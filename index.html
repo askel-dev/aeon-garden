@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AEON Garden</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --card: rgba(255, 250, 240, 0.94);
+    --ink: #3b372f;
+    --muted: #8b8272;
+    --line: #ecdfc8;
+    --accent: #e98a4b;
+    --accent-soft: #fde4cf;
+    --good: #6fb350;
+    --rabbit: #a07850;
+    --fox: #e2702f;
+    --shadow: 0 8px 28px rgba(70, 55, 25, 0.20), 0 1px 3px rgba(70, 55, 25, 0.12);
+    --radius: 18px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #9cc77e; }
+  body { font-family: Nunito, ui-rounded, system-ui, sans-serif; color: var(--ink); font-size: 14px; }
+  canvas#world { position: fixed; inset: 0; display: block; touch-action: none; }
+  canvas#world.tool-look { cursor: grab; }
+  canvas#world.tool-look.dragging { cursor: grabbing; }
+  canvas#world.tool-rabbit, canvas#world.tool-fox { cursor: copy; }
+  canvas#world.tool-grass { cursor: crosshair; }
+
+  .card {
+    position: fixed; background: var(--card); border-radius: var(--radius);
+    box-shadow: var(--shadow); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  a[data-id] { color: var(--accent); font-weight: 800; text-decoration: none; cursor: pointer; }
+  a[data-id]:hover { text-decoration: underline; }
+
+  /* ---- the meadow card, top left */
+  #meadow { top: 16px; left: 16px; width: 272px; padding: 14px 16px 12px; }
+  #meadow .brand { font-weight: 900; font-size: 18px; letter-spacing: 0.2px; }
+  #meadow .clock { color: var(--muted); font-weight: 700; margin-top: 2px; display: flex; gap: 6px; align-items: center; }
+  #meadow .clock b { color: var(--ink); }
+  .pop { display: grid; grid-template-columns: 26px 44px 1fr; align-items: center; gap: 6px; margin-top: 10px; }
+  .pop .emoji { font-size: 20px; }
+  .pop .n { font-weight: 900; font-size: 18px; font-variant-numeric: tabular-nums; }
+  .pop canvas { width: 100%; height: 30px; }
+  .spark-caption { color: var(--muted); font-size: 11px; text-align: right; margin-top: 2px; }
+  .evo { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
+  .evo h3 { margin: 0 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); }
+  .evo .row { font-size: 13px; line-height: 1.5; }
+  .evo .up { color: var(--good); font-weight: 800; }
+  .evo .down { color: #c9673a; font-weight: 800; }
+
+  /* ---- news, bottom left */
+  #news { position: fixed; left: 16px; bottom: 96px; width: 360px; display: flex; flex-direction: column-reverse; gap: 6px; pointer-events: none; }
+  .news-item {
+    background: var(--card); border-radius: 14px; padding: 8px 12px; box-shadow: var(--shadow);
+    font-size: 13.5px; line-height: 1.35; pointer-events: auto; animation: pop-in 0.35s ease-out;
+    transition: opacity 1s;
+  }
+  .news-item.old { opacity: 0.55; }
+  @keyframes pop-in { from { transform: translateY(8px) scale(0.97); opacity: 0; } to { transform: none; opacity: 1; } }
+
+  /* ---- toolbar, bottom centre */
+  #toolbar { left: 50%; bottom: 16px; transform: translateX(-50%); padding: 8px; display: flex; gap: 4px; align-items: center; }
+  #toolbar .sep { width: 1px; height: 38px; background: var(--line); margin: 0 6px; }
+  .tool {
+    border: none; background: transparent; border-radius: 12px; padding: 5px 9px 4px; min-width: 50px;
+    display: flex; flex-direction: column; align-items: center; gap: 1px; transition: background 0.15s, transform 0.1s;
+  }
+  .tool .e { font-size: 21px; line-height: 1.1; }
+  .tool .l { font-size: 11px; font-weight: 800; color: var(--muted); }
+  .tool:hover { background: rgba(0,0,0,0.05); }
+  .tool:active { transform: scale(0.95); }
+  .tool.on { background: var(--accent-soft); }
+  .tool.on .l { color: var(--accent); }
+  .speed { min-width: 40px; }
+  .speed .e { font-size: 15px; font-weight: 900; line-height: 26px; }
+
+  /* ---- inspector, right */
+  #inspector { top: 16px; right: 16px; width: 330px; max-height: calc(100% - 32px); overflow-y: auto; padding: 16px; display: none; }
+  #inspector.open { display: block; animation: pop-in 0.3s ease-out; }
+  .ins-head { display: flex; gap: 12px; align-items: center; }
+  .portrait { width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; font-size: 38px; flex: none; box-shadow: inset 0 -4px 0 rgba(0,0,0,0.08); }
+  .ins-name { font-weight: 900; font-size: 20px; line-height: 1.1; }
+  .ins-sub { color: var(--muted); font-weight: 700; font-size: 12.5px; margin-top: 3px; }
+  .close { margin-left: auto; align-self: flex-start; border: none; background: transparent; font-size: 16px; color: var(--muted); border-radius: 8px; padding: 2px 6px; }
+  .close:hover { background: rgba(0,0,0,0.06); }
+  .mood { margin-top: 12px; background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; font-weight: 800; font-size: 15px; }
+  .meters { margin-top: 10px; display: grid; gap: 6px; }
+  .meter-row { display: grid; grid-template-columns: 70px 1fr; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 800; color: var(--muted); }
+  .meter { height: 9px; background: #efe5d3; border-radius: 99px; overflow: hidden; }
+  .meter span { display: block; height: 100%; border-radius: 99px; background: var(--good); transition: width 0.3s; }
+  .meter.low span { background: #e0823f; }
+  .meter.stamina span { background: #6aa6d8; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .chip { background: var(--accent-soft); color: #9a5024; border-radius: 99px; padding: 3px 10px; font-weight: 800; font-size: 12px; }
+  #inspector h4 { margin: 16px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); }
+  .trait { display: grid; grid-template-columns: 22px 78px 1fr auto; align-items: center; gap: 6px; font-size: 13px; margin: 3px 0; }
+  .trait .word { font-weight: 800; font-size: 12px; color: var(--ink); min-width: 92px; text-align: right; }
+  .trait .meter span { background: #d9a86b; }
+  .family { font-size: 13.5px; line-height: 1.6; }
+  .story { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+  .story li { display: grid; grid-template-columns: 22px 1fr; gap: 4px; padding: 3px 0; border-bottom: 1px dashed var(--line); }
+  .story li:last-child { border-bottom: none; }
+  .story .when { color: var(--muted); font-size: 11px; font-weight: 700; }
+  .ins-actions { display: flex; gap: 8px; margin-top: 14px; }
+  .btn { border: none; border-radius: 12px; padding: 8px 12px; font-weight: 800; background: #fff; box-shadow: 0 1px 0 var(--line), 0 0 0 1px var(--line) inset; flex: 1; }
+  .btn:hover { background: #fff7ec; }
+  .btn.on { background: var(--accent-soft); color: #9a5024; }
+  .diary { margin-top: 10px; background: #fffdf6; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; font-style: italic; line-height: 1.45; }
+  .diary.err { font-style: normal; color: var(--muted); font-size: 12.5px; }
+  .diary .dots::after { content: '…'; animation: dots 1.2s infinite steps(4); }
+  @keyframes dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
+
+  /* ---- welcome */
+  #welcome { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(60, 80, 40, 0.25); z-index: 10; }
+  #welcome .card { position: static; width: min(460px, calc(100% - 32px)); padding: 26px 28px 22px; text-align: left; }
+  #welcome h1 { margin: 0 0 8px; font-size: 26px; font-weight: 900; }
+  #welcome p { line-height: 1.55; margin: 0 0 10px; }
+  #welcome ul { padding-left: 0; list-style: none; margin: 12px 0 18px; line-height: 1.9; }
+  #welcome .go { width: 100%; background: var(--accent); color: #fff; font-size: 16px; padding: 11px; box-shadow: none; }
+  #welcome .go:hover { background: #df7b3a; }
+  .hidden { display: none !important; }
+
+  @media (max-width: 760px) {
+    #meadow { width: calc(100% - 32px); }
+    #meadow .evo, .spark-caption { display: none; }
+    #news { width: calc(100% - 32px); bottom: 150px; }
+    #toolbar { flex-wrap: wrap; justify-content: center; width: calc(100% - 32px); }
+    #toolbar .sep { display: none; }
+    #inspector { top: auto; bottom: 16px; left: 16px; right: 16px; width: auto; max-height: 55%; z-index: 5; }
+  }
+</style>
+</head>
+<body>
+<canvas id="world" class="tool-look"></canvas>
+
+<section id="meadow" class="card">
+  <div class="brand">🌱 AEON Garden</div>
+  <div class="clock"><span id="season-emoji">🌸</span><b id="season-name">Spring</b><span id="clock-rest">day 1 · year 1</span><span id="sun" title="Day or night">☀️</span></div>
+  <div class="pop" title="Rabbits alive right now, and the last two years">
+    <span class="emoji">🐇</span><span class="n" id="n-rabbit">0</span><canvas id="spark-rabbit"></canvas>
+  </div>
+  <div class="pop" title="Foxes alive right now, and the last two years">
+    <span class="emoji">🦊</span><span class="n" id="n-fox">0</span><canvas id="spark-fox"></canvas>
+  </div>
+  <div class="spark-caption">last 2 years</div>
+  <div class="evo">
+    <h3>Evolution since the start</h3>
+    <div class="row" id="evo-rabbit"></div>
+    <div class="row" id="evo-fox"></div>
+  </div>
+</section>
+
+<div id="news"></div>
+
+<nav id="toolbar" class="card">
+  <button class="tool on" data-tool="look" title="Look around. Click an animal to follow it (L)"><span class="e">🔍</span><span class="l">Look</span></button>
+  <button class="tool" data-tool="rabbit" title="Click the meadow to release a rabbit"><span class="e">🐇</span><span class="l">Rabbit</span></button>
+  <button class="tool" data-tool="fox" title="Click the meadow to release a fox"><span class="e">🦊</span><span class="l">Fox</span></button>
+  <button class="tool" data-tool="grass" title="Click and drag to grow lush grass"><span class="e">🌱</span><span class="l">Grass</span></button>
+  <button class="tool" data-action="rain" title="Make it rain: grass grows three times faster for a day"><span class="e">🌧️</span><span class="l">Rain</span></button>
+  <span class="sep"></span>
+  <button class="tool speed" data-speed="0" title="Pause (space)"><span class="e">⏸</span><span class="l">Pause</span></button>
+  <button class="tool speed on" data-speed="1" title="Normal speed (1)"><span class="e">1×</span><span class="l">Calm</span></button>
+  <button class="tool speed" data-speed="4" title="Fast (2)"><span class="e">4×</span><span class="l">Fast</span></button>
+  <button class="tool speed" data-speed="15" title="Very fast (3)"><span class="e">15×</span><span class="l">Seasons</span></button>
+  <button class="tool speed" data-speed="60" title="Watch years go by (4)"><span class="e">60×</span><span class="l">Years</span></button>
+  <span class="sep"></span>
+  <button class="tool" data-action="new" title="Start a brand-new meadow"><span class="e">🔄</span><span class="l">New</span></button>
+</nav>
+
+<aside id="inspector" class="card"></aside>
+
+<div id="welcome" class="hidden">
+  <div class="card">
+    <h1>🌱 Welcome to AEON Garden</h1>
+    <p>A small meadow where rabbits and foxes live their own lives. Nobody tells them what to do.
+      They graze, run for their burrows, fall in love and raise families. Every baby inherits a mix of its
+      parents' traits, with a small twist.</p>
+    <p>Leave it running and watch what happens: populations boom and crash, and over the years the animals slowly change.</p>
+    <ul>
+      <li>🔍 <b>Click an animal</b> to follow its whole life story</li>
+      <li>🖱️ <b>Scroll</b> to zoom, <b>drag</b> to look around</li>
+      <li>🐇 🦊 🌱 🌧️ <b>Play god</b> with the tools at the bottom</li>
+    </ul>
+    <button class="btn go" id="go">Let's go!</button>
+  </div>
+</div>
+
+<script src="sim.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
