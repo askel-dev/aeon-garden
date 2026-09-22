@@ -331,7 +331,11 @@ function note(w, c, emoji, text) {
   if (c.story.length > 40) c.story.splice(1, 1);   // keep the birth line
 }
 
-function emit(w, e) { e.t = w.tick; w.events.push(e); }
+const MARKED = new Set(['extinct', 'arrive', 'rain']);   // moments the stats chart pins on its timeline
+function emit(w, e) {
+  e.t = w.tick; w.events.push(e);
+  if (MARKED.has(e.type)) w.history.marks.push({ t: e.t, type: e.type, species: e.species });
+}
 
 function nearestBurrow(w, x, y, maxD) {
   let best = null, bd = maxD * maxD;
@@ -769,7 +773,7 @@ function createWorld(seed, opts = {}) {
     nameCounts: new Map(), rain: 0, anyDied: false,
     count: { rabbit: 0, fox: 0 }, expecting: { rabbit: 0, fox: 0 },
     stats: { births: { rabbit: 0, fox: 0 }, deaths: { rabbit: {}, fox: {} } },
-    history: { t: [], rabbit: [], fox: [], traits: { rabbit: [], fox: [] } },
+    history: { every: 60, t: [], rabbit: [], fox: [], grass: [], traits: { rabbit: [], fox: [] }, marks: [] },
     goneSince: { rabbit: -1, fox: -1 },
     options: { migration: true, ...opts },
   };
@@ -813,14 +817,27 @@ function traitMeans(w, species) {
   return m;
 }
 
+// How full the meadow is: 1 when every tile holds all the grass its soil allows.
+function grassFullness(w) {
+  let g = 0, f = 0;
+  for (let i = 0; i < W * H; i++) { g += w.grass[i]; f += w.fert[i]; }
+  return f ? g / f : 0;
+}
+
+// The whole story is kept. When it gets long, every other sample goes and sampling slows down.
+const HISTORY_MAX = 4000;
 function record(w) {
   const h = w.history;
   h.t.push(w.tick);
   h.rabbit.push(w.count.rabbit);
   h.fox.push(w.count.fox);
+  h.grass.push(grassFullness(w));
   for (const s of ['rabbit', 'fox']) h.traits[s].push(traitMeans(w, s));
-  if (h.t.length > 3000) {
-    for (const a of [h.t, h.rabbit, h.fox, h.traits.rabbit, h.traits.fox]) a.splice(0, 1000);
+  if (h.t.length > HISTORY_MAX) {
+    const half = a => a.filter((_, i) => i % 2 === 0);
+    for (const k of ['t', 'rabbit', 'fox', 'grass']) h[k] = half(h[k]);
+    for (const s of ['rabbit', 'fox']) h.traits[s] = half(h.traits[s]);
+    h.every *= 2;
   }
 }
 
@@ -876,7 +893,7 @@ function step(w) {
   }
   if (w.anyDied) { w.creatures = w.creatures.filter(c => c.alive); w.anyDied = false; }
   flushNewborn(w);
-  if (t % 60 === 0) record(w);
+  if (t % w.history.every === 0) record(w);
   if (t % (TPD / 4) === 0) migrate(w);
   if (t % TPD === 0) forgetTheLongDead(w);
 }

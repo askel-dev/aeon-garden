@@ -14,8 +14,9 @@ let world;
 const ui = {
   speed: 1, tool: 'look', selectedId: 0, hoverId: 0, follow: false,
   trail: [], effects: [], diary: new Map(),
-  lastNews: {}, records: { rabbit: 0, fox: 0 }, crashSaid: { rabbit: -1, fox: -1 }, seenHistory: 0,
+  lastNews: {}, newsLog: [], newsOpen: false, records: { rabbit: 0, fox: 0 }, crashSaid: { rabbit: -1, fox: -1 }, seenHistory: 0,
   releaseSex: { rabbit: 'F', fox: 'F' },
+  stats: { open: false, show: 'rabbit', range: 'five', hover: null },
 };
 const cam = { x: S.W / 2, y: S.H / 2, zoom: 10, goal: null };
 
@@ -204,13 +205,17 @@ function render(now) {
     }
   }
 
-  // Burrows.
+  // Burrows, drawn by hand: some browsers clip the 🕳️ glyph in half.
   for (const b of world.burrows) {
     const [sx, sy] = toScreen(b.x, b.y);
     if (!visible(sx, sy, 40)) continue;
-    ctx.fillStyle = 'rgba(90, 70, 40, 0.25)';
-    ctx.beginPath(); ctx.ellipse(sx, sy + z * 0.2, z * 1.1, z * 0.55, 0, 0, TAU); ctx.fill();
-    drawEmoji('🕳️', sx, sy, Math.max(10, z * 1.5));
+    const r = Math.max(5, z * 0.65);
+    ctx.fillStyle = 'rgba(90, 70, 40, 0.25)';                // dug-up earth
+    ctx.beginPath(); ctx.ellipse(sx, sy + r * 0.3, r * 1.7, r * 0.85, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#7d6649';                               // the far wall
+    ctx.beginPath(); ctx.ellipse(sx, sy, r, r * 0.45, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#2a2019';                               // the dark inside
+    ctx.beginPath(); ctx.ellipse(sx, sy + r * 0.08, r * 0.88, r * 0.36, 0, 0, TAU); ctx.fill();
   }
 
   const sel = world.byId.get(ui.selectedId);
@@ -403,18 +408,33 @@ function drawEffects(now) {
 
 // ------------------------------------------------------------------ news
 
-const NEWS_MAX = 6;
+const NEWS_TOASTS = 3, NEWS_TOAST_MS = 7000, NEWS_LOG_MAX = 80;
 function addNews(html, category, minGapMs = 0) {
   const now = performance.now();
   if (category && minGapMs && ui.lastNews[category] && now - ui.lastNews[category] < minGapMs) return;
   if (category) ui.lastNews[category] = now;
+  ui.newsLog.unshift({ html, tick: world.tick });
+  ui.newsLog.length = Math.min(ui.newsLog.length, NEWS_LOG_MAX);
+  if (ui.newsOpen) { renderNewsLog(); return; }
   const box = $('#news');
   const el = document.createElement('div');
   el.className = 'news-item';
   el.innerHTML = html;
   box.prepend(el);
-  while (box.children.length > NEWS_MAX) box.lastChild.remove();
-  setTimeout(() => el.classList.add('old'), 15000);
+  while (box.children.length > NEWS_TOASTS) box.lastChild.remove();
+  setTimeout(() => { el.classList.add('gone'); setTimeout(() => el.remove(), 800); }, NEWS_TOAST_MS);
+}
+
+function renderNewsLog() {
+  $('#news-log ol').innerHTML = ui.newsLog.map(n => `<li><span class="when">${when(n.tick)}</span>${n.html}</li>`).join('');
+}
+
+function toggleNewsLog() {
+  ui.newsOpen = !ui.newsOpen;
+  $('#news-log').classList.toggle('hidden', !ui.newsOpen);
+  $('.news-toggle').classList.toggle('on', ui.newsOpen);
+  $('#news').innerHTML = '';                        // it's all in the log now
+  if (ui.newsOpen) renderNewsLog();
 }
 
 const link = c => c ? `<a data-id="${c.id}">${esc(c.name)}</a>` : 'someone';
@@ -509,7 +529,7 @@ function checkPopulationNews() {
       }
       ui.records[s] = fresh;
     }
-    const recent = h[s].slice(Math.max(0, n - 200));            // about the last year
+    const recent = h[s].slice(since(world.tick - S.YEAR_DAYS * S.TPD));
     const peak = Math.max(...recent);
     const season = S.seasonOf(world.tick) + 4 * S.clock(world).year;
     if (peak >= (s === 'rabbit' ? 80 : 10) && now <= peak * 0.3 && ui.crashSaid[s] !== season && now > 0) {
@@ -521,10 +541,18 @@ function checkPopulationNews() {
 
 // ------------------------------------------------------------------ the meadow card
 
+// Index of the first history sample at or after tick t.
+function since(t) {
+  const a = world.history.t;
+  let lo = 0, hi = a.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (a[m] < t) lo = m + 1; else hi = m; }
+  return lo;
+}
+
 function sparkline(canvas, data, color) {
   const g = canvas.getContext('2d'), w = canvas.width, h = canvas.height;
   g.clearRect(0, 0, w, h);
-  const pts = data.slice(-400);
+  const pts = data.slice(since(world.tick - 2 * S.YEAR_DAYS * S.TPD));
   if (pts.length < 2) return;
   const max = Math.max(4, ...pts) * 1.1;
   const x = i => (i / (pts.length - 1)) * w, y = v => h - 2 * dpr - (v / max) * (h - 4 * dpr);
@@ -585,6 +613,277 @@ function updateMeadowCard() {
   $('#evo-rabbit').innerHTML = evolutionLine('rabbit');
   $('#evo-fox').innerHTML = evolutionLine('fox');
 }
+
+// ------------------------------------------------------------------ the stats page
+
+const SERIES = {
+  rabbit: { emoji: '🐇', name: 'Rabbits', title: 'Rabbits alive', color: '#a07850', fmt: v => Math.round(v) },
+  fox: { emoji: '🦊', name: 'Foxes', title: 'Foxes alive', color: '#e2702f', fmt: v => Math.round(v) },
+  grass: { emoji: '🌱', name: 'Grass', title: 'How lush the meadow is', color: '#5f9e43', fmt: v => Math.round(v * 100) + '%' },
+};
+const SEASON_TINT = ['#f6dde5', '#f7ecb8', '#f4d6b6', '#dfe8f0'];
+const RANGES = { year: S.YEAR_DAYS * S.TPD, five: 5 * S.YEAR_DAYS * S.TPD, all: Infinity };
+const RANGE_WORDS = { year: 'the last year', five: 'the last 5 years', all: 'the whole story' };
+const MARK_EMOJI = { extinct: '😢', arrive: '🧳', rain: '🌧️' };
+const CAUSES = [['fox', '🦊', 'Caught by a fox'], ['hunger', '🥀', 'Starved'], ['age', '🌙', 'Old age']];
+const INK = '#3b372f', MUTED = '#8b8272';
+
+const shownKeys = () => ui.stats.show === 'all' ? ['rabbit', 'fox', 'grass'] : [ui.stats.show];
+
+function toggleStats(open = !ui.stats.open) {
+  ui.stats.open = open;
+  ui.stats.hover = null;
+  $('#stats').classList.toggle('hidden', !open);
+  $('[data-act="stats"].tool').classList.toggle('on', open);
+  if (open) { renderStats(); $('#stats').scrollTop = 0; }
+}
+
+function statsWindow() {
+  const h = world.history, i0 = since(world.tick - RANGES[ui.stats.range]);
+  const t0 = Math.max(world.tick - RANGES[ui.stats.range], h.t[0]);
+  return { h, i0, t0, t1: Math.max(world.tick, t0 + S.TPD) };
+}
+
+function niceStep(v) {
+  const p = 10 ** Math.floor(Math.log10(v));
+  return [1, 2, 5, 10].map(m => m * p).find(s => s >= v);
+}
+
+function fitCanvas(c, cssH) {
+  const w = c.clientWidth;
+  c.style.height = cssH + 'px';
+  c.width = Math.round(w * dpr); c.height = Math.round(cssH * dpr);
+  const g = c.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return [g, w];
+}
+
+// The big chart: one panel per series, all sharing a time axis striped by season.
+function drawStatsChart() {
+  const c = $('#stats-chart'), keys = shownKeys();
+  const TOP = 24, AXIS = 26, L = 48, R = 20;
+  const panelH = keys.length > 1 ? 150 : Math.max(260, Math.min(420, window.innerHeight * 0.45));
+  const [g, w] = fitCanvas(c, keys.length * (panelH + TOP) + AXIS);
+  const { h, i0, t0, t1 } = statsWindow();
+  const X = t => L + (t - t0) / (t1 - t0) * (w - L - R);
+  const seasonT = S.SEASON_DAYS * S.TPD, yearT = S.YEAR_DAYS * S.TPD;
+  const bottom = keys.length * (panelH + TOP);
+  g.textBaseline = 'middle';
+
+  // the hovered sample, snapped to the nearest one
+  let hi = -1;
+  if (ui.stats.hover !== null && h.t.length > i0) {
+    const t = t0 + (ui.stats.hover - L) / (w - L - R) * (t1 - t0);
+    hi = clamp(since(t), i0, h.t.length - 1);
+    if (hi > i0 && t - h.t[hi - 1] < h.t[hi] - t) hi--;
+  }
+
+  keys.forEach((k, p) => {
+    const top = p * (panelH + TOP) + TOP, bot = top + panelH, sr = SERIES[k];
+    const data = h[k];
+
+    // seasons, with their emoji above the first panel when there is room
+    for (let s = Math.floor(t0 / seasonT) * seasonT; s < t1; s += seasonT) {
+      const a = X(Math.max(s, t0)), b = X(Math.min(s + seasonT, t1)), si = S.seasonOf(s);
+      g.fillStyle = SEASON_TINT[si];
+      g.fillRect(a, top, b - a, panelH);
+      if (p === 0 && b - a > 24) {
+        g.font = '13px ' + EMOJI_FONT; g.textAlign = 'center'; g.fillStyle = INK;
+        const label = b - a > 110 ? '' : S.SEASONS[si].emoji;
+        if (label) g.fillText(label, (a + b) / 2, top - 11);
+        else {
+          g.font = '800 12px Nunito, sans-serif'; g.fillStyle = MUTED;
+          g.fillText(S.SEASONS[si].emoji + ' ' + S.SEASONS[si].name, (a + b) / 2, top - 11);
+        }
+      }
+    }
+
+    // y axis: a few round numbers
+    let max = 1, step = 0.25;
+    if (k !== 'grass') {
+      let m = 4;
+      for (let i = i0; i < data.length; i++) m = Math.max(m, data[i]);
+      step = niceStep(m / 4); max = Math.ceil(m * 1.05 / step) * step;
+    }
+    const Y = v => bot - (v / max) * (panelH - 8);
+    g.font = '700 11px Nunito, sans-serif'; g.textAlign = 'right';
+    for (let v = 0; v <= max + 1e-9; v += step) {
+      g.fillStyle = 'rgba(59,55,47,0.10)'; g.fillRect(L, Math.round(Y(v)), w - L - R, 1);
+      g.fillStyle = MUTED; g.fillText(sr.fmt(v), L - 8, Y(v));
+    }
+
+    // the line, with a soft fill under it
+    if (data.length - i0 >= 2) {
+      g.beginPath();
+      g.moveTo(X(h.t[i0]), bot);
+      for (let i = i0; i < data.length; i++) g.lineTo(X(h.t[i]), Y(data[i]));
+      g.lineTo(X(h.t[data.length - 1]), bot);
+      g.closePath();
+      g.fillStyle = sr.color + '30'; g.fill();
+      g.beginPath();
+      for (let i = i0; i < data.length; i++) i > i0 ? g.lineTo(X(h.t[i]), Y(data[i])) : g.moveTo(X(h.t[i]), Y(data[i]));
+      g.strokeStyle = sr.color; g.lineWidth = 2; g.lineJoin = 'round'; g.stroke();
+    }
+
+    // big moments: extinctions and newcomers for animals, rain for the grass
+    for (const m of h.marks) {
+      if (m.t < t0 || (m.type === 'rain' ? k !== 'grass' : m.species !== k)) continue;
+      const x = X(m.t);
+      g.save(); g.setLineDash([3, 3]); g.strokeStyle = 'rgba(59,55,47,0.35)'; g.lineWidth = 1;
+      g.beginPath(); g.moveTo(x, top + 18); g.lineTo(x, bot); g.stroke(); g.restore();
+      g.font = '13px ' + EMOJI_FONT; g.textAlign = 'center'; g.fillStyle = INK;
+      g.fillText(MARK_EMOJI[m.type], x, top + 10);
+    }
+
+    // which panel is which, when there are several
+    if (keys.length > 1) {
+      g.font = '800 12px Nunito, sans-serif';
+      const label = sr.emoji + ' ' + sr.name, tw = g.measureText(label).width + 16;
+      g.fillStyle = 'rgba(255,250,240,0.9)';
+      g.beginPath(); g.roundRect(L + 6, top + 6, tw, 20, 10); g.fill();
+      g.fillStyle = INK; g.textAlign = 'left'; g.fillText(label, L + 14, top + 16);
+    }
+
+    // today's value, labelled at the end of the line
+    if (data.length > i0) {
+      const x = X(h.t[data.length - 1]), y = Y(data[data.length - 1]);
+      g.fillStyle = '#fffaf0'; g.beginPath(); g.arc(x, y, 6, 0, TAU); g.fill();
+      g.fillStyle = sr.color; g.beginPath(); g.arc(x, y, 4, 0, TAU); g.fill();
+      g.font = '900 13px Nunito, sans-serif'; g.fillStyle = INK; g.textAlign = 'right';
+      g.fillText(sr.fmt(data[data.length - 1]), x - 9, y < top + 20 ? y + 14 : y - 12);
+    }
+    if (hi >= 0) {
+      const x = X(h.t[hi]), y = Y(data[hi]);
+      g.fillStyle = '#fffaf0'; g.beginPath(); g.arc(x, y, 6, 0, TAU); g.fill();
+      g.fillStyle = sr.color; g.beginPath(); g.arc(x, y, 4, 0, TAU); g.fill();
+    }
+  });
+
+  // years: a line where each one begins, labelled along the bottom
+  const pxPerYear = yearT / (t1 - t0) * (w - L - R), every = Math.max(1, Math.ceil(56 / pxPerYear));
+  g.font = '800 11px Nunito, sans-serif'; g.textAlign = 'center';
+  for (let y = Math.ceil(t0 / yearT) * yearT; y <= t1; y += yearT) {
+    const x = Math.round(X(y)), n = y / yearT + 1;
+    g.fillStyle = 'rgba(59,55,47,0.28)'; g.fillRect(x, TOP, 1, bottom - TOP);
+    if ((n - 1) % every === 0) { g.fillStyle = MUTED; g.fillText('Year ' + n, x, bottom + 13); }
+  }
+
+  // hover: a hairline and one readout for every panel
+  const tip = $('#stats-tip');
+  if (hi < 0) { tip.classList.add('hidden'); return; }
+  const x = X(h.t[hi]);
+  g.fillStyle = 'rgba(59,55,47,0.55)'; g.fillRect(Math.round(x), TOP, 1, bottom - TOP);
+  const rows = ['rabbit', 'fox', 'grass'].map(k =>
+    `<div class="tip-row${keys.includes(k) ? '' : ' dim'}"><i style="background:${SERIES[k].color}"></i><b>${SERIES[k].fmt(h[k][hi])}</b> ${SERIES[k].name.toLowerCase()}</div>`);
+  tip.innerHTML = `<div class="tip-when">${S.SEASONS[S.seasonOf(h.t[hi])].emoji} ${when(h.t[hi])}</div>` + rows.join('');
+  tip.classList.remove('hidden');
+  const tw = tip.offsetWidth;
+  tip.style.left = (x + 14 + tw > w ? x - 14 - tw : x + 14) + 'px';
+}
+
+function seasonBars(k, i0) {
+  const h = world.history, sum = [0, 0, 0, 0], n = [0, 0, 0, 0], sr = SERIES[k];
+  for (let i = i0; i < h.t.length; i++) { const s = S.seasonOf(h.t[i]); sum[s] += h[k][i]; n[s]++; }
+  const avg = sum.map((v, s) => n[s] ? v / n[s] : null);
+  const max = Math.max(1e-9, ...avg.filter(v => v !== null));
+  return `<div class="sbars"><div class="st-name">${sr.emoji} ${sr.name}</div><div class="sb-row">` + avg.map((v, s) =>
+    `<div class="sb" title="${S.SEASONS[s].name}"><div class="sb-val">${v === null ? '–' : sr.fmt(v)}</div>` +
+    `<div class="sb-bar"><span style="height:${v === null ? 0 : Math.max(2, v / max * 100)}%;background:${sr.color}"></span></div>` +
+    `<div class="sb-lbl">${S.SEASONS[s].emoji}</div></div>`).join('') + '</div></div>';
+}
+
+function recordRows(k, i0) {
+  const h = world.history, a = h[k], sr = SERIES[k];
+  if (a.length <= i0) return '';
+  let hi = i0, lo = i0, sum = 0;
+  for (let i = i0; i < a.length; i++) { if (a[i] > a[hi]) hi = i; if (a[i] < a[lo]) lo = i; sum += a[i]; }
+  const rows = [
+    ['Now', sr.fmt(a[a.length - 1]), ''],
+    ['Most', sr.fmt(a[hi]), when(h.t[hi])],
+    ['Fewest', sr.fmt(a[lo]), when(h.t[lo])],
+    ['Average', sr.fmt(sum / (a.length - i0)), ''],
+  ];
+  if (k === 'grass') { rows[1][0] = 'Lushest'; rows[2][0] = 'Barest'; }
+  else {
+    const alive = world.creatures.filter(c => c.alive && c.species === k);
+    const oldest = alive.reduce((b, c) => (!b || c.born < b.born ? c : b), null);
+    const parent = alive.reduce((b, c) => (!b || c.kids > b.kids ? c : b), null);
+    if (oldest) rows.push(['Oldest alive', link(oldest), `${Math.floor(S.ageDays(world, oldest))} days`]);
+    if (parent && parent.kids) rows.push(['Biggest family', link(parent), `${parent.kids} ${parent.kids === 1 ? 'child' : 'children'}`]);
+  }
+  return `<div class="st-name">${sr.emoji} ${sr.name}</div><table class="rec">` +
+    rows.map(([a, b, c]) => `<tr><td>${a}</td><td><b>${b}</b></td><td>${c}</td></tr>`).join('') + '</table>';
+}
+
+function deathRows(k) {
+  const d = world.stats.deaths[k], sr = SERIES[k];
+  const total = CAUSES.reduce((n, [c]) => n + (d[c] || 0), 0);
+  const head = `<div class="st-name">${sr.emoji} ${sr.name} <span class="st-sub">${world.stats.births[k]} born here · ${total} died</span></div>`;
+  if (!total) return head + '<div class="st-sub">Nobody has died yet.</div>';
+  return head + CAUSES.filter(([c]) => d[c]).map(([c, e, text]) => {
+    const pct = d[c] / total * 100;
+    return `<div class="dbar"><span class="dl">${e} ${text}</span><span class="dt"><span style="width:${pct}%;background:${sr.color}"></span></span>` +
+      `<span class="dn"><b>${Math.round(pct)}%</b> ${d[c]}</span></div>`;
+  }).join('');
+}
+
+function evoBlock(k) {
+  const base = world.founderMeans[k], now = S.traitMeans(world, k), sr = SERIES[k];
+  return `<div class="st-name">${sr.emoji} ${sr.name} <span class="st-sub">average of everyone alive · dashed line is where the first ones started</span></div><div class="evo-grid">` +
+    TRAITS.map(t => {
+      const d = base && now ? (now[t.k] - base[t.k]) / base[t.k] : 0;
+      const chip = Math.abs(d) >= 0.02 ? `<span class="${d > 0 ? 'up' : 'down'}">${d > 0 ? '▲' : '▼'}${Math.round(Math.abs(d) * 100)}%</span>` : '';
+      return `<div class="evo-mini" title="${t.tip}"><div class="em-head">${t.e} ${t.name} ${chip}</div>` +
+        `<div class="em-word">${now ? word(t, now[t.k]) : 'none alive'}</div><canvas data-evo="${k}|${t.k}"></canvas></div>`;
+    }).join('') + '</div>';
+}
+
+function drawTrait(c, k, gene, i0) {
+  const [g, w] = fitCanvas(c, 54);
+  const h = world.history, tr = h.traits[k], base = world.founderMeans[k]?.[gene];
+  const { t0, t1 } = statsWindow();
+  let lo = base ?? 0.5, hi = lo;
+  for (let i = i0; i < tr.length; i++) if (tr[i]) { lo = Math.min(lo, tr[i][gene]); hi = Math.max(hi, tr[i][gene]); }
+  const mid = (lo + hi) / 2, half = Math.max(0.06, (hi - lo) / 2 * 1.15);
+  const X = t => 2 + (t - t0) / (t1 - t0) * (w - 4), Y = v => 27 - (v - mid) / half * 23;
+  if (base !== undefined) {
+    g.setLineDash([3, 3]); g.strokeStyle = 'rgba(59,55,47,0.35)'; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(0, Y(base)); g.lineTo(w, Y(base)); g.stroke(); g.setLineDash([]);
+  }
+  g.beginPath();
+  let pen = false;
+  for (let i = i0; i < tr.length; i++) {
+    if (!tr[i]) { pen = false; continue; }                 // nobody alive: a gap in the line
+    const x = X(h.t[i]), y = Y(tr[i][gene]);
+    pen ? g.lineTo(x, y) : g.moveTo(x, y); pen = true;
+  }
+  g.strokeStyle = SERIES[k].color; g.lineWidth = 2; g.lineJoin = 'round'; g.stroke();
+}
+
+function renderStatsCards() {
+  const keys = shownKeys(), animals = keys.filter(k => k !== 'grass'), { i0 } = statsWindow();
+  $('#stats-records').innerHTML = keys.map(k => recordRows(k, i0)).join('');
+  $('#stats-seasons').innerHTML = keys.map(k => seasonBars(k, i0)).join('');
+  $('#stats-deaths').innerHTML = animals.map(deathRows).join('');
+  $('#stats-evo').innerHTML = animals.map(evoBlock).join('');
+  $('#stats-deaths').parentElement.classList.toggle('hidden', !animals.length);
+  $('#stats-evo').parentElement.classList.toggle('hidden', !animals.length);
+  document.querySelectorAll('canvas[data-evo]').forEach(c => { const [k, gene] = c.dataset.evo.split('|'); drawTrait(c, k, gene, i0); });
+}
+
+function renderStats() {
+  const keys = shownKeys();
+  $('#stats-title').textContent = keys.length > 1 ? 'Rabbits, foxes and grass' : SERIES[keys[0]].emoji + ' ' + SERIES[keys[0]].title;
+  $('#stats-range-note').textContent = 'over ' + RANGE_WORDS[ui.stats.range];
+  $('#stats-clock').textContent = `${S.SEASONS[S.seasonOf(world.tick)].emoji} ${when(world.tick)}`;
+  document.querySelectorAll('[data-show]').forEach(b => b.classList.toggle('on', b.dataset.show === ui.stats.show));
+  document.querySelectorAll('[data-range]').forEach(b => b.classList.toggle('on', b.dataset.range === ui.stats.range));
+  drawStatsChart();
+  renderStatsCards();
+}
+
+$('#stats-chart').addEventListener('pointermove', e => { ui.stats.hover = e.offsetX; drawStatsChart(); });
+$('#stats-chart').addEventListener('pointerleave', () => { ui.stats.hover = null; drawStatsChart(); });
 
 // ------------------------------------------------------------------ the inspector
 
@@ -817,16 +1116,21 @@ function paintAt(sx, sy) {
 }
 
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-tool],[data-speed],[data-action],[data-act],a[data-id]');
+  const t = e.target.closest('[data-tool],[data-speed],[data-action],[data-act],[data-show],[data-range],a[data-id]');
   if (!t) return;
   if (t.dataset.tool) setTool(t.dataset.tool);
   else if (t.dataset.speed !== undefined) setSpeed(+t.dataset.speed);
   else if (t.dataset.action === 'rain') { S.startRain(world); }
   else if (t.dataset.action === 'new') { if (confirm('Start a brand-new meadow? This one will be gone.')) newWorld(randomSeed()); }
   else if (t.dataset.act === 'close') select(0);
+  else if (t.dataset.act === 'news') toggleNewsLog();
+  else if (t.dataset.act === 'stats') toggleStats();
+  else if (t.dataset.show) { ui.stats.show = t.dataset.show; renderStats(); }
+  else if (t.dataset.range) { ui.stats.range = t.dataset.range; renderStats(); }
   else if (t.dataset.act === 'follow') { ui.follow = !ui.follow; renderInspector(); }
   else if (t.dataset.act === 'diary') { const c = world.byId.get(ui.selectedId); if (c) writeDiary(c); }
   else if (t.dataset.id) {
+    if (ui.stats.open) toggleStats(false);
     const c = world.byId.get(+t.dataset.id);
     if (c) select(c.id);
   }
@@ -839,9 +1143,11 @@ document.addEventListener('keydown', e => {
     e.preventDefault();
     if (ui.speed) { lastSpeed = ui.speed; setSpeed(0); } else setSpeed(lastSpeed);
   } else if ('1234'.includes(e.key) && e.key.length === 1) setSpeed([1, 4, 15, 60][+e.key - 1]);
-  else if (e.key === 'Escape') select(0);
+  else if (e.key === 'Escape') ui.stats.open ? toggleStats(false) : select(0);
+  else if (e.key === 's') toggleStats();
   else if (e.key === 'f' && ui.selectedId) { ui.follow = !ui.follow; renderInspector(); }
   else if (e.key === 'l') setTool('look');
+  else if (e.key === 'n') toggleNewsLog();
   else if (e.key === '+' || e.key === '=') zoomAt(vw / 2, vh / 2, cam.zoom * 1.25);
   else if (e.key === '-') zoomAt(vw / 2, vh / 2, cam.zoom / 1.25);
 });
@@ -853,21 +1159,23 @@ function randomSeed() { return Math.floor(Math.random() * 1e6); }
 function newWorld(seed) {
   world = S.createWorld(seed);
   jitter = Float32Array.from({ length: S.W * S.H }, () => Math.random() * 2 - 1);
-  Object.assign(ui, { selectedId: 0, hoverId: 0, follow: false, trail: [], effects: [], lastNews: {} });
+  Object.assign(ui, { selectedId: 0, hoverId: 0, follow: false, trail: [], effects: [], lastNews: {}, newsLog: [] });
   ui.records = { rabbit: world.count.rabbit, fox: world.count.fox };
   ui.crashSaid = { rabbit: -1, fox: -1 };
   ui.seenHistory = 0;
   $('#news').innerHTML = '';
+  renderNewsLog();
   cam.zoom = minZoom; cam.x = S.W / 2; cam.y = S.H / 2; cam.goal = null;
   clampCam();
   paintTerrain();
   renderInspector();
   updateMeadowCard();
+  if (ui.stats.open) renderStats();
   addNews(`🌱 A new meadow. <b>${world.count.rabbit} rabbits</b> and <b>${world.count.fox} foxes</b> have just moved in.`);
   history.replaceState(null, '', '?seed=' + seed);
 }
 
-let last = performance.now(), acc = 0, lastCard = 0, lastRecord = 0;
+let last = performance.now(), acc = 0, lastCard = 0, lastRecord = 0, lastStatsCards = 0;
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
@@ -902,13 +1210,20 @@ function frame(now) {
   }
   clampCam();
 
-  if (world.tick - terrainTick >= 12 || terrainTick < 0) paintTerrain();
-  render(now);
+  if (!ui.stats.open) {                  // the stats page covers the meadow, so skip drawing it
+    if (world.tick - terrainTick >= 12 || terrainTick < 0) paintTerrain();
+    render(now);
+  }
 
   if (now - lastCard > 250) {
     lastCard = now;
     updateMeadowCard();
     if (ui.selectedId && !$('#inspector').matches(':hover')) renderInspector();
+    if (ui.stats.open) { $('#stats-clock').textContent = `${S.SEASONS[S.seasonOf(world.tick)].emoji} ${when(world.tick)}`; drawStatsChart(); }
+  }
+  if (ui.stats.open && now - lastStatsCards > 1000 && !$('#stats-cards').matches(':hover')) {
+    lastStatsCards = now;                // not while hovering: a rebuilt link would swallow the click
+    renderStatsCards();
   }
   if (world.history.t.length !== lastRecord) { lastRecord = world.history.t.length; checkPopulationNews(); }
   requestAnimationFrame(frame);
@@ -916,7 +1231,7 @@ function frame(now) {
 
 // ------------------------------------------------------------------ start
 
-window.addEventListener('resize', resize);
+window.addEventListener('resize', () => { resize(); if (ui.stats.open) renderStats(); });
 resize();
 const seedParam = +new URLSearchParams(location.search).get('seed');
 newWorld(seedParam || randomSeed());

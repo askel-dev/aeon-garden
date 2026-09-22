@@ -54,14 +54,24 @@
   .evo .up { color: var(--good); font-weight: 800; }
   .evo .down { color: #c9673a; font-weight: 800; }
 
-  /* ---- news, bottom left */
-  #news { position: fixed; left: 16px; bottom: 96px; width: 360px; display: flex; flex-direction: column-reverse; gap: 6px; pointer-events: none; }
+  /* ---- news: a few short-lived toasts bottom left, the full log in the meadow card */
+  #news { position: fixed; left: 16px; bottom: 96px; width: 330px; display: flex; flex-direction: column-reverse; gap: 5px; pointer-events: none; }
   .news-item {
-    background: var(--card); border-radius: 14px; padding: 8px 12px; box-shadow: var(--shadow);
-    font-size: 13.5px; line-height: 1.35; pointer-events: auto; animation: pop-in 0.35s ease-out;
-    transition: opacity 1s;
+    align-self: flex-start; background: var(--card); border-radius: 12px; padding: 5px 11px; box-shadow: var(--shadow);
+    font-size: 13px; line-height: 1.35; animation: pop-in 0.35s ease-out; transition: opacity 0.8s, transform 0.8s;
   }
-  .news-item.old { opacity: 0.55; }
+  .news-item a[data-id] { pointer-events: auto; }   /* clicks go through to the meadow, except on names */
+  .news-item.gone { opacity: 0; transform: translateY(-6px); }
+  #meadow .brand { display: flex; align-items: center; }
+  .news-toggle { margin-left: auto; border: none; background: transparent; border-radius: 8px; padding: 1px 6px; font-size: 16px; }
+  .news-toggle:hover { background: rgba(0,0,0,0.06); }
+  .news-toggle.on { background: var(--accent-soft); }
+  #news-log { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
+  #news-log h3 { margin: 0 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); }
+  #news-log ol { list-style: none; margin: 0; padding: 0; max-height: min(340px, 45vh); overflow-y: auto; font-size: 13px; line-height: 1.35; }
+  #news-log li { padding: 4px 0; border-bottom: 1px dashed var(--line); }
+  #news-log li:last-child { border-bottom: none; }
+  #news-log .when { display: block; color: var(--muted); font-size: 11px; font-weight: 700; }
   @keyframes pop-in { from { transform: translateY(8px) scale(0.97); opacity: 0; } to { transform: none; opacity: 1; } }
 
   /* ---- toolbar, bottom centre */
@@ -126,13 +136,86 @@
   #welcome .go:hover { background: #df7b3a; }
   .hidden { display: none !important; }
 
+  /* ---- the stats page, over everything */
+  .pop[data-act] { cursor: pointer; border-radius: 10px; }
+  .pop[data-act]:hover { background: rgba(0,0,0,0.04); }
+  #stats { position: fixed; inset: 0; z-index: 8; overflow-y: auto; background: #f3ead8; animation: pop-in 0.25s ease-out; }
+  .stats-wrap { max-width: 1180px; margin: 0 auto; padding: 22px 24px 40px; }
+  .stats-head { display: flex; align-items: center; gap: 14px; }
+  .stats-head h1 { margin: 0; font-size: 24px; font-weight: 900; }
+  #stats-clock { color: var(--muted); font-weight: 800; }
+  .stats-head .close { font-size: 20px; margin-left: auto; align-self: center; }
+  .stats-filters { display: flex; flex-wrap: wrap; gap: 10px 18px; margin: 16px 0 14px; }
+  .seg { display: flex; background: #fffaf0; border-radius: 12px; padding: 3px; box-shadow: 0 0 0 1px var(--line) inset; }
+  .seg button { border: none; background: transparent; border-radius: 9px; padding: 6px 12px; font-weight: 800; color: var(--muted); }
+  .seg button:hover { color: var(--ink); }
+  .seg button.on { background: var(--accent-soft); color: #9a5024; }
+  .stats-card { background: #fffaf0; border-radius: var(--radius); box-shadow: 0 1px 3px rgba(70,55,25,0.10), 0 0 0 1px var(--line); padding: 16px 18px; }
+  .stats-card h3 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); }
+  .chart-title { font-size: 18px; font-weight: 900; }
+  .chart-title small { color: var(--muted); font-size: 13px; font-weight: 700; margin-left: 6px; }
+  .chart-box { position: relative; margin-top: 4px; }
+  #stats-chart { display: block; width: 100%; cursor: crosshair; touch-action: pan-y; }
+  #stats-tip { position: absolute; top: 34px; pointer-events: none; background: #fff; border-radius: 10px; padding: 7px 10px;
+    box-shadow: var(--shadow); font-size: 12.5px; white-space: nowrap; }
+  .tip-when { font-weight: 800; color: var(--muted); margin-bottom: 3px; }
+  .tip-row { display: flex; align-items: center; gap: 6px; line-height: 1.5; }
+  .tip-row i { width: 12px; height: 3px; border-radius: 2px; }
+  .tip-row b { font-size: 14px; font-variant-numeric: tabular-nums; }
+  .tip-row.dim { color: var(--muted); }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px; font-size: 12px; font-weight: 700; color: var(--muted); }
+  .legend .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -2px; margin-right: 4px; }
+  .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 14px; }
+  .stats-grid .wide { grid-column: 1 / -1; }
+  .st-name { font-weight: 900; margin: 10px 0 4px; }
+  .st-name:first-child { margin-top: 0; }
+  .st-sub { color: var(--muted); font-weight: 700; font-size: 12px; }
+  .st-name .st-sub { margin-left: 6px; }
+  table.rec { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.rec td { padding: 3px 0; border-bottom: 1px dashed var(--line); }
+  table.rec tr:last-child td { border-bottom: none; }
+  table.rec td:first-child { color: var(--muted); font-weight: 700; width: 38%; }
+  table.rec td:last-child { color: var(--muted); font-size: 12px; text-align: right; white-space: nowrap; }
+  table.rec b { font-variant-numeric: tabular-nums; }
+  .sb-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .sb { text-align: center; }
+  .sb-val { font-weight: 900; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .sb-bar { height: 64px; display: flex; align-items: flex-end; justify-content: center; margin: 3px 0; border-bottom: 1px solid var(--line); }
+  .sb-bar span { width: 60%; max-width: 38px; border-radius: 4px 4px 0 0; }
+  .sb-lbl { font-size: 15px; }
+  .dbar { display: grid; grid-template-columns: 120px 1fr 72px; align-items: center; gap: 8px; font-size: 13px; margin: 5px 0; }
+  .dbar .dl { font-weight: 700; }
+  .dbar .dt { height: 10px; background: #efe5d3; border-radius: 99px; overflow: hidden; }
+  .dbar .dt span { display: block; height: 100%; border-radius: 99px; }
+  .dbar .dn { text-align: right; color: var(--muted); font-size: 12px; }
+  .dbar .dn b { color: var(--ink); font-size: 13px; }
+  .evo-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 8px; }
+  .evo-mini { background: #fff; border-radius: 12px; padding: 8px 10px 6px; box-shadow: 0 0 0 1px var(--line) inset; }
+  .em-head { font-weight: 800; font-size: 13px; }
+  .em-head .up { color: var(--good); font-size: 12px; }
+  .em-head .down { color: #c9673a; font-size: 12px; }
+  .em-word { color: var(--muted); font-size: 12px; font-weight: 700; }
+  .evo-mini canvas { display: block; width: 100%; margin-top: 4px; }
+
   @media (max-width: 760px) {
     #meadow { width: calc(100% - 32px); }
     #meadow .evo, .spark-caption { display: none; }
     #news { width: calc(100% - 32px); bottom: 150px; }
+    #news-log ol { max-height: 30vh; }
     #toolbar { flex-wrap: wrap; justify-content: center; width: calc(100% - 32px); }
     #toolbar .sep { display: none; }
     #inspector { top: auto; bottom: 16px; left: 16px; right: 16px; width: auto; max-height: 55%; z-index: 5; }
+    .stats-wrap { padding: 16px 16px 32px; }
+    .stats-head { flex-wrap: wrap; gap: 4px 12px; }
+    .stats-head h1 { font-size: 20px; }
+    .stats-head .close { position: absolute; top: 12px; right: 12px; }
+    .stats-grid { grid-template-columns: 1fr; }
+    .evo-grid { grid-template-columns: repeat(2, 1fr); }
+    .dbar { grid-template-columns: 104px 1fr 64px; }
+  }
+  @media (min-width: 761px) and (max-width: 1000px) {
+    .stats-grid { grid-template-columns: 1fr 1fr; }
+    .evo-grid { grid-template-columns: repeat(3, 1fr); }
   }
 </style>
 </head>
@@ -140,12 +223,12 @@
 <canvas id="world" class="tool-look"></canvas>
 
 <section id="meadow" class="card">
-  <div class="brand">🌱 AEON Garden</div>
+  <div class="brand">🌱 AEON Garden<button class="news-toggle" data-act="news" title="Meadow news (N)">📰</button></div>
   <div class="clock"><span id="season-emoji">🌸</span><b id="season-name">Spring</b><span id="clock-rest">day 1 · year 1</span><span id="sun" title="Day or night">☀️</span></div>
-  <div class="pop" title="Rabbits alive right now, and the last two years">
+  <div class="pop" data-act="stats" title="Rabbits alive right now, and the last two years. Click for all the statistics (S)">
     <span class="emoji">🐇</span><span class="n" id="n-rabbit">0</span><canvas id="spark-rabbit"></canvas>
   </div>
-  <div class="pop" title="Foxes alive right now, and the last two years">
+  <div class="pop" data-act="stats" title="Foxes alive right now, and the last two years. Click for all the statistics (S)">
     <span class="emoji">🦊</span><span class="n" id="n-fox">0</span><canvas id="spark-fox"></canvas>
   </div>
   <div class="spark-caption">last 2 years</div>
@@ -154,6 +237,7 @@
     <div class="row" id="evo-rabbit"></div>
     <div class="row" id="evo-fox"></div>
   </div>
+  <div id="news-log" class="hidden"><h3>Meadow news</h3><ol></ol></div>
 </section>
 
 <div id="news"></div>
@@ -171,10 +255,44 @@
   <button class="tool speed" data-speed="15" title="Very fast (3)"><span class="e">15×</span><span class="l">Seasons</span></button>
   <button class="tool speed" data-speed="60" title="Watch years go by (4)"><span class="e">60×</span><span class="l">Years</span></button>
   <span class="sep"></span>
+  <button class="tool" data-act="stats" title="Graphs and records for this meadow (S)"><span class="e">📊</span><span class="l">Stats</span></button>
   <button class="tool" data-action="new" title="Start a brand-new meadow"><span class="e">🔄</span><span class="l">New</span></button>
 </nav>
 
 <aside id="inspector" class="card"></aside>
+
+<section id="stats" class="hidden">
+  <div class="stats-wrap">
+    <header class="stats-head">
+      <h1>📊 Meadow statistics</h1>
+      <span id="stats-clock"></span>
+      <button class="close" data-act="stats" title="Back to the meadow (Esc)">✕</button>
+    </header>
+    <div class="stats-filters">
+      <div class="seg">
+        <button data-show="rabbit">🐇 Rabbits</button><button data-show="fox">🦊 Foxes</button><button data-show="grass">🌱 Grass</button><button data-show="all">All three</button>
+      </div>
+      <div class="seg">
+        <button data-range="year">Last year</button><button data-range="five">5 years</button><button data-range="all">Everything</button>
+      </div>
+    </div>
+    <div class="stats-card">
+      <div class="chart-title"><span id="stats-title"></span><small id="stats-range-note"></small></div>
+      <div class="chart-box"><canvas id="stats-chart"></canvas><div id="stats-tip" class="hidden"></div></div>
+      <div class="legend">
+        <span><i class="sw" style="background:#f6dde5"></i>Spring</span><span><i class="sw" style="background:#f7ecb8"></i>Summer</span>
+        <span><i class="sw" style="background:#f4d6b6"></i>Autumn</span><span><i class="sw" style="background:#dfe8f0"></i>Winter</span>
+        <span>│ a new year</span><span>🧳 newcomers arrived</span><span>😢 died out</span><span>🌧️ rain</span>
+      </div>
+    </div>
+    <div class="stats-grid" id="stats-cards">
+      <div class="stats-card"><h3>Records</h3><div id="stats-records"></div></div>
+      <div class="stats-card"><h3>Average by season</h3><div id="stats-seasons"></div></div>
+      <div class="stats-card"><h3>How they died <span style="text-transform:none;letter-spacing:0">(since the start)</span></h3><div id="stats-deaths"></div></div>
+      <div class="stats-card wide"><h3>Evolution</h3><div id="stats-evo"></div></div>
+    </div>
+  </div>
+</section>
 
 <div id="welcome" class="hidden">
   <div class="card">
