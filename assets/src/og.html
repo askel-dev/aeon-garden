@@ -1,0 +1,54 @@
+<!doctype html>
+<!-- Source for assets/og.png, the link preview card. Render with headless Chrome:
+     chrome --headless=new --window-size=1200,630 --virtual-time-budget=8000 \
+            --screenshot=out.png "file://$PWD/og.html" -->
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&family=Nunito:wght@700;900&display=block" rel="stylesheet">
+<style>
+html,body{margin:0;width:1200px;height:630px;overflow:hidden}
+body{position:relative;font-family:Nunito;color:#3b372f;
+  background:radial-gradient(ellipse at 70% 10%,#c9e6a6 0%,#a9d388 35%,#9cc77e 60%,#8dbb6f 100%)}
+.e{font-family:"Noto Color Emoji";position:absolute;line-height:1;transform:translate(-50%,-100%)}
+.hill{position:absolute;border-radius:50%}
+.burrow{position:absolute;border-radius:50%;background:#2a2019;box-shadow:0 0 0 7px #7d6649,0 6px 0 16px rgba(90,70,40,.22)}
+.card{position:absolute;left:60px;top:175px;width:560px;padding:34px 40px 34px;border-radius:30px;
+  background:rgba(255,250,240,.95);box-shadow:0 14px 40px rgba(70,55,25,.22),0 2px 5px rgba(70,55,25,.12)}
+h1{margin:0;font-weight:900;font-size:60px;letter-spacing:-.5px;white-space:nowrap;line-height:1;display:flex;align-items:center;gap:14px}
+h1 .em{font-family:"Noto Color Emoji";font-size:52px}
+p{margin:18px 0 0;font-weight:700;font-size:27px;line-height:1.35;color:#6f6656}
+.bub{position:absolute;background:#fffaf0;border-radius:50%;width:62px;height:62px;display:grid;place-items:center;
+  box-shadow:0 4px 12px rgba(70,55,25,.18);font-family:"Noto Color Emoji";font-size:34px;transform:translate(-50%,-100%)}
+</style></head><body>
+<div class="e" style="left:930px;top:274px;font-size:78px">🦊</div>
+<div class="hill" style="left:560px;top:250px;width:900px;height:420px;background:#8fc06f"></div>
+<div class="hill" style="left:-200px;top:470px;width:1700px;height:500px;background:#86b866"></div>
+
+<div class="e" style="left:1110px;top:250px;font-size:120px">🌳</div>
+<div class="e" style="left:790px;top:232px;font-size:86px">🌳</div>
+<div class="e" style="left:1010px;top:190px;font-size:70px">🌳</div>
+
+<div class="e" style="left:880px;top:330px;font-size:40px">🌿</div>
+
+<div class="burrow" style="left:1030px;top:520px;width:70px;height:26px"></div>
+
+<div class="e" style="left:760px;top:470px;font-size:96px;transform:translate(-50%,-100%) scaleX(-1)">🐇</div>
+<div class="e" style="left:880px;top:490px;font-size:84px">🐇</div>
+<div class="bub" style="left:822px;top:372px">💕</div>
+<div class="e" style="left:1080px;top:600px;font-size:62px">🐇</div>
+<div class="e" style="left:680px;top:600px;font-size:52px">🐇</div>
+
+<div class="e" style="left:980px;top:445px;font-size:36px">🌸</div>
+<div class="e" style="left:1160px;top:470px;font-size:40px">🌼</div>
+<div class="e" style="left:560px;top:625px;font-size:44px">🌷</div>
+<div class="e" style="left:880px;top:628px;font-size:42px">🌱</div>
+<div class="e" style="left:1170px;top:620px;font-size:38px">🌸</div>
+<div class="e" style="left:120px;top:110px;font-size:38px">🌸</div>
+<div class="e" style="left:520px;top:120px;font-size:34px">🌼</div>
+<div class="e" style="left:90px;top:590px;font-size:44px">🌿</div>
+<div class="e" style="left:330px;top:610px;font-size:38px">🌼</div>
+
+<div class="card">
+  <h1><span class="em">🌱</span>AEON Garden</h1>
+  <p>A cozy emoji meadow where rabbits and foxes live their own lives.</p>
+</div>
+</body></html>

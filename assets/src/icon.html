@@ -1,0 +1,33 @@
+<!doctype html>
+<!-- Source for assets/logo.png (#scene), apple-touch-icon.png (#scene-square) and
+     favicon.ico / icon-192.png (#solo). Render with headless Chrome, e.g.
+     chrome --headless=new --window-size=512,512 --default-background-color=00000000 \
+            --virtual-time-budget=8000 --screenshot=out.png "file://$PWD/icon.html#scene"
+     Uses Noto Color Emoji (OFL) so the art is safe to publish. -->
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=block" rel="stylesheet">
+<style>
+html,body{margin:0;background:transparent}
+.e{font-family:"Noto Color Emoji";position:absolute;line-height:1}
+/* everything in % of the tile so any window size works */
+.tile{width:100vw;height:100vh;position:relative;overflow:hidden;
+  background:radial-gradient(circle at 30% 22%,#c6e4a2,#95c672 55%,#7cb15e)}
+body.round .tile{border-radius:22%}
+.hill{position:absolute;left:-25%;right:-25%;top:70%;height:100%;border-radius:50%;background:#6a9f4f}
+.hill.back{top:57%;left:35%;right:-70%;background:#7fb262}
+</style></head><body class="round"><div class="tile">
+  <div class="e scene" style="font-size:36vw;left:57vw;top:30vw">🦊</div>
+  <div class="hill back"></div>
+  <div class="e" id="rab" style="font-size:58vw;left:6vw;top:14vw">🐇</div>
+  <div class="hill"></div>
+</div>
+<script>
+const h=location.hash;
+if(h.includes('square'))document.body.className='';
+if(h.includes('solo')){document.querySelectorAll('.scene,.hill.back').forEach(e=>e.remove());
+  const r=document.getElementById('rab');r.style.fontSize='84vw';r.style.left='6vw';r.style.top='4vw';
+  document.querySelector('.tile').style.background='radial-gradient(circle at 30% 22%,#8cc46a,#5f9e43 60%,#4d8a37)';
+  document.querySelector('.hill').style.background='#3f7a2e';document.querySelector('.hill').style.top='74%';
+  if(h.includes('fox')){r.textContent='🦊';r.style.fontSize='76vw';r.style.left='12vw';r.style.top='10vw';}}
+</script>
+</body></html>
