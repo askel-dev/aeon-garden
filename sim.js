@@ -1611,6 +1611,7 @@ const HIVE_FULL = 1500;         // all the honey a hive can hold
 const WINTER_HONEY = 30;         // honey put by for each bee before the hive raises young
 const FORAGE_RANGE = 20;        // how far from its hive a bee roams
 const FEW_FLOWERS = 40;         // fewer open than this in the whole meadow, and bees stay in
+const DANCE_DAYS = 0.5;         // how long a hive remembers the flowers a bee danced about
 
 // Bees stay in at night, in rain and storms, and while there's hardly a flower open.
 const hiveTime = w => isNight(w.tick) || w.weather.kind === 'rain' || w.weather.kind === 'storm'
@@ -1628,7 +1629,7 @@ function hivesTick(w) {
 const broodTime = h => h.honey > WINTER_HONEY * h.bees;
 
 function makeHive(w, x, y) {
-  const h = { id: w.hives.length + 1, x, y, honey: HIVE_HONEY, bees: 0 };
+  const h = { id: w.hives.length + 1, x, y, honey: HIVE_HONEY, bees: 0, dance: null };
   w.hives.push(h);
   return h;
 }
@@ -1694,6 +1695,7 @@ function beeForage(w, c) {
     if (--c.timer > 0) return true;
     pollinate(w, c.target);
     c.home.honey = Math.min(HIVE_FULL, c.home.honey + HONEY); c.visits++;
+    c.home.dance = { x: c.target.x, y: c.target.y, tick: w.tick };   // the waggle dance: flowers here!
     c.mode = 'wander'; c.target = null;
   }
   if (c.energy >= 0.8 * c.maxEnergy) return false;
@@ -1707,12 +1709,13 @@ function beeForage(w, c) {
   return true;
 }
 
-// Buzz about, never too far from the hive.
+// Buzz about, never too far from the hive. If a sister danced about flowers lately, go there.
 function beeWander(w, c) {
-  if (c.mode === 'wander' && c.target && !fly(c, c.target.x, c.target.y, c.walk * 0.6)) return;
-  const h = c.home, r = FORAGE_RANGE;
-  c.mode = 'wander';
-  c.target = { x: clamp(h.x + w.rng.range(-r, r), 1, W - 1), y: clamp(h.y + w.rng.range(-r, r), 1, H - 1) };
+  if ((c.mode === 'wander' || c.mode === 'dance') && c.target && !fly(c, c.target.x, c.target.y, c.walk * 0.6)) return;
+  const h = c.home, d = h.dance && w.tick - h.dance.tick < DANCE_DAYS * TPD ? h.dance : null;
+  const o = d || h, r = d ? 3 : FORAGE_RANGE;
+  c.mode = d ? 'dance' : 'wander';
+  c.target = { x: clamp(o.x + w.rng.range(-r, r), 1, W - 1), y: clamp(o.y + w.rng.range(-r, r), 1, H - 1) };
 }
 
 // Flying: straight there, over water, trees and all. True once it's there.
@@ -1761,6 +1764,7 @@ function beeMood(w, c) {
     case 'sip': return { emoji: '🌼', text: 'Sipping nectar' };
     case 'flower': return { emoji: '🌸', text: 'Off to a flower' };
     case 'home': return { emoji: '🏠', text: 'Flying home to the hive' };
+    case 'dance': return { emoji: '💃', text: 'Off to the flowers a sister danced about' };
     case 'wander': return { emoji: '', text: 'Buzzing about' };
   }
   return null;

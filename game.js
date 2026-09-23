@@ -772,7 +772,7 @@ function drawBurrow(b, sx, sy, z, season, residents) {
 
 // ------------------------------------------------------------------ drawing
 
-const MOVING = new Set(['wander', 'food', 'flee', 'chase', 'stalk', 'prowl', 'home', 'love', 'follow', 'friends', 'dig']);
+const MOVING = new Set(['wander', 'food', 'flee', 'chase', 'stalk', 'prowl', 'home', 'dance', 'love', 'follow', 'friends', 'dig']);
 const ALWAYS_BUBBLE = new Set(['flee', 'alarm', 'chase', 'love']);
 
 function visible(sx, sy, pad) { return sx > -pad && sy > -pad && sx < vw + pad && sy < vh + pad; }
