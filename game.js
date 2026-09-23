@@ -416,7 +416,7 @@ const groundLayers = [document.createElement('canvas'), document.createElement('
 let groundView = '', groundLook = '', groundStill = 0, groundAt = null;   // the pixel the layer's meadow starts in
 
 //   parts   the parts to paint, [x, y, w, h] each, in screen pixels; all of it if left out
-function paintGround(g, z, ox, oy, fills, parts) {
+function paintGround(g, z, ox, oy, fills, season, parts) {
   let view = [0, 0, vw, vh];
   if (parts) {
     const x0 = Math.min(...parts.map(p => p[0])), y0 = Math.min(...parts.map(p => p[1]));
@@ -426,6 +426,7 @@ function paintGround(g, z, ox, oy, fills, parts) {
   g.drawImage(terr, ox, oy, S.W * z, S.H * z);
   drawGroundDetail(g, z, ox, oy, view, parts);
   drawPonds(g, z, ox, oy, fills, view);
+  drawPlants(g, z, ox, oy, view, season, false);
   if (parts) g.restore();
 }
 
@@ -438,7 +439,8 @@ function groundContext(c) {
 }
 
 // The changed tiles as a few rectangles in screen pixels, [x, y, w, h] each. A tile's colour
-// blurs into its neighbours when scaled up, so each takes two tiles around it along. They are
+// blurs into its neighbours when scaled up (and a flower reaches into them), so each takes two
+// tiles around it along. They are
 // gathered in blocks of 8 tiles, and a row of blocks makes one rectangle.
 const BLOCK = 8, BLOCK_COLS = Math.ceil(S.W / BLOCK), BLOCK_ROWS = Math.ceil(S.H / BLOCK);
 function dirtyParts(z, bx, by, W, H) {
@@ -458,8 +460,9 @@ function dirtyParts(z, bx, by, W, H) {
       if (!blocks[r * BLOCK_COLS + c]) continue;
       const c0 = c;
       while (c + 1 < BLOCK_COLS && blocks[r * BLOCK_COLS + c + 1]) c++;
-      const x0 = Math.max(0, Math.floor(bx + c0 * BLOCK * k)), x1 = Math.min(W, Math.ceil(bx + Math.min(S.W, (c + 1) * BLOCK) * k));
-      const y0 = Math.max(0, Math.floor(by + r * BLOCK * k)), y1 = Math.min(H, Math.ceil(by + Math.min(S.H, (r + 1) * BLOCK) * k));
+      // Blocks on the meadow's edge reach a tile past it, for the flowers that hang over.
+      const x0 = Math.max(0, Math.floor(bx + (c0 ? c0 * BLOCK : -1) * k)), x1 = Math.min(W, Math.ceil(bx + ((c + 1) * BLOCK >= S.W ? S.W + 1 : (c + 1) * BLOCK) * k));
+      const y0 = Math.max(0, Math.floor(by + (r ? r * BLOCK : -1) * k)), y1 = Math.min(H, Math.ceil(by + ((r + 1) * BLOCK >= S.H ? S.H + 1 : (r + 1) * BLOCK) * k));
       if (x1 > x0 && y1 > y0) parts.push([x0, y0, x1 - x0, y1 - y0]);
     }
   }
@@ -467,14 +470,15 @@ function dirtyParts(z, bx, by, W, H) {
 }
 
 function drawGround(z, ox, oy, shaking) {
-  const fills = pondFills();
+  const fills = pondFills(), season = S.clock(world).season;
+  updatePlantLooks(z, season);
   // The whole screen pixel the meadow's corner lands on.
   const bx = Math.round(ox * dpr), by = Math.round(oy * dpr);
   ox = bx / dpr; oy = by / dpr;
   const view = [z, vw, vh, dpr].join('|'), look = terrainVersion + '|' + fills.join();
   groundStill = view === groundView ? groundStill + 1 : 0;
   if (view !== groundView || look !== groundLook) { groundView = view; groundLook = look; groundAt = null; }
-  if (shaking || groundStill < 2) { paintGround(ctx, z, ox, oy, fills); return; }   // zooming: draw it directly
+  if (shaking || groundStill < 2) { paintGround(ctx, z, ox, oy, fills, season); return; }   // zooming: draw it directly
   const W = canvas.width, H = canvas.height;
   if (groundLayers[0].width !== W || groundLayers[0].height !== H) {
     for (const c of groundLayers) { c.width = W; c.height = H; }
@@ -488,7 +492,7 @@ function drawGround(z, ox, oy, shaking) {
     const g = groundLayers[0].getContext('2d');
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.clearRect(0, 0, W, H);
-    paintGround(groundContext(groundLayers[0]), z, ox, oy, fills);
+    paintGround(groundContext(groundLayers[0]), z, ox, oy, fills, season);
     terrDirty.fill(0); terrDirtyCount = 0;
   } else {
     // Everything to paint goes in one pass: a scratch layer used twice in a frame gets copied whole.
@@ -510,7 +514,7 @@ function drawGround(z, ox, oy, shaking) {
       const g = groundLayers[0].getContext('2d');
       g.setTransform(1, 0, 0, 1, 0, 0);
       for (const p of parts) g.clearRect(...p);
-      paintGround(groundContext(groundLayers[0]), z, ox, oy, fills, parts.map(p => p.map(v => v / dpr)));
+      paintGround(groundContext(groundLayers[0]), z, ox, oy, fills, season, parts.map(p => p.map(v => v / dpr)));
     }
   }
   groundAt = [bx, by];
@@ -531,6 +535,53 @@ function plantEmoji(season, kind, g) {
       return g > 0.35 ? (kind < 0.5 ? '🌾' : '🌿') : null;
     default: return kind < 0.07 ? '❄️' : null;
   }
+}
+
+// Flowers and tufts only change with the grass and the season, so they are painted into the
+// ground layer. They are looked at whenever the ground's colours are (every 12 ticks), so a
+// flower changes along with the ground under it, and one that changed repaints just its patch.
+// Anything that changes how one looks belongs in plantLook. The few that little waves could
+// pass over are drawn every frame instead, on top of the waves, and so would any that moved.
+const PLANT_EMOJI = ['🌷', '🌼', '🌸', '🌿', '🌱', '🌻', '🍂', '🌾', '❄️'];
+function plantLook(p, season, z) {
+  const plantPx = z * 0.95;
+  if (plantPx < 7) return null;
+  const g = world.grass[p.i], e = plantEmoji(season, p.kind, g);
+  return e && { e, px: Math.max(4, Math.round(plantPx * (0.55 + 0.45 * Math.min(1, g)))) };   // as the sprite rounds it
+}
+
+// How each plant in the layer looks, as px * 16 + which emoji (0: nothing), and when that was.
+let plantKeys = null, plantKeysWorld = null, plantKeysTick = -1, plantKeysZoom = 0;
+function updatePlantLooks(z, season) {
+  if (plantKeysWorld !== world) { plantKeys = new Int32Array(world.plants.length).fill(-1); plantKeysWorld = world; plantKeysTick = -1; }
+  if (plantKeysTick === terrainTick && plantKeysZoom === z) return;
+  plantKeysTick = terrainTick; plantKeysZoom = z;
+  const near = pond.nearWave;
+  for (let i = 0; i < world.plants.length; i++) {
+    if (near[i]) continue;
+    const p = world.plants[i], l = plantLook(p, season, z);
+    const key = l ? l.px * 16 + PLANT_EMOJI.indexOf(l.e) + 1 : 0;
+    if (key === plantKeys[i]) continue;
+    plantKeys[i] = key;
+    if (!terrDirty[p.i]) { terrDirty[p.i] = 1; terrDirtyCount++; }
+  }
+}
+
+//   live   the plants drawn every frame, as they are now, or the ones in the ground layer
+function drawPlants(g, z, ox, oy, [vx, vy, w, h], season, live) {
+  if (z * 0.95 < 7) return;
+  const near = pond.nearWave;
+  g.save();
+  g.globalAlpha = 0.9;
+  for (let i = 0; i < world.plants.length; i++) {
+    if (!!near[i] !== live) continue;
+    const p = world.plants[i], l = live ? plantLook(p, season, z) : plantKeys[i] > 0 && { e: PLANT_EMOJI[(plantKeys[i] & 15) - 1], px: plantKeys[i] >> 4 };
+    if (!l) continue;
+    const s = sprite(l.e, l.px), x = ox + p.x * z - s.size / 2, y = oy + p.y * z - s.size / 2;
+    if (x + s.size < vx || y + s.size < vy || x > vx + w || y > vy + h) continue;
+    g.drawImage(s.canvas, x, y, s.size, s.size);
+  }
+  g.restore();
 }
 
 // ------------------------------------------------------------------ drawing
@@ -559,18 +610,7 @@ function render(now) {
   drawGround(z, ox, oy, q !== 0);
   drawWaves(now);
 
-  // Flowers and tufts.
-  const plantPx = z * 0.95;
-  if (plantPx >= 7) {
-    for (const p of world.plants) {
-      const g = world.grass[p.i];
-      const e = plantEmoji(ck.season, p.kind, g);
-      if (!e) continue;
-      const [sx, sy] = toScreen(p.x, p.y);
-      if (!visible(sx, sy, plantPx)) continue;
-      drawEmoji(e, sx, sy, plantPx * (0.55 + 0.45 * Math.min(1, g)), { alpha: 0.9 });
-    }
-  }
+  drawPlants(ctx, z, ox, oy, [0, 0, vw, vh], ck.season, true);   // the rest are in the ground
 
   // Burrows, drawn by hand: some browsers clip the 🕳️ glyph in half.
   for (const b of world.burrows) {
@@ -934,7 +974,9 @@ function pondFills() {
       const x = i % S.W, y = (i / S.W) | 0, h = hash2(x, y, world.seed);
       if (f2[i] > 0.9 && h < 0.14) waves.push({ x: x + hash2(y, x, 7), y: y + hash2(x, y, 11), ph: h / 0.14 });
     }
-    pond = { world, waves, rings: [
+    // Plants a wave could pass over: its drift and width, a flower's size, and some spare.
+    const nearWave = Uint8Array.from(world.plants, p => waves.some(v => Math.abs(p.x - v.x) < 2 && Math.abs(p.y - v.y) < 1.2));
+    pond = { world, waves, nearWave, rings: [
       ...steps(0.03, 0.42, 9).map(t => ring(f4, t, 'sand', 0.12)),                // damp sand
       ring(f1, 0.47, [104, 170, 208], 1),                                          // shade under the bank
       ...steps(0.54, 0.8, 7).map(t => ring(f2, t, [130, 200, 235], 0.2)),          // shallows
