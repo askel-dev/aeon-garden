@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Garden Sound Lab</title>
+<link rel="icon" href="assets/favicon.ico" sizes="any">
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #eef3df; --card: #fffaf0; --ink: #3b372f; --muted: #8b8272; --line: #ecdfc8;
+    --accent: #e98a4b; --accent-soft: #fde4cf; --good: #6fb350; --fox: #e2702f; --rabbit: #a07850;
+    --shadow: 0 8px 28px rgba(70, 55, 25, 0.14), 0 1px 3px rgba(70, 55, 25, 0.10);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 500 14px/1.45 Nunito, ui-rounded, system-ui, sans-serif; }
+  main { max-width: 880px; margin: 0 auto; padding: 28px 16px 60px; }
+  h1 { font-size: 26px; font-weight: 900; margin: 0 0 4px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); margin: 0 0 10px; }
+  p.lead { color: var(--muted); margin: 0 0 20px; max-width: 60ch; }
+  .card { background: var(--card); border-radius: 18px; box-shadow: var(--shadow); padding: 16px 18px; margin-bottom: 16px; }
+  button { font: inherit; color: inherit; cursor: pointer; border: 1px solid var(--line); background: #fff; border-radius: 12px; padding: 7px 12px; font-weight: 700; }
+  button:hover { background: var(--accent-soft); }
+  button.on { background: var(--accent-soft); border-color: var(--accent); }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .row + .row { margin-top: 12px; }
+  .row .lbl { width: 92px; color: var(--muted); font-weight: 800; }
+  #start { font-size: 18px; padding: 12px 22px; background: var(--accent); color: #fff; border-color: var(--accent); }
+  #start.on { background: var(--good); border-color: var(--good); }
+  input[type=range] { accent-color: var(--accent); width: 220px; max-width: 100%; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+  .grid button { text-align: left; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+  .grid button b { font-size: 15px; }
+  .grid button span { color: var(--muted); font-weight: 600; font-size: 12px; }
+  .note { color: var(--muted); font-size: 12px; margin-top: 10px; }
+  #log { font-size: 13px; color: var(--muted); min-height: 1.4em; }
+  ul.ideas { margin: 0; padding-left: 18px; }
+  ul.ideas li { margin: 4px 0; }
+  #clock { font-weight: 800; min-width: 110px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>🎧 Garden Sound Lab</h1>
+  <p class="lead">A quiet sound palette for the meadow, made on the fly with no audio files. Every pitched sound uses one
+    pentatonic scale. Rabbits play a high kalimba, foxes a low wooden marimba, and the meadow itself rings a soft bell.</p>
+
+  <div class="card">
+    <div class="row">
+      <button id="start">▶ Start sound</button>
+      <button id="auto">🌱 Let the meadow play</button>
+      <span class="lbl" style="width:auto;margin-left:8px">🔊</span>
+      <input id="vol" type="range" min="0" max="1" step="0.01" value="0.6">
+    </div>
+    <p class="note">"Let the meadow play" runs a 20-second day like the game at Calm speed and triggers events about as often as a real meadow does.</p>
+  </div>
+
+  <div class="card">
+    <h2>Ambience</h2>
+    <div class="row">
+      <span class="lbl">Time</span>
+      <input id="phase" type="range" min="0" max="0.999" step="0.001" value="0.3">
+      <span id="clock">☀️ day</span>
+    </div>
+    <div class="row" id="seasons">
+      <span class="lbl">Season</span>
+      <button data-season="0" class="on">🌸 Spring</button>
+      <button data-season="1">☀️ Summer</button>
+      <button data-season="2">🍂 Autumn</button>
+      <button data-season="3">❄️ Winter</button>
+    </div>
+    <div class="row" id="skies">
+      <span class="lbl">Weather</span>
+      <button data-sky="clear" class="on">☀️ Clear</button>
+      <button data-sky="cloudy">☁️ Cloudy</button>
+      <button data-sky="rain">🌧️ Rain</button>
+      <button data-sky="storm">⛈️ Storm</button>
+      <button data-sky="fog">🌫️ Fog</button>
+      <button data-sky="snow">🌨️ Snow</button>
+      <button data-sky="heat">🥵 Heat</button>
+      <button id="fire">🔥 Fire</button>
+    </div>
+    <div class="row" id="speeds">
+      <span class="lbl">Speed</span>
+      <button data-speed="1" class="on">1× Calm</button>
+      <button data-speed="4">4× Fast</button>
+      <button data-speed="15">15× Seasons</button>
+      <button data-speed="60">60× Years</button>
+    </div>
+    <p class="note">Birds sing by day with a dawn chorus. Crickets and the odd owl come out at night. Autumn adds leaf rustles, winter
+      has cold wind and a few snowy chimes. Rain and storms hiss and drip, fog and snow muffle everything, a heatwave brings
+      cicadas, and a wildfire crackles. At 15× and 60×, day and night blur into one steady mix, and only the big moments
+      (seasons, newcomers, extinctions) still make a sound.</p>
+  </div>
+
+  <div class="card">
+    <h2>Events</h2>
+    <div class="row" id="species" style="margin-bottom:12px">
+      <span class="lbl">Who</span>
+      <button data-species="rabbit" class="on">🐇 Rabbit</button>
+      <button data-species="fox">🦊 Fox</button>
+    </div>
+    <div class="grid" id="events"></div>
+    <p id="log" class="note"></p>
+  </div>
+
+  <div class="card">
+    <h2>How it's put together</h2>
+    <ul class="ideas">
+      <li><b>One scale, three voices.</b> D major pentatonic only, so any two sounds that overlap still sound nice together.</li>
+      <li><b>Rising means life, falling means loss.</b> Love and births go up. Catches and deaths go down, softly, with no stings or screams.</li>
+      <li><b>Quiet by default.</b> Each sound has a cooldown, and there are at most about 6 animal sounds a second. Sounds far from the camera come out quieter and with more echo.</li>
+      <li><b>The clock is the score.</b> The background follows the time of day, the season and the weather, so a year in the meadow has its own sound.</li>
+    </ul>
+  </div>
+</main>
+
+<script src="sound.js"></script>
+<script>
+(() => {
+  const $ = s => document.querySelector(s);
+  const S = window.Sound;
+  const st = { phase: 0.3, season: 0, sky: 'clear', fire: 0, speed: 1, species: 'rabbit', auto: false };
+
+  const EVENTS = [
+    ['love', '💕', 'Fell in love', 'two notes, a third apart'],
+    ['birth', '✨', 'Babies born', 'a plink for each baby'],
+    ['escape', '💨', 'Escaped a fox', 'a whoosh, then relief'],
+    ['catch', '🦴', 'Caught by a fox', 'soft knock, falling notes'],
+    ['starve', '🥀', 'Starved', 'two low falling notes'],
+    ['old', '🌙', 'Died of old age', 'one bell, like a lantern'],
+    ['arrive', '🧳', 'Newcomers', 'a hopping arpeggio'],
+    ['season', '🍂', 'Season changes', 'four bells, one tune per season'],
+    ['extinct', '😢', 'Last one gone', 'two bells, one sad note'],
+    ['rain', '🌧️', 'Rain starts', 'a soft swell'],
+    ['thunder', '⚡', 'Lightning', 'a crack up close, a rumble far off'],
+    ['fire', '🔥', 'Wildfire starts', 'a soft whoomph'],
+    ['fireout', '🌱', 'Fire is out', 'a bell and a hopeful note'],
+    ['rainbow', '🌈', 'Rainbow', 'a quiet run up the scale'],
+    ['release', '🐣', 'Drop in an animal', 'a tiny pop (tool)'],
+    ['grass', '🌱', 'Grow grass', 'a brush stroke (tool)'],
+    ['click', '🔘', 'Button click', 'a wooden tick (UI)'],
+  ];
+  $('#events').innerHTML = EVENTS.map(([k, e, name, how]) =>
+    `<button data-play="${k}"><b>${e} ${name}</b><span>${how}</span></button>`).join('');
+
+  const push = () => S.update({ phase: st.phase, season: st.season, sky: { [st.sky]: 1 }, fire: st.fire, speed: st.speed });
+  const setSky = k => { const wet = ['rain', 'storm']; if (wet.includes(k) && !wet.includes(st.sky)) play('rain'); st.sky = k; onIn('[data-sky]', 'sky', k); push(); };
+  const clockText = p => p >= 0.72 || p < 0.02 ? '🌙 night' : p < 0.12 ? '🌅 dawn' : p > 0.6 ? '🌇 dusk' : '☀️ day';
+  const setPhase = p => { st.phase = p; $('#phase').value = p; $('#clock').textContent = clockText(p); push(); };
+  const onIn = (sel, attr, v) => document.querySelectorAll(sel).forEach(b => b.classList.toggle('on', b.dataset[attr] === String(v)));
+
+  function play(name, extra = {}) {
+    if (!$('#start').classList.contains('on')) $('#start').click();
+    const species = extra.species ?? st.species;
+    const ok = S.play(name, { species, season: st.season, kids: 1 + Math.floor(Math.random() * 5), pan: Math.random() * 1.4 - 0.7, near: extra.near ?? 1, ...extra });
+    const who = ['love', 'birth', 'starve', 'arrive', 'release'].includes(name) ? ` (${species})` : '';
+    $('#log').textContent = ok ? `Played ${name}${who}.` : `Skipped ${name}: it's resting, or too small to hear at ${st.speed}×.`;
+  }
+
+  $('#start').onclick = () => {
+    S.start(); push();
+    const on = $('#start').classList.toggle('on');
+    S.setEnabled(on);
+    $('#start').textContent = on ? '⏸ Sound on' : '▶ Start sound';
+  };
+  $('#vol').oninput = e => S.setVolume(+e.target.value);
+  $('#phase').oninput = e => setPhase(+e.target.value);
+  $('#fire').onclick = () => {
+    st.fire = st.fire ? 0 : 30; $('#fire').classList.toggle('on', !!st.fire); push();
+    play(st.fire ? 'fire' : 'fireout');
+  };
+
+  document.addEventListener('click', e => {
+    const b = e.target.closest('[data-play],[data-season],[data-speed],[data-species],[data-sky]');
+    if (!b) return;
+    if (b.dataset.play) play(b.dataset.play, b.dataset.play === 'thunder' ? { near: Math.random() } : {});
+    else if (b.dataset.sky) { if (!$('#start').classList.contains('on')) $('#start').click(); setSky(b.dataset.sky); }
+    else if (b.dataset.season) { st.season = +b.dataset.season; onIn('[data-season]', 'season', st.season); push(); play('season'); }
+    else if (b.dataset.speed) { st.speed = +b.dataset.speed; onIn('[data-speed]', 'speed', st.speed); push(); }
+    else if (b.dataset.species) { st.species = b.dataset.species; onIn('[data-species]', 'species', st.species); }
+  });
+
+  // A pretend meadow: a 20 s day and events at roughly the game's Calm-speed rate.
+  const RATES = [['birth', 0.12], ['love', 0.10], ['catch', 0.035], ['escape', 0.05], ['old', 0.02], ['starve', 0.015]];
+  let lastT = performance.now();
+  function auto(now) {
+    const dt = (now - lastT) / 1000; lastT = now;
+    if (st.auto) {
+      const days = dt * st.speed / 20;
+      let p = st.phase + days;
+      if (p >= 1) {
+        p %= 1;
+        const dayOfSeason = (st.day = (st.day || 0) + 1) % 10;
+        if (dayOfSeason === 0) { st.season = (st.season + 1) % 4; onIn('[data-season]', 'season', st.season); play('season'); }
+        setSky(Math.random() < 0.5 ? 'clear' : ['cloudy', 'rain', 'storm', 'fog', st.season === 3 ? 'snow' : 'heat'][Math.floor(Math.random() * 5)]);
+      }
+      setPhase(p);
+      if (st.sky === 'storm' && Math.random() < 0.25 * dt * st.speed) play('thunder', { near: Math.random() });
+      for (const [k, r] of RATES) if (Math.random() < r * dt * st.speed)
+        play(k, { species: Math.random() < 0.8 ? 'rabbit' : 'fox', near: Math.random() });
+    }
+    requestAnimationFrame(auto);
+  }
+  requestAnimationFrame(auto);
+  $('#auto').onclick = () => {
+    if (!$('#start').classList.contains('on')) $('#start').click();
+    st.auto = !st.auto; $('#auto').classList.toggle('on', st.auto);
+  };
+})();
+</script>
+</body>
+</html>

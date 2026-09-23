@@ -12,11 +12,12 @@ const TICKS_PER_SECOND = 30;           // at 1x
 
 let world;
 const ui = {
-  speed: 1, tool: 'look', selectedId: 0, hoverId: 0, follow: false,
+  speed: 1, sound: false, tool: 'look', selectedId: 0, hoverId: 0, follow: false,
   trail: [], effects: [], diary: new Map(),
   lastNews: {}, newsLog: [], newsOpen: false, records: { rabbit: 0, fox: 0 }, crashSaid: { rabbit: -1, fox: -1 }, seenHistory: 0,
   releaseSex: { rabbit: 'F', fox: 'F' },
   stats: { open: false, show: 'rabbit', range: 'five', hover: null },
+  sky: { mix: {}, tick: 0, bolt: null, boom: -1e9, rainbow: 0, menu: false },
 };
 const cam = { x: S.W / 2, y: S.H / 2, zoom: 10, goal: null };
 
@@ -25,6 +26,7 @@ const cam = { x: S.W / 2, y: S.H / 2, zoom: 10, goal: null };
 const canvas = $('#world');
 const ctx = canvas.getContext('2d');
 let vw = 0, vh = 0, dpr = 1, minZoom = 1;
+let barPad = 0;                                   // screen pixels the toolbar covers at the bottom
 
 function resize() {
   dpr = window.devicePixelRatio || 1;
@@ -43,8 +45,14 @@ function resize() {
 function clampCam() {
   const hw = vw / 2 / cam.zoom, hh = vh / 2 / cam.zoom;
   cam.x = hw * 2 >= S.W ? S.W / 2 : clamp(cam.x, hw, S.W - hw);
-  cam.y = hh * 2 >= S.H ? S.H / 2 : clamp(cam.y, hh, S.H - hh);
+  // You may look a little past the bottom edge, so nothing is ever stuck under the toolbar.
+  cam.y = clamp(cam.y, Math.min(hh, S.H / 2), Math.max(S.H - hh, S.H / 2) + barPad / cam.zoom);
 }
+
+new ResizeObserver(() => {
+  barPad = $('#toolbar').offsetHeight + 16;
+  document.documentElement.style.setProperty('--bar', barPad + 'px');
+}).observe($('#toolbar'));
 
 const toScreen = (x, y) => [(x - cam.x) * cam.zoom + vw / 2, (y - cam.y) * cam.zoom + vh / 2];
 const toWorld = (sx, sy) => [(sx - vw / 2) / cam.zoom + cam.x, (sy - vh / 2) / cam.zoom + cam.y];
@@ -128,8 +136,14 @@ const terr = document.createElement('canvas');
 terr.width = S.W; terr.height = S.H;
 const tctx = terr.getContext('2d');
 const timg = tctx.createImageData(S.W, S.H);
+// Where the grass is thick, and where the ground is bare, as alpha: masks for the detail.
+const mask = () => { const c = document.createElement('canvas'); c.width = S.W; c.height = S.H; return c; };
+const lush = mask(), bare = mask();
+const limg = new ImageData(S.W, S.H), bimg = new ImageData(S.W, S.H);
 let jitter = new Float32Array(S.W * S.H);
+let patches = new Float32Array(S.W * S.H);              // soft warm (+) and cool (-) patches, a few tiles across
 let terrainTick = -1;
+let shoreSand = [200, 180, 130];
 
 function paintTerrain() {
   const ck = S.clock(world);
@@ -138,23 +152,123 @@ function paintTerrain() {
   const a = PALETTE[ck.season], b = PALETTE[(ck.season + 1) % 4];
   const low = a[0].map((v, i) => lerp(v, b[0][i], t));
   const high = a[1].map((v, i) => lerp(v, b[1][i], t));
-  const d = timg.data, g = world.grass, water = world.water;
+  const d = timg.data, g = world.grass, water = world.water, ash = world.ash;
+  const snow = world.snow, damp = 1 - 0.12 * world.wet;            // wet ground reads darker
+  shoreSand = low.map(v => v * 0.9 * damp);
   for (let i = 0; i < g.length; i++) {
     const j = jitter[i], o = i * 4;
-    if (water[i]) {
-      d[o] = 116 + 8 * j; d[o + 1] = 190 + 8 * j; d[o + 2] = 230 + 5 * j; d[o + 3] = 255;
-      continue;
-    }
-    let v = clamp(g[i] / 0.85, 0, 1);
+    // Snow settles in patches first, then covers everything.
+    const s = snow > 0 ? clamp(snow * 1.4 - 0.2 - 0.2 * j, 0, 0.9) : 0;
+    // Under the ponds (drawn on top by drawPonds) lies damp sand, which blurs into a shore.
+    let v = water[i] ? 0 : clamp(g[i] / 0.85, 0, 1);
     v = v * (2 - v);
-    const k = 1 + 0.035 * j;
-    d[o] = lerp(low[0], high[0], v) * k;
-    d[o + 1] = lerp(low[1], high[1], v) * k;
-    d[o + 2] = lerp(low[2], high[2], v) * k;
+    const k = (1 + 0.035 * j) * damp * (water[i] ? 0.9 : 1), p = patches[i];
+    let r = lerp(low[0], high[0], v) + 7 * p, gr = lerp(low[1], high[1], v) + 2 * p, b = lerp(low[2], high[2], v) - 7 * p;
+    if (ash[i] > 0) {                                                // burnt ground, until the grass returns
+      const a = ash[i] * (1 - v) * 0.85;
+      r = lerp(r, 74, a); gr = lerp(gr, 66, a); b = lerp(b, 60, a);
+    }
+    if (s > 0) { r = lerp(r, 246, s); gr = lerp(gr, 248, s); b = lerp(b, 252, s); }
+    d[o] = r * k; d[o + 1] = gr * k; d[o + 2] = b * k;
     d[o + 3] = 255;
+    limg.data[o + 3] = 255 * v * (1 - s);
+    bimg.data[o + 3] = 255 * (1 - v) * (1 - s);
   }
   tctx.putImageData(timg, 0, 0);
+  lush.getContext('2d').putImageData(limg, 0, 0);
+  bare.getContext('2d').putImageData(bimg, 0, 0);
   terrainTick = world.tick;
+}
+
+// The ground colours are one pixel per tile, so up close they go soft. On top goes crisp
+// detail that pans and zooms with the meadow: fine grain everywhere, and little grass
+// blades wherever the grass is thick. Both are small textures that repeat.
+const DETAIL_PX = 32, DETAIL = DETAIL_PX * 16;          // pixels per tile, texture size
+
+function detailTexture(count, item) {
+  const c = document.createElement('canvas');
+  c.width = c.height = DETAIL;
+  const g = c.getContext('2d');
+  g.lineCap = 'round';
+  for (let i = 0; i < count; i++) {
+    const x = Math.random() * DETAIL, y = Math.random() * DETAIL, r = Math.random();
+    // Drawn nine times, shifted by the texture size, so the edges tile without seams.
+    for (let dx = -DETAIL; dx <= DETAIL; dx += DETAIL) for (let dy = -DETAIL; dy <= DETAIL; dy += DETAIL) item(g, x + dx, y + dy, r);
+  }
+  return ctx.createPattern(c, 'repeat');
+}
+
+const grain = detailTexture(3200, (g, x, y, r) => {
+  g.fillStyle = r < 0.55 ? 'rgba(60, 45, 20, 0.12)' : 'rgba(255, 250, 225, 0.11)';
+  g.beginPath(); g.arc(x, y, 0.8 + 1.2 * ((r * 7.3) % 1), 0, TAU); g.fill();
+});
+
+// Tufts of two to four blades, some in shade and some catching the light.
+const blades = detailTexture(700, (g, x, y, r) => {
+  const n = 2 + Math.floor(r * 3);
+  g.lineWidth = 1.8;
+  g.strokeStyle = r < 0.6 ? 'rgba(40, 90, 20, 0.21)' : 'rgba(235, 255, 175, 0.19)';
+  g.beginPath();
+  for (let k = 0; k < n; k++) {
+    const u = (r * 13.7 * (k + 1)) % 1, len = 6 + 6 * ((r * 31.3 * (k + 1)) % 1);
+    const bx = x + (k - (n - 1) / 2) * 2.5;
+    g.moveTo(bx, y); g.quadraticCurveTo(bx, y - len * 0.6, bx + (u - 0.5) * len * 0.9, y - len);
+  }
+  g.stroke();
+});
+
+// Pebbles, alone or in little groups, for bare and grazed ground.
+const pebbles = detailTexture(140, (g, x, y, r) => {
+  const n = 1 + Math.floor(r * r * 4);
+  for (let k = 0; k < n; k++) {
+    const u = (r * 17.3 * (k + 1)) % 1, w = 1.6 + 2.2 * ((r * 29.1 * (k + 1)) % 1);
+    const px = x + (u - 0.5) * 14, py = y + (((r * 41.7 * (k + 1)) % 1) - 0.5) * 10;
+    g.fillStyle = 'rgba(40, 30, 20, 0.22)';
+    g.beginPath(); g.ellipse(px + 0.6, py + w * 0.45, w, w * 0.6, 0, 0, TAU); g.fill();
+    g.fillStyle = u < 0.5 ? 'rgba(150, 138, 120, 0.8)' : 'rgba(176, 160, 136, 0.8)';
+    g.beginPath(); g.ellipse(px, py, w, w * 0.72, 0, 0, TAU); g.fill();
+    g.fillStyle = 'rgba(255, 250, 235, 0.45)';
+    g.beginPath(); g.ellipse(px - w * 0.3, py - w * 0.3, w * 0.38, w * 0.26, 0, 0, TAU); g.fill();
+  }
+});
+
+const bladeLayer = document.createElement('canvas');
+const bctx = bladeLayer.getContext('2d');
+
+function drawGroundDetail(z, ox, oy) {
+  const a = clamp((z - 7) / 9, 0, 1);                   // zoomed far out it would only shimmer
+  if (a <= 0) return;
+  // Draw in texture space, pinned to the meadow's corner, so the texture moves with the ground.
+  const k = z / DETAIL_PX, W = S.W * DETAIL_PX, H = S.H * DETAIL_PX;
+  const x0 = Math.max(0, -ox / k), y0 = Math.max(0, -oy / k);
+  const x1 = Math.min(W, (vw - ox) / k), y1 = Math.min(H, (vh - oy) / k);
+  const inTexture = g => { g.translate(ox, oy); g.scale(k, k); };
+  ctx.save();
+  ctx.globalAlpha = a;
+  inTexture(ctx);
+  ctx.fillStyle = grain; ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+  ctx.restore();
+  // Blades and pebbles each go on a layer of their own, then everything outside their mask
+  // (thick grass for blades, bare ground for pebbles) is cut away.
+  if (bladeLayer.width !== canvas.width || bladeLayer.height !== canvas.height) {
+    bladeLayer.width = canvas.width; bladeLayer.height = canvas.height;
+  }
+  for (const [pattern, where] of [[blades, lush], [pebbles, bare]]) {
+    bctx.setTransform(1, 0, 0, 1, 0, 0);
+    bctx.clearRect(0, 0, bladeLayer.width, bladeLayer.height);
+    bctx.setTransform(ctx.getTransform());
+    inTexture(bctx);
+    bctx.fillStyle = pattern; bctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+    bctx.globalCompositeOperation = 'destination-in';
+    bctx.imageSmoothingEnabled = true; bctx.imageSmoothingQuality = 'high';
+    bctx.drawImage(where, 0, 0, W, H);
+    bctx.globalCompositeOperation = 'source-over';
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(bladeLayer, 0, 0);
+    ctx.restore();
+  }
 }
 
 function plantEmoji(season, kind, g) {
@@ -184,13 +298,18 @@ function darkness(phase) {
 }
 
 function render(now) {
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  // Thunder rumbles the whole screen a little.
+  const q = now - ui.sky.boom < 350 && ui.speed <= 4 ? 3 * (1 - (now - ui.sky.boom) / 350) : 0;
+  ctx.setTransform(dpr, 0, 0, dpr, q * Math.sin(now / 17) * dpr, q * Math.cos(now / 23) * dpr);
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
+  ctx.clearRect(-8, -8, vw + 16, vh + 16);          // past the meadow's edge the page shows through
   const [ox, oy] = toScreen(0, 0);
   ctx.drawImage(terr, ox, oy, S.W * cam.zoom, S.H * cam.zoom);
 
   const z = cam.zoom, ck = S.clock(world);
+  drawGroundDetail(z, ox, oy);
+  drawPonds(z);
 
   // Flowers and tufts.
   const plantPx = z * 0.95;
@@ -229,30 +348,30 @@ function render(now) {
   }
   const shown = [];
   for (const c of world.creatures) {
-    if (c.hidden) continue;
+    if (c.hidden || !c.alive) continue;
     const [sx, sy] = toScreen(c.x, c.y);
     if (!visible(sx, sy, 60)) continue;
     const it = { y: c.y, c, sx, sy };
     items.push(it); shown.push(it);
   }
   items.sort((a, b) => a.y - b.y);
+  // Shadows first, all together, so a tree's shadow never lands on a rabbit behind it.
+  const sn = sun(ck);
+  for (const it of items) if (it.d) drawDecorShadow(it.d, it.sx, it.sy, sn);
   for (const it of items) {
-    if (it.d) drawEmoji(it.d.emoji, it.sx, it.sy - it.d.size * z * 0.35, it.d.size * z);
+    if (it.d) drawDecor(it.d, it.sx, it.sy, now);
     else drawCreature(it.c, it.sx, it.sy, now);
   }
 
   // Dusk and night.
   const dark = darkness(ck.phase);
-  if (dark > 0) {
-    ctx.fillStyle = `rgba(22, 30, 78, ${dark})`;
-    ctx.fillRect(0, 0, vw, vh);
-  }
+  if (dark > 0) wash(`rgba(22, 30, 78, ${dark})`);
   if (ck.phase > 0.58 && ck.phase < 0.74) {
     const a = 0.10 * Math.sin(Math.PI * (ck.phase - 0.58) / 0.16);
-    ctx.fillStyle = `rgba(255, 140, 60, ${a})`;
-    ctx.fillRect(0, 0, vw, vh);
+    wash(`rgba(255, 140, 60, ${a})`);
   }
-  if (world.rain > 0) drawRain(now);
+  drawFire(now);
+  drawWeather(now, ck);
 
   // Burrow snores at night.
   if (ck.night && z >= 8) {
@@ -293,9 +412,13 @@ function drawCreature(c, sx, sy, now) {
     ? Math.abs(Math.sin(now / (fast ? 55 : 120) + c.id)) * px * (fast ? 0.16 : 0.1) : 0;
   ctx.fillStyle = 'rgba(40, 50, 20, 0.22)';
   ctx.beginPath(); ctx.ellipse(sx, sy + px * 0.34, px * 0.32 * (1 - hop / px), px * 0.09, 0, 0, TAU); ctx.fill();
+  // Standing still, everyone breathes: slow and deep asleep, quick and shallow awake.
+  const breathe = !hop && ui.speed > 0
+    ? Math.sin(now / (c.sleeping ? 650 : 330) + c.id) * (c.sleeping ? 0.035 : 0.02) : 0;
+  const squash = (c.sleeping ? 0.82 : 1) + breathe;
   // The rabbit glyph faces left; the fox glyph is a face and does not care.
-  drawEmoji(c.sp.emoji, sx, sy - hop, px, {
-    tint: furTint(c), flip: c.species === 'rabbit' && c.facing > 0, squash: c.sleeping ? 0.82 : 1,
+  drawEmoji(c.sp.emoji, sx, sy - hop + px * 0.4 * (1 - squash), px, {   // feet stay on the ground
+    tint: furTint(c), flip: c.species === 'rabbit' && c.facing > 0, squash,
   });
 }
 
@@ -373,20 +496,283 @@ function drawSelectionOver(c, now) {
   drawLabel(label, sx, sy + (c.hidden ? cam.zoom : creaturePx(c) * 0.55) + 6);
 }
 
-const rainDrops = Array.from({ length: 140 }, () => ({ x: Math.random(), y: Math.random(), s: 0.6 + Math.random() * 0.8 }));
-function drawRain(now) {
+// Where the sun is: shadows lean west in the morning and east in the evening,
+// and fade at night and under cloud.
+function sun(ck) {
+  const m = ui.sky.mix;
+  const cover = clamp(0.5 * m.cloudy + 0.7 * m.rain + 0.9 * m.storm + 0.8 * m.fog + 0.5 * m.snow, 0, 0.85);
+  return { lean: clamp((ck.phase - 0.36) / 0.34, -1, 1), a: (1 - 1.6 * darkness(ck.phase)) * (1 - cover) };
+}
+
+function drawDecorShadow(d, sx, sy, sn) {
+  if (sn.a <= 0.02) return;
+  const s = d.size * cam.zoom * (d.stump ? 0.45 : 1);
+  const w = s * (d.tree ? 0.34 : 0.42), h = s * 0.12, off = sn.lean * s * 0.22;
+  ctx.fillStyle = `rgba(40, 50, 20, ${0.24 * sn.a})`;
+  ctx.beginPath(); ctx.ellipse(sx + off, sy + h * 0.4, w + Math.abs(off) * 0.6, h, 0, 0, TAU); ctx.fill();
+}
+
+// Trees sway from the trunk. Gusts roll across the meadow, harder in rain and storms.
+function treeSway(d, now) {
+  const m = ui.sky.mix, wind = 0.018 + 0.01 * m.cloudy + 0.03 * m.rain + 0.07 * m.storm;
+  return wind * (Math.sin(now / 900 - d.x * 0.15) + 0.35 * Math.sin(now / 340 + d.y));
+}
+
+function drawDecor(d, sx, sy, now) {
+  const z = cam.zoom, px = d.size * z;
+  if (!d.stump && !d.tree) { drawEmoji(d.emoji, sx, sy - px * 0.35, px); return; }
+  if (!d.stump) {
+    ctx.save();
+    ctx.translate(sx, sy); ctx.rotate(treeSway(d, now));
+    drawEmoji(d.emoji, 0, -px * 0.35, px);
+    ctx.restore();
+    return;
+  }
+  // Struck by lightning: a stump, then a sapling, then (in sim.js) a tree again.
+  const sapling = world.tick - d.stump > S.YEAR_DAYS * S.TPD / 2;
+  drawEmoji(sapling ? '🌱' : '🪵', sx, sy - d.size * z * 0.12, d.size * z * (sapling ? 0.55 : 0.45));
+}
+
+// Ponds are drawn as shapes, so the shore holds up however far you zoom in. The water map
+// is softened by a few box blurs and traced with marching squares; each cut-off gives one
+// faint ring, and stacked rings make gradients: sand fading into the grass, a little shade
+// under the bank, and water that deepens towards the middle. Traced once per meadow.
+let pond = null;
+function blurred(src) {
+  const out = new Float32Array(S.W * S.H), at = (x, y) => src[clamp(y, 0, S.H - 1) * S.W + clamp(x, 0, S.W - 1)];
+  for (let y = 0; y < S.H; y++) for (let x = 0; x < S.W; x++) {
+    let n = 0;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) n += at(x + dx, y + dy);
+    out[y * S.W + x] = n / 9;
+  }
+  return out;
+}
+
+function pondShape(f, t) {
+  const path = new Path2D(), at = (x, y) => f[clamp(y, 0, S.H - 1) * S.W + clamp(x, 0, S.W - 1)];
+  for (let y = -1; y < S.H; y++) for (let x = -1; x < S.W; x++) {
+    const v = [at(x, y), at(x + 1, y), at(x + 1, y + 1), at(x, y + 1)];
+    if (v[0] < t && v[1] < t && v[2] < t && v[3] < t) continue;
+    const px = [x, x + 1, x + 1, x], py = [y, y, y + 1, y + 1];
+    let first = true;
+    const to = (a, b) => { first ? path.moveTo(a + 0.5, b + 0.5) : path.lineTo(a + 0.5, b + 0.5); first = false; };
+    for (let k = 0; k < 4; k++) {
+      const n = (k + 1) % 4;
+      if (v[k] >= t) to(px[k], py[k]);
+      if ((v[k] >= t) !== (v[n] >= t)) {
+        const u = (t - v[k]) / (v[n] - v[k]);
+        to(lerp(px[k], px[n], u), lerp(py[k], py[n], u));
+      }
+    }
+    path.closePath();
+  }
+  return path;
+}
+
+function drawPonds(z) {
+  if (!pond || pond.world !== world) {
+    const f1 = blurred(world.water), f2 = blurred(f1), f4 = blurred(blurred(f2));
+    const ring = (f, t, rgb, a) => ({ path: pondShape(f, t), rgb, a });
+    const steps = (a, b, n) => Array.from({ length: n }, (_, i) => lerp(a, b, i / (n - 1)));
+    pond = { world, rings: [
+      ...steps(0.04, 0.42, 8).map(t => ring(f2, t, 'sand', 0.08)),                // damp sand
+      ring(f1, 0.47, [104, 170, 208], 1),                                          // shade under the bank
+      ...steps(0.54, 0.8, 7).map(t => ring(f2, t, [130, 200, 235], 0.2)),          // shallows
+      ...steps(0.72, 0.99, 9).map(t => ring(f4, t, [94, 164, 214], 0.09)),         // deeper middle
+    ] };
+  }
+  const ice = world.snow > 0 ? clamp(world.snow * 1.4 - 0.3, 0, 0.9) * 0.8 : 0;   // frozen over
+  const [ox, oy] = toScreen(0, 0);
   ctx.save();
-  ctx.strokeStyle = 'rgba(210, 230, 255, 0.55)';
+  ctx.translate(ox, oy); ctx.scale(z, z);
+  for (const { path, rgb, a } of pond.rings) {
+    const c = (rgb === 'sand' ? shoreSand : rgb).map((v, i) => Math.round(lerp(v, [214, 232, 242][i], ice)));
+    ctx.fillStyle = `rgba(${c.join(',')}, ${a})`;
+    ctx.fill(path);
+  }
+  ctx.restore();
+}
+
+// Paints over the whole view, with a margin for the thunder shake.
+function wash(color) { ctx.fillStyle = color; ctx.fillRect(-10, -10, vw + 20, vh + 20); }
+
+// ------------------------------------------------------------------ weather
+
+const WET = new Set(['rain', 'storm']);
+const WEATHER_HINT = {
+  clear: 'Nothing special. The ground slowly dries out',
+  cloudy: 'Cloud shadows drift over the meadow',
+  rain: 'Grass grows three times as fast and the ground soaks up the water',
+  storm: 'Grass grows fast. Thunder sends rabbits running home, foxes curl up and wait. Lightning can start a fire on dry ground',
+  fog: 'Nobody can see very far: foxes find fewer rabbits, and rabbits spot foxes later',
+  snow: 'Grass barely grows and small animals burn extra energy to keep warm',
+  heat: 'The grass browns, running is tiring and the ground dries out fast. Careful with lightning',
+};
+
+// How much of each weather is showing, so one fades into the next. Follows game time.
+function updateSky() {
+  const d = world.tick - ui.sky.tick;
+  ui.sky.tick = world.tick;
+  if (d === 0) return;
+  const k = d < 0 ? 1 : 1 - Math.exp(-d / 50);
+  for (const kind in S.WEATHER) {
+    const m = ui.sky.mix[kind] || 0;
+    ui.sky.mix[kind] = m + ((kind === world.weather.kind ? 1 : 0) - m) * k;
+  }
+}
+
+const drops = Array.from({ length: 300 }, () => ({ x: Math.random(), y: Math.random(), s: 0.6 + Math.random() * 0.8 }));
+const clouds = Array.from({ length: 9 }, () => ({ x: Math.random(), y: Math.random(), r: 9 + Math.random() * 12, s: 0.7 + Math.random() * 0.6 }));
+
+function drawWeather(now, ck) {
+  const m = ui.sky.mix;
+  const shade = 0.12 * m.cloudy + 0.08 * m.rain + 0.10 * m.storm;
+  if (shade > 0.01) drawCloudShadows(now, shade);
+  const dim = 0.05 * m.cloudy + 0.09 * m.rain + 0.30 * m.storm + 0.04 * m.snow;
+  if (dim > 0.005) wash(`rgba(50, 62, 92, ${dim})`);
+  if (m.heat > 0.01) wash(`rgba(255, 168, 60, ${0.11 * m.heat})`);
+  if (!ck.night) drawRainbow(now);
+  if (m.fog > 0.01) drawFog(now, m.fog);
+  const rain = m.rain + 1.8 * m.storm;
+  if (rain > 0.02) drawRain(now, rain, m.storm);
+  if (m.snow > 0.02) drawSnow(now, m.snow);
+  drawLightning(now);
+}
+
+// Soft shadows that pan and zoom with the meadow, drifting east.
+function drawCloudShadows(now, a) {
+  const z = cam.zoom, span = S.W + 60;
+  ctx.save();
+  for (const c of clouds) {
+    const wx = ((c.x * span + now / 1000 * 0.5 * c.s) % span) - 30, wy = c.y * S.H;
+    const [sx, sy] = toScreen(wx, wy), r = c.r * z;
+    if (!visible(sx, sy, r * 1.6)) continue;
+    const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, r * 1.6);
+    grad.addColorStop(0, `rgba(30, 40, 70, ${a * 1.6})`);
+    grad.addColorStop(1, 'rgba(30, 40, 70, 0)');
+    ctx.fillStyle = grad;
+    ctx.setTransform(dpr * 1.6, 0, 0, dpr, sx * dpr * (1 - 1.6), 0);   // stretch sideways
+    ctx.beginPath(); ctx.arc(sx, sy, r * 1.6, 0, TAU); ctx.fill();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  ctx.restore();
+}
+
+function drawRain(now, amount, storm) {
+  const n = Math.min(drops.length, Math.round(150 * amount)), slant = 3 + 6 * storm;
+  ctx.save();
+  ctx.strokeStyle = `rgba(210, 230, 255, ${0.45 + 0.15 * storm})`;
   ctx.lineWidth = 1.2;
   ctx.beginPath();
-  for (const d of rainDrops) {
-    const y = ((d.y + now / 1400 * d.s) % 1) * vh, x = ((d.x - now / 9000) % 1 + 1) % 1 * vw;
-    ctx.moveTo(x, y); ctx.lineTo(x - 3, y + 12 * d.s);
+  for (let i = 0; i < n; i++) {
+    const d = drops[i];
+    const y = ((d.y + now / (1400 - 500 * storm) * d.s) % 1) * vh, x = ((d.x - now / 9000) % 1 + 1) % 1 * vw;
+    ctx.moveTo(x, y); ctx.lineTo(x - slant, y + 12 * d.s);
   }
   ctx.stroke();
-  ctx.fillStyle = 'rgba(60, 80, 120, 0.08)';
-  ctx.fillRect(0, 0, vw, vh);
   ctx.restore();
+}
+
+function drawSnow(now, amount) {
+  const n = Math.round(160 * amount);
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const d = drops[i];
+    const y = ((d.y + now / 9000 * d.s) % 1) * vh;
+    const x = (((d.x + Math.sin(now / 1300 + i) * 0.01) % 1 + 1) % 1) * vw;
+    const r = 1.2 + 1.6 * d.s;
+    ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, TAU);
+  }
+  ctx.fill();
+}
+
+function drawFog(now, amount) {
+  wash(`rgba(236, 240, 244, ${0.30 * amount})`);
+  ctx.save();
+  for (let i = 0; i < 6; i++) {                  // slow banks rolling past
+    const x = ((i / 6 + now / 60000) % 1.4 - 0.2) * vw, y = vh * (0.15 + 0.14 * i), r = vw * 0.35;
+    const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+    grad.addColorStop(0, `rgba(244, 246, 250, ${0.35 * amount})`);
+    grad.addColorStop(1, 'rgba(244, 246, 250, 0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  ctx.restore();
+}
+
+// Just for looks, so it keeps to real time: a rainbow should last a moment even at 60x.
+function drawRainbow(now) {
+  const age = now - ui.sky.rainbow;
+  if (!ui.sky.rainbow || age > 14000) return;
+  const a = 0.3 * Math.sin(Math.PI * age / 14000);
+  const R = Math.max(vw, vh) * 0.55, bw = Math.max(6, R * 0.018);
+  const colors = ['#ff5b5b', '#ff9f43', '#ffe066', '#6bd66b', '#4db8ff', '#6f7bf7', '#b77bf0'];
+  ctx.save();
+  ctx.globalAlpha = a;
+  ctx.lineWidth = bw;
+  colors.forEach((c, i) => {
+    ctx.strokeStyle = c;
+    ctx.beginPath(); ctx.arc(vw * 0.62, vh * 1.08, R - i * bw, Math.PI * 1.05, Math.PI * 1.95); ctx.stroke();
+  });
+  ctx.restore();
+}
+
+// A white flash, and a jagged bolt when the strike is on screen.
+function drawLightning(now) {
+  const b = ui.sky.bolt;
+  if (!b) return;
+  const age = now - b.t0;
+  if (age > 450) { ui.sky.bolt = null; return; }
+  const fade = 1 - age / 450;
+  wash(`rgba(255, 255, 255, ${0.45 * fade * fade})`);
+  const [sx, sy] = toScreen(b.x, b.y);
+  if (!visible(sx, sy, 20) || age > 250) return;
+  ctx.save();
+  ctx.strokeStyle = `rgba(255, 255, 240, ${fade})`;
+  ctx.shadowColor = '#bcd4ff'; ctx.shadowBlur = 14;
+  ctx.lineWidth = 3; ctx.lineJoin = 'round';
+  ctx.beginPath();
+  b.path.forEach(([f, dx], i) => {
+    const x = sx + dx * vw * 0.06 * (1 - f), y = -10 + (sy + 10) * f;
+    i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  });
+  ctx.stroke();
+  ctx.restore();
+}
+
+function thunder(e) {
+  const now = performance.now();
+  if (now - ui.sky.boom < 250) return;           // at 60x, one flash at a time is plenty
+  const path = [[0, Math.random() - 0.5]];
+  for (let f = 0.12; f < 1; f += 0.08 + Math.random() * 0.08) path.push([f, Math.random() - 0.5]);
+  path.push([1, 0]);
+  ui.sky.bolt = { x: e.x, y: e.y, t0: now, path };
+  ui.sky.boom = now;
+}
+
+// Flames glow, so they go on top of the night.
+function drawFire(now) {
+  if (!world.burning.length) return;
+  const z = cam.zoom, px = Math.max(8, z * 1.15);
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const i of world.burning) {
+    const [sx, sy] = toScreen(i % S.W + 0.5, Math.floor(i / S.W) + 0.5);
+    if (!visible(sx, sy, px * 2)) continue;
+    const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, px * 1.6);
+    grad.addColorStop(0, 'rgba(255, 140, 40, 0.2)');
+    grad.addColorStop(1, 'rgba(255, 90, 20, 0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(sx - px * 1.6, sy - px * 1.6, px * 3.2, px * 3.2);
+  }
+  ctx.restore();
+  for (const i of world.burning) {
+    const [sx, sy] = toScreen(i % S.W + 0.5, Math.floor(i / S.W) + 0.5);
+    if (!visible(sx, sy, px)) continue;
+    const flick = Math.round(px * (0.85 + 0.15 * Math.sin(now / 90 + i * 1.7)));
+    drawEmoji('🔥', sx, sy - flick * 0.3, flick);
+  }
 }
 
 function addEffect(emoji, x, y, rise = 1.2, dur = 1400) {
@@ -447,6 +833,37 @@ const SEASON_NEWS = [
   '❄️ <b>Winter.</b> The grass has stopped growing. Lean times ahead.',
 ];
 
+const WEATHER_NEWS = {
+  clear: '☀️ The clouds part. Clear skies.',
+  cloudy: '☁️ Clouds drift in over the meadow.',
+  rain: '🌧️ <b>Rain.</b> The grass drinks it up and grows three times as fast.',
+  storm: '⛈️ <b>A thunderstorm!</b> Rabbits dash for their burrows and foxes curl up to wait it out.',
+  fog: '🌫️ <b>Fog.</b> Nobody can see very far. The foxes will have to stumble onto their dinner.',
+  snow: '🌨️ <b>Snow is falling.</b> The little ones feel the cold most.',
+  heat: '🥵 <b>A heatwave.</b> The grass is drying out. One spark and it could burn.',
+};
+
+// ------------------------------------------------------------------ sound (see sound.js)
+
+// Animal sounds only play when you can see them, or when they are about the animal you follow.
+// They pan with where they happen on screen and get softer as you zoom out.
+function hear(name, x, y, opts = {}, always = false) {
+  if (!ui.sound) return;
+  const [sx, sy] = toScreen(x, y), seen = visible(sx, sy, 40);
+  if (!seen && !always) return;
+  Sound.play(name, { pan: 0.8 * clamp(sx / vw * 2 - 1, -1, 1), near: seen ? clamp(cam.zoom / (3 * minZoom), 0.4, 1) : 0.2, ...opts });
+}
+const chime = (name, opts) => { if (ui.sound) Sound.play(name, opts); };
+
+function toggleSound(on = !ui.sound) {
+  ui.sound = on;
+  if (on && navigator.userActivation?.hasBeenActive !== false) Sound.start();   // else the first click will
+  Sound.setEnabled(on);
+  $('#sound-btn').textContent = on ? '🔊' : '🔇';
+  $('#sound-btn').classList.toggle('on', on);
+  try { localStorage.setItem('aeon-garden-sound', on ? '1' : '0'); } catch (e) { /* fine */ }
+}
+
 function involvesSelected(e) {
   const id = ui.selectedId;
   if (!id) return false;
@@ -458,17 +875,47 @@ function handleEvent(e) {
   switch (e.type) {
     case 'season':
       addNews(SEASON_NEWS[e.season] + (e.season === 0 ? ` Year ${e.year} begins.` : ''));
+      chime('season', { season: e.season });
       break;
-    case 'rain':
-      addNews('🌧️ <b>Rain!</b> The grass will grow three times as fast today.');
+    case 'weather': {
+      if (WET.has(e.kind) && !WET.has(e.prev)) chime('rain');
+      const text = WEATHER_NEWS[e.kind];
+      if (e.player) addNews(text);
+      else if (e.kind === 'clear' || e.kind === 'cloudy') addNews(text, 'sky-calm', 40000);
+      else addNews(text, 'sky', 12000);
+      if (WET.has(e.prev) && (e.kind === 'clear' || e.kind === 'cloudy') && !S.isNight(world.tick)) {
+        ui.sky.rainbow = performance.now();
+        chime('rainbow');
+        addNews('🌈 A rainbow over the meadow.', 'rainbow', 60000);
+      }
       break;
+    }
+    case 'lightning':
+      thunder(e);
+      hear('thunder', e.x, e.y, {}, true);
+      addEffect('💥', e.x, e.y, 0.2, 800);
+      if (e.tree && !e.fire) addNews('⚡ Lightning split a tree in two!', 'tree', 30000);
+      break;
+    case 'fire':
+      addNews('🔥 <b>Wildfire!</b> Lightning set the dry grass alight. Everyone is running.');
+      hear('fire', e.x, e.y, {}, true);
+      break;
+    case 'fireout': {
+      const pct = e.burned / world.water.reduce((n, v) => n + (v ? 0 : 1), 0) * 100;
+      if (e.burned >= 25) chime('fireout');
+      if (e.burned >= 25) addNews(`🌱 The fire is out after burning ${pct < 1 ? 'a corner' : Math.round(pct) + '%'} of the meadow. The ash will feed fresh shoots.`);
+      else addNews('💨 The fire fizzled out.', 'fizzle', 30000);
+      break;
+    }
     case 'love':
       addEffect('💕', (e.a.x + e.b.x) / 2, (e.a.y + e.b.y) / 2);
+      hear('love', e.a.x, e.a.y, { species: e.a.species }, mine);
       if (mine) addNews(`💕 ${link(e.a)} and ${link(e.b)} fell in love.`);
       break;
     case 'birth': {
       addEffect('✨', e.mum.x, e.mum.y, 0.8);
       const n = e.kids.length, fox = e.mum.species === 'fox';
+      hear('birth', e.mum.x, e.mum.y, { species: e.mum.species, kids: n }, mine);
       const what = fox ? (n === 1 ? 'cub' : 'cubs') : (n === 1 ? 'baby' : 'babies');
       const text = `${fox ? '🦊' : '🍼'} ${link(e.mum)} had ${n} ${what}` + (e.dad ? ` with ${link(e.dad)}.` : '.');
       if (mine || fox) addNews(text);
@@ -477,6 +924,7 @@ function handleEvent(e) {
     }
     case 'death': {
       const c = e.c;
+      hear(e.cause === 'fox' ? 'catch' : e.cause === 'old' ? 'old' : 'starve', c.x, c.y, { species: c.species }, mine);
       if (e.cause === 'fox') addEffect('🦴', c.x, c.y, 0.3, 1800);
       else addEffect('👻', c.x, c.y, 1.6, 2000);
       if (e.cause === 'fox') {
@@ -486,6 +934,11 @@ function handleEvent(e) {
         const t = c.species === 'fox' ? `🥀 ${link(c)} the fox starved. There weren't enough rabbits.`
           : `🥀 ${link(c)} starved.`;
         if (mine || c.species === 'fox') addNews(t); else addNews(t, 'starve', 12000);
+      } else if (e.cause === 'lightning') {
+        addNews(`⚡ ${link(c)} was struck by lightning.`);
+      } else if (e.cause === 'fire') {
+        const t = `🔥 ${link(c)} was caught in the wildfire.`;
+        if (mine) addNews(t); else addNews(t, 'burn', 6000);
       } else {
         const age = Math.floor(S.ageDays(world, c));
         const fam = c.kids ? `, leaving ${c.kids} ${c.kids === 1 ? 'child' : 'children'}` : '';
@@ -495,12 +948,14 @@ function handleEvent(e) {
       break;
     }
     case 'escape': {
+      hear('escape', e.rabbit.x, e.rabbit.y, {}, mine);
       const t = e.how === 'burrow' ? `💨 ${link(e.rabbit)} dived into a burrow just before ${link(e.fox)} could pounce!`
         : `💨 ${link(e.rabbit)} outran ${link(e.fox)}!`;
       if (mine) addNews(t); else addNews(t, 'escape', 11000);
       break;
     }
     case 'extinct':
+      chime('extinct');
       addNews(e.species === 'rabbit' ? '😢 <b>The last rabbit is gone.</b>'
         : '😢 <b>The last fox is gone.</b> The rabbits can relax, for now.');
       break;
@@ -509,6 +964,7 @@ function handleEvent(e) {
       addNews(e.species === 'rabbit' ? `🧳 A family of rabbits hopped in from the next valley: ${names}.`
         : `🧳 Foxes have wandered in, drawn by all the rabbits: ${names}.`);
       for (const c of e.who) addEffect('✨', c.x, c.y);
+      hear('arrive', e.who[0].x, e.who[0].y, { species: e.species }, true);
       break;
     }
   }
@@ -606,6 +1062,15 @@ function updateMeadowCard() {
   $('#season-name').textContent = S.SEASONS[ck.season].name;
   $('#clock-rest').textContent = `day ${ck.dayInSeason} · year ${ck.year}`;
   $('#sun').textContent = ck.night ? '🌙' : ck.phase > 0.6 ? '🌇' : ck.phase < 0.1 ? '🌅' : '☀️';
+  const kind = world.weather.kind, wx = S.WEATHER[kind];
+  const ground = world.burning.length ? '<span class="fire">🔥 wildfire!</span>'
+    : world.snow > 0.3 ? 'snow on the ground' : world.wet > 0.7 ? 'soaked ground'
+    : world.wet > 0.35 ? 'damp ground' : 'dry ground';
+  const clearNight = kind === 'clear' && ck.night;
+  const lock = world.skyLocked ? ' <span class="lock">🔒</span>' : '';
+  $('#sky').innerHTML = `${clearNight ? '✨' : wx.emoji} <b>${clearNight ? 'Clear night' : wx.name}</b>${lock} · ${ground}`;
+  $('#sky').title = WEATHER_HINT[kind] + (world.skyLocked ? '. Locked: it stays until you unlock it (K)' : '');
+  $('#sky-btn').textContent = wx.emoji;
   $('#n-rabbit').textContent = world.count.rabbit;
   $('#n-fox').textContent = world.count.fox;
   sparkline($('#spark-rabbit'), world.history.rabbit, '#a07850');
@@ -624,8 +1089,9 @@ const SERIES = {
 const SEASON_TINT = ['#f6dde5', '#f7ecb8', '#f4d6b6', '#dfe8f0'];
 const RANGES = { year: S.YEAR_DAYS * S.TPD, five: 5 * S.YEAR_DAYS * S.TPD, all: Infinity };
 const RANGE_WORDS = { year: 'the last year', five: 'the last 5 years', all: 'the whole story' };
-const MARK_EMOJI = { extinct: '😢', arrive: '🧳', rain: '🌧️' };
-const CAUSES = [['fox', '🦊', 'Caught by a fox'], ['hunger', '🥀', 'Starved'], ['age', '🌙', 'Old age']];
+const MARK_EMOJI = { extinct: '😢', arrive: '🧳', fire: '🔥' };
+const CAUSES = [['fox', '🦊', 'Caught by a fox'], ['hunger', '🥀', 'Starved'], ['age', '🌙', 'Old age'],
+  ['lightning', '⚡', 'Lightning'], ['fire', '🔥', 'Wildfire']];
 const INK = '#3b372f', MUTED = '#8b8272';
 
 const shownKeys = () => ui.stats.show === 'all' ? ['rabbit', 'fox', 'grass'] : [ui.stats.show];
@@ -725,14 +1191,15 @@ function drawStatsChart() {
       g.strokeStyle = sr.color; g.lineWidth = 2; g.lineJoin = 'round'; g.stroke();
     }
 
-    // big moments: extinctions and newcomers for animals, rain for the grass
+    // big moments: extinctions and newcomers for animals, fires and your weather for the grass
     for (const m of h.marks) {
-      if (m.t < t0 || (m.type === 'rain' ? k !== 'grass' : m.species !== k)) continue;
+      const onGrass = m.type === 'sky' || m.type === 'fire';
+      if (m.t < t0 || (onGrass ? k !== 'grass' : m.species !== k)) continue;
       const x = X(m.t);
       g.save(); g.setLineDash([3, 3]); g.strokeStyle = 'rgba(59,55,47,0.35)'; g.lineWidth = 1;
       g.beginPath(); g.moveTo(x, top + 18); g.lineTo(x, bot); g.stroke(); g.restore();
       g.font = '13px ' + EMOJI_FONT; g.textAlign = 'center'; g.fillStyle = INK;
-      g.fillText(MARK_EMOJI[m.type], x, top + 10);
+      g.fillText(m.type === 'sky' ? S.WEATHER[m.kind].emoji : MARK_EMOJI[m.type], x, top + 10);
     }
 
     // which panel is which, when there are several
@@ -981,7 +1448,7 @@ function diaryFacts(c) {
   return [
     `Name: ${c.name}. A ${c.sex === 'F' ? 'female' : 'male'} ${c.sp.name.toLowerCase()}, ${Math.floor(S.ageDays(world, c))} days old (a ${lifeStage(c)}; ${c.sp.plural.toLowerCase()} here live about ${c.sp.lifeDays} days).`,
     `Personality: ${TRAITS.map(t => word(t, c.genes[t.k])).join(', ')}.`,
-    `Right now: ${S.mood(world, c).text}. Tummy ${Math.round(100 * c.energy / c.maxEnergy)}% full. It is ${S.SEASONS[ck.season].name.toLowerCase()}, ${ck.night ? 'night' : 'daytime'}.`,
+    `Right now: ${S.mood(world, c).text}. Tummy ${Math.round(100 * c.energy / c.maxEnergy)}% full. It is ${S.SEASONS[ck.season].name.toLowerCase()}, ${ck.night ? 'night' : 'daytime'}, weather: ${S.WEATHER[world.weather.kind].name.toLowerCase()}${world.burning.length ? ', and there is a wildfire in the meadow' : ''}.`,
     `Family: mum ${mum ? mum.name + (mum.alive ? '' : ' (died)') : 'unknown'}, dad ${dad ? dad.name + (dad.alive ? '' : ' (died)') : 'unknown'}, ${c.kids} children.`,
     c.species === 'fox' ? `Rabbits caught so far: ${c.kills}.` : `Narrow escapes from foxes: ${c.escapes}.`,
     `Recent life events (oldest first):\n${events}`,
@@ -1034,7 +1501,7 @@ function creatureAt(sx, sy) {
   const reach = Math.max(1.4, 20 / cam.zoom);
   let best = null, bd = reach * reach;
   for (const c of world.creatures) {
-    if (c.hidden) continue;
+    if (c.hidden || !c.alive) continue;
     const d = (c.x - wx) ** 2 + (c.y - (wy + 0.2)) ** 2;
     if (d < bd) { best = c; bd = d; }
   }
@@ -1049,6 +1516,7 @@ function setTool(tool) {
 
 function setSpeed(s) {
   ui.speed = s;
+  Sound.update({ speed: s });            // right away, so the first frame at 60x is already quiet
   document.querySelectorAll('[data-speed]').forEach(b => b.classList.toggle('on', +b.dataset.speed === s));
 }
 
@@ -1103,27 +1571,67 @@ function click(sx, sy) {
     const c = S.addCreature(world, ui.tool, wx, wy, { sex, age: world.rng.range(5, 9) });
     if (c) {
       addEffect('✨', wx, wy);
+      hear('release', wx, wy, { species: c.species });
       addNews(`👋 You released ${link(c)}, a ${c.sex === 'F' ? 'female' : 'male'} ${c.sp.name.toLowerCase()}.`);
     }
+  } else if (ui.tool === 'zap') {
+    S.zap(world, wx, wy);
+    flushEvents();
   }
 }
+
+function toggleSkyMenu(open = !ui.sky.menu) {
+  ui.sky.menu = open;
+  $('#sky-menu').classList.toggle('hidden', !open);
+  $('[data-act="sky"]').classList.toggle('on', open);
+  showSkyLock();
+}
+
+// Everything that shows the weather lock: the menu's toggle and the badge on the toolbar.
+function showSkyLock() {
+  const locked = world.skyLocked;
+  document.querySelectorAll('[data-sky]').forEach(b => b.classList.toggle('on', b.dataset.sky === world.weather.kind));
+  const btn = $('[data-act="sky-lock"]');
+  btn.classList.toggle('on', locked);
+  btn.innerHTML = `<span class="e">${locked ? '🔒' : '🔓'}</span><span class="l">${locked ? 'Locked' : 'Lock'}</span>`;
+  $('[data-act="sky"]').classList.toggle('locked', locked);
+}
+
+function toggleSkyLock() {
+  S.lockSky(world, !world.skyLocked);
+  addNews(world.skyLocked
+    ? `🔒 <b>Weather locked</b> on ${S.WEATHER[world.weather.kind].emoji} ${S.WEATHER[world.weather.kind].name.toLowerCase()} until you unlock it.`
+    : '🔓 The weather is free to change again.');
+  showSkyLock();
+  updateMeadowCard();
+}
+
+$('#sky-menu').innerHTML = Object.entries(S.WEATHER).map(([k, wx]) =>
+  `<button class="tool" data-sky="${k}" title="${WEATHER_HINT[k]}"><span class="e">${wx.emoji}</span><span class="l">${wx.name.split(' ')[0]}</span></button>`).join('') +
+  '<span class="sep"></span><button class="tool" data-act="sky-lock" title="Keep this weather until you unlock it (K)"></button>';
 
 function paintAt(sx, sy) {
   const [wx, wy] = toWorld(sx, sy);
   S.paintGrass(world, wx, wy, 3.5);
+  hear('grass', wx, wy);
   if (Math.random() < 0.3) addEffect('🌱', wx + (Math.random() - 0.5) * 3, wy + (Math.random() - 0.5) * 3, 0.6, 900);
   terrainTick = -1;
 }
 
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-tool],[data-speed],[data-action],[data-act],[data-show],[data-range],a[data-id]');
+  const t = e.target.closest('[data-tool],[data-speed],[data-action],[data-act],[data-show],[data-range],[data-sky],a[data-id]');
+  if (ui.sky.menu && !(t && (t.dataset.sky || t.dataset.act === 'sky' || t.dataset.act === 'sky-lock'))) toggleSkyMenu(false);
   if (!t) return;
+  if (t.closest('#toolbar,#sky-menu')) chime('click');
   if (t.dataset.tool) setTool(t.dataset.tool);
   else if (t.dataset.speed !== undefined) setSpeed(+t.dataset.speed);
-  else if (t.dataset.action === 'rain') { S.startRain(world); }
+  else if (t.dataset.sky) { S.setSky(world, t.dataset.sky); flushEvents(); toggleSkyMenu(false); updateMeadowCard(); }
+  else if (t.dataset.act === 'sky') toggleSkyMenu();
+  else if (t.dataset.act === 'sky-lock') toggleSkyLock();
   else if (t.dataset.action === 'new') { if (confirm('Start a brand-new meadow? This one will be gone.')) newWorld(randomSeed()); }
   else if (t.dataset.act === 'close') select(0);
   else if (t.dataset.act === 'news') toggleNewsLog();
+  else if (t.dataset.act === 'sound') toggleSound();
   else if (t.dataset.act === 'stats') toggleStats();
   else if (t.dataset.show) { ui.stats.show = t.dataset.show; renderStats(); }
   else if (t.dataset.range) { ui.stats.range = t.dataset.range; renderStats(); }
@@ -1143,26 +1651,41 @@ document.addEventListener('keydown', e => {
     e.preventDefault();
     if (ui.speed) { lastSpeed = ui.speed; setSpeed(0); } else setSpeed(lastSpeed);
   } else if ('1234'.includes(e.key) && e.key.length === 1) setSpeed([1, 4, 15, 60][+e.key - 1]);
-  else if (e.key === 'Escape') ui.stats.open ? toggleStats(false) : select(0);
+  else if (e.key === 'Escape') ui.sky.menu ? toggleSkyMenu(false) : ui.stats.open ? toggleStats(false) : select(0);
   else if (e.key === 's') toggleStats();
   else if (e.key === 'f' && ui.selectedId) { ui.follow = !ui.follow; renderInspector(); }
   else if (e.key === 'l') setTool('look');
+  else if (e.key === 'z') setTool('zap');
+  else if (e.key === 'w') toggleSkyMenu();
+  else if (e.key === 'k') toggleSkyLock();
   else if (e.key === 'n') toggleNewsLog();
+  else if (e.key === 'm') toggleSound();
   else if (e.key === '+' || e.key === '=') zoomAt(vw / 2, vh / 2, cam.zoom * 1.25);
   else if (e.key === '-') zoomAt(vw / 2, vh / 2, cam.zoom / 1.25);
 });
 
 // ------------------------------------------------------------------ the loop
 
+function flushEvents() {
+  for (const e of world.events) handleEvent(e);
+  world.events.length = 0;
+}
+
 function randomSeed() { return Math.floor(Math.random() * 1e6); }
 
 function newWorld(seed) {
   world = S.createWorld(seed);
   jitter = Float32Array.from({ length: S.W * S.H }, () => Math.random() * 2 - 1);
+  patches = blurred(blurred(blurred(blurred(jitter))));
+  const most = patches.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
+  patches = patches.map(v => v / most);
   Object.assign(ui, { selectedId: 0, hoverId: 0, follow: false, trail: [], effects: [], lastNews: {}, newsLog: [] });
   ui.records = { rabbit: world.count.rabbit, fox: world.count.fox };
   ui.crashSaid = { rabbit: -1, fox: -1 };
   ui.seenHistory = 0;
+  const mix = Object.fromEntries(Object.keys(S.WEATHER).map(k => [k, k === world.weather.kind ? 1 : 0]));
+  Object.assign(ui.sky, { mix, tick: world.tick, bolt: null, rainbow: 0 });
+  showSkyLock();
   $('#news').innerHTML = '';
   renderNewsLog();
   cam.zoom = minZoom; cam.x = S.W / 2; cam.y = S.H / 2; cam.goal = null;
@@ -1186,9 +1709,10 @@ function frame(now) {
     acc -= n;
     for (let i = 0; i < n; i++) {
       S.step(world);
-      if (world.events.length) { for (const e of world.events) handleEvent(e); world.events.length = 0; }
+      if (world.events.length) flushEvents();
     }
   }
+  updateSky();
 
   const sel = world.byId.get(ui.selectedId);
   if (sel && sel.alive && !sel.hidden) {
@@ -1218,6 +1742,10 @@ function frame(now) {
   if (now - lastCard > 250) {
     lastCard = now;
     updateMeadowCard();
+    if (ui.sound) {
+      const ck = S.clock(world);
+      Sound.update({ phase: ck.phase, season: ck.season, speed: ui.speed, sky: ui.sky.mix, fire: world.burning.length });
+    }
     if (ui.selectedId && !$('#inspector').matches(':hover')) renderInspector();
     if (ui.stats.open) { $('#stats-clock').textContent = `${S.SEASONS[S.seasonOf(world.tick)].emoji} ${when(world.tick)}`; drawStatsChart(); }
   }
@@ -1247,8 +1775,14 @@ $('#go').addEventListener('click', () => {
   try { localStorage.setItem('aeon-garden-welcomed', '1'); } catch (e) { /* fine */ }
   setSpeed(1);
   setTimeout(() => addNews('👋 <b>Tip:</b> click any animal to follow its life.'), 2500);
-  setTimeout(() => addNews('🌧️ <b>Tip:</b> the tools at the bottom let you add animals, grow grass or make it rain.'), 25000);
+  setTimeout(() => { if (!ui.sound) addNews('🔊 <b>Tip:</b> the meadow has quiet sounds. Turn them on with 🔇 at the top (M).'); }, 12000);
+  setTimeout(() => addNews('🌦️ <b>Tip:</b> the tools at the bottom let you add animals, grow grass, change the weather or strike lightning.'), 25000);
 });
+
+// Sound stays off until you turn it on, and remembers your choice. Browsers only let a page
+// make sound after a click or key press, so a remembered "on" waits for the first one.
+try { if (localStorage.getItem('aeon-garden-sound') === '1') toggleSound(true); } catch (e) { /* fine */ }
+for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => { if (ui.sound) Sound.start(); }, { once: true });
 
 requestAnimationFrame(frame);
 window.garden = { get world() { return world; }, ui, cam };   // handy in the console

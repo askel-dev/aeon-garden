@@ -12,5 +12,7 @@ Then open http://localhost:8765.
 
 - Click an animal to follow its life story
 - Scroll to zoom, drag to look around
-- Add rabbits and foxes, grow grass or make it rain with the tools at the bottom
+- Add rabbits and foxes, grow grass, change (or 🔒 lock) the weather or strike lightning with the tools at the bottom
+- The weather has a life of its own: rain greens the meadow, fog hides foxes, snow chills the
+  small ones, thunder sends rabbits home, and lightning on dry grass can start a wildfire
 - With [Ollama](https://ollama.com) running, the ✍️ Diary button lets an animal write about its day

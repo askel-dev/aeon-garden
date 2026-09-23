@@ -7,6 +7,8 @@ closed); none of that project's rules apply here.
 
 - `sim.js`: the world. No drawing. Runs in the browser and under node.
 - `game.js`: drawing, UI, news feed, the inspector, the optional Ollama diary.
+- `sound.js`: all the sounds, made with Web Audio (no files). Off until the 🔊 button or M.
+  `sound-lab.html` plays each one on its own. Keep it minimal: one scale, few sounds.
 - `index.html`: layout and styles.
 - `balance.js`: headless check, `node balance.js [years] [seeds]`.
 

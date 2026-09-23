@@ -7,6 +7,7 @@
  * Every animal follows the same small ladder, ported from the old reflex brain:
  *   danger > sleep > love > food > friends > wander
  * Nothing else is scripted. Herds, arms races and boom-bust years come out of that.
+ * The weather leans on the ladder: thunder and fire are danger, storms are for sleeping.
  */
 (function (root) {
 'use strict';
@@ -26,6 +27,26 @@ const SEASONS = [
   { name: 'Autumn', emoji: '🍂', growth: 0.30, cap: 0.75 },
   { name: 'Winter', emoji: '❄️', growth: 0.03, cap: 0.40 },
 ];
+
+// One weather at a time. grow: grass growth. sight: how far anyone can see.
+// soak: how fast the ground gets wetter (+) or dries out (-), per day. days: how long it lasts.
+const WEATHER = {
+  clear:  { name: 'Clear skies',  emoji: '☀️', grow: 1.0, sight: 1.00, soak: -0.6, days: [0.4, 1.2] },
+  cloudy: { name: 'Cloudy',       emoji: '☁️', grow: 1.0, sight: 1.00, soak: -0.3, days: [0.3, 0.8] },
+  rain:   { name: 'Rain',         emoji: '🌧️', grow: 3.0, sight: 0.85, soak: 2.0, days: [0.3, 0.8] },
+  storm:  { name: 'Thunderstorm', emoji: '⛈️', grow: 3.0, sight: 0.70, soak: 1.5, days: [0.25, 0.5] },
+  fog:    { name: 'Fog',          emoji: '🌫️', grow: 1.0, sight: 0.45, soak: -0.1, days: [0.2, 0.5] },
+  snow:   { name: 'Snow',         emoji: '🌨️', grow: 0.5, sight: 0.80, soak: 0.0, days: [0.4, 1.0] },
+  heat:   { name: 'Heatwave',     emoji: '🥵', grow: 0.3, sight: 1.00, soak: -2.5, days: [1.0, 2.0] },
+};
+const WEATHER_ODDS = [             // per season
+  { clear: 4, cloudy: 3, rain: 3, storm: 1, fog: 1 },
+  { clear: 6, cloudy: 2, rain: 1, storm: 2, heat: 2 },
+  { clear: 3, cloudy: 3, rain: 3, storm: 1, fog: 3 },
+  { clear: 3, cloudy: 3, snow: 4, fog: 2 },
+];
+const FIRE_TICKS = 40;          // how long one patch burns
+const ASH_DAYS = 3;             // ash feeds fresh shoots for this long
 
 const GRASS_RATE = 0.4;         // logistic growth per day at full season
 const SEED_RATE = 0.06;         // regrowth trickle on bare ground, per day
@@ -184,7 +205,7 @@ function makeTerrain(w) {
     for (let k = 0; k < n; k++) {
       const x = gx + r.range(-5, 5), y = gy + r.range(-4, 4);
       if (walkable(w, x, y) && !w.burrows.some(b => Math.hypot(b.x - x, b.y - y) < 3)) {
-        w.decor.push({ x, y, emoji: r.next() < 0.6 ? '🌳' : '🌲', size: r.range(2.4, 3.4) });
+        w.decor.push({ x, y, emoji: r.next() < 0.6 ? '🌳' : '🌲', size: r.range(2.4, 3.4), tree: true, stump: 0 });
       }
     }
   }
@@ -200,20 +221,130 @@ function makeTerrain(w) {
 }
 
 function growGrass(w, dt) {
-  const s = SEASONS[seasonOf(w.tick)];
-  const boost = w.rain > 0 ? 3 : 1;
-  const r = GRASS_RATE * s.growth * boost * dt / TPD;
-  const seed = SEED_RATE * Math.max(s.growth, 0.05) * boost * dt / TPD;
-  const die = DIEBACK * dt / TPD;
-  const g = w.grass, f = w.fert, water = w.water;
+  const s = SEASONS[seasonOf(w.tick)], grow = sky(w).grow;
+  const capK = s.cap * (w.weather.kind === 'heat' ? 0.8 : 1);   // a heatwave browns the grass
+  const r = GRASS_RATE * s.growth * grow * dt / TPD;
+  const seed = SEED_RATE * Math.max(s.growth, 0.05) * grow * dt / TPD;
+  const die = DIEBACK * dt / TPD, ashFade = dt / (ASH_DAYS * TPD);
+  const g = w.grass, f = w.fert, water = w.water, ash = w.ash, fire = w.fire;
   for (let i = 0; i < g.length; i++) {
-    if (water[i]) continue;
-    const cap = f[i] * s.cap;
+    if (water[i] || fire[i]) continue;
+    const cap = f[i] * capK;
+    const a = ash[i] > 0 ? 1 + 3 * ash[i] : 1;               // new shoots love ash
     let v = g[i];
-    if (v < cap) v += r * v * (1 - v / cap) + seed * cap;
+    if (v < cap) v += r * a * v * (1 - v / cap) + seed * a * cap;
     else v -= (v - cap) * die;
     g[i] = v;
+    if (ash[i] > 0) ash[i] = Math.max(0, ash[i] - ashFade);
   }
+}
+
+// ---------------------------------------------------------------- weather
+//
+// The sky picks a weather from the season's odds. The ground remembers it: rain soaks it,
+// sun dries it. Lightning on dry ground starts a fire, and fire spreads through tall dry
+// grass, so a well-grazed meadow burns less than an overgrown one.
+
+const sky = w => WEATHER[w.weather.kind];
+
+function setWeather(w, kind, ticks, player = false) {
+  if (kind === w.weather.kind) { w.weather.until = Math.max(w.weather.until, w.tick + ticks); return; }
+  const prev = w.weather.kind;
+  w.weather = { kind, until: w.tick + ticks };
+  emit(w, { type: 'weather', kind, prev, player });
+}
+
+function pickWeather(w) {
+  const odds = WEATHER_ODDS[seasonOf(w.tick)];
+  let roll = w.rng.next() * Object.values(odds).reduce((a, b) => a + b, 0), kind = 'clear';
+  for (const k in odds) { roll -= odds[k]; if (roll < 0) { kind = k; break; } }
+  const [a, b] = WEATHER[kind].days;
+  setWeather(w, kind, w.rng.range(a, b) * TPD);
+}
+
+function weatherTick(w) {
+  if (w.tick >= w.weather.until) {
+    if (w.skyLocked) w.weather.until = w.tick + TPD / 2;     // the player pinned it: keep it going
+    else pickWeather(w);
+  }
+  const kind = w.weather.kind;
+  w.wet = clamp(w.wet + sky(w).soak / TPD, 0, 1);
+  if (kind === 'snow') w.snow = Math.min(1, w.snow + 2 / TPD);
+  else if (w.snow > 0) {                                     // melting snow soaks the ground
+    const melt = Math.min(w.snow, (seasonOf(w.tick) === 3 ? 0.3 : 2) / TPD);
+    w.snow -= melt; w.wet = Math.min(1, w.wet + melt);
+  }
+  // Storms bring lightning. Now and then a heatwave brings a dry strike, with no rain after it.
+  if (w.rng.next() < (kind === 'storm' ? 1 / 80 : kind === 'heat' ? 1 / 900 : 0)) {
+    let x, y;
+    do { x = w.rng.range(1, W - 1); y = w.rng.range(1, H - 1); } while (isWater(w, x, y));
+    strike(w, x, y);
+  }
+}
+
+function strike(w, x, y) {
+  // Lightning likes trees.
+  const tree = w.decor.find(d => d.tree && !d.stump && (d.x - x) ** 2 + (d.y - y) ** 2 < 16);
+  if (tree) { x = tree.x; y = tree.y; tree.stump = w.tick; }
+  let victim = null;
+  forEachNear(w, x, y, 1.2, o => { victim = o; });
+  if (victim) die(w, victim, 'lightning');
+  const i = idx(x, y);
+  const fire = !w.water[i] && (tree ? w.wet < 0.5 : w.wet < 0.4 && w.grass[i] > 0.15) && ignite(w, i);
+  // Thunder: every rabbit out in the open bolts for a burrow.
+  forEachNear(w, x, y, 22, o => { if (o.species === 'rabbit') frighten(o, x, y, 'thunder'); });
+  emit(w, { type: 'lightning', x, y, tree: !!tree, victim, fire });
+}
+
+function ignite(w, i) {
+  if (w.fire[i] || w.water[i]) return false;
+  if (!w.blaze) emit(w, { type: 'fire', x: i % W + 0.5, y: ((i / W) | 0) + 0.5 });
+  w.fire[i] = FIRE_TICKS; w.burning.push(i); w.blaze++;
+  return true;
+}
+
+function fireTick(w, dt) {
+  if (!w.burning.length) return;
+  const g = w.grass, spread = 0.1 * (1 - w.wet) ** 2 * (isNight(w.tick) ? 0.5 : 1);   // dew at night
+  const lit = w.burning;
+  w.burning = [];
+  for (const i of lit) {
+    g[i] *= 0.8;
+    w.fire[i] -= dt;
+    if (w.fire[i] <= 0 || w.wet > 0.7) { w.fire[i] = 0; g[i] = 0; w.ash[i] = 1; continue; }
+    w.burning.push(i);
+    const x = i % W, y = (i / W) | 0;
+    for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
+      if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+      const n = ny * W + nx;
+      if (!w.fire[n] && w.rng.next() < spread * g[n]) ignite(w, n);
+    }
+  }
+  for (const c of w.creatures) {                              // too slow, or asleep in the open
+    if (c.alive && !c.hidden && w.fire[idx(c.x, c.y)]) die(w, c, 'fire');
+  }
+  if (!w.burning.length) { emit(w, { type: 'fireout', burned: w.blaze }); w.blaze = 0; }
+}
+
+function fireNear(w, x, y, r) {
+  for (let yy = Math.max(0, (y - r) | 0); yy <= Math.min(H - 1, y + r); yy++) {
+    for (let xx = Math.max(0, (x - r) | 0); xx <= Math.min(W - 1, x + r); xx++) {
+      if (w.fire[yy * W + xx]) return { x: xx + 0.5, y: yy + 0.5 };
+    }
+  }
+  return null;
+}
+
+function frighten(c, x, y, what) {
+  c.fright = what === 'thunder' ? 90 : 40;
+  c.frightX = x; c.frightY = y; c.frightWhat = what;
+}
+
+// Fire is danger for everyone. Checked every few ticks, and only while something burns.
+function smellSmoke(w, c) {
+  if (!w.burning.length || (w.tick + c.id) % 4 !== 0) return;
+  const f = fireNear(w, c.x, c.y, 4);
+  if (f) frighten(c, f.x, f.y, 'fire');
 }
 
 // ---------------------------------------------------------------- spatial grid
@@ -313,7 +444,7 @@ function makeCreature(w, species, x, y, genes, parents) {
     energy: 0, stamina: 1, heading: r.range(0, Math.PI * 2), facing: 1,
     mode: 'wander', target: null, targetId: 0, timer: 0, moved: 0,
     sprinting: false, sleeping: false, hidden: false, burrow: null, home: null,
-    alert: 0, threatId: 0, chaseT: 0,
+    alert: 0, threatId: 0, chaseT: 0, fright: 0, frightX: 0, frightY: 0, frightWhat: '',
     pregnantUntil: 0, cooldownUntil: 0, dadGenes: null, dadIdPending: 0, dadGenPending: 0,
     kids: 0, kills: 0, escapes: 0, story: [],
   };
@@ -331,10 +462,10 @@ function note(w, c, emoji, text) {
   if (c.story.length > 40) c.story.splice(1, 1);   // keep the birth line
 }
 
-const MARKED = new Set(['extinct', 'arrive', 'rain']);   // moments the stats chart pins on its timeline
+const MARKED = new Set(['extinct', 'arrive', 'fire']);   // moments the stats chart pins on its timeline
 function emit(w, e) {
   e.t = w.tick; w.events.push(e);
-  if (MARKED.has(e.type)) w.history.marks.push({ t: e.t, type: e.type, species: e.species });
+  if (MARKED.has(e.type)) w.history.marks.push({ t: e.t, type: e.type, species: e.species, kind: e.kind });
 }
 
 function nearestBurrow(w, x, y, maxD) {
@@ -482,7 +613,8 @@ function exitBurrow(w, c) {
 function burrowTick(w, c) {
   if (--c.timer > 0) return;
   const hungry = c.energy < 0.3 * c.maxEnergy;
-  if (isNight(w.tick) && !hungry) { c.timer = 30; c.sleeping = true; c.mode = 'sleep'; return; }
+  if (shelterTime(w) && !hungry) { c.timer = 30; c.sleeping = true; c.mode = 'sleep'; return; }
+  if (w.burning.length && fireNear(w, c.x, c.y, 3)) { c.timer = 40; c.mode = 'hide'; return; }
   if (!hungry || c.energy < 0.12 * c.maxEnergy) {
     const fox = nearest(w, c, 6, 'fox');
     if (fox) { c.timer = 40; c.mode = 'hide'; return; }
@@ -493,15 +625,18 @@ function burrowTick(w, c) {
 
 // ---------------------------------------------------------------- rabbits
 
+// Rabbits go home at night, and when it storms.
+const shelterTime = w => isNight(w.tick) || w.weather.kind === 'storm';
+
 function rabbitTick(w, c) {
   const t = w.tick;
   if (c.hidden) return burrowTick(w, c);
-  const night = isNight(t);
+  const night = shelterTime(w);
 
   // 1. Danger. Grazing heads-down means a fox is not always noticed; a charging one is.
   if (c.alert > 0) c.alert--;
   if ((t + c.id) % 2 === 0) {
-    const fox = nearest(w, c, c.sight, 'fox');
+    const fox = nearest(w, c, c.sight * sky(w).sight, 'fox');
     if (fox) {
       // A charging fox is seen quickly but not instantly: that beat is the pounce's window.
       const known = fox.id === c.threatId && c.alert > 0;
@@ -515,6 +650,8 @@ function rabbitTick(w, c) {
     const keep = c.mode === 'flee' ? 1.4 : 1;
     if (f && f.alive && dist2(c, f) < (c.fleeDist * keep) ** 2) return flee(w, c, f);
   }
+  smellSmoke(w, c);
+  if (c.fright > 0) { c.fright--; return flee(w, c, { id: 0, x: c.frightX, y: c.frightY }); }
   if (c.mode === 'flee') { c.mode = 'wander'; c.target = null; c.sleeping = false; }
 
   // 2. Babies stay near mum.
@@ -606,11 +743,12 @@ function findFood(w, c) {
   return best;
 }
 
+// Runs from a fox, or from anything with an x and a y (thunder, fire).
 function flee(w, c, fox) {
   if (c.mode !== 'flee') {
     c.mode = 'flee'; c.sleeping = false; c.threatId = fox.id;
     c.refuge = pickRefuge(w, c, fox);
-    forEachNear(w, c.x, c.y, 6, o => {       // thump! nearby rabbits look up
+    if (fox.id) forEachNear(w, c.x, c.y, 6, o => {       // thump! nearby rabbits look up
       if (o !== c && o.species === 'rabbit' && o.alert <= 0) { o.alert = 80; o.threatId = fox.id; }
     });
   }
@@ -651,6 +789,14 @@ function foxTick(w, c) {
   const e = c.energy / c.maxEnergy;
   c.sleeping = false;
 
+  smellSmoke(w, c);
+  if (c.fright > 0) {
+    c.fright--; c.mode = 'flee'; c.targetId = 0;
+    const a = Math.atan2(c.y - c.frightY, c.x - c.frightX);
+    moveToward(w, c, c.x + Math.cos(a) * 6, c.y + Math.sin(a) * 6, c.stamina > 0 ? c.sprint : c.walk);
+    if (c.stamina > 0) { c.stamina -= 1 / 300; c.sprinting = true; }
+    return;
+  }
   if (c.mode === 'eat') { if (--c.timer <= 0) { c.mode = 'rest'; c.timer = 60; } return; }
   if (c.mode === 'tired') { if (c.stamina > 0.6) c.mode = 'wander'; return; }
   if (c.mode === 'sleep') {
@@ -666,8 +812,10 @@ function foxTick(w, c) {
     }
   }
 
-  // Foxes nap through the middle of the day when fed.
-  if (!night && ph > 0.1 && ph < 0.6 && e > 0.8 && !young) { c.mode = 'sleep'; c.sleeping = true; return; }
+  // Foxes nap through the middle of the day when fed, longer in a heatwave. Storms they sit out.
+  const napAt = w.weather.kind === 'heat' ? 0.6 : 0.8;
+  if (!night && ph > 0.1 && ph < 0.6 && e > napAt && !young) { c.mode = 'sleep'; c.sleeping = true; return; }
+  if (w.weather.kind === 'storm' && e > 0.45) { c.mode = 'shelter'; c.sleeping = true; return; }
 
   if (seekLove(w, c)) return;
 
@@ -680,12 +828,13 @@ function foxTick(w, c) {
 function hunt(w, c) {
   let prey = c.targetId ? w.byId.get(c.targetId) : null;
   if (prey && prey.species !== 'rabbit') prey = null;
-  if (prey && (!prey.alive || prey.hidden || dist2(c, prey) > (c.sight * 1.3) ** 2)) {
+  const sight = c.sight * sky(w).sight;
+  if (prey && (!prey.alive || prey.hidden || dist2(c, prey) > (sight * 1.3) ** 2)) {
     if (prey.alive && c.mode === 'chase') escaped(w, prey, c, prey.hidden ? 'burrow' : 'outran');
     prey = null; c.targetId = 0; c.mode = 'wander';
   }
   if (!prey && (w.tick + c.id) % 5 === 0) {
-    prey = nearest(w, c, c.sight, 'rabbit');
+    prey = nearest(w, c, sight, 'rabbit');
     if (prey) { c.targetId = prey.id; c.mode = 'stalk'; }
   }
   if (!prey) return false;
@@ -740,8 +889,10 @@ function die(w, c, cause, killer) {
   const age = Math.floor(ageDays(w, c));
   const text = cause === 'fox' ? `Caught by ${killer.name}` :
     cause === 'hunger' ? (seasonOf(w.tick) === 3 ? 'Starved in the winter' : 'Starved') :
+    cause === 'lightning' ? 'Struck by lightning' :
+    cause === 'fire' ? 'Caught in a wildfire' :
     `Died of old age, ${age} days old`;
-  note(w, c, cause === 'fox' ? '🦊' : cause === 'hunger' ? '🥀' : '🌙', text);
+  note(w, c, { fox: '🦊', hunger: '🥀', lightning: '⚡', fire: '🔥' }[cause] || '🌙', text);
   w.stats.deaths[c.species][cause] = (w.stats.deaths[c.species][cause] || 0) + 1;
   w.anyDied = true;
   emit(w, { type: 'death', c, cause, killer });
@@ -752,7 +903,9 @@ function lifeTick(w, c) {
   let b = c.burnRate * (0.5 + 0.5 * g);
   if (c.sleeping) b *= 0.6;
   if (c.pregnantUntil) b *= 1.25;
-  b += MOVE_COST * c.moved * c.moved / c.sp.walk;
+  const kind = w.weather.kind;
+  if (kind === 'snow' && !c.hidden) b *= 1 + 0.5 * (1 - c.genes.size);   // small bodies feel the cold
+  b += MOVE_COST * c.moved * c.moved / c.sp.walk * (kind === 'heat' ? 1.5 : 1);
   c.energy -= b;
   if (!c.sprinting) c.stamina = Math.min(1, c.stamina + (c.sleeping || c.mode === 'tired' ? 1 / 150 : 1 / 400));
   c.sprinting = false;
@@ -770,7 +923,9 @@ function createWorld(seed, opts = {}) {
     seed, rng: makeRng(seed), tick: Math.floor(TPD * 0.04),
     nextId: 1, creatures: [], newborn: [], byId: new Map(), events: [],
     grid: Array.from({ length: GW * GH }, () => []),
-    nameCounts: new Map(), rain: 0, anyDied: false,
+    nameCounts: new Map(), anyDied: false,
+    weather: { kind: 'clear', until: 0 }, skyLocked: false, wet: 0.3, snow: 0,
+    fire: new Float32Array(W * H), ash: new Float32Array(W * H), burning: [], blaze: 0,
     count: { rabbit: 0, fox: 0 }, expecting: { rabbit: 0, fox: 0 },
     stats: { births: { rabbit: 0, fox: 0 }, deaths: { rabbit: {}, fox: {} } },
     history: { every: 60, t: [], rabbit: [], fox: [], grass: [], traits: { rabbit: [], fox: [] }, marks: [] },
@@ -789,6 +944,7 @@ function createWorld(seed, opts = {}) {
   w.founderMeans = { rabbit: null, fox: null };
   flushNewborn(w);
   for (const s of ['rabbit', 'fox']) w.founderMeans[s] = traitMeans(w, s);
+  w.weather.until = w.tick + w.rng.range(0.3, 0.8) * TPD;
   record(w);
   return w;
 }
@@ -846,12 +1002,15 @@ function newDay(w) {
   if (d % SEASON_DAYS === 0) {
     const s = seasonOf(w.tick);
     emit(w, { type: 'season', season: s, year: yearOf(w.tick) });
+    if (!w.skyLocked && !WEATHER_ODDS[s][w.weather.kind]) pickWeather(w);      // no snow in spring
     if (s === 0) {
       for (const c of w.creatures) {
         if (c.alive && c.born < w.tick - SEASON_DAYS * TPD) note(w, c, '🌸', 'Made it through the winter');
       }
     }
   }
+  // A tree struck by lightning grows back from its stump in about a year.
+  for (const d of w.decor) if (d.stump && w.tick - d.stump > YEAR_DAYS * TPD) d.stump = 0;
 }
 
 function migrate(w) {
@@ -881,9 +1040,9 @@ function migrate(w) {
 function step(w) {
   const t = ++w.tick;
   if (t % TPD === 0) newDay(w);
-  if (t % 4 === 0) growGrass(w, 4);
-  if (w.rain > 0) w.rain--;
   buildGrid(w);
+  weatherTick(w);
+  if (t % 4 === 0) { growGrass(w, 4); fireTick(w, 4); }
   const list = w.creatures;
   for (let i = 0; i < list.length; i++) {
     const c = list[i];
@@ -918,7 +1077,16 @@ function paintGrass(w, x, y, radius) {
   }
 }
 
-function startRain(w) { w.rain = TPD; emit(w, { type: 'rain' }); }
+// The player picks the weather: it lasts about a day (storms burn out sooner).
+function setSky(w, kind) {
+  setWeather(w, kind, (kind === 'storm' ? 0.5 : 1) * TPD, true);
+  w.history.marks.push({ t: w.tick, type: 'sky', kind });
+}
+
+// A locked sky keeps whatever weather it has until it is unlocked.
+function lockSky(w, on) { w.skyLocked = on; }
+
+function zap(w, x, y) { if (walkable(w, x, y)) strike(w, x, y); }
 
 // ---------------------------------------------------------------- reading an animal
 
@@ -926,11 +1094,16 @@ function mood(w, c) {
   if (!c.alive) return { emoji: '👻', text: c.story[c.story.length - 1].text };
   const other = w.byId.get(c.targetId) || w.byId.get(c.threatId);
   const e = c.energy / c.maxEnergy;
+  const storm = w.weather.kind === 'storm' && !isNight(w.tick);
   switch (c.mode) {
-    case 'flee': return { emoji: '😱', text: `Running from ${w.byId.get(c.threatId)?.name ?? 'a fox'}!` };
+    case 'flee':
+      if (c.fright > 0) return c.frightWhat === 'fire' ? { emoji: '🔥', text: 'Running from the fire!' }
+        : { emoji: '⚡', text: 'Spooked by thunder!' };
+      return { emoji: '😱', text: `Running from ${w.byId.get(c.threatId)?.name ?? 'a fox'}!` };
     case 'hide': return { emoji: '🫣', text: 'Hiding in a burrow' };
-    case 'sleep': return { emoji: '💤', text: c.hidden ? 'Asleep in the burrow' : 'Napping' };
-    case 'home': return { emoji: '🏠', text: 'Heading home for the night' };
+    case 'sleep': return { emoji: '💤', text: c.hidden ? (storm ? 'Snug in the burrow, out of the storm' : 'Asleep in the burrow') : 'Napping' };
+    case 'home': return { emoji: '🏠', text: storm ? 'Hurrying home out of the storm' : 'Heading home for the night' };
+    case 'shelter': return { emoji: '🌧️', text: 'Curled up, waiting out the storm' };
     case 'love': return { emoji: '💕', text: other ? `Courting ${other.name}` : 'Looking for love' };
     case 'graze': return { emoji: '😋', text: 'Munching grass' };
     case 'food': return { emoji: '🌿', text: 'Off to find better grass' };
@@ -948,9 +1121,9 @@ function mood(w, c) {
 }
 
 const api = {
-  W, H, TPD, SEASON_DAYS, YEAR_DAYS, SEASONS, SPECIES, GENES,
+  W, H, TPD, SEASON_DAYS, YEAR_DAYS, SEASONS, SPECIES, GENES, WEATHER,
   createWorld, step, clock, isNight, phaseOf, seasonOf, mood, ageDays, growth, isAdult,
-  addCreature, paintGrass, startRain, traitMeans, walkable,
+  addCreature, paintGrass, setSky, lockSky, zap, traitMeans, walkable,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 else root.Sim = api;

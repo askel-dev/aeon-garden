@@ -44,7 +44,7 @@
   canvas#world.tool-look { cursor: grab; }
   canvas#world.tool-look.dragging { cursor: grabbing; }
   canvas#world.tool-rabbit, canvas#world.tool-fox { cursor: copy; }
-  canvas#world.tool-grass { cursor: crosshair; }
+  canvas#world.tool-grass, canvas#world.tool-zap { cursor: crosshair; }
 
   .card {
     position: fixed; background: var(--card); border-radius: var(--radius);
@@ -64,6 +64,9 @@
   .pop .n { font-weight: 900; font-size: 18px; font-variant-numeric: tabular-nums; }
   .pop canvas { width: 100%; height: 30px; }
   .spark-caption { color: var(--muted); font-size: 11px; text-align: right; margin-top: 2px; }
+  #sky { margin-top: 3px; color: var(--muted); font-weight: 700; font-size: 13px; cursor: help; }
+  #sky b { color: var(--ink); }
+  #sky .fire { color: #d9531e; font-weight: 900; }
   .evo { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
   .evo h3 { margin: 0 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); }
   .evo .row { font-size: 13px; line-height: 1.5; }
@@ -71,7 +74,7 @@
   .evo .down { color: #c9673a; font-weight: 800; }
 
   /* ---- news: a few short-lived toasts bottom left, the full log in the meadow card */
-  #news { position: fixed; left: 16px; bottom: 96px; width: 330px; display: flex; flex-direction: column-reverse; gap: 5px; pointer-events: none; }
+  #news { position: fixed; left: 16px; bottom: calc(var(--bar, 92px) + 8px); width: 330px; display: flex; flex-direction: column-reverse; gap: 5px; pointer-events: none; }
   .news-item {
     align-self: flex-start; background: var(--card); border-radius: 12px; padding: 5px 11px; box-shadow: var(--shadow);
     font-size: 13px; line-height: 1.35; animation: pop-in 0.35s ease-out; transition: opacity 0.8s, transform 0.8s;
@@ -79,9 +82,10 @@
   .news-item a[data-id] { pointer-events: auto; }   /* clicks go through to the meadow, except on names */
   .news-item.gone { opacity: 0; transform: translateY(-6px); }
   #meadow .brand { display: flex; align-items: center; }
-  .news-toggle { margin-left: auto; border: none; background: transparent; border-radius: 8px; padding: 1px 6px; font-size: 16px; }
-  .news-toggle:hover { background: rgba(0,0,0,0.06); }
-  .news-toggle.on { background: var(--accent-soft); }
+  .brand-btn { border: none; background: transparent; border-radius: 8px; padding: 1px 6px; font-size: 16px; }
+  .brand-btn:first-of-type { margin-left: auto; }
+  .brand-btn:hover { background: rgba(0,0,0,0.06); }
+  .brand-btn.on { background: var(--accent-soft); }
   #news-log { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
   #news-log h3 { margin: 0 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); }
   #news-log ol { list-style: none; margin: 0; padding: 0; max-height: min(340px, 45vh); overflow-y: auto; font-size: 13px; line-height: 1.35; }
@@ -91,20 +95,31 @@
   @keyframes pop-in { from { transform: translateY(8px) scale(0.97); opacity: 0; } to { transform: none; opacity: 1; } }
 
   /* ---- toolbar, bottom centre */
-  #toolbar { left: 50%; bottom: 16px; transform: translateX(-50%); padding: 8px; display: flex; gap: 4px; align-items: center; }
-  #toolbar .sep { width: 1px; height: 38px; background: var(--line); margin: 0 6px; }
+  /* The tools grow on big screens; the speeds share one small pill. --bar is the toolbar's height plus its gap, set by game.js. */
+  #toolbar { left: 50%; bottom: 16px; transform: translateX(-50%); padding: 10px 12px; display: flex; gap: 6px; align-items: center; }
+  #toolbar .sep { width: 1px; height: 44px; background: var(--line); margin: 0 10px; }
   .tool {
-    border: none; background: transparent; border-radius: 12px; padding: 5px 9px 4px; min-width: 50px;
-    display: flex; flex-direction: column; align-items: center; gap: 1px; transition: background 0.15s, transform 0.1s;
+    border: none; background: transparent; border-radius: 14px; padding: 6px 10px 5px; min-width: clamp(54px, 4.6vw, 66px);
+    display: flex; flex-direction: column; align-items: center; gap: 2px; transition: background 0.15s, transform 0.1s;
   }
-  .tool .e { font-size: 21px; line-height: 1.1; }
-  .tool .l { font-size: 11px; font-weight: 800; color: var(--muted); }
+  .tool .e { font-size: clamp(24px, 2.1vw, 31px); line-height: 1.1; }
+  .tool .l { font-size: 12px; font-weight: 800; color: var(--muted); }
   .tool:hover { background: rgba(0,0,0,0.05); }
   .tool:active { transform: scale(0.95); }
   .tool.on { background: var(--accent-soft); }
   .tool.on .l { color: var(--accent); }
-  .speed { min-width: 40px; }
-  .speed .e { font-size: 15px; font-weight: 900; line-height: 26px; }
+  .speeds { display: flex; gap: 3px; background: rgba(0,0,0,0.04); border-radius: 14px; padding: 4px; }
+  .speed {
+    border: none; background: transparent; border-radius: 9px; min-width: 36px; height: clamp(32px, 2.6vw, 38px); padding: 0 8px;
+    font-size: 15px; font-weight: 900; color: var(--muted); transition: background 0.15s;
+  }
+  .speed:hover { background: rgba(0,0,0,0.06); }
+  .speed.on { background: var(--card); color: var(--accent); box-shadow: 0 1px 3px rgba(70, 55, 25, 0.18); }
+  #sky-menu { left: 0; right: 0; margin: 0 auto; width: max-content; bottom: calc(var(--bar, 92px) + 8px); padding: 6px; display: flex; gap: 2px; z-index: 4; animation: pop-in 0.2s ease-out; }
+  #sky-menu .sep { width: 1px; background: var(--line); margin: 6px 6px; }
+  .tool[data-act="sky"] { position: relative; }
+  .tool.locked::after { content: '🔒'; position: absolute; top: 1px; right: 3px; font-size: 13px; }
+  #sky .lock { font-size: 11px; }
 
   /* ---- inspector, right */
   #inspector { top: 16px; right: 16px; width: 330px; max-height: calc(100% - 32px); overflow-y: auto; padding: 16px; display: none; }
@@ -216,10 +231,13 @@
   @media (max-width: 760px) {
     #meadow { width: calc(100% - 32px); }
     #meadow .evo, .spark-caption { display: none; }
-    #news { width: calc(100% - 32px); bottom: 150px; }
+    #news { width: calc(100% - 32px); }
     #news-log ol { max-height: 30vh; }
     #toolbar { flex-wrap: wrap; justify-content: center; width: calc(100% - 32px); }
     #toolbar .sep { display: none; }
+    .tool { min-width: 0; flex: 1 1 14%; padding: 6px 2px 5px; }
+    #sky-menu { flex-wrap: wrap; justify-content: center; left: 16px; right: 16px; width: auto; }
+    #sky-menu .sep { display: none; }
     #inspector { top: auto; bottom: 16px; left: 16px; right: 16px; width: auto; max-height: 55%; z-index: 5; }
     .stats-wrap { padding: 16px 16px 32px; }
     .stats-head { flex-wrap: wrap; gap: 4px 12px; }
@@ -239,8 +257,9 @@
 <canvas id="world" class="tool-look"></canvas>
 
 <section id="meadow" class="card">
-  <div class="brand">🌱 AEON Garden<button class="news-toggle" data-act="news" title="Meadow news (N)">📰</button></div>
+  <div class="brand">🌱 AEON Garden<button class="brand-btn" id="sound-btn" data-act="sound" title="Sound on or off (M)">🔇</button><button class="brand-btn news-toggle" data-act="news" title="Meadow news (N)">📰</button><button class="brand-btn" data-action="new" title="Start a brand-new meadow">🔄</button></div>
   <div class="clock"><span id="season-emoji">🌸</span><b id="season-name">Spring</b><span id="clock-rest">day 1 · year 1</span><span id="sun" title="Day or night">☀️</span></div>
+  <div id="sky">☀️ <b>Clear skies</b></div>
   <div class="pop" data-act="stats" title="Rabbits alive right now, and the last two years. Click for all the statistics (S)">
     <span class="emoji">🐇</span><span class="n" id="n-rabbit">0</span><canvas id="spark-rabbit"></canvas>
   </div>
@@ -263,17 +282,21 @@
   <button class="tool" data-tool="rabbit" title="Click the meadow to release a rabbit"><span class="e">🐇</span><span class="l">Rabbit</span></button>
   <button class="tool" data-tool="fox" title="Click the meadow to release a fox"><span class="e">🦊</span><span class="l">Fox</span></button>
   <button class="tool" data-tool="grass" title="Click and drag to grow lush grass"><span class="e">🌱</span><span class="l">Grass</span></button>
-  <button class="tool" data-action="rain" title="Make it rain: grass grows three times faster for a day"><span class="e">🌧️</span><span class="l">Rain</span></button>
+  <button class="tool" data-tool="zap" title="Click the meadow to strike lightning. On dry ground it starts a fire (Z)"><span class="e">⚡</span><span class="l">Zap</span></button>
+  <button class="tool" data-act="sky" title="Change the weather (W)"><span class="e" id="sky-btn">☀️</span><span class="l">Weather</span></button>
   <span class="sep"></span>
-  <button class="tool speed" data-speed="0" title="Pause (space)"><span class="e">⏸</span><span class="l">Pause</span></button>
-  <button class="tool speed on" data-speed="1" title="Normal speed (1)"><span class="e">1×</span><span class="l">Calm</span></button>
-  <button class="tool speed" data-speed="4" title="Fast (2)"><span class="e">4×</span><span class="l">Fast</span></button>
-  <button class="tool speed" data-speed="15" title="Very fast (3)"><span class="e">15×</span><span class="l">Seasons</span></button>
-  <button class="tool speed" data-speed="60" title="Watch years go by (4)"><span class="e">60×</span><span class="l">Years</span></button>
+  <div class="speeds">
+    <button class="speed" data-speed="0" title="Pause (space)">⏸</button>
+    <button class="speed on" data-speed="1" title="Normal speed (1)">1×</button>
+    <button class="speed" data-speed="4" title="Fast (2)">4×</button>
+    <button class="speed" data-speed="15" title="Very fast (3)">15×</button>
+    <button class="speed" data-speed="60" title="Watch years go by (4)">60×</button>
+  </div>
   <span class="sep"></span>
   <button class="tool" data-act="stats" title="Graphs and records for this meadow (S)"><span class="e">📊</span><span class="l">Stats</span></button>
-  <button class="tool" data-action="new" title="Start a brand-new meadow"><span class="e">🔄</span><span class="l">New</span></button>
 </nav>
+
+<div id="sky-menu" class="card hidden"></div>
 
 <aside id="inspector" class="card"></aside>
 
@@ -298,7 +321,7 @@
       <div class="legend">
         <span><i class="sw" style="background:#f6dde5"></i>Spring</span><span><i class="sw" style="background:#f7ecb8"></i>Summer</span>
         <span><i class="sw" style="background:#f4d6b6"></i>Autumn</span><span><i class="sw" style="background:#dfe8f0"></i>Winter</span>
-        <span>│ a new year</span><span>🧳 newcomers arrived</span><span>😢 died out</span><span>🌧️ rain</span>
+        <span>│ a new year</span><span>🧳 newcomers arrived</span><span>😢 died out</span><span>🔥 wildfire</span><span>🌦️ you changed the weather</span>
       </div>
     </div>
     <div class="stats-grid" id="stats-cards">
@@ -320,13 +343,14 @@
     <ul>
       <li>🔍 <b>Click an animal</b> to follow its whole life story</li>
       <li>🖱️ <b>Scroll</b> to zoom, <b>drag</b> to look around</li>
-      <li>🐇 🦊 🌱 🌧️ <b>Play god</b> with the tools at the bottom</li>
+      <li>🐇 🦊 🌱 ⚡ <b>Play god</b> with the tools at the bottom, weather included</li>
     </ul>
     <button class="btn go" id="go">Let's go!</button>
   </div>
 </div>
 
 <script src="sim.js"></script>
+<script src="sound.js"></script>
 <script src="game.js"></script>
 </body>
 </html>
