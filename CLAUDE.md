@@ -29,6 +29,11 @@ move that one number (`refreshWater`). Shallow water is waded slowly; deep water
 Each connected water body is named (`w.waters`, `w.body`). Population caps and starting
 numbers scale with dry land (`w.room`).
 
+Rabbit coats: two letter-pair genes (`coat`, e.g. 'AaDd') give four colours, plus a sliding
+`moult` gene that whitens the coat in winter. Foxes spot a still rabbit from further off when its
+coat stands out from the ground under it (`visibility`); the ground colours (`GROUND`) live in the
+sim and the drawing uses them too.
+
 Every animal uses one ladder: danger > sleep > love > food > friends > wander. Keep new
 behaviour small and readable. If a rule needs a paragraph to explain, it's probably too big.
 

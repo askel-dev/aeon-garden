@@ -209,12 +209,22 @@ function drawEmoji(emoji, x, y, px, opts = {}) {
 
 // Rabbit coats (the genes are in the sim). Wild coats are agouti: each hair banded, so speckled.
 const COAT = {
-  wild: { key: 'wild', rgb: [150, 114, 80], speckle: 0.35, swatch: '#96724f' },
-  black: { key: 'black', rgb: [62, 56, 56], speckle: 0, swatch: '#3e3838' },
-  sand: { key: 'sand', rgb: [212, 178, 128], speckle: 0.3, swatch: '#d4b280' },
-  blue: { key: 'blue', rgb: [128, 134, 150], speckle: 0, swatch: '#808696' },
+  wild: { key: 'wild', rgb: S.COATS.wild.rgb, speckle: 0.35, swatch: '#96724f' },
+  black: { key: 'black', rgb: S.COATS.black.rgb, speckle: 0, swatch: '#3e3838' },
+  sand: { key: 'sand', rgb: S.COATS.sand.rgb, speckle: 0.3, swatch: '#d4b280' },
+  blue: { key: 'blue', rgb: S.COATS.blue.rgb, speckle: 0, swatch: '#808696' },
 };
-const coatLook = c => c.genes.coat && COAT[S.coatOf(c.genes)];
+// In winter a coat pales toward white. A few steps of white keep the sprite cache small.
+const moulted = new Map();
+function coatLook(c) {
+  if (!c.genes.coat) return undefined;
+  const k = S.coatOf(c.genes), q = Math.round(S.whiteness(world, c) * 4) / 4, base = COAT[k];
+  if (!q) return base;
+  let look = moulted.get(k + q);
+  if (!look) moulted.set(k + q, look = { key: k + q, rgb: base.rgb.map((v, i) => lerp(v, S.WINTER_COAT[i], q)),
+    speckle: base.speckle * (1 - q), swatch: base.swatch });
+  return look;
+}
 
 // The rabbit emoji is a white albino. Its fur takes the coat colour but keeps its light and
 // shadow; the pink of the ears stays, and the red eye turns dark.
@@ -253,10 +263,13 @@ function furTint(c) {
 const furCss = c => c.genes.coat ? coatLook(c).swatch : `rgb(${foxRGB(c.genes.fur).join(',')})`;
 
 // "Wild brown coat, carries black": the colours it hides can still turn up in its kits.
+// Then how well it hides where it sits, as a fox would see it.
 function coatLine(c) {
-  const hid = S.hiddenCoats(c.genes);
-  const name = S.COATS[S.coatOf(c.genes)].name;
-  return `🎨 ${name[0].toUpperCase() + name.slice(1)} coat${hid.length ? `, carries ${hid.join(' and ')}` : ''}`;
+  const hid = S.hiddenCoats(c.genes), white = S.whiteness(world, c);
+  const name = S.COATS[S.coatOf(c.genes)].name, v = c.alive && !c.hidden ? S.visibility(world, c) : 1;
+  return `🎨 ${name[0].toUpperCase() + name.slice(1)} coat${white > 0.5 ? ', white for winter' : ''}` +
+    `${hid.length ? `, carries ${hid.join(' and ')}` : ''}` +
+    (v < 1.05 ? ' · 🫥 blends in here' : v > 1.3 ? ' · 👁️ stands out here' : '');
 }
 
 // A coloured rabbit for the inspector: the recoloured sprite, drawn once per coat.
@@ -270,12 +283,7 @@ function portraitHTML(c) {
 
 // ------------------------------------------------------------------ terrain
 
-const PALETTE = [   // [bare ground, lush grass] per season
-  [[214, 197, 150], [118, 196, 92]],
-  [[226, 206, 142], [104, 178, 70]],
-  [[216, 182, 128], [184, 170, 82]],
-  [[228, 226, 218], [178, 200, 180]],
-];
+const PALETTE = S.GROUND.seasons;   // [bare ground, lush grass] per season; camouflage uses it too
 const terr = document.createElement('canvas');
 terr.width = S.W; terr.height = S.H;
 const tctx = terr.getContext('2d');
@@ -314,13 +322,13 @@ function paintTerrain(fresh) {
     // Under the ponds (drawn on top by drawPonds) lies damp sand, which blurs into a shore.
     let v = water[i] ? 0 : clamp(g[i] / 0.85, 0, 1);
     v = v * (2 - v);
-    const k = (1 + 0.035 * j) * damp * (water[i] ? 0.9 : 1), p = patches[i];
+    const k = (1 + 0.035 * j) * damp * (water[i] ? 0.9 : 1) * (1 - 0.3 * world.wood[i]), p = patches[i];
     let r = lerp(low[0], high[0], v) + 6 * p, gr = lerp(low[1], high[1], v) + 2 * p, b = lerp(low[2], high[2], v) - 6 * p;
     if (ash[i] > 0) {                                                // burnt ground, until the grass returns
       const a = ash[i] * (1 - v) * 0.85;
-      r = lerp(r, 74, a); gr = lerp(gr, 66, a); b = lerp(b, 60, a);
+      r = lerp(r, S.GROUND.ash[0], a); gr = lerp(gr, S.GROUND.ash[1], a); b = lerp(b, S.GROUND.ash[2], a);
     }
-    if (s > 0) { r = lerp(r, 246, s); gr = lerp(gr, 248, s); b = lerp(b, 252, s); }
+    if (s > 0) { r = lerp(r, S.GROUND.snow[0], s); gr = lerp(gr, S.GROUND.snow[1], s); b = lerp(b, S.GROUND.snow[2], s); }
     d[o] = r * k; d[o + 1] = gr * k; d[o + 2] = b * k;
     sr += d[o]; sg += d[o + 1]; sb += d[o + 2];
     d[o + 3] = 255;
@@ -1572,14 +1580,17 @@ const TRAITS = [
     up: 'bolder', down: 'shyer', tip: 'Rabbits let foxes get closer before running. Foxes pounce from further away' },
   { k: 'friendly', e: '🤝', name: 'Friendly', words: ['a loner', 'independent', 'easygoing', 'friendly', 'super social'],
     up: 'friendlier', down: 'more solitary', tip: 'Likes to stay close to others' },
+  { k: 'moult', e: '❄️', name: 'Winter coat', only: 'rabbit', words: ['keeps its colour', 'keeps its colour', 'pales a little', 'pales in winter', 'snow-white'],
+    up: 'whiter in winter', down: 'less white in winter', tip: 'Turns white for winter: hidden on snow, easy to see on bare ground' },
 ];
+const traitsOf = species => TRAITS.filter(t => !t.only || t.only === species);
 const word = (t, v) => t.words[v < 0.3 ? 0 : v < 0.45 ? 1 : v < 0.55 ? 2 : v < 0.7 ? 3 : 4];
 
 // Returns just the quiet words when there is nothing to show, so both species can share one line.
 function evolutionLine(species) {
   const base = world.founderMeans[species], now = S.traitMeans(world, species);
   if (!base || !now) return 'none alive';
-  const shifts = TRAITS.map(t => ({ t, d: (now[t.k] - base[t.k]) / base[t.k] }))
+  const shifts = traitsOf(species).map(t => ({ t, d: (now[t.k] - base[t.k]) / base[t.k] }))
     .filter(s => Math.abs(s.d) >= 0.05)
     .sort((a, b) => Math.abs(b.d) - Math.abs(a.d))
     .slice(0, 2);
@@ -1849,7 +1860,7 @@ function deathRows(k) {
 function evoBlock(k) {
   const base = world.founderMeans[k], now = S.traitMeans(world, k), sr = SERIES[k];
   return `<div class="st-name">${sr.emoji} ${sr.name} <span class="st-sub">average of everyone alive · dashed line is where the first ones started</span></div><div class="evo-grid">` +
-    TRAITS.map(t => {
+    traitsOf(k).map(t => {
       const d = base && now ? (now[t.k] - base[t.k]) / base[t.k] : 0;
       const chip = Math.abs(d) >= 0.02 ? `<span class="${d > 0 ? 'up' : 'down'}">${d > 0 ? '▲' : '▼'}${Math.round(Math.abs(d) * 100)}%</span>` : '';
       return `<div class="evo-mini" title="${t.tip}"><div class="em-head">${t.e} ${t.name} ${chip}</div>` +
@@ -1973,7 +1984,7 @@ function renderInspector() {
     </div>` : ''}
     ${chips.length ? `<div class="chips">${chips.map(x => `<span class="chip">${x}</span>`).join('')}</div>` : ''}
     <h4>Personality</h4>
-    ${TRAITS.map(t => `<div class="trait" title="${t.tip}"><span>${t.e}</span><span>${t.name}</span>
+    ${traitsOf(c.species).map(t => `<div class="trait" title="${t.tip}"><span>${t.e}</span><span>${t.name}</span>
       <div class="meter"><span style="width:${Math.round(c.genes[t.k] * 100)}%"></span></div>
       <span class="word">${word(t, c.genes[t.k])}</span></div>`).join('')}
     <h4>Family</h4>
@@ -2012,7 +2023,7 @@ function diaryFacts(c) {
   const events = c.story.slice(-8).map(s => `- (${when(s.t)}) ${s.text}`).join('\n');
   return [
     `Name: ${c.name}. A ${c.sex === 'F' ? 'female' : 'male'} ${c.sp.name.toLowerCase()}, ${Math.floor(S.ageDays(world, c))} days old (a ${lifeStage(c)}; ${c.sp.plural.toLowerCase()} here live about ${c.sp.lifeDays} days).`,
-    `Personality: ${TRAITS.map(t => word(t, c.genes[t.k])).join(', ')}.` + (c.genes.coat ? ` Fur: ${S.COATS[S.coatOf(c.genes)].name}.` : ''),
+    `Personality: ${traitsOf(c.species).map(t => word(t, c.genes[t.k])).join(', ')}.` + (c.genes.coat ? ` Fur: ${S.COATS[S.coatOf(c.genes)].name}${S.whiteness(world, c) > 0.5 ? ', turned white for winter' : ''}.` : ''),
     `Right now: ${S.mood(world, c).text}. Tummy ${Math.round(100 * c.energy / c.maxEnergy)}% full. It is ${S.SEASONS[ck.season].name.toLowerCase()}, ${ck.night ? 'night' : 'daytime'}, weather: ${S.WEATHER[world.weather.kind].name.toLowerCase()}${world.burning.length ? ', and there is a wildfire in the meadow' : ''}.`,
     `Family: mum ${mum ? mum.name + (mum.alive ? '' : ' (died)') : 'unknown'}, dad ${dad ? dad.name + (dad.alive ? '' : ' (died)') : 'unknown'}, ${c.kids} children.`,
     c.species === 'fox' ? `Rabbits caught so far: ${c.kills}.` : `Narrow escapes from foxes: ${c.escapes}.`

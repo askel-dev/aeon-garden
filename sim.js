@@ -57,15 +57,22 @@ const GRASS_ENERGY = 40;        // energy per unit of grass
 const MOVE_COST = 0.25;         // energy per tick = MOVE_COST * v^2 / walk
 
 const GENES = ['speed', 'size', 'eyes', 'bravery', 'friendly'];
+const RABBIT_GENES = [...GENES, 'moult'];   // moult: how white the coat turns for winter
+const genesOf = species => (species === 'rabbit' ? RABBIT_GENES : GENES);
 
 // Rabbit coats: two genes, each a pair of letters, one from each parent. A capital letter wins.
 //   A wild (speckled brown) over a solid (black);  D full colour over d pale.
 // So 'AaDD' looks wild brown but can pass on black. Foxes keep a simple sliding `fur` shade.
 const COATS = {
-  wild: { name: 'wild brown' }, black: { name: 'black' }, sand: { name: 'sandy' }, blue: { name: 'blue-grey' },
+  wild: { name: 'wild brown', rgb: [150, 114, 80] }, black: { name: 'black', rgb: [62, 56, 56] },
+  sand: { name: 'sandy', rgb: [212, 178, 128] }, blue: { name: 'blue-grey', rgb: [128, 134, 150] },
 };
 const COAT_RARE = 0.3;          // founders: how often each recessive letter turns up
 const COAT_FLIP = 0.002;        // per letter per birth: a new colour now and then
+const WINTER_COAT = [236, 236, 230];
+const MOULT_START = 0.5;        // founders: about half turn white in their first winter
+const MOULT_WARM = 0.3;         // a white winter coat is a thick one: this much less burnt while snow lies
+const MOULT_FROM = 0.3, MOULT_TO = 0.7;   // below this moult gene a coat stays; above, it turns fully white
 
 const SPECIES = {
   rabbit: {
@@ -331,17 +338,8 @@ function makeTerrain(w) {
     if (canDig(w, x, y)) newBurrow(w, x, y, 1);
   }
 
-  // Decoration only: trees in a few groves, some rocks, stepping stones at the fords, flower spots.
-  for (let g = 0; g < 8; g++) {
-    const gx = r.range(8, W - 8), gy = r.range(8, H - 8);
-    const n = r.int(3, 7);
-    for (let k = 0; k < n; k++) {
-      const x = gx + r.range(-5, 5), y = gy + r.range(-4, 4);
-      if (dry(w, x, y) && !w.burrows.some(b => Math.hypot(b.x - x, b.y - y) < 3)) {
-        w.decor.push({ x, y, emoji: r.next() < 0.6 ? '🌳' : '🌲', size: r.range(2.4, 3.4), tree: true, stump: 0 });
-      }
-    }
-  }
+  // Decoration only: the forest, some rocks, stepping stones at the fords, flower spots.
+  plantTrees(w, hills, hill, near);
   for (let k = 0; k < 22; k++) {
     const x = r.range(3, W - 3), y = r.range(3, H - 3);
     if (dry(w, x, y)) w.decor.push({ x, y, emoji: '🪨', size: r.range(1.1, 1.8) });
@@ -359,6 +357,106 @@ function makeTerrain(w) {
     if (water[y * W + x] || r.next() > 0.07) continue;
     w.plants.push({ x: x + r.next(), y: y + r.next(), i: y * W + x, kind: r.next() });
   }
+}
+
+// Every meadow has a forest, of one kind or two: woods on the hilltops, a big wood along one
+// side, or a wet wood by the water. Two kinds together are each drawn a little smaller.
+const FORESTS = [['hills'], ['edge'], ['bank'], ['hills', 'bank'], ['edge', 'bank'], ['hills', 'edge']];
+
+function plantTrees(w, hills, hill, near) {
+  const r = w.rng, N = W * H;
+  const kinds = w.options.forest ? w.options.forest.split('+') : r.pick(FORESTS), small = kinds.length > 1;
+  w.forest = kinds;
+  const plant = (x, y, pine) => {
+    if (dry(w, x, y) && !w.burrows.some(b => Math.hypot(b.x - x, b.y - y) < 3)) {
+      w.decor.push({ x, y, emoji: pine ? '🌲' : '🌳', size: r.range(2.4, 3.4), tree: true, stump: 0 });
+    }
+  };
+  const ragged = (x, y) => (hills(x / 9 + 31.7, y / 9 + 12.3) - 0.5) * 7;   // a few tiles in or out
+  const ramp = sd => clamp(sd / 3, 0, 1);                                   // thick 3 tiles in from the edge
+
+  // Each kind says how thick the wood is at a spot (0..1) and how likely a tree there is a pine.
+  const woods = kinds.map(kind => {
+    if (kind === 'hills') {
+      // The highest ground is wooded: pines on the tops, broadleaf lower down.
+      const hs = [];
+      for (let i = 0; i < N; i++) if (!w.water[i]) hs.push(hill[i]);
+      hs.sort((a, b) => a - b);
+      const top = hs[Math.floor(hs.length * (small ? 0.9 : 0.86))], peak = hs[hs.length - 1];
+      const height = (x, y) => (hill[idx(x, y)] - top) / (peak - top);
+      return {
+        dense: (x, y) => clamp((hill[idx(x, y)] + ragged(x, y) * 0.006 - top) / 0.025, 0, 1),
+        pine: (x, y) => 0.2 + 0.8 * clamp(height(x, y) * 1.6, 0, 1),
+      };
+    }
+    if (kind === 'edge') {
+      // The meadow runs up to a big wood along one side, the side with the least water.
+      const sides = ['n', 's', 'w', 'e'].map(side => {
+        let wet = 0;
+        for (let i = 0; i < N; i++) {
+          const x = i % W, y = (i / W) | 0;
+          const d = side === 'n' ? y : side === 's' ? H - 1 - y : side === 'w' ? x : W - 1 - x;
+          if (d < 20 && w.water[i]) wet++;
+        }
+        return { side, wet: wet + r.range(0, 40) };
+      }).sort((a, b) => a.wet - b.wet);
+      const side = sides[0].side, depth = r.range(12, 18) * (small ? 0.7 : 1);
+      const inward = (x, y) => side === 'n' ? y : side === 's' ? H - y : side === 'w' ? x : W - x;
+      const along = (x, y) => side === 'n' || side === 's' ? x : y;
+      return {
+        dense: (x, y) => {
+          const bay = (hills(along(x, y) / 14 + 5.5, 71.3) - 0.5) * 22;       // bays and tongues
+          return ramp(depth + bay - inward(x, y) - ragged(x, y) * 0.5) * (near[idx(x, y)] < 2 ? 0 : 1);
+        },
+        pine: (x, y) => clamp(0.85 - inward(x, y) / depth * 0.6, 0.15, 0.85),
+      };
+    }
+    // 'bank': a wet wood along one stretch of the river or a lakeshore, broadleaf, thick by the water.
+    const shore = [];
+    for (let i = 0; i < N; i++) {
+      const x = i % W + 0.5, y = ((i / W) | 0) + 0.5;
+      if (!w.water[i] && near[i] < 1.5 && x > 15 && x < W - 15 && y > 12 && y < H - 12) shore.push({ x, y });
+    }
+    const c = shore.length ? r.pick(shore) : { x: W / 2, y: H / 2 }, reach = r.range(22, 30) * (small ? 0.7 : 1);
+    return {
+      dense: (x, y) => {
+        const n = near[idx(x, y)];
+        return n < 1 ? 0 : ramp(reach - Math.hypot(x - c.x, (y - c.y) * 1.2) - ragged(x, y)) * ramp(9 - n - ragged(x, y) * 0.6);
+      },
+      pine: () => 0.12,
+    };
+  });
+
+  // One tree per 2.3-tile cell where the wood is thick, fewer toward its edge.
+  const s = 2.3;
+  for (let gy = 0; gy < H; gy += s) for (let gx = 0; gx < W; gx += s) {
+    const x = gx + r.range(0.2, s - 0.2), y = gy + r.range(0.2, s - 0.2);
+    if (x < 1 || y < 1 || x > W - 1 || y > H - 1) continue;
+    let best = null, d = 0;
+    for (const wd of woods) { const v = wd.dense(x, y); if (v > d) { d = v; best = wd; } }
+    if (best && r.next() < d) plant(x, y, r.next() < best.pine(x, y));
+  }
+  // And a few small groves out in the meadow.
+  for (let g = 0; g < 4; g++) {
+    const gx = r.range(8, W - 8), gy = r.range(8, H - 8);
+    for (let k = r.int(3, 7); k > 0; k--) plant(gx + r.range(-5, 5), gy + r.range(-4, 4), r.next() >= 0.6);
+  }
+  shadeWoods(w);
+}
+
+// How shaded each tile is, 0..1, from the trees around it. game.js darkens the ground there.
+function shadeWoods(w) {
+  const wood = new Float32Array(W * H);
+  for (const d of w.decor) {
+    if (!d.tree) continue;
+    for (let y = Math.max(0, Math.floor(d.y - 3)); y <= Math.min(H - 1, d.y + 3); y++) {
+      for (let x = Math.max(0, Math.floor(d.x - 3)); x <= Math.min(W - 1, d.x + 3); x++) {
+        const q = ((x + 0.5 - d.x) ** 2 + (y + 0.5 - d.y) ** 2) / 3.2;
+        if (q < 3) wood[y * W + x] += 0.45 * Math.exp(-q);
+      }
+    }
+  }
+  w.wood = wood.map(v => Math.min(1, v));
 }
 
 // Where the water is, from the ground and the water level.
@@ -469,6 +567,45 @@ function growGrass(w, dt) {
 // grass, so a well-grazed meadow burns less than an overgrown one.
 
 const sky = w => WEATHER[w.weather.kind];
+
+// ---------------------------------------------------------------- camouflage
+//
+// A fox spots a still rabbit from further off when its coat stands out from the ground under
+// it. The ground is judged in the colours the meadow is drawn with. At night it is shadow, where
+// dark coats vanish and pale ones show, except where snow lies.
+
+const GROUND = {
+  seasons: [   // [bare ground, lush grass] per season
+    [[214, 197, 150], [118, 196, 92]],
+    [[226, 206, 142], [104, 178, 70]],
+    [[216, 182, 128], [184, 170, 82]],
+    [[228, 226, 218], [178, 200, 180]],
+  ],
+  ash: [74, 66, 60], snow: [246, 248, 252], night: [22, 30, 78],
+};
+const CAMO = [0.85, 1.5];        // a fox's spotting distance, from a perfect match to a clash
+const CAMO_CLASH = 0.8;         // how much a colour difference (0 same, about 1 very unlike) adds
+
+function groundRGB(w, x, y) {
+  const i = idx(x, y), [bare, lush] = GROUND.seasons[seasonOf(w.tick)];
+  let v = clamp(w.grass[i] / 0.85, 0, 1);
+  v = v * (2 - v);
+  const ash = w.ash[i] * (1 - v) * 0.85, snow = clamp(w.snow * 1.4 - 0.3, 0, 0.9);
+  return bare.map((b, k) => {
+    let c = lerp(b, lush[k], v);
+    c = lerp(c, GROUND.ash[k], ash);
+    c = lerp(c, GROUND.snow[k], snow);
+    return isNight(w.tick) ? lerp(c, GROUND.night[k], 0.6 * (1 - snow)) : c;   // moonlit snow stays bright
+  });
+}
+
+// How far off a fox can pick this rabbit out, as a share of its sight.
+function visibility(w, c) {
+  if (c.mode === 'flee') return CAMO[1];       // running, it's seen whatever its coat
+  const a = coatRGB(w, c), b = groundRGB(w, c.x, c.y);
+  const d = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) / 255;
+  return clamp(CAMO[0] + CAMO_CLASH * d, CAMO[0], CAMO[1]);
+}
 
 function setWeather(w, kind, ticks, player = false) {
   if (kind === w.weather.kind) { w.weather.until = Math.max(w.weather.until, w.tick + ticks); return; }
@@ -642,7 +779,7 @@ function pickName(w, species) {
 
 function founderGenes(w, species) {
   const r = w.rng, g = {};
-  for (const k of GENES) g[k] = clamp(0.5 + 0.12 * r.normal(), 0, 1);
+  for (const k of genesOf(species)) g[k] = clamp((k === 'moult' ? MOULT_START : 0.5) + 0.12 * r.normal(), 0, 1);
   if (species === 'rabbit') g.coat = ['A', 'A', 'D', 'D'].map(L => r.next() < COAT_RARE ? L.toLowerCase() : L).join('');
   else g.fur = r.next();
   return g;
@@ -650,7 +787,7 @@ function founderGenes(w, species) {
 
 function childGenes(w, mum, dad) {
   const r = w.rng, g = {};
-  for (const k of GENES) {
+  for (const k of mum.coat ? RABBIT_GENES : GENES) {
     let v = r.next() < 0.5 ? mum[k] : dad[k];
     if (r.next() < 0.35) v += 0.045 * r.normal();
     g[k] = clamp(v, 0, 1);
@@ -669,6 +806,16 @@ function coatOf(g) {
   const wild = g.coat.slice(0, 2).includes('A'), full = g.coat.slice(2).includes('D');
   return wild ? (full ? 'wild' : 'sand') : (full ? 'black' : 'blue');
 }
+// How white a rabbit has turned: it pales through late autumn and colours again early in spring.
+function whiteness(w, c) {
+  if (!c.genes.coat) return 0;
+  const y = (w.tick / TPD % YEAR_DAYS) / SEASON_DAYS;       // 0 to 4 through the year, spring first
+  const winter = y >= 3 ? 1 : y > 2.5 ? (y - 2.5) / 0.5 : y < 0.5 ? 1 - y / 0.5 : 0;
+  const m = clamp((c.genes.moult - MOULT_FROM) / (MOULT_TO - MOULT_FROM), 0, 1);
+  return m * m * (3 - 2 * m) * winter;
+}
+const coatRGB = (w, c) => COATS[coatOf(c.genes)].rgb.map((v, k) => lerp(v, WINTER_COAT[k], whiteness(w, c)));
+
 function hiddenCoats(g) {
   const out = [];
   if (g.coat.slice(0, 2).includes('A') && g.coat.slice(0, 2).includes('a')) out.push('black');
@@ -1243,7 +1390,8 @@ function hunt(w, c) {
   }
   if (!prey && (w.tick + c.id) % 5 === 0) {
     // Only a rabbit that isn't already watching this fox is worth sneaking up on.
-    prey = nearest(w, c, sight, 'rabbit', o => !(o.alert > 0 && o.threatId === c.id) && clearPath(w, c.x, c.y, o.x, o.y));
+    prey = nearest(w, c, sight * CAMO[1], 'rabbit', o => !(o.alert > 0 && o.threatId === c.id)
+      && dist2(c, o) < (sight * visibility(w, o)) ** 2 && clearPath(w, c.x, c.y, o.x, o.y));
     if (prey) { c.targetId = prey.id; c.mode = 'stalk'; }
   }
   if (!prey) return false;
@@ -1321,6 +1469,7 @@ function lifeTick(w, c) {
   if (c.pregnantUntil) b *= 1.25;
   const kind = w.weather.kind;
   if (kind === 'snow' && !c.hidden) b *= 1 + 0.5 * (1 - c.genes.size);   // small bodies feel the cold
+  if (w.snow > 0.3 && !c.hidden) b *= 1 - MOULT_WARM * whiteness(w, c);
   b += MOVE_COST * c.moved * c.moved / c.sp.walk * (kind === 'heat' ? 1.5 : 1);
   c.energy -= b;
   if (!c.sprinting) c.stamina = Math.min(1, c.stamina + (c.sleeping || c.mode === 'tired' ? 1 / 150 : 1 / 400));
@@ -1378,14 +1527,15 @@ function flushNewborn(w) {
 
 function traitMeans(w, species) {
   const m = {}; let n = 0;
-  for (const k of GENES) m[k] = 0;
+  const genes = genesOf(species);
+  for (const k of genes) m[k] = 0;
   for (const c of w.creatures) {
     if (!c.alive || c.species !== species) continue;
-    for (const k of GENES) m[k] += c.genes[k];
+    for (const k of genes) m[k] += c.genes[k];
     n++;
   }
   if (!n) return null;
-  for (const k of GENES) m[k] /= n;
+  for (const k of genes) m[k] /= n;
   return m;
 }
 
@@ -1546,10 +1696,10 @@ function mood(w, c) {
 }
 
 const api = {
-  W, H, TPD, SHALLOW, DEEP, SEASON_DAYS, YEAR_DAYS, SEASONS, SPECIES, GENES, COATS, WEATHER,
+  W, H, TPD, SHALLOW, DEEP, SEASON_DAYS, YEAR_DAYS, SEASONS, SPECIES, GENES, COATS, GROUND, WEATHER,
   createWorld, step, clock, isNight, phaseOf, seasonOf, mood, ageDays, growth, isAdult,
   addCreature, paintGrass, setSky, lockSky, zap, traitMeans, walkable,
-  coatOf, hiddenCoats, coatCounts,
+  coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 else root.Sim = api;
