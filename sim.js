@@ -14,7 +14,7 @@
 
 // ---------------------------------------------------------------- world constants
 
-const W = 180, H = 120;         // map size in tiles
+const W = 150, H = 100;         // map size in tiles
 const ROOM_TILES = 9000;        // dry tiles the numbers below were tuned for; bigger meadows hold more
 const TPD = 600;                // ticks per day (20 s at 1x)
 const SEASON_DAYS = 5;
