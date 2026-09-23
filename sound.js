@@ -368,9 +368,16 @@ const snowChime = t => kalimba(out(rand(-1, 1), 0.7, 0.3), note(Math.floor(rand(
 
 function update(s) { Object.assign(state, s); }
 
+// Silence isn't free: the reverb and the ambient loops keep running at zero volume. So once
+// the fade-out is done, the whole sound engine pauses, and picks up where it was when turned on.
+let sleepTimer = 0;
 function setEnabled(on) {
   enabled = on;
-  if (master) master.gain.setTargetAtTime(on ? volume : 0, ac.currentTime, 0.3);
+  if (!master) return;
+  clearTimeout(sleepTimer);
+  if (on) ac.resume();
+  master.gain.setTargetAtTime(on ? volume : 0, ac.currentTime, 0.3);
+  if (!on) sleepTimer = setTimeout(() => { if (!enabled) ac.suspend(); }, 2000);
 }
 function setVolume(v) {
   volume = v;

@@ -72,18 +72,15 @@ const SPECIES = {
   },
 };
 
-const NAMES = {
-  rabbit: ['Clover', 'Bun', 'Pip', 'Hazel', 'Thistle', 'Bramble', 'Poppy', 'Juniper', 'Nutmeg',
-    'Willow', 'Biscuit', 'Daisy', 'Mochi', 'Pudding', 'Maple', 'Sorrel', 'Fern', 'Button', 'Honey',
-    'Pebble', 'Tansy', 'Snowdrop', 'Acorn', 'Barley', 'Cocoa', 'Dandelion', 'Figgy', 'Hops', 'Iris',
-    'Jellybean', 'Kiwi', 'Lupin', 'Marzipan', 'Nibbles', 'Oat', 'Peanut', 'Quince', 'Rosie', 'Sage',
-    'Toffee', 'Violet', 'Waffle', 'Yarrow', 'Zinnia', 'Cinnamon', 'Muffin', 'Pumpkin', 'Sprout',
-    'Truffle', 'Bluebell', 'Cotton', 'Parsley', 'Radish', 'Basil', 'Crumpet', 'Dumpling',
-    'Primrose', 'Wisp', 'Chestnut', 'Tumble'],
-  fox: ['Rusty', 'Ember', 'Blaze', 'Saffron', 'Copper', 'Scarlet', 'Sly', 'Rowan', 'Cinder',
-    'Fennec', 'Vixen', 'Tod', 'Flicker', 'Paprika', 'Autumn', 'Sienna', 'Chili', 'Marmalade',
-    'Russet', 'Sunny', 'Fable', 'Ash', 'Juno', 'Tango', 'Pepper', 'Nova', 'Blitz', 'Kindle',
-    'Amber', 'Rufus'],
+const NAME_PARTS = {
+  rabbit: {
+    prefixes: ['Cott', 'Snow', 'Bramb', 'Wil', 'Truf', 'Hazel', 'Ac', 'Peb', 'Dan', 'Tans'],
+    suffixes: ['tail', 'drop', 'le', 'low', 'flee', 'nut', 'orn', 'ble', 'delion', 'sy', 'foot', 'paws']
+  },
+  fox: {
+    prefixes: ['Rus', 'Em', 'Scar', 'Cin', 'Fen', 'Marm', 'Ash', 'Kin', 'Am', 'Vix'],
+    suffixes: ['ty', 'ber', 'let', 'der', 'nec', 'alade', 'ley', 'dle', 'ber', 'en', 'flame', 'spark']
+  }
 };
 
 // ---------------------------------------------------------------- random
@@ -107,6 +104,13 @@ function makeRng(seed) {
       return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * next());
     },
     pick: arr => arr[Math.floor(next() * arr.length)],
+    shuffle: arr => {
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(next() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    },
   };
 }
 
@@ -292,7 +296,7 @@ function strike(w, x, y) {
   const i = idx(x, y);
   const fire = !w.water[i] && (tree ? w.wet < 0.5 : w.wet < 0.4 && w.grass[i] > 0.15) && ignite(w, i);
   // Thunder: every rabbit out in the open bolts for a burrow.
-  forEachNear(w, x, y, 22, o => { if (o.species === 'rabbit') frighten(o, x, y, 'thunder'); });
+  forEachNear(w, x, y, 22, o => frighten(o, x, y, 'thunder'), 'rabbit');
   emit(w, { type: 'lightning', x, y, tree: !!tree, victim, fire });
 }
 
@@ -349,21 +353,32 @@ function smellSmoke(w, c) {
 
 // ---------------------------------------------------------------- spatial grid
 
+// One grid with everyone, and one per species: a rabbit looking out for foxes then only
+// looks at foxes, not at the whole warren around it. Rebuilt every tick, so the cells are
+// reused and only their counts reset (emptying an array makes it reallocate as it refills).
+const makeGrid = () => ({ cells: Array.from({ length: GW * GH }, () => []), n: new Int32Array(GW * GH) });
+
 function buildGrid(w) {
-  for (const cell of w.grid) cell.length = 0;
+  const all = w.grid, rabbit = w.grids.rabbit, fox = w.grids.fox;
+  all.n.fill(0); rabbit.n.fill(0); fox.n.fill(0);
   for (const c of w.creatures) {
     if (!c.alive || c.hidden) continue;
-    const gx = clamp((c.x / CELL) | 0, 0, GW - 1), gy = clamp((c.y / CELL) | 0, 0, GH - 1);
-    w.grid[gy * GW + gx].push(c);
+    const k = clamp((c.y / CELL) | 0, 0, GH - 1) * GW + clamp((c.x / CELL) | 0, 0, GW - 1);
+    const mine = c.species === 'rabbit' ? rabbit : fox;
+    all.cells[k][all.n[k]++] = c;
+    mine.cells[k][mine.n[k]++] = c;
   }
 }
 
-function forEachNear(w, x, y, radius, fn) {
+function forEachNear(w, x, y, radius, fn, species) {
+  const grid = species ? w.grids[species] : w.grid;
   const x0 = clamp(((x - radius) / CELL) | 0, 0, GW - 1), x1 = clamp(((x + radius) / CELL) | 0, 0, GW - 1);
   const y0 = clamp(((y - radius) / CELL) | 0, 0, GH - 1), y1 = clamp(((y + radius) / CELL) | 0, 0, GH - 1);
   const r2 = radius * radius;
   for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) {
-    for (const o of w.grid[gy * GW + gx]) {
+    const k = gy * GW + gx, cell = grid.cells[k];
+    for (let j = 0, n = grid.n[k]; j < n; j++) {
+      const o = cell[j];
       if (!o.alive || o.hidden) continue;
       const d2 = (o.x - x) ** 2 + (o.y - y) ** 2;
       if (d2 <= r2) fn(o, d2);
@@ -374,10 +389,10 @@ function forEachNear(w, x, y, radius, fn) {
 function nearest(w, c, radius, species, pred) {
   let best = null, bd = Infinity;
   forEachNear(w, c.x, c.y, radius, (o, d2) => {
-    if (o === c || o.species !== species || d2 >= bd) return;
+    if (o === c || d2 >= bd) return;
     if (pred && !pred(o)) return;
     best = o; bd = d2;
-  });
+  }, species);
   return best;
 }
 
@@ -391,10 +406,36 @@ function roman(n) {
 }
 
 function pickName(w, species) {
-  const base = w.rng.pick(NAMES[species]);
+  // 1. Initialize the name pool container if it doesn't exist
+  if (!w.namePools) {
+    w.namePools = {};
+  }
+
+  // 2. If the species pool is missing or empty, generate a new shuffled deck
+  if (!w.namePools[species] || w.namePools[species].length === 0) {
+    const parts = NAME_PARTS[species];
+    const combinations = [];
+
+    // Generate every possible combination (e.g., 10 prefixes * 12 suffixes = 120 names)
+    for (const prefix of parts.prefixes) {
+      for (const suffix of parts.suffixes) {
+        combinations.push(prefix + suffix);
+      }
+    }
+
+    // Shuffle the newly created list so names are drawn in a random order
+    // (Assuming your w.rng object has a shuffle method. If not, use a standard Fisher-Yates shuffle here)
+    w.namePools[species] = w.rng.shuffle(combinations);
+  }
+
+  // 3. Draw a unique name from the end of the shuffled array
+  const base = w.namePools[species].pop();
+
+  // 4. Maintain your fallback logic just in case they spawn more entities than combinations
   const key = species + ':' + base;
   const n = (w.nameCounts.get(key) || 0) + 1;
   w.nameCounts.set(key, n);
+
   return n === 1 ? base : base + ' ' + roman(n);
 }
 
@@ -441,10 +482,11 @@ function makeCreature(w, species, x, y, genes, parents) {
     mumId: parents ? parents.mum.id : 0, dadId: parents ? parents.dadId : 0,
     born: w.tick, lifespan: sp.lifeDays * TPD * r.range(0.8, 1.2),
     alive: true, died: 0, cause: '',
-    energy: 0, stamina: 1, heading: r.range(0, Math.PI * 2), facing: 1,
+    energy: 0, stamina: 1, heading: r.range(0, Math.PI * 2), facing: 1, turnBias: 1,
     mode: 'wander', target: null, targetId: 0, timer: 0, moved: 0,
     sprinting: false, sleeping: false, hidden: false, burrow: null, home: null,
     alert: 0, threatId: 0, chaseT: 0, fright: 0, frightX: 0, frightY: 0, frightWhat: '',
+    wary: 0, waryX: 0, waryY: 0, detour: 0, detourX: 0, detourY: 0, nemesisId: 0, haunt: null,
     pregnantUntil: 0, cooldownUntil: 0, dadGenes: null, dadIdPending: 0, dadGenPending: 0,
     kids: 0, kills: 0, escapes: 0, story: [],
   };
@@ -491,32 +533,62 @@ function addCreature(w, species, x, y, opts = {}) {
 
 // ---------------------------------------------------------------- movement
 
-const TURNS = [0, 0.6, -0.6, 1.2, -1.2, 1.9, -1.9, 2.6, -2.6];
+// True when the straight walk from one point to another stays on land (checked every half tile).
+function clearPath(w, x0, y0, x1, y1) {
+  const n = Math.ceil(Math.hypot(x1 - x0, y1 - y0) * 2);
+  for (let k = 1; k <= n; k++) if (!walkable(w, x0 + (x1 - x0) * k / n, y0 + (y1 - y0) * k / n)) return false;
+  return true;
+}
+
+// Straight at the target while the way is clear. When water (or the map edge) blocks the step,
+// turn off it and then follow that shore, keeping it on the same side, until the straight line
+// to the target is all land again. Hugging the shore is what gets an animal out of the bays
+// between pond lobes; turning left and right on the spot just jitters there.
+const TURN_MAGS = [0.6, 1.2, 1.9, 2.6];
+const HUG = [-0.3, 0, 0.35, 0.7, 1.1, 1.6, 2.2, 2.8, 3.4];   // leaning into the shore first
 
 function moveToward(w, c, tx, ty, v) {
   const dx = tx - c.x, dy = ty - c.y, d = Math.hypot(dx, dy);
   if (d < 1e-6) return true;
   const stepLen = Math.min(v, d);
-  const a = Math.atan2(dy, dx);
-  for (const off of TURNS) {
+  if (c.detour > 0) {
+    const jumped = (tx - c.detourX) ** 2 + (ty - c.detourY) ** 2 > 4;   // a new goal; a mate drifting is not
+    c.detourX = tx; c.detourY = ty;
+    if (--c.detour === 0 || jumped || clearPath(w, c.x, c.y, tx, ty)) c.detour = 0;
+  }
+  const bias = c.turnBias || 1;
+  let a, offs;
+  if (c.detour) { a = c.heading; offs = HUG.map(o => o * bias); }
+  else {
+    a = Math.atan2(dy, dx); offs = [0];
+    for (const m of TURN_MAGS) offs.push(bias * m, -bias * m);
+  }
+  for (const off of offs) {
     const nx = c.x + Math.cos(a + off) * stepLen, ny = c.y + Math.sin(a + off) * stepLen;
     if (!walkable(w, nx, ny)) continue;
+    if (!c.detour && off !== 0) {
+      c.turnBias = off > 0 ? 1 : -1;
+      c.detour = 500; c.detourX = tx; c.detourY = ty;
+    }
     c.x = nx; c.y = ny; c.heading = a + off; c.moved = stepLen;
     const cx = Math.cos(c.heading);
     if (Math.abs(cx) > 0.25) c.facing = cx > 0 ? 1 : -1;
     return d <= v;
   }
-  c.target = null;   // boxed in: forget the target
+  c.target = null; c.detour = 0;   // boxed in: forget the target
   return false;
 }
 
 function wander(w, c, pace) {
   if (!c.target || c.timer-- <= 0 || (Math.abs(c.target.x - c.x) < 0.3 && Math.abs(c.target.y - c.y) < 0.3)) {
-    c.heading += 0.9 * w.rng.normal();
-    const reach = w.rng.range(4, 11);
-    let tx = c.x + Math.cos(c.heading) * reach, ty = c.y + Math.sin(c.heading) * reach;
-    if (!inBounds(tx, ty)) { c.heading += Math.PI; tx = clamp(tx, 2, W - 2); ty = clamp(ty, 2, H - 2); }
-    c.target = { x: tx, y: ty };
+    let tx, ty, tries = 0;
+    do {
+      c.heading += 0.9 * w.rng.normal();
+      const reach = w.rng.range(4, 11);
+      tx = c.x + Math.cos(c.heading) * reach; ty = c.y + Math.sin(c.heading) * reach;
+      if (!inBounds(tx, ty)) { c.heading += Math.PI; tx = clamp(tx, 2, W - 2); ty = clamp(ty, 2, H - 2); }
+    } while (!clearPath(w, c.x, c.y, tx, ty) && ++tries < 8);
+    c.target = clearPath(w, c.x, c.y, tx, ty) ? { x: tx, y: ty } : { x: c.x, y: c.y };
     c.timer = 200;
   }
   c.mode = 'wander';
@@ -634,25 +706,36 @@ function rabbitTick(w, c) {
   const night = shelterTime(w);
 
   // 1. Danger. Grazing heads-down means a fox is not always noticed; a charging one is.
+  // A close call leaves a rabbit jumpy for a while after, longer than the alarm itself lasts:
+  // easier to spook, and off its food near wherever the fox was last seen.
   if (c.alert > 0) c.alert--;
+  if (c.wary > 0) c.wary--;
   if ((t + c.id) % 2 === 0) {
     const fox = nearest(w, c, c.sight * sky(w).sight, 'fox');
     if (fox) {
       // A charging fox is seen quickly but not instantly: that beat is the pounce's window.
       const known = fox.id === c.threatId && c.alert > 0;
       const chance = fox.mode === 'chase' ? 0.12 + 0.2 * c.genes.eyes
-        : (0.01 + 0.05 * c.genes.eyes) * (c.sleeping ? 0.3 : 1) * (night ? 0.5 : 1);
-      if (known || w.rng.next() < chance) { c.alert = 120; c.threatId = fox.id; }
+        : (0.01 + 0.05 * c.genes.eyes) * (c.sleeping ? 0.3 : 1) * (night ? 0.5 : 1) * (c.wary > 0 ? 1.6 : 1)
+          * (fox.id === c.nemesisId ? 2 : 1);   // the fox that nearly got it, it looks out for
+      if (known || w.rng.next() < chance) {
+        if (!known) spotted(w, c, fox);
+        c.alert = 120; c.threatId = fox.id; c.wary = 900; c.waryX = fox.x; c.waryY = fox.y;
+      }
     }
   }
   if (c.alert > 0) {
     const f = w.byId.get(c.threatId);
     const keep = c.mode === 'flee' ? 1.4 : 1;
-    if (f && f.alive && dist2(c, f) < (c.fleeDist * keep) ** 2) return flee(w, c, f);
+    if (f && f.alive && dist2(c, f) < (c.fleeDist * keep) ** 2) {
+      c.wary = 900; c.waryX = f.x; c.waryY = f.y;
+      return flee(w, c, f);
+    }
   }
   smellSmoke(w, c);
   if (c.fright > 0) { c.fright--; return flee(w, c, { id: 0, x: c.frightX, y: c.frightY }); }
   if (c.mode === 'flee') { c.mode = 'wander'; c.target = null; c.sleeping = false; }
+  if (c.mode === 'alarm') { if (--c.timer > 0) return; c.mode = 'wander'; c.target = null; }
 
   // 2. Babies stay near mum.
   if (growth(w, c) < 0.5) {
@@ -686,7 +769,8 @@ function rabbitTick(w, c) {
     c.mode = 'wander'; c.target = null;
   }
   if (e < satiation) {
-    if (w.grass[i] > 0.3) { c.mode = 'graze'; eat(w, c, i); return; }
+    const skittish = c.wary > 0 && e > 0.4 && (c.x - c.waryX) ** 2 + (c.y - c.waryY) ** 2 < 36;
+    if (w.grass[i] > 0.3 && !skittish) { c.mode = 'graze'; eat(w, c, i); return; }
     if (c.mode !== 'food' || !c.target || (t + c.id) % 20 === 0) {
       const spot = findFood(w, c);
       if (spot) { c.mode = 'food'; c.target = spot; }
@@ -706,10 +790,10 @@ function rabbitTick(w, c) {
   if ((t + c.id) % 30 === 0) {
     if (w.rng.next() < c.genes.friendly) {
       let sx = 0, sy = 0, n = 0;
-      forEachNear(w, c.x, c.y, c.sight, o => { if (o !== c && o.species === 'rabbit') { sx += o.x; sy += o.y; n++; } });
+      forEachNear(w, c.x, c.y, c.sight, o => { if (o !== c) { sx += o.x; sy += o.y; n++; } }, 'rabbit');
       if (n > 0) {
         sx /= n; sy /= n;
-        if ((sx - c.x) ** 2 + (sy - c.y) ** 2 > 9) { c.mode = 'friends'; c.target = { x: sx, y: sy }; }
+        if ((sx - c.x) ** 2 + (sy - c.y) ** 2 > 9 && clearPath(w, c.x, c.y, sx, sy)) { c.mode = 'friends'; c.target = { x: sx, y: sy }; }
       }
     } else if (w.rng.next() < 0.4) { c.mode = 'rest'; c.timer = w.rng.int(60, 200); return; }
   }
@@ -736,11 +820,36 @@ function findFood(w, c) {
   for (let k = 0; k < 14; k++) {
     const a = w.rng.range(0, Math.PI * 2), r = w.rng.range(1, c.sight);
     const x = c.x + Math.cos(a) * r, y = c.y + Math.sin(a) * r;
-    if (!walkable(w, x, y)) continue;
+    if (!clearPath(w, c.x, c.y, x, y)) continue;   // grass across the pond doesn't count
     const score = w.grass[idx(x, y)] / (1 + 0.1 * r);
     if (score > bestScore) { bestScore = score; best = { x: (x | 0) + 0.5, y: (y | 0) + 0.5 }; }
   }
   return best;
+}
+
+// A fox seen before it is close: sit up, thump, stare it down. A stalking fox that has been
+// seen mostly gives up, the surprise is gone; a starving one charges anyway.
+function spotted(w, c, fox) {
+  if (fox.id === c.nemesisId && c.wary <= 0) note(w, c, '😨', `${fox.name} is back`);
+  if (dist2(c, fox) < c.fleeDist ** 2) return;          // too close to stand about: run instead
+  c.mode = 'alarm'; c.timer = 40; c.sleeping = false; c.target = null;
+  thump(w, c, fox);
+  if (fox.targetId !== c.id || fox.mode !== 'stalk') return;
+  if (fox.energy < 0.3 * fox.maxEnergy) { fox.mode = 'chase'; fox.chaseT = 0; return; }
+  fox.targetId = 0; fox.mode = 'wander'; fox.target = null;
+  missed(fox);
+  note(w, c, '‼️', `Spotted ${fox.name} sneaking up`);
+  note(w, fox, '👀', `${c.name} saw me coming`);
+  emit(w, { type: 'spotted', rabbit: c, fox });
+}
+
+// Thump! Rabbits nearby look up, and know which fox it is.
+function thump(w, c, fox) {
+  forEachNear(w, c.x, c.y, 6, o => {
+    if (o === c || o.alert > 0) return;
+    o.alert = 80; o.threatId = fox.id; o.sleeping = false;
+    if (o.mode !== 'flee') { o.mode = 'alarm'; o.timer = w.rng.int(15, 40); o.target = null; }
+  }, 'rabbit');
 }
 
 // Runs from a fox, or from anything with an x and a y (thunder, fire).
@@ -748,9 +857,7 @@ function flee(w, c, fox) {
   if (c.mode !== 'flee') {
     c.mode = 'flee'; c.sleeping = false; c.threatId = fox.id;
     c.refuge = pickRefuge(w, c, fox);
-    if (fox.id) forEachNear(w, c.x, c.y, 6, o => {       // thump! nearby rabbits look up
-      if (o !== c && o.species === 'rabbit' && o.alert <= 0) { o.alert = 80; o.threatId = fox.id; }
-    });
+    if (fox.id) thump(w, c, fox);
   }
   let tx, ty;
   const b = c.refuge;
@@ -761,8 +868,12 @@ function flee(w, c, fox) {
       return;
     }
   } else {
-    const a = Math.atan2(c.y - fox.y, c.x - fox.x);
-    tx = c.x + Math.cos(a) * 8; ty = c.y + Math.sin(a) * 8;
+    // Straight away from the fox, or as close to that as the ponds allow.
+    const a = Math.atan2(c.y - fox.y, c.x - fox.x), b = c.turnBias || 1;
+    for (const off of [0, 0.5, -0.5, 1, -1, 1.5, -1.5]) {
+      tx = c.x + Math.cos(a + off * b) * 6; ty = c.y + Math.sin(a + off * b) * 6;
+      if (clearPath(w, c.x, c.y, tx, ty)) break;
+    }
   }
   const sprinting = c.stamina > 0;
   moveToward(w, c, tx, ty, (sprinting ? c.sprint : c.walk) * kidPace(w, c));
@@ -774,7 +885,7 @@ function pickRefuge(w, c, fox) {
   let best = null, bd = 8 * 8;
   for (const b of w.burrows) {
     const bx = b.x - c.x, by = b.y - c.y, d2 = bx * bx + by * by;
-    if (d2 >= bd) continue;
+    if (d2 >= bd || !clearPath(w, c.x, c.y, b.x, b.y)) continue;
     const bdl = Math.sqrt(d2) || 1;
     const towardFox = (bx * fx + by * fy) / (bdl * fd);
     if (bdl < 2.5 || towardFox < 0.3) { best = b; bd = d2; }
@@ -822,6 +933,11 @@ function foxTick(w, c) {
   if (e < 0.75 && growth(w, c) > 0.3 && hunt(w, c)) return;
 
   if (c.mode === 'rest') { if (--c.timer > 0) return; c.mode = 'wander'; }
+  // Hungry, nothing in sight: back to where the last catch was. Arriving to nobody is a miss.
+  if (e < 0.75 && c.haunt) {
+    if (dist2(c, c.haunt) > 16) { c.mode = 'prowl'; moveToward(w, c, c.haunt.x, c.haunt.y, c.walk * 0.8); return; }
+    if (c.mode === 'prowl') missed(c);
+  }
   wander(w, c, 0.8);
 }
 
@@ -833,8 +949,15 @@ function hunt(w, c) {
     if (prey.alive && c.mode === 'chase') escaped(w, prey, c, prey.hidden ? 'burrow' : 'outran');
     prey = null; c.targetId = 0; c.mode = 'wander';
   }
+  // Foxes don't swim. A rabbit across the water is out of reach, and one that gets water
+  // between itself and the fox mid-chase has got away.
+  if (prey && (w.tick + c.id) % 5 === 0 && !clearPath(w, c.x, c.y, prey.x, prey.y)) {
+    if (c.mode === 'chase') escaped(w, prey, c, 'pond');
+    prey = null; c.targetId = 0; c.mode = 'wander';
+  }
   if (!prey && (w.tick + c.id) % 5 === 0) {
-    prey = nearest(w, c, sight, 'rabbit');
+    // Only a rabbit that isn't already watching this fox is worth sneaking up on.
+    prey = nearest(w, c, sight, 'rabbit', o => !(o.alert > 0 && o.threatId === c.id) && clearPath(w, c.x, c.y, o.x, o.y));
     if (prey) { c.targetId = prey.id; c.mode = 'stalk'; }
   }
   if (!prey) return false;
@@ -858,9 +981,17 @@ function hunt(w, c) {
 
 function escaped(w, rabbit, fox, how) {
   rabbit.escapes++;
-  note(w, rabbit, '💨', how === 'burrow' ? `Dived into a burrow to escape ${fox.name}` : `Outran ${fox.name}`);
+  rabbit.nemesisId = fox.id;   // it won't forget this one
+  missed(fox);
+  note(w, rabbit, '💨', how === 'burrow' ? `Dived into a burrow to escape ${fox.name}`
+    : how === 'pond' ? `Got away from ${fox.name} across the pond` : `Outran ${fox.name}`);
   note(w, fox, '😤', `${rabbit.name} got away`);
   emit(w, { type: 'escape', rabbit, fox, how });
+}
+
+// A hunt that came to nothing. Three of those and the old hunting ground is forgotten.
+function missed(fox) {
+  if (fox.haunt && --fox.haunt.n <= 0) fox.haunt = null;
 }
 
 function catchPrey(w, fox, rabbit) {
@@ -868,13 +999,12 @@ function catchPrey(w, fox, rabbit) {
   fox.energy = Math.min(fox.maxEnergy, fox.energy + gain);
   fox.kills++;
   fox.mode = 'eat'; fox.timer = 80; fox.targetId = 0;
+  fox.haunt = { x: rabbit.x, y: rabbit.y, n: 3 };   // good hunting here; worth a few more tries
   note(w, fox, '🍖', `Caught ${rabbit.name}`);
   // Share with own young cubs nearby.
   forEachNear(w, fox.x, fox.y, 8, o => {
-    if (o.species === 'fox' && o.mumId === fox.id && growth(w, o) < 0.6) {
-      o.energy = Math.min(o.maxEnergy, o.energy + 30);
-    }
-  });
+    if (o.mumId === fox.id && growth(w, o) < 0.6) o.energy = Math.min(o.maxEnergy, o.energy + 30);
+  }, 'fox');
   die(w, rabbit, 'fox', fox);
 }
 
@@ -922,7 +1052,7 @@ function createWorld(seed, opts = {}) {
   const w = {
     seed, rng: makeRng(seed), tick: Math.floor(TPD * 0.04),
     nextId: 1, creatures: [], newborn: [], byId: new Map(), events: [],
-    grid: Array.from({ length: GW * GH }, () => []),
+    grid: makeGrid(), grids: { rabbit: makeGrid(), fox: makeGrid() },
     nameCounts: new Map(), anyDied: false,
     weather: { kind: 'clear', until: 0 }, skyLocked: false, wet: 0.3, snow: 0,
     fire: new Float32Array(W * H), ash: new Float32Array(W * H), burning: [], blaze: 0,
@@ -1100,6 +1230,7 @@ function mood(w, c) {
       if (c.fright > 0) return c.frightWhat === 'fire' ? { emoji: '🔥', text: 'Running from the fire!' }
         : { emoji: '⚡', text: 'Spooked by thunder!' };
       return { emoji: '😱', text: `Running from ${w.byId.get(c.threatId)?.name ?? 'a fox'}!` };
+    case 'alarm': return { emoji: '‼️', text: `Spotted ${w.byId.get(c.threatId)?.name ?? 'a fox'}!` };
     case 'hide': return { emoji: '🫣', text: 'Hiding in a burrow' };
     case 'sleep': return { emoji: '💤', text: c.hidden ? (storm ? 'Snug in the burrow, out of the storm' : 'Asleep in the burrow') : 'Napping' };
     case 'home': return { emoji: '🏠', text: storm ? 'Hurrying home out of the storm' : 'Heading home for the night' };
@@ -1107,6 +1238,7 @@ function mood(w, c) {
     case 'love': return { emoji: '💕', text: other ? `Courting ${other.name}` : 'Looking for love' };
     case 'graze': return { emoji: '😋', text: 'Munching grass' };
     case 'food': return { emoji: '🌿', text: 'Off to find better grass' };
+    case 'prowl': return { emoji: '🐾', text: 'Back to good hunting ground' };
     case 'stalk': return { emoji: '👀', text: other ? `Sneaking up on ${other.name}` : 'Sneaking' };
     case 'chase': return { emoji: '💨', text: other ? `Chasing ${other.name}!` : 'Chasing!' };
     case 'eat': return { emoji: '🍖', text: 'Eating' };

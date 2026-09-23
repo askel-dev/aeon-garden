@@ -15,7 +15,7 @@ const ui = {
   speed: 1, sound: false, tool: 'look', selectedId: 0, hoverId: 0, follow: false,
   trail: [], effects: [], diary: new Map(),
   lastNews: {}, newsLog: [], newsOpen: false, records: { rabbit: 0, fox: 0 }, crashSaid: { rabbit: -1, fox: -1 }, seenHistory: 0,
-  releaseSex: { rabbit: 'F', fox: 'F' },
+  releaseSex: { rabbit: 'F', fox: 'F' }, mini: false, ring: null,
   stats: { open: false, show: 'rabbit', range: 'five', hover: null },
   sky: { mix: {}, tick: 0, bolt: null, boom: -1e9, rainbow: 0, menu: false },
 };
@@ -53,6 +53,9 @@ new ResizeObserver(() => {
   barPad = $('#toolbar').offsetHeight + 16;
   document.documentElement.style.setProperty('--bar', barPad + 'px');
 }).observe($('#toolbar'));
+new ResizeObserver(() => {            // on a phone the time pill sits under the meadow card
+  document.documentElement.style.setProperty('--meadow-h', $('#meadow').offsetHeight + 'px');
+}).observe($('#meadow'));
 
 const toScreen = (x, y) => [(x - cam.x) * cam.zoom + vw / 2, (y - cam.y) * cam.zoom + vh / 2];
 const toWorld = (sx, sy) => [(sx - vw / 2) / cam.zoom + cam.x, (sy - vh / 2) / cam.zoom + cam.y];
@@ -70,31 +73,95 @@ function zoomAt(sx, sy, z) {
 const EMOJI_FONT = '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
 const spriteCache = new Map();
 
-function sprite(emoji, px, tint) {
+function sprite(emoji, px, tint, leaf, center) {
   px = Math.max(4, Math.round(px));
-  const key = emoji + '|' + px + '|' + (tint || '');
+  const key = emoji + '|' + px + '|' + (tint || '') + '|' + (leaf ? leaf.key : '') + (center ? '|c' : '');
   let s = spriteCache.get(key);
   if (s) return s;
   if (spriteCache.size > 2000) spriteCache.clear();
   const size = Math.ceil(px * 1.3 * dpr);
   const c = document.createElement('canvas');
   c.width = c.height = size;
-  const g = c.getContext('2d');
+  const g = c.getContext('2d', leaf && { willReadFrequently: true });   // repainting reads pixels back
   g.textAlign = 'center'; g.textBaseline = 'middle';
   g.font = `${px * dpr}px ${EMOJI_FONT}`;
   g.fillText(emoji, size / 2, size / 2 + px * dpr * 0.06);
+  // Each emoji sits a bit differently in its box (‼️, 👀 and 🤝 most of all). Where it has to
+  // sit dead centre, as in a bubble, find its visible pixels and move them to the middle.
+  if (center) {
+    const d = g.getImageData(0, 0, size, size).data;
+    let x0 = size, x1 = -1, y0 = size, y1 = -1;
+    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+      if (d[(y * size + x) * 4 + 3] < 24) continue;
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+    }
+    if (x1 >= 0) {
+      g.clearRect(0, 0, size, size);
+      g.fillText(emoji, size - (x0 + x1 + 1) / 2, size / 2 + px * dpr * 0.06 + size / 2 - (y0 + y1 + 1) / 2);
+    }
+  }
   if (tint) {
     g.globalCompositeOperation = 'source-atop';
     g.fillStyle = tint;
     g.fillRect(0, 0, size, size);
   }
+  if (leaf) restyleTree(g, size, leaf);
   s = { canvas: c, size: size / dpr };
   spriteCache.set(key, s);
   return s;
 }
 
+// Trees wear the seasons by repainting their emoji (once per look; the sprite cache keeps it).
+// Leaf pixels are the ones clearly greener than they are red or blue. They take the new colour
+// but keep their shading, so the canopy keeps its light and shadow and the trunk stays brown.
+//   rgb, m   the new leaf colour, and how much of it
+//   where    'dark': only the shaded leaves (a pine's old inner needles), 'light': only the
+//            lit ones (fresh tips), otherwise all of them
+//   fall     how many leaves have dropped, in soft blotches; the trunk fades with them
+//   snow     how much snow lies along the tops
+const SNOW_RGB = [244, 248, 252];
+function hash2(x, y, seed) {
+  let h = Math.imul(x, 374761393) + Math.imul(y, 668265263) + Math.imul(seed, 982451653) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+function blotches(x, y, seed) {                          // smooth value noise, 0..1
+  const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;
+  const u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
+  return lerp(lerp(hash2(ix, iy, seed), hash2(ix + 1, iy, seed), u),
+              lerp(hash2(ix, iy + 1, seed), hash2(ix + 1, iy + 1, seed), u), v);
+}
+function restyleTree(g, size, look) {
+  const img = g.getImageData(0, 0, size, size), d = img.data;
+  const alpha = new Uint8Array(size * size);
+  for (let i = 0; i < alpha.length; i++) alpha[i] = d[i * 4 + 3];
+  const cap = Math.max(2, Math.round(size * 0.06)), cell = size / 9;
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const p = y * size + x, i = p * 4;
+    if (!alpha[p]) continue;
+    const leaf = clamp((d[i + 1] - Math.max(d[i], d[i + 2])) / 40, 0, 1), shade = d[i + 1] / 160;
+    if (look.m && leaf) {
+      const w = look.where === 'dark' ? clamp((0.9 - shade) * 3, 0, 1)
+              : look.where === 'light' ? clamp((shade - 0.75) * 3, 0, 1) : 1;
+      const lit = look.where === 'dark' ? Math.max(shade, 0.62) : shade;
+      const a = leaf * w * look.m;
+      for (let k = 0; k < 3; k++) d[i + k] = lerp(d[i + k], Math.min(255, look.rgb[k] * lit), a);
+    }
+    if (look.snow) {
+      const top = y < cap || alpha[p - cap * size] < 60;
+      const a = look.snow * (top ? 0.95 : 0.7 * leaf * clamp((shade - 0.45) * 2, 0, 1));
+      for (let k = 0; k < 3; k++) d[i + k] = lerp(d[i + k], SNOW_RGB[k], a);
+    }
+    if (look.fall) {
+      const keep = clamp((blotches(x / cell, y / cell, look.seed) - look.fall) * 5 + 0.5, 0, 1);
+      d[i + 3] *= lerp(1 - look.fall, keep, leaf);
+    }
+  }
+  g.putImageData(img, 0, 0);
+}
+
 function drawEmoji(emoji, x, y, px, opts = {}) {
-  const s = sprite(emoji, px, opts.tint);
+  const s = sprite(emoji, px, opts.tint, opts.leaf, opts.center);
   if (!opts.flip && !opts.squash && opts.alpha === undefined) {
     ctx.drawImage(s.canvas, x - s.size / 2, y - s.size / 2, s.size, s.size);
     return;
@@ -142,7 +209,7 @@ const lush = mask(), bare = mask();
 const limg = new ImageData(S.W, S.H), bimg = new ImageData(S.W, S.H);
 let jitter = new Float32Array(S.W * S.H);
 let patches = new Float32Array(S.W * S.H);              // soft warm (+) and cool (-) patches, a few tiles across
-let terrainTick = -1;
+let terrainTick = -1, terrainVersion = 0;
 let shoreSand = [200, 180, 130];
 
 function paintTerrain() {
@@ -177,7 +244,7 @@ function paintTerrain() {
   tctx.putImageData(timg, 0, 0);
   lush.getContext('2d').putImageData(limg, 0, 0);
   bare.getContext('2d').putImageData(bimg, 0, 0);
-  terrainTick = world.tick;
+  terrainTick = world.tick; terrainVersion++;
 }
 
 // The ground colours are one pixel per tile, so up close they go soft. On top goes crisp
@@ -235,19 +302,19 @@ const pebbles = detailTexture(140, (g, x, y, r) => {
 const bladeLayer = document.createElement('canvas');
 const bctx = bladeLayer.getContext('2d');
 
-function drawGroundDetail(z, ox, oy) {
+function drawGroundDetail(g, z, ox, oy) {
   const a = clamp((z - 7) / 9, 0, 1);                   // zoomed far out it would only shimmer
   if (a <= 0) return;
   // Draw in texture space, pinned to the meadow's corner, so the texture moves with the ground.
   const k = z / DETAIL_PX, W = S.W * DETAIL_PX, H = S.H * DETAIL_PX;
   const x0 = Math.max(0, -ox / k), y0 = Math.max(0, -oy / k);
   const x1 = Math.min(W, (vw - ox) / k), y1 = Math.min(H, (vh - oy) / k);
-  const inTexture = g => { g.translate(ox, oy); g.scale(k, k); };
-  ctx.save();
-  ctx.globalAlpha = a;
-  inTexture(ctx);
-  ctx.fillStyle = grain; ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
-  ctx.restore();
+  const inTexture = t => { t.translate(ox, oy); t.scale(k, k); };
+  g.save();
+  g.globalAlpha = a;
+  inTexture(g);
+  g.fillStyle = grain; g.fillRect(x0, y0, x1 - x0, y1 - y0);
+  g.restore();
   // Blades and pebbles each go on a layer of their own, then everything outside their mask
   // (thick grass for blades, bare ground for pebbles) is cut away.
   if (bladeLayer.width !== canvas.width || bladeLayer.height !== canvas.height) {
@@ -256,19 +323,58 @@ function drawGroundDetail(z, ox, oy) {
   for (const [pattern, where] of [[blades, lush], [pebbles, bare]]) {
     bctx.setTransform(1, 0, 0, 1, 0, 0);
     bctx.clearRect(0, 0, bladeLayer.width, bladeLayer.height);
-    bctx.setTransform(ctx.getTransform());
+    bctx.setTransform(g.getTransform());
     inTexture(bctx);
     bctx.fillStyle = pattern; bctx.fillRect(x0, y0, x1 - x0, y1 - y0);
     bctx.globalCompositeOperation = 'destination-in';
     bctx.imageSmoothingEnabled = true; bctx.imageSmoothingQuality = 'high';
     bctx.drawImage(where, 0, 0, W, H);
     bctx.globalCompositeOperation = 'source-over';
-    ctx.save();
-    ctx.globalAlpha = a;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.drawImage(bladeLayer, 0, 0);
-    ctx.restore();
+    g.save();
+    g.globalAlpha = a;
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.drawImage(bladeLayer, 0, 0);
+    g.restore();
   }
+}
+
+// The ground (colours, grain, blades, pebbles, ponds) is by far the priciest part of a frame:
+// a dozen passes over every pixel. It only changes when the terrain is repainted or the camera
+// moves, so once it has held still for a couple of frames it is kept in a layer of its own and
+// copied in one pass. The layer is drawn exactly as the screen would be, so it looks the same.
+const groundLayer = document.createElement('canvas');
+const gctx = groundLayer.getContext('2d');
+let groundKey = '', groundStill = 0, groundCached = '';
+
+function paintGround(g, z, ox, oy, fills) {
+  g.drawImage(terr, ox, oy, S.W * z, S.H * z);
+  drawGroundDetail(g, z, ox, oy);
+  drawPonds(g, z, ox, oy, fills);
+}
+
+function drawGround(z, ox, oy, shaking) {
+  const fills = pondFills();
+  const key = [cam.x, cam.y, z, vw, vh, dpr, terrainVersion, fills.join()].join('|');
+  groundStill = key === groundKey ? groundStill + 1 : 0;
+  groundKey = key;
+  if (shaking || groundStill < 2) { paintGround(ctx, z, ox, oy, fills); return; }   // on the move: draw it directly
+  if (groundCached !== key) {
+    if (groundLayer.width !== canvas.width || groundLayer.height !== canvas.height) {
+      groundLayer.width = canvas.width; groundLayer.height = canvas.height;
+    }
+    gctx.setTransform(1, 0, 0, 1, 0, 0);
+    gctx.clearRect(0, 0, groundLayer.width, groundLayer.height);
+    gctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    gctx.imageSmoothingEnabled = true;
+    gctx.imageSmoothingQuality = 'high';
+    paintGround(gctx, z, ox, oy, fills);
+    groundCached = key;
+  }
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.imageSmoothingEnabled = false;                     // a pixel-for-pixel copy
+  ctx.drawImage(groundLayer, 0, 0);
+  ctx.restore();
 }
 
 function plantEmoji(season, kind, g) {
@@ -285,8 +391,8 @@ function plantEmoji(season, kind, g) {
 
 // ------------------------------------------------------------------ drawing
 
-const MOVING = new Set(['wander', 'food', 'flee', 'chase', 'stalk', 'home', 'love', 'follow', 'friends']);
-const ALWAYS_BUBBLE = new Set(['flee', 'chase', 'love']);
+const MOVING = new Set(['wander', 'food', 'flee', 'chase', 'stalk', 'prowl', 'home', 'love', 'follow', 'friends']);
+const ALWAYS_BUBBLE = new Set(['flee', 'alarm', 'chase', 'love']);
 
 function visible(sx, sy, pad) { return sx > -pad && sy > -pad && sx < vw + pad && sy < vh + pad; }
 
@@ -305,11 +411,8 @@ function render(now) {
   ctx.imageSmoothingQuality = 'high';
   ctx.clearRect(-8, -8, vw + 16, vh + 16);          // past the meadow's edge the page shows through
   const [ox, oy] = toScreen(0, 0);
-  ctx.drawImage(terr, ox, oy, S.W * cam.zoom, S.H * cam.zoom);
-
   const z = cam.zoom, ck = S.clock(world);
-  drawGroundDetail(z, ox, oy);
-  drawPonds(z);
+  drawGround(z, ox, oy, q !== 0);
 
   // Flowers and tufts.
   const plantPx = z * 0.95;
@@ -359,9 +462,10 @@ function render(now) {
   const sn = sun(ck);
   for (const it of items) if (it.d) drawDecorShadow(it.d, it.sx, it.sy, sn);
   for (const it of items) {
-    if (it.d) drawDecor(it.d, it.sx, it.sy, now);
+    if (it.d) drawDecor(it.d, it.sx, it.sy, now, ck);
     else drawCreature(it.c, it.sx, it.sy, now);
   }
+  drawFallingLeaves(now);
 
   // Dusk and night.
   const dark = darkness(ck.phase);
@@ -434,7 +538,7 @@ function drawBubble(emoji, sx, sy, px, important) {
   ctx.lineTo(bx - r * 0.9, by + r * 1.3);
   ctx.lineTo(bx - r * 0.05, by + r * 0.95);
   ctx.fill(); ctx.stroke();
-  drawEmoji(emoji, bx, by, r * 1.3);
+  drawEmoji(emoji, bx, by, r * 1.3, { center: true });
 }
 
 function drawLabel(text, x, y) {
@@ -481,13 +585,13 @@ function drawSelectionUnder(c, now) {
 function drawSelectionOver(c, now) {
   if (!c.alive) return;
   const [sx, sy] = toScreen(c.x, c.y);
-  const other = world.byId.get(c.mode === 'flee' ? c.threatId : c.targetId);
-  if (other && other.alive && ['flee', 'chase', 'stalk', 'love'].includes(c.mode)) {
+  const other = world.byId.get(c.mode === 'flee' || c.mode === 'alarm' ? c.threatId : c.targetId);
+  if (other && other.alive && ['flee', 'alarm', 'chase', 'stalk', 'love'].includes(c.mode)) {
     const [ox, oy] = toScreen(other.x, other.y);
     ctx.save();
     ctx.setLineDash([4, 6]);
     ctx.lineDashOffset = -now / 40;
-    ctx.strokeStyle = c.mode === 'love' ? '#ff7aa8' : c.mode === 'flee' ? '#ff5a4a' : '#ffb13b';
+    ctx.strokeStyle = c.mode === 'love' ? '#ff7aa8' : c.mode === 'flee' || c.mode === 'alarm' ? '#ff5a4a' : '#ffb13b';
     ctx.lineWidth = 2.5;
     ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ox, oy); ctx.stroke();
     ctx.restore();
@@ -518,14 +622,97 @@ function treeSway(d, now) {
   return wind * (Math.sin(now / 900 - d.x * 0.15) + 0.35 * Math.sin(now / 340 + d.y));
 }
 
-function drawDecor(d, sx, sy, now) {
+// The trees follow real ones, loosely. Broadleaf 🌳: in autumn the green drains away and each
+// tree shows its own colour, gold (birch, beech), orange (maple), red (red maple) or russet
+// (oak). Then the leaves drop and it stands bare, except the oaks, which hold on to their dry
+// brown leaves all winter. In spring they leaf out lime green. Pines 🌲 stay green, but not
+// quite the same green: old inner needles yellow in autumn, the whole tree bronzes a little in
+// the cold, and new tips come in light at the end of spring. Snow settles on top of them all.
+const AUTUMN = [[238, 192, 56], [238, 192, 56], [240, 130, 40], [240, 130, 40], [200, 50, 42], [176, 100, 52]];
+const OAK = 5, DRY = [160, 120, 80], SPRING = [156, 214, 84];
+const OLD_NEEDLES = [214, 180, 64], BRONZE = [128, 118, 62], CANDLES = [176, 226, 100];
+// Older systems have no 🪾; there every broadleaf keeps its dry leaves through winter, like an oak.
+const HAS_BARE = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 32;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.font = `28px ${EMOJI_FONT}`; g.textBaseline = 'middle'; g.fillText('🪾', 2, 16);
+  const d = g.getImageData(0, 0, 32, 32).data;
+  let n = 0;
+  for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 128 && d[i] - d[i + 2] > 30) n++;
+  return n > 20;                                         // brown bark, not a blank box
+})();
+const step = (v, n) => Math.round(clamp(v, 0, 1) * n) / n;   // a few steps keep the sprite cache small
+const mix = (a, b, t) => a.map((v, i) => lerp(v, b[i], t));
+
+function treeLook(d, ck) {
+  const sp = (ck.dayInSeason - 1 + ck.phase) / S.SEASON_DAYS, s = ck.season;
+  const h = Math.abs(Math.floor(d.x * 7.3 + d.y * 13.1)), lag = (h % 5) * 0.04;
+  let rgb = SPRING, m = 0, where = '', fall = 0, drop = 0;
+  if (d.emoji === '🌲') {
+    const a = 0.6 + 0.2 * (h % 3);                       // some pines turn more than others
+    if (s === 2) { rgb = OLD_NEEDLES; m = 0.7 * a * Math.sin(Math.PI * sp); where = 'dark'; }
+    else if (s === 3 || (s === 0 && sp < 0.4)) { rgb = BRONZE; m = 0.45 * a * (s === 3 ? clamp(sp / 0.25, 0, 1) : 1 - sp / 0.4); }
+    else { rgb = CANDLES; m = 0.6 * (s === 0 ? clamp((sp - 0.4) / 0.4, 0, 1) : 1 - clamp(sp / 0.5, 0, 1)); where = 'light'; }
+  } else {
+    const hue = AUTUMN[h % AUTUMN.length], oak = h % AUTUMN.length === OAK || !HAS_BARE;
+    if (s === 2) {
+      const turn = clamp((sp - 0.05 - lag) / 0.4, 0, 1);
+      rgb = mix(hue, DRY, clamp((sp - 0.65 - lag) / 0.35, 0, 1) * (oak ? 1 : 0.5)); m = turn;
+      fall = oak ? 0 : clamp((sp - 0.6 - lag) / 0.35, 0, 1);
+      drop = clamp(turn * 1.5 - 0.4, 0, 1) * (1 - fall * fall) * (oak ? 0.3 : 1);
+    } else if (s === 3) { rgb = DRY; m = 1; fall = oak ? 0 : 1; }
+    else if (s === 0) {
+      rgb = oak ? mix(DRY, SPRING, clamp(sp / 0.3, 0, 1)) : SPRING;
+      m = 1 - clamp((sp - 0.35) / 0.45, 0, 1);
+      fall = oak ? 0 : 1 - clamp((sp - lag) / 0.35, 0, 1);
+    }
+  }
+  rgb = rgb.map(v => Math.round(v / 8) * 8);
+  m = step(m, 8); fall = step(fall, 10);
+  const snow = step(world.snow * 1.6 - 0.1, 4), seed = h % 3;
+  const look = m || fall || snow
+    ? { rgb, m, where, fall, snow, seed, key: [rgb, m, where, fall, snow, seed].join('|') } : undefined;
+  const bare = fall && { snow, seed, m: 0, fall: 0, key: `bare|${snow}` };
+  return { look, fall, bare, drop, rgb, h };
+}
+
+// Leaves let go in autumn and tumble down, drifting east with the wind. Trees queue them up
+// as they are drawn, and they are drawn on top of everything once the trees are done.
+const leafFall = [];
+function drawFallingLeaves(now) {
+  const m = ui.sky.mix, wind = 0.4 + 0.6 * m.cloudy + 1.5 * m.rain + 3 * m.storm;
+  ctx.save();
+  for (const f of leafFall) {
+    const px = f.px, n = Math.round(12 * f.drop);
+    for (let k = 0; k < n; k++) {
+      const r1 = hash2(f.h, k, 1), life = 4500 + 2500 * r1, t = now / life + hash2(f.h, k, 2);
+      const p = t % 1, r2 = hash2(f.h * 31 + k, Math.floor(t), 3), r3 = hash2(f.h * 31 + k, Math.floor(t), 4);
+      const x = f.sx + (r2 - 0.5) * px * 0.7 + Math.sin(p * 9 + k) * px * 0.06 + wind * p * px * 0.25;
+      const y = f.sy - px * (0.75 - 0.3 * r3) + p * px * (0.8 + 0.2 * r1);
+      const s = Math.max(1.5, px * 0.06), shade = 0.8 + 0.35 * r3;
+      ctx.globalAlpha = Math.min(1, p * 8, (1 - p) * 5);
+      ctx.fillStyle = `rgb(${f.rgb.map(v => Math.min(255, Math.round(v * shade))).join(',')})`;
+      ctx.setTransform(dpr, 0, 0, dpr, x * dpr, y * dpr);
+      ctx.rotate(Math.sin(p * 7 + k) * 1.3);
+      ctx.scale(1, 0.25 + 0.75 * Math.abs(Math.cos(p * 11 + k)));        // tumbling
+      ctx.beginPath(); ctx.ellipse(0, 0, s, s * 0.55, 0, 0, TAU); ctx.fill();
+    }
+  }
+  ctx.restore();
+  leafFall.length = 0;
+}
+
+function drawDecor(d, sx, sy, now, ck) {
   const z = cam.zoom, px = d.size * z;
   if (!d.stump && !d.tree) { drawEmoji(d.emoji, sx, sy - px * 0.35, px); return; }
   if (!d.stump) {
+    const t = treeLook(d, ck);
     ctx.save();
     ctx.translate(sx, sy); ctx.rotate(treeSway(d, now));
-    drawEmoji(d.emoji, 0, -px * 0.35, px);
+    if (t.bare) drawEmoji('🪾', 0, -px * 0.42, px * 1.15, { alpha: t.fall, leaf: t.bare });   // it draws small
+    if (t.fall < 1) drawEmoji(d.emoji, 0, -px * 0.35, px, { leaf: t.look });
     ctx.restore();
+    if (t.drop && px >= 22) leafFall.push({ sx, sy, px, drop: t.drop, rgb: t.rgb, h: t.h });
     return;
   }
   // Struck by lightning: a stump, then a sapling, then (in sim.js) a tree again.
@@ -569,7 +756,8 @@ function pondShape(f, t) {
   return path;
 }
 
-function drawPonds(z) {
+// Each ring's colour: the sand follows the season, and snow freezes the water over.
+function pondFills() {
   if (!pond || pond.world !== world) {
     const f1 = blurred(world.water), f2 = blurred(f1), f4 = blurred(blurred(f2));
     const ring = (f, t, rgb, a) => ({ path: pondShape(f, t), rgb, a });
@@ -582,15 +770,17 @@ function drawPonds(z) {
     ] };
   }
   const ice = world.snow > 0 ? clamp(world.snow * 1.4 - 0.3, 0, 0.9) * 0.8 : 0;   // frozen over
-  const [ox, oy] = toScreen(0, 0);
-  ctx.save();
-  ctx.translate(ox, oy); ctx.scale(z, z);
-  for (const { path, rgb, a } of pond.rings) {
+  return pond.rings.map(({ rgb, a }) => {
     const c = (rgb === 'sand' ? shoreSand : rgb).map((v, i) => Math.round(lerp(v, [214, 232, 242][i], ice)));
-    ctx.fillStyle = `rgba(${c.join(',')}, ${a})`;
-    ctx.fill(path);
-  }
-  ctx.restore();
+    return `rgba(${c.join(',')}, ${a})`;
+  });
+}
+
+function drawPonds(g, z, ox, oy, fills) {
+  g.save();
+  g.translate(ox, oy); g.scale(z, z);
+  pond.rings.forEach(({ path }, i) => { g.fillStyle = fills[i]; g.fill(path); });
+  g.restore();
 }
 
 // Paints over the whole view, with a margin for the thunder shake.
@@ -952,8 +1142,14 @@ function handleEvent(e) {
     case 'escape': {
       hear('escape', e.rabbit.x, e.rabbit.y, {}, mine);
       const t = e.how === 'burrow' ? `💨 ${link(e.rabbit)} dived into a burrow just before ${link(e.fox)} could pounce!`
+        : e.how === 'pond' ? `🌊 ${link(e.rabbit)} put the pond between itself and ${link(e.fox)}, and got away!`
         : `💨 ${link(e.rabbit)} outran ${link(e.fox)}!`;
       if (mine) addNews(t); else addNews(t, 'escape', 11000);
+      break;
+    }
+    case 'spotted': {
+      const t = `‼️ ${link(e.rabbit)} spotted ${link(e.fox)} sneaking up and thumped the alarm.`;
+      if (mine) addNews(t); else addNews(t, 'spotted', 20000);
       break;
     }
     case 'extinct':
@@ -1007,17 +1203,30 @@ function since(t) {
   return lo;
 }
 
+// The last two years as a small chart: a zero line, a dashed line at the peak, and both numbers
+// in a narrow gutter on the right so you can read the scale.
 function sparkline(canvas, data, color) {
   const g = canvas.getContext('2d'), w = canvas.width, h = canvas.height;
   g.clearRect(0, 0, w, h);
   const pts = data.slice(since(world.tick - 2 * S.YEAR_DAYS * S.TPD));
   if (pts.length < 2) return;
-  const max = Math.max(4, ...pts) * 1.1;
-  const x = i => (i / (pts.length - 1)) * w, y = v => h - 2 * dpr - (v / max) * (h - 4 * dpr);
+  const peak = Math.max(...pts), max = Math.max(4, peak);
+  const gut = 30 * dpr, pad = 6 * dpr, cw = w - gut, top = 6 * dpr, base = h - 6 * dpr;
+  const x = i => (i / (pts.length - 1)) * cw, y = v => base - (v / max) * (base - top);
+  g.font = `800 ${10 * dpr}px Nunito, sans-serif`; g.textAlign = 'right'; g.textBaseline = 'middle'; g.fillStyle = MUTED;
+  g.strokeStyle = '#e2d4ba'; g.lineWidth = dpr;
+  g.beginPath(); g.moveTo(0, base + 0.5 * dpr); g.lineTo(cw, base + 0.5 * dpr); g.stroke();
+  g.fillText('0', w - pad, base);
+  if (peak > 0) {
+    g.setLineDash([3 * dpr, 3 * dpr]);
+    g.beginPath(); g.moveTo(0, y(peak)); g.lineTo(cw, y(peak)); g.stroke();
+    g.setLineDash([]);
+    g.fillText(Math.round(peak), w - pad, y(peak));
+  }
   g.beginPath();
-  g.moveTo(0, h);
+  g.moveTo(0, base);
   pts.forEach((v, i) => g.lineTo(x(i), y(v)));
-  g.lineTo(w, h);
+  g.lineTo(cw, base);
   g.closePath();
   g.fillStyle = color + '2e';
   g.fill();
@@ -1041,44 +1250,60 @@ const TRAITS = [
 ];
 const word = (t, v) => t.words[v < 0.3 ? 0 : v < 0.45 ? 1 : v < 0.55 ? 2 : v < 0.7 ? 3 : 4];
 
+// Returns just the quiet words when there is nothing to show, so both species can share one line.
 function evolutionLine(species) {
   const base = world.founderMeans[species], now = S.traitMeans(world, species);
-  const icon = species === 'rabbit' ? '🐇' : '🦊';
-  if (!base || !now) return `${icon} <span style="color:var(--muted)">none alive</span>`;
-  // In the first year the averages wobble with every litter: that is luck, not evolution.
-  if (world.tick < S.YEAR_DAYS * S.TPD) return `${icon} <span style="color:var(--muted)">give it a year or two…</span>`;
+  if (!base || !now) return 'none alive';
   const shifts = TRAITS.map(t => ({ t, d: (now[t.k] - base[t.k]) / base[t.k] }))
     .filter(s => Math.abs(s.d) >= 0.05)
     .sort((a, b) => Math.abs(b.d) - Math.abs(a.d))
     .slice(0, 2);
-  if (!shifts.length) return `${icon} <span style="color:var(--muted)">no big changes yet</span>`;
-  return icon + ' ' + shifts.map(s => {
+  if (!shifts.length) return 'no big changes yet';
+  return shifts.map(s => {
     const up = s.d > 0;
     return `${s.t.e} ${up ? s.t.up : s.t.down} <span class="${up ? 'up' : 'down'}">${up ? '▲' : '▼'}${Math.round(Math.abs(s.d) * 100)}%</span>`;
   }).join(' · ');
 }
 
+// Rewriting part of the page with what it already shows still costs the browser a layout and
+// a repaint, and the card and inspector refresh four times a second. So only touch what changed.
+const shownHTML = new WeakMap();
+function setHTML(el, html) { if (shownHTML.get(el) !== html) { shownHTML.set(el, html); el.innerHTML = html; } }
+function setText(el, text) { if (el.textContent !== text) el.textContent = text; }
+
 function updateMeadowCard() {
   const ck = S.clock(world);
-  $('#season-emoji').textContent = S.SEASONS[ck.season].emoji;
-  $('#season-name').textContent = S.SEASONS[ck.season].name;
-  $('#clock-rest').textContent = `day ${ck.dayInSeason} · year ${ck.year}`;
-  $('#sun').textContent = ck.night ? '🌙' : ck.phase > 0.6 ? '🌇' : ck.phase < 0.1 ? '🌅' : '☀️';
+  setText($('#season-emoji'), S.SEASONS[ck.season].emoji);
+  setText($('#season-name'), S.SEASONS[ck.season].name);
+  setText($('#clock-rest'), `· day ${ck.dayInSeason} · year ${ck.year}`);
   const kind = world.weather.kind, wx = S.WEATHER[kind];
+  // One icon for the sky: clear weather shows the time of day instead of a plain sun.
+  const icon = kind !== 'clear' ? wx.emoji : ck.night ? '🌙' : ck.phase > 0.6 ? '🌇' : ck.phase < 0.1 ? '🌅' : wx.emoji;
   const ground = world.burning.length ? '<span class="fire">🔥 wildfire!</span>'
     : world.snow > 0.3 ? 'snow on the ground' : world.wet > 0.7 ? 'soaked ground'
     : world.wet > 0.35 ? 'damp ground' : 'dry ground';
   const clearNight = kind === 'clear' && ck.night;
   const lock = world.skyLocked ? ' <span class="lock">🔒</span>' : '';
-  $('#sky').innerHTML = `${clearNight ? '✨' : wx.emoji} <b>${clearNight ? 'Clear night' : wx.name}</b>${lock} · ${ground}`;
+  setHTML($('#sky'), `${icon} <b>${clearNight ? 'Clear night' : wx.name}</b>${lock} · ${ground}`);
   $('#sky').title = WEATHER_HINT[kind] + (world.skyLocked ? '. Locked: it stays until you unlock it (K)' : '');
-  $('#sky-btn').textContent = wx.emoji;
-  $('#n-rabbit').textContent = world.count.rabbit;
-  $('#n-fox').textContent = world.count.fox;
+  setText($('#sky-btn'), wx.emoji);
+  setText($('#mini-sky'), S.SEASONS[ck.season].emoji + icon);
+  setText($('#mini-rabbit'), String(world.count.rabbit));
+  setText($('#mini-fox'), String(world.count.fox));
+  setText($('#n-rabbit'), String(world.count.rabbit));
+  setText($('#n-fox'), String(world.count.fox));
   sparkline($('#spark-rabbit'), world.history.rabbit, '#a07850');
   sparkline($('#spark-fox'), world.history.fox, '#e2702f');
-  $('#evo-rabbit').innerHTML = evolutionLine('rabbit');
-  $('#evo-fox').innerHTML = evolutionLine('fox');
+  // In the first year the averages wobble with every litter: that is luck, not evolution.
+  const r = world.tick < S.YEAR_DAYS * S.TPD ? 'wait' : evolutionLine('rabbit'), f = r === 'wait' ? 'wait' : evolutionLine('fox');
+  const quiet = v => !v.includes('<');
+  if (r === f) {
+    setHTML($('#evo-rabbit'), `<span class="quiet">${r === 'wait' ? 'Too early to tell. The animals start to drift after a year or two.' : '🐇 🦊 ' + r}</span>`);
+    setHTML($('#evo-fox'), '');
+  } else {
+    setHTML($('#evo-rabbit'), '🐇 ' + (quiet(r) ? `<span class="quiet">${r}</span>` : r));
+    setHTML($('#evo-fox'), '🦊 ' + (quiet(f) ? `<span class="quiet">${f}</span>` : f));
+  }
 }
 
 // ------------------------------------------------------------------ the stats page
@@ -1094,7 +1319,7 @@ const RANGE_WORDS = { year: 'the last year', five: 'the last 5 years', all: 'the
 const MARK_EMOJI = { extinct: '😢', arrive: '🧳', fire: '🔥' };
 const CAUSES = [['fox', '🦊', 'Caught by a fox'], ['hunger', '🥀', 'Starved'], ['age', '🌙', 'Old age'],
   ['lightning', '⚡', 'Lightning'], ['fire', '🔥', 'Wildfire']];
-const INK = '#3b372f', MUTED = '#8b8272';
+const INK = '#3b372f', MUTED = '#6f6657';
 
 const shownKeys = () => ui.stats.show === 'all' ? ['rabbit', 'fox', 'grass'] : [ui.stats.show];
 
@@ -1102,7 +1327,7 @@ function toggleStats(open = !ui.stats.open) {
   ui.stats.open = open;
   ui.stats.hover = null;
   $('#stats').classList.toggle('hidden', !open);
-  $('[data-act="stats"].tool').classList.toggle('on', open);
+  $('[data-act="stats"]').classList.toggle('on', open);
   if (open) { renderStats(); $('#stats').scrollTop = 0; }
 }
 
@@ -1372,7 +1597,7 @@ function lifeStage(c) {
 function renderInspector() {
   const box = $('#inspector');
   const c = world.byId.get(ui.selectedId);
-  if (!c) { box.classList.remove('open'); box.innerHTML = ''; return; }
+  if (!c) { box.classList.remove('open'); setHTML(box, ''); return; }
   box.classList.add('open');
   const age = Math.floor(S.ageDays(world, c));
   const sex = c.sex === 'F' ? '♀' : '♂';
@@ -1385,6 +1610,8 @@ function renderInspector() {
   if (c.alive && c.pregnantUntil) chips.push(c.species === 'fox' ? '🍼 Expecting cubs' : '🍼 Expecting babies');
   if (c.kills) chips.push(`🍖 ${c.kills} ${c.kills === 1 ? 'catch' : 'catches'}`);
   if (c.escapes) chips.push(`💨 ${c.escapes} narrow ${c.escapes === 1 ? 'escape' : 'escapes'}`);
+  const nemesis = world.byId.get(c.nemesisId);
+  if (nemesis && nemesis.alive) chips.push(`😨 Afraid of ${link(nemesis)}`);
   if (c.gen > 1) chips.push(`🌳 Generation ${c.gen}`);
   const story = c.story.slice().reverse().slice(0, 10).map(s =>
     `<li><span>${s.emoji}</span><span>${esc(s.text)}<div class="when">${when(s.t)}</div></span></li>`).join('');
@@ -1394,7 +1621,7 @@ function renderInspector() {
     : `<div class="diary ${diary.error ? 'err' : ''}">${esc(diary.text)}</div>`) : '';
   const living = c.alive ? '' : world.creatures.find(k => k.mumId === c.id || k.dadId === c.id);
 
-  box.innerHTML = `
+  setHTML(box, `
     <div class="ins-head">
       <div class="portrait" style="background:${furCss(c)}33">${c.alive ? c.sp.emoji : '👻'}</div>
       <div>
@@ -1426,7 +1653,7 @@ function renderInspector() {
       ${c.alive ? `<button class="btn ${ui.follow ? 'on' : ''}" data-act="follow">${ui.follow ? '📍 Following' : '📍 Follow'}</button>
         <button class="btn" data-act="diary" title="Uses the local AI on this computer (Ollama)">✍️ Diary</button>`
         : living ? `<button class="btn" data-act="child" data-id="${living.id}">🐣 Follow ${esc(living.name)}</button>` : ''}
-    </div>`;
+    </div>`);
 }
 
 // ------------------------------------------------------------------ the diary (local LLM, optional)
@@ -1452,7 +1679,8 @@ function diaryFacts(c) {
     `Personality: ${TRAITS.map(t => word(t, c.genes[t.k])).join(', ')}.`,
     `Right now: ${S.mood(world, c).text}. Tummy ${Math.round(100 * c.energy / c.maxEnergy)}% full. It is ${S.SEASONS[ck.season].name.toLowerCase()}, ${ck.night ? 'night' : 'daytime'}, weather: ${S.WEATHER[world.weather.kind].name.toLowerCase()}${world.burning.length ? ', and there is a wildfire in the meadow' : ''}.`,
     `Family: mum ${mum ? mum.name + (mum.alive ? '' : ' (died)') : 'unknown'}, dad ${dad ? dad.name + (dad.alive ? '' : ' (died)') : 'unknown'}, ${c.kids} children.`,
-    c.species === 'fox' ? `Rabbits caught so far: ${c.kills}.` : `Narrow escapes from foxes: ${c.escapes}.`,
+    c.species === 'fox' ? `Rabbits caught so far: ${c.kills}.` : `Narrow escapes from foxes: ${c.escapes}.`
+      + (world.byId.get(c.nemesisId) ? ` The fox it fears most: ${world.byId.get(c.nemesisId).name}.` : ''),
     `Recent life events (oldest first):\n${events}`,
     `Write today's diary entry.`,
   ].join('\n');
@@ -1514,6 +1742,34 @@ function setTool(tool) {
   ui.tool = tool;
   document.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === tool));
   canvas.className = 'tool-' + tool;
+  updateBar();
+}
+
+// The toolbar slides away while you just watch and comes back as soon as the mouse enters the spot
+// where it lives, so you stop on the buttons instead of running into the screen edge and back.
+// It stays up while a tool other than Look is in your hand.
+// Touch screens have no hover, so there the CSS keeps it up for good.
+let barNear = true, barTimer = 0;
+function updateBar() {
+  clearTimeout(barTimer);
+  if (barNear || ui.tool !== 'look') document.body.classList.remove('bar-away');
+  else barTimer = setTimeout(() => document.body.classList.add('bar-away'), 200);
+}
+addEventListener('pointermove', e => {
+  if (e.pointerType !== 'mouse') return;
+  const bar = $('#toolbar').getBoundingClientRect(), up = !document.body.classList.contains('bar-away');
+  const pad = up ? 12 : 0;                     // once it's up, a little slack so it doesn't flicker at the rim
+  const over = e.clientX > bar.left - pad && e.clientX < bar.right + pad;
+  const near = (over && e.clientY > vh - barPad - pad) || !!e.target.closest('#toolbar');
+  if (near !== barNear) { barNear = near; updateBar(); }
+});
+document.documentElement.addEventListener('mouseleave', () => { barNear = false; updateBar(); });
+
+function toggleMini(on = !ui.mini) {
+  ui.mini = on;
+  $('#meadow').classList.toggle('mini', on);
+  resize();                              // the sparklines need their real size again
+  try { localStorage.setItem('aeon-garden-mini', on ? '1' : '0'); } catch (e) { /* fine */ }
 }
 
 function setSpeed(s) {
@@ -1524,6 +1780,8 @@ function setSpeed(s) {
 
 let drag = null;
 canvas.addEventListener('pointerdown', e => {
+  if (ui.ring) { closeRing(); return; }
+  if (e.button === 2 || (e.ctrlKey && e.pointerType === 'mouse')) return;   // that's the ring menu
   canvas.setPointerCapture(e.pointerId);
   drag = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y, moved: false, paint: ui.tool === 'grass' && e.button === 0 };
   if (drag.paint) paintAt(e.clientX, e.clientY);
@@ -1550,8 +1808,10 @@ canvas.addEventListener('pointerup', e => {
   drag = null;
 });
 canvas.addEventListener('pointerleave', () => { ui.hoverId = 0; });
+canvas.addEventListener('contextmenu', e => { e.preventDefault(); openRing(e.clientX, e.clientY); });
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
+  closeRing();
   const pixelPan = !e.ctrlKey && e.deltaMode === 0 && (e.deltaX !== 0 || Math.abs(e.deltaY) < 40);
   if (pixelPan) {                     // trackpad two-finger scroll: look around
     cam.x += e.deltaX / cam.zoom; cam.y += e.deltaY / cam.zoom;
@@ -1567,26 +1827,93 @@ function click(sx, sy) {
   if (ui.tool === 'look') {
     const c = creatureAt(sx, sy);
     select(c ? c.id : 0);
-  } else if (ui.tool === 'rabbit' || ui.tool === 'fox') {
-    const sex = ui.releaseSex[ui.tool];
-    ui.releaseSex[ui.tool] = sex === 'F' ? 'M' : 'F';
-    const c = S.addCreature(world, ui.tool, wx, wy, { sex, age: world.rng.range(5, 9) });
-    if (c) {
-      addEffect('✨', wx, wy);
-      hear('release', wx, wy, { species: c.species });
-      addNews(`👋 You released ${link(c)}, a ${c.sex === 'F' ? 'female' : 'male'} ${c.sp.name.toLowerCase()}.`);
-    }
-  } else if (ui.tool === 'zap') {
-    S.zap(world, wx, wy);
-    flushEvents();
+  } else if (ui.tool === 'rabbit' || ui.tool === 'fox') release(ui.tool, wx, wy);
+  else if (ui.tool === 'zap') { S.zap(world, wx, wy); flushEvents(); }
+}
+
+function release(species, wx, wy) {
+  const sex = ui.releaseSex[species];
+  ui.releaseSex[species] = sex === 'F' ? 'M' : 'F';
+  const c = S.addCreature(world, species, wx, wy, { sex, age: world.rng.range(5, 9) });
+  if (c) {
+    addEffect('✨', wx, wy);
+    hear('release', wx, wy, { species: c.species });
+    addNews(`👋 You released ${link(c)}, a ${c.sex === 'F' ? 'female' : 'male'} ${c.sp.name.toLowerCase()}.`);
   }
 }
+
+// ------------------------------------------------------------------ the ring: right-click the meadow
+
+const RING_TOOLS = [['rabbit', '🐇', 'Release a rabbit'], ['fox', '🦊', 'Release a fox'], ['grass', '🌱', 'Grow grass'],
+  ['zap', '⚡', 'Strike lightning'], ['sky', '🌦️', 'Weather']];
+
+function openRing(sx, sy, weather = false) {
+  const items = weather
+    ? [...Object.entries(S.WEATHER).map(([k, wx]) => ['sky:' + k, wx.emoji, wx.name]), ['lock', world.skyLocked ? '🔒' : '🔓', world.skyLocked ? 'Unlock the weather' : 'Keep this weather']]
+    : RING_TOOLS;
+  if (!ui.ring) { ui.ring = { at: toWorld(sx, sy) }; chime('click'); }
+  ui.ring.t0 = performance.now();
+  const r = weather ? 80 : 64;           // near an edge the ring moves in, but still acts where you clicked
+  sx = clamp(sx, r + 34, vw - r - 34); sy = clamp(sy, r + 34, vh - r - 34);
+  const ring = $('#ring');
+  ring.style.left = sx + 'px'; ring.style.top = sy + 'px';
+  ring.innerHTML = '<div class="ring-hub"></div>' + items.map(([k, e, label], i) => {
+    const a = -Math.PI / 2 + i / items.length * TAU;
+    const on = k === 'sky:' + world.weather.kind || (k === 'lock' && world.skyLocked);
+    return `<button class="ring-item${on ? ' on' : ''}" data-ring="${k}" data-label="${label}" aria-label="${label}"
+      style="--dx:${(Math.cos(a) * r).toFixed(1)}px;--dy:${(Math.sin(a) * r).toFixed(1)}px;animation-delay:${i * 18}ms">${e}</button>`;
+  }).join('');
+  ring.classList.remove('hidden');
+}
+
+function closeRing() {
+  if (!ui.ring) return;
+  ui.ring = null;
+  $('#ring').classList.add('hidden');
+}
+
+function ringPick(k) {
+  const [wx, wy] = ui.ring.at;
+  if (k === 'sky') { const [sx, sy] = toScreen(wx, wy); openRing(sx, sy, true); return; }
+  closeRing();
+  if (k === 'rabbit' || k === 'fox') release(k, wx, wy);
+  else if (k === 'zap') { S.zap(world, wx, wy); flushEvents(); }
+  else if (k === 'grass') {
+    S.paintGrass(world, wx, wy, 5);
+    hear('grass', wx, wy);
+    for (let i = 0; i < 6; i++) addEffect('🌱', wx + (Math.random() - 0.5) * 7, wy + (Math.random() - 0.5) * 7, 0.6, 900);
+    terrainTick = -1;
+  } else if (k === 'lock') toggleSkyLock();
+  else if (k.startsWith('sky:')) { S.setSky(world, k.slice(4)); flushEvents(); showSkyLock(); updateMeadowCard(); }
+}
+
+$('#ring').addEventListener('pointerover', e => {
+  if (performance.now() - ui.ring.t0 < 300) return;     // the buttons fly out from under the mouse
+  const b = e.target.closest('[data-ring]');
+  $('.ring-hub').textContent = b ? b.dataset.label : '';
+});
+$('#ring').addEventListener('contextmenu', e => e.preventDefault());
+addEventListener('pointerdown', e => { if (ui.ring && !e.target.closest('#ring,#world')) closeRing(); });
 
 function toggleSkyMenu(open = !ui.sky.menu) {
   ui.sky.menu = open;
   $('#sky-menu').classList.toggle('hidden', !open);
   $('[data-act="sky"]').classList.toggle('on', open);
+  if (open) toggleMore(false);
   showSkyLock();
+}
+
+// The ••• menu: things you do to the whole meadow, kept away from everyday buttons.
+function toggleMore(open = $('#more-menu').classList.contains('hidden')) {
+  $('#more-menu').classList.toggle('hidden', !open);
+  $('[data-act="more"]').classList.toggle('on', open);
+  if (open && ui.sky.menu) toggleSkyMenu(false);
+}
+
+function copyLink() {
+  navigator.clipboard?.writeText(location.href).then(
+    () => addNews('🔗 Link copied. Anyone who opens it gets this same meadow from the start.'),
+    () => addNews(`🔗 Couldn't copy. The link is ${esc(location.href)}`));
 }
 
 // Everything that shows the weather lock: the menu's toggle and the badge on the toolbar.
@@ -1621,11 +1948,13 @@ function paintAt(sx, sy) {
 }
 
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-tool],[data-speed],[data-action],[data-act],[data-show],[data-range],[data-sky],a[data-id]');
+  const t = e.target.closest('[data-tool],[data-speed],[data-action],[data-act],[data-show],[data-range],[data-sky],[data-ring],a[data-id]');
   if (ui.sky.menu && !(t && (t.dataset.sky || t.dataset.act === 'sky' || t.dataset.act === 'sky-lock'))) toggleSkyMenu(false);
+  if (!(t && t.dataset.act === 'more')) toggleMore(false);
   if (!t) return;
-  if (t.closest('#toolbar,#sky-menu')) chime('click');
-  if (t.dataset.tool) setTool(t.dataset.tool);
+  if (t.closest('#toolbar,#hud-right .hud-top,#ring')) chime('click');
+  if (t.dataset.ring) ringPick(t.dataset.ring);
+  else if (t.dataset.tool) setTool(t.dataset.tool);
   else if (t.dataset.speed !== undefined) setSpeed(+t.dataset.speed);
   else if (t.dataset.sky) { S.setSky(world, t.dataset.sky); flushEvents(); toggleSkyMenu(false); updateMeadowCard(); }
   else if (t.dataset.act === 'sky') toggleSkyMenu();
@@ -1633,6 +1962,9 @@ document.addEventListener('click', e => {
   else if (t.dataset.action === 'new') { if (confirm('Start a brand-new meadow? This one will be gone.')) newWorld(randomSeed()); }
   else if (t.dataset.act === 'close') select(0);
   else if (t.dataset.act === 'news') toggleNewsLog();
+  else if (t.dataset.act === 'mini') toggleMini();
+  else if (t.dataset.act === 'more') toggleMore();
+  else if (t.dataset.act === 'copy-link') copyLink();
   else if (t.dataset.act === 'sound') toggleSound();
   else if (t.dataset.act === 'stats') toggleStats();
   else if (t.dataset.show) { ui.stats.show = t.dataset.show; renderStats(); }
@@ -1653,7 +1985,11 @@ document.addEventListener('keydown', e => {
     e.preventDefault();
     if (ui.speed) { lastSpeed = ui.speed; setSpeed(0); } else setSpeed(lastSpeed);
   } else if ('1234'.includes(e.key) && e.key.length === 1) setSpeed([1, 4, 15, 60][+e.key - 1]);
-  else if (e.key === 'Escape') ui.sky.menu ? toggleSkyMenu(false) : ui.stats.open ? toggleStats(false) : select(0);
+  else if (e.key === 'Escape') {
+    const more = !$('#more-menu').classList.contains('hidden');
+    ui.ring ? closeRing() : ui.sky.menu ? toggleSkyMenu(false) : more ? toggleMore(false) : ui.stats.open ? toggleStats(false)
+      : ui.tool !== 'look' ? setTool('look') : select(0);
+  }
   else if (e.key === 's') toggleStats();
   else if (e.key === 'f' && ui.selectedId) { ui.follow = !ui.follow; renderInspector(); }
   else if (e.key === 'l') setTool('look');
@@ -1661,6 +1997,7 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'w') toggleSkyMenu();
   else if (e.key === 'k') toggleSkyLock();
   else if (e.key === 'n') toggleNewsLog();
+  else if (e.key === 'c') toggleMini();
   else if (e.key === 'm') toggleSound();
   else if (e.key === '+' || e.key === '=') zoomAt(vw / 2, vh / 2, cam.zoom * 1.25);
   else if (e.key === '-') zoomAt(vw / 2, vh / 2, cam.zoom / 1.25);
@@ -1777,13 +2114,19 @@ $('#go').addEventListener('click', () => {
   try { localStorage.setItem('aeon-garden-welcomed', '1'); } catch (e) { /* fine */ }
   setSpeed(1);
   setTimeout(() => addNews('👋 <b>Tip:</b> click any animal to follow its life.'), 2500);
-  setTimeout(() => { if (!ui.sound) addNews('🔊 <b>Tip:</b> the meadow has quiet sounds. Turn them on with 🔇 at the top (M).'); }, 12000);
-  setTimeout(() => addNews('🌦️ <b>Tip:</b> the tools at the bottom let you add animals, grow grass, change the weather or strike lightning.'), 25000);
+  setTimeout(() => { if (!ui.sound) addNews('🔊 <b>Tip:</b> the meadow has quiet sounds. Turn them on with 🔇 at the top right (M).'); }, 12000);
+  setTimeout(() => addNews('🌦️ <b>Tip:</b> right-click the meadow to add animals, grow grass, change the weather or strike lightning. The toolbar waits at the bottom edge.'), 25000);
 });
 
 // Sound stays off until you turn it on, and remembers your choice. Browsers only let a page
 // make sound after a click or key press, so a remembered "on" waits for the first one.
 try { if (localStorage.getItem('aeon-garden-sound') === '1') toggleSound(true); } catch (e) { /* fine */ }
+
+// The card remembers being small. A phone starts it small, there's not much room up there.
+let mini = matchMedia('(max-width: 760px)').matches;
+try { const m = localStorage.getItem('aeon-garden-mini'); if (m) mini = m === '1'; } catch (e) { /* fine */ }
+if (mini) toggleMini(true);
+setTimeout(() => { barNear = false; updateBar(); }, 4000);   // show the toolbar for a moment, then let the meadow breathe
 for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => { if (ui.sound) Sound.start(); }, { once: true });
 
 requestAnimationFrame(frame);

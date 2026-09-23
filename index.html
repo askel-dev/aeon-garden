@@ -27,7 +27,7 @@
   :root {
     --card: rgba(255, 250, 240, 0.94);
     --ink: #3b372f;
-    --muted: #8b8272;
+    --muted: #6f6657;        /* at least 4.5:1 on the cream cards */
     --line: #ecdfc8;
     --accent: #e98a4b;
     --accent-soft: #fde4cf;
@@ -36,6 +36,7 @@
     --fox: #e2702f;
     --shadow: 0 8px 28px rgba(70, 55, 25, 0.20), 0 1px 3px rgba(70, 55, 25, 0.12);
     --radius: 18px;
+    --hud-h: 46px;           /* the top-right pill, the mini card and the card's title row all share one centre line */
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; overflow: hidden; background: #9cc77e; }
@@ -55,39 +56,53 @@
   a[data-id]:hover { text-decoration: underline; }
 
   /* ---- the meadow card, top left */
-  #meadow { top: 16px; left: 16px; width: 272px; padding: 14px 16px 12px; }
-  #meadow .brand { font-weight: 900; font-size: 18px; letter-spacing: 0.2px; }
-  #meadow .clock { color: var(--muted); font-weight: 700; margin-top: 2px; display: flex; gap: 6px; align-items: center; }
+  #meadow { top: 16px; left: 16px; width: 272px; padding: calc((var(--hud-h) - 30px) / 2) 10px 10px 16px; }
+  #meadow.mini { width: auto; height: var(--hud-h); padding: 0 4px; display: flex; align-items: center; }
+  #meadow.mini .full, #meadow:not(.mini) .mini-line { display: none; }
+  .mini-line { display: flex; align-items: center; gap: 12px; border: none; background: transparent; border-radius: 12px; height: 38px; padding: 0 5px 0 12px; font-size: 15px; }
+  .mini-line:hover { background: rgba(0,0,0,0.04); }
+  .mini-line b { font-weight: 900; font-variant-numeric: tabular-nums; }
+  #mini-sky { letter-spacing: 3px; }
+  /* the card's one window control: a chevron, up to fold the card away, down to open it again */
+  .win-btn { flex: none; width: 28px; height: 28px; border: none; border-radius: 8px; background: transparent; position: relative; transition: background 0.15s; }
+  .win-btn:hover, .mini-line:hover .win-btn { background: rgba(0,0,0,0.06); }
+  .win-btn::before { content: ''; position: absolute; left: 50%; top: 50%; width: 7px; height: 7px;
+    border: solid var(--muted); border-width: 2.5px 0 0 2.5px; border-radius: 1px; transform: translate(-50%, -25%) rotate(45deg); }
+  .win-btn.grow::before { transform: translate(-50%, -75%) rotate(225deg); }
+  #meadow .head { display: flex; align-items: center; gap: 8px; height: 30px; }
+  #meadow .brand { font-weight: 900; font-size: 18px; letter-spacing: 0.2px; white-space: nowrap; flex: 1; }
+  #meadow .clock { color: var(--muted); font-weight: 700; margin-top: 4px; display: flex; gap: 6px; align-items: center; }
   #meadow .clock b { color: var(--ink); }
-  .pop { display: grid; grid-template-columns: 26px 44px 1fr; align-items: center; gap: 6px; margin-top: 10px; }
-  .pop .emoji { font-size: 20px; }
-  .pop .n { font-weight: 900; font-size: 18px; font-variant-numeric: tabular-nums; }
-  .pop canvas { width: 100%; height: 30px; }
-  .spark-caption { color: var(--muted); font-size: 11px; text-align: right; margin-top: 2px; }
-  #sky { margin-top: 3px; color: var(--muted); font-weight: 700; font-size: 13px; cursor: help; }
+  #sky { margin-top: 2px; color: var(--muted); font-weight: 700; font-size: 13px; cursor: help; }
   #sky b { color: var(--ink); }
   #sky .fire { color: #d9531e; font-weight: 900; }
-  .evo { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
-  .evo h3 { margin: 0 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); }
+  #meadow h3.sec { margin: 12px 0 2px; padding-top: 10px; border-top: 1px dashed var(--line); font-size: 12px; text-transform: uppercase;
+    letter-spacing: 0.8px; color: var(--muted); }
+  #meadow h3.sec span { text-transform: none; letter-spacing: 0; font-weight: 700; margin-left: 4px; }
+  .pop { display: grid; grid-template-columns: 26px 38px 1fr; align-items: center; gap: 6px; margin-top: 4px; padding: 2px 0; }
+  .pop .emoji { font-size: 20px; }
+  .pop .n { font-weight: 900; font-size: 18px; font-variant-numeric: tabular-nums; }
+  .pop canvas { width: 100%; height: 34px; }
   .evo .row { font-size: 13px; line-height: 1.5; }
-  .evo .up { color: var(--good); font-weight: 800; }
-  .evo .down { color: #c9673a; font-weight: 800; }
+  .evo .quiet { color: var(--muted); }
+  .evo .up { color: #4f8a35; font-weight: 800; }
+  .evo .down { color: #b35a2f; font-weight: 800; }
+  .card-actions { display: flex; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line); }
+  .card-actions .act { flex: 1; border: none; border-radius: 10px; padding: 6px 8px; background: rgba(0,0,0,0.04); font-weight: 800; font-size: 12.5px; color: var(--ink); }
+  .card-actions .act:hover { background: rgba(0,0,0,0.08); }
+  .card-actions .act.on { background: var(--accent-soft); color: #9a5024; }
 
   /* ---- news: a few short-lived toasts bottom left, the full log in the meadow card */
-  #news { position: fixed; left: 16px; bottom: calc(var(--bar, 92px) + 8px); width: 330px; display: flex; flex-direction: column-reverse; gap: 5px; pointer-events: none; }
+  #news { position: fixed; left: 16px; bottom: calc(var(--bar, 92px) + 8px); width: 330px; display: flex; flex-direction: column-reverse; gap: 5px; pointer-events: none; transition: bottom 0.35s ease; }
   .news-item {
     align-self: flex-start; background: var(--card); border-radius: 12px; padding: 5px 11px; box-shadow: var(--shadow);
     font-size: 13px; line-height: 1.35; animation: pop-in 0.35s ease-out; transition: opacity 0.8s, transform 0.8s;
   }
   .news-item a[data-id] { pointer-events: auto; }   /* clicks go through to the meadow, except on names */
   .news-item.gone { opacity: 0; transform: translateY(-6px); }
-  #meadow .brand { display: flex; align-items: center; }
   .brand-btn { border: none; background: transparent; border-radius: 8px; padding: 1px 6px; font-size: 16px; }
-  .brand-btn:first-of-type { margin-left: auto; }
   .brand-btn:hover { background: rgba(0,0,0,0.06); }
   .brand-btn.on { background: var(--accent-soft); }
-  #news-log { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
-  #news-log h3 { margin: 0 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); }
   #news-log ol { list-style: none; margin: 0; padding: 0; max-height: min(340px, 45vh); overflow-y: auto; font-size: 13px; line-height: 1.35; }
   #news-log li { padding: 4px 0; border-bottom: 1px dashed var(--line); }
   #news-log li:last-child { border-bottom: none; }
@@ -95,34 +110,64 @@
   @keyframes pop-in { from { transform: translateY(8px) scale(0.97); opacity: 0; } to { transform: none; opacity: 1; } }
 
   /* ---- toolbar, bottom centre */
-  /* The tools grow on big screens; the speeds share one small pill. --bar is the toolbar's height plus its gap, set by game.js. */
-  #toolbar { left: 50%; bottom: 16px; transform: translateX(-50%); padding: 10px 12px; display: flex; gap: 6px; align-items: center; }
-  #toolbar .sep { width: 1px; height: 44px; background: var(--line); margin: 0 10px; }
-  .tool {
-    border: none; background: transparent; border-radius: 14px; padding: 6px 10px 5px; min-width: clamp(54px, 4.6vw, 66px);
-    display: flex; flex-direction: column; align-items: center; gap: 2px; transition: background 0.15s, transform 0.1s;
+  /* The tools grow on big screens. --bar is the toolbar's height plus its gap, set by game.js.
+     With a mouse it slides away while you just watch, leaving a sliver. It comes back by fading in
+     right where it lives, so the buttons never move under the pointer on the way to them. */
+  #toolbar { left: 50%; bottom: 16px; transform: translateX(-50%); padding: 8px 14px; display: flex; gap: 10px; align-items: center; }
+  @media (hover: hover) {
+    body:not(.bar-away) #toolbar { animation: bar-in 0.45s cubic-bezier(0.22, 1, 0.36, 1); }
+    body.bar-away #toolbar { transform: translate(-50%, calc(100% + 10px)); opacity: 0.6; transition: transform 0.25s ease-in, opacity 0.25s; }
+    body.bar-away #news { bottom: 16px; }
   }
-  .tool .e { font-size: clamp(24px, 2.1vw, 31px); line-height: 1.1; }
-  .tool .l { font-size: 12px; font-weight: 800; color: var(--muted); }
+  @keyframes bar-in { from { opacity: 0; transform: translate(-50%, 14px); } }
+  .tool {
+    border: none; background: transparent; border-radius: 13px; padding: 9px 18px 9px 14px;
+    display: flex; align-items: center; gap: 8px; transition: background 0.15s, transform 0.1s;
+  }
+  .tool .e { font-size: clamp(24px, 1.9vw, 30px); line-height: 1; width: 1.2em; text-align: center; }
+  .tool .l { font-size: clamp(14px, 1vw, 16px); font-weight: 800; color: var(--muted); }
   .tool:hover { background: rgba(0,0,0,0.05); }
   .tool:active { transform: scale(0.95); }
   .tool.on { background: var(--accent-soft); }
   .tool.on .l { color: var(--accent); }
   .speeds { display: flex; gap: 3px; background: rgba(0,0,0,0.04); border-radius: 14px; padding: 4px; }
+
+  /* ---- top right: time and sound, then the inspector below */
+  #hud-right { position: fixed; top: 16px; right: 16px; bottom: 16px; z-index: 5; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; pointer-events: none; }
+  #hud-right > * { pointer-events: auto; }
+  #hud-right .card { position: relative; }
+  .hud-top { position: relative; display: flex; flex-direction: column; align-items: flex-end; }
+  #time { display: flex; align-items: center; gap: 3px; height: var(--hud-h); padding: 0 5px; border-radius: 16px; }
+  #time .speeds { background: transparent; padding: 0; }
+  .hud-sep { width: 1px; height: 24px; margin: 0 5px; background: var(--line); }
+  .hud-btn { border: none; background: transparent; border-radius: 9px; height: 36px; min-width: 36px; padding: 0 6px;
+    font-size: 17px; position: relative; transition: background 0.15s; }
+  .hud-btn:hover { background: rgba(0,0,0,0.06); }
+  .hud-btn.on { background: var(--accent-soft); }
+  .hud-btn.more { font-size: 10px; letter-spacing: 1px; color: var(--muted); font-weight: 900; }
+  .hud-btn.locked::after { content: '🔒'; position: absolute; bottom: -2px; right: -2px; font-size: 11px; }
+  /* menus drop from the top-right pill and float over the inspector */
+  #hud-right .drop { position: absolute; top: calc(100% + 8px); right: 0; z-index: 2; padding: 6px; animation: pop-in 0.18s ease-out; }
+  #more-menu { display: flex; flex-direction: column; min-width: 230px; }
+  .menu-item { border: none; background: transparent; text-align: left; border-radius: 10px; padding: 8px 10px; font-weight: 800; }
+  .menu-item:hover { background: rgba(0,0,0,0.05); }
+  .menu-item.danger { color: #a4452a; }
+  .menu-item.danger:hover { background: #fbe3d9; }
   .speed {
-    border: none; background: transparent; border-radius: 9px; min-width: 36px; height: clamp(32px, 2.6vw, 38px); padding: 0 8px;
+    border: none; background: transparent; border-radius: 9px; min-width: 36px; height: 36px; padding: 0 8px;
     font-size: 15px; font-weight: 900; color: var(--muted); transition: background 0.15s;
   }
   .speed:hover { background: rgba(0,0,0,0.06); }
   .speed.on { background: var(--card); color: var(--accent); box-shadow: 0 1px 3px rgba(70, 55, 25, 0.18); }
-  #sky-menu { left: 0; right: 0; margin: 0 auto; width: max-content; bottom: calc(var(--bar, 92px) + 8px); padding: 6px; display: flex; gap: 2px; z-index: 4; animation: pop-in 0.2s ease-out; }
-  #sky-menu .sep { width: 1px; background: var(--line); margin: 6px 6px; }
-  .tool[data-act="sky"] { position: relative; }
-  .tool.locked::after { content: '🔒'; position: absolute; top: 1px; right: 3px; font-size: 13px; }
+  #sky-menu:not(.hidden) { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; }
+  #sky-menu .tool { flex-direction: column; gap: 3px; padding: 7px 8px 6px; min-width: 66px; }
+  #sky-menu .tool .e { font-size: 24px; }
+  #sky-menu .tool .l { font-size: 12px; }
+  #sky-menu .sep { display: none; }
   #sky .lock { font-size: 11px; }
 
   /* ---- inspector, right */
-  #inspector { top: 16px; right: 16px; width: 330px; max-height: calc(100% - 32px); overflow-y: auto; padding: 16px; display: none; }
+  #inspector { width: 330px; min-height: 0; overflow-y: auto; padding: 16px; display: none; }
   #inspector.open { display: block; animation: pop-in 0.3s ease-out; }
   .ins-head { display: flex; gap: 12px; align-items: center; }
   .portrait { width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; font-size: 38px; flex: none; box-shadow: inset 0 -4px 0 rgba(0,0,0,0.08); }
@@ -156,6 +201,20 @@
   .diary.err { font-style: normal; color: var(--muted); font-size: 12.5px; }
   .diary .dots::after { content: '…'; animation: dots 1.2s infinite steps(4); }
   @keyframes dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
+
+  /* ---- the ring menu: right-click the meadow */
+  #ring { position: fixed; z-index: 6; width: 0; height: 0; }
+  .ring-item {
+    position: absolute; width: 50px; height: 50px; border: none; border-radius: 50%; background: var(--card); box-shadow: var(--shadow);
+    font-size: 25px; display: grid; place-items: center; transform: translate(calc(var(--dx) - 50%), calc(var(--dy) - 50%));
+    animation: ring-out 0.22s ease-out backwards; transition: background 0.15s, scale 0.15s;
+  }
+  .ring-item:hover { background: #fff; scale: 1.12; }
+  .ring-item.on { background: var(--accent-soft); }
+  .ring-hub { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; background: var(--card); box-shadow: var(--shadow);
+    border-radius: 99px; padding: 3px 10px; font-size: 12px; font-weight: 800; color: var(--muted); pointer-events: none; }
+  .ring-hub:empty { width: 10px; height: 10px; padding: 0; }
+  @keyframes ring-out { from { transform: translate(-50%, -50%) scale(0.3); opacity: 0; } }
 
   /* ---- welcome */
   #welcome { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(60, 80, 40, 0.25); z-index: 10; }
@@ -229,16 +288,19 @@
   .evo-mini canvas { display: block; width: 100%; margin-top: 4px; }
 
   @media (max-width: 760px) {
-    #meadow { width: calc(100% - 32px); }
-    #meadow .evo, .spark-caption { display: none; }
+    #meadow:not(.mini) { width: calc(100% - 32px); }
+    #hud-right { top: calc(var(--meadow-h, 0px) + 24px); left: 16px; }
+    #meadow .evo, #meadow .evo-h { display: none; }
     #news { width: calc(100% - 32px); }
     #news-log ol { max-height: 30vh; }
-    #toolbar { flex-wrap: wrap; justify-content: center; width: calc(100% - 32px); }
-    #toolbar .sep { display: none; }
-    .tool { min-width: 0; flex: 1 1 14%; padding: 6px 2px 5px; }
-    #sky-menu { flex-wrap: wrap; justify-content: center; left: 16px; right: 16px; width: auto; }
-    #sky-menu .sep { display: none; }
-    #inspector { top: auto; bottom: 16px; left: 16px; right: 16px; width: auto; max-height: 55%; z-index: 5; }
+    #toolbar { width: calc(100% - 32px); padding: 7px; gap: 4px; }
+    #toolbar .tool { min-width: 0; flex: 1 1 0; flex-direction: column; gap: 2px; padding: 5px 0 4px; }
+    .tool .l { font-size: 11px; }
+    #time { gap: 1px; padding: 0 4px; }
+    .speed { min-width: 0; padding: 0 5px; font-size: 14px; }
+    .hud-btn { min-width: 30px; padding: 0 3px; }
+    .hud-sep { margin: 0 3px; }
+    #inspector { margin-top: auto; width: 100%; max-height: 55%; }
     .stats-wrap { padding: 16px 16px 32px; }
     .stats-head { flex-wrap: wrap; gap: 4px 12px; }
     .stats-head h1 { font-size: 20px; }
@@ -257,22 +319,38 @@
 <canvas id="world" class="tool-look"></canvas>
 
 <section id="meadow" class="card">
-  <div class="brand">🌱 AEON Garden<button class="brand-btn" id="sound-btn" data-act="sound" title="Sound on or off (M)">🔇</button><button class="brand-btn news-toggle" data-act="news" title="Meadow news (N)">📰</button><button class="brand-btn" data-action="new" title="Start a brand-new meadow">🔄</button></div>
-  <div class="clock"><span id="season-emoji">🌸</span><b id="season-name">Spring</b><span id="clock-rest">day 1 · year 1</span><span id="sun" title="Day or night">☀️</span></div>
-  <div id="sky">☀️ <b>Clear skies</b></div>
-  <div class="pop" data-act="stats" title="Rabbits alive right now, and the last two years. Click for all the statistics (S)">
-    <span class="emoji">🐇</span><span class="n" id="n-rabbit">0</span><canvas id="spark-rabbit"></canvas>
+  <button class="mini-line" data-act="mini" title="Show the whole card (C)">
+    <span id="mini-sky">🌸☀️</span><span class="mini-pop">🐇 <b id="mini-rabbit">0</b></span><span class="mini-pop">🦊 <b id="mini-fox">0</b></span>
+    <span class="win-btn grow" aria-hidden="true"></span>
+  </button>
+  <div class="full">
+    <header class="head">
+      <div class="brand">🌱 AEON Garden</div>
+      <button class="win-btn shrink" data-act="mini" title="Make this card small (C)" aria-label="Make this card small"></button>
+    </header>
+    <div class="clock"><span id="season-emoji">🌸</span><b id="season-name">Spring</b><span id="clock-rest">day 1 · year 1</span></div>
+    <div id="sky">☀️ <b>Clear skies</b></div>
+
+    <h3 class="sec">Population <span>last 2 years</span></h3>
+    <div class="pop" data-act="stats" title="Rabbits alive right now, and the last two years. Click for all the statistics (S)">
+      <span class="emoji">🐇</span><span class="n" id="n-rabbit">0</span><canvas id="spark-rabbit"></canvas>
+    </div>
+    <div class="pop" data-act="stats" title="Foxes alive right now, and the last two years. Click for all the statistics (S)">
+      <span class="emoji">🦊</span><span class="n" id="n-fox">0</span><canvas id="spark-fox"></canvas>
+    </div>
+
+    <h3 class="sec evo-h">Evolution <span>since the start</span></h3>
+    <div class="evo">
+      <div class="row" id="evo-rabbit"></div>
+      <div class="row" id="evo-fox"></div>
+    </div>
+
+    <div id="news-log" class="hidden"><h3 class="sec">Meadow news</h3><ol></ol></div>
+
+    <footer class="card-actions">
+      <button class="act news-toggle" data-act="news" title="All the meadow news so far (N)">📰 Meadow news</button>
+    </footer>
   </div>
-  <div class="pop" data-act="stats" title="Foxes alive right now, and the last two years. Click for all the statistics (S)">
-    <span class="emoji">🦊</span><span class="n" id="n-fox">0</span><canvas id="spark-fox"></canvas>
-  </div>
-  <div class="spark-caption">last 2 years</div>
-  <div class="evo">
-    <h3>Evolution since the start</h3>
-    <div class="row" id="evo-rabbit"></div>
-    <div class="row" id="evo-fox"></div>
-  </div>
-  <div id="news-log" class="hidden"><h3>Meadow news</h3><ol></ol></div>
 </section>
 
 <div id="news"></div>
@@ -283,22 +361,36 @@
   <button class="tool" data-tool="fox" title="Click the meadow to release a fox"><span class="e">🦊</span><span class="l">Fox</span></button>
   <button class="tool" data-tool="grass" title="Click and drag to grow lush grass"><span class="e">🌱</span><span class="l">Grass</span></button>
   <button class="tool" data-tool="zap" title="Click the meadow to strike lightning. On dry ground it starts a fire (Z)"><span class="e">⚡</span><span class="l">Zap</span></button>
-  <button class="tool" data-act="sky" title="Change the weather (W)"><span class="e" id="sky-btn">☀️</span><span class="l">Weather</span></button>
-  <span class="sep"></span>
-  <div class="speeds">
-    <button class="speed" data-speed="0" title="Pause (space)">⏸</button>
-    <button class="speed on" data-speed="1" title="Normal speed (1)">1×</button>
-    <button class="speed" data-speed="4" title="Fast (2)">4×</button>
-    <button class="speed" data-speed="15" title="Very fast (3)">15×</button>
-    <button class="speed" data-speed="60" title="Watch years go by (4)">60×</button>
-  </div>
-  <span class="sep"></span>
-  <button class="tool" data-act="stats" title="Graphs and records for this meadow (S)"><span class="e">📊</span><span class="l">Stats</span></button>
 </nav>
 
-<div id="sky-menu" class="card hidden"></div>
+<!-- top right: time, then the meadow's controls; menus drop down, the inspector hangs underneath -->
+<div id="hud-right">
+  <div class="hud-top">
+  <div id="time" class="card">
+    <div class="speeds">
+      <button class="speed" data-speed="0" title="Pause (space)">⏸</button>
+      <button class="speed on" data-speed="1" title="Normal speed (1)">1×</button>
+      <button class="speed" data-speed="4" title="Fast (2)">4×</button>
+      <button class="speed" data-speed="15" title="Very fast (3)">15×</button>
+      <button class="speed" data-speed="60" title="Watch years go by (4)">60×</button>
+    </div>
+    <span class="hud-sep"></span>
+    <button class="hud-btn" data-act="sky" title="Change the weather (W)"><span id="sky-btn">☀️</span></button>
+    <button class="hud-btn" data-act="stats" title="Graphs and records for this meadow (S)">📊</button>
+    <button class="hud-btn" id="sound-btn" data-act="sound" title="Sound on or off (M)">🔇</button>
+    <button class="hud-btn more" data-act="more" title="More">•••</button>
+  </div>
+  <div id="sky-menu" class="card drop hidden"></div>
+  <div id="more-menu" class="card drop hidden">
+    <button class="menu-item" data-act="copy-link">🔗 Copy a link to this meadow</button>
+    <button class="menu-item danger" data-action="new">🔄 Start a new meadow…</button>
+  </div>
+  </div>
+  <aside id="inspector" class="card"></aside>
+</div>
 
-<aside id="inspector" class="card"></aside>
+<!-- right-click the meadow: tools that act right where you clicked -->
+<div id="ring" class="hidden"></div>
 
 <section id="stats" class="hidden">
   <div class="stats-wrap">
@@ -343,7 +435,7 @@
     <ul>
       <li>🔍 <b>Click an animal</b> to follow its whole life story</li>
       <li>🖱️ <b>Scroll</b> to zoom, <b>drag</b> to look around</li>
-      <li>🐇 🦊 🌱 ⚡ <b>Play god</b> with the tools at the bottom, weather included</li>
+      <li>🐇 🦊 🌱 ⚡ <b>Right-click</b> the meadow to play god, weather included. The toolbar waits at the bottom edge</li>
     </ul>
     <button class="btn go" id="go">Let's go!</button>
   </div>
