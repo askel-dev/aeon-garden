@@ -6,7 +6,7 @@ for (let s = 1; s <= seeds; s++) {
   const w = Sim.createWorld(s * 7919);
   const t0 = Date.now();
   const rows = [];
-  let arrivals = { rabbit: 0, fox: 0 }, kills = 0, escapes = 0, strikes = 0, fires = 0, burned = 0;
+  let arrivals = { rabbit: 0, fox: 0 }, surprises = 0, kills = 0, escapes = 0, strikes = 0, fires = 0, burned = 0;
   const sky = {};
   let maxR = 0, maxF = 0;
   for (let k = 0; k < years * 4; k++) {
@@ -17,6 +17,7 @@ for (let s = 1; s <= seeds; s++) {
         if (e.type === 'arrive') arrivals[e.species]++;
         if (e.type === 'death' && e.cause === 'fox') kills++;
         if (e.type === 'escape') escapes++;
+        if (e.type === 'birth' && e.surprise.length) surprises++;
         if (e.type === 'lightning') strikes++;
         if (e.type === 'fireout') { fires++; burned = Math.max(burned, e.burned); }
         if (e.type === 'weather') sky[e.kind] = (sky[e.kind] || 0) + 1;
@@ -33,7 +34,8 @@ for (let s = 1; s <= seeds; s++) {
   console.log(`  weather ${JSON.stringify(sky)}  strikes ${strikes}  fires ${fires} (biggest ${burned} tiles)`);
   console.log('  deaths rabbit', JSON.stringify(d.rabbit), 'fox', JSON.stringify(d.fox));
   const tm = Sim.traitMeans(w, 'rabbit'), fm = Sim.traitMeans(w, 'fox');
-  const fmt = m => m ? Object.entries(m).filter(([k]) => k !== 'fur').map(([k, v]) => `${k}${v.toFixed(2)}`).join(' ') : '-';
+  const fmt = m => m ? Object.entries(m).map(([k, v]) => `${k}${v.toFixed(2)}`).join(' ') : '-';
   console.log('  rabbit genes', fmt(tm), '| fox genes', fmt(fm));
+  console.log('  rabbit coats', JSON.stringify(Sim.coatCounts(w)), ' surprise litters', surprises);
   for (let i = 0; i < rows.length; i += 8) console.log('  ' + rows.slice(i, i + 8).join('  '));
 }

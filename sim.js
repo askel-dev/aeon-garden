@@ -56,7 +56,16 @@ const BITE = 0.012;             // grass eaten per tick of grazing
 const GRASS_ENERGY = 40;        // energy per unit of grass
 const MOVE_COST = 0.25;         // energy per tick = MOVE_COST * v^2 / walk
 
-const GENES = ['speed', 'size', 'eyes', 'bravery', 'friendly', 'fur'];
+const GENES = ['speed', 'size', 'eyes', 'bravery', 'friendly'];
+
+// Rabbit coats: two genes, each a pair of letters, one from each parent. A capital letter wins.
+//   A wild (speckled brown) over a solid (black);  D full colour over d pale.
+// So 'AaDD' looks wild brown but can pass on black. Foxes keep a simple sliding `fur` shade.
+const COATS = {
+  wild: { name: 'wild brown' }, black: { name: 'black' }, sand: { name: 'sandy' }, blue: { name: 'blue-grey' },
+};
+const COAT_RARE = 0.3;          // founders: how often each recessive letter turns up
+const COAT_FLIP = 0.002;        // per letter per birth: a new colour now and then
 
 const SPECIES = {
   rabbit: {
@@ -631,10 +640,11 @@ function pickName(w, species) {
   return n === 1 ? base : base + ' ' + roman(n);
 }
 
-function founderGenes(w) {
-  const g = {};
-  for (const k of GENES) g[k] = clamp(0.5 + 0.12 * w.rng.normal(), 0, 1);
-  g.fur = w.rng.next();
+function founderGenes(w, species) {
+  const r = w.rng, g = {};
+  for (const k of GENES) g[k] = clamp(0.5 + 0.12 * r.normal(), 0, 1);
+  if (species === 'rabbit') g.coat = ['A', 'A', 'D', 'D'].map(L => r.next() < COAT_RARE ? L.toLowerCase() : L).join('');
+  else g.fur = r.next();
   return g;
 }
 
@@ -642,11 +652,28 @@ function childGenes(w, mum, dad) {
   const r = w.rng, g = {};
   for (const k of GENES) {
     let v = r.next() < 0.5 ? mum[k] : dad[k];
-    if (k === 'fur') v = (mum.fur + dad.fur) / 2 + 0.05 * r.normal();   // families share a coat
-    else if (r.next() < 0.35) v += 0.045 * r.normal();
+    if (r.next() < 0.35) v += 0.045 * r.normal();
     g[k] = clamp(v, 0, 1);
   }
+  if (mum.coat) {
+    // One letter of each gene from mum, one from dad. Rarely a letter flips.
+    const pick = (a, b) => [a[r.next() < 0.5 ? 0 : 1], b[r.next() < 0.5 ? 0 : 1]]
+      .map(L => r.next() < COAT_FLIP ? (L === L.toUpperCase() ? L.toLowerCase() : L.toUpperCase()) : L).join('');
+    g.coat = pick(mum.coat.slice(0, 2), dad.coat.slice(0, 2)) + pick(mum.coat.slice(2), dad.coat.slice(2));
+  } else g.fur = clamp((mum.fur + dad.fur) / 2 + 0.05 * r.normal(), 0, 1);   // fox families share a coat
   return g;
+}
+
+// What a rabbit's coat looks like, and the colours it hides and can still pass on.
+function coatOf(g) {
+  const wild = g.coat.slice(0, 2).includes('A'), full = g.coat.slice(2).includes('D');
+  return wild ? (full ? 'wild' : 'sand') : (full ? 'black' : 'blue');
+}
+function hiddenCoats(g) {
+  const out = [];
+  if (g.coat.slice(0, 2).includes('A') && g.coat.slice(0, 2).includes('a')) out.push('black');
+  if (g.coat.slice(2).includes('D') && g.coat.slice(2).includes('d')) out.push('pale');
+  return out;
 }
 
 function computeTraits(c) {
@@ -714,7 +741,7 @@ function nearestBurrow(w, x, y, maxD, halfDug = false) {
 
 function addCreature(w, species, x, y, opts = {}) {
   if (!dry(w, x, y)) return null;
-  const c = makeCreature(w, species, x, y, opts.genes || founderGenes(w), null);
+  const c = makeCreature(w, species, x, y, opts.genes || founderGenes(w, species), null);
   if (opts.sex) c.sex = opts.sex;
   if (opts.age) c.born = w.tick - opts.age * TPD;
   c.home = nearestBurrow(w, x, y, 40);
@@ -836,7 +863,9 @@ function giveBirth(w, mum) {
   let n = r.int(sp.litter[0], sp.litter[1]);
   if (well < 0.4) n = Math.max(1, n - 1);
   const dad = w.byId.get(mum.dadIdPending);
-  const kids = [];
+  const kids = [], surprise = [];
+  // A coat neither parent shows came from colours both of them were hiding.
+  const shown = mum.genes.coat && [coatOf(mum.genes), coatOf(mum.dadGenes)];
   for (let k = 0; k < n; k++) {
     let x = mum.x + r.range(-1, 1), y = mum.y + r.range(-1, 1);
     if (!dry(w, x, y)) { x = mum.x; y = mum.y; }
@@ -845,6 +874,10 @@ function giveBirth(w, mum) {
     kid.home = mum.home || mum.burrow;
     if (mum.hidden) { kid.hidden = true; kid.burrow = mum.burrow; kid.sleeping = true; kid.mode = 'sleep'; kid.timer = 60; mum.burrow.count++; }
     note(w, kid, '🐣', `Born to ${mum.name}` + (dad ? ` and ${dad.name}` : ''));
+    if (shown && !shown.includes(coatOf(kid.genes))) {
+      surprise.push(kid);
+      note(w, kid, '🎨', `Born ${COATS[coatOf(kid.genes)].name}, unlike either parent`);
+    }
     w.newborn.push(kid);
     w.byId.set(kid.id, kid);
     kids.push(kid);
@@ -855,7 +888,7 @@ function giveBirth(w, mum) {
   note(w, mum, '🍼', `Had ${n} ${n === 1 ? 'baby' : 'babies'}`);
   if (dad && dad.alive) note(w, dad, '🍼', `Became a dad to ${n} with ${mum.name}`);
   w.stats.births[mum.species] += n;
-  emit(w, { type: 'birth', mum, dad, kids });
+  emit(w, { type: 'birth', mum, dad, kids, surprise });
 }
 
 // ---------------------------------------------------------------- burrows
@@ -1356,6 +1389,12 @@ function traitMeans(w, species) {
   return m;
 }
 
+function coatCounts(w) {
+  const n = { wild: 0, black: 0, sand: 0, blue: 0 };
+  for (const c of w.creatures) if (c.alive && c.genes.coat) n[coatOf(c.genes)]++;
+  return n;
+}
+
 // How full the meadow is: 1 when every tile holds all the grass its soil allows.
 function grassFullness(w) {
   let g = 0, f = 0;
@@ -1507,9 +1546,10 @@ function mood(w, c) {
 }
 
 const api = {
-  W, H, TPD, SHALLOW, DEEP, SEASON_DAYS, YEAR_DAYS, SEASONS, SPECIES, GENES, WEATHER,
+  W, H, TPD, SHALLOW, DEEP, SEASON_DAYS, YEAR_DAYS, SEASONS, SPECIES, GENES, COATS, WEATHER,
   createWorld, step, clock, isNight, phaseOf, seasonOf, mood, ageDays, growth, isAdult,
   addCreature, paintGrass, setSky, lockSky, zap, traitMeans, walkable,
+  coatOf, hiddenCoats, coatCounts,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 else root.Sim = api;

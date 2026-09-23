@@ -101,9 +101,9 @@ const spriteCache = new Map();
 let spriteBytes = 0;
 const SPRITE_BYTES = 96e6;          // phones cap canvas memory in total, so mind the pixels, not the count
 
-function sprite(emoji, px, tint, leaf, center) {
+function sprite(emoji, px, tint, leaf, center, coat) {
   px = Math.max(4, Math.round(px));
-  const key = emoji + '|' + px + '|' + (tint || '') + '|' + (leaf ? leaf.key : '') + (center ? '|c' : '');
+  const key = emoji + '|' + px + '|' + (tint || '') + '|' + (leaf ? leaf.key : '') + (center ? '|c' : '') + (coat ? '|' + coat.key : '');
   let s = spriteCache.get(key);
   if (s) return s;
   const size = Math.ceil(px * 1.3 * dpr);
@@ -114,7 +114,7 @@ function sprite(emoji, px, tint, leaf, center) {
   spriteBytes += size * size * 4;
   const c = document.createElement('canvas');
   c.width = c.height = size;
-  const g = c.getContext('2d', leaf && { willReadFrequently: true });   // repainting reads pixels back
+  const g = c.getContext('2d', (leaf || coat) && { willReadFrequently: true });   // repainting reads pixels back
   g.textAlign = 'center'; g.textBaseline = 'middle';
   g.font = `${px * dpr}px ${EMOJI_FONT}`;
   g.fillText(emoji, size / 2, size / 2 + px * dpr * 0.06);
@@ -138,6 +138,7 @@ function sprite(emoji, px, tint, leaf, center) {
     g.fillRect(0, 0, size, size);
   }
   if (leaf) restyleTree(g, size, leaf);
+  if (coat) recolourCoat(g, size, coat, px * dpr);
   s = { canvas: c, size: size / dpr };
   spriteCache.set(key, s);
   return s;
@@ -193,7 +194,7 @@ function restyleTree(g, size, look) {
 }
 
 function drawEmoji(emoji, x, y, px, opts = {}) {
-  const s = sprite(emoji, px, opts.tint, opts.leaf, opts.center);
+  const s = sprite(emoji, px, opts.tint, opts.leaf, opts.center, opts.coat);
   if (!opts.flip && !opts.squash && opts.alpha === undefined) {
     ctx.drawImage(s.canvas, x - s.size / 2, y - s.size / 2, s.size, s.size);
     return;
@@ -206,22 +207,66 @@ function drawEmoji(emoji, x, y, px, opts = {}) {
   ctx.restore();
 }
 
-// Fur colour: families share a coat, so you can spot a lineage across the meadow.
-const FUR = {
-  rabbit: [[255, 246, 230], [214, 178, 130], [156, 112, 78], [148, 142, 142], [112, 96, 88]],
-  fox: [[245, 150, 60], [214, 92, 42], [176, 98, 62], [205, 205, 212], [255, 255, 255]],
+// Rabbit coats (the genes are in the sim). Wild coats are agouti: each hair banded, so speckled.
+const COAT = {
+  wild: { key: 'wild', rgb: [150, 114, 80], speckle: 0.35, swatch: '#96724f' },
+  black: { key: 'black', rgb: [62, 56, 56], speckle: 0, swatch: '#3e3838' },
+  sand: { key: 'sand', rgb: [212, 178, 128], speckle: 0.3, swatch: '#d4b280' },
+  blue: { key: 'blue', rgb: [128, 134, 150], speckle: 0, swatch: '#808696' },
 };
-function furRGB(species, f) {
-  const stops = FUR[species], p = clamp(f, 0, 0.999) * (stops.length - 1);
-  const i = Math.floor(p), t = p - i, a = stops[i], b = stops[i + 1];
+const coatLook = c => c.genes.coat && COAT[S.coatOf(c.genes)];
+
+// The rabbit emoji is a white albino. Its fur takes the coat colour but keeps its light and
+// shadow; the pink of the ears stays, and the red eye turns dark.
+// The speckles are laid out on the glyph itself (from its centre, in font sizes), so they
+// stay in place on the body at every zoom.
+const SPECKS = 30;              // speckles across one font size
+function recolourCoat(g, size, coat, em) {
+  const img = g.getImageData(0, 0, size, size), d = img.data, cell = em / SPECKS;
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const i = (y * size + x) * 4;
+    if (!d[i + 3]) continue;
+    const r = d[i], gr = d[i + 1], b = d[i + 2];
+    const hi = Math.max(r, gr, b), sat = (hi - Math.min(r, gr, b)) / 255, lum = (r + gr + b) / 765;
+    if (r > gr + 70 && lum < 0.45) { d[i] = 44; d[i + 1] = 32; d[i + 2] = 28; continue; }   // the eye
+    const fur = clamp(1 - (sat - 0.08) * 6, 0, 1);
+    if (!fur) continue;
+    const speck = 1 + coat.speckle * (hash2(Math.floor((x - size / 2) / cell), Math.floor((y - size / 2) / cell), 7) - 0.5);
+    const shade = (1 + (lum - 0.82) * 1.6) * speck;
+    for (let k = 0; k < 3; k++) d[i + k] = lerp(d[i + k], Math.min(255, coat.rgb[k] * shade), fur);
+  }
+  g.putImageData(img, 0, 0);
+}
+
+// Fox fur: one sliding shade that families share, laid lightly over the emoji.
+const FOX_FUR = [[245, 150, 60], [214, 92, 42], [176, 98, 62], [205, 205, 212], [255, 255, 255]];
+function foxRGB(f) {
+  const p = clamp(f, 0, 0.999) * (FOX_FUR.length - 1);
+  const i = Math.floor(p), t = p - i, a = FOX_FUR[i], b = FOX_FUR[i + 1];
   return [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)].map(Math.round);
 }
 function furTint(c) {
-  const q = Math.round(c.genes.fur * 10) / 10;           // a few shades keep the sprite cache small
-  const [r, g, b] = furRGB(c.species, q);
+  if (c.genes.coat) return undefined;
+  const [r, g, b] = foxRGB(Math.round(c.genes.fur * 10) / 10);   // a few shades keep the sprite cache small
   return `rgba(${r},${g},${b},0.22)`;
 }
-const furCss = c => `rgb(${furRGB(c.species, c.genes.fur).join(',')})`;
+const furCss = c => c.genes.coat ? coatLook(c).swatch : `rgb(${foxRGB(c.genes.fur).join(',')})`;
+
+// "Wild brown coat, carries black": the colours it hides can still turn up in its kits.
+function coatLine(c) {
+  const hid = S.hiddenCoats(c.genes);
+  const name = S.COATS[S.coatOf(c.genes)].name;
+  return `🎨 ${name[0].toUpperCase() + name.slice(1)} coat${hid.length ? `, carries ${hid.join(' and ')}` : ''}`;
+}
+
+// A coloured rabbit for the inspector: the recoloured sprite, drawn once per coat.
+const portraits = new Map();
+function portraitHTML(c) {
+  if (!c.alive || !c.genes.coat) return c.alive ? c.sp.emoji : '👻';
+  const look = coatLook(c);
+  if (!portraits.has(look.key)) portraits.set(look.key, sprite(c.sp.emoji, 38, undefined, null, true, look).canvas.toDataURL());
+  return `<img src="${portraits.get(look.key)}" alt="${c.sp.emoji}">`;
+}
 
 // ------------------------------------------------------------------ terrain
 
@@ -713,7 +758,7 @@ function drawCreature(c, sx, sy, now) {
     const line = sy + px * 0.3, rip = 1 + 0.12 * Math.sin(now / 260 + c.id);
     ctx.save();
     ctx.beginPath(); ctx.rect(sx - px, line - px * 2, px * 2, px * 2); ctx.clip();
-    drawEmoji(c.sp.emoji, sx, sy + px * 0.1, px, { tint: furTint(c), flip: c.species === 'rabbit' && c.facing > 0 });
+    drawEmoji(c.sp.emoji, sx, sy + px * 0.1, px, { tint: furTint(c), coat: coatLook(c), flip: c.species === 'rabbit' && c.facing > 0 });
     ctx.restore();
     ctx.strokeStyle = 'rgba(240, 250, 255, 0.7)';
     ctx.lineWidth = Math.max(1, px * 0.05);
@@ -727,7 +772,7 @@ function drawCreature(c, sx, sy, now) {
   const squash = (c.sleeping ? 0.82 : 1) + breathe;
   // The rabbit glyph faces left; the fox glyph is a face and does not care.
   drawEmoji(c.sp.emoji, sx, sy - hop + px * 0.4 * (1 - squash), px, {   // feet stay on the ground
-    tint: furTint(c), flip: c.species === 'rabbit' && c.facing > 0, squash,
+    tint: furTint(c), coat: coatLook(c), flip: c.species === 'rabbit' && c.facing > 0, squash,
   });
 }
 
@@ -1379,6 +1424,13 @@ function handleEvent(e) {
       const text = `${fox ? '🦊' : '🍼'} ${link(e.mum)} had ${n} ${what}` + (e.dad ? ` with ${link(e.dad)}.` : '.');
       if (mine || fox) addNews(text);
       else addNews(text, 'birth', 9000);
+      if (e.surprise.length) {
+        const n = {};
+        for (const k of e.surprise) { const c = S.coatOf(k.genes); n[c] = (n[c] || 0) + 1; }
+        const what = Object.entries(n).map(([c, m]) => `${m === 1 ? 'a' : m} ${S.COATS[c].name} ${m === 1 ? 'baby' : 'babies'}`).join(' and ');
+        const t = `🎨 Surprise! ${link(e.mum)}` + (e.dad ? ` and ${link(e.dad)}` : '') + ` had ${what}.`;
+        if (mine) addNews(t); else addNews(t, 'surprise', 20000);
+      }
       break;
     }
     case 'death': {
@@ -1802,7 +1854,14 @@ function evoBlock(k) {
       const chip = Math.abs(d) >= 0.02 ? `<span class="${d > 0 ? 'up' : 'down'}">${d > 0 ? '▲' : '▼'}${Math.round(Math.abs(d) * 100)}%</span>` : '';
       return `<div class="evo-mini" title="${t.tip}"><div class="em-head">${t.e} ${t.name} ${chip}</div>` +
         `<div class="em-word">${now ? word(t, now[t.k]) : 'none alive'}</div><canvas data-evo="${k}|${t.k}"></canvas></div>`;
-    }).join('') + '</div>';
+    }).join('') + '</div>' + (k === 'rabbit' ? coatTally() : '');
+}
+
+function coatTally() {
+  const n = S.coatCounts(world), total = Object.values(n).reduce((a, b) => a + b, 0);
+  if (!total) return '';
+  return `<div class="coats"><b>🎨 Coats</b>` + Object.keys(COAT).filter(c => n[c]).map(c =>
+    `<span><i style="background:${COAT[c].swatch}"></i>${S.COATS[c].name} <b>${Math.round(n[c] / total * 100)}%</b></span>`).join('') + '</div>';
 }
 
 function drawTrait(c, k, gene, i0) {
@@ -1899,7 +1958,7 @@ function renderInspector() {
   setHTML(box, `
     <button class="sheet-handle phone-only" aria-label="${ui.sheetUp ? 'Show less' : 'Show more'}"></button>
     <div class="ins-head">
-      <div class="portrait" style="background:${furCss(c)}33">${c.alive ? c.sp.emoji : '👻'}</div>
+      <div class="portrait" style="background:${furCss(c)}33">${portraitHTML(c)}</div>
       <div>
         <div class="ins-name">${esc(c.name)} <span style="color:var(--muted)">${sex}</span></div>
         <div class="ins-sub">${c.alive ? `${c.sp.name} · ${lifeStage(c)} · ${age} ${age === 1 ? 'day' : 'days'} old`
@@ -1919,6 +1978,7 @@ function renderInspector() {
       <span class="word">${word(t, c.genes[t.k])}</span></div>`).join('')}
     <h4>Family</h4>
     <div class="family">
+      ${c.genes.coat ? `${coatLine(c)}<br>` : ''}
       ${c.gen === 1 ? 'One of the first arrivals.' : [parent(mum, 'Mum'), parent(dad, 'Dad')].filter(Boolean).join(' · ')}<br>
       ${c.kids ? `${c.kids} ${c.kids === 1 ? 'child' : 'children'}${kidsAlive ? `, ${kidsAlive} still alive` : ''}` : 'No children yet'}
     </div>
@@ -1952,7 +2012,7 @@ function diaryFacts(c) {
   const events = c.story.slice(-8).map(s => `- (${when(s.t)}) ${s.text}`).join('\n');
   return [
     `Name: ${c.name}. A ${c.sex === 'F' ? 'female' : 'male'} ${c.sp.name.toLowerCase()}, ${Math.floor(S.ageDays(world, c))} days old (a ${lifeStage(c)}; ${c.sp.plural.toLowerCase()} here live about ${c.sp.lifeDays} days).`,
-    `Personality: ${TRAITS.map(t => word(t, c.genes[t.k])).join(', ')}.`,
+    `Personality: ${TRAITS.map(t => word(t, c.genes[t.k])).join(', ')}.` + (c.genes.coat ? ` Fur: ${S.COATS[S.coatOf(c.genes)].name}.` : ''),
     `Right now: ${S.mood(world, c).text}. Tummy ${Math.round(100 * c.energy / c.maxEnergy)}% full. It is ${S.SEASONS[ck.season].name.toLowerCase()}, ${ck.night ? 'night' : 'daytime'}, weather: ${S.WEATHER[world.weather.kind].name.toLowerCase()}${world.burning.length ? ', and there is a wildfire in the meadow' : ''}.`,
     `Family: mum ${mum ? mum.name + (mum.alive ? '' : ' (died)') : 'unknown'}, dad ${dad ? dad.name + (dad.alive ? '' : ' (died)') : 'unknown'}, ${c.kids} children.`,
     c.species === 'fox' ? `Rabbits caught so far: ${c.kills}.` : `Narrow escapes from foxes: ${c.escapes}.`

@@ -5,6 +5,10 @@ emerges. **This is a game.** Balancing for fun is allowed and is the job; realis
 optional. It grew out of the AEON artificial-life lab (`~/programming/AEON`, finished and
 closed); none of that project's rules apply here.
 
+**Discuss before implementing.** When asked for a change, first talk it through (what you
+found, the options, what you'd recommend) and wait for a go-ahead before editing code, unless
+told to just do it.
+
 - `sim.js`: the world. No drawing. Runs in the browser and under node.
 - `game.js`: drawing, UI, news feed, the inspector, the optional Ollama diary.
 - `sound.js`: all the sounds, made with Web Audio (no files). Off until the 🔊 button or M.
