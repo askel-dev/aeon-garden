@@ -430,6 +430,7 @@ function render(now) {
   const [ox, oy] = toScreen(0, 0);
   const z = cam.zoom, ck = S.clock(world);
   drawGround(z, ox, oy, q !== 0);
+  drawWaves(now);
 
   // Flowers and tufts.
   const plantPx = z * 0.95;
@@ -477,7 +478,10 @@ function render(now) {
   items.sort((a, b) => a.y - b.y);
   // Shadows first, all together, so a tree's shadow never lands on a rabbit behind it.
   const sn = sun(ck);
-  for (const it of items) if (it.d) drawDecorShadow(it.d, it.sx, it.sy, sn);
+  for (const it of items) {
+    if (it.d) drawDecorShadow(it.d, it.sx, it.sy, sn);
+    else drawCreatureShadow(it.c, it.sx, it.sy, now, sn);
+  }
   for (const it of items) {
     if (it.d) drawDecor(it.d, it.sx, it.sy, now, ck);
     else drawCreature(it.c, it.sx, it.sy, now);
@@ -526,13 +530,16 @@ function render(now) {
 // Grows with zoom, but never shrinks to a speck when you look at the whole meadow.
 const creaturePx = c => (10 + cam.zoom * 1.4) * c.scale * (0.55 + 0.45 * S.growth(world, c));
 
+// How high off the ground a hop has lifted it, in screen pixels.
+function hopOf(c, px, now) {
+  const fast = c.mode === 'flee' || c.mode === 'chase';
+  return MOVING.has(c.mode) && ui.speed > 0
+    ? Math.abs(Math.sin(now / (fast ? 55 : 120) + c.id)) * px * (fast ? 0.16 : 0.1) : 0;
+}
+
 function drawCreature(c, sx, sy, now) {
   const px = creaturePx(c);
-  const fast = c.mode === 'flee' || c.mode === 'chase';
-  const hop = MOVING.has(c.mode) && ui.speed > 0
-    ? Math.abs(Math.sin(now / (fast ? 55 : 120) + c.id)) * px * (fast ? 0.16 : 0.1) : 0;
-  ctx.fillStyle = 'rgba(40, 50, 20, 0.22)';
-  ctx.beginPath(); ctx.ellipse(sx, sy + px * 0.34, px * 0.32 * (1 - hop / px), px * 0.09, 0, 0, TAU); ctx.fill();
+  const hop = hopOf(c, px, now);
   // Standing still, everyone breathes: slow and deep asleep, quick and shallow awake.
   const breathe = !hop && ui.speed > 0
     ? Math.sin(now / (c.sleeping ? 650 : 330) + c.id) * (c.sleeping ? 0.035 : 0.02) : 0;
@@ -631,6 +638,17 @@ function drawDecorShadow(d, sx, sy, sn) {
   const w = s * (d.tree ? 0.34 : 0.42), h = s * 0.12, off = sn.lean * s * 0.22;
   ctx.fillStyle = `rgba(40, 50, 20, ${0.24 * sn.a})`;
   ctx.beginPath(); ctx.ellipse(sx + off, sy + h * 0.4, w + Math.abs(off) * 0.6, h, 0, 0, TAU); ctx.fill();
+}
+
+// Animals lean their shadow with the sun like the trees do, and keep a faint one at their feet
+// at night and under cloud so they never float. A hop lifts them off it and it shrinks.
+function drawCreatureShadow(c, sx, sy, now, sn) {
+  const px = creaturePx(c), lift = 1 - hopOf(c, px, now) / px;
+  const a = 0.14 + 0.16 * Math.max(0, sn.a), off = Math.max(0, sn.a) * sn.lean * px * 0.2;
+  ctx.fillStyle = `rgba(40, 50, 20, ${a * lift})`;
+  ctx.beginPath();
+  ctx.ellipse(sx + off, sy + px * 0.36, (px * 0.34 + Math.abs(off) * 0.6) * lift, px * 0.1 * lift, 0, 0, TAU);
+  ctx.fill();
 }
 
 // Trees sway from the trunk. Gusts roll across the meadow, harder in rain and storms.
@@ -779,18 +797,54 @@ function pondFills() {
     const f1 = blurred(world.water), f2 = blurred(f1), f4 = blurred(blurred(f2));
     const ring = (f, t, rgb, a) => ({ path: pondShape(f, t), rgb, a });
     const steps = (a, b, n) => Array.from({ length: n }, (_, i) => lerp(a, b, i / (n - 1)));
-    pond = { world, rings: [
-      ...steps(0.04, 0.42, 8).map(t => ring(f2, t, 'sand', 0.08)),                // damp sand
+    // Where little waves come and go: a scatter of spots well inside the water, fixed per meadow.
+    const waves = [];
+    for (let i = 0; i < f2.length; i++) {
+      const x = i % S.W, y = (i / S.W) | 0, h = hash2(x, y, world.seed);
+      if (f2[i] > 0.9 && h < 0.14) waves.push({ x: x + hash2(y, x, 7), y: y + hash2(x, y, 11), ph: h / 0.14 });
+    }
+    pond = { world, waves, rings: [
+      ...steps(0.03, 0.42, 9).map(t => ring(f4, t, 'sand', 0.12)),                // damp sand
       ring(f1, 0.47, [104, 170, 208], 1),                                          // shade under the bank
       ...steps(0.54, 0.8, 7).map(t => ring(f2, t, [130, 200, 235], 0.2)),          // shallows
       ...steps(0.72, 0.99, 9).map(t => ring(f4, t, [94, 164, 214], 0.09)),         // deeper middle
     ] };
   }
-  const ice = world.snow > 0 ? clamp(world.snow * 1.4 - 0.3, 0, 0.9) * 0.8 : 0;   // frozen over
+  const ice = iceOver();
   return pond.rings.map(({ rgb, a }) => {
     const c = (rgb === 'sand' ? shoreSand : rgb).map((v, i) => Math.round(lerp(v, [214, 232, 242][i], ice)));
     return `rgba(${c.join(',')}, ${a})`;
   });
+}
+
+const iceOver = () => world.snow > 0 ? clamp(world.snow * 1.4 - 0.3, 0, 0.9) * 0.8 : 0;   // frozen over
+
+// Little waves on open water: a small ~ that rises, drifts downwind and settles again.
+// The wind makes more of them show and bigger; ice stills the water.
+function drawWaves(now) {
+  const m = ui.sky.mix, wind = 0.4 * m.cloudy + 0.7 * m.rain + m.storm;
+  const a = (0.45 + 0.3 * Math.min(1, wind)) * (1 - iceOver() / 0.72), z = cam.zoom;
+  if (a <= 0.05 || z < 6) return;
+  const big = 1 + 0.4 * Math.min(1, wind), w = z * 0.34 * big, h = w * 0.22;
+  ctx.save();
+  ctx.strokeStyle = '#f4fbff'; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.lineWidth = Math.max(1, z * 0.07);
+  for (const p of pond.waves) {
+    const life = (now / (5200 - 2000 * Math.min(1, wind)) + p.ph) % 1;
+    const b = Math.sin(Math.PI * life);
+    if (b < 0.08) continue;
+    const [sx, sy] = toScreen(p.x + (life - 0.5) * 0.7, p.y);
+    if (!visible(sx, sy, w * 2)) continue;
+    const s = 0.6 + 0.4 * b;                                     // rises, then settles
+    ctx.globalAlpha = a * b;
+    ctx.beginPath();
+    for (let k = 0; k <= 12; k++) {                             // a short ~ of a wave and a half
+      const u = k / 12;
+      ctx.lineTo(sx + w * s * (2 * u - 1), sy - h * s * Math.sin(u * 3 * Math.PI));
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 function drawPonds(g, z, ox, oy, fills) {
