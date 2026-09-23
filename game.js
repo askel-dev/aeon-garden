@@ -83,6 +83,8 @@ new ResizeObserver(measureSheet).observe($('#inspector'));
 
 const toScreen = (x, y) => [(x - cam.x) * cam.zoom + vw / 2, (y - cam.y) * cam.zoom + vh / 2];
 const toWorld = (sx, sy) => [(sx - vw / 2) / cam.zoom + cam.x, (sy - vh / 2) / cam.zoom + cam.y];
+// Drags and scrolls move the view by whole screen pixels, so the ground's tiles can slide along.
+const wholePx = v => Math.round(v * dpr) / dpr;
 
 function zoomAt(sx, sy, z) {
   const [wx, wy] = toWorld(sx, sy);
@@ -342,16 +344,20 @@ const pebbles = detailTexture(140, (g, x, y, r) => {
   }
 });
 
-const bladeLayer = document.createElement('canvas');
-const bctx = bladeLayer.getContext('2d');
+// Scratch layers to cut the blades and the pebbles out on. One each: reusing a layer in the same
+// frame, while the screen still holds on to what was drawn from it, makes the browser copy it all.
+const bladeLayers = [[blades, lush], [pebbles, bare]].map(([pattern, where]) => ({ pattern, where, g: document.createElement('canvas').getContext('2d') }));
 
-function drawGroundDetail(g, z, ox, oy) {
+//   view   the part being painted, [x, y, w, h] in screen pixels
+//   clip   whether g is clipped to it, so the blade layer can be too
+function drawGroundDetail(g, z, ox, oy, view, clip) {
   const a = clamp((z - 7) / 9, 0, 1);                   // zoomed far out it would only shimmer
   if (a <= 0) return;
   // Draw in texture space, pinned to the meadow's corner, so the texture moves with the ground.
-  const k = z / DETAIL_PX, W = S.W * DETAIL_PX, H = S.H * DETAIL_PX;
-  const x0 = Math.max(0, -ox / k), y0 = Math.max(0, -oy / k);
-  const x1 = Math.min(W, (vw - ox) / k), y1 = Math.min(H, (vh - oy) / k);
+  const k = z / DETAIL_PX, W = S.W * DETAIL_PX, H = S.H * DETAIL_PX, [vx, vy, w, h] = view;
+  const x0 = Math.max(0, (vx - ox) / k), y0 = Math.max(0, (vy - oy) / k);
+  const x1 = Math.min(W, (vx + w - ox) / k), y1 = Math.min(H, (vy + h - oy) / k);
+  if (x1 <= x0 || y1 <= y0) return;
   const inTexture = t => { t.translate(ox, oy); t.scale(k, k); };
   g.save();
   g.globalAlpha = a;
@@ -360,10 +366,13 @@ function drawGroundDetail(g, z, ox, oy) {
   g.restore();
   // Blades and pebbles each go on a layer of their own, then everything outside their mask
   // (thick grass for blades, bare ground for pebbles) is cut away.
-  if (bladeLayer.width !== canvas.width || bladeLayer.height !== canvas.height) {
-    bladeLayer.width = canvas.width; bladeLayer.height = canvas.height;
-  }
-  for (const [pattern, where] of [[blades, lush], [pebbles, bare]]) {
+  for (const { pattern, where, g: bctx } of bladeLayers) {
+    const bladeLayer = bctx.canvas;
+    if (bladeLayer.width !== canvas.width || bladeLayer.height !== canvas.height) {
+      bladeLayer.width = canvas.width; bladeLayer.height = canvas.height;
+    }
+    bctx.save();
+    if (clip) { bctx.setTransform(dpr, 0, 0, dpr, 0, 0); bctx.beginPath(); bctx.rect(vx, vy, w, h); bctx.clip(); }
     bctx.setTransform(1, 0, 0, 1, 0, 0);
     bctx.clearRect(0, 0, bladeLayer.width, bladeLayer.height);
     bctx.setTransform(g.getTransform());
@@ -372,7 +381,7 @@ function drawGroundDetail(g, z, ox, oy) {
     bctx.globalCompositeOperation = 'destination-in';
     bctx.imageSmoothingEnabled = true; bctx.imageSmoothingQuality = 'high';
     bctx.drawImage(where, 0, 0, W, H);
-    bctx.globalCompositeOperation = 'source-over';
+    bctx.restore();
     g.save();
     g.globalAlpha = a;
     g.setTransform(1, 0, 0, 1, 0, 0);
@@ -382,41 +391,73 @@ function drawGroundDetail(g, z, ox, oy) {
 }
 
 // The ground (colours, grain, blades, pebbles, ponds) is by far the priciest part of a frame:
-// a dozen passes over every pixel. It only changes when the terrain is repainted or the camera
-// moves, so once it has held still for a couple of frames it is kept in a layer of its own and
-// copied in one pass. The layer is drawn exactly as the screen would be, so it looks the same.
-const groundLayer = document.createElement('canvas');
-const gctx = groundLayer.getContext('2d');
-let groundKey = '', groundStill = 0, groundCached = '';
+// a dozen passes over every pixel. It only changes when the terrain is repainted or the view
+// zooms, so it is kept in a layer of its own and copied in one pass. Panning slides the layer
+// along and paints only the strips that come into view. The layer is drawn exactly as the
+// screen would be, so it looks the same. It can only slide by whole pixels, so after a pan by
+// part of a pixel (following an animal, say), as while zooming, the ground is drawn directly.
+const groundLayers = [document.createElement('canvas'), document.createElement('canvas')];   // shown, spare
+let groundView = '', groundLook = '', groundStill = 0, groundAt = null;   // the pixel the layer's meadow starts in
 
-function paintGround(g, z, ox, oy, fills) {
+//   part   the part to paint, [x, y, w, h] in screen pixels; all of it if left out
+function paintGround(g, z, ox, oy, fills, part) {
+  const view = part || [0, 0, vw, vh];
+  if (part) { g.save(); g.beginPath(); g.rect(...part); g.clip(); }
   g.drawImage(terr, ox, oy, S.W * z, S.H * z);
-  drawGroundDetail(g, z, ox, oy);
-  drawPonds(g, z, ox, oy, fills);
+  drawGroundDetail(g, z, ox, oy, view, !!part);
+  drawPonds(g, z, ox, oy, fills, view);
+  if (part) g.restore();
+}
+
+function groundContext(c) {
+  const g = c.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.imageSmoothingEnabled = true;
+  g.imageSmoothingQuality = 'high';
+  return g;
 }
 
 function drawGround(z, ox, oy, shaking) {
   const fills = pondFills();
-  const key = [cam.x, cam.y, z, vw, vh, dpr, terrainVersion, fills.join()].join('|');
-  groundStill = key === groundKey ? groundStill + 1 : 0;
-  groundKey = key;
-  if (shaking || groundStill < 2) { paintGround(ctx, z, ox, oy, fills); return; }   // on the move: draw it directly
-  if (groundCached !== key) {
-    if (groundLayer.width !== canvas.width || groundLayer.height !== canvas.height) {
-      groundLayer.width = canvas.width; groundLayer.height = canvas.height;
-    }
-    gctx.setTransform(1, 0, 0, 1, 0, 0);
-    gctx.clearRect(0, 0, groundLayer.width, groundLayer.height);
-    gctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    gctx.imageSmoothingEnabled = true;
-    gctx.imageSmoothingQuality = 'high';
-    paintGround(gctx, z, ox, oy, fills);
-    groundCached = key;
+  // Where the meadow's corner lands on the screen's pixels: the whole pixel, and how far into it.
+  // (Rounded a little for the comparison, so the sums' last digits don't count as a move.)
+  const X = Math.round(ox * dpr * 256) / 256, Y = Math.round(oy * dpr * 256) / 256;
+  const bx = Math.floor(X), by = Math.floor(Y);
+  const view = [z, vw, vh, dpr, X - bx, Y - by].join('|'), look = terrainVersion + '|' + fills.join();
+  groundStill = view === groundView ? groundStill + 1 : 0;
+  if (view !== groundView || look !== groundLook) { groundView = view; groundLook = look; groundAt = null; }
+  if (shaking || groundStill < 2) { paintGround(ctx, z, ox, oy, fills); return; }   // zooming: draw it directly
+  const W = canvas.width, H = canvas.height;
+  if (groundLayers[0].width !== W || groundLayers[0].height !== H) {
+    for (const c of groundLayers) { c.width = W; c.height = H; }
+    groundAt = null;
   }
+  // How far the view has slid since, in screen pixels.
+  const dx = groundAt ? bx - groundAt[0] : 0, dy = groundAt ? by - groundAt[1] : 0;
+  if (!groundAt || Math.abs(dx) >= W || Math.abs(dy) >= H) {
+    const g = groundLayers[0].getContext('2d');
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.clearRect(0, 0, W, H);
+    paintGround(groundContext(groundLayers[0]), z, ox, oy, fills);
+  } else if (dx || dy) {
+    // Copy what's still in view onto the spare layer, then paint the strips that came in.
+    const [shown, spare] = groundLayers, g = spare.getContext('2d');
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.clearRect(0, 0, W, H);
+    g.imageSmoothingEnabled = false;
+    g.drawImage(shown, dx, dy);
+    groundContext(spare);
+    const strip = (x, y, w, h) => paintGround(g, z, ox, oy, fills, [x / dpr, y / dpr, w / dpr, h / dpr]);
+    const sx = dx > 0 ? 0 : W + dx, restX = dx > 0 ? dx : 0;                  // the side strip, and what's left beside it
+    if (dx) strip(sx, 0, Math.abs(dx), H);
+    if (dy) strip(restX, dy > 0 ? 0 : H + dy, W - Math.abs(dx), Math.abs(dy));  // top or bottom, less the corner
+    groundLayers.reverse();
+  }
+  groundAt = [bx, by];
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.imageSmoothingEnabled = false;                     // a pixel-for-pixel copy
-  ctx.drawImage(groundLayer, 0, 0);
+  ctx.drawImage(groundLayers[0], 0, 0);
   ctx.restore();
 }
 
@@ -796,11 +837,15 @@ function blurred(src) {
   return out;
 }
 
+// Also gives the box around the shape, so painting part of the ground can skip the rings that miss it.
 function pondShape(f, t) {
   const path = new Path2D(), at = (x, y) => f[clamp(y, 0, S.H - 1) * S.W + clamp(x, 0, S.W - 1)];
+  const box = [Infinity, Infinity, -Infinity, -Infinity];
   for (let y = -1; y < S.H; y++) for (let x = -1; x < S.W; x++) {
     const v = [at(x, y), at(x + 1, y), at(x + 1, y + 1), at(x, y + 1)];
     if (v[0] < t && v[1] < t && v[2] < t && v[3] < t) continue;
+    box[0] = Math.min(box[0], x + 0.5); box[1] = Math.min(box[1], y + 0.5);
+    box[2] = Math.max(box[2], x + 1.5); box[3] = Math.max(box[3], y + 1.5);
     const px = [x, x + 1, x + 1, x], py = [y, y, y + 1, y + 1];
     let first = true;
     const to = (a, b) => { first ? path.moveTo(a + 0.5, b + 0.5) : path.lineTo(a + 0.5, b + 0.5); first = false; };
@@ -814,14 +859,14 @@ function pondShape(f, t) {
     }
     path.closePath();
   }
-  return path;
+  return { path, box };
 }
 
 // Each ring's colour: the sand follows the season, and snow freezes the water over.
 function pondFills() {
   if (!pond || pond.world !== world) {
     const f1 = blurred(world.water), f2 = blurred(f1), f4 = blurred(blurred(f2));
-    const ring = (f, t, rgb, a) => ({ path: pondShape(f, t), rgb, a });
+    const ring = (f, t, rgb, a) => ({ ...pondShape(f, t), rgb, a });
     const steps = (a, b, n) => Array.from({ length: n }, (_, i) => lerp(a, b, i / (n - 1)));
     // Where little waves come and go: a scatter of spots well inside the water, fixed per meadow.
     const waves = [];
@@ -873,10 +918,15 @@ function drawWaves(now) {
   ctx.restore();
 }
 
-function drawPonds(g, z, ox, oy, fills) {
+//   view   the part being painted, [x, y, w, h] in screen pixels: rings that miss it are skipped
+function drawPonds(g, z, ox, oy, fills, [vx, vy, w, h]) {
   g.save();
   g.translate(ox, oy); g.scale(z, z);
-  pond.rings.forEach(({ path }, i) => { g.fillStyle = fills[i]; g.fill(path); });
+  pond.rings.forEach(({ path, box }, i) => {
+    const m = 4;                                     // a few pixels spare, for the thunder shake
+    if (ox + box[2] * z < vx - m || oy + box[3] * z < vy - m || ox + box[0] * z > vx + w + m || oy + box[1] * z > vy + h + m) return;
+    g.fillStyle = fills[i]; g.fill(path);
+  });
   g.restore();
 }
 
@@ -1907,7 +1957,7 @@ function setSpeed(s) {
 }
 
 // Two fingers pinch: the spot of meadow between them stays under them as they spread and move.
-let drag = null, pinch = null;
+let drag = null, pinch = null, scrollRest = { x: 0, y: 0 };
 const fingers = new Map();
 
 function startPinch() {
@@ -1959,7 +2009,7 @@ canvas.addEventListener('pointermove', e => {
   if (drag.moved) {
     canvas.classList.add('dragging');
     ui.follow = false;
-    cam.x = drag.cx - dx / cam.zoom; cam.y = drag.cy - dy / cam.zoom;
+    cam.x = drag.cx - wholePx(dx) / cam.zoom; cam.y = drag.cy - wholePx(dy) / cam.zoom;
     clampCam();
   }
 });
@@ -1983,7 +2033,9 @@ canvas.addEventListener('wheel', e => {
   closeRing();
   const pixelPan = !e.ctrlKey && e.deltaMode === 0 && (e.deltaX !== 0 || Math.abs(e.deltaY) < 40);
   if (pixelPan) {                     // trackpad two-finger scroll: look around
-    cam.x += e.deltaX / cam.zoom; cam.y += e.deltaY / cam.zoom;
+    const dx = wholePx(scrollRest.x + e.deltaX), dy = wholePx(scrollRest.y + e.deltaY);
+    scrollRest = { x: scrollRest.x + e.deltaX - dx, y: scrollRest.y + e.deltaY - dy };   // the rest comes next time
+    cam.x += dx / cam.zoom; cam.y += dy / cam.zoom;
     ui.follow = false; clampCam();
   } else {                            // mouse wheel or pinch: zoom
     cam.goal = null;
