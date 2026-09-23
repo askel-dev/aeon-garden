@@ -109,8 +109,8 @@ function drawEmoji(emoji, x, y, px, opts = {}) {
 
 // Fur colour: families share a coat, so you can spot a lineage across the meadow.
 const FUR = {
-  rabbit: [[255, 246, 230], [214, 178, 130], [156, 112, 78], [128, 128, 134], [78, 66, 60]],
-  fox: [[245, 150, 60], [214, 92, 42], [150, 80, 52], [205, 205, 212], [255, 255, 255]],
+  rabbit: [[255, 246, 230], [214, 178, 130], [156, 112, 78], [148, 142, 142], [112, 96, 88]],
+  fox: [[245, 150, 60], [214, 92, 42], [176, 98, 62], [205, 205, 212], [255, 255, 255]],
 };
 function furRGB(species, f) {
   const stops = FUR[species], p = clamp(f, 0, 0.999) * (stops.length - 1);
@@ -120,7 +120,7 @@ function furRGB(species, f) {
 function furTint(c) {
   const q = Math.round(c.genes.fur * 10) / 10;           // a few shades keep the sprite cache small
   const [r, g, b] = furRGB(c.species, q);
-  return `rgba(${r},${g},${b},0.38)`;
+  return `rgba(${r},${g},${b},0.22)`;
 }
 const furCss = c => `rgb(${furRGB(c.species, c.genes.fur).join(',')})`;
 
@@ -706,14 +706,16 @@ function drawRainbow(now) {
   const age = now - ui.sky.rainbow;
   if (!ui.sky.rainbow || age > 14000) return;
   const a = 0.3 * Math.sin(Math.PI * age / 14000);
-  const R = Math.max(vw, vh) * 0.55, bw = Math.max(6, R * 0.018);
+  const zoomScale = cam.zoom / minZoom;
+  const R = Math.max(vw, vh) * 0.55 * zoomScale, bw = Math.max(3, R * 0.018);
+  const [cx, cy] = toScreen(S.W * 0.58, S.H + 6);
   const colors = ['#ff5b5b', '#ff9f43', '#ffe066', '#6bd66b', '#4db8ff', '#6f7bf7', '#b77bf0'];
   ctx.save();
   ctx.globalAlpha = a;
   ctx.lineWidth = bw;
   colors.forEach((c, i) => {
     ctx.strokeStyle = c;
-    ctx.beginPath(); ctx.arc(vw * 0.62, vh * 1.08, R - i * bw, Math.PI * 1.05, Math.PI * 1.95); ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx, cy, R - i * bw, Math.PI * 1.05, Math.PI * 1.95); ctx.stroke();
   });
   ctx.restore();
 }
