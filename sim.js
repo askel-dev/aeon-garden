@@ -405,37 +405,19 @@ function roman(n) {
   return s;
 }
 
+// Names are a prefix and a suffix (Hazel + tail), dealt from a shuffled deck of every pairing
+// so they rarely repeat. An empty deck is shuffled again, and a repeat gets a number: Hazeltail II.
 function pickName(w, species) {
-  // 1. Initialize the name pool container if it doesn't exist
-  if (!w.namePools) {
-    w.namePools = {};
+  w.namePools ??= {};
+  let deck = w.namePools[species];
+  if (!deck || !deck.length) {
+    const { prefixes, suffixes } = NAME_PARTS[species];
+    deck = w.namePools[species] = w.rng.shuffle(prefixes.flatMap(p => suffixes.map(s => p + s)));
   }
-
-  // 2. If the species pool is missing or empty, generate a new shuffled deck
-  if (!w.namePools[species] || w.namePools[species].length === 0) {
-    const parts = NAME_PARTS[species];
-    const combinations = [];
-
-    // Generate every possible combination (e.g., 10 prefixes * 12 suffixes = 120 names)
-    for (const prefix of parts.prefixes) {
-      for (const suffix of parts.suffixes) {
-        combinations.push(prefix + suffix);
-      }
-    }
-
-    // Shuffle the newly created list so names are drawn in a random order
-    // (Assuming your w.rng object has a shuffle method. If not, use a standard Fisher-Yates shuffle here)
-    w.namePools[species] = w.rng.shuffle(combinations);
-  }
-
-  // 3. Draw a unique name from the end of the shuffled array
-  const base = w.namePools[species].pop();
-
-  // 4. Maintain your fallback logic just in case they spawn more entities than combinations
+  const base = deck.pop();
   const key = species + ':' + base;
   const n = (w.nameCounts.get(key) || 0) + 1;
   w.nameCounts.set(key, n);
-
   return n === 1 ? base : base + ' ' + roman(n);
 }
 
