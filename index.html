@@ -49,7 +49,7 @@
     --left: calc(16px + env(safe-area-inset-left, 0px));
     --right: calc(16px + env(safe-area-inset-right, 0px));
   }
-  * { box-sizing: border-box; }
+  * { box-sizing: border-box; touch-action: manipulation; }   /* no double-tap zoom in Safari; the meadow does its own zoom */
   html, body { margin: 0; height: 100%; overflow: hidden; background: #9cc77e; }
   body { font-family: Nunito, ui-rounded, system-ui, sans-serif; color: var(--ink); font-size: 14px; }
   /* The meadow fills the whole glass: under the clock and behind Safari's floating bar too (lvh). */
