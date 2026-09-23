@@ -42,6 +42,8 @@
   html, body { margin: 0; height: 100%; overflow: hidden; background: #9cc77e; }
   body { font-family: Nunito, ui-rounded, system-ui, sans-serif; color: var(--ink); font-size: 14px; }
   canvas#world { position: fixed; inset: 0; display: block; touch-action: none; }
+  .touch-only { display: none; }
+  @media (pointer: coarse) { .touch-only { display: list-item; } .mouse-only { display: none; } }
   canvas#world.tool-look { cursor: grab; }
   canvas#world.tool-look.dragging { cursor: grabbing; }
   canvas#world.tool-rabbit, canvas#world.tool-fox { cursor: copy; }
@@ -434,7 +436,8 @@
     <p>Leave it running and watch what happens: populations boom and crash, and over the years the animals slowly change.</p>
     <ul>
       <li>🔍 <b>Click an animal</b> to follow its whole life story</li>
-      <li>🖱️ <b>Scroll</b> to zoom, <b>drag</b> to look around</li>
+      <li class="mouse-only">🖱️ <b>Scroll</b> to zoom, <b>drag</b> to look around</li>
+      <li class="touch-only">🤏 <b>Pinch</b> to zoom, <b>drag</b> to look around</li>
       <li>🐇 🦊 🌱 ⚡ <b>Right-click</b> the meadow to play god, weather included. The toolbar waits at the bottom edge</li>
     </ul>
     <button class="btn go" id="go">Let's go!</button>

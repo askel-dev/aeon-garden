@@ -28,8 +28,19 @@ const ctx = canvas.getContext('2d');
 let vw = 0, vh = 0, dpr = 1, minZoom = 1;
 let barPad = 0;                                   // screen pixels the toolbar covers at the bottom
 
+// Safari's fingerprinting protection (iOS 26, private tabs) can report a ratio of 1 on a
+// retina phone, which leaves the meadow blurry. Ask the media queries too, and failing that,
+// trust that a touch screen is sharp.
+function pixelRatio() {
+  const r = window.devicePixelRatio || 1;
+  if (r >= 2) return r;
+  for (const n of [3, 2]) if (matchMedia(`(min-resolution: ${n}dppx)`).matches) return n;
+  if (matchMedia('(pointer: coarse)').matches) return Math.min(innerWidth, innerHeight) < 600 ? 3 : 2;
+  return r;
+}
+
 function resize() {
-  dpr = window.devicePixelRatio || 1;
+  dpr = pixelRatio();
   vw = window.innerWidth; vh = window.innerHeight;
   canvas.width = Math.round(vw * dpr); canvas.height = Math.round(vh * dpr);
   canvas.style.width = vw + 'px'; canvas.style.height = vh + 'px';
@@ -72,14 +83,20 @@ function zoomAt(sx, sy, z) {
 
 const EMOJI_FONT = '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
 const spriteCache = new Map();
+let spriteBytes = 0;
+const SPRITE_BYTES = 96e6;          // phones cap canvas memory in total, so mind the pixels, not the count
 
 function sprite(emoji, px, tint, leaf, center) {
   px = Math.max(4, Math.round(px));
   const key = emoji + '|' + px + '|' + (tint || '') + '|' + (leaf ? leaf.key : '') + (center ? '|c' : '');
   let s = spriteCache.get(key);
   if (s) return s;
-  if (spriteCache.size > 2000) spriteCache.clear();
   const size = Math.ceil(px * 1.3 * dpr);
+  if (spriteCache.size > 2000 || spriteBytes + size * size * 4 > SPRITE_BYTES) {
+    for (const old of spriteCache.values()) old.canvas.width = 0;   // hands the memory back right away
+    spriteCache.clear(); spriteBytes = 0;
+  }
+  spriteBytes += size * size * 4;
   const c = document.createElement('canvas');
   c.width = c.height = size;
   const g = c.getContext('2d', leaf && { willReadFrequently: true });   // repainting reads pixels back
@@ -1778,15 +1795,48 @@ function setSpeed(s) {
   document.querySelectorAll('[data-speed]').forEach(b => b.classList.toggle('on', +b.dataset.speed === s));
 }
 
-let drag = null;
+// Two fingers pinch: the spot of meadow between them stays under them as they spread and move.
+let drag = null, pinch = null;
+const fingers = new Map();
+
+function startPinch() {
+  const [a, b] = fingers.values(), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+  const [wx, wy] = toWorld(mx, my);
+  pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, zoom: cam.zoom, wx, wy };
+  drag = null; cam.goal = null; ui.follow = false;
+}
+
+function movePinch() {
+  const [a, b] = fingers.values(), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+  cam.zoom = clamp(pinch.zoom * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d, minZoom, 64);
+  cam.x = pinch.wx - (mx - vw / 2) / cam.zoom; cam.y = pinch.wy - (my - vh / 2) / cam.zoom;
+  clampCam();
+}
+
+function liftFinger(e) {
+  fingers.delete(e.pointerId);
+  if (!pinch) return false;
+  if (fingers.size >= 2) startPinch();
+  else {                                  // one finger left: carry on as a plain drag, never a tap
+    pinch = null;
+    const [f] = fingers.values();
+    if (f) drag = { x: f.x, y: f.y, cx: cam.x, cy: cam.y, moved: true, paint: false };
+  }
+  return true;
+}
+
 canvas.addEventListener('pointerdown', e => {
   if (ui.ring) { closeRing(); return; }
   if (e.button === 2 || (e.ctrlKey && e.pointerType === 'mouse')) return;   // that's the ring menu
   canvas.setPointerCapture(e.pointerId);
+  if (e.pointerType === 'touch') fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (fingers.size >= 2) { startPinch(); return; }
   drag = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y, moved: false, paint: ui.tool === 'grass' && e.button === 0 };
   if (drag.paint) paintAt(e.clientX, e.clientY);
 });
 canvas.addEventListener('pointermove', e => {
+  if (fingers.has(e.pointerId)) fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pinch) { movePinch(); return; }
   if (!drag) {
     const c = creatureAt(e.clientX, e.clientY);
     ui.hoverId = c ? c.id : 0;
@@ -1803,10 +1853,18 @@ canvas.addEventListener('pointermove', e => {
   }
 });
 canvas.addEventListener('pointerup', e => {
+  if (liftFinger(e)) return;
   canvas.classList.remove('dragging');
   if (drag && !drag.moved) click(e.clientX, e.clientY);
   drag = null;
 });
+canvas.addEventListener('pointercancel', e => {
+  if (liftFinger(e)) return;
+  canvas.classList.remove('dragging');
+  drag = null;
+});
+// Safari ignores the viewport's no-zoom, and a zoomed page makes the whole meadow blurry.
+document.addEventListener('gesturestart', e => e.preventDefault());
 canvas.addEventListener('pointerleave', () => { ui.hoverId = 0; });
 canvas.addEventListener('contextmenu', e => { e.preventDefault(); openRing(e.clientX, e.clientY); });
 canvas.addEventListener('wheel', e => {
