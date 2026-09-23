@@ -2914,7 +2914,8 @@ function frame(now) {
     updateMeadowCard();
     if (ui.sound) {
       const ck = S.clock(world);
-      Sound.update({ phase: ck.phase, season: ck.season, speed: ui.speed, sky: ui.sky.mix, fire: world.burning.length });
+      const life = world.count.rabbit / (S.SPECIES.rabbit.cap * world.room);
+      Sound.update({ phase: ck.phase, season: ck.season, speed: ui.speed, sky: ui.sky.mix, fire: world.burning.length, life });
     }
     if (ui.selectedId && !$('#inspector').matches(':hover')) renderInspector();
     if (ui.stats.open) { $('#stats-clock').textContent = `${S.SEASONS[S.seasonOf(world.tick)].emoji} ${when(world.tick)}`; drawStatsChart(); }
