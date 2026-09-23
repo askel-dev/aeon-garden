@@ -87,6 +87,14 @@ const SPECIES = {
     matureDays: 8, lifeDays: 40, gestationDays: 2.5, litter: [2, 4], cooldownDays: 8,
     breedSeasons: [0, 1], breedEnergy: 0.65, birthCost: 25, cap: 60,
   },
+  bee: {
+    key: 'bee', name: 'Bee', plural: 'Bees', emoji: '🐝',
+    maxEnergy: 30, burn: 0.02, walk: 0.1, sprint: 0.2, sight: 10,
+    mateRange: 20, wade: 1, 
+    matureDays: 2, lifeDays: 20, gestationDays: 1, litter: [2, 4], 
+    cooldownDays: 2, 
+    breedSeasons: [0, 1], breedEnergy: 0.6, birthCost: 5, cap: 60,  
+  }
 };
 
 const NAME_PARTS = {
@@ -97,8 +105,12 @@ const NAME_PARTS = {
   fox: {
     prefixes: ['Rus', 'Em', 'Scar', 'Cin', 'Fen', 'Marm', 'Ash', 'Kin', 'Am', 'Vix'],
     suffixes: ['ty', 'ber', 'let', 'der', 'nec', 'alade', 'ley', 'dle', 'ber', 'en', 'flame', 'spark']
+  },
+  bee: {
+    prefixes: ['Buzz', 'Honey', 'Nectar', 'Pollen', 'Sting', 'Hive', 'Queen', 'Drone', 'Worker', 'Flower'],
+    suffixes: ['bee', 'buzz', 'sting', 'hive', 'nectar', 'pollen', 'queen', 'drone', 'worker', 'flower', 'le', 'by', 'wick', 'ly', 'ina', 'drop', 'kin', 'ette', 'o']
   }
-};
+}
 
 // ---------------------------------------------------------------- random
 
@@ -715,12 +727,13 @@ function smellSmoke(w, c) {
 const makeGrid = () => ({ cells: Array.from({ length: GW * GH }, () => []), n: new Int32Array(GW * GH) });
 
 function buildGrid(w) {
-  const all = w.grid, rabbit = w.grids.rabbit, fox = w.grids.fox;
-  all.n.fill(0); rabbit.n.fill(0); fox.n.fill(0);
+  const all = w.grid;
+  all.n.fill(0);
+  for (const s in w.grids) w.grids[s].n.fill(0);
   for (const c of w.creatures) {
     if (!c.alive || c.hidden) continue;
     const k = clamp((c.y / CELL) | 0, 0, GH - 1) * GW + clamp((c.x / CELL) | 0, 0, GW - 1);
-    const mine = c.species === 'rabbit' ? rabbit : fox;
+    const mine = w.grids[c.species];
     all.cells[k][all.n[k]++] = c;
     mine.cells[k][mine.n[k]++] = c;
   }
@@ -891,7 +904,7 @@ function addCreature(w, species, x, y, opts = {}) {
   const c = makeCreature(w, species, x, y, opts.genes || founderGenes(w, species), null);
   if (opts.sex) c.sex = opts.sex;
   if (opts.age) c.born = w.tick - opts.age * TPD;
-  c.home = nearestBurrow(w, x, y, 40);
+  c.home = species === 'bee' ? w.hive : nearestBurrow(w, x, y, 40);
   note(w, c, '🌍', opts.arrived ? 'Wandered into the meadow' : 'Arrived in the meadow');
   w.newborn.push(c);
   w.byId.set(c.id, c);
@@ -1019,7 +1032,7 @@ function giveBirth(w, mum) {
     const kid = makeCreature(w, mum.species, x, y, childGenes(w, mum.genes, mum.dadGenes),
       { mum, dadId: mum.dadIdPending, dadGen: mum.dadGenPending });
     kid.home = mum.home || mum.burrow;
-    if (mum.hidden) { kid.hidden = true; kid.burrow = mum.burrow; kid.sleeping = true; kid.mode = 'sleep'; kid.timer = 60; mum.burrow.count++; }
+    if (mum.hidden && mum.burrow) { kid.hidden = true; kid.burrow = mum.burrow; kid.sleeping = true; kid.mode = 'sleep'; kid.timer = 60; mum.burrow.count++; }
     note(w, kid, '🐣', `Born to ${mum.name}` + (dad ? ` and ${dad.name}` : ''));
     if (shown && !shown.includes(coatOf(kid.genes))) {
       surprise.push(kid);
@@ -1442,6 +1455,99 @@ function catchPrey(w, fox, rabbit) {
   die(w, rabbit, 'fox', fox);
 }
 
+// ---------------------------------------------------------------- bees
+
+const NECTAR = 0.4;             // energy per tick of sipping
+const SIP_TICKS = 40;           // how long one flower takes
+const HONEY = 3;                // honey a bee brings home from each flower
+
+// Bees stay in the hive at night, in rain and storms, and from autumn to spring (no flowers).
+const hiveTime = w => isNight(w.tick) || w.weather.kind === 'rain' || w.weather.kind === 'storm'
+  || seasonOf(w.tick) >= 2;
+
+function beeTick(w, c) {
+  const e = c.energy / c.maxEnergy;
+
+  // 1. Danger: nothing hunts bees (yet).
+
+  // 2. Home: sleep in the hive, and eat honey there when hungry.
+  if (c.hidden) {
+    const hungry = e < 0.5 && c.home.honey > 0;
+    if (hungry) { c.home.honey -= 0.2; c.energy += 0.2; }
+    if (hiveTime(w) || hungry) return;
+    c.hidden = false; c.sleeping = false; c.mode = 'wander';
+  }
+  if (hiveTime(w) || (e < 0.3 && c.home.honey > 0)) {
+    c.mode = 'home';
+    if (fly(c, c.home.x, c.home.y, c.walk)) { c.hidden = true; c.sleeping = true; c.mode = 'sleep'; }
+    return;
+  }
+
+  // 3. Love.
+  if (seekLove(w, c)) return;
+
+  // 4. Food: fly to a flower, sip, and pollinate it.
+  if (c.mode === 'sip') {
+    c.energy = Math.min(c.maxEnergy, c.energy + NECTAR);
+    if (--c.timer > 0) return;
+    pollinate(w, c.target);
+    c.home.honey += HONEY;
+    c.mode = 'wander'; c.target = null;
+  }
+  if (e < 0.8) {
+    if (c.mode !== 'flower') { c.target = findFlower(w, c); if (c.target) c.mode = 'flower'; }
+    if (c.mode === 'flower') {
+      if (fly(c, c.target.x, c.target.y, c.walk)) { c.mode = 'sip'; c.timer = SIP_TICKS; c.target.sipped = w.tick; }
+      return;
+    }
+  }
+
+  // 5. Wander: buzz about, never too far from the hive.
+  if (c.mode !== 'wander' || !c.target || fly(c, c.target.x, c.target.y, c.walk * 0.6)) {
+    c.mode = 'wander';
+    c.target = { x: c.home.x + w.rng.range(-20, 20), y: c.home.y + w.rng.range(-20, 20) };
+  }
+}
+
+// Bees fly straight over water, trees and all. True once it's there.
+function fly(c, tx, ty, v) {
+  const dx = tx - c.x, dy = ty - c.y, d = Math.hypot(dx, dy);
+  if (Math.abs(dx) > 0.05) c.facing = dx > 0 ? 1 : -1;
+  if (d <= v) { c.x = tx; c.y = ty; c.moved = d; return true; }
+  c.x += dx / d * v; c.y += dy / d * v; c.moved = v;
+  return false;
+}
+
+// The flowers the meadow shows: spring and summer, where the grass is lush.
+// (Same rule as plantEmoji in game.js. If you change one, change the other.)
+function isFlower(w, p) {
+  const s = seasonOf(w.tick);
+  if (w.grass[p.i] < 0.55) return false;
+  return (s === 0 && p.kind < 0.35) || (s === 1 && p.kind < 0.22);
+}
+
+// The nearest flower in sight that nobody has sipped from in the last half day.
+function findFlower(w, c) {
+  let best = null, bd = c.sight * c.sight;
+  for (const p of w.plants) {
+    const d2 = (p.x - c.x) ** 2 + (p.y - c.y) ** 2;
+    const fresh = !p.sipped || w.tick - p.sipped > TPD / 2;
+    if (d2 < bd && fresh && isFlower(w, p)) { best = p; bd = d2; }
+  }
+  return best;
+}
+
+// A visited flower spreads its seed: the grass around it grows back thicker. Good for rabbits.
+function pollinate(w, p) {
+  for (let y = (p.y | 0) - 2; y <= (p.y | 0) + 2; y++) {
+    for (let x = (p.x | 0) - 2; x <= (p.x | 0) + 2; x++) {
+      if (!dry(w, x, y)) continue;
+      const i = idx(x, y);
+      w.grass[i] = Math.min(w.fert[i], w.grass[i] + 0.1);
+    }
+  }
+}
+
 // ---------------------------------------------------------------- life and death
 
 function die(w, c, cause, killer) {
@@ -1466,6 +1572,7 @@ function lifeTick(w, c) {
   const g = growth(w, c);
   let b = c.burnRate * (0.5 + 0.5 * g);
   if (c.sleeping) b *= 0.6;
+  if (c.species === 'bee' && c.hidden) b *= 0.3;   // huddled in the hive, barely burning
   if (c.pregnantUntil) b *= 1.25;
   const kind = w.weather.kind;
   if (kind === 'snow' && !c.hidden) b *= 1 + 0.5 * (1 - c.genes.size);   // small bodies feel the cold
@@ -1487,28 +1594,35 @@ function createWorld(seed, opts = {}) {
   const w = {
     seed, rng: makeRng(seed), tick: Math.floor(TPD * 0.04),
     nextId: 1, creatures: [], newborn: [], byId: new Map(), events: [],
-    grid: makeGrid(), grids: { rabbit: makeGrid(), fox: makeGrid() },
+    grid: makeGrid(), grids: { rabbit: makeGrid(), fox: makeGrid(), bee: makeGrid() },
     nameCounts: new Map(), anyDied: false,
     weather: { kind: 'clear', until: 0 }, skyLocked: false, wet: 0.3, snow: 0,
     fire: new Float32Array(W * H), ash: new Float32Array(W * H), burning: [], blaze: 0,
-    count: { rabbit: 0, fox: 0 }, expecting: { rabbit: 0, fox: 0 },
-    stats: { births: { rabbit: 0, fox: 0 }, deaths: { rabbit: {}, fox: {} } },
-    history: { every: 60, t: [], rabbit: [], fox: [], grass: [], traits: { rabbit: [], fox: [] }, marks: [] },
-    goneSince: { rabbit: -1, fox: -1 },
+    count: { rabbit: 0, fox: 0, bee: 0 }, expecting: { rabbit: 0, fox: 0, bee: 0 },
+    stats: { births: { rabbit: 0, fox: 0, bee: 0 }, deaths: { rabbit: {}, fox: {}, bee: {} } },
+    history: { every: 60, t: [], rabbit: [], fox: [], bee: [], grass: [], traits: { rabbit: [], fox: [], bee: [] }, marks: [] },
+    goneSince: { rabbit: -1, fox: -1, bee: -1 },
     options: { migration: true, ...opts },
   };
   makeTerrain(w);
-  const n = { rabbit: opts.rabbits ?? Math.round(30 * w.room), fox: opts.foxes ?? Math.round(4 * w.room) };
-  for (const species of ['rabbit', 'fox']) {
+  // One hive, hung in the tree nearest the middle. Bees sleep there, and sit out the winter inside.
+  let tree = null;
+  for (const d of w.decor) {
+    if (d.tree && (!tree || Math.hypot(d.x - W / 2, d.y - H / 2) < Math.hypot(tree.x - W / 2, tree.y - H / 2))) tree = d;
+  }
+  w.hive = { x: tree.x + 0.5, y: tree.y + 0.2, honey: 200 };
+  w.decor.push({ x: w.hive.x, y: w.hive.y, emoji: '🍯', size: 1.2 });
+  const n = { rabbit: opts.rabbits ?? Math.round(30 * w.room), fox: opts.foxes ?? Math.round(4 * w.room), bee: 12 };
+  for (const species of ['rabbit', 'fox', 'bee']) {
     for (let k = 0; k < n[species]; k++) {
       let x, y;
       do { x = w.rng.range(4, W - 4); y = w.rng.range(4, H - 4); } while (!dry(w, x, y));
       addCreature(w, species, x, y, { sex: k % 2 ? 'M' : 'F', age: w.rng.range(4, 10) });
     }
   }
-  w.founderMeans = { rabbit: null, fox: null };
+  w.founderMeans = { rabbit: null, fox: null, bee: null };
   flushNewborn(w);
-  for (const s of ['rabbit', 'fox']) w.founderMeans[s] = traitMeans(w, s);
+  for (const s of ['rabbit', 'fox', 'bee']) w.founderMeans[s] = traitMeans(w, s);
   w.weather.until = w.tick + w.rng.range(0.3, 0.8) * TPD;
   record(w);
   return w;
@@ -1517,7 +1631,8 @@ function createWorld(seed, opts = {}) {
 function flushNewborn(w) {
   for (const k of w.newborn) w.creatures.push(k);
   w.newborn.length = 0;
-  w.count.rabbit = w.count.fox = w.expecting.rabbit = w.expecting.fox = 0;
+  w.count.rabbit = w.count.fox = w.count.bee = 0;
+  w.expecting.rabbit = w.expecting.fox = w.expecting.bee = 0;
   for (const c of w.creatures) {
     if (!c.alive) continue;
     w.count[c.species]++;
@@ -1559,12 +1674,13 @@ function record(w) {
   h.t.push(w.tick);
   h.rabbit.push(w.count.rabbit);
   h.fox.push(w.count.fox);
+  h.bee.push(w.count.bee);
   h.grass.push(grassFullness(w));
-  for (const s of ['rabbit', 'fox']) h.traits[s].push(traitMeans(w, s));
+  for (const s of ['rabbit', 'fox', 'bee']) h.traits[s].push(traitMeans(w, s));
   if (h.t.length > HISTORY_MAX) {
     const half = a => a.filter((_, i) => i % 2 === 0);
-    for (const k of ['t', 'rabbit', 'fox', 'grass']) h[k] = half(h[k]);
-    for (const s of ['rabbit', 'fox']) h.traits[s] = half(h.traits[s]);
+    for (const k of ['t', 'rabbit', 'fox', 'bee', 'grass']) h[k] = half(h[k]);
+    for (const s of ['rabbit', 'fox', 'bee']) h.traits[s] = half(h.traits[s]);
     h.every *= 2;
   }
 }
@@ -1587,12 +1703,13 @@ function newDay(w) {
 
 function migrate(w) {
   if (!w.options.migration) return;
-  const wait = { rabbit: 1, fox: 3 }, arrive = { rabbit: 6, fox: 2 }, few = { rabbit: 4, fox: 3 };
-  for (const s of ['rabbit', 'fox']) {
+  const wait = { rabbit: 1, fox: 3, bee: 2 }, arrive = { rabbit: 6, fox: 2, bee: 8 }, few = { rabbit: 4, fox: 3, bee: 4 };
+  for (const s of ['rabbit', 'fox', 'bee']) {
     if (w.count[s] >= few[s]) { w.goneSince[s] = -1; continue; }
     if (w.goneSince[s] < 0) { w.goneSince[s] = w.tick; if (w.count[s] === 0) emit(w, { type: 'extinct', species: s }); continue; }
     if (w.tick - w.goneSince[s] < wait[s] * TPD) continue;
     if (s === 'fox' && w.count.rabbit < 60 * w.room) continue;   // foxes only come where there is food
+    if (s === 'bee' && seasonOf(w.tick) !== 1) continue;  // a swarm only comes in summer
     const side = w.rng.int(0, 3);
     const kids = [];
     for (let k = 0; k < arrive[s]; k++) {
@@ -1619,7 +1736,9 @@ function step(w) {
   for (let i = 0; i < list.length; i++) {
     const c = list[i];
     if (!c.alive) continue;
-    if (c.species === 'rabbit') rabbitTick(w, c); else foxTick(w, c);
+    if (c.species === 'rabbit') rabbitTick(w, c);
+    else if (c.species === 'fox') foxTick(w, c);
+    else if (c.species === 'bee') beeTick(w, c);
     if (c.alive) lifeTick(w, c);
   }
   if (w.anyDied) { w.creatures = w.creatures.filter(c => c.alive); w.anyDied = false; }
@@ -1667,7 +1786,10 @@ function mood(w, c) {
   const other = w.byId.get(c.targetId) || w.byId.get(c.threatId);
   const e = c.energy / c.maxEnergy;
   const storm = w.weather.kind === 'storm' && !isNight(w.tick);
+  if (c.species === 'bee' && c.hidden) return { emoji: '🍯', text: 'Snug in the hive' };
   switch (c.mode) {
+    case 'sip': return { emoji: '🌼', text: 'Sipping nectar' };
+    case 'flower': return { emoji: '🌸', text: 'Off to a flower' };
     case 'flee':
       if (c.fright > 0) return c.frightWhat === 'fire' ? { emoji: '🔥', text: 'Running from the fire!' }
         : { emoji: '⚡', text: 'Spooked by thunder!' };
