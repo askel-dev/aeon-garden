@@ -89,13 +89,13 @@ const SPECIES = {
   },
   bee: {
     key: 'bee', name: 'Bee', plural: 'Bees', emoji: '🐝',
-    maxEnergy: 30, burn: 0.02, walk: 0.1, sprint: 0.2, sight: 10,
-    mateRange: 20, wade: 1, 
-    matureDays: 2, lifeDays: 20, gestationDays: 1, litter: [2, 4], 
-    cooldownDays: 2, 
-    breedSeasons: [0, 1], breedEnergy: 0.6, birthCost: 5, cap: 60,  
-  }
+    maxEnergy: 30, burn: 0.02, walk: 0.1, sprint: 0.2, sight: 15, mateRange: 20, wade: 1, flies: true,
+    matureDays: 2, lifeDays: 20, gestationDays: 1, litter: [2, 4], cooldownDays: 2,
+    breedSeasons: [0, 1], breedEnergy: 0.6, birthCost: 5, cap: 60,
+  },
 };
+const KINDS = Object.keys(SPECIES);                        // 'rabbit', 'fox', 'bee'
+const perKind = make => Object.fromEntries(KINDS.map(s => [s, make(s)]));   // { rabbit: .., fox: .., bee: .. }
 
 const NAME_PARTS = {
   rabbit: {
@@ -110,7 +110,7 @@ const NAME_PARTS = {
     prefixes: ['Buzz', 'Honey', 'Nectar', 'Pollen', 'Sting', 'Hive', 'Queen', 'Drone', 'Worker', 'Flower'],
     suffixes: ['bee', 'buzz', 'sting', 'hive', 'nectar', 'pollen', 'queen', 'drone', 'worker', 'flower', 'le', 'by', 'wick', 'ly', 'ina', 'drop', 'kin', 'ette', 'o']
   }
-}
+};
 
 // ---------------------------------------------------------------- random
 
@@ -171,8 +171,50 @@ function clock(w) {
 // ponds of its own, well away from the rest.
 
 const SHALLOW = 1, DEEP = 2;       // w.water, per tile. 0 is dry land
-const DEEP_AT = 0.3;               // water at least this deep can't be waded
-const BANK = 0.05;                 // how fast the ground rises away from the water, per tile
+
+// Every number that shapes a meadow, one per line. The terrain lab (index.html?lab) has a slider
+// for each, and its "Copy as code" gives this block back with your changes, to paste over it.
+// One meadow can override any of them: createWorld(seed, { terrain: { hillSize: 40 } }).
+// Pairs are a range: each lake, pond or wood picks somewhere in between.
+const TERRAIN = {
+  hillSize: 28,                // tiles across a hill: bigger is broader and gentler
+  hillDetail: 0.5,             // how much the smaller bumps show on the big hills
+  hillFloor: 0.3,              // hill height that sits right at the water line
+  hillRise: 1.2,               // how steeply the ground climbs with the hills
+  bank: 0.05,                  // how fast the ground rises away from the water, per tile
+  level: 0,                    // the water line: higher floods the low meadows, lower drains them
+  deepAt: 0.3,                 // water at least this deep can't be waded
+  layouts: { valley: 2, river: 1, lake: 1 },   // odds of each: a river through a lake, a river, a lake
+  lakeBlobs: 6,                // circles a lake is made of
+  lakeSpread: 13,              // how far they stray from its middle
+  lakeSize: [6, 11],           // each circle's radius
+  lakeDepth: 1,
+  riverBends: 16,              // tiles between the river's big bends
+  riverSway: 8,                // how far a bend swings sideways
+  meander: 6,                  // the small wiggles on top of the bends
+  meanderLength: 40,           // how drawn out the wiggles are
+  riverWidth: [1.3, 2.5],      // half its width where it comes in, and where it leaves
+  riverDepth: 0.9,
+  fords: [2, 3],               // stretches of river shallow enough to wade across
+  fordDepth: 0.18,             // how deep a ford is in its middle
+  fordLength: 14,
+  ponds: [2, 4],
+  pondSize: [2, 4],            // radius of each of a pond's four circles
+  pondDepth: [0.25, 0.8],
+  patches: 36,                 // fertile and poor patches of soil
+  patchSize: [7, 20],
+  patchRichness: [-0.45, 0.6], // from poor to rich
+  wetBanks: 0.35,              // how much richer the soil is by the water
+  forests: [['hills'], ['edge'], ['bank'], ['hills', 'bank'], ['edge', 'bank'], ['hills', 'edge']],   // one is picked
+  hillWoods: 0.14,             // share of the highest ground that is wooded
+  edgeWoods: [12, 18],         // how far a big wood along one side reaches in
+  bankWoods: [22, 30],         // how far a wet wood stretches along the water
+  treeSpacing: 2.3,            // tiles between trees where a wood is thick
+  treeSize: [2.4, 3.4],
+  groves: 4,                   // small clumps of trees out in the meadow
+  rocks: 22,
+  flowers: 0.07,               // share of tiles with a flower or a tuft
+};
 
 const idx = (x, y) => (y | 0) * W + (x | 0);
 const inBounds = (x, y) => x >= 0.5 && y >= 0.5 && x < W - 0.5 && y < H - 0.5;
@@ -186,7 +228,7 @@ const WATER_NAMES = {
   river: ['Brook', 'Beck', 'River', 'Stream'], lake: ['Mere', 'Lake', 'Water'], pond: ['Pond', 'Pool'],
 };
 
-// Smooth random hills: value noise in three layers, each finer and fainter. About 0 to 1.
+// Smooth random hills: value noise in three layers, each finer and fainter by `detail`. About 0 to 1.
 function makeNoise(r) {
   const cells = Float32Array.from({ length: 64 * 64 }, () => r.next());
   const at = (x, y) => cells[(y & 63) * 64 + (x & 63)];
@@ -197,7 +239,10 @@ function makeNoise(r) {
     const bot = at(x0, y0 + 1) + (at(x0 + 1, y0 + 1) - at(x0, y0 + 1)) * su;
     return top + (bot - top) * sv;
   };
-  return (x, y) => (4 * one(x, y) + 2 * one(2 * x + 17.3, 2 * y + 5.1) + one(4 * x + 3.7, 4 * y + 41.9)) / 7;
+  return (x, y, detail = 0.5) => {
+    const a = 4, b = 4 * detail, c = 4 * detail * detail;
+    return (a * one(x, y) + b * one(2 * x + 17.3, 2 * y + 5.1) + c * one(4 * x + 3.7, 4 * y + 41.9)) / (a + b + c);
+  };
 }
 
 // A few overlapping circles read as a lake or a pond, not as a disc.
@@ -211,24 +256,29 @@ function outside(shape, x, y) {    // tiles from the shape's edge; negative insi
 
 // The river: in at one edge and out at the far one, through the lake if there is one, bending
 // on the way, and meandering in between. Returned as points half a tile apart.
-function riverPath(r, lake, wiggle) {
+function riverPath(r, T, lake, wiggle) {
   const leftRight = r.next() < 0.6, L = leftRight ? W : H, S = leftRight ? H : W;
   const at = (u, v) => leftRight ? { x: u, y: v } : { x: v, y: u };
   const ends = [at(-6, r.range(0.2, 0.8) * S), at(L + 6, r.range(0.2, 0.8) * S)];
   const via = lake ? [lake] : [];
   const route = [ends[0], ...via, ends[1]];
   const along = p => leftRight ? p.x : p.y, across = p => leftRight ? p.y : p.x;
-  // A bend every 16 tiles or so, pushed sideways, except where it goes through the lake.
+  // A bend every so often, pushed sideways, except where it goes through the lake.
   const ctrl = [route[0]];
   for (let k = 1; k < route.length; k++) {
-    const a = route[k - 1], b = route[k], n = Math.max(1, Math.round((along(b) - along(a)) / 16));
+    const a = route[k - 1], b = route[k], n = Math.max(1, Math.round((along(b) - along(a)) / T.riverBends));
     for (let j = 1; j < n; j++) {
-      const u = lerp(along(a), along(b), j / n), v = lerp(across(a), across(b), j / n) + r.range(-8, 8);
+      const u = lerp(along(a), along(b), j / n), v = lerp(across(a), across(b), j / n) + r.range(-T.riverSway, T.riverSway);
       ctrl.push(at(u, clamp(v, 12, S - 12)));
     }
     ctrl.push(b);
   }
-  // Smooth it (Catmull-Rom through the bends) and walk it in half-tile steps.
+  return smoothRiver(T, ctrl, lake, wiggle);
+}
+
+// A river through these bends: smoothed (Catmull-Rom), walked in half-tile steps, and
+// meandering a little on top, calm near the lake.
+function smoothRiver(T, ctrl, lake, wiggle) {
   const pts = [];
   for (let k = 0; k < ctrl.length - 1; k++) {
     const p0 = ctrl[Math.max(0, k - 1)], p1 = ctrl[k], p2 = ctrl[k + 1], p3 = ctrl[Math.min(ctrl.length - 1, k + 2)];
@@ -244,71 +294,125 @@ function riverPath(r, lake, wiggle) {
   return pts.map((p, k) => {
     const a = pts[Math.max(0, k - 1)], b = pts[Math.min(pts.length - 1, k + 1)];
     const d = Math.hypot(b.x - a.x, b.y - a.y) || 1, calm = lake ? clamp(Math.hypot(p.x - lake.x, p.y - lake.y) / 15 - 0.5, 0, 1) : 1;
-    const off = 6 * (wiggle(k / 40, 3.3) - 0.5) * calm;
+    const off = T.meander * (wiggle(k / T.meanderLength, 3.3) - 0.5) * calm;
     return { x: p.x - (b.y - a.y) / d * off, y: p.y + (b.x - a.x) / d * off };
   });
 }
 
+// Carves a river into the ground. It widens as it goes, and has a few fords: stretches shallow
+// enough to wade across, never where it runs through a lake (`wet`).
+function carveRiver(w, T, pts, wet, carve) {
+  const r = w.rng, n = pts.length;
+  const spots = r.shuffle(pts.map((p, k) => k).filter(k => {
+    const p = pts[k];
+    return p.x > 10 && p.x < W - 10 && p.y > 10 && p.y < H - 10 && !wet(p);
+  }));
+  const fords = [], nFords = r.int(...T.fords);
+  for (const k of spots) {
+    if (fords.length < nFords && fords.every(f => Math.abs(f - k) > 70)) fords.push(k);
+  }
+  pts.forEach((p, k) => {
+    const t = k / n, half = lerp(...T.riverWidth, t);
+    let ford = 0;
+    for (const f of fords) ford = Math.max(ford, Math.exp(-(((k - f) / T.fordLength) ** 2)));
+    const deep = T.riverDepth - (T.riverDepth - T.fordDepth) * ford, reach = half + 8;
+    for (let y = Math.max(0, Math.floor(p.y - reach)); y <= Math.min(H - 1, p.y + reach); y++) {
+      for (let x = Math.max(0, Math.floor(p.x - reach)); x <= Math.min(W - 1, p.x + reach); x++) {
+        carve(y * W + x, Math.hypot(x + 0.5 - p.x, y + 0.5 - p.y) - half, deep, half);
+      }
+    }
+  });
+  for (const k of fords) w.fords.push({ x: pts[k].x, y: pts[k].y, k, river: w.rivers.length });
+  w.rivers.push({ pts });
+}
+
+// Water drawn in the terrain lab: circles, carved as one shape, so a lake deepens toward its
+// middle however it was painted. Each circle says how deep the water under it gets.
+function carveDrawnWater(w, circles, carve) {
+  const N = W * H, inside = new Uint8Array(N), deep = new Float32Array(N);
+  for (const c of circles) {
+    for (let y = Math.max(0, Math.floor(c.y - c.r)); y <= Math.min(H - 1, c.y + c.r); y++) {
+      for (let x = Math.max(0, Math.floor(c.x - c.r)); x <= Math.min(W - 1, c.x + c.r); x++) {
+        const i = y * W + x;
+        if (Math.hypot(x + 0.5 - c.x, y + 0.5 - c.y) < c.r) { inside[i] = 1; deep[i] = Math.max(deep[i], c.deep); }
+      }
+    }
+  }
+  const out = distanceTo(inside), into = distanceTo(inside.map(v => 1 - v));
+  for (let i = 0; i < N; i++) carve(i, inside[i] ? 0.5 - into[i] : out[i] - 0.5, deep[i], 4);
+}
+
+// What was drawn in the terrain lab, as createWorld's `drawn` option (numbers in tiles):
+//   { empty: true,                  no river, lake, ponds or woods of the meadow's own
+//     water: [[x, y, r, deep]],     circles of water
+//     rivers: [[[x, y], ...]],      each river's bends
+//     woods: [[x, y, r]] }          circles of forest
+function readDrawn(d = {}) {
+  return {
+    empty: !!d.empty,
+    water: (d.water || []).map(([x, y, r, deep]) => ({ x, y, r, deep })),
+    rivers: (d.rivers || []).filter(p => p.length > 1).map(p => p.map(([x, y]) => ({ x, y }))),
+    woods: (d.woods || []).map(([x, y, r]) => ({ x, y, r })),
+  };
+}
+
+// Picks one of the keys of { name: odds }.
+function pickOdds(r, odds) {
+  const keys = Object.keys(odds);
+  let u = r.next() * keys.reduce((sum, k) => sum + odds[k], 0);
+  for (const k of keys) if ((u -= odds[k]) < 0) return k;
+  return keys[keys.length - 1];
+}
+
 function makeTerrain(w) {
   const r = w.rng, N = W * H;
+  const T = w.terrain = { ...TERRAIN, ...w.options.terrain };
+  const drawn = w.drawn = readDrawn(w.options.drawn);
   const hills = makeNoise(r);
   const ground = new Float32Array(N), hill = new Float32Array(N);
   for (let i = 0; i < N; i++) {
-    hill[i] = hills((i % W) / 28, ((i / W) | 0) / 28);
-    ground[i] = Math.max(0.05, (hill[i] - 0.3) * 1.2);   // the low meadows sit just above the water
+    hill[i] = hills((i % W) / T.hillSize, ((i / W) | 0) / T.hillSize, T.hillDetail);
+    ground[i] = Math.max(0.05, (hill[i] - T.hillFloor) * T.hillRise);   // the low meadows sit just above the water
   }
   // Water is carved into the ground: the bed drops to `deep` over `edge` tiles from the shore,
   // and outside the shape the bank rises gently back up to the meadow.
   const carve = (i, sd, deep, edge) => {
-    const h = sd >= 0 ? BANK * sd : -deep * Math.min(1, -sd / edge);
+    const h = sd >= 0 ? T.bank * sd : -deep * Math.min(1, -sd / edge);
     if (h < ground[i]) ground[i] = h;
   };
   const each = fn => { for (let i = 0; i < N; i++) fn(i, (i % W) + 0.5, ((i / W) | 0) + 0.5); };
 
-  const layout = r.pick(['valley', 'valley', 'river', 'lake']);
-  const lake = layout === 'river' ? null : { x: r.range(45, W - 45), y: r.range(35, H - 35) };
+  const layout = drawn.empty ? 'none' : pickOdds(r, T.layouts);
+  const lake = layout === 'river' || layout === 'none' ? null : { x: r.range(45, W - 45), y: r.range(35, H - 35) };
   if (lake) {
-    const shape = blobs(r, lake.x, lake.y, 6, 13, 6, 11);
-    each((i, x, y) => carve(i, outside(shape, x, y), 1, 6));
+    const shape = blobs(r, lake.x, lake.y, T.lakeBlobs, T.lakeSpread, ...T.lakeSize);
+    each((i, x, y) => carve(i, outside(shape, x, y), T.lakeDepth, 6));
     lake.shape = shape;
   }
 
-  // The river widens as it goes, and has a few fords: stretches shallow enough to wade across.
-  w.river = null; w.fords = [];
-  if (layout !== 'lake') {
-    const pts = riverPath(r, lake, hills), n = pts.length;
-    const inLake = p => lake && outside(lake.shape, p.x, p.y) < 6;
-    const spots = r.shuffle(pts.map((p, k) => k).filter(k => {
-      const p = pts[k];
-      return p.x > 10 && p.x < W - 10 && p.y > 10 && p.y < H - 10 && !inLake(p);
-    }));
-    const fords = [], nFords = r.int(2, 3);
-    for (const k of spots) {
-      if (fords.length < nFords && fords.every(f => Math.abs(f - k) > 70)) fords.push(k);
-    }
-    pts.forEach((p, k) => {
-      const t = k / n, half = 1.3 + 1.2 * t;
-      let ford = 0;
-      for (const f of fords) ford = Math.max(ford, Math.exp(-(((k - f) / 14) ** 2)));
-      const deep = 0.9 - 0.72 * ford, reach = half + 8;
-      for (let y = Math.max(0, Math.floor(p.y - reach)); y <= Math.min(H - 1, p.y + reach); y++) {
-        for (let x = Math.max(0, Math.floor(p.x - reach)); x <= Math.min(W - 1, p.x + reach); x++) {
-          carve(y * W + x, Math.hypot(x + 0.5 - p.x, y + 0.5 - p.y) - half, deep, half);
-        }
-      }
+  const inLake = p => (lake && outside(lake.shape, p.x, p.y) < 6) || outside(drawn.water, p.x, p.y) < 3;
+  w.rivers = []; w.fords = [];
+  if (layout === 'valley' || layout === 'river') carveRiver(w, T, riverPath(r, T, lake, hills), inLake, carve);
+
+  // Then whatever was drawn. A drawn river that nearly reaches the edge runs on off the map.
+  if (drawn.water.length) carveDrawnWater(w, drawn.water, carve);
+  for (const bends of drawn.rivers) {
+    const ends = [bends[0], bends[bends.length - 1]].map((p, k) => {
+      const next = bends[k ? bends.length - 2 : 1], d = Math.hypot(p.x - next.x, p.y - next.y) || 1;
+      const edge = Math.min(p.x, p.y, W - p.x, H - p.y);
+      return edge < 4 ? { x: p.x + (p.x - next.x) / d * 8, y: p.y + (p.y - next.y) / d * 8 } : p;
     });
-    w.river = { pts };
-    w.fords = fords.map(k => ({ x: pts[k].x, y: pts[k].y, k }));
+    carveRiver(w, T, smoothRiver(T, [ends[0], ...bends.slice(1, -1), ends[1]], null, hills), inLake, carve);
   }
 
   // Small ponds, well away from the other water.
   w.water = new Uint8Array(N);
-  w.ground = ground; w.level = 0;
+  w.ground = ground; w.level = T.level;
   refreshWater(w);
-  for (let p = r.int(2, 4), tries = 0; p > 0 && tries < 200; tries++) {
+  for (let p = drawn.empty ? 0 : r.int(...T.ponds), tries = 0; p > 0 && tries < 200; tries++) {
     const cx = r.range(14, W - 14), cy = r.range(12, H - 12);
     if (waterWithin(w, cx, cy, 14)) continue;
-    const shape = blobs(r, cx, cy, 4, 3.5, 2, 4), deep = r.range(0.25, 0.8);
+    const shape = blobs(r, cx, cy, 4, 3.5, ...T.pondSize), deep = r.range(...T.pondDepth);
     each((i, x, y) => { if (Math.abs(x - cx) < 20 && Math.abs(y - cy) < 16) carve(i, outside(shape, x, y), deep, 2.5); });
     refreshWater(w);
     p--;
@@ -320,14 +424,14 @@ function makeTerrain(w) {
   const near = distanceToWater(w);
   const fert = new Float32Array(N);
   const patches = [];
-  for (let i = 0; i < 36; i++) {
-    patches.push({ x: r.range(0, W), y: r.range(0, H), r: r.range(7, 20), a: r.range(-0.45, 0.6) });
+  for (let i = 0; i < T.patches; i++) {
+    patches.push({ x: r.range(0, W), y: r.range(0, H), r: r.range(...T.patchSize), a: r.range(...T.patchRichness) });
   }
   each((i, x, y) => {
     if (water[i]) return;
     let v = 0.55;
     for (const b of patches) v += b.a * Math.exp(-((x - b.x) ** 2 + (y - b.y) ** 2) / (2 * b.r * b.r));
-    v += 0.35 * Math.exp(-near[i] / 3);
+    v += T.wetBanks * Math.exp(-near[i] / 3);
     v += 0.2 * (0.5 - hill[i]);
     v += r.range(-0.06, 0.06);
     fert[i] = v;
@@ -352,12 +456,12 @@ function makeTerrain(w) {
 
   // Decoration only: the forest, some rocks, stepping stones at the fords, flower spots.
   plantTrees(w, hills, hill, near);
-  for (let k = 0; k < 22; k++) {
+  for (let k = 0; k < T.rocks; k++) {
     const x = r.range(3, W - 3), y = r.range(3, H - 3);
     if (dry(w, x, y)) w.decor.push({ x, y, emoji: '🪨', size: r.range(1.1, 1.8) });
   }
   for (const f of w.fords) {
-    const p = w.river.pts, a = p[Math.min(p.length - 1, f.k + 1)], b = p[Math.max(0, f.k - 1)];
+    const p = w.rivers[f.river].pts, a = p[Math.min(p.length - 1, f.k + 1)], b = p[Math.max(0, f.k - 1)];
     const d = Math.hypot(a.x - b.x, a.y - b.y) || 1, nx = -(a.y - b.y) / d, ny = (a.x - b.x) / d;   // across the river
     for (let s = -2; s <= 2; s++) {
       const x = f.x + nx * s * 1.1 + r.range(-0.3, 0.3), y = f.y + ny * s * 1.1 + r.range(-0.3, 0.3);
@@ -366,22 +470,21 @@ function makeTerrain(w) {
   }
   w.plants = [];
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    if (water[y * W + x] || r.next() > 0.07) continue;
+    if (water[y * W + x] || r.next() > T.flowers) continue;
     w.plants.push({ x: x + r.next(), y: y + r.next(), i: y * W + x, kind: r.next() });
   }
 }
 
 // Every meadow has a forest, of one kind or two: woods on the hilltops, a big wood along one
-// side, or a wet wood by the water. Two kinds together are each drawn a little smaller.
-const FORESTS = [['hills'], ['edge'], ['bank'], ['hills', 'bank'], ['edge', 'bank'], ['hills', 'edge']];
+// side, or a wet wood by the water (TERRAIN.forests). Two kinds together are each a little smaller.
 
 function plantTrees(w, hills, hill, near) {
-  const r = w.rng, N = W * H;
-  const kinds = w.options.forest ? w.options.forest.split('+') : r.pick(FORESTS), small = kinds.length > 1;
+  const r = w.rng, N = W * H, T = w.terrain;
+  const kinds = w.drawn.empty ? [] : r.pick(T.forests), small = kinds.length > 1;
   w.forest = kinds;
   const plant = (x, y, pine) => {
     if (dry(w, x, y) && !w.burrows.some(b => Math.hypot(b.x - x, b.y - y) < 3)) {
-      w.decor.push({ x, y, emoji: pine ? '🌲' : '🌳', size: r.range(2.4, 3.4), tree: true, stump: 0 });
+      w.decor.push({ x, y, emoji: pine ? '🌲' : '🌳', size: r.range(...T.treeSize), tree: true, stump: 0 });
     }
   };
   const ragged = (x, y) => (hills(x / 9 + 31.7, y / 9 + 12.3) - 0.5) * 7;   // a few tiles in or out
@@ -394,7 +497,7 @@ function plantTrees(w, hills, hill, near) {
       const hs = [];
       for (let i = 0; i < N; i++) if (!w.water[i]) hs.push(hill[i]);
       hs.sort((a, b) => a - b);
-      const top = hs[Math.floor(hs.length * (small ? 0.9 : 0.86))], peak = hs[hs.length - 1];
+      const top = hs[Math.floor(hs.length * (1 - T.hillWoods * (small ? 5 / 7 : 1)))], peak = hs[hs.length - 1];
       const height = (x, y) => (hill[idx(x, y)] - top) / (peak - top);
       return {
         dense: (x, y) => clamp((hill[idx(x, y)] + ragged(x, y) * 0.006 - top) / 0.025, 0, 1),
@@ -412,7 +515,7 @@ function plantTrees(w, hills, hill, near) {
         }
         return { side, wet: wet + r.range(0, 40) };
       }).sort((a, b) => a.wet - b.wet);
-      const side = sides[0].side, depth = r.range(12, 18) * (small ? 0.7 : 1);
+      const side = sides[0].side, depth = r.range(...T.edgeWoods) * (small ? 0.7 : 1);
       const inward = (x, y) => side === 'n' ? y : side === 's' ? H - y : side === 'w' ? x : W - x;
       const along = (x, y) => side === 'n' || side === 's' ? x : y;
       return {
@@ -429,7 +532,7 @@ function plantTrees(w, hills, hill, near) {
       const x = i % W + 0.5, y = ((i / W) | 0) + 0.5;
       if (!w.water[i] && near[i] < 1.5 && x > 15 && x < W - 15 && y > 12 && y < H - 12) shore.push({ x, y });
     }
-    const c = shore.length ? r.pick(shore) : { x: W / 2, y: H / 2 }, reach = r.range(22, 30) * (small ? 0.7 : 1);
+    const c = shore.length ? r.pick(shore) : { x: W / 2, y: H / 2 }, reach = r.range(...T.bankWoods) * (small ? 0.7 : 1);
     return {
       dense: (x, y) => {
         const n = near[idx(x, y)];
@@ -439,8 +542,16 @@ function plantTrees(w, hills, hill, near) {
     };
   });
 
-  // One tree per 2.3-tile cell where the wood is thick, fewer toward its edge.
-  const s = 2.3;
+  // Woods drawn in the terrain lab: pines up on the hills, broadleaf lower down.
+  if (w.drawn.woods.length) {
+    woods.push({
+      dense: (x, y) => ramp(-outside(w.drawn.woods, x, y) - ragged(x, y) * 0.3),
+      pine: (x, y) => clamp((hill[idx(x, y)] - 0.45) * 3, 0.1, 0.9),
+    });
+  }
+
+  // One tree per cell where the wood is thick, fewer toward its edge.
+  const s = T.treeSpacing;
   for (let gy = 0; gy < H; gy += s) for (let gx = 0; gx < W; gx += s) {
     const x = gx + r.range(0.2, s - 0.2), y = gy + r.range(0.2, s - 0.2);
     if (x < 1 || y < 1 || x > W - 1 || y > H - 1) continue;
@@ -449,7 +560,7 @@ function plantTrees(w, hills, hill, near) {
     if (best && r.next() < d) plant(x, y, r.next() < best.pine(x, y));
   }
   // And a few small groves out in the meadow.
-  for (let g = 0; g < 4; g++) {
+  for (let g = 0; g < (w.drawn.empty ? 0 : T.groves); g++) {
     const gx = r.range(8, W - 8), gy = r.range(8, H - 8);
     for (let k = r.int(3, 7); k > 0; k--) plant(gx + r.range(-5, 5), gy + r.range(-4, 4), r.next() >= 0.6);
   }
@@ -476,7 +587,7 @@ function refreshWater(w) {
   const g = w.ground, water = w.water;
   for (let i = 0; i < g.length; i++) {
     const d = w.level - g[i];
-    water[i] = d <= 0 ? 0 : d < DEEP_AT ? SHALLOW : DEEP;
+    water[i] = d <= 0 ? 0 : d < w.terrain.deepAt ? SHALLOW : DEEP;
   }
 }
 
@@ -489,9 +600,12 @@ function waterWithin(w, x, y, radius) {
   return false;
 }
 
-// Tiles to the nearest water, roughly (two sweeps, straight steps 1 and diagonal 1.4).
-function distanceToWater(w) {
-  const d = Float32Array.from(w.water, v => v ? 0 : 1e9);
+// Tiles to the nearest water, roughly.
+const distanceToWater = w => distanceTo(w.water);
+
+// Tiles to the nearest tile that is set in `from` (two sweeps, straight steps 1 and diagonal 1.4).
+function distanceTo(from) {
+  const d = Float32Array.from(from, v => v ? 0 : 1e9);
   const sweep = (y0, y1, dy, x0, x1, dx) => {
     for (let y = y0; y !== y1; y += dy) for (let x = x0; x !== x1; x += dx) {
       const i = y * W + x;
@@ -511,7 +625,7 @@ function distanceToWater(w) {
 function nameWaters(w, lake) {
   const r = w.rng, body = new Int16Array(W * H).fill(-1);
   const river = new Uint8Array(W * H);
-  if (w.river) for (const p of w.river.pts) if (inBounds(p.x, p.y)) river[idx(p.x, p.y)] = 1;
+  for (const rv of w.rivers) for (const p of rv.pts) if (inBounds(p.x, p.y)) river[idx(p.x, p.y)] = 1;
   const firsts = r.shuffle(WATER_NAMES.first.slice());
   w.waters = [];
   for (let s = 0; s < W * H; s++) {
@@ -867,7 +981,7 @@ function makeCreature(w, species, x, y, genes, parents) {
     alert: 0, threatId: 0, chaseT: 0, fright: 0, frightX: 0, frightY: 0, frightWhat: '',
     wary: 0, waryX: 0, waryY: 0, detour: 0, detourX: 0, detourY: 0, nemesisId: 0, haunt: null,
     pregnantUntil: 0, cooldownUntil: 0, dadGenes: null, dadIdPending: 0, dadGenPending: 0,
-    kids: 0, kills: 0, escapes: 0, story: [],
+    kids: 0, kills: 0, escapes: 0, visits: 0, story: [],
   };
   computeTraits(c);
   c.energy = c.maxEnergy * (parents ? 0.6 : 0.8);
@@ -889,10 +1003,10 @@ function emit(w, e) {
   if (MARKED.has(e.type)) w.history.marks.push({ t: e.t, type: e.type, species: e.species, kind: e.kind });
 }
 
-function nearestBurrow(w, x, y, maxD, halfDug = false) {
+function nearestBurrow(w, x, y, maxD, ok = b => b.dug >= 1) {
   let best = null, bd = maxD * maxD;
   for (const b of w.burrows) {
-    if (b.dug < 1 && !halfDug) continue;
+    if (!ok(b)) continue;
     const d2 = (b.x - x) ** 2 + (b.y - y) ** 2;
     if (d2 < bd) { best = b; bd = d2; }
   }
@@ -904,7 +1018,7 @@ function addCreature(w, species, x, y, opts = {}) {
   const c = makeCreature(w, species, x, y, opts.genes || founderGenes(w, species), null);
   if (opts.sex) c.sex = opts.sex;
   if (opts.age) c.born = w.tick - opts.age * TPD;
-  c.home = species === 'bee' ? w.hive : nearestBurrow(w, x, y, 40);
+  c.home = species === 'bee' ? nearestHive(w, x, y) : nearestBurrow(w, x, y, 40);
   note(w, c, '🌍', opts.arrived ? 'Wandered into the meadow' : 'Arrived in the meadow');
   w.newborn.push(c);
   w.byId.set(c.id, c);
@@ -954,7 +1068,7 @@ function moveToward(w, c, tx, ty, v) {
     }
     c.x = nx; c.y = ny; c.heading = a + off; c.moved = stepLen;
     const cx = Math.cos(c.heading);
-    if (Math.abs(cx) > 0.25) c.facing = cx > 0 ? 1 : -1;
+    if (Math.abs(cx) > 0.4) c.facing = cx > 0 ? 1 : -1;   // going up or down a shore, it wobbles: keep facing
     return d <= v;
   }
   c.target = null; c.detour = 0;   // boxed in: forget the target
@@ -979,6 +1093,9 @@ function wander(w, c, pace) {
 
 const kidPace = (w, c) => 0.6 + 0.4 * growth(w, c);
 
+// Walk, or fly for those that can (see fly, with the bees).
+const go = (w, c, tx, ty, v) => (c.sp.flies ? fly(c, tx, ty, v) : moveToward(w, c, tx, ty, v));
+
 // ---------------------------------------------------------------- love
 
 function readyToMate(w, c) {
@@ -1000,7 +1117,7 @@ function seekLove(w, c) {
   if (!partner) { if (c.mode === 'love') c.mode = 'wander'; return false; }
   c.mode = 'love'; c.targetId = partner.id;
   if (dist2(c, partner) < 1.2 * 1.2) { mate(w, c, partner); return true; }
-  moveToward(w, c, partner.x, partner.y, c.walk * 1.2);
+  go(w, c, partner.x, partner.y, c.walk * 1.2);
   return true;
 }
 
@@ -1052,6 +1169,12 @@ function giveBirth(w, mum) {
 }
 
 // ---------------------------------------------------------------- burrows
+//
+// A burrow has room for ten. Kits born inside, or following mum in, squeeze in anyway.
+
+const BURROW_ROOM = 10;
+const hasRoom = b => b.count < BURROW_ROOM;
+const roomy = b => b.dug >= 1 && hasRoom(b);
 
 function enterBurrow(w, c, b, ticks, sleeping) {
   c.hidden = true; c.burrow = b; c.x = b.x; c.y = b.y;
@@ -1095,7 +1218,8 @@ const DIG_TICKS = 300;     // one rabbit digging on its own: half a day
 function canDig(w, x, y) {
   for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) if (!dry(w, x + dx, y + dy)) return false;
   return !w.burrows.some(b => Math.hypot(b.x - x, b.y - y) < DIG_GAP)
-    && !w.decor.some(d => !d.stone && Math.hypot(d.x - x, d.y - y) < 2);
+    && !w.decor.some(d => !d.stone && Math.hypot(d.x - x, d.y - y) < 2)
+    && !w.hives.some(h => Math.hypot(h.x - x, h.y - y) < 3);
 }
 
 function newBurrow(w, x, y, dug) {
@@ -1106,7 +1230,7 @@ function newBurrow(w, x, y, dug) {
 
 function startDigging(w, c) {
   if (w.burrows.length * 4 > w.count.rabbit) return false;
-  const near = nearestBurrow(w, c.x, c.y, DIG_GAP, true);
+  const near = nearestBurrow(w, c.x, c.y, DIG_GAP, () => true);
   if (near && near.dug >= 1) return false;
   if (!near && !canDig(w, c.x, c.y)) return false;
   c.dig = near || newBurrow(w, c.x, c.y, 0);
@@ -1181,24 +1305,28 @@ function rabbitTick(w, c) {
   if (c.mode === 'flee') { c.mode = 'wander'; c.target = null; c.sleeping = false; }
   if (c.mode === 'alarm') { if (--c.timer > 0) return; c.mode = 'wander'; c.target = null; }
 
-  // 2. Babies stay near mum.
+  // 2. Babies stay near mum. Once it sets off after her, it goes all the way back.
   if (growth(w, c) < 0.5) {
     const mum = w.byId.get(c.mumId);
     if (mum && mum.alive) {
       if (mum.hidden && !night) { /* mum is inside: wait nearby */ }
       else if (mum.hidden) return goHome(w, c, mum.burrow);
-      else if (dist2(c, mum) > 9) { c.mode = 'follow'; moveToward(w, c, mum.x, mum.y, c.walk * kidPace(w, c)); return; }
+      else if (dist2(c, mum) > (c.mode === 'follow' ? 1.5 : 3) ** 2) { c.mode = 'follow'; moveToward(w, c, mum.x, mum.y, c.walk * kidPace(w, c)); return; }
     }
   }
 
-  // 3. Night: go home to sleep, unless hungry.
+  // 3. Night: go home to sleep, unless hungry. One on its way home keeps going; one eating
+  // eats its fill (half a tummy) first.
   const e = c.energy / c.maxEnergy;
   if (c.mode === 'sleep') {
     if (!night || e < 0.25) { c.sleeping = false; c.mode = 'wander'; } else return;
   }
-  if (night && e > 0.3) {
-    let b = c.home && Math.hypot(c.home.x - c.x, c.home.y - c.y) < 35 ? c.home : nearestBurrow(w, c.x, c.y, 35);
-    if (b) return goHome(w, c, b);
+  const bedtime = { home: 0.2, graze: 0.5, food: 0.5 }[c.mode] ?? 0.3;
+  if (night && e > bedtime) {
+    // Home full (or far)? The nearest burrow with room becomes home. None: sleep out.
+    const b = c.home && hasRoom(c.home) && Math.hypot(c.home.x - c.x, c.home.y - c.y) < 35 ? c.home
+      : nearestBurrow(w, c.x, c.y, 35, roomy);
+    if (b) { c.home = b; return goHome(w, c, b); }
     c.mode = 'sleep'; c.sleeping = true; return;
   }
 
@@ -1215,7 +1343,7 @@ function rabbitTick(w, c) {
   if (e < satiation) {
     const skittish = c.wary > 0 && e > 0.4 && (c.x - c.waryX) ** 2 + (c.y - c.waryY) ** 2 < 36;
     if (w.grass[i] > 0.3 && !skittish) { c.mode = 'graze'; eat(w, c, i); return; }
-    if (c.mode !== 'food' || !c.target || (t + c.id) % 20 === 0) {
+    if (c.mode !== 'food' || !c.target || w.grass[idx(c.target.x, c.target.y)] < 0.12) {   // stick with a patch till it's gone
       const spot = findFood(w, c);
       if (spot) { c.mode = 'food'; c.target = spot; }
     }
@@ -1301,11 +1429,12 @@ function thump(w, c, fox) {
 // Runs from a fox, or from anything with an x and a y (thunder, fire).
 function flee(w, c, fox) {
   if (c.mode !== 'flee') {
-    c.mode = 'flee'; c.sleeping = false; c.threatId = fox.id;
+    c.mode = 'flee'; c.sleeping = false; c.threatId = fox.id; c.target = null;
     c.refuge = pickRefuge(w, c, fox);
     if (fox.id) thump(w, c, fox);
   }
   let tx, ty;
+  if (c.refuge && !hasRoom(c.refuge)) c.refuge = pickRefuge(w, c, fox);   // filled up: try another
   const b = c.refuge;
   if (b) {
     tx = b.x; ty = b.y;
@@ -1314,11 +1443,19 @@ function flee(w, c, fox) {
       return;
     }
   } else {
-    // Straight away from the fox, or as close to that as the ponds allow.
-    const a = Math.atan2(c.y - fox.y, c.x - fox.x), b = c.turnBias || 1;
-    for (const off of [0, 0.5, -0.5, 1, -1, 1.5, -1.5]) {
-      tx = c.x + Math.cos(a + off * b) * 6; ty = c.y + Math.sin(a + off * b) * 6;
-      if (clearPath(w, c.x, c.y, tx, ty)) break;
+    // Straight away from the fox, or as close to that as the ponds allow. It keeps to the way
+    // it picked until it gets there or the fox comes round that side; picking afresh every
+    // step, it dithers along the shore.
+    const t = c.target;
+    if (t && (t.x - c.x) ** 2 + (t.y - c.y) ** 2 > 1 && (t.x - c.x) * (c.x - fox.x) + (t.y - c.y) * (c.y - fox.y) > 0) {
+      tx = t.x; ty = t.y;
+    } else {
+      const a = Math.atan2(c.y - fox.y, c.x - fox.x), b = c.turnBias || 1;
+      for (const off of [0, 0.5, -0.5, 1, -1, 1.5, -1.5]) {
+        tx = c.x + Math.cos(a + off * b) * 6; ty = c.y + Math.sin(a + off * b) * 6;
+        if (clearPath(w, c.x, c.y, tx, ty)) break;
+      }
+      c.target = { x: tx, y: ty };
     }
   }
   const sprinting = c.stamina > 0;
@@ -1331,7 +1468,7 @@ function pickRefuge(w, c, fox) {
   let best = null, bd = 8 * 8;
   for (const b of w.burrows) {
     const bx = b.x - c.x, by = b.y - c.y, d2 = bx * bx + by * by;
-    if (d2 >= bd || b.dug < 1 || !clearPath(w, c.x, c.y, b.x, b.y)) continue;
+    if (d2 >= bd || !roomy(b) || !clearPath(w, c.x, c.y, b.x, b.y)) continue;
     const bdl = Math.sqrt(d2) || 1;
     const towardFox = (bx * fx + by * fy) / (bdl * fd);
     if (bdl < 2.5 || towardFox < 0.3) { best = b; bd = d2; }
@@ -1364,8 +1501,9 @@ function foxTick(w, c) {
   const young = growth(w, c) < 0.5;
   if (young) {
     const mum = w.byId.get(c.mumId);
-    if (mum && mum.alive && dist2(c, mum) > 16) {
-      c.mode = 'follow'; moveToward(w, c, mum.x, mum.y, c.walk * kidPace(w, c)); return;
+    if (mum && mum.alive && dist2(c, mum) > (c.mode === 'follow' ? 2 : 4) ** 2) {   // same as rabbit kits
+      c.mode = 'follow'; c.targetId = 0;   // back to mum, and the hunt is off
+      moveToward(w, c, mum.x, mum.y, c.walk * kidPace(w, c)); return;
     }
   }
 
@@ -1391,7 +1529,8 @@ function hunt(w, c) {
   let prey = c.targetId ? w.byId.get(c.targetId) : null;
   if (prey && prey.species !== 'rabbit') prey = null;
   const sight = c.sight * sky(w).sight;
-  if (prey && (!prey.alive || prey.hidden || dist2(c, prey) > (sight * 1.3) ** 2)) {
+  // Lost from view: a little further off than the furthest a fox spots one, or it'd flicker.
+  if (prey && (!prey.alive || prey.hidden || dist2(c, prey) > (sight * CAMO[1] * 1.2) ** 2)) {
     if (prey.alive && c.mode === 'chase') escaped(w, prey, c, prey.hidden ? 'burrow' : 'outran');
     prey = null; c.targetId = 0; c.mode = 'wander';
   }
@@ -1456,60 +1595,127 @@ function catchPrey(w, fox, rabbit) {
 }
 
 // ---------------------------------------------------------------- bees
+//
+// Bees live in hives (w.hives). A hive is a spot on the map and a store of honey. Every bee
+// belongs to one (c.home). In spring and summer they fly out to the flowers, sip, and bring
+// honey back; from autumn to spring they stay in and live on it. They fly, so water and woods
+// don't stop them. Same ladder as everyone: danger > home > love > food > wander, one function
+// per rung. New bee behaviour is a new rung, or a line in one.
 
 const NECTAR = 0.4;             // energy per tick of sipping
 const SIP_TICKS = 40;           // how long one flower takes
 const HONEY = 3;                // honey a bee brings home from each flower
+const HONEY_BITE = 0.2;         // honey a hungry bee eats per tick, in the hive
+const HIVE_HONEY = 200;         // what a new hive starts with
+const HIVE_FULL = 1500;         // all the honey a hive can hold
+const WINTER_HONEY = 30;         // honey put by for each bee before the hive raises young
+const FORAGE_RANGE = 20;        // how far from its hive a bee roams
+const FEW_FLOWERS = 40;         // fewer open than this in the whole meadow, and bees stay in
 
-// Bees stay in the hive at night, in rain and storms, and from autumn to spring (no flowers).
+// Bees stay in at night, in rain and storms, and while there's hardly a flower open.
 const hiveTime = w => isNight(w.tick) || w.weather.kind === 'rain' || w.weather.kind === 'storm'
-  || seasonOf(w.tick) >= 2;
+  || w.flowers < FEW_FLOWERS;
 
-function beeTick(w, c) {
-  const e = c.energy / c.maxEnergy;
-
-  // 1. Danger: nothing hunts bees (yet).
-
-  // 2. Home: sleep in the hive, and eat honey there when hungry.
-  if (c.hidden) {
-    const hungry = e < 0.5 && c.home.honey > 0;
-    if (hungry) { c.home.honey -= 0.2; c.energy += 0.2; }
-    if (hiveTime(w) || hungry) return;
-    c.hidden = false; c.sleeping = false; c.mode = 'wander';
-  }
-  if (hiveTime(w) || (e < 0.3 && c.home.honey > 0)) {
-    c.mode = 'home';
-    if (fly(c, c.home.x, c.home.y, c.walk)) { c.hidden = true; c.sleeping = true; c.mode = 'sleep'; }
-    return;
-  }
-
-  // 3. Love.
-  if (seekLove(w, c)) return;
-
-  // 4. Food: fly to a flower, sip, and pollinate it.
-  if (c.mode === 'sip') {
-    c.energy = Math.min(c.maxEnergy, c.energy + NECTAR);
-    if (--c.timer > 0) return;
-    pollinate(w, c.target);
-    c.home.honey += HONEY;
-    c.mode = 'wander'; c.target = null;
-  }
-  if (e < 0.8) {
-    if (c.mode !== 'flower') { c.target = findFlower(w, c); if (c.target) c.mode = 'flower'; }
-    if (c.mode === 'flower') {
-      if (fly(c, c.target.x, c.target.y, c.walk)) { c.mode = 'sip'; c.timer = SIP_TICKS; c.target.sipped = w.tick; }
-      return;
-    }
-  }
-
-  // 5. Wander: buzz about, never too far from the hive.
-  if (c.mode !== 'wander' || !c.target || fly(c, c.target.x, c.target.y, c.walk * 0.6)) {
-    c.mode = 'wander';
-    c.target = { x: c.home.x + w.rng.range(-20, 20), y: c.home.y + w.rng.range(-20, 20) };
-  }
+// Every little while: how many flowers are open, and how many bees each hive has.
+function hivesTick(w) {
+  w.flowers = 0;
+  for (const p of w.plants) if (isFlower(w, p)) w.flowers++;
+  for (const h of w.hives) h.bees = 0;
+  for (const c of w.creatures) if (c.alive && c.species === 'bee') c.home.bees++;
 }
 
-// Bees fly straight over water, trees and all. True once it's there.
+// A hive raises young only once it has honey enough to see all its bees through the winter.
+const broodTime = h => h.honey > WINTER_HONEY * h.bees;
+
+function makeHive(w, x, y) {
+  const h = { id: w.hives.length + 1, x, y, honey: HIVE_HONEY, bees: 0 };
+  w.hives.push(h);
+  return h;
+}
+
+// The first hive: a hollow dead tree beside the tree with the most flowering plants in reach,
+// at the edge of the wood rather than deep in it, so there's room to see it.
+function placeHive(w) {
+  let best = { x: W / 2, y: H / 2 }, bestScore = -Infinity;
+  for (const d of w.decor) {
+    if (!d.tree) continue;
+    const x = d.x + 1.4, y = d.y + 0.4;
+    if (!dry(w, x, y)) continue;
+    const flowers = w.plants.filter(p => p.kind < 0.35 && w.fert[p.i] > 0.7          // rich soil: they'll bloom
+      && Math.hypot(p.x - x, p.y - y) < FORAGE_RANGE).length;
+    const crowd = w.decor.filter(o => o.tree && Math.hypot(o.x - x, o.y - y) < 4).length;
+    const score = flowers - 5 * crowd;
+    if (score > bestScore) { best = { x, y }; bestScore = score; }
+  }
+  for (let rad = 0; !dry(w, best.x, best.y) && rad < W; rad++) {    // no trees at all: the nearest dry spot
+    for (let a = 0; a < 16 && !dry(w, best.x, best.y); a++) {
+      const x = W / 2 + rad * Math.cos(a * Math.PI / 8), y = H / 2 + rad * Math.sin(a * Math.PI / 8);
+      if (dry(w, x, y)) best = { x, y };
+    }
+  }
+  return makeHive(w, best.x, best.y);
+}
+
+function nearestHive(w, x, y) {
+  let best = null;
+  for (const h of w.hives) if (!best || Math.hypot(h.x - x, h.y - y) < Math.hypot(best.x - x, best.y - y)) best = h;
+  return best;
+}
+
+function beeTick(w, c) {
+  // 1. Danger: nothing hunts bees (yet).
+  if (beeHome(w, c)) return;                                  // 2. home: sleep, shelter, honey
+  if (broodTime(c.home) && seekLove(w, c)) return;            // 3. love, when the hive can feed young
+  if (beeForage(w, c)) return;                                // 4. food
+  beeWander(w, c);                                            // 5. wander
+}
+
+// In the hive: eat honey when hungry, come out when it's time. Outside: fly home at hive
+// time, or early when hungry and there's honey waiting.
+function beeHome(w, c) {
+  const e = c.energy / c.maxEnergy, h = c.home;
+  if (c.hidden) {
+    const hungry = e < 0.5 && h.honey > 0;
+    if (hungry) { const bite = Math.min(h.honey, HONEY_BITE); h.honey -= bite; c.energy += bite; }
+    if (hiveTime(w) || hungry) return true;
+    c.hidden = false; c.sleeping = false; c.mode = 'wander'; c.target = null;
+    return false;
+  }
+  if (!hiveTime(w) && !(e < 0.3 && h.honey > 0)) return false;
+  c.mode = 'home';
+  if (fly(c, h.x, h.y, c.walk)) { c.hidden = true; c.sleeping = true; c.mode = 'sleep'; c.target = null; }
+  return true;
+}
+
+// Hungry: off to the nearest fresh flower, sip, pollinate it, and bring honey home.
+function beeForage(w, c) {
+  if (c.mode === 'sip') {
+    c.energy = Math.min(c.maxEnergy, c.energy + NECTAR);
+    if (--c.timer > 0) return true;
+    pollinate(w, c.target);
+    c.home.honey = Math.min(HIVE_FULL, c.home.honey + HONEY); c.visits++;
+    c.mode = 'wander'; c.target = null;
+  }
+  if (c.energy >= 0.8 * c.maxEnergy) return false;
+  if (c.mode !== 'flower') {
+    if ((w.tick + c.id) % 10) return false;         // look around now and then, not every tick
+    c.target = findFlower(w, c);
+    if (!c.target) return false;
+    c.mode = 'flower';
+  }
+  if (fly(c, c.target.x, c.target.y, c.walk)) { c.mode = 'sip'; c.timer = SIP_TICKS; c.target.sipped = w.tick; }
+  return true;
+}
+
+// Buzz about, never too far from the hive.
+function beeWander(w, c) {
+  if (c.mode === 'wander' && c.target && !fly(c, c.target.x, c.target.y, c.walk * 0.6)) return;
+  const h = c.home, r = FORAGE_RANGE;
+  c.mode = 'wander';
+  c.target = { x: clamp(h.x + w.rng.range(-r, r), 1, W - 1), y: clamp(h.y + w.rng.range(-r, r), 1, H - 1) };
+}
+
+// Flying: straight there, over water, trees and all. True once it's there.
 function fly(c, tx, ty, v) {
   const dx = tx - c.x, dy = ty - c.y, d = Math.hypot(dx, dy);
   if (Math.abs(dx) > 0.05) c.facing = dx > 0 ? 1 : -1;
@@ -1546,6 +1752,18 @@ function pollinate(w, p) {
       w.grass[i] = Math.min(w.fert[i], w.grass[i] + 0.1);
     }
   }
+}
+
+function beeMood(w, c) {
+  if (c.hidden) return c.energy < 0.5 * c.maxEnergy && c.home.honey > 0 ? { emoji: '🍯', text: 'Eating honey in the hive' }
+    : { emoji: '💤', text: w.flowers < FEW_FLOWERS ? 'Waiting in the hive for the flowers' : 'Asleep in the hive' };
+  switch (c.mode) {
+    case 'sip': return { emoji: '🌼', text: 'Sipping nectar' };
+    case 'flower': return { emoji: '🌸', text: 'Off to a flower' };
+    case 'home': return { emoji: '🏠', text: 'Flying home to the hive' };
+    case 'wander': return { emoji: '', text: 'Buzzing about' };
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------- life and death
@@ -1594,35 +1812,29 @@ function createWorld(seed, opts = {}) {
   const w = {
     seed, rng: makeRng(seed), tick: Math.floor(TPD * 0.04),
     nextId: 1, creatures: [], newborn: [], byId: new Map(), events: [],
-    grid: makeGrid(), grids: { rabbit: makeGrid(), fox: makeGrid(), bee: makeGrid() },
+    grid: makeGrid(), grids: perKind(makeGrid),
     nameCounts: new Map(), anyDied: false,
     weather: { kind: 'clear', until: 0 }, skyLocked: false, wet: 0.3, snow: 0,
     fire: new Float32Array(W * H), ash: new Float32Array(W * H), burning: [], blaze: 0,
-    count: { rabbit: 0, fox: 0, bee: 0 }, expecting: { rabbit: 0, fox: 0, bee: 0 },
-    stats: { births: { rabbit: 0, fox: 0, bee: 0 }, deaths: { rabbit: {}, fox: {}, bee: {} } },
-    history: { every: 60, t: [], rabbit: [], fox: [], bee: [], grass: [], traits: { rabbit: [], fox: [], bee: [] }, marks: [] },
-    goneSince: { rabbit: -1, fox: -1, bee: -1 },
+    count: perKind(() => 0), expecting: perKind(() => 0),
+    stats: { births: perKind(() => 0), deaths: perKind(() => ({})) },
+    history: { every: 60, t: [], grass: [], ...perKind(() => []), traits: perKind(() => []), marks: [] },
+    goneSince: perKind(() => -1), hives: [],
     options: { migration: true, ...opts },
   };
   makeTerrain(w);
-  // One hive, hung in the tree nearest the middle. Bees sleep there, and sit out the winter inside.
-  let tree = null;
-  for (const d of w.decor) {
-    if (d.tree && (!tree || Math.hypot(d.x - W / 2, d.y - H / 2) < Math.hypot(tree.x - W / 2, tree.y - H / 2))) tree = d;
-  }
-  w.hive = { x: tree.x + 0.5, y: tree.y + 0.2, honey: 200 };
-  w.decor.push({ x: w.hive.x, y: w.hive.y, emoji: '🍯', size: 1.2 });
-  const n = { rabbit: opts.rabbits ?? Math.round(30 * w.room), fox: opts.foxes ?? Math.round(4 * w.room), bee: 12 };
-  for (const species of ['rabbit', 'fox', 'bee']) {
+  placeHive(w);
+  const n = { rabbit: opts.rabbits ?? Math.round(30 * w.room), fox: opts.foxes ?? Math.round(4 * w.room), bee: opts.bees ?? 12 };
+  for (const species of KINDS) {
     for (let k = 0; k < n[species]; k++) {
       let x, y;
       do { x = w.rng.range(4, W - 4); y = w.rng.range(4, H - 4); } while (!dry(w, x, y));
       addCreature(w, species, x, y, { sex: k % 2 ? 'M' : 'F', age: w.rng.range(4, 10) });
     }
   }
-  w.founderMeans = { rabbit: null, fox: null, bee: null };
   flushNewborn(w);
-  for (const s of ['rabbit', 'fox', 'bee']) w.founderMeans[s] = traitMeans(w, s);
+  hivesTick(w);
+  w.founderMeans = perKind(s => traitMeans(w, s));
   w.weather.until = w.tick + w.rng.range(0.3, 0.8) * TPD;
   record(w);
   return w;
@@ -1631,8 +1843,7 @@ function createWorld(seed, opts = {}) {
 function flushNewborn(w) {
   for (const k of w.newborn) w.creatures.push(k);
   w.newborn.length = 0;
-  w.count.rabbit = w.count.fox = w.count.bee = 0;
-  w.expecting.rabbit = w.expecting.fox = w.expecting.bee = 0;
+  for (const s of KINDS) w.count[s] = w.expecting[s] = 0;
   for (const c of w.creatures) {
     if (!c.alive) continue;
     w.count[c.species]++;
@@ -1672,15 +1883,12 @@ const HISTORY_MAX = 4000;
 function record(w) {
   const h = w.history;
   h.t.push(w.tick);
-  h.rabbit.push(w.count.rabbit);
-  h.fox.push(w.count.fox);
-  h.bee.push(w.count.bee);
   h.grass.push(grassFullness(w));
-  for (const s of ['rabbit', 'fox', 'bee']) h.traits[s].push(traitMeans(w, s));
+  for (const s of KINDS) { h[s].push(w.count[s]); h.traits[s].push(traitMeans(w, s)); }
   if (h.t.length > HISTORY_MAX) {
     const half = a => a.filter((_, i) => i % 2 === 0);
-    for (const k of ['t', 'rabbit', 'fox', 'bee', 'grass']) h[k] = half(h[k]);
-    for (const s of ['rabbit', 'fox', 'bee']) h.traits[s] = half(h.traits[s]);
+    for (const k of ['t', 'grass', ...KINDS]) h[k] = half(h[k]);
+    for (const s of KINDS) h.traits[s] = half(h.traits[s]);
     h.every *= 2;
   }
 }
@@ -1704,12 +1912,12 @@ function newDay(w) {
 function migrate(w) {
   if (!w.options.migration) return;
   const wait = { rabbit: 1, fox: 3, bee: 2 }, arrive = { rabbit: 6, fox: 2, bee: 8 }, few = { rabbit: 4, fox: 3, bee: 4 };
-  for (const s of ['rabbit', 'fox', 'bee']) {
+  for (const s of KINDS) {
     if (w.count[s] >= few[s]) { w.goneSince[s] = -1; continue; }
     if (w.goneSince[s] < 0) { w.goneSince[s] = w.tick; if (w.count[s] === 0) emit(w, { type: 'extinct', species: s }); continue; }
     if (w.tick - w.goneSince[s] < wait[s] * TPD) continue;
     if (s === 'fox' && w.count.rabbit < 60 * w.room) continue;   // foxes only come where there is food
-    if (s === 'bee' && seasonOf(w.tick) !== 1) continue;  // a swarm only comes in summer
+    if (s === 'bee' && w.flowers < FEW_FLOWERS) continue;         // a swarm comes when the flowers are out
     const side = w.rng.int(0, 3);
     const kids = [];
     for (let k = 0; k < arrive[s]; k++) {
@@ -1717,6 +1925,7 @@ function migrate(w) {
       do {
         const u = w.rng.range(4, (side % 2 ? H : W) - 4);
         [x, y] = side === 0 ? [u, 2] : side === 1 ? [W - 2, u] : side === 2 ? [u, H - 2] : [2, u];
+        if (s === 'bee') { const h = w.hives[0]; x = h.x + w.rng.range(-2, 2); y = h.y + w.rng.range(-2, 2); }   // a swarm settles in the hive
       } while (!dry(w, x, y) && ++tries < 50);
       const c = addCreature(w, s, x, y, { sex: k % 2 ? 'M' : 'F', age: SPECIES[s].matureDays + 1, arrived: true });
       if (c) kids.push(c);
@@ -1732,6 +1941,7 @@ function step(w) {
   buildGrid(w);
   weatherTick(w);
   if (t % 4 === 0) { growGrass(w, 4); fireTick(w, 4); }
+  if (t % 60 === 0) hivesTick(w);
   const list = w.creatures;
   for (let i = 0; i < list.length; i++) {
     const c = list[i];
@@ -1786,10 +1996,8 @@ function mood(w, c) {
   const other = w.byId.get(c.targetId) || w.byId.get(c.threatId);
   const e = c.energy / c.maxEnergy;
   const storm = w.weather.kind === 'storm' && !isNight(w.tick);
-  if (c.species === 'bee' && c.hidden) return { emoji: '🍯', text: 'Snug in the hive' };
+  if (c.species === 'bee') { const m = beeMood(w, c); if (m) return m; }
   switch (c.mode) {
-    case 'sip': return { emoji: '🌼', text: 'Sipping nectar' };
-    case 'flower': return { emoji: '🌸', text: 'Off to a flower' };
     case 'flee':
       if (c.fright > 0) return c.frightWhat === 'fire' ? { emoji: '🔥', text: 'Running from the fire!' }
         : { emoji: '⚡', text: 'Spooked by thunder!' };
@@ -1821,7 +2029,8 @@ const api = {
   W, H, TPD, SHALLOW, DEEP, SEASON_DAYS, YEAR_DAYS, SEASONS, SPECIES, GENES, COATS, GROUND, WEATHER,
   createWorld, step, clock, isNight, phaseOf, seasonOf, mood, ageDays, growth, isAdult,
   addCreature, paintGrass, setSky, lockSky, zap, traitMeans, walkable,
-  coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT,
+  coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT, KINDS,
+  TERRAIN, distanceToWater,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 else root.Sim = api;

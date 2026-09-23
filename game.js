@@ -7,15 +7,25 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const lerp = (a, b, t) => a + (b - a) * t;
 const TAU = Math.PI * 2;
 const TICKS_PER_SECOND = 30;           // at 1x
+const perKind = make => Object.fromEntries(S.KINDS.map(s => [s, make(s)]));   // { rabbit: .., fox: .., bee: .. }
 
 // ------------------------------------------------------------------ state
+
+// ?terrain={...} overrides some of the meadow's settings (Sim.TERRAIN) and ?drawn={...} adds
+// what was drawn on it, as the terrain lab hands them over. ?lab opens that lab: the meadow
+// without animals, and terrain-lab.js on top.
+const params = new URLSearchParams(location.search), LAB = params.has('lab');
+const fromUrl = key => { try { return JSON.parse(params.get(key) || '{}'); } catch (e) { return {}; } };   // a broken link: the usual meadow
+let terrain = fromUrl('terrain'), drawn = fromUrl('drawn');
+const terrainQuery = () => ['terrain', 'drawn'].map(k => [k, { terrain, drawn }[k]])
+  .filter(([, v]) => Object.keys(v).length).map(([k, v]) => `&${k}=` + encodeURIComponent(JSON.stringify(v))).join('');
 
 let world;
 const ui = {
   speed: 1, sound: false, tool: 'look', selectedId: 0, hoverId: 0, follow: false,
   trail: [], effects: [], diary: new Map(),
-  lastNews: {}, newsLog: [], newsOpen: false, records: { rabbit: 0, fox: 0 }, crashSaid: { rabbit: -1, fox: -1 }, seenHistory: 0,
-  releaseSex: { rabbit: 'F', fox: 'F' }, mini: false, ring: null, sheetUp: false,
+  lastNews: {}, newsLog: [], newsOpen: false, records: perKind(() => 0), crashSaid: perKind(() => -1), seenHistory: 0,
+  releaseSex: perKind(() => 'F'), mini: false, ring: null, sheetUp: false,
   stats: { open: false, show: 'rabbit', range: 'five', hover: null },
   sky: { mix: {}, tick: 0, bolt: null, boom: -1e9, rainbow: 0, menu: false },
 };
@@ -49,7 +59,7 @@ function resize() {
   minZoom = Math.max(vw / S.W, vh / S.H);        // the meadow always fills the window
   cam.zoom = Math.max(cam.zoom, minZoom);
   clampCam();
-  for (const s of ['rabbit', 'fox']) {
+  for (const s of S.KINDS) {
     const c = $('#spark-' + s);
     c.width = Math.round(c.clientWidth * dpr); c.height = Math.round(c.clientHeight * dpr);
   }
@@ -256,11 +266,12 @@ function foxRGB(f) {
   return [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)].map(Math.round);
 }
 function furTint(c) {
-  if (c.genes.coat) return undefined;
+  if (c.species !== 'fox') return undefined;
   const [r, g, b] = foxRGB(Math.round(c.genes.fur * 10) / 10);   // a few shades keep the sprite cache small
   return `rgba(${r},${g},${b},0.22)`;
 }
-const furCss = c => c.genes.coat ? coatLook(c).swatch : `rgb(${foxRGB(c.genes.fur).join(',')})`;
+const furCss = c => c.genes.coat ? coatLook(c).swatch
+  : c.species === 'fox' ? `rgb(${foxRGB(c.genes.fur).join(',')})` : LOOKS[c.species].swatch;
 
 // "Wild brown coat, carries black": the colours it hides can still turn up in its kits.
 // Then how well it hides where it sits, as a fox would see it.
@@ -821,6 +832,10 @@ function render(now) {
     const [sx, sy] = toScreen(d.x, d.y);
     if (visible(sx, sy, d.size * z)) items.push({ y: d.y, d, sx, sy });
   }
+  for (const h of world.hives) {
+    const [sx, sy] = toScreen(h.x, h.y);
+    if (visible(sx, sy, 3 * z)) items.push({ y: h.y, h, sx, sy });
+  }
   const shown = [];
   for (const c of world.creatures) {
     if (c.hidden || !c.alive) continue;
@@ -834,10 +849,12 @@ function render(now) {
   const sn = sun(ck);
   for (const it of items) {
     if (it.d) drawDecorShadow(it.d, it.sx, it.sy, sn);
+    else if (it.h) drawHiveShadow(it.sx, it.sy, sn);
     else drawCreatureShadow(it.c, it.sx, it.sy, now, sn);
   }
   for (const it of items) {
     if (it.d) drawDecor(it.d, it.sx, it.sy, now, ck);
+    else if (it.h) drawHive(it.h, it.sx, it.sy);
     else drawCreature(it.c, it.sx, it.sy, now);
   }
   drawFallingLeaves(now);
@@ -861,6 +878,11 @@ function render(now) {
       const bob = Math.sin(now / 600 + b.id) * 3;
       drawEmoji('💤', sx + z * 0.8, sy - z * 1.1 + bob, Math.max(11, z * 0.8), { alpha: 0.85 });
     }
+    for (const h of world.hives) {
+      if (!h.bees) continue;
+      const [sx, sy] = toScreen(h.x, h.y);
+      if (visible(sx, sy, 40)) drawEmoji('💤', sx + z * 0.9, sy - z * 1.9 + Math.sin(now / 600 + h.id) * 3, Math.max(11, z * 0.8), { alpha: 0.85 });
+    }
   }
 
   // Thought bubbles above the dark.
@@ -869,7 +891,8 @@ function render(now) {
     const important = ALWAYS_BUBBLE.has(c.mode);
     if (!(important || c.id === ui.selectedId || c.id === ui.hoverId || z >= 20)) continue;
     const m = S.mood(world, c);
-    if (m.emoji) drawBubble(m.emoji, it.sx, it.sy, creaturePx(c), important);
+    const px = creaturePx(c), up = c.sp.flies ? liftOf(c, px, now) : 0;
+    if (m.emoji) drawBubble(m.emoji, it.sx, it.sy - up, px, important);
   }
 
   drawEffects(now);
@@ -878,11 +901,30 @@ function render(now) {
   if (hov && hov.alive && !hov.hidden && hov.id !== ui.selectedId) {
     const [sx, sy] = toScreen(hov.x, hov.y);
     drawLabel(`${hov.name} · ${S.mood(world, hov).text}`, sx, sy + creaturePx(hov) * 0.55 + 6);
+  } else if (ui.hoverHive) {
+    const h = ui.hoverHive, [sx, sy] = toScreen(h.x, h.y);
+    drawLabel(`🐝 Hive · ${h.bees} ${h.bees === 1 ? 'bee' : 'bees'} · ${Math.round(h.honey)} honey`, sx, sy + z * 0.5 + 6);
   }
 }
 
+// How each kind is drawn: its size next to a rabbit, and whether its emoji faces left (then it
+// is mirrored to face where it's going). Animals that fly (c.sp.flies) hover above their shadow.
+const LOOKS = {
+  rabbit: { size: 1, facesLeft: true },
+  fox: { size: 1, facesLeft: false },          // a face: it does not care
+  bee: { size: 0.38, facesLeft: true, swatch: '#e8b83a' },
+};
+
 // Grows with zoom, but never shrinks to a speck when you look at the whole meadow.
-const creaturePx = c => (10 + cam.zoom * 1.4) * c.scale * (0.55 + 0.45 * S.growth(world, c));
+const creaturePx = c => (10 + cam.zoom * 1.4) * LOOKS[c.species].size * c.scale * (0.55 + 0.45 * S.growth(world, c));
+const flipOf = c => LOOKS[c.species].facesLeft && c.facing > 0;
+
+// How high off the ground it is drawn: a hop, or a flier's hover. A sipping bee sits on the flower.
+function liftOf(c, px, now) {
+  if (!c.sp.flies) return hopOf(c, px, now);
+  const bob = ui.speed > 0 ? Math.sin(now / 90 + c.id) * px * 0.08 : 0;
+  return (c.mode === 'sip' ? px * 0.15 : px * 0.9) + bob;
+}
 
 // How high off the ground a hop has lifted it, in screen pixels.
 function hopOf(c, px, now) {
@@ -900,21 +942,20 @@ function drawCreature(c, sx, sy, now) {
     const line = sy + px * 0.3, rip = 1 + 0.12 * Math.sin(now / 260 + c.id);
     ctx.save();
     ctx.beginPath(); ctx.rect(sx - px, line - px * 2, px * 2, px * 2); ctx.clip();
-    drawEmoji(c.sp.emoji, sx, sy + px * 0.1, px, { tint: furTint(c), coat: coatLook(c), flip: c.species === 'rabbit' && c.facing > 0 });
+    drawEmoji(c.sp.emoji, sx, sy + px * 0.1, px, { tint: furTint(c), coat: coatLook(c), flip: flipOf(c) });
     ctx.restore();
     ctx.strokeStyle = 'rgba(240, 250, 255, 0.7)';
     ctx.lineWidth = Math.max(1, px * 0.05);
     ctx.beginPath(); ctx.ellipse(sx, line, px * 0.36 * rip, px * 0.09 * rip, 0, 0, TAU); ctx.stroke();
     return;
   }
-  const hop = hopOf(c, px, now);
+  const hop = liftOf(c, px, now);
   // Standing still, everyone breathes: slow and deep asleep, quick and shallow awake.
   const breathe = !hop && ui.speed > 0
     ? Math.sin(now / (c.sleeping ? 650 : 330) + c.id) * (c.sleeping ? 0.035 : 0.02) : 0;
   const squash = (c.sleeping ? 0.82 : 1) + breathe;
-  // The rabbit glyph faces left; the fox glyph is a face and does not care.
   drawEmoji(c.sp.emoji, sx, sy - hop + px * 0.4 * (1 - squash), px, {   // feet stay on the ground
-    tint: furTint(c), coat: coatLook(c), flip: c.species === 'rabbit' && c.facing > 0, squash,
+    tint: furTint(c), coat: coatLook(c), flip: flipOf(c), squash,
   });
 }
 
@@ -1012,7 +1053,7 @@ function drawDecorShadow(d, sx, sy, sn) {
 // at night and under cloud so they never float. A hop lifts them off it and it shrinks.
 function drawCreatureShadow(c, sx, sy, now, sn) {
   if (wading(c)) return;
-  const px = creaturePx(c), lift = 1 - hopOf(c, px, now) / px;
+  const px = creaturePx(c), lift = 1 - Math.min(0.8, liftOf(c, px, now) / px);
   const a = 0.14 + 0.16 * Math.max(0, sn.a), off = Math.max(0, sn.a) * sn.lean * px * 0.2;
   ctx.fillStyle = `rgba(40, 50, 20, ${a * lift})`;
   ctx.beginPath();
@@ -1122,6 +1163,226 @@ function drawDecor(d, sx, sy, now, ck) {
   // Struck by lightning: a stump, then a sapling, then (in sim.js) a tree again.
   const sapling = world.tick - d.stump > S.YEAR_DAYS * S.TPD / 2;
   drawEmoji(sapling ? '🌱' : '🪵', sx, sy - d.size * z * 0.12, d.size * z * (sapling ? 0.55 : 0.45));
+}
+
+// ------------------------------------------------------------------ hives
+//
+// A wild colony lives in an old dead tree whose top has snapped off: the bare 🪾 cut short, with
+// comb glinting in its hollow and bees on the doorstep, more of them the bigger the colony.
+// Light comes from the top left, like on the emoji. The tree's still parts are painted once per
+// size into a sprite, in emoji units (0,0 the 🪾's centre, 1 its size), so bark and shading land
+// on the wood alone; the bees, honey and snow are drawn over it each frame.
+
+const SNAG = 2.6;                                          // the 🪾's size, in tiles
+const SNAG_BREAK = -0.2;                                   // where the top snapped off
+const SNAG_JAG = [[-0.072, 0.024], [-0.058, 0.012], [-0.045, 0.024], [-0.028, 0], [-0.012, 0.018], [0.004, -0.04],
+  [0.018, 0.004], [0.04, 0.016], [0.06, -0.018], [0.078, 0.014], [0.098, 0.002], [0.122, 0.026]];
+const SNAG_TRUNK = [[-0.2, -0.073, 0.125], [-0.1, -0.053, 0.112], [0, -0.045, 0.116], [0.1, -0.062, 0.125],
+  [0.2, -0.073, 0.14], [0.3, -0.073, 0.168], [0.4, -0.1, 0.18]];   // y, then the trunk's left and right edge
+const SNAG_HOLE = { x: 0.085, y: 0.005, rx: 0.042, ry: 0.064 };    // over the emoji's own knot hole, a bit bigger
+const snagSprites = new Map();
+
+function trunkAt(y) {
+  const T = SNAG_TRUNK;
+  let i = 0;
+  while (i < T.length - 2 && y > T[i + 1][0]) i++;
+  const t = clamp((y - T[i][0]) / (T[i + 1][0] - T[i][0]), 0, 1);
+  return [lerp(T[i][1], T[i + 1][1], t), lerp(T[i][2], T[i + 1][2], t)];
+}
+
+function softSpot(g, x, y, rx, ry, rgb, a) {
+  g.save(); g.translate(x, y); g.scale(1, ry / rx);
+  const r = g.createRadialGradient(0, 0, 0, 0, 0, rx);
+  r.addColorStop(0, `rgba(${rgb}, ${a})`); r.addColorStop(1, `rgba(${rgb}, 0)`);
+  g.fillStyle = r; g.beginPath(); g.arc(0, 0, rx, 0, TAU); g.fill();
+  g.restore();
+}
+
+function holePath(g, k) {                                  // the hollow's ragged outline, k times its size
+  const { x, y, rx, ry } = SNAG_HOLE;
+  g.beginPath();
+  for (let i = 0; i <= 14; i++) {
+    const a = i / 14 * TAU, w = k * (1 + 0.1 * Math.sin(a * 3 + 1) + 0.06 * Math.cos(a * 5));
+    g[i ? 'lineTo' : 'moveTo'](x + Math.cos(a) * rx * w, y + Math.sin(a) * ry * w);
+  }
+  g.closePath();
+}
+
+function snagSprite(P) {
+  P = Math.round(P);
+  let s = snagSprites.get(P);
+  if (s) return s;
+  if (snagSprites.size > 40) snagSprites.clear();
+  const W = P * 0.85, H = P * 0.72, ox = P * 0.45, oy = P * 0.27;
+  const c = document.createElement('canvas');
+  c.width = Math.ceil(W * dpr); c.height = Math.ceil(H * dpr);
+  const g = c.getContext('2d'), px = 1 / P;               // px: one screen pixel, in emoji units
+  g.setTransform(dpr * P, 0, 0, dpr * P, ox * dpr, oy * dpr);
+  g.lineCap = 'round';
+
+  // The dead tree, cut off along a splintered line.
+  g.save();
+  g.beginPath(); g.moveTo(-0.5, 0.5); g.lineTo(-0.5, SNAG_BREAK + 0.02);
+  for (const [x, y] of SNAG_JAG) g.lineTo(x, SNAG_BREAK + y);
+  g.lineTo(0.5, SNAG_BREAK + 0.02); g.lineTo(0.5, 0.5); g.closePath(); g.clip();
+  const e = sprite('🪾', P);
+  g.drawImage(e.canvas, -e.size / 2 / P, -e.size / 2 / P, e.size / P, e.size / P);
+  g.restore();
+
+  // Bark, laid onto the wood only: a round trunk, ridges running up it, patches of older bark,
+  // and a soft crease where each branch leaves the trunk.
+  g.globalCompositeOperation = 'source-atop';
+  const round = g.createLinearGradient(-0.09, 0, 0.2, 0);
+  round.addColorStop(0, 'rgba(255, 232, 190, 0.2)'); round.addColorStop(0.4, 'rgba(0, 0, 0, 0)');
+  round.addColorStop(1, 'rgba(35, 18, 5, 0.34)');
+  g.fillStyle = round; g.fillRect(-0.5, -0.5, 1, 1);
+  if (P > 40) {
+    for (let k = 0; k < 7; k++) {
+      const f = (k + 0.5) / 7 + (hash2(k, 1, 7) - 0.5) * 0.1;
+      g.beginPath();
+      for (let n = 0, y = SNAG_BREAK + 0.02; y <= 0.43; n++, y += 0.025) {
+        const [l, r] = trunkAt(y);
+        g[n ? 'lineTo' : 'moveTo'](l + f * (r - l) + (hash2(k, n, 3) - 0.5) * 0.012, y);
+      }
+      g.lineWidth = Math.max(px, 0.009); g.strokeStyle = 'rgba(45, 24, 8, 0.16)'; g.stroke();
+      g.lineWidth = Math.max(px, 0.0035); g.strokeStyle = 'rgba(40, 20, 6, 0.22)'; g.stroke();
+      g.translate(-0.005, 0); g.strokeStyle = 'rgba(255, 225, 185, 0.1)'; g.stroke(); g.translate(0.005, 0);
+    }
+    for (let i = 0; i < 7; i++) {
+      const y = SNAG_BREAK + 0.06 + hash2(i, 4, 7) * 0.5, [l, r] = trunkAt(y);
+      softSpot(g, lerp(l, r, hash2(i, 5, 7)), y, 0.02 + hash2(i, 6, 7) * 0.02, 0.04, i % 2 ? '120, 105, 90' : '40, 22, 8', 0.18);
+    }
+  }
+  for (const [x, y, rx, ry, a] of [[0.12, -0.028, 0.028, 0.012, 0.55], [0.112, -0.086, 0.012, 0.008, 0.45],
+                                    [-0.056, 0.088, 0.03, 0.013, 0.55], [-0.048, 0.034, 0.012, 0.008, 0.45]])
+    softSpot(g, x, y, rx, ry, '30, 15, 4', a);
+  // A rougher outline: nicks in the trunk's edges, away from where the branches join.
+  g.globalCompositeOperation = 'destination-out';
+  for (let i = 0; i < 16; i++) {
+    const y = SNAG_BREAK + 0.05 + hash2(i, 2, 9) * 0.34, right = i % 2;
+    if (right ? y > -0.1 && y < 0.02 : y > 0 && y < 0.12) continue;
+    const [l, r] = trunkAt(y);
+    g.beginPath();
+    g.ellipse(right ? r + 0.004 : l - 0.004, y, 0.005 + hash2(i, 3, 9) * 0.006, 0.01 + hash2(i, 4, 9) * 0.015, 0, 0, TAU);
+    g.fill();
+  }
+  g.globalCompositeOperation = 'source-over';
+
+  // The break: bare wood, its splinters lit where they face the sky, a shaded lip below.
+  const face = g.createLinearGradient(-0.09, 0, 0.13, 0);
+  face.addColorStop(0, '#c9ab80'); face.addColorStop(0.6, '#9a7650'); face.addColorStop(1, '#654426');
+  g.fillStyle = face;
+  g.beginPath(); g.moveTo(-0.072, SNAG_BREAK + 0.026);
+  for (const [x, y] of SNAG_JAG) g.lineTo(x, SNAG_BREAK + y);
+  g.quadraticCurveTo(0.025, SNAG_BREAK + 0.046, -0.072, SNAG_BREAK + 0.026); g.fill();
+  g.strokeStyle = 'rgba(55, 30, 10, 0.55)'; g.lineWidth = Math.max(px, 0.005);
+  g.beginPath(); g.moveTo(-0.07, SNAG_BREAK + 0.03); g.quadraticCurveTo(0.025, SNAG_BREAK + 0.05, 0.12, SNAG_BREAK + 0.03); g.stroke();
+  g.lineWidth = Math.max(px, 0.0045);
+  for (let i = 0; i + 1 < SNAG_JAG.length; i++) {
+    const [x0, y0] = SNAG_JAG[i], [x1, y1] = SNAG_JAG[i + 1];
+    g.strokeStyle = y1 < y0 ? 'rgba(248, 230, 196, 0.8)' : 'rgba(248, 230, 196, 0.25)';
+    g.beginPath(); g.moveTo(x0, SNAG_BREAK + y0); g.lineTo(x1, SNAG_BREAK + y1); g.stroke();
+  }
+
+  // The hollow. A honey stain runs down from it.
+  const { x, y, rx, ry } = SNAG_HOLE;
+  const stain = g.createLinearGradient(0, y + ry, 0, y + ry + 0.2);
+  stain.addColorStop(0, 'rgba(80, 45, 12, 0.5)'); stain.addColorStop(1, 'rgba(80, 45, 12, 0)');
+  g.fillStyle = stain;
+  g.beginPath(); g.moveTo(x - 0.03, y + ry * 0.8); g.quadraticCurveTo(x - 0.02, y + ry + 0.14, x - 0.004, y + ry + 0.2);
+  g.quadraticCurveTo(x + 0.016, y + ry + 0.1, x + 0.028, y + ry * 0.8); g.fill();
+  // A lip of bark around it, lit top left and shaded bottom right.
+  holePath(g, 1.32);
+  const lip = g.createLinearGradient(x - rx, y - ry, x + rx, y + ry);
+  lip.addColorStop(0, '#c49466'); lip.addColorStop(0.45, '#7d5331'); lip.addColorStop(1, '#3f2612');
+  g.fillStyle = lip; g.fill();
+  // Inside: brown at the mouth, black deep in.
+  holePath(g, 1);
+  const deep = g.createRadialGradient(x - rx * 0.15, y - ry * 0.2, 0, x, y, ry * 1.05);
+  deep.addColorStop(0, '#040201'); deep.addColorStop(0.55, '#140a04'); deep.addColorStop(1, '#4d2e15');
+  g.fillStyle = deep; g.fill();
+  g.save(); g.clip();
+  // The comb, bulging towards us, with its cells when there's room for them.
+  const cx = x + rx * 0.1, cy = y + ry * 0.62, crx = rx * 1.05, cry = ry * 0.6;
+  const comb = g.createRadialGradient(cx - crx * 0.25, cy - cry * 0.1, 0, cx, cy, crx * 1.2);
+  comb.addColorStop(0, '#e9c070'); comb.addColorStop(0.5, '#c4862c'); comb.addColorStop(1, '#4a2806');
+  g.fillStyle = comb; g.beginPath(); g.ellipse(cx, cy, crx, cry, 0, 0, TAU); g.fill();
+  const cell = rx * 0.22;
+  if (cell * P > 2) {
+    g.fillStyle = 'rgba(110, 60, 8, 0.4)';
+    for (let r = 0, yy = cy - cry; yy < cy + cry; r++, yy += cell * 0.87)
+      for (let xx = cx - crx + (r % 2) * cell / 2; xx < cx + crx; xx += cell) { g.beginPath(); g.arc(xx, yy, cell * 0.3, 0, TAU); g.fill(); }
+  }
+  // The top of the hole shades what's under it, and the far rim catches the light: the bark's thickness.
+  const lid = g.createLinearGradient(0, y - ry, 0, y + ry * 0.35);
+  lid.addColorStop(0, 'rgba(4, 2, 1, 0.97)'); lid.addColorStop(1, 'rgba(4, 2, 1, 0)');
+  g.fillStyle = lid; g.fillRect(x - rx * 2, y - ry * 2, rx * 4, ry * 2.35);
+  const rim = g.createLinearGradient(x - rx, y - ry, x + rx, y + ry);
+  rim.addColorStop(0, 'rgba(210, 160, 105, 0)'); rim.addColorStop(0.55, 'rgba(210, 160, 105, 0.15)');
+  rim.addColorStop(1, 'rgba(225, 175, 115, 0.9)');
+  holePath(g, 1); g.strokeStyle = rim; g.lineWidth = rx * 0.3; g.stroke();
+  g.restore();
+
+  s = { canvas: c, W, H, ox, oy };
+  snagSprites.set(P, s);
+  return s;
+}
+
+// A bee on the bark, seen from above: gold with dark bands and a glint of wing. Too small, a dot.
+function barkBee(x, y, s, a) {
+  if (s < 1.3) { ctx.fillStyle = '#3a2610'; ctx.fillRect(x - 0.6, y - 0.6, 1.3, 1.3); return; }
+  ctx.save(); ctx.translate(x, y); ctx.rotate(a);
+  ctx.fillStyle = 'rgba(240, 245, 255, 0.6)';
+  ctx.beginPath(); ctx.ellipse(-s * 0.1, -s * 0.5, s * 0.5, s * 0.28, -0.4, 0, TAU); ctx.fill();
+  ctx.fillStyle = '#d99a22'; ctx.beginPath(); ctx.ellipse(0, 0, s, s * 0.58, 0, 0, TAU); ctx.fill();
+  ctx.fillStyle = '#2e1d0b';
+  ctx.fillRect(-s * 0.45, -s * 0.55, s * 0.22, s * 1.1); ctx.fillRect(s * 0.05, -s * 0.55, s * 0.22, s * 1.1);
+  ctx.beginPath(); ctx.arc(s * 0.85, 0, s * 0.38, 0, TAU); ctx.fill();
+  ctx.restore();
+}
+
+function drawHive(h, sx, sy) {
+  const P = cam.zoom * SNAG, top = sy - P * 0.4, s = snagSprite(P);
+  ctx.drawImage(s.canvas, sx - s.ox, top - s.oy, s.W, s.H);
+  // Bees on the doorstep, a few wandering down the bark; they shuffle while time runs.
+  const hx = sx + SNAG_HOLE.x * P, hy = top + (SNAG_HOLE.y + SNAG_HOLE.ry * 1.15) * P;
+  const n = Math.min(14, 3 + h.bees), b = cam.zoom * 0.045, t = ui.speed > 0 ? performance.now() / 700 : 0;
+  for (let i = 0; i < n; i++) {
+    const far = i >= n * 0.7;
+    const bx = hx + (hash2(1, i, h.id) - 0.5) * P * (far ? 0.1 : 0.07) + Math.sin(t + i) * b * 0.4;
+    const by = hy + (far ? 0.02 + hash2(i, 1, h.id) * 0.14 : hash2(i, 1, h.id) * 0.02) * P + Math.cos(t * 0.8 + i) * b * 0.3;
+    barkBee(bx, by, b, Math.PI / 2 + (hash2(i, 2, h.id) - 0.5) * 2.5);
+  }
+  // A full hive has honey oozing over the sill.
+  if (h.honey > 800) {
+    const x = hx - P * 0.012, y = hy - P * 0.01, r = P * 0.009;
+    const len = r * (0.5 + 0.8 * Math.min(1, (h.honey - 800) / 700));
+    const g = ctx.createLinearGradient(x - r, y, x + r, y + len);
+    g.addColorStop(0, 'rgba(255, 205, 90, 0.95)'); g.addColorStop(1, 'rgba(205, 125, 15, 0.95)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.moveTo(x - r * 0.5, y);
+    ctx.quadraticCurveTo(x - r * 0.5, y + len - r, x - r, y + len); ctx.arc(x, y + len, r, Math.PI, 0, true);
+    ctx.quadraticCurveTo(x + r * 0.5, y + len - r, x + r * 0.5, y); ctx.fill();
+    ctx.fillStyle = 'rgba(255, 250, 225, 0.85)';
+    ctx.beginPath(); ctx.arc(x - r * 0.35, y + len - r * 0.2, r * 0.3, 0, TAU); ctx.fill();
+  }
+  // Snow settles on the break.
+  if (world.snow > 0.3) {
+    ctx.fillStyle = 'rgba(250, 252, 255, 0.95)';
+    ctx.beginPath(); ctx.moveTo(sx - 0.1 * P, top + (SNAG_BREAK + 0.03) * P);
+    for (const [x, y] of SNAG_JAG) ctx.lineTo(sx + x * P, top + (SNAG_BREAK + Math.max(y, 0) - 0.008) * P);
+    ctx.quadraticCurveTo(sx + 0.02 * P, top + (SNAG_BREAK + 0.05) * P, sx - 0.1 * P, top + (SNAG_BREAK + 0.03) * P);
+    ctx.fill();
+  }
+}
+
+function drawHiveShadow(sx, sy, sn) {                      // the same shadow a tree of its height casts
+  drawDecorShadow({ size: SNAG * 0.7, tree: true }, sx, sy, sn);
+}
+
+function hiveAt(sx, sy) {
+  const [wx, wy] = toWorld(sx, sy);
+  return world.hives.find(h => Math.hypot(h.x - wx, h.y - 0.9 - wy) < Math.max(1, 14 / cam.zoom)) || null;   // the trunk
 }
 
 // Ponds are drawn as shapes, so the shore holds up however far you zoom in. The water map
@@ -1562,7 +1823,7 @@ function handleEvent(e) {
       addEffect('✨', e.mum.x, e.mum.y, 0.8);
       const n = e.kids.length, fox = e.mum.species === 'fox';
       hear('birth', e.mum.x, e.mum.y, { species: e.mum.species, kids: n }, mine);
-      const what = fox ? (n === 1 ? 'cub' : 'cubs') : (n === 1 ? 'baby' : 'babies');
+      const what = fox ? (n === 1 ? 'cub' : 'cubs') : e.mum.species === 'bee' ? (n === 1 ? 'young bee' : 'young bees') : (n === 1 ? 'baby' : 'babies');
       const text = `${fox ? '🦊' : '🍼'} ${link(e.mum)} had ${n} ${what}` + (e.dad ? ` with ${link(e.dad)}.` : '.');
       if (mine || fox) addNews(text);
       else addNews(text, 'birth', 9000);
@@ -1585,6 +1846,7 @@ function handleEvent(e) {
         if (mine) addNews(t); else addNews(t, 'catch', 7000);
       } else if (e.cause === 'hunger') {
         const t = c.species === 'fox' ? `🥀 ${link(c)} the fox starved. There weren't enough rabbits.`
+          : c.species === 'bee' ? `🥀 ${link(c)} the bee starved. The hive ran out of honey.`
           : `🥀 ${link(c)} starved.`;
         if (mine || c.species === 'fox') addNews(t); else addNews(t, 'starve', 12000);
       } else if (e.cause === 'lightning') {
@@ -1622,13 +1884,19 @@ function handleEvent(e) {
     }
     case 'extinct':
       chime('extinct');
-      addNews(e.species === 'rabbit' ? '😢 <b>The last rabbit is gone.</b>'
-        : '😢 <b>The last fox is gone.</b> The rabbits can relax, for now.');
+      addNews({
+        rabbit: '😢 <b>The last rabbit is gone.</b>',
+        fox: '😢 <b>The last fox is gone.</b> The rabbits can relax, for now.',
+        bee: '😢 <b>The hive has gone quiet.</b> The last bee is gone.',
+      }[e.species]);
       break;
     case 'arrive': {
       const names = e.who.map(link).join(', ');
-      addNews(e.species === 'rabbit' ? `🧳 A family of rabbits hopped in from the next valley: ${names}.`
-        : `🧳 Foxes have wandered in, drawn by all the rabbits: ${names}.`);
+      addNews({
+        rabbit: `🧳 A family of rabbits hopped in from the next valley: ${names}.`,
+        fox: `🧳 Foxes have wandered in, drawn by all the rabbits: ${names}.`,
+        bee: `🐝 A swarm has found the empty hive and moved in: ${names}.`,
+      }[e.species]);
       for (const c of e.who) addEffect('✨', c.x, c.y);
       hear('arrive', e.who[0].x, e.who[0].y, { species: e.species }, true);
       break;
@@ -1636,17 +1904,20 @@ function handleEvent(e) {
   }
 }
 
+// How many make a record worth telling, and how big a peak has to be before its crash is news.
+const NEWSWORTHY = { rabbit: { record: 20, crash: 80 }, fox: { record: 8, crash: 10 }, bee: { record: 20, crash: 40 } };
+
 function checkPopulationNews() {
   const h = world.history, n = h.rabbit.length;
   const from = Math.max(0, Math.min(ui.seenHistory, n - 1));   // every sample since last look, even at 60x
   ui.seenHistory = n;
-  for (const s of ['rabbit', 'fox']) {
-    const now = world.count[s], name = s === 'rabbit' ? 'rabbits' : 'foxes';
+  for (const s of S.KINDS) {
+    const now = world.count[s], name = S.SPECIES[s].plural.toLowerCase(), big = NEWSWORTHY[s];
     const fresh = Math.max(...h[s].slice(from));
     if (world.tick < S.TPD * S.SEASON_DAYS) {                 // the first spring is not news
       ui.records[s] = Math.max(ui.records[s], fresh);
     } else if (fresh > ui.records[s]) {
-      if (fresh >= Math.max(s === 'rabbit' ? 20 : 8, Math.ceil(ui.records[s] * 1.12))) {
+      if (fresh >= Math.max(big.record, Math.ceil(ui.records[s] * 1.12))) {
         addNews(`📈 <b>${fresh} ${name}</b>, the most this meadow has ever had!`, 'record-' + s, 20000);
       }
       ui.records[s] = fresh;
@@ -1654,7 +1925,7 @@ function checkPopulationNews() {
     const recent = h[s].slice(since(world.tick - S.YEAR_DAYS * S.TPD));
     const peak = Math.max(...recent);
     const season = S.seasonOf(world.tick) + 4 * S.clock(world).year;
-    if (peak >= (s === 'rabbit' ? 80 : 10) && now <= peak * 0.3 && ui.crashSaid[s] !== season && now > 0) {
+    if (peak >= big.crash && now <= peak * 0.3 && ui.crashSaid[s] !== season && now > 0) {
       ui.crashSaid[s] = season;
       addNews(`📉 <b>The ${name} are crashing</b>: ${now} left, down from ${peak}.`);
     }
@@ -1759,12 +2030,11 @@ function updateMeadowCard() {
   $('#sky').title = WEATHER_HINT[kind] + (world.skyLocked ? '. Locked: it stays until you unlock it (K)' : '');
   setText($('#sky-btn'), wx.emoji);
   setText($('#mini-sky'), S.SEASONS[ck.season].emoji + icon);
-  setText($('#mini-rabbit'), String(world.count.rabbit));
-  setText($('#mini-fox'), String(world.count.fox));
-  setText($('#n-rabbit'), String(world.count.rabbit));
-  setText($('#n-fox'), String(world.count.fox));
-  sparkline($('#spark-rabbit'), world.history.rabbit, '#a07850');
-  sparkline($('#spark-fox'), world.history.fox, '#e2702f');
+  for (const s of S.KINDS) {
+    setText($('#mini-' + s), String(world.count[s]));
+    setText($('#n-' + s), String(world.count[s]));
+    sparkline($('#spark-' + s), world.history[s], SERIES[s].color);
+  }
   // In the first year the averages wobble with every litter: that is luck, not evolution.
   const r = world.tick < S.YEAR_DAYS * S.TPD ? 'wait' : evolutionLine('rabbit'), f = r === 'wait' ? 'wait' : evolutionLine('fox');
   const quiet = v => !v.includes('<');
@@ -1782,6 +2052,7 @@ function updateMeadowCard() {
 const SERIES = {
   rabbit: { emoji: '🐇', name: 'Rabbits', title: 'Rabbits alive', color: '#a07850', fmt: v => Math.round(v) },
   fox: { emoji: '🦊', name: 'Foxes', title: 'Foxes alive', color: '#e2702f', fmt: v => Math.round(v) },
+  bee: { emoji: '🐝', name: 'Bees', title: 'Bees alive', color: '#d9a21b', fmt: v => Math.round(v) },
   grass: { emoji: '🌱', name: 'Grass', title: 'How lush the meadow is', color: '#5f9e43', fmt: v => Math.round(v * 100) + '%' },
 };
 const SEASON_TINT = ['#f6dde5', '#f7ecb8', '#f4d6b6', '#dfe8f0'];
@@ -1792,7 +2063,7 @@ const CAUSES = [['fox', '🦊', 'Caught by a fox'], ['hunger', '🥀', 'Starved'
   ['lightning', '⚡', 'Lightning'], ['fire', '🔥', 'Wildfire']];
 const INK = '#3b372f', MUTED = '#6f6657';
 
-const shownKeys = () => ui.stats.show === 'all' ? ['rabbit', 'fox', 'grass'] : [ui.stats.show];
+const shownKeys = () => ui.stats.show === 'all' ? Object.keys(SERIES) : [ui.stats.show];
 
 function toggleStats(open = !ui.stats.open) {
   ui.stats.open = open;
@@ -1938,7 +2209,7 @@ function drawStatsChart() {
   if (hi < 0) { tip.classList.add('hidden'); return; }
   const x = X(h.t[hi]);
   g.fillStyle = 'rgba(59,55,47,0.55)'; g.fillRect(Math.round(x), TOP, 1, bottom - TOP);
-  const rows = ['rabbit', 'fox', 'grass'].map(k =>
+  const rows = Object.keys(SERIES).map(k =>
     `<div class="tip-row${keys.includes(k) ? '' : ' dim'}"><i style="background:${SERIES[k].color}"></i><b>${SERIES[k].fmt(h[k][hi])}</b> ${SERIES[k].name.toLowerCase()}</div>`);
   tip.innerHTML = `<div class="tip-when">${S.SEASONS[S.seasonOf(h.t[hi])].emoji} ${when(h.t[hi])}</div>` + rows.join('');
   tip.classList.remove('hidden');
@@ -2045,7 +2316,7 @@ function renderStatsCards() {
 
 function renderStats() {
   const keys = shownKeys();
-  $('#stats-title').textContent = keys.length > 1 ? 'Rabbits, foxes and grass' : SERIES[keys[0]].emoji + ' ' + SERIES[keys[0]].title;
+  $('#stats-title').textContent = keys.length > 1 ? 'Rabbits, foxes, bees and grass' : SERIES[keys[0]].emoji + ' ' + SERIES[keys[0]].title;
   $('#stats-range-note').textContent = 'over ' + RANGE_WORDS[ui.stats.range];
   $('#stats-clock').textContent = `${S.SEASONS[S.seasonOf(world.tick)].emoji} ${when(world.tick)}`;
   document.querySelectorAll('[data-show]').forEach(b => b.classList.toggle('on', b.dataset.show === ui.stats.show));
@@ -2090,6 +2361,7 @@ function renderInspector() {
   if (c.alive && c.pregnantUntil) chips.push(c.species === 'fox' ? '🍼 Expecting cubs' : '🍼 Expecting babies');
   if (c.kills) chips.push(`🍖 ${c.kills} ${c.kills === 1 ? 'catch' : 'catches'}`);
   if (c.escapes) chips.push(`💨 ${c.escapes} narrow ${c.escapes === 1 ? 'escape' : 'escapes'}`);
+  if (c.visits) chips.push(`🌼 ${c.visits} ${c.visits === 1 ? 'flower' : 'flowers'} visited`);
   const nemesis = world.byId.get(c.nemesisId);
   if (nemesis && nemesis.alive) chips.push(`😨 Afraid of ${link(nemesis)}`);
   if (c.gen > 1) chips.push(`🌳 Generation ${c.gen}`);
@@ -2161,8 +2433,10 @@ function diaryFacts(c) {
     `Personality: ${traitsOf(c.species).map(t => word(t, c.genes[t.k])).join(', ')}.` + (c.genes.coat ? ` Fur: ${S.COATS[S.coatOf(c.genes)].name}${S.whiteness(world, c) > 0.5 ? ', turned white for winter' : ''}.` : ''),
     `Right now: ${S.mood(world, c).text}. Tummy ${Math.round(100 * c.energy / c.maxEnergy)}% full. It is ${S.SEASONS[ck.season].name.toLowerCase()}, ${ck.night ? 'night' : 'daytime'}, weather: ${S.WEATHER[world.weather.kind].name.toLowerCase()}${world.burning.length ? ', and there is a wildfire in the meadow' : ''}.`,
     `Family: mum ${mum ? mum.name + (mum.alive ? '' : ' (died)') : 'unknown'}, dad ${dad ? dad.name + (dad.alive ? '' : ' (died)') : 'unknown'}, ${c.kids} children.`,
-    c.species === 'fox' ? `Rabbits caught so far: ${c.kills}.` : `Narrow escapes from foxes: ${c.escapes}.`
-      + (world.byId.get(c.nemesisId) ? ` The fox it fears most: ${world.byId.get(c.nemesisId).name}.` : ''),
+    c.species === 'fox' ? `Rabbits caught so far: ${c.kills}.`
+      : c.species === 'bee' ? `Flowers visited so far: ${c.visits}. Honey in the hive: ${Math.round(c.home.honey)}, shared by ${c.home.bees} bees.`
+      : `Narrow escapes from foxes: ${c.escapes}.`
+        + (world.byId.get(c.nemesisId) ? ` The fox it fears most: ${world.byId.get(c.nemesisId).name}.` : ''),
     `Recent life events (oldest first):\n${events}`,
     `Write today's diary entry.`,
   ].join('\n');
@@ -2332,6 +2606,7 @@ canvas.addEventListener('pointermove', e => {
   if (!drag) {
     const c = creatureAt(e.clientX, e.clientY);
     ui.hoverId = c ? c.id : 0;
+    ui.hoverHive = c ? null : hiveAt(e.clientX, e.clientY);
     return;
   }
   const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
@@ -2357,8 +2632,8 @@ canvas.addEventListener('pointercancel', e => {
 });
 // Safari ignores the viewport's no-zoom, and a zoomed page makes the whole meadow blurry.
 document.addEventListener('gesturestart', e => e.preventDefault());
-canvas.addEventListener('pointerleave', () => { ui.hoverId = 0; });
-canvas.addEventListener('contextmenu', e => { e.preventDefault(); openRing(e.clientX, e.clientY); });
+canvas.addEventListener('pointerleave', () => { ui.hoverId = 0; ui.hoverHive = null; });
+canvas.addEventListener('contextmenu', e => { e.preventDefault(); if (!LAB) openRing(e.clientX, e.clientY); });
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
   closeRing();
@@ -2379,7 +2654,7 @@ function click(sx, sy) {
   if (ui.tool === 'look') {
     const c = creatureAt(sx, sy);
     select(c ? c.id : 0);
-  } else if (ui.tool === 'rabbit' || ui.tool === 'fox') release(ui.tool, wx, wy);
+  } else if (S.KINDS.includes(ui.tool)) release(ui.tool, wx, wy);
   else if (ui.tool === 'zap') { S.zap(world, wx, wy); flushEvents(); }
 }
 
@@ -2396,7 +2671,7 @@ function release(species, wx, wy) {
 
 // ------------------------------------------------------------------ the ring: right-click the meadow
 
-const RING_TOOLS = [['rabbit', '🐇', 'Release a rabbit'], ['fox', '🦊', 'Release a fox'], ['grass', '🌱', 'Grow grass'],
+const RING_TOOLS = [['rabbit', '🐇', 'Release a rabbit'], ['fox', '🦊', 'Release a fox'], ['bee', '🐝', 'Release a bee'], ['grass', '🌱', 'Grow grass'],
   ['zap', '⚡', 'Strike lightning'], ['sky', '🌦️', 'Weather']];
 
 function openRing(sx, sy, weather = false) {
@@ -2428,7 +2703,7 @@ function ringPick(k) {
   const [wx, wy] = ui.ring.at;
   if (k === 'sky') { const [sx, sy] = toScreen(wx, wy); openRing(sx, sy, true); return; }
   closeRing();
-  if (k === 'rabbit' || k === 'fox') release(k, wx, wy);
+  if (S.KINDS.includes(k)) release(k, wx, wy);
   else if (k === 'zap') { S.zap(world, wx, wy); flushEvents(); }
   else if (k === 'grass') {
     S.paintGrass(world, wx, wy, 5);
@@ -2533,6 +2808,7 @@ document.addEventListener('click', e => {
 
 document.addEventListener('keydown', e => {
   if (e.target.closest('input,textarea')) return;
+  if (LAB && !'+=-'.includes(e.key)) return;            // the lab has keys of its own
   if (e.key === ' ') {
     e.preventDefault();
     setSpeed(ui.speed ? 0 : lastSpeed);
@@ -2565,14 +2841,14 @@ function flushEvents() {
 function randomSeed() { return Math.floor(Math.random() * 1e6); }
 
 function newWorld(seed) {
-  world = S.createWorld(seed);
+  world = S.createWorld(seed, LAB ? { terrain, drawn, rabbits: 0, foxes: 0, bees: 0 } : { terrain, drawn });
   jitter = Float32Array.from({ length: S.W * S.H }, () => Math.random() * 2 - 1);
   patches = blurred(blurred(blurred(blurred(jitter))));
   const spread = Math.sqrt(patches.reduce((m, v) => m + v * v, 0) / patches.length);
   patches = patches.map(v => clamp(v / spread, -2.5, 2.5));      // about -1..1 on a typical tile
   Object.assign(ui, { selectedId: 0, hoverId: 0, follow: false, trail: [], effects: [], lastNews: {}, newsLog: [] });
-  ui.records = { rabbit: world.count.rabbit, fox: world.count.fox };
-  ui.crashSaid = { rabbit: -1, fox: -1 };
+  ui.records = perKind(s => world.count[s]);
+  ui.crashSaid = perKind(() => -1);
   ui.seenHistory = 0;
   const mix = Object.fromEntries(Object.keys(S.WEATHER).map(k => [k, k === world.weather.kind ? 1 : 0]));
   Object.assign(ui.sky, { mix, tick: world.tick, bolt: null, rainbow: 0 });
@@ -2587,7 +2863,7 @@ function newWorld(seed) {
   if (ui.stats.open) renderStats();
   const big = [world.waters.find(v => v.kind === 'river'), world.lake].filter(Boolean).map(v => `<b>${v.name}</b>`);
   addNews(`🌱 A new meadow${big.length ? ' by ' + big.join(' and ') : ''}. <b>${world.count.rabbit} rabbits</b> and <b>${world.count.fox} foxes</b> have just moved in.`);
-  history.replaceState(null, '', '?seed=' + seed);
+  if (!LAB) history.replaceState(null, '', '?seed=' + seed + terrainQuery());
 }
 
 let last = performance.now(), acc = 0, lastCard = 0, lastRecord = 0, lastStatsCards = 0;
@@ -2630,6 +2906,7 @@ function frame(now) {
   if (!ui.stats.open && canvas.width && canvas.height) {   // the stats page covers the meadow; a hidden tab can have no size
     if (world.tick - terrainTick >= 12 || terrainTick < 0) paintTerrain();
     render(now);
+    if (lab?.draw) lab.draw(ctx, now);
   }
 
   if (now - lastCard > 250) {
@@ -2650,6 +2927,25 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
+// ------------------------------------------------------------------ the terrain lab
+//
+// What terrain-lab.js needs from the game: swap in a meadow without the fuss of a new game
+// (same camera, same grain, no news), show it in any season, and draw over it every frame.
+const lab = LAB ? {
+  meadow(seed, t, d) {
+    terrain = t; drawn = d;
+    world = S.createWorld(seed, { terrain, drawn, rabbits: 0, foxes: 0, bees: 0 });
+    paintTerrain(true);
+  },
+  season(s) {                                          // midday, halfway through it; snow in winter
+    world.tick = Math.round((s * S.SEASON_DAYS + 2 + 0.3) * S.TPD);
+    world.snow = s === 3 ? 0.75 : 0;
+    paintTerrain(true);
+  },
+  toScreen, toWorld,
+  draw: null,                                          // (ctx, now): drawn over the meadow
+} : null;
+
 // ------------------------------------------------------------------ start
 
 window.addEventListener('resize', () => { resize(); if (ui.stats.open) renderStats(); });
@@ -2659,7 +2955,13 @@ newWorld(seedParam || randomSeed());
 
 let seen = false;
 try { seen = localStorage.getItem('aeon-garden-welcomed') === '1'; } catch (e) { /* private window */ }
-if (!seen) {
+if (LAB) {
+  document.body.classList.add('lab');
+  setSpeed(0);
+  const js = document.createElement('script');
+  js.src = 'terrain-lab.js';
+  document.body.append(js);
+} else if (!seen) {
   $('#welcome').classList.remove('hidden');
   setSpeed(0);
 }
@@ -2687,5 +2989,5 @@ setTimeout(() => { barNear = false; updateBar(); }, 4000);   // show the toolbar
 for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => { if (ui.sound) Sound.start(); }, { once: true });
 
 requestAnimationFrame(frame);
-window.garden = { get world() { return world; }, ui, cam };   // handy in the console
+window.garden = { get world() { return world; }, ui, cam, lab };   // handy in the console
 })();

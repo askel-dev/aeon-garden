@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>AEON Garden</title>
-<meta name="description" content="A cozy emoji meadow where rabbits and foxes live their own lives. Leave it running and watch what emerges.">
+<meta name="description" content="A cozy emoji meadow where rabbits, foxes and bees live their own lives. Leave it running and watch what emerges.">
 <meta name="theme-color" content="#9cc77e">
 <link rel="icon" href="assets/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
@@ -19,7 +19,7 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="AEON Garden">
 <meta property="og:title" content="AEON Garden">
-<meta property="og:description" content="A cozy emoji meadow where rabbits and foxes live their own lives. Leave it running and watch what emerges.">
+<meta property="og:description" content="A cozy emoji meadow where rabbits, foxes and bees live their own lives. Leave it running and watch what emerges.">
 <meta property="og:url" content="https://askel-dev.github.io/aeon-garden/">
 <meta property="og:image" content="https://askel-dev.github.io/aeon-garden/assets/og.png">
 <meta property="og:image:width" content="1200">
@@ -234,6 +234,9 @@
   @keyframes ring-out { from { transform: translate(-50%, -50%) scale(0.3); opacity: 0; } }
 
   /* ---- welcome */
+  /* the terrain lab (?lab) brings its own panel, see terrain-lab.js */
+  body.lab #meadow, body.lab #news, body.lab #toolbar, body.lab #hud-right, body.lab #ring { display: none; }
+
   #welcome { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(60, 80, 40, 0.25); z-index: 10; }
   #welcome .card { position: static; width: min(460px, calc(100% - 32px)); padding: 26px 28px 22px; text-align: left; }
   #welcome h1 { margin: 0 0 8px; font-size: 26px; font-weight: 900; }
@@ -380,7 +383,7 @@
 
 <section id="meadow" class="card">
   <button class="mini-line" data-act="mini" title="Show the whole card (C)">
-    <span id="mini-sky">🌸☀️</span><span class="mini-pop">🐇 <b id="mini-rabbit">0</b></span><span class="mini-pop">🦊 <b id="mini-fox">0</b></span>
+    <span id="mini-sky">🌸☀️</span><span class="mini-pop">🐇 <b id="mini-rabbit">0</b></span><span class="mini-pop">🦊 <b id="mini-fox">0</b></span><span class="mini-pop">🐝 <b id="mini-bee">0</b></span>
     <span class="win-btn grow" aria-hidden="true"></span>
   </button>
   <div class="full">
@@ -397,6 +400,9 @@
     </div>
     <div class="pop" data-act="stats" title="Foxes alive right now, and the last two years. Click for all the statistics (S)">
       <span class="emoji">🦊</span><span class="n" id="n-fox">0</span><canvas id="spark-fox"></canvas>
+    </div>
+    <div class="pop" data-act="stats" title="Bees alive right now, and the last two years. Click for all the statistics (S)">
+      <span class="emoji">🐝</span><span class="n" id="n-bee">0</span><canvas id="spark-bee"></canvas>
     </div>
 
     <h3 class="sec evo-h">Evolution <span>since the start</span></h3>
@@ -419,6 +425,7 @@
   <button class="tool on" data-tool="look" title="Look around. Click an animal to follow it (L)"><span class="e">🔍</span><span class="l">Look</span></button>
   <button class="tool" data-tool="rabbit" title="Click the meadow to release a rabbit"><span class="e">🐇</span><span class="l">Rabbit</span></button>
   <button class="tool" data-tool="fox" title="Click the meadow to release a fox"><span class="e">🦊</span><span class="l">Fox</span></button>
+  <button class="tool" data-tool="bee" title="Click the meadow to release a bee. It moves into the nearest hive"><span class="e">🐝</span><span class="l">Bee</span></button>
   <button class="tool" data-tool="grass" title="Click and drag to grow lush grass"><span class="e">🌱</span><span class="l">Grass</span></button>
   <button class="tool" data-tool="zap" title="Click the meadow to strike lightning. On dry ground it starts a fire (Z)"><span class="e">⚡</span><span class="l">Zap</span></button>
 </nav>
@@ -465,7 +472,7 @@
     </header>
     <div class="stats-filters">
       <div class="seg">
-        <button data-show="rabbit">🐇 Rabbits</button><button data-show="fox">🦊 Foxes</button><button data-show="grass">🌱 Grass</button><button data-show="all">All three</button>
+        <button data-show="rabbit">🐇 Rabbits</button><button data-show="fox">🦊 Foxes</button><button data-show="bee">🐝 Bees</button><button data-show="grass">🌱 Grass</button><button data-show="all">All</button>
       </div>
       <div class="seg">
         <button data-range="year">Last year</button><button data-range="five">5 years</button><button data-range="all">Everything</button>
@@ -492,7 +499,7 @@
 <div id="welcome" class="hidden">
   <div class="card">
     <h1>🌱 Welcome to AEON Garden</h1>
-    <p>A small meadow where rabbits and foxes live their own lives. Nobody tells them what to do.
+    <p>A small meadow where rabbits, foxes and bees live their own lives. Nobody tells them what to do.
       They graze, run for their burrows, fall in love and raise families. Every baby inherits a mix of its
       parents' traits, with a small twist.</p>
     <p>Leave it running and watch what happens: populations boom and crash, and over the years the animals slowly change.</p>
