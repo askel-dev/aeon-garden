@@ -13,7 +13,17 @@ closed); none of that project's rules apply here.
 - `balance.js`: headless check, `node balance.js [years] [seeds]`.
 
 Run: `python3 -m http.server 8765`, then open http://localhost:8765 (`?seed=123` replays
-a meadow). The diary button talks to Ollama on localhost:11434 (qwen3:8b, else qwen3:4b).
+a meadow).
+
+Checking visuals: you may use Google Chrome on this laptop (`/Applications/Google Chrome.app`)
+to look at the game yourself, headless or not. `--headless=new --screenshot` only captures the
+first frame; to see the game running (animals moving, camera moved), drive Chrome over the
+DevTools protocol (`--remote-debugging-port`) and use `Runtime.evaluate` / `Page.captureScreenshot`. The diary button talks to Ollama on localhost:11434 (qwen3:8b, else qwen3:4b).
+
+Terrain: the ground has a height and water lies below `w.level`, so seasonal water can later
+move that one number (`refreshWater`). Shallow water is waded slowly; deep water blocks.
+Each connected water body is named (`w.waters`, `w.body`). Population caps and starting
+numbers scale with dry land (`w.room`).
 
 Every animal uses one ladder: danger > sleep > love > food > friends > wander. Keep new
 behaviour small and readable. If a rule needs a paragraph to explain, it's probably too big.

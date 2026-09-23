@@ -14,7 +14,8 @@
 
 // ---------------------------------------------------------------- world constants
 
-const W = 120, H = 80;          // map size in tiles
+const W = 180, H = 120;         // map size in tiles
+const ROOM_TILES = 9000;        // dry tiles the numbers below were tuned for; bigger meadows hold more
 const TPD = 600;                // ticks per day (20 s at 1x)
 const SEASON_DAYS = 5;
 const YEAR_DAYS = SEASON_DAYS * 4;
@@ -60,13 +61,13 @@ const GENES = ['speed', 'size', 'eyes', 'bravery', 'friendly', 'fur'];
 const SPECIES = {
   rabbit: {
     key: 'rabbit', name: 'Rabbit', plural: 'Rabbits', emoji: '🐇',
-    maxEnergy: 100, burn: 0.035, walk: 0.06, sprint: 0.155, sight: 10, mateRange: 24,
+    maxEnergy: 100, burn: 0.035, walk: 0.06, sprint: 0.155, sight: 10, mateRange: 24, wade: 0.45,
     matureDays: 4, lifeDays: 22, gestationDays: 1.5, litter: [2, 5], cooldownDays: 1.0,
     breedSeasons: [0, 1], breedEnergy: 0.55, birthCost: 10, cap: 320,
   },
   fox: {
     key: 'fox', name: 'Fox', plural: 'Foxes', emoji: '🦊',
-    maxEnergy: 220, burn: 0.035, walk: 0.07, sprint: 0.21, sight: 18, mateRange: 45,
+    maxEnergy: 220, burn: 0.035, walk: 0.07, sprint: 0.21, sight: 18, mateRange: 45, wade: 0.6,
     matureDays: 8, lifeDays: 40, gestationDays: 2.5, litter: [2, 4], cooldownDays: 8,
     breedSeasons: [0, 1], breedEnergy: 0.65, birthCost: 25, cap: 60,
   },
@@ -115,6 +116,7 @@ function makeRng(seed) {
 }
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const lerp = (a, b, t) => a + (b - a) * t;
 const dist2 = (a, b) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
 
 // ---------------------------------------------------------------- clock
@@ -134,94 +136,309 @@ function clock(w) {
 }
 
 // ---------------------------------------------------------------- terrain
+//
+// The ground has a height, and water lies wherever the ground is below the water level, so
+// a wetter or drier season only has to move one number. Shallow water can be waded, slowly;
+// deep water can't be crossed. Every meadow gets a river, a lake or both, and a few small
+// ponds of its own, well away from the rest.
+
+const SHALLOW = 1, DEEP = 2;       // w.water, per tile. 0 is dry land
+const DEEP_AT = 0.3;               // water at least this deep can't be waded
+const BANK = 0.05;                 // how fast the ground rises away from the water, per tile
 
 const idx = (x, y) => (y | 0) * W + (x | 0);
 const inBounds = (x, y) => x >= 0.5 && y >= 0.5 && x < W - 0.5 && y < H - 0.5;
-const isWater = (w, x, y) => w.water[idx(x, y)] === 1;
-const walkable = (w, x, y) => inBounds(x, y) && !isWater(w, x, y);
+const isWater = (w, x, y) => w.water[idx(x, y)] > 0;
+const walkable = (w, x, y) => inBounds(x, y) && w.water[idx(x, y)] !== DEEP;
+const dry = (w, x, y) => inBounds(x, y) && !w.water[idx(x, y)];
+
+const WATER_NAMES = {
+  first: ['Willow', 'Heron', 'Otter', 'Alder', 'Mill', 'Reed', 'Kingfisher', 'Moss', 'Silver',
+    'Bramble', 'Mirror', 'Moon', 'Lily', 'Newt', 'Mallow', 'Duck', 'Hazel', 'Frog'],
+  river: ['Brook', 'Beck', 'River', 'Stream'], lake: ['Mere', 'Lake', 'Water'], pond: ['Pond', 'Pool'],
+};
+
+// Smooth random hills: value noise in three layers, each finer and fainter. About 0 to 1.
+function makeNoise(r) {
+  const cells = Float32Array.from({ length: 64 * 64 }, () => r.next());
+  const at = (x, y) => cells[(y & 63) * 64 + (x & 63)];
+  const one = (x, y) => {
+    const x0 = Math.floor(x), y0 = Math.floor(y), u = x - x0, v = y - y0;
+    const su = u * u * (3 - 2 * u), sv = v * v * (3 - 2 * v);
+    const top = at(x0, y0) + (at(x0 + 1, y0) - at(x0, y0)) * su;
+    const bot = at(x0, y0 + 1) + (at(x0 + 1, y0 + 1) - at(x0, y0 + 1)) * su;
+    return top + (bot - top) * sv;
+  };
+  return (x, y) => (4 * one(x, y) + 2 * one(2 * x + 17.3, 2 * y + 5.1) + one(4 * x + 3.7, 4 * y + 41.9)) / 7;
+}
+
+// A few overlapping circles read as a lake or a pond, not as a disc.
+const blobs = (r, cx, cy, n, spread, rMin, rMax) => Array.from({ length: n },
+  () => ({ x: cx + r.range(-spread, spread), y: cy + r.range(-spread, spread) * 0.7, r: r.range(rMin, rMax) }));
+function outside(shape, x, y) {    // tiles from the shape's edge; negative inside it
+  let d = Infinity;
+  for (const c of shape) d = Math.min(d, Math.hypot(x - c.x, y - c.y) - c.r);
+  return d;
+}
+
+// The river: in at one edge and out at the far one, through the lake if there is one, bending
+// on the way, and meandering in between. Returned as points half a tile apart.
+function riverPath(r, lake, wiggle) {
+  const leftRight = r.next() < 0.6, L = leftRight ? W : H, S = leftRight ? H : W;
+  const at = (u, v) => leftRight ? { x: u, y: v } : { x: v, y: u };
+  const ends = [at(-6, r.range(0.2, 0.8) * S), at(L + 6, r.range(0.2, 0.8) * S)];
+  const via = lake ? [lake] : [];
+  const route = [ends[0], ...via, ends[1]];
+  const along = p => leftRight ? p.x : p.y, across = p => leftRight ? p.y : p.x;
+  // A bend every 16 tiles or so, pushed sideways, except where it goes through the lake.
+  const ctrl = [route[0]];
+  for (let k = 1; k < route.length; k++) {
+    const a = route[k - 1], b = route[k], n = Math.max(1, Math.round((along(b) - along(a)) / 16));
+    for (let j = 1; j < n; j++) {
+      const u = lerp(along(a), along(b), j / n), v = lerp(across(a), across(b), j / n) + r.range(-8, 8);
+      ctrl.push(at(u, clamp(v, 12, S - 12)));
+    }
+    ctrl.push(b);
+  }
+  // Smooth it (Catmull-Rom through the bends) and walk it in half-tile steps.
+  const pts = [];
+  for (let k = 0; k < ctrl.length - 1; k++) {
+    const p0 = ctrl[Math.max(0, k - 1)], p1 = ctrl[k], p2 = ctrl[k + 1], p3 = ctrl[Math.min(ctrl.length - 1, k + 2)];
+    const n = Math.ceil(Math.hypot(p2.x - p1.x, p2.y - p1.y) * 2);
+    for (let j = 0; j < n; j++) {
+      const t = j / n, t2 = t * t, t3 = t2 * t;
+      const f = (a, b, c, d) => 0.5 * (2 * b + (c - a) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (3 * b - a - 3 * c + d) * t3);
+      pts.push({ x: f(p0.x, p1.x, p2.x, p3.x), y: f(p0.y, p1.y, p2.y, p3.y) });
+    }
+  }
+  pts.push(ctrl[ctrl.length - 1]);
+  // Small meanders on top of the bends: each point nudged sideways, calm near the lake.
+  return pts.map((p, k) => {
+    const a = pts[Math.max(0, k - 1)], b = pts[Math.min(pts.length - 1, k + 1)];
+    const d = Math.hypot(b.x - a.x, b.y - a.y) || 1, calm = lake ? clamp(Math.hypot(p.x - lake.x, p.y - lake.y) / 15 - 0.5, 0, 1) : 1;
+    const off = 6 * (wiggle(k / 40, 3.3) - 0.5) * calm;
+    return { x: p.x - (b.y - a.y) / d * off, y: p.y + (b.x - a.x) / d * off };
+  });
+}
 
 function makeTerrain(w) {
-  const r = w.rng;
-  const fert = new Float32Array(W * H);
-  const water = new Uint8Array(W * H);
+  const r = w.rng, N = W * H;
+  const hills = makeNoise(r);
+  const ground = new Float32Array(N), hill = new Float32Array(N);
+  for (let i = 0; i < N; i++) {
+    hill[i] = hills((i % W) / 28, ((i / W) | 0) / 28);
+    ground[i] = Math.max(0.05, (hill[i] - 0.3) * 1.2);   // the low meadows sit just above the water
+  }
+  // Water is carved into the ground: the bed drops to `deep` over `edge` tiles from the shore,
+  // and outside the shape the bank rises gently back up to the meadow.
+  const carve = (i, sd, deep, edge) => {
+    const h = sd >= 0 ? BANK * sd : -deep * Math.min(1, -sd / edge);
+    if (h < ground[i]) ground[i] = h;
+  };
+  const each = fn => { for (let i = 0; i < N; i++) fn(i, (i % W) + 0.5, ((i / W) | 0) + 0.5); };
 
-  // Ponds: a few overlapping circles each, so they read as ponds and not as discs.
-  const ponds = [];
-  const nPonds = r.int(2, 3);
-  for (let p = 0; p < nPonds; p++) {
-    const cx = r.range(18, W - 18), cy = r.range(14, H - 14);
-    for (let k = 0; k < 4; k++) {
-      ponds.push({ x: cx + r.range(-4, 4), y: cy + r.range(-3, 3), r: r.range(2.5, 5) });
+  const layout = r.pick(['valley', 'valley', 'river', 'lake']);
+  const lake = layout === 'river' ? null : { x: r.range(45, W - 45), y: r.range(35, H - 35) };
+  if (lake) {
+    const shape = blobs(r, lake.x, lake.y, 6, 13, 6, 11);
+    each((i, x, y) => carve(i, outside(shape, x, y), 1, 6));
+    lake.shape = shape;
+  }
+
+  // The river widens as it goes, and has a few fords: stretches shallow enough to wade across.
+  w.river = null; w.fords = [];
+  if (layout !== 'lake') {
+    const pts = riverPath(r, lake, hills), n = pts.length;
+    const inLake = p => lake && outside(lake.shape, p.x, p.y) < 6;
+    const spots = r.shuffle(pts.map((p, k) => k).filter(k => {
+      const p = pts[k];
+      return p.x > 10 && p.x < W - 10 && p.y > 10 && p.y < H - 10 && !inLake(p);
+    }));
+    const fords = [], nFords = r.int(2, 3);
+    for (const k of spots) {
+      if (fords.length < nFords && fords.every(f => Math.abs(f - k) > 70)) fords.push(k);
     }
-  }
-  // Fertile and poor patches.
-  const blobs = [];
-  for (let i = 0; i < 16; i++) {
-    blobs.push({ x: r.range(0, W), y: r.range(0, H), r: r.range(7, 20), a: r.range(-0.45, 0.6) });
-  }
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      const i = y * W + x;
-      let nearWater = 99;
-      for (const p of ponds) {
-        const d = Math.hypot(x + 0.5 - p.x, y + 0.5 - p.y) - p.r;
-        if (d < nearWater) nearWater = d;
+    pts.forEach((p, k) => {
+      const t = k / n, half = 1.3 + 1.2 * t;
+      let ford = 0;
+      for (const f of fords) ford = Math.max(ford, Math.exp(-(((k - f) / 14) ** 2)));
+      const deep = 0.9 - 0.72 * ford, reach = half + 8;
+      for (let y = Math.max(0, Math.floor(p.y - reach)); y <= Math.min(H - 1, p.y + reach); y++) {
+        for (let x = Math.max(0, Math.floor(p.x - reach)); x <= Math.min(W - 1, p.x + reach); x++) {
+          carve(y * W + x, Math.hypot(x + 0.5 - p.x, y + 0.5 - p.y) - half, deep, half);
+        }
       }
-      if (nearWater < 0) { water[i] = 1; continue; }
-      let v = 0.55;
-      for (const b of blobs) {
-        const d2 = (x - b.x) ** 2 + (y - b.y) ** 2;
-        v += b.a * Math.exp(-d2 / (2 * b.r * b.r));
-      }
-      v += 0.35 * Math.exp(-nearWater / 3);        // lush banks
-      v += r.range(-0.06, 0.06);
-      fert[i] = v;
-    }
+    });
+    w.river = { pts };
+    w.fords = fords.map(k => ({ x: pts[k].x, y: pts[k].y, k }));
   }
+
+  // Small ponds, well away from the other water.
+  w.water = new Uint8Array(N);
+  w.ground = ground; w.level = 0;
+  refreshWater(w);
+  for (let p = r.int(2, 4), tries = 0; p > 0 && tries < 200; tries++) {
+    const cx = r.range(14, W - 14), cy = r.range(12, H - 12);
+    if (waterWithin(w, cx, cy, 14)) continue;
+    const shape = blobs(r, cx, cy, 4, 3.5, 2, 4), deep = r.range(0.25, 0.8);
+    each((i, x, y) => { if (Math.abs(x - cx) < 20 && Math.abs(y - cy) < 16) carve(i, outside(shape, x, y), deep, 2.5); });
+    refreshWater(w);
+    p--;
+  }
+  const water = w.water;
+  nameWaters(w, lake);
+
+  // Fertile and poor patches, lush banks, and the low meadows a little richer than the hills.
+  const near = distanceToWater(w);
+  const fert = new Float32Array(N);
+  const patches = [];
+  for (let i = 0; i < 36; i++) {
+    patches.push({ x: r.range(0, W), y: r.range(0, H), r: r.range(7, 20), a: r.range(-0.45, 0.6) });
+  }
+  each((i, x, y) => {
+    if (water[i]) return;
+    let v = 0.55;
+    for (const b of patches) v += b.a * Math.exp(-((x - b.x) ** 2 + (y - b.y) ** 2) / (2 * b.r * b.r));
+    v += 0.35 * Math.exp(-near[i] / 3);
+    v += 0.2 * (0.5 - hill[i]);
+    v += r.range(-0.06, 0.06);
+    fert[i] = v;
+  });
   // Every world should be livable: rescale so the average meadow is equally rich.
   let sum = 0, n = 0;
-  for (let i = 0; i < W * H; i++) if (!water[i]) { sum += fert[i]; n++; }
+  for (let i = 0; i < N; i++) if (!water[i]) { sum += fert[i]; n++; }
   const k = 0.62 / (sum / n);
-  for (let i = 0; i < W * H; i++) fert[i] = water[i] ? 0 : clamp(fert[i] * k, 0.12, 1);
+  for (let i = 0; i < N; i++) fert[i] = water[i] ? 0 : clamp(fert[i] * k, 0.12, 1);
   w.fert = fert;
-  w.water = water;
-  w.grass = new Float32Array(W * H);
-  for (let i = 0; i < W * H; i++) w.grass[i] = water[i] ? 0 : fert[i] * r.range(0.5, 0.9);
+  w.land = n;
+  w.room = n / ROOM_TILES;
+  w.grass = new Float32Array(N);
+  for (let i = 0; i < N; i++) w.grass[i] = water[i] ? 0 : fert[i] * r.range(0.5, 0.9);
 
   // Burrows: spread out, on dry land.
   w.burrows = [];
-  for (let tries = 0; w.burrows.length < 18 && tries < 2000; tries++) {
+  for (let tries = 0; w.burrows.length < 36 && tries < 4000; tries++) {
     const x = r.range(6, W - 6), y = r.range(6, H - 6);
-    if (!walkable(w, x, y)) continue;
+    if (!dry(w, x, y)) continue;
     let ok = true;
     for (let dx = -2; dx <= 2 && ok; dx++) for (let dy = -2; dy <= 2 && ok; dy++) {
-      if (!walkable(w, x + dx, y + dy)) ok = false;
+      if (!dry(w, x + dx, y + dy)) ok = false;
     }
     if (!ok || w.burrows.some(b => Math.hypot(b.x - x, b.y - y) < 14)) continue;
     w.burrows.push({ id: w.burrows.length, x, y, count: 0 });
   }
 
-  // Decoration only: trees in a few groves, some rocks, flower spots.
+  // Decoration only: trees in a few groves, some rocks, stepping stones at the fords, flower spots.
   w.decor = [];
-  for (let g = 0; g < 4; g++) {
+  for (let g = 0; g < 8; g++) {
     const gx = r.range(8, W - 8), gy = r.range(8, H - 8);
     const n = r.int(3, 7);
     for (let k = 0; k < n; k++) {
       const x = gx + r.range(-5, 5), y = gy + r.range(-4, 4);
-      if (walkable(w, x, y) && !w.burrows.some(b => Math.hypot(b.x - x, b.y - y) < 3)) {
+      if (dry(w, x, y) && !w.burrows.some(b => Math.hypot(b.x - x, b.y - y) < 3)) {
         w.decor.push({ x, y, emoji: r.next() < 0.6 ? '🌳' : '🌲', size: r.range(2.4, 3.4), tree: true, stump: 0 });
       }
     }
   }
-  for (let k = 0; k < 10; k++) {
+  for (let k = 0; k < 22; k++) {
     const x = r.range(3, W - 3), y = r.range(3, H - 3);
-    if (walkable(w, x, y)) w.decor.push({ x, y, emoji: '🪨', size: r.range(1.1, 1.8) });
+    if (dry(w, x, y)) w.decor.push({ x, y, emoji: '🪨', size: r.range(1.1, 1.8) });
+  }
+  for (const f of w.fords) {
+    const p = w.river.pts, a = p[Math.min(p.length - 1, f.k + 1)], b = p[Math.max(0, f.k - 1)];
+    const d = Math.hypot(a.x - b.x, a.y - b.y) || 1, nx = -(a.y - b.y) / d, ny = (a.x - b.x) / d;   // across the river
+    for (let s = -2; s <= 2; s++) {
+      const x = f.x + nx * s * 1.1 + r.range(-0.3, 0.3), y = f.y + ny * s * 1.1 + r.range(-0.3, 0.3);
+      if (isWater(w, x, y)) w.decor.push({ x, y, emoji: '🪨', size: r.range(0.7, 1), stone: true });
+    }
   }
   w.plants = [];
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     if (water[y * W + x] || r.next() > 0.07) continue;
     w.plants.push({ x: x + r.next(), y: y + r.next(), i: y * W + x, kind: r.next() });
   }
+}
+
+// Where the water is, from the ground and the water level.
+function refreshWater(w) {
+  const g = w.ground, water = w.water;
+  for (let i = 0; i < g.length; i++) {
+    const d = w.level - g[i];
+    water[i] = d <= 0 ? 0 : d < DEEP_AT ? SHALLOW : DEEP;
+  }
+}
+
+function waterWithin(w, x, y, radius) {
+  for (let yy = Math.max(0, Math.floor(y - radius)); yy <= Math.min(H - 1, y + radius); yy++) {
+    for (let xx = Math.max(0, Math.floor(x - radius)); xx <= Math.min(W - 1, x + radius); xx++) {
+      if (w.water[yy * W + xx] && (xx + 0.5 - x) ** 2 + (yy + 0.5 - y) ** 2 < radius * radius) return true;
+    }
+  }
+  return false;
+}
+
+// Tiles to the nearest water, roughly (two sweeps, straight steps 1 and diagonal 1.4).
+function distanceToWater(w) {
+  const d = Float32Array.from(w.water, v => v ? 0 : 1e9);
+  const sweep = (y0, y1, dy, x0, x1, dx) => {
+    for (let y = y0; y !== y1; y += dy) for (let x = x0; x !== x1; x += dx) {
+      const i = y * W + x;
+      for (const [ox, oy, c] of [[-dx, 0, 1], [0, -dy, 1], [-dx, -dy, 1.4], [dx, -dy, 1.4]]) {
+        const nx = x + ox, ny = y + oy;
+        if (nx >= 0 && ny >= 0 && nx < W && ny < H) d[i] = Math.min(d[i], d[ny * W + nx] + c);
+      }
+    }
+  };
+  sweep(0, H, 1, 0, W, 1);
+  sweep(H - 1, -1, -1, W - 1, -1, -1);
+  return d;
+}
+
+// Each stretch of connected water gets a name, and w.body says which one a tile is in.
+// A lake the river runs through shares its water but keeps a name of its own.
+function nameWaters(w, lake) {
+  const r = w.rng, body = new Int16Array(W * H).fill(-1);
+  const river = new Uint8Array(W * H);
+  if (w.river) for (const p of w.river.pts) if (inBounds(p.x, p.y)) river[idx(p.x, p.y)] = 1;
+  const firsts = r.shuffle(WATER_NAMES.first.slice());
+  w.waters = [];
+  for (let s = 0; s < W * H; s++) {
+    if (!w.water[s] || body[s] >= 0) continue;
+    const id = w.waters.length, stack = [s];
+    let size = 0, sx = 0, sy = 0, flows = false;
+    body[s] = id;
+    while (stack.length) {
+      const i = stack.pop(), x = i % W, y = (i / W) | 0;
+      size++; sx += x; sy += y; if (river[i]) flows = true;
+      for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+        const n = ny * W + nx;
+        if (w.water[n] && body[n] < 0) { body[n] = id; stack.push(n); }
+      }
+    }
+    const kind = flows ? 'river' : size > 250 ? 'lake' : 'pond';
+    const name = `${firsts[id % firsts.length]} ${r.pick(WATER_NAMES[kind])}`;
+    w.waters.push({ id, kind, name, size, x: sx / size + 0.5, y: sy / size + 0.5 });
+  }
+  w.body = body;
+  w.lake = null;
+  if (lake) {
+    const c = lake.shape[0], home = w.waters[body[idx(c.x, c.y)]];   // a blob's middle is always water
+    if (home.kind === 'lake') w.lake = home;
+    else w.lake = { kind: 'lake', name: `${firsts[w.waters.length % firsts.length]} ${r.pick(WATER_NAMES.lake)}`, x: lake.x, y: lake.y };
+    w.lake.shape = lake.shape;
+  }
+}
+
+// The water a straight walk from one point to another would have to swim, if any.
+function waterBetween(w, x0, y0, x1, y1) {
+  const n = Math.ceil(Math.hypot(x1 - x0, y1 - y0) * 2);
+  for (let k = 1; k <= n; k++) {
+    const x = x0 + (x1 - x0) * k / n, y = y0 + (y1 - y0) * k / n;
+    if (!inBounds(x, y) || w.water[idx(x, y)] !== DEEP) continue;
+    return w.lake && outside(w.lake.shape, x, y) < 2 ? w.lake : w.waters[w.body[idx(x, y)]];
+  }
+  return null;
 }
 
 function growGrass(w, dt) {
@@ -502,7 +719,7 @@ function nearestBurrow(w, x, y, maxD) {
 }
 
 function addCreature(w, species, x, y, opts = {}) {
-  if (!walkable(w, x, y)) return null;
+  if (!dry(w, x, y)) return null;
   const c = makeCreature(w, species, x, y, opts.genes || founderGenes(w), null);
   if (opts.sex) c.sex = opts.sex;
   if (opts.age) c.born = w.tick - opts.age * TPD;
@@ -525,11 +742,13 @@ function clearPath(w, x0, y0, x1, y1) {
 // Straight at the target while the way is clear. When water (or the map edge) blocks the step,
 // turn off it and then follow that shore, keeping it on the same side, until the straight line
 // to the target is all land again. Hugging the shore is what gets an animal out of the bays
-// between pond lobes; turning left and right on the spot just jitters there.
+// between pond lobes; turning left and right on the spot just jitters there. Shallow water
+// counts as a way through, only slower.
 const TURN_MAGS = [0.6, 1.2, 1.9, 2.6];
 const HUG = [-0.3, 0, 0.35, 0.7, 1.1, 1.6, 2.2, 2.8, 3.4];   // leaning into the shore first
 
 function moveToward(w, c, tx, ty, v) {
+  if (w.water[idx(c.x, c.y)]) v *= c.sp.wade;   // wading: rabbits hate it more than foxes
   const dx = tx - c.x, dy = ty - c.y, d = Math.hypot(dx, dy);
   if (d < 1e-6) return true;
   const stepLen = Math.min(v, d);
@@ -569,8 +788,8 @@ function wander(w, c, pace) {
       const reach = w.rng.range(4, 11);
       tx = c.x + Math.cos(c.heading) * reach; ty = c.y + Math.sin(c.heading) * reach;
       if (!inBounds(tx, ty)) { c.heading += Math.PI; tx = clamp(tx, 2, W - 2); ty = clamp(ty, 2, H - 2); }
-    } while (!clearPath(w, c.x, c.y, tx, ty) && ++tries < 8);
-    c.target = clearPath(w, c.x, c.y, tx, ty) ? { x: tx, y: ty } : { x: c.x, y: c.y };
+    } while (!(dry(w, tx, ty) && clearPath(w, c.x, c.y, tx, ty)) && ++tries < 8);   // paddling, but not for fun
+    c.target = dry(w, tx, ty) && clearPath(w, c.x, c.y, tx, ty) ? { x: tx, y: ty } : { x: c.x, y: c.y };
     c.timer = 200;
   }
   c.mode = 'wander';
@@ -585,7 +804,7 @@ function readyToMate(w, c) {
   return c.alive && !c.hidden && isAdult(w, c) && c.pregnantUntil === 0
     && w.tick >= c.cooldownUntil && c.energy >= c.sp.breedEnergy * c.maxEnergy
     && c.sp.breedSeasons.includes(seasonOf(w.tick))
-    && w.count[c.species] + w.expecting[c.species] < c.sp.cap;
+    && w.count[c.species] + w.expecting[c.species] < c.sp.cap * w.room;
 }
 
 function seekLove(w, c) {
@@ -626,7 +845,7 @@ function giveBirth(w, mum) {
   const kids = [];
   for (let k = 0; k < n; k++) {
     let x = mum.x + r.range(-1, 1), y = mum.y + r.range(-1, 1);
-    if (!walkable(w, x, y)) { x = mum.x; y = mum.y; }
+    if (!dry(w, x, y)) { x = mum.x; y = mum.y; }
     const kid = makeCreature(w, mum.species, x, y, childGenes(w, mum.genes, mum.dadGenes),
       { mum, dadId: mum.dadIdPending, dadGen: mum.dadGenPending });
     kid.home = mum.home || mum.burrow;
@@ -931,10 +1150,10 @@ function hunt(w, c) {
     if (prey.alive && c.mode === 'chase') escaped(w, prey, c, prey.hidden ? 'burrow' : 'outran');
     prey = null; c.targetId = 0; c.mode = 'wander';
   }
-  // Foxes don't swim. A rabbit across the water is out of reach, and one that gets water
-  // between itself and the fox mid-chase has got away.
+  // Foxes don't swim. A rabbit across deep water is out of reach, and one that gets deep water
+  // between itself and the fox mid-chase has got away. Shallow water only slows them both.
   if (prey && (w.tick + c.id) % 5 === 0 && !clearPath(w, c.x, c.y, prey.x, prey.y)) {
-    if (c.mode === 'chase') escaped(w, prey, c, 'pond');
+    if (c.mode === 'chase') escaped(w, prey, c, 'pond', waterBetween(w, c.x, c.y, prey.x, prey.y));
     prey = null; c.targetId = 0; c.mode = 'wander';
   }
   if (!prey && (w.tick + c.id) % 5 === 0) {
@@ -961,14 +1180,14 @@ function hunt(w, c) {
   return true;
 }
 
-function escaped(w, rabbit, fox, how) {
+function escaped(w, rabbit, fox, how, water) {
   rabbit.escapes++;
   rabbit.nemesisId = fox.id;   // it won't forget this one
   missed(fox);
   note(w, rabbit, '💨', how === 'burrow' ? `Dived into a burrow to escape ${fox.name}`
-    : how === 'pond' ? `Got away from ${fox.name} across the pond` : `Outran ${fox.name}`);
+    : how === 'pond' ? `Got away from ${fox.name} across ${water ? water.name : 'the water'}` : `Outran ${fox.name}`);
   note(w, fox, '😤', `${rabbit.name} got away`);
-  emit(w, { type: 'escape', rabbit, fox, how });
+  emit(w, { type: 'escape', rabbit, fox, how, water });
 }
 
 // A hunt that came to nothing. Three of those and the old hunting ground is forgotten.
@@ -1045,11 +1264,11 @@ function createWorld(seed, opts = {}) {
     options: { migration: true, ...opts },
   };
   makeTerrain(w);
-  const n = { rabbit: opts.rabbits ?? 40, fox: opts.foxes ?? 4 };
+  const n = { rabbit: opts.rabbits ?? Math.round(40 * w.room), fox: opts.foxes ?? Math.round(4 * w.room) };
   for (const species of ['rabbit', 'fox']) {
     for (let k = 0; k < n[species]; k++) {
       let x, y;
-      do { x = w.rng.range(4, W - 4); y = w.rng.range(4, H - 4); } while (!walkable(w, x, y));
+      do { x = w.rng.range(4, W - 4); y = w.rng.range(4, H - 4); } while (!dry(w, x, y));
       addCreature(w, species, x, y, { sex: k % 2 ? 'M' : 'F', age: w.rng.range(4, 10) });
     }
   }
@@ -1132,7 +1351,7 @@ function migrate(w) {
     if (w.count[s] >= few[s]) { w.goneSince[s] = -1; continue; }
     if (w.goneSince[s] < 0) { w.goneSince[s] = w.tick; if (w.count[s] === 0) emit(w, { type: 'extinct', species: s }); continue; }
     if (w.tick - w.goneSince[s] < wait[s] * TPD) continue;
-    if (s === 'fox' && w.count.rabbit < 60) continue;   // foxes only come where there is food
+    if (s === 'fox' && w.count.rabbit < 60 * w.room) continue;   // foxes only come where there is food
     const side = w.rng.int(0, 3);
     const kids = [];
     for (let k = 0; k < arrive[s]; k++) {
@@ -1140,7 +1359,7 @@ function migrate(w) {
       do {
         const u = w.rng.range(4, (side % 2 ? H : W) - 4);
         [x, y] = side === 0 ? [u, 2] : side === 1 ? [W - 2, u] : side === 2 ? [u, H - 2] : [2, u];
-      } while (!walkable(w, x, y) && ++tries < 50);
+      } while (!dry(w, x, y) && ++tries < 50);
       const c = addCreature(w, s, x, y, { sex: k % 2 ? 'M' : 'F', age: SPECIES[s].matureDays + 1, arrived: true });
       if (c) kids.push(c);
     }
@@ -1235,7 +1454,7 @@ function mood(w, c) {
 }
 
 const api = {
-  W, H, TPD, SEASON_DAYS, YEAR_DAYS, SEASONS, SPECIES, GENES, WEATHER,
+  W, H, TPD, SHALLOW, DEEP, SEASON_DAYS, YEAR_DAYS, SEASONS, SPECIES, GENES, WEATHER,
   createWorld, step, clock, isNight, phaseOf, seasonOf, mood, ageDays, growth, isAdult,
   addCreature, paintGrass, setSky, lockSky, zap, traitMeans, walkable,
 };

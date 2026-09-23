@@ -704,8 +704,22 @@ function hopOf(c, px, now) {
     ? Math.abs(Math.sin(now / (fast ? 55 : 120) + c.id)) * px * (fast ? 0.16 : 0.1) : 0;
 }
 
+// In shallow water an animal sits lower, its legs hidden below a little ring of ripples.
+const wading = c => !c.hidden && world.water[(c.y | 0) * S.W + (c.x | 0)] > 0;
+
 function drawCreature(c, sx, sy, now) {
   const px = creaturePx(c);
+  if (wading(c)) {
+    const line = sy + px * 0.3, rip = 1 + 0.12 * Math.sin(now / 260 + c.id);
+    ctx.save();
+    ctx.beginPath(); ctx.rect(sx - px, line - px * 2, px * 2, px * 2); ctx.clip();
+    drawEmoji(c.sp.emoji, sx, sy + px * 0.1, px, { tint: furTint(c), flip: c.species === 'rabbit' && c.facing > 0 });
+    ctx.restore();
+    ctx.strokeStyle = 'rgba(240, 250, 255, 0.7)';
+    ctx.lineWidth = Math.max(1, px * 0.05);
+    ctx.beginPath(); ctx.ellipse(sx, line, px * 0.36 * rip, px * 0.09 * rip, 0, 0, TAU); ctx.stroke();
+    return;
+  }
   const hop = hopOf(c, px, now);
   // Standing still, everyone breathes: slow and deep asleep, quick and shallow awake.
   const breathe = !hop && ui.speed > 0
@@ -810,6 +824,7 @@ function drawDecorShadow(d, sx, sy, sn) {
 // Animals lean their shadow with the sun like the trees do, and keep a faint one at their feet
 // at night and under cloud so they never float. A hop lifts them off it and it shrinks.
 function drawCreatureShadow(c, sx, sy, now, sn) {
+  if (wading(c)) return;
   const px = creaturePx(c), lift = 1 - hopOf(c, px, now) / px;
   const a = 0.14 + 0.16 * Math.max(0, sn.a), off = Math.max(0, sn.a) * sn.lean * px * 0.2;
   ctx.fillStyle = `rgba(40, 50, 20, ${a * lift})`;
@@ -925,7 +940,8 @@ function drawDecor(d, sx, sy, now, ck) {
 // Ponds are drawn as shapes, so the shore holds up however far you zoom in. The water map
 // is softened by a few box blurs and traced with marching squares; each cut-off gives one
 // faint ring, and stacked rings make gradients: sand fading into the grass, a little shade
-// under the bank, and water that deepens towards the middle. Traced once per meadow.
+// under the bank, shallows, and a darker blue where it gets too deep to wade (so the fords
+// show as pale stretches of river). Traced once per meadow.
 let pond = null;
 function blurred(src) {
   const out = new Float32Array(S.W * S.H), at = (x, y) => src[clamp(y, 0, S.H - 1) * S.W + clamp(x, 0, S.W - 1)];
@@ -965,7 +981,8 @@ function pondShape(f, t) {
 // Each ring's colour: the sand follows the season, and snow freezes the water over.
 function pondFills() {
   if (!pond || pond.world !== world) {
-    const f1 = blurred(world.water), f2 = blurred(f1), f4 = blurred(blurred(f2));
+    const wet = Float32Array.from(world.water, v => v ? 1 : 0), deep = Float32Array.from(world.water, v => v === S.DEEP ? 1 : 0);
+    const f1 = blurred(wet), f2 = blurred(f1), f4 = blurred(blurred(f2)), d2 = blurred(blurred(deep));
     const ring = (f, t, rgb, a) => ({ ...pondShape(f, t), rgb, a });
     const steps = (a, b, n) => Array.from({ length: n }, (_, i) => lerp(a, b, i / (n - 1)));
     // Where little waves come and go: a scatter of spots well inside the water, fixed per meadow.
@@ -980,7 +997,7 @@ function pondFills() {
       ...steps(0.03, 0.42, 9).map(t => ring(f4, t, 'sand', 0.12)),                // damp sand
       ring(f1, 0.47, [104, 170, 208], 1),                                          // shade under the bank
       ...steps(0.54, 0.8, 7).map(t => ring(f2, t, [130, 200, 235], 0.2)),          // shallows
-      ...steps(0.72, 0.99, 9).map(t => ring(f4, t, [94, 164, 214], 0.09)),         // deeper middle
+      ...steps(0.3, 0.95, 9).map(t => ring(d2, t, [72, 142, 202], 0.12)),          // too deep to wade
     ] };
   }
   const ice = iceOver();
@@ -1392,7 +1409,7 @@ function handleEvent(e) {
     case 'escape': {
       hear('escape', e.rabbit.x, e.rabbit.y, {}, mine);
       const t = e.how === 'burrow' ? `💨 ${link(e.rabbit)} dived into a burrow just before ${link(e.fox)} could pounce!`
-        : e.how === 'pond' ? `🌊 ${link(e.rabbit)} put the pond between itself and ${link(e.fox)}, and got away!`
+        : e.how === 'pond' ? `🌊 ${link(e.rabbit)} put ${e.water ? e.water.name : 'the water'} between itself and ${link(e.fox)}, and got away!`
         : `💨 ${link(e.rabbit)} outran ${link(e.fox)}!`;
       if (mine) addNews(t); else addNews(t, 'escape', 11000);
       break;
@@ -2356,7 +2373,8 @@ function newWorld(seed) {
   renderInspector();
   updateMeadowCard();
   if (ui.stats.open) renderStats();
-  addNews(`🌱 A new meadow. <b>${world.count.rabbit} rabbits</b> and <b>${world.count.fox} foxes</b> have just moved in.`);
+  const big = [world.waters.find(v => v.kind === 'river'), world.lake].filter(Boolean).map(v => `<b>${v.name}</b>`);
+  addNews(`🌱 A new meadow${big.length ? ' by ' + big.join(' and ') : ''}. <b>${world.count.rabbit} rabbits</b> and <b>${world.count.fox} foxes</b> have just moved in.`);
   history.replaceState(null, '', '?seed=' + seed);
 }
 
