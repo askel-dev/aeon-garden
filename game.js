@@ -243,8 +243,13 @@ let jitter = new Float32Array(S.W * S.H);
 let patches = new Float32Array(S.W * S.H);              // soft warm (+) and cool (-) patches, a few tiles across
 let terrainTick = -1, terrainVersion = 0;
 let shoreSand = [200, 180, 130];
+// Most repaints change only a few tiles (a rabbit's bite), so the ground layer repaints just
+// those. Tiles changed since the layer was painted are marked here. When too many have changed,
+// or it's a new meadow, terrainVersion goes up instead and the whole ground is repainted.
+const terrDirty = new Uint8Array(S.W * S.H);
+let terrDirtyCount = 0;
 
-function paintTerrain() {
+function paintTerrain(fresh) {
   const ck = S.clock(world);
   const sp = (ck.dayInSeason - 1 + ck.phase) / S.SEASON_DAYS;
   const t = sp > 0.8 ? (sp - 0.8) / 0.2 : 0;
@@ -254,9 +259,11 @@ function paintTerrain() {
   const d = timg.data, g = world.grass, water = world.water, ash = world.ash;
   const snow = world.snow, damp = 1 - 0.12 * world.wet;            // wet ground reads darker
   shoreSand = low.map(v => v * 0.9 * damp);
-  let sr = 0, sg = 0, sb = 0;
+  const ld = limg.data, bd = bimg.data;
+  let sr = 0, sg = 0, sb = 0, changed = false;
   for (let i = 0; i < g.length; i++) {
     const j = jitter[i], o = i * 4;
+    const r0 = d[o], g0 = d[o + 1], b0 = d[o + 2], l0 = ld[o + 3], k0 = bd[o + 3];
     // Snow settles in patches first, then covers everything.
     const s = snow > 0 ? clamp(snow * 1.4 - 0.2 - 0.2 * j, 0, 0.9) : 0;
     // Under the ponds (drawn on top by drawPonds) lies damp sand, which blurs into a shore.
@@ -272,14 +279,20 @@ function paintTerrain() {
     d[o] = r * k; d[o + 1] = gr * k; d[o + 2] = b * k;
     sr += d[o]; sg += d[o + 1]; sb += d[o + 2];
     d[o + 3] = 255;
-    limg.data[o + 3] = 255 * v * (1 - s);
-    bimg.data[o + 3] = 255 * (1 - v) * (1 - s);
+    ld[o + 3] = 255 * v * (1 - s);
+    bd[o + 3] = 255 * (1 - v) * (1 - s);
+    if (d[o] !== r0 || d[o + 1] !== g0 || d[o + 2] !== b0 || ld[o + 3] !== l0 || bd[o + 3] !== k0) {
+      changed = true;
+      if (!terrDirty[i]) { terrDirty[i] = 1; terrDirtyCount++; }
+    }
   }
+  terrainTick = world.tick;
+  edgeColour(sr / g.length, sg / g.length, sb / g.length);
+  if (!changed && !fresh) return;
   tctx.putImageData(timg, 0, 0);
   lush.getContext('2d').putImageData(limg, 0, 0);
   bare.getContext('2d').putImageData(bimg, 0, 0);
-  terrainTick = world.tick; terrainVersion++;
-  edgeColour(sr / g.length, sg / g.length, sb / g.length);
+  if (fresh || terrDirtyCount > g.length / 6) { terrainVersion++; terrDirty.fill(0); terrDirtyCount = 0; }
 }
 
 // Where the browser won't let the meadow reach (the clock, Safari's bars) it shows the page behind,
@@ -348,8 +361,10 @@ const pebbles = detailTexture(140, (g, x, y, r) => {
 // frame, while the screen still holds on to what was drawn from it, makes the browser copy it all.
 const bladeLayers = [[blades, lush], [pebbles, bare]].map(([pattern, where]) => ({ pattern, where, g: document.createElement('canvas').getContext('2d') }));
 
-//   view   the part being painted, [x, y, w, h] in screen pixels
-//   clip   whether g is clipped to it, so the blade layer can be too
+const clipTo = (g, parts) => { g.beginPath(); for (const p of parts) g.rect(...p); g.clip(); };
+
+//   view   the box around what's being painted, [x, y, w, h] in screen pixels
+//   clip   the parts g is clipped to, if it is, so the blade layer can be too
 function drawGroundDetail(g, z, ox, oy, view, clip) {
   const a = clamp((z - 7) / 9, 0, 1);                   // zoomed far out it would only shimmer
   if (a <= 0) return;
@@ -372,7 +387,7 @@ function drawGroundDetail(g, z, ox, oy, view, clip) {
       bladeLayer.width = canvas.width; bladeLayer.height = canvas.height;
     }
     bctx.save();
-    if (clip) { bctx.setTransform(dpr, 0, 0, dpr, 0, 0); bctx.beginPath(); bctx.rect(vx, vy, w, h); bctx.clip(); }
+    if (clip) { bctx.setTransform(dpr, 0, 0, dpr, 0, 0); clipTo(bctx, clip); }
     bctx.setTransform(1, 0, 0, 1, 0, 0);
     bctx.clearRect(0, 0, bladeLayer.width, bladeLayer.height);
     bctx.setTransform(g.getTransform());
@@ -391,22 +406,27 @@ function drawGroundDetail(g, z, ox, oy, view, clip) {
 }
 
 // The ground (colours, grain, blades, pebbles, ponds) is by far the priciest part of a frame:
-// a dozen passes over every pixel. It only changes when the terrain is repainted or the view
-// zooms, so it is kept in a layer of its own and copied in one pass. Panning slides the layer
-// along and paints only the strips that come into view. The layer is drawn exactly as the
-// screen would be, so it looks the same. It can only slide by whole pixels, so after a pan by
-// part of a pixel (following an animal, say), as while zooming, the ground is drawn directly.
+// a dozen passes over every pixel. So it is kept in a layer of its own and copied in one pass.
+// Panning slides the layer along and paints only the strips that come into view, and when the
+// terrain changes only the changed tiles are repainted. The layer is drawn exactly as the
+// screen would be, so it looks the same. It can only slide by whole pixels, so the ground is
+// placed on whole screen pixels: a camera that follows an animal moves it by at most half a
+// pixel from where the rest is drawn. While zooming the ground is drawn directly.
 const groundLayers = [document.createElement('canvas'), document.createElement('canvas')];   // shown, spare
 let groundView = '', groundLook = '', groundStill = 0, groundAt = null;   // the pixel the layer's meadow starts in
 
-//   part   the part to paint, [x, y, w, h] in screen pixels; all of it if left out
-function paintGround(g, z, ox, oy, fills, part) {
-  const view = part || [0, 0, vw, vh];
-  if (part) { g.save(); g.beginPath(); g.rect(...part); g.clip(); }
+//   parts   the parts to paint, [x, y, w, h] each, in screen pixels; all of it if left out
+function paintGround(g, z, ox, oy, fills, parts) {
+  let view = [0, 0, vw, vh];
+  if (parts) {
+    const x0 = Math.min(...parts.map(p => p[0])), y0 = Math.min(...parts.map(p => p[1]));
+    view = [x0, y0, Math.max(...parts.map(p => p[0] + p[2])) - x0, Math.max(...parts.map(p => p[1] + p[3])) - y0];
+    g.save(); clipTo(g, parts);
+  }
   g.drawImage(terr, ox, oy, S.W * z, S.H * z);
-  drawGroundDetail(g, z, ox, oy, view, !!part);
+  drawGroundDetail(g, z, ox, oy, view, parts);
   drawPonds(g, z, ox, oy, fills, view);
-  if (part) g.restore();
+  if (parts) g.restore();
 }
 
 function groundContext(c) {
@@ -417,13 +437,41 @@ function groundContext(c) {
   return g;
 }
 
+// The changed tiles as a few rectangles in screen pixels, [x, y, w, h] each. A tile's colour
+// blurs into its neighbours when scaled up, so each takes two tiles around it along. They are
+// gathered in blocks of 8 tiles, and a row of blocks makes one rectangle.
+const BLOCK = 8, BLOCK_COLS = Math.ceil(S.W / BLOCK), BLOCK_ROWS = Math.ceil(S.H / BLOCK);
+function dirtyParts(z, bx, by, W, H) {
+  if (!terrDirtyCount) return [];
+  const blocks = new Uint8Array(BLOCK_COLS * BLOCK_ROWS), parts = [];
+  for (let i = 0; i < terrDirty.length; i++) {
+    if (!terrDirty[i]) continue;
+    const x = i % S.W, y = (i / S.W) | 0;
+    const c0 = Math.floor(Math.max(0, x - 2) / BLOCK), c1 = Math.floor(Math.min(S.W - 1, x + 2) / BLOCK);
+    const r0 = Math.floor(Math.max(0, y - 2) / BLOCK), r1 = Math.floor(Math.min(S.H - 1, y + 2) / BLOCK);
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) blocks[r * BLOCK_COLS + c] = 1;
+  }
+  terrDirty.fill(0); terrDirtyCount = 0;
+  const k = z * dpr;
+  for (let r = 0; r < BLOCK_ROWS; r++) {
+    for (let c = 0; c < BLOCK_COLS; c++) {
+      if (!blocks[r * BLOCK_COLS + c]) continue;
+      const c0 = c;
+      while (c + 1 < BLOCK_COLS && blocks[r * BLOCK_COLS + c + 1]) c++;
+      const x0 = Math.max(0, Math.floor(bx + c0 * BLOCK * k)), x1 = Math.min(W, Math.ceil(bx + Math.min(S.W, (c + 1) * BLOCK) * k));
+      const y0 = Math.max(0, Math.floor(by + r * BLOCK * k)), y1 = Math.min(H, Math.ceil(by + Math.min(S.H, (r + 1) * BLOCK) * k));
+      if (x1 > x0 && y1 > y0) parts.push([x0, y0, x1 - x0, y1 - y0]);
+    }
+  }
+  return parts;
+}
+
 function drawGround(z, ox, oy, shaking) {
   const fills = pondFills();
-  // Where the meadow's corner lands on the screen's pixels: the whole pixel, and how far into it.
-  // (Rounded a little for the comparison, so the sums' last digits don't count as a move.)
-  const X = Math.round(ox * dpr * 256) / 256, Y = Math.round(oy * dpr * 256) / 256;
-  const bx = Math.floor(X), by = Math.floor(Y);
-  const view = [z, vw, vh, dpr, X - bx, Y - by].join('|'), look = terrainVersion + '|' + fills.join();
+  // The whole screen pixel the meadow's corner lands on.
+  const bx = Math.round(ox * dpr), by = Math.round(oy * dpr);
+  ox = bx / dpr; oy = by / dpr;
+  const view = [z, vw, vh, dpr].join('|'), look = terrainVersion + '|' + fills.join();
   groundStill = view === groundView ? groundStill + 1 : 0;
   if (view !== groundView || look !== groundLook) { groundView = view; groundLook = look; groundAt = null; }
   if (shaking || groundStill < 2) { paintGround(ctx, z, ox, oy, fills); return; }   // zooming: draw it directly
@@ -432,26 +480,38 @@ function drawGround(z, ox, oy, shaking) {
     for (const c of groundLayers) { c.width = W; c.height = H; }
     groundAt = null;
   }
-  // How far the view has slid since, in screen pixels.
+  // How far the view has slid since, in screen pixels. When much of the ground has changed
+  // (at high speed, say), painting it all in one go is cheaper than in pieces.
   const dx = groundAt ? bx - groundAt[0] : 0, dy = groundAt ? by - groundAt[1] : 0;
-  if (!groundAt || Math.abs(dx) >= W || Math.abs(dy) >= H) {
+  const dirty = groundAt ? dirtyParts(z, bx, by, W, H) : [];
+  if (!groundAt || Math.abs(dx) >= W || Math.abs(dy) >= H || dirty.reduce((a, p) => a + p[2] * p[3], 0) > W * H / 3) {
     const g = groundLayers[0].getContext('2d');
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.clearRect(0, 0, W, H);
     paintGround(groundContext(groundLayers[0]), z, ox, oy, fills);
-  } else if (dx || dy) {
-    // Copy what's still in view onto the spare layer, then paint the strips that came in.
-    const [shown, spare] = groundLayers, g = spare.getContext('2d');
-    g.setTransform(1, 0, 0, 1, 0, 0);
-    g.clearRect(0, 0, W, H);
-    g.imageSmoothingEnabled = false;
-    g.drawImage(shown, dx, dy);
-    groundContext(spare);
-    const strip = (x, y, w, h) => paintGround(g, z, ox, oy, fills, [x / dpr, y / dpr, w / dpr, h / dpr]);
-    const sx = dx > 0 ? 0 : W + dx, restX = dx > 0 ? dx : 0;                  // the side strip, and what's left beside it
-    if (dx) strip(sx, 0, Math.abs(dx), H);
-    if (dy) strip(restX, dy > 0 ? 0 : H + dy, W - Math.abs(dx), Math.abs(dy));  // top or bottom, less the corner
-    groundLayers.reverse();
+    terrDirty.fill(0); terrDirtyCount = 0;
+  } else {
+    // Everything to paint goes in one pass: a scratch layer used twice in a frame gets copied whole.
+    const parts = [];
+    if (dx || dy) {
+      // Copy what's still in view onto the spare layer, then paint the strips that came in.
+      const [shown, spare] = groundLayers, g = spare.getContext('2d');
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.clearRect(0, 0, W, H);
+      g.imageSmoothingEnabled = false;
+      g.drawImage(shown, dx, dy);
+      const sx = dx > 0 ? 0 : W + dx, restX = dx > 0 ? dx : 0;                          // the side strip, and what's left beside it
+      if (dx) parts.push([sx, 0, Math.abs(dx), H]);
+      if (dy) parts.push([restX, dy > 0 ? 0 : H + dy, W - Math.abs(dx), Math.abs(dy)]);  // top or bottom, less the corner
+      groundLayers.reverse();
+    }
+    parts.push(...dirty);
+    if (parts.length) {
+      const g = groundLayers[0].getContext('2d');
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      for (const p of parts) g.clearRect(...p);
+      paintGround(groundContext(groundLayers[0]), z, ox, oy, fills, parts.map(p => p.map(v => v / dpr)));
+    }
   }
   groundAt = [bx, by];
   ctx.save();
@@ -2250,7 +2310,7 @@ function newWorld(seed) {
   renderNewsLog();
   cam.zoom = minZoom; cam.x = S.W / 2; cam.y = S.H / 2; cam.goal = null;
   clampCam();
-  paintTerrain();
+  paintTerrain(true);
   renderInspector();
   updateMeadowCard();
   if (ui.stats.open) renderStats();
