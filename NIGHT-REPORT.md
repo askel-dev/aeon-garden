@@ -1,11 +1,11 @@
 # Night report, 2026-09-23
-Status: working
+Status: all done
 Branch: night/2026-09-23 (not merged, not pushed)
 
 ## Summary
-1. Bees: done, waggle dance (commit: see git log "Night: bees dance"), plus ideas for next steps below
-2. Audio: done, a wind chime that rings more with more rabbits (commit: "Night: rabbit wind chime"), plus ideas below
-3. (empty on the list)
+1. Bees: done, waggle dance (128e3b2), plus ideas for next steps below
+2. Audio: done, a wind chime that rings more with more rabbits (a9e77fd), plus ideas below
+3. Empty on the list, nothing done. I read over the night's diff and found no bugs.
 
 ## 1. Lets expand on the behaviour of bees
 Status: done (small step) + ideas for the next ones
