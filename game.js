@@ -637,6 +637,128 @@ function drawPlants(g, z, ox, oy, [vx, vy, w, h], season, live) {
   g.restore();
 }
 
+// ------------------------------------------------------------------ burrows
+//
+// A burrow is a hole dug into a low bank, with the earth that came out of it spilled in front.
+// It shows its story: a half-dug one is a scrape and a pile of raw soil, a new one keeps its
+// bright earth for a few days, a busy one wears paths into the grass, and one nobody visits
+// grows over and starts to fall in before it collapses.
+
+const dugAt = new WeakMap();        // when each burrow was finished, from the 'dug' news
+const FRESH_DAYS = 3;
+const burrowRand = (id, k) => { const s = Math.sin(id * 12.9898 + k * 78.233) * 43758.5453; return s - Math.floor(s); };
+
+// A flat-bottomed arch standing on y0, w to each side and h tall.
+function arch(w, h, y0) {
+  ctx.moveTo(-w, y0);
+  ctx.bezierCurveTo(-w, y0 - h * 1.33, w, y0 - h * 1.33, w, y0);
+  ctx.quadraticCurveTo(0, y0 + h * 0.2, -w, y0);
+}
+
+function drawBurrow(b, sx, sy, z, season, residents) {
+  const rnd = k => burrowRand(b.id, k);
+  const r = Math.max(5, z * 0.8) * (0.9 + 0.2 * rnd(0));
+  const made = dugAt.get(b), done = b.dug >= 1;
+  const fresh = !done ? 1 : made === undefined ? 0 : clamp(1 - (world.tick - made) / (FRESH_DAYS * S.TPD), 0, 1);
+  const idle = b.count > 0 ? 0 : (world.tick - b.used) / (S.SEASON_DAYS * S.TPD);   // it falls in at 1
+  const neglect = done ? clamp((idle - 0.4) / 0.6, 0, 1) : 0;
+  const wear = clamp(residents / 3, 0, 1) * (1 - neglect);
+  const pile = done ? 1 : 0.35 + 0.65 * Math.sqrt(b.dug);          // how much earth is out
+  const open = clamp((b.dug - 0.35) / 0.65, 0, 1);                 // the hole shows once the scrape is deep
+  const detail = r >= 9, flip = rnd(1) < 0.5 ? -1 : 1;
+  const earth = [lerp(120, 158, fresh), lerp(92, 116, fresh), lerp(58, 70, fresh)];
+  const rgba = (c, k, a) => `rgba(${c[0] * k | 0}, ${c[1] * k | 0}, ${c[2] * k | 0}, ${a})`;
+
+  ctx.save();
+  ctx.translate(sx, sy);
+
+  // Paths worn into the grass by the rabbits who live here.
+  if (detail && wear > 0.05) {
+    ctx.lineCap = 'round';
+    const n = rnd(3) < 0.5 ? 2 : 3;
+    for (let i = 0; i < n; i++) {
+      const a = Math.PI / 2 + (i - (n - 1) / 2) * 1.4 + (rnd(4 + i) - 0.5) * 0.7, len = r * (3 + 2.5 * rnd(8 + i));
+      const bend = (rnd(12 + i) - 0.5) * r * 2, ca = Math.cos(a), sa = Math.sin(a) * 0.6;
+      ctx.beginPath();
+      ctx.moveTo(ca * r * 0.6, sa * r * 0.6 + r * 0.3);
+      ctx.quadraticCurveTo(ca * len / 2 - sa * bend, sa * len / 2 + ca * bend + r * 0.3, ca * len, sa * len + r * 0.3);
+      for (const [lw, al] of [[0.55, 0.12], [0.28, 0.18]]) {
+        ctx.strokeStyle = `rgba(214, 198, 140, ${al * wear})`; ctx.lineWidth = r * lw; ctx.stroke();
+      }
+    }
+  }
+
+  ctx.rotate((rnd(2) - 0.5) * 0.25);
+
+  // The low bank the hole goes into: light on top, a soft shadow along its foot.
+  const mh = r * 0.8 * pile, mw = r * 1.3 * pile;
+  const foot = ctx.createRadialGradient(mw * 0.1, 0, mw * 0.5, mw * 0.1, 0, mw * 1.15);
+  foot.addColorStop(0, 'rgba(35, 45, 15, 0.3)'); foot.addColorStop(1, 'rgba(35, 45, 15, 0)');
+  ctx.fillStyle = foot;
+  ctx.beginPath(); ctx.ellipse(mw * 0.1, 0, mw * 1.15, mh * 0.8, 0, 0, TAU); ctx.fill();
+  const lit = ctx.createRadialGradient(-mw * 0.2, -mh * 0.55, 0, -mw * 0.1, -mh * 0.3, mw * 0.95);
+  lit.addColorStop(0, 'rgba(255, 250, 210, 0.42)'); lit.addColorStop(0.6, 'rgba(255, 250, 210, 0.12)');
+  lit.addColorStop(1, 'rgba(255, 250, 210, 0)');
+  ctx.fillStyle = lit;
+  ctx.beginPath(); ctx.ellipse(0, -mh * 0.2, mw * 0.95, mh * 0.66, 0, 0, TAU); ctx.fill();
+
+  // The spilled earth in front, soft at the edge. Grass takes it back once it's left alone.
+  const ea = (done ? lerp(0.5, 0.9, fresh) : 0.9) * (1 - 0.85 * neglect);
+  const spoil = s => {
+    ctx.beginPath();
+    ctx.ellipse(flip * r * 0.15, r * 0.55, r * 1.2 * s * pile, r * 0.5 * s * pile, 0, 0, TAU);
+    ctx.ellipse(flip * r * 0.8, r * 0.7, r * 0.55 * s * pile, r * 0.32 * s * pile, 0, 0, TAU);
+    ctx.ellipse(-flip * r * 0.7, r * 0.45, r * 0.45 * s * pile, r * 0.26 * s * pile, 0, 0, TAU);
+  };
+  ctx.fillStyle = rgba(earth, 1, ea * 0.35); spoil(1.25); ctx.fill();
+  ctx.fillStyle = rgba(earth, 1, ea); spoil(1); ctx.fill();
+  if (detail) {
+    for (let i = 0; i < 8; i++) {                                    // clods and a pebble or two
+      const a = rnd(20 + i) * TAU, d = Math.sqrt(rnd(30 + i)) * pile;
+      const x = flip * r * 0.15 + Math.cos(a) * d * r * 1.3, y = r * 0.6 + Math.sin(a) * d * r * 0.55;
+      const pebble = i < 2, s = r * (0.05 + 0.06 * rnd(40 + i));
+      ctx.fillStyle = pebble ? `rgba(150, 146, 136, ${ea})` : rgba(earth, 0.7, ea);
+      ctx.beginPath(); ctx.ellipse(x, y, s * 1.3, s, 0, 0, TAU); ctx.fill();
+    }
+  }
+
+  // A half-dug burrow is only a scrape at first.
+  if (!done) {
+    ctx.fillStyle = rgba(earth, 0.55, 0.7);
+    ctx.beginPath(); ctx.ellipse(0, r * 0.2, r * 0.6 * pile, r * 0.25 * pile, 0, 0, TAU); ctx.fill();
+  }
+
+  // The way in: an earth lip, then the dark tunnel, darkest at the back. It sinks as it falls in.
+  if (open > 0) {
+    const w = r * 0.62 * (0.5 + 0.5 * open), h = r * 0.72 * open * (1 - 0.35 * neglect), y0 = r * 0.28;
+    ctx.fillStyle = rgba(earth, 0.78, 0.95 - 0.35 * neglect);
+    ctx.beginPath(); arch(w * 1.25, h * 1.2, y0 + r * 0.06); ctx.fill();
+    ctx.strokeStyle = `rgba(255, 235, 190, ${0.3 * (1 - 0.5 * neglect)})`;   // the sun on its rim
+    ctx.lineWidth = Math.max(1, r * 0.06);
+    ctx.beginPath(); ctx.moveTo(-w * 1.2, y0 - h * 0.35);
+    ctx.bezierCurveTo(-w * 1.1, y0 - h * 1.5, w * 1.1, y0 - h * 1.5, w * 1.2, y0 - h * 0.35); ctx.stroke();
+    const dark = ctx.createLinearGradient(0, y0 - h, 0, y0);
+    dark.addColorStop(0, '#0d0906'); dark.addColorStop(0.6, '#1f160f'); dark.addColorStop(1, '#46331f');
+    ctx.fillStyle = dark;
+    ctx.beginPath(); arch(w, h, y0); ctx.fill();
+
+    // Grass on the bank above, leaning out over the rim, more of it the longer it's been left.
+    if (detail) {
+      const g = PALETTE[season][1], n = 4 + Math.round(6 * neglect), wl = w * 1.3;
+      ctx.strokeStyle = rgba(g, 0.66, 0.95); ctx.lineWidth = Math.max(1, r * 0.055); ctx.lineCap = 'round';
+      ctx.beginPath();
+      for (let i = 0; i < n; i++) {
+        const t = (i / (n - 1) - 0.5) * 1.7 + (rnd(50 + i) - 0.5) * 0.25;
+        const x = t * wl, top = y0 - h * 1.25 * Math.sqrt(Math.max(0, 1 - t * t)) - r * 0.02;
+        const len = r * (0.16 + 0.12 * rnd(60 + i)) * (1 + 0.8 * neglect), out = t * r * 0.25;
+        ctx.moveTo(x, top); ctx.quadraticCurveTo(x + out * 0.3, top - len * 0.8, x + out, top - len * (0.6 - 0.9 * neglect));
+      }
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
 // ------------------------------------------------------------------ drawing
 
 const MOVING = new Set(['wander', 'food', 'flee', 'chase', 'stalk', 'prowl', 'home', 'love', 'follow', 'friends', 'dig']);
@@ -651,6 +773,22 @@ function darkness(phase) {
   return 0;
 }
 
+// The view may reach a little past the bottom edge (see clampCam). There the ground goes on as
+// the meadow's last rows seen in a mirror, fading darker, so it reads as the edge of the meadow.
+function drawEdge(z, ox, oy) {
+  const y0 = oy + S.H * z, h = vh + 8 - y0;
+  if (h <= 0) return;
+  const k = Math.min(h / z, S.H);                     // in tiles
+  ctx.save();
+  ctx.translate(0, y0); ctx.scale(1, -1);
+  ctx.drawImage(terr, 0, S.H - k, S.W, k, ox, -k * z, S.W * z, k * z);
+  ctx.restore();
+  const shade = ctx.createLinearGradient(0, y0, 0, y0 + Math.max(h, 40));
+  shade.addColorStop(0, 'rgba(40, 50, 20, 0.12)'); shade.addColorStop(1, 'rgba(40, 50, 20, 0.4)');
+  ctx.fillStyle = shade;
+  ctx.fillRect(ox, y0, S.W * z, h);
+}
+
 function render(now) {
   // Thunder rumbles the whole screen a little.
   const q = now - ui.sky.boom < 350 && ui.speed <= 4 ? 3 * (1 - (now - ui.sky.boom) / 350) : 0;
@@ -661,21 +799,17 @@ function render(now) {
   const [ox, oy] = toScreen(0, 0);
   const z = cam.zoom, ck = S.clock(world);
   drawGround(z, ox, oy, q !== 0);
+  drawEdge(z, ox, oy);
   drawWaves(now);
 
   drawPlants(ctx, z, ox, oy, [0, 0, vw, vh], ck.season, true);   // the rest are in the ground
 
-  // Burrows, drawn by hand: some browsers clip the 🕳️ glyph in half. A half-dug one is smaller.
+  // Burrows, drawn by hand: some browsers clip the 🕳️ glyph in half.
+  const residents = new Map();
+  for (const c of world.creatures) if (c.alive && c.home) residents.set(c.home, (residents.get(c.home) || 0) + 1);
   for (const b of world.burrows) {
     const [sx, sy] = toScreen(b.x, b.y);
-    if (!visible(sx, sy, 40)) continue;
-    const r = Math.max(5, z * 0.65) * (0.3 + 0.7 * b.dug);
-    ctx.fillStyle = 'rgba(90, 70, 40, 0.25)';                // dug-up earth
-    ctx.beginPath(); ctx.ellipse(sx, sy + r * 0.3, r * 1.7, r * 0.85, 0, 0, TAU); ctx.fill();
-    ctx.fillStyle = '#7d6649';                               // the far wall
-    ctx.beginPath(); ctx.ellipse(sx, sy, r, r * 0.45, 0, 0, TAU); ctx.fill();
-    ctx.fillStyle = '#2a2019';                               // the dark inside
-    ctx.beginPath(); ctx.ellipse(sx, sy + r * 0.08, r * 0.88, r * 0.36, 0, 0, TAU); ctx.fill();
+    if (visible(sx, sy, z * 5)) drawBurrow(b, sx, sy, z, ck.season, residents.get(b) || 0);
   }
 
   const sel = world.byId.get(ui.selectedId);
@@ -1467,6 +1601,7 @@ function handleEvent(e) {
       break;
     }
     case 'dug': {
+      dugAt.set(e.burrow, world.tick);
       addEffect('🕳️', e.burrow.x, e.burrow.y, 0.8);
       const t = `🕳️ ${link(e.c)} dug a new burrow.`;
       if (mine) addNews(t); else addNews(t, 'dug', 30000);
@@ -2492,7 +2627,7 @@ function frame(now) {
   }
   clampCam();
 
-  if (!ui.stats.open) {                  // the stats page covers the meadow, so skip drawing it
+  if (!ui.stats.open && canvas.width && canvas.height) {   // the stats page covers the meadow; a hidden tab can have no size
     if (world.tick - terrainTick >= 12 || terrainTick < 0) paintTerrain();
     render(now);
   }
