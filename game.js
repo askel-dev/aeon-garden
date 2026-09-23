@@ -163,7 +163,7 @@ function paintTerrain() {
     let v = water[i] ? 0 : clamp(g[i] / 0.85, 0, 1);
     v = v * (2 - v);
     const k = (1 + 0.035 * j) * damp * (water[i] ? 0.9 : 1), p = patches[i];
-    let r = lerp(low[0], high[0], v) + 7 * p, gr = lerp(low[1], high[1], v) + 2 * p, b = lerp(low[2], high[2], v) - 7 * p;
+    let r = lerp(low[0], high[0], v) + 6 * p, gr = lerp(low[1], high[1], v) + 2 * p, b = lerp(low[2], high[2], v) - 6 * p;
     if (ash[i] > 0) {                                                // burnt ground, until the grass returns
       const a = ash[i] * (1 - v) * 0.85;
       r = lerp(r, 74, a); gr = lerp(gr, 66, a); b = lerp(b, 60, a);
@@ -1679,8 +1679,8 @@ function newWorld(seed) {
   world = S.createWorld(seed);
   jitter = Float32Array.from({ length: S.W * S.H }, () => Math.random() * 2 - 1);
   patches = blurred(blurred(blurred(blurred(jitter))));
-  const most = patches.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
-  patches = patches.map(v => v / most);
+  const spread = Math.sqrt(patches.reduce((m, v) => m + v * v, 0) / patches.length);
+  patches = patches.map(v => clamp(v / spread, -2.5, 2.5));      // about -1..1 on a typical tile
   Object.assign(ui, { selectedId: 0, hoverId: 0, follow: false, trail: [], effects: [], lastNews: {}, newsLog: [] });
   ui.records = { rabbit: world.count.rabbit, fox: world.count.fox };
   ui.crashSaid = { rabbit: -1, fox: -1 };
