@@ -15,7 +15,7 @@ const ui = {
   speed: 1, sound: false, tool: 'look', selectedId: 0, hoverId: 0, follow: false,
   trail: [], effects: [], diary: new Map(),
   lastNews: {}, newsLog: [], newsOpen: false, records: { rabbit: 0, fox: 0 }, crashSaid: { rabbit: -1, fox: -1 }, seenHistory: 0,
-  releaseSex: { rabbit: 'F', fox: 'F' }, mini: false, ring: null,
+  releaseSex: { rabbit: 'F', fox: 'F' }, mini: false, ring: null, sheetUp: false,
   stats: { open: false, show: 'rabbit', range: 'five', hover: null },
   sky: { mix: {}, tick: 0, bolt: null, boom: -1e9, rainbow: 0, menu: false },
 };
@@ -27,6 +27,8 @@ const canvas = $('#world');
 const ctx = canvas.getContext('2d');
 let vw = 0, vh = 0, dpr = 1, minZoom = 1;
 let barPad = 0;                                   // screen pixels the toolbar covers at the bottom
+let sheet = null;                                 // on a phone: the rows the top bar and the inspector sheet hide
+const narrow = () => matchMedia('(max-width: 760px)').matches;
 
 // Safari's fingerprinting protection (iOS 26, private tabs) can report a ratio of 1 on a
 // retina phone, which leaves the meadow blurry. Ask the media queries too, and failing that,
@@ -41,9 +43,9 @@ function pixelRatio() {
 
 function resize() {
   dpr = pixelRatio();
-  vw = window.innerWidth; vh = window.innerHeight;
+  // The CSS sizes the canvas: on a phone it reaches under the clock and Safari's bar, past innerHeight.
+  vw = canvas.clientWidth || innerWidth; vh = canvas.clientHeight || innerHeight;
   canvas.width = Math.round(vw * dpr); canvas.height = Math.round(vh * dpr);
-  canvas.style.width = vw + 'px'; canvas.style.height = vh + 'px';
   minZoom = Math.max(vw / S.W, vh / S.H);        // the meadow always fills the window
   cam.zoom = Math.max(cam.zoom, minZoom);
   clampCam();
@@ -51,13 +53,23 @@ function resize() {
     const c = $('#spark-' + s);
     c.width = Math.round(c.clientWidth * dpr); c.height = Math.round(c.clientHeight * dpr);
   }
+  measureSheet();
+}
+
+// On a phone the inspector is a sheet over the bottom of the meadow. The one you follow is kept in
+// the middle of what's still showing, between the top bar and the sheet, instead of under the sheet.
+function measureSheet() {
+  const ins = $('#inspector').getBoundingClientRect();
+  if (!ins.height || ins.width < vw * 0.8) { sheet = null; return; }
+  const top = Math.max($('#meadow').getBoundingClientRect().bottom, $('#hud-right .hud-top').getBoundingClientRect().bottom);
+  sheet = { top, bottom: vh - ins.top };
 }
 
 function clampCam() {
   const hw = vw / 2 / cam.zoom, hh = vh / 2 / cam.zoom;
   cam.x = hw * 2 >= S.W ? S.W / 2 : clamp(cam.x, hw, S.W - hw);
   // You may look a little past the bottom edge, so nothing is ever stuck under the toolbar.
-  cam.y = clamp(cam.y, Math.min(hh, S.H / 2), Math.max(S.H - hh, S.H / 2) + barPad / cam.zoom);
+  cam.y = clamp(cam.y, Math.min(hh, S.H / 2), Math.max(S.H - hh, S.H / 2) + Math.max(barPad, sheet ? sheet.bottom : 0) / cam.zoom);
 }
 
 new ResizeObserver(() => {
@@ -67,6 +79,7 @@ new ResizeObserver(() => {
 new ResizeObserver(() => {            // on a phone the time pill sits under the meadow card
   document.documentElement.style.setProperty('--meadow-h', $('#meadow').offsetHeight + 'px');
 }).observe($('#meadow'));
+new ResizeObserver(measureSheet).observe($('#inspector'));
 
 const toScreen = (x, y) => [(x - cam.x) * cam.zoom + vw / 2, (y - cam.y) * cam.zoom + vh / 2];
 const toWorld = (sx, sy) => [(sx - vw / 2) / cam.zoom + cam.x, (sy - vh / 2) / cam.zoom + cam.y];
@@ -239,6 +252,7 @@ function paintTerrain() {
   const d = timg.data, g = world.grass, water = world.water, ash = world.ash;
   const snow = world.snow, damp = 1 - 0.12 * world.wet;            // wet ground reads darker
   shoreSand = low.map(v => v * 0.9 * damp);
+  let sr = 0, sg = 0, sb = 0;
   for (let i = 0; i < g.length; i++) {
     const j = jitter[i], o = i * 4;
     // Snow settles in patches first, then covers everything.
@@ -254,6 +268,7 @@ function paintTerrain() {
     }
     if (s > 0) { r = lerp(r, 246, s); gr = lerp(gr, 248, s); b = lerp(b, 252, s); }
     d[o] = r * k; d[o + 1] = gr * k; d[o + 2] = b * k;
+    sr += d[o]; sg += d[o + 1]; sb += d[o + 2];
     d[o + 3] = 255;
     limg.data[o + 3] = 255 * v * (1 - s);
     bimg.data[o + 3] = 255 * (1 - v) * (1 - s);
@@ -262,6 +277,17 @@ function paintTerrain() {
   lush.getContext('2d').putImageData(limg, 0, 0);
   bare.getContext('2d').putImageData(bimg, 0, 0);
   terrainTick = world.tick; terrainVersion++;
+  edgeColour(sr / g.length, sg / g.length, sb / g.length);
+}
+
+// Where the browser won't let the meadow reach (the clock, Safari's bars) it shows the page behind,
+// so that takes the meadow's average colour and the seam disappears.
+const themeMeta = $('meta[name="theme-color"]');
+function edgeColour(r, g, b) {
+  const css = `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
+  if (themeMeta.content === css) return;
+  themeMeta.content = css;
+  document.documentElement.style.background = document.body.style.background = css;
 }
 
 // The ground colours are one pixel per tile, so up close they go soft. On top goes crisp
@@ -1070,7 +1096,7 @@ function addNews(html, category, minGapMs = 0) {
   el.className = 'news-item';
   el.innerHTML = html;
   box.prepend(el);
-  while (box.children.length > NEWS_TOASTS) box.lastChild.remove();
+  while (box.children.length > (narrow() ? 1 : NEWS_TOASTS)) box.lastChild.remove();   // a phone has room for one
   setTimeout(() => { el.classList.add('gone'); setTimeout(() => el.remove(), 800); }, NEWS_TOAST_MS);
 }
 
@@ -1124,6 +1150,7 @@ function toggleSound(on = !ui.sound) {
   Sound.setEnabled(on);
   $('#sound-btn').textContent = on ? '🔊' : '🔇';
   $('#sound-btn').classList.toggle('on', on);
+  $('#sound-item').textContent = on ? '🔊 Sound is on' : '🔇 Sound is off';
   try { localStorage.setItem('aeon-garden-sound', on ? '1' : '0'); } catch (e) { /* fine */ }
 }
 
@@ -1668,8 +1695,10 @@ function lifeStage(c) {
 function renderInspector() {
   const box = $('#inspector');
   const c = world.byId.get(ui.selectedId);
+  document.body.classList.toggle('inspecting', !!c);
   if (!c) { box.classList.remove('open'); setHTML(box, ''); return; }
   box.classList.add('open');
+  box.classList.toggle('peek', !ui.sheetUp);          // only a phone draws it small
   const age = Math.floor(S.ageDays(world, c));
   const sex = c.sex === 'F' ? '♀' : '♂';
   const mood = S.mood(world, c);
@@ -1693,6 +1722,7 @@ function renderInspector() {
   const living = c.alive ? '' : world.creatures.find(k => k.mumId === c.id || k.dadId === c.id);
 
   setHTML(box, `
+    <button class="sheet-handle phone-only" aria-label="${ui.sheetUp ? 'Show less' : 'Show more'}"></button>
     <div class="ins-head">
       <div class="portrait" style="background:${furCss(c)}33">${c.alive ? c.sp.emoji : '👻'}</div>
       <div>
@@ -1793,9 +1823,29 @@ function select(id, zoomIn = true) {
   ui.selectedId = id;
   ui.trail = [];
   ui.follow = !!id;
-  if (id && zoomIn && cam.zoom < 20) cam.goal = 22;
+  ui.sheetUp = false;
+  const close = narrow() ? 16 : 22;           // a phone keeps a little more of the meadow around it
+  if (id && zoomIn && cam.zoom < close - 2) cam.goal = close;
   renderInspector();
 }
+
+// The sheet on a phone: tap the handle, or swipe the handle or the name, up for more and down for less.
+// Swiping down a small sheet puts it away.
+let swipe = null;
+$('#inspector').addEventListener('pointerdown', e => {
+  if (sheet && e.target.closest('.sheet-handle, .ins-head') && !e.target.closest('button:not(.sheet-handle)')) swipe = { y: e.clientY };
+});
+$('#inspector').addEventListener('pointerup', e => {
+  if (!swipe) return;
+  const dy = e.clientY - swipe.y, tap = Math.abs(dy) < 10 && e.target.closest('.sheet-handle');
+  swipe = null;
+  if (tap || dy < -24) ui.sheetUp = tap ? !ui.sheetUp : true;
+  else if (dy > 24) { if (ui.sheetUp) ui.sheetUp = false; else { select(0); return; } }
+  else return;
+  $('#inspector').scrollTop = 0;
+  renderInspector();
+});
+$('#inspector').addEventListener('pointercancel', () => { swipe = null; });
 
 function creatureAt(sx, sy) {
   const [wx, wy] = toWorld(sx, sy);
@@ -1843,10 +1893,17 @@ function toggleMini(on = !ui.mini) {
   try { localStorage.setItem('aeon-garden-mini', on ? '1' : '0'); } catch (e) { /* fine */ }
 }
 
+// A phone has no room for four speed buttons: one steps through them instead, and pause toggles.
+const SPEEDS = [1, 4, 15, 60];
+let lastSpeed = 1;
 function setSpeed(s) {
   ui.speed = s;
+  if (s) lastSpeed = s;
   Sound.update({ speed: s });            // right away, so the first frame at 60x is already quiet
   document.querySelectorAll('[data-speed]').forEach(b => b.classList.toggle('on', +b.dataset.speed === s));
+  const step = $('[data-act="cycle"]');
+  step.textContent = lastSpeed + '×';
+  step.classList.toggle('on', s > 0);
 }
 
 // Two fingers pinch: the spot of meadow between them stays under them as they spread and move.
@@ -2067,7 +2124,8 @@ document.addEventListener('click', e => {
   if (t.closest('#toolbar,#hud-right .hud-top,#ring')) chime('click');
   if (t.dataset.ring) ringPick(t.dataset.ring);
   else if (t.dataset.tool) setTool(t.dataset.tool);
-  else if (t.dataset.speed !== undefined) setSpeed(+t.dataset.speed);
+  else if (t.dataset.speed !== undefined) setSpeed(+t.dataset.speed || (ui.speed ? 0 : lastSpeed));
+  else if (t.dataset.act === 'cycle') setSpeed(ui.speed ? SPEEDS[(SPEEDS.indexOf(ui.speed) + 1) % SPEEDS.length] : lastSpeed);
   else if (t.dataset.sky) { S.setSky(world, t.dataset.sky); flushEvents(); toggleSkyMenu(false); updateMeadowCard(); }
   else if (t.dataset.act === 'sky') toggleSkyMenu();
   else if (t.dataset.act === 'sky-lock') toggleSkyLock();
@@ -2090,12 +2148,11 @@ document.addEventListener('click', e => {
   }
 });
 
-let lastSpeed = 1;
 document.addEventListener('keydown', e => {
   if (e.target.closest('input,textarea')) return;
   if (e.key === ' ') {
     e.preventDefault();
-    if (ui.speed) { lastSpeed = ui.speed; setSpeed(0); } else setSpeed(lastSpeed);
+    setSpeed(ui.speed ? 0 : lastSpeed);
   } else if ('1234'.includes(e.key) && e.key.length === 1) setSpeed([1, 4, 15, 60][+e.key - 1]);
   else if (e.key === 'Escape') {
     const more = !$('#more-menu').classList.contains('hidden');
@@ -2175,7 +2232,8 @@ function frame(now) {
   }
   if (sel && ui.follow) {
     const k = 1 - Math.pow(0.001, dt);
-    cam.x += (sel.x - cam.x) * k; cam.y += (sel.y - cam.y) * k;
+    const gy = sheet ? sel.y + (vh / 2 - (sheet.top + vh - sheet.bottom) / 2) / cam.zoom : sel.y;
+    cam.x += (sel.x - cam.x) * k; cam.y += (gy - cam.y) * k;
   }
   if (cam.goal) {
     const k = 1 - Math.pow(0.01, dt);
@@ -2226,8 +2284,11 @@ $('#go').addEventListener('click', () => {
   try { localStorage.setItem('aeon-garden-welcomed', '1'); } catch (e) { /* fine */ }
   setSpeed(1);
   setTimeout(() => addNews('👋 <b>Tip:</b> click any animal to follow its life.'), 2500);
-  setTimeout(() => { if (!ui.sound) addNews('🔊 <b>Tip:</b> the meadow has quiet sounds. Turn them on with 🔇 at the top right (M).'); }, 12000);
-  setTimeout(() => addNews('🌦️ <b>Tip:</b> right-click the meadow to add animals, grow grass, change the weather or strike lightning. The toolbar waits at the bottom edge.'), 25000);
+  const touch = matchMedia('(pointer: coarse)').matches;
+  setTimeout(() => { if (!ui.sound) addNews(narrow() ? '🔊 <b>Tip:</b> the meadow has quiet sounds. Turn them on in ••• at the top.'
+    : '🔊 <b>Tip:</b> the meadow has quiet sounds. Turn them on with 🔇 at the top right (M).'); }, 12000);
+  setTimeout(() => addNews(touch ? '🌦️ <b>Tip:</b> the toolbar adds animals, grows grass and strikes lightning. The weather waits in •••.'
+    : '🌦️ <b>Tip:</b> right-click the meadow to add animals, grow grass, change the weather or strike lightning. The toolbar waits at the bottom edge.'), 25000);
 });
 
 // Sound stays off until you turn it on, and remembers your choice. Browsers only let a page

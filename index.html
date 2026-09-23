@@ -2,13 +2,19 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>AEON Garden</title>
 <meta name="description" content="A cozy emoji meadow where rabbits and foxes live their own lives. Leave it running and watch what emerges.">
 <meta name="theme-color" content="#9cc77e">
 <link rel="icon" href="assets/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<!-- added to the home screen it opens with no browser bars at all -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="AEON Garden">
 <!-- link previews (iMessage, Slack, Discord, ...): these need absolute URLs -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="AEON Garden">
@@ -37,11 +43,18 @@
     --shadow: 0 8px 28px rgba(70, 55, 25, 0.20), 0 1px 3px rgba(70, 55, 25, 0.12);
     --radius: 18px;
     --hud-h: 46px;           /* the top-right pill, the mini card and the card's title row all share one centre line */
+    /* the edges of the screen, minus the notch, the clock and the home bar */
+    --top: calc(16px + env(safe-area-inset-top, 0px));
+    --bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    --left: calc(16px + env(safe-area-inset-left, 0px));
+    --right: calc(16px + env(safe-area-inset-right, 0px));
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; overflow: hidden; background: #9cc77e; }
   body { font-family: Nunito, ui-rounded, system-ui, sans-serif; color: var(--ink); font-size: 14px; }
-  canvas#world { position: fixed; inset: 0; display: block; touch-action: none; }
+  /* The meadow fills the whole glass: under the clock and behind Safari's floating bar too (lvh). */
+  canvas#world { position: fixed; top: 0; left: 0; width: 100%; height: 100vh; height: 100lvh; display: block; touch-action: none; }
+  .phone-only { display: none; }
   .touch-only { display: none; }
   @media (pointer: coarse) { .touch-only { display: list-item; } .mouse-only { display: none; } }
   canvas#world.tool-look { cursor: grab; }
@@ -58,7 +71,7 @@
   a[data-id]:hover { text-decoration: underline; }
 
   /* ---- the meadow card, top left */
-  #meadow { top: 16px; left: 16px; width: 272px; padding: calc((var(--hud-h) - 30px) / 2) 10px 10px 16px; }
+  #meadow { top: var(--top); left: var(--left); width: 272px; padding: calc((var(--hud-h) - 30px) / 2) 10px 10px 16px; }
   #meadow.mini { width: auto; height: var(--hud-h); padding: 0 4px; display: flex; align-items: center; }
   #meadow.mini .full, #meadow:not(.mini) .mini-line { display: none; }
   .mini-line { display: flex; align-items: center; gap: 12px; border: none; background: transparent; border-radius: 12px; height: 38px; padding: 0 5px 0 12px; font-size: 15px; }
@@ -95,7 +108,7 @@
   .card-actions .act.on { background: var(--accent-soft); color: #9a5024; }
 
   /* ---- news: a few short-lived toasts bottom left, the full log in the meadow card */
-  #news { position: fixed; left: 16px; bottom: calc(var(--bar, 92px) + 8px); width: 330px; display: flex; flex-direction: column-reverse; gap: 5px; pointer-events: none; transition: bottom 0.35s ease; }
+  #news { position: fixed; left: var(--left); bottom: calc(var(--bar, 92px) + 8px); width: 330px; display: flex; flex-direction: column-reverse; gap: 5px; pointer-events: none; transition: bottom 0.35s ease; }
   .news-item {
     align-self: flex-start; background: var(--card); border-radius: 12px; padding: 5px 11px; box-shadow: var(--shadow);
     font-size: 13px; line-height: 1.35; animation: pop-in 0.35s ease-out; transition: opacity 0.8s, transform 0.8s;
@@ -115,11 +128,11 @@
   /* The tools grow on big screens. --bar is the toolbar's height plus its gap, set by game.js.
      With a mouse it slides away while you just watch, leaving a sliver. It comes back by fading in
      right where it lives, so the buttons never move under the pointer on the way to them. */
-  #toolbar { left: 50%; bottom: 16px; transform: translateX(-50%); padding: 8px 14px; display: flex; gap: 10px; align-items: center; }
+  #toolbar { left: 50%; bottom: var(--bottom); transform: translateX(-50%); padding: 8px 14px; display: flex; gap: 10px; align-items: center; }
   @media (hover: hover) {
     body:not(.bar-away) #toolbar { animation: bar-in 0.45s cubic-bezier(0.22, 1, 0.36, 1); }
     body.bar-away #toolbar { transform: translate(-50%, calc(100% + 10px)); opacity: 0.6; transition: transform 0.25s ease-in, opacity 0.25s; }
-    body.bar-away #news { bottom: 16px; }
+    body.bar-away #news { bottom: var(--bottom); }
   }
   @keyframes bar-in { from { opacity: 0; transform: translate(-50%, 14px); } }
   .tool {
@@ -135,7 +148,7 @@
   .speeds { display: flex; gap: 3px; background: rgba(0,0,0,0.04); border-radius: 14px; padding: 4px; }
 
   /* ---- top right: time and sound, then the inspector below */
-  #hud-right { position: fixed; top: 16px; right: 16px; bottom: 16px; z-index: 5; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; pointer-events: none; }
+  #hud-right { position: fixed; top: var(--top); right: var(--right); bottom: var(--bottom); z-index: 5; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; pointer-events: none; }
   #hud-right > * { pointer-events: auto; }
   #hud-right .card { position: relative; }
   .hud-top { position: relative; display: flex; flex-direction: column; align-items: flex-end; }
@@ -161,6 +174,7 @@
   }
   .speed:hover { background: rgba(0,0,0,0.06); }
   .speed.on { background: var(--card); color: var(--accent); box-shadow: 0 1px 3px rgba(70, 55, 25, 0.18); }
+  .speed.cycle { display: none; min-width: 44px; }
   #sky-menu:not(.hidden) { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; }
   #sky-menu .tool { flex-direction: column; gap: 3px; padding: 7px 8px 6px; min-width: 66px; }
   #sky-menu .tool .e { font-size: 24px; }
@@ -289,20 +303,61 @@
   .em-word { color: var(--muted); font-size: 12px; font-weight: 700; }
   .evo-mini canvas { display: block; width: 100%; margin-top: 4px; }
 
+  /* ---- phones: one slim row on top, a slim toolbar below, and the inspector as a bottom sheet */
   @media (max-width: 760px) {
+    .phone-only { display: revert; }
+    #meadow { --hud-h: 44px; }
     #meadow:not(.mini) { width: calc(100% - 32px); }
-    #hud-right { top: calc(var(--meadow-h, 0px) + 24px); left: 16px; }
+    /* The small card and the time pill share the top row. The big card pushes the pill below it. */
+    #hud-right { top: calc(var(--top) + var(--meadow-h, 0px) + 8px); left: var(--left); }
+    #meadow.mini ~ #hud-right { top: var(--top); }
     #meadow .evo, #meadow .evo-h { display: none; }
+    .mini-line { gap: 10px; }
     #news { width: calc(100% - 32px); }
     #news-log ol { max-height: 30vh; }
-    #toolbar { width: calc(100% - 32px); padding: 7px; gap: 4px; }
-    #toolbar .tool { min-width: 0; flex: 1 1 0; flex-direction: column; gap: 2px; padding: 5px 0 4px; }
-    .tool .l { font-size: 11px; }
-    #time { gap: 1px; padding: 0 4px; }
-    .speed { min-width: 0; padding: 0 5px; font-size: 14px; }
-    .hud-btn { min-width: 30px; padding: 0 3px; }
-    .hud-sep { margin: 0 3px; }
-    #inspector { margin-top: auto; width: 100%; max-height: 55%; }
+    #toolbar { width: calc(100% - 32px); padding: 5px; gap: 4px; }
+    #toolbar .tool { min-width: 0; flex: 1 1 0; justify-content: center; gap: 5px; padding: 8px 0; border-radius: 12px; }
+    #toolbar .tool .e { font-size: 24px; width: auto; }
+    #toolbar .tool:not(.on) .l { display: none; }         /* only the tool in your hand says its name */
+    .tool .l { font-size: 13px; }
+    /* time: pause and one button that steps through the speeds; the rest waits in ••• */
+    #time { --hud-h: 44px; gap: 2px; padding: 0 4px; }
+    #time .speed[data-speed]:not([data-speed="0"]), #time .hud-btn:not(.more), #time .hud-sep { display: none; }
+    #time .speed.cycle { display: block; }
+    .speed { min-width: 40px; height: 38px; padding: 0 6px; font-size: 15px; }
+    .hud-btn.more { min-width: 40px; height: 38px; }
+    #more-menu { min-width: 260px; }
+    .menu-item { padding: 10px 12px; }
+    #sky-menu { width: min(380px, calc(100vw - 32px)); }
+    #sky-menu:not(.hidden) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    #sky-menu .tool { min-width: 0; padding: 7px 2px 6px; }
+
+    /* The inspector sits at the bottom as a sheet. It opens small: who, how they feel, and Follow.
+       Swipe it up (or tap the handle) for the rest. */
+    #inspector { margin-top: auto; width: 100%; max-height: 72%; padding: 6px 16px 14px;
+      overscroll-behavior: contain; transition: max-height 0.25s ease; }
+    #inspector.peek { overflow: hidden; }
+    #inspector.peek h4, #inspector.peek .trait, #inspector.peek .family, #inspector.peek .story,
+    #inspector.peek .chips, #inspector.peek .diary { display: none; }
+    #inspector.peek .ins-actions { margin-top: 12px; }
+    .sheet-handle { display: block; width: 100%; height: 22px; margin: 0 0 4px; border: none; background: transparent; position: relative; touch-action: none; }
+    .sheet-handle::before { content: ''; position: absolute; left: 50%; top: 8px; width: 40px; height: 5px; margin-left: -20px;
+      border-radius: 99px; background: #d9ccb4; }
+    #inspector .ins-head { touch-action: none; }
+    .portrait { width: 52px; height: 52px; font-size: 32px; }
+    .mood { margin-top: 10px; padding: 7px 12px; }
+    .close { font-size: 18px; padding: 8px 12px; margin: -8px -10px 0 auto; }
+    body.inspecting #news { display: none; }                 /* the sheet covers that corner anyway */
+  }
+  /* small phones: squeeze the top row so the two pills never overlap */
+  @media (max-width: 400px) {
+    .mini-line { gap: 7px; padding: 0 2px 0 8px; font-size: 14px; }
+    #mini-sky { letter-spacing: 0; }
+    #time .speed, .hud-btn.more { min-width: 36px; padding: 0 4px; }
+  }
+  @media (max-width: 360px) {
+    #meadow.mini .win-btn { display: none; }                /* the whole pill still opens the card */
+    .mini-line { padding-right: 8px; }
     .stats-wrap { padding: 16px 16px 32px; }
     .stats-head { flex-wrap: wrap; gap: 4px 12px; }
     .stats-head h1 { font-size: 20px; }
@@ -375,6 +430,7 @@
       <button class="speed" data-speed="4" title="Fast (2)">4×</button>
       <button class="speed" data-speed="15" title="Very fast (3)">15×</button>
       <button class="speed" data-speed="60" title="Watch years go by (4)">60×</button>
+      <button class="speed cycle on" data-act="cycle" title="Faster: 1×, 4×, 15×, 60×">1×</button>
     </div>
     <span class="hud-sep"></span>
     <button class="hud-btn" data-act="sky" title="Change the weather (W)"><span id="sky-btn">☀️</span></button>
@@ -384,6 +440,9 @@
   </div>
   <div id="sky-menu" class="card drop hidden"></div>
   <div id="more-menu" class="card drop hidden">
+    <button class="menu-item phone-only" data-act="sky">🌦️ Weather</button>
+    <button class="menu-item phone-only" data-act="stats">📊 Graphs and records</button>
+    <button class="menu-item phone-only" data-act="sound" id="sound-item">🔇 Sound is off</button>
     <button class="menu-item" data-act="copy-link">🔗 Copy a link to this meadow</button>
     <button class="menu-item danger" data-action="new">🔄 Start a new meadow…</button>
   </div>
@@ -438,7 +497,8 @@
       <li>🔍 <b>Click an animal</b> to follow its whole life story</li>
       <li class="mouse-only">🖱️ <b>Scroll</b> to zoom, <b>drag</b> to look around</li>
       <li class="touch-only">🤏 <b>Pinch</b> to zoom, <b>drag</b> to look around</li>
-      <li>🐇 🦊 🌱 ⚡ <b>Right-click</b> the meadow to play god, weather included. The toolbar waits at the bottom edge</li>
+      <li class="mouse-only">🐇 🦊 🌱 ⚡ <b>Right-click</b> the meadow to play god, weather included. The toolbar waits at the bottom edge</li>
+      <li class="touch-only">🐇 🦊 🌱 ⚡ <b>The toolbar</b> at the bottom lets you play god. The weather is in <b>•••</b></li>
     </ul>
     <button class="btn go" id="go">Let's go!</button>
   </div>
