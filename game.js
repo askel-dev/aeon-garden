@@ -586,7 +586,7 @@ function drawPlants(g, z, ox, oy, [vx, vy, w, h], season, live) {
 
 // ------------------------------------------------------------------ drawing
 
-const MOVING = new Set(['wander', 'food', 'flee', 'chase', 'stalk', 'prowl', 'home', 'love', 'follow', 'friends']);
+const MOVING = new Set(['wander', 'food', 'flee', 'chase', 'stalk', 'prowl', 'home', 'love', 'follow', 'friends', 'dig']);
 const ALWAYS_BUBBLE = new Set(['flee', 'alarm', 'chase', 'love']);
 
 function visible(sx, sy, pad) { return sx > -pad && sy > -pad && sx < vw + pad && sy < vh + pad; }
@@ -612,11 +612,11 @@ function render(now) {
 
   drawPlants(ctx, z, ox, oy, [0, 0, vw, vh], ck.season, true);   // the rest are in the ground
 
-  // Burrows, drawn by hand: some browsers clip the 🕳️ glyph in half.
+  // Burrows, drawn by hand: some browsers clip the 🕳️ glyph in half. A half-dug one is smaller.
   for (const b of world.burrows) {
     const [sx, sy] = toScreen(b.x, b.y);
     if (!visible(sx, sy, 40)) continue;
-    const r = Math.max(5, z * 0.65);
+    const r = Math.max(5, z * 0.65) * (0.3 + 0.7 * b.dug);
     ctx.fillStyle = 'rgba(90, 70, 40, 0.25)';                // dug-up earth
     ctx.beginPath(); ctx.ellipse(sx, sy + r * 0.3, r * 1.7, r * 0.85, 0, 0, TAU); ctx.fill();
     ctx.fillStyle = '#7d6649';                               // the far wall
@@ -1404,6 +1404,12 @@ function handleEvent(e) {
         const t = `🌙 Old ${link(c)} died peacefully at ${age} days${fam}.`;
         if (mine || c.kids >= 10) addNews(t); else addNews(t, 'old', 15000);
       }
+      break;
+    }
+    case 'dug': {
+      addEffect('🕳️', e.burrow.x, e.burrow.y, 0.8);
+      const t = `🕳️ ${link(e.c)} dug a new burrow.`;
+      if (mine) addNews(t); else addNews(t, 'dug', 30000);
       break;
     }
     case 'escape': {

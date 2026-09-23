@@ -63,7 +63,7 @@ const SPECIES = {
     key: 'rabbit', name: 'Rabbit', plural: 'Rabbits', emoji: '🐇',
     maxEnergy: 100, burn: 0.035, walk: 0.06, sprint: 0.155, sight: 10, mateRange: 24, wade: 0.45,
     matureDays: 4, lifeDays: 22, gestationDays: 1.5, litter: [2, 5], cooldownDays: 1.0,
-    breedSeasons: [0, 1], breedEnergy: 0.55, birthCost: 10, cap: 320,
+    breedSeasons: [0, 1], breedEnergy: 0.55, birthCost: 10, cap: 200,
   },
   fox: {
     key: 'fox', name: 'Fox', plural: 'Foxes', emoji: '🦊',
@@ -315,21 +315,14 @@ function makeTerrain(w) {
   w.grass = new Float32Array(N);
   for (let i = 0; i < N; i++) w.grass[i] = water[i] ? 0 : fert[i] * r.range(0.5, 0.9);
 
-  // Burrows: spread out, on dry land.
-  w.burrows = [];
-  for (let tries = 0; w.burrows.length < 36 && tries < 4000; tries++) {
+  // A few old burrows to start with; the rabbits dig the rest themselves.
+  w.burrows = []; w.nextBurrow = 1; w.decor = [];
+  for (let tries = 0; w.burrows.length < Math.round(6 * w.room) && tries < 4000; tries++) {
     const x = r.range(6, W - 6), y = r.range(6, H - 6);
-    if (!dry(w, x, y)) continue;
-    let ok = true;
-    for (let dx = -2; dx <= 2 && ok; dx++) for (let dy = -2; dy <= 2 && ok; dy++) {
-      if (!dry(w, x + dx, y + dy)) ok = false;
-    }
-    if (!ok || w.burrows.some(b => Math.hypot(b.x - x, b.y - y) < 14)) continue;
-    w.burrows.push({ id: w.burrows.length, x, y, count: 0 });
+    if (canDig(w, x, y)) newBurrow(w, x, y, 1);
   }
 
   // Decoration only: trees in a few groves, some rocks, stepping stones at the fords, flower spots.
-  w.decor = [];
   for (let g = 0; g < 8; g++) {
     const gx = r.range(8, W - 8), gy = r.range(8, H - 8);
     const n = r.int(3, 7);
@@ -683,7 +676,7 @@ function makeCreature(w, species, x, y, genes, parents) {
     alive: true, died: 0, cause: '',
     energy: 0, stamina: 1, heading: r.range(0, Math.PI * 2), facing: 1, turnBias: 1,
     mode: 'wander', target: null, targetId: 0, timer: 0, moved: 0,
-    sprinting: false, sleeping: false, hidden: false, burrow: null, home: null,
+    sprinting: false, sleeping: false, hidden: false, burrow: null, home: null, refuge: null, dig: null,
     alert: 0, threatId: 0, chaseT: 0, fright: 0, frightX: 0, frightY: 0, frightWhat: '',
     wary: 0, waryX: 0, waryY: 0, detour: 0, detourX: 0, detourY: 0, nemesisId: 0, haunt: null,
     pregnantUntil: 0, cooldownUntil: 0, dadGenes: null, dadIdPending: 0, dadGenPending: 0,
@@ -709,9 +702,10 @@ function emit(w, e) {
   if (MARKED.has(e.type)) w.history.marks.push({ t: e.t, type: e.type, species: e.species, kind: e.kind });
 }
 
-function nearestBurrow(w, x, y, maxD) {
+function nearestBurrow(w, x, y, maxD, halfDug = false) {
   let best = null, bd = maxD * maxD;
   for (const b of w.burrows) {
+    if (b.dug < 1 && !halfDug) continue;
     const d2 = (b.x - x) ** 2 + (b.y - y) ** 2;
     if (d2 < bd) { best = b; bd = d2; }
   }
@@ -870,7 +864,7 @@ function enterBurrow(w, c, b, ticks, sleeping) {
   c.hidden = true; c.burrow = b; c.x = b.x; c.y = b.y;
   c.timer = ticks; c.sleeping = sleeping; c.mode = sleeping ? 'sleep' : 'hide';
   c.target = null; c.alert = 0;
-  b.count++;
+  b.count++; b.used = w.tick;
   if (sleeping) c.home = b;
 }
 
@@ -894,6 +888,62 @@ function burrowTick(w, c) {
   }
   if (c.sleeping && w.rng.next() < 0.6) { c.timer = w.rng.int(10, 60); return; }   // staggered waking
   exitBurrow(w, c);
+}
+
+// ---------------------------------------------------------------- digging
+//
+// A settled rabbit with no burrow near digs one where it stands, or helps finish a half-dug
+// one close by. One burrow for every four rabbits is plenty. A burrow nobody has been inside
+// for a season falls in, and so does a half-dug one left alone for a day.
+
+const DIG_GAP = 14;        // tiles between burrows
+const DIG_TICKS = 300;     // one rabbit digging on its own: half a day
+
+function canDig(w, x, y) {
+  for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) if (!dry(w, x + dx, y + dy)) return false;
+  return !w.burrows.some(b => Math.hypot(b.x - x, b.y - y) < DIG_GAP)
+    && !w.decor.some(d => !d.stone && Math.hypot(d.x - x, d.y - y) < 2);
+}
+
+function newBurrow(w, x, y, dug) {
+  const b = { id: w.nextBurrow++, x, y, count: 0, dug, used: w.tick };
+  w.burrows.push(b);
+  return b;
+}
+
+function startDigging(w, c) {
+  if (w.burrows.length * 4 > w.count.rabbit) return false;
+  const near = nearestBurrow(w, c.x, c.y, DIG_GAP, true);
+  if (near && near.dug >= 1) return false;
+  if (!near && !canDig(w, c.x, c.y)) return false;
+  c.dig = near || newBurrow(w, c.x, c.y, 0);
+  c.mode = 'dig'; c.target = null;
+  return true;
+}
+
+function dig(w, c) {
+  const b = c.dig;
+  if (!b || b.dug >= 1) { c.dig = null; c.mode = 'wander'; return false; }
+  if (!moveToward(w, c, b.x + 0.7, b.y + 0.2, c.walk)) return true;
+  b.dug += 1 / DIG_TICKS; b.used = w.tick;
+  if (b.dug >= 1) {
+    b.dug = 1; c.home = b; c.dig = null; c.mode = 'rest'; c.timer = 60;
+    note(w, c, '🕳️', 'Dug a new burrow');
+    emit(w, { type: 'dug', c, burrow: b });
+  }
+  return true;
+}
+
+function collapseBurrows(w) {
+  const old = b => b.count === 0 && w.tick - b.used > (b.dug < 1 ? 1 : SEASON_DAYS) * TPD;
+  if (!w.burrows.some(old)) return;
+  const gone = new Set(w.burrows.filter(old));
+  w.burrows = w.burrows.filter(b => !gone.has(b));
+  for (const c of w.creatures) {
+    if (gone.has(c.home)) c.home = null;
+    if (gone.has(c.refuge)) c.refuge = null;
+    if (gone.has(c.dig)) c.dig = null;
+  }
 }
 
 // ---------------------------------------------------------------- rabbits
@@ -986,9 +1036,11 @@ function rabbitTick(w, c) {
     return wander(w, c, 1.0);   // nothing in sight: go looking
   }
 
-  // 6. Fed and safe: sit, find friends, or amble.
+  // 6. Fed and safe: dig, sit, find friends, or amble.
+  if (c.mode === 'dig' && dig(w, c)) return;
   if (c.mode === 'rest') { if (--c.timer > 0) return; c.mode = 'wander'; c.target = null; }
   if ((t + c.id) % 30 === 0) {
+    if (isAdult(w, c) && startDigging(w, c)) return;
     if (w.rng.next() < c.genes.friendly) {
       let sx = 0, sy = 0, n = 0;
       forEachNear(w, c.x, c.y, c.sight, o => { if (o !== c) { sx += o.x; sy += o.y; n++; } }, 'rabbit');
@@ -1086,7 +1138,7 @@ function pickRefuge(w, c, fox) {
   let best = null, bd = 8 * 8;
   for (const b of w.burrows) {
     const bx = b.x - c.x, by = b.y - c.y, d2 = bx * bx + by * by;
-    if (d2 >= bd || !clearPath(w, c.x, c.y, b.x, b.y)) continue;
+    if (d2 >= bd || b.dug < 1 || !clearPath(w, c.x, c.y, b.x, b.y)) continue;
     const bdl = Math.sqrt(d2) || 1;
     const towardFox = (bx * fx + by * fy) / (bdl * fd);
     if (bdl < 2.5 || towardFox < 0.3) { best = b; bd = d2; }
@@ -1264,7 +1316,7 @@ function createWorld(seed, opts = {}) {
     options: { migration: true, ...opts },
   };
   makeTerrain(w);
-  const n = { rabbit: opts.rabbits ?? Math.round(40 * w.room), fox: opts.foxes ?? Math.round(4 * w.room) };
+  const n = { rabbit: opts.rabbits ?? Math.round(30 * w.room), fox: opts.foxes ?? Math.round(4 * w.room) };
   for (const species of ['rabbit', 'fox']) {
     for (let k = 0; k < n[species]; k++) {
       let x, y;
@@ -1346,7 +1398,7 @@ function newDay(w) {
 
 function migrate(w) {
   if (!w.options.migration) return;
-  const wait = { rabbit: 1, fox: 3 }, arrive = { rabbit: 6, fox: 2 }, few = { rabbit: 4, fox: 1 };
+  const wait = { rabbit: 1, fox: 3 }, arrive = { rabbit: 6, fox: 2 }, few = { rabbit: 4, fox: 3 };
   for (const s of ['rabbit', 'fox']) {
     if (w.count[s] >= few[s]) { w.goneSince[s] = -1; continue; }
     if (w.goneSince[s] < 0) { w.goneSince[s] = w.tick; if (w.count[s] === 0) emit(w, { type: 'extinct', species: s }); continue; }
@@ -1385,7 +1437,7 @@ function step(w) {
   flushNewborn(w);
   if (t % w.history.every === 0) record(w);
   if (t % (TPD / 4) === 0) migrate(w);
-  if (t % TPD === 0) forgetTheLongDead(w);
+  if (t % TPD === 0) { forgetTheLongDead(w); collapseBurrows(w); }
 }
 
 function forgetTheLongDead(w) {
@@ -1432,6 +1484,7 @@ function mood(w, c) {
         : { emoji: '⚡', text: 'Spooked by thunder!' };
       return { emoji: '😱', text: `Running from ${w.byId.get(c.threatId)?.name ?? 'a fox'}!` };
     case 'alarm': return { emoji: '‼️', text: `Spotted ${w.byId.get(c.threatId)?.name ?? 'a fox'}!` };
+    case 'dig': return { emoji: '🕳️', text: 'Digging a burrow' };
     case 'hide': return { emoji: '🫣', text: 'Hiding in a burrow' };
     case 'sleep': return { emoji: '💤', text: c.hidden ? (storm ? 'Snug in the burrow, out of the storm' : 'Asleep in the burrow') : 'Napping' };
     case 'home': return { emoji: '🏠', text: storm ? 'Hurrying home out of the storm' : 'Heading home for the night' };
