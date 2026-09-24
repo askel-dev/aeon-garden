@@ -75,5 +75,26 @@ Colony-level things go in `hivesTick`. Species lists come from
 Every animal uses one ladder: danger > sleep > love > food > friends > wander. Keep new
 behaviour small and readable. If a rule needs a paragraph to explain, it's probably too big.
 
+Keep it smooth. The game has to run without lag on a phone, zoomed out, at 60x, in rain at night.
+A lot of work already went into this (the cached ground, the sprite cache, the neighbour grid). A
+new feature must not slow it down. If it would, make it cheaper or leave it out.
+- Paint once, copy after. Anything that looks the same from frame to frame goes into a canvas once and
+  gets `drawImage`d: the sprite cache (`sprite`), `fireGlow`, `detailTexture`. Never do these per item per
+  frame: gradients, `shadowBlur`, `ctx.filter`, `getImageData`/`putImageData`, `measureText`, new canvases.
+- The ground is a cached layer (`drawGround`). It slides when the camera pans, and only changed tiles
+  get repainted. Nothing painted into it may change every frame, or the whole ground repaints all the time.
+  Moving things go on top. An overlay is one small canvas stretched over the meadow (like
+  `drawHillLight`), rebuilt only when its key changes.
+- Sprite keys take few values. Round sizes (`spriteStep`) and colours (`step`) into a few steps, or
+  the cache fills up and repaints all the time.
+- Draw only what's on screen (`visible`). A full-screen pass (a `wash`, an overlay, a composite mode)
+  costs the most, so add one only when it's clearly worth it, and skip it while it wouldn't show.
+- The sim can run 2000 ticks in one frame. In hot loops, don't make new objects or arrays, and don't
+  scan every creature: use the neighbour grid. Recount things only after they change.
+- The page (cards, inspector, news) updates a few times a second at most, and only rewrites what changed.
+- Measure it. Before and after a drawing change, time `render` over a few seconds in a busy meadow,
+  following an animal, zoomed out, at 60x. If it got slower, fix it before committing, and put the
+  numbers in the commit message.
+
 After touching the sim, run `balance.js` over several seeds. The goal is visible
 boom-and-bust cycles that recover, not a flat line and not extinction.
