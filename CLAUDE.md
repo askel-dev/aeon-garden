@@ -46,7 +46,7 @@ spring, down in summer, a little with the rain, so the river spreads over its fl
 A flooded burrow is lost and kits too young to climb out drown (`floodBurrows`); grass under water
 drowns and grows back fast in the silt (`w.silt`). Flooded water keeps the name of the water it spilled
 from (`w.nearBody`). The ground shader shades the slopes by the sun, and colours the grass by where it is: lusher by the water
-and the woods, drier up high, mud at the water's edge. That colouring is only a look; the grass the animals eat is `w.grass`.
+and the woods, golden up high, wet moss at the water's edge, with a faint painterly mottle. That colouring is only a look; the grass the animals eat is `w.grass`.
 Shallow water is waded slowly; deep water blocks.
 Each connected water body is named (`w.waters`, `w.body`). Population caps and starting
 numbers scale with dry land (`w.room`).

@@ -400,10 +400,21 @@ flat.width = S.W; flat.height = S.H;
 const flatImg = new ImageData(S.W, S.H);
 
 // This moment's [bare ground, lush grass]: the season's, turning into the next over its last fifth.
-function groundColours() {
+// The season now, the next, and how far the ground has turned toward the next (over a season's last fifth).
+function seasonTurn() {
   const ck = S.clock(world), sp = (ck.dayInSeason - 1 + ck.phase) / S.SEASON_DAYS;
-  const t = sp > 0.8 ? (sp - 0.8) / 0.2 : 0, a = PALETTE[ck.season], b = PALETTE[(ck.season + 1) % 4];
+  return [ck.season, (ck.season + 1) % 4, sp > 0.8 ? (sp - 0.8) / 0.2 : 0];
+}
+
+function groundColours() {
+  const [now, next, t] = seasonTurn(), a = PALETTE[now], b = PALETTE[next];
   return [0, 1].map(k => a[k].map((v, i) => lerp(v, b[k][i], t)));
+}
+
+// How far the water has gone winter slate.
+function coldness() {
+  const [now, next, t] = seasonTurn();
+  return 0.6 * lerp(now === 3 ? 1 : 0, next === 3 ? 1 : 0, t);
 }
 
 function paintTerrain() {
@@ -452,7 +463,7 @@ function drawGround(z, ox, oy) {
   const [low, high] = groundColours(), sn = sun(S.clock(world)), k = 2.5 * Math.max(0, sn.a) * (0.6 + 0.4 * Math.abs(sn.lean));
   Ground.draw({
     width: canvas.width, height: canvas.height, zoom: z, ox, oy, dpr, seed: groundSeed, low, high, sand: shoreSand,
-    snow: world.snow, damp: 1 - 0.12 * world.wet, ice: iceOver(), lx: k * sn.lean, ly: k * 0.8,
+    snow: world.snow, damp: 1 - 0.12 * world.wet, ice: iceOver(), cold: coldness(), lx: k * sn.lean, ly: k * 0.8,
   });
   ctx.drawImage(Ground.canvas, 0, 0, vw, vh);
 }

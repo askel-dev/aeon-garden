@@ -7,7 +7,8 @@
  *     drifts (the hue shifts, the grass stays bright);
  *   - the grass itself (what the rabbits eat): lush grass, or the bare earth where it is grazed;
  *   - crisp tufts where the grass is thick, once you're close enough to see them;
- *   - the sun on the slopes, mud at the water's edge, then the water in soft layers.
+ *   - a faint painterly mottle and, up close, a fine grain;
+ *   - the sun on the slopes, wet moss at the water's edge, then the water in soft layers.
  *
  * Use: Ground.set(name, data) with a Float32Array of 4 values a tile: 'tile' (grass, water,
  * ash, wood), 'bloom' (a field's tint times how much it shows, then how much), 'shape' (height,
@@ -31,7 +32,7 @@ const FRAGMENT = `#version 300 es
 precision highp float;
 uniform sampler2D tile, bloom, shape, water;
 uniform vec2 size, off, res, seed;
-uniform float zoom, dpr, snow, damp, lx, ly, ice;
+uniform float zoom, dpr, snow, damp, lx, ly, ice, cold;
 uniform vec3 low, high, sand;
 out vec4 o;
 
@@ -113,19 +114,25 @@ void main() {
   vec3 green = high, lush = green * vec3(0.84, 0.95, 0.9), golden = green * mix(vec3(1.), vec3(1.16, 1.07, 0.62), hue);
   vec3 grass = mix(lush, green, smoothstep(0.05, 0.45, dry));
   grass = mix(grass, golden, smoothstep(0.45, 0.85, dry));
-  grass = mix(grass, lush * 0.94, 0.3 * exp(-H.b / 3.));
+  grass = mix(grass, grass * vec3(0.82, 0.94, 0.98), 0.45 * exp(-H.b / 3.));   // cool shade by the woods
   grass *= 1. - 0.08 * exp(-max(toWater, 0.) / 1.4);             // wet grass along the water
   float clover = 0.4 * smoothstep(0.55, 0.75, fbm(q * 0.28 + 90.)) * clamp(0.4 + moist - dry, 0., 1.);
   grass = mix(grass, grass * vec3(0.8, 0.9, 0.86), 0.8 * clover);
   vec3 earth = mix(low * vec3(0.95, 0.93, 0.9), low * vec3(0.66, 0.6, 0.55), moist);
 
-  // The grass itself, over the earth, and tufts where it is thick.
-  vec3 col = mix(earth, grass, smoothstep(0., 1., g)) * (0.97 + 0.06 * n1);
-  float detail = clamp((zoom - 7.) / 9., 0., 1.);                // zoomed far out they would only shimmer
+  // The grass itself, over the earth, with a nibbled edge, and tufts where it is thick.
+  vec3 col = mix(earth, grass, smoothstep(0., 1., clamp(g + 0.15 * (n2 - 0.5), 0., 1.))) * (0.97 + 0.06 * n1);
+  float detail = clamp((zoom - 10.) / 8., 0., 1.);               // further out they would only read as speckle
   if (detail > 0.) col = mix(col, grass * vec3(0.72, 0.8, 0.7), 0.85 * detail * tufts(p, px));
 
-  col = mix(col, low * vec3(0.55, 0.48, 0.4), 0.75 * (1. - smoothstep(0.4, 1.6, toWater)));   // mud at the edge
+  // A thin edge of wet moss along the water, fuller here and there. Not tan: tan is grazed ground.
+  float cove = smoothstep(0.4, 0.65, fbm(q * 0.5 + 70.));
+  col = mix(col, grass * vec3(0.62, 0.72, 0.64), 0.7 * (1. - smoothstep(0.1, 0.8, toWater)) * mix(0.35, 1., cove));
   col *= 0.95 + 0.1 * height;
+  // A painterly surface: every tile a touch lighter or darker, warm and cool patches, a fine grain up close.
+  col *= 1. + 0.07 * (noise(q * 1.1 + 200.) - 0.5) + 0.035 * (noise(q * 3.1 + 250.) - 0.5);
+  col += vec3(1., 0.33, -1.) * 0.035 * (fbm(q * 0.22 + 300.) - 0.5);
+  col *= 1. + 0.08 * detail * (noise(q * 13. + 400.) - 0.5 + 0.6 * (noise(q * 29. + 500.) - 0.5));
   col = col * (1. - B.a) + B.rgb;                                // a flower field in bloom
   col = mix(col, vec3(74., 66., 60.) / 255., T.b * (1. - g) * 0.85);   // burnt, until the grass returns
   float s = snow > 0. ? clamp(snow * 1.4 - 0.2 - 0.25 * (2. * n1 - 1.) - 0.1 * (2. * n2 - 1.), 0., 0.9) : 0.;
@@ -139,12 +146,16 @@ void main() {
   col *= 1. + (1. - wet) * clamp((east * lx + south * ly) * 0.4, -0.1, 0.1);
 
   // The water, in soft layers: damp sand fading into the grass, a little shade under the
-  // bank, shallows, and a darker blue where it gets too deep to wade. Snow freezes it over.
+  // bank, shallows, and a darker blue where it gets too deep to wade. Slate in the cold
+  // months, and snow freezes it over.
   vec3 frozen = vec3(214., 232., 242.) / 255.;
-  vec3 sandC = mix(sand, frozen, ice), bankC = mix(vec3(104., 170., 208.) / 255., frozen, ice);
-  vec3 shallowC = mix(vec3(130., 200., 235.) / 255., frozen, ice), deepC = mix(vec3(72., 142., 202.) / 255., frozen, ice);
+  vec3 bank = mix(vec3(104., 170., 208.), vec3(100., 135., 160.), cold) / 255.;
+  vec3 shallow = mix(vec3(130., 200., 235.), vec3(142., 172., 188.), cold) / 255.;
+  vec3 deep = mix(vec3(72., 142., 202.), vec3(82., 114., 138.), cold) / 255.;
+  vec3 sandC = mix(sand, frozen, ice), bankC = mix(bank, frozen, ice);
+  vec3 shallowC = mix(shallow, frozen, ice), deepC = mix(deep, frozen, ice);
   float edge = max(fwidth(F.r) * 0.7, 1e-4);
-  col = mix(col, sandC, layers(F.b, 0.03, 0.42, 9., 0.12));
+  col = mix(col, sandC, layers(F.b, 0.03, 0.42, 9., 0.07));
   col = mix(col, bankC, smoothstep(0.47 - edge, 0.47 + edge, F.r));   // the water's edge stays crisp
   col = mix(col, shallowC, layers(F.g, 0.54, 0.8, 7., 0.2));
   col = mix(col, deepC, layers(F.a, 0.3, 0.95, 9., 0.12));
@@ -206,7 +217,7 @@ function draw(u) {
   if (canvas.width !== u.width || canvas.height !== u.height) { canvas.width = u.width; canvas.height = u.height; }
   gl.viewport(0, 0, u.width, u.height);
   gl.uniform2f(U.res, u.width, u.height); gl.uniform2f(U.off, u.ox, u.oy); gl.uniform2fv(U.seed, u.seed);
-  for (const k of ['zoom', 'dpr', 'snow', 'damp', 'lx', 'ly', 'ice']) gl.uniform1f(U[k], u[k]);
+  for (const k of ['zoom', 'dpr', 'snow', 'damp', 'lx', 'ly', 'ice', 'cold']) gl.uniform1f(U[k], u[k]);
   for (const k of ['low', 'high', 'sand']) gl.uniform3fv(U[k], u[k].map(v => v / 255));
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
