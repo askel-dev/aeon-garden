@@ -1047,7 +1047,7 @@ function render(now) {
   }
   for (const h of world.hives) {                           // (a swarm hanging in a tree is one too)
     const [sx, sy] = toScreen(h.x, h.y);
-    if (visible(sx, sy, 3 * z)) items.push({ y: h.y, h, sx, sy });
+    if (visible(sx, sy, SNAG * z)) items.push({ y: h.y, h, sx, sy });
   }
   const shown = [];
   for (const c of world.creatures) {
@@ -1095,7 +1095,7 @@ function render(now) {
     for (const h of world.hives) {
       if (!h.bees || h.cluster) continue;
       const [sx, sy] = toScreen(h.x, h.y);
-      if (visible(sx, sy, 40)) drawEmoji('💤', sx + z * 0.9, sy - z * 1.9 + Math.sin(now / 600 + h.id) * 3, Math.max(11, z * 0.8), { alpha: 0.85 });
+      if (visible(sx, sy, 40)) drawEmoji('💤', sx + z * SNAG * 0.35, sy - z * (SNAG * 0.6 + 0.35) + Math.sin(now / 600 + h.id) * 3, Math.max(11, z * 0.8), { alpha: 0.85 });
     }
   }
 
@@ -1708,7 +1708,7 @@ function drawRock(d, sx, sy) {
 // size into a sprite, in emoji units (0,0 the 🪾's centre, 1 its size), so bark and shading land
 // on the wood alone; the bees, honey and snow are drawn over it each frame.
 
-const SNAG = 2.6;                                          // the 🪾's size, in tiles
+const SNAG = 4;                                            // the 🪾's size, in tiles: a small tree's, so it's seen
 const SNAG_BREAK = -0.2;                                   // where the top snapped off
 const SNAG_JAG = [[-0.072, 0.024], [-0.058, 0.012], [-0.045, 0.024], [-0.028, 0], [-0.012, 0.018], [0.004, -0.04],
   [0.018, 0.004], [0.04, 0.016], [0.06, -0.018], [0.078, 0.014], [0.098, 0.002], [0.122, 0.026]];
