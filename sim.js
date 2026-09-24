@@ -1927,7 +1927,7 @@ function beeMood(w, c) {
     case 'sip': return { emoji: '🌼', text: 'Sipping nectar' };
     case 'flower': return { emoji: '🌸', text: 'Off to a flower' };
     case 'home': return { emoji: '🏠', text: 'Flying home to the hive' };
-    case 'swarm': return { emoji: '🐝', text: 'Hanging in the swarm, waiting for the scouts' };
+    case 'swarm': return { emoji: '', text: 'Hanging in the swarm, waiting for the scouts' };
     case 'scout': return { emoji: '🔎', text: 'Scouting for a new home for the swarm' };
     case 'wander': return { emoji: '', text: 'Buzzing about' };
   }

@@ -46,6 +46,9 @@ They stay in while few flowers are open (`w.flowers`) and live on honey. Bees do
 queen (`h.queen`, just a name and genes on the hive) who lays in `layEggs`, in spring and summer on whatever
 honey there is, in autumn only once there's honey put by for every bee (`broodTime`). Summer bees live a few
 days, autumn-born ones last the winter (`winterLifeDays`), and a small winter cluster burns more (`clusterCold`).
+A crowded hive (`HIVE_ROOM`) swarms in spring or summer (`swarm`): the old queen takes half the bees to hang in
+a tree (a hive with `cluster: true`, drawn by `drawSwarm`) while scouts fly to the sites from `hiveSites`, then
+`settle` moves them into the best hollow tree or empty hive; a daughter queen stays behind.
 Colony-level things go in `hivesTick`. Species lists come from
 `KINDS` / `perKind`, so a new species needs no hand-written `{ rabbit, fox, bee }` lists.
 
