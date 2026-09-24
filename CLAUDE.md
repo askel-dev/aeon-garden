@@ -28,7 +28,11 @@ a meadow).
 Checking visuals: you may use Google Chrome on this laptop (`/Applications/Google Chrome.app`)
 to look at the game yourself, headless or not. `--headless=new --screenshot` only captures the
 first frame; to see the game running (animals moving, camera moved), drive Chrome over the
-DevTools protocol (`--remote-debugging-port`) and use `Runtime.evaluate` / `Page.captureScreenshot`. The diary button talks to Ollama on localhost:11434 (qwen3:8b, else qwen3:4b).
+DevTools protocol (`--remote-debugging-port`) and use `Runtime.evaluate` / `Page.captureScreenshot`.
+Shortcuts for that: set `localStorage['aeon-garden-welcomed'] = '1'` before load to skip the welcome
+card; `window.garden` has `world`, `cam` (set `x`, `y`, `zoom`, `goal = null` to look somewhere) and
+`ui` (`ui.speed = 0` pauses); the CSS `body > *:not(#world) { visibility: hidden }` hides every panel.
+In a cloud session with no Chrome, Playwright is installed globally (`npm root -g`) with Chromium. The diary button talks to Ollama on localhost:11434 (qwen3:8b, else qwen3:4b).
 
 Terrain: the ground has a height and water lies below `w.level`. A lake lies in a hollow or by the
 edge, running off the map (`placeLake`), and the river runs through it, out of it or into it; often a
