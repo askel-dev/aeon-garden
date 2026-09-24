@@ -904,13 +904,16 @@ function nameWaters(w, lake) {
   }
 }
 
+// The named water at a spot: the lake keeps its own name where the river runs through it.
+const waterAt = (w, x, y) => w.lake && outside(w.lake.shape, x, y) < 2 ? w.lake : w.waters[w.body[idx(x, y)]] || null;
+
 // The water a straight walk from one point to another would have to swim, if any.
 function waterBetween(w, x0, y0, x1, y1) {
   const n = Math.ceil(Math.hypot(x1 - x0, y1 - y0) * 2);
   for (let k = 1; k <= n; k++) {
     const x = x0 + (x1 - x0) * k / n, y = y0 + (y1 - y0) * k / n;
     if (!inBounds(x, y) || w.water[idx(x, y)] !== DEEP) continue;
-    return w.lake && outside(w.lake.shape, x, y) < 2 ? w.lake : w.waters[w.body[idx(x, y)]];
+    return waterAt(w, x, y);
   }
   return null;
 }
@@ -2563,6 +2566,7 @@ const api = {
   addCreature, paintGrass, setSky, lockSky, zap, traitMeans, walkable,
   coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT, KINDS,
   TERRAIN, distanceToWater, fieldBloom, FIELD_GRASS, settleWater, LOAD, HONEY,
+  isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 else root.Sim = api;

@@ -22,7 +22,7 @@ const terrainQuery = () => ['terrain', 'drawn'].map(k => [k, { terrain, drawn }[
 
 let world;
 const ui = {
-  speed: 1, sound: false, tool: 'look', selectedId: 0, hoverId: 0, follow: false,
+  speed: 1, sound: false, tool: 'look', selectedId: 0, picked: null, hoverId: 0, follow: false,
   trail: [], effects: [], diary: new Map(),
   lastNews: {}, newsLog: [], newsOpen: false, records: perKind(() => 0), crashSaid: perKind(() => -1), seenHistory: 0,
   releaseSex: perKind(() => 'F'), mini: false, ring: null, sheetUp: false,
@@ -1037,6 +1037,7 @@ function render(now) {
 
   const sel = world.byId.get(ui.selectedId);
   if (sel) drawSelectionUnder(sel, now);
+  if (ui.picked) drawPickedUnder(now);
 
   // Trees, rocks and animals, back to front.
   const items = [];
@@ -1110,11 +1111,12 @@ function render(now) {
 
   drawEffects(now);
   if (sel) drawSelectionOver(sel, now);
+  if (ui.picked) drawPickedOver();
   const hov = world.byId.get(ui.hoverId);
   if (hov && hov.alive && !hov.hidden && hov.id !== ui.selectedId) {
     const [sx, sy] = screenOf(hov);
     drawLabel(`${hov.name} · ${S.mood(world, hov).text}`, sx, sy + creaturePx(hov) * 0.55 + 6);
-  } else if (ui.hoverHive) {
+  } else if (ui.hoverHive && ui.hoverHive !== ui.picked?.it) {
     const h = ui.hoverHive, [sx, sy] = toScreen(h.x, h.y);
     const where = h.patch && h.patch.field ? `the ${h.patch.field.name}` : 'flowers';
     const dance = S.patchFresh(world, h) ? ` · 💃 ${where} to the ${compass(h.patch.x - h.x, h.patch.y - h.y)}` : '';
@@ -1931,10 +1933,10 @@ function drawHiveShadow(sx, sy, sn) {                      // the same shadow a 
 }
 
 // The trunk, from its foot up to the snapped-off top, and never smaller than a fingertip.
-function hiveAt(sx, sy) {
+function hiveAt(sx, sy, swarms = false) {
   const P = cam.zoom * SNAG, reach = Math.max(22, P * 0.15);
   return world.hives.find(h => {
-    if (h.cluster) return false;
+    if (h.cluster && !swarms) return false;
     const [hx, hy] = toScreen(h.x, h.y);
     return Math.abs(sx - hx) < reach && sy > hy - P * 0.65 - reach / 2 && sy < hy + reach / 2;
   }) || null;
@@ -3063,13 +3065,18 @@ function lifeStage(c) {
   return 'adult';
 }
 
+const traitRows = (species, genes) => traitsOf(species).map(t => `<div class="trait" title="${t.tip}"><span>${t.e}</span><span>${t.name}</span>
+  <div class="meter"><span style="width:${Math.round(genes[t.k] * 100)}%"></span></div>
+  <span class="word">${word(t, genes[t.k])}</span></div>`).join('');
+
 function renderInspector() {
   const box = $('#inspector');
-  const c = world.byId.get(ui.selectedId);
-  document.body.classList.toggle('inspecting', !!c);
-  if (!c) { box.classList.remove('open'); setHTML(box, ''); return; }
+  const c = world.byId.get(ui.selectedId), thing = !c && ui.picked;
+  document.body.classList.toggle('inspecting', !!(c || thing));
+  if (!c && !thing) { box.classList.remove('open'); setHTML(box, ''); return; }
   box.classList.add('open');
   box.classList.toggle('peek', !ui.sheetUp);          // only a phone draws it small
+  if (thing) { renderThing(box); return; }
   const age = Math.floor(S.ageDays(world, c));
   const sex = c.sex === 'F' ? '♀' : '♂';
   const mood = S.mood(world, c);
@@ -3111,9 +3118,7 @@ function renderInspector() {
     </div>` : ''}
     ${chips.length ? `<div class="chips">${chips.map(x => `<span class="chip">${x}</span>`).join('')}</div>` : ''}
     <h4>Personality</h4>
-    ${traitsOf(c.species).map(t => `<div class="trait" title="${t.tip}"><span>${t.e}</span><span>${t.name}</span>
-      <div class="meter"><span style="width:${Math.round(c.genes[t.k] * 100)}%"></span></div>
-      <span class="word">${word(t, c.genes[t.k])}</span></div>`).join('')}
+    ${traitRows(c.species, c.genes)}
     <h4>Family</h4>
     <div class="family">
       ${c.genes.coat ? `${coatLine(c)}<br>` : ''}
@@ -3130,6 +3135,336 @@ function renderInspector() {
         <button class="btn" data-act="diary" title="Uses the local AI on this computer (Ollama)">✍️ Diary</button>`
         : living ? `<button class="btn" data-act="child" data-id="${living.id}">🐣 Follow ${esc(living.name)}</button>` : ''}
     </div>`);
+}
+
+// ------------------------------------------------------------------ things: everything else you can click
+//
+// A click that finds no animal looks for a thing under it, in the order of THINGS (what's on top
+// first): a hive, a tree or rock, a burrow, a flower, a flower field, water. Bare ground finds
+// nothing and closes the inspector. Each kind says how to find one on the screen (at), whether it
+// is still there (here), where to ring it (spot, in tiles; fields and water are too big and get
+// only a label) and what the inspector shows (show):
+//   { emoji, tint, name, sub, status, meters: [[label, 0..1, class]], chips, facts: [[emoji, text]],
+//     sections: [[title, html]] }
+// Names from the sim go through esc; status, facts and sections are html.
+
+const days = n => { n = Math.max(0, Math.round(n)); return `${n} ${n === 1 ? 'day' : 'days'}`; };
+const hours = t => { const n = Math.max(1, Math.round(t / S.TPD * 24)); return `${n} ${n === 1 ? 'hour' : 'hours'}`; };
+const ago = t => days((world.tick - t) / S.TPD);
+const tileOf = (x, y) => clamp(Math.floor(y), 0, S.H - 1) * S.W + clamp(Math.floor(x), 0, S.W - 1);
+const seasonName = s => S.SEASONS[s].name.toLowerCase();
+const thingLink = (kind, id, text) => `<a data-thing="${kind}:${id}">${text}</a>`;
+
+// Who is about near a spot, as "🐇 2 · 🦊 1".
+function whoNear(x, y, r, keep = () => true) {
+  const n = {};
+  for (const c of world.creatures) {
+    if (c.alive && !c.hidden && (c.x - x) ** 2 + (c.y - y) ** 2 < r * r && keep(c)) n[c.sp.emoji] = (n[c.sp.emoji] || 0) + 1;
+  }
+  return Object.entries(n).map(([e, k]) => `${e} ${k}`).join(' · ');
+}
+
+const linkList = (list, most = 12) => list.slice(0, most).map(link).join(', ') + (list.length > most ? ` and ${list.length - most} more` : '');
+
+// The tree or rock drawn under a spot on the screen; the one in front if they overlap.
+function decorAt(sx, sy) {
+  const z = cam.zoom;
+  let best = null;
+  for (const d of world.decor) {
+    const [dx, dy] = toScreen(d.x, d.y), px = d.size * z * (d.stump ? 0.45 : 1);
+    const half = Math.max(6, px * (d.tree ? 0.36 : 0.5)), top = Math.max(10, px * (d.tree ? 0.85 : 0.6));
+    if (Math.abs(sx - dx) < half && sy > dy - top && sy < dy + Math.max(4, px * 0.12) && (!best || d.y > best.y)) best = d;
+  }
+  return best;
+}
+
+// Broadleaf trees by the colour they turn in autumn (AUTUMN, OAK).
+const TREE_KINDS = ['Birch', 'Birch', 'Beech', 'Beech', 'Maple', 'Oak'];
+const treeName = d => d.emoji === '🌲' ? 'Pine' : { apple: 'Apple tree', cherry: 'Cherry tree' }[treeInfo(d).fruit] || TREE_KINDS[treeInfo(d).h % AUTUMN.length];
+
+function treeSeason(d) {
+  const s = S.seasonOf(world.tick), info = treeInfo(d), oak = !info.fruit && info.h % AUTUMN.length === OAK || !HAS_BARE;
+  if (d.emoji === '🌲') return s === 3 ? '🌲 Evergreen, dark against the snow' : '🌲 Evergreen';
+  if (s === 0) return info.fruit ? `🌸 In ${info.fruit} blossom` : '🌱 Coming into leaf';
+  if (s === 1) return info.fruit === 'apple' ? '🍏 Apples ripening' : info.fruit === 'cherry' ? '🍒 Hung with cherries' : '🌳 In full leaf';
+  if (s === 2) return info.fruit === 'apple' ? '🍎 Dropping ripe apples' : oak ? '🍂 Leaves turned brown' : '🍂 Leaves turning';
+  return oak ? '🍂 Holding on to its dry leaves' : '🪾 Bare for the winter';    // (oak when there's no 🪾)
+}
+
+const ROCK_NAMES = { pebbles: 'Pebbles', stone: 'Stone', boulder: 'Boulder', great: 'Great rock', ford: 'Stepping stone' };
+const ROCK_SAYS = {
+  pebbles: '🪨 A scatter of pebbles', stone: '🪨 A lone stone', boulder: '🪨 A boulder, half sunk in the ground',
+  great: '⛰️ One of the great rocks of the meadow', ford: '🦶 A stepping stone at the ford',
+};
+const PLANT_NAMES = { '🌷': 'Tulip', '🌼': 'Daisy', '🌸': 'Blossom', '🌻': 'Sunflower', '🪻': 'Bluebell', '🌿': 'Tuft of grass',
+  '🌱': 'Green shoot', '🍂': 'Fallen leaves', '🌾': 'Seed heads', '❄️': 'Frost' };
+const WATER_LOOKS = { river: '🏞️', lake: '🌊', pond: '💧', brook: '💦' };
+
+// The water line against the usual one, as the sim's news tells it (waterTick).
+function waterLine() {
+  const T = world.terrain, d = world.level - T.level;
+  if (d > T.springFlood / 2) return ['⬆️', 'The water is high, out over the low meadows'];
+  if (d < -T.summerLow / 2) return ['⬇️', 'The water is low, the banks showing'];
+  return ['〰️', 'The water is at its usual line'];
+}
+
+const THINGS = {
+  hive: {
+    at: (sx, sy) => hiveAt(sx, sy, true),
+    here: h => world.hives.includes(h),
+    spot: h => ({ x: h.x, y: h.y, r: 1.1 }),
+    show(h) {
+      if (!this.here(h)) return { emoji: '🐝', name: 'A swarm', sub: 'Moved on', status: '🏡 The swarm has moved into its new home.' };
+      const q = h.queen, ck = S.clock(world), s = ck.season;
+      const bees = world.creatures.filter(c => c.alive && c.home === h), out = bees.filter(c => !c.hidden).length;
+      let status;
+      if (h.cluster) status = `🐝 Hanging in a tree while scouts look for a home. They move in ${hours(h.settleAt - world.tick)}.`;
+      else if (!q) status = '🕸️ Empty. The old comb waits for a swarm.';
+      else if (world.tick < q.laysFrom) status = '💒 The new queen is away on her wedding flight';
+      else if (S.patchFresh(world, h)) status = `💃 Dancing about ${h.patch.field ? esc(`the ${h.patch.field.name}`) : 'flowers'} to the ${compass(h.patch.x - h.x, h.patch.y - h.y)}`;
+      else if (out) status = `🌼 ${out} out among the flowers`;
+      else status = ck.night ? '💤 Asleep for the night' : s === 3 ? '❄️ Huddled up for the winter, living on honey'
+        : ['rain', 'storm'].includes(world.weather.kind) ? '🌧️ Waiting out the rain' : '🏠 Everyone is in';
+      const chips = [`🍯 ${Math.round(h.honey)} honey`, `🐝 ${h.bees} ${h.bees === 1 ? 'bee' : 'bees'}`];
+      if (s >= 2 && h.winterBees) chips.push(`❄️ ${h.winterBees} winter ${h.winterBees === 1 ? 'bee' : 'bees'}`);
+      if (h.swarmed > 0) chips.push(`🪽 Swarmed ${ago(h.swarmed)} ago`);
+      const facts = [];
+      if (h.bees >= S.HIVE_ROOM * 0.8 && !h.cluster) facts.push(['🏘️', 'Crowded: ready to swarm come spring or summer']);
+      if (q && s >= 2) facts.push(['🍯', `${Math.round(h.honey / Math.max(1, h.bees))} honey put by for each bee`]);
+      const fields = world.fields.filter(f => Math.hypot(f.x - h.x, f.y - h.y) < S.FORAGE_RANGE);
+      const sections = [];
+      if (q) sections.push([`👑 Queen ${esc(q.name)}`, `<div class="family">Generation ${q.gen} · queen for ${ago(q.since)} · has raised ${q.kids} ${q.kids === 1 ? 'bee' : 'bees'}${q.mum ? `<br>A daughter of Queen ${esc(q.mum)}` : ''}</div>${traitRows('bee', q.genes)}`]);
+      sections.push(['Flowers in reach', fields.length
+        ? fields.map(f => `${f.emoji[0]} ${thingLink('field', f.id, esc(f.name))} <span class="dim">· ${seasonName(f.season)} · to the ${compass(f.x - h.x, f.y - h.y)}</span>`).join('<br>')
+        : 'No flower fields, only the flowers scattered about']);
+      if (bees.length) sections.push(['Bees', linkList(bees)]);
+      return {
+        emoji: h.cluster || !HAS_BARE ? '🐝' : '🪾', tint: '#e8b83a', name: h.cluster ? `Queen ${q.name}'s swarm` : q ? `Queen ${q.name}'s hive` : 'Empty hive',
+        sub: h.cluster ? 'A swarm looking for a home' : 'A hollow tree', status, chips, facts, sections,
+        meters: [['Honey', h.honey / S.HIVE_FULL, 'honey'], ['Room', h.bees / S.HIVE_ROOM, h.bees >= S.HIVE_ROOM * 0.8 ? 'low' : '']],
+      };
+    },
+  },
+
+  tree: {
+    at: (sx, sy) => { const d = decorAt(sx, sy); return d && d.tree ? d : null; },
+    here: () => true,
+    spot: d => ({ x: d.x, y: d.y, r: d.size * (d.stump ? 0.2 : 0.3) }),
+    show(d) {
+      const T = world.terrain, name = treeName(d), wood = world.wood[tileOf(d.x, d.y)];
+      const grown = (d.size - T.treeSize[0]) / (T.treeSize[1] - T.treeSize[0]);
+      const age = grown < 0.15 ? 'Young' : grown < 0.45 ? 'Grown' : grown < 0.8 ? 'Tall' : 'Ancient';
+      const where = wood > 0.6 ? 'deep in the wood' : wood > 0.2 ? 'at the edge of the wood' : 'standing on its own';
+      let status;
+      if (world.fire[tileOf(d.x, d.y)] > 0) status = '🔥 On fire!';
+      else if (d.stump) {
+        const left = (d.stump + S.YEAR_DAYS * S.TPD - world.tick) / S.TPD;
+        status = world.tick - d.stump > S.YEAR_DAYS * S.TPD / 2 ? `🌱 A sapling now, a tree again in ${days(left)}`
+          : `⚡ Struck by lightning ${ago(d.stump)} ago`;
+      } else status = treeSeason(d);
+      const facts = [];
+      if (treeInfo(d).owl && !d.stump) facts.push(['🦉', 'An owl roosts here; look for it at night']);
+      if (world.snow > 0.3 && !d.stump) facts.push(['❄️', 'Snow on the branches']);
+      if (!d.stump && world.wet < 0.5) facts.push(['⚡', 'Dry: a lightning strike would set it alight']);   // as strike does
+      const shade = whoNear(d.x, d.y, Math.max(1.5, d.size * 0.4));
+      if (shade) facts.push(['🌳', `Under it: ${shade}`]);
+      const swarm = world.hives.find(h => h.cluster && Math.hypot(h.x - d.x, h.y - d.y) < 2);
+      if (swarm) facts.push(['🐝', `${thingLink('hive', swarm.id, 'A swarm')} is hanging in it`]);
+      return {
+        emoji: d.stump ? '🪵' : d.emoji, tint: '#7fb24a', name: d.stump ? `${name} stump` : name,
+        sub: d.stump ? where : `${age} · ${where}`, status, facts, meters: d.stump ? null : [['Size', grown, '']],
+      };
+    },
+  },
+
+  rock: {
+    at: (sx, sy) => { const d = decorAt(sx, sy); return d && !d.tree ? d : null; },
+    here: () => true,
+    spot: d => ({ x: d.x, y: d.y, r: d.size * 0.45 }),
+    show(d) {
+      const t = rockInfo(d), wood = world.wood[tileOf(d.x, d.y)], water = S.waterAt(world, d.x, d.y);
+      const where = t.kind === 'ford' ? (water ? `across the ${water.name}` : 'at an old ford')
+        : wood > 0.3 ? 'in the wood' : water && Math.hypot(water.x - d.x, water.y - d.y) < 12 ? `by the ${water.name}` : 'out in the meadow';
+      const facts = [];
+      if (t.kind === 'great') facts.push(['🕳️', 'Rabbits never dig close to it']);
+      if (t.kind === 'ford') facts.push(['🦶', world.water[tileOf(d.x, d.y)] === S.DEEP ? 'Under deep water just now' : 'Animals wade across the river here']);
+      if (t.moss > 0.3) facts.push(['🌿', t.moss > 0.7 ? 'Thick with moss' : 'Mossy']);
+      if (t.kind !== 'ford' && world.snow > 0.3) facts.push(['❄️', 'Capped with snow']);
+      const who = whoNear(d.x, d.y, Math.max(1.5, d.size * 0.6));
+      if (who) facts.push(['👀', `Near it: ${who}`]);
+      const T = world.terrain, big = T.bigRockSize[1];
+      return { emoji: '🪨', tint: '#b8ae9c', name: ROCK_NAMES[t.kind], sub: where, status: ROCK_SAYS[t.kind], facts, meters: [['Size', d.size / big, '']] };
+    },
+  },
+
+  burrow: {
+    at(sx, sy) {
+      const z = cam.zoom, r = Math.max(5, z * 0.8), reach = Math.max(10, r * 1.4);
+      let best = null, bd = reach * reach;
+      for (const b of world.burrows) {
+        const [bx, by] = toScreen(b.x, b.y), d = (bx - sx) ** 2 + (by - r * 0.3 - sy) ** 2;
+        if (d < bd) { best = b; bd = d; }
+      }
+      return best;
+    },
+    here: b => world.burrows.includes(b),
+    spot: b => ({ x: b.x, y: b.y, r: 1 }),
+    show(b) {
+      if (!this.here(b)) {
+        return { emoji: '🕳️', name: 'Burrow', sub: 'Gone', status: world.water[tileOf(b.x, b.y)] ? '🌊 Flooded and lost' : '🌾 Fallen in: nobody came back to it' };
+      }
+      const T = world.terrain, made = dugAt.get(b), idle = (world.tick - b.used) / S.TPD;
+      const home = world.creatures.filter(c => c.alive && c.home === b), inside = world.creatures.filter(c => c.alive && c.hidden && c.burrow === b);
+      let status;
+      if (b.dug < 1) status = `⛏️ Being dug: ${Math.round(b.dug * 100)}% done`;
+      else if (inside.length) status = `💤 ${inside.length} inside: ${linkList(inside, 6)}`;
+      else if (idle > S.SEASON_DAYS * 0.4) status = `🌾 Growing over: it falls in within ${days(S.SEASON_DAYS - idle)} unless someone comes back`;
+      else status = '🕳️ Empty for now';
+      const facts = [];
+      const high = T.level + T.springFlood + T.rainRise / 2;       // the highest the water gets, about (as plantTrees)
+      facts.push(world.ground[tileOf(b.x, b.y)] < high ? ['🌊', 'Low ground: a spring flood could reach it'] : ['⛰️', 'High and dry, safe from floods']);
+      if (b.dug >= 1) facts.push(['🐾', `Last used ${idle < 1 ? 'today' : `${days(idle)} ago`}`]);
+      const foxes = whoNear(b.x, b.y, 10, c => c.species === 'fox');
+      if (foxes) facts.push(['⚠️', `A fox is prowling nearby`]);
+      return {
+        emoji: '🕳️', tint: '#b89868', name: 'Burrow',
+        sub: b.dug < 1 ? 'Being dug' : made !== undefined ? `Dug ${ago(made)} ago` : 'An old burrow, here before anyone',
+        status, facts, sections: [['Home to', home.length ? linkList(home) : 'Nobody calls it home']],
+      };
+    },
+  },
+
+  flower: {
+    at(sx, sy) {
+      const z = cam.zoom, season = S.seasonOf(world.tick);
+      let best = null, bd = Infinity;
+      for (const p of world.plants) {
+        const [px, py] = toScreen(p.x, p.y), d = (px - sx) ** 2 + (py - sy) ** 2;
+        if (d > Math.max(8, z * 0.6) ** 2 || d >= bd) continue;
+        const l = plantLook(p, season, z);                   // a field's leaves out of bloom are the field
+        if (l && (!p.field || p.field.emoji.includes(l.e))) { best = p; bd = d; }
+      }
+      return best;
+    },
+    here: () => true,
+    spot: p => ({ x: p.x, y: p.y, r: 0.45 }),
+    show(p) {
+      const season = S.seasonOf(world.tick), g = world.grass[p.i], e = plantEmoji(season, p, g) || '🌱', f = p.field;
+      const open = S.isFlower(world, p), inBloom = f && e === f.emoji[Math.floor(p.kind * f.emoji.length)];
+      let status;
+      if (world.water[p.i]) status = '🌊 Under the flood';
+      else if (open) status = p.sipped && world.tick - p.sipped < S.REFILL ? '🐝 Sipped dry, filling up with nectar again' : '🍯 Open and full of nectar';
+      else if (f && season === f.season) status = '🐇 Nibbled down: it blooms once the grass grows back';
+      else if (f) status = `🌿 Just leaves: it blooms in ${seasonName(f.season)}`;
+      else status = '🌿 Not in flower';
+      const sections = f ? [['Part of', `${f.emoji[0]} ${thingLink('field', f.id, esc(f.name))}`]] : [];
+      return {
+        emoji: e, tint: f ? `rgb(${f.tint})` : '#9cc65a', name: inBloom ? f.name.split(' ')[0] : PLANT_NAMES[e] || 'Plant',
+        sub: f ? `In the ${f.name}` : 'Growing wild', status, sections,
+        meters: [['Grass', g, g < 0.3 ? 'low' : '']],
+      };
+    },
+  },
+
+  field: {
+    at(sx, sy) { const [wx, wy] = toWorld(sx, sy), i = tileOf(wx, wy); return !world.water[i] && world.fieldAt[i] >= 0 ? world.fields[world.fieldAt[i]] : null; },
+    here: () => true,
+    show(f) {
+      const season = S.seasonOf(world.tick), plants = world.plants.filter(p => p.field === f), open = plants.filter(p => S.isFlower(world, p)).length;
+      let tiles = 0, grass = 0;
+      for (let i = 0; i < world.fieldAt.length; i++) if (world.fieldAt[i] === f.id && !world.water[i]) { tiles++; grass += world.grass[i]; }
+      const status = season === f.season ? (open ? `${f.emoji[0]} In bloom: ${open} of ${plants.length} flowers open` : '🐇 Grazed down: no flowers open')
+        : `🌿 Resting: it blooms in ${seasonName(f.season)}`;
+      const inField = c => world.fieldAt[tileOf(c.x, c.y)] === f.id;
+      const now = world.creatures.filter(c => c.alive && !c.hidden && inField(c));
+      const hives = world.hives.filter(h => !h.cluster && Math.hypot(f.x - h.x, f.y - h.y) < S.FORAGE_RANGE);
+      const sections = [['Hives in reach', hives.length
+        ? hives.map(h => `🐝 ${thingLink('hive', h.id, h.queen ? esc(`Queen ${h.queen.name}'s hive`) : 'Empty hive')}`).join('<br>')
+        : 'None: only a bee from far off comes here']];
+      if (now.length) sections.push(['Here now', linkList(now)]);
+      return {
+        emoji: f.emoji[0], tint: `rgb(${f.tint})`, name: f.name, sub: `A field of ${f.kind.names.join(' and ').toLowerCase()} · ${tiles} tiles`,
+        status, sections, meters: [['Grass', tiles ? grass / tiles : 0, '']],
+      };
+    },
+  },
+
+  water: {
+    at(sx, sy) {
+      const [wx, wy] = toWorld(sx, sy);
+      if (wx < 0 || wy < 0 || wx >= S.W || wy >= S.H || !world.water[tileOf(wx, wy)]) return null;
+      const brook = world.rivers.find(rv => rv.brook && rv.pts.some(p => (p.x - wx) ** 2 + (p.y - wy) ** 2 < 6));
+      const body = brook ? { kind: 'brook', name: brook.name, size: 0 } : S.waterAt(world, wx, wy);
+      return body && { body, x: wx, y: wy };
+    },
+    here: () => true,
+    show({ body, x, y }) {
+      const i = tileOf(x, y), T = world.terrain, deep = world.water[i] === S.DEEP;
+      const facts = [[deep ? '🌊' : '🦶', deep ? 'Too deep to wade: animals go round' : 'Shallow: animals wade across, slowly']];
+      if (world.ground[i] > T.level) facts.push(['🌧️', 'Flood water: this is dry land most of the year']);
+      facts.push(waterLine());
+      if (world.fords.some(f => Math.hypot(f.x - x, f.y - y) < 4)) facts.push(['🪨', 'A ford: stepping stones cross here']);
+      const who = whoNear(x, y, 4, c => world.water[tileOf(c.x, c.y)] && !c.sp.flies);
+      if (who) facts.push(['🏊', `In the water: ${who}`]);
+      const kind = body.kind[0].toUpperCase() + body.kind.slice(1);
+      return {
+        emoji: WATER_LOOKS[body.kind] || '💧', tint: '#6aa6d8', name: body.name,
+        sub: body.size ? `${kind} · ${body.size} tiles` : kind, status: deep ? '🌊 Deep water' : '💧 Shallow water', facts,
+      };
+    },
+  },
+};
+
+// What a click lands on, if not an animal: { kind, it } or null for bare ground.
+function thingAt(sx, sy) {
+  for (const kind in THINGS) {
+    const it = THINGS[kind].at(sx, sy);
+    if (it) return { kind, it };
+  }
+  return null;
+}
+
+function pick(kind, it, at) {
+  Object.assign(ui, { selectedId: 0, follow: false, trail: [], sheetUp: false, picked: { kind, it, at, name: '' } });
+  renderInspector();
+}
+
+function renderThing(box) {
+  const p = ui.picked, v = THINGS[p.kind].show(p.it);
+  p.name = v.name;
+  setHTML(box, `
+    <button class="sheet-handle phone-only" aria-label="${ui.sheetUp ? 'Show less' : 'Show more'}"></button>
+    <div class="ins-head">
+      <div class="portrait" style="background:${v.tint || '#d9c9a8'}33">${v.emoji}</div>
+      <div>
+        <div class="ins-name">${esc(v.name)}</div>
+        <div class="ins-sub">${esc(v.sub)}</div>
+      </div>
+      <button class="close" data-act="close" title="Close (Esc)">✕</button>
+    </div>
+    <div class="mood">${v.status}</div>
+    ${v.meters ? `<div class="meters">${v.meters.map(([label, k, cls]) =>
+      `<div class="meter-row">${label} <div class="meter ${cls}"><span style="width:${Math.round(clamp(k, 0, 1) * 100)}%"></span></div></div>`).join('')}</div>` : ''}
+    ${v.chips?.length ? `<div class="chips">${v.chips.map(x => `<span class="chip">${x}</span>`).join('')}</div>` : ''}
+    ${v.facts?.length ? `<ul class="story facts">${v.facts.map(([e, t]) => `<li><span>${e}</span><span>${t}</span></li>`).join('')}</ul>` : ''}
+    ${(v.sections || []).map(([title, html]) => `<h4>${title}</h4><div class="family">${html}</div>`).join('')}`);
+}
+
+// A ring round the picked thing, under it; its name over everything.
+function drawPickedUnder(now) {
+  const p = ui.picked, T = THINGS[p.kind];
+  if (!T.spot || !T.here(p.it)) return;
+  const s = T.spot(p.it), [sx, sy] = toScreen(s.x, s.y), r = Math.max(10, s.r * cam.zoom) * (1 + 0.06 * Math.sin(now / 250));
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.ellipse(sx, sy, r, r * 0.4, 0, 0, TAU); ctx.stroke();
+}
+
+function drawPickedOver() {
+  const p = ui.picked, T = THINGS[p.kind];
+  if (!p.name || !T.here(p.it)) return;
+  const at = p.at || [p.it.x, p.it.y], s = T.spot ? T.spot(p.it) : { x: at[0], y: at[1], r: 0 }, [sx, sy] = toScreen(s.x, s.y);
+  drawLabel(p.name, sx, sy + Math.max(4, s.r * cam.zoom * 0.4) + 6);
 }
 
 // ------------------------------------------------------------------ the diary (local LLM, optional)
@@ -3199,6 +3534,7 @@ async function writeDiary(c) {
 
 function select(id, zoomIn = true) {
   ui.selectedId = id;
+  ui.picked = null;
   ui.trail = [];
   ui.follow = !!id;
   ui.sheetUp = false;
@@ -3375,9 +3711,9 @@ canvas.addEventListener('wheel', e => {
 function click(sx, sy) {
   const [wx, wy] = toWorld(sx, sy);
   if (ui.tool === 'look') {
-    const c = creatureAt(sx, sy);
-    select(c ? c.id : 0);
-    ui.hoverHive = c ? null : hiveAt(sx, sy);      // a tap shows the hive's label: touch screens have no hover
+    const c = creatureAt(sx, sy), t = !c && thingAt(sx, sy);
+    if (t) pick(t.kind, t.it, [wx, wy]); else select(c ? c.id : 0);
+    ui.hoverHive = null;
   } else if (S.KINDS.includes(ui.tool)) release(ui.tool, wx, wy);
   else if (ui.tool === 'zap') { S.zap(world, wx, wy); flushEvents(); }
 }
@@ -3499,7 +3835,7 @@ function paintAt(sx, sy) {
 }
 
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-tool],[data-speed],[data-action],[data-act],[data-show],[data-range],[data-sky],[data-ring],a[data-id]');
+  const t = e.target.closest('[data-tool],[data-speed],[data-action],[data-act],[data-show],[data-range],[data-sky],[data-ring],a[data-id],a[data-thing]');
   if (ui.sky.menu && !(t && (t.dataset.sky || t.dataset.act === 'sky' || t.dataset.act === 'sky-lock'))) toggleSkyMenu(false);
   if (!(t && t.dataset.act === 'more')) toggleMore(false);
   if (!t) return;
@@ -3523,6 +3859,10 @@ document.addEventListener('click', e => {
   else if (t.dataset.range) { ui.stats.range = t.dataset.range; renderStats(); }
   else if (t.dataset.act === 'follow') { ui.follow = !ui.follow; renderInspector(); }
   else if (t.dataset.act === 'diary') { const c = world.byId.get(ui.selectedId); if (c) writeDiary(c); }
+  else if (t.dataset.thing) {
+    const [kind, id] = t.dataset.thing.split(':'), it = (kind === 'hive' ? world.hives : world.fields).find(o => o.id === +id);
+    if (it) pick(kind, it);
+  }
   else if (t.dataset.id) {
     if (ui.stats.open) toggleStats(false);
     const c = world.byId.get(+t.dataset.id);
@@ -3590,7 +3930,7 @@ function newWorld(seed) {
   patches = blurred(blurred(blurred(blurred(jitter))));
   const spread = Math.sqrt(patches.reduce((m, v) => m + v * v, 0) / patches.length);
   patches = patches.map(v => clamp(v / spread, -2.5, 2.5));      // about -1..1 on a typical tile
-  Object.assign(ui, { selectedId: 0, hoverId: 0, follow: false, trail: [], effects: [], lastNews: {}, newsLog: [] });
+  Object.assign(ui, { selectedId: 0, picked: null, hoverId: 0, follow: false, trail: [], effects: [], lastNews: {}, newsLog: [] });
   pollen.until = 0; pollen.t0.fill(-1e9);
   ui.records = perKind(s => world.count[s]);
   ui.crashSaid = perKind(() => -1);
@@ -3665,7 +4005,7 @@ function frame(now) {
       const ck = S.clock(world);
       Sound.update({ phase: ck.phase, season: ck.season, speed: ui.speed, sky: ui.sky.mix, fire: world.burning.length, bees: beesOnScreen() });
     }
-    if (ui.selectedId && !$('#inspector').matches(':hover')) renderInspector();
+    if ((ui.selectedId || ui.picked) && !$('#inspector').matches(':hover')) renderInspector();
     if (ui.stats.open) { $('#stats-clock').textContent = `${S.SEASONS[S.seasonOf(world.tick)].emoji} ${when(world.tick)}`; drawStatsChart(); }
   }
   if (ui.stats.open && now - lastStatsCards > 1000 && !$('#stats-cards').matches(':hover')) {

@@ -10,7 +10,9 @@ found, the options, what you'd recommend) and wait for a go-ahead before editing
 told to just do it.
 
 - `sim.js`: the world. No drawing. Runs in the browser and under node.
-- `game.js`: drawing, UI, news feed, the inspector, the optional Ollama diary.
+- `game.js`: drawing, UI, news feed, the inspector, the optional Ollama diary. The inspector shows
+  animals and every other thing you click (hives, trees, rocks, burrows, flowers, fields, water): each
+  kind is an entry in `THINGS`, saying how to find one on screen and what its panel shows.
 - `sound.js`: all the sounds, made with Web Audio (no files). Off until the 🔊 button or M.
   `sound-lab.html` plays each one on its own. Keep it minimal: one scale, few sounds.
 - `index.html`: layout and styles.

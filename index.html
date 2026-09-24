@@ -68,8 +68,8 @@
     box-shadow: var(--shadow); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
   }
   button { font: inherit; color: inherit; cursor: pointer; }
-  a[data-id] { color: var(--accent); font-weight: 800; text-decoration: none; cursor: pointer; }
-  a[data-id]:hover { text-decoration: underline; }
+  a[data-id], a[data-thing] { color: var(--accent); font-weight: 800; text-decoration: none; cursor: pointer; }
+  a[data-id]:hover, a[data-thing]:hover { text-decoration: underline; }
 
   /* ---- the meadow card, top left */
   #meadow { top: var(--top); left: var(--left); width: 272px; padding: calc((var(--hud-h) - 30px) / 2) 10px 10px 16px; }
@@ -211,6 +211,9 @@
   .story li { display: grid; grid-template-columns: 22px 1fr; gap: 4px; padding: 3px 0; border-bottom: 1px dashed var(--line); }
   .story li:last-child { border-bottom: none; }
   .story .when { color: var(--muted); font-size: 11px; font-weight: 700; }
+  .facts { margin-top: 10px; }
+  .family .dim { color: var(--muted); font-size: 12px; }
+  .meter.honey span { background: #e8b83a; }
   .ins-actions { display: flex; gap: 8px; margin-top: 14px; }
   .btn { border: none; border-radius: 12px; padding: 8px 12px; font-weight: 800; background: #fff; box-shadow: 0 1px 0 var(--line), 0 0 0 1px var(--line) inset; flex: 1; }
   .btn:hover { background: #fff7ec; }
