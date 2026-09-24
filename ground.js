@@ -3,9 +3,9 @@
  * game.js hands over the meadow as a few tiny textures, one texel a tile, and the shader works
  * out every pixel on the screen, every frame. Nothing is cached, so the grass changes the moment
  * it grows and the ground is sharp at any zoom. The look, from big to small:
- *   - where it is: lush and dark by the water and the woods, drier and yellower up high and in
- *     big drifts, a few bare patches where it is dry;
- *   - the grass itself (what the rabbits eat): lush grass, or the bare earth under it;
+ *   - where it is: a cooler, deeper green by the water and the woods, golden up high and in big
+ *     drifts (the hue shifts, the grass stays bright);
+ *   - the grass itself (what the rabbits eat): lush grass, or the bare earth where it is grazed;
  *   - crisp tufts where the grass is thick, once you're close enough to see them;
  *   - the sun on the slopes, mud at the water's edge, then the water in soft layers.
  *
@@ -107,22 +107,22 @@ void main() {
 
   // Where it is: damp by the water, dry up high and in big drifts, shaded by the woods.
   float moist = exp(-max(toWater, 0.) / 4.);
-  float dry = clamp(0.4 * height + 0.8 * (fbm(q * 0.045 + 5.) - 0.5) - 0.6 * moist + 0.2, 0., 1.);
-  vec3 green = mix(high, vec3(dot(high, vec3(0.3, 0.59, 0.11))), 0.2);
-  vec3 lush = green * vec3(0.8, 0.88, 0.78), parched = mix(green, low, 0.24) * vec3(1.03, 1., 0.88);
+  float dry = clamp(0.4 * height + 0.75 * (fbm(q * 0.03 + 5.) - 0.5) - 0.6 * moist + 0.2, 0., 1.);
+  // Golden only as far as the season's grass is green: winter's grey-green would turn sickly yellow.
+  float hue = clamp((max(high.r, max(high.g, high.b)) - min(high.r, min(high.g, high.b))) / 0.35, 0., 1.);
+  vec3 green = high, lush = green * vec3(0.84, 0.95, 0.9), golden = green * mix(vec3(1.), vec3(1.16, 1.07, 0.62), hue);
   vec3 grass = mix(lush, green, smoothstep(0.05, 0.45, dry));
-  grass = mix(grass, parched, smoothstep(0.45, 0.85, dry));
-  grass = mix(grass, lush * 0.88, 0.55 * exp(-H.b / 3.));
+  grass = mix(grass, golden, smoothstep(0.45, 0.85, dry));
+  grass = mix(grass, lush * 0.94, 0.3 * exp(-H.b / 3.));
   grass *= 1. - 0.08 * exp(-max(toWater, 0.) / 1.4);             // wet grass along the water
-  float clover = smoothstep(0.64, 0.7, fbm(q * 0.28 + 90.)) * clamp(0.4 + moist - dry, 0., 1.);
+  float clover = 0.4 * smoothstep(0.55, 0.75, fbm(q * 0.28 + 90.)) * clamp(0.4 + moist - dry, 0., 1.);
   grass = mix(grass, grass * vec3(0.8, 0.9, 0.86), 0.8 * clover);
-  float bare = smoothstep(0.7, 0.74, fbm(q * 0.22 + 50.) + 0.15 * dry - 0.3 * moist);
   vec3 earth = mix(low * vec3(0.95, 0.93, 0.9), low * vec3(0.66, 0.6, 0.55), moist);
 
   // The grass itself, over the earth, and tufts where it is thick.
-  vec3 col = mix(earth, grass, smoothstep(0., 1., g * (1. - 0.45 * bare))) * (0.97 + 0.06 * n1);
+  vec3 col = mix(earth, grass, smoothstep(0., 1., g)) * (0.97 + 0.06 * n1);
   float detail = clamp((zoom - 7.) / 9., 0., 1.);                // zoomed far out they would only shimmer
-  if (detail > 0.) col = mix(col, grass * vec3(0.72, 0.8, 0.7), 0.85 * detail * (1. - bare) * tufts(p, px));
+  if (detail > 0.) col = mix(col, grass * vec3(0.72, 0.8, 0.7), 0.85 * detail * tufts(p, px));
 
   col = mix(col, low * vec3(0.55, 0.48, 0.4), 0.75 * (1. - smoothstep(0.4, 1.6, toWater)));   // mud at the edge
   col *= 0.95 + 0.1 * height;
@@ -132,11 +132,11 @@ void main() {
   col = mix(col, vec3(246., 248., 252.) / 255., s);             // snow settles in patches first
   col *= damp * (1. - 0.3 * T.a) * (1. - 0.1 * wet);
 
-  // The sun on the slopes: lighter where the ground falls toward it. Water lies flat.
+  // The sun on the slopes: lighter where the ground falls toward it, gently. Water lies flat.
   vec2 e = vec2(1., 0.);
   float east = texture(shape, (p + e.xy) / size).r - texture(shape, (p - e.xy) / size).r;
   float south = texture(shape, (p + e.yx) / size).r - texture(shape, (p - e.yx) / size).r;
-  col *= 1. + (1. - wet) * clamp((east * lx + south * ly) * 0.78, -0.2, 0.2);
+  col *= 1. + (1. - wet) * clamp((east * lx + south * ly) * 0.4, -0.1, 0.1);
 
   // The water, in soft layers: damp sand fading into the grass, a little shade under the
   // bank, shallows, and a darker blue where it gets too deep to wade. Snow freezes it over.

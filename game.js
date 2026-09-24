@@ -425,9 +425,9 @@ function paintTerrain() {
     }
   }
   terrainTick = world.tick; terrainAt = performance.now();
-  // The shader's grass is a little deeper and softer than the palette's (see green in ground.js).
-  const v = sum / g.length, grey = 0.3 * high[0] + 0.59 * high[1] + 0.11 * high[2];
-  edgeColour(...low.map((c, k) => lerp(c, lerp(high[k], grey, 0.2) * 0.92, v) * damp));
+  // The shader's grass averages a little deeper than the palette's (greener by the water, see ground.js).
+  const v = sum / g.length;
+  edgeColour(...low.map((c, k) => lerp(c, high[k] * 0.96, v) * damp));
   if (Ground.ok) { Ground.set('tile', tileData); Ground.set('bloom', bloomData); }
   else flat.getContext('2d').putImageData(flatImg, 0, 0);
 }
