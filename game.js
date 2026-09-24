@@ -311,15 +311,26 @@ const timg = tctx.createImageData(S.W, S.H);
 // Where the grass is thick, and where the ground is bare, as alpha: masks for the detail.
 const mask = () => { const c = document.createElement('canvas'); c.width = S.W; c.height = S.H; return c; };
 const lush = mask(), bare = mask();
+// The same masks smoothly enlarged to a few pixels per tile, once per repaint of the ground's colours,
+// so painting the detail can stretch them the rest of the way with plain (quick) smoothing.
+const MASK_PX = 4;
+const smoothMask = () => { const c = document.createElement('canvas'); c.width = S.W * MASK_PX; c.height = S.H * MASK_PX; return c; };
+const lushUp = smoothMask(), bareUp = smoothMask();
+function enlargeMask(from, to) {
+  const g = to.getContext('2d');
+  g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+  g.clearRect(0, 0, to.width, to.height);
+  g.drawImage(from, 0, 0, to.width, to.height);
+}
 const limg = new ImageData(S.W, S.H), bimg = new ImageData(S.W, S.H);
 let jitter = new Float32Array(S.W * S.H);
 let patches = new Float32Array(S.W * S.H);              // soft warm (+) and cool (-) patches, a few tiles across
 let relief = null, reliefOf = null;                     // how lit each tile's slope is, for which meadow
-let terrainTick = -1, terrainVersion = 0;
+let terrainTick = -1, terrainVersion = 0, terrainAt = 0;   // painted at which tick, and when (real time)
 let shoreSand = [200, 180, 130];
-// Most repaints change only a few tiles (a rabbit's bite), so the ground layer repaints just
-// those. Tiles changed since the layer was painted are marked here. When too many have changed,
-// or it's a new meadow, terrainVersion goes up instead and the whole ground is repainted.
+// Most repaints change only some tiles (a rabbit's bite, grass growing), so the ground layer
+// repaints just those. Tiles changed since the layer was painted are marked here. For a new
+// meadow terrainVersion goes up instead and the whole ground is repainted.
 const terrDirty = new Uint8Array(S.W * S.H);
 let terrDirtyCount = 0;
 
@@ -337,12 +348,14 @@ function paintTerrain(fresh) {
   if (reliefOf !== world) { relief = hillLight(world); reliefOf = world; }
   const ck = S.clock(world);
   const sp = (ck.dayInSeason - 1 + ck.phase) / S.SEASON_DAYS;
-  const t = sp > 0.8 ? (sp - 0.8) / 0.2 : 0;
+  // What colours the whole meadow at once (the turn of the season, the wet, the snow) moves in
+  // small steps, and so does the grass: a tile is only repainted when it changes by a step.
+  const t = sp > 0.8 ? Math.round((sp - 0.8) / 0.2 * 16) / 16 : 0;
   const a = PALETTE[ck.season], b = PALETTE[(ck.season + 1) % 4];
   const low = a[0].map((v, i) => lerp(v, b[0][i], t));
   const high = a[1].map((v, i) => lerp(v, b[1][i], t));
   const d = timg.data, g = world.grass, water = world.water, ash = world.ash;
-  const snow = world.snow, damp = 1 - 0.12 * world.wet;            // wet ground reads darker
+  const snow = Math.round(world.snow * 20) / 20, damp = 1 - 0.12 * Math.round(world.wet * 10) / 10;   // wet ground reads darker
   shoreSand = low.map(v => v * 0.9 * damp);
   const ld = limg.data, bd = bimg.data;
   let sr = 0, sg = 0, sb = 0, changed = false;
@@ -353,7 +366,7 @@ function paintTerrain(fresh) {
     const s = snow > 0 ? clamp(snow * 1.4 - 0.2 - 0.2 * j, 0, 0.9) : 0;
     // Under the ponds (drawn on top by drawPonds) lies damp sand, which blurs into a shore.
     let v = water[i] ? 0 : clamp(g[i] / 0.85, 0, 1);
-    v = v * (2 - v);
+    v = Math.round(v * (2 - v) * 32) / 32;
     const k = (1 + 0.035 * j) * damp * (water[i] ? 0.9 : 1) * (1 - 0.3 * world.wood[i]) * relief[i], p = patches[i];
     let r = lerp(low[0], high[0], v) + 6 * p, gr = lerp(low[1], high[1], v) + 2 * p, b = lerp(low[2], high[2], v) - 6 * p;
     const fi = world.fieldAt[i], bloom = fi >= 0 ? S.fieldBloom(world, world.fields[fi], i, v) : 0;
@@ -373,13 +386,14 @@ function paintTerrain(fresh) {
       if (!terrDirty[i]) { terrDirty[i] = 1; terrDirtyCount++; }
     }
   }
-  terrainTick = world.tick;
+  terrainTick = world.tick; terrainAt = performance.now();
   edgeColour(sr / g.length, sg / g.length, sb / g.length);
   if (!changed && !fresh) return;
   tctx.putImageData(timg, 0, 0);
   lush.getContext('2d').putImageData(limg, 0, 0);
   bare.getContext('2d').putImageData(bimg, 0, 0);
-  if (fresh || terrDirtyCount > g.length / 6) { terrainVersion++; terrDirty.fill(0); terrDirtyCount = 0; }
+  enlargeMask(lush, lushUp); enlargeMask(bare, bareUp);
+  if (fresh) { terrainVersion++; terrDirty.fill(0); terrDirtyCount = 0; }
 }
 
 // Where the browser won't let the meadow reach (the clock, Safari's bars) it shows the page behind,
@@ -446,7 +460,7 @@ const pebbles = detailTexture(140, (g, x, y, r) => {
 
 // Scratch layers to cut the blades and the pebbles out on. One each: reusing a layer in the same
 // frame, while the screen still holds on to what was drawn from it, makes the browser copy it all.
-const bladeLayers = [[blades, lush], [pebbles, bare]].map(([pattern, where]) => ({ pattern, where, g: document.createElement('canvas').getContext('2d') }));
+const bladeLayers = [[blades, lushUp], [pebbles, bareUp]].map(([pattern, where]) => ({ pattern, where, g: document.createElement('canvas').getContext('2d') }));
 
 const clipTo = (g, parts) => { g.beginPath(); for (const p of parts) g.rect(...p); g.clip(); };
 
@@ -461,6 +475,10 @@ function drawGroundDetail(g, z, ox, oy, view, clip) {
   const x1 = Math.min(W, (vx + w - ox) / k), y1 = Math.min(H, (vy + h - oy) / k);
   if (x1 <= x0 || y1 <= y0) return;
   const inTexture = t => { t.translate(ox, oy); t.scale(k, k); };
+  // The same box on the blade layers, in their own pixels, which match the screen's.
+  const m = g.getTransform();
+  const px0 = clamp(Math.floor(m.a * vx + m.e) - 2, 0, canvas.width), px1 = clamp(Math.ceil(m.a * (vx + w) + m.e) + 2, 0, canvas.width);
+  const py0 = clamp(Math.floor(m.d * vy + m.f) - 2, 0, canvas.height), py1 = clamp(Math.ceil(m.d * (vy + h) + m.f) + 2, 0, canvas.height);
   g.save();
   g.globalAlpha = a;
   inTexture(g);
@@ -476,18 +494,18 @@ function drawGroundDetail(g, z, ox, oy, view, clip) {
     bctx.save();
     if (clip) { bctx.setTransform(dpr, 0, 0, dpr, 0, 0); clipTo(bctx, clip); }
     bctx.setTransform(1, 0, 0, 1, 0, 0);
-    bctx.clearRect(0, 0, bladeLayer.width, bladeLayer.height);
+    bctx.clearRect(px0, py0, px1 - px0, py1 - py0);
     bctx.setTransform(g.getTransform());
     inTexture(bctx);
     bctx.fillStyle = pattern; bctx.fillRect(x0, y0, x1 - x0, y1 - y0);
     bctx.globalCompositeOperation = 'destination-in';
-    bctx.imageSmoothingEnabled = true; bctx.imageSmoothingQuality = 'high';
+    bctx.imageSmoothingEnabled = true; bctx.imageSmoothingQuality = 'low';   // already smooth: see enlargeMask
     bctx.drawImage(where, 0, 0, W, H);
     bctx.restore();
     g.save();
     g.globalAlpha = a;
     g.setTransform(1, 0, 0, 1, 0, 0);
-    g.drawImage(bladeLayer, 0, 0);
+    if (px1 > px0 && py1 > py0) g.drawImage(bladeLayer, px0, py0, px1 - px0, py1 - py0, px0, py0, px1 - px0, py1 - py0);
     g.restore();
   }
 }
@@ -527,30 +545,37 @@ function groundContext(c) {
 
 // The changed tiles as a few rectangles in screen pixels, [x, y, w, h] each. A tile's colour
 // blurs into its neighbours when scaled up (and a flower reaches into them), so each takes two
-// tiles around it along. They are
-// gathered in blocks of 8 tiles, and a row of blocks makes one rectangle.
+// tiles around it along. They are gathered in blocks of 8 tiles (dirtyBlocks), and a row of
+// blocks makes one rectangle. Growing grass changes tiles all over, so repainting them all at
+// once would stall a frame: each frame repaints the next rows of blocks, up to about `budget`
+// screen pixels, and the rest wait for the frames after.
 const BLOCK = 8, BLOCK_COLS = Math.ceil(S.W / BLOCK), BLOCK_ROWS = Math.ceil(S.H / BLOCK);
-function dirtyParts(z, bx, by, W, H) {
-  if (!terrDirtyCount) return [];
-  const blocks = new Uint8Array(BLOCK_COLS * BLOCK_ROWS), parts = [];
-  for (let i = 0; i < terrDirty.length; i++) {
+const dirtyBlocks = new Uint8Array(BLOCK_COLS * BLOCK_ROWS);
+let dirtyRow = 0;                                  // the row of blocks the next slice starts at
+function clearDirty() { terrDirty.fill(0); terrDirtyCount = 0; dirtyBlocks.fill(0); }
+function dirtyParts(z, bx, by, W, H, budget) {
+  for (let i = 0; terrDirtyCount && i < terrDirty.length; i++) {
     if (!terrDirty[i]) continue;
     const x = i % S.W, y = (i / S.W) | 0;
     const c0 = Math.floor(Math.max(0, x - 2) / BLOCK), c1 = Math.floor(Math.min(S.W - 1, x + 2) / BLOCK);
     const r0 = Math.floor(Math.max(0, y - 2) / BLOCK), r1 = Math.floor(Math.min(S.H - 1, y + 2) / BLOCK);
-    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) blocks[r * BLOCK_COLS + c] = 1;
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) dirtyBlocks[r * BLOCK_COLS + c] = 1;
   }
   terrDirty.fill(0); terrDirtyCount = 0;
-  const k = z * dpr;
-  for (let r = 0; r < BLOCK_ROWS; r++) {
+  const k = z * dpr, parts = [];
+  let area = 0;
+  for (let n = 0; n < BLOCK_ROWS && area < budget; n++) {
+    const r = (dirtyRow + n) % BLOCK_ROWS;
+    dirtyRow = (r + 1) % BLOCK_ROWS;
     for (let c = 0; c < BLOCK_COLS; c++) {
-      if (!blocks[r * BLOCK_COLS + c]) continue;
+      if (!dirtyBlocks[r * BLOCK_COLS + c]) continue;
       const c0 = c;
-      while (c + 1 < BLOCK_COLS && blocks[r * BLOCK_COLS + c + 1]) c++;
+      while (c + 1 < BLOCK_COLS && dirtyBlocks[r * BLOCK_COLS + c + 1]) c++;
+      dirtyBlocks.fill(0, r * BLOCK_COLS + c0, r * BLOCK_COLS + c + 1);   // off screen too: it's painted fresh when it slides in
       // Blocks on the meadow's edge reach a tile past it, for the flowers that hang over.
       const x0 = Math.max(0, Math.floor(bx + (c0 ? c0 * BLOCK : -1) * k)), x1 = Math.min(W, Math.ceil(bx + ((c + 1) * BLOCK >= S.W ? S.W + 1 : (c + 1) * BLOCK) * k));
       const y0 = Math.max(0, Math.floor(by + (r ? r * BLOCK : -1) * k)), y1 = Math.min(H, Math.ceil(by + ((r + 1) * BLOCK >= S.H ? S.H + 1 : (r + 1) * BLOCK) * k));
-      if (x1 > x0 && y1 > y0) parts.push([x0, y0, x1 - x0, y1 - y0]);
+      if (x1 > x0 && y1 > y0) { parts.push([x0, y0, x1 - x0, y1 - y0]); area += (x1 - x0) * (y1 - y0); }
     }
   }
   return parts;
@@ -571,17 +596,16 @@ function drawGround(z, ox, oy, shaking) {
     for (const c of groundLayers) { c.width = W; c.height = H; }
     groundAt = null;
   }
-  // How far the view has slid since, in screen pixels. When much of the ground has changed
-  // (at high speed, say), painting it all in one go is cheaper than in pieces.
+  // How far the view has slid since, in screen pixels.
   const dx = groundAt ? bx - groundAt[0] : 0, dy = groundAt ? by - groundAt[1] : 0;
-  const dirty = groundAt ? dirtyParts(z, bx, by, W, H) : [];
-  if (!groundAt || Math.abs(dx) >= W || Math.abs(dy) >= H || dirty.reduce((a, p) => a + p[2] * p[3], 0) > W * H / 3) {
+  if (!groundAt || Math.abs(dx) >= W || Math.abs(dy) >= H) {
     const g = groundLayers[0].getContext('2d');
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.clearRect(0, 0, W, H);
     paintGround(groundContext(groundLayers[0]), z, ox, oy, fills, season);
-    terrDirty.fill(0); terrDirtyCount = 0;
+    clearDirty();
   } else {
+    const dirty = dirtyParts(z, bx, by, W, H, W * H / 4);
     // Everything to paint goes in one pass: a scratch layer used twice in a frame gets copied whole.
     const parts = [];
     if (dx || dy) {
@@ -1707,7 +1731,16 @@ function thunder(e) {
   ui.sky.boom = now;
 }
 
-// Flames glow, so they go on top of the night.
+// Flames glow, so they go on top of the night. The glow is painted once and stretched to size.
+const fireGlow = (() => {
+  const c = document.createElement('canvas'), n = 128, g = c.getContext('2d');
+  c.width = c.height = n;
+  const grad = g.createRadialGradient(n / 2, n / 2, 0, n / 2, n / 2, n / 2);
+  grad.addColorStop(0, 'rgba(255, 140, 40, 0.2)');
+  grad.addColorStop(1, 'rgba(255, 90, 20, 0)');
+  g.fillStyle = grad; g.fillRect(0, 0, n, n);
+  return c;
+})();
 function drawFire(now) {
   if (!world.burning.length) return;
   const z = cam.zoom, px = Math.max(8, z * 1.15);
@@ -1716,11 +1749,7 @@ function drawFire(now) {
   for (const i of world.burning) {
     const [sx, sy] = toScreen(i % S.W + 0.5, Math.floor(i / S.W) + 0.5);
     if (!visible(sx, sy, px * 2)) continue;
-    const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, px * 1.6);
-    grad.addColorStop(0, 'rgba(255, 140, 40, 0.2)');
-    grad.addColorStop(1, 'rgba(255, 90, 20, 0)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(sx - px * 1.6, sy - px * 1.6, px * 3.2, px * 3.2);
+    ctx.drawImage(fireGlow, sx - px * 1.6, sy - px * 1.6, px * 3.2, px * 3.2);
   }
   ctx.restore();
   for (const i of world.burning) {
@@ -1757,7 +1786,7 @@ function addNews(html, category, minGapMs = 0) {
   if (category) ui.lastNews[category] = now;
   ui.newsLog.unshift({ html, tick: world.tick });
   ui.newsLog.length = Math.min(ui.newsLog.length, NEWS_LOG_MAX);
-  if (ui.newsOpen) { renderNewsLog(); return; }
+  if (ui.newsOpen) { ui.newsStale = true; return; }   // the frame rebuilds it, once however much happened
   const box = $('#news');
   const el = document.createElement('div');
   el.className = 'news-item';
@@ -1768,6 +1797,7 @@ function addNews(html, category, minGapMs = 0) {
 }
 
 function renderNewsLog() {
+  ui.newsStale = false;
   $('#news-log ol').innerHTML = ui.newsLog.map(n => `<li><span class="when">${when(n.tick)}</span>${n.html}</li>`).join('');
 }
 
@@ -2957,6 +2987,7 @@ function newWorld(seed) {
 }
 
 let last = performance.now(), acc = 0, lastCard = 0, lastRecord = 0, lastStatsCards = 0;
+const TERRAIN_MS = 1000;                  // real time between repaints of the ground's colours (painting grass skips the wait)
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
@@ -2970,6 +3001,7 @@ function frame(now) {
       if (world.events.length) flushEvents();
     }
   }
+  if (ui.newsStale && ui.newsOpen) renderNewsLog();
   updateSky();
 
   const sel = world.byId.get(ui.selectedId);
@@ -2994,7 +3026,8 @@ function frame(now) {
   clampCam();
 
   if (!ui.stats.open && canvas.width && canvas.height) {   // the stats page covers the meadow; a hidden tab can have no size
-    if (world.tick - terrainTick >= 12 || terrainTick < 0) paintTerrain();
+    // Every 12 ticks, and no more than once a second: grass changes too slowly to see the difference.
+    if (terrainTick < 0 || (world.tick - terrainTick >= 12 && now - terrainAt >= TERRAIN_MS)) paintTerrain();
     render(now);
     if (lab?.draw) lab.draw(ctx, now);
   }

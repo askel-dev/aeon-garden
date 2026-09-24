@@ -508,8 +508,11 @@ function makeTerrain(w) {
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const i = y * W + x, f = w.fieldAt[i] >= 0 ? w.fields[w.fieldAt[i]] : null;
     if (water[i] || r.next() > (f ? T.fieldFlowers : T.flowers)) continue;
-    w.plants.push({ x: x + r.next(), y: y + r.next(), i, kind: r.next(), field: f });
+    w.plants.push({ x: x + r.next(), y: y + r.next(), i, kind: r.next(), field: f, n: w.plants.length });
   }
+  // Plants never move, so they go into the spatial grid's cells once, for the bees looking for them.
+  w.plantCells = Array.from({ length: GW * GH }, () => []);
+  for (const p of w.plants) w.plantCells[clamp((p.y / CELL) | 0, 0, GH - 1) * GW + clamp((p.x / CELL) | 0, 0, GW - 1)].push(p);
 }
 
 // A few flower fields out in the open meadow, on good soil, away from the woods, the water and
@@ -650,13 +653,16 @@ function shadeWoods(w) {
   w.wood = wood.map(v => Math.min(1, v));
 }
 
-// Where the water is, from the ground and the water level.
+// Where the water is, from the ground and the water level. w.dryTiles lists the rest, so the
+// grass doesn't have to look at every pond tile to grow.
 function refreshWater(w) {
-  const g = w.ground, water = w.water;
+  const g = w.ground, water = w.water, dryTiles = [];
   for (let i = 0; i < g.length; i++) {
     const d = w.level - g[i];
     water[i] = d <= 0 ? 0 : d < w.terrain.deepAt ? SHALLOW : DEEP;
+    if (!water[i]) dryTiles.push(i);
   }
+  w.dryTiles = Int32Array.from(dryTiles);
 }
 
 function waterWithin(w, x, y, radius) {
@@ -754,9 +760,10 @@ function growGrass(w, dt) {
   const r = GRASS_RATE * s.growth * grow * dt / TPD;
   const seed = SEED_RATE * Math.max(s.growth, 0.05) * grow * dt / TPD;
   const die = DIEBACK * dt / TPD, ashFade = dt / (ASH_DAYS * TPD);
-  const g = w.grass, f = w.fert, water = w.water, ash = w.ash, fire = w.fire;
-  for (let i = 0; i < g.length; i++) {
-    if (water[i] || fire[i]) continue;
+  const g = w.grass, f = w.fert, ash = w.ash, fire = w.fire, dryTiles = w.dryTiles;
+  for (let k = 0; k < dryTiles.length; k++) {
+    const i = dryTiles[k];
+    if (fire[i]) continue;
     const cap = f[i] * capK;
     const a = ash[i] > 0 ? 1 + 3 * ash[i] : 1;               // new shoots love ash
     let v = g[i];
@@ -956,6 +963,13 @@ function forEachNear(w, x, y, radius, fn, species) {
   }
 }
 
+// Every plant in the grid cells that reach within radius of x, y (some a little further off).
+function forEachPlantNear(w, x, y, radius, fn) {
+  const x0 = clamp(((x - radius) / CELL) | 0, 0, GW - 1), x1 = clamp(((x + radius) / CELL) | 0, 0, GW - 1);
+  const y0 = clamp(((y - radius) / CELL) | 0, 0, GH - 1), y1 = clamp(((y + radius) / CELL) | 0, 0, GH - 1);
+  for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) for (const p of w.plantCells[gy * GW + gx]) fn(p);
+}
+
 function nearest(w, c, radius, species, pred) {
   let best = null, bd = Infinity;
   forEachNear(w, c.x, c.y, radius, (o, d2) => {
@@ -1129,6 +1143,10 @@ function clearPath(w, x0, y0, x1, y1) {
 // counts as a way through, only slower.
 const TURN_MAGS = [0.6, 1.2, 1.9, 2.6];
 const HUG = [-0.3, 0, 0.35, 0.7, 1.1, 1.6, 2.2, 2.8, 3.4];   // leaning into the shore first
+// Both lists for each way an animal can lean (c.turnBias 1 or -1), made once: straight first, then
+// turning further and further, and hugging the shore.
+const TURNS = [1, -1].map(bias => [0, ...TURN_MAGS.flatMap(m => [bias * m, -bias * m])]);
+const HUGS = [1, -1].map(bias => HUG.map(o => o * bias));
 
 function moveToward(w, c, tx, ty, v) {
   if (w.water[idx(c.x, c.y)]) v *= c.sp.wade;   // wading: rabbits hate it more than foxes
@@ -1140,13 +1158,8 @@ function moveToward(w, c, tx, ty, v) {
     c.detourX = tx; c.detourY = ty;
     if (--c.detour === 0 || jumped || clearPath(w, c.x, c.y, tx, ty)) c.detour = 0;
   }
-  const bias = c.turnBias || 1;
-  let a, offs;
-  if (c.detour) { a = c.heading; offs = HUG.map(o => o * bias); }
-  else {
-    a = Math.atan2(dy, dx); offs = [0];
-    for (const m of TURN_MAGS) offs.push(bias * m, -bias * m);
-  }
+  const lean = c.turnBias < 0 ? 1 : 0;
+  const a = c.detour ? c.heading : Math.atan2(dy, dx), offs = c.detour ? HUGS[lean] : TURNS[lean];
   for (const off of offs) {
     const nx = c.x + Math.cos(a + off) * stepLen, ny = c.y + Math.sin(a + off) * stepLen;
     if (!walkable(w, nx, ny)) continue;
@@ -1214,6 +1227,7 @@ function mate(w, a, b) {
   mum.pregnantUntil = w.tick + mum.sp.gestationDays * TPD;
   mum.cooldownUntil = mum.pregnantUntil + mum.sp.cooldownDays * TPD;
   mum.dadGenes = dad.genes; mum.dadIdPending = dad.id; mum.dadGenPending = dad.gen;
+  w.recount = true;
   dad.cooldownUntil = w.tick + 0.4 * TPD;
   for (const c of [mum, dad]) { c.mode = 'wander'; c.target = null; c.targetId = 0; }
   note(w, mum, '💕', `Fell in love with ${dad.name}`);
@@ -1223,7 +1237,7 @@ function mate(w, a, b) {
 
 function giveBirth(w, mum) {
   const sp = mum.sp, r = w.rng;
-  mum.pregnantUntil = 0;
+  mum.pregnantUntil = 0; w.recount = true;
   const well = mum.energy / mum.maxEnergy;
   let n = r.int(sp.litter[0], sp.litter[1]);
   if (well < 0.4) n = Math.max(1, n - 1);
@@ -1409,7 +1423,7 @@ function rabbitTick(w, c) {
   if (c.mode === 'sleep') {
     if (!night || e < 0.25) { c.sleeping = false; c.mode = 'wander'; } else return;
   }
-  const bedtime = { home: 0.2, graze: 0.5, food: 0.5 }[c.mode] ?? 0.3;
+  const bedtime = c.mode === 'home' ? 0.2 : c.mode === 'graze' || c.mode === 'food' ? 0.5 : 0.3;
   if (night && e > bedtime) {
     // Home full (or far)? The nearest burrow with room becomes home. None: sleep out.
     const b = c.home && hasRoom(c.home) && Math.hypot(c.home.x - c.x, c.home.y - c.y) < 35 ? c.home
@@ -1861,8 +1875,10 @@ function settle(w, s) {
 const SEASON_FIELD = 150;       // what each season with a field in reach is worth to a hive site
 function siteScore(w, x, y) {
   const seasons = new Set(w.fields.filter(f => Math.hypot(f.x - x, f.y - y) < FORAGE_RANGE).map(f => f.season)).size;
-  const flowers = w.plants.filter(p => (p.field || (p.kind < 0.35 && w.fert[p.i] > 0.7))   // fields, or rich soil: they'll bloom
-    && Math.hypot(p.x - x, p.y - y) < FORAGE_RANGE).length;
+  let flowers = 0;
+  forEachPlantNear(w, x, y, FORAGE_RANGE, p => {
+    if ((p.field || (p.kind < 0.35 && w.fert[p.i] > 0.7)) && Math.hypot(p.x - x, p.y - y) < FORAGE_RANGE) flowers++;   // fields, or rich soil: they'll bloom
+  });
   const crowd = w.decor.filter(o => o.tree && Math.hypot(o.x - x, o.y - y) < 4).length;
   return flowers + SEASON_FIELD * seasons - 5 * crowd;
 }
@@ -2057,10 +2073,11 @@ const freshFlower = (w, p) => !taken(p) && (!p.sipped || w.tick - p.sipped > REF
 function findFlower(w, c) {
   let best = null, bd = c.sight * c.sight;
   const h = c.home, reach = FORAGE_RANGE * FORAGE_RANGE;
-  for (const p of w.plants) {
+  forEachPlantNear(w, c.x, c.y, c.sight, p => {
     const d2 = (p.x - c.x) ** 2 + (p.y - c.y) ** 2;
-    if (d2 < bd && (p.x - h.x) ** 2 + (p.y - h.y) ** 2 < reach && freshFlower(w, p)) { best = p; bd = d2; }
-  }
+    const closer = d2 < bd || (d2 === bd && best && p.n < best.n);   // a tie goes to the first plant, whichever cell it's in
+    if (closer && (p.x - h.x) ** 2 + (p.y - h.y) ** 2 < reach && freshFlower(w, p)) { best = p; bd = d2; }
+  });
   return best;
 }
 
@@ -2075,7 +2092,7 @@ function pickFlower(w, c) {
 // How many fresh flowers are close around this one: how rich the patch is.
 function freshAround(w, f) {
   let n = 0;
-  for (const p of w.plants) if ((p.x - f.x) ** 2 + (p.y - f.y) ** 2 < 64 && freshFlower(w, p)) n++;
+  forEachPlantNear(w, f.x, f.y, 8, p => { if ((p.x - f.x) ** 2 + (p.y - f.y) ** 2 < 64 && freshFlower(w, p)) n++; });
   return n;
 }
 
@@ -2125,7 +2142,7 @@ function die(w, c, cause, killer) {
     `Died of old age, ${age} days old`;
   note(w, c, { fox: '🦊', hunger: '🥀', lightning: '⚡', fire: '🔥' }[cause] || '🌙', text);
   w.stats.deaths[c.species][cause] = (w.stats.deaths[c.species][cause] || 0) + 1;
-  w.anyDied = true;
+  w.anyDied = w.recount = true;
   emit(w, { type: 'death', c, cause, killer });
 }
 
@@ -2184,7 +2201,11 @@ function createWorld(seed, opts = {}) {
   return w;
 }
 
+// The newborn join everyone else, and the numbers are counted again when anything changed them:
+// a birth, a death, or a pregnancy (w.recount).
 function flushNewborn(w) {
+  if (!w.newborn.length && !w.recount) return;
+  w.recount = false;
   for (const k of w.newborn) w.creatures.push(k);
   w.newborn.length = 0;
   for (const s of KINDS) w.count[s] = w.expecting[s] = 0;
