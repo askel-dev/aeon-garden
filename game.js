@@ -1209,8 +1209,8 @@ function hopOf(c, px, now) {
     ? Math.abs(Math.sin(now / (fast ? 55 : 120) + c.id)) * px * (fast ? 0.16 : 0.1) : 0;
 }
 
-// In shallow water an animal sits lower, its legs hidden below a little ring of ripples.
-const wading = c => !c.hidden && world.water[(c.y | 0) * S.W + (c.x | 0)] > 0;
+// In shallow water an animal sits lower, its legs hidden below a little ring of ripples. Fliers fly over.
+const wading = c => !c.hidden && !c.sp.flies && world.water[(c.y | 0) * S.W + (c.x | 0)] > 0;
 
 function drawCreature(c, sx, sy, now) {
   const px = creaturePx(c);
