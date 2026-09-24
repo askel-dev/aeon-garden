@@ -3353,8 +3353,8 @@ const THINGS = {
         : 'No flower fields, only the flowers scattered about']);
       if (bees.length) sections.push(['Bees', linkList(bees)]);
       return {
-        emoji: h.cluster || !HAS_BARE ? '🐝' : '🪾', tint: '#e8b83a', name: h.cluster ? `Queen ${q.name}'s swarm` : q ? `Queen ${q.name}'s hive` : 'Empty hive',
-        sub: h.cluster ? 'A swarm looking for a home' : 'A hollow tree', status, chips, facts, sections,
+        emoji: h.cluster ? '🐝' : '🌳', tint: '#e8b83a', name: h.cluster ? `Queen ${q.name}'s swarm` : q ? `Queen ${q.name}'s hive` : 'Empty hive',
+        sub: h.cluster ? 'A swarm looking for a home' : 'A hollow in a great old tree', status, chips, facts, sections,
         meters: [['Honey', h.honey / S.HIVE_FULL, 'honey'], ['Room', h.bees / S.HIVE_ROOM, h.bees >= S.HIVE_ROOM * 0.8 ? 'low' : '']],
       };
     },
