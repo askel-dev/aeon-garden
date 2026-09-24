@@ -36,9 +36,11 @@ const cam = { x: S.W / 2, y: S.H / 2, zoom: 10, goal: null };
 const canvas = $('#world');
 const ctx = canvas.getContext('2d');
 let vw = 0, vh = 0, dpr = 1, minZoom = 1;
-let barPad = 0;                                   // screen pixels the toolbar covers at the bottom
-let sheet = null;                                 // on a phone: the rows the top bar and the inspector sheet hide
-const narrow = () => matchMedia('(max-width: 760px)').matches;
+let barPad = 0, railPad = 0;                      // screen pixels the toolbar covers at the bottom, or down the left on a phone on its side
+let sheet = null;                                 // the edges of the meadow the inspector and the bars hide, while it's open
+// A phone upright or on its side: slim bars. On its side (a short screen) the tools stand down the left.
+const narrow = () => matchMedia('(max-width: 760px), (max-height: 500px)').matches;
+const short = () => matchMedia('(max-height: 500px)').matches;
 
 // Safari's fingerprinting protection (iOS 26, private tabs) can report a ratio of 1 on a
 // retina phone, which leaves the meadow blurry. Ask the media queries too, and failing that,
@@ -51,18 +53,20 @@ function pixelRatio() {
   return r;
 }
 
-// On the home screen iOS takes the clock's strip off the window's height, so everything fixed ends
-// short of the bottom. Measure what's missing (0 anywhere else); the CSS adds it back as --lost.
-function lostStrip() {
-  if (!navigator.standalone) return 0;
+// On the home screen iOS 26 takes the clock's strip off the window's height, and nothing can paint
+// below that (WebKit bug 301108). The page then already ends above the home bar, so the bars
+// needn't keep clear of it too.
+function shortOfScreen() {
+  if (!navigator.standalone) return false;
   const tall = innerHeight > innerWidth, screenH = tall ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
-  return clamp(screenH - innerHeight, 0, 80);
+  return screenH - innerHeight > 20;
 }
 
 function resize() {
-  document.documentElement.style.setProperty('--lost', lostStrip() + 'px');
+  if (shortOfScreen()) document.documentElement.style.setProperty('--home-bar', '0px');
+  else document.documentElement.style.removeProperty('--home-bar');
   dpr = pixelRatio();
-  // The CSS sizes the canvas: on a phone it reaches under the clock and Safari's bar, past innerHeight.
+  // The CSS sizes the canvas: in Safari on a phone it reaches under the clock and the address bar, past innerHeight.
   vw = canvas.clientWidth || innerWidth; vh = canvas.clientHeight || innerHeight;
   canvas.width = Math.round(vw * dpr); canvas.height = Math.round(vh * dpr);
   minZoom = Math.max(vw / S.W, vh / S.H);        // the meadow always fills the window
@@ -75,25 +79,31 @@ function resize() {
   measureSheet();
 }
 
-// On a phone the inspector is a sheet over the bottom of the meadow. The one you follow is kept in
-// the middle of what's still showing, between the top bar and the sheet, instead of under the sheet.
+// On a phone the inspector is a sheet over the bottom of the meadow, or on its side a panel down the
+// right. The one you follow is kept in the middle of what's still showing, instead of under the panel.
 function measureSheet() {
   const ins = $('#inspector').getBoundingClientRect();
-  if (!ins.height || ins.width < vw * 0.8) { sheet = null; return; }
-  const top = Math.max($('#meadow').getBoundingClientRect().bottom, $('#hud-right .hud-top').getBoundingClientRect().bottom);
-  sheet = { top, bottom: vh - ins.top };
+  if (!ins.height) sheet = null;
+  else if (ins.width >= vw * 0.8) {
+    const top = Math.max($('#meadow').getBoundingClientRect().bottom, $('#hud-right .hud-top').getBoundingClientRect().bottom);
+    sheet = { top, bottom: vh - ins.top, left: 0, right: 0 };
+  } else sheet = short() ? { top: 0, bottom: 0, left: railPad, right: vw - ins.left } : null;
 }
 
 function clampCam() {
   const hw = vw / 2 / cam.zoom, hh = vh / 2 / cam.zoom;
-  cam.x = hw * 2 >= S.W ? S.W / 2 : clamp(cam.x, hw, S.W - hw);
-  // You may look a little past the bottom edge, so nothing is ever stuck under the toolbar.
+  // You may look a little past the edges, so nothing is ever stuck under the toolbar or the inspector.
+  const left = Math.max(railPad, sheet ? sheet.left : 0) / cam.zoom, right = (sheet ? sheet.right : 0) / cam.zoom;
+  cam.x = clamp(cam.x, Math.min(hw, S.W / 2) - left, Math.max(S.W - hw, S.W / 2) + right);
   cam.y = clamp(cam.y, Math.min(hh, S.H / 2), Math.max(S.H - hh, S.H / 2) + Math.max(barPad, sheet ? sheet.bottom : 0) / cam.zoom);
 }
 
 new ResizeObserver(() => {
-  barPad = $('#toolbar').offsetHeight + 16;
+  const rail = short();
+  barPad = rail ? 0 : $('#toolbar').offsetHeight + 16;
+  railPad = rail ? $('#toolbar').offsetWidth + 16 : 0;
   document.documentElement.style.setProperty('--bar', barPad + 'px');
+  document.documentElement.style.setProperty('--rail', (railPad - 8) + 'px');
 }).observe($('#toolbar'));
 new ResizeObserver(() => {            // on a phone the time pill sits under the meadow card
   document.documentElement.style.setProperty('--meadow-h', $('#meadow').offsetHeight + 'px');
@@ -2645,7 +2655,7 @@ function renderInspector() {
   const living = c.alive ? '' : world.creatures.find(k => k.mumId === c.id || k.dadId === c.id);
 
   setHTML(box, `
-    <button class="sheet-handle phone-only" aria-label="${ui.sheetUp ? 'Show less' : 'Show more'}"></button>
+    <button class="sheet-handle sheet-only" aria-label="${ui.sheetUp ? 'Show less' : 'Show more'}"></button>
     <div class="ins-head">
       <div class="portrait" style="background:${furCss(c)}33">${portraitHTML(c)}</div>
       <div>
@@ -2982,7 +2992,7 @@ function renderThing(box) {
   const p = ui.picked, v = THINGS[p.kind].show(p.it);
   p.name = v.name;
   setHTML(box, `
-    <button class="sheet-handle phone-only" aria-label="${ui.sheetUp ? 'Show less' : 'Show more'}"></button>
+    <button class="sheet-handle sheet-only" aria-label="${ui.sheetUp ? 'Show less' : 'Show more'}"></button>
     <div class="ins-head">
       <div class="portrait" style="background:${v.tint || '#d9c9a8'}33">${v.emoji}</div>
       <div>
@@ -3087,6 +3097,7 @@ function select(id, zoomIn = true) {
   ui.trail = [];
   ui.follow = !!id;
   ui.sheetUp = false;
+  flick.vx = flick.vy = 0;
   const close = narrow() ? 16 : 22;           // a phone keeps a little more of the meadow around it
   if (id && zoomIn && cam.zoom < close - 2) cam.goal = close;
   renderInspector();
@@ -3096,7 +3107,7 @@ function select(id, zoomIn = true) {
 // Swiping down a small sheet puts it away.
 let swipe = null;
 $('#inspector').addEventListener('pointerdown', e => {
-  if (sheet && e.target.closest('.sheet-handle, .ins-head') && !e.target.closest('button:not(.sheet-handle)')) swipe = { y: e.clientY };
+  if (sheet && sheet.bottom && e.target.closest('.sheet-handle, .ins-head') && !e.target.closest('button:not(.sheet-handle)')) swipe = { y: e.clientY };
 });
 $('#inspector').addEventListener('pointerup', e => {
   if (!swipe) return;
@@ -3112,7 +3123,7 @@ $('#inspector').addEventListener('pointercancel', () => { swipe = null; });
 
 function creatureAt(sx, sy) {
   const [wx, wy] = toWorld(sx, sy);
-  const reach = Math.max(1.4, 20 / cam.zoom);
+  const reach = Math.max(1.4, (fingerTap ? 28 : 20) / cam.zoom);   // a fingertip is bigger than a pointer
   let best = null, bd = reach * reach;
   for (const c of world.creatures) {
     if (c.hidden || !c.alive) continue;
@@ -3171,6 +3182,9 @@ function setSpeed(s) {
 
 // Two fingers pinch: the spot of meadow between them stays under them as they spread and move.
 let drag = null, pinch = null, scrollRest = { x: 0, y: 0 };
+let fingerTap = false;                    // the last press was a finger: taps may wobble a little and hit a little wider
+// Let go of a pan while still moving and the meadow glides on a little (screen pixels a second).
+const flick = { vx: 0, vy: 0 };
 const fingers = new Map();
 
 function startPinch() {
@@ -3194,7 +3208,7 @@ function liftFinger(e) {
   else {                                  // one finger left: carry on as a plain drag, never a tap
     pinch = null;
     const [f] = fingers.values();
-    if (f) drag = { x: f.x, y: f.y, cx: cam.x, cy: cam.y, moved: true, paint: false };
+    if (f) drag = { x: f.x, y: f.y, cx: cam.x, cy: cam.y, moved: true, paint: false, t: e.timeStamp, lx: f.x, ly: f.y, vx: 0, vy: 0 };
   }
   return true;
 }
@@ -3203,9 +3217,12 @@ canvas.addEventListener('pointerdown', e => {
   if (ui.ring) { closeRing(); return; }
   if (e.button === 2 || (e.ctrlKey && e.pointerType === 'mouse')) return;   // that's the ring menu
   canvas.setPointerCapture(e.pointerId);
-  if (e.pointerType === 'touch') fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  fingerTap = e.pointerType === 'touch';
+  flick.vx = flick.vy = 0;
+  if (fingerTap) fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (fingers.size >= 2) { startPinch(); return; }
-  drag = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y, moved: false, paint: ui.tool === 'grass' && e.button === 0 };
+  drag = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y, moved: false, paint: ui.tool === 'grass' && e.button === 0,
+    t: e.timeStamp, lx: e.clientX, ly: e.clientY, vx: 0, vy: 0 };
   if (drag.paint) paintAt(e.clientX, e.clientY);
 });
 canvas.addEventListener('pointermove', e => {
@@ -3217,9 +3234,19 @@ canvas.addEventListener('pointermove', e => {
     ui.hoverHive = c ? null : hiveAt(e.clientX, e.clientY);
     return;
   }
-  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-  if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
+  let dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  if (!drag.moved && Math.abs(dx) + Math.abs(dy) > (e.pointerType === 'touch' ? 10 : 4)) {
+    drag.moved = true;
+    if (!drag.paint) { drag.x = e.clientX; drag.y = e.clientY; dx = dy = 0; }   // start from here, no jump
+  }
   if (drag.paint) { paintAt(e.clientX, e.clientY); return; }
+  const ms = e.timeStamp - drag.t;
+  if (ms > 0) {                           // how fast the finger moves, smoothed over the last few moves
+    const a = Math.min(1, ms / 40);
+    drag.vx += ((e.clientX - drag.lx) * 1000 / ms - drag.vx) * a;
+    drag.vy += ((e.clientY - drag.ly) * 1000 / ms - drag.vy) * a;
+    drag.t = e.timeStamp; drag.lx = e.clientX; drag.ly = e.clientY;
+  }
   if (drag.moved) {
     canvas.classList.add('dragging');
     ui.follow = false;
@@ -3231,6 +3258,9 @@ canvas.addEventListener('pointerup', e => {
   if (liftFinger(e)) return;
   canvas.classList.remove('dragging');
   if (drag && !drag.moved) click(e.clientX, e.clientY);
+  else if (drag && !drag.paint && e.pointerType === 'touch' && e.timeStamp - drag.t < 60 && Math.hypot(drag.vx, drag.vy) > 250) {
+    flick.vx = drag.vx; flick.vy = drag.vy;
+  }
   drag = null;
 });
 canvas.addEventListener('pointercancel', e => {
@@ -3525,8 +3555,15 @@ function frame(now) {
   }
   if (sel && ui.follow) {
     const k = 1 - Math.pow(0.001, dt);
-    const gy = sheet ? sel.y + (vh / 2 - (sheet.top + vh - sheet.bottom) / 2) / cam.zoom : sel.y;
-    cam.x += (sel.x - cam.x) * k; cam.y += (gy - cam.y) * k;
+    const gx = sheet ? sel.x + (sheet.right - sheet.left) / 2 / cam.zoom : sel.x;
+    const gy = sheet ? sel.y + (sheet.bottom - sheet.top) / 2 / cam.zoom : sel.y;
+    cam.x += (gx - cam.x) * k; cam.y += (gy - cam.y) * k;
+  }
+  if (flick.vx || flick.vy) {             // a flicked pan glides to a stop
+    cam.x -= flick.vx * dt / cam.zoom; cam.y -= flick.vy * dt / cam.zoom;
+    const f = Math.pow(0.02, dt);
+    flick.vx *= f; flick.vy *= f;
+    if (Math.abs(flick.vx) + Math.abs(flick.vy) < 20) flick.vx = flick.vy = 0;
   }
   if (cam.goal) {
     const k = 1 - Math.pow(0.01, dt);
@@ -3619,7 +3656,7 @@ $('#go').addEventListener('click', () => {
 try { if (localStorage.getItem('aeon-garden-sound') === '1') toggleSound(true); } catch (e) { /* fine */ }
 
 // The card remembers being small. A phone starts it small, there's not much room up there.
-let mini = matchMedia('(max-width: 760px)').matches;
+let mini = narrow();
 try { const m = localStorage.getItem('aeon-garden-mini'); if (m) mini = m === '1'; } catch (e) { /* fine */ }
 if (mini) toggleMini(true);
 setTimeout(() => { barNear = false; updateBar(); }, 4000);   // show the toolbar for a moment, then let the meadow breathe

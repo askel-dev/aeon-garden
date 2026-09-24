@@ -45,8 +45,8 @@
     --hud-h: 46px;           /* the top-right pill, the mini card and the card's title row all share one centre line */
     /* the edges of the screen, minus the notch, the clock and the home bar */
     --top: calc(16px + env(safe-area-inset-top, 0px));
-    /* --lost: the strip iOS leaves off the bottom of a home-screen app, measured in game.js */
-    --bottom: calc(16px + env(safe-area-inset-bottom, 0px) - var(--lost, 0px));
+    /* --home-bar: 0 when iOS already stops the page short of the home bar, see game.js */
+    --bottom: calc(16px + var(--home-bar, env(safe-area-inset-bottom, 0px)));
     --left: calc(16px + env(safe-area-inset-left, 0px));
     --right: calc(16px + env(safe-area-inset-right, 0px));
   }
@@ -54,8 +54,8 @@
   html, body { margin: 0; height: 100%; overflow: hidden; background: #9cc77e; }
   body { font-family: Nunito, ui-rounded, system-ui, sans-serif; color: var(--ink); font-size: 14px; }
   /* The meadow fills the whole glass: under the clock and behind Safari's floating bar too (lvh). */
-  canvas#world { position: fixed; top: 0; left: 0; width: 100%; height: 100vh; height: calc(100lvh + var(--lost, 0px)); display: block; touch-action: none; }
-  .phone-only { display: none; }
+  canvas#world { position: fixed; top: 0; left: 0; width: 100%; height: 100vh; height: 100lvh; display: block; touch-action: none; }
+  .phone-only, .sheet-only { display: none; }
   .touch-only { display: none; }
   @media (pointer: coarse) { .touch-only { display: list-item; } .mouse-only { display: none; } }
   canvas#world.tool-look { cursor: grab; }
@@ -130,7 +130,7 @@
      With a mouse it slides away while you just watch, leaving a sliver. It comes back by fading in
      right where it lives, so the buttons never move under the pointer on the way to them. */
   #toolbar { left: 50%; bottom: var(--bottom); transform: translateX(-50%); padding: 8px 14px; display: flex; gap: 10px; align-items: center; }
-  @media (hover: hover) {
+  @media (hover: hover) and (min-height: 501px) {
     body:not(.bar-away) #toolbar { animation: bar-in 0.45s cubic-bezier(0.22, 1, 0.36, 1); }
     body.bar-away #toolbar { transform: translate(-50%, calc(100% + 10px)); opacity: 0.6; transition: transform 0.25s ease-in, opacity 0.25s; }
     body.bar-away #news { bottom: var(--bottom); }
@@ -241,7 +241,7 @@
   /* the terrain lab (?lab) brings its own panel, see terrain-lab.js */
   body.lab #meadow, body.lab #news, body.lab #toolbar, body.lab #hud-right, body.lab #ring { display: none; }
 
-  #welcome { position: fixed; inset: 0; bottom: calc(0px - var(--lost, 0px)); display: grid; place-items: center; background: rgba(60, 80, 40, 0.25); z-index: 10; }
+  #welcome { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(60, 80, 40, 0.25); z-index: 10; }
   #welcome .card { position: static; width: min(460px, calc(100% - 32px)); padding: 26px 28px 22px; text-align: left; }
   #welcome h1 { margin: 0 0 8px; font-size: 26px; font-weight: 900; }
   #welcome p { line-height: 1.55; margin: 0 0 10px; }
@@ -253,7 +253,7 @@
   /* ---- the stats page, over everything */
   .pop[data-act] { cursor: pointer; border-radius: 10px; }
   .pop[data-act]:hover { background: rgba(0,0,0,0.04); }
-  #stats { position: fixed; inset: 0; bottom: calc(0px - var(--lost, 0px)); z-index: 8; overflow-y: auto; background: #f3ead8; animation: pop-in 0.25s ease-out; }
+  #stats { position: fixed; inset: 0; z-index: 8; overflow-y: auto; background: #f3ead8; animation: pop-in 0.25s ease-out; }
   .stats-wrap { max-width: 1180px; margin: 0 auto; padding: 22px 24px 40px; }
   .stats-head { display: flex; align-items: center; gap: 14px; }
   .stats-head h1 { margin: 0; font-size: 24px; font-weight: 900; }
@@ -313,8 +313,8 @@
   .em-word { color: var(--muted); font-size: 12px; font-weight: 700; }
   .evo-mini canvas { display: block; width: 100%; margin-top: 4px; }
 
-  /* ---- phones: one slim row on top, a slim toolbar below, and the inspector as a bottom sheet */
-  @media (max-width: 760px) {
+  /* ---- phones, upright or on their side: one slim row on top and a slim toolbar */
+  @media (max-width: 760px), (max-height: 500px) {
     .phone-only { display: revert; }
     #meadow { --hud-h: 44px; }
     #meadow:not(.mini) { width: calc(100% - 32px); }
@@ -341,7 +341,12 @@
     #sky-menu { width: min(380px, calc(100vw - 32px)); }
     #sky-menu:not(.hidden) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
     #sky-menu .tool { min-width: 0; padding: 7px 2px 6px; }
-
+    .portrait { width: 52px; height: 52px; font-size: 32px; }
+    .mood { margin-top: 10px; padding: 7px 12px; }
+  }
+  /* ---- upright phones: the inspector as a bottom sheet */
+  @media (max-width: 760px) and (min-height: 501px) {
+    .sheet-only { display: revert; }
     /* The inspector sits at the bottom as a sheet. It opens small: who, how they feel, and Follow.
        Swipe it up (or tap the handle) for the rest. */
     #inspector { margin-top: auto; width: 100%; max-height: 72%; padding: 6px 16px 14px;
@@ -354,10 +359,27 @@
     .sheet-handle::before { content: ''; position: absolute; left: 50%; top: 8px; width: 40px; height: 5px; margin-left: -20px;
       border-radius: 99px; background: #d9ccb4; }
     #inspector .ins-head { touch-action: none; }
-    .portrait { width: 52px; height: 52px; font-size: 32px; }
-    .mood { margin-top: 10px; padding: 7px 12px; }
     .close { font-size: 18px; padding: 8px 12px; margin: -8px -10px 0 auto; }
     body.inspecting #news { display: none; }                 /* the sheet covers that corner anyway */
+  }
+  /* ---- phones on their side: the tools stand in a column down the left, the inspector is a panel
+     down the right, and the meadow keeps the middle. The screen is short, so nothing sits along the bottom. */
+  @media (max-height: 500px) {
+    #meadow:not(.mini) { width: 280px; max-height: calc(100vh - var(--top) - var(--bottom)); overflow-y: auto; overscroll-behavior: contain; z-index: 4; }
+    #meadow:not(.mini) ~ #hud-right, #hud-right { top: var(--top); left: auto; }
+    #toolbar { left: var(--left); top: calc(var(--top) + 44px + 8px); bottom: auto; transform: none; width: auto;
+      flex-direction: column; padding: 4px; gap: 2px; }
+    #toolbar .tool { flex: none; width: 46px; height: 44px; padding: 0; }
+    #toolbar .tool .l { display: none; }
+    #news { left: calc(var(--left) + var(--rail, 0px)); bottom: var(--bottom); width: min(330px, calc(100% - var(--left) - var(--rail, 0px) - 16px)); }
+    #inspector { width: min(320px, 42vw); padding: 12px 14px; overscroll-behavior: contain; }
+    .ins-name { font-size: 18px; }
+    #news-log ol { max-height: none; }
+    #welcome .card { max-height: calc(100% - 24px); overflow-y: auto; padding: 18px 22px 16px; }
+    #welcome ul { margin: 8px 0 12px; line-height: 1.7; }
+  }
+  @media (max-height: 360px) {
+    #toolbar .tool { height: 38px; }
   }
   /* small phones: squeeze the top row so the two pills never overlap */
   /* Three kinds and the time pill are a tight fit: just the weather, and the whole pill opens the card. */
@@ -513,7 +535,7 @@
       <li class="mouse-only">🖱️ <b>Scroll</b> to zoom, <b>drag</b> to look around</li>
       <li class="touch-only">🤏 <b>Pinch</b> to zoom, <b>drag</b> to look around</li>
       <li class="mouse-only">🐇 🦊 🌱 ⚡ <b>Right-click</b> the meadow to play god, weather included. The toolbar waits at the bottom edge</li>
-      <li class="touch-only">🐇 🦊 🌱 ⚡ <b>The toolbar</b> at the bottom lets you play god. The weather is in <b>•••</b></li>
+      <li class="touch-only">🐇 🦊 🌱 ⚡ <b>The toolbar</b> lets you play god. The weather is in <b>•••</b></li>
     </ul>
     <button class="btn go" id="go">Let's go!</button>
   </div>

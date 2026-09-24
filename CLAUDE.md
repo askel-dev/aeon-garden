@@ -21,7 +21,9 @@ told to just do it.
   differently each time); the lab plays each piece on demand. Like C418's Minecraft music, the
   silence between pieces is part of it, and no piece is about the time of day (a day is 20 s, a
   piece 90 s): they fit any moment, lean towards a season at 1x, and the piano plays darker at night.
-- `index.html`: layout and styles.
+- `index.html`: layout and styles. Phones get slim bars (`narrow()`: up to 760px wide, or up to 500px tall
+  on their side). Upright, the inspector is a bottom sheet; on their side (`short()`) the tools stand down
+  the left and the inspector is a panel down the right.
 - `balance.js`: headless check, `node balance.js [years] [seeds]`.
 - `terrain-lab.js`: the terrain lab, `index.html?lab`. Sliders for every number in `TERRAIN` (sim.js),
   drawn by the game itself, plus hidden layers and a strip of other seeds. Its "Copy as code" gives
