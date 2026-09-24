@@ -1926,7 +1926,7 @@ function hivesTick(w) {
       h.queen.died = w.tick;
       emit(w, { type: 'queenlost', hive: h, queen: h.queen });
       h.queen = null;
-      if (h.cluster) w.hives.splice(w.hives.indexOf(h), 1);
+      if (h.cluster) { w.hives.splice(w.hives.indexOf(h), 1); continue; }   // the swarm is gone
     }
     if (h.cluster) { if (w.tick >= h.settleAt) settle(w, h); continue; }
     if (h.queen) layEggs(w, h);
