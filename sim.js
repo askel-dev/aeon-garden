@@ -1,4 +1,4 @@
-/* AEON Garden — the simulation.
+/* Nobody's Meadow — the simulation.
  *
  * Nothing in here draws. game.js reads the world and paints it; this file only decides
  * what happens. It also runs under node (`require('./sim.js')`) so balance can be checked

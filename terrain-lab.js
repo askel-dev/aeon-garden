@@ -1,4 +1,4 @@
-/* AEON Garden terrain lab: index.html?lab
+/* Nobody's Meadow terrain lab: index.html?lab
  *
  * A slider for every number in Sim.TERRAIN, and the meadow is remade as you drag, drawn by the
  * game itself. You can draw water, rivers and woods on it too, on top of what the meadow makes

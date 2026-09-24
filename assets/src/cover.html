@@ -1,0 +1,52 @@
+<!doctype html>
+<!-- Source for the itch.io cover, assets/itch/cover.png (630x500) and cover@2x.png (1260x1000).
+     Straight from the brand sheet's cover (Nobody's Meadow, direction 04). Render with headless Chrome:
+       chrome --headless=new --hide-scrollbars --window-size=630,500 --virtual-time-budget=8000 \
+              --screenshot=cover.png "file://$PWD/cover.html"
+     and the same with --force-device-scale-factor=2 for cover@2x.png.
+     meadow.jpg is the running game, cropped to the watch face. Fraunces comes from Google Fonts,
+     so render online. -->
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT,WONK@0,9..144,680,100,1;1,9..144,450,100,1&display=block" rel="stylesheet">
+<style>
+html,body{margin:0;width:630px;height:500px;overflow:hidden}
+body{position:relative;background:#F1DDB0;color:#3B372F}
+svg{position:absolute;left:0;top:0}
+.fr{font-family:Fraunces,Georgia,serif;font-variation-settings:'SOFT' 100,'WONK' 1}
+.face{position:absolute;left:431px;top:101px;width:148px;height:148px;border-radius:50%;overflow:hidden;background:#8CC56A}
+.face img{display:block;width:100%;height:100%}
+.name{position:absolute;left:36px;top:40px}
+.name .a{font-size:36px;font-style:italic;font-weight:450;line-height:1;margin-left:5px}
+.name .b{font-size:96px;font-weight:680;line-height:.92;letter-spacing:-.02em}
+.line{position:absolute;right:30px;bottom:26px;font-size:19px;font-style:italic;font-weight:450;color:#F7EEDC}
+</style></head><body>
+<svg viewBox="0 0 630 500" width="630" height="500" aria-hidden="true">
+  <path d="M505 -10 C 512 10, 498 22, 506 40" fill="none" stroke="#C08A38" stroke-width="6" stroke-dasharray="9 5" stroke-linecap="round"/>
+  <g transform="translate(505 175) scale(2.28) translate(-60 -70)">
+    <circle cx="61.5" cy="72" r="46" fill="#C9A86A" opacity="0.35"/>
+    <circle cx="60" cy="10.5" r="6.5" fill="none" stroke="#C08A38" stroke-width="4"/>
+    <rect x="52" y="15" width="16" height="10" rx="3.5" fill="#C08A38"/>
+    <circle cx="60" cy="70" r="46" fill="#D9A441"/><circle cx="60" cy="70" r="42" fill="#F7EEDC"/>
+    <g fill="none" stroke-width="5.5" stroke-linecap="round"><path d="M63.27,32.64 A37.5 37.5 0 0 1 97.36,66.73" stroke="#E9A7A2"/><path d="M97.36,73.27 A37.5 37.5 0 0 1 63.27,107.36" stroke="#EDC34F"/><path d="M56.73,107.36 A37.5 37.5 0 0 1 22.64,73.27" stroke="#D5873A"/><path d="M22.64,66.73 A37.5 37.5 0 0 1 56.73,32.64" stroke="#A9C4CE"/></g>
+  </g>
+  <path d="M458 322 L464 298 L474 316Z M478 316 L486 297 L492 322Z" fill="#E2702F"/>
+  <path d="M461 310 L464 298 L468 308Z M483 308 L486 297 L489 310Z" fill="#3B372F"/>
+  <path d="M-10 336 C 120 300, 300 290, 420 306 C 520 320, 580 306, 640 296 L640 510 L-10 510Z" fill="#B7D493"/>
+  <path d="M-10 384 C 150 338, 350 346, 480 372 C 560 388, 610 380, 640 372 L640 510 L-10 510Z" fill="#9CC47A"/>
+  <g transform="rotate(-13 180 398)"><ellipse cx="180" cy="398" rx="11.5" ry="33" fill="#F6EFE3"/><ellipse cx="180" cy="403" rx="5" ry="22" fill="#E9A7A2"/></g>
+  <g transform="rotate(10 205 395)"><ellipse cx="205" cy="395" rx="11.5" ry="35" fill="#F6EFE3"/><ellipse cx="205" cy="400" rx="5" ry="23" fill="#E9A7A2"/></g>
+  <path d="M-10 452 C 60 424, 130 412, 194 412 C 270 412, 420 440, 640 428 L640 510 L-10 510Z" fill="#5F9346"/>
+  <path d="M128 421 l-2.5 -9 M134 419 l0.8 -10 M140 417.5 l4 -8.5 M262 418 l-2 -9 M268 419.5 l1.2 -9.5 M274 421 l4 -8" stroke="#5F9346" stroke-width="3.4" stroke-linecap="round" fill="none"/>
+  <g fill="#E9A7A2"><circle cx="60" cy="470" r="4"/><circle cx="80" cy="480" r="3.4"/><circle cx="252" cy="470" r="3.6"/></g>
+  <g fill="#FBF0D2"><circle cx="70" cy="476" r="3.2"/><circle cx="240" cy="478" r="3.2"/><circle cx="600" cy="440" r="3.2"/></g>
+</svg>
+<div class="face"><img src="meadow.jpg" alt="The living meadow inside the watch face"></div>
+<svg viewBox="0 0 630 500" width="630" height="500" aria-hidden="true">
+  <g transform="translate(505 175) scale(2.28) translate(-60 -70)">
+    <circle cx="60" cy="70" r="33" fill="none" stroke="#F7EEDC" stroke-width="1.4"/>
+    <path d="M38 50 C 42 43, 48 39.5, 55 38" fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/>
+  </g>
+</svg>
+<div class="name fr"><div class="a">Nobody's</div><div class="b">Meadow</div></div>
+<div class="line fr">Nobody tells them what to do.</div>
+</body></html>

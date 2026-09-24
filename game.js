@@ -1,4 +1,4 @@
-/* AEON Garden — everything you see and click. The simulation lives in sim.js. */
+/* Nobody's Meadow — everything you see and click. The simulation lives in sim.js. */
 (() => {
 'use strict';
 const S = window.Sim;

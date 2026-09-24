@@ -1,4 +1,4 @@
-/* AEON Garden — the ground: grass, earth, shores and water, painted by a small WebGL shader.
+/* Nobody's Meadow — the ground: grass, earth, shores and water, painted by a small WebGL shader.
  *
  * game.js hands over the meadow as a few tiny textures, one texel a tile, and the shader works
  * out every pixel on the screen, every frame. Nothing is cached, so the grass changes the moment
