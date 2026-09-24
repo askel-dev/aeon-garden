@@ -2149,6 +2149,7 @@ function beeForage(w, c) {
     c.energy = Math.min(c.maxEnergy, c.energy + NECTAR);
     if (--c.timer > 0) return true;
     pollinate(w, c.target); c.target.sipped = w.tick;
+    emit(w, { type: 'pollinate', x: c.target.x, y: c.target.y });
     c.load += HONEY; c.visits++;
     const rich = freshAround(w, c.target);
     if (rich >= RICH && (!c.find || rich > c.find.rich)) c.find = { x: c.target.x, y: c.target.y, rich, field: c.target.field };

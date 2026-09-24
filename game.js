@@ -1070,6 +1070,7 @@ function render(now) {
     else drawCreature(it.c, it.sx, it.sy, now);
   }
   drawFallingLeaves(now);
+  drawPollen(now);
 
   // Dusk and night.
   const dark = darkness(ck.phase);
@@ -1171,6 +1172,7 @@ function drawCreature(c, sx, sy, now) {
   drawEmoji(c.sp.emoji, sx, sy - hop + px * 0.4 * (1 - squash), px, {   // feet stay on the ground
     tint: furTint(c), coat: coatLook(c), flip: flipOf(c), squash,
   });
+  if (c.mode === 'sip') drawSipping(c, sx, sy, px, now);
 }
 
 function drawBubble(emoji, sx, sy, px, important) {
@@ -2030,6 +2032,82 @@ function drawEffects(now) {
   }
 }
 
+// ------------------------------------------------------------------ pollen
+//
+// A sipping bee kicks up a few specks of pollen, and when she's done with a flower a little puff
+// bursts off it. Only at 1x and 4x, and only zoomed in far enough to see the flowers: faster, a
+// sip lasts a frame and it would just fizz. Specks are dots in a fixed pool, oldest reused first,
+// so nothing is made or thrown away per speck; the sipping ones aren't stored at all.
+const POLLEN_MAX = 300, POLLEN_MS = 800, PUFF = 10;
+// Two soft dots, gold and pale, painted once and stamped for every speck.
+const POLLEN_DOTS = ['255, 206, 60', '255, 236, 150'].map(rgb => {
+  const c = document.createElement('canvas'), g = c.getContext('2d'), r = 16;
+  c.width = c.height = 2 * r;
+  const grad = g.createRadialGradient(r, r, 0, r, r, r);
+  grad.addColorStop(0, `rgba(${rgb}, 1)`); grad.addColorStop(0.45, `rgba(${rgb}, 0.9)`); grad.addColorStop(1, `rgba(${rgb}, 0)`);
+  g.fillStyle = grad; g.fillRect(0, 0, 2 * r, 2 * r);
+  return c;
+});
+const pollen = {
+  x: new Float32Array(POLLEN_MAX), y: new Float32Array(POLLEN_MAX),       // where it burst, in tiles
+  vx: new Float32Array(POLLEN_MAX), vy: new Float32Array(POLLEN_MAX),     // how far it flies, in tiles
+  t0: new Float64Array(POLLEN_MAX).fill(-1e9), next: 0, until: 0,
+};
+const pollenShows = () => ui.speed > 0 && ui.speed <= 4 && cam.zoom * 0.95 >= 7;   // as drawPlants
+
+function puffPollen(x, y) {
+  if (!pollenShows()) return;
+  const [sx, sy] = toScreen(x, y);
+  if (!visible(sx, sy, 30)) return;
+  const now = performance.now(), turn = Math.random() * TAU;
+  for (let k = 0; k <= PUFF; k++) {                     // the last one is the twinkle, standing still
+    const i = pollen.next, a = turn + k * TAU / PUFF + Math.random() * 0.5, r = k < PUFF ? 0.45 + Math.random() * 0.45 : 0;
+    pollen.x[i] = x; pollen.y[i] = y - 0.15;
+    pollen.vx[i] = Math.cos(a) * r; pollen.vy[i] = Math.sin(a) * r * 0.7 - (k < PUFF ? 0.15 : 0);
+    pollen.t0[i] = now;
+    pollen.next = (i + 1) % POLLEN_MAX;
+  }
+  pollen.until = now + POLLEN_MS;
+}
+
+function drawPollen(now) {
+  if (now > pollen.until) return;                       // nothing in the air
+  const z = cam.zoom, s = Math.max(2.2, z * 0.09);
+  for (let i = 0; i < POLLEN_MAX; i++) {
+    const a = (now - pollen.t0[i]) / POLLEN_MS;
+    if (a >= 1) continue;
+    const t = Math.max(0, a), out = t * (2 - t);        // quick out, slowing down
+    const sx = (pollen.x[i] + pollen.vx[i] * out - cam.x) * z + vw / 2;          // (toScreen, without an array per speck)
+    const sy = (pollen.y[i] + pollen.vy[i] * out + 0.25 * t * t - cam.y) * z + vh / 2;
+    if (pollen.vx[i] === 0 && pollen.vy[i] === 0) {      // the twinkle: a little cross that shrinks
+      const r = s * 4 * (1 - t) * Math.min(1, t * 8);    // pops open, then shrinks away
+      ctx.globalAlpha = 0.95 * (1 - t);
+      ctx.fillStyle = '#fff6c8';
+      ctx.fillRect(sx - r, sy - s * 0.35, r * 2, s * 0.7);
+      ctx.fillRect(sx - s * 0.35, sy - r, s * 0.7, r * 2);
+      continue;
+    }
+    const d = 2 * s * (1 - 0.4 * t);                    // (the dot's soft edge is half of it)
+    ctx.globalAlpha = 1 - t * t;
+    ctx.drawImage(POLLEN_DOTS[i & 1], sx - d / 2, sy - d / 2, d, d);
+  }
+  ctx.globalAlpha = 1;
+}
+
+// While she sips, a few specks drift up off the flower, from a hash of her id and the time.
+function drawSipping(c, sx, sy, px, now) {
+  if (!pollenShows()) return;
+  const d = 2 * Math.max(1.6, cam.zoom * 0.055);
+  for (let k = 0; k < 3; k++) {
+    const t = now / 900 + hash2(c.id, k, 5), p = t % 1, n = Math.floor(t);
+    const x = sx + (hash2(c.id * 3 + k, n, 6) - 0.5) * px * 1.1 + Math.sin(p * 6 + k) * px * 0.08;
+    const y = sy - px * 0.1 - p * px * 0.9;
+    ctx.globalAlpha = 0.9 * Math.min(1, p * 6, (1 - p) * 2.5);
+    ctx.drawImage(POLLEN_DOTS[k & 1], x - d / 2, y - d / 2, d, d);
+  }
+  ctx.globalAlpha = 1;
+}
+
 // ------------------------------------------------------------------ news
 
 const NEWS_TOASTS = 3, NEWS_TOAST_MS = 7000, NEWS_LOG_MAX = 80;
@@ -2276,6 +2354,9 @@ function handleEvent(e) {
         fox: '😢 <b>The last fox is gone.</b> The rabbits can relax, for now.',
         bee: '😢 <b>The hive has gone quiet.</b> The last bee is gone.',
       }[e.species]);
+      break;
+    case 'pollinate':
+      puffPollen(e.x, e.y);
       break;
     case 'arrive': {
       const names = e.who.map(link).join(', ');
@@ -3258,6 +3339,7 @@ function newWorld(seed) {
   const spread = Math.sqrt(patches.reduce((m, v) => m + v * v, 0) / patches.length);
   patches = patches.map(v => clamp(v / spread, -2.5, 2.5));      // about -1..1 on a typical tile
   Object.assign(ui, { selectedId: 0, hoverId: 0, follow: false, trail: [], effects: [], lastNews: {}, newsLog: [] });
+  pollen.until = 0; pollen.t0.fill(-1e9);
   ui.records = perKind(s => world.count[s]);
   ui.crashSaid = perKind(() => -1);
   ui.seenHistory = 0;
