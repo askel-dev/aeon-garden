@@ -958,8 +958,8 @@ const GROUND = {
   seasons: [   // [bare ground, lush grass] per season
     [[214, 197, 150], [118, 196, 92]],
     [[226, 206, 142], [104, 178, 70]],
-    [[216, 182, 128], [184, 170, 82]],
-    [[228, 226, 218], [178, 200, 180]],
+    [[226, 214, 178], [184, 146, 72]],   // amber, so grazed ground shows paler
+    [[226, 231, 238], [168, 196, 200]],  // frost-blue
   ],
   ash: [74, 66, 60], snow: [246, 248, 252], night: [22, 30, 78],
 };
@@ -2565,7 +2565,7 @@ const api = {
   createWorld, step, clock, isNight, phaseOf, seasonOf, mood, ageDays, growth, isAdult, patchFresh,
   addCreature, paintGrass, setSky, lockSky, zap, traitMeans, walkable,
   coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT, KINDS,
-  TERRAIN, distanceToWater, fieldBloom, FIELD_GRASS, settleWater, LOAD, HONEY,
+  TERRAIN, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;

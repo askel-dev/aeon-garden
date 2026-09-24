@@ -13,6 +13,8 @@ told to just do it.
 - `game.js`: drawing, UI, news feed, the inspector, the optional Ollama diary. The inspector shows
   animals and every other thing you click (hives, trees, rocks, burrows, flowers, fields, water): each
   kind is an entry in `THINGS`, saying how to find one on screen and what its panel shows.
+- `ground.js`: the ground (grass, earth, shores, water) as a WebGL shader, painted fresh every frame from a
+  few small textures of one texel a tile that game.js keeps up to date (`paintTerrain`, `updateWater`).
 - `sound.js`: all the sounds, made with Web Audio (no files). Off until the 🔊 button or M.
   `sound-lab.html` plays each one on its own. Keep it minimal: one scale, few sounds.
 - `index.html`: layout and styles.
@@ -43,7 +45,8 @@ around the river and lake (`TERRAIN.valley`, half as wide by a brook). The water
 spring, down in summer, a little with the rain, so the river spreads over its floodplain and back.
 A flooded burrow is lost and kits too young to climb out drown (`floodBurrows`); grass under water
 drowns and grows back fast in the silt (`w.silt`). Flooded water keeps the name of the water it spilled
-from (`w.nearBody`). The game shades the slopes by the sun (`drawHillLight`, laid over the ground each frame).
+from (`w.nearBody`). The ground shader shades the slopes by the sun, and colours the grass by where it is: lusher by the water
+and the woods, golden up high, wet moss at the water's edge, with a faint painterly mottle. That colouring is only a look; the grass the animals eat is `w.grass`.
 Shallow water is waded slowly; deep water blocks.
 Each connected water body is named (`w.waters`, `w.body`). Population caps and starting
 numbers scale with dry land (`w.room`).
