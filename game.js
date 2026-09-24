@@ -1051,9 +1051,9 @@ function render(now) {
   const shown = [];
   for (const c of world.creatures) {
     if (c.hidden || !c.alive) continue;
-    const [sx, sy] = toScreen(c.x, c.y);
+    const [sx, sy] = screenOf(c);
     if (!visible(sx, sy, 60)) continue;
-    const it = { y: c.y, c, sx, sy };
+    const it = { y: c.y + (c.mode === 'dance' ? DANCE_FRONT : 0), c, sx, sy };
     items.push(it); shown.push(it);
   }
   items.sort((a, b) => a.y - b.y);
@@ -1070,6 +1070,7 @@ function render(now) {
     else drawCreature(it.c, it.sx, it.sy, now);
   }
   drawFallingLeaves(now);
+  drawPollen(now);
 
   // Dusk and night.
   const dark = darkness(ck.phase);
@@ -1111,7 +1112,7 @@ function render(now) {
   if (sel) drawSelectionOver(sel, now);
   const hov = world.byId.get(ui.hoverId);
   if (hov && hov.alive && !hov.hidden && hov.id !== ui.selectedId) {
-    const [sx, sy] = toScreen(hov.x, hov.y);
+    const [sx, sy] = screenOf(hov);
     drawLabel(`${hov.name} · ${S.mood(world, hov).text}`, sx, sy + creaturePx(hov) * 0.55 + 6);
   } else if (ui.hoverHive) {
     const h = ui.hoverHive, [sx, sy] = toScreen(h.x, h.y);
@@ -1133,11 +1134,72 @@ const LOOKS = {
 const creaturePx = c => (10 + cam.zoom * 1.4) * LOOKS[c.species].size * c.scale * (0.55 + 0.45 * S.growth(world, c));
 const flipOf = c => LOOKS[c.species].facesLeft && c.facing > 0;
 
-// How high off the ground it is drawn: a hop, or a flier's hover. A sipping bee sits on the flower.
+// How full a forager's load is, 0..1.
+const loadOf = c => c.load ? Math.min(1, c.load / (S.LOAD * S.HONEY)) : 0;
+
+// How high off the ground it is drawn: a hop, or a flier's hover. A sipping bee sits on the flower,
+// and a laden one flies lower.
 function liftOf(c, px, now) {
   if (!c.sp.flies) return hopOf(c, px, now);
   const bob = ui.speed > 0 ? Math.sin(now / 90 + c.id) * px * 0.08 : 0;
-  return (c.mode === 'sip' ? px * 0.15 : px * 0.9) + bob;
+  return (c.mode === 'sip' ? px * 0.15 : px * (0.9 - 0.3 * loadOf(c))) + bob;
+}
+
+// Fliers don't fly straight: they weave a loose figure of eight about their way, half as much
+// when laden. Only in the drawing. It keeps sim time, so it stops with the clock, and its size
+// eases in and out (in c's entry in weaves), so a bee never jumps when she picks a new target.
+const WEAVE = 0.3, WEAVE_TICKS = 45;               // tiles to each side; ticks per loop
+const weaves = new WeakMap();
+function weaveOf(c) {
+  const t = world.tick + acc, goal = c.mode === 'home' || c.mode === 'unload' ? c.home
+    : c.mode === 'sip' || c.mode === 'dance' ? null : c.target;
+  const want = goal ? Math.min(1, Math.hypot(goal.x - c.x, goal.y - c.y) / 1.5) * (1 - 0.5 * loadOf(c)) : 0;
+  let s = weaves.get(c);
+  if (!s) weaves.set(c, s = { amp: want, t, x: 0, y: 0 });
+  if (s.t !== t) {
+    s.amp += (want - s.amp) * Math.min(1, (t - s.t) / 8);
+    s.t = t;
+    const ph = t / WEAVE_TICKS * TAU + c.id;
+    s.x = WEAVE * s.amp * Math.sin(ph); s.y = WEAVE * 0.6 * s.amp * Math.sin(2 * ph + c.id);
+  }
+  return s;
+}
+
+// Where a creature is drawn on screen: where it is, plus a flier's weave. A dancer is drawn a
+// little in front of her hive, where the tree doesn't hide her, and her eight a size bigger.
+const DANCE_FRONT = 0.45, DANCE_SIZE = 1.8;
+function screenOf(c) {
+  const p = toScreen(c.x, c.y), z = cam.zoom;
+  if (c.sp.flies && !c.hidden) { const s = weaveOf(c); p[0] += s.x * z; p[1] += s.y * z; }
+  if (c.mode === 'dance') {
+    const [x, y] = danceAt(c.timer + 1);
+    p[0] += x * (DANCE_SIZE - 1) * z; p[1] += (y * (DANCE_SIZE - 1) + DANCE_FRONT) * z;
+  }
+  return p;
+}
+
+// The waggle dance: the figure of eight she has just traced glows behind her, and specks run
+// out from it the way the patch lies. Her path is the sim's (beeForage): where she is at timer
+// + 1, as the sim counts it down after moving her.
+const danceAt = timer => { const a = timer * 0.3; return [0.35 * Math.sin(a), 0.18 * Math.sin(2 * a)]; };
+function drawDance(c, bx, by, px) {
+  const h = c.home, z = cam.zoom * DANCE_SIZE, [x0, y0] = danceAt(c.timer + 1);
+  const cx = bx - x0 * z, cy = by - y0 * z;                // the middle of the eight, at her height
+  const d = 2 * Math.max(1.8, px * 0.1);
+  for (let k = 1; k <= 12; k++) {
+    const [x, y] = danceAt(c.timer + 1 + k * 0.6), f = 1 - k / 13;
+    ctx.globalAlpha = 0.8 * f;
+    ctx.drawImage(POLLEN_DOTS[1], cx + x * z - d * f / 2, cy + y * z - d * f / 2, d * f, d * f);
+  }
+  if (S.patchFresh(world, h)) {
+    const dx = h.patch.x - h.x, dy = h.patch.y - h.y, n = Math.hypot(dx, dy) || 1, t = world.tick + acc;
+    for (let k = 0; k < 5; k++) {
+      const u = (t / 30 + k / 5) % 1, r = cam.zoom * (0.5 + 1.6 * u), e = d * 1.2;
+      ctx.globalAlpha = 0.9 * Math.sin(Math.PI * u);
+      ctx.drawImage(POLLEN_DOTS[0], cx + dx / n * r - e / 2, cy + dy / n * r - e / 2, e, e);
+    }
+  }
+  ctx.globalAlpha = 1;
 }
 
 // How high off the ground a hop has lifted it, in screen pixels.
@@ -1147,8 +1209,8 @@ function hopOf(c, px, now) {
     ? Math.abs(Math.sin(now / (fast ? 55 : 120) + c.id)) * px * (fast ? 0.16 : 0.1) : 0;
 }
 
-// In shallow water an animal sits lower, its legs hidden below a little ring of ripples.
-const wading = c => !c.hidden && world.water[(c.y | 0) * S.W + (c.x | 0)] > 0;
+// In shallow water an animal sits lower, its legs hidden below a little ring of ripples. Fliers fly over.
+const wading = c => !c.hidden && !c.sp.flies && world.water[(c.y | 0) * S.W + (c.x | 0)] > 0;
 
 function drawCreature(c, sx, sy, now) {
   const px = creaturePx(c);
@@ -1168,9 +1230,28 @@ function drawCreature(c, sx, sy, now) {
   const breathe = !hop && ui.speed > 0
     ? Math.sin(now / (c.sleeping ? 650 : 330) + c.id) * (c.sleeping ? 0.035 : 0.02) : 0;
   const squash = (c.sleeping ? 0.82 : 1) + breathe;
-  drawEmoji(c.sp.emoji, sx, sy - hop + px * 0.4 * (1 - squash), px, {   // feet stay on the ground
+  const y = sy - hop + px * 0.4 * (1 - squash);
+  if (c.mode === 'dance') drawDance(c, sx, y, px);
+  drawEmoji(c.sp.emoji, sx, y, px, {   // feet stay on the ground
     tint: furTint(c), coat: coatLook(c), flip: flipOf(c), squash,
   });
+  if (c.load) drawBaskets(c, sx, y, px);
+  if (c.mode === 'sip') drawSipping(c, sx, sy, px, now);
+}
+
+// A forager packs pollen on her hind legs: two gold lumps that grow as she fills up.
+const BASKET = { x: 0.04, y: 0.37, dx: 0.08, dy: -0.03 };  // the near hind leg, and the far one from it, in px (facing left)
+function drawBaskets(c, sx, y, px) {
+  const f = loadOf(c), r = px * (0.04 + 0.05 * f), side = flipOf(c) ? -1 : 1;
+  const x1 = sx + side * px * BASKET.x, y1 = y + px * BASKET.y;
+  const x2 = x1 + side * px * BASKET.dx, y2 = y1 + px * BASKET.dy;
+  ctx.fillStyle = '#ffcc33';
+  ctx.strokeStyle = 'rgba(120, 70, 0, 0.55)';
+  ctx.lineWidth = Math.max(0.6, px * 0.012);
+  ctx.beginPath();
+  ctx.moveTo(x2 + r * 0.85, y2); ctx.arc(x2, y2, r * 0.85, 0, TAU);    // the far one, behind
+  ctx.moveTo(x1 + r, y1); ctx.arc(x1, y1, r, 0, TAU);
+  ctx.fill(); ctx.stroke();
 }
 
 function drawBubble(emoji, sx, sy, px, important) {
@@ -1199,7 +1280,7 @@ function drawLabel(text, x, y) {
 
 function drawSelectionUnder(c, now) {
   if (!c.alive) return;
-  const [sx, sy] = toScreen(c.x, c.y);
+  const [sx, sy] = screenOf(c);
   const z = cam.zoom;
   // Where it has been.
   if (ui.trail.length > 1) {
@@ -1231,7 +1312,7 @@ function drawSelectionUnder(c, now) {
 
 function drawSelectionOver(c, now) {
   if (!c.alive) return;
-  const [sx, sy] = toScreen(c.x, c.y);
+  const [sx, sy] = screenOf(c);
   const other = world.byId.get(c.mode === 'flee' || c.mode === 'alarm' ? c.threatId : c.targetId);
   if (other && other.alive && ['flee', 'alarm', 'chase', 'stalk', 'love'].includes(c.mode)) {
     const [ox, oy] = toScreen(other.x, other.y);
@@ -2203,6 +2284,82 @@ function drawEffects(now) {
   }
 }
 
+// ------------------------------------------------------------------ pollen
+//
+// A sipping bee kicks up a few specks of pollen, and when she's done with a flower a little puff
+// bursts off it. Only at 1x and 4x, and only zoomed in far enough to see the flowers: faster, a
+// sip lasts a frame and it would just fizz. Specks are dots in a fixed pool, oldest reused first,
+// so nothing is made or thrown away per speck; the sipping ones aren't stored at all.
+const POLLEN_MAX = 300, POLLEN_MS = 800, PUFF = 10;
+// Two soft dots, gold and pale, painted once and stamped for every speck.
+const POLLEN_DOTS = ['255, 206, 60', '255, 236, 150'].map(rgb => {
+  const c = document.createElement('canvas'), g = c.getContext('2d'), r = 16;
+  c.width = c.height = 2 * r;
+  const grad = g.createRadialGradient(r, r, 0, r, r, r);
+  grad.addColorStop(0, `rgba(${rgb}, 1)`); grad.addColorStop(0.45, `rgba(${rgb}, 0.9)`); grad.addColorStop(1, `rgba(${rgb}, 0)`);
+  g.fillStyle = grad; g.fillRect(0, 0, 2 * r, 2 * r);
+  return c;
+});
+const pollen = {
+  x: new Float32Array(POLLEN_MAX), y: new Float32Array(POLLEN_MAX),       // where it burst, in tiles
+  vx: new Float32Array(POLLEN_MAX), vy: new Float32Array(POLLEN_MAX),     // how far it flies, in tiles
+  t0: new Float64Array(POLLEN_MAX).fill(-1e9), next: 0, until: 0,
+};
+const pollenShows = () => ui.speed > 0 && ui.speed <= 4 && cam.zoom * 0.95 >= 7;   // as drawPlants
+
+function puffPollen(x, y) {
+  if (!pollenShows()) return;
+  const [sx, sy] = toScreen(x, y);
+  if (!visible(sx, sy, 30)) return;
+  const now = performance.now(), turn = Math.random() * TAU;
+  for (let k = 0; k <= PUFF; k++) {                     // the last one is the twinkle, standing still
+    const i = pollen.next, a = turn + k * TAU / PUFF + Math.random() * 0.5, r = k < PUFF ? 0.45 + Math.random() * 0.45 : 0;
+    pollen.x[i] = x; pollen.y[i] = y - 0.15;
+    pollen.vx[i] = Math.cos(a) * r; pollen.vy[i] = Math.sin(a) * r * 0.7 - (k < PUFF ? 0.15 : 0);
+    pollen.t0[i] = now;
+    pollen.next = (i + 1) % POLLEN_MAX;
+  }
+  pollen.until = now + POLLEN_MS;
+}
+
+function drawPollen(now) {
+  if (now > pollen.until) return;                       // nothing in the air
+  const z = cam.zoom, s = Math.max(2.2, z * 0.09);
+  for (let i = 0; i < POLLEN_MAX; i++) {
+    const a = (now - pollen.t0[i]) / POLLEN_MS;
+    if (a >= 1) continue;
+    const t = Math.max(0, a), out = t * (2 - t);        // quick out, slowing down
+    const sx = (pollen.x[i] + pollen.vx[i] * out - cam.x) * z + vw / 2;          // (toScreen, without an array per speck)
+    const sy = (pollen.y[i] + pollen.vy[i] * out + 0.25 * t * t - cam.y) * z + vh / 2;
+    if (pollen.vx[i] === 0 && pollen.vy[i] === 0) {      // the twinkle: a little cross that shrinks
+      const r = s * 4 * (1 - t) * Math.min(1, t * 8);    // pops open, then shrinks away
+      ctx.globalAlpha = 0.95 * (1 - t);
+      ctx.fillStyle = '#fff6c8';
+      ctx.fillRect(sx - r, sy - s * 0.35, r * 2, s * 0.7);
+      ctx.fillRect(sx - s * 0.35, sy - r, s * 0.7, r * 2);
+      continue;
+    }
+    const d = 2 * s * (1 - 0.4 * t);                    // (the dot's soft edge is half of it)
+    ctx.globalAlpha = 1 - t * t;
+    ctx.drawImage(POLLEN_DOTS[i & 1], sx - d / 2, sy - d / 2, d, d);
+  }
+  ctx.globalAlpha = 1;
+}
+
+// While she sips, a few specks drift up off the flower, from a hash of her id and the time.
+function drawSipping(c, sx, sy, px, now) {
+  if (!pollenShows()) return;
+  const d = 2 * Math.max(1.6, cam.zoom * 0.055);
+  for (let k = 0; k < 3; k++) {
+    const t = now / 900 + hash2(c.id, k, 5), p = t % 1, n = Math.floor(t);
+    const x = sx + (hash2(c.id * 3 + k, n, 6) - 0.5) * px * 1.1 + Math.sin(p * 6 + k) * px * 0.08;
+    const y = sy - px * 0.1 - p * px * 0.9;
+    ctx.globalAlpha = 0.9 * Math.min(1, p * 6, (1 - p) * 2.5);
+    ctx.drawImage(POLLEN_DOTS[k & 1], x - d / 2, y - d / 2, d, d);
+  }
+  ctx.globalAlpha = 1;
+}
+
 // ------------------------------------------------------------------ news
 
 const NEWS_TOASTS = 3, NEWS_TOAST_MS = 7000, NEWS_LOG_MAX = 80;
@@ -2449,6 +2606,9 @@ function handleEvent(e) {
         fox: '😢 <b>The last fox is gone.</b> The rabbits can relax, for now.',
         bee: '😢 <b>The hive has gone quiet.</b> The last bee is gone.',
       }[e.species]);
+      break;
+    case 'pollinate':
+      puffPollen(e.x, e.y);
       break;
     case 'arrive': {
       const names = e.who.map(link).join(', ');
@@ -3431,6 +3591,7 @@ function newWorld(seed) {
   const spread = Math.sqrt(patches.reduce((m, v) => m + v * v, 0) / patches.length);
   patches = patches.map(v => clamp(v / spread, -2.5, 2.5));      // about -1..1 on a typical tile
   Object.assign(ui, { selectedId: 0, hoverId: 0, follow: false, trail: [], effects: [], lastNews: {}, newsLog: [] });
+  pollen.until = 0; pollen.t0.fill(-1e9);
   ui.records = perKind(s => world.count[s]);
   ui.crashSaid = perKind(() => -1);
   ui.seenHistory = 0;

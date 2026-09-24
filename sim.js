@@ -2160,6 +2160,7 @@ function beeForage(w, c) {
     c.energy = Math.min(c.maxEnergy, c.energy + NECTAR);
     if (--c.timer > 0) return true;
     pollinate(w, c.target); c.target.sipped = w.tick;
+    emit(w, { type: 'pollinate', x: c.target.x, y: c.target.y });
     c.load += HONEY; c.visits++;
     const rich = freshAround(w, c.target);
     if (rich >= RICH && (!c.find || rich > c.find.rich)) c.find = { x: c.target.x, y: c.target.y, rich, field: c.target.field };
@@ -2561,7 +2562,7 @@ const api = {
   createWorld, step, clock, isNight, phaseOf, seasonOf, mood, ageDays, growth, isAdult, patchFresh,
   addCreature, paintGrass, setSky, lockSky, zap, traitMeans, walkable,
   coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT, KINDS,
-  TERRAIN, distanceToWater, fieldBloom, FIELD_GRASS, settleWater,
+  TERRAIN, distanceToWater, fieldBloom, FIELD_GRASS, settleWater, LOAD, HONEY,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 else root.Sim = api;
