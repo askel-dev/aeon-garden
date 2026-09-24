@@ -171,6 +171,8 @@ function sprite(emoji, px, tint, leaf, center, coat) {
 //            lit ones (fresh tips), otherwise all of them
 //   fall     how many leaves have dropped, in soft blotches; the trunk fades with them
 //   snow     how much snow lies along the tops
+//   blossom  how much blossom is out, in little clusters over the leaves, of colour bloom
+//   fruit    an emoji to hang in the tree (hangFruit)
 const SNOW_RGB = [244, 248, 252];
 function hash2(x, y, seed) {
   let h = Math.imul(x, 374761393) + Math.imul(y, 668265263) + Math.imul(seed, 982451653) | 0;
@@ -182,6 +184,16 @@ function blotches(x, y, seed) {                          // smooth value noise, 
   const u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
   return lerp(lerp(hash2(ix, iy, seed), hash2(ix + 1, iy, seed), u),
               lerp(hash2(ix, iy + 1, seed), hash2(ix + 1, iy + 1, seed), u), v);
+}
+function flowerAt(x, y, amount) {                      // round clusters, more of them as more are out
+  const cx = Math.floor(x), cy = Math.floor(y);
+  for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
+    const X = cx + i, Y = cy + j;
+    if (hash2(X, Y, 7) > amount * 0.55) continue;
+    const r = 0.3 + 0.25 * hash2(X, Y, 10);
+    if ((x - X - hash2(X, Y, 8)) ** 2 + (y - Y - hash2(X, Y, 9)) ** 2 < r * r) return true;
+  }
+  return false;
 }
 function restyleTree(g, size, look) {
   const img = g.getImageData(0, 0, size, size), d = img.data;
@@ -199,6 +211,10 @@ function restyleTree(g, size, look) {
       const a = leaf * w * look.m;
       for (let k = 0; k < 3; k++) d[i + k] = lerp(d[i + k], Math.min(255, look.rgb[k] * lit), a);
     }
+    if (look.blossom && leaf && flowerAt(x / (size / 18), y / (size / 18), look.blossom)) {
+      const lit = clamp(0.8 + shade * 0.25, 0, 1.08);
+      for (let k = 0; k < 3; k++) d[i + k] = lerp(d[i + k], Math.min(255, look.bloom[k] * lit), leaf * 0.95);
+    }
     if (look.snow) {
       const top = y < cap || alpha[p - cap * size] < 60;
       const a = look.snow * (top ? 0.95 : 0.7 * leaf * clamp((shade - 0.45) * 2, 0, 1));
@@ -210,6 +226,63 @@ function restyleTree(g, size, look) {
     }
   }
   g.putImageData(img, 0, 0);
+  if (look.fruit) hangFruit(g, size, look);
+}
+
+// Fruit hangs in the gaps between the leaf clumps, lower in the tree and not on its rim, each on
+// a stalk and in the shade of the leaves above, with a few bits of the tree laid back over its top.
+function hangFruit(g, size, look) {
+  const d = g.getImageData(0, 0, size, size).data;
+  const leafAt = (x, y) => {
+    x |= 0; y |= 0;
+    if (x < 0 || y < 0 || x >= size || y >= size) return 0;
+    const i = (y * size + x) * 4;
+    return d[i + 3] > 200 && d[i + 1] - Math.max(d[i], d[i + 2]) > 15 ? d[i + 1] / 160 : 0;
+  };
+  let top = size, bot = 0;
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x += 3) if (leafAt(x, y)) { top = Math.min(top, y); bot = Math.max(bot, y); }
+  const r = size * 0.05, step = Math.max(1, Math.round(size / 100)), spots = [];
+  for (let y = top; y < bot; y += step) for (let x = 0; x < size; x += step) {
+    const lit = leafAt(x, y);
+    if (!lit || !leafAt(x - r * 1.6, y) || !leafAt(x + r * 1.6, y) || !leafAt(x, y - r * 1.6) || !leafAt(x, y + r * 1.4)) continue;
+    const around = (leafAt(x - r, y - r) + leafAt(x + r, y - r) + leafAt(x, y - r * 1.5)) / 3;   // a gap is darker
+    spots.push({ x, y, lit, score: (around - lit) * 2 + (y - top) / (bot - top) * 0.8 + hash2(x, y, look.seed) * 0.5 });
+  }
+  spots.sort((a, b) => b.score - a.score);
+  const hung = [];
+  for (const q of spots) {
+    if (hung.length >= look.fruit.n) break;
+    if (hung.every(p => Math.hypot(p.x - q.x, p.y - q.y) > r * 3.2)) hung.push(q);
+  }
+  const layer = (c => (c.width = c.height = size, c))(document.createElement('canvas'));
+  const over = (c => (c.width = c.height = size, c))(document.createElement('canvas'));
+  const f = layer.getContext('2d'), o = over.getContext('2d');
+  f.textAlign = 'center'; f.textBaseline = 'middle';
+  f.strokeStyle = '#5a3a1c'; f.lineWidth = Math.max(1, r * 0.14);
+  for (const [k, p] of hung.entries()) {
+    const rr = r * (0.85 + 0.3 * hash2(k, look.seed, 8));
+    f.beginPath(); f.moveTo(p.x, p.y - rr * 0.3); f.lineTo(p.x + rr * 0.15, p.y - rr * 1.5); f.stroke();
+    f.save(); f.translate(p.x, p.y + rr * 0.35); f.rotate((hash2(k, look.seed, 9) - 0.5) * 0.5);
+    f.font = `${rr * 2.3}px ${EMOJI_FONT}`; f.fillText(look.fruit.e, 0, 0);
+    f.restore();
+    for (let j = 0; j < 3; j++) {
+      o.beginPath();
+      o.arc(p.x + (hash2(k, j, 11) - 0.5) * rr * 1.6, p.y - rr * (0.55 + 0.35 * hash2(k, j, 12)), rr * (0.45 + 0.3 * hash2(k, j, 13)), 0, TAU);
+      o.fill();
+    }
+  }
+  f.globalCompositeOperation = 'source-atop';
+  for (const p of hung) {
+    const sh = f.createLinearGradient(0, p.y - r * 1.2, 0, p.y + r * 1.6);
+    sh.addColorStop(0, 'rgba(20,40,10,0.55)');
+    sh.addColorStop(0.45, `rgba(20,40,10,${0.35 * (1 - clamp(p.lit, 0, 1))})`);
+    sh.addColorStop(1, 'rgba(20,40,10,0)');
+    f.fillStyle = sh; f.fillRect(p.x - r * 2, p.y - r * 2, r * 4, r * 4);
+  }
+  o.globalCompositeOperation = 'source-in'; o.drawImage(g.canvas, 0, 0);     // the tree, only where the blobs are
+  g.drawImage(layer, 0, 0);
+  g.drawImage(over, 0, 0);
+  layer.width = over.width = 0;
 }
 
 function drawEmoji(emoji, x, y, px, opts = {}) {
@@ -325,7 +398,7 @@ function enlargeMask(from, to) {
 const limg = new ImageData(S.W, S.H), bimg = new ImageData(S.W, S.H);
 let jitter = new Float32Array(S.W * S.H);
 let patches = new Float32Array(S.W * S.H);              // soft warm (+) and cool (-) patches, a few tiles across
-let relief = null, reliefOf = null;                     // how lit each tile's slope is, for which meadow
+let slopes = null;                                      // the ground's slope east and south, per tile, and its meadow
 let terrainTick = -1, terrainVersion = 0, terrainAt = 0;   // painted at which tick, and when (real time)
 let shoreSand = [200, 180, 130];
 // Most repaints change only some tiles (a rabbit's bite, grass growing), so the ground layer
@@ -334,18 +407,27 @@ let shoreSand = [200, 180, 130];
 const terrDirty = new Uint8Array(S.W * S.H);
 let terrDirtyCount = 0;
 
-// The hills, lit softly from the top left: slopes facing it a little lighter, those facing
-// away a little darker. The ground under the water stays as it is.
-function hillLight(w) {
-  const g = w.ground, at = (x, y) => g[clamp(y, 0, S.H - 1) * S.W + clamp(x, 0, S.W - 1)];
-  return Float32Array.from(g, (h, i) => {
-    const x = i % S.W, y = (i / S.W) | 0;
-    return w.water[i] ? 1 : 1 + clamp((at(x + 1, y) - at(x - 1, y) + at(x, y + 1) - at(x, y - 1)) * 2.5, -0.2, 0.2);
-  });
+// The hills in sunlight: slopes facing the sun a little lighter, those facing away a little
+// darker. The sun comes up in the east, stands in the north at midday (the shadows fall
+// south) and sets in the west, and shows the hills most when it is low. At night and under
+// cloud they go flat, like the shadows. It moves in steps, so the ground isn't repainted
+// every time it's looked at.
+function hillLight(ck) {
+  if (!slopes || slopes.world !== world) {
+    const g = world.ground, at = (x, y) => g[clamp(y, 0, S.H - 1) * S.W + clamp(x, 0, S.W - 1)];
+    const east = new Float32Array(g.length), south = new Float32Array(g.length);
+    for (let i = 0; i < g.length; i++) {
+      const x = i % S.W, y = (i / S.W) | 0;
+      east[i] = at(x + 1, y) - at(x - 1, y); south[i] = at(x, y + 1) - at(x, y - 1);
+    }
+    slopes = { world, east, south };
+  }
+  const sn = sun(ck), step = v => Math.round(v * 10) / 10;
+  const k = 2.5 * step(Math.max(0, sn.a)) * (0.6 + 0.4 * Math.abs(sn.lean));
+  return { ...slopes, x: k * step(sn.lean), y: k * 0.8 };   // lit where the ground falls toward the sun
 }
 
 function paintTerrain(fresh) {
-  if (reliefOf !== world) { relief = hillLight(world); reliefOf = world; }
   const ck = S.clock(world);
   const sp = (ck.dayInSeason - 1 + ck.phase) / S.SEASON_DAYS;
   // What colours the whole meadow at once (the turn of the season, the wet, the snow) moves in
@@ -355,6 +437,7 @@ function paintTerrain(fresh) {
   const low = a[0].map((v, i) => lerp(v, b[0][i], t));
   const high = a[1].map((v, i) => lerp(v, b[1][i], t));
   const d = timg.data, g = world.grass, water = world.water, ash = world.ash;
+  const light = hillLight(ck);
   const snow = Math.round(world.snow * 20) / 20, damp = 1 - 0.12 * Math.round(world.wet * 10) / 10;   // wet ground reads darker
   shoreSand = low.map(v => v * 0.9 * damp);
   const ld = limg.data, bd = bimg.data;
@@ -367,7 +450,8 @@ function paintTerrain(fresh) {
     // Under the ponds (drawn on top by drawPonds) lies damp sand, which blurs into a shore.
     let v = water[i] ? 0 : clamp(g[i] / 0.85, 0, 1);
     v = Math.round(v * (2 - v) * 32) / 32;
-    const k = (1 + 0.035 * j) * damp * (water[i] ? 0.9 : 1) * (1 - 0.3 * world.wood[i]) * relief[i], p = patches[i];
+    const k = (1 + 0.035 * j) * damp * (water[i] ? 0.9 : 1) * (1 - 0.3 * world.wood[i]), p = patches[i];
+    const lit = water[i] ? 1 : 1 + clamp(light.east[i] * light.x + light.south[i] * light.y, -0.2, 0.2);
     let r = lerp(low[0], high[0], v) + 6 * p, gr = lerp(low[1], high[1], v) + 2 * p, b = lerp(low[2], high[2], v) - 6 * p;
     const fi = world.fieldAt[i], bloom = fi >= 0 ? S.fieldBloom(world, world.fields[fi], i, v) : 0;
     if (bloom > 0) { const c = world.fields[fi].tint; r = lerp(r, c[0], bloom); gr = lerp(gr, c[1], bloom); b = lerp(b, c[2], bloom); }
@@ -376,7 +460,7 @@ function paintTerrain(fresh) {
       r = lerp(r, S.GROUND.ash[0], a); gr = lerp(gr, S.GROUND.ash[1], a); b = lerp(b, S.GROUND.ash[2], a);
     }
     if (s > 0) { r = lerp(r, S.GROUND.snow[0], s); gr = lerp(gr, S.GROUND.snow[1], s); b = lerp(b, S.GROUND.snow[2], s); }
-    d[o] = r * k; d[o + 1] = gr * k; d[o + 2] = b * k;
+    d[o] = r * k * lit; d[o + 1] = gr * k * lit; d[o + 2] = b * k * lit;
     sr += d[o]; sg += d[o + 1]; sb += d[o + 2];
     d[o + 3] = 255;
     ld[o + 3] = 255 * v * (1 - s);
@@ -660,6 +744,7 @@ const PLANT_EMOJI = ['🌷', '🌼', '🌸', '🌿', '🌱', '🌻', '🍂', '�
 function plantLook(p, season, z) {
   const plantPx = z * 0.95;
   if (plantPx < 7) return null;
+  if (world.water[p.i]) return null;                    // under the flood
   const g = world.grass[p.i], e = plantEmoji(season, p, g);
   return e && { e, px: Math.max(4, Math.round(plantPx * (0.55 + 0.45 * Math.min(1, g)))) };   // as the sprite rounds it
 }
@@ -1125,9 +1210,19 @@ function treeSway(d, now) {
 // brown leaves all winter. In spring they leaf out lime green. Pines 🌲 stay green, but not
 // quite the same green: old inner needles yellow in autumn, the whole tree bronzes a little in
 // the cold, and new tips come in light at the end of spring. Snow settles on top of them all.
+// Some broadleaf trees are fruit trees, mostly out in the open (treeInfo). An apple tree flowers
+// white in spring, hangs apples from high summer and drops windfalls in autumn. A cherry comes
+// into leaf pink, a cloud of blossom that turns green and sheds petals, then cherries in early
+// summer and red leaves in autumn. No two broadleaf trees are quite the same green, and half of
+// all trees are drawn mirrored. A few of the biggest have an owl in them at night.
 const AUTUMN = [[238, 192, 56], [238, 192, 56], [240, 130, 40], [240, 130, 40], [200, 50, 42], [176, 100, 52]];
 const OAK = 5, DRY = [160, 120, 80], SPRING = [156, 214, 84];
 const OLD_NEEDLES = [214, 180, 64], BRONZE = [128, 118, 62], CANDLES = [176, 226, 100];
+const GREEN = [88, 152, 60], APPLE_WHITE = [255, 240, 244], CHERRY_PINK = [255, 176, 206];
+const FRUIT = {
+  apple: { e: '🍎', autumn: [196, 176, 64] },
+  cherry: { e: '🍒', autumn: [214, 70, 48] },
+};
 // Older systems have no 🪾; there every broadleaf keeps its dry leaves through winter, like an oak.
 const HAS_BARE = (() => {
   const c = document.createElement('canvas'); c.width = c.height = 32;
@@ -1141,36 +1236,84 @@ const HAS_BARE = (() => {
 const step = (v, n) => Math.round(clamp(v, 0, 1) * n) / n;   // a few steps keep the sprite cache small
 const mix = (a, b, t) => a.map((v, i) => lerp(v, b[i], t));
 
+// What a tree is, worked out once from where it stands.
+const treeInfos = new WeakMap();
+function treeInfo(d) {
+  let t = treeInfos.get(d);
+  if (t) return t;
+  const hx = Math.floor(d.x * 100), hy = Math.floor(d.y * 100);
+  const wood = world.wood[Math.floor(d.y) * S.W + Math.floor(d.x)];
+  const fruity = d.emoji === '🌳' && hash2(hx, hy, 41) < clamp((1 - wood) * 1.1, 0.04, 0.5);
+  t = {
+    h: Math.abs(Math.floor(d.x * 7.3 + d.y * 13.1)),
+    fruit: fruity ? (hash2(hx, hy, 42) < 0.5 ? 'apple' : 'cherry') : '',
+    flip: hash2(hx, hy, 43) < 0.5,
+    green: GREEN.map((v, k) => v + Math.round((hash2(hx, hy, 44) - 0.5) * 4) * [7, 4, -4][k]),
+    owl: d.size > 4.4 && hash2(hx, hy, 45) < 0.12,
+  };
+  treeInfos.set(d, t);
+  return t;
+}
+
 function treeLook(d, ck) {
   const sp = (ck.dayInSeason - 1 + ck.phase) / S.SEASON_DAYS, s = ck.season;
-  const h = Math.abs(Math.floor(d.x * 7.3 + d.y * 13.1)), lag = (h % 5) * 0.04;
-  let rgb = SPRING, m = 0, where = '', fall = 0, drop = 0;
+  const info = treeInfo(d), h = info.h, lag = (h % 5) * 0.04;
+  let rgb = SPRING, m = 0, where = '', fall = 0, drop = 0, blossom = 0, bloom = APPLE_WHITE, fruit = null, ground = null;
   if (d.emoji === '🌲') {
     const a = 0.6 + 0.2 * (h % 3);                       // some pines turn more than others
     if (s === 2) { rgb = OLD_NEEDLES; m = 0.7 * a * Math.sin(Math.PI * sp); where = 'dark'; }
     else if (s === 3 || (s === 0 && sp < 0.4)) { rgb = BRONZE; m = 0.45 * a * (s === 3 ? clamp(sp / 0.25, 0, 1) : 1 - sp / 0.4); }
     else { rgb = CANDLES; m = 0.6 * (s === 0 ? clamp((sp - 0.4) / 0.4, 0, 1) : 1 - clamp(sp / 0.5, 0, 1)); where = 'light'; }
   } else {
-    const hue = AUTUMN[h % AUTUMN.length], oak = h % AUTUMN.length === OAK || !HAS_BARE;
+    // Broadleaf leaves are always repainted, from the tree's own green.
+    const kind = FRUIT[info.fruit], green = info.green, n = Math.round(clamp(d.size * cam.zoom / 11, 2, 9));
+    const hue = kind ? kind.autumn : AUTUMN[h % AUTUMN.length], oak = !kind && h % AUTUMN.length === OAK || !HAS_BARE;
+    m = 1;
     if (s === 2) {
       const turn = clamp((sp - 0.05 - lag) / 0.4, 0, 1);
-      rgb = mix(hue, DRY, clamp((sp - 0.65 - lag) / 0.35, 0, 1) * (oak ? 1 : 0.5)); m = turn;
+      rgb = mix(mix(green, hue, turn), DRY, clamp((sp - 0.65 - lag) / 0.35, 0, 1) * (oak ? 1 : 0.5));
       fall = oak ? 0 : clamp((sp - 0.6 - lag) / 0.35, 0, 1);
       drop = clamp(turn * 1.5 - 0.4, 0, 1) * (1 - fall * fall) * (oak ? 0.3 : 1);
-    } else if (s === 3) { rgb = DRY; m = 1; fall = oak ? 0 : 1; }
+      if (info.fruit === 'apple') {
+        if (sp < 0.4) fruit = { e: kind.e, n: Math.ceil(n * (1 - sp / 0.4)) };
+        ground = { e: kind.e, n: Math.round(6 * clamp(sp / 0.4, 0, 1) * (1 - fall)), size: 0.12 };
+      }
+    } else if (s === 3) { rgb = DRY; fall = oak ? 0 : 1; }
     else if (s === 0) {
-      rgb = oak ? mix(DRY, SPRING, clamp(sp / 0.3, 0, 1)) : SPRING;
-      m = 1 - clamp((sp - 0.35) / 0.45, 0, 1);
+      rgb = mix(oak ? mix(DRY, SPRING, clamp(sp / 0.3, 0, 1)) : SPRING, green, clamp((sp - 0.35) / 0.45, 0, 1));
       fall = oak ? 0 : 1 - clamp((sp - lag) / 0.35, 0, 1);
+      if (info.fruit === 'cherry') {                     // all pink, then the pink breaks up over green
+        if (sp < 0.5 + lag) rgb = CHERRY_PINK;
+        else { blossom = 1 - clamp((sp - 0.5 - lag) / 0.3, 0, 1); bloom = CHERRY_PINK; }
+        if (sp > 0.4) ground = { e: '🌸', n: Math.round(6 * Math.sin(Math.PI * clamp((sp - 0.4) / 0.45, 0, 1))), size: 0.08 };
+      }
+      if (info.fruit === 'apple') blossom = Math.sin(Math.PI * clamp((sp - 0.3 - lag) / 0.5, 0, 1));
+    } else {
+      rgb = green;
+      if (info.fruit === 'apple' && sp > 0.3) fruit = { e: kind.e, n: Math.ceil(n * clamp((sp - 0.3) / 0.2, 0, 1)) };
+      if (info.fruit === 'cherry' && sp < 0.7) fruit = { e: kind.e, n: Math.ceil(n * clamp((0.7 - sp) / 0.2, 0, 1)) };
     }
+    if (d.size * cam.zoom < 18) fruit = null;            // too small to see
   }
   rgb = rgb.map(v => Math.round(v / 8) * 8);
-  m = step(m, 8); fall = step(fall, 10);
+  m = step(m, 8); fall = step(fall, 10); blossom = step(blossom, 4);
   const snow = step(world.snow * 1.6 - 0.1, 4), seed = h % 3;
   const look = m || fall || snow
-    ? { rgb, m, where, fall, snow, seed, key: [rgb, m, where, fall, snow, seed].join('|') } : undefined;
+    ? { rgb, m, where, fall, snow, seed, blossom, bloom, fruit,
+        key: [rgb, m, where, fall, snow, seed, blossom && bloom, blossom, fruit ? fruit.e + fruit.n : ''].join('|') } : undefined;
   const bare = fall && { snow, seed, m: 0, fall: 0, key: `bare|${snow}` };
-  return { look, fall, bare, drop, rgb, h };
+  return { look, fall, bare, drop, rgb, h, ground, flip: info.flip, owl: info.owl };
+}
+
+// Windfalls and petals lying under a tree: those behind the trunk go down first, then the rest.
+function drawUnderTree(bits, h, sx, sy, px, front) {
+  for (let k = 0; k < bits.n; k++) {
+    const a = hash2(h, k, 21) * TAU, r = 0.2 + 0.3 * hash2(h, k, 22), y = sy + Math.sin(a) * r * px * 0.35;
+    if ((y >= sy) !== front) continue;
+    ctx.save(); ctx.translate(sx + Math.cos(a) * r * px, y); ctx.rotate((hash2(h, k, 23) - 0.5) * 1.5);
+    drawEmoji(bits.e, 0, 0, px * bits.size);
+    ctx.restore();
+  }
 }
 
 // Leaves let go in autumn and tumble down, drifting east with the wind. Trees queue them up
@@ -1203,12 +1346,19 @@ function drawDecor(d, sx, sy, now, ck) {
   const z = cam.zoom, px = d.size * z;
   if (!d.stump && !d.tree) { drawEmoji(d.emoji, sx, sy - px * 0.35, px); return; }
   if (!d.stump) {
-    const t = treeLook(d, ck);
+    const t = treeLook(d, ck), under = t.ground?.n && px >= 20;
+    if (under) drawUnderTree(t.ground, t.h, sx, sy, px, false);
     ctx.save();
     ctx.translate(sx, sy); ctx.rotate(treeSway(d, now));
-    if (t.bare) drawEmoji('🪾', 0, -px * 0.42, px * 1.15, { alpha: t.fall, leaf: t.bare });   // it draws small
-    if (t.fall < 1) drawEmoji(d.emoji, 0, -px * 0.35, px, { leaf: t.look });
+    if (t.bare) drawEmoji('🪾', 0, -px * 0.42, px * 1.15, { alpha: t.fall, leaf: t.bare, flip: t.flip });   // it draws small
+    if (t.fall < 1) drawEmoji(d.emoji, 0, -px * 0.35, px, { leaf: t.look, flip: t.flip });
+    if (t.owl && px >= 24 && darkness(ck.phase) > 0.3) {
+      const side = t.flip ? -1 : 1;                   // on a low bough of the leaves, or in the bare fork
+      if (t.fall < 0.5) drawEmoji('🦉', side * px * 0.2, -px * 0.3, px * 0.2);
+      else drawEmoji('🦉', 0, -px * 0.8, px * 0.24);
+    }
     ctx.restore();
+    if (under) drawUnderTree(t.ground, t.h, sx, sy, px, true);
     if (t.drop && px >= 22) leafFall.push({ sx, sy, px, drop: t.drop, rgb: t.rgb, h: t.h });
     return;
   }
@@ -1500,9 +1650,12 @@ function pondShape(f, t) {
   return { path, box };
 }
 
-// Each ring's colour: the sand follows the season, and snow freezes the water over.
+// Each ring's colour: the sand follows the season, and snow freezes the water over. The
+// rings are traced again when the water rises or drops, at most once a second.
 function pondFills() {
-  if (!pond || pond.world !== world) {
+  const now = performance.now();
+  if (!pond || pond.world !== world || (pond.version !== world.waterVersion && now - pond.at > 1000)) {
+    if (pond && pond.world === world) { terrainVersion++; plantKeysWorld = null; }   // repaint it all, flowers too
     const wet = Float32Array.from(world.water, v => v ? 1 : 0), deep = Float32Array.from(world.water, v => v === S.DEEP ? 1 : 0);
     const f1 = blurred(wet), f2 = blurred(f1), f4 = blurred(blurred(f2)), d2 = blurred(blurred(deep));
     const ring = (f, t, rgb, a) => ({ ...pondShape(f, t), rgb, a });
@@ -1515,7 +1668,7 @@ function pondFills() {
     }
     // Plants a wave could pass over: its drift and width, a flower's size, and some spare.
     const nearWave = Uint8Array.from(world.plants, p => waves.some(v => Math.abs(p.x - v.x) < 2 && Math.abs(p.y - v.y) < 1.2));
-    pond = { world, waves, nearWave, rings: [
+    pond = { world, version: world.waterVersion, at: now, waves, nearWave, rings: [
       ...steps(0.03, 0.42, 9).map(t => ring(f4, t, 'sand', 0.12)),                // damp sand
       ring(f1, 0.47, [104, 170, 208], 1),                                          // shade under the bank
       ...steps(0.54, 0.8, 7).map(t => ring(f2, t, [130, 200, 235], 0.2)),          // shallows
@@ -1945,6 +2098,8 @@ function handleEvent(e) {
       } else if (e.cause === 'fire') {
         const t = `🔥 ${link(c)} was caught in the wildfire.`;
         if (mine) addNews(t); else addNews(t, 'burn', 6000);
+      } else if (e.cause === 'flood') {
+        if (mine) addNews(`🌊 ${link(c)} drowned when the burrow flooded.`);   // the rest are in the 'flooded' news
       } else {
         const age = Math.floor(S.ageDays(world, c));
         const fam = c.kids ? `, leaving ${c.kids} ${c.kids === 1 ? 'child' : 'children'}` : '';
@@ -1977,6 +2132,22 @@ function handleEvent(e) {
       addEffect('✨', e.hive.x, e.hive.y);
       addNews(`🏡 Queen ${esc(e.queen.name)}'s swarm has moved into ${e.reused ? 'an empty hive, old comb and all' : 'a hollow tree'}.`);
       break;
+    case 'water': {
+      const river = world.waters.find(b => b.kind === 'river') || world.lake || world.waters[0];
+      const name = river ? river.name : 'The water';
+      addNews(e.rising ? `🌊 ${esc(name)} has risen over its banks. The low meadows are under water.`
+        : `☀️ ${esc(name)} has dropped low for the summer. There are more places to wade across.`);
+      break;
+    }
+    case 'flooded': {
+      const { burrow: b, drowned, escaped } = e, who = escaped.slice(0, 3).map(link).join(', ') + (escaped.length > 3 ? ` and ${escaped.length - 3} more` : '');
+      addEffect('🌊', b.x, b.y, 0.8);
+      let t = escaped.length ? `🌊 The water reached a burrow. ${who} scrambled out` : '🌊 The water reached a burrow';
+      if (drowned.length) t += `${escaped.length ? ', but' : '.'} ${drowned.length === 1 ? 'a kit' : drowned.length + ' kits'} too small to climb out drowned.`;
+      else t += '.';
+      if (drowned.length || e.escaped.some(c => c.id === ui.selectedId)) addNews(t); else addNews(t, 'flooded', 20000);
+      break;
+    }
     case 'dug': {
       dugAt.set(e.burrow, world.tick);
       addEffect('🕳️', e.burrow.x, e.burrow.y, 0.8);
@@ -2176,7 +2347,7 @@ const RANGES = { year: S.YEAR_DAYS * S.TPD, five: 5 * S.YEAR_DAYS * S.TPD, all: 
 const RANGE_WORDS = { year: 'the last year', five: 'the last 5 years', all: 'the whole story' };
 const MARK_EMOJI = { extinct: '😢', arrive: '🧳', fire: '🔥' };
 const CAUSES = [['fox', '🦊', 'Caught by a fox'], ['hunger', '🥀', 'Starved'], ['age', '🌙', 'Old age'],
-  ['lightning', '⚡', 'Lightning'], ['fire', '🔥', 'Wildfire']];
+  ['lightning', '⚡', 'Lightning'], ['fire', '🔥', 'Wildfire'], ['flood', '🌊', 'Drowned in a flood']];
 const INK = '#3b372f', MUTED = '#6f6657';
 
 const shownKeys = () => ui.stats.show === 'all' ? Object.keys(SERIES) : [ui.stats.show];
@@ -2926,6 +3097,25 @@ document.addEventListener('click', e => {
   }
 });
 
+// P copies a picture of the whole meadow, SHOT pixels a tile, as the game draws it. The camera
+// looks at all of it for one frame and is put straight back, so the screen never shows it.
+const SHOT = 32;
+function copyMeadow() {
+  const keep = { x: cam.x, y: cam.y, zoom: cam.zoom, vw, vh, dpr }, now = performance.now();
+  vw = S.W * SHOT; vh = S.H * SHOT; dpr = 1;
+  Object.assign(cam, { x: S.W / 2, y: S.H / 2, zoom: SHOT });
+  canvas.width = vw; canvas.height = vh;
+  render(now);
+  if (lab?.draw) lab.draw(ctx, dpr, true);
+  const png = new Promise(ok => canvas.toBlob(ok, 'image/png'));   // takes the picture now, encodes it later
+  ({ vw, vh, dpr } = keep);
+  Object.assign(cam, { x: keep.x, y: keep.y, zoom: keep.zoom });
+  canvas.width = Math.round(vw * dpr); canvas.height = Math.round(vh * dpr);
+  render(now);
+  if (lab?.draw) lab.draw(ctx, dpr);
+  return navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]).then(() => [S.W * SHOT, S.H * SHOT]);
+}
+
 document.addEventListener('keydown', e => {
   if (e.target.closest('input,textarea')) return;
   if (LAB && !'+=-'.includes(e.key)) return;            // the lab has keys of its own
@@ -2947,6 +3137,7 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'n') toggleNewsLog();
   else if (e.key === 'c') toggleMini();
   else if (e.key === 'm') toggleSound();
+  else if (e.key === 'p') copyMeadow().then(([w, h]) => addNews(`📋 Copied the meadow, ${w} × ${h}`), () => addNews('📋 The browser would not let me copy the meadow.'));
   else if (e.key === '+' || e.key === '=') zoomAt(vw / 2, vh / 2, cam.zoom * 1.25);
   else if (e.key === '-') zoomAt(vw / 2, vh / 2, cam.zoom / 1.25);
 });
@@ -3029,7 +3220,7 @@ function frame(now) {
     // Every 12 ticks, and no more than once a second: grass changes too slowly to see the difference.
     if (terrainTick < 0 || (world.tick - terrainTick >= 12 && now - terrainAt >= TERRAIN_MS)) paintTerrain();
     render(now);
-    if (lab?.draw) lab.draw(ctx, now);
+    if (lab?.draw) lab.draw(ctx, dpr);
   }
 
   if (now - lastCard > 250) {
@@ -3063,10 +3254,13 @@ const lab = LAB ? {
   season(s) {                                          // midday, halfway through it; snow in winter
     world.tick = Math.round((s * S.SEASON_DAYS + 2 + 0.3) * S.TPD);
     world.snow = s === 3 ? 0.75 : 0;
+    S.settleWater(world);                              // and the water where it stands then
+    pond = null;
     paintTerrain(true);
   },
   toScreen, toWorld,
-  draw: null,                                          // (ctx, now): drawn over the meadow
+  shot: copyMeadow,
+  draw: null,                                          // (ctx, dpr, shot): drawn over the meadow; no pen in a shot
 } : null;
 
 // ------------------------------------------------------------------ start

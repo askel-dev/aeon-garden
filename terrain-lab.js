@@ -38,9 +38,13 @@ const GROUPS = [
     ['layouts', 'Layout', [['Random', DEF.layouts], ['River + lake', { valley: 1, river: 0, lake: 0 }],
       ['River', { valley: 0, river: 1, lake: 0 }], ['Lake', { valley: 0, river: 0, lake: 1 }]]],
     ['level', 'Water level', -0.3, 0.4, 0.01],
+    ['springFlood', 'Spring flood', 0, 0.2, 0.005],
+    ['summerLow', 'Summer low', 0, 0.2, 0.005],
+    ['rainRise', 'Rain rise', 0, 0.2, 0.005],
     ['deepAt', 'Wading depth', 0.02, 1, 0.01],
   ]],
   ['🏞️', 'Lake', [
+    ['lakeEdge', 'By the edge', 0, 1, 0.05],
     ['lakeBlobs', 'Circles', 1, 16, 1],
     ['lakeSpread', 'Spread', 0, 35, 0.5],
     ['lakeSize', 'Circle size', 1, 25, 0.5],
@@ -53,6 +57,9 @@ const GROUPS = [
     ['meanderLength', 'Wiggle length', 5, 150, 1],
     ['riverWidth', 'Half width', 0.3, 8, 0.1],
     ['riverDepth', 'Depth', 0.1, 2.5, 0.05],
+    ['brooks', 'Brook odds', 0, 1, 0.05],
+    ['brookWidth', 'Brook half width', 0.3, 4, 0.1],
+    ['brookDepth', 'Brook depth', 0.05, 1.5, 0.01],
     ['fords', 'Fords', 0, 8, 1],
     ['fordDepth', 'Ford depth', 0, 0.9, 0.01],
     ['fordLength', 'Ford length', 2, 50, 1],
@@ -178,6 +185,7 @@ style.textContent = `
   #lab-legend .ends { display: flex; justify-content: space-between; }
   #lab-hover { margin-top: 8px; font-size: 12px; min-height: 2.8em; line-height: 1.4; border-top: 1px dashed var(--line); padding-top: 6px; }
   #lab-keys { font-size: 11px; color: var(--muted); margin-top: 6px; }
+  #lab-say { position: fixed; left: 50%; top: var(--top); transform: translateX(-50%); padding: 6px 12px; font-size: 13px; font-weight: 700; z-index: 4; transition: opacity 0.6s; }
 
   #lab-strip { left: calc(var(--left) + 312px); right: var(--right); bottom: var(--bottom); padding: 8px; display: flex; gap: 8px; align-items: stretch; z-index: 3; overflow-x: auto; }
   #lab-strip .thumb { flex: 1 1 0; min-width: 88px; max-width: 176px; border: 2px solid transparent; background: none; border-radius: 12px; padding: 3px; text-align: left; }
@@ -252,7 +260,7 @@ viewCard.innerHTML = `
   <div class="seg">${S.SEASONS.map((s, i) => `<button class="lab-btn" data-season="${i}" title="${s.name}">${s.emoji}</button>`).join('')}</div>
   <div id="lab-legend"></div>
   <div id="lab-hover"></div>
-  <div id="lab-keys">Hold <b>space</b> to peek at the meadow · <b>H</b> hides all this</div>`;
+  <div id="lab-keys">Hold <b>space</b> to peek at the meadow · <b>H</b> hides all this · <b>P</b> copies a picture</div>`;
 document.body.append(viewCard);
 
 const strip = document.createElement('section');
@@ -394,8 +402,9 @@ function remake() {
   document.querySelectorAll('#lab-strip .thumb').forEach(b => b.classList.toggle('on', +b.dataset.pick === seed));
 }
 
-// Each river's name: the water it runs in, a little way along.
+// Each river's name: the water it runs in, a little way along. A brook has its own.
 function riverName(w, rv) {
+  if (rv.name) return { name: rv.name, p: rv.pts[Math.floor(rv.pts.length * 0.4)] };
   for (let k = Math.floor(rv.pts.length * 0.2); k < rv.pts.length; k++) {
     const p = rv.pts[k], b = p.x >= 0 && p.y >= 0 && p.x < S.W && p.y < S.H ? w.body[(p.y | 0) * S.W + (p.x | 0)] : -1;
     if (b >= 0) return { name: w.waters[b].name, p };
@@ -403,6 +412,7 @@ function riverName(w, rv) {
   return null;
 }
 const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+const riversOf = w => w.rivers.filter(rv => !rv.brook).length, brooksOf = w => w.rivers.length - riversOf(w);
 const lakesOf = w => w.waters.filter(v => v.kind === 'lake').length || (w.lake ? 1 : 0);
 const woodsOf = w => [...w.forest.map(k => FOREST_NAMES[k] || k), ...(w.drawn.woods.length ? ['drawn'] : [])].join(' and ') || 'none';
 
@@ -410,7 +420,7 @@ function info() {
   const w = G.world, land = w.land / (S.W * S.H);
   const names = [...new Set([...w.rivers.map(rv => riverName(w, rv)?.name), w.lake?.name].filter(Boolean))];
   $('#lab-info').innerHTML = `
-    <b>${Math.round(land * 100)}%</b> dry land · ${count(w.rivers.length, 'river', 'rivers')}, ${count(lakesOf(w), 'lake', 'lakes')},
+    <b>${Math.round(land * 100)}%</b> dry land · ${count(riversOf(w), 'river', 'rivers')}${brooksOf(w) ? `, ${count(brooksOf(w), 'brook', 'brooks')}` : ''}, ${count(lakesOf(w), 'lake', 'lakes')},
     ${count(w.waters.filter(v => v.kind === 'pond').length, 'pond', 'ponds')}${names.length ? ` (${names.join(', ')})` : ''} · woods: ${woodsOf(w)}<br>
     A game here starts with <b>🐇 ${Math.round(30 * w.room)}</b> and <b>🦊 ${Math.round(4 * w.room)}</b>
     <span title="Population caps and starting numbers grow with dry land. A lot more or less than usual? Run balance.js">(room ${w.room.toFixed(2)})</span>
@@ -555,8 +565,8 @@ function legend(cols, a, b, note) {
 }
 
 // Drawn over the meadow every frame: the layer, if one is showing, and the pen.
-lab.draw = g => {
-  const k = g.canvas.width / g.canvas.clientWidth, z = G.cam.zoom, [ox, oy] = lab.toScreen(0, 0);
+lab.draw = (g, k, shot) => {
+  const z = G.cam.zoom, [ox, oy] = lab.toScreen(0, 0);
   g.save();
   g.setTransform(k, 0, 0, k, 0, 0);
   if (overlay && !peek) {
@@ -566,7 +576,7 @@ lab.draw = g => {
     g.globalAlpha = 1;
     if (view === 'water') drawWaterMarks(g, z);
   }
-  drawPen(g, z);
+  if (!shot) drawPen(g, z);
   g.restore();
 };
 
@@ -742,7 +752,7 @@ async function drawStrip() {
     const c = paintLayer(w, view === 'meadow' ? 'meadow' : view, 2, view === 'near' ? S.distanceToWater(w) : null);
     const b = strip.querySelector(`[data-pick="${s}"]`);
     b.querySelector('canvas').getContext('2d').drawImage(c, 0, 0);
-    const layout = [w.rivers.length && 'river', lakesOf(w) && 'lake'].filter(Boolean).join(' + ') || 'ponds';
+    const layout = [riversOf(w) && 'river', brooksOf(w) && 'brook', lakesOf(w) && 'lake'].filter(Boolean).join(' + ') || 'ponds';
     b.querySelector('.cap').innerHTML = `<b>${s}</b> · ${Math.round(w.land / (S.W * S.H) * 100)}% dry · ${layout}`;
     b.title = `Seed ${s}: ${layout}, woods: ${woodsOf(w)}`;
   }
@@ -844,6 +854,15 @@ document.addEventListener('click', e => {
 });
 $('#lab-seed').addEventListener('change', e => setSeed(+e.target.value));
 
+// A word for a moment, top middle.
+function say(text) {
+  const el = document.createElement('div');
+  el.id = 'lab-say'; el.className = 'card'; el.textContent = text;
+  $('#lab-say')?.remove();
+  document.body.append(el);
+  setTimeout(() => { el.style.opacity = 0; setTimeout(() => el.remove(), 600); }, 2500);
+}
+
 const PEN_KEYS = { l: 'look', w: 'water', v: 'river', f: 'woods', e: 'erase' };
 addEventListener('keydown', e => {
   if (e.key === 'z' && (e.metaKey || e.ctrlKey) && !e.target.closest('input[type=number],textarea')) {
@@ -861,6 +880,7 @@ addEventListener('keydown', e => {
   else if (e.key === 'ArrowRight') setSeed(seed + 1);
   else if (e.key === 'r') setSeed(Math.floor(Math.random() * 1e6));
   else if (e.key === 'h') document.body.classList.toggle('lab-hide');
+  else if (e.key === 'p') lab.shot().then(([w, h]) => say(`📋 Copied the meadow, ${w} × ${h}`), () => say('📋 The browser would not let me copy the meadow.'));
   else if (/^[1-5]$/.test(e.key)) setView(VIEWS[+e.key - 1][0]);
 });
 addEventListener('keyup', e => { if (e.key === ' ') peek = false; });

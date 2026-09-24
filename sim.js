@@ -186,8 +186,12 @@ const TERRAIN = {
   valley: 22,                  // tiles over which the land slopes down to the river or lake
   bank: 0.05,                  // how fast the ground rises away from the water, per tile
   level: 0,                    // the water line: higher floods the low meadows, lower drains them
+  springFlood: 0.035,          // how far the water rises in spring
+  summerLow: 0.03,             // and how far it drops in summer
+  rainRise: 0.03,              // how much a soaked meadow adds to it (a dry one takes it away)
   deepAt: 0.3,                 // water at least this deep can't be waded
   layouts: { valley: 2, river: 1, lake: 1 },   // odds of each: a river through a lake, a river, a lake
+  lakeEdge: 0.4,               // odds a lake lies by the edge of the meadow, running off it (else in a hollow)
   lakeBlobs: 6,                // circles a lake is made of
   lakeSpread: 13,              // how far they stray from its middle
   lakeSize: [6, 11],           // each circle's radius
@@ -198,6 +202,9 @@ const TERRAIN = {
   meanderLength: 40,           // how drawn out the wiggles are
   riverWidth: [1.3, 2.5],      // half its width where it comes in, and where it leaves
   riverDepth: 0.9,
+  brooks: 0.6,                 // odds a brook runs into the river
+  brookWidth: [0.7, 1.2],      // its half width where it comes in, and where it joins the river
+  brookDepth: 0.26,            // shallow enough to wade, except when the spring flood is in
   fords: [2, 3],               // stretches of river shallow enough to wade across
   fordDepth: 0.18,             // how deep a ford is in its middle
   fordLength: 14,
@@ -213,7 +220,7 @@ const TERRAIN = {
   edgeWoods: [12, 18],         // how far a big wood along one side reaches in
   bankWoods: [22, 30],         // how far a wet wood stretches along the water
   treeSpacing: 2.3,            // tiles between trees where a wood is thick
-  treeSize: [2.4, 3.4],
+  treeSize: [2.7, 5.2],        // smallest to biggest tree; most are small, a few are giants
   groves: 4,                   // small clumps of trees out in the meadow
   rocks: 22,
   flowers: 0.07,               // share of tiles with a flower or a tuft
@@ -235,6 +242,7 @@ const WATER_NAMES = {
   first: ['Willow', 'Heron', 'Otter', 'Alder', 'Mill', 'Reed', 'Kingfisher', 'Moss', 'Silver',
     'Bramble', 'Mirror', 'Moon', 'Lily', 'Newt', 'Mallow', 'Duck', 'Hazel', 'Frog'],
   river: ['Brook', 'Beck', 'River', 'Stream'], lake: ['Mere', 'Lake', 'Water'], pond: ['Pond', 'Pool'],
+  brook: ['Brook', 'Beck', 'Burn', 'Rill'],
 };
 
 // Each flower field is one kind, blooming in its season: its flowers, its name, and the tint
@@ -274,14 +282,33 @@ function outside(shape, x, y) {    // tiles from the shape's edge; negative insi
   return d;
 }
 
+// The lake: in a hollow of the hills (the lowest of a few spots), or by the edge of the
+// meadow, running off it. `side` says which edge.
+function placeLake(r, T, hills) {
+  if (r.next() < T.lakeEdge) {
+    const side = r.pick(['w', 'e', 'n', 's']), off = r.range(2, 10);   // its middle just inside the edge
+    return {
+      side,
+      x: side === 'w' ? off : side === 'e' ? W - off : r.range(30, W - 30),
+      y: side === 'n' ? off : side === 's' ? H - off : r.range(25, H - 25),
+    };
+  }
+  let best = null;
+  for (let k = 0; k < 6; k++) {
+    const x = r.range(25, W - 25), y = r.range(20, H - 20), h = hills(x / T.hillSize, y / T.hillSize, T.hillDetail);
+    if (!best || h < best.h) best = { x, y, h };
+  }
+  return { x: best.x, y: best.y };
+}
+
 // The river: in at one edge and out at the far one, through the lake if there is one, bending
-// on the way, and meandering in between. Returned as points half a tile apart.
+// on the way, and meandering in between. A lake by the edge takes the place of that end: the
+// river runs out of it, or into it. Returned as points half a tile apart.
 function riverPath(r, T, lake, wiggle) {
-  const leftRight = r.next() < 0.6, L = leftRight ? W : H, S = leftRight ? H : W;
+  const leftRight = lake?.side ? 'we'.includes(lake.side) : r.next() < 0.6, L = leftRight ? W : H, S = leftRight ? H : W;
   const at = (u, v) => leftRight ? { x: u, y: v } : { x: v, y: u };
   const ends = [at(-6, r.range(0.2, 0.8) * S), at(L + 6, r.range(0.2, 0.8) * S)];
-  const via = lake ? [lake] : [];
-  const route = [ends[0], ...via, ends[1]];
+  const route = !lake ? ends : !lake.side ? [ends[0], lake, ends[1]] : 'wn'.includes(lake.side) ? [lake, ends[1]] : [ends[0], lake];
   const along = p => leftRight ? p.x : p.y, across = p => leftRight ? p.y : p.x;
   // A bend every so often, pushed sideways, except where it goes through the lake.
   const ctrl = [route[0]];
@@ -319,23 +346,55 @@ function smoothRiver(T, ctrl, lake, wiggle) {
   });
 }
 
+// A brook: in from the edge on one side of the river, joining it at a slant, downstream.
+// It keeps clear of the lake and of the river's other bends. Null if no good way was found.
+function brookPath(r, T, river, lake, wiggle) {
+  for (let tries = 0; tries < 12; tries++) {
+    const k = Math.floor(river.length * r.range(0.25, 0.75)), join = river[k];
+    if (!inBounds(join.x, join.y) || (lake && outside(lake.shape, join.x, join.y) < 8)) continue;
+    const a = river[Math.max(0, k - 6)], b = river[Math.min(river.length - 1, k + 6)];
+    const d = Math.hypot(b.x - a.x, b.y - a.y) || 1, fx = (b.x - a.x) / d, fy = (b.y - a.y) / d;   // the way the river flows
+    const side = r.next() < 0.5 ? 1 : -1;
+    let ox = -fy * side - fx * 0.7, oy = fx * side - fy * 0.7;                   // out to one side, and back upstream
+    const o = Math.hypot(ox, oy); ox /= o; oy /= o;
+    let len = 0;
+    while (inBounds(join.x + ox * len, join.y + oy * len)) len++;
+    if (len < 25) continue;
+    len += 6;
+    // Bends along the way, pushed sideways, none at the join itself.
+    const n = Math.max(2, Math.round(len / T.riverBends)), ctrl = [];
+    for (let j = n; j > 0; j--) {
+      const sway = j < n ? r.range(-T.riverSway, T.riverSway) * 0.7 : 0, u = len * j / n;
+      ctrl.push({ x: join.x + ox * u - oy * sway, y: join.y + oy * u + ox * sway });
+    }
+    ctrl.push(join);
+    const pts = smoothRiver(T, ctrl, join, wiggle);
+    const clear = pts.every(p => Math.hypot(p.x - join.x, p.y - join.y) < 10 ||
+      (!(lake && outside(lake.shape, p.x, p.y) < 4) && river.every(q => Math.abs(p.x - q.x) > 6 || Math.abs(p.y - q.y) > 6)));
+    if (clear) return pts;
+  }
+  return null;
+}
+
 // Carves a river into the ground. It widens as it goes, and has a few fords: stretches shallow
-// enough to wade across, never where it runs through a lake (`wet`).
-function carveRiver(w, T, pts, wet, carve) {
+// enough to wade across, never where it runs through a lake (`wet`). A brook is narrower and
+// shallower, with one ford.
+function carveRiver(w, T, pts, wet, carve, brook = false) {
+  const [width, depth, nFords] = brook ? [T.brookWidth, T.brookDepth, 1] : [T.riverWidth, T.riverDepth, w.rng.int(...T.fords)];
   const r = w.rng, n = pts.length;
   const spots = r.shuffle(pts.map((p, k) => k).filter(k => {
     const p = pts[k];
     return p.x > 10 && p.x < W - 10 && p.y > 10 && p.y < H - 10 && !wet(p);
   }));
-  const fords = [], nFords = r.int(...T.fords);
+  const fords = [];
   for (const k of spots) {
     if (fords.length < nFords && fords.every(f => Math.abs(f - k) > 70)) fords.push(k);
   }
   pts.forEach((p, k) => {
-    const t = k / n, half = lerp(...T.riverWidth, t);
+    const t = k / n, half = lerp(...width, t);
     let ford = 0;
     for (const f of fords) ford = Math.max(ford, Math.exp(-(((k - f) / T.fordLength) ** 2)));
-    const deep = T.riverDepth - (T.riverDepth - T.fordDepth) * ford, reach = half + 8;
+    const deep = depth - Math.max(0, depth - T.fordDepth) * ford, reach = half + 8;
     for (let y = Math.max(0, Math.floor(p.y - reach)); y <= Math.min(H - 1, p.y + reach); y++) {
       for (let x = Math.max(0, Math.floor(p.x - reach)); x <= Math.min(W - 1, p.x + reach); x++) {
         carve(y * W + x, Math.hypot(x + 0.5 - p.x, y + 0.5 - p.y) - half, deep, half);
@@ -343,7 +402,7 @@ function carveRiver(w, T, pts, wet, carve) {
     }
   });
   for (const k of fords) w.fords.push({ x: pts[k].x, y: pts[k].y, k, river: w.rivers.length });
-  w.rivers.push({ pts });
+  w.rivers.push({ pts, brook });
 }
 
 // Water drawn in the terrain lab: circles, carved as one shape, so a lake deepens toward its
@@ -395,9 +454,10 @@ function makeTerrain(w) {
 
   // First where the water will go: the lake, the river, and whatever was drawn.
   const layout = drawn.empty ? 'none' : pickOdds(r, T.layouts);
-  const lake = layout === 'river' || layout === 'none' ? null : { x: r.range(45, W - 45), y: r.range(35, H - 35) };
+  const lake = layout === 'river' || layout === 'none' ? null : placeLake(r, T, hills);
   if (lake) lake.shape = blobs(r, lake.x, lake.y, T.lakeBlobs, T.lakeSpread, ...T.lakeSize);
   const river = layout === 'valley' || layout === 'river' ? riverPath(r, T, lake, hills) : null;
+  const brook = river && r.next() < T.brooks ? brookPath(r, T, river, lake, hills) : null;
   // A drawn river that nearly reaches the edge runs on off the map.
   const drawnRivers = drawn.rivers.map(bends => {
     const ends = [bends[0], bends[bends.length - 1]].map((p, k) => {
@@ -409,15 +469,22 @@ function makeTerrain(w) {
   });
 
   // Then the ground: the land slopes down into a valley around that water, so a rising water
-  // level spreads out from the river first. Away from it the hills rise from low meadows that
-  // still dip and swell a little, and no hilltop sits right by the water.
-  const planned = new Uint8Array(N);
-  each((i, x, y) => { if ((lake && outside(lake.shape, x, y) < 0) || outside(drawn.water, x, y) < 0) planned[i] = 1; });
-  for (const pts of [river || [], ...drawnRivers]) for (const p of pts) if (inBounds(p.x, p.y)) planned[idx(p.x, p.y)] = 1;
-  const fromWater = planned.some(v => v) ? blurred(blurred(distanceTo(planned), 2), 2) : null;   // blurred, or it shows its eight directions
+  // level spreads out from the river first. A brook's valley is half as wide. Away from them the
+  // hills rise from low meadows that still dip and swell a little, and no hilltop sits right by
+  // the water.
+  const valley = (shapes, lines, width) => {
+    const planned = new Uint8Array(N);
+    each((i, x, y) => { if (shapes.some(sh => outside(sh, x, y) < 0)) planned[i] = 1; });
+    for (const pts of lines) for (const p of pts) if (inBounds(p.x, p.y)) planned[idx(p.x, p.y)] = 1;
+    if (!planned.some(v => v)) return () => 1;
+    const d = blurred(blurred(distanceTo(planned), 2), 2);             // blurred, or it shows its eight directions
+    return i => 1 - (1 - clamp(d[i] / width, 0, 1)) ** 2;              // rises fast from the water, then levels off
+  };
+  const byRiver = valley([lake ? lake.shape : [], drawn.water], [river || [], ...drawnRivers], T.valley);
+  const byBrook = valley([], [brook || []], T.valley / 2);
   const ground = new Float32Array(N);
   for (let i = 0; i < N; i++) {
-    const v = fromWater ? 1 - (1 - clamp(fromWater[i] / T.valley, 0, 1)) ** 2 : 1;   // rises fast from the water, then levels off
+    const v = Math.min(byRiver(i), byBrook(i));
     hill[i] = lerp(Math.min(hill[i], T.hillFloor), hill[i], v);
     const g = (hill[i] - T.hillFloor) * T.hillRise;
     ground[i] = v * Math.max(0.01, T.lowGround + (g > 0 ? g : g * T.lowSlope));
@@ -432,6 +499,7 @@ function makeTerrain(w) {
   const inLake = p => (lake && outside(lake.shape, p.x, p.y) < 6) || outside(drawn.water, p.x, p.y) < 3;
   w.rivers = []; w.fords = [];
   if (river) carveRiver(w, T, river, inLake, carve);
+  if (brook) carveRiver(w, T, brook, p => inLake(p) || Math.hypot(p.x - brook.at(-1).x, p.y - brook.at(-1).y) < 12, carve, true);
   if (drawn.water.length) carveDrawnWater(w, drawn.water, carve);
   for (const pts of drawnRivers) carveRiver(w, T, pts, inLake, carve);
 
@@ -456,6 +524,7 @@ function makeTerrain(w) {
   nameWaters(w, lake);
 
   // Fertile and poor patches, lush banks, and the low meadows a little richer than the hills.
+  // Worked out under the water too, for the ground a falling water line leaves behind.
   const near = distanceToWater(w);
   const fert = new Float32Array(N);
   const patches = [];
@@ -463,7 +532,6 @@ function makeTerrain(w) {
     patches.push({ x: r.range(0, W), y: r.range(0, H), r: r.range(...T.patchSize), a: r.range(...T.patchRichness) });
   }
   each((i, x, y) => {
-    if (water[i]) return;
     let v = 0.55;
     for (const b of patches) v += b.a * Math.exp(-((x - b.x) ** 2 + (y - b.y) ** 2) / (2 * b.r * b.r));
     v += T.wetBanks * Math.exp(-near[i] / 3);
@@ -475,7 +543,7 @@ function makeTerrain(w) {
   let sum = 0, n = 0;
   for (let i = 0; i < N; i++) if (!water[i]) { sum += fert[i]; n++; }
   const k = 0.62 / (sum / n);
-  for (let i = 0; i < N; i++) fert[i] = water[i] ? 0 : clamp(fert[i] * k, 0.12, 1);
+  for (let i = 0; i < N; i++) fert[i] = clamp(fert[i] * k, 0.12, 1);   // under water too, for when it drops
   w.fert = fert;
   w.land = n;
   w.room = n / ROOM_TILES;
@@ -513,6 +581,9 @@ function makeTerrain(w) {
   // Plants never move, so they go into the spatial grid's cells once, for the bees looking for them.
   w.plantCells = Array.from({ length: GW * GH }, () => []);
   for (const p of w.plants) w.plantCells[clamp((p.y / CELL) | 0, 0, GH - 1) * GW + clamp((p.x / CELL) | 0, 0, GW - 1)].push(p);
+  // Everything above was laid out at the usual water line; now the water stands where it
+  // does this time of year.
+  settleWater(w);
 }
 
 // A few flower fields out in the open meadow, on good soil, away from the woods, the water and
@@ -553,9 +624,11 @@ function plantTrees(w, hills, hill, near) {
   const r = w.rng, N = W * H, T = w.terrain;
   const kinds = w.drawn.empty ? [] : r.pick(T.forests), small = kinds.length > 1;
   w.forest = kinds;
+  const [small0, big] = T.treeSize;
   const plant = (x, y, pine) => {
     if (dry(w, x, y) && !w.burrows.some(b => Math.hypot(b.x - x, b.y - y) < 3)) {
-      w.decor.push({ x, y, emoji: pine ? '🌲' : '🌳', size: r.range(...T.treeSize), tree: true, stump: 0 });
+      const size = small0 + (big - small0) * r.next() ** 2;           // squared: big trees are rare
+      w.decor.push({ x, y, emoji: pine ? '🌲' : '🌳', size, tree: true, stump: 0 });
     }
   };
   const ragged = (x, y) => (hills(x / 9 + 31.7, y / 9 + 12.3) - 0.5) * 7;   // a few tiles in or out
@@ -653,16 +726,75 @@ function shadeWoods(w) {
   w.wood = wood.map(v => Math.min(1, v));
 }
 
-// Where the water is, from the ground and the water level. w.dryTiles lists the rest, so the
-// grass doesn't have to look at every pond tile to grow.
+// Where the water is, from the ground and the water level. Says whether any of it changed.
+// Water that spreads over the land belongs to the nearest named water (w.nearBody).
 function refreshWater(w) {
-  const g = w.ground, water = w.water, dryTiles = [];
+  const g = w.ground, water = w.water;
+  let changed = false;
   for (let i = 0; i < g.length; i++) {
-    const d = w.level - g[i];
-    water[i] = d <= 0 ? 0 : d < w.terrain.deepAt ? SHALLOW : DEEP;
-    if (!water[i]) dryTiles.push(i);
+    const d = w.level - g[i], v = d <= 0 ? 0 : d < w.terrain.deepAt ? SHALLOW : DEEP;
+    if (v === water[i]) continue;
+    water[i] = v; changed = true;
+    if (w.body) w.body[i] = v ? w.nearBody[i] : -1;
   }
-  w.dryTiles = Int32Array.from(dryTiles);
+  return changed;
+}
+
+// ---------------------------------------------------------------- seasonal water
+//
+// The water rises in spring and drops in summer, a little higher when the ground is soaked
+// and lower after a dry spell, and takes a day or so to get there. A burrow the water reaches
+// is lost: everyone inside scrambles out, except kits too young to, who drown. Grass under
+// water drowns too, and grows back fast in the silt once the water has gone.
+
+const WATER_EVERY = 30;          // ticks between moves of the water line
+const WATER_DAYS = 1;            // about how long the water takes to reach its level for the season
+const DROWN_DAYS = 1;            // grass under water is gone in about this long
+const SILT_DAYS = 3;             // how long the ground the water left grows fast
+const KIT_DAYS = 1;              // kits younger than this can't get out of a flooding burrow
+
+function waterGoal(w) {
+  const T = w.terrain, s = seasonOf(w.tick);
+  return T.level + (s === 0 ? T.springFlood : s === 1 ? -T.summerLow : 0) + T.rainRise * (w.wet - 0.5);
+}
+
+// Straight to this season's level, for a new meadow (or the terrain lab picking a season).
+function settleWater(w) {
+  w.level = waterGoal(w);
+  refreshWater(w);
+  floodBurrows(w);
+  w.waterVersion = (w.waterVersion || 0) + 1;
+}
+
+function waterTick(w) {
+  const was = w.level, T = w.terrain;
+  w.level += (waterGoal(w) - w.level) * WATER_EVERY / (WATER_DAYS * TPD);
+  // The news: the river has come up over its banks, or dropped low.
+  const high = T.level + T.springFlood / 2, low = T.level - T.summerLow / 2;
+  if (was < high && w.level >= high) emit(w, { type: 'water', rising: true });
+  if (was > low && w.level <= low) emit(w, { type: 'water', rising: false });
+  if (!refreshWater(w)) return;
+  w.waterVersion++;
+  floodBurrows(w);
+}
+
+function floodBurrows(w) {
+  const flooded = new Set(w.burrows.filter(b => w.water[idx(b.x, b.y)]));
+  if (!flooded.size) return;
+  w.burrows = w.burrows.filter(b => !flooded.has(b));
+  const out = new Map();                                     // burrow: { drowned, escaped }
+  for (const c of w.creatures) {
+    if (!c.alive) continue;
+    if (flooded.has(c.home)) c.home = null;
+    if (flooded.has(c.refuge)) c.refuge = null;
+    if (flooded.has(c.dig)) { c.dig = null; c.mode = 'wander'; }
+    const b = c.hidden && c.burrow;
+    if (!flooded.has(b)) continue;
+    if (!out.has(b)) out.set(b, { burrow: b, drowned: [], escaped: [] });
+    if (ageDays(w, c) < KIT_DAYS) { die(w, c, 'flood'); out.get(b).drowned.push(c); }
+    else { exitBurrow(w, c); out.get(b).escaped.push(c); }
+  }
+  for (const e of out.values()) emit(w, { type: 'flooded', ...e });
 }
 
 function waterWithin(w, x, y, radius) {
@@ -734,10 +866,24 @@ function nameWaters(w, lake) {
     w.waters.push({ id, kind, name, size, x: sx / size + 0.5, y: sy / size + 0.5 });
   }
   w.body = body;
+  // And on dry land, which water is nearest: a flood belongs to the water it spilled from.
+  const near = Int16Array.from(body), queue = [];
+  for (let i = 0; i < near.length; i++) if (near[i] >= 0) queue.push(i);
+  for (let q = 0; q < queue.length; q++) {
+    const i = queue[q], x = i % W, y = (i / W) | 0;
+    for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
+      if (nx < 0 || ny < 0 || nx >= W || ny >= H || near[ny * W + nx] >= 0) continue;
+      near[ny * W + nx] = near[i]; queue.push(ny * W + nx);
+    }
+  }
+  w.nearBody = near;
   w.lake = null;
+  // The brook runs in the river's water, but has a name of its own too.
+  for (const rv of w.rivers) if (rv.brook) rv.name = `${firsts[(w.waters.length + 1) % firsts.length]} ${r.pick(WATER_NAMES.brook)}`;
   if (lake) {
-    const c = lake.shape[0], home = w.waters[body[idx(c.x, c.y)]];   // a blob's middle is always water
-    if (home.kind === 'lake') w.lake = home;
+    const c = lake.shape.find(c => inBounds(c.x, c.y) && w.water[idx(c.x, c.y)]);   // a blob's middle is water, if it's on the map
+    const home = c && w.waters[body[idx(c.x, c.y)]];
+    if (home?.kind === 'lake') w.lake = home;
     else w.lake = { kind: 'lake', name: `${firsts[w.waters.length % firsts.length]} ${r.pick(WATER_NAMES.lake)}`, x: lake.x, y: lake.y };
     w.lake.shape = lake.shape;
   }
@@ -760,17 +906,19 @@ function growGrass(w, dt) {
   const r = GRASS_RATE * s.growth * grow * dt / TPD;
   const seed = SEED_RATE * Math.max(s.growth, 0.05) * grow * dt / TPD;
   const die = DIEBACK * dt / TPD, ashFade = dt / (ASH_DAYS * TPD);
-  const g = w.grass, f = w.fert, ash = w.ash, fire = w.fire, dryTiles = w.dryTiles;
-  for (let k = 0; k < dryTiles.length; k++) {
-    const i = dryTiles[k];
+  const drown = dt / (DROWN_DAYS * TPD), siltFade = dt / (SILT_DAYS * TPD);
+  const g = w.grass, f = w.fert, water = w.water, ash = w.ash, fire = w.fire, silt = w.silt;
+  for (let i = 0; i < g.length; i++) {
+    if (water[i]) { if (g[i] > 0) g[i] = Math.max(0, g[i] - drown); silt[i] = 1; continue; }
     if (fire[i]) continue;
     const cap = f[i] * capK;
-    const a = ash[i] > 0 ? 1 + 3 * ash[i] : 1;               // new shoots love ash
+    const a = 1 + 3 * ash[i] + 3 * silt[i];                  // new shoots love ash, and silt
     let v = g[i];
     if (v < cap) v += r * a * v * (1 - v / cap) + seed * a * cap;
     else v -= (v - cap) * die;
     g[i] = v;
     if (ash[i] > 0) ash[i] = Math.max(0, ash[i] - ashFade);
+    if (silt[i] > 0) silt[i] = Math.max(0, silt[i] - siltFade);
   }
 }
 
@@ -2059,6 +2207,7 @@ function fly(c, tx, ty, v) {
 const FIELD_GRASS = 0.35;
 // (Same rule as plantEmoji in game.js. If you change one, change the other.)
 function isFlower(w, p) {
+  if (w.water[p.i]) return false;
   const s = seasonOf(w.tick);
   if (p.field) return s === p.field.season && w.grass[p.i] >= FIELD_GRASS;
   if (w.grass[p.i] < 0.55) return false;
@@ -2139,8 +2288,9 @@ function die(w, c, cause, killer) {
     cause === 'hunger' ? (seasonOf(w.tick) === 3 ? 'Starved in the winter' : 'Starved') :
     cause === 'lightning' ? 'Struck by lightning' :
     cause === 'fire' ? 'Caught in a wildfire' :
+    cause === 'flood' ? 'Drowned when the burrow flooded' :
     `Died of old age, ${age} days old`;
-  note(w, c, { fox: '🦊', hunger: '🥀', lightning: '⚡', fire: '🔥' }[cause] || '🌙', text);
+  note(w, c, { fox: '🦊', hunger: '🥀', lightning: '⚡', fire: '🔥', flood: '🌊' }[cause] || '🌙', text);
   w.stats.deaths[c.species][cause] = (w.stats.deaths[c.species][cause] || 0) + 1;
   w.anyDied = w.recount = true;
   emit(w, { type: 'death', c, cause, killer });
@@ -2175,7 +2325,7 @@ function createWorld(seed, opts = {}) {
     grid: makeGrid(), grids: perKind(makeGrid),
     nameCounts: new Map(), anyDied: false,
     weather: { kind: 'clear', until: 0 }, skyLocked: false, wet: 0.3, snow: 0,
-    fire: new Float32Array(W * H), ash: new Float32Array(W * H), burning: [], blaze: 0,
+    fire: new Float32Array(W * H), ash: new Float32Array(W * H), silt: new Float32Array(W * H), burning: [], blaze: 0,
     count: perKind(() => 0), expecting: perKind(() => 0),
     stats: { births: perKind(() => 0), deaths: perKind(() => ({})) },
     history: { every: 60, t: [], grass: [], ...perKind(() => []), traits: perKind(() => []), marks: [] },
@@ -2239,7 +2389,7 @@ function coatCounts(w) {
 // How full the meadow is: 1 when every tile holds all the grass its soil allows.
 function grassFullness(w) {
   let g = 0, f = 0;
-  for (let i = 0; i < W * H; i++) { g += w.grass[i]; f += w.fert[i]; }
+  for (let i = 0; i < W * H; i++) if (!w.water[i]) { g += w.grass[i]; f += w.fert[i]; }
   return f ? g / f : 0;
 }
 
@@ -2306,6 +2456,7 @@ function step(w) {
   buildGrid(w);
   weatherTick(w);
   if (t % 4 === 0) { growGrass(w, 4); fireTick(w, 4); }
+  if (t % WATER_EVERY === 0) waterTick(w);
   if (t % 60 === 0) hivesTick(w);
   const list = w.creatures;
   for (let i = 0; i < list.length; i++) {
@@ -2395,7 +2546,7 @@ const api = {
   createWorld, step, clock, isNight, phaseOf, seasonOf, mood, ageDays, growth, isAdult, patchFresh,
   addCreature, paintGrass, setSky, lockSky, zap, traitMeans, walkable,
   coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT, KINDS,
-  TERRAIN, distanceToWater, fieldBloom, FIELD_GRASS,
+  TERRAIN, distanceToWater, fieldBloom, FIELD_GRASS, settleWater,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 else root.Sim = api;
