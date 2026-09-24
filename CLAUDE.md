@@ -37,7 +37,7 @@ around the river and lake (`TERRAIN.valley`, half as wide by a brook). The water
 spring, down in summer, a little with the rain, so the river spreads over its floodplain and back.
 A flooded burrow is lost and kits too young to climb out drown (`floodBurrows`); grass under water
 drowns and grows back fast in the silt (`w.silt`). Flooded water keeps the name of the water it spilled
-from (`w.nearBody`). The game shades the slopes by the sun (`hillLight`).
+from (`w.nearBody`). The game shades the slopes by the sun (`drawHillLight`, laid over the ground each frame).
 Shallow water is waded slowly; deep water blocks.
 Each connected water body is named (`w.waters`, `w.body`). Population caps and starting
 numbers scale with dry land (`w.room`).
