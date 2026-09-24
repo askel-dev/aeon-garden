@@ -1762,17 +1762,8 @@ function trunkPath(g) {                                    // in tree sizes, fro
   g.closePath();
 }
 
-function trunkSprite(P) {
-  P = Math.round(P);
-  let s = trunkSprites.get(P);
-  if (s) return s;
-  if (trunkSprites.size > 40) trunkSprites.clear();
-  const W = P * 0.56, H = P * 0.42, ox = P * 0.28, oy = P * 0.36;
-  const c = document.createElement('canvas');
-  c.width = Math.ceil(W * dpr); c.height = Math.ceil(H * dpr);
-  const g = c.getContext('2d'), px = 1 / P;
-  g.setTransform(dpr * P, 0, 0, dpr * P, ox * dpr, oy * dpr);
-  // Old bark, lit from the top left, with deep ridges fanning out into the roots.
+// Old bark, lit from the top left, with deep ridges fanning out into the roots, fading out at the top.
+function paintTrunk(g, P, px) {
   trunkPath(g);
   const bark = g.createLinearGradient(-0.13, 0, 0.15, 0);
   bark.addColorStop(0, '#9c7b5f'); bark.addColorStop(0.45, '#6f4f3b'); bark.addColorStop(1, '#3d2a1d');
@@ -1793,6 +1784,25 @@ function trunkSprite(P) {
   softSpot(g, 0.09, 0.012, 0.09, 0.03, '96, 120, 40', 0.55);          // moss at the foot, on the shaded side
   softSpot(g, 0.1, -0.12, 0.03, 0.07, '96, 120, 40', 0.35);
   g.restore();
+  // The top fades out, so the tree's own trunk and crown take over (a hollow, painted later, doesn't).
+  g.globalCompositeOperation = 'destination-out';
+  const fade = g.createLinearGradient(0, OLD_FADE[0], 0, OLD_FADE[1]);
+  fade.addColorStop(0, 'rgba(0, 0, 0, 0)'); fade.addColorStop(1, 'rgba(0, 0, 0, 1)');
+  g.fillStyle = fade; g.fillRect(-0.5, -0.5, 1, 0.5 + OLD_FADE[0]);
+  g.globalCompositeOperation = 'source-over';
+}
+
+function trunkSprite(P, bare) {                          // bare: the hollow alone, for the 🪾's own trunk
+  P = Math.round(P);
+  let s = trunkSprites.get(P + (bare ? 'b' : ''));
+  if (s) return s;
+  if (trunkSprites.size > 40) trunkSprites.clear();
+  const W = P * 0.56, H = P * 0.42, ox = P * 0.28, oy = P * 0.36;
+  const c = document.createElement('canvas');
+  c.width = Math.ceil(W * dpr); c.height = Math.ceil(H * dpr);
+  const g = c.getContext('2d'), px = 1 / P;
+  g.setTransform(dpr * P, 0, 0, dpr * P, ox * dpr, oy * dpr);
+  if (!bare) paintTrunk(g, P, px);
   // The hollow: a resin-dark rim, a lip of bark, black inside, comb glinting at the bottom.
   const { x, y, rx, ry } = OLD_HOLE;
   softSpot(g, x, y + ry * 0.2, rx * 1.9, ry * 1.6, '40, 22, 8', 0.6);
@@ -1809,25 +1819,23 @@ function trunkSprite(P) {
   lid.addColorStop(0, 'rgba(4, 2, 1, 0.95)'); lid.addColorStop(1, 'rgba(4, 2, 1, 0)');
   g.fillStyle = lid; g.fillRect(x - rx, y - ry, 2 * rx, ry * 1.2);
   g.restore();
-  // The top fades out, so the tree's own trunk and crown take over.
-  g.globalCompositeOperation = 'destination-out';
-  const fade = g.createLinearGradient(0, OLD_FADE[0], 0, OLD_FADE[1]);
-  fade.addColorStop(0, 'rgba(0, 0, 0, 0)'); fade.addColorStop(1, 'rgba(0, 0, 0, 1)');
-  g.fillStyle = fade; g.fillRect(-0.5, -0.5, 1, 0.5 + OLD_FADE[0]);
   s = { canvas: c, W, H, ox, oy };
-  trunkSprites.set(P, s);
+  trunkSprites.set(P + (bare ? 'b' : ''), s);
   return s;
 }
 
 function drawBeeTree(h, sx, sy, now, ck) {
-  const d = beeTree(h), px = d.size * cam.zoom, s = trunkSprite(px);
-  // The tree, all but the foot of its own trunk, which reaches below the ground here.
+  // In leaf: the tree, all but the foot of its own trunk, which the painted one stands in for.
+  // Bare: the 🪾 is an old trunk already, so it's drawn whole and the hollow laid on it.
+  const d = beeTree(h), px = d.size * cam.zoom, bare = treeLook(d, ck).fall > 0, s = trunkSprite(px, bare);
   ctx.save();
-  ctx.beginPath();
-  ctx.rect(sx - px, sy - px * 2, px * 2, px * 1.94);
-  ctx.rect(sx - px, sy - px * 0.1, px * 0.84, px * 0.6);
-  ctx.rect(sx + px * 0.16, sy - px * 0.1, px * 0.84, px * 0.6);
-  ctx.clip();
+  if (!bare) {
+    ctx.beginPath();
+    ctx.rect(sx - px, sy - px * 2, px * 2, px * 1.94);
+    ctx.rect(sx - px, sy - px * 0.1, px * 0.84, px * 0.6);
+    ctx.rect(sx + px * 0.16, sy - px * 0.1, px * 0.84, px * 0.6);
+    ctx.clip();
+  }
   drawDecor(d, sx, sy, now, ck);
   ctx.restore();
   ctx.drawImage(s.canvas, sx - s.ox, sy - s.oy, s.W, s.H);
