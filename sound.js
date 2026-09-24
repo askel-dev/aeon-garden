@@ -2,6 +2,7 @@
  *
  * Three ideas keep it cozy:
  *  1. One scale. Every pitched sound comes from D major pentatonic, so nothing can clash.
+ *     Only the birds sing free: they're the meadow's nature, not its music.
  *  2. One instrument per species. Rabbits are a high kalimba, foxes a low felt marimba, bees
  *     a buzz that hums in tune, the meadow itself (seasons, old age) a soft glass bell.
  *     Rising = life, falling = loss. Lightning is the one loud thing, on purpose.
@@ -24,9 +25,10 @@ const note = (deg, oct = 0) => {
 const rand = (a, b) => a + Math.random() * (b - a);
 const pick = a => a[Math.floor(Math.random() * a.length)];
 
-let ac = null, master, fxBus, ambBus, hush, reverb, noiseBuf;
+let ac = null, master, ducker, loud, fxBus, ambBus, hush, reverb, noiseBuf, brownBuf;
 let enabled = true, volume = 0.6;
 const amb = {};                                    // ambient layers
+const LOUD = 1.4;                                  // thunder's level against the rest
 const state = { phase: 0.3, season: 0, speed: 1, sky: { clear: 1 }, fire: 0, bees: 0 };
 const last = {};                                   // per-sound cooldowns
 let recent = 0, recentAt = 0;                      // global voice budget
@@ -40,7 +42,14 @@ function start() {
   const comp = ac.createDynamicsCompressor();
   comp.threshold.value = -18; comp.ratio.value = 4; comp.attack.value = 0.01; comp.release.value = 0.3;
   master = ac.createGain(); master.gain.value = enabled ? volume : 0;
-  master.connect(comp).connect(ac.destination);
+  ducker = ac.createGain();                        // dips the meadow under a close strike
+  master.connect(ducker).connect(comp).connect(ac.destination);
+
+  // Thunder's own way out, past the compressor so it can be truly loud, with a hard limiter.
+  const lim = ac.createDynamicsCompressor();
+  lim.threshold.value = -2; lim.knee.value = 0; lim.ratio.value = 20; lim.attack.value = 0.001; lim.release.value = 0.2;
+  loud = ac.createGain(); loud.gain.value = enabled ? volume * LOUD : 0;
+  loud.connect(lim).connect(ac.destination);
 
   reverb = ac.createConvolver(); reverb.buffer = impulse(3.2);
   const wet = ac.createGain(); wet.gain.value = 0.55;
@@ -51,7 +60,7 @@ function start() {
   hush = ac.createBiquadFilter(); hush.type = 'lowpass'; hush.frequency.value = 12000; hush.connect(master);
   ambBus = ac.createGain(); ambBus.gain.value = 0.8; ambBus.connect(hush);
 
-  noiseBuf = pinkNoise(4);
+  noiseBuf = pinkNoise(4); brownBuf = brownNoise(4);
   buildAmbience();
   setInterval(tickAmbience, 200);
 }
@@ -81,14 +90,22 @@ function pinkNoise(sec) {
   return buf;
 }
 
+// Deeper than pink: the body of an explosion.
+function brownNoise(sec) {
+  const buf = ac.createBuffer(1, Math.floor(ac.sampleRate * sec), ac.sampleRate), d = buf.getChannelData(0);
+  let last = 0;
+  for (let i = 0; i < d.length; i++) { last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02; d[i] = last * 3.5; }
+  return buf;
+}
+
 // ------------------------------------------------------------------ small building blocks
 
-// out(pan, verb): a panner feeding the fx bus plus a reverb send.
-function out(pan = 0, verb = 0.3, gain = 1) {
+// out(pan, verb): a panner feeding the fx bus (or thunder's loud bus) plus a reverb send.
+function out(pan = 0, verb = 0.3, gain = 1, bus = fxBus) {
   const g = ac.createGain(); g.gain.value = gain;
   const p = ac.createStereoPanner(); p.pan.value = Math.max(-1, Math.min(1, pan));
   const s = ac.createGain(); s.gain.value = verb;
-  g.connect(p); p.connect(fxBus); p.connect(s); s.connect(reverb);
+  g.connect(p); p.connect(bus); p.connect(s); s.connect(reverb);
   return g;
 }
 
@@ -144,6 +161,63 @@ function grit(dest, amount) {
   return ws;
 }
 
+// Thunder is built the way Minecraft builds it: an explosion slowed down to about 0.6x, and a
+// long roll. boom: deep noise that hits, loses its top fast and dies slowly, shaken by quick
+// uneven bumps, with a sub drop under it. A bigger attack smears it, for echoes.
+function boom(dest, t, { sec = 2.4, bright = 3000, peak = 1, attack = 0.004, heat = 2.5 } = {}) {
+  const o = grit(dest, heat);
+  const src = ac.createBufferSource(); src.buffer = brownBuf; src.loop = true;
+  const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.Q.value = 0.6;
+  f.frequency.setValueAtTime(bright, t);
+  f.frequency.exponentialRampToValueAtTime(400, t + attack + sec * 0.3);
+  f.frequency.exponentialRampToValueAtTime(150, t + sec);
+  const N = Math.ceil(sec * 40), bumps = new Float32Array(N); let v = 1;   // ~40 bumps a second
+  for (let j = 0; j < N; j++) { v += (rand(0.3, 1.7) - v) * 0.5; bumps[j] = v; }
+  const r = ac.createGain(); r.gain.setValueCurveAtTime(bumps, t, sec);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + attack);
+  g.gain.setTargetAtTime(0.0001, t + attack + 0.1, sec / 5);
+  src.connect(f).connect(r).connect(g).connect(o); src.start(t, rand(0, 2)); src.stop(t + sec + 0.1);
+  const sub = ac.createOscillator(), sg = ac.createGain();
+  sub.frequency.setValueAtTime(75, t); sub.frequency.exponentialRampToValueAtTime(30, t + sec * 0.4);
+  sg.gain.setValueAtTime(0.0001, t); sg.gain.exponentialRampToValueAtTime(0.8 * peak, t + attack);
+  sg.gain.setTargetAtTime(0.0001, t + attack + 0.05, sec / 8);
+  sub.connect(sg).connect(o); sub.start(t); sub.stop(t + sec + 0.1);
+}
+
+// A roll: noise that swells in uneven lumps as it dies away, instead of one smooth fade. A low
+// body for headphones and a band around 300-700 Hz so laptop speakers hear it too.
+function roll(dest, t, sec, { cut = 500, lumps = 6, peak = 0.5, mid = 0.35, heat = 1.3 } = {}) {
+  const N = 512, c = new Float32Array(N), at = [[0.02, 0.05, 1]];   // one lump right at the start
+  for (let i = 0; i < lumps; i++) at.push([Math.pow(Math.random(), 1.6) * 0.75, rand(0.03, 0.1), rand(0.4, 1)]);
+  let top = 0;
+  for (let j = 0; j < N; j++) {
+    const x = j / N; let v = 0.12;
+    for (const [x0, w, h] of at) v += h * Math.exp(-(((x - x0) / w) ** 2));
+    c[j] = v * Math.pow(1 - x, 1.6); top = Math.max(top, c[j]);
+  }
+  for (let j = 0; j < N; j++) c[j] = Math.max(0.0001, c[j] / top * peak);
+  c[0] = c[N - 1] = 0.0001;
+  const g = ac.createGain(); g.gain.setValueCurveAtTime(c, t, sec);
+  g.connect(grit(dest, heat));
+  for (const [type, from, to, q, v] of [['lowpass', cut, cut * 0.4, 0.5, 1], ['bandpass', 700, 300, 0.8, mid]]) {
+    const src = ac.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+    const f = ac.createBiquadFilter(); f.type = type; f.Q.value = q;
+    f.frequency.setValueAtTime(from, t); f.frequency.exponentialRampToValueAtTime(to, t + sec);
+    const vg = ac.createGain(); vg.gain.value = v * 2.2;
+    src.connect(f).connect(vg).connect(g); src.start(t, rand(0, 3)); src.stop(t + sec + 0.05);
+  }
+}
+
+// The rest of the meadow dips under a close strike, then comes back.
+function duck(t, depth, back) {
+  ducker.gain.cancelScheduledValues(t);
+  ducker.gain.setValueAtTime(ducker.gain.value, t);
+  ducker.gain.linearRampToValueAtTime(depth, t + 0.02);
+  ducker.gain.setTargetAtTime(1, t + 0.3, back / 3);
+}
+let farAt = -1e9;                                  // when the last distant roll started
+
 // Filtered noise with a moving band: whooshes, rustles, gusts. attack: seconds to full volume
 // (by default a third of the sound, so it swells; a crack wants a couple of milliseconds).
 function noise(dest, t, dur, { from = 800, to = 2400, q = 1.2, peak = 0.3, type = 'bandpass', attack = dur * 0.35 } = {}) {
@@ -172,7 +246,7 @@ const RULES = {
   queen:   { gap: 4,    maxSpeed: 15 },
   queenlost: { gap: 4,  maxSpeed: 15 },
   arrive:  { gap: 2,    maxSpeed: 60 },
-  thunder: { gap: 1.2,  maxSpeed: 15 },
+  thunder: { gap: 0.3,  maxSpeed: 15, always: true },   // a strike you see is always heard
   fire:    { gap: 4,    maxSpeed: 60 },
   fireout: { gap: 4,    maxSpeed: 60 },
   rainbow: { gap: 20,   maxSpeed: 4 },
@@ -248,26 +322,32 @@ const SOUNDS = {
     bell(o, note(-1, -1) * Math.pow(2, 1 / 12), t + 0.8, 0.5);   // a flat sixth: the one sad note
   },
   rain(t, o) { noise(o, t, 2.2, { from: 300, to: 1600, q: 0.6, peak: 0.12, type: 'lowpass' }); },
-  // The one loud sound. A strike you can see hits: an instant crack and a falling boom, both
-  // clipped a little for grit, right with the flash. Then, seen or not, a rolling rumble,
-  // later and darker the farther away it is. The rumble starts around 1 kHz so laptop speakers
-  // can play it; the deepest layer is for headphones.
+  // The one loud sound. A strike you can see: the slowed explosion and the roll together, then
+  // the sky settling: echoes off the far hills, a gust through the grass, a long grumble.
+  // Off screen only the roll and the grumble, late and dark, at most one every few seconds:
+  // a storm strikes every ~3 s and these tails are long.
   thunder(t, o, { seen = true, pan = 0 }) {
     if (seen) {
-      const hit = grit(out(pan, 0.4, 1), 2.5);
-      noise(hit, t, 0.15, { from: 9000, to: 1500, q: 0.3, peak: 0.9, type: 'lowpass', attack: 0.002 });
-      noise(hit, t + 0.02, 0.35, { from: 5000, to: 400, q: 0.4, peak: 0.45, type: 'lowpass', attack: 0.004 });
-      const osc = ac.createOscillator(), g = ac.createGain();
-      osc.frequency.setValueAtTime(150, t); osc.frequency.exponentialRampToValueAtTime(38, t + 0.5);
-      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.8, t + 0.004);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
-      osc.connect(g).connect(hit); osc.start(t); osc.stop(t + 1);
+      const hit = out(pan, 0.4, 1, loud);
+      duck(t, 0.3, 6);
+      boom(hit, t);
+      roll(hit, t + 0.1, rand(5, 7), { cut: 500, lumps: 7, peak: 0.5 });
+      let at = 0, side = Math.random() < 0.5 ? -1 : 1;
+      for (const [v, bright] of [[0.4, 900], [0.25, 650], [0.15, 450]].slice(0, Math.random() < 0.5 ? 2 : 3)) {
+        at += rand(0.9, 1.4); side = -side;
+        boom(out(side * rand(0.6, 0.9), 0.8, 1, loud), t + at, { sec: 2.2, bright, peak: v, attack: rand(0.04, 0.1), heat: 1.5 });
+      }
+      const gust = out(-pan, 0.3, 1, loud);
+      noise(gust, t + 0.25, 3.2, { from: 900, to: 2600, q: 0.5, peak: 0.09, attack: 0.6 });
+      noise(gust, t + 0.6, 2.4, { from: 3000, to: 5500, q: 0.9, peak: 0.035, attack: 0.5 });
+      roll(out(pan, 0.7, 1, loud), t + rand(2.5, 3.5), rand(7, 9), { cut: 230, lumps: 6, peak: 0.28, mid: 0.2, heat: 1.1 });
+    } else {
+      if (t - farAt < 4 * Math.max(1, state.speed / 2)) return;
+      farAt = t;
+      const d = rand(0.6, 1.4);
+      roll(out(pan, 0.6, 0.7, loud), t + d, rand(4.5, 6), { cut: 300, lumps: 6, peak: 0.45, mid: 0.2 });
+      roll(out(pan, 0.8, 0.7, loud), t + d + rand(2.5, 3.5), rand(6, 8), { cut: 200, lumps: 5, peak: 0.22, mid: 0.12, heat: 1.1 });
     }
-    const d = seen ? 0.15 : rand(0.8, 1.6), dark = seen ? 1 : 0.6;
-    for (let i = 0; i < 3; i++) {
-      noise(o, t + d + i * rand(0.3, 0.7), rand(1.8, 3), { from: rand(900, 1400) * dark, to: 120, q: 0.4, peak: seen ? 0.4 : 0.3, type: 'lowpass' });
-    }
-    noise(o, t + d, rand(3, 4), { from: 300, to: 45, q: 0.5, peak: 0.35, type: 'lowpass' });
   },
   // Dry grass catching: a soft whoomph.
   fire(t, o) { noise(o, t, 1.4, { from: 200, to: 1400, q: 0.5, peak: 0.16, type: 'lowpass' }); },
@@ -287,7 +367,7 @@ function play(name, opts = {}) {
   if (state.speed > r.maxSpeed) return false;
   if (now - (last[name] ?? -1e9) < r.gap * Math.max(1, state.speed / 2)) return false;
   if (now - recentAt > 1) { recent = 0; recentAt = now; }
-  if (++recent > 6 && r.maxSpeed < 60) return false;    // at most ~6 creature sounds a second
+  if (!r.always && ++recent > 6 && r.maxSpeed < 60) return false;    // at most ~6 creature sounds a second
   last[name] = now;
   const ok = v => Number.isFinite(v) ? v : undefined;      // a NaN would throw inside Web Audio
   const near = ok(opts.near) ?? 1;
@@ -297,6 +377,18 @@ function play(name, opts = {}) {
 }
 
 // ------------------------------------------------------------------ ambience
+
+// Rain comes as two bands, panned apart and from different places in the noise, so it sounds
+// wide instead of one flat hiss in the middle.
+function rainSide(pan, freq) {
+  const src = ac.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+  const f = ac.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = freq; f.Q.value = 0.4;
+  const soft = ac.createBiquadFilter(); soft.type = 'lowpass'; soft.frequency.value = 6500; soft.Q.value = 0.5;
+  const g = ac.createGain(); g.gain.value = 0;
+  const p = ac.createStereoPanner(); p.pan.value = pan;
+  src.connect(f).connect(soft).connect(g).connect(p).connect(ambBus); src.start(0, rand(0, 3.5));
+  return { f, g };
+}
 
 function loopNoise(filterType, freq, q) {
   const src = ac.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
@@ -308,11 +400,11 @@ function loopNoise(filterType, freq, q) {
 
 function buildAmbience() {
   amb.wind = loopNoise('lowpass', 500, 0.7);
-  amb.rain = loopNoise('bandpass', 2400, 0.4);
+  amb.rainL = rainSide(-0.7, 2300); amb.rainR = rainSide(0.7, 2600);
   amb.rainLow = loopNoise('lowpass', 350, 0.5);
   amb.fire = loopNoise('lowpass', 220, 0.6);
   amb.hum = hiveHum();
-  amb.windTarget = 0; amb.gust = 0;
+  amb.windTarget = 0; amb.gust = 0; amb.swell = 0.5;
 }
 
 // What the meadow should sound like right now, smoothed so fast-forward blurs into an average.
@@ -350,18 +442,25 @@ function tickAmbience() {
   amb.wind.g.gain.setTargetAtTime(0.16 * w, now, 1.2);
   amb.wind.f.frequency.setTargetAtTime(m.windHi * (0.5 + 0.5 * amb.windTarget + 0.6 * amb.gust), now, 1.5);
 
-  amb.rain.g.gain.setTargetAtTime(0.07 * m.rain + 0.03 * m.storm, now, 2.5);
-  amb.rainLow.g.gain.setTargetAtTime(0.10 * m.rain + 0.06 * m.storm, now, 3);
+  // Rain breathes slowly, and in a storm leans into the gusts.
+  amb.swell = Math.max(0, Math.min(1, amb.swell + (Math.random() - 0.5) * 0.05));
+  const gust = amb.gust * m.storm, rainLvl = 0.85 + 0.3 * amb.swell + 0.5 * gust;
+  amb.rainL.g.gain.setTargetAtTime((0.055 * m.rain + 0.025 * m.storm) * rainLvl * (1 + 0.2 * gust), now, 1.5);
+  amb.rainR.g.gain.setTargetAtTime((0.055 * m.rain + 0.025 * m.storm) * rainLvl * (1 - 0.1 * gust), now, 1.5);
+  amb.rainLow.g.gain.setTargetAtTime((0.10 * m.rain + 0.06 * m.storm) * rainLvl, now, 2);
   amb.fire.g.gain.setTargetAtTime(0.12 * m.fire, now, 1.5);
   amb.hum.gain.setTargetAtTime(0.03 * m.bees, now, 1.5);
   hush.frequency.setTargetAtTime(12000 - 9500 * m.hush, now, 2);
 
   // Scattered one-shots, each rolled a few times a second.
   const dt = 0.2 * fastFactor;
-  if (Math.random() < m.birds * 0.35 * dt) bird(now + rand(0, 0.2));
+  birdTick(now, m.birds * fastFactor);
   if (Math.random() < m.crickets * 2.2 * dt) cricket(now + rand(0, 0.2));
   if (Math.random() < (1 - m.day) * (state.season === 3 ? 0.02 : 0.05) * dt) owl(now);
-  if (Math.random() < m.rain * 3 * dt) drip(now + rand(0, 0.2));
+  if (Math.random() < m.rain * 3 * dt) {
+    const deg = drip(now + rand(0, 0.2), rand(0.5, 1.3));
+    if (Math.random() < 0.2) drip(now + rand(0.25, 0.4), 0.5, deg + pick([-1, 1]));   // then a smaller one off the leaf
+  }
   if (state.season === 2 && Math.random() < 0.08 * dt) rustle(now);
   if (Math.random() < m.snow * 0.15 * dt) snowChime(now);
   if (Math.random() < m.cicadas * 0.12 * dt) cicada(now);
@@ -386,17 +485,122 @@ function hiveHum() {
   return g;
 }
 
-// A songbird: fast sine glides, a few syllables.
-function bird(t) {
-  const o = out(rand(-0.9, 0.9), 0.35, rand(0.25, 0.55)), base = rand(2600, 4200), n = Math.floor(rand(2, 6));
-  const shape = pick(['up', 'down', 'trill']);
-  for (let i = 0; i < n; i++) {
-    const s = t + i * rand(0.07, 0.14), osc = ac.createOscillator(), g = ac.createGain(), len = rand(0.04, 0.09);
-    const a = shape === 'down' ? base * 1.3 : base, b = shape === 'up' ? base * 1.35 : shape === 'down' ? base * 0.85 : base * 1.1;
-    osc.frequency.setValueAtTime(a, s); osc.frequency.exponentialRampToValueAtTime(b, s + len);
-    g.gain.setValueAtTime(0.0001, s); g.gain.exponentialRampToValueAtTime(0.05, s + 0.01);
-    g.gain.exponentialRampToValueAtTime(0.0001, s + len);
-    osc.connect(g).connect(o); osc.start(s); osc.stop(s + len + 0.02);
+// Birds. They sing almost pure tones; what makes them sound alive is that pitch and loudness
+// move along smooth curves, never straight lines. They're nature, not music, so they're not tied
+// to the scale. voice(): fx and ax give pitch (Hz) and loudness (0..1) for x from 0 to 1,
+// sampled every 2 ms, with a hair of drift so no two notes are the same.
+const ease = x => x * x * (3 - 2 * x);
+const arch = (x, p = 0.7) => Math.pow(Math.sin(Math.PI * x), p);
+const early = x => Math.pow(Math.sin(Math.PI * Math.pow(x, 0.55)), 0.8);   // quick rise, longer fall
+function voice(o, t, len, fx, ax, amp, k = 1) {
+  const N = Math.max(8, Math.round(len * 500)), fc = new Float32Array(N), gc = new Float32Array(N);
+  let drift = 0;
+  for (let i = 0; i < N; i++) {
+    const x = i / (N - 1);
+    drift = 0.9 * drift + (Math.random() - 0.5) * 0.003;
+    fc[i] = k * fx(x) * (1 + drift); gc[i] = amp * ax(x);
+  }
+  gc[0] = gc[N - 1] = 0;
+  const g = ac.createGain(); g.gain.value = 0; g.gain.setValueCurveAtTime(gc, t, len); g.connect(o);
+  for (const [mul, a] of [[1, 1], [2, 0.05]]) {
+    const osc = ac.createOscillator(), og = ac.createGain(); og.gain.value = a;
+    osc.frequency.setValueCurveAtTime(mul === 1 ? fc : fc.map(v => v * 2), t, len);
+    osc.connect(og).connect(g); osc.start(t); osc.stop(t + len + 0.01);
+  }
+  return len;
+}
+// Syllables. Each returns a singer (o, t, amp, k) that sings it and says how long it took.
+const SYL = {
+  // A clear whistle from f1 to f2, bowed up or down in the middle by `bend`.
+  whistle: (f1, f2, len, bend = 0) => (o, t, a, k) => voice(o, t, len, x => f1 + (f2 - f1) * ease(x) + f1 * bend * Math.sin(Math.PI * x), early, a, k),
+  // A quick drop from high to low, the building block of trills.
+  chip: (hi, lo, len = 0.03) => (o, t, a, k) => voice(o, t, len, x => lo + (hi - lo) * (1 - x) * (1 - x), x => arch(x, 0.5), a, k),
+  // A note that wobbles fast in pitch, and a little in loudness with it.
+  warble: (f, rate, depth, len) => (o, t, a, k) => voice(o, t, len,
+    x => f * (1 + depth * Math.sin(2 * Math.PI * rate * len * x)) * (1 - 0.06 * x),
+    x => early(x) * (0.75 + 0.25 * Math.sin(2 * Math.PI * rate * len * x)), a, k),
+  // A thin, high, held "tseee".
+  tsee: (f, len) => (o, t, a, k) => voice(o, t, len, x => f * (1 + 0.05 * x), x => arch(x, 1), a, k),
+};
+
+// Four kinds of songbird. make() gives a bird its own version of its kind's song, so each one
+// is recognisable; sing() sings it with small changes each time.
+const SONGS = {
+  // Chaffinch: a trill that speeds up as it falls, a few slower notes, and a flourish at the end.
+  chaffinch: {
+    make: () => ({ top: rand(4300, 5200), fall: rand(0.15, 0.3), n1: Math.floor(rand(5, 8)), n2: Math.floor(rand(2, 4)), end: rand(2900, 3500) }),
+    sing(o, t, p, k) {
+      let s = t;
+      for (let i = 0; i < p.n1; i++) {
+        const f = p.top * (1 - p.fall * 0.5 * i / p.n1);
+        SYL.chip(f * 1.12, f * 0.82, 0.035)(o, s, 0.05, k);
+        s += 0.11 - 0.035 * i / p.n1;
+      }
+      const f2 = p.top * (1 - p.fall);
+      for (let i = 0; i < p.n2; i++) { SYL.chip(f2 * 1.08, f2 * 0.78, 0.05)(o, s, 0.055, k); s += 0.1; }
+      SYL.chip(p.end * 1.5, p.end * 1.1, 0.03)(o, s + 0.02, 0.04, k);
+      SYL.whistle(p.end * 1.25, p.end * 0.75, 0.2, 0.08)(o, s + 0.08, 0.06, k);
+    },
+  },
+  // Great tit: "tea-cher, tea-cher, tea-cher", a high note and a lower one, three to five times.
+  greatTit: {
+    make: () => ({ hi: rand(4800, 6000), lo: rand(0.6, 0.72), reps: Math.floor(rand(3, 6)), pace: rand(0.26, 0.34) }),
+    sing(o, t, p, k) {
+      for (let r = 0, reps = p.reps + pick([-1, 0, 0, 1]); r < reps; r++) {
+        const s = t + r * p.pace * rand(0.96, 1.04);
+        SYL.whistle(p.hi, p.hi * 0.96, 0.08, 0.03)(o, s, 0.05, k);
+        SYL.whistle(p.hi * p.lo * 1.06, p.hi * p.lo * 0.9, 0.07)(o, s + 0.12, 0.045, k);
+      }
+    },
+  },
+  // Robin: a wistful, wandering phrase, put together each time from the bird's own few syllables.
+  robin: {
+    make: () => ({ vocab: Array.from({ length: 7 }, () => pick([
+      () => SYL.tsee(rand(6000, 7500), rand(0.08, 0.16)),
+      () => SYL.whistle(rand(2500, 4500), rand(2500, 5500), rand(0.1, 0.25), rand(-0.1, 0.15)),
+      () => SYL.warble(rand(3000, 5000), rand(14, 26), rand(0.05, 0.12), rand(0.12, 0.25)),
+      () => SYL.chip(rand(5000, 7000), rand(2500, 3500), rand(0.03, 0.05)),
+    ])()) }),
+    sing(o, t, p, k) {
+      let s = t;
+      for (let i = 0, n = Math.floor(rand(4, 8)); i < n; i++) s += pick(p.vocab)(o, s, rand(0.035, 0.055), k) + rand(0.04, 0.12);
+    },
+  },
+  // Blackbird: low, fluty, unhurried notes, often ending in a quiet squeaky twitter.
+  blackbird: {
+    make: () => ({ vocab: Array.from({ length: 5 }, () => Math.random() < 0.6
+      ? SYL.whistle(rand(1500, 2600), rand(1400, 2800), rand(0.15, 0.3), rand(-0.08, 0.12))
+      : SYL.warble(rand(1700, 2500), rand(8, 14), rand(0.04, 0.08), rand(0.2, 0.35))) }),
+    sing(o, t, p, k) {
+      let s = t;
+      for (let i = 0, n = Math.floor(rand(3, 6)); i < n; i++) s += pick(p.vocab)(o, s, rand(0.06, 0.08), k) + rand(0.03, 0.09);
+      if (Math.random() < 0.6) for (let i = 0, n = Math.floor(rand(3, 6)); i < n; i++) {
+        const f = rand(5000, 7000);
+        s += SYL.chip(f, f * 0.7, 0.03)(o, s + 0.05, 0.025, k) + 0.04;
+      }
+    },
+  },
+};
+
+// The birds that live around the meadow. Each keeps to its spot, sings every few seconds for a
+// while, then goes quiet for a while. Far ones are softer, duller and more echoey. How much the
+// meadow sings (time of day, season, weather) stretches the gaps between songs.
+const residents = Object.keys(SONGS).map((kind, i, all) => ({
+  kind, p: SONGS[kind].make(), pan: -0.75 + 1.5 * ((i * 3) % all.length) / (all.length - 1) + rand(-0.1, 0.1),
+  dist: rand(0.1, 0.8), every: rand(5, 9), next: 0, awake: true, boutEnd: 0,
+}));
+function birdOut(b) {
+  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 12000 - 7000 * b.dist;
+  lp.connect(out(b.pan, 0.2 + 0.45 * b.dist, 0.6 - 0.35 * b.dist));
+  return lp;
+}
+function birdTick(now, activity) {
+  for (const b of residents) {
+    if (!b.boutEnd) { b.boutEnd = now + rand(10, 60); b.next = now + rand(0.5, b.every); }
+    if (now > b.boutEnd) { b.awake = !b.awake; b.boutEnd = now + (b.awake ? rand(40, 90) : rand(20, 50)); b.next = now + rand(1, 3); }
+    if (!b.awake || now < b.next) continue;
+    if (Math.random() < activity) SONGS[b.kind].sing(birdOut(b), now + rand(0.05, 0.2), b.p, rand(0.97, 1.03));
+    b.next = now + b.every * rand(0.75, 1.3) / Math.max(1, activity);         // the dawn chorus sings faster
   }
 }
 
@@ -418,13 +622,14 @@ function owl(t) {
 }
 
 // Rain on the pond: tiny tuned plinks.
-function drip(t) {
-  const o = out(rand(-1, 1), 0.4, rand(0.15, 0.4)), f = note(Math.floor(rand(0, 10)), 2);
+function drip(t, v = 1, deg = Math.floor(rand(0, 10))) {
+  const o = out(rand(-1, 1), 0.4, rand(0.15, 0.4) * v), f = note(deg, 2);
   const osc = ac.createOscillator(), g = ac.createGain();
   osc.frequency.setValueAtTime(f * 0.8, t); osc.frequency.exponentialRampToValueAtTime(f, t + 0.03);
   g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.05, t + 0.004);
   g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
   osc.connect(g).connect(o); osc.start(t); osc.stop(t + 0.15);
+  return deg;
 }
 
 // A cicada in the heat: a buzz that swells and fades.
@@ -459,11 +664,14 @@ function setEnabled(on) {
   clearTimeout(sleepTimer);
   if (on) ac.resume();
   master.gain.setTargetAtTime(on ? volume : 0, ac.currentTime, 0.3);
+  loud.gain.setTargetAtTime(on ? volume * LOUD : 0, ac.currentTime, 0.3);
   if (!on) sleepTimer = setTimeout(() => { if (!enabled) ac.suspend(); }, 2000);
 }
 function setVolume(v) {
   volume = v;
-  if (master && enabled) master.gain.setTargetAtTime(v, ac.currentTime, 0.1);
+  if (!master || !enabled) return;
+  master.gain.setTargetAtTime(v, ac.currentTime, 0.1);
+  loud.gain.setTargetAtTime(v * LOUD, ac.currentTime, 0.1);
 }
 
 window.Sound = { start, play, update, setEnabled, setVolume, get enabled() { return enabled; }, names: Object.keys(SOUNDS) };

@@ -89,7 +89,7 @@ const SPECIES = {
   },
   bee: {
     key: 'bee', name: 'Bee', plural: 'Bees', emoji: '🐝',
-    maxEnergy: 30, burn: 0.02, walk: 0.1, sprint: 0.2, sight: 15, wade: 1, flies: true,
+    maxEnergy: 30, burn: 0.02, walk: 0.2, sprint: 0.3, sight: 15, wade: 1, flies: true,
     matureDays: 1, lifeDays: 3, winterLifeDays: 10,   // summer bees wear out fast; autumn-born ones last the winter
     breedSeasons: [0, 1, 2], cap: 150,                // the queen lays (see hivesTick), no pairing up
   },
@@ -179,8 +179,11 @@ const SHALLOW = 1, DEEP = 2;       // w.water, per tile. 0 is dry land
 const TERRAIN = {
   hillSize: 28,                // tiles across a hill: bigger is broader and gentler
   hillDetail: 0.5,             // how much the smaller bumps show on the big hills
-  hillFloor: 0.3,              // hill height that sits right at the water line
+  hillFloor: 0.3,              // hill height where the hills give way to the low meadows
   hillRise: 1.2,               // how steeply the ground climbs with the hills
+  lowGround: 0.08,             // how high the low meadows sit above the water, away from the river
+  lowSlope: 0.25,              // how much of the hills' rise and fall the low meadows keep
+  valley: 22,                  // tiles over which the land slopes down to the river or lake
   bank: 0.05,                  // how fast the ground rises away from the water, per tile
   level: 0,                    // the water line: higher floods the low meadows, lower drains them
   deepAt: 0.3,                 // water at least this deep can't be waded
@@ -214,6 +217,12 @@ const TERRAIN = {
   groves: 4,                   // small clumps of trees out in the meadow
   rocks: 22,
   flowers: 0.07,               // share of tiles with a flower or a tuft
+  fields: [3, 5],              // flower fields, where the bees go
+  fieldSize: [3, 6],           // radius of each of a field's circles
+  fieldSpread: 5,              // how far a field's circles stray from its middle
+  fieldFlowers: 0.45,          // share of a field's tiles with a flower
+  fieldSoil: 0.25,             // how much richer the soil is in a field
+  fieldGather: 60,             // the first three fields lie this close together, so one hive can reach all three
 };
 
 const idx = (x, y) => (y | 0) * W + (x | 0);
@@ -227,6 +236,17 @@ const WATER_NAMES = {
     'Bramble', 'Mirror', 'Moon', 'Lily', 'Newt', 'Mallow', 'Duck', 'Hazel', 'Frog'],
   river: ['Brook', 'Beck', 'River', 'Stream'], lake: ['Mere', 'Lake', 'Water'], pond: ['Pond', 'Pool'],
 };
+
+// Each flower field is one kind, blooming in its season: its flowers, its name, and the tint
+// it gives the ground while in bloom (game.js paints it too).
+const FIELD_KINDS = [
+  { season: 0, emoji: ['🌷', '🌷', '🌷', '🌸'], names: ['Tulip'], tint: [226, 150, 170] },
+  { season: 0, emoji: ['🪻'], names: ['Bluebell', 'Hyacinth'], tint: [160, 150, 214] },
+  { season: 1, emoji: ['🌻'], names: ['Sunflower'], tint: [230, 200, 80] },
+  { season: 1, emoji: ['🌼', '🌼', '🌼', '🌻'], names: ['Buttercup', 'Daisy'], tint: [232, 218, 120] },
+  { season: 2, emoji: ['🪻', '🪻', '🌸'], names: ['Heather', 'Aster'], tint: [200, 130, 176] },   // the last food before winter
+];
+const FIELD_PLACES = ['Field', 'Meadow', 'Bank', 'Patch'];
 
 // Smooth random hills: value noise in three layers, each finer and fainter by `detail`. About 0 to 1.
 function makeNoise(r) {
@@ -369,10 +389,38 @@ function makeTerrain(w) {
   const T = w.terrain = { ...TERRAIN, ...w.options.terrain };
   const drawn = w.drawn = readDrawn(w.options.drawn);
   const hills = makeNoise(r);
-  const ground = new Float32Array(N), hill = new Float32Array(N);
+  const hill = new Float32Array(N);
+  for (let i = 0; i < N; i++) hill[i] = hills((i % W) / T.hillSize, ((i / W) | 0) / T.hillSize, T.hillDetail);
+  const each = fn => { for (let i = 0; i < N; i++) fn(i, (i % W) + 0.5, ((i / W) | 0) + 0.5); };
+
+  // First where the water will go: the lake, the river, and whatever was drawn.
+  const layout = drawn.empty ? 'none' : pickOdds(r, T.layouts);
+  const lake = layout === 'river' || layout === 'none' ? null : { x: r.range(45, W - 45), y: r.range(35, H - 35) };
+  if (lake) lake.shape = blobs(r, lake.x, lake.y, T.lakeBlobs, T.lakeSpread, ...T.lakeSize);
+  const river = layout === 'valley' || layout === 'river' ? riverPath(r, T, lake, hills) : null;
+  // A drawn river that nearly reaches the edge runs on off the map.
+  const drawnRivers = drawn.rivers.map(bends => {
+    const ends = [bends[0], bends[bends.length - 1]].map((p, k) => {
+      const next = bends[k ? bends.length - 2 : 1], d = Math.hypot(p.x - next.x, p.y - next.y) || 1;
+      const edge = Math.min(p.x, p.y, W - p.x, H - p.y);
+      return edge < 4 ? { x: p.x + (p.x - next.x) / d * 8, y: p.y + (p.y - next.y) / d * 8 } : p;
+    });
+    return smoothRiver(T, [ends[0], ...bends.slice(1, -1), ends[1]], null, hills);
+  });
+
+  // Then the ground: the land slopes down into a valley around that water, so a rising water
+  // level spreads out from the river first. Away from it the hills rise from low meadows that
+  // still dip and swell a little, and no hilltop sits right by the water.
+  const planned = new Uint8Array(N);
+  each((i, x, y) => { if ((lake && outside(lake.shape, x, y) < 0) || outside(drawn.water, x, y) < 0) planned[i] = 1; });
+  for (const pts of [river || [], ...drawnRivers]) for (const p of pts) if (inBounds(p.x, p.y)) planned[idx(p.x, p.y)] = 1;
+  const fromWater = planned.some(v => v) ? blurred(blurred(distanceTo(planned), 2), 2) : null;   // blurred, or it shows its eight directions
+  const ground = new Float32Array(N);
   for (let i = 0; i < N; i++) {
-    hill[i] = hills((i % W) / T.hillSize, ((i / W) | 0) / T.hillSize, T.hillDetail);
-    ground[i] = Math.max(0.05, (hill[i] - T.hillFloor) * T.hillRise);   // the low meadows sit just above the water
+    const v = fromWater ? 1 - (1 - clamp(fromWater[i] / T.valley, 0, 1)) ** 2 : 1;   // rises fast from the water, then levels off
+    hill[i] = lerp(Math.min(hill[i], T.hillFloor), hill[i], v);
+    const g = (hill[i] - T.hillFloor) * T.hillRise;
+    ground[i] = v * Math.max(0.01, T.lowGround + (g > 0 ? g : g * T.lowSlope));
   }
   // Water is carved into the ground: the bed drops to `deep` over `edge` tiles from the shore,
   // and outside the shape the bank rises gently back up to the meadow.
@@ -380,38 +428,25 @@ function makeTerrain(w) {
     const h = sd >= 0 ? T.bank * sd : -deep * Math.min(1, -sd / edge);
     if (h < ground[i]) ground[i] = h;
   };
-  const each = fn => { for (let i = 0; i < N; i++) fn(i, (i % W) + 0.5, ((i / W) | 0) + 0.5); };
-
-  const layout = drawn.empty ? 'none' : pickOdds(r, T.layouts);
-  const lake = layout === 'river' || layout === 'none' ? null : { x: r.range(45, W - 45), y: r.range(35, H - 35) };
-  if (lake) {
-    const shape = blobs(r, lake.x, lake.y, T.lakeBlobs, T.lakeSpread, ...T.lakeSize);
-    each((i, x, y) => carve(i, outside(shape, x, y), T.lakeDepth, 6));
-    lake.shape = shape;
-  }
-
+  if (lake) each((i, x, y) => carve(i, outside(lake.shape, x, y), T.lakeDepth, 6));
   const inLake = p => (lake && outside(lake.shape, p.x, p.y) < 6) || outside(drawn.water, p.x, p.y) < 3;
   w.rivers = []; w.fords = [];
-  if (layout === 'valley' || layout === 'river') carveRiver(w, T, riverPath(r, T, lake, hills), inLake, carve);
-
-  // Then whatever was drawn. A drawn river that nearly reaches the edge runs on off the map.
+  if (river) carveRiver(w, T, river, inLake, carve);
   if (drawn.water.length) carveDrawnWater(w, drawn.water, carve);
-  for (const bends of drawn.rivers) {
-    const ends = [bends[0], bends[bends.length - 1]].map((p, k) => {
-      const next = bends[k ? bends.length - 2 : 1], d = Math.hypot(p.x - next.x, p.y - next.y) || 1;
-      const edge = Math.min(p.x, p.y, W - p.x, H - p.y);
-      return edge < 4 ? { x: p.x + (p.x - next.x) / d * 8, y: p.y + (p.y - next.y) / d * 8 } : p;
-    });
-    carveRiver(w, T, smoothRiver(T, [ends[0], ...bends.slice(1, -1), ends[1]], null, hills), inLake, carve);
-  }
+  for (const pts of drawnRivers) carveRiver(w, T, pts, inLake, carve);
 
-  // Small ponds, well away from the other water.
+  // Small ponds, well away from the other water, each in the lowest of a few spots, so they
+  // gather in the hollows.
   w.water = new Uint8Array(N);
   w.ground = ground; w.level = T.level;
   refreshWater(w);
   for (let p = drawn.empty ? 0 : r.int(...T.ponds), tries = 0; p > 0 && tries < 200; tries++) {
-    const cx = r.range(14, W - 14), cy = r.range(12, H - 12);
-    if (waterWithin(w, cx, cy, 14)) continue;
+    let cx = 0, cy = 0, low = Infinity;
+    for (let k = 0; k < 6; k++) {
+      const x = r.range(14, W - 14), y = r.range(12, H - 12);
+      if (ground[idx(x, y)] < low && !waterWithin(w, x, y, 14)) { cx = x; cy = y; low = ground[idx(x, y)]; }
+    }
+    if (low === Infinity) continue;
     const shape = blobs(r, cx, cy, 4, 3.5, ...T.pondSize), deep = r.range(...T.pondDepth);
     each((i, x, y) => { if (Math.abs(x - cx) < 20 && Math.abs(y - cy) < 16) carve(i, outside(shape, x, y), deep, 2.5); });
     refreshWater(w);
@@ -456,6 +491,7 @@ function makeTerrain(w) {
 
   // Decoration only: the forest, some rocks, stepping stones at the fords, flower spots.
   plantTrees(w, hills, hill, near);
+  placeFields(w, near);
   for (let k = 0; k < T.rocks; k++) {
     const x = r.range(3, W - 3), y = r.range(3, H - 3);
     if (dry(w, x, y)) w.decor.push({ x, y, emoji: '🪨', size: r.range(1.1, 1.8) });
@@ -470,8 +506,40 @@ function makeTerrain(w) {
   }
   w.plants = [];
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    if (water[y * W + x] || r.next() > T.flowers) continue;
-    w.plants.push({ x: x + r.next(), y: y + r.next(), i: y * W + x, kind: r.next() });
+    const i = y * W + x, f = w.fieldAt[i] >= 0 ? w.fields[w.fieldAt[i]] : null;
+    if (water[i] || r.next() > (f ? T.fieldFlowers : T.flowers)) continue;
+    w.plants.push({ x: x + r.next(), y: y + r.next(), i, kind: r.next(), field: f });
+  }
+}
+
+// A few flower fields out in the open meadow, on good soil, away from the woods, the water and
+// each other. The first three bloom one each in spring, summer and autumn, close enough together
+// that a hive between them has flowers all year. w.fieldAt says which field a tile
+// is in (-1: none), w.fieldIn how far in (0 at the edge, 1 two tiles in).
+function placeFields(w, near) {
+  const r = w.rng, T = w.terrain, N = W * H;
+  w.fields = []; w.fieldAt = new Int8Array(N).fill(-1); w.fieldIn = new Float32Array(N);
+  const kinds = r.shuffle(FIELD_KINDS.slice()), places = r.shuffle(FIELD_PLACES.slice()), seasons = r.shuffle([0, 1, 2]);
+  for (let n = w.drawn.empty ? 0 : r.int(...T.fields), tries = 0; w.fields.length < n && tries < 1000; tries++) {
+    const cx = r.range(14, W - 14), cy = r.range(12, H - 12), reach = T.fieldSpread + T.fieldSize[1];
+    if (!dry(w, cx, cy) || near[idx(cx, cy)] < reach * 0.6 || w.fert[idx(cx, cy)] < 0.5) continue;
+    if (w.fields.some(f => Math.hypot(f.x - cx, f.y - cy) < reach * 2.5)) continue;
+    if (w.fields.length < 3 && w.fields.some(f => Math.hypot(f.x - cx, f.y - cy) > T.fieldGather)) continue;
+    if (w.decor.some(d => d.tree && Math.hypot(d.x - cx, d.y - cy) < reach)) continue;
+    const season = seasons[w.fields.length % 3];
+    const kind = kinds.find(k => k.season === season && !w.fields.some(f => f.kind === k)) || kinds.find(k => k.season === season);
+    const id = w.fields.length, shape = blobs(r, cx, cy, 4, T.fieldSpread, ...T.fieldSize);
+    const f = { id, kind, season, emoji: kind.emoji, tint: kind.tint, x: cx, y: cy, shape,
+      name: `${r.pick(kind.names)} ${places[id % places.length]}` };
+    w.fields.push(f);
+    for (let y = Math.max(0, Math.floor(cy - reach)); y < Math.min(H, cy + reach); y++) {
+      for (let x = Math.max(0, Math.floor(cx - reach)); x < Math.min(W, cx + reach); x++) {
+        const i = y * W + x, d = outside(shape, x + 0.5, y + 0.5);
+        if (d >= 0 || w.water[i]) continue;
+        w.fieldAt[i] = id; w.fieldIn[i] = clamp(-d / 2, 0, 1);
+        w.fert[i] = Math.min(1, w.fert[i] + T.fieldSoil * w.fieldIn[i]);
+      }
+    }
   }
 }
 
@@ -620,6 +688,19 @@ function distanceTo(from) {
   return d;
 }
 
+// Each tile the average of the square `reach` tiles around it.
+function blurred(src, reach) {
+  const out = new Float32Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    let sum = 0, n = 0;
+    for (let yy = Math.max(0, y - reach); yy <= Math.min(H - 1, y + reach); yy++) {
+      for (let xx = Math.max(0, x - reach); xx <= Math.min(W - 1, x + reach); xx++) { sum += src[yy * W + xx]; n++; }
+    }
+    out[y * W + x] = sum / n;
+  }
+  return out;
+}
+
 // Each stretch of connected water gets a name, and w.body says which one a tile is in.
 // A lake the river runs through shares its water but keeps a name of its own.
 function nameWaters(w, lake) {
@@ -717,13 +798,19 @@ function groundRGB(w, x, y) {
   let v = clamp(w.grass[i] / 0.85, 0, 1);
   v = v * (2 - v);
   const ash = w.ash[i] * (1 - v) * 0.85, snow = clamp(w.snow * 1.4 - 0.3, 0, 0.9);
+  const f = w.fieldAt[i] >= 0 ? w.fields[w.fieldAt[i]] : null, bloom = fieldBloom(w, f, i, v);
   return bare.map((b, k) => {
     let c = lerp(b, lush[k], v);
+    if (bloom > 0) c = lerp(c, f.tint[k], bloom);
     c = lerp(c, GROUND.ash[k], ash);
     c = lerp(c, GROUND.snow[k], snow);
     return isNight(w.tick) ? lerp(c, GROUND.night[k], 0.6 * (1 - snow)) : c;   // moonlit snow stays bright
   });
 }
+
+// How strongly a field tints the ground at tile i: only in its season, where the grass is lush.
+const FIELD_TINT = 0.3;          // at most this much of the field's colour
+const fieldBloom = (w, f, i, v) => (f && f.season === seasonOf(w.tick) ? FIELD_TINT * w.fieldIn[i] * v : 0);
 
 // How far off a fox can pick this rabbit out, as a share of its sight.
 function visibility(w, c) {
@@ -981,7 +1068,7 @@ function makeCreature(w, species, x, y, genes, parents) {
     alert: 0, threatId: 0, chaseT: 0, fright: 0, frightX: 0, frightY: 0, frightWhat: '',
     wary: 0, waryX: 0, waryY: 0, detour: 0, detourX: 0, detourY: 0, nemesisId: 0, haunt: null,
     pregnantUntil: 0, cooldownUntil: 0, dadGenes: null, dadIdPending: 0, dadGenPending: 0,
-    kids: 0, kills: 0, escapes: 0, visits: 0, story: [],
+    kids: 0, kills: 0, escapes: 0, visits: 0, load: 0, find: null, story: [],
   };
   computeTraits(c);
   c.energy = c.maxEnergy * (parents ? 0.6 : 0.8);
@@ -1602,19 +1689,29 @@ function catchPrey(w, fox, rabbit) {
 // lays (hivesTick). In spring and summer they fly out to the flowers, sip, and bring honey back;
 // from autumn to spring they stay in and live on it. Summer bees wear out in a few days, the
 // ones raised in autumn last the winter, so a hive swells in summer and shrinks to a small
-// cluster for the cold. A crowded hive swarms: the old queen takes half the bees off to a new
-// hollow tree (swarm, settle). They fly, so water and woods don't stop them. Same ladder as
+// cluster for the cold. Foragers carry nectar home a few flowers at a time, and one back from
+// a rich patch dances so the others know where to go. A crowded hive swarms: the old queen
+// takes half the bees off to a new hollow tree (swarm, settle). They fly, so water and woods don't stop them. Same ladder as
 // everyone: danger > swarm > home > food > wander, one function per rung. New bee behaviour is
 // a new rung, or a line in one.
 
 const NECTAR = 0.4;             // energy per tick of sipping
 const SIP_TICKS = 40;           // how long one flower takes
-const HONEY = 6;                // honey a bee brings home from each flower
+const REFILL = 150;             // ticks a sipped flower needs to fill with nectar again
+const HONEY = 20;               // honey a bee brings home from each flower
+const LOAD = 3;                 // flowers a forager visits before she flies home to unload
+const RICH = 3;                 // fresh flowers left around her last one (within 8 tiles) that make a patch worth dancing for
+const DANCE_TICKS = 40;         // how long she dances about it at the hive
+const PATCH_DAYS = 0.5;         // how long the hive remembers a dance
+const PATCH_SPREAD = 4;         // how far apart the bees following a dance scatter over the patch
+const LEAVE = 0.05;             // chance each tick that a bee ready to go comes out, so the hive empties bit by bit
 const HONEY_BITE = 0.2;         // honey a hungry bee eats per tick, in the hive
+const FILL_UP = 0.9;            // how full a bee eats herself before flying out, if there's honey
+const POLLEN = 0.05;            // how much a visited flower thickens the grass around it
 const HIVE_HONEY = 200;         // what a new hive starts with
 const HIVE_FULL = 1500;         // all the honey a hive can hold
 const WINTER_HONEY = 30;         // honey put by for each bee before the hive raises young
-const FORAGE_RANGE = 20;        // how far from its hive a bee roams
+const FORAGE_RANGE = 35;        // how far from its hive a bee roams
 const FEW_FLOWERS = 40;         // fewer open than this in the whole meadow, and bees stay in
 const QUEEN_LAYS = 2;           // most young bees a queen can raise per hive check (ten checks a day)
 const NURSING = 0.06;           // young bees raised per check for each bee in the hive, up to QUEEN_LAYS
@@ -1627,6 +1724,7 @@ const SWARM_CARRY = 5;          // honey each leaving bee takes along, in her be
 const SWARM_HANG = 0.5;         // days a swarm hangs in a tree while its scouts look around
 const SWARM_RANGE = 45;         // how far off a swarm will look for a home
 const HIVE_GAP = 20;            // a new hive keeps this far from the others
+const HIVE_SHORE = 2;           // and this far from water, so the hollow tree isn't drawn over the pond
 const OLD_COMB = 20;            // how much a swarm likes an empty hive with comb already in it
 const MATING_FLIGHT = 0.5;      // days before a new queen, back from her wedding flight, starts to lay
 const SCOUTS = 6;               // one bee in this many is a scout
@@ -1639,8 +1737,10 @@ const hiveTime = w => isNight(w.tick) || w.weather.kind === 'rain' || w.weather.
 function hivesTick(w) {
   w.flowers = 0;
   for (const p of w.plants) if (isFlower(w, p)) w.flowers++;
-  for (const h of w.hives) h.bees = 0;
-  for (const list of [w.creatures, w.newborn]) for (const c of list) if (c.alive && c.species === 'bee') c.home.bees++;
+  for (const h of w.hives) { h.bees = 0; h.winterBees = 0; }
+  for (const list of [w.creatures, w.newborn]) {
+    for (const c of list) if (c.alive && c.species === 'bee') { c.home.bees++; if (seasonOf(c.born) >= 2) c.home.winterBees++; }
+  }
   for (const h of [...w.hives]) {                         // a copy: swarms join and leave the list
     if (h.queen && !h.bees) {                             // nobody left to feed her
       h.queen.died = w.tick;
@@ -1654,9 +1754,10 @@ function hivesTick(w) {
   }
 }
 
-// In spring and summer a hive raises young on whatever honey it has. In autumn only once it has
-// honey enough to see all its bees through the winter: those young are the winter bees.
-const broodTime = (w, h) => seasonOf(w.tick) !== 2 || h.honey > WINTER_HONEY * h.bees;
+// In spring and summer a hive raises young on whatever honey it has. In autumn only while it has
+// honey put by for every winter bee so far (the summer bees won't live to see it): those young are
+// the winter bees.
+const broodTime = (w, h) => seasonOf(w.tick) !== 2 || h.honey > WINTER_HONEY * (h.winterBees + 1);
 
 // The more bees at home to feed the brood, the more young, up to what the queen can lay. Never
 // in winter, never before a new queen is back from her wedding flight, and never past the room
@@ -1699,7 +1800,7 @@ function daughterQueen(w, mum) {
 
 function makeHive(w, x, y) {
   const id = w.hives.reduce((m, o) => Math.max(m, o.id), 0) + 1;
-  const h = { id, x, y, honey: HIVE_HONEY, bees: 0, queen: null, brood: 0, swarmed: -Infinity, cluster: false };
+  const h = { id, x, y, honey: HIVE_HONEY, bees: 0, queen: null, brood: 0, swarmed: -Infinity, cluster: false, patch: null };
   w.hives.push(h);
   return h;
 }
@@ -1755,14 +1856,20 @@ function settle(w, s) {
   emit(w, { type: 'settle', hive: home, queen: home.queen, reused: !!(site && site.hive) });
 }
 
-// How good a hollow tree is for a hive: plenty of flowers in reach, and room to be seen rather
-// than deep in the wood.
+// How good a hollow tree is for a hive: plenty of flowers in reach, fields for more than one
+// season, and room to be seen rather than deep in the wood.
+const SEASON_FIELD = 150;       // what each season with a field in reach is worth to a hive site
 function siteScore(w, x, y) {
-  const flowers = w.plants.filter(p => p.kind < 0.35 && w.fert[p.i] > 0.7          // rich soil: they'll bloom
+  const seasons = new Set(w.fields.filter(f => Math.hypot(f.x - x, f.y - y) < FORAGE_RANGE).map(f => f.season)).size;
+  const flowers = w.plants.filter(p => (p.field || (p.kind < 0.35 && w.fert[p.i] > 0.7))   // fields, or rich soil: they'll bloom
     && Math.hypot(p.x - x, p.y - y) < FORAGE_RANGE).length;
   const crowd = w.decor.filter(o => o.tree && Math.hypot(o.x - x, o.y - y) < 4).length;
-  return flowers - 5 * crowd;
+  return flowers + SEASON_FIELD * seasons - 5 * crowd;
 }
+
+// Dry ground all round, far enough out that the hollow tree stands clear of the water.
+const hiveGround = (w, x, y) => dry(w, x, y) &&
+  [0, 1, 2, 3, 4, 5, 6, 7].every(a => dry(w, x + HIVE_SHORE * Math.cos(a * Math.PI / 4), y + HIVE_SHORE * Math.sin(a * Math.PI / 4)));
 
 // Where a swarm from hive h could live, best first: an empty hive, or a tree clear of the others.
 function hiveSites(w, h) {
@@ -1774,7 +1881,7 @@ function hiveSites(w, h) {
   for (const d of w.decor) {
     if (!d.tree || d.stump) continue;
     const x = d.x + 1.4, y = d.y + 0.4;
-    if (!near(x, y) || !dry(w, x, y) || w.hives.some(o => Math.hypot(o.x - x, o.y - y) < HIVE_GAP)) continue;
+    if (!near(x, y) || !hiveGround(w, x, y) || w.hives.some(o => Math.hypot(o.x - x, o.y - y) < HIVE_GAP)) continue;
     sites.push({ x, y, hive: null, score: siteScore(w, x, y) });
   }
   return sites.sort((a, b) => b.score - a.score);
@@ -1788,9 +1895,9 @@ const clusterCold = (w, h) => (seasonOf(w.tick) === 3 ? 1 + CLUSTER_COLD * Math.
 function placeHive(w) {
   let best = { x: W / 2, y: H / 2 }, bestScore = -Infinity;
   for (const d of w.decor) {
-    if (!d.tree) continue;
+    if (!d.tree || d.stump) continue;
     const x = d.x + 1.4, y = d.y + 0.4;
-    if (!dry(w, x, y)) continue;
+    if (!hiveGround(w, x, y)) continue;
     const score = siteScore(w, x, y);
     if (score > bestScore) { best = { x, y }; bestScore = score; }
   }
@@ -1834,40 +1941,83 @@ function beeSwarm(w, c) {
   return true;
 }
 
-// In the hive: eat honey when hungry, come out when it's time (young bees stay in and nurse
-// till they're grown). Outside: fly home at hive time, or early when hungry and there's honey.
+// In the hive: eat honey when hungry, and fill up before heading out to the far flowers; come
+// out when it's time (young bees stay in and nurse till they're grown). Outside: fly home at hive time, or early when hungry and there's honey.
 function beeHome(w, c) {
   const e = c.energy / c.maxEnergy, h = c.home;
   if (c.hidden) {
-    const hungry = e < 0.5 && h.honey > 0;
+    const hungry = e < (hiveTime(w) ? 0.5 : FILL_UP) && h.honey > 0;
     if (hungry) { const bite = Math.min(h.honey, HONEY_BITE); h.honey -= bite; c.energy += bite; }
-    if (hiveTime(w) || hungry || !isAdult(w, c)) return true;
+    if (hiveTime(w) || hungry || !isAdult(w, c) || w.rng.next() > LEAVE) return true;
     c.hidden = false; c.sleeping = false; c.mode = 'wander'; c.target = null;
     return false;
   }
   if (!hiveTime(w) && !(e < 0.3 && h.honey > 0)) return false;
   c.mode = 'home';
-  if (fly(c, h.x, h.y, c.walk)) { c.hidden = true; c.sleeping = true; c.mode = 'sleep'; c.target = null; }
+  if (fly(c, h.x, h.y, c.walk)) { unload(h, c); c.hidden = true; c.sleeping = true; c.mode = 'sleep'; c.target = null; }
   return true;
 }
 
-// Off to the nearest fresh flower, sip, pollinate it, and bring honey home.
+function unload(h, c) {
+  h.honey = Math.min(HIVE_FULL, h.honey + c.load);
+  c.load = 0;
+}
+
+// A dance is news for a while: the patch it points to, and how rich it was.
+const patchFresh = (w, h) => h.patch && w.tick - h.patch.t < PATCH_DAYS * TPD;
+
+// Off to the nearest fresh flower and sip, pollinating it. With a full load, home to unload,
+// and if she found a rich patch she dances: the hive remembers it (h.patch), and bees setting
+// out from the hive fly there. Out in the meadow each finds her own flowers.
 function beeForage(w, c) {
+  const h = c.home;
+  if (c.mode === 'dance') {                       // a figure of eight on the doorstep
+    const a = c.timer * 0.3;
+    c.x = h.x + 0.35 * Math.sin(a); c.y = h.y - 0.2 + 0.18 * Math.sin(2 * a); c.facing = Math.cos(a) > 0 ? 1 : -1;
+    if (--c.timer > 0) return true;
+    c.mode = 'wander'; c.target = null;
+  }
   if (c.mode === 'sip') {
     c.energy = Math.min(c.maxEnergy, c.energy + NECTAR);
     if (--c.timer > 0) return true;
-    pollinate(w, c.target);
-    c.home.honey = Math.min(HIVE_FULL, c.home.honey + HONEY); c.visits++;
+    pollinate(w, c.target); c.target.sipped = w.tick;
+    c.load += HONEY; c.visits++;
+    const rich = freshAround(w, c.target);
+    if (rich >= RICH && (!c.find || rich > c.find.rich)) c.find = { x: c.target.x, y: c.target.y, rich, field: c.target.field };
     c.mode = 'wander'; c.target = null;
   }
-  if (c.home.honey >= HIVE_FULL && c.energy >= 0.8 * c.maxEnergy) return false;   // workers gather all day, till the hive is full
-  if (c.mode !== 'flower') {
-    if ((w.tick + c.id) % 10) return false;         // look around now and then, not every tick
-    c.target = findFlower(w, c);
-    if (!c.target) return false;
-    c.mode = 'flower';
+  if (c.load >= LOAD * HONEY) {                   // full: home to unload, and tell the others
+    c.mode = 'unload';
+    if (!fly(c, h.x, h.y, c.walk)) return true;
+    unload(h, c);
+    if (c.find) {
+      if (!patchFresh(w, h) || c.find.rich >= h.patch.rich) h.patch = { ...c.find, t: w.tick };
+      c.find = null; c.mode = 'dance'; c.timer = DANCE_TICKS;
+      return true;
+    }
+    c.mode = 'wander';
   }
-  if (fly(c, c.target.x, c.target.y, c.walk)) { c.mode = 'sip'; c.timer = SIP_TICKS; c.target.sipped = w.tick; }
+  if (h.honey >= HIVE_FULL && c.energy >= 0.8 * c.maxEnergy) return false;   // workers gather all day, till the hive is full
+  if (c.mode !== 'flower' && c.mode !== 'patch' && (w.tick + c.id) % 10 === 0) {   // look around now and then
+    if (patchFresh(w, h) && Math.hypot(h.x - c.x, h.y - c.y) < 2) {
+      const s = PATCH_SPREAD;
+      c.mode = 'patch'; c.target = { x: clamp(h.patch.x + w.rng.range(-s, s), 1, W - 1), y: clamp(h.patch.y + w.rng.range(-s, s), 1, H - 1), field: h.patch.field };
+    } else if (!pickFlower(w, c)) {               // nothing free in sight: off to a field she knows is in bloom
+      const f = w.rng.pick(w.fields.filter(f => f.season === seasonOf(w.tick) && Math.hypot(f.x - h.x, f.y - h.y) < FORAGE_RANGE).concat([null]));
+      const b = f && w.rng.pick(f.shape);
+      if (b) { c.mode = 'patch'; c.target = { x: clamp(b.x + w.rng.range(-b.r, b.r) * 0.7, 1, W - 1), y: clamp(b.y + w.rng.range(-b.r, b.r) * 0.7, 1, H - 1), field: f }; }
+    }
+  }
+  if (c.mode === 'patch') {                       // off where a dancer said
+    if (!fly(c, c.target.x, c.target.y, c.walk)) return true;
+    if (!pickFlower(w, c)) {                      // all sipped: that patch is done
+      if (h.patch && Math.hypot(h.patch.x - c.x, h.patch.y - c.y) < PATCH_SPREAD) h.patch = null;
+      c.mode = 'wander'; c.target = null;
+      return false;
+    }
+  }
+  if (c.mode !== 'flower') return false;
+  if (fly(c, c.target.x, c.target.y, c.walk)) { c.mode = 'sip'; c.timer = SIP_TICKS; }
   return true;
 }
 
@@ -1888,23 +2038,45 @@ function fly(c, tx, ty, v) {
   return false;
 }
 
-// The flowers the meadow shows: spring and summer, where the grass is lush.
+// The flowers the meadow shows: spring and summer, where the grass is lush. A field's flowers
+// bloom in the field's own season, and are hardier: rabbits have to graze it low to crop them.
+const FIELD_GRASS = 0.35;
 // (Same rule as plantEmoji in game.js. If you change one, change the other.)
 function isFlower(w, p) {
   const s = seasonOf(w.tick);
+  if (p.field) return s === p.field.season && w.grass[p.i] >= FIELD_GRASS;
   if (w.grass[p.i] < 0.55) return false;
   return (s === 0 && p.kind < 0.35) || (s === 1 && p.kind < 0.22);
 }
 
-// The nearest flower in sight that nobody has sipped from in the last half day.
+// A flower no other bee is headed to or sipping from (p.bee), that has had time to fill again.
+const taken = p => p.bee && p.bee.alive && p.bee.target === p;
+const freshFlower = (w, p) => !taken(p) && (!p.sipped || w.tick - p.sipped > REFILL) && isFlower(w, p);
+
+// The nearest fresh flower in sight, within reach of home.
 function findFlower(w, c) {
   let best = null, bd = c.sight * c.sight;
+  const h = c.home, reach = FORAGE_RANGE * FORAGE_RANGE;
   for (const p of w.plants) {
     const d2 = (p.x - c.x) ** 2 + (p.y - c.y) ** 2;
-    const fresh = !p.sipped || w.tick - p.sipped > TPD / 2;
-    if (d2 < bd && fresh && isFlower(w, p)) { best = p; bd = d2; }
+    if (d2 < bd && (p.x - h.x) ** 2 + (p.y - h.y) ** 2 < reach && freshFlower(w, p)) { best = p; bd = d2; }
   }
   return best;
+}
+
+// Head for the nearest fresh flower and claim it (p.bee), so the next bee picks another.
+function pickFlower(w, c) {
+  const p = findFlower(w, c);
+  if (!p) return false;
+  p.bee = c; c.mode = 'flower'; c.target = p;
+  return true;
+}
+
+// How many fresh flowers are close around this one: how rich the patch is.
+function freshAround(w, f) {
+  let n = 0;
+  for (const p of w.plants) if ((p.x - f.x) ** 2 + (p.y - f.y) ** 2 < 64 && freshFlower(w, p)) n++;
+  return n;
 }
 
 // A visited flower spreads its seed: the grass around it grows back thicker. Good for rabbits.
@@ -1913,7 +2085,7 @@ function pollinate(w, p) {
     for (let x = (p.x | 0) - 2; x <= (p.x | 0) + 2; x++) {
       if (!dry(w, x, y)) continue;
       const i = idx(x, y);
-      w.grass[i] = Math.min(w.fert[i], w.grass[i] + 0.1);
+      w.grass[i] = Math.min(w.fert[i], w.grass[i] + POLLEN);
     }
   }
 }
@@ -1927,6 +2099,9 @@ function beeMood(w, c) {
     case 'sip': return { emoji: '🌼', text: 'Sipping nectar' };
     case 'flower': return { emoji: '🌸', text: 'Off to a flower' };
     case 'home': return { emoji: '🏠', text: 'Flying home to the hive' };
+    case 'unload': return { emoji: '🍯', text: 'Carrying nectar home' };
+    case 'dance': return { emoji: '💃', text: 'Dancing to tell the others about a rich patch of flowers' };
+    case 'patch': return { emoji: '🧭', text: c.target && c.target.field ? `Off to the ${c.target.field.name}` : 'Off to the flowers a dancer told of' };
     case 'swarm': return { emoji: '', text: 'Hanging in the swarm, waiting for the scouts' };
     case 'scout': return { emoji: '🔎', text: 'Scouting for a new home for the swarm' };
     case 'wander': return { emoji: '', text: 'Buzzing about' };
@@ -2196,10 +2371,10 @@ function mood(w, c) {
 
 const api = {
   W, H, TPD, SHALLOW, DEEP, SEASON_DAYS, YEAR_DAYS, SEASONS, SPECIES, GENES, COATS, GROUND, WEATHER,
-  createWorld, step, clock, isNight, phaseOf, seasonOf, mood, ageDays, growth, isAdult,
+  createWorld, step, clock, isNight, phaseOf, seasonOf, mood, ageDays, growth, isAdult, patchFresh,
   addCreature, paintGrass, setSky, lockSky, zap, traitMeans, walkable,
   coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT, KINDS,
-  TERRAIN, distanceToWater,
+  TERRAIN, distanceToWater, fieldBloom, FIELD_GRASS,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 else root.Sim = api;

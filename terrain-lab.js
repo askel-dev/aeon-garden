@@ -27,8 +27,11 @@ const GROUPS = [
   ['⛰️', 'Hills', [
     ['hillSize', 'Hill size', 8, 90, 1],
     ['hillDetail', 'Bumpiness', 0, 1.2, 0.05],
-    ['hillFloor', 'Low ground', 0, 0.7, 0.01],
+    ['hillFloor', 'Hills start', 0, 0.7, 0.01],
     ['hillRise', 'Steepness', 0.2, 3, 0.05],
+    ['lowGround', 'Low meadows', 0, 0.4, 0.01],
+    ['lowSlope', 'Low dips', 0, 1, 0.05],
+    ['valley', 'Valley width', 1, 60, 1],
     ['bank', 'Bank slope', 0.005, 0.2, 0.005],
   ]],
   ['💧', 'Water', [
@@ -78,6 +81,14 @@ const GROUPS = [
   ['🪨', 'Scatter', [
     ['rocks', 'Rocks', 0, 150, 1],
     ['flowers', 'Flowers', 0, 0.4, 0.01],
+  ]],
+  ['🌷', 'Flower fields', [
+    ['fields', 'Fields', 0, 8, 1],
+    ['fieldSize', 'Circle size', 1, 12, 0.5],
+    ['fieldSpread', 'Spread', 0, 15, 0.5],
+    ['fieldFlowers', 'Flowers', 0, 1, 0.01],
+    ['fieldSoil', 'Richer soil', 0, 0.8, 0.05],
+    ['fieldGather', 'Gathered within', 20, 150, 1],
   ]],
 ];
 

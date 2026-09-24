@@ -51,7 +51,16 @@ function pixelRatio() {
   return r;
 }
 
+// On the home screen iOS takes the clock's strip off the window's height, so everything fixed ends
+// short of the bottom. Measure what's missing (0 anywhere else); the CSS adds it back as --lost.
+function lostStrip() {
+  if (!navigator.standalone) return 0;
+  const tall = innerHeight > innerWidth, screenH = tall ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
+  return clamp(screenH - innerHeight, 0, 80);
+}
+
 function resize() {
+  document.documentElement.style.setProperty('--lost', lostStrip() + 'px');
   dpr = pixelRatio();
   // The CSS sizes the canvas: on a phone it reaches under the clock and Safari's bar, past innerHeight.
   vw = canvas.clientWidth || innerWidth; vh = canvas.clientHeight || innerHeight;
@@ -305,6 +314,7 @@ const lush = mask(), bare = mask();
 const limg = new ImageData(S.W, S.H), bimg = new ImageData(S.W, S.H);
 let jitter = new Float32Array(S.W * S.H);
 let patches = new Float32Array(S.W * S.H);              // soft warm (+) and cool (-) patches, a few tiles across
+let relief = null, reliefOf = null;                     // how lit each tile's slope is, for which meadow
 let terrainTick = -1, terrainVersion = 0;
 let shoreSand = [200, 180, 130];
 // Most repaints change only a few tiles (a rabbit's bite), so the ground layer repaints just
@@ -313,7 +323,18 @@ let shoreSand = [200, 180, 130];
 const terrDirty = new Uint8Array(S.W * S.H);
 let terrDirtyCount = 0;
 
+// The hills, lit softly from the top left: slopes facing it a little lighter, those facing
+// away a little darker. The ground under the water stays as it is.
+function hillLight(w) {
+  const g = w.ground, at = (x, y) => g[clamp(y, 0, S.H - 1) * S.W + clamp(x, 0, S.W - 1)];
+  return Float32Array.from(g, (h, i) => {
+    const x = i % S.W, y = (i / S.W) | 0;
+    return w.water[i] ? 1 : 1 + clamp((at(x + 1, y) - at(x - 1, y) + at(x, y + 1) - at(x, y - 1)) * 2.5, -0.2, 0.2);
+  });
+}
+
 function paintTerrain(fresh) {
+  if (reliefOf !== world) { relief = hillLight(world); reliefOf = world; }
   const ck = S.clock(world);
   const sp = (ck.dayInSeason - 1 + ck.phase) / S.SEASON_DAYS;
   const t = sp > 0.8 ? (sp - 0.8) / 0.2 : 0;
@@ -333,8 +354,10 @@ function paintTerrain(fresh) {
     // Under the ponds (drawn on top by drawPonds) lies damp sand, which blurs into a shore.
     let v = water[i] ? 0 : clamp(g[i] / 0.85, 0, 1);
     v = v * (2 - v);
-    const k = (1 + 0.035 * j) * damp * (water[i] ? 0.9 : 1) * (1 - 0.3 * world.wood[i]), p = patches[i];
+    const k = (1 + 0.035 * j) * damp * (water[i] ? 0.9 : 1) * (1 - 0.3 * world.wood[i]) * relief[i], p = patches[i];
     let r = lerp(low[0], high[0], v) + 6 * p, gr = lerp(low[1], high[1], v) + 2 * p, b = lerp(low[2], high[2], v) - 6 * p;
+    const fi = world.fieldAt[i], bloom = fi >= 0 ? S.fieldBloom(world, world.fields[fi], i, v) : 0;
+    if (bloom > 0) { const c = world.fields[fi].tint; r = lerp(r, c[0], bloom); gr = lerp(gr, c[1], bloom); b = lerp(b, c[2], bloom); }
     if (ash[i] > 0) {                                                // burnt ground, until the grass returns
       const a = ash[i] * (1 - v) * 0.85;
       r = lerp(r, S.GROUND.ash[0], a); gr = lerp(gr, S.GROUND.ash[1], a); b = lerp(b, S.GROUND.ash[2], a);
@@ -589,7 +612,10 @@ function drawGround(z, ox, oy, shaking) {
   ctx.restore();
 }
 
-function plantEmoji(season, kind, g) {
+function plantEmoji(season, p, g) {
+  const kind = p.kind, f = p.field;
+  if (f && season === f.season) return g >= S.FIELD_GRASS ? f.emoji[Math.floor(kind * f.emoji.length)] : '🌱';
+  if (f && season < 2) return g > 0.4 ? '🌿' : null;      // a field out of bloom is just grass
   switch (season) {
     case 0: if (g > 0.55 && kind < 0.35) return kind < 0.12 ? '🌷' : kind < 0.24 ? '🌼' : '🌸';
       return g > 0.4 ? '🌿' : kind < 0.3 ? '🌱' : null;
@@ -606,11 +632,11 @@ function plantEmoji(season, kind, g) {
 // flower changes along with the ground under it, and one that changed repaints just its patch.
 // Anything that changes how one looks belongs in plantLook. The few that little waves could
 // pass over are drawn every frame instead, on top of the waves, and so would any that moved.
-const PLANT_EMOJI = ['🌷', '🌼', '🌸', '🌿', '🌱', '🌻', '🍂', '🌾', '❄️'];
+const PLANT_EMOJI = ['🌷', '🌼', '🌸', '🌿', '🌱', '🌻', '🍂', '🌾', '❄️', '🪻'];
 function plantLook(p, season, z) {
   const plantPx = z * 0.95;
   if (plantPx < 7) return null;
-  const g = world.grass[p.i], e = plantEmoji(season, p.kind, g);
+  const g = world.grass[p.i], e = plantEmoji(season, p, g);
   return e && { e, px: Math.max(4, Math.round(plantPx * (0.55 + 0.45 * Math.min(1, g)))) };   // as the sprite rounds it
 }
 
@@ -903,7 +929,9 @@ function render(now) {
     drawLabel(`${hov.name} · ${S.mood(world, hov).text}`, sx, sy + creaturePx(hov) * 0.55 + 6);
   } else if (ui.hoverHive) {
     const h = ui.hoverHive, [sx, sy] = toScreen(h.x, h.y);
-    drawLabel(`🐝 ${h.queen ? `Queen ${h.queen.name}'s hive` : 'Empty hive'} · ${h.bees} ${h.bees === 1 ? 'bee' : 'bees'} · ${Math.round(h.honey)} honey`, sx, sy + z * 0.5 + 6);
+    const where = h.patch && h.patch.field ? `the ${h.patch.field.name}` : 'flowers';
+    const dance = S.patchFresh(world, h) ? ` · 💃 ${where} to the ${compass(h.patch.x - h.x, h.patch.y - h.y)}` : '';
+    drawLabel(`🐝 ${h.queen ? `Queen ${h.queen.name}'s hive` : 'Empty hive'} · ${h.bees} ${h.bees === 1 ? 'bee' : 'bees'} · ${Math.round(h.honey)} honey${dance}`, sx, sy + z * 0.5 + 6);
   }
 }
 
@@ -1376,6 +1404,10 @@ function drawHive(h, sx, sy) {
   }
 }
 
+// Which way, in words, like a waggle dance tells it. North is up the map.
+const compass = (dx, dy) => ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'][
+  (Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) + 8) % 8];
+
 // A swarm hanging from a branch: a drooping clump of bees, widest near the bottom, bigger the
 // more bees there are, and seething while time runs.
 function drawSwarm(h, sx, sy) {
@@ -1393,9 +1425,14 @@ function drawHiveShadow(sx, sy, sn) {                      // the same shadow a 
   drawDecorShadow({ size: SNAG * 0.7, tree: true }, sx, sy, sn);
 }
 
+// The trunk, from its foot up to the snapped-off top, and never smaller than a fingertip.
 function hiveAt(sx, sy) {
-  const [wx, wy] = toWorld(sx, sy);
-  return world.hives.find(h => !h.cluster && Math.hypot(h.x - wx, h.y - 0.9 - wy) < Math.max(1, 14 / cam.zoom)) || null;   // the trunk
+  const P = cam.zoom * SNAG, reach = Math.max(22, P * 0.15);
+  return world.hives.find(h => {
+    if (h.cluster) return false;
+    const [hx, hy] = toScreen(h.x, h.y);
+    return Math.abs(sx - hx) < reach && sy > hy - P * 0.65 - reach / 2 && sy < hy + reach / 2;
+  }) || null;
 }
 
 // Ponds are drawn as shapes, so the shore holds up however far you zoom in. The water map
@@ -2078,7 +2115,7 @@ function updateMeadowCard() {
   setHTML($('#sky'), `${icon} <b>${clearNight ? 'Clear night' : wx.name}</b>${lock} · ${ground}`);
   $('#sky').title = WEATHER_HINT[kind] + (world.skyLocked ? '. Locked: it stays until you unlock it (K)' : '');
   setText($('#sky-btn'), wx.emoji);
-  setText($('#mini-sky'), S.SEASONS[ck.season].emoji + icon);
+  setHTML($('#mini-sky'), `<span id="mini-season">${S.SEASONS[ck.season].emoji}</span>${icon}`);   // phones hide the season
   for (const s of S.KINDS) {
     setText($('#mini-' + s), String(world.count[s]));
     setText($('#n-' + s), String(world.count[s]));
@@ -2684,7 +2721,7 @@ canvas.addEventListener('pointercancel', e => {
 });
 // Safari ignores the viewport's no-zoom, and a zoomed page makes the whole meadow blurry.
 document.addEventListener('gesturestart', e => e.preventDefault());
-canvas.addEventListener('pointerleave', () => { ui.hoverId = 0; ui.hoverHive = null; });
+canvas.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') { ui.hoverId = 0; ui.hoverHive = null; } });   // a lifted finger leaves too
 canvas.addEventListener('contextmenu', e => { e.preventDefault(); if (!LAB) openRing(e.clientX, e.clientY); });
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
@@ -2706,6 +2743,7 @@ function click(sx, sy) {
   if (ui.tool === 'look') {
     const c = creatureAt(sx, sy);
     select(c ? c.id : 0);
+    ui.hoverHive = c ? null : hiveAt(sx, sy);      // a tap shows the hive's label: touch screens have no hover
   } else if (S.KINDS.includes(ui.tool)) release(ui.tool, wx, wy);
   else if (ui.tool === 'zap') { S.zap(world, wx, wy); flushEvents(); }
 }

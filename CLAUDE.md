@@ -31,9 +31,14 @@ first frame; to see the game running (animals moving, camera moved), drive Chrom
 DevTools protocol (`--remote-debugging-port`) and use `Runtime.evaluate` / `Page.captureScreenshot`. The diary button talks to Ollama on localhost:11434 (qwen3:8b, else qwen3:4b).
 
 Terrain: the ground has a height and water lies below `w.level`, so seasonal water can later
-move that one number (`refreshWater`). Shallow water is waded slowly; deep water blocks.
+move that one number (`refreshWater`). The land slopes down into a valley around the river and lake
+(`TERRAIN.valley`), so rising water spreads from the river first; the game shades the slopes (`hillLight`).
+Shallow water is waded slowly; deep water blocks.
 Each connected water body is named (`w.waters`, `w.body`). Population caps and starting
 numbers scale with dry land (`w.room`).
+Flower fields (`w.fields`, `placeFields`) are dense named patches of one flower (`FIELD_KINDS`), each
+blooming in its own season (the first three: spring, summer, autumn, gathered within `fieldGather` so one hive can reach all three), with hardier flowers (`FIELD_GRASS`) and a tint on the ground while in bloom
+(`fieldBloom`). They're the bees' main food; the few scattered flowers elsewhere are the rest.
 
 Rabbit coats: two letter-pair genes (`coat`, e.g. 'AaDd') give four colours, plus a sliding
 `moult` gene that whitens the coat in winter. Foxes spot a still rabbit from further off when its
@@ -41,7 +46,9 @@ coat stands out from the ground under it (`visibility`); the ground colours (`GR
 sim and the drawing uses them too.
 
 Bees: they live in hives (`w.hives`, drawn as a hollow dead tree, see `snagSprite`), fly (`flies: true` in `SPECIES`, see `go`/`fly`),
-sip from the flowers the meadow shows (`isFlower`, same rule as `plantEmoji` in game.js) and bring honey home.
+sip from the flowers the meadow shows (`isFlower`, same rule as `plantEmoji` in game.js) within `FORAGE_RANGE`
+of home, and carry it back a `LOAD` at a time. One back from a rich patch dances (`h.patch`), and bees setting out
+from the hive fly there; the hive label says which way.
 They stay in while few flowers are open (`w.flowers`) and live on honey. Bees don't pair up: each hive has a
 queen (`h.queen`, just a name and genes on the hive) who lays in `layEggs`, in spring and summer on whatever
 honey there is, in autumn only once there's honey put by for every bee (`broodTime`). Summer bees live a few
