@@ -87,6 +87,9 @@ const GROUPS = [
   ]],
   ['🪨', 'Scatter', [
     ['rocks', 'Rocks', 0, 150, 1],
+    ['rockSize', 'Rock size', 0.3, 4, 0.1],
+    ['bigRocks', 'Great rocks', 0, 10, 1],
+    ['bigRockSize', 'Great rock size', 2, 8, 0.1],
     ['flowers', 'Flowers', 0, 0.4, 0.01],
   ]],
   ['🌷', 'Flower fields', [
@@ -547,7 +550,7 @@ function paintMeadow(w, g, scale) {
     if (!t.tree && t.emoji !== '🪨') continue;
     g.fillStyle = t.tree ? leaf[t.emoji === '🌲' ? 1 : 0] : '#9a968c';
     g.beginPath();
-    g.arc(t.x * scale, t.y * scale, (t.tree ? t.size * 0.3 : 0.4) * scale, 0, Math.PI * 2);
+    g.arc(t.x * scale, t.y * scale, t.size * 0.3 * scale, 0, Math.PI * 2);
     g.fill();
   }
 }
