@@ -1451,7 +1451,7 @@ function drawDecor(d, sx, sy, now, ck) {
 // outlines, turned and mirrored, in a few colours of stone: a darker side, a lighter top lit
 // from the top left, a dark line where it meets the ground, and moss on some, more in the
 // woods. What a rock looks like comes from where it lies (rockInfo); it's painted into a
-// sprite once per size and redone only when the zoom or the snow changes.
+// sprite, painted again when the zoom settles at a new size or the snow changes.
 
 const ROCK_SHAPES = [   // an outline's reach at ten steps round, starting at the right, going down
   [1, 0.95, 0.8, 0.85, 0.98, 1.05, 0.9, 0.72, 0.78, 0.92],
@@ -1464,7 +1464,7 @@ const ROCK_RGB = [[184, 174, 156], [160, 166, 166], [206, 178, 128], [190, 168, 
 const MOSS_RGB = [108, 146, 52];
 const ROCK_SQUASH = 0.62;                                  // we look down at the meadow at a slant
 const ROCK_FOOT = 0.66;                                    // where the ground is in a rock's sprite, from the top
-const ROCK_MAX_PX = 256;                                   // each rock keeps its sprite, so mind the memory
+const ROCK_MAX_PX = 256;                                   // each rock keeps its sprite, so mind the memory; past this it's a little soft
 const rockInfos = new WeakMap();
 let rockLayer = null;                                      // scratch canvas, one stone at a time
 
@@ -1584,9 +1584,7 @@ function paintStone(g, p, t, U, snow) {
   g.drawImage(L, -L.width / 2, -L.height * ROCK_FOOT);
 }
 
-function rockSprite(t, px, snow) {
-  const U = Math.min(ROCK_MAX_PX, Math.round(px * dpr));   // past that it's drawn a little soft, not huge
-  if (t.sprite && t.px === U && t.snow === snow) return t.sprite;
+function rockSprite(t, U, snow) {
   const c = t.sprite || document.createElement('canvas');
   c.width = Math.ceil(U * 1.8); c.height = Math.ceil(U * 1.5);
   if (!rockLayer) rockLayer = document.createElement('canvas');
@@ -1608,9 +1606,13 @@ function rockSprite(t, px, snow) {
   return c;
 }
 
+// While the zoom moves, a rock painted at about this size is stretched rather than painted again;
+// it's painted sharp once the zoom comes to rest (groundStill), like the ground.
 function drawRock(d, sx, sy) {
-  const t = rockInfo(d), px = d.size * cam.zoom;
-  const s = rockSprite(t, px, t.kind === 'ford' ? 0 : step(world.snow * 1.6 - 0.2, 4));
+  const t = rockInfo(d), px = d.size * cam.zoom, snow = t.kind === 'ford' ? 0 : step(world.snow * 1.6 - 0.2, 4);
+  const want = Math.min(ROCK_MAX_PX, spriteStep(px * dpr)), off = t.sprite ? want / t.px : 0;
+  const keep = t.snow === snow && (want === t.px || (groundStill < 2 && off > 0.7 && off < 1.4));
+  const s = keep ? t.sprite : rockSprite(t, want, snow);
   const w = s.width * px / t.px, h = s.height * px / t.px;
   ctx.drawImage(s, sx - w / 2, sy - h * ROCK_FOOT, w, h);
 }
