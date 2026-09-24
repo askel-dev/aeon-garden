@@ -1043,11 +1043,12 @@ function render(now) {
   const items = [];
   for (const d of world.decor) {
     const [sx, sy] = toScreen(d.x, d.y);
+    if (besideHive(d)) continue;
     if (visible(sx, sy, d.size * z)) items.push({ y: d.y, d, sx, sy });
   }
   for (const h of world.hives) {                           // (a swarm hanging in a tree is one too)
     const [sx, sy] = toScreen(h.x, h.y);
-    if (visible(sx, sy, SNAG * z)) items.push({ y: h.y, h, sx, sy });
+    if (visible(sx, sy, OLD_TREE * z)) items.push({ y: h.y, h, sx, sy });
   }
   const shown = [];
   for (const c of world.creatures) {
@@ -1062,12 +1063,12 @@ function render(now) {
   const sn = sun(ck);
   for (const it of items) {
     if (it.d) drawDecorShadow(it.d, it.sx, it.sy, sn);
-    else if (it.h) { if (!it.h.cluster) drawHiveShadow(it.sx, it.sy, sn); }
+    else if (it.h) { if (!it.h.cluster) drawHiveShadow(it.h, it.sx, it.sy, sn); }
     else drawCreatureShadow(it.c, it.sx, it.sy, now, sn);
   }
   for (const it of items) {
     if (it.d) drawDecor(it.d, it.sx, it.sy, now, ck);
-    else if (it.h) (it.h.cluster ? drawSwarm : drawHive)(it.h, it.sx, it.sy);
+    else if (it.h) (it.h.cluster ? drawSwarm : drawBeeTree)(it.h, it.sx, it.sy, now, ck);
     else drawCreature(it.c, it.sx, it.sy, now);
   }
   drawFallingLeaves(now);
@@ -1095,7 +1096,7 @@ function render(now) {
     for (const h of world.hives) {
       if (!h.bees || h.cluster) continue;
       const [sx, sy] = toScreen(h.x, h.y);
-      if (visible(sx, sy, 40)) drawEmoji('💤', sx + z * SNAG * 0.35, sy - z * (SNAG * 0.6 + 0.35) + Math.sin(now / 600 + h.id) * 3, Math.max(11, z * 0.8), { alpha: 0.85 });
+      if (visible(sx, sy, 40)) drawEmoji('💤', sx + z * OLD_TREE * 0.12, sy - z * OLD_TREE * 0.2 + Math.sin(now / 600 + h.id) * 3, Math.max(11, z * 0.8), { alpha: 0.85 });
     }
   }
 
@@ -1915,6 +1916,118 @@ function drawHive(h, sx, sy) {
 const compass = (dx, dy) => ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'][
   (Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) + 8) % 8];
 
+// An old bee tree: a giant broadleaf, bigger than any in the wood, with a thick trunk flaring
+// into its roots and a hollow low down where the bees go in, its rim dark with their resin. The
+// trunk is painted into a sprite that fades out at the top, laid over the emoji's own, so it
+// grows up into the crown whatever the emoji font. The bees on the sill are drawn each frame.
+const OLD_TREE = 8;                                        // its size, in tiles
+const OLD_HOLE = { x: 0.015, y: -0.075, rx: 0.042, ry: 0.066 };   // in tree sizes, from its foot
+const OLD_FADE = [-0.15, -0.27];                           // the trunk fades into the crown between these
+const beeTrees = new WeakMap(), trunkSprites = new Map();
+// The ordinary tree the hive stands beside isn't drawn: the old bee tree takes its place.
+const besideHive = d => d.tree && world.hives.some(h => !h.cluster && Math.hypot(h.x - d.x, h.y - d.y) < 2);
+function beeTree(h) {
+  let d = beeTrees.get(h);
+  if (!d) {
+    beeTrees.set(h, d = { x: h.x, y: h.y, emoji: '🌳', size: OLD_TREE, tree: true, stump: 0 });
+    treeInfo(d).fruit = '';
+  }
+  return d;
+}
+
+function trunkPath(g) {                                    // in tree sizes, from its foot
+  g.beginPath();
+  g.moveTo(-0.095, -0.34);
+  g.bezierCurveTo(-0.105, -0.2, -0.115, -0.1, -0.13, -0.035);
+  g.quadraticCurveTo(-0.155, 0.008, -0.26, 0.028);                     // a root, left
+  g.quadraticCurveTo(-0.15, 0.048, -0.075, 0.032);
+  g.quadraticCurveTo(0.01, 0.052, 0.08, 0.034);
+  g.quadraticCurveTo(0.14, 0.052, 0.235, 0.022);                       // and right
+  g.quadraticCurveTo(0.15, 0.004, 0.14, -0.05);
+  g.bezierCurveTo(0.13, -0.12, 0.12, -0.22, 0.115, -0.34);
+  g.closePath();
+}
+
+function trunkSprite(P) {
+  P = Math.round(P);
+  let s = trunkSprites.get(P);
+  if (s) return s;
+  if (trunkSprites.size > 40) trunkSprites.clear();
+  const W = P * 0.56, H = P * 0.42, ox = P * 0.28, oy = P * 0.36;
+  const c = document.createElement('canvas');
+  c.width = Math.ceil(W * dpr); c.height = Math.ceil(H * dpr);
+  const g = c.getContext('2d'), px = 1 / P;
+  g.setTransform(dpr * P, 0, 0, dpr * P, ox * dpr, oy * dpr);
+  // Old bark, lit from the top left, with deep ridges fanning out into the roots.
+  trunkPath(g);
+  const bark = g.createLinearGradient(-0.13, 0, 0.15, 0);
+  bark.addColorStop(0, '#9c7b5f'); bark.addColorStop(0.45, '#6f4f3b'); bark.addColorStop(1, '#3d2a1d');
+  g.fillStyle = bark; g.fill();
+  g.save(); g.clip();
+  if (P > 60) {
+    for (let k = 0; k < 10; k++) {
+      const f = (k + 0.5) / 10 - 0.5;
+      g.beginPath();
+      for (let n = 0, y = -0.34; y <= 0.05; n++, y += 0.02) {
+        const spread = y > -0.05 ? 1 + (y + 0.05) * 14 : 1;
+        g[n ? 'lineTo' : 'moveTo'](0.01 + f * 0.24 * spread + (hash2(k, n, 5) - 0.5) * 0.008, y);
+      }
+      g.lineWidth = Math.max(px, 0.007); g.strokeStyle = 'rgba(35, 20, 10, 0.3)'; g.stroke();
+      g.translate(-0.004, 0); g.lineWidth = Math.max(px, 0.003); g.strokeStyle = 'rgba(255, 225, 185, 0.1)'; g.stroke(); g.translate(0.004, 0);
+    }
+  }
+  softSpot(g, 0.09, 0.012, 0.09, 0.03, '96, 120, 40', 0.55);          // moss at the foot, on the shaded side
+  softSpot(g, 0.1, -0.12, 0.03, 0.07, '96, 120, 40', 0.35);
+  g.restore();
+  // The hollow: a resin-dark rim, a lip of bark, black inside, comb glinting at the bottom.
+  const { x, y, rx, ry } = OLD_HOLE;
+  softSpot(g, x, y + ry * 0.2, rx * 1.9, ry * 1.6, '40, 22, 8', 0.6);
+  const lip = g.createLinearGradient(x - rx, y - ry, x + rx, y + ry);
+  lip.addColorStop(0, '#b88a5c'); lip.addColorStop(0.5, '#6a4526'); lip.addColorStop(1, '#2e1b0c');
+  g.fillStyle = lip; g.beginPath(); g.ellipse(x, y, rx * 1.22, ry * 1.15, 0, 0, TAU); g.fill();
+  g.save();
+  g.beginPath(); g.ellipse(x, y, rx, ry, 0, 0, TAU); g.clip();
+  g.fillStyle = '#0a0503'; g.fillRect(x - rx, y - ry, 2 * rx, 2 * ry);
+  const comb = g.createRadialGradient(x - rx * 0.2, y + ry * 0.55, 0, x, y + ry * 0.7, rx * 1.2);
+  comb.addColorStop(0, '#e9c070'); comb.addColorStop(0.5, '#b87a26'); comb.addColorStop(1, 'rgba(60, 32, 6, 0)');
+  g.fillStyle = comb; g.beginPath(); g.ellipse(x, y + ry * 0.75, rx * 1.1, ry * 0.5, 0, 0, TAU); g.fill();
+  const lid = g.createLinearGradient(0, y - ry, 0, y + ry * 0.2);
+  lid.addColorStop(0, 'rgba(4, 2, 1, 0.95)'); lid.addColorStop(1, 'rgba(4, 2, 1, 0)');
+  g.fillStyle = lid; g.fillRect(x - rx, y - ry, 2 * rx, ry * 1.2);
+  g.restore();
+  // The top fades out, so the tree's own trunk and crown take over.
+  g.globalCompositeOperation = 'destination-out';
+  const fade = g.createLinearGradient(0, OLD_FADE[0], 0, OLD_FADE[1]);
+  fade.addColorStop(0, 'rgba(0, 0, 0, 0)'); fade.addColorStop(1, 'rgba(0, 0, 0, 1)');
+  g.fillStyle = fade; g.fillRect(-0.5, -0.5, 1, 0.5 + OLD_FADE[0]);
+  s = { canvas: c, W, H, ox, oy };
+  trunkSprites.set(P, s);
+  return s;
+}
+
+function drawBeeTree(h, sx, sy, now, ck) {
+  const d = beeTree(h), px = d.size * cam.zoom, s = trunkSprite(px);
+  // The tree, all but the foot of its own trunk, which reaches below the ground here.
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(sx - px, sy - px * 2, px * 2, px * 1.94);
+  ctx.rect(sx - px, sy - px * 0.1, px * 0.84, px * 0.6);
+  ctx.rect(sx + px * 0.16, sy - px * 0.1, px * 0.84, px * 0.6);
+  ctx.clip();
+  drawDecor(d, sx, sy, now, ck);
+  ctx.restore();
+  ctx.drawImage(s.canvas, sx - s.ox, sy - s.oy, s.W, s.H);
+  // Bees on the sill, a few wandering on the bark; they shuffle while time runs.
+  const { x, y, rx, ry } = OLD_HOLE, hx = sx + x * px, sill = sy + (y + ry * 1.1) * px;
+  const n = Math.min(16, 3 + h.bees), b = cam.zoom * 0.045, t = ui.speed > 0 ? performance.now() / 700 : 0;
+  for (let i = 0; i < n; i++) {
+    const far = i >= n * 0.7;
+    const bx = hx + (hash2(1, i, h.id) - 0.5) * px * (far ? 0.12 : 0.06) + Math.sin(t + i) * b * 0.4;
+    const by = sill + (far ? hash2(i, 1, h.id) * 0.05 : hash2(i, 1, h.id) * 0.01) * px + Math.cos(t * 0.8 + i) * b * 0.3;
+    barkBee(bx, by, b, Math.PI / 2 + (hash2(i, 2, h.id) - 0.5) * 2.5);
+  }
+}
+
 // A swarm hanging from a branch: a drooping clump of bees, widest near the bottom, bigger the
 // more bees there are, and seething while time runs.
 function drawSwarm(h, sx, sy) {
@@ -1928,17 +2041,17 @@ function drawSwarm(h, sx, sy) {
   }
 }
 
-function drawHiveShadow(sx, sy, sn) {                      // the same shadow a tree of its height casts
-  drawDecorShadow({ size: SNAG * 0.7, tree: true }, sx, sy, sn);
+function drawHiveShadow(h, sx, sy, sn) {
+  drawDecorShadow(beeTree(h), sx, sy, sn);
 }
 
 // The trunk, from its foot up to the snapped-off top, and never smaller than a fingertip.
 function hiveAt(sx, sy, swarms = false) {
-  const P = cam.zoom * SNAG, reach = Math.max(22, P * 0.15);
+  const P = cam.zoom * OLD_TREE, reach = Math.max(22, P * 0.12);
   return world.hives.find(h => {
     if (h.cluster && !swarms) return false;
     const [hx, hy] = toScreen(h.x, h.y);
-    return Math.abs(sx - hx) < reach && sy > hy - P * 0.65 - reach / 2 && sy < hy + reach / 2;
+    return Math.abs(sx - hx) < reach && sy > hy - P * 0.3 - reach / 2 && sy < hy + reach / 2;
   }) || null;
 }
 
@@ -3171,6 +3284,7 @@ function decorAt(sx, sy) {
   const z = cam.zoom;
   let best = null;
   for (const d of world.decor) {
+    if (besideHive(d)) continue;
     const [dx, dy] = toScreen(d.x, d.y), px = d.size * z * (d.stump ? 0.45 : 1);
     const half = Math.max(6, px * (d.tree ? 0.36 : 0.5)), top = Math.max(10, px * (d.tree ? 0.85 : 0.6));
     if (Math.abs(sx - dx) < half && sy > dy - top && sy < dy + Math.max(4, px * 0.12) && (!best || d.y > best.y)) best = d;
