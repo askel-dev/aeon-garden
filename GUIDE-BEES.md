@@ -23,7 +23,7 @@
 | --- | --- |
 | Bee size, facing | `LOOKS` (search for `const LOOKS`) |
 | Hovering and bobbing | `liftOf` |
-| The hive (a hollow dead tree) | `drawHive`, `snagSprite` (section `// ---- hives`) |
+| The hive (a hollow in a giant old tree) | `drawBeeTree`, `trunkSprite` (section `// ---- hives`) |
 | News about bees | search `bee:` in `handleEvent`, and `NEWSWORTHY` |
 
 ## Rules of thumb

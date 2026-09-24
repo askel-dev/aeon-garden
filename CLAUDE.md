@@ -60,7 +60,7 @@ Rabbit coats: two letter-pair genes (`coat`, e.g. 'AaDd') give four colours, plu
 coat stands out from the ground under it (`visibility`); the ground colours (`GROUND`) live in the
 sim and the drawing uses them too.
 
-Bees: they live in hives (`w.hives`, drawn as a hollow dead tree, see `snagSprite`), fly (`flies: true` in `SPECIES`, see `go`/`fly`),
+Bees: they live in hives (`w.hives`, drawn as a giant old tree with a hollow low on its trunk, see `drawBeeTree`), fly (`flies: true` in `SPECIES`, see `go`/`fly`),
 sip from the flowers the meadow shows (`isFlower`, same rule as `plantEmoji` in game.js) within `FORAGE_RANGE`
 of home, and carry it back a `LOAD` at a time. One back from a rich patch dances (`h.patch`), and bees setting out
 from the hive fly there; the hive label says which way.

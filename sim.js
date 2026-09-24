@@ -2072,7 +2072,7 @@ function hiveSites(w, h) {
 // Huddled together a winter cluster keeps warm; a handful of bees can't.
 const clusterCold = (w, h) => (seasonOf(w.tick) === 3 ? 1 + CLUSTER_COLD * Math.max(0, 1 - h.bees / CLUSTER_WARM) : 1);
 
-// The first hive: a hollow dead tree beside the tree with the most flowering plants in reach,
+// The first hive: a hollow old tree, where the tree with the most flowering plants in reach stands,
 // at the edge of the wood rather than deep in it, so there's room to see it.
 function placeHive(w) {
   let best = { x: W / 2, y: H / 2 }, bestScore = -Infinity;

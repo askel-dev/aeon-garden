@@ -1703,166 +1703,11 @@ function drawRock(d, sx, sy) {
 
 // ------------------------------------------------------------------ hives
 //
-// A wild colony lives in an old dead tree whose top has snapped off: the bare 🪾 cut short, with
-// comb glinting in its hollow and bees on the doorstep, more of them the bigger the colony.
-// Light comes from the top left, like on the emoji. The tree's still parts are painted once per
-// size into a sprite, in emoji units (0,0 the 🪾's centre, 1 its size), so bark and shading land
-// on the wood alone; the bees, honey and snow are drawn over it each frame.
-
-const SNAG = 4;                                            // the 🪾's size, in tiles: a small tree's, so it's seen
-const SNAG_BREAK = -0.2;                                   // where the top snapped off
-const SNAG_JAG = [[-0.072, 0.024], [-0.058, 0.012], [-0.045, 0.024], [-0.028, 0], [-0.012, 0.018], [0.004, -0.04],
-  [0.018, 0.004], [0.04, 0.016], [0.06, -0.018], [0.078, 0.014], [0.098, 0.002], [0.122, 0.026]];
-const SNAG_TRUNK = [[-0.2, -0.073, 0.125], [-0.1, -0.053, 0.112], [0, -0.045, 0.116], [0.1, -0.062, 0.125],
-  [0.2, -0.073, 0.14], [0.3, -0.073, 0.168], [0.4, -0.1, 0.18]];   // y, then the trunk's left and right edge
-const SNAG_HOLE = { x: 0.085, y: 0.005, rx: 0.042, ry: 0.064 };    // over the emoji's own knot hole, a bit bigger
-const snagSprites = new Map();
-
-function trunkAt(y) {
-  const T = SNAG_TRUNK;
-  let i = 0;
-  while (i < T.length - 2 && y > T[i + 1][0]) i++;
-  const t = clamp((y - T[i][0]) / (T[i + 1][0] - T[i][0]), 0, 1);
-  return [lerp(T[i][1], T[i + 1][1], t), lerp(T[i][2], T[i + 1][2], t)];
-}
-
-function softSpot(g, x, y, rx, ry, rgb, a) {
-  g.save(); g.translate(x, y); g.scale(1, ry / rx);
-  const r = g.createRadialGradient(0, 0, 0, 0, 0, rx);
-  r.addColorStop(0, `rgba(${rgb}, ${a})`); r.addColorStop(1, `rgba(${rgb}, 0)`);
-  g.fillStyle = r; g.beginPath(); g.arc(0, 0, rx, 0, TAU); g.fill();
-  g.restore();
-}
-
-function holePath(g, k) {                                  // the hollow's ragged outline, k times its size
-  const { x, y, rx, ry } = SNAG_HOLE;
-  g.beginPath();
-  for (let i = 0; i <= 14; i++) {
-    const a = i / 14 * TAU, w = k * (1 + 0.1 * Math.sin(a * 3 + 1) + 0.06 * Math.cos(a * 5));
-    g[i ? 'lineTo' : 'moveTo'](x + Math.cos(a) * rx * w, y + Math.sin(a) * ry * w);
-  }
-  g.closePath();
-}
-
-function snagSprite(P) {
-  P = Math.round(P);
-  let s = snagSprites.get(P);
-  if (s) return s;
-  if (snagSprites.size > 40) snagSprites.clear();
-  const W = P * 0.85, H = P * 0.72, ox = P * 0.45, oy = P * 0.27;
-  const c = document.createElement('canvas');
-  c.width = Math.ceil(W * dpr); c.height = Math.ceil(H * dpr);
-  const g = c.getContext('2d'), px = 1 / P;               // px: one screen pixel, in emoji units
-  g.setTransform(dpr * P, 0, 0, dpr * P, ox * dpr, oy * dpr);
-  g.lineCap = 'round';
-
-  // The dead tree, cut off along a splintered line.
-  g.save();
-  g.beginPath(); g.moveTo(-0.5, 0.5); g.lineTo(-0.5, SNAG_BREAK + 0.02);
-  for (const [x, y] of SNAG_JAG) g.lineTo(x, SNAG_BREAK + y);
-  g.lineTo(0.5, SNAG_BREAK + 0.02); g.lineTo(0.5, 0.5); g.closePath(); g.clip();
-  const e = sprite('🪾', P);
-  g.drawImage(e.canvas, -e.size / 2 / P, -e.size / 2 / P, e.size / P, e.size / P);
-  g.restore();
-
-  // Bark, laid onto the wood only: a round trunk, ridges running up it, patches of older bark,
-  // and a soft crease where each branch leaves the trunk.
-  g.globalCompositeOperation = 'source-atop';
-  const round = g.createLinearGradient(-0.09, 0, 0.2, 0);
-  round.addColorStop(0, 'rgba(255, 232, 190, 0.2)'); round.addColorStop(0.4, 'rgba(0, 0, 0, 0)');
-  round.addColorStop(1, 'rgba(35, 18, 5, 0.34)');
-  g.fillStyle = round; g.fillRect(-0.5, -0.5, 1, 1);
-  if (P > 40) {
-    for (let k = 0; k < 7; k++) {
-      const f = (k + 0.5) / 7 + (hash2(k, 1, 7) - 0.5) * 0.1;
-      g.beginPath();
-      for (let n = 0, y = SNAG_BREAK + 0.02; y <= 0.43; n++, y += 0.025) {
-        const [l, r] = trunkAt(y);
-        g[n ? 'lineTo' : 'moveTo'](l + f * (r - l) + (hash2(k, n, 3) - 0.5) * 0.012, y);
-      }
-      g.lineWidth = Math.max(px, 0.009); g.strokeStyle = 'rgba(45, 24, 8, 0.16)'; g.stroke();
-      g.lineWidth = Math.max(px, 0.0035); g.strokeStyle = 'rgba(40, 20, 6, 0.22)'; g.stroke();
-      g.translate(-0.005, 0); g.strokeStyle = 'rgba(255, 225, 185, 0.1)'; g.stroke(); g.translate(0.005, 0);
-    }
-    for (let i = 0; i < 7; i++) {
-      const y = SNAG_BREAK + 0.06 + hash2(i, 4, 7) * 0.5, [l, r] = trunkAt(y);
-      softSpot(g, lerp(l, r, hash2(i, 5, 7)), y, 0.02 + hash2(i, 6, 7) * 0.02, 0.04, i % 2 ? '120, 105, 90' : '40, 22, 8', 0.18);
-    }
-  }
-  for (const [x, y, rx, ry, a] of [[0.12, -0.028, 0.028, 0.012, 0.55], [0.112, -0.086, 0.012, 0.008, 0.45],
-                                    [-0.056, 0.088, 0.03, 0.013, 0.55], [-0.048, 0.034, 0.012, 0.008, 0.45]])
-    softSpot(g, x, y, rx, ry, '30, 15, 4', a);
-  // A rougher outline: nicks in the trunk's edges, away from where the branches join.
-  g.globalCompositeOperation = 'destination-out';
-  for (let i = 0; i < 16; i++) {
-    const y = SNAG_BREAK + 0.05 + hash2(i, 2, 9) * 0.34, right = i % 2;
-    if (right ? y > -0.1 && y < 0.02 : y > 0 && y < 0.12) continue;
-    const [l, r] = trunkAt(y);
-    g.beginPath();
-    g.ellipse(right ? r + 0.004 : l - 0.004, y, 0.005 + hash2(i, 3, 9) * 0.006, 0.01 + hash2(i, 4, 9) * 0.015, 0, 0, TAU);
-    g.fill();
-  }
-  g.globalCompositeOperation = 'source-over';
-
-  // The break: bare wood, its splinters lit where they face the sky, a shaded lip below.
-  const face = g.createLinearGradient(-0.09, 0, 0.13, 0);
-  face.addColorStop(0, '#c9ab80'); face.addColorStop(0.6, '#9a7650'); face.addColorStop(1, '#654426');
-  g.fillStyle = face;
-  g.beginPath(); g.moveTo(-0.072, SNAG_BREAK + 0.026);
-  for (const [x, y] of SNAG_JAG) g.lineTo(x, SNAG_BREAK + y);
-  g.quadraticCurveTo(0.025, SNAG_BREAK + 0.046, -0.072, SNAG_BREAK + 0.026); g.fill();
-  g.strokeStyle = 'rgba(55, 30, 10, 0.55)'; g.lineWidth = Math.max(px, 0.005);
-  g.beginPath(); g.moveTo(-0.07, SNAG_BREAK + 0.03); g.quadraticCurveTo(0.025, SNAG_BREAK + 0.05, 0.12, SNAG_BREAK + 0.03); g.stroke();
-  g.lineWidth = Math.max(px, 0.0045);
-  for (let i = 0; i + 1 < SNAG_JAG.length; i++) {
-    const [x0, y0] = SNAG_JAG[i], [x1, y1] = SNAG_JAG[i + 1];
-    g.strokeStyle = y1 < y0 ? 'rgba(248, 230, 196, 0.8)' : 'rgba(248, 230, 196, 0.25)';
-    g.beginPath(); g.moveTo(x0, SNAG_BREAK + y0); g.lineTo(x1, SNAG_BREAK + y1); g.stroke();
-  }
-
-  // The hollow. A honey stain runs down from it.
-  const { x, y, rx, ry } = SNAG_HOLE;
-  const stain = g.createLinearGradient(0, y + ry, 0, y + ry + 0.2);
-  stain.addColorStop(0, 'rgba(80, 45, 12, 0.5)'); stain.addColorStop(1, 'rgba(80, 45, 12, 0)');
-  g.fillStyle = stain;
-  g.beginPath(); g.moveTo(x - 0.03, y + ry * 0.8); g.quadraticCurveTo(x - 0.02, y + ry + 0.14, x - 0.004, y + ry + 0.2);
-  g.quadraticCurveTo(x + 0.016, y + ry + 0.1, x + 0.028, y + ry * 0.8); g.fill();
-  // A lip of bark around it, lit top left and shaded bottom right.
-  holePath(g, 1.32);
-  const lip = g.createLinearGradient(x - rx, y - ry, x + rx, y + ry);
-  lip.addColorStop(0, '#c49466'); lip.addColorStop(0.45, '#7d5331'); lip.addColorStop(1, '#3f2612');
-  g.fillStyle = lip; g.fill();
-  // Inside: brown at the mouth, black deep in.
-  holePath(g, 1);
-  const deep = g.createRadialGradient(x - rx * 0.15, y - ry * 0.2, 0, x, y, ry * 1.05);
-  deep.addColorStop(0, '#040201'); deep.addColorStop(0.55, '#140a04'); deep.addColorStop(1, '#4d2e15');
-  g.fillStyle = deep; g.fill();
-  g.save(); g.clip();
-  // The comb, bulging towards us, with its cells when there's room for them.
-  const cx = x + rx * 0.1, cy = y + ry * 0.62, crx = rx * 1.05, cry = ry * 0.6;
-  const comb = g.createRadialGradient(cx - crx * 0.25, cy - cry * 0.1, 0, cx, cy, crx * 1.2);
-  comb.addColorStop(0, '#e9c070'); comb.addColorStop(0.5, '#c4862c'); comb.addColorStop(1, '#4a2806');
-  g.fillStyle = comb; g.beginPath(); g.ellipse(cx, cy, crx, cry, 0, 0, TAU); g.fill();
-  const cell = rx * 0.22;
-  if (cell * P > 2) {
-    g.fillStyle = 'rgba(110, 60, 8, 0.4)';
-    for (let r = 0, yy = cy - cry; yy < cy + cry; r++, yy += cell * 0.87)
-      for (let xx = cx - crx + (r % 2) * cell / 2; xx < cx + crx; xx += cell) { g.beginPath(); g.arc(xx, yy, cell * 0.3, 0, TAU); g.fill(); }
-  }
-  // The top of the hole shades what's under it, and the far rim catches the light: the bark's thickness.
-  const lid = g.createLinearGradient(0, y - ry, 0, y + ry * 0.35);
-  lid.addColorStop(0, 'rgba(4, 2, 1, 0.97)'); lid.addColorStop(1, 'rgba(4, 2, 1, 0)');
-  g.fillStyle = lid; g.fillRect(x - rx * 2, y - ry * 2, rx * 4, ry * 2.35);
-  const rim = g.createLinearGradient(x - rx, y - ry, x + rx, y + ry);
-  rim.addColorStop(0, 'rgba(210, 160, 105, 0)'); rim.addColorStop(0.55, 'rgba(210, 160, 105, 0.15)');
-  rim.addColorStop(1, 'rgba(225, 175, 115, 0.9)');
-  holePath(g, 1); g.strokeStyle = rim; g.lineWidth = rx * 0.3; g.stroke();
-  g.restore();
-
-  s = { canvas: c, W, H, ox, oy };
-  snagSprites.set(P, s);
-  return s;
-}
+// A wild colony lives in a hollow in an old tree: a giant broadleaf, bigger than any in the wood,
+// with a thick trunk flaring into its roots and a hole low down where the bees go in, its rim dark
+// with their resin. The trunk is painted into a sprite that fades out at the top, laid over the
+// emoji's own, so it grows up into the crown whatever the emoji font. The bees on the sill are
+// drawn each frame, more of them the bigger the colony.
 
 // A bee on the bark, seen from above: gold with dark bands and a glint of wing. Too small, a dot.
 function barkBee(x, y, s, a) {
@@ -1877,50 +1722,11 @@ function barkBee(x, y, s, a) {
   ctx.restore();
 }
 
-function drawHive(h, sx, sy) {
-  const P = cam.zoom * SNAG, top = sy - P * 0.4, s = snagSprite(P);
-  ctx.drawImage(s.canvas, sx - s.ox, top - s.oy, s.W, s.H);
-  // Bees on the doorstep, a few wandering down the bark; they shuffle while time runs.
-  const hx = sx + SNAG_HOLE.x * P, hy = top + (SNAG_HOLE.y + SNAG_HOLE.ry * 1.15) * P;
-  const n = Math.min(14, 3 + h.bees), b = cam.zoom * 0.045, t = ui.speed > 0 ? performance.now() / 700 : 0;
-  for (let i = 0; i < n; i++) {
-    const far = i >= n * 0.7;
-    const bx = hx + (hash2(1, i, h.id) - 0.5) * P * (far ? 0.1 : 0.07) + Math.sin(t + i) * b * 0.4;
-    const by = hy + (far ? 0.02 + hash2(i, 1, h.id) * 0.14 : hash2(i, 1, h.id) * 0.02) * P + Math.cos(t * 0.8 + i) * b * 0.3;
-    barkBee(bx, by, b, Math.PI / 2 + (hash2(i, 2, h.id) - 0.5) * 2.5);
-  }
-  // A full hive has honey oozing over the sill.
-  if (h.honey > 800) {
-    const x = hx - P * 0.012, y = hy - P * 0.01, r = P * 0.009;
-    const len = r * (0.5 + 0.8 * Math.min(1, (h.honey - 800) / 700));
-    const g = ctx.createLinearGradient(x - r, y, x + r, y + len);
-    g.addColorStop(0, 'rgba(255, 205, 90, 0.95)'); g.addColorStop(1, 'rgba(205, 125, 15, 0.95)');
-    ctx.fillStyle = g;
-    ctx.beginPath(); ctx.moveTo(x - r * 0.5, y);
-    ctx.quadraticCurveTo(x - r * 0.5, y + len - r, x - r, y + len); ctx.arc(x, y + len, r, Math.PI, 0, true);
-    ctx.quadraticCurveTo(x + r * 0.5, y + len - r, x + r * 0.5, y); ctx.fill();
-    ctx.fillStyle = 'rgba(255, 250, 225, 0.85)';
-    ctx.beginPath(); ctx.arc(x - r * 0.35, y + len - r * 0.2, r * 0.3, 0, TAU); ctx.fill();
-  }
-  // Snow settles on the break.
-  if (world.snow > 0.3) {
-    ctx.fillStyle = 'rgba(250, 252, 255, 0.95)';
-    ctx.beginPath(); ctx.moveTo(sx - 0.1 * P, top + (SNAG_BREAK + 0.03) * P);
-    for (const [x, y] of SNAG_JAG) ctx.lineTo(sx + x * P, top + (SNAG_BREAK + Math.max(y, 0) - 0.008) * P);
-    ctx.quadraticCurveTo(sx + 0.02 * P, top + (SNAG_BREAK + 0.05) * P, sx - 0.1 * P, top + (SNAG_BREAK + 0.03) * P);
-    ctx.fill();
-  }
-}
-
 // Which way, in words, like a waggle dance tells it. North is up the map.
 const compass = (dx, dy) => ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'][
   (Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) + 8) % 8];
 
-// An old bee tree: a giant broadleaf, bigger than any in the wood, with a thick trunk flaring
-// into its roots and a hollow low down where the bees go in, its rim dark with their resin. The
-// trunk is painted into a sprite that fades out at the top, laid over the emoji's own, so it
-// grows up into the crown whatever the emoji font. The bees on the sill are drawn each frame.
-const OLD_TREE = 8;                                        // its size, in tiles
+const OLD_TREE = 8;                                        // the bee tree's size, in tiles
 const OLD_HOLE = { x: 0.015, y: -0.075, rx: 0.042, ry: 0.066 };   // in tree sizes, from its foot
 const OLD_FADE = [-0.15, -0.27];                           // the trunk fades into the crown between these
 const beeTrees = new WeakMap(), trunkSprites = new Map();
@@ -1933,6 +1739,14 @@ function beeTree(h) {
     treeInfo(d).fruit = '';
   }
   return d;
+}
+
+function softSpot(g, x, y, rx, ry, rgb, a) {
+  g.save(); g.translate(x, y); g.scale(1, ry / rx);
+  const r = g.createRadialGradient(0, 0, 0, 0, 0, rx);
+  r.addColorStop(0, `rgba(${rgb}, ${a})`); r.addColorStop(1, `rgba(${rgb}, 0)`);
+  g.fillStyle = r; g.beginPath(); g.arc(0, 0, rx, 0, TAU); g.fill();
+  g.restore();
 }
 
 function trunkPath(g) {                                    // in tree sizes, from its foot
@@ -2019,6 +1833,19 @@ function drawBeeTree(h, sx, sy, now, ck) {
   ctx.drawImage(s.canvas, sx - s.ox, sy - s.oy, s.W, s.H);
   // Bees on the sill, a few wandering on the bark; they shuffle while time runs.
   const { x, y, rx, ry } = OLD_HOLE, hx = sx + x * px, sill = sy + (y + ry * 1.1) * px;
+  // A full hive has honey oozing over the sill.
+  if (h.honey > 800) {
+    const x = hx - rx * px * 0.85, y = sill - ry * px * 0.45, r = px * 0.011;
+    const len = r * (1 + 1.5 * Math.min(1, (h.honey - 800) / 700));
+    const g = ctx.createLinearGradient(x - r, y, x + r, y + len);
+    g.addColorStop(0, 'rgba(255, 205, 90, 0.95)'); g.addColorStop(1, 'rgba(205, 125, 15, 0.95)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.moveTo(x - r * 0.5, y);
+    ctx.quadraticCurveTo(x - r * 0.5, y + len - r, x - r, y + len); ctx.arc(x, y + len, r, Math.PI, 0, true);
+    ctx.quadraticCurveTo(x + r * 0.5, y + len - r, x + r * 0.5, y); ctx.fill();
+    ctx.fillStyle = 'rgba(255, 250, 225, 0.85)';
+    ctx.beginPath(); ctx.arc(x - r * 0.35, y + len - r * 0.2, r * 0.3, 0, TAU); ctx.fill();
+  }
   const n = Math.min(16, 3 + h.bees), b = cam.zoom * 0.045, t = ui.speed > 0 ? performance.now() / 700 : 0;
   for (let i = 0; i < n; i++) {
     const far = i >= n * 0.7;
