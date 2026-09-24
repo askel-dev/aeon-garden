@@ -43,7 +43,8 @@
 <main>
   <h1>🎧 Garden Sound Lab</h1>
   <p class="lead">A quiet sound palette for the meadow, made on the fly with no audio files. Every pitched sound uses one
-    pentatonic scale. Rabbits play a high kalimba, foxes a low wooden marimba, and the meadow itself rings a soft bell.</p>
+    pentatonic scale. Rabbits play a high kalimba, foxes a low wooden marimba, and the meadow itself rings a soft bell.
+    Now and then a short felt-piano piece drifts in, like the music in Minecraft.</p>
 
   <div class="card">
     <div class="row">
@@ -100,6 +101,12 @@
   </div>
 
   <div class="card">
+    <h2>Music</h2>
+    <div class="row" id="tunes"></div>
+    <p id="tune-now" class="note">In the game a piece drifts in every 5 to 10 minutes, picked (at 1x) to suit the season, and plays softer and darker at night.</p>
+  </div>
+
+  <div class="card">
     <h2>Events</h2>
     <div class="row" id="species" style="margin-bottom:12px">
       <span class="lbl">Who</span>
@@ -117,6 +124,7 @@
       <li><b>One scale, three voices.</b> D major pentatonic only, so any two sounds that overlap still sound nice together.</li>
       <li><b>Rising means life, falling means loss.</b> Love and births go up. Catches and deaths go down, softly, with no stings or screams.</li>
       <li><b>Quiet by default.</b> Each sound has a cooldown, and there are at most about 6 animal sounds a second. Sounds far from the camera come out quieter and with more echo.</li>
+      <li><b>Music now and then.</b> A short felt-piano piece every 5 to 10 minutes, then just the meadow again. In keys that hold the pentatonic, so it sits under everything else, with one chord borrowed from outside for its one moment.</li>
       <li><b>The clock is the score.</b> The background follows the time of day, the season and the weather, so a year in the meadow has its own sound.</li>
     </ul>
   </div>
@@ -155,6 +163,20 @@
   ];
   $('#events').innerHTML = EVENTS.map(([k, e, name, how]) =>
     `<button data-play="${k}"><b>${e} ${name}</b><span>${how}</span></button>`).join('');
+
+  $('#tunes').innerHTML = Object.entries(S.tunes).map(([k, title]) => `<button data-tune="${k}">🎹 ${title}</button>`).join('')
+    + '<button id="tune-stop">⏹ Stop</button>';
+  const clock = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+  $('#tunes').onclick = e => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (!$('#start').classList.contains('on')) $('#start').click();
+    if (b.id === 'tune-stop') S.stopTune(); else S.playTune(b.dataset.tune);
+  };
+  setInterval(() => {
+    const t = S.tune;
+    onIn('[data-tune]', 'tune', t?.name);
+    if (t) $('#tune-now').textContent = `Playing ${S.tunes[t.name]}, ${clock(Math.min(t.at, t.length))} of ${clock(t.length)}.`;
+  }, 250);
 
   const push = () => S.update({ phase: st.phase, season: st.season, sky: { [st.sky]: 1 }, fire: st.fire, speed: st.speed, bees: st.bees || 0 });
   const setSky = k => { const wet = ['rain', 'storm']; if (wet.includes(k) && !wet.includes(st.sky)) play('rain'); st.sky = k; onIn('[data-sky]', 'sky', k); push(); };

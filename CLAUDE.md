@@ -16,7 +16,11 @@ told to just do it.
 - `ground.js`: the ground (grass, earth, shores, water) as a WebGL shader, painted fresh every frame from a
   few small textures of one texel a tile that game.js keeps up to date (`paintTerrain`, `updateWater`).
 - `sound.js`: all the sounds, made with Web Audio (no files). Off until the 🔊 button or M.
-  `sound-lab.html` plays each one on its own. Keep it minimal: one scale, few sounds.
+  `sound-lab.html` plays each one on its own. Keep it minimal: one scale, few sounds. Every 5 to 10
+  minutes a short felt-piano piece plays (`TUNES`, written out note by note and played a little
+  differently each time); the lab plays each piece on demand. Like C418's Minecraft music, the
+  silence between pieces is part of it, and no piece is about the time of day (a day is 20 s, a
+  piece 90 s): they fit any moment, lean towards a season at 1x, and the piano plays darker at night.
 - `index.html`: layout and styles.
 - `balance.js`: headless check, `node balance.js [years] [seeds]`.
 - `terrain-lab.js`: the terrain lab, `index.html?lab`. Sliders for every number in `TERRAIN` (sim.js),

@@ -8,6 +8,8 @@
  *     Rising = life, falling = loss. Lightning is the one loud thing, on purpose.
  *  3. The meadow is the music. Wind, birds, crickets, rain and fire follow the clock and the
  *     sky, and events are rare, quiet and rate-limited so fast-forward never turns into noise.
+ *     Every few minutes a short felt-piano piece drifts over it, like the music in Minecraft
+ *     (see "music" below), in keys that hold the pentatonic so it still fits.
  *
  * Use: Sound.start() from a click, then Sound.update({ phase, season, speed, sky, fire, bees }) a
  * few times a second (sky: how much of each weather is showing, 0..1; bees: how many are flying
@@ -25,7 +27,7 @@ const note = (deg, oct = 0) => {
 const rand = (a, b) => a + Math.random() * (b - a);
 const pick = a => a[Math.floor(Math.random() * a.length)];
 
-let ac = null, master, ducker, loud, fxBus, ambBus, hush, reverb, noiseBuf, brownBuf;
+let ac = null, master, ducker, loud, fxBus, ambBus, musicBus, hush, reverb, noiseBuf, brownBuf;
 let enabled = true, volume = 0.6;
 const amb = {};                                    // ambient layers
 const LOUD = 1.4;                                  // thunder's level against the rest
@@ -59,6 +61,10 @@ function start() {
   // Fog and snow muffle the meadow: the whole background goes through one low-pass.
   hush = ac.createBiquadFilter(); hush.type = 'lowpass'; hush.frequency.value = 12000; hush.connect(master);
   ambBus = ac.createGain(); ambBus.gain.value = 0.8; ambBus.connect(hush);
+
+  // The music: dry into the mix, with more reverb than the meadow, and not muffled by fog.
+  musicBus = ac.createGain(); musicBus.gain.value = 0.45; musicBus.connect(master);
+  const musicVerb = ac.createGain(); musicVerb.gain.value = 0.45; musicBus.connect(musicVerb).connect(reverb);
 
   noiseBuf = pinkNoise(4); brownBuf = brownNoise(4);
   buildAmbience();
@@ -472,6 +478,7 @@ function tickAmbience() {
   if (Math.random() < m.snow * 0.15 * dt) snowChime(now);
   if (Math.random() < m.cicadas * 0.12 * dt) cicada(now);
   for (let i = 0; i < 3; i++) if (Math.random() < m.fire * 4 * dt) crackle(now + rand(0, 0.2));
+  musicTick(now, m);
 }
 
 // Wind comes in gusts: each one swells for a couple of seconds, holds, dies away and crosses the
@@ -693,6 +700,288 @@ const crackle = t => noise(out(rand(-0.8, 0.8), 0.15, rand(0.3, 1)), t, rand(0.0
 const rustle = (t, pan = rand(-1, 1), v = 1) => noise(out(pan, 0.2, 0.8 * v), t, rand(0.6, 1.2), { from: 1800, to: 4200, q: 0.9, peak: 0.08 });
 const snowChime = t => kalimba(out(rand(-1, 1), 0.7, 0.3), note(Math.floor(rand(5, 10)), 1), t, 0.4);
 
+// ------------------------------------------------------------------ music
+
+// Now and then, like in Minecraft, a short piano piece drifts over the meadow, then several minutes
+// of just the meadow again: the silence is what makes a piece feel like an event. The pieces are
+// written out below and played a little differently each time: loose timing, a softer or firmer
+// touch, sometimes another form. Their keys (D, G, B minor, E minor) all hold the D pentatonic, so
+// they sit with the rest; most borrow one chord from outside the key, once, for their one moment.
+// A day is 20 seconds and a piece a minute and a half, so no piece is about the time of day: the
+// piano just plays softer and darker at night, while it plays.
+
+// A felt piano: a few harmonics stretched a hair sharp like real strings, a hammer's quick drop
+// into a long tail, and a low-pass that closes as the note fades, so it goes soft and round.
+// Low notes ring longer. len: when the key lets go and the damper falls. bright < 1 is more muffled.
+function piano(dest, f, t, v = 1, len = 1, bright = 1) {
+  const ring = 1.5 + 3 * Math.min(1, 220 / f), end = t + Math.min(len, ring * 1.5);
+  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 0.3;
+  lp.frequency.setValueAtTime(Math.min(10000, f * (2.5 + 5 * v) * bright), t);
+  lp.frequency.setTargetAtTime(f * 2, t + 0.01, ring / 3);
+  const g = ac.createGain(), peak = 0.2 * v;
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(peak, t + 0.005);
+  g.gain.setTargetAtTime(peak * 0.35, t + 0.005, 0.15);
+  g.gain.setTargetAtTime(0, t + 0.3, ring / 3);
+  g.gain.setTargetAtTime(0, end, 0.1);
+  lp.connect(g).connect(dest);
+  for (const [n, a] of [[1, 1], [1.0012, 0.4], [2, 0.5], [3, 0.22], [4, 0.12], [5, 0.05]]) {
+    const o = ac.createOscillator(), og = ac.createGain();
+    const h = Math.round(n);
+    o.frequency.value = f * n * Math.sqrt(1 + 0.0003 * h * h); og.gain.value = a;
+    o.connect(og).connect(lp); o.start(t); o.stop(end + 0.6);
+  }
+  noise(dest, t, 0.03, { from: f * 3, to: f, type: 'lowpass', q: 0.5, peak: 0.02 * v, attack: 0.002 });
+}
+
+// Glass: a wet finger round a wine glass. A pure tone that swells in, shimmers a little and
+// fades, with no strike at all.
+function glass(dest, f, t, v = 1, len = 1) {
+  const dur = Math.max(1.8, Math.min(len, 3.5)), g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.16 * v, t + 0.2);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  g.connect(dest);
+  const lfo = ac.createOscillator(), depth = ac.createGain();
+  lfo.frequency.value = rand(4, 5.5); depth.gain.value = f * 0.002; lfo.connect(depth);
+  for (const [n, a] of [[1, 1], [2, 0.06]]) {
+    const o = ac.createOscillator(), og = ac.createGain();
+    o.frequency.value = f * n; og.gain.value = a; depth.connect(o.frequency);
+    o.connect(og).connect(g); o.start(t); o.stop(t + dur + 0.05);
+  }
+  lfo.start(t); lfo.stop(t + dur + 0.05);
+}
+// Celesta: a soft hammer on a small steel bar. In tune (whole-number overtones), unlike the bell.
+function celesta(dest, f, t, v = 1) {
+  partial(dest, f, t, 0.22 * v, 0.003, 1.4);
+  partial(dest, f * 2, t, 0.05 * v, 0.002, 0.5);
+  partial(dest, f * 4, t, 0.025 * v, 0.002, 0.15);
+}
+// The voices a piece can play in. echo: the piano again, muffled, as if from far off.
+const VOICES = { piano, glass, celesta, echo: (dest, f, t, v, len) => piano(dest, f, t, v, len, 0.5) };
+
+// The pieces. A step is an eighth note; bars are split by |.
+//  steps:  steps to a bar: 8 (four beats, the default) or 6 (a waltz).
+//  key:    D (the default), G, Bm or Em: a key that holds the D pentatonic. Melody and chords
+//          count from its first note.
+//  tone:   how bright the piano is (1 the default, lower is more muffled).
+//  octave: moves the whole tune up (1) or down (-1) an octave.
+//  echo:   each tune note comes back this many steps later, an octave up, in echoVoice (a VOICES name).
+//  melody: degrees of the key (in D: 1 = D5 ... 7 = C#6; in G: 1 = G4; in B minor: 1 = B4),
+//          ' an octave up, , an octave down,
+//          - holds the note before, . is a rest.
+//          A b or # before a degree lowers or raises it a semitone (in D: b7, = C4).
+//  chords: the degree each chord stands on (in D: 1 = D, 4 = G, 5 = A, 6 = Bm ...), one or two a bar,
+//          major or minor as the key makes it. A borrowed chord from outside the key: b or # moves
+//          the root a semitone and makes it major, m or M after it makes it minor or major
+//          (in D: b7 = C, 4m = Gm; in B minor: 1M = B major).
+//  left:   the left hand over each chord, in scale steps above its root (0 root, 4 fifth,
+//          7 octave, 9 tenth ...), starting again at every chord; 7+9 plays both together.
+//          A part can have its own.
+//  slow:   how much the part slows towards its end (0.4: the last step is 40% longer).
+//  forms:  the order of the parts; one is picked each time. a^ plays a's tune an octave up.
+//  fit:    how much the piece suits the season (state: season, sky). Only asked at 1x: faster, a
+//          season is gone before the piece ends, so every piece is as likely.
+//  trial:  a version to try in the lab; the game never picks it.
+const TUNES = {
+  // Clover: spring. An easy walk up the tune and back, over a rippling left hand. Late in the
+  // middle part a C major, from outside D, clouds it for one bar before G and A bring it home.
+  clover: {
+    title: 'Clover', bpm: 72, left: '0 4 7 9 11 9 7 4',
+    fit: s => [3, 2, 0.7, 0.3][s.season],
+    parts: {
+      intro: { chords: '1 | 4' },
+      a:  { chords: '1 | 4 | 1 | 5',
+            melody: "5, - 1 2 3 - 5 - | 4 - 3 2 1 - 2 - | 3 - - 5 3 2 1 - | 2 - - - . . . ." },
+      a2: { chords: '1 | 4 | 6 5 | 1',
+            melody: "5, - 1 2 3 - 5 - | 6 - 5 4 3 - 2 - | 3 - 2 - 1 - 7, - | 1 - - - - - . ." },
+      b:  { chords: '4 | 1 | 4 | 5 | 6 | b7 | 4 | 5',
+            melody: "1' - 7 6 5 - - - | 3 - 5 - 1' - - - | 6 - 5 4 6 - 5 - | 5 - - - 7 - - - | " +
+                    "6 - 5 - 3 - - - | 5 - 2 - b7, - - - | 4 - 3 - 2 - 1 - | 2 - - - 5, - 7, -" },
+      end: { chords: '4 | 1', left: '0 4 7 9 11 14 . .', slow: 0.5,
+            melody: "6 - 5 - 3 - 2 - | 1 - - - - - - -" },
+    },
+    forms: ['intro a a2 b a a2 end', 'intro a a2 b a^ a2 end'],
+  },
+  // Lanterns: autumn, a slow waltz in B minor, lower and more muffled than Clover. Each bar
+  // lilts long-short-long, and the chords fall round the circle (Bm Em A D G ...). The middle
+  // part lifts into D major before it sinks back, and the last chord turns to B major: the
+  // lanterns coming on.
+  lanterns: {
+    title: 'Lanterns', bpm: 76, steps: 6, key: 'Bm', tone: 0.65, left: '0 4 7+9 . 7+9 .',
+    fit: s => [0.6, 1, 3, 0.6][s.season],
+    parts: {
+      intro: { chords: '1 | 6' },
+      a:  { chords: '1 | 4 | 7 | 3 | 6 | 4 | 5 | 5',
+            melody: "5 - - 4 3 - | 3 - - 2 1 - | 2 - - 1 7, - | 7, - - - - - | " +
+                    "3 - - 4 5 - | 6 - - 5 4 - | 5 - - 4 3 - | 2 - - - - -" },
+      a2: { chords: '1 | 4 | 7 | 3 | 6 | 5 | 1 | 1',
+            melody: "5 - - 4 3 - | 3 - - 2 1 - | 2 - - 1 7, - | 7, - - - - - | " +
+                    "3 - - 4 5 - | 7 - - 6 5 - | 4 - - 2 1 - | 1 - - - . ." },
+      b:  { chords: '3 | 7 | 6 | 3 | 3 | 7 | 4 | 5',
+            melody: "7 - - 1' 3' - | 2' - - - 1' 7 | 1' - - - 6 - | 7 - - - - - | " +
+                    "7 - - 1' 3' - | 2' - - 3' 4' - | 4' - - 3' 2' - | 2' - - - 7 -" },
+      end: { chords: '6 | 5 | 1M', left: '0 4 7 9 11 14', slow: 0.6,
+            melody: "3 - - 2 1 - | 2 - - - 7, - | 1 - - - - -" },
+    },
+    forms: ['intro a a2 b a2 end', 'intro a a2 b a^ a2 end'],
+  },
+  // Burrow: a lullaby, in G, for any season. Slow, and far apart like a music box: a small tune
+  // up high on the lullaby's falling third (D-B, D-D-B), over a low note rocking like a cradle.
+  // At the end it stops rocking: C, then C minor from outside the key, as the tune slips down
+  // by half steps (B, B flat, A) onto G.
+  burrow: {
+    title: 'Burrow', bpm: 58, key: 'G', octave: 1, tone: 0.85, left: '0 . 7 . 4 . 7 .',
+    fit: () => 1,
+    parts: {
+      intro: { chords: '1 | 4' },
+      a:  { chords: '1 | 4 | 1 | 5',
+            melody: "5 - 3 - 5 5 3 - | 6 - 5 - 3 - - - | 5 - 3 - 2 - 1 - | 2 - - - - - . ." },
+      a2: { chords: '1 | 4 | 5 | 1',
+            melody: "5 - 3 - 5 5 3 - | 6 - 5 - 3 - 1 - | 2 - 3 - 2 - 7, - | 1 - - - - - . ." },
+      b:  { chords: '6 | 3 | 4 | 5',
+            melody: "5 - - 6 5 - 3 - | 2 - - 3 2 - 7, - | 1 - - 2 3 - 5 - | 6 - - - 5 - 4 -" },
+      end: { chords: '4 4m | 1', left: '0+4+9 . . . . . . .', slow: 0.6,
+            melody: "3 - - - b3 - - - | 2 - 1 - - - - -" },
+    },
+    forms: ['intro a a2 b a2 end', 'intro a a2 b a a2 end'],
+  },
+  // Frost: winter, snow falling. Plain E minor, rocking between E minor and A minor. Under the
+  // tune an open fifth, then two notes drifting down on a slow 3+3+2. The tune is one small
+  // motif, a falling B-G-E that comes in after a rest like a flake, said again and again with a
+  // little changed. It ends A minor, C, E minor. Sometimes it's just the motif, with no middle part.
+  frost: {
+    title: 'Frost', bpm: 66, key: 'Em', tone: 0.9, left: '0+4 . . 9 . . 7 .',
+    fit: s => (s.season === 3 ? 4 : 0.3) * (1 + (s.sky.snow || 0)),
+    parts: {
+      intro: { chords: '1 | 4' },
+      a:  { chords: '1 | 4 | 1 | 7',
+            melody: ". . 5 - 3 - 1 - | 6 - - - 5 - - - | . . 5 - 3 - 2 - | 1 - - - - - . ." },
+      a2: { chords: '1 | 4 | 7 | 1',
+            melody: ". . 5 - 3 - 1 - | 6 - - - 1' - - - | 7 - 5 - 4 - 2 - | 1 - - - - - . ." },
+      b:  { chords: '3 | 7 | 4 | 1 | 3 | 7 | 5 | 5',
+            melody: "7 - - - 5 - 3 - | 4 - - - 2 - - - | 5 - - - 6 - 1' - | 1' - - - 7 - 5 - | " +
+                    "7 - - - 5 - 3 - | 4 - - - 2 - - - | 4 - - 5 2 - - - | 2 - - - - - . ." },
+      end: { chords: '4 | 6 | 1', left: '0+4 . . 9 . . 11 .', slow: 0.5,
+            melody: "6 - - - 5 - - - | 5 - - - 3 - - - | 1 - - - - - - -" },
+    },
+    forms: ['intro a a2 b a a2 end', 'intro a a2 end'],
+  },
+};
+
+const SCALES = { major: [0, 2, 4, 5, 7, 9, 11], minor: [0, 2, 3, 5, 7, 8, 10], mixolydian: [0, 2, 4, 5, 7, 9, 10] };
+const KEYS = { D: [2, 'major'], G: [7, 'major'], Bm: [11, 'minor'], Em: [4, 'minor'] };   // first note (C = 0), scale
+// Degree d of a key (1-based, may run past 7 or below 1) as a MIDI note, from its lowest octave.
+const degree = (key, d) => { const [pc, sc] = KEYS[key], i = d - 1; return pc + SCALES[sc][((i % 7) + 7) % 7] + 12 * Math.floor(i / 7); };
+const lift = (m, lo) => 12 * Math.ceil((lo - m) / 12);   // octaves to move m up to lo or just above
+const hz = m => 440 * Math.pow(2, (m - 69) / 12);
+const bars = s => !s ? [] : s.split('|').map(b => b.trim().split(/\s+/).filter(Boolean));
+const shift = a => a === 'b' ? -1 : a === '#' ? 1 : 0;
+// A chord mark (1, b7, 4m ...): its root as a MIDI note, and at(k), the note k scale steps above
+// the root. A chord of the key takes its notes from the key; a borrowed one is built on its own
+// root, major (with a flat seventh, the way borrowed chords usually come) or minor.
+function chord(key, c) {
+  const [, acc, d, q] = c.match(/^([b#]?)(\d)([mM]?)$/), root = degree(key, +d) + shift(acc);
+  if (!acc && !q) return { root, at: k => degree(key, +d + k) };
+  const sc = SCALES[q === 'm' ? 'minor' : 'mixolydian'];
+  return { root, at: k => root + sc[((k % 7) + 7) % 7] + 12 * Math.floor(k / 7) };
+}
+
+// Writes out one playing of a piece: every note with its time, pitch, touch, length and hand.
+function score(tune) {
+  const step = 30 / tune.bpm, per = tune.steps || 8, key = tune.key || 'D', notes = [];
+  let t0 = 0;
+  for (const name of pick(tune.forms).split(' ')) {
+    const up = name.endsWith('^'), part = tune.parts[name.replace('^', '')];
+    const chords = bars(part.chords), n = chords.length * per;
+    const mel = bars(part.melody), left = (part.left || tune.left).split(' ');
+    mel.forEach((b, i) => { if (b.length !== per) console.warn(`${tune.title} ${name}: bar ${i + 1} has ${b.length} steps`); });
+    const at = [0];                                  // when each step starts, slowing towards the end
+    for (let i = 0; i < n; i++) at.push(at[i] + step * (1 + (part.slow || 0) * (i / n) ** 2));
+    // The left hand: each chord's pattern, held down (pedalled) until the next chord.
+    chords.forEach((cs, b) => cs.forEach((c, j) => {
+      const ch = chord(key, c), low = lift(ch.root, 45), from = b * per + j * per / cs.length, to = from + per / cs.length;
+      for (let i = from; i < to; i++) {
+        const ks = left[(i - from) % left.length];
+        if (ks === '.') continue;
+        for (const k of ks.split('+'))
+          notes.push({ t: t0 + at[i] + rand(0, 0.012), f: hz(ch.at(+k) + low), hand: 0,
+                       v: (i === from ? 0.55 : ks.includes('+') ? 0.32 : 0.42) + rand(-0.04, 0.04), len: at[to] - at[i] + 0.3 });
+      }
+    }));
+    // The right hand: the tune, each note held through its dashes, its 1 between F#4 and F5.
+    const steps = mel.flat(), high = lift(degree(key, 1), 66) + 12 * (tune.octave || 0);
+    const line = [];
+    steps.forEach((s, i) => {
+      const m = s.match(/^([b#]?)(\d)([',]*)$/);
+      if (!m) return;
+      let j = i + 1; while (steps[j] === '-') j++;
+      const oct = (up ? 1 : 0) + (m[3].split("'").length - 1) - (m[3].split(',').length - 1);
+      line.push({ t: t0 + at[i] + rand(-0.01, 0.01), m: degree(key, +m[2]) + shift(m[1]) + high + 12 * oct,
+                  v: (up ? 0.6 : 0.75) + rand(-0.06, 0.06), len: at[Math.min(j, n)] - at[i] + 0.15 });
+    });
+    // Phrasing: the higher a note climbs above the middle of the part, the firmer it's played,
+    // and the part's last note is let go softly.
+    const mid = line.reduce((a, l) => a + l.m, 0) / line.length;
+    line.forEach((l, i) => {
+      const note = { t: l.t, f: hz(l.m), hand: 1, len: l.len,
+                     v: l.v * (1 + 0.25 * Math.max(-1, Math.min(1, (l.m - mid) / 8))) * (i === line.length - 1 ? 0.8 : 1) };
+      notes.push(note);
+      if (tune.echo) notes.push({ ...note, t: note.t + tune.echo * step * rand(0.95, 1.08), f: note.f * 2, hand: 2, v: note.v * 0.6, voice: tune.echoVoice });
+    });
+    t0 += at[n];
+  }
+  notes.sort((a, b) => a.t - b.t);
+  return { notes, length: t0 };
+}
+
+const music = { next: 0, piece: null, last: null };
+const GAP = [300, 600];                              // seconds of just the meadow between pieces
+
+function playTune(name) {
+  if (!ac || !enabled || !TUNES[name]) return false;
+  stopTune();
+  const now = ac.currentTime, { notes, length } = score(TUNES[name]);
+  const out = ac.createGain(); out.connect(musicBus);
+  const hands = [-0.2, 0.2, -0.5].map(p => { const pn = ac.createStereoPanner(); pn.pan.value = p; pn.connect(out); return pn; });
+  music.last = name;
+  music.piece = { name, notes, tone: TUNES[name].tone || 1, i: 0, t0: now + 0.1, end: now + 0.1 + length + 4, length, out, hands };
+  return true;
+}
+function stopTune() {
+  const p = music.piece;
+  if (!p) return;
+  p.out.gain.setTargetAtTime(0, ac.currentTime, 0.4);
+  setTimeout(() => p.out.disconnect(), 3000);
+  music.piece = null;
+  music.next = ac.currentTime + rand(...GAP);
+}
+
+// A few times a second: hand the next notes to Web Audio, or wait for the next piece. The
+// piano follows the light as it plays, softer and darker at night (m.day, from mix()). A storm
+// has the stage to itself, and each piece is chosen by how well it suits the season (at 1x),
+// and rarely the one that played last.
+function musicTick(now, m) {
+  const p = music.piece;
+  if (p) {
+    const soft = 0.85 + 0.15 * m.day, bright = p.tone * (0.75 + 0.25 * m.day);
+    while (p.i < p.notes.length && p.t0 + p.notes[p.i].t < now + 1.5) {
+      const n = p.notes[p.i++], t = p.t0 + n.t;
+      if (t > now - 0.05) VOICES[n.voice || 'piano'](p.hands[n.hand], n.f, Math.max(t, now), n.v * soft, n.len, bright);
+    }
+    if (now > p.end) { music.piece = null; music.next = now + rand(...GAP); }
+    return;
+  }
+  if (!music.next) music.next = now + rand(60, 120);
+  if (now < music.next) return;
+  if ((state.sky.storm || 0) > 0.3) { music.next = now + 30; return; }
+  const names = Object.keys(TUNES);
+  const w = names.map(k => TUNES[k].trial ? 0 : (state.speed > 1 ? 1 : TUNES[k].fit(state)) * (k === music.last ? 0.2 : 1));
+  let r = Math.random() * w.reduce((a, b) => a + b, 0), i = 0;
+  while (r > w[i] && i < names.length - 1) r -= w[i++];
+  playTune(names[i]);
+}
+
 // ------------------------------------------------------------------ public
 
 function update(s) { Object.assign(state, s); }
@@ -716,5 +1005,10 @@ function setVolume(v) {
   loud.gain.setTargetAtTime(v * LOUD, ac.currentTime, 0.1);
 }
 
-window.Sound = { start, play, update, setEnabled, setVolume, get enabled() { return enabled; }, names: Object.keys(SOUNDS) };
+window.Sound = {
+  start, play, update, setEnabled, setVolume, get enabled() { return enabled; }, names: Object.keys(SOUNDS),
+  playTune, stopTune, tunes: Object.fromEntries(Object.entries(TUNES).map(([k, t]) => [k, t.title])),
+  // What's playing: { name, at, length } in seconds, or null.
+  get tune() { const p = music.piece; return p && ac ? { name: p.name, at: Math.max(0, ac.currentTime - p.t0), length: p.length } : null; },
+};
 })();
