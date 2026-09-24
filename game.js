@@ -1051,9 +1051,9 @@ function render(now) {
   const shown = [];
   for (const c of world.creatures) {
     if (c.hidden || !c.alive) continue;
-    const [sx, sy] = toScreen(c.x, c.y);
+    const [sx, sy] = screenOf(c);
     if (!visible(sx, sy, 60)) continue;
-    const it = { y: c.y, c, sx, sy };
+    const it = { y: c.y + (c.mode === 'dance' ? DANCE_FRONT : 0), c, sx, sy };
     items.push(it); shown.push(it);
   }
   items.sort((a, b) => a.y - b.y);
@@ -1112,7 +1112,7 @@ function render(now) {
   if (sel) drawSelectionOver(sel, now);
   const hov = world.byId.get(ui.hoverId);
   if (hov && hov.alive && !hov.hidden && hov.id !== ui.selectedId) {
-    const [sx, sy] = toScreen(hov.x, hov.y);
+    const [sx, sy] = screenOf(hov);
     drawLabel(`${hov.name} · ${S.mood(world, hov).text}`, sx, sy + creaturePx(hov) * 0.55 + 6);
   } else if (ui.hoverHive) {
     const h = ui.hoverHive, [sx, sy] = toScreen(h.x, h.y);
@@ -1134,11 +1134,72 @@ const LOOKS = {
 const creaturePx = c => (10 + cam.zoom * 1.4) * LOOKS[c.species].size * c.scale * (0.55 + 0.45 * S.growth(world, c));
 const flipOf = c => LOOKS[c.species].facesLeft && c.facing > 0;
 
-// How high off the ground it is drawn: a hop, or a flier's hover. A sipping bee sits on the flower.
+// How full a forager's load is, 0..1.
+const loadOf = c => c.load ? Math.min(1, c.load / (S.LOAD * S.HONEY)) : 0;
+
+// How high off the ground it is drawn: a hop, or a flier's hover. A sipping bee sits on the flower,
+// and a laden one flies lower.
 function liftOf(c, px, now) {
   if (!c.sp.flies) return hopOf(c, px, now);
   const bob = ui.speed > 0 ? Math.sin(now / 90 + c.id) * px * 0.08 : 0;
-  return (c.mode === 'sip' ? px * 0.15 : px * 0.9) + bob;
+  return (c.mode === 'sip' ? px * 0.15 : px * (0.9 - 0.3 * loadOf(c))) + bob;
+}
+
+// Fliers don't fly straight: they weave a loose figure of eight about their way, half as much
+// when laden. Only in the drawing. It keeps sim time, so it stops with the clock, and its size
+// eases in and out (in c's entry in weaves), so a bee never jumps when she picks a new target.
+const WEAVE = 0.3, WEAVE_TICKS = 45;               // tiles to each side; ticks per loop
+const weaves = new WeakMap();
+function weaveOf(c) {
+  const t = world.tick + acc, goal = c.mode === 'home' || c.mode === 'unload' ? c.home
+    : c.mode === 'sip' || c.mode === 'dance' ? null : c.target;
+  const want = goal ? Math.min(1, Math.hypot(goal.x - c.x, goal.y - c.y) / 1.5) * (1 - 0.5 * loadOf(c)) : 0;
+  let s = weaves.get(c);
+  if (!s) weaves.set(c, s = { amp: want, t, x: 0, y: 0 });
+  if (s.t !== t) {
+    s.amp += (want - s.amp) * Math.min(1, (t - s.t) / 8);
+    s.t = t;
+    const ph = t / WEAVE_TICKS * TAU + c.id;
+    s.x = WEAVE * s.amp * Math.sin(ph); s.y = WEAVE * 0.6 * s.amp * Math.sin(2 * ph + c.id);
+  }
+  return s;
+}
+
+// Where a creature is drawn on screen: where it is, plus a flier's weave. A dancer is drawn a
+// little in front of her hive, where the tree doesn't hide her, and her eight a size bigger.
+const DANCE_FRONT = 0.45, DANCE_SIZE = 1.8;
+function screenOf(c) {
+  const p = toScreen(c.x, c.y), z = cam.zoom;
+  if (c.sp.flies && !c.hidden) { const s = weaveOf(c); p[0] += s.x * z; p[1] += s.y * z; }
+  if (c.mode === 'dance') {
+    const [x, y] = danceAt(c.timer + 1);
+    p[0] += x * (DANCE_SIZE - 1) * z; p[1] += (y * (DANCE_SIZE - 1) + DANCE_FRONT) * z;
+  }
+  return p;
+}
+
+// The waggle dance: the figure of eight she has just traced glows behind her, and specks run
+// out from it the way the patch lies. Her path is the sim's (beeForage): where she is at timer
+// + 1, as the sim counts it down after moving her.
+const danceAt = timer => { const a = timer * 0.3; return [0.35 * Math.sin(a), 0.18 * Math.sin(2 * a)]; };
+function drawDance(c, bx, by, px) {
+  const h = c.home, z = cam.zoom * DANCE_SIZE, [x0, y0] = danceAt(c.timer + 1);
+  const cx = bx - x0 * z, cy = by - y0 * z;                // the middle of the eight, at her height
+  const d = 2 * Math.max(1.8, px * 0.1);
+  for (let k = 1; k <= 12; k++) {
+    const [x, y] = danceAt(c.timer + 1 + k * 0.6), f = 1 - k / 13;
+    ctx.globalAlpha = 0.8 * f;
+    ctx.drawImage(POLLEN_DOTS[1], cx + x * z - d * f / 2, cy + y * z - d * f / 2, d * f, d * f);
+  }
+  if (S.patchFresh(world, h)) {
+    const dx = h.patch.x - h.x, dy = h.patch.y - h.y, n = Math.hypot(dx, dy) || 1, t = world.tick + acc;
+    for (let k = 0; k < 5; k++) {
+      const u = (t / 30 + k / 5) % 1, r = cam.zoom * (0.5 + 1.6 * u), e = d * 1.2;
+      ctx.globalAlpha = 0.9 * Math.sin(Math.PI * u);
+      ctx.drawImage(POLLEN_DOTS[0], cx + dx / n * r - e / 2, cy + dy / n * r - e / 2, e, e);
+    }
+  }
+  ctx.globalAlpha = 1;
 }
 
 // How high off the ground a hop has lifted it, in screen pixels.
@@ -1169,10 +1230,28 @@ function drawCreature(c, sx, sy, now) {
   const breathe = !hop && ui.speed > 0
     ? Math.sin(now / (c.sleeping ? 650 : 330) + c.id) * (c.sleeping ? 0.035 : 0.02) : 0;
   const squash = (c.sleeping ? 0.82 : 1) + breathe;
-  drawEmoji(c.sp.emoji, sx, sy - hop + px * 0.4 * (1 - squash), px, {   // feet stay on the ground
+  const y = sy - hop + px * 0.4 * (1 - squash);
+  if (c.mode === 'dance') drawDance(c, sx, y, px);
+  drawEmoji(c.sp.emoji, sx, y, px, {   // feet stay on the ground
     tint: furTint(c), coat: coatLook(c), flip: flipOf(c), squash,
   });
+  if (c.load) drawBaskets(c, sx, y, px);
   if (c.mode === 'sip') drawSipping(c, sx, sy, px, now);
+}
+
+// A forager packs pollen on her hind legs: two gold lumps that grow as she fills up.
+const BASKET = { x: 0.04, y: 0.37, dx: 0.08, dy: -0.03 };  // the near hind leg, and the far one from it, in px (facing left)
+function drawBaskets(c, sx, y, px) {
+  const f = loadOf(c), r = px * (0.04 + 0.05 * f), side = flipOf(c) ? -1 : 1;
+  const x1 = sx + side * px * BASKET.x, y1 = y + px * BASKET.y;
+  const x2 = x1 + side * px * BASKET.dx, y2 = y1 + px * BASKET.dy;
+  ctx.fillStyle = '#ffcc33';
+  ctx.strokeStyle = 'rgba(120, 70, 0, 0.55)';
+  ctx.lineWidth = Math.max(0.6, px * 0.012);
+  ctx.beginPath();
+  ctx.moveTo(x2 + r * 0.85, y2); ctx.arc(x2, y2, r * 0.85, 0, TAU);    // the far one, behind
+  ctx.moveTo(x1 + r, y1); ctx.arc(x1, y1, r, 0, TAU);
+  ctx.fill(); ctx.stroke();
 }
 
 function drawBubble(emoji, sx, sy, px, important) {
@@ -1201,7 +1280,7 @@ function drawLabel(text, x, y) {
 
 function drawSelectionUnder(c, now) {
   if (!c.alive) return;
-  const [sx, sy] = toScreen(c.x, c.y);
+  const [sx, sy] = screenOf(c);
   const z = cam.zoom;
   // Where it has been.
   if (ui.trail.length > 1) {
@@ -1233,7 +1312,7 @@ function drawSelectionUnder(c, now) {
 
 function drawSelectionOver(c, now) {
   if (!c.alive) return;
-  const [sx, sy] = toScreen(c.x, c.y);
+  const [sx, sy] = screenOf(c);
   const other = world.byId.get(c.mode === 'flee' || c.mode === 'alarm' ? c.threatId : c.targetId);
   if (other && other.alive && ['flee', 'alarm', 'chase', 'stalk', 'love'].includes(c.mode)) {
     const [ox, oy] = toScreen(other.x, other.y);
