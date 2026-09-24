@@ -1041,14 +1041,14 @@ function render(now) {
 
   // Trees, rocks and animals, back to front.
   const items = [];
-  for (const d of world.decor) {
+  for (const d of world.decor) {                           // (a hive is in one of the trees)
     const [sx, sy] = toScreen(d.x, d.y);
-    if (besideHive(d)) continue;
     if (visible(sx, sy, d.size * z)) items.push({ y: d.y, d, sx, sy });
   }
-  for (const h of world.hives) {                           // (a swarm hanging in a tree is one too)
+  for (const h of world.hives) {                           // a swarm hanging in a tree
+    if (!h.cluster) continue;
     const [sx, sy] = toScreen(h.x, h.y);
-    if (visible(sx, sy, OLD_TREE * z)) items.push({ y: h.y, h, sx, sy });
+    if (visible(sx, sy, 3 * z)) items.push({ y: h.y, h, sx, sy });
   }
   const shown = [];
   for (const c of world.creatures) {
@@ -1063,12 +1063,11 @@ function render(now) {
   const sn = sun(ck);
   for (const it of items) {
     if (it.d) drawDecorShadow(it.d, it.sx, it.sy, sn);
-    else if (it.h) { if (!it.h.cluster) drawHiveShadow(it.h, it.sx, it.sy, sn); }
-    else drawCreatureShadow(it.c, it.sx, it.sy, now, sn);
+    else if (it.c) drawCreatureShadow(it.c, it.sx, it.sy, now, sn);
   }
   for (const it of items) {
-    if (it.d) drawDecor(it.d, it.sx, it.sy, now, ck);
-    else if (it.h) (it.h.cluster ? drawSwarm : drawBeeTree)(it.h, it.sx, it.sy, now, ck);
+    if (it.d) (it.d.hive ? drawBeeTree : drawDecor)(it.d, it.sx, it.sy, now, ck);
+    else if (it.h) drawSwarm(it.h, it.sx, it.sy);
     else drawCreature(it.c, it.sx, it.sy, now);
   }
   drawFallingLeaves(now);
@@ -1096,7 +1095,8 @@ function render(now) {
     for (const h of world.hives) {
       if (!h.bees || h.cluster) continue;
       const [sx, sy] = toScreen(h.x, h.y);
-      if (visible(sx, sy, 40)) drawEmoji('💤', sx + z * OLD_TREE * 0.12, sy - z * OLD_TREE * 0.2 + Math.sin(now / 600 + h.id) * 3, Math.max(11, z * 0.8), { alpha: 0.85 });
+      const px = z * h.tree.size;
+      if (visible(sx, sy, 40)) drawEmoji('💤', sx + px * 0.12, sy - px * 0.2 + Math.sin(now / 600 + h.id) * 3, Math.max(11, z * 0.8), { alpha: 0.85 });
     }
   }
 
@@ -1371,7 +1371,7 @@ function treeSway(d, now) {
 // brown leaves all winter. In spring they leaf out lime green. Pines 🌲 stay green, but not
 // quite the same green: old inner needles yellow in autumn, the whole tree bronzes a little in
 // the cold, and new tips come in light at the end of spring. Snow settles on top of them all.
-// Some broadleaf trees are fruit trees, mostly out in the open (treeInfo). An apple tree flowers
+// Some broadleaf trees are fruit trees, mostly out in the open (sim.js, plantTrees). An apple tree flowers
 // white in spring, hangs apples from high summer and drops windfalls in autumn. A cherry comes
 // into leaf pink, a cloud of blossom that turns green and sheds petals, then cherries in early
 // summer and red leaves in autumn. No two broadleaf trees are quite the same green, and half of
@@ -1403,11 +1403,9 @@ function treeInfo(d) {
   let t = treeInfos.get(d);
   if (t) return t;
   const hx = Math.floor(d.x * 100), hy = Math.floor(d.y * 100);
-  const wood = world.wood[Math.floor(d.y) * S.W + Math.floor(d.x)];
-  const fruity = d.emoji === '🌳' && hash2(hx, hy, 41) < clamp((1 - wood) * 1.1, 0.04, 0.5);
   t = {
     h: Math.abs(Math.floor(d.x * 7.3 + d.y * 13.1)),
-    fruit: fruity ? (hash2(hx, hy, 42) < 0.5 ? 'apple' : 'cherry') : '',
+    fruit: d.fruit || '',                                 // the sim says which (plantTrees)
     flip: hash2(hx, hy, 43) < 0.5,
     green: GREEN.map((v, k) => v + Math.round((hash2(hx, hy, 44) - 0.5) * 4) * [7, 4, -4][k]),
     owl: d.size > 4.4 && hash2(hx, hy, 45) < 0.12,
@@ -1503,7 +1501,7 @@ function drawFallingLeaves(now) {
   leafFall.length = 0;
 }
 
-function drawDecor(d, sx, sy, now, ck) {
+function drawDecor(d, sx, sy, now, ck, clipLeaves) {
   const z = cam.zoom, px = d.size * z;
   if (d.emoji === '🪨') { drawRock(d, sx, sy); return; }
   if (!d.stump && !d.tree) { drawEmoji(d.emoji, sx, sy - px * 0.35, px); return; }
@@ -1513,6 +1511,7 @@ function drawDecor(d, sx, sy, now, ck) {
     ctx.save();
     ctx.translate(sx, sy); ctx.rotate(treeSway(d, now));
     if (t.bare) drawEmoji('🪾', 0, -px * 0.42, px * 1.15, { alpha: t.fall, leaf: t.bare, flip: t.flip });   // it draws small
+    if (clipLeaves) clipLeaves(px);                      // (the bee tree)
     if (t.fall < 1) drawEmoji(d.emoji, 0, -px * 0.35, px, { leaf: t.look, flip: t.flip });
     if (t.owl && px >= 24 && darkness(ck.phase) > 0.3) {
       const side = t.flip ? -1 : 1;                   // on a low bough of the leaves, or in the bare fork
@@ -1726,20 +1725,9 @@ function barkBee(x, y, s, a) {
 const compass = (dx, dy) => ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'][
   (Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) + 8) % 8];
 
-const OLD_TREE = 8;                                        // the bee tree's size, in tiles
 const OLD_HOLE = { x: 0.015, y: -0.075, rx: 0.042, ry: 0.066 };   // in tree sizes, from its foot
 const OLD_FADE = [-0.15, -0.27];                           // the trunk fades into the crown between these
-const beeTrees = new WeakMap(), trunkSprites = new Map();
-// The ordinary tree the hive stands beside isn't drawn: the old bee tree takes its place.
-const besideHive = d => d.tree && world.hives.some(h => !h.cluster && Math.hypot(h.x - d.x, h.y - d.y) < 2);
-function beeTree(h) {
-  let d = beeTrees.get(h);
-  if (!d) {
-    beeTrees.set(h, d = { x: h.x, y: h.y, emoji: '🌳', size: OLD_TREE, tree: true, stump: 0 });
-    treeInfo(d).fruit = '';
-  }
-  return d;
-}
+const trunkSprites = new Map();
 
 function softSpot(g, x, y, rx, ry, rgb, a) {
   g.save(); g.translate(x, y); g.scale(1, ry / rx);
@@ -1792,9 +1780,9 @@ function paintTrunk(g, P, px) {
   g.globalCompositeOperation = 'source-over';
 }
 
-function trunkSprite(P, bare) {                          // bare: the hollow alone, for the 🪾's own trunk
+function trunkSprite(P, hole) {                          // the painted trunk, or (hole) the hollow in it
   P = Math.round(P);
-  let s = trunkSprites.get(P + (bare ? 'b' : ''));
+  let s = trunkSprites.get(P + (hole ? 'h' : 't'));
   if (s) return s;
   if (trunkSprites.size > 40) trunkSprites.clear();
   const W = P * 0.56, H = P * 0.42, ox = P * 0.28, oy = P * 0.36;
@@ -1802,7 +1790,9 @@ function trunkSprite(P, bare) {                          // bare: the hollow alo
   c.width = Math.ceil(W * dpr); c.height = Math.ceil(H * dpr);
   const g = c.getContext('2d'), px = 1 / P;
   g.setTransform(dpr * P, 0, 0, dpr * P, ox * dpr, oy * dpr);
-  if (!bare) paintTrunk(g, P, px);
+  s = { canvas: c, W, H, ox, oy };
+  trunkSprites.set(P + (hole ? 'h' : 't'), s);
+  if (!hole) { paintTrunk(g, P, px); return s; }
   // The hollow: a resin-dark rim, a lip of bark, black inside, comb glinting at the bottom.
   const { x, y, rx, ry } = OLD_HOLE;
   softSpot(g, x, y + ry * 0.2, rx * 1.9, ry * 1.6, '40, 22, 8', 0.6);
@@ -1819,26 +1809,27 @@ function trunkSprite(P, bare) {                          // bare: the hollow alo
   lid.addColorStop(0, 'rgba(4, 2, 1, 0.95)'); lid.addColorStop(1, 'rgba(4, 2, 1, 0)');
   g.fillStyle = lid; g.fillRect(x - rx, y - ry, 2 * rx, ry * 1.2);
   g.restore();
-  s = { canvas: c, W, H, ox, oy };
-  trunkSprites.set(P + (bare ? 'b' : ''), s);
   return s;
 }
 
-function drawBeeTree(h, sx, sy, now, ck) {
-  // In leaf: the tree, all but the foot of its own trunk, which the painted one stands in for.
-  // Bare: the 🪾 is an old trunk already, so it's drawn whole and the hollow laid on it.
-  const d = beeTree(h), px = d.size * cam.zoom, bare = treeLook(d, ck).fall > 0, s = trunkSprite(px, bare);
-  ctx.save();
-  if (!bare) {
-    ctx.beginPath();
-    ctx.rect(sx - px, sy - px * 2, px * 2, px * 1.94);
-    ctx.rect(sx - px, sy - px * 0.1, px * 0.84, px * 0.6);
-    ctx.rect(sx + px * 0.16, sy - px * 0.1, px * 0.84, px * 0.6);
-    ctx.clip();
-  }
-  drawDecor(d, sx, sy, now, ck);
-  ctx.restore();
-  ctx.drawImage(s.canvas, sx - s.ox, sy - s.oy, s.W, s.H);
+// The 🌳 is drawn all but the foot of its own trunk, which the painted trunk stands in for.
+function clipFoot(px) {
+  ctx.beginPath();
+  ctx.rect(-px, -px * 2, px * 2, px * 1.94);
+  ctx.rect(-px, -px * 0.1, px * 0.84, px * 0.6);
+  ctx.rect(px * 0.16, -px * 0.1, px * 0.84, px * 0.6);
+  ctx.clip();
+}
+
+// The hive's tree. In leaf, a painted old trunk stands in for the 🌳's own. As the leaves drop the
+// 🪾 comes through, an old trunk already, and the painted one fades with the leaves; the hollow
+// stays put through it all.
+function drawBeeTree(d, sx, sy, now, ck) {
+  const h = d.hive, px = d.size * cam.zoom, fall = treeLook(d, ck).fall;
+  drawDecor(d, sx, sy, now, ck, clipFoot);
+  const put = s => ctx.drawImage(s.canvas, sx - s.ox, sy - s.oy, s.W, s.H);
+  if (fall < 1) { ctx.globalAlpha = 1 - fall; put(trunkSprite(px)); ctx.globalAlpha = 1; }
+  put(trunkSprite(px, true));
   // Bees on the sill, a few wandering on the bark; they shuffle while time runs.
   const { x, y, rx, ry } = OLD_HOLE, hx = sx + x * px, sill = sy + (y + ry * 1.1) * px;
   // A full hive has honey oozing over the sill.
@@ -1876,15 +1867,12 @@ function drawSwarm(h, sx, sy) {
   }
 }
 
-function drawHiveShadow(h, sx, sy, sn) {
-  drawDecorShadow(beeTree(h), sx, sy, sn);
-}
-
-// The trunk, from its foot up to the snapped-off top, and never smaller than a fingertip.
+// The trunk, from its foot up to where the crown begins, and never smaller than a fingertip.
+// (Above that is the tree: THINGS.tree.)
 function hiveAt(sx, sy, swarms = false) {
-  const P = cam.zoom * OLD_TREE, reach = Math.max(22, P * 0.12);
   return world.hives.find(h => {
     if (h.cluster && !swarms) return false;
+    const P = cam.zoom * (h.tree ? h.tree.size : S.HIVE_TREE), reach = Math.max(22, P * 0.12);
     const [hx, hy] = toScreen(h.x, h.y);
     return Math.abs(sx - hx) < reach && sy > hy - P * 0.3 - reach / 2 && sy < hy + reach / 2;
   }) || null;
@@ -2426,6 +2414,9 @@ function handleEvent(e) {
       hear('thunder', e.x, e.y, {}, true);
       addEffect('💥', e.x, e.y, 0.2, 800);
       if (e.tree && !e.fire) addNews('⚡ Lightning split a tree in two!', 'tree', 30000);
+      break;
+    case 'hivestruck':
+      addNews(`⚡ <b>Lightning struck Queen ${esc(e.queen.name)}'s tree!</b> Her ${e.who.length} bees swarm out and hang in a tree nearby while scouts look for a new home.`);
       break;
     case 'fire':
       addNews('🔥 <b>Wildfire!</b> Lightning set the dry grass alight. Everyone is running.');
@@ -3119,7 +3110,6 @@ function decorAt(sx, sy) {
   const z = cam.zoom;
   let best = null;
   for (const d of world.decor) {
-    if (besideHive(d)) continue;
     const [dx, dy] = toScreen(d.x, d.y), px = d.size * z * (d.stump ? 0.45 : 1);
     const half = Math.max(6, px * (d.tree ? 0.36 : 0.5)), top = Math.max(10, px * (d.tree ? 0.85 : 0.6));
     if (Math.abs(sx - dx) < half && sy > dy - top && sy < dy + Math.max(4, px * 0.12) && (!best || d.y > best.y)) best = d;
@@ -3163,7 +3153,11 @@ const THINGS = {
     here: h => world.hives.includes(h),
     spot: h => ({ x: h.x, y: h.y, r: 1.1 }),
     show(h) {
-      if (!this.here(h)) return { emoji: '🐝', name: 'A swarm', sub: 'Moved on', status: '🏡 The swarm has moved into its new home.' };
+      if (!this.here(h)) {
+        if (h.queen) return { emoji: '🐝', name: 'A swarm', sub: 'Moved on', status: '🏡 The swarm has moved into its new home.' };
+        if (h.cluster) return { emoji: '🐝', name: 'A swarm', sub: 'Gone', status: '🥀 The swarm never found a home.' };
+        return { emoji: '🪵', name: 'Empty hive', sub: 'Gone', status: '⚡ Lightning took its tree.' };
+      }
       const q = h.queen, ck = S.clock(world), s = ck.season;
       const bees = world.creatures.filter(c => c.alive && c.home === h), out = bees.filter(c => !c.hidden).length;
       let status;
@@ -3189,7 +3183,7 @@ const THINGS = {
       if (bees.length) sections.push(['Bees', linkList(bees)]);
       return {
         emoji: h.cluster ? '🐝' : '🌳', tint: '#e8b83a', name: h.cluster ? `Queen ${q.name}'s swarm` : q ? `Queen ${q.name}'s hive` : 'Empty hive',
-        sub: h.cluster ? 'A swarm looking for a home' : 'A hollow in a great old tree', status, chips, facts, sections,
+        sub: h.cluster ? 'A swarm looking for a home' : `A hollow in an old ${treeName(h.tree).toLowerCase()}`, status, chips, facts, sections,
         meters: [['Honey', h.honey / S.HIVE_FULL, 'honey'], ['Room', h.bees / S.HIVE_ROOM, h.bees >= S.HIVE_ROOM * 0.8 ? 'low' : '']],
       };
     },
@@ -3212,6 +3206,7 @@ const THINGS = {
           : `⚡ Struck by lightning ${ago(d.stump)} ago`;
       } else status = treeSeason(d);
       const facts = [];
+      if (d.hive) facts.push(['🐝', `${thingLink('hive', d.hive.id, d.hive.queen ? `Queen ${esc(d.hive.queen.name)}'s hive` : 'An empty hive')} is in its hollow`]);
       if (treeInfo(d).owl && !d.stump) facts.push(['🦉', 'An owl roosts here; look for it at night']);
       if (world.snow > 0.3 && !d.stump) facts.push(['❄️', 'Snow on the branches']);
       if (!d.stump && world.wet < 0.5) facts.push(['⚡', 'Dry: a lightning strike would set it alight']);   // as strike does

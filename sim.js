@@ -146,6 +146,11 @@ function makeRng(seed) {
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const lerp = (a, b, t) => a + (b - a) * t;
 const dist2 = (a, b) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
+function hash2(x, y, seed) {                             // 0..1 from three whole numbers, the same every time
+  let h = Math.imul(x, 374761393) + Math.imul(y, 668265263) + Math.imul(seed, 982451653) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
 
 // ---------------------------------------------------------------- clock
 
@@ -724,6 +729,13 @@ function plantTrees(w, hills, hill, near) {
     for (let k = r.int(3, 7); k > 0; k--) plant(gx + r.range(-5, 5), gy + r.range(-4, 4), r.next() >= 0.6);
   }
   shadeWoods(w);
+  // Some broadleaf trees are fruit trees, apple or cherry, mostly out in the open.
+  for (const d of w.decor) {
+    if (!d.tree) continue;
+    const hx = Math.floor(d.x * 100), hy = Math.floor(d.y * 100), open = 1 - w.wood[idx(d.x, d.y)];
+    const fruity = d.emoji === '🌳' && hash2(hx, hy, 41) < clamp(open * 1.1, 0.04, 0.5);
+    d.fruit = fruity ? (hash2(hx, hy, 42) < 0.5 ? 'apple' : 'cherry') : '';
+  }
 }
 
 // How shaded each tile is, 0..1, from the trees around it. game.js darkens the ground there.
@@ -1031,7 +1043,7 @@ function weatherTick(w) {
 function strike(w, x, y) {
   // Lightning likes trees.
   const tree = w.decor.find(d => d.tree && !d.stump && (d.x - x) ** 2 + (d.y - y) ** 2 < 16);
-  if (tree) { x = tree.x; y = tree.y; tree.stump = w.tick; }
+  if (tree) { x = tree.x; y = tree.y; tree.stump = w.tick; if (tree.hive) hiveStruck(w, tree.hive); }
   let victim = null;
   forEachNear(w, x, y, 1.2, o => { victim = o; });
   if (victim) die(w, victim, 'lightning');
@@ -1905,6 +1917,9 @@ const SWARM_HANG = 0.5;         // days a swarm hangs in a tree while its scouts
 const SWARM_RANGE = 45;         // how far off a swarm will look for a home
 const HIVE_GAP = 20;            // a new hive keeps this far from the others
 const HIVE_SHORE = 2;           // and this far from water, so the hollow tree isn't drawn over the pond
+const HIVE_TREE = 8;            // a hollow tree is an old giant: the tree a hive moves into grows to this size
+const CROWD = 30;               // what each tree within 4 tiles takes off a site: the giant needs room
+const IN_FRONT = 60;            // and each tree in front of it (to the south), hiding the hollow
 const OLD_COMB = 20;            // how much a swarm likes an empty hive with comb already in it
 const MATING_FLIGHT = 0.5;      // days before a new queen, back from her wedding flight, starts to lay
 const SCOUTS = 6;               // one bee in this many is a scout
@@ -1980,9 +1995,25 @@ function daughterQueen(w, mum) {
 
 function makeHive(w, x, y) {
   const id = w.hives.reduce((m, o) => Math.max(m, o.id), 0) + 1;
-  const h = { id, x, y, honey: HIVE_HONEY, bees: 0, queen: null, brood: 0, swarmed: -Infinity, cluster: false, patch: null };
+  const h = { id, x, y, tree: null, honey: HIVE_HONEY, bees: 0, queen: null, brood: 0, swarmed: -Infinity, cluster: false, patch: null };
   w.hives.push(h);
   return h;
+}
+
+// A hive lives in a tree (h.tree, d.hive), in a hollow low on the trunk. The tree is an old giant.
+function moveIn(h, d) {
+  h.tree = d; d.hive = h; h.x = d.x; h.y = d.y;
+  d.size = Math.max(d.size, HIVE_TREE);
+}
+
+// Where a swarm hangs: a branch of the nearest tree a little way off, not another hive's.
+function hangSpot(w, x, y) {
+  let tree = null;
+  for (const d of w.decor) {
+    const d2 = (d.x - x) ** 2 + (d.y - y) ** 2;
+    if (d.tree && !d.stump && !d.hive && d2 > 4 && d2 < 64 && (!tree || d2 < (tree.x - x) ** 2 + (tree.y - y) ** 2)) tree = d;
+  }
+  return tree ? { x: tree.x + 0.6, y: tree.y + 0.3 } : { x: x + 3, y };
 }
 
 // Crowded, well fed, spring or summer, a laying queen, and not swarmed already this year.
@@ -1995,12 +2026,7 @@ const swarmTime = (w, h) => seasonOf(w.tick) <= 1 && h.bees >= 0.8 * HIVE_ROOM &
 function swarm(w, h) {
   const sites = hiveSites(w, h);
   if (!sites.length) return;
-  let tree = null;
-  for (const d of w.decor) {
-    const d2 = (d.x - h.x) ** 2 + (d.y - h.y) ** 2;
-    if (d.tree && !d.stump && d2 > 4 && d2 < 64 && (!tree || d2 < (tree.x - h.x) ** 2 + (tree.y - h.y) ** 2)) tree = d;
-  }
-  const s = makeHive(w, tree ? tree.x + 0.6 : h.x + 3, tree ? tree.y + 0.3 : h.y);
+  const at = hangSpot(w, h.x, h.y), s = makeHive(w, at.x, at.y);
   const q = h.queen;
   s.cluster = true; s.queen = q; s.sites = sites.slice(0, 3); s.settleAt = w.tick + SWARM_HANG * TPD;
   h.queen = daughterQueen(w, q); h.swarmed = w.tick; h.brood = 0;
@@ -2017,15 +2043,19 @@ function swarm(w, h) {
 }
 
 // The scouts have made up their minds: the swarm moves into the best of the sites they looked at.
-// An empty hive may have been taken meanwhile; with nothing left they build right on the branch.
+// One may have been taken or struck meanwhile; with none of them left they look again, and with
+// nowhere free at all they hang on another while.
 function settle(w, s) {
-  const site = s.sites.find(o => !o.hive || !o.hive.queen);
+  const free = o => (o.hive ? !o.hive.queen && w.hives.includes(o.hive) : hollowTree(w, o.tree));
+  let site = s.sites.find(free);
+  if (!site) { s.sites = hiveSites(w, s).slice(0, 3); site = s.sites[0]; }
+  if (!site) { s.settleAt = w.tick + SWARM_HANG * TPD; return; }
   let home = s;
-  if (site && site.hive) {
+  if (site.hive) {
     home = site.hive;
     home.honey = Math.min(HIVE_FULL, home.honey + s.honey); home.queen = s.queen; home.brood = 0;
     w.hives.splice(w.hives.indexOf(s), 1);
-  } else if (site) { s.x = site.x; s.y = site.y; }
+  } else moveIn(s, site.tree);
   s.cluster = false; s.sites = null;
   for (const c of w.creatures) {
     if (c.home !== s) continue;
@@ -2033,38 +2063,67 @@ function settle(w, s) {
     note(w, c, '🏡', `Moved into a new home with Queen ${home.queen.name}`);
   }
   home.bees = s.bees;
-  emit(w, { type: 'settle', hive: home, queen: home.queen, reused: !!(site && site.hive) });
+  emit(w, { type: 'settle', hive: home, queen: home.queen, reused: !!site.hive });
 }
 
-// How good a hollow tree is for a hive: plenty of flowers in reach, fields for more than one
-// season, and room to be seen rather than deep in the wood.
+// Lightning took a hive's tree. An empty hive goes with it. The bees fly out as a swarm with what
+// honey they can carry and hang in a tree nearby while their scouts look for a new home.
+function hiveStruck(w, h) {
+  const d = h.tree;
+  d.hive = null; h.tree = null;
+  d.size = Math.min(d.size, w.terrain.treeSize[1]);        // it grows back an ordinary tree
+  if (!h.queen) { w.hives.splice(w.hives.indexOf(h), 1); return; }
+  const bees = [...w.creatures, ...w.newborn].filter(c => c.alive && c.home === h);
+  Object.assign(h, hangSpot(w, h.x, h.y));
+  h.cluster = true; h.sites = hiveSites(w, h).slice(0, 3); h.settleAt = w.tick + SWARM_HANG * TPD;
+  h.honey = Math.min(h.honey, SWARM_CARRY * bees.length); h.brood = 0; h.patch = null;
+  for (const c of bees) {
+    c.hidden = false; c.sleeping = false; c.mode = 'swarm'; c.target = null;
+    note(w, c, '⚡', `Fled the hive when lightning struck, with Queen ${h.queen.name}`);
+  }
+  emit(w, { type: 'hivestruck', hive: h, queen: h.queen, who: bees });
+}
+
+// How good a hollow tree is for a hive: fields in reach for more than one season, flowers
+// scattered about (open most of the year, where a field is open for one season), and room to be
+// seen: not deep in the wood, and open ground in front of it. An autumn field counts half: it sees
+// a hive through the winter, but spring and summer ones make it grow.
 const SEASON_FIELD = 150;       // what each season with a field in reach is worth to a hive site
-function siteScore(w, x, y) {
-  const seasons = new Set(w.fields.filter(f => Math.hypot(f.x - x, f.y - y) < FORAGE_RANGE).map(f => f.season)).size;
+function siteScore(w, d) {
+  const { x, y } = d;
+  let seasons = 0;
+  for (const s of new Set(w.fields.filter(f => Math.hypot(f.x - x, f.y - y) < FORAGE_RANGE).map(f => f.season))) seasons += s === 2 ? 0.5 : 1;
   let flowers = 0;
   forEachPlantNear(w, x, y, FORAGE_RANGE, p => {
-    if ((p.field || (p.kind < 0.35 && w.fert[p.i] > 0.7)) && Math.hypot(p.x - x, p.y - y) < FORAGE_RANGE) flowers++;   // fields, or rich soil: they'll bloom
+    if (!p.field && p.kind < 0.35 && w.fert[p.i] > 0.7 && Math.hypot(p.x - x, p.y - y) < FORAGE_RANGE) flowers++;   // rich soil: they'll bloom
   });
-  const crowd = w.decor.filter(o => o.tree && Math.hypot(o.x - x, o.y - y) < 4).length;
-  return flowers + SEASON_FIELD * seasons - 5 * crowd;
+  let crowd = 0, front = 0;
+  for (const o of w.decor) {
+    if (!o.tree || o === d) continue;
+    if (Math.hypot(o.x - x, o.y - y) < 4) crowd++;
+    if (o.y > y && o.y - y < 5 && Math.abs(o.x - x) < 3) front++;
+  }
+  return flowers + SEASON_FIELD * seasons - CROWD * crowd - IN_FRONT * front;
 }
 
 // Dry ground all round, far enough out that the hollow tree stands clear of the water.
 const hiveGround = (w, x, y) => dry(w, x, y) &&
   [0, 1, 2, 3, 4, 5, 6, 7].every(a => dry(w, x + HIVE_SHORE * Math.cos(a * Math.PI / 4), y + HIVE_SHORE * Math.sin(a * Math.PI / 4)));
 
+// A tree bees could move into: a broadleaf, not a fruit tree, standing, with nobody in it, clear of
+// the water and of the other hives.
+const hollowTree = (w, d) => d.tree && d.emoji === '🌳' && !d.fruit && !d.stump && !d.hive && hiveGround(w, d.x, d.y)
+  && !w.hives.some(o => !o.cluster && Math.hypot(o.x - d.x, o.y - d.y) < HIVE_GAP);
+
 // Where a swarm from hive h could live, best first: an empty hive, or a tree clear of the others.
 function hiveSites(w, h) {
-  const near = (x, y) => Math.hypot(x - h.x, y - h.y) < SWARM_RANGE;
+  const near = o => Math.hypot(o.x - h.x, o.y - h.y) < SWARM_RANGE;
   const sites = [];
   for (const o of w.hives) {
-    if (!o.queen && !o.cluster && near(o.x, o.y)) sites.push({ x: o.x, y: o.y, hive: o, score: siteScore(w, o.x, o.y) + OLD_COMB });
+    if (!o.queen && !o.cluster && near(o)) sites.push({ x: o.x, y: o.y, hive: o, tree: o.tree, score: siteScore(w, o.tree) + OLD_COMB });
   }
   for (const d of w.decor) {
-    if (!d.tree || d.stump) continue;
-    const x = d.x + 1.4, y = d.y + 0.4;
-    if (!near(x, y) || !hiveGround(w, x, y) || w.hives.some(o => Math.hypot(o.x - x, o.y - y) < HIVE_GAP)) continue;
-    sites.push({ x, y, hive: null, score: siteScore(w, x, y) });
+    if (near(d) && hollowTree(w, d)) sites.push({ x: d.x, y: d.y, hive: null, tree: d, score: siteScore(w, d) });
   }
   return sites.sort((a, b) => b.score - a.score);
 }
@@ -2072,24 +2131,29 @@ function hiveSites(w, h) {
 // Huddled together a winter cluster keeps warm; a handful of bees can't.
 const clusterCold = (w, h) => (seasonOf(w.tick) === 3 ? 1 + CLUSTER_COLD * Math.max(0, 1 - h.bees / CLUSTER_WARM) : 1);
 
-// The first hive: a hollow old tree, where the tree with the most flowering plants in reach stands,
-// at the edge of the wood rather than deep in it, so there's room to see it.
+// The first hive: the best hollow tree (siteScore), with flowers in reach and room to be seen.
+// A meadow with no such tree has one old tree standing alone, at the dry spot nearest the middle.
 function placeHive(w) {
-  let best = { x: W / 2, y: H / 2 }, bestScore = -Infinity;
+  let best = null, bestScore = -Infinity;
   for (const d of w.decor) {
-    if (!d.tree || d.stump) continue;
-    const x = d.x + 1.4, y = d.y + 0.4;
-    if (!hiveGround(w, x, y)) continue;
-    const score = siteScore(w, x, y);
-    if (score > bestScore) { best = { x, y }; bestScore = score; }
+    if (!hollowTree(w, d)) continue;
+    const score = siteScore(w, d);
+    if (score > bestScore) { best = d; bestScore = score; }
   }
-  for (let rad = 0; !dry(w, best.x, best.y) && rad < W; rad++) {    // no trees at all: the nearest dry spot
-    for (let a = 0; a < 16 && !dry(w, best.x, best.y); a++) {
-      const x = W / 2 + rad * Math.cos(a * Math.PI / 8), y = H / 2 + rad * Math.sin(a * Math.PI / 8);
-      if (dry(w, x, y)) best = { x, y };
+  if (!best) {
+    let at = { x: W / 2, y: H / 2 };
+    for (let rad = 0; !dry(w, at.x, at.y) && rad < W; rad++) {
+      for (let a = 0; a < 16 && !dry(w, at.x, at.y); a++) {
+        const x = W / 2 + rad * Math.cos(a * Math.PI / 8), y = H / 2 + rad * Math.sin(a * Math.PI / 8);
+        if (dry(w, x, y)) at = { x, y };
+      }
     }
+    best = { ...at, emoji: '🌳', size: w.terrain.treeSize[1], tree: true, stump: 0, fruit: '' };
+    w.decor.push(best);
   }
-  return makeHive(w, best.x, best.y);
+  const h = makeHive(w, best.x, best.y);
+  moveIn(h, best);
+  return h;
 }
 
 function nearestHive(w, x, y) {
@@ -2114,7 +2178,7 @@ function beeSwarm(w, c) {
   if (c.energy < 0.5 * c.maxEnergy && h.honey > 0) { const bite = Math.min(h.honey, HONEY_BITE); h.honey -= bite; c.energy += bite; }
   const scout = c.id % SCOUTS === 0, near = Math.hypot(c.x - h.x, c.y - h.y) < 2;
   if (c.target && !fly(c, c.target.x, c.target.y, c.walk * (near && c.mode === 'swarm' ? 0.3 : 1))) return true;
-  if (scout && c.mode === 'swarm' && c.target) {
+  if (scout && c.mode === 'swarm' && c.target && h.sites.length) {
     const site = h.sites[(c.id / SCOUTS) % h.sites.length];
     c.mode = 'scout'; c.target = { x: site.x, y: site.y };
   } else {
@@ -2452,14 +2516,14 @@ function migrate(w) {
     if (w.tick - w.goneSince[s] < wait[s] * TPD) continue;
     if (s === 'fox' && w.count.rabbit < 60 * w.room) continue;   // foxes only come where there is food
     if (s === 'bee' && w.flowers < FEW_FLOWERS) continue;         // a swarm comes when the flowers are out
-    const side = w.rng.int(0, 3);
+    const side = w.rng.int(0, 3), hive = s === 'bee' && (w.hives.find(h => !h.cluster) || placeHive(w));
     const kids = [];
     for (let k = 0; k < arrive[s]; k++) {
       let x, y, tries = 0;
       do {
         const u = w.rng.range(4, (side % 2 ? H : W) - 4);
         [x, y] = side === 0 ? [u, 2] : side === 1 ? [W - 2, u] : side === 2 ? [u, H - 2] : [2, u];
-        if (s === 'bee') { const h = w.hives[0]; x = h.x + w.rng.range(-2, 2); y = h.y + w.rng.range(-2, 2); }   // a swarm settles in the hive
+        if (s === 'bee') { x = hive.x + w.rng.range(-2, 2); y = hive.y + w.rng.range(-2, 2); }   // a swarm settles in a hive
       } while (!dry(w, x, y) && ++tries < 50);
       const c = addCreature(w, s, x, y, { sex: k % 2 ? 'M' : 'F', age: SPECIES[s].matureDays + 1, arrived: true });
       if (c) kids.push(c);
@@ -2566,7 +2630,7 @@ const api = {
   addCreature, paintGrass, setSky, lockSky, zap, traitMeans, walkable,
   coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT, KINDS,
   TERRAIN, distanceToWater, fieldBloom, FIELD_GRASS, settleWater, LOAD, HONEY,
-  isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL,
+  isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 else root.Sim = api;
