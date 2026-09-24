@@ -30,9 +30,14 @@ to look at the game yourself, headless or not. `--headless=new --screenshot` onl
 first frame; to see the game running (animals moving, camera moved), drive Chrome over the
 DevTools protocol (`--remote-debugging-port`) and use `Runtime.evaluate` / `Page.captureScreenshot`. The diary button talks to Ollama on localhost:11434 (qwen3:8b, else qwen3:4b).
 
-Terrain: the ground has a height and water lies below `w.level`, so seasonal water can later
-move that one number (`refreshWater`). The land slopes down into a valley around the river and lake
-(`TERRAIN.valley`), so rising water spreads from the river first; the game shades the slopes (`hillLight`).
+Terrain: the ground has a height and water lies below `w.level`. A lake lies in a hollow or by the
+edge, running off the map (`placeLake`), and the river runs through it, out of it or into it; often a
+shallow brook joins the river (`brookPath`, `rv.brook`). The land slopes down into a valley
+around the river and lake (`TERRAIN.valley`, half as wide by a brook). The water line follows the seasons (`waterTick`): up in
+spring, down in summer, a little with the rain, so the river spreads over its floodplain and back.
+A flooded burrow is lost and kits too young to climb out drown (`floodBurrows`); grass under water
+drowns and grows back fast in the silt (`w.silt`). Flooded water keeps the name of the water it spilled
+from (`w.nearBody`). The game shades the slopes by the sun (`hillLight`).
 Shallow water is waded slowly; deep water blocks.
 Each connected water body is named (`w.waters`, `w.body`). Population caps and starting
 numbers scale with dry land (`w.room`).
