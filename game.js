@@ -1344,6 +1344,7 @@ function drawFallingLeaves(now) {
 
 function drawDecor(d, sx, sy, now, ck) {
   const z = cam.zoom, px = d.size * z;
+  if (d.emoji === '🪨') { drawRock(d, sx, sy); return; }
   if (!d.stump && !d.tree) { drawEmoji(d.emoji, sx, sy - px * 0.35, px); return; }
   if (!d.stump) {
     const t = treeLook(d, ck), under = t.ground?.n && px >= 20;
@@ -1365,6 +1366,176 @@ function drawDecor(d, sx, sy, now, ck) {
   // Struck by lightning: a stump, then a sapling, then (in sim.js) a tree again.
   const sapling = world.tick - d.stump > S.YEAR_DAYS * S.TPD / 2;
   drawEmoji(sapling ? '🌱' : '🪵', sx, sy - d.size * z * 0.12, d.size * z * (sapling ? 0.55 : 0.45));
+}
+
+// ------------------------------------------------------------------ rocks
+//
+// Rocks are painted, not emoji. Each is one to a few stones from a handful of hand-made
+// outlines, turned and mirrored, in a few colours of stone: a darker side, a lighter top lit
+// from the top left, a dark line where it meets the ground, and moss on some, more in the
+// woods. What a rock looks like comes from where it lies (rockInfo); it's painted into a
+// sprite once per size and redone only when the zoom or the snow changes.
+
+const ROCK_SHAPES = [   // an outline's reach at ten steps round, starting at the right, going down
+  [1, 0.95, 0.8, 0.85, 0.98, 1.05, 0.9, 0.72, 0.78, 0.92],
+  [1.12, 0.9, 0.7, 0.74, 0.9, 1.02, 1.08, 0.84, 0.7, 0.9],
+  [0.95, 1, 1, 0.8, 0.68, 0.86, 1, 0.95, 0.7, 0.8],
+  [1.15, 1.04, 0.72, 0.62, 0.8, 1.1, 0.94, 0.68, 0.76, 1],
+  [0.9, 0.84, 0.96, 1.05, 0.8, 0.74, 0.9, 1, 1.06, 0.8],
+];
+const ROCK_RGB = [[184, 174, 156], [160, 166, 166], [206, 178, 128], [190, 168, 150], [184, 174, 156], [146, 144, 130]];
+const MOSS_RGB = [108, 146, 52];
+const ROCK_SQUASH = 0.62;                                  // we look down at the meadow at a slant
+const ROCK_FOOT = 0.66;                                    // where the ground is in a rock's sprite, from the top
+const ROCK_MAX_PX = 256;                                   // each rock keeps its sprite, so mind the memory
+const rockInfos = new WeakMap();
+let rockLayer = null;                                      // scratch canvas, one stone at a time
+
+// The stones of a rock, in rock units (1 is d.size), (0, 0) where it meets the ground.
+function rockInfo(d) {
+  let t = rockInfos.get(d);
+  if (t) return t;
+  const hx = Math.floor(d.x * 100), hy = Math.floor(d.y * 100), h = k => hash2(hx, hy, 60 + k);
+  const wood = world.wood[Math.floor(d.y) * S.W + Math.floor(d.x)];
+  const grown = clamp((d.size - 0.7) / 1.6, 0, 1);         // the bigger the rock, the likelier a boulder
+  const kind = d.stone ? 'ford' : d.big ? 'great' : h(0) < 0.45 - 0.3 * grown ? 'pebbles' : h(0) < 0.85 - 0.35 * grown ? 'stone' : 'boulder';
+  let k = 1;
+  const stone = (x, y, s, tall, round) => ({ x, y, s, tall, round, shape: Math.floor(h(k++) * 5), turn: h(k++) * TAU, flip: h(k++) < 0.5 ? -1 : 1 });
+  const stones = [];
+  if (kind === 'pebbles') {
+    for (let n = 3 + Math.floor(h(90) * 3), i = 0; i < n; i++) {
+      const a = h(k++) * TAU, r = i ? 0.12 + h(k++) * 0.2 : 0;
+      stones.push(stone(Math.cos(a) * r, Math.sin(a) * r * ROCK_SQUASH, 0.09 + h(k++) * 0.08, 0.55, 0.5));
+    }
+  } else if (kind === 'ford') {
+    stones.push(stone(0, 0, 0.46, 0.2, 0.42));
+  } else if (kind === 'great') {                          // a big one, a slab leaning on it, stones at its foot
+    const side = h(92) < 0.5 ? -1 : 1;
+    stones.push(stone(0, 0, 0.5, 0.75, 0.2), stone(side * 0.44, 0.1, 0.24, 0.7, 0.24));
+    for (let n = 2 + Math.floor(h(93) * 3), i = 0; i < n; i++) {
+      const a = h(k++) * TAU;
+      stones.push(stone(Math.cos(a) * 0.62, 0.12 + Math.abs(Math.sin(a)) * 0.2, 0.04 + h(k++) * 0.06, 0.55, 0.45));
+    }
+  } else {
+    const big = kind === 'boulder';
+    stones.push(stone(0, 0, big ? 0.6 : 0.36, big ? 0.8 : 0.6, big ? 0.22 : 0.32));
+    if (big || h(91) < 0.5) {                               // a smaller one or two at its foot
+      const side = h(92) < 0.5 ? -1 : 1;
+      stones.push(stone(side * (big ? 0.56 : 0.34), 0.06, big ? 0.17 : 0.1, 0.6, 0.4));
+      if (big && h(93) < 0.6) stones.push(stone(-side * 0.42, 0.16, 0.09, 0.5, 0.5));
+    }
+  }
+  stones.sort((a, b) => a.y - b.y);
+  t = {
+    stones, kind,
+    rgb: ROCK_RGB[Math.floor(h(94) * ROCK_RGB.length)].map(v => v * (0.94 + 0.12 * h(95))),
+    moss: kind === 'ford' ? 0 : clamp(h(96) * 1.4 - (kind === 'great' ? 0.5 : 0.9) + wood * 1.2, 0, 1),
+    sprite: null, px: 0, snow: -1,
+  };
+  rockInfos.set(d, t);
+  return t;
+}
+
+// A stone's outline, lifted by lift and grown by k, with its corners rounded by its round.
+function rockPath(g, p, lift, k) {
+  const R = ROCK_SHAPES[p.shape], n = R.length, pts = [];
+  for (let i = 0; i < n; i++) {
+    const a = p.turn + i / n * TAU, r = R[i] * p.s * k;
+    pts.push([p.x + p.flip * Math.cos(a) * r, p.y - lift + Math.sin(a) * r * ROCK_SQUASH]);
+  }
+  g.beginPath();
+  for (let i = 0; i < n; i++) {
+    const v = pts[i], a = pts[(i + n - 1) % n], b = pts[(i + 1) % n], c = p.round;
+    const p0 = [lerp(v[0], a[0], c), lerp(v[1], a[1], c)], p1 = [lerp(v[0], b[0], c), lerp(v[1], b[1], c)];
+    g[i ? 'lineTo' : 'moveTo'](p0[0], p0[1]);
+    g.quadraticCurveTo(v[0], v[1], p1[0], p1[1]);
+  }
+  g.closePath();
+}
+
+const rockRGB = (c, a = 1) => `rgba(${c.map(v => Math.round(clamp(v, 0, 255))).join(',')},${a})`;
+
+function paintStone(g, p, t, U, snow) {
+  const L = rockLayer, lg = L.getContext('2d'), h = p.s * p.tall;
+  lg.setTransform(1, 0, 0, 1, 0, 0);
+  lg.clearRect(0, 0, L.width, L.height);
+  lg.setTransform(U, 0, 0, U, L.width / 2, L.height * ROCK_FOOT);
+  const base = t.rgb, wet = t.kind === 'ford';
+  const side = base.map(v => v * (wet ? 0.66 : 0.84)), top = base.map(v => v * (wet ? 0.96 : 1.06) + 14);
+  // The body: the outline stacked from the ground up, drawing in towards the top.
+  lg.fillStyle = rockRGB(side);
+  for (let s = 0; s <= 8; s++) { const f = s / 8; rockPath(lg, p, h * f, 1 - 0.28 * f * f); lg.fill(); }
+  lg.globalCompositeOperation = 'source-atop';
+  let gr = lg.createLinearGradient(0, p.y - h, 0, p.y + p.s * ROCK_SQUASH);
+  gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(46,44,24,0.35)');
+  lg.fillStyle = gr; lg.fillRect(-2, -2, 4, 4);
+  gr = lg.createLinearGradient(p.x - p.s, 0, p.x + p.s, 0);
+  gr.addColorStop(0, 'rgba(255,250,235,0.12)'); gr.addColorStop(1, 'rgba(40,42,24,0.25)');
+  lg.fillStyle = gr; lg.fillRect(-2, -2, 4, 4);
+  // The top, lit from the top left.
+  lg.globalCompositeOperation = 'source-over';
+  rockPath(lg, p, h * 0.98, 0.74);
+  gr = lg.createRadialGradient(p.x - p.s * 0.35, p.y - h - p.s * 0.25, 0, p.x - p.s * 0.2, p.y - h, p.s * 1.1);
+  gr.addColorStop(0, rockRGB(top.map(v => v + 14))); gr.addColorStop(0.6, rockRGB(top)); gr.addColorStop(1, rockRGB(base.map(v => v * 0.9)));
+  lg.fillStyle = gr; lg.fill();
+  lg.globalCompositeOperation = 'source-atop';
+  // Grain: a few flecks, light and dark, and a crack on the big ones.
+  for (let i = 0; i < 10; i++) {
+    const a = hash2(p.shape * 31 + i, Math.floor(p.turn * 100), 71) * TAU, r = Math.sqrt(hash2(i, Math.floor(p.turn * 100), 72)) * p.s * 0.9;
+    lg.fillStyle = i % 2 ? 'rgba(40,36,30,0.18)' : 'rgba(255,252,240,0.2)';
+    lg.beginPath(); lg.arc(p.x + Math.cos(a) * r, p.y - h * 0.6 + Math.sin(a) * r * ROCK_SQUASH, Math.min(p.s * 0.035, 0.01), 0, TAU); lg.fill();
+  }
+  if (p.s > 0.3) {
+    lg.strokeStyle = rockRGB(side.map(v => v * 0.75), 0.45); lg.lineWidth = 0.01; lg.lineCap = 'round';
+    const c = Math.cos(p.turn), s = Math.sin(p.turn);
+    lg.beginPath(); lg.moveTo(p.x + c * p.s * 0.1, p.y - h - s * p.s * 0.1);
+    lg.lineTo(p.x + c * p.s * 0.35 + 0.02, p.y - h * 0.9 + p.s * 0.08); lg.lineTo(p.x + c * p.s * 0.5, p.y - h * 0.35); lg.stroke();
+  }
+  // Moss towards the back of the top, then snow over it.
+  if (t.moss > 0.05) {
+    for (let i = 0; i < 7; i++) {
+      const u = hash2(i, p.shape + Math.floor(p.turn * 100), 73), v = hash2(i, p.shape, 74);
+      const x = p.x + (u - 0.5) * p.s * 1.5, y = p.y - h - p.s * ROCK_SQUASH * (0.2 + 0.5 * v);
+      softSpot(lg, x, y, p.s * (0.25 + 0.25 * v) * (0.5 + t.moss), p.s * 0.2 * (0.5 + t.moss), MOSS_RGB.map(c => c + (u - 0.5) * 30).join(','), 0.55 + 0.45 * t.moss);
+    }
+  }
+  if (snow > 0) {
+    rockPath(lg, p, h * 1.02, 0.72 * (0.6 + 0.4 * snow));
+    lg.fillStyle = rockRGB(SNOW_RGB, 0.9 * snow); lg.fill();
+  }
+  lg.globalCompositeOperation = 'source-over';
+  g.drawImage(L, -L.width / 2, -L.height * ROCK_FOOT);
+}
+
+function rockSprite(t, px, snow) {
+  const U = Math.min(ROCK_MAX_PX, Math.round(px * dpr));   // past that it's drawn a little soft, not huge
+  if (t.sprite && t.px === U && t.snow === snow) return t.sprite;
+  const c = t.sprite || document.createElement('canvas');
+  c.width = Math.ceil(U * 1.8); c.height = Math.ceil(U * 1.5);
+  if (!rockLayer) rockLayer = document.createElement('canvas');
+  if (rockLayer.width < c.width || rockLayer.height < c.height) { rockLayer.width = c.width; rockLayer.height = c.height; }
+  const g = c.getContext('2d');
+  g.translate(c.width / 2, c.height * ROCK_FOOT);
+  // A dark line where the stones meet the ground, under them all.
+  g.save(); g.scale(U, U);
+  for (const p of t.stones) {
+    if (t.kind === 'ford') {                              // a ring of lighter water round a wet stone
+      g.strokeStyle = 'rgba(235,245,255,0.55)'; g.lineWidth = 0.035;
+      rockPath(g, p, -0.01, 1.12); g.stroke();
+    }
+    softSpot(g, p.x, p.y + p.s * 0.08, p.s * 1.25, p.s * ROCK_SQUASH * 1.1, '30,34,16', 0.5);
+  }
+  g.restore();
+  for (const p of t.stones) paintStone(g, p, t, U, snow);
+  Object.assign(t, { sprite: c, px: U, snow });
+  return c;
+}
+
+function drawRock(d, sx, sy) {
+  const t = rockInfo(d), px = d.size * cam.zoom;
+  const s = rockSprite(t, px, t.kind === 'ford' ? 0 : step(world.snow * 1.6 - 0.2, 4));
+  const w = s.width * px / t.px, h = s.height * px / t.px;
+  ctx.drawImage(s, sx - w / 2, sy - h * ROCK_FOOT, w, h);
 }
 
 // ------------------------------------------------------------------ hives

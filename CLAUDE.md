@@ -49,6 +49,10 @@ Flower fields (`w.fields`, `placeFields`) are dense named patches of one flower 
 blooming in its own season (the first three: spring, summer, autumn, gathered within `fieldGather` so one hive can reach all three), with hardier flowers (`FIELD_GRASS`) and a tint on the ground while in bloom
 (`fieldBloom`). They're the bees' main food; the few scattered flowers elsewhere are the rest.
 
+Rocks are painted, not emoji (`rockInfo`, `rockSprite` in game.js): pebbles, stones and boulders by
+size (`TERRAIN.rockSize`), flat stones at the fords, and two or three great rocks per meadow
+(`TERRAIN.bigRocks`, `big: true`) that burrows keep clear of.
+
 Rabbit coats: two letter-pair genes (`coat`, e.g. 'AaDd') give four colours, plus a sliding
 `moult` gene that whitens the coat in winter. Foxes spot a still rabbit from further off when its
 coat stands out from the ground under it (`visibility`); the ground colours (`GROUND`) live in the

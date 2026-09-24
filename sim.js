@@ -222,7 +222,10 @@ const TERRAIN = {
   treeSpacing: 2.3,            // tiles between trees where a wood is thick
   treeSize: [2.7, 5.2],        // smallest to biggest tree; most are small, a few are giants
   groves: 4,                   // small clumps of trees out in the meadow
-  rocks: 22,
+  rocks: 40,                   // scattered rocks, from pebbles to boulders
+  rockSize: [0.7, 2.3],        // smallest to biggest; the bigger, the likelier a boulder
+  bigRocks: [2, 3],            // great rocks: a rare landmark or two, out in the open
+  bigRockSize: [3.4, 4.8],     // and how big they are
   flowers: 0.07,               // share of tiles with a flower or a tuft
   fields: [3, 5],              // flower fields, where the bees go
   fieldSize: [3, 6],           // radius of each of a field's circles
@@ -562,7 +565,15 @@ function makeTerrain(w) {
   placeFields(w, near);
   for (let k = 0; k < T.rocks; k++) {
     const x = r.range(3, W - 3), y = r.range(3, H - 3);
-    if (dry(w, x, y)) w.decor.push({ x, y, emoji: '🪨', size: r.range(1.1, 1.8) });
+    if (dry(w, x, y)) w.decor.push({ x, y, emoji: '🪨', size: r.range(...T.rockSize) });
+  }
+  for (let n = r.int(...T.bigRocks), tries = 0; n > 0 && tries < 500; tries++) {   // away from the water, woods and burrows
+    const x = r.range(8, W - 8), y = r.range(8, H - 8), size = r.range(...T.bigRockSize), i = idx(x, y);
+    if (!dry(w, x, y) || near[i] < size + 2 || w.fieldAt[i] >= 0) continue;
+    if (w.decor.some(d => Math.hypot(d.x - x, d.y - y) < size + (d.tree ? 2 : 0))) continue;
+    if (w.burrows.some(b => Math.hypot(b.x - x, b.y - y) < size + 2)) continue;
+    w.decor.push({ x, y, emoji: '🪨', size, big: true });
+    n--;
   }
   for (const f of w.fords) {
     const p = w.rivers[f.river].pts, a = p[Math.min(p.length - 1, f.k + 1)], b = p[Math.max(0, f.k - 1)];
@@ -1472,7 +1483,7 @@ const DIG_TICKS = 300;     // one rabbit digging on its own: half a day
 function canDig(w, x, y) {
   for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) if (!dry(w, x + dx, y + dy)) return false;
   return !w.burrows.some(b => Math.hypot(b.x - x, b.y - y) < DIG_GAP)
-    && !w.decor.some(d => !d.stone && Math.hypot(d.x - x, d.y - y) < 2)
+    && !w.decor.some(d => !d.stone && Math.hypot(d.x - x, d.y - y) < (d.big ? d.size * 0.6 : 2))
     && !w.hives.some(h => Math.hypot(h.x - x, h.y - y) < 3);
 }
 
