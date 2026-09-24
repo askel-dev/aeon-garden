@@ -2565,7 +2565,7 @@ const api = {
   createWorld, step, clock, isNight, phaseOf, seasonOf, mood, ageDays, growth, isAdult, patchFresh,
   addCreature, paintGrass, setSky, lockSky, zap, traitMeans, walkable,
   coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT, KINDS,
-  TERRAIN, distanceToWater, fieldBloom, FIELD_GRASS, settleWater, LOAD, HONEY,
+  TERRAIN, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
