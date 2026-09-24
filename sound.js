@@ -398,13 +398,28 @@ function loopNoise(filterType, freq, q) {
   return { f, g };
 }
 
+// The wind: a band of noise that slides up as it blows harder, panned where the gust is, plus a
+// thin whistle in the same noise, tuned to the scale, that only shows in a strong gust.
+function windVoice() {
+  const src = ac.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+  const f = ac.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 300; f.Q.value = 0.9;
+  const g = ac.createGain(); g.gain.value = 0;
+  const wf = ac.createBiquadFilter(); wf.type = 'bandpass'; wf.frequency.value = note(8); wf.Q.value = 30;
+  const wg = ac.createGain(); wg.gain.value = 0;
+  const p = ac.createStereoPanner();
+  src.connect(f).connect(g).connect(p).connect(ambBus);
+  src.connect(wf).connect(wg).connect(p);
+  src.start(0, rand(0, 3.5));
+  return { f, g, wf, wg, p };
+}
+
 function buildAmbience() {
-  amb.wind = loopNoise('lowpass', 500, 0.7);
+  amb.wind = windVoice();
   amb.rainL = rainSide(-0.7, 2300); amb.rainR = rainSide(0.7, 2600);
   amb.rainLow = loopNoise('lowpass', 350, 0.5);
   amb.fire = loopNoise('lowpass', 220, 0.6);
   amb.hum = hiveHum();
-  amb.windTarget = 0; amb.gust = 0; amb.swell = 0.5;
+  amb.calm = 0.5; amb.blow = null; amb.gust = 0; amb.swell = 0.5;
 }
 
 // What the meadow should sound like right now, smoothed so fast-forward blurs into an average.
@@ -433,14 +448,7 @@ function tickAmbience() {
   if (!ac || ac.state !== 'running') return;
   const now = ac.currentTime, m = mix(), fastFactor = state.speed >= 15 ? 0.4 : 1;
 
-  // Wind wanders: a slow random walk, now and then a gust.
-  amb.gust *= 0.96;
-  if (Math.random() < 0.012) amb.gust = rand(0.4, 1);
-  amb.windTarget += (Math.random() - 0.5) * 0.15;
-  amb.windTarget = Math.max(0, Math.min(1, amb.windTarget));
-  const w = m.wind * (0.35 + 0.4 * amb.windTarget + 0.5 * amb.gust) * (1 - 0.4 * m.rain + 0.6 * m.storm);
-  amb.wind.g.gain.setTargetAtTime(0.16 * w, now, 1.2);
-  amb.wind.f.frequency.setTargetAtTime(m.windHi * (0.5 + 0.5 * amb.windTarget + 0.6 * amb.gust), now, 1.5);
+  windTick(now, m);
 
   // Rain breathes slowly, and in a storm leans into the gusts.
   amb.swell = Math.max(0, Math.min(1, amb.swell + (Math.random() - 0.5) * 0.05));
@@ -461,11 +469,45 @@ function tickAmbience() {
     const deg = drip(now + rand(0, 0.2), rand(0.5, 1.3));
     if (Math.random() < 0.2) drip(now + rand(0.25, 0.4), 0.5, deg + pick([-1, 1]));   // then a smaller one off the leaf
   }
-  if (state.season === 2 && Math.random() < 0.08 * dt) rustle(now);
   if (Math.random() < m.snow * 0.15 * dt) snowChime(now);
   if (Math.random() < m.cicadas * 0.12 * dt) cicada(now);
   for (let i = 0; i < 3; i++) if (Math.random() < m.fire * 4 * dt) crackle(now + rand(0, 0.2));
 }
+
+// Wind comes in gusts: each one swells for a couple of seconds, holds, dies away and crosses the
+// meadow from one side to the other as it goes. Between gusts the air drifts low, sometimes
+// nearly still. The grass rustles as a gust peaks (dry leaves in autumn), and a strong one whistles.
+const smooth = x => x * x * (3 - 2 * x);
+function windTick(now, m) {
+  amb.calm = Math.max(0, Math.min(1, amb.calm + (Math.random() - 0.5) * 0.04));
+  if (!amb.blow && Math.random() < 0.012 * (0.5 + m.wind) + 0.03 * m.storm) {
+    const side = pick([-1, 1]) * rand(0.2, 0.6);
+    amb.blow = { t0: now, rise: rand(1.2, 3), hold: rand(0.3, 1.5), fall: rand(2.5, 5), peak: rand(0.4, 1),
+                 from: side, to: -side, deg: Math.floor(rand(7, 11)), rustled: false };
+  }
+  let env = 0, pan = 0;
+  const b = amb.blow;
+  if (b) {
+    const age = now - b.t0, len = b.rise + b.hold + b.fall;
+    env = age < b.rise ? smooth(age / b.rise) : age < b.rise + b.hold ? 1 : 1 - smooth(Math.min(1, (age - b.rise - b.hold) / b.fall));
+    pan = b.from + (b.to - b.from) * Math.min(1, age / len);
+    if (!b.rustled && age >= b.rise) {
+      b.rustled = true;
+      if (b.peak * m.wind > 0.3 && m.snow < 0.5) rustle(now, pan, state.season === 2 ? 1 : 0.4 * b.peak);
+    }
+    if (age >= len) amb.blow = null;
+  }
+  amb.gust = env * (b ? b.peak : 0);
+  const w = m.wind * (0.12 + 0.25 * amb.calm + 0.9 * amb.gust) * (1 - 0.4 * m.rain + 0.6 * m.storm);
+  amb.wind.g.gain.setTargetAtTime(0.25 * w, now, 0.5);
+  amb.wind.f.frequency.setTargetAtTime(m.windHi * (0.35 + 0.15 * amb.calm + 0.7 * amb.gust), now, 0.6);
+  amb.wind.p.pan.setTargetAtTime(pan, now, 0.8);
+  // The whistle: only in a hard gust (winter, a storm, a strong autumn one), bending up into its note.
+  const hard = Math.max(0, m.wind * amb.gust - 0.4);
+  if (b) amb.wind.wf.frequency.setTargetAtTime(note(b.deg) * (0.96 + 0.04 * env), now, 0.4);
+  amb.wind.wg.gain.setTargetAtTime(WHISTLE * hard, now, 0.5);
+}
+const WHISTLE = 1;                                 // kept well under the gust: a hint of a tone, not a note
 
 // Bees at work on screen: a faint drone in tune (D and A), with wings fluttering and a slow wobble.
 function hiveHum() {
@@ -648,7 +690,7 @@ function cicada(t) {
 // A crackle of burning grass: a tiny click of noise.
 const crackle = t => noise(out(rand(-0.8, 0.8), 0.15, rand(0.3, 1)), t, rand(0.015, 0.04), { from: rand(900, 3500), to: rand(600, 2500), q: 1.5, peak: 0.25 });
 
-const rustle = t => noise(out(rand(-1, 1), 0.2, 0.8), t, rand(0.6, 1.2), { from: 1800, to: 4200, q: 0.9, peak: 0.08 });
+const rustle = (t, pan = rand(-1, 1), v = 1) => noise(out(pan, 0.2, 0.8 * v), t, rand(0.6, 1.2), { from: 1800, to: 4200, q: 0.9, peak: 0.08 });
 const snowChime = t => kalimba(out(rand(-1, 1), 0.7, 0.3), note(Math.floor(rand(5, 10)), 1), t, 0.4);
 
 // ------------------------------------------------------------------ public
