@@ -3622,7 +3622,11 @@ const lab = LAB ? {
 
 // ------------------------------------------------------------------ start
 
-window.addEventListener('resize', () => { resize(); if (ui.stats.open) renderStats(); });
+const refit = () => { resize(); if (ui.stats.open) renderStats(); };
+window.addEventListener('resize', refit);
+// Turning a phone, iOS fires 'resize' before the page is laid out again, so the canvas still has its
+// old size and would be stretched to the new one. Watch the canvas itself for when it really changes.
+new ResizeObserver(() => { if (canvas.clientWidth !== vw || canvas.clientHeight !== vh) refit(); }).observe(canvas);
 resize();
 const seedParam = +new URLSearchParams(location.search).get('seed');
 newWorld(seedParam || randomSeed());
