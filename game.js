@@ -116,9 +116,11 @@ function zoomAt(sx, sy, z) {
 // ------------------------------------------------------------------ emoji sprites
 
 const EMOJI_FONT = '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
-const spriteCache = new Map();
+const spriteCache = new Map(), latestLook = new Map();   // latestLook: each look's newest sprite, at any size
 let spriteBytes = 0, spriteFrame = 0;   // render counts the frames, so a full cache knows what's still drawn
+let paintedMs = 0, standIns = false;    // spent painting sprites this frame; only render takes stand-ins
 const SPRITE_BYTES = 96e6;          // phones cap canvas memory in total, so mind the pixels, not the count
+const PAINT_MS = 3;                 // past this much painting in a frame, sprites wait for the next one
 
 // Past small sizes a sprite is painted in steps of about 6% and stretched to the size asked for,
 // so zooming reuses a few sizes instead of painting (and recolouring) every tree at every pixel.
@@ -129,15 +131,23 @@ function sprite(emoji, want, tint, leaf, center, coat) {
   return want === px ? s : { canvas: s.canvas, size: s.size * want / px };
 }
 function paintedSprite(emoji, px, tint, leaf, center, coat) {
-  const key = emoji + '|' + px + '|' + (tint || '') + '|' + (leaf ? leaf.key : '') + (center ? '|c' : '') + (coat ? '|' + coat.key : '');
+  const look = emoji + '|' + (tint || '') + '|' + (leaf ? leaf.key : '') + (center ? '|c' : '') + (coat ? '|' + coat.key : '');
+  const key = px + '|' + look;
   let s = spriteCache.get(key);
   if (s) { s.used = spriteFrame; return s; }
+  // Zooming asks for every tree on screen at a new size in the same frame. Past a few ms of
+  // painting, the same look at another size stands in, stretched, and the rest are painted over
+  // the next frames.
+  const near = standIns && paintedMs > PAINT_MS && latestLook.get(look);
+  if (near) { near.used = spriteFrame; return { canvas: near.canvas, size: near.size * px / near.px }; }
+  const t0 = performance.now();
   const size = Math.ceil(px * 1.3 * dpr);
   if (spriteCache.size > 2000 || spriteBytes + size * size * 4 > SPRITE_BYTES) dropSprites(size * size * 4);
   spriteBytes += size * size * 4;
   const c = document.createElement('canvas');
   c.width = c.height = size;
-  const g = c.getContext('2d', (leaf || coat) && { willReadFrequently: true });   // repainting reads pixels back
+  // Repainting and centring read the pixels back: from a canvas on the GPU that waits for it, 5-30 ms a sprite.
+  const g = c.getContext('2d', (leaf || coat || center) && { willReadFrequently: true });
   g.textAlign = 'center'; g.textBaseline = 'middle';
   g.font = `${px * dpr}px ${EMOJI_FONT}`;
   g.fillText(emoji, size / 2, size / 2 + px * dpr * 0.06);
@@ -162,8 +172,9 @@ function paintedSprite(emoji, px, tint, leaf, center, coat) {
   }
   if (leaf) restyleTree(g, size, leaf);
   if (coat) recolourCoat(g, size, coat, px * dpr);
-  s = { canvas: c, size: size / dpr, used: spriteFrame };
-  spriteCache.set(key, s);
+  s = { canvas: c, size: size / dpr, px, look, used: spriteFrame };
+  spriteCache.set(key, s); latestLook.set(look, s);
+  paintedMs += performance.now() - t0;
   return s;
 }
 // A full cache lets go of the sprites not drawn in the last few frames (other zooms, looks gone
@@ -175,10 +186,11 @@ function dropSprites(need) {
     spriteBytes -= s.canvas.width * s.canvas.height * 4;
     s.canvas.width = 0;                                  // hands the memory back right away
     spriteCache.delete(key);
+    if (latestLook.get(s.look) === s) latestLook.delete(s.look);
   }
   if (spriteCache.size <= 2000 && spriteBytes + need <= SPRITE_BYTES) return;
   for (const s of spriteCache.values()) s.canvas.width = 0;
-  spriteCache.clear(); spriteBytes = 0;
+  spriteCache.clear(); latestLook.clear(); spriteBytes = 0;
 }
 
 // Trees wear the seasons by repainting their emoji (once per look; the sprite cache keeps it).
@@ -678,7 +690,7 @@ function render(now) {
   // Sprites are painted near the size they're drawn at, so 'high' looks the same, but Chrome pays
   // for it on every draw, GPU or not: with it, a wood on screen dropped frames.
   ctx.imageSmoothingQuality = 'low';
-  spriteFrame++;
+  spriteFrame++; paintedMs = 0; standIns = true;
   ctx.clearRect(-8, -8, vw + 16, vh + 16);          // past the meadow's edge the page shows through
   const [ox, oy] = toScreen(0, 0);
   const z = cam.zoom, ck = S.clock(world);
@@ -782,6 +794,7 @@ function render(now) {
     const dance = S.patchFresh(world, h) ? ` · 💃 ${where} to the ${compass(h.patch.x - h.x, h.patch.y - h.y)}` : '';
     drawLabel(`🐝 ${h.queen ? `Queen ${h.queen.name}'s hive` : 'Empty hive'} · ${h.bees} ${h.bees === 1 ? 'bee' : 'bees'} · ${Math.round(h.honey)} honey${dance}`, sx, sy + z * 0.5 + 6);
   }
+  standIns = false;                                    // a portrait for the inspector is kept, so it's always painted
 }
 
 // How each kind is drawn: its size next to a rabbit, and whether its emoji faces left (then it
