@@ -6,7 +6,7 @@ for (let s = 1; s <= seeds; s++) {
   const w = Sim.createWorld(s * 7919);
   const t0 = Date.now();
   const rows = [];
-  let arrivals = { rabbit: 0, fox: 0, bee: 0 }, surprises = 0, kills = 0, escapes = 0, strikes = 0, fires = 0, burned = 0;
+  let arrivals = { rabbit: 0, fox: 0, bee: 0 }, surprises = 0, kills = 0, escapes = 0, strikes = 0, fires = 0, burned = 0, swarms = 0;
   const sky = {};
   let maxR = 0, maxF = 0;
   for (let k = 0; k < years * 4; k++) {
@@ -19,6 +19,7 @@ for (let s = 1; s <= seeds; s++) {
         if (e.type === 'escape') escapes++;
         if (e.type === 'birth' && e.surprise.length) surprises++;
         if (e.type === 'lightning') strikes++;
+        if (e.type === 'swarm') swarms++;
         if (e.type === 'fireout') { fires++; burned = Math.max(burned, e.burned); }
         if (e.type === 'weather') sky[e.kind] = (sky[e.kind] || 0) + 1;
       }
@@ -30,7 +31,8 @@ for (let s = 1; s <= seeds; s++) {
     rows.push(`${Sim.SEASONS[k % 4].name[0]}${Math.floor(k / 4) + 1}:${w.count.rabbit}/${w.count.fox}/${w.count.bee}` + (verbose ? `(g${grass.toFixed(0)} min${minR}/${minF})` : ''));
   }
   const d = w.stats.deaths;
-  console.log(`seed ${s}  ${((Date.now() - t0) / 1000).toFixed(1)}s  max ${maxR}/${maxF}  arrivals r${arrivals.rabbit} f${arrivals.fox} b${arrivals.bee}  kills ${kills} escapes ${escapes}`);
+  const hives = w.hives.filter(h => h.queen && !h.cluster).length;
+  console.log(`seed ${s}  ${((Date.now() - t0) / 1000).toFixed(1)}s  max ${maxR}/${maxF}  arrivals r${arrivals.rabbit} f${arrivals.fox} b${arrivals.bee}  kills ${kills} escapes ${escapes}  swarms ${swarms}  hives ${hives}/${w.hives.length}`);
   console.log(`  weather ${JSON.stringify(sky)}  strikes ${strikes}  fires ${fires} (biggest ${burned} tiles)`);
   console.log('  deaths rabbit', JSON.stringify(d.rabbit), 'fox', JSON.stringify(d.fox), 'bee', JSON.stringify(d.bee));
   const tm = Sim.traitMeans(w, 'rabbit'), fm = Sim.traitMeans(w, 'fox');

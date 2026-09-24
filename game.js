@@ -832,7 +832,7 @@ function render(now) {
     const [sx, sy] = toScreen(d.x, d.y);
     if (visible(sx, sy, d.size * z)) items.push({ y: d.y, d, sx, sy });
   }
-  for (const h of world.hives) {
+  for (const h of world.hives) {                           // (a swarm hanging in a tree is one too)
     const [sx, sy] = toScreen(h.x, h.y);
     if (visible(sx, sy, 3 * z)) items.push({ y: h.y, h, sx, sy });
   }
@@ -849,12 +849,12 @@ function render(now) {
   const sn = sun(ck);
   for (const it of items) {
     if (it.d) drawDecorShadow(it.d, it.sx, it.sy, sn);
-    else if (it.h) drawHiveShadow(it.sx, it.sy, sn);
+    else if (it.h) { if (!it.h.cluster) drawHiveShadow(it.sx, it.sy, sn); }
     else drawCreatureShadow(it.c, it.sx, it.sy, now, sn);
   }
   for (const it of items) {
     if (it.d) drawDecor(it.d, it.sx, it.sy, now, ck);
-    else if (it.h) drawHive(it.h, it.sx, it.sy);
+    else if (it.h) (it.h.cluster ? drawSwarm : drawHive)(it.h, it.sx, it.sy);
     else drawCreature(it.c, it.sx, it.sy, now);
   }
   drawFallingLeaves(now);
@@ -879,7 +879,7 @@ function render(now) {
       drawEmoji('💤', sx + z * 0.8, sy - z * 1.1 + bob, Math.max(11, z * 0.8), { alpha: 0.85 });
     }
     for (const h of world.hives) {
-      if (!h.bees) continue;
+      if (!h.bees || h.cluster) continue;
       const [sx, sy] = toScreen(h.x, h.y);
       if (visible(sx, sy, 40)) drawEmoji('💤', sx + z * 0.9, sy - z * 1.9 + Math.sin(now / 600 + h.id) * 3, Math.max(11, z * 0.8), { alpha: 0.85 });
     }
@@ -903,7 +903,7 @@ function render(now) {
     drawLabel(`${hov.name} · ${S.mood(world, hov).text}`, sx, sy + creaturePx(hov) * 0.55 + 6);
   } else if (ui.hoverHive) {
     const h = ui.hoverHive, [sx, sy] = toScreen(h.x, h.y);
-    drawLabel(`🐝 Hive · ${h.bees} ${h.bees === 1 ? 'bee' : 'bees'} · ${Math.round(h.honey)} honey`, sx, sy + z * 0.5 + 6);
+    drawLabel(`🐝 ${h.queen ? `Queen ${h.queen.name}'s hive` : 'Empty hive'} · ${h.bees} ${h.bees === 1 ? 'bee' : 'bees'} · ${Math.round(h.honey)} honey`, sx, sy + z * 0.5 + 6);
   }
 }
 
@@ -1029,7 +1029,7 @@ function drawSelectionOver(c, now) {
     ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ox, oy); ctx.stroke();
     ctx.restore();
   }
-  const label = c.hidden ? `${c.name} is inside the burrow` : c.name;
+  const label = c.hidden ? `${c.name} is inside the ${c.species === 'bee' ? 'hive' : 'burrow'}` : c.name;
   drawLabel(label, sx, sy + (c.hidden ? cam.zoom : creaturePx(c) * 0.55) + 6);
 }
 
@@ -1376,13 +1376,26 @@ function drawHive(h, sx, sy) {
   }
 }
 
+// A swarm hanging from a branch: a drooping clump of bees, widest near the bottom, bigger the
+// more bees there are, and seething while time runs.
+function drawSwarm(h, sx, sy) {
+  const z = cam.zoom, n = Math.min(80, 12 + 4 * h.bees), b = z * 0.09, t = ui.speed > 0 ? performance.now() / 500 : 0;
+  const top = sy - z * 1.6, len = z * (0.5 + 0.04 * Math.min(h.bees, 30)), wide = len * 0.4;
+  for (let i = 0; i < n; i++) {
+    const v = hash2(i, 3, h.id), u = hash2(3, i, h.id) - 0.5;
+    const bx = sx + u * 2 * wide * Math.sin(Math.PI * Math.pow(v, 0.6)) + Math.sin(t + i) * b * 0.3;
+    const by = top + v * len + Math.cos(t * 0.7 + i) * b * 0.3;
+    barkBee(bx, by, b, Math.PI / 2 + (hash2(i, 4, h.id) - 0.5) * 2);
+  }
+}
+
 function drawHiveShadow(sx, sy, sn) {                      // the same shadow a tree of its height casts
   drawDecorShadow({ size: SNAG * 0.7, tree: true }, sx, sy, sn);
 }
 
 function hiveAt(sx, sy) {
   const [wx, wy] = toWorld(sx, sy);
-  return world.hives.find(h => Math.hypot(h.x - wx, h.y - 0.9 - wy) < Math.max(1, 14 / cam.zoom)) || null;   // the trunk
+  return world.hives.find(h => !h.cluster && Math.hypot(h.x - wx, h.y - 0.9 - wy) < Math.max(1, 14 / cam.zoom)) || null;   // the trunk
 }
 
 // Ponds are drawn as shapes, so the shore holds up however far you zoom in. The water map
@@ -1757,9 +1770,20 @@ function hear(name, x, y, opts = {}, always = false) {
   if (!ui.sound) return;
   const [sx, sy] = toScreen(x, y), seen = visible(sx, sy, 40);
   if (!seen && !always) return;
-  Sound.play(name, { pan: 0.8 * clamp(sx / vw * 2 - 1, -1, 1), near: seen ? clamp(cam.zoom / (3 * minZoom), 0.4, 1) : 0.2, ...opts });
+  Sound.play(name, { pan: 0.8 * clamp(sx / vw * 2 - 1, -1, 1), near: seen ? clamp(cam.zoom / (3 * minZoom), 0.4, 1) : 0.2, seen, ...opts });
 }
 const chime = (name, opts) => { if (ui.sound) Sound.play(name, opts); };
+
+// Bees out flying where you're looking: the hive hum follows them.
+function beesOnScreen() {
+  let n = 0;
+  for (const c of world.creatures) {
+    if (c.species !== 'bee' || !c.alive || c.hidden) continue;
+    const [sx, sy] = toScreen(c.x, c.y);
+    if (visible(sx, sy, 0)) n++;
+  }
+  return n;
+}
 
 function toggleSound(on = !ui.sound) {
   ui.sound = on;
@@ -1838,7 +1862,7 @@ function handleEvent(e) {
     }
     case 'death': {
       const c = e.c;
-      hear(e.cause === 'fox' ? 'catch' : e.cause === 'old' ? 'old' : 'starve', c.x, c.y, { species: c.species }, mine);
+      hear(e.cause === 'fox' ? 'catch' : e.cause === 'age' ? 'old' : 'starve', c.x, c.y, { species: c.species }, mine);
       if (e.cause === 'fox') addEffect('🦴', c.x, c.y, 0.3, 1800);
       else addEffect('👻', c.x, c.y, 1.6, 2000);
       if (e.cause === 'fox') {
@@ -1862,6 +1886,30 @@ function handleEvent(e) {
       }
       break;
     }
+    case 'hatch': {
+      hear('birth', e.hive.x, e.hive.y, { species: 'bee', kids: e.kids.length });
+      const t = `🐣 Young bees are hatching in Queen ${esc(e.hive.queen.name)}'s hive.`;
+      addNews(t, 'hatch', 60000);
+      break;
+    }
+    case 'queen':
+      hear('queen', e.hive.x, e.hive.y, {}, true);
+      addNews(`👑 <b>Queen ${esc(e.queen.name)}</b> has settled in the hive.`);
+      break;
+    case 'queenlost':
+      hear('queenlost', e.hive.x, e.hive.y, {}, true);
+      addNews(e.hive.cluster ? `🥀 Queen ${esc(e.queen.name)}'s swarm never found a home.`
+        : `🥀 Queen ${esc(e.queen.name)} died in the empty hive, after raising ${e.queen.kids} ${e.queen.kids === 1 ? 'bee' : 'bees'}.`);
+      break;
+    case 'swarm':
+      addEffect('✨', e.swarm.x, e.swarm.y);
+      hear('arrive', e.swarm.x, e.swarm.y, { species: 'bee' }, true);
+      addNews(`🐝 <b>A swarm!</b> Queen ${esc(e.queen.name)} has left her crowded hive with ${e.who.length} bees. They hang in a tree while scouts look for a new home. Her daughter, Queen ${esc(e.heir.name)}, stays behind.`);
+      break;
+    case 'settle':
+      addEffect('✨', e.hive.x, e.hive.y);
+      addNews(`🏡 Queen ${esc(e.queen.name)}'s swarm has moved into ${e.reused ? 'an empty hive, old comb and all' : 'a hollow tree'}.`);
+      break;
     case 'dug': {
       dugAt.set(e.burrow, world.tick);
       addEffect('🕳️', e.burrow.x, e.burrow.y, 0.8);
@@ -1870,7 +1918,7 @@ function handleEvent(e) {
       break;
     }
     case 'escape': {
-      hear('escape', e.rabbit.x, e.rabbit.y, {}, mine);
+      hear('escape', e.rabbit.x, e.rabbit.y, { how: e.how }, mine);
       const t = e.how === 'burrow' ? `💨 ${link(e.rabbit)} dived into a burrow just before ${link(e.fox)} could pounce!`
         : e.how === 'pond' ? `🌊 ${link(e.rabbit)} put ${e.water ? e.water.name : 'the water'} between itself and ${link(e.fox)}, and got away!`
         : `💨 ${link(e.rabbit)} outran ${link(e.fox)}!`;
@@ -1878,6 +1926,7 @@ function handleEvent(e) {
       break;
     }
     case 'spotted': {
+      hear('thump', e.rabbit.x, e.rabbit.y, {}, mine);
       const t = `‼️ ${link(e.rabbit)} spotted ${link(e.fox)} sneaking up and thumped the alarm.`;
       if (mine) addNews(t); else addNews(t, 'spotted', 20000);
       break;
@@ -2339,7 +2388,7 @@ function lifeStage(c) {
   const age = S.ageDays(world, c), g = S.growth(world, c);
   if (g < 0.5) return 'baby';
   if (g < 1) return 'youngster';
-  if (age > c.sp.lifeDays * 0.8) return 'elder';
+  if (age > c.lifespan / S.TPD * 0.8) return 'elder';
   return 'adult';
 }
 
@@ -2397,8 +2446,10 @@ function renderInspector() {
     <h4>Family</h4>
     <div class="family">
       ${c.genes.coat ? `${coatLine(c)}<br>` : ''}
-      ${c.gen === 1 ? 'One of the first arrivals.' : [parent(mum, 'Mum'), parent(dad, 'Dad')].filter(Boolean).join(' · ')}<br>
-      ${c.kids ? `${c.kids} ${c.kids === 1 ? 'child' : 'children'}${kidsAlive ? `, ${kidsAlive} still alive` : ''}` : 'No children yet'}
+      ${c.queen ? `A daughter of 👑 Queen ${esc(c.queen.name)}${c.queen.died ? ' 🪦' : ''}, who has raised ${c.queen.kids} bees.<br>
+        Workers have no young of their own: the queen lays all the eggs.`
+        : `${c.gen === 1 ? 'One of the first arrivals.' : [parent(mum, 'Mum'), parent(dad, 'Dad')].filter(Boolean).join(' · ')}<br>
+      ${c.kids ? `${c.kids} ${c.kids === 1 ? 'child' : 'children'}${kidsAlive ? `, ${kidsAlive} still alive` : ''}` : 'No children yet'}`}
     </div>
     <h4>Life story</h4>
     <ul class="story">${story}</ul>
@@ -2429,10 +2480,11 @@ function diaryFacts(c) {
   const mum = world.byId.get(c.mumId), dad = world.byId.get(c.dadId);
   const events = c.story.slice(-8).map(s => `- (${when(s.t)}) ${s.text}`).join('\n');
   return [
-    `Name: ${c.name}. A ${c.sex === 'F' ? 'female' : 'male'} ${c.sp.name.toLowerCase()}, ${Math.floor(S.ageDays(world, c))} days old (a ${lifeStage(c)}; ${c.sp.plural.toLowerCase()} here live about ${c.sp.lifeDays} days).`,
+    `Name: ${c.name}. A ${c.sex === 'F' ? 'female' : 'male'} ${c.sp.name.toLowerCase()}, ${Math.floor(S.ageDays(world, c))} days old (a ${lifeStage(c)}; this one will live about ${Math.round(c.lifespan / S.TPD)} days).`,
     `Personality: ${traitsOf(c.species).map(t => word(t, c.genes[t.k])).join(', ')}.` + (c.genes.coat ? ` Fur: ${S.COATS[S.coatOf(c.genes)].name}${S.whiteness(world, c) > 0.5 ? ', turned white for winter' : ''}.` : ''),
     `Right now: ${S.mood(world, c).text}. Tummy ${Math.round(100 * c.energy / c.maxEnergy)}% full. It is ${S.SEASONS[ck.season].name.toLowerCase()}, ${ck.night ? 'night' : 'daytime'}, weather: ${S.WEATHER[world.weather.kind].name.toLowerCase()}${world.burning.length ? ', and there is a wildfire in the meadow' : ''}.`,
-    `Family: mum ${mum ? mum.name + (mum.alive ? '' : ' (died)') : 'unknown'}, dad ${dad ? dad.name + (dad.alive ? '' : ' (died)') : 'unknown'}, ${c.kids} children.`,
+    c.queen ? `Family: a worker, daughter of Queen ${c.queen.name}, who lays all the hive's eggs. Sisters in the hive: ${c.home.bees - 1}.`
+      : `Family: mum ${mum ? mum.name + (mum.alive ? '' : ' (died)') : 'unknown'}, dad ${dad ? dad.name + (dad.alive ? '' : ' (died)') : 'unknown'}, ${c.kids} children.`,
     c.species === 'fox' ? `Rabbits caught so far: ${c.kills}.`
       : c.species === 'bee' ? `Flowers visited so far: ${c.visits}. Honey in the hive: ${Math.round(c.home.honey)}, shared by ${c.home.bees} bees.`
       : `Narrow escapes from foxes: ${c.escapes}.`
@@ -2665,7 +2717,7 @@ function release(species, wx, wy) {
   if (c) {
     addEffect('✨', wx, wy);
     hear('release', wx, wy, { species: c.species });
-    addNews(`👋 You released ${link(c)}, a ${c.sex === 'F' ? 'female' : 'male'} ${c.sp.name.toLowerCase()}.`);
+    addNews(`👋 You released ${link(c)}, a ${c.species === 'bee' ? 'worker' : c.sex === 'F' ? 'female' : 'male'} ${c.sp.name.toLowerCase()}.`);
   }
 }
 
@@ -2914,7 +2966,7 @@ function frame(now) {
     updateMeadowCard();
     if (ui.sound) {
       const ck = S.clock(world);
-      Sound.update({ phase: ck.phase, season: ck.season, speed: ui.speed, sky: ui.sky.mix, fire: world.burning.length });
+      Sound.update({ phase: ck.phase, season: ck.season, speed: ui.speed, sky: ui.sky.mix, fire: world.burning.length, bees: beesOnScreen() });
     }
     if (ui.selectedId && !$('#inspector').matches(':hover')) renderInspector();
     if (ui.stats.open) { $('#stats-clock').textContent = `${S.SEASONS[S.seasonOf(world.tick)].emoji} ${when(world.tick)}`; drawStatsChart(); }

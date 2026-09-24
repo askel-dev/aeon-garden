@@ -42,8 +42,11 @@ sim and the drawing uses them too.
 
 Bees: they live in hives (`w.hives`, drawn as a hollow dead tree, see `snagSprite`), fly (`flies: true` in `SPECIES`, see `go`/`fly`),
 sip from the flowers the meadow shows (`isFlower`, same rule as `plantEmoji` in game.js) and bring honey home.
-They stay in while few flowers are open (`w.flowers`) and live on honey; a hive only raises young once it has
-honey put by for every bee (`broodTime`). Colony-level things go in `hivesTick`. Species lists come from
+They stay in while few flowers are open (`w.flowers`) and live on honey. Bees don't pair up: each hive has a
+queen (`h.queen`, just a name and genes on the hive) who lays in `layEggs`, in spring and summer on whatever
+honey there is, in autumn only once there's honey put by for every bee (`broodTime`). Summer bees live a few
+days, autumn-born ones last the winter (`winterLifeDays`), and a small winter cluster burns more (`clusterCold`).
+Colony-level things go in `hivesTick`. Species lists come from
 `KINDS` / `perKind`, so a new species needs no hand-written `{ rabbit, fox, bee }` lists.
 
 Every animal uses one ladder: danger > sleep > love > food > friends > wander. Keep new

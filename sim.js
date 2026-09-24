@@ -89,9 +89,9 @@ const SPECIES = {
   },
   bee: {
     key: 'bee', name: 'Bee', plural: 'Bees', emoji: '🐝',
-    maxEnergy: 30, burn: 0.02, walk: 0.1, sprint: 0.2, sight: 15, mateRange: 20, wade: 1, flies: true,
-    matureDays: 2, lifeDays: 20, gestationDays: 1, litter: [2, 4], cooldownDays: 2,
-    breedSeasons: [0, 1], breedEnergy: 0.6, birthCost: 5, cap: 60,
+    maxEnergy: 30, burn: 0.02, walk: 0.1, sprint: 0.2, sight: 15, wade: 1, flies: true,
+    matureDays: 1, lifeDays: 3, winterLifeDays: 10,   // summer bees wear out fast; autumn-born ones last the winter
+    breedSeasons: [0, 1, 2], cap: 150,                // the queen lays (see hivesTick), no pairing up
   },
 };
 const KINDS = Object.keys(SPECIES);                        // 'rabbit', 'fox', 'bee'
@@ -107,8 +107,8 @@ const NAME_PARTS = {
     suffixes: ['ty', 'ber', 'let', 'der', 'nec', 'alade', 'ley', 'dle', 'ber', 'en', 'flame', 'spark']
   },
   bee: {
-    prefixes: ['Buzz', 'Honey', 'Nectar', 'Pollen', 'Sting', 'Hive', 'Queen', 'Drone', 'Worker', 'Flower'],
-    suffixes: ['bee', 'buzz', 'sting', 'hive', 'nectar', 'pollen', 'queen', 'drone', 'worker', 'flower', 'le', 'by', 'wick', 'ly', 'ina', 'drop', 'kin', 'ette', 'o']
+    prefixes: ['Buzz', 'Honey', 'Nectar', 'Pollen', 'Sting', 'Hive', 'Clover', 'Amber', 'Comb', 'Flower'],
+    suffixes: ['bee', 'buzz', 'sting', 'hive', 'nectar', 'pollen', 'wing', 'comb', 'dew', 'flower', 'le', 'by', 'wick', 'ly', 'ina', 'drop', 'kin', 'ette', 'o']
   }
 };
 
@@ -970,10 +970,10 @@ function makeCreature(w, species, x, y, genes, parents) {
   const c = {
     id: w.nextId++, species, sp, x, y, genes,
     name: pickName(w, species),
-    sex: r.next() < 0.5 ? 'F' : 'M',
+    sex: species === 'bee' || r.next() < 0.5 ? 'F' : 'M',
     gen: parents ? Math.max(parents.mum.gen, parents.dadGen) + 1 : 1,
     mumId: parents ? parents.mum.id : 0, dadId: parents ? parents.dadId : 0,
-    born: w.tick, lifespan: sp.lifeDays * TPD * r.range(0.8, 1.2),
+    born: w.tick, lifespan: (sp.winterLifeDays && seasonOf(w.tick) >= 2 ? sp.winterLifeDays : sp.lifeDays) * TPD * r.range(0.8, 1.2),
     alive: true, died: 0, cause: '',
     energy: 0, stamina: 1, heading: r.range(0, Math.PI * 2), facing: 1, turnBias: 1,
     mode: 'wander', target: null, targetId: 0, timer: 0, moved: 0,
@@ -1016,9 +1016,10 @@ function nearestBurrow(w, x, y, maxD, ok = b => b.dug >= 1) {
 function addCreature(w, species, x, y, opts = {}) {
   if (!dry(w, x, y)) return null;
   const c = makeCreature(w, species, x, y, opts.genes || founderGenes(w, species), null);
-  if (opts.sex) c.sex = opts.sex;
-  if (opts.age) c.born = w.tick - opts.age * TPD;
+  if (opts.sex && species !== 'bee') c.sex = opts.sex;          // bees out and about are all workers
+  if (opts.age) c.born = w.tick - Math.min(opts.age * TPD, c.lifespan / 2);   // nobody arrives at death's door
   c.home = species === 'bee' ? nearestHive(w, x, y) : nearestBurrow(w, x, y, 40);
+  if (species === 'bee' && !c.home.queen) newQueen(w, c.home);   // a swarm always brings its queen
   note(w, c, '🌍', opts.arrived ? 'Wandered into the meadow' : 'Arrived in the meadow');
   w.newborn.push(c);
   w.byId.set(c.id, c);
@@ -1596,42 +1597,191 @@ function catchPrey(w, fox, rabbit) {
 
 // ---------------------------------------------------------------- bees
 //
-// Bees live in hives (w.hives). A hive is a spot on the map and a store of honey. Every bee
-// belongs to one (c.home). In spring and summer they fly out to the flowers, sip, and bring
-// honey back; from autumn to spring they stay in and live on it. They fly, so water and woods
-// don't stop them. Same ladder as everyone: danger > home > love > food > wander, one function
-// per rung. New bee behaviour is a new rung, or a line in one.
+// Bees live in hives (w.hives). A hive is a spot on the map, a store of honey and a queen. Every
+// bee belongs to one (c.home) and is one of the queen's daughters: bees don't pair up, the queen
+// lays (hivesTick). In spring and summer they fly out to the flowers, sip, and bring honey back;
+// from autumn to spring they stay in and live on it. Summer bees wear out in a few days, the
+// ones raised in autumn last the winter, so a hive swells in summer and shrinks to a small
+// cluster for the cold. A crowded hive swarms: the old queen takes half the bees off to a new
+// hollow tree (swarm, settle). They fly, so water and woods don't stop them. Same ladder as
+// everyone: danger > swarm > home > food > wander, one function per rung. New bee behaviour is
+// a new rung, or a line in one.
 
 const NECTAR = 0.4;             // energy per tick of sipping
 const SIP_TICKS = 40;           // how long one flower takes
-const HONEY = 3;                // honey a bee brings home from each flower
+const HONEY = 6;                // honey a bee brings home from each flower
 const HONEY_BITE = 0.2;         // honey a hungry bee eats per tick, in the hive
 const HIVE_HONEY = 200;         // what a new hive starts with
 const HIVE_FULL = 1500;         // all the honey a hive can hold
 const WINTER_HONEY = 30;         // honey put by for each bee before the hive raises young
 const FORAGE_RANGE = 20;        // how far from its hive a bee roams
 const FEW_FLOWERS = 40;         // fewer open than this in the whole meadow, and bees stay in
+const QUEEN_LAYS = 2;           // most young bees a queen can raise per hive check (ten checks a day)
+const NURSING = 0.06;           // young bees raised per check for each bee in the hive, up to QUEEN_LAYS
+const BROOD_HONEY = 8;          // honey it takes to raise one young bee
+const CLUSTER_WARM = 20;        // bees it takes to keep the winter cluster warm
+const CLUSTER_COLD = 2;         // a lone bee in winter burns this much more on top (1 + this)
+const HIVE_ROOM = 60;           // bees one hollow tree has room for; a crowded hive swarms
+const SWARM_HONEY = 400;        // honey a hive needs before it can spare a swarm
+const SWARM_CARRY = 5;          // honey each leaving bee takes along, in her belly
+const SWARM_HANG = 0.5;         // days a swarm hangs in a tree while its scouts look around
+const SWARM_RANGE = 45;         // how far off a swarm will look for a home
+const HIVE_GAP = 20;            // a new hive keeps this far from the others
+const OLD_COMB = 20;            // how much a swarm likes an empty hive with comb already in it
+const MATING_FLIGHT = 0.5;      // days before a new queen, back from her wedding flight, starts to lay
+const SCOUTS = 6;               // one bee in this many is a scout
 
 // Bees stay in at night, in rain and storms, and while there's hardly a flower open.
 const hiveTime = w => isNight(w.tick) || w.weather.kind === 'rain' || w.weather.kind === 'storm'
   || w.flowers < FEW_FLOWERS;
 
-// Every little while: how many flowers are open, and how many bees each hive has.
+// Every little while: how many flowers are open, how many bees each hive has, and the queens lay.
 function hivesTick(w) {
   w.flowers = 0;
   for (const p of w.plants) if (isFlower(w, p)) w.flowers++;
   for (const h of w.hives) h.bees = 0;
-  for (const c of w.creatures) if (c.alive && c.species === 'bee') c.home.bees++;
+  for (const list of [w.creatures, w.newborn]) for (const c of list) if (c.alive && c.species === 'bee') c.home.bees++;
+  for (const h of [...w.hives]) {                         // a copy: swarms join and leave the list
+    if (h.queen && !h.bees) {                             // nobody left to feed her
+      h.queen.died = w.tick;
+      emit(w, { type: 'queenlost', hive: h, queen: h.queen });
+      h.queen = null;
+      if (h.cluster) w.hives.splice(w.hives.indexOf(h), 1);
+    }
+    if (h.cluster) { if (w.tick >= h.settleAt) settle(w, h); continue; }
+    if (h.queen) layEggs(w, h);
+    if (h.queen && swarmTime(w, h)) swarm(w, h);
+  }
 }
 
-// A hive raises young only once it has honey enough to see all its bees through the winter.
-const broodTime = h => h.honey > WINTER_HONEY * h.bees;
+// In spring and summer a hive raises young on whatever honey it has. In autumn only once it has
+// honey enough to see all its bees through the winter: those young are the winter bees.
+const broodTime = (w, h) => seasonOf(w.tick) !== 2 || h.honey > WINTER_HONEY * h.bees;
+
+// The more bees at home to feed the brood, the more young, up to what the queen can lay. Never
+// in winter, never before a new queen is back from her wedding flight, and never past the room
+// in the hive.
+function layEggs(w, h) {
+  if (!SPECIES.bee.breedSeasons.includes(seasonOf(w.tick)) || !broodTime(w, h) || w.tick < h.queen.laysFrom) return;
+  h.brood += Math.min(QUEEN_LAYS, NURSING * h.bees);
+  const kids = [];
+  for (; h.brood >= 1 && h.honey >= BROOD_HONEY; h.brood--) {
+    if (h.bees + kids.length >= HIVE_ROOM || w.count.bee + w.newborn.length >= SPECIES.bee.cap * w.room) { h.brood = 0; break; }
+    h.honey -= BROOD_HONEY;
+    const q = h.queen;
+    const kid = makeCreature(w, 'bee', h.x, h.y, childGenes(w, q.genes, q.drone), { mum: { id: 0, gen: q.gen }, dadId: 0, dadGen: q.gen });
+    kid.home = h; kid.queen = q; kid.hidden = true; kid.mode = 'nurse';
+    note(w, kid, '🐣', `Hatched in the hive, a daughter of Queen ${q.name}`);
+    w.newborn.push(kid); w.byId.set(kid.id, kid); kids.push(kid);
+    q.kids++;
+  }
+  if (!kids.length) return;
+  w.stats.births.bee += kids.length;
+  emit(w, { type: 'hatch', hive: h, kids });
+}
+
+// A new queen for an empty hive. She stays inside, so she's a name and genes on the hive, and
+// she carries the genes of the drone she met on her wedding flight.
+function newQueen(w, h) {
+  h.queen = { name: pickName(w, 'bee'), genes: founderGenes(w, 'bee'), drone: founderGenes(w, 'bee'), gen: 1, since: w.tick, laysFrom: 0, kids: 0 };
+  h.brood = 0;
+  emit(w, { type: 'queen', hive: h, queen: h.queen });
+}
+
+// A queen raised in the hive. On her wedding flight she meets a drone from anywhere in the
+// meadow: any bee will do for his genes.
+function daughterQueen(w, mum) {
+  const bees = w.creatures.filter(c => c.alive && c.species === 'bee');
+  const drone = bees.length ? bees[w.rng.int(0, bees.length - 1)].genes : founderGenes(w, 'bee');
+  return { name: pickName(w, 'bee'), genes: childGenes(w, mum.genes, mum.drone), drone, gen: mum.gen + 1,
+    since: w.tick, laysFrom: w.tick + MATING_FLIGHT * TPD, kids: 0, mum: mum.name };
+}
 
 function makeHive(w, x, y) {
-  const h = { id: w.hives.length + 1, x, y, honey: HIVE_HONEY, bees: 0 };
+  const id = w.hives.reduce((m, o) => Math.max(m, o.id), 0) + 1;
+  const h = { id, x, y, honey: HIVE_HONEY, bees: 0, queen: null, brood: 0, swarmed: -Infinity, cluster: false };
   w.hives.push(h);
   return h;
 }
+
+// Crowded, well fed, spring or summer, a laying queen, and not swarmed already this year.
+const swarmTime = (w, h) => seasonOf(w.tick) <= 1 && h.bees >= 0.8 * HIVE_ROOM && h.honey >= SWARM_HONEY
+  && w.tick >= h.queen.laysFrom && w.tick - h.swarmed > YEAR_DAYS * TPD / 2;
+
+// A crowded hive splits. The old queen and half the bees fill up on honey and leave, and hang
+// in a tree nearby while scouts look over the hollow trees around. A daughter queen stays with
+// the rest. No hollow tree free within reach, and they stay put.
+function swarm(w, h) {
+  const sites = hiveSites(w, h);
+  if (!sites.length) return;
+  let tree = null;
+  for (const d of w.decor) {
+    const d2 = (d.x - h.x) ** 2 + (d.y - h.y) ** 2;
+    if (d.tree && !d.stump && d2 > 4 && d2 < 64 && (!tree || d2 < (tree.x - h.x) ** 2 + (tree.y - h.y) ** 2)) tree = d;
+  }
+  const s = makeHive(w, tree ? tree.x + 0.6 : h.x + 3, tree ? tree.y + 0.3 : h.y);
+  const q = h.queen;
+  s.cluster = true; s.queen = q; s.sites = sites.slice(0, 3); s.settleAt = w.tick + SWARM_HANG * TPD;
+  h.queen = daughterQueen(w, q); h.swarmed = w.tick; h.brood = 0;
+  const leaving = w.creatures.filter(c => c.alive && c.species === 'bee' && c.home === h && isAdult(w, c))
+    .filter((c, k) => k % 2 === 0);
+  for (const c of leaving) {
+    c.home = s; c.hidden = false; c.sleeping = false; c.mode = 'swarm'; c.target = null;
+    note(w, c, '🐝', `Left home with the swarm, following Queen ${q.name}`);
+  }
+  s.honey = Math.min(h.honey / 2, SWARM_CARRY * leaving.length);
+  h.honey -= s.honey;
+  s.bees = leaving.length; h.bees -= leaving.length;
+  emit(w, { type: 'swarm', from: h, swarm: s, queen: q, heir: h.queen, who: leaving });
+}
+
+// The scouts have made up their minds: the swarm moves into the best of the sites they looked at.
+// An empty hive may have been taken meanwhile; with nothing left they build right on the branch.
+function settle(w, s) {
+  const site = s.sites.find(o => !o.hive || !o.hive.queen);
+  let home = s;
+  if (site && site.hive) {
+    home = site.hive;
+    home.honey = Math.min(HIVE_FULL, home.honey + s.honey); home.queen = s.queen; home.brood = 0;
+    w.hives.splice(w.hives.indexOf(s), 1);
+  } else if (site) { s.x = site.x; s.y = site.y; }
+  s.cluster = false; s.sites = null;
+  for (const c of w.creatures) {
+    if (c.home !== s) continue;
+    c.home = home; c.mode = 'wander'; c.target = null;
+    note(w, c, '🏡', `Moved into a new home with Queen ${home.queen.name}`);
+  }
+  home.bees = s.bees;
+  emit(w, { type: 'settle', hive: home, queen: home.queen, reused: !!(site && site.hive) });
+}
+
+// How good a hollow tree is for a hive: plenty of flowers in reach, and room to be seen rather
+// than deep in the wood.
+function siteScore(w, x, y) {
+  const flowers = w.plants.filter(p => p.kind < 0.35 && w.fert[p.i] > 0.7          // rich soil: they'll bloom
+    && Math.hypot(p.x - x, p.y - y) < FORAGE_RANGE).length;
+  const crowd = w.decor.filter(o => o.tree && Math.hypot(o.x - x, o.y - y) < 4).length;
+  return flowers - 5 * crowd;
+}
+
+// Where a swarm from hive h could live, best first: an empty hive, or a tree clear of the others.
+function hiveSites(w, h) {
+  const near = (x, y) => Math.hypot(x - h.x, y - h.y) < SWARM_RANGE;
+  const sites = [];
+  for (const o of w.hives) {
+    if (!o.queen && !o.cluster && near(o.x, o.y)) sites.push({ x: o.x, y: o.y, hive: o, score: siteScore(w, o.x, o.y) + OLD_COMB });
+  }
+  for (const d of w.decor) {
+    if (!d.tree || d.stump) continue;
+    const x = d.x + 1.4, y = d.y + 0.4;
+    if (!near(x, y) || !dry(w, x, y) || w.hives.some(o => Math.hypot(o.x - x, o.y - y) < HIVE_GAP)) continue;
+    sites.push({ x, y, hive: null, score: siteScore(w, x, y) });
+  }
+  return sites.sort((a, b) => b.score - a.score);
+}
+
+// Huddled together a winter cluster keeps warm; a handful of bees can't.
+const clusterCold = (w, h) => (seasonOf(w.tick) === 3 ? 1 + CLUSTER_COLD * Math.max(0, 1 - h.bees / CLUSTER_WARM) : 1);
 
 // The first hive: a hollow dead tree beside the tree with the most flowering plants in reach,
 // at the edge of the wood rather than deep in it, so there's room to see it.
@@ -1641,10 +1791,7 @@ function placeHive(w) {
     if (!d.tree) continue;
     const x = d.x + 1.4, y = d.y + 0.4;
     if (!dry(w, x, y)) continue;
-    const flowers = w.plants.filter(p => p.kind < 0.35 && w.fert[p.i] > 0.7          // rich soil: they'll bloom
-      && Math.hypot(p.x - x, p.y - y) < FORAGE_RANGE).length;
-    const crowd = w.decor.filter(o => o.tree && Math.hypot(o.x - x, o.y - y) < 4).length;
-    const score = flowers - 5 * crowd;
+    const score = siteScore(w, x, y);
     if (score > bestScore) { best = { x, y }; bestScore = score; }
   }
   for (let rad = 0; !dry(w, best.x, best.y) && rad < W; rad++) {    // no trees at all: the nearest dry spot
@@ -1664,20 +1811,37 @@ function nearestHive(w, x, y) {
 
 function beeTick(w, c) {
   // 1. Danger: nothing hunts bees (yet).
-  if (beeHome(w, c)) return;                                  // 2. home: sleep, shelter, honey
-  if (broodTime(c.home) && seekLove(w, c)) return;            // 3. love, when the hive can feed young
+  if (beeSwarm(w, c)) return;                                 // 2. hanging in a swarm, or scouting for it
+  if (beeHome(w, c)) return;                                  // 3. home: sleep, shelter, honey, nursing
   if (beeForage(w, c)) return;                                // 4. food
   beeWander(w, c);                                            // 5. wander
 }
 
-// In the hive: eat honey when hungry, come out when it's time. Outside: fly home at hive
-// time, or early when hungry and there's honey waiting.
+// In a swarm: hang together in the tree, living on the honey they brought. The scouts fly out
+// to the sites the swarm is weighing and back again.
+function beeSwarm(w, c) {
+  const h = c.home;
+  if (!h.cluster) return false;
+  if (c.energy < 0.5 * c.maxEnergy && h.honey > 0) { const bite = Math.min(h.honey, HONEY_BITE); h.honey -= bite; c.energy += bite; }
+  const scout = c.id % SCOUTS === 0, near = Math.hypot(c.x - h.x, c.y - h.y) < 2;
+  if (c.target && !fly(c, c.target.x, c.target.y, c.walk * (near && c.mode === 'swarm' ? 0.3 : 1))) return true;
+  if (scout && c.mode === 'swarm' && c.target) {
+    const site = h.sites[(c.id / SCOUTS) % h.sites.length];
+    c.mode = 'scout'; c.target = { x: site.x, y: site.y };
+  } else {
+    c.mode = 'swarm'; c.target = { x: h.x + w.rng.range(-1.2, 1.2), y: h.y + w.rng.range(-0.8, 0.5) };
+  }
+  return true;
+}
+
+// In the hive: eat honey when hungry, come out when it's time (young bees stay in and nurse
+// till they're grown). Outside: fly home at hive time, or early when hungry and there's honey.
 function beeHome(w, c) {
   const e = c.energy / c.maxEnergy, h = c.home;
   if (c.hidden) {
     const hungry = e < 0.5 && h.honey > 0;
     if (hungry) { const bite = Math.min(h.honey, HONEY_BITE); h.honey -= bite; c.energy += bite; }
-    if (hiveTime(w) || hungry) return true;
+    if (hiveTime(w) || hungry || !isAdult(w, c)) return true;
     c.hidden = false; c.sleeping = false; c.mode = 'wander'; c.target = null;
     return false;
   }
@@ -1687,7 +1851,7 @@ function beeHome(w, c) {
   return true;
 }
 
-// Hungry: off to the nearest fresh flower, sip, pollinate it, and bring honey home.
+// Off to the nearest fresh flower, sip, pollinate it, and bring honey home.
 function beeForage(w, c) {
   if (c.mode === 'sip') {
     c.energy = Math.min(c.maxEnergy, c.energy + NECTAR);
@@ -1696,7 +1860,7 @@ function beeForage(w, c) {
     c.home.honey = Math.min(HIVE_FULL, c.home.honey + HONEY); c.visits++;
     c.mode = 'wander'; c.target = null;
   }
-  if (c.energy >= 0.8 * c.maxEnergy) return false;
+  if (c.home.honey >= HIVE_FULL && c.energy >= 0.8 * c.maxEnergy) return false;   // workers gather all day, till the hive is full
   if (c.mode !== 'flower') {
     if ((w.tick + c.id) % 10) return false;         // look around now and then, not every tick
     c.target = findFlower(w, c);
@@ -1755,12 +1919,16 @@ function pollinate(w, p) {
 }
 
 function beeMood(w, c) {
-  if (c.hidden) return c.energy < 0.5 * c.maxEnergy && c.home.honey > 0 ? { emoji: '🍯', text: 'Eating honey in the hive' }
+  if (c.hidden && c.energy < 0.5 * c.maxEnergy && c.home.honey > 0) return { emoji: '🍯', text: 'Eating honey in the hive' };
+  if (c.hidden && !isAdult(w, c)) return { emoji: '🐣', text: 'A young house bee, feeding the brood' };
+  if (c.hidden) return clusterCold(w, c.home) > 1.5 ? { emoji: '🥶', text: 'Shivering in a small winter cluster' }
     : { emoji: '💤', text: w.flowers < FEW_FLOWERS ? 'Waiting in the hive for the flowers' : 'Asleep in the hive' };
   switch (c.mode) {
     case 'sip': return { emoji: '🌼', text: 'Sipping nectar' };
     case 'flower': return { emoji: '🌸', text: 'Off to a flower' };
     case 'home': return { emoji: '🏠', text: 'Flying home to the hive' };
+    case 'swarm': return { emoji: '🐝', text: 'Hanging in the swarm, waiting for the scouts' };
+    case 'scout': return { emoji: '🔎', text: 'Scouting for a new home for the swarm' };
     case 'wander': return { emoji: '', text: 'Buzzing about' };
   }
   return null;
@@ -1790,7 +1958,7 @@ function lifeTick(w, c) {
   const g = growth(w, c);
   let b = c.burnRate * (0.5 + 0.5 * g);
   if (c.sleeping) b *= 0.6;
-  if (c.species === 'bee' && c.hidden) b *= 0.3;   // huddled in the hive, barely burning
+  if (c.species === 'bee' && c.hidden) b *= 0.3 * clusterCold(w, c.home);   // huddled in the hive, barely burning
   if (c.pregnantUntil) b *= 1.25;
   const kind = w.weather.kind;
   if (kind === 'snow' && !c.hidden) b *= 1 + 0.5 * (1 - c.genes.size);   // small bodies feel the cold
@@ -1829,7 +1997,8 @@ function createWorld(seed, opts = {}) {
     for (let k = 0; k < n[species]; k++) {
       let x, y;
       do { x = w.rng.range(4, W - 4); y = w.rng.range(4, H - 4); } while (!dry(w, x, y));
-      addCreature(w, species, x, y, { sex: k % 2 ? 'M' : 'F', age: w.rng.range(4, 10) });
+      const age = species === 'bee' ? w.rng.range(1, 2) : w.rng.range(4, 10);   // summer bees only live a few days
+      addCreature(w, species, x, y, { sex: k % 2 ? 'M' : 'F', age });
     }
   }
   flushNewborn(w);

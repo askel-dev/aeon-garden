@@ -2,14 +2,15 @@
  *
  * Three ideas keep it cozy:
  *  1. One scale. Every pitched sound comes from D major pentatonic, so nothing can clash.
- *  2. One instrument per species. Rabbits are a high kalimba, foxes a low felt marimba,
- *     the meadow itself (seasons, old age) is a soft glass bell. Rising = life, falling = loss.
+ *  2. One instrument per species. Rabbits are a high kalimba, foxes a low felt marimba, bees
+ *     a buzz that hums in tune, the meadow itself (seasons, old age) a soft glass bell.
+ *     Rising = life, falling = loss. Lightning is the one loud thing, on purpose.
  *  3. The meadow is the music. Wind, birds, crickets, rain and fire follow the clock and the
  *     sky, and events are rare, quiet and rate-limited so fast-forward never turns into noise.
  *
- * Use: Sound.start() from a click, then Sound.update({ phase, season, speed, sky, fire }) a few
- * times a second (sky: how much of each weather is showing, 0..1) and
- * Sound.play('birth', { species, pan, near }) on events.
+ * Use: Sound.start() from a click, then Sound.update({ phase, season, speed, sky, fire, bees }) a
+ * few times a second (sky: how much of each weather is showing, 0..1; bees: how many are flying
+ * on screen) and Sound.play('birth', { species, pan, near, seen }) on events.
  */
 (() => {
 'use strict';
@@ -26,7 +27,7 @@ const pick = a => a[Math.floor(Math.random() * a.length)];
 let ac = null, master, fxBus, ambBus, hush, reverb, noiseBuf;
 let enabled = true, volume = 0.6;
 const amb = {};                                    // ambient layers
-const state = { phase: 0.3, season: 0, speed: 1, sky: { clear: 1 }, fire: 0 };
+const state = { phase: 0.3, season: 0, speed: 1, sky: { clear: 1 }, fire: 0, bees: 0 };
 const last = {};                                   // per-sound cooldowns
 let recent = 0, recentAt = 0;                      // global voice budget
 
@@ -117,17 +118,41 @@ const bell = (dest, f, t, v = 1) => {               // the meadow: glass bell, l
   [[1, 0.22, 3.2], [2.76, 0.06, 1.6], [5.4, 0.03, 0.8], [8.93, 0.012, 0.4]]
     .forEach(([r, a, d]) => partial(dest, f * r, t, a * v, 0.006, d));
 };
-const voiceOf = species => species === 'fox' ? marimba : kalimba;
-const octOf = species => species === 'fox' ? -1 : 1;
+// Bees: a soft sawtooth buzz on a note, with the flutter of wings and a little lift at the start.
+const buzz = (dest, f, t, v = 1, len = 0.35) => {
+  const o = ac.createOscillator(), lp = ac.createBiquadFilter(), g = ac.createGain();
+  const wing = ac.createOscillator(), depth = ac.createGain(), am = ac.createGain();
+  o.type = 'sawtooth';
+  o.frequency.setValueAtTime(f * 0.96, t); o.frequency.exponentialRampToValueAtTime(f, t + 0.06);
+  lp.type = 'lowpass'; lp.frequency.value = f * 3; lp.Q.value = 0.7;
+  wing.frequency.value = rand(20, 26); depth.gain.value = 0.35; am.gain.value = 0.65;
+  wing.connect(depth).connect(am.gain);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.65 * v, t + 0.03);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+  o.connect(lp).connect(am).connect(g).connect(dest);
+  o.start(t); wing.start(t); o.stop(t + len + 0.05); wing.stop(t + len + 0.05);
+};
+const voiceOf = species => species === 'fox' ? marimba : species === 'bee' ? buzz : kalimba;
+const octOf = species => species === 'fox' ? -1 : species === 'bee' ? 0 : 1;
 
-// Filtered noise with a moving band: whooshes, rustles, gusts.
-function noise(dest, t, dur, { from = 800, to = 2400, q = 1.2, peak = 0.3, type = 'bandpass' } = {}) {
+// A soft clip, for grit: harmonics let a laptop speaker "hear" a boom it can't play.
+function grit(dest, amount) {
+  const ws = ac.createWaveShaper(), n = 1024, curve = new Float32Array(n);
+  for (let i = 0; i < n; i++) { const x = i / (n - 1) * 2 - 1; curve[i] = Math.tanh(amount * x) / Math.tanh(amount); }
+  ws.curve = curve; ws.connect(dest);
+  return ws;
+}
+
+// Filtered noise with a moving band: whooshes, rustles, gusts. attack: seconds to full volume
+// (by default a third of the sound, so it swells; a crack wants a couple of milliseconds).
+function noise(dest, t, dur, { from = 800, to = 2400, q = 1.2, peak = 0.3, type = 'bandpass', attack = dur * 0.35 } = {}) {
   const src = ac.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
   const f = ac.createBiquadFilter(); f.type = type; f.Q.value = q;
   f.frequency.setValueAtTime(from, t); f.frequency.exponentialRampToValueAtTime(to, t + dur);
   const g = ac.createGain();
   g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(peak, t + dur * 0.35);
+  g.gain.exponentialRampToValueAtTime(peak, t + attack);
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
   src.connect(f).connect(g).connect(dest);
   src.start(t, rand(0, 3)); src.stop(t + dur + 0.05);
@@ -143,6 +168,9 @@ const RULES = {
   starve:  { gap: 1.2,  maxSpeed: 4 },
   old:     { gap: 1.5,  maxSpeed: 4 },
   escape:  { gap: 0.6,  maxSpeed: 4 },
+  thump:   { gap: 0.5,  maxSpeed: 4 },
+  queen:   { gap: 4,    maxSpeed: 15 },
+  queenlost: { gap: 4,  maxSpeed: 15 },
   arrive:  { gap: 2,    maxSpeed: 60 },
   thunder: { gap: 1.2,  maxSpeed: 15 },
   fire:    { gap: 4,    maxSpeed: 60 },
@@ -180,10 +208,31 @@ const SOUNDS = {
   },
   // A long life: one soft bell, like a lantern going out.
   old(t, o) { bell(o, note(pick([0, 3]), 0), t, 0.5); },
-  escape(t, o) {
-    noise(o, t, 0.35, { from: 600, to: 3200, q: 0.8, peak: 0.18 });
-    kalimba(o, note(4, 1), t + 0.2, 0.35);
+  // Got away: a whoosh, or a splash when the water saved it. Then relief.
+  escape(t, o, { how }) {
+    if (how === 'pond') {
+      noise(o, t, 0.4, { from: 2200, to: 500, q: 0.7, peak: 0.55, attack: 0.008 });
+      [0.12, 0.2, 0.31].forEach(d => partial(o, rand(900, 1500), t + d, 0.04, 0.003, 0.08));
+    } else noise(o, t, 0.35, { from: 600, to: 3200, q: 0.8, peak: 0.18 });
+    kalimba(o, note(4, 1), t + 0.25, 0.35);
   },
+  // A rabbit saw the fox first: two thumps of a hind foot on the ground.
+  thump(t, o) {
+    for (const d of [0, 0.14]) {
+      const osc = ac.createOscillator(), g = ac.createGain();
+      osc.frequency.setValueAtTime(140, t + d); osc.frequency.exponentialRampToValueAtTime(55, t + d + 0.1);
+      g.gain.setValueAtTime(0.0001, t + d); g.gain.exponentialRampToValueAtTime(0.28, t + d + 0.003);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.16);
+      osc.connect(g).connect(o); osc.start(t + d); osc.stop(t + d + 0.2);
+      noise(o, t + d, 0.05, { from: 700, to: 300, q: 0.8, peak: 0.2, type: 'lowpass', attack: 0.002 });
+    }
+  },
+  // A new queen for an empty hive: a bell, and the hive buzzing up to meet her.
+  queen(t, o) {
+    bell(o, note(4, -1), t, 0.45);
+    [0, 2, 4].forEach((d, i) => buzz(o, note(d, 0), t + 0.3 + i * 0.16, 0.8));
+  },
+  queenlost(t, o) { buzz(o, note(2, 0), t, 0.7, 0.5); buzz(o, note(0, 0), t + 0.4, 0.6, 0.7); },
   // Newcomers: a hopping arpeggio walking in.
   arrive(t, o, { species }) {
     const v = voiceOf(species), k = octOf(species);
@@ -199,15 +248,26 @@ const SOUNDS = {
     bell(o, note(-1, -1) * Math.pow(2, 1 / 12), t + 0.8, 0.5);   // a flat sixth: the one sad note
   },
   rain(t, o) { noise(o, t, 2.2, { from: 300, to: 1600, q: 0.6, peak: 0.12, type: 'lowpass' }); },
-  // A crack, then a rolling rumble that arrives later the farther away it is. The rumble
-  // starts around 1 kHz so laptop speakers can play it; the deep layer is for headphones.
-  thunder(t, o, { near = 1 }) {
-    const d = 0.1 + 0.7 * (1 - near);
-    noise(o, t, 0.2, { from: 3500, to: 700, q: 0.6, peak: 0.08 + 0.14 * near });
-    for (let i = 0; i < 3; i++) {
-      noise(o, t + d + i * rand(0.3, 0.6), rand(1.4, 2.4), { from: rand(900, 1400) - 300 * (1 - near), to: 140, q: 0.4, peak: 0.35, type: 'lowpass' });
+  // The one loud sound. A strike you can see hits: an instant crack and a falling boom, both
+  // clipped a little for grit, right with the flash. Then, seen or not, a rolling rumble,
+  // later and darker the farther away it is. The rumble starts around 1 kHz so laptop speakers
+  // can play it; the deepest layer is for headphones.
+  thunder(t, o, { seen = true, pan = 0 }) {
+    if (seen) {
+      const hit = grit(out(pan, 0.4, 1), 2.5);
+      noise(hit, t, 0.15, { from: 9000, to: 1500, q: 0.3, peak: 0.9, type: 'lowpass', attack: 0.002 });
+      noise(hit, t + 0.02, 0.35, { from: 5000, to: 400, q: 0.4, peak: 0.45, type: 'lowpass', attack: 0.004 });
+      const osc = ac.createOscillator(), g = ac.createGain();
+      osc.frequency.setValueAtTime(150, t); osc.frequency.exponentialRampToValueAtTime(38, t + 0.5);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.8, t + 0.004);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
+      osc.connect(g).connect(hit); osc.start(t); osc.stop(t + 1);
     }
-    noise(o, t + d, rand(2.8, 3.6), { from: 300, to: 50, q: 0.5, peak: 0.3, type: 'lowpass' });
+    const d = seen ? 0.15 : rand(0.8, 1.6), dark = seen ? 1 : 0.6;
+    for (let i = 0; i < 3; i++) {
+      noise(o, t + d + i * rand(0.3, 0.7), rand(1.8, 3), { from: rand(900, 1400) * dark, to: 120, q: 0.4, peak: seen ? 0.4 : 0.3, type: 'lowpass' });
+    }
+    noise(o, t + d, rand(3, 4), { from: 300, to: 45, q: 0.5, peak: 0.35, type: 'lowpass' });
   },
   // Dry grass catching: a soft whoomph.
   fire(t, o) { noise(o, t, 1.4, { from: 200, to: 1400, q: 0.5, peak: 0.16, type: 'lowpass' }); },
@@ -231,7 +291,8 @@ function play(name, opts = {}) {
   last[name] = now;
   const ok = v => Number.isFinite(v) ? v : undefined;      // a NaN would throw inside Web Audio
   const near = ok(opts.near) ?? 1;
-  SOUNDS[name](now + 0.02, out(ok(opts.pan) ?? 0, 0.25 + 0.35 * (1 - near), 0.35 + 0.65 * near), { ...opts, near });
+  const pan = ok(opts.pan) ?? 0;
+  SOUNDS[name](now + 0.02, out(pan, 0.25 + 0.35 * (1 - near), 0.35 + 0.65 * near), { ...opts, near, pan });
   return true;
 }
 
@@ -250,6 +311,7 @@ function buildAmbience() {
   amb.rain = loopNoise('bandpass', 2400, 0.4);
   amb.rainLow = loopNoise('lowpass', 350, 0.5);
   amb.fire = loopNoise('lowpass', 220, 0.6);
+  amb.hum = hiveHum();
   amb.windTarget = 0; amb.gust = 0;
 }
 
@@ -271,6 +333,7 @@ function mix() {
     snow: Math.max(sky('snow'), s === 3 ? 0.3 * dayness : 0),
     hush: Math.max(sky('fog'), 0.7 * sky('snow')),
     fire: Math.min(1, state.fire / 30),
+    bees: state.speed >= 15 ? 0 : Math.min(1, state.bees / 12),
   };
 }
 
@@ -290,6 +353,7 @@ function tickAmbience() {
   amb.rain.g.gain.setTargetAtTime(0.07 * m.rain + 0.03 * m.storm, now, 2.5);
   amb.rainLow.g.gain.setTargetAtTime(0.10 * m.rain + 0.06 * m.storm, now, 3);
   amb.fire.g.gain.setTargetAtTime(0.12 * m.fire, now, 1.5);
+  amb.hum.gain.setTargetAtTime(0.03 * m.bees, now, 1.5);
   hush.frequency.setTargetAtTime(12000 - 9500 * m.hush, now, 2);
 
   // Scattered one-shots, each rolled a few times a second.
@@ -302,6 +366,24 @@ function tickAmbience() {
   if (Math.random() < m.snow * 0.15 * dt) snowChime(now);
   if (Math.random() < m.cicadas * 0.12 * dt) cicada(now);
   for (let i = 0; i < 3; i++) if (Math.random() < m.fire * 4 * dt) crackle(now + rand(0, 0.2));
+}
+
+// Bees at work on screen: a faint drone in tune (D and A), with wings fluttering and a slow wobble.
+function hiveHum() {
+  const g = ac.createGain(); g.gain.value = 0;
+  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900; lp.Q.value = 0.5;
+  const am = ac.createGain(); am.gain.value = 0.7;
+  const wing = ac.createOscillator(), depth = ac.createGain();
+  wing.frequency.value = 23; depth.gain.value = 0.3; wing.connect(depth).connect(am.gain); wing.start();
+  const wobble = ac.createOscillator(), cents = ac.createGain();
+  wobble.frequency.value = 0.3; cents.gain.value = 6; wobble.connect(cents); wobble.start();
+  for (const [f, v] of [[note(0, -1), 1], [note(0, -1) * 1.004, 0.7], [note(3, -1), 0.5]]) {
+    const o = ac.createOscillator(), og = ac.createGain();
+    o.type = 'sawtooth'; o.frequency.value = f; og.gain.value = v;
+    cents.connect(o.detune); o.connect(og).connect(lp); o.start();
+  }
+  lp.connect(am).connect(g).connect(ambBus);
+  return g;
 }
 
 // A songbird: fast sine glides, a few syllables.
