@@ -260,7 +260,7 @@ viewCard.innerHTML = `
   <div class="seg">${S.SEASONS.map((s, i) => `<button class="lab-btn" data-season="${i}" title="${s.name}">${s.emoji}</button>`).join('')}</div>
   <div id="lab-legend"></div>
   <div id="lab-hover"></div>
-  <div id="lab-keys">Hold <b>space</b> to peek at the meadow · <b>H</b> hides all this · <b>P</b> copies a picture</div>`;
+  <div id="lab-keys">Hold <b>space</b> to peek at the meadow · <b>R</b> a random seed · <b>H</b> hides all this · <b>P</b> copies a picture</div>`;
 document.body.append(viewCard);
 
 const strip = document.createElement('section');
@@ -878,7 +878,7 @@ addEventListener('keydown', e => {
   else if (e.key === ' ') { e.preventDefault(); peek = true; }
   else if (e.key === 'ArrowLeft') setSeed(seed - 1);
   else if (e.key === 'ArrowRight') setSeed(seed + 1);
-  else if (e.key === 'r') setSeed(Math.floor(Math.random() * 1e6));
+  else if (e.key === 'r' || e.key === 'R') setSeed(Math.floor(Math.random() * 1e6));
   else if (e.key === 'h') document.body.classList.toggle('lab-hide');
   else if (e.key === 'p') lab.shot().then(([w, h]) => say(`📋 Copied the meadow, ${w} × ${h}`), () => say('📋 The browser would not let me copy the meadow.'));
   else if (/^[1-5]$/.test(e.key)) setView(VIEWS[+e.key - 1][0]);

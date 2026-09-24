@@ -625,8 +625,12 @@ function plantTrees(w, hills, hill, near) {
   const kinds = w.drawn.empty ? [] : r.pick(T.forests), small = kinds.length > 1;
   w.forest = kinds;
   const [small0, big] = T.treeSize;
+  // Trees stand clear of the highest the water gets (waterGoal), and a wet wood follows that
+  // high-water line rather than the everyday shore.
+  const flood = T.level + T.springFlood + T.rainRise / 2;
+  const nearFlood = distanceTo(w.ground.map(g => g < flood ? 1 : 0));
   const plant = (x, y, pine) => {
-    if (dry(w, x, y) && !w.burrows.some(b => Math.hypot(b.x - x, b.y - y) < 3)) {
+    if (inBounds(x, y) && w.ground[idx(x, y)] > flood && !w.burrows.some(b => Math.hypot(b.x - x, b.y - y) < 3)) {
       const size = small0 + (big - small0) * r.next() ** 2;           // squared: big trees are rare
       w.decor.push({ x, y, emoji: pine ? '🌲' : '🌳', size, tree: true, stump: 0 });
     }
@@ -674,12 +678,12 @@ function plantTrees(w, hills, hill, near) {
     const shore = [];
     for (let i = 0; i < N; i++) {
       const x = i % W + 0.5, y = ((i / W) | 0) + 0.5;
-      if (!w.water[i] && near[i] < 1.5 && x > 15 && x < W - 15 && y > 12 && y < H - 12) shore.push({ x, y });
+      if (nearFlood[i] > 0 && nearFlood[i] < 1.5 && x > 15 && x < W - 15 && y > 12 && y < H - 12) shore.push({ x, y });
     }
     const c = shore.length ? r.pick(shore) : { x: W / 2, y: H / 2 }, reach = r.range(...T.bankWoods) * (small ? 0.7 : 1);
     return {
       dense: (x, y) => {
-        const n = near[idx(x, y)];
+        const n = nearFlood[idx(x, y)];
         return n < 1 ? 0 : ramp(reach - Math.hypot(x - c.x, (y - c.y) * 1.2) - ragged(x, y)) * ramp(9 - n - ragged(x, y) * 0.6);
       },
       pine: () => 0.12,
