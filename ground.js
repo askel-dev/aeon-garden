@@ -6,7 +6,7 @@
  *   - where it is: a cooler, deeper green by the water and the woods, golden up high and in big
  *     drifts (the hue shifts, the grass stays bright);
  *   - the grass itself (what the rabbits eat): lush grass, or the bare earth where it is grazed;
- *   - crisp tufts where the grass is thick, once you're close enough to see them;
+ *   - where the grass is thick: soft brush dabs from afar, crisp filled tufts once you're close;
  *   - a faint painterly mottle and, up close, a fine grain;
  *   - the sun on the slopes, wet moss at the water's edge, then the water in soft layers.
  *
@@ -36,7 +36,14 @@ uniform float zoom, dpr, snow, damp, lx, ly, ice, cold;
 uniform vec3 low, high, sand;
 out vec4 o;
 
-float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+// Hashes the float's own bits, so it stays exact at any coordinate: a float trick like
+// fract(p * 123.34) runs out of digits in the fine grain and paints it in streaks.
+float hash(vec2 p) {
+  uvec2 u = floatBitsToUint(p);
+  uint h = u.x * 0x8da6b343u ^ u.y * 0xd8163841u;
+  h ^= h >> 16; h *= 0x7feb352du; h ^= h >> 15; h *= 0x846ca68bu; h ^= h >> 16;
+  return float(h) * (1. / 4294967296.);
+}
 float noise(vec2 p) {
   vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f);
   return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
@@ -61,29 +68,57 @@ float segment(vec2 p, vec2 a, vec2 b, out float t) {
   return length(pa - ba * t);
 }
 
-// Tufts of three blades, a few to a tile, only where the grass is thick. Gives how much of
-// this pixel they cover. px: tiles a screen pixel.
-float tufts(vec2 p, float px) {
-  const float CELL = 0.9, LEN = 0.3;
-  float cover = 0.;
+// Tufts: a small fan of five filled blades, a few to a tile, only where the grass is thick.
+// Gives how much of this pixel they cover, and whether it is a blade's sunny side. px: tiles a screen pixel.
+vec2 tufts(vec2 p, float px) {
+  const float CELL = 0.9, LEN = 0.34, WIDTH = 0.05;
+  float cover = 0., lit = 0.;
   vec2 c = floor(p / CELL);
   for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) {
     vec2 id = c + vec2(dx, dy), r = vec2(hash(id + seed), hash(id + seed + 17.1));
     vec2 base = (id + 0.2 + 0.6 * r) * CELL;
     float g = texture(tile, base / size).r;
-    if (hash(id + seed + 41.7) > 0.55 * smoothstep(0.55, 0.9, g)) continue;
-    float len = LEN * (0.7 + 0.5 * hash(id + 3.3)) * (0.6 + 0.4 * g), lean = (hash(id + 9.1) - 0.5) * 0.1;
-    float d = 1e9, along = 0.;
-    for (int k = -1; k <= 1; k++) {
+    if (hash(id + seed + 41.7) > 0.55 * smoothstep(0.45, 0.9, g)) continue;
+    float len = LEN * (0.75 + 0.5 * hash(id + 3.3)) * (0.6 + 0.4 * g);
+    if (length(p - base + vec2(0., 0.5 * len)) > 0.7 * len + WIDTH + px) continue;   // too far to reach this pixel
+    for (int k = -2; k <= 2; k++) {
       float fk = float(k), t;
-      vec2 tip = base + vec2(fk * 0.12 + lean + fk * len * 0.35, -len * (1. - 0.25 * abs(fk)));
-      float dk = segment(p, base + vec2(fk * 0.05, 0.), tip, t);
-      if (dk < d) { d = dk; along = t; }
+      vec2 foot = base + vec2(fk * 0.025, 0.);
+      vec2 tip = base + vec2(fk * len * 0.3 + (hash(id + fk) - 0.5) * 0.06, -len * (1. - 0.2 * abs(fk)));
+      float d = segment(p, foot, tip, t);
+      float w = max(WIDTH, 0.7 * px) * (1. - t * t);             // wide at the foot, a point at the tip
+      float a = 1. - smoothstep(w - px, w + px, d);
+      if (a > cover) { cover = a; lit = step(0., dot(p - foot, vec2(foot.y - tip.y, tip.x - foot.x))); }
     }
-    float w = max(0.022, 0.6 * px) * (1. - 0.75 * along);       // thinner toward the tip
-    cover = max(cover, 1. - smoothstep(w - px, w + px, d));
   }
-  return cover;
+  return vec2(cover, lit);
+}
+
+// Four values from one hash, a byte each: cheaper than four hashes.
+vec4 hash4(vec2 p) {
+  uint h = uint(hash(p) * 4294967296.);
+  return vec4(uvec4(h, h >> 8, h >> 16, h >> 24) & 255u) * (1. / 255.);
+}
+
+// Soft upright brush dabs, one to a cell, each a touch lighter or darker. Gives that shade
+// (-0.5 to 0.5) where a dab covers the pixel. Seen from afar, where the tufts are gone.
+float dabs(vec2 p, float px) {
+  const float CELL = 0.8;
+  vec2 s = p / CELL, c = floor(s);
+  float shade = 0.;
+  for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) {
+    vec2 id = c + vec2(dx, dy);
+    vec4 a = hash4(id + seed);                                     // where, lean, length
+    vec2 d = s - id - a.xy;
+    if (dot(d, d) > 1.1) continue;                                 // too far to reach this pixel
+    vec4 b = hash4(id + seed + 7.7);                               // width, shade
+    vec2 dir = normalize(vec2(0.9 * (a.z - 0.5), -1.));
+    float u = dot(d, dir), v = dot(d, vec2(-dir.y, dir.x));
+    float len = 0.55 + 0.35 * a.w, w = (0.2 + 0.1 * b.x) * (1. - 0.5 * clamp(u / len * 0.5 + 0.5, 0., 1.));
+    float f = length(vec2(u / len, v / w)), aa = px / CELL / w * 1.5 + 0.15;
+    shade = mix(shade, b.y - 0.5, 1. - smoothstep(1. - aa, 1. + aa, f));
+  }
+  return shade;
 }
 
 // n layers of a colour at alpha a each, stacked from level t0 to t1 of field f, as how much of
@@ -120,10 +155,9 @@ void main() {
   grass = mix(grass, grass * vec3(0.8, 0.9, 0.86), 0.8 * clover);
   vec3 earth = mix(low * vec3(0.95, 0.93, 0.9), low * vec3(0.66, 0.6, 0.55), moist);
 
-  // The grass itself, over the earth, with a nibbled edge, and tufts where it is thick.
+  // The grass itself, over the earth, with a nibbled edge.
   vec3 col = mix(earth, grass, smoothstep(0., 1., clamp(g + 0.15 * (n2 - 0.5), 0., 1.))) * (0.97 + 0.06 * n1);
-  float detail = clamp((zoom - 10.) / 8., 0., 1.);               // further out they would only read as speckle
-  if (detail > 0.) col = mix(col, grass * vec3(0.72, 0.8, 0.7), 0.85 * detail * tufts(p, px));
+  float detail = clamp((zoom - 12.) / 6., 0., 1.);               // further out the tufts would only read as speckle
 
   // A thin edge of wet moss along the water, fuller here and there. Not tan: tan is grazed ground.
   float cove = smoothstep(0.4, 0.65, fbm(q * 0.5 + 70.));
@@ -132,7 +166,14 @@ void main() {
   // A painterly surface: every tile a touch lighter or darker, warm and cool patches, a fine grain up close.
   col *= 1. + 0.07 * (noise(q * 1.1 + 200.) - 0.5) + 0.035 * (noise(q * 3.1 + 250.) - 0.5);
   col += vec3(1., 0.33, -1.) * 0.035 * (fbm(q * 0.22 + 300.) - 0.5);
-  col *= 1. + 0.08 * detail * (noise(q * 13. + 400.) - 0.5 + 0.6 * (noise(q * 29. + 500.) - 0.5));
+  // Zoomed out, brush dabs where the grass is thick; zoomed in, the tufts take over.
+  float brush = clamp((zoom - 4.) / 4., 0., 1.) * (1. - clamp((zoom - 11.) / 3., 0., 1.)) * smoothstep(0.3, 0.9, g);
+  if (brush > 0.) col *= 1. + 0.12 * brush * dabs(q, px);
+  if (detail > 0.) {
+    col *= 1. + 0.06 * detail * (noise(q * 13. + 400.) - 0.5 + 0.6 * (noise(q * 29. + 500.) - 0.5));
+    vec2 tf = tufts(p, px);
+    col = mix(col, grass * mix(vec3(0.7, 0.82, 0.68), vec3(0.86, 0.94, 0.82), tf.y), 0.85 * detail * tf.x);
+  }
   col = col * (1. - B.a) + B.rgb;                                // a flower field in bloom
   col = mix(col, vec3(74., 66., 60.) / 255., T.b * (1. - g) * 0.85);   // burnt, until the grass returns
   float s = snow > 0. ? clamp(snow * 1.4 - 0.2 - 0.25 * (2. * n1 - 1.) - 0.1 * (2. * n2 - 1.), 0., 0.9) : 0.;
