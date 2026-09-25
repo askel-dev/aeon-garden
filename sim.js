@@ -243,8 +243,9 @@ const TERRAIN = {
 const idx = (x, y) => (y | 0) * W + (x | 0);
 const inBounds = (x, y) => x >= 0.5 && y >= 0.5 && x < W - 0.5 && y < H - 0.5;
 const isWater = (w, x, y) => w.water[idx(x, y)] > 0;
-const walkable = (w, x, y) => inBounds(x, y) && w.water[idx(x, y)] !== DEEP;
+const walkable = (w, x, y) => inBounds(x, y) && (w.water[idx(x, y)] !== DEEP || w.frozen);   // ice takes any weight
 const dry = (w, x, y) => inBounds(x, y) && !w.water[idx(x, y)];
+const footing = (w, x, y) => inBounds(x, y) && (w.frozen || !w.water[idx(x, y)]);   // dry land, or the ice
 
 const WATER_NAMES = {
   first: ['Willow', 'Heron', 'Otter', 'Alder', 'Mill', 'Reed', 'Kingfisher', 'Moss', 'Silver',
@@ -735,7 +736,9 @@ function plantTrees(w, hills, hill, near) {
     const hx = Math.floor(d.x * 100), hy = Math.floor(d.y * 100), open = 1 - w.wood[idx(d.x, d.y)];
     const fruity = d.emoji === '🌳' && hash2(hx, hy, 41) < clamp(open * 1.1, 0.04, 0.5);
     d.fruit = fruity ? (hash2(hx, hy, 42) < 0.5 ? 'apple' : 'cherry') : '';
+    d.apples = 0;                                          // windfalls lying under it (windfallTick)
   }
+  w.orchard = w.decor.filter(d => d.fruit === 'apple');
 }
 
 // How shaded each tile is, 0..1, from the trees around it. game.js darkens the ground there.
@@ -823,6 +826,99 @@ function floodBurrows(w) {
   }
   for (const e of out.values()) emit(w, { type: 'flooded', ...e });
 }
+
+// ---------------------------------------------------------------- ice
+//
+// Snow lying in winter freezes the water over, and the ice takes any weight: a river that kept
+// the rabbits safe from the foxes all year is a way across for a few days. It thaws when the snow
+// goes. Whoever is out on deep water then goes through: a grown one scrambles out, soaked and
+// chilled, and a youngster drowns.
+
+const FREEZE_DAYS = 1;          // snow lying this long freezes the water over
+const THAW_DAYS = 0.5;          // and the ice goes about this fast once it's gone
+const THIN_ICE = 0.6;           // the ice holds until it has thawed below this
+const SOAKED = 0.3;             // share of its energy a fall through the ice costs
+
+function iceTick(w, dt) {
+  const cold = seasonOf(w.tick) === 3 && w.snow > 0.3;
+  w.ice = clamp(w.ice + (cold ? 1 / FREEZE_DAYS : -1 / THAW_DAYS) * dt / TPD, 0, 1);
+  if (!w.frozen && w.ice >= 1) { w.frozen = true; emit(w, { type: 'ice', frozen: true }); }
+  else if (w.frozen && w.ice < THIN_ICE) { w.frozen = false; breakUp(w); }
+}
+
+function breakUp(w) {
+  const fell = [], drowned = [];
+  for (const c of w.creatures) {
+    if (!c.alive || c.hidden || c.sp.flies || w.water[idx(c.x, c.y)] !== DEEP) continue;
+    if (growth(w, c) < 0.5) { die(w, c, 'ice'); drowned.push(c); continue; }
+    const at = nearestFooting(w, c.x, c.y);
+    c.x = at.x; c.y = at.y; c.target = null; c.detour = 0;
+    c.energy -= SOAKED * c.maxEnergy;
+    note(w, c, '🧊', 'Fell through the ice, and scrambled out soaked');
+    fell.push(c);
+  }
+  emit(w, { type: 'ice', frozen: false, fell, drowned });
+}
+
+// The closest place to stand, looking further and further out.
+function nearestFooting(w, x, y) {
+  for (let r = 0.5; r < W; r += 0.5) {
+    for (let a = 0; a < 16; a++) {
+      const nx = x + r * Math.cos(a * Math.PI / 8), ny = y + r * Math.sin(a * Math.PI / 8);
+      if (walkable(w, nx, ny)) return { x: nx, y: ny };
+    }
+  }
+  return { x, y };
+}
+
+// ---------------------------------------------------------------- windfalls
+//
+// Apple trees drop their apples early in autumn, and hungry rabbits come for them: a windfall is
+// a big meal, so the apple trees are where everyone gathers, and where the foxes learn to look.
+// What isn't eaten rots away as the leaves come down (game.js hangs and drops them to match).
+
+const APPLES = 6;               // most windfalls lying under one tree
+const APPLE_ENERGY = 30;        // what one is worth to a rabbit
+const APPLE_DROP = 0.35;        // odds a tree drops one, each time windfallTick runs, early in autumn
+const APPLE_ROT = 0.3;          // odds one rots, each time, late in autumn
+const APPLE_SMELL = 2;          // a rabbit finds apples this many times as far off as it sees a fox
+
+function windfallTick(w) {
+  const s = seasonOf(w.tick), sp = (dayOf(w.tick) % SEASON_DAYS + phaseOf(w.tick)) / SEASON_DAYS;
+  w.windfalls = 0;
+  for (const d of w.orchard) {
+    if (d.stump || s !== 2) d.apples = 0;
+    else if (sp < 0.4) { if (d.apples < APPLES && w.rng.next() < APPLE_DROP) d.apples++; }
+    else if (sp > 0.6 && d.apples && w.rng.next() < APPLE_ROT) d.apples--;
+    w.windfalls += d.apples;
+  }
+  if (w.windfalls && w.appleYear !== yearOf(w.tick)) { w.appleYear = yearOf(w.tick); emit(w, { type: 'windfall' }); }
+}
+
+// Hungry, and apples lying under a tree not far off: go and sit under it, and munch one.
+function windfall(w, c) {
+  if (c.mode === 'munch') { if (--c.timer > 0) return true; c.mode = 'wander'; c.target = null; }
+  let d = c.mode === 'apple' && c.target && c.target.tree;
+  if (!d || !d.apples) {
+    d = null;
+    if ((w.tick + c.id) % 10) return false;
+    let best = (c.sight * APPLE_SMELL) ** 2;
+    for (const o of w.orchard) {
+      const dd = (o.x - c.x) ** 2 + (o.y - c.y) ** 2;
+      if (o.apples && dd < best && clearPath(w, c.x, c.y, o.x, o.y + 0.3)) { d = o; best = dd; }
+    }
+    if (!d) return false;
+    const a = (c.id % 7) / 7 * Math.PI * 2;               // everyone to their own side of the tree
+    c.mode = 'apple'; c.target = { x: d.x + 0.9 * Math.cos(a), y: d.y + 0.3 + 0.5 * Math.sin(a), tree: d };
+  }
+  if (!moveToward(w, c, c.target.x, c.target.y, c.walk * kidPace(w, c))) return true;
+  d.apples--; w.windfalls--;
+  c.energy = Math.min(c.maxEnergy, c.energy + APPLE_ENERGY);
+  c.mode = 'munch'; c.timer = 90; c.target = null;
+  if (c.story[c.story.length - 1].text !== WINDFALL_NOTE) note(w, c, '🍎', WINDFALL_NOTE);
+  return true;
+}
+const WINDFALL_NOTE = 'Found windfall apples under an apple tree';
 
 function waterWithin(w, x, y, radius) {
   for (let yy = Math.max(0, Math.floor(y - radius)); yy <= Math.min(H - 1, y + radius); yy++) {
@@ -1327,7 +1423,7 @@ const TURNS = [1, -1].map(bias => [0, ...TURN_MAGS.flatMap(m => [bias * m, -bias
 const HUGS = [1, -1].map(bias => HUG.map(o => o * bias));
 
 function moveToward(w, c, tx, ty, v) {
-  if (w.water[idx(c.x, c.y)]) v *= c.sp.wade;   // wading: rabbits hate it more than foxes
+  if (w.water[idx(c.x, c.y)] && !w.frozen) v *= c.sp.wade;   // wading: rabbits hate it more than foxes
   const dx = tx - c.x, dy = ty - c.y, d = Math.hypot(dx, dy);
   if (d < 1e-6) return true;
   const stepLen = Math.min(v, d);
@@ -1362,8 +1458,8 @@ function wander(w, c, pace) {
       const reach = w.rng.range(4, 11);
       tx = c.x + Math.cos(c.heading) * reach; ty = c.y + Math.sin(c.heading) * reach;
       if (!inBounds(tx, ty)) { c.heading += Math.PI; tx = clamp(tx, 2, W - 2); ty = clamp(ty, 2, H - 2); }
-    } while (!(dry(w, tx, ty) && clearPath(w, c.x, c.y, tx, ty)) && ++tries < 8);   // paddling, but not for fun
-    c.target = dry(w, tx, ty) && clearPath(w, c.x, c.y, tx, ty) ? { x: tx, y: ty } : { x: c.x, y: c.y };
+    } while (!(footing(w, tx, ty) && clearPath(w, c.x, c.y, tx, ty)) && ++tries < 8);   // paddling, but not for fun
+    c.target = footing(w, tx, ty) && clearPath(w, c.x, c.y, tx, ty) ? { x: tx, y: ty } : { x: c.x, y: c.y };
     c.timer = 200;
   }
   c.mode = 'wander';
@@ -1613,8 +1709,9 @@ function rabbitTick(w, c) {
   // 4. Love.
   if (seekLove(w, c)) return;
 
-  // 5. Food.
+  // 5. Food. Windfalls first, in autumn.
   const satiation = seasonOf(t) === 2 ? 0.95 : 0.85;
+  if ((c.mode === 'munch' || e < satiation) && w.windfalls && windfall(w, c)) return;
   const i = idx(c.x, c.y);
   if (c.mode === 'graze') {
     if (w.grass[i] > 0.06 && e < 0.98) { eat(w, c, i); return; }
@@ -1928,10 +2025,19 @@ const SCOUTS = 6;               // one bee in this many is a scout
 const hiveTime = w => isNight(w.tick) || w.weather.kind === 'rain' || w.weather.kind === 'storm'
   || w.flowers < FEW_FLOWERS;
 
+const BLOOM_NEWS = 0.3;          // share of a field's flowers out when the news says it's in bloom
+
 // Every little while: how many flowers are open, how many bees each hive has, and the queens lay.
 function hivesTick(w) {
   w.flowers = 0;
-  for (const p of w.plants) if (isFlower(w, p)) w.flowers++;
+  for (const f of w.fields) f.open = f.all = 0;
+  for (const p of w.plants) {
+    if (p.field) p.field.all++;
+    if (isFlower(w, p)) { w.flowers++; if (p.field) p.field.open++; }
+  }
+  for (const f of w.fields) {                             // the news, once a year: a field has come out
+    if (f.bloomed !== yearOf(w.tick) && f.open > BLOOM_NEWS * f.all) { f.bloomed = yearOf(w.tick); emit(w, { type: 'bloom', field: f }); }
+  }
   for (const h of w.hives) { h.bees = 0; h.winterBees = 0; }
   for (const list of [w.creatures, w.newborn]) {
     for (const c of list) if (c.alive && c.species === 'bee') { c.home.bees++; if (seasonOf(c.born) >= 2) c.home.winterBees++; }
@@ -2372,8 +2478,9 @@ function die(w, c, cause, killer) {
     cause === 'lightning' ? 'Struck by lightning' :
     cause === 'fire' ? 'Caught in a wildfire' :
     cause === 'flood' ? 'Drowned when the burrow flooded' :
+    cause === 'ice' ? 'Fell through the ice and drowned' :
     `Died of old age, ${age} days old`;
-  note(w, c, { fox: '🦊', hunger: '🥀', lightning: '⚡', fire: '🔥', flood: '🌊' }[cause] || '🌙', text);
+  note(w, c, { fox: '🦊', hunger: '🥀', lightning: '⚡', fire: '🔥', flood: '🌊', ice: '🧊' }[cause] || '🌙', text);
   w.stats.deaths[c.species][cause] = (w.stats.deaths[c.species][cause] || 0) + 1;
   w.anyDied = w.recount = true;
   emit(w, { type: 'death', c, cause, killer });
@@ -2407,7 +2514,7 @@ function createWorld(seed, opts = {}) {
     nextId: 1, creatures: [], newborn: [], byId: new Map(), events: [],
     grid: makeGrid(), grids: perKind(makeGrid),
     nameCounts: new Map(), anyDied: false,
-    weather: { kind: 'clear', until: 0 }, skyLocked: false, wet: 0.3, snow: 0,
+    weather: { kind: 'clear', until: 0 }, skyLocked: false, wet: 0.3, snow: 0, ice: 0, frozen: false, windfalls: 0,
     fire: new Float32Array(W * H), ash: new Float32Array(W * H), silt: new Float32Array(W * H), burning: [], blaze: 0,
     count: perKind(() => 0), expecting: perKind(() => 0),
     stats: { births: perKind(() => 0), deaths: perKind(() => ({})) },
@@ -2427,6 +2534,7 @@ function createWorld(seed, opts = {}) {
     }
   }
   flushNewborn(w);
+  for (const f of w.fields) if (f.season === seasonOf(w.tick)) f.bloomed = yearOf(w.tick);   // no news of what's out already
   hivesTick(w);
   w.founderMeans = perKind(s => traitMeans(w, s));
   w.weather.until = w.tick + w.rng.range(0.3, 0.8) * TPD;
@@ -2538,9 +2646,9 @@ function step(w) {
   if (t % TPD === 0) newDay(w);
   buildGrid(w);
   weatherTick(w);
-  if (t % 4 === 0) { growGrass(w, 4); fireTick(w, 4); }
+  if (t % 4 === 0) { growGrass(w, 4); fireTick(w, 4); iceTick(w, 4); }
   if (t % WATER_EVERY === 0) waterTick(w);
-  if (t % 60 === 0) hivesTick(w);
+  if (t % 60 === 0) { hivesTick(w); windfallTick(w); }
   const list = w.creatures;
   for (let i = 0; i < list.length; i++) {
     const c = list[i];
@@ -2610,6 +2718,8 @@ function mood(w, c) {
     case 'love': return { emoji: '💕', text: other ? `Courting ${other.name}` : 'Looking for love' };
     case 'graze': return { emoji: '😋', text: 'Munching grass' };
     case 'food': return { emoji: '🌿', text: 'Off to find better grass' };
+    case 'apple': return { emoji: '🍎', text: 'Off to the apple tree for a windfall' };
+    case 'munch': return { emoji: '🍎', text: 'Munching a windfall apple' };
     case 'prowl': return { emoji: '🐾', text: 'Back to good hunting ground' };
     case 'stalk': return { emoji: '👀', text: other ? `Sneaking up on ${other.name}` : 'Sneaking' };
     case 'chase': return { emoji: '💨', text: other ? `Chasing ${other.name}!` : 'Chasing!' };
