@@ -528,15 +528,20 @@ function plantLook(p, season, z) {
   return e && { e, px: Math.max(4, Math.round(plantPx * (0.55 + 0.45 * Math.min(1, g)))) };   // as the sprite rounds it
 }
 
-// How each plant looks, as px * 16 + which emoji (0: nothing), and when that was.
-let plantKeys = null, plantKeysWorld = null, plantKeysTick = -1, plantKeysZoom = 0;
+// How each plant looks, as px * 16 + which emoji (0: nothing), and when that was. plantArt is the
+// flower's painting (flowerSprite's code + 1; 0: it's drawn as its emoji).
+let plantKeys = null, plantArt = null, plantKeysWorld = null, plantKeysTick = -1, plantKeysZoom = 0, plantKeysDpr = 0;
 function updatePlantLooks(z, season) {
-  if (plantKeysWorld !== world) { plantKeys = new Int32Array(world.plants.length); plantKeysWorld = world; plantKeysTick = -1; }
-  if (plantKeysTick === terrainTick && plantKeysZoom === z) return;
-  plantKeysTick = terrainTick; plantKeysZoom = z;
+  if (plantKeysWorld !== world) {
+    plantKeys = new Int32Array(world.plants.length); plantArt = new Int32Array(world.plants.length);
+    plantKeysWorld = world; plantKeysTick = -1;
+  }
+  if (plantKeysTick === terrainTick && plantKeysZoom === z && plantKeysDpr === dpr) return;
+  plantKeysTick = terrainTick; plantKeysZoom = z; plantKeysDpr = dpr;
   for (let i = 0; i < world.plants.length; i++) {
-    const l = plantLook(world.plants[i], season, z);
+    const p = world.plants[i], l = plantLook(p, season, z), art = l ? flowerArt(l.e, season) : -1;
     plantKeys[i] = l ? l.px * 16 + PLANT_EMOJI.indexOf(l.e) + 1 : 0;
+    plantArt[i] = art < 0 ? 0 : flowerCode(art, Math.imul(p.n + 1, 2654435761) >>> 0, l.px) + 1;
   }
 }
 
@@ -548,12 +553,233 @@ function drawPlants(z, ox, oy, season) {
   for (let i = 0; i < world.plants.length; i++) {
     const key = plantKeys[i];
     if (!key) continue;
-    const p = world.plants[i], s = sprite(PLANT_EMOJI[(key & 15) - 1], key >> 4);
+    const p = world.plants[i], art = plantArt[i];
+    if (art) {                                       // its foot a little below its spot, so the clump stands on it
+      const px = key >> 4, w = FLOWER_BOX[0] * px, h = FLOWER_BOX[1] * px;
+      const x = ox + p.x * z - w / 2, y = oy + p.y * z + px * 0.35 - h * FLOWER_FOOT;
+      if (x + w < 0 || y + h < 0 || x > vw || y > vh) continue;
+      ctx.drawImage(flowerSprite(art - 1), x, y, w, h);
+      continue;
+    }
+    const s = sprite(PLANT_EMOJI[(key & 15) - 1], key >> 4);
     const x = ox + p.x * z - s.size / 2, y = oy + p.y * z - s.size / 2;
     if (x + s.size < 0 || y + s.size < 0 || x > vw || y > vh) continue;
     ctx.drawImage(s.canvas, x, y, s.size, s.size);
   }
   ctx.restore();
+}
+
+// ------------------------------------------------------------------ flowers
+//
+// Flowers are painted, not emoji, like the rocks: a clump of a few on their stems, with leaves at
+// the foot and a soft shadow under it, in a few variants of each kind so a field isn't one stamp
+// over and over. Each look is painted once per size, in half-octave steps, and stretched to the
+// size each plant is drawn at. Tufts, sprouts and fallen leaves stay emoji.
+
+const FLOWER_ARTS = [paintTulips, paintBlossom, paintButtercups, paintSunflowers, paintBluebells, paintHeather, paintAsters];
+const FLOWER_VARIANTS = 5;
+const FLOWER_BOX = [1.6, 1.8], FLOWER_FOOT = 0.82;   // a sprite in plant sizes, and where the ground is in it, from the top
+const FLOWER_MAX_K = 15;                            // painted at most 2^7.5 = 181 px a plant, stretched past that
+const flowerSprites = new Map();
+let flowerBytes = 0;
+
+// Which painting an emoji gets (-1: it stays an emoji). The season tells the spring bluebells from
+// the autumn heather, and a spring blossom from an autumn aster.
+function flowerArt(e, season) {
+  switch (e) {
+    case '🌷': return 0;
+    case '🌸': return season === 2 ? 6 : 1;
+    case '🌼': return 2;
+    case '🌻': return 3;
+    case '🪻': return season === 2 ? 5 : 4;
+    default: return -1;
+  }
+}
+// A sprite's code: which painting, which variant (from a hash of the plant), and k, the size it's
+// painted at: 2^(k/2) device pixels a plant.
+const flowerCode = (art, hash, px) =>
+  (art * 8 + hash % FLOWER_VARIANTS) * 64 + Math.min(FLOWER_MAX_K, Math.max(0, Math.round(2 * Math.log2(px * dpr))));
+
+function flowerSprite(code) {
+  let c = flowerSprites.get(code);
+  if (c) return c;
+  const k = code & 63, v = (code >> 6) & 7, art = code >> 9, U = 2 ** (k / 2);
+  if (flowerBytes > 32e6) { for (const o of flowerSprites.values()) o.width = 0; flowerSprites.clear(); flowerBytes = 0; }
+  c = document.createElement('canvas');
+  c.width = Math.ceil(U * FLOWER_BOX[0]); c.height = Math.ceil(U * FLOWER_BOX[1]);
+  flowerBytes += c.width * c.height * 4;
+  const g = c.getContext('2d');
+  g.translate(c.width / 2, c.height * FLOWER_FOOT); g.scale(U, U);
+  g.lineCap = 'round'; g.lineJoin = 'round';
+  softSpot(g, 0, 0.02, 0.34, 0.11, '34, 44, 14', 0.35);
+  // Small, the heads are painted bigger and the stems no thinner than a pixel, so they still read.
+  const r = n => hash2(art * 8 + v, 29, n), bold = 1 + 0.4 * clamp((36 - U) / 28, 0, 1);
+  FLOWER_ARTS[art](g, r, v, bold, Math.max(0.022, 1 / U));
+  flowerSprites.set(code, c);
+  return c;
+}
+
+const LEAF_DARK = [64, 110, 46], LEAF_LIGHT = [104, 154, 66], STEM = [84, 132, 56];
+const tone = (c, k, add = 0) => [c[0] * k + add, c[1] * k + add, c[2] * k + add];
+
+// A leaf standing from the foot at x, len long, its tip leaning out by lean; lit down one side.
+function flowerLeaf(g, x, len, lean, w) {
+  for (const [rgb, dx, k] of [[LEAF_DARK, 0, 1], [LEAF_LIGHT, -w * 0.35, 0.55]]) {
+    const x0 = x + dx, ww = w * k;
+    g.fillStyle = rockRGB(rgb);
+    g.beginPath(); g.moveTo(x0 - ww, 0);
+    g.quadraticCurveTo(x0 - ww * 0.6 + lean * 0.2, -len * 0.6, x0 + lean, -len * (k === 1 ? 1 : 0.92));
+    g.quadraticCurveTo(x0 + ww + lean * 0.5, -len * 0.45, x0 + ww, 0);
+    g.closePath(); g.fill();
+  }
+}
+// A stem from the foot up to (x, y), bowed a little.
+function flowerStem(g, x, y, bend, w, rgb = STEM) {
+  g.strokeStyle = rockRGB(rgb); g.lineWidth = w;
+  g.beginPath(); g.moveTo(x * 0.3, 0); g.quadraticCurveTo(x * 0.3 + bend, y * 0.55, x, y); g.stroke();
+}
+// n heads spread over the clump, the tallest first (they stand behind), each { x, y } its top.
+function flowerHeads(r, n, spread, lo, hi) {
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const x = (n === 1 ? 0 : (i / (n - 1) - 0.5) * 2 * spread) + (r(10 + i) - 0.5) * spread * 0.5;
+    out.push({ x, y: -lerp(lo, hi, r(20 + i)), bend: (r(30 + i) - 0.5) * 0.12, turn: r(40 + i) * TAU });
+  }
+  return out.sort((a, b) => a.y - b.y);
+}
+// A ring of n petals round (x, y), each len long and wid wide, seen from a little above.
+function petalRing(g, x, y, n, len, wid, turn, rgb, squash = 0.8) {
+  g.save(); g.translate(x, y); g.scale(1, squash);
+  g.fillStyle = rockRGB(rgb);
+  for (let i = 0; i < n; i++) {
+    const a = turn + i / n * TAU;
+    g.beginPath(); g.ellipse(Math.cos(a) * len * 0.5, Math.sin(a) * len * 0.5, len * 0.5, wid * 0.5, a, 0, TAU); g.fill();
+  }
+  g.restore();
+}
+function dot(g, x, y, rx, ry, rgb, a = 1) {
+  g.fillStyle = rockRGB(rgb, a); g.beginPath(); g.ellipse(x, y, rx, ry, 0, 0, TAU); g.fill();
+}
+// Five round petals and a heart, a little darker round the edge.
+function roundFlower(g, x, y, s, turn, rgb, heart) {
+  petalRing(g, x, y, 5, s * 1.25, s * 1.05, turn, tone(rgb, 0.8));
+  petalRing(g, x, y, 5, s * 1.1, s * 0.92, turn, rgb);
+  dot(g, x - s * 0.25, y - s * 0.3, s * 0.3, s * 0.2, tone(rgb, 1, 40), 0.6);
+  dot(g, x, y, s * 0.3, s * 0.25, heart);
+}
+// Thin rays round a disc, like a daisy's or an aster's.
+function rayFlower(g, x, y, s, turn, n, rgb, disc) {
+  petalRing(g, x, y, n, s * 1.9, s * 0.42, turn, tone(rgb, 0.78));
+  petalRing(g, x, y, n, s * 1.7, s * 0.34, turn + Math.PI / n, rgb);
+  dot(g, x, y, s * 0.36, s * 0.3, disc);
+  dot(g, x - s * 0.1, y - s * 0.08, s * 0.16, s * 0.12, tone(disc, 1, 40));
+}
+
+const TULIPS = [[214, 58, 62], [232, 112, 146], [242, 168, 188], [244, 190, 70], [224, 84, 110]];
+function paintTulips(g, r, v, bold, sw) {
+  flowerLeaf(g, -0.08, 0.4, -0.22, 0.09); flowerLeaf(g, 0.07, 0.34, 0.22, 0.085);
+  const rgb = TULIPS[v], dark = tone(rgb, 0.76), s = 0.15 * bold;
+  for (const h of flowerHeads(r, r(1) < 0.5 ? 2 : 3, 0.2, 0.4, 0.66)) {
+    flowerStem(g, h.x, h.y, h.bend, sw * 1.4);
+    const { x, y } = h;                               // a cup of three petals, the middle one to the front
+    g.fillStyle = rockRGB(dark);
+    g.beginPath(); g.moveTo(x - s, y - s * 1.9);
+    g.quadraticCurveTo(x - s * 1.1, y - s * 0.1, x, y); g.quadraticCurveTo(x + s * 1.1, y - s * 0.1, x + s, y - s * 1.9);
+    g.lineTo(x + s * 0.45, y - s * 1.45); g.lineTo(x, y - s * 2.15); g.lineTo(x - s * 0.45, y - s * 1.45);
+    g.closePath(); g.fill();
+    g.fillStyle = rockRGB(rgb);
+    g.beginPath(); g.moveTo(x - s * 0.62, y - s * 1.5);
+    g.quadraticCurveTo(x - s * 0.7, y - s * 0.25, x, y - s * 0.08); g.quadraticCurveTo(x + s * 0.7, y - s * 0.25, x + s * 0.62, y - s * 1.5);
+    g.lineTo(x, y - s * 2.15); g.closePath(); g.fill();
+    g.strokeStyle = rockRGB(tone(rgb, 1.05, 40), 0.7); g.lineWidth = s * 0.2;
+    g.beginPath(); g.moveTo(x - s * 0.3, y - s * 1.4); g.quadraticCurveTo(x - s * 0.38, y - s * 0.6, x - s * 0.05, y - s * 0.35); g.stroke();
+  }
+}
+
+const BLOSSOMS = [[244, 176, 200], [236, 150, 184], [250, 204, 218], [232, 160, 198], [246, 188, 208]];
+function paintBlossom(g, r, v, bold, sw) {
+  flowerLeaf(g, -0.1, 0.24, -0.2, 0.07); flowerLeaf(g, 0.09, 0.22, 0.2, 0.07); flowerLeaf(g, 0, 0.26, 0.02, 0.06);
+  for (const h of flowerHeads(r, 3, 0.22, 0.2, 0.42)) {
+    flowerStem(g, h.x, h.y, h.bend, sw);
+    roundFlower(g, h.x, h.y, 0.13 * bold, h.turn, BLOSSOMS[v], [246, 206, 96]);
+  }
+}
+
+const BUTTERCUPS = [[246, 208, 60], [250, 220, 84], [242, 196, 50], [248, 212, 70]];
+function paintButtercups(g, r, v, bold, sw) {
+  flowerLeaf(g, -0.09, 0.24, -0.22, 0.07); flowerLeaf(g, 0.09, 0.21, 0.22, 0.07);
+  const daisy = v === 4;                             // one in five is a daisy
+  for (const h of flowerHeads(r, r(1) < 0.5 ? 3 : 4, 0.24, 0.22, 0.52)) {
+    flowerStem(g, h.x, h.y, h.bend, sw);
+    if (daisy) rayFlower(g, h.x, h.y, 0.085 * bold, h.turn, 12, [252, 250, 240], [240, 196, 50]);
+    else roundFlower(g, h.x, h.y, 0.11 * bold, h.turn, BUTTERCUPS[v], [214, 164, 36]);
+  }
+}
+
+function paintSunflowers(g, r, v, bold, sw) {
+  flowerLeaf(g, -0.07, 0.26, -0.2, 0.08); flowerLeaf(g, 0.07, 0.24, 0.2, 0.08);
+  const s = 0.24 * Math.min(bold, 1.2);
+  for (const h of flowerHeads(r, v < 3 ? 1 : 2, 0.2, 0.72, 0.9)) {
+    flowerStem(g, h.x, h.y, h.bend, sw * 2.2);
+    for (const side of [-1, 1]) {                   // two big leaves on the stalk
+      const ly = h.y * (side < 0 ? 0.42 : 0.58), lx = h.x * 0.6 + h.bend * 0.3;
+      g.save(); g.translate(lx, ly); g.rotate(side * 0.9);
+      dot(g, side * 0.1, 0, 0.12, 0.065, LEAF_DARK); dot(g, side * 0.095, -0.018, 0.08, 0.035, LEAF_LIGHT);
+      g.restore();
+    }
+    const x = h.x, y = h.y - s * 0.3;
+    petalRing(g, x, y, 16, s * 1.25, s * 0.42, h.turn, [212, 150, 28], 0.88);
+    petalRing(g, x, y, 16, s * 1.1, s * 0.36, h.turn + Math.PI / 16, [248, 198, 44], 0.88);
+    dot(g, x, y, s * 0.52, s * 0.46, [104, 66, 30]);
+    dot(g, x + s * 0.05, y + s * 0.05, s * 0.34, s * 0.3, [76, 48, 22]);
+    dot(g, x - s * 0.18, y - s * 0.16, s * 0.14, s * 0.1, [150, 104, 50], 0.8);
+  }
+}
+
+// A spike of little bells up the top of a stem, smaller towards the tip.
+function bellSpike(g, x, y, len, s, rgb) {
+  const n = 7;
+  for (let j = n - 1; j >= 0; j--) {
+    const t = j / (n - 1), by = y + t * len, bx = x + (j % 2 ? 1 : -1) * s * (0.4 + 0.5 * t), bs = s * (0.55 + 0.45 * t);
+    dot(g, bx, by, bs, bs * 1.1, tone(rgb, 0.72));
+    dot(g, bx - bs * 0.15, by - bs * 0.2, bs * 0.78, bs * 0.8, rgb);
+  }
+  dot(g, x, y - s * 0.4, s * 0.45, s * 0.5, tone(rgb, 0.9, 20));   // the bud at the tip
+}
+
+const BLUEBELLS = [[112, 104, 206], [128, 112, 214], [100, 96, 196], [142, 122, 222], [118, 108, 210]];
+function paintBluebells(g, r, v, bold, sw) {
+  flowerLeaf(g, -0.07, 0.38, -0.26, 0.05); flowerLeaf(g, 0.06, 0.34, 0.28, 0.05); flowerLeaf(g, 0, 0.3, 0.04, 0.045);
+  for (const h of flowerHeads(r, r(1) < 0.5 ? 2 : 3, 0.2, 0.62, 0.82)) {
+    flowerStem(g, h.x, h.y, h.bend, sw * 1.2);
+    bellSpike(g, h.x, h.y, 0.4, 0.058 * bold, BLUEBELLS[v]);
+  }
+}
+
+// Low and bushy: woody sprigs fanning out from the foot, thick with tiny bells.
+const HEATHERS = [[196, 112, 172], [184, 100, 164], [210, 132, 188], [176, 96, 160], [202, 122, 182]];
+function paintHeather(g, r, v, bold, sw) {
+  dot(g, 0, -0.05, 0.3, 0.12, [74, 104, 58]);
+  const rgb = HEATHERS[v], n = 6;
+  for (let i = 0; i < n; i++) {
+    const a = -Math.PI / 2 + (i / (n - 1) - 0.5) * 1.9 + (r(50 + i) - 0.5) * 0.3, len = 0.42 + 0.2 * r(60 + i);
+    const tx = Math.cos(a) * len, ty = Math.sin(a) * len * 0.9;
+    flowerStem(g, tx, ty, (r(70 + i) - 0.5) * 0.08, sw, [112, 92, 70]);
+    for (let j = 3; j <= 10; j++) {
+      const t = j / 10, s = 0.045 * bold * (1.15 - 0.4 * t), side = j % 2 ? 1 : -1;
+      const bx = tx * t + side * s * 0.8 * Math.sin(a), by = ty * t - side * s * 0.8 * Math.cos(a);
+      dot(g, bx, by, s, s, tone(rgb, 0.75 + 0.3 * hash2(i, j, v)));
+    }
+  }
+}
+
+const ASTERS = [[170, 140, 220], [190, 150, 226], [160, 130, 210], [204, 160, 230], [180, 146, 224]];
+function paintAsters(g, r, v, bold, sw) {
+  flowerLeaf(g, -0.09, 0.24, -0.2, 0.06); flowerLeaf(g, 0.08, 0.26, 0.2, 0.06);
+  for (const h of flowerHeads(r, r(1) < 0.5 ? 3 : 4, 0.24, 0.26, 0.52)) {
+    flowerStem(g, h.x, h.y, h.bend, sw);
+    rayFlower(g, h.x, h.y, 0.1 * bold, h.turn, 14, ASTERS[v], [238, 192, 60]);
+  }
 }
 
 // ------------------------------------------------------------------ burrows
