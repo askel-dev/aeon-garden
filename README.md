@@ -1,6 +1,8 @@
-# 🌱 AEON Garden
+# Nobody's Meadow
 
-A small meadow where rabbits and foxes live their own lives. They graze, run for their
+*A meadow that keeps its own time.*
+
+A small meadow where rabbits, foxes and bees live their own lives. They graze, run for their
 burrows, fall in love and raise families, and every baby inherits a mix of its parents'
 traits. Leave it running and watch populations boom and crash while the animals slowly evolve.
 

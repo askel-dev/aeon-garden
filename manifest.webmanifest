@@ -1,12 +1,12 @@
 {
-  "name": "AEON Garden",
-  "short_name": "AEON Garden",
-  "description": "A cozy emoji meadow where rabbits and foxes live their own lives.",
+  "name": "Nobody's Meadow",
+  "short_name": "Meadow",
+  "description": "A small meadow that keeps its own time. Rabbits, foxes and bees live their lives, season after season, whether you're watching or not.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#9cc77e",
+  "background_color": "#f1ddb0",
   "theme_color": "#9cc77e",
   "icons": [
     { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png" },

@@ -1,4 +1,4 @@
-/* AEON Garden — sound. Everything is made on the fly with Web Audio: no sound files.
+/* Nobody's Meadow — sound. Everything is made on the fly with Web Audio: no sound files.
  *
  * Three ideas keep it cozy:
  *  1. One scale. Every pitched sound comes from D major pentatonic, so nothing can clash.

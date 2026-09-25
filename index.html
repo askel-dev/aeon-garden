@@ -3,10 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
-<title>AEON Garden</title>
-<meta name="description" content="A cozy emoji meadow where rabbits, foxes and bees live their own lives. Leave it running and watch what emerges.">
+<title>Nobody's Meadow</title>
+<meta name="description" content="A small meadow that keeps its own time. Rabbits, foxes and bees live their lives, season after season, whether you're watching or not.">
 <meta name="theme-color" content="#9cc77e">
-<link rel="icon" href="assets/favicon.ico" sizes="any">
+<!-- the .ico says 32x32, not "any", or Chrome picks it over the SVG. game.js swaps the SVG as the seasons turn -->
+<link rel="icon" href="assets/favicon.ico" sizes="32x32">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg" id="favicon">
 <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <!-- added to the home screen it opens with no browser bars at all -->
@@ -14,21 +16,25 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="AEON Garden">
+<meta name="apple-mobile-web-app-title" content="Meadow">
 <!-- link previews (iMessage, Slack, Discord, ...): these need absolute URLs -->
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="AEON Garden">
-<meta property="og:title" content="AEON Garden">
-<meta property="og:description" content="A cozy emoji meadow where rabbits, foxes and bees live their own lives. Leave it running and watch what emerges.">
+<meta property="og:site_name" content="Nobody's Meadow">
+<meta property="og:title" content="Nobody's Meadow">
+<meta property="og:description" content="A small meadow that keeps its own time. Rabbits, foxes and bees live their lives, season after season, whether you're watching or not.">
 <meta property="og:url" content="https://askel-dev.github.io/aeon-garden/">
-<meta property="og:image" content="https://askel-dev.github.io/aeon-garden/assets/og.png">
+<!-- ?v= changes with the art: Messages, Slack and friends keep a preview by its image URL for weeks -->
+<meta property="og:image" content="https://askel-dev.github.io/aeon-garden/assets/og.png?v=2">
+<meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Two rabbits in love on a green meadow while a fox peeks over the hill">
+<meta property="og:image:alt" content="Nobody's Meadow: a brass pocket watch with the living meadow inside it, over a green hill where a rabbit's ears peek out">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://askel-dev.github.io/aeon-garden/assets/og.png?v=2">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
+<!-- Fraunces only for the name and the season chips: italic 450, upright 600 to 680, soft and wonky -->
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT,WONK@0,9..144,600..680,100,1;1,9..144,450,100,1&family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
 <style>
   :root {
     --card: rgba(255, 250, 240, 0.94);
@@ -86,7 +92,10 @@
     border: solid var(--muted); border-width: 2.5px 0 0 2.5px; border-radius: 1px; transform: translate(-50%, -25%) rotate(45deg); }
   .win-btn.grow::before { transform: translate(-50%, -75%) rotate(225deg); }
   #meadow .head { display: flex; align-items: center; gap: 8px; height: 30px; }
-  #meadow .brand { font-weight: 900; font-size: 18px; letter-spacing: 0.2px; white-space: nowrap; flex: 1; }
+  /* the name is Fraunces, soft and wonky; everything else stays Nunito */
+  .fr { font-family: Fraunces, Georgia, serif; font-variation-settings: 'SOFT' 100, 'WONK' 1; }
+  #meadow .brand { display: flex; align-items: center; gap: 8px; font-size: 20px; font-weight: 650; letter-spacing: -0.01em; white-space: nowrap; flex: 1; }
+  #meadow .brand svg { flex: none; width: 30px; height: 30px; }
   #meadow .clock { color: var(--muted); font-weight: 700; margin-top: 4px; display: flex; gap: 6px; align-items: center; }
   #meadow .clock b { color: var(--ink); }
   #sky { margin-top: 2px; color: var(--muted); font-weight: 700; font-size: 13px; cursor: help; }
@@ -122,7 +131,13 @@
   #news-log ol { list-style: none; margin: 0; padding: 0; max-height: min(340px, 45vh); overflow-y: auto; font-size: 13px; line-height: 1.35; }
   #news-log li { padding: 4px 0; border-bottom: 1px dashed var(--line); }
   #news-log li:last-child { border-bottom: none; }
-  #news-log .when { display: block; color: var(--muted); font-size: 11px; font-weight: 700; }
+  /* the season chips: when it happened, in the season's colour from the watch's ring */
+  .chip { display: inline-block; margin-bottom: 2px; border-radius: 7px; padding: 1px 7px; font-size: 12px; font-weight: 600; }
+  .chip.s0 { background: #f9e0de; color: #8c3b37; }
+  .chip.s1 { background: #fbf0cc; color: #7a5a0e; }
+  .chip.s2 { background: #f6e0cb; color: #7f4a17; }
+  .chip.s3 { background: #e3ecf0; color: #3d5a68; }
+  #news-log .chip + .yr { margin-left: 6px; color: var(--muted); font-size: 11px; font-weight: 700; }
   @keyframes pop-in { from { transform: translateY(8px) scale(0.97); opacity: 0; } to { transform: none; opacity: 1; } }
 
   /* ---- toolbar, bottom centre */
@@ -241,13 +256,19 @@
   /* the terrain lab (?lab) brings its own panel, see terrain-lab.js */
   body.lab #meadow, body.lab #news, body.lab #toolbar, body.lab #hud-right, body.lab #ring { display: none; }
 
-  #welcome { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(60, 80, 40, 0.25); z-index: 10; }
-  #welcome .card { position: static; width: min(460px, calc(100% - 32px)); padding: 26px 28px 22px; text-align: left; }
-  #welcome h1 { margin: 0 0 8px; font-size: 26px; font-weight: 900; }
-  #welcome p { line-height: 1.55; margin: 0 0 10px; }
-  #welcome ul { padding-left: 0; list-style: none; margin: 12px 0 18px; line-height: 1.9; }
-  #welcome .go { width: 100%; background: var(--accent); color: #fff; font-size: 16px; padding: 11px; box-shadow: none; }
-  #welcome .go:hover { background: #df7b3a; }
+  #welcome { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(60, 70, 30, 0.28); z-index: 10; }
+  #welcome .card { position: static; width: min(520px, calc(100% - 32px)); padding: 30px 34px 28px; text-align: left;
+    background: #f7eedc; border-radius: 22px; box-shadow: 0 20px 60px rgba(50, 40, 15, 0.3); backdrop-filter: none; -webkit-backdrop-filter: none; }
+  #welcome .hello { display: flex; align-items: center; gap: 18px; margin-bottom: 18px; }
+  #welcome .hello svg { flex: none; width: 83px; height: 96px; }
+  #welcome .hello .to { font-size: 19px; font-style: italic; font-weight: 450; color: var(--muted); }
+  #welcome h1 { margin: 0; font-size: 40px; font-weight: 680; line-height: 1; letter-spacing: -0.015em; white-space: nowrap; }
+  #welcome .hello .when { margin-top: 6px; font-size: 16px; font-style: italic; font-weight: 450; color: var(--muted); }
+  #welcome p { font-size: 15px; line-height: 1.6; margin: 0 0 12px; }
+  #welcome ul { padding-left: 0; list-style: none; margin: 16px 0 20px; font-size: 15px; line-height: 1.5; }
+  #welcome li + li { margin-top: 6px; }
+  #welcome .go { width: 100%; border-radius: 14px; background: #4f7f3a; color: #fff; font-size: 17px; padding: 13px; box-shadow: none; }
+  #welcome .go:hover { background: #44702f; }
   .hidden { display: none !important; }
 
   /* ---- the stats page, over everything */
@@ -376,7 +397,10 @@
     .ins-name { font-size: 18px; }
     #news-log ol { max-height: none; }
     #welcome .card { max-height: calc(100% - 24px); overflow-y: auto; padding: 18px 22px 16px; }
-    #welcome ul { margin: 8px 0 12px; line-height: 1.7; }
+    #welcome .hello { margin-bottom: 10px; gap: 12px; }
+    #welcome .hello svg { width: 54px; height: 62px; }
+    #welcome h1 { font-size: 30px; }
+    #welcome ul { margin: 8px 0 12px; }
   }
   @media (max-height: 360px) {
     #toolbar .tool { height: 38px; }
@@ -384,6 +408,12 @@
   /* small phones: squeeze the top row so the two pills never overlap */
   /* Three kinds and the time pill are a tight fit: just the weather, and the whole pill opens the card. */
   @media (max-width: 440px) {
+    #welcome .card { padding: 22px 20px 20px; }
+    #welcome .hello { gap: 12px; }
+    #welcome .hello svg { width: 50px; height: 58px; }
+    #welcome .hello .to { font-size: 16px; }
+    #welcome h1 { font-size: min(30px, 6.6vw); }   /* one line, down to 320 px wide */
+    #welcome .hello .when { font-size: 14px; margin-top: 4px; }
     #mini-season, #meadow.mini .win-btn { display: none; }
     .mini-line { gap: 7px; padding: 0 10px; font-size: 14px; }
     #mini-sky { letter-spacing: 0; }
@@ -415,7 +445,7 @@
   </button>
   <div class="full">
     <header class="head">
-      <div class="brand">🌱 AEON Garden</div>
+      <div class="brand fr"><svg viewBox="8 0 104 120" aria-hidden="true"><rect x="50" y="10" width="20" height="16" rx="4" fill="#C08A38"/><circle cx="60" cy="70" r="48" fill="#D9A441"/><clipPath id="mark-mini"><circle cx="60" cy="70" r="37"/></clipPath><g clip-path="url(#mark-mini)"><rect x="20" y="30" width="80" height="80" fill="#F1DDB0"/><ellipse transform="rotate(-13 52 80)" cx="52" cy="80" rx="6.5" ry="14" fill="#FFFFFF"/><ellipse transform="rotate(10 66 79)" cx="66" cy="79" rx="6.5" ry="14.5" fill="#FFFFFF"/><path d="M20 98 C 40 86, 76 86, 100 96 L100 112 L20 112Z" fill="#5F9346"/></g></svg>Nobody's Meadow</div>
       <button class="win-btn shrink" data-act="mini" title="Make this card small (C)" aria-label="Make this card small"></button>
     </header>
     <div class="clock"><span id="season-emoji">🌸</span><b id="season-name">Spring</b><span id="clock-rest">day 1 · year 1</span></div>
@@ -525,19 +555,25 @@
 
 <div id="welcome" class="hidden">
   <div class="card">
-    <h1>🌱 Welcome to AEON Garden</h1>
+    <div class="hello">
+      <svg viewBox="8 0 104 120" aria-hidden="true"><circle cx="60" cy="10.5" r="6.5" fill="none" stroke="#C08A38" stroke-width="4"/><rect x="52" y="15" width="16" height="10" rx="3.5" fill="#C08A38"/><circle cx="60" cy="70" r="46" fill="#D9A441"/><circle cx="60" cy="70" r="42" fill="#F7EEDC"/><g fill="none" stroke-width="5.5" stroke-linecap="round"><path d="M63.27,32.64 A37.5 37.5 0 0 1 97.36,66.73" stroke="#E9A7A2"/><path d="M97.36,73.27 A37.5 37.5 0 0 1 63.27,107.36" stroke="#EDC34F" opacity="0.28"/><path d="M56.73,107.36 A37.5 37.5 0 0 1 22.64,73.27" stroke="#D5873A" opacity="0.28"/><path d="M22.64,66.73 A37.5 37.5 0 0 1 56.73,32.64" stroke="#A9C4CE" opacity="0.28"/></g><clipPath id="mark-welcome"><circle cx="60" cy="70" r="32.5"/></clipPath><g clip-path="url(#mark-welcome)"><rect x="20" y="30" width="80" height="80" fill="#F5E6CC"/><circle cx="44" cy="62" r="8" fill="#FDF5E2"/><path d="M20 86 C 40 76, 72 74, 100 80 L100 110 L20 110Z" fill="#A9D48A"/><g transform="rotate(-13 54 81)"><ellipse cx="54" cy="81" rx="4.2" ry="11" fill="#EFE3CF"/><ellipse cx="54" cy="83" rx="1.8" ry="7.5" fill="#E9A7A2"/></g><g transform="rotate(10 63 80)"><ellipse cx="63" cy="80" rx="4.2" ry="11.5" fill="#EFE3CF"/><ellipse cx="63" cy="82" rx="1.8" ry="8" fill="#E9A7A2"/></g><path d="M20 100 C 34 90, 48 87, 58 87 C 70 87, 88 93, 100 100 L100 110 L20 110Z" fill="#6DAA50"/><path d="M39 90.6 l-1 -3.4 M41 89.9 l.2 -3.6 M43 89.4 l1.4 -3 M73 90 l-.8 -3.4 M75 90.2 l.4 -3.5 M77 90.6 l1.4 -3" stroke="#6DAA50" stroke-width="1.6" stroke-linecap="round" fill="none"/><g fill="#EC9DB3"><circle cx="34" cy="98" r="1.6"/><circle cx="50" cy="101" r="1.4"/><circle cx="80" cy="99" r="1.6"/></g></g><path d="M39 46 C 44 40, 50 37.5, 56 37" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" opacity="0.55"/></svg>
+      <div>
+        <div class="fr to">Welcome to</div>
+        <h1 class="fr">Nobody's Meadow</h1>
+        <div class="fr when">It's spring, day 1.</div>
+      </div>
+    </div>
     <p>A small meadow where rabbits, foxes and bees live their own lives. Nobody tells them what to do.
-      They graze, run for their burrows, fall in love and raise families. Every baby inherits a mix of its
-      parents' traits, with a small twist.</p>
-    <p>Leave it running and watch what happens: populations boom and crash, and over the years the animals slowly change.</p>
+      They graze, fall in love, raise families and run for their burrows. Every baby is a mix of its parents, with a small twist.</p>
+    <p>The meadow keeps its own time. Leave it running, and over the years the animals slowly change.</p>
     <ul>
-      <li>🔍 <b>Click an animal</b> to follow its whole life story</li>
+      <li>🔍 <b>Click an animal</b> to follow its whole life</li>
       <li class="mouse-only">🖱️ <b>Scroll</b> to zoom, <b>drag</b> to look around</li>
       <li class="touch-only">🤏 <b>Pinch</b> to zoom, <b>drag</b> to look around</li>
-      <li class="mouse-only">🐇 🦊 🌱 ⚡ <b>Right-click</b> the meadow to play god, weather included. The toolbar waits at the bottom edge</li>
-      <li class="touch-only">🐇 🦊 🌱 ⚡ <b>The toolbar</b> lets you play god. The weather is in <b>•••</b></li>
+      <li class="mouse-only">⚡ <b>Right-click</b> the meadow to play god, weather included. The toolbar waits at the bottom edge</li>
+      <li class="touch-only">⚡ <b>The toolbar</b> lets you play god. The weather is in <b>•••</b></li>
     </ul>
-    <button class="btn go" id="go">Let's go!</button>
+    <button class="btn go" id="go">Visit the meadow</button>
   </div>
 </div>
 

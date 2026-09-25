@@ -1,33 +1,51 @@
 <!doctype html>
-<!-- Source for assets/logo.png (#scene), apple-touch-icon.png (#scene-square) and
-     favicon.ico / icon-192.png (#solo). Render with headless Chrome, e.g.
-     chrome --headless=new --window-size=512,512 --default-background-color=00000000 \
-            --virtual-time-budget=8000 --screenshot=out.png "file://$PWD/icon.html#scene"
-     Uses Noto Color Emoji (OFL) so the art is safe to publish. -->
+<!-- Source for the icons, the pocket watch from the brand sheet (Nobody's Meadow, direction 04).
+       #tile    the app icon: the watch on a rounded honey tile  -> logo.png (512), icon-192.png
+       #square  the same tile with square corners (iOS rounds it) -> apple-touch-icon.png (180)
+       #mark    the small mark, ../favicon.svg                    -> favicon.ico (16, 32, 48)
+     Render each size with headless Chrome at that window size, e.g.
+       chrome --headless=new --hide-scrollbars --window-size=512,512 --default-background-color=00000000 \
+              --screenshot=logo.png "file://$PWD/icon.html#tile"
+     favicon.ico holds 16, 32 and 48 px renders of #mark, packed with Pillow:
+       Image.open('m48.png').save('favicon.ico', sizes=[(16,16),(32,32),(48,48)],
+                                  append_images=[Image.open('m16.png'), Image.open('m32.png')])
+     No fonts, no emoji: it's all shapes, so it renders the same anywhere. -->
 <html><head><meta charset="utf-8">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=block" rel="stylesheet">
 <style>
-html,body{margin:0;background:transparent}
-.e{font-family:"Noto Color Emoji";position:absolute;line-height:1}
-/* everything in % of the tile so any window size works */
-.tile{width:100vw;height:100vh;position:relative;overflow:hidden;
-  background:radial-gradient(circle at 30% 22%,#c6e4a2,#95c672 55%,#7cb15e)}
-body.round .tile{border-radius:22%}
-.hill{position:absolute;left:-25%;right:-25%;top:70%;height:100%;border-radius:50%;background:#6a9f4f}
-.hill.back{top:57%;left:35%;right:-70%;background:#7fb262}
-</style></head><body class="round"><div class="tile">
-  <div class="e scene" style="font-size:36vw;left:57vw;top:30vw">🦊</div>
-  <div class="hill back"></div>
-  <div class="e" id="rab" style="font-size:58vw;left:6vw;top:14vw">🐇</div>
-  <div class="hill"></div>
-</div>
+html,body{margin:0;width:100vw;height:100vh;overflow:hidden;background:transparent}
+svg,img{display:block;width:100vw;height:100vh}
+</style></head><body>
+<svg id="tile" viewBox="0 0 120 120">
+  <rect id="bg" width="120" height="120" rx="27" fill="#F1DDB0"/>
+  <g transform="translate(60 62) scale(.84) translate(-60 -64)">
+    <circle cx="60" cy="10.5" r="6.5" fill="none" stroke="#C08A38" stroke-width="4"/>
+    <rect x="52" y="15" width="16" height="10" rx="3.5" fill="#C08A38"/>
+    <circle cx="60" cy="70" r="46" fill="#D9A441"/>
+    <circle cx="60" cy="70" r="42" fill="#F7EEDC"/>
+    <!-- the seasons: spring, summer, autumn, winter, clockwise from the top -->
+    <g fill="none" stroke-width="5.5" stroke-linecap="round">
+      <path d="M63.27,32.64 A37.5 37.5 0 0 1 97.36,66.73" stroke="#E9A7A2"/>
+      <path d="M97.36,73.27 A37.5 37.5 0 0 1 63.27,107.36" stroke="#EDC34F"/>
+      <path d="M56.73,107.36 A37.5 37.5 0 0 1 22.64,73.27" stroke="#D5873A"/>
+      <path d="M22.64,66.73 A37.5 37.5 0 0 1 56.73,32.64" stroke="#A9C4CE"/>
+    </g>
+    <clipPath id="dial"><circle cx="60" cy="70" r="32.5"/></clipPath>
+    <!-- the face: a honey sky, the sun, a hill with a rabbit's ears peeking over it -->
+    <g clip-path="url(#dial)">
+      <rect x="20" y="30" width="80" height="80" fill="#F1DDB0"/>
+      <circle cx="78" cy="55" r="8" fill="#FBF0D2"/>
+      <path d="M20 86 C 40 76, 72 74, 100 80 L100 110 L20 110Z" fill="#9CC47A"/>
+      <g transform="rotate(-13 54 81)"><ellipse cx="54" cy="81" rx="4.2" ry="11" fill="#F6EFE3"/><ellipse cx="54" cy="83" rx="1.8" ry="7.5" fill="#E9A7A2"/></g>
+      <g transform="rotate(10 63 80)"><ellipse cx="63" cy="80" rx="4.2" ry="11.5" fill="#F6EFE3"/><ellipse cx="63" cy="82" rx="1.8" ry="8" fill="#E9A7A2"/></g>
+      <path d="M20 100 C 34 90, 48 87, 58 87 C 70 87, 88 93, 100 100 L100 110 L20 110Z" fill="#5F9346"/>
+      <path d="M39 90.6 l-1 -3.4 M41 89.9 l.2 -3.6 M43 89.4 l1.4 -3 M73 90 l-.8 -3.4 M75 90.2 l.4 -3.5 M77 90.6 l1.4 -3" stroke="#5F9346" stroke-width="1.6" stroke-linecap="round" fill="none"/>
+    </g>
+    <path d="M39 46 C 44 40, 50 37.5, 56 37" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" opacity="0.55"/>
+  </g>
+</svg>
 <script>
-const h=location.hash;
-if(h.includes('square'))document.body.className='';
-if(h.includes('solo')){document.querySelectorAll('.scene,.hill.back').forEach(e=>e.remove());
-  const r=document.getElementById('rab');r.style.fontSize='84vw';r.style.left='6vw';r.style.top='4vw';
-  document.querySelector('.tile').style.background='radial-gradient(circle at 30% 22%,#8cc46a,#5f9e43 60%,#4d8a37)';
-  document.querySelector('.hill').style.background='#3f7a2e';document.querySelector('.hill').style.top='74%';
-  if(h.includes('fox')){r.textContent='🦊';r.style.fontSize='76vw';r.style.left='12vw';r.style.top='10vw';}}
+const h = location.hash;
+if (h.includes('square')) document.getElementById('bg').setAttribute('rx', 0);
+if (h.includes('mark')) document.body.innerHTML = '<img src="../favicon.svg" alt="">';
 </script>
 </body></html>

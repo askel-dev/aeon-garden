@@ -1,54 +1,56 @@
 <!doctype html>
-<!-- Source for assets/og.png, the link preview card. Render with headless Chrome:
-     chrome --headless=new --window-size=1200,630 --virtual-time-budget=8000 \
-            --screenshot=out.png "file://$PWD/og.html" -->
+<!-- Source for assets/og.png, the link preview card (1200x630): the itch cover (cover.html) laid out wide.
+     Render with headless Chrome:
+       chrome --headless=new --hide-scrollbars --window-size=1200,630 --virtual-time-budget=8000 \
+              --screenshot=og.png "file://$PWD/og.html"
+     meadow.jpg is the running game, cropped to the watch face. Fraunces comes from Google Fonts,
+     so render online. -->
 <html><head><meta charset="utf-8">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&family=Nunito:wght@700;900&display=block" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT,WONK@0,9..144,680,100,1;1,9..144,450,100,1&display=block" rel="stylesheet">
 <style>
 html,body{margin:0;width:1200px;height:630px;overflow:hidden}
-body{position:relative;font-family:Nunito;color:#3b372f;
-  background:radial-gradient(ellipse at 70% 10%,#c9e6a6 0%,#a9d388 35%,#9cc77e 60%,#8dbb6f 100%)}
-.e{font-family:"Noto Color Emoji";position:absolute;line-height:1;transform:translate(-50%,-100%)}
-.hill{position:absolute;border-radius:50%}
-.burrow{position:absolute;border-radius:50%;background:#2a2019;box-shadow:0 0 0 7px #7d6649,0 6px 0 16px rgba(90,70,40,.22)}
-.card{position:absolute;left:60px;top:175px;width:560px;padding:34px 40px 34px;border-radius:30px;
-  background:rgba(255,250,240,.95);box-shadow:0 14px 40px rgba(70,55,25,.22),0 2px 5px rgba(70,55,25,.12)}
-h1{margin:0;font-weight:900;font-size:60px;letter-spacing:-.5px;white-space:nowrap;line-height:1;display:flex;align-items:center;gap:14px}
-h1 .em{font-family:"Noto Color Emoji";font-size:52px}
-p{margin:18px 0 0;font-weight:700;font-size:27px;line-height:1.35;color:#6f6656}
-.bub{position:absolute;background:#fffaf0;border-radius:50%;width:62px;height:62px;display:grid;place-items:center;
-  box-shadow:0 4px 12px rgba(70,55,25,.18);font-family:"Noto Color Emoji";font-size:34px;transform:translate(-50%,-100%)}
+body{position:relative;background:#F1DDB0;color:#3B372F}
+svg{position:absolute;left:0;top:0}
+.fr{font-family:Fraunces,Georgia,serif;font-variation-settings:'SOFT' 100,'WONK' 1}
+/* the watch face: centre (900, 262), dial radius 32.5 at scale 2.9 */
+.face{position:absolute;left:805.75px;top:167.75px;width:188.5px;height:188.5px;border-radius:50%;overflow:hidden;background:#8CC56A}
+.face img{display:block;width:100%;height:100%}
+.name{position:absolute;left:84px;top:92px}
+.name .a{font-size:58px;font-style:italic;font-weight:450;line-height:1;margin-left:8px}
+.name .b{font-size:156px;font-weight:680;line-height:.92;letter-spacing:-.02em}
+.name .c{margin:20px 0 0 10px;font-size:32px;font-style:italic;font-weight:450;color:#6F6657}
 </style></head><body>
-<div class="e" style="left:930px;top:274px;font-size:78px">🦊</div>
-<div class="hill" style="left:560px;top:250px;width:900px;height:420px;background:#8fc06f"></div>
-<div class="hill" style="left:-200px;top:470px;width:1700px;height:500px;background:#86b866"></div>
-
-<div class="e" style="left:1110px;top:250px;font-size:120px">🌳</div>
-<div class="e" style="left:790px;top:232px;font-size:86px">🌳</div>
-<div class="e" style="left:1010px;top:190px;font-size:70px">🌳</div>
-
-<div class="e" style="left:880px;top:330px;font-size:40px">🌿</div>
-
-<div class="burrow" style="left:1030px;top:520px;width:70px;height:26px"></div>
-
-<div class="e" style="left:760px;top:470px;font-size:96px;transform:translate(-50%,-100%) scaleX(-1)">🐇</div>
-<div class="e" style="left:880px;top:490px;font-size:84px">🐇</div>
-<div class="bub" style="left:822px;top:372px">💕</div>
-<div class="e" style="left:1080px;top:600px;font-size:62px">🐇</div>
-<div class="e" style="left:680px;top:600px;font-size:52px">🐇</div>
-
-<div class="e" style="left:980px;top:445px;font-size:36px">🌸</div>
-<div class="e" style="left:1160px;top:470px;font-size:40px">🌼</div>
-<div class="e" style="left:560px;top:625px;font-size:44px">🌷</div>
-<div class="e" style="left:880px;top:628px;font-size:42px">🌱</div>
-<div class="e" style="left:1170px;top:620px;font-size:38px">🌸</div>
-<div class="e" style="left:120px;top:110px;font-size:38px">🌸</div>
-<div class="e" style="left:520px;top:120px;font-size:34px">🌼</div>
-<div class="e" style="left:90px;top:590px;font-size:44px">🌿</div>
-<div class="e" style="left:330px;top:610px;font-size:38px">🌼</div>
-
-<div class="card">
-  <h1><span class="em">🌱</span>AEON Garden</h1>
-  <p>A cozy emoji meadow where rabbits and foxes live their own lives.</p>
-</div>
+<svg viewBox="0 0 1200 630" width="1200" height="630" aria-hidden="true">
+  <path d="M900 -10 C 909 16, 891 34, 901 70" fill="none" stroke="#C08A38" stroke-width="7" stroke-dasharray="11 6" stroke-linecap="round"/>
+  <g transform="translate(900 262) scale(2.9) translate(-60 -70)">
+    <circle cx="61.5" cy="72" r="46" fill="#C9A86A" opacity="0.35"/>
+    <circle cx="60" cy="10.5" r="6.5" fill="none" stroke="#C08A38" stroke-width="4"/>
+    <rect x="52" y="15" width="16" height="10" rx="3.5" fill="#C08A38"/>
+    <circle cx="60" cy="70" r="46" fill="#D9A441"/><circle cx="60" cy="70" r="42" fill="#F7EEDC"/>
+    <g fill="none" stroke-width="5.5" stroke-linecap="round"><path d="M63.27,32.64 A37.5 37.5 0 0 1 97.36,66.73" stroke="#E9A7A2"/><path d="M97.36,73.27 A37.5 37.5 0 0 1 63.27,107.36" stroke="#EDC34F"/><path d="M56.73,107.36 A37.5 37.5 0 0 1 22.64,73.27" stroke="#D5873A"/><path d="M22.64,66.73 A37.5 37.5 0 0 1 56.73,32.64" stroke="#A9C4CE"/></g>
+  </g>
+  <!-- the cover's hills, stretched wide and dropped 130 px -->
+  <g transform="translate(0 130)">
+    <g transform="translate(0 -12)"><!-- the fox, a little higher: the hill is higher here than on the cover -->
+      <path d="M1003 322 L1009 298 L1019 316Z M1023 316 L1031 297 L1037 322Z" fill="#E2702F"/>
+      <path d="M1006 310 L1009 298 L1013 308Z M1028 308 L1031 297 L1034 310Z" fill="#3B372F"/>
+    </g>
+    <path d="M-10 336 C 230 300, 570 290, 800 306 C 990 320, 1105 306, 1210 296 L1210 510 L-10 510Z" fill="#B7D493"/>
+    <path d="M-10 384 C 285 338, 665 346, 915 372 C 1065 388, 1160 380, 1210 372 L1210 510 L-10 510Z" fill="#9CC47A"/>
+    <g transform="rotate(-13 300 398)"><ellipse cx="300" cy="398" rx="11.5" ry="33" fill="#F6EFE3"/><ellipse cx="300" cy="403" rx="5" ry="22" fill="#E9A7A2"/></g>
+    <g transform="rotate(10 325 395)"><ellipse cx="325" cy="395" rx="11.5" ry="35" fill="#F6EFE3"/><ellipse cx="325" cy="400" rx="5" ry="23" fill="#E9A7A2"/></g>
+    <path d="M-10 452 C 110 424, 230 412, 314 412 C 430 412, 760 440, 1210 428 L1210 510 L-10 510Z" fill="#5F9346"/>
+    <path d="M248 420 l-2.5 -9 M254 418 l0.8 -10 M260 416.5 l4 -8.5 M382 418 l-2 -9 M388 419.5 l1.2 -9.5 M394 421 l4 -8" stroke="#5F9346" stroke-width="3.4" stroke-linecap="round" fill="none"/>
+    <g fill="#E9A7A2"><circle cx="90" cy="470" r="4"/><circle cx="110" cy="480" r="3.4"/><circle cx="470" cy="470" r="3.6"/><circle cx="1080" cy="462" r="3.8"/></g>
+    <g fill="#FBF0D2"><circle cx="100" cy="476" r="3.2"/><circle cx="458" cy="478" r="3.2"/><circle cx="1140" cy="440" r="3.2"/><circle cx="760" cy="470" r="3.4"/></g>
+  </g>
+</svg>
+<div class="face"><img src="meadow.jpg" alt=""></div>
+<svg viewBox="0 0 1200 630" width="1200" height="630" aria-hidden="true">
+  <g transform="translate(900 262) scale(2.9) translate(-60 -70)">
+    <circle cx="60" cy="70" r="33" fill="none" stroke="#F7EEDC" stroke-width="1.4"/>
+    <path d="M38 50 C 42 43, 48 39.5, 55 38" fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/>
+  </g>
+</svg>
+<div class="name fr"><div class="a">Nobody's</div><div class="b">Meadow</div><div class="c">A meadow that keeps its own time.</div></div>
 </body></html>

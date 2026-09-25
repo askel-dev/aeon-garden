@@ -1,7 +1,8 @@
-# AEON Garden
+# Nobody's Meadow
 
 A cozy emoji meadow where rabbits, foxes and bees live their own lives and you watch what
-emerges. **This is a game.** Balancing for fun is allowed and is the job; realism is
+emerges. It used to be called AEON Garden, and the repo, the GitHub Pages URL and the
+`aeon-garden-*` localStorage keys keep that name (renaming the keys would lose players' settings). **This is a game.** Balancing for fun is allowed and is the job; realism is
 optional. It grew out of the AEON artificial-life lab (`~/programming/AEON`, finished and
 closed); none of that project's rules apply here.
 
@@ -13,6 +14,8 @@ told to just do it.
 - `game.js`: drawing, UI, news feed, the inspector, the optional Ollama diary. The inspector shows
   animals and every other thing you click (hives, trees, rocks, burrows, flowers, fields, water): each
   kind is an entry in `THINGS`, saying how to find one on screen and what its panel shows.
+  The tab's icon follows the season and the part of day (`updateFavicon`, at most once a second), and
+  the news log dates each line with a season chip (`seasonChip`).
 - `ground.js`: the ground (grass, earth, shores, water) as a WebGL shader, painted fresh every frame from a
   few small textures of one texel a tile that game.js keeps up to date (`paintTerrain`, `updateWater`).
 - `sound.js`: all the sounds, made with Web Audio (no files). Off until the 🔊 button or M.
