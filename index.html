@@ -6,8 +6,9 @@
 <title>Nobody's Meadow</title>
 <meta name="description" content="A small meadow that keeps its own time. Rabbits, foxes and bees live their lives, season after season, whether you're watching or not.">
 <meta name="theme-color" content="#9cc77e">
-<link rel="icon" href="assets/favicon.ico" sizes="any">
-<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<!-- the .ico says 32x32, not "any", or Chrome picks it over the SVG. game.js swaps the SVG as the seasons turn -->
+<link rel="icon" href="assets/favicon.ico" sizes="32x32">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg" id="favicon">
 <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <!-- added to the home screen it opens with no browser bars at all -->
@@ -29,8 +30,8 @@
 <meta name="twitter:card" content="summary_large_image">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<!-- Fraunces only for the name: italic 450, upright 650 to 680, soft and wonky -->
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT,WONK@0,9..144,650..680,100,1;1,9..144,450,100,1&family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
+<!-- Fraunces only for the name and the season chips: italic 450, upright 600 to 680, soft and wonky -->
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT,WONK@0,9..144,600..680,100,1;1,9..144,450,100,1&family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
 <style>
   :root {
     --card: rgba(255, 250, 240, 0.94);
@@ -127,7 +128,13 @@
   #news-log ol { list-style: none; margin: 0; padding: 0; max-height: min(340px, 45vh); overflow-y: auto; font-size: 13px; line-height: 1.35; }
   #news-log li { padding: 4px 0; border-bottom: 1px dashed var(--line); }
   #news-log li:last-child { border-bottom: none; }
-  #news-log .when { display: block; color: var(--muted); font-size: 11px; font-weight: 700; }
+  /* the season chips: when it happened, in the season's colour from the watch's ring */
+  .chip { display: inline-block; margin-bottom: 2px; border-radius: 7px; padding: 1px 7px; font-size: 12px; font-weight: 600; }
+  .chip.s0 { background: #f9e0de; color: #8c3b37; }
+  .chip.s1 { background: #fbf0cc; color: #7a5a0e; }
+  .chip.s2 { background: #f6e0cb; color: #7f4a17; }
+  .chip.s3 { background: #e3ecf0; color: #3d5a68; }
+  #news-log .chip + .yr { margin-left: 6px; color: var(--muted); font-size: 11px; font-weight: 700; }
   @keyframes pop-in { from { transform: translateY(8px) scale(0.97); opacity: 0; } to { transform: none; opacity: 1; } }
 
   /* ---- toolbar, bottom centre */

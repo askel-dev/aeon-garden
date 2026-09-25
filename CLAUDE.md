@@ -14,6 +14,8 @@ told to just do it.
 - `game.js`: drawing, UI, news feed, the inspector, the optional Ollama diary. The inspector shows
   animals and every other thing you click (hives, trees, rocks, burrows, flowers, fields, water): each
   kind is an entry in `THINGS`, saying how to find one on screen and what its panel shows.
+  The tab's icon follows the season and the part of day (`updateFavicon`, at most once a second), and
+  the news log dates each line with a season chip (`seasonChip`).
 - `ground.js`: the ground (grass, earth, shores, water) as a WebGL shader, painted fresh every frame from a
   few small textures of one texel a tile that game.js keeps up to date (`paintTerrain`, `updateWater`).
 - `sound.js`: all the sounds, made with Web Audio (no files). Off until the 🔊 button or M.

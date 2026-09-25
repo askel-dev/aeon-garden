@@ -1934,7 +1934,8 @@ function addNews(html, category, minGapMs = 0) {
 
 function renderNewsLog() {
   ui.newsStale = false;
-  $('#news-log ol').innerHTML = ui.newsLog.map(n => `<li><span class="when">${when(n.tick)}</span>${n.html}</li>`).join('');
+  const year = S.clock(world).year;
+  $('#news-log ol').innerHTML = ui.newsLog.map(n => `<li>${seasonChip(n.tick, year)}${n.html}</li>`).join('');
 }
 
 function toggleNewsLog() {
@@ -2289,6 +2290,33 @@ const shownHTML = new WeakMap();
 function setHTML(el, html) { if (shownHTML.get(el) !== html) { shownHTML.set(el, html); el.innerHTML = html; } }
 function setText(el, text) { if (el.textContent !== text) el.textContent = text; }
 
+// The tab's icon keeps the meadow's time: the hill takes the season's colour and the sky the
+// part of the day. It's the small mark from assets/favicon.svg, one of 16 made once each. It only
+// changes when the season or the part of day does, at most once a second, and from 15x on the
+// days fly by too fast to follow, so it stays noon and only the seasons turn.
+const MARK_SKY = ['#F5E6CC', '#F1DDB0', '#F0CFA0', '#34405F'];   // morning, noon, evening, night
+const MARK_HILL = [                                                // by season: day, night
+  ['#6DAA50', '#3F6A3A'], ['#5F9346', '#3A5A38'], ['#A5823F', '#6B5A36'], ['#7C8CA6', '#6F7E99'],
+];
+const markIcons = new Map();
+let markKey = -1, markAt = 0;
+function markIcon(season, part) {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="8 0 104 120"><rect x="50" y="10" width="20" height="16" rx="4" fill="#C08A38"/>'
+    + '<circle cx="60" cy="70" r="48" fill="#D9A441"/><clipPath id="c"><circle cx="60" cy="70" r="37"/></clipPath><g clip-path="url(#c)">'
+    + `<rect x="20" y="30" width="80" height="80" fill="${MARK_SKY[part]}"/>`
+    + '<ellipse transform="rotate(-13 52 80)" cx="52" cy="80" rx="6.5" ry="14" fill="#FFFFFF"/><ellipse transform="rotate(10 66 79)" cx="66" cy="79" rx="6.5" ry="14.5" fill="#FFFFFF"/>'
+    + `<path d="M20 98 C 40 86, 76 86, 100 96 L100 112 L20 112Z" fill="${MARK_HILL[season][part === 3 ? 1 : 0]}"/></g></svg>`;
+  return 'data:image/svg+xml,' + encodeURIComponent(svg);
+}
+function updateFavicon(ck) {
+  const part = ui.speed >= 15 ? 1 : ck.night ? 3 : ck.phase > 0.6 ? 2 : ck.phase < 0.1 ? 0 : 1;
+  const key = ck.season * 4 + part, now = performance.now();
+  if (key === markKey || now - markAt < 1000) return;
+  markKey = key; markAt = now;
+  if (!markIcons.has(key)) markIcons.set(key, markIcon(ck.season, part));
+  $('#favicon').href = markIcons.get(key);
+}
+
 function updateMeadowCard() {
   const ck = S.clock(world);
   setText($('#season-emoji'), S.SEASONS[ck.season].emoji);
@@ -2306,6 +2334,7 @@ function updateMeadowCard() {
   $('#sky').title = WEATHER_HINT[kind] + (world.skyLocked ? '. Locked: it stays until you unlock it (K)' : '');
   setText($('#sky-btn'), wx.emoji);
   setHTML($('#mini-sky'), `<span id="mini-season">${S.SEASONS[ck.season].emoji}</span>${icon}`);   // phones hide the season
+  updateFavicon(ck);
   for (const s of S.KINDS) {
     setText($('#mini-' + s), String(world.count[s]));
     setText($('#n-' + s), String(world.count[s]));
@@ -2605,6 +2634,13 @@ $('#stats-chart').addEventListener('pointermove', e => { ui.stats.hover = e.offs
 $('#stats-chart').addEventListener('pointerleave', () => { ui.stats.hover = null; drawStatsChart(); });
 
 // ------------------------------------------------------------------ the inspector
+
+// "Spring · day 3" in the season's colours, and the year when it isn't this one.
+function seasonChip(t, year) {
+  const s = S.seasonOf(t), day = Math.floor(t / S.TPD), y = Math.floor(day / S.YEAR_DAYS) + 1;
+  return `<span class="chip fr s${s}">${S.SEASONS[s].name} · day ${day % S.SEASON_DAYS + 1}</span>`
+    + (y !== year ? `<span class="yr">year ${y}</span>` : '') + '<br>';
+}
 
 function when(t) {
   const s = S.seasonOf(t), day = Math.floor(t / S.TPD);
