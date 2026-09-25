@@ -10,10 +10,11 @@
  *     sky, and events are rare, quiet and rate-limited so fast-forward never turns into noise.
  *     Every few minutes a short felt-piano piece drifts over it, like the music in Minecraft
  *     (see "music" below), in keys that hold the pentatonic so it still fits.
+ *     Over it all hangs a wind chime that rings more the more rabbits there are.
  *
- * Use: Sound.start() from a click, then Sound.update({ phase, season, speed, sky, fire, bees }) a
+ * Use: Sound.start() from a click, then Sound.update({ phase, season, speed, sky, fire, bees, life }) a
  * few times a second (sky: how much of each weather is showing, 0..1; bees: how many are flying
- * on screen) and Sound.play('birth', { species, pan, near, seen }) on events.
+ * on screen; life: how full the meadow is of rabbits, 0..1) and Sound.play('birth', { species, pan, near, seen }) on events.
  */
 (() => {
 'use strict';
@@ -31,7 +32,7 @@ let ac = null, master, ducker, loud, fxBus, ambBus, musicBus, hush, reverb, nois
 let enabled = true, volume = 0.6;
 const amb = {};                                    // ambient layers
 const LOUD = 1.4;                                  // thunder's level against the rest
-const state = { phase: 0.3, season: 0, speed: 1, sky: { clear: 1 }, fire: 0, bees: 0 };
+const state = { phase: 0.3, season: 0, speed: 1, sky: { clear: 1 }, fire: 0, bees: 0, life: 0.3 };
 const last = {};                                   // per-sound cooldowns
 let recent = 0, recentAt = 0;                      // global voice budget
 
@@ -425,7 +426,7 @@ function buildAmbience() {
   amb.rainLow = loopNoise('lowpass', 350, 0.5);
   amb.fire = loopNoise('lowpass', 220, 0.6);
   amb.hum = hiveHum();
-  amb.calm = 0.5; amb.blow = null; amb.gust = 0; amb.swell = 0.5;
+  amb.calm = 0.5; amb.blow = null; amb.gust = 0; amb.swell = 0.5; amb.tube = 2;
 }
 
 // What the meadow should sound like right now, smoothed so fast-forward blurs into an average.
@@ -447,6 +448,7 @@ function mix() {
     hush: Math.max(sky('fog'), 0.7 * sky('snow')),
     fire: Math.min(1, state.fire / 30),
     bees: state.speed >= 15 ? 0 : Math.min(1, state.bees / 12),
+    chimes: Math.min(1, state.life) ** 1.5 * (0.5 + 0.5 * dayness),    // a busy meadow, a busy chime
   };
 }
 
@@ -478,6 +480,7 @@ function tickAmbience() {
   if (Math.random() < m.snow * 0.15 * dt) snowChime(now);
   if (Math.random() < m.cicadas * 0.12 * dt) cicada(now);
   for (let i = 0; i < 3; i++) if (Math.random() < m.fire * 4 * dt) crackle(now + rand(0, 0.2));
+  if (Math.random() < (0.08 + 1.4 * m.chimes) * (0.5 + amb.gust) * dt) chime(now + rand(0, 0.2));
   musicTick(now, m);
 }
 
@@ -698,6 +701,13 @@ function cicada(t) {
 const crackle = t => noise(out(rand(-0.8, 0.8), 0.15, rand(0.3, 1)), t, rand(0.015, 0.04), { from: rand(900, 3500), to: rand(600, 2500), q: 1.5, peak: 0.25 });
 
 const rustle = (t, pan = rand(-1, 1), v = 1) => noise(out(pan, 0.2, 0.8 * v), t, rand(0.6, 1.2), { from: 1800, to: 4200, q: 0.9, peak: 0.08 });
+// The wind chime: six tubes from the scale. The clapper swings to a tube beside the last one,
+// so the notes wander up and down like a slow tune instead of jumping about.
+function chime(t) {
+  amb.tube = Math.max(0, Math.min(5, amb.tube + pick([-1, -1, 1, 1, 2, -2])));
+  bell(out(rand(0.2, 0.45), 0.7, 0.35), note(amb.tube + 4, 0), t, rand(0.35, 0.6));
+}
+
 const snowChime = t => kalimba(out(rand(-1, 1), 0.7, 0.3), note(Math.floor(rand(5, 10)), 1), t, 0.4);
 
 // ------------------------------------------------------------------ music

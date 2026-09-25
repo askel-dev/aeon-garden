@@ -93,9 +93,14 @@
       <button data-speed="15">15× Seasons</button>
       <button data-speed="60">60× Years</button>
     </div>
+    <div class="row">
+      <span class="lbl">Rabbits</span>
+      <input id="life" type="range" min="0" max="1" step="0.01" value="0.3">
+      <span>🎐 the wind chime</span>
+    </div>
     <p class="note">Birds sing by day with a dawn chorus. Crickets and the odd owl come out at night. The wind comes in gusts that swell,
       cross from one side to the other and rustle the grass (dry leaves in autumn); in winter and storms a hard gust whistles
-      faintly, in tune. Winter has a few snowy chimes. Rain and storms hiss and drip, fog and snow muffle everything, a heatwave brings
+      faintly, in tune. Winter has a few snowy chimes, and a wind chime rings over it all, more often the more rabbits there are (and in gusts). Rain and storms hiss and drip, fog and snow muffle everything, a heatwave brings
       cicadas, and a wildfire crackles. Bees flying on screen add a faint hum in tune. At 15× and 60×, day and night blur into one steady mix, and only the big moments
       (seasons, newcomers, extinctions) still make a sound.</p>
   </div>
@@ -135,7 +140,7 @@
 (() => {
   const $ = s => document.querySelector(s);
   const S = window.Sound;
-  const st = { phase: 0.3, season: 0, sky: 'clear', fire: 0, speed: 1, species: 'rabbit', auto: false };
+  const st = { phase: 0.3, season: 0, sky: 'clear', fire: 0, speed: 1, species: 'rabbit', auto: false, life: 0.3 };
 
   const EVENTS = [
     ['love', '💕', 'Fell in love', 'two notes, a third apart'],
@@ -178,7 +183,7 @@
     if (t) $('#tune-now').textContent = `Playing ${S.tunes[t.name]}, ${clock(Math.min(t.at, t.length))} of ${clock(t.length)}.`;
   }, 250);
 
-  const push = () => S.update({ phase: st.phase, season: st.season, sky: { [st.sky]: 1 }, fire: st.fire, speed: st.speed, bees: st.bees || 0 });
+  const push = () => S.update({ phase: st.phase, season: st.season, sky: { [st.sky]: 1 }, fire: st.fire, speed: st.speed, bees: st.bees || 0, life: st.life });
   const setSky = k => { const wet = ['rain', 'storm']; if (wet.includes(k) && !wet.includes(st.sky)) play('rain'); st.sky = k; onIn('[data-sky]', 'sky', k); push(); };
   const clockText = p => p >= 0.72 || p < 0.02 ? '🌙 night' : p < 0.12 ? '🌅 dawn' : p > 0.6 ? '🌇 dusk' : '☀️ day';
   const setPhase = p => { st.phase = p; $('#phase').value = p; $('#clock').textContent = clockText(p); push(); };
@@ -205,6 +210,7 @@
     if (!$('#start').classList.contains('on')) $('#start').click();
     st.bees = +e.target.value; $('#bees-n').textContent = st.bees ? `${st.bees} on screen` : 'none flying'; push();
   };
+  $('#life').oninput = e => { st.life = +e.target.value; push(); };
   $('#fire').onclick = () => {
     st.fire = st.fire ? 0 : 30; $('#fire').classList.toggle('on', !!st.fire); push();
     play(st.fire ? 'fire' : 'fireout');
