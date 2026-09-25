@@ -62,8 +62,6 @@
   /* The meadow fills the whole glass: under the clock and behind Safari's floating bar too (lvh). */
   canvas#world { position: fixed; top: 0; left: 0; width: 100%; height: 100vh; height: 100lvh; display: block; touch-action: none; }
   .phone-only, .sheet-only { display: none; }
-  .touch-only { display: none; }
-  @media (pointer: coarse) { .touch-only { display: list-item; } .mouse-only { display: none; } }
   canvas#world.tool-look { cursor: grab; }
   canvas#world.tool-look.dragging { cursor: grabbing; }
   canvas#world.tool-rabbit, canvas#world.tool-fox { cursor: copy; }
@@ -256,12 +254,15 @@
   /* the terrain lab (?lab) brings its own panel, see terrain-lab.js */
   body.lab #meadow, body.lab #news, body.lab #toolbar, body.lab #hud-right, body.lab #ring { display: none; }
 
-  #welcome { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(60, 70, 30, 0.28); z-index: 10; }
+  #welcome { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(60, 70, 30, 0.28); z-index: 10; transition: opacity 0.7s ease; }
+  #welcome.leaving { opacity: 0; pointer-events: none; }
+  #welcome.leaving .card { transform: translateY(12px) scale(0.98); }
   /* The welcome card opens with the itch cover: a honey sky, the watch on its chain with the live
      meadow inside, and the hills with a rabbit's ears peeking over. It's shown once, paused, so the
      photo is lazy: players who have seen it never load it. */
   #welcome .card { position: static; width: min(520px, calc(100% - 32px)); max-height: calc(100% - 24px); padding: 0; overflow: hidden auto; scrollbar-width: thin; text-align: left;
-    background: #f7eedc; border-radius: 22px; box-shadow: 0 20px 60px rgba(50, 40, 15, 0.3); backdrop-filter: none; -webkit-backdrop-filter: none; }
+    background: #f7eedc; border-radius: 22px; box-shadow: 0 20px 60px rgba(50, 40, 15, 0.3); backdrop-filter: none; -webkit-backdrop-filter: none;
+    transition: transform 0.7s ease; }
   #welcome .banner { position: relative; height: 232px; background: #f1ddb0; }
   #welcome .watch { position: absolute; right: 33px; top: -14px; width: 151px; aspect-ratio: 104 / 134; }
   #welcome .watch svg { position: absolute; inset: 0; width: 100%; height: 100%; }
@@ -274,12 +275,32 @@
   #welcome h1 .n1 { font-size: 32px; font-style: italic; margin-left: 4px; }
   #welcome h1 .n2 { font-size: 80px; font-weight: 680; line-height: 0.92; letter-spacing: -0.02em; }
   #welcome .body { padding: 20px 32px 26px; }
-  #welcome .when { margin: 0 0 10px; font-size: 16px; font-style: italic; font-weight: 450; color: var(--muted); }
-  #welcome p { font-size: 15px; line-height: 1.6; margin: 0 0 12px; }
-  #welcome ul { padding-left: 0; list-style: none; margin: 16px 0 20px; font-size: 15px; line-height: 1.5; }
-  #welcome li + li { margin-top: 6px; }
-  #welcome .go { width: 100%; border-radius: 14px; background: #4f7f3a; color: #fff; font-size: 17px; padding: 13px; box-shadow: none; }
+  #welcome p { font-size: 15px; line-height: 1.6; margin: 0 0 18px; }
+  #welcome .go-row { display: flex; gap: 10px; }
+  #welcome .go { border-radius: 14px; background: #4f7f3a; color: #fff; font-size: 17px; padding: 13px; box-shadow: none; }
   #welcome .go:hover { background: #44702f; }
+  #welcome .card-sound { flex: none; width: 52px; border-radius: 14px; font-size: 19px; padding: 0; background: #fbf5e8; }
+  #welcome .card-sound[aria-pressed="true"] { background: var(--accent-soft); }
+
+  /* ---- the first visit's intro (game.js, startIntro): bars top and bottom, the story under the
+     meadow a line at a time, and everything else away (hush) from the welcome card until it hands over */
+  #intro { position: fixed; inset: 0; pointer-events: none; z-index: 9; --lb: clamp(36px, 9vh, 84px); }
+  #intro .bar { position: absolute; left: 0; right: 0; background: #1d1a15; transition: transform 1.2s cubic-bezier(0.3, 0.7, 0.2, 1); }
+  #intro .top { top: 0; height: calc(var(--lb) + env(safe-area-inset-top, 0px)); transform: translateY(-101%); }
+  #intro .bottom { bottom: 0; height: calc(var(--lb) + env(safe-area-inset-bottom, 0px)); padding-bottom: env(safe-area-inset-bottom, 0px);
+    transform: translateY(101%); display: grid; place-items: center; }
+  body.intro #intro .bar { transform: none; }
+  #intro .line { margin: 0 24px; max-width: 760px; font-size: clamp(16px, 2.4vh, 23px); font-style: italic; font-weight: 450; line-height: 1.3; text-align: center;
+    color: #f3e7cf; opacity: 0; transform: translateY(4px); transition: opacity 0.8s ease, transform 0.8s ease; }
+  #intro .line.on { opacity: 1; transform: none; }
+  #intro .skip { position: absolute; right: var(--right); bottom: 0; height: min(var(--lb), 56px); pointer-events: auto;
+    border: none; background: none; padding: 8px 4px; font: 800 13px Nunito, ui-rounded, system-ui, sans-serif; color: rgba(243, 231, 207, 0.5); cursor: pointer; }
+  #intro .skip:hover { color: #f3e7cf; }
+  body:not(.intro) #intro .skip { visibility: hidden; }
+  body.hush :is(#meadow, #news, #toolbar, #hud-right) { visibility: hidden; }
+  body.ui-in :is(#meadow, #news, #toolbar, #hud-right) { animation: ui-in 1s ease both; }
+  @keyframes ui-in { from { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { #intro .bar, #intro .line, #welcome, #welcome .card { transition-duration: 0.01s; } }
   .hidden { display: none !important; }
 
   /* ---- the stats page, over everything */
@@ -413,7 +434,9 @@
     #welcome h1 { left: 22px; top: 20px; }
     #welcome h1 .to { font-size: 14px; } #welcome h1 .n1 { font-size: 24px; } #welcome h1 .n2 { font-size: 58px; }
     #welcome .body { padding: 14px 22px 16px; }
-    #welcome ul { margin: 8px 0 12px; }
+    #welcome p { margin-bottom: 12px; }
+    #intro { --lb: clamp(36px, 11vh, 96px); }
+    #intro .line { margin: 0 18px; font-size: 16px; }
   }
   @media (max-height: 360px) {
     #toolbar .tool { height: 38px; }
@@ -578,20 +601,18 @@
       <h1 class="fr"><span class="to">Welcome to</span><span class="n1">Nobody's</span><span class="n2">Meadow</span></h1>
     </div>
     <div class="body">
-      <div class="when fr">It's spring, day 1.</div>
-      <p>A small meadow where rabbits, foxes and bees live their own lives. Nobody tells them what to do.
-        They graze, fall in love, raise families and run for their burrows. Every baby is a mix of its parents, with a small twist.</p>
-      <p>The meadow keeps its own time. Leave it running, and over the years the animals slowly change.</p>
-      <ul>
-        <li>🔍 <b>Click an animal</b> to follow its whole life</li>
-        <li class="mouse-only">🖱️ <b>Scroll</b> to zoom, <b>drag</b> to look around</li>
-        <li class="touch-only">🤏 <b>Pinch</b> to zoom, <b>drag</b> to look around</li>
-        <li class="mouse-only">⚡ <b>Right-click</b> the meadow to play god, weather included. The toolbar waits at the bottom edge</li>
-        <li class="touch-only">⚡ <b>The toolbar</b> lets you play god. The weather is in <b>•••</b></li>
-      </ul>
-      <button class="btn go" id="go">Visit the meadow</button>
+      <p>A small meadow where rabbits, foxes and bees live their own lives. Nobody tells them what to do.</p>
+      <div class="go-row">
+        <button class="btn go" id="go">Visit the meadow</button>
+        <button class="btn card-sound" id="card-sound" data-act="sound" aria-pressed="false" aria-label="Sound" title="Sound on or off (M)">🔇</button>
+      </div>
     </div>
   </div>
+</div>
+
+<div id="intro" aria-live="polite">
+  <div class="bar top"><button class="skip" id="intro-skip">Skip ›</button></div>
+  <div class="bar bottom"><p class="line fr" id="intro-line"></p></div>
 </div>
 
 <script src="sim.js"></script>

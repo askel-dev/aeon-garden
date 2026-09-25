@@ -93,9 +93,11 @@ function measureSheet() {
 function clampCam() {
   const hw = vw / 2 / cam.zoom, hh = vh / 2 / cam.zoom;
   // You may look a little past the edges, so nothing is ever stuck under the toolbar or the inspector.
-  const left = Math.max(railPad, sheet ? sheet.left : 0) / cam.zoom, right = (sheet ? sheet.right : 0) / cam.zoom;
+  // Not while they're away for the intro (hush).
+  const rail = ui.hush ? 0 : railPad, bar = ui.hush ? 0 : barPad;
+  const left = Math.max(rail, sheet ? sheet.left : 0) / cam.zoom, right = (sheet ? sheet.right : 0) / cam.zoom;
   cam.x = clamp(cam.x, Math.min(hw, S.W / 2) - left, Math.max(S.W - hw, S.W / 2) + right);
-  cam.y = clamp(cam.y, Math.min(hh, S.H / 2), Math.max(S.H - hh, S.H / 2) + Math.max(barPad, sheet ? sheet.bottom : 0) / cam.zoom);
+  cam.y = clamp(cam.y, Math.min(hh, S.H / 2), Math.max(S.H - hh, S.H / 2) + Math.max(bar, sheet ? sheet.bottom : 0) / cam.zoom);
 }
 
 new ResizeObserver(() => {
@@ -906,7 +908,7 @@ function drawBurrow(b, sx, sy, z, season, residents) {
 
 // ------------------------------------------------------------------ drawing
 
-const MOVING = new Set(['wander', 'food', 'flee', 'chase', 'stalk', 'prowl', 'home', 'love', 'follow', 'friends', 'dig']);
+const MOVING = new Set(['wander', 'food', 'flee', 'chase', 'stalk', 'prowl', 'home', 'love', 'follow', 'friends', 'dig', 'arrive']);
 const ALWAYS_BUBBLE = new Set(['flee', 'alarm', 'chase', 'love']);
 
 function visible(sx, sy, pad) { return sx > -pad && sy > -pad && sx < vw + pad && sy < vh + pad; }
@@ -1007,9 +1009,10 @@ function render(now) {
     }
   }
 
-  // Thought bubbles above the dark.
-  for (const it of shown) {
+  // Thought bubbles above the dark. Not in the intro: its lines tell the story.
+  if (!intro.on) for (const it of shown) {
     const c = it.c;
+    if (LOOKS[c.species].quiet) continue;
     const important = ALWAYS_BUBBLE.has(c.mode);
     if (!(important || c.id === ui.selectedId || c.id === ui.hoverId || z >= 20)) continue;
     const m = S.mood(world, c);
@@ -1038,7 +1041,7 @@ function render(now) {
 const LOOKS = {
   rabbit: { size: 1, facesLeft: true },
   fox: { size: 1, facesLeft: false },          // a face: it does not care
-  bee: { size: 0.38, facesLeft: true, swatch: '#e8b83a' },
+  bee: { size: 0.38, facesLeft: true, swatch: '#e8b83a', quiet: true },   // quiet: no thought bubbles
 };
 
 // Grows with zoom, but never shrinks to a speck when you look at the whole meadow.
@@ -1113,11 +1116,33 @@ function drawDance(c, bx, by, px) {
   ctx.globalAlpha = 1;
 }
 
-// How high off the ground a hop has lifted it, in screen pixels.
+// How high off the ground a hop has lifted it, in screen pixels. At the hole, a digger doesn't hop
+// but scrabbles: a quick small bob.
 function hopOf(c, px, now) {
+  if (ui.speed <= 0) return 0;
+  if (atHole(c)) return Math.abs(Math.sin(now / 70 + c.id)) * px * 0.03;
   const fast = c.mode === 'flee' || c.mode === 'chase';
-  return MOVING.has(c.mode) && ui.speed > 0
-    ? Math.abs(Math.sin(now / (fast ? 55 : 120) + c.id)) * px * (fast ? 0.16 : 0.1) : 0;
+  return MOVING.has(c.mode) ? Math.abs(Math.sin(now / (fast ? 55 : 120) + c.id)) * px * (fast ? 0.16 : 0.1) : 0;
+}
+
+// Digging, at its side of the hole (see dig in sim.js).
+const atHole = c => {
+  const b = c.mode === 'dig' && c.dig;
+  return !!b && Math.abs(c.y - b.y - 0.2) < 0.05 && Math.abs(Math.abs(c.x - b.x) - 0.7) < 0.05;
+};
+
+// Earth flicked out behind a digger: three clods on their way up and over, never more.
+function drawDigging(c, sx, y, px, now) {
+  const back = c.x > c.dig.x ? 1 : -1, r = Math.max(1, px * 0.035);
+  ctx.fillStyle = 'rgb(122, 90, 54)';
+  for (let k = 0; k < 3; k++) {
+    const u = (now / 480 + k / 3 + c.id * 0.37) % 1;
+    ctx.globalAlpha = 1 - u * u;
+    ctx.beginPath();
+    ctx.arc(sx + back * px * (0.2 + 0.6 * u), y + px * 0.3 - Math.sin(Math.PI * u) * px * 0.4, r * (1 - 0.3 * u), 0, TAU);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
 }
 
 // In shallow water an animal sits lower, its legs hidden below a little ring of ripples. Fliers fly over.
@@ -1148,6 +1173,7 @@ function drawCreature(c, sx, sy, now) {
   });
   if (c.load) drawBaskets(c, sx, y, px);
   if (c.mode === 'sip') drawSipping(c, sx, sy, px, now);
+  if (px > 18 && ui.speed > 0 && ui.speed <= 4 && atHole(c)) drawDigging(c, sx, y, px, now);
 }
 
 // A forager packs pollen on her hind legs: two gold lumps that grow as she fills up.
@@ -2219,7 +2245,8 @@ function toggleSound(on = !ui.sound) {
   ui.sound = on;
   if (on && navigator.userActivation?.hasBeenActive !== false) Sound.start();   // else the first click will
   Sound.setEnabled(on);
-  $('#sound-btn').textContent = on ? '🔊' : '🔇';
+  $('#sound-btn').textContent = $('#card-sound').textContent = on ? '🔊' : '🔇';
+  $('#card-sound').setAttribute('aria-pressed', on);
   $('#sound-btn').classList.toggle('on', on);
   $('#sound-item').textContent = on ? '🔊 Sound is on' : '🔇 Sound is off';
   try { localStorage.setItem('aeon-garden-sound', on ? '1' : '0'); } catch (e) { /* fine */ }
@@ -2394,6 +2421,9 @@ function handleEvent(e) {
       puffPollen(e.x, e.y);
       break;
     case 'arrive': {
+      if (e.family) intro.family = e.who;
+      if (e.family) addNews(`🧳 ${link(e.who[0])} and ${link(e.who[1])} moved into the meadow, with their kits ${link(e.who[2])} and ${link(e.who[3])}.`);
+      if (e.founding && e.species === 'rabbit') break;   // the rest come in quietly, a few at a time all day
       const names = e.who.map(link).join(', ');
       addNews({
         rabbit: `🧳 A family of rabbits hopped in from the next valley: ${names}.`,
@@ -3476,6 +3506,7 @@ function liftFinger(e) {
 }
 
 canvas.addEventListener('pointerdown', e => {
+  if (intro.on) { endIntro(true); return; }
   if (ui.ring) { closeRing(); return; }
   if (e.button === 2 || (e.ctrlKey && e.pointerType === 'mouse')) return;   // that's the ring menu
   canvas.setPointerCapture(e.pointerId);
@@ -3490,6 +3521,7 @@ canvas.addEventListener('pointerdown', e => {
 canvas.addEventListener('pointermove', e => {
   if (fingers.has(e.pointerId)) fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (pinch) { movePinch(); return; }
+  if (intro.on) return;
   if (!drag) {
     const c = creatureAt(e.clientX, e.clientY);
     ui.hoverId = c ? c.id : 0;
@@ -3536,6 +3568,7 @@ canvas.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') { 
 canvas.addEventListener('contextmenu', e => { e.preventDefault(); if (!LAB) openRing(e.clientX, e.clientY); });
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
+  if (intro.on) { endIntro(true); return; }
   closeRing();
   const pixelPan = !e.ctrlKey && e.deltaMode === 0 && (e.deltaX !== 0 || Math.abs(e.deltaY) < 40);
   if (pixelPan) {                     // trackpad two-finger scroll: look around
@@ -3732,6 +3765,10 @@ function copyMeadow() {
 
 document.addEventListener('keydown', e => {
   if (e.target.closest('input,textarea')) return;
+  if (intro.on) {                                      // any key skips the intro
+    if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key !== 'Shift' && e.key !== 'Tab') { e.preventDefault(); endIntro(true); }
+    return;
+  }
   if (LAB && !'+=-'.includes(e.key)) return;            // the lab has keys of its own
   if (e.key === ' ') {
     e.preventDefault();
@@ -3756,6 +3793,167 @@ document.addEventListener('keydown', e => {
   else if (e.key === '-') zoomAt(vw / 2, vh / 2, cam.zoom / 1.25);
 });
 
+// ------------------------------------------------------------------ the intro
+//
+// A first visit starts on an empty meadow (Sim.createWorld's arrival option) and watches it fill,
+// with bars top and bottom and a line of story at a time. At dawn a family hops in and digs its
+// home; the camera stays till they're tucked in for the night, pulls back over the whole meadow
+// while the night passes, and hands it over as the sun comes up. The intro only moves the camera,
+// sets the clock's pace and writes the lines. The animals do the rest themselves, so each beat
+// waits for them to do their part. Any key, click or scroll skips it.
+
+const intro = { on: false, beat: '', since: 0, start: 0, family: [], home: null, from: null, lines: [], lineAt: 0, lineTimer: 0 };
+const INTRO_REVEAL = 6.5;                       // seconds the camera takes to pull back
+const INTRO_DAWN = Math.round(1.06 * S.TPD);    // it pulls back till the second sunrise
+const INTRO_STUCK = 16;                         // seconds a beat may wait on the animals before it moves on
+const INTRO_MAX = 50;                           // and the whole intro, before it hands over anyway
+const LINE_MS = 3400;                           // a line stays up at least this long
+const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;   // then no intro: no camera flights
+const ease = u => u * u * (3 - 2 * u);
+
+// Close: the view can't go past the meadow's edge, so near enough that their burrow sits about a
+// third of the way in. A narrow phone can't be that close: there it just has to fit, a little way
+// to spare, and a good few tiles show between the bars.
+function introZoom() {
+  const f = world.family, walk = Math.abs(f.spot.x - f.entry.x), band = vh - 2 * clamp(vh * 0.09, 36, 84);
+  return clamp(Math.min(Math.max(vw / (walk * 3), 26), vw / (walk + 4.5), band / 9, 60), minZoom * 1.5, 64);
+}
+
+// The first shot, behind the welcome card: the edge they'll come in at, at first light.
+function introShot() {
+  Object.assign(cam, { zoom: introZoom() * 0.9, x: world.family.entry.x, y: world.family.spot.y, goal: null });
+  clampCam();
+}
+
+function startIntro() {
+  Object.assign(intro, { on: true, start: performance.now(), home: null, lines: [], lineAt: 0 });
+  document.body.classList.add('intro');
+  introBeat('dawn');
+  introLine('Spring, day one. Nobody lives here yet.', 2400);
+  setIntroSpeed(1);
+  if (ui.sound) Sound.playTune('clover');
+}
+
+function introBeat(beat, line) {
+  intro.beat = beat; intro.since = performance.now();
+  if (line) introLine(line);
+}
+
+// One line at a time, each up long enough to read: they wait their turn, and the old one fades
+// out before the new one fades in.
+function introLine(text, ms = LINE_MS) { intro.lines.push({ text, ms }); }
+function introCaptions(now) {
+  if (!intro.lines.length || now < intro.lineAt) return;
+  const el = $('#intro-line'), { text, ms } = intro.lines.shift(), fade = el.classList.contains('on') ? 800 : 0;
+  el.classList.remove('on');
+  intro.lineAt = now + fade + ms;
+  clearTimeout(intro.lineTimer);
+  intro.lineTimer = setTimeout(() => { el.textContent = text; el.classList.add('on'); }, fade);
+}
+
+function setIntroSpeed(v) {
+  if (v === ui.speed) return;
+  ui.speed = v;
+  Sound.update({ speed: v });
+}
+
+function introFrame(now, dt) {
+  const fam = intro.family, t = (now - intro.since) / 1000, all = (now - intro.start) / 1000;
+  const home = intro.home || (intro.home = fam.find(c => c.dig)?.dig || null);
+  const stuck = t > INTRO_STUCK;
+  let speed = 1;
+  switch (intro.beat) {
+    case 'dawn':                          // the empty meadow at first light, then they come
+      if (fam.length && t > 2.2) introBeat('walk', `Here come ${fam[0].name} and ${fam[1].name}, with two little ones in tow.`);
+      break;
+    case 'walk':
+      if (home) introBeat('dig', 'This looks like a good spot.');
+      else if (stuck) introReveal();
+      break;
+    case 'dig':
+      if (home.dug >= 1) introBeat('home', 'A home of their own.');
+      else if (stuck) introReveal();
+      break;
+    case 'home':                          // an evening by the new burrow, a little quicker, then in they go
+      if (t > 2.5) speed = 2;
+      if (fam.every(c => !c.alive || c.hidden)) introBeat('night', 'Their first night in the meadow.');
+      else if (stuck) introReveal();
+      break;
+    case 'night':
+      if (t > 2.4) introReveal();
+      break;
+    case 'reveal': {                      // the night passes as the camera pulls back
+      const left = INTRO_REVEAL - t;
+      speed = world.tick >= INTRO_DAWN ? 1 : clamp((INTRO_DAWN - world.tick) / (Math.max(left, 0.3) * TICKS_PER_SECOND), 0.5, 4);
+      if (left <= 0 && world.tick >= INTRO_DAWN) introBeat('morning', 'From now on the meadow is theirs. You’re only visiting.');
+      break;
+    }
+    case 'morning':                       // once the last line has been read
+      if (!intro.lines.length && now > intro.lineAt) return endIntro();
+      break;
+  }
+  if (all > INTRO_MAX) return endIntro();
+  setIntroSpeed(speed);
+  introCaptions(now);
+
+  if (intro.beat === 'morning') return;
+  if (intro.beat === 'reveal') {
+    const u = ease(clamp(t / INTRO_REVEAL, 0, 1)), f = intro.from;
+    cam.zoom = Math.exp(lerp(Math.log(f.z), Math.log(minZoom), u));
+    cam.x = lerp(f.x, S.W / 2, u); cam.y = lerp(f.y, S.H / 2, u);
+    return;
+  }
+  // Close up: a slow push in all along, and the camera drifts after the family, or their burrow.
+  const dir = world.family.side ? -1 : 1;
+  let x = world.family.entry.x, y = world.family.spot.y;
+  if (home) { x = home.x + dir * 1.5; y = home.y; }
+  else {
+    const out = fam.filter(c => c.alive && !c.hidden);
+    if (out.length) { x = out.reduce((a, c) => a + c.x, 0) / out.length + dir * 2; y = lerp(y, out.reduce((a, c) => a + c.y, 0) / out.length, 0.5); }
+  }
+  const k = 1 - Math.pow(0.3, dt);
+  cam.x += (x - cam.x) * k; cam.y += (y - cam.y) * k;
+  cam.zoom = introZoom() * (0.9 + 0.18 * ease(clamp(all / 22, 0, 1)));
+}
+
+function introReveal() {
+  intro.from = { x: cam.x, y: cam.y, z: cam.zoom };
+  introBeat('reveal');
+}
+
+function endIntro(skipped = false) {
+  if (!intro.on) return;
+  intro.on = false;
+  clearTimeout(intro.lineTimer);
+  $('#intro-line').classList.remove('on');
+  document.body.classList.remove('intro'); hush(false);
+  document.body.classList.add('ui-in');
+  setTimeout(() => document.body.classList.remove('ui-in'), 1100);
+  $('#news').innerHTML = '';              // what happened meanwhile is in the log
+  setSpeed(1);
+  if (skipped) cam.goal = minZoom;
+  welcomeTips();
+}
+$('#intro-skip').addEventListener('click', () => endIntro(true));
+
+// From the welcome card to the end of the intro, the cards and bars are away.
+function hush(on) {
+  ui.hush = on;
+  document.body.classList.toggle('hush', on);
+}
+
+// A few tips in the news, one at a time, once the meadow is theirs to watch.
+function welcomeTips() {
+  const touch = matchMedia('(pointer: coarse)').matches, mum = intro.family[0];
+  const who = mum && mum.alive ? `${link(mum)}, or anyone else,` : 'any animal';
+  setTimeout(() => addNews(`👋 <b>Tip:</b> ${touch ? 'tap' : 'click'} ${who} to follow their life.`), 2500);
+  setTimeout(() => addNews(touch ? '🤏 <b>Tip:</b> pinch to zoom, drag to look around.' : '🖱️ <b>Tip:</b> scroll to zoom, drag to look around.'), 10000);
+  setTimeout(() => { if (!ui.sound) addNews(narrow() ? '🔊 <b>Tip:</b> the meadow has quiet sounds. Turn them on in ••• at the top.'
+    : '🔊 <b>Tip:</b> the meadow has quiet sounds. Turn them on with 🔇 at the top right (M).'); }, 18000);
+  setTimeout(() => addNews(touch ? '🌦️ <b>Tip:</b> the toolbar adds animals, grows grass and strikes lightning. The weather waits in •••.'
+    : '🌦️ <b>Tip:</b> right-click the meadow to add animals, grow grass, change the weather or strike lightning. The toolbar waits at the bottom edge.'), 27000);
+}
+
 // ------------------------------------------------------------------ the loop
 
 function flushEvents() {
@@ -3765,8 +3963,9 @@ function flushEvents() {
 
 function randomSeed() { return Math.floor(Math.random() * 1e6); }
 
-function newWorld(seed) {
-  world = S.createWorld(seed, LAB ? { terrain, drawn, rabbits: 0, foxes: 0, bees: 0 } : { terrain, drawn });
+function newWorld(seed, arrival = false) {
+  world = S.createWorld(seed, LAB ? { terrain, drawn, rabbits: 0, foxes: 0, bees: 0 } : { terrain, drawn, arrival });
+  intro.family = [];
   groundSeed = [(seed % 97) * 3.7, (seed % 89) * 4.3];
   Object.assign(ui, { selectedId: 0, picked: null, hoverId: 0, follow: false, trail: [], effects: [], lastNews: {}, newsLog: [] });
   pollen.until = 0; pollen.t0.fill(-1e9);
@@ -3785,7 +3984,9 @@ function newWorld(seed) {
   updateMeadowCard();
   if (ui.stats.open) renderStats();
   const big = [world.waters.find(v => v.kind === 'river'), world.lake].filter(Boolean).map(v => `<b>${v.name}</b>`);
-  addNews(`🌱 A new meadow${big.length ? ' by ' + big.join(' and ') : ''}. <b>${world.count.rabbit} rabbits</b> and <b>${world.count.fox} foxes</b> have just moved in.`);
+  const by = big.length ? ' by ' + big.join(' and ') : '';
+  addNews(arrival ? `🌱 A new meadow${by}. Nobody lives here yet.`
+    : `🌱 A new meadow${by}. <b>${world.count.rabbit} rabbits</b> and <b>${world.count.fox} foxes</b> have just moved in.`);
   if (!LAB) history.replaceState(null, '', '?seed=' + seed + terrainQuery());
 }
 
@@ -3794,6 +3995,7 @@ const TERRAIN_MS = 250;                   // real time between hand-overs of the
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
+  if (intro.on) introFrame(now, dt);
 
   if (ui.speed > 0) {
     acc += dt * TICKS_PER_SECOND * ui.speed;
@@ -3890,31 +4092,31 @@ window.addEventListener('resize', refit);
 // old size and would be stretched to the new one. Watch the canvas itself for when it really changes.
 new ResizeObserver(() => { if (canvas.clientWidth !== vw || canvas.clientHeight !== vh) refit(); }).observe(canvas);
 resize();
-const seedParam = +new URLSearchParams(location.search).get('seed');
-newWorld(seedParam || randomSeed());
-
+const seedParam = +params.get('seed');
 let seen = false;
 try { seen = localStorage.getItem('aeon-garden-welcomed') === '1'; } catch (e) { /* private window */ }
+const firstVisit = !LAB && (!seen || params.has('intro'));   // ?intro plays it again
+newWorld(seedParam || randomSeed(), firstVisit);
+
 if (LAB) {
   document.body.classList.add('lab');
   setSpeed(0);
   const js = document.createElement('script');
   js.src = 'terrain-lab.js';
   document.body.append(js);
-} else if (!seen) {
+} else if (firstVisit) {
   $('#welcome').classList.remove('hidden');
+  hush(true);                                         // nothing to count yet: the bars and cards wait
   setSpeed(0);
+  if (world.family && !calm) introShot();
 }
 $('#go').addEventListener('click', () => {
-  $('#welcome').classList.add('hidden');
+  const card = $('#welcome');
+  card.classList.add('leaving');
+  setTimeout(() => card.classList.add('hidden'), 700);
   try { localStorage.setItem('aeon-garden-welcomed', '1'); } catch (e) { /* fine */ }
-  setSpeed(1);
-  setTimeout(() => addNews('👋 <b>Tip:</b> click any animal to follow its life.'), 2500);
-  const touch = matchMedia('(pointer: coarse)').matches;
-  setTimeout(() => { if (!ui.sound) addNews(narrow() ? '🔊 <b>Tip:</b> the meadow has quiet sounds. Turn them on in ••• at the top.'
-    : '🔊 <b>Tip:</b> the meadow has quiet sounds. Turn them on with 🔇 at the top right (M).'); }, 12000);
-  setTimeout(() => addNews(touch ? '🌦️ <b>Tip:</b> the toolbar adds animals, grows grass and strikes lightning. The weather waits in •••.'
-    : '🌦️ <b>Tip:</b> right-click the meadow to add animals, grow grass, change the weather or strike lightning. The toolbar waits at the bottom edge.'), 25000);
+  if (world.family && !calm) startIntro();
+  else { hush(false); setSpeed(1); welcomeTips(); }
 });
 
 // Sound stays off until you turn it on, and remembers your choice. Browsers only let a page

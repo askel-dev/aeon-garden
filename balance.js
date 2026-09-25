@@ -1,9 +1,12 @@
 // Headless balance check: run several worlds for N years, print populations each season.
+// `node balance.js 5 4 v` adds grass and lows; `arrival` anywhere starts them the way a first
+// visit does, everyone moving in over the first days.
 const Sim = require('./sim.js');
 const years = +(process.argv[2] || 5), seeds = +(process.argv[3] || 4), verbose = process.argv[4] === 'v';
+const arrival = process.argv.includes('arrival');
 const perSeason = Sim.SEASON_DAYS * Sim.TPD;
 for (let s = 1; s <= seeds; s++) {
-  const w = Sim.createWorld(s * 7919);
+  const w = Sim.createWorld(s * 7919, { arrival });
   const t0 = Date.now();
   const rows = [];
   let arrivals = { rabbit: 0, fox: 0, bee: 0 }, surprises = 0, kills = 0, escapes = 0, strikes = 0, fires = 0, burned = 0, swarms = 0;
@@ -14,7 +17,7 @@ for (let s = 1; s <= seeds; s++) {
     for (let i = 0; i < perSeason; i++) {
       Sim.step(w);
       for (const e of w.events) {
-        if (e.type === 'arrive') arrivals[e.species]++;
+        if (e.type === 'arrive' && !e.founding) arrivals[e.species]++;
         if (e.type === 'death' && e.cause === 'fox') kills++;
         if (e.type === 'escape') escapes++;
         if (e.type === 'birth' && e.surprise.length) surprises++;

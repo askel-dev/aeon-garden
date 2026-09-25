@@ -1256,7 +1256,7 @@ function makeCreature(w, species, x, y, genes, parents) {
     alive: true, died: 0, cause: '',
     energy: 0, stamina: 1, heading: r.range(0, Math.PI * 2), facing: 1, turnBias: 1,
     mode: 'wander', target: null, targetId: 0, timer: 0, moved: 0,
-    sprinting: false, sleeping: false, hidden: false, burrow: null, home: null, refuge: null, dig: null,
+    sprinting: false, sleeping: false, hidden: false, burrow: null, home: null, refuge: null, dig: null, arrive: null,
     alert: 0, threatId: 0, chaseT: 0, fright: 0, frightX: 0, frightY: 0, frightWhat: '',
     wary: 0, waryX: 0, waryY: 0, detour: 0, detourX: 0, detourY: 0, nemesisId: 0, haunt: null,
     pregnantUntil: 0, cooldownUntil: 0, dadGenes: null, dadIdPending: 0, dadGenPending: 0,
@@ -1279,7 +1279,7 @@ function note(w, c, emoji, text) {
 const MARKED = new Set(['extinct', 'arrive', 'fire']);   // moments the stats chart pins on its timeline
 function emit(w, e) {
   e.t = w.tick; w.events.push(e);
-  if (MARKED.has(e.type)) w.history.marks.push({ t: e.t, type: e.type, species: e.species, kind: e.kind });
+  if (MARKED.has(e.type) && !e.founding) w.history.marks.push({ t: e.t, type: e.type, species: e.species, kind: e.kind });
 }
 
 function nearestBurrow(w, x, y, maxD, ok = b => b.dug >= 1) {
@@ -1299,7 +1299,7 @@ function addCreature(w, species, x, y, opts = {}) {
   if (opts.age) c.born = w.tick - Math.min(opts.age * TPD, c.lifespan / 2);   // nobody arrives at death's door
   c.home = species === 'bee' ? nearestHive(w, x, y) : nearestBurrow(w, x, y, 40);
   if (species === 'bee' && !c.home.queen) newQueen(w, c.home);   // a swarm always brings its queen
-  note(w, c, '🌍', opts.arrived ? 'Wandered into the meadow' : 'Arrived in the meadow');
+  note(w, c, '🌍', opts.note || (opts.arrived ? 'Wandered into the meadow' : 'Arrived in the meadow'));
   w.newborn.push(c);
   w.byId.set(c.id, c);
   return c;
@@ -1518,10 +1518,15 @@ function startDigging(w, c) {
   return true;
 }
 
+// Diggers work side by side, one on each side of the hole, facing it. One called away for a
+// meal comes back to finish (c.dig stays).
 function dig(w, c) {
   const b = c.dig;
   if (!b || b.dug >= 1) { c.dig = null; c.mode = 'wander'; return false; }
-  if (!moveToward(w, c, b.x + 0.7, b.y + 0.2, c.walk)) return true;
+  c.mode = 'dig';
+  const side = c.id % 2 ? 1 : -1;
+  if (!moveToward(w, c, b.x + 0.7 * side, b.y + 0.2, c.walk)) return true;
+  c.facing = -side;
   b.dug += 1 / DIG_TICKS; b.used = w.tick;
   if (b.dug >= 1) {
     b.dug = 1; c.home = b; c.dig = null; c.mode = 'rest'; c.timer = 60;
@@ -1613,7 +1618,10 @@ function rabbitTick(w, c) {
   // 4. Love.
   if (seekLove(w, c)) return;
 
-  // 5. Food.
+  // 5. Moving in: a newcomer makes for its spot first, unless it's hungry.
+  if (c.arrive && e > 0.4) return arriving(w, c);
+
+  // 6. Food.
   const satiation = seasonOf(t) === 2 ? 0.95 : 0.85;
   const i = idx(c.x, c.y);
   if (c.mode === 'graze') {
@@ -1637,8 +1645,8 @@ function rabbitTick(w, c) {
     return wander(w, c, 1.0);   // nothing in sight: go looking
   }
 
-  // 6. Fed and safe: dig, sit, find friends, or amble.
-  if (c.mode === 'dig' && dig(w, c)) return;
+  // 7. Fed and safe: dig, sit, find friends, or amble.
+  if (c.dig && dig(w, c)) return;
   if (c.mode === 'rest') { if (--c.timer > 0) return; c.mode = 'wander'; c.target = null; }
   if ((t + c.id) % 30 === 0) {
     if (isAdult(w, c) && startDigging(w, c)) return;
@@ -1656,6 +1664,18 @@ function rabbitTick(w, c) {
     return;
   }
   wander(w, c, 0.5);
+}
+
+// A newcomer walks to the spot it came for (c.arrive). The family that came to stay (dig) digs its
+// home there, or helps with the one being dug. It gives up on a spot it can't get to.
+function arriving(w, c) {
+  const a = c.arrive;
+  c.mode = 'arrive';
+  if (!moveToward(w, c, a.x, a.y, c.walk * kidPace(w, c)) && w.tick < a.until) return;
+  c.arrive = null; c.mode = 'wander'; c.target = null;
+  if (!a.dig) return;
+  const b = nearestBurrow(w, a.x, a.y, DIG_GAP, o => o.dug < 1) || (canDig(w, a.x, a.y) ? newBurrow(w, a.x, a.y, 0) : null);
+  if (b) { c.dig = b; c.mode = 'dig'; }
 }
 
 function goHome(w, c, b) {
@@ -2418,7 +2438,9 @@ function createWorld(seed, opts = {}) {
   makeTerrain(w);
   placeHive(w);
   const n = { rabbit: opts.rabbits ?? Math.round(30 * w.room), fox: opts.foxes ?? Math.round(4 * w.room), bee: opts.bees ?? 12 };
-  for (const species of KINDS) {
+  w.arrivals = []; w.family = null;
+  if (opts.arrival) planArrivals(w, n);
+  else for (const species of KINDS) {
     for (let k = 0; k < n[species]; k++) {
       let x, y;
       do { x = w.rng.range(4, W - 4); y = w.rng.range(4, H - 4); } while (!dry(w, x, y));
@@ -2429,7 +2451,7 @@ function createWorld(seed, opts = {}) {
   flushNewborn(w);
   hivesTick(w);
   w.founderMeans = perKind(s => traitMeans(w, s));
-  w.weather.until = w.tick + w.rng.range(0.3, 0.8) * TPD;
+  w.weather.until = w.tick + (opts.arrival ? 1.5 : w.rng.range(0.3, 0.8)) * TPD;   // moving day, and the morning after, are fine
   record(w);
   return w;
 }
@@ -2449,11 +2471,11 @@ function flushNewborn(w) {
   }
 }
 
-function traitMeans(w, species) {
+function traitMeans(w, species, list = w.creatures) {
   const m = {}; let n = 0;
   const genes = genesOf(species);
   for (const k of genes) m[k] = 0;
-  for (const c of w.creatures) {
+  for (const c of list) {
     if (!c.alive || c.species !== species) continue;
     for (const k of genes) m[k] += c.genes[k];
     n++;
@@ -2507,11 +2529,138 @@ function newDay(w) {
   for (const d of w.decor) if (d.stump && w.tick - d.stump > YEAR_DAYS * TPD) d.stump = 0;
 }
 
+// ---------------------------------------------------------------- moving in
+//
+// A meadow can start empty (createWorld's arrival option, for the first visit's intro). At dawn a
+// family hops in from the left or right edge, mum expecting and two kits in tow, and digs its
+// home near that edge (w.family says where). Through the day more rabbits come in, a few at a
+// time from every side, and head inward. The bees find the empty hive on the second morning,
+// and the foxes follow the rabbits a few days later. w.arrivals is that plan, soonest first.
+
+const FAMILY_WALK = [7, 9];       // tiles from the edge to where the family digs: they must be done by dusk
+const FAMILY_ROOM = 22;           // and at least this far from the top and bottom, so it can be framed
+const GROUP = [2, 5];             // rabbits in each group that follows
+
+// The family's way in: a stretch of dry ground from the edge to a spot where a burrow can go and
+// no flood will reach, with lush grass (a digger stops for a nibble, and mustn't have to go far
+// for it) and a few trees about. Null if the meadow has none.
+function familySpot(w) {
+  const T = w.terrain, flood = T.level + T.springFlood + T.rainRise / 2 + 0.03, r = w.rng;
+  let best = null, bestScore = -Infinity;
+  for (let k = 0; k < 240; k++) {
+    const side = k % 2, y0 = r.range(FAMILY_ROOM, H - FAMILY_ROOM), walk = r.range(...FAMILY_WALK);
+    const entry = { x: side ? W - 0.7 : 0.7, y: y0 };
+    const spot = { x: side ? W - 0.7 - walk : 0.7 + walk, y: y0 + r.range(-2.5, 2.5) };
+    if (!canDig(w, spot.x, spot.y)) continue;
+    let ok = true;
+    for (let t = 0; t <= 1 && ok; t += 0.05) ok = dry(w, lerp(entry.x, spot.x, t), lerp(entry.y, spot.y, t));
+    for (let dx = -3; dx <= 3 && ok; dx++) for (let dy = -3; dy <= 3; dy++) if (w.ground[idx(spot.x + dx, spot.y + dy)] < flood) ok = false;
+    if (!ok || w.hives.some(h => Math.hypot(h.x - spot.x, h.y - spot.y) < 12)) continue;
+    let score = 0, trees = 0;
+    for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) score += w.grass[idx(spot.x + dx, spot.y + dy)] / 25;
+    if (score < 0.35) score -= 1;                                 // lush if at all possible
+    for (const d of w.decor) {
+      if (!d.tree) continue;
+      const dd = Math.hypot(d.x - spot.x, d.y - spot.y);
+      if (dd < 3.5) score -= 0.3;                                   // not in the woods
+      else if (dd < 10) trees++;
+    }
+    score += 0.15 * Math.min(trees, 3) - 0.1 * Math.max(0, trees - 6) + r.range(0, 0.1);
+    if (score > bestScore) { best = { side, entry, spot }; bestScore = score; }
+  }
+  return best;
+}
+
+function planArrivals(w, n) {
+  const r = w.rng, t0 = w.tick, plan = w.arrivals;
+  w.family = familySpot(w);
+  let left = n.rabbit;
+  if (w.family) { plan.push({ t: t0 + 30, species: 'rabbit', family: true }); left -= 4; }
+  const groups = [];
+  while (left > 0) { const k = Math.min(left, r.int(...GROUP)); groups.push(k); left -= k; }
+  groups.forEach((k, i) => plan.push({ t: Math.round(t0 + 110 + 280 * i / groups.length + r.range(0, 15)), species: 'rabbit', n: k }));
+  plan.push({ t: TPD + Math.round(0.25 * TPD), species: 'bee', n: n.bee });
+  const foxes = Math.ceil(n.fox / 2);
+  plan.push({ t: Math.round(3.3 * TPD), species: 'fox', n: foxes }, { t: Math.round(4.6 * TPD), species: 'fox', n: n.fox - foxes });
+  w.arrivals = plan.filter(a => a.family || a.n > 0).sort((a, b) => a.t - b.t);
+}
+
+// The family: mum, expecting, the dad, and two kits born on the way, who scamper along behind.
+// They step in right at the edge, half out of the meadow still.
+function familyArrives(w) {
+  const { entry, spot, side } = w.family, r = w.rng, t = w.tick;
+  const at = (inward, dy) => ({ x: side ? W - 0.55 - inward : 0.55 + inward, y: entry.y + dy });
+  const come = (sex, age, p, genes) => addCreature(w, 'rabbit', p.x, p.y, { sex, age, genes, note: 'Moved into the meadow with the family' })
+    || addCreature(w, 'rabbit', entry.x, entry.y, { sex, age, genes, note: 'Moved into the meadow with the family' });
+  const mum = come('F', r.range(6, 8), at(0.6, -0.3)), dad = come('M', r.range(6, 9), at(0.2, 0.7));
+  const kits = [at(0, -0.8), at(0, 0.1)].map(p => come(r.next() < 0.5 ? 'F' : 'M', r.range(1, 1.2), p, childGenes(w, mum.genes, dad.genes)));
+  for (const k of kits) {
+    Object.assign(k, { mumId: mum.id, dadId: dad.id, gen: 2 });
+    k.story[0] = { t: k.born, emoji: '🐣', text: `Born on the way here, to ${mum.name} and ${dad.name}` };
+  }
+  mum.pregnantUntil = t + 1.3 * TPD;
+  mum.cooldownUntil = mum.pregnantUntil + mum.sp.cooldownDays * TPD;
+  Object.assign(mum, { dadGenes: dad.genes, dadIdPending: dad.id, dadGenPending: dad.gen });
+  dad.cooldownUntil = t + TPD;
+  mum.arrive = { x: spot.x, y: spot.y, dig: true, until: t + TPD };
+  dad.arrive = { ...mum.arrive };
+  for (const c of [mum, dad, ...kits]) { c.home = null; c.facing = side ? -1 : 1; c.heading = side ? Math.PI : 0; }
+  mum.energy = mum.maxEnergy; dad.energy = dad.maxEnergy;
+  w.recount = true;
+  return [mum, dad, ...kits];
+}
+
+// A group comes in together somewhere along an edge (not where the family is), and heads inward.
+function groupArrives(w, a) {
+  const r = w.rng, fam = w.family;
+  let side, u, x, y, tries = 0;
+  do {
+    side = r.int(0, 3); u = r.range(6, (side % 2 ? H : W) - 6);
+    [x, y] = side === 0 ? [u, 0.7] : side === 1 ? [W - 0.7, u] : side === 2 ? [u, H - 0.7] : [0.7, u];
+  } while ((!dry(w, x, y) || (fam && side === (fam.side ? 1 : 3) && Math.abs(u - fam.entry.y) < 25)) && ++tries < 60);
+  const inX = side === 1 ? -1 : side === 3 ? 1 : 0, inY = side === 0 ? 1 : side === 2 ? -1 : 0;
+  const reach = r.range(12, 35), drift = r.range(-10, 10);
+  const to = { x: clamp(x + inX * reach + inY * drift, 3, W - 3), y: clamp(y + inY * reach + inX * drift, 3, H - 3) };
+  const who = [];
+  for (let k = 0; k < a.n; k++) {
+    const along = r.range(-1.5, 1.5), px = x + inY * along, py = y + inX * along;
+    const c = addCreature(w, 'rabbit', dry(w, px, py) ? px : x, dry(w, px, py) ? py : y, { sex: k % 2 ? 'M' : 'F', age: r.range(4, 10), arrived: true });
+    if (!c) continue;
+    c.cooldownUntil = w.tick + 0.5 * TPD;
+    if (dry(w, to.x, to.y)) c.arrive = { x: to.x + r.range(-2, 2), y: to.y + r.range(-2, 2), until: w.tick + TPD };
+    who.push(c);
+  }
+  return who;
+}
+
+// Whoever is due next moves in. Once a kind is all here, its founders are counted (w.founderMeans).
+function arrivalsTick(w) {
+  const a = w.arrivals.shift();
+  let who;
+  if (a.family) who = familyArrives(w);
+  else if (a.species === 'rabbit') who = groupArrives(w, a);
+  else {
+    const hive = a.species === 'bee' && (w.hives.find(h => !h.cluster) || placeHive(w));
+    who = [];
+    for (let k = 0; k < a.n; k++) {
+      let x, y, tries = 0;
+      do {
+        if (hive) { x = hive.x + w.rng.range(-2, 2); y = hive.y + w.rng.range(-2, 2); }
+        else { x = w.rng.next() < 0.5 ? 1 : W - 1; y = w.rng.range(6, H - 6); }   // foxes, from the left or the right
+      } while (!dry(w, x, y) && ++tries < 50);
+      const c = addCreature(w, a.species, x, y, { sex: k % 2 ? 'M' : 'F', age: a.species === 'bee' ? w.rng.range(1, 2) : w.rng.range(4, 10), arrived: true });
+      if (c) who.push(c);
+    }
+  }
+  if (who.length) emit(w, { type: 'arrive', species: a.species, who, family: !!a.family, founding: true });
+  if (!w.arrivals.some(b => b.species === a.species)) w.founderMeans[a.species] = traitMeans(w, a.species, [...w.creatures, ...w.newborn]);
+}
+
 function migrate(w) {
   if (!w.options.migration) return;
   const wait = { rabbit: 1, fox: 3, bee: 2 }, arrive = { rabbit: 6, fox: 2, bee: 8 }, few = { rabbit: 4, fox: 3, bee: 4 };
   for (const s of KINDS) {
-    if (w.count[s] >= few[s]) { w.goneSince[s] = -1; continue; }
+    if (w.count[s] >= few[s] || w.arrivals.some(a => a.species === s)) { w.goneSince[s] = -1; continue; }
     if (w.goneSince[s] < 0) { w.goneSince[s] = w.tick; if (w.count[s] === 0) emit(w, { type: 'extinct', species: s }); continue; }
     if (w.tick - w.goneSince[s] < wait[s] * TPD) continue;
     if (s === 'fox' && w.count.rabbit < 60 * w.room) continue;   // foxes only come where there is food
@@ -2551,6 +2700,7 @@ function step(w) {
     if (c.alive) lifeTick(w, c);
   }
   if (w.anyDied) { w.creatures = w.creatures.filter(c => c.alive); w.anyDied = false; }
+  if (w.arrivals.length && t >= w.arrivals[0].t) arrivalsTick(w);
   flushNewborn(w);
   if (t % w.history.every === 0) record(w);
   if (t % (TPD / 4) === 0) migrate(w);
@@ -2603,6 +2753,7 @@ function mood(w, c) {
       return { emoji: '😱', text: `Running from ${w.byId.get(c.threatId)?.name ?? 'a fox'}!` };
     case 'alarm': return { emoji: '‼️', text: `Spotted ${w.byId.get(c.threatId)?.name ?? 'a fox'}!` };
     case 'dig': return { emoji: '🕳️', text: 'Digging a burrow' };
+    case 'arrive': return { emoji: '🧳', text: 'Moving into the meadow' };
     case 'hide': return { emoji: '🫣', text: 'Hiding in a burrow' };
     case 'sleep': return { emoji: '💤', text: c.hidden ? (storm ? 'Snug in the burrow, out of the storm' : 'Asleep in the burrow') : 'Napping' };
     case 'home': return { emoji: '🏠', text: storm ? 'Hurrying home out of the storm' : 'Heading home for the night' };

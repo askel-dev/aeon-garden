@@ -16,6 +16,10 @@ told to just do it.
   kind is an entry in `THINGS`, saying how to find one on screen and what its panel shows.
   The tab's icon follows the season and the part of day (`updateFavicon`, at most once a second), and
   the news log dates each line with a season chip (`seasonChip`).
+  A first visit (or `?intro`) gets a short welcome card, then the intro (`startIntro`, `introFrame`): an
+  empty meadow (createWorld's `arrival` option, `planArrivals` in sim.js) where a family hops in at dawn,
+  digs its burrow and turns in for the night, while the camera, the clock's pace and a caption at a time
+  follow along in letterbox bars. It never steers the animals, it waits for them. Any key, click or scroll skips it.
 - `ground.js`: the ground (grass, earth, shores, water) as a WebGL shader, painted fresh every frame from a
   few small textures of one texel a tile that game.js keeps up to date (`paintTerrain`, `updateWater`).
 - `sound.js`: all the sounds, made with Web Audio (no files). Off until the 🔊 button or M.
