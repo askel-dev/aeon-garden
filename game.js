@@ -981,10 +981,12 @@ function render(now) {
   }
   drawFallingLeaves(now);
   drawPollen(now);
+  drawButterflies(now, ck);
 
   // Dusk and night.
   const dark = darkness(ck.phase);
   if (dark > 0) wash(`rgba(22, 30, 78, ${dark})`);
+  drawFireflies(now, dark);
   if (ck.phase > 0.58 && ck.phase < 0.74) {
     const a = 0.10 * Math.sin(Math.PI * (ck.phase - 0.58) / 0.16);
     wash(`rgba(255, 140, 60, ${a})`);
@@ -1146,7 +1148,7 @@ function drawDigging(c, sx, y, px, now) {
 }
 
 // In shallow water an animal sits lower, its legs hidden below a little ring of ripples. Fliers fly over.
-const wading = c => !c.hidden && !c.sp.flies && world.water[(c.y | 0) * S.W + (c.x | 0)] > 0;
+const wading = c => !c.hidden && !c.sp.flies && !world.frozen && world.water[(c.y | 0) * S.W + (c.x | 0)] > 0;
 
 function drawCreature(c, sx, sy, now) {
   const px = creaturePx(c);
@@ -1369,7 +1371,7 @@ function treeLook(d, ck) {
       drop = clamp(turn * 1.5 - 0.4, 0, 1) * (1 - fall * fall) * (oak ? 0.3 : 1);
       if (info.fruit === 'apple') {
         if (sp < 0.4) fruit = { e: kind.e, n: Math.ceil(n * (1 - sp / 0.4)) };
-        ground = { e: kind.e, n: Math.round(6 * clamp(sp / 0.4, 0, 1) * (1 - fall)), size: 0.12 };
+        ground = { e: kind.e, n: d.apples, size: 0.12 };          // the sim's windfalls (windfallTick)
       }
     } else if (s === 3) { rgb = DRY; fall = oak ? 0 : 1; }
     else if (s === 0) {
@@ -1853,7 +1855,7 @@ function updateWater() {
   Ground.set('water', waterData); Ground.set('shape', shapeData);
 }
 
-const iceOver = () => world.snow > 0 ? clamp(world.snow * 1.4 - 0.3, 0, 0.9) * 0.8 : 0;   // frozen over
+const iceOver = () => world.ice * 0.72;   // frozen over (the sim's w.ice: it holds once it's all the way)
 
 // Little waves on open water: a small ~ that rises, drifts downwind and settles again.
 // The wind makes more of them show and bigger; ice stills the water.
@@ -2151,6 +2153,91 @@ function drawPollen(now) {
   ctx.globalAlpha = 1;
 }
 
+// ------------------------------------------------------------------ summer nights, summer days
+//
+// Fireflies over the grass by the water and along the edge of the woods on summer nights, and
+// butterflies over a flower field in bloom. Only a look: each one is worked out from a hash and
+// the clock, so there is nothing to keep, and they are drawn from one small glow and the 🦋 sprite.
+
+const FIREFLY_GLOW = (() => {
+  const c = document.createElement('canvas'), n = 32, g = c.getContext('2d');
+  c.width = c.height = n;
+  const grad = g.createRadialGradient(n / 2, n / 2, 0, n / 2, n / 2, n / 2);
+  grad.addColorStop(0, 'rgba(255, 255, 220, 1)');
+  grad.addColorStop(0.12, 'rgba(250, 255, 170, 1)');
+  grad.addColorStop(0.3, 'rgba(210, 255, 110, 0.45)');
+  grad.addColorStop(0.65, 'rgba(180, 255, 80, 0.1)');
+  grad.addColorStop(1, 'rgba(180, 255, 80, 0)');
+  g.fillStyle = grad; g.fillRect(0, 0, n, n);
+  return c;
+})();
+const FIREFLIES = 3;               // to each spot
+
+// Where the fireflies are: a scatter of spots by the water and at the edge of the woods, chosen
+// once for each meadow.
+let fireflySpots = null;
+function fireflyHaunts() {
+  if (fireflySpots && fireflySpots.world === world) return fireflySpots;
+  const near = S.distanceToWater(world), xs = [], ys = [];
+  for (let y = 2; y < S.H - 2; y++) for (let x = 2; x < S.W - 2; x++) {
+    const i = y * S.W + x, wood = world.wood[i];
+    const by = world.water[i] ? 0 : near[i] <= 4 ? 1 : wood > 0.2 && wood < 0.7 ? 0.6 : 0;
+    if (by && hash2(x, y, 61) < 0.04 * by) { xs.push(x + hash2(x, y, 62)); ys.push(y + hash2(x, y, 63)); }
+  }
+  return fireflySpots = { world, x: xs, y: ys };
+}
+
+// Summer, dark, and not raining: each firefly drifts about its spot and flashes every few seconds.
+function drawFireflies(now, dark) {
+  const [season, next, turn] = seasonTurn(), m = ui.sky.mix;
+  const summer = season === 1 ? 1 - turn : next === 1 ? turn : 0;
+  const a = summer * clamp((dark - 0.15) / 0.25, 0, 1) * clamp(1 - 1.5 * ((m.rain || 0) + (m.storm || 0)), 0, 1);
+  if (a <= 0.02) return;
+  const spots = fireflyHaunts(), z = cam.zoom, d = Math.max(12, z * 1.1), t = now / 1000;
+  ctx.globalCompositeOperation = 'lighter';
+  for (let s = 0; s < spots.x.length; s++) {
+    const x0 = spots.x[s], y0 = spots.y[s], i = (y0 | 0) * S.W + (x0 | 0);
+    if (world.water[i] || world.grass[i] < 0.3 || world.fire[i] > 0) continue;
+    const bx = (x0 - cam.x) * z + vw / 2, by = (y0 - cam.y) * z + vh / 2;     // (toScreen, without an array)
+    if (!visible(bx, by, z * 2)) continue;
+    for (let k = 0; k < FIREFLIES; k++) {
+      const h = hash2(s, k, 64), cycle = 2.2 + 2 * hash2(s, k, 65), p = (t / cycle + h) % 1;
+      if (p > 0.4) continue;                                  // dark between flashes
+      const glow = Math.sin(Math.PI * p / 0.4);
+      const sx = bx + z * 1.4 * Math.sin(t * (0.25 + 0.2 * h) + h * 40);
+      const sy = by - z * (0.5 + 0.35 * Math.sin(t * (0.37 + 0.2 * h) + h * 70));
+      ctx.globalAlpha = a * glow;
+      ctx.drawImage(FIREFLY_GLOW, sx - d / 2, sy - d / 2, d, d);
+    }
+  }
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+// By day, over each field in bloom, a butterfly or two for every sixth of it that is out: each
+// loops over one of the field's circles, flapping, washed in the field's colour.
+const BUTTERFLIES = 6;             // over a field in full bloom
+function drawButterflies(now, ck) {
+  const m = ui.sky.mix, calm = 1 - (m.rain || 0) - (m.storm || 0) - 0.6 * (m.fog || 0) - 0.4 * (m.snow || 0);
+  if (darkness(ck.phase) > 0.15 || calm < 0.5) return;       // they settle for the night at dusk
+  const z = cam.zoom, px = Math.max(9, z * 0.75), t = now / 1000;
+  for (const f of world.fields) {
+    if (f.season !== ck.season || !f.all) continue;
+    const n = Math.round(BUTTERFLIES * f.open / f.all);
+    if (!n) continue;
+    const tint = `rgba(${f.tint[0]}, ${f.tint[1]}, ${f.tint[2]}, 0.3)`;
+    for (let k = 0; k < n; k++) {
+      const c = f.shape[k % f.shape.length], h = hash2(f.id, k, 71), r = c.r * 0.75;
+      const x = c.x + r * Math.sin(t * (0.13 + 0.08 * h) + h * 30) + 0.3 * Math.sin(t * 1.7 + h * 9);
+      const y = c.y + r * 0.7 * Math.sin(t * (0.19 + 0.06 * h) + h * 50);
+      const sx = (x - cam.x) * z + vw / 2, sy = (y - cam.y) * z + vh / 2 - px * (0.9 + 0.3 * Math.abs(Math.sin(t * 2.3 + h * 7)));
+      if (!visible(sx, sy, px)) continue;
+      const s = sprite('🦋', px, tint), flap = 0.4 + 0.6 * Math.abs(Math.sin(t * 13 + h * 20));
+      ctx.drawImage(s.canvas, sx - s.size * flap / 2, sy - s.size / 2, s.size * flap, s.size);
+    }
+  }
+}
+
 // While she sips, a few specks drift up off the flower, from a hash of her id and the time.
 function drawSipping(c, sx, sy, px, now) {
   if (!pollenShows()) return;
@@ -2340,6 +2427,8 @@ function handleEvent(e) {
         if (mine) addNews(t); else addNews(t, 'burn', 6000);
       } else if (e.cause === 'flood') {
         if (mine) addNews(`🌊 ${link(c)} drowned when the burrow flooded.`);   // the rest are in the 'flooded' news
+      } else if (e.cause === 'ice') {
+        if (mine) addNews(`🧊 ${link(c)} went through the ice and drowned.`);   // the rest are in the 'ice' news
       } else {
         const age = Math.floor(S.ageDays(world, c));
         const fam = c.kids ? `, leaving ${c.kids} ${c.kids === 1 ? 'child' : 'children'}` : '';
@@ -2379,6 +2468,23 @@ function handleEvent(e) {
         : `☀️ ${esc(name)} has dropped low for the summer. There are more places to wade across.`);
       break;
     }
+    case 'ice': {
+      const river = world.waters.find(b => b.kind === 'river') || world.lake || world.waters[0];
+      const name = river ? esc(river.name) : 'The water';
+      if (e.frozen) { addNews(`🧊 <b>${name} has frozen over.</b> The ice will hold anyone now, foxes too.`); break; }
+      const { fell, drowned } = e, who = fell.slice(0, 3).map(link).join(', ') + (fell.length > 3 ? ` and ${fell.length - 3} more` : '');
+      let t = `💧 The ice is breaking up on ${name}.`;
+      if (fell.length) t += ` ${who} went through and scrambled out, soaked.`;
+      if (drowned.length) t += ` ${drowned.length === 1 ? 'A youngster' : drowned.length + ' youngsters'} out on the ice drowned.`;
+      addNews(t);
+      break;
+    }
+    case 'windfall':
+      addNews('🍎 <b>The apples are falling.</b> Hungry rabbits are gathering under the apple trees.');
+      break;
+    case 'bloom':
+      addNews(`${e.field.emoji[0]} ${esc(e.field.name)} is in bloom.${e.field.season === 2 ? ' The last flowers before winter.' : ''}`);
+      break;
     case 'flooded': {
       const { burrow: b, drowned, escaped } = e, who = escaped.slice(0, 3).map(link).join(', ') + (escaped.length > 3 ? ` and ${escaped.length - 3} more` : '');
       addEffect('🌊', b.x, b.y, 0.8);
@@ -2621,7 +2727,8 @@ const RANGES = { year: S.YEAR_DAYS * S.TPD, five: 5 * S.YEAR_DAYS * S.TPD, all: 
 const RANGE_WORDS = { year: 'the last year', five: 'the last 5 years', all: 'the whole story' };
 const MARK_EMOJI = { extinct: '😢', arrive: '🧳', fire: '🔥' };
 const CAUSES = [['fox', '🦊', 'Caught by a fox'], ['hunger', '🥀', 'Starved'], ['age', '🌙', 'Old age'],
-  ['lightning', '⚡', 'Lightning'], ['fire', '🔥', 'Wildfire'], ['flood', '🌊', 'Drowned in a flood']];
+  ['lightning', '⚡', 'Lightning'], ['fire', '🔥', 'Wildfire'], ['flood', '🌊', 'Drowned in a flood'],
+  ['ice', '🧊', 'Fell through the ice']];
 const INK = '#3b372f', MUTED = '#6f6657';
 
 const shownKeys = () => ui.stats.show === 'all' ? Object.keys(SERIES) : [ui.stats.show];
@@ -3116,6 +3223,7 @@ const THINGS = {
       if (d.hive) facts.push(['🐝', `${thingLink('hive', d.hive.id, d.hive.queen ? `Queen ${esc(d.hive.queen.name)}'s hive` : 'An empty hive')} is in its hollow`]);
       if (treeInfo(d).owl && !d.stump) facts.push(['🦉', 'An owl roosts here; look for it at night']);
       if (world.snow > 0.3 && !d.stump) facts.push(['❄️', 'Snow on the branches']);
+      if (d.apples) facts.push(['🍎', `${d.apples === 1 ? 'A windfall apple lies' : d.apples + ' windfall apples lie'} under it, for any hungry rabbit`]);
       if (!d.stump && world.wet < 0.5) facts.push(['⚡', 'Dry: a lightning strike would set it alight']);   // as strike does
       const shade = whoNear(d.x, d.y, Math.max(1.5, d.size * 0.4));
       if (shade) facts.push(['🌳', `Under it: ${shade}`]);
@@ -3251,16 +3359,18 @@ const THINGS = {
     here: () => true,
     show({ body, x, y }) {
       const i = tileOf(x, y), T = world.terrain, deep = world.water[i] === S.DEEP;
-      const facts = [[deep ? '🌊' : '🦶', deep ? 'Too deep to wade: animals go round' : 'Shallow: animals wade across, slowly']];
+      const facts = world.frozen ? [['🧊', 'Frozen over: anyone can walk across, till it thaws']]
+        : [[deep ? '🌊' : '🦶', deep ? 'Too deep to wade: animals go round' : 'Shallow: animals wade across, slowly']];
       if (world.ground[i] > T.level) facts.push(['🌧️', 'Flood water: this is dry land most of the year']);
       facts.push(waterLine());
       if (world.fords.some(f => Math.hypot(f.x - x, f.y - y) < 4)) facts.push(['🪨', 'A ford: stepping stones cross here']);
       const who = whoNear(x, y, 4, c => world.water[tileOf(c.x, c.y)] && !c.sp.flies);
-      if (who) facts.push(['🏊', `In the water: ${who}`]);
+      if (who) facts.push(world.frozen ? ['⛸️', `On the ice: ${who}`] : ['🏊', `In the water: ${who}`]);
       const kind = body.kind[0].toUpperCase() + body.kind.slice(1);
       return {
         emoji: WATER_LOOKS[body.kind] || '💧', tint: '#6aa6d8', name: body.name,
-        sub: body.size ? `${kind} · ${body.size} tiles` : kind, status: deep ? '🌊 Deep water' : '💧 Shallow water', facts,
+        sub: body.size ? `${kind} · ${body.size} tiles` : kind, facts,
+        status: world.frozen ? '🧊 Frozen over' : deep ? '🌊 Deep water' : '💧 Shallow water',
       };
     },
   },
@@ -4074,7 +4184,7 @@ const lab = LAB ? {
   },
   season(s) {                                          // midday, halfway through it; snow in winter
     world.tick = Math.round((s * S.SEASON_DAYS + 2 + 0.3) * S.TPD);
-    world.snow = s === 3 ? 0.75 : 0;
+    world.snow = s === 3 ? 0.75 : 0; world.ice = s === 3 ? 1 : 0;
     S.settleWater(world);                              // and the water where it stands then
     pond = null;
     paintTerrain();

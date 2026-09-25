@@ -58,14 +58,19 @@ around the river and lake (`TERRAIN.valley`, half as wide by a brook). The water
 spring, down in summer, a little with the rain, so the river spreads over its floodplain and back.
 A flooded burrow is lost and kits too young to climb out drown (`floodBurrows`); grass under water
 drowns and grows back fast in the silt (`w.silt`). Flooded water keeps the name of the water it spilled
-from (`w.nearBody`). The ground shader shades the slopes by the sun, and colours the grass by where it is: lusher by the water
+from (`w.nearBody`). Snow lying in winter freezes it over (`iceTick`, `w.ice`, `w.frozen`): the ice takes any weight, so
+foxes cross where they couldn't, and whoever is out on deep water when it thaws goes through (`breakUp`). The ground shader shades the slopes by the sun, and colours the grass by where it is: lusher by the water
 and the woods, golden up high, wet moss at the water's edge, with a faint painterly mottle. That colouring is only a look; the grass the animals eat is `w.grass`.
 Shallow water is waded slowly; deep water blocks.
 Each connected water body is named (`w.waters`, `w.body`). Population caps and starting
 numbers scale with dry land (`w.room`).
 Flower fields (`w.fields`, `placeFields`) are dense named patches of one flower (`FIELD_KINDS`), each
 blooming in its own season (the first three: spring, summer, autumn, gathered within `fieldGather` so one hive can reach all three), with hardier flowers (`FIELD_GRASS`) and a tint on the ground while in bloom
-(`fieldBloom`). They're the bees' main food; the few scattered flowers elsewhere are the rest.
+(`fieldBloom`). They're the bees' main food; the few scattered flowers elsewhere are the rest. Butterflies loop over a field in
+bloom by day, and fireflies blink by the water and the wood's edge on summer nights (`drawButterflies`, `drawFireflies`: a look only).
+
+Apple trees (`w.orchard`) drop windfalls early in autumn (`windfallTick`, `d.apples`), a big meal that hungry rabbits
+walk a way for (`windfall`), so the apple trees are where they gather in autumn, and where the foxes find them.
 
 Rocks are painted, not emoji (`rockInfo`, `rockSprite` in game.js): pebbles, stones and boulders by
 size (`TERRAIN.rockSize`), flat stones at the fords, and two or three great rocks per meadow
