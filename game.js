@@ -2171,8 +2171,8 @@ const iceOver = () => world.ice * 0.72;   // frozen over (the sim's w.ice: it ho
 // The wind makes more of them show and bigger; ice stills the water.
 function drawWaves(now) {
   const m = ui.sky.mix, wind = 0.4 * m.cloudy + 0.7 * m.rain + m.storm;
-  const a = (0.45 + 0.3 * Math.min(1, wind)) * (1 - iceOver() / 0.72), z = cam.zoom;
-  if (a <= 0.05 || z < 6) return;
+  const z = cam.zoom, a = (0.45 + 0.3 * Math.min(1, wind)) * (1 - iceOver() / 0.72) * clamp((z - 9) / 5, 0, 1);   // from afar they'd only be speckle
+  if (a <= 0.05) return;
   const big = 1 + 0.4 * Math.min(1, wind), w = z * 0.34 * big, h = w * 0.22;
   ctx.save();
   ctx.strokeStyle = '#f4fbff'; ctx.lineCap = 'round'; ctx.lineJoin = 'round';

@@ -208,17 +208,20 @@ void main() {
   vec3 frozen = vec3(214., 232., 242.) / 255.;
   vec3 bank = mix(vec3(104., 170., 208.), vec3(100., 135., 160.), cold) / 255.;
   vec3 shallow = mix(vec3(130., 200., 235.), vec3(142., 172., 188.), cold) / 255.;
-  vec3 deep = mix(vec3(72., 142., 202.), vec3(82., 114., 138.), cold) / 255.;
+  vec3 deep = mix(vec3(84., 156., 214.), vec3(82., 114., 138.), cold) / 255.;
   vec3 sandC = mix(sand, frozen, ice), bankC = mix(bank, frozen, ice);
   vec3 shallowC = mix(shallow, frozen, ice), deepC = mix(deep, frozen, ice);
   float edge = max(fwidth(F.r) * 0.7, 1e-4);
   col = mix(col, sandC, layers(F.b, 0.03, 0.42, 9., 0.07));
   col = mix(col, bankC, smoothstep(0.47 - edge, 0.47 + edge, F.r));   // the water's edge stays crisp
   col = mix(col, shallowC, layers(F.g, 0.54, 0.8, 7., 0.2));
-  col = mix(col, deepC, layers(F.a, 0.3, 0.95, 9., 0.12));
-  // Deeper still well out from the shore, where the deep water is wide.
-  vec3 abyss = mix(mix(vec3(44., 100., 168.), vec3(62., 90., 114.), cold) / 255., frozen, ice);
-  col = mix(col, abyss, 0.6 * smoothstep(0.5, 1., F.a * F.b));
+  col = mix(col, deepC, layers(F.a, 0.3, 1., 9., 0.07));
+  // A touch deeper well out from the shore, where the deep water is wide: gently, or from afar
+  // it reads as a dark hole in the lake.
+  vec3 abyss = mix(mix(vec3(60., 124., 188.), vec3(70., 100., 126.), cold) / 255., frozen, ice);
+  col = mix(col, abyss, 0.25 * smoothstep(0.5, 1., F.a * F.b));
+  // A pale line just in from the edge, where the water laps the bank.
+  col = mix(col, vec3(226., 244., 250.) / 255., 0.45 * (1. - ice) * (smoothstep(0.47 - edge, 0.47 + edge, F.r) - smoothstep(0.49, 0.53, F.r)));
   // A painted surface: long soft strokes across open water, a touch lighter or darker, and the sun
   // lighter on the shallows just in from the edge. Ice stills it.
   float open = smoothstep(0.47, 0.6, F.r) * (1. - ice);
