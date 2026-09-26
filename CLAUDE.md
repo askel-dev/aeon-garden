@@ -29,8 +29,9 @@ told to just do it.
   silence between pieces is part of it, and no piece is about the time of day (a day is 20 s, a
   piece 90 s): they fit any moment, lean towards a season at 1x, and the piano plays darker at night.
 - `index.html`: layout and styles. Phones get slim bars (`narrow()`: up to 760px wide, or up to 500px tall
-  on their side). Upright, the inspector is a bottom sheet; on their side (`short()`) the tools stand down
-  the left and the inspector is a panel down the right. Either way it opens folded to one line (`stripHTML`):
+  on their side). The tools fold into one round button in the bottom right showing the one in hand (`toggleTools`),
+  and a finger held on the meadow opens the ring there (`HOLD_MS`). Upright, the inspector is a bottom sheet;
+  on their side (`short()`) it is a panel down the right. Either way it opens folded to one line (`stripHTML`):
   who, what they're up to, and the tummy. Tap it for the rest.
 - `balance.js`: headless check, `node balance.js [years] [seeds]`.
 - `terrain-lab.js`: the terrain lab, `index.html?lab`. Sliders for every number in `TERRAIN` (sim.js),

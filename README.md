@@ -56,7 +56,7 @@ Every meadow is different: a river, a lake or both, a few ponds, woods, great ro
 
 - Click an animal to follow its whole life, or anything else (a hive, a tree, a burrow, a field) to see what it is
 - Scroll to zoom, drag to look around. On a phone: pinch and drag
-- The tools at the bottom (or right-click the meadow) add rabbits, foxes and bees, grow grass, or strike lightning
+- The tools at the bottom (on a phone, the button in the corner; or right-click or hold a finger on the meadow) add rabbits, foxes and bees, grow grass, or strike lightning
 - Change the weather, or 🔒 lock it, from the sky button at the top
 - Quiet sounds and a little felt piano now and then, off until you press 🔊 or M
 - With [Ollama](https://ollama.com) running, the ✍️ Diary button lets an animal write about its day

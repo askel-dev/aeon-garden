@@ -60,7 +60,8 @@
   html, body { margin: 0; height: 100%; overflow: hidden; background: #9cc77e; }
   body { font-family: Nunito, ui-rounded, system-ui, sans-serif; color: var(--ink); font-size: 14px; }
   /* The meadow fills the whole glass: under the clock and behind Safari's floating bar too (lvh). */
-  canvas#world { position: fixed; top: 0; left: 0; width: 100%; height: 100vh; height: 100lvh; display: block; touch-action: none; }
+  canvas#world { position: fixed; top: 0; left: 0; width: 100%; height: 100vh; height: 100lvh; display: block; touch-action: none;
+    -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }   /* a held finger opens the ring, not Safari's menu */
   .phone-only { display: none; }
   canvas#world.tool-look { cursor: grab; }
   canvas#world.tool-look.dragging { cursor: grabbing; }
@@ -143,7 +144,9 @@
      With a mouse it slides away while you just watch, leaving a sliver. It comes back by fading in
      right where it lives, so the buttons never move under the pointer on the way to them. */
   #toolbar { left: 50%; bottom: var(--bottom); transform: translateX(-50%); padding: 8px 14px; display: flex; gap: 10px; align-items: center; }
-  @media (hover: hover) and (min-height: 501px) {
+  #toolbar .tools { display: contents; }
+  #toolbar .hand { display: none; }
+  @media (hover: hover) and (min-width: 761px) and (min-height: 501px) {
     body:not(.bar-away) #toolbar { animation: bar-in 0.45s cubic-bezier(0.22, 1, 0.36, 1); }
     body.bar-away #toolbar { transform: translate(-50%, calc(100% + 10px)); opacity: 0.6; transition: transform 0.25s ease-in, opacity 0.25s; }
     body.bar-away #news { bottom: var(--bottom); }
@@ -396,13 +399,21 @@
     #meadow.mini ~ #hud-right { top: var(--top); }
     #meadow .evo, #meadow .evo-h { display: none; }
     .mini-line { gap: 10px; }
-    #news { width: calc(100% - 32px); }
+    #news { bottom: var(--bottom); width: calc(100% - var(--left) - var(--right) - 60px); }   /* beside the tools' button */
     #news-log ol { max-height: 30vh; }
-    #toolbar { width: calc(100% - 32px); padding: 5px; gap: 4px; }
-    #toolbar .tool { min-width: 0; flex: 1 1 0; justify-content: center; gap: 5px; padding: 8px 0; border-radius: 12px; }
-    #toolbar .tool .e { font-size: 24px; width: auto; }
-    #toolbar .tool:not(.on) .l { display: none; }         /* only the tool in your hand says its name */
-    .tool .l { font-size: 13px; }
+    /* The tools fold into one round button in the bottom right, showing the one in your hand.
+       Tap it and they rise above it, Look nearest the thumb; picking one folds them away again. */
+    #toolbar { left: auto; right: var(--right); transform: none; padding: 0; border-radius: 50%; z-index: 4; }
+    #toolbar .hand { display: grid; place-items: center; width: 52px; height: 52px; padding: 0; border: none; border-radius: 50%;
+      background: transparent; font-size: 26px; transition: background 0.15s, transform 0.1s; }
+    #toolbar .hand:active { transform: scale(0.93); }
+    #toolbar .hand.on, #toolbar.open .hand { background: var(--accent-soft); }
+    #toolbar .tools { display: none; position: absolute; right: 0; bottom: calc(100% + 8px); flex-direction: column-reverse; gap: 2px;
+      padding: 5px; background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); animation: pop-in 0.18s ease-out; }
+    #toolbar.open .tools { display: flex; }
+    #toolbar .tool { flex-direction: row-reverse; justify-content: flex-start; gap: 10px; height: 44px; padding: 0 9px 0 16px; border-radius: 12px; }
+    #toolbar .tool .e { font-size: 24px; width: 1.1em; }
+    .tool .l { font-size: 14px; }
     /* time: pause and one button that steps through the speeds; the rest waits in ••• */
     #time { --hud-h: 44px; gap: 2px; padding: 0 4px; }
     #time .speed[data-speed]:not([data-speed="0"]), #time .hud-btn:not(.more), #time .hud-sep { display: none; }
@@ -437,22 +448,22 @@
        tap or swipe it up for the rest. */
     #inspector { margin-top: auto; width: 100%; max-height: 72%; padding: 6px 16px 14px;
       overscroll-behavior: contain; transition: max-height 0.25s ease; }
-    #inspector.strip { margin-bottom: calc(var(--bar) - 8px); }
+    #inspector.strip { align-self: flex-start; width: calc(100% - 60px); }   /* folded, it shares the bottom row with the tools */
     #inspector .ins-head { touch-action: none; }
     .close { font-size: 18px; padding: 8px 12px; margin: -8px -10px 0 auto; }
     body.inspecting:not(.ins-strip) #news { display: none; }  /* the sheet covers that corner anyway */
-    body.ins-strip #news { bottom: calc(var(--bar) + 66px); }  /* over the folded line */
+    body.ins-strip #news { bottom: calc(var(--bottom) + 64px); }  /* over the folded line */
   }
-  /* ---- phones on their side: the tools stand in a column down the left, the inspector is a panel
-     down the right, and the meadow keeps the middle. The screen is short, so nothing sits along the bottom. */
+  /* ---- phones on their side: the inspector is a panel down the right, and the meadow keeps the middle.
+     Open, the panel covers the tools' button; fold it or close it to get them back. */
   @media (max-height: 500px) {
     #meadow:not(.mini) { width: 280px; max-height: calc(100vh - var(--top) - var(--bottom)); overflow-y: auto; overscroll-behavior: contain; z-index: 4; }
     #meadow:not(.mini) ~ #hud-right, #hud-right { top: var(--top); left: auto; }
-    #toolbar { left: var(--left); top: calc(var(--top) + 44px + 8px); bottom: auto; transform: none; width: auto;
-      flex-direction: column; padding: 4px; gap: 2px; }
-    #toolbar .tool { flex: none; width: 46px; height: 44px; padding: 0; }
+    #news { width: min(330px, calc(100% - var(--left) - var(--right) - 60px)); }
+    /* too short for a column: the tools open in a row to the left of their button, Look nearest */
+    #toolbar .tools { flex-direction: row-reverse; right: calc(100% + 8px); bottom: -1px; }
+    #toolbar .tool { width: 46px; padding: 0; justify-content: center; }
     #toolbar .tool .l { display: none; }
-    #news { left: calc(var(--left) + var(--rail, 0px)); bottom: var(--bottom); width: min(330px, calc(100% - var(--left) - var(--rail, 0px) - 16px)); }
     #inspector { width: min(320px, 42vw); padding: 6px 14px 12px; overscroll-behavior: contain; }
     #inspector.strip { width: min(280px, 42vw); }
     .ins-name { font-size: 18px; }
@@ -470,9 +481,6 @@
     #home-guide :is(.go, .later) { padding: 9px 14px; }
     #intro { --lb: clamp(36px, 11vh, 96px); }
     #intro .line { margin: 0 18px; font-size: 16px; }
-  }
-  @media (max-height: 360px) {
-    #toolbar .tool { height: 38px; }
   }
   /* small phones: squeeze the top row so the two pills never overlap */
   /* Three kinds and the time pill are a tight fit: just the weather, and the whole pill opens the card. */
@@ -548,12 +556,16 @@
 <div id="news"></div>
 
 <nav id="toolbar" class="card">
+  <div class="tools">
   <button class="tool on" data-tool="look" title="Look around. Click an animal to follow it (L)"><span class="e">🔍</span><span class="l">Look</span></button>
   <button class="tool" data-tool="rabbit" title="Click the meadow to release a rabbit"><span class="e">🐇</span><span class="l">Rabbit</span></button>
   <button class="tool" data-tool="fox" title="Click the meadow to release a fox"><span class="e">🦊</span><span class="l">Fox</span></button>
   <button class="tool" data-tool="bee" title="Click the meadow to release a bee. It moves into the nearest hive"><span class="e">🐝</span><span class="l">Bee</span></button>
   <button class="tool" data-tool="grass" title="Click and drag to grow lush grass"><span class="e">🌱</span><span class="l">Grass</span></button>
   <button class="tool" data-tool="zap" title="Click the meadow to strike lightning. On dry ground it starts a fire (Z)"><span class="e">⚡</span><span class="l">Zap</span></button>
+  </div>
+  <!-- phones: the tools fold into one round button in the corner, showing the one in your hand -->
+  <button class="hand" data-act="tools" title="Tools" aria-expanded="false">🔍</button>
 </nav>
 
 <!-- top right: time, then the meadow's controls; menus drop down, the inspector hangs underneath -->

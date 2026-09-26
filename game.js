@@ -36,9 +36,10 @@ const cam = { x: S.W / 2, y: S.H / 2, zoom: 10, goal: null };
 const canvas = $('#world');
 const ctx = canvas.getContext('2d');
 let vw = 0, vh = 0, dpr = 1, minZoom = 1;
-let barPad = 0, railPad = 0;                      // screen pixels the toolbar covers at the bottom, or down the left on a phone on its side
+let barPad = 0;                                   // screen pixels the toolbar covers at the bottom (on a phone, its button in the corner)
 let sheet = null;                                 // the edges of the meadow the inspector and the bars hide, while it's open
-// A phone upright or on its side: slim bars. On its side (a short screen) the tools stand down the left.
+// A phone upright or on its side: slim bars, and the tools fold into a button. On its side (a short screen)
+// the inspector is a panel down the right.
 const narrow = () => matchMedia('(max-width: 760px), (max-height: 500px)').matches;
 const short = () => matchMedia('(max-height: 500px)').matches;
 const canHover = matchMedia('(hover: hover)');
@@ -85,28 +86,25 @@ function resize() {
 function measureSheet() {
   const ins = $('#inspector').getBoundingClientRect();
   if (!ins.height) sheet = null;
-  else if (ins.width >= vw * 0.8) {
+  else if (narrow() && !short()) {
     const top = Math.max($('#meadow').getBoundingClientRect().bottom, $('#hud-right .hud-top').getBoundingClientRect().bottom);
     sheet = { top, bottom: vh - ins.top, left: 0, right: 0 };
-  } else sheet = short() ? { top: 0, bottom: 0, left: railPad, right: $('#inspector').classList.contains('strip') ? 0 : vw - ins.left } : null;
+  } else sheet = short() ? { top: 0, bottom: 0, left: 0, right: $('#inspector').classList.contains('strip') ? 0 : vw - ins.left } : null;
 }
 
 function clampCam() {
   const hw = vw / 2 / cam.zoom, hh = vh / 2 / cam.zoom;
   // You may look a little past the edges, so nothing is ever stuck under the toolbar or the inspector.
   // Not while they're away for the intro (hush).
-  const rail = ui.hush ? 0 : railPad, bar = ui.hush ? 0 : barPad;
-  const left = Math.max(rail, sheet ? sheet.left : 0) / cam.zoom, right = (sheet ? sheet.right : 0) / cam.zoom;
+  const bar = ui.hush ? 0 : barPad;
+  const left = (sheet ? sheet.left : 0) / cam.zoom, right = (sheet ? sheet.right : 0) / cam.zoom;
   cam.x = clamp(cam.x, Math.min(hw, S.W / 2) - left, Math.max(S.W - hw, S.W / 2) + right);
   cam.y = clamp(cam.y, Math.min(hh, S.H / 2), Math.max(S.H - hh, S.H / 2) + Math.max(bar, sheet ? sheet.bottom : 0) / cam.zoom);
 }
 
 new ResizeObserver(() => {
-  const rail = short();
-  barPad = rail ? 0 : $('#toolbar').offsetHeight + 16;
-  railPad = rail ? $('#toolbar').offsetWidth + 16 : 0;
+  barPad = $('#toolbar').offsetHeight + 16;
   document.documentElement.style.setProperty('--bar', barPad + 'px');
-  document.documentElement.style.setProperty('--rail', (railPad - 8) + 'px');
 }).observe($('#toolbar'));
 new ResizeObserver(() => {            // on a phone the time pill sits under the meadow card
   document.documentElement.style.setProperty('--meadow-h', $('#meadow').offsetHeight + 'px');
@@ -3565,8 +3563,19 @@ function setTool(tool) {
   ui.tool = tool;
   document.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === tool));
   canvas.className = 'tool-' + tool;
+  const hand = $('#toolbar .hand');
+  hand.textContent = $(`[data-tool="${tool}"] .e`).textContent;
+  hand.classList.toggle('on', tool !== 'look');
+  toggleTools(false);
   updateBar();
 }
+
+// On a phone the tools fold into one button in the corner; tap it and they rise above it.
+function toggleTools(open = !$('#toolbar').classList.contains('open')) {
+  $('#toolbar').classList.toggle('open', open);
+  $('#toolbar .hand').setAttribute('aria-expanded', open);
+}
+addEventListener('pointerdown', e => { if (!e.target.closest('#toolbar')) toggleTools(false); });
 
 // The toolbar slides away while you just watch and comes back as soon as the mouse enters the spot
 // where it lives, so you stop on the buttons instead of running into the screen edge and back.
@@ -3641,18 +3650,32 @@ function liftFinger(e) {
   return true;
 }
 
+// A finger held still on the meadow opens the ring there, as a right-click does (iPhones never send one).
+const HOLD_MS = 450;
+let holdTimer = 0;
+
 canvas.addEventListener('pointerdown', e => {
   if (intro.on) { endIntro(true); return; }
   if (ui.ring) { closeRing(); return; }
+  if ($('#toolbar').classList.contains('open')) { toggleTools(false); return; }   // that tap only folds the tools away
   if (e.button === 2 || (e.ctrlKey && e.pointerType === 'mouse')) return;   // that's the ring menu
   canvas.setPointerCapture(e.pointerId);
   fingerTap = e.pointerType === 'touch';
   flick.vx = flick.vy = 0;
+  clearTimeout(holdTimer);
   if (fingerTap) fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (fingers.size >= 2) { startPinch(); return; }
   drag = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y, moved: false, paint: ui.tool === 'grass' && e.button === 0,
     t: e.timeStamp, lx: e.clientX, ly: e.clientY, vx: 0, vy: 0 };
   if (drag.paint) paintAt(e.clientX, e.clientY);
+  else if (fingerTap && !LAB) {
+    const d = drag;
+    holdTimer = setTimeout(() => {
+      if (drag !== d || d.moved || fingers.size !== 1) return;
+      drag = null;                        // lifting the finger now is no tap
+      openRing(d.x, d.y);
+    }, HOLD_MS);
+  }
 });
 canvas.addEventListener('pointermove', e => {
   if (fingers.has(e.pointerId)) fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -3701,7 +3724,7 @@ canvas.addEventListener('pointercancel', e => {
 // Safari ignores the viewport's no-zoom, and a zoomed page makes the whole meadow blurry.
 document.addEventListener('gesturestart', e => e.preventDefault());
 canvas.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') { ui.hoverId = 0; ui.hoverHive = null; } });   // a lifted finger leaves too
-canvas.addEventListener('contextmenu', e => { e.preventDefault(); if (!LAB) openRing(e.clientX, e.clientY); });
+canvas.addEventListener('contextmenu', e => { e.preventDefault(); if (!LAB && !ui.ring) openRing(e.clientX, e.clientY); });   // Android's long-press sends one too
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
   if (intro.on) { endIntro(true); return; }
@@ -3901,6 +3924,7 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'cycle') setSpeed(ui.speed ? SPEEDS[(SPEEDS.indexOf(ui.speed) + 1) % SPEEDS.length] : lastSpeed);
   else if (t.dataset.sky) { S.setSky(world, t.dataset.sky); flushEvents(); toggleSkyMenu(false); updateMeadowCard(); }
   else if (t.dataset.act === 'sky') toggleSkyMenu();
+  else if (t.dataset.act === 'tools') toggleTools();
   else if (t.dataset.act === 'sky-lock') toggleSkyLock();
   else if (t.dataset.action === 'new') { if (confirm('Start a brand-new meadow? This one will be gone.')) newWorld(randomSeed()); }
   else if (t.dataset.act === 'close') select(0);
@@ -3965,7 +3989,7 @@ document.addEventListener('keydown', e => {
   } else if ('1234'.includes(e.key) && e.key.length === 1) setSpeed([1, 4, 15, 60][+e.key - 1]);
   else if (e.key === 'Escape') {
     const more = !$('#more-menu').classList.contains('hidden');
-    homeOpen() ? homeGuide(false) : ui.ring ? closeRing() : ui.sky.menu ? toggleSkyMenu(false) : more ? toggleMore(false) : ui.stats.open ? toggleStats(false)
+    homeOpen() ? homeGuide(false) : ui.ring ? closeRing() : $('#toolbar').classList.contains('open') ? toggleTools(false) : ui.sky.menu ? toggleSkyMenu(false) : more ? toggleMore(false) : ui.stats.open ? toggleStats(false)
       : ui.tool !== 'look' ? setTool('look') : select(0);
   }
   else if (e.key === 's') toggleStats();
@@ -4147,7 +4171,7 @@ function newsTips() {
   setTimeout(() => addNews(touch ? '🤏 <b>Tip:</b> pinch to zoom, drag to look around.' : '🖱️ <b>Tip:</b> scroll to zoom, drag to look around.'), 10000);
   setTimeout(() => { if (!ui.sound) addNews(narrow() ? '🔊 <b>Tip:</b> the meadow has quiet sounds. Turn them on in ••• at the top.'
     : '🔊 <b>Tip:</b> the meadow has quiet sounds. Turn them on with 🔇 at the top right (M).'); }, 18000);
-  setTimeout(() => addNews(touch ? '🌦️ <b>Tip:</b> the toolbar adds animals, grows grass and strikes lightning. The weather waits in •••.'
+  setTimeout(() => addNews(touch ? '🌦️ <b>Tip:</b> hold a finger on the meadow to add an animal, grow grass, change the weather or strike lightning right there.' + (narrow() ? ' The 🔍 in the corner keeps a tool in your hand.' : '')
     : '🌦️ <b>Tip:</b> right-click the meadow to add animals, grow grass, change the weather or strike lightning. The toolbar waits at the bottom edge.'), 27000);
 }
 
