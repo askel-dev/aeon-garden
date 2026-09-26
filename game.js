@@ -141,8 +141,12 @@ function sprite(emoji, want, tint, leaf, center, coat) {
   const px = spriteStep(want), s = paintedSprite(emoji, px, tint, leaf, center, coat);
   return want === px ? s : { canvas: s.canvas, size: s.size * want / px };
 }
+const lookKey = (emoji, tint, leaf, center, coat) =>
+  emoji + '|' + (tint || '') + '|' + (leaf ? leaf.key : '') + (center ? '|c' : '') + (coat ? '|' + coat.key : '');
+// Whether drawEmoji would find this one painted already.
+const spriteReady = (emoji, want, leaf) => spriteCache.has(spriteStep(Math.max(4, want)) + '|' + lookKey(emoji, '', leaf));
 function paintedSprite(emoji, px, tint, leaf, center, coat) {
-  const look = emoji + '|' + (tint || '') + '|' + (leaf ? leaf.key : '') + (center ? '|c' : '') + (coat ? '|' + coat.key : '');
+  const look = lookKey(emoji, tint, leaf, center, coat);
   const key = px + '|' + look;
   let s = spriteCache.get(key);
   if (s) { s.used = spriteFrame; return s; }
@@ -931,7 +935,7 @@ function render(now) {
   // Sprites are painted near the size they're drawn at, so 'high' looks the same, but Chrome pays
   // for it on every draw, GPU or not: with it, a wood on screen dropped frames.
   ctx.imageSmoothingQuality = 'low';
-  spriteFrame++; paintedMs = 0; standIns = true;
+  spriteFrame++; paintedMs = 0; standIns = true; turned = 0;
   ctx.clearRect(-8, -8, vw + 16, vh + 16);          // past the meadow's edge the page shows through
   const [ox, oy] = toScreen(0, 0);
   const z = cam.zoom, ck = S.clock(world);
@@ -1440,12 +1444,29 @@ function drawFallingLeaves(now) {
   leafFall.length = 0;
 }
 
+// A tree turning colour is painted afresh at every step, and at 15x or 60x the seasons go by so fast
+// that every tree on screen would want a new sprite every few frames. So at most TURNS a frame get their
+// new colours; the rest keep the one they're showing a moment longer, and skip the steps they missed.
+const TURNS = 1;
+const treeShown = new WeakMap();                           // tree: the look it was last drawn with
+let turned = 0;                                            // trees given a new look this frame
+function shownLook(d, look, px) {
+  const was = treeShown.get(d);
+  if (was !== undefined && (was && was.key) !== (look && look.key) && !spriteReady(d.emoji, px, look)) {
+    if (turned >= TURNS) return was;
+    turned++;
+  }
+  treeShown.set(d, look);
+  return look;
+}
+
 function drawDecor(d, sx, sy, now, ck, clipLeaves) {
   const z = cam.zoom, px = d.size * z;
   if (d.emoji === '🪨') { drawRock(d, sx, sy); return; }
   if (!d.stump && !d.tree) { drawEmoji(d.emoji, sx, sy - px * 0.35, px); return; }
   if (!d.stump) {
     const t = treeLook(d, ck), under = t.ground?.n && px >= 20;
+    t.look = shownLook(d, t.look, px);
     if (under) drawUnderTree(t.ground, t.h, sx, sy, px, false);
     ctx.save();
     ctx.translate(sx, sy); ctx.rotate(treeSway(d, now));

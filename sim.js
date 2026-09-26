@@ -935,12 +935,19 @@ const distanceToWater = w => distanceTo(w.water);
 // Tiles to the nearest tile that is set in `from` (two sweeps, straight steps 1 and diagonal 1.4).
 function distanceTo(from) {
   const d = Float32Array.from(from, v => v ? 0 : 1e9);
-  const sweep = (y0, y1, dy, x0, x1, dx) => {
-    for (let y = y0; y !== y1; y += dy) for (let x = x0; x !== x1; x += dx) {
-      const i = y * W + x;
-      for (const [ox, oy, c] of [[-dx, 0, 1], [0, -dy, 1], [-dx, -dy, 1.4], [dx, -dy, 1.4]]) {
-        const nx = x + ox, ny = y + oy;
-        if (nx >= 0 && ny >= 0 && nx < W && ny < H) d[i] = Math.min(d[i], d[ny * W + nx] + c);
+  const sweep = (y0, y1, dy, x0, x1, dx) => {      // from the tile behind, the row behind, and its two corners
+    for (let y = y0; y !== y1; y += dy) {
+      const py = y - dy, row = py >= 0 && py < H;
+      for (let x = x0; x !== x1; x += dx) {
+        const i = y * W + x, bx = x - dx, fx = x + dx, back = bx >= 0 && bx < W;
+        let v = d[i];
+        if (back) v = Math.min(v, d[y * W + bx] + 1);
+        if (row) {
+          v = Math.min(v, d[py * W + x] + 1);
+          if (back) v = Math.min(v, d[py * W + bx] + 1.4);
+          if (fx >= 0 && fx < W) v = Math.min(v, d[py * W + fx] + 1.4);
+        }
+        d[i] = v;
       }
     }
   };
