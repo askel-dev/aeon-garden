@@ -20,8 +20,11 @@ told to just do it.
   empty meadow (createWorld's `arrival` option, `planArrivals` in sim.js) where a family hops in at dawn,
   digs its burrow and turns in for the night, while the camera, the clock's pace and a caption at a time
   follow along in letterbox bars. It never steers the animals, it waits for them. Any key, click or scroll skips it.
-- `ground.js`: the ground (grass, earth, shores, water) as a WebGL shader, painted fresh every frame from a
+- `ground.js`: the ground (grass, earth, shores, water) as a WebGL shader, painted from a
   few small textures of one texel a tile that game.js keeps up to date (`paintTerrain`, `updateWater`).
+  It paints again only when the camera, a texture or the light has moved (`same`), and at most at 2x
+  (`GROUND_DPR`). The loop gives the sim at most `SIM_MS` a frame (a slow phone runs 60x a bit slower
+  instead of dropping frames), and a paused meadow nobody is touching draws at 30 fps (`resting`).
 - `sound.js`: all the sounds, made with Web Audio (no files). Off until the 🔊 button or M.
   `sound-lab.html` plays each one on its own. Keep it minimal: one scale, few sounds. Every 5 to 10
   minutes a short felt-piano piece plays (`TUNES`, written out note by note and played a little

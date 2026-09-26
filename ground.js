@@ -1,8 +1,9 @@
 /* Nobody's Meadow — the ground: grass, earth, shores and water, painted by a small WebGL shader.
  *
  * game.js hands over the meadow as a few tiny textures, one texel a tile, and the shader works
- * out every pixel on the screen, every frame. Nothing is cached, so the grass changes the moment
- * it grows and the ground is sharp at any zoom. The look, from big to small:
+ * out every pixel on the screen. It paints again only when something it shows has moved (the
+ * camera, a texture, the light), so the grass changes the moment it grows and the ground is sharp
+ * at any zoom, but a still camera costs the GPU next to nothing. The look, from big to small:
  *   - where it is: a cooler, deeper green by the water and the woods, golden up high and in big
  *     drifts (the hue shifts, the grass stays bright);
  *   - the grass itself (what the rabbits eat): lush grass, or the bare earth where it is grazed;
@@ -14,7 +15,7 @@
  * ash, wood), 'bloom' (a field's tint times how much it shows, then how much), 'shape' (height,
  * tiles to the water, tiles to the woods) and 'water' (the water softened by 1, 2 and 4 blurs,
  * and the deep water by 2). Then Ground.draw(uniforms) paints Ground.canvas, to be copied onto
- * the screen.
+ * the screen (it says whether it had to paint).
  * Ground.ok is false where there is no WebGL2.
  */
 (() => {
@@ -22,7 +23,8 @@
 
 const S = window.Sim;
 const canvas = document.createElement('canvas');
-const gl = canvas.getContext('webgl2', { antialias: false, depth: false, stencil: false });
+// preserveDrawingBuffer: the picture stays put between draws, to be copied again while nothing changed.
+const gl = canvas.getContext('webgl2', { antialias: false, depth: false, stencil: false, preserveDrawingBuffer: true });
 
 const VERTEX = `#version 300 es
 in vec2 a;
@@ -246,21 +248,38 @@ if (gl) {
 }
 
 function set(name, data) {
+  last = null;
   const { unit, t } = textures[name];
   gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t);
   gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, S.W, S.H, gl.RGBA, gl.FLOAT, data);
+}
+
+// What the last draw painted. The camera must match exactly; the light and the season only
+// nearly, so a slow sunset paints a few times a second instead of every frame.
+let last = null;
+const NEAR = { snow: 0.004, damp: 0.002, ice: 0.004, cold: 0.004, lx: 0.01, ly: 0.01 };
+const EXACT = ['width', 'height', 'zoom', 'ox', 'oy', 'dpr'];
+function same(u) {
+  if (!last || u.seed[0] !== last.seed[0] || u.seed[1] !== last.seed[1]) return false;
+  for (const k of EXACT) if (u[k] !== last[k]) return false;
+  for (const k in NEAR) if (Math.abs(u[k] - last[k]) > NEAR[k]) return false;
+  for (const k of ['low', 'high', 'sand']) for (let i = 0; i < 3; i++) if (Math.abs(u[k][i] - last[k][i]) > 0.5) return false;
+  return true;
 }
 
 //   width, height   the canvas, in its own pixels
 //   zoom, ox, oy    CSS pixels a tile, and where the meadow's corner lands
 //   the rest        see the uniforms in the shader
 function draw(u) {
+  if (same(u)) return false;
+  last = u;
   if (canvas.width !== u.width || canvas.height !== u.height) { canvas.width = u.width; canvas.height = u.height; }
   gl.viewport(0, 0, u.width, u.height);
   gl.uniform2f(U.res, u.width, u.height); gl.uniform2f(U.off, u.ox, u.oy); gl.uniform2fv(U.seed, u.seed);
   for (const k of ['zoom', 'dpr', 'snow', 'damp', 'lx', 'ly', 'ice', 'cold']) gl.uniform1f(U[k], u[k]);
   for (const k of ['low', 'high', 'sand']) gl.uniform3fv(U[k], u[k].map(v => v / 255));
   gl.drawArrays(gl.TRIANGLES, 0, 3);
+  return true;
 }
 
 // A lost context (the GPU reset) takes the shader with it: from then on game.js draws plain colours.

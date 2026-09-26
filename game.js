@@ -487,16 +487,20 @@ function edgeColour(r, g, b) {
   document.documentElement.style.background = document.body.style.background = css;
 }
 
-// The ground, drawn fresh every frame. The sun shows the hills most when it is low: it comes up
-// in the east, stands in the north at midday (the shadows fall south) and sets in the west. At
-// night and under cloud they go flat, like the shadows.
+// The ground, copied onto every frame; the shader paints it again only when it would look different.
+// The sun shows the hills most when it is low: it comes up in the east, stands in the north at midday
+// (the shadows fall south) and sets in the west. At night and under cloud they go flat, like the shadows.
+// On a screen sharper than 2x the ground is painted at 2x and stretched: soft grass doesn't show the
+// difference, and the shader has half the pixels to work out.
+const GROUND_DPR = 2;
 function drawGround(z, ox, oy) {
   groundStill = z === lastZoom ? groundStill + 1 : 0; lastZoom = z;
   updateWater();
   if (!Ground.ok) { ctx.drawImage(flat, ox, oy, S.W * z, S.H * z); return; }
   const [low, high] = groundColours(), sn = sun(S.clock(world)), k = 2.5 * Math.max(0, sn.a) * (0.6 + 0.4 * Math.abs(sn.lean));
+  const gd = Math.min(dpr, GROUND_DPR);
   Ground.draw({
-    width: canvas.width, height: canvas.height, zoom: z, ox, oy, dpr, seed: groundSeed, low, high, sand: shoreSand,
+    width: Math.round(vw * gd), height: Math.round(vh * gd), zoom: z, ox, oy, dpr: gd, seed: groundSeed, low, high, sand: shoreSand,
     snow: world.snow, damp: 1 - 0.12 * world.wet, ice: iceOver(), cold: coldness(), lx: k * sn.lean, ly: k * 0.8,
   });
   ctx.drawImage(Ground.canvas, 0, 0, vw, vh);
@@ -4213,6 +4217,23 @@ function newWorld(seed, arrival = false) {
 
 let last = performance.now(), acc = 0, lastCard = 0, lastRecord = 0, lastStatsCards = 0;
 const TERRAIN_MS = 250;                   // real time between hand-overs of the grass to the ground (painting grass skips the wait)
+// The most real time the sim gets in a frame. A slow phone at 60x would rather run a little slower
+// than drop frames: the ticks that don't fit are let go, and don't pile up for the next frame.
+const SIM_MS = 6;
+
+// Paused, the world stands still, but the water, the weather and the trees still move a little:
+// 30 frames a second are plenty for that, unless you're looking around or something is happening.
+const RESTING_MS = 30, WOKEN_MS = 500;
+let lastDrawn = 0, lastInput = 0;
+const camWas = { x: 0, y: 0, zoom: 0 };
+for (const type of ['pointerdown', 'pointermove', 'wheel', 'keydown', 'resize']) addEventListener(type, () => { lastInput = performance.now(); }, { passive: true });
+function resting(now) {
+  const still = cam.x === camWas.x && cam.y === camWas.y && cam.zoom === camWas.zoom;
+  camWas.x = cam.x; camWas.y = cam.y; camWas.zoom = cam.zoom;
+  return still && ui.speed === 0 && !intro.on && !LAB && !ui.effects.length
+    && now - lastInput > WOKEN_MS && now - ui.sky.boom > WOKEN_MS;
+}
+
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
@@ -4220,11 +4241,12 @@ function frame(now) {
 
   if (ui.speed > 0) {
     acc += dt * TICKS_PER_SECOND * ui.speed;
-    const n = Math.min(Math.floor(acc), 2000);
+    const n = Math.min(Math.floor(acc), 2000), t0 = performance.now();
     acc -= n;
     for (let i = 0; i < n; i++) {
       S.step(world);
       if (world.events.length) flushEvents();
+      if ((i & 7) === 7 && performance.now() - t0 > SIM_MS) break;
     }
   }
   if (ui.newsStale && ui.newsOpen) renderNewsLog();
@@ -4258,7 +4280,9 @@ function frame(now) {
   }
   clampCam();
 
-  if (!ui.stats.open && canvas.width && canvas.height) {   // the stats page covers the meadow; a hidden tab can have no size
+  const rest = resting(now) && now - lastDrawn < RESTING_MS;
+  if (!rest && !ui.stats.open && canvas.width && canvas.height) {   // the stats page covers the meadow; a hidden tab can have no size
+    lastDrawn = now;
     // Every 12 ticks, and no more than a few times a second: grass changes too slowly to see the difference.
     if (terrainTick < 0 || (world.tick - terrainTick >= 12 && now - terrainAt >= TERRAIN_MS)) paintTerrain();
     render(now);
