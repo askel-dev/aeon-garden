@@ -1110,9 +1110,175 @@ function drawBaskets(c, sx, y, px) {
   ctx.fill(); ctx.stroke();
 }
 
+// Thought bubbles: a cream bubble, two little puffs trailing down to the animal, and a painted icon for
+// what it's up to (BUBBLE_ICONS; a mood without one keeps its emoji). Bubble and icon are one sprite.
+const BUBBLE_R = 0.36, BUBBLE_AT = [0.06, -0.08];     // the bubble in its sprite, in sprite sizes from the middle
+function paintBubble(g, size, U, i) {
+  g.setTransform(U, 0, 0, U, size / 2, size / 2);
+  const [x, y] = BUBBLE_AT, r = BUBBLE_R;
+  const bubble = (dx, dy) => {
+    g.beginPath();
+    g.moveTo(x + dx + r, y + dy); g.arc(x + dx, y + dy, r, 0, TAU);
+    g.moveTo(x + dx - 0.24, y + dy + 0.33); g.arc(x + dx - 0.3, y + dy + 0.33, 0.06, 0, TAU);
+    g.moveTo(x + dx - 0.385, y + dy + 0.47); g.arc(x + dx - 0.42, y + dy + 0.47, 0.035, 0, TAU);
+  };
+  g.fillStyle = 'rgba(60, 45, 20, 0.16)'; bubble(0.015, 0.025); g.fill();
+  g.fillStyle = '#fffaf0'; bubble(0, 0); g.fill();
+  g.strokeStyle = 'rgba(90, 70, 40, 0.35)'; g.lineWidth = 0.018; g.stroke();
+  g.translate(x, y); g.scale(r * 0.64, r * 0.64);
+  g.lineCap = g.lineJoin = 'round';
+  BUBBLE_ICONS[i][1](g);
+}
+
+// The icons, each in a box from -1 to 1, flat colours with a lighter or darker side.
+const fillIn = (g, colour, path) => { g.fillStyle = colour; g.beginPath(); path(); g.fill(); };
+const strokeIn = (g, colour, w, path) => { g.strokeStyle = colour; g.lineWidth = w; g.beginPath(); path(); g.stroke(); };
+const discAt = (g, x, y, r) => { g.moveTo(x + r, y); g.arc(x, y, r, 0, TAU); };
+const ovalAt = (g, x, y, rx, ry, a = 0) => { g.moveTo(x + Math.cos(a) * rx, y + Math.sin(a) * rx); g.ellipse(x, y, rx, ry, a, 0, TAU); };
+const heartAt = (g, x, y, s) => {
+  g.moveTo(x, y + s * 0.9);
+  g.bezierCurveTo(x - s * 1.5, y - s * 0.1, x - s * 0.6, y - s * 1.15, x, y - s * 0.4);
+  g.bezierCurveTo(x + s * 0.6, y - s * 1.15, x + s * 1.5, y - s * 0.1, x, y + s * 0.9);
+};
+const pawAt = (g, x, y, s) => fillIn(g, '#8a5a3c', () => {
+  ovalAt(g, x, y + s * 0.35, s * 0.5, s * 0.42);
+  for (const [tx, ty] of [[-0.58, -0.2], [-0.21, -0.58], [0.21, -0.58], [0.58, -0.2]]) ovalAt(g, x + tx * s, y + ty * s, s * 0.19, s * 0.25, tx * 0.6);
+});
+const moundAt = (g, hole) => {
+  fillIn(g, '#a7784c', () => { g.moveTo(-0.95, 0.55); g.ellipse(0, 0.55, 0.95, 0.8, 0, Math.PI, TAU); g.closePath(); });
+  fillIn(g, '#c09063', () => { g.moveTo(-0.7, 0.1); g.quadraticCurveTo(-0.4, -0.25, 0, -0.25); g.quadraticCurveTo(-0.45, -0.05, -0.55, 0.3); g.closePath(); });
+  if (hole) fillIn(g, '#3a2616', () => { g.moveTo(-0.42, 0.55); g.ellipse(0, 0.55, 0.42, 0.34, 0, Math.PI, TAU); g.closePath(); });
+};
+const BUBBLE_ICONS = [
+  ['💕', g => { fillIn(g, '#e8506e', () => heartAt(g, -0.18, 0.12, 0.62)); fillIn(g, '#f58aa2', () => heartAt(g, 0.52, -0.45, 0.32)); }],
+  ['😋', g => {                                          // grazing: a leaf
+    g.rotate(-0.6);
+    fillIn(g, '#5f9e3c', () => { g.moveTo(0, -1); g.quadraticCurveTo(0.85, -0.2, 0, 1); g.quadraticCurveTo(-0.85, -0.2, 0, -1); });
+    fillIn(g, '#86c057', () => { g.moveTo(0, -1); g.quadraticCurveTo(-0.85, -0.2, 0, 1); g.closePath(); });
+    strokeIn(g, '#3f7a2a', 0.09, () => { g.moveTo(0, -0.75); g.lineTo(0, 1.15); });
+  }],
+  ['🌿', g => {                                          // off to better grass: a tuft
+    for (const [a, c, l] of [[-0.5, '#6aa84a', 1.3], [0.45, '#5f9e3c', 1.2], [0, '#86c057', 1.6]]) {
+      strokeIn(g, c, 0.26, () => { g.moveTo(0, 0.9); g.quadraticCurveTo(a * 0.3, 0.9 - l * 0.6, a * 1.3, 0.9 - l); });
+    }
+  }],
+  ['🍎', g => {
+    fillIn(g, '#c92e26', () => { discAt(g, -0.28, 0.15, 0.62); discAt(g, 0.28, 0.15, 0.62); });
+    fillIn(g, '#ec6a5a', () => ovalAt(g, -0.38, -0.08, 0.2, 0.26, 0.4));
+    strokeIn(g, '#6b4226', 0.12, () => { g.moveTo(0, -0.38); g.lineTo(0.08, -0.85); });
+    fillIn(g, '#6aa84a', () => ovalAt(g, 0.36, -0.72, 0.28, 0.13, -0.45));
+  }],
+  ['🐾', g => pawAt(g, 0, 0.05, 1)],
+  ['🤝', g => { pawAt(g, -0.42, 0.25, 0.62); pawAt(g, 0.45, -0.2, 0.55); }],   // with friends: two paws
+  ['👀', g => {
+    for (const x of [-0.4, 0.4]) {
+      fillIn(g, '#ffffff', () => ovalAt(g, x, 0, 0.34, 0.46));
+      strokeIn(g, '#3b372f', 0.08, () => ovalAt(g, x, 0, 0.34, 0.46));
+      fillIn(g, '#2d261e', () => discAt(g, x + 0.13, 0.06, 0.16));
+    }
+  }],
+  ['💨', g => {
+    for (const [y, l, x0] of [[-0.5, 1.2, -0.6], [0, 1.7, -0.95], [0.5, 1.1, -0.45]]) {
+      strokeIn(g, '#8fa9bf', 0.17, () => { g.moveTo(x0, y); g.quadraticCurveTo(x0 + l * 0.6, y - 0.12, x0 + l, y + 0.05); });
+    }
+  }],
+  ['🍖', g => {
+    strokeIn(g, '#efe4cf', 0.24, () => { g.moveTo(0.2, -0.2); g.lineTo(0.7, -0.7); });
+    fillIn(g, '#efe4cf', () => { discAt(g, 0.64, -0.86, 0.16); discAt(g, 0.86, -0.64, 0.16); });
+    fillIn(g, '#a9552a', () => ovalAt(g, -0.18, 0.22, 0.66, 0.47, -Math.PI / 4));
+    fillIn(g, '#d17d48', () => ovalAt(g, -0.3, 0.08, 0.34, 0.2, -Math.PI / 4));
+  }],
+  ['💤', g => {
+    strokeIn(g, '#6a8fc7', 0.17, () => { g.moveTo(-0.7, -0.05); g.lineTo(0.05, -0.05); g.lineTo(-0.7, 0.7); g.lineTo(0.05, 0.7); });
+    strokeIn(g, '#8fb0dc', 0.13, () => { g.moveTo(0.25, -0.8); g.lineTo(0.72, -0.8); g.lineTo(0.25, -0.3); g.lineTo(0.72, -0.3); });
+  }],
+  ['🏠', g => {                                          // heading home: the burrow
+    moundAt(g, true);
+    strokeIn(g, '#6aa84a', 0.1, () => { for (const x of [-0.5, -0.35, 0.45, 0.6]) { g.moveTo(x, -0.05 - Math.abs(x) * 0.1); g.lineTo(x + 0.08, -0.35); } });
+  }],
+  ['🕳️', g => {                                          // digging: a hole, earth flying
+    fillIn(g, '#a7784c', () => ovalAt(g, 0, 0.5, 0.8, 0.36));
+    fillIn(g, '#3a2616', () => ovalAt(g, 0, 0.52, 0.55, 0.24));
+    fillIn(g, '#8a6038', () => { for (const [x, y, r] of [[-0.55, -0.15, 0.12], [-0.12, -0.55, 0.14], [0.35, -0.3, 0.11], [0.62, -0.72, 0.09]]) discAt(g, x, y, r); });
+  }],
+  ['🫣', g => {                                          // hiding: ears out of the hole
+    moundAt(g, false);
+    fillIn(g, '#3a2616', () => ovalAt(g, 0, -0.12, 0.4, 0.15));
+    fillIn(g, '#c9a27e', () => { ovalAt(g, -0.16, -0.5, 0.11, 0.4, -0.15); ovalAt(g, 0.16, -0.5, 0.11, 0.4, 0.15); });
+    fillIn(g, '#e9b8b0', () => { ovalAt(g, -0.16, -0.52, 0.05, 0.26, -0.15); ovalAt(g, 0.16, -0.52, 0.05, 0.26, 0.15); });
+  }],
+  ['🌧️', g => {
+    fillIn(g, '#aebccb', () => { discAt(g, -0.42, -0.05, 0.36); discAt(g, 0.02, -0.3, 0.46); discAt(g, 0.44, -0.05, 0.36); g.rect(-0.42, -0.05, 0.86, 0.36); });
+    fillIn(g, '#c9d4de', () => { discAt(g, -0.05, -0.38, 0.3); discAt(g, -0.45, -0.1, 0.22); });
+    fillIn(g, '#5c9bd6', () => { for (const [x, y] of [[-0.4, 0.6], [0.05, 0.78], [0.45, 0.58]]) ovalAt(g, x, y, 0.08, 0.16, 0.3); });
+  }],
+  ['‼️', g => {
+    for (const x of [-0.3, 0.3]) {
+      strokeIn(g, '#d9372b', 0.28, () => { g.moveTo(x, -0.75); g.lineTo(x, 0.22); });
+      fillIn(g, '#d9372b', () => discAt(g, x, 0.66, 0.16));
+    }
+  }],
+  ['😱', g => {                                          // running from a fox: the fox
+    fillIn(g, '#e2702f', () => {
+      g.moveTo(-0.85, -0.4); g.lineTo(-0.7, -1); g.lineTo(-0.3, -0.55); g.lineTo(0.3, -0.55); g.lineTo(0.7, -1); g.lineTo(0.85, -0.4);
+      g.quadraticCurveTo(0.7, 0.3, 0, 0.85); g.quadraticCurveTo(-0.7, 0.3, -0.85, -0.4);
+    });
+    fillIn(g, '#fbf3e6', () => { g.moveTo(-0.62, 0.05); g.quadraticCurveTo(-0.2, 0.05, 0, 0.85); g.quadraticCurveTo(0.2, 0.05, 0.62, 0.05); g.quadraticCurveTo(0.5, 0.45, 0, 0.85); g.quadraticCurveTo(-0.5, 0.45, -0.62, 0.05); });
+    fillIn(g, '#2d261e', () => { discAt(g, 0, 0.78, 0.1); ovalAt(g, -0.3, -0.15, 0.08, 0.11); ovalAt(g, 0.3, -0.15, 0.08, 0.11); });
+  }],
+  ['🔥', g => {
+    const flame = (s, dy) => { g.moveTo(0, -1 * s + dy); g.bezierCurveTo(0.35 * s, -0.45 * s + dy, 0.8 * s, -0.1 * s + dy, 0.7 * s, 0.35 * s + dy);
+      g.bezierCurveTo(0.6 * s, 0.85 * s + dy, -0.6 * s, 0.85 * s + dy, -0.7 * s, 0.35 * s + dy); g.bezierCurveTo(-0.8 * s, -0.1 * s + dy, -0.2 * s, -0.3 * s + dy, 0, -1 * s + dy); };
+    fillIn(g, '#e8602c', () => flame(1, 0.05));
+    fillIn(g, '#f6b93b', () => flame(0.58, 0.38));
+  }],
+  ['⚡', g => {
+    const bolt = () => { g.moveTo(0.2, -1); g.lineTo(-0.5, 0.15); g.lineTo(-0.02, 0.15); g.lineTo(-0.25, 1); g.lineTo(0.55, -0.25); g.lineTo(0.08, -0.25); g.lineTo(0.35, -1); g.closePath(); };
+    fillIn(g, '#c9951a', () => { g.translate(0.05, 0.05); bolt(); g.translate(-0.05, -0.05); });
+    fillIn(g, '#f2c230', bolt);
+  }],
+  ['🧳', g => {                                          // moving in: a bundle on a stick
+    strokeIn(g, '#7a5232', 0.12, () => { g.moveTo(-0.85, 0.85); g.lineTo(0.55, -0.6); });
+    fillIn(g, '#d9483b', () => discAt(g, 0.35, -0.3, 0.45));
+    fillIn(g, '#fbe9e2', () => { for (const [x, y] of [[0.2, -0.45], [0.5, -0.2], [0.25, -0.05], [0.55, -0.55]]) discAt(g, x, y, 0.07); });
+    fillIn(g, '#b8352b', () => { ovalAt(g, 0.55, -0.75, 0.13, 0.22, 0.6); ovalAt(g, 0.72, -0.62, 0.13, 0.2, 1.3); });
+  }],
+  ['😮‍💨', g => {                                          // out of breath: a puff and a drop
+    fillIn(g, '#dfe6ec', () => { discAt(g, 0.15, 0.25, 0.32); discAt(g, 0.5, 0.05, 0.26); discAt(g, 0.78, 0.3, 0.2); });
+    fillIn(g, '#6db0e0', () => { g.moveTo(-0.45, -0.8); g.quadraticCurveTo(-0.15, -0.3, -0.15, -0.1); g.arc(-0.45, -0.1, 0.3, 0, Math.PI); g.quadraticCurveTo(-0.75, -0.3, -0.45, -0.8); });
+  }],
+  ['🍼', g => {                                          // following mum: milk
+    fillIn(g, '#e8a25a', () => { g.moveTo(-0.2, -0.45); g.quadraticCurveTo(-0.2, -0.95, 0, -0.95); g.quadraticCurveTo(0.2, -0.95, 0.2, -0.45); });
+    fillIn(g, '#fdfaf3', () => g.roundRect(-0.36, -0.38, 0.72, 1.28, 0.2));
+    strokeIn(g, '#9aa7b4', 0.07, () => g.roundRect(-0.36, -0.38, 0.72, 1.28, 0.2));
+    fillIn(g, '#7fb3d9', () => g.rect(-0.42, -0.5, 0.84, 0.16));
+    strokeIn(g, '#9aa7b4', 0.06, () => { for (const y of [0.1, 0.35, 0.6]) { g.moveTo(0.1, y); g.lineTo(0.3, y); } });
+  }],
+  ['😌', g => {                                          // relaxing
+    fillIn(g, '#f4c64e', () => discAt(g, 0, 0, 0.88));
+    fillIn(g, '#f19a7e', () => { ovalAt(g, -0.5, 0.2, 0.16, 0.1); ovalAt(g, 0.5, 0.2, 0.16, 0.1); });
+    strokeIn(g, '#6b4a1e', 0.1, () => { g.arc(-0.32, -0.12, 0.17, 0.15, Math.PI - 0.15); g.moveTo(0.49, -0.1); g.arc(0.32, -0.12, 0.17, 0.15, Math.PI - 0.15); g.moveTo(0.28, 0.32); g.arc(0, 0.2, 0.3, 0.4, Math.PI - 0.4); });
+  }],
+  ['🥺', g => {                                          // hungry: an empty bowl
+    fillIn(g, '#b07a4a', () => { g.moveTo(-0.88, 0); g.ellipse(0, 0, 0.88, 0.7, 0, Math.PI, 0, true); g.closePath(); });
+    fillIn(g, '#8a5a34', () => ovalAt(g, 0, 0, 0.88, 0.24));
+    fillIn(g, '#5e3c22', () => ovalAt(g, 0, 0.02, 0.72, 0.16));
+    fillIn(g, '#c99467', () => ovalAt(g, -0.45, 0.35, 0.16, 0.1, 0.3));
+  }],
+];
+const BUBBLE_ART = new Map(BUBBLE_ICONS.map(([e], i) => [e, 'bubble:' + i]));
+
 function drawBubble(emoji, sx, sy, px, important) {
   const r = Math.max(9, px * 0.3);
   const bx = sx + px * 0.38, by = sy - px * 0.62 - r * 0.4;
+  const art = BUBBLE_ART.get(emoji);
+  if (art) {
+    const want = r / BUBBLE_R, s = sprite(art, want);
+    if (!important) ctx.globalAlpha = 0.92;
+    ctx.drawImage(s.canvas, bx - BUBBLE_AT[0] * want - s.size / 2, by - BUBBLE_AT[1] * want - s.size / 2, s.size, s.size);
+    ctx.globalAlpha = 1;
+    return;
+  }
   ctx.fillStyle = important ? '#fffaf0' : 'rgba(255, 250, 240, 0.9)';
   ctx.strokeStyle = 'rgba(80, 60, 30, 0.25)';
   ctx.lineWidth = 1;
@@ -1681,7 +1847,7 @@ function drawShore(z, ox, oy, season) {
     ctx.drawImage(sp.canvas, x - sp.size / 2, y - px * 0.35 - sp.size / 2, sp.size, sp.size);
   }
 }
-const PAINTERS = { tree: paintTree, pine: paintPine, stump: paintStump, reeds: paintReeds, lily: paintLilies };
+const PAINTERS = { tree: paintTree, pine: paintPine, stump: paintStump, reeds: paintReeds, lily: paintLilies, bubble: paintBubble };
 const STUMP_LOOKS = [0, 0.25, 0.5, 0.75, 1].map(snow => ({ snow, key: 'snow' + snow }));
 
 function drawDecor(d, sx, sy, now, ck, clipLeaves) {

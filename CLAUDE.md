@@ -87,7 +87,8 @@ one of `FLOWER_VARIANTS` looks, painted once per half-octave size. Which paintin
 its emoji and the season (`flowerArt`), so the sim and the inspector still speak emoji. Trees are painted
 as well (`paintTree`, `paintPine`, `paintStump`, looked up by name in `PAINTERS` from the sprite cache):
 leafy clumps and tiers painted straight in the colours `treeLook` gives them, so nothing is read back;
-the sim still calls them 🌳 and 🌲. Tufts, sprouts and fallen leaves are still emoji.
+the sim still calls them 🌳 and 🌲. Thought bubbles are painted too: the bubble and an icon for the mood's
+emoji (`BUBBLE_ICONS`), one sprite; a mood without an icon keeps its emoji. Tufts, sprouts and fallen leaves are still emoji.
 
 Rabbit coats: two letter-pair genes (`coat`, e.g. 'AaDd') give four colours, plus a sliding
 `moult` gene that whitens the coat in winter. Foxes spot a still rabbit from further off when its
