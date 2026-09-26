@@ -3820,23 +3820,30 @@ function showHomeItem() {
 addEventListener('beforeinstallprompt', e => { e.preventDefault(); installPrompt = e; showHomeItem(); });
 addEventListener('appinstalled', () => { installPrompt = null; showHomeItem(); addNews('📱 The meadow is on your home screen now.'); });
 
-function homeGuide(open = true) {
-  if (open && installPrompt) {
-    installPrompt.prompt();                             // each one opens once
-    installPrompt = null;
-    showHomeItem();
-    return;
-  }
+const wantsHome = () => !installed() && matchMedia('(pointer: coarse)').matches;
+let afterHome = null;                                   // what waits for the card to close
+
+// A tap on the menu item opens Chrome's install dialog straight away. The card showing by itself
+// can't: a page may only open that dialog from a tap, so the card gets an Install button.
+function homeGuide(open = true, byItself = false) {
+  if (open && installPrompt && !byItself) { install(); return; }
   const card = $('#home-guide');
-  card.dataset.os = iOS ? 'ios' : 'other';
+  card.dataset.os = installPrompt ? 'prompt' : iOS ? 'ios' : 'other';
   card.classList.toggle('hidden', !open);
+  if (!open && afterHome) { const then = afterHome; afterHome = null; then(); }
+}
+function install() {
+  installPrompt?.prompt();                              // each one opens once
+  installPrompt = null;
+  showHomeItem();
+  homeGuide(false);
 }
 const homeOpen = () => !$('#home-guide').classList.contains('hidden');
 $('#home-guide').addEventListener('click', e => { if (e.target.id === 'home-guide') homeGuide(false); });
 
 // Once ever, on a phone or tablet that hasn't added it yet.
 function homeTip(ms) {
-  if (installed() || !matchMedia('(pointer: coarse)').matches) return;
+  if (!wantsHome()) return;
   try { if (localStorage.getItem('aeon-garden-hometip') === '1') return; } catch (e) { return; }
   setTimeout(() => {
     if (installed()) return;
@@ -3908,6 +3915,7 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'copy-link') copyLink();
   else if (t.dataset.act === 'home') homeGuide();
   else if (t.dataset.act === 'home-done') homeGuide(false);
+  else if (t.dataset.act === 'home-install') install();
   else if (t.dataset.act === 'sound') toggleSound();
   else if (t.dataset.act === 'stats') toggleStats();
   else if (t.dataset.show) { ui.stats.show = t.dataset.show; renderStats(); }
@@ -4123,8 +4131,16 @@ function hush(on) {
   document.body.classList.toggle('hush', on);
 }
 
-// A few tips in the news, one at a time, once the meadow is theirs to watch.
+// A few tips in the news, one at a time, once the meadow is theirs to watch. On a phone or tablet the
+// home screen card comes first, and the tips wait for it to close.
 function welcomeTips() {
+  if (wantsHome()) {
+    try { localStorage.setItem('aeon-garden-hometip', '1'); } catch (e) { /* fine */ }
+    afterHome = newsTips;
+    setTimeout(() => homeGuide(true, true), 1200);      // once the bars are back
+  } else newsTips();
+}
+function newsTips() {
   const touch = matchMedia('(pointer: coarse)').matches, mum = intro.family[0];
   const who = mum && mum.alive ? `${link(mum)}, or anyone else,` : 'any animal';
   setTimeout(() => addNews(`👋 <b>Tip:</b> ${touch ? 'tap' : 'click'} ${who} to follow their life.`), 2500);
@@ -4133,7 +4149,6 @@ function welcomeTips() {
     : '🔊 <b>Tip:</b> the meadow has quiet sounds. Turn them on with 🔇 at the top right (M).'); }, 18000);
   setTimeout(() => addNews(touch ? '🌦️ <b>Tip:</b> the toolbar adds animals, grows grass and strikes lightning. The weather waits in •••.'
     : '🌦️ <b>Tip:</b> right-click the meadow to add animals, grow grass, change the weather or strike lightning. The toolbar waits at the bottom edge.'), 27000);
-  homeTip(40000);
 }
 
 // ------------------------------------------------------------------ the loop
