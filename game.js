@@ -92,14 +92,14 @@ function measureSheet() {
   } else sheet = short() ? { top: 0, bottom: 0, left: 0, right: $('#inspector').classList.contains('strip') ? 0 : vw - ins.left } : null;
 }
 
+// You may look a little past the edges, so nothing is ever stuck under the toolbar or the inspector.
+// Not while they're away for the intro (hush). This far past the bottom edge, in screen pixels:
+const lookPast = () => Math.max(ui.hush ? 0 : barPad, sheet ? sheet.bottom : 0);
 function clampCam() {
   const hw = vw / 2 / cam.zoom, hh = vh / 2 / cam.zoom;
-  // You may look a little past the edges, so nothing is ever stuck under the toolbar or the inspector.
-  // Not while they're away for the intro (hush).
-  const bar = ui.hush ? 0 : barPad;
   const left = (sheet ? sheet.left : 0) / cam.zoom, right = (sheet ? sheet.right : 0) / cam.zoom;
   cam.x = clamp(cam.x, Math.min(hw, S.W / 2) - left, Math.max(S.W - hw, S.W / 2) + right);
-  cam.y = clamp(cam.y, Math.min(hh, S.H / 2), Math.max(S.H - hh, S.H / 2) + Math.max(bar, sheet ? sheet.bottom : 0) / cam.zoom);
+  cam.y = clamp(cam.y, Math.min(hh, S.H / 2), Math.max(S.H - hh, S.H / 2) + lookPast() / cam.zoom);
 }
 
 new ResizeObserver(() => {
@@ -502,12 +502,12 @@ function drawGround(z, ox, oy) {
   updateWater();
   if (!Ground.ok) { ctx.drawImage(flat, ox, oy, S.W * z, S.H * z); return; }
   const [low, high] = groundColours(), sn = sun(S.clock(world)), k = 2.5 * Math.max(0, sn.a) * (0.6 + 0.4 * Math.abs(sn.lean));
-  const gd = Math.min(dpr, GROUND_DPR);
+  const gd = Math.min(dpr, GROUND_DPR), w = Math.round(vw * gd), h = Math.round(vh * gd);
   Ground.draw({
-    width: Math.round(vw * gd), height: Math.round(vh * gd), zoom: z, ox, oy, dpr: gd, seed: groundSeed, low, high, sand: shoreSand,
+    width: w, height: h, zoom: z, ox, oy, dpr: gd, past: lookPast(), seed: groundSeed, low, high, sand: shoreSand,
     snow: world.snow, damp: 1 - 0.12 * world.wet, ice: iceOver(), cold: coldness(), lx: k * sn.lean, ly: k * 0.8,
   });
-  ctx.drawImage(Ground.canvas, 0, 0, vw, vh);
+  ctx.drawImage(Ground.canvas, Ground.view.x, Ground.view.y, w, h, 0, 0, vw, vh);
 }
 
 function plantEmoji(season, p, g) {

@@ -14,8 +14,8 @@
  * Use: Ground.set(name, data) with a Float32Array of 4 values a tile: 'tile' (grass, water,
  * ash, wood), 'bloom' (a field's tint times how much it shows, then how much), 'shape' (height,
  * tiles to the water, tiles to the woods) and 'water' (the water softened by 1, 2 and 4 blurs,
- * and the deep water by 2). Then Ground.draw(uniforms) paints Ground.canvas, to be copied onto
- * the screen (it says whether it had to paint).
+ * and the deep water by 2). Then Ground.draw(uniforms) paints Ground.canvas if it has to, and
+ * Ground.view says where in it the screen's corner is, to be copied from there onto the screen.
  * Ground.ok is false where there is no WebGL2.
  */
 (() => {
@@ -33,8 +33,8 @@ void main() { gl_Position = vec4(a, 0., 1.); }`;
 const FRAGMENT = `#version 300 es
 precision highp float;
 uniform sampler2D tile, bloom, shape, water;
-uniform vec2 size, off, res, seed;
-uniform float zoom, dpr, snow, damp, lx, ly, ice, cold;
+uniform vec2 size, off, seed;
+uniform float top, past, zoom, dpr, snow, damp, lx, ly, ice, cold;
 uniform vec3 low, high, sand;
 out vec4 o;
 
@@ -130,7 +130,7 @@ float layers(float f, float t0, float t1, float n, float a) {
 }
 
 void main() {
-  vec2 p = ((vec2(gl_FragCoord.x, res.y - gl_FragCoord.y) / dpr) - off) / zoom;   // in tiles
+  vec2 p = ((vec2(gl_FragCoord.x, top - gl_FragCoord.y) / dpr) - off) / zoom;     // in tiles (top: the canvas's height)
   // Past the bottom edge the meadow goes on in a mirror, fading darker (you may look a little past it).
   float below = max(0., p.y - size.y) * zoom;
   if (below > 0.) p.y = 2. * size.y - p.y;
@@ -204,8 +204,8 @@ void main() {
   col = mix(col, deepC, layers(F.a, 0.3, 0.95, 9., 0.12));
 
   if (below > 0.) {
-    float past = res.y / dpr + 8. - (off.y + size.y * zoom);      // how far the view reaches past the edge
-    col = mix(col, vec3(40., 50., 20.) / 255., mix(0.12, 0.4, clamp(below / max(past, 40.), 0., 1.)));
+    // darker the further, all the way at the furthest the camera may look (past: CSS pixels)
+    col = mix(col, vec3(40., 50., 20.) / 255., mix(0.12, 0.4, clamp(below / max(past + 8., 40.), 0., 1.)));
   }
   o = vec4(col, 1.);
 }`;
@@ -248,42 +248,63 @@ if (gl) {
 }
 
 function set(name, data) {
-  last = null;
+  stale = true;
   const { unit, t } = textures[name];
   gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t);
   gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, S.W, S.H, gl.RGBA, gl.FLOAT, data);
 }
 
 // What the last draw painted. The camera must match exactly; the light and the season only
-// nearly, so a slow sunset paints a few times a second instead of every frame.
-let last = null;
-const NEAR = { snow: 0.004, damp: 0.002, ice: 0.004, cold: 0.004, lx: 0.01, ly: 0.01 };
-const EXACT = ['width', 'height', 'zoom', 'ox', 'oy', 'dpr'];
-function same(u) {
-  if (!last || u.seed[0] !== last.seed[0] || u.seed[1] !== last.seed[1]) return false;
+// nearly, so the sun going over paints a few times a second instead of every frame. (A step of 0.08
+// in lx or ly moves the slopes' light by well under one colour level.)
+//
+// Following an animal moves the camera every frame. Then the ground is painted with a margin of PAD
+// CSS pixels all round, and while the screen stays inside it, it is only copied from further along,
+// in whole pixels. Not while something else makes it paint often anyway (the light at 15x or 60x, a
+// zoom): the margin would only make every paint bigger.
+const PAD = 64;
+let last = null, stale = true, busy = 0, panned = -1e9;   // busy: how often lately more than the camera moved
+const NEAR = { snow: 0.004, damp: 0.002, ice: 0.004, cold: 0.004, lx: 0.08, ly: 0.08 };
+const EXACT = ['width', 'height', 'zoom', 'dpr', 'past'];
+const was = { ox: 0, oy: 0 }, view = { x: 0, y: 0 };
+function steady(u) {                                    // all but where the camera is
+  if (stale || !last || u.seed[0] !== last.seed[0] || u.seed[1] !== last.seed[1]) return false;
   for (const k of EXACT) if (u[k] !== last[k]) return false;
   for (const k in NEAR) if (Math.abs(u[k] - last[k]) > NEAR[k]) return false;
   for (const k of ['low', 'high', 'sand']) for (let i = 0; i < 3; i++) if (Math.abs(u[k][i] - last[k][i]) > 0.5) return false;
   return true;
 }
+const within = (d, pad, dpr) => d === 0 || Math.abs(d) <= pad - 1 / dpr;
 
-//   width, height   the canvas, in its own pixels
+//   width, height   the screen, in the canvas's pixels
 //   zoom, ox, oy    CSS pixels a tile, and where the meadow's corner lands
+//   past            how far past the meadow's bottom edge the camera may look, in CSS pixels
 //   the rest        see the uniforms in the shader
 function draw(u) {
-  if (same(u)) return false;
-  last = u;
-  if (canvas.width !== u.width || canvas.height !== u.height) { canvas.width = u.width; canvas.height = u.height; }
-  gl.viewport(0, 0, u.width, u.height);
-  gl.uniform2f(U.res, u.width, u.height); gl.uniform2f(U.off, u.ox, u.oy); gl.uniform2fv(U.seed, u.seed);
-  for (const k of ['zoom', 'dpr', 'snow', 'damp', 'lx', 'ly', 'ice', 'cold']) gl.uniform1f(U[k], u[k]);
+  const now = performance.now();
+  if (u.ox !== was.ox || u.oy !== was.oy) panned = now;
+  was.ox = u.ox; was.oy = u.oy;
+  const still = steady(u);
+  busy = busy * 0.95 + (last && !still ? 0.05 : 0);
+  if (still && within(last.ox - u.ox, last.pad, u.dpr) && within(last.oy - u.oy, last.pad, u.dpr)) {
+    view.x = Math.round((last.pad + last.ox - u.ox) * u.dpr); view.y = Math.round((last.pad + last.oy - u.oy) * u.dpr);
+    return false;
+  }
+  const most = Math.round(PAD * u.dpr), cw = u.width + 2 * most, ch = u.height + 2 * most;
+  const m = now - panned < 1000 && busy < 0.5 ? most : 0, pad = m / u.dpr;
+  if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+  gl.viewport(0, ch - u.height - 2 * m, u.width + 2 * m, u.height + 2 * m);   // the canvas's top left
+  gl.uniform1f(U.top, ch);
+  gl.uniform2f(U.off, u.ox + pad, u.oy + pad); gl.uniform2fv(U.seed, u.seed);
+  for (const k of ['past', 'zoom', 'dpr', 'snow', 'damp', 'lx', 'ly', 'ice', 'cold']) gl.uniform1f(U[k], u[k]);
   for (const k of ['low', 'high', 'sand']) gl.uniform3fv(U[k], u[k].map(v => v / 255));
   gl.drawArrays(gl.TRIANGLES, 0, 3);
+  last = { ...u, pad }; stale = false; view.x = view.y = m;
   return true;
 }
 
 // A lost context (the GPU reset) takes the shader with it: from then on game.js draws plain colours.
 canvas.addEventListener('webglcontextlost', () => { ok = false; });
 
-window.Ground = { get ok() { return ok; }, canvas, set, draw };
+window.Ground = { get ok() { return ok; }, canvas, set, draw, view };
 })();

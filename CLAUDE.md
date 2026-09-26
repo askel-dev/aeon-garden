@@ -22,8 +22,9 @@ told to just do it.
   follow along in letterbox bars. It never steers the animals, it waits for them. Any key, click or scroll skips it.
 - `ground.js`: the ground (grass, earth, shores, water) as a WebGL shader, painted from a
   few small textures of one texel a tile that game.js keeps up to date (`paintTerrain`, `updateWater`).
-  It paints again only when the camera, a texture or the light has moved (`same`), and at most at 2x
-  (`GROUND_DPR`). The loop gives the sim at most `SIM_MS` a frame (a slow phone runs 60x a bit slower
+  It paints again only when a texture, the zoom or the light has moved (`steady`), and at most at 2x
+  (`GROUND_DPR`). While the camera pans (following, dragging) it paints a margin round the screen (`PAD`)
+  and slides the picture along (`Ground.view`) until the margin runs out. The loop gives the sim at most `SIM_MS` a frame (a slow phone runs 60x a bit slower
   instead of dropping frames), and a paused meadow nobody is touching draws at 30 fps (`resting`).
 - `sound.js`: all the sounds, made with Web Audio (no files). Off until the 🔊 button or M.
   `sound-lab.html` plays each one on its own. Keep it minimal: one scale, few sounds. Every 5 to 10
