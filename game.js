@@ -183,10 +183,10 @@ function paintedSprite(emoji, px, tint, leaf, center, coat) {
   const c = document.createElement('canvas');
   c.width = c.height = size;
   // Repainting and centring read the pixels back: from a canvas on the GPU that waits for it, 5-30 ms a sprite.
-  // A painted tree or stump ('tree:0', 'pine:2', 'stump:0': PAINTERS) is painted in its colours, never read back.
+  // Painted things ('reeds:0', 'lily:2', 'bubble:5': PAINTERS) are painted in their colours, never read back.
   const colon = emoji.indexOf(':'), art = colon > 0 && PAINTERS[emoji.slice(0, colon)];
-  const g = c.getContext('2d', (coat || center) && { willReadFrequently: true });
-  if (art) art(g, size, px * dpr, +emoji.slice(colon + 1), leaf || NO_LOOK);
+  const g = c.getContext('2d', !art && (leaf || coat || center) && { willReadFrequently: true });
+  if (art) art(g, size, px * dpr, +emoji.slice(colon + 1), leaf);
   else {
     g.textAlign = 'center'; g.textBaseline = 'middle';
     g.font = `${px * dpr}px ${EMOJI_FONT}`;
@@ -210,6 +210,7 @@ function paintedSprite(emoji, px, tint, leaf, center, coat) {
       g.fillStyle = tint;
       g.fillRect(0, 0, size, size);
     }
+    if (leaf) restyleTree(g, size, leaf);
     if (coat) recolourCoat(g, size, coat, px * dpr);
   }
   s = { canvas: c, size: size / dpr, px, look, used: spriteFrame };
@@ -233,12 +234,128 @@ function dropSprites(need) {
   spriteCache.clear(); latestLook.clear(); spriteBytes = 0;
 }
 
+// Trees wear the seasons by repainting their emoji (once per look; the sprite cache keeps it).
+// Leaf pixels are the ones clearly greener than they are red or blue. They take the new colour
+// but keep their shading, so the canopy keeps its light and shadow and the trunk stays brown.
+//   rgb, m   the new leaf colour, and how much of it
+//   where    'dark': only the shaded leaves (a pine's old inner needles), 'light': only the
+//            lit ones (fresh tips), otherwise all of them
+//   fall     how many leaves have dropped, in soft blotches; the trunk fades with them
+//   snow     how much snow lies along the tops
+//   blossom  how much blossom is out, in little clusters over the leaves, of colour bloom
+//   fruit    an emoji to hang in the tree (hangFruit)
 const SNOW_RGB = [244, 248, 252];
 function hash2(x, y, seed) {
   let h = Math.imul(x, 374761393) + Math.imul(y, 668265263) + Math.imul(seed, 982451653) | 0;
   h = Math.imul(h ^ (h >>> 13), 1274126177);
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
+function blotches(x, y, seed) {                          // smooth value noise, 0..1
+  const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;
+  const u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
+  return lerp(lerp(hash2(ix, iy, seed), hash2(ix + 1, iy, seed), u),
+              lerp(hash2(ix, iy + 1, seed), hash2(ix + 1, iy + 1, seed), u), v);
+}
+function flowerAt(x, y, amount) {                      // round clusters, more of them as more are out
+  const cx = Math.floor(x), cy = Math.floor(y);
+  for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
+    const X = cx + i, Y = cy + j;
+    if (hash2(X, Y, 7) > amount * 0.55) continue;
+    const r = 0.3 + 0.25 * hash2(X, Y, 10);
+    if ((x - X - hash2(X, Y, 8)) ** 2 + (y - Y - hash2(X, Y, 9)) ** 2 < r * r) return true;
+  }
+  return false;
+}
+function restyleTree(g, size, look) {
+  const img = g.getImageData(0, 0, size, size), d = img.data;
+  const alpha = new Uint8Array(size * size);
+  for (let i = 0; i < alpha.length; i++) alpha[i] = d[i * 4 + 3];
+  const cap = Math.max(2, Math.round(size * 0.06)), cell = size / 9;
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const p = y * size + x, i = p * 4;
+    if (!alpha[p]) continue;
+    const leaf = clamp((d[i + 1] - Math.max(d[i], d[i + 2])) / 40, 0, 1), shade = d[i + 1] / 160;
+    if (look.m && leaf) {
+      const w = look.where === 'dark' ? clamp((0.9 - shade) * 3, 0, 1)
+              : look.where === 'light' ? clamp((shade - 0.75) * 3, 0, 1) : 1;
+      const lit = look.where === 'dark' ? Math.max(shade, 0.62) : shade;
+      const a = leaf * w * look.m;
+      for (let k = 0; k < 3; k++) d[i + k] = lerp(d[i + k], Math.min(255, look.rgb[k] * lit), a);
+    }
+    if (look.blossom && leaf && flowerAt(x / (size / 18), y / (size / 18), look.blossom)) {
+      const lit = clamp(0.8 + shade * 0.25, 0, 1.08);
+      for (let k = 0; k < 3; k++) d[i + k] = lerp(d[i + k], Math.min(255, look.bloom[k] * lit), leaf * 0.95);
+    }
+    if (look.snow) {
+      const top = y < cap || alpha[p - cap * size] < 60;
+      const a = look.snow * (top ? 0.95 : 0.7 * leaf * clamp((shade - 0.45) * 2, 0, 1));
+      for (let k = 0; k < 3; k++) d[i + k] = lerp(d[i + k], SNOW_RGB[k], a);
+    }
+    if (look.fall) {
+      const keep = clamp((blotches(x / cell, y / cell, look.seed) - look.fall) * 5 + 0.5, 0, 1);
+      d[i + 3] *= lerp(1 - look.fall, keep, leaf);
+    }
+  }
+  g.putImageData(img, 0, 0);
+  if (look.fruit) hangFruit(g, size, look);
+}
+
+// Fruit hangs in the gaps between the leaf clumps, lower in the tree and not on its rim, each on
+// a stalk and in the shade of the leaves above, with a few bits of the tree laid back over its top.
+function hangFruit(g, size, look) {
+  const d = g.getImageData(0, 0, size, size).data;
+  const leafAt = (x, y) => {
+    x |= 0; y |= 0;
+    if (x < 0 || y < 0 || x >= size || y >= size) return 0;
+    const i = (y * size + x) * 4;
+    return d[i + 3] > 200 && d[i + 1] - Math.max(d[i], d[i + 2]) > 15 ? d[i + 1] / 160 : 0;
+  };
+  let top = size, bot = 0;
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x += 3) if (leafAt(x, y)) { top = Math.min(top, y); bot = Math.max(bot, y); }
+  const r = size * 0.05, step = Math.max(1, Math.round(size / 100)), spots = [];
+  for (let y = top; y < bot; y += step) for (let x = 0; x < size; x += step) {
+    const lit = leafAt(x, y);
+    if (!lit || !leafAt(x - r * 1.6, y) || !leafAt(x + r * 1.6, y) || !leafAt(x, y - r * 1.6) || !leafAt(x, y + r * 1.4)) continue;
+    const around = (leafAt(x - r, y - r) + leafAt(x + r, y - r) + leafAt(x, y - r * 1.5)) / 3;   // a gap is darker
+    spots.push({ x, y, lit, score: (around - lit) * 2 + (y - top) / (bot - top) * 0.8 + hash2(x, y, look.seed) * 0.5 });
+  }
+  spots.sort((a, b) => b.score - a.score);
+  const hung = [];
+  for (const q of spots) {
+    if (hung.length >= look.fruit.n) break;
+    if (hung.every(p => Math.hypot(p.x - q.x, p.y - q.y) > r * 3.2)) hung.push(q);
+  }
+  const layer = (c => (c.width = c.height = size, c))(document.createElement('canvas'));
+  const over = (c => (c.width = c.height = size, c))(document.createElement('canvas'));
+  const f = layer.getContext('2d'), o = over.getContext('2d');
+  f.textAlign = 'center'; f.textBaseline = 'middle';
+  f.strokeStyle = '#5a3a1c'; f.lineWidth = Math.max(1, r * 0.14);
+  for (const [k, p] of hung.entries()) {
+    const rr = r * (0.85 + 0.3 * hash2(k, look.seed, 8));
+    f.beginPath(); f.moveTo(p.x, p.y - rr * 0.3); f.lineTo(p.x + rr * 0.15, p.y - rr * 1.5); f.stroke();
+    f.save(); f.translate(p.x, p.y + rr * 0.35); f.rotate((hash2(k, look.seed, 9) - 0.5) * 0.5);
+    f.font = `${rr * 2.3}px ${EMOJI_FONT}`; f.fillText(look.fruit.e, 0, 0);
+    f.restore();
+    for (let j = 0; j < 3; j++) {
+      o.beginPath();
+      o.arc(p.x + (hash2(k, j, 11) - 0.5) * rr * 1.6, p.y - rr * (0.55 + 0.35 * hash2(k, j, 12)), rr * (0.45 + 0.3 * hash2(k, j, 13)), 0, TAU);
+      o.fill();
+    }
+  }
+  f.globalCompositeOperation = 'source-atop';
+  for (const p of hung) {
+    const sh = f.createLinearGradient(0, p.y - r * 1.2, 0, p.y + r * 1.6);
+    sh.addColorStop(0, 'rgba(20,40,10,0.55)');
+    sh.addColorStop(0.45, `rgba(20,40,10,${0.35 * (1 - clamp(p.lit, 0, 1))})`);
+    sh.addColorStop(1, 'rgba(20,40,10,0)');
+    f.fillStyle = sh; f.fillRect(p.x - r * 2, p.y - r * 2, r * 4, r * 4);
+  }
+  o.globalCompositeOperation = 'source-in'; o.drawImage(g.canvas, 0, 0);     // the tree, only where the blobs are
+  g.drawImage(layer, 0, 0);
+  g.drawImage(over, 0, 0);
+  layer.width = over.width = 0;
+}
+
 function drawEmoji(emoji, x, y, px, opts = {}) {
   const s = sprite(emoji, px, opts.tint, opts.leaf, opts.center, opts.coat);
   if (!opts.flip && !opts.squash && opts.alpha === undefined) {
@@ -1413,6 +1530,16 @@ const FRUIT = {
   apple: { e: '🍎', autumn: [196, 176, 64] },
   cherry: { e: '🍒', autumn: [214, 70, 48] },
 };
+// Older systems have no 🪾; there every broadleaf keeps its dry leaves through winter, like an oak.
+const HAS_BARE = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 32;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.font = `28px ${EMOJI_FONT}`; g.textBaseline = 'middle'; g.fillText('🪾', 2, 16);
+  const d = g.getImageData(0, 0, 32, 32).data;
+  let n = 0;
+  for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 128 && d[i] - d[i + 2] > 30) n++;
+  return n > 20;                                         // brown bark, not a blank box
+})();
 const step = (v, n) => Math.round(clamp(v, 0, 1) * n) / n;   // a few steps keep the sprite cache small
 const mix = (a, b, t) => a.map((v, i) => lerp(v, b[i], t));
 
@@ -1445,7 +1572,7 @@ function treeLook(d, ck) {
   } else {
     // Broadleaf leaves are always repainted, from the tree's own green.
     const kind = FRUIT[info.fruit], green = info.green, n = Math.round(clamp(d.size * cam.zoom / 11, 2, 9));
-    const hue = kind ? kind.autumn : AUTUMN[h % AUTUMN.length], oak = !kind && h % AUTUMN.length === OAK;
+    const hue = kind ? kind.autumn : AUTUMN[h % AUTUMN.length], oak = !kind && h % AUTUMN.length === OAK || !HAS_BARE;
     m = 1;
     if (s === 2) {
       const turn = clamp((sp - 0.05 - lag) / 0.4, 0, 1);
@@ -1475,11 +1602,12 @@ function treeLook(d, ck) {
   }
   rgb = rgb.map(v => Math.round(v / 8) * 8);
   m = step(m, 8); fall = step(fall, 10); blossom = step(blossom, 4);
-  const snow = step(world.snow * 1.6 - 0.1, 4);
+  const snow = step(world.snow * 1.6 - 0.1, 4), seed = h % 3;
   const look = m || fall || snow
-    ? { rgb, m, where, fall, snow, blossom, bloom, fruit,
-        key: [rgb, m, where, fall, snow, blossom && bloom, blossom, fruit ? fruit.e + fruit.n : ''].join('|') } : undefined;
-  return { look, fall, drop, rgb, h, ground, flip: info.flip, owl: info.owl };
+    ? { rgb, m, where, fall, snow, seed, blossom, bloom, fruit,
+        key: [rgb, m, where, fall, snow, seed, blossom && bloom, blossom, fruit ? fruit.e + fruit.n : ''].join('|') } : undefined;
+  const bare = fall && { snow, seed, m: 0, fall: 0, key: `bare|${snow}` };
+  return { look, fall, bare, drop, rgb, h, ground, flip: info.flip, owl: info.owl };
 }
 
 // Windfalls and petals lying under a tree: those behind the trunk go down first, then the rest.
@@ -1525,9 +1653,9 @@ function drawFallingLeaves(now) {
 const TURNS = 1;
 const treeShown = new WeakMap();                           // tree: the look it was last drawn with
 let turned = 0;                                            // trees given a new look this frame
-function shownLook(d, look, px, art) {
+function shownLook(d, look, px) {
   const was = treeShown.get(d);
-  if (was !== undefined && (was && was.key) !== (look && look.key) && !spriteReady(art || d.emoji, px, look)) {
+  if (was !== undefined && (was && was.key) !== (look && look.key) && !spriteReady(d.emoji, px, look)) {
     if (turned >= TURNS) return was;
     turned++;
   }
@@ -1535,250 +1663,8 @@ function shownLook(d, look, px, art) {
   return look;
 }
 
-// ------------------------------------------------------------------ painted trees
-//
-// Trees are painted, not emoji (the sim still calls them 🌳 and 🌲). A broadleaf is a trunk and its
-// boughs, then a crown of leaf clumps, back to front, each a dark underside, its body and a lit top
-// towards the sun (top left, like the rocks). It's painted straight in its look's colours (treeLook),
-// so nothing is read back:
-//   rgb, m   the leaf colour, and how much of it (a pine: how far its needles have turned)
-//   where    a pine's turn: 'dark' the old inner needles, 'light' the fresh tips, '' all of it
-//   fall     how many leaves have dropped: clumps left out here and there, so the bare tree is
-//            the same painting with its boughs showing
-//   snow     how much snow lies on it
-//   blossom  how much blossom is out, of colour bloom
-//   fruit    { e, n }: which fruit (FRUIT_ART) and how many hang on the front clumps
-// Three shapes of each kind (CROWNS), mirrored for half the trees.
-const CROWNS = 3, crowns = [];
-function crownOf(s) {                                      // in tree sizes, from its foot
-  if (crowns[s]) return crowns[s];
-  let k = 0;
-  const h = () => hash2(s, k++, 71);
-  const lean = (h() - 0.5) * 0.06, top = -0.4, cx = lean * 1.5, cy = -0.55 - h() * 0.03;
-  const rx = 0.3 + 0.05 * h(), ry = 0.2 + 0.04 * h();
-  const boughs = [[], [], []];                             // x0, y0, x1, y1 by thickness
-  const grow = (x, y, a, len, d) => {
-    const x1 = x + Math.cos(a) * len, y1 = y + Math.sin(a) * len;
-    boughs[d].push(x, y, x1, y1);
-    if (d < 2) for (const side of [-1, 1]) grow(x1, y1, a + side * (0.35 + 0.25 * h()), len * (0.55 + 0.1 * h()), d + 1);
-  };
-  const limbs = 3 + s % 2;
-  for (let i = 0; i < limbs; i++) grow(lean, top, -Math.PI / 2 + (i / (limbs - 1) - 0.5) * 1.5 + (h() - 0.5) * 0.3, 0.2 + 0.06 * h(), 0);
-  const clumps = [], N = 11;
-  for (let i = 0; i < N; i++) {                            // a sunflower spiral fills the crown evenly
-    const a = i * 2.39996 + h() * 0.5, f = Math.sqrt((i + 0.5) / N);
-    const x = cx + Math.cos(a) * f * rx, y = cy + Math.sin(a) * f * ry;
-    clumps.push({ n: i, x, y, r: 0.13 + 0.06 * h() - 0.03 * f, drop: 0.25 * (1 - f) + 0.75 * h(), a: h() * TAU,
-      lit: clamp(1 - 0.3 * ((x - cx) / rx * 0.5 + (y - cy) / ry * 0.9), 0.72, 1.25) });   // the crown's sunny side
-  }
-  clumps.sort((a, b) => a.y - b.y);
-  return crowns[s] = { lean, top, boughs, clumps };
-}
 const rgbOf = (rgb, k, add) => rockRGB(tone(rgb, k, add));
-const FRUIT_ART = { '🍎': ['#8e1f1a', '#d7352b', 0.04, 1], '🍒': ['#6e0a1a', '#b3122e', 0.025, 2] };   // dark, colour, size, how many on a stalk
 
-function paintTree(g, size, U, shape, look) {
-  const T = crownOf(shape), snow = look.snow, rgb = look.rgb;
-  g.setTransform(U, 0, 0, U, size / 2, size / 2 + 0.35 * U);
-  // The trunk, flaring into its roots, lit on the left.
-  const trunk = (w, dx) => {
-    g.beginPath();
-    g.moveTo(T.lean - 0.026 * w + dx, T.top);
-    g.quadraticCurveTo(-0.03 * w + dx, -0.12, -0.08 * w + dx, 0.012);
-    g.quadraticCurveTo(dx, 0.03, 0.08 * w + dx, 0.012);
-    g.quadraticCurveTo(0.03 * w + dx, -0.12, T.lean + 0.026 * w + dx, T.top);
-    g.fill();
-  };
-  g.fillStyle = '#4b3324'; trunk(1, 0);
-  g.fillStyle = '#7d5c43'; trunk(0.45, -0.018);
-  g.lineCap = 'round';
-  const W = [0.034, 0.019, 0.01];
-  const strokeBoughs = (style, k, dx, dy) => {
-    g.strokeStyle = style;
-    for (let d = 0; d < 3; d++) {
-      const b = T.boughs[d];
-      g.lineWidth = W[d] * k; g.beginPath();
-      for (let i = 0; i < b.length; i += 4) { g.moveTo(b[i] + dx * W[d], b[i + 1] + dy * W[d]); g.lineTo(b[i + 2] + dx * W[d], b[i + 3] + dy * W[d]); }
-      g.stroke();
-    }
-  };
-  strokeBoughs('#4b3324', 1, 0, 0);
-  strokeBoughs('#7d5c43', 0.4, -0.25, -0.1);
-  if (snow) strokeBoughs(`rgba(244,248,252,${snow})`, 0.55, 0, -0.35);
-  // The crown.
-  const fine = U > 70, fruit = look.fruit && FRUIT_ART[look.fruit.e];
-  const dark = rgbOf(mix(rgb, [30, 60, 70], 0.3), 0.5), top = rgbOf(mix(rgb, [255, 248, 200], 0.3), 1.08);
-  const disc = (x, y, r) => { g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill(); };
-  // A leafy patch: three overlapping discs round a spot, for light that isn't a round spot.
-  const scallop = (x, y, r, a) => {
-    g.beginPath();
-    for (let j = 0; j < 3; j++) { const qx = x + Math.cos(a + j * 2.1) * r * 0.6, qy = y + Math.sin(a + j * 2.1) * r * 0.6; g.moveTo(qx + r, qy); g.arc(qx, qy, r, 0, TAU); }
-    g.fill();
-  };
-  // Where a clump has dropped, a few stragglers hang on, fewer as the autumn goes on; the clumps
-  // still there thin a little.
-  const left = Math.round(9 * (1 - look.fall)), thin = 1 - 0.3 * look.fall;
-  if (look.fall && left) {
-    for (const lightOnes of [false, true]) {
-      g.fillStyle = lightOnes ? rgbOf(rgb, 1.05, 8) : rgbOf(rgb, 0.78);
-      g.beginPath();
-      for (const c of T.clumps) {
-        if (c.drop >= look.fall) continue;
-        for (let j = lightOnes ? 0 : 1; j < left; j += 2) {
-          const a = c.a + j * 2.4, f = Math.sqrt(hash2(j, c.n, 74)) * c.r, lx = c.x + Math.cos(a) * f, ly = c.y + Math.sin(a) * f * 0.8;
-          g.moveTo(lx + Math.cos(a) * c.r * 0.13, ly + Math.sin(a) * c.r * 0.13); g.ellipse(lx, ly, c.r * 0.13, c.r * 0.08, a, 0, TAU);
-        }
-      }
-      g.fill();
-    }
-  }
-  // A clump's outline, added to the path: a middle and six leafy lobes round it, never quite round.
-  const lobes = (x, y, r, c) => {
-    g.moveTo(x + r * 0.7, y); g.arc(x, y, r * 0.7, 0, TAU);
-    for (let j = 0; j < 6; j++) {
-      const b = c.a + j * TAU / 6, qx = x + Math.cos(b) * r * 0.64, qy = y + Math.sin(b) * r * 0.64, q = r * (0.3 + 0.1 * hash2(j, c.n, 75));
-      g.moveTo(qx + q, qy); g.arc(qx, qy, q, 0, TAU);
-    }
-  };
-  const kept = T.clumps.filter(c => c.drop >= look.fall), hang = fruit ? kept.length - look.fruit.n : kept.length;
-  g.fillStyle = dark; g.beginPath();                       // the whole crown in shade first: its underside and the gaps
-  for (const c of kept) lobes(c.x + 0.015, c.y + 0.02, c.r * thin * 1.02, c);
-  g.fill();
-  for (const [i, c] of kept.entries()) {                   // fruit on the front clumps
-    const { x, y, lit } = c, r = c.r * thin;
-    g.fillStyle = rgbOf(rgb, 0.74 * lit); g.beginPath(); lobes(x - r * 0.06, y - r * 0.08, r * 0.86, c); g.fill();
-    g.fillStyle = rgbOf(rgb, lit, 8); scallop(x - r * 0.3, y - r * 0.32, r * 0.3, c.a);
-    if (fine) {                                            // leafy dabs round the rim, lit or shaded by side
-      for (const lightSide of [true, false]) {
-        g.fillStyle = lightSide ? top : dark; g.beginPath();
-        for (let j = 0; j < 7; j++) {
-          const a = c.a + j * 0.9, ex = Math.cos(a), ey = Math.sin(a);
-          if ((ex + ey < 0) !== lightSide) continue;
-          g.moveTo(x + ex * r * 0.8 - ey * r * 0.2, y + ey * r * 0.8 + ex * r * 0.2);   // where the ellipse starts
-          g.ellipse(x + ex * r * 0.8, y + ey * r * 0.8, r * 0.2, r * 0.1, a + Math.PI / 2, 0, TAU);
-        }
-        g.fill();
-      }
-    }
-    if (lit > 1) { g.fillStyle = top; scallop(x - r * 0.4, y - r * 0.45, r * 0.13, c.a + 1); }
-    if (look.blossom) {
-      const n = Math.round(look.blossom * 6);
-      for (let j = 0; j < n; j++) {
-        const a = c.a + j * 2.4, f = 0.3 + 0.5 * hash2(j, c.n, 72), bx = x + Math.cos(a) * r * f, by = y + Math.sin(a) * r * f;
-        g.fillStyle = rgbOf(look.bloom, 0.92); disc(bx, by, r * 0.16);
-        g.fillStyle = rgbOf(mix(look.bloom, [255, 255, 255], 0.6), 1); disc(bx - r * 0.04, by - r * 0.04, r * 0.07);
-      }
-    }
-    const onTop = snow * clamp((lit - 0.85) * 3, 0, 1);     // snow settles on the open top of the crown
-    if (onTop) { g.fillStyle = `rgba(244,248,252,${0.9 * onTop})`; scallop(x - r * 0.1, y - r * 0.5, r * 0.26, c.a); }
-    if (i >= hang) {
-      const [shade, colour, fr, many] = fruit;
-      for (let j = 0; j < many; j++) {
-        const fx = x + (hash2(c.n, j, 73) - 0.5) * r * 0.9 + j * fr * 1.8, fy = y + r * 0.4 + j * fr * 0.3;
-        g.strokeStyle = '#4b3324'; g.lineWidth = 0.006;
-        g.beginPath(); g.moveTo(fx, fy - fr * 0.8); g.lineTo(fx + fr * 0.3 - j * fr * 0.9, fy - fr * 2.2); g.stroke();
-        g.fillStyle = shade; disc(fx + fr * 0.15, fy + fr * 0.15, fr);
-        g.fillStyle = colour; disc(fx - fr * 0.05, fy - fr * 0.05, fr * 0.85);
-        g.fillStyle = 'rgba(255,255,255,0.55)'; disc(fx - fr * 0.35, fy - fr * 0.35, fr * 0.25);
-      }
-    }
-  }
-}
-
-// A pine: tiers of drooping boughs, bottom to top, each throwing its shade on the one below, lit on
-// the left, darker in towards the trunk on the right, with light tips at the ends of the boughs.
-// The look says how the needles turn (treeLook): 'dark' yellows the old needles inside, 'light' is
-// the fresh tips, otherwise the whole tree bronzes. Snow lies in lumps along each tier's boughs.
-const PINE = [58, 124, 76], PINE_TIP = [112, 172, 92];
-const NO_LOOK = { rgb: PINE, m: 0, where: '', fall: 0, snow: 0 };
-const pines = [];
-function pineOf(s) {
-  if (pines[s]) return pines[s];
-  let k = 0;
-  const h = () => hash2(s, k++, 76);
-  const n = 5 + s % 2, wide = 0.37 + 0.05 * h(), lean = (h() - 0.5) * 0.03, tiers = [];
-  for (let i = 0; i < n; i++) {
-    const f = i / (n - 1), b = lerp(-0.1, -0.74, f), w = wide * (1 - 0.78 * f) * (0.94 + 0.12 * h());
-    const m = 2 + Math.round(w * 9), tips = [];            // bough tips along the skirt, x from the middle, then y
-    for (let j = 0; j <= m; j++) tips.push(-w + 2 * w * j / m, b + (h() - 0.3) * 0.03);
-    tiers.push({ x: lean * f, a: b - lerp(0.36, 0.24, f), b, w, tips });
-  }
-  return pines[s] = { tiers };
-}
-function tierPath(g, t, dx, dy) {
-  const p = t.tips, n = p.length, x0 = t.x + dx;
-  g.moveTo(x0, t.a + dy);
-  g.quadraticCurveTo(x0 + p[0] * 0.7, lerp(t.a, t.b, 0.55) + dy, x0 + p[0], p[1] + dy);        // down the left side, full
-  for (let j = 2; j < n; j += 2) g.quadraticCurveTo(x0 + (p[j - 2] + p[j]) / 2, (p[j - 1] + p[j + 1]) / 2 - 0.035 + dy, x0 + p[j], p[j + 1] + dy);
-  g.quadraticCurveTo(x0 + p[n - 2] * 0.7, lerp(t.a, t.b, 0.55) + dy, x0, t.a + dy);           // and up the right
-}
-
-function paintPine(g, size, U, shape, look) {
-  const P = pineOf(shape), m = look.m, snow = look.snow;
-  g.setTransform(U, 0, 0, U, size / 2, size / 2 + 0.35 * U);
-  const body = look.where ? PINE : mix(PINE, look.rgb, m);
-  const inner = look.where === 'dark' ? mix(PINE, look.rgb, m) : body;
-  const tip = look.where === 'dark' ? PINE_TIP : mix(PINE_TIP, look.rgb, m);
-  const dark = rgbOf(mix(body, [20, 40, 50], 0.35), 0.52), mid = rgbOf(body, 0.9), lit = rgbOf(body, 1.2, 8);
-  const deep = rgbOf(inner, look.where === 'dark' ? 0.85 : 0.68);
-  g.fillStyle = '#4b3324'; g.fillRect(-0.024, -0.2, 0.048, 0.2);
-  g.fillStyle = '#7d5c43'; g.fillRect(-0.024, -0.2, 0.018, 0.2);
-  for (const t of P.tiers) {
-    g.fillStyle = dark; g.beginPath(); tierPath(g, t, 0.01, 0.022); g.fill();
-    g.fillStyle = mid; g.beginPath(); tierPath(g, t, 0, 0); g.fill();
-    g.save(); g.clip();
-    g.fillStyle = lit; g.beginPath();                      // the sunny side, in soft patches down the left
-    for (const q of [0.3, 0.55, 0.8, 1]) {
-      const x = t.x - t.w * q * 0.62, y = lerp(t.a, t.b, q), r = t.w * (0.12 + 0.2 * q);
-      g.moveTo(x + r, y); g.arc(x, y, r, 0, TAU);
-    }
-    g.fill();
-    g.fillStyle = deep; g.beginPath();                     // in towards the trunk, shaded
-    g.moveTo(t.x + 0.01, t.a + 0.05); g.lineTo(t.x + t.w * 0.65, t.b + 0.05); g.lineTo(t.x + t.w * 0.12, t.b + 0.05); g.fill();
-    if (U > 70) {                                          // needles, up close
-      g.strokeStyle = 'rgba(20, 40, 30, 0.3)'; g.lineWidth = 0.006; g.beginPath();
-      for (let j = 0; j < t.tips.length; j += 2) {
-        g.moveTo(t.x + t.tips[j] * 0.35, lerp(t.a, t.b, 0.55)); g.lineTo(t.x + t.tips[j] * 0.9, t.tips[j + 1] - 0.015);
-      }
-      g.stroke();
-    }
-    g.restore();
-    g.fillStyle = rgbOf(tip, 1); g.beginPath();
-    for (let j = 0; j < t.tips.length; j += 2) {
-      const x = t.x + t.tips[j], y = t.tips[j + 1] - 0.012;
-      g.moveTo(x + 0.028, y); g.ellipse(x, y, 0.028, 0.016, 0, 0, TAU);
-    }
-    g.fill();
-    if (snow) {                                            // in lumps along the boughs, above their tips
-      const r = t.w / (t.tips.length / 2) * 1.1;
-      g.fillStyle = `rgba(244,248,252,${0.92 * snow})`; g.beginPath();
-      for (let j = 0; j < t.tips.length; j += 2) {
-        const x = t.x + t.tips[j] * 0.85, y = t.tips[j + 1] - 0.04;
-        g.moveTo(x + r, y); g.ellipse(x, y, r, 0.022, 0, 0, TAU);
-      }
-      g.moveTo(t.x + 0.03, t.a + 0.03); g.ellipse(t.x, t.a + 0.03, 0.03, 0.02, 0, 0, TAU);
-      g.fill();
-    }
-  }
-}
-
-// A stump, where lightning took a tree: a cut trunk on its roots, rings on top.
-function paintStump(g, size, U, shape, look) {
-  g.setTransform(U, 0, 0, U, size / 2, size / 2 + 0.35 * U);
-  const w = 0.11, h = 0.1;
-  const stump = dx => {
-    g.beginPath(); g.moveTo(-w - 0.05 + dx, 0.012);
-    g.quadraticCurveTo(-w + dx, -0.005, -w + dx, -h); g.lineTo(w + dx, -h);
-    g.quadraticCurveTo(w + dx, -0.005, w + 0.06 + dx, 0.014); g.quadraticCurveTo(dx, 0.03, -w - 0.05 + dx, 0.012); g.fill();
-  };
-  g.fillStyle = '#4b3324'; stump(0);
-  g.save(); g.clip(); g.fillStyle = '#7d5c43'; g.fillRect(-w - 0.06, -h, w * 0.8, h + 0.04); g.restore();
-  g.fillStyle = '#d9b98c'; g.beginPath(); g.ellipse(0, -h, w, w * 0.42, 0, 0, TAU); g.fill();
-  g.strokeStyle = '#a57d52'; g.lineWidth = 0.006;
-  for (const k of [0.68, 0.36]) { g.beginPath(); g.ellipse(0, -h, w * k, w * 0.42 * k, 0, 0, TAU); g.stroke(); }
-  g.strokeStyle = '#6b4a30'; g.lineWidth = 0.008; g.beginPath(); g.ellipse(0, -h, w, w * 0.42, 0, 0, TAU); g.stroke();
-  if (look.snow) { g.fillStyle = `rgba(244,248,252,${0.92 * look.snow})`; g.beginPath(); g.ellipse(-0.005, -h - 0.004, w * 0.9, w * 0.36, 0, 0, TAU); g.fill(); }
-}
 // Reeds by the water: a clump of blades, fresh in spring, green in summer, tawny in autumn, straw in
 // winter, and in summer and autumn a few bulrushes, brown heads on long stems.
 const REED_RGB = [[128, 184, 84], [94, 152, 72], [190, 162, 90], [200, 184, 146]];   // by season
@@ -1847,21 +1733,20 @@ function drawShore(z, ox, oy, season) {
     ctx.drawImage(sp.canvas, x - sp.size / 2, y - px * 0.35 - sp.size / 2, sp.size, sp.size);
   }
 }
-const PAINTERS = { tree: paintTree, pine: paintPine, stump: paintStump, reeds: paintReeds, lily: paintLilies, bubble: paintBubble };
-const STUMP_LOOKS = [0, 0.25, 0.5, 0.75, 1].map(snow => ({ snow, key: 'snow' + snow }));
-
+const PAINTERS = { reeds: paintReeds, lily: paintLilies, bubble: paintBubble };
 function drawDecor(d, sx, sy, now, ck, clipLeaves) {
   const z = cam.zoom, px = d.size * z;
   if (d.emoji === '🪨') { drawRock(d, sx, sy); return; }
   if (!d.stump && !d.tree) { drawEmoji(d.emoji, sx, sy - px * 0.35, px); return; }
   if (!d.stump) {
-    const t = treeLook(d, ck), under = t.ground?.n && px >= 20, art = treeArt(d, t);
-    t.look = shownLook(d, t.look, px, art);
+    const t = treeLook(d, ck), under = t.ground?.n && px >= 20;
+    t.look = shownLook(d, t.look, px);
     if (under) drawUnderTree(t.ground, t.h, sx, sy, px, false);
     ctx.save();
     ctx.translate(sx, sy); ctx.rotate(treeSway(d, now));
+    if (t.bare) drawEmoji('🪾', 0, -px * 0.42, px * 1.15, { alpha: t.fall, leaf: t.bare, flip: t.flip });   // it draws small
     if (clipLeaves) clipLeaves(px);                      // (the bee tree)
-    drawEmoji(art, 0, -px * 0.35, px, { leaf: t.look, flip: t.flip });
+    if (t.fall < 1) drawEmoji(d.emoji, 0, -px * 0.35, px, { leaf: t.look, flip: t.flip });
     if (t.owl && px >= 24 && darkness(ck.phase) > 0.3) {
       const side = t.flip ? -1 : 1;                   // on a low bough of the leaves, or in the bare fork
       if (t.fall < 0.5) drawEmoji('🦉', side * px * 0.2, -px * 0.3, px * 0.2);
@@ -1872,14 +1757,10 @@ function drawDecor(d, sx, sy, now, ck, clipLeaves) {
     if (t.drop && px >= 22) leafFall.push({ sx, sy, px, drop: t.drop, rgb: t.rgb, h: t.h });
     return;
   }
-  // Struck by lightning: a stump, then a sapling of what it was, then (in sim.js) a tree again.
-  if (world.tick - d.stump > S.YEAR_DAYS * S.TPD / 2) {
-    const t = treeLook(d, ck);
-    drawEmoji(treeArt(d, t), sx, sy - px * 0.14, px * 0.4, { leaf: t.look, flip: t.flip });
-  } else drawEmoji('stump:0', sx, sy - px * 0.35, px, { leaf: STUMP_LOOKS[Math.round(step(world.snow * 1.6 - 0.1, 4) * 4)] });
+  // Struck by lightning: a stump, then a sapling, then (in sim.js) a tree again.
+  const sapling = world.tick - d.stump > S.YEAR_DAYS * S.TPD / 2;
+  drawEmoji(sapling ? '🌱' : '🪵', sx, sy - d.size * z * 0.12, d.size * z * (sapling ? 0.55 : 0.45));
 }
-const TREE_ARTS = ['tree:0', 'tree:1', 'tree:2'], PINE_ARTS = ['pine:0', 'pine:1', 'pine:2'];
-const treeArt = (d, t) => (d.emoji === '🌲' ? PINE_ARTS : TREE_ARTS)[t.h % CROWNS];
 
 // ------------------------------------------------------------------ rocks
 //
@@ -2058,7 +1939,7 @@ function drawRock(d, sx, sy) {
 // A wild colony lives in a hollow in an old tree: a giant broadleaf, bigger than any in the wood,
 // with a thick trunk flaring into its roots and a hole low down where the bees go in, its rim dark
 // with their resin. The trunk is painted into a sprite that fades out at the top, laid over the
-// tree's own, so it grows up into the crown. The bees on the sill are
+// emoji's own, so it grows up into the crown whatever the emoji font. The bees on the sill are
 // drawn each frame, more of them the bigger the colony.
 
 // A bee on the bark, seen from above: gold with dark bands and a glint of wing. Too small, a dot.
@@ -2165,7 +2046,7 @@ function trunkSprite(P, hole) {                          // the painted trunk, o
   return s;
 }
 
-// The tree is drawn all but the foot of its own trunk, which the painted trunk stands in for.
+// The 🌳 is drawn all but the foot of its own trunk, which the painted trunk stands in for.
 function clipFoot(px) {
   ctx.beginPath();
   ctx.rect(-px, -px * 2, px * 2, px * 1.94);
@@ -2174,12 +2055,14 @@ function clipFoot(px) {
   ctx.clip();
 }
 
-// The hive's tree: a painted old trunk, with its hollow, stands in for the foot of the tree's own.
+// The hive's tree. In leaf, a painted old trunk stands in for the 🌳's own. As the leaves drop the
+// 🪾 comes through, an old trunk already, and the painted one fades with the leaves; the hollow
+// stays put through it all.
 function drawBeeTree(d, sx, sy, now, ck) {
-  const h = d.hive, px = d.size * cam.zoom;
+  const h = d.hive, px = d.size * cam.zoom, fall = treeLook(d, ck).fall;
   drawDecor(d, sx, sy, now, ck, clipFoot);
   const put = s => ctx.drawImage(s.canvas, sx - s.ox, sy - s.oy, s.W, s.H);
-  put(trunkSprite(px));
+  if (fall < 1) { ctx.globalAlpha = 1 - fall; put(trunkSprite(px)); ctx.globalAlpha = 1; }
   put(trunkSprite(px, true));
   // Bees on the sill, a few wandering on the bark; they shuffle while time runs.
   const { x, y, rx, ry } = OLD_HOLE, hx = sx + x * px, sill = sy + (y + ry * 1.1) * px;
@@ -3581,7 +3464,7 @@ const TREE_KINDS = ['Birch', 'Birch', 'Beech', 'Beech', 'Maple', 'Oak'];
 const treeName = d => d.emoji === '🌲' ? 'Pine' : { apple: 'Apple tree', cherry: 'Cherry tree' }[treeInfo(d).fruit] || TREE_KINDS[treeInfo(d).h % AUTUMN.length];
 
 function treeSeason(d) {
-  const s = S.seasonOf(world.tick), info = treeInfo(d), oak = !info.fruit && info.h % AUTUMN.length === OAK;
+  const s = S.seasonOf(world.tick), info = treeInfo(d), oak = !info.fruit && info.h % AUTUMN.length === OAK || !HAS_BARE;
   if (d.emoji === '🌲') return s === 3 ? '🌲 Evergreen, dark against the snow' : '🌲 Evergreen';
   if (s === 0) return info.fruit ? `🌸 In ${info.fruit} blossom` : '🌱 Coming into leaf';
   if (s === 1) return info.fruit === 'apple' ? '🍏 Apples ripening' : info.fruit === 'cherry' ? '🍒 Hung with cherries' : '🌳 In full leaf';
