@@ -64,6 +64,27 @@ function shortOfScreen() {
   return screenH - innerHeight > 20;
 }
 
+// The cards are parchment: a faint grain of fibres and flecks, painted once and tiled by the CSS (--paper).
+(() => {
+  const c = document.createElement('canvas'), N = 160;
+  c.width = c.height = N;
+  const g = c.getContext('2d');
+  for (let i = 0; i < 260; i++) {                          // fibres, drawn three times over so they tile
+    const x = hash2(i, 1, 90) * N, y = hash2(i, 2, 90) * N, a = hash2(i, 3, 90) * TAU, l = 3 + hash2(i, 4, 90) * 9;
+    g.strokeStyle = `rgba(120, 90, 40, ${0.035 + 0.05 * hash2(i, 5, 90)})`; g.lineWidth = 0.6 + hash2(i, 6, 90) * 0.6;
+    for (const [ox, oy] of [[0, 0], [-N, 0], [0, -N], [-N, -N]]) {
+      g.beginPath(); g.moveTo(x + ox, y + oy);
+      g.quadraticCurveTo(x + ox + Math.cos(a + 0.6) * l * 0.6, y + oy + Math.sin(a + 0.6) * l * 0.6, x + ox + Math.cos(a) * l, y + oy + Math.sin(a) * l);
+      g.stroke();
+    }
+  }
+  for (let i = 0; i < 500; i++) {                          // flecks
+    g.fillStyle = hash2(i, 7, 90) < 0.7 ? `rgba(110, 80, 30, ${0.05 + 0.07 * hash2(i, 8, 90)})` : 'rgba(255, 252, 240, 0.5)';
+    g.fillRect(hash2(i, 9, 90) * N, hash2(i, 10, 90) * N, 1, 1);
+  }
+  document.documentElement.style.setProperty('--paper', `url(${c.toDataURL()})`);
+})();
+
 function resize() {
   if (shortOfScreen()) document.documentElement.style.setProperty('--home-bar', '0px');
   else document.documentElement.style.removeProperty('--home-bar');
@@ -829,6 +850,7 @@ function render(now) {
   const z = cam.zoom, ck = S.clock(world);
   drawGround(z, ox, oy);
   drawWaves(now);
+  drawShore(z, ox, oy, ck.season);
   drawPlants(z, ox, oy, ck.season);                  // over the waves, which can pass a flower by the water
 
   // Burrows, drawn by hand: some browsers clip the 🕳️ glyph in half.
@@ -1591,7 +1613,75 @@ function paintStump(g, size, U, shape, look) {
   g.strokeStyle = '#6b4a30'; g.lineWidth = 0.008; g.beginPath(); g.ellipse(0, -h, w, w * 0.42, 0, 0, TAU); g.stroke();
   if (look.snow) { g.fillStyle = `rgba(244,248,252,${0.92 * look.snow})`; g.beginPath(); g.ellipse(-0.005, -h - 0.004, w * 0.9, w * 0.36, 0, 0, TAU); g.fill(); }
 }
-const PAINTERS = { tree: paintTree, pine: paintPine, stump: paintStump };
+// Reeds by the water: a clump of blades, fresh in spring, green in summer, tawny in autumn, straw in
+// winter, and in summer and autumn a few bulrushes, brown heads on long stems.
+const REED_RGB = [[128, 184, 84], [94, 152, 72], [190, 162, 90], [200, 184, 146]];   // by season
+function paintReeds(g, size, U, shape, look) {
+  g.setTransform(U, 0, 0, U, size / 2, size / 2 + 0.35 * U);
+  const rgb = REED_RGB[look.season], n = 10 + shape * 3, tips = [];
+  g.lineCap = 'round'; g.lineWidth = 0.035;
+  for (let i = 0; i < n; i++) {
+    const h = k => hash2(i, shape, 80 + k), x = (h(0) - 0.5) * 0.42, tall = 0.42 + 0.4 * h(1), lean = (h(2) - 0.5) * 0.35 + x * 0.6;
+    g.strokeStyle = rgbOf(rgb, 0.72 + 0.45 * h(3));
+    g.beginPath(); g.moveTo(x, 0); g.quadraticCurveTo(x + lean * 0.3, -tall * 0.6, x + lean, -tall); g.stroke();
+    tips.push(x + lean, -tall);
+  }
+  if (look.season === 1 || look.season === 2) {
+    for (let k = 0; k <= shape; k++) {
+      const x = (hash2(k, shape, 86) - 0.3) * 0.2, top = -0.7 - 0.2 * hash2(k, shape, 87);
+      g.strokeStyle = rgbOf(rgb, 0.8); g.lineWidth = 0.02;
+      g.beginPath(); g.moveTo(x, 0); g.lineTo(x + 0.04, top - 0.1); g.stroke();
+      g.fillStyle = '#6b4226'; g.beginPath(); g.ellipse(x + 0.03, top + 0.02, 0.035, 0.1, 0.1, 0, TAU); g.fill();
+      g.fillStyle = 'rgba(255, 220, 170, 0.35)'; g.beginPath(); g.ellipse(x + 0.02, top, 0.012, 0.06, 0.1, 0, TAU); g.fill();
+    }
+  }
+  if (look.snow) {
+    g.fillStyle = `rgba(244,248,252,${0.9 * look.snow})`; g.beginPath();
+    for (let i = 0; i < tips.length; i += 4) { g.moveTo(tips[i] + 0.03, tips[i + 1] + 0.02); g.ellipse(tips[i], tips[i + 1] + 0.02, 0.03, 0.02, 0, 0, TAU); }
+    g.moveTo(0.18, 0); g.ellipse(0, 0, 0.18, 0.05, 0, 0, TAU);
+    g.fill();
+  }
+}
+
+// Lily pads lying flat on quiet water, round with a notch, yellowing in autumn, gone in winter; a
+// water lily open on one of them in summer.
+function paintLilies(g, size, U, shape, look) {
+  g.setTransform(U, 0, 0, U, size / 2, size / 2 + 0.35 * U);
+  const rgb = look.season === 2 ? [150, 150, 70] : [84, 142, 64];
+  for (let k = 0, n = 2 + shape % 2; k < n; k++) {
+    const h = j => hash2(k, shape, 90 + j), x = (h(0) - 0.5) * 0.5, y = (h(1) - 0.5) * 0.2, r = 0.14 + 0.1 * h(2), notch = h(3) * TAU;
+    g.save(); g.translate(x, y); g.scale(1, 0.55);
+    g.fillStyle = rgbOf(rgb, 0.6); g.beginPath(); g.arc(0.012, 0.03, r, 0, TAU); g.fill();   // its shade on the water
+    g.fillStyle = rgbOf(rgb, 1); g.beginPath(); g.moveTo(0, 0); g.arc(0, 0, r, notch + 0.35, notch - 0.35 + TAU); g.closePath(); g.fill();
+    g.strokeStyle = rgbOf(rgb, 1.25, 10); g.lineWidth = 0.01; g.beginPath();
+    for (let j = 1; j < 5; j++) { const a = notch + j * TAU / 5; g.moveTo(0, 0); g.lineTo(Math.cos(a) * r * 0.8, Math.sin(a) * r * 0.8); }
+    g.stroke();
+    g.restore();
+  }
+  if (look.season === 1) {                                 // a water lily
+    const x = (hash2(0, shape, 90) - 0.5) * 0.5, y = (hash2(0, shape, 91) - 0.5) * 0.2 - 0.03;
+    const petal = shape === 1 ? '#fbe8f0' : '#f6a8c4';
+    g.fillStyle = petal;
+    for (let j = 0; j < 7; j++) { const a = j * TAU / 7; g.beginPath(); g.ellipse(x + Math.cos(a) * 0.04, y + Math.sin(a) * 0.022, 0.04, 0.018, a, 0, TAU); g.fill(); }
+    g.fillStyle = '#f2c94c'; g.beginPath(); g.arc(x, y - 0.005, 0.018, 0, TAU); g.fill();
+  }
+}
+const REED_ARTS = ['reeds:0', 'reeds:1', 'reeds:2'], LILY_ARTS = ['lily:0', 'lily:1', 'lily:2'];
+const SHORE_LOOKS = [0, 1, 2, 3].flatMap(season => [0, 0.25, 0.5, 0.75, 1].map(snow => ({ season, snow, key: season + '|' + snow })));
+
+// Reeds and lily pads, from the scatter updateWater keeps; lily pads not under ice nor in winter.
+function drawShore(z, ox, oy, season) {
+  if (z < 9 || !pond) return;
+  const look = SHORE_LOOKS[season * 5 + Math.round(step(world.snow * 1.6 - 0.1, 4) * 4)], iced = iceOver() > 0.3;
+  for (const s of pond.shore) {
+    if (s.lily && (iced || season === 3)) continue;
+    const px = s.size * z, x = ox + s.x * z, y = oy + s.y * z;
+    if (x + px < 0 || x - px > vw || y + px * 0.3 < 0 || y - px > vh) continue;
+    const sp = sprite(s.art, px, '', look);
+    ctx.drawImage(sp.canvas, x - sp.size / 2, y - px * 0.35 - sp.size / 2, sp.size, sp.size);
+  }
+}
+const PAINTERS = { tree: paintTree, pine: paintPine, stump: paintStump, reeds: paintReeds, lily: paintLilies };
 const STUMP_LOOKS = [0, 0.25, 0.5, 0.75, 1].map(snow => ({ snow, key: 'snow' + snow }));
 
 function drawDecor(d, sx, sy, now, ck, clipLeaves) {
@@ -2001,8 +2091,20 @@ function updateWater() {
     const x = i % S.W, y = (i / S.W) | 0, h = hash2(x, y, world.seed);
     if (f2[i] > 0.9 && h < 0.14) waves.push({ x: x + hash2(y, x, 7), y: y + hash2(x, y, 11), ph: h / 0.14 });
   }
+  // Reeds in patches along the shore, and lily pads out on quiet shallows away from the deep (drawShore).
+  const shore = [];
+  for (let i = 0; i < f1.length; i++) {
+    const x = i % S.W, y = (i / S.W) | 0, h = hash2(x, y, world.seed + 5), wet = world.water[i];
+    const reed = hash2(x >> 2, y >> 2, world.seed + 6) < 0.55 && (wet ? wet !== S.DEEP && f1[i] < 0.8 && h < 0.3 : f1[i] > 0.2 && h < 0.4);
+    const lily = !reed && wet === S.SHALLOW && f4[i] > 0.6 && d2[i] < 0.35 && h > 0.88;
+    if (!reed && !lily) continue;
+    const px = x + 0.2 + 0.6 * hash2(y, x, 8), py = y + 0.2 + 0.6 * hash2(y, x, 9);
+    if (reed && world.burrows.some(b => Math.abs(b.x - px) < 1.5 && Math.abs(b.y - py) < 1.5)) continue;
+    const shape = Math.floor(hash2(x, y, 10) * 3);
+    shore.push({ x: px, y: py, art: (reed ? REED_ARTS : LILY_ARTS)[shape], lily, size: (reed ? 1.1 : 1.3) + 0.6 * hash2(x, y, 12) });
+  }
   const woods = pond && pond.world === world ? pond.woods : S.distanceTo(Uint8Array.from(world.wood, v => v > 0.25 ? 1 : 0));
-  pond = { world, version: world.waterVersion, at: now, waves, woods };
+  pond = { world, version: world.waterVersion, at: now, waves, woods, shore };
   if (!Ground.ok) return;
   const toWater = S.distanceToWater(world);
   for (let i = 0; i < f1.length; i++) {

@@ -8,8 +8,9 @@
  *     drifts (the hue shifts, the grass stays bright);
  *   - the grass itself (what the rabbits eat): lush grass, or the bare earth where it is grazed;
  *   - where the grass is thick: soft brush dabs from afar, crisp filled tufts once you're close;
- *   - a faint painterly mottle and, up close, a fine grain;
- *   - the sun on the slopes, wet moss at the water's edge, then the water in soft layers.
+ *   - a faint painterly mottle and, up close, a fine grain and the odd pebble;
+ *   - the sun on the slopes, wet moss at the water's edge, then the water in soft layers,
+ *     deepest well out from the shore, with long brushed strokes on its surface.
  *
  * Use: Ground.set(name, data) with a Float32Array of 4 values a tile: 'tile' (grass, water,
  * ash, wood), 'bloom' (a field's tint times how much it shows, then how much), 'shape' (height,
@@ -40,12 +41,13 @@ out vec4 o;
 
 // Hashes the float's own bits, so it stays exact at any coordinate: a float trick like
 // fract(p * 123.34) runs out of digits in the fine grain and paints it in streaks.
-float hash(vec2 p) {
+uint hashu(vec2 p) {
   uvec2 u = floatBitsToUint(p);
   uint h = u.x * 0x8da6b343u ^ u.y * 0xd8163841u;
   h ^= h >> 16; h *= 0x7feb352du; h ^= h >> 15; h *= 0x846ca68bu; h ^= h >> 16;
-  return float(h) * (1. / 4294967296.);
+  return h;
 }
+float hash(vec2 p) { return float(hashu(p)) * (1. / 4294967296.); }
 float noise(vec2 p) {
   vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f);
   return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
@@ -96,9 +98,10 @@ vec2 tufts(vec2 p, float px) {
   return vec2(cover, lit);
 }
 
-// Four values from one hash, a byte each: cheaper than four hashes.
+// Four values from one hash, a byte each: cheaper than four hashes. (From the uint itself: a float
+// keeps only 24 bits, and the lowest byte would come out 0.)
 vec4 hash4(vec2 p) {
-  uint h = uint(hash(p) * 4294967296.);
+  uint h = hashu(p);
   return vec4(uvec4(h, h >> 8, h >> 16, h >> 24) & 255u) * (1. / 255.);
 }
 
@@ -175,6 +178,17 @@ void main() {
     col *= 1. + 0.06 * detail * (noise(q * 13. + 400.) - 0.5 + 0.6 * (noise(q * 29. + 500.) - 0.5));
     vec2 tf = tufts(p, px);
     col = mix(col, grass * mix(vec3(0.7, 0.82, 0.68), vec3(0.86, 0.94, 0.82), tf.y), 0.85 * detail * tf.x);
+    // A pebble here and there, more on bare earth: one to a cell at most, lit from the top left.
+    vec2 pc = floor(p / 0.7);
+    vec4 ph = hash4(pc + seed + 13.3);
+    if (ph.x < 0.03 + 0.1 * (1. - g) * (1. - g)) {
+      vec2 c = (pc + 0.2 + 0.6 * ph.yz) * 0.7, rr = vec2(0.05 + 0.06 * ph.w) * vec2(1., 0.7);
+      vec2 d = (p - c) / rr;
+      float f = length(d), aa = px / rr.x * 1.5;
+      col *= 1. - 0.25 * detail * (1. - smoothstep(0.8, 1.3, length((p - c - vec2(0.012, 0.018)) / rr)));   // its shadow
+      vec3 stone = mix(vec3(0.6, 0.58, 0.54), vec3(0.74, 0.69, 0.6), ph.w) * (0.9 - 0.18 * clamp(d.x + d.y, -1., 1.));
+      col = mix(col, stone, detail * (1. - smoothstep(1. - aa, 1. + aa, f)));
+    }
   }
   col = col * (1. - B.a) + B.rgb;                                // a flower field in bloom
   col = mix(col, vec3(74., 66., 60.) / 255., T.b * (1. - g) * 0.85);   // burnt, until the grass returns
@@ -202,6 +216,17 @@ void main() {
   col = mix(col, bankC, smoothstep(0.47 - edge, 0.47 + edge, F.r));   // the water's edge stays crisp
   col = mix(col, shallowC, layers(F.g, 0.54, 0.8, 7., 0.2));
   col = mix(col, deepC, layers(F.a, 0.3, 0.95, 9., 0.12));
+  // Deeper still well out from the shore, where the deep water is wide.
+  vec3 abyss = mix(mix(vec3(44., 100., 168.), vec3(62., 90., 114.), cold) / 255., frozen, ice);
+  col = mix(col, abyss, 0.6 * smoothstep(0.5, 1., F.a * F.b));
+  // A painted surface: long soft strokes across open water, a touch lighter or darker, and the sun
+  // lighter on the shallows just in from the edge. Ice stills it.
+  float open = smoothstep(0.47, 0.6, F.r) * (1. - ice);
+  if (open > 0.) {
+    float stroke = noise(vec2(q.x * 0.8, q.y * 3.6) + 600.) - 0.5, mottle = fbm(q * 0.45 + 650.) - 0.5;
+    col *= 1. + open * (0.08 * stroke + 0.05 * mottle);
+    col = mix(col, min(shallowC * 1.1 + 0.04, 1.), open * 0.3 * (1. - smoothstep(0.5, 0.72, F.g)));
+  }
 
   if (below > 0.) {
     // darker the further, all the way at the furthest the camera may look (past: CSS pixels)

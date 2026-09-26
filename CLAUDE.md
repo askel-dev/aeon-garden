@@ -32,7 +32,7 @@ told to just do it.
   differently each time); the lab plays each piece on demand. Like C418's Minecraft music, the
   silence between pieces is part of it, and no piece is about the time of day (a day is 20 s, a
   piece 90 s): they fit any moment, lean towards a season at 1x, and the piano plays darker at night.
-- `index.html`: layout and styles. Phones get slim bars (`narrow()`: up to 760px wide, or up to 500px tall
+- `index.html`: layout and styles. The cards are opaque parchment with a painted grain (`--paper`), never a `backdrop-filter`. Phones get slim bars (`narrow()`: up to 760px wide, or up to 500px tall
   on their side). The tools fold into one round button in the bottom right showing the one in hand (`toggleTools`),
   and a finger held on the meadow opens the ring there (`HOLD_MS`). Upright, the inspector is a bottom sheet;
   on their side (`short()`) it is a panel down the right. Either way it opens folded to one line (`stripHTML`):
@@ -67,6 +67,7 @@ drowns and grows back fast in the silt (`w.silt`). Flooded water keeps the name 
 from (`w.nearBody`). Snow lying in winter freezes it over (`iceTick`, `w.ice`, `w.frozen`): the ice takes any weight, so
 foxes cross where they couldn't, and whoever is out on deep water when it thaws goes through (`breakUp`). The ground shader shades the slopes by the sun, and colours the grass by where it is: lusher by the water
 and the woods, golden up high, wet moss at the water's edge, with a faint painterly mottle. That colouring is only a look; the grass the animals eat is `w.grass`.
+Reeds and lily pads (`drawShore`) are a look too: a scatter `updateWater` works out along the shore whenever the water changes.
 Shallow water is waded slowly; deep water blocks.
 Each connected water body is named (`w.waters`, `w.body`). Population caps and starting
 numbers scale with dry land (`w.room`).
