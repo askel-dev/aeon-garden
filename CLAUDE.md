@@ -83,8 +83,10 @@ size (`TERRAIN.rockSize`), flat stones at the fords, and two or three great rock
 (`TERRAIN.bigRocks`, `big: true`) that burrows keep clear of.
 Flowers are painted too (`flowerSprite`, one painter per kind in `FLOWER_ARTS`): a clump on stems in
 one of `FLOWER_VARIANTS` looks, painted once per half-octave size. Which painting a flower gets comes from
-its emoji and the season (`flowerArt`), so the sim and the inspector still speak emoji. Tufts, sprouts and
-fallen leaves are still emoji.
+its emoji and the season (`flowerArt`), so the sim and the inspector still speak emoji. Trees are painted
+as well (`paintTree`, `paintPine`, `paintStump`, looked up by name in `PAINTERS` from the sprite cache):
+leafy clumps and tiers painted straight in the colours `treeLook` gives them, so nothing is read back;
+the sim still calls them 🌳 and 🌲. Tufts, sprouts and fallen leaves are still emoji.
 
 Rabbit coats: two letter-pair genes (`coat`, e.g. 'AaDd') give four colours, plus a sliding
 `moult` gene that whitens the coat in winter. Foxes spot a still rabbit from further off when its
