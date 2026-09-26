@@ -8,7 +8,9 @@
  *     drifts (the hue shifts, the grass stays bright);
  *   - the grass itself (what the rabbits eat): lush grass, or the bare earth where it is grazed;
  *   - where the grass is thick: soft brush dabs from afar, crisp filled tufts once you're close;
- *   - a faint painterly mottle and, up close, a fine grain and the odd pebble;
+ *   - big soft patches of lighter and deeper grass, a faint painterly mottle and, up close, a fine
+ *     grain and the odd pebble;
+ *   - an earthy bank round the water, wet and dark at the lip, with the grass hanging over it;
  *   - the sun on the slopes, wet moss at the water's edge, then the water in soft layers,
  *     deepest well out from the shore, with long brushed strokes on its surface.
  *
@@ -171,6 +173,9 @@ void main() {
   // A painterly surface: every tile a touch lighter or darker, warm and cool patches, a fine grain up close.
   col *= 1. + 0.07 * (noise(q * 1.1 + 200.) - 0.5) + 0.035 * (noise(q * 3.1 + 250.) - 0.5);
   col += vec3(1., 0.33, -1.) * 0.035 * (fbm(q * 0.22 + 300.) - 0.5);
+  // Big soft patches laid in like a painter would: some lighter and sunnier, some deeper and cooler.
+  float patches = smoothstep(0.3, 0.7, fbm(q * 0.1 + 800.));
+  col *= mix(vec3(0.9, 0.93, 0.95), vec3(1.06, 1.05, 0.97), patches);
   // Zoomed out, brush dabs where the grass is thick; zoomed in, the tufts take over.
   float brush = clamp((zoom - 4.) / 4., 0., 1.) * (1. - clamp((zoom - 11.) / 3., 0., 1.)) * smoothstep(0.3, 0.9, g);
   if (brush > 0.) col *= 1. + 0.12 * brush * dabs(q, px);
@@ -191,6 +196,21 @@ void main() {
     }
   }
   col = col * (1. - B.a) + B.rgb;                                // a flower field in bloom
+  // The bank: a crisp rim of earth round the water, wider here and there, lighter where it
+  // meets the grass and darker at the lip. (F.r is 0.47 at the water's edge.)
+  float rim = 0.1 + 0.2 * smoothstep(0.3, 0.7, fbm(q * 0.3 + 900.)) + 0.04 * (n2 - 0.5);
+  float rimAa = max(fwidth(F.r), 1e-4);
+  float onBank = smoothstep(0.47 - rim - rimAa, 0.47 - rim + rimAa, F.r) * (1. - smoothstep(0.47 - rimAa, 0.47 + rimAa, F.r));
+  // Just above it, the grass hangs over in a thin line of shade.
+  col *= 1. - 0.14 * smoothstep(0.47 - rim - 0.08, 0.47 - rim, F.r) * (1. - onBank);
+  if (onBank > 0.) {
+    float down = clamp((F.r - 0.47 + rim) / rim, 0., 1.);        // 0 at the grass, 1 at the water
+    vec3 soil = mix(low * vec3(1.08, 1.03, 0.92) + 0.05, low * vec3(0.8, 0.74, 0.66), smoothstep(0.2, 0.7, down));
+    soil = mix(soil, low * vec3(0.55, 0.5, 0.45), smoothstep(0.72, 0.9, down));   // wet at the lip
+    soil *= 1. - 0.1 * smoothstep(0.02, 0.12, down) * (1. - smoothstep(0.12, 0.3, down));   // under the grass
+    soil *= 0.95 + 0.1 * n1 + 0.08 * detail * (noise(q * 9. + 950.) - 0.5);
+    col = mix(col, soil, onBank * 0.92);
+  }
   col = mix(col, vec3(74., 66., 60.) / 255., T.b * (1. - g) * 0.85);   // burnt, until the grass returns
   float s = snow > 0. ? clamp(snow * 1.4 - 0.2 - 0.25 * (2. * n1 - 1.) - 0.1 * (2. * n2 - 1.), 0., 0.9) : 0.;
   col = mix(col, vec3(246., 248., 252.) / 255., s);             // snow settles in patches first
@@ -212,7 +232,7 @@ void main() {
   vec3 sandC = mix(sand, frozen, ice), bankC = mix(bank, frozen, ice);
   vec3 shallowC = mix(shallow, frozen, ice), deepC = mix(deep, frozen, ice);
   float edge = max(fwidth(F.r) * 0.7, 1e-4);
-  col = mix(col, sandC, layers(F.b, 0.03, 0.42, 9., 0.07));
+  col = mix(col, sandC, layers(F.b, 0.03, 0.42, 9., 0.035));
   col = mix(col, bankC, smoothstep(0.47 - edge, 0.47 + edge, F.r));   // the water's edge stays crisp
   col = mix(col, shallowC, layers(F.g, 0.54, 0.8, 7., 0.2));
   col = mix(col, deepC, layers(F.a, 0.3, 1., 9., 0.07));
