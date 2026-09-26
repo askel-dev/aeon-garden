@@ -41,6 +41,7 @@ let sheet = null;                                 // the edges of the meadow the
 // A phone upright or on its side: slim bars. On its side (a short screen) the tools stand down the left.
 const narrow = () => matchMedia('(max-width: 760px), (max-height: 500px)').matches;
 const short = () => matchMedia('(max-height: 500px)').matches;
+const canHover = matchMedia('(hover: hover)');
 
 // Safari's fingerprinting protection (iOS 26, private tabs) can report a ratio of 1 on a
 // retina phone, which leaves the meadow blurry. Ask the media queries too, and failing that,
@@ -87,7 +88,7 @@ function measureSheet() {
   else if (ins.width >= vw * 0.8) {
     const top = Math.max($('#meadow').getBoundingClientRect().bottom, $('#hud-right .hud-top').getBoundingClientRect().bottom);
     sheet = { top, bottom: vh - ins.top, left: 0, right: 0 };
-  } else sheet = short() ? { top: 0, bottom: 0, left: railPad, right: vw - ins.left } : null;
+  } else sheet = short() ? { top: 0, bottom: 0, left: railPad, right: $('#inspector').classList.contains('strip') ? 0 : vw - ins.left } : null;
 }
 
 function clampCam() {
@@ -3022,18 +3023,36 @@ const traitRows = (species, genes) => traitsOf(species).map(t => `<div class="tr
   <div class="meter"><span style="width:${Math.round(genes[t.k] * 100)}%"></span></div>
   <span class="word">${word(t, genes[t.k])}</span></div>`).join('');
 
+// On a phone the inspector opens folded to one line: who, what they're up to, and the tummy (or a
+// thing's first meter) as a thin line under that. Tap it for the rest.
+const stripHTML = (tint, face, name, line, meter) => `
+  <div class="strip-row" data-act="sheet-up" title="Show more">
+    <div class="portrait" style="background:${tint}33">${face}</div>
+    <div class="strip-text"><div class="strip-name">${name}</div><div class="strip-line">${line}</div>
+      ${meter ? `<div class="meter strip-meter ${meter[1]}"><span style="width:${Math.round(clamp(meter[0], 0, 1) * 100)}%"></span></div>` : ''}</div>
+    <span class="strip-more" aria-hidden="true">︿</span>
+    <button class="close" data-act="close" title="Close (Esc)">✕</button>
+  </div>`;
+
 function renderInspector() {
   const box = $('#inspector');
   const c = world.byId.get(ui.selectedId), thing = !c && ui.picked;
+  const strip = !!(c || thing) && !ui.sheetUp && narrow();
   document.body.classList.toggle('inspecting', !!(c || thing));
+  document.body.classList.toggle('ins-strip', strip);
   if (!c && !thing) { box.classList.remove('open'); setHTML(box, ''); return; }
   box.classList.add('open');
-  box.classList.toggle('peek', !ui.sheetUp);          // only a phone draws it small
-  if (thing) { renderThing(box); return; }
+  box.classList.toggle('strip', strip);
+  if (thing) { renderThing(box, strip); return; }
   const age = Math.floor(S.ageDays(world, c));
   const sex = c.sex === 'F' ? '♀' : '♂';
   const mood = S.mood(world, c);
   const e = c.energy / c.maxEnergy;
+  if (strip) {
+    setHTML(box, stripHTML(furCss(c), portraitHTML(c), `${esc(c.name)} <span class="sex">${sex}</span>`,
+      `${mood.emoji || '🙂'} ${esc(mood.text)}`, c.alive && [e, e < 0.3 ? 'low' : '']));
+    return;
+  }
   const mum = world.byId.get(c.mumId), dad = world.byId.get(c.dadId);
   const parent = (p, label) => p ? `${label} ${link(p)}${p.alive ? '' : ' 🪦'}` : '';
   const kidsAlive = world.creatures.filter(k => k.mumId === c.id || k.dadId === c.id).length;
@@ -3054,7 +3073,7 @@ function renderInspector() {
   const living = c.alive ? '' : world.creatures.find(k => k.mumId === c.id || k.dadId === c.id);
 
   setHTML(box, `
-    <button class="sheet-handle sheet-only" aria-label="${ui.sheetUp ? 'Show less' : 'Show more'}"></button>
+    <button class="sheet-handle phone-only" data-act="sheet-down" aria-label="Show less"></button>
     <div class="ins-head">
       <div class="portrait" style="background:${furCss(c)}33">${portraitHTML(c)}</div>
       <div>
@@ -3390,11 +3409,16 @@ function pick(kind, it, at) {
   renderInspector();
 }
 
-function renderThing(box) {
+function renderThing(box, strip) {
   const p = ui.picked, v = THINGS[p.kind].show(p.it);
   p.name = v.name;
+  if (strip) {
+    const m = v.meters?.[0];
+    setHTML(box, stripHTML(v.tint || '#d9c9a8', v.emoji, esc(v.name), v.status, m && [m[1], m[2]]));
+    return;
+  }
   setHTML(box, `
-    <button class="sheet-handle sheet-only" aria-label="${ui.sheetUp ? 'Show less' : 'Show more'}"></button>
+    <button class="sheet-handle phone-only" data-act="sheet-down" aria-label="Show less"></button>
     <div class="ins-head">
       <div class="portrait" style="background:${v.tint || '#d9c9a8'}33">${v.emoji}</div>
       <div>
@@ -3505,23 +3529,25 @@ function select(id, zoomIn = true) {
   renderInspector();
 }
 
-// The sheet on a phone: tap the handle, or swipe the handle or the name, up for more and down for less.
-// Swiping down a small sheet puts it away.
-let swipe = null;
+// The sheet on a phone: tap the folded line for more and the handle for less (the click handler), or
+// swipe the line, the handle or the name, up for more and down for less. Swiping the line down puts it away.
+let swipe = null, pressing = false;          // while a finger is down on it, it isn't rebuilt under the tap
+addEventListener('pointercancel', () => { pressing = false; swipe = null; });
 $('#inspector').addEventListener('pointerdown', e => {
-  if (sheet && sheet.bottom && e.target.closest('.sheet-handle, .ins-head') && !e.target.closest('button:not(.sheet-handle)')) swipe = { y: e.clientY };
+  pressing = true;
+  if (sheet && sheet.bottom && e.target.closest('.sheet-handle, .ins-head, .strip-row') && !e.target.closest('button:not(.sheet-handle)')) swipe = { y: e.clientY };
 });
-$('#inspector').addEventListener('pointerup', e => {
+addEventListener('pointerup', e => {         // on the window: a swipe up soon leaves the folded line
+  pressing = false;
   if (!swipe) return;
-  const dy = e.clientY - swipe.y, tap = Math.abs(dy) < 10 && e.target.closest('.sheet-handle');
+  const dy = e.clientY - swipe.y;
   swipe = null;
-  if (tap || dy < -24) ui.sheetUp = tap ? !ui.sheetUp : true;
+  if (dy < -24) ui.sheetUp = true;
   else if (dy > 24) { if (ui.sheetUp) ui.sheetUp = false; else { select(0); return; } }
   else return;
   $('#inspector').scrollTop = 0;
   renderInspector();
 });
-$('#inspector').addEventListener('pointercancel', () => { swipe = null; });
 
 function creatureAt(sx, sy) {
   const [wx, wy] = toWorld(sx, sy);
@@ -3871,6 +3897,11 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'sky-lock') toggleSkyLock();
   else if (t.dataset.action === 'new') { if (confirm('Start a brand-new meadow? This one will be gone.')) newWorld(randomSeed()); }
   else if (t.dataset.act === 'close') select(0);
+  else if (t.dataset.act === 'sheet-up' || t.dataset.act === 'sheet-down') {
+    ui.sheetUp = t.dataset.act === 'sheet-up';
+    $('#inspector').scrollTop = 0;
+    renderInspector();
+  }
   else if (t.dataset.act === 'news') toggleNewsLog();
   else if (t.dataset.act === 'mini') toggleMini();
   else if (t.dataset.act === 'more') toggleMore();
@@ -4203,7 +4234,8 @@ function frame(now) {
       const life = world.count.rabbit / (S.SPECIES.rabbit.cap * world.room);
       Sound.update({ phase: ck.phase, season: ck.season, speed: ui.speed, sky: ui.sky.mix, fire: world.burning.length, bees: beesOnScreen(), life });
     }
-    if ((ui.selectedId || ui.picked) && !$('#inspector').matches(':hover')) renderInspector();
+    // Not under the mouse or a finger: a rebuilt button would swallow the click. (A finger leaves :hover stuck.)
+    if ((ui.selectedId || ui.picked) && !pressing && !(canHover.matches && $('#inspector').matches(':hover'))) renderInspector();
     if (ui.stats.open) { $('#stats-clock').textContent = `${S.SEASONS[S.seasonOf(world.tick)].emoji} ${when(world.tick)}`; drawStatsChart(); }
   }
   if (ui.stats.open && now - lastStatsCards > 1000 && !$('#stats-cards').matches(':hover')) {
