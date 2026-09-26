@@ -72,8 +72,8 @@
     box-shadow: var(--shadow); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
   }
   button { font: inherit; color: inherit; cursor: pointer; }
-  a[data-id], a[data-thing] { color: var(--accent); font-weight: 800; text-decoration: none; cursor: pointer; }
-  a[data-id]:hover, a[data-thing]:hover { text-decoration: underline; }
+  a[data-id], a[data-thing], a[data-act] { color: var(--accent); font-weight: 800; text-decoration: none; cursor: pointer; }
+  a[data-id]:hover, a[data-thing]:hover, a[data-act]:hover { text-decoration: underline; }
 
   /* ---- the meadow card, top left */
   #meadow { top: var(--top); left: var(--left); width: 272px; padding: calc((var(--hud-h) - 30px) / 2) 10px 10px 16px; }
@@ -282,6 +282,22 @@
   #welcome .card-sound { flex: none; width: 52px; border-radius: 14px; font-size: 19px; padding: 0; background: #fbf5e8; }
   #welcome .card-sound[aria-pressed="true"] { background: var(--accent-soft); }
 
+  /* ---- how to put the meadow on the home screen, from ••• */
+  #home-guide { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(60, 70, 30, 0.28); z-index: 10; }
+  #home-guide .card { position: static; width: min(420px, calc(100% - 32px)); max-height: calc(100% - 24px); overflow: hidden auto; padding: 22px 24px 20px;
+    background: #f7eedc; border-radius: 22px; box-shadow: 0 20px 60px rgba(50, 40, 15, 0.3); backdrop-filter: none; -webkit-backdrop-filter: none;
+    animation: pop-in 0.18s ease-out; }
+  #home-guide h2 { margin: 0 0 6px; font-size: 24px; font-weight: 650; line-height: 1.15; }
+  #home-guide p { margin: 0 0 14px; line-height: 1.5; color: var(--muted); }
+  #home-guide ol { margin: 0 0 18px; padding: 0; list-style: none; counter-reset: step; }
+  #home-guide li { counter-increment: step; display: flex; gap: 12px; align-items: flex-start; padding: 7px 0; line-height: 1.5; }
+  #home-guide li::before { content: counter(step); flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+    background: #4f7f3a; color: #fff; font-weight: 900; font-size: 13px; margin-top: -1px; }
+  #home-guide .glyph { width: 20px; height: 20px; vertical-align: -4px; fill: none; stroke: #2f6fd6; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  #home-guide[data-os="ios"] .other, #home-guide:not([data-os="ios"]) .ios { display: none; }
+  #home-guide .go { width: 100%; border-radius: 14px; background: #4f7f3a; color: #fff; font-size: 16px; padding: 12px; box-shadow: none; }
+  #home-guide .go:hover { background: #44702f; }
+
   /* ---- the first visit's intro (game.js, startIntro): bars top and bottom, the story under the
      meadow a line at a time, and everything else away (hush) from the welcome card until it hands over */
   #intro { position: fixed; inset: 0; pointer-events: none; z-index: 9; --lb: clamp(36px, 9vh, 84px); }
@@ -435,6 +451,10 @@
     #welcome h1 .to { font-size: 14px; } #welcome h1 .n1 { font-size: 24px; } #welcome h1 .n2 { font-size: 58px; }
     #welcome .body { padding: 14px 22px 16px; }
     #welcome p { margin-bottom: 12px; }
+    #home-guide .card { width: min(560px, calc(100% - 32px)); padding: 14px 20px; }
+    #home-guide h2 { font-size: 20px; } #home-guide p { margin-bottom: 6px; }
+    #home-guide li { padding: 3px 0; } #home-guide ol { margin-bottom: 10px; }
+    #home-guide .go { padding: 9px; }
     #intro { --lb: clamp(36px, 11vh, 96px); }
     #intro .line { margin: 0 18px; font-size: 16px; }
   }
@@ -546,6 +566,7 @@
     <button class="menu-item phone-only" data-act="sky">🌦️ Weather</button>
     <button class="menu-item phone-only" data-act="stats">📊 Graphs and records</button>
     <button class="menu-item phone-only" data-act="sound" id="sound-item">🔇 Sound is off</button>
+    <button class="menu-item hidden" data-act="home" id="home-item">📱 Add to your home screen</button>
     <button class="menu-item" data-act="copy-link">🔗 Copy a link to this meadow</button>
     <button class="menu-item danger" data-action="new">🔄 Start a new meadow…</button>
   </div>
@@ -607,6 +628,27 @@
         <button class="btn card-sound" id="card-sound" data-act="sound" aria-pressed="false" aria-label="Sound" title="Sound on or off (M)">🔇</button>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- the steps for Safari, which has no install button of its own (game.js, homeGuide) -->
+<div id="home-guide" class="hidden" role="dialog" aria-modal="true" aria-labelledby="home-title">
+  <div class="card">
+    <h2 class="fr" id="home-title">Keep the meadow on your home screen</h2>
+    <p>It opens full screen from its own icon, with no browser bars in the way.</p>
+    <ol class="ios">
+      <li><span>Tap <b>Share</b> <svg class="glyph" viewBox="0 0 24 24" aria-label="the Share button"><path d="M8.5 9.5H7a2 2 0 0 0-2 2V19a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7.5a2 2 0 0 0-2-2h-1.5M12 3v11.5M8.5 6.5 12 3l3.5 3.5"/></svg>.
+        In Safari on iOS 26 it's in the <b>•••</b> menu by the address bar.</span></li>
+      <li><span>Scroll down and pick <b>Add to Home Screen</b> <svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M12 8.5v7M8.5 12h7"/></svg>.
+        If it isn't there, tap <b>More</b> or <b>Edit Actions</b> first.</span></li>
+      <li><span>Leave <b>Open as Web App</b> on if it asks, and tap <b>Add</b>.</span></li>
+    </ol>
+    <ol class="other">
+      <li><span>Open your browser's menu, <b>⋮</b> or <b>☰</b>.</span></li>
+      <li><span>Pick <b>Add to Home screen</b> or <b>Install app</b>.</span></li>
+      <li><span>Tap <b>Add</b> or <b>Install</b>.</span></li>
+    </ol>
+    <button class="btn go" data-act="home-done">Got it</button>
   </div>
 </div>
 

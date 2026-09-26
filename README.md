@@ -22,3 +22,12 @@ Then open http://localhost:8765.
 - The weather has a life of its own: rain greens the meadow, fog hides foxes, snow chills the
   small ones, thunder sends rabbits home, and lightning on dry grass can start a wildfire
 - With [Ollama](https://ollama.com) running, the ✍️ Diary button lets an animal write about its day
+
+## On your phone
+
+Added to the home screen, the meadow opens full screen from its own icon, with no browser bars.
+
+- **iPhone and iPad:** in Safari, tap Share (in iOS 26 it's in the ••• menu by the address bar),
+  then **Add to Home Screen** (scroll down, or tap More), and **Add**
+- **Android:** in the meadow's ••• menu, tap **📱 Add to your home screen**, or pick **Install app**
+  in your browser's ⋮ menu

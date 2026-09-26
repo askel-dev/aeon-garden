@@ -3781,6 +3781,44 @@ function toggleMore(open = $('#more-menu').classList.contains('hidden')) {
   if (open && ui.sky.menu) toggleSkyMenu(false);
 }
 
+// ------------------------------------------------------------------ on the home screen
+// Added to the home screen, the meadow opens full screen with no browser bars (manifest.webmanifest).
+// Chrome and friends have an install dialog we can open; Safari has none, so a card shows the steps.
+const installed = () => navigator.standalone || matchMedia('(display-mode: standalone)').matches;
+const iOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+let installPrompt = null;
+function showHomeItem() {
+  $('#home-item').classList.toggle('hidden', installed() || !(installPrompt || matchMedia('(pointer: coarse)').matches));
+}
+// Kept for the ••• menu rather than let Chrome drop its own bar over the toolbar.
+addEventListener('beforeinstallprompt', e => { e.preventDefault(); installPrompt = e; showHomeItem(); });
+addEventListener('appinstalled', () => { installPrompt = null; showHomeItem(); addNews('📱 The meadow is on your home screen now.'); });
+
+function homeGuide(open = true) {
+  if (open && installPrompt) {
+    installPrompt.prompt();                             // each one opens once
+    installPrompt = null;
+    showHomeItem();
+    return;
+  }
+  const card = $('#home-guide');
+  card.dataset.os = iOS ? 'ios' : 'other';
+  card.classList.toggle('hidden', !open);
+}
+const homeOpen = () => !$('#home-guide').classList.contains('hidden');
+$('#home-guide').addEventListener('click', e => { if (e.target.id === 'home-guide') homeGuide(false); });
+
+// Once ever, on a phone or tablet that hasn't added it yet.
+function homeTip(ms) {
+  if (installed() || !matchMedia('(pointer: coarse)').matches) return;
+  try { if (localStorage.getItem('aeon-garden-hometip') === '1') return; } catch (e) { return; }
+  setTimeout(() => {
+    if (installed()) return;
+    addNews('📱 <b>Tip:</b> put the meadow on your home screen and it opens full screen, like an app. <a data-act="home">Show me how</a>, or find it in ••• later.');
+    try { localStorage.setItem('aeon-garden-hometip', '1'); } catch (e) { /* fine */ }
+  }, ms);
+}
+
 function copyLink() {
   navigator.clipboard?.writeText(location.href).then(
     () => addNews('🔗 Link copied. Anyone who opens it gets this same meadow from the start.'),
@@ -3837,6 +3875,8 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'mini') toggleMini();
   else if (t.dataset.act === 'more') toggleMore();
   else if (t.dataset.act === 'copy-link') copyLink();
+  else if (t.dataset.act === 'home') homeGuide();
+  else if (t.dataset.act === 'home-done') homeGuide(false);
   else if (t.dataset.act === 'sound') toggleSound();
   else if (t.dataset.act === 'stats') toggleStats();
   else if (t.dataset.show) { ui.stats.show = t.dataset.show; renderStats(); }
@@ -3886,7 +3926,7 @@ document.addEventListener('keydown', e => {
   } else if ('1234'.includes(e.key) && e.key.length === 1) setSpeed([1, 4, 15, 60][+e.key - 1]);
   else if (e.key === 'Escape') {
     const more = !$('#more-menu').classList.contains('hidden');
-    ui.ring ? closeRing() : ui.sky.menu ? toggleSkyMenu(false) : more ? toggleMore(false) : ui.stats.open ? toggleStats(false)
+    homeOpen() ? homeGuide(false) : ui.ring ? closeRing() : ui.sky.menu ? toggleSkyMenu(false) : more ? toggleMore(false) : ui.stats.open ? toggleStats(false)
       : ui.tool !== 'look' ? setTool('look') : select(0);
   }
   else if (e.key === 's') toggleStats();
@@ -4062,6 +4102,7 @@ function welcomeTips() {
     : '🔊 <b>Tip:</b> the meadow has quiet sounds. Turn them on with 🔇 at the top right (M).'); }, 18000);
   setTimeout(() => addNews(touch ? '🌦️ <b>Tip:</b> the toolbar adds animals, grows grass and strikes lightning. The weather waits in •••.'
     : '🌦️ <b>Tip:</b> right-click the meadow to add animals, grow grass, change the weather or strike lightning. The toolbar waits at the bottom edge.'), 27000);
+  homeTip(40000);
 }
 
 // ------------------------------------------------------------------ the loop
@@ -4220,7 +4261,8 @@ if (LAB) {
   hush(true);                                         // nothing to count yet: the bars and cards wait
   setSpeed(0);
   if (world.family && !calm) introShot();
-}
+} else homeTip(30000);
+showHomeItem();
 $('#go').addEventListener('click', () => {
   const card = $('#welcome');
   card.classList.add('leaving');
