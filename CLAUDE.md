@@ -66,7 +66,7 @@ A flooded burrow is lost and kits too young to climb out drown (`floodBurrows`);
 drowns and grows back fast in the silt (`w.silt`). Flooded water keeps the name of the water it spilled
 from (`w.nearBody`). Snow lying in winter freezes it over (`iceTick`, `w.ice`, `w.frozen`): the ice takes any weight, so
 foxes cross where they couldn't, and whoever is out on deep water when it thaws goes through (`breakUp`). The ground shader shades the slopes by the sun, and colours the grass by where it is: lusher by the water
-and the woods, golden up high, wet moss at the water's edge, in big soft light and dark patches, and gives the water an earthy bank (dark and wet at the lip). That colouring is only a look; the grass the animals eat is `w.grass`.
+and the woods, golden up high, wet moss at the water's edge, in big soft light and dark patches, and gives the water a soft earthy bank. That colouring is only a look; the grass the animals eat is `w.grass`.
 Reeds and lily pads (`drawShore`) are a look too: a scatter `updateWater` works out along the shore whenever the water changes.
 Shallow water is waded slowly; deep water blocks.
 Each connected water body is named (`w.waters`, `w.body`). Population caps and starting

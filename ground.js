@@ -10,7 +10,7 @@
  *   - where the grass is thick: soft brush dabs from afar, crisp filled tufts once you're close;
  *   - big soft patches of lighter and deeper grass, a faint painterly mottle and, up close, a fine
  *     grain and the odd pebble;
- *   - an earthy bank round the water, wet and dark at the lip, with the grass hanging over it;
+ *   - a soft earthy bank round the water, melting into the grass, damp at the lip;
  *   - the sun on the slopes, wet moss at the water's edge, then the water in soft layers,
  *     deepest well out from the shore, with long brushed strokes on its surface.
  *
@@ -196,20 +196,18 @@ void main() {
     }
   }
   col = col * (1. - B.a) + B.rgb;                                // a flower field in bloom
-  // The bank: a crisp rim of earth round the water, wider here and there, lighter where it
-  // meets the grass and darker at the lip. (F.r is 0.47 at the water's edge.)
-  float rim = 0.1 + 0.2 * smoothstep(0.3, 0.7, fbm(q * 0.3 + 900.)) + 0.04 * (n2 - 0.5);
+  // The bank: a soft rim of earth round the water, wider here and there, melting into the grass
+  // and a little darker at the lip. (F.r is 0.47 at the water's edge.)
+  float rim = 0.08 + 0.14 * smoothstep(0.3, 0.7, fbm(q * 0.3 + 900.)) + 0.03 * (n2 - 0.5);
   float rimAa = max(fwidth(F.r), 1e-4);
-  float onBank = smoothstep(0.47 - rim - rimAa, 0.47 - rim + rimAa, F.r) * (1. - smoothstep(0.47 - rimAa, 0.47 + rimAa, F.r));
-  // Just above it, the grass hangs over in a thin line of shade.
-  col *= 1. - 0.14 * smoothstep(0.47 - rim - 0.08, 0.47 - rim, F.r) * (1. - onBank);
+  float onBank = smoothstep(0.47 - rim - 0.06, 0.47 - rim + 0.05, F.r) * (1. - smoothstep(0.47 - rimAa, 0.47 + rimAa, F.r));
   if (onBank > 0.) {
     float down = clamp((F.r - 0.47 + rim) / rim, 0., 1.);        // 0 at the grass, 1 at the water
-    vec3 soil = mix(low * vec3(1.08, 1.03, 0.92) + 0.05, low * vec3(0.8, 0.74, 0.66), smoothstep(0.2, 0.7, down));
-    soil = mix(soil, low * vec3(0.55, 0.5, 0.45), smoothstep(0.72, 0.9, down));   // wet at the lip
-    soil *= 1. - 0.1 * smoothstep(0.02, 0.12, down) * (1. - smoothstep(0.12, 0.3, down));   // under the grass
-    soil *= 0.95 + 0.1 * n1 + 0.08 * detail * (noise(q * 9. + 950.) - 0.5);
-    col = mix(col, soil, onBank * 0.92);
+    vec3 soil = mix(low * vec3(1.06, 1.03, 0.94) + 0.06, low * vec3(0.86, 0.8, 0.72), smoothstep(0.2, 0.8, down));
+    soil = mix(soil, low * vec3(0.7, 0.66, 0.6), smoothstep(0.6, 1., down));   // damp at the lip
+    soil = mix(soil, grass, 0.2);                                // in the meadow's own colours
+    soil *= 0.97 + 0.06 * n1 + 0.05 * detail * (noise(q * 9. + 950.) - 0.5);
+    col = mix(col, soil, onBank * 0.8);
   }
   col = mix(col, vec3(74., 66., 60.) / 255., T.b * (1. - g) * 0.85);   // burnt, until the grass returns
   float s = snow > 0. ? clamp(snow * 1.4 - 0.2 - 0.25 * (2. * n1 - 1.) - 0.1 * (2. * n2 - 1.), 0., 0.9) : 0.;
