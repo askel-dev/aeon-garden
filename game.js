@@ -1744,7 +1744,7 @@ function drawShore(z, ox, oy, season) {
 // laid on as thick as the snow lying. Before a tree's first painting comes, and where there's no
 // worker (or with ?emoji), it's drawn as it always was, an emoji.
 const TREE_SHAPES = 4;
-const TREE_UNIT = 220;                   // painted px (at scale 1) to one tree size: an oak's crown is about that wide
+const TREE_UNIT = 200;                   // painted px (at scale 1) to one tree size: an oak's crown is about that wide
 const TREE_TIERS = [0.125, 0.25, 0.5, 1, 2];   // the scales each look is painted at
 const TREE_BYTES = 48e6;                 // the paintings kept, in memory
 const HIVE_DOOR = [1, -38];              // the hive's sill in the hive oak's painting, from its foot (trees.js hive)
@@ -1815,24 +1815,30 @@ function treeKind(d) {
   const info = treeInfo(d);
   return info.fruit || TREE_KINDS[info.h % AUTUMN.length].toLowerCase();
 }
-// Which looks a tree is between, and how far from the first to the second (same timings as treeLook).
+// Which looks a tree is between, and how far from the first to the second (about the timings of
+// treeLook). The leafier look goes second, fading in or out over the other. A broadleaf buds, then
+// comes into leaf; an oak first drops last year's dry leaves. In autumn the others thin, then stand bare.
 function treeStage(kind, d, ck) {
   const sp = (ck.dayInSeason - 1 + ck.phase) / S.SEASON_DAYS, s = ck.season, lag = (treeInfo(d).h % 5) * 0.04;
-  const oak = kind === 'oak' || kind === 'hive', bare = 'winter';   // an oak's winter look keeps its dry leaves
+  const oak = kind === 'oak' || kind === 'hive', bare = oak ? 'bare' : 'winter';   // an oak's winter look keeps its dry leaves
+  const quick = m => { m = clamp((m - 0.2) / 0.6, 0, 1); return m * m * (3 - 2 * m); };   // leaves on a bare tree look ghostly half faded: keep that short
   if (kind === 'pine') {
     if (s === 0) return ['summer', 'spring', clamp((sp - 0.4) / 0.4, 0, 1)];
     return s === 1 ? ['spring', 'summer', clamp(sp / 0.5, 0, 1)] : ['summer', null, 0];
   }
   if (s === 0) {
-    const out = clamp((sp - lag) / (oak ? 0.3 : 0.35), 0, 1), green = clamp((sp - 0.4 - lag) / 0.45, 0, 1);
-    return green > 0 ? ['spring', 'summer', green] : [bare, 'spring', out];
+    const t = sp - lag - (oak ? 0.1 : 0), shed = clamp((sp - lag) / 0.1, 0, 1);
+    const bud = clamp(t / 0.15, 0, 1), out = clamp((t - 0.15) / 0.2, 0, 1), green = clamp((sp - 0.45 - lag) / 0.4, 0, 1);
+    if (oak && shed < 1) return ['bare', 'winter', quick(1 - shed)];
+    return green > 0 ? ['spring', 'summer', green] : out > 0 ? ['bud', 'spring', out] : [bare, 'bud', quick(bud)];
   }
   if (s === 1) return ['summer', null, 0];
   if (s === 2) {
     const turn = clamp((sp - 0.05 - lag) / 0.4, 0, 1), fall = clamp((sp - (oak ? 0.65 : 0.6) - lag) / 0.35, 0, 1);
-    return fall > 0 ? [bare, 'autumn', 1 - fall] : ['summer', 'autumn', turn];
+    if (oak) return fall > 0 ? ['winter', 'autumn', 1 - fall] : ['summer', 'autumn', turn];
+    return fall > 0.5 ? ['winter', 'thin', quick(2 - fall * 2)] : fall > 0 ? ['thin', 'autumn', quick(1 - fall * 2)] : ['summer', 'autumn', turn];
   }
-  return [bare, null, 0];
+  return ['winter', null, 0];
 }
 // Draws a tree from its paintings, swaying from the foot; false if it has none yet.
 function drawPaintedTree(d, sx, sy, now, ck) {

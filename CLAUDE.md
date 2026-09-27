@@ -46,8 +46,9 @@ told to just do it.
   Painting is slow (up to 0.1 s a tree), so the game has it done in a worker (`tree-worker.js`) and never on a
   frame: each kind in 4 shapes (`TREE_SHAPES`, a tree picks one from where it stands), each shape in its
   season's looks, each look at a few sizes (`TREE_TIERS`), asked for only when on screen and kept within
-  `TREE_BYTES` (game.js, `treePainting`). A tree turning crossfades between two looks (`treeStage`); snow is a
-  layer of its own, laid on as thick as the snow lying. Until its painting comes a tree is an emoji, and so
+  `TREE_BYTES` (game.js, `treePainting`). A tree turning crossfades between two looks (`treeStage`), with looks
+  in between so the two are alike (`LOOKS` in trees.js: an oak bare in early spring, first leaves, half fallen);
+  a bare crown is a haze of fine twigs. Snow is a layer of its own, laid on as thick as the snow lying. Until its painting comes a tree is an emoji, and so
   it stays with `?emoji` or no worker. Small paintings are sculpted coarser (`ss`), which is most of the saving.
   `tree-lab.html` shows every kind in every season, close and far, with sliders for `LOOK` and a "Copy as code".
 - `balance.js`: headless check, `node balance.js [years] [seeds]`.
