@@ -80,3 +80,4 @@ Then open http://localhost:8765.
 - `node balance.js [years] [seeds]` runs meadows headless and prints how the populations did
 - `index.html?lab` opens the terrain lab: sliders for every terrain number, and a brush to draw your own water, rivers and woods
 - `sound-lab.html` plays each sound and piece of music on its own
+- `tree-lab.html` shows the painted trees (trees.js) in every season, with sliders for the brush

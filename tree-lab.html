@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meadow Tree Lab</title>
+<link rel="icon" href="assets/favicon.ico" sizes="any">
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f1ead8; --card: #fbf5e8; --ink: #3b372f; --muted: #8b8272; --line: #e6d8bc;
+    --accent: #5f9346; --accent-soft: #e2edcf;
+    --shadow: 0 8px 28px rgba(70, 55, 25, 0.12), 0 1px 3px rgba(70, 55, 25, 0.10);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 500 14px/1.45 Nunito, ui-rounded, system-ui, sans-serif; }
+  main { max-width: 1320px; margin: 0 auto; padding: 24px 16px 60px; }
+  h1 { font-size: 26px; font-weight: 900; margin: 0 0 4px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); margin: 0 0 10px; }
+  p.lead { color: var(--muted); margin: 0 0 18px; max-width: 75ch; }
+  .card { background: var(--card); border-radius: 18px; box-shadow: var(--shadow); padding: 16px 18px; margin-bottom: 16px; }
+  button { font: inherit; color: inherit; cursor: pointer; border: 1px solid var(--line); background: #fff; border-radius: 12px; padding: 6px 11px; font-weight: 700; }
+  button:hover { background: var(--accent-soft); }
+  button.on { background: var(--accent-soft); border-color: var(--accent); }
+  .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .row + .row { margin-top: 10px; }
+  .lbl { width: 70px; color: var(--muted); font-weight: 800; }
+  .looks { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 6px 22px; }
+  .looks label { display: grid; grid-template-columns: 1fr 130px 42px; gap: 8px; align-items: center; }
+  .looks label span:first-child { font-weight: 700; }
+  .looks small { color: var(--muted); display: block; font-weight: 500; font-size: 11px; line-height: 1.2; }
+  .looks output { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+  input[type=range] { accent-color: var(--accent); width: 100%; }
+  input[type=number] { font: inherit; width: 70px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 10px; }
+  #status { color: var(--muted); margin-left: auto; font-variant-numeric: tabular-nums; }
+  .grid { display: grid; gap: 10px; overflow-x: auto; }
+  .cell { border-radius: 14px; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; min-height: 120px; padding: 10px 6px 6px; overflow: hidden; }
+  .cell canvas { display: block; max-width: 100%; height: auto; }
+  .cell .ms { position: absolute; top: 6px; right: 9px; font-size: 11px; color: rgba(40, 40, 30, 0.55); font-weight: 700; }
+  .head { font-weight: 800; color: var(--muted); align-self: end; padding: 0 4px 2px; }
+  .side { font-weight: 800; align-self: center; }
+  #far { width: 100%; height: auto; display: block; border-radius: 14px; }
+  pre { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; font-size: 12px; overflow-x: auto; display: none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>🌳 Meadow Tree Lab</h1>
+  <p class="lead">Every tree kind through the year, painted by <code>trees.js</code> exactly as the game will get them:
+    sculpted as a little 3D model for the light, then painted over with leaf dabs and bark strokes. The sliders tune the
+    brush for all trees at once; "Copy as code" gives back the <code>LOOK</code> block to paste over the one in trees.js.</p>
+
+  <div class="card">
+    <div class="row" id="kinds"><span class="lbl">Trees</span></div>
+    <div class="row" id="seasons"><span class="lbl">Seasons</span></div>
+    <div class="row">
+      <span class="lbl">Size</span>
+      <span id="sizes"></span>
+      <span class="lbl" style="margin-left:14px;width:auto">Seed</span>
+      <input id="seed" type="number" min="1" value="1">
+      <button id="another">🎲 Another</button>
+      <span class="lbl" style="margin-left:14px;width:auto">Snow in winter</span>
+      <input id="snow" type="range" min="0" max="1" step="0.05" value="1" style="width:110px">
+      <span id="status"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Brush</h2>
+    <div class="looks" id="looks"></div>
+    <div class="row" style="margin-top:12px">
+      <button id="copy">📋 Copy as code</button>
+      <button id="reset">↺ Reset</button>
+      <span class="lbl" style="width:auto">Quality</span>
+      <span id="quality"></span>
+    </div>
+    <pre id="code"></pre>
+  </div>
+
+  <div class="card">
+    <h2>Close</h2>
+    <div class="grid" id="grid"></div>
+  </div>
+
+  <div class="card">
+    <h2>From afar, among the animals</h2>
+    <canvas id="far"></canvas>
+  </div>
+</main>
+
+<script src="sim.js"></script>
+<script src="trees.js"></script>
+<script>
+(() => {
+'use strict';
+const T = window.Trees, S = window.Sim, $ = s => document.querySelector(s);
+const SEASON_ICON = { spring: '🌸', summer: '☀️', autumn: '🍂', winter: '❄️' };
+const SIZES = [['Close', 1.2], ['Big', 0.8], ['Game', 0.5], ['Far', 0.25]];
+const HINTS = {
+  dab: ['Leaf size', 'how big each painted leaf is', 1, 5, 0.1],
+  dabs: ['Leaf cover', 'how thickly the leaves cover the crown', 0.5, 5, 0.1],
+  under: ['Leaf edges', 'how dark the leaf under each one shows', 0, 0.4, 0.01],
+  highlights: ['Sunlit leaves', 'how many bright leaves on the sunny side', 0, 1, 0.01],
+  shine: ['Sunlit brightness', 'how much brighter those are', 0, 0.4, 0.01],
+  crevice: ['Crevice shade', 'how far the shade between clumps reaches', 0.5, 3, 0.05],
+  stroke: ['Bark strokes', 'how long the strokes along the bark are', 0.5, 5, 0.1],
+  cracks: ['Bark cracks', 'share of dark strokes in the bark', 0, 0.6, 0.01],
+};
+const DEFAULT = { ...T.LOOK };
+const st = { kinds: Object.keys(T.KINDS), seasons: T.SEASONS.slice(), size: 0.8, seed: 1, snow: 1, ss: 3 };
+
+// ---- controls
+function chips(el, items, isOn, toggle) {
+  for (const [key, label] of items) {
+    const b = document.createElement('button');
+    b.textContent = label; b.dataset.key = key;
+    b.onclick = e => { toggle(key, e.shiftKey); refresh(el, isOn); draw(); };
+    el.appendChild(b);
+  }
+  refresh(el, isOn);
+}
+function refresh(el, isOn) { for (const b of el.querySelectorAll('button')) b.classList.toggle('on', isOn(b.dataset.key)); }
+// A click shows that one alone, or all of them again; shift-click adds or removes it.
+const pick = (list, all) => (key, shift) => {
+  const i = list.indexOf(key);
+  if (shift) { if (i >= 0 && list.length > 1) list.splice(i, 1); else if (i < 0) list.push(key); }
+  else if (list.length === 1 && i === 0) list.splice(0, 1, ...all);
+  else list.splice(0, list.length, key);
+  list.sort((a, b) => all.indexOf(a) - all.indexOf(b));
+};
+chips($('#kinds'), Object.entries(T.KINDS).map(([k, v]) => [k, v.name]), k => st.kinds.includes(k), pick(st.kinds, Object.keys(T.KINDS)));
+chips($('#seasons'), T.SEASONS.map(s => [s, SEASON_ICON[s] + ' ' + s[0].toUpperCase() + s.slice(1)]), s => st.seasons.includes(s), pick(st.seasons, T.SEASONS));
+chips($('#sizes'), SIZES.map(([n, k]) => [k, n]), k => +k === st.size, k => { st.size = +k; });
+chips($('#quality'), [[2, 'Quick'], [3, 'Game'], [4, 'Fine']], k => +k === st.ss, k => { st.ss = +k; });
+$('#seed').oninput = e => { st.seed = Math.max(1, +e.target.value || 1); draw(); };
+$('#another').onclick = () => { st.seed = 1 + Math.floor(Math.random() * 9999); $('#seed').value = st.seed; draw(); };
+$('#snow').oninput = e => { st.snow = +e.target.value; draw(); };
+
+const looks = $('#looks');
+for (const [key, [name, hint, min, max, step]] of Object.entries(HINTS)) {
+  const l = document.createElement('label');
+  l.innerHTML = `<span>${name}<small>${hint}</small></span><input type="range" min="${min}" max="${max}" step="${step}"><output></output>`;
+  const input = l.querySelector('input'), out = l.querySelector('output');
+  input.value = T.LOOK[key]; out.textContent = T.LOOK[key];
+  input.oninput = () => { T.LOOK[key] = +input.value; out.textContent = input.value; draw(); };
+  l.dataset.key = key;
+  looks.appendChild(l);
+}
+$('#reset').onclick = () => {
+  Object.assign(T.LOOK, DEFAULT);
+  for (const l of looks.children) { l.querySelector('input').value = T.LOOK[l.dataset.key]; l.querySelector('output').textContent = T.LOOK[l.dataset.key]; }
+  draw();
+};
+$('#copy').onclick = () => {
+  const w = Math.max(...Object.keys(T.LOOK).map(k => k.length));
+  const text = 'const LOOK = {\n' + Object.entries(T.LOOK).map(([k, v]) => `  ${(k + ':').padEnd(w + 1)} ${+v.toFixed(3)},`).join('\n') + '\n};';
+  const pre = $('#code'); pre.textContent = text; pre.style.display = 'block';
+  navigator.clipboard?.writeText(text).catch(() => {});
+};
+
+// ---- painting, a tree at a time so the page stays live
+const rgb = c => `rgb(${c.map(v => Math.round(v)).join(',')})`;
+function groundOf(season, snow) {
+  const i = T.SEASONS.indexOf(season), lush = S.GROUND.seasons[i][1];
+  return season === 'winter' && snow > 0.5 ? S.GROUND.snow : lush;
+}
+function withShadow(tree) {                                   // the soft green-blue shadow the game puts under trees
+  const c = document.createElement('canvas'), pad = Math.ceil(tree.width * 0.1);
+  c.width = tree.width + pad * 2; c.height = tree.height + Math.ceil(tree.width * 0.06);
+  const g = c.getContext('2d'), rx = tree.width * 0.34, ry = rx * 0.22, x = tree.bx + pad + rx * 0.05, y = tree.by - 2;
+  g.save(); g.translate(x, y); g.scale(1, ry / rx);
+  const gr = g.createRadialGradient(0, 0, 0, 0, 0, rx);
+  gr.addColorStop(0, 'rgba(20,60,50,0.36)'); gr.addColorStop(0.6, 'rgba(20,60,50,0.18)'); gr.addColorStop(1, 'rgba(20,60,50,0)');
+  g.fillStyle = gr; g.beginPath(); g.arc(0, 0, rx, 0, 7); g.fill(); g.restore();
+  g.drawImage(tree, pad, 0);
+  return c;
+}
+let gen = 0;
+function draw() {
+  const my = ++gen, grid = $('#grid'), jobs = [];
+  grid.innerHTML = '';
+  grid.style.gridTemplateColumns = `90px repeat(${st.seasons.length}, max-content)`;
+  grid.appendChild(document.createElement('div'));
+  for (const s of st.seasons) { const h = document.createElement('div'); h.className = 'head'; h.textContent = SEASON_ICON[s] + ' ' + s; grid.appendChild(h); }
+  for (const k of st.kinds) {
+    const side = document.createElement('div'); side.className = 'side'; side.textContent = T.KINDS[k].name; grid.appendChild(side);
+    for (const s of st.seasons) {
+      const cell = document.createElement('div'); cell.className = 'cell';
+      cell.style.background = rgb(groundOf(s, st.snow));
+      cell.style.minWidth = Math.round(260 * st.size) + 'px'; cell.style.minHeight = Math.round(300 * st.size) + 'px';
+      grid.appendChild(cell);
+      jobs.push(() => {
+        const t0 = performance.now();
+        const tree = T.paint(k, { seed: st.seed, season: s, snow: s === 'winter' ? st.snow : 0, scale: st.size, ss: st.ss });
+        const ms = performance.now() - t0;
+        cell.appendChild(withShadow(tree));
+        const tag = document.createElement('span'); tag.className = 'ms'; tag.textContent = Math.round(ms) + ' ms'; cell.appendChild(tag);
+        return ms;
+      });
+    }
+  }
+  jobs.push(() => drawFar(my));
+  let total = 0, n = 0;
+  const next = () => {
+    if (my !== gen || !jobs.length) return;
+    const ms = jobs.shift()();
+    if (typeof ms === 'number') { total += ms; n++; }
+    $('#status').textContent = jobs.length ? `painting… ${jobs.length} to go` : `${n} trees, ${Math.round(total / Math.max(1, n))} ms each on average`;
+    setTimeout(next, 0);
+  };
+  $('#status').textContent = 'painting…';
+  setTimeout(next, 30);
+}
+
+// A patch of meadow in the first season shown, at the game's far zoom, with rabbits and a fox for scale.
+function drawFar(my) {
+  const c = $('#far'), dpr = Math.min(2, devicePixelRatio || 1), W = 1240, H = 300, season = st.seasons[0];
+  c.width = W * dpr; c.height = H * dpr;
+  const g = c.getContext('2d'); g.scale(dpr, dpr);
+  g.fillStyle = rgb(groundOf(season, st.snow)); g.fillRect(0, 0, W, H);
+  const snow = season === 'winter' ? st.snow : 0, kinds = st.kinds, spots = [];
+  let r = st.seed * 9301 + 49297;
+  const rand = () => (r = (r * 9301 + 49297) % 233280) / 233280;
+  for (let i = 0; i < 26; i++) spots.push([30 + rand() * (W - 60), 80 + rand() * (H - 90), kinds[i % kinds.length], i]);
+  spots.sort((a, b) => a[1] - b[1]);
+  const cache = {};
+  for (const [x, y, k, i] of spots) {
+    const key = k + (i % 3);
+    const tree = cache[key] || (cache[key] = withShadow(T.paint(k, { seed: st.seed + (i % 3), season, snow, scale: 0.26 * dpr, ss: 2 })));
+    if (my !== gen) return;
+    g.drawImage(tree, x - (tree.width / dpr) / 2, y - (tree.height / dpr) + 4, tree.width / dpr, tree.height / dpr);
+  }
+  g.font = '15px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif'; g.textAlign = 'center';
+  [['🐇', 0.3, 0.7], ['🐇', 0.5, 0.55], ['🐇', 0.33, 0.8], ['🦊', 0.72, 0.85], ['🐝', 0.6, 0.4]].forEach(([e, fx, fy]) => g.fillText(e, fx * W, fy * H));
+}
+
+draw();
+})();
+</script>
+</body>
+</html>

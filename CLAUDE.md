@@ -37,6 +37,14 @@ told to just do it.
   and a finger held on the meadow opens the ring there (`HOLD_MS`). Upright, the inspector is a bottom sheet;
   on their side (`short()`) it is a panel down the right. Either way it opens folded to one line (`stripHTML`):
   who, what they're up to, and the tummy. Tap it for the rest.
+- `trees.js`: the trees, painted in code (not in the game yet: it still draws emoji trees). Each kind
+  (`KINDS`: oak, hive oak, maple, birch, apple, cherry, pine, willow, hawthorn) is sculpted as a little 3D
+  model of spheres for the light (a skeleton swept in bark, leaf clumps at the twig ends), then painted over:
+  leaves as flat leaf-shaped dabs from shade to light, bark as strokes along each branch. The 3D gives the volume, the
+  brushwork keeps it from looking 3D (plain 3D leaflets looked like broccoli). The seed fixes a tree's shape and the
+  season only its leaves. The hive oak carries the hive: a dome of straw rings in a split in its trunk.
+  Painting is slow (about 0.1 s a tree), so it has to be done once per look and copied after.
+  `tree-lab.html` shows every kind in every season, close and far, with sliders for `LOOK` and a "Copy as code".
 - `balance.js`: headless check, `node balance.js [years] [seeds]`.
 - `terrain-lab.js`: the terrain lab, `index.html?lab`. Sliders for every number in `TERRAIN` (sim.js),
   drawn by the game itself, plus hidden layers and a strip of other seeds. Its "Copy as code" gives
