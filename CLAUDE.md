@@ -50,7 +50,10 @@ told to just do it.
   in between so the two are alike (`LOOKS` in trees.js: an oak bare in early spring, first leaves, half fallen);
   a bare crown is a haze of fine twigs. Each kind is drawn at its own height (`TREE_SCALE` in game.js, times
   the sim's `d.size`, which only says how grown a tree is): oaks and beeches big, apples smaller, the hive oak
-  a giant. The willow (a fountain of strands over a dome) is painted but not planted for now. Snow is a layer of its own, laid on as thick as the snow lying. Until its painting comes a tree is an emoji, and so
+  a giant, and a tree four to seven rabbits tall (`creaturePx`). The look is kept close to the emoji trees':
+  big leaflets (`LOOK.leaflet`), their greens, one colour for a whole tree (from its seed, a few clumps another,
+  so autumn is a patchwork of trees and not of leaves), the crown up off the trunk (`LOOK.lift`) and the
+  branches not too wide (`LOOK.spread`), so you see trunks and ground between the trees. The willow (a fountain of strands over a dome) is painted but not planted for now. Snow is a layer of its own, laid on as thick as the snow lying. Until its painting comes a tree is an emoji, and so
   it stays with `?emoji` or no worker. Small paintings are sculpted coarser (`ss`), which is most of the saving.
   `tree-lab.html` shows every kind in every season, close and far, with sliders for `LOOK` and a "Copy as code".
 - `balance.js`: headless check, `node balance.js [years] [seeds]`.

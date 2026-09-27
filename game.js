@@ -1080,8 +1080,9 @@ const LOOKS = {
   bee: { size: 0.38, facesLeft: true, swatch: '#e8b83a', quiet: true },   // quiet: no thought bubbles
 };
 
-// Grows with zoom, but never shrinks to a speck when you look at the whole meadow.
-const creaturePx = c => (10 + cam.zoom * 1.4) * LOOKS[c.species].size * c.scale * (0.55 + 0.45 * S.growth(world, c));
+// Grows with zoom, but never shrinks to a speck when you look at the whole meadow. A tree is four
+// to seven rabbits tall.
+const creaturePx = c => (8 + cam.zoom) * LOOKS[c.species].size * c.scale * (0.55 + 0.45 * S.growth(world, c));
 const flipOf = c => LOOKS[c.species].facesLeft && c.facing > 0;
 
 // How full a forager's load is, 0..1.
@@ -1386,7 +1387,7 @@ const BUBBLE_ICONS = [
 const BUBBLE_ART = new Map(BUBBLE_ICONS.map(([e], i) => [e, 'bubble:' + i]));
 
 function drawBubble(emoji, sx, sy, px, important) {
-  const r = Math.max(9, px * 0.3);
+  const r = Math.max(9, px * 0.4);                       // a bit big for the animal, so it reads
   const bx = sx + px * 0.38, by = sy - px * 0.62 - r * 0.4;
   const art = BUBBLE_ART.get(emoji);
   if (art) {
@@ -1757,9 +1758,10 @@ const TREE_TIERS = [0.125, 0.25, 0.5, 1, 2];   // the scales each look is painte
 const TREE_BYTES = 48e6;                 // the paintings kept, in memory
 // How much bigger each kind is drawn than its d.size (the sim's, which says how grown it is). The
 // paintings differ (an oak's is short and wide, a birch's tall), so these give each kind its own
-// height: oak, beech and pine big, birch and maple a little less, apple and cherry smaller, hawthorn
-// a thicket. The hive oak is an old giant already (HIVE_TREE). Emoji trees keep their size.
-const TREE_SCALE = { oak: 1.6, hive: 1, beech: 1.55, maple: 1.3, birch: 1.05, pine: 1.15, willow: 1.17, apple: 1.45, cherry: 1.45, hawthorn: 1.25 };
+// height: oak, beech and pine big, birch and maple a little less, apple smaller, a cherry a big pink
+// cloud in spring, hawthorn a thicket. Kept small enough that you see between trees. The hive oak is
+// an old giant already (HIVE_TREE). Emoji trees keep their size.
+const TREE_SCALE = { oak: 1.41, hive: 1, beech: 1.36, maple: 1.14, birch: 0.92, pine: 1.01, willow: 1.03, apple: 1.28, cherry: 1.72, hawthorn: 1.1 };
 const treePx = d => d.size * cam.zoom * (d.tree && treeWorker ? TREE_SCALE[treeKind(d)] || 1 : 1);
 const HIVE_DOOR = [1, -38];              // the hive's sill in the hive oak's painting, from its foot (trees.js hive)
 const treeArt = new Map(), treeAsked = new Map(), treeSent = new Set(), treeAny = new Map();

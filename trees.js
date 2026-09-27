@@ -28,20 +28,25 @@
 
 // How the brush paints. tree-lab.html has a slider for each, and hands the block back as code.
 const LOOK = {
-  dab: 2.6,          // leaf dab size, px at scale 1
-  dabs: 2.6,         // how thickly the dabs cover the leaves
-  under: 0.17,       // how much darker the leaf under each dab is (in full light; less in shade)
-  highlights: 0.25,  // share of extra bright dabs on the sunny side
-  shine: 0.13,       // how much brighter those are
-  crevice: 1.8,      // how wide the shade between clumps reaches
+  dab: 5,            // leaf dab size, px at scale 1
+  dabs: 2.2,         // how thickly the dabs cover the leaves
+  under: 0.09,       // how much darker the leaf under each dab is (in full light; less in shade)
+  highlights: 0.04,  // share of extra bright dabs on the sunny side
+  shine: 0.06,       // how much brighter those are
+  crevice: 2,        // how wide the shade between clumps reaches
   stroke: 2.4,       // bark stroke length
-  cracks: 0.22,      // share of dark bark strokes
+  cracks: 0.08,      // share of dark bark strokes
+  leaflet: 1.8,      // leaflet size, times each kind's own: bigger is fewer, rounder bumps
+  form: 1.15,        // how strongly the light rounds the whole crown
+  lift: 0.5,         // how high the crown starts: no leaf clumps low in it, so the trunk shows (1: none left out)
+  spread: 0.85,      // how wide the branches reach, times each kind's own: narrower leaves room between trees
 };
 
 const L = norm([-0.55, -0.75, 0.55]);          // the light: top left, a little in front
 const HV = norm([L[0], L[1], L[2] + 1]);       // half-vector, for the shine on fruit
 let SS = 3, OUT = 1;                           // px sculpted, and px painted, per px of the tree at scale 1 (SS may be under 1 for a small painting)
 let LEAVES = { keep: 1, size: 1 };             // the share of leaf clumps kept and how big (fewer or smaller, over bare twigs: LOOKS)
+let SEASON = 'summer', OWN = null;             // the season painted, and the tree's own random numbers (its colour)
 
 function norm(v) { const l = Math.hypot(...v) || 1; return v.map(x => x / l); }
 const add = (a, b) => a.map((v, i) => v + b[i]), mul = (a, k) => a.map(v => v * k);
@@ -59,16 +64,16 @@ const canvas = (w, h) => typeof OffscreenCanvas !== 'undefined' ? new OffscreenC
 
 // Colour ramps, dark to light. Shade stays saturated (deep teal-green), light goes to lime.
 const RAMPS = {
-  summer: [[14, 44, 38], [22, 74, 44], [44, 112, 36], [96, 164, 34], [160, 210, 48], [206, 238, 96]],
-  spring: [[30, 76, 36], [62, 124, 34], [118, 180, 40], [170, 218, 62], [210, 240, 110], [236, 252, 170]],
-  olive:  [[18, 50, 34], [36, 88, 36], [74, 134, 38], [128, 180, 50], [180, 216, 80], [214, 238, 130]],
+  summer: [[26, 52, 22], [40, 80, 30], [60, 112, 42], [80, 144, 54], [102, 180, 70], [128, 216, 92]],
+  spring: [[36, 70, 26], [56, 104, 34], [82, 144, 46], [110, 180, 60], [140, 210, 80], [178, 234, 116]],
+  olive:  [[30, 54, 26], [46, 82, 34], [66, 114, 44], [88, 144, 56], [112, 174, 70], [142, 204, 92]],
   willow: [[14, 50, 36], [34, 90, 42], [82, 140, 44], [140, 188, 66], [190, 222, 106], [226, 244, 164]],
-  pine:   [[8, 32, 34], [14, 56, 50], [26, 88, 58], [52, 126, 60], [102, 170, 70], [150, 204, 96]],
-  fresh:  [[30, 84, 50], [60, 128, 58], [100, 172, 66], [150, 210, 86], [194, 236, 126], [226, 250, 178]],
+  pine:   [[10, 36, 20], [22, 62, 34], [38, 92, 50], [54, 124, 64], [78, 158, 82], [116, 194, 110]],
+  fresh:  [[34, 72, 34], [54, 106, 44], [78, 144, 58], [104, 178, 74], [134, 206, 96], [170, 230, 130]],
   maple:  [[84, 22, 16], [146, 44, 18], [206, 88, 22], [238, 144, 36], [252, 196, 80], [255, 230, 150]],
   scarlet:[[80, 10, 16], [140, 20, 24], [196, 42, 30], [228, 80, 44], [246, 130, 80], [255, 190, 140]],
-  gold:   [[90, 64, 14], [150, 108, 16], [208, 162, 26], [240, 206, 60], [255, 232, 120], [255, 246, 190]],
-  lemon:  [[96, 84, 18], [156, 140, 24], [210, 196, 44], [236, 226, 90], [250, 244, 150], [255, 252, 200]],
+  gold:   [[84, 62, 16], [140, 104, 20], [190, 150, 30], [222, 186, 52], [240, 212, 90], [250, 232, 150]],
+  lemon:  [[84, 78, 20], [134, 126, 30], [184, 172, 40], [214, 204, 62], [234, 226, 106], [246, 240, 160]],
   russet: [[66, 28, 14], [120, 50, 18], [172, 86, 28], [208, 128, 44], [230, 170, 80], [244, 206, 130]],
   copper: [[80, 26, 12], [140, 48, 16], [196, 82, 24], [226, 124, 40], [244, 170, 76], [252, 210, 130]],
   dry:    [[52, 30, 18], [90, 56, 32], [130, 88, 52], [164, 122, 78], [192, 156, 108], [216, 188, 144]],
@@ -172,7 +177,9 @@ class Scene {
       }
       occ /= taps.length;
       let t = (n[0] * L[0] + n[1] * L[1] + n[2] * L[2]) * 0.5 + 0.5;
+      if (m.lobe) t = 0.47 + (t - 0.5) * LOOK.form;            // leaves: the light rounds the whole crown
       t = t * (1 - occ * m.ao) - occ * m.ao * 0.25 + s.tone;
+      if (m.lobe) t = Math.min(t, 0.92);                       // the palest greens are only for the sunlit dabs
       if (m.shaded && o.shade) t -= 0.35 * clamp(1 - (py / SS - o.shade[0]) / o.shade[1], 0, 1);
       let rp = RAMPS[s.look.ramp];
       if (m.birch && (vnoise(px / (5 * SS), py / (1.2 * SS)) > 0.7 || py / SS > o.birchFoot)) { rp = RAMPS.bark; t -= 0.2; }
@@ -249,7 +256,7 @@ class Scene {
     if (strokes.length) {
       const layer = canvas(W, H), lg = layer.getContext('2d'), mask = new ImageData(W, H), st = [];
       for (const k of strokes) mask.data[k * 4 + 3] = 255;
-      const sr = 1.5 * SS, n = Math.round(strokes.length / (sr * sr * 3) * 2.2);
+      const sr = 1.5 * SS, n = Math.round(strokes.length / (sr * sr * 3) * 1.1);
       for (let j = 0; j < n; j++) { const k = strokes[Math.floor(R() * strokes.length)]; st.push([k, T[k] + (R() - 0.5) * 0.14]); }
       st.sort((a, b) => a[1] - b[1]);
       for (const [k, t] of st) {
@@ -310,7 +317,7 @@ function grow(sc, R, p, dir, len, r, depth, o, out, look) {
   if (depth <= 0) return out;
   const kids = o.kids(depth, R), a0 = R() * 6.28;
   for (let k = 0; k < kids; k++) {
-    const a = a0 + k / kids * 6.28 + (R() - 0.5) * 0.8, th = o.spread * (0.7 + 0.6 * R());
+    const a = a0 + k / kids * 6.28 + (R() - 0.5) * 0.8, th = o.spread * LOOK.spread * (0.7 + 0.6 * R());
     const nd = norm(add(add(mul(dir, Math.cos(th)), mul(add(mul(u, Math.cos(a)), mul(v, Math.sin(a))), Math.sin(th))), [0, -(o.up ?? 0.2), 0]));
     grow(sc, R, end, nd, len * (o.shrink ?? 0.7) * (0.8 + 0.4 * R()), r1 * 0.85, depth - 1, o, out, look);
   }
@@ -341,7 +348,7 @@ function clump(sc, R, c, cr, leafR, look, crown, density = 1) {
   }
 }
 // Leaf clumps at the segment ends between depths lo and hi (and halfway along with along).
-// ramps: each clump picks one. bare: no leaves, but a spray of fine twigs where each clump would
+// ramps: the tree takes one of them (in spring never the yellow), and a few clumps another. bare: no leaves, but a spray of fine twigs where each clump would
 // be (twig: their ramp, twigW how thick, haze how strongly they show from afar); twigs: those twigs
 // under the leaves too; keep, size: fewer or smaller clumps, as LEAVES.
 function leafy(sc, R, tips, o, look) {
@@ -352,13 +359,19 @@ function leafy(sc, R, tips, o, look) {
     ends.push([t, k]);
     if (t.depth <= (o.along ?? -1)) cs.push({ p: add(add(t.p, t.from).map(v => v / 2), [0, (o.droop || 0) + k * 0.3, 0]), r: k * 0.85 });
   }
+  const low = fitCrown(cs), up = cs.filter(c => c.p[1] < low.y + low.ry * LOOK.lift);   // the crown up off the trunk
+  if (up.length >= 3) { cs.length = 0; cs.push(...up); }
   const crown = fitCrown(cs);
   const keep = LEAVES.keep * (o.keep ?? 1), size = LEAVES.size * (o.size ?? 1);
+  // One colour for the whole tree, so autumn is a patchwork of trees and not of leaves.
+  const mains = o.ramps && SEASON === 'spring' && o.ramps.some(r => r !== 'lemon') ? o.ramps.filter(r => r !== 'lemon') : o.ramps;
+  const main = mains && mains[Math.floor(OWN() * mains.length)];
   if (o.bare || o.twigs || LEAVES.size < 1) twigs(sc, ends, cs, crown, o);
   if (!o.bare) for (const c of cs) {
     if (keep < 1 && R() > keep) continue;   // (no draw when all, so the full looks come out as before)
-    const lk = o.ramps ? { ...look, ramp: o.ramps[Math.floor(R() * o.ramps.length)], mix: o.ramps } : look;
-    clump(sc, R, c.p, c.r * size, o.leafR, lk, crown, o.density ?? 1);
+    const pick = o.ramps && o.ramps[Math.floor(R() * o.ramps.length)];
+    const lk = o.ramps ? { ...look, ramp: OWN() < 0.12 ? pick : main, mix: [main] } : look;
+    clump(sc, R, c.p, c.r * size, o.leafR * LOOK.leaflet, lk, crown, o.density ?? 1);
   }
   return { crown, cs };
 }
@@ -415,7 +428,7 @@ function oak(R, season, o) {
     { kids: d => d > 3 ? 3 : 2 + (R() < 0.4), spread: old ? 1.05 : 0.95, shrink: 0.74, up: 0.12, taper: 0.64, wobble: 0.22 }, [], BARK);
   // Oaks hold on to their dry leaves all winter: a thin, pale buff over the bare twigs, so it never
   // reads as autumn (a full copper crown in early spring looked like the wrong season).
-  const winter = season === 'winter', ramps = { spring: ['spring', 'spring', 'lemon'], summer: ['summer'], autumn: ['russet', 'copper', 'copper', 'gold'], winter: ['dry'] }[season];
+  const winter = season === 'winter', ramps = { spring: ['spring', 'spring', 'lemon'], summer: ['summer'], autumn: ['russet', 'copper', 'scarlet'], winter: ['dry'] }[season];
   const { crown } = leafy(sc, R, tips, { lo: 1, hi: 2, clumpR: 25, leafR: 6, density: winter ? 0.6 : season === 'spring' ? 0.8 : 1, ramps, bare: o.bare, twigs: winter, keep: winter ? 0.5 : 1, size: winter ? 0.7 : 1 }, { mat: 'leaf', ramp: 'summer' });
   if (old) hive(sc, R, base, trunkR);
   return [sc, { aoR: 7, shade: winter ? null : [crown.y + crown.ry * 0.6, 40] }, cv => season === 'autumn' && litter(cv, R, ['#c0622a', '#d8903a', '#a4481e'], 55, 24)];
@@ -447,7 +460,7 @@ function maple(R, season) {
   const sc = new Scene(300, 285, 150, 270), base = [150, 270, 0];
   roots(sc, R, base, 9, 3);
   const tips = grow(sc, R, base, [0, -1, 0], 58, 9, 4, { kids: d => 2 + (R() < 0.5), spread: 0.7, shrink: 0.74, up: 0.25, taper: 0.66 }, [], BARK);
-  const ramps = { spring: ['spring', 'spring', 'summer'], summer: ['summer'], autumn: ['maple', 'maple', 'scarlet', 'gold'], winter: null }[season];
+  const ramps = { spring: ['spring', 'spring', 'summer'], summer: ['summer'], autumn: ['maple', 'scarlet', 'scarlet', 'gold'], winter: null }[season];
   const { crown } = leafy(sc, R, tips, { lo: 1, hi: 2, clumpR: 23, leafR: 5.4, ramps, bare: season === 'winter' }, { mat: 'leaf', ramp: 'summer' });
   return [sc, { aoR: 7, shade: season === 'winter' ? null : [crown.y + crown.ry * 0.6, 36] }, cv => season === 'autumn' && litter(cv, R, ['#e07a22', '#c9481c', '#f0a83a'], 55)];
 }
@@ -476,7 +489,7 @@ function birch(R, season) {
     grow(sc, R, p, dir, (42 * Math.sin(Math.PI * Math.min(1, (h - 0.2) * 1.3)) + 12) * (0.75 + 0.4 * R()), 2 * (1 - h * 0.6), 2,
       { kids: () => 2, spread: 0.55, shrink: 0.62, up: -0.35, taper: 0.6, wobble: 0.2 }, tips, BARK);
   }
-  const ramps = { spring: ['spring', 'spring', 'lemon'], summer: ['spring', 'spring', 'summer'], autumn: ['gold', 'gold', 'lemon', 'lemon', 'spring'], winter: null }[season];
+  const ramps = { spring: ['spring', 'spring', 'lemon'], summer: ['spring', 'spring', 'summer'], autumn: ['gold', 'gold', 'lemon'], winter: null }[season];
   const { crown } = leafy(sc, R, tips, { hi: 2, along: 1, droop: 6, clumpR: 11, leafR: 3.4, density: 0.85, ramps, bare: season === 'winter', twig: 'birchtwig', haze: 0.42, twigDroop: 0.8, twigW: 0.8 }, { mat: 'leaf', ramp: 'spring' });
   return [sc, { aoR: 5, shade: season === 'winter' ? null : [crown.y + crown.ry * 0.8, 30], birchFoot: 306 }];
 }
@@ -624,6 +637,7 @@ const LOOKS = { bare: ['winter', 'bare'], bud: ['spring', { keep: 1, size: 0.45 
 function paint(kind, o = {}) {
   SS = o.ss || 3; OUT = o.scale || 1;
   const [season, how] = LOOKS[o.season] || [o.season || 'summer'], R = rng((o.seed ?? 1) * 7919 + 13);
+  SEASON = season; OWN = rng((o.seed ?? 1) * 104729 + 7);
   LEAVES = typeof how === 'object' ? how : { keep: 1, size: 1 };
   const [sc, po, after] = KINDS[kind].paint(R, season, { ...o, bare: how === 'bare' });
   const cv = sc.paint({ ...po, snow: o.snow ?? 0, layer: !!o.snowLayer });
