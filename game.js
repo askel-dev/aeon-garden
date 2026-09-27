@@ -1483,12 +1483,19 @@ const SOFT_SHADOW = (() => {
   g.scale(1, 0.5); g.fillStyle = r; g.fillRect(0, 0, 64, 64);
   return c;
 })();
+// A tree also keeps a dark patch at its foot, day and night, so it stands on the ground.
 function drawDecorShadow(d, sx, sy, sn) {
+  const tree = d.tree && !d.stump, s = d.size * cam.zoom * (d.stump ? 0.45 : 1);
+  if (tree) {
+    const cw = s * 0.2, ch = s * 0.06;
+    ctx.globalAlpha = 0.4 + 0.25 * Math.max(0, sn.a);
+    ctx.drawImage(SOFT_SHADOW, sx - cw, sy - ch * 0.8, cw * 2, ch * 2);
+    ctx.globalAlpha = 1;
+  }
   if (sn.a <= 0.02) return;
-  const s = d.size * cam.zoom * (d.stump ? 0.45 : 1);
   const w = s * (d.tree ? 0.34 : 0.42), h = s * 0.12, off = sn.lean * s * 0.22;
   const W = (w + Math.abs(off) * 0.6) * 2.5, H = h * 2.6;   // the soft edge takes a bit off, so a bit bigger
-  ctx.globalAlpha = 0.3 * sn.a;
+  ctx.globalAlpha = (tree ? 0.55 : 0.3) * sn.a;
   ctx.drawImage(SOFT_SHADOW, sx + off - W / 2, sy + h * 0.4 - H / 2, W, H);
   ctx.globalAlpha = 1;
 }
