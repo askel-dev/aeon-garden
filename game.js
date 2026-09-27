@@ -1512,8 +1512,8 @@ function treeSway(d, now) {
 }
 
 // The trees follow real ones, loosely. Broadleaf 🌳: in autumn the green drains away and each
-// tree shows its own colour, gold (birch, beech), orange (maple), red (red maple) or russet
-// (oak). Then the leaves drop and it stands bare, except the oaks, which hold on to their dry
+// tree shows its kind's colour (the sim says which kind, plantTrees): gold (birch, willow), orange
+// (beech), red (maple) or russet (oak, hawthorn). Then the leaves drop and it stands bare, except the oaks, which hold on to their dry
 // brown leaves all winter. In spring they leaf out lime green. Pines 🌲 stay green, but not
 // quite the same green: old inner needles yellow in autumn, the whole tree bronzes a little in
 // the cold, and new tips come in light at the end of spring. Snow settles on top of them all.
@@ -1522,8 +1522,8 @@ function treeSway(d, now) {
 // into leaf pink, a cloud of blossom that turns green and sheds petals, then cherries in early
 // summer and red leaves in autumn. No two broadleaf trees are quite the same green, and half of
 // all trees are drawn mirrored. A few of the biggest have an owl in them at night.
-const AUTUMN = [[238, 192, 56], [238, 192, 56], [240, 130, 40], [240, 130, 40], [200, 50, 42], [176, 100, 52]];
-const OAK = 5, DRY = [160, 120, 80], SPRING = [156, 214, 84];
+const AUTUMN = { birch: [238, 192, 56], willow: [238, 192, 56], beech: [240, 130, 40], maple: [200, 50, 42], oak: [176, 100, 52], hawthorn: [176, 100, 52] };
+const DRY = [160, 120, 80], SPRING = [156, 214, 84];
 const OLD_NEEDLES = [214, 180, 64], BRONZE = [128, 118, 62], CANDLES = [176, 226, 100];
 const GREEN = [88, 152, 60], APPLE_WHITE = [255, 240, 244], CHERRY_PINK = [255, 176, 206];
 const FRUIT = {
@@ -1552,6 +1552,7 @@ function treeInfo(d) {
   t = {
     h: Math.abs(Math.floor(d.x * 7.3 + d.y * 13.1)),
     fruit: d.fruit || '',                                 // the sim says which (plantTrees)
+    kind: d.kind || (d.emoji === '🌲' ? 'pine' : 'oak'),
     flip: hash2(hx, hy, 43) < 0.5,
     green: GREEN.map((v, k) => v + Math.round((hash2(hx, hy, 44) - 0.5) * 4) * [7, 4, -4][k]),
     owl: d.size > 4.4 && hash2(hx, hy, 45) < 0.12,
@@ -1572,7 +1573,7 @@ function treeLook(d, ck) {
   } else {
     // Broadleaf leaves are always repainted, from the tree's own green.
     const kind = FRUIT[info.fruit], green = info.green, n = Math.round(clamp(d.size * cam.zoom / 11, 2, 9));
-    const hue = kind ? kind.autumn : AUTUMN[h % AUTUMN.length], oak = !kind && h % AUTUMN.length === OAK || !HAS_BARE;
+    const hue = kind ? kind.autumn : AUTUMN[info.kind], oak = info.kind === 'oak' || !HAS_BARE;
     m = 1;
     if (s === 2) {
       const turn = clamp((sp - 0.05 - lag) / 0.4, 0, 1);
@@ -1809,12 +1810,7 @@ function treePainting(kind, shape, look, tier, snow) {
   }
   return null;
 }
-function treeKind(d) {
-  if (d.hive) return 'hive';
-  if (d.emoji === '🌲') return 'pine';
-  const info = treeInfo(d);
-  return info.fruit || TREE_KINDS[info.h % AUTUMN.length].toLowerCase();
-}
+const treeKind = d => d.hive ? 'hive' : treeInfo(d).kind;
 // Which looks a tree is between, and how far from the first to the second (about the timings of
 // treeLook). The leafier look goes second, fading in or out over the other. A broadleaf buds, then
 // comes into leaf; an oak first drops last year's dry leaves. In autumn the others thin, then stand bare.
@@ -3606,16 +3602,18 @@ function decorAt(sx, sy) {
   return best;
 }
 
-// Broadleaf trees by the colour they turn in autumn (AUTUMN, OAK).
-const TREE_KINDS = ['Birch', 'Birch', 'Beech', 'Beech', 'Maple', 'Oak'];
-const treeName = d => d.emoji === '🌲' ? 'Pine' : { apple: 'Apple tree', cherry: 'Cherry tree' }[treeInfo(d).fruit] || TREE_KINDS[treeInfo(d).h % AUTUMN.length];
+const TREE_NAMES = { oak: 'Oak', beech: 'Beech', maple: 'Maple', birch: 'Birch', willow: 'Willow', hawthorn: 'Hawthorn',
+  apple: 'Apple tree', cherry: 'Cherry tree', pine: 'Pine' };
+const treeName = d => TREE_NAMES[treeInfo(d).kind];
 
 function treeSeason(d) {
-  const s = S.seasonOf(world.tick), info = treeInfo(d), oak = !info.fruit && info.h % AUTUMN.length === OAK || !HAS_BARE;
-  if (d.emoji === '🌲') return s === 3 ? '🌲 Evergreen, dark against the snow' : '🌲 Evergreen';
-  if (s === 0) return info.fruit ? `🌸 In ${info.fruit} blossom` : '🌱 Coming into leaf';
-  if (s === 1) return info.fruit === 'apple' ? '🍏 Apples ripening' : info.fruit === 'cherry' ? '🍒 Hung with cherries' : '🌳 In full leaf';
-  if (s === 2) return info.fruit === 'apple' ? '🍎 Dropping ripe apples' : oak ? '🍂 Leaves turned brown' : '🍂 Leaves turning';
+  const s = S.seasonOf(world.tick), info = treeInfo(d), k = info.kind, oak = k === 'oak' || !HAS_BARE;
+  if (k === 'pine') return s === 3 ? '🌲 Evergreen, dark against the snow' : '🌲 Evergreen';
+  if (s === 0) return info.fruit ? `🌸 In ${info.fruit} blossom` : k === 'hawthorn' ? '🤍 White with may blossom' : '🌱 Coming into leaf';
+  if (s === 1) return info.fruit === 'apple' ? '🍏 Apples ripening' : info.fruit === 'cherry' ? '🍒 Hung with cherries' : k === 'willow' ? '🌿 Trailing its long green curtains' : '🌳 In full leaf';
+  if (s === 2) return info.fruit === 'apple' ? '🍎 Dropping ripe apples' : k === 'hawthorn' ? '🔴 Red with haws' : oak ? '🍂 Leaves turned brown' : '🍂 Leaves turning';
+  if (k === 'hawthorn') return '🔴 Bare, a few red haws left';
+  if (k === 'willow') return '🌾 Bare golden withies';
   return oak ? '🍂 Holding on to its dry leaves' : '🪾 Bare for the winter';    // (oak when there's no 🪾)
 }
 
@@ -3686,7 +3684,7 @@ const THINGS = {
       const T = world.terrain, name = treeName(d), wood = world.wood[tileOf(d.x, d.y)];
       const grown = (d.size - T.treeSize[0]) / (T.treeSize[1] - T.treeSize[0]);
       const age = grown < 0.15 ? 'Young' : grown < 0.45 ? 'Grown' : grown < 0.8 ? 'Tall' : 'Ancient';
-      const where = wood > 0.6 ? 'deep in the wood' : wood > 0.2 ? 'at the edge of the wood' : 'standing on its own';
+      const where = treeInfo(d).kind === 'willow' ? 'by the water' : wood >= 0.95 ? 'deep in the wood' : wood >= 0.6 ? 'at the edge of the wood' : 'standing on its own';   // as plantTrees tells them
       let status;
       if (world.fire[tileOf(d.x, d.y)] > 0) status = '🔥 On fire!';
       else if (d.stump) {

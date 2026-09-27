@@ -90,6 +90,10 @@ blooming in its own season (the first three: spring, summer, autumn, gathered wi
 (`fieldBloom`). They're the bees' main food; the few scattered flowers elsewhere are the rest. Butterflies loop over a field in
 bloom by day, and fireflies blink by the water and the wood's edge on summer nights (`drawButterflies`, `drawFireflies`: a look only).
 
+Every tree has a kind (`d.kind`: oak, beech, maple, birch, willow, hawthorn, apple, cherry, pine), from where it stands
+(`treeKind`, `TREE_MIX` in sim.js): willows by the water, hawthorn scrub and old oaks out in the open, birches at the
+wood's edge, beech, oak and maple deep in. The drawing, its autumn colour and the inspector all follow it.
+
 Apple trees (`w.orchard`) drop windfalls early in autumn (`windfallTick`, `d.apples`), a big meal that hungry rabbits
 walk a way for (`windfall`), so the apple trees are where they gather in autumn, and where the foxes find them.
 
@@ -107,9 +111,9 @@ Rabbit coats: two letter-pair genes (`coat`, e.g. 'AaDd') give four colours, plu
 coat stands out from the ground under it (`visibility`); the ground colours (`GROUND`) live in the
 sim and the drawing uses them too.
 
-Bees: they live in hives (`w.hives`), each in a broadleaf tree from `w.decor` (`h.tree`, `d.hive`, `moveIn`), which grows
-into an old giant (`HIVE_TREE`) with a hollow low on its trunk (`drawBeeTree`). Sites (`hiveSites`, `siteScore`) are free
-non-fruit 🌳s with fields in reach and open ground in front; lightning on a hive's tree sends its bees out as a swarm
+Bees: they live in hives (`w.hives`), each in an oak from `w.decor` (`h.tree`, `d.hive`, `moveIn`), which grows
+into an old giant (`HIVE_TREE`) with a hollow low on its trunk (`drawBeeTree`). The first hive takes the best broadleaf,
+which becomes an oak (`placeHive`). Sites (`hiveSites`, `siteScore`) are free oaks with fields in reach and open ground in front; lightning on a hive's tree sends its bees out as a swarm
 (`hiveStruck`). Bees fly (`flies: true` in `SPECIES`, see `go`/`fly`),
 sip from the flowers the meadow shows (`isFlower`, same rule as `plantEmoji` in game.js) within `FORAGE_RANGE`
 of home, and carry it back a `LOAD` at a time. One back from a rich patch dances (`h.patch`), and bees setting out

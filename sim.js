@@ -737,8 +737,27 @@ function plantTrees(w, hills, hill, near) {
     const fruity = d.emoji === '🌳' && hash2(hx, hy, 41) < clamp(open * 1.1, 0.04, 0.5);
     d.fruit = fruity ? (hash2(hx, hy, 42) < 0.5 ? 'apple' : 'cherry') : '';
     d.apples = 0;                                          // windfalls lying under it (windfallTick)
+    d.kind = treeKind(d, w.wood[idx(d.x, d.y)], nearFlood[idx(d.x, d.y)]);
   }
   w.orchard = w.decor.filter(d => d.fruit === 'apple');
+}
+
+// Which kind of tree each is, by where it stands: willows by the water, hawthorn scrub and old
+// oaks out in the open, birches at the wood's edge, beech, oak and maple in the wood. Each row
+// gives the kinds and the share of each (from a hash, so the meadow's other randomness is untouched).
+const TREE_MIX = {
+  water: [['willow', 0.7], ['birch', 0.15], ['oak', 0.15]],                 // within 3 tiles of high water
+  open:  [['oak', 0.5], ['hawthorn', 0.3], ['birch', 0.2]],                 // on its own (only its own shade)
+  edge:  [['birch', 0.4], ['oak', 0.25], ['hawthorn', 0.15], ['beech', 0.1], ['maple', 0.1]],
+  wood:  [['beech', 0.35], ['oak', 0.3], ['maple', 0.2], ['birch', 0.15]],  // deep in, in full shade
+};
+function treeKind(d, wood, water) {
+  if (d.emoji === '🌲') return 'pine';
+  if (d.fruit) return d.fruit;
+  let u = hash2(Math.floor(d.x * 100), Math.floor(d.y * 100), 47);
+  const mix = TREE_MIX[water < 3 ? 'water' : wood < 0.6 ? 'open' : wood < 0.95 ? 'edge' : 'wood'];
+  for (const [kind, share] of mix) if ((u -= share) < 0) return kind;
+  return mix[0][0];
 }
 
 // How shaded each tile is, 0..1, from the trees around it. game.js darkens the ground there.
@@ -2243,9 +2262,9 @@ function siteScore(w, d) {
 const hiveGround = (w, x, y) => dry(w, x, y) &&
   [0, 1, 2, 3, 4, 5, 6, 7].every(a => dry(w, x + HIVE_SHORE * Math.cos(a * Math.PI / 4), y + HIVE_SHORE * Math.sin(a * Math.PI / 4)));
 
-// A tree bees could move into: a broadleaf, not a fruit tree, standing, with nobody in it, clear of
-// the water and of the other hives.
-const hollowTree = (w, d) => d.tree && d.emoji === '🌳' && !d.fruit && !d.stump && !d.hive && hiveGround(w, d.x, d.y)
+// A tree bees could move into: an oak (the only kind that grows old and hollow enough), standing,
+// with nobody in it, clear of the water and of the other hives.
+const hollowTree = (w, d) => d.tree && d.kind === 'oak' && !d.stump && !d.hive && hiveGround(w, d.x, d.y)
   && !w.hives.some(o => !o.cluster && Math.hypot(o.x - d.x, o.y - d.y) < HIVE_GAP);
 
 // Where a swarm from hive h could live, best first: an empty hive, or a tree clear of the others.
@@ -2264,12 +2283,12 @@ function hiveSites(w, h) {
 // Huddled together a winter cluster keeps warm; a handful of bees can't.
 const clusterCold = (w, h) => (seasonOf(w.tick) === 3 ? 1 + CLUSTER_COLD * Math.max(0, 1 - h.bees / CLUSTER_WARM) : 1);
 
-// The first hive: the best hollow tree (siteScore), with flowers in reach and room to be seen.
-// A meadow with no such tree has one old tree standing alone, at the dry spot nearest the middle.
+// The first hive: the best broadleaf for one (siteScore), with flowers in reach and room to be seen,
+// which becomes an old oak. A meadow with no such tree has one standing alone, at the dry spot nearest the middle.
 function placeHive(w) {
   let best = null, bestScore = -Infinity;
   for (const d of w.decor) {
-    if (!hollowTree(w, d)) continue;
+    if (d.emoji !== '🌳' || d.fruit || !hollowTree(w, { ...d, kind: 'oak' })) continue;
     const score = siteScore(w, d);
     if (score > bestScore) { best = d; bestScore = score; }
   }
@@ -2281,9 +2300,10 @@ function placeHive(w) {
         if (dry(w, x, y)) at = { x, y };
       }
     }
-    best = { ...at, emoji: '🌳', size: w.terrain.treeSize[1], tree: true, stump: 0, fruit: '' };
+    best = { ...at, emoji: '🌳', size: w.terrain.treeSize[1], tree: true, stump: 0, fruit: '', kind: 'oak' };
     w.decor.push(best);
   }
+  best.kind = 'oak';
   const h = makeHive(w, best.x, best.y);
   moveIn(h, best);
   return h;
