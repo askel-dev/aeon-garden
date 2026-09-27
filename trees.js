@@ -16,9 +16,12 @@
  * Painting is slow (a tenth of a second or more for a big tree), so it's done once per look and
  * copied after. tree-lab.html shows every kind in every season, and tunes LOOK.
  *
- * Use: Trees.paint(kind, { seed, season, snow, scale, ss }) returns a canvas, with bx, by where the
- * foot of the trunk is. kind is a key of Trees.KINDS, season 'spring' | 'summer' | 'autumn' |
- * 'winter', snow 0..1, scale the size (1: about 250 px tall for a big tree), ss the supersampling.
+ * Use: Trees.paint(kind, { seed, season, snow, scale, ss, snowLayer }) returns a canvas, with bx, by
+ * where the foot of the trunk is. kind is a key of Trees.KINDS, season 'spring' | 'summer' | 'autumn' |
+ * 'winter', snow 0..1, scale the size (1: about 250 px tall for a big tree), ss how finely it's sculpted
+ * (px per px at scale 1, 3 by default; a small painting needs only about scale × 3, and paints that much faster).
+ * With snowLayer the snow isn't painted in but comes apart, as canvas.snow (same size and place), for
+ * the game to lay on as thick as the snow lying. It runs in a worker too (tree-worker.js).
  */
 (() => {
 'use strict';
@@ -37,7 +40,7 @@ const LOOK = {
 
 const L = norm([-0.55, -0.75, 0.55]);          // the light: top left, a little in front
 const HV = norm([L[0], L[1], L[2] + 1]);       // half-vector, for the shine on fruit
-let SS = 3, OUT = 1;                           // supersampling and size of the paint under way
+let SS = 3, OUT = 1;                           // px sculpted, and px painted, per px of the tree at scale 1 (SS may be under 1 for a small painting)
 
 function norm(v) { const l = Math.hypot(...v) || 1; return v.map(x => x / l); }
 const add = (a, b) => a.map((v, i) => v + b[i]), mul = (a, k) => a.map(v => v * k);
@@ -69,6 +72,7 @@ const RAMPS = {
   copper: [[80, 26, 12], [140, 48, 16], [196, 82, 24], [226, 124, 40], [244, 170, 76], [252, 210, 130]],
   dry:    [[52, 30, 18], [90, 56, 32], [130, 88, 52], [164, 122, 78], [192, 156, 108], [216, 188, 144]],
   withy:  [[70, 62, 20], [120, 106, 30], [168, 150, 48], [204, 188, 80], [228, 216, 120], [244, 236, 170]],
+  grey:   [[38, 38, 38], [68, 68, 66], [106, 104, 98], [144, 140, 132], [178, 174, 164], [204, 200, 190]],
   bark:   [[34, 22, 18], [62, 40, 28], [98, 66, 42], [138, 98, 64], [174, 132, 90], [200, 164, 120]],
   birch:  [[96, 92, 88], [160, 156, 146], [208, 204, 192], [236, 232, 222], [250, 248, 242], [255, 255, 252]],
   hollow: [[10, 6, 4], [22, 14, 8], [38, 24, 14], [56, 36, 22], [74, 50, 32], [92, 64, 42]],
@@ -91,7 +95,7 @@ function ramp(r, t) {
 // strokes: painted in strokes along the sphere's dir; shaded: darker under the crown.
 const MAT = {
   leaf:   { w: [0, 0.4, 0.6], ao: 1.1, snow: true, lobe: 0.1 },
-  needle: { w: [0, 0.4, 0.6], ao: 1.1, snow: true, lobe: 0.16, dab: [1.5, 0.45] },
+  needle: { w: [0, 0.4, 0.6], ao: 1.1, snow: true, lobe: 0.16, dab: [1.5, 0.45], snowOn: true },   // snow on each tuft's top
   strand: { w: [0, 0.4, 0.6], ao: 1.1, lobe: 0.14, dab: [2.2, 0.3], small: 0.75 },
   bloom:  { w: [0, 0.4, 0.6], ao: 0.9, lobe: 0.12 },
   bark:   { w: [1, 0, 0], ao: 0.7, snow: true, strokes: 1, shaded: true },
@@ -105,7 +109,7 @@ const MAT = {
 
 class Scene {
   constructor(w, h, bx, by) {
-    this.w = w; this.h = h; this.W = w * SS; this.H = h * SS; this.base = [bx, by];
+    this.w = w; this.h = h; this.W = Math.ceil(w * SS); this.H = Math.ceil(h * SS); this.base = [bx, by];
     this.z = new Float32Array(this.W * this.H).fill(-1e9);
     this.id = new Int32Array(this.W * this.H).fill(-1);
     this.s = [];
@@ -134,10 +138,11 @@ class Scene {
     });
   }
   // Light every pixel of the sculpture, then paint over it. o: shade [y, fade] darkens bark under
-  // the crown, snow 0..1, birchFoot where a birch's trunk turns dark.
+  // the crown, snow 0..1 (or layer: the snow apart, see Use), birchFoot where a birch's trunk turns dark.
   paint(o = {}) {
     this.raster();
-    const { W, H, z, id, s: S } = this, img = new ImageData(W, H), d = img.data, top = new ImageData(W, H);
+    const { W, H, z, id, s: S } = this, img = new ImageData(W, H), d = img.data, top = new ImageData(W, H), snowy = o.layer && new ImageData(W, H);
+    const snow = o.layer ? 1 : o.snow;
     const aoR = (o.aoR || 6) * SS * LOOK.crevice, taps = [];
     for (let k = 0; k < 12; k++) { const a = k / 12 * Math.PI * 2, rr = aoR * (k % 2 ? 0.5 : 1); taps.push([Math.round(Math.cos(a) * rr), Math.round(Math.sin(a) * rr)]); }
     const T = new Float32Array(W * H), RP = new Array(W * H), SA = new Float32Array(W * H), leaves = [], strokes = [];
@@ -165,10 +170,14 @@ class Scene {
       if (m.birch && (vnoise(px / (5 * SS), py / (1.2 * SS)) > 0.7 || py / SS > o.birchFoot)) { rp = RAMPS.bark; t -= 0.2; }
       let c = ramp(rp, t);
       if (m.shine) { const sp = Math.pow(Math.max(0, n[0] * HV[0] + n[1] * HV[1] + n[2] * HV[2]), 30) * m.shine; c = c.map(v => v + (255 - v) * sp); }
-      if (o.snow && m.snow) {
-        const up = -n[1] - (1 - o.snow) * 0.5 + (vnoise(px / (2 * SS), py / (2 * SS)) - 0.5) * 0.25 - (m.lobe ? 0.2 : 0);
+      if (snow && m.snow) {
+        const up = -(m.snowOn ? (py + 0.5 - s.y) / s.r : n[1]) - (1 - snow) * 0.5 + (vnoise(px / (2 * SS), py / (2 * SS)) - 0.5) * 0.25 - (m.lobe ? 0.2 : 0);
         const a = clamp((up - 0.35) * 5, 0, 1);
-        if (a > 0) { const sc = ramp(RAMPS.snow, t + 0.25); c = c.map((v, j) => v + (sc[j] - v) * a); SA[k] = a; }
+        if (a > 0) {
+          const sc = ramp(RAMPS.snow, t + 0.25);
+          if (snowy) { snowy.data.set([sc[0], sc[1], sc[2], a * 255], k * 4); }
+          else { c = c.map((v, j) => v + (sc[j] - v) * a); SA[k] = a; }
+        }
       }
       const out = m.onTop ? top.data : d;
       out[k * 4] = c[0]; out[k * 4 + 1] = c[1]; out[k * 4 + 2] = c[2]; out[k * 4 + 3] = 255;
@@ -184,8 +193,13 @@ class Scene {
     for (let k = 0; k < W * H; k++) if (id[k] >= 0) { const x = k % W, y = (k / W) | 0; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
     const pad = 6 * SS; x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad); x1 = Math.min(W, x1 + pad); y1 = Math.min(H, y1 + pad);
     x0 -= x0 % SS; y0 -= y0 % SS;
-    const cv = canvas(Math.max(1, Math.ceil((x1 - x0) / SS * OUT)), Math.max(1, Math.ceil((y1 - y0) / SS * OUT))), g = cv.getContext('2d');
-    g.imageSmoothingQuality = 'high'; g.drawImage(big, x0, y0, x1 - x0, y1 - y0, 0, 0, cv.width, cv.height);
+    const shrink = src => {
+      const c = canvas(Math.max(1, Math.ceil((x1 - x0) / SS * OUT)), Math.max(1, Math.ceil((y1 - y0) / SS * OUT))), g = c.getContext('2d');
+      g.imageSmoothingQuality = 'high'; g.drawImage(src, x0, y0, x1 - x0, y1 - y0, 0, 0, c.width, c.height);
+      return c;
+    };
+    const cv = shrink(big);
+    if (snowy) { const sc = canvas(W, H); sc.getContext('2d').putImageData(snowy, 0, 0); cv.snow = shrink(sc); }
     cv.bx = (this.base[0] - x0 / SS) * OUT; cv.by = (this.base[1] - y0 / SS) * OUT;
     return cv;
   }
@@ -332,7 +346,7 @@ function litter(cv, R, cols, rx, n = 40) {
 const BARK = { mat: 'bark', ramp: 'bark' };
 
 function oak(R, season, o) {
-  const old = o.hive, sc = new Scene(340, 320, 170, 310), base = [170, 310, 0], trunkR = old ? 21 : 12;
+  const old = o.hive, sc = old ? new Scene(390, 345, 195, 318) : new Scene(340, 330, 170, 310), base = [...sc.base, 0], trunkR = old ? 21 : 12;
   roots(sc, R, base, trunkR, old ? 5 : 4);
   const tips = grow(sc, R, base, norm([0.02, -1, 0]), old ? 96 : 50, trunkR, 4,
     { kids: d => d > 3 ? 3 : 2 + (R() < 0.4), spread: old ? 1.05 : 0.95, shrink: 0.74, up: 0.12, taper: 0.64, wobble: 0.22 }, [], BARK);
@@ -366,7 +380,7 @@ function hive(sc, R, base, trunkR) {
 }
 
 function maple(R, season) {
-  const sc = new Scene(300, 280, 150, 270), base = [150, 270, 0];
+  const sc = new Scene(300, 285, 150, 270), base = [150, 270, 0];
   roots(sc, R, base, 9, 3);
   const tips = grow(sc, R, base, [0, -1, 0], 58, 9, 4, { kids: d => 2 + (R() < 0.5), spread: 0.7, shrink: 0.74, up: 0.25, taper: 0.66 }, [], BARK);
   const ramps = { spring: ['spring', 'spring', 'summer'], summer: ['summer'], autumn: ['maple', 'maple', 'scarlet', 'gold'], winter: null }[season];
@@ -374,9 +388,19 @@ function maple(R, season) {
   return [sc, { aoR: 7, shade: season === 'winter' ? null : [crown.y + crown.ry * 0.6, 36] }, cv => season === 'autumn' && litter(cv, R, ['#e07a22', '#c9481c', '#f0a83a'], 55)];
 }
 
+// Beech: a broad, round crown on a smooth grey trunk; copper and gold in autumn.
+function beech(R, season) {
+  const sc = new Scene(320, 285, 160, 270), base = [160, 270, 0], GREY = { mat: 'bark', ramp: 'grey' };
+  roots(sc, R, base, 10, 4);
+  const tips = grow(sc, R, base, norm([0.03, -1, 0]), 54, 10, 4, { kids: d => d > 3 ? 3 : 2 + (R() < 0.5), spread: 0.85, shrink: 0.74, up: 0.2, taper: 0.66, wobble: 0.14 }, [], GREY);
+  const ramps = { spring: ['spring', 'lemon', 'spring'], summer: ['summer', 'olive'], autumn: ['copper', 'gold', 'copper', 'russet'], winter: null }[season];
+  const { crown } = leafy(sc, R, tips, { lo: 1, hi: 2, clumpR: 24, leafR: 5.6, ramps, bare: season === 'winter' }, { mat: 'leaf', ramp: 'summer' });
+  return [sc, { aoR: 7, shade: season === 'winter' ? null : [crown.y + crown.ry * 0.6, 36] }, cv => season === 'autumn' && litter(cv, R, ['#c0622a', '#d8a03a', '#a4481e'], 55, 26)];
+}
+
 // A birch keeps one leader to the top, with thin darker branches off it whose twigs hang down.
 function birch(R, season) {
-  const sc = new Scene(260, 330, 130, 320), base = [130, 320, 0], Ht = 250, BIR = { mat: 'birch', ramp: 'birch' };
+  const sc = new Scene(270, 332, 130, 320), base = [130, 320, 0], Ht = 250, BIR = { mat: 'birch', ramp: 'birch' };
   const top = [130 + (R() - 0.5) * 24, 320 - Ht, 0], mid = [130 + (R() - 0.5) * 20, 320 - Ht * 0.5, 0];
   limb(sc, base, mid, top, 6.5, 1.4, BIR);
   const on = t => base.map((v, j) => (1 - t) ** 2 * v + 2 * (1 - t) * t * mid[j] + t * t * top[j]);
@@ -396,7 +420,7 @@ function birch(R, season) {
 // Apple and cherry: short trunks, wide low crowns. Apples blossom white among the new leaves and
 // hang red from summer; cherries are a pink cloud in spring, hang dark red in summer, go red.
 function fruitTree(R, season, kind) {
-  const sc = new Scene(300, 260, 150, 250), base = [150, 250, 0];
+  const sc = new Scene(300, 288, 150, 250), base = [150, 250, 0];
   roots(sc, R, base, 9, 3);
   const tips = grow(sc, R, base, [0, -1, 0], 30, 10, 4, { kids: d => d === 4 ? 4 : 2, spread: 1.0, shrink: 0.9, up: 0.02, taper: 0.66, wobble: 0.3 }, [], BARK);
   const cherry = kind === 'cherry', pinkCloud = cherry && season === 'spring';
@@ -412,7 +436,7 @@ function fruitTree(R, season, kind) {
 // Pines: tiers of boughs that fan out and droop, their tips turning up (fresh and light in
 // spring), over a dark skirt of needles. The tiers vary and the top leans, so no two are alike.
 function pine(R, season) {
-  const sc = new Scene(220, 290, 110, 282), bx = 110, lean = (R() - 0.5) * 8;
+  const sc = new Scene(220, 295, 110, 282), bx = 110, lean = (R() - 0.5) * 8;
   const X = y => bx + lean * (1 - y / 282) ** 2;
   limb(sc, [bx, 282, 0], [X(150), 150, 0], [X(40), 40, 0], 8, 2, BARK);
   const tiers = 7, NEED = { mat: 'needle', ramp: 'pine' }, TIPS = season === 'spring' ? { mat: 'needle', ramp: 'fresh' } : NEED;
@@ -449,7 +473,7 @@ function pine(R, season) {
 // The willow, by the water: a low crown and curtains of hanging strands that curve and sway.
 // In winter the strands stay, bare golden withies.
 function willow(R, season) {
-  const sc = new Scene(340, 280, 170, 272), base = [170, 272, 0], winter = season === 'winter';
+  const sc = new Scene(340, 292, 170, 272), base = [170, 272, 0], winter = season === 'winter';
   roots(sc, R, base, 13, 5);
   const tips = grow(sc, R, base, norm([-0.1, -1, 0]), 52, 14, 2, { kids: () => 3, spread: 1.0, shrink: 0.8, up: 0.1, taper: 0.66, wobble: 0.25 }, [], BARK);
   const ramps = { spring: ['spring', 'spring', 'willow'], summer: ['willow', 'willow', 'spring'], autumn: ['lemon', 'willow', 'gold'], winter: null }[season];
@@ -491,7 +515,8 @@ function hawthorn(R, season) {
 
 const KINDS = {
   oak:      { name: 'Oak', paint: oak },
-  hive:     { name: 'Hive oak', paint: (R, s, o) => oak(R, s, { ...o, hive: true }) },
+  hive:     { name: 'Hive oak', paint: (R, s, o) => oak(R, s, { ...o, hive: true }) },   // its door's sill: 1, -38 from the foot (game.js HIVE_DOOR)
+  beech:    { name: 'Beech', paint: beech },
   maple:    { name: 'Maple', paint: maple },
   birch:    { name: 'Birch', paint: birch },
   apple:    { name: 'Apple', paint: (R, s) => fruitTree(R, s, 'apple') },
@@ -506,10 +531,10 @@ function paint(kind, o = {}) {
   SS = o.ss || 3; OUT = o.scale || 1;
   const season = o.season || 'summer', R = rng((o.seed ?? 1) * 7919 + 13);
   const [sc, po, after] = KINDS[kind].paint(R, season, o);
-  const cv = sc.paint({ ...po, snow: o.snow ?? 0 });
+  const cv = sc.paint({ ...po, snow: o.snow ?? 0, layer: !!o.snowLayer });
   if (after) after(cv);
   return cv;
 }
 
-window.Trees = { paint, KINDS, SEASONS, LOOK, RAMPS };
+self.Trees = { paint, KINDS, SEASONS, LOOK, RAMPS };
 })();

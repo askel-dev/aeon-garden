@@ -1733,15 +1733,148 @@ function drawShore(z, ox, oy, season) {
     ctx.drawImage(sp.canvas, x - sp.size / 2, y - px * 0.35 - sp.size / 2, sp.size, sp.size);
   }
 }
+// ------------------------------------------------------------------ painted trees
+//
+// Trees are painted by trees.js: sculpted as a little 3D model for the light, then brushed over.
+// A paint takes a tenth of a second or more, so it's done in a worker (tree-worker.js) and never
+// holds up a frame. Each kind comes in a few shapes, a tree picking one from where it stands; each
+// shape in its season's looks; each look at a few sizes (TREE_TIERS). Only what's on screen is
+// asked for, and until it comes the nearest size, or another look of the same tree, stands in. A
+// tree turning crossfades from one look to the next (treeStage), and the snow is a layer of its own,
+// laid on as thick as the snow lying. Before a tree's first painting comes, and where there's no
+// worker (or with ?emoji), it's drawn as it always was, an emoji.
+const TREE_SHAPES = 4;
+const TREE_UNIT = 220;                   // painted px (at scale 1) to one tree size: an oak's crown is about that wide
+const TREE_TIERS = [0.125, 0.25, 0.5, 1, 2];   // the scales each look is painted at
+const TREE_BYTES = 48e6;                 // the paintings kept, in memory
+const HIVE_DOOR = [1, -38];              // the hive's sill in the hive oak's painting, from its foot (trees.js hive)
+const treeArt = new Map(), treeAsked = new Map(), treeSent = new Set(), treeAny = new Map();
+let treeWorker = null, treeBusy = 0, treeBytes = 0;
+if (!params.has('emoji') && window.Worker && window.OffscreenCanvas) {
+  try {
+    treeWorker = new Worker('tree-worker.js');
+    treeWorker.onmessage = e => {
+      const { key, bx, by, image, snow } = e.data, [kind, shape, , tier] = key.split('|');
+      const p = { image, snow, bx, by, scale: +tier, used: spriteFrame, bytes: image.width * image.height * 4 * (snow ? 2 : 1) };
+      treeArt.set(key, p); treeAny.set(kind + '|' + shape, p);
+      treeBytes += p.bytes; treeSent.delete(key); treeBusy--;
+      if (treeBytes > TREE_BYTES) dropTreeArt();
+      askTrees();
+    };
+    treeWorker.onerror = () => { treeWorker = null; };     // no OffscreenCanvas in workers here: emoji trees
+  } catch (e) { treeWorker = null; }
+}
+// Let go of the paintings not drawn for a while, oldest first, down to three quarters full.
+function dropTreeArt() {
+  const old = [...treeArt].filter(([, p]) => spriteFrame - p.used > 60).sort((a, b) => a[1].used - b[1].used);
+  for (const [key, p] of old) {
+    if (treeBytes < TREE_BYTES * 0.75) break;
+    p.image.close(); if (p.snow) p.snow.close();
+    treeArt.delete(key); treeBytes -= p.bytes;
+    for (const [k, q] of treeAny) if (q === p) treeAny.delete(k);
+  }
+}
+// Hands the worker the next painting wanted, two at a time: the ones wanted this frame first, small
+// sizes before big so something shows soon. What hasn't been wanted for a while is forgotten.
+function askTrees() {
+  while (treeWorker && treeBusy < 2 && treeAsked.size) {
+    let best = null;
+    for (const [key, a] of treeAsked) {
+      if (spriteFrame - a.frame > 30) { treeAsked.delete(key); continue; }
+      if (!best || a.frame > best[1].frame || (a.frame === best[1].frame && a.job.scale < best[1].job.scale)) best = [key, a];
+    }
+    if (!best) return;
+    treeAsked.delete(best[0]); treeSent.add(best[0]); treeBusy++;
+    treeWorker.postMessage({ key: best[0], ...best[1].job });
+  }
+}
+// A painting of this tree's look near this size: the one asked for if it's there (else it's asked
+// for), or the same look at the nearest size, or none.
+function treePainting(kind, shape, look, tier, snow) {
+  const base = kind + '|' + shape + '|' + look + '|', key = base + tier + (snow ? '|s' : '');
+  const p = treeArt.get(key);
+  if (p) { p.used = spriteFrame; return p; }
+  if (!treeSent.has(key)) {
+    const a = treeAsked.get(key);
+    if (a) a.frame = spriteFrame;
+    else treeAsked.set(key, { frame: spriteFrame, job: { kind, seed: shape + 1, season: look, scale: tier, ss: clamp(tier * 3, 0.4, 2), snow } });   // sculpted about 3x as fine as shown
+    askTrees();
+  }
+  const i = TREE_TIERS.indexOf(tier);
+  for (let k = 0; k < TREE_TIERS.length; k++) {           // this size without the snow, then one up, one down, ...
+    for (const j of k ? [i + k, i - k] : [i]) {
+      const t = TREE_TIERS[j], q = t && (treeArt.get(base + t + (snow ? '|s' : '')) || treeArt.get(base + t));
+      if (q) { q.used = spriteFrame; return q; }
+    }
+  }
+  return null;
+}
+function treeKind(d) {
+  if (d.hive) return 'hive';
+  if (d.emoji === '🌲') return 'pine';
+  const info = treeInfo(d);
+  return info.fruit || TREE_KINDS[info.h % AUTUMN.length].toLowerCase();
+}
+// Which looks a tree is between, and how far from the first to the second (same timings as treeLook).
+function treeStage(kind, d, ck) {
+  const sp = (ck.dayInSeason - 1 + ck.phase) / S.SEASON_DAYS, s = ck.season, lag = (treeInfo(d).h % 5) * 0.04;
+  const oak = kind === 'oak' || kind === 'hive', bare = 'winter';   // an oak's winter look keeps its dry leaves
+  if (kind === 'pine') {
+    if (s === 0) return ['summer', 'spring', clamp((sp - 0.4) / 0.4, 0, 1)];
+    return s === 1 ? ['spring', 'summer', clamp(sp / 0.5, 0, 1)] : ['summer', null, 0];
+  }
+  if (s === 0) {
+    const out = clamp((sp - lag) / (oak ? 0.3 : 0.35), 0, 1), green = clamp((sp - 0.4 - lag) / 0.45, 0, 1);
+    return green > 0 ? ['spring', 'summer', green] : [bare, 'spring', out];
+  }
+  if (s === 1) return ['summer', null, 0];
+  if (s === 2) {
+    const turn = clamp((sp - 0.05 - lag) / 0.4, 0, 1), fall = clamp((sp - (oak ? 0.65 : 0.6) - lag) / 0.35, 0, 1);
+    return fall > 0 ? [bare, 'autumn', 1 - fall] : ['summer', 'autumn', turn];
+  }
+  return [bare, null, 0];
+}
+// Draws a tree from its paintings, swaying from the foot; false if it has none yet.
+function drawPaintedTree(d, sx, sy, now, ck) {
+  if (!treeWorker) return false;
+  const kind = treeKind(d), hx = Math.floor(d.x * 100), hy = Math.floor(d.y * 100);
+  const shape = Math.floor(hash2(hx, hy, 46) * TREE_SHAPES), f = d.size * cam.zoom / TREE_UNIT, want = f * dpr;
+  const tier = TREE_TIERS.find(t => t >= want * 0.9) || TREE_TIERS[TREE_TIERS.length - 1];
+  const snow = step(world.snow * 1.6 - 0.1, 4);
+  const [a, b, m] = treeStage(kind, d, ck);
+  let A = m < 1 ? treePainting(kind, shape, a, tier, snow > 0) : null, B = b && m > 0 ? treePainting(kind, shape, b, tier, snow > 0) : null;
+  if (!A && !B) A = treeAny.get(kind + '|' + shape);   // another look of it, till this one comes
+  if (!A && !B) return false;
+  ctx.save();
+  ctx.translate(sx, sy); ctx.rotate(treeSway(d, now));
+  if (A) putPainting(A, f, 1, snow);
+  if (B) putPainting(B, f, A ? m : 1, snow);
+  ctx.restore();
+  return true;
+}
+function putPainting(p, f, alpha, snow) {
+  const k = f / p.scale, x = -p.bx * k, y = -p.by * k, w = p.image.width * k, h = p.image.height * k;
+  ctx.globalAlpha = alpha;
+  ctx.drawImage(p.image, x, y, w, h);
+  if (snow && p.snow) { ctx.globalAlpha = alpha * snow; ctx.drawImage(p.snow, x, y, w, h); }
+  ctx.globalAlpha = 1;
+}
 const PAINTERS = { reeds: paintReeds, lily: paintLilies, bubble: paintBubble };
 function drawDecor(d, sx, sy, now, ck, clipLeaves) {
   const z = cam.zoom, px = d.size * z;
   if (d.emoji === '🪨') { drawRock(d, sx, sy); return; }
   if (!d.stump && !d.tree) { drawEmoji(d.emoji, sx, sy - px * 0.35, px); return; }
   if (!d.stump) {
-    const t = treeLook(d, ck), under = t.ground?.n && px >= 20;
-    t.look = shownLook(d, t.look, px);
+    const t = treeLook(d, ck);
+    const under = t.ground?.n && px >= 20 && !(treeWorker && t.ground.e === '🌸');   // a painted cherry has its own petals
     if (under) drawUnderTree(t.ground, t.h, sx, sy, px, false);
+    if (!clipLeaves && drawPaintedTree(d, sx, sy, now, ck)) {
+      if (t.owl && px >= 24 && darkness(ck.phase) > 0.3) drawEmoji('🦉', sx - px * 0.08, sy - px * (t.fall < 0.5 ? 0.45 : 0.6), px * 0.2);
+      if (under) drawUnderTree(t.ground, t.h, sx, sy, px, true);
+      if (t.drop && px >= 22) leafFall.push({ sx, sy, px, drop: t.drop, rgb: t.rgb, h: t.h });
+      return;
+    }
+    t.look = shownLook(d, t.look, px);
     ctx.save();
     ctx.translate(sx, sy); ctx.rotate(treeSway(d, now));
     if (t.bare) drawEmoji('🪾', 0, -px * 0.42, px * 1.15, { alpha: t.fall, leaf: t.bare, flip: t.flip });   // it draws small
@@ -2059,13 +2192,21 @@ function clipFoot(px) {
 // 🪾 comes through, an old trunk already, and the painted one fades with the leaves; the hollow
 // stays put through it all.
 function drawBeeTree(d, sx, sy, now, ck) {
-  const h = d.hive, px = d.size * cam.zoom, fall = treeLook(d, ck).fall;
-  drawDecor(d, sx, sy, now, ck, clipFoot);
-  const put = s => ctx.drawImage(s.canvas, sx - s.ox, sy - s.oy, s.W, s.H);
-  if (fall < 1) { ctx.globalAlpha = 1 - fall; put(trunkSprite(px)); ctx.globalAlpha = 1; }
-  put(trunkSprite(px, true));
+  const h = d.hive, px = d.size * cam.zoom;
+  let hx, sill, rx;
+  if (drawPaintedTree(d, sx, sy, now, ck)) {                 // the hive oak, the hive in its trunk
+    const f = px / TREE_UNIT, a = treeSway(d, now);         // (the door sways with the tree)
+    hx = sx + HIVE_DOOR[0] * f - HIVE_DOOR[1] * f * Math.sin(a); sill = sy + HIVE_DOOR[1] * f; rx = 0.02;
+  } else {
+    const fall = treeLook(d, ck).fall;
+    drawDecor(d, sx, sy, now, ck, clipFoot);
+    const put = s => ctx.drawImage(s.canvas, sx - s.ox, sy - s.oy, s.W, s.H);
+    if (fall < 1) { ctx.globalAlpha = 1 - fall; put(trunkSprite(px)); ctx.globalAlpha = 1; }
+    put(trunkSprite(px, true));
+    hx = sx + OLD_HOLE.x * px; sill = sy + (OLD_HOLE.y + OLD_HOLE.ry * 1.1) * px; rx = OLD_HOLE.rx;
+  }
   // Bees on the sill, a few wandering on the bark; they shuffle while time runs.
-  const { x, y, rx, ry } = OLD_HOLE, hx = sx + x * px, sill = sy + (y + ry * 1.1) * px;
+  const ry = OLD_HOLE.ry;
   // A full hive has honey oozing over the sill.
   if (h.honey > 800) {
     const x = hx - rx * px * 0.85, y = sill - ry * px * 0.45, r = px * 0.011;
@@ -4686,5 +4827,6 @@ setTimeout(() => { barNear = false; updateBar(); }, 4000);   // show the toolbar
 for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => { if (ui.sound) Sound.start(); }, { once: true });
 
 requestAnimationFrame(frame);
-window.garden = { get world() { return world; }, ui, cam, lab };   // handy in the console
+window.garden = { get world() { return world; }, ui, cam, lab,   // handy in the console
+  get trees() { return { worker: !!treeWorker, art: treeArt, bytes: treeBytes, asked: treeAsked.size, busy: treeBusy }; } };
 })();

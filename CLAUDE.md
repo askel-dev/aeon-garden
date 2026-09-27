@@ -37,13 +37,18 @@ told to just do it.
   and a finger held on the meadow opens the ring there (`HOLD_MS`). Upright, the inspector is a bottom sheet;
   on their side (`short()`) it is a panel down the right. Either way it opens folded to one line (`stripHTML`):
   who, what they're up to, and the tummy. Tap it for the rest.
-- `trees.js`: the trees, painted in code (not in the game yet: it still draws emoji trees). Each kind
-  (`KINDS`: oak, hive oak, maple, birch, apple, cherry, pine, willow, hawthorn) is sculpted as a little 3D
+- `trees.js`: the trees, painted in code. Each kind
+  (`KINDS`: oak, hive oak, beech, maple, birch, apple, cherry, pine, willow, hawthorn) is sculpted as a little 3D
   model of spheres for the light (a skeleton swept in bark, leaf clumps at the twig ends), then painted over:
   leaves as flat leaf-shaped dabs from shade to light, bark as strokes along each branch. The 3D gives the volume, the
   brushwork keeps it from looking 3D (plain 3D leaflets looked like broccoli). The seed fixes a tree's shape and the
   season only its leaves. The hive oak carries the hive: a dome of straw rings in a split in its trunk.
-  Painting is slow (about 0.1 s a tree), so it has to be done once per look and copied after.
+  Painting is slow (up to 0.1 s a tree), so the game has it done in a worker (`tree-worker.js`) and never on a
+  frame: each kind in 4 shapes (`TREE_SHAPES`, a tree picks one from where it stands), each shape in its
+  season's looks, each look at a few sizes (`TREE_TIERS`), asked for only when on screen and kept within
+  `TREE_BYTES` (game.js, `treePainting`). A tree turning crossfades between two looks (`treeStage`); snow is a
+  layer of its own, laid on as thick as the snow lying. Until its painting comes a tree is an emoji, and so
+  it stays with `?emoji` or no worker. Small paintings are sculpted coarser (`ss`), which is most of the saving.
   `tree-lab.html` shows every kind in every season, close and far, with sliders for `LOOK` and a "Copy as code".
 - `balance.js`: headless check, `node balance.js [years] [seeds]`.
 - `terrain-lab.js`: the terrain lab, `index.html?lab`. Sliders for every number in `TERRAIN` (sim.js),
@@ -94,7 +99,7 @@ Flowers are painted too (`flowerSprite`, one painter per kind in `FLOWER_ARTS`):
 one of `FLOWER_VARIANTS` looks, painted once per half-octave size. Which painting a flower gets comes from
 its emoji and the season (`flowerArt`), so the sim and the inspector still speak emoji. Thought bubbles are
 painted too: the bubble and an icon for the mood's emoji (`BUBBLE_ICONS`), one sprite; a mood without an icon
-keeps its emoji. Trees, tufts, sprouts and fallen leaves are still emoji.
+keeps its emoji. Trees are painted by trees.js (above); tufts, sprouts and fallen leaves are still emoji.
 
 Rabbit coats: two letter-pair genes (`coat`, e.g. 'AaDd') give four colours, plus a sliding
 `moult` gene that whitens the coat in winter. Foxes spot a still rabbit from further off when its
