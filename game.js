@@ -986,7 +986,7 @@ function render(now) {
   const items = [];
   for (const d of world.decor) {                           // (a hive is in one of the trees)
     const [sx, sy] = toScreen(d.x, d.y);
-    if (visible(sx, sy, d.size * z)) items.push({ y: d.y, d, sx, sy });
+    if (visible(sx, sy, d.tree ? treePx(d) : d.size * z)) items.push({ y: d.y, d, sx, sy });
   }
   for (const h of world.hives) {                           // a swarm hanging in a tree
     if (!h.cluster) continue;
@@ -1485,7 +1485,7 @@ const SOFT_SHADOW = (() => {
 })();
 // A tree also keeps a dark patch at its foot, day and night, so it stands on the ground.
 function drawDecorShadow(d, sx, sy, sn) {
-  const tree = d.tree && !d.stump, s = d.size * cam.zoom * (d.stump ? 0.45 : 1);
+  const tree = d.tree && !d.stump, s = (d.tree ? treePx(d) : d.size * cam.zoom) * (d.stump ? 0.45 : 1);
   if (tree) {
     const cw = s * 0.2, ch = s * 0.06;
     ctx.globalAlpha = 0.4 + 0.25 * Math.max(0, sn.a);
@@ -1755,6 +1755,12 @@ const TREE_SHAPES = 4;
 const TREE_UNIT = 200;                   // painted px (at scale 1) to one tree size: an oak's crown is about that wide
 const TREE_TIERS = [0.125, 0.25, 0.5, 1, 2];   // the scales each look is painted at
 const TREE_BYTES = 48e6;                 // the paintings kept, in memory
+// How much bigger each kind is drawn than its d.size (the sim's, which says how grown it is). The
+// paintings differ (an oak's is short and wide, a birch's tall), so these give each kind its own
+// height: oak, beech and pine big, birch and maple a little less, apple and cherry smaller, hawthorn
+// a thicket. The hive oak is an old giant already (HIVE_TREE). Emoji trees keep their size.
+const TREE_SCALE = { oak: 1.6, hive: 1, beech: 1.55, maple: 1.3, birch: 1.05, pine: 1.15, willow: 1.17, apple: 1.45, cherry: 1.45, hawthorn: 1.25 };
+const treePx = d => d.size * cam.zoom * (d.tree && treeWorker ? TREE_SCALE[treeKind(d)] || 1 : 1);
 const HIVE_DOOR = [1, -38];              // the hive's sill in the hive oak's painting, from its foot (trees.js hive)
 const treeArt = new Map(), treeAsked = new Map(), treeSent = new Set(), treeAny = new Map();
 let treeWorker = null, treeBusy = 0, treeBytes = 0;
@@ -1847,7 +1853,7 @@ function treeStage(kind, d, ck) {
 function drawPaintedTree(d, sx, sy, now, ck) {
   if (!treeWorker) return false;
   const kind = treeKind(d), hx = Math.floor(d.x * 100), hy = Math.floor(d.y * 100);
-  const shape = Math.floor(hash2(hx, hy, 46) * TREE_SHAPES), f = d.size * cam.zoom / TREE_UNIT, want = f * dpr;
+  const shape = Math.floor(hash2(hx, hy, 46) * TREE_SHAPES), f = treePx(d) / TREE_UNIT, want = f * dpr;
   const tier = TREE_TIERS.find(t => t >= want * 0.9) || TREE_TIERS[TREE_TIERS.length - 1];
   const snow = step(world.snow * 1.6 - 0.1, 4);
   const [a, b, m] = treeStage(kind, d, ck);
@@ -1870,7 +1876,7 @@ function putPainting(p, f, alpha, snow) {
 }
 const PAINTERS = { reeds: paintReeds, lily: paintLilies, bubble: paintBubble };
 function drawDecor(d, sx, sy, now, ck, clipLeaves) {
-  const z = cam.zoom, px = d.size * z;
+  const z = cam.zoom, px = d.tree ? treePx(d) : d.size * z;
   if (d.emoji === '🪨') { drawRock(d, sx, sy); return; }
   if (!d.stump && !d.tree) { drawEmoji(d.emoji, sx, sy - px * 0.35, px); return; }
   if (!d.stump) {
@@ -1901,7 +1907,7 @@ function drawDecor(d, sx, sy, now, ck, clipLeaves) {
   }
   // Struck by lightning: a stump, then a sapling, then (in sim.js) a tree again.
   const sapling = world.tick - d.stump > S.YEAR_DAYS * S.TPD / 2;
-  drawEmoji(sapling ? '🌱' : '🪵', sx, sy - d.size * z * 0.12, d.size * z * (sapling ? 0.55 : 0.45));
+  drawEmoji(sapling ? '🌱' : '🪵', sx, sy - px * 0.12, px * (sapling ? 0.55 : 0.45));
 }
 
 // ------------------------------------------------------------------ rocks
@@ -3602,7 +3608,7 @@ function decorAt(sx, sy) {
   const z = cam.zoom;
   let best = null;
   for (const d of world.decor) {
-    const [dx, dy] = toScreen(d.x, d.y), px = d.size * z * (d.stump ? 0.45 : 1);
+    const [dx, dy] = toScreen(d.x, d.y), px = (d.tree ? treePx(d) : d.size * z) * (d.stump ? 0.45 : 1);
     const half = Math.max(6, px * (d.tree ? 0.36 : 0.5)), top = Math.max(10, px * (d.tree ? 0.85 : 0.6));
     if (Math.abs(sx - dx) < half && sy > dy - top && sy < dy + Math.max(4, px * 0.12) && (!best || d.y > best.y)) best = d;
   }
@@ -3686,12 +3692,12 @@ const THINGS = {
   tree: {
     at: (sx, sy) => { const d = decorAt(sx, sy); return d && d.tree ? d : null; },
     here: () => true,
-    spot: d => ({ x: d.x, y: d.y, r: d.size * (d.stump ? 0.2 : 0.3) }),
+    spot: d => ({ x: d.x, y: d.y, r: treePx(d) / cam.zoom * (d.stump ? 0.2 : 0.3) }),
     show(d) {
       const T = world.terrain, name = treeName(d), wood = world.wood[tileOf(d.x, d.y)];
       const grown = (d.size - T.treeSize[0]) / (T.treeSize[1] - T.treeSize[0]);
       const age = grown < 0.15 ? 'Young' : grown < 0.45 ? 'Grown' : grown < 0.8 ? 'Tall' : 'Ancient';
-      const where = treeInfo(d).kind === 'willow' ? 'by the water' : wood >= 0.95 ? 'deep in the wood' : wood >= 0.6 ? 'at the edge of the wood' : 'standing on its own';   // as plantTrees tells them
+      const where = wood >= 0.95 ? 'deep in the wood' : wood >= 0.6 ? 'at the edge of the wood' : 'standing on its own';   // as plantTrees tells them
       let status;
       if (world.fire[tileOf(d.x, d.y)] > 0) status = '🔥 On fire!';
       else if (d.stump) {
@@ -3705,7 +3711,7 @@ const THINGS = {
       if (world.snow > 0.3 && !d.stump) facts.push(['❄️', 'Snow on the branches']);
       if (d.apples) facts.push(['🍎', `${d.apples === 1 ? 'A windfall apple lies' : d.apples + ' windfall apples lie'} under it, for any hungry rabbit`]);
       if (!d.stump && world.wet < 0.5) facts.push(['⚡', 'Dry: a lightning strike would set it alight']);   // as strike does
-      const shade = whoNear(d.x, d.y, Math.max(1.5, d.size * 0.4));
+      const shade = whoNear(d.x, d.y, Math.max(1.5, treePx(d) / cam.zoom * 0.4));
       if (shade) facts.push(['🌳', `Under it: ${shade}`]);
       const swarm = world.hives.find(h => h.cluster && Math.hypot(h.x - d.x, h.y - d.y) < 2);
       if (swarm) facts.push(['🐝', `${thingLink('hive', swarm.id, 'A swarm')} is hanging in it`]);

@@ -742,11 +742,11 @@ function plantTrees(w, hills, hill, near) {
   w.orchard = w.decor.filter(d => d.fruit === 'apple');
 }
 
-// Which kind of tree each is, by where it stands: willows by the water, hawthorn scrub and old
+// Which kind of tree each is, by where it stands: birches by the water, hawthorn scrub and old
 // oaks out in the open, birches at the wood's edge, beech, oak and maple in the wood. Each row
 // gives the kinds and the share of each (from a hash, so the meadow's other randomness is untouched).
 const TREE_MIX = {
-  water: [['willow', 0.7], ['birch', 0.15], ['oak', 0.15]],                 // within 3 tiles of high water
+  water: [['birch', 0.55], ['beech', 0.15], ['maple', 0.15], ['oak', 0.15]],  // within 3 tiles of high water (no willows for now)
   open:  [['oak', 0.5], ['hawthorn', 0.3], ['birch', 0.2]],                 // on its own (only its own shade)
   edge:  [['birch', 0.4], ['oak', 0.25], ['hawthorn', 0.15], ['beech', 0.1], ['maple', 0.1]],
   wood:  [['beech', 0.35], ['oak', 0.3], ['maple', 0.2], ['birch', 0.15]],  // deep in, in full shade

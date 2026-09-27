@@ -48,7 +48,9 @@ told to just do it.
   season's looks, each look at a few sizes (`TREE_TIERS`), asked for only when on screen and kept within
   `TREE_BYTES` (game.js, `treePainting`). A tree turning crossfades between two looks (`treeStage`), with looks
   in between so the two are alike (`LOOKS` in trees.js: an oak bare in early spring, first leaves, half fallen);
-  a bare crown is a haze of fine twigs. Snow is a layer of its own, laid on as thick as the snow lying. Until its painting comes a tree is an emoji, and so
+  a bare crown is a haze of fine twigs. Each kind is drawn at its own height (`TREE_SCALE` in game.js, times
+  the sim's `d.size`, which only says how grown a tree is): oaks and beeches big, apples smaller, the hive oak
+  a giant. The willow (a fountain of strands over a dome) is painted but not planted for now. Snow is a layer of its own, laid on as thick as the snow lying. Until its painting comes a tree is an emoji, and so
   it stays with `?emoji` or no worker. Small paintings are sculpted coarser (`ss`), which is most of the saving.
   `tree-lab.html` shows every kind in every season, close and far, with sliders for `LOOK` and a "Copy as code".
 - `balance.js`: headless check, `node balance.js [years] [seeds]`.
@@ -90,8 +92,8 @@ blooming in its own season (the first three: spring, summer, autumn, gathered wi
 (`fieldBloom`). They're the bees' main food; the few scattered flowers elsewhere are the rest. Butterflies loop over a field in
 bloom by day, and fireflies blink by the water and the wood's edge on summer nights (`drawButterflies`, `drawFireflies`: a look only).
 
-Every tree has a kind (`d.kind`: oak, beech, maple, birch, willow, hawthorn, apple, cherry, pine), from where it stands
-(`treeKind`, `TREE_MIX` in sim.js): willows by the water, hawthorn scrub and old oaks out in the open, birches at the
+Every tree has a kind (`d.kind`: oak, beech, maple, birch, hawthorn, apple, cherry, pine), from where it stands
+(`treeKind`, `TREE_MIX` in sim.js): mostly birches by the water (no willows for now), hawthorn scrub and old oaks out in the open, birches at the
 wood's edge, beech, oak and maple deep in. The drawing, its autumn colour and the inspector all follow it.
 
 Apple trees (`w.orchard`) drop windfalls early in autumn (`windfallTick`, `d.apples`), a big meal that hungry rabbits

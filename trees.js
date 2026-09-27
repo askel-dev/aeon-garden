@@ -62,7 +62,7 @@ const RAMPS = {
   summer: [[14, 44, 38], [22, 74, 44], [44, 112, 36], [96, 164, 34], [160, 210, 48], [206, 238, 96]],
   spring: [[30, 76, 36], [62, 124, 34], [118, 180, 40], [170, 218, 62], [210, 240, 110], [236, 252, 170]],
   olive:  [[18, 50, 34], [36, 88, 36], [74, 134, 38], [128, 180, 50], [180, 216, 80], [214, 238, 130]],
-  willow: [[26, 68, 30], [58, 116, 30], [112, 166, 36], [168, 208, 62], [208, 234, 110], [236, 250, 170]],
+  willow: [[14, 50, 36], [34, 90, 42], [82, 140, 44], [140, 188, 66], [190, 222, 106], [226, 244, 164]],
   pine:   [[8, 32, 34], [14, 56, 50], [26, 88, 58], [52, 126, 60], [102, 170, 70], [150, 204, 96]],
   fresh:  [[30, 84, 50], [60, 128, 58], [100, 172, 66], [150, 210, 86], [194, 236, 126], [226, 250, 178]],
   maple:  [[84, 22, 16], [146, 44, 18], [206, 88, 22], [238, 144, 36], [252, 196, 80], [255, 230, 150]],
@@ -534,29 +534,55 @@ function pine(R, season) {
   return [sc, { aoR: 6 }];
 }
 
-// The willow, by the water: a low crown and curtains of hanging strands that curve and sway.
-// In winter the strands stay, bare golden withies.
+// The willow, by the water: a fountain. A short trunk parts into a few leaders that arch up and
+// out, and from them hang long strands, over the top of the dome and down its sides nearly to the
+// ground. Inner strands are darker, so the curtain has depth; in front it parts a little over the
+// trunk. In winter the strands stay, bare golden withies; in between, some are in leaf (LEAVES).
 function willow(R, season) {
   const sc = new Scene(340, 292, 170, 272), base = [170, 272, 0], winter = season === 'winter';
+  const cx = 170 + (R() - 0.5) * 10, top = 48 + R() * 10, eq = 128 + R() * 10, Rx = 100 + R() * 10, Rz = Rx * 0.8;
+  const dome = { x: cx, y: 214, z: 0, rx: Rx, ry: 214 - top, rz: Rz };   // for the light: lit on top, round at the sides
+  // Not a perfect bell: a few cascades, one side fuller, the hem rising and falling round the tree.
+  const ph = [R() * 6.28, R() * 6.28, R() * 6.28], lean = (R() - 0.5) * 0.24;
+  const lobe = a => 0.5 + 0.3 * Math.sin(3 * a + ph[0]) + 0.2 * Math.sin(5 * a + ph[1]);
+  const at = (a, th, k = 1) => {
+    const kk = k * (1 + lean * Math.cos(a) + 0.08 * lobe(a)), t = top + 22 * (1 - lobe(a));
+    return [cx + Math.cos(a) * Rx * Math.sin(th) * kk, eq - (eq - t) * Math.cos(th) * k, Math.sin(a) * Rz * Math.sin(th) * kk];
+  };
   roots(sc, R, base, 13, 5);
-  const tips = grow(sc, R, base, norm([-0.1, -1, 0]), 52, 14, 2, { kids: () => 3, spread: 1.0, shrink: 0.8, up: 0.1, taper: 0.66, wobble: 0.25 }, [], BARK);
-  const ramps = { spring: ['spring', 'spring', 'willow'], summer: ['willow', 'willow', 'spring'], autumn: ['lemon', 'willow', 'gold'], winter: null }[season];
-  const { crown } = leafy(sc, R, tips, { hi: 0, clumpR: 30, leafR: 5, density: 0.9, ramps, bare: winter }, { mat: 'leaf', ramp: 'willow' });
-  const curtain = { x: crown.x, y: 0, z: crown.z, rx: crown.rx * 1.05, ry: 1e5, rz: crown.rz * 1.05 };
-  for (let i = 0; i < 80; i++) {
-    const a = i / 80 * 3.5 - 0.17 + (R() - 0.5) * 0.12, ring = 0.7 + 0.35 * R(), high = R() < 0.35;   // front half, round the sides
-    let p = [crown.x + Math.cos(a) * crown.rx * ring, crown.y + crown.ry * (high ? -0.4 + 0.4 * R() : 0.1 + 0.5 * R()), crown.z + Math.sin(a) * crown.rz * ring * 0.9];
-    const len = (266 - p[1]) * (0.45 + 0.55 * R()), out = Math.cos(a) * (0.1 + 0.12 * R()), tone = (R() - 0.5) * 0.18 - 0.03;
-    const sway = 0.25 + 0.35 * R(), ph = R() * 6.28, fq = 0.03 + 0.03 * R(), STR = { mat: 'strand', ramp: winter ? 'withy' : ramps[i % ramps.length] };
-    for (let s = 0; s < len; s += 2.6) {
-      const q = s / len, wdt = (winter ? 2.2 : 5) * (1 - 0.65 * q * q), vx = out * 2.6 * (1 - q * 0.6) + Math.sin(s * fq + ph) * sway, dir = Math.atan2(2.6, vx);
-      p = add(p, [vx, 2.6, 0]);
-      sc.add(add(p, [(R() - 0.5) * wdt * 0.8, 0, (R() - 0.5) * 2]), wdt * (0.55 + 0.3 * R()), STR, [p[0], p[1] - 2, p[2] - 3], curtain, tone + (R() - 0.5) * 0.1 + (q > 0.85 ? 0.08 : 0), dir);
-      if (!winter && R() < 0.5) sc.add(add(p, [(R() - 0.5) * wdt * 1.4, 1.5, 1 + R() * 2]), wdt * 0.4, STR, [p[0], p[1] - 2, p[2] - 3], curtain, tone + (R() - 0.5) * 0.12, dir);
+  const fork = [cx + (R() - 0.5) * 8, 196, 0];
+  limb(sc, base, add(base, [0, -40, 0]), fork, 14, 11, BARK);
+  for (let i = 0, n = 4 + Math.floor(R() * 2); i < n; i++) {            // the leaders, arching up and out
+    const a = i / n * 6.28 + R() * 0.8, end = at(a, 0.75 + 0.35 * R(), 0.72), mid = add(fork, [0, -60, 0]), m = lerpV(mid, end, 0.3);
+    limb(sc, fork, [m[0], mid[1] - 30, m[2]], end, 9, 3.5, BARK);
+    const tip = at(a + (R() - 0.5) * 0.6, 1.35, 0.85);
+    limb(sc, end, add(lerpV(end, tip, 0.5), [0, -18, 0]), tip, 3.5, 1.5, BARK);
+  }
+  const ramps = { spring: ['spring', 'willow', 'willow'], summer: ['willow', 'willow', 'willow', 'willow', 'spring'], autumn: ['lemon', 'willow', 'gold', 'lemon'], winter: null }[season];
+  for (let i = 0, n = winter ? 130 : 230; i < n; i++) {
+    const back = i % 4 === 3, a = back ? Math.PI + R() * Math.PI : -0.35 + R() * (Math.PI + 0.7);   // most in front and round the sides
+    const k = back ? 0.82 + 0.1 * R() : 0.86 + 0.16 * R(), th0 = Math.acos(1 - R() * 0.95) * (0.9 + 0.1 * R());   // spread evenly over the dome
+    const leafy = ramps && R() < LEAVES.keep * (0.4 + 0.6 * LEAVES.size), w0 = winter || !leafy ? 1.6 : 1.6 + 2.2 * LEAVES.size;
+    const STR = { mat: 'strand', ramp: leafy ? ramps[Math.floor(R() * ramps.length)] : 'withy' };
+    const front = Math.sin(a) * Math.max(0, 1 - Math.abs(Math.cos(a)) * 2.5);    // over the trunk the curtain parts a little
+    const hem = 258 - 34 * (1 - lobe(a * 1.3 + 1)) - 12 * R() ** 2 - 36 * front * R();
+    const tone = (k - 0.95) * 0.9 - (back ? 0.12 : 0) + (R() - 0.5) * 0.06;
+    const sway = 0.2 + 0.3 * R(), wph = R() * 6.28, fq = 0.03 + 0.03 * R(), out = Math.cos(a) * (0.03 + 0.05 * R());
+    let p = at(a, th0, k), th = th0, s = 0, st = leafy ? 3 : 2;   // a bare withy is thin, so closer steps
+    while (p[1] < hem) {
+      let q;
+      if (th < 1.5) { th = Math.min(1.5, th + st / (Rx * k)); q = at(a, th, k); q[1] -= 5 * Math.sin(th * 2) * (1 - th0); }   // over the dome, arching
+      else q = [p[0] + out * st + Math.sin(s * fq + wph) * sway, p[1] + st, p[2]];   // then straight down, swaying
+      const dir = Math.atan2(q[1] - p[1], q[0] - p[0]), f = clamp((hem - q[1]) / 30, 0, 1), wdt = w0 * (0.45 + 0.55 * f);
+      const clump = [cx + (q[0] - cx) * 0.6, q[1] - 6, q[2] * 0.6];          // so the curtain rounds outward
+      sc.add(add(q, [(R() - 0.5) * wdt * 0.6, 0, (R() - 0.5) * 2]), wdt * (0.55 + 0.3 * R()), STR, clump, dome, tone + (R() - 0.5) * 0.08, dir);
+      if (leafy && R() < 0.35) sc.add(add(q, [(R() - 0.5) * wdt * 1.4, 1.2, 1 + R() * 2]), wdt * 0.4, STR, clump, dome, tone + (R() - 0.5) * 0.1, dir);
+      p = q; s += st;
     }
   }
-  return [sc, { aoR: 5, shade: [crown.y + crown.ry, 40] }];
+  return [sc, { aoR: 7, shade: [eq + 30, 60] }];
 }
+const lerpV = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
 
 // Hawthorn: a thicket of stems. White blossom in spring, red haws in autumn that hang on into winter.
 function hawthorn(R, season) {
