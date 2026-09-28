@@ -47,6 +47,7 @@ const WEATHER_ODDS = [             // per season
   { clear: 3, cloudy: 3, snow: 4, fog: 2 },
 ];
 const FIRE_TICKS = 40;          // how long one patch burns
+const WALL_TICKS = TPD / 2;     // how long a wall of fire the player draws burns
 const ASH_DAYS = 3;             // ash feeds fresh shoots for this long
 
 const GRASS_RATE = 0.4;         // logistic growth per day at full season
@@ -1588,10 +1589,10 @@ function strike(w, x, y) {
   emit(w, { type: 'lightning', x, y, tree: !!tree, victim, fire });
 }
 
-function ignite(w, i) {
+function ignite(w, i, ticks = FIRE_TICKS, set = false) {
   if (w.fire[i] || w.water[i]) return false;
-  if (!w.blaze) emit(w, { type: 'fire', x: i % W + 0.5, y: ((i / W) | 0) + 0.5 });
-  w.fire[i] = FIRE_TICKS; w.burning.push(i); w.blaze++;
+  if (!w.blaze) emit(w, { type: 'fire', x: i % W + 0.5, y: ((i / W) | 0) + 0.5, set });
+  w.fire[i] = ticks; w.burning.push(i); w.blaze++;
   return true;
 }
 
@@ -3307,6 +3308,18 @@ function lockSky(w, on) { w.skyLocked = on; }
 
 function zap(w, x, y) { if (walkable(w, x, y)) strike(w, x, y); }
 
+// A wall of fire along a stroke. It burns long, grass or none, and spreads like any fire.
+function burnLine(w, x0, y0, x1, y1) {
+  const n = Math.ceil(Math.hypot(x1 - x0, y1 - y0) * 2);
+  for (let k = 0; k <= n; k++) {
+    const x = Math.floor(x0 + (x1 - x0) * k / (n || 1)), y = Math.floor(y0 + (y1 - y0) * k / (n || 1));
+    if (x < 0 || y < 0 || x >= W || y >= H) continue;
+    const i = y * W + x;
+    if (w.fire[i]) w.fire[i] = Math.max(w.fire[i], WALL_TICKS);
+    else ignite(w, i, WALL_TICKS, true);
+  }
+}
+
 // ---------------------------------------------------------------- reading an animal
 
 function mood(w, c) {
@@ -3350,7 +3363,7 @@ function mood(w, c) {
 const api = {
   W, H, TPD, SHALLOW, DEEP, SEASON_DAYS, YEAR_DAYS, SEASONS, SPECIES, GENES, COATS, GROUND, WEATHER,
   createWorld, step, clock, isNight, phaseOf, seasonOf, mood, ageDays, growth, isAdult, patchFresh,
-  addCreature, paintGrass, setSky, lockSky, zap, traitMeans, walkable,
+  addCreature, paintGrass, setSky, lockSky, zap, burnLine, traitMeans, walkable,
   coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT, KINDS,
   TERRAIN, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE,

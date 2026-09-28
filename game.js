@@ -23,11 +23,11 @@ const terrainQuery = () => ['terrain', 'drawn'].map(k => [k, { terrain, drawn }[
 let world;
 const ui = {
   speed: 1, sound: false, tool: 'look', selectedId: 0, picked: null, hoverId: 0, follow: false,
-  trail: [], effects: [], diary: new Map(),
+  trail: [], effects: [], zaps: [], zapNext: 0, diary: new Map(),
   lastNews: {}, newsLog: [], newsOpen: false, records: perKind(() => 0), crashSaid: perKind(() => -1), seenHistory: 0,
   releaseSex: perKind(() => 'F'), mini: false, ring: null, sheetUp: false,
   stats: { open: false, show: 'rabbit', range: 'five', hover: null },
-  sky: { mix: {}, tick: 0, bolt: null, boom: -1e9, rainbow: 0, menu: false },
+  sky: { mix: {}, tick: 0, bolts: [], boom: -1e9, rainbow: 0, menu: false },
 };
 const cam = { x: S.W / 2, y: S.H / 2, zoom: 10, goal: null };
 
@@ -1071,6 +1071,7 @@ function render(now) {
   }
 
   drawEffects(now);
+  drawZaps(now);
   if (sel) drawSelectionOver(sel, now);
   if (ui.picked) drawPickedOver();
   const hov = world.byId.get(ui.hoverId);
@@ -2597,36 +2598,38 @@ function drawRainbow(now) {
   ctx.restore();
 }
 
-// A white flash, and a jagged bolt when the strike is on screen.
+// A white flash, and a jagged bolt for each strike on screen. Several at once share one flash.
 function drawLightning(now) {
-  const b = ui.sky.bolt;
-  if (!b) return;
-  const age = now - b.t0;
-  if (age > 450) { ui.sky.bolt = null; return; }
-  const fade = 1 - age / 450;
+  const bolts = ui.sky.bolts;
+  if (!bolts.length) return;
+  while (bolts.length && now - bolts[0].t0 > 450) bolts.shift();
+  if (!bolts.length) return;
+  const fade = 1 - (now - bolts[bolts.length - 1].t0) / 450;
   wash(`rgba(255, 255, 255, ${0.45 * fade * fade})`);
-  const [sx, sy] = toScreen(b.x, b.y);
-  if (!visible(sx, sy, 20) || age > 250) return;
-  ctx.save();
-  ctx.strokeStyle = `rgba(255, 255, 240, ${fade})`;
-  ctx.shadowColor = '#bcd4ff'; ctx.shadowBlur = 14;
-  ctx.lineWidth = 3; ctx.lineJoin = 'round';
-  ctx.beginPath();
-  b.path.forEach(([f, dx], i) => {
-    const x = sx + dx * vw * 0.06 * (1 - f), y = -10 + (sy + 10) * f;
-    i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
-  });
-  ctx.stroke();
-  ctx.restore();
+  for (const b of bolts) {
+    const age = now - b.t0, [sx, sy] = toScreen(b.x, b.y);
+    if (!visible(sx, sy, 20) || age > 250) continue;
+    ctx.save();
+    ctx.strokeStyle = `rgba(255, 255, 240, ${1 - age / 450})`;
+    ctx.shadowColor = '#bcd4ff'; ctx.shadowBlur = 14;
+    ctx.lineWidth = 3; ctx.lineJoin = 'round';
+    ctx.beginPath();
+    b.path.forEach(([f, dx], i) => {
+      const x = sx + dx * vw * 0.06 * (1 - f), y = -10 + (sy + 10) * f;
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    });
+    ctx.stroke();
+    ctx.restore();
+  }
 }
 
 function thunder(e) {
   const now = performance.now();
-  if (now - ui.sky.boom < 250) return;           // at 60x, one flash at a time is plenty
+  if (now - ui.sky.boom < 250 && !zapping) return;   // at 60x, one flash at a time is plenty (but your own storm shows every bolt)
   const path = [[0, Math.random() - 0.5]];
   for (let f = 0.12; f < 1; f += 0.08 + Math.random() * 0.08) path.push([f, Math.random() - 0.5]);
   path.push([1, 0]);
-  ui.sky.bolt = { x: e.x, y: e.y, t0: now, path };
+  if (ui.sky.bolts.length < 30) ui.sky.bolts.push({ x: e.x, y: e.y, t0: now, path });
   ui.sky.boom = now;
 }
 
@@ -2984,6 +2987,7 @@ function handleEvent(e) {
       break;
     }
     case 'fire':
+      if (e.set) break;                 // the player's own: burnAt tells of it
       addNews('🔥 <b>Wildfire!</b> Lightning set the dry grass alight. Everyone is running.');
       hear('fire', e.x, e.y, {}, true);
       break;
@@ -4319,7 +4323,7 @@ canvas.addEventListener('pointerdown', e => {
   clearTimeout(holdTimer);
   if (fingerTap) fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (fingers.size >= 2) { startPinch(); return; }
-  drag = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y, moved: false, paint: ui.tool === 'grass' && e.button === 0,
+  drag = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y, moved: false, paint: (ui.tool === 'grass' || ui.tool === 'fire') && e.button === 0,
     t: e.timeStamp, lx: e.clientX, ly: e.clientY, vx: 0, vy: 0 };
   if (drag.paint) paintAt(e.clientX, e.clientY);
   else if (fingerTap && !LAB) {
@@ -4402,7 +4406,36 @@ function click(sx, sy) {
     if (t) pick(t.kind, t.it, [wx, wy]); else select(c ? c.id : 0);
     ui.hoverHive = null;
   } else if (S.KINDS.includes(ui.tool)) release(ui.tool, wx, wy);
-  else if (ui.tool === 'zap') { S.zap(world, wx, wy); flushEvents(); }
+  else if (ui.tool === 'zap') zapAt(wx, wy);
+}
+
+// Paused, a bolt waits over its spot (drawZaps), like a released rabbit waits to move. When time runs
+// again they strike one after another, ZAP_GAP apart, a storm of your own.
+const ZAP_GAP = 70;
+function zapAt(wx, wy) {
+  if (ui.speed > 0) { zapping = true; S.zap(world, wx, wy); flushEvents(); zapping = false; return; }
+  if (!S.walkable(world, wx, wy) || ui.zaps.length >= 60) return;
+  ui.zaps.push({ x: wx, y: wy, t0: performance.now() });
+  chime('click');
+}
+
+let zapping = false;
+function strikeZaps(now) {
+  if (!ui.zaps.length || now < ui.zapNext) return;
+  const z = ui.zaps.shift();
+  zapping = true; S.zap(world, z.x, z.y); flushEvents(); zapping = false;
+  ui.zapNext = now + ZAP_GAP * (0.7 + 0.6 * Math.random());
+}
+
+// A waiting bolt hangs over its spot and sways a little.
+function drawZaps(now) {
+  const px = Math.max(16, cam.zoom * 1.5);
+  for (const z of ui.zaps) {
+    const [sx, sy] = toScreen(z.x, z.y);
+    if (!visible(sx, sy, px)) continue;
+    const t = (now - z.t0) / 1000, grow = Math.min(1, t * 5);
+    drawEmoji('⚡', sx, sy - px * (0.9 + 0.12 * Math.sin(t * 3 + z.x)), px * grow, { alpha: 0.9 });
+  }
 }
 
 function release(species, wx, wy) {
@@ -4419,7 +4452,7 @@ function release(species, wx, wy) {
 // ------------------------------------------------------------------ the ring: right-click the meadow
 
 const RING_TOOLS = [['rabbit', '🐇', 'Release a rabbit'], ['fox', '🦊', 'Release a fox'], ['bee', '🐝', 'Release a bee'], ['grass', '🌱', 'Grow grass'],
-  ['zap', '⚡', 'Strike lightning'], ['sky', '🌦️', 'Weather']];
+  ['zap', '⚡', 'Strike lightning'], ['fire', '🔥', 'Wall of fire'], ['sky', '🌦️', 'Weather']];
 
 function openRing(sx, sy, weather = false) {
   const items = weather
@@ -4451,7 +4484,8 @@ function ringPick(k) {
   if (k === 'sky') { const [sx, sy] = toScreen(wx, wy); openRing(sx, sy, true); return; }
   closeRing();
   if (S.KINDS.includes(k)) release(k, wx, wy);
-  else if (k === 'zap') { S.zap(world, wx, wy); flushEvents(); }
+  else if (k === 'zap') zapAt(wx, wy);
+  else if (k === 'fire') { setFire(wx, wy); S.burnLine(world, wx - 3, wy, wx + 3, wy); flushEvents(); }   // a short wall across the spot
   else if (k === 'grass') {
     S.paintGrass(world, wx, wy, 5);
     hear('grass', wx, wy);
@@ -4560,10 +4594,26 @@ $('#sky-menu').innerHTML = Object.entries(S.WEATHER).map(([k, wx]) =>
 
 function paintAt(sx, sy) {
   const [wx, wy] = toWorld(sx, sy);
+  if (ui.tool === 'fire') { burnAt(wx, wy); return; }
   S.paintGrass(world, wx, wy, 3.5);
   hear('grass', wx, wy);
   if (Math.random() < 0.3) addEffect('🌱', wx + (Math.random() - 0.5) * 3, wy + (Math.random() - 0.5) * 3, 0.6, 900);
   terrainTick = -1;
+}
+
+// Fire is drawn from where the pointer last was, so a quick stroke leaves no gaps.
+function burnAt(wx, wy) {
+  const [fx, fy] = drag.burn || [wx, wy];
+  if (!drag.burn) setFire(wx, wy);
+  S.burnLine(world, fx, fy, wx, wy);
+  drag.burn = [wx, wy];
+  flushEvents();
+}
+
+function setFire(wx, wy) {
+  hear('fire', wx, wy, {}, true);
+  addNews(world.wet > 0.7 ? '🔥 You drew a wall of fire, but the ground is too wet to burn.'
+    : '🔥 <b>You drew a wall of fire.</b> Everyone near it runs. On dry grass it could spread.', 'firewall', 8000);
 }
 
 document.addEventListener('click', e => {
@@ -4651,6 +4701,7 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'f' && ui.selectedId) { ui.follow = !ui.follow; renderInspector(); }
   else if (e.key === 'l') setTool('look');
   else if (e.key === 'z') setTool('zap');
+  else if (e.key === 'b') setTool('fire');
   else if (e.key === 'w') toggleSkyMenu();
   else if (e.key === 'k') toggleSkyLock();
   else if (e.key === 'n') toggleNewsLog();
@@ -5090,13 +5141,13 @@ function newWorld(seed, arrival = false) {
   world = S.createWorld(seed, LAB ? { terrain, drawn, rabbits: 0, foxes: 0, bees: 0 } : { terrain, drawn, arrival });
   intro.family = [];
   groundSeed = [(seed % 97) * 3.7, (seed % 89) * 4.3];
-  Object.assign(ui, { selectedId: 0, picked: null, hoverId: 0, follow: false, trail: [], effects: [], lastNews: {}, newsLog: [] });
+  Object.assign(ui, { selectedId: 0, picked: null, hoverId: 0, follow: false, trail: [], effects: [], zaps: [], lastNews: {}, newsLog: [] });
   pollen.until = 0; pollen.t0.fill(-1e9);
   ui.records = perKind(s => world.count[s]);
   ui.crashSaid = perKind(() => -1);
   ui.seenHistory = 0;
   const mix = Object.fromEntries(Object.keys(S.WEATHER).map(k => [k, k === world.weather.kind ? 1 : 0]));
-  Object.assign(ui.sky, { mix, tick: world.tick, bolt: null, rainbow: 0 });
+  Object.assign(ui.sky, { mix, tick: world.tick, bolts: [], rainbow: 0 });
   showSkyLock();
   $('#news').innerHTML = '';
   renderNewsLog();
@@ -5138,6 +5189,7 @@ function frame(now) {
   if (intro.on) introFrame(now, dt);
 
   if (ui.speed > 0) {
+    strikeZaps(now);
     acc += dt * TICKS_PER_SECOND * ui.speed;
     const n = Math.min(Math.floor(acc), 2000), t0 = performance.now();
     acc -= n;
