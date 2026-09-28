@@ -64,7 +64,7 @@ told to just do it.
   so autumn is a patchwork of trees and not of leaves), the crown up off the trunk (`LOOK.lift`) and the
   branches not too wide (`LOOK.spread`), so you see trunks and ground between the trees. The willow (a fountain of strands over a dome) is painted but not planted for now. Snow is a layer of its own, laid on as thick as the snow lying. A painting is
   also of a tone (the sim's `d.tone`: one of three colours of its kind, or a copper beech), and of the grown or the
-  young form (slimmer, its branches more upright; a seedling is one, small); a dead tree is the grey `dead` look with
+  young form (slimmer, its branches more upright; a seedling is one, small); a dead tree is the grey `dead` look (one a fire killed, `d.burnt`, the charred `burnt` look) with
   limbs broken off, a fallen one the `log` kind, and one lightning took the `stump` kind. The paintings go by number
   (`treeKey`), so a frame builds no names. Until its painting comes the same look at another size stands in, or a
   small painting of its kind in that look (`treeKin`: one of each, painted ahead at the start by `kinAhead` and kept
@@ -127,7 +127,7 @@ seed comes up where there's light enough for its kind (`sprout`, `shadeOver`; pi
 unless a thorn bush guards it (`THORNS`), so grazing keeps the meadow open, and after the rabbits crash the
 woods creep out. A tree grows through seedling, sapling, young, grown and old (`treeStage`, from `d.size`
 and its age), a young one waiting in the shade if its kind bears shade. It dies (`treeDies`) of shade,
-grazing, fire, flood, a storm or age, stands a while as a grey snag, falls as a log (`treeFalls`) and rots
+grazing, fire (as the fire reaches it, `burnTrees`, the odds from its bark, `burn`), flood, a storm or age, stands a while as a grey snag, falls as a log (`treeFalls`) and rots
 away; a broadleaf struck by lightning grows again from its stump. Apple, cherry and hawthorn blossom for
 the bees in spring (`w.blossoms`) and bear as much fruit as the bees visited (`setFruit`). A tree takes its
 parent's tone (`d.tone`: which of its kind's colours; now and then a beech is a copper beech, `RARE_TONE`),

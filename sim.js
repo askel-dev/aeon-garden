@@ -920,14 +920,14 @@ const TREES = {
   // seeds: seedlings it tries for each year; shade: how much shade a young one bears (0 none, 1 deep
   // wood); taste: how much rabbits like it; by: how its seed gets about, far: and how far (tiles);
   // burn: odds a fire kills it grown; blossom: when in spring it flowers for the bees (share of the season)
-  birch:    { grow: 1.1, life: 10, seedAge: 2, seeds: 5, shade: 0.15, taste: 0.7, by: 'wind', far: 18, burn: 0.5 },
-  pine:     { grow: 0.8, life: 18, seedAge: 3, seeds: 3, shade: 0.45, taste: 0.3, by: 'wind', far: 10, burn: 0.1 },
-  maple:    { grow: 0.8, life: 18, seedAge: 3, seeds: 2, shade: 0.7, taste: 0.8, by: 'wind', far: 7, burn: 0.4 },
-  beech:    { grow: 0.6, life: 20, seedAge: 4, seeds: 1, shade: 0.9, taste: 0.6, by: 'jay', far: 10, burn: 0.5, mast: 'beechnuts' },
-  oak:      { grow: 0.6, life: 24, seedAge: 4, seeds: 1, shade: 0.4, taste: 0.9, by: 'jay', far: 25, burn: 0.1, mast: 'acorns' },
-  hawthorn: { grow: 1.0, life: 16, seedAge: 2, seeds: 3, shade: 0.3, taste: 0.2, by: 'bird', far: 15, burn: 0.3, thorns: true, blossom: [0.35, 0.85] },
-  apple:    { grow: 0.8, life: 16, seedAge: 3, seeds: 3, shade: 0.4, taste: 0.8, by: 'drop', far: 8, burn: 0.4, blossom: [0.3, 0.8] },
-  cherry:   { grow: 1.0, life: 12, seedAge: 2, seeds: 3, shade: 0.35, taste: 0.7, by: 'bird', far: 15, burn: 0.4, blossom: [0.05, 0.5] },
+  birch:    { grow: 1.1, life: 10, seedAge: 2, seeds: 5, shade: 0.15, taste: 0.7, by: 'wind', far: 18, burn: 0.8 },
+  pine:     { grow: 0.8, life: 18, seedAge: 3, seeds: 3, shade: 0.45, taste: 0.3, by: 'wind', far: 10, burn: 0.25 },
+  maple:    { grow: 0.8, life: 18, seedAge: 3, seeds: 2, shade: 0.7, taste: 0.8, by: 'wind', far: 7, burn: 0.7 },
+  beech:    { grow: 0.6, life: 20, seedAge: 4, seeds: 1, shade: 0.9, taste: 0.6, by: 'jay', far: 10, burn: 0.8, mast: 'beechnuts' },
+  oak:      { grow: 0.6, life: 24, seedAge: 4, seeds: 1, shade: 0.4, taste: 0.9, by: 'jay', far: 25, burn: 0.25, mast: 'acorns' },
+  hawthorn: { grow: 1.0, life: 16, seedAge: 2, seeds: 3, shade: 0.3, taste: 0.2, by: 'bird', far: 15, burn: 0.6, thorns: true, blossom: [0.35, 0.85] },
+  apple:    { grow: 0.8, life: 16, seedAge: 3, seeds: 3, shade: 0.4, taste: 0.8, by: 'drop', far: 8, burn: 0.7, blossom: [0.3, 0.8] },
+  cherry:   { grow: 1.0, life: 12, seedAge: 2, seeds: 3, shade: 0.35, taste: 0.7, by: 'bird', far: 15, burn: 0.7, blossom: [0.05, 0.5] },
 };
 const YEAR = YEAR_DAYS * TPD;   // ticks in a year
 const SPROUT = 0.3;             // a new seedling's size
@@ -1146,7 +1146,7 @@ function treeDies(w, d, cause) {
   tally(w, d.kind, cause);
   dropBlossoms(w, d);
   if (d.size < SAPLING && !d.hive) { d.gone = true; w.treesMoved = true; return; }
-  d.dead = w.tick; d.until = w.tick + w.treeRng.range(...SNAG_DAYS) * TPD;
+  d.dead = w.tick; d.burnt = cause === 'fire'; d.until = w.tick + w.treeRng.range(...SNAG_DAYS) * TPD;
   if (cause === 'age' && (d.name || d.hive || d.size > 4.2)) emit(w, { type: 'treedied', tree: d, age: treeAge(w, d) });
 }
 
@@ -1262,14 +1262,17 @@ const inBloom = (w, d) => {
   return d.blooms && seasonOf(w.tick) === 0 && sp >= b[0] && sp <= b[1] && standing(d);
 };
 
-// Fire on a tile: the young trees on it die, and grown ones too if their bark is thin. A log burns up.
+// Fire reaching a tile: the young trees on it die, and grown ones too unless their bark is thick. A log burns up.
 function burnTrees(w, i) {
   const x = i % W + 0.5, y = ((i / W) | 0) + 0.5;
   w.scorched[i] = yearOf(w.tick);
   forEachDecorNear(w, x, y, 1, d => {
     if (!d.tree || Math.abs(d.x - x) > 0.5 || Math.abs(d.y - y) > 0.5) return;
     if (d.fallen) { d.gone = true; w.treesMoved = true; }
-    else if (standing(d) && (d.size < SAPLING || w.treeRng.next() < TREES[d.kind].burn)) treeDies(w, d, 'fire');
+    else if (standing(d) && (d.size < SAPLING || w.treeRng.next() < TREES[d.kind].burn)) {
+      if (d.size >= SAPLING) w.blazeTrees++;
+      treeDies(w, d, 'fire');
+    }
   });
 }
 
@@ -1591,8 +1594,9 @@ function strike(w, x, y) {
 
 function ignite(w, i, ticks = FIRE_TICKS, set = false) {
   if (w.fire[i] || w.water[i]) return false;
-  if (!w.blaze) emit(w, { type: 'fire', x: i % W + 0.5, y: ((i / W) | 0) + 0.5, set });
+  if (!w.blaze) { emit(w, { type: 'fire', x: i % W + 0.5, y: ((i / W) | 0) + 0.5, set }); w.blazeTrees = 0; }
   w.fire[i] = ticks; w.burning.push(i); w.blaze++;
+  burnTrees(w, i);
   return true;
 }
 
@@ -1604,7 +1608,7 @@ function fireTick(w, dt) {
   for (const i of lit) {
     g[i] *= 0.8;
     w.fire[i] -= dt;
-    if (w.fire[i] <= 0 || w.wet > 0.7) { w.fire[i] = 0; g[i] = 0; w.ash[i] = 1; burnTrees(w, i); continue; }
+    if (w.fire[i] <= 0 || w.wet > 0.7) { w.fire[i] = 0; g[i] = 0; w.ash[i] = 1; continue; }
     w.burning.push(i);
     const x = i % W, y = (i / W) | 0;
     for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
@@ -1617,7 +1621,7 @@ function fireTick(w, dt) {
     if (c.alive && !c.hidden && w.fire[idx(c.x, c.y)]) die(w, c, 'fire');
   }
   tidyTrees(w);                                              // the young trees it took
-  if (!w.burning.length) { emit(w, { type: 'fireout', burned: w.blaze }); w.blaze = 0; }
+  if (!w.burning.length) { emit(w, { type: 'fireout', burned: w.blaze, trees: w.blazeTrees }); w.blaze = 0; }
 }
 
 function fireNear(w, x, y, r) {
@@ -2990,7 +2994,7 @@ function createWorld(seed, opts = {}) {
     grid: makeGrid(), grids: perKind(makeGrid),
     nameCounts: new Map(), anyDied: false,
     weather: { kind: 'clear', until: 0 }, skyLocked: false, wet: 0.3, snow: 0, ice: 0, frozen: false, windfalls: 0,
-    fire: new Float32Array(W * H), ash: new Float32Array(W * H), silt: new Float32Array(W * H), burning: [], blaze: 0,
+    fire: new Float32Array(W * H), ash: new Float32Array(W * H), silt: new Float32Array(W * H), burning: [], blaze: 0, blazeTrees: 0,
     count: perKind(() => 0), expecting: perKind(() => 0),
     stats: { births: perKind(() => 0), deaths: perKind(() => ({})) },
     history: { every: 60, t: [], grass: [], ...perKind(() => []), traits: perKind(() => []), marks: [] },

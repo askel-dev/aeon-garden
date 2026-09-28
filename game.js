@@ -1798,12 +1798,12 @@ const LOG_BARK = { beech: 'grey', birch: 'birch' };      // whose bark a log or 
 const YOUNG = new Set(['seedling', 'sapling', 'young']);
 const SEEDLING_PX = 6;                                   // a seedling smaller than this on screen isn't drawn
 // A bare tree looks the same whatever its tone, and a young one hardly shows its shape: fewer paintings to make.
-const bareLook = (kind, look) => look === 'dead' || (kind !== 'pine' && kind !== 'log' && (look === 'winter' || look === 'bare'));
+const bareLook = (kind, look) => look === 'dead' || look === 'burnt' || (kind !== 'pine' && kind !== 'log' && (look === 'winter' || look === 'bare'));
 const HIVE_DOOR = [1, -38];              // the hive's sill in the hive oak's painting, from its foot (trees.js hive)
 // Paintings go by number, so a frame builds no names: the tree (kind, shape, tone, form), its look, the size (its
 // place in TREE_TIERS) and the snow, packed together.
 const ART_KINDS = { oak: 0, hive: 1, beech: 2, maple: 3, birch: 4, pine: 5, willow: 6, apple: 7, cherry: 8, hawthorn: 9, log: 10, stump: 11 };
-const ART_LOOKS = { summer: 0, spring: 1, bud: 2, autumn: 3, thin: 4, winter: 5, bare: 6, dead: 7 };
+const ART_LOOKS = { summer: 0, spring: 1, bud: 2, autumn: 3, thin: 4, winter: 5, bare: 6, dead: 7, burnt: 8 }, ART_LOOK_N = 9;
 const ART_TONES = { 0: 0, 1: 1, 2: 2, 3: 3, bark: 4, grey: 5, birch: 6 };
 const treeKey = (kind, shape, tone, form) => ((ART_KINDS[kind] * 4 + shape) * 8 + ART_TONES[tone]) * 2 + form;
 // treeAny: a painting of each tree, in any look, till its own comes. treeKin: a small one of each kind in each
@@ -1853,7 +1853,7 @@ function dropTreeArt() {
 // A stand-in of this kind in this look (treeKin) is painted, or will be: now, first thing, when a tree on
 // screen has nothing else to show.
 function wantKin(kind, look, now) {
-  const kin = ART_KINDS[kind] * 8 + ART_LOOKS[look];
+  const kin = ART_KINDS[kind] * ART_LOOK_N + ART_LOOKS[look];
   if (treeKin.has(kin) || treeSent.has(-1 - kin)) return;
   const i = kinWanted.findIndex(j => j.kin === kin);
   if (i < 0) {
@@ -1896,7 +1896,7 @@ function askTrees() {
 // A painting of this tree's look near this size: the one asked for if it's there (else it's asked
 // for), or the same look at the nearest size, or none. tone: the tree's (a log's or a stump's: its bark); form: 1 young, 0 grown.
 function treePainting(kind, shape, tone, form, look, tier, snow) {
-  const tree = treeKey(kind, shape, tone, form), lk = tree * 8 + ART_LOOKS[look], i = TREE_TIERS.indexOf(tier), key = (lk * 8 + i) * 2 + (snow ? 1 : 0);
+  const tree = treeKey(kind, shape, tone, form), lk = tree * ART_LOOK_N + ART_LOOKS[look], i = TREE_TIERS.indexOf(tier), key = (lk * 8 + i) * 2 + (snow ? 1 : 0);
   const p = treeArt.get(key);
   if (p) { p.used = spriteFrame; return p; }
   if (!treeSent.has(key)) {
@@ -1950,12 +1950,12 @@ function drawPaintedTree(d, sx, sy, now, ck, stage = S.treeStage(world, d)) {
   const form = YOUNG.has(stage) ? 1 : 0, shape = Math.floor(hash2(hx, hy, 46) * TREE_SHAPES) % (form ? 2 : TREE_SHAPES);
   const px = treePx(d), f = px / TREE_UNIT, want = f * dpr, tier = TREE_TIERS.find(t => t >= want * 0.9) || TREE_TIERS[TREE_TIERS.length - 1];
   const snow = step(world.snow * 1.6 - 0.1, 4), tone = wood ? LOG_BARK[d.kind] || 'bark' : d.tone ?? 0;
-  const [a, b, m] = wood ? ['summer', null, 0] : stage === 'dead' ? ['dead', null, 0] : treeStage(kind, d, ck);
+  const [a, b, m] = wood ? ['summer', null, 0] : stage === 'dead' ? [d.burnt ? 'burnt' : 'dead', null, 0] : treeStage(kind, d, ck);
   let A = m < 1 ? treePainting(kind, shape, bareLook(kind, a) ? 0 : tone, form, a, tier, snow > 0) : null;
   let B = b && m > 0 ? treePainting(kind, shape, bareLook(kind, b) ? 0 : tone, form, b, tier, snow > 0) : null;
   if (!A && !B) {                                            // till this one comes: its kind in this look, or another look of it
     const look = m > 0.5 ? b : a;
-    A = treeKin.get(ART_KINDS[kind] * 8 + ART_LOOKS[look]) || treeAny.get(treeKey(kind, shape, tone, form));
+    A = treeKin.get(ART_KINDS[kind] * ART_LOOK_N + ART_LOOKS[look]) || treeAny.get(treeKey(kind, shape, tone, form));
     if (!A) { wantKin(kind, look, true); if (!treeWaits.has(d)) treeWaits.set(d, 0); return false; }
   }
   let fade = 1;
@@ -2994,7 +2994,9 @@ function handleEvent(e) {
     case 'fireout': {
       const pct = e.burned / world.water.reduce((n, v) => n + (v ? 0 : 1), 0) * 100;
       if (e.burned >= 25) chime('fireout');
-      if (e.burned >= 25) addNews(`🌱 The fire is out after burning ${pct < 1 ? 'a corner' : Math.round(pct) + '%'} of the meadow. The ash will feed fresh shoots.`);
+      const trees = e.trees === 1 ? ' and one tree' : e.trees ? ` and ${e.trees} trees` : '';
+      if (e.burned >= 25) addNews(`🌱 The fire is out after burning ${pct < 1 ? 'a corner' : Math.round(pct) + '%'} of the meadow${trees}. The ash will feed fresh shoots.`);
+      else if (e.trees) addNews(`💨 The fire fizzled out, but it took ${e.trees === 1 ? 'a tree' : e.trees + ' trees'} with it.`);
       else addNews('💨 The fire fizzled out.', 'fizzle', 30000);
       break;
     }
@@ -3775,7 +3777,7 @@ function treeTitle(d) {
     case 'sapling': return `${short[0].toUpperCase() + short.slice(1)} sapling`;
     case 'young': return `Young ${low}`;
     case 'old': return `Old ${low}`;
-    case 'dead': return `Dead ${low}`;
+    case 'dead': return `${d.burnt ? 'Burnt' : 'Dead'} ${low}`;
     case 'log': return `Fallen ${low}`;
     case 'stump': return `${kind} stump`;
     default: return kind;
@@ -3868,7 +3870,8 @@ const THINGS = {
       if (world.fire[i] > 0) status = '🔥 On fire!';
       else if (d.stump) status = `⚡ Struck by lightning ${ago(d.stump)} ago. It will sprout again from the stump.`;
       else if (stage === 'log') status = `🪵 Down ${ago(d.fallen)}, rotting away. Beetles and fungi are at work.`;
-      else if (stage === 'dead') status = `🪾 Died ${ago(d.dead)} ago. It stands grey and bare, and one day it will fall.`;
+      else if (stage === 'dead') status = d.burnt ? `🔥 Killed by a fire ${ago(d.dead)} ago. It stands black and bare, and one day it will fall.`
+        : `🪾 Died ${ago(d.dead)} ago. It stands grey and bare, and one day it will fall.`;
       else if (young && world.fire[i] === 0 && wood > k.shade) status = k.shade > 0.6 ? '🌑 Waiting in the shade for an old tree to fall' : '🌑 Too much shade: it is struggling';
       else if (young && d.size < S.SAPLING) status = thornGuard(d) ? '🌿 Safe among the thorns from hungry rabbits' : '🐇 Small enough for a rabbit to nibble';
       else status = treeSeason(d);
