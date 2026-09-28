@@ -328,6 +328,20 @@
   #ask .go:disabled { opacity: 0.5; }
   #ask.sent :is(textarea, .btns, .ask-q), #ask:not(.sent) .ask-thanks { display: none; }
 
+  /* ---- back after a while: the meadow runs on a season, then says what happened (game.js, startAway). Like #ask. */
+  #away { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 10; width: min(420px, calc(100% - 32px)); padding: 22px 24px 20px;
+    max-height: calc(100% - 32px); box-sizing: border-box; overflow: hidden auto; scrollbar-width: thin;
+    background: var(--paper, none) #f7eedc; border-radius: 22px; box-shadow: 0 20px 60px rgba(50, 40, 15, 0.3); }
+  #away:not(.hidden) > * { animation: pop-in 0.18s ease-out; }
+  #away h2 { margin: 0 0 6px; font-size: 24px; font-weight: 650; line-height: 1.15; }
+  #away p { margin: 0 0 12px; line-height: 1.5; }
+  #away .life { color: var(--muted); white-space: pre-line; }
+  #away ul { margin: 0 0 14px; padding: 0; list-style: none; }
+  #away li { padding: 8px 0; border-top: 1px solid rgba(90, 70, 40, 0.15); line-height: 1.45; }
+  #away .go { display: block; width: 100%; border-radius: 14px; background: #4f7f3a; color: #fff; font-size: 16px; padding: 12px; box-shadow: none; }
+  #away .go:hover { background: #44702f; }
+  #away:not(.done) :is(.life, ul, .go) { display: none; }
+
   /* ---- the first visit's intro (game.js, startIntro): bars top and bottom, the story under the
      meadow a line at a time, and everything else away (hush) from the welcome card until it hands over */
   #intro { position: fixed; inset: 0; pointer-events: none; z-index: 9; --lb: clamp(36px, 9vh, 84px); }
@@ -624,6 +638,7 @@
     <button class="menu-item hidden" data-act="home" id="home-item">📱 Add to your home screen</button>
     <button class="menu-item" data-act="watch" title="Let the meadow film itself, like when you leave it be (V)">🎥 Sit back and watch</button>
     <button class="menu-item" data-act="copy-link">🔗 Copy a link to this meadow</button>
+    <button class="menu-item" data-act="ideas" title="Tell me what you'd love to see in the meadow">💌 Send an idea</button>
     <button class="menu-item" data-act="lab" title="Shape the ground, water and woods of this meadow">🗺️ Terrain lab</button>
     <button class="menu-item danger" data-action="new">🔄 Start a new meadow…</button>
   </div>
@@ -723,6 +738,14 @@
     <button class="btn go" id="ask-send" data-act="ask-send">Send</button>
   </div>
   <p class="ask-thanks">Thank you! 🌼 It's on its way.</p>
+</div>
+
+<div id="away" class="hidden" role="dialog" aria-labelledby="away-title" aria-live="polite">
+  <h2 class="fr" id="away-title">While you were away…</h2>
+  <p id="away-text"></p>
+  <p class="life" id="away-life"></p>
+  <ul id="away-news"></ul>
+  <button class="btn go" data-act="away-ok">Back to the meadow</button>
 </div>
 
 <div id="intro" aria-live="polite">

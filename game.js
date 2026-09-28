@@ -19,6 +19,21 @@ const fromUrl = key => { try { return JSON.parse(params.get(key) || '{}'); } cat
 let terrain = fromUrl('terrain'), drawn = location.hash.length > 1 ? S.drawnFromLink(location.hash) : fromUrl('drawn');
 const terrainQuery = () => (Object.keys(terrain).length ? '&terrain=' + encodeURIComponent(JSON.stringify(terrain)) : '')
   + (S.drawnToLink(drawn) ? '#' + S.drawnToLink(drawn) : '');
+const meadowLink = seed => '?seed=' + seed + terrainQuery();   // the address of a meadow, and the name it's kept under
+
+// How many people come, and from where, counted by GoatCounter (goatcounter.com: free, no cookies,
+// nothing to agree to). Off until COUNTER holds the site's code: sign up there, pick a code, put it
+// here. A link posted as meadow.cryptoler.net/?ref=reddit is counted as coming from "reddit". The
+// counter looks at the address a moment after the game has made it ?seed=.., so it's told the page
+// and where they came from here. Every visit is the one page, whichever meadow it opens.
+const COUNTER = '';                        // e.g. 'nobodys-meadow', for nobodys-meadow.goatcounter.com
+if (COUNTER && !['localhost', '127.0.0.1'].includes(location.hostname)) {
+  window.goatcounter = { path: LAB ? '/lab' : '/', referrer: params.get('ref') || params.get('utm_source') || document.referrer };
+  const js = document.createElement('script');
+  js.async = true; js.src = 'https://gc.zgo.at/count.js';
+  js.dataset.goatcounter = `https://${COUNTER}.goatcounter.com/count`;
+  document.head.append(js);
+}
 
 let world;
 const ui = {
@@ -2853,6 +2868,7 @@ function addNews(html, category, minGapMs = 0) {
   if (category) ui.lastNews[category] = now;
   ui.newsLog.unshift({ html, tick: world.tick });
   ui.newsLog.length = Math.min(ui.newsLog.length, NEWS_LOG_MAX);
+  if (away.on) { awayNews(html); ui.newsStale = true; return; }   // catching up: the log, and the card if it's big
   if (ui.newsOpen) { ui.newsStale = true; return; }   // the frame rebuilds it, once however much happened
   const box = $('#news');
   const el = document.createElement('div');
@@ -2902,12 +2918,12 @@ const WEATHER_NEWS = {
 // Animal sounds only play when you can see them, or when they are about the animal you follow.
 // They pan with where they happen on screen and get softer as you zoom out.
 function hear(name, x, y, opts = {}, always = false) {
-  if (!ui.sound) return;
+  if (!ui.sound || away.on) return;
   const [sx, sy] = toScreen(x, y), seen = visible(sx, sy, 40);
   if (!seen && !always) return;
   Sound.play(name, { pan: 0.8 * clamp(sx / vw * 2 - 1, -1, 1), near: seen ? clamp(cam.zoom / (3 * minZoom), 0.4, 1) : 0.2, seen, ...opts });
 }
-const chime = (name, opts) => { if (ui.sound) Sound.play(name, opts); };
+const chime = (name, opts) => { if (ui.sound && !away.on) Sound.play(name, opts); };
 
 // Bees out flying where you're looking: the hive hum follows them.
 function beesOnScreen() {
@@ -2940,6 +2956,7 @@ function involvesSelected(e) {
 function handleEvent(e) {
   const mine = involvesSelected(e);
   if (idle.on) idleNews(e);
+  if (away.on) { away.type = e.type; away.mine = mine; }
   switch (e.type) {
     case 'season':
       addNews(SEASON_NEWS[e.season] + (e.season === 0 ? ` Year ${e.year} begins.` : ''));
@@ -4609,17 +4626,23 @@ const ASK_MS = 120000;                  // play this long first (the tab showing
 let played = 0;
 try { if (localStorage.getItem('aeon-garden-asked') === '1') played = -Infinity; } catch (e) { played = -Infinity; }
 const askOpen = () => !$('#ask').classList.contains('hidden');
+const canShare = !!navigator.share && matchMedia('(pointer: coarse)').matches;   // a phone or tablet: its share sheet
 
 // Counted a few times a second. It waits for a quiet moment: nothing else open, not filming itself.
 function askTick(ms) {
   if (!IDEAS_KEY || LAB || played < 0 || document.hidden || intro.on || !$('#welcome').classList.contains('hidden')) return;
   if ((played += ms) < ASK_MS) return;
-  if (idle.on || ui.hush || ui.ring || ui.stats.open || ui.newsOpen || homeOpen() || !$('#more-menu').classList.contains('hidden')) return;
+  if (idle.on || ui.hush || ui.ring || ui.stats.open || ui.newsOpen || homeOpen() || awayOpen() || !$('#more-menu').classList.contains('hidden')) return;
   played = -Infinity;
   try { localStorage.setItem('aeon-garden-asked', '1'); } catch (e) { /* fine */ }
   askIdeas(true);
 }
 function askIdeas(open) {
+  if (open && $('#ask').classList.contains('sent')) {   // another idea, after one went off (from the ••• menu)
+    $('#ask').classList.remove('sent');
+    $('#ask-text').value = '';
+    $('#ask-send').disabled = false;
+  }
   $('#ask').classList.toggle('hidden', !open);
   if (open && !narrow()) $('#ask-text').focus({ preventScroll: true });   // (on a phone the keyboard would jump up)
 }
@@ -4641,7 +4664,13 @@ function sendIdea() {
 }
 $('#ask').addEventListener('keydown', e => { if (e.key === 'Escape') askIdeas(false); });
 
+// On a phone the share sheet (messages, chats), elsewhere the clipboard.
 function copyLink() {
+  if (canShare) {
+    navigator.share({ title: "Nobody's Meadow", text: 'Rabbits, foxes and bees living their own lives, in a meadow that keeps its own time.', url: location.href })
+      .catch(() => { /* they changed their mind */ });
+    return;
+  }
   navigator.clipboard?.writeText(location.href).then(
     () => addNews('🔗 Link copied. Anyone who opens it gets this same meadow from the start.'),
     () => addNews(`🔗 Couldn't copy. The link is ${esc(location.href)}`));
@@ -4727,12 +4756,14 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'mini') toggleMini();
   else if (t.dataset.act === 'more') toggleMore();
   else if (t.dataset.act === 'copy-link') copyLink();
+  else if (t.dataset.act === 'ideas') { played = -Infinity; askIdeas(true); }   // found it themselves: no need to ask
   else if (t.dataset.act === 'lab') openLab();
   else if (t.dataset.act === 'watch') startIdle();
   else if (t.dataset.act === 'home') homeGuide();
   else if (t.dataset.act === 'home-done') homeGuide(false);
   else if (t.dataset.act === 'home-install') install();
   else if (t.dataset.act === 'ask-later') askIdeas(false);
+  else if (t.dataset.act === 'away-ok') closeAway();
   else if (t.dataset.act === 'ask-send') sendIdea();
   else if (t.dataset.act === 'sound') toggleSound();
   else if (t.dataset.act === 'stats') toggleStats();
@@ -4783,7 +4814,7 @@ document.addEventListener('keydown', e => {
   } else if ('1234'.includes(e.key) && e.key.length === 1) setSpeed([1, 4, 15, 60][+e.key - 1]);
   else if (e.key === 'Escape') {
     const more = !$('#more-menu').classList.contains('hidden');
-    homeOpen() ? homeGuide(false) : ui.ring ? closeRing() : $('#toolbar').classList.contains('open') ? toggleTools(false) : ui.sky.menu ? toggleSkyMenu(false) : more ? toggleMore(false) : ui.stats.open ? toggleStats(false)
+    awayOpen() ? closeAway() : homeOpen() ? homeGuide(false) : ui.ring ? closeRing() : $('#toolbar').classList.contains('open') ? toggleTools(false) : ui.sky.menu ? toggleSkyMenu(false) : more ? toggleMore(false) : ui.stats.open ? toggleStats(false)
       : ui.tool !== 'look' ? setTool('look') : select(0);
   }
   else if (e.key === 's') toggleStats();
@@ -4995,7 +5026,7 @@ const between = (a, b) => a + Math.random() * (b - a);
 const anyOf = a => a.length ? a[Math.floor(Math.random() * a.length)] : null;
 
 const idleMayStart = now => !idle.on && now - lastInput > IDLE_MS && ui.speed > 0 && !ui.hush && !LAB && !calm && !document.hidden
-  && !askOpen() && !ui.selectedId && !ui.picked && !ui.ring && !ui.stats.open && !ui.newsOpen && !ui.sky.menu
+  && !askOpen() && !awayOpen() && !ui.selectedId && !ui.picked && !ui.ring && !ui.stats.open && !ui.newsOpen && !ui.sky.menu
   && $('#more-menu').classList.contains('hidden') && !homeOpen() && !$('#toolbar').classList.contains('open');
 
 function startIdle(now = performance.now()) {
@@ -5217,6 +5248,183 @@ function idleFrame(now, dt) {
   cam.x = x; cam.y = y;
 }
 
+// ------------------------------------------------------------------ keeping the meadow
+//
+// The meadow is kept in the browser when the page is hidden or closed, and the next visit picks it up
+// where it was (Sim.packWorld), with the news, the camera and whoever you were following. A kept meadow
+// is a few megabytes, too big for localStorage, so it goes in IndexedDB under its link, and localStorage
+// keeps the list of links, the one watched last first. A few are kept, so a meadow a friend sent doesn't
+// take the place of your own: the bare address opens the last one, a link its own. Not in the lab.
+// A kept meadow that won't open, or that broke the page the last time it opened (OPENING), is let go.
+const KEEP_MEADOWS = 3;
+const KEEP_IDLE_MS = 10 * 60e3;            // and while it films itself (nobody at the keys to see the hitch), this often
+const KEPT = 'aeon-garden-kept', OPENING = 'aeon-garden-opening';   // in localStorage
+let keepOpen = null, keptTick = -1, keptWhen = Date.now();
+let opening = 0;                           // a kept meadow just opened: 1 until a frame starts, then counts frames that got to the end
+
+function keepDb() {
+  return keepOpen ??= new Promise((ok, fail) => {
+    const r = indexedDB.open('aeon-garden', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('meadows');
+    r.onsuccess = () => ok(r.result);
+    r.onerror = () => fail(r.error);
+  });
+}
+function keptList() {
+  try { return JSON.parse(localStorage.getItem(KEPT) || '[]'); } catch (e) { return []; }
+}
+function setKept(list) {
+  try { localStorage.setItem(KEPT, JSON.stringify(list)); return true; } catch (e) { return false; }
+}
+
+// Hiding the page or leaving it (below), or now and then while it films itself: a few hundredths of a
+// second, so never while someone is watching.
+function keepMeadow() {
+  if (opening === 1) cleared();                       // never shown (a tab in the background): it can't have broken anything
+  if (LAB || !world || world.tick === keptTick || !$('#welcome').classList.contains('hidden')) return;
+  let kept;
+  try { kept = S.packWorld(world); } catch (e) { console.warn('Could not keep the meadow', e); return; }
+  keptTick = world.tick; keptWhen = Date.now();
+  const link = meadowLink(world.seed), at = Date.now();
+  const list = [{ link, at }, ...keptList().filter(k => k.link !== link)];
+  if (!setKept(list.slice(0, KEEP_MEADOWS))) return;
+  const rec = { link, at, kept, paused: ui.speed === 0, news: ui.newsLog, records: ui.records, crashSaid: ui.crashSaid,
+    cam: { x: cam.x, y: cam.y, zoom: cam.zoom }, selectedId: ui.selectedId, follow: ui.follow };
+  keepDb().then(db => {
+    const tx = db.transaction('meadows', 'readwrite'), store = tx.objectStore('meadows');
+    store.put(rec, link);
+    for (const k of list.slice(KEEP_MEADOWS)) store.delete(k.link);
+    tx.commit?.();                                     // now, not when the page gets round to it
+  }).catch(e => console.warn('Could not keep the meadow', e));
+}
+
+// The kept meadow to open: this seed's, or with none, the one watched last. Null if there's none, or
+// no IndexedDB, or it takes too long to say (a new meadow then).
+function keptMeadow(seed) {
+  const list = keptList(), link = seed ? meadowLink(seed) : list[0]?.link;
+  if (!link || !list.some(k => k.link === link)) return Promise.resolve(null);
+  let broke = false;
+  try { broke = localStorage.getItem(OPENING) === link; } catch (e) { /* fine */ }
+  if (broke) { forgetMeadow(link); return Promise.resolve(null); }
+  const read = keepDb().then(db => new Promise(ok => {
+    const r = db.transaction('meadows').objectStore('meadows').get(link);
+    r.onsuccess = () => ok(r.result || null);
+    r.onerror = () => ok(null);
+  }));
+  return Promise.race([read, new Promise(ok => setTimeout(ok, 3000, null))]).catch(() => null);
+}
+
+function cleared() {
+  opening = 0;
+  try { localStorage.removeItem(OPENING); } catch (e) { /* fine */ }
+}
+function forgetMeadow(link) {
+  setKept(keptList().filter(k => k.link !== link));
+  cleared();
+  keepDb().then(db => db.transaction('meadows', 'readwrite').objectStore('meadows').delete(link)).catch(() => {});
+}
+
+// A kept meadow back on screen. False if it won't open, and then it's let go.
+function resumeWorld(rec) {
+  try {
+    localStorage.setItem(OPENING, rec.link);          // cleared once it has run a few frames (frame)
+    const w = S.unpackWorld(rec.kept);
+    if (!w) throw new Error('kept by another version');
+    terrain = w.options.terrain || {}; drawn = w.options.drawn || {};
+    showWorld(w);
+    S.step(world);                                    // a meadow that can't take a step is no good
+    flushEvents();
+  } catch (e) {
+    console.warn('The kept meadow would not open', e);
+    forgetMeadow(rec.link);
+    return false;
+  }
+  opening = 1;
+  Object.assign(ui, { newsLog: rec.news || [], records: rec.records || ui.records, crashSaid: rec.crashSaid || ui.crashSaid });
+  renderNewsLog();
+  if (rec.cam) { cam.zoom = Math.max(rec.cam.zoom, minZoom); cam.x = rec.cam.x; cam.y = rec.cam.y; clampCam(); }
+  const c = world.byId.get(rec.selectedId);
+  if (c) { select(c.id, false); ui.follow = rec.follow; }
+  history.replaceState(null, '', meadowLink(world.seed));
+  return true;
+}
+
+let hiddenAt = 0;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { hiddenAt = Date.now(); keepMeadow(); }
+  else if (hiddenAt && Date.now() - hiddenAt > AWAY_MIN && world && ui.speed > 0 && (!ui.hush || idle.on) && !LAB && !away.on) startAway();
+});
+addEventListener('pagehide', keepMeadow);
+
+// ------------------------------------------------------------------ while you were away
+//
+// The meadow keeps its own time. Back after a while (the page closed, or hidden), it runs on by a
+// season while a card says so, then the card says what happened. Nothing is drawn meanwhile: days
+// flashing by would flicker. Paused, it waited for you.
+const AWAY_MIN = 5 * 60e3;                 // gone at least this long, in real time
+const AWAY_TICKS = S.SEASON_DAYS * S.TPD;  // and it moves on a season, however long it was
+const AWAY_MS = 40;                        // of each frame the catching up gets
+const AWAY_BIG = ['extinct', 'swarm', 'settle', 'hivestruck', 'queenlost', 'fire', 'mast', 'treedied', 'windthrow'];   // news for the card, the first told first
+const away = { on: false, frames: 0, left: 0, from: 0, day: -1, births: null, deaths: null, news: [], type: '', mine: false };
+const awayOpen = () => !$('#away').classList.contains('hidden');
+const deathsOf = s => Object.values(world.stats.deaths[s]).reduce((a, b) => a + b, 0);
+
+function startAway() {
+  if (idle.on) wakeIdle();
+  Object.assign(away, { on: true, frames: 0, left: AWAY_TICKS, from: world.tick, day: -1, news: [],
+    births: perKind(s => world.stats.births[s]), deaths: perKind(deathsOf) });
+  $('#away').classList.remove('hidden', 'done');
+  awayProgress();
+}
+
+// The first frame only draws the meadow as it was; after that each one runs it on, and draws nothing.
+function awayFrame() {
+  if (!away.frames++) return;
+  const t0 = performance.now();
+  do {
+    for (let i = 0; i < 16 && away.left > 0; i++, away.left--) {
+      S.step(world);
+      if (world.events.length) flushEvents();
+    }
+  } while (away.left > 0 && performance.now() - t0 < AWAY_MS);
+  if (away.left > 0) awayProgress(); else awayDone();
+}
+
+function awayProgress() {
+  const day = Math.floor(world.tick / S.TPD);
+  if (day === away.day) return;
+  away.day = day;
+  $('#away-text').textContent = `The meadow kept its own time. ${S.SEASONS[S.seasonOf(world.tick)].emoji} ${when(world.tick)}…`;
+}
+
+// Called by addNews while catching up: yours, or big news, goes on the card.
+function awayNews(html) {
+  const rank = away.mine ? -1 : AWAY_BIG.indexOf(away.type);
+  if ((away.mine || rank >= 0) && !away.news.some(n => n.html === html)) away.news.push({ html, rank });
+}
+
+function awayDone() {
+  away.on = false;
+  ui.effects.length = ui.zaps.length = ui.trail.length = 0;   // what they showed is long over
+  const from = S.SEASONS[S.seasonOf(away.from)], to = S.SEASONS[S.seasonOf(world.tick)];
+  const and = parts => (parts.length > 1 ? parts.slice(0, -1).join(', ') + ' and ' + parts.at(-1) : parts[0]);
+  const tally = (was, now) => and(S.KINDS.filter(s => now(s) > was[s])
+    .map(s => { const n = now(s) - was[s]; return `${n} ${(n === 1 ? S.SPECIES[s].name : S.SPECIES[s].plural).toLowerCase()}`; }));
+  const born = tally(away.births, s => world.stats.births[s]), died = tally(away.deaths, deathsOf);
+  $('#away-text').textContent = `${from.emoji} ${from.name} turned to ${to.name.toLowerCase()}.`
+    + (to === S.SEASONS[0] ? ` Year ${S.clock(world).year} has begun.` : '');
+  $('#away-life').textContent = [born && `🐣 Born: ${born}.`, died && `🥀 Gone: ${died}.`].filter(Boolean).join('\n') || 'A quiet season.';
+  const top = away.news.sort((a, b) => a.rank - b.rank).slice(0, 3);
+  $('#away-news').innerHTML = top.map(n => `<li>${n.html}</li>`).join('');
+  away.news = [];
+  $('#away').classList.add('done');
+}
+
+function closeAway() {
+  if (!away.on) $('#away').classList.add('hidden');
+}
+$('#away').addEventListener('click', e => { if (e.target.closest('a[data-id], a[data-thing]')) closeAway(); });   // off to see who it was
+
 // ------------------------------------------------------------------ the loop
 
 function flushEvents() {
@@ -5227,7 +5435,18 @@ function flushEvents() {
 function randomSeed() { return Math.floor(Math.random() * 1e6); }
 
 function newWorld(seed, arrival = false) {
-  world = S.createWorld(seed, LAB ? { terrain, drawn, rabbits: 0, foxes: 0, bees: 0 } : { terrain, drawn, arrival });
+  showWorld(S.createWorld(seed, LAB ? { terrain, drawn, rabbits: 0, foxes: 0, bees: 0 } : { terrain, drawn, arrival }));
+  const big = [world.waters.find(v => v.kind === 'river'), world.lake].filter(Boolean).map(v => `<b>${v.name}</b>`);
+  const by = big.length ? ' by ' + big.join(' and ') : '';
+  addNews(arrival ? `🌱 A new meadow${by}. Nobody lives here yet.`
+    : `🌱 A new meadow${by}. <b>${world.count.rabbit} rabbits</b> and <b>${world.count.fox} foxes</b> have just moved in.`);
+  if (!LAB) history.replaceState(null, '', meadowLink(seed));
+}
+
+// Everything a meadow needs to be the one on screen, a new one or a kept one (resumeWorld).
+function showWorld(w) {
+  world = w;
+  const seed = w.seed;
   intro.family = [];
   groundSeed = [(seed % 97) * 3.7, (seed % 89) * 4.3];
   Object.assign(ui, { selectedId: 0, picked: null, hoverId: 0, follow: false, trail: [], effects: [], zaps: [], lastNews: {}, newsLog: [] });
@@ -5246,11 +5465,6 @@ function newWorld(seed, arrival = false) {
   renderInspector();
   updateMeadowCard();
   if (ui.stats.open) renderStats();
-  const big = [world.waters.find(v => v.kind === 'river'), world.lake].filter(Boolean).map(v => `<b>${v.name}</b>`);
-  const by = big.length ? ' by ' + big.join(' and ') : '';
-  addNews(arrival ? `🌱 A new meadow${by}. Nobody lives here yet.`
-    : `🌱 A new meadow${by}. <b>${world.count.rabbit} rabbits</b> and <b>${world.count.fox} foxes</b> have just moved in.`);
-  if (!LAB) history.replaceState(null, '', '?seed=' + seed + terrainQuery());
 }
 
 let last = performance.now(), acc = 0, lastCard = 0, lastRecord = 0, lastStatsCards = 0;
@@ -5273,11 +5487,13 @@ function resting(now) {
 }
 
 function frame(now) {
+  if (opening === 1) opening = 2;
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   if (intro.on) introFrame(now, dt);
 
-  if (ui.speed > 0) {
+  if (away.on) awayFrame();
+  else if (ui.speed > 0) {
     strikeZaps(now);
     acc += dt * TICKS_PER_SECOND * ui.speed;
     const n = Math.min(Math.floor(acc), 2000), t0 = performance.now();
@@ -5321,7 +5537,7 @@ function frame(now) {
   clampCam();
 
   const rest = resting(now) && now - lastDrawn < RESTING_MS;
-  if (!rest && !ui.stats.open && canvas.width && canvas.height) {   // the stats page covers the meadow; a hidden tab can have no size
+  if (!rest && !(away.on && away.frames > 1) && !ui.stats.open && canvas.width && canvas.height) {   // the stats page covers the meadow; a hidden tab can have no size
     lastDrawn = now;
     // Every 12 ticks, and no more than a few times a second: grass changes too slowly to see the difference.
     if (terrainTick < 0 || (world.tick - terrainTick >= 12 && now - terrainAt >= TERRAIN_MS)) paintTerrain();
@@ -5333,6 +5549,7 @@ function frame(now) {
     askTick(Math.min(now - lastCard, 1000));
     lastCard = now;
     if (idleMayStart(now)) startIdle(now);
+    if (idle.on && Date.now() - keptWhen > KEEP_IDLE_MS) keepMeadow();
     updateMeadowCard();
     if (ui.sound) {
       const ck = S.clock(world);
@@ -5348,6 +5565,7 @@ function frame(now) {
     renderStatsCards();
   }
   if (world.history.t.length !== lastRecord) { lastRecord = world.history.t.length; checkPopulationNews(); }
+  if (opening > 1 && ++opening > 4) cleared();       // a kept meadow that opened fine
   requestAnimationFrame(frame);
 }
 
@@ -5387,21 +5605,32 @@ const seedParam = +params.get('seed');
 let seen = false;
 try { seen = localStorage.getItem('aeon-garden-welcomed') === '1'; } catch (e) { /* private window */ }
 const firstVisit = !LAB && (!seen || params.has('intro'));   // ?intro plays it again
-newWorld(seedParam || randomSeed(), firstVisit);
+// The kept meadow if there is one (keeping the meadow, above), else a new one. The rest below doesn't wait for it.
+function begin(rec) {
+  const back = rec && resumeWorld(rec);
+  if (!back) newWorld(seedParam || randomSeed(), firstVisit);
+  if (rec && !back) addNews("🌱 Your meadow couldn't come along into this version of the game, so here is a new one.");
 
-if (LAB) {
-  document.body.classList.add('lab');
-  setSpeed(0);
-  const js = document.createElement('script');
-  js.src = 'terrain-lab.js';
-  document.body.append(js);
-} else if (firstVisit) {
-  $('#welcome').classList.remove('hidden');
-  hush(true);                                         // nothing to count yet: the bars and cards wait
-  setSpeed(0);
-  if (world.family && !calm) introShot();
-} else homeTip(30000);
+  if (LAB) {
+    document.body.classList.add('lab');
+    setSpeed(0);
+    const js = document.createElement('script');
+    js.src = 'terrain-lab.js';
+    document.body.append(js);
+  } else if (firstVisit) {
+    $('#welcome').classList.remove('hidden');
+    hush(true);                                         // nothing to count yet: the bars and cards wait
+    setSpeed(0);
+    if (world.family && !calm) introShot();
+  } else homeTip(30000);
+  if (back && !rec.paused && Date.now() - rec.at > AWAY_MIN) startAway();
+  requestAnimationFrame(frame);
+}
+(firstVisit || LAB ? Promise.resolve(null) : keptMeadow(seedParam)).then(begin);
+if (!LAB) keepDb().catch(() => { /* not kept, then */ });   // opened now, so keeping at the last moment needn't wait for it
 showHomeItem();
+if (canShare) $('[data-act="copy-link"]').textContent = '🔗 Share this meadow';
+if (!IDEAS_KEY) $('[data-act="ideas"]').remove();
 $('#go').addEventListener('click', () => {
   const card = $('#welcome');
   card.classList.add('leaving');
@@ -5429,7 +5658,6 @@ showGroup();
 setTimeout(() => { barNear = false; updateBar(); }, 4000);   // show the toolbar for a moment, then let the meadow breathe
 for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => { if (ui.sound) Sound.start(); }, { once: true });
 
-requestAnimationFrame(frame);
 window.garden = { get world() { return world; }, ui, cam, lab, installed,   // handy in the console
   get trees() { return { worker: !!treeWorker, workers: treeWorkers.length, art: treeArt, bytes: treeBytes, asked: treeAsked.size, busy: treeBusy }; } };
 })();

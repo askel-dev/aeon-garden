@@ -126,6 +126,7 @@ function makeRng(seed) {
   };
   return {
     next,
+    state: () => s,                                  // makeRng(state) carries on from here (packWorld)
     range: (a, b) => a + (b - a) * next(),
     int: (a, b) => a + Math.floor(next() * (b - a + 1)),
     normal: () => {
@@ -3317,6 +3318,93 @@ function forgetTheLongDead(w) {
   for (const [id, c] of w.byId) if (!c.alive && c.died < horizon) w.byId.delete(id);
 }
 
+// ---------------------------------------------------------------- keeping a meadow
+//
+// A meadow is kept between visits (game.js, keepMeadow): packWorld turns it into plain data the
+// browser can store, unpackWorld brings it back. The world is a web of objects pointing at each
+// other (a rabbit at its burrow, a hive at its tree), so each object goes once into a flat list and
+// a pointer to it is {$: its place}. The tables in this file (SPECIES and the like) are pointed at by
+// name, {$t: 'SPECIES.fox'}, so a kept meadow plays by the rules of the day. The random numbers go as
+// where they'd got to. The neighbour grids and the events stay out, and are made again.
+// A change a kept meadow can't take (a new field the code counts on, on the world, a creature, a hive
+// or a tree) bumps KEEP_VERSION, and kept meadows start over.
+const KEEP_VERSION = 1;
+const TABLES = { SPECIES, FIELD_KINDS, TREE_MIX, TREES, SEASONS, WEATHER, COATS, GROUND };
+const UNKEPT = ['grid', 'grids', 'events', 'newborn'];      // on the world
+let tableNames = null;                                     // object -> 'SPECIES.fox', made the first time
+// Of the dead (w.byId keeps them a few years), a kept meadow keeps only those still spoken of: parents
+// (the family in the inspector), foxes (a rabbit's nemesis) and the lately gone (the news).
+const remembered = (w, c) => c.alive || c.kids || c.species === 'fox' || w.tick - c.died < SEASON_DAYS * TPD;
+
+function nameTables() {
+  tableNames = new Map();
+  const walk = (o, path) => {
+    if (!o || typeof o !== 'object' || tableNames.has(o)) return;
+    tableNames.set(o, path);
+    for (const k of Object.keys(o)) walk(o[k], path + '.' + k);
+  };
+  for (const k of Object.keys(TABLES)) walk(TABLES[k], k);
+}
+
+function packWorld(w) {
+  if (!tableNames) nameTables();
+  const list = [w], place = new Map([[w, 0]]);
+  const pack = v => {
+    if (v === null || typeof v !== 'object') {
+      if (typeof v === 'function') throw new Error('packWorld: a function');
+      return v;
+    }
+    const t = tableNames.get(v);
+    if (t) return { $t: t };
+    if (typeof v.next === 'function' && v.state) return { $r: v.state() };
+    let n = place.get(v);
+    if (n === undefined) { n = list.length; place.set(v, n); list.push(v); }
+    return { $: n };
+  };
+  const out = [];
+  for (let i = 0; i < list.length; i++) {             // the list grows as pointers turn up
+    const o = list[i];
+    let e;
+    if (Array.isArray(o)) { e = new Array(o.length); for (let k = 0; k < o.length; k++) e[k] = pack(o[k]); }
+    else if (ArrayBuffer.isView(o)) e = o.slice();                   // a copy: the browser may store it a moment later
+    else if (o instanceof Map) { e = { $map: [] }; for (const [k, v] of o) if (o !== w.byId || remembered(w, v)) e.$map.push(pack(k), pack(v)); }
+    else if (o instanceof Set) { e = { $set: [] }; for (const v of o) e.$set.push(pack(v)); }
+    else {
+      if (Object.getPrototypeOf(o) !== Object.prototype) throw new Error('packWorld: not plain data');
+      e = {};
+      for (const k in o) if (!(i === 0 && UNKEPT.includes(k))) e[k] = pack(o[k]);
+    }
+    out.push(e);
+  }
+  return { version: KEEP_VERSION, list: out };
+}
+
+// Null for a meadow kept by another version.
+function unpackWorld(kept) {
+  if (!kept || kept.version !== KEEP_VERSION) return null;
+  const list = kept.list;
+  const made = list.map(e => (Array.isArray(e) ? new Array(e.length) : ArrayBuffer.isView(e) ? e
+    : e.$map ? new Map() : e.$set ? new Set() : {}));
+  const table = path => path.split('.').reduce((o, k) => {
+    if (!o || !(k in o)) throw new Error('unpackWorld: no table ' + path);
+    return o[k];
+  }, TABLES);
+  const value = v => (v === null || typeof v !== 'object' ? v
+    : v.$ !== undefined ? made[v.$] : v.$t ? table(v.$t) : makeRng(v.$r));
+  for (let i = 0; i < list.length; i++) {
+    const e = list[i], o = made[i];
+    if (Array.isArray(e)) for (let k = 0; k < e.length; k++) o[k] = value(e[k]);
+    else if (ArrayBuffer.isView(e)) continue;
+    else if (e.$map) for (let k = 0; k < e.$map.length; k += 2) o.set(value(e.$map[k]), value(e.$map[k + 1]));
+    else if (e.$set) for (const v of e.$set) o.add(value(v));
+    else for (const k in e) o[k] = value(e[k]);
+  }
+  const w = made[0];
+  w.grid = makeGrid(); w.grids = perKind(makeGrid); w.events = []; w.newborn = [];
+  buildGrid(w);
+  return w;
+}
+
 // ---------------------------------------------------------------- player powers
 
 function paintGrass(w, x, y, radius) {
@@ -3397,7 +3485,7 @@ function mood(w, c) {
 const api = {
   W, H, TPD, SHALLOW, DEEP, SEASON_DAYS, YEAR_DAYS, SEASONS, SPECIES, GENES, COATS, GROUND, WEATHER,
   createWorld, step, clock, isNight, phaseOf, seasonOf, mood, ageDays, growth, isAdult, patchFresh,
-  addCreature, paintGrass, setSky, lockSky, zap, burnLine, traitMeans, walkable,
+  addCreature, paintGrass, setSky, lockSky, zap, burnLine, traitMeans, walkable, packWorld, unpackWorld,
   coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT, KINDS,
   TERRAIN, drawnToLink, drawnFromLink, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE,
