@@ -445,6 +445,36 @@ function readDrawn(d = {}) {
   };
 }
 
+// The drawing as a link carries it, after the # (the server never sees that part, and a big drawing
+// is too long for a ?query): empty&water=x,y,r,deep,x,..&rivers=x,y,x,y;x,y,..&woods=x,y,r,..
+function drawnToLink(d = {}) {
+  const nums = a => a.flat().map(v => Math.round(v * 100) / 100).join(',');
+  return [
+    d.empty && 'empty',
+    d.water?.length && 'water=' + nums(d.water),
+    d.rivers?.length && 'rivers=' + d.rivers.map(nums).join(';'),
+    d.woods?.length && 'woods=' + nums(d.woods),
+  ].filter(Boolean).join('&');
+}
+
+function drawnFromLink(s) {
+  const d = { empty: false, water: [], rivers: [], woods: [] };
+  const groups = (v, n) => {
+    const a = v.split(',').map(Number).filter(Number.isFinite), out = [];
+    for (let i = 0; i + n <= a.length; i += n) out.push(a.slice(i, i + n));
+    return out;
+  };
+  try { s = decodeURIComponent(s.replace(/^#/, '')); } catch (e) { return d; }   // a broken link: nothing drawn
+  for (const part of s.split('&')) {
+    const [k, v = ''] = part.split('=');
+    if (k === 'empty') d.empty = true;
+    else if (k === 'water') d.water = groups(v, 4);
+    else if (k === 'woods') d.woods = groups(v, 3);
+    else if (k === 'rivers') d.rivers = v.split(';').map(p => groups(p, 2)).filter(p => p.length > 1);
+  }
+  return d;
+}
+
 // Picks one of the keys of { name: odds }.
 function pickOdds(r, odds) {
   const keys = Object.keys(odds);
@@ -3369,7 +3399,7 @@ const api = {
   createWorld, step, clock, isNight, phaseOf, seasonOf, mood, ageDays, growth, isAdult, patchFresh,
   addCreature, paintGrass, setSky, lockSky, zap, burnLine, traitMeans, walkable,
   coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT, KINDS,
-  TERRAIN, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, LOAD, HONEY,
+  TERRAIN, drawnToLink, drawnFromLink, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE,
   TREES, treeStage, treeAge, standing, bearing, hollow, inBloom, SEEDLING, SAPLING, GROWN, KIND_NAMES,
 };

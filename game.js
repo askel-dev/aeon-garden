@@ -11,14 +11,14 @@ const perKind = make => Object.fromEntries(S.KINDS.map(s => [s, make(s)]));   //
 
 // ------------------------------------------------------------------ state
 
-// ?terrain={...} overrides some of the meadow's settings (Sim.TERRAIN) and ?drawn={...} adds
-// what was drawn on it, as the terrain lab hands them over. ?lab opens that lab: the meadow
-// without animals, and terrain-lab.js on top.
+// ?terrain={...} overrides some of the meadow's settings (Sim.TERRAIN) and #water=.. adds what was
+// drawn on it (Sim.drawnToLink; older links have it as ?drawn={...}), as the terrain lab hands them
+// over. ?lab opens that lab: the meadow without animals, and terrain-lab.js on top.
 const params = new URLSearchParams(location.search), LAB = params.has('lab');
 const fromUrl = key => { try { return JSON.parse(params.get(key) || '{}'); } catch (e) { return {}; } };   // a broken link: the usual meadow
-let terrain = fromUrl('terrain'), drawn = fromUrl('drawn');
-const terrainQuery = () => ['terrain', 'drawn'].map(k => [k, { terrain, drawn }[k]])
-  .filter(([, v]) => Object.keys(v).length).map(([k, v]) => `&${k}=` + encodeURIComponent(JSON.stringify(v))).join('');
+let terrain = fromUrl('terrain'), drawn = location.hash.length > 1 ? S.drawnFromLink(location.hash) : fromUrl('drawn');
+const terrainQuery = () => (Object.keys(terrain).length ? '&terrain=' + encodeURIComponent(JSON.stringify(terrain)) : '')
+  + (S.drawnToLink(drawn) ? '#' + S.drawnToLink(drawn) : '');
 
 let world;
 const ui = {
@@ -4600,6 +4600,46 @@ function homeTip(ms) {
   }, ms);
 }
 
+// Once ever, after two minutes of play: are you enjoying it, and any ideas? The idea goes to Web3Forms,
+// which emails it on. The key is theirs to give out (it can only send to that one inbox). With no key
+// the card never shows.
+const IDEAS_KEY = '74821b79-dd35-4f02-a7a4-24ebb7c7ebff';   // the access key from web3forms.com
+const ASK_MS = 120000;                  // play this long first (the tab showing, past the welcome and intro)
+let played = 0;
+try { if (localStorage.getItem('aeon-garden-asked') === '1') played = -Infinity; } catch (e) { played = -Infinity; }
+const askOpen = () => !$('#ask').classList.contains('hidden');
+
+// Counted a few times a second. It waits for a quiet moment: nothing else open, not filming itself.
+function askTick(ms) {
+  if (!IDEAS_KEY || LAB || played < 0 || document.hidden || intro.on || !$('#welcome').classList.contains('hidden')) return;
+  if ((played += ms) < ASK_MS) return;
+  if (idle.on || ui.hush || ui.ring || ui.stats.open || ui.newsOpen || homeOpen() || !$('#more-menu').classList.contains('hidden')) return;
+  played = -Infinity;
+  try { localStorage.setItem('aeon-garden-asked', '1'); } catch (e) { /* fine */ }
+  askIdeas(true);
+}
+function askIdeas(open) {
+  $('#ask').classList.toggle('hidden', !open);
+  if (open && !narrow()) $('#ask-text').focus({ preventScroll: true });   // (on a phone the keyboard would jump up)
+}
+function sendIdea() {
+  const text = $('#ask-text').value.trim();
+  if (!text) { $('#ask-text').focus(); return; }
+  $('#ask-send').disabled = true;
+  fetch('https://api.web3forms.com/submit', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ access_key: IDEAS_KEY, subject: "An idea for Nobody's Meadow", from_name: "Nobody's Meadow", message: text }),
+  }).then(r => r.json()).then(r => {
+    if (!r.success) throw r;
+    $('#ask').classList.add('sent');
+    setTimeout(() => askIdeas(false), 2500);
+  }).catch(() => {
+    $('#ask-send').disabled = false;
+    addNews("💌 Couldn't send your idea just now. Your words are still in the box, try again in a moment.");
+  });
+}
+$('#ask').addEventListener('keydown', e => { if (e.key === 'Escape') askIdeas(false); });
+
 function copyLink() {
   navigator.clipboard?.writeText(location.href).then(
     () => addNews('🔗 Link copied. Anyone who opens it gets this same meadow from the start.'),
@@ -4682,6 +4722,8 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'home') homeGuide();
   else if (t.dataset.act === 'home-done') homeGuide(false);
   else if (t.dataset.act === 'home-install') install();
+  else if (t.dataset.act === 'ask-later') askIdeas(false);
+  else if (t.dataset.act === 'ask-send') sendIdea();
   else if (t.dataset.act === 'sound') toggleSound();
   else if (t.dataset.act === 'stats') toggleStats();
   else if (t.dataset.show) { ui.stats.show = t.dataset.show; renderStats(); }
@@ -4943,7 +4985,7 @@ const between = (a, b) => a + Math.random() * (b - a);
 const anyOf = a => a.length ? a[Math.floor(Math.random() * a.length)] : null;
 
 const idleMayStart = now => !idle.on && now - lastInput > IDLE_MS && ui.speed > 0 && !ui.hush && !LAB && !calm && !document.hidden
-  && !ui.selectedId && !ui.picked && !ui.ring && !ui.stats.open && !ui.newsOpen && !ui.sky.menu
+  && !askOpen() && !ui.selectedId && !ui.picked && !ui.ring && !ui.stats.open && !ui.newsOpen && !ui.sky.menu
   && $('#more-menu').classList.contains('hidden') && !homeOpen() && !$('#toolbar').classList.contains('open');
 
 function startIdle(now = performance.now()) {
@@ -5278,6 +5320,7 @@ function frame(now) {
   }
 
   if (now - lastCard > 250) {
+    askTick(Math.min(now - lastCard, 1000));
     lastCard = now;
     if (idleMayStart(now)) startIdle(now);
     updateMeadowCard();

@@ -79,7 +79,7 @@ told to just do it.
   back the `TERRAIN` block to paste over the one in sim.js. New terrain numbers belong in `TERRAIN`
   (one per line, with a comment) and get a slider in the lab's `GROUPS`. You can also draw water,
   rivers and woods there; the drawing is createWorld's `drawn` option (`readDrawn`), carved by the
-  same code as generated water, and travels in the link (`?drawn=`).
+  same code as generated water, and travels in the link after the `#` (`drawnToLink`: a server turns a long `?query` away).
 
 Run: `python3 -m http.server 8765`, then open http://localhost:8765 (`?seed=123` replays
 a meadow).
