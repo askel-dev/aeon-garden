@@ -48,7 +48,9 @@
   <h1>🌳 Meadow Tree Lab</h1>
   <p class="lead">Every tree kind through the year, painted by <code>trees.js</code> exactly as the game will get them:
     sculpted as a little 3D model for the light, then painted over with leaf dabs and bark strokes. The sliders tune the
-    brush for all trees at once; "Copy as code" gives back the <code>LOOK</code> block to paste over the one in trees.js.</p>
+    brush for all trees at once; "Copy as code" gives back the <code>LOOK</code> block to paste over the one in trees.js.
+    Each tree in the game has a tone of its kind (a copper beech is the beech's fourth), is slimmer while young, stands
+    grey once dead, and at last lies as a log; lightning leaves a stump.</p>
 
   <div class="card">
     <div class="row" id="kinds"><span class="lbl">Trees</span></div>
@@ -62,6 +64,14 @@
       <span class="lbl" style="margin-left:14px;width:auto">Snow in winter</span>
       <input id="snow" type="range" min="0" max="1" step="0.05" value="1" style="width:110px">
       <span id="status"></span>
+    </div>
+    <div class="row">
+      <span class="lbl">Tone</span>
+      <span id="tones"></span>
+      <span class="lbl" style="margin-left:14px;width:auto">Age</span>
+      <span id="ages"></span>
+      <span class="lbl" style="margin-left:14px;width:auto">Bark of a log or stump</span>
+      <span id="barks"></span>
     </div>
   </div>
 
@@ -94,8 +104,8 @@
 (() => {
 'use strict';
 const T = window.Trees, S = window.Sim, $ = s => document.querySelector(s);
-const SEASON_ICON = { spring: '🌸', summer: '☀️', autumn: '🍂', winter: '❄️', bare: '🪵', bud: '🌱', thin: '🍁' };
-const LOOKS = ['bare', 'bud', 'spring', 'summer', 'autumn', 'thin', 'winter'];   // the seasons and the looks between (Trees.LOOKS), through the year
+const SEASON_ICON = { spring: '🌸', summer: '☀️', autumn: '🍂', winter: '❄️', bare: '🪵', bud: '🌱', thin: '🍁', dead: '🦴' };
+const LOOKS = ['bare', 'bud', 'spring', 'summer', 'autumn', 'thin', 'winter', 'dead'];   // the seasons and the looks between (Trees.LOOKS), through the year, and dead
 const SIZES = [['Close', 1.2], ['Big', 0.8], ['Game', 0.5], ['Far', 0.25]];
 const HINTS = {
   dab: ['Leaf size', 'how big each painted leaf is', 1, 8, 0.1],
@@ -112,7 +122,9 @@ const HINTS = {
   spread: ['Branch spread', 'how wide the branches reach (narrower: more room between trees)', 0.5, 1.3, 0.05],
 };
 const DEFAULT = { ...T.LOOK };
-const st = { kinds: Object.keys(T.KINDS), seasons: T.SEASONS.slice(), size: 0.8, seed: 1, snow: 1, ss: 3 };
+// tone: null takes it from the seed, as the painter does; the game gives each tree one from its genes.
+const st = { kinds: Object.keys(T.KINDS), seasons: T.SEASONS.slice(), size: 0.8, seed: 1, snow: 1, ss: 3, tone: null, young: false, bark: 'bark' };
+const opts = (seed, season, scale, ss) => ({ seed, season, snow: season === 'winter' ? st.snow : 0, scale, ss, tone: st.tone ?? undefined, young: st.young, bark: st.bark });
 
 // ---- controls
 function chips(el, items, isOn, toggle) {
@@ -137,6 +149,9 @@ chips($('#kinds'), Object.entries(T.KINDS).map(([k, v]) => [k, v.name]), k => st
 chips($('#seasons'), LOOKS.map(s => [s, SEASON_ICON[s] + ' ' + s[0].toUpperCase() + s.slice(1)]), s => st.seasons.includes(s), pick(st.seasons, T.SEASONS, LOOKS));
 chips($('#sizes'), SIZES.map(([n, k]) => [k, n]), k => +k === st.size, k => { st.size = +k; });
 chips($('#quality'), [[2, 'Quick'], [3, 'Game'], [4, 'Fine']], k => +k === st.ss, k => { st.ss = +k; });
+chips($('#tones'), [['', 'From seed'], [0, '1'], [1, '2'], [2, '3'], [3, 'Copper beech']], k => (k === '' ? null : +k) === st.tone, k => { st.tone = k === '' ? null : +k; });
+chips($('#ages'), [['grown', 'Grown'], ['young', 'Young']], k => (k === 'young') === st.young, k => { st.young = k === 'young'; });
+chips($('#barks'), [['bark', 'Oak'], ['grey', 'Beech'], ['birch', 'Birch']], k => k === st.bark, k => { st.bark = k; });
 $('#seed').oninput = e => { st.seed = Math.max(1, +e.target.value || 1); draw(); };
 $('#another').onclick = () => { st.seed = 1 + Math.floor(Math.random() * 9999); $('#seed').value = st.seed; draw(); };
 $('#snow').oninput = e => { st.snow = +e.target.value; draw(); };
@@ -166,7 +181,7 @@ $('#copy').onclick = () => {
 // ---- painting, a tree at a time so the page stays live
 const rgb = c => `rgb(${c.map(v => Math.round(v)).join(',')})`;
 function groundOf(season, snow) {
-  if (T.LOOKS[season]) season = season === 'bare' ? 'spring' : T.LOOKS[season][0];   // (an oak stands bare in early spring)
+  if (T.LOOKS[season]) season = season === 'bare' ? 'spring' : season === 'dead' ? 'summer' : T.LOOKS[season][0];   // (an oak stands bare in early spring)
   const i = T.SEASONS.indexOf(season), lush = S.GROUND.seasons[i][1];
   return season === 'winter' && snow > 0.5 ? S.GROUND.snow : lush;
 }
@@ -197,7 +212,7 @@ function draw() {
       grid.appendChild(cell);
       jobs.push(() => {
         const t0 = performance.now();
-        const tree = T.paint(k, { seed: st.seed, season: s, snow: s === 'winter' ? st.snow : 0, scale: st.size, ss: st.ss });
+        const tree = T.paint(k, opts(st.seed, s, st.size, st.ss));
         const ms = performance.now() - t0;
         cell.appendChild(withShadow(tree));
         const tag = document.createElement('span'); tag.className = 'ms'; tag.textContent = Math.round(ms) + ' ms'; cell.appendChild(tag);
@@ -224,7 +239,7 @@ function drawFar(my) {
   c.width = W * dpr; c.height = H * dpr;
   const g = c.getContext('2d'); g.scale(dpr, dpr);
   g.fillStyle = rgb(groundOf(season, st.snow)); g.fillRect(0, 0, W, H);
-  const snow = season === 'winter' ? st.snow : 0, kinds = st.kinds, spots = [];
+  const kinds = st.kinds, spots = [];
   let r = st.seed * 9301 + 49297;
   const rand = () => (r = (r * 9301 + 49297) % 233280) / 233280;
   for (let i = 0; i < 26; i++) spots.push([30 + rand() * (W - 60), 80 + rand() * (H - 90), kinds[i % kinds.length], i]);
@@ -232,7 +247,7 @@ function drawFar(my) {
   const cache = {};
   for (const [x, y, k, i] of spots) {
     const key = k + (i % 3);
-    const tree = cache[key] || (cache[key] = withShadow(T.paint(k, { seed: st.seed + (i % 3), season, snow, scale: 0.26 * dpr, ss: 2 })));
+    const tree = cache[key] || (cache[key] = withShadow(T.paint(k, opts(st.seed + (i % 3), season, 0.26 * dpr, 2))));
     if (my !== gen) return;
     g.drawImage(tree, x - (tree.width / dpr) / 2, y - (tree.height / dpr) + 4, tree.width / dpr, tree.height / dpr);
   }

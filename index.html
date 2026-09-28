@@ -63,6 +63,8 @@
   /* The meadow fills the whole glass: under the clock and behind Safari's floating bar too (lvh). */
   canvas#world { position: fixed; top: 0; left: 0; width: 100%; height: 100vh; height: 100lvh; display: block; touch-action: none;
     -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }   /* a held finger opens the ring, not Safari's menu */
+  /* The ground under it, a little bigger than the screen; game.js sizes it and slides it into place. */
+  canvas#ground { position: fixed; top: 0; left: 0; display: block; pointer-events: none; transform-origin: 0 0; }
   .phone-only { display: none; }
   canvas#world.tool-look { cursor: grab; }
   canvas#world.tool-look.dragging { cursor: grabbing; }

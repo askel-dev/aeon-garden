@@ -16,7 +16,8 @@
  * ash, wood), 'bloom' (a field's tint times how much it shows, then how much), 'shape' (height,
  * tiles to the water, tiles to the woods) and 'water' (the water softened by 1, 2 and 4 blurs,
  * and the deep water by 2). Then Ground.draw(uniforms) paints Ground.canvas if it has to, and
- * Ground.view says where in it the screen's corner is, to be copied from there onto the screen.
+ * Ground.view says where in it the screen's corner is. game.js shows the canvas as a layer of its own
+ * under the meadow, slid so that corner is on the screen's.
  * Ground.ok is false where there is no WebGL2.
  */
 (() => {
@@ -24,7 +25,7 @@
 
 const S = window.Sim;
 const canvas = document.createElement('canvas');
-// preserveDrawingBuffer: the picture stays put between draws, to be copied again while nothing changed.
+// preserveDrawingBuffer: the picture stays put between draws, as it is while nothing changed.
 const gl = canvas.getContext('webgl2', { antialias: false, depth: false, stencil: false, preserveDrawingBuffer: true });
 
 const VERTEX = `#version 300 es

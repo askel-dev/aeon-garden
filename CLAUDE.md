@@ -24,7 +24,10 @@ told to just do it.
   few small textures of one texel a tile that game.js keeps up to date (`paintTerrain`, `updateWater`).
   It paints again only when a texture, the zoom or the light has moved (`steady`), and at most at 2x
   (`GROUND_DPR`). While the camera pans (following, dragging) it paints a margin round the screen (`PAD`)
-  and slides the picture along (`Ground.view`) until the margin runs out. The loop gives the sim at most `SIM_MS` a frame (a slow phone runs 60x a bit slower
+  and slides the picture along (`Ground.view`) until the margin runs out. The picture is a canvas of its own
+  under the meadow's (`#ground`), slid into place with a CSS transform, never copied onto a frame (only into
+  the P photo, `groundIn`); so nothing drawn on the meadow can blend with the ground (a `'lighter'` glow lays a
+  light over it instead of adding to it). The loop gives the sim at most `SIM_MS` a frame (a slow phone runs 60x a bit slower
   instead of dropping frames), and a paused meadow nobody is touching draws at 30 fps (`resting`).
 - `sound.js`: all the sounds, made with Web Audio (no files). Off until the 🔊 button or M.
   `sound-lab.html` plays each one on its own. Keep it minimal: one scale, few sounds. Every 5 to 10
@@ -53,9 +56,17 @@ told to just do it.
   a giant, and a tree four to seven rabbits tall (`creaturePx`). The look is kept close to the emoji trees':
   big leaflets (`LOOK.leaflet`), their greens, one colour for a whole tree (from its seed, a few clumps another,
   so autumn is a patchwork of trees and not of leaves), the crown up off the trunk (`LOOK.lift`) and the
-  branches not too wide (`LOOK.spread`), so you see trunks and ground between the trees. The willow (a fountain of strands over a dome) is painted but not planted for now. Snow is a layer of its own, laid on as thick as the snow lying. Until its painting comes a tree is an emoji, and so
-  it stays with `?emoji` or no worker. Small paintings are sculpted coarser (`ss`), which is most of the saving.
-  `tree-lab.html` shows every kind in every season, close and far, with sliders for `LOOK` and a "Copy as code".
+  branches not too wide (`LOOK.spread`), so you see trunks and ground between the trees. The willow (a fountain of strands over a dome) is painted but not planted for now. Snow is a layer of its own, laid on as thick as the snow lying. A painting is
+  also of a tone (the sim's `d.tone`: one of three colours of its kind, or a copper beech), and of the grown or the
+  young form (slimmer, its branches more upright; a seedling is one, small); a dead tree is the grey `dead` look with
+  limbs broken off, a fallen one the `log` kind, and one lightning took the `stump` kind. The paintings go by number
+  (`treeKey`), so a frame builds no names. Until its painting comes the same look at another size stands in, or a
+  small painting of its kind in that look (`treeKin`: one of each, painted ahead at the start by `kinAhead` and kept
+  for good, outside `TREE_BYTES`), or another look of itself (`treeAny`). With none of those yet (the first moment
+  after the page loads) a tree isn't drawn, and fades in when its painting comes (`treeWaits`). Emoji trees are
+  only for `?emoji` or a browser with no worker. Small paintings are sculpted coarser (`ss`), which is most of the saving.
+  `tree-lab.html` shows every kind in every season, close and far, in any tone, young or grown, dead, as a log and
+  as a stump, with sliders for `LOOK` and a "Copy as code".
 - `balance.js`: headless check, `node balance.js [years] [seeds]`.
 - `terrain-lab.js`: the terrain lab, `index.html?lab`. Sliders for every number in `TERRAIN` (sim.js),
   drawn by the game itself, plus hidden layers and a strip of other seeds. Its "Copy as code" gives
@@ -73,7 +84,7 @@ first frame; to see the game running (animals moving, camera moved), drive Chrom
 DevTools protocol (`--remote-debugging-port`) and use `Runtime.evaluate` / `Page.captureScreenshot`.
 Shortcuts for that: set `localStorage['aeon-garden-welcomed'] = '1'` before load to skip the welcome
 card; `window.garden` has `world`, `cam` (set `x`, `y`, `zoom`, `goal = null` to look somewhere) and
-`ui` (`ui.speed = 0` pauses); the CSS `body > *:not(#world) { visibility: hidden }` hides every panel.
+`ui` (`ui.speed = 0` pauses); the CSS `body > *:not(#world, #ground) { visibility: hidden }` hides every panel.
 In a cloud session with no Chrome, Playwright is installed globally (`npm root -g`) with Chromium. The diary button talks to Ollama on localhost:11434 (qwen3:8b, else qwen3:4b).
 
 Terrain: the ground has a height and water lies below `w.level`. A lake lies in a hollow or by the
@@ -98,6 +109,23 @@ bloom by day, and fireflies blink by the water and the wood's edge on summer nig
 Every tree has a kind (`d.kind`: oak, beech, maple, birch, hawthorn, apple, cherry, pine), from where it stands
 (`treeKind`, `TREE_MIX` in sim.js): mostly birches by the water (no willows for now), hawthorn scrub and old oaks out in the open, birches at the
 wood's edge, beech, oak and maple deep in. The drawing, its autumn colour and the inspector all follow it.
+
+Trees live slow lives of their own, loosely like real ones (`treesTick`, once a day; `TREES` in sim.js gives
+each kind its pace, seed and hardiness). The pace is quick for a game: a birch comes and goes in about 10
+years, an oak in about 24 (`life`). Early in autumn a tree old enough sheds its seed (`seedFall`): on the wind
+(birch, pine, maple), buried by jays out in the open (oak, beech), dropped by birds under a perch, a thorn bush
+likeliest (hawthorn, cherry), or fallen and carried a little way (apple). Oaks and beeches fruit together,
+heavily in a mast year (`w.mast`) and little between, and the nuts are a windfall for the rabbits. In spring the
+seed comes up where there's light enough for its kind (`sprout`, `shadeOver`; pines only in pine country,
+`w.pineLand`), less often as the woods fill their room (`TREE_ROOM`). A seedling is a mouthful for a rabbit
+unless a thorn bush guards it (`THORNS`), so grazing keeps the meadow open, and after the rabbits crash the
+woods creep out. A tree grows through seedling, sapling, young, grown and old (`treeStage`, from `d.size`
+and its age), a young one waiting in the shade if its kind bears shade. It dies (`treeDies`) of shade,
+grazing, fire, flood, a storm or age, stands a while as a grey snag, falls as a log (`treeFalls`) and rots
+away; a broadleaf struck by lightning grows again from its stump. Apple, cherry and hawthorn blossom for
+the bees in spring (`w.blossoms`) and bear as much fruit as the bees visited (`setFruit`). A tree takes its
+parent's tone (`d.tone`: which of its kind's colours; now and then a beech is a copper beech, `RARE_TONE`),
+and a tree that grows old may get a name (`oldName`), which the inspector and the news use.
 
 Apple trees (`w.orchard`) drop windfalls early in autumn (`windfallTick`, `d.apples`), a big meal that hungry rabbits
 walk a way for (`windfall`), so the apple trees are where they gather in autumn, and where the foxes find them.
@@ -149,6 +177,10 @@ new feature must not slow it down. If it would, make it cheaper or leave it out.
   `drawHillLight`), rebuilt only when its key changes.
 - Sprite keys take few values. Round sizes (`spriteStep`) and colours (`step`) into a few steps, or
   the cache fills up and repaints all the time.
+- Chrome lets a frame draw from only about 30 MB of distinct pictures (width × height × 4, summed over every
+  image or canvas `drawImage`d that frame). Past that it flushes mid-frame and every canvas call costs more,
+  which a profile blames on whatever call comes next. So keep big pictures off the canvas (the ground is a
+  layer of its own), paint sprites near the size they're drawn at, and don't draw many different large ones.
 - Draw only what's on screen (`visible`). A full-screen pass (a `wash`, an overlay, a composite mode)
   costs the most, so add one only when it's clearly worth it, and skip it while it wouldn't show.
 - The sim can run 2000 ticks in one frame. In hot loops, don't make new objects or arrays, and don't

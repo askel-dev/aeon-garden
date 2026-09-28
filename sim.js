@@ -724,6 +724,14 @@ function plantTrees(w, hills, hill, near) {
     for (const wd of woods) { const v = wd.dense(x, y); if (v > d) { d = v; best = wd; } }
     if (best && r.next() < d) plant(x, y, r.next() < best.pine(x, y));
   }
+  // Pine country: how likely a tree coming up here later is to do well as a pine (sprout).
+  w.pineLand = new Float32Array(N).fill(0.4);
+  for (let i = 0; i < N; i++) {
+    const x = i % W + 0.5, y = ((i / W) | 0) + 0.5;
+    let best = null, d = 0;
+    for (const wd of woods) { const v = wd.dense(x, y); if (v > d) { d = v; best = wd; } }
+    if (best) w.pineLand[i] = best.pine(x, y);
+  }
   // And a few small groves out in the meadow.
   for (let g = 0; g < (w.drawn.empty ? 0 : T.groves); g++) {
     const gx = r.range(8, W - 8), gy = r.range(8, H - 8);
@@ -736,10 +744,9 @@ function plantTrees(w, hills, hill, near) {
     const hx = Math.floor(d.x * 100), hy = Math.floor(d.y * 100), open = 1 - w.wood[idx(d.x, d.y)];
     const fruity = d.emoji === '🌳' && hash2(hx, hy, 41) < clamp(open * 1.1, 0.04, 0.5);
     d.fruit = fruity ? (hash2(hx, hy, 42) < 0.5 ? 'apple' : 'cherry') : '';
-    d.apples = 0;                                          // windfalls lying under it (windfallTick)
     d.kind = treeKind(d, w.wood[idx(d.x, d.y)], nearFlood[idx(d.x, d.y)]);
+    foundTree(w, d);
   }
-  w.orchard = w.decor.filter(d => d.fruit === 'apple');
 }
 
 // Which kind of tree each is, by where it stands: birches by the water, hawthorn scrub and old
@@ -890,11 +897,411 @@ function nearestFooting(w, x, y) {
   return { x, y };
 }
 
+// ---------------------------------------------------------------- trees
+//
+// Trees live slow lives of their own, loosely like real ones. Early in autumn a grown tree sheds
+// its seed, and how far it gets depends on the kind (TREES): birch, pine and maple seed rides the
+// wind; jays bury acorns and beechnuts out in the open by the wood's edge and the thorn bushes,
+// and forget some; birds eat cherries and haws and drop the stones under the trees they perch
+// in, a thorn bush likeliest; apples fall, and whoever eats one carries the pips off a way. In
+// spring the seed comes up wherever there's light enough for its kind (and pines keep to pine
+// country, w.pineLand). A seedling is a mouthful for a rabbit unless a thorn bush guards it, so
+// where the rabbits graze the meadow stays open, and when they're few the woods creep out. Under
+// the trees a young one waits in the shade (beech and maple can wait for years, birch and pine
+// die) until an old one falls. Old trees die standing, fall, and rot away. Fire kills the young
+// and the thin-barked, floods drown seedlings, storms blow over the big ones, and a broadleaf
+// struck by lightning grows again from its stump. Old oaks go hollow, and that's where bees live.
+// Apple, cherry and hawthorn blossom for the bees, and bear as much fruit as the bees pollinated.
+// All of it runs once a day (treesTick) or less.
+
+const TREES = {
+  // grow: how fast it grows up; life: years it lives, about; seedAge: years before it bears seed;
+  // seeds: seedlings it tries for each year; shade: how much shade a young one bears (0 none, 1 deep
+  // wood); taste: how much rabbits like it; by: how its seed gets about, far: and how far (tiles);
+  // burn: odds a fire kills it grown; blossom: when in spring it flowers for the bees (share of the season)
+  birch:    { grow: 1.1, life: 10, seedAge: 2, seeds: 5, shade: 0.15, taste: 0.7, by: 'wind', far: 18, burn: 0.5 },
+  pine:     { grow: 0.8, life: 18, seedAge: 3, seeds: 3, shade: 0.45, taste: 0.3, by: 'wind', far: 10, burn: 0.1 },
+  maple:    { grow: 0.8, life: 18, seedAge: 3, seeds: 2, shade: 0.7, taste: 0.8, by: 'wind', far: 7, burn: 0.4 },
+  beech:    { grow: 0.6, life: 20, seedAge: 4, seeds: 1, shade: 0.9, taste: 0.6, by: 'jay', far: 10, burn: 0.5, mast: 'beechnuts' },
+  oak:      { grow: 0.6, life: 24, seedAge: 4, seeds: 1, shade: 0.4, taste: 0.9, by: 'jay', far: 25, burn: 0.1, mast: 'acorns' },
+  hawthorn: { grow: 1.0, life: 16, seedAge: 2, seeds: 3, shade: 0.3, taste: 0.2, by: 'bird', far: 15, burn: 0.3, thorns: true, blossom: [0.35, 0.85] },
+  apple:    { grow: 0.8, life: 16, seedAge: 3, seeds: 3, shade: 0.4, taste: 0.8, by: 'drop', far: 8, burn: 0.4, blossom: [0.3, 0.8] },
+  cherry:   { grow: 1.0, life: 12, seedAge: 2, seeds: 3, shade: 0.35, taste: 0.7, by: 'bird', far: 15, burn: 0.4, blossom: [0.05, 0.5] },
+};
+const YEAR = YEAR_DAYS * TPD;   // ticks in a year
+const SPROUT = 0.3;             // a new seedling's size
+const SEEDLING = 0.8;           // below this it's a seedling: a mouthful for a rabbit
+const SAPLING = 1.8;            // below this a rabbit can reach its shoots and nibble it back, and fire and flood kill it
+const GROWN = 2.4;              // this big, and old enough (seedAge), it bears seed
+const GROW_DAYS = SEASONS.reduce((n, s) => n + s.growth, 0) * SEASON_DAYS;   // a year's growing, in days of full growth
+const THORNS = 1.8;             // a seedling this close to a grown hawthorn is safe from rabbits
+const SPACE = 1.2;              // no seedling comes up this close to a trunk
+const SPROUT_ODDS = 0.5;        // odds a seed that lands where it could grow comes up
+const BURNT_SPROUT = 3;         // how much likelier on ground burnt last year (a pioneer's delight), or fresh silt (half that)
+const LEAN = 0.4, MAST = 4;     // an oak's or beech's seed in an ordinary year, and in a mast year, times its seeds
+const MAST_ODDS = [0, 0.15, 0.35, 0.6, 0.9];   // chance of a mast year, by years since the last
+const NUTS = 5;                 // acorns or beechnuts lying under one tree in a mast year, at most
+const NUT_ENERGY = 12;          // what one is worth to a rabbit
+const SHADE_DEATH = 0.02;       // odds a day a young tree in more shade than it bears dies
+const LOST = 0.004;             // odds a day a seedling dies anyway: slugs, drought, a hard frost
+const SNAG_DAYS = [15, 35];     // a dead tree stands this long, bare and grey, then falls
+const LOG_DAYS = [15, 30];      // and lies as a log this long, rotting away
+const STUMP_DAYS = 10;          // a broadleaf struck by lightning sprouts again from its stump after this
+const WINDTHROW = 0.1;          // odds, each tenth of a day in a storm, that it blows a big tree over
+const BLOOMS = 5;               // flowers for the bees in a tree's crown
+const VISITS = 10;              // bee visits to its blossom for a full crop
+const SELF_SET = 0.2;           // the crop with no bees at all: a little from the wind and the flies
+const TREE_ROOM = 1.4;          // the woods can grow to about this many times the trees the meadow started with
+const RARE_TONE = 0.03;         // odds a founding beech is a copper beech (tone 3), and half its seedlings are
+const OLD_NAMES = ['Old', 'Great', 'Crooked', 'Grey', 'Twisted', 'Lonely', 'Whispering', 'Mossy', 'Leaning',
+  'Gnarled', 'Giant', 'Owl', 'Elder', 'Broad', 'Ancient', 'Split', 'Singing', 'Watching', 'Wishing', 'Sleeping'];
+const KIND_NAMES = { oak: 'Oak', beech: 'Beech', maple: 'Maple', pine: 'Pine', birch: 'Birch', apple: 'Apple', cherry: 'Cherry', hawthorn: 'Thorn' };
+
+const treeAge = (w, d) => (w.tick - d.born) / YEAR;
+const standing = d => d.tree && !d.stump && !d.dead && !d.fallen;
+const bearing = (w, d) => standing(d) && d.size >= GROWN && treeAge(w, d) >= TREES[d.kind].seedAge;
+const hollow = (w, d) => d.kind === 'oak' && standing(d) && d.size >= 3.5 && treeAge(w, d) >= d.life * 0.5;
+const sizeAt = (k, max, years) => max / (1 + (max / SPROUT - 1) * Math.exp(-k.grow * years));
+const yearsTo = (k, max, size) => Math.log((max / SPROUT - 1) / Math.max(1e-3, max / size - 1)) / k.grow;
+const springPart = t => (dayOf(t) % SEASON_DAYS + phaseOf(t)) / SEASON_DAYS;   // how far into its season t is
+
+// What a tree is now, for the drawing and the inspector.
+function treeStage(w, d) {
+  if (d.fallen) return 'log';
+  if (d.dead) return 'dead';
+  if (d.stump) return 'stump';
+  if (d.size < SEEDLING) return 'seedling';
+  if (d.size < SAPLING) return 'sapling';
+  if (!bearing(w, d)) return 'young';
+  return treeAge(w, d) > d.life * 0.7 ? 'old' : 'grown';
+}
+
+// A tree comes up. o: what it inherits (tone, parent, how its seed got here).
+function newTree(w, x, y, kind, o = {}) {
+  const r = w.treeRng, T = w.terrain, k = TREES[kind];
+  const d = {
+    id: w.nextTree++, x, y, emoji: kind === 'pine' ? '🌲' : '🌳', tree: true, kind,
+    fruit: kind === 'apple' || kind === 'cherry' ? kind : '', size: SPROUT,
+    max: (T.treeSize[0] + (T.treeSize[1] - T.treeSize[0]) * r.next() ** 2) * (0.85 + 0.3 * w.fert[idx(x, y)]),   // most middling, a few giants, bigger on good soil
+    born: w.tick, life: k.life * r.range(0.7, 1.3), tone: r.int(0, 2), parent: 0, by: '',
+    stump: 0, dead: 0, fallen: 0, until: 0, windfall: 0, crop: 1, visits: 0, blooms: false, name: '', named: false, ...o,
+  };
+  w.decor.push(d); w.treesMoved = true;
+  return d;
+}
+
+// A tree the meadow starts with: as old as its size says, give or take, and a few near their end.
+function foundTree(w, d) {
+  const r = w.treeRng, k = TREES[d.kind], hx = Math.floor(d.x * 100), hy = Math.floor(d.y * 100);
+  const tone = d.kind === 'beech' && hash2(hx, hy, 49) < RARE_TONE ? 3 : Math.floor(hash2(hx, hy, 48) * 3);
+  Object.assign(d, { id: w.nextTree++, max: d.size * r.range(1.04, 1.3), life: k.life * r.range(0.7, 1.3), tone, parent: 0, by: '',
+    dead: 0, fallen: 0, until: 0, windfall: 0, crop: 1, visits: 0, blooms: false, name: '', named: false });
+  const grew = yearsTo(k, d.max, d.size), left = Math.max(0, d.life - grew);
+  d.born = w.tick - Math.min(d.life * 0.97, grew + r.next() * left * (d.size > d.max * 0.9 ? 1 : 0.3)) * YEAR;
+}
+
+// The meadow doesn't start out new: in and around the woods are young trees from the last few
+// years' seed. (Out in the open the rabbits have had them.)
+function startTrees(w) {
+  const r = w.treeRng;
+  treesTick(w, false);
+  for (let years = 3; years >= 1; years--) {
+    for (const d of [...w.decor]) {
+      if (!bearing(w, d) || r.next() > 0.6) continue;
+      const s = seedSpot(w, d, r), k = TREES[d.kind];
+      if (!s || w.wood[idx(s.x, s.y)] < 0.05) continue;
+      const t = sprout(w, { ...s, kind: d.kind, tone: childTone(w, d), parent: d.id, by: k.by });
+      if (!t) continue;
+      t.born -= years * YEAR;
+      t.size = sizeAt(k, t.max, years * (1 - 0.8 * shadeOver(w, t)));
+    }
+    treesTick(w, false);
+  }
+}
+
+// Counts for balance.js: seeds shed, seedlings come up, and deaths by cause, of each kind.
+const tally = (w, kind, what) => { const t = w.treeStats[kind] ??= {}; t[what] = (t[what] || 0) + 1; };
+
+const childTone = (w, d) => {
+  const r = w.treeRng;
+  if (d.tone === 3) return r.next() < 0.5 ? 3 : r.int(0, 2);
+  return r.next() < 0.1 ? r.int(0, 2) : d.tone;            // colour runs in families, mostly
+};
+
+// Every decor thing (trees, rocks) in the grid cells that reach within radius of x, y. The grid
+// is rebuilt when trees come or go (tidyTrees).
+function forEachDecorNear(w, x, y, radius, fn) {
+  const x0 = clamp(((x - radius) / CELL) | 0, 0, GW - 1), x1 = clamp(((x + radius) / CELL) | 0, 0, GW - 1);
+  const y0 = clamp(((y - radius) / CELL) | 0, 0, GH - 1), y1 = clamp(((y + radius) / CELL) | 0, 0, GH - 1);
+  for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) for (const d of w.decorCells[gy * GW + gx]) if (!d.gone) fn(d);
+}
+const cellOf = (cells, p) => cells[clamp((p.y / CELL) | 0, 0, GH - 1) * GW + clamp((p.x / CELL) | 0, 0, GW - 1)];
+
+// Trees that died without a trace, or rotted away, leave; the grid is built again.
+function tidyTrees(w) {
+  if (!w.treesMoved) return;
+  w.treesMoved = false;
+  w.decor = w.decor.filter(d => !d.gone);
+  w.decorCells = Array.from({ length: GW * GH }, () => []);
+  for (const d of w.decor) cellOf(w.decorCells, d).push(d);
+}
+
+// How much shade falls on a tree from the taller ones about it: 0 in the open, 1 deep in a wood.
+function shadeOver(w, d) {
+  let s = 0;
+  forEachDecorNear(w, d.x, d.y, 3, o => {
+    if (o === d || !standing(o) || o.size <= d.size) return;
+    const q = ((o.x - d.x) ** 2 + (o.y - d.y) ** 2) / 3.2;
+    if (q < 3) s += 0.45 * shadeOf(o) * Math.exp(-q);
+  });
+  return Math.min(1, s);
+}
+const shadeOf = d => clamp((d.size - SEEDLING) / 2, 0, 1);    // a sapling casts hardly any
+
+// Where one of a tree's seeds ends up, or null.
+function seedSpot(w, d, r) {
+  const k = TREES[d.kind];
+  if (k.by === 'jay') {                 // the best of a few spots out in the open, by a thorn bush or the wood's edge
+    let best = null, most = 0;
+    for (let n = 0; n < 4; n++) {
+      const a = r.range(0, Math.PI * 2), far = r.range(2, k.far), x = d.x + Math.cos(a) * far, y = d.y + Math.sin(a) * far;
+      if (!dry(w, x, y)) continue;
+      const shade = w.wood[idx(x, y)], v = (shade < 0.4 ? 1 : 0.2) + (shade > 0.05 && shade < 0.4 ? 1 : 0) + (thornNear(w, x, y, 2.5) ? 2 : 0) + r.next();
+      if (v > most) { best = { x, y }; most = v; }
+    }
+    return best;
+  }
+  if (k.by === 'bird') {                // dropped under a tree a bird perched in, the sunniest of a few: likeliest a thorn bush
+    let best = null, most = -1;
+    for (let tries = 0; tries < 3; tries++) {
+      let perch = null, sum = 0;
+      forEachDecorNear(w, d.x, d.y, k.far, o => {
+        if (o === d || !standing(o) || o.size < SAPLING || (o.x - d.x) ** 2 + (o.y - d.y) ** 2 > k.far * k.far) return;
+        const like = o.kind === 'hawthorn' ? 3 : o.size >= GROWN ? 1 : 0;
+        if (like && r.next() < like / (sum += like)) perch = o;
+      });
+      if (!perch) return null;
+      const a = r.range(0, Math.PI * 2), far = r.range(perch.kind === 'hawthorn' ? 0.8 : 1.4, perch.kind === 'hawthorn' ? 1.6 : 2.6);   // under the edge of its crown
+      const x = perch.x + Math.cos(a) * far, y = perch.y + Math.sin(a) * far * 0.7, sun = inBounds(x, y) ? 1 - w.wood[idx(x, y)] : 0;
+      if (sun > most) { best = { x, y }; most = sun; }
+    }
+    return best;
+  }
+  const a = r.range(0, Math.PI * 2);    // the wind: most near, a few far; or it falls, and is carried off a little way
+  const far = k.by === 'wind' ? k.far * Math.min(1, -Math.log(1 - r.next() * 0.95) / 3) + 0.8 : r.range(0.8, k.far);
+  return { x: d.x + Math.cos(a) * far, y: d.y + Math.sin(a) * far };
+}
+
+const thornNear = (w, x, y, reach) => {
+  let yes = false;
+  forEachDecorNear(w, x, y, reach, o => { if (!yes && o.kind === 'hawthorn' && standing(o) && o.size >= SAPLING && (o.x - x) ** 2 + (o.y - y) ** 2 < reach * reach) yes = true; });
+  return yes;
+};
+
+// A seed comes up, if the spot has room and light enough for its kind, and luck. The woods grow
+// harder to come up in as they fill their room (w.treeRoom). Null if it doesn't.
+function sprout(w, s) {
+  const r = w.treeRng, k = TREES[s.kind];
+  if (!inBounds(s.x, s.y)) return null;
+  const i = idx(s.x, s.y);
+  if (w.water[i] || w.fieldAt[i] >= 0 || w.wood[i] > k.shade) return null;
+  if (w.burrows.some(b => (b.x - s.x) ** 2 + (b.y - s.y) ** 2 < 4) || w.hives.some(h => (h.x - s.x) ** 2 + (h.y - s.y) ** 2 < 4)) return null;
+  let crowded = false;
+  forEachDecorNear(w, s.x, s.y, 3, o => {
+    if (!crowded && Math.hypot(o.x - s.x, o.y - s.y) < (o.tree ? SPACE : o.size * 0.5 + 0.3)) crowded = true;
+  });
+  if (crowded) return null;
+  const burnt = yearOf(w.tick) - w.scorched[i] <= 1, bare = burnt ? BURNT_SPROUT : w.silt[i] > 0 ? BURNT_SPROUT / 2 : 1;
+  const room = clamp((w.treeRoom - w.treeCount) / (w.treeRoom * 0.3), 0, 1), pine = w.pineLand[i];
+  const suits = s.kind === 'pine' ? 0.4 + 0.8 * pine : 1.2 - 0.6 * pine;   // pines where the pinewoods are, broadleaf elsewhere
+  if (r.next() > SPROUT_ODDS * bare * room * suits) return null;
+  const d = newTree(w, s.x, s.y, s.kind, { tone: s.tone, parent: s.parent, by: s.by });
+  w.sprouted++; if (burnt) w.sproutedBurnt++;
+  tally(w, s.kind, 'sprouted');
+  return d;
+}
+
+// Early in autumn every tree old enough sheds its seed, to come up next spring. Oaks and beeches
+// fruit all together, heavily one year in a few (a mast year) and little in between.
+function seedFall(w) {
+  const r = w.treeRng, since = yearOf(w.tick) - w.mastYear;
+  w.mast = r.next() < MAST_ODDS[Math.min(since, MAST_ODDS.length - 1)];
+  if (w.mast) { w.mastYear = yearOf(w.tick); emit(w, { type: 'mast' }); }
+  const spring = (Math.floor(dayOf(w.tick) / YEAR_DAYS) + 1) * YEAR;
+  for (const d of w.decor) {
+    if (!bearing(w, d)) continue;
+    const k = TREES[d.kind];
+    let n = k.seeds * (k.mast ? (w.mast ? MAST : LEAN) : 1) * (k.blossom ? 0.5 + 0.5 * d.crop : 1);
+    for (n = Math.floor(n) + (r.next() < n % 1 ? 1 : 0); n > 0; n--) {
+      const s = seedSpot(w, d, r);
+      tally(w, d.kind, 'seeds');
+      if (s) w.seeds.push({ x: s.x, y: s.y, kind: d.kind, tone: childTone(w, d), parent: d.id, by: k.by, at: spring + r.range(0, 0.5) * SEASON_DAYS * TPD });
+    }
+  }
+}
+
+// A tree dies. A seedling or a sapling is simply gone; a bigger one stands dead a while (a snag), then falls.
+function treeDies(w, d, cause) {
+  tally(w, d.kind, cause);
+  dropBlossoms(w, d);
+  if (d.size < SAPLING && !d.hive) { d.gone = true; w.treesMoved = true; return; }
+  d.dead = w.tick; d.until = w.tick + w.treeRng.range(...SNAG_DAYS) * TPD;
+  if (cause === 'age' && (d.name || d.hive || d.size > 4.2)) emit(w, { type: 'treedied', tree: d, age: treeAge(w, d) });
+}
+
+// Down it comes: a log now, rotting away. The bees in it fly out as a swarm.
+function treeFalls(w, d) {
+  d.fallen = w.tick; d.dead ||= w.tick; d.until = w.tick + w.treeRng.range(...LOG_DAYS) * TPD;
+  dropBlossoms(w, d);
+  if (d.hive) hiveStruck(w, d.hive, true);
+}
+
+// Once a day: every tree grows, and some die. grow false: only the bookkeeping (the grid, the
+// shade on the ground, which trees fruit), as when the meadow is made.
+function treesTick(w, grow = true) {
+  const r = w.treeRng, t = w.tick, s = seasonOf(t), g = SEASONS[s].growth / GROW_DAYS;
+  if (grow) {
+    if (s === 0 && w.seeds.length) {                    // the seed comes up through the first half of spring
+      for (const sd of w.seeds) if (sd.at <= t) sprout(w, sd);
+      w.seeds = w.seeds.filter(sd => sd.at > t);
+      if (!w.seeds.length && w.sprouted) {
+        emit(w, { type: 'sprouts', n: w.sprouted, burnt: w.sproutedBurnt });
+        w.sprouted = w.sproutedBurnt = 0;
+      }
+    }
+    for (const d of w.decor) {
+      if (!d.tree || d.gone) continue;
+      if (d.until && t >= d.until) {                     // a snag falls, a log rots away, a stump sprouts
+        if (d.fallen) { d.gone = true; w.treesMoved = true; }
+        else if (d.dead) treeFalls(w, d);
+        else { d.stump = 0; d.until = 0; d.size = SEEDLING; d.born = t; d.sprouted = true; }
+        continue;
+      }
+      if (!standing(d)) continue;
+      const k = TREES[d.kind], i = idx(d.x, d.y), young = d.size < GROWN, shade = young ? shadeOver(w, d) : 0;
+      if (treeAge(w, d) > d.life) { treeDies(w, d, 'age'); continue; }
+      if (d.size < SAPLING) {
+        if (w.water[i] && r.next() < 0.5) { treeDies(w, d, 'flood'); continue; }
+        if (w.burrows.some(b => (b.x - d.x) ** 2 + (b.y - d.y) ** 2 < 1)) { treeDies(w, d, 'dug'); continue; }
+        if (w.bitten[i] && r.next() < k.taste * (thornNear(w, d.x, d.y, THORNS) ? 0.1 : 1)) {
+          const c = w.byId.get(w.bitten[i]), what = `Nibbled a young ${KIND_NAMES[d.kind].toLowerCase()}`;
+          if (c && c.alive && c.story[c.story.length - 1].text !== what) note(w, c, '🌱', what);
+          if (d.size < SEEDLING) { treeDies(w, d, 'eaten'); continue; }
+          d.size = Math.max(SEEDLING * 0.9, d.size - 0.3);          // nibbled back
+        }
+        if (d.size < SEEDLING && r.next() < LOST) { treeDies(w, d, 'lost'); continue; }
+      }
+      if (young && shade > k.shade && r.next() < SHADE_DEATH) { treeDies(w, d, 'shade'); continue; }
+      if (d.size < d.max) d.size += k.grow * (d.sprouted ? 2 : 1) * (1 - shade) * g * d.size * (1 - d.size / d.max);
+      if (!d.named && treeAge(w, d) > d.life * 0.7) {    // an old giant gets a name
+        d.named = true;
+        if (d.size > 4 && r.next() < 0.6) d.name = oldName(w, d);
+      }
+    }
+    w.bitten.fill(0);
+  }
+  tidyTrees(w);
+  // The shade on the ground (game.js darkens it there), the trees with food to drop, how full the woods are.
+  const wood = w.wood;
+  wood.fill(0);
+  let n = 0;
+  for (const d of w.decor) {
+    if (!standing(d)) continue;
+    if (d.size >= SEEDLING) n++;
+    if (TREES[d.kind].blossom && !d.blooms && bearing(w, d)) addBlossoms(w, d);
+    const a = 0.45 * shadeOf(d);
+    if (!a) continue;
+    for (let y = Math.max(0, Math.floor(d.y - 3)); y <= Math.min(H - 1, d.y + 3); y++) {
+      for (let x = Math.max(0, Math.floor(d.x - 3)); x <= Math.min(W - 1, d.x + 3); x++) {
+        const q = ((x + 0.5 - d.x) ** 2 + (y + 0.5 - d.y) ** 2) / 3.2;
+        if (q < 3) wood[y * W + x] = Math.min(1, wood[y * W + x] + a * Math.exp(-q));
+      }
+    }
+  }
+  w.treeCount = n;
+  w.orchard = w.decor.filter(d => bearing(w, d) && (d.kind === 'apple' || TREES[d.kind].mast));
+}
+
+function oldName(w, d) {
+  const taken = new Set(w.decor.map(o => o.name));
+  for (let k = 0; k < 8; k++) {
+    const name = `${w.treeRng.pick(OLD_NAMES)} ${KIND_NAMES[d.kind]}`;
+    if (!taken.has(name)) return name;
+  }
+  return '';
+}
+
+// Late in spring the blossom is over, and a tree sets as much fruit as the bees pollinated.
+function setFruit(w) {
+  for (const d of w.decor) {
+    if (!d.blooms) continue;
+    d.crop = clamp(SELF_SET + (1 - SELF_SET) * d.visits / VISITS, 0, 1); d.visits = 0;
+  }
+}
+
+// A tree in blossom is flowers for the bees: a few spots in its crown (w.blossoms, found like
+// w.plants), open while it's in bloom. up: how high in the crown, as a share of the tree (game.js).
+function addBlossoms(w, d) {
+  d.blooms = true;
+  for (let k = 0; k < BLOOMS; k++) {
+    const a = (k + 0.5) / BLOOMS * Math.PI;
+    const p = { x: clamp(d.x - Math.cos(a) * 0.7, 0.5, W - 0.5), y: clamp(d.y + 0.05 + Math.sin(a) * 0.15, 0.5, H - 0.5), i: idx(d.x, d.y),
+      kind: 1, field: null, n: 1e6 + w.nextBloom++, tree: d, up: 0.45 + 0.2 * Math.sin(a) };
+    w.blossoms.push(p); cellOf(w.blossomCells, p).push(p);
+  }
+}
+function dropBlossoms(w, d) {
+  if (!d.blooms) return;
+  d.blooms = false;
+  w.blossoms = w.blossoms.filter(p => p.tree !== d);
+  for (let k = 0; k < w.blossomCells.length; k++) if (w.blossomCells[k].some(p => p.tree === d)) w.blossomCells[k] = w.blossomCells[k].filter(p => p.tree !== d);
+}
+const inBloom = (w, d) => {
+  const b = TREES[d.kind].blossom, sp = springPart(w.tick);
+  return d.blooms && seasonOf(w.tick) === 0 && sp >= b[0] && sp <= b[1] && standing(d);
+};
+
+// Fire on a tile: the young trees on it die, and grown ones too if their bark is thin. A log burns up.
+function burnTrees(w, i) {
+  const x = i % W + 0.5, y = ((i / W) | 0) + 0.5;
+  w.scorched[i] = yearOf(w.tick);
+  forEachDecorNear(w, x, y, 1, d => {
+    if (!d.tree || Math.abs(d.x - x) > 0.5 || Math.abs(d.y - y) > 0.5) return;
+    if (d.fallen) { d.gone = true; w.treesMoved = true; }
+    else if (standing(d) && (d.size < SAPLING || w.treeRng.next() < TREES[d.kind].burn)) treeDies(w, d, 'fire');
+  });
+}
+
+// A storm now and then blows over a big tree, the old ones likeliest, or brings down a dead one.
+function windthrow(w) {
+  const r = w.treeRng;
+  if (!w.decor.length || r.next() > WINDTHROW) return;
+  for (let k = 0; k < 30; k++) {
+    const d = w.decor[r.int(0, w.decor.length - 1)];
+    if (!d.tree || d.fallen || d.stump || d.gone) continue;
+    if (!d.dead && (d.size < 3.5 || r.next() > treeAge(w, d) / d.life)) continue;
+    if (!d.dead) tally(w, d.kind, 'storm');
+    emit(w, { type: 'windthrow', tree: d, alive: !d.dead });
+    treeFalls(w, d);
+    return;
+  }
+}
+
+// Lightning on a tree: a pine dies; a broadleaf loses its crown and grows again from the stump.
+function struck(w, d) {
+  if (d.kind === 'pine') { treeDies(w, d, 'lightning'); return; }
+  tally(w, d.kind, 'lightning');
+  dropBlossoms(w, d);
+  d.stump = w.tick; d.until = w.tick + STUMP_DAYS * TPD;
+}
+
 // ---------------------------------------------------------------- windfalls
 //
-// Apple trees drop their apples early in autumn, and hungry rabbits come for them: a windfall is
-// a big meal, so the apple trees are where everyone gathers, and where the foxes learn to look.
-// What isn't eaten rots away as the leaves come down (game.js hangs and drops them to match).
+// Apple trees drop their apples early in autumn, and in a mast year the oaks and beeches drop
+// acorns and beechnuts. Hungry rabbits come for them: a windfall is a good meal, so the apple
+// trees are where everyone gathers, and where the foxes learn to look. What isn't eaten rots away
+// as the leaves come down (game.js hangs and drops them to match). An apple tree drops as many
+// as its blossom set (d.crop).
 
 const APPLES = 6;               // most windfalls lying under one tree
 const APPLE_ENERGY = 30;        // what one is worth to a rabbit
@@ -903,38 +1310,40 @@ const APPLE_ROT = 0.3;          // odds one rots, each time, late in autumn
 const APPLE_SMELL = 2;          // a rabbit finds apples this many times as far off as it sees a fox
 
 function windfallTick(w) {
-  const s = seasonOf(w.tick), sp = (dayOf(w.tick) % SEASON_DAYS + phaseOf(w.tick)) / SEASON_DAYS;
+  const s = seasonOf(w.tick), sp = springPart(w.tick);
   w.windfalls = 0;
   for (const d of w.orchard) {
-    if (d.stump || s !== 2) d.apples = 0;
-    else if (sp < 0.4) { if (d.apples < APPLES && w.rng.next() < APPLE_DROP) d.apples++; }
-    else if (sp > 0.6 && d.apples && w.rng.next() < APPLE_ROT) d.apples--;
-    w.windfalls += d.apples;
+    const most = d.kind === 'apple' ? Math.round(APPLES * d.crop) : w.mast ? NUTS : 0;
+    if (!standing(d) || s !== 2) d.windfall = 0;
+    else if (sp < 0.4) { if (d.windfall < most && w.rng.next() < APPLE_DROP) d.windfall++; }
+    else if (sp > 0.6 && d.windfall && w.rng.next() < APPLE_ROT) d.windfall--;
+    w.windfalls += d.windfall;
   }
-  if (w.windfalls && w.appleYear !== yearOf(w.tick)) { w.appleYear = yearOf(w.tick); emit(w, { type: 'windfall' }); }
+  if (w.windfalls && w.appleYear !== yearOf(w.tick)) { w.appleYear = yearOf(w.tick); emit(w, { type: 'windfall', mast: w.mast }); }
 }
 
-// Hungry, and apples lying under a tree not far off: go and sit under it, and munch one.
+// Hungry, and windfalls lying under a tree not far off: go and sit under it, and munch one.
 function windfall(w, c) {
   if (c.mode === 'munch') { if (--c.timer > 0) return true; c.mode = 'wander'; c.target = null; }
   let d = c.mode === 'apple' && c.target && c.target.tree;
-  if (!d || !d.apples) {
+  if (!d || !d.windfall) {
     d = null;
     if ((w.tick + c.id) % 10) return false;
     let best = (c.sight * APPLE_SMELL) ** 2;
     for (const o of w.orchard) {
       const dd = (o.x - c.x) ** 2 + (o.y - c.y) ** 2;
-      if (o.apples && dd < best && clearPath(w, c.x, c.y, o.x, o.y + 0.3)) { d = o; best = dd; }
+      if (o.windfall && dd < best && clearPath(w, c.x, c.y, o.x, o.y + 0.3)) { d = o; best = dd; }
     }
     if (!d) return false;
     const a = (c.id % 7) / 7 * Math.PI * 2;               // everyone to their own side of the tree
     c.mode = 'apple'; c.target = { x: d.x + 0.9 * Math.cos(a), y: d.y + 0.3 + 0.5 * Math.sin(a), tree: d };
   }
   if (!moveToward(w, c, c.target.x, c.target.y, c.walk * kidPace(w, c))) return true;
-  d.apples--; w.windfalls--;
-  c.energy = Math.min(c.maxEnergy, c.energy + APPLE_ENERGY);
-  c.mode = 'munch'; c.timer = 90; c.target = null;
-  if (c.story[c.story.length - 1].text !== WINDFALL_NOTE) note(w, c, '🍎', WINDFALL_NOTE);
+  d.windfall--; w.windfalls--;
+  const apple = d.kind === 'apple', found = apple ? WINDFALL_NOTE : `Found ${TREES[d.kind].mast} under ${d.kind === 'oak' ? 'an oak' : 'a beech'}`;
+  c.energy = Math.min(c.maxEnergy, c.energy + (apple ? APPLE_ENERGY : NUT_ENERGY));
+  c.mode = 'munch'; c.timer = apple ? 90 : 45; c.target = null; c.snack = apple ? 'apple' : TREES[d.kind].mast;
+  if (c.story[c.story.length - 1].text !== found) note(w, c, apple ? '🍎' : '🌰', found);
   return true;
 }
 const WINDFALL_NOTE = 'Found windfall apples under an apple tree';
@@ -1163,9 +1572,12 @@ function weatherTick(w) {
 }
 
 function strike(w, x, y) {
-  // Lightning likes trees.
-  const tree = w.decor.find(d => d.tree && !d.stump && (d.x - x) ** 2 + (d.y - y) ** 2 < 16);
-  if (tree) { x = tree.x; y = tree.y; tree.stump = w.tick; if (tree.hive) hiveStruck(w, tree.hive); }
+  // Lightning likes trees, the tallest about.
+  let tree = null;
+  forEachDecorNear(w, x, y, 4, d => {
+    if (standing(d) && d.size >= SAPLING && (d.x - x) ** 2 + (d.y - y) ** 2 < 16 && (!tree || d.size > tree.size)) tree = d;
+  });
+  if (tree) { x = tree.x; y = tree.y; if (tree.hive) hiveStruck(w, tree.hive); struck(w, tree); }
   let victim = null;
   forEachNear(w, x, y, 1.2, o => { victim = o; });
   if (victim) die(w, victim, 'lightning');
@@ -1191,7 +1603,7 @@ function fireTick(w, dt) {
   for (const i of lit) {
     g[i] *= 0.8;
     w.fire[i] -= dt;
-    if (w.fire[i] <= 0 || w.wet > 0.7) { w.fire[i] = 0; g[i] = 0; w.ash[i] = 1; continue; }
+    if (w.fire[i] <= 0 || w.wet > 0.7) { w.fire[i] = 0; g[i] = 0; w.ash[i] = 1; burnTrees(w, i); continue; }
     w.burning.push(i);
     const x = i % W, y = (i / W) | 0;
     for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
@@ -1203,6 +1615,7 @@ function fireTick(w, dt) {
   for (const c of w.creatures) {                              // too slow, or asleep in the open
     if (c.alive && !c.hidden && w.fire[idx(c.x, c.y)]) die(w, c, 'fire');
   }
+  tidyTrees(w);                                              // the young trees it took
   if (!w.burning.length) { emit(w, { type: 'fireout', burned: w.blaze }); w.blaze = 0; }
 }
 
@@ -1263,11 +1676,15 @@ function forEachNear(w, x, y, radius, fn, species) {
   }
 }
 
-// Every plant in the grid cells that reach within radius of x, y (some a little further off).
+// Every plant in the grid cells that reach within radius of x, y (some a little further off), and
+// the blossom in the trees.
 function forEachPlantNear(w, x, y, radius, fn) {
   const x0 = clamp(((x - radius) / CELL) | 0, 0, GW - 1), x1 = clamp(((x + radius) / CELL) | 0, 0, GW - 1);
   const y0 = clamp(((y - radius) / CELL) | 0, 0, GH - 1), y1 = clamp(((y + radius) / CELL) | 0, 0, GH - 1);
-  for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) for (const p of w.plantCells[gy * GW + gx]) fn(p);
+  for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) {
+    for (const p of w.plantCells[gy * GW + gx]) fn(p);
+    for (const p of w.blossomCells[gy * GW + gx]) fn(p);
+  }
 }
 
 function nearest(w, c, radius, species, pred) {
@@ -1620,7 +2037,7 @@ const DIG_TICKS = 300;     // one rabbit digging on its own: half a day
 function canDig(w, x, y) {
   for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) if (!dry(w, x + dx, y + dy)) return false;
   return !w.burrows.some(b => Math.hypot(b.x - x, b.y - y) < DIG_GAP)
-    && !w.decor.some(d => !d.stone && Math.hypot(d.x - x, d.y - y) < (d.big ? d.size * 0.6 : 2))
+    && !w.decor.some(d => !d.stone && !(standing(d) && d.size < SAPLING) && Math.hypot(d.x - x, d.y - y) < (d.big ? d.size * 0.6 : 2))
     && !w.hives.some(h => Math.hypot(h.x - x, h.y - y) < 3);
 }
 
@@ -1809,6 +2226,7 @@ function goHome(w, c, b) {
 function eat(w, c, i) {
   const bite = Math.min(w.grass[i], BITE);
   w.grass[i] -= bite;
+  w.bitten[i] = c.id;                                       // any seedling here is in danger (treesTick)
   c.energy = Math.min(c.maxEnergy, c.energy + bite * GRASS_ENERGY);
 }
 
@@ -2081,6 +2499,7 @@ function hivesTick(w) {
     if (p.field) p.field.all++;
     if (isFlower(w, p)) { w.flowers++; if (p.field) p.field.open++; }
   }
+  for (const p of w.blossoms) if (isFlower(w, p)) w.flowers++;
   for (const f of w.fields) {                             // the news, once a year: a field has come out
     if (f.bloomed !== yearOf(w.tick) && f.open > BLOOM_NEWS * f.all) { f.bloomed = yearOf(w.tick); emit(w, { type: 'bloom', field: f }); }
   }
@@ -2163,7 +2582,7 @@ function hangSpot(w, x, y) {
   let tree = null;
   for (const d of w.decor) {
     const d2 = (d.x - x) ** 2 + (d.y - y) ** 2;
-    if (d.tree && !d.stump && !d.hive && d2 > 4 && d2 < 64 && (!tree || d2 < (tree.x - x) ** 2 + (tree.y - y) ** 2)) tree = d;
+    if (standing(d) && d.size >= GROWN && !d.hive && d2 > 4 && d2 < 64 && (!tree || d2 < (tree.x - x) ** 2 + (tree.y - y) ** 2)) tree = d;
   }
   return tree ? { x: tree.x + 0.6, y: tree.y + 0.3 } : { x: x + 3, y };
 }
@@ -2220,7 +2639,8 @@ function settle(w, s) {
 
 // Lightning took a hive's tree. An empty hive goes with it. The bees fly out as a swarm with what
 // honey they can carry and hang in a tree nearby while their scouts look for a new home.
-function hiveStruck(w, h) {
+// fell: the hive's tree fell, old and dead, rather than being struck.
+function hiveStruck(w, h, fell = false) {
   const d = h.tree;
   d.hive = null; h.tree = null;
   d.size = Math.min(d.size, w.terrain.treeSize[1]);        // it grows back an ordinary tree
@@ -2231,9 +2651,10 @@ function hiveStruck(w, h) {
   h.honey = Math.min(h.honey, SWARM_CARRY * bees.length); h.brood = 0; h.patch = null;
   for (const c of bees) {
     c.hidden = false; c.sleeping = false; c.mode = 'swarm'; c.target = null;
-    note(w, c, '⚡', `Fled the hive when lightning struck, with Queen ${h.queen.name}`);
+    if (fell) note(w, c, '🪵', `Fled when the old hive tree came down, with Queen ${h.queen.name}`);
+    else note(w, c, '⚡', `Fled the hive when lightning struck, with Queen ${h.queen.name}`);
   }
-  emit(w, { type: 'hivestruck', hive: h, queen: h.queen, who: bees });
+  emit(w, { type: 'hivestruck', hive: h, queen: h.queen, who: bees, fell });
 }
 
 // How good a hollow tree is for a hive: fields in reach for more than one season, flowers
@@ -2251,7 +2672,7 @@ function siteScore(w, d) {
   });
   let crowd = 0, front = 0;
   for (const o of w.decor) {
-    if (!o.tree || o === d) continue;
+    if (!standing(o) || o.size < SAPLING || o === d) continue;
     if (Math.hypot(o.x - x, o.y - y) < 4) crowd++;
     if (o.y > y && o.y - y < 5 && Math.abs(o.x - x) < 3) front++;
   }
@@ -2262,9 +2683,9 @@ function siteScore(w, d) {
 const hiveGround = (w, x, y) => dry(w, x, y) &&
   [0, 1, 2, 3, 4, 5, 6, 7].every(a => dry(w, x + HIVE_SHORE * Math.cos(a * Math.PI / 4), y + HIVE_SHORE * Math.sin(a * Math.PI / 4)));
 
-// A tree bees could move into: an oak (the only kind that grows old and hollow enough), standing,
-// with nobody in it, clear of the water and of the other hives.
-const hollowTree = (w, d) => d.tree && d.kind === 'oak' && !d.stump && !d.hive && hiveGround(w, d.x, d.y)
+// A tree bees could move into: an old oak (the only kind that grows hollow), standing, with nobody
+// in it, clear of the water and of the other hives. any: an oak of any age will do (placeHive makes it old).
+const hollowTree = (w, d, any = false) => (any ? standing(d) : hollow(w, d)) && !d.hive && hiveGround(w, d.x, d.y)
   && !w.hives.some(o => !o.cluster && Math.hypot(o.x - d.x, o.y - d.y) < HIVE_GAP);
 
 // Where a swarm from hive h could live, best first: an empty hive, or a tree clear of the others.
@@ -2288,7 +2709,7 @@ const clusterCold = (w, h) => (seasonOf(w.tick) === 3 ? 1 + CLUSTER_COLD * Math.
 function placeHive(w) {
   let best = null, bestScore = -Infinity;
   for (const d of w.decor) {
-    if (d.emoji !== '🌳' || d.fruit || !hollowTree(w, { ...d, kind: 'oak' })) continue;
+    if (d.emoji !== '🌳' || d.fruit || d.size < GROWN || !hollowTree(w, d, true)) continue;
     const score = siteScore(w, d);
     if (score > bestScore) { best = d; bestScore = score; }
   }
@@ -2300,10 +2721,13 @@ function placeHive(w) {
         if (dry(w, x, y)) at = { x, y };
       }
     }
-    best = { ...at, emoji: '🌳', size: w.terrain.treeSize[1], tree: true, stump: 0, fruit: '', kind: 'oak' };
-    w.decor.push(best);
+    best = newTree(w, at.x, at.y, 'oak');
+    tidyTrees(w);
   }
-  best.kind = 'oak';
+  // An old oak, hollow, with years in it yet.
+  const age = TREES.oak.life * w.treeRng.range(0.5, 0.6);
+  Object.assign(best, { kind: 'oak', emoji: '🌳', fruit: '', born: w.tick - age * YEAR, life: age + w.treeRng.range(12, 18), max: HIVE_TREE, blooms: false });
+  dropBlossoms(w, best);
   const h = makeHive(w, best.x, best.y);
   moveIn(h, best);
   return h;
@@ -2443,6 +2867,7 @@ function fly(c, tx, ty, v) {
 const FIELD_GRASS = 0.35;
 // (Same rule as plantEmoji in game.js. If you change one, change the other.)
 function isFlower(w, p) {
+  if (p.tree) return inBloom(w, p.tree);                   // blossom in a tree (addBlossoms)
   if (w.water[p.i]) return false;
   const s = seasonOf(w.tick);
   if (p.field) return s === p.field.season && w.grass[p.i] >= FIELD_GRASS;
@@ -2482,7 +2907,9 @@ function freshAround(w, f) {
 }
 
 // A visited flower spreads its seed: the grass around it grows back thicker. Good for rabbits.
+// Blossom on a tree sets fruit instead (setFruit).
 function pollinate(w, p) {
+  if (p.tree) { p.tree.visits++; return; }
   for (let y = (p.y | 0) - 2; y <= (p.y | 0) + 2; y++) {
     for (let x = (p.x | 0) - 2; x <= (p.x | 0) + 2; x++) {
       if (!dry(w, x, y)) continue;
@@ -2567,10 +2994,16 @@ function createWorld(seed, opts = {}) {
     stats: { births: perKind(() => 0), deaths: perKind(() => ({})) },
     history: { every: 60, t: [], grass: [], ...perKind(() => []), traits: perKind(() => []), marks: [] },
     goneSince: perKind(() => -1), hives: [],
+    // The trees (see treesTick). They have their own random numbers, so the rest of the meadow comes out as it did before they grew.
+    treeRng: makeRng(seed ^ 0x5eed7ee), nextTree: 1, seeds: [], mast: false, mastYear: 0, orchard: [], treeCount: 0,
+    blossoms: [], blossomCells: Array.from({ length: GW * GH }, () => []), nextBloom: 0, decorCells: [], treesMoved: true,
+    bitten: new Int32Array(W * H), scorched: new Uint16Array(W * H), sprouted: 0, sproutedBurnt: 0, treeStats: {},
     options: { migration: true, ...opts },
   };
   makeTerrain(w);
   placeHive(w);
+  w.treeRoom = TREE_ROOM * w.decor.filter(d => d.tree).length;
+  startTrees(w);
   const n = { rabbit: opts.rabbits ?? Math.round(30 * w.room), fox: opts.foxes ?? Math.round(4 * w.room), bee: opts.bees ?? 12 };
   w.arrivals = []; w.family = null;
   if (opts.arrival) planArrivals(w, n);
@@ -2659,9 +3092,10 @@ function newDay(w) {
         if (c.alive && c.born < w.tick - SEASON_DAYS * TPD) note(w, c, '🌸', 'Made it through the winter');
       }
     }
+    if (s === 1) setFruit(w);
+    if (s === 2) seedFall(w);
   }
-  // A tree struck by lightning grows back from its stump in about a year.
-  for (const d of w.decor) if (d.stump && w.tick - d.stump > YEAR_DAYS * TPD) d.stump = 0;
+  treesTick(w);
 }
 
 // ---------------------------------------------------------------- moving in
@@ -2695,7 +3129,7 @@ function familySpot(w) {
     for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) score += w.grass[idx(spot.x + dx, spot.y + dy)] / 25;
     if (score < 0.35) score -= 1;                                 // lush if at all possible
     for (const d of w.decor) {
-      if (!d.tree) continue;
+      if (!d.tree || d.size < GROWN) continue;
       const dd = Math.hypot(d.x - spot.x, d.y - spot.y);
       if (dd < 3.5) score -= 0.3;                                   // not in the woods
       else if (dd < 10) trees++;
@@ -2824,7 +3258,7 @@ function step(w) {
   weatherTick(w);
   if (t % 4 === 0) { growGrass(w, 4); fireTick(w, 4); iceTick(w, 4); }
   if (t % WATER_EVERY === 0) waterTick(w);
-  if (t % 60 === 0) { hivesTick(w); windfallTick(w); }
+  if (t % 60 === 0) { hivesTick(w); windfallTick(w); if (w.weather.kind === 'storm') windthrow(w); }
   const list = w.creatures;
   for (let i = 0; i < list.length; i++) {
     const c = list[i];
@@ -2896,8 +3330,9 @@ function mood(w, c) {
     case 'love': return { emoji: '💕', text: other ? `Courting ${other.name}` : 'Looking for love' };
     case 'graze': return { emoji: '😋', text: 'Munching grass' };
     case 'food': return { emoji: '🌿', text: 'Off to find better grass' };
-    case 'apple': return { emoji: '🍎', text: 'Off to the apple tree for a windfall' };
-    case 'munch': return { emoji: '🍎', text: 'Munching a windfall apple' };
+    case 'apple': return c.target?.tree?.kind === 'apple' ? { emoji: '🍎', text: 'Off to the apple tree for a windfall' }
+      : { emoji: '🌰', text: `Off to the ${c.target?.tree?.kind === 'beech' ? 'beeches for beechnuts' : 'oaks for acorns'}` };
+    case 'munch': return c.snack === 'apple' ? { emoji: '🍎', text: 'Munching a windfall apple' } : { emoji: '🌰', text: `Nibbling ${c.snack}` };
     case 'prowl': return { emoji: '🐾', text: 'Back to good hunting ground' };
     case 'stalk': return { emoji: '👀', text: other ? `Sneaking up on ${other.name}` : 'Sneaking' };
     case 'chase': return { emoji: '💨', text: other ? `Chasing ${other.name}!` : 'Chasing!' };
@@ -2919,6 +3354,7 @@ const api = {
   coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT, KINDS,
   TERRAIN, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE,
+  TREES, treeStage, treeAge, standing, bearing, hollow, inBloom, SEEDLING, SAPLING, GROWN, KIND_NAMES,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 else root.Sim = api;

@@ -517,23 +517,35 @@ function edgeColour(r, g, b) {
   document.documentElement.style.background = document.body.style.background = css;
 }
 
-// The ground, copied onto every frame; the shader paints it again only when it would look different.
+// The ground; the shader paints it again only when it would look different.
 // The sun shows the hills most when it is low: it comes up in the east, stands in the north at midday
 // (the shadows fall south) and sets in the west. At night and under cloud they go flat, like the shadows.
 // On a screen sharper than 2x the ground is painted at 2x and stretched: soft grass doesn't show the
 // difference, and the shader has half the pixels to work out.
+// It is a canvas of its own under the meadow's (#ground), slid into place, not copied onto every frame:
+// Chrome lets a frame draw only so many pictures' bytes before it pays extra on every call, and a copy
+// of the ground took most of them. The photo still draws it in (groundIn).
 const GROUND_DPR = 2;
-function drawGround(z, ox, oy) {
+const groundLayer = Ground.ok ? Ground.canvas : null, laid = { w: 0, h: 0, x: 0, y: 0 };
+if (groundLayer) { groundLayer.id = 'ground'; canvas.before(groundLayer); }
+let groundIn = false;
+function drawGround(z, ox, oy, shx, shy) {
   groundStill = z === lastZoom ? groundStill + 1 : 0; lastZoom = z;
   updateWater();
-  if (!Ground.ok) { ctx.drawImage(flat, ox, oy, S.W * z, S.H * z); return; }
+  if (!Ground.ok) {
+    if (groundLayer) groundLayer.style.display = 'none';
+    ctx.drawImage(flat, ox, oy, S.W * z, S.H * z); return;
+  }
   const [low, high] = groundColours(), sn = sun(S.clock(world)), k = 2.5 * Math.max(0, sn.a) * (0.6 + 0.4 * Math.abs(sn.lean));
   const gd = Math.min(dpr, GROUND_DPR), w = Math.round(vw * gd), h = Math.round(vh * gd);
   Ground.draw({
     width: w, height: h, zoom: z, ox, oy, dpr: gd, past: lookPast(), seed: groundSeed, low, high, sand: shoreSand,
     snow: world.snow, damp: 1 - 0.12 * world.wet, ice: iceOver(), cold: coldness(), lx: k * sn.lean, ly: k * 0.8,
   });
-  ctx.drawImage(Ground.canvas, Ground.view.x, Ground.view.y, w, h, 0, 0, vw, vh);
+  if (groundIn) { ctx.drawImage(Ground.canvas, Ground.view.x, Ground.view.y, w, h, 0, 0, vw, vh); return; }
+  const g = Ground.canvas, cw = g.width / gd, ch = g.height / gd, x = shx - Ground.view.x / gd, y = shy - Ground.view.y / gd;
+  if (cw !== laid.w || ch !== laid.h) { g.style.width = cw + 'px'; g.style.height = ch + 'px'; laid.w = cw; laid.h = ch; }
+  if (x !== laid.x || y !== laid.y) { g.style.transform = `translate(${x}px, ${y}px)`; laid.x = x; laid.y = y; }
 }
 
 function plantEmoji(season, p, g) {
@@ -956,7 +968,8 @@ function darkness(phase) {
 function render(now) {
   // Thunder rumbles the whole screen a little.
   const q = now - ui.sky.boom < 350 && ui.speed <= 4 ? 3 * (1 - (now - ui.sky.boom) / 350) : 0;
-  ctx.setTransform(dpr, 0, 0, dpr, q * Math.sin(now / 17) * dpr, q * Math.cos(now / 23) * dpr);
+  const shx = q * Math.sin(now / 17), shy = q * Math.cos(now / 23);
+  ctx.setTransform(dpr, 0, 0, dpr, shx * dpr, shy * dpr);
   ctx.imageSmoothingEnabled = true;
   // Sprites are painted near the size they're drawn at, so 'high' looks the same, but Chrome pays
   // for it on every draw, GPU or not: with it, a wood on screen dropped frames.
@@ -965,7 +978,7 @@ function render(now) {
   ctx.clearRect(-8, -8, vw + 16, vh + 16);          // past the meadow's edge the page shows through
   const [ox, oy] = toScreen(0, 0);
   const z = cam.zoom, ck = S.clock(world);
-  drawGround(z, ox, oy);
+  drawGround(z, ox, oy, shx, shy);
   drawWaves(now);
   drawShore(z, ox, oy, ck.season);
   drawPlants(z, ox, oy, ck.season);                  // over the waves, which can pass a flower by the water
@@ -985,6 +998,7 @@ function render(now) {
   // Trees, rocks and animals, back to front.
   const items = [];
   for (const d of world.decor) {                           // (a hive is in one of the trees)
+    if (d.tree && d.size * z < SEEDLING_PX && !d.stump) continue;   // a seedling too small to see from here
     const [sx, sy] = toScreen(d.x, d.y);
     if (visible(sx, sy, d.tree ? treePx(d) : d.size * z)) items.push({ y: d.y, d, sx, sy });
   }
@@ -1092,8 +1106,12 @@ const loadOf = c => c.load ? Math.min(1, c.load / (S.LOAD * S.HONEY)) : 0;
 // and a laden one flies lower.
 function liftOf(c, px, now) {
   if (!c.sp.flies) return hopOf(c, px, now);
-  const bob = ui.speed > 0 ? Math.sin(now / 90 + c.id) * px * 0.08 : 0;
-  return (c.mode === 'sip' ? px * 0.15 : px * (0.9 - 0.3 * loadOf(c))) + bob;
+  const bob = ui.speed > 0 ? Math.sin(now / 90 + c.id) * px * 0.08 : 0, fly = px * (0.9 - 0.3 * loadOf(c)), tree = c.target?.tree;
+  if (tree && (c.mode === 'sip' || c.mode === 'flower')) {   // blossom in a tree (sim.js addBlossoms): up in its crown
+    const crown = treePx(tree) * (tree.kind === 'hawthorn' ? 0.9 : 1.25) * c.target.up;
+    return lerp(fly, crown, c.mode === 'sip' ? 1 : clamp(1.5 - Math.hypot(c.target.x - c.x, c.target.y - c.y) / 2, 0, 1)) + bob;
+  }
+  return (c.mode === 'sip' ? px * 0.15 : fly) + bob;
 }
 
 // Fliers don't fly straight: they weave a loose figure of eight about their way, half as much
@@ -1486,7 +1504,16 @@ const SOFT_SHADOW = (() => {
 })();
 // A tree also keeps a dark patch at its foot, day and night, so it stands on the ground.
 function drawDecorShadow(d, sx, sy, sn) {
-  const tree = d.tree && !d.stump, s = (d.tree ? treePx(d) : d.size * cam.zoom) * (d.stump ? 0.45 : 1);
+  if (treeWaits.get(d) === 0) return;                      // not drawn yet (drawPaintedTree)
+  if (d.tree && d.size < S.SAPLING && !d.stump && (d.size < S.SEEDLING || d.size * cam.zoom < 20)) return;   // too small for one
+  if (d.fallen) {                                         // a log: along it
+    const s = treePx(d);
+    ctx.globalAlpha = 0.35 + 0.2 * Math.max(0, sn.a);
+    ctx.drawImage(SOFT_SHADOW, sx - s * 0.5, sy - s * 0.05, s, s * 0.12);
+    ctx.globalAlpha = 1;
+    return;
+  }
+  const tree = d.tree && !d.stump, s = (d.tree ? treePx(d) : d.size * cam.zoom) * (d.stump ? 0.45 : d.dead ? 0.6 : 1);
   if (tree) {
     const cw = s * 0.2, ch = s * 0.06;
     ctx.globalAlpha = 0.4 + 0.25 * Math.max(0, sn.a);
@@ -1590,8 +1617,8 @@ function treeLook(d, ck) {
       drop = clamp(turn * 1.5 - 0.4, 0, 1) * (1 - fall * fall) * (oak ? 0.3 : 1);
       if (info.fruit === 'apple') {
         if (sp < 0.4) fruit = { e: kind.e, n: Math.ceil(n * (1 - sp / 0.4)) };
-        ground = { e: kind.e, n: d.apples, size: 0.12 };          // the sim's windfalls (windfallTick)
-      }
+        ground = { e: kind.e, n: d.windfall, size: 0.12 };        // the sim's windfalls (windfallTick)
+      } else if (d.windfall) ground = { e: '🌰', n: d.windfall, size: 0.07 };   // acorns or beechnuts, in a mast year
     } else if (s === 3) { rgb = DRY; fall = oak ? 0 : 1; }
     else if (s === 0) {
       rgb = mix(oak ? mix(DRY, SPRING, clamp(sp / 0.3, 0, 1)) : SPRING, green, clamp((sp - 0.35) / 0.45, 0, 1));
@@ -1747,11 +1774,14 @@ function drawShore(z, ox, oy, season) {
 // Trees are painted by trees.js: sculpted as a little 3D model for the light, then brushed over.
 // A paint takes a tenth of a second or more, so it's done in a worker (tree-worker.js) and never
 // holds up a frame. Each kind comes in a few shapes, a tree picking one from where it stands; each
-// shape in its season's looks; each look at a few sizes (TREE_TIERS). Only what's on screen is
-// asked for, and until it comes the nearest size, or another look of the same tree, stands in. A
-// tree turning crossfades from one look to the next (treeStage), and the snow is a layer of its own,
-// laid on as thick as the snow lying. Before a tree's first painting comes, and where there's no
-// worker (or with ?emoji), it's drawn as it always was, an emoji.
+// shape in its season's looks, in its tone (sim.js d.tone) and form (young, or grown); each look at a
+// few sizes (TREE_TIERS). A dead tree has one look, grey and bare, a fallen one is a log, and one lightning
+// took is a stump. Only what's on screen is asked for, and until it comes the nearest size stands in, or
+// a small painting of its kind in that look (treeKin: painted ahead, one of each, kept for good), or
+// another look of the same tree. A tree with none of these yet isn't drawn, and fades in when its
+// painting comes. A tree turning crossfades from one look to the next (treeStage), and the snow is a
+// layer of its own, laid on as thick as the snow lying. Where there's no worker (or with ?emoji),
+// trees are emoji.
 const TREE_SHAPES = 4;
 const TREE_UNIT = 200;                   // painted px (at scale 1) to one tree size: an oak's crown is about that wide
 const TREE_TIERS = [0.125, 0.25, 0.5, 1, 2];   // the scales each look is painted at
@@ -1761,20 +1791,41 @@ const TREE_BYTES = 48e6;                 // the paintings kept, in memory
 // height: oak, beech and pine big, birch and maple a little less, apple smaller, a cherry a big pink
 // cloud in spring, hawthorn a thicket. Kept small enough that you see between trees. The hive oak is
 // an old giant already (HIVE_TREE). Emoji trees keep their size.
-const TREE_SCALE = { oak: 1.41, hive: 1, beech: 1.36, maple: 1.14, birch: 0.92, pine: 1.01, willow: 1.03, apple: 1.28, cherry: 1.72, hawthorn: 1.1 };
-const treePx = d => d.size * cam.zoom * (d.tree && treeWorker ? TREE_SCALE[treeKind(d)] || 1 : 1);
+const TREE_SCALE = { oak: 1.41, hive: 1, beech: 1.36, maple: 1.14, birch: 0.92, pine: 1.01, willow: 1.03, apple: 1.28, cherry: 1.72, hawthorn: 1.1, log: 1.2, stump: 1 };
+const treePx = d => d.size * cam.zoom * (d.tree && treeWorker ? TREE_SCALE[d.fallen ? 'log' : d.stump ? 'stump' : treeKind(d)] || 1 : 1);
+const LOG_BARK = { beech: 'grey', birch: 'birch' };      // whose bark a log or a stump has (trees.js); the rest are brown
+const YOUNG = new Set(['seedling', 'sapling', 'young']);
+const SEEDLING_PX = 6;                                   // a seedling smaller than this on screen isn't drawn
+// A bare tree looks the same whatever its tone, and a young one hardly shows its shape: fewer paintings to make.
+const bareLook = (kind, look) => look === 'dead' || (kind !== 'pine' && kind !== 'log' && (look === 'winter' || look === 'bare'));
 const HIVE_DOOR = [1, -38];              // the hive's sill in the hive oak's painting, from its foot (trees.js hive)
-const treeArt = new Map(), treeAsked = new Map(), treeSent = new Set(), treeAny = new Map();
-let treeWorker = null, treeBusy = 0, treeBytes = 0;
+// Paintings go by number, so a frame builds no names: the tree (kind, shape, tone, form), its look, the size (its
+// place in TREE_TIERS) and the snow, packed together.
+const ART_KINDS = { oak: 0, hive: 1, beech: 2, maple: 3, birch: 4, pine: 5, willow: 6, apple: 7, cherry: 8, hawthorn: 9, log: 10, stump: 11 };
+const ART_LOOKS = { summer: 0, spring: 1, bud: 2, autumn: 3, thin: 4, winter: 5, bare: 6, dead: 7 };
+const ART_TONES = { 0: 0, 1: 1, 2: 2, 3: 3, bark: 4, grey: 5, birch: 6 };
+const treeKey = (kind, shape, tone, form) => ((ART_KINDS[kind] * 4 + shape) * 8 + ART_TONES[tone]) * 2 + form;
+// treeAny: a painting of each tree, in any look, till its own comes. treeKin: a small one of each kind in each
+// look, with its snow, painted ahead and kept for good (outside TREE_BYTES: a few MB), so there's always one.
+const treeArt = new Map(), treeAsked = new Map(), treeSent = new Map(), treeAny = new Map(), treeKin = new Map();
+const BROAD = ['winter', 'bud', 'spring', 'summer', 'autumn', 'thin', 'dead'], OAK = ['bare', 'winter', 'bud', 'spring', 'summer', 'autumn', 'dead'];
+const KIN_LOOKS = { oak: OAK, hive: OAK, beech: BROAD, maple: BROAD, birch: BROAD, apple: BROAD, cherry: BROAD, hawthorn: BROAD,
+  pine: ['summer', 'spring', 'dead'], log: ['summer'], stump: ['summer'] };   // the looks each kind goes through (treeStage)
+const KIN_TIER = 0.25;
+const kinWanted = [];                    // stand-ins still to paint, one wanted on screen first
+let treeWorker = null, treeBusy = 0, treeBytes = 0, kinBusy = false, kinAsked = false;
 if (!params.has('emoji') && window.Worker && window.OffscreenCanvas) {
   try {
     treeWorker = new Worker('tree-worker.js');
     treeWorker.onmessage = e => {
-      const { key, bx, by, image, snow } = e.data, [kind, shape, , tier] = key.split('|');
-      const p = { image, snow, bx, by, scale: +tier, used: spriteFrame, bytes: image.width * image.height * 4 * (snow ? 2 : 1) };
-      treeArt.set(key, p); treeAny.set(kind + '|' + shape, p);
-      treeBytes += p.bytes; treeSent.delete(key); treeBusy--;
-      if (treeBytes > TREE_BYTES) dropTreeArt();
+      const { key, bx, by, image, snow } = e.data, job = treeSent.get(key);
+      const p = { image, snow, bx, by, scale: job.scale, used: spriteFrame, bytes: image.width * image.height * 4 * (snow ? 2 : 1) };
+      treeSent.delete(key); treeBusy--;
+      if (job.kin !== undefined) { treeKin.set(job.kin, p); kinBusy = false; }
+      else {
+        treeArt.set(key, p); treeAny.set(job.tree, p); treeBytes += p.bytes;
+        if (treeBytes > TREE_BYTES) dropTreeArt();
+      }
       askTrees();
     };
     treeWorker.onerror = () => { treeWorker = null; };     // no OffscreenCanvas in workers here: emoji trees
@@ -1790,36 +1841,62 @@ function dropTreeArt() {
     for (const [k, q] of treeAny) if (q === p) treeAny.delete(k);
   }
 }
-// Hands the worker the next painting wanted, two at a time: the ones wanted this frame first, small
-// sizes before big so something shows soon. What hasn't been wanted for a while is forgotten.
+// A stand-in of this kind in this look (treeKin) is painted, or will be: now, first thing, when a tree on
+// screen has nothing else to show.
+function wantKin(kind, look, now) {
+  const kin = ART_KINDS[kind] * 8 + ART_LOOKS[look];
+  if (treeKin.has(kin) || treeSent.has(-1 - kin)) return;
+  const i = kinWanted.findIndex(j => j.kin === kin);
+  if (i < 0) {
+    const job = { kind, seed: 1, season: look, scale: KIN_TIER, ss: KIN_TIER * 3, snow: true, kin, ...(kind === 'log' || kind === 'stump' ? { bark: 'bark' } : { tone: 0 }) };
+    if (now) kinWanted.unshift(job); else kinWanted.push(job);
+  } else if (now && i > 0) kinWanted.unshift(kinWanted.splice(i, 1)[0]);
+  askTrees();
+}
+// All the stand-ins, asked for once at the start: this season's looks first, then the year's on from it.
+function kinAhead() {
+  kinAsked = true;
+  const s = S.clock(world).season, looks = new Set();
+  for (let k = 0; k < 4; k++) for (const l of [['bare', 'bud', 'spring'], ['summer'], ['autumn', 'thin'], ['winter']][(s + k) % 4]) looks.add(l);
+  for (const look of [...looks, 'dead']) for (const kind in KIN_LOOKS) if (KIN_LOOKS[kind].includes(look)) wantKin(kind, look, false);
+}
+// Hands the worker the next painting wanted, two at a time: a stand-in while none is being painted (one
+// at a time, so the rest go on), then the ones wanted this frame, small sizes before big so something
+// shows soon. What hasn't been wanted for a while is forgotten.
 function askTrees() {
-  while (treeWorker && treeBusy < 2 && treeAsked.size) {
+  while (treeWorker && treeBusy < 2) {
+    if (kinWanted.length && !kinBusy) {
+      const job = kinWanted.shift(), key = -1 - job.kin;          // (its own keys, below the others)
+      kinBusy = true; treeSent.set(key, job); treeBusy++;
+      treeWorker.postMessage({ key, ...job });
+      continue;
+    }
     let best = null;
     for (const [key, a] of treeAsked) {
       if (spriteFrame - a.frame > 30) { treeAsked.delete(key); continue; }
       if (!best || a.frame > best[1].frame || (a.frame === best[1].frame && a.job.scale < best[1].job.scale)) best = [key, a];
     }
     if (!best) return;
-    treeAsked.delete(best[0]); treeSent.add(best[0]); treeBusy++;
+    treeAsked.delete(best[0]); treeSent.set(best[0], best[1].job); treeBusy++;
     treeWorker.postMessage({ key: best[0], ...best[1].job });
   }
 }
 // A painting of this tree's look near this size: the one asked for if it's there (else it's asked
-// for), or the same look at the nearest size, or none.
-function treePainting(kind, shape, look, tier, snow) {
-  const base = kind + '|' + shape + '|' + look + '|', key = base + tier + (snow ? '|s' : '');
+// for), or the same look at the nearest size, or none. tone: the tree's (a log's or a stump's: its bark); form: 1 young, 0 grown.
+function treePainting(kind, shape, tone, form, look, tier, snow) {
+  const tree = treeKey(kind, shape, tone, form), lk = tree * 8 + ART_LOOKS[look], i = TREE_TIERS.indexOf(tier), key = (lk * 8 + i) * 2 + (snow ? 1 : 0);
   const p = treeArt.get(key);
   if (p) { p.used = spriteFrame; return p; }
   if (!treeSent.has(key)) {
     const a = treeAsked.get(key);
     if (a) a.frame = spriteFrame;
-    else treeAsked.set(key, { frame: spriteFrame, job: { kind, seed: shape + 1, season: look, scale: tier, ss: clamp(tier * 3, 0.4, 2), snow } });   // sculpted about 3x as fine as shown
+    else treeAsked.set(key, { frame: spriteFrame, job: { kind, seed: shape + 1, season: look, scale: tier, ss: clamp(tier * 3, 0.4, 2), snow,   // sculpted about 3x as fine as shown
+      tree, ...(typeof tone === 'string' ? { bark: tone } : { tone, young: form === 1 }) } });
     askTrees();
   }
-  const i = TREE_TIERS.indexOf(tier);
   for (let k = 0; k < TREE_TIERS.length; k++) {           // this size without the snow, then one up, one down, ...
     for (const j of k ? [i + k, i - k] : [i]) {
-      const t = TREE_TIERS[j], q = t && (treeArt.get(base + t + (snow ? '|s' : '')) || treeArt.get(base + t));
+      const q = j >= 0 && j < TREE_TIERS.length && (snow && treeArt.get((lk * 8 + j) * 2 + 1) || treeArt.get((lk * 8 + j) * 2));
       if (q) { q.used = spriteFrame; return q; }
     }
   }
@@ -1851,26 +1928,40 @@ function treeStage(kind, d, ck) {
   }
   return ['winter', null, 0];
 }
-// Draws a tree from its paintings, swaying from the foot; false if it has none yet.
-function drawPaintedTree(d, sx, sy, now, ck) {
+// Draws a tree from its paintings, swaying from the foot; false if it has none yet. stage: sim.js treeStage.
+// Trees that had nothing to show: 0 while they wait, then when their painting came, to fade them in.
+const treeWaits = new WeakMap(), FADE_MS = 300;
+function drawPaintedTree(d, sx, sy, now, ck, stage = S.treeStage(world, d)) {
   if (!treeWorker) return false;
-  const kind = treeKind(d), hx = Math.floor(d.x * 100), hy = Math.floor(d.y * 100);
-  const shape = Math.floor(hash2(hx, hy, 46) * TREE_SHAPES), f = treePx(d) / TREE_UNIT, want = f * dpr;
-  const tier = TREE_TIERS.find(t => t >= want * 0.9) || TREE_TIERS[TREE_TIERS.length - 1];
-  const snow = step(world.snow * 1.6 - 0.1, 4);
-  const [a, b, m] = treeStage(kind, d, ck);
-  let A = m < 1 ? treePainting(kind, shape, a, tier, snow > 0) : null, B = b && m > 0 ? treePainting(kind, shape, b, tier, snow > 0) : null;
-  if (!A && !B) A = treeAny.get(kind + '|' + shape);   // another look of it, till this one comes
-  if (!A && !B) return false;
-  ctx.save();
-  ctx.translate(sx, sy); ctx.rotate(treeSway(d, now));
-  if (A) putPainting(A, f, 1, snow);
-  if (B) putPainting(B, f, A ? m : 1, snow);
-  ctx.restore();
+  if (!kinAsked) kinAhead();
+  const wood = stage === 'log' || stage === 'stump', kind = wood ? stage : treeKind(d), hx = Math.floor(d.x * 100), hy = Math.floor(d.y * 100);
+  const form = YOUNG.has(stage) ? 1 : 0, shape = Math.floor(hash2(hx, hy, 46) * TREE_SHAPES) % (form ? 2 : TREE_SHAPES);
+  const px = treePx(d), f = px / TREE_UNIT, want = f * dpr, tier = TREE_TIERS.find(t => t >= want * 0.9) || TREE_TIERS[TREE_TIERS.length - 1];
+  const snow = step(world.snow * 1.6 - 0.1, 4), tone = wood ? LOG_BARK[d.kind] || 'bark' : d.tone ?? 0;
+  const [a, b, m] = wood ? ['summer', null, 0] : stage === 'dead' ? ['dead', null, 0] : treeStage(kind, d, ck);
+  let A = m < 1 ? treePainting(kind, shape, bareLook(kind, a) ? 0 : tone, form, a, tier, snow > 0) : null;
+  let B = b && m > 0 ? treePainting(kind, shape, bareLook(kind, b) ? 0 : tone, form, b, tier, snow > 0) : null;
+  if (!A && !B) {                                            // till this one comes: its kind in this look, or another look of it
+    const look = m > 0.5 ? b : a;
+    A = treeKin.get(ART_KINDS[kind] * 8 + ART_LOOKS[look]) || treeAny.get(treeKey(kind, shape, tone, form));
+    if (!A) { wantKin(kind, look, true); if (!treeWaits.has(d)) treeWaits.set(d, 0); return false; }
+  }
+  let fade = 1;
+  const t0 = treeWaits.get(d);
+  if (t0 !== undefined) {
+    if (!t0) treeWaits.set(d, now);
+    fade = t0 ? Math.min(1, (now - t0) / FADE_MS) : 0;
+    if (fade >= 1) treeWaits.delete(d);
+  }
+  const r = wood ? 0 : treeSway(d, now) * (stage === 'dead' ? 0.4 : 1), still = Math.abs(r) * px < 0.5;   // a sway too small to see isn't drawn
+  if (!still) { ctx.save(); ctx.translate(sx, sy); ctx.rotate(r); }   // swaying from the foot
+  if (A) putPainting(A, f, fade, snow, still ? sx : 0, still ? sy : 0);
+  if (B) putPainting(B, f, (A ? m : 1) * fade, snow, still ? sx : 0, still ? sy : 0);
+  if (!still) ctx.restore();
   return true;
 }
-function putPainting(p, f, alpha, snow) {
-  const k = f / p.scale, x = -p.bx * k, y = -p.by * k, w = p.image.width * k, h = p.image.height * k;
+function putPainting(p, f, alpha, snow, ox, oy) {
+  const k = f / p.scale, x = ox - p.bx * k, y = oy - p.by * k, w = p.image.width * k, h = p.image.height * k;
   ctx.globalAlpha = alpha;
   ctx.drawImage(p.image, x, y, w, h);
   if (snow && p.snow) { ctx.globalAlpha = alpha * snow; ctx.drawImage(p.snow, x, y, w, h); }
@@ -1881,35 +1972,39 @@ function drawDecor(d, sx, sy, now, ck, clipLeaves) {
   const z = cam.zoom, px = d.tree ? treePx(d) : d.size * z;
   if (d.emoji === '🪨') { drawRock(d, sx, sy); return; }
   if (!d.stump && !d.tree) { drawEmoji(d.emoji, sx, sy - px * 0.35, px); return; }
-  if (!d.stump) {
-    const t = treeLook(d, ck);
-    const under = t.ground?.n && px >= 20 && !(treeWorker && t.ground.e === '🌸');   // a painted cherry has its own petals
-    if (under) drawUnderTree(t.ground, t.h, sx, sy, px, false);
-    if (!clipLeaves && drawPaintedTree(d, sx, sy, now, ck)) {
-      if (t.owl && px >= 24 && darkness(ck.phase) > 0.3) drawEmoji('🦉', sx - px * 0.08, sy - px * (t.fall < 0.5 ? 0.45 : 0.6), px * 0.2);
-      if (under) drawUnderTree(t.ground, t.h, sx, sy, px, true);
-      if (t.drop && px >= 22) leafFall.push({ sx, sy, px, drop: t.drop, rgb: t.rgb, h: t.h });
-      return;
-    }
-    t.look = shownLook(d, t.look, px);
-    ctx.save();
-    ctx.translate(sx, sy); ctx.rotate(treeSway(d, now));
-    if (t.bare) drawEmoji('🪾', 0, -px * 0.42, px * 1.15, { alpha: t.fall, leaf: t.bare, flip: t.flip });   // it draws small
-    if (clipLeaves) clipLeaves(px);                      // (the bee tree)
-    if (t.fall < 1) drawEmoji(d.emoji, 0, -px * 0.35, px, { leaf: t.look, flip: t.flip });
-    if (t.owl && px >= 24 && darkness(ck.phase) > 0.3) {
-      const side = t.flip ? -1 : 1;                   // on a low bough of the leaves, or in the bare fork
-      if (t.fall < 0.5) drawEmoji('🦉', side * px * 0.2, -px * 0.3, px * 0.2);
-      else drawEmoji('🦉', 0, -px * 0.8, px * 0.24);
-    }
-    ctx.restore();
+  const stage = d.tree && S.treeStage(world, d);
+  if (stage === 'seedling' && !treeWorker) { if (px >= 3) drawEmoji('🌱', sx, sy - px * 0.3, px * 0.9); return; }   // (painted, it's a little young tree)
+  if (stage === 'dead' || stage === 'log' || stage === 'stump') {   // grey and bare, fallen, or a stump till it sprouts again
+    if (drawPaintedTree(d, sx, sy, now, ck, stage) || treeWorker) return;
+    if (stage === 'dead') drawEmoji('🪾', sx, sy - px * 0.42, px * 1.15);
+    else drawEmoji('🪵', sx, sy - px * (stage === 'log' ? 0.1 : 0.12), px * (stage === 'log' ? 0.5 : 0.45));
+    return;
+  }
+  if (px < 20 && !clipLeaves && (drawPaintedTree(d, sx, sy, now, ck, stage) || treeWorker)) return;   // too small for anything under it or in it
+  const t = treeLook(d, ck);
+  const under = t.ground?.n && px >= 20 && !(treeWorker && t.ground.e === '🌸');   // a painted cherry has its own petals
+  if (under) drawUnderTree(t.ground, t.h, sx, sy, px, false);
+  if (!clipLeaves && drawPaintedTree(d, sx, sy, now, ck, stage)) {
+    if (t.owl && px >= 24 && darkness(ck.phase) > 0.3) drawEmoji('🦉', sx - px * 0.08, sy - px * (t.fall < 0.5 ? 0.45 : 0.6), px * 0.2);
     if (under) drawUnderTree(t.ground, t.h, sx, sy, px, true);
     if (t.drop && px >= 22) leafFall.push({ sx, sy, px, drop: t.drop, rgb: t.rgb, h: t.h });
     return;
   }
-  // Struck by lightning: a stump, then a sapling, then (in sim.js) a tree again.
-  const sapling = world.tick - d.stump > S.YEAR_DAYS * S.TPD / 2;
-  drawEmoji(sapling ? '🌱' : '🪵', sx, sy - px * 0.12, px * (sapling ? 0.55 : 0.45));
+  if (treeWorker) return;                                    // nothing to show yet: it fades in when its painting comes
+  t.look = shownLook(d, t.look, px);
+  ctx.save();
+  ctx.translate(sx, sy); ctx.rotate(treeSway(d, now));
+  if (t.bare) drawEmoji('🪾', 0, -px * 0.42, px * 1.15, { alpha: t.fall, leaf: t.bare, flip: t.flip });   // it draws small
+  if (clipLeaves) clipLeaves(px);                      // (the bee tree)
+  if (t.fall < 1) drawEmoji(d.emoji, 0, -px * 0.35, px, { leaf: t.look, flip: t.flip });
+  if (t.owl && px >= 24 && darkness(ck.phase) > 0.3) {
+    const side = t.flip ? -1 : 1;                   // on a low bough of the leaves, or in the bare fork
+    if (t.fall < 0.5) drawEmoji('🦉', side * px * 0.2, -px * 0.3, px * 0.2);
+    else drawEmoji('🦉', 0, -px * 0.8, px * 0.24);
+  }
+  ctx.restore();
+  if (under) drawUnderTree(t.ground, t.h, sx, sy, px, true);
+  if (t.drop && px >= 22) leafFall.push({ sx, sy, px, drop: t.drop, rgb: t.rgb, h: t.h });
 }
 
 // ------------------------------------------------------------------ rocks
@@ -2225,6 +2320,7 @@ function drawBeeTree(d, sx, sy, now, ck) {
     const f = px / TREE_UNIT, a = treeSway(d, now);         // (the door sways with the tree)
     hx = sx + HIVE_DOOR[0] * f - HIVE_DOOR[1] * f * Math.sin(a); sill = sy + HIVE_DOOR[1] * f; rx = 0.02;
   } else {
+    if (treeWorker) return;                                  // nothing to show yet: it fades in when its painting comes
     const fall = treeLook(d, ck).fall;
     drawDecor(d, sx, sy, now, ck, clipFoot);
     const put = s => ctx.drawImage(s.canvas, sx - s.ox, sy - s.oy, s.W, s.H);
@@ -2524,12 +2620,14 @@ function thunder(e) {
 }
 
 // Flames glow, so they go on top of the night. The glow is painted once and stretched to size.
+// It can't add light to the ground (a layer of its own, under the canvas), so it lays a pale warm
+// light over it, which reads the same: the glows add up to it where many flames burn.
 const fireGlow = (() => {
   const c = document.createElement('canvas'), n = 128, g = c.getContext('2d');
   c.width = c.height = n;
   const grad = g.createRadialGradient(n / 2, n / 2, 0, n / 2, n / 2, n / 2);
-  grad.addColorStop(0, 'rgba(255, 140, 40, 0.2)');
-  grad.addColorStop(1, 'rgba(255, 90, 20, 0)');
+  grad.addColorStop(0, 'rgba(255, 225, 110, 0.42)');
+  grad.addColorStop(1, 'rgba(255, 190, 90, 0)');
   g.fillStyle = grad; g.fillRect(0, 0, n, n);
   return c;
 })();
@@ -2637,14 +2735,15 @@ function drawPollen(now) {
 // butterflies over a flower field in bloom. Only a look: each one is worked out from a hash and
 // the clock, so there is nothing to keep, and they are drawn from one small glow and the 🦋 sprite.
 
+// (The halo is laid over the dark ground, not added to it, like the fire's glow: so it's thicker.)
 const FIREFLY_GLOW = (() => {
   const c = document.createElement('canvas'), n = 32, g = c.getContext('2d');
   c.width = c.height = n;
   const grad = g.createRadialGradient(n / 2, n / 2, 0, n / 2, n / 2, n / 2);
   grad.addColorStop(0, 'rgba(255, 255, 220, 1)');
   grad.addColorStop(0.12, 'rgba(250, 255, 170, 1)');
-  grad.addColorStop(0.3, 'rgba(210, 255, 110, 0.45)');
-  grad.addColorStop(0.65, 'rgba(180, 255, 80, 0.1)');
+  grad.addColorStop(0.3, 'rgba(210, 255, 110, 0.75)');
+  grad.addColorStop(0.65, 'rgba(180, 255, 80, 0.17)');
   grad.addColorStop(1, 'rgba(180, 255, 80, 0)');
   g.fillStyle = grad; g.fillRect(0, 0, n, n);
   return c;
@@ -2850,8 +2949,28 @@ function handleEvent(e) {
       if (e.tree && !e.fire) addNews('⚡ Lightning split a tree in two!', 'tree', 30000);
       break;
     case 'hivestruck':
-      addNews(`⚡ <b>Lightning struck Queen ${esc(e.queen.name)}'s tree!</b> Her ${e.who.length} bees swarm out and hang in a tree nearby while scouts look for a new home.`);
+      addNews(e.fell ? `🪵 <b>Queen ${esc(e.queen.name)}'s old tree has come down!</b> Her ${e.who.length} bees swarm out and hang in a tree nearby while scouts look for a new home.`
+        : `⚡ <b>Lightning struck Queen ${esc(e.queen.name)}'s tree!</b> Her ${e.who.length} bees swarm out and hang in a tree nearby while scouts look for a new home.`);
       break;
+    case 'mast':
+      addNews('🌰 <b>A mast year!</b> The oaks and beeches are heavy with acorns and beechnuts. Rabbits will feast, jays will bury them, and next spring the woods will be full of seedlings.');
+      break;
+    case 'sprouts': {
+      const few = world.count.rabbit < 60 * world.room, burn = e.burnt >= Math.max(5, e.n / 4);
+      addNews(`🌱 ${e.n} tree seedlings have come up this spring${burn ? ', many on the ground the fire burned' : ''}.`
+        + (few ? ' With so few rabbits about, many may make it.' : ' The rabbits will get most of the ones out in the open.'), 'sprouts', 60000);
+      break;
+    }
+    case 'treedied': {
+      const d = e.tree, t = thingLink('tree', d.id, esc(treeTitle(d).replace(/^Dead /, 'The old ')));
+      addNews(`🍂 ${t} has died, ${Math.floor(e.age)} years old.` + (d.hive ? ' Its bees stay on in the dead trunk, for now.' : ' It will stand a while yet, grey and bare.'), 'treedied', 30000);
+      break;
+    }
+    case 'windthrow': {
+      const d = e.tree, t = thingLink('tree', d.id, esc(e.alive ? (d.name ? `the ${d.name}` : `a big ${treeName(d).toLowerCase()}`) : `a dead ${treeName(d).toLowerCase()}`));
+      addNews(`🌬️ The storm brought down ${t}.`, 'windthrow', 20000);
+      break;
+    }
     case 'fire':
       addNews('🔥 <b>Wildfire!</b> Lightning set the dry grass alight. Everyone is running.');
       hear('fire', e.x, e.y, {}, true);
@@ -2958,7 +3077,8 @@ function handleEvent(e) {
       break;
     }
     case 'windfall':
-      addNews('🍎 <b>The apples are falling.</b> Hungry rabbits are gathering under the apple trees.');
+      addNews(e.mast ? '🍂 <b>Windfalls!</b> Apples, acorns and beechnuts are dropping. Hungry rabbits are gathering under the trees.'
+        : '🍎 <b>The apples are falling.</b> Hungry rabbits are gathering under the apple trees.');
       break;
     case 'bloom':
       addNews(`${e.field.emoji[0]} ${esc(e.field.name)} is in bloom.${e.field.season === 2 ? ' The last flowers before winter.' : ''}`);
@@ -3621,7 +3741,7 @@ function decorAt(sx, sy) {
   let best = null;
   for (const d of world.decor) {
     const [dx, dy] = toScreen(d.x, d.y), px = (d.tree ? treePx(d) : d.size * z) * (d.stump ? 0.45 : 1);
-    const half = Math.max(6, px * (d.tree ? 0.36 : 0.5)), top = Math.max(10, px * (d.tree ? 0.85 : 0.6));
+    const half = Math.max(6, px * (d.fallen ? 0.55 : d.tree ? 0.36 : 0.5)), top = Math.max(10, px * (d.fallen ? 0.3 : d.tree ? 0.85 : 0.6));
     if (Math.abs(sx - dx) < half && sy > dy - top && sy < dy + Math.max(4, px * 0.12) && (!best || d.y > best.y)) best = d;
   }
   return best;
@@ -3629,7 +3749,24 @@ function decorAt(sx, sy) {
 
 const TREE_NAMES = { oak: 'Oak', beech: 'Beech', maple: 'Maple', birch: 'Birch', willow: 'Willow', hawthorn: 'Hawthorn',
   apple: 'Apple tree', cherry: 'Cherry tree', pine: 'Pine' };
-const treeName = d => TREE_NAMES[treeInfo(d).kind];
+const treeName = d => d.kind === 'beech' && d.tone === 3 ? 'Copper beech' : TREE_NAMES[treeInfo(d).kind];
+// What the inspector and the news call a tree: its name if it's an old giant with one (sim.js oldName), else what it is now.
+function treeTitle(d) {
+  if (d.name) return `The ${d.name}`;
+  const kind = treeName(d), low = kind.toLowerCase(), short = (d.tone === 3 && d.kind === 'beech' ? 'copper beech' : S.KIND_NAMES[d.kind].toLowerCase());
+  switch (S.treeStage(world, d)) {
+    case 'seedling': return `${short[0].toUpperCase() + short.slice(1)} seedling`;
+    case 'sapling': return `${short[0].toUpperCase() + short.slice(1)} sapling`;
+    case 'young': return `Young ${low}`;
+    case 'old': return `Old ${low}`;
+    case 'dead': return `Dead ${low}`;
+    case 'log': return `Fallen ${low}`;
+    case 'stump': return `${kind} stump`;
+    default: return kind;
+  }
+}
+// Is a grown hawthorn close enough to keep rabbits off this one (sim.js THORNS)? False for a hawthorn itself.
+const thornGuard = d => d.kind !== 'hawthorn' && world.decor.some(o => o !== d && o.kind === 'hawthorn' && S.standing(o) && o.size >= S.SAPLING && Math.hypot(o.x - d.x, o.y - d.y) < 1.8);
 
 function treeSeason(d) {
   const s = S.seasonOf(world.tick), info = treeInfo(d), k = info.kind, oak = k === 'oak' || !HAS_BARE;
@@ -3703,33 +3840,57 @@ const THINGS = {
 
   tree: {
     at: (sx, sy) => { const d = decorAt(sx, sy); return d && d.tree ? d : null; },
-    here: () => true,
-    spot: d => ({ x: d.x, y: d.y, r: treePx(d) / cam.zoom * (d.stump ? 0.2 : 0.3) }),
+    here: d => world.decor.includes(d),
+    spot: d => ({ x: d.x, y: d.y, r: treePx(d) / cam.zoom * (d.stump ? 0.2 : d.fallen ? 0.5 : 0.3) }),
     show(d) {
-      const T = world.terrain, name = treeName(d), wood = world.wood[tileOf(d.x, d.y)];
-      const grown = (d.size - T.treeSize[0]) / (T.treeSize[1] - T.treeSize[0]);
-      const age = grown < 0.15 ? 'Young' : grown < 0.45 ? 'Grown' : grown < 0.8 ? 'Tall' : 'Ancient';
+      const name = treeTitle(d), kind = treeName(d).toLowerCase();
+      if (!this.here(d)) return { emoji: '🍂', tint: '#b8a47a', name, sub: 'Gone', status: d.size < S.SAPLING ? '🍂 It didn\'t make it.' : '🍂 It has rotted away into the ground.' };
+      const stage = S.treeStage(world, d), age = S.treeAge(world, d), k = S.TREES[d.kind], i = tileOf(d.x, d.y), wood = world.wood[i];
       const where = wood >= 0.95 ? 'deep in the wood' : wood >= 0.6 ? 'at the edge of the wood' : 'standing on its own';   // as plantTrees tells them
+      const living = S.standing(d), young = YOUNG.has(stage);
       let status;
-      if (world.fire[tileOf(d.x, d.y)] > 0) status = '🔥 On fire!';
-      else if (d.stump) {
-        const left = (d.stump + S.YEAR_DAYS * S.TPD - world.tick) / S.TPD;
-        status = world.tick - d.stump > S.YEAR_DAYS * S.TPD / 2 ? `🌱 A sapling now, a tree again in ${days(left)}`
-          : `⚡ Struck by lightning ${ago(d.stump)} ago`;
-      } else status = treeSeason(d);
-      const facts = [];
+      if (world.fire[i] > 0) status = '🔥 On fire!';
+      else if (d.stump) status = `⚡ Struck by lightning ${ago(d.stump)} ago. It will sprout again from the stump.`;
+      else if (stage === 'log') status = `🪵 Down ${ago(d.fallen)}, rotting away. Beetles and fungi are at work.`;
+      else if (stage === 'dead') status = `🪾 Died ${ago(d.dead)} ago. It stands grey and bare, and one day it will fall.`;
+      else if (young && world.fire[i] === 0 && wood > k.shade) status = k.shade > 0.6 ? '🌑 Waiting in the shade for an old tree to fall' : '🌑 Too much shade: it is struggling';
+      else if (young && d.size < S.SAPLING) status = thornGuard(d) ? '🌿 Safe among the thorns from hungry rabbits' : '🐇 Small enough for a rabbit to nibble';
+      else status = treeSeason(d);
+      const facts = [], parent = d.parent && world.decor.find(o => o.id === d.parent);
+      const from = parent ? thingLink('tree', parent.id, treeTitle(parent).replace(/^The /, 'the ')) : `an old ${kind} long gone`;
+      if (living || d.stump) facts.push(['🎂', `${age < 1 ? days(age * S.YEAR_DAYS) : `${Math.floor(age)} ${Math.floor(age) === 1 ? 'year' : 'years'}`} old`]);
+      if (d.sprouted) facts.push(['🪵', 'Grew again from the stump of a tree lightning took']);
+      else if (d.by === 'jay') facts.push(['🐦', `Grew from ${k.mast === 'acorns' ? 'an acorn' : 'a beechnut'} a jay carried off from ${from}, buried, and forgot`]);
+      else if (d.by === 'bird') facts.push(['🐦', `Grew from a stone a bird dropped, from ${d.kind === 'cherry' ? 'the cherries' : 'the haws'} of ${from}`]);
+      else if (d.by === 'wind') facts.push(['🌬️', `Its seed blew in on the wind from ${from}`]);
+      else if (d.by === 'drop') facts.push(['🍎', `Grew from a pip of ${from}`]);
       if (d.hive) facts.push(['🐝', `${thingLink('hive', d.hive.id, d.hive.queen ? `Queen ${esc(d.hive.queen.name)}'s hive` : 'An empty hive')} is in its hollow`]);
-      if (treeInfo(d).owl && !d.stump) facts.push(['🦉', 'An owl roosts here; look for it at night']);
-      if (world.snow > 0.3 && !d.stump) facts.push(['❄️', 'Snow on the branches']);
-      if (d.apples) facts.push(['🍎', `${d.apples === 1 ? 'A windfall apple lies' : d.apples + ' windfall apples lie'} under it, for any hungry rabbit`]);
-      if (!d.stump && world.wet < 0.5) facts.push(['⚡', 'Dry: a lightning strike would set it alight']);   // as strike does
+      else if (S.hollow(world, d)) facts.push(['🕳️', 'Old enough to have gone hollow: bees could make a home in it']);
+      if (living && S.bearing(world, d)) {
+        const bear = { wind: '🌬️ Sheds its seed on the wind each autumn', jay: `🌰 Its ${k.mast} are a feast in a mast year, and jays bury them far and wide`,
+          bird: `🐦 Birds carry off its ${d.kind === 'cherry' ? 'cherries' : 'haws'} and drop the stones far and wide`, drop: '🍎 Drops its apples for whoever comes by' }[k.by];
+        facts.push([bear.slice(0, 2), bear.slice(3)]);
+      }
+      if (living && k.blossom && d.blooms) {
+        if (S.inBloom(world, d)) facts.push(['🐝', `In blossom: the bees have been ${d.visits ? `${d.visits} ${d.visits === 1 ? 'time' : 'times'}` : 'yet to come'}`]);
+        else if (S.seasonOf(world.tick) > 0) facts.push(['🐝', d.crop > 0.8 ? 'The bees came to its blossom: a full crop this year' : d.crop > 0.4 ? 'Some bees came to its blossom: a fair crop this year' : 'Few bees came to its blossom: a poor crop this year']);
+      }
+      if (living && !young && k.thorns) facts.push(['🌿', 'Its thorns keep rabbits off the seedlings under it']);
+      const kids = world.decor.filter(o => o.parent === d.id && S.standing(o)).length;
+      if (kids) facts.push(['🌱', `${kids} of its young ${kids === 1 ? 'grows' : 'grow'} in the meadow`]);
+      if (treeInfo(d).owl && living && !young) facts.push(['🦉', 'An owl roosts here; look for it at night']);
+      if (world.snow > 0.3 && !d.stump) facts.push(['❄️', d.fallen ? 'Snow on it' : 'Snow on the branches']);
+      if (d.windfall) facts.push([d.kind === 'apple' ? '🍎' : '🌰', `${d.windfall === 1 ? `A windfall ${d.kind === 'apple' ? 'apple lies' : k.mast.slice(0, -1) + ' lies'}` : `${d.windfall} windfall ${d.kind === 'apple' ? 'apples' : k.mast} lie`} under it, for any hungry rabbit`]);
+      if (living && !young && world.wet < 0.5) facts.push(['⚡', 'Dry: a lightning strike would set it alight']);   // as strike does
       const shade = whoNear(d.x, d.y, Math.max(1.5, treePx(d) / cam.zoom * 0.4));
-      if (shade) facts.push(['🌳', `Under it: ${shade}`]);
+      if (shade) facts.push([d.fallen ? '🪵' : '🌳', `${d.fallen ? 'By it' : 'Under it'}: ${shade}`]);
       const swarm = world.hives.find(h => h.cluster && Math.hypot(h.x - d.x, h.y - d.y) < 2);
       if (swarm) facts.push(['🐝', `${thingLink('hive', swarm.id, 'A swarm')} is hanging in it`]);
+      const STAGES = { seedling: 'Seedling', sapling: 'Sapling', young: 'Young', grown: 'Grown', old: 'Old', dead: 'Dead', log: 'Fallen', stump: 'Stump' };
       return {
-        emoji: d.stump ? '🪵' : d.emoji, tint: '#7fb24a', name: d.stump ? `${name} stump` : name,
-        sub: d.stump ? where : `${age} · ${where}`, status, facts, meters: d.stump ? null : [['Size', grown, '']],
+        emoji: d.stump || d.fallen ? '🪵' : d.dead ? '🪾' : stage === 'seedling' ? '🌱' : d.emoji, tint: d.dead ? '#b8a47a' : '#7fb24a', name,
+        sub: `${STAGES[stage]} · ${where}`, status, facts,
+        meters: living ? [['Grown', d.size / Math.max(d.max, d.size), ''], ['Age', age / d.life, age > d.life * 0.85 ? 'low' : '']] : null,
       };
     },
   },
@@ -4428,7 +4589,7 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'follow') { ui.follow = !ui.follow; renderInspector(); }
   else if (t.dataset.act === 'diary') { const c = world.byId.get(ui.selectedId); if (c) writeDiary(c); }
   else if (t.dataset.thing) {
-    const [kind, id] = t.dataset.thing.split(':'), it = (kind === 'hive' ? world.hives : world.fields).find(o => o.id === +id);
+    const [kind, id] = t.dataset.thing.split(':'), it = (kind === 'hive' ? world.hives : kind === 'tree' ? world.decor.filter(o => o.tree) : world.fields).find(o => o.id === +id);
     if (it) pick(kind, it);
   }
   else if (t.dataset.id) {
@@ -4446,7 +4607,7 @@ function copyMeadow() {
   vw = S.W * SHOT; vh = S.H * SHOT; dpr = 1;
   Object.assign(cam, { x: S.W / 2, y: S.H / 2, zoom: SHOT });
   canvas.width = vw; canvas.height = vh;
-  render(now);
+  groundIn = true; render(now); groundIn = false;   // the ground drawn in, as it's a layer of its own on screen
   if (lab?.draw) lab.draw(ctx, dpr, true);
   const png = new Promise(ok => canvas.toBlob(ok, 'image/png'));   // takes the picture now, encodes it later
   ({ vw, vh, dpr } = keep);
