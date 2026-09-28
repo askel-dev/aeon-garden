@@ -25,7 +25,7 @@ const ui = {
   speed: 1, sound: false, tool: 'look', selectedId: 0, picked: null, hoverId: 0, follow: false,
   trail: [], effects: [], zaps: [], zapNext: 0, diary: new Map(),
   lastNews: {}, newsLog: [], newsOpen: false, records: perKind(() => 0), crashSaid: perKind(() => -1), seenHistory: 0,
-  releaseSex: perKind(() => 'F'), mini: false, ring: null, sheetUp: false,
+  releaseSex: perKind(() => 'F'), group: perKind(() => 1), mini: false, ring: null, sheetUp: false,
   stats: { open: false, show: 'rabbit', range: 'five', hover: null },
   sky: { mix: {}, tick: 0, bolts: [], boom: -1e9, rainbow: 0, menu: false },
 };
@@ -4217,15 +4217,36 @@ function creatureAt(sx, sy) {
   return best;
 }
 
+// Tap an animal tool already in your hand and it releases more at a time: ×1, ×2, ×5, ×10.
+const GROUPS = [1, 2, 5, 10];
 function setTool(tool) {
+  if (tool === ui.tool && S.KINDS.includes(tool)) {
+    ui.group[tool] = GROUPS[(GROUPS.indexOf(ui.group[tool]) + 1) % GROUPS.length];
+    try { localStorage.setItem('aeon-garden-group', JSON.stringify(ui.group)); } catch (e) { /* fine */ }
+    showGroup();
+    return;                               // the tools stay open, so a phone can tap again
+  }
   ui.tool = tool;
   document.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === tool));
   canvas.className = 'tool-' + tool;
   const hand = $('#toolbar .hand');
   hand.textContent = $(`[data-tool="${tool}"] .e`).textContent;
   hand.classList.toggle('on', tool !== 'look');
+  showGroup();
   toggleTools(false);
   updateBar();
+}
+
+// The group size shows as a badge on each animal tool, and on the folded tools button while one is in hand.
+function showGroup() {
+  for (const k of S.KINDS) {
+    const b = $(`[data-tool="${k}"]`), n = ui.group[k];
+    if (n > 1) b.dataset.n = '×' + n; else delete b.dataset.n;
+    b.title = `Click the meadow to release ${n > 1 ? n + ' ' + S.SPECIES[k].plural.toLowerCase() : 'a ' + S.SPECIES[k].name.toLowerCase()}`
+      + `${k === 'bee' ? '. They move into the nearest hive' : ''}. Tap again for more at a time`;
+  }
+  const hand = $('#toolbar .hand'), n = ui.group[ui.tool];
+  if (n > 1) hand.dataset.n = '×' + n; else delete hand.dataset.n;
 }
 
 // On a phone the tools fold into one button in the corner; tap it and they rise above it.
@@ -4438,15 +4459,28 @@ function drawZaps(now) {
   }
 }
 
+// A group lands in a loose scatter around the spot, on dry ground, the sexes taking turns so two make a pair.
 function release(species, wx, wy) {
-  const sex = ui.releaseSex[species];
-  ui.releaseSex[species] = sex === 'F' ? 'M' : 'F';
-  const c = S.addCreature(world, species, wx, wy, { sex, age: world.rng.range(5, 9) });
-  if (c) {
-    addEffect('✨', wx, wy);
-    hear('release', wx, wy, { species: c.species });
-    addNews(`👋 You released ${link(c)}, a ${c.species === 'bee' ? 'worker' : c.sex === 'F' ? 'female' : 'male'} ${c.sp.name.toLowerCase()}.`);
+  const n = ui.group[species], spread = n > 1 ? 0.8 + Math.sqrt(n) * 0.7 : 0, out = [];
+  for (let i = 0; i < n; i++) {
+    for (let tries = 0; tries < 8; tries++) {
+      const a = world.rng.range(0, TAU), r = i && spread * Math.sqrt(world.rng.range(0, 1));
+      const x = wx + Math.cos(a) * r, y = wy + Math.sin(a) * r;
+      const sex = ui.releaseSex[species];
+      const c = S.addCreature(world, species, x, y, { sex, age: world.rng.range(5, 9) });
+      if (!c) continue;
+      ui.releaseSex[species] = sex === 'F' ? 'M' : 'F';
+      addEffect('✨', x, y);
+      out.push(c);
+      break;
+    }
   }
+  if (!out.length) return;
+  const c = out[0];
+  hear('release', wx, wy, { species });
+  addNews(out.length === 1
+    ? `👋 You released ${link(c)}, a ${species === 'bee' ? 'worker' : c.sex === 'F' ? 'female' : 'male'} ${c.sp.name.toLowerCase()}.`
+    : `👋 You released ${out.length} ${c.sp.plural.toLowerCase()}: ${linkList(out)}.`);
 }
 
 // ------------------------------------------------------------------ the ring: right-click the meadow
@@ -5327,6 +5361,13 @@ try { if (localStorage.getItem('aeon-garden-sound') === '1') toggleSound(true); 
 let mini = narrow();
 try { const m = localStorage.getItem('aeon-garden-mini'); if (m) mini = m === '1'; } catch (e) { /* fine */ }
 if (mini) toggleMini(true);
+
+// The animal tools remember how many they release at a time.
+try {
+  const g = JSON.parse(localStorage.getItem('aeon-garden-group') || '{}');
+  for (const k of S.KINDS) if (GROUPS.includes(g[k])) ui.group[k] = g[k];
+} catch (e) { /* fine */ }
+showGroup();
 setTimeout(() => { barNear = false; updateBar(); }, 4000);   // show the toolbar for a moment, then let the meadow breathe
 for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => { if (ui.sound) Sound.start(); }, { once: true });
 
