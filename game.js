@@ -2924,6 +2924,7 @@ function involvesSelected(e) {
 
 function handleEvent(e) {
   const mine = involvesSelected(e);
+  if (idle.on) idleNews(e);
   switch (e.type) {
     case 'season':
       addNews(SEASON_NEWS[e.season] + (e.season === 0 ? ` Year ${e.year} begins.` : ''));
@@ -4579,6 +4580,7 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'mini') toggleMini();
   else if (t.dataset.act === 'more') toggleMore();
   else if (t.dataset.act === 'copy-link') copyLink();
+  else if (t.dataset.act === 'watch') startIdle();
   else if (t.dataset.act === 'home') homeGuide();
   else if (t.dataset.act === 'home-done') homeGuide(false);
   else if (t.dataset.act === 'home-install') install();
@@ -4643,6 +4645,7 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'n') toggleNewsLog();
   else if (e.key === 'c') toggleMini();
   else if (e.key === 'm') toggleSound();
+  else if (e.key === 'v') startIdle();
   else if (e.key === 'p') copyMeadow().then(([w, h]) => addNews(`📋 Copied the meadow, ${w} × ${h}`), () => addNews('📋 The browser would not let me copy the meadow.'));
   else if (e.key === '+' || e.key === '=') zoomAt(vw / 2, vh / 2, cam.zoom * 1.25);
   else if (e.key === '-') zoomAt(vw / 2, vh / 2, cam.zoom / 1.25);
@@ -4817,6 +4820,252 @@ function newsTips() {
     : '🌦️ <b>Tip:</b> right-click the meadow to add animals, grow grass, change the weather or strike lightning. The toolbar waits at the bottom edge.'), 27000);
 }
 
+// ------------------------------------------------------------------ the idle camera
+//
+// Leave the meadow be for a minute and it films itself, like a nature film: the intro's bars come
+// in, the cards fade away, and the camera goes from shot to shot. It follows a fox on the hunt, a
+// kit after its mum or a courting pair, or drifts past a hive, a field in bloom, an old tree or the
+// lake, and now and then over the whole meadow. What just happened comes first: a fire, a swarm, a
+// storm felling a tree. A shot keeps one zoom and only pans (a new zoom paints the ground again),
+// and the next comes after a dip to dark, or with a glide when it's near. At 15x and 60x only
+// places: animals would dart about. Not while paused, or while a card is open (you're reading).
+// V or ••• starts it now. Any key, click, scroll or move of the mouse hands the meadow back, the
+// camera staying where it is.
+
+const IDLE_MS = 60000;                  // no touch this long and it starts
+const SHOT_S = [8, 14];                 // seconds a shot lasts
+const DIP_MS = 400;                     // each way, the dip to dark between shots (as #intro .dip in index.html)
+const GLIDE_S = 2.5;                    // seconds a glide to a shot nearby takes
+const DRIFT_PX = 14;                    // screen pixels a second a place drifts past
+const SWEEP_PX = 40;                    // and the most the whole meadow does
+const NEWS_S = 12;                      // seconds something that happened stays worth filming
+const idle = { on: false, since: 0, shot: null, next: null, dipAt: 0, news: null, lastKind: '', lastKey: null, px: 0, py: 0, lineTimer: 0 };
+const between = (a, b) => a + Math.random() * (b - a);
+const anyOf = a => a.length ? a[Math.floor(Math.random() * a.length)] : null;
+
+const idleMayStart = now => !idle.on && now - lastInput > IDLE_MS && ui.speed > 0 && !ui.hush && !LAB && !calm && !document.hidden
+  && !ui.selectedId && !ui.picked && !ui.ring && !ui.stats.open && !ui.newsOpen && !ui.sky.menu
+  && $('#more-menu').classList.contains('hidden') && !homeOpen() && !$('#toolbar').classList.contains('open');
+
+function startIdle(now = performance.now()) {
+  if (idle.on || ui.hush || LAB) return;
+  closeRing(); toggleTools(false); toggleSkyMenu(false); toggleMore(false);
+  if (homeOpen()) homeGuide(false);
+  if (ui.stats.open) toggleStats(false);
+  if (ui.newsOpen) toggleNewsLog();
+  if (ui.selectedId || ui.picked) select(0);
+  if (!ui.speed) setSpeed(lastSpeed);
+  Object.assign(idle, { on: true, since: now, next: null, dipAt: 0, news: null, lastKind: '', lastKey: null,
+    shot: { kind: 'hold', until: now + 1200 } });       // the cards fade out and the bars come in first
+  Object.assign(ui, { hush: true, hoverId: 0, hoverHive: null });   // (hush: nothing to keep clear of at the bottom)
+  cam.goal = null; flick.vx = flick.vy = 0;
+  document.body.classList.add('idle');
+}
+
+function wakeIdle() {
+  if (!idle.on) return;
+  idle.on = false; idle.shot = idle.next = null; idle.dipAt = 0;
+  lastInput = performance.now();
+  clearTimeout(idle.lineTimer);
+  $('#intro-line').classList.remove('on');
+  $('#intro .dip').classList.remove('on');
+  ui.hush = false;
+  document.body.classList.remove('idle');
+  document.body.classList.add('ui-in');
+  setTimeout(() => document.body.classList.remove('ui-in'), 1100);
+}
+
+// The press that wakes it does nothing else. It goes to the window first (capture), before the meadow sees it.
+addEventListener('pointerdown', e => {
+  if (!idle.on) return;
+  e.stopPropagation();
+  if (ui.sound) Sound.start();
+  wakeIdle();
+}, true);
+addEventListener('keydown', e => {
+  if (!idle.on) return;
+  if (ui.sound) Sound.start();
+  wakeIdle();
+  if (!e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); e.stopPropagation(); }   // the browser's own keys still work
+}, true);
+addEventListener('wheel', e => {
+  if (!idle.on) return;
+  e.preventDefault(); e.stopPropagation();
+  wakeIdle();
+}, { capture: true, passive: false });
+// A nudged desk isn't a hand on the mouse: it takes a real move. Not the one just after starting it from the menu.
+addEventListener('pointermove', e => {
+  if (!idle.on || performance.now() - idle.since < 800) { idle.px = e.clientX; idle.py = e.clientY; }
+  else if (Math.hypot(e.clientX - idle.px, e.clientY - idle.py) > 24) wakeIdle();
+}, { passive: true });
+addEventListener('resize', () => wakeIdle());
+// Back from another tab or window counts as a touch: it shouldn't greet you with a film.
+for (const [on, type] of [[window, 'focus'], [document, 'visibilitychange']]) on.addEventListener(type, () => { lastInput = performance.now(); });
+
+// What just happened, for the next shot. Big things cut the shot on screen short.
+function idleNews(e) {
+  const at = performance.now();
+  let n = null;
+  switch (e.type) {
+    case 'birth':
+      if (e.mum.species !== 'bee') n = { c: e.mum, w: 3, line: `${e.mum.name} and her new ${e.mum.species === 'fox' ? 'cubs' : 'babies'}` };
+      break;
+    case 'death': if (e.cause === 'fox' && e.killer) n = { c: e.killer, w: 5 }; break;
+    case 'lightning': if (e.tree) n = { x: e.x, y: e.y, w: 8, line: 'Struck by lightning', big: true }; break;
+    case 'windthrow': n = { x: e.tree.x, y: e.tree.y, w: 8, line: 'Brought down by the storm', big: true }; break;
+    case 'swarm': n = { x: e.swarm.x, y: e.swarm.y, w: 8, line: `Queen ${e.queen.name}'s swarm, looking for a home`, big: true }; break;
+    case 'settle': n = { x: e.hive.x, y: e.hive.y, w: 6, line: `Queen ${e.queen.name}'s swarm moves in` }; break;
+    case 'fire': n = { big: true }; break;          // the fire is filmed anyway, first of all
+  }
+  if (!n) return;
+  if (n.c || n.x !== undefined) idle.news = Object.assign(n, { at });
+  const s = idle.shot;
+  if (n.big && s && s.kind !== 'hold' && at - s.t0 > 3000) s.until = Math.min(s.until, at);
+}
+
+const lowerFirst = s => s[0].toLowerCase() + s.slice(1);
+const animalLine = c => `${c.name} the ${c.sp.name.toLowerCase()}, ${lowerFirst(S.mood(world, c).text)}`;
+const treeLift = d => d ? treePx(d) / cam.zoom * 0.3 : 0;   // up a tree from its foot (in tiles, whatever the zoom)
+
+// What to film next: at most one of each kind of subject there is, then one of them by weight. Never
+// the same subject twice running, and the same kind again only now and then.
+function pickShot(now) {
+  const fast = ui.speed > 4, ck = S.clock(world), season = ck.season, z = narrow() ? 0.75 : 1, opts = [];
+  const add = (w, kind, s) => {
+    if (w > 0 && s.key !== idle.lastKey) opts.push([kind === idle.lastKind ? w / 4 : w, Object.assign(s, { kind })]);
+  };
+  const who = (w, kind, c, other = null, line = '') => {
+    if (c && c.alive && !c.hidden) add(w, kind, { c, other, x: c.x, y: c.y, zoom: between(20, 26) * z, key: c, line: line || animalLine(c) });
+  };
+  const at = (w, kind, key, x, y, zoom, line = '') => add(w, kind, { x, y, zoom: zoom * z, key, line });
+
+  const n = idle.news;
+  if (n && now - n.at < NEWS_S * 1000) {
+    if (n.c) { if (!fast) who(n.w, 'news', n.c, null, n.line); }
+    else at(n.w, 'news', n, n.x, n.y, 16, n.line);
+  }
+  if (world.burning.length) { const i = anyOf(world.burning); at(12, 'fire', 'fire', i % S.W + 0.5, Math.floor(i / S.W) + 0.5, 13, 'Wildfire!'); }
+
+  if (!fast) {
+    const hunt = [], young = [], love = [], busy = [], out = [];
+    for (const c of world.creatures) {
+      if (!c.alive || c.hidden || c.species === 'bee') continue;     // a bee is too small and quick to follow: the hive shots have them
+      const m = c.mode;
+      if (m === 'stalk' || m === 'chase' || (m === 'flee' && c.threatId)) hunt.push(c);
+      else if (m === 'follow') young.push(c);
+      else if (m === 'love') love.push(c);
+      else if (m === 'dig' || m === 'munch' || m === 'apple' || m === 'alarm') busy.push(c);
+      else if (m !== 'sleep' && m !== 'shelter' && m !== 'rest') out.push(c);
+    }
+    const h = anyOf(hunt), y = anyOf(young), l = anyOf(love);
+    who(6, 'hunt', h, h && world.byId.get(h.species === 'fox' ? h.targetId : h.threatId));
+    who(2, 'young', y, y && world.byId.get(y.mumId));
+    who(1.5, 'love', l, l && world.byId.get(l.targetId));
+    who(2, 'busy', anyOf(busy));
+    who(2, 'out', anyOf(out));
+  }
+
+  const swarm = anyOf(world.hives.filter(h => h.cluster)), hive = anyOf(world.hives.filter(h => !h.cluster));
+  if (swarm) at(5, 'swarm', swarm, swarm.x, swarm.y, 18, swarm.queen ? `Queen ${swarm.queen.name}'s swarm, looking for a home` : 'A swarm, looking for a home');
+  if (hive) at(ck.night || season === 3 ? 0.4 : 2, 'hive', hive, hive.x, hive.y - treeLift(hive.tree), 16, hive.queen ? `Queen ${hive.queen.name}'s hive` : 'An empty hive');
+  const field = anyOf(world.fields.filter(f => f.season === season));
+  if (field) at(ck.night ? 0.3 : 2, 'field', field, field.x, field.y, 12, field.name);
+  const old = anyOf(world.decor.filter(d => d.tree && d.name && !d.fallen));
+  if (old) at(1.2, 'tree', old, old.x, old.y - treeLift(old), 17, treeTitle(old));
+  const bloom = season === 0 && anyOf(world.blossoms)?.tree;
+  if (bloom) at(1.5, 'tree', bloom, bloom.x, bloom.y - treeLift(bloom), 18, `${treeTitle(bloom)} in blossom`);
+  const rock = anyOf(world.decor.filter(d => d.big));
+  if (rock) at(0.6, 'rock', rock, rock.x, rock.y, 18);
+  const wet = world.lake ? [world.lake] : [];
+  for (const rv of world.rivers) {
+    const p = anyOf(rv.pts);
+    if (p) wet.push({ name: rv.name, x: clamp(p.x, 4, S.W - 4), y: clamp(p.y, 4, S.H - 4) });
+  }
+  const water = anyOf(wet);
+  if (water) at(ck.night && season === 1 ? 2.5 : world.frozen ? 2 : 1.2, 'water', water.name, water.x, water.y, 11,   // fireflies on a summer night
+    world.frozen ? `${water.name}, frozen over` : water.name);
+  const wide = { x: S.W / 2, y: S.H / 2, zoom: minZoom * 1.25, key: 'wide', line: `${S.SEASONS[season].name}, year ${ck.year}` };
+  add(fast ? 3 : 1.2, 'wide', wide);
+
+  let r = Math.random() * opts.reduce((a, [w]) => a + w, 0);
+  const s = opts.length ? (opts.find(([w]) => (r -= w) <= 0) || opts[opts.length - 1])[1] : Object.assign(wide, { kind: 'wide' });   // nothing else: the meadow again
+  if (s.kind !== 'wide') s.zoom = clamp(s.zoom, minZoom * 1.15, 40);
+  return s;
+}
+
+// Glide there if it's near and about as close up (the zoom stays: see above), else dip to dark and cut.
+function changeShot(now) {
+  const cur = idle.shot, s = pickShot(now);
+  idle.lastKind = s.kind; idle.lastKey = s.key;
+  const near = cur.kind !== 'hold' && cur.kind !== 'wide' && s.kind !== 'wide' && Math.abs(Math.log(cam.zoom / s.zoom)) < 0.35
+    && Math.hypot(s.x - cam.x, s.y - cam.y) * cam.zoom < vw * 0.8;
+  if (near) { s.zoom = cam.zoom; beginShot(s, now, true); return; }
+  idle.shot = null; idle.next = s; idle.dipAt = now;
+  $('#intro .dip').classList.add('on');
+  idleLine('');
+}
+
+function beginShot(s, now, glide) {
+  idle.shot = s;
+  s.t0 = now; s.until = now + between(...SHOT_S) * 1000;
+  s.from = glide ? { x: cam.x, y: cam.y } : null;
+  cam.zoom = s.zoom;
+  if (s.c) {                              // with room ahead of where they face
+    s.lead = s.c.facing * vw / 7 / cam.zoom;
+    s.sx = s.x + s.lead; s.sy = s.y;
+  } else {                                // a place drifts past, its subject in the middle halfway through
+    const dur = (s.until - now) / 1000, dir = () => Math.random() < 0.5 ? -1 : 1;
+    if (s.kind === 'wide') {              // the whole meadow, from one side towards the other
+      s.vx = dir() * Math.min(Math.max(0, S.W - vw / cam.zoom) * 0.8 / dur, SWEEP_PX / cam.zoom);
+      s.vy = dir() * Math.min(Math.max(0, S.H - vh / cam.zoom) * 0.4 / dur, SWEEP_PX / cam.zoom);
+    } else {
+      const a = Math.random() * TAU, v = DRIFT_PX / cam.zoom;
+      s.vx = Math.cos(a) * v; s.vy = Math.sin(a) * v * 0.6;
+    }
+    s.x0 = s.x - s.vx * dur / 2; s.y0 = s.y - s.vy * dur / 2;
+  }
+  idleLine(s.line);
+}
+
+// The shot's line, a moment after it starts, and gone again well before it ends.
+function idleLine(text) {
+  const el = $('#intro-line');
+  clearTimeout(idle.lineTimer);
+  el.classList.remove('on');
+  if (!text) return;
+  idle.lineTimer = setTimeout(() => {
+    el.textContent = text; el.classList.add('on');
+    idle.lineTimer = setTimeout(() => el.classList.remove('on'), 5000);
+  }, 900);
+}
+
+function idleFrame(now, dt) {
+  if (idle.dipAt) {                       // dark: cut to the next shot, then light again
+    if (now - idle.dipAt < DIP_MS) return;
+    idle.dipAt = 0;
+    beginShot(idle.next, now, false);
+    $('#intro .dip').classList.remove('on');
+  }
+  let s = idle.shot;
+  if (now > s.until) { changeShot(now); if (!(s = idle.shot)) return; }
+  if (s.kind === 'hold') return;
+  const t = (now - s.t0) / 1000;
+  let x, y;
+  if (s.c) {                              // after them, or both of a pair in the picture
+    const c = s.c, o = s.other;
+    if (c.alive && !c.hidden) {
+      const pair = o && o.alive && !o.hidden && Math.abs(o.x - c.x) * cam.zoom < vw * 0.5 && Math.abs(o.y - c.y) * cam.zoom < vh * 0.4;
+      s.lead += ((pair ? 0 : c.facing * vw / 7 / cam.zoom) - s.lead) * (1 - Math.pow(0.4, dt));   // turning round, it swings over slowly
+      const k = 1 - Math.pow(0.05, dt);
+      s.sx += ((pair ? (c.x + o.x) / 2 : c.x) + s.lead - s.sx) * k;
+      s.sy += ((pair ? (c.y + o.y) / 2 : c.y) - s.sy) * k;
+    } else if (!s.gone) { s.gone = true; s.until = Math.min(s.until, now + 2500); }   // into a burrow, or caught: a moment on the spot
+    x = s.sx; y = s.sy;
+  } else { x = s.x0 + s.vx * t; y = s.y0 + s.vy * t; }
+  if (s.from && t < GLIDE_S) { const u = ease(t / GLIDE_S); x = lerp(s.from.x, x, u); y = lerp(s.from.y, y, u); }
+  cam.x = x; cam.y = y;
+}
+
 // ------------------------------------------------------------------ the loop
 
 function flushEvents() {
@@ -4904,6 +5153,7 @@ function frame(now) {
     const gy = sheet ? sel.y + (sheet.bottom - sheet.top) / 2 / cam.zoom : sel.y;
     cam.x += (gx - cam.x) * k; cam.y += (gy - cam.y) * k;
   }
+  if (idle.on) idleFrame(now, dt);
   if (flick.vx || flick.vy) {             // a flicked pan glides to a stop
     cam.x -= flick.vx * dt / cam.zoom; cam.y -= flick.vy * dt / cam.zoom;
     const f = Math.pow(0.02, dt);
@@ -4929,6 +5179,7 @@ function frame(now) {
 
   if (now - lastCard > 250) {
     lastCard = now;
+    if (idleMayStart(now)) startIdle(now);
     updateMeadowCard();
     if (ui.sound) {
       const ck = S.clock(world);

@@ -327,6 +327,12 @@
   body.ui-in :is(#meadow, #news, #toolbar, #hud-right) { animation: ui-in 1s ease both; }
   @keyframes ui-in { from { opacity: 0; } }
   @media (prefers-reduced-motion: reduce) { #intro .bar, #intro .line, #welcome, #welcome .card { transition-duration: 0.01s; } }
+  /* ---- the idle camera (game.js, startIdle): the intro's bars and lines, the cards faded away, and a dip to
+     dark between shots (as long as DIP_MS) */
+  #intro .dip { position: absolute; inset: 0; background: #1d1a15; opacity: 0; transition: opacity 0.4s ease; }
+  #intro .dip.on { opacity: 1; }
+  body.idle #intro .bar { transform: none; }
+  body.idle :is(#meadow, #news, #toolbar, #hud-right) { opacity: 0; visibility: hidden; transition: opacity 1s ease, visibility 0s 1s; }
   .hidden { display: none !important; }
 
   /* ---- the stats page, over everything */
@@ -595,6 +601,7 @@
     <button class="menu-item phone-only" data-act="stats">📊 Graphs and records</button>
     <button class="menu-item phone-only" data-act="sound" id="sound-item">🔇 Sound is off</button>
     <button class="menu-item hidden" data-act="home" id="home-item">📱 Add to your home screen</button>
+    <button class="menu-item" data-act="watch" title="Let the meadow film itself, like when you leave it be (V)">🎥 Sit back and watch</button>
     <button class="menu-item" data-act="copy-link">🔗 Copy a link to this meadow</button>
     <button class="menu-item danger" data-action="new">🔄 Start a new meadow…</button>
   </div>
@@ -685,6 +692,7 @@
 </div>
 
 <div id="intro" aria-live="polite">
+  <div class="dip"></div>
   <div class="bar top"><button class="skip" id="intro-skip">Skip ›</button></div>
   <div class="bar bottom"><p class="line fr" id="intro-line"></p></div>
 </div>

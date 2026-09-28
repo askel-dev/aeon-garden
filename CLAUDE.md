@@ -20,6 +20,10 @@ told to just do it.
   empty meadow (createWorld's `arrival` option, `planArrivals` in sim.js) where a family hops in at dawn,
   digs its burrow and turns in for the night, while the camera, the clock's pace and a caption at a time
   follow along in letterbox bars. It never steers the animals, it waits for them. Any key, click or scroll skips it.
+  Left alone for a minute while it runs, with no card open (or on V, or ••• "Sit back and watch"), the meadow films
+  itself (`startIdle`, `pickShot`, `idleFrame`): the intro's bars and lines, the cards faded away, shots that follow an
+  animal or drift past a place, what just happened first (`idleNews`). A shot keeps one zoom and only pans, and the next
+  comes after a dip to dark or a glide. Any key, click, scroll or mouse move hands it back, the camera staying put.
 - `ground.js`: the ground (grass, earth, shores, water) as a WebGL shader, painted from a
   few small textures of one texel a tile that game.js keeps up to date (`paintTerrain`, `updateWater`).
   It paints again only when a texture, the zoom or the light has moved (`steady`), and at most at 2x
