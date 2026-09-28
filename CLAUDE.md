@@ -104,7 +104,8 @@ walk a way for (`windfall`), so the apple trees are where they gather in autumn,
 
 Rocks are painted, not emoji (`rockInfo`, `rockSprite` in game.js): pebbles, stones and boulders by
 size (`TERRAIN.rockSize`), flat stones at the fords, and two or three great rocks per meadow
-(`TERRAIN.bigRocks`, `big: true`) that burrows keep clear of.
+(`TERRAIN.bigRocks`, `big: true`) that burrows keep clear of. Like a tree's, a rock's snow is a layer of its
+own, painted once and faded in as thick as the snow lying, so the snow never repaints the rock.
 Flowers are painted too (`flowerSprite`, one painter per kind in `FLOWER_ARTS`): a clump on stems in
 one of `FLOWER_VARIANTS` looks, painted once per half-octave size. Which painting a flower gets comes from
 its emoji and the season (`flowerArt`), so the sim and the inspector still speak emoji. Thought bubbles are

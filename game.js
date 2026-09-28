@@ -1974,7 +1974,7 @@ function rockInfo(d) {
     stones, kind,
     rgb: ROCK_RGB[Math.floor(h(94) * ROCK_RGB.length)].map(v => v * (0.94 + 0.12 * h(95))),
     moss: kind === 'ford' ? 0 : clamp(h(96) * 1.4 - (kind === 'great' ? 0.5 : 0.9) + wood * 1.2, 0, 1),
-    sprite: null, px: 0, snow: -1,
+    sprite: null, px: 0, snow: null,                     // snow: its snow, a layer of its own like a tree's
   };
   rockInfos.set(d, t);
   return t;
@@ -1999,7 +1999,7 @@ function rockPath(g, p, lift, k) {
 
 const rockRGB = (c, a = 1) => `rgba(${c.map(v => Math.round(clamp(v, 0, 255))).join(',')},${a})`;
 
-function paintStone(g, p, t, U, snow) {
+function paintStone(g, p, t, U, sg) {
   const L = rockLayer, lg = L.getContext('2d'), h = p.s * p.tall;
   lg.setTransform(1, 0, 0, 1, 0, 0);
   lg.clearRect(0, 0, L.width, L.height);
@@ -2043,17 +2043,23 @@ function paintStone(g, p, t, U, snow) {
       softSpot(lg, x, y, p.s * (0.25 + 0.25 * v) * (0.5 + t.moss), p.s * 0.2 * (0.5 + t.moss), MOSS_RGB.map(c => c + (u - 0.5) * 30).join(','), 0.55 + 0.45 * t.moss);
     }
   }
-  if (snow > 0) {
-    rockPath(lg, p, h * 1.02, 0.72 * (0.6 + 0.4 * snow));
-    lg.fillStyle = rockRGB(SNOW_RGB, 0.9 * snow); lg.fill();
-  }
   lg.globalCompositeOperation = 'source-over';
   g.drawImage(L, -L.width / 2, -L.height * ROCK_FOOT);
+  if (!sg) return;
+  // Its snow cap goes on the snow layer, over the snow on the stones behind, which it hides.
+  sg.globalCompositeOperation = 'destination-out'; sg.drawImage(L, -L.width / 2, -L.height * ROCK_FOOT);
+  sg.globalCompositeOperation = 'source-over';
+  sg.save(); sg.scale(U, U); rockPath(sg, p, h, 0.72); sg.restore();
+  sg.fillStyle = rockRGB(SNOW_RGB, 0.9); sg.fill();
 }
 
-function rockSprite(t, U, snow) {
-  const c = t.sprite || document.createElement('canvas');
+function rockSprite(t, U, snowy) {
+  const t0 = performance.now(), c = t.sprite || document.createElement('canvas');
   c.width = Math.ceil(U * 1.8); c.height = Math.ceil(U * 1.5);
+  const sc = snowy ? t.snow || document.createElement('canvas') : null;
+  if (sc) { sc.width = c.width; sc.height = c.height; }
+  const sg = sc && sc.getContext('2d');
+  sg?.translate(c.width / 2, c.height * ROCK_FOOT);
   if (!rockLayer) rockLayer = document.createElement('canvas');
   if (rockLayer.width < c.width || rockLayer.height < c.height) { rockLayer.width = c.width; rockLayer.height = c.height; }
   const g = c.getContext('2d');
@@ -2068,20 +2074,24 @@ function rockSprite(t, U, snow) {
     softSpot(g, p.x, p.y + p.s * 0.08, p.s * 1.25, p.s * ROCK_SQUASH * 1.1, '30,34,16', 0.5);
   }
   g.restore();
-  for (const p of t.stones) paintStone(g, p, t, U, snow);
-  Object.assign(t, { sprite: c, px: U, snow });
+  for (const p of t.stones) paintStone(g, p, t, U, sg);
+  Object.assign(t, { sprite: c, px: U, snow: sc });
+  paintedMs += performance.now() - t0;
   return c;
 }
 
 // While the zoom moves, a rock painted at about this size is stretched rather than painted again;
-// it's painted sharp once the zoom comes to rest (groundStill).
+// it's painted sharp once the zoom comes to rest (groundStill). Its snow is painted once, the first
+// time it snows, and fades in and out on top, so the snow coming and going never repaints it.
 function drawRock(d, sx, sy) {
-  const t = rockInfo(d), px = d.size * cam.zoom, snow = t.kind === 'ford' ? 0 : step(world.snow * 1.6 - 0.2, 4);
+  const t = rockInfo(d), px = d.size * cam.zoom, snow = t.kind === 'ford' ? 0 : clamp(world.snow * 1.6 - 0.2, 0, 1);
   const want = Math.min(ROCK_MAX_PX, spriteStep(px * dpr)), off = t.sprite ? want / t.px : 0;
-  const keep = t.snow === snow && (want === t.px || (groundStill < 2 && off > 0.7 && off < 1.4));
-  const s = keep ? t.sprite : rockSprite(t, want, snow);
-  const w = s.width * px / t.px, h = s.height * px / t.px;
-  ctx.drawImage(s, sx - w / 2, sy - h * ROCK_FOOT, w, h);
+  const keep = (t.snow || !snow) && (want === t.px || (groundStill < 2 && off > 0.7 && off < 1.4));
+  const wait = !keep && t.sprite && standIns && paintedMs > PAINT_MS;   // past the frame's painting, it waits a frame
+  const s = keep || wait ? t.sprite : rockSprite(t, want, snow > 0);
+  const w = s.width * px / t.px, h = s.height * px / t.px, x = sx - w / 2, y = sy - h * ROCK_FOOT;
+  ctx.drawImage(s, x, y, w, h);
+  if (snow && t.snow) { ctx.globalAlpha = snow; ctx.drawImage(t.snow, x, y, w, h); ctx.globalAlpha = 1; }
 }
 
 // ------------------------------------------------------------------ hives
