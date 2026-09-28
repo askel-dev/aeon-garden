@@ -1,8 +1,10 @@
 # Nobody's Meadow
 
 A cozy emoji meadow where rabbits, foxes and bees live their own lives and you watch what
-emerges. It used to be called AEON Garden, and the repo, the GitHub Pages URL and the
-`aeon-garden-*` localStorage keys keep that name (renaming the keys would lose players' settings). **This is a game.** Balancing for fun is allowed and is the job; realism is
+emerges. It used to be called AEON Garden, and the repo and the
+`aeon-garden-*` localStorage keys keep that name (renaming the keys would lose players' settings).
+It's played at https://meadow.cryptoler.net: GitHub Pages from `main` under a custom domain (`CNAME`;
+the DNS record is in Vercel, see the `askel-dev/cryptoler.net` README). The old github.io link redirects there. **This is a game.** Balancing for fun is allowed and is the job; realism is
 optional. It grew out of the AEON artificial-life lab (`~/programming/AEON`, finished and
 closed); none of that project's rules apply here.
 

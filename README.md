@@ -7,7 +7,7 @@
 <p align="center"><em>A meadow that keeps its own time.</em></p>
 
 <p align="center">
-  <a href="https://askel-dev.github.io/aeon-garden/"><strong>▶ Play it in your browser</strong></a>
+  <a href="https://meadow.cryptoler.net/"><strong>▶ Play it in your browser</strong></a>
 </p>
 
 ![A summer morning in the meadow: a lake and a river, woods, rabbits, foxes and bees](assets/screens/summer.jpg)
