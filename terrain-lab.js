@@ -129,6 +129,8 @@ const drawnHash = () => hasDrawing() ? '#' + S.drawnToLink(drawn) : '';   // aft
 
 const changes = () => Object.keys(DEF).filter(k => !same(t[k], DEF[k]));
 const diff = () => Object.fromEntries(changes().map(k => [k, t[k]]));
+// This meadow in the game: with its animals, the numbers you changed and what you drew.
+const gameLink = () => `./?seed=${seed}${changes().length ? '&terrain=' + encodeURIComponent(JSON.stringify(diff())) : ''}${drawnHash()}`;
 
 // ------------------------------------------------------------------ the panel
 
@@ -220,7 +222,7 @@ const panel = document.createElement('section');
 panel.id = 'lab-panel'; panel.className = 'card';
 panel.innerHTML = `
   <header>
-    <h1>🗺️ Terrain lab <small><a href="./" style="color:inherit">back to the game</a></small></h1>
+    <h1>🗺️ Terrain lab <small><a id="lab-back" href="./" style="color:inherit">back to the game</a></small></h1>
     <div class="lab-seed">
       <button class="lab-btn" data-seed="-1" title="Previous seed (←)">←</button>
       <input id="lab-seed" type="number" title="Seed: the same seed and settings always make the same meadow">
@@ -403,6 +405,7 @@ function remake() {
   if (view !== 'meadow') q.set('view', view);
   if (season) q.set('season', season);
   if (!stroke) history.replaceState(null, '', '?' + q.toString().replace('lab=', 'lab') + drawnHash());   // not mid-stroke: Safari allows only so many
+  $('#lab-back').href = gameLink();
   document.querySelectorAll('#lab-strip .thumb').forEach(b => b.classList.toggle('on', +b.dataset.pick === seed));
 }
 
@@ -851,8 +854,8 @@ document.addEventListener('click', e => {
   else if (b.dataset.do === 'code') showCode();
   else if (b.dataset.do === 'reset') { Object.assign(t, clone(DEF)); changed(); }
   else if (b.dataset.do === 'play') {
-    const q = changes().length ? '&terrain=' + encodeURIComponent(JSON.stringify(diff())) : '';
-    open(`./?seed=${seed}${q}${drawnHash()}`, '_blank');
+    if (G.installed()) location.href = gameLink();   // on the home screen a new tab would leave the app
+    else open(gameLink(), '_blank');
   }
 });
 $('#lab-seed').addEventListener('change', e => setSeed(+e.target.value));

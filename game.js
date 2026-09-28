@@ -4646,6 +4646,14 @@ function copyLink() {
     () => addNews(`🔗 Couldn't copy. The link is ${esc(location.href)}`));
 }
 
+// The terrain lab on this meadow's map. In a tab of its own, so the meadow keeps going; on the home
+// screen a new tab would drop out of the app, so it goes in place, and nothing keeps this meadow.
+function openLab() {
+  const url = './?lab&seed=' + world.seed + terrainQuery();
+  if (!installed()) open(url, '_blank');
+  else if (confirm('Open the terrain lab? This meadow will be gone: coming back starts its map over from the beginning.')) location.href = url;
+}
+
 // Everything that shows the weather lock: the menu's toggle and the badge on the toolbar.
 function showSkyLock() {
   const locked = world.skyLocked;
@@ -4718,6 +4726,7 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'mini') toggleMini();
   else if (t.dataset.act === 'more') toggleMore();
   else if (t.dataset.act === 'copy-link') copyLink();
+  else if (t.dataset.act === 'lab') openLab();
   else if (t.dataset.act === 'watch') startIdle();
   else if (t.dataset.act === 'home') homeGuide();
   else if (t.dataset.act === 'home-done') homeGuide(false);
@@ -5418,6 +5427,6 @@ setTimeout(() => { barNear = false; updateBar(); }, 4000);   // show the toolbar
 for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => { if (ui.sound) Sound.start(); }, { once: true });
 
 requestAnimationFrame(frame);
-window.garden = { get world() { return world; }, ui, cam, lab,   // handy in the console
+window.garden = { get world() { return world; }, ui, cam, lab, installed,   // handy in the console
   get trees() { return { worker: !!treeWorker, workers: treeWorkers.length, art: treeArt, bytes: treeBytes, asked: treeAsked.size, busy: treeBusy }; } };
 })();
