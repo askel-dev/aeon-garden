@@ -50,8 +50,8 @@ told to just do it.
   leaves as flat leaf-shaped dabs from shade to light, bark as strokes along each branch. The 3D gives the volume, the
   brushwork keeps it from looking 3D (plain 3D leaflets looked like broccoli). The seed fixes a tree's shape and the
   season only its leaves. The hive oak carries the hive: a dome of straw rings in a split in its trunk.
-  Painting is slow (up to 0.1 s a tree), so the game has it done in a worker (`tree-worker.js`) and never on a
-  frame: each kind in 4 shapes (`TREE_SHAPES`, a tree picks one from where it stands), each shape in its
+  Painting is slow (a few hundredths of a second a tree, more on a phone), so the game has it done in two workers
+  (`tree-worker.js`, `TREE_WORKERS`) and never on a frame; the painter's loop over every pixel makes no arrays, which Safari is slow at: each kind in 4 shapes (`TREE_SHAPES`, a tree picks one from where it stands), each shape in its
   season's looks, each look at a few sizes (`TREE_TIERS`), asked for only when on screen and kept within
   `TREE_BYTES` (game.js, `treePainting`). A tree turning crossfades between two looks (`treeStage`), with looks
   in between so the two are alike (`LOOKS` in trees.js: an oak bare in early spring, first leaves, half fallen);

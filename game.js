@@ -1772,8 +1772,8 @@ function drawShore(z, ox, oy, season) {
 // ------------------------------------------------------------------ painted trees
 //
 // Trees are painted by trees.js: sculpted as a little 3D model for the light, then brushed over.
-// A paint takes a tenth of a second or more, so it's done in a worker (tree-worker.js) and never
-// holds up a frame. Each kind comes in a few shapes, a tree picking one from where it stands; each
+// A paint takes a few hundredths of a second, so it's done in workers (tree-worker.js, two where there are
+// the cores) and never holds up a frame. Each kind comes in a few shapes, a tree picking one from where it stands; each
 // shape in its season's looks, in its tone (sim.js d.tone) and form (young, or grown); each look at a
 // few sizes (TREE_TIERS). A dead tree has one look, grey and bare, a fallen one is a log, and one lightning
 // took is a stump. Only what's on screen is asked for, and until it comes the nearest size stands in, or
@@ -1813,22 +1813,30 @@ const KIN_LOOKS = { oak: OAK, hive: OAK, beech: BROAD, maple: BROAD, birch: BROA
   pine: ['summer', 'spring', 'dead'], log: ['summer'], stump: ['summer'] };   // the looks each kind goes through (treeStage)
 const KIN_TIER = 0.25;
 const kinWanted = [];                    // stand-ins still to paint, one wanted on screen first
+// Two workers where there are the cores for it (a phone has them to spare), each handed two paintings at a time.
+// treeWorker is the first, and says whether trees are painted at all.
+const TREE_WORKERS = Math.max(1, Math.min(2, (navigator.hardwareConcurrency || 2) - 1));
+const treeWorkers = [];                  // { worker, busy }
 let treeWorker = null, treeBusy = 0, treeBytes = 0, kinBusy = false, kinAsked = false;
 if (!params.has('emoji') && window.Worker && window.OffscreenCanvas) {
   try {
-    treeWorker = new Worker('tree-worker.js');
-    treeWorker.onmessage = e => {
-      const { key, bx, by, image, snow } = e.data, job = treeSent.get(key);
-      const p = { image, snow, bx, by, scale: job.scale, used: spriteFrame, bytes: image.width * image.height * 4 * (snow ? 2 : 1) };
-      treeSent.delete(key); treeBusy--;
-      if (job.kin !== undefined) { treeKin.set(job.kin, p); kinBusy = false; }
-      else {
-        treeArt.set(key, p); treeAny.set(job.tree, p); treeBytes += p.bytes;
-        if (treeBytes > TREE_BYTES) dropTreeArt();
-      }
-      askTrees();
-    };
-    treeWorker.onerror = () => { treeWorker = null; };     // no OffscreenCanvas in workers here: emoji trees
+    for (let n = 0; n < TREE_WORKERS; n++) {
+      const tw = { worker: new Worker('tree-worker.js'), busy: 0 };
+      tw.worker.onmessage = e => {
+        const { key, bx, by, image, snow } = e.data, job = treeSent.get(key);
+        const p = { image, snow, bx, by, scale: job.scale, used: spriteFrame, bytes: image.width * image.height * 4 * (snow ? 2 : 1) };
+        treeSent.delete(key); treeBusy--; tw.busy--;
+        if (job.kin !== undefined) { treeKin.set(job.kin, p); kinBusy = false; }
+        else {
+          treeArt.set(key, p); treeAny.set(job.tree, p); treeBytes += p.bytes;
+          if (treeBytes > TREE_BYTES) dropTreeArt();
+        }
+        askTrees();
+      };
+      tw.worker.onerror = () => { treeWorker = null; };   // no OffscreenCanvas in workers here: emoji trees
+      treeWorkers.push(tw);
+    }
+    treeWorker = treeWorkers[0].worker;
   } catch (e) { treeWorker = null; }
 }
 // Let go of the paintings not drawn for a while, oldest first, down to three quarters full.
@@ -1860,15 +1868,19 @@ function kinAhead() {
   for (let k = 0; k < 4; k++) for (const l of [['bare', 'bud', 'spring'], ['summer'], ['autumn', 'thin'], ['winter']][(s + k) % 4]) looks.add(l);
   for (const look of [...looks, 'dead']) for (const kind in KIN_LOOKS) if (KIN_LOOKS[kind].includes(look)) wantKin(kind, look, false);
 }
-// Hands the worker the next painting wanted, two at a time: a stand-in while none is being painted (one
-// at a time, so the rest go on), then the ones wanted this frame, small sizes before big so something
+// Hands the workers the next painting wanted, two each at a time: a stand-in while none is being painted
+// (one at a time, so the rest go on), then the ones wanted this frame, small sizes before big so something
 // shows soon. What hasn't been wanted for a while is forgotten.
+function sendTree(key, job) {
+  const tw = treeWorkers.reduce((a, b) => b.busy < a.busy ? b : a);
+  treeSent.set(key, job); treeBusy++; tw.busy++;
+  tw.worker.postMessage({ key, ...job });
+}
 function askTrees() {
-  while (treeWorker && treeBusy < 2) {
+  while (treeWorker && treeBusy < 2 * treeWorkers.length) {
     if (kinWanted.length && !kinBusy) {
-      const job = kinWanted.shift(), key = -1 - job.kin;          // (its own keys, below the others)
-      kinBusy = true; treeSent.set(key, job); treeBusy++;
-      treeWorker.postMessage({ key, ...job });
+      const job = kinWanted.shift();
+      kinBusy = true; sendTree(-1 - job.kin, job);               // (its own keys, below the others)
       continue;
     }
     let best = null;
@@ -1877,8 +1889,7 @@ function askTrees() {
       if (!best || a.frame > best[1].frame || (a.frame === best[1].frame && a.job.scale < best[1].job.scale)) best = [key, a];
     }
     if (!best) return;
-    treeAsked.delete(best[0]); treeSent.set(best[0], best[1].job); treeBusy++;
-    treeWorker.postMessage({ key: best[0], ...best[1].job });
+    treeAsked.delete(best[0]); sendTree(best[0], best[1].job);
   }
 }
 // A painting of this tree's look near this size: the one asked for if it's there (else it's asked
@@ -5269,5 +5280,5 @@ for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => { if (ui
 
 requestAnimationFrame(frame);
 window.garden = { get world() { return world; }, ui, cam, lab,   // handy in the console
-  get trees() { return { worker: !!treeWorker, art: treeArt, bytes: treeBytes, asked: treeAsked.size, busy: treeBusy }; } };
+  get trees() { return { worker: !!treeWorker, workers: treeWorkers.length, art: treeArt, bytes: treeBytes, asked: treeAsked.size, busy: treeBusy }; } };
 })();

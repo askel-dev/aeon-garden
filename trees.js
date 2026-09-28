@@ -106,10 +106,11 @@ const RAMPS = {
   berry:  [[80, 6, 20], [140, 12, 30], [196, 30, 40], [230, 70, 60], [250, 140, 120], [255, 200, 180]],
   snow:   [[140, 164, 200], [186, 204, 230], [222, 232, 246], [244, 248, 254], [255, 255, 255], [255, 255, 255]],
 };
-function ramp(r, t) {
+function ramp(r, t, c = [0, 0, 0]) {      // c: an array to fill, so a loop over every pixel makes none
   t = clamp(t, 0, 1) * (r.length - 1);
   const i = Math.min(r.length - 2, Math.floor(t)), f = t - i, a = r[i], b = r[i + 1];
-  return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
+  c[0] = a[0] + (b[0] - a[0]) * f; c[1] = a[1] + (b[1] - a[1]) * f; c[2] = a[2] + (b[2] - a[2]) * f;
+  return c;
 }
 
 // Materials. w weighs the three normals (the sphere's own, its clump's, the whole crown's); leaves
@@ -156,8 +157,12 @@ class Scene {
           const dx = px + 0.5 - s.x;
           let d2 = dx * dx + dy * dy;
           if (d2 > r2) continue;
-          if (lobe) { const f = 1 - lobe * (0.5 + 0.5 * Math.cos(nl * Math.atan2(dy, dx) + ph)); d2 /= f * f; if (d2 > r2) continue; }
-          const zz = s.z + Math.sqrt(r2 - d2), k = py * W + px;
+          const k = py * W + px;
+          if (lobe) {                                        // (the ruffle only lowers it: first, is it hidden anyway?)
+            if (s.z + Math.sqrt(r2 - d2) <= z[k]) continue;
+            const f = 1 - lobe * (0.5 + 0.5 * Math.cos(nl * Math.atan2(dy, dx) + ph)); d2 /= f * f; if (d2 > r2) continue;
+          }
+          const zz = s.z + Math.sqrt(r2 - d2);
           if (zz > z[k]) { z[k] = zz; id[k] = i; }
         }
       }
@@ -169,42 +174,47 @@ class Scene {
     this.raster();
     const { W, H, z, id, s: S } = this, img = new ImageData(W, H), d = img.data, top = new ImageData(W, H), snowy = o.layer && new ImageData(W, H);
     const snow = o.layer ? 1 : o.snow;
-    const aoR = (o.aoR || 6) * SS * LOOK.crevice, taps = [];
-    for (let k = 0; k < 12; k++) { const a = k / 12 * Math.PI * 2, rr = aoR * (k % 2 ? 0.5 : 1); taps.push([Math.round(Math.cos(a) * rr), Math.round(Math.sin(a) * rr)]); }
+    // The loop runs over every pixel (a few hundred thousand), so it makes no arrays: Safari is slow at that.
+    const aoR = (o.aoR || 6) * SS * LOOK.crevice, TX = new Int32Array(12), TY = new Int32Array(12);
+    for (let k = 0; k < 12; k++) { const a = k / 12 * Math.PI * 2, rr = aoR * (k % 2 ? 0.5 : 1); TX[k] = Math.round(Math.cos(a) * rr); TY[k] = Math.round(Math.sin(a) * rr); }
     const T = new Float32Array(W * H), RP = new Array(W * H), SA = new Float32Array(W * H), leaves = [], strokes = [];
+    const mats = S.map(s => MAT[s.look.mat]), ramps = S.map(s => RAMPS[s.look.ramp]), c = [0, 0, 0], sc = [0, 0, 0];
     for (let py = 0; py < H; py++) for (let px = 0; px < W; px++) {
       const k = py * W + px, i = id[k];
       if (i < 0) continue;
-      const s = S[i], m = MAT[s.look.mat], pz = z[k], w = m.w;
-      let n = [(px + 0.5 - s.x) / s.r * w[0], (py + 0.5 - s.y) / s.r * w[0], (pz - s.z) / s.r * w[0]];
-      if (s.clump && w[1]) n = add(n, mul(norm([px - s.clump[0] * SS, py - s.clump[1] * SS, pz - s.clump[2] * SS]), w[1]));
-      if (s.crown && w[2]) {
-        const e = s.crown;
-        n = add(n, mul(norm([(px - e.x * SS) / (e.rx * e.rx), (py - e.y * SS) / (e.ry * e.ry), (pz - e.z * SS) / (e.rz * e.rz)]), w[2]));
+      const s = S[i], m = mats[i], pz = z[k], w = m.w;
+      let nx = (px + 0.5 - s.x) / s.r * w[0], ny = (py + 0.5 - s.y) / s.r * w[0], nz = (pz - s.z) / s.r * w[0], l;
+      if (s.clump && w[1]) {
+        const ax = px - s.clump[0] * SS, ay = py - s.clump[1] * SS, az = pz - s.clump[2] * SS;
+        l = Math.hypot(ax, ay, az) || 1; nx += ax / l * w[1]; ny += ay / l * w[1]; nz += az / l * w[1];
       }
-      n = norm(n);
+      if (s.crown && w[2]) {
+        const e = s.crown, ax = (px - e.x * SS) / (e.rx * e.rx), ay = (py - e.y * SS) / (e.ry * e.ry), az = (pz - e.z * SS) / (e.rz * e.rz);
+        l = Math.hypot(ax, ay, az) || 1; nx += ax / l * w[2]; ny += ay / l * w[2]; nz += az / l * w[2];
+      }
+      l = Math.hypot(nx, ny, nz) || 1; nx /= l; ny /= l; nz /= l;
       let occ = 0;
-      for (const [ox, oy] of taps) {
-        const qx = px + ox, qy = py + oy;
+      for (let j = 0; j < 12; j++) {
+        const qx = px + TX[j], qy = py + TY[j];
         if (qx >= 0 && qy >= 0 && qx < W && qy < H) occ += clamp((z[qy * W + qx] - pz) / (aoR * 1.6), 0, 1);
       }
-      occ /= taps.length;
-      let t = (n[0] * L[0] + n[1] * L[1] + n[2] * L[2]) * 0.5 + 0.5;
+      occ /= 12;
+      let t = (nx * L[0] + ny * L[1] + nz * L[2]) * 0.5 + 0.5;
       if (m.lobe) t = 0.47 + (t - 0.5) * LOOK.form;            // leaves: the light rounds the whole crown
       t = t * (1 - occ * m.ao) - occ * m.ao * 0.25 + s.tone;
       if (m.lobe) t = Math.min(t, 0.92);                       // the palest greens are only for the sunlit dabs
       if (m.shaded && o.shade) t -= 0.35 * clamp(1 - (py / SS - o.shade[0]) / o.shade[1], 0, 1);
-      let rp = RAMPS[s.look.ramp];
+      let rp = ramps[i];
       if (m.birch && (vnoise(px / (5 * SS), py / (1.2 * SS)) > 0.7 || py / SS > o.birchFoot)) { rp = RAMPS.bark; t -= 0.2; }
-      let c = ramp(rp, t);
-      if (m.shine) { const sp = Math.pow(Math.max(0, n[0] * HV[0] + n[1] * HV[1] + n[2] * HV[2]), 30) * m.shine; c = c.map(v => v + (255 - v) * sp); }
+      ramp(rp, t, c);
+      if (m.shine) { const sp = Math.pow(Math.max(0, nx * HV[0] + ny * HV[1] + nz * HV[2]), 30) * m.shine; for (let j = 0; j < 3; j++) c[j] += (255 - c[j]) * sp; }
       if (snow && m.snow) {
-        const up = -(m.snowOn ? (py + 0.5 - s.y) / s.r : n[1]) - (1 - snow) * 0.5 + (vnoise(px / (2 * SS), py / (2 * SS)) - 0.5) * 0.25 - (m.lobe ? 0.2 : 0);
+        const up = -(m.snowOn ? (py + 0.5 - s.y) / s.r : ny) - (1 - snow) * 0.5 + (vnoise(px / (2 * SS), py / (2 * SS)) - 0.5) * 0.25 - (m.lobe ? 0.2 : 0);
         const a = clamp((up - 0.35) * 5, 0, 1);
         if (a > 0) {
-          const sc = ramp(RAMPS.snow, t + 0.25);
-          if (snowy) { snowy.data.set([sc[0], sc[1], sc[2], a * 255], k * 4); }
-          else { c = c.map((v, j) => v + (sc[j] - v) * a); SA[k] = a; }
+          ramp(RAMPS.snow, t + 0.25, sc);
+          if (snowy) { const q = snowy.data; q[k * 4] = sc[0]; q[k * 4 + 1] = sc[1]; q[k * 4 + 2] = sc[2]; q[k * 4 + 3] = a * 255; }
+          else { for (let j = 0; j < 3; j++) c[j] += (sc[j] - c[j]) * a; SA[k] = a; }
         }
       }
       const out = m.onTop ? top.data : d;
