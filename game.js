@@ -115,10 +115,11 @@ function measureSheet() {
 
 // You may look a little past the edges, so nothing is ever stuck under the toolbar or the inspector.
 // Not while they're away for the intro (hush). This far past the bottom edge, in screen pixels:
-const lookPast = () => Math.max(ui.hush ? 0 : barPad, sheet ? sheet.bottom : 0);
+// In the lab, its own sheet on a phone (lab.cover).
+const lookPast = () => Math.max(ui.hush ? 0 : barPad, sheet ? sheet.bottom : 0, LAB ? lab.cover.bottom : 0);
 function clampCam() {
   const hw = vw / 2 / cam.zoom, hh = vh / 2 / cam.zoom;
-  const left = (sheet ? sheet.left : 0) / cam.zoom, right = (sheet ? sheet.right : 0) / cam.zoom;
+  const left = (sheet ? sheet.left : 0) / cam.zoom, right = Math.max(sheet ? sheet.right : 0, LAB ? lab.cover.right : 0) / cam.zoom;
   cam.x = clamp(cam.x, Math.min(hw, S.W / 2) - left, Math.max(S.W - hw, S.W / 2) + right);
   cam.y = clamp(cam.y, Math.min(hh, S.H / 2), Math.max(S.H - hh, S.H / 2) + lookPast() / cam.zoom);
 }
@@ -5367,7 +5368,9 @@ const lab = LAB ? {
     pond = null;
     paintTerrain();
   },
-  toScreen, toWorld,
+  toScreen, toWorld, clampCam,
+  get minZoom() { return minZoom; },
+  cover: { bottom: 0, right: 0 },                      // screen pixels the lab's panel hides, so you can look past them
   shot: copyMeadow,
   draw: null,                                          // (ctx, dpr, shot): drawn over the meadow; no pen in a shot
 } : null;

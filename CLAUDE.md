@@ -80,6 +80,8 @@ told to just do it.
   (one per line, with a comment) and get a slider in the lab's `GROUPS`. You can also draw water,
   rivers and woods there; the drawing is createWorld's `drawn` option (`readDrawn`), carved by the
   same code as generated water, and travels in the link after the `#` (`drawnToLink`: a server turns a long `?query` away).
+  On a phone the three cards become one sheet with tabs (`place`, `openTab`: Draw, Tune, View, Seeds), folded to the
+  seed and the tabs, and two fingers pinch the map whatever the pen.
 
 Run: `python3 -m http.server 8765`, then open http://localhost:8765 (`?seed=123` replays
 a meadow).
