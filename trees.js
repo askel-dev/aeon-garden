@@ -11,7 +11,8 @@
  *
  * One tree keeps one skeleton all year: the seed decides its shape and the season only its
  * leaves. Oaks hold their dry leaves through winter; the others stand bare, and snow settles on
- * whatever faces up. Its tone (a gene in the sim) picks its colours for the whole year: one of three
+ * whatever faces up. A bare crown shows only its branches, and only about half of the finest (PRUNE),
+ * so it stays as simple as the emoji animals. Its tone (a gene in the sim) picks its colours for the whole year: one of three
  * greens and autumn colours of its kind, or for a beech, tone 3, a copper beech. A young tree is the
  * same kind slimmer, its branches more upright; a dead one stands grey and bare with limbs broken
  * off (the 'dead' look), and at last lies as a log (the 'log' kind). One struck by lightning is a
@@ -50,10 +51,12 @@ const LOOK = {
 const L = norm([-0.55, -0.75, 0.55]);          // the light: top left, a little in front
 const HV = norm([L[0], L[1], L[2] + 1]);       // half-vector, for the shine on fruit
 let SS = 3, OUT = 1;                           // px sculpted, and px painted, per px of the tree at scale 1 (SS may be under 1 for a small painting)
-let LEAVES = { keep: 1, size: 1 };             // the share of leaf clumps kept and how big (fewer or smaller, over bare twigs: LOOKS)
+let LEAVES = { keep: 1, size: 1 };             // the share of leaf clumps kept and how big (fewer or smaller: LOOKS)
 let SEASON = 'summer', OWN = null;             // the season painted, and the tree's own random numbers (its colour)
 let TONE = null, YOUNG = 0, DEAD = false;      // its tone (null: from OWN), 1 for the young form, and dead
 let HIDE = 0, BREAK = null;                    // a dead tree's broken limbs: while HIDE, nothing is added (grow)
+let PRUNE = false;                             // few or no leaves: about half the finest branches left out (grow)
+const MIN_LIMB = 1.1;                          // the thinnest a branch gets, px at scale 1, so the tips read as branches and not hairlines
 
 function norm(v) { const l = Math.hypot(...v) || 1; return v.map(x => x / l); }
 const add = (a, b) => a.map((v, i) => v + b[i]), mul = (a, k) => a.map(v => v * k);
@@ -93,9 +96,6 @@ const RAMPS = {
   withy:  [[70, 62, 20], [120, 106, 30], [168, 150, 48], [204, 188, 80], [228, 216, 120], [244, 236, 170]],
   grey:   [[38, 38, 38], [68, 68, 66], [106, 104, 98], [144, 140, 132], [178, 174, 164], [204, 200, 190]],
   bark:   [[34, 22, 18], [62, 40, 28], [98, 66, 42], [138, 98, 64], [174, 132, 90], [200, 164, 120]],
-  twig:   [[40, 26, 28], [72, 48, 50], [106, 78, 78], [140, 110, 104], [172, 144, 132], [198, 174, 160]],   // bare twigs, a little purple
-  birchtwig: [[44, 20, 30], [74, 34, 44], [104, 54, 62], [134, 78, 82], [162, 104, 104], [188, 134, 128]],   // a birch's, purple-red, so a bare one is a haze and not a white stick
-  twiggy: [[46, 44, 48], [78, 74, 78], [112, 106, 106], [146, 140, 136], [176, 170, 164], [200, 196, 188]],   // a beech's, grey
   birch:  [[96, 92, 88], [160, 156, 146], [208, 204, 192], [236, 232, 222], [250, 248, 242], [255, 255, 252]],
   hollow: [[10, 6, 4], [22, 14, 8], [38, 24, 14], [56, 36, 22], [74, 50, 32], [92, 64, 42]],
   comb:   [[96, 52, 8], [156, 96, 16], [212, 150, 32], [238, 192, 66], [250, 222, 124], [255, 242, 186]],
@@ -134,7 +134,7 @@ class Scene {
     this.w = w; this.h = h; this.W = Math.ceil(w * SS); this.H = Math.ceil(h * SS); this.base = [bx, by];
     this.z = new Float32Array(this.W * this.H).fill(-1e9);
     this.id = new Int32Array(this.W * this.H).fill(-1);
-    this.s = []; this.twigs = []; this.hazes = []; this.hazeA = 0.22;
+    this.s = [];
   }
   // p in px at scale 1 (z toward the viewer), r its radius, look { mat, ramp }; clump: the clump's
   // centre; crown: an ellipsoid round the whole crown; tone: lighter or darker; dir: which way
@@ -146,10 +146,6 @@ class Scene {
     if (wood && DEAD && look.ramp === 'bark') look = DEADWOOD;
     this.s.push({ x: p[0] * SS, y: p[1] * SS, z: p[2] * SS, r: r * SS, look, clump, crown, tone, dir });
   }
-  // A bare twig, a curve a..c..b of width w, painted under the tree: close up a tangle of twigs,
-  // from afar (thinner than a pixel) a haze where the crown would be. And that haze itself, a little.
-  twig(a, c, b, w, ramp, t) { this.twigs.push({ a: mul(a, SS), c: mul(c, SS), b: mul(b, SS), w: w * SS, ramp, t }); }
-  haze(p, r, ramp) { this.hazes.push({ p: mul(p, SS), r: r * SS, ramp }); }
   raster() {
     const { W, H, z, id } = this, floor = Math.min(H, Math.ceil((this.base[1] + 1.5) * SS));   // cut off flat at the ground, no round foot
     this.s.forEach((s, i) => {
@@ -219,12 +215,10 @@ class Scene {
     const big = canvas(W, H), bg = big.getContext('2d');
     bg.putImageData(img, 0, 0);
     this.brush(bg, T, RP, SA, leaves, strokes);
-    if (this.twigs.length) this.bare(bg);
     const fc = canvas(W, H); fc.getContext('2d').putImageData(top, 0, 0); bg.drawImage(fc, 0, 0);   // fruit and flowers over the leaves
     // Trim to what was painted, and scale down to the size asked for.
     let x0 = W, y0 = H, x1 = 0, y1 = 0;
     for (let k = 0; k < W * H; k++) if (id[k] >= 0) { const x = k % W, y = (k / W) | 0; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
-    for (const { b: [x, y] } of this.twigs) { x0 = Math.min(x0, x | 0); x1 = Math.max(x1, Math.ceil(x)); y0 = Math.min(y0, y | 0); y1 = Math.max(y1, Math.ceil(y)); }
     x0 = Math.max(0, x0); y0 = Math.max(0, y0); x1 = Math.min(W - 1, x1); y1 = Math.min(H - 1, y1);
     const pad = 6 * SS; x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad); x1 = Math.min(W, x1 + pad); y1 = Math.min(H, y1 + pad);
     x0 -= x0 % SS; y0 -= y0 % SS;
@@ -237,32 +231,6 @@ class Scene {
     if (snowy) { const sc = canvas(W, H); sc.getContext('2d').putImageData(snowy, 0, 0); cv.snow = shrink(sc); }
     cv.bx = (this.base[0] - x0 / SS) * OUT; cv.by = (this.base[1] - y0 / SS) * OUT;
     return cv;
-  }
-  // The bare twigs and their haze, under what's painted (so behind the branches). Each twig thins
-  // in three steps to its tip.
-  bare(bg) {
-    const css = c => `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`;
-    bg.save(); bg.globalCompositeOperation = 'destination-over'; bg.lineCap = 'round';
-    for (const { a, c, b, w, ramp: r, t } of this.twigs) {
-      const at = u => [0, 1].map(j => (1 - u) ** 2 * a[j] + 2 * (1 - u) * u * c[j] + u * u * b[j]);
-      bg.strokeStyle = css(ramp(RAMPS[r], t));
-      let p = at(0);
-      for (let i = 1; i <= 3; i++) {
-        const q = at(i / 3);
-        bg.lineWidth = w * (1.15 - i * 0.25);
-        bg.beginPath(); bg.moveTo(p[0], p[1]); bg.lineTo(q[0], q[1]); bg.stroke();
-        p = q;
-      }
-    }
-    // The haze painted small and stretched back up, which blurs it for nothing.
-    const { W, H } = this, k = Math.max(1, 4 * SS), hz = canvas(Math.ceil(W / k), Math.ceil(H / k)), hg = hz.getContext('2d');
-    for (const { p, r, ramp: rp } of this.hazes) {
-      hg.fillStyle = css(ramp(RAMPS[rp], 0.45));
-      hg.beginPath(); hg.ellipse(p[0] / k, p[1] / k, r / k, r * 0.85 / k, 0, 0, 7); hg.fill();
-    }
-    bg.globalAlpha = this.hazeA; bg.imageSmoothingQuality = 'high';
-    bg.drawImage(hz, 0, 0, hz.width * k, hz.height * k);
-    bg.restore();
   }
   // The brushwork: strokes along bark and straw (kept inside them), then the leaves as dabs from
   // shade to light, each a flat colour from the light where it sits.
@@ -327,14 +295,15 @@ function basis(d) {
 // twigs hang), taper, wobble.
 // A dead tree has lost limbs: a broken one leaves a stub, and nothing past it is added (HIDE), though
 // its random numbers are drawn all the same, so the rest of the tree keeps its shape. A young one's
-// branches spread less.
+// branches spread less. Bare (PRUNE), a kind whose leaves grow further in (o.prune) leaves out about half
+// its finest branches, the same half every time.
 function grow(sc, R, p, dir, len, r, depth, o, out, look) {
   const [u, v] = basis(dir), wob = o.wobble ?? 0.15;
   const ctrl = add(add(p, mul(dir, len * 0.5)), add(mul(u, (R() - 0.5) * len * wob * 2), mul(v, (R() - 0.5) * len * wob * 2)));
   const end = add(p, mul(dir, len)), r1 = r * (o.taper ?? 0.7);
   const snap = DEAD && !HIDE && depth > 0 && depth <= 2 && BREAK() < 0.25;
   if (snap) { limb(sc, p, add(p, mul(dir, len * 0.15)), add(p, mul(dir, len * 0.3)), r, r1 * 1.15, look); HIDE++; }
-  else limb(sc, p, ctrl, end, r, r1, look);
+  else if (!(PRUNE && o.prune && depth === 0 && hash(end[0] * 13 | 0, end[1] * 13 | 0) < 0.55)) limb(sc, p, ctrl, end, Math.max(r, MIN_LIMB), Math.max(r1, MIN_LIMB), look);
   if (!HIDE) out.push({ p: end, from: p, depth, dir });
   if (depth > 0) {
     const kids = o.kids(depth, R), a0 = R() * 6.28;
@@ -372,27 +341,25 @@ function clump(sc, R, c, cr, leafR, look, crown, density = 1) {
   }
 }
 // Leaf clumps at the segment ends between depths lo and hi (and halfway along with along).
-// ramps: the tree takes one of them (in spring never the yellow), and a few clumps another. bare: no leaves, but a spray of fine twigs where each clump would
-// be (twig: their ramp, twigW how thick, haze how strongly they show from afar); twigs: those twigs
-// under the leaves too; keep, size: fewer or smaller clumps, as LEAVES.
+// ramps: the tree takes one of them (in spring never the yellow), and a few clumps another. bare: no
+// leaves; keep, size: fewer or smaller clumps, as LEAVES.
 function leafy(sc, R, tips, o, look) {
   const cs = [], ends = [];
   for (const t of tips) if (t.depth <= o.hi && t.depth >= (o.lo || 0)) {
     const k = o.clumpR * (0.75 + 0.5 * R()) * (t.depth === 0 ? 1 : 1.15);
     cs.push({ p: add(add(t.p, mul(t.dir, k * 0.35)), [0, o.droop || 0, 0]), r: k });
-    ends.push([t, k]);
+    ends.push(t);
     if (t.depth <= (o.along ?? -1)) cs.push({ p: add(add(t.p, t.from).map(v => v / 2), [0, (o.droop || 0) + k * 0.3, 0]), r: k * 0.85 });
   }
-  if (!cs.length) return { crown: fitCrown(ends.map(([t]) => ({ p: t.p, r: 10 }))), cs };
+  if (!cs.length) return { crown: fitCrown(ends.map(t => ({ p: t.p, r: 10 }))), cs };
   const low = fitCrown(cs), up = cs.filter(c => c.p[1] < low.y + low.ry * LOOK.lift);   // the crown up off the trunk
   if (up.length >= 3) { cs.length = 0; cs.push(...up); }
   const crown = fitCrown(cs);
-  if (DEAD) return { crown, cs };                         // bare and grey: no leaves, no twigs
+  if (DEAD) return { crown, cs };                         // bare and grey: no leaves
   const keep = LEAVES.keep * (o.keep ?? 1), size = LEAVES.size * (o.size ?? 1);
   // One colour for the whole tree, so autumn is a patchwork of trees and not of leaves.
   const mains = o.ramps && SEASON === 'spring' && o.ramps.some(r => r !== 'lemon') ? o.ramps.filter(r => r !== 'lemon') : o.ramps;
   const main = mains && (TONE !== null ? mains[TONE % mains.length] : mains[Math.floor(OWN() * mains.length)]);
-  if (o.bare || o.twigs || LEAVES.size < 1) twigs(sc, ends, cs, crown, o);
   if (!o.bare) for (const c of cs) {
     if (keep < 1 && R() > keep) continue;   // (no draw when all, so the full looks come out as before)
     const pick = o.ramps && o.ramps[Math.floor(R() * o.ramps.length)];
@@ -400,26 +367,6 @@ function leafy(sc, R, tips, o, look) {
     clump(sc, R, c.p, c.r * size, o.leafR * LOOK.leaflet, lk, crown, o.density ?? 1);
   }
   return { crown, cs };
-}
-// A bare crown's fine twigs, from each branch end: a fan of them, each with a side twig or two.
-// Lighter towards the sun. Their own random numbers, so the rest of the tree comes out the same.
-function twigs(sc, ends, cs, crown, o) {
-  const R = rng(ends.length * 131 + 7), rp = o.twig || 'twig', w = o.twigW || 1;
-  if (o.haze) sc.hazeA = o.haze;
-  const tone = p => 0.42 + 0.2 * clamp((crown.x - p[0]) / crown.rx * 0.55 + (crown.y - p[1]) / crown.ry * 0.75, -1, 1) + (R() - 0.5) * 0.1;
-  const spray = (a, dir, len, wd, kids) => {
-    const d = norm(add(dir, [(R() - 0.5) * 1.1, (R() - 0.5) * 1.1 - 0.2, (R() - 0.5) * 1.1])), b = add(a, mul(d, len));
-    const [u] = basis(d), c = add(add(a, mul(d, len * 0.5)), mul(u, (R() - 0.5) * len * 0.3));
-    sc.twig(a, c, b, wd, rp, tone(b));
-    for (let i = 0; i < kids; i++) spray(add(a, mul(d, len * (0.35 + 0.35 * R()))), d, len * 0.5, wd * 0.6, 0);
-  };
-  const fall = [0, o.twigDroop || 0, 0];
-  for (const [t, k] of ends) {
-    const dir = add(t.dir, fall);
-    for (let i = 0, n = 4 + Math.floor(R() * 3); i < n; i++) spray(t.p, dir, k * (0.6 + 0.5 * R()), w * (0.9 + 0.4 * R()), 1 + (R() < 0.5));
-    for (let i = 0; i < 3; i++) spray(add(t.from, mul(add(t.p, mul(t.from, -1)), 0.3 + 0.5 * R())), dir, k * (0.5 + 0.4 * R()), w * 0.8, 1);   // and along the branch
-  }
-  for (const c of cs) sc.haze(c.p, c.r * 0.8, rp);
 }
 // Things dotted over a crown's clumps: fruit, blossom, berries (painted on top of the leaves).
 function dot(sc, R, cs, n, r, ramps, spread = [1.4, -0.2]) {
@@ -451,11 +398,11 @@ function oak(R, season, o) {
   const old = o.hive, sc = old ? new Scene(390, 345, 195, 318) : new Scene(340, 330, 170, 310), base = [...sc.base, 0], trunkR = old ? 21 : 12;
   roots(sc, R, base, trunkR, old ? 5 : 4);
   const tips = grow(sc, R, base, norm([0.02, -1, 0]), old ? 96 : 50, trunkR, 4,
-    { kids: d => d > 3 ? 3 : 2 + (R() < 0.4), spread: old ? 1.05 : 0.95, shrink: 0.74, up: 0.12, taper: 0.64, wobble: 0.22 }, [], BARK);
-  // Oaks hold on to their dry leaves all winter: a thin, pale buff over the bare twigs, so it never
+    { prune: true, kids: d => d > 3 ? 3 : 2 + (R() < 0.4), spread: old ? 1.05 : 0.95, shrink: 0.74, up: 0.12, taper: 0.64, wobble: 0.22 }, [], BARK);
+  // Oaks hold on to their dry leaves all winter: a thin, pale buff over the bare branches, so it never
   // reads as autumn (a full copper crown in early spring looked like the wrong season).
   const winter = season === 'winter', ramps = { spring: ['spring', 'fresh', 'lemon'], summer: ['summer', 'deep', 'olive'], autumn: ['russet', 'copper', 'scarlet'], winter: ['dry'] }[season];
-  const { crown } = leafy(sc, R, tips, { lo: 1, hi: 2, clumpR: 25, leafR: 6, density: winter ? 0.6 : season === 'spring' ? 0.8 : 1, ramps, bare: o.bare, twigs: winter, keep: winter ? 0.5 : 1, size: winter ? 0.7 : 1 }, { mat: 'leaf', ramp: 'summer' });
+  const { crown } = leafy(sc, R, tips, { lo: 1, hi: 2, clumpR: 25, leafR: 6, density: winter ? 0.6 : season === 'spring' ? 0.8 : 1, ramps, bare: o.bare, keep: winter ? 0.5 : 1, size: winter ? 0.7 : 1 }, { mat: 'leaf', ramp: 'summer' });
   if (old) hive(sc, R, base, trunkR);
   return [sc, { aoR: 7, shade: winter ? null : [crown.y + crown.ry * 0.6, 40] }, cv => season === 'autumn' && litter(cv, R, ['#c0622a', '#d8903a', '#a4481e'], 55, 24)];
 }
@@ -485,7 +432,7 @@ function hive(sc, R, base, trunkR) {
 function maple(R, season) {
   const sc = new Scene(300, 285, 150, 270), base = [150, 270, 0];
   roots(sc, R, base, 9, 3);
-  const tips = grow(sc, R, base, [0, -1, 0], 58, 9, 4, { kids: d => 2 + (R() < 0.5), spread: 0.7, shrink: 0.74, up: 0.25, taper: 0.66 }, [], BARK);
+  const tips = grow(sc, R, base, [0, -1, 0], 58, 9, 4, { prune: true, kids: d => 2 + (R() < 0.5), spread: 0.7, shrink: 0.74, up: 0.25, taper: 0.66 }, [], BARK);
   const ramps = { spring: ['spring', 'fresh', 'summer'], summer: ['summer', 'fresh', 'deep'], autumn: ['maple', 'scarlet', 'gold'], winter: null }[season];
   const { crown } = leafy(sc, R, tips, { lo: 1, hi: 2, clumpR: 23, leafR: 5.4, ramps, bare: season === 'winter' }, { mat: 'leaf', ramp: 'summer' });
   return [sc, { aoR: 7, shade: season === 'winter' ? null : [crown.y + crown.ry * 0.6, 36] }, cv => season === 'autumn' && litter(cv, R, ['#e07a22', '#c9481c', '#f0a83a'], 55)];
@@ -495,14 +442,14 @@ function maple(R, season) {
 function beech(R, season) {
   const sc = new Scene(320, 285, 160, 270), base = [160, 270, 0], GREY = { mat: 'bark', ramp: 'grey' };
   roots(sc, R, base, 10, 4);
-  const tips = grow(sc, R, base, norm([0.03, -1, 0]), 54, 10, 4, { kids: d => d > 3 ? 3 : 2 + (R() < 0.5), spread: 0.85, shrink: 0.74, up: 0.2, taper: 0.66, wobble: 0.14 }, [], GREY);
+  const tips = grow(sc, R, base, norm([0.03, -1, 0]), 54, 10, 4, { prune: true, kids: d => d > 3 ? 3 : 2 + (R() < 0.5), spread: 0.85, shrink: 0.74, up: 0.2, taper: 0.66, wobble: 0.14 }, [], GREY);
   const ramps = TONE === 3 ? { spring: ['purple'], summer: ['purple'], autumn: ['copper'], winter: null }[season]   // a copper beech
     : { spring: ['spring', 'fresh', 'lemon'], summer: ['summer', 'olive', 'fresh'], autumn: ['copper', 'gold', 'russet'], winter: null }[season];
-  const { crown } = leafy(sc, R, tips, { lo: 1, hi: 2, clumpR: 24, leafR: 5.6, ramps, bare: season === 'winter', twig: 'twiggy' }, { mat: 'leaf', ramp: 'summer' });
+  const { crown } = leafy(sc, R, tips, { lo: 1, hi: 2, clumpR: 24, leafR: 5.6, ramps, bare: season === 'winter' }, { mat: 'leaf', ramp: 'summer' });
   return [sc, { aoR: 7, shade: season === 'winter' ? null : [crown.y + crown.ry * 0.6, 36] }, cv => season === 'autumn' && litter(cv, R, ['#c0622a', '#d8a03a', '#a4481e'], 55, 26)];
 }
 
-// A birch keeps one leader to the top, with thin darker branches off it whose twigs hang down.
+// A birch keeps one leader to the top, with thin darker branches off it that hang down at the tips.
 function birch(R, season) {
   const sc = new Scene(270, 332, 130, 320), base = [130, 320, 0], Ht = 250, BIR = { mat: 'birch', ramp: 'birch' };
   const top = [130 + (R() - 0.5) * 24, 320 - Ht, 0], mid = [130 + (R() - 0.5) * 20, 320 - Ht * 0.5, 0];
@@ -517,7 +464,7 @@ function birch(R, season) {
       { kids: () => 2, spread: 0.55, shrink: 0.62, up: -0.35, taper: 0.6, wobble: 0.2 }, tips, BARK);
   }
   const ramps = { spring: ['spring', 'fresh', 'lemon'], summer: ['spring', 'summer', 'fresh'], autumn: ['gold', 'lemon', 'gold'], winter: null }[season];
-  const { crown } = leafy(sc, R, tips, { hi: 2, along: 1, droop: 6, clumpR: 11, leafR: 3.4, density: 0.85, ramps, bare: season === 'winter', twig: 'birchtwig', haze: 0.42, twigDroop: 0.8, twigW: 0.8 }, { mat: 'leaf', ramp: 'spring' });
+  const { crown } = leafy(sc, R, tips, { hi: 2, along: 1, droop: 6, clumpR: 11, leafR: 3.4, density: 0.85, ramps, bare: season === 'winter' }, { mat: 'leaf', ramp: 'spring' });
   return [sc, { aoR: 5, shade: season === 'winter' ? null : [crown.y + crown.ry * 0.8, 30], birchFoot: 306 }];
 }
 
@@ -526,7 +473,7 @@ function birch(R, season) {
 function fruitTree(R, season, kind) {
   const sc = new Scene(300, 288, 150, 250), base = [150, 250, 0];
   roots(sc, R, base, 9, 3);
-  const tips = grow(sc, R, base, [0, -1, 0], 30, 10, 4, { kids: d => d === 4 ? 4 : 2, spread: 1.0, shrink: 0.9, up: 0.02, taper: 0.66, wobble: 0.3 }, [], BARK);
+  const tips = grow(sc, R, base, [0, -1, 0], 30, 10, 4, { prune: true, kids: d => d === 4 ? 4 : 2, spread: 1.0, shrink: 0.9, up: 0.02, taper: 0.66, wobble: 0.3 }, [], BARK);
   const cherry = kind === 'cherry', pinkCloud = cherry && season === 'spring';
   const ramps = { spring: cherry ? ['pink'] : ['olive', 'spring', 'fresh'], summer: ['olive', 'summer', 'deep'], autumn: cherry ? ['scarlet', 'copper', 'gold'] : ['olive', 'lemon', 'gold'], winter: null }[season];
   const { crown, cs } = leafy(sc, R, tips, { lo: 1, hi: 2, clumpR: 21, leafR: 5, ramps, bare: season === 'winter' }, { mat: pinkCloud ? 'bloom' : 'leaf', ramp: 'olive' });
@@ -724,7 +671,7 @@ function paint(kind, o = {}) {
   SS = o.ss || 3; OUT = o.scale || 1;
   const [season, how] = LOOKS[o.season] || [o.season || 'summer'], R = rng((o.seed ?? 1) * 7919 + 13);
   SEASON = season; OWN = rng((o.seed ?? 1) * 104729 + 7);
-  TONE = o.tone ?? null; YOUNG = o.young ? 1 : 0; DEAD = how === 'dead'; BREAK = rng((o.seed ?? 1) * 31 + 5); HIDE = 0;
+  TONE = o.tone ?? null; YOUNG = o.young ? 1 : 0; DEAD = how === 'dead'; PRUNE = season === 'winter' || how === 'bare' || typeof how === 'object'; BREAK = rng((o.seed ?? 1) * 31 + 5); HIDE = 0;
   LEAVES = typeof how === 'object' ? how : { keep: 1, size: 1 };
   const [sc, po, after] = KINDS[kind].paint(R, season, { ...o, bare: how === 'bare' || DEAD });
   const cv = sc.paint({ ...po, snow: o.snow ?? 0, layer: !!o.snowLayer });

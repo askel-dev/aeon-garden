@@ -55,7 +55,7 @@ told to just do it.
   season's looks, each look at a few sizes (`TREE_TIERS`), asked for only when on screen and kept within
   `TREE_BYTES` (game.js, `treePainting`). A tree turning crossfades between two looks (`treeStage`), with looks
   in between so the two are alike (`LOOKS` in trees.js: an oak bare in early spring, first leaves, half fallen);
-  a bare crown is a haze of fine twigs. Each kind is drawn at its own height (`TREE_SCALE` in game.js, times
+  a bare crown shows only its branches, about half of the finest left out (`PRUNE`), so it stays simple. Each kind is drawn at its own height (`TREE_SCALE` in game.js, times
   the sim's `d.size`, which only says how grown a tree is): oaks and beeches big, apples smaller, the hive oak
   a giant, and a tree four to seven rabbits tall (`creaturePx`). The look is kept close to the emoji trees':
   big leaflets (`LOOK.leaflet`), their greens, one colour for a whole tree (from its seed, a few clumps another,
