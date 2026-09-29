@@ -9,7 +9,11 @@ for (let s = 1; s <= seeds; s++) {
   const w = Sim.createWorld(s * 7919, { arrival });
   const t0 = Date.now();
   const rows = [];
-  let arrivals = { rabbit: 0, fox: 0, bee: 0 }, surprises = 0, kills = 0, escapes = 0, strikes = 0, fires = 0, burned = 0, swarms = 0;
+  let arrivals = Object.fromEntries(Sim.KINDS.map(k => [k, 0])), surprises = 0, kills = 0, escapes = 0, strikes = 0, fires = 0, burned = 0, swarms = 0;
+  // The crows at each season's end, their gatherings at remains, and the oaks and beeches at the start and the end.
+  const crows = [], oaks = () => ['oak', 'beech'].map(k => w.decor.filter(d => d.kind === k && Sim.standing(d) && d.size >= Sim.SEEDLING).length).join('/');
+  const oaks0 = oaks();
+  let gatherings = 0;
   const sky = {};
   let maxR = 0, maxF = 0;
   // The ground: days the rabbits sat at their cap, crashes (under a quarter of it) and recoveries (back over
@@ -37,6 +41,7 @@ for (let s = 1; s <= seeds; s++) {
         if (e.type === 'voles') voleNews[e.boom ? 'boom' : 'bust']++;
         if (e.type === 'outbreak') outbreaks++;
         if (e.type === 'outbreakover') over++;
+        if (e.type === 'gathering') gatherings++;
       }
       w.events.length = 0;
       minR = Math.min(minR, w.count.rabbit); minF = Math.min(minF, w.count.fox);
@@ -62,14 +67,15 @@ for (let s = 1; s <= seeds; s++) {
       rich.push(w.rich ? (100 * r / w.land).toFixed(1) + '%' : '-');
     }
     voles.push(Math.round(w.voleCount));
+    crows.push(w.count.crow);
     const grass = w.grass.reduce((a, b) => a + b, 0);
     rows.push(`${Sim.SEASONS[k % 4].name[0]}${Math.floor(k / 4) + 1}:${w.count.rabbit}/${w.count.fox}/${w.count.bee}` + (verbose ? `(g${grass.toFixed(0)} min${minR}/${minF})` : ''));
   }
   const d = w.stats.deaths;
   const hives = w.hives.filter(h => h.queen && !h.cluster).length;
-  console.log(`seed ${s}  ${((Date.now() - t0) / 1000).toFixed(1)}s  max ${maxR}/${maxF}  arrivals r${arrivals.rabbit} f${arrivals.fox} b${arrivals.bee}  kills ${kills} escapes ${escapes}  swarms ${swarms}  hives ${hives}/${w.hives.length}`);
+  console.log(`seed ${s}  ${((Date.now() - t0) / 1000).toFixed(1)}s  max ${maxR}/${maxF}  arrivals r${arrivals.rabbit} f${arrivals.fox} b${arrivals.bee} c${arrivals.crow}  kills ${kills} escapes ${escapes}  swarms ${swarms}  hives ${hives}/${w.hives.length}`);
   console.log(`  weather ${JSON.stringify(sky)}  strikes ${strikes}  fires ${fires} (biggest ${burned} tiles)`);
-  console.log('  deaths rabbit', JSON.stringify(d.rabbit), 'fox', JSON.stringify(d.fox), 'bee', JSON.stringify(d.bee));
+  console.log('  deaths rabbit', JSON.stringify(d.rabbit), 'fox', JSON.stringify(d.fox), 'bee', JSON.stringify(d.bee), 'crow', JSON.stringify(d.crow));
   const tm = Sim.traitMeans(w, 'rabbit'), fm = Sim.traitMeans(w, 'fox');
   const fmt = m => m ? Object.entries(m).map(([k, v]) => `${k}${v.toFixed(2)}`).join(' ') : '-';
   console.log('  rabbit genes', fmt(tm), '| fox genes', fmt(fm));
@@ -79,4 +85,7 @@ for (let s = 1; s <= seeds; s++) {
   for (let i = 0; i < rows.length; i += 8) console.log('  ' + rows.slice(i, i + 8).join('  '));
   const eaten = w.stats.voles;
   console.log(`  voles  ${voles.join(' ')}  eaten ${eaten} (${Math.round(100 * eaten / Math.max(1, eaten + kills))}% of fox meals)  fox hunger ${d.fox.hunger || 0}  vole years ${voleNews.boom} crashes ${voleNews.bust}`);
+  const st = w.stats, rm = st.remains;
+  console.log(`  crows  ${crows.join(' ')}  remains ${rm.left} (eaten up by crows ${rm.eaten}, rotted ${rm.rotted})  gatherings ${gatherings}` +
+    `  acorns buried ${st.cached} dug up ${st.dugUp} came up ${st.planted}  oaks/beeches ${oaks0} -> ${oaks()}`);
 }

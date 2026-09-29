@@ -593,7 +593,7 @@
 
 <section id="meadow" class="card">
   <button class="mini-line" data-act="mini" title="Show the whole card (C)">
-    <span id="mini-sky"><span id="mini-season">🌸</span>☀️</span><span class="mini-pop">🐇 <b id="mini-rabbit">0</b></span><span class="mini-pop">🦊 <b id="mini-fox">0</b></span><span class="mini-pop">🐝 <b id="mini-bee">0</b></span>
+    <span id="mini-sky"><span id="mini-season">🌸</span>☀️</span><span class="mini-pop">🐇 <b id="mini-rabbit">0</b></span><span class="mini-pop">🦊 <b id="mini-fox">0</b></span><span class="mini-pop">🐝 <b id="mini-bee">0</b></span><span class="mini-pop">🐦‍⬛ <b id="mini-crow">0</b></span>
     <span class="win-btn grow" aria-hidden="true"></span>
   </button>
   <div class="full">
@@ -613,6 +613,9 @@
     </div>
     <div class="pop" data-act="stats" title="Bees alive right now, and the last two years. Click for all the statistics (S)">
       <span class="emoji">🐝</span><span class="n" id="n-bee">0</span><canvas id="spark-bee"></canvas>
+    </div>
+    <div class="pop" data-act="stats" title="Crows alive right now, and the last two years. Click for all the statistics (S)">
+      <span class="emoji">🐦‍⬛</span><span class="n" id="n-crow">0</span><canvas id="spark-crow"></canvas>
     </div>
 
     <h3 class="sec evo-h">Evolution <span>since the start</span></h3>
@@ -639,6 +642,7 @@
   <button class="tool" data-tool="rabbit" title="Click the meadow to release a rabbit"><span class="e">🐇</span><span class="l">Rabbit</span></button>
   <button class="tool" data-tool="fox" title="Click the meadow to release a fox"><span class="e">🦊</span><span class="l">Fox</span></button>
   <button class="tool" data-tool="bee" title="Click the meadow to release a bee. It moves into the nearest hive"><span class="e">🐝</span><span class="l">Bee</span></button>
+  <button class="tool" data-tool="crow" title="Click the meadow to release a crow"><span class="e">🐦‍⬛</span><span class="l">Crow</span></button>
   <button class="tool" data-tool="grass" title="Click and drag to grow lush grass"><span class="e">🌱</span><span class="l">Grass</span></button>
   <button class="tool" data-tool="zap" title="Click the meadow to strike lightning. On dry ground it starts a fire (Z)"><span class="e">⚡</span><span class="l">Zap</span></button>
   <button class="tool" data-tool="fire" title="Click and drag to draw a wall of fire. It burns half a day, and on dry grass it spreads (B)"><span class="e">🔥</span><span class="l">Fire</span></button>
@@ -694,7 +698,7 @@
     </header>
     <div class="stats-filters">
       <div class="seg">
-        <button data-show="rabbit">🐇 Rabbits</button><button data-show="fox">🦊 Foxes</button><button data-show="bee">🐝 Bees</button><button data-show="voles">🐁 Voles</button><button data-show="grass">🌱 Grass</button><button data-show="all">All</button>
+        <button data-show="rabbit">🐇 Rabbits</button><button data-show="fox">🦊 Foxes</button><button data-show="bee">🐝 Bees</button><button data-show="crow">🐦‍⬛ Crows</button><button data-show="voles">🐁 Voles</button><button data-show="grass">🌱 Grass</button><button data-show="all">All</button>
       </div>
       <div class="seg">
         <button data-range="year">Last year</button><button data-range="five">5 years</button><button data-range="all">Everything</button>

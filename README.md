@@ -12,7 +12,7 @@
 
 ![A summer morning in the meadow: a lake and a river, woods, rabbits, foxes and bees](assets/screens/summer.jpg)
 
-A small meadow where rabbits, foxes and bees live their own lives. Nobody tells them what to do.
+A small meadow where rabbits, foxes, bees and crows live their own lives. Nobody tells them what to do.
 They graze, fall in love, raise families and run for their burrows. Every baby is a mix of its
 parents, with a small twist.
 
@@ -47,6 +47,7 @@ with the ground they hide on, and the bees swarm off to find new hollow trees.
 - **Rabbits** dig their own burrows, and neighbours help finish them. Their coats come from two genes, and a fox spots a still rabbit sooner when its coat stands out from the ground.
 - **Foxes** hunt by sight, so fog, snow and a good coat all help a rabbit get away. Deep water stops them, shallow fords don't.
 - **Bees** live in a hollow in an old tree. They sip from the flower fields, dance to show the others the way to a rich patch, and put honey by for winter. A crowded hive swarms: the old queen takes half the bees off to hang in a tree while scouts look for a new home.
+- **Crows** peck for grubs on the short grass, gather at whatever the foxes and the winter leave lying, and all sleep in one big tree. In autumn they carry acorns off and bury them, and the ones they forget come up as oaks.
 - **The weather** has a life of its own: rain greens the meadow, fog hides the foxes, thunder sends rabbits home, and lightning on dry grass can start a wildfire.
 
 Every meadow is different: a river, a lake or both, a few ponds, woods, great rocks and named flower fields.
@@ -56,7 +57,7 @@ Every meadow is different: a river, a lake or both, a few ponds, woods, great ro
 
 - Click an animal to follow its whole life, or anything else (a hive, a tree, a burrow, a field) to see what it is
 - Scroll to zoom, drag to look around. On a phone: pinch and drag
-- The tools at the bottom (on a phone, the button in the corner; or right-click or hold a finger on the meadow) add rabbits, foxes and bees, grow grass, or strike lightning
+- The tools at the bottom (on a phone, the button in the corner; or right-click or hold a finger on the meadow) add rabbits, foxes, bees and crows, grow grass, or strike lightning
 - Change the weather, or 🔒 lock it, from the sky button at the top
 - Quiet sounds and a little felt piano now and then, off until you press 🔊 or M
 - With [Ollama](https://ollama.com) running, the ✍️ Diary button lets an animal write about its day

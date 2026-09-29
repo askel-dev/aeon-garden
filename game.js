@@ -456,6 +456,10 @@ function coatLine(c) {
 // A coloured rabbit for the inspector: the recoloured sprite, drawn once per coat.
 const portraits = new Map();
 function portraitHTML(c) {
+  if (c.alive && c.species === 'crow') {                   // painted, as in the meadow (the emoji splits on older systems)
+    if (!portraits.has('crow')) portraits.set('crow', sprite(CROW_ARTS[0], 38).canvas.toDataURL());
+    return `<img src="${portraits.get('crow')}" alt="🐦‍⬛">`;
+  }
   if (!c.alive || !c.genes.coat) return c.alive ? c.sp.emoji : '👻';
   const look = coatLook(c);
   if (!portraits.has(look.key)) portraits.set(look.key, sprite(c.sp.emoji, 38, undefined, null, true, look).canvas.toDataURL());
@@ -971,6 +975,7 @@ function drawBurrow(b, sx, sy, z, season, residents) {
 // ------------------------------------------------------------------ drawing
 
 const MOVING = new Set(['wander', 'food', 'flee', 'chase', 'stalk', 'prowl', 'home', 'love', 'follow', 'friends', 'dig', 'arrive']);
+const REMAINS_SIZE = 0.75;                // remains, next to a rabbit (drawRemains)
 const ALWAYS_BUBBLE = new Set(['flee', 'alarm', 'chase', 'love']);
 
 function visible(sx, sy, pad) { return sx > -pad && sy > -pad && sx < vw + pad && sy < vh + pad; }
@@ -1008,6 +1013,7 @@ function render(now) {
     const [sx, sy] = toScreen(b.x, b.y);
     if (visible(sx, sy, z * 5)) drawBurrow(b, sx, sy, z, ck.season, residents.get(b) || 0);
   }
+  drawRemains(z);
 
   const sel = world.byId.get(ui.selectedId);
   if (sel) drawSelectionUnder(sel, now);
@@ -1105,12 +1111,36 @@ function render(now) {
   standIns = false;                                    // a portrait for the inspector is kept, so it's always painted
 }
 
+// Remains lying in the grass (sim.js leaveRemains), fading as they go. Painted once per look and size.
+const remainsLooks = new WeakMap();
+const remainsPx = z => Math.max(8, (8 + z) * REMAINS_SIZE);
+function remainsLook(c) {
+  if (c.species === 'crow') return 5;
+  if (c.species === 'fox') return 4;
+  if (S.whiteness(world, c) > 0.5) return 3;
+  const coat = S.coatOf(c.genes);
+  return coat === 'wild' ? 0 : coat === 'sand' ? 1 : 2;
+}
+function drawRemains(z) {
+  if (!world.carcasses.length) return;
+  const px = remainsPx(z);
+  for (const k of world.carcasses) {
+    if (k.meat <= 0) continue;
+    const sx = (k.x - cam.x) * z + vw / 2, sy = (k.y - cam.y) * z + vh / 2;   // (toScreen, without an array)
+    if (!visible(sx, sy, px)) continue;
+    let look = remainsLooks.get(k);
+    if (look === undefined) remainsLooks.set(k, look = remainsLook(k.c));
+    drawEmoji(REMAINS_ARTS[look], sx, sy, px, { alpha: 0.45 + 0.55 * k.meat / k.full, flip: k.c.id % 2 === 1 });
+  }
+}
+
 // How each kind is drawn: its size next to a rabbit, and whether its emoji faces left (then it
 // is mirrored to face where it's going). Animals that fly (c.sp.flies) hover above their shadow.
 const LOOKS = {
   rabbit: { size: 1, facesLeft: true },
   fox: { size: 1, facesLeft: false },          // a face: it does not care
   bee: { size: 0.38, facesLeft: true, swatch: '#e8b83a', quiet: true },   // quiet: no thought bubbles
+  crow: { size: 0.95, facesLeft: true, swatch: '#4a4e5e' },               // painted (crowArt), not the emoji
 };
 
 // Grows with zoom, but never shrinks to a speck when you look at the whole meadow. A tree is four
@@ -1125,12 +1155,47 @@ const loadOf = c => c.load ? Math.min(1, c.load / (S.LOAD * S.HONEY)) : 0;
 // and a laden one flies lower.
 function liftOf(c, px, now) {
   if (!c.sp.flies) return hopOf(c, px, now);
+  if (c.species === 'crow') return crowLift(c, px);
   const bob = ui.speed > 0 ? Math.sin(now / 90 + c.id) * px * 0.08 : 0, fly = px * (0.9 - 0.3 * loadOf(c)), tree = c.target?.tree;
   if (tree && (c.mode === 'sip' || c.mode === 'flower')) {   // blossom in a tree (sim.js addBlossoms): up in its crown
     const crown = treePx(tree) * (tree.kind === 'hawthorn' ? 0.9 : 1.25) * c.target.up;
     return lerp(fly, crown, c.mode === 'sip' ? 1 : clamp(1.5 - Math.hypot(c.target.x - c.x, c.target.y - c.y) / 2, 0, 1)) + bob;
   }
   return (c.mode === 'sip' ? px * 0.15 : fly) + bob;
+}
+
+// A crow is on the ground pecking, up in the air, or up a tree at the roost or its nest (sim.js crowTick).
+// It glides between them: the height eases in sim time, so it lands and takes off and stops with the clock.
+const CROW_FLY = 1.5;              // how high a crow flies, in its size
+const CROW_PERCH = 0.55;           // how far up a tree's painting it sits
+const CROW_EASE = 12;              // ticks to get most of the way to a new height
+const CROW_AIR = new Set(['flap', 'flock', 'love', 'follow']);                               // flying
+const CROW_LANDS = new Set(['remains', 'forage', 'fetch', 'cache', 'apple', 'unbury']);       // flying there, and down
+const CROW_PECKS = new Set(['peck', 'carrion', 'munch', 'bury', 'unbury']);                 // heads down
+const crowLifts = new WeakMap();
+const perch = d => (d ? treePx(d) * CROW_PERCH : 0);
+const near = (c, p, far) => clamp(Math.hypot(p.x - c.x, p.y - c.y) / far, 0, 1);
+function crowHeight(c, px) {
+  const fly = px * CROW_FLY;
+  if (c.mode === 'sleep') return perch(world.roost);
+  if (c.mode === 'roost' && world.roost) return lerp(perch(world.roost), fly, near(c, world.roost, 4));
+  if (c.mode === 'nest') return c.home ? lerp(perch(c.home), fly, near(c, c.home, 3)) : 0;
+  if (CROW_AIR.has(c.mode)) return fly;
+  return CROW_LANDS.has(c.mode) && c.target ? fly * near(c, c.target, 2) : 0;
+}
+function crowLift(c, px) {
+  const t = world.tick + acc, want = crowHeight(c, px);
+  let s = crowLifts.get(c);
+  if (!s) crowLifts.set(c, s = { h: want, t, z: cam.zoom });
+  if (s.z !== cam.zoom) { s.h *= (8 + cam.zoom) / (8 + s.z); s.z = cam.zoom; }   // (both grow with the zoom, about)
+  if (s.t !== t) { s.h += (want - s.h) * Math.min(1, Math.abs(t - s.t) / CROW_EASE); s.t = t; }
+  return s.h;
+}
+// Its painting: wingbeats in the air (with an acorn in its beak, carrying one), a peck now and then on the ground.
+const CROW_BEAT = 120;             // ms a wingbeat
+function crowArt(c, up, px, now) {
+  if (up > px * 0.3 && !c.sleeping) return CROW_ARTS[(c.mode === 'cache' ? 4 : 2) + (ui.speed > 0 ? ((now / CROW_BEAT + c.id) | 0) & 1 : 0)];
+  return CROW_PECKS.has(c.mode) && ui.speed > 0 && Math.sin(now / 170 + c.id * 1.7) > 0.3 ? CROW_ARTS[1] : CROW_ARTS[0];
 }
 
 // Fliers don't fly straight: they weave a loose figure of eight about their way, half as much
@@ -1158,7 +1223,7 @@ function weaveOf(c) {
 const DANCE_FRONT = 0.45, DANCE_SIZE = 1.8;
 function screenOf(c) {
   const p = toScreen(c.x, c.y), z = cam.zoom;
-  if (c.sp.flies && !c.hidden) { const s = weaveOf(c); p[0] += s.x * z; p[1] += s.y * z; }
+  if (c.species === 'bee' && !c.hidden) { const s = weaveOf(c); p[0] += s.x * z; p[1] += s.y * z; }   // (crows fly straight)
   if (c.mode === 'dance') {
     const [x, y] = danceAt(c.timer + 1);
     p[0] += x * (DANCE_SIZE - 1) * z; p[1] += (y * (DANCE_SIZE - 1) + DANCE_FRONT) * z;
@@ -1245,10 +1310,10 @@ function drawCreature(c, sx, sy, now) {
   const squash = (c.sleeping ? 0.82 : c.sick ? 0.9 : 1) + breathe;   // a sick one sits hunched
   const y = sy - hop + px * 0.4 * (1 - squash);
   if (c.mode === 'dance') drawDance(c, sx, y, px);
-  drawEmoji(c.sp.emoji, sx, y, px, {   // feet stay on the ground
+  drawEmoji(c.species === 'crow' ? crowArt(c, hop, px, now) : c.sp.emoji, sx, y, px, {   // feet stay on the ground
     tint: furTint(c), coat: coatLook(c), flip: flipOf(c), squash,
   });
-  if (c.load) drawBaskets(c, sx, y, px);
+  if (c.load && c.species === 'bee') drawBaskets(c, sx, y, px);
   if (c.mode === 'sip') drawSipping(c, sx, sy, px, now);
   if (px > 18 && ui.speed > 0 && ui.speed <= 4 && atHole(c)) drawDigging(c, sx, y, px, now);
 }
@@ -1318,6 +1383,82 @@ function paintVole(g, size, U) {
   g.lineCap = g.lineJoin = 'round';
   voleAt(g);
 }
+// A crow, facing left, blue-black with a sheen (sim.js crowTick): standing, pecking, flying with its wings up
+// and down, and those two again with an acorn in its beak ('crow:0' to 'crow:5'). Its box -1 to 1 is the size
+// asked for, feet on the ground at 0.72 like an animal's.
+const CROW_INK = '#2a2c35', CROW_DARK = '#1b1c23', CROW_SHEEN = '#56617e', CROW_BEAK = '#3a3a42';
+function paintCrow(g, size, U, pose) {
+  g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
+  g.lineCap = g.lineJoin = 'round';
+  const fly = pose >= 2, down = pose === 3 || pose === 5;
+  if (!fly) {
+    const peck = pose === 1;
+    strokeIn(g, CROW_DARK, 0.06, () => { g.moveTo(-0.02, 0.32); g.lineTo(-0.07, 0.71); g.moveTo(0.16, 0.3); g.lineTo(0.16, 0.71); });
+    strokeIn(g, CROW_DARK, 0.045, () => { g.moveTo(-0.22, 0.72); g.lineTo(0.03, 0.72); g.moveTo(0.02, 0.72); g.lineTo(0.26, 0.72); });
+    fillIn(g, CROW_INK, () => peck   // the tail, up when it pecks
+      ? (g.moveTo(0.44, 0.06), g.lineTo(0.9, -0.2), g.lineTo(0.92, -0.06), g.lineTo(0.48, 0.2))
+      : (g.moveTo(0.4, 0.14), g.lineTo(0.86, 0.46), g.lineTo(0.78, 0.56), g.lineTo(0.34, 0.3)));
+    fillIn(g, CROW_INK, () => ovalAt(g, 0.1, peck ? 0.12 : 0.04, 0.46, peck ? 0.27 : 0.3, peck ? -0.25 : 0.5));
+    const [hx, hy] = peck ? [-0.38, 0.3] : [-0.33, -0.36];
+    fillIn(g, CROW_INK, () => { ovalAt(g, (hx + 0.1) / 2, (hy + 0.05) / 2, 0.2, 0.22, 0.4); discAt(g, hx, hy, 0.2); });
+    fillIn(g, CROW_DARK, () => ovalAt(g, 0.18, peck ? 0.06 : 0.0, 0.32, 0.17, peck ? -0.25 : 0.5));   // the wing
+    strokeIn(g, CROW_SHEEN, 0.05, () => peck
+      ? (g.moveTo(-0.1, -0.05), g.quadraticCurveTo(0.2, -0.12, 0.44, -0.02))
+      : (g.moveTo(-0.08, -0.18), g.quadraticCurveTo(0.2, -0.1, 0.4, 0.12)));
+    fillIn(g, CROW_BEAK, () => peck
+      ? (g.moveTo(-0.5, 0.26), g.quadraticCurveTo(-0.6, 0.45, -0.64, 0.68), g.lineTo(-0.4, 0.44))
+      : (g.moveTo(-0.5, -0.45), g.quadraticCurveTo(-0.72, -0.44, -0.87, -0.33), g.lineTo(-0.52, -0.27)));
+    fillIn(g, '#0e0e12', () => discAt(g, hx - 0.07, hy - 0.05, 0.045));
+    fillIn(g, '#e8e8f0', () => discAt(g, hx - 0.08, hy - 0.065, 0.016));
+    return;
+  }
+  const wing = (x0, x1, tipX, tipY, colour) => fillIn(g, colour, () => {   // broad, swept back, fingered at the tip
+    g.moveTo(x0, 0); g.quadraticCurveTo(x0 - 0.08, tipY * 0.7, tipX, tipY);
+    for (let k = 1; k <= 4; k++) { g.lineTo(tipX + 0.07 * k - 0.02, tipY * (0.98 - 0.07 * k) + 0.02 * Math.sign(tipY)); g.lineTo(tipX + 0.07 * k, tipY * (1 - 0.07 * k)); }
+    g.quadraticCurveTo(x1 + 0.04, tipY * 0.35, x1, 0); g.closePath();
+  });
+  wing(0.06, 0.4, 0.2, down ? 0.62 : -0.84, CROW_DARK);                            // the far wing
+  fillIn(g, CROW_INK, () => { g.moveTo(0.38, -0.05); g.lineTo(0.84, -0.16); g.lineTo(0.88, 0.1); g.lineTo(0.38, 0.1); });
+  fillIn(g, CROW_INK, () => { ovalAt(g, 0.02, 0.02, 0.44, 0.17); discAt(g, -0.45, -0.06, 0.16); });
+  fillIn(g, CROW_BEAK, () => { g.moveTo(-0.57, -0.11); g.quadraticCurveTo(-0.74, -0.1, -0.86, -0.02); g.lineTo(-0.58, 0.02); });
+  fillIn(g, '#0e0e12', () => discAt(g, -0.5, -0.1, 0.035));
+  wing(-0.2, 0.26, -0.06, down ? 0.8 : -0.9, CROW_INK);                            // the near wing
+  strokeIn(g, CROW_SHEEN, 0.045, () => { g.moveTo(-0.1, down ? 0.06 : -0.04); g.quadraticCurveTo(-0.14, down ? 0.4 : -0.45, -0.02, down ? 0.7 : -0.78); });
+  if (pose >= 4) {                                                                  // an acorn in its beak
+    fillIn(g, '#b8843e', () => ovalAt(g, -0.88, 0.06, 0.07, 0.09));
+    fillIn(g, '#6e5230', () => ovalAt(g, -0.88, -0.02, 0.08, 0.045));
+  }
+}
+const CROW_ARTS = [0, 1, 2, 3, 4, 5].map(k => 'crow:' + k);
+
+// Remains lying in the grass (sim.js leaveRemains): a soft tuft of fur, or for a crow a few feathers. In the
+// colour of who it was ('remains:0' to 'remains:5'): brown, sandy, dark, a winter white, a fox's, a crow's.
+const REMAINS_RGB = [[150, 114, 80], [212, 178, 128], [84, 78, 80], [236, 236, 230], [206, 108, 58]];
+const TUFTS = [[-0.42, 0.5, 0.34, 0.19], [0.02, 0.44, 0.42, 0.25], [0.44, 0.52, 0.3, 0.17]];      // x, y, rx, ry
+const WISPS = [[-0.7, 0.52, -0.2, -0.1], [-0.46, 0.36, -0.12, -0.22], [-0.12, 0.26, -0.04, -0.26], [0.18, 0.26, 0.08, -0.26],
+  [0.46, 0.38, 0.16, -0.2], [0.7, 0.5, 0.2, -0.08]];
+function paintRemains(g, size, U, look) {
+  g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
+  g.lineCap = g.lineJoin = 'round';
+  fillIn(g, 'rgba(40, 50, 20, 0.2)', () => ovalAt(g, 0.02, 0.64, 0.86, 0.16));   // pressed into the grass
+  if (look === 5) {
+    for (const [x, y, a, s] of [[-0.36, 0.5, -0.3, 1.5], [0.34, 0.56, 0.5, 1.2], [0.02, 0.4, 0.1, 1.1]]) {
+      g.save(); g.translate(x, y); g.rotate(a); g.scale(s, s * 0.7);
+      fillIn(g, CROW_INK, () => { g.moveTo(-0.34, 0); g.quadraticCurveTo(0, -0.16, 0.32, 0); g.quadraticCurveTo(0, 0.12, -0.34, 0); });
+      strokeIn(g, CROW_SHEEN, 0.04, () => { g.moveTo(-0.2, -0.05); g.quadraticCurveTo(0, -0.1, 0.2, -0.04); });
+      strokeIn(g, '#9a9eac', 0.03, () => { g.moveTo(-0.4, 0.01); g.lineTo(0.28, 0); });
+      g.restore();
+    }
+    return;
+  }
+  const rgb = REMAINS_RGB[look], dark = rockRGB(tone(rgb, 0.7)), mid = rockRGB(rgb), light = rockRGB(tone(rgb, 1.15, 16));
+  WISPS.forEach(([x, y, dx, dy], k) => strokeIn(g, k % 2 ? light : mid, 0.06, () => { g.moveTo(x - dx, y - dy); g.quadraticCurveTo(x + dx * 0.4, y + dy * 0.2, x + dx, y + dy); }));
+  fillIn(g, dark, () => { for (const [x, y, rx, ry] of TUFTS) ovalAt(g, x, y, rx, ry); });
+  fillIn(g, mid, () => { for (const [x, y, rx, ry] of TUFTS) ovalAt(g, x - 0.02, y - 0.05, rx * 0.8, ry * 0.72); });
+  fillIn(g, light, () => { for (const [x, y, rx, ry] of TUFTS) ovalAt(g, x - 0.06, y - 0.1, rx * 0.4, ry * 0.32); });
+}
+const REMAINS_ARTS = [0, 1, 2, 3, 4, 5].map(k => 'remains:' + k);
+
 const moundAt = (g, hole) => {
   fillIn(g, '#a7784c', () => { g.moveTo(-0.95, 0.55); g.ellipse(0, 0.55, 0.95, 0.8, 0, Math.PI, TAU); g.closePath(); });
   fillIn(g, '#c09063', () => { g.moveTo(-0.7, 0.1); g.quadraticCurveTo(-0.4, -0.25, 0, -0.25); g.quadraticCurveTo(-0.45, -0.05, -0.55, 0.3); g.closePath(); });
@@ -1448,6 +1589,22 @@ const BUBBLE_ICONS = [
     fillIn(g, '#c99467', () => ovalAt(g, -0.45, 0.35, 0.16, 0.1, 0.3));
   }],
   ['🐁', voleAt],                                       // mousing: a vole
+  ['🪱', g => {                                          // a crow pecking for grubs: a worm
+    strokeIn(g, '#d88a86', 0.32, () => { g.moveTo(-0.72, 0.42); g.bezierCurveTo(-0.45, -0.35, -0.05, 0.75, 0.3, 0.02); g.quadraticCurveTo(0.48, -0.36, 0.74, -0.3); });
+    strokeIn(g, '#e8a8a2', 0.3, () => { g.moveTo(-0.18, 0.3); g.lineTo(-0.02, 0.36); });
+    fillIn(g, '#3a2a26', () => discAt(g, 0.66, -0.36, 0.05));
+  }],
+  ['🌰', g => {                                          // an acorn (a crow's, a rabbit's)
+    fillIn(g, '#b8843e', () => ovalAt(g, 0, 0.2, 0.5, 0.62));
+    fillIn(g, '#d4a45e', () => ovalAt(g, -0.18, 0.28, 0.12, 0.3, 0.2));
+    fillIn(g, '#7a5a32', () => { g.moveTo(-0.64, -0.12); g.quadraticCurveTo(0, -0.78, 0.64, -0.12); g.quadraticCurveTo(0, 0.02, -0.64, -0.12); });
+    strokeIn(g, '#5e4222', 0.12, () => { g.moveTo(0, -0.42); g.lineTo(0.1, -0.78); });
+  }],
+  ['🪺', g => {                                          // the nest
+    fillIn(g, '#8fc4c0', () => { ovalAt(g, -0.3, -0.08, 0.2, 0.26, -0.2); ovalAt(g, 0.08, -0.14, 0.2, 0.26); ovalAt(g, 0.4, -0.04, 0.18, 0.24, 0.3); });
+    fillIn(g, '#8a6a42', () => { g.moveTo(-0.85, 0); g.quadraticCurveTo(0, 0.2, 0.85, 0); g.quadraticCurveTo(0.7, 0.7, 0, 0.72); g.quadraticCurveTo(-0.7, 0.7, -0.85, 0); });
+    strokeIn(g, '#6a4e2c', 0.07, () => { for (const y of [0.18, 0.36, 0.52]) { g.moveTo(-0.72, y); g.quadraticCurveTo(0, y + 0.14, 0.72, y); } });
+  }],
 ];
 const BUBBLE_ART = new Map(BUBBLE_ICONS.map(([e], i) => [e, 'bubble:' + i]));
 
@@ -1529,7 +1686,7 @@ function drawSelectionOver(c, now) {
     ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ox, oy); ctx.stroke();
     ctx.restore();
   }
-  const label = c.hidden ? `${c.name} is inside the ${c.species === 'bee' ? 'hive' : 'burrow'}` : c.name;
+  const label = c.hidden ? `${c.name} is ${c.species === 'crow' ? 'in the nest' : `inside the ${c.species === 'bee' ? 'hive' : 'burrow'}`}` : c.name;
   drawLabel(label, sx, sy + (c.hidden ? cam.zoom : creaturePx(c) * 0.55) + 6);
 }
 
@@ -2026,7 +2183,7 @@ function putPainting(p, f, alpha, snow, ox, oy) {
   if (snow && p.snow) { ctx.globalAlpha = alpha * snow; ctx.drawImage(p.snow, x, y, w, h); }
   ctx.globalAlpha = 1;
 }
-const PAINTERS = { reeds: paintReeds, lily: paintLilies, bubble: paintBubble, vole: paintVole };
+const PAINTERS = { reeds: paintReeds, lily: paintLilies, bubble: paintBubble, vole: paintVole, crow: paintCrow, remains: paintRemains };
 function drawDecor(d, sx, sy, now, ck, clipLeaves) {
   const z = cam.zoom, px = d.tree ? treePx(d) : d.size * z;
   if (d.emoji === '🪨') { drawRock(d, sx, sy); return; }
@@ -3112,8 +3269,9 @@ function handleEvent(e) {
       addEffect('✨', e.mum.x, e.mum.y, 0.8);
       const n = e.kids.length, fox = e.mum.species === 'fox';
       hear('birth', e.mum.x, e.mum.y, { species: e.mum.species, kids: n }, mine);
-      const what = fox ? (n === 1 ? 'cub' : 'cubs') : e.mum.species === 'bee' ? (n === 1 ? 'young bee' : 'young bees') : (n === 1 ? 'baby' : 'babies');
-      const text = `${fox ? '🦊' : '🍼'} ${link(e.mum)} had ${n} ${what}` + (e.dad ? ` with ${link(e.dad)}.` : '.');
+      const crow = e.mum.species === 'crow';
+      const what = fox ? (n === 1 ? 'cub' : 'cubs') : e.mum.species === 'bee' ? (n === 1 ? 'young bee' : 'young bees') : crow ? (n === 1 ? 'chick' : 'chicks') : (n === 1 ? 'baby' : 'babies');
+      const text = `${fox ? '🦊' : crow ? '🪺' : '🍼'} ${link(e.mum)} had ${n} ${what}` + (e.dad ? ` with ${link(e.dad)}` : '') + (crow ? ', up in the nest.' : '.');
       if (mine || fox) addNews(text);
       else addNews(text, 'birth', 9000);
       if (e.surprise.length) {
@@ -3131,11 +3289,12 @@ function handleEvent(e) {
       if (e.cause === 'fox') addEffect('🦴', c.x, c.y, 0.3, 1800);
       else addEffect('👻', c.x, c.y, 1.6, 2000);
       if (e.cause === 'fox') {
-        const t = `🦊 ${link(e.killer)} caught ${link(c)}.`;
+        const t = `🦊 ${link(e.killer)} caught ${link(c)}${c.species === 'crow' ? ' the crow, off its guard' : ''}.`;
         if (mine) addNews(t); else addNews(t, 'catch', 7000);
       } else if (e.cause === 'hunger') {
         const t = c.species === 'fox' ? `🥀 ${link(c)} the fox starved. There weren't enough rabbits or voles.`
           : c.species === 'bee' ? `🥀 ${link(c)} the bee starved. The hive ran out of honey.`
+          : c.species === 'crow' ? `🥀 ${link(c)} the crow starved.`
           : `🥀 ${link(c)} starved.`;
         if (mine || c.species === 'fox') addNews(t); else addNews(t, 'starve', 12000);
       } else if (e.cause === 'lightning') {
@@ -3208,6 +3367,14 @@ function handleEvent(e) {
       addNews(`🌤️ The sickness has died down after ${days(e.days)}.` + (e.dead
         ? ` It took ${e.dead} ${e.dead === 1 ? 'rabbit' : 'rabbits'}. Those who pulled through won't catch it again for a while.` : ' Nobody died of it.'));
       break;
+    case 'gathering': {
+      const where = placeNear(e.remains.x, e.remains.y);
+      addNews(`🐦‍⬛ <b>${e.n} crows</b> have gathered at the remains of ${link(e.remains.c)}${where ? ' ' + where : ''}. With the sickness going round, the crows are eating well.`);
+      break;
+    }
+    case 'buried':
+      addNews(`🌰 The crows buried ${e.n} ${e.n === 1 ? 'acorn' : 'acorns and beechnuts'} this autumn. The ones they forget will come up as oaks and beeches in the spring.`);
+      break;
     case 'voles':
       addNews(e.boom ? '🐁 <b>A vole year!</b> The long grass is alive with voles, and the foxes are out mousing, leaping high to pounce.'
         : '🐁 <b>The voles have crashed.</b> The long grass has gone quiet, and the foxes are back to hunting rabbits.');
@@ -3255,6 +3422,7 @@ function handleEvent(e) {
         rabbit: '😢 <b>The last rabbit is gone.</b>',
         fox: '😢 <b>The last fox is gone.</b> The rabbits can relax, for now.',
         bee: '😢 <b>The hive has gone quiet.</b> The last bee is gone.',
+        crow: '😢 <b>The last crow is gone.</b> The remains lie longer now, and the acorns lie where they fall.',
       }[e.species]);
       break;
     case 'pollinate':
@@ -3269,6 +3437,7 @@ function handleEvent(e) {
         rabbit: `🧳 A family of rabbits hopped in from the next valley: ${names}.`,
         fox: `🧳 Foxes have wandered in, drawn by all the rabbits: ${names}.`,
         bee: `🐝 A swarm has found the empty hive and moved in: ${names}.`,
+        crow: `🐦‍⬛ Crows have flown in over the trees: ${names}.`,
       }[e.species]);
       for (const c of e.who) addEffect('✨', c.x, c.y);
       hear('arrive', e.who[0].x, e.who[0].y, { species: e.species }, true);
@@ -3278,7 +3447,7 @@ function handleEvent(e) {
 }
 
 // How many make a record worth telling, and how big a peak has to be before its crash is news.
-const NEWSWORTHY = { rabbit: { record: 20, crash: 80 }, fox: { record: 8, crash: 10 }, bee: { record: 20, crash: 40 } };
+const NEWSWORTHY = { rabbit: { record: 20, crash: 80 }, fox: { record: 8, crash: 10 }, bee: { record: 20, crash: 40 }, crow: { record: 25, crash: 15 } };
 
 function checkPopulationNews() {
   const h = world.history, n = h.rabbit.length;
@@ -3456,6 +3625,7 @@ const SERIES = {
   rabbit: { emoji: '🐇', name: 'Rabbits', title: 'Rabbits alive', color: '#a07850', fmt: v => Math.round(v) },
   fox: { emoji: '🦊', name: 'Foxes', title: 'Foxes alive', color: '#e2702f', fmt: v => Math.round(v) },
   bee: { emoji: '🐝', name: 'Bees', title: 'Bees alive', color: '#d9a21b', fmt: v => Math.round(v) },
+  crow: { emoji: '🐦‍⬛', name: 'Crows', title: 'Crows alive', color: '#4a4e5e', fmt: v => Math.round(v) },
   voles: { emoji: '🐁', name: 'Voles', title: 'Voles in the long grass', color: '#8a6a4e', fmt: v => Math.round(v) },
   grass: { emoji: '🌱', name: 'Grass', title: 'How lush the meadow is', color: '#5f9e43', fmt: v => Math.round(v * 100) + '%' },
 };
@@ -3798,6 +3968,8 @@ function renderInspector() {
   if (c.voles) chips.push(`🐁 ${c.voles} ${c.voles === 1 ? 'vole' : 'voles'} caught`);
   if (c.escapes) chips.push(`💨 ${c.escapes} narrow ${c.escapes === 1 ? 'escape' : 'escapes'}`);
   if (c.visits) chips.push(`🌼 ${c.visits} ${c.visits === 1 ? 'flower' : 'flowers'} visited`);
+  if (c.species === 'crow' && c.home && c.sex === 'F') chips.push(`🪺 Nests in ${thingLink('tree', c.home.id, c.home.name ? 'the ' + esc(c.home.name) : 'a tall ' + treeName(c.home).toLowerCase())}`);
+  if (c.caches?.length && S.seasonOf(world.tick) >= 2) chips.push(`🌰 Remembers where ${c.caches.length === 1 ? 'one acorn is' : c.caches.length + ' acorns are'} buried`);
   const nemesis = world.byId.get(c.nemesisId);
   if (nemesis && nemesis.alive) chips.push(`😨 Afraid of ${link(nemesis)}`);
   if (c.alive && c.sick) chips.push('🤒 Sick');
@@ -3851,7 +4023,7 @@ function renderInspector() {
 // ------------------------------------------------------------------ things: everything else you can click
 //
 // A click that finds no animal looks for a thing under it, in the order of THINGS (what's on top
-// first): a hive, a tree or rock, a burrow, a flower, a flower field, water. Bare ground finds
+// first): a hive, a tree or rock, remains, a burrow, a flower, a flower field, water. Bare ground finds
 // nothing and closes the inspector. Each kind says how to find one on the screen (at), whether it
 // is still there (here), where to ring it (spot, in tiles; fields and water are too big and get
 // only a label) and what the inspector shows (show):
@@ -4003,14 +4175,14 @@ const THINGS = {
       const from = parent ? thingLink('tree', parent.id, treeTitle(parent).replace(/^The /, 'the ')) : `an old ${kind} long gone`;
       if (living || d.stump) facts.push(['🎂', `${age < 1 ? days(age * S.YEAR_DAYS) : `${Math.floor(age)} ${Math.floor(age) === 1 ? 'year' : 'years'}`} old`]);
       if (d.sprouted) facts.push(['🪵', 'Grew again from the stump of a tree lightning took']);
-      else if (d.by === 'jay') facts.push(['🐦', `Grew from ${k.mast === 'acorns' ? 'an acorn' : 'a beechnut'} a jay carried off from ${from}, buried, and forgot`]);
+      else if (d.by === 'crow') facts.push(['🐦‍⬛', `Grew from ${k.mast === 'acorns' ? 'an acorn' : 'a beechnut'} a crow carried off from ${from}, buried, and forgot`]);
       else if (d.by === 'bird') facts.push(['🐦', `Grew from a stone a bird dropped, from ${d.kind === 'cherry' ? 'the cherries' : 'the haws'} of ${from}`]);
       else if (d.by === 'wind') facts.push(['🌬️', `Its seed blew in on the wind from ${from}`]);
-      else if (d.by === 'drop') facts.push(['🍎', `Grew from a pip of ${from}`]);
+      else if (d.by === 'drop') facts.push(k.mast ? ['🌰', `Grew from ${k.mast === 'acorns' ? 'an acorn' : 'a beechnut'} that fell from ${from}`] : ['🍎', `Grew from a pip of ${from}`]);
       if (d.hive) facts.push(['🐝', `${thingLink('hive', d.hive.id, d.hive.queen ? `Queen ${esc(d.hive.queen.name)}'s hive` : 'An empty hive')} is in its hollow`]);
       else if (S.hollow(world, d)) facts.push(['🕳️', 'Old enough to have gone hollow: bees could make a home in it']);
       if (living && S.bearing(world, d)) {
-        const bear = { wind: '🌬️ Sheds its seed on the wind each autumn', jay: `🌰 Its ${k.mast} are a feast in a mast year, and jays bury them far and wide`,
+        const bear = { wind: '🌬️ Sheds its seed on the wind each autumn', crow: `🌰 Its ${k.mast} are a feast in a mast year, and the crows bury them far and wide`,
           bird: `🐦 Birds carry off its ${d.kind === 'cherry' ? 'cherries' : 'haws'} and drop the stones far and wide`, drop: '🍎 Drops its apples for whoever comes by' }[k.by];
         facts.push([bear.slice(0, 2), bear.slice(3)]);
       }
@@ -4022,6 +4194,9 @@ const THINGS = {
       const kids = world.decor.filter(o => o.parent === d.id && S.standing(o)).length;
       if (kids) facts.push(['🌱', `${kids} of its young ${kids === 1 ? 'grows' : 'grow'} in the meadow`]);
       if (treeInfo(d).owl && living && !young) facts.push(['🦉', 'An owl roosts here; look for it at night']);
+      if (d === world.roost) facts.push(['🐦‍⬛', 'The crows\' roost: they all sleep here at night']);
+      if (world.creatures.some(c => c.alive && c.species === 'crow' && c.home === d)) facts.push(['🪺', 'A crows\' nest is up in it']);
+      if (d.nuts && S.seasonOf(world.tick) === 2) facts.push(['🌰', `${d.nuts} ${d.nuts === 1 ? k.mast.slice(0, -1) : k.mast} left for the crows to carry off and bury`]);
       if (world.snow > 0.3 && !d.stump) facts.push(['❄️', d.fallen ? 'Snow on it' : 'Snow on the branches']);
       if (d.windfall) facts.push([d.kind === 'apple' ? '🍎' : '🌰', `${d.windfall === 1 ? `A windfall ${d.kind === 'apple' ? 'apple lies' : k.mast.slice(0, -1) + ' lies'}` : `${d.windfall} windfall ${d.kind === 'apple' ? 'apples' : k.mast} lie`} under it, for any hungry rabbit`]);
       if (living && !young && world.wet < 0.5) facts.push(['⚡', 'Dry: a lightning strike would set it alight']);   // as strike does
@@ -4055,6 +4230,35 @@ const THINGS = {
       if (who) facts.push(['👀', `Near it: ${who}`]);
       const T = world.terrain, big = T.bigRockSize[1];
       return { emoji: '🪨', tint: '#b8ae9c', name: ROCK_NAMES[t.kind], sub: where, status: ROCK_SAYS[t.kind], facts, meters: [['Size', d.size / big, '']] };
+    },
+  },
+
+  remains: {
+    at(sx, sy) {
+      const r = Math.max(8, remainsPx(cam.zoom) * 0.5);
+      let best = null, bd = r * r;
+      for (const k of world.carcasses) {
+        const [x, y] = toScreen(k.x, k.y), d = (x - sx) ** 2 + (y + r * 0.4 - sy) ** 2;
+        if (k.meat > 0 && d < bd) { best = k; bd = d; }
+      }
+      return best;
+    },
+    here: k => k.meat > 0 && world.carcasses.includes(k),
+    spot: k => ({ x: k.x, y: k.y + 0.3, r: 0.6 }),
+    show(k) {
+      const c = k.c, killer = world.byId.get(c.killerId);
+      const how = { fox: `caught by ${killer ? killer.name : 'a fox'}`, hunger: 'starved', sickness: 'the sickness', age: 'old age',
+        lightning: 'lightning', fire: 'the wildfire' }[c.cause] || c.cause;
+      const name = `The remains of ${c.name}`, sub = `${c.species === 'fox' ? 'A fox' : `A ${c.sp.name.toLowerCase()}`} (${how})`;
+      if (!this.here(k)) return { emoji: '🌱', tint: '#9cc27a', name, sub, status: '🌱 Gone back into the ground. The grass will be lush here for a while.' };
+      const crows = world.creatures.filter(o => o.alive && o.target === k && o.mode === 'carrion');
+      const status = crows.length ? `🐦‍⬛ ${crows.length === 1 ? `${link(crows[0])} is` : `${crows.length} crows are`} pecking at them`
+        : world.tick - k.fox < 150 ? '🦊 A fox was here: the crows keep off a while' : '🍂 Lying in the grass, going back to the earth';
+      const ago = world.tick - c.died, facts = [['📖', `${link(c)} died ${ago < S.TPD ? hours(ago) : days(ago / S.TPD)} ago`]];
+      const s = S.seasonOf(world.tick);
+      facts.push(s === 1 ? ['☀️', 'In the summer heat they won\'t last long'] : s === 3 ? ['❄️', 'In the cold they keep a while'] : ['🍂', 'They\'ll be gone in a few days']);
+      if (crows.length > 1) facts.push(['🐦‍⬛', linkList(crows, 6)]);
+      return { emoji: c.species === 'crow' ? '🪶' : '🍂', tint: '#b8a47a', name, sub, status, facts, meters: [['Left', k.meat / k.full, '']] };
     },
   },
 
@@ -4270,6 +4474,7 @@ function diaryFacts(c) {
       : `Family: mum ${mum ? mum.name + (mum.alive ? '' : ' (died)') : 'unknown'}, dad ${dad ? dad.name + (dad.alive ? '' : ' (died)') : 'unknown'}, ${c.kids} children.`,
     c.species === 'fox' ? `Rabbits caught so far: ${c.kills}. Voles caught in the long grass: ${c.voles}.`
       : c.species === 'bee' ? `Flowers visited so far: ${c.visits}. Honey in the hive: ${Math.round(c.home.honey)}, shared by ${c.home.bees} bees.`
+      : c.species === 'crow' ? `A crow: it pecks for grubs, eats what the foxes leave and whoever died out in the meadow, sleeps with the other crows in one big tree, and buries acorns in autumn.`
       : `Narrow escapes from foxes: ${c.escapes}.`
         + (world.byId.get(c.nemesisId) ? ` The fox it fears most: ${world.byId.get(c.nemesisId).name}.` : ''),
     `Recent life events (oldest first):\n${events}`,
@@ -4622,7 +4827,7 @@ function release(species, wx, wy) {
 
 // ------------------------------------------------------------------ the ring: right-click the meadow
 
-const RING_TOOLS = [['rabbit', '🐇', 'Release a rabbit'], ['fox', '🦊', 'Release a fox'], ['bee', '🐝', 'Release a bee'], ['grass', '🌱', 'Grow grass'],
+const RING_TOOLS = [['rabbit', '🐇', 'Release a rabbit'], ['fox', '🦊', 'Release a fox'], ['bee', '🐝', 'Release a bee'], ['crow', '🐦‍⬛', 'Release a crow'], ['grass', '🌱', 'Grow grass'],
   ['zap', '⚡', 'Strike lightning'], ['fire', '🔥', 'Wall of fire'], ['sky', '🌦️', 'Weather']];
 
 function openRing(sx, sy, weather = false) {
@@ -5352,7 +5557,7 @@ function idleNews(e) {
   let n = null;
   switch (e.type) {
     case 'birth':
-      if (e.mum.species !== 'bee') n = { c: e.mum, w: 3, line: `${e.mum.name} and her new ${e.mum.species === 'fox' ? 'cubs' : 'babies'}` };
+      if (e.mum.species !== 'bee') n = { c: e.mum, w: 3, line: `${e.mum.name} and her new ${e.mum.species === 'fox' ? 'cubs' : e.mum.species === 'crow' ? 'chicks' : 'babies'}` };
       break;
     case 'death': if (e.cause === 'fox' && e.killer) n = { c: e.killer, w: 5 }; break;
     case 'lightning': if (e.tree) n = { x: e.x, y: e.y, w: 8, line: 'Struck by lightning', big: true }; break;
@@ -5361,6 +5566,7 @@ function idleNews(e) {
     case 'settle': n = { x: e.hive.x, y: e.hive.y, w: 6, line: `Queen ${e.queen.name}'s swarm moves in` }; break;
     case 'fire': n = { big: true }; break;          // the fire is filmed anyway, first of all
     case 'outbreak': n = { x: e.x, y: e.y, w: 6, line: 'A sickness is going round the warren' }; break;
+    case 'gathering': n = { x: e.remains.x, y: e.remains.y, w: 6, line: `Crows at the remains of ${e.remains.c.name}` }; break;
   }
   if (!n) return;
   if (n.c || n.x !== undefined) idle.news = Object.assign(n, { at });

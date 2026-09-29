@@ -1,6 +1,6 @@
 # Nobody's Meadow
 
-A cozy emoji meadow where rabbits, foxes and bees live their own lives and you watch what
+A cozy emoji meadow where rabbits, foxes, bees and crows live their own lives and you watch what
 emerges. It used to be called AEON Garden, and the repo and the
 `aeon-garden-*` localStorage keys keep that name (renaming the keys would lose players' settings).
 It's played at https://meadow.cryptoler.net: GitHub Pages from `main` under a custom domain (`CNAME`;
@@ -17,7 +17,7 @@ told to just do it.
   random numbers as where they'd got to). A change a kept meadow can't take (a new field on the world, a
   creature, a hive or a tree that the code counts on) bumps `KEEP_VERSION`, and players' kept meadows start over.
 - `game.js`: drawing, UI, news feed, the inspector, the optional Ollama diary. The inspector shows
-  animals and every other thing you click (hives, trees, rocks, burrows, flowers, fields, water): each
+  animals and every other thing you click (hives, trees, rocks, remains, burrows, flowers, fields, water): each
   kind is an entry in `THINGS`, saying how to find one on screen and what its panel shows.
   The tab's icon follows the season and the part of day (`updateFavicon`, at most once a second), and
   the news log dates each line with a season chip (`seasonChip`).
@@ -123,7 +123,7 @@ and the woods, golden up high, wet moss at the water's edge, with a faint painte
 The woods' shade thins that grass (`SHADE_GRASS`, half that while the broadleaves are bare, `leafless`): once a day
 `groundTick` works out how much grass each tile's soil holds under the shade on it (`w.shadedFert`, which `growGrass`
 reads), so woods that creep out cost the rabbits grazing. And the ground remembers what lives and dies on it (`w.rich`,
-`enrich`): a body left out in the open (`die`; not one in a burrow, not a bee), the latrines round a warren in use (a
+`enrich`): a body left out in the open (`leaveRemains`; not one in a burrow, not a bee), the latrines round a warren in use (a
 day's droppings for each rabbit home at dawn) and a log rotting away feed the soil. The grass there grows back faster
 and a little past the soil's cap (`RICH_GROW`, `RICH_SOIL`, never over 1), and it fades over about a season (`RICH_DAYS`).
 Rabbits won't graze ground that rich (`fouled`: fresh droppings, or where a body lay), so a busy warren's latrines and
@@ -144,7 +144,7 @@ wood's edge, beech, oak and maple deep in. The drawing, its autumn colour and th
 Trees live slow lives of their own, loosely like real ones (`treesTick`, once a day; `TREES` in sim.js gives
 each kind its pace, seed and hardiness). The pace is quick for a game: a birch comes and goes in about 10
 years, an oak in about 24 (`life`). Early in autumn a tree old enough sheds its seed (`seedFall`): on the wind
-(birch, pine, maple), buried by jays out in the open (oak, beech), dropped by birds under a perch, a thorn bush
+(birch, pine, maple), left for the crows to bury out in the open (oak, beech: `d.nuts`, see the crows), dropped by birds under a perch, a thorn bush
 likeliest (hawthorn, cherry), or fallen and carried a little way (apple). Oaks and beeches fruit together,
 heavily in a mast year (`w.mast`) and little between, and the nuts are a windfall for the rabbits. In spring the
 seed comes up where there's light enough for its kind (`sprout`, `shadeOver`; pines only in pine country,
@@ -201,6 +201,24 @@ outbreaks and slips back between them. The sickness and the foxes hold the rabbi
 only a safety net. The news tells when an outbreak starts (`OUTBREAK` sick at once, by the nearest named place,
 `placeNear`) and when it dies down (nobody sick), and the stats chart pins it. The inspector shows who is sick or
 immune, and the sickness in a warren. A sick rabbit sits hunched, with a thermometer in its bubble.
+
+A body left out in the open lies a few days as remains (`leaveRemains`, `w.carcasses`; a fox's catch leaves what it
+didn't eat, `KILL_LEFT`), rotting away in `ROT_DAYS` by season (`carrionTick`), fast in summer. Crows eat them (`crowTick`):
+a few birds that fly over everything (`flies: true`), painted in game.js (`paintCrow`: standing, pecking, two wingbeats,
+and those with an acorn; the 🐦‍⬛ emoji splits in two on older systems, so it's only for text). By day they walk about
+pecking for grubs (`peck`, `grubs`: best on short grass and rich ground, little in winter, none under snow), fly down to
+remains they see or see other crows at (`carrion`, `remainsNear`, `GATHER_SIGHT`), and only really hungry take the
+rabbits' windfalls (`CROW_HUNGRY`). In autumn one that isn't hungry fetches a few acorns or beechnuts from an oak or a
+beech (`d.nuts`, which `seedFall` leaves for them) and buries them one by one out in the open (`cacheNut`, `seedSpot`),
+each a seed in `w.seeds`. It remembers only its last few (`CACHE_MEMORY`) and digs those up if hungry in winter (`unbury`);
+the rest come up as oaks and beeches, so the woods spread with the crows, and a sickness year that feeds them plants oaks.
+At dusk they all fly to one big tree (`w.roost`, `pickRoost`); in spring a mum sits on her eggs in a tall tree (`nestTree`,
+`c.home`) and the chicks stay hidden in the nest till they fledge (`FLEDGE`). A fox that comes close sends them flapping up,
+the others with them (`flapUp`, `caw`), but one busy on the ground may not see it in time: a small meal for the fox
+(`CROW_MEAL`) that changes neither its search image nor its haunt. Foxes don't eat remains (tried: it fed them through the
+rabbits' lows). game.js draws remains as a tuft of fur or a few feathers, fading as they go (`drawRemains`), and eases a
+crow's height in sim time (`crowLift`), so it glides down to land and up to its perch. The news tells of crows arriving,
+a gathering at remains in an outbreak (`GATHERING`), and the acorns they buried each autumn.
 
 Bees: they live in hives (`w.hives`), each in an oak from `w.decor` (`h.tree`, `d.hive`, `moveIn`), which grows
 into an old giant (`HIVE_TREE`) with a hollow low on its trunk (`drawBeeTree`). The first hive takes the best broadleaf,
