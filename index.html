@@ -312,6 +312,22 @@
   #home-guide .go { border-radius: 14px; background: #4f7f3a; color: #fff; font-size: 16px; padding: 12px; box-shadow: none; }
   #home-guide .go:hover { background: #44702f; }
 
+  /* ---- asking for ideas, once, after two minutes of play (game.js, askIdeas). No backdrop: the meadow goes on behind it. */
+  #ask { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 10; width: min(400px, calc(100% - 32px)); padding: 22px 24px 20px;
+    background: var(--paper, none) #f7eedc; border-radius: 22px; box-shadow: 0 20px 60px rgba(50, 40, 15, 0.3); }
+  #ask:not(.hidden) > * { animation: pop-in 0.18s ease-out; }
+  #ask h2 { margin: 0 0 6px; font-size: 24px; font-weight: 650; line-height: 1.15; }
+  #ask p { margin: 0 0 12px; line-height: 1.5; color: var(--muted); }
+  #ask textarea { display: block; box-sizing: border-box; width: 100%; min-height: 84px; resize: vertical; margin: 0 0 14px; padding: 10px 12px;
+    border: 1.5px solid #d9ccb0; border-radius: 12px; background: #fffaf0; font: inherit; font-size: 16px; color: var(--ink); }
+  #ask textarea:focus { outline: none; border-color: #4f7f3a; }
+  #ask .btns { display: flex; gap: 10px; }
+  #ask .later { flex: none; border-radius: 14px; background: #fbf5e8; padding: 12px 16px; box-shadow: none; }
+  #ask .go { border-radius: 14px; background: #4f7f3a; color: #fff; font-size: 16px; padding: 12px; box-shadow: none; }
+  #ask .go:hover { background: #44702f; }
+  #ask .go:disabled { opacity: 0.5; }
+  #ask.sent :is(textarea, .btns, .ask-q), #ask:not(.sent) .ask-thanks { display: none; }
+
   /* ---- the first visit's intro (game.js, startIntro): bars top and bottom, the story under the
      meadow a line at a time, and everything else away (hush) from the welcome card until it hands over */
   #intro { position: fixed; inset: 0; pointer-events: none; z-index: 9; --lb: clamp(36px, 9vh, 84px); }
@@ -694,6 +710,18 @@
       <button class="btn go no-prompt" data-act="home-done">Got it</button>
     </div>
   </div>
+</div>
+
+<!-- once, after two minutes of play (game.js, askIdeas) -->
+<div id="ask" class="hidden" role="dialog" aria-labelledby="ask-title">
+  <h2 class="fr" id="ask-title">Enjoying the meadow? 🙂</h2>
+  <p class="ask-q">Is there anything fun you'd love to see in it next? I read every idea.</p>
+  <textarea id="ask-text" maxlength="2000" placeholder="An animal, a thing to do, anything…" aria-label="Your idea"></textarea>
+  <div class="btns">
+    <button class="btn later" data-act="ask-later">Not now</button>
+    <button class="btn go" id="ask-send" data-act="ask-send">Send</button>
+  </div>
+  <p class="ask-thanks">Thank you! 🌼 It's on its way.</p>
 </div>
 
 <div id="intro" aria-live="polite">

@@ -2,7 +2,7 @@
  *
  * A slider for every number in Sim.TERRAIN, and the meadow is remade as you drag, drawn by the
  * game itself. You can draw water, rivers and woods on it too, on top of what the meadow makes
- * or on an empty one; the drawing travels in the link (?drawn=, see readDrawn in sim.js). Under it lie the hidden layers (height, water, soil, distance to water), and
+ * or on an empty one; the drawing travels in the link (after the #, see drawnToLink in sim.js). Under it lie the hidden layers (height, water, soil, distance to water), and
  * along the bottom the same settings on eight other seeds. Nothing here makes terrain: sim.js
  * does, so what you see is what the game gets. "Copy as code" hands back sim.js's TERRAIN block
  * with your changes, ready to paste over the old one.
@@ -117,13 +117,15 @@ let source = null;                        // sim.js's TERRAIN block as written, 
 
 // What you drew, as createWorld's `drawn` option: numbers in tiles, rounded so the link stays short.
 let urlDrawn = {};
-try { urlDrawn = JSON.parse(params.get('drawn') || '{}'); } catch (e) { /* nothing drawn, then */ }
+if (location.hash.length > 1) urlDrawn = S.drawnFromLink(location.hash);
+else try { urlDrawn = JSON.parse(params.get('drawn') || '{}'); } catch (e) { /* nothing drawn, then */ }   // an older link
 let drawn = { empty: false, water: [], rivers: [], woods: [], ...urlDrawn };
 let pen = 'look', brush = 5, depth = 0.8, stroke = null, cursor = null, panning = null;
 const undo = [];
 const hasDrawing = () => drawn.empty || drawn.water.length || drawn.rivers.length || drawn.woods.length;
 const drawnOut = () => hasDrawing() ? drawn : {};
 const r1 = v => Math.round(v * 10) / 10;
+const drawnHash = () => hasDrawing() ? '#' + S.drawnToLink(drawn) : '';   // after the #: too long for the server, drawn big
 
 const changes = () => Object.keys(DEF).filter(k => !same(t[k], DEF[k]));
 const diff = () => Object.fromEntries(changes().map(k => [k, t[k]]));
@@ -398,10 +400,9 @@ function remake() {
   info();
   const q = new URLSearchParams({ lab: '', seed });
   if (changes().length) q.set('terrain', JSON.stringify(diff()));
-  if (hasDrawing()) q.set('drawn', JSON.stringify(drawn));
   if (view !== 'meadow') q.set('view', view);
   if (season) q.set('season', season);
-  if (!stroke) history.replaceState(null, '', '?' + q.toString().replace('lab=', 'lab'));   // not mid-stroke: Safari allows only so many
+  if (!stroke) history.replaceState(null, '', '?' + q.toString().replace('lab=', 'lab') + drawnHash());   // not mid-stroke: Safari allows only so many
   document.querySelectorAll('#lab-strip .thumb').forEach(b => b.classList.toggle('on', +b.dataset.pick === seed));
 }
 
@@ -850,9 +851,8 @@ document.addEventListener('click', e => {
   else if (b.dataset.do === 'code') showCode();
   else if (b.dataset.do === 'reset') { Object.assign(t, clone(DEF)); changed(); }
   else if (b.dataset.do === 'play') {
-    const q = (changes().length ? '&terrain=' + encodeURIComponent(JSON.stringify(diff())) : '')
-      + (hasDrawing() ? '&drawn=' + encodeURIComponent(JSON.stringify(drawn)) : '');
-    open(`./?seed=${seed}${q}`, '_blank');
+    const q = changes().length ? '&terrain=' + encodeURIComponent(JSON.stringify(diff())) : '';
+    open(`./?seed=${seed}${q}${drawnHash()}`, '_blank');
   }
 });
 $('#lab-seed').addEventListener('change', e => setSeed(+e.target.value));

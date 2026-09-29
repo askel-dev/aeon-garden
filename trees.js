@@ -15,7 +15,7 @@
  * so it stays as simple as the emoji animals. Its tone (a gene in the sim) picks its colours for the whole year: one of three
  * greens and autumn colours of its kind, or for a beech, tone 3, a copper beech. A young tree is the
  * same kind slimmer, its branches more upright; a dead one stands grey and bare with limbs broken
- * off (the 'dead' look), and at last lies as a log (the 'log' kind). One struck by lightning is a
+ * off (the 'dead' look; the 'burnt' look is the same charred black), and at last lies as a log (the 'log' kind). One struck by lightning is a
  * stump (the 'stump' kind) till it sprouts again.
  *
  * Painting is slow (a tenth of a second or more for a big tree), so it's done once per look and
@@ -23,7 +23,7 @@
  *
  * Use: Trees.paint(kind, { seed, season, snow, scale, ss, snowLayer, tone, young, bark }) returns a canvas, with bx, by
  * where the foot of the trunk is. kind is a key of Trees.KINDS, season 'spring' | 'summer' | 'autumn' |
- * 'winter', or one of the looks in between (LOOKS: bare, bud, thin, or dead), snow 0..1, scale the size (1: about 250 px tall for a big tree), ss how finely it's sculpted
+ * 'winter', or one of the looks in between (LOOKS: bare, bud, thin, dead or burnt), snow 0..1, scale the size (1: about 250 px tall for a big tree), ss how finely it's sculpted
  * (px per px at scale 1, 3 by default; a small painting needs only about scale × 3, and paints that much faster).
  * With snowLayer the snow isn't painted in but comes apart, as canvas.snow (same size and place), for
  * the game to lay on as thick as the snow lying. tone 0..3 (none: from the seed), young true for the
@@ -54,6 +54,7 @@ let SS = 3, OUT = 1;                           // px sculpted, and px painted, p
 let LEAVES = { keep: 1, size: 1 };             // the share of leaf clumps kept and how big (fewer or smaller: LOOKS)
 let SEASON = 'summer', OWN = null;             // the season painted, and the tree's own random numbers (its colour)
 let TONE = null, YOUNG = 0, DEAD = false;      // its tone (null: from OWN), 1 for the young form, and dead
+let BURNT = false;                             // dead in a fire: all its wood charred
 let HIDE = 0, BREAK = null;                    // a dead tree's broken limbs: while HIDE, nothing is added (grow)
 let PRUNE = false;                             // few or no leaves: about half the finest branches left out (grow)
 const MIN_LIMB = 1.1;                          // the thinnest a branch gets, px at scale 1, so the tips read as branches and not hairlines
@@ -85,6 +86,7 @@ const RAMPS = {
   purple: [[46, 14, 26], [80, 24, 40], [116, 40, 56], [150, 60, 72], [182, 90, 96], [212, 130, 128]],   // a copper beech's leaves
   moss:   [[30, 50, 16], [52, 80, 24], [80, 112, 34], [110, 142, 46], [140, 170, 62], [172, 196, 90]],
   deadwood: [[46, 42, 40], [80, 74, 70], [118, 110, 102], [156, 148, 136], [188, 180, 166], [214, 208, 194]],   // weathered, silver
+  char:   [[14, 12, 12], [26, 22, 21], [40, 35, 32], [58, 52, 48], [84, 78, 72], [118, 112, 104]],             // burnt, with ash on the sunny side
   fresh:  [[34, 72, 34], [54, 106, 44], [78, 144, 58], [104, 178, 74], [134, 206, 96], [170, 230, 130]],
   maple:  [[84, 22, 16], [146, 44, 18], [206, 88, 22], [238, 144, 36], [252, 196, 80], [255, 230, 150]],
   scarlet:[[80, 10, 16], [140, 20, 24], [196, 42, 30], [228, 80, 44], [246, 130, 80], [255, 190, 140]],
@@ -144,7 +146,8 @@ class Scene {
     if (HIDE) return;
     const wood = MAT[look.mat].strokes;
     if (wood && YOUNG) r *= 1 - 0.4 * YOUNG;                   // a young tree is slender
-    if (wood && DEAD && look.ramp === 'bark') look = DEADWOOD;
+    if (wood && BURNT) look = CHAR;
+    else if (wood && DEAD && look.ramp === 'bark') look = DEADWOOD;
     this.s.push({ x: p[0] * SS, y: p[1] * SS, z: p[2] * SS, r: r * SS, look, clump, crown, tone, dir });
   }
   raster() {
@@ -402,7 +405,7 @@ function litter(cv, R, cols, rx, n = 40) {
 // Each paints one kind: (R, season, o) => [scene, paint options, after(canvas)?]. The skeleton
 // comes first and is the same in every season, so a tree keeps its shape all year.
 
-const BARK = { mat: 'bark', ramp: 'bark' }, DEADWOOD = { mat: 'bark', ramp: 'deadwood' };
+const BARK = { mat: 'bark', ramp: 'bark' }, DEADWOOD = { mat: 'bark', ramp: 'deadwood' }, CHAR = { mat: 'bark', ramp: 'char' };
 
 function oak(R, season, o) {
   const old = o.hive, sc = old ? new Scene(390, 345, 195, 318) : new Scene(340, 330, 170, 310), base = [...sc.base, 0], trunkR = old ? 21 : 12;
@@ -674,14 +677,14 @@ const SEASONS = ['spring', 'summer', 'autumn', 'winter'];
 // The looks between the seasons, so a tree turning fades between two that are alike: an oak without
 // its dry leaves (bare, a few days in early spring), a tuft of first leaves at every twig end (bud),
 // half of them fallen (thin).
-// A dead tree (dead) is bare, grey, and missing limbs, whatever the season.
-const LOOKS = { bare: ['winter', 'bare'], bud: ['spring', { keep: 1, size: 0.45 }], thin: ['autumn', { keep: 0.45, size: 0.7 }], dead: ['winter', 'dead'] };
+// A dead tree (dead) is bare, grey, and missing limbs, whatever the season; one a fire killed (burnt), black.
+const LOOKS = { bare: ['winter', 'bare'], bud: ['spring', { keep: 1, size: 0.45 }], thin: ['autumn', { keep: 0.45, size: 0.7 }], dead: ['winter', 'dead'], burnt: ['winter', 'burnt'] };
 
 function paint(kind, o = {}) {
   SS = o.ss || 3; OUT = o.scale || 1;
   const [season, how] = LOOKS[o.season] || [o.season || 'summer'], R = rng((o.seed ?? 1) * 7919 + 13);
   SEASON = season; OWN = rng((o.seed ?? 1) * 104729 + 7);
-  TONE = o.tone ?? null; YOUNG = o.young ? 1 : 0; DEAD = how === 'dead'; PRUNE = season === 'winter' || how === 'bare' || typeof how === 'object'; BREAK = rng((o.seed ?? 1) * 31 + 5); HIDE = 0;
+  TONE = o.tone ?? null; YOUNG = o.young ? 1 : 0; BURNT = how === 'burnt'; DEAD = how === 'dead' || BURNT; PRUNE = season === 'winter' || how === 'bare' || typeof how === 'object'; BREAK = rng((o.seed ?? 1) * 31 + 5); HIDE = 0;
   LEAVES = typeof how === 'object' ? how : { keep: 1, size: 1 };
   const [sc, po, after] = KINDS[kind].paint(R, season, { ...o, bare: how === 'bare' || DEAD });
   const cv = sc.paint({ ...po, snow: o.snow ?? 0, layer: !!o.snowLayer });

@@ -50,7 +50,7 @@
     sculpted as a little 3D model for the light, then painted over with leaf dabs and bark strokes. The sliders tune the
     brush for all trees at once; "Copy as code" gives back the <code>LOOK</code> block to paste over the one in trees.js.
     Each tree in the game has a tone of its kind (a copper beech is the beech's fourth), is slimmer while young, stands
-    grey once dead, and at last lies as a log; lightning leaves a stump.</p>
+    grey once dead (black if a fire killed it), and at last lies as a log; lightning leaves a stump.</p>
 
   <div class="card">
     <div class="row" id="kinds"><span class="lbl">Trees</span></div>
@@ -104,8 +104,8 @@
 (() => {
 'use strict';
 const T = window.Trees, S = window.Sim, $ = s => document.querySelector(s);
-const SEASON_ICON = { spring: '🌸', summer: '☀️', autumn: '🍂', winter: '❄️', bare: '🪵', bud: '🌱', thin: '🍁', dead: '🦴' };
-const LOOKS = ['bare', 'bud', 'spring', 'summer', 'autumn', 'thin', 'winter', 'dead'];   // the seasons and the looks between (Trees.LOOKS), through the year, and dead
+const SEASON_ICON = { spring: '🌸', summer: '☀️', autumn: '🍂', winter: '❄️', bare: '🪵', bud: '🌱', thin: '🍁', dead: '🦴', burnt: '🔥' };
+const LOOKS = ['bare', 'bud', 'spring', 'summer', 'autumn', 'thin', 'winter', 'dead', 'burnt'];   // the seasons and the looks between (Trees.LOOKS), through the year, and dead
 const SIZES = [['Close', 1.2], ['Big', 0.8], ['Game', 0.5], ['Far', 0.25]];
 const HINTS = {
   dab: ['Leaf size', 'how big each painted leaf is', 1, 8, 0.1],
@@ -181,7 +181,7 @@ $('#copy').onclick = () => {
 // ---- painting, a tree at a time so the page stays live
 const rgb = c => `rgb(${c.map(v => Math.round(v)).join(',')})`;
 function groundOf(season, snow) {
-  if (T.LOOKS[season]) season = season === 'bare' ? 'spring' : season === 'dead' ? 'summer' : T.LOOKS[season][0];   // (an oak stands bare in early spring)
+  if (T.LOOKS[season]) season = season === 'bare' ? 'spring' : season === 'dead' || season === 'burnt' ? 'summer' : T.LOOKS[season][0];   // (an oak stands bare in early spring)
   const i = T.SEASONS.indexOf(season), lush = S.GROUND.seasons[i][1];
   return season === 'winter' && snow > 0.5 ? S.GROUND.snow : lush;
 }
