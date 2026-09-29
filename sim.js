@@ -984,7 +984,7 @@ const LEAN = 0.4, MAST = 4;     // an oak's or beech's seed in an ordinary year,
 const MAST_ODDS = [0, 0.15, 0.35, 0.6, 0.9];   // chance of a mast year, by years since the last
 const NUTS = 5;                 // acorns or beechnuts lying under one tree in a mast year, at most
 const NUT_ENERGY = 12;          // what one is worth to a rabbit
-const NUT_CROP = 2;             // acorns or beechnuts for the crows to carry off, for each seedling it tries for (d.nuts)
+const NUT_CROP = 4;             // acorns or beechnuts for the crows to carry off, for each seedling it tries for (d.nuts)
 const UNDER = 0.2;              // odds one just falls under its tree instead; the ones the crows leave, the mice eat
 const SHADE_DEATH = 0.02;       // odds a day a young tree in more shade than it bears dies
 const LOST = 0.004;             // odds a day a seedling dies anyway: slugs, drought, a hard frost
@@ -3632,7 +3632,7 @@ function crowMood(w, c) {
     case 'cache': return { emoji: '🌰', text: `Carrying ${one} off to bury` };
     case 'bury': return { emoji: '🌰', text: `Burying ${one} for the winter` };
     case 'unbury': return { emoji: '🌰', text: `Digging up ${one} it buried in the autumn` };
-    case 'flock': return { emoji: '🤝', text: 'Flying over to the other crows' };
+    case 'flock': return { emoji: '', text: 'Flying over to the other crows' };   // no bubble: 🤝 is painted as paws
     case 'follow': return { emoji: '🍼', text: 'Following mum, begging for food' };
     case 'rest': return { emoji: '😌', text: 'Preening' };
   }
