@@ -1302,6 +1302,22 @@ const pawAt = (g, x, y, s) => fillIn(g, '#8a5a3c', () => {
   ovalAt(g, x, y + s * 0.35, s * 0.5, s * 0.42);
   for (const [tx, ty] of [[-0.58, -0.2], [-0.21, -0.58], [0.21, -0.58], [0.58, -0.2]]) ovalAt(g, x + tx * s, y + ty * s, s * 0.19, s * 0.25, tx * 0.6);
 });
+// A field vole, round and brown and short-tailed, facing left: the mousing bubble's, and the ones that
+// peep out of the grass (paintVole, drawVoles).
+const voleAt = g => {
+  strokeIn(g, '#7a5a42', 0.08, () => { g.moveTo(0.6, 0.45); g.quadraticCurveTo(0.95, 0.5, 0.9, 0.8); });
+  fillIn(g, '#8a6a4e', () => { ovalAt(g, 0.08, 0.25, 0.6, 0.42); ovalAt(g, -0.5, 0.12, 0.34, 0.3, -0.3); });
+  fillIn(g, '#a8876a', () => ovalAt(g, 0.12, 0.08, 0.36, 0.18));
+  fillIn(g, '#9c7b5e', () => discAt(g, -0.38, -0.22, 0.17));
+  fillIn(g, '#e3a8a0', () => { discAt(g, -0.38, -0.22, 0.08); discAt(g, -0.84, 0.18, 0.06); });
+  fillIn(g, '#2d261e', () => discAt(g, -0.6, 0.04, 0.06));
+};
+// The vole on its own, for the sprite cache ('vole:0'): its box -1 to 1 is the size asked for, like an emoji.
+function paintVole(g, size, U) {
+  g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
+  g.lineCap = g.lineJoin = 'round';
+  voleAt(g);
+}
 const moundAt = (g, hole) => {
   fillIn(g, '#a7784c', () => { g.moveTo(-0.95, 0.55); g.ellipse(0, 0.55, 0.95, 0.8, 0, Math.PI, TAU); g.closePath(); });
   fillIn(g, '#c09063', () => { g.moveTo(-0.7, 0.1); g.quadraticCurveTo(-0.4, -0.25, 0, -0.25); g.quadraticCurveTo(-0.45, -0.05, -0.55, 0.3); g.closePath(); });
@@ -1423,14 +1439,7 @@ const BUBBLE_ICONS = [
     fillIn(g, '#5e3c22', () => ovalAt(g, 0, 0.02, 0.72, 0.16));
     fillIn(g, '#c99467', () => ovalAt(g, -0.45, 0.35, 0.16, 0.1, 0.3));
   }],
-  ['🐁', g => {                                          // mousing: a vole, round and brown, short-tailed
-    strokeIn(g, '#7a5a42', 0.08, () => { g.moveTo(0.6, 0.45); g.quadraticCurveTo(0.95, 0.5, 0.9, 0.8); });
-    fillIn(g, '#8a6a4e', () => { ovalAt(g, 0.08, 0.25, 0.6, 0.42); ovalAt(g, -0.5, 0.12, 0.34, 0.3, -0.3); });
-    fillIn(g, '#a8876a', () => ovalAt(g, 0.12, 0.08, 0.36, 0.18));
-    fillIn(g, '#9c7b5e', () => discAt(g, -0.38, -0.22, 0.17));
-    fillIn(g, '#e3a8a0', () => { discAt(g, -0.38, -0.22, 0.08); discAt(g, -0.84, 0.18, 0.06); });
-    fillIn(g, '#2d261e', () => discAt(g, -0.6, 0.04, 0.06));
-  }],
+  ['🐁', voleAt],                                       // mousing: a vole
 ];
 const BUBBLE_ART = new Map(BUBBLE_ICONS.map(([e], i) => [e, 'bubble:' + i]));
 
@@ -2009,7 +2018,7 @@ function putPainting(p, f, alpha, snow, ox, oy) {
   if (snow && p.snow) { ctx.globalAlpha = alpha * snow; ctx.drawImage(p.snow, x, y, w, h); }
   ctx.globalAlpha = 1;
 }
-const PAINTERS = { reeds: paintReeds, lily: paintLilies, bubble: paintBubble };
+const PAINTERS = { reeds: paintReeds, lily: paintLilies, bubble: paintBubble, vole: paintVole };
 function drawDecor(d, sx, sy, now, ck, clipLeaves) {
   const z = cam.zoom, px = d.tree ? treePx(d) : d.size * z;
   if (d.emoji === '🪨') { drawRock(d, sx, sy); return; }
@@ -2715,13 +2724,14 @@ function drawEffects(now) {
 //
 // The sim keeps voles as a number on each tile (w.voles), too many and too small to follow. So now and
 // then one pops up out of the long grass for a moment where they're thick, and ducks back. Only a look:
-// each frame one spot on screen is tried, likelier to show a vole the more live there, and the 🐁 comes
-// from the sprite cache, its top part only, rising out of the grass line. A fixed pool, nothing kept.
+// each frame one spot on screen is tried, likelier to show a vole the more live there, and the vole (the
+// painted one of the mousing bubble, voleAt) comes from the sprite cache, its top part only, rising out of
+// the grass line. A fixed pool, nothing kept.
 const PEEPS = 8;                   // most up at once
 const PEEP_MS = 1300;              // how long one is up
 const PEEP_ODDS = 0.05;            // odds a try where they're thickest shows one (less as they thin)
 const PEEP_SIZE = 0.5;             // of a rabbit
-const PEEP_FOOT = 0.78, PEEP_BODY = 0.42;   // in the sprite, from the top: where its feet are, and how tall it is
+const PEEP_FOOT = 0.76, PEEP_BODY = 0.41;   // in the sprite, from the top: where its feet are, and how tall it is
 const peeps = { x: new Float32Array(PEEPS), y: new Float32Array(PEEPS), t0: new Float64Array(PEEPS).fill(-1e9), next: 0 };
 
 function drawVoles(now, z) {
@@ -2737,7 +2747,7 @@ function drawVoles(now, z) {
   for (let k = 0; k < PEEPS; k++) {
     const a = (now - peeps.t0[k]) / PEEP_MS;
     if (a >= 1) continue;
-    if (!s) { s = sprite('🐁', Math.max(9, (8 + z) * PEEP_SIZE)); size = s.size; }
+    if (!s) { s = sprite('vole:0', Math.max(9, (8 + z) * PEEP_SIZE)); size = s.size; }
     const up = Math.min(1, 2.5 * Math.sin(Math.PI * a));  // quick up, a look round, quick down
     const shown = PEEP_FOOT * size - (1 - up) * PEEP_BODY * size;
     const sx = (peeps.x[k] - cam.x) * z + vw / 2, sy = (peeps.y[k] - cam.y) * z + vh / 2;   // (toScreen, without an array)
