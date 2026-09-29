@@ -408,7 +408,7 @@
   #stats-clock { color: var(--muted); font-weight: 800; }
   .stats-head .close { font-size: 20px; margin-left: auto; align-self: center; }
   .stats-filters { display: flex; flex-wrap: wrap; gap: 10px 18px; margin: 16px 0 14px; }
-  .seg { display: flex; background: #fffaf0; border-radius: 12px; padding: 3px; box-shadow: 0 0 0 1px var(--line) inset; }
+  .seg { display: flex; flex-wrap: wrap; background: #fffaf0; border-radius: 12px; padding: 3px; box-shadow: 0 0 0 1px var(--line) inset; }
   .seg button { border: none; background: transparent; border-radius: 9px; padding: 6px 12px; font-weight: 800; color: var(--muted); }
   .seg button:hover { color: var(--ink); }
   .seg button.on { background: var(--accent-soft); color: #9a5024; }
@@ -694,7 +694,7 @@
     </header>
     <div class="stats-filters">
       <div class="seg">
-        <button data-show="rabbit">🐇 Rabbits</button><button data-show="fox">🦊 Foxes</button><button data-show="bee">🐝 Bees</button><button data-show="grass">🌱 Grass</button><button data-show="all">All</button>
+        <button data-show="rabbit">🐇 Rabbits</button><button data-show="fox">🦊 Foxes</button><button data-show="bee">🐝 Bees</button><button data-show="voles">🐁 Voles</button><button data-show="grass">🌱 Grass</button><button data-show="all">All</button>
       </div>
       <div class="seg">
         <button data-range="year">Last year</button><button data-range="five">5 years</button><button data-range="all">Everything</button>
@@ -706,7 +706,7 @@
       <div class="legend">
         <span><i class="sw" style="background:#f6dde5"></i>Spring</span><span><i class="sw" style="background:#f7ecb8"></i>Summer</span>
         <span><i class="sw" style="background:#f4d6b6"></i>Autumn</span><span><i class="sw" style="background:#dfe8f0"></i>Winter</span>
-        <span>│ a new year</span><span>🧳 newcomers arrived</span><span>😢 died out</span><span>🔥 wildfire</span><span>🌦️ you changed the weather</span>
+        <span>│ a new year</span><span>🧳 newcomers arrived</span><span>😢 died out</span><span>🤒 a sickness broke out</span><span>🔥 wildfire</span><span>🌦️ you changed the weather</span>
       </div>
     </div>
     <div class="stats-grid" id="stats-cards">

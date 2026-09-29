@@ -58,7 +58,7 @@ const GRASS_ENERGY = 40;        // energy per unit of grass
 const MOVE_COST = 0.25;         // energy per tick = MOVE_COST * v^2 / walk
 
 const GENES = ['speed', 'size', 'eyes', 'bravery', 'friendly'];
-const RABBIT_GENES = [...GENES, 'moult'];   // moult: how white the coat turns for winter
+const RABBIT_GENES = [...GENES, 'moult', 'resist'];   // moult: how white the coat turns for winter; resist: see the sickness
 const genesOf = species => (species === 'rabbit' ? RABBIT_GENES : GENES);
 
 // Rabbit coats: two genes, each a pair of letters, one from each parent. A capital letter wins.
@@ -80,7 +80,7 @@ const SPECIES = {
     key: 'rabbit', name: 'Rabbit', plural: 'Rabbits', emoji: '🐇',
     maxEnergy: 100, burn: 0.035, walk: 0.06, sprint: 0.155, sight: 10, mateRange: 24, wade: 0.45,
     matureDays: 4, lifeDays: 22, gestationDays: 1.5, litter: [2, 5], cooldownDays: 1.0,
-    breedSeasons: [0, 1], breedEnergy: 0.55, birthCost: 10, cap: 200,
+    breedSeasons: [0, 1], breedEnergy: 0.55, birthCost: 10, cap: 300,   // only a safety net: the sickness and the foxes hold them
   },
   fox: {
     key: 'fox', name: 'Fox', plural: 'Foxes', emoji: '🦊',
@@ -1221,7 +1221,7 @@ function treesTick(w, grow = true) {
           if (d.size < SEEDLING) { treeDies(w, d, 'eaten'); continue; }
           d.size = Math.max(SEEDLING * 0.9, d.size - 0.3);          // nibbled back
         }
-        if (d.size < SEEDLING && r.next() < LOST) { treeDies(w, d, 'lost'); continue; }
+        if (d.size < SEEDLING && r.next() < LOST * (1 + VOLE_SEEDS * w.voles[i] / VOLE_K)) { treeDies(w, d, 'lost'); continue; }   // voles eat them too
       }
       if (young && shade > k.shade && r.next() < SHADE_DEATH) { treeDies(w, d, 'shade'); continue; }
       if (d.size < d.max) d.size += k.grow * (d.sprouted ? 2 : 1) * (1 - shade) * g * d.size * (1 - d.size / d.max);
@@ -1687,6 +1687,7 @@ function ignite(w, i, ticks = FIRE_TICKS, set = false) {
   if (w.fire[i] || w.water[i]) return false;
   if (!w.blaze) { emit(w, { type: 'fire', x: i % W + 0.5, y: ((i / W) | 0) + 0.5, set }); w.blazeTrees = 0; }
   w.fire[i] = ticks; w.burning.push(i); w.blaze++;
+  w.voles[i] = 0;
   burnTrees(w, i);
   return true;
 }
@@ -1820,7 +1821,7 @@ function pickName(w, species) {
 
 function founderGenes(w, species) {
   const r = w.rng, g = {};
-  for (const k of genesOf(species)) g[k] = clamp((k === 'moult' ? MOULT_START : 0.5) + 0.12 * r.normal(), 0, 1);
+  for (const k of genesOf(species)) g[k] = clamp((k === 'moult' ? MOULT_START : k === 'resist' ? RESIST_START : 0.5) + 0.12 * r.normal(), 0, 1);
   if (species === 'rabbit') g.coat = ['A', 'A', 'D', 'D'].map(L => r.next() < COAT_RARE ? L.toLowerCase() : L).join('');
   else g.fur = r.next();
   return g;
@@ -1869,7 +1870,7 @@ function computeTraits(c) {
   const sizeF = 0.75 + 0.5 * g.size;
   const speedF = (0.75 + 0.5 * g.speed) * (1.1 - 0.2 * g.size);
   c.maxEnergy = sp.maxEnergy * sizeF;
-  c.burnRate = sp.burn * Math.pow(sizeF, 0.75) * (0.9 + 0.2 * g.eyes);
+  c.burnRate = sp.burn * Math.pow(sizeF, 0.75) * (0.9 + 0.2 * g.eyes) * (1 + RESIST_BURN * (g.resist || 0));
   c.walk = sp.walk * speedF;
   c.sprint = sp.sprint * speedF;
   c.sight = sp.sight * (0.7 + 0.6 * g.eyes);
@@ -1895,7 +1896,8 @@ function makeCreature(w, species, x, y, genes, parents) {
     alert: 0, threatId: 0, chaseT: 0, fright: 0, frightX: 0, frightY: 0, frightWhat: '',
     wary: 0, waryX: 0, waryY: 0, detour: 0, detourX: 0, detourY: 0, nemesisId: 0, haunt: null,
     pregnantUntil: 0, cooldownUntil: 0, dadGenes: null, dadIdPending: 0, dadGenPending: 0,
-    kids: 0, kills: 0, escapes: 0, visits: 0, load: 0, find: null, story: [],
+    kids: 0, kills: 0, voles: 0, prey: '', escapes: 0, visits: 0, load: 0, find: null, story: [],
+    sick: 0, immune: 0,   // ticks when the sickness ends, and when immunity does (see sicknessTick)
   };
   computeTraits(c);
   c.energy = c.maxEnergy * (parents ? 0.6 : 0.8);
@@ -1911,7 +1913,7 @@ function note(w, c, emoji, text) {
   if (c.story.length > 40) c.story.splice(1, 1);   // keep the birth line
 }
 
-const MARKED = new Set(['extinct', 'arrive', 'fire']);   // moments the stats chart pins on its timeline
+const MARKED = new Set(['extinct', 'arrive', 'fire', 'outbreak']);   // moments the stats chart pins on its timeline
 function emit(w, e) {
   e.t = w.tick; w.events.push(e);
   if (MARKED.has(e.type) && !e.founding) w.history.marks.push({ t: e.t, type: e.type, species: e.species, kind: e.kind });
@@ -2064,6 +2066,7 @@ function giveBirth(w, mum) {
     const kid = makeCreature(w, mum.species, x, y, childGenes(w, mum.genes, mum.dadGenes),
       { mum, dadId: mum.dadIdPending, dadGen: mum.dadGenPending });
     kid.home = mum.home || mum.burrow;
+    if (mum.immune > w.tick) kid.immune = w.tick + KIT_IMMUNE * TPD;   // an immune mother's milk guards her kits a while
     if (mum.hidden && mum.burrow) { kid.hidden = true; kid.burrow = mum.burrow; kid.sleeping = true; kid.mode = 'sleep'; kid.timer = 60; mum.burrow.count++; }
     note(w, kid, '🐣', `Born to ${mum.name}` + (dad ? ` and ${dad.name}` : ''));
     if (shown && !shown.includes(coatOf(kid.genes))) {
@@ -2138,7 +2141,7 @@ function canDig(w, x, y) {
 }
 
 function newBurrow(w, x, y, dug) {
-  const b = { id: w.nextBurrow++, x, y, count: 0, dug, used: w.tick };
+  const b = { id: w.nextBurrow++, x, y, count: 0, dug, used: w.tick, sick: 0 };
   w.burrows.push(b);
   return b;
 }
@@ -2413,6 +2416,93 @@ function pickRefuge(w, c, fox) {
   return best;
 }
 
+// ---------------------------------------------------------------- sickness
+//
+// A rabbit sickness that spreads by contact: to rabbits sharing a burrow with a sick one, and to those
+// close by out in the open (a burrow holds only a few, so in a crowded meadow most catch it outside),
+// more easily the more crowded the meadow. With nobody sick, a first case turns up now and then,
+// likelier when crowded. It lasts a few days: a fever that burns, a slow step, dull eyes and no
+// courting. Some die of it, the weak likeliest; a survivor is immune for a while. The resist gene makes
+// catching it and dying of it less likely, but a hardy rabbit burns a little more, so between outbreaks
+// it slips back.
+
+const SICK_EVERY = 30;          // ticks between checks
+const CROWDED = 200;            // rabbits (times w.room) that make a crowded meadow: it spreads at the odds below, half as easily at half that
+const BURROW_CATCH = 0.1;       // odds a check, for each sick rabbit in its burrow, that a rabbit catches it
+const OPEN_CATCH = 0.06;        // odds a check that a sick rabbit out in the open gives it to each one close by
+const CONTACT = 5;              // close by: within this many tiles
+const FIRST_CASE = 0.3;         // odds a day of a first case, with nobody sick, in a crowded meadow
+const SICK_DAYS = [4, 6];       // how long it lasts
+const SICK_BURN = 1.5;          // the fever burns this many times the energy
+const SICK_PACE = 0.75;         // a sick rabbit walks and runs this much as fast
+const SICK_SIGHT = 0.7;         // and sees this much as far, so it spots a fox later
+const SICK_DEATH = 0.3;         // odds a day a sick rabbit with no resistance dies of it
+const WEAK = 0.3;               // twice that with its tummy below this, or in winter
+const IMMUNE_DAYS = [8, 16];    // a survivor can't catch it again for this long
+const KIT_IMMUNE = 3;           // nor an immune mother's kits, for this many days
+const RESIST = 0.8;             // the resist gene at 1 takes this share off the odds of catching it and of dying of it
+const RESIST_START = 0.2;       // founders' resist gene, about
+const RESIST_BURN = 0.05;       // and a rabbit with it at 1 always burns this much more
+const OUTBREAK = 5;             // this many sick at once is an outbreak (news); it's over when nobody is sick
+
+const crowding = w => w.count.rabbit / (CROWDED * w.room);
+const guard = c => 1 - RESIST * c.genes.resist;
+const canCatch = (w, c) => !c.sick && w.tick >= c.immune;
+
+function fallIll(w, c) {
+  c.sick = w.tick + Math.round(w.rng.range(...SICK_DAYS) * TPD);
+  c.walk *= SICK_PACE; c.sprint *= SICK_PACE; c.sight *= SICK_SIGHT;
+  c.cooldownUntil = Math.max(c.cooldownUntil, c.sick);                 // no courting while sick
+  note(w, c, '🤒', 'Fell sick');
+}
+
+function getBetter(w, c) {
+  c.sick = 0; c.immune = w.tick + Math.round(w.rng.range(...IMMUNE_DAYS) * TPD);
+  computeTraits(c);                                                    // its old pace and eyes back
+  note(w, c, '💪', 'Got over the sickness');
+}
+
+// Every SICK_EVERY ticks: count the sick (w.sick, and b.sick in each burrow). Then each sick rabbit gets
+// better, dies of it, or passes it on to those close by, and those in a burrow with the sick may catch it.
+function sicknessTick(w) {
+  const crowd = crowding(w), day = SICK_EVERY / TPD;
+  let sick = 0, first = null;
+  for (const b of w.burrows) b.sick = 0;
+  for (const c of w.creatures) {
+    if (!c.alive || !c.sick) continue;
+    sick++; first ??= c;
+    if (c.hidden) c.burrow.sick++;
+  }
+  const pass = o => { if (o.alive && canCatch(w, o) && w.rng.next() < OPEN_CATCH * crowd * guard(o)) fallIll(w, o); };
+  for (const c of w.creatures) {
+    if (!c.alive || c.species !== 'rabbit') continue;
+    if (!c.sick) {
+      const b = c.hidden && c.burrow;
+      if (b && b.sick && canCatch(w, c) && w.rng.next() < BURROW_CATCH * b.sick * crowd * guard(c)) fallIll(w, c);
+      continue;
+    }
+    if (w.tick >= c.sick) { getBetter(w, c); continue; }
+    const weak = c.energy < WEAK * c.maxEnergy || seasonOf(w.tick) === 3;
+    if (w.rng.next() < SICK_DEATH * day * guard(c) * (weak ? 2 : 1)) { die(w, c, 'sickness'); continue; }
+    if (!c.hidden) forEachNear(w, c.x, c.y, CONTACT, pass, 'rabbit');
+  }
+  w.sick = sick;
+  if (!sick && w.count.rabbit && w.rng.next() < FIRST_CASE * crowd * day) {
+    const c = w.rng.pick(w.creatures);
+    if (c.alive && c.species === 'rabbit' && canCatch(w, c)) fallIll(w, c);
+  }
+  // News, with a gap between the two so it doesn't flicker: an outbreak once OUTBREAK are sick, over once none are.
+  const dead = w.stats.deaths.rabbit.sickness || 0;
+  if (!w.outbreak && sick >= OUTBREAK) {
+    const at = first.home || first;
+    w.outbreak = { t: w.tick, dead };
+    emit(w, { type: 'outbreak', species: 'rabbit', x: at.x, y: at.y, sick });
+  } else if (w.outbreak && !sick) {
+    emit(w, { type: 'outbreakover', species: 'rabbit', dead: dead - w.outbreak.dead, days: (w.tick - w.outbreak.t) / TPD });
+    w.outbreak = null;
+  }
+}
+
 // ---------------------------------------------------------------- foxes
 
 function foxTick(w, c) {
@@ -2429,6 +2519,7 @@ function foxTick(w, c) {
     return;
   }
   if (c.mode === 'eat') { if (--c.timer <= 0) { c.mode = 'rest'; c.timer = 60; } return; }
+  if (c.mode === 'pounce' || c.mode === 'gulp') { mouse(w, c); return; }   // up in the air, or a vole in its jaws
   if (c.mode === 'tired') { if (c.stamina > 0.6) c.mode = 'wander'; return; }
   if (c.mode === 'sleep') {
     if (e < 0.6 || ph > 0.62) c.mode = 'wander';
@@ -2451,7 +2542,7 @@ function foxTick(w, c) {
 
   if (seekLove(w, c)) return;
 
-  if (e < 0.75 && growth(w, c) > 0.3 && hunt(w, c)) return;
+  if (e < 0.75 && growth(w, c) > 0.3 && (hunt(w, c) || mouse(w, c))) return;   // rabbits first; none in sight, voles
 
   if (c.mode === 'rest') { if (--c.timer > 0) return; c.mode = 'wander'; }
   // Hungry, nothing in sight: back to where the last catch was. Arriving to nobody is a miss.
@@ -2465,7 +2556,9 @@ function foxTick(w, c) {
 function hunt(w, c) {
   let prey = c.targetId ? w.byId.get(c.targetId) : null;
   if (prey && prey.species !== 'rabbit') prey = null;
-  const sight = c.sight * sky(w).sight;
+  // Living on voles, it has an eye for the grass more than for rabbits. That's what keeps the foxes
+  // the voles carry through a rabbit low from eating up the last rabbits and dragging the low out.
+  const sight = c.sight * sky(w).sight * (c.prey === 'vole' ? MOUSE_EYES : 1);
   // Lost from view: a little further off than the furthest a fox spots one, or it'd flicker.
   if (prey && (!prey.alive || prey.hidden || dist2(c, prey) > (sight * CAMO[1] * 1.2) ** 2)) {
     if (prey.alive && c.mode === 'chase') escaped(w, prey, c, prey.hidden ? 'burrow' : 'outran');
@@ -2520,7 +2613,7 @@ function missed(fox) {
 function catchPrey(w, fox, rabbit) {
   const gain = (40 + 0.4 * rabbit.energy) * (0.4 + 0.6 * growth(w, rabbit));
   fox.energy = Math.min(fox.maxEnergy, fox.energy + gain);
-  fox.kills++;
+  fox.kills++; fox.prey = 'rabbit';
   fox.mode = 'eat'; fox.timer = 80; fox.targetId = 0;
   fox.haunt = { x: rabbit.x, y: rabbit.y, n: 3 };   // good hunting here; worth a few more tries
   note(w, fox, '🍖', `Caught ${rabbit.name}`);
@@ -2529,6 +2622,141 @@ function catchPrey(w, fox, rabbit) {
     if (o.mumId === fox.id && growth(w, o) < 0.6) o.energy = Math.min(o.maxEnergy, o.energy + 30);
   }, 'fox');
   die(w, rabbit, 'fox', fox);
+}
+
+// ---------------------------------------------------------------- voles
+//
+// Voles live in the long grass, too many and too small to follow one by one: w.voles is how many
+// there are on each tile. From spring to autumn they breed wherever the grass is long, eat a little
+// of it and spill over next door, and where it's grazed short they dwindle, so the rabbits keep them
+// off the warrens. Winter thins them, snow less (they tunnel under it). Water and fire kill them, and
+// they eat tree seedlings (treesTick). A hungry fox with no rabbit in sight goes mousing (mouse), and
+// one living on voles watches the grass more than the rabbits (hunt), so rabbits get a rest in a low.
+
+const VOLE_EVERY = 30;          // ticks between counts (a fire kills them as it catches, in ignite)
+const VOLE_K = 0.15;            // voles a tile of long grass has room for
+const VOLE_SHORT = 0.2;         // grass this short has room for none
+const VOLE_LONG = 0.5;          // and this long, for all it can
+const VOLE_BREED = 0.35;        // growth a day while there's room, in spring (less as the grass slows, SEASONS growth)
+const VOLE_FADE = 0.5;          // share of those over a tile's room gone in a day
+const VOLE_COLD = 0.15;         // share gone each winter day, half that while snow lies
+const VOLE_SPREAD = 0.1;        // share that moves next door each count
+const VOLE_BITE = 0.1;          // grass a vole eats in a day
+const VOLE_START = 0.8;         // a new meadow's voles, as a share of the room, at most (in patches)
+const VOLE_SEEDS = 5;           // a tree seedling is lost this many times likelier again where they're thickest (treesTick)
+const VOLE_BOOM = 0.078;        // voles to a dry tile, the meadow over, that make a vole year (news): one summer in four or so
+const VOLE_BUST = 0.04;         // and after one, below this they've crashed (most winters after)
+const VOLE_WAYS = [1, W, -1, -W];   // next door, one way each count
+const MOUSE_EYES = 0.3;         // of how far off a fox that last caught a vole sees a rabbit (hunt)
+const MOUSE_RANGE = 6;          // how far off it looks for the long grass with the most voles
+const MOUSE_WORTH = 0.03;       // voles on a tile worth listening at
+const MOUSE_PACE = 0.5;         // of its walk, stepping softly
+const LISTEN_TICKS = [15, 40];  // it stands and listens this long before each pounce
+const POUNCE_TICKS = 16;        // up and over
+const POUNCE_LEAP = 1.4;        // tiles it lands ahead
+const GULP_TICKS = 20;          // a vole is gone in a moment
+const VOLE_CATCH = 0.6;         // odds it lands on one where they're thickest, about
+const VOLE_HALF = 0.08;         // voles on a tile where it lands on one half as often as it could
+const VOLE_ENERGY = 10;         // a vole to a fox (a grown rabbit is about 60)
+const VOLE_NOTE = 'Caught a vole in the long grass';
+
+const voleRoom = g => (g >= VOLE_LONG ? VOLE_K : g <= VOLE_SHORT ? 0 : VOLE_K * (g - VOLE_SHORT) / (VOLE_LONG - VOLE_SHORT));
+
+// A new meadow has voles in its long grass, in patches.
+function startVoles(w) {
+  let total = 0;
+  for (let i = 0; i < W * H; i++) {
+    if (w.water[i]) continue;
+    w.voles[i] = voleRoom(w.grass[i]) * VOLE_START * hash2((i % W) >> 3, ((i / W) | 0) >> 3, w.seed);
+    total += w.voles[i];
+  }
+  w.voleCount = total;
+}
+
+// Every VOLE_EVERY ticks. Each tile spills over one way (a different one each count) to the tile
+// next door, and the tiles go in the order that has counted that one already, so what moves doesn't
+// move on again.
+function volesTick(w) {
+  const v = w.voles, g = w.grass, water = w.water, s = seasonOf(w.tick), dt = VOLE_EVERY / TPD;
+  const breed = VOLE_BREED * SEASONS[s].growth * dt, fade = VOLE_FADE * dt, bite = VOLE_BITE * dt;
+  const keep = s === 3 ? 1 - VOLE_COLD * (w.snow > 0.3 ? 0.5 : 1) * dt : 0;   // in winter only that, no breeding
+  const off = VOLE_WAYS[(w.tick / VOLE_EVERY) % 4], back = off > 0, by = back ? -1 : 1;
+  const ex = off === 1 ? W - 1 : off === -1 ? 0 : -1, ey = off === W ? H - 1 : off === -W ? 0 : -1;   // the edge it can't spill past
+  let total = 0;
+  for (let y = back ? H - 1 : 0; y >= 0 && y < H; y += by) {
+    for (let x = back ? W - 1 : 0, i = y * W + x; x >= 0 && x < W; x += by, i += by) {
+      let n = v[i];
+      if (n === 0) continue;
+      if (water[i] || n < 1e-3) { v[i] = 0; continue; }
+      const gi = g[i];
+      if (keep) n *= keep;
+      else {
+        const room = voleRoom(gi);
+        n += n < room ? breed * n * (1 - n / room) : (room - n) * fade;
+      }
+      if (gi > 0) g[i] = gi > bite * n ? gi - bite * n : 0;
+      total += n;
+      if (x !== ex && y !== ey && !water[i + off]) { const m = n * VOLE_SPREAD; v[i + off] += m; n -= m; }
+      v[i] = n;
+    }
+  }
+  w.voleCount = total;
+  // The news: a vole year, and the crash after it.
+  const per = total / w.land;
+  if (!w.voleYear && per > VOLE_BOOM) { w.voleYear = true; emit(w, { type: 'voles', boom: true }); }
+  else if (w.voleYear && per < VOLE_BUST) { w.voleYear = false; emit(w, { type: 'voles', boom: false }); }
+}
+
+// Hungry, and no rabbit in sight: mousing where the voles are thickest. It steps softly through the
+// long grass, stands and listens, then leaps high and comes down on the rustle, on a vole as often
+// as they're thick there. A vole is a snack: it takes a few to fill a fox.
+function mouse(w, c) {
+  if (c.mode === 'gulp') {                           // then it listens again, there
+    if (--c.timer <= 0) { c.mode = 'mouse'; c.timer = w.rng.int(...LISTEN_TICKS); }
+    return true;
+  }
+  if (c.mode === 'pounce') {
+    if (c.target) moveToward(w, c, c.target.x, c.target.y, POUNCE_LEAP / POUNCE_TICKS);
+    if (--c.timer > 0) return true;
+    const x0 = clamp(c.x | 0, 2, W - 3), y0 = clamp(c.y | 0, 2, H - 3), n = w.voles[y0 * W + x0];
+    c.mode = 'mouse'; c.target = null; c.timer = w.rng.int(...LISTEN_TICKS);
+    if (w.rng.next() > VOLE_CATCH * n / (n + VOLE_HALF)) return true;          // missed: listen again
+    let near = 0;                                    // one vole fewer about the spot (a tile holds only part of one)
+    for (let y = y0 - 2; y <= y0 + 2; y++) for (let x = x0 - 2; x <= x0 + 2; x++) near += w.voles[y * W + x];
+    for (let y = y0 - 2; y <= y0 + 2; y++) for (let x = x0 - 2; x <= x0 + 2; x++) w.voles[y * W + x] *= Math.max(0, 1 - 1 / near);
+    c.energy = Math.min(c.maxEnergy, c.energy + VOLE_ENERGY);
+    c.voles++; w.stats.voles++; c.prey = 'vole';
+    c.mode = 'gulp'; c.timer = GULP_TICKS;
+    if (c.story[c.story.length - 1].text !== VOLE_NOTE) note(w, c, '🐁', VOLE_NOTE);
+    return true;
+  }
+  if (c.mode !== 'mouse') {                          // where to listen: the long grass with the most voles about
+    if ((w.tick + c.id) % 10) return false;
+    const spot = voleNear(w, c, 0, MOUSE_RANGE, 8);
+    if (!spot) return false;
+    c.mode = 'mouse'; c.target = spot; c.timer = w.rng.int(...LISTEN_TICKS);
+  }
+  if (c.target) {                                    // on its way there, softly
+    if (moveToward(w, c, c.target.x, c.target.y, c.walk * MOUSE_PACE)) c.target = null;
+    return true;
+  }
+  if (--c.timer > 0) return true;                    // ears up, listening
+  const rustle = voleNear(w, c, POUNCE_LEAP, POUNCE_LEAP, 4);
+  if (!rustle) { c.mode = 'wander'; return false; }  // nothing stirring here: on it goes
+  c.mode = 'pounce'; c.timer = POUNCE_TICKS; c.target = rustle;
+  return true;
+}
+
+// The tile with the most voles of a few tried between near and far tiles off, if any is worth it.
+function voleNear(w, c, near, far, tries) {
+  let best = null, most = MOUSE_WORTH;
+  for (let k = 0; k < tries; k++) {
+    const a = w.rng.range(0, Math.PI * 2), r = w.rng.range(near, far);
+    const x = c.x + Math.cos(a) * r, y = c.y + Math.sin(a) * r;
+    if (!inBounds(x, y) || w.voles[idx(x, y)] <= most || !clearPath(w, c.x, c.y, x, y)) continue;
+    best = { x, y }; most = w.voles[idx(x, y)];
+  }
+  return best;
 }
 
 // ---------------------------------------------------------------- bees
@@ -3050,8 +3278,9 @@ function die(w, c, cause, killer) {
     cause === 'fire' ? 'Caught in a wildfire' :
     cause === 'flood' ? 'Drowned when the burrow flooded' :
     cause === 'ice' ? 'Fell through the ice and drowned' :
+    cause === 'sickness' ? 'Died of the sickness' :
     `Died of old age, ${age} days old`;
-  note(w, c, { fox: '🦊', hunger: '🥀', lightning: '⚡', fire: '🔥', flood: '🌊', ice: '🧊' }[cause] || '🌙', text);
+  note(w, c, { fox: '🦊', hunger: '🥀', lightning: '⚡', fire: '🔥', flood: '🌊', ice: '🧊', sickness: '🤒' }[cause] || '🌙', text);
   w.stats.deaths[c.species][cause] = (w.stats.deaths[c.species][cause] || 0) + 1;
   w.anyDied = w.recount = true;
   emit(w, { type: 'death', c, cause, killer });
@@ -3063,6 +3292,7 @@ function lifeTick(w, c) {
   if (c.sleeping) b *= 0.6;
   if (c.species === 'bee' && c.hidden) b *= 0.3 * clusterCold(w, c.home);   // huddled in the hive, barely burning
   if (c.pregnantUntil) b *= 1.25;
+  if (c.sick) b *= SICK_BURN;                                             // a fever
   const kind = w.weather.kind;
   if (kind === 'snow' && !c.hidden) b *= 1 + 0.5 * (1 - c.genes.size);   // small bodies feel the cold
   if (w.snow > 0.3 && !c.hidden) b *= 1 - MOULT_WARM * whiteness(w, c);
@@ -3072,7 +3302,7 @@ function lifeTick(w, c) {
   c.sprinting = false;
   c.moved = 0;
 
-  if (c.energy <= 0) return die(w, c, 'hunger');
+  if (c.energy <= 0) return die(w, c, c.sick ? 'sickness' : 'hunger');   // wasted away with the fever
   if (w.tick - c.born > c.lifespan) return die(w, c, 'age');
   if (c.pregnantUntil && w.tick >= c.pregnantUntil) giveBirth(w, c);
 }
@@ -3088,9 +3318,11 @@ function createWorld(seed, opts = {}) {
     weather: { kind: 'clear', until: 0 }, skyLocked: false, wet: 0.3, snow: 0, ice: 0, frozen: false, windfalls: 0,
     fire: new Float32Array(W * H), ash: new Float32Array(W * H), silt: new Float32Array(W * H), burning: [], blaze: 0, blazeTrees: 0,
     rich: new Float32Array(W * H), shadedFert: new Float32Array(W * H),   // (see groundTick)
+    voles: new Float32Array(W * H), voleCount: 0, voleYear: false,          // (see volesTick)
+    sick: 0, outbreak: null,                                              // (see sicknessTick)
     count: perKind(() => 0), expecting: perKind(() => 0),
-    stats: { births: perKind(() => 0), deaths: perKind(() => ({})) },
-    history: { every: 60, t: [], grass: [], ...perKind(() => []), traits: perKind(() => []), marks: [] },
+    stats: { births: perKind(() => 0), deaths: perKind(() => ({})), voles: 0 },   // voles: the foxes caught
+    history: { every: 60, t: [], grass: [], voles: [], ...perKind(() => []), traits: perKind(() => []), marks: [] },
     goneSince: perKind(() => -1), hives: [],
     // The trees (see treesTick). They have their own random numbers, so the rest of the meadow comes out as it did before they grew.
     treeRng: makeRng(seed ^ 0x5eed7ee), nextTree: 1, seeds: [], mast: false, mastYear: 0, orchard: [], treeCount: 0,
@@ -3103,6 +3335,7 @@ function createWorld(seed, opts = {}) {
   w.treeRoom = TREE_ROOM * w.decor.filter(d => d.tree).length;
   startTrees(w);
   groundTick(w);
+  startVoles(w);
   const n = { rabbit: opts.rabbits ?? Math.round(30 * w.room), fox: opts.foxes ?? Math.round(4 * w.room), bee: opts.bees ?? 12 };
   w.arrivals = []; w.family = null;
   if (opts.arrival) planArrivals(w, n);
@@ -3171,10 +3404,11 @@ function record(w) {
   const h = w.history;
   h.t.push(w.tick);
   h.grass.push(grassFullness(w));
+  h.voles.push(Math.round(w.voleCount));
   for (const s of KINDS) { h[s].push(w.count[s]); h.traits[s].push(traitMeans(w, s)); }
   if (h.t.length > HISTORY_MAX) {
     const half = a => a.filter((_, i) => i % 2 === 0);
-    for (const k of ['t', 'grass', ...KINDS]) h[k] = half(h[k]);
+    for (const k of ['t', 'grass', 'voles', ...KINDS]) h[k] = half(h[k]);
     for (const s of KINDS) h.traits[s] = half(h.traits[s]);
     h.every *= 2;
   }
@@ -3358,7 +3592,9 @@ function step(w) {
   weatherTick(w);
   if (t % 4 === 0) { growGrass(w, 4); fireTick(w, 4); iceTick(w, 4); }
   if (t % WATER_EVERY === 0) waterTick(w);
+  if (t % VOLE_EVERY === 0) volesTick(w);
   if (t % 60 === 0) { hivesTick(w); windfallTick(w); if (w.weather.kind === 'storm') windthrow(w); }
+  if (t % SICK_EVERY === 0) sicknessTick(w);
   const list = w.creatures;
   for (let i = 0; i < list.length; i++) {
     const c = list[i];
@@ -3392,7 +3628,7 @@ function forgetTheLongDead(w) {
 // where they'd got to. The neighbour grids and the events stay out, and are made again.
 // A change a kept meadow can't take (a new field the code counts on, on the world, a creature, a hive
 // or a tree) bumps KEEP_VERSION, and kept meadows start over.
-const KEEP_VERSION = 2;                 // 2: shade and rich ground (w.shadedFert, w.rich)
+const KEEP_VERSION = 4;                 // 2: shade and rich ground (w.shadedFert, w.rich); 3: voles (w.voles); 4: the sickness (c.sick, c.immune, the resist gene)
 const TABLES = { SPECIES, FIELD_KINDS, TREE_MIX, TREES, SEASONS, WEATHER, COATS, GROUND };
 const UNKEPT = ['grid', 'grids', 'events', 'newborn'];      // on the world
 let tableNames = null;                                     // object -> 'SPECIES.fox', made the first time
@@ -3514,6 +3750,7 @@ function mood(w, c) {
   const e = c.energy / c.maxEnergy;
   const storm = w.weather.kind === 'storm' && !isNight(w.tick);
   if (c.species === 'bee') { const m = beeMood(w, c); if (m) return m; }
+  if (c.sick && c.mode !== 'flee' && c.mode !== 'alarm') return { emoji: '🤒', text: c.hidden ? 'Sick, curled up in the burrow' : 'Sick with a fever' };
   switch (c.mode) {
     case 'flee':
       if (c.fright > 0) return c.frightWhat === 'fire' ? { emoji: '🔥', text: 'Running from the fire!' }
@@ -3533,6 +3770,9 @@ function mood(w, c) {
       : { emoji: '🌰', text: `Off to the ${c.target?.tree?.kind === 'beech' ? 'beeches for beechnuts' : 'oaks for acorns'}` };
     case 'munch': return c.snack === 'apple' ? { emoji: '🍎', text: 'Munching a windfall apple' } : { emoji: '🌰', text: `Nibbling ${c.snack}` };
     case 'prowl': return { emoji: '🐾', text: 'Back to good hunting ground' };
+    case 'mouse': return { emoji: '🐁', text: c.target ? 'Stepping softly through the long grass' : 'Listening for voles in the long grass' };
+    case 'pounce': return { emoji: '🐁', text: 'Pouncing on a vole!' };
+    case 'gulp': return { emoji: '🐁', text: 'Gulping down a vole' };
     case 'stalk': return { emoji: '👀', text: other ? `Sneaking up on ${other.name}` : 'Sneaking' };
     case 'chase': return { emoji: '💨', text: other ? `Chasing ${other.name}!` : 'Chasing!' };
     case 'eat': return { emoji: '🍖', text: 'Eating' };
@@ -3554,6 +3794,7 @@ const api = {
   TERRAIN, drawnToLink, drawnFromLink, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE,
   TREES, treeStage, treeAge, standing, bearing, hollow, inBloom, SEEDLING, SAPLING, GROWN, KIND_NAMES,
+  VOLE_K, POUNCE_TICKS, CROWDED,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 else root.Sim = api;

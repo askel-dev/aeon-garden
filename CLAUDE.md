@@ -161,6 +161,18 @@ and a tree that grows old may get a name (`oldName`), which the inspector and th
 Apple trees (`w.orchard`) drop windfalls early in autumn (`windfallTick`, `d.apples`), a big meal that hungry rabbits
 walk a way for (`windfall`), so the apple trees are where they gather in autumn, and where the foxes find them.
 
+Voles live in the long grass, too many and too small to be creatures: `w.voles` is how many are on each tile
+(`volesTick`, every `VOLE_EVERY` ticks). From spring to autumn they grow where the grass is long (`voleRoom`, up to
+`VOLE_K` a tile), spill over next door and fade where it's grazed short, so the rabbits keep them off the warrens;
+winter thins them, snow less. Floods and fire kill them, and they eat tree seedlings (`VOLE_SEEDS` in `treesTick`).
+A hungry fox with no rabbit in sight goes mousing (`mouse`: it steps softly to where they're thickest, listens,
+then pounces, `mode` 'mouse', 'pounce', 'gulp'); a vole is a snack (`VOLE_ENERGY`), so it takes several. A fox that
+last caught a vole (`c.prey`) sees rabbits only at `MOUSE_EYES` of its sight: that search image is what keeps the
+foxes the voles carry through a rabbit low from eating the last rabbits and dragging the low out. The drawing is a
+look only: now and then a painted vole (`voleAt`, the mousing bubble's) pops up out of the grass where they're thick (`drawVoles`, a fixed pool), and a pounce
+is a high arc (`hopOf`). The news tells of a vole year and the crash after it (`VOLE_BOOM`, `VOLE_BUST`), and the
+stats chart has their meadow-wide count (`w.history.voles`).
+
 Rocks are painted, not emoji (`rockInfo`, `rockSprite` in game.js): pebbles, stones and boulders by
 size (`TERRAIN.rockSize`), flat stones at the fords, and two or three great rocks per meadow
 (`TERRAIN.bigRocks`, `big: true`) that burrows keep clear of. Like a tree's, a rock's snow is a layer of its
@@ -175,6 +187,20 @@ Rabbit coats: two letter-pair genes (`coat`, e.g. 'AaDd') give four colours, plu
 `moult` gene that whitens the coat in winter. Foxes spot a still rabbit from further off when its
 coat stands out from the ground under it (`visibility`); the ground colours (`GROUND`) live in the
 sim and the drawing uses them too.
+
+Rabbits catch a sickness from each other (`sicknessTick`, every `SICK_EVERY` ticks): from a sick one sharing their
+burrow (`BURROW_CATCH`), and from one within `CONTACT` tiles out in the open (`OPEN_CATCH`), both times how crowded
+the meadow is (`crowding`: rabbits against `CROWDED` × `w.room`). A burrow holds only a few and most sleep out when
+there are many, so in a crowded meadow most catch it outside. With nobody sick a first case turns up now and then,
+likelier when crowded (`FIRST_CASE`). A sick rabbit (`c.sick`, the tick it ends) burns more (`SICK_BURN`), is slower
+and sees less far (`fallIll` scales its traits, `getBetter` puts them back), doesn't court, and may die of it
+(`SICK_DEATH`, twice as likely hungry or in winter; starving while sick counts too). A survivor can't catch it again
+for a while (`c.immune`), nor can an immune mother's young kits (`KIT_IMMUNE`). The `resist` gene takes up to `RESIST`
+off the odds of catching it and of dying of it, but costs a little energy (`RESIST_BURN`), so it rises after
+outbreaks and slips back between them. The sickness and the foxes hold the rabbits now, and their cap (300) is
+only a safety net. The news tells when an outbreak starts (`OUTBREAK` sick at once, by the nearest named place,
+`placeNear`) and when it dies down (nobody sick), and the stats chart pins it. The inspector shows who is sick or
+immune, and the sickness in a warren. A sick rabbit sits hunched, with a thermometer in its bubble.
 
 Bees: they live in hives (`w.hives`), each in an oak from `w.decor` (`h.tree`, `d.hive`, `moveIn`), which grows
 into an old giant (`HIVE_TREE`) with a hollow low on its trunk (`drawBeeTree`). The first hive takes the best broadleaf,
