@@ -3958,6 +3958,9 @@ const THINGS = {
       const high = T.level + T.springFlood + T.rainRise / 2;       // the highest the water gets, about (as plantTrees)
       facts.push(world.ground[tileOf(b.x, b.y)] < high ? ['🌊', 'Low ground: a spring flood could reach it'] : ['⛰️', 'High and dry, safe from floods']);
       if (b.dug >= 1) facts.push(['🐾', `Last used ${idle < 1 ? 'today' : `${days(idle)} ago`}`]);
+      let rich = 0;                                              // its latrines (sim.js groundTick), fouled past 0.3 (FOULED)
+      for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) rich = Math.max(rich, world.rich[tileOf(b.x + dx, b.y + dy)]);
+      if (rich > 0.3) facts.push(['🌿', 'Lush grass round its latrines, which the rabbits won\'t graze']);
       const foxes = whoNear(b.x, b.y, 10, c => c.species === 'fox');
       if (foxes) facts.push(['⚠️', `A fox is prowling nearby`]);
       return {

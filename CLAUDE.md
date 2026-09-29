@@ -103,6 +103,14 @@ drowns and grows back fast in the silt (`w.silt`). Flooded water keeps the name 
 from (`w.nearBody`). Snow lying in winter freezes it over (`iceTick`, `w.ice`, `w.frozen`): the ice takes any weight, so
 foxes cross where they couldn't, and whoever is out on deep water when it thaws goes through (`breakUp`). The ground shader shades the slopes by the sun, and colours the grass by where it is: lusher by the water
 and the woods, golden up high, wet moss at the water's edge, with a faint painterly mottle. That colouring is only a look; the grass the animals eat is `w.grass`.
+The woods' shade thins that grass (`SHADE_GRASS`, half that while the broadleaves are bare, `leafless`): once a day
+`groundTick` works out how much grass each tile's soil holds under the shade on it (`w.shadedFert`, which `growGrass`
+reads), so woods that creep out cost the rabbits grazing. And the ground remembers what lives and dies on it (`w.rich`,
+`enrich`): a body left out in the open (`die`; not one in a burrow, not a bee), the latrines round a warren in use (a
+day's droppings for each rabbit home at dawn) and a log rotting away feed the soil. The grass there grows back faster
+and a little past the soil's cap (`RICH_GROW`, `RICH_SOIL`, never over 1), and it fades over about a season (`RICH_DAYS`).
+Rabbits won't graze ground that rich (`fouled`: fresh droppings, or where a body lay), so a busy warren's latrines and
+an old kill site stand out as lusher patches (the ground's colour follows `w.grass`) until they fade and get grazed.
 Reeds and lily pads (`drawShore`) are a look too: a scatter `updateWater` works out along the shore whenever the water changes.
 Shallow water is waded slowly; deep water blocks.
 Each connected water body is named (`w.waters`, `w.body`). Population caps and starting

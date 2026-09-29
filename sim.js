@@ -1173,7 +1173,7 @@ function treesTick(w, grow = true) {
     for (const d of w.decor) {
       if (!d.tree || d.gone) continue;
       if (d.until && t >= d.until) {                     // a snag falls, a log rots away, a stump sprouts
-        if (d.fallen) { d.gone = true; w.treesMoved = true; }
+        if (d.fallen) { d.gone = true; w.treesMoved = true; enrich(w, d.x, d.y, LOG_RICH, 1 + d.size / 2); }
         else if (d.dead) treeFalls(w, d);
         else { d.stump = 0; d.until = 0; d.size = SEEDLING; d.born = t; d.sprouted = true; }
         continue;
@@ -1202,7 +1202,7 @@ function treesTick(w, grow = true) {
     w.bitten.fill(0);
   }
   tidyTrees(w);
-  // The shade on the ground (game.js darkens it there), the trees with food to drop, how full the woods are.
+  // The shade on the ground (it thins the grass, see groundTick, and game.js darkens it), the trees with food to drop, how full the woods are.
   const wood = w.wood;
   wood.fill(0);
   let n = 0;
@@ -1469,18 +1469,78 @@ function growGrass(w, dt) {
   const seed = SEED_RATE * Math.max(s.growth, 0.05) * grow * dt / TPD;
   const die = DIEBACK * dt / TPD, ashFade = dt / (ASH_DAYS * TPD);
   const drown = dt / (DROWN_DAYS * TPD), siltFade = dt / (SILT_DAYS * TPD);
-  const g = w.grass, f = w.fert, water = w.water, ash = w.ash, fire = w.fire, silt = w.silt;
+  const g = w.grass, f = w.shadedFert, water = w.water, ash = w.ash, fire = w.fire, silt = w.silt;   // (the soil, less under the trees)
+  const rich = w.rich, keep = 1 - dt / (RICH_DAYS * TPD);
   for (let i = 0; i < g.length; i++) {
     if (water[i]) { if (g[i] > 0) g[i] = Math.max(0, g[i] - drown); silt[i] = 1; continue; }
     if (fire[i]) continue;
-    const cap = f[i] * capK;
-    const a = 1 + 3 * ash[i] + 3 * silt[i];                  // new shoots love ash, and silt
+    let cap = f[i] * capK, a = 1;
+    const ashy = ash[i], silty = silt[i], k = rich[i];
+    if (ashy + silty + k > 0) {                              // new shoots love ash, and silt, and rich ground (most tiles have none)
+      a += 3 * ashy + 3 * silty + RICH_GROW * k;
+      if (ashy > 0) ash[i] = Math.max(0, ashy - ashFade);
+      if (silty > 0) silt[i] = Math.max(0, silty - siltFade);
+      if (k > 0) { cap = Math.min(1, cap + RICH_SOIL * k * capK); rich[i] = k < RICH_GONE ? 0 : k * keep; }
+    }
     let v = g[i];
     if (v < cap) v += r * a * v * (1 - v / cap) + seed * a * cap;
     else v -= (v - cap) * die;
     g[i] = v;
-    if (ash[i] > 0) ash[i] = Math.max(0, ash[i] - ashFade);
-    if (silt[i] > 0) silt[i] = Math.max(0, silt[i] - siltFade);
+  }
+}
+
+// ---------------------------------------------------------------- shade and rich ground
+//
+// The woods' shade thins the grass under them, less while the broadleaves are bare, so woods that
+// spread out cost the rabbits grazing. And the ground remembers what lives and dies on it (w.rich):
+// a body left out in the open, the latrines round a busy warren and a log rotting away feed the
+// soil, and the grass there grows back faster and a little past what the soil alone would hold.
+// Rabbits won't graze it while it's fresh, so it stands out as a lusher patch. It fades over a season or so.
+
+const SHADE_GRASS = 0.5;        // how much of the grass deep shade takes
+const BARE_SHADE = 0.5;         // and how much of that it still takes while the broadleaves are bare
+const RICH_DAYS = 5;            // rich ground loses about two thirds of it in this long
+const RICH_GONE = 0.01;         // and below this it's plain ground again
+const RICH_SOIL = 0.3;          // fully rich ground holds as much grass as soil this much more fertile
+const RICH_GROW = 2;            // and grows it back this many times faster, on top
+const BODY_RICH = 0.8;          // a body left out in the open, at the middle
+const BODY_REACH = 1.5;         // out to this many tiles
+const LATRINES = 5;             // dung heaps round a warren
+const LATRINE_OUT = 3;          // this far out from the hole
+const LATRINE_REACH = 1.3;      // each this wide
+const LATRINE_RICH = 0.015;     // a day's droppings, for each rabbit living there
+const LOG_RICH = 1;             // a log rotted away, at the middle, out to about half its size
+const FOULED = 0.3;             // rabbits won't graze ground richer than this: fresh droppings, or where a body lay
+
+// Rabbits won't graze fouled ground, so a busy warren's latrines and an old kill site stand out lush till it fades.
+const fouled = (w, i) => w.rich[i] > FOULED;
+
+// Winter and the first third of spring, when the broadleaves are bare (as game.js draws them).
+const leafless = t => seasonOf(t) === 3 || (seasonOf(t) === 0 && springPart(t) < 0.35);
+
+// The ground about (x, y) grows richer: by amount at the middle, less out to radius tiles. Not under water.
+function enrich(w, x, y, amount, radius) {
+  const rich = w.rich, r2 = radius * radius;
+  for (let yy = Math.max(0, Math.floor(y - radius)); yy <= Math.min(H - 1, y + radius); yy++) {
+    for (let xx = Math.max(0, Math.floor(x - radius)); xx <= Math.min(W - 1, x + radius); xx++) {
+      const i = yy * W + xx, d = ((xx + 0.5 - x) ** 2 + (yy + 0.5 - y) ** 2) / r2;
+      if (d < 1 && !w.water[i]) rich[i] = Math.min(1, rich[i] + amount * (1 - d));
+    }
+  }
+}
+
+// Once a day, at dawn when everyone is home: how much grass each tile's soil holds in the shade on it
+// now (w.shadedFert, which growGrass reads), and each warren's latrines, a ring of dung heaps round
+// the hole, get a day's droppings from the rabbits in it.
+function groundTick(w) {
+  const shade = SHADE_GRASS * (leafless(w.tick) ? BARE_SHADE : 1);
+  for (let i = 0; i < W * H; i++) w.shadedFert[i] = w.fert[i] * (1 - shade * w.wood[i]);
+  for (const b of w.burrows) {
+    if (!b.count) continue;
+    for (let k = 0; k < LATRINES; k++) {
+      const a = (k + hash2(b.id, k, 53)) / LATRINES * Math.PI * 2;
+      enrich(w, b.x + Math.cos(a) * LATRINE_OUT, b.y + Math.sin(a) * LATRINE_OUT, LATRINE_RICH * b.count, LATRINE_REACH);
+    }
   }
 }
 
@@ -2171,7 +2231,7 @@ function rabbitTick(w, c) {
   }
   if (e < satiation) {
     const skittish = c.wary > 0 && e > 0.4 && (c.x - c.waryX) ** 2 + (c.y - c.waryY) ** 2 < 36;
-    if (w.grass[i] > 0.3 && !skittish) { c.mode = 'graze'; eat(w, c, i); return; }
+    if (w.grass[i] > 0.3 && !skittish && !fouled(w, i)) { c.mode = 'graze'; eat(w, c, i); return; }
     if (c.mode !== 'food' || !c.target || w.grass[idx(c.target.x, c.target.y)] < 0.12) {   // stick with a patch till it's gone
       const spot = findFood(w, c);
       if (spot) { c.mode = 'food'; c.target = spot; }
@@ -2237,7 +2297,7 @@ function findFood(w, c) {
     const a = w.rng.range(0, Math.PI * 2), r = w.rng.range(1, c.sight);
     const x = c.x + Math.cos(a) * r, y = c.y + Math.sin(a) * r;
     if (!clearPath(w, c.x, c.y, x, y)) continue;   // grass across the pond doesn't count
-    const score = w.grass[idx(x, y)] / (1 + 0.1 * r);
+    const j = idx(x, y), score = (fouled(w, j) ? 0 : w.grass[j]) / (1 + 0.1 * r);
     if (score > bestScore) { bestScore = score; best = { x: (x | 0) + 0.5, y: (y | 0) + 0.5 }; }
   }
   return best;
@@ -2943,6 +3003,7 @@ function beeMood(w, c) {
 
 function die(w, c, cause, killer) {
   if (!c.alive) return;
+  if (!c.hidden && c.species !== 'bee') enrich(w, c.x, c.y, BODY_RICH, BODY_REACH);   // a body left out feeds the ground
   c.alive = false; c.died = w.tick; c.cause = cause;
   c.killerId = killer ? killer.id : 0;
   if (c.hidden && c.burrow) c.burrow.count--;
@@ -2991,6 +3052,7 @@ function createWorld(seed, opts = {}) {
     nameCounts: new Map(), anyDied: false,
     weather: { kind: 'clear', until: 0 }, skyLocked: false, wet: 0.3, snow: 0, ice: 0, frozen: false, windfalls: 0,
     fire: new Float32Array(W * H), ash: new Float32Array(W * H), silt: new Float32Array(W * H), burning: [], blaze: 0,
+    rich: new Float32Array(W * H), shadedFert: new Float32Array(W * H),   // (see groundTick)
     count: perKind(() => 0), expecting: perKind(() => 0),
     stats: { births: perKind(() => 0), deaths: perKind(() => ({})) },
     history: { every: 60, t: [], grass: [], ...perKind(() => []), traits: perKind(() => []), marks: [] },
@@ -3005,6 +3067,7 @@ function createWorld(seed, opts = {}) {
   placeHive(w);
   w.treeRoom = TREE_ROOM * w.decor.filter(d => d.tree).length;
   startTrees(w);
+  groundTick(w);
   const n = { rabbit: opts.rabbits ?? Math.round(30 * w.room), fox: opts.foxes ?? Math.round(4 * w.room), bee: opts.bees ?? 12 };
   w.arrivals = []; w.family = null;
   if (opts.arrival) planArrivals(w, n);
@@ -3097,6 +3160,7 @@ function newDay(w) {
     if (s === 2) seedFall(w);
   }
   treesTick(w);
+  groundTick(w);
 }
 
 // ---------------------------------------------------------------- moving in
