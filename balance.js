@@ -17,6 +17,10 @@ for (let s = 1; s <= seeds; s++) {
   const capR = Sim.SPECIES.rabbit.cap * w.room, trees = [w.treeCount], rich = [], shade = { wood: 0, open: 0, n: 0 };
   let capDays = 0, crashes = 0, recovered = 0, low = null;
   const voles = [], voleNews = { boom: 0, bust: 0 };   // the meadow's voles at each season's end, and its vole years and crashes
+  // The sickness: outbreaks begun and over, rabbit-days of it, rabbits per burrow at the peak, the resist gene
+  // each winter's end, and the cap's numbers again against the old cap (CROWDED), to compare with before it rose.
+  const oldCap = Sim.CROWDED * w.room, resist = [Sim.traitMeans(w, 'rabbit')?.resist];
+  let outbreaks = 0, over = 0, sickDays = 0, perBurrow = 0, oldCapDays = 0, oldCrashes = 0, oldRecovered = 0, oldLow = null;
   for (let k = 0; k < years * 4; k++) {
     let minR = 1e9, minF = 1e9;
     for (let i = 0; i < perSeason; i++) {
@@ -31,15 +35,22 @@ for (let s = 1; s <= seeds; s++) {
         if (e.type === 'fireout') { fires++; burned = Math.max(burned, e.burned); }
         if (e.type === 'weather') sky[e.kind] = (sky[e.kind] || 0) + 1;
         if (e.type === 'voles') voleNews[e.boom ? 'boom' : 'bust']++;
+        if (e.type === 'outbreak') outbreaks++;
+        if (e.type === 'outbreakover') over++;
       }
       w.events.length = 0;
       minR = Math.min(minR, w.count.rabbit); minF = Math.min(minF, w.count.fox);
+      if (w.count.rabbit > maxR) perBurrow = w.count.rabbit / w.burrows.filter(b => b.dug >= 1).length;
       maxR = Math.max(maxR, w.count.rabbit); maxF = Math.max(maxF, w.count.fox);
+      sickDays += w.sick / Sim.TPD;
+      if (w.count.rabbit + w.expecting.rabbit >= oldCap && Sim.SPECIES.rabbit.breedSeasons.includes(Sim.seasonOf(w.tick))) oldCapDays += 1 / Sim.TPD;
+      if (w.count.rabbit > 0.75 * oldCap) { if (oldLow) oldRecovered++; oldLow = false; }
+      else if (oldLow === false && w.count.rabbit < 0.25 * oldCap) { oldLow = true; oldCrashes++; }
       if (w.count.rabbit + w.expecting.rabbit >= capR && Sim.SPECIES.rabbit.breedSeasons.includes(Sim.seasonOf(w.tick))) capDays += 1 / Sim.TPD;
       if (w.count.rabbit > 0.75 * capR) { if (low) recovered++; low = false; }  // (null till they first get there)
       else if (low === false && w.count.rabbit < 0.25 * capR) { low = true; crashes++; }
     }
-    if (k % 4 === 3) trees.push(w.treeCount);
+    if (k % 4 === 3) { trees.push(w.treeCount); resist.push(Sim.traitMeans(w, 'rabbit')?.resist); }
     if (k % 4 === 1) {                                       // end of summer: grass under the trees and out in the open
       let gw = 0, nw = 0, go = 0, no = 0, r = 0;
       for (let i = 0; i < w.grass.length; i++) {
@@ -64,6 +75,7 @@ for (let s = 1; s <= seeds; s++) {
   console.log('  rabbit genes', fmt(tm), '| fox genes', fmt(fm));
   console.log('  rabbit coats', JSON.stringify(Sim.coatCounts(w)), ' surprise litters', surprises);
   console.log(`  ground  at cap ${capDays.toFixed(0)}/${years * Sim.SPECIES.rabbit.breedSeasons.length * Sim.SEASON_DAYS} breeding days  crashes ${crashes} recovered ${recovered}  trees ${trees.join(' ')}  summer grass wood ${(shade.wood / shade.n).toFixed(2)} open ${(shade.open / shade.n).toFixed(2)}  rich ${rich.join(' ')}`);
+  console.log(`  sickness  outbreaks ${outbreaks} (over ${over})  sick rabbit-days ${sickDays.toFixed(0)}  deaths ${d.rabbit.sickness || 0}  rabbits per burrow at peak ${perBurrow.toFixed(1)}  old cap: at it ${oldCapDays.toFixed(0)} days, crashes ${oldCrashes} recovered ${oldRecovered}  resist ${resist.map(v => v === undefined ? '-' : v.toFixed(2)).join(' ')}`);
   for (let i = 0; i < rows.length; i += 8) console.log('  ' + rows.slice(i, i + 8).join('  '));
   const eaten = w.stats.voles;
   console.log(`  voles  ${voles.join(' ')}  eaten ${eaten} (${Math.round(100 * eaten / Math.max(1, eaten + kills))}% of fox meals)  fox hunger ${d.fox.hunger || 0}  vole years ${voleNews.boom} crashes ${voleNews.bust}`);

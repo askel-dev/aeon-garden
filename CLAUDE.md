@@ -183,6 +183,20 @@ Rabbit coats: two letter-pair genes (`coat`, e.g. 'AaDd') give four colours, plu
 coat stands out from the ground under it (`visibility`); the ground colours (`GROUND`) live in the
 sim and the drawing uses them too.
 
+Rabbits catch a sickness from each other (`sicknessTick`, every `SICK_EVERY` ticks): from a sick one sharing their
+burrow (`BURROW_CATCH`), and from one within `CONTACT` tiles out in the open (`OPEN_CATCH`), both times how crowded
+the meadow is (`crowding`: rabbits against `CROWDED` × `w.room`). A burrow holds only a few and most sleep out when
+there are many, so in a crowded meadow most catch it outside. With nobody sick a first case turns up now and then,
+likelier when crowded (`FIRST_CASE`). A sick rabbit (`c.sick`, the tick it ends) burns more (`SICK_BURN`), is slower
+and sees less far (`fallIll` scales its traits, `getBetter` puts them back), doesn't court, and may die of it
+(`SICK_DEATH`, twice as likely hungry or in winter; starving while sick counts too). A survivor can't catch it again
+for a while (`c.immune`), nor can an immune mother's young kits (`KIT_IMMUNE`). The `resist` gene takes up to `RESIST`
+off the odds of catching it and of dying of it, but costs a little energy (`RESIST_BURN`), so it rises after
+outbreaks and slips back between them. The sickness and the foxes hold the rabbits now, and their cap (300) is
+only a safety net. The news tells when an outbreak starts (`OUTBREAK` sick at once, by the nearest named place,
+`placeNear`) and when it dies down (nobody sick), and the stats chart pins it. The inspector shows who is sick or
+immune, and the sickness in a warren. A sick rabbit sits hunched, with a thermometer in its bubble.
+
 Bees: they live in hives (`w.hives`), each in an oak from `w.decor` (`h.tree`, `d.hive`, `moveIn`), which grows
 into an old giant (`HIVE_TREE`) with a hollow low on its trunk (`drawBeeTree`). The first hive takes the best broadleaf,
 which becomes an oak (`placeHive`). Sites (`hiveSites`, `siteScore`) are free oaks with fields in reach and open ground in front; lightning on a hive's tree sends its bees out as a swarm

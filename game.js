@@ -1242,7 +1242,7 @@ function drawCreature(c, sx, sy, now) {
   // Standing still, everyone breathes: slow and deep asleep, quick and shallow awake.
   const breathe = !hop && ui.speed > 0
     ? Math.sin(now / (c.sleeping ? 650 : 330) + c.id) * (c.sleeping ? 0.035 : 0.02) : 0;
-  const squash = (c.sleeping ? 0.82 : 1) + breathe;
+  const squash = (c.sleeping ? 0.82 : c.sick ? 0.9 : 1) + breathe;   // a sick one sits hunched
   const y = sy - hop + px * 0.4 * (1 - squash);
   if (c.mode === 'dance') drawDance(c, sx, y, px);
   drawEmoji(c.sp.emoji, sx, y, px, {   // feet stay on the ground
@@ -1432,6 +1432,14 @@ const BUBBLE_ICONS = [
     fillIn(g, '#f4c64e', () => discAt(g, 0, 0, 0.88));
     fillIn(g, '#f19a7e', () => { ovalAt(g, -0.5, 0.2, 0.16, 0.1); ovalAt(g, 0.5, 0.2, 0.16, 0.1); });
     strokeIn(g, '#6b4a1e', 0.1, () => { g.arc(-0.32, -0.12, 0.17, 0.15, Math.PI - 0.15); g.moveTo(0.49, -0.1); g.arc(0.32, -0.12, 0.17, 0.15, Math.PI - 0.15); g.moveTo(0.28, 0.32); g.arc(0, 0.2, 0.3, 0.4, Math.PI - 0.4); });
+  }],
+  ['🤒', g => {                                          // sick: a thermometer, running hot
+    g.rotate(0.45);
+    const glass = e => { g.roundRect(-0.21 - e, -0.95 - e, 0.42 + 2 * e, 1.45 + e, 0.21 + e); discAt(g, 0, 0.55, 0.33 + e); };
+    fillIn(g, '#8d8a84', () => glass(0.08));
+    fillIn(g, '#fbf8f1', () => glass(0));
+    fillIn(g, '#d9372b', () => { discAt(g, 0, 0.55, 0.22); g.rect(-0.08, -0.5, 0.16, 1.05); });
+    strokeIn(g, '#8d8a84', 0.06, () => { for (const y of [-0.72, -0.48, -0.24, 0]) { g.moveTo(0.21, y); g.lineTo(0.1, y); } });
   }],
   ['🥺', g => {                                          // hungry: an empty bowl
     fillIn(g, '#b07a4a', () => { g.moveTo(-0.88, 0); g.ellipse(0, 0, 0.88, 0.7, 0, Math.PI, 0, true); g.closePath(); });
@@ -3014,6 +3022,21 @@ function involvesSelected(e) {
   return [e.c, e.a, e.b, e.mum, e.dad, e.rabbit, e.fox, e.killer].some(x => x && x.id === id);
 }
 
+// Where something happened, by the nearest thing with a name: a flower field, an old tree or the water. '' with none near.
+function placeNear(x, y) {
+  let name = '', bd = 20 * 20;
+  const near = (px, py, n) => { const d = (px - x) ** 2 + (py - y) ** 2; if (d < bd) { bd = d; name = n; } };
+  for (const f of world.fields) near(f.x, f.y, f.name);
+  for (const d of world.decor) if (d.name && S.standing(d)) near(d.x, d.y, d.name);
+  for (let ty = Math.max(0, Math.floor(y - 20)); ty < Math.min(S.H, y + 20); ty++) {
+    for (let tx = Math.max(0, Math.floor(x - 20)); tx < Math.min(S.W, x + 20); tx++) {
+      const water = world.water[ty * S.W + tx] && S.waterAt(world, tx, ty);
+      if (water) near(tx + 0.5, ty + 0.5, water.name);
+    }
+  }
+  return name ? `by the ${esc(name)}` : '';
+}
+
 function handleEvent(e) {
   const mine = involvesSelected(e);
   if (idle.on) idleNews(e);
@@ -3123,6 +3146,8 @@ function handleEvent(e) {
         if (mine) addNews(`🌊 ${link(c)} drowned when the burrow flooded.`);   // the rest are in the 'flooded' news
       } else if (e.cause === 'ice') {
         if (mine) addNews(`🧊 ${link(c)} went through the ice and drowned.`);   // the rest are in the 'ice' news
+      } else if (e.cause === 'sickness') {
+        if (mine) addNews(`🤒 ${link(c)} died of the sickness.`);            // the rest are in the 'outbreak' news
       } else {
         const age = Math.floor(S.ageDays(world, c));
         const fam = c.kids ? `, leaving ${c.kids} ${c.kids === 1 ? 'child' : 'children'}` : '';
@@ -3173,6 +3198,15 @@ function handleEvent(e) {
       addNews(t);
       break;
     }
+    case 'outbreak': {
+      const where = placeNear(e.x, e.y);
+      addNews(`🤒 <b>A sickness is going round the warren${where ? ' ' + where : ''}.</b> In a crowded meadow it spreads fast.`);
+      break;
+    }
+    case 'outbreakover':
+      addNews(`🌤️ The sickness has died down after ${days(e.days)}.` + (e.dead
+        ? ` It took ${e.dead} ${e.dead === 1 ? 'rabbit' : 'rabbits'}. Those who pulled through won't catch it again for a while.` : ' Nobody died of it.'));
+      break;
     case 'voles':
       addNews(e.boom ? '🐁 <b>A vole year!</b> The long grass is alive with voles, and the foxes are out mousing, leaping high to pounce.'
         : '🐁 <b>The voles have crashed.</b> The long grass has gone quiet, and the foxes are back to hunting rabbits.');
@@ -3326,6 +3360,8 @@ const TRAITS = [
     up: 'friendlier', down: 'more solitary', tip: 'Likes to stay close to others' },
   { k: 'moult', e: '❄️', name: 'Winter coat', only: 'rabbit', words: ['keeps its colour', 'keeps its colour', 'pales a little', 'pales in winter', 'snow-white'],
     up: 'whiter in winter', down: 'less white in winter', tip: 'Turns white for winter: hidden on snow, easy to see on bare ground' },
+  { k: 'resist', e: '🛡️', name: 'Resistance', only: 'rabbit', words: ['catches anything', 'delicate', 'fairly hardy', 'hardy', 'tough as old boots'],
+    up: 'hardier', down: 'more delicate', tip: 'Less likely to catch the sickness or die of it, but burns a little more energy' },
 ];
 const traitsOf = species => TRAITS.filter(t => !t.only || t.only === species);
 const word = (t, v) => t.words[v < 0.3 ? 0 : v < 0.45 ? 1 : v < 0.55 ? 2 : v < 0.7 ? 3 : 4];
@@ -3425,9 +3461,9 @@ const SERIES = {
 const SEASON_TINT = ['#f6dde5', '#f7ecb8', '#f4d6b6', '#dfe8f0'];
 const RANGES = { year: S.YEAR_DAYS * S.TPD, five: 5 * S.YEAR_DAYS * S.TPD, all: Infinity };
 const RANGE_WORDS = { year: 'the last year', five: 'the last 5 years', all: 'the whole story' };
-const MARK_EMOJI = { extinct: '😢', arrive: '🧳', fire: '🔥' };
+const MARK_EMOJI = { extinct: '😢', arrive: '🧳', fire: '🔥', outbreak: '🤒' };
 const CAUSES = [['fox', '🦊', 'Caught by a fox'], ['hunger', '🥀', 'Starved'], ['age', '🌙', 'Old age'],
-  ['lightning', '⚡', 'Lightning'], ['fire', '🔥', 'Wildfire'], ['flood', '🌊', 'Drowned in a flood'],
+  ['sickness', '🤒', 'Sickness'], ['lightning', '⚡', 'Lightning'], ['fire', '🔥', 'Wildfire'], ['flood', '🌊', 'Drowned in a flood'],
   ['ice', '🧊', 'Fell through the ice']];
 const INK = '#3b372f', MUTED = '#6f6657';
 
@@ -3763,6 +3799,8 @@ function renderInspector() {
   if (c.visits) chips.push(`🌼 ${c.visits} ${c.visits === 1 ? 'flower' : 'flowers'} visited`);
   const nemesis = world.byId.get(c.nemesisId);
   if (nemesis && nemesis.alive) chips.push(`😨 Afraid of ${link(nemesis)}`);
+  if (c.alive && c.sick) chips.push('🤒 Sick');
+  else if (c.alive && c.immune > world.tick) chips.push(`🛡️ Immune to the sickness for ${days((c.immune - world.tick) / S.TPD)}`);
   if (c.gen > 1) chips.push(`🌳 Generation ${c.gen}`);
   const story = c.story.slice().reverse().slice(0, 10).map(s =>
     `<li><span>${s.emoji}</span><span>${esc(s.text)}<div class="when">${when(s.t)}</div></span></li>`).join('');
@@ -4051,6 +4089,10 @@ const THINGS = {
       if (rich > 0.3) facts.push(['🌿', 'Lush grass round its latrines, which the rabbits won\'t graze']);
       const foxes = whoNear(b.x, b.y, 10, c => c.species === 'fox');
       if (foxes) facts.push(['⚠️', `A fox is prowling nearby`]);
+      let sick = 0, immune = 0;                                  // (sim.js sicknessTick)
+      for (const c of new Set([...home, ...inside])) { if (c.sick) sick++; else if (c.immune > world.tick) immune++; }
+      if (sick) facts.push(['🤒', `Sickness in this warren: ${sick} sick${immune ? `, ${immune} immune` : ''}`]);
+      else if (immune) facts.push(['🛡️', `${immune} here can't catch the sickness for now`]);
       return {
         emoji: '🕳️', tint: '#b89868', name: 'Burrow',
         sub: b.dug < 1 ? 'Being dug' : made !== undefined ? `Dug ${ago(made)} ago` : 'An old burrow, here before anyone',
@@ -5170,6 +5212,7 @@ function idleNews(e) {
     case 'swarm': n = { x: e.swarm.x, y: e.swarm.y, w: 8, line: `Queen ${e.queen.name}'s swarm, looking for a home`, big: true }; break;
     case 'settle': n = { x: e.hive.x, y: e.hive.y, w: 6, line: `Queen ${e.queen.name}'s swarm moves in` }; break;
     case 'fire': n = { big: true }; break;          // the fire is filmed anyway, first of all
+    case 'outbreak': n = { x: e.x, y: e.y, w: 6, line: 'A sickness is going round the warren' }; break;
   }
   if (!n) return;
   if (n.c || n.x !== undefined) idle.news = Object.assign(n, { at });
@@ -5436,7 +5479,7 @@ addEventListener('pagehide', keepMeadow);
 const AWAY_MIN = 5 * 60e3;                 // gone at least this long, in real time
 const AWAY_TICKS = S.SEASON_DAYS * S.TPD;  // and it moves on a season, however long it was
 const AWAY_MS = 40;                        // of each frame the catching up gets
-const AWAY_BIG = ['extinct', 'swarm', 'settle', 'hivestruck', 'queenlost', 'fire', 'mast', 'voles', 'treedied', 'windthrow'];   // news for the card, the first told first
+const AWAY_BIG = ['extinct', 'swarm', 'settle', 'hivestruck', 'queenlost', 'fire', 'outbreak', 'outbreakover', 'mast', 'voles', 'treedied', 'windthrow'];   // news for the card, the first told first
 const away = { on: false, frames: 0, left: 0, from: 0, day: -1, births: null, deaths: null, news: [], type: '', mine: false };
 const awayOpen = () => !$('#away').classList.contains('hidden');
 const deathsOf = s => Object.values(world.stats.deaths[s]).reduce((a, b) => a + b, 0);
