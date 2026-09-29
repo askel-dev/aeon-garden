@@ -999,6 +999,7 @@ function render(now) {
   drawWaves(now);
   drawShore(z, ox, oy, ck.season);
   drawPlants(z, ox, oy, ck.season);                  // over the waves, which can pass a flower by the water
+  drawVoles(now, z);
 
   // Burrows, drawn by hand: some browsers clip the 🕳️ glyph in half.
   const residents = new Map();
@@ -1190,12 +1191,15 @@ function drawDance(c, bx, by, px) {
 }
 
 // How high off the ground a hop has lifted it, in screen pixels. At the hole, a digger doesn't hop
-// but scrabbles: a quick small bob.
+// but scrabbles: a quick small bob. A mousing fox's pounce is the high arc up and over onto the vole,
+// in sim time (sim.js mouse), so a paused one hangs in the air.
+const POUNCE_HIGH = 0.9;           // how high the pounce goes, in the fox's size
 function hopOf(c, px, now) {
+  if (c.mode === 'pounce') return Math.sin(Math.PI * clamp((S.POUNCE_TICKS - c.timer + acc) / S.POUNCE_TICKS, 0, 1)) * px * POUNCE_HIGH;
   if (ui.speed <= 0) return 0;
   if (atHole(c)) return Math.abs(Math.sin(now / 70 + c.id)) * px * 0.03;
   const fast = c.mode === 'flee' || c.mode === 'chase';
-  return MOVING.has(c.mode) ? Math.abs(Math.sin(now / (fast ? 55 : 120) + c.id)) * px * (fast ? 0.16 : 0.1) : 0;
+  return MOVING.has(c.mode) || (c.mode === 'mouse' && c.target) ? Math.abs(Math.sin(now / (fast ? 55 : 120) + c.id)) * px * (fast ? 0.16 : 0.1) : 0;
 }
 
 // Digging, at its side of the hole (see dig in sim.js).
@@ -1419,6 +1423,14 @@ const BUBBLE_ICONS = [
     fillIn(g, '#5e3c22', () => ovalAt(g, 0, 0.02, 0.72, 0.16));
     fillIn(g, '#c99467', () => ovalAt(g, -0.45, 0.35, 0.16, 0.1, 0.3));
   }],
+  ['🐁', g => {                                          // mousing: a vole, round and brown, short-tailed
+    strokeIn(g, '#7a5a42', 0.08, () => { g.moveTo(0.6, 0.45); g.quadraticCurveTo(0.95, 0.5, 0.9, 0.8); });
+    fillIn(g, '#8a6a4e', () => { ovalAt(g, 0.08, 0.25, 0.6, 0.42); ovalAt(g, -0.5, 0.12, 0.34, 0.3, -0.3); });
+    fillIn(g, '#a8876a', () => ovalAt(g, 0.12, 0.08, 0.36, 0.18));
+    fillIn(g, '#9c7b5e', () => discAt(g, -0.38, -0.22, 0.17));
+    fillIn(g, '#e3a8a0', () => { discAt(g, -0.38, -0.22, 0.08); discAt(g, -0.84, 0.18, 0.06); });
+    fillIn(g, '#2d261e', () => discAt(g, -0.6, 0.04, 0.06));
+  }],
 ];
 const BUBBLE_ART = new Map(BUBBLE_ICONS.map(([e], i) => [e, 'bubble:' + i]));
 
@@ -1547,10 +1559,11 @@ function drawDecorShadow(d, sx, sy, sn) {
 }
 
 // Animals lean their shadow with the sun like the trees do, and keep a faint one at their feet
-// at night and under cloud so they never float. A hop lifts them off it and it shrinks.
+// at night and under cloud so they never float. A hop lifts them off it and it shrinks, less for a
+// pouncing fox than a flier, so the leap reads.
 function drawCreatureShadow(c, sx, sy, now, sn) {
   if (wading(c)) return;
-  const px = creaturePx(c), lift = 1 - Math.min(0.8, liftOf(c, px, now) / px);
+  const px = creaturePx(c), lift = 1 - Math.min(c.sp.flies ? 0.8 : 0.5, liftOf(c, px, now) / px);
   const a = 0.14 + 0.16 * Math.max(0, sn.a), off = Math.max(0, sn.a) * sn.lean * px * 0.2;
   ctx.fillStyle = `rgba(40, 50, 20, ${a * lift})`;
   ctx.beginPath();
@@ -2698,6 +2711,43 @@ function drawEffects(now) {
   }
 }
 
+// ------------------------------------------------------------------ voles
+//
+// The sim keeps voles as a number on each tile (w.voles), too many and too small to follow. So now and
+// then one pops up out of the long grass for a moment where they're thick, and ducks back. Only a look:
+// each frame one spot on screen is tried, likelier to show a vole the more live there, and the 🐁 comes
+// from the sprite cache, its top part only, rising out of the grass line. A fixed pool, nothing kept.
+const PEEPS = 8;                   // most up at once
+const PEEP_MS = 1300;              // how long one is up
+const PEEP_ODDS = 0.05;            // odds a try where they're thickest shows one (less as they thin)
+const PEEP_SIZE = 0.5;             // of a rabbit
+const PEEP_FOOT = 0.78, PEEP_BODY = 0.42;   // in the sprite, from the top: where its feet are, and how tall it is
+const peeps = { x: new Float32Array(PEEPS), y: new Float32Array(PEEPS), t0: new Float64Array(PEEPS).fill(-1e9), next: 0 };
+
+function drawVoles(now, z) {
+  if (z < 10) return;                                   // too small to make out
+  if (ui.speed > 0 && world.snow < 0.3) {               // under the snow they keep to their tunnels
+    const x = cam.x + (Math.random() - 0.5) * vw / z, y = cam.y + (Math.random() - 0.5) * vh / z, k = peeps.next;
+    const n = x >= 0 && y >= 0 && x < S.W && y < S.H ? world.voles[(y | 0) * S.W + (x | 0)] / S.VOLE_K : 0;
+    if (now - peeps.t0[k] > PEEP_MS && Math.random() < PEEP_ODDS * n * n) {
+      peeps.x[k] = x; peeps.y[k] = y; peeps.t0[k] = now; peeps.next = (k + 1) % PEEPS;
+    }
+  }
+  let s = null, size = 0;
+  for (let k = 0; k < PEEPS; k++) {
+    const a = (now - peeps.t0[k]) / PEEP_MS;
+    if (a >= 1) continue;
+    if (!s) { s = sprite('🐁', Math.max(9, (8 + z) * PEEP_SIZE)); size = s.size; }
+    const up = Math.min(1, 2.5 * Math.sin(Math.PI * a));  // quick up, a look round, quick down
+    const shown = PEEP_FOOT * size - (1 - up) * PEEP_BODY * size;
+    const sx = (peeps.x[k] - cam.x) * z + vw / 2, sy = (peeps.y[k] - cam.y) * z + vh / 2;   // (toScreen, without an array)
+    if (shown <= 0 || !visible(sx, sy, size)) continue;
+    ctx.globalAlpha = Math.min(1, 3 * up);
+    ctx.drawImage(s.canvas, 0, 0, s.canvas.width, s.canvas.height * shown / size, sx - size / 2, sy - shown, size, shown);
+  }
+  ctx.globalAlpha = 1;
+}
+
 // ------------------------------------------------------------------ pollen
 //
 // A sipping bee kicks up a few specks of pollen, and when she's done with a flower a little puff
@@ -3050,7 +3100,7 @@ function handleEvent(e) {
         const t = `🦊 ${link(e.killer)} caught ${link(c)}.`;
         if (mine) addNews(t); else addNews(t, 'catch', 7000);
       } else if (e.cause === 'hunger') {
-        const t = c.species === 'fox' ? `🥀 ${link(c)} the fox starved. There weren't enough rabbits.`
+        const t = c.species === 'fox' ? `🥀 ${link(c)} the fox starved. There weren't enough rabbits or voles.`
           : c.species === 'bee' ? `🥀 ${link(c)} the bee starved. The hive ran out of honey.`
           : `🥀 ${link(c)} starved.`;
         if (mine || c.species === 'fox') addNews(t); else addNews(t, 'starve', 12000);
@@ -3113,6 +3163,10 @@ function handleEvent(e) {
       addNews(t);
       break;
     }
+    case 'voles':
+      addNews(e.boom ? '🐁 <b>A vole year!</b> The long grass is alive with voles, and the foxes are out mousing, leaping high to pounce.'
+        : '🐁 <b>The voles have crashed.</b> The long grass has gone quiet, and the foxes are back to hunting rabbits.');
+      break;
     case 'windfall':
       addNews(e.mast ? '🍂 <b>Windfalls!</b> Apples, acorns and beechnuts are dropping. Hungry rabbits are gathering under the trees.'
         : '🍎 <b>The apples are falling.</b> Hungry rabbits are gathering under the apple trees.');
@@ -3355,6 +3409,7 @@ const SERIES = {
   rabbit: { emoji: '🐇', name: 'Rabbits', title: 'Rabbits alive', color: '#a07850', fmt: v => Math.round(v) },
   fox: { emoji: '🦊', name: 'Foxes', title: 'Foxes alive', color: '#e2702f', fmt: v => Math.round(v) },
   bee: { emoji: '🐝', name: 'Bees', title: 'Bees alive', color: '#d9a21b', fmt: v => Math.round(v) },
+  voles: { emoji: '🐁', name: 'Voles', title: 'Voles in the long grass', color: '#8a6a4e', fmt: v => Math.round(v) },
   grass: { emoji: '🌱', name: 'Grass', title: 'How lush the meadow is', color: '#5f9e43', fmt: v => Math.round(v * 100) + '%' },
 };
 const SEASON_TINT = ['#f6dde5', '#f7ecb8', '#f4d6b6', '#dfe8f0'];
@@ -3607,7 +3662,7 @@ function drawTrait(c, k, gene, i0) {
 }
 
 function renderStatsCards() {
-  const keys = shownKeys(), animals = keys.filter(k => k !== 'grass'), { i0 } = statsWindow();
+  const keys = shownKeys(), animals = keys.filter(k => S.KINDS.includes(k)), { i0 } = statsWindow();   // (voles aren't creatures: no deaths or genes to show)
   $('#stats-records').innerHTML = keys.map(k => recordRows(k, i0)).join('');
   $('#stats-seasons').innerHTML = keys.map(k => seasonBars(k, i0)).join('');
   $('#stats-deaths').innerHTML = animals.map(deathRows).join('');
@@ -3619,7 +3674,7 @@ function renderStatsCards() {
 
 function renderStats() {
   const keys = shownKeys();
-  $('#stats-title').textContent = keys.length > 1 ? 'Rabbits, foxes, bees and grass' : SERIES[keys[0]].emoji + ' ' + SERIES[keys[0]].title;
+  $('#stats-title').textContent = keys.length > 1 ? 'Rabbits, foxes, bees, voles and grass' : SERIES[keys[0]].emoji + ' ' + SERIES[keys[0]].title;
   $('#stats-range-note').textContent = 'over ' + RANGE_WORDS[ui.stats.range];
   $('#stats-clock').textContent = `${S.SEASONS[S.seasonOf(world.tick)].emoji} ${when(world.tick)}`;
   document.querySelectorAll('[data-show]').forEach(b => b.classList.toggle('on', b.dataset.show === ui.stats.show));
@@ -3693,6 +3748,7 @@ function renderInspector() {
   const chips = [];
   if (c.alive && c.pregnantUntil) chips.push(c.species === 'fox' ? '🍼 Expecting cubs' : '🍼 Expecting babies');
   if (c.kills) chips.push(`🍖 ${c.kills} ${c.kills === 1 ? 'catch' : 'catches'}`);
+  if (c.voles) chips.push(`🐁 ${c.voles} ${c.voles === 1 ? 'vole' : 'voles'} caught`);
   if (c.escapes) chips.push(`💨 ${c.escapes} narrow ${c.escapes === 1 ? 'escape' : 'escapes'}`);
   if (c.visits) chips.push(`🌼 ${c.visits} ${c.visits === 1 ? 'flower' : 'flowers'} visited`);
   const nemesis = world.byId.get(c.nemesisId);
@@ -4030,8 +4086,8 @@ const THINGS = {
     here: () => true,
     show(f) {
       const season = S.seasonOf(world.tick), plants = world.plants.filter(p => p.field === f), open = plants.filter(p => S.isFlower(world, p)).length;
-      let tiles = 0, grass = 0;
-      for (let i = 0; i < world.fieldAt.length; i++) if (world.fieldAt[i] === f.id && !world.water[i]) { tiles++; grass += world.grass[i]; }
+      let tiles = 0, grass = 0, voles = 0;
+      for (let i = 0; i < world.fieldAt.length; i++) if (world.fieldAt[i] === f.id && !world.water[i]) { tiles++; grass += world.grass[i]; voles += world.voles[i]; }
       const status = season === f.season ? (open ? `${f.emoji[0]} In bloom: ${open} of ${plants.length} flowers open` : '🐇 Grazed down: no flowers open')
         : `🌿 Resting: it blooms in ${seasonName(f.season)}`;
       const inField = c => world.fieldAt[tileOf(c.x, c.y)] === f.id;
@@ -4041,9 +4097,11 @@ const THINGS = {
         ? hives.map(h => `🐝 ${thingLink('hive', h.id, h.queen ? esc(`Queen ${h.queen.name}'s hive`) : 'Empty hive')}`).join('<br>')
         : 'None: only a bee from far off comes here']];
       if (now.length) sections.push(['Here now', linkList(now)]);
+      const thick = tiles ? voles / tiles / S.VOLE_K : 0;         // (sim.js volesTick)
+      const facts = thick > 0.15 ? [['🐁', thick > 0.5 ? 'Voles run all through the long grass here, and the foxes come mousing' : 'A few voles run in the long grass here']] : [];
       return {
         emoji: f.emoji[0], tint: `rgb(${f.tint})`, name: f.name, sub: `A field of ${f.kind.names.join(' and ').toLowerCase()} · ${tiles} tiles`,
-        status, sections, meters: [['Grass', tiles ? grass / tiles : 0, '']],
+        status, sections, facts, meters: [['Grass', tiles ? grass / tiles : 0, '']],
       };
     },
   },
@@ -4157,7 +4215,7 @@ function diaryFacts(c) {
     `Right now: ${S.mood(world, c).text}. Tummy ${Math.round(100 * c.energy / c.maxEnergy)}% full. It is ${S.SEASONS[ck.season].name.toLowerCase()}, ${ck.night ? 'night' : 'daytime'}, weather: ${S.WEATHER[world.weather.kind].name.toLowerCase()}${world.burning.length ? ', and there is a wildfire in the meadow' : ''}.`,
     c.queen ? `Family: a worker, daughter of Queen ${c.queen.name}, who lays all the hive's eggs. Sisters in the hive: ${c.home.bees - 1}.`
       : `Family: mum ${mum ? mum.name + (mum.alive ? '' : ' (died)') : 'unknown'}, dad ${dad ? dad.name + (dad.alive ? '' : ' (died)') : 'unknown'}, ${c.kids} children.`,
-    c.species === 'fox' ? `Rabbits caught so far: ${c.kills}.`
+    c.species === 'fox' ? `Rabbits caught so far: ${c.kills}. Voles caught in the long grass: ${c.voles}.`
       : c.species === 'bee' ? `Flowers visited so far: ${c.visits}. Honey in the hive: ${Math.round(c.home.honey)}, shared by ${c.home.bees} bees.`
       : `Narrow escapes from foxes: ${c.escapes}.`
         + (world.byId.get(c.nemesisId) ? ` The fox it fears most: ${world.byId.get(c.nemesisId).name}.` : ''),
@@ -5368,7 +5426,7 @@ addEventListener('pagehide', keepMeadow);
 const AWAY_MIN = 5 * 60e3;                 // gone at least this long, in real time
 const AWAY_TICKS = S.SEASON_DAYS * S.TPD;  // and it moves on a season, however long it was
 const AWAY_MS = 40;                        // of each frame the catching up gets
-const AWAY_BIG = ['extinct', 'swarm', 'settle', 'hivestruck', 'queenlost', 'fire', 'mast', 'treedied', 'windthrow'];   // news for the card, the first told first
+const AWAY_BIG = ['extinct', 'swarm', 'settle', 'hivestruck', 'queenlost', 'fire', 'mast', 'voles', 'treedied', 'windthrow'];   // news for the card, the first told first
 const away = { on: false, frames: 0, left: 0, from: 0, day: -1, births: null, deaths: null, news: [], type: '', mine: false };
 const awayOpen = () => !$('#away').classList.contains('hidden');
 const deathsOf = s => Object.values(world.stats.deaths[s]).reduce((a, b) => a + b, 0);

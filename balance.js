@@ -16,6 +16,7 @@ for (let s = 1; s <= seeds; s++) {
   // three quarters), the trees at the start and each winter's end, grass under the trees, rich ground.
   const capR = Sim.SPECIES.rabbit.cap * w.room, trees = [w.treeCount], rich = [], shade = { wood: 0, open: 0, n: 0 };
   let capDays = 0, crashes = 0, recovered = 0, low = null;
+  const voles = [], voleNews = { boom: 0, bust: 0 };   // the meadow's voles at each season's end, and its vole years and crashes
   for (let k = 0; k < years * 4; k++) {
     let minR = 1e9, minF = 1e9;
     for (let i = 0; i < perSeason; i++) {
@@ -29,6 +30,7 @@ for (let s = 1; s <= seeds; s++) {
         if (e.type === 'swarm') swarms++;
         if (e.type === 'fireout') { fires++; burned = Math.max(burned, e.burned); }
         if (e.type === 'weather') sky[e.kind] = (sky[e.kind] || 0) + 1;
+        if (e.type === 'voles') voleNews[e.boom ? 'boom' : 'bust']++;
       }
       w.events.length = 0;
       minR = Math.min(minR, w.count.rabbit); minF = Math.min(minF, w.count.fox);
@@ -48,6 +50,7 @@ for (let s = 1; s <= seeds; s++) {
       shade.wood += nw ? gw / nw : 0; shade.open += no ? go / no : 0; shade.n++;
       rich.push(w.rich ? (100 * r / w.land).toFixed(1) + '%' : '-');
     }
+    voles.push(Math.round(w.voleCount));
     const grass = w.grass.reduce((a, b) => a + b, 0);
     rows.push(`${Sim.SEASONS[k % 4].name[0]}${Math.floor(k / 4) + 1}:${w.count.rabbit}/${w.count.fox}/${w.count.bee}` + (verbose ? `(g${grass.toFixed(0)} min${minR}/${minF})` : ''));
   }
@@ -62,4 +65,6 @@ for (let s = 1; s <= seeds; s++) {
   console.log('  rabbit coats', JSON.stringify(Sim.coatCounts(w)), ' surprise litters', surprises);
   console.log(`  ground  at cap ${capDays.toFixed(0)}/${years * Sim.SPECIES.rabbit.breedSeasons.length * Sim.SEASON_DAYS} breeding days  crashes ${crashes} recovered ${recovered}  trees ${trees.join(' ')}  summer grass wood ${(shade.wood / shade.n).toFixed(2)} open ${(shade.open / shade.n).toFixed(2)}  rich ${rich.join(' ')}`);
   for (let i = 0; i < rows.length; i += 8) console.log('  ' + rows.slice(i, i + 8).join('  '));
+  const eaten = w.stats.voles;
+  console.log(`  voles  ${voles.join(' ')}  eaten ${eaten} (${Math.round(100 * eaten / Math.max(1, eaten + kills))}% of fox meals)  fox hunger ${d.fox.hunger || 0}  vole years ${voleNews.boom} crashes ${voleNews.bust}`);
 }

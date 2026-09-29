@@ -156,6 +156,18 @@ and a tree that grows old may get a name (`oldName`), which the inspector and th
 Apple trees (`w.orchard`) drop windfalls early in autumn (`windfallTick`, `d.apples`), a big meal that hungry rabbits
 walk a way for (`windfall`), so the apple trees are where they gather in autumn, and where the foxes find them.
 
+Voles live in the long grass, too many and too small to be creatures: `w.voles` is how many are on each tile
+(`volesTick`, every `VOLE_EVERY` ticks). From spring to autumn they grow where the grass is long (`voleRoom`, up to
+`VOLE_K` a tile), spill over next door and fade where it's grazed short, so the rabbits keep them off the warrens;
+winter thins them, snow less. Floods and fire kill them, and they eat tree seedlings (`VOLE_SEEDS` in `treesTick`).
+A hungry fox with no rabbit in sight goes mousing (`mouse`: it steps softly to where they're thickest, listens,
+then pounces, `mode` 'mouse', 'pounce', 'gulp'); a vole is a snack (`VOLE_ENERGY`), so it takes several. A fox that
+last caught a vole (`c.prey`) sees rabbits only at `MOUSE_EYES` of its sight: that search image is what keeps the
+foxes the voles carry through a rabbit low from eating the last rabbits and dragging the low out. The drawing is a
+look only: now and then a 🐁 pops up out of the grass where they're thick (`drawVoles`, a fixed pool), and a pounce
+is a high arc (`hopOf`). The news tells of a vole year and the crash after it (`VOLE_BOOM`, `VOLE_BUST`), and the
+stats chart has their meadow-wide count (`w.history.voles`).
+
 Rocks are painted, not emoji (`rockInfo`, `rockSprite` in game.js): pebbles, stones and boulders by
 size (`TERRAIN.rockSize`), flat stones at the fords, and two or three great rocks per meadow
 (`TERRAIN.bigRocks`, `big: true`) that burrows keep clear of. Like a tree's, a rock's snow is a layer of its
