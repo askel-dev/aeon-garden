@@ -25,6 +25,11 @@ told to just do it.
   empty meadow (createWorld's `arrival` option, `planArrivals` in sim.js) where a family hops in at dawn,
   digs its burrow and turns in for the night, while the camera, the clock's pace and a caption at a time
   follow along in letterbox bars. It never steers the animals, it waits for them. Any key, click or scroll skips it.
+  Then the guide (`startGuide`, `guideTick`, a card bottom left with the news above it): three steps one at a time
+  (follow an animal, run time faster, open the ring), each waiting till it's done, then a notebook of things to try
+  (`TRIES`: lightning, fire, a fox, the weather, a tree, a year at 60×, the graphs) that tick off whenever they're done
+  (`tried`), a tap on one putting its tool in hand. It keeps what's done under `aeon-garden-tried`, comes back on later
+  visits till it's done or closed, and ••• "Things to try" opens it again.
   Left alone for a minute while it runs, with no card open (or on V, or ••• "Sit back and watch"), the meadow films
   itself (`startIdle`, `pickShot`, `idleFrame`): the intro's bars and lines, the cards faded away, shots that follow an
   animal or drift past a place, what just happened first (`idleNews`). A shot keeps one zoom and only pans, and the next

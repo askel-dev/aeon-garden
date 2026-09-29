@@ -120,7 +120,7 @@
   .card-actions .act.on { background: var(--accent-soft); color: #9a5024; }
 
   /* ---- news: a few short-lived toasts bottom left, the full log in the meadow card */
-  #news { position: fixed; left: var(--left); bottom: calc(var(--bar, 92px) + 8px); width: 330px; display: flex; flex-direction: column-reverse; gap: 5px; pointer-events: none; transition: bottom 0.35s ease; }
+  #news { position: fixed; left: var(--left); bottom: calc(var(--bar, 92px) + 8px + var(--guide-h, 0px)); width: 330px; display: flex; flex-direction: column-reverse; gap: 5px; pointer-events: none; transition: bottom 0.35s ease; }
   .news-item {
     align-self: flex-start; background: var(--paper, none) var(--card); border-radius: 12px; padding: 5px 11px; box-shadow: var(--edge), var(--shadow);
     font-size: 13px; line-height: 1.35; animation: pop-in 0.35s ease-out; transition: opacity 0.8s, transform 0.8s;
@@ -152,7 +152,8 @@
   @media (hover: hover) and (min-width: 761px) and (min-height: 501px) {
     body:not(.bar-away) #toolbar { animation: bar-in 0.45s cubic-bezier(0.22, 1, 0.36, 1); }
     body.bar-away #toolbar { transform: translate(-50%, calc(100% + 10px)); opacity: 0.6; transition: transform 0.25s ease-in, opacity 0.25s; }
-    body.bar-away #news { bottom: var(--bottom); }
+    body.bar-away #news { bottom: calc(var(--bottom) + var(--guide-h, 0px)); }
+    body.bar-away #guide { bottom: var(--bottom); }
   }
   @keyframes bar-in { from { opacity: 0; transform: translate(-50%, 14px); } }
   .tool {
@@ -262,7 +263,7 @@
 
   /* ---- welcome */
   /* the terrain lab (?lab) brings its own panel, see terrain-lab.js */
-  body.lab #meadow, body.lab #news, body.lab #toolbar, body.lab #hud-right, body.lab #ring { display: none; }
+  body.lab #meadow, body.lab #news, body.lab #guide, body.lab #toolbar, body.lab #hud-right, body.lab #ring { display: none; }
 
   #welcome { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(60, 70, 30, 0.28); z-index: 10; transition: opacity 0.7s ease; }
   #welcome.leaving { opacity: 0; pointer-events: none; }
@@ -342,6 +343,34 @@
   #away .go:hover { background: #44702f; }
   #away:not(.done) :is(.life, ul, .go) { display: none; }
 
+  /* ---- things to try (game.js, the guide): bottom left, the news toasts stacked above it */
+  #guide { left: var(--left); bottom: calc(var(--bar, 92px) + 8px); width: 320px; padding: 9px 10px 10px 14px; animation: pop-in 0.35s ease-out; transition: bottom 0.35s ease; }
+  .g-top { display: flex; align-items: center; gap: 6px; }
+  .g-step { flex: 1; font-size: 11px; font-weight: 800; letter-spacing: 0.8px; text-transform: uppercase; color: var(--muted); }
+  .g-skip, .g-x { flex: none; border: none; background: transparent; border-radius: 8px; color: var(--muted); font-weight: 800; font-size: 12.5px; padding: 3px 7px; }
+  .g-skip:hover, .g-x:hover { background: rgba(0,0,0,0.06); color: var(--ink); }
+  .g-line { margin: 3px 0 0; font-size: 15px; font-weight: 800; line-height: 1.3; animation: pop-in 0.35s ease-out; }
+  .g-line.done::after { content: ' ✓'; color: #4f8a35; font-weight: 900; }
+  .g-line kbd { font: 800 12px Nunito, ui-rounded, system-ui, sans-serif; padding: 1px 6px; border-radius: 5px; background: rgba(0,0,0,0.06); box-shadow: inset 0 -1px 0 rgba(0,0,0,0.15); }
+  .g-hint { margin: 2px 0 0; color: var(--muted); font-size: 12.5px; font-weight: 700; line-height: 1.3; }
+  .g-head { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; border: none; background: transparent; border-radius: 10px; padding: 2px 2px 2px 0; text-align: left; }
+  .g-title { flex: 1; font-size: 16px; font-weight: 650; white-space: nowrap; }
+  .g-count { color: var(--muted); font-weight: 800; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .g-head:hover .win-btn { background: rgba(0,0,0,0.06); }
+  .g-list { list-style: none; margin: 6px 0 0 -6px; padding: 0; }
+  .g-list button { display: grid; grid-template-columns: 24px 1fr 14px; gap: 8px; align-items: center; width: 100%; text-align: left; border: none; background: transparent; border-radius: 10px; padding: 4px 6px; }
+  .g-list button:hover { background: rgba(0,0,0,0.045); }
+  .g-list .e { font-size: 18px; text-align: center; }
+  .g-list b { display: block; font-weight: 800; font-size: 13.5px; line-height: 1.25; }
+  .g-list small { display: block; color: var(--muted); font-size: 12px; font-weight: 700; line-height: 1.25; }
+  .g-list .done b { color: var(--muted); text-decoration: line-through; text-decoration-color: rgba(90, 70, 40, 0.35); }
+  .g-list .done small { color: #4f7f3a; font-style: italic; }
+  .g-list .done .e { opacity: 0.6; }
+  .g-list .fresh { animation: tried 1.2s ease-out; }
+  .g-list .tick { color: #4f8a35; font-weight: 900; }
+  @keyframes tried { from { background: var(--accent-soft); } }
+  #guide.fold .g-list, #guide.fold .g-sub { display: none; }
+
   /* ---- the first visit's intro (game.js, startIntro): bars top and bottom, the story under the
      meadow a line at a time, and everything else away (hush) from the welcome card until it hands over */
   #intro { position: fixed; inset: 0; pointer-events: none; z-index: 9; --lb: clamp(36px, 9vh, 84px); }
@@ -357,8 +386,8 @@
     border: none; background: none; padding: 8px 4px; font: 800 13px Nunito, ui-rounded, system-ui, sans-serif; color: rgba(243, 231, 207, 0.5); cursor: pointer; }
   #intro .skip:hover { color: #f3e7cf; }
   body:not(.intro) #intro .skip { visibility: hidden; }
-  body.hush :is(#meadow, #news, #toolbar, #hud-right) { visibility: hidden; }
-  body.ui-in :is(#meadow, #news, #toolbar, #hud-right) { animation: ui-in 1s ease both; }
+  body.hush :is(#meadow, #news, #guide, #toolbar, #hud-right) { visibility: hidden; }
+  body.ui-in :is(#meadow, #news, #guide, #toolbar, #hud-right) { animation: ui-in 1s ease both; }
   @keyframes ui-in { from { opacity: 0; } }
   @media (prefers-reduced-motion: reduce) { #intro .bar, #intro .line, #welcome, #welcome .card { transition-duration: 0.01s; } }
   /* ---- the idle camera (game.js, startIdle): the intro's bars and lines, the cards faded away, and a dip to
@@ -366,7 +395,7 @@
   #intro .dip { position: absolute; inset: 0; background: #1d1a15; opacity: 0; transition: opacity 0.4s ease; }
   #intro .dip.on { opacity: 1; }
   body.idle #intro .bar { transform: none; }
-  body.idle :is(#meadow, #news, #toolbar, #hud-right) { opacity: 0; visibility: hidden; transition: opacity 1s ease, visibility 0s 1s; }
+  body.idle :is(#meadow, #news, #guide, #toolbar, #hud-right) { opacity: 0; visibility: hidden; transition: opacity 1s ease, visibility 0s 1s; }
   .hidden { display: none !important; }
 
   /* ---- the stats page, over everything */
@@ -442,7 +471,9 @@
     #meadow.mini ~ #hud-right { top: var(--top); }
     #meadow .evo, #meadow .evo-h { display: none; }
     .mini-line { gap: 10px; }
-    #news { bottom: var(--bottom); width: calc(100% - var(--left) - var(--right) - 60px); }   /* beside the tools' button */
+    #news { bottom: calc(var(--bottom) + var(--guide-h, 0px)); width: calc(100% - var(--left) - var(--right) - 60px); }   /* beside the tools' button */
+    #guide { bottom: var(--bottom); width: calc(100% - var(--left) - var(--right) - 60px); max-width: 360px; }
+    .g-list small { display: none; } .g-list .fresh small { display: block; }   /* no room for every hint: just what the last one said */
     #news-log ol { max-height: 30vh; }
     /* The tools fold into one round button in the bottom right, showing the one in your hand.
        Tap it and they rise above it, Look nearest the thumb; picking one folds them away again. */
@@ -495,14 +526,16 @@
     #inspector .ins-head { touch-action: none; }
     .close { font-size: 18px; padding: 8px 12px; margin: -8px -10px 0 auto; }
     body.inspecting:not(.ins-strip) #news { display: none; }  /* the sheet covers that corner anyway */
-    body.ins-strip #news { bottom: calc(var(--bottom) + 64px); }  /* over the folded line */
+    body.ins-strip #news { bottom: calc(var(--bottom) + 64px + var(--guide-h, 0px)); }  /* over the folded line */
+    body.inspecting:not(.ins-strip) #guide { display: none; }
+    body.ins-strip #guide { bottom: calc(var(--bottom) + 64px); }
   }
   /* ---- phones on their side: the inspector is a panel down the right, and the meadow keeps the middle.
      Open, the panel covers the tools' button; fold it or close it to get them back. */
   @media (max-height: 500px) {
     #meadow:not(.mini) { width: 280px; max-height: calc(100vh - var(--top) - var(--bottom)); overflow-y: auto; overscroll-behavior: contain; z-index: 4; }
     #meadow:not(.mini) ~ #hud-right, #hud-right { top: var(--top); left: auto; }
-    #news { width: min(330px, calc(100% - var(--left) - var(--right) - 60px)); }
+    #news, #guide { width: min(330px, calc(100% - var(--left) - var(--right) - 60px)); }
     /* too short for a column: the tools open in a row to the left of their button, Look nearest */
     #toolbar .tools { flex-direction: row-reverse; right: calc(100% + 8px); bottom: -1px; }
     #toolbar .tool { width: 46px; padding: 0; justify-content: center; }
@@ -597,6 +630,8 @@
 </section>
 
 <div id="news"></div>
+<!-- after the intro: three steps, then things to try (game.js, the guide) -->
+<aside id="guide" class="card hidden" aria-live="polite"></aside>
 
 <nav id="toolbar" class="card">
   <div class="tools">
@@ -636,6 +671,7 @@
     <button class="menu-item phone-only" data-act="stats">📊 Graphs and records</button>
     <button class="menu-item phone-only" data-act="sound" id="sound-item">🔇 Sound is off</button>
     <button class="menu-item hidden" data-act="home" id="home-item">📱 Add to your home screen</button>
+    <button class="menu-item" data-act="guide" title="A few things to do in the meadow, gentle and not">📓 Things to try</button>
     <button class="menu-item" data-act="watch" title="Let the meadow film itself, like when you leave it be (V)">🎥 Sit back and watch</button>
     <button class="menu-item" data-act="copy-link">🔗 Copy a link to this meadow</button>
     <button class="menu-item" data-act="ideas" title="Tell me what you'd love to see in the meadow">💌 Send an idea</button>

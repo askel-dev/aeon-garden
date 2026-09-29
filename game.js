@@ -2966,7 +2966,7 @@ function handleEvent(e) {
     case 'weather': {
       if (WET.has(e.kind) && !WET.has(e.prev)) chime('rain');
       const text = WEATHER_NEWS[e.kind];
-      if (e.player) addNews(text);
+      if (e.player) { addNews(text); tried('sky', SKY_SAID[e.kind]); }
       else if (e.kind === 'clear' || e.kind === 'cloudy') addNews(text, 'sky-calm', 40000);
       else addNews(text, 'sky', 12000);
       if (WET.has(e.prev) && (e.kind === 'clear' || e.kind === 'cloudy') && !S.isNight(world.tick)) {
@@ -2981,6 +2981,7 @@ function handleEvent(e) {
       hear('thunder', e.x, e.y, {}, true);
       addEffect('💥', e.x, e.y, 0.2, 800);
       if (e.tree && !e.fire) addNews('⚡ Lightning split a tree in two!', 'tree', 30000);
+      if (zapping) tried('zap', e.tree ? 'Crack! Lightning goes for the tallest tree about.' : 'Lightning likes trees. Try it by one.');
       break;
     case 'hivestruck':
       addNews(e.fell ? `🪵 <b>Queen ${esc(e.queen.name)}'s old tree has come down!</b> Her ${e.who.length} bees swarm out and hang in a tree nearby while scouts look for a new home.`
@@ -4503,6 +4504,7 @@ function release(species, wx, wy) {
   if (!out.length) return;
   const c = out[0];
   hear('release', wx, wy, { species });
+  if (species === 'fox' && tried('fox') && guide.on) select(c.id);   // the first one: go along and see
   addNews(out.length === 1
     ? `👋 You released ${link(c)}, a ${species === 'bee' ? 'worker' : c.sex === 'F' ? 'female' : 'male'} ${c.sp.name.toLowerCase()}.`
     : `👋 You released ${out.length} ${c.sp.plural.toLowerCase()}: ${linkList(out)}.`);
@@ -4636,7 +4638,7 @@ const canShare = !!navigator.share && matchMedia('(pointer: coarse)').matches;  
 function askTick(ms) {
   if (!IDEAS_KEY || LAB || played < 0 || document.hidden || intro.on || !$('#welcome').classList.contains('hidden')) return;
   if ((played += ms) < ASK_MS) return;
-  if (idle.on || ui.hush || ui.ring || ui.stats.open || ui.newsOpen || homeOpen() || awayOpen() || !$('#more-menu').classList.contains('hidden')) return;
+  if (idle.on || ui.hush || ui.ring || (guide.on && guide.step < GUIDE_STEPS) || ui.stats.open || ui.newsOpen || homeOpen() || awayOpen() || !$('#more-menu').classList.contains('hidden')) return;
   played = -Infinity;
   try { localStorage.setItem('aeon-garden-asked', '1'); } catch (e) { /* fine */ }
   askIdeas(true);
@@ -4731,6 +4733,7 @@ function burnAt(wx, wy) {
 
 function setFire(wx, wy) {
   hear('fire', wx, wy, {}, true);
+  tried('fire', world.wet > 0.7 ? 'Too wet to burn. Try it after a heatwave.' : '');
   addNews(world.wet > 0.7 ? '🔥 You drew a wall of fire, but the ground is too wet to burn.'
     : '🔥 <b>You drew a wall of fire.</b> Everyone near it runs. On dry grass it could spread.', 'firewall', 8000);
 }
@@ -4763,6 +4766,11 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'ideas') { played = -Infinity; askIdeas(true); }   // found it themselves: no need to ask
   else if (t.dataset.act === 'lab') openLab();
   else if (t.dataset.act === 'watch') startIdle();
+  else if (t.dataset.act === 'guide') { openGuide(); guideTick(performance.now()); }
+  else if (t.dataset.act === 'guide-shut') { shutGuide(); guideTick(performance.now()); }
+  else if (t.dataset.act === 'guide-skip') { Object.assign(guide, { step: GUIDE_STEPS, wait: 0 }); saveGuide(); guideTick(performance.now()); }
+  else if (t.dataset.act === 'guide-fold') { guide.fold = !guide.fold; guide.fresh = ''; saveGuide(); guideTick(performance.now()); }
+  else if (t.dataset.act?.startsWith('try:')) tryThing(t.dataset.act.slice(4));
   else if (t.dataset.act === 'home') homeGuide();
   else if (t.dataset.act === 'home-done') homeGuide(false);
   else if (t.dataset.act === 'home-install') install();
@@ -4991,20 +4999,160 @@ function hush(on) {
 function welcomeTips() {
   if (wantsHome()) {
     try { localStorage.setItem('aeon-garden-hometip', '1'); } catch (e) { /* fine */ }
-    afterHome = newsTips;
+    afterHome = firstSteps;
     setTimeout(() => homeGuide(true, true), 1200);      // once the bars are back
-  } else newsTips();
+  } else firstSteps();
 }
-function newsTips() {
-  const touch = matchMedia('(pointer: coarse)').matches, mum = intro.family[0];
-  const who = mum && mum.alive ? `${link(mum)}, or anyone else,` : 'any animal';
-  setTimeout(() => addNews(`👋 <b>Tip:</b> ${touch ? 'tap' : 'click'} ${who} to follow their life.`), 2500);
-  setTimeout(() => addNews(touch ? '🤏 <b>Tip:</b> pinch to zoom, drag to look around.' : '🖱️ <b>Tip:</b> scroll to zoom, drag to look around.'), 10000);
+function firstSteps() {
+  setTimeout(startGuide, 1200);
   setTimeout(() => { if (!ui.sound) addNews(narrow() ? '🔊 <b>Tip:</b> the meadow has quiet sounds. Turn them on in ••• at the top.'
-    : '🔊 <b>Tip:</b> the meadow has quiet sounds. Turn them on with 🔇 at the top right (M).'); }, 18000);
-  setTimeout(() => addNews(touch ? '🌦️ <b>Tip:</b> hold a finger on the meadow to add an animal, grow grass, change the weather or strike lightning right there.' + (narrow() ? ' The 🔍 in the corner keeps a tool in your hand.' : '')
-    : '🌦️ <b>Tip:</b> right-click the meadow to add animals, grow grass, change the weather or strike lightning. The toolbar waits at the bottom edge.'), 27000);
+    : '🔊 <b>Tip:</b> the meadow has quiet sounds. Turn them on with 🔇 at the top right (M).'); }, 40000);
 }
+
+// ------------------------------------------------------------------ things to try
+//
+// After the intro, three steps, one at a time: follow an animal, run time faster, open the ring. Then a
+// notebook of things to try, gentle and not, that tick off as they're done, and a tap on one puts its tool
+// in your hand. It only points: the meadow does the rest. What's done is kept (aeon-garden-tried), it comes
+// back on the next visit till it's done or closed, and ••• opens it again.
+
+const TRIES = [                          // what to try, a hint, and what it says once done
+  { k: 'zap', e: '⚡', text: 'Strike lightning on a tree', hint: 'On a dry day it starts a fire.' },
+  { k: 'fire', e: '🔥', text: 'Draw a wall of fire', hint: 'Drag it across the grass and see who runs.', said: 'The ash will feed fresh shoots.' },
+  { k: 'fox', e: '🦊', text: 'Let a fox loose by the rabbits', hint: 'They know what to do.', said: 'Run, rabbits!' },
+  { k: 'sky', e: '🌦️', text: 'Change the weather', hint: 'A heatwave dries the grass out for a fire.' },
+  { k: 'look', e: '🌳', text: 'Click a tree, a hive or a burrow', hint: 'Everything here has a story.', said: 'Rocks, flowers and water have theirs too.' },
+  { k: 'fast', e: '⏩', text: 'Watch a year go by at 60×', hint: 'The rabbits boom and crash.', said: 'The meadow keeps going while you’re away, too.' },
+  { k: 'stats', e: '📊', text: 'Look at the graphs', hint: 'Every birth, death and fire is counted.', said: 'The records keep the meadow’s oldest and biggest.' },
+];
+const SKY_SAID = {
+  clear: 'Lock it (🔒) and it stays.', cloudy: 'Lock it (🔒) and it stays.',
+  rain: 'Rain grows the grass three times as fast.', storm: 'A storm brings lightning of its own.',
+  fog: 'In fog a fox can’t see far.', heat: 'The grass dries out. A fire now would spread.',
+  snow: 'In winter snow freezes the water over, and foxes walk across.',
+};
+const GUIDE_STEPS = 3, GUIDE_BYE = 4000, GUIDE_KEY = 'aeon-garden-tried';   // the last tick shows this long before the goodbye
+const guide = { on: false, step: 0, tried: [], said: {}, fresh: '', shut: false, fold: false, auto: false, wait: 0, fast: 0, tickWas: 0, html: '', doneAt: 0 };
+try { Object.assign(guide, JSON.parse(localStorage.getItem(GUIDE_KEY) || '{}')); } catch (e) { /* fine */ }
+const guideDone = () => TRIES.every(t => guide.tried.includes(t.k));
+
+function saveGuide() {
+  const { step, tried, shut, fold, auto } = guide;
+  try { localStorage.setItem(GUIDE_KEY, JSON.stringify({ step, tried, shut, fold, auto })); } catch (e) { /* fine */ }
+}
+
+// A first visit starts it from the top; a later one only brings back what was left open.
+function startGuide(fresh = true) {
+  if (LAB) return;
+  if (fresh) Object.assign(guide, { step: 0, tried: [], said: {}, fresh: '', shut: false, fold: false, auto: true, wait: 0, fast: 0, doneAt: 0 });
+  else if (!guide.auto || guide.shut || guideDone()) return;
+  guide.on = true; guide.tickWas = world.tick;
+  saveGuide();
+}
+
+// From the ••• menu: the notebook, open.
+function openGuide() {
+  Object.assign(guide, { on: true, step: GUIDE_STEPS, shut: false, fold: false, doneAt: 0, tickWas: world.tick });
+  saveGuide();
+}
+
+function shutGuide() {
+  Object.assign(guide, { on: false, shut: true });
+  saveGuide();
+}
+
+// Something on the list was done. It counts whenever it's done, even with the notebook closed.
+function tried(k, said) {
+  if (guide.tried.includes(k) || intro.on || away.on || idle.on) return false;
+  guide.tried.push(k);
+  guide.said[k] = said || TRIES.find(t => t.k === k).said || '';
+  saveGuide();
+  if (guide.on && guide.step >= GUIDE_STEPS) {
+    guide.fresh = k;
+    chime('tick');
+    if (narrow()) { guide.fold = false; guide.freshAt = 0; }       // a phone opens it to show the tick, and folds it again below
+    if (guideDone()) guide.doneAt = performance.now();
+  }
+  return true;
+}
+
+// A tap on a line puts that thing in your hand.
+function tryThing(k) {
+  if (k === 'zap' || k === 'fire' || k === 'fox') { if (ui.tool !== k) setTool(k); }
+  else if (k === 'look') setTool('look');
+  else if (k === 'sky') toggleSkyMenu(true);
+  else if (k === 'fast') setSpeed(60);
+  else if (k === 'stats') toggleStats(true);
+  if (narrow() && k !== 'sky') { guide.fold = true; saveGuide(); }   // out of the way of the meadow
+  guideTick(performance.now());
+}
+
+// A few times a second (the cards' beat): the steps wait for what they ask, and a few things on the list
+// are easier to see done than to catch.
+function guideTick(now) {
+  const show = guide.on && !intro.on && !away.on;
+  if ($('#guide').classList.contains('hidden') === show) $('#guide').classList.toggle('hidden', !show);
+  if (!show || idle.on) { guide.tickWas = world.tick; return; }
+  if (ui.picked) tried('look');
+  if (ui.stats.open) tried('stats');
+  const ran = world.tick - guide.tickWas;
+  guide.tickWas = world.tick;
+  if (ui.speed === 60 && ran > 0 && (guide.fast += ran) >= S.YEAR_DAYS * S.TPD) tried('fast');
+
+  if (guide.step < GUIDE_STEPS) {
+    const done = [() => world.byId.has(ui.selectedId), () => ui.speed >= 4, () => !!ui.ring || ui.tool !== 'look'][guide.step]();
+    if (done && !guide.wait) guide.wait = now + (guide.step < GUIDE_STEPS - 1 ? 1600 : 400);
+    if (guide.wait && now >= guide.wait) {
+      guide.wait = 0; guide.step++;
+      saveGuide();
+      chime('tick');
+    }
+  }
+  if (guide.doneAt && now - guide.doneAt > GUIDE_BYE + 12000) { shutGuide(); guideTick(now); return; }
+  if (guide.fresh && narrow() && !guide.fold && now - (guide.freshAt ||= now) > 5000) { guide.fold = true; guide.fresh = ''; guide.freshAt = 0; saveGuide(); }
+  renderGuide(now);
+}
+
+function renderGuide(now) {
+  const box = $('#guide'), touch = matchMedia('(pointer: coarse)').matches;
+  let html;
+  if (guide.step < GUIDE_STEPS) {
+    const mum = intro.family[0], click = touch ? 'Tap' : 'Click';
+    const steps = [
+      [mum && mum.alive ? `${click} ${link(mum)} to follow her.` : `${click} any animal to follow their life.`,
+        touch ? 'Pinch to zoom, drag to look around.' : 'Scroll to zoom, drag to look around.'],
+      [touch ? 'Time can run faster. Tap <b>1×</b> at the top.' : 'Time can run faster. Press <kbd>3</kbd>, or pick <b>15×</b> at the top.',
+        touch ? '⏸ stops it.' : 'Space stops it.'],
+      [touch ? 'Now hold a finger on the meadow.' : 'Now right-click anywhere on the meadow.', 'That’s where you change things.'],
+    ];
+    const [line, hint] = steps[guide.step];
+    html = `<div class="g-top"><span class="g-step">${guide.step + 1} of ${GUIDE_STEPS}</span><button class="g-skip" data-act="guide-skip">Skip</button></div>
+      <p class="g-line${guide.wait ? ' done' : ''}" data-step="${guide.step}">${line}</p><p class="g-hint">${hint}</p>`;
+  } else if (guide.doneAt && now - guide.doneAt > GUIDE_BYE) {
+    html = `<div class="g-top"><b class="g-title fr">📓 That’s all of them</b><button class="g-x" data-act="guide-shut" aria-label="Close">✕</button></div>
+      <p class="g-hint">Now sit back. The meadow gets on with it, whether you watch or not.</p>`;
+  } else {
+    const n = guide.tried.length;
+    html = `<div class="g-top"><button class="g-head" data-act="guide-fold" aria-expanded="${!guide.fold}"><b class="g-title fr">📓 Things to try</b>
+        <span class="g-count">${n} of ${TRIES.length}</span><span class="win-btn${guide.fold ? ' grow' : ''}" aria-hidden="true"></span></button>
+        <button class="g-x" data-act="guide-shut" aria-label="Close" title="Close. ••• opens it again">✕</button></div>
+      ${n ? '' : '<p class="g-hint g-sub">Your turn. The meadow can take it.</p>'}
+      <ul class="g-list">${TRIES.map(t => {
+        const done = guide.tried.includes(t.k), said = done && guide.said[t.k];
+        const text = t.k === 'look' && touch ? t.text.replace('Click', 'Tap') : t.text;
+        return `<li><button class="${done ? 'done' : ''}${guide.fresh === t.k ? ' fresh' : ''}" data-act="try:${t.k}"><span class="e">${t.e}</span>
+          <span><b>${text}</b>${done ? (said ? `<small>${said}</small>` : '') : `<small>${t.hint}</small>`}</span><span class="tick">${done ? '✓' : ''}</span></button></li>`;
+      }).join('')}</ul>`;
+  }
+  box.classList.toggle('fold', guide.fold && guide.step >= GUIDE_STEPS && !(guide.doneAt && now - guide.doneAt > GUIDE_BYE));
+  if (html !== guide.html) { box.innerHTML = html; guide.html = html; }
+}
+
+// The news toasts sit above it, however tall it is.
+new ResizeObserver(() => {
+  const h = $('#guide').offsetHeight;
+  document.body.style.setProperty('--guide-h', h ? h + 8 + 'px' : '0px');
+}).observe($('#guide'));
 
 // ------------------------------------------------------------------ the idle camera
 //
@@ -5551,6 +5699,7 @@ function frame(now) {
 
   if (now - lastCard > 250) {
     askTick(Math.min(now - lastCard, 1000));
+    guideTick(now);
     lastCard = now;
     if (idleMayStart(now)) startIdle(now);
     if (idle.on && Date.now() - keptWhen > KEEP_IDLE_MS) keepMeadow();
@@ -5626,7 +5775,7 @@ function begin(rec) {
     hush(true);                                         // nothing to count yet: the bars and cards wait
     setSpeed(0);
     if (world.family && !calm) introShot();
-  } else homeTip(30000);
+  } else { homeTip(30000); setTimeout(() => startGuide(false), 2500); }
   if (back && !rec.paused && Date.now() - rec.at > AWAY_MIN) startAway();
   requestAnimationFrame(frame);
 }
