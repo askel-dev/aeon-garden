@@ -25,10 +25,11 @@ const meadowLink = seed => '?seed=' + seed + terrainQuery();   // the address of
 // nothing to agree to). Off until COUNTER holds the site's code: sign up there, pick a code, put it
 // here. A link posted as meadow.cryptoler.net/?ref=reddit is counted as coming from "reddit". The
 // counter looks at the address a moment after the game has made it ?seed=.., so it's told the page
-// and where they came from here. Every visit is the one page, whichever meadow it opens.
-const COUNTER = '';                        // e.g. 'nobodys-meadow', for nobodys-meadow.goatcounter.com
+// and where they came from here. Every visit is the one page, whichever meadow it opens: /meadow, as
+// the one counter may count cryptoler.net's own pages too.
+const COUNTER = 'cryptoler';               // cryptoler.goatcounter.com
 if (COUNTER && !['localhost', '127.0.0.1'].includes(location.hostname)) {
-  window.goatcounter = { path: LAB ? '/lab' : '/', referrer: params.get('ref') || params.get('utm_source') || document.referrer };
+  window.goatcounter = { path: LAB ? '/meadow/lab' : '/meadow', referrer: params.get('ref') || params.get('utm_source') || document.referrer };
   const js = document.createElement('script');
   js.async = true; js.src = 'https://gc.zgo.at/count.js';
   js.dataset.goatcounter = `https://${COUNTER}.goatcounter.com/count`;

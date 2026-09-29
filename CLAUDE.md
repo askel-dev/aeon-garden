@@ -34,7 +34,8 @@ told to just do it.
   The next visit opens it where it was (`resumeWorld`): the bare address the one watched last, a `?seed=` link its
   own. Back after `AWAY_MIN` it runs on a season, drawing nothing (days would flicker), behind a card that then says
   what happened (`startAway`, `awayFrame`). The ••• menu shares the link (a phone's share sheet) and takes ideas
-  (the `#ask` card). `COUNTER` turns on GoatCounter (no cookies) once it holds the site's code; `?ref=` says where from.
+  (the `#ask` card). Visits are counted by GoatCounter (`COUNTER`: cryptoler.goatcounter.com, no cookies), all as the
+  page `/meadow` whatever the seed, and a link posted with `?ref=reddit` says where they came from.
 - `ground.js`: the ground (grass, earth, shores, water) as a WebGL shader, painted from a
   few small textures of one texel a tile that game.js keeps up to date (`paintTerrain`, `updateWater`).
   It paints again only when a texture, the zoom or the light has moved (`steady`), and at most at 2x
