@@ -12,7 +12,10 @@ closed); none of that project's rules apply here.
 found, the options, what you'd recommend) and wait for a go-ahead before editing code, unless
 told to just do it.
 
-- `sim.js`: the world. No drawing. Runs in the browser and under node.
+- `sim.js`: the world. No drawing. Runs in the browser and under node. `packWorld` / `unpackWorld` turn a
+  world into plain data and back, for keeping it between visits (the tables like `SPECIES` go by name, the
+  random numbers as where they'd got to). A change a kept meadow can't take (a new field on the world, a
+  creature, a hive or a tree that the code counts on) bumps `KEEP_VERSION`, and players' kept meadows start over.
 - `game.js`: drawing, UI, news feed, the inspector, the optional Ollama diary. The inspector shows
   animals and every other thing you click (hives, trees, rocks, burrows, flowers, fields, water): each
   kind is an entry in `THINGS`, saying how to find one on screen and what its panel shows.
@@ -26,6 +29,13 @@ told to just do it.
   itself (`startIdle`, `pickShot`, `idleFrame`): the intro's bars and lines, the cards faded away, shots that follow an
   animal or drift past a place, what just happened first (`idleNews`). A shot keeps one zoom and only pans, and the next
   comes after a dip to dark or a glide. Any key, click, scroll or mouse move hands it back, the camera staying put.
+  The meadow is kept in the browser when the page is hidden or closed, and while it films itself (`keepMeadow`:
+  IndexedDB, under its link, the last `KEEP_MEADOWS`), never on a timer while someone watches (a save is a few frames).
+  The next visit opens it where it was (`resumeWorld`): the bare address the one watched last, a `?seed=` link its
+  own. Back after `AWAY_MIN` it runs on a season, drawing nothing (days would flicker), behind a card that then says
+  what happened (`startAway`, `awayFrame`). The ••• menu shares the link (a phone's share sheet) and takes ideas
+  (the `#ask` card). Visits are counted by GoatCounter (`COUNTER`: cryptoler.goatcounter.com, no cookies), all as the
+  page `/meadow` whatever the seed, and a link posted with `?ref=reddit` says where they came from.
 - `ground.js`: the ground (grass, earth, shores, water) as a WebGL shader, painted from a
   few small textures of one texel a tile that game.js keeps up to date (`paintTerrain`, `updateWater`).
   It paints again only when a texture, the zoom or the light has moved (`steady`), and at most at 2x
@@ -80,6 +90,8 @@ told to just do it.
   (one per line, with a comment) and get a slider in the lab's `GROUPS`. You can also draw water,
   rivers and woods there; the drawing is createWorld's `drawn` option (`readDrawn`), carved by the
   same code as generated water, and travels in the link after the `#` (`drawnToLink`: a server turns a long `?query` away).
+  On a phone the three cards become one sheet with tabs (`place`, `openTab`: Draw, Tune, View, Seeds), folded to the
+  seed and the tabs, and two fingers pinch the map whatever the pen.
 
 Run: `python3 -m http.server 8765`, then open http://localhost:8765 (`?seed=123` replays
 a meadow).

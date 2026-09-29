@@ -64,6 +64,10 @@ Every meadow is different: a river, a lake or both, a few ponds, woods, great ro
 Keys: <kbd>Space</kbd> pause, <kbd>1</kbd>–<kbd>4</kbd> speed, <kbd>S</kbd> stats, <kbd>N</kbd> news, <kbd>W</kbd> weather,
 <kbd>K</kbd> lock the weather, <kbd>F</kbd> follow, <kbd>M</kbd> sound, <kbd>P</kbd> copy the meadow as a picture, <kbd>Esc</kbd> close.
 
+Your meadow is kept in your browser. Close it and come back, and it's where you left it. If you've been away a
+while, a season has passed, and a card tells you what happened. The ••• menu shares a link to your meadow, or sends me
+an idea.
+
 It runs on phones too. Add it to your home screen and it opens like an app.
 
 ## Running it yourself

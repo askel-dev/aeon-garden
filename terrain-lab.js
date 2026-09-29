@@ -129,6 +129,8 @@ const drawnHash = () => hasDrawing() ? '#' + S.drawnToLink(drawn) : '';   // aft
 
 const changes = () => Object.keys(DEF).filter(k => !same(t[k], DEF[k]));
 const diff = () => Object.fromEntries(changes().map(k => [k, t[k]]));
+// This meadow in the game: with its animals, the numbers you changed and what you drew.
+const gameLink = () => `./?seed=${seed}${changes().length ? '&terrain=' + encodeURIComponent(JSON.stringify(diff())) : ''}${drawnHash()}`;
 
 // ------------------------------------------------------------------ the panel
 
@@ -209,9 +211,47 @@ style.textContent = `
   #lab-code pre { margin: 0; overflow: auto; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font-size: 12px; line-height: 1.45; }
   #lab-code mark { background: var(--accent-soft); color: #9a5024; border-radius: 3px; }
   #lab-code .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }
-  @media (max-width: 760px) {
-    #lab-panel { bottom: auto; max-height: 55vh; width: calc(100% - var(--left) - var(--right)); }
-    #lab-view, #lab-strip { display: none; }
+
+  /* Phones: one sheet (#lab-sheet) instead of the three cards, holding them in tabs; see place().
+     Folded it's the seed and the tabs; a tab opens it, the open tab or the handle folds it. */
+  #lab-sheet { display: none; }
+  @media (max-width: 760px), (max-height: 500px) {
+    #lab-panel { display: none; }
+    #lab-sheet { display: flex; flex-direction: column; left: var(--left); right: var(--right); bottom: var(--bottom); max-height: 62vh; padding: 0 12px 10px; z-index: 3; }
+    .lab-handle { flex: none; width: 100%; height: 20px; border: none; background: none; position: relative; touch-action: none; }
+    .lab-handle::before { content: ''; position: absolute; left: 50%; top: 7px; width: 40px; height: 5px; margin-left: -20px; border-radius: 99px; background: #d9ccb4; }
+    .lab-seed .lab-btn, .lab-seed input { min-height: 38px; }
+    .lab-tabs { display: flex; gap: 4px; margin-top: 8px; }
+    .lab-tabs .lab-btn { flex: 1 1 0; min-width: 0; padding: 7px 2px; font-size: 13px; white-space: nowrap; }
+    .lab-pane { display: none; min-height: 0; margin-top: 10px; overflow-y: auto; overscroll-behavior: contain; }
+    #lab-sheet[data-open="draw"] [data-pane="draw"], #lab-sheet[data-open="view"] [data-pane="view"],
+    #lab-sheet[data-open="seeds"] [data-pane="seeds"] { display: block; }
+    #lab-sheet[data-open="numbers"] [data-pane="numbers"] { display: flex; flex-direction: column; overflow: hidden; }
+    #lab-sheet .lab-draw { margin-top: 0; }
+    #lab-sheet #lab-groups { padding: 0 2px; }
+    #lab-sheet footer { padding: 8px 0 0; }
+    #lab-sheet #lab-changes { max-height: 3.6em; }
+    #lab-sheet #lab-view, #lab-sheet #lab-strip { position: static; width: auto; padding: 0; background: none; box-shadow: none; }
+    #lab-sheet #lab-strip { margin-top: 10px; }
+    #lab-sheet #lab-strip .thumb { flex: 0 0 132px; max-width: none; }
+    #lab-sheet h1 { font-size: 16px; font-weight: 900; margin: 0; }
+    #lab-sheet h1 small { font-weight: 700; color: var(--muted); font-size: 12px; margin-left: 6px; }
+    body.lab-hide #lab-sheet { display: none; }
+  }
+  /* on their side: a panel down the right, just the top of it while folded */
+  @media (max-height: 500px) {
+    #lab-sheet { left: auto; top: var(--top); bottom: auto; width: min(340px, 46vw); max-height: none; padding-top: 10px; }
+    #lab-sheet:not(.fold) { bottom: var(--bottom); }
+    #lab-sheet[data-open] .lab-pane { flex: 1; }
+    .lab-handle { display: none; }
+  }
+  /* fingers: bigger buttons and slider thumbs, and no keys to tell of */
+  @media (pointer: coarse) {
+    .lab-btn { padding: 7px 10px; }
+    .lab-draw .pens .lab-btn, .lab-draw .pen-row .lab-btn, .lab-row .choices .lab-btn, #lab-view .seg .lab-btn { font-size: 13px; padding: 7px 10px; }
+    .lab-row input[type=range], .lab-draw label input { height: 30px; }
+    .lab-row .reset { padding: 4px 8px; font-size: 16px; }
+    #lab-keys { display: none; }
   }
 `;
 document.head.append(style);
@@ -220,7 +260,7 @@ const panel = document.createElement('section');
 panel.id = 'lab-panel'; panel.className = 'card';
 panel.innerHTML = `
   <header>
-    <h1>🗺️ Terrain lab <small><a href="./" style="color:inherit">back to the game</a></small></h1>
+    <h1>🗺️ Terrain lab <small><a id="lab-back" href="./" style="color:inherit">back to the game</a></small></h1>
     <div class="lab-seed">
       <button class="lab-btn" data-seed="-1" title="Previous seed (←)">←</button>
       <input id="lab-seed" type="number" title="Seed: the same seed and settings always make the same meadow">
@@ -271,6 +311,68 @@ document.body.append(viewCard);
 const strip = document.createElement('section');
 strip.id = 'lab-strip'; strip.className = 'card';
 document.body.append(strip);
+
+// ------------------------------------------------------------------ on a phone: one sheet
+
+const PHONE = matchMedia('(max-width: 760px), (max-height: 500px)'), SIDE = matchMedia('(max-height: 500px)');
+const TOUCH = matchMedia('(pointer: coarse)').matches;
+const TABS = [['draw', '✏️ Draw'], ['numbers', '🎚️ Tune'], ['view', '🗺️ View'], ['seeds', '🎲 Seeds']];
+const sheet = document.createElement('section');
+sheet.id = 'lab-sheet'; sheet.className = 'card';
+sheet.innerHTML = `
+  <button class="lab-handle" data-tab="" aria-label="Open or fold the lab"></button>
+  <div class="lab-top"></div>
+  <div class="lab-tabs">${TABS.map(([k, l]) => `<button class="lab-btn" data-tab="${k}">${l}</button>`).join('')}</div>
+  ${TABS.map(([k]) => `<div class="lab-pane" data-pane="${k}"></div>`).join('')}`;
+document.body.append(sheet);
+const parts = {
+  header: panel.querySelector('header'), title: panel.querySelector('h1'), seed: panel.querySelector('.lab-seed'),
+  info: $('#lab-info'), draw: panel.querySelector('.lab-draw'), groups: $('#lab-groups'), footer: panel.querySelector('footer'),
+};
+let tab = 'draw';
+try { tab = localStorage.getItem('aeon-garden-lab-tab') || tab; } catch (e) { /* fine */ }
+
+// The same controls, moved into the sheet on a phone and back into the cards on a bigger screen.
+function place() {
+  const p = parts, pane = k => sheet.querySelector(`[data-pane="${k}"]`);
+  if (PHONE.matches) {
+    sheet.querySelector('.lab-top').append(p.seed);
+    pane('draw').append(p.draw);
+    pane('numbers').append(p.groups, p.footer);
+    pane('view').append(viewCard);
+    pane('seeds').append(p.title, p.info, strip);
+  } else {
+    p.header.append(p.title, p.seed, p.info, p.draw);
+    panel.append(p.groups, p.footer);
+    document.body.append(viewCard, strip);
+  }
+  measure();
+}
+
+function openTab(k) {                      // '' folds it
+  if (k) { tab = k; try { localStorage.setItem('aeon-garden-lab-tab', k); } catch (e) { /* fine */ } }
+  if (k) sheet.dataset.open = k; else delete sheet.dataset.open;
+  sheet.classList.toggle('fold', !k);
+  sheet.querySelectorAll('.lab-tabs [data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === k));
+  measure();
+}
+sheet.addEventListener('click', e => {
+  const b = e.target.closest('[data-tab]');
+  if (!b) return;
+  const k = b.dataset.tab || tab;
+  openTab(sheet.dataset.open === k || (!b.dataset.tab && sheet.dataset.open) ? '' : k);
+});
+
+// What the sheet hides, so the camera may look past it.
+function measure() {
+  const r = sheet.getBoundingClientRect(), cover = lab.cover;
+  cover.bottom = PHONE.matches && !SIDE.matches ? Math.max(0, innerHeight - r.top) : 0;
+  cover.right = PHONE.matches && SIDE.matches && sheet.dataset.open ? Math.max(0, innerWidth - r.left) : 0;
+  lab.clampCam();
+}
+new ResizeObserver(measure).observe(sheet);
+PHONE.addEventListener('change', place);
+SIDE.addEventListener('change', measure);
 
 const fmt = (v, step) => {
   const d = step < 1 ? String(step).split('.')[1].length : 0;
@@ -338,7 +440,7 @@ function syncControls() {
 }
 
 const PEN_HINTS = {
-  look: 'Drag to move the map, scroll to zoom. Pick a pen to draw.',
+  look: `Drag to move the map, ${TOUCH ? 'pinch' : 'scroll'} to zoom. Pick a pen to draw.`,
   water: 'Drag to paint water. Small patches become ponds, big ones lakes.',
   river: 'Drag along where the river should run. Let go near the edge and it flows off the map.',
   woods: 'Drag to paint woods: pines up on the hills, broadleaf lower down.',
@@ -350,7 +452,7 @@ function syncPens() {
   $('#lab-depth-row').hidden = pen !== 'water';
   $('#lab-brush').value = brush; $('#lab-brush-v').textContent = `${brush} tiles`;
   $('#lab-depth').value = depth; $('#lab-depth-v').textContent = depth < t.deepAt ? `${depth} · wading` : `${depth}`;
-  $('#lab-pen-hint').textContent = PEN_HINTS[pen] + (pen === 'look' ? '' : ' Right-drag moves the map.');
+  $('#lab-pen-hint').textContent = PEN_HINTS[pen] + (pen === 'look' ? '' : TOUCH ? ' Two fingers move the map.' : ' Right-drag moves the map.');
   const e = $('[data-draw="empty"]');
   e.textContent = (drawn.empty ? '☑' : '☐') + ' Start empty';
   e.classList.toggle('on', drawn.empty);
@@ -403,6 +505,7 @@ function remake() {
   if (view !== 'meadow') q.set('view', view);
   if (season) q.set('season', season);
   if (!stroke) history.replaceState(null, '', '?' + q.toString().replace('lab=', 'lab') + drawnHash());   // not mid-stroke: Safari allows only so many
+  $('#lab-back').href = gameLink();
   document.querySelectorAll('#lab-strip .thumb').forEach(b => b.classList.toggle('on', +b.dataset.pick === seed));
 }
 
@@ -645,26 +748,50 @@ function setView(v) {
   changed();
 }
 
-// What's under the mouse.
-const HOVER_HINT = '<span style="color:var(--muted)">Point at the meadow to read a tile.</span>';
-$('#world').addEventListener('mousemove', e => {
-  const [x, y] = lab.toWorld(e.clientX, e.clientY), w = G.world;
+// What's under the mouse, or the finger that last touched the meadow.
+const HOVER_HINT = `<span style="color:var(--muted)">${TOUCH ? 'Tap' : 'Point at'} the meadow to read a tile.</span>`;
+$('#world').addEventListener('mousemove', e => readTile(e.clientX, e.clientY));
+function readTile(sx, sy) {
+  const [x, y] = lab.toWorld(sx, sy), w = G.world;
   if (x < 0 || y < 0 || x >= S.W || y >= S.H) { $('#lab-hover').innerHTML = HOVER_HINT; return; }
   const i = (y | 0) * S.W + (x | 0), h = w.ground[i], body = w.body[i] >= 0 ? w.waters[w.body[i]] : null;
   const where = `<b>${x | 0}, ${y | 0}</b>`;
   $('#lab-hover').innerHTML = w.water[i]
     ? `${where} · ${esc(body?.name ?? 'water')} (${body?.kind}, ${body?.size} tiles)<br>${(w.level - h).toFixed(2)} deep · ${w.water[i] === S.DEEP ? 'too deep to wade' : 'can be waded'}`
     : `${where} · height <b>${(h - w.level).toFixed(2)}</b> above the water<br>soil <b>${w.fert[i].toFixed(2)}</b> · ${near ? near[i].toFixed(1) : '?'} tiles to water${w.wood[i] > 0.05 ? ` · shade ${w.wood[i].toFixed(2)}` : ''}`;
-});
+}
 
 // ------------------------------------------------------------------ drawing
 //
 // These listen before the game does: with a pen, a left-drag draws instead of moving the map,
-// and a right-drag moves the map whatever the pen.
+// and a right-drag, or two fingers, move the map whatever the pen (with no pen the game does that).
 
 const canvas = $('#world');
+const touches = new Map();
+let pinch = null;
+function startPinch() {
+  const [a, b] = touches.values(), [wx, wy] = lab.toWorld((a.x + b.x) / 2, (a.y + b.y) / 2);
+  pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, zoom: G.cam.zoom, wx, wy };
+  G.cam.goal = null;
+}
+function movePinch() {                     // the spot between the fingers stays under them
+  const [a, b] = touches.values(), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+  G.cam.zoom = clamp(pinch.zoom * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d, lab.minZoom, 64);
+  const [x, y] = lab.toWorld(mx, my);
+  G.cam.x += pinch.wx - x; G.cam.y += pinch.wy - y;
+  lab.clampCam();
+}
+
 addEventListener('pointerdown', e => {
   if (e.target !== canvas) return;
+  readTile(e.clientX, e.clientY);
+  if (e.pointerType === 'touch') touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pinch || (touches.size >= 2 && pen !== 'look')) {
+    e.stopPropagation();
+    if (stroke) { stroke = null; setDrawn(JSON.parse(undo.pop())); }   // the first finger wasn't drawing after all
+    if (touches.size === 2) startPinch();
+    return;
+  }
   if (e.button === 2) { e.stopPropagation(); panning = { x: e.clientX, y: e.clientY, cx: G.cam.x, cy: G.cam.y }; return; }
   if (pen === 'look' || e.button !== 0) return;
   e.stopPropagation();
@@ -675,6 +802,8 @@ addEventListener('pointerdown', e => {
   strokeTo(...lab.toWorld(e.clientX, e.clientY));
 }, true);
 addEventListener('pointermove', e => {
+  if (touches.has(e.pointerId)) touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pinch) { e.stopPropagation(); movePinch(); return; }
   cursor = e.target === canvas || stroke ? lab.toWorld(e.clientX, e.clientY) : null;
   if (panning) {
     e.stopPropagation();
@@ -687,6 +816,12 @@ addEventListener('pointermove', e => {
 }, true);
 for (const type of ['pointerup', 'pointercancel']) {
   addEventListener(type, e => {
+    if (e.pointerType === 'touch') { touches.delete(e.pointerId); cursor = null; }   // no brush left hanging where a finger was
+    if (pinch) {
+      e.stopPropagation();
+      if (touches.size >= 2) startPinch(); else pinch = null;
+      return;
+    }
     if (panning) { e.stopPropagation(); panning = null; return; }
     if (!stroke) return;
     e.stopPropagation();
@@ -851,8 +986,8 @@ document.addEventListener('click', e => {
   else if (b.dataset.do === 'code') showCode();
   else if (b.dataset.do === 'reset') { Object.assign(t, clone(DEF)); changed(); }
   else if (b.dataset.do === 'play') {
-    const q = changes().length ? '&terrain=' + encodeURIComponent(JSON.stringify(diff())) : '';
-    open(`./?seed=${seed}${q}${drawnHash()}`, '_blank');
+    if (G.installed()) location.href = gameLink();   // on the home screen a new tab would leave the app
+    else open(gameLink(), '_blank');
   }
 });
 $('#lab-seed').addEventListener('change', e => setSeed(+e.target.value));
@@ -892,6 +1027,8 @@ addEventListener('blur', () => { peek = false; });
 // ------------------------------------------------------------------ start
 
 buildGroups();
+place();
+openTab('');
 $('#lab-hover').innerHTML = HOVER_HINT;
 setView(VIEWS.some(v => v[0] === view) ? view : 'meadow');
 drawStrip();
