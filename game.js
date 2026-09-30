@@ -5206,6 +5206,7 @@ canvas.addEventListener('pointermove', e => {
   if (pinch) { movePinch(); return; }
   if (intro.on) return;
   if (!drag) {
+    if (e.pointerType !== 'mouse') return;   // a finger paints no hover label: it would stick to the last spot it touched
     const c = creatureAt(e.clientX, e.clientY);
     ui.hoverId = c ? c.id : 0;
     ui.hoverHive = c ? null : hiveAt(e.clientX, e.clientY);
@@ -5247,7 +5248,7 @@ canvas.addEventListener('pointercancel', e => {
 });
 // Safari ignores the viewport's no-zoom, and a zoomed page makes the whole meadow blurry.
 document.addEventListener('gesturestart', e => e.preventDefault());
-canvas.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') { ui.hoverId = 0; ui.hoverHive = null; } });   // a lifted finger leaves too
+canvas.addEventListener('pointerleave', () => { ui.hoverId = 0; ui.hoverHive = null });   // a lifted finger leaves too, and so does a dragged one that strays off the glass
 canvas.addEventListener('contextmenu', e => { e.preventDefault(); if (!LAB && !ui.ring) openRing(e.clientX, e.clientY); });   // Android's long-press sends one too
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
