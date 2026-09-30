@@ -6531,7 +6531,7 @@ function frame(now) {
     updateMeadowCard();
     if (ui.sound) {
       const ck = S.clock(world);
-      const life = world.count.rabbit / (S.SPECIES.rabbit.cap * world.room);
+      const life = world.count.rabbit / (S.CROWDED * world.room);   // a crowded meadow, not the cap (only a safety net now)
       Sound.update({ phase: ck.phase, season: ck.season, speed: ui.speed, sky: ui.sky.mix, fire: world.burning.length, bees: beesOnScreen(), life, owls: world.count.owl || 0,
         frogs: world.spawnCount > 0 && ck.season === 0 ? Math.min(1, world.spawnCount / 300) : 0 });
     }

@@ -2471,6 +2471,7 @@ const BURROW_CATCH = 0.1;       // odds a check, for each sick rabbit in its bur
 const OPEN_CATCH = 0.06;        // odds a check that a sick rabbit out in the open gives it to each one close by
 const CONTACT = 5;              // close by: within this many tiles
 const FIRST_CASE = 0.3;         // odds a day of a first case, with nobody sick, in a crowded meadow
+const CALM_YEARS = 1;           // and none in a meadow's first year: a newcomer meets the meadow before its troubles
 const SICK_DAYS = [4, 6];       // how long it lasts
 const SICK_BURN = 1.5;          // the fever burns this many times the energy
 const SICK_PACE = 0.75;         // a sick rabbit walks and runs this much as fast
@@ -2526,7 +2527,7 @@ function sicknessTick(w) {
     if (!c.hidden) forEachNear(w, c.x, c.y, CONTACT, pass, 'rabbit');
   }
   w.sick = sick;
-  if (!sick && w.count.rabbit && w.rng.next() < FIRST_CASE * crowd * day) {
+  if (!sick && w.count.rabbit && w.tick >= CALM_YEARS * YEAR && w.rng.next() < FIRST_CASE * crowd * day) {
     const c = w.rng.pick(w.creatures);
     if (c.alive && c.species === 'rabbit' && canCatch(w, c)) fallIll(w, c);
   }
