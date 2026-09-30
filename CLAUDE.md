@@ -243,10 +243,10 @@ At dusk they all fly to one big tree (`w.roost`, `pickRoost`); in spring a mum s
 `c.home`) and the chicks stay hidden in the nest till they fledge (`FLEDGE`). A fox that comes close sends them flapping up,
 the others with them (`flapUp`, `caw`), but one busy on the ground may not see it in time: a small meal for the fox
 (`CROW_MEAL`) that changes neither its search image nor its haunt. Foxes don't eat remains (tried: it fed them through the
-rabbits' lows). game.js paints a dead rabbit in its coat (`paintBody`), lying on its side with its eyes closed,
-in four stages as the meat goes (`BODY_STAGES`): whole, opened with the ribs showing (where a fox's or an owl's catch
-starts), picked over to bones, and a flat pelt that fades. A fox's remains are a tuft of fur and a bird's a few
-feathers (`drawRemains`). And game.js eases a
+rabbits' lows). game.js paints a dead rabbit in its coat, or a dead fox (`paintBody`, `paintFox`; a fox `FOX_BODY` the
+size, its white-tipped tail lasting longest), lying on its side with its eyes closed, in four stages as the meat goes
+(`BODY_STAGES`): whole, opened with the ribs showing (where a fox's or an owl's catch starts), picked over to bones, and
+a flat pelt that fades. A bird's remains are a few feathers (`drawRemains`). And game.js eases a
 crow's height in sim time (`birdLift`, `crowHeight`), so it glides down to land and up to its perch. The news tells of crows arriving,
 a gathering at remains in an outbreak (`GATHERING`), and the acorns they buried each autumn.
 
