@@ -976,6 +976,7 @@ function drawBurrow(b, sx, sy, z, season, residents) {
 
 const MOVING = new Set(['wander', 'food', 'flee', 'chase', 'stalk', 'prowl', 'home', 'love', 'follow', 'friends', 'dig', 'arrive']);
 const REMAINS_SIZE = 0.75;                // remains, next to a rabbit (drawRemains)
+const BODY_SIZE = 1;                      // a dead rabbit, lying on its side
 const ALWAYS_BUBBLE = new Set(['flee', 'alarm', 'chase', 'love']);
 
 function visible(sx, sy, pad) { return sx > -pad && sy > -pad && sx < vw + pad && sy < vh + pad; }
@@ -1112,27 +1113,32 @@ function render(now) {
   standIns = false;                                    // a portrait for the inspector is kept, so it's always painted
 }
 
-// Remains lying in the grass (sim.js leaveRemains), fading as they go. Painted once per look and size.
+// Remains lying in the grass (sim.js leaveRemains). A rabbit lies whole, then opened, picked over and a pelt as
+// the meat goes (BODY_STAGES; one a fox or an owl caught starts opened), and the pelt fades. The rest are a
+// tuft or feathers, fading as they go. Painted once per look and size.
+const BODY_STAGES = [0.7, 0.4, 0.15];     // meat left, of what there was, where each next stage begins
 const remainsLooks = new WeakMap();
 const remainsPx = z => Math.max(8, (8 + z) * REMAINS_SIZE);
-function remainsLook(c) {
-  if (c.species === 'owl') return 6;
-  if (c.species === 'crow') return 5;
-  if (c.species === 'fox') return 4;
-  if (S.whiteness(world, c) > 0.5) return 3;
-  const coat = S.coatOf(c.genes);
-  return coat === 'wild' ? 0 : coat === 'sand' ? 1 : 2;
+const bodyPx = z => Math.max(8, (8 + z) * BODY_SIZE);
+function remainsLook(c) {                 // a rabbit's coat (BODY_COATS), or the others' tuft or feathers (REMAINS_ARTS)
+  if (c.species !== 'rabbit') return c.species === 'owl' ? 2 : c.species === 'crow' ? 1 : 0;
+  return S.whiteness(world, c) > 0.5 ? 4 : BODY_COAT_OF[S.coatOf(c.genes)];
 }
 function drawRemains(z) {
   if (!world.carcasses.length) return;
-  const px = remainsPx(z);
+  const rpx = remainsPx(z), bpx = bodyPx(z);
   for (const k of world.carcasses) {
     if (k.meat <= 0) continue;
+    const body = k.c.species === 'rabbit', px = body ? bpx : rpx;
     const sx = (k.x - cam.x) * z + vw / 2, sy = (k.y - cam.y) * z + vh / 2;   // (toScreen, without an array)
     if (!visible(sx, sy, px)) continue;
     let look = remainsLooks.get(k);
     if (look === undefined) remainsLooks.set(k, look = remainsLook(k.c));
-    drawEmoji(REMAINS_ARTS[look], sx, sy, px, { alpha: 0.45 + 0.55 * k.meat / k.full, flip: k.c.id % 2 === 1 });
+    const m = k.meat / k.full, flip = k.c.id % 2 === 1;
+    if (!body) { drawEmoji(REMAINS_ARTS[look], sx, sy, px, { alpha: 0.45 + 0.55 * m, flip }); continue; }
+    const [open, picked, pelt] = BODY_STAGES, caught = k.c.cause === 'fox' || k.c.cause === 'owl';
+    const stage = m > open && !caught ? 0 : m > picked ? 1 : m > pelt ? 2 : 3;
+    drawEmoji(BODY_ARTS[look * 4 + stage], sx, sy, px, { alpha: stage === 3 ? 0.4 + 0.6 * m / pelt : undefined, flip });
   }
 }
 
@@ -1503,9 +1509,9 @@ function paintCrow(g, size, U, pose) {
 }
 const CROW_ARTS = [0, 1, 2, 3, 4, 5].map(k => 'crow:' + k);
 
-// Remains lying in the grass (sim.js leaveRemains): a soft tuft of fur, or for a bird a few feathers. In the
-// colour of who it was ('remains:0' to 'remains:6'): brown, sandy, dark, a winter white, a fox's, a crow's, an owl's.
-const REMAINS_RGB = [[150, 114, 80], [212, 178, 128], [84, 78, 80], [236, 236, 230], [206, 108, 58]];
+// A fox's remains are a soft tuft of fur ('remains:0'), a bird's a few feathers: a crow's ('remains:1') or an
+// owl's barred brown ones ('remains:2'). A rabbit's are painted below (paintBody).
+const FOX_REMAINS = [206, 108, 58];
 const TUFTS = [[-0.42, 0.5, 0.34, 0.19], [0.02, 0.44, 0.42, 0.25], [0.44, 0.52, 0.3, 0.17]];      // x, y, rx, ry
 const WISPS = [[-0.7, 0.52, -0.2, -0.1], [-0.46, 0.36, -0.12, -0.22], [-0.12, 0.26, -0.04, -0.26], [0.18, 0.26, 0.08, -0.26],
   [0.46, 0.38, 0.16, -0.2], [0.7, 0.5, 0.2, -0.08]];
@@ -1513,8 +1519,8 @@ function paintRemains(g, size, U, look) {
   g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
   g.lineCap = g.lineJoin = 'round';
   fillIn(g, 'rgba(40, 50, 20, 0.2)', () => ovalAt(g, 0.02, 0.64, 0.86, 0.16));   // pressed into the grass
-  if (look >= 5) {                                  // feathers: a crow's, or an owl's barred brown ones
-    const ink = look === 6 ? '#8a5c36' : CROW_INK, sheen = look === 6 ? '#d0a878' : CROW_SHEEN;
+  if (look) {                                       // feathers: a crow's, or an owl's barred brown ones
+    const ink = look === 2 ? '#8a5c36' : CROW_INK, sheen = look === 2 ? '#d0a878' : CROW_SHEEN;
     for (const [x, y, a, s] of [[-0.36, 0.5, -0.3, 1.5], [0.34, 0.56, 0.5, 1.2], [0.02, 0.4, 0.1, 1.1]]) {
       g.save(); g.translate(x, y); g.rotate(a); g.scale(s, s * 0.7);
       fillIn(g, ink, () => { g.moveTo(-0.34, 0); g.quadraticCurveTo(0, -0.16, 0.32, 0); g.quadraticCurveTo(0, 0.12, -0.34, 0); });
@@ -1524,13 +1530,113 @@ function paintRemains(g, size, U, look) {
     }
     return;
   }
-  const rgb = REMAINS_RGB[look], dark = rockRGB(tone(rgb, 0.7)), mid = rockRGB(rgb), light = rockRGB(tone(rgb, 1.15, 16));
+  const rgb = FOX_REMAINS, dark = rockRGB(tone(rgb, 0.7)), mid = rockRGB(rgb), light = rockRGB(tone(rgb, 1.15, 16));
   WISPS.forEach(([x, y, dx, dy], k) => strokeIn(g, k % 2 ? light : mid, 0.06, () => { g.moveTo(x - dx, y - dy); g.quadraticCurveTo(x + dx * 0.4, y + dy * 0.2, x + dx, y + dy); }));
   fillIn(g, dark, () => { for (const [x, y, rx, ry] of TUFTS) ovalAt(g, x, y, rx, ry); });
   fillIn(g, mid, () => { for (const [x, y, rx, ry] of TUFTS) ovalAt(g, x - 0.02, y - 0.05, rx * 0.8, ry * 0.72); });
   fillIn(g, light, () => { for (const [x, y, rx, ry] of TUFTS) ovalAt(g, x - 0.06, y - 0.1, rx * 0.4, ry * 0.32); });
 }
-const REMAINS_ARTS = [0, 1, 2, 3, 4, 5, 6].map(k => 'remains:' + k);
+const REMAINS_ARTS = [0, 1, 2].map(k => 'remains:' + k);
+
+// A dead rabbit, lying on its side facing left, in four stages ('body:' + coat * 4 + stage): 0 whole, its eyes
+// closed; 1 opened, the ribs showing; 2 picked over, bones and scraps; 3 a flat pelt, a bone or two. Soft shapes in
+// the emoji rabbit's proportions, no red. Coats: wild, sandy, black, blue-grey, a winter white (drawRemains).
+const BODY_COATS = [S.COATS.wild.rgb, S.COATS.sand.rgb, S.COATS.black.rgb, S.COATS.blue.rgb, S.WINTER_COAT];
+const BODY_COAT_OF = { wild: 0, sand: 1, black: 2, blue: 3 };
+const BONE = '#ece2cc', BONE_DARK = '#b3a283', GUT = '#6a3a2e', GUT_DARK = '#3a221c';
+// A part, shaded soft from its lit top to its dark underside (painted once, so a gradient is fine).
+function softIn(g, rgb, y0, y1, path, lit = 1.18, dim = 0.68) {
+  const gr = g.createLinearGradient(0, y0, 0, y1);
+  gr.addColorStop(0, rockRGB(tone(rgb, lit, 12)));
+  gr.addColorStop(0.5, rockRGB(rgb));
+  gr.addColorStop(1, rockRGB(tone(rgb, dim)));
+  g.fillStyle = gr; g.beginPath(); path(); g.fill();
+}
+// A little bone: a shaft with two knobs at each end, a darker copy under it for shade.
+const boneAt = (g, x, y, l, a, s = 1) => {
+  const dx = Math.cos(a) * l / 2, dy = Math.sin(a) * l / 2, nx = -Math.sin(a) * 0.028 * s, ny = Math.cos(a) * 0.028 * s;
+  const shape = off => { g.moveTo(x - dx, y - dy + off); g.lineTo(x + dx, y + dy + off); };
+  const knobs = (off, r) => { for (const e of [-1, 1]) { discAt(g, x + e * dx + nx, y + e * dy + ny + off, r); discAt(g, x + e * dx - nx, y + e * dy - ny + off, r); } };
+  strokeIn(g, BONE_DARK, 0.055 * s, () => shape(0.014));
+  fillIn(g, BONE_DARK, () => knobs(0.014, 0.036 * s));
+  strokeIn(g, BONE, 0.045 * s, () => shape(0));
+  fillIn(g, BONE, () => knobs(0, 0.032 * s));
+};
+// Ribs seen from the side: arcs hanging from the spine and curving back.
+const ribsAt = (g, x0, y, n, gap, h, w = 0.042) => {
+  for (let i = 0; i < n; i++) {
+    const x = x0 + i * gap, hh = h * (1 - 0.18 * i);
+    strokeIn(g, BONE_DARK, w * 1.35, () => { g.moveTo(x, y); g.bezierCurveTo(x - 0.1, y + hh * 0.2, x - 0.1, y + hh * 0.8, x + 0.02, y + hh); });
+    strokeIn(g, BONE, w, () => { g.moveTo(x - 0.008, y - 0.006); g.bezierCurveTo(x - 0.105, y + hh * 0.2, x - 0.105, y + hh * 0.78, x + 0.012, y + hh - 0.008); });
+  }
+};
+const tailAt = (g, x, y) => {                  // the white scut
+  fillIn(g, '#d9d3c6', () => { discAt(g, x + 0.02, y + 0.03, 0.1); });
+  fillIn(g, '#f6f3ec', () => { discAt(g, x, y, 0.085); discAt(g, x + 0.05, y + 0.04, 0.06); });
+};
+
+// The head, lying on the grass: a closed eye, its ear laid back.
+function bodyHead(g, rgb, cream) {
+  softIn(g, rgb, 0.12, 0.66, () => { g.ellipse(-0.52, 0.42, 0.28, 0.22, 0.1, 0, TAU); g.moveTo(-0.62, 0.5); g.ellipse(-0.74, 0.5, 0.13, 0.12, 0, 0, TAU); });
+  fillIn(g, rockRGB(cream, 0.9), () => { ovalAt(g, -0.7, 0.52, 0.13, 0.09, 0.2); });
+  fillIn(g, '#c98a86', () => discAt(g, -0.86, 0.47, 0.03));
+  strokeIn(g, rockRGB(tone(rgb, 0.35)), 0.032, () => { g.moveTo(-0.6, 0.38); g.quadraticCurveTo(-0.54, 0.43, -0.47, 0.39); });   // the closed eye
+  softIn(g, rgb, 0.14, 0.34, () => { g.ellipse(-0.22, 0.25, 0.32, 0.09, -0.2, 0, TAU); });   // the ear, laid back
+  fillIn(g, 'rgba(214,150,146,0.75)', () => ovalAt(g, -0.19, 0.255, 0.23, 0.038, -0.2));
+}
+// The body on its side: haunch, back, belly; the hind leg stretched out, a front paw.
+function bodyLying(g, rgb, cream, dark) {
+  softIn(g, dark, 0.5, 0.7, () => { g.ellipse(-0.24, 0.62, 0.14, 0.045, 0.1, 0, TAU); g.moveTo(0.62, 0.64); g.ellipse(0.5, 0.64, 0.16, 0.045, 0, 0, TAU); });   // the far legs
+  softIn(g, rgb, 0.46, 0.68, () => { g.ellipse(0.62, 0.58, 0.3, 0.085, 0.14, 0, TAU); });              // the hind leg, stretched out
+  softIn(g, rgb, 0.04, 0.66, () => { g.ellipse(0.02, 0.38, 0.5, 0.28, -0.05, 0, TAU); g.moveTo(0.64, 0.36); g.arc(0.34, 0.36, 0.3, 0, TAU); });   // body and haunch
+  fillIn(g, rockRGB(cream, 0.8), () => ovalAt(g, -0.02, 0.57, 0.38, 0.075, -0.03));                   // belly
+  fillIn(g, rockRGB(tone(rgb, 1.25, 20), 0.35), () => { ovalAt(g, -0.05, 0.2, 0.3, 0.06, -0.1); ovalAt(g, 0.32, 0.16, 0.16, 0.05, 0.1); });   // light on the back
+  softIn(g, rgb, 0.52, 0.66, () => { g.ellipse(-0.34, 0.6, 0.18, 0.055, 0.15, 0, TAU); });             // a front paw
+}
+
+function paintBody(g, size, U, look, leaf, up = 0) {     // up: raised in its box (lying low, it sits under the middle)
+  g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2 - up * U / 2);
+  g.lineCap = g.lineJoin = 'round';
+  const coat = BODY_COATS[Math.floor(look / 4)], stage = look % 4;
+  const rgb = tone(coat, 0.92, 8), cream = tone(rgb, 0.4, 150), dark = tone(rgb, 0.62);
+  fillIn(g, 'rgba(40, 50, 20, 0.22)', () => ovalAt(g, 0, 0.62, 0.95, 0.14));   // pressed into the grass
+  if (stage <= 1) {
+    bodyLying(g, rgb, cream, dark);
+    tailAt(g, 0.64, 0.24);
+    if (stage === 1) {                                                          // opened up: a hole in the side, the ribs over it
+      fillIn(g, rockRGB(tone(rgb, 0.55)), () => ovalAt(g, 0.15, 0.36, 0.27, 0.17, -0.06));          // torn edge
+      fillIn(g, GUT, () => ovalAt(g, 0.15, 0.37, 0.24, 0.14, -0.06));
+      fillIn(g, GUT_DARK, () => ovalAt(g, 0.17, 0.41, 0.17, 0.08, -0.06));
+      ribsAt(g, 0.0, 0.25, 4, 0.1, 0.24, 0.036);
+      strokeIn(g, BONE_DARK, 0.06, () => { g.moveTo(-0.06, 0.25); g.quadraticCurveTo(0.14, 0.2, 0.36, 0.26); });   // a bit of spine
+      strokeIn(g, BONE, 0.045, () => { g.moveTo(-0.06, 0.24); g.quadraticCurveTo(0.14, 0.19, 0.36, 0.25); });
+    }
+    bodyHead(g, rgb, cream);
+    return;
+  }
+  if (stage === 2) {                                                            // picked over: the hind half, the spine and ribs, bones about
+    softIn(g, rgb, 0.3, 0.68, () => { g.ellipse(0.42, 0.5, 0.26, 0.15, 0.1, 0, TAU); g.moveTo(0.92, 0.6); g.ellipse(0.7, 0.6, 0.22, 0.065, 0.15, 0, TAU); });
+    softIn(g, rgb, 0.4, 0.66, () => { g.ellipse(-0.5, 0.56, 0.2, 0.09, -0.15, 0, TAU); });              // a scrap of the front
+    tailAt(g, 0.66, 0.4);
+    strokeIn(g, BONE_DARK, 0.075, () => { g.moveTo(-0.4, 0.44); g.quadraticCurveTo(-0.05, 0.3, 0.26, 0.42); });   // the spine
+    fillIn(g, BONE, () => { for (let i = 0; i <= 7; i++) { const t = i / 7, u = 1 - t; discAt(g, u * u * -0.4 + 2 * u * t * -0.05 + t * t * 0.26, u * u * 0.44 + 2 * u * t * 0.3 + t * t * 0.42 - 0.012, 0.034); } });
+    ribsAt(g, -0.22, 0.37, 4, 0.1, 0.24, 0.038);
+    boneAt(g, -0.66, 0.74, 0.22, -0.35); boneAt(g, 0.2, 0.74, 0.2, 0.15); boneAt(g, -0.1, 0.16, 0.16, 0.5, 0.8);
+    return;
+  }
+  // a flat pelt, going back to the earth, a bone or two on it
+  const pelt = tone(rgb, 0.85);
+  softIn(g, pelt, 0.3, 0.7, () => {
+    g.moveTo(-0.7, 0.52);
+    g.quadraticCurveTo(-0.62, 0.36, -0.36, 0.38); g.quadraticCurveTo(0, 0.3, 0.46, 0.36);
+    g.quadraticCurveTo(0.7, 0.36, 0.74, 0.46); g.lineTo(0.9, 0.5); g.lineTo(0.72, 0.56); g.quadraticCurveTo(0.6, 0.66, 0.36, 0.64);
+    g.lineTo(0.3, 0.74); g.lineTo(0.18, 0.65); g.quadraticCurveTo(-0.1, 0.7, -0.32, 0.66); g.lineTo(-0.44, 0.76); g.lineTo(-0.48, 0.64); g.quadraticCurveTo(-0.66, 0.62, -0.7, 0.52);
+  }, 1.1, 0.75);
+  fillIn(g, rockRGB(tone(pelt, 0.72), 0.5), () => { ovalAt(g, -0.24, 0.52, 0.18, 0.06, 0.1); ovalAt(g, 0.3, 0.5, 0.22, 0.07, -0.1); });   // it's gone dark in places
+  fillIn(g, rockRGB(tone(pelt, 1.2, 14), 0.4), () => { ovalAt(g, 0.02, 0.42, 0.26, 0.04, -0.05); });   // a little light along it
+  boneAt(g, -0.3, 0.5, 0.3, 0.2); boneAt(g, 0.22, 0.54, 0.24, -0.25, 0.9); boneAt(g, 0.62, 0.78, 0.18, 0.3, 0.8);
+}
+const BODY_ARTS = Array.from({ length: BODY_COATS.length * 4 }, (_, k) => 'body:' + k);
 
 const moundAt = (g, hole) => {
   fillIn(g, '#a7784c', () => { g.moveTo(-0.95, 0.55); g.ellipse(0, 0.55, 0.95, 0.8, 0, Math.PI, TAU); g.closePath(); });
@@ -2257,7 +2363,7 @@ function putPainting(p, f, alpha, snow, ox, oy) {
   if (snow && p.snow) { ctx.globalAlpha = alpha * snow; ctx.drawImage(p.snow, x, y, w, h); }
   ctx.globalAlpha = 1;
 }
-const PAINTERS = { reeds: paintReeds, lily: paintLilies, bubble: paintBubble, vole: paintVole, frog: paintFrog, crow: paintCrow, remains: paintRemains };
+const PAINTERS = { reeds: paintReeds, lily: paintLilies, bubble: paintBubble, vole: paintVole, frog: paintFrog, crow: paintCrow, remains: paintRemains, body: paintBody };
 function drawDecor(d, sx, sy, now, ck, clipLeaves) {
   const z = cam.zoom, px = d.tree ? treePx(d) : d.size * z;
   if (d.emoji === '🪨') { drawRock(d, sx, sy); return; }
@@ -4099,7 +4205,7 @@ const WEB_W = 400, WEB_H = 454, WEB_R = 19;
 const WEB_NODES = {
   fox: { x: 150, y: 78, art: '🦊', name: 'Foxes', color: '#e2702f' },
   owl: { x: 256, y: 78, art: '🦉', name: 'Owls', color: '#9a6a3e' },
-  remains: { x: 368, y: 78, art: 'remains:0', name: 'Remains', color: '#857565' },
+  remains: { x: 368, y: 78, art: 'body:1', name: 'Remains', color: '#857565' },
   bee: { x: 36, y: 200, art: '🐝', name: 'Bees', color: '#d9a21b' },
   rabbit: { x: 108, y: 200, art: '🐇', name: 'Rabbits', color: '#a07850' },
   vole: { x: 180, y: 200, art: 'vole:0', name: 'Voles', color: '#8a6a4e' },
@@ -4171,7 +4277,8 @@ function webIcon(art) {
     const f = flowerSprite((2 * 8) * 64 + Math.min(FLOWER_MAX_K, Math.round(2 * Math.log2(px * 0.9))));   // daisies
     const k = 1.5 * Math.min(size / f.width, size / f.height);   // (the clump is small in its box)
     g.drawImage(f, (size - f.width * k) / 2, (size - f.height * k) / 2, f.width * k, f.height * k);
-  } else if (colon > 0 && PAINTERS[art.slice(0, colon)]) PAINTERS[art.slice(0, colon)](g, size, px, +art.slice(colon + 1));
+  } else if (art.startsWith('body:')) paintBody(g, size, px * 1.3, +art.slice(5), null, 0.4);   // bigger, and in the middle
+  else if (colon > 0 && PAINTERS[art.slice(0, colon)]) PAINTERS[art.slice(0, colon)](g, size, px, +art.slice(colon + 1));
   else {
     g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `${px}px ${EMOJI_FONT}`;
     g.fillText(art, size / 2, size / 2 + px * 0.06);
@@ -4721,7 +4828,7 @@ const THINGS = {
 
   remains: {
     at(sx, sy) {
-      const r = Math.max(8, remainsPx(cam.zoom) * 0.5);
+      const r = Math.max(8, bodyPx(cam.zoom) * 0.5);
       let best = null, bd = r * r;
       for (const k of world.carcasses) {
         const [x, y] = toScreen(k.x, k.y), d = (x - sx) ** 2 + (y + r * 0.4 - sy) ** 2;
