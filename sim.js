@@ -1716,7 +1716,7 @@ function ignite(w, i, ticks = FIRE_TICKS, set = false) {
   if (w.fire[i] || w.water[i]) return false;
   if (!w.blaze) { emit(w, { type: 'fire', x: i % W + 0.5, y: ((i / W) | 0) + 0.5, set }); w.blazeTrees = 0; }
   w.fire[i] = ticks; w.burning.push(i); w.blaze++;
-  w.voles[i] = 0;
+  w.voles[i] = 0; w.frogs[i] = 0;
   burnTrees(w, i);
   return true;
 }
@@ -1925,7 +1925,7 @@ function makeCreature(w, species, x, y, genes, parents) {
     alert: 0, threatId: 0, chaseT: 0, fright: 0, frightX: 0, frightY: 0, frightWhat: '',
     wary: 0, waryX: 0, waryY: 0, detour: 0, detourX: 0, detourY: 0, nemesisId: 0, haunt: null,
     pregnantUntil: 0, cooldownUntil: 0, dadGenes: null, dadIdPending: 0, dadGenPending: 0,
-    kids: 0, kills: 0, voles: 0, prey: '', escapes: 0, visits: 0, load: 0, find: null, story: [],
+    kids: 0, kills: 0, voles: 0, frogs: 0, prey: '', escapes: 0, visits: 0, load: 0, find: null, story: [],
     sick: 0, immune: 0,   // ticks when the sickness ends, and when immunity does (see sicknessTick)
     caches: null,         // a crow's acorns and beechnuts buried this autumn (cacheNut)
     perch: null,          // an owl's branch: where it sits hunting, or sleeps by day (owlTick)
@@ -2595,7 +2595,8 @@ function hunt(w, c) {
   if (prey && prey.species !== 'rabbit') prey = null;
   // Living on voles, it has an eye for the grass more than for rabbits. That's what keeps the foxes
   // the voles carry through a rabbit low from eating up the last rabbits and dragging the low out.
-  const sight = c.sight * sky(w).sight * (c.prey === 'vole' ? MOUSE_EYES : 1);
+  // A frog is small prey too: it keeps the same eye for the grass.
+  const sight = c.sight * sky(w).sight * (c.prey === 'vole' || c.prey === 'frog' ? MOUSE_EYES : 1);
   // Lost from view: a little further off than the furthest a fox spots one, or it'd flicker.
   if (prey && (!prey.alive || prey.hidden || dist2(c, prey) > (sight * CAMO[1] * 1.2) ** 2)) {
     if (prey.alive && c.mode === 'chase') escaped(w, prey, c, prey.hidden ? 'burrow' : 'outran');
@@ -2760,13 +2761,21 @@ function mouse(w, c) {
   if (c.mode === 'pounce') {
     if (c.target) moveToward(w, c, c.target.x, c.target.y, POUNCE_LEAP / POUNCE_TICKS);
     if (--c.timer > 0) return true;
-    const x0 = clamp(c.x | 0, 2, W - 3), y0 = clamp(c.y | 0, 2, H - 3), n = w.voles[y0 * W + x0];
+    const x0 = clamp(c.x | 0, 2, W - 3), y0 = clamp(c.y | 0, 2, H - 3), i = y0 * W + x0, n = smallAt(w, i);
     c.mode = 'mouse'; c.target = null; c.timer = w.rng.int(...LISTEN_TICKS);
-    if (w.rng.next() > VOLE_CATCH * n / (n + VOLE_HALF)) return true;          // missed: listen again
+    const odds = VOLE_CATCH * n / (n + VOLE_HALF), roll = w.rng.next();
+    if (roll > odds) return true;                                              // missed: listen again
+    c.mode = 'gulp'; c.timer = GULP_TICKS;
+    if (roll < odds * (n - w.voles[i]) / n) {                                  // a frog, as often as there are more of them
+      takeFrog(w, x0, y0);
+      c.energy = Math.min(c.maxEnergy, c.energy + FROG_ENERGY);
+      c.frogs++; w.stats.frogs++; c.prey = 'frog';
+      if (c.story[c.story.length - 1].text !== FROG_NOTE) note(w, c, '🐸', FROG_NOTE);
+      return true;
+    }
     takeVole(w, x0, y0);
     c.energy = Math.min(c.maxEnergy, c.energy + VOLE_ENERGY);
     c.voles++; w.stats.voles++; c.prey = 'vole';
-    c.mode = 'gulp'; c.timer = GULP_TICKS;
     if (c.story[c.story.length - 1].text !== VOLE_NOTE) note(w, c, '🐁', VOLE_NOTE);
     return true;
   }
@@ -2800,10 +2809,348 @@ function voleNear(w, c, near, far, tries) {
   for (let k = 0; k < tries; k++) {
     const a = w.rng.range(0, Math.PI * 2), r = w.rng.range(near, far);
     const x = c.x + Math.cos(a) * r, y = c.y + Math.sin(a) * r;
-    if (!inBounds(x, y) || w.voles[idx(x, y)] <= most || !clearPath(w, c.x, c.y, x, y)) continue;
-    best = { x, y }; most = w.voles[idx(x, y)];
+    if (!inBounds(x, y) || smallAt(w, idx(x, y)) <= most || !clearPath(w, c.x, c.y, x, y)) continue;
+    best = { x, y }; most = smallAt(w, idx(x, y));
   }
   return best;
+}
+
+// ---------------------------------------------------------------- frogs
+//
+// Common frogs, like the voles too many and too small to follow one by one: w.frogs is how many live on
+// each tile of land, and w.spawn how much spawn, and then tadpoles, lies in each tile of shallow water.
+// From spring to autumn the frogs live in the damp long grass near the water (frogRoom): grazed short it
+// holds fewer, and in a heatwave only the shore stays damp. They winter in the mud, and a hard winter with
+// ice lying thins them more. On a mild night early in spring, once the water is up, they spawn in the
+// shallows about (spawnFrogs): still water, a flood pool out on the floodplain best (warm, and no fish),
+// the lasting shallows less, by the river's current or the deep hardly at all. The tadpoles grow as one
+// (w.frogYear.grown), faster in the sun, and leave the water as froglets for the grass about. But the
+// flood pools go when the water falls back in summer (waterTick), or in a dry spell, and tadpoles still in
+// one that dries out die: an early spawning and a warm spring beat the drop, a late cold one doesn't. That's
+// what makes a frog year. A mousing fox snaps them up with the voles (mouse, smallAt), an owl drops on them
+// (owlHunt), and the crows pick the spawn and tadpoles out of the shallows (tadpoles).
+
+const FROG_EVERY = 60;          // ticks between counts (a fire kills them as it catches, in ignite)
+const FROG_K = 0.3;             // frogs a tile of damp long grass right by the water has room for
+const FROG_REACH = 6;           // tiles from the water the grass is damp enough for them, fewer the further
+const FROG_DRY = 3;             // and in a heatwave, only this close
+const FROG_BARE = 0.3;          // grass grazed short (VOLE_SHORT) has room for this share of them, long (VOLE_LONG) for all
+const FROG_FADE = 0.3;          // share of those over a tile's room gone in a day
+const FROG_DIE = 0.01;          // share gone each day from spring to autumn anyway: grass snakes, herons, old age
+const FROG_COLD = 0.03;         // share gone each winter day, in the mud
+const FROG_ICE = 2;             // times that while the ice lies
+const FROG_SPREAD = 0.2;        // share that moves next door each count
+const FROG_START = 0.3;         // a new meadow's frogs, as a share of the room
+const DAMP_EVERY = TPD;         // ticks between workings-out of how far each tile is from the water (w.damp), at most
+const SPAWN_FROM = 1;           // days into spring before they spawn: the water's up by then
+const SPAWN_BY = 3.5;           // and by this many they have, mild night or not
+const SPAWN_ODDS = 0.5;         // odds a night is mild enough (a wet night always is)
+const SPAWN_REACH = 6;          // frogs this close to the shallows spawn in them
+const EGGS = 8;                 // froglets one frog's spawn would come to, if nothing ate them and the water stayed
+const SPAWN_EDGE = 0.5;         // how good the lasting shallows are, against a flood pool on the floodplain
+const SPAWN_DEEP = 6;           // deep tiles within two that make shallows no good (the current, the fish)
+const TADPOLE_DAYS = 3.2;       // days from spawn to froglet, at an ordinary warmth
+const WARMTH = { clear: 1.25, heat: 1.4, cloudy: 1, fog: 0.8, rain: 0.85, storm: 0.85, snow: 0.5 };   // how fast they grow, by the weather
+const TADPOLE_LOSS = 0.1;       // share gone a day anyway (beetles, newts)
+const TADPOLE_DEEP = 0.5;       // and in deep water (the fish)
+const FROGLET_LEAVE = 2;        // share of the grown ones that leave the water a day
+const FROGLET_REACH = 4;        // tiles from the water the froglets get
+const FROG_ENERGY = 8;          // a frog to a fox (a vole is 10)
+const OWL_FROG = 12;            // and to an owl
+const SPAWN_BITE = 0.02;        // spawn a crow picks out a tick (twice the best grubs' worth)
+const SPAWN_ENERGY = 10;        // what each one is worth to it
+const SPAWN_WORTH = 0.15;       // spawn on a tile worth flying down to
+const SPAWN_SPOTS = 12;         // the best tiles of spawn, a few apart, for the crows to find (w.spawnSpots)
+const SPAWN_RANGE = 30;         // how far off a crow flies for them
+const FROG_BOOM = 4.4;          // froglets for each frog that spawned that make a big frog year (news)
+const FROG_POOR = 0.7;          // and fewer than this, a poor one
+const STRAND_NEWS = 0.08;       // share of the year's spawn stranded at once that makes the news
+const FROG_NOTE = 'Snapped up a frog by the water', OWL_FROG_NOTE = 'Dropped on a frog by the water';
+
+const frogCover = g => (g >= VOLE_LONG ? 1 : g <= VOLE_SHORT ? FROG_BARE : FROG_BARE + (1 - FROG_BARE) * (g - VOLE_SHORT) / (VOLE_LONG - VOLE_SHORT));
+const frogRoom = (d, g, reach) => (d > reach ? 0 : FROG_K * (1 - (d - 1) / reach) * frogCover(g));   // d: tiles to the water (w.damp)
+// Small prey on a tile, for a mousing fox or an owl: the voles, and out of winter the frogs.
+const smallAt = (w, i) => (w.frogsOut ? w.voles[i] + w.frogs[i] : w.voles[i]);
+// Whether it's frogs more than voles at a spot (for the moods).
+const frogsBy = (w, p) => { const i = idx(clamp(p.x, 0, W - 1), clamp(p.y, 0, H - 1)); return w.frogsOut && w.frogs[i] > w.voles[i]; };
+
+// Scratch maps for the counts (never kept, filled afresh each time).
+const FROG_A = new Float32Array(W * H), FROG_B = new Float32Array(W * H), FROG_C = new Float32Array(W * H), FROG_D = new Float32Array(W * H), FROG_T = new Float32Array(W * H);
+
+// dst: the sum of src over the square r tiles round each tile (tmp: a scratch map).
+function boxSum(src, dst, r, tmp) {
+  for (let y = 0; y < H; y++) {
+    const o = y * W;
+    let s = 0;
+    for (let x = 0; x < r; x++) s += src[o + x];
+    for (let x = 0; x < W; x++) {
+      if (x + r < W) s += src[o + x + r];
+      tmp[o + x] = s;
+      if (x >= r) s -= src[o + x - r];
+    }
+  }
+  for (let x = 0; x < W; x++) {
+    let s = 0;
+    for (let y = 0; y < r; y++) s += tmp[y * W + x];
+    for (let y = 0; y < H; y++) {
+      if (y + r < H) s += tmp[(y + r) * W + x];
+      dst[y * W + x] = s;
+      if (y >= r) s -= tmp[(y - r) * W + x];
+    }
+  }
+}
+
+// Shares `from` (on some tiles) out over the tiles r round each in proportion to `weight`, adding it to
+// `to`; what has no weight within r stays in `back`. Says how much went. (Uses FROG_B, FROG_T; from is used up.)
+function shareOut(from, weight, r, to, back) {
+  const sum = FROG_B;
+  boxSum(weight, sum, r, FROG_T);
+  for (let i = 0; i < W * H; i++) {
+    if (from[i] === 0) continue;
+    if (sum[i] > 1e-6) from[i] /= sum[i];
+    else { back[i] += from[i]; from[i] = 0; }
+  }
+  boxSum(from, sum, r, FROG_T);
+  let went = 0;
+  for (let i = 0; i < W * H; i++) {
+    if (weight[i] === 0 || sum[i] <= 0) continue;
+    const n = weight[i] * sum[i];
+    to[i] += n; went += n;
+  }
+  return went;
+}
+
+// How far each tile is from the water (w.damp), as distanceTo but in place and only as far as a frog cares.
+function dampen(w) {
+  const d = w.damp, water = w.water, far = FROG_REACH + 1;
+  for (let i = 0; i < W * H; i++) d[i] = water[i] ? 0 : far;
+  for (let y = 0; y < H; y++) for (let x = 0, i = y * W; x < W; x++, i++) {      // from the tile behind, the row above and its corners
+    let v = d[i];
+    if (v === 0) continue;
+    if (x > 0 && d[i - 1] + 1 < v) v = d[i - 1] + 1;
+    if (y > 0) {
+      if (d[i - W] + 1 < v) v = d[i - W] + 1;
+      if (x > 0 && d[i - W - 1] + 1.4 < v) v = d[i - W - 1] + 1.4;
+      if (x < W - 1 && d[i - W + 1] + 1.4 < v) v = d[i - W + 1] + 1.4;
+    }
+    d[i] = v;
+  }
+  for (let y = H - 1; y >= 0; y--) for (let x = W - 1, i = y * W + x; x >= 0; x--, i--) {   // and back the other way
+    let v = d[i];
+    if (v === 0) continue;
+    if (x < W - 1 && d[i + 1] + 1 < v) v = d[i + 1] + 1;
+    if (y < H - 1) {
+      if (d[i + W] + 1 < v) v = d[i + W] + 1;
+      if (x < W - 1 && d[i + W + 1] + 1.4 < v) v = d[i + W + 1] + 1.4;
+      if (x > 0 && d[i + W - 1] + 1.4 < v) v = d[i + W - 1] + 1.4;
+    }
+    d[i] = v;
+  }
+  w.dampOf = w.waterVersion; w.dampAt = w.tick;
+}
+
+// A new meadow has frogs in the damp grass by its water.
+function startFrogs(w) {
+  dampen(w);
+  let total = 0;
+  for (let i = 0; i < W * H; i++) {
+    if (w.water[i]) continue;
+    w.frogs[i] = frogRoom(w.damp[i], w.grass[i], FROG_REACH) * FROG_START;
+    total += w.frogs[i];
+  }
+  w.frogCount = total;
+}
+
+// Every FROG_EVERY ticks: the spring's spawning, the frogs on land (spilling over one way, as volesTick
+// does), then the spawn and tadpoles in the water.
+function frogsTick(w) {
+  const s = seasonOf(w.tick), dt = FROG_EVERY / TPD, yr = w.frogYear;
+  if (w.dampOf !== w.waterVersion && w.tick - w.dampAt >= DAMP_EVERY) dampen(w);
+  w.frogsOut = s !== 3;
+  if (s === 0 && yr.year !== yearOf(w.tick)) Object.assign(yr, { year: yearOf(w.tick), at: -1, grown: 0, laid: 0, spawners: 0, stranded: 0, eaten: 0, left: 0, told: 0, dryDay: -1 });
+  if (s === 0 && yr.at < 0 && isNight(w.tick)) {
+    const into = dayOf(w.tick) % SEASON_DAYS + phaseOf(w.tick), k = w.weather.kind;
+    if (into >= SPAWN_FROM && (into >= SPAWN_BY || k === 'rain' || k === 'storm' || hash2(dayOf(w.tick), w.seed, 77) < SPAWN_ODDS)) spawnFrogs(w);
+  }
+  if (yr.at >= 0 && yr.grown < 1) yr.grown += dt / TADPOLE_DAYS * (WARMTH[w.weather.kind] ?? 1);
+
+  const f = w.frogs, g = w.grass, water = w.water, damp = w.damp, winter = s === 3;
+  const reach = w.weather.kind === 'heat' ? FROG_DRY : FROG_REACH, fade = FROG_FADE * dt;
+  const keep = 1 - (winter ? FROG_COLD * (w.frozen ? FROG_ICE : 1) : FROG_DIE) * dt;
+  const off = VOLE_WAYS[Math.floor(w.tick / FROG_EVERY) % 4], back = off > 0, by = back ? -1 : 1;
+  const ex = off === 1 ? W - 1 : off === -1 ? 0 : -1, ey = off === W ? H - 1 : off === -W ? 0 : -1;
+  let total = 0;
+  for (let y = back ? H - 1 : 0; y >= 0 && y < H; y += by) {
+    for (let x = back ? W - 1 : 0, i = y * W + x; x >= 0 && x < W; x += by, i += by) {
+      let n = f[i];
+      if (n === 0) continue;
+      if (n < 1e-4) { f[i] = 0; continue; }
+      n *= keep;
+      total += n;
+      if (water[i]) {                                  // flooded out: they swim for the bank
+        if (x !== ex && y !== ey) { const m = water[i + off] ? n / 2 : n; f[i + off] += m; n -= m; }
+      } else if (!winter) {
+        const room = frogRoom(damp[i], g[i], reach);
+        if (n > room) n -= (n - room) * fade;
+        if (x !== ex && y !== ey && !water[i + off]) { const m = n * FROG_SPREAD; f[i + off] += m; n -= m; }
+      }
+      f[i] = n;
+    }
+  }
+  w.frogCount = total;
+  if (w.spawnCount > 0) tadpolesTick(w, s, dt);
+}
+
+// Spawning, one mild night: each frog near the shallows shares its spawn out over the good water round it.
+function spawnFrogs(w) {
+  const yr = w.frogYear, q = FROG_A, near = FROG_C, water = w.water, sp = w.spawn, base = w.terrain.level;
+  yr.at = w.tick;
+  for (let i = 0; i < W * H; i++) q[i] = water[i] === DEEP ? 1 : 0;
+  boxSum(q, near, 2, FROG_T);
+  for (let i = 0; i < W * H; i++) {                  // how good each tile is: shallow, still, a flood pool best, rich water a little better (algae)
+    q[i] = water[i] !== SHALLOW ? 0 : Math.max(0, 1 - near[i] / SPAWN_DEEP) * (w.ground[i] > base ? 1 : SPAWN_EDGE) * (1 + w.rich[i]);
+  }
+  boxSum(q, near, SPAWN_REACH, FROG_T);
+  const eggs = near;                                 // (in place: each tile reads only its own)
+  let spawners = 0;
+  for (let i = 0; i < W * H; i++) {
+    const n = w.frogs[i] > 0 && near[i] > 1e-6 ? w.frogs[i] : 0;
+    eggs[i] = n * EGGS; spawners += n;
+  }
+  const laid = shareOut(eggs, q, SPAWN_REACH, sp, sp);   // (none is left over: each had good water near)
+  yr.spawners = spawners; yr.laid = laid;
+  let total = 0, n = 0;
+  for (let i = 0; i < W * H; i++) {
+    FROG_A[i] = 0;                                 // (shareOut leaves its from, eggs, in FROG_C; tadpolesTick wants FROG_A clear)
+    if (sp[i] > 0) { total += sp[i]; w.spawnTiles[n++] = i; }
+  }
+  w.spawnN = n; w.spawnCount = total;
+  if (laid > 1) emit(w, { type: 'frogs', what: 'spawn', water: mostIn(w, sp, water), laid, spawners });
+}
+
+// The named water with the most of `field` in or about it (on the tiles where `on` is set).
+function mostIn(w, field, on) {
+  const sum = new Float64Array(w.waters.length), at = new Int32Array(w.waters.length);
+  for (let i = 0; i < W * H; i++) {
+    if (!field[i] || !on[i]) continue;
+    const b = w.nearBody[i];
+    if (b >= 0) { sum[b] += field[i]; at[b] = i; }
+  }
+  let best = -1;
+  for (let b = 0; b < sum.length; b++) if (sum[b] > 0 && (best < 0 || sum[b] > sum[best])) best = b;
+  if (best < 0) return null;
+  const x = at[best] % W + 0.5, y = ((at[best] / W) | 0) + 0.5;
+  return w.lake && outside(w.lake.shape, x, y) < 2 ? w.lake : w.waters[best];   // (as waterAt, on dry ground too)
+}
+
+// The spawn and tadpoles: stranded where the water's gone, a few lost each day, and once grown, off onto land.
+// Only the tiles spawned in are looked at (w.spawnTiles, the first w.spawnN of them); FROG_A and FROG_D are
+// left all naught.
+function tadpolesTick(w, s, dt) {
+  const sp = w.spawn, water = w.water, yr = w.frogYear, spots = w.spawnSpots, list = w.spawnTiles, n0 = w.spawnN;
+  const leave = yr.grown < 1 ? 0 : s >= 2 ? 1 : Math.min(1, FROGLET_LEAVE * dt), out = FROG_A, dried = FROG_D;
+  const lose = TADPOLE_LOSS * dt, loseDeep = TADPOLE_DEEP * dt;
+  spots.fill(-1);
+  let total = 0, strand = 0, leaving = 0;
+  for (let k = 0; k < n0; k++) {
+    const i = list[k];
+    let n = sp[i];
+    if (n === 0) continue;
+    if (!water[i]) { strand += n; dried[i] = n; sp[i] = 0; continue; }
+    n *= 1 - (water[i] === DEEP ? loseDeep : lose);
+    if (leave) { out[i] = n * leave; n -= out[i]; leaving += out[i]; }
+    if (n < 1e-4) n = 0;
+    sp[i] = n; total += n;
+    if (n > SPAWN_WORTH) spotSpawn(spots, sp, i);
+  }
+  if (strand > 0) {
+    yr.stranded += strand;
+    const day = dayOf(w.tick);
+    if (strand > STRAND_NEWS * yr.laid && yr.dryDay !== day && yr.told < 8) {
+      yr.dryDay = day; yr.told += 4;
+      emit(w, { type: 'frogs', what: 'stranded', water: mostIn(w, dried, dried), share: strand / yr.laid, grown: yr.grown });
+    }
+  }
+  if (leaving > 0) {
+    if (!(yr.told & 1)) { yr.told |= 1; emit(w, { type: 'frogs', what: 'froglets', water: mostIn(w, out, out) }); }
+    const L = FROG_C;
+    for (let i = 0; i < W * H; i++) L[i] = water[i] ? 0 : frogCover(w.grass[i]);
+    const went = shareOut(out, L, FROGLET_REACH, w.frogs, sp);   // (what finds no grass near stays: those tiles are on the list)
+    yr.left += went; total += leaving - went; w.frogCount += went;
+  }
+  let kept = 0;
+  for (let k = 0; k < n0; k++) {
+    const i = list[k];
+    out[i] = 0; dried[i] = 0;
+    if (sp[i] > 0) list[kept++] = i;
+  }
+  w.spawnN = kept;
+  w.spawnCount = total;
+  // The year's verdict, once the tadpoles are gone one way or another.
+  if (!(yr.told & 2) && yr.laid > 1 && (total < 0.03 * yr.laid || s >= 2)) {
+    yr.told |= 2;
+    const per = yr.left / Math.max(1, yr.spawners);
+    w.stats.frogYears.push({ year: yr.year, spawners: +yr.spawners.toFixed(1), laid: +yr.laid.toFixed(1), stranded: +yr.stranded.toFixed(1), eaten: +yr.eaten.toFixed(1), left: +yr.left.toFixed(1) });
+    emit(w, { type: 'frogyear', big: per >= FROG_BOOM, poor: per < FROG_POOR, per, stranded: yr.stranded / yr.laid });
+  }
+  if (total < 1e-3) { for (let k = 0; k < kept; k++) sp[list[k]] = 0; w.spawnN = 0; w.spawnCount = 0; }
+}
+
+// Keeps the best tiles of spawn in `spots`, at most one within a few tiles of another.
+function spotSpawn(spots, sp, i) {
+  const x = i % W, y = (i / W) | 0;
+  let slot = -1, low = sp[i];
+  for (let k = 0; k < SPAWN_SPOTS; k++) {
+    const j = spots[k];
+    if (j >= 0 && Math.abs(j % W - x) <= 4 && Math.abs(((j / W) | 0) - y) <= 4) { if (sp[j] < sp[i]) spots[k] = i; return; }
+    const v = j < 0 ? -1 : sp[j];
+    if (v < low) { low = v; slot = k; }
+  }
+  if (slot >= 0) spots[slot] = i;
+}
+
+// One frog fewer about the tile x0, y0 (x0, y0 two tiles in from the edge), as takeVole.
+function takeFrog(w, x0, y0) {
+  let near = 0;
+  for (let y = y0 - 2; y <= y0 + 2; y++) for (let x = x0 - 2; x <= x0 + 2; x++) near += w.frogs[y * W + x];
+  for (let y = y0 - 2; y <= y0 + 2; y++) for (let x = x0 - 2; x <= x0 + 2; x++) w.frogs[y * W + x] *= Math.max(0, 1 - 1 / near);
+  w.frogCount = Math.max(0, w.frogCount - Math.min(1, near));
+}
+
+// A hungry crow in spring: down to the spawn in the shallows, standing at the water's edge by it, and
+// picking it out till the patch is done or it's full (crowTick stops it then).
+function tadpoles(w, c) {
+  if (c.mode === 'pool' || c.mode === 'tadpole') {
+    const t = c.target, sp = w.spawn;
+    if (sp[t.i] < SPAWN_WORTH / 4) { c.mode = 'wander'; c.target = null; return false; }
+    if (c.mode === 'pool') {
+      if (go(w, c, t.x, t.y, c.walk)) { c.mode = 'tadpole'; c.facing = t.i % W + 0.5 > c.x ? 1 : -1; }
+      return true;
+    }
+    const got = Math.min(sp[t.i], SPAWN_BITE);
+    sp[t.i] -= got; w.spawnCount -= got; w.frogYear.eaten += got; w.stats.crowSpawn += got;
+    c.energy = Math.min(c.maxEnergy, c.energy + got * SPAWN_ENERGY);
+    return true;
+  }
+  if ((w.tick + c.id) % 10 || w.spawnCount < SPAWN_WORTH || grubs(w, c.x, c.y) >= SPAWN_BITE * SPAWN_ENERGY / 2) return false;   // (good pecking here: it stays)
+  let best = -1, bd = SPAWN_RANGE ** 2;
+  for (const i of w.spawnSpots) {
+    if (i < 0 || w.spawn[i] < SPAWN_WORTH) continue;
+    const d = (i % W + 0.5 - c.x) ** 2 + (((i / W) | 0) + 0.5 - c.y) ** 2;
+    if (d < bd) { best = i; bd = d; }
+  }
+  if (best < 0) return false;
+  // Where to stand: on the bank beside it if there's one, else out in the shallows.
+  const x = best % W, y = (best / W) | 0;
+  let tx = x + 0.5, ty = y + 0.5;
+  for (let k = 0; k < 8; k++) {
+    const dx = [1, -1, 0, 0, 1, -1, 1, -1][(k + c.id) % 8], dy = [0, 0, 1, -1, 1, 1, -1, -1][(k + c.id) % 8];
+    if (dry(w, x + dx + 0.5, y + dy + 0.5)) { tx += dx * 0.55; ty += dy * 0.55; break; }
+  }
+  c.mode = 'pool'; c.target = { x: tx, y: ty, i: best };
+  const what = w.frogYear.grown < 0.3 ? 'frogspawn' : 'tadpoles';
+  if (!c.story[c.story.length - 1].text.endsWith(what)) note(w, c, '🫧', `Pecked at the ${what}`);
+  return true;
 }
 
 // ---------------------------------------------------------------- bees
@@ -3402,7 +3749,7 @@ const NEST_RANGE = 25;          // how far off a mum looks for a tall tree to ne
 const FLEDGE = 0.4;             // chicks leave the nest this grown
 const ROOST_AT = 0.66;          // the time of day they fly to the roost (dusk is 0.72)
 const ROOST_MIDDLE = 15;        // tiles from the middle of the meadow that take one off a roost tree's size
-const PECKING = new Set(['peck', 'carrion', 'munch', 'bury', 'unbury']);   // busy on the ground, heads down
+const PECKING = new Set(['peck', 'carrion', 'munch', 'bury', 'unbury', 'tadpole']);   // busy on the ground, heads down
 
 const grubs = (w, x, y) => {
   const i = idx(x, y);
@@ -3471,10 +3818,10 @@ function crowTick(w, c) {
   const eating = c.mode === 'carrion' || c.mode === 'munch', caching = c.mode === 'cache' || c.mode === 'bury';
   if (!eating && e > (caching ? CACHE_FED / 2 : CACHE_FED) && cacheNut(w, c)) return;
   if (e < (eating ? 0.97 : CROW_FULL)) {
-    if (carrion(w, c) || (w.windfalls && e < CROW_HUNGRY && windfall(w, c)) || unbury(w, c)) return;
+    if (carrion(w, c) || (w.windfalls && e < CROW_HUNGRY && windfall(w, c)) || unbury(w, c) || tadpoles(w, c)) return;
     return peck(w, c, true);
   }
-  if (eating || c.mode === 'remains' || c.mode === 'apple' || c.mode === 'unbury') { c.mode = 'wander'; c.target = null; }
+  if (eating || c.mode === 'remains' || c.mode === 'apple' || c.mode === 'unbury' || c.mode === 'pool' || c.mode === 'tadpole') { c.mode = 'wander'; c.target = null; }
 
   // 5. Fed: mobbing an owl it found asleep, off to the others now and then, a rest, or pecking about.
   if (c.mode === 'mob' && mob(w, c)) return;
@@ -3654,6 +4001,8 @@ function crowMood(w, c) {
     case 'cache': return { emoji: '🌰', text: `Carrying ${one} off to bury` };
     case 'bury': return { emoji: '🌰', text: `Burying ${one} for the winter` };
     case 'unbury': return { emoji: '🌰', text: `Digging up ${one} it buried in the autumn` };
+    case 'pool': return { emoji: '🫧', text: `Off to the ${w.frogYear.grown < 0.3 ? 'frogspawn' : 'tadpoles'} in the shallows` };
+    case 'tadpole': return { emoji: '🫧', text: w.frogYear.grown < 0.3 ? 'Pecking at the frogspawn at the water\'s edge' : 'Picking tadpoles out of the shallows' };
     case 'flock': return { emoji: '', text: 'Flying over to the other crows' };   // no bubble: 🤝 is painted as paws
     case 'mob': return { emoji: '‼️', text: `Mobbing ${w.byId.get(c.targetId)?.name ?? 'an owl'} the owl, cawing` };
     case 'follow': return { emoji: '🍼', text: 'Following mum, begging for food' };
@@ -3793,8 +4142,18 @@ function owlHunt(w, c) {
       c.mode = 'gulp'; c.timer = OWL_GULP * 3;
       return;
     }
-    const x0 = clamp(c.x | 0, 2, W - 3), y0 = clamp(c.y | 0, 2, H - 3), n = w.voles[y0 * W + x0];
-    if (w.rng.next() >= OWL_CATCH * n / (n + OWL_HALF)) return;
+    const x0 = clamp(c.x | 0, 2, W - 3), y0 = clamp(c.y | 0, 2, H - 3), i = y0 * W + x0, n = smallAt(w, i);
+    const odds = OWL_CATCH * n / (n + OWL_HALF), roll = w.rng.next();
+    if (roll >= odds) return;
+    if (roll < odds * (n - w.voles[i]) / n) {                                  // a frog
+      takeFrog(w, x0, y0);
+      c.energy = Math.min(c.maxEnergy, c.energy + OWL_FROG);
+      c.frogs++; c.prey = 'frog'; w.stats.owlFrogs++;
+      if (c.perch) c.perch.tries = 0;
+      c.mode = 'gulp'; c.timer = OWL_GULP;
+      if (c.story[c.story.length - 1].text !== OWL_FROG_NOTE) note(w, c, '🐸', OWL_FROG_NOTE);
+      return;
+    }
     takeVole(w, x0, y0);
     c.energy = Math.min(c.maxEnergy, c.energy + OWL_VOLE);
     c.voles++; c.prey = 'vole'; w.stats.owlVoles++;
@@ -3832,12 +4191,12 @@ function perchSpot(w, c) {
   let best = null, most = OWL_WORTH;
   for (let k = 0; k < 10; k++) {
     const a = w.rng.range(0, Math.PI * 2), r = w.rng.range(0, PERCH_LOOK), x = h.x + Math.cos(a) * r, y = h.y + Math.sin(a) * r;
-    if (!inBounds(x, y) || w.voles[idx(x, y)] <= most) continue;
+    if (!inBounds(x, y) || smallAt(w, idx(x, y)) <= most) continue;
     let tree = null;
     forEachDecorNear(w, x, y, PERCH_TREE, d => {
       if (!tree && standing(d) && d.size >= SAPLING && !d.hive && (d.x - x) ** 2 + (d.y - y) ** 2 < PERCH_TREE ** 2) tree = d;
     });
-    if (tree) { best = tree; most = w.voles[idx(x, y)]; }
+    if (tree) { best = tree; most = smallAt(w, idx(x, y)); }
   }
   return best && sitIn(c, best, true);
 }
@@ -3847,7 +4206,7 @@ function rustle(w, c) {
   let best = null, most = OWL_WORTH;
   for (let k = 0; k < 6; k++) {
     const a = w.rng.range(0, Math.PI * 2), r = w.rng.range(0, PERCH_REACH), x = c.x + Math.cos(a) * r, y = c.y + Math.sin(a) * r;
-    if (inBounds(x, y) && w.voles[idx(x, y)] > most) { best = { x, y }; most = w.voles[idx(x, y)]; }
+    if (inBounds(x, y) && smallAt(w, idx(x, y)) > most) { best = { x, y }; most = smallAt(w, idx(x, y)); }
   }
   return best;
 }
@@ -3948,8 +4307,8 @@ function owlMood(w, c) {
     case 'look': return { emoji: '👀', text: 'Looking for long grass with voles in' };
     case 'hunt': return { emoji: '👀', text: c.perch && c.perch.hunt ? 'Gliding silently to a branch by the long grass' : 'Gliding off to hunt somewhere else' };
     case 'perch': return { emoji: '👀', text: 'Sitting on a branch, listening for voles' };
-    case 'swoop': return kit ? { emoji: '👀', text: `Dropping silently on ${kit.name}!` } : { emoji: '🐁', text: 'Dropping on a vole!' };
-    case 'gulp': return c.prey === 'rabbit' ? { emoji: '🍖', text: 'Eating its catch' } : { emoji: '🐁', text: 'Swallowing a vole whole' };
+    case 'swoop': return kit ? { emoji: '👀', text: `Dropping silently on ${kit.name}!` } : frogsBy(w, c.target || c) ? { emoji: '🐸', text: 'Dropping on a frog!' } : { emoji: '🐁', text: 'Dropping on a vole!' };
+    case 'gulp': return c.prey === 'rabbit' ? { emoji: '🍖', text: 'Eating its catch' } : c.prey === 'frog' ? { emoji: '🐸', text: 'Swallowing a frog whole' } : { emoji: '🐁', text: 'Swallowing a vole whole' };
     case 'follow': return { emoji: '🍼', text: 'Following mum, begging for food' };
     case 'home': return { emoji: '🏠', text: 'Fed, flying back to its tree' };
     case 'hoot': return { emoji: '', text: 'Sitting in its tree, hooting' };
@@ -4015,12 +4374,16 @@ function createWorld(seed, opts = {}) {
     fire: new Float32Array(W * H), ash: new Float32Array(W * H), silt: new Float32Array(W * H), burning: [], blaze: 0, blazeTrees: 0,
     rich: new Float32Array(W * H), shadedFert: new Float32Array(W * H),   // (see groundTick)
     voles: new Float32Array(W * H), voleCount: 0, voleYear: false,          // (see volesTick)
+    frogs: new Float32Array(W * H), spawn: new Float32Array(W * H), frogCount: 0, spawnCount: 0, frogsOut: true,   // (see frogsTick; damp: tiles to the water, as of the tick dampAt)
+    damp: new Float32Array(W * H), dampOf: -1, dampAt: 0, spawnSpots: new Int32Array(SPAWN_SPOTS).fill(-1), spawnTiles: new Int32Array(W * H), spawnN: 0,
+    frogYear: { year: 0, at: -1, grown: 0, laid: 0, spawners: 0, stranded: 0, eaten: 0, left: 0, told: 0, dryDay: -1 },   // this spring's spawn, and how it went
     sick: 0, outbreak: null,                                              // (see sicknessTick)
     carcasses: [], roost: null, cached: 0, gatherSaid: -1,                // (see carrionTick and crowTick; cached: this autumn; gatherSaid: the outbreak told of)
     count: perKind(() => 0), expecting: perKind(() => 0),
     stats: { births: perKind(() => 0), deaths: perKind(() => ({})), voles: 0, owlVoles: 0,   // voles: the foxes caught, and the owls
+      frogs: 0, owlFrogs: 0, crowSpawn: 0, frogYears: [],                                   // frogs likewise; the spawn the crows ate; each spring's frogs
       remains: { left: 0, eaten: 0, rotted: 0 }, cached: 0, dugUp: 0, planted: 0 },   // remains, and how they went; the crows' acorns
-    history: { every: 60, t: [], grass: [], voles: [], ...perKind(() => []), traits: perKind(() => []), marks: [] },
+    history: { every: 60, t: [], grass: [], voles: [], frogs: [], ...perKind(() => []), traits: perKind(() => []), marks: [] },
     goneSince: perKind(() => -1), hives: [],
     // The trees (see treesTick). They have their own random numbers, so the rest of the meadow comes out as it did before they grew.
     treeRng: makeRng(seed ^ 0x5eed7ee), nextTree: 1, seeds: [], mast: false, mastYear: 0, orchard: [], treeCount: 0,
@@ -4034,6 +4397,7 @@ function createWorld(seed, opts = {}) {
   startTrees(w);
   groundTick(w);
   startVoles(w);
+  startFrogs(w);
   w.roost = pickRoost(w);
   const n = { rabbit: opts.rabbits ?? Math.round(30 * w.room), fox: opts.foxes ?? Math.round(4 * w.room), bee: opts.bees ?? 12, crow: opts.crows ?? Math.round(8 * w.room),
     owl: opts.owls ?? 2 * Math.max(1, Math.round(w.room)) };   // a pair or two
@@ -4105,10 +4469,11 @@ function record(w) {
   h.t.push(w.tick);
   h.grass.push(grassFullness(w));
   h.voles.push(Math.round(w.voleCount));
+  h.frogs.push(Math.round(w.frogCount));
   for (const s of KINDS) { h[s].push(w.count[s]); h.traits[s].push(traitMeans(w, s)); }
   if (h.t.length > HISTORY_MAX) {
     const half = a => a.filter((_, i) => i % 2 === 0);
-    for (const k of ['t', 'grass', 'voles', ...KINDS]) h[k] = half(h[k]);
+    for (const k of ['t', 'grass', 'voles', 'frogs', ...KINDS]) h[k] = half(h[k]);
     for (const s of KINDS) h.traits[s] = half(h.traits[s]);
     h.every *= 2;
   }
@@ -4301,6 +4666,7 @@ function step(w) {
   if (t % 4 === 0) { growGrass(w, 4); fireTick(w, 4); iceTick(w, 4); }
   if (t % WATER_EVERY === 0) waterTick(w);
   if (t % VOLE_EVERY === 0) volesTick(w);
+  if (t % FROG_EVERY === 15) frogsTick(w);
   if (t % 60 === 0) { hivesTick(w); windfallTick(w); if (w.weather.kind === 'storm') windthrow(w); }
   if (t % SICK_EVERY === 0) sicknessTick(w);
   if (t % CARRION_EVERY === 0) carrionTick(w);
@@ -4339,8 +4705,9 @@ function forgetTheLongDead(w) {
 // where they'd got to. The neighbour grids and the events stay out, and are made again.
 // A change a kept meadow can't take (a new field the code counts on, on the world, a creature, a hive
 // or a tree) bumps KEEP_VERSION, and kept meadows start over.
-const KEEP_VERSION = 6;                 // 2: shade and rich ground (w.shadedFert, w.rich); 3: voles (w.voles); 4: the sickness (c.sick, c.immune, the resist gene);
-                                        // 5: crows and remains (w.carcasses, w.roost, c.caches, d.nuts); 6: owls (d.owl, c.perch)
+const KEEP_VERSION = 7;                 // 2: shade and rich ground (w.shadedFert, w.rich); 3: voles (w.voles); 4: the sickness (c.sick, c.immune, the resist gene);
+                                        // 5: crows and remains (w.carcasses, w.roost, c.caches, d.nuts); 6: owls (d.owl, c.perch);
+                                        // 7: frogs (w.frogs, w.spawn, w.frogYear, c.frogs)
 const TABLES = { SPECIES, FIELD_KINDS, TREE_MIX, TREES, SEASONS, WEATHER, COATS, GROUND };
 const UNKEPT = ['grid', 'grids', 'events', 'newborn'];      // on the world
 let tableNames = null;                                     // object -> 'SPECIES.fox', made the first time
@@ -4484,9 +4851,10 @@ function mood(w, c) {
       : { emoji: '🌰', text: `Off to the ${c.target?.tree?.kind === 'beech' ? 'beeches for beechnuts' : 'oaks for acorns'}` };
     case 'munch': return c.snack === 'apple' ? { emoji: '🍎', text: 'Munching a windfall apple' } : { emoji: '🌰', text: `Nibbling ${c.snack}` };
     case 'prowl': return { emoji: '🐾', text: 'Back to good hunting ground' };
-    case 'mouse': return { emoji: '🐁', text: c.target ? 'Stepping softly through the long grass' : 'Listening for voles in the long grass' };
-    case 'pounce': return { emoji: '🐁', text: 'Pouncing on a vole!' };
-    case 'gulp': return { emoji: '🐁', text: 'Gulping down a vole' };
+    case 'mouse': return frogsBy(w, c) ? { emoji: '🐸', text: c.target ? 'Creeping along the water\'s edge' : 'Listening for frogs in the wet grass' }
+      : { emoji: '🐁', text: c.target ? 'Stepping softly through the long grass' : 'Listening for voles in the long grass' };
+    case 'pounce': return frogsBy(w, c) ? { emoji: '🐸', text: 'Pouncing on a frog!' } : { emoji: '🐁', text: 'Pouncing on a vole!' };
+    case 'gulp': return c.prey === 'frog' ? { emoji: '🐸', text: 'Gulping down a frog' } : { emoji: '🐁', text: 'Gulping down a vole' };
     case 'stalk': return { emoji: '👀', text: other ? `Sneaking up on ${other.name}` : 'Sneaking' };
     case 'chase': return { emoji: '💨', text: other ? `Chasing ${other.name}!` : 'Chasing!' };
     case 'eat': return { emoji: '🍖', text: 'Eating' };
@@ -4508,7 +4876,7 @@ const api = {
   TERRAIN, drawnToLink, drawnFromLink, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE,
   TREES, treeStage, treeAge, standing, bearing, hollow, inBloom, SEEDLING, SAPLING, GROWN, KIND_NAMES,
-  VOLE_K, POUNCE_TICKS, CROWDED,
+  VOLE_K, POUNCE_TICKS, CROWDED, FROG_K, SPAWN_WORTH,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 else root.Sim = api;

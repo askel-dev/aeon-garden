@@ -173,6 +173,27 @@ look only: now and then a painted vole (`voleAt`, the mousing bubble's) pops up 
 is a high arc (`hopOf`). The news tells of a vole year and the crash after it (`VOLE_BOOM`, `VOLE_BUST`), and the
 stats chart has their meadow-wide count (`w.history.voles`).
 
+Frogs are a field too, like the voles (`frogsTick`, every `FROG_EVERY` ticks): `w.frogs` on land, `w.spawn` (spawn,
+then tadpoles) on shallow water. From spring to autumn frogs live in the damp long grass near the water (`frogRoom`: up
+to `FROG_K` a tile, fewer the further from the water, `w.damp`, worked out at most once a day by `dampen`; grazed short
+holds `FROG_BARE` of it; a heatwave shrinks the reach to `FROG_DRY`); they winter in the mud (`FROG_COLD`, twice that
+under ice), and fire kills them. On a mild night early in spring (`SPAWN_FROM`, `SPAWN_ODDS`, a wet night always, by
+`SPAWN_BY` anyway) the frogs within `SPAWN_REACH` of the shallows spawn (`spawnFrogs`, shared out with `boxSum` and
+`shareOut`): still shallows best, a flood pool on the floodplain above all (`SPAWN_EDGE` for the lasting shallows, none by
+the deep or the current, `SPAWN_DEEP`; rich water a little more). The tadpoles grow as one (`w.frogYear.grown`,
+`TADPOLE_DAYS`, faster in the sun, `WARMTH`) and then leave for the grass about (`FROGLET_LEAVE`, `FROGLET_REACH`). That's
+the gamble: the flood pools go when the water falls back in summer (or in a dry spell), and tadpoles in one that dries
+out are stranded (`tadpolesTick`), so an early spawning in a warm spring makes a big frog year and a late cold one a
+poor one. Only the tiles spawned in are looked at (`w.spawnTiles`). A mousing fox and an owl take frogs with the voles
+(`smallAt`, `takeFrog`: whichever is thicker there, `FROG_ENERGY`, `OWL_FROG`), and a frog is small prey for the fox's
+search image too (`c.prey` 'frog' sees rabbits at `MOUSE_EYES`; without that, rabbit lows dragged on). A hungry crow in
+spring flies down to the thickest spawn (`w.spawnSpots`) and pecks it out at the water's edge (`tadpoles`, modes 'pool'
+and 'tadpole'). game.js draws it all as a look, a fixed pool (`drawPond`): frogspawn clumps, then tadpoles, a painted
+common frog (`frogAt`, also the 🐸 bubble; 🫧 is the frogspawn) hopping at the water's edge or up on a lily pad. The water
+inspector says what's in it (`pondFacts`), the news tells of the spawning, a pool drying out with tadpoles in it,
+froglets leaving and a big or poor frog year (`FROG_BOOM`, `FROG_POOR`, event 'frogyear'), the stats chart has
+`w.history.frogs`, and a frog purrs now and then on spring nights while there's spawn about (sound.js `croak`).
+
 Rocks are painted, not emoji (`rockInfo`, `rockSprite` in game.js): pebbles, stones and boulders by
 size (`TERRAIN.rockSize`), flat stones at the fords, and two or three great rocks per meadow
 (`TERRAIN.bigRocks`, `big: true`) that burrows keep clear of. Like a tree's, a rock's snow is a layer of its

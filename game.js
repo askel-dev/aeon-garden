@@ -1005,6 +1005,7 @@ function render(now) {
   drawShore(z, ox, oy, ck.season);
   drawPlants(z, ox, oy, ck.season);                  // over the waves, which can pass a flower by the water
   drawVoles(now, z);
+  drawPond(now, z);
 
   // Burrows, drawn by hand: some browsers clip the 🕳️ glyph in half.
   const residents = new Map();
@@ -1173,8 +1174,8 @@ const CROW_FLY = 1.5;              // how high a crow flies, in its size
 const CROW_PERCH = 0.55;           // how far up a tree's painting it sits
 const CROW_EASE = 12;              // ticks to get most of the way to a new height
 const CROW_AIR = new Set(['flap', 'flock', 'love', 'follow']);                               // flying (and 'mob': round an owl)
-const CROW_LANDS = new Set(['remains', 'forage', 'fetch', 'cache', 'apple', 'unbury']);       // flying there, and down
-const CROW_PECKS = new Set(['peck', 'carrion', 'munch', 'bury', 'unbury']);                 // heads down
+const CROW_LANDS = new Set(['remains', 'forage', 'fetch', 'cache', 'apple', 'unbury', 'pool']); // flying there, and down
+const CROW_PECKS = new Set(['peck', 'carrion', 'munch', 'bury', 'unbury', 'tadpole']);       // heads down
 const birdLifts = new WeakMap();
 const perch = d => (d ? treePx(d) * CROW_PERCH : 0);
 const near = (c, p, far) => clamp(Math.hypot(p.x - c.x, p.y - c.y) / far, 0, 1);
@@ -1410,6 +1411,50 @@ function paintVole(g, size, U) {
   g.lineCap = g.lineJoin = 'round';
   voleAt(g);
 }
+// A common frog, facing left, olive-brown with darker blotches and the dark patch behind its eye: sitting
+// (the frog bubble's, and the ones by the water, drawPond) or leaping with its hind legs out behind.
+const FROG_SKIN = '#7f7c46', FROG_DARK = '#5c5a31', FROG_BELLY = '#c2b784', FROG_MASK = '#3f3421';
+const frogAt = (g, leap = false) => {
+  if (leap) {
+    strokeIn(g, FROG_DARK, 0.13, () => { g.moveTo(0.35, 0.2); g.lineTo(0.72, 0.32); g.lineTo(0.95, 0.5); g.moveTo(0.3, 0.26); g.lineTo(0.62, 0.46); g.lineTo(0.9, 0.6); });
+    strokeIn(g, FROG_DARK, 0.09, () => { g.moveTo(-0.45, 0.28); g.lineTo(-0.72, 0.5); });
+    fillIn(g, FROG_SKIN, () => { ovalAt(g, 0.02, 0.14, 0.5, 0.24, 0.12); ovalAt(g, -0.52, 0.02, 0.26, 0.19, -0.05); });
+    fillIn(g, FROG_BELLY, () => ovalAt(g, -0.05, 0.27, 0.36, 0.1, 0.1));
+    fillIn(g, FROG_DARK, () => { discAt(g, 0.12, 0.02, 0.07); discAt(g, 0.32, 0.1, 0.06); });
+    fillIn(g, FROG_MASK, () => ovalAt(g, -0.4, 0.02, 0.12, 0.06, 0.2));
+    fillIn(g, '#c9a54a', () => discAt(g, -0.54, -0.1, 0.075));
+    fillIn(g, '#221c12', () => discAt(g, -0.55, -0.1, 0.04));
+    return;
+  }
+  fillIn(g, FROG_DARK, () => { ovalAt(g, 0.36, 0.4, 0.34, 0.25, -0.35); ovalAt(g, 0.1, 0.67, 0.34, 0.07); });   // the hind leg, folded, and its long foot
+  fillIn(g, FROG_SKIN, () => { ovalAt(g, 0.08, 0.2, 0.55, 0.34, -0.4); ovalAt(g, -0.44, -0.08, 0.3, 0.22, -0.2); discAt(g, -0.42, -0.26, 0.12); });
+  fillIn(g, FROG_BELLY, () => ovalAt(g, -0.1, 0.38, 0.36, 0.13, -0.35));
+  fillIn(g, FROG_DARK, () => { discAt(g, 0.12, -0.02, 0.08); discAt(g, 0.36, 0.14, 0.07); discAt(g, 0.28, 0.4, 0.06); });
+  fillIn(g, FROG_MASK, () => ovalAt(g, -0.27, -0.16, 0.13, 0.08, 0.6));
+  strokeIn(g, FROG_DARK, 0.09, () => { g.moveTo(-0.34, 0.2); g.lineTo(-0.4, 0.64); g.lineTo(-0.52, 0.68); });   // a front leg
+  fillIn(g, '#c9a54a', () => discAt(g, -0.43, -0.27, 0.08));
+  fillIn(g, '#221c12', () => discAt(g, -0.44, -0.27, 0.045));
+};
+// Frogspawn: a clump of clear jelly, a black dot in each egg (the frogspawn bubble's, and in the shallows).
+const spawnAt = g => {
+  const eggs = [[-0.5, 0.1], [-0.2, -0.15], [0.12, -0.2], [0.42, -0.02], [-0.3, 0.32], [0.02, 0.1], [0.3, 0.3], [0.6, 0.28], [-0.62, -0.18], [0.05, 0.42]];
+  fillIn(g, 'rgba(214,226,210,0.55)', () => { for (const [x, y] of eggs) discAt(g, x, y, 0.2); });
+  fillIn(g, 'rgba(240,246,236,0.7)', () => { for (const [x, y] of eggs) discAt(g, x - 0.05, y - 0.06, 0.07); });
+  fillIn(g, '#26241e', () => { for (const [x, y] of eggs) discAt(g, x + 0.02, y + 0.02, 0.055); });
+};
+// A few tadpoles, black commas wriggling every way (in the shallows).
+const tadpolesAt = g => {
+  for (const [x, y, a] of [[-0.45, -0.1, 0.4], [0.1, -0.3, 2.5], [0.4, 0.2, -1.2], [-0.15, 0.35, 3.6], [0.55, -0.35, 1.3]]) {
+    strokeIn(g, '#2e2b22', 0.06, () => { g.moveTo(x, y); g.quadraticCurveTo(x + Math.cos(a) * 0.2 - Math.sin(a) * 0.08, y + Math.sin(a) * 0.2 + Math.cos(a) * 0.08, x + Math.cos(a) * 0.34, y + Math.sin(a) * 0.34); });
+    fillIn(g, '#26241e', () => ovalAt(g, x, y, 0.09, 0.07, a));
+  }
+};
+// On their own, for the sprite cache: 'frog:0' sitting, 'frog:1' leaping, 'frog:2' spawn, 'frog:3' tadpoles.
+function paintFrog(g, size, U, pose) {
+  g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
+  g.lineCap = g.lineJoin = 'round';
+  if (pose === 2) spawnAt(g); else if (pose === 3) tadpolesAt(g); else frogAt(g, pose === 1);
+}
 // A crow, facing left, blue-black with a sheen (sim.js crowTick): standing, pecking, flying with its wings up
 // and down, and those two again with an acorn in its beak ('crow:0' to 'crow:5'). Its box -1 to 1 is the size
 // asked for, feet on the ground at 0.72 like an animal's.
@@ -1617,6 +1662,8 @@ const BUBBLE_ICONS = [
     fillIn(g, '#c99467', () => ovalAt(g, -0.45, 0.35, 0.16, 0.1, 0.3));
   }],
   ['🐁', voleAt],                                       // mousing: a vole
+  ['🐸', g => frogAt(g)],                               // a frog (a fox or an owl after them)
+  ['🫧', spawnAt],                                      // frogspawn (a crow at it)
   ['🪱', g => {                                          // a crow pecking for grubs: a worm
     strokeIn(g, '#d88a86', 0.32, () => { g.moveTo(-0.72, 0.42); g.bezierCurveTo(-0.45, -0.35, -0.05, 0.75, 0.3, 0.02); g.quadraticCurveTo(0.48, -0.36, 0.74, -0.3); });
     strokeIn(g, '#e8a8a2', 0.3, () => { g.moveTo(-0.18, 0.3); g.lineTo(-0.02, 0.36); });
@@ -2210,7 +2257,7 @@ function putPainting(p, f, alpha, snow, ox, oy) {
   if (snow && p.snow) { ctx.globalAlpha = alpha * snow; ctx.drawImage(p.snow, x, y, w, h); }
   ctx.globalAlpha = 1;
 }
-const PAINTERS = { reeds: paintReeds, lily: paintLilies, bubble: paintBubble, vole: paintVole, crow: paintCrow, remains: paintRemains };
+const PAINTERS = { reeds: paintReeds, lily: paintLilies, bubble: paintBubble, vole: paintVole, frog: paintFrog, crow: paintCrow, remains: paintRemains };
 function drawDecor(d, sx, sy, now, ck, clipLeaves) {
   const z = cam.zoom, px = d.tree ? treePx(d) : d.size * z;
   if (d.emoji === '🪨') { drawRock(d, sx, sy); return; }
@@ -2944,6 +2991,88 @@ function drawVoles(now, z) {
   ctx.globalAlpha = 1;
 }
 
+// ------------------------------------------------------------------ pond life
+//
+// The sim keeps frogs, and their spawn and tadpoles, as numbers on tiles (w.frogs, w.spawn), like the voles.
+// So the look is a fixed pool of spots, one tried a frame at a random place on screen, likelier to take the
+// more there are: a clump of frogspawn in the shallows early in spring, then a few tadpoles wriggling; a frog
+// that sits at the water's edge, hops once, and sits again; now and then one on a lily pad. Nothing kept.
+const POND_SPOTS = 14;             // most shown at once
+const POND_ODDS = 0.06;            // odds a try where they're thickest shows one
+const POND_TRIES = 3;              // tries a frame
+const SPAWN_MS = [7000, 3500];     // how long a clump of spawn, or some tadpoles, shows
+const HOP_MS = 2600;               // a frog: it sits, hops, sits
+const LILY_MS = 6000;              // and one on a lily pad sits a while
+const FROG_SIZE = 0.5;             // of a rabbit (a vole peeping up is too)
+const HOP_OFF = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]];
+const pondLife = { x: new Float32Array(POND_SPOTS), y: new Float32Array(POND_SPOTS), dx: new Float32Array(POND_SPOTS), dy: new Float32Array(POND_SPOTS),
+  t0: new Float64Array(POND_SPOTS).fill(-1e9), ms: new Float32Array(POND_SPOTS), kind: new Uint8Array(POND_SPOTS), next: 0 };
+const frogsAround = i => Math.max(world.frogs[i], world.frogs[i - 1] || 0, world.frogs[i + 1] || 0, world.frogs[i - S.W] || 0, world.frogs[i + S.W] || 0);
+
+function pondSpot(now, kind, x, y, ms, dx = 0, dy = 0) {
+  const P = pondLife, k = P.next;
+  if (now - P.t0[k] < P.ms[k]) return;               // (the oldest is still showing: wait)
+  P.x[k] = x; P.y[k] = y; P.dx[k] = dx; P.dy[k] = dy; P.t0[k] = now; P.ms[k] = ms; P.kind[k] = kind; P.next = (k + 1) % POND_SPOTS;
+}
+
+function drawPond(now, z) {
+  if (z < 10) return;
+  const season = S.seasonOf(world.tick), frogsOut = world.frogsOut && iceOver() < 0.3;
+  if (ui.speed > 0 && (world.spawnCount > 0 || frogsOut)) for (let t = 0; t < POND_TRIES; t++) {
+    const x = cam.x + (Math.random() - 0.5) * vw / z, y = cam.y + (Math.random() - 0.5) * vh / z;
+    if (x >= 1 && y >= 1 && x < S.W - 1 && y < S.H - 1) {
+      const i = (y | 0) * S.W + (x | 0);
+      if (world.water[i]) {
+        const n = world.spawn[i] / (4 * S.SPAWN_WORTH);
+        if (n > 0 && Math.random() < POND_ODDS * 4 * n) { const tad = world.frogYear.grown >= 0.35 ? 1 : 0; pondSpot(now, tad, x, y, SPAWN_MS[tad]); }
+      } else if (frogsOut) {
+        const n = world.frogs[i] / S.FROG_K;
+        if (Math.random() < POND_ODDS * n) {             // a hop, towards the water if it's near
+          let dx = Math.random() < 0.5 ? 0.8 : -0.8, dy = 0;
+          for (const [ox, oy] of HOP_OFF) if (world.water[i + ox + oy * S.W]) { dx = ox * 0.8; dy = oy * 0.5; break; }
+          pondSpot(now, 2, x, y, HOP_MS, dx, dy);
+        }
+      }
+    }
+  }
+  if (ui.speed > 0) {
+    if (frogsOut && season < 3 && pond && pond.shore.length && Math.random() < 0.05) {   // a frog up on a lily pad
+      const s = pond.shore[(Math.random() * pond.shore.length) | 0];
+      const n = s.lily ? frogsAround((s.y | 0) * S.W + (s.x | 0)) / S.FROG_K : 0;
+      if (n > 0 && Math.random() < 3 * POND_ODDS * n) pondSpot(now, 3, s.x, s.y + 0.05, LILY_MS);
+    }
+  }
+  const P = pondLife, px = Math.max(8, (8 + z) * FROG_SIZE);
+  for (let k = 0; k < POND_SPOTS; k++) {
+    const a = (now - P.t0[k]) / P.ms[k];
+    if (a >= 1 || a < 0) continue;
+    const kind = P.kind[k];
+    if (kind < 2 && !world.spawn[(P.y[k] | 0) * S.W + (P.x[k] | 0)]) continue;   // eaten, or dried out
+    let x = P.x[k], y = P.y[k], lift = 0, art = 'frog:0';
+    if (kind === 0 || kind === 1) {
+      art = kind === 0 ? 'frog:2' : 'frog:3';
+      if (kind === 1) { x += 0.15 * Math.sin(now / 400 + k); y += 0.08 * Math.cos(now / 530 + k); }
+    } else if (kind === 2) {
+      const h = (a - 0.35) / 0.2;                        // sit, hop (a fifth of the time), sit
+      const u = h <= 0 ? 0 : h >= 1 ? 1 : h;
+      x += P.dx[k] * u; y += P.dy[k] * u;
+      if (h > 0 && h < 1) { lift = Math.sin(Math.PI * h) * 0.5; art = 'frog:1'; }
+      else if (h >= 1 && world.water[(y | 0) * S.W + (x | 0)]) continue;   // plop: into the water
+    }
+    const sx = (x - cam.x) * z + vw / 2, sy = (y - cam.y) * z + vh / 2 - lift * z;   // (toScreen, without an array)
+    const size = kind === 0 ? px * 2 : kind === 1 ? px * 1.6 : px;
+    if (!visible(sx, sy, size)) continue;
+    const s = sprite(art, size);
+    ctx.globalAlpha = Math.min(1, 6 * a, 6 * (1 - a)) * (kind === 0 ? 0.85 : 1);
+    if (kind >= 2 && P.dx[k] > 0) {                     // (painted facing left)
+      ctx.save(); ctx.translate(sx, 0); ctx.scale(-1, 1);
+      ctx.drawImage(s.canvas, -s.size / 2, sy - s.size * 0.76, s.size, s.size);
+      ctx.restore();
+    } else ctx.drawImage(s.canvas, sx - s.size / 2, sy - s.size * (kind < 2 ? 0.5 : 0.76), s.size, s.size);
+  }
+  ctx.globalAlpha = 1;
+}
+
 // ------------------------------------------------------------------ pollen
 //
 // A sipping bee kicks up a few specks of pollen, and when she's done with a flower a little puff
@@ -3415,6 +3544,17 @@ function handleEvent(e) {
     case 'buried':
       addNews(`🌰 The crows buried ${e.n} ${e.n === 1 ? 'acorn' : 'acorns and beechnuts'} this autumn. The ones they forget will come up as oaks and beeches in the spring.`);
       break;
+    case 'frogs': {
+      const at = e.water ? `the ${e.water.name}` : 'the shallows';
+      if (e.what === 'spawn') addNews(`🫧 <b>The frogs are spawning</b> in ${at}: a night of croaking, and clumps of frogspawn in the warm shallows.`, 'frogspawn', 30000);
+      else if (e.what === 'stranded') addNews(`🫧 The water is falling back from the pools by ${at}, and the tadpoles in them are stranded in the mud${e.grown < 0.9 ? ', not grown yet' : ''}.`, 'tadpoles', 30000);
+      else if (e.what === 'froglets') addNews(`🐸 <b>Froglets!</b> Tiny frogs are leaving ${at} for the long grass, and the foxes and owls are finding them.`, 'froglets', 30000);
+      break;
+    }
+    case 'frogyear':
+      if (e.big) addNews('🐸 <b>A big frog year!</b> The spring was kind and the tadpoles got out in time: the wet grass by the water is hopping with frogs.');
+      else if (e.poor) addNews(`🐸 <b>A poor year for frogs.</b> ${e.stranded > 0.5 ? 'The water fell back before the tadpoles were grown, and hardly a froglet got out.' : 'Hardly a froglet made it out of the water this spring.'}`);
+      break;
     case 'voles':
       addNews(e.boom ? '🐁 <b>A vole year!</b> The long grass is alive with voles, and the foxes are out mousing, leaping high to pounce.'
         : '🐁 <b>The voles have crashed.</b> The long grass has gone quiet, and the foxes are back to hunting rabbits.');
@@ -3670,6 +3810,7 @@ const SERIES = {
   crow: { emoji: '🐦‍⬛', name: 'Crows', title: 'Crows alive', color: '#4a4e5e', fmt: v => Math.round(v) },
   owl: { emoji: '🦉', name: 'Owls', title: 'Owls alive', color: '#9a6a3e', fmt: v => Math.round(v) },
   voles: { emoji: '🐁', name: 'Voles', title: 'Voles in the long grass', color: '#8a6a4e', fmt: v => Math.round(v) },
+  frogs: { emoji: '🐸', name: 'Frogs', title: 'Frogs by the water', color: '#6f8f3e', fmt: v => Math.round(v) },
   grass: { emoji: '🌱', name: 'Grass', title: 'How lush the meadow is', color: '#5f9e43', fmt: v => Math.round(v * 100) + '%' },
 };
 const SEASON_TINT = ['#f6dde5', '#f7ecb8', '#f4d6b6', '#dfe8f0'];
@@ -3934,7 +4075,7 @@ function renderStatsCards() {
 
 function renderStats() {
   const keys = shownKeys();
-  $('#stats-title').textContent = keys.length > 1 ? 'Rabbits, foxes, bees, voles and grass' : SERIES[keys[0]].emoji + ' ' + SERIES[keys[0]].title;
+  $('#stats-title').textContent = keys.length > 1 ? 'Rabbits, foxes, bees, voles, frogs and grass' : SERIES[keys[0]].emoji + ' ' + SERIES[keys[0]].title;
   $('#stats-range-note').textContent = 'over ' + RANGE_WORDS[ui.stats.range];
   $('#stats-clock').textContent = `${S.SEASONS[S.seasonOf(world.tick)].emoji} ${when(world.tick)}`;
   document.querySelectorAll('[data-show]').forEach(b => b.classList.toggle('on', b.dataset.show === ui.stats.show));
@@ -4009,6 +4150,7 @@ function renderInspector() {
   if (c.alive && c.pregnantUntil) chips.push(c.species === 'fox' ? '🍼 Expecting cubs' : '🍼 Expecting babies');
   if (c.kills) chips.push(`🍖 ${c.kills} ${c.kills === 1 ? 'catch' : 'catches'}`);
   if (c.voles) chips.push(`🐁 ${c.voles} ${c.voles === 1 ? 'vole' : 'voles'} caught`);
+  if (c.frogs) chips.push(`🐸 ${c.frogs} ${c.frogs === 1 ? 'frog' : 'frogs'} caught`);
   if (c.escapes) chips.push(`💨 ${c.escapes} narrow ${c.escapes === 1 ? 'escape' : 'escapes'}`);
   if (c.visits) chips.push(`🌼 ${c.visits} ${c.visits === 1 ? 'flower' : 'flowers'} visited`);
   if (c.species === 'crow' && c.home && c.sex === 'F') chips.push(`🪺 Nests in ${thingLink('tree', c.home.id, c.home.name ? 'the ' + esc(c.home.name) : 'a tall ' + treeName(c.home).toLowerCase())}`);
@@ -4425,6 +4567,7 @@ const THINGS = {
       if (world.ground[i] > T.level) facts.push(['🌧️', 'Flood water: this is dry land most of the year']);
       facts.push(waterLine());
       if (world.fords.some(f => Math.hypot(f.x - x, f.y - y) < 4)) facts.push(['🪨', 'A ford: stepping stones cross here']);
+      facts.push(...pondFacts(i));
       const who = whoNear(x, y, 4, c => world.water[tileOf(c.x, c.y)] && !c.sp.flies);
       if (who) facts.push(world.frozen ? ['⛸️', `On the ice: ${who}`] : ['🏊', `In the water: ${who}`]);
       const kind = body.kind[0].toUpperCase() + body.kind.slice(1);
@@ -4436,6 +4579,22 @@ const THINGS = {
     },
   },
 };
+
+// What lives in the water at tile i and round its shore (sim.js frogsTick): spawn or tadpoles, and frogs.
+function pondFacts(i) {
+  const b = world.body[i], out = [], y = world.frogYear;
+  let spawn = 0, frogs = 0;
+  for (let j = 0; j < world.body.length; j++) {
+    if (world.water[j]) { if (world.body[j] === b) spawn += world.spawn[j]; }
+    else if (world.nearBody[j] === b) frogs += world.frogs[j];
+  }
+  if (spawn > 0.5) {
+    out.push(['🫧', y.grown < 0.35 ? 'Clumps of frogspawn in the shallows' : y.grown < 1 ? `Tadpoles in the shallows, ${y.grown < 0.75 ? 'growing legs' : 'nearly froglets'}` : 'The last tadpoles, turning into froglets']);
+    if (world.spawn[i] > 0 && world.ground[i] > world.terrain.level) out.push(['⏳', 'A flood pool: the tadpoles have to be grown before the water falls back in summer']);
+  }
+  if (frogs >= 1) out.push(['🐸', world.frogsOut ? `About ${Math.round(frogs)} frogs in the wet grass round it` : `About ${Math.round(frogs)} frogs asleep in the mud round it till spring`]);
+  return out;
+}
 
 // What a click lands on, if not an animal: { kind, it } or null for bare ground.
 function thingAt(sx, sy) {
@@ -4518,10 +4677,10 @@ function diaryFacts(c) {
     `Right now: ${S.mood(world, c).text}. Tummy ${Math.round(100 * c.energy / c.maxEnergy)}% full. It is ${S.SEASONS[ck.season].name.toLowerCase()}, ${ck.night ? 'night' : 'daytime'}, weather: ${S.WEATHER[world.weather.kind].name.toLowerCase()}${world.burning.length ? ', and there is a wildfire in the meadow' : ''}.`,
     c.queen ? `Family: a worker, daughter of Queen ${c.queen.name}, who lays all the hive's eggs. Sisters in the hive: ${c.home.bees - 1}.`
       : `Family: mum ${mum ? mum.name + (mum.alive ? '' : ' (died)') : 'unknown'}, dad ${dad ? dad.name + (dad.alive ? '' : ' (died)') : 'unknown'}, ${c.kids} children.`,
-    c.species === 'fox' ? `Rabbits caught so far: ${c.kills}. Voles caught in the long grass: ${c.voles}.`
+    c.species === 'fox' ? `Rabbits caught so far: ${c.kills}. Voles caught in the long grass: ${c.voles}. Frogs caught by the water: ${c.frogs || 0}.`
       : c.species === 'bee' ? `Flowers visited so far: ${c.visits}. Honey in the hive: ${Math.round(c.home.honey)}, shared by ${c.home.bees} bees.`
       : c.species === 'crow' ? `A crow: it pecks for grubs, eats what the foxes leave and whoever died out in the meadow, sleeps with the other crows in one big tree, and buries acorns in autumn.`
-      : c.species === 'owl' ? `A tawny owl: it sleeps in its tree by day, and from dusk to dawn sits on a branch listening for voles and drops on them. Voles caught so far: ${c.voles}. Young rabbits caught: ${c.kills}. The crows mob it if they find it asleep.`
+      : c.species === 'owl' ? `A tawny owl: it sleeps in its tree by day, and from dusk to dawn sits on a branch listening for voles and frogs and drops on them. Voles caught so far: ${c.voles}. Frogs: ${c.frogs || 0}. Young rabbits caught: ${c.kills}. The crows mob it if they find it asleep.`
       : `Narrow escapes from foxes: ${c.escapes}.`
         + (world.byId.get(c.nemesisId) ? ` The fox it fears most: ${world.byId.get(c.nemesisId).name}.` : ''),
     `Recent life events (oldest first):\n${events}`,
@@ -5881,7 +6040,7 @@ addEventListener('pagehide', keepMeadow);
 const AWAY_MIN = 5 * 60e3;                 // gone at least this long, in real time
 const AWAY_TICKS = S.SEASON_DAYS * S.TPD;  // and it moves on a season, however long it was
 const AWAY_MS = 40;                        // of each frame the catching up gets
-const AWAY_BIG = ['extinct', 'swarm', 'settle', 'hivestruck', 'queenlost', 'fire', 'outbreak', 'outbreakover', 'mast', 'voles', 'treedied', 'windthrow'];   // news for the card, the first told first
+const AWAY_BIG = ['extinct', 'swarm', 'settle', 'hivestruck', 'queenlost', 'fire', 'outbreak', 'outbreakover', 'mast', 'voles', 'frogyear', 'treedied', 'windthrow'];   // news for the card, the first told first
 const away = { on: false, frames: 0, left: 0, from: 0, day: -1, births: null, deaths: null, news: [], type: '', mine: false };
 const awayOpen = () => !$('#away').classList.contains('hidden');
 const deathsOf = s => Object.values(world.stats.deaths[s]).reduce((a, b) => a + b, 0);
@@ -6072,7 +6231,8 @@ function frame(now) {
     if (ui.sound) {
       const ck = S.clock(world);
       const life = world.count.rabbit / (S.SPECIES.rabbit.cap * world.room);
-      Sound.update({ phase: ck.phase, season: ck.season, speed: ui.speed, sky: ui.sky.mix, fire: world.burning.length, bees: beesOnScreen(), life, owls: world.count.owl || 0 });
+      Sound.update({ phase: ck.phase, season: ck.season, speed: ui.speed, sky: ui.sky.mix, fire: world.burning.length, bees: beesOnScreen(), life, owls: world.count.owl || 0,
+        frogs: world.spawnCount > 0 && ck.season === 0 ? Math.min(1, world.spawnCount / 300) : 0 });
     }
     // Not under the mouse or a finger: a rebuilt button would swallow the click. (A finger leaves :hover stuck.)
     if ((ui.selectedId || ui.picked) && !pressing && !(canHover.matches && $('#inspector').matches(':hover'))) renderInspector();

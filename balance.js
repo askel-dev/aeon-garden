@@ -24,6 +24,7 @@ for (let s = 1; s <= seeds; s++) {
   const capR = Sim.SPECIES.rabbit.cap * w.room, trees = [w.treeCount], rich = [], shade = { wood: 0, open: 0, n: 0 };
   let capDays = 0, crashes = 0, recovered = 0, low = null;
   const voles = [], voleNews = { boom: 0, bust: 0 };   // the meadow's voles at each season's end, and its vole years and crashes
+  const frogs = [], frogNews = { spawn: 0, stranded: 0, froglets: 0, big: 0, poor: 0 };   // the frogs at each season's end, and the frog news
   // The sickness: outbreaks begun and over, rabbit-days of it, rabbits per burrow at the peak, the resist gene
   // each winter's end, and the cap's numbers again against the old cap (CROWDED), to compare with before it rose.
   const oldCap = Sim.CROWDED * w.room, resist = [Sim.traitMeans(w, 'rabbit')?.resist];
@@ -42,6 +43,8 @@ for (let s = 1; s <= seeds; s++) {
         if (e.type === 'fireout') { fires++; burned = Math.max(burned, e.burned); }
         if (e.type === 'weather') sky[e.kind] = (sky[e.kind] || 0) + 1;
         if (e.type === 'voles') voleNews[e.boom ? 'boom' : 'bust']++;
+        if (e.type === 'frogs') frogNews[e.what]++;
+        if (e.type === 'frogyear' && (e.big || e.poor)) frogNews[e.big ? 'big' : 'poor']++;
         if (e.type === 'outbreak') outbreaks++;
         if (e.type === 'outbreakover') over++;
         if (e.type === 'gathering') gatherings++;
@@ -73,6 +76,7 @@ for (let s = 1; s <= seeds; s++) {
       rich.push(w.rich ? (100 * r / w.land).toFixed(1) + '%' : '-');
     }
     voles.push(Math.round(w.voleCount));
+    frogs.push(Math.round(w.frogCount));
     crows.push(w.count.crow);
     owls.push(`${w.count.owl}(${w.decor.filter(d => d.owl).length})`);
     const grass = w.grass.reduce((a, b) => a + b, 0);
@@ -93,6 +97,9 @@ for (let s = 1; s <= seeds; s++) {
   const eaten = w.stats.voles;
   console.log(`  voles  ${voles.join(' ')}  eaten ${eaten} (${Math.round(100 * eaten / Math.max(1, eaten + kills))}% of fox meals)  fox hunger ${d.fox.hunger || 0}  vole years ${voleNews.boom} crashes ${voleNews.bust}`);
   const st = w.stats, rm = st.remains;
+  const yrs = st.frogYears, pc = k => Math.round(100 * yrs.reduce((a, y) => a + y[k], 0) / Math.max(1, yrs.reduce((a, y) => a + y.laid, 0)));
+  console.log(`  frogs  ${frogs.join(' ')}  news ${JSON.stringify(frogNews)}  froglets per spawner ${yrs.map(y => (y.left / Math.max(1, y.spawners)).toFixed(1)).join(' ')}` +
+    `  spawn stranded ${pc('stranded')}% eaten by crows ${pc('eaten')}%  frogs eaten by foxes ${st.frogs} (${Math.round(100 * st.frogs / Math.max(1, st.frogs + eaten))}% of their mousing) by owls ${st.owlFrogs}`);
   console.log(`  crows  ${crows.join(' ')}  remains ${rm.left} (eaten up by crows ${rm.eaten}, rotted ${rm.rotted})  gatherings ${gatherings}` +
     `  acorns buried ${st.cached} dug up ${st.dugUp} came up ${st.planted}  oaks/beeches ${oaks0} -> ${oaks()}`);
   console.log(`  owls (hollows)  ${owls.join(' ')}  hollows taken ${owlNests}  owlets ${st.births.owl} fledged ${fledged} flew off ${leaving}` +

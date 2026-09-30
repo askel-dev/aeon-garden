@@ -14,7 +14,8 @@
  *
  * Use: Sound.start() from a click, then Sound.update({ phase, season, speed, sky, fire, bees, life, owls }) a
  * few times a second (sky: how much of each weather is showing, 0..1; bees: how many are flying
- * on screen; life: how full the meadow is of rabbits, 0..1; owls: how many live there, for the hoots at night) and
+ * on screen; life: how full the meadow is of rabbits, 0..1; owls: how many live there, for the hoots at night; frogs: 0..1,
+ * the spring's spawn, for a croak now and then at night) and
  * Sound.play('birth', { species, pan, near, seen }) on events.
  */
 (() => {
@@ -33,7 +34,7 @@ let ac = null, master, ducker, loud, fxBus, ambBus, musicBus, hush, reverb, nois
 let enabled = true, volume = 0.6;
 const amb = {};                                    // ambient layers
 const LOUD = 1.4;                                  // thunder's level against the rest
-const state = { phase: 0.3, season: 0, speed: 1, sky: { clear: 1 }, fire: 0, bees: 0, life: 0.3, owls: 1 };
+const state = { phase: 0.3, season: 0, speed: 1, sky: { clear: 1 }, fire: 0, bees: 0, life: 0.3, owls: 1, frogs: 0 };
 const last = {};                                   // per-sound cooldowns
 let recent = 0, recentAt = 0;                      // global voice budget
 
@@ -477,6 +478,7 @@ function tickAmbience() {
   birdTick(now, m.birds * fastFactor);
   if (Math.random() < m.crickets * 2.2 * dt) cricket(now + rand(0, 0.2));
   if (state.owls && Math.random() < (1 - m.day) * (state.season === 3 ? 0.02 : 0.05) * dt) owl(now);   // only with owls in the meadow
+  if (Math.random() < (1 - m.day) * state.frogs * 0.5 * dt) croak(now + rand(0, 0.2));   // spring nights, while there's spawn about
   if (Math.random() < m.rain * 3 * dt) {
     const deg = drip(now + rand(0, 0.2), rand(0.5, 1.3));
     if (Math.random() < 0.2) drip(now + rand(0.25, 0.4), 0.5, deg + pick([-1, 1]));   // then a smaller one off the leaf
@@ -675,6 +677,22 @@ function owl(t) {
     g.gain.exponentialRampToValueAtTime(0.0001, s + len);
     osc.connect(g).connect(o); osc.start(s); osc.stop(s + len + 0.05);
   });
+}
+
+// A common frog by the water: a soft low purr, two to four times, on the scale's root or its third.
+function croak(t) {
+  const o = out(rand(-0.9, 0.9), 0.35, rand(0.2, 0.45)), f = note(pick([0, 2]), -1) * rand(0.99, 1.01);
+  for (let k = 0, n = 2 + Math.floor(rand(0, 3)); k < n; k++) {
+    const s = t + k * rand(0.3, 0.42), len = rand(0.16, 0.26);
+    const osc = ac.createOscillator(), lfo = ac.createOscillator(), depth = ac.createGain(), am = ac.createGain(), lp = ac.createBiquadFilter(), g = ac.createGain();
+    osc.type = 'sawtooth'; osc.frequency.value = f; lfo.frequency.value = rand(18, 26); depth.gain.value = 0.5; am.gain.value = 0.5;
+    lp.type = 'lowpass'; lp.frequency.value = 650;
+    g.gain.setValueAtTime(0.0001, s); g.gain.exponentialRampToValueAtTime(0.03, s + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, s + len);
+    lfo.connect(depth).connect(am.gain);
+    osc.connect(lp).connect(am).connect(g).connect(o);
+    osc.start(s); lfo.start(s); osc.stop(s + len + 0.05); lfo.stop(s + len + 0.05);
+  }
 }
 
 // Rain on the pond: tiny tuned plinks.

@@ -98,7 +98,7 @@
       <input id="life" type="range" min="0" max="1" step="0.01" value="0.3">
       <span>🎐 the wind chime</span>
     </div>
-    <p class="note">Birds sing by day with a dawn chorus. Crickets and the odd owl come out at night. The wind comes in gusts that swell,
+    <p class="note">Birds sing by day with a dawn chorus. Crickets and the odd owl come out at night, and on spring nights, while there's frogspawn in the shallows, a frog purrs now and then. The wind comes in gusts that swell,
       cross from one side to the other and rustle the grass (dry leaves in autumn); in winter and storms a hard gust whistles
       faintly, in tune. Winter has a few snowy chimes, and a wind chime rings over it all, more often the more rabbits there are (and in gusts). Rain and storms hiss and drip, fog and snow muffle everything, a heatwave brings
       cicadas, and a wildfire crackles. Bees flying on screen add a faint hum in tune. At 15× and 60×, day and night blur into one steady mix, and only the big moments
@@ -184,7 +184,7 @@
     if (t) $('#tune-now').textContent = `Playing ${S.tunes[t.name]}, ${clock(Math.min(t.at, t.length))} of ${clock(t.length)}.`;
   }, 250);
 
-  const push = () => S.update({ phase: st.phase, season: st.season, sky: { [st.sky]: 1 }, fire: st.fire, speed: st.speed, bees: st.bees || 0, life: st.life });
+  const push = () => S.update({ phase: st.phase, season: st.season, sky: { [st.sky]: 1 }, fire: st.fire, speed: st.speed, bees: st.bees || 0, life: st.life, frogs: st.season === 0 ? 1 : 0 });
   const setSky = k => { const wet = ['rain', 'storm']; if (wet.includes(k) && !wet.includes(st.sky)) play('rain'); st.sky = k; onIn('[data-sky]', 'sky', k); push(); };
   const clockText = p => p >= 0.72 || p < 0.02 ? '🌙 night' : p < 0.12 ? '🌅 dawn' : p > 0.6 ? '🌇 dusk' : '☀️ day';
   const setPhase = p => { st.phase = p; $('#phase').value = p; $('#clock').textContent = clockText(p); push(); };
