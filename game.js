@@ -1036,7 +1036,7 @@ function render(now) {
     if (c.hidden || !c.alive) continue;
     const [sx, sy] = screenOf(c);
     if (!visible(sx, sy, 60)) continue;
-    const it = { y: c.y + (c.mode === 'dance' ? DANCE_FRONT : 0), c, sx, sy };
+    const it = { y: c.y + (c.mode === 'dance' ? DANCE_FRONT : c.species === 'owl' && c.mode !== 'gulp' ? OWL_FRONT : 0), c, sx, sy };
     items.push(it); shown.push(it);
   }
   items.sort((a, b) => a.y - b.y);
@@ -1115,6 +1115,7 @@ function render(now) {
 const remainsLooks = new WeakMap();
 const remainsPx = z => Math.max(8, (8 + z) * REMAINS_SIZE);
 function remainsLook(c) {
+  if (c.species === 'owl') return 6;
   if (c.species === 'crow') return 5;
   if (c.species === 'fox') return 4;
   if (S.whiteness(world, c) > 0.5) return 3;
@@ -1141,6 +1142,7 @@ const LOOKS = {
   fox: { size: 1, facesLeft: false },          // a face: it does not care
   bee: { size: 0.38, facesLeft: true, swatch: '#e8b83a', quiet: true },   // quiet: no thought bubbles
   crow: { size: 0.95, facesLeft: true, swatch: '#4a4e5e' },               // painted (crowArt), not the emoji
+  owl: { size: 0.85, facesLeft: false, swatch: '#9a6a3e' },               // a face: it does not care
 };
 
 // Grows with zoom, but never shrinks to a speck when you look at the whole meadow. A tree is four
@@ -1155,7 +1157,8 @@ const loadOf = c => c.load ? Math.min(1, c.load / (S.LOAD * S.HONEY)) : 0;
 // and a laden one flies lower.
 function liftOf(c, px, now) {
   if (!c.sp.flies) return hopOf(c, px, now);
-  if (c.species === 'crow') return crowLift(c, px);
+  if (c.species === 'crow') return birdLift(c, crowHeight(c, px));
+  if (c.species === 'owl') return birdLift(c, owlHeight(c, px));
   const bob = ui.speed > 0 ? Math.sin(now / 90 + c.id) * px * 0.08 : 0, fly = px * (0.9 - 0.3 * loadOf(c)), tree = c.target?.tree;
   if (tree && (c.mode === 'sip' || c.mode === 'flower')) {   // blossom in a tree (sim.js addBlossoms): up in its crown
     const crown = treePx(tree) * (tree.kind === 'hawthorn' ? 0.9 : 1.25) * c.target.up;
@@ -1169,10 +1172,10 @@ function liftOf(c, px, now) {
 const CROW_FLY = 1.5;              // how high a crow flies, in its size
 const CROW_PERCH = 0.55;           // how far up a tree's painting it sits
 const CROW_EASE = 12;              // ticks to get most of the way to a new height
-const CROW_AIR = new Set(['flap', 'flock', 'love', 'follow']);                               // flying
+const CROW_AIR = new Set(['flap', 'flock', 'love', 'follow']);                               // flying (and 'mob': round an owl)
 const CROW_LANDS = new Set(['remains', 'forage', 'fetch', 'cache', 'apple', 'unbury']);       // flying there, and down
 const CROW_PECKS = new Set(['peck', 'carrion', 'munch', 'bury', 'unbury']);                 // heads down
-const crowLifts = new WeakMap();
+const birdLifts = new WeakMap();
 const perch = d => (d ? treePx(d) * CROW_PERCH : 0);
 const near = (c, p, far) => clamp(Math.hypot(p.x - c.x, p.y - c.y) / far, 0, 1);
 function crowHeight(c, px) {
@@ -1181,12 +1184,36 @@ function crowHeight(c, px) {
   if (c.mode === 'roost' && world.roost) return lerp(perch(world.roost), fly, near(c, world.roost, 4));
   if (c.mode === 'nest') return c.home ? lerp(perch(c.home), fly, near(c, c.home, 3)) : 0;
   if (CROW_AIR.has(c.mode)) return fly;
+  if (c.mode === 'mob') { const o = world.byId.get(c.targetId); return Math.max(fly, owlSits(o) + px * 0.6); }   // round the owl in its tree
   return CROW_LANDS.has(c.mode) && c.target ? fly * near(c, c.target, 2) : 0;
 }
-function crowLift(c, px) {
-  const t = world.tick + acc, want = crowHeight(c, px);
-  let s = crowLifts.get(c);
-  if (!s) crowLifts.set(c, s = { h: want, t, z: cam.zoom });
+// An owl sits up a tree: asleep on a branch by day, on its perch hunting, or in its hollow on her eggs. It glides
+// from tree to tree and drops to the grass on a vole (sim.js owlTick). Its height eases like a crow's.
+const OWL_FLY = 1.3;               // how high an owl flies, in its size
+const OWL_PERCH = 0.45;            // how far up a tree's painting it sits on a branch
+const OWL_HOLLOW = 0.3;            // and in the hollow
+const OWL_FRONT = S.H;             // up in a tree or gliding over, it's drawn over the trees (the ones in front would hide it); down on a vole, among them
+const OWL_SITS = new Set(['sleep', 'perch', 'hoot']);                   // sitting in its tree (c.perch)
+const OWL_LANDS = new Set(['roost', 'hunt', 'home', 'shift']);          // flying there, and up into it
+const owlSits = o => (o && o.perch && o.perch.tree && Math.hypot(o.perch.x - o.x, o.perch.y - o.y) < 0.5 ? treePx(o.perch.tree) * OWL_PERCH : 0);
+function owlHeight(c, px) {
+  const fly = px * OWL_FLY;
+  if (c.mode === 'nest') return c.home ? lerp(treePx(c.home) * OWL_HOLLOW, fly, near(c, c.home, 3)) : 0;
+  if (OWL_SITS.has(c.mode)) return owlSits(c);
+  if (OWL_LANDS.has(c.mode)) {
+    const to = c.mode === 'hunt' ? c.target : c.perch;
+    return to && to.tree ? lerp(treePx(to.tree) * OWL_PERCH, fly, near(c, to, 3)) : fly;
+  }
+  if (c.mode === 'swoop') {                        // down from its perch
+    const to = world.byId.get(c.targetId) || c.target;
+    return to ? (c.perch && c.perch.tree ? treePx(c.perch.tree) * OWL_PERCH : fly) * near(c, to, 4) : 0;
+  }
+  return c.mode === 'gulp' ? 0 : fly;
+}
+function birdLift(c, want) {
+  const t = world.tick + acc;
+  let s = birdLifts.get(c);
+  if (!s) birdLifts.set(c, s = { h: want, t, z: cam.zoom });
   if (s.z !== cam.zoom) { s.h *= (8 + cam.zoom) / (8 + s.z); s.z = cam.zoom; }   // (both grow with the zoom, about)
   if (s.t !== t) { s.h += (want - s.h) * Math.min(1, Math.abs(t - s.t) / CROW_EASE); s.t = t; }
   return s.h;
@@ -1431,8 +1458,8 @@ function paintCrow(g, size, U, pose) {
 }
 const CROW_ARTS = [0, 1, 2, 3, 4, 5].map(k => 'crow:' + k);
 
-// Remains lying in the grass (sim.js leaveRemains): a soft tuft of fur, or for a crow a few feathers. In the
-// colour of who it was ('remains:0' to 'remains:5'): brown, sandy, dark, a winter white, a fox's, a crow's.
+// Remains lying in the grass (sim.js leaveRemains): a soft tuft of fur, or for a bird a few feathers. In the
+// colour of who it was ('remains:0' to 'remains:6'): brown, sandy, dark, a winter white, a fox's, a crow's, an owl's.
 const REMAINS_RGB = [[150, 114, 80], [212, 178, 128], [84, 78, 80], [236, 236, 230], [206, 108, 58]];
 const TUFTS = [[-0.42, 0.5, 0.34, 0.19], [0.02, 0.44, 0.42, 0.25], [0.44, 0.52, 0.3, 0.17]];      // x, y, rx, ry
 const WISPS = [[-0.7, 0.52, -0.2, -0.1], [-0.46, 0.36, -0.12, -0.22], [-0.12, 0.26, -0.04, -0.26], [0.18, 0.26, 0.08, -0.26],
@@ -1441,11 +1468,12 @@ function paintRemains(g, size, U, look) {
   g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
   g.lineCap = g.lineJoin = 'round';
   fillIn(g, 'rgba(40, 50, 20, 0.2)', () => ovalAt(g, 0.02, 0.64, 0.86, 0.16));   // pressed into the grass
-  if (look === 5) {
+  if (look >= 5) {                                  // feathers: a crow's, or an owl's barred brown ones
+    const ink = look === 6 ? '#8a5c36' : CROW_INK, sheen = look === 6 ? '#d0a878' : CROW_SHEEN;
     for (const [x, y, a, s] of [[-0.36, 0.5, -0.3, 1.5], [0.34, 0.56, 0.5, 1.2], [0.02, 0.4, 0.1, 1.1]]) {
       g.save(); g.translate(x, y); g.rotate(a); g.scale(s, s * 0.7);
-      fillIn(g, CROW_INK, () => { g.moveTo(-0.34, 0); g.quadraticCurveTo(0, -0.16, 0.32, 0); g.quadraticCurveTo(0, 0.12, -0.34, 0); });
-      strokeIn(g, CROW_SHEEN, 0.04, () => { g.moveTo(-0.2, -0.05); g.quadraticCurveTo(0, -0.1, 0.2, -0.04); });
+      fillIn(g, ink, () => { g.moveTo(-0.34, 0); g.quadraticCurveTo(0, -0.16, 0.32, 0); g.quadraticCurveTo(0, 0.12, -0.34, 0); });
+      strokeIn(g, sheen, 0.04, () => { g.moveTo(-0.2, -0.05); g.quadraticCurveTo(0, -0.1, 0.2, -0.04); });
       strokeIn(g, '#9a9eac', 0.03, () => { g.moveTo(-0.4, 0.01); g.lineTo(0.28, 0); });
       g.restore();
     }
@@ -1457,7 +1485,7 @@ function paintRemains(g, size, U, look) {
   fillIn(g, mid, () => { for (const [x, y, rx, ry] of TUFTS) ovalAt(g, x - 0.02, y - 0.05, rx * 0.8, ry * 0.72); });
   fillIn(g, light, () => { for (const [x, y, rx, ry] of TUFTS) ovalAt(g, x - 0.06, y - 0.1, rx * 0.4, ry * 0.32); });
 }
-const REMAINS_ARTS = [0, 1, 2, 3, 4, 5].map(k => 'remains:' + k);
+const REMAINS_ARTS = [0, 1, 2, 3, 4, 5, 6].map(k => 'remains:' + k);
 
 const moundAt = (g, hole) => {
   fillIn(g, '#a7784c', () => { g.moveTo(-0.95, 0.55); g.ellipse(0, 0.55, 0.95, 0.8, 0, Math.PI, TAU); g.closePath(); });
@@ -1686,7 +1714,7 @@ function drawSelectionOver(c, now) {
     ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ox, oy); ctx.stroke();
     ctx.restore();
   }
-  const label = c.hidden ? `${c.name} is ${c.species === 'crow' ? 'in the nest' : `inside the ${c.species === 'bee' ? 'hive' : 'burrow'}`}` : c.name;
+  const label = c.hidden ? `${c.name} is ${c.species === 'crow' ? 'in the nest' : c.species === 'owl' ? 'in the hollow' : `inside the ${c.species === 'bee' ? 'hive' : 'burrow'}`}` : c.name;
   drawLabel(label, sx, sy + (c.hidden ? cam.zoom : creaturePx(c) * 0.55) + 6);
 }
 
@@ -1761,7 +1789,7 @@ function treeSway(d, now) {
 // white in spring, hangs apples from high summer and drops windfalls in autumn. A cherry comes
 // into leaf pink, a cloud of blossom that turns green and sheds petals, then cherries in early
 // summer and red leaves in autumn. No two broadleaf trees are quite the same green, and half of
-// all trees are drawn mirrored. A few of the biggest have an owl in them at night.
+// all trees are drawn mirrored.
 const AUTUMN = { birch: [238, 192, 56], willow: [238, 192, 56], beech: [240, 130, 40], maple: [200, 50, 42], oak: [176, 100, 52], hawthorn: [176, 100, 52] };
 const DRY = [160, 120, 80], SPRING = [156, 214, 84];
 const OLD_NEEDLES = [214, 180, 64], BRONZE = [128, 118, 62], CANDLES = [176, 226, 100];
@@ -1795,7 +1823,6 @@ function treeInfo(d) {
     kind: d.kind || (d.emoji === '🌲' ? 'pine' : 'oak'),
     flip: hash2(hx, hy, 43) < 0.5,
     green: GREEN.map((v, k) => v + Math.round((hash2(hx, hy, 44) - 0.5) * 4) * [7, 4, -4][k]),
-    owl: d.size > 4.4 && hash2(hx, hy, 45) < 0.12,
   };
   treeInfos.set(d, t);
   return t;
@@ -1848,7 +1875,7 @@ function treeLook(d, ck) {
     ? { rgb, m, where, fall, snow, seed, blossom, bloom, fruit,
         key: [rgb, m, where, fall, snow, seed, blossom && bloom, blossom, fruit ? fruit.e + fruit.n : ''].join('|') } : undefined;
   const bare = fall && { snow, seed, m: 0, fall: 0, key: `bare|${snow}` };
-  return { look, fall, bare, drop, rgb, h, ground, flip: info.flip, owl: info.owl };
+  return { look, fall, bare, drop, rgb, h, ground, flip: info.flip };
 }
 
 // Windfalls and petals lying under a tree: those behind the trunk go down first, then the rest.
@@ -2201,7 +2228,6 @@ function drawDecor(d, sx, sy, now, ck, clipLeaves) {
   const under = t.ground?.n && px >= 20 && !(treeWorker && t.ground.e === '🌸');   // a painted cherry has its own petals
   if (under) drawUnderTree(t.ground, t.h, sx, sy, px, false);
   if (!clipLeaves && drawPaintedTree(d, sx, sy, now, ck, stage)) {
-    if (t.owl && px >= 24 && darkness(ck.phase) > 0.3) drawEmoji('🦉', sx - px * 0.08, sy - px * (t.fall < 0.5 ? 0.45 : 0.6), px * 0.2);
     if (under) drawUnderTree(t.ground, t.h, sx, sy, px, true);
     if (t.drop && px >= 22) leafFall.push({ sx, sy, px, drop: t.drop, rgb: t.rgb, h: t.h });
     return;
@@ -2213,11 +2239,6 @@ function drawDecor(d, sx, sy, now, ck, clipLeaves) {
   if (t.bare) drawEmoji('🪾', 0, -px * 0.42, px * 1.15, { alpha: t.fall, leaf: t.bare, flip: t.flip });   // it draws small
   if (clipLeaves) clipLeaves(px);                      // (the bee tree)
   if (t.fall < 1) drawEmoji(d.emoji, 0, -px * 0.35, px, { leaf: t.look, flip: t.flip });
-  if (t.owl && px >= 24 && darkness(ck.phase) > 0.3) {
-    const side = t.flip ? -1 : 1;                   // on a low bough of the leaves, or in the bare fork
-    if (t.fall < 0.5) drawEmoji('🦉', side * px * 0.2, -px * 0.3, px * 0.2);
-    else drawEmoji('🦉', 0, -px * 0.8, px * 0.24);
-  }
   ctx.restore();
   if (under) drawUnderTree(t.ground, t.h, sx, sy, px, true);
   if (t.drop && px >= 22) leafFall.push({ sx, sy, px, drop: t.drop, rgb: t.rgb, h: t.h });
@@ -3269,10 +3290,12 @@ function handleEvent(e) {
       addEffect('✨', e.mum.x, e.mum.y, 0.8);
       const n = e.kids.length, fox = e.mum.species === 'fox';
       hear('birth', e.mum.x, e.mum.y, { species: e.mum.species, kids: n }, mine);
-      const crow = e.mum.species === 'crow';
-      const what = fox ? (n === 1 ? 'cub' : 'cubs') : e.mum.species === 'bee' ? (n === 1 ? 'young bee' : 'young bees') : crow ? (n === 1 ? 'chick' : 'chicks') : (n === 1 ? 'baby' : 'babies');
-      const text = `${fox ? '🦊' : crow ? '🪺' : '🍼'} ${link(e.mum)} had ${n} ${what}` + (e.dad ? ` with ${link(e.dad)}` : '') + (crow ? ', up in the nest.' : '.');
-      if (mine || fox) addNews(text);
+      const crow = e.mum.species === 'crow', owl = e.mum.species === 'owl';
+      const what = fox ? (n === 1 ? 'cub' : 'cubs') : e.mum.species === 'bee' ? (n === 1 ? 'young bee' : 'young bees') : crow ? (n === 1 ? 'chick' : 'chicks')
+        : owl ? (n === 1 ? 'owlet' : 'owlets') : (n === 1 ? 'baby' : 'babies');
+      const text = `${fox ? '🦊' : crow ? '🪺' : owl ? '🦉' : '🍼'} ${link(e.mum)} had ${n} ${what}` + (e.dad ? ` with ${link(e.dad)}` : '')
+        + (crow ? ', up in the nest.' : owl ? `, in the hollow of the old oak. ${n === 1 ? 'Few voles about this spring: only the one.' : n === 3 ? 'Voles aplenty to feed them.' : ''}` : '.');
+      if (mine || fox || owl) addNews(text);
       else addNews(text, 'birth', 9000);
       if (e.surprise.length) {
         const n = {};
@@ -3286,17 +3309,23 @@ function handleEvent(e) {
     case 'death': {
       const c = e.c;
       hear(e.cause === 'fox' ? 'catch' : e.cause === 'age' ? 'old' : 'starve', c.x, c.y, { species: c.species }, mine);
-      if (e.cause === 'fox') addEffect('🦴', c.x, c.y, 0.3, 1800);
-      else addEffect('👻', c.x, c.y, 1.6, 2000);
+      if (e.cause === 'fox' || e.cause === 'owl') addEffect('🦴', c.x, c.y, 0.3, 1800);
+      else if (e.cause !== 'left') addEffect('👻', c.x, c.y, 1.6, 2000);
       if (e.cause === 'fox') {
         const t = `🦊 ${link(e.killer)} caught ${link(c)}${c.species === 'crow' ? ' the crow, off its guard' : ''}.`;
         if (mine) addNews(t); else addNews(t, 'catch', 7000);
+      } else if (e.cause === 'owl') {
+        const t = `🦉 ${link(e.killer)} the owl dropped silently out of the dusk and took ${link(c)}, a young rabbit still out.`;
+        if (mine) addNews(t); else addNews(t, 'owlcatch', 20000);
+      } else if (e.cause === 'left') {
+        if (mine) addNews(`🦉 ${link(c)} has flown off over the trees to find a wood of its own.`);   // the rest: the 'owlleaves' news
       } else if (e.cause === 'hunger') {
         const t = c.species === 'fox' ? `🥀 ${link(c)} the fox starved. There weren't enough rabbits or voles.`
           : c.species === 'bee' ? `🥀 ${link(c)} the bee starved. The hive ran out of honey.`
           : c.species === 'crow' ? `🥀 ${link(c)} the crow starved.`
+          : c.species === 'owl' ? `🥀 ${link(c)} the owl starved. There weren't enough voles in the long grass.`
           : `🥀 ${link(c)} starved.`;
-        if (mine || c.species === 'fox') addNews(t); else addNews(t, 'starve', 12000);
+        if (mine || c.species === 'fox' || c.species === 'owl') addNews(t); else addNews(t, 'starve', 12000);
       } else if (e.cause === 'lightning') {
         addNews(`⚡ ${link(c)} was struck by lightning.`);
       } else if (e.cause === 'fire') {
@@ -3372,6 +3401,17 @@ function handleEvent(e) {
       addNews(`🐦‍⬛ <b>${e.n} crows</b> have gathered at the remains of ${link(e.remains.c)}${where ? ' ' + where : ''}. With the sickness going round, the crows are eating well.`);
       break;
     }
+    case 'owlnest': {
+      const d = e.tree;
+      addNews(`🦉 ${link(e.c)} the owl has taken the hollow of ${thingLink('tree', d.id, d.name ? 'the ' + esc(d.name) : 'an old oak')} to nest in. Listen for the hoots at night.`, 'owlnest', 20000);
+      break;
+    }
+    case 'fledge':
+      addNews(`🪶 ${link(e.c)} the owlet has left the hollow${e.mum ? ` and follows ${link(e.mum)} about in the dark` : ''}, a fluffy grey thing on a branch.`, 'fledge', 30000);
+      break;
+    case 'owlleaves':
+      addNews(`🦉 ${link(e.c)}, grown now, found no hollow free and is flying off to find a wood of its own.`, 'owlleaves', 30000);
+      break;
     case 'buried':
       addNews(`🌰 The crows buried ${e.n} ${e.n === 1 ? 'acorn' : 'acorns and beechnuts'} this autumn. The ones they forget will come up as oaks and beeches in the spring.`);
       break;
@@ -3423,6 +3463,7 @@ function handleEvent(e) {
         fox: '😢 <b>The last fox is gone.</b> The rabbits can relax, for now.',
         bee: '😢 <b>The hive has gone quiet.</b> The last bee is gone.',
         crow: '😢 <b>The last crow is gone.</b> The remains lie longer now, and the acorns lie where they fall.',
+        owl: '😢 <b>The last owl is gone.</b> The nights are quiet, and the hollow oaks stand empty.',
       }[e.species]);
       break;
     case 'pollinate':
@@ -3438,6 +3479,7 @@ function handleEvent(e) {
         fox: `🧳 Foxes have wandered in, drawn by all the rabbits: ${names}.`,
         bee: `🐝 A swarm has found the empty hive and moved in: ${names}.`,
         crow: `🐦‍⬛ Crows have flown in over the trees: ${names}.`,
+        owl: `🦉 ${e.who.length === 2 ? 'A pair of tawny owls has' : 'Tawny owls have'} flown in over the trees, looking for hollow oaks: ${names}.`,
       }[e.species]);
       for (const c of e.who) addEffect('✨', c.x, c.y);
       hear('arrive', e.who[0].x, e.who[0].y, { species: e.species }, true);
@@ -3447,7 +3489,7 @@ function handleEvent(e) {
 }
 
 // How many make a record worth telling, and how big a peak has to be before its crash is news.
-const NEWSWORTHY = { rabbit: { record: 20, crash: 80 }, fox: { record: 8, crash: 10 }, bee: { record: 20, crash: 40 }, crow: { record: 25, crash: 15 } };
+const NEWSWORTHY = { rabbit: { record: 20, crash: 80 }, fox: { record: 8, crash: 10 }, bee: { record: 20, crash: 40 }, crow: { record: 25, crash: 15 }, owl: { record: 8, crash: 99 } };
 
 function checkPopulationNews() {
   const h = world.history, n = h.rabbit.length;
@@ -3626,6 +3668,7 @@ const SERIES = {
   fox: { emoji: '🦊', name: 'Foxes', title: 'Foxes alive', color: '#e2702f', fmt: v => Math.round(v) },
   bee: { emoji: '🐝', name: 'Bees', title: 'Bees alive', color: '#d9a21b', fmt: v => Math.round(v) },
   crow: { emoji: '🐦‍⬛', name: 'Crows', title: 'Crows alive', color: '#4a4e5e', fmt: v => Math.round(v) },
+  owl: { emoji: '🦉', name: 'Owls', title: 'Owls alive', color: '#9a6a3e', fmt: v => Math.round(v) },
   voles: { emoji: '🐁', name: 'Voles', title: 'Voles in the long grass', color: '#8a6a4e', fmt: v => Math.round(v) },
   grass: { emoji: '🌱', name: 'Grass', title: 'How lush the meadow is', color: '#5f9e43', fmt: v => Math.round(v * 100) + '%' },
 };
@@ -3635,7 +3678,7 @@ const RANGE_WORDS = { year: 'the last year', five: 'the last 5 years', all: 'the
 const MARK_EMOJI = { extinct: '😢', arrive: '🧳', fire: '🔥', outbreak: '🤒' };
 const CAUSES = [['fox', '🦊', 'Caught by a fox'], ['hunger', '🥀', 'Starved'], ['age', '🌙', 'Old age'],
   ['sickness', '🤒', 'Sickness'], ['lightning', '⚡', 'Lightning'], ['fire', '🔥', 'Wildfire'], ['flood', '🌊', 'Drowned in a flood'],
-  ['ice', '🧊', 'Fell through the ice']];
+  ['ice', '🧊', 'Fell through the ice'], ['owl', '🦉', 'Taken by an owl'], ['left', '🧳', 'Flew off to find a wood']];
 const INK = '#3b372f', MUTED = '#6f6657';
 
 const shownKeys = () => ui.stats.show === 'all' ? Object.keys(SERIES) : [ui.stats.show];
@@ -3969,6 +4012,8 @@ function renderInspector() {
   if (c.escapes) chips.push(`💨 ${c.escapes} narrow ${c.escapes === 1 ? 'escape' : 'escapes'}`);
   if (c.visits) chips.push(`🌼 ${c.visits} ${c.visits === 1 ? 'flower' : 'flowers'} visited`);
   if (c.species === 'crow' && c.home && c.sex === 'F') chips.push(`🪺 Nests in ${thingLink('tree', c.home.id, c.home.name ? 'the ' + esc(c.home.name) : 'a tall ' + treeName(c.home).toLowerCase())}`);
+  if (c.species === 'owl' && c.home && c.home.owl === c.id) chips.push(`🕳️ Nests in the hollow of ${thingLink('tree', c.home.id, c.home.name ? 'the ' + esc(c.home.name) : 'an old oak')}`);
+  else if (c.species === 'owl' && c.home) chips.push(`🌳 Lives in the wood round ${thingLink('tree', c.home.id, c.home.name ? 'the ' + esc(c.home.name) : 'an old oak')}`);
   if (c.caches?.length && S.seasonOf(world.tick) >= 2) chips.push(`🌰 Remembers where ${c.caches.length === 1 ? 'one acorn is' : c.caches.length + ' acorns are'} buried`);
   const nemesis = world.byId.get(c.nemesisId);
   if (nemesis && nemesis.alive) chips.push(`😨 Afraid of ${link(nemesis)}`);
@@ -4179,8 +4224,10 @@ const THINGS = {
       else if (d.by === 'bird') facts.push(['🐦', `Grew from a stone a bird dropped, from ${d.kind === 'cherry' ? 'the cherries' : 'the haws'} of ${from}`]);
       else if (d.by === 'wind') facts.push(['🌬️', `Its seed blew in on the wind from ${from}`]);
       else if (d.by === 'drop') facts.push(k.mast ? ['🌰', `Grew from ${k.mast === 'acorns' ? 'an acorn' : 'a beechnut'} that fell from ${from}`] : ['🍎', `Grew from a pip of ${from}`]);
+      const owl = d.owl && world.byId.get(d.owl);
       if (d.hive) facts.push(['🐝', `${thingLink('hive', d.hive.id, d.hive.queen ? `Queen ${esc(d.hive.queen.name)}'s hive` : 'An empty hive')} is in its hollow`]);
-      else if (S.hollow(world, d)) facts.push(['🕳️', 'Old enough to have gone hollow: bees could make a home in it']);
+      else if (owl && owl.alive) facts.push(['🦉', `${link(owl)} the owl nests in its hollow`]);
+      else if (S.hollow(world, d)) facts.push(['🕳️', 'Old enough to have gone hollow: bees or owls could make a home in it']);
       if (living && S.bearing(world, d)) {
         const bear = { wind: '🌬️ Sheds its seed on the wind each autumn', crow: `🌰 Its ${k.mast} are a feast in a mast year, and the crows bury them far and wide`,
           bird: `🐦 Birds carry off its ${d.kind === 'cherry' ? 'cherries' : 'haws'} and drop the stones far and wide`, drop: '🍎 Drops its apples for whoever comes by' }[k.by];
@@ -4193,7 +4240,6 @@ const THINGS = {
       if (living && !young && k.thorns) facts.push(['🌿', 'Its thorns keep rabbits off the seedlings under it']);
       const kids = world.decor.filter(o => o.parent === d.id && S.standing(o)).length;
       if (kids) facts.push(['🌱', `${kids} of its young ${kids === 1 ? 'grows' : 'grow'} in the meadow`]);
-      if (treeInfo(d).owl && living && !young) facts.push(['🦉', 'An owl roosts here; look for it at night']);
       if (d === world.roost) facts.push(['🐦‍⬛', 'The crows\' roost: they all sleep here at night']);
       if (world.creatures.some(c => c.alive && c.species === 'crow' && c.home === d)) facts.push(['🪺', 'A crows\' nest is up in it']);
       if (d.nuts && S.seasonOf(world.tick) === 2) facts.push(['🌰', `${d.nuts} ${d.nuts === 1 ? k.mast.slice(0, -1) : k.mast} left for the crows to carry off and bury`]);
@@ -4247,7 +4293,7 @@ const THINGS = {
     spot: k => ({ x: k.x, y: k.y + 0.3, r: 0.6 }),
     show(k) {
       const c = k.c, killer = world.byId.get(c.killerId);
-      const how = { fox: `caught by ${killer ? killer.name : 'a fox'}`, hunger: 'starved', sickness: 'the sickness', age: 'old age',
+      const how = { fox: `caught by ${killer ? killer.name : 'a fox'}`, owl: `caught by ${killer ? killer.name : 'an owl'} the owl`, hunger: 'starved', sickness: 'the sickness', age: 'old age',
         lightning: 'lightning', fire: 'the wildfire' }[c.cause] || c.cause;
       const name = `The remains of ${c.name}`, sub = `${c.species === 'fox' ? 'A fox' : `A ${c.sp.name.toLowerCase()}`} (${how})`;
       if (!this.here(k)) return { emoji: '🌱', tint: '#9cc27a', name, sub, status: '🌱 Gone back into the ground. The grass will be lush here for a while.' };
@@ -4258,7 +4304,7 @@ const THINGS = {
       const s = S.seasonOf(world.tick);
       facts.push(s === 1 ? ['☀️', 'In the summer heat they won\'t last long'] : s === 3 ? ['❄️', 'In the cold they keep a while'] : ['🍂', 'They\'ll be gone in a few days']);
       if (crows.length > 1) facts.push(['🐦‍⬛', linkList(crows, 6)]);
-      return { emoji: c.species === 'crow' ? '🪶' : '🍂', tint: '#b8a47a', name, sub, status, facts, meters: [['Left', k.meat / k.full, '']] };
+      return { emoji: c.species === 'crow' || c.species === 'owl' ? '🪶' : '🍂', tint: '#b8a47a', name, sub, status, facts, meters: [['Left', k.meat / k.full, '']] };
     },
   },
 
@@ -4475,6 +4521,7 @@ function diaryFacts(c) {
     c.species === 'fox' ? `Rabbits caught so far: ${c.kills}. Voles caught in the long grass: ${c.voles}.`
       : c.species === 'bee' ? `Flowers visited so far: ${c.visits}. Honey in the hive: ${Math.round(c.home.honey)}, shared by ${c.home.bees} bees.`
       : c.species === 'crow' ? `A crow: it pecks for grubs, eats what the foxes leave and whoever died out in the meadow, sleeps with the other crows in one big tree, and buries acorns in autumn.`
+      : c.species === 'owl' ? `A tawny owl: it sleeps in its tree by day, and from dusk to dawn sits on a branch listening for voles and drops on them. Voles caught so far: ${c.voles}. Young rabbits caught: ${c.kills}. The crows mob it if they find it asleep.`
       : `Narrow escapes from foxes: ${c.escapes}.`
         + (world.byId.get(c.nemesisId) ? ` The fox it fears most: ${world.byId.get(c.nemesisId).name}.` : ''),
     `Recent life events (oldest first):\n${events}`,
@@ -4827,7 +4874,7 @@ function release(species, wx, wy) {
 
 // ------------------------------------------------------------------ the ring: right-click the meadow
 
-const RING_TOOLS = [['rabbit', '🐇', 'Release a rabbit'], ['fox', '🦊', 'Release a fox'], ['bee', '🐝', 'Release a bee'], ['crow', '🐦‍⬛', 'Release a crow'], ['grass', '🌱', 'Grow grass'],
+const RING_TOOLS = [['rabbit', '🐇', 'Release a rabbit'], ['fox', '🦊', 'Release a fox'], ['bee', '🐝', 'Release a bee'], ['crow', '🐦‍⬛', 'Release a crow'], ['owl', '🦉', 'Release an owl'], ['grass', '🌱', 'Grow grass'],
   ['zap', '⚡', 'Strike lightning'], ['fire', '🔥', 'Wall of fire'], ['sky', '🌦️', 'Weather']];
 
 function openRing(sx, sy, weather = false) {
@@ -5557,7 +5604,7 @@ function idleNews(e) {
   let n = null;
   switch (e.type) {
     case 'birth':
-      if (e.mum.species !== 'bee') n = { c: e.mum, w: 3, line: `${e.mum.name} and her new ${e.mum.species === 'fox' ? 'cubs' : e.mum.species === 'crow' ? 'chicks' : 'babies'}` };
+      if (e.mum.species !== 'bee') n = { c: e.mum, w: 3, line: `${e.mum.name} and her new ${e.mum.species === 'fox' ? 'cubs' : e.mum.species === 'crow' ? 'chicks' : e.mum.species === 'owl' ? 'owlets' : 'babies'}` };
       break;
     case 'death': if (e.cause === 'fox' && e.killer) n = { c: e.killer, w: 5 }; break;
     case 'lightning': if (e.tree) n = { x: e.x, y: e.y, w: 8, line: 'Struck by lightning', big: true }; break;
@@ -5567,6 +5614,7 @@ function idleNews(e) {
     case 'fire': n = { big: true }; break;          // the fire is filmed anyway, first of all
     case 'outbreak': n = { x: e.x, y: e.y, w: 6, line: 'A sickness is going round the warren' }; break;
     case 'gathering': n = { x: e.remains.x, y: e.remains.y, w: 6, line: `Crows at the remains of ${e.remains.c.name}` }; break;
+    case 'fledge': n = { c: e.c, w: 4, line: `${e.c.name}, an owlet out of the hollow` }; break;
   }
   if (!n) return;
   if (n.c || n.x !== undefined) idle.news = Object.assign(n, { at });
@@ -6024,7 +6072,7 @@ function frame(now) {
     if (ui.sound) {
       const ck = S.clock(world);
       const life = world.count.rabbit / (S.SPECIES.rabbit.cap * world.room);
-      Sound.update({ phase: ck.phase, season: ck.season, speed: ui.speed, sky: ui.sky.mix, fire: world.burning.length, bees: beesOnScreen(), life });
+      Sound.update({ phase: ck.phase, season: ck.season, speed: ui.speed, sky: ui.sky.mix, fire: world.burning.length, bees: beesOnScreen(), life, owls: world.count.owl || 0 });
     }
     // Not under the mouse or a finger: a rebuilt button would swallow the click. (A finger leaves :hover stuck.)
     if ((ui.selectedId || ui.picked) && !pressing && !(canHover.matches && $('#inspector').matches(':hover'))) renderInspector();

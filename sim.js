@@ -100,9 +100,15 @@ const SPECIES = {
     matureDays: 6, lifeDays: 60, gestationDays: 2, litter: [1, 3], cooldownDays: 15,   // one brood a year, in a tall tree
     breedSeasons: [0], breedEnergy: 0.6, birthCost: 8, cap: 24,
   },
+  owl: {
+    key: 'owl', name: 'Owl', plural: 'Owls', emoji: '🦉',   // tawny owls, in the hollow oaks
+    maxEnergy: 60, burn: 0.02, walk: 0.3, sprint: 0.4, sight: 12, mateRange: 150, wade: 1, flies: true, glide: 0.2,
+    matureDays: 8, lifeDays: 90, gestationDays: 2, litter: [1, 3], cooldownDays: 15,   // one brood a year, in its hollow; how many: owlClutch
+    breedSeasons: [0], breedEnergy: 0.5, birthCost: 5, cap: 4,
+  },
 };
-const KINDS = Object.keys(SPECIES);                        // 'rabbit', 'fox', 'bee', 'crow'
-const perKind = make => Object.fromEntries(KINDS.map(s => [s, make(s)]));   // { rabbit: .., fox: .., bee: .., crow: .. }
+const KINDS = Object.keys(SPECIES);                        // 'rabbit', 'fox', 'bee', 'crow', 'owl'
+const perKind = make => Object.fromEntries(KINDS.map(s => [s, make(s)]));   // { rabbit: .., fox: .., bee: .., crow: .., owl: .. }
 
 const NAME_PARTS = {
   rabbit: {
@@ -120,6 +126,10 @@ const NAME_PARTS = {
   crow: {
     prefixes: ['Soot', 'Ink', 'Char', 'Coal', 'Rook', 'Caw', 'Jet', 'Smudge', 'Crag', 'Pitch'],
     suffixes: ['wing', 'feather', 'beak', 'claw', 'caw', 'ley', 'by', 'ton', 'wick', 'o']
+  },
+  owl: {
+    prefixes: ['Hoo', 'Moon', 'Dusk', 'Tawn', 'Hush', 'Bark', 'Hollow', 'Mott', 'Umber', 'Night'],
+    suffixes: ['wing', 'feather', 'talon', 'eye', 'ley', 'by', 'wick', 'o', 'hoot', 'shade']
   }
 };
 
@@ -1028,7 +1038,7 @@ function newTree(w, x, y, kind, o = {}) {
     fruit: kind === 'apple' || kind === 'cherry' ? kind : '', size: SPROUT,
     max: (T.treeSize[0] + (T.treeSize[1] - T.treeSize[0]) * r.next() ** 2) * (0.85 + 0.3 * w.fert[idx(x, y)]),   // most middling, a few giants, bigger on good soil
     born: w.tick, life: k.life * r.range(0.7, 1.3), tone: r.int(0, 2), parent: 0, by: '',
-    stump: 0, dead: 0, fallen: 0, until: 0, windfall: 0, nuts: 0, crop: 1, visits: 0, blooms: false, name: '', named: false, ...o,
+    stump: 0, dead: 0, fallen: 0, until: 0, windfall: 0, nuts: 0, owl: 0, crop: 1, visits: 0, blooms: false, name: '', named: false, ...o,
   };
   w.decor.push(d); w.treesMoved = true;
   return d;
@@ -1039,7 +1049,7 @@ function foundTree(w, d) {
   const r = w.treeRng, k = TREES[d.kind], hx = Math.floor(d.x * 100), hy = Math.floor(d.y * 100);
   const tone = d.kind === 'beech' && hash2(hx, hy, 49) < RARE_TONE ? 3 : Math.floor(hash2(hx, hy, 48) * 3);
   Object.assign(d, { id: w.nextTree++, max: d.size * r.range(1.04, 1.3), life: k.life * r.range(0.7, 1.3), tone, parent: 0, by: '',
-    dead: 0, fallen: 0, until: 0, windfall: 0, nuts: 0, crop: 1, visits: 0, blooms: false, name: '', named: false });
+    dead: 0, fallen: 0, until: 0, windfall: 0, nuts: 0, owl: 0, crop: 1, visits: 0, blooms: false, name: '', named: false });
   const grew = yearsTo(k, d.max, d.size), left = Math.max(0, d.life - grew);
   d.born = w.tick - Math.min(d.life * 0.97, grew + r.next() * left * (d.size > d.max * 0.9 ? 1 : 0.3)) * YEAR;
 }
@@ -1918,6 +1928,7 @@ function makeCreature(w, species, x, y, genes, parents) {
     kids: 0, kills: 0, voles: 0, prey: '', escapes: 0, visits: 0, load: 0, find: null, story: [],
     sick: 0, immune: 0,   // ticks when the sickness ends, and when immunity does (see sicknessTick)
     caches: null,         // a crow's acorns and beechnuts buried this autumn (cacheNut)
+    perch: null,          // an owl's branch: where it sits hunting, or sleeps by day (owlTick)
   };
   computeTraits(c);
   c.energy = c.maxEnergy * (parents ? 0.6 : 0.8);
@@ -1954,7 +1965,7 @@ function addCreature(w, species, x, y, opts = {}) {
   const c = makeCreature(w, species, x, y, opts.genes || founderGenes(w, species), null);
   if (opts.sex && species !== 'bee') c.sex = opts.sex;          // bees out and about are all workers
   if (opts.age) c.born = w.tick - Math.min(opts.age * TPD, c.lifespan / 2);   // nobody arrives at death's door
-  c.home = species === 'bee' ? nearestHive(w, x, y) : species === 'crow' ? null : nearestBurrow(w, x, y, 40);   // (a crow's is its nest)
+  c.home = species === 'bee' ? nearestHive(w, x, y) : species === 'crow' || species === 'owl' ? null : nearestBurrow(w, x, y, 40);   // (a crow's is its nest, an owl's its hollow)
   if (species === 'bee' && !c.home.queen) newQueen(w, c.home);   // a swarm always brings its queen
   note(w, c, '🌍', opts.note || (opts.arrived ? 'Wandered into the meadow' : 'Arrived in the meadow'));
   w.newborn.push(c);
@@ -2038,7 +2049,8 @@ function readyToMate(w, c) {
   return c.alive && !c.hidden && isAdult(w, c) && c.pregnantUntil === 0
     && w.tick >= c.cooldownUntil && c.energy >= c.sp.breedEnergy * c.maxEnergy
     && c.sp.breedSeasons.includes(seasonOf(w.tick))
-    && w.count[c.species] + w.expecting[c.species] < c.sp.cap * w.room;
+    && w.count[c.species] + w.expecting[c.species] < c.sp.cap * w.room
+    && (c.species !== 'owl' || owlReady(w, c));
 }
 
 function seekLove(w, c) {
@@ -2065,6 +2077,7 @@ function mate(w, a, b) {
   w.recount = true;
   dad.cooldownUntil = w.tick + 0.4 * TPD;
   for (const c of [mum, dad]) { c.mode = 'wander'; c.target = null; c.targetId = 0; }
+  if (mum.species === 'owl' && mum.home) dad.home = mum.home;    // he moves into her hollow's wood
   note(w, mum, '💕', `Fell in love with ${dad.name}`);
   note(w, dad, '💕', `Fell in love with ${mum.name}`);
   emit(w, { type: 'love', a: mum, b: dad });
@@ -2074,7 +2087,7 @@ function giveBirth(w, mum) {
   const sp = mum.sp, r = w.rng;
   mum.pregnantUntil = 0; w.recount = true;
   const well = mum.energy / mum.maxEnergy;
-  let n = r.int(sp.litter[0], sp.litter[1]);
+  let n = mum.species === 'owl' ? owlClutch(w) : r.int(sp.litter[0], sp.litter[1]);
   if (well < 0.4) n = Math.max(1, n - 1);
   const dad = w.byId.get(mum.dadIdPending);
   const kids = [], surprise = [];
@@ -2088,7 +2101,7 @@ function giveBirth(w, mum) {
     kid.home = mum.home || mum.burrow;
     if (mum.immune > w.tick) kid.immune = w.tick + KIT_IMMUNE * TPD;   // an immune mother's milk guards her kits a while
     if (mum.hidden && mum.burrow) { kid.hidden = true; kid.burrow = mum.burrow; kid.sleeping = true; kid.mode = 'sleep'; kid.timer = 60; mum.burrow.count++; }
-    if (mum.species === 'crow') {                                    // chicks, in the nest till they fledge (crowTick)
+    if (mum.species === 'crow' || mum.species === 'owl') {           // chicks, in the nest till they fledge (crowTick, owlTick)
       const nest = mum.home || mum;
       Object.assign(kid, { x: nest.x, y: nest.y, hidden: true, sleeping: true, mode: 'nest' });
     }
@@ -2750,9 +2763,7 @@ function mouse(w, c) {
     const x0 = clamp(c.x | 0, 2, W - 3), y0 = clamp(c.y | 0, 2, H - 3), n = w.voles[y0 * W + x0];
     c.mode = 'mouse'; c.target = null; c.timer = w.rng.int(...LISTEN_TICKS);
     if (w.rng.next() > VOLE_CATCH * n / (n + VOLE_HALF)) return true;          // missed: listen again
-    let near = 0;                                    // one vole fewer about the spot (a tile holds only part of one)
-    for (let y = y0 - 2; y <= y0 + 2; y++) for (let x = x0 - 2; x <= x0 + 2; x++) near += w.voles[y * W + x];
-    for (let y = y0 - 2; y <= y0 + 2; y++) for (let x = x0 - 2; x <= x0 + 2; x++) w.voles[y * W + x] *= Math.max(0, 1 - 1 / near);
+    takeVole(w, x0, y0);
     c.energy = Math.min(c.maxEnergy, c.energy + VOLE_ENERGY);
     c.voles++; w.stats.voles++; c.prey = 'vole';
     c.mode = 'gulp'; c.timer = GULP_TICKS;
@@ -2774,6 +2785,13 @@ function mouse(w, c) {
   if (!rustle) { c.mode = 'wander'; return false; }  // nothing stirring here: on it goes
   c.mode = 'pounce'; c.timer = POUNCE_TICKS; c.target = rustle;
   return true;
+}
+
+// One vole fewer about the tile x0, y0 (a tile holds only part of one). (x0, y0 two tiles in from the edge.)
+function takeVole(w, x0, y0) {
+  let near = 0;
+  for (let y = y0 - 2; y <= y0 + 2; y++) for (let x = x0 - 2; x <= x0 + 2; x++) near += w.voles[y * W + x];
+  for (let y = y0 - 2; y <= y0 + 2; y++) for (let x = x0 - 2; x <= x0 + 2; x++) w.voles[y * W + x] *= Math.max(0, 1 - 1 / near);
 }
 
 // The tile with the most voles of a few tried between near and far tiles off, if any is worth it.
@@ -3037,8 +3055,9 @@ const hiveGround = (w, x, y) => dry(w, x, y) &&
   [0, 1, 2, 3, 4, 5, 6, 7].every(a => dry(w, x + HIVE_SHORE * Math.cos(a * Math.PI / 4), y + HIVE_SHORE * Math.sin(a * Math.PI / 4)));
 
 // A tree bees could move into: an old oak (the only kind that grows hollow), standing, with nobody
-// in it, clear of the water and of the other hives. any: an oak of any age will do (placeHive makes it old).
-const hollowTree = (w, d, any = false) => (any ? standing(d) : hollow(w, d)) && !d.hive && hiveGround(w, d.x, d.y)
+// in it (no hive, no owls: d.owl), clear of the water and of the other hives. any: an oak of any age
+// will do (placeHive makes it old).
+const hollowTree = (w, d, any = false) => (any ? standing(d) : hollow(w, d)) && !d.hive && !d.owl && hiveGround(w, d.x, d.y)
   && !w.hives.some(o => !o.cluster && Math.hypot(o.x - d.x, o.y - d.y) < HIVE_GAP);
 
 // Where a swarm from hive h could live, best first: an empty hive, or a tree clear of the others.
@@ -3457,9 +3476,12 @@ function crowTick(w, c) {
   }
   if (eating || c.mode === 'remains' || c.mode === 'apple' || c.mode === 'unbury') { c.mode = 'wander'; c.target = null; }
 
-  // 5. Fed: off to the others now and then, a rest, or pecking about.
+  // 5. Fed: mobbing an owl it found asleep, off to the others now and then, a rest, or pecking about.
+  if (c.mode === 'mob' && mob(w, c)) return;
   if (c.mode === 'rest') { if (--c.timer > 0) return; c.mode = 'wander'; }
   if ((t + c.id) % 30 === 0) {
+    const owl = w.count.owl && nearest(w, c, c.sight, 'owl', o => o.mode === 'sleep');
+    if (owl && w.rng.next() < MOB_ODDS) { startMob(w, c, owl); return; }
     if (w.rng.next() < c.genes.friendly) {
       let sx = 0, sy = 0, n = 0;
       forEachNear(w, c.x, c.y, c.sight, o => { if (o !== c) { sx += o.x; sy += o.y; n++; } }, 'crow');
@@ -3596,11 +3618,11 @@ function unbury(w, c) {
   return true;
 }
 
-// The tallest grown tree about for a nest: not the bees' tree, nor the roost.
+// The tallest grown tree about for a nest: not the bees' tree, nor the owls', nor the roost.
 function nestTree(w, c) {
   let best = null;
   forEachDecorNear(w, c.x, c.y, NEST_RANGE, d => {
-    if (standing(d) && d.size >= GROWN && !d.hive && d !== w.roost && (!best || d.size > best.size)) best = d;
+    if (standing(d) && d.size >= GROWN && !d.hive && !d.owl && d !== w.roost && (!best || d.size > best.size)) best = d;
   });
   return best;
 }
@@ -3633,8 +3655,304 @@ function crowMood(w, c) {
     case 'bury': return { emoji: '🌰', text: `Burying ${one} for the winter` };
     case 'unbury': return { emoji: '🌰', text: `Digging up ${one} it buried in the autumn` };
     case 'flock': return { emoji: '', text: 'Flying over to the other crows' };   // no bubble: 🤝 is painted as paws
+    case 'mob': return { emoji: '‼️', text: `Mobbing ${w.byId.get(c.targetId)?.name ?? 'an owl'} the owl, cawing` };
     case 'follow': return { emoji: '🍼', text: 'Following mum, begging for food' };
     case 'rest': return { emoji: '😌', text: 'Preening' };
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------- owls
+//
+// Tawny owls: a pair or two, nesting in the hollow oaks. A hollow holds owls or a hive, never both
+// (d.owl: the id of the owl nesting in it). They sleep in their tree by day and hunt from dusk to dawn:
+// sit on a branch by the long grass, listen, and drop on a vole (w.voles, taken as a fox's mousing takes
+// them), or now and then on a young rabbit still out at dusk. In spring a pair lays in its hollow, but
+// only with voles about to feed the owlets, and more of them the more voles there are (owlClutch). The
+// owlets stay in the hollow till they fledge and keep near mum a while; grown, a young owl finds a
+// hollow of its own or flies off (comeOfAge). By day the crows mob one they find asleep out on a
+// branch (mob), and it may move off to a quieter tree. Same ladder as everyone: danger > sleep > love >
+// food > friends > wander.
+
+const OWL_WAKE = 0.66;          // the time of day an owl wakes (dusk is 0.72)
+const OWL_BED = 0.03;           // and goes to sleep (sunrise is 0)
+const OWL_STARVING = 0.2;       // this hungry, it hunts by day too
+const OWL_FULL = 0.85;          // it hunts till its tummy is this full
+const OWL_GAP = 25;             // tiles between two pairs' hollows: each pair holds a wood of its own
+const OWL_RANGE = 25;           // how far from home it hunts
+const PERCH_LOOK = 15;          // how far off it looks for long grass with voles in
+const PERCH_TREE = 4;           // and sits in a tree this close to it
+const OWL_HOP = [6, 15];        // with none about, it flies on this far to look again
+const PERCH_REACH = 5;          // tiles from its perch it drops on a vole
+const OWL_WORTH = 0.015;        // voles on a tile worth sitting over, or dropping on
+const PERCH_DROPS = 4;          // listens this many times, hearing nothing, before it moves on
+const OWL_LISTEN = [15, 40];    // ticks it sits and listens each time
+const OWL_CATCH = 0.8;          // odds it lands on a vole where they're thickest, about
+const OWL_HALF = 0.06;          // voles on a tile where it lands on one half as often as it could
+const OWL_VOLE = 15;            // a vole to an owl
+const OWL_GULP = 30;            // ticks swallowing one
+const OWL_KIT = 0.5;            // a young rabbit this grown or less is prey
+const KIT_EYES = 6;             // seen this far from the perch, out at dusk or at night
+const KIT_CATCH = 0.2;          // odds it takes one it drops on
+const KIT_MEAL = 30;            // what one is worth to an owl
+const OWL_BREED = 0.03;         // voles to a dry tile, the meadow over, below which owls don't lay (a spring's is about 0.035)
+const OWL_BROOD = 0.012;        // and one owlet more for each this many more, up to three
+const OWLET_FLEDGE = 0.35;      // owlets leave the hollow this grown
+const MOB_ODDS = 0.3;           // odds a fed crow that sees an owl asleep on a branch goes to mob it
+const MOB_TICKS = 150;          // and keeps at it this long
+const MOB_SHIFT = 0.004;        // odds a tick, for each crow at it, that the owl gives up and moves to another tree
+const SHIFT_FAR = [6, 15];      // this far off
+const OWL_VOLE_NOTE = 'Dropped on a vole in the long grass';
+
+const owlSide = c => (c.id % 2 ? 0.45 : -0.45);
+const sitIn = (c, d, hunt) => ({ x: d.x + owlSide(c), y: d.y + 0.2, tree: d, tries: 0, hunt });   // a branch of tree d (c.perch)
+const owlClutch = w => clamp(1 + Math.floor((w.voleCount / w.land - OWL_BREED) / OWL_BROOD), 1, SPECIES.owl.litter[1]);
+const owlReady = (w, c) => w.voleCount / w.land >= OWL_BREED && (c.sex === 'M' || (c.home && c.home.owl === c.id));
+
+function owlTick(w, c) {
+  const t = w.tick, ph = phaseOf(t), e = c.energy / c.maxEnergy;
+  if (c.hidden) {                                    // an owlet in the hollow
+    if (growth(w, c) >= OWLET_FLEDGE) {
+      c.hidden = c.sleeping = false; c.mode = 'wander';
+      note(w, c, '🪶', 'Left the hollow');
+      emit(w, { type: 'fledge', c, mum: w.byId.get(c.mumId) });
+    }
+    return;
+  }
+  c.sleeping = false;
+
+  // 1. Danger: fire. Up and away, or on its way somewhere it has to be (a quieter tree, out of the meadow).
+  smellSmoke(w, c);
+  if (c.fright > 0) { c.fright = 0; flapUp(w, c, c.frightX, c.frightY); }
+  if (c.mode === 'flap' || c.mode === 'shift' || c.mode === 'leave') {
+    if (!go(w, c, c.target.x, c.target.y, c.mode === 'flap' ? c.sprint : c.walk)) return;
+    if (c.mode === 'leave') { die(w, c, 'left'); return; }
+    if (c.mode === 'shift') { c.mode = 'sleep'; c.sleeping = true; return; }
+    c.mode = 'wander'; c.target = null;
+  }
+
+  // 2. Sleep: by day (unless starving) and through a storm, on a branch of its tree. Expecting, she sits in the hollow.
+  const day = ph >= OWL_BED && ph < OWL_WAKE;
+  if (c.pregnantUntil && c.home && e > (day ? OWL_STARVING : 0.4)) {
+    c.mode = 'nest';
+    if (go(w, c, c.home.x, c.home.y + 0.1, c.walk)) c.sleeping = true;
+    return;
+  }
+  if ((day && e > OWL_STARVING) || w.weather.kind === 'storm') {
+    if (c.mode !== 'sleep') {
+      if (c.mode !== 'roost') { c.mode = 'roost'; c.perch = roostTree(w, c); }
+      if (c.perch && !go(w, c, c.perch.x, c.perch.y, c.walk)) return;
+      c.mode = 'sleep';
+    }
+    c.sleeping = true;
+    return;
+  }
+  if (c.mode === 'sleep' || c.mode === 'roost' || c.mode === 'nest') { c.mode = 'wander'; c.target = null; }
+
+  // Owlets keep near mum till they're half grown; grown, they find a place of their own.
+  if (growth(w, c) < 0.6 && e > 0.4) {
+    const mum = w.byId.get(c.mumId);
+    if (mum && mum.alive && !mum.hidden && dist2(c, mum) > (c.mode === 'follow' ? 1.5 : 5) ** 2) { c.mode = 'follow'; go(w, c, mum.x, mum.y, c.walk); return; }
+  }
+  if (c.home && c.home.owl && c.home.owl === c.mumId && isAdult(w, c)) { comeOfAge(w, c); if (c.mode === 'leave') return; }
+  if (c.sex === 'F' && !(c.home && c.home.owl === c.id) && (t + c.id) % 60 === 0) {   // a hollow of her own, if one's free
+    const d = owlHollow(w, c);
+    if (d) moveInOwl(w, c, d);
+  }
+
+  // 3. Love.
+  if (seekLove(w, c)) return;
+
+  // 4. Food: hunting from a perch till full.
+  if (e < OWL_FULL || c.mode === 'swoop' || c.mode === 'gulp') { owlHunt(w, c); return; }
+
+  // 5. Fed: back to its tree, to sit and hoot.
+  if (c.mode !== 'hoot' && c.mode !== 'home') { c.mode = 'home'; c.perch = roostTree(w, c); }
+  if (c.mode === 'home' && (!c.perch || go(w, c, c.perch.x, c.perch.y, c.walk))) c.mode = 'hoot';
+}
+
+// Sitting on a perch it listens, then drops on a vole it hears (or a young rabbit it sees), then back up.
+// Nothing stirring after a few tries, or no perch yet: the best of a few trees by long grass with voles in
+// (perchSpot). None about: off somewhere else in its range to look again.
+function owlHunt(w, c) {
+  if (c.mode === 'gulp') {
+    if (--c.timer > 0) return;
+    c.mode = c.perch ? 'hunt' : 'look'; c.target = c.perch;
+    return;
+  }
+  if (c.mode === 'swoop') {
+    const kit = c.targetId ? w.byId.get(c.targetId) : null, to = kit || c.target;
+    if (!go(w, c, to.x, to.y, c.sprint)) return;
+    c.mode = c.perch ? 'hunt' : 'look'; c.target = c.perch; c.targetId = 0;   // (back up, unless it caught something)
+    if (kit) {
+      if (!kit.alive || kit.hidden || w.rng.next() >= KIT_CATCH) return;
+      c.energy = Math.min(c.maxEnergy, c.energy + KIT_MEAL * (0.4 + 0.6 * growth(w, kit)));
+      c.kills++; c.prey = 'rabbit';
+      note(w, c, '🍖', `Caught ${kit.name}`);
+      die(w, kit, 'owl', c);
+      c.mode = 'gulp'; c.timer = OWL_GULP * 3;
+      return;
+    }
+    const x0 = clamp(c.x | 0, 2, W - 3), y0 = clamp(c.y | 0, 2, H - 3), n = w.voles[y0 * W + x0];
+    if (w.rng.next() >= OWL_CATCH * n / (n + OWL_HALF)) return;
+    takeVole(w, x0, y0);
+    c.energy = Math.min(c.maxEnergy, c.energy + OWL_VOLE);
+    c.voles++; c.prey = 'vole'; w.stats.owlVoles++;
+    if (c.perch) c.perch.tries = 0;
+    c.mode = 'gulp'; c.timer = OWL_GULP;
+    if (c.story[c.story.length - 1].text !== OWL_VOLE_NOTE) note(w, c, '🐁', OWL_VOLE_NOTE);
+    return;
+  }
+  if (c.mode === 'hunt') {                           // flying to a perch, or to somewhere to look about
+    if (!c.target || !go(w, c, c.target.x, c.target.y, c.walk)) return;
+    if (c.perch && c.perch.hunt) { c.mode = 'perch'; c.timer = w.rng.int(...OWL_LISTEN); } else c.mode = 'look';
+    return;
+  }
+  if (c.mode === 'perch' && c.perch && c.perch.hunt) {
+    if (--c.timer > 0) return;
+    c.timer = w.rng.int(...OWL_LISTEN);
+    const kit = (w.tick + c.id) % 2 === 0 && nearest(w, c, KIT_EYES, 'rabbit', o => growth(w, o) <= OWL_KIT);
+    if (kit) { c.mode = 'swoop'; c.targetId = kit.id; return; }
+    const v = rustle(w, c);
+    if (v) { c.mode = 'swoop'; c.target = v; c.targetId = 0; return; }
+    if (++c.perch.tries < PERCH_DROPS) return;
+  }
+  if ((w.tick + c.id) % 10) { c.mode = 'look'; return; }   // (looking about)
+  const p = perchSpot(w, c);
+  if (p) { c.perch = p; c.mode = 'hunt'; c.target = p; return; }
+  const h = c.home && dist2(c, c.home) > OWL_RANGE ** 2 ? c.home : c, a = w.rng.range(0, Math.PI * 2), r = w.rng.range(...OWL_HOP);
+  c.mode = 'hunt'; c.perch = null;
+  c.target = { x: clamp(h.x + Math.cos(a) * r, 2, W - 2), y: clamp(h.y + Math.sin(a) * r, 2, H - 2) };
+}
+
+// The best of a few trees about with voles in the grass by it, round the owl, or round home if it's
+// strayed out of its range. Null if there's none worth sitting over.
+function perchSpot(w, c) {
+  const h = c.home && dist2(c, c.home) > OWL_RANGE ** 2 ? c.home : c;
+  let best = null, most = OWL_WORTH;
+  for (let k = 0; k < 10; k++) {
+    const a = w.rng.range(0, Math.PI * 2), r = w.rng.range(0, PERCH_LOOK), x = h.x + Math.cos(a) * r, y = h.y + Math.sin(a) * r;
+    if (!inBounds(x, y) || w.voles[idx(x, y)] <= most) continue;
+    let tree = null;
+    forEachDecorNear(w, x, y, PERCH_TREE, d => {
+      if (!tree && standing(d) && d.size >= SAPLING && !d.hive && (d.x - x) ** 2 + (d.y - y) ** 2 < PERCH_TREE ** 2) tree = d;
+    });
+    if (tree) { best = tree; most = w.voles[idx(x, y)]; }
+  }
+  return best && sitIn(c, best, true);
+}
+
+// The tile with the most voles of a few within reach of its perch, if any is worth dropping on.
+function rustle(w, c) {
+  let best = null, most = OWL_WORTH;
+  for (let k = 0; k < 6; k++) {
+    const a = w.rng.range(0, Math.PI * 2), r = w.rng.range(0, PERCH_REACH), x = c.x + Math.cos(a) * r, y = c.y + Math.sin(a) * r;
+    if (inBounds(x, y) && w.voles[idx(x, y)] > most) { best = { x, y }; most = w.voles[idx(x, y)]; }
+  }
+  return best;
+}
+
+// Where it sleeps by day: its home tree, or the nearest big one (no hive in it). Null with none about.
+function roostTree(w, c) {
+  let d = c.home && standing(c.home) ? c.home : null;
+  if (!d) {
+    forEachDecorNear(w, c.x, c.y, 15, o => {
+      if (standing(o) && o.size >= GROWN && !o.hive && (!d || dist2(o, c) < dist2(d, c))) d = o;
+    });
+  }
+  return d && sitIn(c, d, false);
+}
+
+// The nearest hollow oak free for owls: no hive, not the crows' roost, and away from the other owls' hollows.
+function owlHollow(w, c) {
+  const held = w.decor.filter(d => d.owl);
+  let best = null, bd = Infinity;
+  for (const d of w.decor) {
+    if (d.owl || d.hive || d === w.roost || !hollow(w, d)) continue;
+    const dd = dist2(d, c);
+    if (dd < bd && !held.some(o => dist2(o, d) < OWL_GAP ** 2)) { best = d; bd = dd; }
+  }
+  return best;
+}
+
+function moveInOwl(w, c, d) {
+  if (c.home && c.home.owl === c.id) c.home.owl = 0;
+  c.home = d; d.owl = c.id;
+  note(w, c, '🏡', `Found a hollow of her own in ${d.name ? 'the ' + d.name : 'an old oak'}`);
+  emit(w, { type: 'owlnest', c, tree: d });
+}
+
+// Grown up in its parents' wood: a young female takes a free hollow, a young male stays to find a mate,
+// while the meadow has room for more owls. Otherwise it flies off, out of the meadow, to find a wood of
+// its own (out at the nearest edge; die 'left').
+function comeOfAge(w, c) {
+  const room = w.count.owl <= c.sp.cap * w.room, d = room && c.sex === 'F' && owlHollow(w, c);
+  if (d) { moveInOwl(w, c, d); return; }
+  if (room && c.sex === 'M') { c.home = null; note(w, c, '🌙', 'Grown, and off to find a mate of his own'); return; }
+  const edges = [[c.x, 0.5, 0], [W - c.x, W - 0.5, 0], [c.y, 0, 0.5], [H - c.y, 0, H - 0.5]].sort((a, b) => a[0] - b[0]);
+  const [, ex, ey] = edges[0];
+  c.home = null; c.mode = 'leave';
+  c.target = ex ? { x: ex, y: c.y } : { x: c.x, y: ey };
+  emit(w, { type: 'owlleaves', c });
+}
+
+// Once a day: a hollow whose owl is gone, or that fell, is free again.
+function owlsDay(w) {
+  for (const d of w.decor) {
+    if (!d.owl) continue;
+    const o = w.byId.get(d.owl);
+    if (!o || !o.alive || o.home !== d || !standing(d)) d.owl = 0;
+  }
+}
+
+// A crow mobbing an owl asleep on a branch by day: round and round it, cawing. The more crows at it, the
+// likelier the owl gives up and moves off to another tree (owlShift). It stops when the owl goes, or after a while.
+function mob(w, c) {
+  const owl = w.byId.get(c.targetId);
+  if (!owl || !owl.alive || owl.mode !== 'sleep' || --c.timer <= 0) { c.mode = 'wander'; c.target = null; c.targetId = 0; return false; }
+  const a = c.id * 2.4 + w.tick / 15;
+  go(w, c, owl.x + Math.cos(a) * 1.2, owl.y + Math.sin(a) * 0.6, c.walk);
+  if (dist2(c, owl) < 4 && w.rng.next() < MOB_SHIFT) owlShift(w, owl);
+  return true;
+}
+
+// A fed crow that sees an owl asleep on a branch by day goes to mob it, and calls the others about to come too.
+function startMob(w, c, owl) {
+  c.mode = 'mob'; c.targetId = owl.id; c.timer = MOB_TICKS;
+  forEachNear(w, c.x, c.y, CAW, o => {
+    if (o !== c && (o.mode === 'rest' || o.mode === 'peck')) { o.mode = 'mob'; o.targetId = owl.id; o.timer = MOB_TICKS; }
+  }, 'crow');
+}
+
+function owlShift(w, c) {
+  let best = null;
+  forEachDecorNear(w, c.x, c.y, SHIFT_FAR[1], d => {
+    const dd = dist2(d, c);
+    if (standing(d) && d.size >= GROWN && !d.hive && dd > SHIFT_FAR[0] ** 2 && dd < SHIFT_FAR[1] ** 2 && (!best || dd < dist2(best, c))) best = d;
+  });
+  if (!best) return;
+  c.perch = sitIn(c, best, false);
+  c.mode = 'shift'; c.target = c.perch; c.sleeping = false;
+  if (!c.story[c.story.length - 1].text.startsWith('Mobbed')) note(w, c, '🐦‍⬛', 'Mobbed by the crows, and moved off to a quieter tree');
+}
+
+function owlMood(w, c) {
+  const kit = c.mode === 'swoop' && c.targetId && w.byId.get(c.targetId);
+  switch (c.mode) {
+    case 'nest': return { emoji: '', text: c.hidden ? 'An owlet in the hollow, calling for food' : c.sleeping ? 'Sitting on her eggs in the hollow' : 'Flying to her hollow' };
+    case 'sleep': return { emoji: '💤', text: c.home && c.perch && c.perch.tree === c.home ? 'Asleep in its tree till dusk' : 'Asleep on a branch till dusk' };
+    case 'roost': return { emoji: '🏠', text: 'Flying back to its tree for the day' };
+    case 'shift': return { emoji: '', text: 'Mobbed by the crows: off to a quieter tree' };
+    case 'flap': return { emoji: '🔥', text: 'Flying from the smoke!' };
+    case 'leave': return { emoji: '🧳', text: 'Flying off to find a wood of its own' };
+    case 'look': return { emoji: '👀', text: 'Looking for long grass with voles in' };
+    case 'hunt': return { emoji: '👀', text: c.perch && c.perch.hunt ? 'Gliding silently to a branch by the long grass' : 'Gliding off to hunt somewhere else' };
+    case 'perch': return { emoji: '👀', text: 'Sitting on a branch, listening for voles' };
+    case 'swoop': return kit ? { emoji: '👀', text: `Dropping silently on ${kit.name}!` } : { emoji: '🐁', text: 'Dropping on a vole!' };
+    case 'gulp': return c.prey === 'rabbit' ? { emoji: '🍖', text: 'Eating its catch' } : { emoji: '🐁', text: 'Swallowing a vole whole' };
+    case 'follow': return { emoji: '🍼', text: 'Following mum, begging for food' };
+    case 'home': return { emoji: '🏠', text: 'Fed, flying back to its tree' };
+    case 'hoot': return { emoji: '', text: 'Sitting in its tree, hooting' };
   }
   return null;
 }
@@ -3643,13 +3961,14 @@ function crowMood(w, c) {
 
 function die(w, c, cause, killer) {
   if (!c.alive) return;
-  if (!c.hidden && c.species !== 'bee') leaveRemains(w, c, cause === 'fox');   // a body left out
+  if (!c.hidden && c.species !== 'bee' && cause !== 'left') leaveRemains(w, c, cause === 'fox' || cause === 'owl');   // a body left out
   c.alive = false; c.died = w.tick; c.cause = cause;
   c.killerId = killer ? killer.id : 0;
   if (c.hidden && c.burrow) c.burrow.count--;
   c.hidden = false;
   const age = Math.floor(ageDays(w, c));
-  const text = cause === 'fox' ? `Caught by ${killer.name}` :
+  const text = cause === 'fox' || cause === 'owl' ? `Caught by ${killer.name}${cause === 'owl' ? ' the owl' : ''}` :
+    cause === 'left' ? 'Flew off over the trees to find a wood of its own' :
     cause === 'hunger' ? (seasonOf(w.tick) === 3 ? 'Starved in the winter' : 'Starved') :
     cause === 'lightning' ? 'Struck by lightning' :
     cause === 'fire' ? 'Caught in a wildfire' :
@@ -3657,7 +3976,7 @@ function die(w, c, cause, killer) {
     cause === 'ice' ? 'Fell through the ice and drowned' :
     cause === 'sickness' ? 'Died of the sickness' :
     `Died of old age, ${age} days old`;
-  note(w, c, { fox: '🦊', hunger: '🥀', lightning: '⚡', fire: '🔥', flood: '🌊', ice: '🧊', sickness: '🤒' }[cause] || '🌙', text);
+  note(w, c, { fox: '🦊', owl: '🦉', left: '🧳', hunger: '🥀', lightning: '⚡', fire: '🔥', flood: '🌊', ice: '🧊', sickness: '🤒' }[cause] || '🌙', text);
   w.stats.deaths[c.species][cause] = (w.stats.deaths[c.species][cause] || 0) + 1;
   w.anyDied = w.recount = true;
   emit(w, { type: 'death', c, cause, killer });
@@ -3699,7 +4018,7 @@ function createWorld(seed, opts = {}) {
     sick: 0, outbreak: null,                                              // (see sicknessTick)
     carcasses: [], roost: null, cached: 0, gatherSaid: -1,                // (see carrionTick and crowTick; cached: this autumn; gatherSaid: the outbreak told of)
     count: perKind(() => 0), expecting: perKind(() => 0),
-    stats: { births: perKind(() => 0), deaths: perKind(() => ({})), voles: 0,   // voles: the foxes caught
+    stats: { births: perKind(() => 0), deaths: perKind(() => ({})), voles: 0, owlVoles: 0,   // voles: the foxes caught, and the owls
       remains: { left: 0, eaten: 0, rotted: 0 }, cached: 0, dugUp: 0, planted: 0 },   // remains, and how they went; the crows' acorns
     history: { every: 60, t: [], grass: [], voles: [], ...perKind(() => []), traits: perKind(() => []), marks: [] },
     goneSince: perKind(() => -1), hives: [],
@@ -3716,14 +4035,15 @@ function createWorld(seed, opts = {}) {
   groundTick(w);
   startVoles(w);
   w.roost = pickRoost(w);
-  const n = { rabbit: opts.rabbits ?? Math.round(30 * w.room), fox: opts.foxes ?? Math.round(4 * w.room), bee: opts.bees ?? 12, crow: opts.crows ?? Math.round(8 * w.room) };
+  const n = { rabbit: opts.rabbits ?? Math.round(30 * w.room), fox: opts.foxes ?? Math.round(4 * w.room), bee: opts.bees ?? 12, crow: opts.crows ?? Math.round(8 * w.room),
+    owl: opts.owls ?? 2 * Math.max(1, Math.round(w.room)) };   // a pair or two
   w.arrivals = []; w.family = null;
   if (opts.arrival) planArrivals(w, n);
   else for (const species of KINDS) {
     for (let k = 0; k < n[species]; k++) {
       let x, y;
       do { x = w.rng.range(4, W - 4); y = w.rng.range(4, H - 4); } while (!dry(w, x, y));
-      const age = species === 'bee' ? w.rng.range(1, 2) : w.rng.range(4, 10);   // summer bees only live a few days
+      const age = species === 'bee' ? w.rng.range(1, 2) : species === 'owl' ? w.rng.range(10, 30) : w.rng.range(4, 10);   // summer bees only live a few days
       addCreature(w, species, x, y, { sex: k % 2 ? 'M' : 'F', age });
     }
   }
@@ -3812,6 +4132,7 @@ function newDay(w) {
   treesTick(w);
   groundTick(w);
   if (!w.roost || !standing(w.roost)) w.roost = pickRoost(w);
+  owlsDay(w);
 }
 
 // ---------------------------------------------------------------- moving in
@@ -3866,6 +4187,7 @@ function planArrivals(w, n) {
   groups.forEach((k, i) => plan.push({ t: Math.round(t0 + 110 + 280 * i / groups.length + r.range(0, 15)), species: 'rabbit', n: k }));
   plan.push({ t: TPD + Math.round(0.25 * TPD), species: 'bee', n: n.bee });
   plan.push({ t: Math.round(2.3 * TPD), species: 'crow', n: n.crow });
+  plan.push({ t: Math.round(2.7 * TPD), species: 'owl', n: n.owl });   // at dusk
   const foxes = Math.ceil(n.fox / 2);
   plan.push({ t: Math.round(3.3 * TPD), species: 'fox', n: foxes }, { t: Math.round(4.6 * TPD), species: 'fox', n: n.fox - foxes });
   w.arrivals = plan.filter(a => a.family || a.n > 0).sort((a, b) => a.t - b.t);
@@ -3932,9 +4254,10 @@ function arrivalsTick(w) {
       let x, y, tries = 0;
       do {
         if (hive) { x = hive.x + w.rng.range(-2, 2); y = hive.y + w.rng.range(-2, 2); }
-        else { x = w.rng.next() < 0.5 ? 1 : W - 1; y = w.rng.range(6, H - 6); }   // foxes and crows, from the left or the right
+        else { x = w.rng.next() < 0.5 ? 1 : W - 1; y = w.rng.range(6, H - 6); }   // foxes, crows and owls, from the left or the right
       } while (!dry(w, x, y) && ++tries < 50);
-      const c = addCreature(w, a.species, x, y, { sex: k % 2 ? 'M' : 'F', age: a.species === 'bee' ? w.rng.range(1, 2) : w.rng.range(4, 10), arrived: true });
+      const age = a.species === 'bee' ? w.rng.range(1, 2) : a.species === 'owl' ? w.rng.range(10, 30) : w.rng.range(4, 10);
+      const c = addCreature(w, a.species, x, y, { sex: k % 2 ? 'M' : 'F', age, arrived: true });
       if (c) who.push(c);
     }
   }
@@ -3944,7 +4267,7 @@ function arrivalsTick(w) {
 
 function migrate(w) {
   if (!w.options.migration) return;
-  const wait = { rabbit: 1, fox: 3, bee: 2, crow: 3 }, arrive = { rabbit: 6, fox: 2, bee: 8, crow: 4 }, few = { rabbit: 4, fox: 3, bee: 4, crow: 3 };
+  const wait = { rabbit: 1, fox: 3, bee: 2, crow: 3, owl: 10 }, arrive = { rabbit: 6, fox: 2, bee: 8, crow: 4, owl: 2 }, few = { rabbit: 4, fox: 3, bee: 4, crow: 3, owl: 2 };
   for (const s of KINDS) {
     if (w.count[s] >= few[s] || w.arrivals.some(a => a.species === s)) { w.goneSince[s] = -1; continue; }
     if (w.goneSince[s] < 0) { w.goneSince[s] = w.tick; if (w.count[s] === 0) emit(w, { type: 'extinct', species: s }); continue; }
@@ -3952,6 +4275,7 @@ function migrate(w) {
     if (s === 'fox' && w.count.rabbit < 60 * w.room) continue;   // foxes only come where there is food
     if (s === 'bee' && w.flowers < FEW_FLOWERS) continue;         // a swarm comes when the flowers are out
     if (s === 'crow' && seasonOf(w.tick) === 3 && !w.carcasses.length) continue;   // and crows when there's food: grubs, or remains
+    if (s === 'owl' && (seasonOf(w.tick) !== 2 || !owlHollow(w, { x: W / 2, y: H / 2 }))) continue;   // and a pair of owls in autumn, to a free hollow
     const side = w.rng.int(0, 3), hive = s === 'bee' && (w.hives.find(h => !h.cluster) || placeHive(w));
     const kids = [];
     for (let k = 0; k < arrive[s]; k++) {
@@ -3988,6 +4312,7 @@ function step(w) {
     else if (c.species === 'fox') foxTick(w, c);
     else if (c.species === 'bee') beeTick(w, c);
     else if (c.species === 'crow') crowTick(w, c);
+    else if (c.species === 'owl') owlTick(w, c);
     if (c.alive) lifeTick(w, c);
   }
   if (w.anyDied) { w.creatures = w.creatures.filter(c => c.alive); w.anyDied = false; }
@@ -4014,8 +4339,8 @@ function forgetTheLongDead(w) {
 // where they'd got to. The neighbour grids and the events stay out, and are made again.
 // A change a kept meadow can't take (a new field the code counts on, on the world, a creature, a hive
 // or a tree) bumps KEEP_VERSION, and kept meadows start over.
-const KEEP_VERSION = 5;                 // 2: shade and rich ground (w.shadedFert, w.rich); 3: voles (w.voles); 4: the sickness (c.sick, c.immune, the resist gene);
-                                        // 5: crows and remains (w.carcasses, w.roost, c.caches, d.nuts)
+const KEEP_VERSION = 6;                 // 2: shade and rich ground (w.shadedFert, w.rich); 3: voles (w.voles); 4: the sickness (c.sick, c.immune, the resist gene);
+                                        // 5: crows and remains (w.carcasses, w.roost, c.caches, d.nuts); 6: owls (d.owl, c.perch)
 const TABLES = { SPECIES, FIELD_KINDS, TREE_MIX, TREES, SEASONS, WEATHER, COATS, GROUND };
 const UNKEPT = ['grid', 'grids', 'events', 'newborn'];      // on the world
 let tableNames = null;                                     // object -> 'SPECIES.fox', made the first time
@@ -4138,6 +4463,7 @@ function mood(w, c) {
   const storm = w.weather.kind === 'storm' && !isNight(w.tick);
   if (c.species === 'bee') { const m = beeMood(w, c); if (m) return m; }
   if (c.species === 'crow') { const m = crowMood(w, c); if (m) return m; }
+  if (c.species === 'owl') { const m = owlMood(w, c); if (m) return m; }
   if (c.sick && c.mode !== 'flee' && c.mode !== 'alarm') return { emoji: '🤒', text: c.hidden ? 'Sick, curled up in the burrow' : 'Sick with a fever' };
   switch (c.mode) {
     case 'flee':

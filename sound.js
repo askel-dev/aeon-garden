@@ -12,9 +12,10 @@
  *     (see "music" below), in keys that hold the pentatonic so it still fits.
  *     Over it all hangs a wind chime that rings more the more rabbits there are.
  *
- * Use: Sound.start() from a click, then Sound.update({ phase, season, speed, sky, fire, bees, life }) a
+ * Use: Sound.start() from a click, then Sound.update({ phase, season, speed, sky, fire, bees, life, owls }) a
  * few times a second (sky: how much of each weather is showing, 0..1; bees: how many are flying
- * on screen; life: how full the meadow is of rabbits, 0..1) and Sound.play('birth', { species, pan, near, seen }) on events.
+ * on screen; life: how full the meadow is of rabbits, 0..1; owls: how many live there, for the hoots at night) and
+ * Sound.play('birth', { species, pan, near, seen }) on events.
  */
 (() => {
 'use strict';
@@ -32,7 +33,7 @@ let ac = null, master, ducker, loud, fxBus, ambBus, musicBus, hush, reverb, nois
 let enabled = true, volume = 0.6;
 const amb = {};                                    // ambient layers
 const LOUD = 1.4;                                  // thunder's level against the rest
-const state = { phase: 0.3, season: 0, speed: 1, sky: { clear: 1 }, fire: 0, bees: 0, life: 0.3 };
+const state = { phase: 0.3, season: 0, speed: 1, sky: { clear: 1 }, fire: 0, bees: 0, life: 0.3, owls: 1 };
 const last = {};                                   // per-sound cooldowns
 let recent = 0, recentAt = 0;                      // global voice budget
 
@@ -475,7 +476,7 @@ function tickAmbience() {
   const dt = 0.2 * fastFactor;
   birdTick(now, m.birds * fastFactor);
   if (Math.random() < m.crickets * 2.2 * dt) cricket(now + rand(0, 0.2));
-  if (Math.random() < (1 - m.day) * (state.season === 3 ? 0.02 : 0.05) * dt) owl(now);
+  if (state.owls && Math.random() < (1 - m.day) * (state.season === 3 ? 0.02 : 0.05) * dt) owl(now);   // only with owls in the meadow
   if (Math.random() < m.rain * 3 * dt) {
     const deg = drip(now + rand(0, 0.2), rand(0.5, 1.3));
     if (Math.random() < 0.2) drip(now + rand(0.25, 0.4), 0.5, deg + pick([-1, 1]));   // then a smaller one off the leaf

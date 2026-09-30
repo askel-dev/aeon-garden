@@ -1,6 +1,6 @@
 # Nobody's Meadow
 
-A cozy emoji meadow where rabbits, foxes, bees and crows live their own lives and you watch what
+A cozy emoji meadow where rabbits, foxes, bees, crows and owls live their own lives and you watch what
 emerges. It used to be called AEON Garden, and the repo and the
 `aeon-garden-*` localStorage keys keep that name (renaming the keys would lose players' settings).
 It's played at https://meadow.cryptoler.net: GitHub Pages from `main` under a custom domain (`CNAME`;
@@ -217,8 +217,25 @@ At dusk they all fly to one big tree (`w.roost`, `pickRoost`); in spring a mum s
 the others with them (`flapUp`, `caw`), but one busy on the ground may not see it in time: a small meal for the fox
 (`CROW_MEAL`) that changes neither its search image nor its haunt. Foxes don't eat remains (tried: it fed them through the
 rabbits' lows). game.js draws remains as a tuft of fur or a few feathers, fading as they go (`drawRemains`), and eases a
-crow's height in sim time (`crowLift`), so it glides down to land and up to its perch. The news tells of crows arriving,
+crow's height in sim time (`birdLift`, `crowHeight`), so it glides down to land and up to its perch. The news tells of crows arriving,
 a gathering at remains in an outbreak (`GATHERING`), and the acorns they buried each autumn.
+
+Tawny owls (`owlTick`): a pair or two (`SPECIES.owl.cap` × `w.room`), drawn as the 🦉 emoji. A female nests in a hollow oak
+(`hollow`, `owlHollow`: no hive in it, not the crows' roost, `OWL_GAP` from the other owls' hollows) and marks it
+(`d.owl`, her id; `owlsDay` frees it once she's gone); the bees' `hollowTree` skips it, as the owls skip a hive's, so the
+two compete for the hollows. A male moves into his mate's (`mate`); one with no hollow roosts in any big tree and can't
+breed. They sleep in their tree by day (`OWL_WAKE`, `OWL_BED`; `roostTree`, `c.perch`) and hunt from dusk to dawn
+(`owlHunt`): sit on a branch by long grass with voles in (`perchSpot`), listen (`OWL_LISTEN`), drop on a vole
+(`rustle`, then `takeVole`, which the fox's mousing uses too) or now and then on a kit still out at dusk (`OWL_KIT`,
+`KIT_CATCH`), and after a few tries with nothing stirring move on. So owls and foxes share the voles. In spring a pair
+lays only in a year with voles about (`owlReady`, `OWL_BREED`), up to three owlets the more there are (`owlClutch`). The
+owlets stay in the hollow till they fledge (`OWLET_FLEDGE`), keep near mum, and once grown a young female takes a free
+hollow and a young male stays to find a mate while the meadow has room; otherwise it flies off out of the meadow
+(`comeOfAge`, cause `'left'`, no remains). A dead owl leaves remains for the crows (barred brown feathers). By day a fed
+crow that spots an owl asleep on a branch mobs it (`startMob`, `mob`, `MOB_ODDS`) and calls the others; the owl may
+move off to a quieter tree (`owlShift`). A pair flies in in autumn when there are none (`migrate`). game.js eases an
+owl's height like a crow's (`owlHeight`): on a branch, in the hollow, gliding, dropping to the grass. The news tells
+of a hollow taken, owlets hatched and fledged, and a young owl leaving; the night hoot in sound.js only plays with owls about.
 
 Bees: they live in hives (`w.hives`), each in an oak from `w.decor` (`h.tree`, `d.hive`, `moveIn`), which grows
 into an old giant (`HIVE_TREE`) with a hollow low on its trunk (`drawBeeTree`). The first hive takes the best broadleaf,
