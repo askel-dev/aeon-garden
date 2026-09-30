@@ -66,6 +66,26 @@
     body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
     textarea { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
   }
+  /* WCAG 2.2's minimum target, 44×44: a finger needs room the mouse never asked for. The meadow's own
+     tools already wear 44 px on phones (see the max-width media rules); this reaches the rest — the top
+     pill, the menu lines, the card's corners. Buttons grow by min-height and keep their ink centred; the
+     chevrons keep their drawn size and lean into the card's slack with a negative margin instead of
+     pushing rows apart. */
+  @media (pointer: coarse) {
+    .hud-btn, .speed { min-height: 44px; min-width: 44px; }
+    #time { height: auto; padding-top: 3px; padding-bottom: 3px; }
+    .win-btn { width: 44px; height: 44px; margin: -7px; }
+    #guide .win-btn { margin: -7px -7px -7px 0; }   /* its chevron ends the row: no room to lean right */
+    .close { min-width: 44px; min-height: 44px; display: grid; place-items: center; }
+    .g-skip, .g-x { min-height: 40px; padding: 10px 12px; }
+    .brand-btn { min-width: 44px; min-height: 36px; }
+    .menu-item { min-height: 44px; }
+    .card-actions .act { min-height: 44px; }
+    .mini-line { min-height: 44px; }
+    .pop[data-act] { min-height: 44px; }
+    .strip-row { min-height: 48px; }                /* the whole folded line is one tap: name or mood opens it */
+    #ask textarea { font-size: 16px; }   /* under 16 px, iOS zooms the page on focus */
+  }
   /* The meadow fills the whole glass: under the clock and behind Safari's floating bar too (lvh). */
   canvas#world { position: fixed; top: 0; left: 0; width: 100%; height: 100vh; height: 100lvh; display: block; touch-action: none;
     -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }   /* a held finger opens the ring, not Safari's menu */
@@ -82,6 +102,11 @@
     box-shadow: var(--edge), var(--shadow);   /* opaque: a blur behind would redo itself every frame the meadow moves */
   }
   button { font: inherit; color: inherit; cursor: pointer; }
+  /* The keyboard's turn: hover is the mouse's cue, :focus-visible is its twin. A green ring lands on every
+     control Tab reaches — buttons, the idea box's textarea; an <a> gets the hover's underline too.
+     Plain :focus would light up a button on a mere click or tap, which reads as a bug. */
+  :is(button, textarea, [tabindex]):focus-visible { outline: 2px solid #4f7f3a; outline-offset: 2px; border-radius: inherit; }
+  :is(a[data-id], a[data-thing], a[data-act]):focus-visible { text-decoration: underline; outline: 2px solid #4f7f3a; outline-offset: 1px; border-radius: 4px; }
   a[data-id], a[data-thing], a[data-act] { color: var(--accent); font-weight: 800; text-decoration: none; cursor: pointer; }
   a[data-id]:hover, a[data-thing]:hover, a[data-act]:hover { text-decoration: underline; }
 
@@ -94,7 +119,7 @@
   .mini-line b { font-weight: 900; font-variant-numeric: tabular-nums; }
   #mini-sky { letter-spacing: 3px; }
   /* the card's one window control: a chevron, up to fold the card away, down to open it again */
-  .win-btn { flex: none; width: 28px; height: 28px; border: none; border-radius: 8px; background: transparent; position: relative; transition: background 0.15s; }
+  .win-btn { flex: none; width: 30px; height: 30px; border: none; border-radius: 8px; background: transparent; position: relative; transition: background 0.15s; }
   .win-btn:hover, .mini-line:hover .win-btn { background: rgba(0,0,0,0.06); }
   .win-btn::before { content: ''; position: absolute; left: 50%; top: 50%; width: 7px; height: 7px;
     border: solid var(--muted); border-width: 2.5px 0 0 2.5px; border-radius: 1px; transform: translate(-50%, -25%) rotate(45deg); }
@@ -545,11 +570,13 @@
     #toolbar .tool .e { font-size: 24px; width: 1.1em; }
     .tool .l { font-size: 14px; }
     /* time: pause and one button that steps through the speeds; the rest waits in ••• */
-    #time { --hud-h: 44px; gap: 2px; padding: 0 4px; }
+    /* On a finger screen the 44 px minimum above wins over these rows' 38/40 px sizes — they only set
+       the look for fine pointers, so here they give back the height and keep the widths. */
+    #time { --hud-h: 44px; gap: 2px; padding: 3px 4px; }
     #time .speed[data-speed]:not([data-speed="0"]), #time .hud-btn:not(.more), #time .hud-sep { display: none; }
     #time .speed.cycle { display: block; }
-    .speed { min-width: 40px; height: 38px; padding: 0 6px; font-size: 15px; }
-    .hud-btn.more { min-width: 40px; height: 38px; }
+    .speed { min-width: 40px; height: auto; padding: 0 6px; font-size: 15px; }
+    .hud-btn.more { min-width: 40px; height: auto; }
     #more-menu { min-width: 260px; }
     .menu-item { padding: 10px 12px; }
     #sky-menu { width: min(380px, calc(100vw - 32px)); }
