@@ -329,6 +329,56 @@
   #ask .go:disabled { opacity: 0.5; }
   #ask.sent :is(textarea, .btns, .ask-q), #ask:not(.sent) .ask-thanks { display: none; }
 
+  /* ---- who ate whom: the food web (game.js, updateWeb). Like #ask. */
+  #web { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 9; box-sizing: border-box; width: min(470px, calc(100% - 32px));
+    max-height: calc(100% - 24px); overflow: hidden auto; scrollbar-width: thin; padding: 16px 20px 14px;
+    background: var(--paper, none) #f7eedc; border-radius: 22px; box-shadow: 0 20px 60px rgba(50, 40, 15, 0.3); }
+  #web:not(.hidden) > * { animation: pop-in 0.18s ease-out; }
+  .web-head { display: flex; align-items: center; gap: 10px; }
+  .web-head h2 { margin: 0; font-size: 24px; font-weight: 650; line-height: 1.15; }
+  .web-head .close { margin-left: auto; font-size: 18px; }
+  .web-when { margin: 10px 0 4px; align-self: flex-start; width: fit-content; }
+  .web-when button { padding: 5px 10px; }
+  #web-svg { display: block; width: 100%; height: auto; user-select: none; -webkit-user-select: none; }
+  #web-say { min-height: 4.4em; margin: 2px 2px 0; line-height: 1.45; font-size: 14.5px; }
+  #web-svg text { text-anchor: middle; font-family: inherit; }
+  #web-svg .web-row { text-anchor: start; font-size: 11px; font-style: italic; fill: var(--muted); opacity: 0.8; }
+  .web-node .disc { fill: #fffaf0; stroke-width: 2.5; }
+  :is(.web-node text, #web-svg .web-row) { paint-order: stroke; stroke: #f7eedc; stroke-width: 4px; stroke-linejoin: round; }
+  .web-node .name { font-size: 12.5px; font-weight: 800; fill: var(--ink); }
+  .web-node .now { font-size: 11px; font-weight: 700; fill: var(--muted); }
+  .web-node, .web-link { cursor: pointer; transition: opacity 0.3s; }
+  .web-link .ln { stroke-linecap: round; stroke-opacity: 0.72; }
+  .web-link .hd { fill-opacity: 0.85; }
+  .web-link .hit { stroke: transparent; stroke-width: 14; }
+  .web-link.body .ln { stroke: #8f8578; stroke-dasharray: 2 4; }
+  .web-link.body .hd { fill: #8f8578; }
+  .web-link.grow .ln { stroke-dasharray: 7 4; }
+  .web-link.uncounted .ln { stroke-dasharray: 1 4; stroke-opacity: 0.6; }
+  .web-link.none { opacity: 0.35; }
+  .web-link.none .ln { stroke-dasharray: 1 5; }
+  .web-node.gone { opacity: 0.35; }
+  .web-node.gone .disc { stroke-dasharray: 3 3; }
+  .web-link.gone { opacity: 0.2; }
+  #web-svg.picking :is(.web-node, .web-link):not(.hot) { opacity: 0.12; }
+  #web-svg.picking .web-node.gone.hot { opacity: 0.5; }
+  .web-btn { margin-left: auto; border-radius: 12px; background: #fffaf0; box-shadow: 0 0 0 1px var(--line) inset; padding: 6px 12px; font-weight: 800; color: var(--ink); }
+  .web-btn + .close { margin-left: 0; }
+  @media (max-width: 760px) and (min-height: 501px) {
+    #web { width: calc(100% - 16px); padding: 12px 12px 10px; border-radius: 18px; }
+    .web-head h2 { font-size: 21px; }
+    #web-say { font-size: 14px; }
+  }
+  @media (max-height: 500px) {
+    #web { width: calc(100% - 24px); max-width: 820px; padding: 10px 14px; }
+    .web-head h2 { font-size: 19px; }
+    .web-when { position: absolute; top: 9px; right: 48px; margin: 0; }
+    .web-body { display: flex; gap: 14px; align-items: center; }
+    #web-svg { width: auto; height: calc(100vh - 92px); height: calc(100dvh - 92px); flex: none; max-width: 62%; }
+    #web-say { flex: 1; min-height: 0; }
+  }
+  @media (max-width: 440px) { .stats-head .web-btn { padding: 6px 8px; font-size: 13px; } }
+
   /* ---- back after a while: the meadow runs on a season, then says what happened (game.js, startAway). Like #ask. */
   #away { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 10; width: min(420px, calc(100% - 32px)); padding: 22px 24px 20px;
     max-height: calc(100% - 32px); box-sizing: border-box; overflow: hidden auto; scrollbar-width: thin;
@@ -677,6 +727,7 @@
   <div id="more-menu" class="card drop hidden">
     <button class="menu-item phone-only" data-act="sky">🌦️ Weather</button>
     <button class="menu-item phone-only" data-act="stats">📊 Graphs and records</button>
+    <button class="menu-item" data-act="web" title="This meadow's food web: who ate whom, and how much">🕸️ Who ate whom</button>
     <button class="menu-item phone-only" data-act="sound" id="sound-item">🔇 Sound is off</button>
     <button class="menu-item hidden" data-act="home" id="home-item">📱 Add to your home screen</button>
     <button class="menu-item" data-act="guide" title="A few things to do in the meadow, gentle and not">📓 Things to try</button>
@@ -698,6 +749,7 @@
     <header class="stats-head">
       <h1>📊 Meadow statistics</h1>
       <span id="stats-clock"></span>
+      <button class="web-btn" data-act="web" title="This meadow's food web: who ate whom, and how much">🕸️ Who ate whom</button>
       <button class="close" data-act="stats" title="Back to the meadow (Esc)">✕</button>
     </header>
     <div class="stats-filters">
@@ -773,6 +825,19 @@
 </div>
 
 <!-- once, after two minutes of play (game.js, askIdeas) -->
+<!-- the food web as it ran (game.js, updateWeb) -->
+<div id="web" class="hidden" role="dialog" aria-labelledby="web-title">
+  <header class="web-head">
+    <h2 class="fr" id="web-title">Who ate whom</h2>
+    <button class="close" data-act="web" title="Back to the meadow (Esc)">✕</button>
+  </header>
+  <div class="seg web-when"><button data-web="season">This season</button><button data-web="year">Last year</button><button data-web="all">Since the start</button></div>
+  <div class="web-body">
+    <svg id="web-svg" role="img" aria-label="The meadow's food web: arrows from the eaten to the eater, as thick as how many"></svg>
+    <p id="web-say" aria-live="polite"></p>
+  </div>
+</div>
+
 <div id="ask" class="hidden" role="dialog" aria-labelledby="ask-title">
   <h2 class="fr" id="ask-title">Enjoying the meadow? 🙂</h2>
   <p class="ask-q">Is there anything fun you'd love to see in it next? I read every idea.</p>

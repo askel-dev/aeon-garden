@@ -39,7 +39,13 @@ told to just do it.
   The next visit opens it where it was (`resumeWorld`): the bare address the one watched last, a `?seed=` link its
   own. Back after `AWAY_MIN` it runs on a season, drawing nothing (days would flicker), behind a card that then says
   what happened (`startAway`, `awayFrame`). The ••• menu shares the link (a phone's share sheet) and takes ideas
-  (the `#ask` card). Visits are counted by GoatCounter (`COUNTER`: cryptoler.goatcounter.com, no cookies), all as the
+  (the `#ask` card). The ••• menu and the stats page also open "Who ate whom" (`#web`, `toggleWeb`, `updateWeb`): the food
+  web as an SVG made once (`WEB_NODES`, `WEB_LINKS`, placed by hand), each arrow from the eaten to the eater as thick as
+  the log of what went along it, a thing gone now faded with its arrows, a sentence on a tap or hover. Its counts are
+  sim.js `webCounts` (the old `w.stats` counters plus plain increments: `grazed`, `sips`, `blossomSips`, `grubs`, `apples`,
+  `nuts`, `bodies`, `remains.crows`), minus the snapshot the sim keeps each season (`w.stats.web`, the last `WEB_KEEP`)
+  for "this season" and "last year". Open, it updates once a second, writing only what changed; closed, nothing.
+  A meadow kept before them gets the new counters at 0 (`unpackWorld`), no `KEEP_VERSION` bump. Visits are counted by GoatCounter (`COUNTER`: cryptoler.goatcounter.com, no cookies), all as the
   page `/meadow` whatever the seed, and a link posted with `?ref=reddit` says where they came from.
 - `ground.js`: the ground (grass, earth, shores, water) as a WebGL shader, painted from a
   few small textures of one texel a tile that game.js keeps up to date (`paintTerrain`, `updateWater`).

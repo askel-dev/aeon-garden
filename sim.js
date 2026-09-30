@@ -1406,6 +1406,7 @@ function windfall(w, c) {
   d.windfall--; w.windfalls--;
   const apple = d.kind === 'apple', found = apple ? WINDFALL_NOTE : `Found ${TREES[d.kind].mast} under ${d.kind === 'oak' ? 'an oak' : 'a beech'}`;
   c.energy = Math.min(c.maxEnergy, c.energy + (apple ? APPLE_ENERGY : NUT_ENERGY));
+  w.stats[apple ? 'apples' : 'nuts'][c.species]++;
   c.mode = 'munch'; c.timer = apple ? 90 : 45; c.target = null; c.snack = apple ? 'apple' : TREES[d.kind].mast;
   if (c.story[c.story.length - 1].text !== found) note(w, c, apple ? '🍎' : '🌰', found);
   return true;
@@ -2363,6 +2364,7 @@ function eat(w, c, i) {
   const bite = Math.min(w.grass[i], BITE);
   w.grass[i] -= bite;
   w.bitten[i] = c.id;                                       // any seedling here is in danger (treesTick)
+  w.stats.grazed++;
   c.energy = Math.min(c.maxEnergy, c.energy + bite * GRASS_ENERGY);
 }
 
@@ -3524,7 +3526,7 @@ function beeForage(w, c) {
     if (--c.timer > 0) return true;
     pollinate(w, c.target); c.target.sipped = w.tick;
     emit(w, { type: 'pollinate', x: c.target.x, y: c.target.y });
-    c.load += HONEY; c.visits++;
+    c.load += HONEY; c.visits++; w.stats.sips++;
     const rich = freshAround(w, c.target);
     if (rich >= RICH && (!c.find || rich > c.find.rich)) c.find = { x: c.target.x, y: c.target.y, rich, field: c.target.field };
     c.mode = 'wander'; c.target = null;
@@ -3628,7 +3630,7 @@ function freshAround(w, f) {
 // A visited flower spreads its seed: the grass around it grows back thicker. Good for rabbits.
 // Blossom on a tree sets fruit instead (setFruit).
 function pollinate(w, p) {
-  if (p.tree) { p.tree.visits++; return; }
+  if (p.tree) { p.tree.visits++; w.stats.blossomSips++; return; }
   for (let y = (p.y | 0) - 2; y <= (p.y | 0) + 2; y++) {
     for (let x = (p.x | 0) - 2; x <= (p.x | 0) + 2; x++) {
       if (!dry(w, x, y)) continue;
@@ -3680,7 +3682,7 @@ function leaveRemains(w, c, killed) {
   const meat = c.maxEnergy * (0.4 + 0.6 * growth(w, c)) * (killed ? KILL_LEFT : 1);
   // fed, fox: when a crow, a fox was last at them (a fox's catch: it's eating the rest right there); eaten: the crows had the last of them
   w.carcasses.push({ x: c.x, y: c.y, c, meat, full: meat, fed: -1e9, fox: killed ? w.tick : -1e9, eaten: false });
-  w.stats.remains.left++;
+  w.stats.remains.left++; w.stats.bodies[c.species]++;
 }
 
 // The remains rot away. A big gathering of crows at them in an outbreak is news.
@@ -3866,7 +3868,8 @@ function peck(w, c, hungry) {
     const a = w.rng.range(0, Math.PI * 2), r = w.rng.range(0.4, 1.6), x = c.x + Math.cos(a) * r, y = c.y + Math.sin(a) * r;
     c.mode = 'peck'; c.target = dry(w, x, y) ? { x, y } : { x: c.x, y: c.y };
   }
-  c.energy = Math.min(c.maxEnergy, c.energy + grubs(w, c.x, c.y));
+  const g = grubs(w, c.x, c.y);
+  c.energy = Math.min(c.maxEnergy, c.energy + g); w.stats.grubs += g / GRUB;
 }
 
 // The best of a few spots about with more grubs than here, if any.
@@ -3896,6 +3899,7 @@ function carrion(w, c) {
     if (!c.story[c.story.length - 1].text.startsWith(REMAINS_NOTE)) note(w, c, '🍖', `${REMAINS_NOTE} ${k.c.name}`);
   }
   const bite = Math.min(k.meat, CROW_BITE, c.maxEnergy - c.energy);
+  if (k.fed < 0) w.stats.remains.crows++;                 // the first crow at them
   k.meat -= bite; c.energy += bite; k.fed = w.tick;
   if (k.meat <= 0) k.eaten = true;
   return true;
@@ -4364,6 +4368,33 @@ function lifeTick(w, c) {
 
 // ---------------------------------------------------------------- the world
 
+// The food web as it ran, for the "Who ate whom" card (game.js, renderWeb): a few more counters, plain
+// increments where the eating happens (grazed: mouthfuls of grass; sips: flowers the bees sipped, blossom
+// on the fruit trees too; grubs: a tick's best pecking each; apples, nuts: windfalls eaten, by who; bodies:
+// left lying, by who), and once a season all the counts as they stood (web), the last few kept, so the card
+// can tell a season or a year apart from the whole story. A meadow kept before them starts them at 0.
+const WEB_KEEP = 5;
+const webStats = () => ({ grazed: 0, sips: 0, blossomSips: 0, grubs: 0, apples: perKind(() => 0), nuts: perKind(() => 0),
+  bodies: perKind(() => 0), web: [] });
+// Every count the card reads, in one flat object: 'born:fox', 'died:rabbit:owl', 'ate:voles'. Made once a
+// season, and once a second while the card is open.
+function webCounts(w) {
+  const st = w.stats, n = { grazed: st.grazed, sips: st.sips, blossomSips: st.blossomSips, grubs: Math.round(st.grubs),
+    voles: st.voles, owlVoles: st.owlVoles, frogs: st.frogs, owlFrogs: st.owlFrogs, crowSpawn: Math.round(st.crowSpawn),
+    cached: st.cached, dugUp: st.dugUp, planted: st.planted, seedlingsEaten: 0, seedlingsLost: 0,
+    remainsLeft: st.remains.left, remainsCrows: st.remains.crows, remainsRotted: st.remains.rotted };
+  for (const k in w.treeStats) { n.seedlingsEaten += w.treeStats[k].eaten || 0; n.seedlingsLost += w.treeStats[k].lost || 0; }
+  for (const s of KINDS) {
+    n['born:' + s] = st.births[s]; n['apples:' + s] = st.apples[s]; n['nuts:' + s] = st.nuts[s]; n['bodies:' + s] = st.bodies[s];
+    for (const c in st.deaths[s]) n['died:' + s + ':' + c] = st.deaths[s][c];
+  }
+  return n;
+}
+function webSnapshot(w) {
+  w.stats.web.push({ t: w.tick, n: webCounts(w) });
+  if (w.stats.web.length > WEB_KEEP) w.stats.web.shift();
+}
+
 function createWorld(seed, opts = {}) {
   const w = {
     seed, rng: makeRng(seed), tick: Math.floor(TPD * 0.04),
@@ -4382,7 +4413,8 @@ function createWorld(seed, opts = {}) {
     count: perKind(() => 0), expecting: perKind(() => 0),
     stats: { births: perKind(() => 0), deaths: perKind(() => ({})), voles: 0, owlVoles: 0,   // voles: the foxes caught, and the owls
       frogs: 0, owlFrogs: 0, crowSpawn: 0, frogYears: [],                                   // frogs likewise; the spawn the crows ate; each spring's frogs
-      remains: { left: 0, eaten: 0, rotted: 0 }, cached: 0, dugUp: 0, planted: 0 },   // remains, and how they went; the crows' acorns
+      remains: { left: 0, eaten: 0, rotted: 0, crows: 0 }, cached: 0, dugUp: 0, planted: 0,   // remains, and how they went (crows: the crows fed at); the crows' acorns
+      ...webStats() },
     history: { every: 60, t: [], grass: [], voles: [], frogs: [], ...perKind(() => []), traits: perKind(() => []), marks: [] },
     goneSince: perKind(() => -1), hives: [],
     // The trees (see treesTick). They have their own random numbers, so the rest of the meadow comes out as it did before they grew.
@@ -4493,6 +4525,7 @@ function newDay(w) {
     if (s === 1) setFruit(w);
     if (s === 2) seedFall(w);
     if (s === 3 && w.cached) emit(w, { type: 'buried', n: w.cached });   // the crows' autumn
+    webSnapshot(w);
   }
   treesTick(w);
   groundTick(w);
@@ -4779,6 +4812,9 @@ function unpackWorld(kept) {
     else for (const k in e) o[k] = value(e[k]);
   }
   const w = made[0];
+  const fresh = webStats();                                  // (kept before the food web's counters)
+  for (const k in fresh) w.stats[k] ??= fresh[k];
+  w.stats.remains.crows ??= 0;
   w.grid = makeGrid(); w.grids = perKind(makeGrid); w.events = []; w.newborn = [];
   buildGrid(w);
   return w;
@@ -4876,7 +4912,7 @@ const api = {
   TERRAIN, drawnToLink, drawnFromLink, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE,
   TREES, treeStage, treeAge, standing, bearing, hollow, inBloom, SEEDLING, SAPLING, GROWN, KIND_NAMES,
-  VOLE_K, POUNCE_TICKS, CROWDED, FROG_K, SPAWN_WORTH,
+  VOLE_K, POUNCE_TICKS, CROWDED, FROG_K, SPAWN_WORTH, webCounts,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 else root.Sim = api;

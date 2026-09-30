@@ -4087,6 +4087,304 @@ function renderStats() {
 $('#stats-chart').addEventListener('pointermove', e => { ui.stats.hover = e.offsetX; drawStatsChart(); });
 $('#stats-chart').addEventListener('pointerleave', () => { ui.stats.hover = null; drawStatsChart(); });
 
+// ------------------------------------------------------------------ who ate whom
+//
+// The meadow's food web as it ran (sim.js webCounts): the hunters on top, the plant-eaters under them, the
+// plants at the bottom, and down the right the remains and the rich ground closing the loop. An arrow runs
+// from the eaten to the eater, as thick as how much went along it, by the log (a million mouthfuls of grass
+// and forty young rabbits both have to show). A thing gone just now fades, and its arrows with it. It's an
+// SVG in a card of its own, made once. While it's open, once a second, only the attributes that changed are
+// written; closed, it costs nothing.
+const WEB_W = 400, WEB_H = 454, WEB_R = 19;
+const WEB_NODES = {
+  fox: { x: 150, y: 78, art: '🦊', name: 'Foxes', color: '#e2702f' },
+  owl: { x: 256, y: 78, art: '🦉', name: 'Owls', color: '#9a6a3e' },
+  remains: { x: 368, y: 78, art: 'remains:0', name: 'Remains', color: '#857565' },
+  bee: { x: 36, y: 200, art: '🐝', name: 'Bees', color: '#d9a21b' },
+  rabbit: { x: 108, y: 200, art: '🐇', name: 'Rabbits', color: '#a07850' },
+  vole: { x: 180, y: 200, art: 'vole:0', name: 'Voles', color: '#8a6a4e' },
+  frog: { x: 252, y: 200, art: 'frog:0', name: 'Frogs', color: '#6f8f3e' },
+  crow: { x: 324, y: 200, art: 'crow:0', name: 'Crows', color: '#4a4e5e' },
+  flowers: { x: 36, y: 340, art: 'flower', name: 'Flowers', color: '#c0609a' },
+  fruit: { x: 108, y: 340, art: 'icon:🍎', name: 'Fruit trees', color: '#c94a3a' },
+  grass: { x: 180, y: 340, art: 'icon:🌿', name: 'Grass', color: '#5f9e43' },
+  seedlings: { x: 252, y: 340, art: '🌱', name: 'Seedlings', color: '#7aa64a' },
+  nuts: { x: 324, y: 340, art: 'icon:🌰', name: 'Acorns', color: '#9a7040' },
+  soil: { x: 368, y: 412, art: 'icon:🪱', name: 'Rich soil', color: '#7a5a3a' },
+};
+// n: the count along it (a key of webCounts, or a function of v, the period's counts), none for a link that's
+// real but not counted (a thin line). kind: 'body' for the dead left lying, 'grow' for what feeds the ground
+// and the woods; bend: how far the curve bows out, to its left.
+const WEB_LINKS = [
+  { from: 'grass', to: 'rabbit', n: 'grazed', say: n => `Rabbits took ${many(n, 'mouthful')} of grass.` },
+  { from: 'grass', to: 'vole', say: () => 'Voles live on the long grass. The rabbits keep it short round their warrens, and the voles off it.' },
+  { from: 'seedlings', to: 'rabbit', n: 'seedlingsEaten', say: n => `Rabbits nibbled ${many(n, 'tree seedling')} to nothing.` },
+  { from: 'seedlings', to: 'vole', n: 'seedlingsLost', say: n => `${upper(many(n, 'tree seedling'))} went in the grass, most to the voles.` },
+  { from: 'fruit', to: 'rabbit', n: 'apples:rabbit', say: n => `Rabbits ate ${many(n, 'windfall apple')}.`, bend: -14 },
+  { from: 'fruit', to: 'crow', n: 'apples:crow', say: n => `Crows ate ${many(n, 'windfall apple')}.`, bend: 30 },
+  { from: 'fruit', to: 'bee', n: 'blossomSips', say: n => `Bees sipped ${many(n, 'blossom')} on the fruit trees, and the blossom they visit sets fruit.` },
+  { from: 'flowers', to: 'bee', n: v => v('sips') - v('blossomSips'), say: n => `Bees sipped ${many(n, 'flower')}.` },
+  { from: 'nuts', to: 'rabbit', n: 'nuts:rabbit', say: n => `Rabbits ate ${many(n, 'fallen nut')}, acorns and beechnuts.`, bend: -40 },
+  { from: 'nuts', to: 'crow', n: v => v('cached') + v('nuts:crow'), bend: 12,
+    say: (n, v) => `Crows carried off ${many(v('cached'), 'acorn')} to bury, and dug ${many(v('dugUp'), 'acorn')} up again${v('nuts:crow') ? `, and ate ${big(v('nuts:crow'))} where they fell` : ''}.` },
+  { from: 'crow', to: 'nuts', kind: 'grow', n: 'planted', say: n => `${upper(many(n, 'acorn'))} the crows forgot came up as trees.`, bend: 12 },
+  { from: 'rabbit', to: 'fox', n: 'died:rabbit:fox', say: n => `Foxes caught ${many(n, 'rabbit')}.` },
+  { from: 'rabbit', to: 'owl', n: 'died:rabbit:owl', say: n => `Owls took ${many(n, 'young rabbit')}.`, bend: 10 },
+  { from: 'vole', to: 'fox', n: 'voles', say: n => `Foxes caught ${many(n, 'vole')}, mousing in the long grass.`, bend: 10 },
+  { from: 'vole', to: 'owl', n: 'owlVoles', say: n => `Owls caught ${many(n, 'vole')}.`, bend: -10 },
+  { from: 'frog', to: 'fox', n: 'frogs', say: n => `Foxes caught ${many(n, 'frog')}.`, bend: -10 },
+  { from: 'frog', to: 'owl', n: 'owlFrogs', say: n => `Owls caught ${many(n, 'frog')}.` },
+  { from: 'frog', to: 'crow', n: 'crowSpawn', say: n => `Crows ate frogspawn and tadpoles, as many as would have made ${many(n, 'frog')}.` },
+  { from: 'soil', to: 'crow', n: 'grubs', say: n => `Crows pecked ${many(n, 'grub')} out of the short grass and the rich ground.`, bend: 20 },
+  { from: 'remains', to: 'crow', n: 'remainsCrows', say: n => `Crows fed at the remains of ${many(n, 'animal')}.`, bend: 14 },
+  { from: 'remains', to: 'soil', kind: 'grow', n: 'remainsRotted', say: n => `${upper(many(n, 'body'))} rotted away where they lay, into the ground.`, bend: -26 },
+  { from: 'soil', to: 'grass', kind: 'grow', say: () => 'Rich ground grows lusher grass. What dies on it, the droppings round the warrens and old logs all feed it.', bend: -60 },
+  { from: 'rabbit', to: 'remains', kind: 'body', n: 'bodies:rabbit', say: n => `${upper(many(n, 'rabbit'))} were left lying, caught or dead out in the open.`, bend: 34 },
+  { from: 'fox', to: 'remains', kind: 'body', n: 'bodies:fox', say: n => `${upper(many(n, 'fox'))} died out in the open and were left lying.`, bend: 34 },
+  { from: 'owl', to: 'remains', kind: 'body', n: 'bodies:owl', say: n => `${upper(many(n, 'owl'))} died out in the open and were left lying.`, bend: 12 },
+  { from: 'crow', to: 'remains', kind: 'body', n: 'bodies:crow', say: n => `${upper(many(n, 'crow'))} died out in the open and were left lying.`, bend: -14 },
+];
+const WEB_WHEN = { season: null, year: 'Last year', all: 'Since the start' };
+const web = { open: false, when: 'year', at: 0, hover: null, pin: null, v: null, live: null, built: false };
+const webOpen = () => web.open;
+
+const PLURALS = { body: 'bodies', fox: 'foxes' };
+const big = n => (n >= 1e6 ? `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)} million` : Math.round(n).toLocaleString('en-US'));
+const many = (n, one) => { n = Math.round(n); return n <= 0 ? `no ${PLURALS[one] || one + 's'}` : n === 1 ? `one ${one}` : `${big(n)} ${PLURALS[one] || one + 's'}`; };
+const upper = s => s[0].toUpperCase() + s.slice(1);
+const andList = a => (a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1]);
+
+// A node's picture, painted once into a little canvas of its own (not the sprite cache, which lets go):
+// the meadow's own painted animals and bubble icons where there are some, else the emoji.
+const webIcons = new Map();
+function webIcon(art) {
+  let url = webIcons.get(art);
+  if (url) return url;
+  const px = 34 * 3, size = Math.ceil(px * 1.3), c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d'), colon = art.indexOf(':');
+  if (art.startsWith('icon:')) {
+    const i = BUBBLE_ICONS.findIndex(([e]) => e === art.slice(5));
+    g.setTransform(px / 2, 0, 0, px / 2, size / 2, size / 2); g.lineCap = g.lineJoin = 'round';
+    BUBBLE_ICONS[i][1](g);
+  } else if (art === 'flower') {
+    const f = flowerSprite((2 * 8) * 64 + Math.min(FLOWER_MAX_K, Math.round(2 * Math.log2(px * 0.9))));   // daisies
+    const k = 1.5 * Math.min(size / f.width, size / f.height);   // (the clump is small in its box)
+    g.drawImage(f, (size - f.width * k) / 2, (size - f.height * k) / 2, f.width * k, f.height * k);
+  } else if (colon > 0 && PAINTERS[art.slice(0, colon)]) PAINTERS[art.slice(0, colon)](g, size, px, +art.slice(colon + 1));
+  else {
+    g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `${px}px ${EMOJI_FONT}`;
+    g.fillText(art, size / 2, size / 2 + px * 0.06);
+  }
+  webIcons.set(art, url = c.toDataURL());
+  return url;
+}
+
+const svgEl = (tag, attrs, parent) => {
+  const e = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+};
+// Set only what changed.
+const setAttr = (e, k, v) => { v = String(v); if (e.getAttribute(k) !== v) e.setAttribute(k, v); };
+
+// Where a link runs: a curve bowing out by its bend, from the edge of one node to the tip of its arrowhead
+// at the other; w its width.
+function webGeometry(l, w) {
+  const a = WEB_NODES[l.from], b = WEB_NODES[l.to], dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy);
+  const cx = (a.x + b.x) / 2 - dy / d * (l.bend || 0), cy = (a.y + b.y) / 2 + dx / d * (l.bend || 0);
+  const unit = (x, y, tx, ty) => { const k = Math.hypot(tx - x, ty - y); return [(tx - x) / k, (ty - y) / k]; };
+  const [sx, sy] = unit(a.x, a.y, cx, cy), [ex, ey] = unit(b.x, b.y, cx, cy);
+  const head = 5 + w * 0.9, half = 3.5 + w * 0.7;
+  const x0 = a.x + sx * (WEB_R + 3), y0 = a.y + sy * (WEB_R + 3);
+  const tx = b.x + ex * (WEB_R + 3), ty = b.y + ey * (WEB_R + 3);               // the arrow's tip
+  const bx = tx + ex * head, by = ty + ey * head;                              // the middle of its base
+  const f = n => n.toFixed(1);
+  return {
+    line: `M${f(x0)} ${f(y0)}Q${f(cx)} ${f(cy)} ${f(tx + ex * head * 0.8)} ${f(ty + ey * head * 0.8)}`,
+    head: `M${f(tx)} ${f(ty)}L${f(bx - ey * half)} ${f(by + ex * half)}L${f(bx + ey * half)} ${f(by - ex * half)}Z`,
+  };
+}
+
+function buildWeb() {
+  const svg = $('#web-svg');
+  svg.setAttribute('viewBox', `0 0 ${WEB_W} ${WEB_H}`);
+  for (const [y, t] of [[140, 'the hunters'], [270, 'the foragers'], [404, 'what grows']]) {
+    svgEl('text', { x: 8, y, class: 'web-row' }, svg).textContent = t;
+  }
+  const links = svgEl('g', {}, svg), nodes = svgEl('g', {}, svg);
+  WEB_LINKS.forEach((l, i) => {
+    const n = WEB_NODES[l.from];
+    const g = l.el = svgEl('g', { class: 'web-link' + (l.kind ? ' ' + l.kind : ''), 'data-pick': 'link:' + i, fill: n.color, stroke: n.color }, links);
+    l.hit = svgEl('path', { class: 'hit', fill: 'none' }, g);
+    l.line = svgEl('path', { class: 'ln', fill: 'none' }, g);
+    l.head = svgEl('path', { class: 'hd', stroke: 'none' }, g);
+  });
+  for (const k in WEB_NODES) {
+    const n = WEB_NODES[k], g = n.el = svgEl('g', { class: 'web-node', 'data-pick': 'node:' + k }, nodes);
+    svgEl('circle', { cx: n.x, cy: n.y, r: WEB_R, class: 'disc', stroke: n.color }, g);
+    svgEl('image', { href: webIcon(n.art), x: n.x - 15, y: n.y - 15, width: 30, height: 30 }, g);
+    const up = n.y < 100;                                   // the top row's names above, clear of the arrows coming up
+    svgEl('text', { x: n.x, y: up ? n.y - WEB_R - 19 : n.y + WEB_R + 13, class: 'name' }, g).textContent = n.name;
+    n.now = svgEl('text', { x: n.x, y: up ? n.y - WEB_R - 7 : n.y + WEB_R + 25, class: 'now' }, g);
+  }
+  svg.addEventListener('pointerover', e => {
+    if (e.pointerType !== 'mouse') return;
+    const t = e.target.closest('[data-pick]');
+    web.hover = t ? t.dataset.pick : null; sayWeb();
+  });
+  svg.addEventListener('pointerleave', () => { web.hover = null; sayWeb(); });
+  svg.addEventListener('click', e => {
+    const t = e.target.closest('[data-pick]'), k = t ? t.dataset.pick : null;
+    web.pin = k && k !== web.pin ? k : null; sayWeb();
+  });
+  $('#web').addEventListener('click', e => {
+    const b = e.target.closest('[data-web]');
+    if (b) { web.when = b.dataset.web; updateWeb(); }
+  });
+  web.built = true;
+}
+
+// The counts for the period, from the snapshot the sim took at its start (none: since the meadow began).
+function webPeriod() {
+  const snaps = world.stats.web || [];
+  if (web.when === 'all' || !snaps.length) return null;
+  if (web.when === 'season') return snaps[snaps.length - 1];
+  const from = world.tick - S.YEAR_DAYS * S.TPD;
+  return snaps.find(s => s.t >= from) || null;
+}
+
+// What's there now, for the second line under each node and for fading the ones gone.
+function webLive() {
+  const w = world, trees = { fruit: 0, nuts: 0, seedlings: 0 };
+  for (const d of w.decor) {
+    if (!d.tree || !S.standing(d)) continue;
+    if (d.size < S.SAPLING) trees.seedlings++;
+    else if (d.kind === 'apple' || d.kind === 'cherry' || d.kind === 'hawthorn') trees.fruit++;
+    else if (d.kind === 'oak' || d.kind === 'beech') trees.nuts++;
+  }
+  const g = w.history.grass;
+  return {
+    ...Object.fromEntries(S.KINDS.map(s => [s, w.count[s]])), ...trees,
+    vole: Math.round(w.voleCount), frog: Math.round(w.frogCount), spawn: w.spawnCount >= 0.5, flowers: w.flowers,
+    remains: w.carcasses.length, grass: g.length ? g[g.length - 1] : 1, hives: w.hives.filter(h => h.bees > 0 && !h.cluster).length,
+    sick: w.sick, mast: w.mast, voleYear: w.voleYear,
+  };
+}
+const webGone = (k, live) => (k in live ? (k === 'grass' ? false : k === 'frog' ? !live.frog && !live.spawn : !live[k]) : false);
+function webNow(k, L) {
+  switch (k) {
+    case 'grass': return Math.round(L.grass * 100) + '% grown';
+    case 'soil': return '';
+    case 'vole': case 'frog': return L[k] ? '~' + big(L[k]) : k === 'frog' && L.spawn ? 'spawn' : 'none now';
+    case 'flowers': return L.flowers ? big(L.flowers) + ' open' : 'none open';
+    case 'remains': return L.remains ? L.remains + ' lying' : 'none lying';
+    case 'fruit': case 'nuts': return L[k] ? L[k] + (L[k] === 1 ? ' tree' : ' trees') : 'none now';
+    default: return L[k] ? big(L[k]) : 'none now';
+  }
+}
+
+// A deaths-and-births line for an animal over the period: "120 born; 80 caught by foxes and 12 starved."
+const WEB_DIED = { fox: 'caught by foxes', owl: 'taken by owls', sickness: 'died of the sickness', hunger: 'starved', age: 'died of old age', left: 'flew off' };
+function lifeLine(s, v, cur) {
+  const parts = [], rest = {};
+  for (const key in cur) {
+    if (!key.startsWith('died:' + s + ':')) continue;
+    const c = key.slice(6 + s.length), n = v(key);
+    if (n <= 0) continue;
+    if (WEB_DIED[c]) parts.push([n, `${big(n)} ${WEB_DIED[c]}`]); else rest[c] = n;
+  }
+  const other = Object.values(rest).reduce((a, b) => a + b, 0);
+  if (other) parts.push([other, `${big(other)} lost to ${andList(Object.keys(rest).map(c => ({ fire: 'fire', flood: 'floods', ice: 'the ice', lightning: 'lightning' })[c] || c))}`]);
+  parts.sort((a, b) => b[0] - a[0]);
+  const born = v('born:' + s);
+  return `${born ? big(born) : 'None'} born${parts.length ? '; ' + andList(parts.map(p => p[1])) : ''}.`;
+}
+
+function webNodeSay(k, v, L, cur) {
+  const n = WEB_NODES[k], count = L[k];
+  const head = count ? `${big(count)} ${n.name.toLowerCase()} now` : `No ${n.name.toLowerCase()} now`;
+  switch (k) {
+    case 'rabbit': return `${head}${L.sick ? `, ${L.sick} of them sick` : ''}. ${lifeLine(k, v, cur)}`;
+    case 'fox': return `${head}. They caught ${andList([many(v('died:rabbit:fox'), 'rabbit'), many(v('voles'), 'vole'), many(v('frogs'), 'frog')])}. ${lifeLine(k, v, cur)}`;
+    case 'owl': return `${head}. They caught ${andList([many(v('owlVoles'), 'vole'), many(v('owlFrogs'), 'frog'), many(v('died:rabbit:owl'), 'young rabbit')])}. ${lifeLine(k, v, cur)}`;
+    case 'crow': return `${head}. They pecked ${many(v('grubs'), 'grub')}, fed at ${many(v('remainsCrows'), 'body')}, ate spawn worth ${many(v('crowSpawn'), 'frog')} and ${many(v('apples:crow'), 'windfall')}, and buried ${many(v('cached'), 'acorn')}. ${lifeLine(k, v, cur)}`;
+    case 'bee': return `${head}${count ? `, in ${L.hives === 1 ? 'one hive' : L.hives + ' hives'}` : ''}. They sipped ${many(v('sips') - v('blossomSips'), 'flower')} and ${many(v('blossomSips'), 'blossom')}. ${lifeLine(k, v, cur)}`;
+    case 'vole': return `${count ? `About ${big(count)} voles in the long grass now${L.voleYear ? ', a vole year' : ''}` : 'No voles in the grass now'}. Foxes caught ${big(v('voles'))} and owls ${big(v('owlVoles'))}.`;
+    case 'frog': return `${count ? `About ${big(count)} frogs by the water now` : L.spawn ? 'No frogs out now, but spawn in the pools' : 'No frogs now'}. Foxes caught ${big(v('frogs'))}, owls ${big(v('owlFrogs'))}, and crows ate spawn worth ${many(v('crowSpawn'), 'frog')}.`;
+    case 'grass': return `The meadow's grass is ${Math.round(L.grass * 100)}% grown. Rabbits took ${many(v('grazed'), 'mouthful')} of it, and voles live in the long grass.`;
+    case 'flowers': return `${L.flowers ? `${big(L.flowers)} flowers open now` : 'No flowers open now'}. Bees sipped ${many(v('sips') - v('blossomSips'), 'flower')}.`;
+    case 'fruit': return `${L.fruit ? `${big(L.fruit)} apple, cherry and hawthorn trees` : 'No fruit trees now'}. They blossom for the bees in spring (${many(v('blossomSips'), 'visit')}) and bear as much as the bees visited: rabbits ate ${many(v('apples:rabbit'), 'windfall')}, crows ${big(v('apples:crow'))}.`;
+    case 'nuts': return `${L.nuts ? `${big(L.nuts)} oaks and beeches${L.mast ? ', and a mast year' : ''}` : 'No oaks or beeches now'}. Rabbits ate ${many(v('nuts:rabbit'), 'fallen nut')}, crows buried ${many(v('cached'), 'acorn')}, and ${many(v('planted'), 'forgotten one')} came up as trees.`;
+    case 'seedlings': return `${L.seedlings ? `${big(L.seedlings)} seedlings coming up now` : 'No seedlings coming up now'}. Rabbits nibbled ${many(v('seedlingsEaten'), 'seedling')} to nothing, and ${big(v('seedlingsLost'))} more went in the grass, most to the voles.`;
+    case 'remains': return `${L.remains ? `${big(L.remains)} remains lying now` : 'No remains lying now'}. ${upper(many(v('remainsLeft'), 'body'))} left lying; the crows fed at ${big(v('remainsCrows'))}, and ${big(v('remainsRotted'))} rotted away.`;
+    case 'soil': return 'The ground remembers what lived and died on it. Remains, the droppings round the warrens and old logs feed it, the grass grows back lusher there, and the crows peck grubs out of it.';
+  }
+  return '';
+}
+
+function sayWeb() {
+  if (!web.v) return;
+  const pick = web.hover || web.pin, svg = $('#web-svg');
+  let text = '';
+  const hot = new Set();
+  if (pick) {
+    const [kind, id] = pick.split(':');
+    if (kind === 'link') { const l = WEB_LINKS[+id]; text = l.say(l.value, web.v); hot.add(l.el); hot.add(WEB_NODES[l.from].el); hot.add(WEB_NODES[l.to].el); }
+    else {
+      text = webNodeSay(id, web.v, web.live, web.cur); hot.add(WEB_NODES[id].el);
+      for (const l of WEB_LINKS) if (l.from === id || l.to === id) { hot.add(l.el); hot.add(WEB_NODES[l.from].el); hot.add(WEB_NODES[l.to].el); }
+    }
+  } else {
+    const gone = ['fox', 'owl', 'crow', 'bee', 'rabbit', 'vole', 'frog'].filter(k => webGone(k, web.live)).map(k => WEB_NODES[k].name.toLowerCase());
+    text = (gone.length ? `No ${andList(gone)} now. ` : '') + (canHover.matches ? 'Point at' : 'Tap') + ' an animal or an arrow to see who ate whom.';
+  }
+  svg.classList.toggle('picking', !!pick);
+  for (const e of svg.querySelectorAll('.web-node, .web-link')) e.classList.toggle('hot', hot.has(e));
+  setHTML($('#web-say'), text);
+}
+
+function updateWeb() {
+  if (!web.built) buildWeb();
+  const cur = S.webCounts(world), base = webPeriod(), b = base ? base.n : null;
+  const v = key => Math.max(0, (cur[key] || 0) - (b ? b[key] || 0 : 0));
+  const L = webLive();
+  web.v = v; web.cur = cur; web.live = L;
+  for (const k in WEB_NODES) {
+    const n = WEB_NODES[k], gone = webGone(k, L);
+    n.el.classList.toggle('gone', gone);
+    const now = webNow(k, L);
+    if (n.now.textContent !== now) n.now.textContent = now;
+  }
+  for (const l of WEB_LINKS) {
+    l.value = !l.n ? null : typeof l.n === 'function' ? Math.max(0, l.n(v)) : v(l.n);
+    const w = l.value === null ? 1.4 : l.value > 0 ? Math.min(9, 1.2 + 1.3 * Math.log10(1 + l.value)) * (l.kind === 'body' ? 0.6 : 1) : 1;
+    const wr = Math.round(w * 2) / 2;                        // a few widths: small changes don't show, nor get written
+    if (l.w !== wr) {
+      l.w = wr;
+      const geo = webGeometry(l, wr);
+      setAttr(l.line, 'd', geo.line); setAttr(l.hit, 'd', geo.line); setAttr(l.head, 'd', geo.head);
+      setAttr(l.line, 'stroke-width', wr);
+    }
+    l.el.classList.toggle('none', l.value === 0);
+    l.el.classList.toggle('uncounted', l.value === null);
+    l.el.classList.toggle('gone', webGone(l.from, L) || webGone(l.to, L));
+  }
+  const season = S.SEASONS[S.seasonOf(world.tick)].name.toLowerCase();
+  const seasonBtn = $('[data-web="season"]');
+  if (seasonBtn.textContent !== 'This ' + season) seasonBtn.textContent = 'This ' + season;
+  document.querySelectorAll('[data-web]').forEach(e => e.classList.toggle('on', e.dataset.web === web.when));
+  sayWeb();
+}
+
+function toggleWeb(open = !web.open) {
+  web.open = open;
+  if (open && ui.stats.open) toggleStats(false);
+  $('#web').classList.toggle('hidden', !open);
+  if (open) { web.pin = web.hover = null; updateWeb(); web.at = performance.now(); }
+}
+
 // ------------------------------------------------------------------ the inspector
 
 // "Spring · day 3" in the season's colours, and the year when it isn't this one.
@@ -5159,7 +5457,7 @@ const canShare = !!navigator.share && matchMedia('(pointer: coarse)').matches;  
 function askTick(ms) {
   if (!IDEAS_KEY || LAB || played < 0 || document.hidden || intro.on || !$('#welcome').classList.contains('hidden')) return;
   if ((played += ms) < ASK_MS) return;
-  if (idle.on || ui.hush || ui.ring || (guide.on && guide.step < GUIDE_STEPS) || ui.stats.open || ui.newsOpen || homeOpen() || awayOpen() || !$('#more-menu').classList.contains('hidden')) return;
+  if (idle.on || ui.hush || ui.ring || (guide.on && guide.step < GUIDE_STEPS) || ui.stats.open || webOpen() || ui.newsOpen || homeOpen() || awayOpen() || !$('#more-menu').classList.contains('hidden')) return;
   played = -Infinity;
   try { localStorage.setItem('aeon-garden-asked', '1'); } catch (e) { /* fine */ }
   askIdeas(true);
@@ -5300,6 +5598,7 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'ask-send') sendIdea();
   else if (t.dataset.act === 'sound') toggleSound();
   else if (t.dataset.act === 'stats') toggleStats();
+  else if (t.dataset.act === 'web') toggleWeb();
   else if (t.dataset.show) { ui.stats.show = t.dataset.show; renderStats(); }
   else if (t.dataset.range) { ui.stats.range = t.dataset.range; renderStats(); }
   else if (t.dataset.act === 'follow') { ui.follow = !ui.follow; renderInspector(); }
@@ -5347,7 +5646,7 @@ document.addEventListener('keydown', e => {
   } else if ('1234'.includes(e.key) && e.key.length === 1) setSpeed([1, 4, 15, 60][+e.key - 1]);
   else if (e.key === 'Escape') {
     const more = !$('#more-menu').classList.contains('hidden');
-    awayOpen() ? closeAway() : homeOpen() ? homeGuide(false) : ui.ring ? closeRing() : $('#toolbar').classList.contains('open') ? toggleTools(false) : ui.sky.menu ? toggleSkyMenu(false) : more ? toggleMore(false) : ui.stats.open ? toggleStats(false)
+    awayOpen() ? closeAway() : homeOpen() ? homeGuide(false) : webOpen() ? toggleWeb(false) : ui.ring ? closeRing() : $('#toolbar').classList.contains('open') ? toggleTools(false) : ui.sky.menu ? toggleSkyMenu(false) : more ? toggleMore(false) : ui.stats.open ? toggleStats(false)
       : ui.tool !== 'look' ? setTool('look') : select(0);
   }
   else if (e.key === 's') toggleStats();
@@ -5699,7 +5998,7 @@ const between = (a, b) => a + Math.random() * (b - a);
 const anyOf = a => a.length ? a[Math.floor(Math.random() * a.length)] : null;
 
 const idleMayStart = now => !idle.on && now - lastInput > IDLE_MS && ui.speed > 0 && !ui.hush && !LAB && !calm && !document.hidden
-  && !askOpen() && !awayOpen() && !ui.selectedId && !ui.picked && !ui.ring && !ui.stats.open && !ui.newsOpen && !ui.sky.menu
+  && !askOpen() && !awayOpen() && !ui.selectedId && !ui.picked && !ui.ring && !ui.stats.open && !webOpen() && !ui.newsOpen && !ui.sky.menu
   && $('#more-menu').classList.contains('hidden') && !homeOpen() && !$('#toolbar').classList.contains('open');
 
 function startIdle(now = performance.now()) {
@@ -5707,6 +6006,7 @@ function startIdle(now = performance.now()) {
   closeRing(); toggleTools(false); toggleSkyMenu(false); toggleMore(false);
   if (homeOpen()) homeGuide(false);
   if (ui.stats.open) toggleStats(false);
+  if (webOpen()) toggleWeb(false);
   if (ui.newsOpen) toggleNewsLog();
   if (ui.selectedId || ui.picked) select(0);
   if (!ui.speed) setSpeed(lastSpeed);
@@ -6141,6 +6441,7 @@ function showWorld(w) {
   renderInspector();
   updateMeadowCard();
   if (ui.stats.open) renderStats();
+  if (webOpen()) updateWeb();
 }
 
 let last = performance.now(), acc = 0, lastCard = 0, lastRecord = 0, lastStatsCards = 0;
@@ -6242,6 +6543,7 @@ function frame(now) {
     lastStatsCards = now;                // not while hovering: a rebuilt link would swallow the click
     renderStatsCards();
   }
+  if (webOpen() && now - web.at > 1000) { web.at = now; updateWeb(); }
   if (world.history.t.length !== lastRecord) { lastRecord = world.history.t.length; checkPopulationNews(); }
   if (opening > 1 && ++opening > 4) cleared();       // a kept meadow that opened fine
   requestAnimationFrame(frame);
