@@ -1926,7 +1926,7 @@ function makeCreature(w, species, x, y, genes, parents) {
     alert: 0, threatId: 0, chaseT: 0, fright: 0, frightX: 0, frightY: 0, frightWhat: '',
     wary: 0, waryX: 0, waryY: 0, detour: 0, detourX: 0, detourY: 0, nemesisId: 0, haunt: null,
     pregnantUntil: 0, cooldownUntil: 0, dadGenes: null, dadIdPending: 0, dadGenPending: 0,
-    kids: 0, kills: 0, voles: 0, frogs: 0, prey: '', escapes: 0, visits: 0, load: 0, find: null, story: [],
+    kids: 0, kills: 0, voles: 0, frogs: 0, prey: '', rustle: null, escapes: 0, visits: 0, load: 0, find: null, story: [],
     sick: 0, immune: 0,   // ticks when the sickness ends, and when immunity does (see sicknessTick)
     caches: null,         // a crow's acorns and beechnuts buried this autumn (cacheNut)
     perch: null,          // an owl's branch: where it sits hunting, or sleeps by day (owlTick)
@@ -2755,20 +2755,20 @@ function volesTick(w) {
 
 // Hungry, and no rabbit in sight: mousing where the voles are thickest. It steps softly through the
 // long grass, stands and listens, then leaps high and comes down on the rustle, on a vole as often
-// as they're thick there. A vole is a snack: it takes a few to fill a fox.
+// as they're thick there. A vole is a snack: it takes a few to fill a fox. It hears the rustle it'll
+// leap at as it starts listening (c.rustle), so the grass there twitches while it listens.
 function mouse(w, c) {
   if (c.mode === 'gulp') {                           // then it listens again, there
-    if (--c.timer <= 0) { c.mode = 'mouse'; c.timer = w.rng.int(...LISTEN_TICKS); }
+    if (--c.timer <= 0) listen(w, c);
     return true;
   }
   if (c.mode === 'pounce') {
     if (c.target) moveToward(w, c, c.target.x, c.target.y, POUNCE_LEAP / POUNCE_TICKS);
     if (--c.timer > 0) return true;
     const x0 = clamp(c.x | 0, 2, W - 3), y0 = clamp(c.y | 0, 2, H - 3), i = y0 * W + x0, n = smallAt(w, i);
-    c.mode = 'mouse'; c.target = null; c.timer = w.rng.int(...LISTEN_TICKS);
     const odds = VOLE_CATCH * n / (n + VOLE_HALF), roll = w.rng.next();
-    if (roll > odds) return true;                                              // missed: listen again
-    c.mode = 'gulp'; c.timer = GULP_TICKS;
+    if (roll > odds) { listen(w, c); return true; }                            // missed: listen again
+    c.mode = 'gulp'; c.target = null; c.timer = GULP_TICKS;
     if (roll < odds * (n - w.voles[i]) / n) {                                  // a frog, as often as there are more of them
       takeFrog(w, x0, y0);
       c.energy = Math.min(c.maxEnergy, c.energy + FROG_ENERGY);
@@ -2786,17 +2786,22 @@ function mouse(w, c) {
     if ((w.tick + c.id) % 10) return false;
     const spot = voleNear(w, c, 0, MOUSE_RANGE, 8);
     if (!spot) return false;
-    c.mode = 'mouse'; c.target = spot; c.timer = w.rng.int(...LISTEN_TICKS);
+    c.mode = 'mouse'; c.target = spot; c.timer = w.rng.int(...LISTEN_TICKS); c.rustle = null;
   }
   if (c.target) {                                    // on its way there, softly
-    if (moveToward(w, c, c.target.x, c.target.y, c.walk * MOUSE_PACE)) c.target = null;
+    if (moveToward(w, c, c.target.x, c.target.y, c.walk * MOUSE_PACE)) listen(w, c);
     return true;
   }
   if (--c.timer > 0) return true;                    // ears up, listening
-  const rustle = voleNear(w, c, POUNCE_LEAP, POUNCE_LEAP, 4);
-  if (!rustle) { c.mode = 'wander'; return false; }  // nothing stirring here: on it goes
-  c.mode = 'pounce'; c.timer = POUNCE_TICKS; c.target = rustle;
+  if (!c.rustle) { c.mode = 'wander'; return false; }   // nothing stirring here: on it goes
+  c.mode = 'pounce'; c.timer = POUNCE_TICKS; c.target = c.rustle; c.rustle = null;
   return true;
+}
+
+// It stands where it is, ears up, and hears the next rustle nearby, if there is one.
+function listen(w, c) {
+  c.mode = 'mouse'; c.target = null; c.timer = w.rng.int(...LISTEN_TICKS);
+  c.rustle = voleNear(w, c, POUNCE_LEAP, POUNCE_LEAP, 4);
 }
 
 // One vole fewer about the tile x0, y0 (a tile holds only part of one). (x0, y0 two tiles in from the edge.)

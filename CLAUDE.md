@@ -176,7 +176,10 @@ then pounces, `mode` 'mouse', 'pounce', 'gulp'); a vole is a snack (`VOLE_ENERGY
 last caught a vole (`c.prey`) sees rabbits only at `MOUSE_EYES` of its sight: that search image is what keeps the
 foxes the voles carry through a rabbit low from eating the last rabbits and dragging the low out. The drawing is a
 look only: now and then a painted vole (`voleAt`, the mousing bubble's) pops up out of the grass where they're thick (`drawVoles`, a fixed pool), and a pounce
-is a high arc (`hopOf`). The news tells of a vole year and the crash after it (`VOLE_BOOM`, `VOLE_BUST`), and the
+is a high arc (`hopOf`). The fox hears the rustle it'll leap at as it starts listening (`c.rustle`, `listen`), so you
+see it coming: the grass there twitches in fits and the vole's back shows (`drawRustle`, a frog by the water), and as the
+fox crouches (`crouchOf`) the vole looks up and freezes. Caught, it's in the fox's jaws while it gulps (`drawCatch`);
+missed, it darts off from under it (`watchLeap`, `drawDashes`). The news tells of a vole year and the crash after it (`VOLE_BOOM`, `VOLE_BUST`), and the
 stats chart has their meadow-wide count (`w.history.voles`).
 
 Frogs are a field too, like the voles (`frogsTick`, every `FROG_EVERY` ticks): `w.frogs` on land, `w.spawn` (spawn,

@@ -1037,6 +1037,11 @@ function render(now) {
   const shown = [];
   for (const c of world.creatures) {
     if (c.hidden || !c.alive) continue;
+    if (c.species === 'fox') {                             // mousing: the rustle it's after
+      watchLeap(c, now);
+      const to = rustleOf(c);
+      if (to) { const [rx, ry] = toScreen(to.x, to.y); if (visible(rx, ry, 30)) items.push({ y: to.y, rustle: c, to, sx: rx, sy: ry }); }
+    }
     const [sx, sy] = screenOf(c);
     if (!visible(sx, sy, 60)) continue;
     const it = { y: c.y + (c.mode === 'dance' ? DANCE_FRONT : c.species === 'owl' && c.mode !== 'gulp' ? OWL_FRONT : 0), c, sx, sy };
@@ -1052,6 +1057,7 @@ function render(now) {
   for (const it of items) {
     if (it.d) (it.d.hive ? drawBeeTree : drawDecor)(it.d, it.sx, it.sy, now, ck);
     else if (it.h) drawSwarm(it.h, it.sx, it.sy);
+    else if (it.rustle) drawRustle(it.rustle, it.to, it.sx, it.sy, z);
     else drawCreature(it.c, it.sx, it.sy, now);
   }
   drawFallingLeaves(now);
@@ -3207,19 +3213,104 @@ function drawVoles(now, z) {
       peeps.x[k] = x; peeps.y[k] = y; peeps.t0[k] = now; peeps.next = (k + 1) % PEEPS;
     }
   }
-  let s = null, size = 0;
+  let s = null;
   for (let k = 0; k < PEEPS; k++) {
     const a = (now - peeps.t0[k]) / PEEP_MS;
     if (a >= 1) continue;
-    if (!s) { s = sprite('vole:0', Math.max(9, (8 + z) * PEEP_SIZE)); size = s.size; }
-    const up = Math.min(1, 2.5 * Math.sin(Math.PI * a));  // quick up, a look round, quick down
-    const shown = PEEP_FOOT * size - (1 - up) * PEEP_BODY * size;
+    if (!s) s = sprite('vole:0', Math.max(9, (8 + z) * PEEP_SIZE));
     const sx = (peeps.x[k] - cam.x) * z + vw / 2, sy = (peeps.y[k] - cam.y) * z + vh / 2;   // (toScreen, without an array)
-    if (shown <= 0 || !visible(sx, sy, size)) continue;
-    ctx.globalAlpha = Math.min(1, 3 * up);
-    ctx.drawImage(s.canvas, 0, 0, s.canvas.width, s.canvas.height * shown / size, sx - size / 2, sy - shown, size, shown);
+    peepAt(s, sx, sy, Math.min(1, 2.5 * Math.sin(Math.PI * a)), false);   // quick up, a look round, quick down
+  }
+  drawDashes(now, z);
+}
+
+// A vole (or a frog) up out of the grass, up of the way, its feet on the grass line at sx, sy.
+function peepAt(s, sx, sy, up, flip) {
+  const size = s.size, shown = PEEP_FOOT * size - (1 - up) * PEEP_BODY * size;
+  if (shown <= 0 || !visible(sx, sy, size)) return;
+  ctx.globalAlpha = Math.min(1, 3 * up);
+  const h = s.canvas.height * shown / size;
+  if (!flip) ctx.drawImage(s.canvas, 0, 0, s.canvas.width, h, sx - size / 2, sy - shown, size, shown);
+  else {
+    ctx.save(); ctx.translate(sx, 0); ctx.scale(-1, 1);
+    ctx.drawImage(s.canvas, 0, 0, s.canvas.width, h, -size / 2, sy - shown, size, shown);
+    ctx.restore();
   }
   ctx.globalAlpha = 1;
+}
+
+// ------------------------------------------------------------------ a fox mousing
+//
+// The sim says where a mousing fox heard the rustle it'll leap at (c.rustle while it listens, c.target in
+// the air, sim.js mouse). There the grass twitches in fits, and as the fox crouches to leap, the vole looks
+// up out of the grass and freezes (a frog, where there are more frogs). The fox comes down on it: caught,
+// it's in the fox's jaws while it gulps it down (drawCatch); missed, it darts off through the grass. Only a
+// look, from sprites in the cache, and a fixed pool for the ones darting off.
+const CROUCH = 6;                  // ticks before the leap that it crouches, and the vole looks up
+const CROUCH_LOW = 0.12;           // how low it crouches, of its size
+const RUSTLE_SIZE = 0.5;           // the twitching tuft, of a rabbit
+const RUSTLE_PREY = 0.6;           // the vole (or frog) there, of a rabbit
+const RUSTLE_PEEK = 0.35;          // how far up it shows while the grass twitches most
+const DASH_MS = 700;               // a vole the fox missed darting off
+const DASH_LEN = 2;                // tiles, out from under the fox
+const DASHES = 4;
+const dashes = { x: new Float32Array(DASHES), y: new Float32Array(DASHES), dx: new Float32Array(DASHES), dy: new Float32Array(DASHES),
+  t0: new Float64Array(DASHES).fill(-1e9), frog: new Uint8Array(DASHES), next: 0 };
+const leaps = new WeakMap();       // a fox in the air: where it'll land, to see if it missed once it's down
+
+// Where a mousing fox heard its rustle or is leaping to (null: it isn't).
+const rustleOf = c => c.species !== 'fox' ? null : c.mode === 'pounce' ? c.target : c.mode === 'mouse' && !c.target ? c.rustle || null : null;
+const frogThere = p => { const i = (p.y | 0) * S.W + (p.x | 0); return world.frogs[i] > world.voles[i]; };
+const crouchOf = c => (c.species === 'fox' && c.mode === 'mouse' && !c.target && c.rustle ? CROUCH_LOW * clamp(1 - (c.timer - acc) / CROUCH, 0, 1) : 0);
+
+// Every frame, for each fox: down from a leap that didn't end in a gulp, the vole darts off from under it.
+function watchLeap(c, now) {
+  if (c.mode === 'pounce') { if (c.target) leaps.set(c, c.target); return; }
+  const to = leaps.get(c);
+  if (!to) return;
+  leaps.delete(c);
+  if (c.mode !== 'mouse' || ui.speed > 4 || world.snow >= 0.3) return;   // caught it, or too quick to see
+  const k = dashes.next, a = c.heading + (Math.random() - 0.5) * 2;       // on ahead, about
+  dashes.x[k] = to.x; dashes.y[k] = to.y; dashes.dx[k] = Math.cos(a) * DASH_LEN; dashes.dy[k] = Math.sin(a) * DASH_LEN * 0.6;
+  dashes.t0[k] = now; dashes.frog[k] = frogThere(to) ? 1 : 0; dashes.next = (k + 1) % DASHES;
+}
+
+function drawDashes(now, z) {
+  for (let k = 0; k < DASHES; k++) {
+    const a = (now - dashes.t0[k]) / DASH_MS;
+    if (a >= 1) continue;
+    const go = 1 - (1 - a) * (1 - a), frog = dashes.frog[k];               // quick off, slowing into the grass
+    const sx = (dashes.x[k] + dashes.dx[k] * go - cam.x) * z + vw / 2, sy = (dashes.y[k] + dashes.dy[k] * go - cam.y) * z + vh / 2;
+    const s = sprite(frog ? 'frog:1' : 'vole:0', Math.max(9, (8 + z) * RUSTLE_PREY));
+    peepAt(s, sx, sy - (frog ? Math.sin(Math.PI * a) * s.size * 0.4 : 0), a < 0.7 ? 0.75 : 0.75 * (1 - a) / 0.3, dashes.dx[k] > 0);
+  }
+}
+
+// The rustle a fox is listening to, or leaping at: the grass there twitching, and the vole looking up.
+function drawRustle(c, to, sx, sy, z) {
+  if (world.snow >= 0.3 || z < 6) return;              // (under the snow, nothing shows)
+  const t = world.tick + acc, left = c.mode === 'pounce' ? 0 : c.timer - acc, px = 8 + z;
+  const tuft = sprite('🌿', px * RUSTLE_SIZE), fit = Math.max(0, Math.sin(t * 0.4 + c.id));
+  for (const side of [-1, 1]) {
+    ctx.save();
+    ctx.translate(sx + side * tuft.size * 0.3, sy);
+    ctx.rotate(fit * fit * 0.4 * Math.sin(t * 2.3 + side * 1.7));       // twitching in fits, at the foot
+    ctx.drawImage(tuft.canvas, -tuft.size / 2, -tuft.size * 0.8, tuft.size, tuft.size);
+    ctx.restore();
+  }
+  const up = Math.max(clamp(1 - left / CROUCH, 0, 1), fit > 0.8 ? RUSTLE_PEEK : 0);   // its back now and then, then up it looks
+  if (up > 0) peepAt(sprite(frogThere(to) ? 'frog:0' : 'vole:0', Math.max(9, px * RUSTLE_PREY)), sx, sy, up, c.x < to.x);
+}
+
+// Caught: the vole (or frog) crosswise in the fox's jaws while it gulps it down, gone at the last.
+function drawCatch(c, sx, y, px) {
+  const s = sprite(c.prey === 'frog' ? 'frog:0' : 'vole:0', px * 0.55);
+  ctx.save();
+  ctx.globalAlpha = clamp((c.timer - acc) / 6, 0, 1);
+  ctx.translate(sx + px * 0.04, y + px * 0.3);
+  ctx.rotate(-0.25);
+  ctx.drawImage(s.canvas, -s.size / 2, -s.size / 2, s.size, s.size);
+  ctx.restore();
 }
 
 // ------------------------------------------------------------------ pond life
