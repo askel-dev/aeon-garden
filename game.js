@@ -3308,7 +3308,7 @@ function handleEvent(e) {
     }
     case 'death': {
       const c = e.c;
-      hear(e.cause === 'fox' ? 'catch' : e.cause === 'age' ? 'old' : 'starve', c.x, c.y, { species: c.species }, mine);
+      if (e.cause !== 'left') hear(e.cause === 'fox' || e.cause === 'owl' ? 'catch' : e.cause === 'age' ? 'old' : 'starve', c.x, c.y, { species: c.species }, mine);   // (one flying off makes no sound)
       if (e.cause === 'fox' || e.cause === 'owl') addEffect('🦴', c.x, c.y, 0.3, 1800);
       else if (e.cause !== 'left') addEffect('👻', c.x, c.y, 1.6, 2000);
       if (e.cause === 'fox') {
