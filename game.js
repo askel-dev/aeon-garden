@@ -1090,6 +1090,7 @@ function render(now) {
   if (!intro.on) for (const it of shown) {
     const c = it.c;
     if (LOOKS[c.species].quiet) continue;
+    if (c.species === 'crow' && c.mode === 'sleep' && c.perch?.k && c.id !== ui.selectedId && c.id !== ui.hoverId) continue;   // one 💤 a tree at the roost
     const important = ALWAYS_BUBBLE.has(c.mode);
     if (!(important || c.id === ui.selectedId || c.id === ui.hoverId || z >= 20)) continue;
     const m = S.mood(world, c);
@@ -1166,7 +1167,7 @@ const loadOf = c => c.load ? Math.min(1, c.load / (S.LOAD * S.HONEY)) : 0;
 // and a laden one flies lower.
 function liftOf(c, px, now) {
   if (!c.sp.flies) return hopOf(c, px, now);
-  if (c.species === 'crow') return birdLift(c, crowHeight(c, px));
+  if (c.species === 'crow') return birdLift(c, crowHeight(c, px), c.sleeping) + crowHop(c, px);
   if (c.species === 'owl') return birdLift(c, owlHeight(c, px));
   const bob = ui.speed > 0 ? Math.sin(now / 90 + c.id) * px * 0.08 : 0, fly = px * (0.9 - 0.3 * loadOf(c)), tree = c.target?.tree;
   if (tree && (c.mode === 'sip' || c.mode === 'flower')) {   // blossom in a tree (sim.js addBlossoms): up in its crown
@@ -1176,22 +1177,45 @@ function liftOf(c, px, now) {
   return (c.mode === 'sip' ? px * 0.15 : fly) + bob;
 }
 
-// A crow is on the ground pecking, up in the air, or up a tree at the roost or its nest (sim.js crowTick).
-// It glides between them: the height eases in sim time, so it lands and takes off and stops with the clock.
+// A crow is on the ground pecking, up in the air, or up a tree on its seat at the roost or its nest (sim.js
+// crowTick). It glides between them: the height eases in sim time, so it lands and takes off and stops with the clock.
 const CROW_FLY = 1.5;              // how high a crow flies, in its size
-const CROW_PERCH = 0.55;           // how far up a tree's painting it sits
 const CROW_EASE = 12;              // ticks to get most of the way to a new height
+const CROW_HOP_LEN = 0.35;         // tiles a hop, hopping about on the ground
+// Where the crown is in each kind's painting, in the tree's size (treePx), measured off trees.js: its bottom
+// and top, and how far it reaches to each side at five heights from the bottom up. (emoji: the emoji trees.)
+const CROWNS = {
+  oak: [0.33, 0.8, 0.4, 0.44, 0.42, 0.33, 0.2], beech: [0.42, 0.88, 0.33, 0.38, 0.37, 0.3, 0.16],
+  maple: [0.5, 0.95, 0.26, 0.33, 0.34, 0.3, 0.18], birch: [0.62, 1.28, 0.3, 0.4, 0.42, 0.4, 0.28],
+  apple: [0.22, 0.62, 0.3, 0.36, 0.36, 0.32, 0.2], cherry: [0.22, 0.62, 0.3, 0.36, 0.36, 0.32, 0.2],
+  pine: [0.3, 1.05, 0.36, 0.31, 0.25, 0.18, 0.12], hawthorn: [0.2, 0.5, 0.3, 0.33, 0.32, 0.28, 0.18],
+  emoji: [0.3, 0.75, 0.35, 0.42, 0.42, 0.36, 0.22],
+};
+const SEAT_OUT = 0.9;              // how far out along the crown's reach a seat on the side is
+const NEST_SEAT = [0.12, 0.85];    // the nest: a little to the side, high in the crown
+// A crow's seat up its tree (sim.js CROW_SEATS: side and height in the crown), on screen: how far across from the
+// trunk and how high up, in px. Null when it isn't at the roost or its nest. (One object, filled in again each time.)
+const seat = { tree: null, x: 0, y: 0, dx: 0, up: 0 };
+function crowSeat(c) {
+  let d, s, t;
+  if ((c.mode === 'sleep' || c.mode === 'roost') && c.perch) { d = c.perch.tree; s = S.CROW_SEATS[c.perch.k][0] * (d.id % 2 ? -1 : 1); t = S.CROW_SEATS[c.perch.k][1]; seat.x = c.perch.x; seat.y = c.perch.y; }
+  else if (c.mode === 'nest' && c.home) { d = c.home; s = NEST_SEAT[0]; t = NEST_SEAT[1]; seat.x = d.x; seat.y = d.y + 0.1; }
+  else return null;
+  const k = treeWorker ? CROWNS[treeKind(d)] || CROWNS.oak : CROWNS.emoji, px = treePx(d), i = t * 4, j = Math.min(3, i | 0);
+  seat.tree = d; seat.dx = s * SEAT_OUT * lerp(k[2 + j], k[3 + j], i - j) * px; seat.up = lerp(k[0], k[1], t) * px;
+  return seat;
+}
+// How far across a crow is drawn from where the sim has it: onto its seat, as it comes in to land there.
+const seatShift = c => { const st = crowSeat(c); return st ? (st.dx - (st.x - st.tree.x) * cam.zoom) * (1 - near(c, st, 4)) : 0; };
 const CROW_AIR = new Set(['flap', 'flock', 'love', 'follow']);                               // flying (and 'mob': round an owl)
 const CROW_LANDS = new Set(['remains', 'forage', 'fetch', 'cache', 'apple', 'unbury', 'pool']); // flying there, and down
 const CROW_PECKS = new Set(['peck', 'carrion', 'munch', 'bury', 'unbury', 'tadpole']);       // heads down
 const birdLifts = new WeakMap();
-const perch = d => (d ? treePx(d) * CROW_PERCH : 0);
 const near = (c, p, far) => clamp(Math.hypot(p.x - c.x, p.y - c.y) / far, 0, 1);
 function crowHeight(c, px) {
-  const fly = px * CROW_FLY;
-  if (c.mode === 'sleep') return perch(world.roost);
-  if (c.mode === 'roost' && world.roost) return lerp(perch(world.roost), fly, near(c, world.roost, 4));
-  if (c.mode === 'nest') return c.home ? lerp(perch(c.home), fly, near(c, c.home, 3)) : 0;
+  const fly = px * CROW_FLY, st = crowSeat(c);
+  if (st) return lerp(st.up, fly, near(c, st, 4));
+  if (c.mode === 'roost') return fly;
   if (CROW_AIR.has(c.mode)) return fly;
   if (c.mode === 'mob') { const o = world.byId.get(c.targetId); return Math.max(fly, owlSits(o) + px * 0.6); }   // round the owl in its tree
   return CROW_LANDS.has(c.mode) && c.target ? fly * near(c, c.target, 2) : 0;
@@ -1219,18 +1243,37 @@ function owlHeight(c, px) {
   }
   return c.mode === 'gulp' ? 0 : fly;
 }
-function birdLift(c, want) {
+// A sitting bird (sit) is at its height at once: its tree grows with the zoom and its easing wouldn't.
+function birdLift(c, want, sit) {
   const t = world.tick + acc;
   let s = birdLifts.get(c);
   if (!s) birdLifts.set(c, s = { h: want, t, z: cam.zoom });
+  if (sit) { s.h = want; s.t = t; s.z = cam.zoom; return want; }
   if (s.z !== cam.zoom) { s.h *= (8 + cam.zoom) / (8 + s.z); s.z = cam.zoom; }   // (both grow with the zoom, about)
   if (s.t !== t) { s.h += (want - s.h) * Math.min(1, Math.abs(t - s.t) / CROW_EASE); s.t = t; }
   return s.h;
 }
-// Its painting: wingbeats in the air (with an acorn in its beak, carrying one), a peck now and then on the ground.
+// Walking about on the ground (sim.js peck): on its way, not yet stopped where it's going to peck.
+const crowWalks = c => c.mode === 'peck' && c.target && (c.x !== c.target.x || c.y !== c.target.y);
+// Hopping there (t.hop): an arc each CROW_HOP_LEN, down on its feet as it gets there.
+function crowHop(c, px) {
+  const t = c.target;
+  if (!crowWalks(c) || !t.hop) return 0;
+  const u = Math.hypot(t.x - c.x, t.y - c.y) / CROW_HOP_LEN;
+  return Math.sin(Math.PI * (u - Math.floor(u))) * px * 0.14;
+}
+// Its painting: asleep on a branch (or sitting on her eggs), wingbeats in the air (with an acorn in its beak,
+// carrying one), a step each CROW_STRIDE of its length walking, and a peck now and then when it stops.
 const CROW_BEAT = 120;             // ms a wingbeat
+const CROW_STRIDE = 0.18;          // of its length, a step
 function crowArt(c, up, px, now) {
-  if (up > px * 0.3 && !c.sleeping) return CROW_ARTS[(c.mode === 'cache' ? 4 : 2) + (ui.speed > 0 ? ((now / CROW_BEAT + c.id) | 0) & 1 : 0)];
+  if (c.sleeping) return CROW_ARTS[8];
+  if (up > px * 0.3) return CROW_ARTS[(c.mode === 'cache' ? 4 : 2) + (ui.speed > 0 ? ((now / CROW_BEAT + c.id) | 0) & 1 : 0)];
+  if (ui.speed > 0 && crowWalks(c)) {   // (the step goes by where it is, so it stops when it stops)
+    if (c.target?.hop) return CROW_ARTS[0];
+    const k = cam.zoom / (px * CROW_STRIDE);
+    return CROW_ARTS[(Math.floor(c.x * k) + Math.floor(c.y * k)) & 1 ? 6 : 7];
+  }
   return CROW_PECKS.has(c.mode) && ui.speed > 0 && Math.sin(now / 170 + c.id * 1.7) > 0.3 ? CROW_ARTS[1] : CROW_ARTS[0];
 }
 
@@ -1260,6 +1303,7 @@ const DANCE_FRONT = 0.45, DANCE_SIZE = 1.8;
 function screenOf(c) {
   const p = toScreen(c.x, c.y), z = cam.zoom;
   if (c.species === 'bee' && !c.hidden) { const s = weaveOf(c); p[0] += s.x * z; p[1] += s.y * z; }   // (crows fly straight)
+  if (c.species === 'crow') p[0] += seatShift(c);                  // up a tree: onto its seat in the crown
   if (c.mode === 'dance') {
     const [x, y] = danceAt(c.timer + 1);
     p[0] += x * (DANCE_SIZE - 1) * z; p[1] += (y * (DANCE_SIZE - 1) + DANCE_FRONT) * z;
@@ -1343,12 +1387,15 @@ function drawCreature(c, sx, sy, now) {
   // Standing still, everyone breathes: slow and deep asleep, quick and shallow awake.
   const breathe = !hop && ui.speed > 0
     ? Math.sin(now / (c.sleeping ? 650 : 330) + c.id) * (c.sleeping ? 0.035 : 0.02) : 0;
-  const squash = (c.sleeping ? 0.82 : c.sick ? 0.9 : 1) + breathe;   // a sick one sits hunched
-  const y = sy - hop + px * 0.4 * (1 - squash);
+  const squash = (c.sleeping ? c.species === 'crow' ? 1 : 0.82 : c.sick ? 0.9 : 1) + breathe;   // a sick one sits hunched (a crow's sleeping painting is fluffed up already)
+  const low = squash - crouchOf(c);                   // a mousing fox crouches to leap
+  const y = sy - hop + px * 0.4 * (1 - low);
+  if (c.species === 'crow' && c.sleeping && crowSeat(c)) sx += treeSway(seat.tree, now) * hop;   // up a tree, it sways with it
   if (c.mode === 'dance') drawDance(c, sx, y, px);
   drawEmoji(c.species === 'crow' ? crowArt(c, hop, px, now) : c.sp.emoji, sx, y, px, {   // feet stay on the ground
-    tint: furTint(c), coat: coatLook(c), flip: flipOf(c), squash,
+    tint: furTint(c), coat: coatLook(c), flip: flipOf(c), squash: low,
   });
+  if (c.mode === 'gulp' && c.species === 'fox') drawCatch(c, sx, y, px);
   if (c.load && c.species === 'bee') drawBaskets(c, sx, y, px);
   if (c.mode === 'sip') drawSipping(c, sx, sy, px, now);
   if (px > 18 && ui.speed > 0 && ui.speed <= 4 && atHole(c)) drawDigging(c, sx, y, px, now);
@@ -1464,30 +1511,48 @@ function paintFrog(g, size, U, pose) {
   if (pose === 2) spawnAt(g); else if (pose === 3) tadpolesAt(g); else frogAt(g, pose === 1);
 }
 // A crow, facing left, blue-black with a sheen (sim.js crowTick): standing, pecking, flying with its wings up
-// and down, and those two again with an acorn in its beak ('crow:0' to 'crow:5'). Its box -1 to 1 is the size
-// asked for, feet on the ground at 0.72 like an animal's.
+// and down, those two again with an acorn in its beak, the two steps of a walk, and asleep on a branch ('crow:0'
+// to 'crow:8'). Its box -1 to 1 is the size asked for, feet on the ground at 0.72 like an animal's.
 const CROW_INK = '#2a2c35', CROW_DARK = '#1b1c23', CROW_SHEEN = '#56617e', CROW_BEAK = '#3a3a42';
+// On its feet: each leg's hip, knee (null: straight) and foot, the near one first, and how far the head is
+// moved, for standing (and pecking) and the two steps of a walk: legs apart with the head forward, then one
+// leg lifted past the other with the head back.
+const CROW_FEET = {
+  0: [[-0.02, 0.32, null, -0.07, 0.71], [0.16, 0.3, null, 0.16, 0.71], 0, 0],
+  6: [[-0.02, 0.32, null, -0.22, 0.71], [0.16, 0.3, null, 0.32, 0.71], -0.07, 0.05],
+  7: [[0.05, 0.31, null, 0.04, 0.71], [0.14, 0.3, [0.2, 0.48], -0.06, 0.58], 0.02, -0.02],
+};
 function paintCrow(g, size, U, pose) {
   g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
   g.lineCap = g.lineJoin = 'round';
-  const fly = pose >= 2, down = pose === 3 || pose === 5;
+  if (pose === 8) {                                  // asleep on a branch: fluffed round, head sunk in, tail hanging, toes round the twig
+    strokeIn(g, CROW_DARK, 0.045, () => { g.moveTo(-0.14, 0.66); g.lineTo(0.06, 0.66); g.moveTo(0.1, 0.66); g.lineTo(0.28, 0.66); });
+    fillIn(g, CROW_INK, () => { g.moveTo(0.36, 0.3); g.lineTo(0.64, 0.8); g.lineTo(0.5, 0.86); g.lineTo(0.24, 0.42); });
+    fillIn(g, CROW_INK, () => { ovalAt(g, 0.06, 0.24, 0.44, 0.4, 0.2); discAt(g, -0.26, -0.1, 0.24); });
+    fillIn(g, CROW_DARK, () => ovalAt(g, 0.17, 0.26, 0.31, 0.23, 0.35));   // the wing
+    strokeIn(g, CROW_SHEEN, 0.05, () => { g.moveTo(-0.06, 0.02); g.quadraticCurveTo(0.2, -0.02, 0.38, 0.18); });
+    fillIn(g, CROW_BEAK, () => { g.moveTo(-0.44, -0.14); g.quadraticCurveTo(-0.6, -0.08, -0.67, 0.02); g.lineTo(-0.42, -0.02); });   // tucked down
+    strokeIn(g, '#7a84a0', 0.03, () => { g.moveTo(-0.4, -0.2); g.quadraticCurveTo(-0.34, -0.15, -0.28, -0.19); });   // its eye shut
+    return;
+  }
+  const fly = pose >= 2 && pose <= 5, down = pose === 3 || pose === 5;
   if (!fly) {
-    const peck = pose === 1;
-    strokeIn(g, CROW_DARK, 0.06, () => { g.moveTo(-0.02, 0.32); g.lineTo(-0.07, 0.71); g.moveTo(0.16, 0.3); g.lineTo(0.16, 0.71); });
-    strokeIn(g, CROW_DARK, 0.045, () => { g.moveTo(-0.22, 0.72); g.lineTo(0.03, 0.72); g.moveTo(0.02, 0.72); g.lineTo(0.26, 0.72); });
+    const peck = pose === 1, [nearLeg, farLeg, hdx, hdy] = CROW_FEET[peck ? 0 : pose];
+    strokeIn(g, CROW_DARK, 0.06, () => { for (const [x0, y0, knee, x1, y1] of [farLeg, nearLeg]) { g.moveTo(x0, y0); if (knee) g.lineTo(knee[0], knee[1]); g.lineTo(x1, y1); } });
+    strokeIn(g, CROW_DARK, 0.045, () => { for (const [, , knee, x, y] of [farLeg, nearLeg]) { g.moveTo(x - (knee ? 0.08 : 0.15), y + (knee ? 0.02 : 0.01)); g.lineTo(x + (knee ? 0.04 : 0.1), y + (knee ? 0.02 : 0.01)); } });
     fillIn(g, CROW_INK, () => peck   // the tail, up when it pecks
       ? (g.moveTo(0.44, 0.06), g.lineTo(0.9, -0.2), g.lineTo(0.92, -0.06), g.lineTo(0.48, 0.2))
-      : (g.moveTo(0.4, 0.14), g.lineTo(0.86, 0.46), g.lineTo(0.78, 0.56), g.lineTo(0.34, 0.3)));
-    fillIn(g, CROW_INK, () => ovalAt(g, 0.1, peck ? 0.12 : 0.04, 0.46, peck ? 0.27 : 0.3, peck ? -0.25 : 0.5));
-    const [hx, hy] = peck ? [-0.38, 0.3] : [-0.33, -0.36];
+      : (g.moveTo(0.4, 0.14), g.lineTo(0.86, 0.46 - hdy), g.lineTo(0.78, 0.56 - hdy), g.lineTo(0.34, 0.3)));
+    fillIn(g, CROW_INK, () => ovalAt(g, 0.1, peck ? 0.12 : 0.04, 0.46, peck ? 0.27 : 0.3, peck ? -0.25 : 0.5 - hdy));
+    const [hx, hy] = peck ? [-0.38, 0.3] : [-0.33 + hdx, -0.36 + hdy];
     fillIn(g, CROW_INK, () => { ovalAt(g, (hx + 0.1) / 2, (hy + 0.05) / 2, 0.2, 0.22, 0.4); discAt(g, hx, hy, 0.2); });
-    fillIn(g, CROW_DARK, () => ovalAt(g, 0.18, peck ? 0.06 : 0.0, 0.32, 0.17, peck ? -0.25 : 0.5));   // the wing
+    fillIn(g, CROW_DARK, () => ovalAt(g, 0.18, peck ? 0.06 : 0.0, 0.32, 0.17, peck ? -0.25 : 0.5 - hdy));   // the wing
     strokeIn(g, CROW_SHEEN, 0.05, () => peck
       ? (g.moveTo(-0.1, -0.05), g.quadraticCurveTo(0.2, -0.12, 0.44, -0.02))
-      : (g.moveTo(-0.08, -0.18), g.quadraticCurveTo(0.2, -0.1, 0.4, 0.12)));
+      : (g.moveTo(-0.08 + hdx / 2, -0.18 + hdy / 2), g.quadraticCurveTo(0.2, -0.1, 0.4, 0.12)));
     fillIn(g, CROW_BEAK, () => peck
       ? (g.moveTo(-0.5, 0.26), g.quadraticCurveTo(-0.6, 0.45, -0.64, 0.68), g.lineTo(-0.4, 0.44))
-      : (g.moveTo(-0.5, -0.45), g.quadraticCurveTo(-0.72, -0.44, -0.87, -0.33), g.lineTo(-0.52, -0.27)));
+      : (g.moveTo(hx - 0.17, hy - 0.09), g.quadraticCurveTo(hx - 0.39, hy - 0.08, hx - 0.54, hy + 0.03), g.lineTo(hx - 0.19, hy + 0.09)));
     fillIn(g, '#0e0e12', () => discAt(g, hx - 0.07, hy - 0.05, 0.045));
     fillIn(g, '#e8e8f0', () => discAt(g, hx - 0.08, hy - 0.065, 0.016));
     return;
@@ -1509,7 +1574,7 @@ function paintCrow(g, size, U, pose) {
     fillIn(g, '#6e5230', () => ovalAt(g, -0.88, -0.02, 0.08, 0.045));
   }
 }
-const CROW_ARTS = [0, 1, 2, 3, 4, 5].map(k => 'crow:' + k);
+const CROW_ARTS = [0, 1, 2, 3, 4, 5, 6, 7, 8].map(k => 'crow:' + k);
 
 // A bird's remains are a few feathers: a crow's ('remains:0') or an owl's barred brown ones ('remains:1'). A rabbit's
 // and a fox's are painted below (paintBody).

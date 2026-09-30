@@ -3723,7 +3723,8 @@ function remainsNear(w, c) {
 // down to remains wherever they see them or see other crows at them (carrion), and in autumn to the
 // windfalls. A fed crow in autumn carries acorns and beechnuts off from the oaks and beeches and buries
 // them out in the open (cacheNut). In winter a hungry one digs its own up again (unbury); the ones nobody
-// digs up come up as oaks and beeches in spring. At night they all sleep in one big tree (w.roost). In
+// digs up come up as oaks and beeches in spring. At night they sleep in the roost: a big tree (w.roost) and
+// the ones about it, each crow on a branch of its own (c.perch, roostSeat), a few to a tree. In
 // spring a pair nests in a tall tree near where they met; the chicks stay in the nest a few days, then
 // follow mum about. A fox that comes close sends them flapping up, but one busy on the ground may not
 // see it in time. Same ladder as everyone: danger > sleep > love > food > friends > wander.
@@ -3735,7 +3736,9 @@ const CROW_MEAL = 0.3;          // a crow is mostly feathers: this much of a rab
                                 // feed the foxes through the rabbits' lows, and the foxes eat the last rabbits
 const FLAP = 8;                 // tiles it flies off
 const CAW = 8;                  // and the others on the ground this close go up with it
-const CROW_STEP = 0.07;         // of its flying pace, walking about
+const CROW_PACE = 0.035;        // tiles a tick, walking about pecking: a few steps, then a stop (peck)
+const CROW_HOP = 0.07;          // and hopping, now and then, over a longer way
+const CROW_STOP = [15, 60];     // ticks it stops to peck between walks
 const CROW_FULL = 0.85;         // a crow eats till its tummy is this full
 const CROW_HUNGRY = 0.25;       // and only this hungry takes the rabbits' windfalls (more, and the rabbits go into winter thin)
 const GRUB = 0.1;               // energy a tick pecking on short grass, at best
@@ -3752,6 +3755,16 @@ const NEST_RANGE = 25;          // how far off a mum looks for a tall tree to ne
 const FLEDGE = 0.4;             // chicks leave the nest this grown
 const ROOST_AT = 0.66;          // the time of day they fly to the roost (dusk is 0.72)
 const ROOST_MIDDLE = 15;        // tiles from the middle of the meadow that take one off a roost tree's size
+const ROOST_GROVE = 6;          // tiles round the roost tree: the trees the crows sleep in with it
+const ROOST_ROOM = 24;          // seats in a grove past which more don't make it a better roost
+const PERCHES = { oak: 1.6, beech: 1.4, maple: 1.2, birch: 1, pine: 1, apple: 1, cherry: 1, hawthorn: 0.7 };   // crows a tree has room for, a tree size
+// The seats in a crown, the first ones spread over it: side (-1 left to 1 right) and height (0 the bottom of
+// the crown to 1 the top). game.js knows where a crown is in each kind's painting; the sim only puts a crow
+// under its seat, SEAT_REACH of the tree's size to the side.
+const CROW_SEATS = [[0.1, 0.8], [-0.6, 0.55], [0.65, 0.4], [-0.3, 0.92], [0.45, 0.75], [-0.75, 0.25], [0.8, 0.2], [0, 0.4],
+  [-0.5, 0.75], [0.55, 0.6], [0.25, 0.15], [-0.2, 0.12], [0.85, 0.55], [-0.85, 0.5]];
+const SEAT_REACH = 0.4;
+const WAKE_FLY = [3, 10];       // tiles it flies off from the roost at dawn, to a spot of its own
 const PECKING = new Set(['peck', 'carrion', 'munch', 'bury', 'unbury', 'tadpole']);   // busy on the ground, heads down
 
 const grubs = (w, x, y) => {
@@ -3785,18 +3798,18 @@ function crowTick(w, c) {
     c.mode = 'wander'; c.target = null;
   }
 
-  // 2. Sleep: from dusk to dawn, and through a storm, at the roost with the others.
+  // 2. Sleep: from dusk to dawn, and through a storm, at the roost with the others, on a branch of its own.
   if (ph > ROOST_AT || ph < 0.03 || w.weather.kind === 'storm') {
-    const r = w.roost || c, a = c.id * 2.4;
-    if (c.mode !== 'sleep') {
-      c.mode = 'roost';
-      if (!go(w, c, r.x + Math.cos(a) * (r === c ? 0 : 1.2), r.y + (r === c ? 0 : 0.15 + 0.2 * Math.abs(Math.sin(a))), c.walk)) return;
+    if (c.mode !== 'sleep' || (c.perch && !standing(c.perch.tree))) {
+      if (c.mode !== 'roost' || (c.perch && !standing(c.perch.tree))) { c.mode = 'roost'; c.perch = roostSeat(w, c); }
+      const p = c.perch || c;
+      if (!go(w, c, p.x, p.y, c.walk)) return;
       c.mode = 'sleep';
     }
     c.sleeping = true;
     return;
   }
-  if (c.mode === 'sleep' || c.mode === 'roost') { c.mode = 'wander'; c.target = null; }
+  if (c.mode === 'sleep' || c.mode === 'roost') { c.perch = null; flyOut(w, c); }
 
   // Fledglings keep close to mum.
   if (growth(w, c) < 0.6) {
@@ -3860,14 +3873,16 @@ function caw(w, c, fox) {
   }, 'crow');
 }
 
-// Walking about pecking, a step at a time. Hungry where the pecking is poor, it flies off to better.
+// Walking about pecking: a few steps, a stop to peck a while (t.stop), and on; over a longer way now and
+// then in hops (t.hop). Hungry where the pecking is poor, it flies off to better.
 function peck(w, c, hungry) {
   if (c.mode === 'forage' && !go(w, c, c.target.x, c.target.y, c.walk)) return;
-  if (c.mode !== 'peck' || go(w, c, c.target.x, c.target.y, c.walk * CROW_STEP)) {
+  const t = c.mode === 'peck' && c.target;
+  if (!t || (go(w, c, t.x, t.y, t.hop ? CROW_HOP : CROW_PACE) && !(--t.stop > 0))) {
     const better = hungry && grubs(w, c.x, c.y) < GRUB / 2 && grubSpot(w, c);
     if (better) { c.mode = 'forage'; c.target = better; return; }
-    const a = w.rng.range(0, Math.PI * 2), r = w.rng.range(0.4, 1.6), x = c.x + Math.cos(a) * r, y = c.y + Math.sin(a) * r;
-    c.mode = 'peck'; c.target = dry(w, x, y) ? { x, y } : { x: c.x, y: c.y };
+    const a = w.rng.range(0, Math.PI * 2), r = w.rng.range(0.3, 1.5), x = c.x + Math.cos(a) * r, y = c.y + Math.sin(a) * r, ok = dry(w, x, y);
+    c.mode = 'peck'; c.target = { x: ok ? x : c.x, y: ok ? y : c.y, hop: ok && r > 1.1 && w.rng.next() < 0.5, stop: w.rng.int(CROW_STOP[0], CROW_STOP[1]) };
   }
   const g = grubs(w, c.x, c.y);
   c.energy = Math.min(c.maxEnergy, c.energy + g); w.stats.grubs += g / GRUB;
@@ -3979,12 +3994,50 @@ function nestTree(w, c) {
   return best;
 }
 
-// The crows' roost: a big tree towards the middle of the meadow, not the bees'. Another when it falls (newDay).
+// Awake: off the roost to a spot of its own a way off, not all down under the one tree.
+function flyOut(w, c) {
+  const a = w.rng.range(0, Math.PI * 2), r = w.rng.range(WAKE_FLY[0], WAKE_FLY[1]);
+  const x = clamp(c.x + Math.cos(a) * r, 2, W - 2), y = clamp(c.y + Math.sin(a) * r, 2, H - 2);
+  if (dry(w, x, y)) { c.mode = 'forage'; c.target = { x, y }; } else { c.mode = 'wander'; c.target = null; }
+}
+
+// A tree crows sleep in, and how many it has room for.
+const perchable = d => standing(d) && d.size >= GROWN && !d.hive && !d.owl;
+const perches = d => Math.min(CROW_SEATS.length, Math.max(2, Math.floor(d.size * (PERCHES[d.kind] ?? 1))));
+const seatAt = (d, k) => ({ x: d.x + CROW_SEATS[k][0] * (d.id % 2 ? -1 : 1) * d.size * SEAT_REACH, y: d.y + 0.15 + 0.02 * k, tree: d, k });
+
+// A free seat at the roost: in the roost tree while it has room, then in the nearest of the trees about it
+// (further out if the grove is full). None free anywhere: it squeezes in at the roost tree.
+function roostSeat(w, c) {
+  const r = w.roost;
+  if (!r) return null;
+  const taken = new Map();                               // tree: its seats taken, a bit each
+  for (const o of w.creatures) {
+    if (o !== c && o.alive && o.species === 'crow' && o.perch && (o.mode === 'roost' || o.mode === 'sleep')) taken.set(o.perch.tree, (taken.get(o.perch.tree) || 0) | 1 << o.perch.k);
+  }
+  const free = d => { const t = taken.get(d) || 0; for (let k = 0; k < perches(d); k++) if (!(t & 1 << k)) return k; return -1; };
+  for (const reach of [ROOST_GROVE, 2 * ROOST_GROVE]) {
+    let best = null, bd = Infinity, bk = -1;
+    forEachDecorNear(w, r.x, r.y, reach, d => {
+      const dd = d === r ? -1 : dist2(d, r);
+      if (dd > reach * reach || !perchable(d)) return;
+      const k = dd < bd ? free(d) : -1;
+      if (k >= 0) { best = d; bd = dd; bk = k; }
+    });
+    if (best) return seatAt(best, bk);
+  }
+  return seatAt(r, (taken.size + c.id) % CROW_SEATS.length);
+}
+
+// The crows' roost: a big tree in a grove with room for them all, towards the middle of the meadow, not the
+// bees'. Another when it falls (newDay).
 function pickRoost(w) {
   let best = null, most = -Infinity;
   for (const d of w.decor) {
-    if (!standing(d) || d.size < GROWN || d.hive) continue;
-    const v = d.size - Math.hypot(d.x - W / 2, d.y - H / 2) / ROOST_MIDDLE;
+    if (!perchable(d)) continue;
+    let room = 0;
+    forEachDecorNear(w, d.x, d.y, ROOST_GROVE, o => { if (dist2(o, d) < ROOST_GROVE ** 2 && perchable(o)) room += perches(o); });
+    const v = Math.min(room, ROOST_ROOM) + d.size - Math.hypot(d.x - W / 2, d.y - H / 2) / ROOST_MIDDLE;
     if (v > most) { best = d; most = v; }
   }
   return best;
@@ -3995,7 +4048,7 @@ function crowMood(w, c) {
   const kind = c.target && (c.target.tree ? c.target.tree.kind : c.target.kind), one = kind === 'beech' ? 'a beechnut' : 'an acorn';
   switch (c.mode) {
     case 'nest': return { emoji: '🪺', text: c.hidden ? 'A chick in the nest, calling for food' : c.sleeping ? 'Sitting on her eggs in the nest' : 'Flying to her nest' };
-    case 'sleep': return { emoji: '💤', text: w.roost ? 'Asleep at the roost with the other crows' : 'Asleep' };
+    case 'sleep': return { emoji: '💤', text: c.perch ? 'Asleep at the roost with the other crows' : 'Asleep' };
     case 'roost': return { emoji: '🏠', text: 'Flying to the roost for the night' };
     case 'flap': return { emoji: '😱', text: c.threatId ? `Flapped up, away from ${w.byId.get(c.threatId)?.name ?? 'a fox'}!` : 'Flapped up, away from the smoke!' };
     case 'remains': return { emoji: '👀', text: `Flying down to the remains of ${dead.name}` };
@@ -4913,7 +4966,7 @@ const api = {
   TERRAIN, drawnToLink, drawnFromLink, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE,
   TREES, treeStage, treeAge, standing, bearing, hollow, inBloom, SEEDLING, SAPLING, GROWN, KIND_NAMES,
-  VOLE_K, POUNCE_TICKS, CROWDED, FROG_K, SPAWN_WORTH, webCounts,
+  VOLE_K, POUNCE_TICKS, CROWDED, FROG_K, SPAWN_WORTH, webCounts, CROW_SEATS,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 else root.Sim = api;
