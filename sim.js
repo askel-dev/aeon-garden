@@ -3839,8 +3839,8 @@ function crowTick(w, c) {
       if (go(w, c, c.home.x, c.home.y + 0.1, c.walk)) c.sleeping = true;
       return;
     }
-    if (c.mode !== 'sleep' || (c.perch && !standing(c.perch.tree))) {
-      if (c.mode !== 'roost' || (c.perch && !standing(c.perch.tree))) { c.mode = 'roost'; c.perch = roostSeat(w, c); }
+    if (c.mode !== 'sleep' || (c.perch && !perchable(c.perch.tree))) {
+      if (c.mode !== 'roost' || (c.perch && !perchable(c.perch.tree))) { c.mode = 'roost'; c.perch = roostSeat(w, c); }
       const p = c.perch || c;
       if (!go(w, c, p.x, p.y, c.walk)) return;
       c.mode = 'sleep';
@@ -4694,7 +4694,7 @@ function newDay(w) {
   }
   treesTick(w);
   groundTick(w);
-  if (!w.roost || !standing(w.roost)) w.roost = pickRoost(w);
+  if (!w.roost || !perchable(w.roost)) w.roost = pickRoost(w);   // gone, or bees or an owl moved in
   owlsDay(w);
 }
 

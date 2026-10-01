@@ -1045,6 +1045,7 @@ function render(now) {
     const [sx, sy] = screenOf(c);
     if (!visible(sx, sy, 60)) continue;
     const it = { y: c.y + (c.mode === 'dance' ? DANCE_FRONT : c.species === 'owl' && c.mode !== 'gulp' ? OWL_FRONT : 0), c, sx, sy };
+    if (c.species === 'crow' && crowSeat(c)) it.y -= (seat.y - seat.tree.y) * SEAT_SORT;   // up a tree: just after it, not after the trees just in front
     items.push(it);
     if (!c.held) shown.push(it);                           // (one held up has its shadow here, and is drawn last, in the hand)
   }
@@ -1203,6 +1204,7 @@ const CROWNS = {
 };
 const SEAT_OUT = 0.9;              // how far out along the crown's reach a seat on the side is
 const NEST_SEAT = [0.12, 0.85];    // the nest: a little to the side, high in the crown
+const SEAT_SORT = 0.95;            // how much of the way from its seat (just in front of the tree) to the tree a crow up it is drawn at
 // A crow's seat up its tree (sim.js CROW_SEATS: side and height in the crown), on screen: how far across from the
 // trunk and how high up, in px. Null when it isn't at the roost or its nest. (One object, filled in again each time.)
 const seat = { tree: null, x: 0, y: 0, dx: 0, up: 0 };
