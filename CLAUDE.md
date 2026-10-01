@@ -19,6 +19,11 @@ told to just do it.
 - `game.js`: drawing, UI, news feed, the inspector, the optional Ollama diary. The inspector shows
   animals and every other thing you click (hives, trees, rocks, remains, burrows, flowers, fields, water): each
   kind is an entry in `THINGS`, saying how to find one on screen and what its panel shows.
+  The inspector's 🏷️ Name makes an animal yours (sim.js `nameCreature`, `c.mine`; a bee by its queen, `nameQueen`,
+  `q.mine`): its news always comes and heads the away card (`involvesSelected`), its death gets a line of its own
+  that offers a young one left behind to name (`goneLine`, `data-act="adopt"`), it wears a brass ring in its label
+  and on the ground (`RING`, `drawRingUnder`), and ••• Yours lists everyone you named, gone or not (`#yours`,
+  `renderYours`). The named are kept with the meadow for good (`remembered`). No `KEEP_VERSION` bump.
   With Look in hand, a press on an animal dragged (or a finger held on it) picks it up by the scruff (`pickUp`,
   `grabAt`: on its body as drawn, so a pan from near one stays a pan): it dangles from the hand as a pendulum the
   hand's speeding up swings (`heldFrame`, `drawHeld`), kicks in fits, and drops with a hop where you let go

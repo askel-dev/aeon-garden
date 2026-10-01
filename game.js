@@ -51,7 +51,8 @@ const cam = { x: S.W / 2, y: S.H / 2, zoom: 10, goal: null };
 
 const canvas = $('#world');
 const ctx = canvas.getContext('2d');
-let vw = 0, vh = 0, dpr = 1, minZoom = 1;
+let vw = 0, vh = 0, dpr = 1, minZoom = 1, fitZoom = 1;
+const FIT = 0.92;                                 // zoomed right out, how much of the window the meadow fills (it fades into mist, drawMist)
 let barPad = 0;                                   // screen pixels the toolbar covers at the bottom (on a phone, its button in the corner)
 let sheet = null;                                 // the edges of the meadow the inspector and the bars hide, while it's open
 // A phone upright or on its side: slim bars, and the tools fold into a button. On its side (a short screen)
@@ -108,8 +109,9 @@ function resize() {
   // The CSS sizes the canvas: in Safari on a phone it reaches under the clock and the address bar, past innerHeight.
   vw = canvas.clientWidth || innerWidth; vh = canvas.clientHeight || innerHeight;
   canvas.width = Math.round(vw * dpr); canvas.height = Math.round(vh * dpr);
-  minZoom = Math.max(vw / S.W, vh / S.H);        // the meadow always fills the window
-  cam.zoom = Math.max(cam.zoom, minZoom);
+  minZoom = Math.max(vw / S.W, vh / S.H);        // the meadow fills the window: the wide shot
+  fitZoom = Math.min(vw / S.W, vh / S.H) * FIT;  // and you may look further out, at all of it
+  cam.zoom = Math.max(cam.zoom, fitZoom);
   clampCam();
   for (const s of S.KINDS) {
     const c = $('#spark-' + s);
@@ -156,7 +158,7 @@ const wholePx = v => Math.round(v * dpr) / dpr;
 
 function zoomAt(sx, sy, z) {
   const [wx, wy] = toWorld(sx, sy);
-  cam.zoom = clamp(z, minZoom, 64);
+  cam.zoom = clamp(z, fitZoom, 64);
   const [nx, ny] = toWorld(sx, sy);
   cam.x += wx - nx; cam.y += wy - ny;
   clampCam();
@@ -560,13 +562,92 @@ function drawGround(z, ox, oy, shx, shy) {
   const [low, high] = groundColours(), sn = sun(S.clock(world)), k = 2.5 * Math.max(0, sn.a) * (0.6 + 0.4 * Math.abs(sn.lean));
   const gd = Math.min(dpr, GROUND_DPR), w = Math.round(vw * gd), h = Math.round(vh * gd);
   Ground.draw({
-    width: w, height: h, zoom: z, ox, oy, dpr: gd, past: lookPast(), seed: groundSeed, low, high, sand: shoreSand,
+    width: w, height: h, zoom: z, ox, oy, dpr: gd, seed: groundSeed, low, high, sand: shoreSand, fog: fogColour(high),
     snow: world.snow, damp: 1 - 0.12 * world.wet, ice: iceOver(), cold: coldness(), lx: k * sn.lean, ly: k * 0.8,
   });
   if (groundIn) { ctx.drawImage(Ground.canvas, Ground.view.x, Ground.view.y, w, h, 0, 0, vw, vh); return; }
   const g = Ground.canvas, cw = g.width / gd, ch = g.height / gd, x = shx - Ground.view.x / gd, y = shy - Ground.view.y / gd;
   if (cw !== laid.w || ch !== laid.h) { g.style.width = cw + 'px'; g.style.height = ch + 'px'; laid.w = cw; laid.h = ch; }
   if (x !== laid.x || y !== laid.y) { g.style.transform = `translate(${x}px, ${y}px)`; laid.x = x; laid.y = y; }
+}
+
+// Past its edges the meadow fades into a mist. The ground shader fades it out and paints the mist in big pale
+// clouds (ground.js FOG), and this lays it over everything from MIST_IN tiles in, trees and animals too, so they
+// fade into it and don't stand sharp against it: thick by MIST_FULL tiles out, and thinning again to MIST_OUT,
+// where the shader's clouds show through. Its edge has round corners (MIST_ROUND) and wavers a long way in and
+// out, so the meadow never reads as a rectangle. It's painted once, MIST_PX a tile, again only when its colour
+// moves (the season's greens tint it, the snow whitens it), and drawn as four strips along the edges, never over
+// the middle. At dusk and at night a rose or lavender light is laid over it, after the dark (drawMistLift), so it
+// doesn't go a muddy grey.
+const MIST_RGB = [230, 231, 214], MIST_TINT = 0.12, MIST_SNOW = [238, 242, 246];   // and white over the snow
+const MIST_DUSK = [240, 176, 160], MIST_NIGHT = [124, 118, 176];
+const MIST_IN = 6, MIST_FULL = 4, MIST_OUT = 10, MIST_PX = 3, MIST_ROUND = 14;   // (ground.js has the same ROUND)
+const MIST_WAVER = 8;                             // tiles the edge wavers in and out, all told
+const MIST_DEEP = MIST_IN + MIST_WAVER / 2 + 2;   // the strips reach this far in, past where a bank of it can roll in
+const fogColour = high => MIST_RGB.map((v, i) => Math.round(lerp(lerp(v, high[i], MIST_TINT), MIST_SNOW[i], Math.min(1, world.snow)) / 4) * 4);
+const mist = { canvas: null, dusk: null, night: null, base: null, lift: null, key: '', at: -1e9, on: false, xs: null, ys: null, sx: null, sy: null };
+function mistAlpha() {                            // how thick it is, over the meadow and lifted (that one doesn't thin out)
+  const cw = (S.W + 2 * MIST_OUT) * MIST_PX, ch = (S.H + 2 * MIST_OUT) * MIST_PX, R = MIST_ROUND;
+  mist.base = new Uint8ClampedArray(cw * ch); mist.lift = new Uint8ClampedArray(cw * ch);
+  for (let j = 0; j < ch; j++) for (let i = 0; i < cw; i++) {
+    const x = (i + 0.5) / MIST_PX - MIST_OUT, y = (j + 0.5) / MIST_PX - MIST_OUT;
+    const qx = Math.abs(x - S.W / 2) - S.W / 2 + R, qy = Math.abs(y - S.H / 2) - S.H / 2 + R;
+    const past = Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - R;
+    const roll = MIST_WAVER * (blotches(x * 0.04, y * 0.04, 73) - 0.5) + 3 * (blotches(x * 0.25, y * 0.25, 72) - 0.5);   // banks of it rolling in
+    const t = clamp((past + roll + MIST_IN) / (MIST_FULL + MIST_IN), 0, 1) * clamp(past + MIST_DEEP, 0, 1), u = clamp((MIST_OUT - past) / 3, 0, 1);
+    const k = j * cw + i, st = t * t * (3 - 2 * t);
+    mist.base[k] = 255 * st * u * u * (3 - 2 * u); mist.lift[k] = 255 * st;
+  }
+}
+function paintMist(c, rgb, alpha) {
+  const cw = (S.W + 2 * MIST_OUT) * MIST_PX, ch = (S.H + 2 * MIST_OUT) * MIST_PX;
+  if (!c) { c = document.createElement('canvas'); c.width = cw; c.height = ch; }
+  const mc = c.getContext('2d'), img = mc.createImageData(cw, ch), d = img.data;
+  for (let k = 0; k < alpha.length; k++) { d[4 * k] = rgb[0]; d[4 * k + 1] = rgb[1]; d[4 * k + 2] = rgb[2]; d[4 * k + 3] = alpha[k]; }
+  mc.putImageData(img, 0, 0);
+  return c;
+}
+function mistStrips(c) {
+  const { xs, ys, sx, sy } = mist;
+  const strip = (c0, c1, r0, r1) => {
+    if (xs[c1] <= 0 || xs[c0] >= vw || ys[r1] <= 0 || ys[r0] >= vh) return;
+    ctx.drawImage(c, sx[c0], sy[r0], sx[c1] - sx[c0], sy[r1] - sy[r0], xs[c0], ys[r0], xs[c1] - xs[c0], ys[r1] - ys[r0]);
+  };
+  strip(0, 3, 0, 1); strip(0, 3, 2, 3); strip(0, 1, 1, 2); strip(2, 3, 1, 2);
+}
+function drawMist(ox, oy, z) {
+  const I = MIST_DEEP, W = S.W, H = S.H;
+  mist.on = !(ox + I * z <= 0 && oy + I * z <= 0 && ox + (W - I) * z >= vw && oy + (H - I) * z >= vh);
+  if (!mist.on) return;                                                // no edge on screen
+  const fog = fogColour(groundColours()[1]), key = fog.join(), now = performance.now();
+  if (key !== mist.key && (!mist.canvas || now - mist.at > 500)) {     // (at 60x the snow comes and goes fast)
+    if (!mist.base) mistAlpha();
+    mist.canvas = paintMist(mist.canvas, fog, mist.base);
+    mist.at = now; mist.key = key;
+  }
+  // The strips meet on whole screen pixels, so no seam shows between them.
+  const P = MIST_PX, O = MIST_OUT;
+  mist.xs = [ox - O * z, ox + I * z, ox + (W - I) * z, ox + (W + O) * z].map(Math.round);
+  mist.ys = [oy - O * z, oy + I * z, oy + (H - I) * z, oy + (H + O) * z].map(Math.round);
+  mist.sx = [0, (O + I) * P, (O + W - I) * P, (W + 2 * O) * P]; mist.sy = [0, (O + I) * P, (O + H - I) * P, (H + 2 * O) * P];
+  mistStrips(mist.canvas);
+}
+// The dusk and night light on the mist, over the dark: the strips, and the mist all round them past MIST_OUT.
+function drawMistLift(dark, dusk) {
+  if (!mist.on || (dark <= 0 && dusk <= 0)) return;
+  if (!mist.dusk) { mist.dusk = paintMist(null, MIST_DUSK, mist.lift); mist.night = paintMist(null, MIST_NIGHT, mist.lift); }
+  const [x0, , , x3] = mist.xs, [y0, , , y3] = mist.ys;
+  ctx.save();
+  for (const [c, rgb, a] of [[mist.night, MIST_NIGHT, dark * 0.7], [mist.dusk, MIST_DUSK, dusk * 2.2]]) {
+    if (a <= 0) continue;
+    ctx.globalAlpha = a; ctx.fillStyle = `rgb(${rgb})`;
+    mistStrips(c);
+    if (y0 > 0) ctx.fillRect(-10, -10, vw + 20, y0 + 10);
+    if (y3 < vh) ctx.fillRect(-10, y3, vw + 20, vh - y3 + 10);
+    if (x0 > 0) ctx.fillRect(-10, y0, x0 + 10, y3 - y0);
+    if (x3 < vw) ctx.fillRect(x3, y0, vw - x3 + 10, y3 - y0);
+  }
+  ctx.restore();
 }
 
 function plantEmoji(season, p, g) {
@@ -1067,15 +1148,15 @@ function render(now) {
   drawFallingLeaves(now);
   drawPollen(now);
   drawButterflies(now, ck);
+  drawMist(ox, oy, z);
 
   // Dusk and night.
   const dark = darkness(ck.phase);
   if (dark > 0) wash(`rgba(22, 30, 78, ${dark})`);
   drawFireflies(now, dark);
-  if (ck.phase > 0.58 && ck.phase < 0.74) {
-    const a = 0.10 * Math.sin(Math.PI * (ck.phase - 0.58) / 0.16);
-    wash(`rgba(255, 140, 60, ${a})`);
-  }
+  const dusk = ck.phase > 0.58 && ck.phase < 0.74 ? 0.10 * Math.sin(Math.PI * (ck.phase - 0.58) / 0.16) : 0;
+  if (dusk > 0) wash(`rgba(255, 140, 60, ${dusk})`);
+  drawMistLift(dark, dusk);
   drawFire(now);
   drawWeather(now, ck);
 
@@ -5474,7 +5555,7 @@ function startPinch() {
 
 function movePinch() {
   const [a, b] = fingers.values(), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-  cam.zoom = clamp(pinch.zoom * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d, minZoom, 64);
+  cam.zoom = clamp(pinch.zoom * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d, fitZoom, 64);
   cam.x = pinch.wx - (mx - vw / 2) / cam.zoom; cam.y = pinch.wy - (my - vh / 2) / cam.zoom;
   clampCam();
 }
@@ -6758,7 +6839,7 @@ function resumeWorld(rec) {
   opening = 1;
   Object.assign(ui, { newsLog: rec.news || [], records: rec.records || ui.records, crashSaid: rec.crashSaid || ui.crashSaid });
   renderNewsLog();
-  if (rec.cam) { cam.zoom = Math.max(rec.cam.zoom, minZoom); cam.x = rec.cam.x; cam.y = rec.cam.y; clampCam(); }
+  if (rec.cam) { cam.zoom = Math.max(rec.cam.zoom, fitZoom); cam.x = rec.cam.x; cam.y = rec.cam.y; clampCam(); }
   const c = world.byId.get(rec.selectedId);
   if (c) { select(c.id, false); ui.follow = rec.follow; }
   history.replaceState(null, '', meadowLink(world.seed));
@@ -6950,7 +7031,7 @@ function frame(now) {
     const k = 1 - Math.pow(0.01, dt);
     cam.zoom += (cam.goal - cam.zoom) * k;
     if (Math.abs(cam.goal - cam.zoom) < 0.05) cam.goal = null;
-    cam.zoom = Math.max(cam.zoom, minZoom);
+    cam.zoom = Math.max(cam.zoom, fitZoom);
   }
   clampCam();
 

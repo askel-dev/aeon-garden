@@ -36,9 +36,10 @@ const FRAGMENT = `#version 300 es
 precision highp float;
 uniform sampler2D tile, bloom, shape, water;
 uniform vec2 size, off, seed;
-uniform float top, past, zoom, dpr, snow, damp, lx, ly, ice, cold;
-uniform vec3 low, high, sand;
+uniform float top, zoom, dpr, snow, damp, lx, ly, ice, cold;
+uniform vec3 low, high, sand, fog;
 out vec4 o;
+const float FOG = 9., ROUND = 14.;                               // tiles past the edge the mist is solid; the corners' roundness (game.js MIST_ROUND)
 
 // Hashes the float's own bits, so it stays exact at any coordinate: a float trick like
 // fract(p * 123.34) runs out of digits in the fine grain and paints it in streaks.
@@ -134,11 +135,15 @@ float layers(float f, float t0, float t1, float n, float a) {
 }
 
 void main() {
-  vec2 p = ((vec2(gl_FragCoord.x, top - gl_FragCoord.y) / dpr) - off) / zoom;     // in tiles (top: the canvas's height)
-  // Past the bottom edge the meadow goes on in a mirror, fading darker (you may look a little past it).
-  float below = max(0., p.y - size.y) * zoom;
-  if (below > 0.) p.y = 2. * size.y - p.y;
-  if (p.x < 0. || p.x > size.x || p.y < 0.) { o = vec4(0.); return; }
+  vec2 at = ((vec2(gl_FragCoord.x, top - gl_FragCoord.y) / dpr) - off) / zoom;    // in tiles (top: the canvas's height)
+  // Past the edges (zoomed right out, or looking a little past the bottom) the meadow goes on, mirrored, into
+  // the mist. game.js lays the mist itself over it all near the edges (drawMist), so the trees fade into it
+  // too; here it only has to be solid from where that ends.
+  vec2 c = abs(at - 0.5 * size) - 0.5 * size + ROUND;
+  float past = length(max(c, 0.)) + min(max(c.x, c.y), 0.) - ROUND;   // tiles past the nearest edge (less than 0 inside), round at the corners
+  vec3 mist = mix(fog, min(fog * 1.04 + 0.04, 1.), smoothstep(0.4, 0.8, fbm(at * 0.03 + 950.)));   // in big pale clouds
+  if (past > FOG) { o = vec4(mist, 1.); return; }
+  vec2 p = size - abs(size - abs(at));                           // the meadow, mirrored back in from past its edges
   float px = 1. / (zoom * dpr);
   vec2 q = p + seed;                                              // the same noise, moved for each meadow
 
@@ -232,10 +237,7 @@ void main() {
     col = mix(col, min(shallowC * 1.1 + 0.04, 1.), open * 0.3 * (1. - smoothstep(0.5, 0.72, F.g)));
   }
 
-  if (below > 0.) {
-    // darker the further, all the way at the furthest the camera may look (past: CSS pixels)
-    col = mix(col, vec3(40., 50., 20.) / 255., mix(0.12, 0.4, clamp(below / max(past + 8., 40.), 0., 1.)));
-  }
+  col = mix(col, mist, smoothstep(-3., 6., past + 6. * (fbm(at * 0.04 + 900.) - 0.5)));   // wavering, and before the mirror's crease shows
   o = vec4(col, 1.);
 }`;
 
@@ -294,20 +296,19 @@ function set(name, data) {
 const PAD = 64;
 let last = null, stale = true, busy = 0, panned = -1e9;   // busy: how often lately more than the camera moved
 const NEAR = { snow: 0.004, damp: 0.002, ice: 0.004, cold: 0.004, lx: 0.08, ly: 0.08 };
-const EXACT = ['width', 'height', 'zoom', 'dpr', 'past'];
+const EXACT = ['width', 'height', 'zoom', 'dpr'];
 const was = { ox: 0, oy: 0 }, view = { x: 0, y: 0 };
 function steady(u) {                                    // all but where the camera is
   if (stale || !last || u.seed[0] !== last.seed[0] || u.seed[1] !== last.seed[1]) return false;
   for (const k of EXACT) if (u[k] !== last[k]) return false;
   for (const k in NEAR) if (Math.abs(u[k] - last[k]) > NEAR[k]) return false;
-  for (const k of ['low', 'high', 'sand']) for (let i = 0; i < 3; i++) if (Math.abs(u[k][i] - last[k][i]) > 0.5) return false;
+  for (const k of ['low', 'high', 'sand', 'fog']) for (let i = 0; i < 3; i++) if (Math.abs(u[k][i] - last[k][i]) > 0.5) return false;
   return true;
 }
 const within = (d, pad, dpr) => d === 0 || Math.abs(d) <= pad - 1 / dpr;
 
 //   width, height   the screen, in the canvas's pixels
 //   zoom, ox, oy    CSS pixels a tile, and where the meadow's corner lands
-//   past            how far past the meadow's bottom edge the camera may look, in CSS pixels
 //   the rest        see the uniforms in the shader
 function draw(u) {
   const now = performance.now();
@@ -325,8 +326,8 @@ function draw(u) {
   gl.viewport(0, ch - u.height - 2 * m, u.width + 2 * m, u.height + 2 * m);   // the canvas's top left
   gl.uniform1f(U.top, ch);
   gl.uniform2f(U.off, u.ox + pad, u.oy + pad); gl.uniform2fv(U.seed, u.seed);
-  for (const k of ['past', 'zoom', 'dpr', 'snow', 'damp', 'lx', 'ly', 'ice', 'cold']) gl.uniform1f(U[k], u[k]);
-  for (const k of ['low', 'high', 'sand']) gl.uniform3fv(U[k], u[k].map(v => v / 255));
+  for (const k of ['zoom', 'dpr', 'snow', 'damp', 'lx', 'ly', 'ice', 'cold']) gl.uniform1f(U[k], u[k]);
+  for (const k of ['low', 'high', 'sand', 'fog']) gl.uniform3fv(U[k], u[k].map(v => v / 255));
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   last = { ...u, pad }; stale = false; view.x = view.y = m;
   return true;
