@@ -927,7 +927,7 @@ function iceTick(w, dt) {
 function breakUp(w) {
   const fell = [], drowned = [];
   for (const c of w.creatures) {
-    if (!c.alive || c.hidden || c.sp.flies || w.water[idx(c.x, c.y)] !== DEEP) continue;
+    if (!c.alive || c.hidden || c.held || c.sp.flies || w.water[idx(c.x, c.y)] !== DEEP) continue;
     if (growth(w, c) < 0.5) { die(w, c, 'ice'); drowned.push(c); continue; }
     const at = nearestFooting(w, c.x, c.y);
     c.x = at.x; c.y = at.y; c.target = null; c.detour = 0;
@@ -1740,7 +1740,7 @@ function fireTick(w, dt) {
     }
   }
   for (const c of w.creatures) {                              // too slow, or asleep in the open
-    if (c.alive && !c.hidden && w.fire[idx(c.x, c.y)]) die(w, c, 'fire');
+    if (c.alive && !c.hidden && !c.held && w.fire[idx(c.x, c.y)]) die(w, c, 'fire');
   }
   tidyTrees(w);                                              // the young trees it took
   if (!w.burning.length) { emit(w, { type: 'fireout', burned: w.blaze, trees: w.blazeTrees }); w.blaze = 0; }
@@ -1779,7 +1779,7 @@ function buildGrid(w) {
   all.n.fill(0);
   for (const s in w.grids) w.grids[s].n.fill(0);
   for (const c of w.creatures) {
-    if (!c.alive || c.hidden) continue;
+    if (!c.alive || c.hidden || c.held) continue;           // (one the player holds up is out of everyone's reach)
     const k = clamp((c.y / CELL) | 0, 0, GH - 1) * GW + clamp((c.x / CELL) | 0, 0, GW - 1);
     const mine = w.grids[c.species];
     all.cells[k][all.n[k]++] = c;
@@ -2526,7 +2526,7 @@ function sicknessTick(w) {
     if (w.tick >= c.sick) { getBetter(w, c); continue; }
     const weak = c.energy < WEAK * c.maxEnergy || seasonOf(w.tick) === 3;
     if (w.rng.next() < SICK_DEATH * day * guard(c) * (weak ? 2 : 1)) { die(w, c, 'sickness'); continue; }
-    if (!c.hidden) forEachNear(w, c.x, c.y, CONTACT, pass, 'rabbit');
+    if (!c.hidden && !c.held) forEachNear(w, c.x, c.y, CONTACT, pass, 'rabbit');
   }
   w.sick = sick;
   if (!sick && w.count.rabbit && w.tick >= CALM_YEARS * YEAR && w.rng.next() < FIRST_CASE * crowd * day) {
@@ -4872,6 +4872,7 @@ function step(w) {
   for (let i = 0; i < list.length; i++) {
     const c = list[i];
     if (!c.alive) continue;
+    if (c.held) { lifeTick(w, c); continue; }               // dangling from the player's hand: it only waits
     if (c.species === 'rabbit') rabbitTick(w, c);
     else if (c.species === 'fox') foxTick(w, c);
     else if (c.species === 'bee') beeTick(w, c);
@@ -4980,6 +4981,7 @@ function unpackWorld(kept) {
   const fresh = webStats();                                  // (kept before the food web's counters)
   for (const k in fresh) w.stats[k] ??= fresh[k];
   w.stats.remains.crows ??= 0;
+  for (const c of w.creatures) delete c.held;                // (kept while the player held one up)
   w.grid = makeGrid(); w.grids = perKind(makeGrid); w.events = []; w.newborn = [];
   buildGrid(w);
   return w;
@@ -5010,6 +5012,23 @@ function lockSky(w, on) { w.skyLocked = on; }
 
 function zap(w, x, y) { if (walkable(w, x, y)) strike(w, x, y); }
 
+// The player picks an animal up (game.js): while held (c.held) it does nothing and nobody can see it, so a
+// fox after it, an owl dropping on it, a crow chasing it lose it now. game.js moves it about under the hand.
+function lift(w, c) {
+  c.held = true; c.sleeping = false;
+  for (const o of w.creatures) if (o.targetId === c.id) { o.targetId = 0; o.target = null; o.mode = 'wander'; }
+}
+
+// And puts it down: on the nearest dry footing (a flier anywhere), with whatever it was up to forgotten.
+function putDown(w, c, x, y) {
+  delete c.held;
+  const at = c.sp.flies ? { x: clamp(x, 0.5, W - 0.5), y: clamp(y, 0.5, H - 0.5) } : walkable(w, x, y) ? { x, y } : nearestFooting(w, x, y);
+  c.x = at.x; c.y = at.y;
+  c.mode = 'wander'; c.target = null; c.targetId = 0; c.timer = 0; c.perch = null; c.rustle = null; c.detour = 0;
+  note(w, c, '🫳', 'Picked up by a giant hand, and set down somewhere else');
+  return at;
+}
+
 // A wall of fire along a stroke. It burns long, grass or none, and spreads like any fire.
 function burnLine(w, x0, y0, x1, y1) {
   const n = Math.ceil(Math.hypot(x1 - x0, y1 - y0) * 2);
@@ -5026,6 +5045,8 @@ function burnLine(w, x0, y0, x1, y1) {
 
 function mood(w, c) {
   if (!c.alive) return { emoji: '👻', text: c.story[c.story.length - 1].text };
+  if (c.held) return c.species === 'bee' ? { emoji: '😠', text: 'Buzzing crossly in your fingers' }
+    : c.sp.flies ? { emoji: '😠', text: 'Flapping crossly, held by the scruff' } : { emoji: '😳', text: 'Dangling in the air, legs going' };
   const other = w.byId.get(c.targetId) || w.byId.get(c.threatId);
   const e = c.energy / c.maxEnergy;
   const storm = w.weather.kind === 'storm' && !isNight(w.tick);
@@ -5072,7 +5093,7 @@ function mood(w, c) {
 const api = {
   W, H, TPD, SHALLOW, DEEP, SEASON_DAYS, YEAR_DAYS, SEASONS, SPECIES, GENES, COATS, GROUND, WEATHER,
   createWorld, step, clock, isNight, phaseOf, seasonOf, mood, ageDays, growth, isAdult, patchFresh,
-  addCreature, paintGrass, setSky, lockSky, zap, burnLine, traitMeans, walkable, packWorld, unpackWorld,
+  addCreature, paintGrass, setSky, lockSky, zap, burnLine, lift, putDown, traitMeans, walkable, packWorld, unpackWorld,
   coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT, KINDS,
   TERRAIN, drawnToLink, drawnFromLink, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE,

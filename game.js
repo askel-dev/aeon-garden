@@ -1045,7 +1045,8 @@ function render(now) {
     const [sx, sy] = screenOf(c);
     if (!visible(sx, sy, 60)) continue;
     const it = { y: c.y + (c.mode === 'dance' ? DANCE_FRONT : c.species === 'owl' && c.mode !== 'gulp' ? OWL_FRONT : 0), c, sx, sy };
-    items.push(it); shown.push(it);
+    items.push(it);
+    if (!c.held) shown.push(it);                           // (one held up has its shadow here, and is drawn last, in the hand)
   }
   items.sort((a, b) => a.y - b.y);
   // Shadows first, all together, so a tree's shadow never lands on a rabbit behind it.
@@ -1058,6 +1059,8 @@ function render(now) {
     if (it.d) (it.d.hive ? drawBeeTree : drawDecor)(it.d, it.sx, it.sy, now, ck);
     else if (it.h) drawSwarm(it.h, it.sx, it.sy);
     else if (it.rustle) drawRustle(it.rustle, it.to, it.sx, it.sy, z);
+    else if (it.c.held) continue;
+    else if (falls.size && falls.has(it.c)) drawFalling(it.c, falls.get(it.c), it.sx, it.sy, now);
     else drawCreature(it.c, it.sx, it.sy, now);
   }
   drawFallingLeaves(now);
@@ -1106,6 +1109,7 @@ function render(now) {
 
   drawEffects(now);
   drawZaps(now);
+  if (held) drawHeld(now);
   if (sel) drawSelectionOver(sel, now);
   if (ui.picked) drawPickedOver();
   const hov = world.byId.get(ui.hoverId);
@@ -1972,7 +1976,7 @@ function drawSelectionUnder(c, now) {
     ctx.restore();
   }
   // How far it can see.
-  if (!c.hidden) {
+  if (!c.hidden && !c.held) {
     ctx.save();
     ctx.setLineDash([6, 6]);
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
@@ -2001,6 +2005,7 @@ function drawSelectionOver(c, now) {
     ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ox, oy); ctx.stroke();
     ctx.restore();
   }
+  if (c.held && held) { const [hx, hy] = heldAt(held, now); drawLabel(c.name, hx, hy + creaturePx(c) * 0.55 + 6); return; }
   const label = c.hidden ? `${c.name} is ${c.species === 'crow' ? 'in the nest' : c.species === 'owl' ? 'in the hollow' : `inside the ${c.species === 'bee' ? 'hive' : 'burrow'}`}` : c.name;
   drawLabel(label, sx, sy + (c.hidden ? cam.zoom : creaturePx(c) * 0.55) + 6);
 }
@@ -2052,7 +2057,7 @@ function drawDecorShadow(d, sx, sy, sn) {
 // pouncing fox than a flier, so the leap reads.
 function drawCreatureShadow(c, sx, sy, now, sn) {
   if (wading(c)) return;
-  const px = creaturePx(c), lift = 1 - Math.min(c.sp.flies ? 0.8 : 0.5, liftOf(c, px, now) / px);
+  const px = creaturePx(c), lift = c.held ? 0.55 : 1 - Math.min(c.sp.flies ? 0.8 : 0.5, liftOf(c, px, now) / px);
   const a = 0.14 + 0.16 * Math.max(0, sn.a), off = Math.max(0, sn.a) * sn.lean * px * 0.2;
   ctx.fillStyle = `rgba(40, 50, 20, ${a * lift})`;
   ctx.beginPath();
@@ -5511,6 +5516,7 @@ canvas.addEventListener('pointerdown', e => {
   if (ui.ring) { closeRing(); return; }
   if ($('#toolbar').classList.contains('open')) { toggleTools(false); return; }   // that tap only folds the tools away
   if (e.button === 2 || (e.ctrlKey && e.pointerType === 'mouse')) return;   // that's the ring menu
+  if (held) return;                       // another finger, while one holds an animal up
   canvas.setPointerCapture(e.pointerId);
   fingerTap = e.pointerType === 'touch';
   flick.vx = flick.vy = 0;
@@ -5518,14 +5524,16 @@ canvas.addEventListener('pointerdown', e => {
   if (fingerTap) fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (fingers.size >= 2) { startPinch(); return; }
   drag = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y, moved: false, paint: (ui.tool === 'grass' || ui.tool === 'fire') && e.button === 0,
-    t: e.timeStamp, lx: e.clientX, ly: e.clientY, vx: 0, vy: 0 };
+    t: e.timeStamp, lx: e.clientX, ly: e.clientY, vx: 0, vy: 0, id: e.pointerId,
+    grab: ui.tool === 'look' && e.button === 0 && !LAB ? grabAt(e.clientX, e.clientY) : null };   // dragged, it's picked up
   if (drag.paint) paintAt(e.clientX, e.clientY);
   else if (fingerTap && !LAB) {
     const d = drag;
     holdTimer = setTimeout(() => {
       if (drag !== d || d.moved || fingers.size !== 1) return;
       drag = null;                        // lifting the finger now is no tap
-      openRing(d.x, d.y);
+      if (d.grab && d.grab.alive && !d.grab.hidden) pickUp(d.grab, d.x, d.y, d.id);   // held on an animal: up it comes
+      else openRing(d.x, d.y);
     }, HOLD_MS);
   }
 });
@@ -5533,6 +5541,7 @@ canvas.addEventListener('pointermove', e => {
   if (fingers.has(e.pointerId)) fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (pinch) { movePinch(); return; }
   if (intro.on) return;
+  if (held) { if (e.pointerId === held.id) { held.sx = e.clientX; held.sy = e.clientY; } return; }
   if (!drag) {
     const c = creatureAt(e.clientX, e.clientY);
     ui.hoverId = c ? c.id : 0;
@@ -5541,6 +5550,7 @@ canvas.addEventListener('pointermove', e => {
   }
   let dx = e.clientX - drag.x, dy = e.clientY - drag.y;
   if (!drag.moved && Math.abs(dx) + Math.abs(dy) > (e.pointerType === 'touch' ? 10 : 4)) {
+    if (drag.grab && drag.grab.alive && !drag.grab.hidden) { pickUp(drag.grab, e.clientX, e.clientY, e.pointerId); drag = null; return; }
     drag.moved = true;
     if (!drag.paint) { drag.x = e.clientX; drag.y = e.clientY; dx = dy = 0; }   // start from here, no jump
   }
@@ -5560,6 +5570,7 @@ canvas.addEventListener('pointermove', e => {
   }
 });
 canvas.addEventListener('pointerup', e => {
+  if (held && e.pointerId === held.id) { fingers.delete(e.pointerId); letGo(); return; }
   if (liftFinger(e)) return;
   canvas.classList.remove('dragging');
   if (drag && !drag.moved) click(e.clientX, e.clientY);
@@ -5569,6 +5580,7 @@ canvas.addEventListener('pointerup', e => {
   drag = null;
 });
 canvas.addEventListener('pointercancel', e => {
+  if (held && e.pointerId === held.id) { fingers.delete(e.pointerId); letGo(); return; }
   if (liftFinger(e)) return;
   canvas.classList.remove('dragging');
   drag = null;
@@ -5592,6 +5604,121 @@ canvas.addEventListener('wheel', e => {
     zoomAt(e.clientX, e.clientY, cam.zoom * Math.exp(-e.deltaY * (e.ctrlKey ? 0.012 : 0.0018)));
   }
 }, { passive: false });
+
+// ------------------------------------------------------------------ picking an animal up
+//
+// With Look in hand, press on an animal and drag (or hold a finger on it) and it's picked up by the scruff:
+// it dangles under the hand, swings as the hand moves, kicks now and then, and drops where you let go (sim.js
+// lift, putDown). Its place in the sim is the ground under it, so the camera, its trail and its kits go along.
+const HELD_UP = 1.6;                 // its spot on the ground is this far below the hand, in its size
+const HANG = 0.42;                   // and the middle of it this far, from the scruff
+const SWING = (TAU / 0.8) ** 2;      // a swing every 0.8 s or so
+const SWING_DAMP = 2.4;              // how fast a swing dies down
+const SWING_MAX = 1.1;               // radians: it never swings up over the hand
+const LIFT_MS = 150, FALL_MS = 280;  // up into the hand, and down again (a flier glides down, twice as slow)
+const BOUNCE = 0.35;                 // a landing hop, as a share of the fall's time
+let held = null;                     // { c, id (the pointer), sx, sy (the hand), lx, ly, vx, vy, a (its swing), va, t0, from, follow }
+const falls = new Map();             // just let go: { t0, dx, h (tiles off its landing spot), a (its swing) }
+
+// The animal under a press: on its body as drawn, not the wider reach of a click, so a pan from near one stays a pan.
+function grabAt(sx, sy) {
+  let best = null, bd = Infinity;
+  const now = performance.now();
+  for (const c of world.creatures) {
+    if (c.hidden || !c.alive) continue;
+    const [x, y] = screenOf(c), px = creaturePx(c), r = Math.max(fingerTap ? 16 : 10, px * 0.5);
+    const d = (x - sx) ** 2 + (y - liftOf(c, px, now) - sy) ** 2;
+    if (d < r * r && d < bd) { best = c; bd = d; }
+  }
+  return best;
+}
+
+function pickUp(c, sx, sy, id) {
+  const now = performance.now(), px = creaturePx(c), [x, y] = screenOf(c);
+  held = { c, id, sx, sy, lx: sx, ly: sy, vx: 0, vy: 0, a: 0, va: 0, t0: now, from: [x, y - liftOf(c, px, now)],
+    follow: ui.follow && ui.selectedId === c.id };
+  ui.follow = false;                         // the camera stays put while you carry it about
+  ui.hoverId = 0; ui.hoverHive = null;
+  falls.delete(c);
+  S.lift(world, c);
+  canvas.classList.add('dragging');
+  clearTimeout(holdTimer);
+  hear('release', c.x, c.y, { species: c.species });
+  tried('carry');
+}
+
+function letGo() {
+  const h = held, c = h.c;
+  held = null;
+  canvas.classList.remove('dragging');
+  if (!c.alive) return;
+  const [x, y] = heldAt(h, performance.now()), wx = c.x, wy = c.y;
+  const at = S.putDown(world, c, wx, wy), [lx, ly] = toScreen(at.x, at.y);
+  falls.set(c, { t0: performance.now(), dx: (x - lx) / cam.zoom, h: (ly - y) / cam.zoom, a: h.a });
+  if (h.follow && ui.selectedId === c.id) ui.follow = true;
+  renderInspector();
+}
+
+// Where the middle of a held animal is on screen, and the scruff it hangs from.
+function heldAt(h, now) {
+  const px = creaturePx(h.c), u = clamp((now - h.t0) / LIFT_MS, 0, 1), e = 1 - (1 - u) ** 3;
+  const hx = lerp(h.from[0], h.sx, e), hy = lerp(h.from[1] - px * HANG, h.sy, e);
+  return [hx - Math.sin(h.a) * px * HANG, hy + Math.cos(h.a) * px * HANG, hx, hy];
+}
+
+// Each frame: the hand's speed, and the swing it gives. It hangs like a pendulum from the hand, pushed the other way
+// as the hand speeds up, and its spot in the sim is the ground below it.
+function heldFrame(dt) {
+  const h = held, c = h.c;
+  if (!c.alive) { held = null; canvas.classList.remove('dragging'); return; }
+  if (dt > 0) {
+    const k = Math.min(1, dt * 25), vx = h.vx, vy = h.vy;
+    h.vx += ((h.sx - h.lx) / dt - h.vx) * k; h.vy += ((h.sy - h.ly) / dt - h.vy) * k;
+    h.lx = h.sx; h.ly = h.sy;
+    const ax = (h.vx - vx) / dt, L = Math.max(24, creaturePx(c) * HANG);
+    h.ay = (h.vy - vy) / dt;
+    for (let n = Math.ceil(dt * 240), i = 0; i < n; i++) {
+      const s = dt / n;
+      h.va += (-SWING * Math.sin(h.a) + ax / L * 0.35 * Math.cos(h.a) - SWING_DAMP * h.va) * s;
+      h.a = clamp(h.a + h.va * s, -SWING_MAX, SWING_MAX);
+    }
+  }
+  const [wx, wy] = toWorld(h.sx, h.sy + creaturePx(c) * HELD_UP);
+  c.x = clamp(wx, 0.5, S.W - 0.5); c.y = clamp(wy, 0.5, S.H - 0.5);
+  if (Math.abs(h.vx) > 30) c.facing = h.vx > 0 ? 1 : -1;     // it looks the way it's carried
+}
+
+// Kicking its legs, a few times a second in fits; a bee buzzes, a bird flaps.
+function kickOf(c, now) {
+  if (c.species === 'bee') return Math.sin(now / 18) * 0.06;
+  const fit = Math.max(0, Math.sin(now / 520 + c.id * 1.3)) ** 3;
+  return Math.sin(now / 55 + c.id) * 0.12 * fit;
+}
+
+function drawHeld(now) {
+  const h = held, c = h.c, px = creaturePx(c), [, , hx, hy] = heldAt(h, now);
+  const stretch = 1.06 + clamp(-(h.ay || 0) * 0.00002, -0.1, 0.14);   // hanging, it stretches; jerked up, more
+  const art = c.species === 'crow' ? CROW_ARTS[2 + (((now / CROW_BEAT) | 0) & 1)] : c.sp.emoji;
+  ctx.save();
+  ctx.translate(hx, hy);
+  ctx.rotate(h.a + kickOf(c, now));
+  drawEmoji(art, 0, px * HANG, px, { tint: furTint(c), coat: coatLook(c), flip: flipOf(c), squash: stretch });
+  ctx.restore();
+}
+
+// Let go, it drops to its spot and hops once as it lands, coming upright on the way. A flier glides down.
+function drawFalling(c, f, sx, sy, now) {
+  const ms = c.sp.flies ? FALL_MS * 2 : FALL_MS, u = (now - f.t0) / ms, z = cam.zoom;
+  if (u >= 1 + (c.sp.flies ? 0 : BOUNCE)) { falls.delete(c); drawCreature(c, sx, sy, now); return; }
+  const k = u < 1 ? (c.sp.flies ? 1 - (1 - u) ** 2 : u * u) : 1;
+  const hop = u < 1 ? f.h * z * (1 - k) : Math.sin(Math.PI * (u - 1) / BOUNCE) * Math.min(f.h * z * 0.15, creaturePx(c) * 0.25);
+  ctx.save();
+  ctx.translate(sx + f.dx * z * (1 - k), sy - hop);
+  ctx.rotate(f.a * (1 - k));
+  drawCreature(c, 0, 0, now);
+  ctx.restore();
+  if (u >= 1 && !f.landed) { f.landed = true; chime('click'); }
+}
 
 function click(sx, sy) {
   const [wx, wy] = toWorld(sx, sy);
@@ -6170,6 +6297,7 @@ const TRIES = [                          // what to try, a hint, and what it say
   { k: 'fox', e: '🦊', text: 'Let a fox loose by the rabbits', hint: 'They know what to do.', said: 'Run, rabbits!' },
   { k: 'sky', e: '🌦️', text: 'Change the weather', hint: 'A heatwave dries the grass out for a fire.' },
   { k: 'look', e: '🌳', text: 'Click a tree, a hive or a burrow', hint: 'Everything here has a story.', said: 'Rocks, flowers and water have theirs too.' },
+  { k: 'carry', e: '🫳', text: 'Pick up an animal and carry it', hint: 'Press on it and drag. On a phone, hold a finger on it.', said: 'Mind where you put it down.' },
   { k: 'fast', e: '⏩', text: 'Watch a year go by at 60×', hint: 'The rabbits boom and crash.', said: 'The meadow keeps going while you’re away, too.' },
   { k: 'stats', e: '📊', text: 'Look at the graphs', hint: 'Every birth, death and fire is counted.', said: 'The records keep the meadow’s oldest and biggest.' },
 ];
@@ -6227,7 +6355,7 @@ function tried(k, said) {
 // A tap on a line puts that thing in your hand.
 function tryThing(k) {
   if (k === 'zap' || k === 'fire' || k === 'fox') { if (ui.tool !== k) setTool(k); }
-  else if (k === 'look') setTool('look');
+  else if (k === 'look' || k === 'carry') setTool('look');
   else if (k === 'sky') toggleSkyMenu(true);
   else if (k === 'fast') setSpeed(60);
   else if (k === 'stats') toggleStats(true);
@@ -6325,7 +6453,7 @@ const idle = { on: false, since: 0, shot: null, next: null, dipAt: 0, news: null
 const between = (a, b) => a + Math.random() * (b - a);
 const anyOf = a => a.length ? a[Math.floor(Math.random() * a.length)] : null;
 
-const idleMayStart = now => !idle.on && now - lastInput > IDLE_MS && ui.speed > 0 && !ui.hush && !LAB && !calm && !document.hidden
+const idleMayStart = now => !idle.on && !held && now - lastInput > IDLE_MS && ui.speed > 0 && !ui.hush && !LAB && !calm && !document.hidden
   && !askOpen() && !awayOpen() && !ui.selectedId && !ui.picked && !ui.ring && !ui.stats.open && !webOpen() && !ui.newsOpen && !ui.sky.menu
   && $('#more-menu').classList.contains('hidden') && !homeOpen() && !$('#toolbar').classList.contains('open');
 
@@ -6787,7 +6915,7 @@ for (const type of ['pointerdown', 'pointermove', 'wheel', 'keydown', 'resize'])
 function resting(now) {
   const still = cam.x === camWas.x && cam.y === camWas.y && cam.zoom === camWas.zoom;
   camWas.x = cam.x; camWas.y = cam.y; camWas.zoom = cam.zoom;
-  return still && ui.speed === 0 && !intro.on && !LAB && !ui.effects.length
+  return still && ui.speed === 0 && !intro.on && !LAB && !ui.effects.length && !held && !falls.size
     && now - lastInput > WOKEN_MS && now - ui.sky.boom > WOKEN_MS;
 }
 
@@ -6820,6 +6948,7 @@ function frame(now) {
       if (ui.trail.length > 160) ui.trail.shift();
     }
   }
+  if (held) heldFrame(dt);
   if (sel && ui.follow) {
     const k = 1 - Math.pow(0.001, dt);
     const gx = sheet ? sel.x + (sheet.right - sheet.left) / 2 / cam.zoom : sel.x;

@@ -19,6 +19,11 @@ told to just do it.
 - `game.js`: drawing, UI, news feed, the inspector, the optional Ollama diary. The inspector shows
   animals and every other thing you click (hives, trees, rocks, remains, burrows, flowers, fields, water): each
   kind is an entry in `THINGS`, saying how to find one on screen and what its panel shows.
+  With Look in hand, a press on an animal dragged (or a finger held on it) picks it up by the scruff (`pickUp`,
+  `grabAt`: on its body as drawn, so a pan from near one stays a pan): it dangles from the hand as a pendulum the
+  hand's speeding up swings (`heldFrame`, `drawHeld`), kicks in fits, and drops with a hop where you let go
+  (`letGo`, `drawFalling`). In the sim (`lift`, `putDown`) a held one (`c.held`) skips its turn and is out of the
+  grid, so nothing hunts it; its place is the ground under the hand, and it lands on the nearest dry footing.
   The tab's icon follows the season and the part of day (`updateFavicon`, at most once a second), and
   the news log dates each line with a season chip (`seasonChip`).
   A first visit (or `?intro`) gets a short welcome card, then the intro (`startIntro`, `introFrame`): an
