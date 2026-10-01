@@ -1006,7 +1006,7 @@ function render(now) {
   drawWaves(now);
   drawShore(z, ox, oy, ck.season);
   drawPlants(z, ox, oy, ck.season);                  // over the waves, which can pass a flower by the water
-  drawVoles(now, z);
+  if (z >= 6) drawDashes(now, z);                    // voles a fox or an owl missed
   drawPond(now, z);
 
   // Burrows, drawn by hand: some browsers clip the 🕳️ glyph in half.
@@ -1037,7 +1037,7 @@ function render(now) {
   const shown = [];
   for (const c of world.creatures) {
     if (c.hidden || !c.alive) continue;
-    if (c.species === 'fox') {                             // mousing: the rustle it's after
+    if (c.species === 'fox' || c.species === 'owl') {      // hunting voles: the rustle it's after
       watchLeap(c, now);
       const to = rustleOf(c);
       if (to) { const [rx, ry] = toScreen(to.x, to.y); if (visible(rx, ry, 30)) items.push({ y: to.y, rustle: c, to, sx: rx, sy: ry }); }
@@ -1410,7 +1410,7 @@ function drawCreature(c, sx, sy, now) {
   drawEmoji(c.species === 'crow' ? crowArt(c, hop, px, now) : c.sp.emoji, sx, y, px, {   // feet stay on the ground
     tint: furTint(c), coat: coatLook(c), flip: flipOf(c), squash: low,
   });
-  if (c.mode === 'gulp' && c.species === 'fox') drawCatch(c, sx, y, px);
+  if (c.mode === 'gulp' && (c.species === 'fox' || c.species === 'owl' && c.prey !== 'rabbit')) drawCatch(c, sx, y, px);
   if (c.load && c.species === 'bee') drawBaskets(c, sx, y, px);
   if (c.mode === 'sip') drawSipping(c, sx, sy, px, now);
   if (px > 18 && ui.speed > 0 && ui.speed <= 4 && atHole(c)) drawDigging(c, sx, y, px, now);
@@ -1465,8 +1465,8 @@ const pawAt = (g, x, y, s) => fillIn(g, '#8a5a3c', () => {
   ovalAt(g, x, y + s * 0.35, s * 0.5, s * 0.42);
   for (const [tx, ty] of [[-0.58, -0.2], [-0.21, -0.58], [0.21, -0.58], [0.58, -0.2]]) ovalAt(g, x + tx * s, y + ty * s, s * 0.19, s * 0.25, tx * 0.6);
 });
-// A field vole, round and brown and short-tailed, facing left: the mousing bubble's, and the ones that
-// peep out of the grass (paintVole, drawVoles).
+// A field vole, round and brown and short-tailed, facing left: the mousing bubble's, and the one a fox
+// or an owl is after (paintVole, drawRustle).
 const voleAt = g => {
   strokeIn(g, '#7a5a42', 0.08, () => { g.moveTo(0.6, 0.45); g.quadraticCurveTo(0.95, 0.5, 0.9, 0.8); });
   fillIn(g, '#8a6a4e', () => { ovalAt(g, 0.08, 0.25, 0.6, 0.42); ovalAt(g, -0.5, 0.12, 0.34, 0.3, -0.3); });
@@ -3202,37 +3202,11 @@ function drawEffects(now) {
 
 // ------------------------------------------------------------------ voles
 //
-// The sim keeps voles as a number on each tile (w.voles), too many and too small to follow. So now and
-// then one pops up out of the long grass for a moment where they're thick, and ducks back. Only a look:
-// each frame one spot on screen is tried, likelier to show a vole the more live there, and the vole (the
-// painted one of the mousing bubble, voleAt) comes from the sprite cache, its top part only, rising out of
-// the grass line. A fixed pool, nothing kept.
-const PEEPS = 8;                   // most up at once
-const PEEP_MS = 1300;              // how long one is up
-const PEEP_ODDS = 0.05;            // odds a try where they're thickest shows one (less as they thin)
-const PEEP_SIZE = 0.5;             // of a rabbit
+// The sim keeps voles as a number on each tile (w.voles), too many and too small to follow, so a vole only
+// shows when something's after it: a fox listening or leaping, an owl dropping on it (drawRustle below).
+// The vole (the painted one of the mousing bubble, voleAt) comes from the sprite cache, its top part only,
+// rising out of the grass line.
 const PEEP_FOOT = 0.76, PEEP_BODY = 0.41;   // in the sprite, from the top: where its feet are, and how tall it is
-const peeps = { x: new Float32Array(PEEPS), y: new Float32Array(PEEPS), t0: new Float64Array(PEEPS).fill(-1e9), next: 0 };
-
-function drawVoles(now, z) {
-  if (z < 10) return;                                   // too small to make out
-  if (ui.speed > 0 && world.snow < 0.3) {               // under the snow they keep to their tunnels
-    const x = cam.x + (Math.random() - 0.5) * vw / z, y = cam.y + (Math.random() - 0.5) * vh / z, k = peeps.next;
-    const n = x >= 0 && y >= 0 && x < S.W && y < S.H ? world.voles[(y | 0) * S.W + (x | 0)] / S.VOLE_K : 0;
-    if (now - peeps.t0[k] > PEEP_MS && Math.random() < PEEP_ODDS * n * n) {
-      peeps.x[k] = x; peeps.y[k] = y; peeps.t0[k] = now; peeps.next = (k + 1) % PEEPS;
-    }
-  }
-  let s = null;
-  for (let k = 0; k < PEEPS; k++) {
-    const a = (now - peeps.t0[k]) / PEEP_MS;
-    if (a >= 1) continue;
-    if (!s) s = sprite('vole:0', Math.max(9, (8 + z) * PEEP_SIZE));
-    const sx = (peeps.x[k] - cam.x) * z + vw / 2, sy = (peeps.y[k] - cam.y) * z + vh / 2;   // (toScreen, without an array)
-    peepAt(s, sx, sy, Math.min(1, 2.5 * Math.sin(Math.PI * a)), false);   // quick up, a look round, quick down
-  }
-  drawDashes(now, z);
-}
 
 // A vole (or a frog) up out of the grass, up of the way, its feet on the grass line at sx, sy.
 function peepAt(s, sx, sy, up, flip) {
@@ -3249,18 +3223,20 @@ function peepAt(s, sx, sy, up, flip) {
   ctx.globalAlpha = 1;
 }
 
-// ------------------------------------------------------------------ a fox mousing
+// ------------------------------------------------------------------ a fox mousing, an owl hunting
 //
 // The sim says where a mousing fox heard the rustle it'll leap at (c.rustle while it listens, c.target in
-// the air, sim.js mouse). There the grass twitches in fits, and as the fox crouches to leap, the vole looks
-// up out of the grass and freezes (a frog, where there are more frogs). The fox comes down on it: caught,
-// it's in the fox's jaws while it gulps it down (drawCatch); missed, it darts off through the grass. Only a
-// look, from sprites in the cache, and a fixed pool for the ones darting off.
+// the air, sim.js mouse), and where an owl drops on one (c.target as it swoops, sim.js owlHunt). There the
+// grass twitches in fits, and as the fox crouches to leap, or the owl comes down, the vole looks up out of
+// the grass and freezes (a frog, where there are more frogs). Caught, it's in the fox's jaws or the owl's
+// beak while it's gulped down (drawCatch); missed, it darts off through the grass. Only a look, from
+// sprites in the cache, and a fixed pool for the ones darting off.
 const CROUCH = 6;                  // ticks before the leap that it crouches, and the vole looks up
 const CROUCH_LOW = 0.12;           // how low it crouches, of its size
 const RUSTLE_SIZE = 0.5;           // the twitching tuft, of a rabbit
 const RUSTLE_PREY = 0.6;           // the vole (or frog) there, of a rabbit
 const RUSTLE_PEEK = 0.35;          // how far up it shows while the grass twitches most
+const OWL_SEEN = 3;                // tiles off: the vole sees the owl coming and looks up
 const DASH_MS = 700;               // a vole the fox missed darting off
 const DASH_LEN = 2;                // tiles, out from under the fox
 const DASHES = 4;
@@ -3268,18 +3244,20 @@ const dashes = { x: new Float32Array(DASHES), y: new Float32Array(DASHES), dx: n
   t0: new Float64Array(DASHES).fill(-1e9), frog: new Uint8Array(DASHES), next: 0 };
 const leaps = new WeakMap();       // a fox in the air: where it'll land, to see if it missed once it's down
 
-// Where a mousing fox heard its rustle or is leaping to (null: it isn't).
-const rustleOf = c => c.species !== 'fox' ? null : c.mode === 'pounce' ? c.target : c.mode === 'mouse' && !c.target ? c.rustle || null : null;
+// A fox leaping on a vole, or an owl dropping on one (not on a kit).
+const leaping = c => (c.species === 'fox' ? c.mode === 'pounce' : c.mode === 'swoop' && !c.targetId);
+// Where a mousing fox heard its rustle, or a fox or an owl is coming down (null: it isn't).
+const rustleOf = c => leaping(c) ? c.target : c.species === 'fox' && c.mode === 'mouse' && !c.target ? c.rustle || null : null;
 const frogThere = p => { const i = (p.y | 0) * S.W + (p.x | 0); return world.frogs[i] > world.voles[i]; };
 const crouchOf = c => (c.species === 'fox' && c.mode === 'mouse' && !c.target && c.rustle ? CROUCH_LOW * clamp(1 - (c.timer - acc) / CROUCH, 0, 1) : 0);
 
-// Every frame, for each fox: down from a leap that didn't end in a gulp, the vole darts off from under it.
+// Every frame, for each fox and owl: down from a leap that didn't end in a gulp, the vole darts off from under it.
 function watchLeap(c, now) {
-  if (c.mode === 'pounce') { if (c.target) leaps.set(c, c.target); return; }
+  if (leaping(c)) { if (c.target) leaps.set(c, c.target); return; }
   const to = leaps.get(c);
   if (!to) return;
   leaps.delete(c);
-  if (c.mode !== 'mouse' || ui.speed > 4 || world.snow >= 0.3) return;   // caught it, or too quick to see
+  if (c.mode === 'gulp' || ui.speed > 4 || world.snow >= 0.3) return;   // caught it, or too quick to see
   const k = dashes.next, a = c.heading + (Math.random() - 0.5) * 2;       // on ahead, about
   dashes.x[k] = to.x; dashes.y[k] = to.y; dashes.dx[k] = Math.cos(a) * DASH_LEN; dashes.dy[k] = Math.sin(a) * DASH_LEN * 0.6;
   dashes.t0[k] = now; dashes.frog[k] = frogThere(to) ? 1 : 0; dashes.next = (k + 1) % DASHES;
@@ -3296,10 +3274,10 @@ function drawDashes(now, z) {
   }
 }
 
-// The rustle a fox is listening to, or leaping at: the grass there twitching, and the vole looking up.
+// The rustle a fox is listening to or leaping at, or an owl dropping on: the grass there twitching, and the vole looking up.
 function drawRustle(c, to, sx, sy, z) {
   if (world.snow >= 0.3 || z < 6) return;              // (under the snow, nothing shows)
-  const t = world.tick + acc, left = c.mode === 'pounce' ? 0 : c.timer - acc, px = 8 + z;
+  const t = world.tick + acc, px = 8 + z;
   const tuft = sprite('🌿', px * RUSTLE_SIZE), fit = Math.max(0, Math.sin(t * 0.4 + c.id));
   for (const side of [-1, 1]) {
     ctx.save();
@@ -3308,17 +3286,21 @@ function drawRustle(c, to, sx, sy, z) {
     ctx.drawImage(tuft.canvas, -tuft.size / 2, -tuft.size * 0.8, tuft.size, tuft.size);
     ctx.restore();
   }
-  const up = Math.max(clamp(1 - left / CROUCH, 0, 1), fit > 0.8 ? RUSTLE_PEEK : 0);   // its back now and then, then up it looks
+  const look = c.species === 'owl' ? clamp(1 - Math.hypot(c.x - to.x, c.y - to.y) / OWL_SEEN, 0, 1)
+    : c.mode === 'pounce' ? 1 : clamp(1 - (c.timer - acc) / CROUCH, 0, 1);
+  const up = Math.max(look, fit > 0.8 ? RUSTLE_PEEK : 0);   // its back now and then, then up it looks
   if (up > 0) peepAt(sprite(frogThere(to) ? 'frog:0' : 'vole:0', Math.max(9, px * RUSTLE_PREY)), sx, sy, up, c.x < to.x);
 }
 
-// Caught: the vole (or frog) crosswise in the fox's jaws while it gulps it down, gone at the last.
+// Caught: the vole (or frog) crosswise in the fox's jaws or the owl's beak while it's gulped down, gone at the last.
+// Where in the emoji, of its size, how big, and turned how far: crosswise in a fox's jaws, head first into an owl's beak.
+const MOUTH = { fox: [0.04, 0.3, 0.55, -0.25], owl: [0.06, -0.09, 0.42, 1.35] };
 function drawCatch(c, sx, y, px) {
-  const s = sprite(c.prey === 'frog' ? 'frog:0' : 'vole:0', px * 0.55);
+  const [mx, my, mz, turn] = MOUTH[c.species], s = sprite(c.prey === 'frog' ? 'frog:0' : 'vole:0', px * mz);
   ctx.save();
   ctx.globalAlpha = clamp((c.timer - acc) / 6, 0, 1);
-  ctx.translate(sx + px * 0.04, y + px * 0.3);
-  ctx.rotate(-0.25);
+  ctx.translate(sx + px * mx, y + px * my);
+  ctx.rotate(turn);
   ctx.drawImage(s.canvas, -s.size / 2, -s.size / 2, s.size, s.size);
   ctx.restore();
 }
@@ -3335,7 +3317,7 @@ const POND_TRIES = 3;              // tries a frame
 const SPAWN_MS = [7000, 3500];     // how long a clump of spawn, or some tadpoles, shows
 const HOP_MS = 2600;               // a frog: it sits, hops, sits
 const LILY_MS = 6000;              // and one on a lily pad sits a while
-const FROG_SIZE = 0.5;             // of a rabbit (a vole peeping up is too)
+const FROG_SIZE = 0.5;             // of a rabbit
 const HOP_OFF = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]];
 const pondLife = { x: new Float32Array(POND_SPOTS), y: new Float32Array(POND_SPOTS), dx: new Float32Array(POND_SPOTS), dy: new Float32Array(POND_SPOTS),
   t0: new Float64Array(POND_SPOTS).fill(-1e9), ms: new Float32Array(POND_SPOTS), kind: new Uint8Array(POND_SPOTS), next: 0 };

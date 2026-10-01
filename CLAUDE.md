@@ -180,7 +180,7 @@ A hungry fox with no rabbit in sight goes mousing (`mouse`: it steps softly to w
 then pounces, `mode` 'mouse', 'pounce', 'gulp'); a vole is a snack (`VOLE_ENERGY`), so it takes several. A fox that
 last caught a vole (`c.prey`) sees rabbits only at `MOUSE_EYES` of its sight: that search image is what keeps the
 foxes the voles carry through a rabbit low from eating the last rabbits and dragging the low out. The drawing is a
-look only: now and then a painted vole (`voleAt`, the mousing bubble's) pops up out of the grass where they're thick (`drawVoles`, a fixed pool), and a pounce
+look only, and a vole (`voleAt`, the mousing bubble's) shows only when something is after it; a pounce
 is a high arc (`hopOf`). The fox hears the rustle it'll leap at as it starts listening (`c.rustle`, `listen`), so you
 see it coming: the grass there twitches in fits and the vole's back shows (`drawRustle`, a frog by the water), and as the
 fox crouches (`crouchOf`) the vole looks up and freezes. Caught, it's in the fox's jaws while it gulps (`drawCatch`);
@@ -278,7 +278,8 @@ Tawny owls (`owlTick`): a pair or two (`SPECIES.owl.cap` × `w.room`), drawn as 
 two compete for the hollows. A male moves into his mate's (`mate`); one with no hollow roosts in any big tree and can't
 breed. They sleep in their tree by day (`OWL_WAKE`, `OWL_BED`; `roostTree`, `c.perch`) and hunt from dusk to dawn
 (`owlHunt`): sit on a branch by long grass with voles in (`perchSpot`), listen (`OWL_LISTEN`), drop on a vole
-(`rustle`, then `takeVole`, which the fox's mousing uses too) or now and then on a kit still out at dusk (`OWL_KIT`,
+(`rustle`, then `takeVole`, which the fox's mousing uses too; game.js shows the vole there as it drops, like a fox's
+rustle, and in its beak as it gulps) or now and then on a kit still out at dusk (`OWL_KIT`,
 `KIT_CATCH`), and after a few tries with nothing stirring move on. So owls and foxes share the voles. In spring a pair
 lays only in a year with voles about (`owlReady`, `OWL_BREED`), up to three owlets the more there are (`owlClutch`). The
 owlets stay in the hollow till they fledge (`OWLET_FLEDGE`), keep near mum, and once grown a young female takes a free
