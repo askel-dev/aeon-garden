@@ -5854,15 +5854,17 @@ canvas.addEventListener('wheel', e => {
   e.preventDefault();
   if (intro.on) { endIntro(true); return; }
   closeRing();
-  const pixelPan = !e.ctrlKey && e.deltaMode === 0 && (e.deltaX !== 0 || Math.abs(e.deltaY) < 40);
+  const unit = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? innerHeight : 1;   // Firefox's wheel counts lines (3 a notch, Chrome's 100 px)
+  const ddx = e.deltaX * unit, ddy = e.deltaY * unit;
+  const pixelPan = !e.ctrlKey && e.deltaMode === 0 && (ddx !== 0 || Math.abs(ddy) < 40);
   if (pixelPan) {                     // trackpad two-finger scroll: look around
-    const dx = wholePx(scrollRest.x + e.deltaX), dy = wholePx(scrollRest.y + e.deltaY);
-    scrollRest = { x: scrollRest.x + e.deltaX - dx, y: scrollRest.y + e.deltaY - dy };   // the rest comes next time
+    const dx = wholePx(scrollRest.x + ddx), dy = wholePx(scrollRest.y + ddy);
+    scrollRest = { x: scrollRest.x + ddx - dx, y: scrollRest.y + ddy - dy };   // the rest comes next time
     cam.x += dx / cam.zoom; cam.y += dy / cam.zoom;
     ui.follow = false; clampCam();
   } else {                            // mouse wheel or pinch: zoom
     cam.goal = null;
-    zoomAt(e.clientX, e.clientY, cam.zoom * Math.exp(-e.deltaY * (e.ctrlKey ? 0.012 : 0.0018)));
+    zoomAt(e.clientX, e.clientY, cam.zoom * Math.exp(-ddy * (e.ctrlKey ? 0.012 : 0.0018)));
   }
 }, { passive: false });
 
