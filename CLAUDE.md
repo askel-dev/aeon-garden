@@ -238,17 +238,25 @@ a few birds that fly over everything (`flies: true`), painted in game.js (`paint
 and those with an acorn, the two steps of a walk, asleep on a branch; the 🐦‍⬛ emoji splits in two on older systems, so
 it's only for text). By day they walk about pecking for grubs (`peck`, `grubs`: best on short grass and rich ground, little
 in winter, none under snow): a few steps, a stop to peck, now and then a few hops (`t.stop`, `t.hop`; game.js picks the
-step from where it is, `crowWalks`, `crowHop`), and fly down to
-remains they see or see other crows at (`carrion`, `remainsNear`, `GATHER_SIGHT`), and only really hungry take the
+step from where it is, `crowWalks`, `crowHop`), stepping away from one too close (`CROW_SPACE`), and fly down to
+remains they see, or now and then see other crows at (`carrion`, `remainsNear`, `GATHER_SIGHT`, `GATHER_NOTICE`), a few at
+a time: a crow claims a place there as it sets off (`k.seats`, `freeSeat`, `CARRION_SEATS`), and only really hungry take the
 rabbits' windfalls (`CROW_HUNGRY`). In autumn one that isn't hungry fetches a few acorns or beechnuts from an oak or a
 beech (`d.nuts`, which `seedFall` leaves for them) and buries them one by one out in the open (`cacheNut`, `seedSpot`),
 each a seed in `w.seeds`. It remembers only its last few (`CACHE_MEMORY`) and digs those up if hungry in winter (`unbury`);
 the rest come up as oaks and beeches, so the woods spread with the crows, and a sickness year that feeds them plants oaks.
-At dusk they fly to the roost: a big tree in a grove with room for them (`w.roost`, `pickRoost`), each crow to a seat of
+Each crow keeps its own clock (`ownClock`): it wakes, gathers and goes to roost a little earlier or later than the others.
+Crows that mate stay a pair for life (`c.mate`, `mateOf`, `faithful`), and once they've nested the ground round their nest
+tree is their patch (`patchOf`, `PATCH`): fed, they fly back to it, keep near each other (a crow with no mate flies over to
+the nearest crow instead, `FRIEND_FAR`), and in spring drive other grown crows off it (`drive`). So by day paired crows are
+spread over the meadow, and the young and the unpaired go about in a loose flock. Late in the afternoon they gather on open
+ground by the roost (`gatherSpot`, `GATHER_AT`: setting off in time to get there, one busy with acorns seeing to them first),
+and fly in at dusk. At the roost: a big tree in a grove with room for them (`w.roost`, `pickRoost`), each crow to a seat of
 its own in it or the trees about it, a few to a tree by its size (`roostSeat`, `c.perch`, `PERCHES`, `CROW_SEATS`: side
 and height in the crown), and at dawn each flies off to a spot of its own (`flyOut`). game.js knows where the crown is in
 each kind's painting (`CROWNS`, measured off trees.js) and draws a crow on its seat there (`crowSeat`, `seatShift`),
-swaying with the tree; one 💤 a tree. In spring a mum sits on her eggs high in a tall tree (`nestTree`,
+swaying with the tree; one 💤 a tree, and mates side by side. In flight a crow swings about its way (game.js `weaveOf`).
+In spring a mum sits on her eggs high in a tall tree, night and day (`nestTree`,
 `c.home`) and the chicks stay hidden in the nest till they fledge (`FLEDGE`). A fox that comes close sends them flapping up,
 the others with them (`flapUp`, `caw`), but one busy on the ground may not see it in time: a small meal for the fox
 (`CROW_MEAL`) that changes neither its search image nor its haunt. Foxes don't eat remains (tried: it fed them through the

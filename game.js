@@ -1213,8 +1213,9 @@ function crowSeat(c) {
 }
 // How far across a crow is drawn from where the sim has it: onto its seat, as it comes in to land there.
 const seatShift = c => { const st = crowSeat(c); return st ? (st.dx - (st.x - st.tree.x) * cam.zoom) * (1 - near(c, st, 4)) : 0; };
-const CROW_AIR = new Set(['flap', 'flock', 'love', 'follow']);                               // flying (and 'mob': round an owl)
-const CROW_LANDS = new Set(['remains', 'forage', 'fetch', 'cache', 'apple', 'unbury', 'pool']); // flying there, and down
+const CROW_AIR = new Set(['flap', 'flock', 'love', 'follow', 'drive']);                               // flying (and 'mob': round an owl)
+const CROW_LANDS = new Set(['remains', 'forage', 'fetch', 'cache', 'apple', 'unbury', 'pool', 'gather']); // flying there, and down
+const CROW_WEAVES = new Set(['flap', 'flock', 'remains', 'forage', 'fetch', 'cache', 'apple', 'pool', 'gather', 'roost']);   // on the wing, going somewhere
 const CROW_PECKS = new Set(['peck', 'carrion', 'munch', 'bury', 'unbury', 'tadpole']);       // heads down
 const birdLifts = new WeakMap();
 const near = (c, p, far) => clamp(Math.hypot(p.x - c.x, p.y - c.y) / far, 0, 1);
@@ -1284,20 +1285,22 @@ function crowArt(c, up, px, now) {
 }
 
 // Fliers don't fly straight: they weave a loose figure of eight about their way, half as much
-// when laden. Only in the drawing. It keeps sim time, so it stops with the clock, and its size
-// eases in and out (in c's entry in weaves), so a bee never jumps when she picks a new target.
+// when laden, and a crow in slow wide swings, only on the wing. Only in the drawing. It keeps sim time, so it
+// stops with the clock, and its size eases in and out (in c's entry in weaves), so a bee never jumps when she
+// picks a new target.
 const WEAVE = 0.3, WEAVE_TICKS = 45;               // tiles to each side; ticks per loop
+const CROW_SWING = 2.5;                            // times as slow a loop, for a crow
 const weaves = new WeakMap();
 function weaveOf(c) {
-  const t = world.tick + acc, goal = c.mode === 'home' || c.mode === 'unload' ? c.home
-    : c.mode === 'sip' || c.mode === 'dance' ? null : c.target;
+  const t = world.tick + acc, crow = c.species === 'crow', goal = crow ? CROW_WEAVES.has(c.mode) ? c.mode === 'roost' ? c.perch : c.target : null
+    : c.mode === 'home' || c.mode === 'unload' ? c.home : c.mode === 'sip' || c.mode === 'dance' ? null : c.target;
   const want = goal ? Math.min(1, Math.hypot(goal.x - c.x, goal.y - c.y) / 1.5) * (1 - 0.5 * loadOf(c)) : 0;
   let s = weaves.get(c);
   if (!s) weaves.set(c, s = { amp: want, t, x: 0, y: 0 });
   if (s.t !== t) {
     s.amp += (want - s.amp) * Math.min(1, (t - s.t) / 8);
     s.t = t;
-    const ph = t / WEAVE_TICKS * TAU + c.id;
+    const ph = t / (crow ? WEAVE_TICKS * CROW_SWING : WEAVE_TICKS) * TAU + c.id;
     s.x = WEAVE * s.amp * Math.sin(ph); s.y = WEAVE * 0.6 * s.amp * Math.sin(2 * ph + c.id);
   }
   return s;
@@ -1308,7 +1311,7 @@ function weaveOf(c) {
 const DANCE_FRONT = 0.45, DANCE_SIZE = 1.8;
 function screenOf(c) {
   const p = toScreen(c.x, c.y), z = cam.zoom;
-  if (c.species === 'bee' && !c.hidden) { const s = weaveOf(c); p[0] += s.x * z; p[1] += s.y * z; }   // (crows fly straight)
+  if ((c.species === 'bee' || c.species === 'crow') && !c.hidden) { const s = weaveOf(c); p[0] += s.x * z; p[1] += s.y * z; }
   if (c.species === 'crow') p[0] += seatShift(c);                  // up a tree: onto its seat in the crown
   if (c.mode === 'dance') {
     const [x, y] = danceAt(c.timer + 1);
@@ -3798,7 +3801,7 @@ function handleEvent(e) {
     }
     case 'hatch': {
       hear('birth', e.hive.x, e.hive.y, { species: 'bee', kids: e.kids.length });
-      const t = `🐣 Young bees are hatching in Queen ${esc(e.hive.queen.name)}'s hive.`;
+      const t = `🐣 Young bees are hatching in Queen ${esc(e.queen.name)}'s hive.`;
       addNews(t, 'hatch', 60000);
       break;
     }
@@ -4774,7 +4777,9 @@ function renderInspector() {
   if (c.frogs) chips.push(`🐸 ${c.frogs} ${c.frogs === 1 ? 'frog' : 'frogs'} caught`);
   if (c.escapes) chips.push(`💨 ${c.escapes} narrow ${c.escapes === 1 ? 'escape' : 'escapes'}`);
   if (c.visits) chips.push(`🌼 ${c.visits} ${c.visits === 1 ? 'flower' : 'flowers'} visited`);
-  if (c.species === 'crow' && c.home && c.sex === 'F') chips.push(`🪺 Nests in ${thingLink('tree', c.home.id, c.home.name ? 'the ' + esc(c.home.name) : 'a tall ' + treeName(c.home).toLowerCase())}`);
+  const mate = c.species === 'crow' && c.mate && world.byId.get(c.mate);
+  if (mate) chips.push(mate.alive ? `💞 Paired with ${link(mate)}` : `🥀 Lost its mate ${link(mate)}`);
+  if (c.species === 'crow' && c.home) chips.push(`${c.sex === 'F' ? '🪺 Nests in' : '🌳 Its patch is round'} ${thingLink('tree', c.home.id, c.home.name ? 'the ' + esc(c.home.name) : 'a tall ' + treeName(c.home).toLowerCase())}`);
   if (c.species === 'owl' && c.home && c.home.owl === c.id) chips.push(`🕳️ Nests in the hollow of ${thingLink('tree', c.home.id, c.home.name ? 'the ' + esc(c.home.name) : 'an old oak')}`);
   else if (c.species === 'owl' && c.home) chips.push(`🌳 Lives in the wood round ${thingLink('tree', c.home.id, c.home.name ? 'the ' + esc(c.home.name) : 'an old oak')}`);
   if (c.caches?.length && S.seasonOf(world.tick) >= 2) chips.push(`🌰 Remembers where ${c.caches.length === 1 ? 'one acorn is' : c.caches.length + ' acorns are'} buried`);

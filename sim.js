@@ -1929,6 +1929,7 @@ function makeCreature(w, species, x, y, genes, parents) {
     kids: 0, kills: 0, voles: 0, frogs: 0, prey: '', rustle: null, escapes: 0, visits: 0, load: 0, find: null, story: [],
     sick: 0, immune: 0,   // ticks when the sickness ends, and when immunity does (see sicknessTick)
     caches: null,         // a crow's acorns and beechnuts buried this autumn (cacheNut)
+    mate: 0,              // a crow's mate, for life (by id; mateOf)
     perch: null,          // an owl's branch: where it sits hunting, or sleeps by day (owlTick)
   };
   computeTraits(c);
@@ -2061,7 +2062,7 @@ function seekLove(w, c) {
   if (!partner && (w.tick + c.id) % 10 === 0) {
     // When a species is rare, the few left call louder: search the whole meadow.
     const range = w.count[c.species] < 30 ? 150 : c.sp.mateRange;
-    partner = nearest(w, c, range, c.species, o => o.sex !== c.sex && readyToMate(w, o));
+    partner = nearest(w, c, range, c.species, o => o.sex !== c.sex && readyToMate(w, o) && (c.species !== 'crow' || faithful(w, c, o)));
   }
   if (!partner) { if (c.mode === 'love') c.mode = 'wander'; return false; }
   c.mode = 'love'; c.targetId = partner.id;
@@ -2079,6 +2080,7 @@ function mate(w, a, b) {
   dad.cooldownUntil = w.tick + 0.4 * TPD;
   for (const c of [mum, dad]) { c.mode = 'wander'; c.target = null; c.targetId = 0; }
   if (mum.species === 'owl' && mum.home) dad.home = mum.home;    // he moves into her hollow's wood
+  if (mum.species === 'crow') { mum.mate = dad.id; dad.mate = mum.id; }   // crows pair for life
   note(w, mum, '💕', `Fell in love with ${dad.name}`);
   note(w, dad, '💕', `Fell in love with ${mum.name}`);
   emit(w, { type: 'love', a: mum, b: dad });
@@ -3270,7 +3272,7 @@ function layEggs(w, h) {
   }
   if (!kids.length) return;
   w.stats.births.bee += kids.length;
-  emit(w, { type: 'hatch', hive: h, kids });
+  emit(w, { type: 'hatch', hive: h, queen: h.queen, kids });
 }
 
 // A new queen for an empty hive. She stays inside, so she's a name and genes on the hive, and
@@ -3709,16 +3711,27 @@ function carrionTick(w) {
   w.carcasses = w.carcasses.filter(k => k.meat > 0);
 }
 
-// The nearest remains a crow can see, or further off where other crows are at them. Not where a fox is,
-// nor the last scraps.
+// The nearest remains a crow can see, or (now and then, GATHER_NOTICE) further off where other crows are at
+// them. Not where a fox is, nor the last scraps, nor where there's no room (freeSeat).
 function remainsNear(w, c) {
   let best = null, bd = Infinity;
+  const far = w.rng.next() < GATHER_NOTICE ? GATHER_SIGHT : 0, eyes = c.sight * sky(w).sight;
   for (const k of w.carcasses) {
     if (k.meat < SCRAPS || w.tick - k.fox < FOX_NEAR) continue;
     const d2 = (k.x - c.x) ** 2 + (k.y - c.y) ** 2;
-    if (d2 < bd && d2 < (w.tick - k.fed < CARRION_EVERY ? GATHER_SIGHT : c.sight * sky(w).sight) ** 2) { best = k; bd = d2; }
+    if (d2 < bd && d2 < Math.max(eyes, w.tick - k.fed < CARRION_EVERY ? far : 0) ** 2 && freeSeat(k) >= 0) { best = k; bd = d2; }
   }
   return best;
+}
+
+// A place free at remains k (k.seats: the crows flying to them or eating there, CARRION_SEATS of them), or -1.
+// A place is free again once its crow is off doing something else.
+function freeSeat(k) {
+  for (let i = 0; i < CARRION_SEATS; i++) {
+    const o = k.seats?.[i];
+    if (!o || !o.alive || o.target !== k || (o.mode !== 'remains' && o.mode !== 'carrion')) return i;
+  }
+  return -1;
 }
 
 // ---------------------------------------------------------------- crows
@@ -3758,7 +3771,21 @@ const NUT_LOAD = 5;             // and how many it carries off at a time, in its
 const BURY_TICKS = 15;          // burying one, or digging it up
 const NEST_RANGE = 25;          // how far off a mum looks for a tall tree to nest in
 const FLEDGE = 0.4;             // chicks leave the nest this grown
-const ROOST_AT = 0.66;          // the time of day they fly to the roost (dusk is 0.72)
+const ROOST_AT = 0.66;          // the time of day they fly to the roost (dusk is 0.72), each a little later by its own clock
+const GATHER_AT = 0.55;         // before that they gather on open ground by the roost (gatherSpot), each by its own clock
+const WAKE_AT = 0.01;           // and they wake from sunrise, each by its own clock
+const OWN_CLOCK = 0.05;         // of a day: how far apart the crows' own clocks are (ownClock)
+const GATHER_OUT = 8;           // tiles from the roost the gathering is, towards the middle of the meadow
+const GATHER_NEAR = 6;          // a crow this far from it flies back to the others
+const CROW_SPACE = 1;           // tiles: a crow pecking about steps away from another this close
+const FRIEND_FAR = 6;           // a friendly one with no crow this close flies over to the nearest,
+const FRIEND_GAP = [2, 4];      // and lands this far from it
+const CARRION_SEATS = 4;        // crows at one lot of remains at once; more wait, pecking about, or go elsewhere
+const GATHER_NOTICE = 0.3;      // odds a check that a crow far off notices others at remains
+const PATCH = 12;               // tiles round its nest tree: a pair's own patch, where it forages when it isn't hungry
+const DRIVE_SIGHT = 6;          // in spring a pair drives off another grown crow this close, on its patch,
+const DRIVE_ODDS = 0.5;         // at these odds a check,
+const DRIVE_TICKS = 90;         // chasing it this long at most
 const ROOST_MIDDLE = 15;        // tiles from the middle of the meadow that take one off a roost tree's size
 const ROOST_GROVE = 6;          // tiles round the roost tree: the trees the crows sleep in with it
 const ROOST_ROOM = 24;          // seats in a grove past which more don't make it a better roost
@@ -3803,8 +3830,15 @@ function crowTick(w, c) {
     c.mode = 'wander'; c.target = null;
   }
 
-  // 2. Sleep: from dusk to dawn, and through a storm, at the roost with the others, on a branch of its own.
-  if (ph > ROOST_AT || ph < 0.03 || w.weather.kind === 'storm') {
+  // 2. Sleep: from dusk to dawn, and through a storm, at the roost with the others, on a branch of its own; a
+  // mum on her eggs in her nest. Each keeps its own clock (ownClock), and gathers with the others first.
+  const own = ownClock(c);
+  if (ph > ROOST_AT + own || ph < WAKE_AT + own || w.weather.kind === 'storm') {
+    if (c.pregnantUntil && c.home && standing(c.home)) {
+      c.mode = 'nest';
+      if (go(w, c, c.home.x, c.home.y + 0.1, c.walk)) c.sleeping = true;
+      return;
+    }
     if (c.mode !== 'sleep' || (c.perch && !standing(c.perch.tree))) {
       if (c.mode !== 'roost' || (c.perch && !standing(c.perch.tree))) { c.mode = 'roost'; c.perch = roostSeat(w, c); }
       const p = c.perch || c;
@@ -3815,6 +3849,19 @@ function crowTick(w, c) {
     return;
   }
   if (c.mode === 'sleep' || c.mode === 'roost') { c.perch = null; flyOut(w, c); }
+  const g = w.roost && gatherSpot(w);                  // the gathering: pecking about by the roost (setting off in time to be there)
+  if (g && ph > GATHER_AT + own - Math.sqrt(dist2(c, g)) / (c.walk * TPD) && growth(w, c) >= 0.6 && !c.pregnantUntil
+    && c.mode !== 'fetch' && c.mode !== 'cache' && c.mode !== 'bury') {   // (one busy with acorns sees to them first)
+    if (c.mode === 'gather' && !go(w, c, c.target.x, c.target.y, c.walk)) return;
+    if (c.mode !== 'peck' || (t + c.id) % 10 === 0) {
+      if (dist2(c, g) > GATHER_NEAR ** 2) {
+        const a = w.rng.range(0, Math.PI * 2), r = w.rng.range(0, GATHER_NEAR / 2), x = g.x + Math.cos(a) * r, y = g.y + Math.sin(a) * r;
+        c.mode = 'gather'; c.target = dry(w, x, y) ? { x, y } : g;
+        return;
+      }
+    }
+    return peck(w, c, false);
+  }
 
   // Fledglings keep close to mum.
   if (growth(w, c) < 0.6) {
@@ -3824,7 +3871,7 @@ function crowTick(w, c) {
 
   // 3. Love. Expecting, a mum sits in the nest (unless she's hungry): the tallest tree near where she is.
   if (c.pregnantUntil && e > 0.4) {
-    if (!c.home || !standing(c.home)) c.home = nestTree(w, c);
+    if (!c.home || !standing(c.home)) { c.home = nestTree(w, c); const m = mateOf(w, c); if (m) m.home = c.home; }   // (their patch)
     if (c.home) {
       c.mode = 'nest';
       if (go(w, c, c.home.x, c.home.y + 0.1, c.walk)) c.sleeping = true;
@@ -3844,17 +3891,30 @@ function crowTick(w, c) {
   }
   if (eating || c.mode === 'remains' || c.mode === 'apple' || c.mode === 'unbury' || c.mode === 'pool' || c.mode === 'tadpole') { c.mode = 'wander'; c.target = null; }
 
-  // 5. Fed: mobbing an owl it found asleep, off to the others now and then, a rest, or pecking about.
+  // 5. Fed: mobbing an owl it found asleep, driving another crow off its patch in spring, back to its patch,
+  // off to its mate (or with none, another crow) now and then, a rest, or pecking about.
   if (c.mode === 'mob' && mob(w, c)) return;
+  if (c.mode === 'drive' && drive(w, c)) return;
   if (c.mode === 'rest') { if (--c.timer > 0) return; c.mode = 'wander'; }
   if ((t + c.id) % 30 === 0) {
     const owl = w.count.owl && nearest(w, c, c.sight, 'owl', o => o.mode === 'sleep');
     if (owl && w.rng.next() < MOB_ODDS) { startMob(w, c, owl); return; }
-    if (w.rng.next() < c.genes.friendly) {
-      let sx = 0, sy = 0, n = 0;
-      forEachNear(w, c.x, c.y, c.sight, o => { if (o !== c) { sx += o.x; sy += o.y; n++; } }, 'crow');
-      const x = sx / n + w.rng.range(-2, 2), y = sy / n + w.rng.range(-2, 2);
-      if (n && (x - c.x) ** 2 + (y - c.y) ** 2 > 36 && dry(w, x, y)) { c.mode = 'flock'; c.target = { x, y }; }
+    const home = patchOf(c), m = mateOf(w, c);
+    if (home && seasonOf(t) === 0 && w.rng.next() < DRIVE_ODDS) {
+      const o = nearest(w, c, DRIVE_SIGHT, 'crow', o => o !== m && awake(o) && isAdult(w, o) && patchOf(o) !== home && dist2(o, home) < PATCH ** 2);
+      if (o) { c.mode = 'drive'; c.targetId = o.id; c.timer = DRIVE_TICKS; return; }
+    }
+    if (home && dist2(c, home) > PATCH ** 2) {             // back to its patch
+      const a = w.rng.range(0, Math.PI * 2), r = w.rng.range(2, PATCH / 2), x = home.x + Math.cos(a) * r, y = home.y + Math.sin(a) * r;
+      if (dry(w, x, y)) { c.mode = 'forage'; c.target = { x, y }; return; }
+    }
+    if (w.rng.next() < c.genes.friendly) {   // over to its mate, or with none the nearest crow, if it isn't close by
+      const o = m ? dist2(c, m) > FRIEND_FAR ** 2 && awake(m) && m : !nearest(w, c, FRIEND_FAR, 'crow', awake) && nearest(w, c, c.sight, 'crow', awake);
+      if (o) {
+        const a = Math.atan2(c.y - o.y, c.x - o.x) + w.rng.range(-1, 1), r = w.rng.range(FRIEND_GAP[0], FRIEND_GAP[1]);
+        const x = o.x + Math.cos(a) * r, y = o.y + Math.sin(a) * r;
+        if (dry(w, x, y)) { c.mode = 'flock'; c.target = { x, y }; }
+      }
     } else if (w.rng.next() < 0.3) { c.mode = 'rest'; c.timer = w.rng.int(60, 200); return; }
   }
   if (c.mode === 'flock') {
@@ -3862,6 +3922,45 @@ function crowTick(w, c) {
     c.mode = 'wander'; c.target = null;
   }
   peck(w, c, false);
+}
+
+// A crow's mate, while it lives; and whether a and b may pair (neither has another).
+const mateOf = (w, c) => { const m = c.mate && w.byId.get(c.mate); return m && m.alive ? m : null; };
+const faithful = (w, a, b) => { const ma = mateOf(w, a), mb = mateOf(w, b); return (!ma || ma === b) && (!mb || mb === a); };
+// Its patch: round its nest tree, once it has nested (or its mate has).
+const patchOf = c => (c.home && standing(c.home) ? c.home : null);
+
+// Spring: after another crow on its patch till it's close, and puts it up (flapUp). False once it's gone.
+function drive(w, c) {
+  const o = w.byId.get(c.targetId);
+  if (!o || !o.alive || !awake(o) || --c.timer <= 0) { c.mode = 'wander'; return false; }
+  if (dist2(c, o) > 1) { go(w, c, o.x, o.y, c.sprint); return true; }
+  o.threatId = c.id; flapUp(w, o, c.x, c.y);
+  c.mode = 'wander';
+  return true;
+}
+
+// A crow out and about (for company), not asleep, in the nest, or flapping off.
+const awake = o => !o.hidden && !o.sleeping && o.mode !== 'flap' && o.mode !== 'roost';
+
+// Each crow's own clock: a share of OWN_CLOCK it wakes, gathers and goes to roost later than the earliest.
+const ownClock = c => ((c.id * 0.618034) % 1) * OWN_CLOCK;
+
+// Where they gather before the roost: open ground GATHER_OUT from it towards the middle of the meadow,
+// or round it the other ways if that's water (or the roost itself). Worked out once a roost tree.
+const gatherSpots = new WeakMap();
+function gatherSpot(w) {
+  const r = w.roost;
+  let g = gatherSpots.get(r);
+  if (g) return g;
+  const a0 = Math.atan2(H / 2 - r.y, W / 2 - r.x);
+  for (let k = 0; k < 8 && !g; k++) {
+    const a = a0 + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * Math.PI / 4;
+    const x = clamp(r.x + Math.cos(a) * GATHER_OUT, 2, W - 2), y = clamp(r.y + Math.sin(a) * GATHER_OUT, 2, H - 2);
+    if (dry(w, x, y)) g = { x, y };
+  }
+  gatherSpots.set(r, g ||= { x: r.x, y: r.y });
+  return g;
 }
 
 // Up and away from a fox, or a fire, at x, y.
@@ -3886,7 +3985,9 @@ function peck(w, c, hungry) {
   if (!t || (go(w, c, t.x, t.y, t.hop ? CROW_HOP : CROW_PACE) && !(--t.stop > 0))) {
     const better = hungry && grubs(w, c.x, c.y) < GRUB / 2 && grubSpot(w, c);
     if (better) { c.mode = 'forage'; c.target = better; return; }
-    const a = w.rng.range(0, Math.PI * 2), r = w.rng.range(0.3, 1.5), x = c.x + Math.cos(a) * r, y = c.y + Math.sin(a) * r, ok = dry(w, x, y);
+    const o = nearest(w, c, CROW_SPACE, 'crow', awake);   // (another too close: away from it)
+    const a = o ? Math.atan2(c.y - o.y, c.x - o.x) + w.rng.range(-0.8, 0.8) : w.rng.range(0, Math.PI * 2);
+    const r = w.rng.range(0.3, 1.5), x = c.x + Math.cos(a) * r, y = c.y + Math.sin(a) * r, ok = dry(w, x, y);
     c.mode = 'peck'; c.target = { x: ok ? x : c.x, y: ok ? y : c.y, hop: ok && r > 1.1 && w.rng.next() < 0.5, stop: w.rng.int(CROW_STOP[0], CROW_STOP[1]) };
   }
   const g = grubs(w, c.x, c.y);
@@ -3911,10 +4012,11 @@ function carrion(w, c) {
   if (!k || k.meat <= 0 || w.tick - k.fox < FOX_NEAR) {          // (one flapping up puts them all up)
     if (k) { c.mode = 'wander'; c.target = null; }
     if ((w.tick + c.id) % 10 || !(k = remainsNear(w, c))) return false;
+    (k.seats ??= [])[freeSeat(k)] = c;
     c.mode = 'remains'; c.target = k;
   }
   if (c.mode === 'remains') {
-    const a = c.id * 2.4;
+    const a = (k.seats.indexOf(c) + 0.5) * Math.PI / 2;   // (its place round them)
     if (!go(w, c, k.x + 0.7 * Math.cos(a), k.y + 0.35 * Math.sin(a), c.walk)) return true;
     c.mode = 'carrion'; c.facing = k.x > c.x ? 1 : -1;
     if (!c.story[c.story.length - 1].text.startsWith(REMAINS_NOTE)) note(w, c, '🍖', `${REMAINS_NOTE} ${k.c.name}`);
@@ -4021,6 +4123,8 @@ function roostSeat(w, c) {
     if (o !== c && o.alive && o.species === 'crow' && o.perch && (o.mode === 'roost' || o.mode === 'sleep')) taken.set(o.perch.tree, (taken.get(o.perch.tree) || 0) | 1 << o.perch.k);
   }
   const free = d => { const t = taken.get(d) || 0; for (let k = 0; k < perches(d); k++) if (!(t & 1 << k)) return k; return -1; };
+  const m = mateOf(w, c), mt = m && m.perch && (m.mode === 'roost' || m.mode === 'sleep') && m.perch.tree;   // by its mate, if there's room
+  if (mt && perchable(mt) && free(mt) >= 0) return seatAt(mt, free(mt));
   for (const reach of [ROOST_GROVE, 2 * ROOST_GROVE]) {
     let best = null, bd = Infinity, bk = -1;
     forEachDecorNear(w, r.x, r.y, reach, d => {
@@ -4066,7 +4170,9 @@ function crowMood(w, c) {
     case 'unbury': return { emoji: '🌰', text: `Digging up ${one} it buried in the autumn` };
     case 'pool': return { emoji: '🫧', text: `Off to the ${w.frogYear.grown < 0.3 ? 'frogspawn' : 'tadpoles'} in the shallows` };
     case 'tadpole': return { emoji: '🫧', text: w.frogYear.grown < 0.3 ? 'Pecking at the frogspawn at the water\'s edge' : 'Picking tadpoles out of the shallows' };
-    case 'flock': return { emoji: '', text: 'Flying over to the other crows' };   // no bubble: 🤝 is painted as paws
+    case 'flock': { const m = mateOf(w, c); return { emoji: '', text: m && Math.hypot(c.target.x - m.x, c.target.y - m.y) < 5 ? `Flying over to its mate ${m.name}` : 'Flying over to another crow' }; }   // no bubble: 🤝 is painted as paws
+    case 'drive': return { emoji: '‼️', text: `Chasing ${w.byId.get(c.targetId)?.name ?? 'another crow'} off its patch` };
+    case 'gather': return { emoji: '', text: 'Off to the others, gathering by the roost for the night' };
     case 'mob': return { emoji: '‼️', text: `Mobbing ${w.byId.get(c.targetId)?.name ?? 'an owl'} the owl, cawing` };
     case 'follow': return { emoji: '🍼', text: 'Following mum, begging for food' };
     case 'rest': return { emoji: '😌', text: 'Preening' };
