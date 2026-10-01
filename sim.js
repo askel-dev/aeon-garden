@@ -113,7 +113,8 @@ const perKind = make => Object.fromEntries(KINDS.map(s => [s, make(s)]));   // {
 const NAME_PARTS = {
   rabbit: {
     prefixes: ['Cott', 'Snow', 'Bramb', 'Wil', 'Truf', 'Hazel', 'Ac', 'Peb', 'Dan', 'Tans'],
-    suffixes: ['tail', 'drop', 'le', 'low', 'flee', 'nut', 'orn', 'ble', 'delion', 'sy', 'foot', 'paws']
+    suffixes: ['tail', 'drop', 'le', 'low', 'flee', 'nut', 'orn', 'ble', 'delion', 'sy', 'foot', 'paws'],
+    whole: ['Juni']
   },
   fox: {
     prefixes: ['Rus', 'Em', 'Scar', 'Cin', 'Fen', 'Marm', 'Ash', 'Kin', 'Am', 'Vix'],
@@ -1843,10 +1844,17 @@ function roman(n) {
 // Names are a prefix and a suffix (Hazel + tail), dealt from a shuffled deck of every pairing
 // so they rarely repeat. An empty deck is shuffled again, and a repeat gets a number: Hazeltail II.
 function pickName(w, species) {
+  const { prefixes, suffixes, whole } = NAME_PARTS[species];
+  if (whole && w.rng.next() < 0.15) {
+    const base = w.rng.pick(whole);
+    const key = species + ':' + base;
+    const n = (w.nameCounts.get(key) || 0) + 1;
+    w.nameCounts.set(key, n);
+    return n === 1 ? base : base + ' ' + roman(n);
+  }
   w.namePools ??= {};
   let deck = w.namePools[species];
   if (!deck || !deck.length) {
-    const { prefixes, suffixes } = NAME_PARTS[species];
     deck = w.namePools[species] = w.rng.shuffle(prefixes.flatMap(p => suffixes.map(s => p + s)));
   }
   const base = deck.pop();
@@ -4613,7 +4621,8 @@ function createWorld(seed, opts = {}) {
       let x, y;
       do { x = w.rng.range(4, W - 4); y = w.rng.range(4, H - 4); } while (!dry(w, x, y));
       const age = species === 'bee' ? w.rng.range(1, 2) : species === 'owl' ? w.rng.range(10, 30) : w.rng.range(4, 10);   // summer bees only live a few days
-      addCreature(w, species, x, y, { sex: k % 2 ? 'M' : 'F', age });
+      const c = addCreature(w, species, x, y, { sex: k % 2 ? 'M' : 'F', age });
+      if (c && species === 'rabbit' && k === 0) { c.name = 'Juni'; w.nameCounts.set('rabbit:Juni', 1); }
     }
   }
   flushNewborn(w);
@@ -4772,6 +4781,8 @@ function familyArrives(w) {
   const come = (sex, age, p, genes) => addCreature(w, 'rabbit', p.x, p.y, { sex, age, genes, note: 'Moved into the meadow with the family' })
     || addCreature(w, 'rabbit', entry.x, entry.y, { sex, age, genes, note: 'Moved into the meadow with the family' });
   const mum = come('F', r.range(6, 8), at(0.6, -0.3)), dad = come('M', r.range(6, 9), at(0.2, 0.7));
+  mum.name = 'Juni';
+  w.nameCounts.set('rabbit:Juni', 1);
   const kits = [at(0, -0.8), at(0, 0.1)].map(p => come(r.next() < 0.5 ? 'F' : 'M', r.range(1, 1.2), p, childGenes(w, mum.genes, dad.genes)));
   for (const k of kits) {
     Object.assign(k, { mumId: mum.id, dadId: dad.id, gen: 2 });

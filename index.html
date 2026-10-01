@@ -537,6 +537,7 @@
   @media (max-width: 760px), (max-height: 500px) {
     .phone-only { display: revert; }
     #meadow { --hud-h: 44px; }
+    #mini-sky { display: none; }   /* the weather waits in ••• */
     #meadow:not(.mini) { width: calc(100% - 32px); }
     /* The small card and the time pill share the top row. The big card pushes the pill below it. */
     #hud-right { top: calc(var(--top) + var(--meadow-h, 0px) + 8px); left: var(--left); }
@@ -548,26 +549,35 @@
     .g-list small { display: none; } .g-list .fresh small { display: block; }   /* no room for every hint: just what the last one said */
     #news-log ol { max-height: 30vh; }
     /* The tools fold into one round button in the bottom right, showing the one in your hand.
-       Tap it and they rise above it, Look nearest the thumb; picking one folds them away again. */
+       Tap it and they rise above it as two rows, the animals on top and the rest below, Look nearest
+       the thumb; picking one folds them away again. */
     #toolbar { left: auto; right: var(--right); transform: none; padding: 0; border-radius: 50%; z-index: 4; }
     #toolbar .hand { display: grid; place-items: center; width: 52px; height: 52px; padding: 0; border: none; border-radius: 50%;
       background: transparent; font-size: 26px; transition: background 0.15s, transform 0.1s; }
     #toolbar .hand:active { transform: scale(0.93); }
     #toolbar .hand.on, #toolbar.open .hand { background: var(--accent-soft); }
-    #toolbar .tools { display: none; position: absolute; right: 0; bottom: calc(100% + 8px); flex-direction: column-reverse; gap: 2px;
+    #toolbar .tools { display: none; position: absolute; right: 0; bottom: calc(100% + 8px); grid-template-columns: repeat(5, 56px); gap: 2px;
       padding: 5px; background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); animation: pop-in 0.18s ease-out; }
-    #toolbar.open .tools { display: flex; }
-    #toolbar .tool { flex-direction: row-reverse; justify-content: flex-start; gap: 10px; height: 44px; padding: 0 9px 0 16px; border-radius: 12px; }
-    #toolbar .tool .e { font-size: 24px; width: 1.1em; }
-    .tool .l { font-size: 14px; }
+    #toolbar.open .tools { display: grid; }
+    #toolbar .tool { flex-direction: column; justify-content: center; gap: 3px; height: 58px; padding: 0; border-radius: 12px; }
+    #toolbar .tool .e { font-size: 24px; width: auto; }
+    #toolbar .tool .l { font-size: 11.5px; line-height: 1; }
+    #toolbar .tool[data-tool="fire"] { order: 1; } #toolbar .tool[data-tool="zap"] { order: 2; } #toolbar .tool[data-tool="plant"] { order: 3; }
+    #toolbar .tool[data-tool="grass"] { order: 4; } #toolbar .tool[data-tool="look"] { order: 5; }
     /* time: pause and one button that steps through the speeds; the rest waits in ••• */
     #time { --hud-h: 44px; gap: 2px; padding: 0 4px; }
     #time .speed[data-speed]:not([data-speed="0"]), #time .hud-btn:not(.more), #time .hud-sep { display: none; }
     #time .speed.cycle { display: block; }
     .speed { min-width: 40px; height: 38px; padding: 0 6px; font-size: 15px; }
     .hud-btn.more { min-width: 40px; height: 38px; }
-    #more-menu { min-width: 260px; }
-    .menu-item { padding: 10px 12px; }
+    /* ••• as tiles, three to a row; starting over stays a row of its own at the bottom */
+    #more-menu:not(.hidden) { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; width: min(300px, calc(100vw - 32px)); min-width: 0; }
+    #more-menu .menu-item { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 5px; padding: 10px 4px 9px;
+      text-align: center; font-size: 12.5px; line-height: 1.15; }
+    #more-menu .menu-item .e { font-size: 24px; line-height: 1; }
+    #more-menu .menu-item .x { display: none; }
+    #more-menu .menu-item.danger { grid-column: 1 / -1; flex-direction: row; gap: 8px; padding: 11px 12px; margin-top: 2px; font-size: 14px; }
+    #more-menu .menu-item.danger .e { font-size: 17px; }
     #sky-menu { width: min(380px, calc(100vw - 32px)); }
     #sky-menu:not(.hidden) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
     #sky-menu .tool { min-width: 0; padding: 7px 2px 6px; }
@@ -608,11 +618,8 @@
     #meadow:not(.mini) { width: 280px; max-height: calc(100vh - var(--top) - var(--bottom)); overflow-y: auto; overscroll-behavior: contain; z-index: 4; }
     #meadow:not(.mini) ~ #hud-right, #hud-right { top: var(--top); left: auto; }
     #news, #guide { width: min(330px, calc(100% - var(--left) - var(--right) - 60px)); }
-    /* too short for a column: the tools open in a row to the left of their button, Look nearest */
-    #toolbar .tools { flex-direction: row-reverse; right: calc(100% + 8px); bottom: -1px; }
-    #toolbar .tool { width: 46px; padding: 0; justify-content: center; }
-    #toolbar .tool .l { display: none; }
     #inspector { width: min(320px, 42vw); padding: 6px 14px 12px; overscroll-behavior: contain; }
+    #more-menu:not(.hidden) { grid-template-columns: repeat(5, minmax(0, 1fr)); width: 440px; }
     #inspector.strip { width: min(280px, 42vw); }
     .ins-name { font-size: 18px; }
     #news-log ol { max-height: none; }
@@ -630,8 +637,14 @@
     #intro { --lb: clamp(36px, 11vh, 96px); }
     #intro .line { margin: 0 18px; font-size: 16px; }
   }
-  /* small phones: squeeze the top row so the two pills never overlap */
-  /* Three kinds and the time pill are a tight fit: just the weather, and the whole pill opens the card. */
+  /* Upright phones: five kinds and the time pill don't fit in a row, so each count sits under its emoji,
+     and the whole pill opens the card. */
+  @media (max-width: 540px) and (min-height: 501px) {
+    #meadow.mini .win-btn { display: none; }
+    .mini-line { gap: 9px; padding: 0 10px; }
+    .mini-pop { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 15px; line-height: 1; }
+    .mini-pop b { font-size: 12px; }
+  }
   @media (max-width: 440px) {
     #welcome .banner { height: 168px; }
     #welcome .watch { right: 14px; top: -10px; width: min(98px, 26vw); }   /* the name and the watch share the width, down to 320 px */
@@ -639,13 +652,11 @@
     #welcome h1 { left: 20px; top: 20px; }
     #welcome h1 .to { font-size: 13px; margin-bottom: 4px; } #welcome h1 .n1 { font-size: 22px; } #welcome h1 .n2 { font-size: min(50px, 12vw); }
     #welcome .body { padding: 14px 20px 18px; }
-    #mini-season, #meadow.mini .win-btn { display: none; }
-    .mini-line { gap: 7px; padding: 0 10px; font-size: 14px; }
-    #mini-sky { letter-spacing: 0; }
     #time .speed, .hud-btn.more { min-width: 36px; padding: 0 4px; }
   }
   @media (max-width: 360px) {
-    .mini-line { gap: 5px; padding: 0 8px; font-size: 13px; }
+    .mini-line { gap: 4px; padding: 0 7px; }
+    .mini-pop b { font-size: 11px; }
     .stats-wrap { padding: 16px 16px 32px; }
     .stats-head { flex-wrap: wrap; gap: 4px 12px; }
     .stats-head h1 { font-size: 20px; }
@@ -748,17 +759,17 @@
   </div>
   <div id="sky-menu" class="card drop hidden"></div>
   <div id="more-menu" class="card drop hidden">
-    <button class="menu-item phone-only" data-act="sky">🌦️ Weather</button>
-    <button class="menu-item phone-only" data-act="stats">📊 Graphs and records</button>
-    <button class="menu-item" data-act="web" title="This meadow's food web: who ate whom, and how much">🕸️ Who ate whom</button>
-    <button class="menu-item" data-act="yours" title="The animals you named, and how they're doing">🏷️ Yours</button>
-    <button class="menu-item phone-only" data-act="sound" id="sound-item">🔇 Sound is off</button>
-    <button class="menu-item hidden" data-act="home" id="home-item">📱 Add to your home screen</button>
-    <button class="menu-item" data-act="guide" title="A few things to do in the meadow, gentle and not">📓 Things to try</button>
-    <button class="menu-item" data-act="watch" title="Let the meadow film itself, like when you leave it be (V)">🎥 Sit back and watch</button>
-    <button class="menu-item" data-act="copy-link">🔗 Copy a link to this meadow</button>
-    <button class="menu-item" data-act="ideas" title="Tell me what you'd love to see in the meadow">💌 Send an idea</button>
-    <button class="menu-item" data-act="lab" title="Shape the ground, water and woods of this meadow">🗺️ Terrain lab</button>
+    <button class="menu-item phone-only" data-act="sky"><span class="e">🌦️</span> <span class="l">Weather</span></button>
+    <button class="menu-item phone-only" data-act="stats"><span class="e">📊</span> <span class="l">Graphs<span class="x"> and records</span></span></button>
+    <button class="menu-item" data-act="web" title="This meadow's food web: who ate whom, and how much"><span class="e">🕸️</span> <span class="l">Who ate whom</span></button>
+    <button class="menu-item" data-act="yours" title="The animals you named, and how they're doing"><span class="e">🏷️</span> <span class="l">Yours</span></button>
+    <button class="menu-item phone-only" data-act="sound" id="sound-item"><span class="e">🔇</span> <span class="l">Sound is off</span></button>
+    <button class="menu-item hidden" data-act="home" id="home-item"><span class="e">📱</span> <span class="l">Add to<span class="x"> your</span> home screen</span></button>
+    <button class="menu-item" data-act="guide" title="A few things to do in the meadow, gentle and not"><span class="e">📓</span> <span class="l">Things to try</span></button>
+    <button class="menu-item" data-act="watch" title="Let the meadow film itself, like when you leave it be (V)"><span class="e">🎥</span> <span class="l">Sit back and watch</span></button>
+    <button class="menu-item" data-act="copy-link"><span class="e">🔗</span> <span class="l">Copy a link<span class="x"> to this meadow</span></span></button>
+    <button class="menu-item" data-act="ideas" title="Tell me what you'd love to see in the meadow"><span class="e">💌</span> <span class="l">Send an idea</span></button>
+    <button class="menu-item" data-act="lab" title="Shape the ground, water and woods of this meadow"><span class="e">🗺️</span> <span class="l">Terrain lab</span></button>
     <button class="menu-item danger" data-action="new">🔄 Start a new meadow…</button>
   </div>
   </div>

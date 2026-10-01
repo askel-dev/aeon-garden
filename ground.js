@@ -15,7 +15,7 @@
  * Use: Ground.set(name, data) with a Float32Array of 4 values a tile: 'tile' (grass, water,
  * ash, wood), 'bloom' (a field's tint times how much it shows, then how much), 'shape' (height,
  * tiles to the water, tiles to the woods) and 'water' (the water softened by 1, 2 and 4 blurs,
- * and the deep water by 2). Then Ground.draw(uniforms) paints Ground.canvas if it has to, and
+ * and the deep water by 2), and once Ground.mist(...) with how thick the mist is near the edges. Then Ground.draw(uniforms) paints Ground.canvas if it has to, and
  * Ground.view says where in it the screen's corner is. game.js shows the canvas as a layer of its own
  * under the meadow, slid so that corner is on the screen's.
  * Ground.ok is false where there is no WebGL2.
@@ -34,12 +34,11 @@ void main() { gl_Position = vec4(a, 0., 1.); }`;
 
 const FRAGMENT = `#version 300 es
 precision highp float;
-uniform sampler2D tile, bloom, shape, water;
+uniform sampler2D tile, bloom, shape, water, mist;
 uniform vec2 size, off, seed;
-uniform float top, zoom, dpr, snow, damp, lx, ly, ice, cold;
+uniform float top, zoom, dpr, snow, damp, lx, ly, ice, cold, mistOut;
 uniform vec3 low, high, sand, fog;
 out vec4 o;
-const float FOG = 9., ROUND = 14.;                               // tiles past the edge the mist is solid; the corners' roundness (game.js MIST_ROUND)
 
 // Hashes the float's own bits, so it stays exact at any coordinate: a float trick like
 // fract(p * 123.34) runs out of digits in the fine grain and paints it in streaks.
@@ -136,13 +135,12 @@ float layers(float f, float t0, float t1, float n, float a) {
 
 void main() {
   vec2 at = ((vec2(gl_FragCoord.x, top - gl_FragCoord.y) / dpr) - off) / zoom;    // in tiles (top: the canvas's height)
-  // Past the edges (zoomed right out, or looking a little past the bottom) the meadow goes on, mirrored, into
-  // the mist. game.js lays the mist itself over it all near the edges (drawMist), so the trees fade into it
-  // too; here it only has to be solid from where that ends.
-  vec2 c = abs(at - 0.5 * size) - 0.5 * size + ROUND;
-  float past = length(max(c, 0.)) + min(max(c.x, c.y), 0.) - ROUND;   // tiles past the nearest edge (less than 0 inside), round at the corners
-  vec3 mist = mix(fog, min(fog * 1.04 + 0.04, 1.), smoothstep(0.4, 0.8, fbm(at * 0.03 + 950.)));   // in big pale clouds
-  if (past > FOG) { o = vec4(mist, 1.); return; }
+  // Near the edges the meadow fades into the mist, in big pale clouds; past them (zoomed right out, or looking a
+  // little past the bottom) it goes on, mirrored, until the mist is thick. How thick it is is game.js's mistField.
+  float m = texture(mist, (at + mistOut) / (size + 2. * mistOut)).r;
+  vec3 fogC = fog;
+  if (m > 0.) fogC = mix(fog, min(fog * 1.04 + 0.04, 1.), smoothstep(0.4, 0.8, fbm(at * 0.03 + 950.)));
+  if (m > 0.996) { o = vec4(fogC, 1.); return; }
   vec2 p = size - abs(size - abs(at));                           // the meadow, mirrored back in from past its edges
   float px = 1. / (zoom * dpr);
   vec2 q = p + seed;                                              // the same noise, moved for each meadow
@@ -237,7 +235,7 @@ void main() {
     col = mix(col, min(shallowC * 1.1 + 0.04, 1.), open * 0.3 * (1. - smoothstep(0.5, 0.72, F.g)));
   }
 
-  col = mix(col, mist, smoothstep(-3., 6., past + 6. * (fbm(at * 0.04 + 900.) - 0.5)));   // wavering, and before the mirror's crease shows
+  col = mix(col, fogC, m);
   o = vec4(col, 1.);
 }`;
 
@@ -271,11 +269,24 @@ if (gl) {
       gl.uniform1i(U[name], unit);
       textures[name] = { unit, t };
     });
-    gl.uniform2f(U.size, S.W, S.H);
+    gl.uniform2f(U.size, S.W, S.H); gl.uniform1i(U.mist, 4);   // (no mist until Ground.mist: unit 4 reads 0)
   } catch (e) {
     console.warn('The ground shader would not start:', e);
     ok = false;
   }
+}
+
+// How thick the mist is (a byte a texel, w by h over the meadow and out past its edges, out tiles all round).
+// Once: it never changes.
+function mist(data, w, h, out) {
+  stale = true;
+  const t = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, t);
+  for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR],
+    [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, w, h, 0, gl.RED, gl.UNSIGNED_BYTE, data);
+  gl.uniform1f(U.mistOut, out);
 }
 
 function set(name, data) {
@@ -336,5 +347,5 @@ function draw(u) {
 // A lost context (the GPU reset) takes the shader with it: from then on game.js draws plain colours.
 canvas.addEventListener('webglcontextlost', () => { ok = false; });
 
-window.Ground = { get ok() { return ok; }, canvas, set, draw, view };
+window.Ground = { get ok() { return ok; }, canvas, set, mist, draw, view };
 })();

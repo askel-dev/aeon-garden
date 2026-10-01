@@ -52,7 +52,7 @@ const cam = { x: S.W / 2, y: S.H / 2, zoom: 10, goal: null };
 const canvas = $('#world');
 const ctx = canvas.getContext('2d');
 let vw = 0, vh = 0, dpr = 1, minZoom = 1, fitZoom = 1;
-const FIT = 0.92;                                 // zoomed right out, how much of the window the meadow fills (it fades into mist, drawMist)
+const FIT = 0.92;                                 // zoomed right out, how much of the window the meadow fills (it fades into mist, mistField)
 let barPad = 0;                                   // screen pixels the toolbar covers at the bottom (on a phone, its button in the corner)
 let sheet = null;                                 // the edges of the meadow the inspector and the bars hide, while it's open
 // A phone upright or on its side: slim bars, and the tools fold into a button. On its side (a short screen)
@@ -559,10 +559,11 @@ function drawGround(z, ox, oy, shx, shy) {
     if (groundLayer) groundLayer.style.display = 'none';
     ctx.drawImage(flat, ox, oy, S.W * z, S.H * z); return;
   }
-  const [low, high] = groundColours(), sn = sun(S.clock(world)), k = 2.5 * Math.max(0, sn.a) * (0.6 + 0.4 * Math.abs(sn.lean));
+  const [low, high] = groundColours(), ck = S.clock(world), sn = sun(ck), k = 2.5 * Math.max(0, sn.a) * (0.6 + 0.4 * Math.abs(sn.lean));
+  if (!mist.field) { mistField(); Ground.mist(mist.field, MIST_W, MIST_H, MIST_OUT); }
   const gd = Math.min(dpr, GROUND_DPR), w = Math.round(vw * gd), h = Math.round(vh * gd);
   Ground.draw({
-    width: w, height: h, zoom: z, ox, oy, dpr: gd, seed: groundSeed, low, high, sand: shoreSand, fog: fogColour(high),
+    width: w, height: h, zoom: z, ox, oy, dpr: gd, seed: groundSeed, low, high, sand: shoreSand, fog: fogColour(high, ck.phase),
     snow: world.snow, damp: 1 - 0.12 * world.wet, ice: iceOver(), cold: coldness(), lx: k * sn.lean, ly: k * 0.8,
   });
   if (groundIn) { ctx.drawImage(Ground.canvas, Ground.view.x, Ground.view.y, w, h, 0, 0, vw, vh); return; }
@@ -571,84 +572,66 @@ function drawGround(z, ox, oy, shx, shy) {
   if (x !== laid.x || y !== laid.y) { g.style.transform = `translate(${x}px, ${y}px)`; laid.x = x; laid.y = y; }
 }
 
-// Past its edges the meadow fades into a mist. The ground shader fades it out and paints the mist in big pale
-// clouds (ground.js FOG), and this lays it over everything from MIST_IN tiles in, trees and animals too, so they
-// fade into it and don't stand sharp against it: thick by MIST_FULL tiles out, and thinning again to MIST_OUT,
-// where the shader's clouds show through. Its edge has round corners (MIST_ROUND) and wavers a long way in and
-// out, so the meadow never reads as a rectangle. It's painted once, MIST_PX a tile, again only when its colour
-// moves (the season's greens tint it, the snow whitens it), and drawn as four strips along the edges, never over
-// the middle. At dusk and at night a rose or lavender light is laid over it, after the dark (drawMistLift), so it
-// doesn't go a muddy grey.
+// Past its edges the meadow fades into a mist, thick by MIST_FULL tiles out. Where it starts wavers a long way in
+// and out (MIST_WAVER), from MIST_IN tiles in, and its corners are round (MIST_ROUND), so the meadow never reads as
+// a rectangle. How thick it is everywhere is worked out once, MIST_PX a tile (mist.field), and the ground shader
+// paints the ground into it from that, in big pale clouds, while whatever stands in it is drawn that much
+// see-through (fadeAt), so the trees and the animals fade into it too. Nothing is laid over the meadow for it.
+// At dusk and at night the mist is painted lighter, so that under the dark it comes out a rose or lavender light
+// instead of a muddy grey (fogColour).
 const MIST_RGB = [230, 231, 214], MIST_TINT = 0.12, MIST_SNOW = [238, 242, 246];   // and white over the snow
 const MIST_DUSK = [240, 176, 160], MIST_NIGHT = [124, 118, 176];
-const MIST_IN = 6, MIST_FULL = 4, MIST_OUT = 10, MIST_PX = 3, MIST_ROUND = 14;   // (ground.js has the same ROUND)
+const MIST_IN = 6, MIST_FULL = 4, MIST_OUT = 10, MIST_PX = 3, MIST_ROUND = 14;
 const MIST_WAVER = 8;                             // tiles the edge wavers in and out, all told
-const MIST_DEEP = MIST_IN + MIST_WAVER / 2 + 2;   // the strips reach this far in, past where a bank of it can roll in
-const fogColour = high => MIST_RGB.map((v, i) => Math.round(lerp(lerp(v, high[i], MIST_TINT), MIST_SNOW[i], Math.min(1, world.snow)) / 4) * 4);
-const mist = { canvas: null, dusk: null, night: null, base: null, lift: null, key: '', at: -1e9, on: false, xs: null, ys: null, sx: null, sy: null };
-function mistAlpha() {                            // how thick it is, over the meadow and lifted (that one doesn't thin out)
-  const cw = (S.W + 2 * MIST_OUT) * MIST_PX, ch = (S.H + 2 * MIST_OUT) * MIST_PX, R = MIST_ROUND;
-  mist.base = new Uint8ClampedArray(cw * ch); mist.lift = new Uint8ClampedArray(cw * ch);
-  for (let j = 0; j < ch; j++) for (let i = 0; i < cw; i++) {
+const MIST_DEEP = MIST_IN + MIST_WAVER / 2 + 2;   // further in than this there's none, wherever a bank of it rolls in
+const NIGHT_RGB = [22, 30, 78], DUSK_RGB = [255, 140, 60];   // the dark and the dusk glow, washed over everything
+const MIST_W = (S.W + 2 * MIST_OUT) * MIST_PX, MIST_H = (S.H + 2 * MIST_OUT) * MIST_PX;
+const mist = { field: null };
+function mistField() {
+  const R = MIST_ROUND, f = mist.field = new Uint8Array(MIST_W * MIST_H);
+  for (let j = 0; j < MIST_H; j++) for (let i = 0; i < MIST_W; i++) {
     const x = (i + 0.5) / MIST_PX - MIST_OUT, y = (j + 0.5) / MIST_PX - MIST_OUT;
     const qx = Math.abs(x - S.W / 2) - S.W / 2 + R, qy = Math.abs(y - S.H / 2) - S.H / 2 + R;
     const past = Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - R;
     const roll = MIST_WAVER * (blotches(x * 0.04, y * 0.04, 73) - 0.5) + 3 * (blotches(x * 0.25, y * 0.25, 72) - 0.5);   // banks of it rolling in
-    const t = clamp((past + roll + MIST_IN) / (MIST_FULL + MIST_IN), 0, 1) * clamp(past + MIST_DEEP, 0, 1), u = clamp((MIST_OUT - past) / 3, 0, 1);
-    const k = j * cw + i, st = t * t * (3 - 2 * t);
-    mist.base[k] = 255 * st * u * u * (3 - 2 * u); mist.lift[k] = 255 * st;
+    const t = clamp((past + roll + MIST_IN) / (MIST_FULL + MIST_IN), 0, 1) * clamp(past + MIST_DEEP, 0, 1);
+    f[j * MIST_W + i] = Math.round(255 * t * t * (3 - 2 * t));
   }
 }
-function paintMist(c, rgb, alpha) {
-  const cw = (S.W + 2 * MIST_OUT) * MIST_PX, ch = (S.H + 2 * MIST_OUT) * MIST_PX;
-  if (!c) { c = document.createElement('canvas'); c.width = cw; c.height = ch; }
-  const mc = c.getContext('2d'), img = mc.createImageData(cw, ch), d = img.data;
-  for (let k = 0; k < alpha.length; k++) { d[4 * k] = rgb[0]; d[4 * k + 1] = rgb[1]; d[4 * k + 2] = rgb[2]; d[4 * k + 3] = alpha[k]; }
-  mc.putImageData(img, 0, 0);
-  return c;
+function mistAt(x, y) {                           // how thick the mist is here, 0..1
+  if (x > MIST_DEEP && y > MIST_DEEP && x < S.W - MIST_DEEP && y < S.H - MIST_DEEP) return 0;
+  if (!mist.field) mistField();
+  const i = clamp(Math.floor((x + MIST_OUT) * MIST_PX), 0, MIST_W - 1), j = clamp(Math.floor((y + MIST_OUT) * MIST_PX), 0, MIST_H - 1);
+  return mist.field[j * MIST_W + i] / 255;
 }
-function mistStrips(c) {
-  const { xs, ys, sx, sy } = mist;
-  const strip = (c0, c1, r0, r1) => {
-    if (xs[c1] <= 0 || xs[c0] >= vw || ys[r1] <= 0 || ys[r0] >= vh) return;
-    ctx.drawImage(c, sx[c0], sy[r0], sx[c1] - sx[c0], sy[r1] - sy[r0], xs[c0], ys[r0], xs[c1] - xs[c0], ys[r1] - ys[r0]);
-  };
-  strip(0, 3, 0, 1); strip(0, 3, 2, 3); strip(0, 1, 1, 2); strip(2, 3, 1, 2);
+// The mist's colour for the shader. At dusk and at night it's what, washed over by the dark and the dusk glow,
+// comes out as the mist with a lavender (MIST_NIGHT) and a rose light (MIST_DUSK) laid over it.
+const over = (c, rgb, a) => c.map((v, i) => v + (rgb[i] - v) * a);
+function fogColour(high, phase) {
+  const fog = MIST_RGB.map((v, i) => lerp(lerp(v, high[i], MIST_TINT), MIST_SNOW[i], Math.min(1, world.snow)));
+  const d = darkness(phase), k = duskGlow(phase);
+  if (d <= 0 && k <= 0) return fog.map(v => Math.round(v / 4) * 4);
+  const seen = over(over(over(over(fog, NIGHT_RGB, d), DUSK_RGB, k), MIST_NIGHT, 0.7 * d), MIST_DUSK, 2.2 * k);
+  return seen.map((v, i) => Math.round(clamp(((v - DUSK_RGB[i] * k) / (1 - k) - NIGHT_RGB[i] * d) / (1 - d), 0, 255) / 4) * 4);   // (each step paints the ground again)
 }
-function drawMist(ox, oy, z) {
-  const I = MIST_DEEP, W = S.W, H = S.H;
-  mist.on = !(ox + I * z <= 0 && oy + I * z <= 0 && ox + (W - I) * z >= vw && oy + (H - I) * z >= vh);
-  if (!mist.on) return;                                                // no edge on screen
-  const fog = fogColour(groundColours()[1]), key = fog.join(), now = performance.now();
-  if (key !== mist.key && (!mist.canvas || now - mist.at > 500)) {     // (at 60x the snow comes and goes fast)
-    if (!mist.base) mistAlpha();
-    mist.canvas = paintMist(mist.canvas, fog, mist.base);
-    mist.at = now; mist.key = key;
-  }
-  // The strips meet on whole screen pixels, so no seam shows between them.
-  const P = MIST_PX, O = MIST_OUT;
-  mist.xs = [ox - O * z, ox + I * z, ox + (W - I) * z, ox + (W + O) * z].map(Math.round);
-  mist.ys = [oy - O * z, oy + I * z, oy + (H - I) * z, oy + (H + O) * z].map(Math.round);
-  mist.sx = [0, (O + I) * P, (O + W - I) * P, (W + 2 * O) * P]; mist.sy = [0, (O + I) * P, (O + H - I) * P, (H + 2 * O) * P];
-  mistStrips(mist.canvas);
+
+// While fade is below 1, everything drawn is that much see-through, whatever alpha its drawing sets: a thing
+// standing in the mist is faded into it (fadeAt), and unfade() puts it back.
+let fade = 1;
+const ALPHA = Object.getOwnPropertyDescriptor(CanvasRenderingContext2D.prototype, 'globalAlpha');
+Object.defineProperty(ctx, 'globalAlpha', { get() { return ALPHA.get.call(ctx) / fade; }, set(v) { ALPHA.set.call(ctx, v * fade); } });
+function fadeTo(f) {
+  if (f === fade) return;
+  const a = ctx.globalAlpha;
+  fade = f; ctx.globalAlpha = a;
 }
-// The dusk and night light on the mist, over the dark: the strips, and the mist all round them past MIST_OUT.
-function drawMistLift(dark, dusk) {
-  if (!mist.on || (dark <= 0 && dusk <= 0)) return;
-  if (!mist.dusk) { mist.dusk = paintMist(null, MIST_DUSK, mist.lift); mist.night = paintMist(null, MIST_NIGHT, mist.lift); }
-  const [x0, , , x3] = mist.xs, [y0, , , y3] = mist.ys;
-  ctx.save();
-  for (const [c, rgb, a] of [[mist.night, MIST_NIGHT, dark * 0.7], [mist.dusk, MIST_DUSK, dusk * 2.2]]) {
-    if (a <= 0) continue;
-    ctx.globalAlpha = a; ctx.fillStyle = `rgb(${rgb})`;
-    mistStrips(c);
-    if (y0 > 0) ctx.fillRect(-10, -10, vw + 20, y0 + 10);
-    if (y3 < vh) ctx.fillRect(-10, y3, vw + 20, vh - y3 + 10);
-    if (x0 > 0) ctx.fillRect(-10, y0, x0 + 10, y3 - y0);
-    if (x3 < vw) ctx.fillRect(x3, y0, vw - x3 + 10, y3 - y0);
-  }
-  ctx.restore();
+function fadeAt(x, y) {                           // false: it's lost in the mist, don't draw it
+  const f = 1 - mistAt(x, y);
+  if (f < 0.02) return false;
+  fadeTo(f);
+  return true;
 }
+const unfade = () => fadeTo(1);
 
 function plantEmoji(season, p, g) {
   const kind = p.kind, f = p.field;
@@ -703,6 +686,7 @@ function drawPlants(z, ox, oy, season) {
     const key = plantKeys[i];
     if (!key) continue;
     const p = world.plants[i], art = plantArt[i];
+    if (!fadeAt(p.x, p.y)) continue;
     if (art) {                                       // its foot a little below its spot, so the clump stands on it
       const px = key >> 4, w = FLOWER_BOX[0] * px, h = FLOWER_BOX[1] * px;
       const x = ox + p.x * z - w / 2, y = oy + p.y * z + px * 0.35 - h * FLOWER_FOOT;
@@ -715,6 +699,7 @@ function drawPlants(z, ox, oy, season) {
     if (x + s.size < 0 || y + s.size < 0 || x > vw || y > vh) continue;
     ctx.drawImage(s.canvas, x, y, s.size, s.size);
   }
+  unfade();
   ctx.restore();
 }
 
@@ -1069,6 +1054,7 @@ function darkness(phase) {
   if (phase < 0.1) return 0.45 * (1 - (phase - 0.02) / 0.08);
   return 0;
 }
+const duskGlow = phase => phase > 0.58 && phase < 0.74 ? 0.10 * Math.sin(Math.PI * (phase - 0.58) / 0.16) : 0;
 
 function render(now) {
   // Thunder rumbles the whole screen a little.
@@ -1095,8 +1081,9 @@ function render(now) {
   for (const c of world.creatures) if (c.alive && c.home) residents.set(c.home, (residents.get(c.home) || 0) + 1);
   for (const b of world.burrows) {
     const [sx, sy] = toScreen(b.x, b.y);
-    if (visible(sx, sy, z * 5)) drawBurrow(b, sx, sy, z, ck.season, residents.get(b) || 0);
+    if (visible(sx, sy, z * 5) && fadeAt(b.x, b.y)) drawBurrow(b, sx, sy, z, ck.season, residents.get(b) || 0);
   }
+  unfade();
   drawRemains(z);
 
   const sel = world.byId.get(ui.selectedId);
@@ -1108,12 +1095,12 @@ function render(now) {
   for (const d of world.decor) {                           // (a hive is in one of the trees)
     if (d.tree && d.size * z < SEEDLING_PX && !d.stump) continue;   // a seedling too small to see from here
     const [sx, sy] = toScreen(d.x, d.y);
-    if (visible(sx, sy, d.tree ? treePx(d) : d.size * z)) items.push({ y: d.y, d, sx, sy });
+    if (visible(sx, sy, d.tree ? treePx(d) : d.size * z)) items.push({ y: d.y, d, sx, sy, f: 1 - mistAt(d.x, d.y) });
   }
   for (const h of world.hives) {                           // a swarm hanging in a tree
     if (!h.cluster) continue;
     const [sx, sy] = toScreen(h.x, h.y);
-    if (visible(sx, sy, 3 * z)) items.push({ y: h.y, h, sx, sy });
+    if (visible(sx, sy, 3 * z)) items.push({ y: h.y, h, sx, sy, f: 1 - mistAt(h.x, h.y) });
   }
   const shown = [];
   for (const c of world.creatures) {
@@ -1121,11 +1108,11 @@ function render(now) {
     if (c.species === 'fox' || c.species === 'owl') {      // hunting voles: the rustle it's after
       watchLeap(c, now);
       const to = rustleOf(c);
-      if (to) { const [rx, ry] = toScreen(to.x, to.y); if (visible(rx, ry, 30)) items.push({ y: to.y, rustle: c, to, sx: rx, sy: ry }); }
+      if (to) { const [rx, ry] = toScreen(to.x, to.y); if (visible(rx, ry, 30)) items.push({ y: to.y, rustle: c, to, sx: rx, sy: ry, f: 1 - mistAt(to.x, to.y) }); }
     }
     const [sx, sy] = screenOf(c);
     if (!visible(sx, sy, 60)) continue;
-    const it = { y: c.y + (c.mode === 'dance' ? DANCE_FRONT : c.species === 'owl' && c.mode !== 'gulp' ? OWL_FRONT : 0), c, sx, sy };
+    const it = { y: c.y + (c.mode === 'dance' ? DANCE_FRONT : c.species === 'owl' && c.mode !== 'gulp' ? OWL_FRONT : 0), c, sx, sy, f: c.held ? 1 : 1 - mistAt(c.x, c.y) };
     if (c.species === 'crow' && crowSeat(c)) it.y -= (seat.y - seat.tree.y) * SEAT_SORT;   // up a tree: just after it, not after the trees just in front
     items.push(it);
     if (!c.held) shown.push(it);                           // (one held up has its shadow here, and is drawn last, in the hand)
@@ -1134,6 +1121,8 @@ function render(now) {
   // Shadows first, all together, so a tree's shadow never lands on a rabbit behind it.
   const sn = sun(ck);
   for (const it of items) {
+    if (it.f < 0.02) continue;                             // lost in the mist
+    fadeTo(it.f);
     if (it.d) drawDecorShadow(it.d, it.sx, it.sy, sn);
     else if (it.c) {
       drawCreatureShadow(it.c, it.sx, it.sy, now, sn);
@@ -1141,6 +1130,8 @@ function render(now) {
     }
   }
   for (const it of items) {
+    if (it.f < 0.02) continue;
+    fadeTo(it.f);
     if (it.d) (it.d.hive ? drawBeeTree : drawDecor)(it.d, it.sx, it.sy, now, ck);
     else if (it.h) drawSwarm(it.h, it.sx, it.sy);
     else if (it.rustle) drawRustle(it.rustle, it.to, it.sx, it.sy, z);
@@ -1148,18 +1139,16 @@ function render(now) {
     else if (falls.size && falls.has(it.c)) drawFalling(it.c, falls.get(it.c), it.sx, it.sy, now);
     else drawCreature(it.c, it.sx, it.sy, now);
   }
+  unfade();
   drawFallingLeaves(now);
   drawPollen(now);
   drawButterflies(now, ck);
-  drawMist(ox, oy, z);
 
   // Dusk and night.
-  const dark = darkness(ck.phase);
-  if (dark > 0) wash(`rgba(22, 30, 78, ${dark})`);
+  const dark = darkness(ck.phase), dusk = duskGlow(ck.phase);
+  if (dark > 0) wash(`rgba(${NIGHT_RGB}, ${dark})`);
   drawFireflies(now, dark);
-  const dusk = ck.phase > 0.58 && ck.phase < 0.74 ? 0.10 * Math.sin(Math.PI * (ck.phase - 0.58) / 0.16) : 0;
-  if (dusk > 0) wash(`rgba(255, 140, 60, ${dusk})`);
-  drawMistLift(dark, dusk);
+  if (dusk > 0) wash(`rgba(${DUSK_RGB}, ${dusk})`);
   drawFire(now);
   drawWeather(now, ck);
 
@@ -1229,7 +1218,7 @@ function drawRemains(z) {
     if (k.meat <= 0) continue;
     const fox = k.c.species === 'fox', body = fox || k.c.species === 'rabbit', px = fox ? bpx * FOX_BODY : body ? bpx : rpx;
     const sx = (k.x - cam.x) * z + vw / 2, sy = (k.y - cam.y) * z + vh / 2;   // (toScreen, without an array)
-    if (!visible(sx, sy, px)) continue;
+    if (!visible(sx, sy, px) || !fadeAt(k.x, k.y)) continue;
     let look = remainsLooks.get(k);
     if (look === undefined) remainsLooks.set(k, look = remainsLook(k.c));
     const m = k.meat / k.full, flip = k.c.id % 2 === 1;
@@ -1238,6 +1227,7 @@ function drawRemains(z) {
     const stage = m > open && !caught ? 0 : m > picked ? 1 : m > pelt ? 2 : 3;
     drawEmoji(BODY_ARTS[look * 4 + stage], sx, sy, px, { alpha: stage === 3 ? 0.4 + 0.6 * m / pelt : undefined, flip });
   }
+  unfade();
 }
 
 // How each kind is drawn: its size next to a rabbit, and whether its emoji faces left (then it
@@ -2296,6 +2286,7 @@ function drawFallingLeaves(now) {
   const m = ui.sky.mix, wind = 0.4 + 0.6 * m.cloudy + 1.5 * m.rain + 3 * m.storm;
   ctx.save();
   for (const f of leafFall) {
+    fadeTo(f.fade);                                     // as its tree is, in the mist
     const px = f.px, n = Math.round(12 * f.drop);
     for (let k = 0; k < n; k++) {
       const r1 = hash2(f.h, k, 1), life = 4500 + 2500 * r1, t = now / life + hash2(f.h, k, 2);
@@ -2311,6 +2302,7 @@ function drawFallingLeaves(now) {
       ctx.beginPath(); ctx.ellipse(0, 0, s, s * 0.55, 0, 0, TAU); ctx.fill();
     }
   }
+  unfade();
   ctx.restore();
   leafFall.length = 0;
 }
@@ -2396,10 +2388,11 @@ function drawShore(z, ox, oy, season) {
   for (const s of pond.shore) {
     if (s.lily && (iced || season === 3)) continue;
     const px = s.size * z, x = ox + s.x * z, y = oy + s.y * z;
-    if (x + px < 0 || x - px > vw || y + px * 0.3 < 0 || y - px > vh) continue;
+    if (x + px < 0 || x - px > vw || y + px * 0.3 < 0 || y - px > vh || !fadeAt(s.x, s.y)) continue;
     const sp = sprite(s.art, px, '', look);
     ctx.drawImage(sp.canvas, x - sp.size / 2, y - px * 0.35 - sp.size / 2, sp.size, sp.size);
   }
+  unfade();
 }
 // ------------------------------------------------------------------ painted trees
 //
@@ -2629,7 +2622,7 @@ function drawDecor(d, sx, sy, now, ck, clipLeaves) {
   if (under) drawUnderTree(t.ground, t.h, sx, sy, px, false);
   if (!clipLeaves && drawPaintedTree(d, sx, sy, now, ck, stage)) {
     if (under) drawUnderTree(t.ground, t.h, sx, sy, px, true);
-    if (t.drop && px >= 22) leafFall.push({ sx, sy, px, drop: t.drop, rgb: t.rgb, h: t.h });
+    if (t.drop && px >= 22) leafFall.push({ sx, sy, px, drop: t.drop, rgb: t.rgb, h: t.h, fade });
     return;
   }
   if (treeWorker) return;                                    // nothing to show yet: it fades in when its painting comes
@@ -2641,7 +2634,7 @@ function drawDecor(d, sx, sy, now, ck, clipLeaves) {
   if (t.fall < 1) drawEmoji(d.emoji, 0, -px * 0.35, px, { leaf: t.look, flip: t.flip });
   ctx.restore();
   if (under) drawUnderTree(t.ground, t.h, sx, sy, px, true);
-  if (t.drop && px >= 22) leafFall.push({ sx, sy, px, drop: t.drop, rgb: t.rgb, h: t.h });
+  if (t.drop && px >= 22) leafFall.push({ sx, sy, px, drop: t.drop, rgb: t.rgb, h: t.h, fade });
 }
 
 // ------------------------------------------------------------------ rocks
@@ -3083,7 +3076,7 @@ function drawWaves(now) {
     const b = Math.sin(Math.PI * life);
     if (b < 0.08) continue;
     const [sx, sy] = toScreen(p.x + (life - 0.5) * 0.7, p.y);
-    if (!visible(sx, sy, w * 2)) continue;
+    if (!visible(sx, sy, w * 2) || !fadeAt(p.x, p.y)) continue;
     const s = 0.6 + 0.4 * b;                                     // rises, then settles
     ctx.globalAlpha = a * b;
     ctx.beginPath();
@@ -3093,6 +3086,7 @@ function drawWaves(now) {
     }
     ctx.stroke();
   }
+  unfade();
   ctx.restore();
 }
 
@@ -3430,9 +3424,11 @@ function drawDashes(now, z) {
     if (a >= 1) continue;
     const go = 1 - (1 - a) * (1 - a), frog = dashes.frog[k];               // quick off, slowing into the grass
     const sx = (dashes.x[k] + dashes.dx[k] * go - cam.x) * z + vw / 2, sy = (dashes.y[k] + dashes.dy[k] * go - cam.y) * z + vh / 2;
+    if (!fadeAt(dashes.x[k], dashes.y[k])) continue;
     const s = sprite(frog ? 'frog:1' : 'vole:0', Math.max(9, (8 + z) * RUSTLE_PREY));
     peepAt(s, sx, sy - (frog ? Math.sin(Math.PI * a) * s.size * 0.4 : 0), a < 0.7 ? 0.75 : 0.75 * (1 - a) / 0.3, dashes.dx[k] > 0);
   }
+  unfade();
 }
 
 // The rustle a fox is listening to or leaping at, or an owl dropping on: the grass there twitching, and the vole looking up.
@@ -3689,11 +3685,12 @@ function drawButterflies(now, ck) {
       const x = c.x + r * Math.sin(t * (0.13 + 0.08 * h) + h * 30) + 0.3 * Math.sin(t * 1.7 + h * 9);
       const y = c.y + r * 0.7 * Math.sin(t * (0.19 + 0.06 * h) + h * 50);
       const sx = (x - cam.x) * z + vw / 2, sy = (y - cam.y) * z + vh / 2 - px * (0.9 + 0.3 * Math.abs(Math.sin(t * 2.3 + h * 7)));
-      if (!visible(sx, sy, px)) continue;
+      if (!visible(sx, sy, px) || !fadeAt(x, y)) continue;
       const s = sprite('🦋', px, tint), flap = 0.4 + 0.6 * Math.abs(Math.sin(t * 13 + h * 20));
       ctx.drawImage(s.canvas, sx - s.size * flap / 2, sy - s.size / 2, s.size * flap, s.size);
     }
   }
+  unfade();
 }
 
 // While she sips, a few specks drift up off the flower, from a hash of her id and the time.
@@ -3820,7 +3817,8 @@ function toggleSound(on = !ui.sound) {
   $('#sound-btn').textContent = $('#card-sound').textContent = on ? '🔊' : '🔇';
   $('#card-sound').setAttribute('aria-pressed', on);
   $('#sound-btn').classList.toggle('on', on);
-  $('#sound-item').textContent = on ? '🔊 Sound is on' : '🔇 Sound is off';
+  $('#sound-item .e').textContent = on ? '🔊' : '🔇';
+  $('#sound-item .l').textContent = on ? 'Sound is on' : 'Sound is off';
   try { localStorage.setItem('aeon-garden-sound', on ? '1' : '0'); } catch (e) { /* fine */ }
 }
 
@@ -6093,7 +6091,7 @@ function openRing(sx, sy, which = '') {
     : which === 'plant' ? PLANT_KINDS.map(([k, e, label]) => ['plant:' + k, e, label]) : RING_TOOLS;
   if (!ui.ring) { ui.ring = { at: toWorld(sx, sy) }; chime('click'); }
   ui.ring.t0 = performance.now();
-  const r = which ? 80 : 72;             // near an edge the ring moves in, but still acts where you clicked
+  const r = Math.max(which ? 80 : 72, items.length * 56 / TAU);   // room for every 50 px button; near an edge the ring moves in, but still acts where you clicked
   sx = clamp(sx, r + 34, vw - r - 34); sy = clamp(sy, r + 34, vh - r - 34);
   const ring = $('#ring');
   ring.style.left = sx + 'px'; ring.style.top = sy + 'px';
@@ -7381,7 +7379,7 @@ function begin(rec) {
 (firstVisit || LAB ? Promise.resolve(null) : keptMeadow(seedParam)).then(begin);
 if (!LAB) keepDb().catch(() => { /* not kept, then */ });   // opened now, so keeping at the last moment needn't wait for it
 showHomeItem();
-if (canShare) $('[data-act="copy-link"]').textContent = '🔗 Share this meadow';
+if (canShare) $('[data-act="copy-link"] .l').innerHTML = 'Share<span class="x"> this meadow</span>';
 if (!IDEAS_KEY) $('[data-act="ideas"]').remove();
 $('#go').addEventListener('click', () => {
   const card = $('#welcome');
