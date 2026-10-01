@@ -74,7 +74,7 @@
   canvas#world.tool-look { cursor: grab; }
   canvas#world.tool-look.dragging { cursor: grabbing; }
   canvas#world.tool-rabbit, canvas#world.tool-fox { cursor: copy; }
-  canvas#world.tool-grass, canvas#world.tool-zap, canvas#world.tool-fire { cursor: crosshair; }
+  canvas#world.tool-grass, canvas#world.tool-zap, canvas#world.tool-fire, canvas#world.tool-plant { cursor: crosshair; }
 
   .card {
     position: fixed; background: var(--paper, none) var(--card); border-radius: var(--radius);
@@ -243,7 +243,8 @@
   .facts { margin-top: 10px; }
   .family .dim { color: var(--muted); font-size: 12px; }
   .meter.honey span { background: #e8b83a; }
-  .ins-actions { display: flex; gap: 8px; margin-top: 14px; }
+  .ins-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .ins-actions .btn { white-space: nowrap; padding: 8px 9px; }
   .btn { border: none; border-radius: 12px; padding: 8px 12px; font-weight: 800; background: #fff; box-shadow: 0 1px 0 var(--line), 0 0 0 1px var(--line) inset; flex: 1; }
   .btn:hover { background: #fff7ec; }
   .btn.on { background: var(--accent-soft); color: #9a5024; }
@@ -333,6 +334,22 @@
   #ask .go:hover { background: #44702f; }
   #ask .go:disabled { opacity: 0.5; }
   #ask.sent :is(textarea, .btns, .ask-q), #ask:not(.sent) .ask-thanks { display: none; }
+
+  /* ---- the animals you named (game.js, renderYours). Like #web. */
+  #yours { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 9; box-sizing: border-box; width: min(400px, calc(100% - 32px));
+    max-height: calc(100% - 24px); overflow: hidden auto; scrollbar-width: thin; padding: 16px 20px 14px;
+    background: var(--paper, none) #f7eedc; border-radius: 22px; box-shadow: 0 20px 60px rgba(50, 40, 15, 0.3); }
+  #yours:not(.hidden) > * { animation: pop-in 0.18s ease-out; }
+  #yours-list { margin: 10px 0 0; }
+  #yours-list .gone { opacity: 0.75; }
+  #yours-list .none { display: block; color: var(--muted); line-height: 1.5; }
+  /* yours wear a brass ring (game.js RING) */
+  .ring { display: inline-block; width: 0.5em; height: 0.5em; margin: 0 0 0.08em 0.3em; vertical-align: middle; border-radius: 50%;
+    border: 0.12em solid #d9a640; box-shadow: 0 0 0 1px #7a5a1e, inset 0 0 0 1px #7a5a1e; }
+  .name-input { width: 9em; max-width: 100%; box-sizing: border-box; padding: 0 6px; font: inherit; color: var(--ink);
+    border: 1.5px solid #4f7f3a; border-radius: 8px; background: #fffaf0; }
+  .name-input:focus { outline: none; }
+  a.adopt { white-space: nowrap; }
 
   /* ---- who ate whom: the food web (game.js, updateWeb). Like #ask. */
   #web { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 9; box-sizing: border-box; width: min(470px, calc(100% - 32px));
@@ -703,6 +720,7 @@
   <button class="tool" data-tool="crow" title="Click the meadow to release a crow"><span class="e">🐦‍⬛</span><span class="l">Crow</span></button>
   <button class="tool" data-tool="owl" title="Click the meadow to release an owl. A female looks for a free hollow oak to nest in"><span class="e">🦉</span><span class="l">Owl</span></button>
   <button class="tool" data-tool="grass" title="Click and drag to grow lush grass"><span class="e">🌱</span><span class="l">Grass</span></button>
+  <button class="tool" data-tool="plant" title="Click the meadow to plant a tree, and pick its kind (T)"><span class="e">🌳</span><span class="l">Plant</span></button>
   <button class="tool" data-tool="zap" title="Click the meadow to strike lightning. On dry ground it starts a fire (Z)"><span class="e">⚡</span><span class="l">Zap</span></button>
   <button class="tool" data-tool="fire" title="Click and drag to draw a wall of fire. It burns half a day, and on dry grass it spreads (B)"><span class="e">🔥</span><span class="l">Fire</span></button>
   </div>
@@ -733,6 +751,7 @@
     <button class="menu-item phone-only" data-act="sky">🌦️ Weather</button>
     <button class="menu-item phone-only" data-act="stats">📊 Graphs and records</button>
     <button class="menu-item" data-act="web" title="This meadow's food web: who ate whom, and how much">🕸️ Who ate whom</button>
+    <button class="menu-item" data-act="yours" title="The animals you named, and how they're doing">🏷️ Yours</button>
     <button class="menu-item phone-only" data-act="sound" id="sound-item">🔇 Sound is off</button>
     <button class="menu-item hidden" data-act="home" id="home-item">📱 Add to your home screen</button>
     <button class="menu-item" data-act="guide" title="A few things to do in the meadow, gentle and not">📓 Things to try</button>
@@ -852,6 +871,11 @@
     <button class="btn go" id="ask-send" data-act="ask-send">Send</button>
   </div>
   <p class="ask-thanks">Thank you! 🌼 It's on its way.</p>
+</div>
+
+<div id="yours" class="hidden" role="dialog" aria-labelledby="yours-title">
+  <div class="web-head"><h2 class="fr" id="yours-title">Yours</h2><button class="close" data-act="yours" title="Back to the meadow (Esc)">✕</button></div>
+  <ul id="yours-list" class="story"></ul>
 </div>
 
 <div id="away" class="hidden" role="dialog" aria-labelledby="away-title" aria-live="polite">

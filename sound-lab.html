@@ -166,6 +166,7 @@
     ['grass', '🌱', 'Grow grass', 'a brush stroke (tool)'],
     ['click', '🔘', 'Button click', 'a wooden tick (UI)'],
     ['tick', '📓', 'Tried it', 'three notes up, a thing ticked off the list (UI)'],
+    ['named', '🏷️', 'Named', 'a bell and its answer, an animal given a name (UI)'],
   ];
   $('#events').innerHTML = EVENTS.map(([k, e, name, how]) =>
     `<button data-play="${k}"><b>${e} ${name}</b><span>${how}</span></button>`).join('');

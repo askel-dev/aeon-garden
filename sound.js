@@ -266,6 +266,7 @@ const RULES = {
   grass:   { gap: 0.09, maxSpeed: 60 },
   click:   { gap: 0.04, maxSpeed: 60 },
   tick:    { gap: 0.5,  maxSpeed: 60, always: true },
+  named:   { gap: 0.5,  maxSpeed: 60, always: true },
 };
 
 const SOUNDS = {
@@ -370,6 +371,8 @@ const SOUNDS = {
   click(t, o) { partial(o, 1320, t, 0.06, 0.002, 0.05, 'triangle'); partial(o, 660, t, 0.05, 0.002, 0.08); },
   // Something tried off the list (game.js, the guide): three notes up.
   tick(t, o) { for (let i = 0; i < 3; i++) kalimba(o, note(2 + i * 2, 1), t + i * 0.08, 0.3); },
+  // A little ring put on: a bell, and its answer a fifth up.
+  named(t, o) { bell(o, note(0, 1), t, 0.35); kalimba(o, note(4, 1), t + 0.16, 0.28); bell(o, note(7, 1), t + 0.34, 0.22); },
 };
 
 // opts: { species, pan (-1..1), near (0..1, how close to the camera), ...sound-specific }

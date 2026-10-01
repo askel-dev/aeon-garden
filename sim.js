@@ -1038,7 +1038,9 @@ function newTree(w, x, y, kind, o = {}) {
     fruit: kind === 'apple' || kind === 'cherry' ? kind : '', size: SPROUT,
     max: (T.treeSize[0] + (T.treeSize[1] - T.treeSize[0]) * r.next() ** 2) * (0.85 + 0.3 * w.fert[idx(x, y)]),   // most middling, a few giants, bigger on good soil
     born: w.tick, life: k.life * r.range(0.7, 1.3), tone: r.int(0, 2), parent: 0, by: '',
-    stump: 0, dead: 0, fallen: 0, until: 0, windfall: 0, nuts: 0, owl: 0, crop: 1, visits: 0, blooms: false, name: '', named: false, ...o,
+    stump: 0, dead: 0, fallen: 0, until: 0, windfall: 0, nuts: 0, owl: 0, crop: 1, visits: 0, blooms: false, name: '', named: false,
+    planted: 0,   // when the player planted it (plantTree); 0 for a wild one
+    ...o,
   };
   w.decor.push(d); w.treesMoved = true;
   return d;
@@ -1187,6 +1189,7 @@ function seedFall(w) {
   const spring = springAfter(w.tick);
   for (const d of w.decor) {
     if (!bearing(w, d)) continue;
+    if (d.planted && !d.seeded) { d.seeded = true; emit(w, { type: 'plantseeds', tree: d }); }   // the player's, bearing its first
     const k = TREES[d.kind];
     let n = k.seeds * (k.mast ? (w.mast ? MAST : LEAN) : 1) * (k.blossom ? 0.5 + 0.5 * d.crop : 1);
     d.nuts = 0;
@@ -1201,8 +1204,10 @@ function seedFall(w) {
 }
 
 // A tree dies. A seedling or a sapling is simply gone; a bigger one stands dead a while (a snag), then falls.
-function treeDies(w, d, cause) {
+// One the player planted is news (by: the rabbit that ate it).
+function treeDies(w, d, cause, by) {
   tally(w, d.kind, cause);
+  if (d.planted) emit(w, { type: 'plantlost', tree: d, cause, c: by });
   dropBlossoms(w, d);
   if (d.size < SAPLING && !d.hive) { d.gone = true; w.treesMoved = true; return; }
   d.dead = w.tick; d.burnt = cause === 'fire'; d.until = w.tick + w.treeRng.range(...SNAG_DAYS) * TPD;
@@ -1246,13 +1251,15 @@ function treesTick(w, grow = true) {
         if (w.bitten[i] && r.next() < k.taste * (thornNear(w, d.x, d.y, THORNS) ? 0.1 : 1)) {
           const c = w.byId.get(w.bitten[i]), what = `Nibbled a young ${KIND_NAMES[d.kind].toLowerCase()}`;
           if (c && c.alive && c.story[c.story.length - 1].text !== what) note(w, c, '🌱', what);
-          if (d.size < SEEDLING) { treeDies(w, d, 'eaten'); continue; }
+          if (d.size < SEEDLING) { treeDies(w, d, 'eaten', c); continue; }
           d.size = Math.max(SEEDLING * 0.9, d.size - 0.3);          // nibbled back
         }
         if (d.size < SEEDLING && r.next() < LOST * (1 + VOLE_SEEDS * w.voles[i] / VOLE_K)) { treeDies(w, d, 'lost'); continue; }   // voles eat them too
       }
       if (young && shade > k.shade && r.next() < SHADE_DEATH) { treeDies(w, d, 'shade'); continue; }
+      const was = d.size;
       if (d.size < d.max) d.size += k.grow * (d.sprouted ? 2 : 1) * (1 - shade) * g * d.size * (1 - d.size / d.max);
+      if (d.planted && was < SAPLING && d.size >= SAPLING) emit(w, { type: 'plantgrew', tree: d });   // out of the rabbits' reach
       if (!d.named && treeAge(w, d) > d.life * 0.7) {    // an old giant gets a name
         d.named = true;
         if (d.size > 4 && r.next() < 0.6) d.name = oldName(w, d);
@@ -1931,6 +1938,7 @@ function makeCreature(w, species, x, y, genes, parents) {
     caches: null,         // a crow's acorns and beechnuts buried this autumn (cacheNut)
     mate: 0,              // a crow's mate, for life (by id; mateOf)
     perch: null,          // an owl's branch: where it sits hunting, or sleeps by day (owlTick)
+    mine: false,          // the player gave it its name (nameCreature)
   };
   computeTraits(c);
   c.energy = c.maxEnergy * (parents ? 0.6 : 0.8);
@@ -4912,7 +4920,8 @@ const UNKEPT = ['grid', 'grids', 'events', 'newborn'];      // on the world
 let tableNames = null;                                     // object -> 'SPECIES.fox', made the first time
 // Of the dead (w.byId keeps them a few years), a kept meadow keeps only those still spoken of: parents
 // (the family in the inspector), foxes (a rabbit's nemesis) and the lately gone (the news).
-const remembered = (w, c) => c.alive || c.kids || c.species === 'fox' || w.tick - c.died < SEASON_DAYS * TPD;
+// Yours are never forgotten.
+const remembered = (w, c) => c.alive || c.mine || c.kids || c.species === 'fox' || w.tick - c.died < SEASON_DAYS * TPD;
 
 function nameTables() {
   tableNames = new Map();
@@ -4982,12 +4991,53 @@ function unpackWorld(kept) {
   for (const k in fresh) w.stats[k] ??= fresh[k];
   w.stats.remains.crows ??= 0;
   for (const c of w.creatures) delete c.held;                // (kept while the player held one up)
+  for (const c of w.byId.values()) c.mine ??= false;         // (kept before the player could name them)
+  for (const d of w.decor) if (d.tree) d.planted ??= 0;      // (or plant trees)
   w.grid = makeGrid(); w.grids = perKind(makeGrid); w.events = []; w.newborn = [];
   buildGrid(w);
   return w;
 }
 
 // ---------------------------------------------------------------- player powers
+
+// The player names an animal, and it's theirs: the news and the away card tell of it first. A bee is named
+// at its hive: the player names the queen.
+const NAME_MAX = 24;
+function nameCreature(w, c, name) {
+  name = String(name).replace(/\s+/g, ' ').trim().slice(0, NAME_MAX);
+  if (!name || name === c.name && c.mine) return false;
+  note(w, c, '🏷️', c.mine ? `Renamed ${name}` : `Given the name ${name}`);
+  c.name = name; c.mine = true;
+  return true;
+}
+// The player plants a tree: a seedling of that kind, the smallest there is. From then on it lives by the
+// same rules as a wild one (treesTick): rabbits eat it unless thorns guard it, the shade holds it back, fire
+// and flood kill it. It needs a spot a wild seed could come up in, but neither luck nor room in the woods.
+// The tree, or why not: 'water', 'field' (a flower field: the bees'), 'burrow', 'crowded' (a trunk or a rock).
+function plantTree(w, x, y, kind) {
+  if (!inBounds(x, y) || !TREES[kind]) return 'water';
+  const i = idx(x, y);
+  if (w.water[i]) return 'water';
+  if (w.fieldAt[i] >= 0) return 'field';
+  if (w.burrows.some(b => (b.x - x) ** 2 + (b.y - y) ** 2 < 4) || w.hives.some(h => (h.x - x) ** 2 + (h.y - y) ** 2 < 4)) return 'burrow';
+  let crowded = false;
+  forEachDecorNear(w, x, y, 3, o => {
+    if (!crowded && !o.gone && Math.hypot(o.x - x, o.y - y) < (o.tree ? SPACE : o.size * 0.5 + 0.3)) crowded = true;
+  });
+  if (crowded) return 'crowded';
+  const d = newTree(w, x, y, kind, { by: 'you', planted: Math.max(1, w.tick) });
+  cellOf(w.decorCells, d).push(d);                            // in the grid now, so the next one can't go on top of it
+  if (kind === 'beech' && w.treeRng.next() < RARE_TONE) d.tone = 3;
+  tally(w, kind, 'planted');
+  return d;
+}
+
+function nameQueen(w, h, name) {
+  name = String(name).replace(/\s+/g, ' ').trim().slice(0, NAME_MAX);
+  if (!h.queen || !name || name === h.queen.name) return false;
+  h.queen.name = name; h.queen.mine = true;
+  return true;
+}
 
 function paintGrass(w, x, y, radius) {
   const s = SEASONS[seasonOf(w.tick)];
@@ -5093,7 +5143,7 @@ function mood(w, c) {
 const api = {
   W, H, TPD, SHALLOW, DEEP, SEASON_DAYS, YEAR_DAYS, SEASONS, SPECIES, GENES, COATS, GROUND, WEATHER,
   createWorld, step, clock, isNight, phaseOf, seasonOf, mood, ageDays, growth, isAdult, patchFresh,
-  addCreature, paintGrass, setSky, lockSky, zap, burnLine, lift, putDown, traitMeans, walkable, packWorld, unpackWorld,
+  addCreature, paintGrass, setSky, lockSky, zap, burnLine, lift, putDown, nameCreature, nameQueen, NAME_MAX, plantTree, traitMeans, walkable, packWorld, unpackWorld,
   coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT, KINDS,
   TERRAIN, drawnToLink, drawnFromLink, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE,
