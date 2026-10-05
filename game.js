@@ -3199,11 +3199,12 @@ function drawFog(now, amount) {
 }
 
 // Just for looks, so it keeps to real time: a rainbow should last a moment even at 60x.
-// It hangs in the sky, not on the ground: sized to the window whatever the zoom, drifting a little as the
-// camera pans. Painted once per size (bow), then copied; while it comes out it's copied in slices, from one foot.
+// It stands over the part of the meadow in view when it came out, sized to the window then, and stays there:
+// panning and zooming move it like the ground. Painted once (bow), then copied; while it comes out it's copied
+// in slices, from one foot.
 const BOW_MS = 14000, BOW_IN = 4000, BOW_OUT = 5000, BOW_RES = 0.5, BOW_OUTER = 1.3, BOW_SLICES = 32;
 const BOW_HUES = [[160, 105, 225], [95, 105, 240], [60, 160, 250], [80, 205, 125], [250, 228, 85], [255, 160, 60], [240, 75, 70]];
-const bow = { t: 0, x: 0, y: 0, R: 0, c: null };
+const bow = { t: 0, x: 0, y: 0, r: 0, R: 0, c: null };   // x, y, r: its centre and radius in the meadow
 
 // One radial gradient, worked out ring by ring: the brighter sky inside, the bow (violet in, red out) with soft
 // edges, a slightly darker band, and a faint second bow with its colours the other way round. The feet fade out.
@@ -3244,12 +3245,14 @@ function paintBow(R) {
 function drawRainbow(now) {
   const age = now - ui.sky.rainbow;
   if (!ui.sky.rainbow || age > BOW_MS) return;
-  if (bow.t !== ui.sky.rainbow) Object.assign(bow, { t: ui.sky.rainbow, x: cam.x, y: cam.y });
-  const R = Math.round(Math.min(vh * 0.74, vw * 0.7) / 8) * 8;      // its top a quarter down; a whole arch on a phone
-  if (bow.R !== R) paintBow(R);
-  const Ro = R * BOW_OUTER, z = cam.zoom;
-  const cx = vw * 0.55 + clamp(-(cam.x - bow.x) * z * 0.12, -vw * 0.25, vw * 0.25);
-  const cy = Math.min(vh * 1.02, vh * 0.28 + R) + clamp(-(cam.y - bow.y) * z * 0.06, -vh * 0.1, vh * 0.1);
+  if (bow.t !== ui.sky.rainbow) {
+    const R = Math.round(Math.min(vh * 0.74, vw * 0.7) / 8) * 8;    // its top a quarter down; a whole arch on a phone
+    if (bow.R !== R) paintBow(R);
+    const [x, y] = toWorld(vw * 0.55, Math.min(vh * 1.02, vh * 0.28 + R));
+    Object.assign(bow, { t: ui.sky.rainbow, x, y, r: R / cam.zoom });
+  }
+  const [cx, cy] = toScreen(bow.x, bow.y), Ro = bow.r * cam.zoom * BOW_OUTER;
+  if (cx + Ro < 0 || cx - Ro > vw || cy < 0 || cy - Ro > vh) return;
   const x0 = cx - Ro, y0 = cy - Ro, w = 2 * Ro, h = Ro;
   const fade = Math.min(1, (BOW_MS - age) / BOW_OUT), peak = 0.85 * fade * fade * (3 - 2 * fade);
   ctx.save();
