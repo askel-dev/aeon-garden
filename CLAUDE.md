@@ -1,7 +1,9 @@
 # Nobody's Meadow
 
 A cozy emoji meadow where rabbits, foxes, bees, crows and owls live their own lives and you watch what
-emerges. It used to be called AEON Garden, and the repo and the
+emerges. The owls are switched off for now (sim.js `OWLS = false`): none start, fly in or can be released,
+a kept meadow's fly off when it opens, and the page hides their tool, counters, graph and food-web node. All their
+code stays; `true` brings them back. It used to be called AEON Garden, and the repo and the
 `aeon-garden-*` localStorage keys keep that name (renaming the keys would lose players' settings).
 It's played at https://meadow.cryptoler.net: GitHub Pages from `main` under a custom domain (`CNAME`;
 the DNS record is in Vercel, see the `askel-dev/cryptoler.net` README). The old github.io link redirects there. **This is a game.** Balancing for fun is allowed and is the job; realism is

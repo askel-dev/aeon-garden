@@ -131,15 +131,16 @@ function measureSheet() {
   } else sheet = short() ? { top: 0, bottom: 0, left: 0, right: $('#inspector').classList.contains('strip') ? 0 : vw - ins.left } : null;
 }
 
-// You may look a little past the edges, so nothing is ever stuck under the toolbar or the inspector.
+// You may look out past the edges into the mist: the middle of the view goes as far as the mist is thick
+// (MIST_FULL tiles out), at any zoom, so an edge can be looked at up close.
+// A bit further where the toolbar or the inspector covers the screen, so nothing is ever stuck under them.
 // Not while they're away for the intro (hush). This far past the bottom edge, in screen pixels:
 // In the lab, its own sheet on a phone (lab.cover).
 const lookPast = () => Math.max(ui.hush ? 0 : barPad, sheet ? sheet.bottom : 0, LAB ? lab.cover.bottom : 0);
 function clampCam() {
-  const hw = vw / 2 / cam.zoom, hh = vh / 2 / cam.zoom;
   const left = (sheet ? sheet.left : 0) / cam.zoom, right = Math.max(sheet ? sheet.right : 0, LAB ? lab.cover.right : 0) / cam.zoom;
-  cam.x = clamp(cam.x, Math.min(hw, S.W / 2) - left, Math.max(S.W - hw, S.W / 2) + right);
-  cam.y = clamp(cam.y, Math.min(hh, S.H / 2), Math.max(S.H - hh, S.H / 2) + lookPast() / cam.zoom);
+  cam.x = clamp(cam.x, -MIST_FULL - left, S.W + MIST_FULL + right);
+  cam.y = clamp(cam.y, -MIST_FULL, S.H + MIST_FULL + lookPast() / cam.zoom);
 }
 
 new ResizeObserver(() => {
@@ -4068,7 +4069,7 @@ function handleEvent(e) {
       const at = e.water ? `the ${e.water.name}` : 'the shallows';
       if (e.what === 'spawn') addNews(`🫧 <b>The frogs are spawning</b> in ${at}: a night of croaking, and clumps of frogspawn in the warm shallows.`, 'frogspawn', 30000);
       else if (e.what === 'stranded') addNews(`🫧 The water is falling back from the pools by ${at}, and the tadpoles in them are stranded in the mud${e.grown < 0.9 ? ', not grown yet' : ''}.`, 'tadpoles', 30000);
-      else if (e.what === 'froglets') addNews(`🐸 <b>Froglets!</b> Tiny frogs are leaving ${at} for the long grass, and the foxes and owls are finding them.`, 'froglets', 30000);
+      else if (e.what === 'froglets') addNews(`🐸 <b>Froglets!</b> Tiny frogs are leaving ${at} for the long grass, and the foxes${S.OWLS ? ' and owls' : ''} are finding them.`, 'froglets', 30000);
       break;
     }
     case 'frogyear':
@@ -4305,6 +4306,7 @@ function updateMeadowCard() {
   setHTML($('#mini-sky'), `<span id="mini-season">${S.SEASONS[ck.season].emoji}</span>${icon}`);   // phones hide the season
   updateFavicon(ck);
   for (const s of S.KINDS) {
+    if (!SERIES[s]) continue;                              // (the owls, while they're off: sim.js OWLS)
     setText($('#mini-' + s), String(world.count[s]));
     setText($('#n-' + s), String(world.count[s]));
     sparkline($('#spark-' + s), world.history[s], SERIES[s].color);
@@ -4342,6 +4344,7 @@ const CAUSES = [['fox', '🦊', 'Caught by a fox'], ['hunger', '🥀', 'Starved'
   ['ice', '🧊', 'Fell through the ice'], ['owl', '🦉', 'Taken by an owl'], ['left', '🧳', 'Flew off to find a wood']];
 const INK = '#3b372f', MUTED = '#6f6657';
 
+if (!S.OWLS) delete SERIES.owl;
 const shownKeys = () => ui.stats.show === 'all' ? Object.keys(SERIES) : [ui.stats.show];
 
 function toggleStats(open = !ui.stats.open) {
@@ -4664,6 +4667,10 @@ const WEB_LINKS = [
   { from: 'owl', to: 'remains', kind: 'body', n: 'bodies:owl', say: n => `${upper(many(n, 'owl'))} died out in the open and were left lying.`, bend: 12 },
   { from: 'crow', to: 'remains', kind: 'body', n: 'bodies:crow', say: n => `${upper(many(n, 'crow'))} died out in the open and were left lying.`, bend: -14 },
 ];
+if (!S.OWLS) {                                             // (owls are off for now: sim.js OWLS)
+  delete WEB_NODES.owl; WEB_NODES.fox.x = 203;
+  for (let i = WEB_LINKS.length - 1; i >= 0; i--) if (WEB_LINKS[i].from === 'owl' || WEB_LINKS[i].to === 'owl') WEB_LINKS.splice(i, 1);
+}
 const WEB_WHEN = { season: null, year: 'Last year', all: 'Since the start' };
 const web = { open: false, when: 'year', at: 0, hover: null, pin: null, v: null, live: null, built: false };
 const webOpen = () => web.open;
@@ -4832,8 +4839,8 @@ function webNodeSay(k, v, L, cur) {
     case 'owl': return `${head}. They caught ${andList([many(v('owlVoles'), 'vole'), many(v('owlFrogs'), 'frog'), many(v('died:rabbit:owl'), 'young rabbit')])}. ${lifeLine(k, v, cur)}`;
     case 'crow': return `${head}. They pecked ${many(v('grubs'), 'grub')}, fed at ${many(v('remainsCrows'), 'body')}, ate spawn worth ${many(v('crowSpawn'), 'frog')} and ${many(v('apples:crow'), 'windfall')}, and buried ${many(v('cached'), 'acorn')}. ${lifeLine(k, v, cur)}`;
     case 'bee': return `${head}${count ? `, in ${L.hives === 1 ? 'one hive' : L.hives + ' hives'}` : ''}. They sipped ${many(v('sips') - v('blossomSips'), 'flower')} and ${many(v('blossomSips'), 'blossom')}. ${lifeLine(k, v, cur)}`;
-    case 'vole': return `${count ? `About ${big(count)} voles in the long grass now${L.voleYear ? ', a vole year' : ''}` : 'No voles in the grass now'}. Foxes caught ${big(v('voles'))} and owls ${big(v('owlVoles'))}.`;
-    case 'frog': return `${count ? `About ${big(count)} frogs by the water now` : L.spawn ? 'No frogs out now, but spawn in the pools' : 'No frogs now'}. Foxes caught ${big(v('frogs'))}, owls ${big(v('owlFrogs'))}, and crows ate spawn worth ${many(v('crowSpawn'), 'frog')}.`;
+    case 'vole': return `${count ? `About ${big(count)} voles in the long grass now${L.voleYear ? ', a vole year' : ''}` : 'No voles in the grass now'}. Foxes caught ${big(v('voles'))}${S.OWLS ? ` and owls ${big(v('owlVoles'))}` : ''}.`;
+    case 'frog': return `${count ? `About ${big(count)} frogs by the water now` : L.spawn ? 'No frogs out now, but spawn in the pools' : 'No frogs now'}. Foxes caught ${big(v('frogs'))}, ${S.OWLS ? `owls ${big(v('owlFrogs'))}, ` : ''}and crows ate spawn worth ${many(v('crowSpawn'), 'frog')}.`;
     case 'grass': return `The meadow's grass is ${Math.round(L.grass * 100)}% grown. Rabbits took ${many(v('grazed'), 'mouthful')} of it, and voles live in the long grass.`;
     case 'flowers': return `${L.flowers ? `${big(L.flowers)} flowers open now` : 'No flowers open now'}. Bees sipped ${many(v('sips') - v('blossomSips'), 'flower')}.`;
     case 'fruit': return `${L.fruit ? `${big(L.fruit)} apple, cherry and hawthorn trees` : 'No fruit trees now'}. They blossom for the bees in spring (${many(v('blossomSips'), 'visit')}) and bear as much as the bees visited: rabbits ate ${many(v('apples:rabbit'), 'windfall')}, crows ${big(v('apples:crow'))}.`;
@@ -4858,7 +4865,7 @@ function sayWeb() {
       for (const l of WEB_LINKS) if (l.from === id || l.to === id) { hot.add(l.el); hot.add(WEB_NODES[l.from].el); hot.add(WEB_NODES[l.to].el); }
     }
   } else {
-    const gone = ['fox', 'owl', 'crow', 'bee', 'rabbit', 'vole', 'frog'].filter(k => webGone(k, web.live)).map(k => WEB_NODES[k].name.toLowerCase());
+    const gone = ['fox', 'owl', 'crow', 'bee', 'rabbit', 'vole', 'frog'].filter(k => WEB_NODES[k] && webGone(k, web.live)).map(k => WEB_NODES[k].name.toLowerCase());
     text = (gone.length ? `No ${andList(gone)} now. ` : '') + (canHover.matches ? 'Point at' : 'Tap') + ' an animal or an arrow to see who ate whom.';
   }
   svg.classList.toggle('picking', !!pick);
@@ -5196,7 +5203,7 @@ const THINGS = {
       const owl = d.owl && world.byId.get(d.owl);
       if (d.hive) facts.push(['🐝', `${thingLink('hive', d.hive.id, d.hive.queen ? `Queen ${esc(d.hive.queen.name)}'s hive` : 'An empty hive')} is in its hollow`]);
       else if (owl && owl.alive) facts.push(['🦉', `${link(owl)} the owl nests in its hollow`]);
-      else if (S.hollow(world, d)) facts.push(['🕳️', 'Old enough to have gone hollow: bees or owls could make a home in it']);
+      else if (S.hollow(world, d)) facts.push(['🕳️', `Old enough to have gone hollow: bees${S.OWLS ? ' or owls' : ''} could make a home in it`]);
       if (living && S.bearing(world, d)) {
         const bear = { wind: '🌬️ Sheds its seed on the wind each autumn', crow: `🌰 Its ${k.mast} are a feast in a mast year, and the crows bury them far and wide`,
           bird: `🐦 Birds carry off its ${d.kind === 'cherry' ? 'cherries' : 'haws'} and drop the stones far and wide`, drop: '🍎 Drops its apples for whoever comes by' }[k.by];
@@ -6002,11 +6009,11 @@ function click(sx, sy) {
 // The Plant tool (or 🌳 in the ring) opens a ring of kinds where you clicked: the kind is the plan. It comes up
 // as a seedling (sim.js plantTree) and lives by the wild ones' rules; the news tells how it does (plantlost,
 // plantgrew, plantseeds), and the inspector remembers you planted it.
-const PLANT_KINDS = [['oak', '🌰', 'Oak: an owl’s hollow one day'], ['birch', '🌿', 'Birch: quick to grow'], ['hawthorn', '🌹', 'Hawthorn: guards its neighbours'],
+const PLANT_KINDS = [['oak', '🌰', S.OWLS ? 'Oak: an owl’s hollow one day' : 'Oak: a hive’s hollow one day'], ['birch', '🌿', 'Birch: quick to grow'], ['hawthorn', '🌹', 'Hawthorn: guards its neighbours'],
   ['apple', '🍎', 'Apple: windfalls in autumn'], ['cherry', '🍒', 'Cherry: blossom for the bees'], ['beech', '🍂', 'Beech: bears the shade'],
   ['maple', '🍁', 'Maple: red in autumn'], ['pine', '🌲', 'Pine: green all winter']];
 const PLANT_SAY = {
-  oak: 'Oaks are slow: in twenty years or so it could hold an owl, or a hive.',
+  oak: 'Oaks are slow: in twenty years or so it could hold ' + (S.OWLS ? 'an owl, or a hive.' : 'a hive in its hollow.'),
   birch: 'Birches grow fast and don’t live long.',
   hawthorn: 'Once it’s grown, its thorns keep the rabbits off the seedlings round it.',
   apple: 'In a few years it drops apples in autumn, and the rabbits come for them.',
@@ -6087,7 +6094,9 @@ function release(species, wx, wy) {
 // ------------------------------------------------------------------ the ring: right-click the meadow
 
 const RING_TOOLS = [['rabbit', '🐇', 'Release a rabbit'], ['fox', '🦊', 'Release a fox'], ['bee', '🐝', 'Release a bee'], ['crow', '🐦‍⬛', 'Release a crow'], ['owl', '🦉', 'Release an owl'], ['grass', '🌱', 'Grow grass'],
-  ['plant', '🌳', 'Plant a tree'], ['zap', '⚡', 'Strike lightning'], ['fire', '🔥', 'Wall of fire'], ['sky', '🌦️', 'Weather']];
+  ['plant', '🌳', 'Plant a tree'], ['zap', '⚡', 'Strike lightning'], ['fire', '🔥', 'Wall of fire'], ['sky', '🌦️', 'Weather']].filter(([k]) => k !== 'owl' || S.OWLS);
+// Owls off for now (sim.js OWLS): their tool, counters and graph button stay in the page, hidden.
+if (!S.OWLS) for (const e of document.querySelectorAll('[data-tool="owl"], [data-show="owl"], #mini-owl, #n-owl')) (e.closest('.mini-pop, .pop') || e).classList.add('hidden');
 
 // which: '' the tools, 'sky' the weather, 'plant' the kinds of tree.
 function openRing(sx, sy, which = '') {

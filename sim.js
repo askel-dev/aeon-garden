@@ -107,6 +107,9 @@ const SPECIES = {
     breedSeasons: [0], breedEnergy: 0.5, birthCost: 5, cap: 4,
   },
 };
+// Owls are switched off for now: none at the start, none fly in, none can be released, and a kept meadow's fly
+// off when it opens (unpackWorld). Their code all stays; true brings them back.
+const OWLS = false;
 const KINDS = Object.keys(SPECIES);                        // 'rabbit', 'fox', 'bee', 'crow', 'owl'
 const perKind = make => Object.fromEntries(KINDS.map(s => [s, make(s)]));   // { rabbit: .., fox: .., bee: .., crow: .., owl: .. }
 
@@ -1979,7 +1982,7 @@ function nearestBurrow(w, x, y, maxD, ok = b => b.dug >= 1) {
 }
 
 function addCreature(w, species, x, y, opts = {}) {
-  if (!dry(w, x, y)) return null;
+  if (!dry(w, x, y) || species === 'owl' && !OWLS) return null;
   const c = makeCreature(w, species, x, y, opts.genes || founderGenes(w, species), null);
   if (opts.sex && species !== 'bee') c.sex = opts.sex;          // bees out and about are all workers
   if (opts.age) c.born = w.tick - Math.min(opts.age * TPD, c.lifespan / 2);   // nobody arrives at death's door
@@ -4613,7 +4616,7 @@ function createWorld(seed, opts = {}) {
   startFrogs(w);
   w.roost = pickRoost(w);
   const n = { rabbit: opts.rabbits ?? Math.round(30 * w.room), fox: opts.foxes ?? Math.round(4 * w.room), bee: opts.bees ?? 12, crow: opts.crows ?? Math.round(8 * w.room),
-    owl: opts.owls ?? 2 * Math.max(1, Math.round(w.room)) };   // a pair or two
+    owl: opts.owls ?? (OWLS ? 2 * Math.max(1, Math.round(w.room)) : 0) };   // a pair or two
   w.arrivals = []; w.family = null;
   if (opts.arrival) planArrivals(w, n);
   else for (const species of KINDS) {
@@ -4851,6 +4854,7 @@ function migrate(w) {
   if (!w.options.migration) return;
   const wait = { rabbit: 1, fox: 3, bee: 2, crow: 3, owl: 10 }, arrive = { rabbit: 6, fox: 2, bee: 8, crow: 4, owl: 2 }, few = { rabbit: 4, fox: 3, bee: 4, crow: 3, owl: 2 };
   for (const s of KINDS) {
+    if (s === 'owl' && !OWLS) continue;
     if (w.count[s] >= few[s] || w.arrivals.some(a => a.species === s)) { w.goneSince[s] = -1; continue; }
     if (w.goneSince[s] < 0) { w.goneSince[s] = w.tick; if (w.count[s] === 0) emit(w, { type: 'extinct', species: s }); continue; }
     if (w.tick - w.goneSince[s] < wait[s] * TPD) continue;
@@ -5005,6 +5009,11 @@ function unpackWorld(kept) {
   for (const c of w.byId.values()) c.mine ??= false;         // (kept before the player could name them)
   for (const d of w.decor) if (d.tree) d.planted ??= 0;      // (or plant trees)
   w.grid = makeGrid(); w.grids = perKind(makeGrid); w.events = []; w.newborn = [];
+  if (!OWLS) {                                               // (kept with owls: they fly off, and leave their hollows)
+    for (const c of w.creatures) if (c.species === 'owl') die(w, c, 'left');
+    for (const d of w.decor) d.owl = 0;
+    w.creatures = w.creatures.filter(c => c.alive); w.count.owl = 0; w.events = [];
+  }
   buildGrid(w);
   return w;
 }
@@ -5155,7 +5164,7 @@ const api = {
   W, H, TPD, SHALLOW, DEEP, SEASON_DAYS, YEAR_DAYS, SEASONS, SPECIES, GENES, COATS, GROUND, WEATHER,
   createWorld, step, clock, isNight, phaseOf, seasonOf, mood, ageDays, growth, isAdult, patchFresh,
   addCreature, paintGrass, setSky, lockSky, zap, burnLine, lift, putDown, nameCreature, nameQueen, NAME_MAX, plantTree, traitMeans, walkable, packWorld, unpackWorld,
-  coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT, KINDS,
+  coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT, KINDS, OWLS,
   TERRAIN, drawnToLink, drawnFromLink, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE,
   TREES, treeStage, treeAge, standing, bearing, hollow, inBloom, SEEDLING, SAPLING, GROWN, KIND_NAMES,
