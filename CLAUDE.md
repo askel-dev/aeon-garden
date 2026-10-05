@@ -18,10 +18,10 @@ told to just do it.
   world into plain data and back, for keeping it between visits (the tables like `SPECIES` go by name, the
   random numbers as where they'd got to). A change a kept meadow can't take (a new field on the world, a
   creature, a hive or a tree that the code counts on) bumps `KEEP_VERSION`, and players' kept meadows start over.
-- `game.js`: drawing, UI, news feed, the inspector, the optional Ollama diary. The inspector shows
+- `game.js`: drawing, UI, news feed, the inspector. The inspector shows
   animals and every other thing you click (hives, trees, rocks, remains, burrows, flowers, fields, water): each
   kind is an entry in `THINGS`, saying how to find one on screen and what its panel shows.
-  The inspector's 🏷️ Name makes an animal yours (sim.js `nameCreature`, `c.mine`; a bee by its queen, `nameQueen`,
+  A tap on the name at the top of the inspector (`nameButton`) makes an animal yours (sim.js `nameCreature`, `c.mine`; a bee by its queen, `nameQueen`,
   `q.mine`): its news always comes and heads the away card (`involvesSelected`), its death gets a line of its own
   that offers a young one left behind to name (`goneLine`, `data-act="adopt"`), it wears a brass ring in its label
   and on the ground (`RING`, `drawRingUnder`), and ••• Yours lists everyone you named, gone or not (`#yours`,
@@ -62,7 +62,8 @@ told to just do it.
 - `ground.js`: the ground (grass, earth, shores, water) as a WebGL shader, painted from a
   few small textures of one texel a tile that game.js keeps up to date (`paintTerrain`, `updateWater`).
   It paints again only when a texture, the zoom or the light has moved (`steady`), and at most at 2x
-  (`GROUND_DPR`). While the camera pans (following, dragging) it paints a margin round the screen (`PAD`)
+  (`GROUND_DPR`). In Safari (`WEBKIT`) it keeps to `GROUND_WEBKIT` pixels, never below 1x: Safari misses a frame
+  on each repaint of a big ground. While the camera pans (following, dragging) it paints a margin round the screen (`PAD`)
   and slides the picture along (`Ground.view`) until the margin runs out. The picture is a canvas of its own
   under the meadow's (`#ground`), slid into place with a CSS transform, never copied onto a frame (only into
   the P photo, `groundIn`); so nothing drawn on the meadow can blend with the ground (a `'lighter'` glow lays a
@@ -101,7 +102,7 @@ DevTools protocol (`--remote-debugging-port`) and use `Runtime.evaluate` / `Page
 Shortcuts for that: set `localStorage['aeon-garden-welcomed'] = '1'` before load to skip the welcome
 card; `window.garden` has `world`, `cam` (set `x`, `y`, `zoom`, `goal = null` to look somewhere) and
 `ui` (`ui.speed = 0` pauses); the CSS `body > *:not(#world, #ground) { visibility: hidden }` hides every panel.
-In a cloud session with no Chrome, Playwright is installed globally (`npm root -g`) with Chromium. The diary button talks to Ollama on localhost:11434 (qwen3:8b, else qwen3:4b).
+In a cloud session with no Chrome, Playwright is installed globally (`npm root -g`) with Chromium.
 
 The meadow's ecology (terrain and water, grass and soil, voles, frogs, rabbit coats, sickness, remains, crows,
 owls, bees, the trees' lives) is in `.claude/rules/ecology.md`, which loads when sim.js or balance.js is opened.
@@ -116,6 +117,8 @@ new feature must not slow it down. If it would, make it cheaper or leave it out.
 - Paint once, copy after. Anything that looks the same from frame to frame goes into a canvas once and
   gets `drawImage`d: the sprite cache (`sprite`), `fireGlow`, `detailTexture`. Never do these per item per
   frame: gradients, `shadowBlur`, `ctx.filter`, `getImageData`/`putImageData`, `measureText`, new canvases.
+  Once painted, a picture that's drawn many times a frame is handed over as an ImageBitmap (`asBitmap`): Safari
+  keeps a small canvas off the GPU and copies its pixels on every draw, which made a busy meadow stutter there.
 - The ground is a cached layer (`drawGround`). It slides when the camera pans, and only changed tiles
   get repainted. Nothing painted into it may change every frame, or the whole ground repaints all the time.
   Moving things go on top. An overlay is one small canvas stretched over the meadow (like

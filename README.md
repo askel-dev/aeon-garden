@@ -62,7 +62,6 @@ Every meadow is different: a river, a lake or both, a few ponds, woods, great ro
 - 🕸️ Who ate whom (in the ••• menu, or on the stats page) draws this meadow's food web as it ran: who caught whom, what they grazed, and what went back into the ground, this season, over the last year or since the start
 - Change the weather, or 🔒 lock it, from the sky button at the top
 - Quiet sounds and a little felt piano now and then, off until you press 🔊 or M
-- With [Ollama](https://ollama.com) running, the ✍️ Diary button lets an animal write about its day
 
 Keys: <kbd>Space</kbd> pause, <kbd>1</kbd>–<kbd>4</kbd> speed, <kbd>S</kbd> stats, <kbd>N</kbd> news, <kbd>W</kbd> weather,
 <kbd>K</kbd> lock the weather, <kbd>F</kbd> follow, <kbd>M</kbd> sound, <kbd>P</kbd> copy the meadow as a picture, <kbd>Esc</kbd> close.

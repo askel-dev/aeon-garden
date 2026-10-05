@@ -39,7 +39,7 @@ if (COUNTER && !['localhost', '127.0.0.1'].includes(location.hostname)) {
 let world;
 const ui = {
   speed: 1, sound: false, tool: 'look', selectedId: 0, picked: null, hoverId: 0, follow: false,
-  trail: [], effects: [], zaps: [], zapNext: 0, diary: new Map(),
+  trail: [], effects: [], zaps: [], zapNext: 0, allTraits: false, allStory: false,
   lastNews: {}, newsLog: [], newsOpen: false, records: perKind(() => 0), crashSaid: perKind(() => -1), seenHistory: 0,
   releaseSex: perKind(() => 'F'), group: perKind(() => 1), mini: false, ring: null, sheetUp: false, naming: 0,
   stats: { open: false, show: 'rabbit', range: 'five', hover: null },
@@ -174,6 +174,22 @@ let paintedMs = 0, standIns = false;    // spent painting sprites this frame; on
 const SPRITE_BYTES = 96e6;          // phones cap canvas memory in total, so mind the pixels, not the count
 const PAINT_MS = 3;                 // past this much painting in a frame, sprites wait for the next one
 
+// Safari keeps a small canvas off the GPU and copies its pixels out every time it's drawn: with a meadow full of
+// rabbits that took most of its frame, and it stuttered. An ImageBitmap stays on the GPU, in every browser. So a
+// picture drawn over and over is handed over as one once it's painted, and drawn from that (a sprite's canvas,
+// then, is an ImageBitmap).
+function asBitmap(c, use) {
+  if (window.createImageBitmap) createImageBitmap(c).then(use, () => { /* it's drawn from the canvas, then */ });
+}
+const freeImage = img => { if (img.close) img.close(); else img.width = 0; };   // hands the memory back right away
+function dataURL(img) {                     // for an <img>: an ImageBitmap goes through a canvas
+  if (img.toDataURL) return img.toDataURL();
+  const c = document.createElement('canvas');
+  c.width = img.width; c.height = img.height;
+  c.getContext('2d').drawImage(img, 0, 0);
+  return c.toDataURL();
+}
+
 // Past small sizes a sprite is painted in steps of about 6% and stretched to the size asked for,
 // so zooming reuses a few sizes instead of painting (and recolouring) every tree at every pixel.
 const spriteStep = px => px < 16 ? Math.round(px) : Math.round(2 ** (Math.round(Math.log2(px) * 12) / 12));
@@ -235,6 +251,7 @@ function paintedSprite(emoji, px, tint, leaf, center, coat) {
   }
   s = { canvas: c, size: size / dpr, px, look, used: spriteFrame };
   spriteCache.set(key, s); latestLook.set(look, s);
+  asBitmap(c, b => { if (spriteCache.get(key) === s) { s.canvas = b; c.width = 0; } else b.close(); });
   paintedMs += performance.now() - t0;
   return s;
 }
@@ -245,12 +262,12 @@ function dropSprites(need) {
   for (const [key, s] of spriteCache) {
     if (spriteFrame - s.used < 3) continue;
     spriteBytes -= s.canvas.width * s.canvas.height * 4;
-    s.canvas.width = 0;                                  // hands the memory back right away
+    freeImage(s.canvas);
     spriteCache.delete(key);
     if (latestLook.get(s.look) === s) latestLook.delete(s.look);
   }
   if (spriteCache.size <= 2000 && spriteBytes + need <= SPRITE_BYTES) return;
-  for (const s of spriteCache.values()) s.canvas.width = 0;
+  for (const s of spriteCache.values()) freeImage(s.canvas);
   spriteCache.clear(); latestLook.clear(); spriteBytes = 0;
 }
 
@@ -460,12 +477,12 @@ function coatLine(c) {
 const portraits = new Map();
 function portraitHTML(c) {
   if (c.alive && c.species === 'crow') {                   // painted, as in the meadow (the emoji splits on older systems)
-    if (!portraits.has('crow')) portraits.set('crow', sprite(CROW_ARTS[0], 38).canvas.toDataURL());
+    if (!portraits.has('crow')) portraits.set('crow', dataURL(sprite(CROW_ARTS[0], 38).canvas));
     return `<img src="${portraits.get('crow')}" alt="🐦‍⬛">`;
   }
   if (!c.alive || !c.genes.coat) return c.alive ? c.sp.emoji : '👻';
   const look = coatLook(c);
-  if (!portraits.has(look.key)) portraits.set(look.key, sprite(c.sp.emoji, 38, undefined, null, true, look).canvas.toDataURL());
+  if (!portraits.has(look.key)) portraits.set(look.key, dataURL(sprite(c.sp.emoji, 38, undefined, null, true, look).canvas));
   return `<img src="${portraits.get(look.key)}" alt="${c.sp.emoji}">`;
 }
 
@@ -549,7 +566,11 @@ function edgeColour(r, g, b) {
 // It is a canvas of its own under the meadow's (#ground), slid into place, not copied onto every frame:
 // Chrome lets a frame draw only so many pictures' bytes before it pays extra on every call, and a copy
 // of the ground took most of them. The photo still draws it in (groundIn).
-const GROUND_DPR = 2;
+// Safari (and every browser on an iPhone: they're all WebKit) misses a frame each time it repaints a big
+// ground, however cheap the shader: on a MacBook at 2x, five times a second at 1x speed. There the ground
+// is kept to GROUND_WEBKIT pixels, but never below 1x. A phone's small screen stays at 2x.
+const GROUND_DPR = 2, GROUND_WEBKIT = 1.5e6;
+const WEBKIT = /AppleWebKit/.test(navigator.userAgent) && !/Chrome\/|Chromium|Edg\//.test(navigator.userAgent);
 const groundLayer = Ground.ok ? Ground.canvas : null, laid = { w: 0, h: 0, x: 0, y: 0 };
 if (groundLayer) { groundLayer.id = 'ground'; canvas.before(groundLayer); }
 let groundIn = false;
@@ -562,7 +583,8 @@ function drawGround(z, ox, oy, shx, shy) {
   }
   const [low, high] = groundColours(), ck = S.clock(world), sn = sun(ck), k = 2.5 * Math.max(0, sn.a) * (0.6 + 0.4 * Math.abs(sn.lean));
   if (!mist.field) { mistField(); Ground.mist(mist.field, MIST_W, MIST_H, MIST_OUT); }
-  const gd = Math.min(dpr, GROUND_DPR), w = Math.round(vw * gd), h = Math.round(vh * gd);
+  const gd = Math.min(dpr, GROUND_DPR, WEBKIT ? Math.max(1, Math.sqrt(GROUND_WEBKIT / (vw * vh))) : Infinity);
+  const w = Math.round(vw * gd), h = Math.round(vh * gd);
   Ground.draw({
     width: w, height: h, zoom: z, ox, oy, dpr: gd, seed: groundSeed, low, high, sand: shoreSand, fog: fogColour(high, ck.phase),
     snow: world.snow, damp: 1 - 0.12 * world.wet, ice: iceOver(), cold: coldness(), lx: k * sn.lean, ly: k * 0.8,
@@ -739,7 +761,7 @@ function flowerSprite(code) {
   let c = flowerSprites.get(code);
   if (c) return c;
   const k = code & 63, v = (code >> 6) & 7, art = code >> 9, U = 2 ** (k / 2);
-  if (flowerBytes > 32e6) { for (const o of flowerSprites.values()) o.width = 0; flowerSprites.clear(); flowerBytes = 0; }
+  if (flowerBytes > 32e6) { for (const o of flowerSprites.values()) freeImage(o); flowerSprites.clear(); flowerBytes = 0; }
   c = document.createElement('canvas');
   c.width = Math.ceil(U * FLOWER_BOX[0]); c.height = Math.ceil(U * FLOWER_BOX[1]);
   flowerBytes += c.width * c.height * 4;
@@ -751,6 +773,7 @@ function flowerSprite(code) {
   const r = n => hash2(art * 8 + v, 29, n), bold = 1 + 0.4 * clamp((36 - U) / 28, 0, 1);
   FLOWER_ARTS[art](g, r, v, bold, Math.max(0.022, 1 / U));
   flowerSprites.set(code, c);
+  asBitmap(c, b => { if (flowerSprites.get(code) === c) { flowerSprites.set(code, b); c.width = 0; } else b.close(); });
   return c;
 }
 
@@ -2118,13 +2141,14 @@ function sun(ck) {
 }
 
 // Trees and rocks cast a soft shadow, a cool green-blue, painted once and stretched under each.
-const SOFT_SHADOW = (() => {
+let SOFT_SHADOW = (() => {                // (an ImageBitmap once it's ready: asBitmap)
   const c = document.createElement('canvas'); c.width = 64; c.height = 32;
   const g = c.getContext('2d'), r = g.createRadialGradient(32, 32, 0, 32, 32, 32);
   r.addColorStop(0, 'rgba(24, 48, 44, 1)'); r.addColorStop(0.5, 'rgba(24, 48, 44, 0.85)'); r.addColorStop(1, 'rgba(24, 48, 44, 0)');
   g.scale(1, 0.5); g.fillStyle = r; g.fillRect(0, 0, 64, 64);
   return c;
 })();
+asBitmap(SOFT_SHADOW, b => { SOFT_SHADOW = b; });
 // A tree also keeps a dark patch at its foot, day and night, so it stands on the ground.
 function drawDecorShadow(d, sx, sy, sn) {
   if (treeWaits.get(d) === 0) return;                      // not drawn yet (drawPaintedTree)
@@ -3314,7 +3338,7 @@ function thunder(e) {
 // Flames glow, so they go on top of the night. The glow is painted once and stretched to size.
 // It can't add light to the ground (a layer of its own, under the canvas), so it lays a pale warm
 // light over it, which reads the same: the glows add up to it where many flames burn.
-const fireGlow = (() => {
+let fireGlow = (() => {                   // (an ImageBitmap once it's ready: asBitmap)
   const c = document.createElement('canvas'), n = 128, g = c.getContext('2d');
   c.width = c.height = n;
   const grad = g.createRadialGradient(n / 2, n / 2, 0, n / 2, n / 2, n / 2);
@@ -3323,6 +3347,7 @@ const fireGlow = (() => {
   g.fillStyle = grad; g.fillRect(0, 0, n, n);
   return c;
 })();
+asBitmap(fireGlow, b => { fireGlow = b; });
 function drawFire(now) {
   if (!world.burning.length) return;
   const z = cam.zoom, px = Math.max(8, z * 1.15);
@@ -3564,6 +3589,7 @@ const POLLEN_DOTS = ['255, 206, 60', '255, 236, 150'].map(rgb => {
   g.fillStyle = grad; g.fillRect(0, 0, 2 * r, 2 * r);
   return c;
 });
+POLLEN_DOTS.forEach((c, i) => asBitmap(c, b => { POLLEN_DOTS[i] = b; }));
 const pollen = {
   x: new Float32Array(POLLEN_MAX), y: new Float32Array(POLLEN_MAX),       // where it burst, in tiles
   vx: new Float32Array(POLLEN_MAX), vy: new Float32Array(POLLEN_MAX),     // how far it flies, in tiles
@@ -3617,7 +3643,7 @@ function drawPollen(now) {
 // the clock, so there is nothing to keep, and they are drawn from one small glow and the 🦋 sprite.
 
 // (The halo is laid over the dark ground, not added to it, like the fire's glow: so it's thicker.)
-const FIREFLY_GLOW = (() => {
+let FIREFLY_GLOW = (() => {               // (an ImageBitmap once it's ready: asBitmap)
   const c = document.createElement('canvas'), n = 32, g = c.getContext('2d');
   c.width = c.height = n;
   const grad = g.createRadialGradient(n / 2, n / 2, 0, n / 2, n / 2, n / 2);
@@ -3629,6 +3655,7 @@ const FIREFLY_GLOW = (() => {
   g.fillStyle = grad; g.fillRect(0, 0, n, n);
   return c;
 })();
+asBitmap(FIREFLY_GLOW, b => { FIREFLY_GLOW = b; });
 const FIREFLIES = 3;               // to each spot
 
 // Where the fireflies are: a scatter of spots by the water and at the edge of the woods, chosen
@@ -4237,7 +4264,8 @@ const TRAITS = [
     up: 'hardier', down: 'more delicate', tip: 'Less likely to catch the sickness or die of it, but burns a little more energy' },
 ];
 const traitsOf = species => TRAITS.filter(t => !t.only || t.only === species);
-const word = (t, v) => t.words[v < 0.3 ? 0 : v < 0.45 ? 1 : v < 0.55 ? 2 : v < 0.7 ? 3 : 4];
+const band = v => v < 0.3 ? 0 : v < 0.45 ? 1 : v < 0.55 ? 2 : v < 0.7 ? 3 : 4;   // 2, the middle, is "medium", "steady"…
+const word = (t, v) => t.words[band(v)];
 
 // Returns just the quiet words when there is nothing to show, so both species can share one line.
 function evolutionLine(species) {
@@ -4935,9 +4963,20 @@ function lifeStage(c) {
   return 'adult';
 }
 
+// The three traits that stand out most, as "⚡ sluggish · 🛡️ catches anything". The middle words say nothing,
+// so they're left out. A tap on the line shows them all (traitRows).
+function traitLine(species, genes) {
+  const odd = traitsOf(species).filter(t => band(genes[t.k]) !== 2)
+    .sort((a, b) => Math.abs(genes[b.k] - 0.5) - Math.abs(genes[a.k] - 0.5)).slice(0, 3);
+  return odd.length ? odd.map(t => `${t.e} ${word(t, genes[t.k])}`).join('<span class="sep">·</span>') : 'Middling in everything';
+}
+
 const traitRows = (species, genes) => traitsOf(species).map(t => `<div class="trait" title="${t.tip}"><span>${t.e}</span><span>${t.name}</span>
   <div class="meter"><span style="width:${Math.round(genes[t.k] * 100)}%"></span></div>
   <span class="word">${word(t, genes[t.k])}</span></div>`).join('');
+const traitsHTML = (species, genes) => `<button class="traits ${ui.allTraits ? 'open' : ''}" data-act="traits" title="${ui.allTraits ? 'Fewer traits' : 'All the traits'}">
+    <span>${traitLine(species, genes)}</span><span class="more" aria-hidden="true">›</span></button>
+  ${ui.allTraits ? `<div class="trait-table">${traitRows(species, genes)}</div>` : ''}`;
 
 // On a phone the inspector opens folded to one line: who, what they're up to, and the tummy (or a
 // thing's first meter) as a thin line under that. Tap it for the rest.
@@ -4950,7 +4989,10 @@ const stripHTML = (tint, face, name, line, meter) => `
     <button class="close" data-act="close" title="Close (Esc)">✕</button>
   </div>`;
 
+const STORY_SHORT = 4;                    // life-story lines shown before "Show all"
 const RING_HTML = '<span class="ring" title="Yours: you named it"></span>';
+// The name at the top of the inspector, when you can name it: a tap turns it into a field (startNaming).
+const nameButton = (html, title) => `<button class="name-edit" data-act="name" title="${title}">${html}<span class="pen" aria-hidden="true">✏️</span></button>`;
 function renderInspector() {
   if (ui.naming && document.activeElement?.id === 'name-input') return;   // not under your typing
   const box = $('#inspector');
@@ -4973,7 +5015,8 @@ function renderInspector() {
   }
   const mum = world.byId.get(c.mumId), dad = world.byId.get(c.dadId);
   const parent = (p, label) => p ? `${label} ${link(p)}${p.alive ? '' : ' 🪦'}` : '';
-  const kidsAlive = world.creatures.filter(k => k.mumId === c.id || k.dadId === c.id).length;
+  const parents = [parent(mum, 'Mum'), parent(dad, 'Dad')].filter(Boolean).join(' · ');
+  const kidsAlive = c.kids && world.creatures.filter(k => k.mumId === c.id || k.dadId === c.id).length;
   const chips = [];
   if (c.alive && c.pregnantUntil) chips.push(c.species === 'fox' ? '🍼 Expecting cubs' : '🍼 Expecting babies');
   if (c.kills) chips.push(`🍖 ${c.kills} ${c.kills === 1 ? 'catch' : 'catches'}`);
@@ -4991,13 +5034,9 @@ function renderInspector() {
   if (nemesis && nemesis.alive) chips.push(`😨 Afraid of ${link(nemesis)}`);
   if (c.alive && c.sick) chips.push('🤒 Sick');
   else if (c.alive && c.immune > world.tick) chips.push(`🛡️ Immune to the sickness for ${days((c.immune - world.tick) / S.TPD)}`);
-  if (c.gen > 1) chips.push(`🌳 Generation ${c.gen}`);
-  const story = c.story.slice().reverse().slice(0, 10).map(s =>
+  const story = c.story.slice().reverse().slice(0, ui.allStory ? Infinity : STORY_SHORT).map(s =>
     `<li><span>${s.emoji}</span><span>${esc(s.text)}<div class="when">${when(s.t)}</div></span></li>`).join('');
-  const diary = ui.diary.get(c.id);
-  const diaryHtml = diary ? (diary.loading
-    ? `<div class="diary"><span class="dots">✍️ ${esc(c.name)} is writing</span></div>`
-    : `<div class="diary ${diary.error ? 'err' : ''}">${esc(diary.text)}</div>`) : '';
+  const nameable = c.alive && c.species !== 'bee', named = esc(c.name) + (c.mine ? RING_HTML : '');
   const living = c.alive ? '' : world.creatures.find(k => k.mumId === c.id || k.dadId === c.id);
 
   setHTML(box, `
@@ -5005,7 +5044,8 @@ function renderInspector() {
     <div class="ins-head">
       <div class="portrait" style="background:${furCss(c)}33">${portraitHTML(c)}</div>
       <div>
-        <div class="ins-name">${ui.naming === c.id ? nameInput(c.name) : esc(c.name) + (c.mine ? RING_HTML : '')} <span style="color:var(--muted)">${sex}</span></div>
+        <div class="ins-name">${ui.naming === c.id ? nameInput(c.name) : nameable
+          ? nameButton(named, c.mine ? 'Rename it' : "Give it a name of your own: you'll hear how its life goes") : named} <span style="color:var(--muted)">${sex}</span></div>
         <div class="ins-sub">${c.alive ? `${c.sp.name} · ${lifeStage(c)} · ${age} ${age === 1 ? 'day' : 'days'} old`
           : `${c.sp.name} · lived ${age} ${age === 1 ? 'day' : 'days'}`}</div>
       </div>
@@ -5014,26 +5054,21 @@ function renderInspector() {
     <div class="mood">${mood.emoji || '🙂'} ${esc(mood.text)}</div>
     ${c.alive ? `<div class="meters">
       <div class="meter-row">Tummy <div class="meter ${e < 0.3 ? 'low' : ''}"><span style="width:${Math.round(e * 100)}%"></span></div></div>
-      <div class="meter-row">Breath <div class="meter stamina"><span style="width:${Math.round(c.stamina * 100)}%"></span></div></div>
+      ${c.stamina < 1 ? `<div class="meter-row">Breath <div class="meter stamina"><span style="width:${Math.round(c.stamina * 100)}%"></span></div></div>` : ''}
     </div>` : ''}
     ${chips.length ? `<div class="chips">${chips.map(x => `<span class="chip">${x}</span>`).join('')}</div>` : ''}
-    <h4>Personality</h4>
-    ${traitRows(c.species, c.genes)}
-    <h4>Family</h4>
+    ${traitsHTML(c.species, c.genes)}
     <div class="family">
       ${c.genes.coat ? `${coatLine(c)}<br>` : ''}
-      ${c.queen ? `A daughter of 👑 Queen ${esc(c.queen.name)}${c.queen.died ? ' 🪦' : ''}, who has raised ${c.queen.kids} bees.<br>
-        Workers have no young of their own: the queen lays all the eggs.`
-        : `${c.gen === 1 ? 'One of the first arrivals.' : [parent(mum, 'Mum'), parent(dad, 'Dad')].filter(Boolean).join(' · ')}<br>
-      ${c.kids ? `${c.kids} ${c.kids === 1 ? 'child' : 'children'}${kidsAlive ? `, ${kidsAlive} still alive` : ''}` : 'No children yet'}`}
+      ${c.queen ? `A daughter of 👑 Queen ${esc(c.queen.name)}${c.queen.died ? ' 🪦' : ''}, who has raised ${c.queen.kids} bees`
+        : c.gen === 1 ? 'One of the first arrivals' : parents ? `${parents} <span class="dim">· generation ${c.gen}</span>` : `Generation ${c.gen}`}
+      ${c.kids ? `<br>${c.kids} ${c.kids === 1 ? 'child' : 'children'}${kidsAlive ? `, ${kidsAlive} still alive` : ''}` : ''}
     </div>
     <h4>Life story</h4>
     <ul class="story">${story}</ul>
-    ${diaryHtml}
+    ${c.story.length > STORY_SHORT ? `<button class="story-more" data-act="story">${ui.allStory ? 'Show less' : `Show all ${c.story.length}`}</button>` : ''}
     <div class="ins-actions">
-      ${c.alive ? `<button class="btn ${ui.follow ? 'on' : ''}" data-act="follow">${ui.follow ? '📍 Following' : '📍 Follow'}</button>
-        ${c.species === 'bee' ? '' : `<button class="btn" data-act="name" title="Give it a name of your own: you'll hear how its life goes">🏷️ ${c.mine ? 'Rename' : 'Name'}</button>`}
-        <button class="btn" data-act="diary" title="Uses the local AI on this computer (Ollama)">✍️ Diary</button>`
+      ${c.alive ? `<button class="btn ${ui.follow ? 'on' : ''}" data-act="follow">${ui.follow ? '📍 Following' : '📍 Follow'}</button>`
         : living ? `<button class="btn" data-act="child" data-id="${living.id}">🐣 Follow ${esc(living.name)}</button>` : ''}
     </div>`);
 }
@@ -5157,7 +5192,7 @@ const THINGS = {
       if (q && s >= 2) facts.push(['🍯', `${Math.round(h.honey / Math.max(1, h.bees))} honey put by for each bee`]);
       const fields = world.fields.filter(f => Math.hypot(f.x - h.x, f.y - h.y) < S.FORAGE_RANGE);
       const sections = [];
-      if (q) sections.push([`👑 Queen ${esc(q.name)}`, `<div class="family">Generation ${q.gen} · queen for ${ago(q.since)} · has raised ${q.kids} ${q.kids === 1 ? 'bee' : 'bees'}${q.mum ? `<br>A daughter of Queen ${esc(q.mum)}` : ''}</div>${traitRows('bee', q.genes)}`]);
+      if (q) sections.push([`👑 Queen ${esc(q.name)}`, `<div class="family">Generation ${q.gen} · queen for ${ago(q.since)} · has raised ${q.kids} ${q.kids === 1 ? 'bee' : 'bees'}${q.mum ? `<br>A daughter of Queen ${esc(q.mum)}` : ''}</div>${traitsHTML('bee', q.genes)}`]);
       sections.push(['Flowers in reach', fields.length
         ? fields.map(f => `${f.emoji[0]} ${thingLink('field', f.id, esc(f.name))} <span class="dim">· ${seasonName(f.season)} · to the ${compass(f.x - h.x, f.y - h.y)}</span>`).join('<br>')
         : 'No flower fields, only the flowers scattered about']);
@@ -5457,7 +5492,8 @@ function renderThing(box, strip) {
     <div class="ins-head">
       <div class="portrait" style="background:${v.tint || '#d9c9a8'}33">${v.emoji}</div>
       <div>
-        <div class="ins-name">${v.queen && ui.naming === v.queen.key ? `Queen ${nameInput(v.queen.name)}` : esc(v.name) + (v.queen?.mine ? RING_HTML : '')}</div>
+        <div class="ins-name">${!v.queen ? esc(v.name) : ui.naming === v.queen.key ? `Queen ${nameInput(v.queen.name)}`
+          : nameButton(esc(v.name) + (v.queen.mine ? RING_HTML : ''), v.queen.mine ? 'Rename the queen' : "Name the queen: her hive is yours, and you'll hear how it goes")}</div>
         <div class="ins-sub">${esc(v.sub)}</div>
       </div>
       <button class="close" data-act="close" title="Close (Esc)">✕</button>
@@ -5467,8 +5503,7 @@ function renderThing(box, strip) {
       `<div class="meter-row">${label} <div class="meter ${cls}"><span style="width:${Math.round(clamp(k, 0, 1) * 100)}%"></span></div></div>`).join('')}</div>` : ''}
     ${v.chips?.length ? `<div class="chips">${v.chips.map(x => `<span class="chip">${x}</span>`).join('')}</div>` : ''}
     ${v.facts?.length ? `<ul class="story facts">${v.facts.map(([e, t]) => `<li><span>${e}</span><span>${t}</span></li>`).join('')}</ul>` : ''}
-    ${(v.sections || []).map(([title, html]) => `<h4>${title}</h4><div class="family">${html}</div>`).join('')}
-    ${v.queen ? `<div class="ins-actions"><button class="btn" data-act="name" title="Name the queen: her hive is yours, and you'll hear how it goes">🏷️ ${v.queen.mine ? 'Rename' : 'Name'} the queen</button></div>` : ''}`);
+    ${(v.sections || []).map(([title, html]) => `<h4>${title}</h4><div class="family">${html}</div>`).join('')}`);
 }
 
 // A ring round the picked thing, under it; its name over everything.
@@ -5488,71 +5523,6 @@ function drawPickedOver() {
   drawLabel(p.name, sx, sy + Math.max(4, s.r * cam.zoom * 0.4) + 6);
 }
 
-// ------------------------------------------------------------------ the diary (local LLM, optional)
-
-const OLLAMA = 'http://localhost:11434';
-let ollamaModel = null;
-
-async function pickModel() {
-  if (ollamaModel) return ollamaModel;
-  const res = await fetch(OLLAMA + '/api/tags');
-  const names = (await res.json()).models.map(m => m.name);
-  ollamaModel = ['qwen3:8b', 'qwen3:4b'].find(n => names.includes(n)) || names[0];
-  if (!ollamaModel) throw new Error('no models');
-  return ollamaModel;
-}
-
-function diaryFacts(c) {
-  const ck = S.clock(world);
-  const mum = world.byId.get(c.mumId), dad = world.byId.get(c.dadId);
-  const events = c.story.slice(-8).map(s => `- (${when(s.t)}) ${s.text}`).join('\n');
-  return [
-    `Name: ${c.name}. A ${c.sex === 'F' ? 'female' : 'male'} ${c.sp.name.toLowerCase()}, ${Math.floor(S.ageDays(world, c))} days old (a ${lifeStage(c)}; this one will live about ${Math.round(c.lifespan / S.TPD)} days).`,
-    `Personality: ${traitsOf(c.species).map(t => word(t, c.genes[t.k])).join(', ')}.` + (c.genes.coat ? ` Fur: ${S.COATS[S.coatOf(c.genes)].name}${S.whiteness(world, c) > 0.5 ? ', turned white for winter' : ''}.` : ''),
-    `Right now: ${S.mood(world, c).text}. Tummy ${Math.round(100 * c.energy / c.maxEnergy)}% full. It is ${S.SEASONS[ck.season].name.toLowerCase()}, ${ck.night ? 'night' : 'daytime'}, weather: ${S.WEATHER[world.weather.kind].name.toLowerCase()}${world.burning.length ? ', and there is a wildfire in the meadow' : ''}.`,
-    c.queen ? `Family: a worker, daughter of Queen ${c.queen.name}, who lays all the hive's eggs. Sisters in the hive: ${c.home.bees - 1}.`
-      : `Family: mum ${mum ? mum.name + (mum.alive ? '' : ' (died)') : 'unknown'}, dad ${dad ? dad.name + (dad.alive ? '' : ' (died)') : 'unknown'}, ${c.kids} children.`,
-    c.species === 'fox' ? `Rabbits caught so far: ${c.kills}. Voles caught in the long grass: ${c.voles}. Frogs caught by the water: ${c.frogs || 0}.`
-      : c.species === 'bee' ? `Flowers visited so far: ${c.visits}. Honey in the hive: ${Math.round(c.home.honey)}, shared by ${c.home.bees} bees.`
-      : c.species === 'crow' ? `A crow: it pecks for grubs, eats what the foxes leave and whoever died out in the meadow, sleeps with the other crows in one big tree, and buries acorns in autumn.`
-      : c.species === 'owl' ? `A tawny owl: it sleeps in its tree by day, and from dusk to dawn sits on a branch listening for voles and frogs and drops on them. Voles caught so far: ${c.voles}. Frogs: ${c.frogs || 0}. Young rabbits caught: ${c.kills}. The crows mob it if they find it asleep.`
-      : `Narrow escapes from foxes: ${c.escapes}.`
-        + (world.byId.get(c.nemesisId) ? ` The fox it fears most: ${world.byId.get(c.nemesisId).name}.` : ''),
-    `Recent life events (oldest first):\n${events}`,
-    `Write today's diary entry.`,
-  ].join('\n');
-}
-
-async function writeDiary(c) {
-  const entry = { loading: true, text: '' };
-  ui.diary.set(c.id, entry);
-  renderInspector();
-  try {
-    const model = await pickModel();
-    const res = await fetch(OLLAMA + '/api/chat', {
-      method: 'POST',
-      body: JSON.stringify({
-        model, stream: false, think: false,
-        options: { temperature: 0.9, num_predict: 180 },
-        messages: [
-          { role: 'system', content: 'You write tiny diary entries for animals living in a cozy meadow. ' +
-            'Write in first person as the animal, in simple, warm, slightly funny words a child would enjoy. ' +
-            'Use only the facts given and do not invent other named animals. 2 or 3 short sentences. At most one emoji.' },
-          { role: 'user', content: diaryFacts(c) },
-        ],
-      }),
-    });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const data = await res.json();
-    entry.text = '“' + data.message.content.replace(/<think>[\s\S]*?<\/think>/g, '').trim().replace(/^["“]|["”]$/g, '') + '”';
-  } catch (err) {
-    entry.error = true;
-    entry.text = '✍️ The diary needs the local AI. Start Ollama on this computer (ollama serve) and try again.';
-  }
-  entry.loading = false;
-  if (ui.selectedId === c.id) renderInspector();
-}
-
 // ------------------------------------------------------------------ selection and input
 
 function select(id, zoomIn = true) {
@@ -5570,9 +5540,10 @@ function select(id, zoomIn = true) {
 
 // ------------------------------------------------------------------ naming
 //
-// 🏷️ in the inspector turns the name into a field: Enter or a tap away keeps it, Esc lets it be. A named animal
-// is yours (sim.js nameCreature): its news comes first and on the away card, its death gets a line of its own
-// (goneLine), it wears a ring (RING), and it's in the Yours card, gone or not. A bee is named at its hive: the queen.
+// A tap on the name at the top of the inspector (nameButton) turns it into a field: Enter or a tap away keeps it,
+// Esc lets it be. A named animal is yours (sim.js nameCreature): its news comes first and on the away card, its death
+// gets a line of its own (goneLine), it wears a ring (RING), and it's in the Yours card, gone or not. A bee is named
+// at its hive: the queen.
 const nameInput = name => `<input id="name-input" class="name-input" maxlength="${S.NAME_MAX}" value="${esc(name)}" aria-label="Its name" enterkeyhint="done" autocomplete="off" spellcheck="false">`;
 function startNaming() {
   const key = ui.picked ? ui.picked.kind === 'hive' && ui.picked.it.queen && 'hive:' + ui.picked.it.id : ui.selectedId;
@@ -5631,7 +5602,7 @@ function renderYours() {
   }
   for (const d of world.decor) if (d.planted) rows.push(`<li><span>🌳</span><span>${thingLink('tree', d.id, esc(treeTitle(d)))}<div class="when">planted in the ${plantedWhen(d)}</div></span></li>`);
   for (const c of gone) rows.push(`<li class="gone"><span>🪦</span><span>${link(c)} · ${GONE_SAY[c.cause] || 'gone'}<div class="when">${when(c.died)}, ${days(S.ageDays(world, c))} old</div></span></li>`);
-  setHTML($('#yours-list'), rows.join('') || `<li class="none">Nobody yet. Click an animal and tap 🏷️ Name: you'll hear how its life goes. A bee is named at its hive, by its queen. The trees you plant are here too.</li>`);
+  setHTML($('#yours-list'), rows.join('') || `<li class="none">Nobody yet. Click an animal and tap its name to give it one of your own: you'll hear how its life goes. A bee is named at its hive, by its queen. The trees you plant are here too.</li>`);
 }
 
 // The sheet on a phone: tap the folded line for more and the handle for less (the click handler), or
@@ -6369,6 +6340,8 @@ document.addEventListener('click', e => {
   else if (t.dataset.range) { ui.stats.range = t.dataset.range; renderStats(); }
   else if (t.dataset.act === 'follow') { ui.follow = !ui.follow; renderInspector(); }
   else if (t.dataset.act === 'name') startNaming();
+  else if (t.dataset.act === 'traits') { ui.allTraits = !ui.allTraits; renderInspector(); }
+  else if (t.dataset.act === 'story') { ui.allStory = !ui.allStory; renderInspector(); }
   else if (t.dataset.act === 'yours') toggleYours();
   else if (t.dataset.act === 'adopt') {
     const c = world.byId.get(+t.dataset.id);
@@ -6376,7 +6349,6 @@ document.addEventListener('click', e => {
     if (yoursOpen()) toggleYours(false);
     if (c && c.alive) { select(c.id); startNaming(); }
   }
-  else if (t.dataset.act === 'diary') { const c = world.byId.get(ui.selectedId); if (c) writeDiary(c); }
   else if (t.dataset.thing) {
     const [kind, id] = t.dataset.thing.split(':'), it = (kind === 'hive' ? world.hives : kind === 'tree' ? world.decor.filter(o => o.tree) : world.fields).find(o => o.id === +id);
     if (t.closest('#yours')) toggleYours(false);
@@ -6619,7 +6591,7 @@ const TRIES = [                          // what to try, a hint, and what it say
   { k: 'fox', e: '🦊', text: 'Let a fox loose by the rabbits', hint: 'They know what to do.', said: 'Run, rabbits!' },
   { k: 'sky', e: '🌦️', text: 'Change the weather', hint: 'A heatwave dries the grass out for a fire.' },
   { k: 'look', e: '🌳', text: 'Click a tree, a hive or a burrow', hint: 'Everything here has a story.', said: 'Rocks, flowers and water have theirs too.' },
-  { k: 'name', e: '🏷️', text: 'Give an animal a name', hint: 'Click one, then 🏷️ Name.', said: 'It’s yours now: you’ll hear how it goes.' },
+  { k: 'name', e: '🏷️', text: 'Give an animal a name', hint: 'Click one, then tap its name.', said: 'It’s yours now: you’ll hear how it goes.' },
   { k: 'plant', e: '🌳', text: 'Plant a tree', hint: 'Pick the kind: an oak is slow, a birch quick, a hawthorn guards its neighbours.', said: 'Mind the rabbits: a seedling is a mouthful.' },
   { k: 'carry', e: '🫳', text: 'Pick up an animal and carry it', hint: 'Press on it and drag. On a phone, hold a finger on it.', said: 'Mind where you put it down.' },
   { k: 'fast', e: '⏩', text: 'Watch a year go by at 60×', hint: 'The rabbits boom and crash.', said: 'The meadow keeps going while you’re away, too.' },
