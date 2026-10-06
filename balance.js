@@ -22,6 +22,9 @@ for (let s = 1; s <= seeds; s++) {
   // The owls at each season's end and their hollows, owlets fledged, the young that flew off, and the crows mobbing them.
   const owls = [];
   let fledged = 0, leaving = 0, owlNests = 0;
+  // The otters at each season's end and their holts, holts made, cubs out of the holt, and the grown ones that left.
+  const otters = [];
+  let holts = 0, cubsOut = 0, otterLeft = 0;
   const sky = {};
   let maxR = 0, maxF = 0;
   // The ground: days the rabbits sat at their cap, crashes (under a quarter of it) and recoveries (back over
@@ -64,6 +67,9 @@ for (let s = 1; s <= seeds; s++) {
         if (e.type === 'fledge') fledged++;
         if (e.type === 'owlleaves') leaving++;
         if (e.type === 'owlnest') owlNests++;
+        if (e.type === 'holt') holts++;
+        if (e.type === 'cubsout') cubsOut++;
+        if (e.type === 'otterleaves') otterLeft++;
       }
       w.events.length = 0;
       minR = Math.min(minR, w.count.rabbit); minF = Math.min(minF, w.count.fox);
@@ -93,14 +99,15 @@ for (let s = 1; s <= seeds; s++) {
     fish.push(Math.round(w.fishCount));
     crows.push(w.count.crow);
     owls.push(`${w.count.owl}(${w.decor.filter(d => d.owl).length})`);
+    otters.push(`${w.count.otter}(${w.decor.filter(d => d.holt).length})`);
     const grass = w.grass.reduce((a, b) => a + b, 0);
     rows.push(`${Sim.SEASONS[k % 4].name[0]}${Math.floor(k / 4) + 1}:${w.count.rabbit}/${w.count.fox}/${w.count.bee}` + (verbose ? `(g${grass.toFixed(0)} min${minR}/${minF})` : ''));
   }
   const d = w.stats.deaths;
   const hives = w.hives.filter(h => h.queen && !h.cluster).length;
-  console.log(`seed ${s}  ${((Date.now() - t0) / 1000).toFixed(1)}s  max ${maxR}/${maxF}  arrivals r${arrivals.rabbit} f${arrivals.fox} b${arrivals.bee} c${arrivals.crow} o${arrivals.owl}  kills ${kills} escapes ${escapes}  swarms ${swarms}  hives ${hives}/${w.hives.length}`);
+  console.log(`seed ${s}  ${((Date.now() - t0) / 1000).toFixed(1)}s  max ${maxR}/${maxF}  arrivals r${arrivals.rabbit} f${arrivals.fox} b${arrivals.bee} c${arrivals.crow} o${arrivals.owl} ot${arrivals.otter}  kills ${kills} escapes ${escapes}  swarms ${swarms}  hives ${hives}/${w.hives.length}`);
   console.log(`  weather ${JSON.stringify(sky)}  strikes ${strikes}  fires ${fires} (biggest ${burned} tiles)`);
-  console.log('  deaths rabbit', JSON.stringify(d.rabbit), 'fox', JSON.stringify(d.fox), 'bee', JSON.stringify(d.bee), 'crow', JSON.stringify(d.crow), 'owl', JSON.stringify(d.owl));
+  console.log('  deaths rabbit', JSON.stringify(d.rabbit), 'fox', JSON.stringify(d.fox), 'bee', JSON.stringify(d.bee), 'crow', JSON.stringify(d.crow), 'owl', JSON.stringify(d.owl), 'otter', JSON.stringify(d.otter));
   const tm = Sim.traitMeans(w, 'rabbit'), fm = Sim.traitMeans(w, 'fox');
   const fmt = m => m ? Object.entries(m).map(([k, v]) => `${k}${v.toFixed(2)}`).join(' ') : '-';
   console.log('  rabbit genes', fmt(tm), '| fox genes', fmt(fm));
@@ -119,6 +126,8 @@ for (let s = 1; s <= seeds; s++) {
     `  acorns buried ${st.cached} dug up ${st.dugUp} came up ${st.planted}  oaks/beeches ${oaks0} -> ${oaks()}`);
   console.log(`  owls (hollows)  ${owls.join(' ')}  hollows taken ${owlNests}  owlets ${st.births.owl} fledged ${fledged} flew off ${leaving}` +
     `  voles eaten ${st.owlVoles} (foxes ${eaten})  kits taken ${d.rabbit.owl || 0}`);
+  console.log(`  otters (holts)  ${otters.join(' ')}  holts made ${holts}  cubs ${st.births.otter} out ${cubsOut} left ${otterLeft}` +
+    `  fish caught ${st.fish} frogs ${st.otterFrogs}`);
   if (plant) {
     const up = w.decor.filter(t => t.planted && Sim.standing(t)), stages = {};
     for (const t of up) { const g = Sim.treeStage(w, t); stages[g] = (stages[g] || 0) + 1; }

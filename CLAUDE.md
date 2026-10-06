@@ -1,6 +1,6 @@
 # Nobody's Meadow
 
-A cozy emoji meadow where rabbits, foxes, bees, crows and owls live their own lives and you watch what
+A cozy emoji meadow where rabbits, foxes, bees, crows, owls and otters live their own lives and you watch what
 emerges. The owls are switched off for now (sim.js `OWLS = false`): none start, fly in or can be released,
 a kept meadow's fly off when it opens, and the page hides their tool, counters, graph and food-web node. All their
 code stays; `true` brings them back. It used to be called AEON Garden, and the repo and the
@@ -104,8 +104,8 @@ card; `window.garden` has `world`, `cam` (set `x`, `y`, `zoom`, `goal = null` to
 `ui` (`ui.speed = 0` pauses); the CSS `body > *:not(#world, #ground) { visibility: hidden }` hides every panel.
 In a cloud session with no Chrome, Playwright is installed globally (`npm root -g`) with Chromium.
 
-The meadow's ecology (terrain and water, grass and soil, voles, frogs, rabbit coats, sickness, remains, crows,
-owls, bees, the trees' lives) is in `.claude/rules/ecology.md`, which loads when sim.js or balance.js is opened.
+The meadow's ecology (terrain and water, grass and soil, voles, frogs, fish, rabbit coats, sickness, remains, crows,
+owls, otters, bees, the trees' lives) is in `.claude/rules/ecology.md`, which loads when sim.js or balance.js is opened.
 Species lists come from `KINDS` / `perKind`, so a new species needs no hand-written `{ rabbit, fox, bee }` lists.
 
 Every animal uses one ladder: danger > sleep > love > food > friends > wander. Keep new

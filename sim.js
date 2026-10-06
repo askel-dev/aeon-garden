@@ -106,12 +106,18 @@ const SPECIES = {
     matureDays: 8, lifeDays: 90, gestationDays: 2, litter: [1, 3], cooldownDays: 15,   // one brood a year, in its hollow; how many: owlClutch
     breedSeasons: [0], breedEnergy: 0.5, birthCost: 5, cap: 4,
   },
+  otter: {
+    key: 'otter', name: 'Otter', plural: 'Otters', emoji: '🦦',   // (game.js paints them: the emoji floats on its back, and differs from system to system)
+    maxEnergy: 150, burn: 0.03, walk: 0.055, sprint: 0.15, sight: 12, mateRange: 150, wade: 1.6, swims: true, glide: 0.4,   // wade: in the water it's quicker; glide: what moving costs it
+    matureDays: 10, lifeDays: 60, gestationDays: 2, litter: [2, 3], cooldownDays: 15,   // one litter a year, in the holt
+    breedSeasons: [0], breedEnergy: 0.55, birthCost: 15, cap: 6,
+  },
 };
 // Owls are switched off for now: none at the start, none fly in, none can be released, and a kept meadow's fly
 // off when it opens (unpackWorld). Their code all stays; true brings them back.
 const OWLS = false;
-const KINDS = Object.keys(SPECIES);                        // 'rabbit', 'fox', 'bee', 'crow', 'owl'
-const perKind = make => Object.fromEntries(KINDS.map(s => [s, make(s)]));   // { rabbit: .., fox: .., bee: .., crow: .., owl: .. }
+const KINDS = Object.keys(SPECIES);                        // 'rabbit', 'fox', 'bee', 'crow', 'owl', 'otter'
+const perKind = make => Object.fromEntries(KINDS.map(s => [s, make(s)]));   // { rabbit: .., fox: .., bee: .., crow: .., owl: .., otter: .. }
 
 const NAME_PARTS = {
   rabbit: {
@@ -134,6 +140,10 @@ const NAME_PARTS = {
   owl: {
     prefixes: ['Hoo', 'Moon', 'Dusk', 'Tawn', 'Hush', 'Bark', 'Hollow', 'Mott', 'Umber', 'Night'],
     suffixes: ['wing', 'feather', 'talon', 'eye', 'ley', 'by', 'wick', 'o', 'hoot', 'shade']
+  },
+  otter: {
+    prefixes: ['Rip', 'Peb', 'Tum', 'Wil', 'Brook', 'Reed', 'Sil', 'Spl', 'Mudd', 'Bub'],
+    suffixes: ['ple', 'ble', 'low', 'ash', 'kin', 'tail', 'ey', 'whisker', 'by', 'paws']
   }
 };
 
@@ -931,7 +941,7 @@ function iceTick(w, dt) {
 function breakUp(w) {
   const fell = [], drowned = [];
   for (const c of w.creatures) {
-    if (!c.alive || c.hidden || c.held || c.sp.flies || w.water[idx(c.x, c.y)] !== DEEP) continue;
+    if (!c.alive || c.hidden || c.held || c.sp.flies || c.sp.swims || w.water[idx(c.x, c.y)] !== DEEP) continue;
     if (growth(w, c) < 0.5) { die(w, c, 'ice'); drowned.push(c); continue; }
     const at = nearestFooting(w, c.x, c.y);
     c.x = at.x; c.y = at.y; c.target = null; c.detour = 0;
@@ -1944,7 +1954,7 @@ function makeCreature(w, species, x, y, genes, parents) {
     alert: 0, threatId: 0, chaseT: 0, fright: 0, frightX: 0, frightY: 0, frightWhat: '',
     wary: 0, waryX: 0, waryY: 0, detour: 0, detourX: 0, detourY: 0, nemesisId: 0, haunt: null,
     pregnantUntil: 0, cooldownUntil: 0, dadGenes: null, dadIdPending: 0, dadGenPending: 0,
-    kids: 0, kills: 0, voles: 0, frogs: 0, prey: '', rustle: null, escapes: 0, visits: 0, load: 0, find: null, story: [],
+    kids: 0, kills: 0, voles: 0, frogs: 0, fish: 0, prey: '', rustle: null, escapes: 0, visits: 0, load: 0, find: null, story: [],
     sick: 0, immune: 0,   // ticks when the sickness ends, and when immunity does (see sicknessTick)
     caches: null,         // a crow's acorns and beechnuts buried this autumn (cacheNut)
     mate: 0,              // a crow's mate, for life (by id; mateOf)
@@ -1982,11 +1992,11 @@ function nearestBurrow(w, x, y, maxD, ok = b => b.dug >= 1) {
 }
 
 function addCreature(w, species, x, y, opts = {}) {
-  if (!dry(w, x, y) || species === 'owl' && !OWLS) return null;
+  if (!(dry(w, x, y) || SPECIES[species].swims && inBounds(x, y)) || species === 'owl' && !OWLS) return null;
   const c = makeCreature(w, species, x, y, opts.genes || founderGenes(w, species), null);
   if (opts.sex && species !== 'bee') c.sex = opts.sex;          // bees out and about are all workers
   if (opts.age) c.born = w.tick - Math.min(opts.age * TPD, c.lifespan / 2);   // nobody arrives at death's door
-  c.home = species === 'bee' ? nearestHive(w, x, y) : species === 'crow' || species === 'owl' ? null : nearestBurrow(w, x, y, 40);   // (a crow's is its nest, an owl's its hollow)
+  c.home = species === 'bee' ? nearestHive(w, x, y) : species === 'rabbit' || species === 'fox' ? nearestBurrow(w, x, y, 40) : null;   // (a crow's is its nest, an owl's its hollow, an otter's its holt)
   if (species === 'bee' && !c.home.queen) newQueen(w, c.home);   // a swarm always brings its queen
   note(w, c, '🌍', opts.note || (opts.arrived ? 'Wandered into the meadow' : 'Arrived in the meadow'));
   w.newborn.push(c);
@@ -2029,7 +2039,7 @@ function moveToward(w, c, tx, ty, v) {
   const a = c.detour ? c.heading : Math.atan2(dy, dx), offs = c.detour ? HUGS[lean] : TURNS[lean];
   for (const off of offs) {
     const nx = c.x + Math.cos(a + off) * stepLen, ny = c.y + Math.sin(a + off) * stepLen;
-    if (!walkable(w, nx, ny)) continue;
+    if (!(c.sp.swims ? inBounds(nx, ny) : walkable(w, nx, ny))) continue;   // (an otter swims the deep water)
     if (!c.detour && off !== 0) {
       c.turnBias = off > 0 ? 1 : -1;
       c.detour = 500; c.detourX = tx; c.detourY = ty;
@@ -2051,8 +2061,8 @@ function wander(w, c, pace) {
       const reach = w.rng.range(4, 11);
       tx = c.x + Math.cos(c.heading) * reach; ty = c.y + Math.sin(c.heading) * reach;
       if (!inBounds(tx, ty)) { c.heading += Math.PI; tx = clamp(tx, 2, W - 2); ty = clamp(ty, 2, H - 2); }
-    } while (!(footing(w, tx, ty) && clearPath(w, c.x, c.y, tx, ty)) && ++tries < 8);   // paddling, but not for fun
-    c.target = footing(w, tx, ty) && clearPath(w, c.x, c.y, tx, ty) ? { x: tx, y: ty } : { x: c.x, y: c.y };
+    } while (!roamable(w, c, tx, ty) && ++tries < 8);   // paddling, but not for fun
+    c.target = roamable(w, c, tx, ty) ? { x: tx, y: ty } : { x: c.x, y: c.y };
     c.timer = 200;
   }
   c.mode = 'wander';
@@ -2060,6 +2070,8 @@ function wander(w, c, pace) {
 }
 
 const kidPace = (w, c) => 0.6 + 0.4 * growth(w, c);
+// Somewhere to wander to: dry ground (or the ice) in a straight walk, or for an otter, the water and its banks.
+const roamable = (w, c, x, y) => (c.sp.swims ? inBounds(x, y) && w.damp[idx(x, y)] <= OTTER_SHORE : footing(w, x, y) && clearPath(w, c.x, c.y, x, y));
 
 // Walk, or fly for those that can (see fly, with the bees).
 const go = (w, c, tx, ty, v) => (c.sp.flies ? fly(c, tx, ty, v) : moveToward(w, c, tx, ty, v));
@@ -2071,7 +2083,7 @@ function readyToMate(w, c) {
     && w.tick >= c.cooldownUntil && c.energy >= c.sp.breedEnergy * c.maxEnergy
     && c.sp.breedSeasons.includes(seasonOf(w.tick))
     && w.count[c.species] + w.expecting[c.species] < c.sp.cap * w.room
-    && (c.species !== 'owl' || owlReady(w, c));
+    && (c.species !== 'owl' || owlReady(w, c)) && (c.species !== 'otter' || otterReady(c));
 }
 
 function seekLove(w, c) {
@@ -2098,7 +2110,7 @@ function mate(w, a, b) {
   w.recount = true;
   dad.cooldownUntil = w.tick + 0.4 * TPD;
   for (const c of [mum, dad]) { c.mode = 'wander'; c.target = null; c.targetId = 0; }
-  if (mum.species === 'owl' && mum.home) dad.home = mum.home;    // he moves into her hollow's wood
+  if ((mum.species === 'owl' || mum.species === 'otter') && mum.home) dad.home = mum.home;    // he moves into her hollow's wood, or her holt
   if (mum.species === 'crow') { mum.mate = dad.id; dad.mate = mum.id; }   // crows pair for life
   note(w, mum, '💕', `Fell in love with ${dad.name}`);
   note(w, dad, '💕', `Fell in love with ${mum.name}`);
@@ -2123,8 +2135,8 @@ function giveBirth(w, mum) {
     kid.home = mum.home || mum.burrow;
     if (mum.immune > w.tick) kid.immune = w.tick + KIT_IMMUNE * TPD;   // an immune mother's milk guards her kits a while
     if (mum.hidden && mum.burrow) { kid.hidden = true; kid.burrow = mum.burrow; kid.sleeping = true; kid.mode = 'sleep'; kid.timer = 60; mum.burrow.count++; }
-    if (mum.species === 'crow' || mum.species === 'owl') {           // chicks, in the nest till they fledge (crowTick, owlTick)
-      const nest = mum.home || mum;
+    if (mum.species === 'crow' || mum.species === 'owl' || mum.species === 'otter') {   // chicks, in the nest till they fledge (crowTick, owlTick), cubs in the holt (otterTick)
+      const nest = (mum.species === 'otter' ? holtOf(mum)?.door : mum.home) || mum;
       Object.assign(kid, { x: nest.x, y: nest.y, hidden: true, sleeping: true, mode: 'nest' });
     }
     note(w, kid, '🐣', `Born to ${mum.name}` + (dad ? ` and ${dad.name}` : ''));
@@ -3080,13 +3092,14 @@ function tadpolesTick(w, s, dt) {
   const leave = yr.grown < 1 ? 0 : s >= 2 ? 1 : Math.min(1, FROGLET_LEAVE * dt), out = FROG_A, dried = FROG_D;
   const lose = TADPOLE_LOSS * dt, eaten = TADPOLE_FISH * dt / FISH_K, fish = w.fish;
   spots.fill(-1);
-  let total = 0, strand = 0, leaving = 0;
+  let total = 0, strand = 0, leaving = 0, fishAte = 0;
   for (let k = 0; k < n0; k++) {
     const i = list[k];
     let n = sp[i];
     if (n === 0) continue;
     if (!water[i]) { strand += n; dried[i] = n; sp[i] = 0; continue; }
-    n *= Math.max(0, 1 - lose - eaten * fish[i]);
+    const f = Math.min(1, eaten * fish[i]);
+    fishAte += n * f; n *= Math.max(0, 1 - lose - f);
     if (leave) { out[i] = n * leave; n -= out[i]; leaving += out[i]; }
     if (n < 1e-4) n = 0;
     sp[i] = n; total += n;
@@ -3114,7 +3127,7 @@ function tadpolesTick(w, s, dt) {
     if (sp[i] > 0) list[kept++] = i;
   }
   w.spawnN = kept;
-  w.spawnCount = total;
+  w.spawnCount = total; w.stats.fishSpawn += fishAte;
   // The year's verdict, once the tadpoles are gone one way or another.
   if (!(yr.told & 2) && yr.laid > 1 && (total < 0.03 * yr.laid || s >= 2)) {
     yr.told |= 2;
@@ -4565,6 +4578,390 @@ function owlMood(w, c) {
   return null;
 }
 
+// ---------------------------------------------------------------- otters
+//
+// Otters: a pair or two along the water. A female makes her holt in the roots of a big tree on the bank of
+// water that lasts (holtTree, HOLT_GAP from the other holts) and marks it (d.holt, her id; d.door, the way in;
+// holtsDay frees it once she's gone, and spreads their spraint on the bank by it). A male moves in with his
+// mate (mate). They're out from the evening to the middle of the morning, and sleep through the middle of the
+// day curled up at the holt (or on any bank, with none). They fish (w.fish): swim to where the fish are
+// thickest, dive, and come up with one as often as they're thick there, and eat it afloat. While the frogs
+// spawn they go after them along the shallows first, and in winter they dig them out of the mud by the water
+// (w.frogs), all there is while the ice shuts them out of the water. A fox, or a fire, near one on the bank
+// sends it into the water. Fed, they play: up the bank, and sliding down it into the water. In spring a
+// female with a holt has two or three cubs, who stay in the holt a while, follow mum about till they're
+// grown, and at a year (otterGrown) a young female finds a holt of her own and a young male goes off along
+// the water to find a mate, while the meadow has room for more; otherwise off down the water, out of the
+// meadow. A pair comes up the water when there are none (migrate). Same ladder as everyone: danger > sleep >
+// love > food > friends > wander.
+
+const OTTER_WAKE = 0.6;         // the time of day an otter wakes (dusk is 0.72)
+const OTTER_BED = 0.3;          // and goes to sleep, in the middle of the morning (sunrise is 0)
+const OTTER_HUNGRY = 0.3;       // this hungry, it fishes through its sleep
+const OTTER_FULL = 0.85;        // it fishes till its tummy is this full
+const OTTER_WARY = 5;           // tiles: a fox this close to one on the bank sends it into the water
+const OTTER_RANGE = 30;         // how far from its holt it fishes
+const OTTER_SHORE = 2;          // tiles from the water it wanders, at most
+const HOLT_BANK = 3;            // a holt's tree stands this close to water that lasts
+const HOLT_GAP = 30;            // tiles between two holts: each has a stretch of water of its own
+const HOLT_FISH = 40;           // and room for this many fish (fishRoom) within HOLT_REACH of it, to feed a family
+const HOLT_REACH = 15;
+const FISH_LOOK = 12;           // how far off it looks for the water with the most fish
+const FISH_WORTH = 0.1;         // fish on a tile worth diving for
+const DIVE_TICKS = [25, 50];    // under, looking
+const DIVES = 3;                // dives in one place, coming up with nothing, before it moves on
+const FISH_CATCH = 0.7;         // odds it comes up with one where they're thickest, about
+const FISH_HALF = 0.3;          // fish on a tile where it comes up with one half as often as it could
+const FISH_ENERGY = 30;         // a fish to an otter
+const FISH_EAT = 60;            // ticks eating one, afloat
+const CUB_SHARE = 15;           // what each cub close by gets of every fish mum catches, till it's grown
+const FROG_FEAST = 1.5;         // days after the frogs spawn that the otters go after them first
+const FROG_LOOK = 8;            // how far off it looks for the frogs
+const ROOT_WORTH = 0.02;        // frogs on a tile worth rooting about for
+const ROOT_TICKS = [30, 60];    // rooting along the shallows, or digging in the mud
+const ROOT_CATCH = 0.6;         // odds it comes up with one where they're thickest, about
+const ROOT_HALF = 0.05;         // frogs on a tile where it does half as often as it could
+const OTTER_FROG = 12;          // a frog to an otter
+const FROG_MUNCH = 30;          // ticks eating one
+const CUB_OUT = 0.25;           // cubs come out of the holt this grown
+const PLAY_ODDS = 0.3;          // odds a check (every 30 ticks) that a fed otter plays, and the others about with it
+const PLAY_TICKS = [150, 300];  // and how long
+const SPRAINT_RICH = 0.1;       // what the spraint by a holt feeds the bank, a day
+const SPRAINT_REACH = 1.5;
+const FISH_NOTE = 'Caught a fish', MUD_NOTE = 'Dug a frog out of the mud', SPAWN_NOTE = 'Caught a frog at the spawning';
+const FEEDING = new Set(['dive', 'eat', 'root', 'munch']);   // busy with a catch: it finishes before anything but danger
+
+const holtOf = c => (c.home && c.home.holt && standing(c.home) ? c.home : null);
+const otterReady = c => c.sex === 'M' || (c.home && c.home.holt === c.id && standing(c.home));
+const swimming = (w, c) => !w.frozen && w.water[idx(c.x, c.y)] > 0;
+// Still living at mum's holt, a cub or grown.
+const atMums = (w, c) => { const m = c.mumId && w.byId.get(c.mumId); return !!(m && c.home && c.home === m.home); };
+
+function otterTick(w, c) {
+  const t = w.tick, ph = phaseOf(t), e = c.energy / c.maxEnergy;
+  if (c.hidden) {                                    // a cub in the holt
+    if (growth(w, c) >= CUB_OUT) {
+      c.hidden = c.sleeping = false; c.mode = 'wander';
+      note(w, c, '🌿', 'Came out of the holt');
+      emit(w, { type: 'cubsout', c, mum: w.byId.get(c.mumId) });
+    }
+    return;
+  }
+  c.sleeping = false;
+
+  // 1. Danger: a fox close by on the bank, or a fire: into the water. And one on its way out of the meadow goes on.
+  smellSmoke(w, c);
+  if (c.fright > 0) { c.fright = 0; if (c.mode !== 'leave') slip(w, c, c.frightX, c.frightY, null); }
+  if ((t + c.id) % 4 === 0 && c.mode !== 'slip' && c.mode !== 'leave' && !swimming(w, c)) {
+    const fox = nearest(w, c, OTTER_WARY, 'fox');
+    if (fox) slip(w, c, fox.x, fox.y, fox);
+  }
+  if (c.mode === 'slip' || c.mode === 'leave') {
+    if (c.target && !moveToward(w, c, c.target.x, c.target.y, c.mode === 'slip' ? c.sprint : c.walk)) return;
+    if (c.mode === 'leave') { die(w, c, 'left'); return; }
+    c.mode = 'wander'; c.target = null;
+  }
+
+  // 2. Sleep: through the middle of the day, unless hungry, curled up at the holt. A catch is eaten first.
+  if (ph >= OTTER_BED && ph < OTTER_WAKE && e > OTTER_HUNGRY && !FEEDING.has(c.mode)) {
+    if (c.mode !== 'sleep') {
+      if (c.mode !== 'bed' || !c.target) { c.mode = 'bed'; c.target = bedOf(w, c); }
+      if (!moveToward(w, c, c.target.x, c.target.y, c.walk)) return;
+      c.mode = 'sleep'; c.target = null;
+    }
+    c.sleeping = true;
+    return;
+  }
+  if (c.mode === 'sleep' || c.mode === 'bed') { c.mode = 'wander'; c.target = null; }
+
+  // Cubs keep near mum till they're grown; at a year they find a place of their own. A female finds a holt.
+  if (growth(w, c) < 1 && !FEEDING.has(c.mode)) {
+    const mum = w.byId.get(c.mumId);
+    if (mum && mum.alive && !mum.held && dist2(c, mum) > (c.mode === 'follow' ? 1.5 : 4) ** 2) { c.mode = 'follow'; moveToward(w, c, mum.x, mum.y, c.walk * 1.2); return; }
+  }
+  const home = atMums(w, c);
+  if (home && ageDays(w, c) >= YEAR_DAYS) { otterGrown(w, c); if (c.mode === 'leave') return; }
+  else if (!home && c.sex === 'F' && isAdult(w, c) && !otterReady(c) && (t + c.id) % 120 === 0) {
+    const d = holtTree(w, c);
+    if (d) moveInHolt(w, c, d);
+  }
+
+  // 3. Love.
+  if (seekLove(w, c)) return;
+
+  // 4. Food.
+  if ((e < OTTER_FULL || FEEDING.has(c.mode)) && otterFood(w, c)) return;
+
+  // 5. Fed: play, the others about joining in.
+  if (c.mode === 'play' || c.mode === 'slide') { if (play(w, c)) return; }
+  else if ((t + c.id) % 30 === 0 && w.rng.next() < PLAY_ODDS) {
+    startPlay(w, c);
+    forEachNear(w, c.x, c.y, 6, o => { if (o !== c && !o.sleeping && o.mode === 'wander' && o.energy > OTTER_FULL * o.maxEnergy) startPlay(w, o); }, 'otter');
+    if (c.mode === 'play') return;
+  }
+
+  // 6. Along the water.
+  wander(w, c, 0.6);
+}
+
+// Food: the fish, or the frogs while they spawn or the ice is on (and when there are no fish to be had). It swims
+// to the water with the most fish about, close by or else anywhere in its range (round its holt: one that has
+// strayed out of it looks there first), dives, and comes up with one or not; or roots along the bank where the
+// frogs are, or digs in the mud for them in winter. Coming up with nothing a few times, it moves on.
+function otterFood(w, c) {
+  switch (c.mode) {
+    case 'eat': case 'munch':
+      if (--c.timer <= 0) { c.mode = 'wander'; c.target = null; }
+      return true;
+    case 'dive': case 'root':
+      if (c.mode === 'dive' && w.frozen) break;      // the ice came over
+      if (--c.timer > 0) return true;
+      return c.mode === 'dive' ? surface(w, c) : rooted(w, c);
+    case 'fish': case 'frog':
+      if (!c.target || c.mode === 'fish' && w.frozen) break;
+      if (moveToward(w, c, c.target.x, c.target.y, c.walk)) {
+        if (c.mode === 'fish' && !swimming(w, c)) break;   // the water's gone from there
+        c.mode = c.mode === 'fish' ? 'dive' : 'root'; c.timer = w.rng.int(...(c.mode === 'dive' ? DIVE_TICKS : ROOT_TICKS));
+      }
+      return true;
+  }
+  c.mode = 'wander'; c.target = null;
+  if ((w.tick + c.id) % 10) return false;            // (looking about)
+  const yr = w.frogYear, h = holtOf(c) || c, at = dist2(c, h) > OTTER_RANGE ** 2 ? h : c;
+  const frogsFirst = w.frozen || seasonOf(w.tick) === 0 && yr.at >= 0 && w.tick - yr.at < FROG_FEAST * TPD;
+  const fish = () => !w.frozen && (mostNear(w, w.fish, at.x, at.y, FISH_LOOK, 8, FISH_WORTH) || mostNear(w, w.fish, h.x, h.y, OTTER_RANGE, 12, FISH_WORTH));
+  const frogs = () => mostNear(w, w.frogs, at.x, at.y, FROG_LOOK, 8, ROOT_WORTH) || mostNear(w, w.frogs, h.x, h.y, OTTER_RANGE, 12, ROOT_WORTH);
+  let spot = frogsFirst ? frogs() : fish();
+  if (spot) c.mode = frogsFirst ? 'frog' : 'fish';
+  else if ((spot = frogsFirst ? fish() : frogs())) c.mode = frogsFirst ? 'fish' : 'frog';
+  if (!spot) return false;
+  spot.tries = 0; c.target = spot;
+  return true;
+}
+
+// Up from a dive, with a fish as often as they're thick there; then it eats it afloat, and mum's young cubs have
+// some. With nothing, it dives again close by, a few times.
+function surface(w, c) {
+  const x0 = clamp(c.x | 0, 2, W - 3), y0 = clamp(c.y | 0, 2, H - 3), n = w.fish[y0 * W + x0];
+  if (w.rng.next() < FISH_CATCH * n / (n + FISH_HALF)) {
+    takeFish(w, x0, y0);
+    c.energy = Math.min(c.maxEnergy, c.energy + FISH_ENERGY);
+    c.fish++; w.stats.fish++; c.prey = 'fish';
+    c.mode = 'eat'; c.timer = FISH_EAT; c.target = null;
+    forEachNear(w, c.x, c.y, 6, o => { if (o.mumId === c.id && growth(w, o) < 1) o.energy = Math.min(o.maxEnergy, o.energy + CUB_SHARE); }, 'otter');
+    if (c.story[c.story.length - 1].text !== FISH_NOTE) note(w, c, '🐟', FISH_NOTE);
+    return true;
+  }
+  return tryAgain(w, c, 'fish');
+}
+
+// Up from rooting about, with a frog as often as they're thick there.
+function rooted(w, c) {
+  const x0 = clamp(c.x | 0, 2, W - 3), y0 = clamp(c.y | 0, 2, H - 3), n = w.frogs[y0 * W + x0];
+  if (w.rng.next() < ROOT_CATCH * n / (n + ROOT_HALF)) {
+    takeFrog(w, x0, y0);
+    c.energy = Math.min(c.maxEnergy, c.energy + OTTER_FROG);
+    c.frogs++; w.stats.otterFrogs++; c.prey = 'frog';
+    c.mode = 'munch'; c.timer = FROG_MUNCH; c.target = null;
+    const what = seasonOf(w.tick) === 3 ? MUD_NOTE : SPAWN_NOTE;
+    if (c.story[c.story.length - 1].text !== what) note(w, c, '🐸', what);
+    return true;
+  }
+  return tryAgain(w, c, 'frog');
+}
+
+// Nothing: again a little way off, or after a few tries, off to look somewhere else.
+function tryAgain(w, c, mode) {
+  const tries = c.target ? c.target.tries + 1 : DIVES;
+  const a = w.rng.range(0, Math.PI * 2), x = c.x + Math.cos(a), y = c.y + Math.sin(a);
+  if (tries >= DIVES || !inBounds(x, y) || (w.water[idx(x, y)] > 0) !== (mode === 'fish')) { c.mode = 'wander'; c.target = null; return false; }
+  c.mode = mode; c.target = { x, y, tries };
+  return true;
+}
+
+// The tile with the most of `field` of a few tried within `far` of x, y, if any has more than `worth`.
+function mostNear(w, field, x, y, far, tries, worth) {
+  let best = null, most = worth;
+  for (let k = 0; k < tries; k++) {
+    const a = w.rng.range(0, Math.PI * 2), r = w.rng.range(0, far), px = x + Math.cos(a) * r, py = y + Math.sin(a) * r;
+    if (inBounds(px, py) && field[idx(px, py)] > most) { best = { x: px, y: py }; most = field[idx(px, py)]; }
+  }
+  return best;
+}
+
+// Into the water from trouble on the bank: the nearest water, the side away from it best, deep better. On the
+// ice, or with no water near, it just runs.
+function slip(w, c, x, y, fox) {
+  const ax = c.x - x, ay = c.y - y, ad = Math.hypot(ax, ay) || 1;
+  let best = null, low = Infinity;
+  for (let r = 1; r <= 8 && !w.frozen; r++) {
+    for (let k = 0; k < 12; k++) {
+      const a = k * Math.PI / 6, px = c.x + Math.cos(a) * r, py = c.y + Math.sin(a) * r;
+      if (!inBounds(px, py) || !w.water[idx(px, py)]) continue;
+      const v = r - 2 * (Math.cos(a) * ax + Math.sin(a) * ay) / ad + (w.water[idx(px, py)] === DEEP ? 0 : 1);
+      if (v < low) { low = v; best = { x: px, y: py }; }
+    }
+  }
+  c.mode = 'slip'; c.sleeping = false; c.threatId = fox ? fox.id : 0;
+  c.target = best || { x: clamp(c.x + ax / ad * 6, 1, W - 1), y: clamp(c.y + ay / ad * 6, 1, H - 1) };
+  if (fox && best && c.story[c.story.length - 1].text !== 'Slipped into the water away from ' + fox.name) note(w, c, '💦', 'Slipped into the water away from ' + fox.name);
+}
+
+// Where it sleeps: curled up at the holt with the family, side by side, or a cub at mum's. With no holt, a
+// bank somewhere near.
+function bedOf(w, c) {
+  const mum = growth(w, c) < 1 && w.byId.get(c.mumId), d = holtOf(c) || (mum && mum.alive ? holtOf(mum) : null);
+  let p = d && d.door;
+  if (p && w.water[idx(p.x, p.y)]) p = { x: d.x, y: d.y + 0.3 };   // the way in's flooded: up by the trunk
+  if (!p) p = bankSpot(w, c, false, 8) || c;
+  const k = c.id % 4;
+  return { x: p.x + [0, 0.55, -0.55, 0.25][k], y: p.y + [0, 0.15, 0.15, 0.4][k] };
+}
+
+// A spot within reach: in the water (wet), or up on the bank a tile or two from it.
+function bankSpot(w, c, wet, reach) {
+  for (let k = 0; k < 10; k++) {
+    const a = w.rng.range(0, Math.PI * 2), r = w.rng.range(1, reach), x = c.x + Math.cos(a) * r, y = c.y + Math.sin(a) * r;
+    if (!inBounds(x, y)) continue;
+    const i = idx(x, y);
+    if (wet ? w.water[i] > 0 : !w.water[i] && w.damp[i] >= 1 && w.damp[i] <= 2.5) return { x, y };
+  }
+  return null;
+}
+
+// Playing: up the bank, then sliding down it into the water (or out over the ice), and again.
+function startPlay(w, c) {
+  const top = bankSpot(w, c, false, 4);
+  if (!top) return;
+  c.mode = 'play'; c.target = top; c.timer = w.rng.int(...PLAY_TICKS);
+}
+function play(w, c) {
+  if (--c.timer <= 0 || !c.target) { c.mode = 'wander'; c.target = null; return false; }
+  if (!moveToward(w, c, c.target.x, c.target.y, c.mode === 'slide' ? c.sprint : c.walk)) return true;
+  const next = bankSpot(w, c, c.mode === 'play', 3);
+  if (!next) { c.mode = 'wander'; c.target = null; return false; }
+  c.mode = c.mode === 'play' ? 'slide' : 'play'; c.target = next;
+  return true;
+}
+
+// The nearest big tree on the bank of water that lasts, free for a holt, away from the other holts, and with
+// room for enough fish about. (Whether a tree is on such a bank goes by the ground, so it's worked out once, d.bank.)
+function holtTree(w, c) {
+  const held = w.decor.filter(d => d.holt && standing(d));
+  let best = null, bd = Infinity;
+  for (const d of w.decor) {
+    if (d.holt || !standing(d) || d.size < GROWN || d.hive || d.owl || (d.bank ??= goodBank(w, d)) === false) continue;
+    const dd = dist2(d, c);
+    if (dd < bd && !held.some(o => dist2(o, d) < HOLT_GAP ** 2)) { best = d; bd = dd; }
+  }
+  return best;
+}
+
+// Whether a tree stands on the bank of water that lasts, with room for HOLT_FISH fish within HOLT_REACH (the
+// lasting water's room, as fishRoom at the meadow's own water line).
+function goodBank(w, d) {
+  if (!holtDoor(w, d)) return false;
+  const T = w.terrain;
+  let n = 0;
+  for (let y = Math.max(0, Math.floor(d.y - HOLT_REACH)); y <= Math.min(H - 1, d.y + HOLT_REACH); y++) {
+    for (let x = Math.max(0, Math.floor(d.x - HOLT_REACH)); x <= Math.min(W - 1, d.x + HOLT_REACH); x++) {
+      const g = w.ground[y * W + x];
+      if (g <= T.level && (x + 0.5 - d.x) ** 2 + (y + 0.5 - d.y) ** 2 < HOLT_REACH ** 2) n += T.level - g >= T.deepAt ? FISH_K : FISH_K * FISH_SHALLOW;
+    }
+  }
+  return n >= HOLT_FISH;
+}
+
+// The way into a holt: between the tree's roots and the nearest water that lasts, on the bank. Null if the tree
+// isn't on a bank.
+function holtDoor(w, d) {
+  let at = -1, near = HOLT_BANK + 1;
+  for (let k = 0; k < 16; k++) {
+    const a = k * Math.PI / 8;
+    for (let r = 0.5; r <= HOLT_BANK && r < near; r += 0.5) {
+      const x = d.x + Math.cos(a) * r, y = d.y + Math.sin(a) * r;
+      if (!inBounds(x, y)) break;
+      if (w.ground[idx(x, y)] <= w.terrain.level) { at = a; near = r; break; }
+    }
+  }
+  if (at < 0) return null;
+  const r = clamp(near - 0.6, 0.3, 0.9);
+  return { x: d.x + Math.cos(at) * r, y: d.y + Math.sin(at) * r };
+}
+
+function moveInHolt(w, c, d) {
+  if (c.home && c.home.holt === c.id) c.home.holt = 0;
+  c.home = d; d.holt = c.id; d.door = holtDoor(w, d);
+  note(w, c, '🏡', `Made a holt in the roots of ${d.name ? 'the ' + d.name : 'a big ' + d.kind + ' on the bank'}`);
+  emit(w, { type: 'holt', c, tree: d });
+}
+
+// A year old, at mum's holt: a young female takes a free holt, a young male goes off along the water to find
+// a mate, while the meadow has room for more otters. Otherwise off down the water and out of the meadow.
+function otterGrown(w, c) {
+  const room = w.count.otter <= c.sp.cap * w.room, d = room && c.sex === 'F' && holtTree(w, c);
+  if (d) { moveInHolt(w, c, d); return; }
+  c.home = null;
+  if (room && c.sex === 'M') { note(w, c, '🌊', 'Grown, and off along the water to find a mate of his own'); return; }
+  c.mode = 'leave'; c.target = riverEnd(w, c);
+  emit(w, { type: 'otterleaves', c });
+}
+
+// Where otters come in to make a holt at p: up the water that runs off the edge of the meadow, unless that's
+// much further than the nearest edge, overland.
+function otterWay(w, p) {
+  const water = riverEnd(w, p, true), edge = riverEnd(w, p, false);
+  return water && dist2(water, p) < 4 * dist2(edge, p) ? water : edge;
+}
+
+// Where the water runs off the edge of the meadow nearest p (lasting water), or else (or with wet false) the
+// nearest edge. Null with wet true and no water running off.
+function riverEnd(w, p, wet) {
+  let best = null, bd = Infinity;
+  for (let k = 0; k < 2 * (W + H) && wet !== false; k++) {
+    const x = k < 2 * W ? k % W + 0.5 : k < 2 * W + H ? 0.7 : W - 0.7;
+    const y = k < W ? 0.7 : k < 2 * W ? H - 0.7 : (k - 2 * W) % H + 0.5, i = idx(x, y);
+    if (!w.water[i] || w.ground[i] > w.terrain.level) continue;
+    const d = (x - p.x) ** 2 + (y - p.y) ** 2;
+    if (d < bd) { best = { x, y }; bd = d; }
+  }
+  if (best || wet) return best;
+  const edges = [[p.x, 0.7, p.y], [W - p.x, W - 0.7, p.y], [p.y, p.x, 0.7], [H - p.y, p.x, H - 0.7]].sort((a, b) => a[0] - b[0]);
+  return { x: edges[0][1], y: edges[0][2] };
+}
+
+// Once a day: a holt whose otter is gone, or whose tree fell, is free again. Those still lived in get the day's spraint.
+function holtsDay(w) {
+  for (const d of w.decor) {
+    if (!d.holt) continue;
+    const o = w.byId.get(d.holt);
+    if (!o || !o.alive || o.home !== d || !standing(d)) { d.holt = 0; continue; }
+    enrich(w, d.door.x, d.door.y, SPRAINT_RICH, SPRAINT_REACH);
+  }
+}
+
+function otterMood(w, c) {
+  const winter = seasonOf(w.tick) === 3, wet = swimming(w, c);
+  switch (c.mode) {
+    case 'nest': return { emoji: '', text: 'A cub in the holt, squeaking for milk' };
+    case 'sleep': return { emoji: '💤', text: holtOf(c) && dist2(c, c.home) < 4 ? 'Curled up asleep at the holt' : 'Curled up asleep on the bank' };
+    case 'bed': return { emoji: '🏠', text: holtOf(c) ? 'Off home to the holt for the day' : 'Looking for a quiet bank to sleep on' };
+    case 'slip': return c.threatId ? { emoji: '💦', text: `Into the water, away from ${w.byId.get(c.threatId)?.name ?? 'a fox'}!` } : { emoji: '🔥', text: 'Away from the smoke!' };
+    case 'leave': return { emoji: '🧳', text: 'Off down the water to find a stretch of its own' };
+    case 'fish': return { emoji: '🐟', text: c.target && c.target.tries ? 'Coming up, and down again' : 'Swimming off to where the fish are' };
+    case 'dive': return { emoji: '🐟', text: 'Diving for fish' };
+    case 'eat': return { emoji: '🐟', text: 'Eating a fish, afloat' };
+    case 'frog': return { emoji: '🐸', text: winter ? 'Off along the bank to dig for frogs' : 'After the frogs at the spawning' };
+    case 'root': return { emoji: '🐸', text: winter ? 'Digging in the mud for frogs' : 'Rooting along the shallows for frogs' };
+    case 'munch': return { emoji: '🐸', text: 'Eating a frog' };
+    case 'play': return { emoji: '', text: 'Playing, up the bank again' };
+    case 'slide': return { emoji: '', text: w.frozen ? 'Sliding over the ice!' : 'Sliding down the bank into the water!' };
+    case 'follow': return { emoji: '🍼', text: 'Following mum' };
+    case 'wander': return wet ? { emoji: '', text: 'Swimming along' } : null;
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------- life and death
 
 function die(w, c, cause, killer) {
@@ -4576,7 +4973,7 @@ function die(w, c, cause, killer) {
   c.hidden = false;
   const age = Math.floor(ageDays(w, c));
   const text = cause === 'fox' || cause === 'owl' ? `Caught by ${killer.name}${cause === 'owl' ? ' the owl' : ''}` :
-    cause === 'left' ? 'Flew off over the trees to find a wood of its own' :
+    cause === 'left' ? (c.species === 'otter' ? 'Went off down the water to find a stretch of its own' : 'Flew off over the trees to find a wood of its own') :
     cause === 'hunger' ? (seasonOf(w.tick) === 3 ? 'Starved in the winter' : 'Starved') :
     cause === 'lightning' ? 'Struck by lightning' :
     cause === 'fire' ? 'Caught in a wildfire' :
@@ -4625,7 +5022,7 @@ const webStats = () => ({ grazed: 0, sips: 0, blossomSips: 0, grubs: 0, apples: 
 // season, and once a second while the card is open.
 function webCounts(w) {
   const st = w.stats, n = { grazed: st.grazed, sips: st.sips, blossomSips: st.blossomSips, grubs: Math.round(st.grubs),
-    voles: st.voles, owlVoles: st.owlVoles, frogs: st.frogs, owlFrogs: st.owlFrogs, crowSpawn: Math.round(st.crowSpawn),
+    voles: st.voles, owlVoles: st.owlVoles, frogs: st.frogs, owlFrogs: st.owlFrogs, crowSpawn: Math.round(st.crowSpawn), fish: st.fish, otterFrogs: st.otterFrogs, fishSpawn: Math.round(st.fishSpawn),
     cached: st.cached, dugUp: st.dugUp, planted: st.planted, seedlingsEaten: 0, seedlingsLost: 0,
     remainsLeft: st.remains.left, remainsCrows: st.remains.crows, remainsRotted: st.remains.rotted };
   for (const k in w.treeStats) { n.seedlingsEaten += w.treeStats[k].eaten || 0; n.seedlingsLost += w.treeStats[k].lost || 0; }
@@ -4659,6 +5056,7 @@ function createWorld(seed, opts = {}) {
     count: perKind(() => 0), expecting: perKind(() => 0),
     stats: { births: perKind(() => 0), deaths: perKind(() => ({})), voles: 0, owlVoles: 0,   // voles: the foxes caught, and the owls
       frogs: 0, owlFrogs: 0, crowSpawn: 0, frogYears: [],                                   // frogs likewise; the spawn the crows ate; each spring's frogs
+      fish: 0, otterFrogs: 0, fishSpawn: 0,                                                 // what the otters caught; the tadpoles the fish ate
       remains: { left: 0, eaten: 0, rotted: 0, crows: 0 }, cached: 0, dugUp: 0, planted: 0,   // remains, and how they went (crows: the crows fed at); the crows' acorns
       ...webStats() },
     history: { every: 60, t: [], grass: [], voles: [], frogs: [], fish: [], ...perKind(() => []), traits: perKind(() => []), marks: [] },
@@ -4679,7 +5077,7 @@ function createWorld(seed, opts = {}) {
   startFish(w);
   w.roost = pickRoost(w);
   const n = { rabbit: opts.rabbits ?? Math.round(30 * w.room), fox: opts.foxes ?? Math.round(4 * w.room), bee: opts.bees ?? 12, crow: opts.crows ?? Math.round(8 * w.room),
-    owl: opts.owls ?? (OWLS ? 2 * Math.max(1, Math.round(w.room)) : 0) };   // a pair or two
+    owl: opts.owls ?? (OWLS ? 2 * Math.max(1, Math.round(w.room)) : 0), otter: opts.otters ?? 0 };   // a pair or two; the otters come up the water (migrate)
   w.arrivals = []; w.family = null;
   if (opts.arrival) planArrivals(w, n);
   else for (const species of KINDS) {
@@ -4780,6 +5178,7 @@ function newDay(w) {
   groundTick(w);
   if (!w.roost || !perchable(w.roost)) w.roost = pickRoost(w);   // gone, or bees or an owl moved in
   owlsDay(w);
+  holtsDay(w);
 }
 
 // ---------------------------------------------------------------- moving in
@@ -4916,16 +5315,20 @@ function arrivalsTick(w) {
 
 function migrate(w) {
   if (!w.options.migration) return;
-  const wait = { rabbit: 1, fox: 3, bee: 2, crow: 3, owl: 10 }, arrive = { rabbit: 6, fox: 2, bee: 8, crow: 4, owl: 2 }, few = { rabbit: 4, fox: 3, bee: 4, crow: 3, owl: 2 };
+  const wait = { rabbit: 1, fox: 3, bee: 2, crow: 3, owl: 10, otter: 3 }, arrive = { rabbit: 6, fox: 2, bee: 8, crow: 4, owl: 2, otter: 2 }, few = { rabbit: 4, fox: 3, bee: 4, crow: 3, owl: 2, otter: 2 };
   for (const s of KINDS) {
     if (s === 'owl' && !OWLS) continue;
-    if (w.count[s] >= few[s] || w.arrivals.some(a => a.species === s)) { w.goneSince[s] = -1; continue; }
-    if (w.goneSince[s] < 0) { w.goneSince[s] = w.tick; if (w.count[s] === 0) emit(w, { type: 'extinct', species: s }); continue; }
+    const n = s === 'otter' && !w.decor.some(d => d.holt) ? 0 : w.count[s];   // (otters with no holt are only passing through)
+    if (n >= few[s] || w.arrivals.some(a => a.species === s)) { w.goneSince[s] = -1; continue; }
+    if (w.goneSince[s] < 0) { w.goneSince[s] = w.tick; if (w.count[s] === 0 && Object.keys(w.stats.deaths[s]).length) emit(w, { type: 'extinct', species: s }); continue; }   // (otters that never came aren't gone)
     if (w.tick - w.goneSince[s] < wait[s] * TPD) continue;
     if (s === 'fox' && w.count.rabbit < 60 * w.room) continue;   // foxes only come where there is food
     if (s === 'bee' && w.flowers < FEW_FLOWERS) continue;         // a swarm comes when the flowers are out
     if (s === 'crow' && seasonOf(w.tick) === 3 && !w.carcasses.length) continue;   // and crows when there's food: grubs, or remains
     if (s === 'owl' && (seasonOf(w.tick) !== 2 || !owlHollow(w, { x: W / 2, y: H / 2 }))) continue;   // and a pair of owls in autumn, to a free hollow
+    if (s === 'otter' && (w.frozen || w.tick % TPD)) continue;     // (looked into once a day)
+    const holt = s === 'otter' && holtTree(w, { x: W / 2, y: H / 2 }), up = holt && otterWay(w, holt);
+    if (s === 'otter' && !up) continue;                           // and a pair of otters up the water, to a free holt
     const side = w.rng.int(0, 3), hive = s === 'bee' && (w.hives.find(h => !h.cluster) || placeHive(w));
     const kids = [];
     for (let k = 0; k < arrive[s]; k++) {
@@ -4934,12 +5337,14 @@ function migrate(w) {
         const u = w.rng.range(4, (side % 2 ? H : W) - 4);
         [x, y] = side === 0 ? [u, 2] : side === 1 ? [W - 2, u] : side === 2 ? [u, H - 2] : [2, u];
         if (s === 'bee') { x = hive.x + w.rng.range(-2, 2); y = hive.y + w.rng.range(-2, 2); }   // a swarm settles in a hive
+        if (s === 'otter') { x = up.x; y = up.y; break; }                                        // the otters swim in
       } while (!dry(w, x, y) && ++tries < 50);
       const c = addCreature(w, s, x, y, { sex: k % 2 ? 'M' : 'F', age: SPECIES[s].matureDays + 1, arrived: true });
       if (c) kids.push(c);
+      if (c && holt && c.sex === 'F') moveInHolt(w, c, holt);                                     // she came for it
     }
     w.goneSince[s] = -1;
-    emit(w, { type: 'arrive', species: s, who: kids });
+    if (kids.length) emit(w, { type: 'arrive', species: s, who: kids });
   }
 }
 
@@ -4966,6 +5371,7 @@ function step(w) {
     else if (c.species === 'bee') beeTick(w, c);
     else if (c.species === 'crow') crowTick(w, c);
     else if (c.species === 'owl') owlTick(w, c);
+    else if (c.species === 'otter') otterTick(w, c);
     if (c.alive) lifeTick(w, c);
   }
   if (w.anyDied) { w.creatures = w.creatures.filter(c => c.alive); w.anyDied = false; }
@@ -5070,6 +5476,12 @@ function unpackWorld(kept) {
   const fresh = webStats();                                  // (kept before the food web's counters)
   for (const k in fresh) w.stats[k] ??= fresh[k];
   w.stats.remains.crows ??= 0;
+  w.stats.fish ??= 0; w.stats.otterFrogs ??= 0; w.stats.fishSpawn ??= 0;
+  for (const s of KINDS) {                                   // (kept before the otters)
+    for (const o of [w.count, w.expecting, w.stats.births, w.stats.apples, w.stats.nuts, w.stats.bodies]) o[s] ??= 0;
+    w.stats.deaths[s] ??= {}; w.goneSince[s] ??= -1; w.founderMeans[s] ??= null;
+    w.history[s] ??= w.history.t.map(() => 0); w.history.traits[s] ??= w.history.t.map(() => null);
+  }
   for (const c of w.creatures) delete c.held;                // (kept while the player held one up)
   for (const c of w.byId.values()) c.mine ??= false;         // (kept before the player could name them)
   for (const d of w.decor) if (d.tree) d.planted ??= 0;      // (or plant trees)
@@ -5161,7 +5573,7 @@ function lift(w, c) {
 // And puts it down: on the nearest dry footing (a flier anywhere), with whatever it was up to forgotten.
 function putDown(w, c, x, y) {
   delete c.held;
-  const at = c.sp.flies ? { x: clamp(x, 0.5, W - 0.5), y: clamp(y, 0.5, H - 0.5) } : walkable(w, x, y) ? { x, y } : nearestFooting(w, x, y);
+  const at = c.sp.flies || c.sp.swims ? { x: clamp(x, 0.5, W - 0.5), y: clamp(y, 0.5, H - 0.5) } : walkable(w, x, y) ? { x, y } : nearestFooting(w, x, y);
   c.x = at.x; c.y = at.y;
   c.mode = 'wander'; c.target = null; c.targetId = 0; c.timer = 0; c.perch = null; c.rustle = null; c.detour = 0;
   note(w, c, '🫳', 'Picked up by a giant hand, and set down somewhere else');
@@ -5192,6 +5604,7 @@ function mood(w, c) {
   if (c.species === 'bee') { const m = beeMood(w, c); if (m) return m; }
   if (c.species === 'crow') { const m = crowMood(w, c); if (m) return m; }
   if (c.species === 'owl') { const m = owlMood(w, c); if (m) return m; }
+  if (c.species === 'otter') { const m = otterMood(w, c); if (m) return m; }
   if (c.sick && c.mode !== 'flee' && c.mode !== 'alarm') return { emoji: '🤒', text: c.hidden ? 'Sick, curled up in the burrow' : 'Sick with a fever' };
   switch (c.mode) {
     case 'flee':
@@ -5237,7 +5650,7 @@ const api = {
   TERRAIN, drawnToLink, drawnFromLink, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE,
   TREES, treeStage, treeAge, standing, bearing, hollow, inBloom, SEEDLING, SAPLING, GROWN, KIND_NAMES,
-  VOLE_K, POUNCE_TICKS, CROWDED, FROG_K, SPAWN_WORTH, FISH_K, webCounts, CROW_SEATS,
+  VOLE_K, POUNCE_TICKS, CROWDED, FROG_K, SPAWN_WORTH, FISH_K, FISH_EAT, webCounts, CROW_SEATS,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 else root.Sim = api;

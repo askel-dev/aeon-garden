@@ -476,9 +476,10 @@ function coatLine(c) {
 // A coloured rabbit for the inspector: the recoloured sprite, drawn once per coat.
 const portraits = new Map();
 function portraitHTML(c) {
-  if (c.alive && c.species === 'crow') {                   // painted, as in the meadow (the emoji splits on older systems)
-    if (!portraits.has('crow')) portraits.set('crow', dataURL(sprite(CROW_ARTS[0], 38).canvas));
-    return `<img src="${portraits.get('crow')}" alt="🐦‍⬛">`;
+  const art = c.alive && { crow: CROW_ARTS[0], otter: OTTER_ARTS[3] }[c.species];
+  if (art) {                                               // painted, as in the meadow (the crow emoji splits on older systems)
+    if (!portraits.has(c.species)) portraits.set(c.species, dataURL(sprite(art, 38).canvas));
+    return `<img src="${portraits.get(c.species)}" alt="${c.sp.emoji}">`;
   }
   if (!c.alive || !c.genes.coat) return c.alive ? c.sp.emoji : '👻';
   const look = coatLook(c);
@@ -1066,6 +1067,7 @@ function drawBurrow(b, sx, sy, z, season, residents) {
 
 const MOVING = new Set(['wander', 'food', 'flee', 'chase', 'stalk', 'prowl', 'home', 'love', 'follow', 'friends', 'dig', 'arrive']);
 const REMAINS_SIZE = 0.75;                // remains, next to a rabbit (drawRemains)
+const HOLT_SIZE = 0.8;                    // the way into an otters' holt
 const BODY_SIZE = 1;                      // a dead rabbit, lying on its side
 const FOX_BODY = 1.4;                     // and a dead fox, next to that
 const ALWAYS_BUBBLE = new Set(['flee', 'alarm', 'chase', 'love']);
@@ -1106,6 +1108,11 @@ function render(now) {
   for (const b of world.burrows) {
     const [sx, sy] = toScreen(b.x, b.y);
     if (visible(sx, sy, z * 5) && fadeAt(b.x, b.y)) drawBurrow(b, sx, sy, z, ck.season, residents.get(b) || 0);
+  }
+  for (const d of world.decor) {                            // and the otters' holts, in the roots of a tree on the bank
+    if (!d.holt || !d.door) continue;
+    const [sx, sy] = toScreen(d.door.x, d.door.y), px = Math.max(6, (8 + z) * HOLT_SIZE);
+    if (visible(sx, sy, px) && fadeAt(d.door.x, d.door.y)) drawEmoji('holt:0', sx, sy, px);
   }
   unfade();
   drawRemains(z);
@@ -1198,6 +1205,7 @@ function render(now) {
     const c = it.c;
     if (LOOKS[c.species].quiet) continue;
     if (c.species === 'crow' && c.mode === 'sleep' && c.perch?.k && c.id !== ui.selectedId && c.id !== ui.hoverId) continue;   // one 💤 a tree at the roost
+    if (c.species === 'otter' && c.sleeping && c.home?.holt && c.home.holt !== c.id && c.id !== ui.selectedId && c.id !== ui.hoverId) continue;   // and a holt
     const important = ALWAYS_BUBBLE.has(c.mode);
     if (!(important || c.id === ui.selectedId || c.id === ui.hoverId || z >= 20)) continue;
     const m = S.mood(world, c);
@@ -1230,9 +1238,9 @@ const BODY_STAGES = [0.7, 0.4, 0.15];     // meat left, of what there was, where
 const remainsLooks = new WeakMap();
 const remainsPx = z => Math.max(8, (8 + z) * REMAINS_SIZE);
 const bodyPx = z => Math.max(8, (8 + z) * BODY_SIZE);
-function remainsLook(c) {                 // a rabbit's coat (BODY_COATS) or a fox (FOX_LOOK), or a bird's feathers (REMAINS_ARTS)
+function remainsLook(c) {                 // a rabbit's coat (BODY_COATS) or a fox (FOX_LOOK), or a bird's feathers, an otter's fur (REMAINS_ARTS)
   if (c.species === 'fox') return FOX_LOOK;
-  if (c.species !== 'rabbit') return c.species === 'owl' ? 1 : 0;
+  if (c.species !== 'rabbit') return c.species === 'owl' ? 1 : c.species === 'otter' ? 2 : 0;
   return S.whiteness(world, c) > 0.5 ? 4 : BODY_COAT_OF[S.coatOf(c.genes)];
 }
 function drawRemains(z) {
@@ -1262,6 +1270,7 @@ const LOOKS = {
   bee: { size: 0.38, facesLeft: true, swatch: '#e8b83a', quiet: true },   // quiet: no thought bubbles
   crow: { size: 0.95, facesLeft: true, swatch: '#4a4e5e' },               // painted (crowArt), not the emoji
   owl: { size: 0.85, facesLeft: false, swatch: '#9a6a3e' },               // a face: it does not care
+  otter: { size: 1.5, facesLeft: true, swatch: '#7c5232' },               // painted (paintOtter), not the emoji
 };
 
 // Grows with zoom, but never shrinks to a speck when you look at the whole meadow. A tree is four
@@ -1275,6 +1284,7 @@ const loadOf = c => c.load ? Math.min(1, c.load / (S.LOAD * S.HONEY)) : 0;
 // How high off the ground it is drawn: a hop, or a flier's hover. A sipping bee sits on the flower,
 // and a laden one flies lower.
 function liftOf(c, px, now) {
+  if (c.species === 'otter') return 0;                // (it lopes: drawOtter)
   if (!c.sp.flies) return hopOf(c, px, now);
   if (c.species === 'crow') return birdLift(c, crowHeight(c, px), c.sleeping) + crowHop(c, px);
   if (c.species === 'owl') return birdLift(c, owlHeight(c, px));
@@ -1466,9 +1476,9 @@ const atHole = c => {
   return !!b && Math.abs(c.y - b.y - 0.2) < 0.05 && Math.abs(Math.abs(c.x - b.x) - 0.7) < 0.05;
 };
 
-// Earth flicked out behind a digger: three clods on their way up and over, never more.
-function drawDigging(c, sx, y, px, now) {
-  const back = c.x > c.dig.x ? 1 : -1, r = Math.max(1, px * 0.035);
+// Earth flicked out behind a digger: three clods on their way up and over, never more. (back: which way that is.)
+function drawDigging(c, sx, y, px, now, back = c.x > c.dig.x ? 1 : -1) {
+  const r = Math.max(1, px * 0.035);
   ctx.fillStyle = 'rgb(122, 90, 54)';
   for (let k = 0; k < 3; k++) {
     const u = (now / 480 + k / 3 + c.id * 0.37) % 1;
@@ -1484,6 +1494,7 @@ function drawDigging(c, sx, y, px, now) {
 const wading = c => !c.hidden && !c.sp.flies && !world.frozen && world.water[(c.y | 0) * S.W + (c.x | 0)] > 0;
 
 function drawCreature(c, sx, sy, now) {
+  if (c.species === 'otter') return drawOtter(c, sx, sy, now);
   const px = creaturePx(c);
   if (wading(c)) {
     const line = sy + px * 0.3, rip = 1 + 0.12 * Math.sin(now / 260 + c.id);
@@ -1689,12 +1700,589 @@ function paintCrow(g, size, U, pose) {
 }
 const CROW_ARTS = [0, 1, 2, 3, 4, 5, 6, 7, 8].map(k => 'crow:' + k);
 
-// A bird's remains are a few feathers: a crow's ('remains:0') or an owl's barred brown ones ('remains:1'). A rabbit's
-// and a fox's are painted below (paintBody).
+// Otters are painted, not the 🦦 emoji: it floats on its back, and differs from system to system.
+// A Eurasian otter, facing left: warm brown, a pale chin and throat, a broad flat head with small low ears,
+// a long low body, short legs and a thick tail. Box -1 to 1, feet on the ground at 0.72.
+// It's painted as one animal: every part of the fur is filled with the one shading (fur), on a layer of its own,
+// and the pale throat, the light on the back and the shade underneath are soft glows laid only on that fur.
+const OTTER = [124, 82, 50], OTTER_WET = [96, 66, 44], OTTER_PALE = [230, 210, 176];
+const OTTER_NOSE = '#2a1e18', OTTER_EYE = '#120d0a', OTTER_LIGHT = [255, 238, 214], OTTER_SHADE = [44, 26, 14];
+
+// The fur's shading, lit from above, from the top of the animal (y0) to its underside (y1).
+function furShade(g, rgb, y0, y1) {
+  const gr = g.createLinearGradient(0, y0, 0, y1);
+  gr.addColorStop(0, rockRGB(tone(rgb, 1.22, 12)));
+  gr.addColorStop(0.45, rockRGB(rgb));
+  gr.addColorStop(1, rockRGB(tone(rgb, 0.62)));
+  return gr;
+}
+// A part of it: its shape (made under tf, if any), filled or stroked with the fur's shading in the pose's own space,
+// so the parts run into each other with no seam.
+function furPart(g, style, path, tf, w) {
+  g.save(); if (tf) tf(g); g.beginPath(); path(g); g.restore();
+  if (w) { g.strokeStyle = style; g.lineWidth = w; g.stroke(); } else { g.fillStyle = style; g.fill(); }
+}
+// A soft glow or shade: an oval of colour fading out to nothing past hard (a share of its size).
+function furGlow(g, rgb, a, x, y, rx, ry, rot = 0, hard = 0) {
+  g.save(); g.translate(x, y); g.rotate(rot); g.scale(rx, ry);
+  const gr = g.createRadialGradient(0, 0, 0, 0, 0, 1);
+  gr.addColorStop(0, rockRGB(rgb, a)); gr.addColorStop(hard, rockRGB(rgb, a)); gr.addColorStop(1, rockRGB(rgb, 0));
+  g.fillStyle = gr; g.beginPath(); g.arc(0, 0, 1, 0, TAU); g.fill(); g.restore();
+}
+
+const OTTER_EDGE = 0.5;                  // how soft the markings' edges are (round 4 was 1)
+// A soft-edged shape that follows the body: filled far off to the side, so only its blurred shadow falls here.
+function blurIn(g, rgb, a, blur, path, tf) {
+  const m = g.getTransform(), off = g.canvas.width * 2;
+  g.save();
+  g.setTransform(m.a, m.b, m.c, m.d, m.e - off, m.f);
+  if (tf) tf(g);
+  g.shadowColor = rockRGB(rgb, a); g.shadowBlur = blur * OTTER_EDGE * Math.hypot(m.a, m.b); g.shadowOffsetX = off;
+  g.fillStyle = '#000'; g.beginPath(); path(g); g.fill();
+  g.restore();
+}
+
+// The head, in its own space: nose to the left at -0.35, the back of the skull at 0.28. h places it.
+const headAt = h => g => { g.translate(h.x, h.y); g.rotate(h.a || 0); g.scale(h.flip ? -h.s : h.s, h.s); };
+function headShape(g) {
+  headOutline(g);
+  ovalAt(g, 0.14, -0.155, 0.065, 0.06);                        // the ear, small and low
+}
+function headOutline(g) {
+  g.moveTo(0.26, 0.1);
+  g.bezierCurveTo(0.1, 0.16, -0.14, 0.15, -0.24, 0.09);       // under the chin
+  g.bezierCurveTo(-0.31, 0.06, -0.36, 0.02, -0.36, -0.02);     // the lip, up to the nose
+  g.bezierCurveTo(-0.36, -0.07, -0.31, -0.1, -0.24, -0.11);    // over the nose
+  g.bezierCurveTo(-0.15, -0.13, -0.08, -0.19, 0.04, -0.19);    // the brow
+  g.bezierCurveTo(0.17, -0.19, 0.28, -0.12, 0.3, -0.02);       // the flat crown, down the back of the head
+  g.bezierCurveTo(0.31, 0.04, 0.29, 0.08, 0.26, 0.1);
+  g.closePath();
+}
+function headGlow(g, h, wet) {                                  // on the fur: the pale lip and chin, the crown's light
+  g.save(); headAt(h)(g);
+  furGlow(g, OTTER_SHADE, 0.55, 0.145, -0.15, 0.03, 0.026);              // in the ear
+  g.beginPath(); headOutline(g); g.clip();                      // the rest only on the head
+  blurIn(g, OTTER_PALE, wet ? 0.85 : 0.95, 0.05, g => {        // the pale lip and chin, below the line of the mouth (the throat's is the pose's)
+    g.moveTo(-0.5, -0.02); g.lineTo(-0.33, -0.005); g.quadraticCurveTo(-0.2, 0.0, -0.06, 0.035);
+    g.lineTo(-0.02, 0.4); g.lineTo(-0.5, 0.4); g.closePath();
+  });
+  furGlow(g, OTTER_LIGHT, wet ? 0.45 : 0.32, -0.02, -0.13, 0.18, 0.045, -0.08);
+  g.restore();
+}
+function headFace(g, h, o = {}) {                               // the nose, the eye, the mouth and whiskers
+  g.save(); headAt(h)(g);
+  fillIn(g, OTTER_NOSE, () => { g.moveTo(-0.37, -0.05); g.quadraticCurveTo(-0.37, -0.09, -0.31, -0.085); g.quadraticCurveTo(-0.26, -0.08, -0.28, -0.035); g.quadraticCurveTo(-0.31, -0.005, -0.35, -0.015); g.closePath(); });
+  fillIn(g, 'rgba(255,255,255,0.35)', () => ovalAt(g, -0.33, -0.07, 0.018, 0.01, -0.2));
+  strokeIn(g, 'rgba(60,36,24,0.45)', 0.012, () => { g.moveTo(-0.33, 0.01); g.quadraticCurveTo(-0.28, 0.05, -0.2, 0.05); });
+  if (o.shut) strokeIn(g, OTTER_EYE, 0.024, () => { g.moveTo(-0.16, -0.075); g.quadraticCurveTo(-0.11, -0.05, -0.06, -0.075); });
+  else {
+    fillIn(g, OTTER_EYE, () => ovalAt(g, -0.11, -0.085, 0.038, 0.036));
+    fillIn(g, 'rgba(255,255,255,0.9)', () => discAt(g, -0.122, -0.099, 0.012));
+  }
+  strokeIn(g, 'rgba(250,244,228,0.7)', 0.01, () => {
+    for (const [dx, dy] of [[-0.17, -0.065], [-0.19, -0.015], [-0.16, 0.04]]) { g.moveTo(-0.25, 0.0); g.quadraticCurveTo(-0.25 + dx * 0.6, dy * 0.35, -0.25 + dx, dy); }
+  });
+  g.restore();
+}
+
+// The fur is painted on this, then laid on the sprite. One canvas, grown when a bigger otter needs it.
+let furCanvas = null;
+function furLayer(g, size, U) {
+  if (!furCanvas) furCanvas = document.createElement('canvas');
+  if (furCanvas.width < size || furCanvas.height < size) furCanvas.width = furCanvas.height = size;   // (a new one is 300 by 150)
+  const L = furCanvas.getContext('2d');
+  L.setTransform(1, 0, 0, 1, 0, 0); L.clearRect(0, 0, size, size);
+  L.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
+  L.lineCap = L.lineJoin = 'round';
+  return L;
+}
+function layDown(g, L) { g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(L.canvas, 0, 0); g.restore(); }
+const atop = (L, glows) => { L.globalCompositeOperation = 'source-atop'; glows(); L.globalCompositeOperation = 'source-over'; };
+
+// A leg: from the hip down to the foot, and the foot, broad and a little forward.
+const legShape = (x0, y0, x1, y1) => g => { g.moveTo(x0, y0); g.lineTo(x1, y1); };
+const pawShape = (x, y, r = 0.075) => g => ovalAt(g, x - r * 0.35, y, r, r * 0.48);
+const toesAt = (g, x, y, r) => strokeIn(g, 'rgba(40,24,14,0.55)', r * 0.16, () => {   // the toes, at the front of the foot
+  for (const k of [-0.75, -0.25]) { g.moveTo(x + k * r - r * 0.35, y - r * 0.12); g.lineTo(x + k * r - r * 0.42, y + r * 0.32); }
+});
+// A near leg on top of the fur: a soft shade on the body behind it, then the leg in its own light, its foot and toes.
+function nearLeg(L, F, x0, y0, x1, y1, w = 0.15, r = 0.085) {
+  atop(L, () => furGlow(L, OTTER_SHADE, 0.35, (x0 + x1) / 2 + w * 0.55, (y0 + y1) / 2, w * 0.6, (y1 - y0) * 0.75));
+  furPart(L, F, legShape(x0, y0 + 0.02, x1, y1), null, w);
+  furPart(L, F, pawShape(x1, y1 + 0.02, r));
+  atop(L, () => { furGlow(L, OTTER_LIGHT, 0.22, x0 - w * 0.2, (y0 + y1) / 2, w * 0.25, (y1 - y0) * 0.5); furGlow(L, OTTER_SHADE, 0.4, x1 - 0.02, y1 + 0.035, r * 1.1, r * 0.55); });
+  toesAt(L, x1, y1 + 0.02, r);
+}
+
+// A tail: its middle runs from the root p0 by p1 and p2 to the tip p3, r thick at the root and tapering all the way
+// to a rounded tip, so it grows out of the body instead of being stuck on.
+function tailShape(p0, p1, p2, p3, r, tip = 0.016) {
+  return g => {
+    const N = 32, a = [], b = [];
+    let end = 0;
+    for (let i = 0; i <= N; i++) {
+      const t = i / N, u = 1 - t, k0 = u * u * u, k1 = 3 * u * u * t, k2 = 3 * u * t * t, k3 = t * t * t;
+      const x = k0 * p0[0] + k1 * p1[0] + k2 * p2[0] + k3 * p3[0], y = k0 * p0[1] + k1 * p1[1] + k2 * p2[1] + k3 * p3[1];
+      const dx = 3 * u * u * (p1[0] - p0[0]) + 6 * u * t * (p2[0] - p1[0]) + 3 * t * t * (p3[0] - p2[0]);
+      const dy = 3 * u * u * (p1[1] - p0[1]) + 6 * u * t * (p2[1] - p1[1]) + 3 * t * t * (p3[1] - p2[1]);
+      const l = Math.hypot(dx, dy) || 1, w = tip + (r - tip) * Math.pow(u, 0.8);
+      a.push([x - dy / l * w, y + dx / l * w]); b.push([x + dy / l * w, y - dx / l * w]);
+      end = Math.atan2(dy, dx);
+    }
+    g.moveTo(a[0][0], a[0][1]); for (const [x, y] of a) g.lineTo(x, y);
+    g.arc(p3[0], p3[1], tip, end + Math.PI / 2, end - Math.PI / 2, true);
+    for (let i = N; i >= 0; i--) g.lineTo(b[i][0], b[i][1]);
+    g.closePath();
+  };
+}
+
+// In the water. Below the surface (y) the fur takes the water's colour and fades out as it goes down, so the animal
+// swims in the water rather than lying on it. On the fur layer, after everything else is painted on it.
+const OTTER_SURFACE = 0.62, OTTER_WATER = [56, 108, 140];
+function inWater(L, y = OTTER_SURFACE, deep = 0.22) {
+  const ramp = (c, a0, a1) => {
+    const gr = L.createLinearGradient(0, y - 0.004, 0, y + deep);
+    gr.addColorStop(0, rockRGB(c, 0)); gr.addColorStop(0.04, rockRGB(c, a0)); gr.addColorStop(1, rockRGB(c, a1));
+    return gr;
+  };
+  L.save();
+  L.globalCompositeOperation = 'source-atop'; L.fillStyle = ramp(OTTER_WATER, 0.45, 0.7); L.fillRect(-2, y - 0.004, 4, 3);
+  L.globalCompositeOperation = 'destination-out'; L.fillStyle = ramp([0, 0, 0], 0.55, 1); L.fillRect(-2, y - 0.004, 4, 3);
+  L.restore();
+}
+// The ring of water round it where it comes up through the surface: the far side (back) before the animal, so the
+// body hides it, the near side after, in a few broken pieces, and a fainter ripple a little further out.
+function waterRing(g, x, y, rx, ry, back) {
+  const arc = (a, w, a0, a1, k = 1, dy = 0) => strokeIn(g, `rgba(240,250,255,${a})`, w, () => g.ellipse(x, y + dy, rx * k, ry * k, 0, a0, a1));
+  if (back) { arc(0.4, 0.024, Math.PI * 1.05, Math.PI * 1.95); return; }
+  arc(0.85, 0.034, 0.2, 1.38); arc(0.75, 0.03, 1.6, 2.94);
+  arc(0.28, 0.02, 1.95, 2.6, 1.22, ry * 0.6);
+}
+
+const OTTER_WARM = [112, 68, 34];   // shade on the pale fur: a warm brown, never grey
+
+// On its feet, the long back humped as it lopes. step: 0 standing, 1 and 2 the two steps of the lope.
+function otterLoping(g, L, step) {
+  const hump = step === 1 ? 0.06 : step === 2 ? -0.03 : 0, dx = 0.05;
+  const legs = [
+    [[-0.3, 0.5, -0.34, 0.68], [0.36, 0.5, 0.4, 0.68], [-0.4, 0.5, -0.44, 0.68], [0.5, 0.5, 0.52, 0.68]],
+    [[-0.28, 0.5, -0.5, 0.67], [0.36, 0.48, 0.2, 0.68], [-0.38, 0.5, -0.3, 0.68], [0.5, 0.48, 0.64, 0.67]],   // gathered under, back up
+    [[-0.3, 0.5, -0.16, 0.68], [0.36, 0.5, 0.6, 0.67], [-0.4, 0.5, -0.6, 0.66], [0.5, 0.5, 0.38, 0.68]],      // stretched out
+  ][step].map(([a, b, c, d]) => [a + dx, b, c + dx, d]);
+  const h = { x: -0.62 + dx, y: 0.2 - hump * 0.3, a: 0.06, s: 1.3 };
+  g.save(); g.lineCap = 'round';
+  const far = furShade(g, tone(OTTER, 0.7), 0.3, 0.74);
+  for (const [x0, y0, x1, y1] of legs.slice(0, 2)) { furPart(g, far, legShape(x0, y0, x1, y1), null, 0.13); furPart(g, far, pawShape(x1, y1 + 0.02)); }
+  g.restore();
+  const F = furShade(L, OTTER, -0.02 - hump, 0.72);
+  furPart(L, F, tailShape([0.46 + dx, 0.36 - hump * 0.6], [0.72 + dx, 0.38 - hump * 0.3], [0.9 + dx, 0.62], [1.1 + dx, 0.6], 0.17));   // thick at the root, drooping, the tip lifted
+  furPart(L, F, g => {
+    g.moveTo(-0.5 + dx, 0.16);                                   // the neck
+    g.bezierCurveTo(-0.3 + dx, 0.02 - hump, 0.25 + dx, -0.02 - hump * 1.4, 0.5 + dx, 0.18 - hump);   // over the back
+    g.bezierCurveTo(0.68 + dx, 0.28, 0.7 + dx, 0.52, 0.54 + dx, 0.6);   // the rump
+    g.bezierCurveTo(0.2 + dx, 0.68, -0.2 + dx, 0.66, -0.44 + dx, 0.6);  // the belly
+    g.bezierCurveTo(-0.66 + dx, 0.54, -0.72 + dx, 0.32, -0.5 + dx, 0.16);   // the chest and throat
+  });
+  furPart(L, F, headShape, headAt(h));
+  furPart(L, F, g => ovalAt(g, 0.44 + dx, 0.44, 0.18, 0.16, 0.3));    // the near haunch
+  atop(L, () => {
+    blurIn(L, OTTER_PALE, 0.95, 0.04, g => {                                  // the pale throat, down to the chest
+      g.moveTo(-0.95 + dx, 0.3); g.lineTo(-0.56 + dx, 0.27 - hump * 0.3); g.quadraticCurveTo(-0.44 + dx, 0.36, -0.44 + dx, 0.5);
+      g.quadraticCurveTo(-0.46 + dx, 0.6, -0.54 + dx, 0.66); g.lineTo(-0.9 + dx, 0.7); g.closePath();
+    });
+    blurIn(L, OTTER_LIGHT, 0.34, 0.07, g => {                                       // light along the back, thin at the neck, on down the tail
+      g.moveTo(-0.46 + dx, 0.1); g.bezierCurveTo(-0.24 + dx, -0.08 - hump, 0.28 + dx, -0.14 - hump * 1.4, 0.6 + dx, 0.12 - hump);
+      g.bezierCurveTo(0.8 + dx, 0.26, 0.96 + dx, 0.5, 1.14 + dx, 0.54); g.lineTo(1.08 + dx, 0.58);
+      g.bezierCurveTo(0.92 + dx, 0.54, 0.76 + dx, 0.42, 0.58 + dx, 0.26 - hump);
+      g.bezierCurveTo(0.26 + dx, 0.07 - hump * 1.4, -0.24 + dx, 0.09 - hump, -0.44 + dx, 0.16); g.closePath();
+    });
+    furGlow(L, OTTER_LIGHT, 0.16, 0.42 + dx, 0.34, 0.16, 0.08, 0.3);                    // and on the haunch
+    blurIn(L, OTTER_SHADE, 0.38, 0.07, g => {                                       // shade along the belly and under the tail
+      g.moveTo(-0.46 + dx, 0.54); g.bezierCurveTo(-0.2 + dx, 0.6, 0.2 + dx, 0.62, 0.56 + dx, 0.52);
+      g.bezierCurveTo(0.76 + dx, 0.5, 0.92 + dx, 0.6, 1.1 + dx, 0.62); g.lineTo(1.1 + dx, 0.8); g.lineTo(-0.5 + dx, 0.8); g.closePath();
+    });
+    furGlow(L, OTTER_SHADE, 0.22, 0.32 + dx, 0.48, 0.1, 0.14, 0.4);                    // where the haunch meets the body
+    headGlow(L, h);
+  });
+  for (const [x0, y0, x1, y1] of legs.slice(2)) nearLeg(L, F, x0, y0, x1, y1);
+  headFace(L, h);
+  layDown(g, L);
+}
+
+// Up on its haunches, looking about: the body upright, front paws held at the chest, the tail on the ground behind.
+function otterSitting(g, L) {
+  const h = { x: -0.22, y: -0.4, a: -0.04, s: 1.3 };
+  const far = furShade(g, tone(OTTER, 0.6), 0.3, 0.74);
+  furPart(g, far, pawShape(0.08, 0.7, 0.08));
+  const F = furShade(L, OTTER, -0.62, 0.74);
+  furPart(L, F, tailShape([0.14, 0.6], [0.4, 0.66], [0.64, 0.72], [0.94, 0.67], 0.12));   // the tail, along the ground behind
+  furPart(L, F, g => {
+    g.moveTo(0.02, -0.4);                                        // the back of the neck
+    g.bezierCurveTo(0.2, -0.26, 0.28, 0.0, 0.32, 0.3);           // the back
+    g.bezierCurveTo(0.38, 0.58, 0.28, 0.73, 0.0, 0.73);          // the haunch
+    g.bezierCurveTo(-0.26, 0.73, -0.3, 0.5, -0.28, 0.24);        // the belly
+    g.bezierCurveTo(-0.28, 0.0, -0.38, -0.2, -0.34, -0.36);      // the chest and throat
+  });
+  furPart(L, F, headShape, headAt(h));
+  furPart(L, F, g => ovalAt(g, 0.12, 0.56, 0.2, 0.17, -0.4));         // the near haunch
+  atop(L, () => {
+    blurIn(L, OTTER_PALE, 0.95, 0.035, g => {                                 // the pale throat and chest, narrowing down the belly
+      g.moveTo(-0.7, -0.42); g.lineTo(-0.3, -0.36);
+      g.bezierCurveTo(-0.06, -0.33, -0.04, -0.16, -0.1, 0.02);
+      g.bezierCurveTo(-0.14, 0.16, -0.2, 0.3, -0.29, 0.42); g.lineTo(-0.7, 0.42); g.closePath();
+    });
+    blurIn(L, OTTER_LIGHT, 0.36, 0.07, g => {                                       // light down the back
+      g.moveTo(0.1, -0.5); g.bezierCurveTo(0.3, -0.3, 0.42, 0.0, 0.44, 0.3); g.lineTo(0.28, 0.3); g.bezierCurveTo(0.24, 0.0, 0.14, -0.22, -0.02, -0.34); g.closePath();
+    });
+    blurIn(L, OTTER_LIGHT, 0.12, 0.08, g => {                                       // and round the top of the haunch
+      g.moveTo(-0.1, 0.46); g.bezierCurveTo(-0.02, 0.36, 0.2, 0.34, 0.3, 0.42); g.lineTo(0.26, 0.48); g.bezierCurveTo(0.16, 0.42, 0.0, 0.44, -0.06, 0.5); g.closePath();
+    });
+    blurIn(L, OTTER_WARM, 0.3, 0.05, g => {                                   // the crease in front of the haunch
+      g.moveTo(-0.12, 0.42); g.bezierCurveTo(-0.14, 0.52, -0.12, 0.62, -0.06, 0.7); g.lineTo(-0.02, 0.68); g.bezierCurveTo(-0.07, 0.6, -0.08, 0.52, -0.06, 0.44); g.closePath();
+    });
+    furGlow(L, OTTER_SHADE, 0.3, 0.0, 0.72, 0.36, 0.07);
+    headGlow(L, h);
+  });
+  furPart(L, F, pawShape(-0.06, 0.7, 0.095));                         // its hind foot
+  atop(L, () => furGlow(L, OTTER_SHADE, 0.4, -0.08, 0.725, 0.1, 0.045));
+  toesAt(L, -0.06, 0.7, 0.095);
+  // its forepaws held up against its chest, the far one behind and a shade darker
+  const arm = furShade(L, OTTER, -0.1, 0.34), farArm = furShade(L, tone(OTTER, 0.78), -0.1, 0.34);
+  furPart(L, farArm, g => { g.moveTo(-0.14, 0.0); g.quadraticCurveTo(-0.24, 0.02, -0.28, 0.12); }, null, 0.085);
+  furPart(L, farArm, g => ovalAt(g, -0.28, 0.16, 0.05, 0.044, 0.3));
+  atop(L, () => furGlow(L, OTTER_WARM, 0.3, -0.26, 0.26, 0.08, 0.05));      // the near paw's shadow on the chest, warm
+  furPart(L, arm, g => { g.moveTo(-0.18, 0.04); g.quadraticCurveTo(-0.34, 0.06, -0.37, 0.18); }, null, 0.1);
+  furPart(L, arm, g => ovalAt(g, -0.37, 0.215, 0.058, 0.05, 0.3));
+  atop(L, () => { furGlow(L, OTTER_LIGHT, 0.3, -0.27, 0.05, 0.06, 0.025, -0.3); furGlow(L, OTTER_SHADE, 0.3, -0.36, 0.245, 0.045, 0.025); });
+  strokeIn(L, 'rgba(40,24,14,0.45)', 0.011, () => { for (const k of [-0.022, 0.012]) { L.moveTo(-0.37 + k, 0.225); L.lineTo(-0.37 + k * 1.2, 0.25); } });
+  headFace(L, h);
+  layDown(g, L);
+}
+
+// Swimming low: the head and a line of back out of the water, the rest of it under, dim. fish: one in its jaws.
+function otterSwimming(g, L, fish) {
+  const h = { x: -0.46, y: 0.38, a: fish ? -0.16 : 0, s: 1.5 };
+  const F = furShade(L, OTTER_WET, 0.2, 0.9);
+  furPart(L, F, tailShape([0.36, 0.74], [0.66, 0.76], [0.9, 0.72], [1.1, 0.67], 0.14));   // trailing behind, just under the surface
+  furPart(L, F, g => {
+    g.moveTo(-0.54, 0.5); g.bezierCurveTo(-0.3, 0.44, 0.2, 0.5, 0.5, 0.6);   // the back, just out of the water
+    g.bezierCurveTo(0.66, 0.66, 0.66, 0.84, 0.46, 0.86);                       // the hips, under it
+    g.bezierCurveTo(0.1, 0.9, -0.36, 0.9, -0.5, 0.82);                         // the belly
+    g.bezierCurveTo(-0.62, 0.74, -0.64, 0.56, -0.54, 0.5); g.closePath();
+  });
+  furPart(L, F, g => { g.moveTo(-0.5, 0.74); g.quadraticCurveTo(-0.66, 0.8, -0.72, 0.9); }, null, 0.09);   // a forepaw paddling
+  furPart(L, F, headShape, headAt(h));
+  atop(L, () => {
+    furGlow(L, OTTER_LIGHT, 0.5, -0.04, 0.5, 0.36, 0.03, 0.1, 0.3);       // wet fur shines along the back
+    headGlow(L, h, true);
+  });
+  headFace(L, h);
+  inWater(L);
+  waterRing(g, -0.2, OTTER_SURFACE, 0.68, 0.055, true);
+  layDown(g, L);
+  if (fish) {                                                    // a fish in its jaws, the half in the water dimmed
+    g.save(); g.beginPath(); g.rect(-2, -2, 4, 2.63); g.clip(); troutAt(g, -0.86, 0.44, 0.56, 0.95); g.restore();
+    g.save(); g.globalAlpha = 0.35; g.beginPath(); g.rect(-2, 0.63, 4, 2); g.clip(); troutAt(g, -0.86, 0.44, 0.56, 0.95); g.restore();
+  }
+  waterRing(g, -0.2, OTTER_SURFACE, 0.68, 0.055);
+}
+
+// Diving: the head and shoulders gone under, the back rolling over after them and the tail curling up last.
+function otterDiving(g, L) {
+  const F = furShade(L, OTTER_WET, 0.2, 0.9);
+  furPart(L, F, g => {
+    g.moveTo(-0.86, 0.94); g.bezierCurveTo(-0.74, 0.54, -0.42, 0.28, -0.14, 0.28);   // up from under the water, over the back
+    g.bezierCurveTo(0.12, 0.28, 0.3, 0.48, 0.32, 0.7);
+    g.bezierCurveTo(0.2, 0.82, -0.2, 0.86, -0.52, 1.0); g.closePath();
+  });
+  furPart(L, F, tailShape([0.14, 0.66], [0.26, 0.42], [0.38, 0.2], [0.6, 0.22], 0.12));   // the tail, its tip curling over
+  atop(L, () => {
+    blurIn(L, OTTER_LIGHT, 0.32, 0.06, g => { g.moveTo(-0.64, 0.56); g.bezierCurveTo(-0.5, 0.2, 0.1, 0.16, 0.22, 0.42); g.bezierCurveTo(0.0, 0.36, -0.4, 0.38, -0.54, 0.6); g.closePath(); });   // wet fur shines
+    furGlow(L, OTTER_LIGHT, 0.3, 0.42, 0.28, 0.03, 0.1, 0.9);
+  });
+  inWater(L);
+  waterRing(g, -0.2, OTTER_SURFACE, 0.56, 0.055, true);
+  layDown(g, L);
+  waterRing(g, -0.2, OTTER_SURFACE, 0.56, 0.055);
+}
+
+// A webbed hind foot held up, its sole to us: broad across the toes. Its heel at the origin, toes up.
+function webbedFoot(g) {
+  g.moveTo(-0.045, 0.0);
+  g.bezierCurveTo(-0.08, -0.03, -0.11, -0.08, -0.105, -0.125);
+  g.quadraticCurveTo(-0.098, -0.168, -0.055, -0.16); g.quadraticCurveTo(-0.03, -0.184, 0.0, -0.17);
+  g.quadraticCurveTo(0.03, -0.184, 0.055, -0.16); g.quadraticCurveTo(0.098, -0.168, 0.105, -0.125);
+  g.bezierCurveTo(0.11, -0.08, 0.08, -0.03, 0.045, 0.0); g.closePath();
+}
+const footAt = (x, y, a) => g => { g.translate(x, y); g.rotate(a); };
+function soleOf(L, x, y, a) {                                    // the sole's pad and the lines of the toes
+  L.save(); footAt(x, y, a)(L);
+  furGlow(L, OTTER_SHADE, 0.45, 0, -0.06, 0.06, 0.05);
+  strokeIn(L, 'rgba(40,24,14,0.3)', 0.01, () => { for (const k of [-0.055, 0, 0.055]) { L.moveTo(k * 0.8, -0.13); L.lineTo(k, -0.162); } });
+  L.restore();
+}
+// A forepaw: a round little hand, two toe lines.
+function handAt(L, style, x, y, a) {
+  furPart(L, style, g => ovalAt(g, x, y, 0.06, 0.048, a));
+  strokeIn(L, 'rgba(40,24,14,0.45)', 0.011, () => { for (const k of [-0.018, 0.018]) { L.moveTo(x + k, y - 0.03); L.lineTo(x + k * 1.2, y - 0.045); } });
+}
+
+// Floating on its back with a fish on its chest: its shoulders and head held up at the left end, looking down
+// itself at the fish; the webbed hind feet up at the other end, the tail out behind; its back under the water.
+function otterFloating(g, L) {
+  const h = { x: -0.5, y: 0.25, a: 0.32, s: 1.12, flip: true };
+  const F = furShade(L, OTTER_WET, 0.04, 0.86);
+  furPart(L, F, tailShape([0.44, 0.66], [0.66, 0.68], [0.84, 0.64], [1.04, 0.58], 0.11));   // out behind, the tip on the surface
+  furPart(L, F, g => {
+    g.moveTo(-0.82, 0.86);
+    g.bezierCurveTo(-0.88, 0.62, -0.82, 0.4, -0.66, 0.3);         // up the back of the neck
+    g.lineTo(-0.36, 0.34);
+    g.bezierCurveTo(-0.1, 0.35, 0.18, 0.37, 0.38, 0.42);          // the chest and belly, up
+    g.bezierCurveTo(0.56, 0.48, 0.64, 0.6, 0.6, 0.76);            // the hips
+    g.bezierCurveTo(0.3, 0.86, -0.4, 0.9, -0.82, 0.86); g.closePath();   // the back, under the water
+  });
+  furPart(L, F, legShape(0.36, 0.52, 0.4, 0.4), null, 0.12);        // the hind legs, up
+  furPart(L, F, legShape(0.5, 0.54, 0.57, 0.42), null, 0.12);
+  furPart(L, F, webbedFoot, footAt(0.4, 0.42, -0.3));
+  furPart(L, F, webbedFoot, footAt(0.58, 0.44, 0.35));
+  atop(L, () => {
+    blurIn(L, OTTER_PALE, 0.95, 0.04, g => {                     // the pale chest and belly, up
+      g.moveTo(-0.7, 0.2); g.lineTo(0.1, 0.22); g.bezierCurveTo(0.3, 0.26, 0.4, 0.42, 0.3, 0.48); g.bezierCurveTo(0.1, 0.47, -0.2, 0.46, -0.5, 0.5); g.closePath();
+    });
+    blurIn(L, OTTER_LIGHT, 0.36, 0.06, g => { g.moveTo(-0.92, 0.62); g.bezierCurveTo(-0.94, 0.42, -0.86, 0.26, -0.66, 0.2); g.lineTo(-0.64, 0.3); g.bezierCurveTo(-0.78, 0.36, -0.82, 0.48, -0.8, 0.62); g.closePath(); });   // wet light down the back of the neck
+  });
+  soleOf(L, 0.4, 0.42, -0.3); soleOf(L, 0.58, 0.44, 0.35);
+  furPart(L, F, headShape, headAt(h));
+  atop(L, () => {
+    furGlow(L, OTTER_WARM, 0.35, -0.46, 0.43, 0.14, 0.045, 0.3);     // under the chin, on the chest
+    furGlow(L, OTTER_SHADE, 0.3, -0.7, 0.36, 0.06, 0.1, 0.3);              // where the head meets the shoulders
+    headGlow(L, h, true);
+  });
+  headFace(L, h);
+  inWater(L, OTTER_SURFACE + 0.02);
+  waterRing(g, -0.1, OTTER_SURFACE + 0.02, 0.8, 0.055, true);
+  layDown(g, L);
+  const paws = furShade(g, OTTER_WET, 0.06, 0.66), farPaws = furShade(g, tone(OTTER_WET, 0.8), 0.06, 0.66);
+  g.save(); g.lineCap = 'round';
+  furPart(g, farPaws, g => { g.moveTo(0.12, 0.45); g.quadraticCurveTo(0.2, 0.42, 0.24, 0.34); }, null, 0.08);   // the far forepaw, behind the fish
+  handAt(g, farPaws, 0.25, 0.32, 0.5);
+  troutAt(g, -0.08, 0.36, 0.5, -0.04);
+  furPart(g, paws, g => { g.moveTo(-0.08, 0.46); g.quadraticCurveTo(0.02, 0.44, 0.05, 0.37); }, null, 0.09);   // the near one over it
+  handAt(g, paws, 0.05, 0.34, -0.5);
+  g.restore();
+  waterRing(g, -0.1, OTTER_SURFACE + 0.02, 0.8, 0.055);
+}
+
+// Eating on the bank: lying on its front, a fish (or a frog) held in its forepaws, head down to it.
+function otterEating(g, L, frog) {
+  const h = { x: -0.58, y: 0.48, a: 0.5, s: 1.3 };
+  const F = furShade(L, OTTER, 0.22, 0.73);
+  furPart(L, F, tailShape([0.46, 0.56], [0.68, 0.6], [0.86, 0.7], [1.06, 0.67], 0.14));
+  furPart(L, F, g => {
+    g.moveTo(-0.46, 0.5); g.bezierCurveTo(-0.3, 0.2, 0.3, 0.18, 0.56, 0.42);
+    g.bezierCurveTo(0.7, 0.56, 0.64, 0.72, 0.46, 0.73); g.lineTo(-0.36, 0.73); g.bezierCurveTo(-0.54, 0.7, -0.56, 0.58, -0.46, 0.5);
+  });
+  furPart(L, F, headShape, headAt(h));
+  furPart(L, F, g => ovalAt(g, 0.4, 0.56, 0.2, 0.15, 0.2));
+  atop(L, () => {
+    furGlow(L, OTTER_LIGHT, 0.3, 0.1, 0.33, 0.36, 0.06, 0.05);
+    furGlow(L, OTTER_LIGHT, 0.2, 0.8, 0.6, 0.2, 0.03, 0.4);                 // on the top of the tail
+    furGlow(L, OTTER_LIGHT, 0.14, 0.4, 0.46, 0.14, 0.06, 0.2);
+    furGlow(L, OTTER_SHADE, 0.32, 0.05, 0.72, 0.5, 0.06);
+    furGlow(L, OTTER_PALE, 0.9, -0.44, 0.6, 0.1, 0.1, 0.4, 0.35);
+    headGlow(L, h);
+  });
+  headFace(L, h);
+  layDown(g, L);
+  if (frog) { g.save(); g.translate(-0.86, 0.6); g.scale(0.34, 0.34); frogAt(g); g.restore(); } else troutAt(g, -0.92, 0.66, 0.6, 0.06);
+  const paws = furShade(g, OTTER, 0.22, 0.73);
+  g.save(); g.lineCap = 'round';
+  furPart(g, paws, g => { g.moveTo(-0.34, 0.6); g.lineTo(-0.52, 0.66); }, null, 0.12);   // a forepaw on the fish
+  furPart(g, paws, g => ovalAt(g, -0.56, 0.67, 0.07, 0.04));
+  g.restore();
+}
+
+// Sliding down a bank on its belly, the forelegs laid back, flat out.
+function otterSliding(g, L) {
+  const tilt = -0.2, h = { x: -0.62, y: 0.47, a: 0.04 + tilt, s: 1.3 };
+  const F = furShade(L, OTTER, 0.18, 0.7);
+  const tf = g => { g.translate(0, 0.44); g.rotate(tilt); };
+  furPart(L, F, tailShape([0.42, 0.04], [0.64, 0.05], [0.84, 0.07], [1.06, 0.04], 0.11), tf);
+  furPart(L, F, g => { g.moveTo(-0.5, 0.04); g.bezierCurveTo(-0.3, -0.16, 0.4, -0.16, 0.6, 0.02); g.bezierCurveTo(0.64, 0.16, 0.3, 0.2, -0.3, 0.2); g.bezierCurveTo(-0.5, 0.2, -0.62, 0.12, -0.5, 0.04); }, tf);
+  furPart(L, F, headShape, headAt(h));
+  atop(L, () => {
+    blurIn(L, OTTER_LIGHT, 0.4, 0.07, g => { g.moveTo(-0.5, -0.06); g.bezierCurveTo(-0.3, -0.26, 0.4, -0.26, 0.64, -0.08); g.bezierCurveTo(0.8, -0.04, 0.96, -0.02, 1.08, 0.0); g.lineTo(1.04, 0.04); g.bezierCurveTo(0.9, 0.02, 0.74, 0.0, 0.6, 0.0); g.bezierCurveTo(0.4, -0.08, -0.3, -0.08, -0.48, 0.06); g.closePath(); }, tf);
+    blurIn(L, OTTER_SHADE, 0.36, 0.06, g => { g.moveTo(-0.4, 0.14); g.bezierCurveTo(-0.1, 0.12, 0.3, 0.12, 0.6, 0.08); g.lineTo(1.1, 0.08); g.lineTo(1.1, 0.3); g.lineTo(-0.4, 0.3); g.closePath(); }, tf);
+    blurIn(L, OTTER_PALE, 0.9, 0.05, g => { g.moveTo(-0.9, 0.06); g.lineTo(-0.5, 0.08); g.quadraticCurveTo(-0.36, 0.12, -0.3, 0.3); g.lineTo(-0.9, 0.3); g.closePath(); }, tf);
+    headGlow(L, h);
+  });
+  headFace(L, h);
+  layDown(g, L);
+}
+
+// Asleep, curled up: the back arched, the hind leg folded under, the tail brought round its front and its chin
+// laid on the tail, nose tucked down.
+function otterAsleep(g, L) {
+  const h = { x: -0.36, y: 0.5, a: -0.28, s: 1.1 };
+  const F = furShade(L, OTTER, 0.14, 0.78);
+  furPart(L, F, g => {
+    g.moveTo(-0.34, 0.44);
+    g.bezierCurveTo(-0.26, 0.2, 0.16, 0.1, 0.42, 0.26);          // over the shoulders and the arched back
+    g.bezierCurveTo(0.64, 0.38, 0.64, 0.66, 0.46, 0.74);         // round the rump
+    g.lineTo(-0.3, 0.75);
+    g.bezierCurveTo(-0.42, 0.68, -0.42, 0.54, -0.34, 0.44); g.closePath();
+  });
+  furPart(L, F, g => ovalAt(g, 0.3, 0.54, 0.22, 0.19, -0.3));      // the haunch, the hind leg folded under it
+  atop(L, () => {
+    blurIn(L, OTTER_LIGHT, 0.4, 0.07, g => {                           // light along the arched back
+      g.moveTo(-0.36, 0.36); g.bezierCurveTo(-0.26, 0.06, 0.24, 0.0, 0.56, 0.26); g.lineTo(0.46, 0.34);
+      g.bezierCurveTo(0.2, 0.2, -0.14, 0.22, -0.26, 0.42); g.closePath();
+    });
+    blurIn(L, OTTER_LIGHT, 0.13, 0.08, g => {                          // and round the top of the haunch
+      g.moveTo(0.1, 0.44); g.bezierCurveTo(0.18, 0.34, 0.4, 0.32, 0.5, 0.42); g.lineTo(0.46, 0.46); g.bezierCurveTo(0.36, 0.4, 0.2, 0.42, 0.14, 0.5); g.closePath();
+    });
+    blurIn(L, OTTER_SHADE, 0.28, 0.05, g => {                          // the crease in front of the haunch
+      g.moveTo(0.08, 0.46); g.bezierCurveTo(0.04, 0.54, 0.06, 0.64, 0.12, 0.72); g.lineTo(0.17, 0.7); g.bezierCurveTo(0.11, 0.62, 0.1, 0.54, 0.13, 0.47); g.closePath();
+    });
+    blurIn(L, OTTER_SHADE, 0.4, 0.06, g => { g.moveTo(-0.5, 0.66); g.bezierCurveTo(-0.1, 0.62, 0.3, 0.64, 0.7, 0.6); g.lineTo(0.7, 0.9); g.lineTo(-0.5, 0.9); g.closePath(); });
+  });
+  furPart(L, F, tailShape([0.44, 0.62], [0.42, 0.78], [-0.16, 0.8], [-0.62, 0.7], 0.12));   // the tail, round its front to its nose
+  atop(L, () => blurIn(L, OTTER_LIGHT, 0.2, 0.06, g => { g.moveTo(0.46, 0.66); g.bezierCurveTo(0.3, 0.72, -0.2, 0.7, -0.62, 0.66); g.lineTo(-0.6, 0.7); g.bezierCurveTo(-0.2, 0.74, 0.3, 0.76, 0.46, 0.7); g.closePath(); }));
+  furPart(L, F, headShape, headAt(h));                              // its chin on its tail
+  atop(L, () => {
+    furGlow(L, OTTER_SHADE, 0.3, -0.18, 0.44, 0.06, 0.12, 0.3);           // where the head lies against the shoulder
+    headGlow(L, h);
+  });
+  headFace(L, h, { shut: true });
+  layDown(g, L);
+}
+
+// A fish: a brown trout, olive above and silver below, spotted. Its head at x, y, l long, at angle a.
+function troutAt(g, x, y, l, a) {
+  g.save(); g.translate(x, y); g.rotate(a); g.scale(l, l);
+  fillIn(g, '#76703f', () => { g.moveTo(0.8, 0); g.lineTo(1.05, -0.16); g.quadraticCurveTo(0.98, 0, 1.05, 0.16); g.closePath(); });   // the tail fin
+  softIn(g, [168, 162, 104], -0.15, 0.15, () => { g.moveTo(0, 0); g.bezierCurveTo(0.14, -0.19, 0.6, -0.17, 0.86, 0); g.bezierCurveTo(0.6, 0.15, 0.14, 0.17, 0, 0); });
+  fillIn(g, 'rgba(240,236,214,0.75)', () => ovalAt(g, 0.42, 0.07, 0.3, 0.045));
+  fillIn(g, '#3e3a24', () => { for (const [sx, sy] of [[0.3, -0.07], [0.46, -0.09], [0.6, -0.06], [0.38, -0.01], [0.53, -0.02]]) discAt(g, sx, sy, 0.024); });
+  fillIn(g, '#c0503e', () => discAt(g, 0.68, 0.02, 0.02));
+  fillIn(g, '#1a1712', () => discAt(g, 0.1, -0.035, 0.028));
+  g.restore();
+}
+
+// The V it leaves swimming: a few short arcs spreading back from its chin, fading (drawn on the water, under it).
+function drawWake(ctx, x, y, px, dir, now) {
+  ctx.lineWidth = Math.max(1, px * 0.035);
+  for (let k = 0; k < 3; k++) {
+    const back = px * (0.2 + 0.28 * k), open = px * (0.08 + 0.13 * k);
+    ctx.strokeStyle = `rgba(235, 246, 255, ${0.6 - 0.17 * k})`;
+    ctx.beginPath();
+    for (const side of [-1, 1]) {
+      const ex = x - dir * px * 0.42 + dir * back, ey = y + px * 0.27 + side * open;
+      ctx.moveTo(ex - dir * px * 0.12, ey - side * px * 0.05); ctx.quadraticCurveTo(ex, ey - side * px * 0.01, ex + dir * px * 0.06, ey + side * px * 0.04);
+    }
+    ctx.stroke();
+  }
+}
+
+// The otters' paintings for the sprite cache ('otter:' + pose): 0 standing, 1 and 2 the two steps of the lope,
+// 3 sitting up, 4 swimming, 5 swimming with a fish in its jaws, 6 diving, 7 afloat on its back eating a fish,
+// 8 eating one on the bank, 9 sliding, 10 asleep, 11 eating a frog on the bank.
+const OTTER_ARTS = Array.from({ length: 12 }, (_, k) => 'otter:' + k);
+function paintOtter(g, size, U, pose) {
+  g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
+  g.lineCap = g.lineJoin = 'round';
+  const L = furLayer(g, size, U);
+  if (pose <= 2) otterLoping(g, L, pose);
+  else if (pose === 3) otterSitting(g, L);
+  else if (pose <= 5) otterSwimming(g, L, pose === 5);
+  else if (pose === 6) otterDiving(g, L);
+  else if (pose === 7) otterFloating(g, L);
+  else if (pose === 8 || pose === 11) otterEating(g, L, pose === 11);
+  else if (pose === 9) otterSliding(g, L);
+  else otterAsleep(g, L);
+}
+// The way into a holt, among the roots of its tree on the bank ('holt:0'): a dark hollow under an arching root.
+function paintHolt(g, size, U) {
+  g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
+  g.lineCap = g.lineJoin = 'round';
+  fillIn(g, 'rgba(40, 50, 20, 0.25)', () => ovalAt(g, 0, 0.56, 0.86, 0.2));                     // the trodden bank
+  fillIn(g, '#7a5a3a', () => { g.moveTo(-0.62, 0.62); g.ellipse(0, 0.62, 0.62, 0.62, 0, Math.PI, TAU); g.closePath(); });   // the earth
+  fillIn(g, '#241810', () => { g.moveTo(-0.4, 0.62); g.ellipse(0, 0.62, 0.4, 0.42, 0, Math.PI, TAU); g.closePath(); });     // the way in
+  strokeIn(g, '#5e4128', 0.15, () => { g.moveTo(-0.78, 0.66); g.bezierCurveTo(-0.66, 0.04, 0.5, -0.06, 0.72, 0.6); });         // a root over it
+  strokeIn(g, '#8a6a46', 0.05, () => { g.moveTo(-0.66, 0.42); g.bezierCurveTo(-0.5, 0.06, 0.34, 0.0, 0.56, 0.34); });
+  strokeIn(g, '#5e4128', 0.09, () => { g.moveTo(0.3, 0.2); g.quadraticCurveTo(0.62, 0.3, 0.9, 0.64); });                       // and another, thinner
+}
+
+// An otter on screen (sim.js otterTick): in the water it swims (a V of wake behind it on its way somewhere), goes
+// under (seen going, then only the rings where it went), and eats its fish afloat; on land it lopes, sits up,
+// roots for frogs, slides down the bank, and sleeps curled up.
+const OTTER_STRIDE = 0.22;         // of its length, a step of the lope
+const OTTER_UNDER = 12;            // ticks it's seen going under, then only the rings
+const OTTER_FISH = 15;             // ticks it's seen with the fish in its jaws, coming up, before it rolls on its back to eat
+const OTTER_GOES = new Set(['fish', 'frog', 'bed', 'slip', 'leave', 'play', 'slide', 'wander']);   // on its way somewhere (c.target)
+const otterSwims = c => !world.frozen && world.water[(c.y | 0) * S.W + (c.x | 0)] > 0;
+function otterGoes(c) {
+  if (c.mode === 'follow') { const m = world.byId.get(c.mumId); return !!m && Math.abs(m.x - c.x) + Math.abs(m.y - c.y) > 1.5; }
+  const t = c.target;
+  return OTTER_GOES.has(c.mode) && !!t && Math.abs(t.x - c.x) + Math.abs(t.y - c.y) > 0.05;
+}
+// Ticks since it went under (a dive's timer only counts down, so a bigger one is a new dive).
+const dives = new WeakMap();
+function underFor(c) {
+  let d = dives.get(c);
+  if (!d || c.timer > d.timer) dives.set(c, d = { t0: world.tick, timer: c.timer });
+  d.timer = c.timer;
+  return world.tick + acc - d.t0;
+}
+// Its painting, or null while it's under the water.
+function otterArt(c, px, wet) {
+  if (c.sleeping) return OTTER_ARTS[10];
+  if (c.mode === 'dive' && wet) return underFor(c) < OTTER_UNDER ? OTTER_ARTS[6] : null;
+  if (c.mode === 'eat') return OTTER_ARTS[!wet ? 8 : c.timer > S.FISH_EAT - OTTER_FISH ? 5 : 7];
+  if (wet) return OTTER_ARTS[4];
+  if (c.mode === 'munch') return OTTER_ARTS[11];
+  const goes = otterGoes(c);
+  if (c.mode === 'slide' && goes) return OTTER_ARTS[9];
+  if (goes && ui.speed > 0) {                        // (the step goes by where it is, so it stops when it stops)
+    const k = cam.zoom / (px * OTTER_STRIDE);
+    return OTTER_ARTS[(Math.floor(c.x * k) + Math.floor(c.y * k)) & 1 ? 1 : 2];
+  }
+  return OTTER_ARTS[c.mode === 'wander' || c.mode === 'play' ? 3 : 0];
+}
+function drawOtter(c, sx, sy, now) {
+  const px = creaturePx(c), wet = otterSwims(c), art = otterArt(c, px, wet), flip = c.facing > 0;
+  if (!art) { drawUnder(sx, sy + px * 0.31, px, now, c.id); return; }
+  if (wet && otterGoes(c)) drawWake(ctx, sx, sy, px, flip ? -1 : 1, now);
+  const breathe = c.sleeping && ui.speed > 0 ? Math.sin(now / 650 + c.id) * 0.035 : 0;
+  drawEmoji(art, sx, sy - px * 0.4 * breathe, px, { flip, squash: 1 + breathe });   // feet stay on the ground
+  if (c.mode === 'root' && px > 18 && ui.speed > 0 && ui.speed <= 4) drawDigging(c, sx, sy, px, now, flip ? -1 : 1);
+}
+// Where an otter went under: rings spreading on the water.
+function drawUnder(sx, y, px, now, id) {
+  ctx.lineWidth = Math.max(1, px * 0.03);
+  for (let k = 0; k < 2; k++) {
+    const u = (now / 1400 + k / 2 + id * 0.31) % 1;
+    ctx.strokeStyle = `rgba(240, 250, 255, ${0.55 * (1 - u)})`;
+    ctx.beginPath(); ctx.ellipse(sx, y, px * (0.12 + 0.4 * u), px * (0.04 + 0.12 * u), 0, 0, TAU); ctx.stroke();
+  }
+}
+
+// A bird's remains are a few feathers: a crow's ('remains:0') or an owl's barred brown ones ('remains:1'). An otter's
+// ('remains:2') are tufts of its brown fur and a bone or two. A rabbit's and a fox's are painted below (paintBody).
 function paintRemains(g, size, U, look) {
   g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
   g.lineCap = g.lineJoin = 'round';
   fillIn(g, 'rgba(40, 50, 20, 0.2)', () => ovalAt(g, 0.02, 0.64, 0.86, 0.16));   // pressed into the grass
+  if (look === 2) {
+    for (const [x, y, a] of [[-0.4, 0.52, -0.3], [0.3, 0.58, 0.4], [0.0, 0.42, 0.1], [0.5, 0.42, -0.6]]) {
+      g.save(); g.translate(x, y); g.rotate(a);
+      softIn(g, OTTER, -0.12, 0.12, () => ovalAt(g, 0, 0, 0.2, 0.1));
+      strokeIn(g, rockRGB(tone(OTTER, 1.25, 10)), 0.025, () => { for (const k of [-0.1, 0, 0.1]) { g.moveTo(k - 0.12, k * 0.3); g.quadraticCurveTo(k, -0.08 + k * 0.2, k + 0.16, k * 0.4); } });
+      g.restore();
+    }
+    boneAt(g, -0.1, 0.66, 0.24, 0.2); boneAt(g, 0.36, 0.72, 0.18, -0.4, 0.8);
+    return;
+  }
   const ink = look ? '#8a5c36' : CROW_INK, sheen = look ? '#d0a878' : CROW_SHEEN;
   for (const [x, y, a, s] of [[-0.36, 0.5, -0.3, 1.5], [0.34, 0.56, 0.5, 1.2], [0.02, 0.4, 0.1, 1.1]]) {
     g.save(); g.translate(x, y); g.rotate(a); g.scale(s, s * 0.7);
@@ -1704,7 +2292,7 @@ function paintRemains(g, size, U, look) {
     g.restore();
   }
 }
-const REMAINS_ARTS = [0, 1].map(k => 'remains:' + k);
+const REMAINS_ARTS = [0, 1, 2].map(k => 'remains:' + k);
 
 // A dead rabbit, lying on its side facing left, in four stages ('body:' + coat * 4 + stage): 0 whole, its eyes
 // closed; 1 opened, the ribs showing; 2 picked over, bones and scraps; 3 a flat pelt, a bone or two. Soft shapes in
@@ -1901,6 +2489,7 @@ const BUBBLE_ICONS = [
     fillIn(g, '#6aa84a', () => ovalAt(g, 0.36, -0.72, 0.28, 0.13, -0.45));
   }],
   ['🐾', g => pawAt(g, 0, 0.05, 1)],
+  ['🐟', g => troutAt(g, -0.95, 0.12, 1.9, -0.18)],   // an otter's fish
   ['🤝', g => { pawAt(g, -0.42, 0.25, 0.62); pawAt(g, 0.45, -0.2, 0.55); }],   // with friends: two paws
   ['👀', g => {
     for (const x of [-0.4, 0.4]) {
@@ -2128,7 +2717,7 @@ function drawSelectionOver(c, now) {
     ctx.restore();
   }
   if (c.held && held) { const [hx, hy] = heldAt(held, now); drawLabel(c.name, hx, hy + creaturePx(c) * 0.55 + 6, c.mine); return; }
-  const label = c.hidden ? `${c.name} is ${c.species === 'crow' ? 'in the nest' : c.species === 'owl' ? 'in the hollow' : `inside the ${c.species === 'bee' ? 'hive' : 'burrow'}`}` : c.name;
+  const label = c.hidden ? `${c.name} is ${c.species === 'crow' ? 'in the nest' : c.species === 'owl' ? 'in the hollow' : c.species === 'otter' ? 'in the holt' : `inside the ${c.species === 'bee' ? 'hive' : 'burrow'}`}` : c.name;
   drawLabel(label, sx, sy + (c.hidden ? cam.zoom : creaturePx(c) * 0.55) + 6, c.mine);
 }
 
@@ -2628,7 +3217,7 @@ function putPainting(p, f, alpha, snow, ox, oy) {
   if (snow && p.snow) { ctx.globalAlpha = alpha * snow; ctx.drawImage(p.snow, x, y, w, h); }
   ctx.globalAlpha = 1;
 }
-const PAINTERS = { reeds: paintReeds, lily: paintLilies, bubble: paintBubble, vole: paintVole, frog: paintFrog, crow: paintCrow, remains: paintRemains, body: paintBody };
+const PAINTERS = { reeds: paintReeds, lily: paintLilies, bubble: paintBubble, vole: paintVole, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody };
 function drawDecor(d, sx, sy, now, ck, clipLeaves) {
   const z = cam.zoom, px = d.tree ? treePx(d) : d.size * z;
   if (d.emoji === '🪨') { drawRock(d, sx, sy); return; }
@@ -3776,7 +4365,7 @@ const link = c => c ? `<a data-id="${c.id}">${esc(c.name)}</a>` : 'someone';
 
 // One of yours gone: a line of its own, what took it and where. If it leaves young, one of them is offered
 // (never named for you): a tap on it opens the inspector to name it.
-const YOUNG_ONE = { rabbit: 'kit', fox: 'cub', crow: 'chick', owl: 'owlet' };
+const YOUNG_ONE = { rabbit: 'kit', fox: 'cub', crow: 'chick', owl: 'owlet', otter: 'cub' };
 const GONE_EMOJI = { fox: '🦊', owl: '🦉', left: '🧳', hunger: '🥀', lightning: '⚡', fire: '🔥', flood: '🌊', ice: '🧊', sickness: '🤒' };
 function goneLine(c, cause, killer) {
   const at = cause === 'left' ? '' : placeNear(c.x, c.y), who = link(c);
@@ -3794,7 +4383,7 @@ function goneLine(c, cause, killer) {
     if (d < kd) { kit = k; kd = d; }
   }
   if (kit) {
-    const where = kit.hidden ? (kit.species === 'crow' ? 'in the nest' : kit.species === 'owl' ? 'in the hollow' : 'in the burrow') : placeNear(kit.x, kit.y) || 'not far off';
+    const where = kit.hidden ? (kit.species === 'crow' ? 'in the nest' : kit.species === 'owl' ? 'in the hollow' : kit.species === 'otter' ? 'in the holt' : 'in the burrow') : placeNear(kit.x, kit.y) || 'not far off';
     t += ` <a class="adopt" data-act="adopt" data-id="${kit.id}">${c.sex === 'F' ? 'Her' : 'His'} ${YOUNG_ONE[kit.species] || 'young one'} ${esc(kit.name)} is ${where} →</a>`;
   }
   return t;
@@ -3965,12 +4554,13 @@ function handleEvent(e) {
       addEffect('✨', e.mum.x, e.mum.y, 0.8);
       const n = e.kids.length, fox = e.mum.species === 'fox';
       hear('birth', e.mum.x, e.mum.y, { species: e.mum.species, kids: n }, mine);
-      const crow = e.mum.species === 'crow', owl = e.mum.species === 'owl';
-      const what = fox ? (n === 1 ? 'cub' : 'cubs') : e.mum.species === 'bee' ? (n === 1 ? 'young bee' : 'young bees') : crow ? (n === 1 ? 'chick' : 'chicks')
+      const crow = e.mum.species === 'crow', owl = e.mum.species === 'owl', otter = e.mum.species === 'otter';
+      const what = fox || otter ? (n === 1 ? 'cub' : 'cubs') : e.mum.species === 'bee' ? (n === 1 ? 'young bee' : 'young bees') : crow ? (n === 1 ? 'chick' : 'chicks')
         : owl ? (n === 1 ? 'owlet' : 'owlets') : (n === 1 ? 'baby' : 'babies');
-      const text = `${fox ? '🦊' : crow ? '🪺' : owl ? '🦉' : '🍼'} ${link(e.mum)} had ${n} ${what}` + (e.dad ? ` with ${link(e.dad)}` : '')
-        + (crow ? ', up in the nest.' : owl ? `, in the hollow of the old oak. ${n === 1 ? 'Few voles about this spring: only the one.' : n === 3 ? 'Voles aplenty to feed them.' : ''}` : '.');
-      if (mine || fox || owl) addNews(text);
+      const text = `${fox ? '🦊' : crow ? '🪺' : owl ? '🦉' : otter ? '🦦' : '🍼'} ${link(e.mum)} had ${n} ${what}` + (e.dad ? ` with ${link(e.dad)}` : '')
+        + (crow ? ', up in the nest.' : owl ? `, in the hollow of the old oak. ${n === 1 ? 'Few voles about this spring: only the one.' : n === 3 ? 'Voles aplenty to feed them.' : ''}`
+          : otter ? ', down in the holt. They\'ll be out in a few days.' : '.');
+      if (mine || fox || owl || otter) addNews(text);
       else addNews(text, 'birth', 9000);
       if (e.surprise.length) {
         const n = {};
@@ -3995,14 +4585,16 @@ function handleEvent(e) {
         const t = `🦉 ${link(e.killer)} the owl dropped silently out of the dusk and took ${link(c)}, a young rabbit still out.`;
         if (mine) addNews(t); else addNews(t, 'owlcatch', 20000);
       } else if (e.cause === 'left') {
-        if (mine) addNews(`🦉 ${link(c)} has flown off over the trees to find a wood of its own.`);   // the rest: the 'owlleaves' news
+        if (mine) addNews(c.species === 'otter' ? `🦦 ${link(c)} has gone off down the water to find a stretch of its own.`
+          : `🦉 ${link(c)} has flown off over the trees to find a wood of its own.`);   // the rest: the 'owlleaves' and 'otterleaves' news
       } else if (e.cause === 'hunger') {
         const t = c.species === 'fox' ? `🥀 ${link(c)} the fox starved. There weren't enough rabbits or voles.`
           : c.species === 'bee' ? `🥀 ${link(c)} the bee starved. The hive ran out of honey.`
           : c.species === 'crow' ? `🥀 ${link(c)} the crow starved.`
           : c.species === 'owl' ? `🥀 ${link(c)} the owl starved. There weren't enough voles in the long grass.`
+          : c.species === 'otter' ? `🥀 ${link(c)} the otter starved${world.frozen ? ', shut out of the water by the ice' : ''}.`
           : `🥀 ${link(c)} starved.`;
-        if (mine || c.species === 'fox' || c.species === 'owl') addNews(t); else addNews(t, 'starve', 12000);
+        if (mine || c.species === 'fox' || c.species === 'owl' || c.species === 'otter') addNews(t); else addNews(t, 'starve', 12000);
       } else if (e.cause === 'lightning') {
         addNews(`⚡ ${link(c)} was struck by lightning.`);
       } else if (e.cause === 'fire') {
@@ -4089,6 +4681,17 @@ function handleEvent(e) {
     case 'owlleaves':
       addNews(`🦉 ${link(e.c)}, grown now, found no hollow free and is flying off to find a wood of its own.`, 'owlleaves', 30000);
       break;
+    case 'holt': {
+      const d = e.tree;
+      addNews(`🦦 ${link(e.c)} the otter has made a holt in the roots of ${thingLink('tree', d.id, d.name ? 'the ' + esc(d.name) : `a big ${treeName(d).toLowerCase()} on the bank`)}.`, 'holt', 20000);
+      break;
+    }
+    case 'cubsout':
+      addNews(`🦦 ${link(e.c)} the otter cub has come out of the holt${e.mum ? ` and swims after ${link(e.mum)}` : ''}.`, 'cubsout', 30000);
+      break;
+    case 'otterleaves':
+      addNews(`🦦 ${link(e.c)}, a year old now, ${e.c.sex === 'F' ? 'found no holt free' : 'found no room here'} and is off down the water to find a stretch of its own.`, 'otterleaves', 30000);
+      break;
     case 'buried':
       addNews(`🌰 The crows buried ${e.n} ${e.n === 1 ? 'acorn' : 'acorns and beechnuts'} this autumn. The ones they forget will come up as oaks and beeches in the spring.`);
       break;
@@ -4152,6 +4755,7 @@ function handleEvent(e) {
         bee: '😢 <b>The hive has gone quiet.</b> The last bee is gone.',
         crow: '😢 <b>The last crow is gone.</b> The remains lie longer now, and the acorns lie where they fall.',
         owl: '😢 <b>The last owl is gone.</b> The nights are quiet, and the hollow oaks stand empty.',
+        otter: '😢 <b>The last otter is gone.</b> The fish have the water to themselves.',
       }[e.species]);
       break;
     case 'pollinate':
@@ -4168,6 +4772,7 @@ function handleEvent(e) {
         bee: `🐝 A swarm has found the empty hive and moved in: ${names}.`,
         crow: `🐦‍⬛ Crows have flown in over the trees: ${names}.`,
         owl: `🦉 ${e.who.length === 2 ? 'A pair of tawny owls has' : 'Tawny owls have'} flown in over the trees, looking for hollow oaks: ${names}.`,
+        otter: `🦦 ${e.who.length === 2 ? 'A pair of otters has' : 'Otters have'} come up the water, looking for a bank to make a holt in: ${names}.`,
       }[e.species]);
       for (const c of e.who) addEffect('✨', c.x, c.y);
       hear('arrive', e.who[0].x, e.who[0].y, { species: e.species }, true);
@@ -4177,7 +4782,8 @@ function handleEvent(e) {
 }
 
 // How many make a record worth telling, and how big a peak has to be before its crash is news.
-const NEWSWORTHY = { rabbit: { record: 20, crash: 80 }, fox: { record: 8, crash: 10 }, bee: { record: 20, crash: 40 }, crow: { record: 25, crash: 15 }, owl: { record: 8, crash: 99 } };
+const NEWSWORTHY = { rabbit: { record: 20, crash: 80 }, fox: { record: 8, crash: 10 }, bee: { record: 20, crash: 40 }, crow: { record: 25, crash: 15 }, owl: { record: 8, crash: 99 },
+  otter: { record: 8, crash: 99 } };
 
 function checkPopulationNews() {
   const h = world.history, n = h.rabbit.length;
@@ -4359,8 +4965,10 @@ const SERIES = {
   bee: { emoji: '🐝', name: 'Bees', title: 'Bees alive', color: '#d9a21b', fmt: v => Math.round(v) },
   crow: { emoji: '🐦‍⬛', name: 'Crows', title: 'Crows alive', color: '#4a4e5e', fmt: v => Math.round(v) },
   owl: { emoji: '🦉', name: 'Owls', title: 'Owls alive', color: '#9a6a3e', fmt: v => Math.round(v) },
+  otter: { emoji: '🦦', name: 'Otters', title: 'Otters alive', color: '#7c5232', fmt: v => Math.round(v) },
   voles: { emoji: '🐁', name: 'Voles', title: 'Voles in the long grass', color: '#8a6a4e', fmt: v => Math.round(v) },
   frogs: { emoji: '🐸', name: 'Frogs', title: 'Frogs by the water', color: '#6f8f3e', fmt: v => Math.round(v) },
+  fish: { emoji: '🐟', name: 'Fish', title: 'Fish in the water', color: '#5a8aa6', fmt: v => Math.round(v) },
   grass: { emoji: '🌱', name: 'Grass', title: 'How lush the meadow is', color: '#5f9e43', fmt: v => Math.round(v * 100) + '%' },
 };
 const SEASON_TINT = ['#f6dde5', '#f7ecb8', '#f4d6b6', '#dfe8f0'];
@@ -4369,7 +4977,7 @@ const RANGE_WORDS = { year: 'the last year', five: 'the last 5 years', all: 'the
 const MARK_EMOJI = { extinct: '😢', arrive: '🧳', fire: '🔥', outbreak: '🤒' };
 const CAUSES = [['fox', '🦊', 'Caught by a fox'], ['hunger', '🥀', 'Starved'], ['age', '🌙', 'Old age'],
   ['sickness', '🤒', 'Sickness'], ['lightning', '⚡', 'Lightning'], ['fire', '🔥', 'Wildfire'], ['flood', '🌊', 'Drowned in a flood'],
-  ['ice', '🧊', 'Fell through the ice'], ['owl', '🦉', 'Taken by an owl'], ['left', '🧳', 'Flew off to find a wood']];
+  ['ice', '🧊', 'Fell through the ice'], ['owl', '🦉', 'Taken by an owl'], ['left', '🧳', 'Left to find a home of its own']];
 const INK = '#3b372f', MUTED = '#6f6657';
 
 if (!S.OWLS) delete SERIES.owl;
@@ -4648,14 +5256,16 @@ $('#stats-chart').addEventListener('pointerleave', () => { ui.stats.hover = null
 // written; closed, it costs nothing.
 const WEB_W = 400, WEB_H = 454, WEB_R = 19;
 const WEB_NODES = {
-  fox: { x: 150, y: 78, art: '🦊', name: 'Foxes', color: '#e2702f' },
-  owl: { x: 256, y: 78, art: '🦉', name: 'Owls', color: '#9a6a3e' },
+  fox: { x: 110, y: 78, art: '🦊', name: 'Foxes', color: '#e2702f' },
+  owl: { x: 196, y: 78, art: '🦉', name: 'Owls', color: '#9a6a3e' },
+  otter: { x: 282, y: 78, art: 'otter:3', name: 'Otters', color: '#7c5232' },
   remains: { x: 368, y: 78, art: 'body:1', name: 'Remains', color: '#857565' },
   bee: { x: 36, y: 200, art: '🐝', name: 'Bees', color: '#d9a21b' },
   rabbit: { x: 108, y: 200, art: '🐇', name: 'Rabbits', color: '#a07850' },
   vole: { x: 180, y: 200, art: 'vole:0', name: 'Voles', color: '#8a6a4e' },
   frog: { x: 252, y: 200, art: 'frog:0', name: 'Frogs', color: '#6f8f3e' },
-  crow: { x: 324, y: 200, art: 'crow:0', name: 'Crows', color: '#4a4e5e' },
+  fish: { x: 316, y: 200, art: 'icon:🐟', name: 'Fish', color: '#5a8aa6' },
+  crow: { x: 376, y: 200, art: 'crow:0', name: 'Crows', color: '#4a4e5e' },
   flowers: { x: 36, y: 340, art: 'flower', name: 'Flowers', color: '#c0609a' },
   fruit: { x: 108, y: 340, art: 'icon:🍎', name: 'Fruit trees', color: '#c94a3a' },
   grass: { x: 180, y: 340, art: 'icon:🌿', name: 'Grass', color: '#5f9e43' },
@@ -4685,7 +5295,10 @@ const WEB_LINKS = [
   { from: 'vole', to: 'owl', n: 'owlVoles', say: n => `Owls caught ${many(n, 'vole')}.`, bend: -10 },
   { from: 'frog', to: 'fox', n: 'frogs', say: n => `Foxes caught ${many(n, 'frog')}.`, bend: -10 },
   { from: 'frog', to: 'owl', n: 'owlFrogs', say: n => `Owls caught ${many(n, 'frog')}.` },
-  { from: 'frog', to: 'crow', n: 'crowSpawn', say: n => `Crows ate frogspawn and tadpoles, as many as would have made ${many(n, 'frog')}.` },
+  { from: 'frog', to: 'crow', n: 'crowSpawn', say: n => `Crows ate frogspawn and tadpoles, as many as would have made ${many(n, 'frog')}.`, bend: -16 },
+  { from: 'frog', to: 'fish', n: 'fishSpawn', say: n => `Fish ate tadpoles, as many as would have made ${many(n, 'frog')}. The flood pools have none.` },
+  { from: 'fish', to: 'otter', n: 'fish', say: n => `Otters caught ${many(n, 'fish')}, diving.` },
+  { from: 'frog', to: 'otter', n: 'otterFrogs', say: n => `Otters caught ${many(n, 'frog')}, at the spawning and dug out of the winter mud.`, bend: 10 },
   { from: 'soil', to: 'crow', n: 'grubs', say: n => `Crows pecked ${many(n, 'grub')} out of the short grass and the rich ground.`, bend: 20 },
   { from: 'remains', to: 'crow', n: 'remainsCrows', say: n => `Crows fed at the remains of ${many(n, 'animal')}.`, bend: 14 },
   { from: 'remains', to: 'soil', kind: 'grow', n: 'remainsRotted', say: n => `${upper(many(n, 'body'))} rotted away where they lay, into the ground.`, bend: -26 },
@@ -4693,17 +5306,18 @@ const WEB_LINKS = [
   { from: 'rabbit', to: 'remains', kind: 'body', n: 'bodies:rabbit', say: n => `${upper(many(n, 'rabbit'))} were left lying, caught or dead out in the open.`, bend: 34 },
   { from: 'fox', to: 'remains', kind: 'body', n: 'bodies:fox', say: n => `${upper(many(n, 'fox'))} died out in the open and were left lying.`, bend: 34 },
   { from: 'owl', to: 'remains', kind: 'body', n: 'bodies:owl', say: n => `${upper(many(n, 'owl'))} died out in the open and were left lying.`, bend: 12 },
+  { from: 'otter', to: 'remains', kind: 'body', n: 'bodies:otter', say: n => `${upper(many(n, 'otter'))} died out on the bank and were left lying.`, bend: 12 },
   { from: 'crow', to: 'remains', kind: 'body', n: 'bodies:crow', say: n => `${upper(many(n, 'crow'))} died out in the open and were left lying.`, bend: -14 },
 ];
 if (!S.OWLS) {                                             // (owls are off for now: sim.js OWLS)
-  delete WEB_NODES.owl; WEB_NODES.fox.x = 203;
+  delete WEB_NODES.owl; WEB_NODES.fox.x = 150; WEB_NODES.otter.x = 260;
   for (let i = WEB_LINKS.length - 1; i >= 0; i--) if (WEB_LINKS[i].from === 'owl' || WEB_LINKS[i].to === 'owl') WEB_LINKS.splice(i, 1);
 }
 const WEB_WHEN = { season: null, year: 'Last year', all: 'Since the start' };
 const web = { open: false, when: 'year', at: 0, hover: null, pin: null, v: null, live: null, built: false };
 const webOpen = () => web.open;
 
-const PLURALS = { body: 'bodies', fox: 'foxes' };
+const PLURALS = { body: 'bodies', fox: 'foxes', fish: 'fish' };
 const big = n => (n >= 1e6 ? `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)} million` : Math.round(n).toLocaleString('en-US'));
 const many = (n, one) => { n = Math.round(n); return n <= 0 ? `no ${PLURALS[one] || one + 's'}` : n === 1 ? `one ${one}` : `${big(n)} ${PLURALS[one] || one + 's'}`; };
 const upper = s => s[0].toUpperCase() + s.slice(1);
@@ -4823,9 +5437,9 @@ function webLive() {
   const g = w.history.grass;
   return {
     ...Object.fromEntries(S.KINDS.map(s => [s, w.count[s]])), ...trees,
-    vole: Math.round(w.voleCount), frog: Math.round(w.frogCount), spawn: w.spawnCount >= 0.5, flowers: w.flowers,
+    vole: Math.round(w.voleCount), frog: Math.round(w.frogCount), spawn: w.spawnCount >= 0.5, fish: Math.round(w.fishCount), flowers: w.flowers,
     remains: w.carcasses.length, grass: g.length ? g[g.length - 1] : 1, hives: w.hives.filter(h => h.bees > 0 && !h.cluster).length,
-    sick: w.sick, mast: w.mast, voleYear: w.voleYear,
+    sick: w.sick, mast: w.mast, voleYear: w.voleYear, holts: w.decor.filter(d => d.holt).length,
   };
 }
 const webGone = (k, live) => (k in live ? (k === 'grass' ? false : k === 'frog' ? !live.frog && !live.spawn : !live[k]) : false);
@@ -4833,7 +5447,7 @@ function webNow(k, L) {
   switch (k) {
     case 'grass': return Math.round(L.grass * 100) + '% grown';
     case 'soil': return '';
-    case 'vole': case 'frog': return L[k] ? '~' + big(L[k]) : k === 'frog' && L.spawn ? 'spawn' : 'none now';
+    case 'vole': case 'frog': case 'fish': return L[k] ? '~' + big(L[k]) : k === 'frog' && L.spawn ? 'spawn' : 'none now';
     case 'flowers': return L.flowers ? big(L.flowers) + ' open' : 'none open';
     case 'remains': return L.remains ? L.remains + ' lying' : 'none lying';
     case 'fruit': case 'nuts': return L[k] ? L[k] + (L[k] === 1 ? ' tree' : ' trees') : 'none now';
@@ -4842,7 +5456,7 @@ function webNow(k, L) {
 }
 
 // A deaths-and-births line for an animal over the period: "120 born; 80 caught by foxes and 12 starved."
-const WEB_DIED = { fox: 'caught by foxes', owl: 'taken by owls', sickness: 'died of the sickness', hunger: 'starved', age: 'died of old age', left: 'flew off' };
+const WEB_DIED = { fox: 'caught by foxes', owl: 'taken by owls', sickness: 'died of the sickness', hunger: 'starved', age: 'died of old age', left: 'left the meadow' };
 function lifeLine(s, v, cur) {
   const parts = [], rest = {};
   for (const key in cur) {
@@ -4865,10 +5479,12 @@ function webNodeSay(k, v, L, cur) {
     case 'rabbit': return `${head}${L.sick ? `, ${L.sick} of them sick` : ''}. ${lifeLine(k, v, cur)}`;
     case 'fox': return `${head}. They caught ${andList([many(v('died:rabbit:fox'), 'rabbit'), many(v('voles'), 'vole'), many(v('frogs'), 'frog')])}. ${lifeLine(k, v, cur)}`;
     case 'owl': return `${head}. They caught ${andList([many(v('owlVoles'), 'vole'), many(v('owlFrogs'), 'frog'), many(v('died:rabbit:owl'), 'young rabbit')])}. ${lifeLine(k, v, cur)}`;
+    case 'otter': return `${head}${L.holts ? `, ${L.holts === 1 ? 'one holt' : L.holts + ' holts'} on the banks` : ''}. They caught ${andList([many(v('fish'), 'fish'), many(v('otterFrogs'), 'frog')])}, and their spraint feeds the bank by the holt. ${lifeLine(k, v, cur)}`;
+    case 'fish': return `${count ? `About ${big(count)} fish in the water that lasts the year round` : 'No fish in the water now'}. They ate tadpoles, as many as would have made ${many(v('fishSpawn'), 'frog')}, and the otters caught ${big(v('fish'))}.`;
     case 'crow': return `${head}. They pecked ${many(v('grubs'), 'grub')}, fed at ${many(v('remainsCrows'), 'body')}, ate spawn worth ${many(v('crowSpawn'), 'frog')} and ${many(v('apples:crow'), 'windfall')}, and buried ${many(v('cached'), 'acorn')}. ${lifeLine(k, v, cur)}`;
     case 'bee': return `${head}${count ? `, in ${L.hives === 1 ? 'one hive' : L.hives + ' hives'}` : ''}. They sipped ${many(v('sips') - v('blossomSips'), 'flower')} and ${many(v('blossomSips'), 'blossom')}. ${lifeLine(k, v, cur)}`;
     case 'vole': return `${count ? `About ${big(count)} voles in the long grass now${L.voleYear ? ', a vole year' : ''}` : 'No voles in the grass now'}. Foxes caught ${big(v('voles'))}${S.OWLS ? ` and owls ${big(v('owlVoles'))}` : ''}.`;
-    case 'frog': return `${count ? `About ${big(count)} frogs by the water now` : L.spawn ? 'No frogs out now, but spawn in the pools' : 'No frogs now'}. Foxes caught ${big(v('frogs'))}, ${S.OWLS ? `owls ${big(v('owlFrogs'))}, ` : ''}and crows ate spawn worth ${many(v('crowSpawn'), 'frog')}.`;
+    case 'frog': return `${count ? `About ${big(count)} frogs by the water now` : L.spawn ? 'No frogs out now, but spawn in the pools' : 'No frogs now'}. Foxes caught ${big(v('frogs'))}, ${S.OWLS ? `owls ${big(v('owlFrogs'))}, ` : ''}otters ${big(v('otterFrogs'))}, crows ate spawn worth ${many(v('crowSpawn'), 'frog')} and fish tadpoles worth ${big(v('fishSpawn'))}.`;
     case 'grass': return `The meadow's grass is ${Math.round(L.grass * 100)}% grown. Rabbits took ${many(v('grazed'), 'mouthful')} of it, and voles live in the long grass.`;
     case 'flowers': return `${L.flowers ? `${big(L.flowers)} flowers open now` : 'No flowers open now'}. Bees sipped ${many(v('sips') - v('blossomSips'), 'flower')}.`;
     case 'fruit': return `${L.fruit ? `${big(L.fruit)} apple, cherry and hawthorn trees` : 'No fruit trees now'}. They blossom for the bees in spring (${many(v('blossomSips'), 'visit')}) and bear as much as the bees visited: rabbits ate ${many(v('apples:rabbit'), 'windfall')}, crows ${big(v('apples:crow'))}.`;
@@ -4893,7 +5509,7 @@ function sayWeb() {
       for (const l of WEB_LINKS) if (l.from === id || l.to === id) { hot.add(l.el); hot.add(WEB_NODES[l.from].el); hot.add(WEB_NODES[l.to].el); }
     }
   } else {
-    const gone = ['fox', 'owl', 'crow', 'bee', 'rabbit', 'vole', 'frog'].filter(k => WEB_NODES[k] && webGone(k, web.live)).map(k => WEB_NODES[k].name.toLowerCase());
+    const gone = ['fox', 'owl', 'otter', 'crow', 'bee', 'rabbit', 'vole', 'frog', 'fish'].filter(k => WEB_NODES[k] && webGone(k, web.live)).map(k => WEB_NODES[k].name.toLowerCase());
     text = (gone.length ? `No ${andList(gone)} now. ` : '') + (canHover.matches ? 'Point at' : 'Tap') + ' an animal or an arrow to see who ate whom.';
   }
   svg.classList.toggle('picking', !!pick);
@@ -5021,6 +5637,7 @@ function renderInspector() {
   if (c.alive && c.pregnantUntil) chips.push(c.species === 'fox' ? '🍼 Expecting cubs' : '🍼 Expecting babies');
   if (c.kills) chips.push(`🍖 ${c.kills} ${c.kills === 1 ? 'catch' : 'catches'}`);
   if (c.voles) chips.push(`🐁 ${c.voles} ${c.voles === 1 ? 'vole' : 'voles'} caught`);
+  if (c.fish) chips.push(`🐟 ${c.fish} fish caught`);
   if (c.frogs) chips.push(`🐸 ${c.frogs} ${c.frogs === 1 ? 'frog' : 'frogs'} caught`);
   if (c.escapes) chips.push(`💨 ${c.escapes} narrow ${c.escapes === 1 ? 'escape' : 'escapes'}`);
   if (c.visits) chips.push(`🌼 ${c.visits} ${c.visits === 1 ? 'flower' : 'flowers'} visited`);
@@ -5029,6 +5646,7 @@ function renderInspector() {
   if (c.species === 'crow' && c.home) chips.push(`${c.sex === 'F' ? '🪺 Nests in' : '🌳 Its patch is round'} ${thingLink('tree', c.home.id, c.home.name ? 'the ' + esc(c.home.name) : 'a tall ' + treeName(c.home).toLowerCase())}`);
   if (c.species === 'owl' && c.home && c.home.owl === c.id) chips.push(`🕳️ Nests in the hollow of ${thingLink('tree', c.home.id, c.home.name ? 'the ' + esc(c.home.name) : 'an old oak')}`);
   else if (c.species === 'owl' && c.home) chips.push(`🌳 Lives in the wood round ${thingLink('tree', c.home.id, c.home.name ? 'the ' + esc(c.home.name) : 'an old oak')}`);
+  if (c.species === 'otter' && c.home) chips.push(`🕳️ ${c.home.holt === c.id ? 'Her holt is' : 'Lives in the holt'} in the roots of ${thingLink('tree', c.home.id, c.home.name ? 'the ' + esc(c.home.name) : 'a big ' + treeName(c.home).toLowerCase())}`);
   if (c.caches?.length && S.seasonOf(world.tick) >= 2) chips.push(`🌰 Remembers where ${c.caches.length === 1 ? 'one acorn is' : c.caches.length + ' acorns are'} buried`);
   const nemesis = world.byId.get(c.nemesisId);
   if (nemesis && nemesis.alive) chips.push(`😨 Afraid of ${link(nemesis)}`);
@@ -5238,6 +5856,8 @@ const THINGS = {
       const owl = d.owl && world.byId.get(d.owl);
       if (d.hive) facts.push(['🐝', `${thingLink('hive', d.hive.id, d.hive.queen ? `Queen ${esc(d.hive.queen.name)}'s hive` : 'An empty hive')} is in its hollow`]);
       else if (owl && owl.alive) facts.push(['🦉', `${link(owl)} the owl nests in its hollow`]);
+      const otter = d.holt && world.byId.get(d.holt);
+      if (otter && otter.alive) facts.push(['🦦', `${link(otter)} the otter has her holt in its roots, down by the water`]);
       else if (S.hollow(world, d)) facts.push(['🕳️', `Old enough to have gone hollow: bees${S.OWLS ? ' or owls' : ''} could make a home in it`]);
       if (living && S.bearing(world, d)) {
         const bear = { wind: '🌬️ Sheds its seed on the wind each autumn', crow: `🌰 Its ${k.mast} are a feast in a mast year, and the crows bury them far and wide`,
@@ -5452,9 +6072,9 @@ const THINGS = {
 // What lives in the water at tile i and round its shore (sim.js frogsTick): spawn or tadpoles, and frogs.
 function pondFacts(i) {
   const b = world.body[i], out = [], y = world.frogYear;
-  let spawn = 0, frogs = 0;
+  let spawn = 0, frogs = 0, fish = 0;
   for (let j = 0; j < world.body.length; j++) {
-    if (world.water[j]) { if (world.body[j] === b) spawn += world.spawn[j]; }
+    if (world.water[j]) { if (world.body[j] === b) { spawn += world.spawn[j]; fish += world.fish[j]; } }
     else if (world.nearBody[j] === b) frogs += world.frogs[j];
   }
   if (spawn > 0.5) {
@@ -5462,6 +6082,7 @@ function pondFacts(i) {
     if (world.spawn[i] > 0 && world.ground[i] > world.terrain.level) out.push(['⏳', 'A flood pool: the tadpoles have to be grown before the water falls back in summer']);
   }
   if (frogs >= 1) out.push(['🐸', world.frogsOut ? `About ${Math.round(frogs)} frogs in the wet grass round it` : `About ${Math.round(frogs)} frogs asleep in the mud round it till spring`]);
+  if (fish >= 1) out.push(['🐟', `About ${Math.round(fish)} fish in it`]);
   return out;
 }
 
@@ -5661,6 +6282,7 @@ function setTool(tool) {
 function showGroup() {
   for (const k of S.KINDS) {
     const b = $(`[data-tool="${k}"]`), n = ui.group[k];
+    if (!b) continue;                                       // (otters come up the water: no tool)
     if (n > 1) b.dataset.n = '×' + n; else delete b.dataset.n;
     b.title = `Click the meadow to release ${n > 1 ? n + ' ' + S.SPECIES[k].plural.toLowerCase() : 'a ' + S.SPECIES[k].name.toLowerCase()}`
       + `${k === 'bee' ? '. They move into the nearest hive' : ''}. Tap again for more at a time`;
@@ -6815,7 +7437,7 @@ function idleNews(e) {
   let n = null;
   switch (e.type) {
     case 'birth':
-      if (e.mum.species !== 'bee') n = { c: e.mum, w: 3, line: `${e.mum.name} and her new ${e.mum.species === 'fox' ? 'cubs' : e.mum.species === 'crow' ? 'chicks' : e.mum.species === 'owl' ? 'owlets' : 'babies'}` };
+      if (e.mum.species !== 'bee') n = { c: e.mum, w: 3, line: `${e.mum.name} and her new ${e.mum.species === 'fox' || e.mum.species === 'otter' ? 'cubs' : e.mum.species === 'crow' ? 'chicks' : e.mum.species === 'owl' ? 'owlets' : 'babies'}` };
       break;
     case 'death': if (e.cause === 'fox' && e.killer) n = { c: e.killer, w: 5 }; break;
     case 'lightning': if (e.tree) n = { x: e.x, y: e.y, w: 8, line: 'Struck by lightning', big: true }; break;
@@ -6826,6 +7448,8 @@ function idleNews(e) {
     case 'outbreak': n = { x: e.x, y: e.y, w: 6, line: 'A sickness is going round the warren' }; break;
     case 'gathering': n = { x: e.remains.x, y: e.remains.y, w: 6, line: `Crows at the remains of ${e.remains.c.name}` }; break;
     case 'fledge': n = { c: e.c, w: 4, line: `${e.c.name}, an owlet out of the hollow` }; break;
+    case 'cubsout': n = { c: e.c, w: 4, line: `${e.c.name}, an otter cub out of the holt` }; break;
+    case 'holt': n = { c: e.c, w: 4, line: `${e.c.name}'s new holt on the bank` }; break;
   }
   if (!n) return;
   if (n.c || n.x !== undefined) idle.news = Object.assign(n, { at });

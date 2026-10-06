@@ -107,6 +107,29 @@ it's flooded; there's no room for them there, and those still on it as it drains
 frogs' gamble is the flood pools (no fish, but they dry up) against the lasting shallows. The otters eat them (`takeFish`).
 A meadow kept before them gets its fish when it opens (`unpackWorld`), no `KEEP_VERSION` bump; the history has `w.history.fish`.
 
+Otters (`otterTick`): a pair or two along the water, swimmers (`swims: true`: `moveToward` lets them through deep water, `wade`
+makes them quicker in it, `roamable` keeps their wandering within `OTTER_SHORE` of the water). A female makes her holt in the
+roots of a big tree on the bank of lasting water with room for `HOLT_FISH` fish about (`holtTree`, `goodBank`, worked out once a
+tree, `d.bank`), `HOLT_GAP` from the other holts, and marks it (`d.holt`, her id; `d.door`, the way in, on the bank side; `holtsDay`
+frees it once she's gone, and spreads the day's spraint on the bank there, `SPRAINT_RICH`). A male moves in with his mate. They're
+out from the evening to the middle of the morning (`OTTER_WAKE`, `OTTER_BED`) and sleep curled up at the holt (`bedOf`; with none,
+on a bank). They fish (`otterFood`): swim to where `w.fish` is thickest about them (round the holt once they've strayed past
+`OTTER_RANGE`), dive (`DIVE_TICKS`) and come up with one as often as they're thick there (`surface`, `FISH_CATCH`, `FISH_HALF`),
+eat it afloat, and dive again close by a few times before moving on (`tryAgain`). For `FROG_FEAST` days after the frogs spawn they
+go after the frogs first, rooting along the shallows, and in winter they dig them out of the mud (`rooted`, `takeFrog`), which is
+all there is while the ice shuts them out of the water. A fox close to one on the bank, or a fire, sends it into the water (`slip`).
+Fed, they play: up the bank and sliding down it into the water or over the ice (`play`), the others about joining in. In spring a
+female with a holt (`otterReady`) has two or three cubs, hidden in the holt till `CUB_OUT`, who follow mum till they're grown (a
+cub busy with a catch finishes first) and get `CUB_SHARE` of every fish she catches. At a year (`otterGrown`, `atMums`) a young
+female takes a free holt and a young male goes off along the water to find a mate, while the meadow has room; otherwise off down
+the water out of the meadow (`riverEnd`, cause `'left'`). A pair comes up the water (`otterWay`: where the lasting water runs off
+the edge, unless that's much further than the nearest edge) when there are none, or no holt is held (`migrate`, checked once a
+day), and the female takes the holt they came for. No release tool. game.js paints them (`paintOtter`, the prototype's painter:
+one fur layer, `furLayer`, soft markings with `blurIn`; water poses sit in the water, `inWater`, `waterRing`), picks the pose from
+the mode and the water (`otterArt`), draws a wake while it swims somewhere (`drawWake`) and only rings while it's under
+(`drawUnder`), and the way into a holt (`paintHolt`). Their remains are tufts of fur (`paintRemains` look 2). No `KEEP_VERSION` bump:
+a kept meadow gets the otters' counts at 0 (`unpackWorld`).
+
 Rocks are painted, not emoji (`rockInfo`, `rockSprite` in game.js): pebbles, stones and boulders by
 size (`TERRAIN.rockSize`), flat stones at the fords, and two or three great rocks per meadow
 (`TERRAIN.bigRocks`, `big: true`) that burrows keep clear of. Like a tree's, a rock's snow is a layer of its
