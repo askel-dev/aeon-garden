@@ -4600,7 +4600,12 @@ const OTTER_BED = 0.3;          // and goes to sleep, in the middle of the morni
 const OTTER_HUNGRY = 0.3;       // this hungry, it fishes through its sleep
 const OTTER_FULL = 0.85;        // it fishes till its tummy is this full
 const OTTER_WARY = 5;           // tiles: a fox this close to one on the bank sends it into the water
-const OTTER_RANGE = 30;         // how far from its holt it fishes
+const WARY_FAR = 8;             // and it watches the fox from the water till it's this far off,
+const WATCH_TICKS = 120;        // or it's seen enough of it,
+const CALM_TICKS = 200;         // and then pays foxes no mind for a while
+const OTTER_RANGE = 30;         // how far from its holt it fishes (a mum with cubs in the holt, HOLT_REACH)
+const HOLT_HOME = 10;           // further from its holt than this at bedtime, it lies up on a bank where it is (not a mum with cubs in it)
+const HOME_PACE = 1.6;          // off to bed at a brisk lope
 const OTTER_SHORE = 2;          // tiles from the water it wanders, at most
 const HOLT_BANK = 3;            // a holt's tree stands this close to water that lasts
 const HOLT_GAP = 30;            // tiles between two holts: each has a stretch of water of its own
@@ -4634,39 +4639,55 @@ const FEEDING = new Set(['dive', 'eat', 'root', 'munch']);   // busy with a catc
 const holtOf = c => (c.home && c.home.holt && standing(c.home) ? c.home : null);
 const otterReady = c => c.sex === 'M' || (c.home && c.home.holt === c.id && standing(c.home));
 const swimming = (w, c) => !w.frozen && w.water[idx(c.x, c.y)] > 0;
+// A mum with cubs still in the holt (each of them marks her every tick, c.cubsIn).
+const nursing = (w, c) => c.cubsIn >= w.tick - 1;
+// A cub stays up while mum's up, and then sleeps by her (bedOf).
+const mumUp = (w, c) => { const m = growth(w, c) < 1 && w.byId.get(c.mumId); return !!(m && m.alive && !m.hidden && !m.held && m.mode !== 'bed' && m.mode !== 'sleep'); };
 // Still living at mum's holt, a cub or grown.
 const atMums = (w, c) => { const m = c.mumId && w.byId.get(c.mumId); return !!(m && c.home && c.home === m.home); };
 
 function otterTick(w, c) {
   const t = w.tick, ph = phaseOf(t), e = c.energy / c.maxEnergy;
   if (c.hidden) {                                    // a cub in the holt
+    const mum = w.byId.get(c.mumId);
+    if (mum) mum.cubsIn = t;
     if (growth(w, c) >= CUB_OUT) {
       c.hidden = c.sleeping = false; c.mode = 'wander';
       note(w, c, '🌿', 'Came out of the holt');
-      emit(w, { type: 'cubsout', c, mum: w.byId.get(c.mumId) });
+      emit(w, { type: 'cubsout', c, mum });
     }
     return;
   }
   c.sleeping = false;
 
-  // 1. Danger: a fox close by on the bank, or a fire: into the water. And one on its way out of the meadow goes on.
+  // 1. Danger: a fox up and about close by on the bank, or a fire: into the water, and it watches the fox from there
+  // till it's gone off or lain down (then pays foxes no mind a while). Asleep, in the holt or a bed in the reeds, it doesn't mind one.
+  // And one on its way out of the meadow goes on.
   smellSmoke(w, c);
   if (c.fright > 0) { c.fright = 0; if (c.mode !== 'leave') slip(w, c, c.frightX, c.frightY, null); }
-  if ((t + c.id) % 4 === 0 && c.mode !== 'slip' && c.mode !== 'leave' && !swimming(w, c)) {
-    const fox = nearest(w, c, OTTER_WARY, 'fox');
+  if ((t + c.id) % 4 === 0 && c.mode !== 'slip' && c.mode !== 'leave' && c.mode !== 'sleep' && !(c.calm > t) && !swimming(w, c)) {
+    const fox = nearest(w, c, OTTER_WARY, 'fox', awake);   // (a fox asleep is no bother)
     if (fox) slip(w, c, fox.x, fox.y, fox);
   }
   if (c.mode === 'slip' || c.mode === 'leave') {
     if (c.target && !moveToward(w, c, c.target.x, c.target.y, c.mode === 'slip' ? c.sprint : c.walk)) return;
     if (c.mode === 'leave') { die(w, c, 'left'); return; }
-    c.mode = 'wander'; c.target = null;
+    c.target = null;
+    if (c.threatId && swimming(w, c)) { c.mode = 'watch'; c.timer = WATCH_TICKS; return; }
+    c.mode = 'wander';
+  }
+  if (c.mode === 'watch') {                          // treading water, eyes on the fox
+    const fox = w.byId.get(c.threatId);
+    if (fox && fox.alive && !fox.sleeping && --c.timer > 0 && dist2(c, fox) < WARY_FAR ** 2) { c.facing = fox.x > c.x ? 1 : -1; return; }
+    c.mode = 'wander'; c.calm = t + CALM_TICKS;
   }
 
-  // 2. Sleep: through the middle of the day, unless hungry, curled up at the holt. A catch is eaten first.
-  if (ph >= OTTER_BED && ph < OTTER_WAKE && e > OTTER_HUNGRY && !FEEDING.has(c.mode)) {
+  // 2. Sleep: through the middle of the day, unless hungry, curled up at the holt, or on a bank if that's far. A
+  // catch is eaten first, and a cub waits for mum.
+  if (ph >= OTTER_BED && ph < OTTER_WAKE && e > OTTER_HUNGRY && !FEEDING.has(c.mode) && !mumUp(w, c)) {
     if (c.mode !== 'sleep') {
-      if (c.mode !== 'bed' || !c.target) { c.mode = 'bed'; c.target = bedOf(w, c); }
-      if (!moveToward(w, c, c.target.x, c.target.y, c.walk)) return;
+      if (c.mode !== 'bed' || !c.target || growth(w, c) < 1) { c.mode = 'bed'; c.target = bedOf(w, c); }   // (a cub keeps after mum)
+      if (!moveToward(w, c, c.target.x, c.target.y, c.walk * HOME_PACE)) return;
       c.mode = 'sleep'; c.target = null;
     }
     c.sleeping = true;
@@ -4706,8 +4727,9 @@ function otterTick(w, c) {
 
 // Food: the fish, or the frogs while they spawn or the ice is on (and when there are no fish to be had). It swims
 // to the water with the most fish about, close by or else anywhere in its range (round its holt: one that has
-// strayed out of it looks there first), dives, and comes up with one or not; or roots along the bank where the
-// frogs are, or digs in the mud for them in winter. Coming up with nothing a few times, it moves on.
+// strayed out of it looks there first; a mum with cubs in the holt keeps close to it), dives, and comes up with
+// one or not; or roots along the water's edge where the frogs are, or digs in the mud there for them in winter.
+// Coming up with nothing a few times, it moves on.
 function otterFood(w, c) {
   switch (c.mode) {
     case 'eat': case 'munch':
@@ -4727,10 +4749,11 @@ function otterFood(w, c) {
   }
   c.mode = 'wander'; c.target = null;
   if ((w.tick + c.id) % 10) return false;            // (looking about)
-  const yr = w.frogYear, h = holtOf(c) || c, at = dist2(c, h) > OTTER_RANGE ** 2 ? h : c;
+  const range = nursing(w, c) ? HOLT_REACH : OTTER_RANGE;
+  const yr = w.frogYear, h = holtOf(c) || c, at = dist2(c, h) > range ** 2 ? h : c;
   const frogsFirst = w.frozen || seasonOf(w.tick) === 0 && yr.at >= 0 && w.tick - yr.at < FROG_FEAST * TPD;
-  const fish = () => !w.frozen && (mostNear(w, w.fish, at.x, at.y, FISH_LOOK, 8, FISH_WORTH) || mostNear(w, w.fish, h.x, h.y, OTTER_RANGE, 12, FISH_WORTH));
-  const frogs = () => mostNear(w, w.frogs, at.x, at.y, FROG_LOOK, 8, ROOT_WORTH) || mostNear(w, w.frogs, h.x, h.y, OTTER_RANGE, 12, ROOT_WORTH);
+  const fish = () => !w.frozen && (mostNear(w, w.fish, at.x, at.y, FISH_LOOK, 8, FISH_WORTH) || mostNear(w, w.fish, h.x, h.y, range, 12, FISH_WORTH));
+  const frogs = () => mostNear(w, w.frogs, at.x, at.y, FROG_LOOK, 8, ROOT_WORTH, OTTER_SHORE) || mostNear(w, w.frogs, h.x, h.y, range, 12, ROOT_WORTH, OTTER_SHORE);
   let spot = frogsFirst ? frogs() : fish();
   if (spot) c.mode = frogsFirst ? 'frog' : 'fish';
   else if ((spot = frogsFirst ? fish() : frogs())) c.mode = frogsFirst ? 'fish' : 'frog';
@@ -4770,21 +4793,24 @@ function rooted(w, c) {
   return tryAgain(w, c, 'frog');
 }
 
-// Nothing: again a little way off, or after a few tries, off to look somewhere else.
+// Nothing: again a little way off (for the frogs, still by the water), or after a few tries, off to look somewhere else.
 function tryAgain(w, c, mode) {
   const tries = c.target ? c.target.tries + 1 : DIVES;
   const a = w.rng.range(0, Math.PI * 2), x = c.x + Math.cos(a), y = c.y + Math.sin(a);
-  if (tries >= DIVES || !inBounds(x, y) || (w.water[idx(x, y)] > 0) !== (mode === 'fish')) { c.mode = 'wander'; c.target = null; return false; }
+  if (tries >= DIVES || !inBounds(x, y) || (w.water[idx(x, y)] > 0) !== (mode === 'fish') || w.damp[idx(x, y)] > OTTER_SHORE) { c.mode = 'wander'; c.target = null; return false; }
   c.mode = mode; c.target = { x, y, tries };
   return true;
 }
 
-// The tile with the most of `field` of a few tried within `far` of x, y, if any has more than `worth`.
-function mostNear(w, field, x, y, far, tries, worth) {
+// The tile with the most of `field` of a few tried within `far` of x, y, if any has more than `worth` (and, with
+// `shore`, is no further than that from the water).
+function mostNear(w, field, x, y, far, tries, worth, shore = Infinity) {
   let best = null, most = worth;
   for (let k = 0; k < tries; k++) {
     const a = w.rng.range(0, Math.PI * 2), r = w.rng.range(0, far), px = x + Math.cos(a) * r, py = y + Math.sin(a) * r;
-    if (inBounds(px, py) && field[idx(px, py)] > most) { best = { x: px, y: py }; most = field[idx(px, py)]; }
+    if (!inBounds(px, py)) continue;
+    const i = idx(px, py);
+    if (field[i] > most && w.damp[i] <= shore) { best = { x: px, y: py }; most = field[i]; }
   }
   return best;
 }
@@ -4807,16 +4833,19 @@ function slip(w, c, x, y, fox) {
   if (fox && best && c.story[c.story.length - 1].text !== 'Slipped into the water away from ' + fox.name) note(w, c, '💦', 'Slipped into the water away from ' + fox.name);
 }
 
-// Where it sleeps: curled up at the holt with the family, side by side, or a cub at mum's. With no holt, a
-// bank somewhere near.
+// Where it sleeps: curled up at the holt with the family, side by side. Further from it than HOLT_HOME (and not
+// a mum with cubs in it), or with no holt, on a bank close by, as otters lie up all along their water; and a cub
+// by mum, wherever she's gone to bed.
 function bedOf(w, c) {
-  const mum = growth(w, c) < 1 && w.byId.get(c.mumId), d = holtOf(c) || (mum && mum.alive ? holtOf(mum) : null);
-  let p = d && d.door;
+  const mum = growth(w, c) < 1 && w.byId.get(c.mumId), d = holtOf(c) || (mum && mum.alive ? holtOf(mum) : null), k = c.id % 4;
+  if (mum && mum.alive && !mum.hidden && !mum.held) return beside(w, mum.mode === 'bed' && mum.target || mum, [0.4, -0.4, 0.3, -0.3][k], [0.15, 0.15, 0.35, 0.35][k]);
+  let p = d && (nursing(w, c) || dist2(c, d) < HOLT_HOME ** 2) && d.door;
   if (p && w.water[idx(p.x, p.y)]) p = { x: d.x, y: d.y + 0.3 };   // the way in's flooded: up by the trunk
-  if (!p) p = bankSpot(w, c, false, 8) || c;
-  const k = c.id % 4;
-  return { x: p.x + [0, 0.55, -0.55, 0.25][k], y: p.y + [0, 0.15, 0.15, 0.4][k] };
+  if (!p) p = bankSpot(w, c, false, 3) || bankSpot(w, c, false, 8) || d && d.door || bankSpot(w, c, false, 16) || c;
+  return beside(w, p, [0, 0.55, -0.55, 0.25][k], [0, 0.15, 0.15, 0.4][k]);
 }
+// A little way from p, side by side with the others, unless that's in the water.
+const beside = (w, p, dx, dy) => (dry(w, p.x + dx, p.y + dy) ? { x: p.x + dx, y: p.y + dy } : { x: p.x, y: p.y });
 
 // A spot within reach: in the water (wet), or up on the bank a tile or two from it.
 function bankSpot(w, c, wet, reach) {
@@ -4945,8 +4974,9 @@ function otterMood(w, c) {
   switch (c.mode) {
     case 'nest': return { emoji: '', text: 'A cub in the holt, squeaking for milk' };
     case 'sleep': return { emoji: '💤', text: holtOf(c) && dist2(c, c.home) < 4 ? 'Curled up asleep at the holt' : 'Curled up asleep on the bank' };
-    case 'bed': return { emoji: '🏠', text: holtOf(c) ? 'Off home to the holt for the day' : 'Looking for a quiet bank to sleep on' };
+    case 'bed': return { emoji: '🏠', text: holtOf(c) && c.target && dist2(c.target, c.home) < 4 ? 'Off home to the holt for the day' : 'Off to a quiet bank to sleep on' };
     case 'slip': return c.threatId ? { emoji: '💦', text: `Into the water, away from ${w.byId.get(c.threatId)?.name ?? 'a fox'}!` } : { emoji: '🔥', text: 'Away from the smoke!' };
+    case 'watch': return { emoji: '👀', text: `Watching ${w.byId.get(c.threatId)?.name ?? 'a fox'} from the water` };
     case 'leave': return { emoji: '🧳', text: 'Off down the water to find a stretch of its own' };
     case 'fish': return { emoji: '🐟', text: c.target && c.target.tries ? 'Coming up, and down again' : 'Swimming off to where the fish are' };
     case 'dive': return { emoji: '🐟', text: 'Diving for fish' };

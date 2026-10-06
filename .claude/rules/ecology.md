@@ -112,12 +112,18 @@ makes them quicker in it, `roamable` keeps their wandering within `OTTER_SHORE` 
 roots of a big tree on the bank of lasting water with room for `HOLT_FISH` fish about (`holtTree`, `goodBank`, worked out once a
 tree, `d.bank`), `HOLT_GAP` from the other holts, and marks it (`d.holt`, her id; `d.door`, the way in, on the bank side; `holtsDay`
 frees it once she's gone, and spreads the day's spraint on the bank there, `SPRAINT_RICH`). A male moves in with his mate. They're
-out from the evening to the middle of the morning (`OTTER_WAKE`, `OTTER_BED`) and sleep curled up at the holt (`bedOf`; with none,
-on a bank). They fish (`otterFood`): swim to where `w.fish` is thickest about them (round the holt once they've strayed past
-`OTTER_RANGE`), dive (`DIVE_TICKS`) and come up with one as often as they're thick there (`surface`, `FISH_CATCH`, `FISH_HALF`),
+out from the evening to the middle of the morning (`OTTER_WAKE`, `OTTER_BED`) and sleep curled up at the holt (`bedOf`), or,
+further from it than `HOLT_HOME` at bedtime or with none, on a bank close by, as otters lie up all along their water; a mum with
+cubs in the holt (`nursing`: they mark her, `c.cubsIn`) always goes home, and a cub sleeps by mum. They go to bed at a lope
+(`HOME_PACE`). They fish (`otterFood`): swim to where `w.fish` is thickest about them (round the holt once they've strayed past
+`OTTER_RANGE`, `HOLT_REACH` for a nursing mum), dive (`DIVE_TICKS`) and come up with one as often as they're thick there (`surface`, `FISH_CATCH`, `FISH_HALF`),
 eat it afloat, and dive again close by a few times before moving on (`tryAgain`). For `FROG_FEAST` days after the frogs spawn they
 go after the frogs first, rooting along the shallows, and in winter they dig them out of the mud (`rooted`, `takeFrog`), which is
-all there is while the ice shuts them out of the water. A fox close to one on the bank, or a fire, sends it into the water (`slip`).
+all there is while the ice shuts them out of the water; only at the water's edge (`mostNear`'s `shore`, `OTTER_SHORE`). A fox up and
+about close to one on the bank, or a fire, sends it into the water (`slip`), and it watches the fox from there (mode `'watch'`) till
+it's `WARY_FAR` off or lies down, or `WATCH_TICKS` have gone, then pays foxes no mind for `CALM_TICKS` (`c.calm`). Asleep, it
+doesn't mind a fox (no fox hunts otters; before, one passing woke the family and sent cubs in and out of the water all night).
+A cub stays up while mum is (`mumUp`) and then sleeps by her; a bed is never in the water (`beside`).
 Fed, they play: up the bank and sliding down it into the water or over the ice (`play`), the others about joining in. In spring a
 female with a holt (`otterReady`) has two or three cubs, hidden in the holt till `CUB_OUT`, who follow mum till they're grown (a
 cub busy with a catch finishes first) and get `CUB_SHARE` of every fish she catches. At a year (`otterGrown`, `atMums`) a young
