@@ -2880,8 +2880,8 @@ const SPAWN_EDGE = 0.5;         // how good the lasting shallows are, against a 
 const SPAWN_DEEP = 6;           // deep tiles within two that make shallows no good (the current, the fish)
 const TADPOLE_DAYS = 3.2;       // days from spawn to froglet, at an ordinary warmth
 const WARMTH = { clear: 1.25, heat: 1.4, cloudy: 1, fog: 0.8, rain: 0.85, storm: 0.85, snow: 0.5 };   // how fast they grow, by the weather
-const TADPOLE_LOSS = 0.1;       // share gone a day anyway (beetles, newts)
-const TADPOLE_DEEP = 0.5;       // and in deep water (the fish)
+const TADPOLE_LOSS = 0.05;      // share gone a day anyway (beetles, newts)
+const TADPOLE_FISH = 0.5;       // and more where there are fish (w.fish), this much more at FISH_K
 const FROGLET_LEAVE = 2;        // share of the grown ones that leave the water a day
 const FROGLET_REACH = 4;        // tiles from the water the froglets get
 const FROG_ENERGY = 8;          // a frog to a fox (a vole is 10)
@@ -3078,7 +3078,7 @@ function mostIn(w, field, on) {
 function tadpolesTick(w, s, dt) {
   const sp = w.spawn, water = w.water, yr = w.frogYear, spots = w.spawnSpots, list = w.spawnTiles, n0 = w.spawnN;
   const leave = yr.grown < 1 ? 0 : s >= 2 ? 1 : Math.min(1, FROGLET_LEAVE * dt), out = FROG_A, dried = FROG_D;
-  const lose = TADPOLE_LOSS * dt, loseDeep = TADPOLE_DEEP * dt;
+  const lose = TADPOLE_LOSS * dt, eaten = TADPOLE_FISH * dt / FISH_K, fish = w.fish;
   spots.fill(-1);
   let total = 0, strand = 0, leaving = 0;
   for (let k = 0; k < n0; k++) {
@@ -3086,7 +3086,7 @@ function tadpolesTick(w, s, dt) {
     let n = sp[i];
     if (n === 0) continue;
     if (!water[i]) { strand += n; dried[i] = n; sp[i] = 0; continue; }
-    n *= 1 - (water[i] === DEEP ? loseDeep : lose);
+    n *= Math.max(0, 1 - lose - eaten * fish[i]);
     if (leave) { out[i] = n * leave; n -= out[i]; leaving += out[i]; }
     if (n < 1e-4) n = 0;
     sp[i] = n; total += n;
@@ -3180,6 +3180,67 @@ function tadpoles(w, c) {
   const what = w.frogYear.grown < 0.3 ? 'frogspawn' : 'tadpoles';
   if (!c.story[c.story.length - 1].text.endsWith(what)) note(w, c, '🫧', `Pecked at the ${what}`);
   return true;
+}
+
+// ---------------------------------------------------------------- fish
+//
+// Fish, like the voles and the frogs too many to follow one by one: w.fish is how many are in each tile of
+// water. They live in the water that lasts the year round (below the meadow's own water line, w.terrain.level:
+// not the flood pools), the deep water best (fishRoom), breed from spring into summer and spill over next
+// door, out onto the floodplain too while it's flooded. There's no room for them out there, and the ones still
+// on it as it drains are stranded. Winter thins them a little. They eat tadpoles (tadpolesTick: more are lost
+// where there are more fish), and the otters eat them.
+
+const FISH_EVERY = 60;          // ticks between counts
+const FISH_K = 1;               // fish a tile of lasting deep water has room for
+const FISH_SHALLOW = 0.2;       // and a tile of lasting shallows, this share of that
+const FISH_BREED = 0.5;         // growth a day while there's room, in spring (less as the year goes on, SEASONS growth)
+const FISH_FADE = 0.5;          // share of those over a tile's room gone in a day
+const FISH_COLD = 0.02;         // share gone each winter day
+const FISH_SPREAD = 0.1;        // share that moves next door each count
+const FISH_START = 0.8;         // a new meadow's fish, as a share of the room
+
+const fishRoom = (w, i) => (!w.water[i] || w.ground[i] > w.terrain.level ? 0 : w.water[i] === DEEP ? FISH_K : FISH_K * FISH_SHALLOW);
+
+// A new meadow has fish in its lasting water.
+function startFish(w) {
+  let total = 0;
+  for (let i = 0; i < W * H; i++) { w.fish[i] = fishRoom(w, i) * FISH_START; total += w.fish[i]; }
+  w.fishCount = total;
+}
+
+// Every FISH_EVERY ticks, as volesTick: each tile spills over one way, into the water next door.
+function fishTick(w) {
+  const f = w.fish, water = w.water, s = seasonOf(w.tick), dt = FISH_EVERY / TPD;
+  const breed = FISH_BREED * SEASONS[s].growth * dt, fade = FISH_FADE * dt;
+  const keep = s === 3 ? 1 - FISH_COLD * dt : 0;     // in winter only that, no breeding
+  const off = VOLE_WAYS[Math.floor(w.tick / FISH_EVERY) % 4], back = off > 0, by = back ? -1 : 1;
+  const ex = off === 1 ? W - 1 : off === -1 ? 0 : -1, ey = off === W ? H - 1 : off === -W ? 0 : -1;
+  let total = 0;
+  for (let y = back ? H - 1 : 0; y >= 0 && y < H; y += by) {
+    for (let x = back ? W - 1 : 0, i = y * W + x; x >= 0 && x < W; x += by, i += by) {
+      let n = f[i];
+      if (n === 0) continue;
+      if (!water[i] || n < 1e-4) { f[i] = 0; continue; }   // stranded where the water went
+      if (keep) n *= keep;
+      else {
+        const room = fishRoom(w, i);
+        n += n < room ? breed * n * (1 - n / room) : (room - n) * fade;
+      }
+      total += n;
+      if (x !== ex && y !== ey && water[i + off]) { const m = n * FISH_SPREAD; f[i + off] += m; n -= m; }
+      f[i] = n;
+    }
+  }
+  w.fishCount = total;
+}
+
+// One fish fewer about the tile x0, y0 (x0, y0 two tiles in from the edge), as takeVole.
+function takeFish(w, x0, y0) {
+  let near = 0;
+  for (let y = y0 - 2; y <= y0 + 2; y++) for (let x = x0 - 2; x <= x0 + 2; x++) near += w.fish[y * W + x];
+  for (let y = y0 - 2; y <= y0 + 2; y++) for (let x = x0 - 2; x <= x0 + 2; x++) w.fish[y * W + x] *= Math.max(0, 1 - 1 / near);
+  w.fishCount = Math.max(0, w.fishCount - Math.min(1, near));
 }
 
 // ---------------------------------------------------------------- bees
@@ -4592,6 +4653,7 @@ function createWorld(seed, opts = {}) {
     frogs: new Float32Array(W * H), spawn: new Float32Array(W * H), frogCount: 0, spawnCount: 0, frogsOut: true,   // (see frogsTick; damp: tiles to the water, as of the tick dampAt)
     damp: new Float32Array(W * H), dampOf: -1, dampAt: 0, spawnSpots: new Int32Array(SPAWN_SPOTS).fill(-1), spawnTiles: new Int32Array(W * H), spawnN: 0,
     frogYear: { year: 0, at: -1, grown: 0, laid: 0, spawners: 0, stranded: 0, eaten: 0, left: 0, told: 0, dryDay: -1 },   // this spring's spawn, and how it went
+    fish: new Float32Array(W * H), fishCount: 0,                          // (see fishTick)
     sick: 0, outbreak: null,                                              // (see sicknessTick)
     carcasses: [], roost: null, cached: 0, gatherSaid: -1,                // (see carrionTick and crowTick; cached: this autumn; gatherSaid: the outbreak told of)
     count: perKind(() => 0), expecting: perKind(() => 0),
@@ -4599,7 +4661,7 @@ function createWorld(seed, opts = {}) {
       frogs: 0, owlFrogs: 0, crowSpawn: 0, frogYears: [],                                   // frogs likewise; the spawn the crows ate; each spring's frogs
       remains: { left: 0, eaten: 0, rotted: 0, crows: 0 }, cached: 0, dugUp: 0, planted: 0,   // remains, and how they went (crows: the crows fed at); the crows' acorns
       ...webStats() },
-    history: { every: 60, t: [], grass: [], voles: [], frogs: [], ...perKind(() => []), traits: perKind(() => []), marks: [] },
+    history: { every: 60, t: [], grass: [], voles: [], frogs: [], fish: [], ...perKind(() => []), traits: perKind(() => []), marks: [] },
     goneSince: perKind(() => -1), hives: [],
     // The trees (see treesTick). They have their own random numbers, so the rest of the meadow comes out as it did before they grew.
     treeRng: makeRng(seed ^ 0x5eed7ee), nextTree: 1, seeds: [], mast: false, mastYear: 0, orchard: [], treeCount: 0,
@@ -4614,6 +4676,7 @@ function createWorld(seed, opts = {}) {
   groundTick(w);
   startVoles(w);
   startFrogs(w);
+  startFish(w);
   w.roost = pickRoost(w);
   const n = { rabbit: opts.rabbits ?? Math.round(30 * w.room), fox: opts.foxes ?? Math.round(4 * w.room), bee: opts.bees ?? 12, crow: opts.crows ?? Math.round(8 * w.room),
     owl: opts.owls ?? (OWLS ? 2 * Math.max(1, Math.round(w.room)) : 0) };   // a pair or two
@@ -4687,10 +4750,11 @@ function record(w) {
   h.grass.push(grassFullness(w));
   h.voles.push(Math.round(w.voleCount));
   h.frogs.push(Math.round(w.frogCount));
+  h.fish.push(Math.round(w.fishCount));
   for (const s of KINDS) { h[s].push(w.count[s]); h.traits[s].push(traitMeans(w, s)); }
   if (h.t.length > HISTORY_MAX) {
     const half = a => a.filter((_, i) => i % 2 === 0);
-    for (const k of ['t', 'grass', 'voles', 'frogs', ...KINDS]) h[k] = half(h[k]);
+    for (const k of ['t', 'grass', 'voles', 'frogs', 'fish', ...KINDS]) h[k] = half(h[k]);
     for (const s of KINDS) h.traits[s] = half(h.traits[s]);
     h.every *= 2;
   }
@@ -4888,6 +4952,7 @@ function step(w) {
   if (t % WATER_EVERY === 0) waterTick(w);
   if (t % VOLE_EVERY === 0) volesTick(w);
   if (t % FROG_EVERY === 15) frogsTick(w);
+  if (t % FISH_EVERY === 45) fishTick(w);
   if (t % 60 === 0) { hivesTick(w); windfallTick(w); if (w.weather.kind === 'storm') windthrow(w); }
   if (t % SICK_EVERY === 0) sicknessTick(w);
   if (t % CARRION_EVERY === 0) carrionTick(w);
@@ -5008,6 +5073,10 @@ function unpackWorld(kept) {
   for (const c of w.creatures) delete c.held;                // (kept while the player held one up)
   for (const c of w.byId.values()) c.mine ??= false;         // (kept before the player could name them)
   for (const d of w.decor) if (d.tree) d.planted ??= 0;      // (or plant trees)
+  if (!w.fish) {                                             // (kept before the fish)
+    w.fish = new Float32Array(W * H); startFish(w);
+    w.history.fish = w.history.t.map(() => Math.round(w.fishCount));
+  }
   w.grid = makeGrid(); w.grids = perKind(makeGrid); w.events = []; w.newborn = [];
   if (!OWLS) {                                               // (kept with owls: they fly off, and leave their hollows)
     for (const c of w.creatures) if (c.species === 'owl') die(w, c, 'left');
@@ -5168,7 +5237,7 @@ const api = {
   TERRAIN, drawnToLink, drawnFromLink, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE,
   TREES, treeStage, treeAge, standing, bearing, hollow, inBloom, SEEDLING, SAPLING, GROWN, KIND_NAMES,
-  VOLE_K, POUNCE_TICKS, CROWDED, FROG_K, SPAWN_WORTH, webCounts, CROW_SEATS,
+  VOLE_K, POUNCE_TICKS, CROWDED, FROG_K, SPAWN_WORTH, FISH_K, webCounts, CROW_SEATS,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 else root.Sim = api;

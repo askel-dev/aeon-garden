@@ -30,6 +30,7 @@ for (let s = 1; s <= seeds; s++) {
   let capDays = 0, crashes = 0, recovered = 0, low = null;
   const voles = [], voleNews = { boom: 0, bust: 0 };   // the meadow's voles at each season's end, and its vole years and crashes
   const frogs = [], frogNews = { spawn: 0, stranded: 0, froglets: 0, big: 0, poor: 0 };   // the frogs at each season's end, and the frog news
+  const fish = [];                                       // the fish at each season's end
   // The sickness: outbreaks begun and over, rabbit-days of it, rabbits per burrow at the peak, the resist gene
   // each winter's end, and the cap's numbers again against the old cap (CROWDED), to compare with before it rose.
   const oldCap = Sim.CROWDED * w.room, resist = [Sim.traitMeans(w, 'rabbit')?.resist];
@@ -89,6 +90,7 @@ for (let s = 1; s <= seeds; s++) {
     }
     voles.push(Math.round(w.voleCount));
     frogs.push(Math.round(w.frogCount));
+    fish.push(Math.round(w.fishCount));
     crows.push(w.count.crow);
     owls.push(`${w.count.owl}(${w.decor.filter(d => d.owl).length})`);
     const grass = w.grass.reduce((a, b) => a + b, 0);
@@ -112,6 +114,7 @@ for (let s = 1; s <= seeds; s++) {
   const yrs = st.frogYears, pc = k => Math.round(100 * yrs.reduce((a, y) => a + y[k], 0) / Math.max(1, yrs.reduce((a, y) => a + y.laid, 0)));
   console.log(`  frogs  ${frogs.join(' ')}  news ${JSON.stringify(frogNews)}  froglets per spawner ${yrs.map(y => (y.left / Math.max(1, y.spawners)).toFixed(1)).join(' ')}` +
     `  spawn stranded ${pc('stranded')}% eaten by crows ${pc('eaten')}%  frogs eaten by foxes ${st.frogs} (${Math.round(100 * st.frogs / Math.max(1, st.frogs + eaten))}% of their mousing) by owls ${st.owlFrogs}`);
+  console.log(`  fish  ${fish.join(' ')}`);
   console.log(`  crows  ${crows.join(' ')}  remains ${rm.left} (eaten up by crows ${rm.eaten}, rotted ${rm.rotted})  gatherings ${gatherings}` +
     `  acorns buried ${st.cached} dug up ${st.dugUp} came up ${st.planted}  oaks/beeches ${oaks0} -> ${oaks()}`);
   console.log(`  owls (hollows)  ${owls.join(' ')}  hollows taken ${owlNests}  owlets ${st.births.owl} fledged ${fledged} flew off ${leaving}` +

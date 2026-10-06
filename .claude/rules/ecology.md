@@ -99,6 +99,14 @@ inspector says what's in it (`pondFacts`), the news tells of the spawning, a poo
 froglets leaving and a big or poor frog year (`FROG_BOOM`, `FROG_POOR`, event 'frogyear'), the stats chart has
 `w.history.frogs`, and a frog purrs now and then on spring nights while there's spawn about (sound.js `croak`).
 
+Fish are a field too (`fishTick`, every `FISH_EVERY` ticks): `w.fish` on water. They live in the water that lasts the year
+round (below `w.terrain.level`, so not the flood pools), deep water best (`fishRoom`: `FISH_K` a deep tile, `FISH_SHALLOW` of
+that in the lasting shallows), breed from spring into summer and spill over next door, out onto the floodplain too while
+it's flooded; there's no room for them there, and those still on it as it drains are stranded. Winter thins them a little
+(`FISH_COLD`). They eat tadpoles: on top of `TADPOLE_LOSS`, a tile loses `TADPOLE_FISH` a day at `FISH_K` fish, so the
+frogs' gamble is the flood pools (no fish, but they dry up) against the lasting shallows. The otters eat them (`takeFish`).
+A meadow kept before them gets its fish when it opens (`unpackWorld`), no `KEEP_VERSION` bump; the history has `w.history.fish`.
+
 Rocks are painted, not emoji (`rockInfo`, `rockSprite` in game.js): pebbles, stones and boulders by
 size (`TERRAIN.rockSize`), flat stones at the fords, and two or three great rocks per meadow
 (`TERRAIN.bigRocks`, `big: true`) that burrows keep clear of. Like a tree's, a rock's snow is a layer of its
