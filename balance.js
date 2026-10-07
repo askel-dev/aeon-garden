@@ -5,7 +5,7 @@
 const Sim = require('./sim.js');
 const years = +(process.argv[2] || 5), seeds = +(process.argv[3] || 4), verbose = process.argv[4] === 'v';
 const arrival = process.argv.includes('arrival'), plant = process.argv.includes('plant');
-const PLANT_KINDS = ['oak', 'beech', 'maple', 'birch', 'hawthorn', 'apple', 'cherry', 'pine'];
+const PLANT_KINDS = ['oak', 'beech', 'maple', 'birch', 'alder', 'hawthorn', 'apple', 'cherry', 'pine'];
 const perSeason = Sim.SEASON_DAYS * Sim.TPD;
 for (let s = 1; s <= seeds; s++) {
   const w = Sim.createWorld(s * 7919, { arrival });
@@ -43,7 +43,7 @@ for (let s = 1; s <= seeds; s++) {
     for (let i = 0; i < perSeason; i++) {
       if (plant && rand() < 5 / (Sim.YEAR_DAYS * Sim.TPD)) {
         planted.tried++;
-        for (let k = 0; k < 20; k++) if (typeof Sim.plantTree(w, rand() * Sim.W, rand() * Sim.H, PLANT_KINDS[Math.floor(rand() * 8)]) !== 'string') { planted.ok++; break; }
+        for (let k = 0; k < 20; k++) if (typeof Sim.plantTree(w, rand() * Sim.W, rand() * Sim.H, PLANT_KINDS[Math.floor(rand() * PLANT_KINDS.length)]) !== 'string') { planted.ok++; break; }
       }
       Sim.step(w);
       for (const e of w.events) {

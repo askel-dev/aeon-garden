@@ -50,10 +50,11 @@ Every meadow has trees along its lasting water, as along any river or lake left 
 `fringeSpacing`, the end of `plantTrees`, with random numbers of their own): one here and there on the bank above the spring flood,
 in stretches with open bank between. And a tree within `FLOAT_REACH` of lasting water drops some of its seed in it (`ON_WATER`,
 `floatSeed`): it floats down the current (`w.current`) or about still water and comes up where it washes ashore above the flood
-line (`by: 'water'`), so the bank trees seed the banks downstream; some float out of the meadow or sink in a lake.
+line (`by: 'water'`), so the bank trees seed the banks downstream; some float out of the meadow or sink in a lake. An alder drops
+most of its seed in (`float`), and its seedlings come up only within `wet` tiles of the water (`w.damp`), so alders keep to the banks.
 
-Every tree has a kind (`d.kind`: oak, beech, maple, birch, hawthorn, apple, cherry, pine), from where it stands
-(`treeKind`, `TREE_MIX` in sim.js): mostly birches by the water (no willows for now), hawthorn scrub and old oaks out in the open, birches at the
+Every tree has a kind (`d.kind`: oak, beech, maple, birch, alder, hawthorn, apple, cherry, pine), from where it stands
+(`treeKind`, `TREE_MIX` in sim.js): mostly alders by the water (dark green, still green in autumn when the rest turn), hawthorn scrub and old oaks out in the open, birches at the
 wood's edge, beech, oak and maple deep in. The drawing, its autumn colour and the inspector all follow it.
 
 Trees live slow lives of their own, loosely like real ones (`treesTick`, once a day; `TREES` in sim.js gives
@@ -163,15 +164,16 @@ or slower), and only rings while it's under
 (`drawUnder`), and the way into a holt (`paintHolt`). Their remains are tufts of fur (`paintRemains` look 2). No `KEEP_VERSION` bump:
 a kept meadow gets the otters' counts at 0 (`unpackWorld`).
 
-Rocks are painted, not emoji (`rockInfo`, `rockSprite` in game.js): pebbles, stones and boulders by
+Rocks are painted (`rockInfo`, `rockSprite` in game.js): pebbles, stones and boulders by
 size (`TERRAIN.rockSize`), flat stones at the fords, and two or three great rocks per meadow
 (`TERRAIN.bigRocks`, `big: true`) that burrows keep clear of. Like a tree's, a rock's snow is a layer of its
 own, painted once and faded in as thick as the snow lying, so the snow never repaints the rock.
 Flowers are painted too (`flowerSprite`, one painter per kind in `FLOWER_ARTS`): a clump on stems in
 one of `FLOWER_VARIANTS` looks, painted once per half-octave size. Which painting a flower gets comes from
-its emoji and the season (`flowerArt`), so the sim and the inspector still speak emoji. Thought bubbles are
-painted too: the bubble and an icon for the mood's emoji (`BUBBLE_ICONS`), one sprite; a mood without an icon
-keeps its emoji. Trees are painted by trees.js (above); tufts, sprouts and fallen leaves are still emoji.
+the sim's flower and the season (`flowerArt`). Thought bubbles are painted too: the bubble and an icon for the
+mood (`BUBBLE_ICONS`), one sprite. Trees are painted by trees.js (above). The rest of the ground cover is more
+`FLOWER_ARTS`: green tufts, tawny ones in autumn, sprouts, fallen leaves, nodding seed heads and winter's frosted
+tufts (`paintTuft` … `paintTuftFrost`); the windfalls under a tree are `paintFall`, the twitching tuft of a rustle `paintTuftSprite`.
 
 Rabbit coats: two letter-pair genes (`coat`, e.g. 'AaDd') give four colours, plus a sliding
 `moult` gene that whitens the coat in winter. Foxes spot a still rabbit from further off when its
@@ -195,8 +197,7 @@ immune, and the sickness in a warren. A sick rabbit sits hunched, with a thermom
 A body left out in the open lies a few days as remains (`leaveRemains`, `w.carcasses`; a fox's catch leaves what it
 didn't eat, `KILL_LEFT`), rotting away in `ROT_DAYS` by season (`carrionTick`), fast in summer. Crows eat them (`crowTick`):
 a few birds that fly over everything (`flies: true`), painted in game.js (`paintCrow`: standing, pecking, two wingbeats,
-and those with an acorn, the two steps of a walk, asleep on a branch; the 🐦‍⬛ emoji splits in two on older systems, so
-it's only for text). By day they walk about pecking for grubs (`peck`, `grubs`: best on short grass and rich ground, little
+and those with an acorn, the two steps of a walk, asleep on a branch). By day they walk about pecking for grubs (`peck`, `grubs`: best on short grass and rich ground, little
 in winter, none under snow): a few steps, a stop to peck, now and then a few hops (`t.stop`, `t.hop`; game.js picks the
 step from where it is, `crowWalks`, `crowHop`), stepping away from one too close (`CROW_SPACE`), and fly down to
 remains they see, or now and then see other crows at (`carrion`, `remainsNear`, `GATHER_SIGHT`, `GATHER_NOTICE`), a few at
@@ -227,7 +228,7 @@ a flat pelt that fades. A bird's remains are a few feathers (`drawRemains`). And
 crow's height in sim time (`birdLift`, `crowHeight`), so it glides down to land and up to its perch. The news tells of crows arriving,
 a gathering at remains in an outbreak (`GATHERING`), and the acorns they buried each autumn.
 
-Tawny owls (`owlTick`): a pair or two (`SPECIES.owl.cap` × `w.room`), drawn as the 🦉 emoji. A female nests in a hollow oak
+Tawny owls (`owlTick`): a pair or two (`SPECIES.owl.cap` × `w.room`). A female nests in a hollow oak
 (`hollow`, `owlHollow`: no hive in it, not the crows' roost, `OWL_GAP` from the other owls' hollows) and marks it
 (`d.owl`, her id; `owlsDay` frees it once she's gone); the bees' `hollowTree` skips it, as the owls skip a hive's, so the
 two compete for the hollows. A male moves into his mate's (`mate`); one with no hollow roosts in any big tree and can't
@@ -251,7 +252,9 @@ which becomes an oak (`placeHive`). Sites (`hiveSites`, `siteScore`) are free oa
 (`hiveStruck`). Bees fly (`flies: true` in `SPECIES`, see `go`/`fly`),
 sip from the flowers the meadow shows (`isFlower`, same rule as `plantEmoji` in game.js) within `FORAGE_RANGE`
 of home, and carry it back a `LOAD` at a time. One back from a rich patch dances (`h.patch`), and bees setting out
-from the hive fly there; the hive label says which way.
+from the hive fly there; the hive label says which way. game.js paints a bee (`paintBee`, soft-shaded like the
+carcasses): it buzzes between wings up and down in flight (`beeArt`, `BEE_BUZZ`; still when too small to see,
+`BEE_STILL`), sits with its wings folded on a flower, and carries its pollen on its hind legs (`drawBaskets`).
 They stay in while few flowers are open (`w.flowers`) and live on honey. Bees don't pair up: each hive has a
 queen (`h.queen`, just a name and genes on the hive) who lays in `layEggs`, in spring and summer on whatever
 honey there is, in autumn only once there's honey put by for every bee (`broodTime`). Summer bees live a few

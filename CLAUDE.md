@@ -1,6 +1,6 @@
 # Nobody's Meadow
 
-A cozy emoji meadow where rabbits, foxes, bees, crows, owls and otters live their own lives and you watch what
+A cozy meadow where rabbits, foxes, bees, crows, owls and otters live their own lives and you watch what
 emerges. The owls are switched off for now (sim.js `OWLS = false`): none start, fly in or can be released,
 a kept meadow's fly off when it opens, and the page hides their tool, counters, graph and food-web node. All their
 code stays; `true` brings them back. It used to be called AEON Garden, and the repo and the
@@ -31,14 +31,19 @@ told to just do it.
   hand's speeding up swings (`heldFrame`, `drawHeld`), kicks in fits, and drops with a hop where you let go
   (`letGo`, `drawFalling`). In the sim (`lift`, `putDown`) a held one (`c.held`) skips its turn and is out of the
   grid, so nothing hunts it; its place is the ground under the hand, and it lands on the nearest dry footing.
-  Foxes and rabbits are painted, not the emoji (`paintFox`, `paintRabbit`, styled on the carcasses): one rig posed for
+  Foxes and rabbits are painted (`paintFox`, `paintRabbit`, styled on the carcasses): one rig posed for
   what each is doing (`FOX_POSES`, `RABBIT_POSES`, picked by `foxArt`, `rabbitArt`), painted as one animal by `paintFur`
   (one shading over it all, each part's form and the markings soft, a part in front casting a soft shadow, a softened
   outline and a faint grain), so its parts don't read as separate shapes. A rabbit's coat is painted in its own colours;
   in winter it whitens in 5 steps, only the brown and the white painted and the steps between the two mixed. A painting
   is costly (each pass through the scratch layer is a flush), so parts can share one (`joined`) and the parts behind are
   just shaded (`flat`). It's painted only at doublings of its size (`FUR_PAINTED`) and shrunk for the sizes between,
-  which keeps a dozen poses, growing young and zooming as cheap as the emoji was.
+  which keeps a dozen poses, growing young and zooming cheap.
+  On the move their legs go round with the ground they cover (`gaitOf`: a fox trots and gallops four paintings a stride,
+  its back level at a trot), a rabbit hops in bursts, drawn a little ahead of or behind the sim along its way and
+  stopping between hops (`hopSurge`), and up to 2x everything is drawn between the sim's last two ticks (`drawnAt`,
+  `keepLast`). No bubbles stay over the animals: when one starts something worth seeing (spots a fox, runs, chases,
+  courts) a little bubble pops up and fades (`drawPops`, `POPS`).
   The tab's icon follows the season and the part of day (`updateFavicon`, at most once a second), and
   the news log dates each line with a season chip (`seasonChip`).
   The rivers run (`drawFlow`, worked out once a meadow by `flowOf` from the sim's `w.current`): streaks of current, quicker

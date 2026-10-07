@@ -1,4 +1,4 @@
-/* Nobody's Meadow — the trees, painted in code: oak, maple, birch, apple, cherry, pine, willow,
+/* Nobody's Meadow — the trees, painted in code: oak, beech, maple, birch, alder, apple, cherry, pine,
  * hawthorn, and the old hive oak with its hive.
  *
  * A tree is sculpted first, then painted. The sculpture is a little 3D model made of spheres: a
@@ -78,7 +78,6 @@ const RAMPS = {
   summer: [[26, 52, 22], [40, 80, 30], [60, 112, 42], [80, 144, 54], [102, 180, 70], [128, 216, 92]],
   spring: [[36, 70, 26], [56, 104, 34], [82, 144, 46], [110, 180, 60], [140, 210, 80], [178, 234, 116]],
   olive:  [[30, 54, 26], [46, 82, 34], [66, 114, 44], [88, 144, 56], [112, 174, 70], [142, 204, 92]],
-  willow: [[14, 50, 36], [34, 90, 42], [82, 140, 44], [140, 188, 66], [190, 222, 106], [226, 244, 164]],
   pine:   [[10, 36, 20], [22, 62, 34], [38, 92, 50], [54, 124, 64], [78, 158, 82], [116, 194, 110]],
   bluepine: [[8, 34, 30], [18, 58, 48], [32, 86, 66], [48, 116, 84], [70, 148, 104], [106, 184, 134]],
   warmpine: [[16, 38, 16], [30, 64, 28], [48, 94, 40], [66, 126, 52], [90, 160, 68], [128, 196, 96]],
@@ -95,7 +94,11 @@ const RAMPS = {
   russet: [[66, 28, 14], [120, 50, 18], [172, 86, 28], [208, 128, 44], [230, 170, 80], [244, 206, 130]],
   copper: [[80, 26, 12], [140, 48, 16], [196, 82, 24], [226, 124, 40], [244, 170, 76], [252, 210, 130]],
   dry:    [[52, 30, 18], [90, 56, 32], [130, 88, 52], [164, 122, 78], [192, 156, 108], [216, 188, 144]],
-  withy:  [[70, 62, 20], [120, 106, 30], [168, 150, 48], [204, 188, 80], [228, 216, 120], [244, 236, 170]],
+  alder:  [[12, 40, 24], [22, 64, 34], [36, 92, 44], [52, 122, 56], [72, 154, 70], [102, 186, 92]],   // an alder's dark, glossy green
+  alderfall: [[40, 42, 20], [66, 68, 30], [96, 96, 40], [124, 122, 54], [152, 148, 74], [182, 176, 104]],   // and the dull olive it falls in
+  alderbark: [[22, 20, 20], [42, 38, 36], [66, 58, 52], [94, 84, 74], [124, 112, 98], [154, 142, 124]],
+  catkin: [[44, 18, 24], [78, 34, 38], [112, 56, 50], [146, 84, 62], [176, 116, 80], [204, 152, 110]],      // its catkins in winter, purple-brown
+  pollen: [[70, 62, 20], [120, 106, 30], [168, 150, 48], [204, 188, 80], [228, 216, 120], [244, 236, 170]],  // and opening, gold
   grey:   [[38, 38, 38], [68, 68, 66], [106, 104, 98], [144, 140, 132], [178, 174, 164], [204, 200, 190]],
   bark:   [[34, 22, 18], [62, 40, 28], [98, 66, 42], [138, 98, 64], [174, 132, 90], [200, 164, 120]],
   birch:  [[96, 92, 88], [160, 156, 146], [208, 204, 192], [236, 232, 222], [250, 248, 242], [255, 255, 252]],
@@ -121,7 +124,6 @@ function ramp(r, t, c = [0, 0, 0]) {      // c: an array to fill, so a loop over
 const MAT = {
   leaf:   { w: [0, 0.4, 0.6], ao: 1.1, snow: true, lobe: 0.1 },
   needle: { w: [0, 0.4, 0.6], ao: 1.1, snow: true, lobe: 0.16, dab: [1.5, 0.45], snowOn: true },   // snow on each tuft's top
-  strand: { w: [0, 0.4, 0.6], ao: 1.1, lobe: 0.14, dab: [2.2, 0.3], small: 0.75 },
   bloom:  { w: [0, 0.4, 0.6], ao: 0.9, lobe: 0.12 },
   bark:   { w: [1, 0, 0], ao: 0.7, snow: true, strokes: 1, shaded: true },
   birch:  { w: [1, 0, 0], ao: 0.5, snow: true, strokes: 0.6, across: true, shaded: true, birch: true },
@@ -550,55 +552,45 @@ function pine(R, season) {
   return [sc, { aoR: 6 }];
 }
 
-// The willow, by the water: a fountain. A short trunk parts into a few leaders that arch up and
-// out, and from them hang long strands, over the top of the dome and down its sides nearly to the
-// ground. Inner strands are darker, so the curtain has depth; in front it parts a little over the
-// trunk. In winter the strands stay, bare golden withies; in between, some are in leaf (LEAVES).
-function willow(R, season) {
-  const sc = new Scene(340, 292, 170, 272), base = [170, 272, 0], winter = season === 'winter';
-  const cx = 170 + (R() - 0.5) * 10, top = 48 + R() * 10, eq = 128 + R() * 10, Rx = 100 + R() * 10, Rz = Rx * 0.8;
-  const dome = { x: cx, y: 214, z: 0, rx: Rx, ry: 214 - top, rz: Rz };   // for the light: lit on top, round at the sides
-  // Not a perfect bell: a few cascades, one side fuller, the hem rising and falling round the tree.
-  const ph = [R() * 6.28, R() * 6.28, R() * 6.28], lean = (R() - 0.5) * 0.24;
-  const lobe = a => 0.5 + 0.3 * Math.sin(3 * a + ph[0]) + 0.2 * Math.sin(5 * a + ph[1]);
-  const at = (a, th, k = 1) => {
-    const kk = k * (1 + lean * Math.cos(a) + 0.08 * lobe(a)), t = top + 22 * (1 - lobe(a));
-    return [cx + Math.cos(a) * Rx * Math.sin(th) * kk, eq - (eq - t) * Math.cos(th) * k, Math.sin(a) * Rz * Math.sin(th) * kk];
-  };
-  roots(sc, R, base, 13, 5);
-  const fork = [cx + (R() - 0.5) * 8, 196, 0];
-  limb(sc, base, add(base, [0, -40, 0]), fork, 14, 11, BARK);
-  for (let i = 0, n = 4 + Math.floor(R() * 2); i < n; i++) {            // the leaders, arching up and out
-    const a = i / n * 6.28 + R() * 0.8, end = at(a, 0.75 + 0.35 * R(), 0.72), mid = add(fork, [0, -60, 0]), m = lerpV(mid, end, 0.3);
-    limb(sc, fork, [m[0], mid[1] - 30, m[2]], end, 9, 3.5, BARK);
-    const tip = at(a + (R() - 0.5) * 0.6, 1.35, 0.85);
-    limb(sc, end, add(lerpV(end, tip, 0.5), [0, -18, 0]), tip, 3.5, 1.5, BARK);
+// The alder, by the water: one straight leader (or two from the foot), its branches longest low and short
+// at the top, so the crown is a narrow cone, darker green than any other. It stays green into autumn
+// and drops its leaves dull olive. Bare, it hangs with catkins (purple-brown in winter, long and gold
+// before the leaves) and little dark cones.
+function alder(R, season, o) {
+  const sc = new Scene(260, 322, 130, 308), base = [130, 308, 0], Ht = 248, stems = R() < 0.45 ? 2 : 1, BK = { mat: 'bark', ramp: 'alderbark' };
+  roots(sc, R, base, 9, 4);
+  const tips = [];
+  for (let s = 0; s < stems; s++) {
+    const side = stems > 1 ? (s ? 1 : -1) : 0, lean = side * (10 + 8 * R()) + (R() - 0.5) * 10;
+    const b = [130 + side * 4, 308, 0], top = [130 + side * 8 + lean, 308 - Ht * (s ? 0.84 : 1), (R() - 0.5) * 10], mid = [130 + side * 5 + lean * 0.35, 308 - Ht * 0.5, 0];
+    limb(sc, b, mid, top, stems > 1 ? 7 : 9, 1.6, BK);
+    const on = t => b.map((v, j) => (1 - t) ** 2 * v + 2 * (1 - t) * t * mid[j] + t * t * top[j]);
+    tips.push({ p: top, from: on(0.92), depth: 0, dir: [0, -1, 0] });
+    let a = R() * 6.28;
+    for (let h = 0.24; h < 0.95; h += 0.045 + R() * 0.03) {
+      a += 2.4 + (R() - 0.5) * 0.6;
+      if (stems > 1 && Math.cos(a) * side < -0.5) continue;                       // two stems keep out of each other's way
+      const p = on(h), len = (8 + 58 * Math.pow(1 - h, 1.15)) * (0.8 + 0.4 * R()) * (stems > 1 ? 0.8 : 1) * (1 - 0.3 * YOUNG);
+      const dir = norm([Math.cos(a), -0.55 - 0.3 * h, Math.sin(a) * 0.8]);        // branches climb, as an alder's do
+      grow(sc, R, p, dir, len, 2.8 * (1 - h * 0.6), 2, { prune: true, kids: () => 2, spread: 0.5, shrink: 0.62, up: 0.18, taper: 0.62, wobble: 0.18 }, tips, BK);
+    }
+    for (let h = 0.8; h < 0.99; h += 0.06) tips.push({ p: on(h), from: on(h - 0.05), depth: 0, dir: [0, -1, 0] });   // leaves up the leader: a pointed top
   }
-  const ramps = { spring: ['spring', 'willow', 'willow'], summer: ['willow', 'willow', 'willow', 'willow', 'spring'], autumn: ['lemon', 'willow', 'gold', 'lemon'], winter: null }[season];
-  for (let i = 0, n = winter ? 130 : 230; i < n; i++) {
-    const back = i % 4 === 3, a = back ? Math.PI + R() * Math.PI : -0.35 + R() * (Math.PI + 0.7);   // most in front and round the sides
-    const k = back ? 0.82 + 0.1 * R() : 0.86 + 0.16 * R(), th0 = Math.acos(1 - R() * 0.95) * (0.9 + 0.1 * R());   // spread evenly over the dome
-    const leafy = ramps && R() < LEAVES.keep * (0.4 + 0.6 * LEAVES.size), w0 = winter || !leafy ? 1.6 : 1.6 + 2.2 * LEAVES.size;
-    const STR = { mat: 'strand', ramp: leafy ? ramps[Math.floor(R() * ramps.length)] : 'withy' };
-    const front = Math.sin(a) * Math.max(0, 1 - Math.abs(Math.cos(a)) * 2.5);    // over the trunk the curtain parts a little
-    const hem = 258 - 34 * (1 - lobe(a * 1.3 + 1)) - 12 * R() ** 2 - 36 * front * R();
-    const tone = (k - 0.95) * 0.9 - (back ? 0.12 : 0) + (R() - 0.5) * 0.06;
-    const sway = 0.2 + 0.3 * R(), wph = R() * 6.28, fq = 0.03 + 0.03 * R(), out = Math.cos(a) * (0.03 + 0.05 * R());
-    let p = at(a, th0, k), th = th0, s = 0, st = leafy ? 3 : 2;   // a bare withy is thin, so closer steps
-    while (p[1] < hem) {
-      let q;
-      if (th < 1.5) { th = Math.min(1.5, th + st / (Rx * k)); q = at(a, th, k); q[1] -= 5 * Math.sin(th * 2) * (1 - th0); }   // over the dome, arching
-      else q = [p[0] + out * st + Math.sin(s * fq + wph) * sway, p[1] + st, p[2]];   // then straight down, swaying
-      const dir = Math.atan2(q[1] - p[1], q[0] - p[0]), f = clamp((hem - q[1]) / 30, 0, 1), wdt = w0 * (0.45 + 0.55 * f);
-      const clump = [cx + (q[0] - cx) * 0.6, q[1] - 6, q[2] * 0.6];          // so the curtain rounds outward
-      sc.add(add(q, [(R() - 0.5) * wdt * 0.6, 0, (R() - 0.5) * 2]), wdt * (0.55 + 0.3 * R()), STR, clump, dome, tone + (R() - 0.5) * 0.08, dir);
-      if (leafy && R() < 0.35) sc.add(add(q, [(R() - 0.5) * wdt * 1.4, 1.2, 1 + R() * 2]), wdt * 0.4, STR, clump, dome, tone + (R() - 0.5) * 0.1, dir);
-      p = q; s += st;
+  const ramps = { spring: ['fresh', 'alder', 'spring'], summer: ['alder', 'deep', 'alder'], autumn: ['alder', 'olive', 'alderfall'], winter: null }[season];
+  const { crown } = leafy(sc, R, tips, { hi: 1, along: 0, clumpR: 14, leafR: 4.4, density: 0.95, ramps, bare: season === 'winter' || o.bare }, { mat: 'leaf', ramp: 'alder' });
+  // Catkins and cones on the bare twigs, and among the first leaves.
+  const gold = o.bare || (season === 'spring' && LEAVES.size < 1);
+  if (!DEAD && (season === 'winter' || gold)) {
+    const CAT = { mat: 'bark', ramp: gold ? 'pollen' : 'catkin' }, CONE = { mat: 'bark', ramp: 'hollow' };
+    for (const t of tips) {
+      if (t.depth !== 0 || R() < 0.3 || (PRUNE && hash(t.p[0] * 13 | 0, t.p[1] * 13 | 0) < 0.55)) continue;   // (not on a twig left out)
+      const len = gold ? 12 + 6 * R() : 7 + 3 * R(), sway = (R() - 0.5) * 4;
+      limb(sc, t.p, add(t.p, [sway * 0.3, len * 0.5, 0]), add(t.p, [sway, len, 1]), 2.3, 1.6, CAT);
+      if (R() < 0.5) for (let j = 0; j < 2; j++) sc.add(add(t.p, [(j ? 3 : -2) + (R() - 0.5), 3 + 2 * R(), 2]), 2.1, CONE, null, null, 0.1, Math.PI / 2);
     }
   }
-  return [sc, { aoR: 7, shade: [eq + 30, 60] }];
+  return [sc, { aoR: 6, shade: season === 'winter' || o.bare ? null : [crown.y + crown.ry * 0.8, 32] }, cv => season === 'autumn' && litter(cv, R, ['#6c6a2c', '#57602a', '#8a7a3a'], 50, 18)];
 }
-const lerpV = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
 
 // Hawthorn: a thicket of stems. White blossom in spring, red haws in autumn that hang on into winter.
 function hawthorn(R, season) {
@@ -668,7 +660,7 @@ const KINDS = {
   apple:    { name: 'Apple', paint: (R, s) => fruitTree(R, s, 'apple') },
   cherry:   { name: 'Cherry', paint: (R, s) => fruitTree(R, s, 'cherry') },
   pine:     { name: 'Pine', paint: pine },
-  willow:   { name: 'Willow', paint: willow },
+  alder:    { name: 'Alder', paint: alder },
   hawthorn: { name: 'Hawthorn', paint: hawthorn },
   log:      { name: 'Log', paint: log },
   stump:    { name: 'Stump', paint: stump },

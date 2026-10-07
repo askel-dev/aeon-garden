@@ -976,11 +976,11 @@ function plantTrees(w, hills, hill, near) {
   }
 }
 
-// Which kind of tree each is, by where it stands: birches by the water, hawthorn scrub and old
+// Which kind of tree each is, by where it stands: alders by the water, hawthorn scrub and old
 // oaks out in the open, birches at the wood's edge, beech, oak and maple in the wood. Each row
 // gives the kinds and the share of each (from a hash, so the meadow's other randomness is untouched).
 const TREE_MIX = {
-  water: [['birch', 0.55], ['beech', 0.15], ['maple', 0.15], ['oak', 0.15]],  // within 3 tiles of high water (no willows for now)
+  water: [['alder', 0.6], ['birch', 0.2], ['oak', 0.1], ['beech', 0.05], ['maple', 0.05]],  // within 3 tiles of high water
   open:  [['oak', 0.5], ['hawthorn', 0.3], ['birch', 0.2]],                 // on its own (only its own shade)
   edge:  [['birch', 0.4], ['oak', 0.25], ['hawthorn', 0.15], ['beech', 0.1], ['maple', 0.1]],
   wood:  [['beech', 0.35], ['oak', 0.3], ['maple', 0.2], ['birch', 0.15]],  // deep in, in full shade
@@ -1221,7 +1221,7 @@ function nearestFooting(w, x, y) {
 //
 // Trees live slow lives of their own, loosely like real ones. Early in autumn a grown tree sheds
 // its seed, and how far it gets depends on the kind (TREES): birch, pine and maple seed rides the
-// wind; the crows carry acorns and beechnuts off and bury them out in the open by the wood's edge and
+// wind, and an alder's mostly drops in the water and floats off down it (floatSeed); the crows carry acorns and beechnuts off and bury them out in the open by the wood's edge and
 // the thorn bushes (cacheNut), and forget some; birds eat cherries and haws and drop the stones under the trees they perch
 // in, a thorn bush likeliest; apples fall, and whoever eats one carries the pips off a way. In
 // spring the seed comes up wherever there's light enough for its kind (and pines keep to pine
@@ -1238,7 +1238,9 @@ const TREES = {
   // grow: how fast it grows up; life: years it lives, about; seedAge: years before it bears seed;
   // seeds: seedlings it tries for each year; shade: how much shade a young one bears (0 none, 1 deep
   // wood); taste: how much rabbits like it; by: how its seed gets about, far: and how far (tiles);
-  // burn: odds a fire kills it grown; blossom: when in spring it flowers for the bees (share of the season)
+  // burn: odds a fire kills it grown; blossom: when in spring it flowers for the bees (share of the season);
+  // wet: it comes up only this close to the water (tiles, w.damp), and drops its seed in it oftener (float)
+  alder:    { grow: 1.1, life: 14, seedAge: 2, seeds: 4, shade: 0.3, taste: 0.5, by: 'wind', far: 6, burn: 0.3, wet: 4, float: 0.6 },
   birch:    { grow: 1.1, life: 10, seedAge: 2, seeds: 5, shade: 0.15, taste: 0.7, by: 'wind', far: 18, burn: 0.8 },
   pine:     { grow: 0.8, life: 18, seedAge: 3, seeds: 3, shade: 0.45, taste: 0.3, by: 'wind', far: 10, burn: 0.25 },
   maple:    { grow: 0.8, life: 18, seedAge: 3, seeds: 2, shade: 0.7, taste: 0.8, by: 'wind', far: 7, burn: 0.7 },
@@ -1277,7 +1279,7 @@ const TREE_ROOM = 1.4;          // the woods can grow to about this many times t
 const RARE_TONE = 0.03;         // odds a founding beech is a copper beech (tone 3), and half its seedlings are
 const OLD_NAMES = ['Old', 'Great', 'Crooked', 'Grey', 'Twisted', 'Lonely', 'Whispering', 'Mossy', 'Leaning',
   'Gnarled', 'Giant', 'Owl', 'Elder', 'Broad', 'Ancient', 'Split', 'Singing', 'Watching', 'Wishing', 'Sleeping'];
-const KIND_NAMES = { oak: 'Oak', beech: 'Beech', maple: 'Maple', pine: 'Pine', birch: 'Birch', apple: 'Apple', cherry: 'Cherry', hawthorn: 'Thorn' };
+const KIND_NAMES = { oak: 'Oak', beech: 'Beech', maple: 'Maple', pine: 'Pine', birch: 'Birch', alder: 'Alder', apple: 'Apple', cherry: 'Cherry', hawthorn: 'Thorn' };
 
 const treeAge = (w, d) => (w.tick - d.born) / YEAR;
 const standing = d => d.tree && !d.stump && !d.dead && !d.fallen;
@@ -1437,6 +1439,7 @@ function sprout(w, s) {
   if (crowded) return null;
   const burnt = yearOf(w.tick) - w.scorched[i] <= 1, bare = burnt ? BURNT_SPROUT : w.silt[i] > 0 ? BURNT_SPROUT / 2 : 1;
   const room = clamp((w.treeRoom - w.treeCount) / (w.treeRoom * 0.3), 0, 1), pine = w.pineLand[i];
+  if (k.wet && w.damp[i] > k.wet) return null;                // an alder only by the water
   const suits = s.kind === 'pine' ? 0.4 + 0.8 * pine : 1.2 - 0.6 * pine;   // pines where the pinewoods are, broadleaf elsewhere
   if (r.next() > SPROUT_ODDS * bare * room * suits) return null;
   const d = newTree(w, s.x, s.y, s.kind, { tone: s.tone, parent: s.parent, by: s.by });
@@ -1464,7 +1467,7 @@ function seedFall(w) {
     const way = waterWay(w, d, FLOAT_REACH, true);
     for (n = Math.floor(n) + (r.next() < n % 1 ? 1 : 0); n > 0; n--) {
       tally(w, d.kind, 'seeds');
-      const wet = way && r.next() < ON_WATER;
+      const wet = way && r.next() < (k.float ?? ON_WATER);
       if (k.by === 'crow' && !wet && r.next() > UNDER) { d.nuts += NUT_CROP; continue; }
       const s = wet ? floatSeed(w, d, way, r) : k.by === 'crow' ? underTree(d, r) : seedSpot(w, d, r);
       if (s) w.seeds.push({ x: s.x, y: s.y, kind: d.kind, tone: childTone(w, d), parent: d.id, by: wet ? 'water' : k.by === 'crow' ? 'drop' : k.by, at: spring + r.range(0, 0.5) * SEASON_DAYS * TPD });
@@ -4171,7 +4174,7 @@ const DRIVE_TICKS = 90;         // chasing it this long at most
 const ROOST_MIDDLE = 15;        // tiles from the middle of the meadow that take one off a roost tree's size
 const ROOST_GROVE = 6;          // tiles round the roost tree: the trees the crows sleep in with it
 const ROOST_ROOM = 24;          // seats in a grove past which more don't make it a better roost
-const PERCHES = { oak: 1.6, beech: 1.4, maple: 1.2, birch: 1, pine: 1, apple: 1, cherry: 1, hawthorn: 0.7 };   // crows a tree has room for, a tree size
+const PERCHES = { oak: 1.6, beech: 1.4, maple: 1.2, birch: 1, alder: 1, pine: 1, apple: 1, cherry: 1, hawthorn: 0.7 };   // crows a tree has room for, a tree size
 // The seats in a crown, the first ones spread over it: side (-1 left to 1 right) and height (0 the bottom of
 // the crown to 1 the top). game.js knows where a crown is in each kind's painting; the sim only puts a crow
 // under its seat, SEAT_REACH of the tree's size to the side.

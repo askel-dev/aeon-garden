@@ -441,11 +441,11 @@ function coatLine(c) {
     (v < 1.05 ? ' · 🫥 blends in here' : v > 1.3 ? ' · 👁️ stands out here' : '');
 }
 
-// The animal for the inspector, painted as in the meadow (the crow emoji splits on older systems), drawn once per look.
+// The animal for the inspector, painted as in the meadow, drawn once per look.
 const portraits = new Map();
 function portraitHTML(c) {
   const art = c.alive && (c.species === 'fox' ? foxArtOf(c.genes.fur, 'stand') : c.species === 'rabbit' ? rabbitArtOf(coatLook(c), 'sit', whiteStep(c))
-    : { crow: CROW_ARTS[0], otter: OTTER_ARTS[3] }[c.species]);
+    : { crow: CROW_ARTS[0], otter: OTTER_ARTS[3], bee: 'bee:2' }[c.species]);
   if (!art) return c.alive ? c.sp.emoji : '👻';
   if (!portraits.has(art)) portraits.set(art, dataURL(sprite(art, 38).canvas));
   return `<img src="${portraits.get(art)}" alt="${c.sp.emoji}">`;
@@ -693,20 +693,22 @@ function drawPlants(z, ox, oy, season) {
 
 // ------------------------------------------------------------------ flowers
 //
-// Flowers are painted, not emoji, like the rocks: a clump of a few on their stems, with leaves at
-// the foot and a soft shadow under it, in a few variants of each kind so a field isn't one stamp
-// over and over. Each look is painted once per size, in half-octave steps, and stretched to the
-// size each plant is drawn at. Tufts, sprouts and fallen leaves stay emoji.
+// Flowers are painted like the rocks: a clump of a few on their stems, with leaves at the foot and
+// a soft shadow under it, in a few variants of each kind so a field isn't one stamp over and over.
+// Each look is painted once per size, in half-octave steps, and stretched to the size each plant is
+// drawn at. The rest of the ground cover goes the same way: tufts, sprouts, fallen leaves, seed heads
+// and frosted tufts in winter.
 
-const FLOWER_ARTS = [paintTulips, paintBlossom, paintButtercups, paintSunflowers, paintBluebells, paintHeather, paintAsters];
+const FLOWER_ARTS = [paintTulips, paintBlossom, paintButtercups, paintSunflowers, paintBluebells, paintHeather, paintAsters,
+  paintTuft, paintTuftAutumn, paintSprout, paintFallenLeaves, paintSeedHeads, paintTuftFrost];   // (7 to 12: the ground cover)
 const FLOWER_VARIANTS = 5;
 const FLOWER_BOX = [1.6, 1.8], FLOWER_FOOT = 0.82;   // a sprite in plant sizes, and where the ground is in it, from the top
 const FLOWER_MAX_K = 15;                            // painted at most 2^7.5 = 181 px a plant, stretched past that
 const flowerSprites = new Map();
 let flowerBytes = 0;
 
-// Which painting an emoji gets (-1: it stays an emoji). The season tells the spring bluebells from
-// the autumn heather, and a spring blossom from an autumn aster.
+// Which painting each plant the sim names gets (-1: none). The season tells the spring bluebells from
+// the autumn heather, a spring blossom from an autumn aster, and a green tuft from a tawny one.
 function flowerArt(e, season) {
   switch (e) {
     case '🌷': return 0;
@@ -714,6 +716,11 @@ function flowerArt(e, season) {
     case '🌼': return 2;
     case '🌻': return 3;
     case '🪻': return season === 2 ? 5 : 4;
+    case '🌿': return season === 2 ? 8 : 7;
+    case '🌱': return 9;
+    case '🍂': return 10;
+    case '🌾': return 11;
+    case '❄️': return 12;
     default: return -1;
   }
 }
@@ -905,6 +912,94 @@ function paintAsters(g, r, v, bold, sw) {
   }
 }
 
+// The ground cover: grass blades shaded from a dark foot to a light tip (each one a gradient, fine as
+// it's painted once a size), fallen leaves lying flat, seed heads nodding over.
+const GRASS = [[[62, 112, 42], [128, 182, 70]], [[58, 106, 40], [116, 172, 62]], [[66, 118, 46], [140, 190, 78]], [[54, 100, 38], [108, 164, 58]], [[70, 120, 44], [134, 186, 74]]];
+const GRASS_AUTUMN = [[[96, 100, 44], [190, 170, 86]], [[104, 96, 46], [200, 164, 84]], [[90, 102, 46], [176, 168, 90]], [[110, 100, 50], [206, 176, 98]], [[96, 96, 44], [184, 158, 80]]];
+const GRASS_FROST = [[112, 92, 60], [196, 172, 120]], FROST = [248, 250, 255];
+function grassBlade(g, x, len, lean, w, dark, light, tip) {
+  const gr = g.createLinearGradient(0, 0, lean * 0.5, -len);
+  gr.addColorStop(0, rockRGB(dark)); gr.addColorStop(tip ? 0.7 : 1, rockRGB(light));
+  if (tip) gr.addColorStop(1, rockRGB(tip));
+  g.fillStyle = gr; g.beginPath(); g.moveTo(x - w, 0);
+  g.quadraticCurveTo(x - w * 0.5 + lean * 0.2, -len * 0.55, x + lean, -len);
+  g.quadraticCurveTo(x + w * 0.5 + lean * 0.5, -len * 0.5, x + w, 0); g.closePath(); g.fill();
+}
+// n blades fanned out from the foot, h tall in the middle and shorter to the sides, the ones behind darker.
+function tuftAt(g, r, n, h, spread, cols, w, tip, seed = 0) {
+  const blades = [];
+  for (let i = 0; i < n; i++) {
+    const t = n === 1 ? 0 : i / (n - 1) * 2 - 1;
+    blades.push({ x: t * spread * 0.22 + (r(80 + i + seed) - 0.5) * 0.05, lean: t * spread + (r(90 + i + seed) - 0.5) * 0.14,
+      len: h * (1 - 0.4 * t * t) * (0.72 + 0.28 * r(100 + i + seed)), back: r(110 + i + seed) });
+  }
+  blades.sort((a, b) => a.back - b.back);
+  for (const b of blades) { const k = 0.78 + 0.32 * b.back; grassBlade(g, b.x, b.len, b.lean, w, tone(cols[0], k), tone(cols[1], k), tip); }
+}
+function paintTuft(g, r, v) { tuftAt(g, r, 7 + v % 3, 0.74, 0.46, GRASS[v], 0.055); }
+function paintTuftAutumn(g, r, v) { tuftAt(g, r, 7 + v % 3, 0.68, 0.5, GRASS_AUTUMN[v], 0.052); }
+function paintTuftFrost(g, r, v) {                   // dry and standing, white with frost at the tips, snow at its foot
+  tuftAt(g, r, 6 + v % 3, 0.6, 0.34, GRASS_FROST, 0.05, FROST);
+  softIn(g, [236, 242, 248], -0.1, 0.04, () => ovalAt(g, 0, -0.015, 0.2, 0.065), 1.05, 0.78);
+}
+// A seedling just up: two round seed leaves on a short stem, in the soil it broke (and a first true leaf, sometimes).
+function paintSprout(g, r, v, bold, sw) {
+  g.scale(1.6, 1.6); sw /= 1.6;
+  softIn(g, [120, 86, 54], -0.06, 0.04, () => ovalAt(g, 0, 0, 0.17, 0.05), 1.15, 0.75);
+  const x = (r(2) - 0.5) * 0.06, y = -0.2 - 0.06 * r(1);
+  flowerStem(g, x, y, 0.01, Math.max(sw, 0.035), [112, 168, 64]);
+  for (const s of [-1, 1]) {
+    softIn(g, s < 0 ? [96, 160, 56] : [120, 182, 68], y - 0.08, y + 0.05, () => {
+      g.moveTo(x, y); g.quadraticCurveTo(x + s * 0.06, y - 0.12, x + s * 0.17, y - 0.07); g.quadraticCurveTo(x + s * 0.14, y + 0.02, x, y);
+    }, 1.2, 0.8);
+  }
+  if (v > 2) softIn(g, [132, 190, 76], y - 0.14, y, () => ovalAt(g, x, y - 0.06, 0.03, 0.06), 1.2, 0.8);
+}
+const LEAF_FALL = [[212, 116, 38], [180, 72, 36], [206, 158, 56], [152, 96, 50], [226, 140, 44], [168, 120, 52]];
+// A leaf lying in the grass, seen from a little above (squashed): pointed, or a maple's five lobes.
+function lyingLeaf(g, x, y, s, a, rgb, maple) {
+  g.save(); g.translate(x, y); g.scale(1, 0.55); g.rotate(a);
+  const shape = () => {
+    if (maple) for (let i = 0; i < 5; i++) {
+      const b = -Math.PI / 2 + (i - 2) * 0.75;
+      g.moveTo(0, 0); g.quadraticCurveTo(Math.cos(b - 0.3) * s * 0.7, Math.sin(b - 0.3) * s * 0.7, Math.cos(b) * s, Math.sin(b) * s);
+      g.quadraticCurveTo(Math.cos(b + 0.3) * s * 0.7, Math.sin(b + 0.3) * s * 0.7, 0, 0);
+    }
+    else { g.moveTo(-s, 0); g.quadraticCurveTo(-s * 0.2, -s * 0.55, s, 0); g.quadraticCurveTo(-s * 0.2, s * 0.55, -s, 0); }
+  };
+  fillIn(g, rockRGB(tone(rgb, 0.45), 0.35), () => { g.translate(0.01, 0.025); shape(); g.translate(-0.01, -0.025); });   // its shadow
+  softIn(g, rgb, -s * 0.5, s * 0.5, shape, 1.2, 0.72);
+  strokeIn(g, rockRGB(tone(rgb, 0.62)), 0.012 + s * 0.03, () => { if (maple) { g.moveTo(0, s * 0.25); g.lineTo(0, -s * 0.8); } else { g.moveTo(-s * 0.9, 0); g.lineTo(s * 0.9, 0); } });
+  g.restore();
+}
+function paintFallenLeaves(g, r, v) {
+  g.scale(1.35, 1.35);
+  for (let i = 0, n = 4 + v % 2; i < n; i++) {
+    const x = (r(10 + i) - 0.5) * 0.6, y = (r(20 + i) - 0.5) * 0.16 - 0.03;
+    lyingLeaf(g, x, y, 0.15 + 0.06 * r(30 + i), r(40 + i) * TAU, LEAF_FALL[(v + i * 2) % LEAF_FALL.length], (v + i) % 3 === 0);
+  }
+}
+const STRAW = [[184, 156, 92], [204, 176, 104], [176, 150, 96], [196, 164, 90], [212, 186, 116]];
+// Ripe grass: a few stems over a low tuft, each head arching over from the top of its stem with grains either
+// side, smaller towards the tip.
+function paintSeedHeads(g, r, v, bold, sw) {
+  tuftAt(g, r, 5, 0.36, 0.42, GRASS_AUTUMN[v], 0.045, null, 7);
+  const rgb = STRAW[v], stalk = rockRGB(tone(rgb, 0.78));
+  for (const h of flowerHeads(r, 3 + v % 2, 0.2, 0.56, 0.78)) {
+    const side = h.x < 0 ? -1 : 1, len = 0.3;
+    flowerStem(g, h.x, h.y, h.bend, Math.max(sw * 1.4, 0.03), tone(rgb, 0.78));
+    const at = t => [h.x + side * len * 0.55 * t, h.y - len * 0.25 * t + len * 0.75 * t * t];
+    strokeIn(g, stalk, Math.max(sw, 0.02), () => { g.moveTo(h.x, h.y); for (let t = 0.1; t <= 1.001; t += 0.1) g.lineTo(...at(t)); });
+    for (let j = 7; j >= 0; j--) {
+      const t = 0.08 + j / 7 * 0.9, [x, y] = at(t), [x2, y2] = at(t + 0.05), a = Math.atan2(y2 - y, x2 - x), s = (1 - 0.45 * t) * bold;
+      for (const e of [-1, 1]) {
+        const gx = x + Math.cos(a + e * 1.3) * 0.03, gy = y + Math.sin(a + e * 1.3) * 0.03;
+        softIn(g, tone(rgb, e < 0 ? 1.05 : 0.9), gy - 0.05, gy + 0.05, () => ovalAt(g, gx, gy, 0.05 * s, 0.028 * s, a + e * 0.5), 1.25, 0.72);
+      }
+    }
+  }
+}
+
 // ------------------------------------------------------------------ burrows
 //
 // A burrow is a hole dug into a low bank, with the earth that came out of it spilled in front.
@@ -1034,7 +1129,6 @@ const REMAINS_SIZE = 0.75;                // remains, next to a rabbit (drawRema
 const HOLT_SIZE = 0.8;                    // the way into an otters' holt
 const BODY_SIZE = 1;                      // a dead rabbit, lying on its side
 const FOX_BODY = 1.4;                     // and a dead fox, next to that
-const ALWAYS_BUBBLE = new Set(['flee', 'alarm', 'chase', 'love']);
 
 function visible(sx, sy, pad) { return sx > -pad && sy > -pad && sx < vw + pad && sy < vh + pad; }
 
@@ -1166,18 +1260,8 @@ function render(now) {
     }
   }
 
-  // Thought bubbles above the dark. Not in the intro: its lines tell the story.
-  if (!intro.on) for (const it of shown) {
-    const c = it.c;
-    if (LOOKS[c.species].quiet) continue;
-    if (c.species === 'crow' && c.mode === 'sleep' && c.perch?.k && c.id !== ui.selectedId && c.id !== ui.hoverId) continue;   // one 💤 a tree at the roost
-    if (c.species === 'otter' && c.sleeping && c.home?.holt && c.home.holt !== c.id && c.id !== ui.selectedId && c.id !== ui.hoverId) continue;   // and a holt
-    const important = ALWAYS_BUBBLE.has(c.mode);
-    if (!(important || c.id === ui.selectedId || c.id === ui.hoverId || z >= 20)) continue;
-    const m = S.mood(world, c);
-    const px = creaturePx(c), up = c.sp.flies ? liftOf(c, px, now) : 0;
-    if (m.emoji) drawBubble(m.emoji, it.sx, it.sy - up, px, important);
-  }
+  // Pop-ups above the dark. Not in the intro: its lines tell the story.
+  if (!intro.on) drawPops(shown, now);
 
   drawEffects(now);
   drawZaps(now);
@@ -1233,7 +1317,7 @@ function drawRemains(z) {
 const LOOKS = {
   rabbit: { size: 1, facesLeft: true },
   fox: { size: 1.4, facesLeft: true },         // painted (paintFox), not the emoji
-  bee: { size: 0.38, facesLeft: true, swatch: '#e8b83a', quiet: true },   // quiet: no thought bubbles
+  bee: { size: 0.38, facesLeft: true, swatch: '#e8b83a', quiet: true },   // quiet: no pop-ups (drawPops)
   crow: { size: 0.95, facesLeft: true, swatch: '#4a4e5e' },               // painted (crowArt), not the emoji
   owl: { size: 0.85, facesLeft: false, swatch: '#9a6a3e' },               // a face: it does not care
   otter: { size: 1.5, facesLeft: true, swatch: '#7c5232' },               // painted (paintOtter), not the emoji
@@ -1272,6 +1356,7 @@ const CROW_HOP_LEN = 0.35;         // tiles a hop, hopping about on the ground
 const CROWNS = {
   oak: [0.33, 0.8, 0.4, 0.44, 0.42, 0.33, 0.2], beech: [0.42, 0.88, 0.33, 0.38, 0.37, 0.3, 0.16],
   maple: [0.5, 0.95, 0.26, 0.33, 0.34, 0.3, 0.18], birch: [0.62, 1.28, 0.3, 0.4, 0.42, 0.4, 0.28],
+  alder: [0.58, 1.26, 0.3, 0.39, 0.29, 0.21, 0.13],
   apple: [0.22, 0.62, 0.3, 0.36, 0.36, 0.32, 0.2], cherry: [0.22, 0.62, 0.3, 0.36, 0.36, 0.32, 0.2],
   pine: [0.3, 1.05, 0.36, 0.31, 0.25, 0.18, 0.12], hawthorn: [0.2, 0.5, 0.3, 0.33, 0.32, 0.28, 0.18],
   emoji: [0.3, 0.75, 0.35, 0.42, 0.42, 0.36, 0.22],
@@ -1386,11 +1471,32 @@ function weaveOf(c) {
   return s;
 }
 
-// Where a creature is drawn on screen: where it is, plus a flier's weave. A dancer is drawn a
+// Where a creature is drawn in the meadow: up to SMOOTH_SPEED, between where it was a tick ago (keepLast) and where it
+// is, as far along as the clock is to the next tick, so it glides rather than stepping 30 times a second. Quicker,
+// held, or just put somewhere, where it is. (One shared answer: read it straight away.)
+const SMOOTH_SPEED = 2;
+const lastTick = new WeakMap(), drawnPos = { x: 0, y: 0 };
+function keepLast() {
+  for (const c of world.creatures) {
+    let p = lastTick.get(c);
+    if (!p) lastTick.set(c, p = { x: 0, y: 0, tick: 0 });
+    p.x = c.x; p.y = c.y; p.tick = world.tick + 1;
+  }
+}
+function drawnAt(c) {
+  const p = ui.speed <= SMOOTH_SPEED && !c.held && lastTick.get(c);
+  if (!p || p.tick !== world.tick || Math.abs(c.x - p.x) + Math.abs(c.y - p.y) > 1) { drawnPos.x = c.x; drawnPos.y = c.y; return drawnPos; }
+  const t = Math.min(acc, 1);
+  drawnPos.x = p.x + (c.x - p.x) * t; drawnPos.y = p.y + (c.y - p.y) * t;
+  return drawnPos;
+}
+
+// Where a creature is drawn on screen: where it is (drawnAt), plus a flier's weave. A dancer is drawn a
 // little in front of her hive, where the tree doesn't hide her, and her eight a size bigger.
 const DANCE_FRONT = 0.45, DANCE_SIZE = 1.8;
 function screenOf(c) {
-  const p = toScreen(c.x, c.y), z = cam.zoom;
+  const d = drawnAt(c), p = toScreen(d.x, d.y), z = cam.zoom;
+  if (c.species === 'rabbit') { const s = hopSurge(c), g = gaitOf(c); p[0] += s * g.hx * z; p[1] += s * g.hy * z; }
   if ((c.species === 'bee' || c.species === 'crow') && !c.hidden) { const s = weaveOf(c); p[0] += s.x * z; p[1] += s.y * z; }
   if (c.species === 'crow') p[0] += seatShift(c);                  // up a tree: onto its seat in the crown
   if (c.mode === 'dance') {
@@ -1424,16 +1530,19 @@ function drawDance(c, bx, by, px) {
   ctx.globalAlpha = 1;
 }
 
-// How high off the ground a hop has lifted it, in screen pixels. At the hole, a digger doesn't hop
-// but scrabbles: a quick small bob. A mousing fox's pounce is the high arc up and over onto the vole,
-// in sim time (sim.js mouse), so a paused one hangs in the air.
+// How high off the ground it's lifted, in screen pixels. A rabbit's hop (HOP), a galloping fox rising a little in the
+// two moments it's in the air (run1, run3); a trotting fox keeps its back level. At the hole, a digger doesn't hop but
+// scrabbles: a quick small bob. A mousing fox's pounce is the high arc up and over onto the vole, in sim time (sim.js
+// mouse), so a paused one hangs in the air.
 const POUNCE_HIGH = 0.9;           // how high the pounce goes, in the fox's size
+const GALLOP_LIFT = 0.06;          // and a gallop's rise
 function hopOf(c, px, now) {
   if (c.mode === 'pounce') return Math.sin(Math.PI * clamp((S.POUNCE_TICKS - c.timer + acc) / S.POUNCE_TICKS, 0, 1)) * px * POUNCE_HIGH;
-  if (ui.speed <= 0) return 0;
-  if (atHole(c)) return Math.abs(Math.sin(now / 70 + c.id)) * px * 0.03;
-  const fast = c.mode === 'flee' || c.mode === 'chase';
-  return (MOVING.has(c.mode) || (c.mode === 'mouse' && c.target)) && movedLately(c) ? Math.abs(Math.sin(now / (fast ? 55 : 120) + c.id)) * px * (fast ? 0.16 : 0.1) : 0;
+  if (atHole(c)) return ui.speed > 0 ? Math.abs(Math.sin(now / 70 + c.id)) * px * 0.03 : 0;
+  if (!STRIDE[c.species] || !onTheMove(c)) return 0;
+  const u = gaitOf(c).step % 1;
+  if (c.species === 'rabbit') { const f = fastGait(c) ? 1 : 0, A = HOP.air[f]; return u < A ? Math.sin(Math.PI * u / A) * px * HOP.high[f] : 0; }
+  return fastGait(c) ? (1 + Math.cos(4 * Math.PI * (u - 0.125))) / 2 * px * GALLOP_LIFT : 0;
 }
 
 // Digging, at its side of the hole (see dig in sim.js).
@@ -1489,7 +1598,7 @@ function drawCreature(c, sx, sy, now) {
 }
 
 // A forager packs pollen on her hind legs: two gold lumps that grow as she fills up.
-const BASKET = { x: 0.04, y: 0.37, dx: 0.08, dy: -0.03 };  // the near hind leg, and the far one from it, in px (facing left)
+const BASKET = { x: 0.08, y: 0.22, dx: 0.07, dy: -0.03 };  // the near hind leg, and the far one from it, in px (facing left)
 function drawBaskets(c, sx, y, px) {
   const f = loadOf(c), r = px * (0.04 + 0.05 * f), side = flipOf(c) ? -1 : 1;
   const x1 = sx + side * px * BASKET.x, y1 = y + px * BASKET.y;
@@ -1662,6 +1771,51 @@ function paintCrow(g, size, U, pose) {
   }
 }
 const CROW_ARTS = [0, 1, 2, 3, 4, 5, 6, 7, 8].map(k => 'crow:' + k);
+
+// A honeybee, facing left, soft-shaded like the carcasses: a golden abdomen with dark bands, a fuzzy thorax, a dark
+// head with a big shiny eye, see-through wings. 'bee:0' wings up and 'bee:1' wings down (in flight it buzzes between
+// the two, beeArt), 'bee:2' sat with its wings folded back, on a flower. Its box -1 to 1 is the size asked for.
+const BEE_GOLD = [240, 182, 46], BEE_THORAX = [190, 128, 44], BEE_BAND = [70, 44, 24], BEE_HEAD = [72, 50, 34];
+function beeWing(g, x, y, len, wid, a, alpha) {
+  g.save(); g.translate(x, y); g.rotate(a);
+  const gr = g.createLinearGradient(0, 0, len, 0);
+  gr.addColorStop(0, `rgba(226,236,250,${alpha})`); gr.addColorStop(1, `rgba(250,252,255,${alpha * 0.8})`);
+  g.fillStyle = gr; g.beginPath(); g.ellipse(len * 0.5, 0, len * 0.5, wid * 0.5, 0, 0, TAU); g.fill();
+  g.strokeStyle = `rgba(120,130,150,${alpha * 0.7})`; g.lineWidth = 0.03; g.stroke();
+  g.beginPath(); g.moveTo(0.02, 0); g.quadraticCurveTo(len * 0.45, -wid * 0.12, len * 0.85, wid * 0.05); g.stroke();   // a vein
+  g.restore();
+}
+function paintBee(g, size, U, pose) {
+  g.setTransform(U * 0.62, 0, 0, U * 0.62, size / 2, size / 2);
+  g.lineCap = g.lineJoin = 'round';
+  const sit = pose === 2, wingA = sit ? 0.18 : pose === 0 ? -1.05 : -0.28, wingL = sit ? 0.82 : 0.9, wingW = sit ? 0.3 : 0.42;
+  beeWing(g, 0.02, -0.26, wingL * 0.9, wingW * 0.9, wingA - (sit ? 0.12 : 0.3), 0.5);          // the far wing
+  strokeIn(g, rockRGB(BEE_BAND), 0.06, () => {                                                   // legs: hanging, or stood
+    for (const [x0, x1] of [[-0.3, -0.42], [-0.14, -0.18], [0.02, 0.12]]) {
+      g.moveTo(x0, 0.18); if (sit) g.lineTo(x1, 0.52); else g.quadraticCurveTo(x1, 0.34, x1 + 0.08, 0.46);
+    }
+  });
+  const abdomen = () => ovalAt(g, 0.34, 0.06, 0.5, 0.35, 0.28);
+  softIn(g, BEE_GOLD, -0.3, 0.42, abdomen, 1.12, 0.72);
+  g.save(); g.beginPath(); abdomen(); g.clip();
+  for (const x of [0.24, 0.48, 0.72]) softIn(g, BEE_BAND, -0.3, 0.42, () => ovalAt(g, x, 0.1, 0.075, 0.6, 0.28), 1.5, 0.8);
+  softIn(g, BEE_BAND, -0.3, 0.42, () => ovalAt(g, 0.9, 0.2, 0.12, 0.3, 0.28), 1.5, 0.8);        // the tip
+  g.restore();
+  furGlow(g, [255, 236, 170], 0.45, 0.26, -0.12, 0.3, 0.12, 0.28);                              // a sheen along the top
+  softIn(g, BEE_THORAX, -0.32, 0.26, () => discAt(g, -0.17, -0.02, 0.29), 1.2, 0.7);
+  furGlow(g, [250, 210, 120], 0.5, -0.2, -0.14, 0.2, 0.12);
+  softIn(g, BEE_HEAD, -0.2, 0.24, () => ovalAt(g, -0.5, 0.04, 0.2, 0.21), 1.3, 0.7);
+  fillIn(g, '#1d1612', () => ovalAt(g, -0.53, 0, 0.1, 0.13, 0.2));
+  fillIn(g, 'rgba(255,255,255,0.9)', () => discAt(g, -0.56, -0.05, 0.04));
+  strokeIn(g, rockRGB(BEE_HEAD), 0.045, () => {                                                 // antennae
+    g.moveTo(-0.58, -0.13); g.quadraticCurveTo(-0.66, -0.36, -0.84, -0.42);
+    g.moveTo(-0.5, -0.15); g.quadraticCurveTo(-0.52, -0.4, -0.68, -0.5);
+  });
+  beeWing(g, -0.04, -0.24, wingL, wingW, wingA, 0.62);                                          // the near wing
+}
+const BEE_BUZZ = 38;               // ms a wingbeat painting shows
+const BEE_STILL = 10;              // px: smaller, the wings can't be seen beating, so they don't
+const beeArt = (c, px, now) => c.mode === 'sip' || c.sleeping ? 'bee:2' : ui.speed === 0 || px < BEE_STILL ? 'bee:0' : 'bee:' + ((now / BEE_BUZZ + c.id) & 1);
 
 // Otters are painted, not the 🦦 emoji: it floats on its back, and differs from system to system.
 // A Eurasian otter, facing left: warm brown, a pale chin and throat, a broad flat head with small low ears,
@@ -2473,18 +2627,31 @@ const FOX_STAND = {
   hind: { near: [0.32, 0.71], far: [0.39, 0.71] },
 };
 const FOX_TROT_TAIL = { base: [0.42, 0.1], c1: [0.64, 0.14], c2: [0.86, 0.22], tip: [1.04, 0.3], w: 1 };
+// A trot, a quarter stride a frame: the diagonal pairs (the near fore with the far hind) half a stride apart, each paw
+// drawn back along the ground under the fox, then lifted and swung forward, TROT_REACH either side of where it stands.
+const TROT_REACH = 0.13, TROT_LIFT = 0.1;
+function foxTrot(k) {
+  const paw = (x, half) => {
+    const a = (k / 4 + 1 / 8 + half / 2) * TAU, up = a % TAU > Math.PI ? -Math.sin(a) : 0;
+    return [x - TROT_REACH * Math.cos(a), 0.71 - TROT_LIFT * up];
+  };
+  return { ...FOX_STAND, chest: [-0.22, 0.21], hip: [0.27, 0.2], head: [-0.52, 0.02, -0.05], tail: FOX_TROT_TAIL,
+    fore: { near: paw(-0.25, 0), far: paw(-0.2, 1) }, hind: { near: paw(0.3, 1), far: paw(0.35, 0) } };
+}
+const FOX_RUN_TAIL = { base: [0.44, 0.08], c1: [0.64, 0.07], c2: [0.84, 0.1], tip: [1.06, 0.14], w: 1 };
 const FOX_POSES = {
   stand: FOX_STAND,
-  trot1: { ...FOX_STAND, head: [-0.52, 0.01, -0.05], tail: FOX_TROT_TAIL,             // one diagonal pair up, the other down
-    fore: { near: [-0.3, 0.6], far: [-0.08, 0.71] }, hind: { near: [0.46, 0.71], far: [0.3, 0.62] } },
-  trot2: { ...FOX_STAND, head: [-0.52, 0.01, -0.05], tail: FOX_TROT_TAIL,
-    fore: { near: [-0.42, 0.71], far: [-0.26, 0.6] }, hind: { near: [0.3, 0.62], far: [0.18, 0.71] } },
-  run1: { ...FOX_STAND, chest: [-0.26, 0.18], hip: [0.3, 0.17], head: [-0.6, 0.06, -0.12], ear: 0.35,   // a gallop, stretched out
-    tail: { base: [0.44, 0.08], c1: [0.64, 0.07], c2: [0.84, 0.1], tip: [1.06, 0.14], w: 1 },
-    fore: { near: [-0.68, 0.54], far: [-0.6, 0.6] }, hind: { near: [0.72, 0.5], far: [0.66, 0.56] } },
-  run2: { ...FOX_STAND, chest: [-0.18, 0.22], hip: [0.2, 0.16], arch: 0.02, head: [-0.5, 0.06, -0.1], ear: 0.35,   // and gathered
-    tail: { base: [0.34, 0.08], c1: [0.54, 0.1], c2: [0.74, 0.2], tip: [0.94, 0.28], w: 1 },
-    fore: { near: [0.02, 0.66], far: [0.08, 0.62] }, hind: { near: [-0.1, 0.68], far: [-0.04, 0.7] } },
+  trot1: foxTrot(0), trot2: foxTrot(1), trot3: foxTrot(2), trot4: foxTrot(3),
+  // A gallop: stretched out in the air, down on the forepaws, gathered in the air, then the hind paws push it off again.
+  run1: { ...FOX_STAND, chest: [-0.27, 0.17], hip: [0.3, 0.16], head: [-0.62, 0.05, -0.1], ear: 0.35, tail: FOX_RUN_TAIL,
+    fore: { near: [-0.62, 0.52], far: [-0.54, 0.57] }, hind: { near: [0.5, 0.6], far: [0.56, 0.6] } },
+  run2: { ...FOX_STAND, chest: [-0.24, 0.22], hip: [0.25, 0.16], head: [-0.58, 0.1, -0.14], ear: 0.35, tail: FOX_RUN_TAIL,
+    fore: { near: [-0.42, 0.71], far: [-0.2, 0.69] }, hind: { near: [0.32, 0.55], far: [0.38, 0.53] } },
+  run3: { ...FOX_STAND, chest: [-0.18, 0.2], hip: [0.17, 0.17], arch: 0.05, head: [-0.5, 0.07, -0.12], ear: 0.35,
+    tail: { base: [0.32, 0.08], c1: [0.52, 0.04], c2: [0.72, 0.1], tip: [0.92, 0.18], w: 1 },
+    fore: { near: [-0.07, 0.7], far: [-0.01, 0.62] }, hind: { near: [0.09, 0.66], far: [0.15, 0.68] } },
+  run4: { ...FOX_STAND, chest: [-0.24, 0.18], hip: [0.24, 0.22], arch: 0.02, head: [-0.58, 0.03, -0.08], ear: 0.35, tail: FOX_RUN_TAIL,
+    fore: { near: [-0.64, 0.5], far: [-0.56, 0.55] }, hind: { near: [0.38, 0.71], far: [0.27, 0.7] } },
   sit: { ...FOX_STAND, chest: [-0.12, 0.2], hip: [0.1, 0.5], head: [-0.3, -0.15, -0.05],
     tail: { base: [0.26, 0.58], c1: [0.44, 0.8], c2: [0.02, 0.86], tip: [-0.36, 0.75], w: 0.95, front: [0, 0.55, 0, 0.67] },
     fore: { near: [-0.24, 0.71], far: [-0.18, 0.71] }, hind: { near: [-0.06, 0.71], far: [0, 0.71] } },
@@ -2725,22 +2892,49 @@ function paintFur(g, size, U, parts, look) {
   g.drawImage(S.canvas, 0, 0, size, size, 0, 0, size, size);
 }
 
-// Whether it has moved in the last few frames (a fox or a rabbit stood still in a mode that moves just stands).
-const stillFor = new WeakMap();      // { x, y, frames } since it last moved, counted once a frame
-function movedLately(c) {
-  let s = stillFor.get(c);
-  if (!s) stillFor.set(c, s = { x: c.x, y: c.y, frames: 99, at: spriteFrame });
-  if (s.at !== spriteFrame) {
-    s.at = spriteFrame;
-    if (s.x !== c.x || s.y !== c.y) { s.x = c.x; s.y = c.y; s.frames = 0; } else s.frames++;
-  }
-  return ui.speed > 0 && s.frames < 12;
+// How a fox or a rabbit is getting along, worked out once a frame from where it's drawn (drawnAt): the frames since it
+// last moved (one stood still in a mode that moves just stands), which way it's going (hx, hy), and how far through
+// its stride it is (step, in strides: the ground covered over STRIDE, at most GAIT_MAX a frame, so at speed the legs
+// still read). Paused, it all holds, so one caught mid-stride stays that way.
+const STRIDE = { rabbit: [0.75, 1.4], fox: [0.65, 1.3] };   // a hop or a trot, and a bound or a gallop, in its sizes
+const GAIT_MAX = 0.11;
+const gaits = new WeakMap();
+const fastGait = c => c.mode === 'flee' || c.mode === 'chase';
+const strideOf = c => STRIDE[c.species][fastGait(c) ? 1 : 0] * creaturePx(c) / cam.zoom;
+function gaitOf(c) {
+  let s = gaits.get(c);
+  if (!s) gaits.set(c, s = { x: 0, y: 0, frames: 99, at: -1, hx: c.facing > 0 ? 1 : -1, hy: 0, step: c.id * 0.618 % 1 });
+  if (s.at === spriteFrame) return s;
+  const first = s.at < 0, p = drawnAt(c), dx = p.x - s.x, dy = p.y - s.y, d = Math.hypot(dx, dy);
+  s.at = spriteFrame; s.x = p.x; s.y = p.y;
+  if (first || ui.speed <= 0) return s;
+  if (d === 0) { s.frames++; return s; }
+  s.frames = 0;
+  if (d > 2) return s;                                            // put somewhere, not walked there
+  s.step += Math.min(d / strideOf(c), GAIT_MAX);
+  s.hx += (dx / d - s.hx) * 0.3; s.hy += (dy / d - s.hy) * 0.3;
+  const h = Math.hypot(s.hx, s.hy) || 1; s.hx /= h; s.hy /= h;
+  return s;
 }
-const walkerArt = (c, px, now) => c.species === 'fox' ? foxArt(c, px) : c.species === 'rabbit' ? rabbitArt(c, now) : c.sp.emoji;
+const movedLately = c => gaitOf(c).frames < 12;
+const onTheMove = c => (MOVING.has(c.mode) || c.mode === 'mouse') && movedLately(c);
+// Above this speed it's a blur: the gaits keep to two of their paintings, so a quick meadow doesn't paint the rest.
+const FEW_FRAMES = 4;
 
-// Which painting, for what the fox is doing. On the move its legs step by where it is (like the otter's), so they
-// stop when it stops; standing still a while in a mode that moves, it just stands.
-const FOX_STRIDE = 0.2;              // of its size, a step of the trot (a gallop's is longer)
+// A rabbit hops: in the air for HOP.air of each hop, covering HOP.ahead of the ground, and the rest while it's down,
+// where it all but stops. The sim moves it evenly, so it's drawn a little ahead of or behind where it is, along its
+// way (hopSurge, in tiles), the same on average. Up to SMOOTH_SPEED: quicker, it's just where it is.
+const HOP = { air: [0.55, 0.65], ahead: [0.9, 0.85], high: [0.16, 0.2] };   // a hop, and a bound
+function hopSurge(c) {
+  if (ui.speed > SMOOTH_SPEED || !onTheMove(c)) return 0;
+  const f = fastGait(c) ? 1 : 0, A = HOP.air[f], P = HOP.ahead[f], u = gaitOf(c).step % 1;
+  const done = u < A ? P * u / A : P + (1 - P) * (u - A) / (1 - A), mean = A * P / 2 + (1 - A) * (1 + P) / 2;
+  return (done - u - (mean - 0.5)) * strideOf(c);
+}
+const walkerArt = (c, px, now) => c.species === 'fox' ? foxArt(c, px) : c.species === 'rabbit' ? rabbitArt(c, now) : c.species === 'bee' ? beeArt(c, px, now) : c.sp.emoji;
+
+// Which painting, for what the fox is doing. On the move its legs go round with the ground it covers (gaitOf), a quarter
+// stride a painting, so they stop when it stops; standing still a while in a mode that moves, it just stands.
 function foxArt(c, px) {
   const art = pose => foxArtOf(c.genes.fur, pose);
   if (c.sleeping) return art('sleep');
@@ -2748,10 +2942,10 @@ function foxArt(c, px) {
   if (c.mode === 'eat') return art('feed');
   if (c.mode === 'rest' || c.mode === 'tired') return art('sit');
   if (crouching(c)) return art('crouch');                                       // mousing: it crouches to leap
-  if (movedLately(c) && (MOVING.has(c.mode) || c.mode === 'mouse')) {
-    const fast = c.mode === 'chase' || c.mode === 'flee', k = cam.zoom / (px * FOX_STRIDE * (fast ? 1.6 : 1));
-    const step = (Math.floor(c.x * k) + Math.floor(c.y * k)) & 1;
-    return art(fast ? (step ? 'run1' : 'run2') : (step ? 'trot1' : 'trot2'));
+  if (onTheMove(c)) {
+    let k = Math.floor(gaitOf(c).step % 1 * 4);
+    if (ui.speed > FEW_FRAMES) k &= 2;
+    return art((fastGait(c) ? 'run' : 'trot') + (k + 1));
   }
   return art('stand');
 }
@@ -2784,6 +2978,14 @@ const RABBIT_POSES = {
     fore: { near: [-0.68, 0.6], far: [-0.6, 0.64] }, hind: { near: [0.52, 0.46, 0.8, 0.54], far: [0.48, 0.48, 0.76, 0.58] }, scut: [0.52, 0.1, 0.9] },
   run2: { ...RABBIT_SIT, chest: [-0.16, 0.36], hip: [0.12, 0.26], arch: 0.07, head: [-0.46, 0.16, -0.15], ear: 1.15,   // and bunched
     fore: { near: [0.0, 0.68], far: [0.06, 0.66] }, hind: { near: [0.06, 0.56, -0.3, 0.64], far: [0.12, 0.54, -0.24, 0.62] }, scut: [0.42, 0.12, 0.9] },
+  push: { ...RABBIT_SIT, chest: [-0.26, 0.28], hip: [0.2, 0.34], arch: 0.03, head: [-0.52, -0.02, 0.05], ear: 0.55,   // off the hind feet
+    fore: { near: [-0.38, 0.52], far: [-0.31, 0.54] }, hind: { near: [0.44, 0.58, 0.7, 0.71], far: [0.49, 0.57, 0.74, 0.7] }, scut: [0.44, 0.22, 0.5] },
+  land: { ...RABBIT_SIT, chest: [-0.24, 0.36], hip: [0.2, 0.24], arch: 0.05, head: [-0.5, 0.14, -0.15], ear: 0.6,   // down on the forefeet
+    fore: { near: [-0.46, 0.71], far: [-0.36, 0.7] }, hind: { near: [0.38, 0.46, 0.6, 0.52], far: [0.42, 0.46, 0.64, 0.53] }, scut: [0.46, 0.12, 0.5] },
+  rpush: { ...RABBIT_SIT, chest: [-0.3, 0.27], hip: [0.2, 0.32], arch: 0.02, head: [-0.6, 0.06, -0.12], ear: 1.15,
+    fore: { near: [-0.46, 0.46], far: [-0.4, 0.5] }, hind: { near: [0.48, 0.56, 0.78, 0.71], far: [0.53, 0.55, 0.82, 0.7] }, scut: [0.44, 0.16, 0.9] },
+  rland: { ...RABBIT_SIT, chest: [-0.28, 0.35], hip: [0.22, 0.2], arch: 0.04, head: [-0.58, 0.18, -0.25], ear: 1.15,
+    fore: { near: [-0.52, 0.71], far: [-0.4, 0.7] }, hind: { near: [0.42, 0.4, 0.66, 0.46], far: [0.46, 0.41, 0.7, 0.48] }, scut: [0.48, 0.08, 0.9] },
   graze: { ...RABBIT_SIT, chest: [-0.2, 0.46], hip: [0.24, 0.36], head: [-0.48, 0.44, -0.55], ear: 0.75 },
   alarm: { ...RABBIT_SIT, chest: [-0.12, 0.06], hip: [0.14, 0.4], rump: 0.28, head: [-0.24, -0.24, 0.08], ear: -0.08,   // sat up tall
     fore: { near: [-0.24, 0.26], far: [-0.18, 0.28] }, foreBend: -1, hind: { near: [0.38, 0.68, -0.04, 0.71], far: [0.44, 0.67, 0.02, 0.7] }, scut: [0.42, 0.5, 0], top: -0.4 },
@@ -2912,8 +3114,9 @@ function paintRabbit(g, size, U, n) {
     }) });
 }
 
-// Which painting, for what the rabbit is doing. On the move it hops in time with its bob (hopOf): stretched out in
-// the air, gathered as it lands; fleeing, flat out with its ears back.
+// Which painting, for what the rabbit is doing. On the move, where it is in its hop (HOP): down and gathered, then off
+// its hind feet, stretched out in the air and down on its forefeet; fleeing, the same flat out with its ears back.
+const RABBIT_GAIT = [['hop1', 'push', 'hop2', 'land'], ['run2', 'rpush', 'run1', 'rland']];
 function rabbitArt(c, now) {
   const look = coatLook(c) || COAT.wild, white = whiteStep(c), art = pose => rabbitArtOf(look, pose, white);
   if (c.sleeping) return art('sleep');
@@ -2922,8 +3125,9 @@ function rabbitArt(c, now) {
   if (c.mode === 'rest') return art('loaf');
   if (atHole(c)) return art('dig');
   if (!movedLately(c)) return art('sit');
-  const fast = c.mode === 'flee', up = Math.abs(Math.sin(now / (fast ? 55 : 120) + c.id));
-  return art(fast ? (up > 0.5 ? 'run1' : 'run2') : up > 0.35 ? 'hop2' : 'hop1');
+  const f = fastGait(c) ? 1 : 0, A = HOP.air[f], u = gaitOf(c).step % 1, v = u / A, poses = RABBIT_GAIT[f];
+  if (u >= A) return art(poses[0]);
+  return art(ui.speed > FEW_FRAMES ? poses[2] : poses[v < 0.25 ? 1 : v < 0.75 ? 2 : 3]);
 }
 
 const moundAt = (g, hole) => {
@@ -3078,27 +3282,53 @@ const BUBBLE_ICONS = [
 ];
 const BUBBLE_ART = new Map(BUBBLE_ICONS.map(([e], i) => [e, 'bubble:' + i]));
 
-function drawBubble(emoji, sx, sy, px, important) {
-  const r = Math.max(9, px * 0.4);                       // a bit big for the animal, so it reads
-  const bx = sx + px * 0.38, by = sy - px * 0.62 - r * 0.4;
+// When an animal starts doing something worth seeing (POPS: it spots a fox, runs, gives chase, falls for someone), a
+// little bubble with what it's thinking pops up over its head, stays a moment and fades. Nothing stays up, so nobody
+// is covered; what each is up to is in the label on hover and in the inspector. Only for those on screen, and only up
+// to POP_SPEED: quicker, moods change faster than they'd read.
+const POPS = new Set(['alarm', 'flee', 'chase', 'stalk', 'love', 'pounce']);
+const POP_MS = 1700, POP_IN = 160, POP_OUT = 450, POP_SPEED = 4;
+const pops = new WeakMap();          // { mode, emoji, at }: the mode it was last seen in, and its pop
+function drawPops(shown, now) {
+  for (const it of shown) {
+    const c = it.c;
+    if (LOOKS[c.species].quiet) continue;
+    let p = pops.get(c);
+    if (!p) { pops.set(c, { mode: c.mode, emoji: '', at: 0 }); continue; }
+    if (p.mode !== c.mode) {
+      p.mode = c.mode;
+      if (POPS.has(c.mode) && ui.speed > 0 && ui.speed <= POP_SPEED) { p.emoji = S.mood(world, c).emoji; p.at = now; }
+    }
+    const t = now - p.at;
+    if (t >= POP_MS || !p.emoji) continue;
+    const px = creaturePx(c), up = c.sp.flies ? liftOf(c, px, now) : hopOf(c, px, now);
+    const grow = t < POP_IN ? Math.sin(t / POP_IN * Math.PI * 0.75) / Math.sin(Math.PI * 0.75) : 1;   // out a touch too far, and back
+    ctx.globalAlpha = Math.min(1, (POP_MS - t) / POP_OUT);
+    drawBubble(p.emoji, it.sx, it.sy - up, px, grow);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawBubble(emoji, sx, sy, px, grow = 1) {
+  const r = Math.max(8, px * 0.28), k = r * grow;
+  const bx = sx + px * 0.3, by = sy - px * 0.7 - r * 0.6;
   const art = BUBBLE_ART.get(emoji);
   if (art) {
-    const want = r / BUBBLE_R, s = sprite(art, want);
-    if (!important) ctx.globalAlpha = 0.92;
-    ctx.drawImage(s.canvas, bx - BUBBLE_AT[0] * want - s.size / 2, by - BUBBLE_AT[1] * want - s.size / 2, s.size, s.size);
-    ctx.globalAlpha = 1;
+    const want = r / BUBBLE_R, s = sprite(art, want), size = s.size * grow;   // (painted at its full size, drawn smaller)
+    ctx.drawImage(s.canvas, bx - BUBBLE_AT[0] * want * grow - size / 2, by - BUBBLE_AT[1] * want * grow - size / 2, size, size);
     return;
   }
-  ctx.fillStyle = important ? '#fffaf0' : 'rgba(255, 250, 240, 0.9)';
+  ctx.fillStyle = '#fffaf0';
   ctx.strokeStyle = 'rgba(80, 60, 30, 0.25)';
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.arc(bx, by, r, 0, TAU);
-  ctx.moveTo(bx - r * 0.5, by + r * 0.75);
-  ctx.lineTo(bx - r * 0.9, by + r * 1.3);
-  ctx.lineTo(bx - r * 0.05, by + r * 0.95);
+  ctx.arc(bx, by, k, 0, TAU);
+  ctx.moveTo(bx - k * 0.5, by + k * 0.75);
+  ctx.lineTo(bx - k * 0.9, by + k * 1.3);
+  ctx.lineTo(bx - k * 0.05, by + k * 0.95);
   ctx.fill(); ctx.stroke();
-  drawEmoji(emoji, bx, by, r * 1.3, { center: true });
+  const e = sprite(emoji, r * 1.3, undefined, undefined, true), size = e.size * grow;
+  ctx.drawImage(e.canvas, bx - size / 2, by - size / 2, size, size);
 }
 
 function drawLabel(text, x, y, ring = false) {
@@ -3246,8 +3476,8 @@ function treeSway(d, now) {
 }
 
 // The trees follow real ones, loosely. Broadleaf 🌳: in autumn the green drains away and each
-// tree shows its kind's colour (the sim says which kind, plantTrees): gold (birch, willow), orange
-// (beech), red (maple) or russet (oak, hawthorn). Then the leaves drop and it stands bare, except the oaks, which hold on to their dry
+// tree shows its kind's colour (the sim says which kind, plantTrees): gold (birch), orange
+// (beech), red (maple), russet (oak, hawthorn), or a dull olive (alder). Then the leaves drop and it stands bare, except the oaks, which hold on to their dry
 // brown leaves all winter. In spring they leaf out lime green. Pines 🌲 stay green, but not
 // quite the same green: old inner needles yellow in autumn, the whole tree bronzes a little in
 // the cold, and new tips come in light at the end of spring. Snow settles on top of them all.
@@ -3256,7 +3486,7 @@ function treeSway(d, now) {
 // into leaf pink, a cloud of blossom that turns green and sheds petals, then cherries in early
 // summer and red leaves in autumn. No two broadleaf trees are quite the same green, and half of
 // all trees are drawn mirrored.
-const AUTUMN = { birch: [238, 192, 56], willow: [238, 192, 56], beech: [240, 130, 40], maple: [200, 50, 42], oak: [176, 100, 52], hawthorn: [176, 100, 52] };
+const AUTUMN = { birch: [238, 192, 56], alder: [112, 116, 50], beech: [240, 130, 40], maple: [200, 50, 42], oak: [176, 100, 52], hawthorn: [176, 100, 52] };
 const DRY = [160, 120, 80], SPRING = [156, 214, 84];
 const OLD_NEEDLES = [214, 180, 64], BRONZE = [128, 118, 62], CANDLES = [176, 226, 100];
 const GREEN = [88, 152, 60], APPLE_WHITE = [255, 240, 244], CHERRY_PINK = [255, 176, 206];
@@ -3344,13 +3574,38 @@ function treeLook(d, ck) {
   return { look, fall, bare, drop, rgb, h, ground, flip: info.flip };
 }
 
+// Windfalls lying in the grass, for the sprite cache: 'fall:0' an apple, 'fall:1' an acorn (or a beechnut).
+function paintFall(g, size, U, n) {
+  g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
+  g.lineCap = g.lineJoin = 'round';
+  softSpot(g, 0.05, 0.62, 0.8, 0.22, '30, 40, 14', 0.45);
+  if (n === 0) {
+    g.scale(1.12, 1.12);
+    softIn(g, [196, 44, 36], -0.6, 0.65, () => { discAt(g, -0.22, 0.05, 0.56); discAt(g, 0.22, 0.05, 0.56); }, 1.25, 0.62);
+    furGlow(g, [255, 200, 170], 0.55, -0.28, -0.2, 0.2, 0.14, -0.4);
+    strokeIn(g, '#5a3a1c', 0.1, () => { g.moveTo(0, -0.42); g.quadraticCurveTo(0.04, -0.62, 0.14, -0.72); });
+    fillIn(g, '#6aa84a', () => ovalAt(g, 0.36, -0.62, 0.24, 0.1, -0.5));
+  } else {
+    g.translate(0, 0.1); g.scale(1.4, 1.4);
+    softIn(g, [176, 120, 54], -0.3, 0.7, () => ovalAt(g, 0, 0.18, 0.4, 0.5), 1.2, 0.65);
+    furGlow(g, [255, 220, 160], 0.5, -0.12, 0, 0.12, 0.2);
+    softIn(g, [112, 84, 48], -0.6, -0.05, () => {                                  // the cup
+      g.moveTo(-0.5, -0.12); g.quadraticCurveTo(-0.48, -0.6, 0, -0.6); g.quadraticCurveTo(0.48, -0.6, 0.5, -0.12); g.quadraticCurveTo(0, 0, -0.5, -0.12);
+    }, 1.2, 0.7);
+    strokeIn(g, 'rgba(60,40,20,0.5)', 0.04, () => { for (const x of [-0.3, -0.1, 0.1, 0.3]) { g.moveTo(x, -0.5); g.lineTo(x * 1.2, -0.14); } });
+    strokeIn(g, '#5a3a1c', 0.08, () => { g.moveTo(0, -0.6); g.lineTo(0.04, -0.76); });
+  }
+}
+const FALL_ART = { '🍎': 'fall:0', '🌰': 'fall:1' };
+
 // Windfalls and petals lying under a tree: those behind the trunk go down first, then the rest.
 function drawUnderTree(bits, h, sx, sy, px, front) {
+  const art = FALL_ART[bits.e] || bits.e;
   for (let k = 0; k < bits.n; k++) {
     const a = hash2(h, k, 21) * TAU, r = 0.2 + 0.3 * hash2(h, k, 22), y = sy + Math.sin(a) * r * px * 0.35;
     if ((y >= sy) !== front) continue;
     ctx.save(); ctx.translate(sx + Math.cos(a) * r * px, y); ctx.rotate((hash2(h, k, 23) - 0.5) * 1.5);
-    drawEmoji(bits.e, 0, 0, px * bits.size);
+    drawEmoji(art, 0, 0, px * bits.size);
     ctx.restore();
   }
 }
@@ -3492,7 +3747,7 @@ const TREE_BYTES = 48e6;                 // the paintings kept, in memory
 // height: oak, beech and pine big, birch and maple a little less, apple smaller, a cherry a big pink
 // cloud in spring, hawthorn a thicket. Kept small enough that you see between trees. The hive oak is
 // an old giant already (HIVE_TREE). Emoji trees keep their size.
-const TREE_SCALE = { oak: 1.41, hive: 1, beech: 1.36, maple: 1.14, birch: 0.92, pine: 1.01, willow: 1.03, apple: 1.28, cherry: 1.72, hawthorn: 1.1, log: 1.2, stump: 1 };
+const TREE_SCALE = { oak: 1.41, hive: 1, beech: 1.36, maple: 1.14, birch: 0.92, alder: 1.05, pine: 1.01, apple: 1.28, cherry: 1.72, hawthorn: 1.1, log: 1.2, stump: 1 };
 const treePx = d => d.size * cam.zoom * (d.tree && treeWorker ? TREE_SCALE[d.fallen ? 'log' : d.stump ? 'stump' : treeKind(d)] || 1 : 1);
 const LOG_BARK = { beech: 'grey', birch: 'birch' };      // whose bark a log or a stump has (trees.js); the rest are brown
 const YOUNG = new Set(['seedling', 'sapling', 'young']);
@@ -3502,7 +3757,7 @@ const bareLook = (kind, look) => look === 'dead' || look === 'burnt' || (kind !=
 const HIVE_DOOR = [1, -38];              // the hive's sill in the hive oak's painting, from its foot (trees.js hive)
 // Paintings go by number, so a frame builds no names: the tree (kind, shape, tone, form), its look, the size (its
 // place in TREE_TIERS) and the snow, packed together.
-const ART_KINDS = { oak: 0, hive: 1, beech: 2, maple: 3, birch: 4, pine: 5, willow: 6, apple: 7, cherry: 8, hawthorn: 9, log: 10, stump: 11 };
+const ART_KINDS = { oak: 0, hive: 1, beech: 2, maple: 3, birch: 4, pine: 5, alder: 6, apple: 7, cherry: 8, hawthorn: 9, log: 10, stump: 11 };
 const ART_LOOKS = { summer: 0, spring: 1, bud: 2, autumn: 3, thin: 4, winter: 5, bare: 6, dead: 7, burnt: 8 }, ART_LOOK_N = 9;
 const ART_TONES = { 0: 0, 1: 1, 2: 2, 3: 3, bark: 4, grey: 5, birch: 6 };
 const treeKey = (kind, shape, tone, form) => ((ART_KINDS[kind] * 4 + shape) * 8 + ART_TONES[tone]) * 2 + form;
@@ -3510,7 +3765,7 @@ const treeKey = (kind, shape, tone, form) => ((ART_KINDS[kind] * 4 + shape) * 8 
 // look, with its snow, painted ahead and kept for good (outside TREE_BYTES: a few MB), so there's always one.
 const treeArt = new Map(), treeAsked = new Map(), treeSent = new Map(), treeAny = new Map(), treeKin = new Map();
 const BROAD = ['winter', 'bud', 'spring', 'summer', 'autumn', 'thin', 'dead'], OAK = ['bare', 'winter', 'bud', 'spring', 'summer', 'autumn', 'dead'];
-const KIN_LOOKS = { oak: OAK, hive: OAK, beech: BROAD, maple: BROAD, birch: BROAD, apple: BROAD, cherry: BROAD, hawthorn: BROAD,
+const KIN_LOOKS = { oak: OAK, hive: OAK, beech: BROAD, maple: BROAD, birch: BROAD, alder: BROAD, apple: BROAD, cherry: BROAD, hawthorn: BROAD,
   pine: ['summer', 'spring', 'dead'], log: ['summer'], stump: ['summer'] };   // the looks each kind goes through (treeStage)
 const KIN_TIER = 0.25;
 const kinWanted = [];                    // stand-ins still to paint, one wanted on screen first
@@ -3679,7 +3934,7 @@ function putPainting(p, f, alpha, snow, ox, oy) {
   if (snow && p.snow) { ctx.globalAlpha = alpha * snow; ctx.drawImage(p.snow, x, y, w, h); }
   ctx.globalAlpha = 1;
 }
-const PAINTERS = { fox: paintFox, rabbit: paintRabbit, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, vole: paintVole, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody };
+const PAINTERS = { fox: paintFox, rabbit: paintRabbit, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, vole: paintVole, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody, bee: paintBee, fall: paintFall, tuft: paintTuftSprite };
 function drawDecor(d, sx, sy, now, ck, clipLeaves) {
   const z = cam.zoom, px = d.tree ? treePx(d) : d.size * z;
   if (d.emoji === '🪨') { drawRock(d, sx, sy); return; }
@@ -4978,11 +5233,16 @@ function drawDashes(now, z) {
   unfade();
 }
 
+// The twitching tuft on its own, square, for the sprite cache ('tuft:0'), its foot a little below the middle.
+function paintTuftSprite(g, size, U) {
+  g.setTransform(U, 0, 0, U, size / 2, size / 2 + 0.36 * U);
+  tuftAt(g, k => hash2(5, 29, k), 9, 0.7, 0.5, GRASS[0], 0.05);
+}
 // The rustle a fox is listening to or leaping at, or an owl dropping on: the grass there twitching, and the vole looking up.
 function drawRustle(c, to, sx, sy, z) {
   if (world.snow >= 0.3 || z < 6) return;              // (under the snow, nothing shows)
   const t = world.tick + acc, px = 8 + z;
-  const tuft = sprite('🌿', px * RUSTLE_SIZE), fit = Math.max(0, Math.sin(t * 0.4 + c.id));
+  const tuft = sprite('tuft:0', px * RUSTLE_SIZE), fit = Math.max(0, Math.sin(t * 0.4 + c.id));
   for (const side of [-1, 1]) {
     ctx.save();
     ctx.translate(sx + side * tuft.size * 0.3, sy);
@@ -6191,7 +6451,7 @@ const WEB_NODES = {
   owl: { x: 196, y: 78, art: '🦉', name: 'Owls', color: '#9a6a3e' },
   otter: { x: 282, y: 78, art: 'otter:3', name: 'Otters', color: '#7c5232' },
   remains: { x: 368, y: 78, art: 'body:1', name: 'Remains', color: '#857565' },
-  bee: { x: 36, y: 200, art: '🐝', name: 'Bees', color: '#d9a21b' },
+  bee: { x: 36, y: 200, art: 'bee:0', name: 'Bees', color: '#d9a21b' },
   rabbit: { x: 108, y: 200, art: rabbitArtOf(COAT.wild, 'sit'), name: 'Rabbits', color: '#a07850' },
   vole: { x: 180, y: 200, art: 'vole:0', name: 'Voles', color: '#8a6a4e' },
   frog: { x: 252, y: 200, art: 'frog:0', name: 'Frogs', color: '#6f8f3e' },
@@ -6665,7 +6925,7 @@ function decorAt(sx, sy) {
   return best;
 }
 
-const TREE_NAMES = { oak: 'Oak', beech: 'Beech', maple: 'Maple', birch: 'Birch', willow: 'Willow', hawthorn: 'Hawthorn',
+const TREE_NAMES = { oak: 'Oak', beech: 'Beech', maple: 'Maple', birch: 'Birch', alder: 'Alder', hawthorn: 'Hawthorn',
   apple: 'Apple tree', cherry: 'Cherry tree', pine: 'Pine' };
 const treeName = d => d.kind === 'beech' && d.tone === 3 ? 'Copper beech' : TREE_NAMES[treeInfo(d).kind];
 // What the inspector and the news call a tree: its name if it's an old giant with one (sim.js oldName), else what it is now.
@@ -6690,10 +6950,10 @@ function treeSeason(d) {
   const s = S.seasonOf(world.tick), info = treeInfo(d), k = info.kind, oak = k === 'oak' || !HAS_BARE;
   if (k === 'pine') return s === 3 ? '🌲 Evergreen, dark against the snow' : '🌲 Evergreen';
   if (s === 0) return info.fruit ? `🌸 In ${info.fruit} blossom` : k === 'hawthorn' ? '🤍 White with may blossom' : '🌱 Coming into leaf';
-  if (s === 1) return info.fruit === 'apple' ? '🍏 Apples ripening' : info.fruit === 'cherry' ? '🍒 Hung with cherries' : k === 'willow' ? '🌿 Trailing its long green curtains' : '🌳 In full leaf';
-  if (s === 2) return info.fruit === 'apple' ? '🍎 Dropping ripe apples' : k === 'hawthorn' ? '🔴 Red with haws' : oak ? '🍂 Leaves turned brown' : '🍂 Leaves turning';
+  if (s === 1) return info.fruit === 'apple' ? '🍏 Apples ripening' : info.fruit === 'cherry' ? '🍒 Hung with cherries' : '🌳 In full leaf';
+  if (s === 2) return info.fruit === 'apple' ? '🍎 Dropping ripe apples' : k === 'hawthorn' ? '🔴 Red with haws' : k === 'alder' ? '🌳 Still green, dropping its leaves' : oak ? '🍂 Leaves turned brown' : '🍂 Leaves turning';
   if (k === 'hawthorn') return '🔴 Bare, a few red haws left';
-  if (k === 'willow') return '🌾 Bare golden withies';
+  if (k === 'alder') return '🟤 Bare, hung with catkins and little cones';
   return oak ? '🍂 Holding on to its dry leaves' : '🪾 Bare for the winter';    // (oak when there's no 🪾)
 }
 
@@ -7542,12 +7802,13 @@ function click(sx, sy) {
 // The Plant tool (or 🌳 in the ring) opens a ring of kinds where you clicked: the kind is the plan. It comes up
 // as a seedling (sim.js plantTree) and lives by the wild ones' rules; the news tells how it does (plantlost,
 // plantgrew, plantseeds), and the inspector remembers you planted it.
-const PLANT_KINDS = [['oak', '🌰', S.OWLS ? 'Oak: an owl’s hollow one day' : 'Oak: a hive’s hollow one day'], ['birch', '🌿', 'Birch: quick to grow'], ['hawthorn', '🌹', 'Hawthorn: guards its neighbours'],
+const PLANT_KINDS = [['oak', '🌰', S.OWLS ? 'Oak: an owl’s hollow one day' : 'Oak: a hive’s hollow one day'], ['birch', '🌿', 'Birch: quick to grow'], ['alder', '💧', 'Alder: lines the water'], ['hawthorn', '🌹', 'Hawthorn: guards its neighbours'],
   ['apple', '🍎', 'Apple: windfalls in autumn'], ['cherry', '🍒', 'Cherry: blossom for the bees'], ['beech', '🍂', 'Beech: bears the shade'],
   ['maple', '🍁', 'Maple: red in autumn'], ['pine', '🌲', 'Pine: green all winter']];
 const PLANT_SAY = {
   oak: 'Oaks are slow: in twenty years or so it could hold ' + (S.OWLS ? 'an owl, or a hive.' : 'a hive in its hollow.'),
   birch: 'Birches grow fast and don’t live long.',
+  alder: 'Alders love wet feet: by the water its seed floats off and comes up along the banks downstream.',
   hawthorn: 'Once it’s grown, its thorns keep the rabbits off the seedlings round it.',
   apple: 'In a few years it drops apples in autumn, and the rabbits come for them.',
   cherry: 'Its blossom feeds the bees in early spring.',
@@ -8794,6 +9055,7 @@ function frame(now) {
     const n = Math.min(Math.floor(acc), 2000), t0 = performance.now();
     acc -= n;
     for (let i = 0; i < n; i++) {
+      if (ui.speed <= SMOOTH_SPEED) keepLast();
       S.step(world);
       if (world.events.length) flushEvents();
       if ((i & 7) === 7 && performance.now() - t0 > SIM_MS) break;
@@ -8812,9 +9074,9 @@ function frame(now) {
   }
   if (held) heldFrame(dt);
   if (sel && ui.follow) {
-    const k = 1 - Math.pow(0.001, dt);
-    const gx = sheet ? sel.x + (sheet.right - sheet.left) / 2 / cam.zoom : sel.x;
-    const gy = sheet ? sel.y + (sheet.bottom - sheet.top) / 2 / cam.zoom : sel.y;
+    const k = 1 - Math.pow(0.001, dt), { x, y } = drawnAt(sel);
+    const gx = sheet ? x + (sheet.right - sheet.left) / 2 / cam.zoom : x;
+    const gy = sheet ? y + (sheet.bottom - sheet.top) / 2 / cam.zoom : y;
     cam.x += (gx - cam.x) * k; cam.y += (gy - cam.y) * k;
   }
   if (idle.on) idleFrame(now, dt);
