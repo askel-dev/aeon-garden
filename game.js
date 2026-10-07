@@ -193,20 +193,21 @@ function dataURL(img) {                     // for an <img>: an ImageBitmap goes
 // Past small sizes a sprite is painted in steps of about 6% and stretched to the size asked for,
 // so zooming reuses a few sizes instead of painting (and recolouring) every tree at every pixel.
 const spriteStep = px => px < 16 ? Math.round(px) : Math.round(2 ** (Math.round(Math.log2(px) * 12) / 12));
-// A fox changes pose as it goes, so each size it's drawn at takes a dozen paintings, and cubs grow through sizes all
-// the time: its sprites come in steps of about 19%, the size above, drawn a little smaller.
-const poseStep = px => Math.ceil(2 ** (Math.ceil(Math.log2(px) * 4) / 4));
-function sprite(emoji, want, tint, leaf, center, coat) {
+// A fox or a rabbit changes pose as it goes, so each size it's drawn at takes a dozen paintings, and the young grow
+// through sizes all the time: their sprites come in steps of about 19%, the size above, drawn a little smaller. Below
+// the size they're painted at (shrunk) they're tiny and many, so one size an octave does, drawn up to half as big.
+const poseStep = px => px < FUR_PAINTED / dpr ? 2 ** Math.ceil(Math.log2(px)) : Math.ceil(2 ** (Math.ceil(Math.log2(px) * 4) / 4));
+const posed = art => art.startsWith('fox:') || art.startsWith('rabbit:');
+function sprite(emoji, want, tint, leaf, center) {
   want = Math.max(4, want);
-  const px = emoji.startsWith('fox:') ? poseStep(want) : spriteStep(want), s = paintedSprite(emoji, px, tint, leaf, center, coat);
+  const px = posed(emoji) ? poseStep(want) : spriteStep(want), s = paintedSprite(emoji, px, tint, leaf, center);
   return want === px ? s : { canvas: s.canvas, size: s.size * want / px };
 }
-const lookKey = (emoji, tint, leaf, center, coat) =>
-  emoji + '|' + (tint || '') + '|' + (leaf ? leaf.key : '') + (center ? '|c' : '') + (coat ? '|' + coat.key : '');
+const lookKey = (emoji, tint, leaf, center) => emoji + '|' + (tint || '') + '|' + (leaf ? leaf.key : '') + (center ? '|c' : '');
 // Whether drawEmoji would find this one painted already.
 const spriteReady = (emoji, want, leaf) => spriteCache.has(spriteStep(Math.max(4, want)) + '|' + lookKey(emoji, '', leaf));
-function paintedSprite(emoji, px, tint, leaf, center, coat) {
-  const look = lookKey(emoji, tint, leaf, center, coat);
+function paintedSprite(emoji, px, tint, leaf, center) {
+  const look = lookKey(emoji, tint, leaf, center);
   const key = px + '|' + look;
   let s = spriteCache.get(key);
   if (s) { s.used = spriteFrame; return s; }
@@ -224,7 +225,7 @@ function paintedSprite(emoji, px, tint, leaf, center, coat) {
   // Repainting and centring read the pixels back: from a canvas on the GPU that waits for it, 5-30 ms a sprite.
   // Painted things ('reeds:0', 'lily:2', 'bubble:5': PAINTERS) are painted in their colours, never read back.
   const colon = emoji.indexOf(':'), art = colon > 0 && PAINTERS[emoji.slice(0, colon)];
-  const g = c.getContext('2d', !art && (leaf || coat || center) && { willReadFrequently: true });
+  const g = c.getContext('2d', !art && (leaf || center) && { willReadFrequently: true });
   if (art) art(g, size, px * dpr, +emoji.slice(colon + 1), leaf);
   else {
     g.textAlign = 'center'; g.textBaseline = 'middle';
@@ -250,7 +251,6 @@ function paintedSprite(emoji, px, tint, leaf, center, coat) {
       g.fillRect(0, 0, size, size);
     }
     if (leaf) restyleTree(g, size, leaf);
-    if (coat) recolourCoat(g, size, coat, px * dpr);
   }
   s = { canvas: c, size: size / dpr, px, look, used: spriteFrame };
   spriteCache.set(key, s); latestLook.set(look, s);
@@ -397,7 +397,7 @@ function hangFruit(g, size, look) {
 }
 
 function drawEmoji(emoji, x, y, px, opts = {}) {
-  const s = sprite(emoji, px, opts.tint, opts.leaf, opts.center, opts.coat);
+  const s = sprite(emoji, px, opts.tint, opts.leaf, opts.center);
   if (!opts.flip && !opts.squash && opts.alpha === undefined) {
     ctx.drawImage(s.canvas, x - s.size / 2, y - s.size / 2, s.size, s.size);
     return;
@@ -410,46 +410,16 @@ function drawEmoji(emoji, x, y, px, opts = {}) {
   ctx.restore();
 }
 
-// Rabbit coats (the genes are in the sim). Wild coats are agouti: each hair banded, so speckled.
+// Rabbit coats (the genes are in the sim). Wild coats are agouti: each hair banded, so speckled. n: its paintings (paintRabbit).
 const COAT = {
-  wild: { key: 'wild', rgb: S.COATS.wild.rgb, speckle: 0.35, swatch: '#96724f' },
-  black: { key: 'black', rgb: S.COATS.black.rgb, speckle: 0, swatch: '#3e3838' },
-  sand: { key: 'sand', rgb: S.COATS.sand.rgb, speckle: 0.3, swatch: '#d4b280' },
-  blue: { key: 'blue', rgb: S.COATS.blue.rgb, speckle: 0, swatch: '#808696' },
+  wild: { key: 'wild', rgb: S.COATS.wild.rgb, speckle: 0.35, swatch: '#96724f', n: 0 },
+  black: { key: 'black', rgb: S.COATS.black.rgb, speckle: 0, swatch: '#3e3838', n: 10 },
+  sand: { key: 'sand', rgb: S.COATS.sand.rgb, speckle: 0.3, swatch: '#d4b280', n: 5 },
+  blue: { key: 'blue', rgb: S.COATS.blue.rgb, speckle: 0, swatch: '#808696', n: 15 },
 };
-// In winter a coat pales toward white. A few steps of white keep the sprite cache small.
-const moulted = new Map();
-function coatLook(c) {
-  if (!c.genes.coat) return undefined;
-  const k = S.coatOf(c.genes), q = Math.round(S.whiteness(world, c) * 4) / 4, base = COAT[k];
-  if (!q) return base;
-  let look = moulted.get(k + q);
-  if (!look) moulted.set(k + q, look = { key: k + q, rgb: base.rgb.map((v, i) => lerp(v, S.WINTER_COAT[i], q)),
-    speckle: base.speckle * (1 - q), swatch: base.swatch });
-  return look;
-}
-
-// The rabbit emoji is a white albino. Its fur takes the coat colour but keeps its light and
-// shadow; the pink of the ears stays, and the red eye turns dark.
-// The speckles are laid out on the glyph itself (from its centre, in font sizes), so they
-// stay in place on the body at every zoom.
-const SPECKS = 30;              // speckles across one font size
-function recolourCoat(g, size, coat, em) {
-  const img = g.getImageData(0, 0, size, size), d = img.data, cell = em / SPECKS;
-  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-    const i = (y * size + x) * 4;
-    if (!d[i + 3]) continue;
-    const r = d[i], gr = d[i + 1], b = d[i + 2];
-    const hi = Math.max(r, gr, b), sat = (hi - Math.min(r, gr, b)) / 255, lum = (r + gr + b) / 765;
-    if (r > gr + 70 && lum < 0.45) { d[i] = 44; d[i + 1] = 32; d[i + 2] = 28; continue; }   // the eye
-    const fur = clamp(1 - (sat - 0.08) * 6, 0, 1);
-    if (!fur) continue;
-    const speck = 1 + coat.speckle * (hash2(Math.floor((x - size / 2) / cell), Math.floor((y - size / 2) / cell), 7) - 0.5);
-    const shade = (1 + (lum - 0.82) * 1.6) * speck;
-    for (let k = 0; k < 3; k++) d[i + k] = lerp(d[i + k], Math.min(255, coat.rgb[k] * shade), fur);
-  }
-  g.putImageData(img, 0, 0);
-}
+const coatLook = c => c.genes.coat ? COAT[S.coatOf(c.genes)] : undefined;
+// In winter a coat pales toward white, in a few steps (0 to 4) to keep the sprite cache small.
+const whiteStep = c => Math.round(S.whiteness(world, c) * 4);
 
 // Fox fur: one sliding shade that families share. The grey is warm, so the shades between stay fox-coloured.
 const FOX_FUR = [[245, 150, 60], [214, 92, 42], [176, 98, 62], [186, 176, 162], [250, 248, 244]];
@@ -471,18 +441,14 @@ function coatLine(c) {
     (v < 1.05 ? ' · 🫥 blends in here' : v > 1.3 ? ' · 👁️ stands out here' : '');
 }
 
-// A coloured rabbit for the inspector: the recoloured sprite, drawn once per coat.
+// The animal for the inspector, painted as in the meadow (the crow emoji splits on older systems), drawn once per look.
 const portraits = new Map();
 function portraitHTML(c) {
-  const art = c.alive && (c.species === 'fox' ? foxArtOf(c.genes.fur, 'stand') : { crow: CROW_ARTS[0], otter: OTTER_ARTS[3] }[c.species]);
-  if (art) {                                               // painted, as in the meadow (the crow emoji splits on older systems)
-    if (!portraits.has(art)) portraits.set(art, dataURL(sprite(art, 38).canvas));
-    return `<img src="${portraits.get(art)}" alt="${c.sp.emoji}">`;
-  }
-  if (!c.alive || !c.genes.coat) return c.alive ? c.sp.emoji : '👻';
-  const look = coatLook(c);
-  if (!portraits.has(look.key)) portraits.set(look.key, dataURL(sprite(c.sp.emoji, 38, undefined, null, true, look).canvas));
-  return `<img src="${portraits.get(look.key)}" alt="${c.sp.emoji}">`;
+  const art = c.alive && (c.species === 'fox' ? foxArtOf(c.genes.fur, 'stand') : c.species === 'rabbit' ? rabbitArtOf(coatLook(c), 'sit', whiteStep(c))
+    : { crow: CROW_ARTS[0], otter: OTTER_ARTS[3] }[c.species]);
+  if (!art) return c.alive ? c.sp.emoji : '👻';
+  if (!portraits.has(art)) portraits.set(art, dataURL(sprite(art, 38).canvas));
+  return `<img src="${portraits.get(art)}" alt="${c.sp.emoji}">`;
 }
 
 // ------------------------------------------------------------------ terrain
@@ -1467,7 +1433,7 @@ function hopOf(c, px, now) {
   if (ui.speed <= 0) return 0;
   if (atHole(c)) return Math.abs(Math.sin(now / 70 + c.id)) * px * 0.03;
   const fast = c.mode === 'flee' || c.mode === 'chase';
-  return MOVING.has(c.mode) || (c.mode === 'mouse' && c.target) ? Math.abs(Math.sin(now / (fast ? 55 : 120) + c.id)) * px * (fast ? 0.16 : 0.1) : 0;
+  return (MOVING.has(c.mode) || (c.mode === 'mouse' && c.target)) && movedLately(c) ? Math.abs(Math.sin(now / (fast ? 55 : 120) + c.id)) * px * (fast ? 0.16 : 0.1) : 0;
 }
 
 // Digging, at its side of the hole (see dig in sim.js).
@@ -1500,7 +1466,7 @@ function drawCreature(c, sx, sy, now) {
     const line = sy + px * 0.3, rip = 1 + 0.12 * Math.sin(now / 260 + c.id);
     ctx.save();
     ctx.beginPath(); ctx.rect(sx - px, line - px * 2, px * 2, px * 2); ctx.clip();
-    drawEmoji(c.species === 'fox' ? foxArt(c, px) : c.sp.emoji, sx, sy + px * 0.1, px, { coat: coatLook(c), flip: flipOf(c) });
+    drawEmoji(walkerArt(c, px, now), sx, sy + px * 0.1, px, { flip: flipOf(c) });
     ctx.restore();
     ctx.strokeStyle = 'rgba(240, 250, 255, 0.7)';
     ctx.lineWidth = Math.max(1, px * 0.05);
@@ -1511,13 +1477,11 @@ function drawCreature(c, sx, sy, now) {
   // Standing still, everyone breathes: slow and deep asleep, quick and shallow awake.
   const breathe = !hop && ui.speed > 0
     ? Math.sin(now / (c.sleeping ? 650 : 330) + c.id) * (c.sleeping ? 0.035 : 0.02) : 0;
-  const squash = (c.sleeping ? c.species === 'crow' || c.species === 'fox' ? 1 : 0.82 : c.sick ? 0.9 : 1) + breathe;   // a sick one sits hunched (a crow's and a fox's sleeping paintings are curled up already)
+  const squash = (c.sleeping ? c.species === 'owl' ? 0.82 : 1 : c.sick ? 0.9 : 1) + breathe;   // a sick one sits hunched (the others' sleeping paintings are curled up already)
   const y = sy - hop + px * 0.4 * (1 - squash);
   if (c.species === 'crow' && c.sleeping && crowSeat(c)) sx += treeSway(seat.tree, now) * hop;   // up a tree, it sways with it
   if (c.mode === 'dance') drawDance(c, sx, y, px);
-  drawEmoji(c.species === 'crow' ? crowArt(c, hop, px, now) : c.species === 'fox' ? foxArt(c, px) : c.sp.emoji, sx, y, px, {   // feet stay on the ground
-    coat: coatLook(c), flip: flipOf(c), squash,
-  });
+  drawEmoji(c.species === 'crow' ? crowArt(c, hop, px, now) : walkerArt(c, px, now), sx, y, px, { flip: flipOf(c), squash });   // feet stay on the ground
   if (c.mode === 'gulp' && (c.species === 'fox' || c.species === 'owl' && c.prey !== 'rabbit')) drawCatch(c, sx, y, px);
   if (c.load && c.species === 'bee') drawBaskets(c, sx, y, px);
   if (c.mode === 'sip') drawSipping(c, sx, sy, px, now);
@@ -2665,28 +2629,52 @@ function foxFade(g, op, [x0, y0, x1, y1]) {
 }
 
 // Painting a fox takes a few times longer than the emoji did, and a dozen poses, cubs growing and zooming all ask
-// for new sizes: so it's painted only at doublings of its size (from FOX_PAINTED up), and each size between is the
-// painting the next size up, shrunk.
-const FOX_PAINTED = 64;
+// for new sizes: so a painted animal (a fox, a rabbit) is painted only at doublings of its size (from FUR_PAINTED
+// pixels up, so a phone's sharp screen doesn't paint three times over), and each size between is the painting the
+// next size up, shrunk. True if it was.
+const FUR_PAINTED = 64;
+function shrunk(g, size, U, art) {
+  const px = U / dpr, painted = 2 ** Math.ceil(Math.max(Math.log2(FUR_PAINTED / dpr), Math.log2(px) - 1e-6));   // (a power of two, as poseStep keeps it)
+  if (px >= painted - 0.5) return false;
+  const m = sprite(art, painted);
+  g.imageSmoothingQuality = 'high';                                             // (once, not every frame)
+  g.drawImage(m.canvas, 0, 0, size, size);
+  return true;
+}
+const FOX_GRAIN = [['rgba(60,25,10,0.035)', 1, 6], ['rgba(255,240,215,0.035)', 1, 6]];
 function paintFox(g, size, U, n) {
-  const px = U / dpr, painted = Math.max(FOX_PAINTED, 2 ** Math.ceil(Math.log2(px) - 1e-6));
-  if (px < painted - 0.5) {
-    const m = sprite('fox:' + n, painted);
-    g.imageSmoothingQuality = 'high';                                           // (once, not every frame)
-    g.drawImage(m.canvas, 0, 0, size, size);
-    return;
-  }
-  const P = FOX_POSES[FOX_POSE_NAMES[n & 15]] || FOX_STAND, coat = foxRGB((n >> 4) / 10);
-  const m = new DOMMatrix([U / 2, 0, 0, U / 2, size / 2, size / 2]), { parts, inHead } = foxParts(P);
+  if (shrunk(g, size, U, 'fox:' + n)) return;
+  const P = FOX_POSES[FOX_POSE_NAMES[n & 15]] || FOX_STAND, coat = foxRGB((n >> 4) / 10), { parts, inHead } = foxParts(P);
+  paintFur(g, size, U, parts, { coat, top: P.sleep ? 0.26 : Math.min(P.chest[1], P.hip[1]) - 0.2, shade: FOX_SHADE, light: FOX_LIGHT, grain: FOX_GRAIN,
+    face: inHead(g => {                                                         // the face, crisp
+      fillIn(g, '#2a211d', () => discAt(g, -0.34, 0.045, 0.03));
+      fillIn(g, 'rgba(255,255,255,0.35)', () => ovalAt(g, -0.345, 0.033, 0.012, 0.007));
+      if (P.eye === 'shut') strokeIn(g, '#3a2a22', 0.03, () => { g.moveTo(-0.15, -0.02); g.quadraticCurveTo(-0.1, 0.015, -0.04, -0.015); });
+      else {
+        fillIn(g, '#241a16', () => ovalAt(g, -0.1, -0.025, 0.036, 0.03, -0.2));
+        fillIn(g, 'rgba(255,255,255,0.9)', () => discAt(g, -0.112, -0.038, 0.011));
+      }
+      strokeIn(g, rockRGB(tone(coat, 0.55), 0.6), 0.016, () => { g.moveTo(-0.32, 0.075); g.quadraticCurveTo(-0.25, 0.085, -0.19, 0.07); });   // the mouth
+    }) });
+}
+
+// Paints an animal's parts (foxParts, rabbitParts) as one animal. look: its coat, where the fur's light starts (top),
+// the colours of its shade and light, its grain ([ink, how thick, stroke length]), its face, painted crisp at the end,
+// and flat: if given, the parts behind are only that much in the shade, with no form of their own. Each pass through
+// the scratch layer (a part's shadow, its shade, its light) is most of what a painting costs (it's flushed), so a part
+// can be joined to the next one: the two get their form as one shape.
+function paintFur(g, size, U, parts, look) {
+  const k = look.scale || 1, m = new DOMMatrix([U / 2 * k, 0, 0, U / 2 * k, size / 2, size / 2 + U / 2 * 0.72 * (1 - k)]), { coat, shade, light } = look;
   const L = foxLayer(0, size, m), T = foxLayer(1, size, m);
   const onto = (from, to) => { to.save(); to.setTransform(1, 0, 0, 1, 0, 0); to.drawImage(from.canvas, 0, 0); to.restore(); };
   const fresh = () => { T.setTransform(1, 0, 0, 1, 0, 0); T.globalCompositeOperation = 'source-over'; T.clearRect(0, 0, size, size); T.setTransform(m); };
-  const fur = L.createLinearGradient(0, P.sleep ? 0.26 : Math.min(P.chest[1], P.hip[1]) - 0.2, 0, 0.74);   // one shading, over the whole fox
+  const fur = L.createLinearGradient(0, look.top, 0, 0.74);                     // one shading, over the whole animal
   fur.addColorStop(0, rockRGB(tone(coat, 1.16, 12))); fur.addColorStop(0.5, rockRGB(coat)); fur.addColorStop(1, rockRGB(tone(coat, 0.72)));
+  let joined = null;                                                            // parts waiting for the next one's form
   for (const p of parts) {
     if (p.casts) {                                                              // its soft shadow on what's behind
       fresh();
-      softFill(T, FOX_SHADE, 0.32, 0.07, p.path, 0.025, 0.02);
+      softFill(T, shade, 0.32, 0.07, p.path, 0.025, 0.02);
       if (p.leg !== undefined) foxFade(T, 'destination-out', [0, p.leg + 0.12, 0, p.leg - 0.02]);   // a leg's only below the body: above, it rings the leg's top
       if (p.fade) foxFade(T, 'destination-in', p.fade);
       L.save(); L.globalCompositeOperation = 'source-atop'; onto(T, L); L.restore();
@@ -2694,42 +2682,37 @@ function paintFox(g, size, U, n) {
     const D = p.fade ? foxLayer(2, size, m) : L;                                 // one that's faded in is painted apart first
     D.fillStyle = fur; D.beginPath(); p.path(D); D.fill();
     D.save(); D.beginPath(); p.path(D); D.clip();
-    for (const [rgb, a, b, path] of p.marks || []) { softFill(D, rgb, a, b * 0.5, path); softFill(D, rgb, a, b * 0.3, path); }   // twice: solid, soft only at the rim
+    for (const [rgb, a, b, path] of p.marks || []) softFill(D, rgb, 1 - (1 - a) ** 2, b * 0.35, path);   // solid, soft only at the rim
     D.restore();
-    if (!p.plain) {                                                             // its form, inside its outline: shade along the underside...
+    if (p.far && look.flat) { D.fillStyle = rockRGB(shade, look.flat); D.beginPath(); p.path(D); D.fill(); }
+    else if (p.joined) { const before = joined; joined = before ? g => { before(g); p.path(g); } : p.path; }
+    else if (!p.plain) {                                                        // its form (and any joined to it), inside its outline: shade along the underside...
+      const before = joined, path = before ? g => { before(g); p.path(g); } : p.path;
+      joined = null;
       fresh();
-      T.fillStyle = rockRGB(FOX_SHADE, p.far ? 0.55 : 0.32); T.beginPath(); p.path(T); T.fill();
+      T.fillStyle = rockRGB(shade, p.far ? 0.55 : 0.32); T.beginPath(); path(T); T.fill();
       T.globalCompositeOperation = 'destination-out';
-      softFill(T, [0, 0, 0], 1, 0.09, p.path, -0.015, -0.05);
+      softFill(T, [0, 0, 0], 1, 0.09, path, -0.015, -0.05);
       if (p.leg !== undefined) foxFade(T, 'destination-out', [0, p.leg + 0.14, 0, p.leg - 0.04]);   // (a leg's top melts into the body)
       onto(T, D);
       if (!p.far && p.leg === undefined) {                                      // ...and light along the top
         fresh();
-        T.fillStyle = rockRGB(FOX_LIGHT, 0.32); T.beginPath(); p.path(T); T.fill();
+        T.fillStyle = rockRGB(light, 0.32); T.beginPath(); path(T); T.fill();
         T.globalCompositeOperation = 'destination-out';
-        softFill(T, [0, 0, 0], 1, 0.08, p.path, 0.01, 0.045);
+        softFill(T, [0, 0, 0], 1, 0.08, path, 0.01, 0.045);
         onto(T, D);
       }
     }
     if (p.fade) { foxFade(D, 'destination-in', p.fade); onto(D, L); }
   }
-  inHead(g => {                                                                 // the face, crisp
-    fillIn(g, '#2a211d', () => discAt(g, -0.34, 0.045, 0.03));
-    fillIn(g, 'rgba(255,255,255,0.35)', () => ovalAt(g, -0.345, 0.033, 0.012, 0.007));
-    if (P.eye === 'shut') strokeIn(g, '#3a2a22', 0.03, () => { g.moveTo(-0.15, -0.02); g.quadraticCurveTo(-0.1, 0.015, -0.04, -0.015); });
-    else {
-      fillIn(g, '#241a16', () => ovalAt(g, -0.1, -0.025, 0.036, 0.03, -0.2));
-      fillIn(g, 'rgba(255,255,255,0.9)', () => discAt(g, -0.112, -0.038, 0.011));
-    }
-    strokeIn(g, rockRGB(tone(coat, 0.55), 0.6), 0.016, () => { g.moveTo(-0.32, 0.075); g.quadraticCurveTo(-0.25, 0.085, -0.19, 0.07); });   // the mouth
-  })(L);
+  look.face(L);
   L.save(); L.setTransform(1, 0, 0, 1, 0, 0); L.globalCompositeOperation = 'source-atop';   // a faint grain of fur
   const r = Math.max(0.7, size / 220);
   let seed = 12345;
   const rnd = () => (seed = seed * 16807 % 2147483647) / 2147483647;
-  for (const ink of ['rgba(60,25,10,0.035)', 'rgba(255,240,215,0.035)']) {
+  for (const [ink, thick, long] of look.grain) {
     L.strokeStyle = ink; L.lineWidth = r; L.beginPath();
-    for (let i = size * size / 180; i > 0; i--) { const x = rnd() * size, y = rnd() * size; L.moveTo(x, y); L.lineTo(x + r * 6, y + r * 1.2); }
+    for (let i = size * size / 180 * thick; i > 0; i--) { const x = rnd() * size, y = rnd() * size; L.moveTo(x, y); L.lineTo(x + r * long, y + r * long * 0.2); }
     L.stroke();
   }
   L.restore();
@@ -2742,10 +2725,22 @@ function paintFox(g, size, U, n) {
   g.drawImage(S.canvas, 0, 0, size, size, 0, 0, size, size);
 }
 
+// Whether it has moved in the last few frames (a fox or a rabbit stood still in a mode that moves just stands).
+const stillFor = new WeakMap();      // { x, y, frames } since it last moved, counted once a frame
+function movedLately(c) {
+  let s = stillFor.get(c);
+  if (!s) stillFor.set(c, s = { x: c.x, y: c.y, frames: 99, at: spriteFrame });
+  if (s.at !== spriteFrame) {
+    s.at = spriteFrame;
+    if (s.x !== c.x || s.y !== c.y) { s.x = c.x; s.y = c.y; s.frames = 0; } else s.frames++;
+  }
+  return ui.speed > 0 && s.frames < 12;
+}
+const walkerArt = (c, px, now) => c.species === 'fox' ? foxArt(c, px) : c.species === 'rabbit' ? rabbitArt(c, now) : c.sp.emoji;
+
 // Which painting, for what the fox is doing. On the move its legs step by where it is (like the otter's), so they
 // stop when it stops; standing still a while in a mode that moves, it just stands.
 const FOX_STRIDE = 0.2;              // of its size, a step of the trot (a gallop's is longer)
-const foxStill = new WeakMap();      // { x, y, frames } since it last moved
 function foxArt(c, px) {
   const art = pose => foxArtOf(c.genes.fur, pose);
   if (c.sleeping) return art('sleep');
@@ -2753,15 +2748,182 @@ function foxArt(c, px) {
   if (c.mode === 'eat') return art('feed');
   if (c.mode === 'rest' || c.mode === 'tired') return art('sit');
   if (crouching(c)) return art('crouch');                                       // mousing: it crouches to leap
-  let s = foxStill.get(c);
-  if (!s) foxStill.set(c, s = { x: c.x, y: c.y, frames: 99 });
-  if (s.x !== c.x || s.y !== c.y) { s.x = c.x; s.y = c.y; s.frames = 0; } else s.frames++;
-  if (ui.speed > 0 && s.frames < 12 && (MOVING.has(c.mode) || c.mode === 'mouse')) {
+  if (movedLately(c) && (MOVING.has(c.mode) || c.mode === 'mouse')) {
     const fast = c.mode === 'chase' || c.mode === 'flee', k = cam.zoom / (px * FOX_STRIDE * (fast ? 1.6 : 1));
     const step = (Math.floor(c.x * k) + Math.floor(c.y * k)) & 1;
     return art(fast ? (step ? 'run1' : 'run2') : (step ? 'trot1' : 'trot2'));
   }
   return art('stand');
+}
+
+// ------------------------------------------------------------------ the rabbit
+//
+// Painted like the fox (paintFur), not the 🐇 emoji: one rig posed for what it's doing (RABBIT_POSES). The big round
+// haunch, the long hind foot flat on the ground, short forelegs, a round head with a big dark eye, the long ears, the
+// scut. Its coat is painted in its own colours (no reading back): a pale belly, chin and eye ring on the wild and sandy
+// ones, black ear tips and a rusty nape on a wild one, and agouti ticking in the grain. In winter it pales by steps:
+// only brown and white are painted, the steps between are the two mixed.
+// Facing left, box -1 to 1, feet on the ground at 0.72. 'rabbit:' + (look << 4) + pose; look = coat * 5 + white step.
+const RABBIT_SCALE = 1.3;            // painted this much bigger, about its feet (so it's the emoji's size)
+const RABBIT_CREAM = [240, 230, 210], RABBIT_PINK = [222, 160, 156], RABBIT_SUN = [255, 240, 210];
+const RABBIT_EYE = { x: -0.065, y: -0.015, rx: 0.07, ry: 0.078 };   // in the head's space: big and round
+const RABBIT_SIT = {
+  chest: [-0.2, 0.42], hip: [0.22, 0.38], arch: 0.04, rump: 0.3,   // rump: the haunch's size
+  head: [-0.44, 0.1, 0], ear: 0.3, eye: 'open',                    // ear: laid back (+), 0 straight up
+  fore: { near: [-0.32, 0.71], far: [-0.24, 0.71] }, foreBend: 1,
+  hind: { near: [0.44, 0.68, -0.02, 0.71], far: [0.5, 0.67, 0.04, 0.7] },   // the hock (heel), then the toes
+  scut: [0.52, 0.22, 0],                                            // where, and flicked up how far
+};
+const RABBIT_POSES = {
+  sit: RABBIT_SIT,
+  hop1: { ...RABBIT_SIT, chest: [-0.22, 0.36], hip: [0.16, 0.3], arch: 0.05, head: [-0.46, 0.06, 0.05], ear: 0.45,   // landed, the hind feet coming through
+    fore: { near: [-0.3, 0.71], far: [-0.22, 0.7] }, hind: { near: [0.3, 0.6, -0.02, 0.66], far: [0.36, 0.58, 0.04, 0.64] }, scut: [0.46, 0.18, 0.4] },
+  hop2: { ...RABBIT_SIT, chest: [-0.26, 0.32], hip: [0.22, 0.24], head: [-0.54, 0.06, -0.1], ear: 0.7,   // in the air, stretched
+    fore: { near: [-0.56, 0.64], far: [-0.48, 0.67] }, hind: { near: [0.46, 0.5, 0.72, 0.62], far: [0.42, 0.52, 0.68, 0.65] }, scut: [0.5, 0.12, 0.6] },
+  run1: { ...RABBIT_SIT, chest: [-0.3, 0.3], hip: [0.24, 0.22], head: [-0.6, 0.14, -0.2], ear: 1.15,   // flat out, the ears laid back
+    fore: { near: [-0.68, 0.6], far: [-0.6, 0.64] }, hind: { near: [0.52, 0.46, 0.8, 0.54], far: [0.48, 0.48, 0.76, 0.58] }, scut: [0.52, 0.1, 0.9] },
+  run2: { ...RABBIT_SIT, chest: [-0.16, 0.36], hip: [0.12, 0.26], arch: 0.07, head: [-0.46, 0.16, -0.15], ear: 1.15,   // and bunched
+    fore: { near: [0.0, 0.68], far: [0.06, 0.66] }, hind: { near: [0.06, 0.56, -0.3, 0.64], far: [0.12, 0.54, -0.24, 0.62] }, scut: [0.42, 0.12, 0.9] },
+  graze: { ...RABBIT_SIT, chest: [-0.2, 0.46], hip: [0.24, 0.36], head: [-0.48, 0.44, -0.55], ear: 0.75 },
+  alarm: { ...RABBIT_SIT, chest: [-0.12, 0.06], hip: [0.14, 0.4], rump: 0.28, head: [-0.24, -0.24, 0.08], ear: -0.08,   // sat up tall
+    fore: { near: [-0.24, 0.26], far: [-0.18, 0.28] }, foreBend: -1, hind: { near: [0.38, 0.68, -0.04, 0.71], far: [0.44, 0.67, 0.02, 0.7] }, scut: [0.42, 0.5, 0], top: -0.4 },
+  loaf: { ...RABBIT_SIT, chest: [-0.18, 0.5], hip: [0.2, 0.46], rump: 0.27, head: [-0.42, 0.3, 0.05], ear: 1.25,   // lying low, the paws tucked in
+    fore: { near: [-0.32, 0.72], far: [-0.26, 0.72] }, hind: { near: [0.4, 0.7, 0.0, 0.72], far: [0.46, 0.7, 0.06, 0.72] }, scut: [0.46, 0.36, 0] },
+  sleep: { ...RABBIT_SIT, chest: [-0.18, 0.5], hip: [0.2, 0.46], rump: 0.27, head: [-0.4, 0.36, -0.12], ear: 1.35, eye: 'shut',
+    fore: { near: [-0.32, 0.72], far: [-0.26, 0.72] }, hind: { near: [0.4, 0.7, 0.0, 0.72], far: [0.46, 0.7, 0.06, 0.72] }, scut: [0.46, 0.36, 0] },
+  dig: { ...RABBIT_SIT, chest: [-0.24, 0.48], hip: [0.2, 0.3], head: [-0.5, 0.46, -0.6], ear: 0.8,   // scrabbling, the rump up
+    fore: { near: [-0.52, 0.68], far: [-0.4, 0.6] }, scut: [0.5, 0.14, 0.3] },
+  hang: { ...RABBIT_SIT, chest: [-0.02, -0.1], hip: [0.04, 0.32], rump: 0.26, head: [-0.2, -0.34, -0.4], ear: 2.3,   // by the scruff, which is at 0, -0.4
+    fore: { near: [-0.16, 0.2], far: [-0.1, 0.22] }, hind: { near: [0.12, 0.6, 0.0, 0.8], far: [0.18, 0.58, 0.06, 0.78] }, scut: [0.2, 0.54, 0.6], top: -0.6 },
+};
+const RABBIT_POSE_NAMES = Object.keys(RABBIT_POSES), RABBIT_POSE = Object.fromEntries(RABBIT_POSE_NAMES.map((p, i) => [p, i]));
+const RABBIT_KINDS = ['wild', 'sand', 'black', 'blue'];            // (BODY_COAT_OF's order)
+const RABBIT_ARTS = Array.from({ length: RABBIT_KINDS.length * 5 << 4 }, (_, n) => 'rabbit:' + n);
+const rabbitArtOf = (look, pose, white = 0) => RABBIT_ARTS[((look.n + white) << 4) + RABBIT_POSE[pose]];
+
+// Its colours, for a coat and how far it's gone white (0 to 1).
+function rabbitColours(kind, q) {
+  const rgb = S.COATS[RABBIT_KINDS[kind]].rgb.map((v, i) => lerp(v, S.WINTER_COAT[i], q)), pale = kind < 2;
+  const mix = (a, b, t) => a.map((v, i) => lerp(v, b[i], t));
+  return {
+    rgb, speckle: COAT[RABBIT_KINDS[kind]].speckle * (1 - q),
+    shade: tone(rgb, 0.3), light: mix(rgb, RABBIT_SUN, 0.7),                 // its own colour, darker and lit, so it stays warm
+    cream: mix(rgb, RABBIT_CREAM, [0.85, 0.7, 0.14, 0.26][kind]),
+    scut: pale ? [248, 245, 238] : mix(rgb, RABBIT_CREAM, 0.3),
+    tip: kind === 0 ? [48, 38, 34] : kind === 1 ? tone(rgb, 0.72) : null,    // a wild one keeps its black ear tips in winter, as hares do
+    nape: kind === 0 && q < 1 ? mix([178, 108, 58], rgb, q) : null,
+    ring: pale ? mix(rgb, RABBIT_CREAM, 0.9) : null,
+  };
+}
+
+// The rabbit's parts for a pose, back to front (as foxParts).
+function rabbitParts(P, C) {
+  const parts = [], add = (path, o = {}) => parts.push({ path, ...o });
+  const [hdx, hdy, hda] = P.head, hc = Math.cos(hda), hn = Math.sin(hda);
+  const onHead = (x, y) => [hdx + x * hc - y * hn, hdy + x * hn + y * hc];
+  const inHead = draw => g => { g.save(); g.translate(hdx, hdy); g.rotate(hda); draw(g); g.restore(); };
+  const ear = (dx, dy, a, far) => {                  // grown from behind the crown, so the head covers its root
+    const at = draw => inHead(g => { g.translate(dx, dy); g.rotate(a); draw(g); });
+    const marks = [];
+    if (!far) marks.push([RABBIT_PINK, 0.55, 0.03, at(g => { g.moveTo(-0.045, -0.05); g.bezierCurveTo(-0.075, -0.17, -0.055, -0.34, -0.02, -0.42); g.quadraticCurveTo(-0.005, -0.28, 0.0, -0.05); g.closePath(); })]);
+    if (C.tip) marks.push([C.tip, 0.9, 0.05, at(g => { g.moveTo(-0.2, -0.41); g.quadraticCurveTo(0, -0.45, 0.2, -0.39); g.lineTo(0.2, -0.6); g.lineTo(-0.2, -0.6); g.closePath(); })]);
+    add(at(g => {
+      g.moveTo(-0.05, 0.02);
+      g.bezierCurveTo(-0.1, -0.15, -0.085, -0.38, -0.025, -0.46);    // the front edge, up to the tip
+      g.quadraticCurveTo(0.03, -0.5, 0.06, -0.43);
+      g.bezierCurveTo(0.095, -0.32, 0.09, -0.12, 0.065, 0.02);       // and down the back
+      g.closePath();
+    }), { far, joined: !far, marks });
+  };
+  const ears = () => { ear(0.1, -0.1, P.ear + 0.14, true); ear(0.04, -0.12, P.ear, false); };   // (the near one's form is the head's)
+  const head = () => add(inHead(g => {
+    ovalAt(g, 0.02, 0, 0.19, 0.165);                                 // the skull
+    ovalAt(g, -0.15, 0.065, 0.13, 0.105, 0.15);                      // the muzzle
+    ovalAt(g, 0.04, 0.08, 0.15, 0.12, 0.1);                          // the cheek
+  }), { casts: true, marks: [
+    [C.cream, 1, 0.05, inHead(g => { g.moveTo(-0.32, 0.1); g.quadraticCurveTo(-0.2, 0.085, -0.08, 0.13); g.quadraticCurveTo(0.08, 0.16, 0.22, 0.12); g.lineTo(0.22, 0.4); g.lineTo(-0.32, 0.4); g.closePath(); })],   // the chin
+    [C.cream, 0.7, 0.05, inHead(g => ovalAt(g, -0.2, 0.06, 0.07, 0.045, 0.2))],   // the whisker pad
+    ...C.ring ? [[C.ring, 0.6, 0.04, inHead(g => { const { x, y, rx, ry } = RABBIT_EYE; ovalAt(g, x, y, rx + 0.03, ry + 0.021, -0.1); })]] : [],   // round the eye
+  ] });
+  const [cx, cy] = P.chest, [hx, hy] = P.hip, R = P.rump, len = Math.hypot(hx - cx, hy - cy);
+  const ux = (hx - cx) / len, uy = (hy - cy) / len, ang = Math.atan2(uy, ux);   // along the body; (-uy, ux) is down
+  const fore = (paw, far) => {
+    const sx = cx - 0.04 + (far ? 0.05 : 0), sy = cy + 0.06, [kx, ky] = jointAt(sx, sy, paw[0], paw[1], 0.17, 0.15, P.foreBend);
+    add(g => { limbAt(g, sx, sy, 0.07, kx, ky, 0.04); limbAt(g, kx, ky, 0.04, paw[0], paw[1] - 0.02, 0.034); ovalAt(g, paw[0] - 0.025, paw[1] - 0.016, 0.05, 0.026); },
+      { far, casts: !far, leg: sy + 0.05, marks: [[C.cream, 0.5, 0.03, g => ovalAt(g, paw[0] - 0.025, paw[1] - 0.016, 0.05, 0.026)]] });
+  };
+  const hind = ([kx, ky, tx, ty], far) => {
+    const ox = hx + (far ? 0.05 : 0), oy = hy;
+    add(g => {
+      ovalAt(g, ox + 0.02, oy + 0.08, R * 0.68, R * 0.76, -0.5);    // the thigh
+      limbAt(g, ox + 0.1, oy + 0.18, 0.12, kx, ky, 0.068);           // down to the hock
+      limbAt(g, kx, ky, 0.064, tx, ty - 0.026, 0.04);                // and the long foot
+    }, { far, leg: oy + 0.06, marks: [[C.cream, 0.55, 0.03, g => limbAt(g, kx, ky + 0.02, 0.035, tx, ty - 0.005, 0.025)]] });
+  };
+  const [sx, sy, flick] = P.scut;
+  fore(P.fore.far, true); hind(P.hind.far, true);
+  add(g => ovalAt(g, sx, sy, 0.1, 0.085, flick), { joined: true, marks: [[C.scut, 1, 0.04, g => ovalAt(g, sx + 0.02 + flick * 0.03, sy + 0.05 - flick * 0.06, 0.085, 0.065 + flick * 0.025)]] });   // the scut, white under
+  add(g => {
+    ovalAt(g, cx, cy, 0.19, 0.2, ang);
+    limbAt(g, cx + ux * 0.04, cy + uy * 0.04, 0.18, hx - ux * 0.04, hy - uy * 0.04, R * 0.92);
+    discAt(g, hx, hy, R);
+    if (P.arch) discAt(g, (cx + hx) / 2 + uy * P.arch, (cy + hy) / 2 - ux * P.arch, 0.2);
+  }, { casts: true, marks: [
+    [C.cream, 1, 0.07, g => ovalAt(g, lerp(cx, hx, 0.4) - uy * 0.17, lerp(cy, hy, 0.4) + ux * 0.17, 0.22, 0.06, ang)],   // the belly
+    [C.cream, 0.9, 0.06, g => ovalAt(g, cx - ux * 0.1 - uy * 0.08, cy - uy * 0.1 + ux * 0.08, 0.08, 0.11, ang + 0.3)],   // and chest
+  ] });
+  hind(P.hind.near, false); fore(P.fore.near, false);
+  const [ax, ay] = onHead(0.08, 0.06), [wx, wy] = onHead(0.0, 0.14), [nx, ny] = onHead(0.2, -0.02);
+  add(g => limbAt(g, cx - 0.02, cy - 0.04, 0.16, ax, ay, 0.13),      // the neck, and its pale throat
+    { plain: true, marks: [[C.cream, 0.9, 0.05, g => limbAt(g, wx, wy, 0.07, lerp(wx, cx - 0.14, 0.7), lerp(wy, cy + 0.04, 0.7), 0.06)],
+      ...C.nape ? [[C.nape, 0.4, 0.09, g => ovalAt(g, nx, ny, 0.08, 0.1)]] : []] });
+  ears(); head();
+  return { parts, inHead };
+}
+
+function paintRabbit(g, size, U, n) {
+  if (shrunk(g, size, U, RABBIT_ARTS[n])) return;
+  const look = n >> 4, step = look % 5;
+  if (step % 4) {                    // part white: only brown and white are painted, the steps between are the two mixed
+    const brown = n - (step << 4), px = U / dpr;
+    g.drawImage(sprite(RABBIT_ARTS[brown], px).canvas, 0, 0, size, size);
+    g.globalAlpha = step / 4;
+    g.drawImage(sprite(RABBIT_ARTS[brown + (4 << 4)], px).canvas, 0, 0, size, size);
+    g.globalAlpha = 1;
+    return;
+  }
+  const P = RABBIT_POSES[RABBIT_POSE_NAMES[n & 15]] || RABBIT_SIT, C = rabbitColours(Math.floor(look / 5), step / 4);
+  const { parts, inHead } = rabbitParts(P, C), tick = 0.09 * C.speckle;
+  const grain = [['rgba(60,40,25,0.02)', 1, 5], ['rgba(255,245,225,0.02)', 1, 5]];
+  if (tick) grain.push([`rgba(25,15,8,${tick})`, 1.2, 2.5], [`rgba(255,240,210,${tick})`, 0.9, 2.5]);   // agouti: each hair banded
+  paintFur(g, size, U, parts, { coat: C.rgb, scale: RABBIT_SCALE, top: P.top ?? Math.min(P.chest[1], P.hip[1]) - P.rump - 0.05, shade: C.shade, light: C.light, grain, flat: 0.22,
+    face: inHead(g => {
+      const { x, y, rx, ry } = RABBIT_EYE;
+      if (P.eye === 'shut') strokeIn(g, '#3a2a22', 0.03, () => { g.moveTo(x - 0.065, y + 0.005); g.quadraticCurveTo(x, y + 0.05, x + 0.07, y + 0.01); });
+      else {                                                                    // dark, a warm brown glow low in it, two catchlights
+        const ink = g.createLinearGradient(0, y - ry, 0, y + ry);
+        ink.addColorStop(0.3, '#150e0b'); ink.addColorStop(1, '#7a4a28');
+        fillIn(g, ink, () => ovalAt(g, x, y, rx, ry, -0.1));
+        fillIn(g, 'rgba(255,255,255,0.9)', () => ovalAt(g, x - rx * 0.36, y - ry * 0.4, 0.028, 0.031, -0.4));
+        fillIn(g, 'rgba(255,255,255,0.85)', () => discAt(g, x + rx * 0.4, y + ry * 0.45, 0.013));
+      }
+      fillIn(g, '#8a5a54', () => ovalAt(g, -0.272, 0.038, 0.022, 0.016, 0.3));   // the nose
+      strokeIn(g, rockRGB(tone(C.rgb, 0.5), 0.6), 0.014, () => { g.moveTo(-0.268, 0.052); g.quadraticCurveTo(-0.262, 0.085, -0.235, 0.098); });   // the mouth
+    }) });
+}
+
+// Which painting, for what the rabbit is doing. On the move it hops in time with its bob (hopOf): stretched out in
+// the air, gathered as it lands; fleeing, flat out with its ears back.
+function rabbitArt(c, now) {
+  const look = coatLook(c) || COAT.wild, white = whiteStep(c), art = pose => rabbitArtOf(look, pose, white);
+  if (c.sleeping) return art('sleep');
+  if (c.mode === 'alarm') return art('alarm');
+  if (c.mode === 'graze' || c.mode === 'munch') return art('graze');
+  if (c.mode === 'rest') return art('loaf');
+  if (atHole(c)) return art('dig');
+  if (!movedLately(c)) return art('sit');
+  const fast = c.mode === 'flee', up = Math.abs(Math.sin(now / (fast ? 55 : 120) + c.id));
+  return art(fast ? (up > 0.5 ? 'run1' : 'run2') : up > 0.35 ? 'hop2' : 'hop1');
 }
 
 const moundAt = (g, hole) => {
@@ -3517,7 +3679,7 @@ function putPainting(p, f, alpha, snow, ox, oy) {
   if (snow && p.snow) { ctx.globalAlpha = alpha * snow; ctx.drawImage(p.snow, x, y, w, h); }
   ctx.globalAlpha = 1;
 }
-const PAINTERS = { fox: paintFox, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, vole: paintVole, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody };
+const PAINTERS = { fox: paintFox, rabbit: paintRabbit, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, vole: paintVole, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody };
 function drawDecor(d, sx, sy, now, ck, clipLeaves) {
   const z = cam.zoom, px = d.tree ? treePx(d) : d.size * z;
   if (d.emoji === '🪨') { drawRock(d, sx, sy); return; }
@@ -6030,7 +6192,7 @@ const WEB_NODES = {
   otter: { x: 282, y: 78, art: 'otter:3', name: 'Otters', color: '#7c5232' },
   remains: { x: 368, y: 78, art: 'body:1', name: 'Remains', color: '#857565' },
   bee: { x: 36, y: 200, art: '🐝', name: 'Bees', color: '#d9a21b' },
-  rabbit: { x: 108, y: 200, art: '🐇', name: 'Rabbits', color: '#a07850' },
+  rabbit: { x: 108, y: 200, art: rabbitArtOf(COAT.wild, 'sit'), name: 'Rabbits', color: '#a07850' },
   vole: { x: 180, y: 200, art: 'vole:0', name: 'Voles', color: '#8a6a4e' },
   frog: { x: 252, y: 200, art: 'frog:0', name: 'Frogs', color: '#6f8f3e' },
   fish: { x: 316, y: 200, art: 'icon:🐟', name: 'Fish', color: '#5a8aa6' },
@@ -7248,7 +7410,8 @@ canvas.addEventListener('wheel', e => {
 const HELD_UP = 1.6;                 // its spot on the ground is this far below the hand, in its size
 const HANG = 0.42;                   // and the middle of it this far, from the scruff
 const FOX_HANG = 0.2;                // (a fox's, painted hanging: FOX_POSES.hang)
-const hangOf = c => c.species === 'fox' ? FOX_HANG : HANG;
+const RABBIT_HANG = 0.25;            // (and a rabbit's: RABBIT_POSES.hang)
+const hangOf = c => c.species === 'fox' ? FOX_HANG : c.species === 'rabbit' ? RABBIT_HANG : HANG;
 const SWING = (TAU / 0.8) ** 2;      // a swing every 0.8 s or so
 const SWING_DAMP = 2.4;              // how fast a swing dies down
 const SWING_MAX = 1.1;               // radians: it never swings up over the hand
@@ -7335,11 +7498,12 @@ function kickOf(c, now) {
 function drawHeld(now) {
   const h = held, c = h.c, px = creaturePx(c), [, , hx, hy] = heldAt(h, now);
   const stretch = 1.06 + clamp(-(h.ay || 0) * 0.00002, -0.1, 0.14);   // hanging, it stretches; jerked up, more
-  const art = c.species === 'crow' ? CROW_ARTS[2 + (((now / CROW_BEAT) | 0) & 1)] : c.species === 'fox' ? foxArtOf(c.genes.fur, 'hang') : c.sp.emoji;
+  const art = c.species === 'crow' ? CROW_ARTS[2 + (((now / CROW_BEAT) | 0) & 1)] : c.species === 'fox' ? foxArtOf(c.genes.fur, 'hang')
+    : c.species === 'rabbit' ? rabbitArtOf(coatLook(c), 'hang', whiteStep(c)) : c.sp.emoji;
   ctx.save();
   ctx.translate(hx, hy);
   ctx.rotate(h.a + kickOf(c, now));
-  drawEmoji(art, 0, px * hangOf(c), px, { coat: coatLook(c), flip: flipOf(c), squash: stretch });
+  drawEmoji(art, 0, px * hangOf(c), px, { flip: flipOf(c), squash: stretch });
   ctx.restore();
 }
 
