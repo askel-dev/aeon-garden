@@ -31,6 +31,11 @@ told to just do it.
   hand's speeding up swings (`heldFrame`, `drawHeld`), kicks in fits, and drops with a hop where you let go
   (`letGo`, `drawFalling`). In the sim (`lift`, `putDown`) a held one (`c.held`) skips its turn and is out of the
   grid, so nothing hunts it; its place is the ground under the hand, and it lands on the nearest dry footing.
+  Foxes are painted, not the emoji (`paintFox`, styled on the carcass `paintDeadFox`): one rig posed for what each is
+  doing (`FOX_POSES`, picked by `foxArt`), painted as one animal (one shading over it all, each part's form and the
+  markings soft, a part in front casting a soft shadow, a softened outline and a faint grain), so its parts don't read
+  as separate shapes. It's painted only at doublings of its size (`FOX_PAINTED`) and shrunk for the sizes between,
+  which keeps a dozen poses, growing cubs and zooming as cheap as the emoji was. The rabbits are to follow in that style.
   The tab's icon follows the season and the part of day (`updateFavicon`, at most once a second), and
   the news log dates each line with a season chip (`seasonChip`).
   The rivers run (`drawFlow`, worked out once a meadow by `flowOf` from the sim's `w.current`): streaks of current, quicker
