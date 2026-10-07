@@ -10,9 +10,9 @@
   <a href="https://meadow.cryptoler.net/"><strong>▶ Play it in your browser</strong></a>
 </p>
 
-![A summer morning in the meadow: a lake and a river, woods, rabbits, foxes and bees](assets/screens/summer.jpg)
+![A summer morning in the meadow: ponds and a river, woods, a sunflower field, rabbits and otters](assets/screens/summer.jpg)
 
-A small meadow where rabbits, foxes, bees, crows and owls live their own lives. Nobody tells them what to do.
+A small meadow where rabbits, foxes, bees, crows and otters live their own lives. Nobody tells them what to do.
 They graze, fall in love, raise families and run for their burrows. Every baby is a mix of its
 parents, with a small twist.
 
@@ -20,18 +20,24 @@ The meadow keeps its own time. A day goes by in twenty seconds, a year in a few 
 running, and over the years the animals slowly change: populations boom and crash, coats shift
 with the ground they hide on, and the bees swarm off to find new hollow trees.
 
-![Following a rabbit through a tulip field: its mood, personality, family and life story](assets/screens/follow.jpg)
+![Following a rabbit past a sunflower field: its mood, personality, family and life story](assets/screens/follow.jpg)
 
 ## Four seasons
 
 <table>
   <tr>
-    <td><img src="assets/screens/spring.jpg" alt="Spring: a tulip field in bloom by the river, with butterflies, bees and rabbits in love"></td>
-    <td><img src="assets/screens/autumn.jpg" alt="Autumn: red and gold woods, bees on the heather, rabbits by their burrows"></td>
-    <td><img src="assets/screens/winter.jpg" alt="Winter: snow, a frozen river, rabbits in white winter coats"></td>
+    <td><img src="assets/screens/spring.jpg" alt="Spring: fruit trees in blossom along the high river, rabbits by their burrows"></td>
+    <td><img src="assets/screens/night.jpg" alt="A summer night: fireflies over the water, the rabbits gone to ground"></td>
   </tr>
   <tr>
     <td align="center">Spring</td>
+    <td align="center">A summer night</td>
+  </tr>
+  <tr>
+    <td><img src="assets/screens/autumn.jpg" alt="Autumn: red and gold woods under a rainbow after the rain"></td>
+    <td><img src="assets/screens/winter.jpg" alt="Winter: snow, frozen ponds, rabbits in white winter coats and a hive in a hollow oak"></td>
+  </tr>
+  <tr>
     <td align="center">Autumn</td>
     <td align="center">Winter</td>
   </tr>
@@ -48,7 +54,7 @@ with the ground they hide on, and the bees swarm off to find new hollow trees.
 - **Foxes** hunt by sight, so fog, snow and a good coat all help a rabbit get away. Deep water stops them, shallow fords don't.
 - **Bees** live in a hollow in an old tree. They sip from the flower fields, dance to show the others the way to a rich patch, and put honey by for winter. A crowded hive swarms: the old queen takes half the bees off to hang in a tree while scouts look for a new home.
 - **Crows** peck for grubs on the short grass, gather at whatever the foxes and the winter leave lying, and all sleep in one big tree. In autumn they carry acorns off and bury them, and the ones they forget come up as oaks.
-- **Owls** nest in the hollow oaks the bees want too. They sleep in their tree by day, and at dusk sit on a branch by the long grass, listening for voles. A good vole year means owlets; a poor one, none. The crows mob one they find asleep.
+- **Otters** come up the river in pairs and make a holt among the roots of a big tree on the bank, or under a boulder. They fish from the evening to the middle of the morning, eat their catch afloat and drift downstream with it, and when they're well fed they take turns sliding down the bank into the water. In spring there are cubs, who follow their mum and share her fish.
 - **The weather** has a life of its own: rain greens the meadow, fog hides the foxes, thunder sends rabbits home, and lightning on dry grass can start a wildfire.
 
 Every meadow is different: a river, a lake or both, a few ponds, woods, great rocks and named flower fields.
@@ -58,7 +64,7 @@ Every meadow is different: a river, a lake or both, a few ponds, woods, great ro
 
 - Click an animal to follow its whole life, or anything else (a hive, a tree, a burrow, a field) to see what it is
 - Scroll to zoom, drag to look around. On a phone: pinch and drag
-- The tools at the bottom (on a phone, the button in the corner; or right-click or hold a finger on the meadow) add rabbits, foxes, bees, crows and owls, grow grass, or strike lightning
+- The tools at the bottom (on a phone, the button in the corner; or right-click or hold a finger on the meadow) add rabbits, foxes, bees and crows, grow grass, or strike lightning
 - 🕸️ Who ate whom (in the ••• menu, or on the stats page) draws this meadow's food web as it ran: who caught whom, what they grazed, and what went back into the ground, this season, over the last year or since the start
 - Change the weather, or 🔒 lock it, from the sky button at the top
 - Quiet sounds and a little felt piano now and then, off until you press 🔊 or M
