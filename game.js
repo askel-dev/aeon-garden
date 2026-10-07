@@ -1096,7 +1096,7 @@ function render(now) {
   const [ox, oy] = toScreen(0, 0);
   const z = cam.zoom, ck = S.clock(world);
   drawGround(z, ox, oy, shx, shy);
-  drawWaves(now);
+  drawWaves(weatherClock);   // (the wind's, so they still while it's paused)
   drawFlow(now, ck);
   drawShore(z, ox, oy, ck.season);
   drawPlants(z, ox, oy, ck.season);                  // over the waves, which can pass a flower by the water
@@ -3864,13 +3864,14 @@ function flowSpot(R, kf, lane) {
 const wetTile = (x, y) => x >= 0 && y >= 0 && x < S.W && y < S.H && world.water[(y | 0) * S.W + (x | 0)] !== 0;
 const laneSpeed = lane => 1 - FLOW_BANK * lane * lane;   // quickest down the middle
 
-// The flow's clock, in seconds. Returns how fast the water runs now against its usual pace.
+// The flow's clock, in seconds; it stops while the game is paused. Returns how fast the water runs now against its
+// usual pace.
 let flowClock = 0, flowLast = 0;
 function flowTick(now) {
   const dt = clamp((now - flowLast) / 1000, 0, 0.1), T = world.terrain, d = world.level - T.level;
   flowLast = now;
   const water = d > 0 ? 1 + FLOW_HIGH * Math.min(1, d / Math.max(1e-6, T.springFlood)) : 1 - FLOW_LOW * Math.min(1, -d / Math.max(1e-6, T.summerLow));
-  flowClock += dt * water * (ui.speed > 1 ? ui.speed ** 0.17 : 1);
+  flowClock += dt * water * (ui.speed > 1 ? ui.speed ** 0.17 : ui.speed > 0 ? 1 : 0);
   return water;
 }
 
@@ -4138,18 +4139,27 @@ function updateSky() {
 const drops = Array.from({ length: 300 }, () => ({ x: Math.random(), y: Math.random(), s: 0.6 + Math.random() * 0.8 }));
 const clouds = Array.from({ length: 9 }, () => ({ x: Math.random(), y: Math.random(), r: 9 + Math.random() * 12, s: 0.7 + Math.random() * 0.6 }));
 
+// The weather's clock, in ms: real time while the game runs, whatever the speed, and still while it's paused, so
+// the rain hangs in the air and the waves on the water hold (drawWaves). (The rainbow and lightning keep to real time.)
+let weatherClock = 0, weatherLast = 0;
+function weatherTick(now) {
+  if (ui.speed > 0) weatherClock += clamp(now - weatherLast, 0, 100);
+  weatherLast = now;
+  return weatherClock;
+}
+
 function drawWeather(now, ck) {
-  const m = ui.sky.mix;
+  const m = ui.sky.mix, t = weatherTick(now);
   const shade = 0.12 * m.cloudy + 0.08 * m.rain + 0.10 * m.storm;
-  if (shade > 0.01) drawCloudShadows(now, shade);
+  if (shade > 0.01) drawCloudShadows(t, shade);
   const dim = 0.05 * m.cloudy + 0.09 * m.rain + 0.30 * m.storm + 0.04 * m.snow;
   if (dim > 0.005) wash(`rgba(50, 62, 92, ${dim})`);
   if (m.heat > 0.01) wash(`rgba(255, 168, 60, ${0.11 * m.heat})`);
   if (!ck.night) drawRainbow(now);
-  if (m.fog > 0.01) drawFog(now, m.fog);
+  if (m.fog > 0.01) drawFog(t, m.fog);
   const rain = m.rain + 1.8 * m.storm;
-  if (rain > 0.02) drawRain(now, rain, m.storm);
-  if (m.snow > 0.02) drawSnow(now, m.snow);
+  if (rain > 0.02) drawRain(t, rain, m.storm);
+  if (m.snow > 0.02) drawSnow(t, m.snow);
   drawLightning(now);
 }
 
