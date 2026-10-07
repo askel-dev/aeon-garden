@@ -8,7 +8,14 @@ paths:
 
 Terrain: the ground has a height and water lies below `w.level`. A lake lies in a hollow or by the
 edge, running off the map (`placeLake`), and the river runs through it, out of it or into it; often a
-shallow brook joins the river (`brookPath`, `rv.brook`). The land slopes down into a valley
+shallow brook joins the river (`brookPath`, `rv.brook`). Lakes and ponds are basins (`basin`): a bowl, stretched
+and turned (a lake on the river lies along it, `shapeLake`), its rim pushed in and out by noise into bays and points.
+`carveBasin` gives each a shelf of shallows, wide and reedy in places (gentle banks there, so the flood spreads) and a
+steep drop in others, widest where the river comes in (`delta`). Some lakes have an island (`w.isle`: no burrows on it,
+`canDig`), clear of the river's way through and of the spring flood. Ponds are mostly small, some all shallows, now and then a big deep one an otter family can live by, and some
+meadows get a cluster of little pools in one low corner (`pools`) or none at all. The shores have random numbers of their
+own (`wr` in `makeTerrain`), so tuning them in the lab leaves the rest of the meadow be. The lake keeps its name on its
+tiles and shore (`w.lake.near`, `nearLake`). The land slopes down into a valley
 around the river and lake (`TERRAIN.valley`, half as wide by a brook). The water line follows the seasons (`waterTick`): up in
 spring, down in summer, a little with the rain, so the river spreads over its floodplain and back.
 A flooded burrow is lost and kits too young to climb out drown (`floodBurrows`); grass under water
@@ -26,6 +33,12 @@ Rabbits won't graze ground that rich (`fouled`: fresh droppings, or where a body
 an old kill site stand out as lusher patches (the ground's colour follows `w.grass`) until they fade and get grazed.
 Reeds and lily pads (`drawShore`) are a look too: a scatter `updateWater` works out along the shore whenever the water changes.
 Shallow water is waded slowly; deep water blocks.
+The rivers run (`makeCurrent`, `w.current`: worked out when a meadow is made or opened, never kept). Each point of a river
+knows which way it runs, how wide its channel is and its pace (quick in the narrows and over a ford, all but still in the lake
+or a wide stretch); each tile of running water takes the way and pace of the nearest point, slower by the banks; and it all runs
+faster in the spring flood and slower at the summer low (`riverPace`). It carries a swimmer along (`drift`, at most `CARRY` of
+its own pace, so it can always swim against it): an otter eating its fish afloat drifts downstream. Otters leave the meadow with
+the current and come up against it (`riverEnd` skips the edges where a river or brook runs in). game.js draws it (`drawFlow`).
 Each connected water body is named (`w.waters`, `w.body`). Population caps and starting
 numbers scale with dry land (`w.room`).
 Flower fields (`w.fields`, `placeFields`) are dense named patches of one flower (`FIELD_KINDS`), each
@@ -124,7 +137,11 @@ about close to one on the bank, or a fire, sends it into the water (`slip`), and
 it's `WARY_FAR` off or lies down, or `WATCH_TICKS` have gone, then pays foxes no mind for `CALM_TICKS` (`c.calm`). Asleep, it
 doesn't mind a fox (no fox hunts otters; before, one passing woke the family and sent cubs in and out of the water all night).
 A cub stays up while mum is (`mumUp`) and then sleeps by her; a bed is never in the water (`beside`).
-Fed, they play: up the bank and sliding down it into the water or over the ice (`play`), the others about joining in. In spring a
+Well fed (`PLAY_FED`), they play (`play`): a slide (`slideNear`, `c.slide`) from the highest of a few spots on the open
+bank about (`SLIDE_BANK`, out from under the trees, `SLIDE_SHADE`) down to the nearest water (`waterWay`) and on into it, or out
+over the ice; they bound up again (`PLAY_PACE`) and slide a few times (`PLAY_RUNS`), the others about joining in on the same
+slide and taking turns at the top (`SLIDE_GAP`). Food still comes first: a game played on while hungry starved families in
+hard winters. In spring a
 female with a holt (`otterReady`) has two or three cubs, hidden in the holt till `CUB_OUT`, who follow mum till they're grown (a
 cub busy with a catch finishes first) and get `CUB_SHARE` of every fish she catches. At a year (`otterGrown`, `atMums`) a young
 female takes a free holt and a young male goes off along the water to find a mate, while the meadow has room; otherwise off down
@@ -132,7 +149,8 @@ the water out of the meadow (`riverEnd`, cause `'left'`). A pair comes up the wa
 the edge, unless that's much further than the nearest edge) when there are none, or no holt is held (`migrate`, checked once a
 day), and the female takes the holt they came for. No release tool. game.js paints them (`paintOtter`, the prototype's painter:
 one fur layer, `furLayer`, soft markings with `blurIn`; water poses sit in the water, `inWater`, `waterRing`), picks the pose from
-the mode and the water (`otterArt`), draws a wake while it swims somewhere (`drawWake`) and only rings while it's under
+the mode and the water (`otterArt`), draws a wake while it swims somewhere (`drawWake`), a splash where one slides or slips into the water (`drawSplashes`, at 4x
+or slower), and only rings while it's under
 (`drawUnder`), and the way into a holt (`paintHolt`). Their remains are tufts of fur (`paintRemains` look 2). No `KEEP_VERSION` bump:
 a kept meadow gets the otters' counts at 0 (`unpackWorld`).
 

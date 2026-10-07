@@ -33,10 +33,12 @@ told to just do it.
   grid, so nothing hunts it; its place is the ground under the hand, and it lands on the nearest dry footing.
   The tab's icon follows the season and the part of day (`updateFavicon`, at most once a second), and
   the news log dates each line with a season chip (`seasonChip`).
-  The rivers run (`drawFlow`, worked out once a meadow by `flowOf`): streaks of current, quicker down the middle, white water
-  at the fords and where the brook comes in or the river leaves the lake, and leaves or petals floating by, all placed by the
-  flow's clock alone (`flowTick`: faster in the spring flood and at speed, slower at the summer low). A frame only looks at the
-  stretches of river on screen (`R.box`). Only a look: nothing in sim.js knows which way the water runs.
+  The rivers run (`drawFlow`, worked out once a meadow by `flowOf` from the sim's `w.current`): streaks of current, quicker
+  down the middle, white water at the fords and where the brook comes in or the river leaves the lake, and things floating by,
+  all placed by the flow's clock alone (`flowTick`: the sim's `riverPace`, faster in the spring flood and at speed, slower at
+  the summer low). A frame only looks at the stretches of river on screen (`R.box`). What floats comes mostly from the trees
+  on the bank (`floatSources`, once a day: blossom off one in flower, its leaves as `treeLook` draws them while they come
+  down), and a little from upstream; a tree you plant by the river drops its leaves in.
   A first visit (or `?intro`) gets a short welcome card, then the intro (`startIntro`, `introFrame`): an
   empty meadow (createWorld's `arrival` option, `planArrivals` in sim.js) where a family hops in at dawn,
   digs its burrow and turns in for the night, while the camera, the clock's pace and a caption at a time

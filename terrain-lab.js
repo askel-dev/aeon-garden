@@ -45,9 +45,15 @@ const GROUPS = [
   ]],
   ['🏞️', 'Lake', [
     ['lakeEdge', 'By the edge', 0, 1, 0.05],
-    ['lakeBlobs', 'Circles', 1, 16, 1],
-    ['lakeSpread', 'Spread', 0, 35, 0.5],
-    ['lakeSize', 'Circle size', 1, 25, 0.5],
+    ['lakeReach', 'Size', 3, 35, 0.5],
+    ['lakeStretch', 'Long', 1, 4, 0.05],
+    ['riverLake', 'Long on a river', 1, 4, 0.05],
+    ['lakeShore', 'Bays', 0, 1.5, 0.05],
+    ['lakeShelf', 'Shallows', 0, 20, 0.5],
+    ['shelfDepth', 'Shallows depth', 0.02, 0.6, 0.01],
+    ['delta', 'Delta', 0, 20, 0.5],
+    ['islands', 'Island odds', 0, 1, 0.05],
+    ['islandHeight', 'Island height', 0, 0.3, 0.005],
     ['lakeDepth', 'Depth', 0.1, 2.5, 0.05],
   ]],
   ['〰️', 'River', [
@@ -66,8 +72,14 @@ const GROUPS = [
   ]],
   ['🫧', 'Ponds', [
     ['ponds', 'Ponds', 0, 16, 1],
-    ['pondSize', 'Size', 0.5, 10, 0.5],
+    ['pondSize', 'Size', 0.5, 10, 0.1],
+    ['pondStretch', 'Long', 1, 4, 0.05],
+    ['pondShore', 'Bays', 0, 1.5, 0.05],
+    ['pondShelf', 'Shallows', 0, 8, 0.1],
     ['pondDepth', 'Depth', 0.02, 2, 0.01],
+    ['pools', 'Pool odds', 0, 1, 0.05],
+    ['poolCount', 'Pools', 0, 12, 1],
+    ['poolSize', 'Pool size', 0.5, 6, 0.1],
   ]],
   ['🌱', 'Soil', [
     ['patches', 'Patches', 0, 120, 1],
@@ -662,7 +674,7 @@ function paintMeadow(w, g, scale) {
 const LEGENDS = {
   meadow: () => 'The meadow as the game draws it.',
   height: () => legend(RAMPS.height.map(s => s[1]), 'water line', 'high', 'Lines every 0.05 of height. Under water: bands every wading depth, so the first line is where wading stops.'),
-  water: () => `Each body of water has its own colour, darker where it's too deep to wade. The river's line and its <b>fords</b> are drawn on top, and the circles that make the lake.`,
+  water: () => `Each body of water has its own colour, darker where it's too deep to wade. The river's line and its <b>fords</b> are drawn on top, and the bowl the lake was shaped from.`,
   soil: () => legend(RAMPS.soil.map(s => s[1]), 'poor', 'rich', 'How much grass the ground can grow. Every meadow is scaled to the same average.'),
   near: () => legend(RAMPS.near.map(s => s[1]), 'at the water', '24+ tiles', 'Lines every 3 tiles. Banks are richer, and the wet wood grows here.'),
 };
@@ -708,9 +720,11 @@ function drawPen(g, z) {
 function drawWaterMarks(g, z) {
   const w = G.world, P = (x, y) => lab.toScreen(x, y);
   g.lineCap = 'round';
-  if (w.lake?.shape) {
+  const m = w.lake?.middle;
+  if (m) {                                                         // the bowl the lake was shaped from
+    const [x, y] = P(m.x, m.y);
     g.strokeStyle = 'rgba(255,255,255,0.8)'; g.lineWidth = 1.2; g.setLineDash([4, 4]);
-    for (const c of w.lake.shape) { const [x, y] = P(c.x, c.y); g.beginPath(); g.arc(x, y, c.r * z, 0, Math.PI * 2); g.stroke(); }
+    g.beginPath(); g.ellipse(x, y, m.reach * m.stretch * z, m.reach * z, m.turn, 0, Math.PI * 2); g.stroke();
   }
   g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth = 1.5; g.setLineDash([6, 5]);
   for (const rv of w.rivers) {

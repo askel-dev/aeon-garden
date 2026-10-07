@@ -1172,6 +1172,7 @@ function render(now) {
     else drawCreature(it.c, it.sx, it.sy, now);
   }
   unfade();
+  if (splashes.length) drawSplashes(now);
   drawFallingLeaves(now);
   drawPollen(now);
   drawButterflies(now, ck);
@@ -2252,12 +2253,40 @@ function otterArt(c, px, wet) {
 }
 function drawOtter(c, sx, sy, now) {
   const px = creaturePx(c), wet = otterSwims(c), art = otterArt(c, px, wet), flip = c.facing > 0;
+  if (wet && wasWet.get(c) === false && (c.mode === 'slide' || c.mode === 'slip') && ui.speed > 0 && ui.speed <= 4 && splashes.length < 12) {
+    splashes.push({ x: c.x, y: c.y, size: px / cam.zoom, t0: now });   // into the water: a splash
+  }
+  wasWet.set(c, wet);
   if (!art) { drawUnder(sx, sy + px * 0.31, px, now, c.id); return; }
   if (wet && otterGoes(c)) drawWake(ctx, sx, sy, px, flip ? -1 : 1, now);
   const breathe = c.sleeping && ui.speed > 0 ? Math.sin(now / 650 + c.id) * 0.035 : 0;
   drawEmoji(art, sx, sy - px * 0.4 * breathe, px, { flip, squash: 1 + breathe });   // feet stay on the ground
   if (c.mode === 'root' && px > 18 && ui.speed > 0 && ui.speed <= 4) drawDigging(c, sx, sy, px, now, flip ? -1 : 1);
 }
+// Where one slid (or slipped) into the water: drops thrown up and out, and a ring spreading. Seen at 4x or slower.
+const SPLASH_MS = 650;
+const SPLASH_DROPS = [[-0.55, 0.3, 0.035], [-0.35, 0.5, 0.045], [-0.15, 0.62, 0.04], [0.05, 0.55, 0.05], [0.25, 0.6, 0.04],
+  [0.42, 0.45, 0.045], [0.6, 0.28, 0.035], [-0.05, 0.35, 0.03], [0.15, 0.3, 0.03]];   // out, up, size, of its size
+const splashes = [], wasWet = new WeakMap();
+function drawSplashes(now) {
+  for (let i = splashes.length - 1; i >= 0; i--) {
+    const s = splashes[i], u = (now - s.t0) / SPLASH_MS;
+    if (u >= 1 || u < 0) { splashes.splice(i, 1); continue; }
+    const [sx, y0] = toScreen(s.x, s.y), px = s.size * cam.zoom, sy = y0 + px * 0.31;
+    if (!visible(sx, sy, px)) continue;
+    ctx.lineWidth = Math.max(1, px * 0.03);
+    ctx.strokeStyle = `rgba(240, 250, 255, ${0.7 * (1 - u)})`;
+    ctx.beginPath(); ctx.ellipse(sx, sy, px * (0.18 + 0.5 * u), px * (0.06 + 0.15 * u), 0, 0, TAU); ctx.stroke();
+    ctx.fillStyle = `rgba(245, 252, 255, ${0.9 * (1 - u * u)})`;
+    ctx.beginPath();
+    for (const [out, up, r] of SPLASH_DROPS) {
+      const x = sx + out * px * u, y = sy - up * px * 4 * u * (1 - u), rr = Math.max(0.8, r * px * (1 - 0.5 * u));
+      ctx.moveTo(x + rr, y); ctx.arc(x, y, rr, 0, TAU);
+    }
+    ctx.fill();
+  }
+}
+
 // Where an otter went under: rings spreading on the water.
 function drawUnder(sx, y, px, now, id) {
   ctx.lineWidth = Math.max(1, px * 0.03);
@@ -3662,7 +3691,7 @@ function updateWater() {
     shore.push({ x: px, y: py, art: (reed ? REED_ARTS : LILY_ARTS)[shape], lily, size: (reed ? 1.1 : 1.3) + 0.6 * hash2(x, y, 12) });
   }
   const woods = pond && pond.world === world ? pond.woods : S.distanceTo(Uint8Array.from(world.wood, v => v > 0.25 ? 1 : 0));
-  pond = { world, version: world.waterVersion, at: now, waves, woods, shore };
+  pond = { world, version: world.waterVersion, at: now, waves, woods, shore, wet: f1 };
   if (!Ground.ok) return;
   const toWater = S.distanceToWater(world);
   for (let i = 0; i < f1.length; i++) {
@@ -3715,22 +3744,18 @@ function drawWaves(now) {
 // from frame to frame. The clock runs faster while the water is high and slower while it's low, and a little
 // faster at 4x and up, so the river doesn't doze while the sun races (flowTick).
 //
-// Worked out once a meadow (flowOf), for each point of each river: which way it runs, how wide the channel is at
-// the meadow's usual water line (and how far its middle lies off the line), how fast it runs (quicker in the
-// narrows and over a ford, all but still in a lake), when water that set off from the river's start gets there
-// (`at`), and how white it is (`foam`). A brook stops being its own where it meets the river (`end`). Streaks set
-// off from a few slots at each point, and the river is cut into stretches (`box`: what its streaks can reach), so
-// a frame only looks at the stretches on screen.
-const FLOW_SPEED = 2.6;            // tiles a second down the middle of a river about two tiles wide
-const FLOW_BANK = 0.5;             // how much slower it runs at the banks than down the middle
-const FLOW_HIGH = 0.7;             // how much faster it runs in the spring flood
-const FLOW_LOW = 0.45;             // and how much slower at the summer low
+// Which way each river runs, how wide and how fast, comes from the sim (w.current, makeCurrent). Worked out from
+// that once a meadow (flowOf): when water that set off from the river's start gets to each point (`at`), and how
+// white it is there (`foam`). Streaks set off from a few slots at each point, and the river is cut into stretches
+// (`box`: what its streaks can reach), so a frame only looks at the stretches on screen.
+const FLOW_SPEED = 2.6;            // tiles a second down the middle of a river about two tiles wide (the sim's pace 1)
+const FLOW_BANK = 0.5;             // how much slower it runs at the banks than down the middle (as the sim's BANK_SLOW)
 const FLOW_STREAKS = 0.45;         // streaks of current to a square tile of running water
 const FLOW_SLOTS = 2;              // where a streak can set off, at each point
 const STREAK_LIFE = [2, 1.6];      // how long a streak lasts on the flow's clock: at least, and up to this much more
 const FLOW_FOAM = 2;               // flecks of white water, at most, to a point where it's all white
 const FLOW_CHUNK = 16;             // points (8 tiles) of river looked at together
-const FLOW_FLOATS = 0.6;           // things floating, at most, to a tile of river (by season: FLOAT_SHARE)
+const FLOW_FLOATS = 0.5;           // things floating in from upstream, at most, to a tile of river (by season: FLOAT_SHARE)
 const FLOAT_SHARE = [0.7, 0.4, 1, 0.3];
 const smooth = (a, b, x) => ease(clamp((x - a) / (b - a), 0, 1));
 let flow = null;
@@ -3740,27 +3765,10 @@ function flowOf() {
   const idx = (x, y) => clamp(Math.floor(y), 0, S.H - 1) * S.W + clamp(Math.floor(x), 0, S.W - 1);
   const wetAt = (x, y) => g[idx(x, y)] < level, lake = world.lake && world.lake.near;
   const rivers = world.rivers.map((rv, ri) => {
-    const pts = rv.pts, n = pts.length, F = () => new Float32Array(n);
-    const R = { pts, n, ri, brook: rv.brook, tx: F(), ty: F(), half: F(), mid: F(), v: F(), at: F(), still: F(), rif: F(), foam: F(), end: n - 1 };
-    const l = F(), r = F();
-    for (let k = 0; k < n; k++) {
-      const a = pts[Math.max(0, k - 2)], b = pts[Math.min(n - 1, k + 2)], d = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-      const tx = (b.x - a.x) / d, ty = (b.y - a.y) / d, p = pts[k];
-      R.tx[k] = tx; R.ty[k] = ty;
-      if (!wetAt(p.x, p.y)) continue;
-      while (l[k] < 12 && wetAt(p.x + ty * (l[k] + 0.25), p.y - tx * (l[k] + 0.25))) l[k] += 0.25;   // across one way
-      while (r[k] < 12 && wetAt(p.x - ty * (r[k] + 0.25), p.y + tx * (r[k] + 0.25))) r[k] += 0.25;   // and the other
-    }
-    const inLake = F();                               // the lake (and its shore) is still water, however narrow
-    for (let k = 0; k < n; k++) inLake[k] = lake && wetAt(pts[k].x, pts[k].y) && lake[idx(pts[k].x, pts[k].y)] ? 1 : 0;
-    for (let k = 0; k < n; k++) {                     // evened out along the river, or every tile's edge shows
-      let sl = 0, sr = 0, sk = 0, m = 0;
-      for (let j = Math.max(0, k - 4); j <= Math.min(n - 1, k + 4); j++) { sl += l[j]; sr += r[j]; sk += inLake[j]; m++; }
-      R.half[k] = (sl + sr) / m / 2; R.mid[k] = (sr - sl) / m / 2;
-      R.still[k] = Math.max(smooth(3.5, 7, R.half[k]), sk / m);
-    }
-    for (const f of world.fords) if (f.river === ri) for (let k = 0; k < n; k++) R.rif[k] = Math.max(R.rif[k], Math.exp(-(((k - f.k) / 9) ** 2)));
-    for (let k = 0; k < n; k++) R.v[k] = FLOW_SPEED * Math.sqrt(2 / clamp(R.half[k], 1.1, 8)) * (1 + 0.5 * R.rif[k]) * (1 - 0.92 * R.still[k]);
+    const C = world.current.rivers[ri], pts = rv.pts, n = pts.length, F = () => new Float32Array(n);
+    const R = { pts, n, ri, brook: rv.brook, tx: C.tx, ty: C.ty, half: C.half, mid: C.mid, still: C.still, rif: C.rif, end: C.end,
+      v: F(), at: F(), foam: F() };
+    for (let k = 0; k < n; k++) R.v[k] = FLOW_SPEED * C.pace[k];
     for (let k = 1; k < n; k++) {
       const a = pts[k - 1], b = pts[k];
       R.at[k] = R.at[k - 1] + Math.hypot(b.x - a.x, b.y - a.y) / Math.max(0.02, (R.v[k - 1] + R.v[k]) / 2);
@@ -3773,18 +3781,12 @@ function flowOf() {
     }
     return R;
   });
-  // A brook ends where it runs into a river's channel, in a rush of white water there and a little way down.
-  for (const B of rivers) if (B.brook) {
-    let into = null, at = 0;
-    for (let k = 0; k < B.n && !into; k++) {
-      const p = B.pts[k];
-      for (const R of rivers) if (!R.brook) for (let j = 0; j < R.n; j++) {
-        const q = R.pts[j];
-        if ((q.x - p.x) ** 2 + (q.y - p.y) ** 2 < (R.half[j] - 0.2) ** 2) { B.end = k; into = R; at = j; break; }
-      }
-    }
+  // Where a brook runs into the river: a rush of white water there and a little way down.
+  for (const B of rivers) {
+    const j = world.current.rivers[B.ri].joins, into = j && rivers[j.river];
+    if (!j) continue;
     for (let k = Math.max(0, B.end - 8); k <= B.end; k++) B.foam[k] = Math.max(B.foam[k], 0.7 * (1 - (B.end - k) / 9));
-    if (into) for (let k = Math.max(0, at - 2); k < Math.min(into.n, at + 16); k++) into.foam[k] = Math.max(into.foam[k], 0.8 * Math.exp(-(((k - at - 3) / 6) ** 2)));
+    for (let k = Math.max(0, j.k - 2); k < Math.min(into.n, j.k + 16); k++) into.foam[k] = Math.max(into.foam[k], 0.8 * Math.exp(-(((k - j.k - 3) / 6) ** 2)));
   }
   // Where the current runs (no lake waves or lilies there), how thick the streaks set off at each point, and the stretches.
   const running = new Uint8Array(S.W * S.H);
@@ -3812,7 +3814,7 @@ function flowOf() {
           if ((x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2 < reach * reach && !(lake && lake[y * S.W + x])) running[y * S.W + x] = 1;
     }
     R.foam[R.end] = 0;
-    R.floats = Math.round(length * FLOW_FLOATS);
+    R.trickle = Math.round(length * FLOW_FLOATS); R.src = [];
     // Each stretch's box: its own points and as far down as a streak setting off from them gets, and the river's width.
     const chunks = Math.ceil(R.end / FLOW_CHUNK), last = STREAK_LIFE[0] + STREAK_LIFE[1] + 0.5;
     R.box = new Float32Array(chunks * 4); R.seen = new Uint8Array(chunks);
@@ -3832,7 +3834,18 @@ function flowOf() {
     if (!R) continue;
     for (const d of world.decor) if (d.stone && Math.hypot(d.x - f.x, d.y - f.y) < 4) R.stones.push({ d, k: Math.min(f.k, R.end - 1) });
   }
-  flow = { world, rivers, running };
+  // Which point of which river each tile by the running water lies over: a tree there drops things in (floatSources).
+  const bank = new Int32Array(S.W * S.H).fill(-1), gap = new Float32Array(S.W * S.H).fill(Infinity);
+  for (const R of rivers) for (let k = 0; k < R.end; k++) {
+    if (!R.dens[k]) continue;
+    const p = R.pts[k], cx = p.x - R.ty[k] * R.mid[k], cy = p.y + R.tx[k] * R.mid[k], reach = R.half[k] + BANK_REACH;
+    for (let y = Math.max(0, Math.floor(cy - reach)); y <= Math.min(S.H - 1, cy + reach); y++)
+      for (let x = Math.max(0, Math.floor(cx - reach)); x <= Math.min(S.W - 1, cx + reach); x++) {
+        const i = y * S.W + x, d2 = (x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2;
+        if (d2 < reach * reach && d2 < gap[i]) { gap[i] = d2; bank[i] = R.ri << 16 | k; }
+      }
+  }
+  flow = { world, rivers, running, bank, day: -1 };
   return flow;
 }
 // Where on its river a thing is that set off from point k0 (fractional, before the end) `age` seconds of the
@@ -3852,33 +3865,43 @@ function flowNear(R, k0, age) {
   while (at[k + 1] <= t) k++;
   return k + (t - at[k]) / Math.max(1e-6, at[k + 1] - at[k]);
 }
-// The spot `lane` (-1..1, one bank to the other) across the river at point kf (fractional): into flowAt.
+// The spot `lane` (-1..1, one bank to the other) across the river at point kf (fractional): into flowAt. The way
+// it runs, the width and the middle are blended between the points, or a thing hops sideways at each one.
 const flowAt = { x: 0, y: 0 };
 function flowSpot(R, kf, lane) {
-  const k = Math.min(R.n - 2, Math.max(0, Math.floor(kf))), f = kf - k, a = R.pts[k], b = R.pts[k + 1];
-  const off = R.mid[k] + lane * R.half[k];
-  flowAt.x = a.x + (b.x - a.x) * f - R.ty[k] * off;
-  flowAt.y = a.y + (b.y - a.y) * f + R.tx[k] * off;
+  const k = Math.min(R.n - 2, Math.max(0, Math.floor(kf))), f = kf - k, g = 1 - f, j = k + 1, a = R.pts[k], b = R.pts[j];
+  const off = g * (R.mid[k] + lane * R.half[k]) + f * (R.mid[j] + lane * R.half[j]);
+  const tx = g * R.tx[k] + f * R.tx[j], ty = g * R.ty[k] + f * R.ty[j];
+  flowAt.x = a.x + (b.x - a.x) * f - ty * off;
+  flowAt.y = a.y + (b.y - a.y) * f + tx * off;
   return flowAt;
 }
+const flowLerp = (A, kf) => { const k = kf | 0, f = kf - k; return f ? A[k] + (A[k + 1] - A[k]) * f : A[k]; };   // A at point kf
 const wetTile = (x, y) => x >= 0 && y >= 0 && x < S.W && y < S.H && world.water[(y | 0) * S.W + (x | 0)] !== 0;
+// How much water there is at (x, y) as the ground draws it (pond.wet, the shader's water field): its edge is at 0.47.
+function wetness(x, y) {
+  const f = pond.wet, qx = clamp(x - 0.5, 0, S.W - 1.001), qy = clamp(y - 0.5, 0, S.H - 1.001);
+  const i = qx | 0, j = qy | 0, u = qx - i, v = qy - j, o = j * S.W + i;
+  return (f[o] + (f[o + 1] - f[o]) * u) * (1 - v) + (f[o + S.W] + (f[o + S.W + 1] - f[o + S.W]) * u) * v;
+}
 const laneSpeed = lane => 1 - FLOW_BANK * lane * lane;   // quickest down the middle
 
 // The flow's clock, in seconds; it stops while the game is paused. Returns how fast the water runs now against its
-// usual pace.
+// usual pace (the sim's riverPace).
 let flowClock = 0, flowLast = 0;
 function flowTick(now) {
-  const dt = clamp((now - flowLast) / 1000, 0, 0.1), T = world.terrain, d = world.level - T.level;
+  const dt = clamp((now - flowLast) / 1000, 0, 0.1), water = S.riverPace(world);
   flowLast = now;
-  const water = d > 0 ? 1 + FLOW_HIGH * Math.min(1, d / Math.max(1e-6, T.springFlood)) : 1 - FLOW_LOW * Math.min(1, -d / Math.max(1e-6, T.summerLow));
   flowClock += dt * water * (ui.speed > 1 ? ui.speed ** 0.17 : ui.speed > 0 ? 1 : 0);
   return water;
 }
 
 // What a frame draws, gathered first and drawn in one go per shade: each streak its head, tail and how far its
 // curls swing out (0: a plain stroke), and each fleck of foam where and how big.
-const STREAK_MAX = 1500, streakBuf = [0, 1, 2, 3, 4].map(() => new Float32Array(STREAK_MAX * 5)), streakN = new Int32Array(5);
-const FLECK_MAX = 1500, fleckBuf = [0, 1, 2, 3].map(() => new Float32Array(FLECK_MAX * 3)), fleckN = new Int32Array(4);
+// Enough shades that one fading in or out doesn't visibly step.
+const SHADES = 8, FLECK_SHADES = 6;
+const STREAK_MAX = 1500, streakBuf = Array.from({ length: SHADES + 1 }, () => new Float32Array(STREAK_MAX * 5)), streakN = new Int32Array(SHADES + 1);
+const FLECK_MAX = 1500, fleckBuf = Array.from({ length: FLECK_SHADES + 1 }, () => new Float32Array(FLECK_MAX * 3)), fleckN = new Int32Array(FLECK_SHADES + 1);
 const FLECKS = [0, 0, 1, -0.24, 0.08, 0.8, -0.42, -0.06, 0.65];   // a fleck of foam: a few blobs, each along, across, size
 function drawFlow(now, ck) {
   const water = flowTick(now);
@@ -3888,20 +3911,26 @@ function drawFlow(now, ck) {
   const F = flowOf(), T = flowClock, dens = Math.sqrt(water);
   const ox = vw / 2 - cam.x * z, oy = vh / 2 - cam.y * z;
   const curl = z >= 12, foamy = z >= 8;              // further out the ~ would be under a pixel: a plain stroke
+  const few = 0.75 + 0.25 * smooth(6, 16, z);           // and fewer of them: from afar a river full of lines looks busy
   streakN.fill(0); fleckN.fill(0);
   // The current: a pale streak sets off, rides downstream and fades. The faster the water, the longer and
   // brighter; over a ford the riffle streaks join in, short ones, any way across.
-  const streak = (R, k0, u, life, lane, bright) => {
+  // `there`: how much of it there is (it fades in and out as the water rises and falls, rather than popping).
+  const streak = (R, k0, u, life, lane, bright, there) => {
     const ls = laneSpeed(lane), kf = flowNear(R, k0, u * life * ls);
     if (kf < 0) return;
-    const k = kf | 0, b = Math.sin(Math.PI * u), vk = R.v[k] * ls * water;   // tiles a second, as it looks
-    const shade = Math.round(b * (1 - R.still[k]) * Math.min(1, (bright || clamp(0.4 + 0.13 * vk, 0.5, 0.9)) + 0.5 * R.rif[k]) * 4);
-    if (shade < 1 || streakN[shade] >= STREAK_MAX) return;
+    const b = Math.sin(Math.PI * u), vk = flowLerp(R.v, kf) * ls * water, rif = flowLerp(R.rif, kf);   // tiles a second, as it looks
+    let a = there * b * (1 - flowLerp(R.still, kf)) * Math.min(1, (bright || clamp(0.4 + 0.13 * vk, 0.5, 0.9)) + 0.5 * rif);
+    if (a * SHADES < 0.5) return;
     const head = flowSpot(R, kf, lane), x = head.x, y = head.y, hx = ox + x * z, hy = oy + y * z;
-    if (!visible(hx, hy, z * 2.5) || !wetTile(x, y) || mistAt(x, y) > 0.4) return;
+    if (!visible(hx, hy, z * 2.5) || mistAt(x, y) > 0.4) return;
     const s = 0.6 + 0.4 * b, len = clamp(0.45 * vk, 0.6, 2.4) * (bright ? 0.5 : 1) * s;   // tiles
-    const tail = flowSpot(R, Math.max(0, kf - 2 * len), lane), o = streakN[shade]++ * 5, buf = streakBuf[shade];
-    buf[o] = hx; buf[o + 1] = hy; buf[o + 2] = ox + tail.x * z; buf[o + 3] = oy + tail.y * z;
+    const tail = flowSpot(R, Math.max(0, kf - 2 * len), lane), tx = tail.x, ty = tail.y;
+    a *= smooth(0.5, 0.62, Math.min(wetness(x, y), wetness(tx, ty)));   // it fades as it nears the bank, head or tail
+    const shade = Math.round(a * SHADES);
+    if (shade < 1 || streakN[shade] >= STREAK_MAX) return;
+    const o = streakN[shade]++ * 5, buf = streakBuf[shade];
+    buf[o] = hx; buf[o + 1] = hy; buf[o + 2] = ox + tx * z; buf[o + 3] = oy + ty * z;
     buf[o + 4] = curl ? 0.15 * s * z / (1 + 0.4 * len) : 0;   // (a curve's control point lies twice as far out as its top)
   };
   // White water: flecks that bob up, race down a little way and go.
@@ -3911,9 +3940,10 @@ function drawFlow(now, ck) {
     const lane = (hash2(j, c, 54) * 2 - 1) * 0.8, ls = laneSpeed(lane), kf = flowNear(R, k + hash2(j, c, 55), u * life * ls);
     if (kf < 0) return;
     const p = flowSpot(R, kf, lane), x = p.x, y = p.y, sx = ox + x * z, sy = oy + y * z;
-    if (!visible(sx, sy, z) || !wetTile(x, y) || mistAt(x, y) > 0.4) return;
-    const shade = Math.ceil(Math.sin(Math.PI * u) * 3), kk = kf | 0, tx = R.tx[kk], ty = R.ty[kk];
+    if (!visible(sx, sy, z) || mistAt(x, y) > 0.4) return;
+    const shade = Math.round(Math.sin(Math.PI * u) * smooth(0.52, 0.65, wetness(x, y)) * FLECK_SHADES);
     if (shade < 1 || fleckN[shade] >= FLECK_MAX - 3) return;
+    const tx = flowLerp(R.tx, kf), ty = flowLerp(R.ty, kf);
     const r = z * (0.06 + 0.03 * hash2(j, c, 56)) * (1 - 0.4 * u), spread = 1 + 0.6 * u, buf = fleckBuf[shade];
     for (let i = 0; i < FLECKS.length; i += 3) {
       const o = fleckN[shade]++ * 3, a = FLECKS[i] * spread * z, b = FLECKS[i + 1] * spread * z;
@@ -3926,10 +3956,10 @@ function drawFlow(now, ck) {
       R.seen[c] = ox + box[c * 4 + 2] * z > 0 && oy + box[c * 4 + 3] * z > 0 && ox + box[c * 4] * z < vw && oy + box[c * 4 + 1] * z < vh ? 1 : 0;
       if (!R.seen[c]) continue;
       for (let k = c * FLOW_CHUNK, k1 = Math.min(R.end, k + FLOW_CHUNK); k < k1; k++) {
-        const p = R.dens[k] * dens;
+        const p = R.dens[k] * dens * few;
         if (p > 0) for (let s = 0; s < FLOW_SLOTS; s++) {
-          const j = k * FLOW_SLOTS + s, life = R.life[j], t = T / life + R.ph[j], cy = Math.floor(t);
-          if (hash2(j, cy, 43 + R.ri) < p) streak(R, k + hash2(j, cy, 45), t - cy, life, (hash2(j, cy, 44) * 2 - 1) * 0.85, 0);
+          const j = k * FLOW_SLOTS + s, life = R.life[j], t = T / life + R.ph[j], cy = Math.floor(t), h = hash2(j, cy, 43 + R.ri);
+          if (h < p) streak(R, k + hash2(j, cy, 45), t - cy, life, (hash2(j, cy, 44) * 2 - 1) * 0.85, 0, Math.min(1, 4 * (p - h) / p));
         }
         if (foamy && R.foam[k] > 0.03) for (let s = 0; s < FLOW_FOAM; s++) fleck(R, k, k * FLOW_FOAM + s, R.foam[k] * dens);
       }
@@ -3940,18 +3970,19 @@ function drawFlow(now, ck) {
       for (let j = 0; j < 5; j++) {
         const life = 0.7 + 0.5 * hash2(j, s.d.x * 7 | 0, 45), t = T / life + hash2(j, s.d.y * 7 | 0, 46), c = Math.floor(t);
         const k0 = clamp(s.k + Math.round((hash2(j, c, 47) - 0.5) * 6), 0, R.end - 1);
-        streak(R, k0, t - c, life, (hash2(j, c, 48) * 2 - 1) * 0.95, 1);
+        streak(R, k0, t - c, life, (hash2(j, c, 48) * 2 - 1) * 0.95, 1, 1);
       }
     }
   }
   ctx.save();
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  const A = 0.95 * open * smooth(5, 9, z);
+  // Under a pixel wide a line is still drawn a pixel wide, so it's fainter instead (by a bit less, or it'd be lost).
+  const A = 0.75 * open * smooth(4, 9, z) * Math.sqrt(Math.min(1, z * 0.08));
   ctx.strokeStyle = '#f4fbff'; ctx.lineWidth = Math.max(1, z * 0.08);
-  for (let shade = 1; shade <= 4; shade++) {
+  for (let shade = 1; shade <= SHADES && A > 0.02; shade++) {
     const n = streakN[shade], buf = streakBuf[shade];
     if (!n) continue;
-    ctx.globalAlpha = A * shade / 4;
+    ctx.globalAlpha = A * shade / SHADES;
     ctx.beginPath();
     for (let i = 0; i < n * 5; i += 5) {
       const hx = buf[i], hy = buf[i + 1], dx = buf[i + 2] - hx, dy = buf[i + 3] - hy, amp = buf[i + 4];
@@ -3965,18 +3996,18 @@ function drawFlow(now, ck) {
     }
     ctx.stroke();
   }
-  const FA = 0.9 * open * smooth(8, 12, z);
+  const FA = 0.8 * open * smooth(8, 12, z);
   ctx.fillStyle = '#fbfeff';
-  for (let shade = 1; shade <= 3 && FA > 0.02; shade++) {
+  for (let shade = 1; shade <= FLECK_SHADES && FA > 0.02; shade++) {
     const n = fleckN[shade], buf = fleckBuf[shade];
     if (!n) continue;
-    ctx.globalAlpha = FA * shade / 3;
+    ctx.globalAlpha = FA * shade / FLECK_SHADES;
     ctx.beginPath();
     for (let i = 0; i < n * 3; i += 3) { ctx.moveTo(buf[i] + buf[i + 2], buf[i + 1]); ctx.arc(buf[i], buf[i + 1], buf[i + 2], 0, TAU); }
     ctx.fill();
   }
   // Riffles: the water parts round each stepping stone in a little V that trails downstream, and won't keep still.
-  const rv = 0.9 * open * smooth(9, 13, z);
+  const rv = 0.8 * open * smooth(9, 13, z);
   if (rv > 0.02) {
     ctx.beginPath();
     for (const R of F.rivers) for (const s of R.stones) {
@@ -3984,32 +4015,74 @@ function drawFlow(now, ck) {
       if (!visible(sx, sy, z * 3) || !wetTile(d.x, d.y)) continue;
       const k = s.k, tx = R.tx[k], ty = R.ty[k], w = d.size * z * 0.42, ph = hash2(d.x * 9 | 0, d.y * 9 | 0, 49) * TAU;
       for (let side = -1; side <= 1; side += 2) {
-        const len = d.size * z * (0.6 + 0.25 * Math.sin(T * 6 + ph + side)) * Math.min(1.4, water);
+        const len = d.size * z * (0.6 + 0.15 * Math.sin(T * 2.6 + ph + side) + 0.08 * Math.sin(T * 4.1 + 2 * ph)) * Math.min(1.4, water);
         const ax = sx - ty * w * side, ay = sy + tx * w * side - z * 0.05;
         ctx.moveTo(ax, ay);
         ctx.quadraticCurveTo(ax + tx * len * 0.5, ay + ty * len * 0.5, ax + tx * len - ty * len * 0.35 * side, ay + ty * len + tx * len * 0.35 * side);
       }
     }
     ctx.strokeStyle = '#f8fdff'; ctx.lineWidth = Math.max(1, z * 0.08);
-    ctx.globalAlpha = rv * (0.8 + 0.2 * Math.sin(T * 7));
+    ctx.globalAlpha = rv;
     ctx.stroke();
   }
   ctx.restore();
   drawFloats(T, z, open, ck, ox, oy);
 }
 
-// Things floating down: petals and leaves, a feather, a twig, as the season has them. Each lands somewhere
-// on the running water with a ring, floats down turning slowly, and after a while sinks, or once it's out on
-// still water (or they'd line up along the river's way through the lake). Each is painted once (floatSprite)
-// and drawn turned, its shadow under it on the water.
-const FLOAT_LOOKS = [                                 // by season, picked evenly: [kind, colour]
-  [[1, [248, 190, 208]], [1, [252, 236, 240]], [1, [240, 160, 190]], [1, [250, 208, 222]], [0, [126, 180, 72]]],   // spring: blossom, a fresh leaf
+// Things floating down: petals and leaves, a feather, a twig. Most fall in from the trees on the bank, each dropping
+// what it has in its season on its side of the river: blossom off a cherry, an apple or a thorn in flower, in autumn
+// leaves coloured by its kind, now and then a green one in summer and a brown one or a twig in winter. A few float in
+// from upstream or drop from the sky (FLOAT_LOOKS). Each lands with a ring, floats down turning slowly, and after a
+// while sinks, or once it's out on still water (or they'd line up along the river's way through the lake). Each look
+// is painted once (floatSprite) and drawn turned, its shadow under it on the water.
+const FLOAT_LOOKS = [                                 // from upstream, by season, picked evenly: [shape, colour]
+  [[1, [248, 190, 208]], [1, [252, 236, 240]], [0, [126, 180, 72]], [0, [140, 190, 84]], [0, [126, 180, 72]]],     // spring: a petal, a fresh leaf
   [[0, [104, 154, 64]], [0, [86, 136, 58]], [0, [118, 160, 70]], [2, [236, 236, 230]], [3, [246, 246, 242]]],     // summer: leaves, a feather, a seed's fluff
   [[0, [222, 132, 44]], [0, [196, 72, 42]], [0, [228, 182, 60]], [0, [150, 98, 52]], [0, [206, 104, 40]]],        // autumn
   [[0, [146, 108, 72]], [0, [122, 92, 64]], [4, [110, 84, 60]], [0, [134, 100, 66]], [4, [96, 74, 54]]],          // winter: brown leaves, twigs
 ];
 const FLOAT_SIZE = [0.5, 0.4, 0.5, 0.26, 0.75];        // tiles: leaf, blossom, feather, fluff, twig
 const FLOAT_BOX = 1.5;                                // a sprite, in its lengths
+const BANK_REACH = 5;                                 // tiles from the water's edge a tree drops things in, on the wind
+const TREE_FLOATS = [4, 1, 5, 1];                     // things a grown tree on the bank drops in at a time, by season (a young one
+                                                      // half; in autumn as fast as its leaves are coming down, treeLook's drop)
+const PETALS = { cherry: [248, 190, 208], apple: [252, 236, 240], hawthorn: [250, 248, 244] };
+const FLOAT_ART = [], floatArt = new Map();          // every look a float has had: [shape, colour]
+function lookOf(shape, rgb) {
+  rgb = rgb.map(v => Math.min(255, Math.round(v / 16) * 16));   // (a few colours, or the sprites pile up)
+  const key = shape + ':' + rgb;
+  let i = floatArt.get(key);
+  if (i === undefined) { i = FLOAT_ART.length; FLOAT_ART.push([shape, rgb]); floatArt.set(key, i); }
+  return i;
+}
+const FLOAT_IDS = FLOAT_LOOKS.map(looks => looks.map(([shape, rgb]) => lookOf(shape, rgb)));
+const scaled = (rgb, k) => rgb.map(v => Math.min(255, Math.round(v * k)));
+// What a tree on the bank drops in now, and how many at a time: blossom while it's in flower, its leaves as they're
+// drawn (treeLook: green in summer, turning in autumn, as fast as they're coming down), brown ones and twigs in winter.
+function treeFloats(d, ck) {
+  const s = ck.season, n = TREE_FLOATS[s] * (d.size >= S.GROWN ? 1 : 0.5);
+  if (d.kind === 'pine') return null;
+  if (s === 0) { const c = PETALS[d.kind]; return c && S.inBloom(world, d) ? { looks: [lookOf(1, c), lookOf(1, scaled(c, 0.95))], n } : null; }
+  if (s === 3) return { looks: [lookOf(0, [134, 100, 66]), lookOf(4, [110, 84, 60])], n };
+  const t = treeLook(d, ck), c = t.rgb, k = Math.round(s === 2 ? n * t.drop : n);
+  return k ? { looks: [lookOf(0, c), lookOf(0, scaled(c, 0.85)), lookOf(0, scaled(c, 1.1))], n: k } : null;
+}
+// The trees on the bank and what they drop in, worked out again each day: each has a few floats of its own (kept
+// by its id, so one coming or going leaves the others be), landing under it on its side of the river.
+function floatSources(ck) {
+  const day = Math.floor(world.tick / S.TPD);
+  if (flow.day === day) return;
+  flow.day = day;
+  for (const R of flow.rivers) R.src.length = 0;
+  for (const d of world.decor) {
+    if (!d.tree || d.size < S.SAPLING || !S.standing(d)) continue;
+    const b = flow.bank[tileOf(d.x, d.y)], drops = b >= 0 && treeFloats(d, ck);
+    if (!drops) continue;
+    const R = flow.rivers[b >> 16], k = b & 0xffff, p = R.pts[k];
+    const across = (d.y - p.y) * R.tx[k] - (d.x - p.x) * R.ty[k] - R.mid[k];   // its side of the river
+    R.src.push({ id: d.id, k, lane: clamp(across / Math.max(0.5, R.half[k]), -0.75, 0.75), looks: drops.looks, n: Math.round(drops.n) });
+  }
+}
 function flowPick(R, u) {                             // a point on the running water, by u in 0..1
   if (!R.pick) {
     R.pick = new Float32Array(R.end);
@@ -4023,54 +4096,66 @@ function flowPick(R, u) {                             // a point on the running 
 function drawFloats(T, z, open, ck, ox, oy) {
   const fz = smooth(8.5, 11, z) * open;               // further out, a speck
   if (fz < 0.02) return;
-  const share = FLOAT_SHARE[ck.season], looks = FLOAT_LOOKS[ck.season];
+  floatSources(ck);
+  const share = FLOAT_SHARE[ck.season], m = ctx.getTransform(), ex = m.e, ey = m.f;   // (the thunder's shake)
   ctx.save();
   ctx.beginPath();          // Chrome carries the path along through every setTransform: the foam's would cost each float dear
-  for (const R of flow.rivers) for (let j = 0; j < R.floats; j++) {
-    const hj = hash2(j, R.ri, 61);
-    if (hj > share) continue;
-    const life = 20 + 15 * hash2(j, R.ri, 62), t = T / life + hash2(j, R.ri, 63), c = Math.floor(t), age = (t - c) * life;
-    const lane = (hash2(j, c, 65) * 2 - 1) * 0.5 + 0.12 * Math.sin(age * 0.23 + j);
-    const kf = flowFind(R, flowPick(R, hash2(j, c, 64 + R.ri)), age * laneSpeed(lane));
-    const sink = kf < 0 ? 0 : 1 - smooth(0.3, 0.75, R.still[kf | 0]);
-    if (sink <= 0 || !R.seen[(kf / FLOW_CHUNK) | 0]) continue;   // (its stretch is off screen)
-    const p = flowSpot(R, kf, lane), sx = ox + p.x * z, sy = oy + p.y * z;
-    if (!visible(sx, sy, z) || !wetTile(p.x, p.y) || !fadeAt(p.x, p.y)) continue;
-    const pick = Math.floor(hash2(j, c, 66) * looks.length), kind = looks[pick][0];
-    const a = fz * sink * Math.min(1, age / 1.5, (life - age) / 4, clamp((share - hj) * 10, 0, 1));
+  // One float: a, b say which (from upstream: its number and the river; from a tree: the tree and its number). It
+  // lands at point k (or anywhere, k < 0) in lane `lane`, looking like one of `looks`, as much there as `there` says.
+  const one = (R, a, b, k, lane, looks, there) => {
+    const life = 20 + 15 * hash2(a, b, 62), t = T / life + hash2(a, b, 63), c = Math.floor(t), age = (t - c) * life, h = a * 31 + b;
+    const k0 = k < 0 ? flowPick(R, hash2(h, c, 64)) : clamp(k + (hash2(h, c, 64) - 0.5) * 4, 0, R.end - 1.01);
+    // It keeps the pace of its own lane and only sways across: were the sway to change its pace, a float that
+    // had come a long way would surge and stall (where it is goes by how long it has been going).
+    const l0 = lane + (hash2(h, c, 65) - 0.5) * (k < 0 ? 1 : 0.3), ln = clamp(l0 + 0.12 * Math.sin(age * 0.23 + a), -0.85, 0.85);
+    const kf = flowFind(R, k0, age * laneSpeed(l0));
+    const sink = kf < 0 ? 0 : 1 - smooth(0.3, 0.75, flowLerp(R.still, kf));
+    if (sink <= 0 || !R.seen[(kf / FLOW_CHUNK) | 0]) return;   // (its stretch is off screen)
+    const p = flowSpot(R, kf, ln), sx = ox + p.x * z, sy = oy + p.y * z, wet = smooth(0.5, 0.62, wetness(p.x, p.y));
+    if (!visible(sx, sy, z) || !wet || !fadeAt(p.x, p.y)) return;
+    const look = looks[Math.floor(hash2(h, c, 66) * looks.length)], kind = FLOAT_ART[look][0];
+    const al = fz * sink * wet * there * Math.min(1, age / 1.5, (life - age) / 4);
     if (age < 1.6) {                                  // where it landed: a ring spreading
       const u = age / 1.6;
-      ctx.globalAlpha = 0.75 * fz * (1 - u); ctx.strokeStyle = '#f4fbff'; ctx.lineWidth = Math.max(1, z * 0.04);
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.globalAlpha = 0.75 * fz * there * (1 - u); ctx.strokeStyle = '#f4fbff'; ctx.lineWidth = Math.max(1, z * 0.04);
+      ctx.setTransform(dpr, 0, 0, dpr, ex, ey);
       ctx.beginPath(); ctx.ellipse(sx, sy, z * (0.2 + 0.6 * u), z * (0.1 + 0.36 * u), 0, 0, TAU); ctx.stroke();
     }
-    const size = z * FLOAT_SIZE[kind] * (0.85 + 0.3 * hash2(j, c, 68)), w = size * FLOAT_BOX;
-    const turn = hash2(j, c, 69) * TAU + 0.5 * Math.sin(age * 0.4 + j) + age * (hash2(j, c, 70) - 0.5) * 0.3;
+    const size = z * FLOAT_SIZE[kind] * (0.85 + 0.3 * hash2(h, c, 68)), w = size * FLOAT_BOX;
+    const turn = hash2(h, c, 69) * TAU + 0.5 * Math.sin(age * 0.4 + a) + age * (hash2(h, c, 70) - 0.5) * 0.3;
     const cos = Math.cos(turn) * dpr, sin = Math.sin(turn) * dpr;
     if (size > 9) {                                   // its shadow on the water (too small to see, further out), then the thing
-      ctx.globalAlpha = 0.25 * a;
-      ctx.setTransform(cos, sin, -sin, cos, (sx + size * 0.08) * dpr, (sy + size * 0.16) * dpr);
+      ctx.globalAlpha = 0.25 * al;
+      ctx.setTransform(cos, sin, -sin, cos, (sx + size * 0.08) * dpr + ex, (sy + size * 0.16) * dpr + ey);
       ctx.drawImage(floatSprite(-1 - kind, size * dpr), -w / 2, -w / 2, w, w);
     }
-    ctx.globalAlpha = a;
-    ctx.setTransform(cos, sin, -sin, cos, sx * dpr, sy * dpr);
-    ctx.drawImage(floatSprite(ck.season * 8 + pick, size * dpr), -w / 2, -w / 2, w, w);
+    ctx.globalAlpha = al;
+    ctx.setTransform(cos, sin, -sin, cos, sx * dpr + ex, sy * dpr + ey);
+    ctx.drawImage(floatSprite(look, size * dpr), -w / 2, -w / 2, w, w);
+  };
+  for (const R of flow.rivers) {
+    for (let j = 0; j < R.trickle; j++) {             // from upstream, fewer out of season
+      const hj = hash2(j, R.ri, 61);
+      if (hj < share) one(R, j, R.ri + 1, -1, 0, FLOAT_IDS[ck.season], clamp((share - hj) * 10, 0, 1));
+    }
+    for (const s of R.src) for (let m = 0; m < s.n; m++) one(R, s.id, 100 + m, s.k, s.lane, s.looks, 1);
   }
   unfade();
   ctx.restore();
 }
-// A float's sprite, `want` device pixels a length, painted in steps of about a quarter. look: season * 8 + which,
-// or -1 - kind for a kind's shadow.
+// A float's sprite, `want` device pixels a length, painted in steps of about a quarter. look: its place in FLOAT_ART,
+// or -1 - shape for a shape's shadow.
 const floatSprites = new Map();
 function floatSprite(look, want) {
   const step = Math.round(3 * Math.log2(Math.max(4, want))), key = look * 64 + step;
   let img = floatSprites.get(key);
   if (img) return img;
+  if (floatSprites.size > 400) { for (const o of floatSprites.values()) freeImage(o); floatSprites.clear(); }
   const U = 2 ** (step / 3), n = Math.ceil(U * FLOAT_BOX), c = document.createElement('canvas'), g = c.getContext('2d');
   c.width = c.height = n;
   g.translate(n / 2, n / 2); g.scale(U, U);
   if (look < 0) { g.fillStyle = '#1c3a58'; floatShape(g, -1 - look, true); }
-  else { const [kind, rgb] = FLOAT_LOOKS[look >> 3][look & 7]; floatPaint(g, kind, rgb, dpr / U); }
+  else { const [kind, rgb] = FLOAT_ART[look]; floatPaint(g, kind, rgb, dpr / U); }
   floatSprites.set(key, c);
   asBitmap(c, b => { if (floatSprites.get(key) === c) { floatSprites.set(key, b); c.width = 0; } else b.close(); });
   return c;

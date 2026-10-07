@@ -208,8 +208,8 @@ function clock(w) {
 //
 // The ground has a height, and water lies wherever the ground is below the water level, so
 // a wetter or drier season only has to move one number. Shallow water can be waded, slowly;
-// deep water can't be crossed. Every meadow gets a river, a lake or both, and a few small
-// ponds of its own, well away from the rest.
+// deep water can't be crossed. Every meadow gets a river, a lake or both, and most get a few
+// ponds of their own, away from the rest: on their own, or a cluster of little pools.
 
 const SHALLOW = 1, DEEP = 2;       // w.water, per tile. 0 is dry land
 
@@ -233,9 +233,15 @@ const TERRAIN = {
   deepAt: 0.3,                 // water at least this deep can't be waded
   layouts: { valley: 2, river: 1, lake: 1 },   // odds of each: a river through a lake, a river, a lake
   lakeEdge: 0.4,               // odds a lake lies by the edge of the meadow, running off it (else in a hollow)
-  lakeBlobs: 6,                // circles a lake is made of
-  lakeSpread: 13,              // how far they stray from its middle
-  lakeSize: [6, 11],           // each circle's radius
+  lakeReach: [11, 18],         // how far a lake reaches from its middle, across it
+  lakeStretch: [1, 1.7],       // how much longer it is than wide
+  riverLake: [1.4, 2.2],       // and a lake on the river, lying along it
+  lakeShore: 0.6,              // how far its shore wanders in and out: bays and points
+  lakeShelf: [0.5, 8],         // the shallows round it, from a steep drop to a wide reedy shelf
+  shelfDepth: 0.18,            // how deep a shelf gets at its outer edge (under deepAt: wadeable)
+  delta: 6,                    // how much wider the shallows are where the river comes in
+  islands: 0.4,                // odds a lake has an island
+  islandHeight: 0.07,          // how high an island's shore stands: clear of the spring flood
   lakeDepth: 1,
   riverBends: 16,              // tiles between the river's big bends
   riverSway: 8,                // how far a bend swings sideways
@@ -249,9 +255,15 @@ const TERRAIN = {
   fords: [2, 3],               // stretches of river shallow enough to wade across
   fordDepth: 0.18,             // how deep a ford is in its middle
   fordLength: 14,
-  ponds: [2, 4],
-  pondSize: [2, 4],            // radius of each of a pond's four circles
-  pondDepth: [0.25, 0.8],
+  ponds: [0, 4],               // ponds out on their own
+  pondSize: [3, 7.5],          // how far one reaches from its middle; most are smallish, a big one deep enough for otters
+  pondStretch: [1, 1.8],       // how much longer than wide
+  pondShore: 0.4,              // how far its shore wanders in and out
+  pondShelf: [0.3, 1.5],       // its shallows, from a steep drop to a wide shelf
+  pondDepth: [0.12, 1],        // most are shallowish; one under deepAt is all shallows
+  pools: 0.35,                 // odds of a cluster of little pools in one low corner
+  poolCount: [3, 6],           // how many pools in it
+  poolSize: [1.2, 2.6],        // and how far each reaches from its middle
   patches: 36,                 // fertile and poor patches of soil
   patchSize: [7, 20],
   patchRichness: [-0.45, 0.6], // from poor to rich
@@ -346,6 +358,121 @@ function placeLake(r, T, hills) {
   return { x: best.x, y: best.y };
 }
 
+// Marks in `out` the tiles joined to `from` (four ways) that pass `ok`, and returns them.
+function spread(out, from, ok) {
+  const stack = [from], all = [];
+  out[from] = 1;
+  while (stack.length) {
+    const i = stack.pop(), x = i % W;
+    all.push(i);
+    for (const j of [i - W, i + W, x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1]) {
+      if (j >= 0 && j < W * H && !out[j] && ok(j)) { out[j] = 1; stack.push(j); }
+    }
+  }
+  return all;
+}
+
+// A hollow that holds water: a bowl reaching `size` tiles from its middle, `stretch` times that along
+// `turn`, its rim pushed in and out by noise (`rough`) so the shore gets bays and points, and with `isle`
+// ({ s, ok }) a hump about `s` tiles round that stands out of the water, well inside it, on a spot `ok(x, y)`
+// likes. The tiles under water: the bowl below its rim joined to its lowest part, with any speck of land in it
+// too small for an island let under. The island's tiles are mask.isles.
+function basin(r, noise, cx, cy, size, stretch, turn, rough, isle) {
+  const N = W * H, h = new Float32Array(N).fill(9), ca = Math.cos(turn), sa = Math.sin(turn);
+  const ox = r.range(0, 60), oy = r.range(0, 60), lobe = Math.max(4, size * 0.8), reach = size * (stretch + rough) * 1.6 + 3;
+  const x0 = Math.max(0, Math.floor(cx - reach)), x1 = Math.min(W - 1, cx + reach);
+  const y0 = Math.max(0, Math.floor(cy - reach)), y1 = Math.min(H - 1, cy + reach);
+  const box = fn => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) fn(y * W + x, x + 0.5, y + 0.5); };
+  box((i, px, py) => {
+    const dx = px - cx + (noise(ox + px / lobe, oy + py / lobe) - 0.5) * 3 * rough * size;   // the rim pushed in and out
+    const dy = py - cy + (noise(oy + py / lobe + 31, ox + px / lobe + 17) - 0.5) * 3 * rough * size;
+    const u = (dx * ca + dy * sa) / stretch, v = dy * ca - dx * sa;
+    h[i] = (u * u + v * v) / (size * size) + 0.5 * rough * (noise(ox + px / 3.5, oy + py / 3.5) - 0.5);   // and ragged
+  });
+  if (isle) {                                                     // on a spot with open water all round it
+    const R = isle.s * 1.4 * r.range(1, 1.6), across = r.range(1, 1.6), it = r.range(0, Math.PI), spots = [];
+    const open = (ix, iy) => {
+      for (let y = Math.floor(iy - R - 2); y <= iy + R + 2; y++) for (let x = Math.floor(ix - R - 2); x <= ix + R + 2; x++) {
+        if ((x + 0.5 - ix) ** 2 + (y + 0.5 - iy) ** 2 < (R + 1.5) ** 2 && (x < x0 || x > x1 || y < y0 || y > y1 || h[y * W + x] >= 0.9)) return false;
+      }
+      return true;
+    };
+    box((i, px, py) => { if (h[i] < 0.6 && isle.ok(px, py) && open(px, py)) spots.push(i); });
+    if (spots.length) {
+      const at = r.pick(spots), ix = at % W + 0.5, iy = ((at / W) | 0) + 0.5, ic = Math.cos(it), is = Math.sin(it);
+      box((i, px, py) => {                                       // longer one way, and ragged
+        const u = (px - ix) * ic + (py - iy) * is, v = ((py - iy) * ic - (px - ix) * is) * across, q = 1 - (u * u + v * v) / (R * R);
+        if (q > 0) h[i] += 2 * q * q * (0.7 + 0.6 * noise(oy + px / 2.5, ox + py / 2.5));
+      });
+    }
+  }
+  let lo = Infinity, start = -1;
+  box(i => { if (h[i] < lo) { lo = h[i]; start = i; } });
+  const mask = new Uint8Array(N);
+  mask.isles = [];
+  if (lo >= 1) return mask;
+  spread(mask, start, i => h[i] < 1);
+  const open = new Uint8Array(N);                                // the land, from the edge of the map in
+  for (let i = 0; i < N; i++) {
+    const x = i % W, y = (i / W) | 0;
+    if ((x === 0 || y === 0 || x === W - 1 || y === H - 1) && !mask[i] && !open[i]) spread(open, i, j => !mask[j]);
+  }
+  for (let i = 0; i < N; i++) {                                   // and the land the water rings round
+    if (mask[i] || open[i]) continue;
+    const land = spread(open, i, j => !mask[j]);
+    if (land.length < 6) for (const j of land) mask[j] = 1;
+    else mask.isles.push(...land);
+  }
+  return mask;
+}
+
+// Carves a basin into the ground: a shelf of shallows, wide in some places and a steep drop in others
+// (as the noise goes, at `scale` tiles), then down to `deep`; `wide` spreads the shelf out round one spot.
+// Where a lake's shelf is wide its bank is gentle too, so the spring flood spreads out there. It eases into
+// the ground about it (a soft min), so a hollow in a hill has no crease, and its islands stand clear of the flood.
+function carveBasin(r, T, noise, mask, ground, deep, shelf, wide, scale = 14) {
+  const into = blurred(distanceTo(mask.map(v => 1 - v)), 1), out = distanceTo(mask);
+  const ox = r.range(0, 60), oy = r.range(0, 60), soft = 0.05;
+  const vary = (x, y, s) => clamp((noise(ox + x / s, oy + y / s) - 0.38) / 0.24, 0, 1);
+  for (let i = 0; i < W * H; i++) {
+    if (out[i] > 14) continue;
+    const x = i % W + 0.5, y = ((i / W) | 0) + 0.5, slow = vary(x, y, 14);
+    let h;
+    if (mask[i]) {
+      let s = lerp(...shelf, scale === 14 ? slow : vary(x, y, scale));
+      if (wide) s += wide.add * Math.exp(-((x - wide.x) ** 2 + (y - wide.y) ** 2) / 128);
+      const d = into[i] - 0.5, top = Math.min(T.shelfDepth, deep);
+      h = -(d < s ? top * (0.3 + 0.7 * d / s) : top + (deep - top) * Math.min(1, (d - s) / 3));
+    } else h = T.bank * lerp(1.5, 0.4, slow) * (out[i] - 0.5);
+    const gap = Math.max(0, soft - Math.abs(h - ground[i]));
+    ground[i] = Math.min(h, ground[i]) - gap * gap / (4 * soft);
+  }
+  for (const i of mask.isles) ground[i] = T.islandHeight + T.bank * 0.5 * (out[i] - 1);
+}
+
+// The lake's shape: a basin round its middle, lying along the river if one runs through it, its shallows
+// spreading out where the river comes in (lake.inflow). lake.out: tiles from the lake, 0 in it.
+function shapeLake(r, T, noise, lake, river) {
+  let turn = r.range(0, Math.PI), stretch = r.range(...T.lakeStretch);
+  if (river) {
+    let k = 0, best = Infinity;
+    river.forEach((p, j) => { const d = dist2(p, lake); if (d < best) { best = d; k = j; } });
+    const a = river[Math.max(0, k - 8)], b = river[Math.min(river.length - 1, k + 8)];
+    turn = Math.atan2(b.y - a.y, b.x - a.x) + r.range(-0.3, 0.3); stretch = r.range(...T.riverLake);
+  }
+  Object.assign(lake, { reach: r.range(...T.lakeReach), turn, stretch });
+  let isle = null;
+  if (r.next() < T.islands) {                            // an island, well clear of the river's way through
+    const s = r.range(2, 3.4) * Math.sqrt(lake.reach / 12), clear = (s * 1.3 + 3) ** 2;
+    isle = { s, ok: (x, y) => !river || river.every(q => (x - q.x) ** 2 + (y - q.y) ** 2 > clear) };
+  }
+  lake.mask = basin(r, noise, lake.x, lake.y, lake.reach, stretch, turn, T.lakeShore, isle);
+  lake.out = distanceTo(lake.mask);
+  const k = river ? river.findIndex(p => inBounds(p.x, p.y) && lake.mask[idx(p.x, p.y)]) : -1;
+  lake.inflow = k > 0 ? { x: river[k].x, y: river[k].y, add: T.delta } : null;
+}
+const lakeGap = (lake, x, y) => (inBounds(x, y) ? lake.out[idx(x, y)] : Infinity);
+
 // The river: in at one edge and out at the far one, through the lake if there is one, bending
 // on the way, and meandering in between. A lake by the edge takes the place of that end: the
 // river runs out of it, or into it. Returned as points half a tile apart.
@@ -396,7 +523,7 @@ function smoothRiver(T, ctrl, lake, wiggle) {
 function brookPath(r, T, river, lake, wiggle) {
   for (let tries = 0; tries < 12; tries++) {
     const k = Math.floor(river.length * r.range(0.25, 0.75)), join = river[k];
-    if (!inBounds(join.x, join.y) || (lake && outside(lake.shape, join.x, join.y) < 8)) continue;
+    if (!inBounds(join.x, join.y) || (lake && lakeGap(lake, join.x, join.y) < 8)) continue;
     const a = river[Math.max(0, k - 6)], b = river[Math.min(river.length - 1, k + 6)];
     const d = Math.hypot(b.x - a.x, b.y - a.y) || 1, fx = (b.x - a.x) / d, fy = (b.y - a.y) / d;   // the way the river flows
     const side = r.next() < 0.5 ? 1 : -1;
@@ -415,7 +542,7 @@ function brookPath(r, T, river, lake, wiggle) {
     ctrl.push(join);
     const pts = smoothRiver(T, ctrl, join, wiggle);
     const clear = pts.every(p => Math.hypot(p.x - join.x, p.y - join.y) < 10 ||
-      (!(lake && outside(lake.shape, p.x, p.y) < 4) && river.every(q => Math.abs(p.x - q.x) > 6 || Math.abs(p.y - q.y) > 6)));
+      (!(lake && lakeGap(lake, p.x, p.y) < 4) && river.every(q => Math.abs(p.x - q.x) > 6 || Math.abs(p.y - q.y) > 6)));
     if (clear) return pts;
   }
   return null;
@@ -523,6 +650,8 @@ function makeTerrain(w) {
   const T = w.terrain = { ...TERRAIN, ...w.options.terrain };
   const drawn = w.drawn = readDrawn(w.options.drawn);
   const hills = makeNoise(r);
+  // The lakes' and ponds' shores have random numbers of their own, so tuning them leaves the rest of the meadow be.
+  const wr = makeRng(w.seed ^ 0x3a7e5), shores = makeNoise(wr);
   const hill = new Float32Array(N);
   for (let i = 0; i < N; i++) hill[i] = hills((i % W) / T.hillSize, ((i / W) | 0) / T.hillSize, T.hillDetail);
   const each = fn => { for (let i = 0; i < N; i++) fn(i, (i % W) + 0.5, ((i / W) | 0) + 0.5); };
@@ -530,8 +659,8 @@ function makeTerrain(w) {
   // First where the water will go: the lake, the river, and whatever was drawn.
   const layout = drawn.empty ? 'none' : pickOdds(r, T.layouts);
   const lake = layout === 'river' || layout === 'none' ? null : placeLake(r, T, hills);
-  if (lake) lake.shape = blobs(r, lake.x, lake.y, T.lakeBlobs, T.lakeSpread, ...T.lakeSize);
   const river = layout === 'valley' || layout === 'river' ? riverPath(r, T, lake, hills) : null;
+  if (lake) shapeLake(wr, T, shores, lake, river);
   const brook = river && r.next() < T.brooks ? brookPath(r, T, river, lake, hills) : null;
   // A drawn river that nearly reaches the edge runs on off the map.
   const drawnRivers = drawn.rivers.map(bends => {
@@ -547,15 +676,15 @@ function makeTerrain(w) {
   // level spreads out from the river first. A brook's valley is half as wide. Away from them the
   // hills rise from low meadows that still dip and swell a little, and no hilltop sits right by
   // the water.
-  const valley = (shapes, lines, width) => {
+  const valley = (shapes, lines, width, mask) => {
     const planned = new Uint8Array(N);
-    each((i, x, y) => { if (shapes.some(sh => outside(sh, x, y) < 0)) planned[i] = 1; });
+    each((i, x, y) => { if ((mask && mask[i]) || shapes.some(sh => outside(sh, x, y) < 0)) planned[i] = 1; });
     for (const pts of lines) for (const p of pts) if (inBounds(p.x, p.y)) planned[idx(p.x, p.y)] = 1;
     if (!planned.some(v => v)) return () => 1;
     const d = blurred(blurred(distanceTo(planned), 2), 2);             // blurred, or it shows its eight directions
     return i => 1 - (1 - clamp(d[i] / width, 0, 1)) ** 2;              // rises fast from the water, then levels off
   };
-  const byRiver = valley([lake ? lake.shape : [], drawn.water], [river || [], ...drawnRivers], T.valley);
+  const byRiver = valley([drawn.water], [river || [], ...drawnRivers], T.valley, lake && lake.mask);
   const byBrook = valley([], [brook || []], T.valley / 2);
   const ground = new Float32Array(N);
   for (let i = 0; i < N; i++) {
@@ -570,30 +699,47 @@ function makeTerrain(w) {
     const h = sd >= 0 ? T.bank * sd : -deep * Math.min(1, -sd / edge);
     if (h < ground[i]) ground[i] = h;
   };
-  if (lake) each((i, x, y) => carve(i, outside(lake.shape, x, y), T.lakeDepth, 6));
-  const inLake = p => (lake && outside(lake.shape, p.x, p.y) < 6) || outside(drawn.water, p.x, p.y) < 3;
+  w.isle = new Uint8Array(N);                                     // islands: no burrows on them (canDig)
+  if (lake) {
+    carveBasin(wr, T, shores, lake.mask, ground, T.lakeDepth, T.lakeShelf, lake.inflow);
+    for (const i of lake.mask.isles) w.isle[i] = 1;
+  }
+  const inLake = p => (lake && lakeGap(lake, p.x, p.y) < 6) || outside(drawn.water, p.x, p.y) < 3;
   w.rivers = []; w.fords = [];
   if (river) carveRiver(w, T, river, inLake, carve);
   if (brook) carveRiver(w, T, brook, p => inLake(p) || Math.hypot(p.x - brook.at(-1).x, p.y - brook.at(-1).y) < 12, carve, true);
   if (drawn.water.length) carveDrawnWater(w, drawn.water, carve);
   for (const pts of drawnRivers) carveRiver(w, T, pts, inLake, carve);
 
-  // Small ponds, well away from the other water, each in the lowest of a few spots, so they
-  // gather in the hollows.
+  // Ponds, each in the lowest of a few spots away from the other water, so they gather in the hollows:
+  // a few out on their own, most of them small, and now and then a cluster of little pools in one low corner.
   w.water = new Uint8Array(N);
   w.ground = ground; w.level = T.level;
   refreshWater(w);
-  for (let p = drawn.empty ? 0 : r.int(...T.ponds), tries = 0; p > 0 && tries < 200; tries++) {
-    let cx = 0, cy = 0, low = Infinity;
+  const lowSpot = (x0, y0, x1, y1, gap) => {
+    let best = null, low = Infinity;
     for (let k = 0; k < 6; k++) {
-      const x = r.range(14, W - 14), y = r.range(12, H - 12);
-      if (ground[idx(x, y)] < low && !waterWithin(w, x, y, 14)) { cx = x; cy = y; low = ground[idx(x, y)]; }
+      const x = wr.range(Math.max(4, x0), Math.min(W - 4, x1)), y = wr.range(Math.max(4, y0), Math.min(H - 4, y1));
+      if (ground[idx(x, y)] < low && !waterWithin(w, x, y, gap)) { best = { x, y }; low = ground[idx(x, y)]; }
     }
-    if (low === Infinity) continue;
-    const shape = blobs(r, cx, cy, 4, 3.5, ...T.pondSize), deep = r.range(...T.pondDepth);
-    each((i, x, y) => { if (Math.abs(x - cx) < 20 && Math.abs(y - cy) < 16) carve(i, outside(shape, x, y), deep, 2.5); });
+    return best;
+  };
+  const pond = (at, size) => {
+    const mask = basin(wr, shores, at.x, at.y, size, wr.range(...T.pondStretch), wr.range(0, Math.PI), T.pondShore, null);
+    carveBasin(wr, T, shores, mask, ground, lerp(...T.pondDepth, wr.next() ** 1.3), T.pondShelf, null, Math.max(2.5, size));
+    for (const i of mask.isles) w.isle[i] = 1;
     refreshWater(w);
-    p--;
+  };
+  if (!drawn.empty) {
+    for (let p = wr.int(...T.ponds), tries = 0; p > 0 && tries < 200; tries++) {
+      const size = lerp(...T.pondSize, wr.next() ** 1.8), at = lowSpot(14, 12, W - 14, H - 12, size * 1.8 + 8);
+      if (at) { pond(at, size); p--; }
+    }
+    const at = wr.next() < T.pools && lowSpot(16, 14, W - 16, H - 14, 18);
+    for (let p = at ? wr.int(...T.poolCount) : 0, tries = 0; p > 0 && tries < 60; tries++) {
+      const size = wr.range(...T.poolSize), spot = lowSpot(at.x - 9, at.y - 7, at.x + 9, at.y + 7, size * 1.6 + 2.5);
+      if (spot) { pond(spot, size); p--; }
+    }
   }
   const water = w.water;
   nameWaters(w, lake);
@@ -664,6 +810,7 @@ function makeTerrain(w) {
   // Plants never move, so they go into the spatial grid's cells once, for the bees looking for them.
   w.plantCells = Array.from({ length: GW * GH }, () => []);
   for (const p of w.plants) w.plantCells[clamp((p.y / CELL) | 0, 0, GH - 1) * GW + clamp((p.x / CELL) | 0, 0, GW - 1)].push(p);
+  makeCurrent(w);
   // Everything above was laid out at the usual water line; now the water stands where it
   // does this time of year.
   settleWater(w);
@@ -757,11 +904,11 @@ function plantTrees(w, hills, hill, near) {
         pine: (x, y) => clamp(0.85 - inward(x, y) / depth * 0.6, 0.15, 0.85),
       };
     }
-    // 'bank': a wet wood along one stretch of the river or a lakeshore, broadleaf, thick by the water.
+    // 'bank': a wet wood along one stretch of the river or a lakeshore (not a pond's), broadleaf, thick by the water.
     const shore = [];
     for (let i = 0; i < N; i++) {
       const x = i % W + 0.5, y = ((i / W) | 0) + 0.5;
-      if (nearFlood[i] > 0 && nearFlood[i] < 1.5 && x > 15 && x < W - 15 && y > 12 && y < H - 12) shore.push({ x, y });
+      if (nearFlood[i] > 0 && nearFlood[i] < 1.5 && x > 15 && x < W - 15 && y > 12 && y < H - 12 && w.waters[w.nearBody[i]]?.kind !== 'pond') shore.push({ x, y });
     }
     const c = shore.length ? r.pick(shore) : { x: W / 2, y: H / 2 }, reach = r.range(...T.bankWoods) * (small ? 0.7 : 1);
     return {
@@ -917,6 +1064,99 @@ function floodBurrows(w) {
     else { exitBurrow(w, c); out.get(b).escaped.push(c); }
   }
   for (const e of out.values()) emit(w, { type: 'flooded', ...e });
+}
+
+// ---------------------------------------------------------------- the current
+//
+// The rivers run from where they come in to where they leave (w.rivers: points half a tile apart, from upstream
+// down). For each point makeCurrent works out which way it runs, how wide the channel is at the usual water line
+// (and how far its middle lies off the line), and how fast it runs against a usual river's middle (`pace`): quicker
+// in the narrows and over a ford, all but still out in a lake or a wide stretch. A brook stops being its own where it
+// runs into the river (`end`, `joins`). Each tile of running water takes the way and the pace of the nearest point,
+// quickest down the middle and slower by the banks (w.current.x, .y: tiles a tick). It's worked out when a meadow is
+// made or opened (it isn't kept), and runs faster in the spring flood and slower at the summer low (riverPace). It
+// carries a swimmer along (drift), an otter leaves the meadow with it (riverEnd), and game.js draws it.
+const CURRENT = 0.035;          // tiles a tick down the middle of a river about two tiles wide, at its usual level
+const BANK_SLOW = 0.5;          // how much slower it runs by the banks than down the middle
+const PACE_HIGH = 0.7;          // how much faster it runs in the spring flood
+const PACE_LOW = 0.45;          // and how much slower at the summer low
+const CARRY = 0.6;              // the most it carries a swimmer, of its own pace in the water: it can always swim against it
+
+function makeCurrent(w) {
+  const level = w.terrain.level, g = w.ground, lake = w.lake && w.lake.near, N = W * H;
+  const tile = (x, y) => clamp(Math.floor(y), 0, H - 1) * W + clamp(Math.floor(x), 0, W - 1);   // (a river runs on off the map)
+  const wetAt = (x, y) => g[tile(x, y)] < level;
+  const ease = (a, b, v) => { const u = clamp((v - a) / (b - a), 0, 1); return u * u * (3 - 2 * u); };
+  const rivers = w.rivers.map((rv, ri) => {
+    const pts = rv.pts, n = pts.length, F = () => new Float32Array(n);
+    const R = { tx: F(), ty: F(), half: F(), mid: F(), still: F(), rif: F(), pace: F(), end: n - 1, joins: null };
+    const l = F(), r = F(), inLake = F();
+    for (let k = 0; k < n; k++) {
+      const a = pts[Math.max(0, k - 2)], b = pts[Math.min(n - 1, k + 2)], d = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+      const tx = (b.x - a.x) / d, ty = (b.y - a.y) / d, p = pts[k];
+      R.tx[k] = tx; R.ty[k] = ty;
+      if (!wetAt(p.x, p.y)) continue;
+      while (l[k] < 12 && wetAt(p.x + ty * (l[k] + 0.25), p.y - tx * (l[k] + 0.25))) l[k] += 0.25;   // across one way
+      while (r[k] < 12 && wetAt(p.x - ty * (r[k] + 0.25), p.y + tx * (r[k] + 0.25))) r[k] += 0.25;   // and the other
+      inLake[k] = lake && lake[tile(p.x, p.y)] ? 1 : 0;   // the lake (and its shore) is still water, however narrow
+    }
+    for (let k = 0; k < n; k++) {                     // evened out along the river, or every tile's edge shows
+      let sl = 0, sr = 0, sk = 0, m = 0;
+      for (let j = Math.max(0, k - 4); j <= Math.min(n - 1, k + 4); j++) { sl += l[j]; sr += r[j]; sk += inLake[j]; m++; }
+      R.half[k] = (sl + sr) / m / 2; R.mid[k] = (sr - sl) / m / 2;
+      R.still[k] = Math.max(ease(3.5, 7, R.half[k]), sk / m);
+    }
+    for (const f of w.fords) if (f.river === ri) for (let k = 0; k < n; k++) R.rif[k] = Math.max(R.rif[k], Math.exp(-(((k - f.k) / 9) ** 2)));
+    for (let k = 0; k < n; k++) R.pace[k] = Math.sqrt(2 / clamp(R.half[k], 1.1, 8)) * (1 + 0.5 * R.rif[k]) * (1 - 0.92 * R.still[k]);
+    return R;
+  });
+  // A brook ends where it runs into a river's channel.
+  for (let b = 0; b < w.rivers.length; b++) {
+    if (!w.rivers[b].brook) continue;
+    const B = rivers[b], bp = w.rivers[b].pts;
+    find: for (let k = 0; k < bp.length; k++) for (let r = 0; r < w.rivers.length; r++) {
+      if (w.rivers[r].brook) continue;
+      const half = rivers[r].half, rp = w.rivers[r].pts;
+      for (let j = 0; j < rp.length; j++) {
+        if ((rp[j].x - bp[k].x) ** 2 + (rp[j].y - bp[k].y) ** 2 < (half[j] - 0.2) ** 2) { B.end = k; B.joins = { river: r, k: j }; break find; }
+      }
+    }
+  }
+  // Each tile of running water: the way and the pace of the nearest point, quickest down the middle.
+  const x = new Float32Array(N), y = new Float32Array(N), gap = new Float32Array(N).fill(Infinity);
+  for (let ri = 0; ri < w.rivers.length; ri++) {
+    const R = rivers[ri], pts = w.rivers[ri].pts;
+    for (let k = 0; k <= R.end; k++) {
+      const p = pts[k], half = R.half[k];
+      if (half < 0.3) continue;
+      const cx = p.x - R.ty[k] * R.mid[k], cy = p.y + R.tx[k] * R.mid[k], reach = half + 0.5;
+      for (let py = Math.max(0, Math.floor(cy - reach)); py <= Math.min(H - 1, cy + reach); py++)
+        for (let px = Math.max(0, Math.floor(cx - reach)); px <= Math.min(W - 1, cx + reach); px++) {
+          const i = py * W + px, d2 = (px + 0.5 - cx) ** 2 + (py + 0.5 - cy) ** 2;
+          if (d2 >= gap[i] || d2 > reach * reach || g[i] >= level || (lake && lake[i])) continue;
+          const v = CURRENT * R.pace[k] * (1 - BANK_SLOW * Math.min(1, d2 / (half * half)));
+          gap[i] = d2; x[i] = R.tx[k] * v; y[i] = R.ty[k] * v;
+        }
+    }
+  }
+  w.current = { rivers, x, y };
+}
+
+// How fast the water runs now, against its usual pace: quicker as it rises towards the spring flood, slower as it drops.
+function riverPace(w) {
+  const T = w.terrain, d = w.level - T.level;
+  return d > 0 ? 1 + PACE_HIGH * Math.min(1, d / Math.max(1e-6, T.springFlood)) : 1 - PACE_LOW * Math.min(1, -d / Math.max(1e-6, T.summerLow));
+}
+
+// The current carries a swimmer along, whatever it's doing: an otter eating its fish afloat drifts downstream, and
+// one swimming up against it gets there slower. Never out of the water, or out of the meadow.
+function drift(w, c) {
+  if (w.frozen || c.hidden) return;
+  const i = idx(c.x, c.y), vx = w.current.x[i], vy = w.current.y[i];
+  if ((!vx && !vy) || !w.water[i]) return;
+  const v = Math.hypot(vx, vy) * riverPace(w), k = Math.min(v, CARRY * c.walk * c.sp.wade) / Math.hypot(vx, vy);
+  const nx = c.x + vx * k, ny = c.y + vy * k;
+  if (inBounds(nx, ny) && w.water[idx(nx, ny)]) { c.x = nx; c.y = ny; }
 }
 
 // ---------------------------------------------------------------- ice
@@ -1525,16 +1765,19 @@ function nameWaters(w, lake) {
   // The brook runs in the river's water, but has a name of its own too.
   for (const rv of w.rivers) if (rv.brook) rv.name = `${firsts[(w.waters.length + 1) % firsts.length]} ${r.pick(WATER_NAMES.brook)}`;
   if (lake) {
-    const c = lake.shape.find(c => inBounds(c.x, c.y) && w.water[idx(c.x, c.y)]);   // a blob's middle is water, if it's on the map
-    const home = c && w.waters[body[idx(c.x, c.y)]];
+    let deep = -1;                                                       // somewhere deep in it, for which water it is
+    for (let i = 0; i < W * H && deep < 0; i++) if (lake.mask[i] && w.water[i] === DEEP) deep = i;
+    const home = deep >= 0 && w.waters[body[deep]];
     if (home?.kind === 'lake') w.lake = home;
     else w.lake = { kind: 'lake', name: `${firsts[w.waters.length % firsts.length]} ${r.pick(WATER_NAMES.lake)}`, x: lake.x, y: lake.y };
-    w.lake.shape = lake.shape;
+    w.lake.near = Uint8Array.from(lake.out, d => (d < 2 ? 1 : 0));    // the lake, and its shore: where it keeps its name
+    w.lake.middle = { x: lake.x, y: lake.y, reach: lake.reach, turn: lake.turn, stretch: lake.stretch };   // (for the terrain lab)
   }
 }
 
 // The named water at a spot: the lake keeps its own name where the river runs through it.
-const waterAt = (w, x, y) => w.lake && outside(w.lake.shape, x, y) < 2 ? w.lake : w.waters[w.body[idx(x, y)]] || null;
+const nearLake = (w, x, y) => w.lake && inBounds(x, y) && w.lake.near[idx(x, y)] === 1;
+const waterAt = (w, x, y) => nearLake(w, x, y) ? w.lake : w.waters[w.body[idx(x, y)]] || null;
 
 // The water a straight walk from one point to another would have to swim, if any.
 function waterBetween(w, x0, y0, x1, y1) {
@@ -2205,6 +2448,7 @@ const DIG_GAP = 14;        // tiles between burrows
 const DIG_TICKS = 300;     // one rabbit digging on its own: half a day
 
 function canDig(w, x, y) {
+  if (w.isle && w.isle[idx(x, y)]) return false;                 // (a kept meadow from before the islands has none)
   for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) if (!dry(w, x + dx, y + dy)) return false;
   return !w.burrows.some(b => Math.hypot(b.x - x, b.y - y) < DIG_GAP)
     && !w.decor.some(d => !d.stone && !(standing(d) && d.size < SAPLING) && Math.hypot(d.x - x, d.y - y) < (d.big ? d.size * 0.6 : 2))
@@ -3081,7 +3325,7 @@ function mostIn(w, field, on) {
   for (let b = 0; b < sum.length; b++) if (sum[b] > 0 && (best < 0 || sum[b] > sum[best])) best = b;
   if (best < 0) return null;
   const x = at[best] % W + 0.5, y = ((at[best] / W) | 0) + 0.5;
-  return w.lake && outside(w.lake.shape, x, y) < 2 ? w.lake : w.waters[best];   // (as waterAt, on dry ground too)
+  return nearLake(w, x, y) ? w.lake : w.waters[best];   // (as waterAt, on dry ground too)
 }
 
 // The spawn and tadpoles: stranded where the water's gone, a few lost each day, and once grown, off onto land.
@@ -4629,8 +4873,16 @@ const ROOT_HALF = 0.05;         // frogs on a tile where it does half as often a
 const OTTER_FROG = 12;          // a frog to an otter
 const FROG_MUNCH = 30;          // ticks eating one
 const CUB_OUT = 0.25;           // cubs come out of the holt this grown
-const PLAY_ODDS = 0.3;          // odds a check (every 30 ticks) that a fed otter plays, and the others about with it
-const PLAY_TICKS = [150, 300];  // and how long
+const PLAY_ODDS = 0.3;          // odds a check (every 30 ticks) that a well fed otter plays, and the others about with it
+const PLAY_FED = 0.92;          // well fed: room for a few slides before it's hungry again (OTTER_FULL)
+const PLAY_RUNS = [2, 5];       // and how many times it slides down
+const PLAY_PACE = 1.4;          // bounding up the bank again
+const SLIDE_LOOK = 5;           // how far off it looks for the top of a slide: the highest bank about,
+const SLIDE_BANK = [1.5, 4];    // this far from the water, out from under the trees (w.wood, so you see it),
+const SLIDE_SHADE = 0.3;
+const SLIDE_RUN = 0.8;          // and it slides on this far into the water,
+const SLIDE_ICE = 2.5;          // or out over the ice
+const SLIDE_GAP = 12;           // ticks between two setting off down the same slide: they take turns
 const SPRAINT_RICH = 0.1;       // what the spraint by a holt feeds the bank, a day
 const SPRAINT_REACH = 1.5;
 const FISH_NOTE = 'Caught a fish', MUD_NOTE = 'Dug a frog out of the mud', SPAWN_NOTE = 'Caught a frog at the spawning';
@@ -4713,11 +4965,11 @@ function otterTick(w, c) {
   // 4. Food.
   if ((e < OTTER_FULL || FEEDING.has(c.mode)) && otterFood(w, c)) return;
 
-  // 5. Fed: play, the others about joining in.
+  // 5. Well fed: play, the others about joining in on the same slide.
   if (c.mode === 'play' || c.mode === 'slide') { if (play(w, c)) return; }
-  else if ((t + c.id) % 30 === 0 && w.rng.next() < PLAY_ODDS) {
-    startPlay(w, c);
-    forEachNear(w, c.x, c.y, 6, o => { if (o !== c && !o.sleeping && o.mode === 'wander' && o.energy > OTTER_FULL * o.maxEnergy) startPlay(w, o); }, 'otter');
+  else if (e >= PLAY_FED && (t + c.id) % 30 === 0 && w.rng.next() < PLAY_ODDS) {
+    const s = startPlay(w, c, slideNear(w, c));
+    if (s) forEachNear(w, c.x, c.y, 6, o => { if (o !== c && !o.sleeping && o.mode === 'wander' && o.energy >= PLAY_FED * o.maxEnergy) startPlay(w, o, s); }, 'otter');
     if (c.mode === 'play') return;
   }
 
@@ -4841,36 +5093,62 @@ function bedOf(w, c) {
   if (mum && mum.alive && !mum.hidden && !mum.held) return beside(w, mum.mode === 'bed' && mum.target || mum, [0.4, -0.4, 0.3, -0.3][k], [0.15, 0.15, 0.35, 0.35][k]);
   let p = d && (nursing(w, c) || dist2(c, d) < HOLT_HOME ** 2) && d.door;
   if (p && w.water[idx(p.x, p.y)]) p = { x: d.x, y: d.y + 0.3 };   // the way in's flooded: up by the trunk
-  if (!p) p = bankSpot(w, c, false, 3) || bankSpot(w, c, false, 8) || d && d.door || bankSpot(w, c, false, 16) || c;
+  if (!p) p = bankSpot(w, c, 3) || bankSpot(w, c, 8) || d && d.door || bankSpot(w, c, 16) || c;
   return beside(w, p, [0, 0.55, -0.55, 0.25][k], [0, 0.15, 0.15, 0.4][k]);
 }
 // A little way from p, side by side with the others, unless that's in the water.
 const beside = (w, p, dx, dy) => (dry(w, p.x + dx, p.y + dy) ? { x: p.x + dx, y: p.y + dy } : { x: p.x, y: p.y });
 
-// A spot within reach: in the water (wet), or up on the bank a tile or two from it.
-function bankSpot(w, c, wet, reach) {
+// A spot within reach up on the bank, a tile or two from the water.
+function bankSpot(w, c, reach) {
   for (let k = 0; k < 10; k++) {
     const a = w.rng.range(0, Math.PI * 2), r = w.rng.range(1, reach), x = c.x + Math.cos(a) * r, y = c.y + Math.sin(a) * r;
     if (!inBounds(x, y)) continue;
     const i = idx(x, y);
-    if (wet ? w.water[i] > 0 : !w.water[i] && w.damp[i] >= 1 && w.damp[i] <= 2.5) return { x, y };
+    if (!w.water[i] && w.damp[i] >= 1 && w.damp[i] <= 2.5) return { x, y };
   }
   return null;
 }
 
-// Playing: up the bank, then sliding down it into the water (or out over the ice), and again.
-function startPlay(w, c) {
-  const top = bankSpot(w, c, false, 4);
-  if (!top) return;
-  c.mode = 'play'; c.target = top; c.timer = w.rng.int(...PLAY_TICKS);
+// Playing: up the highest bank about and sliding down it into the water (or out over the ice), and again, a few
+// times (c.timer, the slides left), the others about sharing the slide (c.slide: its top, its foot, and when the
+// last one set off) and taking turns.
+function startPlay(w, c, s) {
+  if (!s) return null;
+  c.mode = 'play'; c.slide = s; c.target = slideTop(c, s); c.timer = w.rng.int(...PLAY_RUNS);
+  return s;
 }
 function play(w, c) {
-  if (--c.timer <= 0 || !c.target) { c.mode = 'wander'; c.target = null; return false; }
-  if (!moveToward(w, c, c.target.x, c.target.y, c.mode === 'slide' ? c.sprint : c.walk)) return true;
-  const next = bankSpot(w, c, c.mode === 'play', 3);
-  if (!next) { c.mode = 'wander'; c.target = null; return false; }
-  c.mode = c.mode === 'play' ? 'slide' : 'play'; c.target = next;
+  const s = c.slide;
+  if (!s || !c.target) { c.mode = 'wander'; c.target = c.slide = null; return false; }
+  if (!moveToward(w, c, c.target.x, c.target.y, c.mode === 'slide' ? c.sprint : c.walk * PLAY_PACE)) return true;
+  if (c.mode === 'slide') {                                  // down: up again, or that's the game
+    if (c.timer <= 0) { c.mode = 'wander'; c.target = c.slide = null; return false; }
+    c.mode = 'play'; c.target = slideTop(c, s);
+    return true;
+  }
+  if (w.tick - s.went < SLIDE_GAP) { c.facing = s.foot.x > c.x ? 1 : -1; return true; }   // at the top, its turn next
+  s.went = w.tick; c.timer--; c.mode = 'slide'; c.target = { x: s.foot.x + c.target.x - s.top.x, y: s.foot.y + c.target.y - s.top.y };
   return true;
+}
+// Where it waits at the top, a little apart from the others.
+const slideTop = (c, s) => ({ x: s.top.x + [0, 0.3, -0.3][c.id % 3], y: s.top.y + [0, 0.12, 0.12][c.id % 3] });
+
+// A slide: the highest of a few spots on the open bank about, and the way down from it to the nearest water and
+// on into it. Null with no bank about.
+function slideNear(w, c) {
+  let top = null, high = -Infinity;
+  for (let k = 0; k < 10; k++) {
+    const a = w.rng.range(0, Math.PI * 2), r = w.rng.range(0, SLIDE_LOOK), x = c.x + Math.cos(a) * r, y = c.y + Math.sin(a) * r;
+    if (!inBounds(x, y)) continue;
+    const i = idx(x, y);
+    if (!w.water[i] && w.damp[i] >= SLIDE_BANK[0] && w.damp[i] <= SLIDE_BANK[1] && w.wood[i] < SLIDE_SHADE && w.ground[i] > high) { top = { x, y }; high = w.ground[i]; }
+  }
+  const way = top && waterWay(w, top, SLIDE_BANK[1] + 1, false);
+  if (!way) return null;
+  let run = way.r + (w.frozen ? SLIDE_ICE : SLIDE_RUN), x = top.x + Math.cos(way.a) * run, y = top.y + Math.sin(way.a) * run;
+  if (!inBounds(x, y) || !w.water[idx(x, y)]) { run = way.r + 0.3; x = top.x + Math.cos(way.a) * run; y = top.y + Math.sin(way.a) * run; }
+  return { top, foot: { x, y }, went: -SLIDE_GAP };
 }
 
 // The nearest big tree on the bank of water that lasts, free for a holt, away from the other holts, and with
@@ -4904,18 +5182,25 @@ function goodBank(w, d) {
 // The way into a holt: between the tree's roots and the nearest water that lasts, on the bank. Null if the tree
 // isn't on a bank.
 function holtDoor(w, d) {
-  let at = -1, near = HOLT_BANK + 1;
+  const way = waterWay(w, d, HOLT_BANK, true);
+  if (!way) return null;
+  const r = clamp(way.r - 0.6, 0.3, 0.9);
+  return { x: d.x + Math.cos(way.a) * r, y: d.y + Math.sin(way.a) * r };
+}
+
+// Which way the nearest water is from p, within far, and how far: { a, r }, or null. With lasting, only the water
+// that lasts the year round (below the meadow's own water line).
+function waterWay(w, p, far, lasting) {
+  let at = -1, near = far + 1;
   for (let k = 0; k < 16; k++) {
     const a = k * Math.PI / 8;
-    for (let r = 0.5; r <= HOLT_BANK && r < near; r += 0.5) {
-      const x = d.x + Math.cos(a) * r, y = d.y + Math.sin(a) * r;
+    for (let r = 0.5; r <= far && r < near; r += 0.5) {
+      const x = p.x + Math.cos(a) * r, y = p.y + Math.sin(a) * r;
       if (!inBounds(x, y)) break;
-      if (w.ground[idx(x, y)] <= w.terrain.level) { at = a; near = r; break; }
+      if (lasting ? w.ground[idx(x, y)] <= w.terrain.level : w.water[idx(x, y)]) { at = a; near = r; break; }
     }
   }
-  if (at < 0) return null;
-  const r = clamp(near - 0.6, 0.3, 0.9);
-  return { x: d.x + Math.cos(at) * r, y: d.y + Math.sin(at) * r };
+  return at < 0 ? null : { a: at, r: near };
 }
 
 function moveInHolt(w, c, d) {
@@ -4943,14 +5228,17 @@ function otterWay(w, p) {
   return water && dist2(water, p) < 4 * dist2(edge, p) ? water : edge;
 }
 
-// Where the water runs off the edge of the meadow nearest p (lasting water), or else (or with wet false) the
-// nearest edge. Null with wet true and no water running off.
+// Where the water runs off the edge of the meadow nearest p (lasting water, and not where a river or a brook comes
+// in: an otter leaves with the current and comes up against it), or else (or with wet false) the nearest edge. Null
+// with wet true and no water running off.
 function riverEnd(w, p, wet) {
   let best = null, bd = Infinity;
   for (let k = 0; k < 2 * (W + H) && wet !== false; k++) {
     const x = k < 2 * W ? k % W + 0.5 : k < 2 * W + H ? 0.7 : W - 0.7;
     const y = k < W ? 0.7 : k < 2 * W ? H - 0.7 : (k - 2 * W) % H + 0.5, i = idx(x, y);
     if (!w.water[i] || w.ground[i] > w.terrain.level) continue;
+    const out = k < W ? -w.current.y[i] : k < 2 * W ? w.current.y[i] : k < 2 * W + H ? -w.current.x[i] : w.current.x[i];
+    if (out < 0) continue;                               // (it runs in here)
     const d = (x - p.x) ** 2 + (y - p.y) ** 2;
     if (d < bd) { best = { x, y }; bd = d; }
   }
@@ -4984,7 +5272,7 @@ function otterMood(w, c) {
     case 'frog': return { emoji: '🐸', text: winter ? 'Off along the bank to dig for frogs' : 'After the frogs at the spawning' };
     case 'root': return { emoji: '🐸', text: winter ? 'Digging in the mud for frogs' : 'Rooting along the shallows for frogs' };
     case 'munch': return { emoji: '🐸', text: 'Eating a frog' };
-    case 'play': return { emoji: '', text: 'Playing, up the bank again' };
+    case 'play': return { emoji: '', text: c.slide && c.target && dist2(c, c.target) < 0.01 ? 'Waiting its turn at the top of the slide' : 'Playing, up the bank again' };
     case 'slide': return { emoji: '', text: w.frozen ? 'Sliding over the ice!' : 'Sliding down the bank into the water!' };
     case 'follow': return { emoji: '🍼', text: 'Following mum' };
     case 'wander': return wet ? { emoji: '', text: 'Swimming along' } : null;
@@ -5402,6 +5690,7 @@ function step(w) {
     else if (c.species === 'crow') crowTick(w, c);
     else if (c.species === 'owl') owlTick(w, c);
     else if (c.species === 'otter') otterTick(w, c);
+    if (c.alive && c.sp.swims) drift(w, c);
     if (c.alive) lifeTick(w, c);
   }
   if (w.anyDied) { w.creatures = w.creatures.filter(c => c.alive); w.anyDied = false; }
@@ -5432,7 +5721,7 @@ const KEEP_VERSION = 7;                 // 2: shade and rich ground (w.shadedFer
                                         // 5: crows and remains (w.carcasses, w.roost, c.caches, d.nuts); 6: owls (d.owl, c.perch);
                                         // 7: frogs (w.frogs, w.spawn, w.frogYear, c.frogs)
 const TABLES = { SPECIES, FIELD_KINDS, TREE_MIX, TREES, SEASONS, WEATHER, COATS, GROUND };
-const UNKEPT = ['grid', 'grids', 'events', 'newborn'];      // on the world
+const UNKEPT = ['grid', 'grids', 'events', 'newborn', 'current'];   // on the world
 let tableNames = null;                                     // object -> 'SPECIES.fox', made the first time
 // Of the dead (w.byId keeps them a few years), a kept meadow keeps only those still spoken of: parents
 // (the family in the inspector), foxes (a rabbit's nemesis) and the lately gone (the news).
@@ -5515,11 +5804,17 @@ function unpackWorld(kept) {
   for (const c of w.creatures) delete c.held;                // (kept while the player held one up)
   for (const c of w.byId.values()) c.mine ??= false;         // (kept before the player could name them)
   for (const d of w.decor) if (d.tree) d.planted ??= 0;      // (or plant trees)
+  if (w.lake && !w.lake.near) {                              // (kept while a lake was circles)
+    w.lake.near = new Uint8Array(W * H);
+    for (let i = 0; i < W * H; i++) if (outside(w.lake.shape, i % W + 0.5, ((i / W) | 0) + 0.5) < 2) w.lake.near[i] = 1;
+    delete w.lake.shape;
+  }
   if (!w.fish) {                                             // (kept before the fish)
     w.fish = new Float32Array(W * H); startFish(w);
     w.history.fish = w.history.t.map(() => Math.round(w.fishCount));
   }
   w.grid = makeGrid(); w.grids = perKind(makeGrid); w.events = []; w.newborn = [];
+  makeCurrent(w);
   if (!OWLS) {                                               // (kept with owls: they fly off, and leave their hollows)
     for (const c of w.creatures) if (c.species === 'owl') die(w, c, 'left');
     for (const d of w.decor) d.owl = 0;
@@ -5677,7 +5972,7 @@ const api = {
   createWorld, step, clock, isNight, phaseOf, seasonOf, mood, ageDays, growth, isAdult, patchFresh,
   addCreature, paintGrass, setSky, lockSky, zap, burnLine, lift, putDown, nameCreature, nameQueen, NAME_MAX, plantTree, traitMeans, walkable, packWorld, unpackWorld,
   coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT, KINDS, OWLS,
-  TERRAIN, drawnToLink, drawnFromLink, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, LOAD, HONEY,
+  TERRAIN, drawnToLink, drawnFromLink, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE,
   TREES, treeStage, treeAge, standing, bearing, hollow, inBloom, SEEDLING, SAPLING, GROWN, KIND_NAMES,
   VOLE_K, POUNCE_TICKS, CROWDED, FROG_K, SPAWN_WORTH, FISH_K, FISH_EAT, webCounts, CROW_SEATS,
