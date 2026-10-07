@@ -5164,19 +5164,66 @@ function holtTree(w, c) {
   return best;
 }
 
-// Whether a tree stands on the bank of water that lasts, with room for HOLT_FISH fish within HOLT_REACH (the
-// lasting water's room, as fishRoom at the meadow's own water line).
-function goodBank(w, d) {
-  if (!holtDoor(w, d)) return false;
+// A meadow with no big tree on such a bank gets a few: a short row along the stretch with the most fish, above the
+// spring flood, so the otters have somewhere to make a holt. When the meadow is made (or a kept one made before)
+// they're grown, young for their size. And each spring, once the old ones are going and no young tree on such a bank
+// is coming on, a few saplings come up along it (young), as trees do along the water, to be holt trees in a year or
+// two. (The rest of the meadow is as it was: the trees have their own random numbers.)
+const BANK_ROW = 4;             // trees in the row
+const BANK_ROW_REACH = 7;       // tiles from the first that the others stand, at most
+const BANK_EDGE = 10;           // and tiles from the meadow's edge, out of the mist (and never on an island)
+function bankTrees(w, young) {
+  const coming = d => standing(d) && d.size >= (young ? SAPLING : GROWN) && !(young && treeAge(w, d) > d.life * 0.7)   // (an old one is going)
+    && !d.hive && !d.owl && (d.bank ??= goodBank(w, d));
+  if (w.drawn?.empty || w.decor.some(coming)) return;
+  const T = w.terrain, high = T.level + T.springFlood, spots = [], R = HOLT_BANK - 0.5, bank = new Uint8Array(W * H);
+  for (let i = 0; i < W * H; i++) {                       // (the tiles near the lasting water first: waterWay is slow)
+    if (w.ground[i] > T.level) continue;
+    const x0 = i % W, y0 = (i / W) | 0;
+    for (let y = Math.max(0, y0 - HOLT_BANK); y <= Math.min(H - 1, y0 + HOLT_BANK); y++) for (let x = Math.max(0, x0 - HOLT_BANK); x <= Math.min(W - 1, x0 + HOLT_BANK); x++) bank[y * W + x] = 1;
+  }
+  for (let y = BANK_EDGE; y < H - BANK_EDGE; y++) for (let x = BANK_EDGE; x < W - BANK_EDGE; x++) {
+    const i = y * W + x, p = { x: x + 0.5, y: y + 0.5 };
+    if (!bank[i] || w.ground[i] <= high || w.isle?.[i] || w.fieldAt[i] >= 0 || !waterWay(w, p, R, true)) continue;
+    if (w.burrows.some(b => dist2(b, p) < 4) || w.hives.some(h => dist2(h, p) < 4)) continue;
+    if (w.decor.some(d => dist2(d, p) < (d.tree ? 2.2 ** 2 : (d.size * 0.5 + 1) ** 2))) continue;
+    spots.push(p);
+  }
+  let first = null, most = 0;
+  for (const p of spots) { const n = fishNear(w, p); if (n > most && n >= HOLT_FISH) { first = p; most = n; } }
+  if (!first) return;
+  const row = [first];
+  for (const p of spots.sort((a, b) => dist2(a, first) - dist2(b, first))) {
+    if (row.length >= BANK_ROW || dist2(p, first) > BANK_ROW_REACH ** 2) break;
+    if (row.every(o => dist2(o, p) >= 2.2 ** 2)) row.push(p);
+  }
+  const r = w.treeRng;
+  for (const p of row) {
+    const x = p.x + r.range(-0.3, 0.3), y = p.y + r.range(-0.3, 0.3), kind = treeKind({ x, y, emoji: '🌳' }, 0.5, 0);
+    const d = newTree(w, x, y, kind);
+    d.size = young ? SAPLING : r.range(GROWN + 0.6, 4.2);
+    d.max = Math.max(d.max, d.size * 1.1, GROWN + 0.6);                // (big enough for a holt)
+    d.born = w.tick - yearsTo(TREES[kind], d.max, d.size) * YEAR;
+    if (w.decorCells.length) cellOf(w.decorCells, d).push(d);
+  }
+}
+
+// How many fish the water that lasts has room for within HOLT_REACH of p (fishRoom at the meadow's own water line).
+function fishNear(w, p) {
   const T = w.terrain;
   let n = 0;
-  for (let y = Math.max(0, Math.floor(d.y - HOLT_REACH)); y <= Math.min(H - 1, d.y + HOLT_REACH); y++) {
-    for (let x = Math.max(0, Math.floor(d.x - HOLT_REACH)); x <= Math.min(W - 1, d.x + HOLT_REACH); x++) {
+  for (let y = Math.max(0, Math.floor(p.y - HOLT_REACH)); y <= Math.min(H - 1, p.y + HOLT_REACH); y++) {
+    for (let x = Math.max(0, Math.floor(p.x - HOLT_REACH)); x <= Math.min(W - 1, p.x + HOLT_REACH); x++) {
       const g = w.ground[y * W + x];
-      if (g <= T.level && (x + 0.5 - d.x) ** 2 + (y + 0.5 - d.y) ** 2 < HOLT_REACH ** 2) n += T.level - g >= T.deepAt ? FISH_K : FISH_K * FISH_SHALLOW;
+      if (g <= T.level && (x + 0.5 - p.x) ** 2 + (y + 0.5 - p.y) ** 2 < HOLT_REACH ** 2) n += T.level - g >= T.deepAt ? FISH_K : FISH_K * FISH_SHALLOW;
     }
   }
-  return n >= HOLT_FISH;
+  return n;
+}
+
+// Whether a tree stands on the bank of water that lasts, with room for HOLT_FISH fish within HOLT_REACH.
+function goodBank(w, d) {
+  return !!holtDoor(w, d) && fishNear(w, d) >= HOLT_FISH;
 }
 
 // The way into a holt: between the tree's roots and the nearest water that lasts, on the bank. Null if the tree
@@ -5387,6 +5434,7 @@ function createWorld(seed, opts = {}) {
   };
   makeTerrain(w);
   placeHive(w);
+  bankTrees(w);
   w.treeRoom = TREE_ROOM * w.decor.filter(d => d.tree).length;
   startTrees(w);
   groundTick(w);
@@ -5497,6 +5545,7 @@ function newDay(w) {
   if (!w.roost || !perchable(w.roost)) w.roost = pickRoost(w);   // gone, or bees or an owl moved in
   owlsDay(w);
   holtsDay(w);
+  if (d % YEAR_DAYS === 0) bankTrees(w, true);
 }
 
 // ---------------------------------------------------------------- moving in
@@ -5815,6 +5864,7 @@ function unpackWorld(kept) {
   }
   w.grid = makeGrid(); w.grids = perKind(makeGrid); w.events = []; w.newborn = [];
   makeCurrent(w);
+  bankTrees(w);                                              // (kept with no tree for a holt)
   if (!OWLS) {                                               // (kept with owls: they fly off, and leave their hollows)
     for (const c of w.creatures) if (c.species === 'owl') die(w, c, 'left');
     for (const d of w.decor) d.owl = 0;

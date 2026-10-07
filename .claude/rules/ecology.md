@@ -124,7 +124,10 @@ Otters (`otterTick`): a pair or two along the water, swimmers (`swims: true`: `m
 makes them quicker in it, `roamable` keeps their wandering within `OTTER_SHORE` of the water). A female makes her holt in the
 roots of a big tree on the bank of lasting water with room for `HOLT_FISH` fish about (`holtTree`, `goodBank`, worked out once a
 tree, `d.bank`), `HOLT_GAP` from the other holts, and marks it (`d.holt`, her id; `d.door`, the way in, on the bank side; `holtsDay`
-frees it once she's gone, and spreads the day's spraint on the bank there, `SPRAINT_RICH`). A male moves in with his mate. They're
+frees it once she's gone, and spreads the day's spraint on the bank there, `SPRAINT_RICH`). Wild trees seldom grow that close to
+the water, so a meadow with no such tree gets a short row of grown ones on the bank with the most fish (`bankTrees`: when it's
+made, or a kept one opened, away from the edges and off the islands), and each spring, once the holt trees are old and no young
+one is coming on, a few saplings come up there (`bankTrees(w, true)`). A male moves in with his mate. They're
 out from the evening to the middle of the morning (`OTTER_WAKE`, `OTTER_BED`) and sleep curled up at the holt (`bedOf`), or,
 further from it than `HOLT_HOME` at bedtime or with none, on a bank close by, as otters lie up all along their water; a mum with
 cubs in the holt (`nursing`: they mark her, `c.cubsIn`) always goes home, and a cub sleeps by mum. They go to bed at a lope
