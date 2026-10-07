@@ -5614,7 +5614,7 @@ function handleEvent(e) {
       break;
     case 'holt': {
       const d = e.tree;
-      addNews(`🦦 ${link(e.c)} the otter has made a holt in the roots of ${thingLink('tree', d.id, d.name ? 'the ' + esc(d.name) : `a big ${treeName(d).toLowerCase()} on the bank`)}.`, 'holt', 20000);
+      addNews(`🦦 ${link(e.c)} the otter has made a holt ${holtPlace(d, 'on the bank')}.`, 'holt', 20000);
       break;
     }
     case 'cubsout':
@@ -6577,7 +6577,7 @@ function renderInspector() {
   if (c.species === 'crow' && c.home) chips.push(`${c.sex === 'F' ? '🪺 Nests in' : '🌳 Its patch is round'} ${thingLink('tree', c.home.id, c.home.name ? 'the ' + esc(c.home.name) : 'a tall ' + treeName(c.home).toLowerCase())}`);
   if (c.species === 'owl' && c.home && c.home.owl === c.id) chips.push(`🕳️ Nests in the hollow of ${thingLink('tree', c.home.id, c.home.name ? 'the ' + esc(c.home.name) : 'an old oak')}`);
   else if (c.species === 'owl' && c.home) chips.push(`🌳 Lives in the wood round ${thingLink('tree', c.home.id, c.home.name ? 'the ' + esc(c.home.name) : 'an old oak')}`);
-  if (c.species === 'otter' && c.home) chips.push(`🕳️ ${c.home.holt === c.id ? 'Her holt is' : 'Lives in the holt'} in the roots of ${thingLink('tree', c.home.id, c.home.name ? 'the ' + esc(c.home.name) : 'a big ' + treeName(c.home).toLowerCase())}`);
+  if (c.species === 'otter' && c.home) chips.push(`🕳️ ${c.home.holt === c.id ? 'Her holt is' : 'Lives in the holt'} ${holtPlace(c.home, '')}`);
   if (c.caches?.length && S.seasonOf(world.tick) >= 2) chips.push(`🌰 Remembers where ${c.caches.length === 1 ? 'one acorn is' : c.caches.length + ' acorns are'} buried`);
   const nemesis = world.byId.get(c.nemesisId);
   if (nemesis && nemesis.alive) chips.push(`😨 Afraid of ${link(nemesis)}`);
@@ -6639,6 +6639,8 @@ const ago = t => days((world.tick - t) / S.TPD);
 const tileOf = (x, y) => clamp(Math.floor(y), 0, S.H - 1) * S.W + clamp(Math.floor(x), 0, S.W - 1);
 const seasonName = s => S.SEASONS[s].name.toLowerCase();
 const thingLink = (kind, id, text) => `<a data-thing="${kind}:${id}">${text}</a>`;
+// Where an otters' holt is: in the roots of a tree (a link to it), or under a boulder. bank: said after a tree with no name.
+const holtPlace = (d, bank) => (d.tree ? `in the roots of ${thingLink('tree', d.id, d.name ? 'the ' + esc(d.name) : `a big ${treeName(d).toLowerCase()}${bank ? ' ' + bank : ''}`)}` : 'under a boulder on the bank');
 
 // Who is about near a spot, as "🐇 2 · 🦊 1".
 function whoNear(x, y, r, keep = () => true) {
@@ -6783,6 +6785,7 @@ const THINGS = {
       else if (d.by === 'crow') facts.push(['🐦‍⬛', `Grew from ${k.mast === 'acorns' ? 'an acorn' : 'a beechnut'} a crow carried off from ${from}, buried, and forgot`]);
       else if (d.by === 'bird') facts.push(['🐦', `Grew from a stone a bird dropped, from ${d.kind === 'cherry' ? 'the cherries' : 'the haws'} of ${from}`]);
       else if (d.by === 'wind') facts.push(['🌬️', `Its seed blew in on the wind from ${from}`]);
+      else if (d.by === 'water') facts.push(['🌊', `Its seed fell in the water from ${from}, floated off and washed up here`]);
       else if (d.by === 'drop') facts.push(k.mast ? ['🌰', `Grew from ${k.mast === 'acorns' ? 'an acorn' : 'a beechnut'} that fell from ${from}`] : ['🍎', `Grew from a pip of ${from}`]);
       const owl = d.owl && world.byId.get(d.owl);
       if (d.hive) facts.push(['🐝', `${thingLink('hive', d.hive.id, d.hive.queen ? `Queen ${esc(d.hive.queen.name)}'s hive` : 'An empty hive')} is in its hollow`]);
@@ -6832,6 +6835,8 @@ const THINGS = {
       const facts = [];
       if (t.kind === 'great') facts.push(['🕳️', 'Rabbits never dig close to it']);
       if (t.kind === 'ford') facts.push(['🦶', world.water[tileOf(d.x, d.y)] === S.DEEP ? 'Under deep water just now' : 'Animals wade across the river here']);
+      const otter = d.holt && world.byId.get(d.holt);
+      if (otter && otter.alive) facts.push(['🦦', `${link(otter)} the otter has her holt under it, down by the water`]);
       if (t.moss > 0.3) facts.push(['🌿', t.moss > 0.7 ? 'Thick with moss' : 'Mossy']);
       if (t.kind !== 'ford' && world.snow > 0.3) facts.push(['❄️', 'Capped with snow']);
       const who = whoNear(d.x, d.y, Math.max(1.5, d.size * 0.6));

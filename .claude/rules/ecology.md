@@ -46,6 +46,12 @@ blooming in its own season (the first three: spring, summer, autumn, gathered wi
 (`fieldBloom`). They're the bees' main food; the few scattered flowers elsewhere are the rest. Butterflies loop over a field in
 bloom by day, and fireflies blink by the water and the wood's edge on summer nights (`drawButterflies`, `drawFireflies`: a look only).
 
+Every meadow has trees along its lasting water, as along any river or lake left to itself (`TERRAIN.fringe`, `fringeGaps`,
+`fringeSpacing`, the end of `plantTrees`, with random numbers of their own): one here and there on the bank above the spring flood,
+in stretches with open bank between. And a tree within `FLOAT_REACH` of lasting water drops some of its seed in it (`ON_WATER`,
+`floatSeed`): it floats down the current (`w.current`) or about still water and comes up where it washes ashore above the flood
+line (`by: 'water'`), so the bank trees seed the banks downstream; some float out of the meadow or sink in a lake.
+
 Every tree has a kind (`d.kind`: oak, beech, maple, birch, hawthorn, apple, cherry, pine), from where it stands
 (`treeKind`, `TREE_MIX` in sim.js): mostly birches by the water (no willows for now), hawthorn scrub and old oaks out in the open, birches at the
 wood's edge, beech, oak and maple deep in. The drawing, its autumn colour and the inspector all follow it.
@@ -122,12 +128,12 @@ A meadow kept before them gets its fish when it opens (`unpackWorld`), no `KEEP_
 
 Otters (`otterTick`): a pair or two along the water, swimmers (`swims: true`: `moveToward` lets them through deep water, `wade`
 makes them quicker in it, `roamable` keeps their wandering within `OTTER_SHORE` of the water). A female makes her holt in the
-roots of a big tree on the bank of lasting water with room for `HOLT_FISH` fish about (`holtTree`, `goodBank`, worked out once a
-tree, `d.bank`), `HOLT_GAP` from the other holts, and marks it (`d.holt`, her id; `d.door`, the way in, on the bank side; `holtsDay`
-frees it once she's gone, and spreads the day's spraint on the bank there, `SPRAINT_RICH`). Wild trees seldom grow that close to
-the water, so a meadow with no such tree gets a short row of grown ones on the bank with the most fish (`bankTrees`: when it's
-made, or a kept one opened, away from the edges and off the islands), and each spring, once the holt trees are old and no young
-one is coming on, a few saplings come up there (`bankTrees(w, true)`). A male moves in with his mate. They're
+roots of a big tree on the bank of lasting water, or under a boulder there above the spring flood (`holtSite`, `HOLT_ROCK`, `holds`:
+a tree's holt goes when it falls), where there's room for the most fish about, at least `HOLT_FISH` (`holtTree`, `holtFish`, worked
+out once a place, `d.holtFish`), `HOLT_GAP` from the other holts, and marks it (`d.holt`, her id; `d.door`, the way in, on the bank side; `holtsDay`
+frees it once she's gone, and spreads the day's spraint on the bank there, `SPRAINT_RICH`). The trees along the water
+(`plantTrees`' fringe, and the seed they drop in the water, `floatSeed`) give every meadow holt trees; a kept meadow made before
+them with none gets a short row (`bankTrees`). A male moves in with his mate. They're
 out from the evening to the middle of the morning (`OTTER_WAKE`, `OTTER_BED`) and sleep curled up at the holt (`bedOf`), or,
 further from it than `HOLT_HOME` at bedtime or with none, on a bank close by, as otters lie up all along their water; a mum with
 cubs in the holt (`nursing`: they mark her, `c.cubsIn`) always goes home, and a cub sleeps by mum. They go to bed at a lope
