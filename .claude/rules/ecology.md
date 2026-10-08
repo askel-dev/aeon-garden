@@ -31,7 +31,14 @@ day's droppings for each rabbit home at dawn) and a log rotting away feed the so
 and a little past the soil's cap (`RICH_GROW`, `RICH_SOIL`, never over 1), and it fades over about a season (`RICH_DAYS`).
 Rabbits won't graze ground that rich (`fouled`: fresh droppings, or where a body lay), so a busy warren's latrines and
 an old kill site stand out as lusher patches (the ground's colour follows `w.grass`) until they fade and get grazed.
-In a keeper field (`?field`, PLAN.md) the soil moves, and only there (`soilTick`, daily before `groundTick`): it starts at
+A keeper field (`?field`, createWorld's `keeper` option, PLAN.md) is always the `'field'` layout (`w.field`; odds 0 in
+`TERRAIN.layouts`, so the lab's Layout › Worn field shows one, the same map for the same seed): the hills, and one brook
+along a long side (`fieldBrook`, `TERRAIN.fieldBrook`, `fieldSway`) running off the map at both ends, carved as a brook; no
+lake, ponds, woods, flower fields or burrows. Its trees are one old hollow oak out in the open on the best ground, empty (no
+`placeHive`), a stub of hawthorn hedge beside it (`fieldHedge`) and a few lone thorns (`fieldThorns`, `fieldTrees`); a few
+boulders stand on the brook's bank above the spring flood (`fieldBoulders`, a holt one day). It starts with only crows
+(`FIELD_CROWS`), no voles or frogs, fish in the brook, the turf grazed short (`WORN_TURF`), and woods that can grow to
+`FIELD_TREE_ROOM` trees in time. In a keeper field the soil moves, and only there (`soilTick`, daily before `groundTick`): it starts at
 `WORN` of what it could be (`w.potential`, the soil as made), heals in a flower patch, under a crown in autumn and winter,
 and on rich ground, and wears where grazed bare for days (`w.bare`). Rabbits won't graze grass under 0.3, so on worn soil
 they starve rather than graze it down: wear bites only where the soil was mended. The meadow you watch keeps its soil.

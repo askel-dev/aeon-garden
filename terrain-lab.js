@@ -36,7 +36,8 @@ const GROUPS = [
   ]],
   ['💧', 'Water', [
     ['layouts', 'Layout', [['Random', DEF.layouts], ['River + lake', { valley: 1, river: 0, lake: 0 }],
-      ['River', { valley: 0, river: 1, lake: 0 }], ['Lake', { valley: 0, river: 0, lake: 1 }]]],
+      ['River', { valley: 0, river: 1, lake: 0 }], ['Lake', { valley: 0, river: 0, lake: 1 }],
+      ['Worn field', { valley: 0, river: 0, lake: 0, field: 1 }]]],
     ['level', 'Water level', -0.3, 0.4, 0.01],
     ['springFlood', 'Spring flood', 0, 0.2, 0.005],
     ['summerLow', 'Summer low', 0, 0.2, 0.005],
@@ -114,6 +115,13 @@ const GROUPS = [
     ['fieldFlowers', 'Flowers', 0, 1, 0.01],
     ['fieldSoil', 'Richer soil', 0, 0.8, 0.05],
     ['fieldGather', 'Gathered within', 20, 150, 1],
+  ]],
+  ['🐑', 'Worn field', [               // the keeper game's field (?field); Water › Layout › Worn field shows one
+    ['fieldBrook', 'Brook in from the side', 2, 45, 0.5],
+    ['fieldSway', 'Brook bends', 0, 20, 0.5],
+    ['fieldBoulders', 'Boulders on the bank', 0, 10, 1],
+    ['fieldHedge', 'Hedge by the oak', 0, 12, 1],
+    ['fieldThorns', 'Lone thorns', 0, 15, 1],
   ]],
 ];
 

@@ -231,7 +231,7 @@ const TERRAIN = {
   summerLow: 0.03,             // and how far it drops in summer
   rainRise: 0.03,              // how much a soaked meadow adds to it (a dry one takes it away)
   deepAt: 0.3,                 // water at least this deep can't be waded
-  layouts: { valley: 2, river: 1, lake: 1 },   // odds of each: a river through a lake, a river, a lake
+  layouts: { valley: 2, river: 1, lake: 1, field: 0 },   // odds of each: a river through a lake, a river, a lake, a worn field (fieldBrook)
   lakeEdge: 0.4,               // odds a lake lies by the edge of the meadow, running off it (else in a hollow)
   lakeReach: [11, 18],         // how far a lake reaches from its middle, across it
   lakeStretch: [1, 1.7],       // how much longer it is than wide
@@ -289,6 +289,12 @@ const TERRAIN = {
   fieldFlowers: 0.45,          // share of a field's tiles with a flower
   fieldSoil: 0.25,             // how much richer the soil is in a field
   fieldGather: 60,             // the first three fields lie this close together, so one hive can reach all three
+  // A worn field (the layout a keeper game is played on, PLAN.md): a brook along one side, an old oak, a few thorns.
+  fieldBrook: [8, 20],         // how far in from its side the brook runs, about
+  fieldSway: 5,                // how far its bends swing
+  fieldBoulders: [3, 5],       // boulders on the brook's bank (an otter's holt one day)
+  fieldHedge: 4,               // hawthorns in the stub of hedge by the old oak
+  fieldThorns: [3, 6],         // lone hawthorns out in the field
 };
 
 const idx = (x, y) => (y | 0) * W + (x | 0);
@@ -551,6 +557,16 @@ function brookPath(r, T, river, lake, wiggle) {
   return null;
 }
 
+// A worn field's brook: along one long side, not far in, running off the map at both ends.
+function fieldBrook(r, T, wiggle) {
+  const top = r.next() < 0.5, n = Math.max(2, Math.round(W / T.riverBends)), ctrl = [];
+  for (let j = 0; j <= n; j++) {
+    const v = r.range(...T.fieldBrook) + (j && j < n ? r.range(-T.fieldSway, T.fieldSway) : 0);
+    ctrl.push({ x: lerp(-6, W + 6, j / n), y: top ? v : H - v });
+  }
+  return smoothRiver(T, ctrl, null, wiggle);
+}
+
 // Carves a river into the ground. It widens as it goes, and has a few fords: stretches shallow
 // enough to wade across, never where it runs through a lake (`wet`). A brook is narrower and
 // shallower, with one ford.
@@ -659,12 +675,14 @@ function makeTerrain(w) {
   for (let i = 0; i < N; i++) hill[i] = hills((i % W) / T.hillSize, ((i / W) | 0) / T.hillSize, T.hillDetail);
   const each = fn => { for (let i = 0; i < N; i++) fn(i, (i % W) + 0.5, ((i / W) | 0) + 0.5); };
 
-  // First where the water will go: the lake, the river, and whatever was drawn.
-  const layout = drawn.empty ? 'none' : pickOdds(r, T.layouts);
-  const lake = layout === 'river' || layout === 'none' ? null : placeLake(r, T, hills);
+  // First where the water will go: the lake, the river, and whatever was drawn. A keeper's field is always
+  // a worn field: a brook and nothing else (w.field).
+  const picked = drawn.empty ? 'none' : pickOdds(r, T.layouts), layout = w.options.keeper && !drawn.empty ? 'field' : picked;   // (the lab's Worn field is the same)
+  const field = w.field = layout === 'field';
+  const lake = layout === 'river' || layout === 'none' || field ? null : placeLake(r, T, hills);
   const river = layout === 'valley' || layout === 'river' ? riverPath(r, T, lake, hills) : null;
   if (lake) shapeLake(wr, T, shores, lake, river);
-  const brook = river && r.next() < T.brooks ? brookPath(r, T, river, lake, hills) : null;
+  const brook = field ? fieldBrook(r, T, hills) : river && r.next() < T.brooks ? brookPath(r, T, river, lake, hills) : null;
   // A drawn river that nearly reaches the edge runs on off the map.
   const drawnRivers = drawn.rivers.map(bends => {
     const ends = [bends[0], bends[bends.length - 1]].map((p, k) => {
@@ -710,7 +728,7 @@ function makeTerrain(w) {
   const inLake = p => (lake && lakeGap(lake, p.x, p.y) < 6) || outside(drawn.water, p.x, p.y) < 3;
   w.rivers = []; w.fords = [];
   if (river) carveRiver(w, T, river, inLake, carve);
-  if (brook) carveRiver(w, T, brook, p => inLake(p) || Math.hypot(p.x - brook.at(-1).x, p.y - brook.at(-1).y) < 12, carve, true);
+  if (brook) carveRiver(w, T, brook, p => inLake(p) || !field && Math.hypot(p.x - brook.at(-1).x, p.y - brook.at(-1).y) < 12, carve, true);
   if (drawn.water.length) carveDrawnWater(w, drawn.water, carve);
   for (const pts of drawnRivers) carveRiver(w, T, pts, inLake, carve);
 
@@ -733,7 +751,7 @@ function makeTerrain(w) {
     for (const i of mask.isles) w.isle[i] = 1;
     refreshWater(w);
   };
-  if (!drawn.empty) {
+  if (!drawn.empty && !field) {
     for (let p = wr.int(...T.ponds), tries = 0; p > 0 && tries < 200; tries++) {
       const size = lerp(...T.pondSize, wr.next() ** 1.8), at = lowSpot(14, 12, W - 14, H - 12, size * 1.8 + 8);
       if (at) { pond(at, size); p--; }
@@ -774,15 +792,16 @@ function makeTerrain(w) {
   w.grass = new Float32Array(N);
   for (let i = 0; i < N; i++) w.grass[i] = water[i] ? 0 : fert[i] * r.range(0.5, 0.9);
 
-  // A few old burrows to start with; the rabbits dig the rest themselves.
+  // A few old burrows to start with (none in a worn field); the rabbits dig the rest themselves.
   w.burrows = []; w.nextBurrow = 1; w.decor = [];
-  for (let tries = 0; w.burrows.length < Math.round(6 * w.room) && tries < 4000; tries++) {
+  for (let tries = 0; w.burrows.length < (field ? 0 : Math.round(6 * w.room)) && tries < 4000; tries++) {
     const x = r.range(6, W - 6), y = r.range(6, H - 6);
     if (canDig(w, x, y)) newBurrow(w, x, y, 1);
   }
 
-  // Decoration only: the forest, some rocks, stepping stones at the fords, flower spots.
-  plantTrees(w, hills, hill, near);
+  // Decoration only: the forest, some rocks, stepping stones at the fords, flower spots. A worn field has its
+  // old oak and a few thorns instead, and no flower fields.
+  if (field) fieldTrees(w, near); else plantTrees(w, hills, hill, near);
   placeFields(w, near);
   for (let k = 0; k < T.rocks; k++) {
     const x = r.range(3, W - 3), y = r.range(3, H - 3);
@@ -796,6 +815,7 @@ function makeTerrain(w) {
     w.decor.push({ x, y, emoji: '🪨', size, big: true });
     n--;
   }
+  if (field) fieldBoulders(w);
   for (const f of w.fords) {
     const p = w.rivers[f.river].pts, a = p[Math.min(p.length - 1, f.k + 1)], b = p[Math.max(0, f.k - 1)];
     const d = Math.hypot(a.x - b.x, a.y - b.y) || 1, nx = -(a.y - b.y) / d, ny = (a.x - b.x) / d;   // across the river
@@ -827,7 +847,7 @@ function placeFields(w, near) {
   const r = w.rng, T = w.terrain, N = W * H;
   w.fields = []; w.fieldAt = new Int8Array(N).fill(-1); w.fieldIn = new Float32Array(N);
   const kinds = r.shuffle(FIELD_KINDS.slice()), places = r.shuffle(FIELD_PLACES.slice()), seasons = r.shuffle([0, 1, 2]);
-  for (let n = w.drawn.empty ? 0 : r.int(...T.fields), tries = 0; w.fields.length < n && tries < 1000; tries++) {
+  for (let n = w.drawn.empty || w.field ? 0 : r.int(...T.fields), tries = 0; w.fields.length < n && tries < 1000; tries++) {
     const cx = r.range(14, W - 14), cy = r.range(12, H - 12), reach = T.fieldSpread + T.fieldSize[1];
     if (!dry(w, cx, cy) || near[idx(cx, cy)] < reach * 0.6 || w.fert[idx(cx, cy)] < 0.5) continue;
     if (w.fields.some(f => Math.hypot(f.x - cx, f.y - cy) < reach * 2.5)) continue;
@@ -973,6 +993,51 @@ function plantTrees(w, hills, hill, near) {
     d.fruit = fruity ? (hash2(hx, hy, 42) < 0.5 ? 'apple' : 'cherry') : '';
     d.kind = treeKind(d, w.wood[idx(d.x, d.y)], nearFlood[idx(d.x, d.y)]);
     foundTree(w, d);
+  }
+}
+
+// A worn field's trees: one old oak, hollow, out in the open on the best ground (the bees' and the crows'), a short
+// stub of hawthorn hedge by it, and a few lone thorns about. Like a wood's trees, they're as old as their size says.
+function fieldTrees(w, near) {
+  const r = w.rng, T = w.terrain, [small, big] = T.treeSize;
+  const tree = (x, y, kind, size) => {
+    const d = { x, y, emoji: '🌳', size, tree: true, stump: 0, kind, fruit: '' };
+    w.decor.push(d); foundTree(w, d);
+    return d;
+  };
+  const open = (x, y, gap) => dry(w, x, y) && near[idx(x, y)] > 8 && !w.decor.some(d => dist2(d, { x, y }) < gap * gap);
+  let at = null, best = -Infinity;
+  for (let k = 0; k < 60; k++) {
+    const x = r.range(W * 0.25, W * 0.75), y = r.range(H * 0.25, H * 0.75);
+    const v = w.fert[idx(x, y)] - Math.hypot(x - W / 2, y - H / 2) / W;
+    if (open(x, y, 0) && near[idx(x, y)] > 14 && v > best) { at = { x, y }; best = v; }
+  }
+  at ??= { x: W / 2, y: H / 2 };
+  const oak = tree(at.x, at.y, 'oak', big);
+  const age = TREES.oak.life * w.treeRng.range(0.55, 0.65);                  // (as placeHive's: hollow, with years in it yet)
+  Object.assign(oak, { born: w.tick - age * YEAR, life: age + w.treeRng.range(12, 18), size: HIVE_TREE, max: HIVE_TREE });
+  const a = r.range(0, Math.PI * 2), ax = Math.cos(a), ay = Math.sin(a);   // the hedge, along one way from beside the oak
+  for (let k = 0; k < T.fieldHedge; k++) {
+    const x = at.x + ax * (3 + 1.5 * k) + r.range(-0.2, 0.2), y = at.y + ay * (3 + 1.5 * k) + r.range(-0.2, 0.2);
+    if (dry(w, x, y)) tree(x, y, 'hawthorn', r.range(GROWN, small));
+  }
+  for (let n = r.int(...T.fieldThorns), tries = 0; n > 0 && tries < 400; tries++) {
+    const x = r.range(6, W - 6), y = r.range(6, H - 6);
+    if (open(x, y, 10)) { tree(x, y, 'hawthorn', r.range(GROWN, small + 0.5)); n--; }
+  }
+  w.forest = [];
+  w.pineLand = new Float32Array(W * H).fill(0.4);
+  shadeWoods(w);
+}
+
+// And boulders on the brook's bank above the spring flood: where an otter might make a holt one day.
+function fieldBoulders(w) {
+  const r = w.rng, T = w.terrain, bank = nearLasting(w, HOLT_BANK), high = T.level + T.springFlood;
+  for (let n = r.int(...T.fieldBoulders), tries = 0; n > 0 && tries < 2000; tries++) {
+    const x = r.range(3, W - 3), y = r.range(3, H - 3), i = idx(x, y);
+    if (!bank[i] || w.ground[i] <= high || w.decor.some(d => dist2(d, { x, y }) < 64)) continue;
+    w.decor.push({ x, y, emoji: '🪨', size: r.range(1.8, T.rockSize[1]) });
+    n--;
   }
 }
 
@@ -1939,13 +2004,16 @@ const BARE = 0.3;                         // grass under this share of what its 
 const WEAR_DAYS = 2;                      // and bare for longer than this, the soil wears
 const WEAR = 0.1 / SEASON_DAYS;           // this much a day: a season of it loses a tenth
 const WORN_OUT = 0.1;                     // never below this of what it could be
+const WORN_TURF = 0.5;                    // and the sheep left the grass this short, of what the soil holds
+const FIELD_TREE_ROOM = 150;              // a worn field's woods can grow to this many trees (times w.room), in time
+const FIELD_CROWS = 3;                    // the crows a worn field starts with (times w.room)
 
 function wornSoil(w) {
   const near = distanceToWater(w);
   w.potential = w.fert.slice(); w.bare = new Uint8Array(W * H);
   for (let i = 0; i < W * H; i++) {
     w.fert[i] *= WORN + WORN_WET * Math.exp(-near[i] / 3);
-    w.grass[i] = Math.min(w.grass[i], w.fert[i]);
+    w.grass[i] = WORN_TURF * w.fert[i];
   }
 }
 
@@ -5594,18 +5662,22 @@ function createWorld(seed, opts = {}) {
     options: { migration: !opts.keeper, ...opts },                        // a keeper field: nobody wanders in (keeper, below)
   };
   makeTerrain(w);
-  if (opts.keeper) wornSoil(w);
-  placeHive(w);
-  w.treeRoom = TREE_ROOM * w.decor.filter(d => d.tree).length;
+  // A keeper's field starts worn out (wornSoil), its oak's hollow empty, with no voles or frogs and a few crows: the
+  // rest come as the keepers make room for them.
+  const keeper = !!opts.keeper;
+  if (keeper) wornSoil(w);
+  else placeHive(w);
+  w.treeRoom = keeper ? FIELD_TREE_ROOM * w.room : TREE_ROOM * w.decor.filter(d => d.tree).length;
   startTrees(w);
   groundTick(w);
   coverTick(w);
-  startVoles(w);
-  startFrogs(w);
+  if (keeper) dampen(w);
+  else { startVoles(w); startFrogs(w); }
   startFish(w);
   w.roost = pickRoost(w);
-  const n = { rabbit: opts.rabbits ?? Math.round(30 * w.room), fox: opts.foxes ?? Math.round(4 * w.room), bee: opts.bees ?? 12, crow: opts.crows ?? Math.round(8 * w.room),
-    owl: opts.owls ?? (OWLS ? 2 * Math.max(1, Math.round(w.room)) : 0), otter: opts.otters ?? 0 };   // a pair or two; the otters come up the water (migrate)
+  const n = keeper ? { ...perKind(() => 0), crow: opts.crows ?? Math.round(FIELD_CROWS * w.room) }
+    : { rabbit: opts.rabbits ?? Math.round(30 * w.room), fox: opts.foxes ?? Math.round(4 * w.room), bee: opts.bees ?? 12, crow: opts.crows ?? Math.round(8 * w.room),
+      owl: opts.owls ?? (OWLS ? 2 * Math.max(1, Math.round(w.room)) : 0), otter: opts.otters ?? 0 };   // a pair or two; the otters come up the water (migrate)
   w.arrivals = []; w.family = null;
   if (opts.arrival && !opts.keeper) planArrivals(w, n);
   else for (const species of KINDS) {
