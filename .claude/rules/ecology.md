@@ -184,6 +184,15 @@ Rabbit coats: two letter-pair genes (`coat`, e.g. 'AaDd') give four colours, plu
 coat stands out from the ground under it (`visibility`); the ground colours (`GROUND`) live in the
 sim and the drawing uses them too.
 
+Cover (`w.cover`, 0 to 1 a tile, `coverTick` once a day after the trees, and a fire takes it as it burns): a hawthorn
+within `COVER_THORN` of its trunk (full once it's young), the scrub where a wood thins out (`COVER_EDGE`), and a little in
+long grass (`COVER_GRASS` over `LONG`). A still rabbit on cover is seen from nearer (`visibility`, `HIDE`). A rabbit fleeing
+a fox with no burrow in reach runs for the nearest good cover (`coverNear`, `HIDE_IN`, within `HIDE_REACH`, not toward the
+fox) and crouches there (mode `'cover'`, `HIDE_TICKS`, `crouched`): a fox can't pick it out, and one chasing it loses it
+(`escaped`, how `'cover'`). In a keeper field a planted hawthorn grows up `HEDGE_PACE` times as fast till it's young, so a
+hedge planted in spring hides a little that summer and fully the next. With it, about a fifth of the meadow's escapes are
+into cover; the foxes still cycle with the rabbits.
+
 Rabbits catch a sickness from each other (`sicknessTick`, every `SICK_EVERY` ticks): from a sick one sharing their
 burrow (`BURROW_CATCH`), and from one within `CONTACT` tiles out in the open (`OPEN_CATCH`), both times how crowded
 the meadow is (`crowding`: rabbits against `CROWDED` × `w.room`). A burrow holds only a few and most sleep out when

@@ -5944,6 +5944,7 @@ function handleEvent(e) {
     case 'escape': {
       hear('escape', e.rabbit.x, e.rabbit.y, { how: e.how }, mine);
       const t = e.how === 'burrow' ? `💨 ${link(e.rabbit)} dived into a burrow just before ${link(e.fox)} could pounce!`
+        : e.how === 'cover' ? `🌿 ${link(e.rabbit)} slipped into cover and kept still, and ${link(e.fox)} lost sight of it.`
         : e.how === 'pond' ? `🌊 ${link(e.rabbit)} put ${e.water ? e.water.name : 'the water'} between itself and ${link(e.fox)}, and got away!`
         : `💨 ${link(e.rabbit)} outran ${link(e.fox)}!`;
       if (mine) addNews(t); else addNews(t, 'escape', 11000);

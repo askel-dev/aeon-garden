@@ -1560,7 +1560,8 @@ function treesTick(w, grow = true) {
       }
       if (young && shade > k.shade && r.next() < SHADE_DEATH) { treeDies(w, d, 'shade'); continue; }
       const was = d.size;
-      if (d.size < d.max) d.size += k.grow * (d.sprouted ? 2 : 1) * (1 - shade) * g * d.size * (1 - d.size / d.max);
+      const hedge = d.planted && d.kind === 'hawthorn' && d.size < SAPLING && w.options.keeper ? HEDGE_PACE : 1;   // (cover)
+      if (d.size < d.max) d.size += k.grow * (d.sprouted ? 2 : 1) * hedge * (1 - shade) * g * d.size * (1 - d.size / d.max);
       if (d.planted && was < SAPLING && d.size >= SAPLING) emit(w, { type: 'plantgrew', tree: d });   // out of the rabbits' reach
       if (!d.named && treeAge(w, d) > d.life * 0.7) {    // an old giant gets a name
         d.named = true;
@@ -2012,12 +2013,65 @@ function groundRGB(w, x, y) {
 const FIELD_TINT = 0.3;          // at most this much of the field's colour
 const fieldBloom = (w, f, i, v) => (f && f.season === seasonOf(w.tick) ? FIELD_TINT * w.fieldIn[i] * v : 0);
 
-// How far off a fox can pick this rabbit out, as a share of its sight.
+// How far off a fox can pick this rabbit out, as a share of its sight: nearer on cover (w.cover).
 function visibility(w, c) {
   if (c.mode === 'flee') return CAMO[1];       // running, it's seen whatever its coat
   const a = coatRGB(w, c), b = groundRGB(w, c.x, c.y);
   const d = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) / 255;
-  return clamp(CAMO[0] + CAMO_CLASH * d, CAMO[0], CAMO[1]);
+  return clamp(CAMO[0] + CAMO_CLASH * d, CAMO[0], CAMO[1]) * (1 - HIDE * w.cover[idx(c.x, c.y)]);
+}
+
+// ---------------------------------------------------------------- cover
+//
+// Somewhere to hide, 0 to 1 a tile (w.cover): a thorn bush (a hedge is a row of them), the scrub where a wood
+// thins out, and a little in long grass. A fox picks out a still rabbit on cover only from nearer (visibility).
+// A rabbit with no burrow in reach runs for good cover instead (flee, coverNear) and crouches there (mode
+// 'cover'), and a fox loses it as it does at a burrow. Rebuilt once a day after the trees (coverTick), and a
+// fire takes it as it burns (ignite).
+
+const COVER_THORN = 1.3;        // a hawthorn hides what's within this many tiles of its trunk, fully once it's young
+const COVER_EDGE = 0.6;         // the scrub where a wood thins out (w.wood about 0.6 to 0.95), at most
+const COVER_GRASS = 0.35;       // long grass, at most (grass at its fullest)
+const LONG = 0.5;               // grass longer than this is long grass (VOLE_LONG)
+const HIDE = 0.7;               // a still rabbit on full cover is seen from this much nearer
+const HIDE_IN = 0.5;            // cover this thick is good to crouch in: a fox loses a rabbit there
+const HIDE_REACH = 5;           // how far a rabbit with no burrow near runs for it
+const HIDE_TICKS = [150, 300];  // how long it keeps still there
+const HEDGE_PACE = 2.5;         // a hawthorn the keepers plant grows up this much faster than a wild one: young (full cover) in a year
+
+const crouched = (w, c) => c.mode === 'cover' && w.cover[idx(c.x, c.y)] >= HIDE_IN;
+
+function coverTick(w) {
+  const cover = w.cover ??= new Float32Array(W * H), wood = w.wood, grass = w.grass;
+  for (let i = 0; i < W * H; i++) {
+    const v = wood[i], edge = COVER_EDGE * clamp((v - 0.5) / 0.15, 0, 1) * clamp((1 - v) / 0.1, 0, 1);
+    cover[i] = w.water[i] ? 0 : Math.max(edge, COVER_GRASS * clamp((grass[i] - LONG) / (1 - LONG), 0, 1));
+  }
+  for (const d of w.decor) {
+    if (d.kind !== 'hawthorn' || !standing(d) || d.size <= SEEDLING) continue;
+    const f = clamp((d.size - SEEDLING) / (SAPLING - SEEDLING), 0, 1), r = COVER_THORN;
+    for (let y = Math.max(0, Math.floor(d.y - r)); y <= Math.min(H - 1, d.y + r); y++) {
+      for (let x = Math.max(0, Math.floor(d.x - r)); x <= Math.min(W - 1, d.x + r); x++) {
+        const i = y * W + x;
+        if ((x + 0.5 - d.x) ** 2 + (y + 0.5 - d.y) ** 2 < r * r && !w.water[i] && cover[i] < f) cover[i] = f;
+      }
+    }
+  }
+}
+
+// The nearest good cover within reach, not toward the fox, or null.
+function coverNear(w, c, fox) {
+  const fx = fox.x - c.x, fy = fox.y - c.y, fd = Math.hypot(fx, fy) || 1, R = HIDE_REACH;
+  let best = null, bd = R * R;
+  for (let y = Math.max(0, Math.floor(c.y - R)); y <= Math.min(H - 1, c.y + R); y++) {
+    for (let x = Math.max(0, Math.floor(c.x - R)); x <= Math.min(W - 1, c.x + R); x++) {
+      if (w.cover[y * W + x] < HIDE_IN) continue;
+      const dx = x + 0.5 - c.x, dy = y + 0.5 - c.y, d2 = dx * dx + dy * dy;
+      if (d2 >= bd || (d2 > 2 && (dx * fx + dy * fy) / (Math.sqrt(d2) * fd) > 0.3)) continue;
+      if (clearPath(w, c.x, c.y, x + 0.5, y + 0.5)) { best = { x: x + 0.5, y: y + 0.5 }; bd = d2; }
+    }
+  }
+  return best;
 }
 
 function setWeather(w, kind, ticks, player = false) {
@@ -2076,7 +2130,7 @@ function ignite(w, i, ticks = FIRE_TICKS, set = false) {
   if (w.fire[i] || w.water[i]) return false;
   if (!w.blaze) { emit(w, { type: 'fire', x: i % W + 0.5, y: ((i / W) | 0) + 0.5, set }); w.blazeTrees = 0; }
   w.fire[i] = ticks; w.burning.push(i); w.blaze++;
-  w.voles[i] = 0; w.frogs[i] = 0;
+  w.voles[i] = 0; w.frogs[i] = 0; w.cover[i] = 0;
   burnTrees(w, i);
   return true;
 }
@@ -2288,7 +2342,7 @@ function makeCreature(w, species, x, y, genes, parents) {
     alive: true, died: 0, cause: '',
     energy: 0, stamina: 1, heading: r.range(0, Math.PI * 2), facing: 1, turnBias: 1,
     mode: 'wander', target: null, targetId: 0, timer: 0, moved: 0,
-    sprinting: false, sleeping: false, hidden: false, burrow: null, home: null, refuge: null, dig: null, arrive: null,
+    sprinting: false, sleeping: false, hidden: false, burrow: null, home: null, refuge: null, hideAt: null, dig: null, arrive: null,
     alert: 0, threatId: 0, chaseT: 0, fright: 0, frightX: 0, frightY: 0, frightWhat: '',
     wary: 0, waryX: 0, waryY: 0, detour: 0, detourX: 0, detourY: 0, nemesisId: 0, haunt: null,
     pregnantUntil: 0, cooldownUntil: 0, dadGenes: null, dadIdPending: 0, dadGenPending: 0,
@@ -2636,7 +2690,7 @@ function rabbitTick(w, c) {
   smellSmoke(w, c);
   if (c.fright > 0) { c.fright--; return flee(w, c, { id: 0, x: c.frightX, y: c.frightY }); }
   if (c.mode === 'flee') { c.mode = 'wander'; c.target = null; c.sleeping = false; }
-  if (c.mode === 'alarm') { if (--c.timer > 0) return; c.mode = 'wander'; c.target = null; }
+  if (c.mode === 'alarm' || c.mode === 'cover') { if (--c.timer > 0) return; c.mode = 'wander'; c.target = null; }
 
   // 2. Babies stay near mum. Once it sets off after her, it goes all the way back.
   if (growth(w, c) < 0.5) {
@@ -2777,11 +2831,14 @@ function thump(w, c, fox) {
   }, 'rabbit');
 }
 
-// Runs from a fox, or from anything with an x and a y (thunder, fire).
+// Runs from a fox, or from anything with an x and a y (thunder, fire): to a burrow, or from a fox to cover
+// (coverNear), or away. Crouched in cover, it keeps still while the fox is about.
 function flee(w, c, fox) {
+  if (fox.id && crouched(w, c)) return;
   if (c.mode !== 'flee') {
     c.mode = 'flee'; c.sleeping = false; c.threatId = fox.id; c.target = null;
     c.refuge = pickRefuge(w, c, fox);
+    c.hideAt = c.refuge || !fox.id ? null : coverNear(w, c, fox);
     if (fox.id) thump(w, c, fox);
   }
   let tx, ty;
@@ -2791,6 +2848,12 @@ function flee(w, c, fox) {
     tx = b.x; ty = b.y;
     if ((b.x - c.x) ** 2 + (b.y - c.y) ** 2 < 0.8) {
       enterBurrow(w, c, b, w.rng.int(150, 350), false);
+      return;
+    }
+  } else if (c.hideAt) {
+    tx = c.hideAt.x; ty = c.hideAt.y;
+    if ((tx - c.x) ** 2 + (ty - c.y) ** 2 < 0.25) {
+      c.mode = 'cover'; c.timer = w.rng.int(...HIDE_TICKS); c.hideAt = null; c.target = null;
       return;
     }
   } else {
@@ -2973,8 +3036,8 @@ function hunt(w, c) {
   // A frog is small prey too: it keeps the same eye for the grass.
   const sight = c.sight * sky(w).sight * (c.prey === 'vole' || c.prey === 'frog' ? MOUSE_EYES : 1);
   // Lost from view: a little further off than the furthest a fox spots one, or it'd flicker.
-  if (prey && (!prey.alive || prey.hidden || dist2(c, prey) > (sight * CAMO[1] * 1.2) ** 2)) {
-    if (prey.alive && c.mode === 'chase') escaped(w, prey, c, prey.hidden ? 'burrow' : 'outran');
+  if (prey && (!prey.alive || prey.hidden || crouched(w, prey) || dist2(c, prey) > (sight * CAMO[1] * 1.2) ** 2)) {
+    if (prey.alive && c.mode === 'chase') escaped(w, prey, c, prey.hidden ? 'burrow' : crouched(w, prey) ? 'cover' : 'outran');
     prey = null; c.targetId = 0; c.mode = 'wander';
   }
   // Foxes don't swim. A rabbit across deep water is out of reach, and one that gets deep water
@@ -2985,7 +3048,7 @@ function hunt(w, c) {
   }
   if (!prey && (w.tick + c.id) % 5 === 0) {
     // Only a rabbit that isn't already watching this fox is worth sneaking up on.
-    prey = nearest(w, c, sight * CAMO[1], 'rabbit', o => !(o.alert > 0 && o.threatId === c.id)
+    prey = nearest(w, c, sight * CAMO[1], 'rabbit', o => !(o.alert > 0 && o.threatId === c.id) && !crouched(w, o)
       && dist2(c, o) < (sight * visibility(w, o)) ** 2 && clearPath(w, c.x, c.y, o.x, o.y));
     if (prey) { c.targetId = prey.id; c.mode = 'stalk'; }
   }
@@ -3013,6 +3076,7 @@ function escaped(w, rabbit, fox, how, water) {
   rabbit.nemesisId = fox.id;   // it won't forget this one
   missed(fox);
   note(w, rabbit, '💨', how === 'burrow' ? `Dived into a burrow to escape ${fox.name}`
+    : how === 'cover' ? `Hid in cover, and ${fox.name} lost sight of it`
     : how === 'pond' ? `Got away from ${fox.name} across ${water ? water.name : 'the water'}` : `Outran ${fox.name}`);
   note(w, fox, '😤', `${rabbit.name} got away`);
   emit(w, { type: 'escape', rabbit, fox, how, water });
@@ -5535,6 +5599,7 @@ function createWorld(seed, opts = {}) {
   w.treeRoom = TREE_ROOM * w.decor.filter(d => d.tree).length;
   startTrees(w);
   groundTick(w);
+  coverTick(w);
   startVoles(w);
   startFrogs(w);
   startFish(w);
@@ -5640,6 +5705,7 @@ function newDay(w) {
   treesTick(w);
   if (w.options.keeper) soilTick(w);
   groundTick(w);
+  coverTick(w);
   if (!w.roost || !perchable(w.roost)) w.roost = pickRoost(w);   // gone, or bees or an owl moved in
   owlsDay(w);
   holtsDay(w);
@@ -5951,6 +6017,7 @@ function unpackWorld(kept) {
   for (const c of w.creatures) delete c.held;                // (kept while the player held one up)
   for (const c of w.byId.values()) c.mine ??= false;         // (kept before the player could name them)
   w.orders ??= [];                                           // (or give orders, act)
+  if (!w.cover) coverTick(w);                                // (or cover)
   for (const d of w.decor) if (d.tree) { d.planted ??= 0; delete d.bank; }   // (or plant trees; d.bank: the holts' old reckoning, now d.holtFish)
   if (w.lake && !w.lake.near) {                              // (kept while a lake was circles)
     w.lake.near = new Uint8Array(W * H);
@@ -6128,6 +6195,7 @@ function mood(w, c) {
     case 'dig': return { emoji: '🕳️', text: 'Digging a burrow' };
     case 'arrive': return { emoji: '🧳', text: 'Moving into the meadow' };
     case 'hide': return { emoji: '🫣', text: 'Hiding in a burrow' };
+    case 'cover': return { emoji: '🌿', text: 'Crouched in cover, keeping still' };
     case 'sleep': return { emoji: '💤', text: c.hidden ? (storm ? 'Snug in the burrow, out of the storm' : 'Asleep in the burrow') : 'Napping' };
     case 'home': return { emoji: '🏠', text: storm ? 'Hurrying home out of the storm' : 'Heading home for the night' };
     case 'shelter': return { emoji: '🌧️', text: 'Curled up, waiting out the storm' };
