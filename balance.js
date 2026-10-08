@@ -44,6 +44,7 @@ for (let s = 1; s <= seeds; s++) {
   const voles = [], voleNews = { boom: 0, bust: 0 };   // the meadow's voles at each season's end, and its vole years and crashes
   const frogs = [], frogNews = { spawn: 0, stranded: 0, froglets: 0, big: 0, poor: 0 };   // the frogs at each season's end, and the frog news
   const fish = [];                                       // the fish at each season's end
+  const soil = [], worn = [];                            // a keeper field's soil at each season's end (of what it could be), and the land grazed bare
   // The sickness: outbreaks begun and over, rabbit-days of it, rabbits per burrow at the peak, the resist gene
   // each winter's end, and the cap's numbers again against the old cap (CROWDED), to compare with before it rose.
   const oldCap = Sim.CROWDED * w.room, resist = [Sim.traitMeans(w, 'rabbit')?.resist];
@@ -111,6 +112,10 @@ for (let s = 1; s <= seeds; s++) {
     voles.push(Math.round(w.voleCount));
     frogs.push(Math.round(w.frogCount));
     fish.push(Math.round(w.fishCount));
+    if (keeper) {
+      soil.push(Math.round(100 * Sim.soilMended(w)) + '%');
+      worn.push(Math.round(100 * w.bare.reduce((n, d) => n + (d > 2), 0) / w.land) + '%');
+    }
     crows.push(w.count.crow);
     owls.push(`${w.count.owl}(${w.decor.filter(d => d.owl).length})`);
     otters.push(`${w.count.otter}(${w.decor.filter(d => d.holt).length})`);
@@ -129,6 +134,7 @@ for (let s = 1; s <= seeds; s++) {
   console.log(`  ground  at cap ${capDays.toFixed(0)}/${years * Sim.SPECIES.rabbit.breedSeasons.length * Sim.SEASON_DAYS} breeding days  crashes ${crashes} recovered ${recovered}  trees ${trees.join(' ')}  summer grass wood ${(shade.wood / shade.n).toFixed(2)} open ${(shade.open / shade.n).toFixed(2)}  rich ${rich.join(' ')}`);
   console.log(`  sickness  outbreaks ${outbreaks} (over ${over})  sick rabbit-days ${sickDays.toFixed(0)}  deaths ${d.rabbit.sickness || 0}  rabbits per burrow at peak ${perBurrow.toFixed(1)}  old cap: at it ${oldCapDays.toFixed(0)} days, crashes ${oldCrashes} recovered ${oldRecovered}  resist ${resist.map(v => v === undefined ? '-' : v.toFixed(2)).join(' ')}`);
   for (let i = 0; i < rows.length; i += 8) console.log('  ' + rows.slice(i, i + 8).join('  '));
+  if (keeper) console.log(`  soil  ${soil.join(' ')}  bare ${worn.join(' ')}`);
   const eaten = w.stats.voles;
   console.log(`  voles  ${voles.join(' ')}  eaten ${eaten} (${Math.round(100 * eaten / Math.max(1, eaten + kills))}% of fox meals)  fox hunger ${d.fox.hunger || 0}  vole years ${voleNews.boom} crashes ${voleNews.bust}`);
   const st = w.stats, rm = st.remains;

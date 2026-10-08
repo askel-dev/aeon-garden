@@ -31,6 +31,10 @@ day's droppings for each rabbit home at dawn) and a log rotting away feed the so
 and a little past the soil's cap (`RICH_GROW`, `RICH_SOIL`, never over 1), and it fades over about a season (`RICH_DAYS`).
 Rabbits won't graze ground that rich (`fouled`: fresh droppings, or where a body lay), so a busy warren's latrines and
 an old kill site stand out as lusher patches (the ground's colour follows `w.grass`) until they fade and get grazed.
+In a keeper field (`?field`, PLAN.md) the soil moves, and only there (`soilTick`, daily before `groundTick`): it starts at
+`WORN` of what it could be (`w.potential`, the soil as made), heals in a flower patch, under a crown in autumn and winter,
+and on rich ground, and wears where grazed bare for days (`w.bare`). Rabbits won't graze grass under 0.3, so on worn soil
+they starve rather than graze it down: wear bites only where the soil was mended. The meadow you watch keeps its soil.
 Reeds and lily pads (`drawShore`) are a look too: a scatter `updateWater` works out along the shore whenever the water changes.
 Shallow water is waded slowly; deep water blocks.
 The rivers run (`makeCurrent`, `w.current`: worked out when a meadow is made or opened, never kept). Each point of a river

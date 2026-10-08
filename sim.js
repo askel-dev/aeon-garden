@@ -1920,6 +1920,53 @@ function groundTick(w) {
   }
 }
 
+// ---------------------------------------------------------------- the living soil
+//
+// In a keeper field (act) the soil moves. What each tile's soil could be (w.potential) is what the meadow was
+// made with: the valley, the damp, the hills. It starts worn out, WORN of that (a little more by the water), and
+// heals only where something is on it: a flower patch, a tree's crown as its leaves come down and rot in, rich
+// ground (droppings, remains, a rotting log). Ground grazed bare for days on end wears down again (w.bare counts
+// the days). Once a day, before groundTick works out the grass it holds, so mended land greens up as the grass
+// follows it. The meadow you watch never runs it: its soil stays as it was made.
+
+const WORN = 0.3;                         // a keeper field's soil, of what it could be
+const WORN_WET = 0.2;                     // and up to this much more by the water, fading out over a few tiles
+const MEND_FLOWERS = 0.7 / YEAR_DAYS;     // a day in a flower patch mends this much of what it could be: a year heals it
+const MEND_LEAVES = 0.7 / (4 * SEASON_DAYS);   // a day under a full crown in autumn and winter: two years heal it
+const MEND_RICH = 0.05;                   // a day on fully rich ground
+const BARE = 0.3;                         // grass under this share of what its soil holds now is bare ground
+const WEAR_DAYS = 2;                      // and bare for longer than this, the soil wears
+const WEAR = 0.1 / SEASON_DAYS;           // this much a day: a season of it loses a tenth
+const WORN_OUT = 0.1;                     // never below this of what it could be
+
+function wornSoil(w) {
+  const near = distanceToWater(w);
+  w.potential = w.fert.slice(); w.bare = new Uint8Array(W * H);
+  for (let i = 0; i < W * H; i++) {
+    w.fert[i] *= WORN + WORN_WET * Math.exp(-near[i] / 3);
+    w.grass[i] = Math.min(w.grass[i], w.fert[i]);
+  }
+}
+
+function soilTick(w) {
+  const s = seasonOf(w.tick), fert = w.fert, could = w.potential, bare = w.bare, grass = w.grass, holds = w.shadedFert;
+  const short = BARE * SEASONS[s].cap, leaves = s >= 2 ? MEND_LEAVES : 0;   // the leaves come down in autumn and rot in over the winter
+  for (let i = 0; i < W * H; i++) {
+    if (w.water[i]) { bare[i] = 0; continue; }
+    let mend = leaves * w.wood[i] + MEND_RICH * w.rich[i] + (w.fieldAt[i] >= 0 ? MEND_FLOWERS : 0);
+    if (grass[i] >= short * holds[i]) bare[i] = 0;
+    else if (++bare[i] > WEAR_DAYS) { mend -= WEAR; bare[i] = WEAR_DAYS + 1; }
+    if (mend) fert[i] = clamp(fert[i] + mend * could[i], WORN_OUT * could[i], could[i]);
+  }
+}
+
+// How much of what the soil could be it is, over the whole field: 1 is all mended.
+function soilMended(w) {
+  let f = 0, p = 0;
+  for (let i = 0; i < W * H; i++) if (!w.water[i]) { f += w.fert[i]; p += w.potential[i]; }
+  return p ? f / p : 1;
+}
+
 // ---------------------------------------------------------------- weather
 //
 // The sky picks a weather from the season's odds. The ground remembers it: rain soaks it,
@@ -5483,6 +5530,7 @@ function createWorld(seed, opts = {}) {
     options: { migration: !opts.keeper, ...opts },                        // a keeper field: nobody wanders in (keeper, below)
   };
   makeTerrain(w);
+  if (opts.keeper) wornSoil(w);
   placeHive(w);
   w.treeRoom = TREE_ROOM * w.decor.filter(d => d.tree).length;
   startTrees(w);
@@ -5590,6 +5638,7 @@ function newDay(w) {
     webSnapshot(w);
   }
   treesTick(w);
+  if (w.options.keeper) soilTick(w);
   groundTick(w);
   if (!w.roost || !perchable(w.roost)) w.roost = pickRoost(w);   // gone, or bees or an owl moved in
   owlsDay(w);
@@ -6109,7 +6158,7 @@ function mood(w, c) {
 const api = {
   W, H, TPD, SHALLOW, DEEP, SEASON_DAYS, YEAR_DAYS, SEASONS, SPECIES, GENES, COATS, GROUND, WEATHER,
   createWorld, step, clock, isNight, phaseOf, seasonOf, mood, ageDays, growth, isAdult, patchFresh,
-  addCreature, paintGrass, setSky, lockSky, zap, burnLine, lift, putDown, nameCreature, nameQueen, NAME_MAX, plantTree, act, carryOut, traitMeans, walkable, packWorld, unpackWorld,
+  addCreature, paintGrass, setSky, lockSky, zap, burnLine, lift, putDown, nameCreature, nameQueen, NAME_MAX, plantTree, act, carryOut, soilMended, traitMeans, walkable, packWorld, unpackWorld,
   coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT, KINDS, OWLS,
   TERRAIN, drawnToLink, drawnFromLink, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE,
