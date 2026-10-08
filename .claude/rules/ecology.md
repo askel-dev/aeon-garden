@@ -38,7 +38,21 @@ lake, ponds, woods, flower fields or burrows. Its trees are one old hollow oak o
 `placeHive`), a stub of hawthorn hedge beside it (`fieldHedge`) and a few lone thorns (`fieldThorns`, `fieldTrees`); a few
 boulders stand on the brook's bank above the spring flood (`fieldBoulders`, a holt one day). It starts with only crows
 (`FIELD_CROWS`), no voles or frogs, fish in the brook, the turf grazed short (`WORN_TURF`), and woods that can grow to
-`FIELD_TREE_ROOM` trees in time. In a keeper field the soil moves, and only there (`soilTick`, daily before `groundTick`): it starts at
+`FIELD_TREE_ROOM` trees in time. In a keeper field nobody wanders in (no `migrate`): each species comes, settles, frets and leaves by its needs (`WANTS`,
+one check each a day, `guestsDay`, just after dawn; each says whether its needs are met, `why`, and `where` is best). Rabbits:
+good grass (`GOOD_GRASS`: 0.45 to come, which worn soil never grows; 0.35 to stay) over `FAMILY_GRASS` tiles within
+`FAMILY_REACH`, by good cover (`RABBIT_COVER`) on ground they can dig. Foxes: `FOX_PREY` rabbits (or a vole year) and a thicket
+to den in (`FOX_DEN`). Bees: `BEE_FLOWERS` open within reach of a free hollow, in spring and summer. Frogs: still shallows
+(`STILL`, `FROG_POOL`) in spring with damp long grass by them (`FROG_GRASS`), then the grass alone. Voles: long grass over a
+stretch (`VOLE_PATCH`). Otters: a holt with fish enough (`holtTree`). Crows: a roost (here from the start; they don't count).
+Out of season a need isn't judged (met null). Met `ARRIVE_DAYS` running and a few come from the nearest edge (`guestArrives`: a
+rabbit family, `familyArrives`; a fox pair; a swarm into the hollow; an otter pair up the water; voles and frogs put down
+about the spot). Bred here (`bredHere`) and here a year, they've settled. Unmet `FRET_DAYS`, they're restless (event `fret`,
+with why); unmet `LEAVE_DAYS`, every one of them walks (or flies) off the nearest edge (`g.going`, `goAway`, mode `'leave'`,
+cause `'left'`, no remains; a hive goes queen and all), or, voles and frogs, they're left to thin out. All dead counts as
+gone too. Coming back takes `ARRIVE_DAYS × (1 + left)`. `w.guests[s]` keeps how each stands (state `none`, `visiting`,
+`settled`, `left`); events `arrive` (with `guest`), `settled`, `fret`, `leave`. With nobody keeping it, nothing settles.
+In a keeper field the soil moves, and only there (`soilTick`, daily before `groundTick`): it starts at
 `WORN` of what it could be (`w.potential`, the soil as made), heals in a flower patch, under a crown in autumn and winter,
 and on rich ground, and wears where grazed bare for days (`w.bare`). Rabbits won't graze grass under 0.3, so on worn soil
 they starve rather than graze it down: wear bites only where the soil was mended. The meadow you watch keeps its soil.

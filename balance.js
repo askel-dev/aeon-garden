@@ -4,6 +4,7 @@
 // anywhere they'll go, and tells how they did.
 // `keeper` plays the keeper game (PLAN.md, "The Field") through the keepers' one door (Sim.act), with a bot:
 // `none` does nothing, `lazy` (the default) plants anywhere, as `plant` does. `node balance.js 6 8 keeper none`.
+// It prints the soil and the bare land each season, and the guests' comings and goings (sim.js guestsDay).
 const Sim = require('./sim.js');
 const years = +(process.argv[2] || 5), seeds = +(process.argv[3] || 4), verbose = process.argv[4] === 'v';
 const arrival = process.argv.includes('arrival'), keeper = process.argv.includes('keeper');
@@ -45,6 +46,7 @@ for (let s = 1; s <= seeds; s++) {
   const frogs = [], frogNews = { spawn: 0, stranded: 0, froglets: 0, big: 0, poor: 0 };   // the frogs at each season's end, and the frog news
   const fish = [];                                       // the fish at each season's end
   const soil = [], worn = [];                            // a keeper field's soil at each season's end (of what it could be), and the land grazed bare
+  const guests = [];                                     // and its guests' comings and goings: 'Y2Sp rabbit+' came, ! settled, ? fretted, - left, x died out
   // The sickness: outbreaks begun and over, rabbit-days of it, rabbits per burrow at the peak, the resist gene
   // each winter's end, and the cap's numbers again against the old cap (CROWDED), to compare with before it rose.
   const oldCap = Sim.CROWDED * w.room, resist = [Sim.traitMeans(w, 'rabbit')?.resist];
@@ -66,6 +68,10 @@ for (let s = 1; s <= seeds; s++) {
         if (e.type === 'plantgrew') planted.sapling++;
         if (e.type === 'plantseeds') planted.seeded++;
         if (e.type === 'arrive' && !e.founding) arrivals[e.species]++;
+        if (e.guest || ['settled', 'fret', 'leave'].includes(e.type)) {
+          const d = Math.floor(w.tick / Sim.TPD);
+          guests.push(`Y${Math.floor(d / Sim.YEAR_DAYS) + 1}${Sim.SEASONS[Sim.seasonOf(w.tick)].name.slice(0, 2)} ${e.species}${{ arrive: '+', settled: '!', fret: '?', leave: e.dead ? 'x' : '-' }[e.type]}`);
+        }
         if (e.type === 'death' && e.cause === 'fox') kills++;
         if (e.type === 'escape') escapes++;
         if (e.type === 'birth' && e.surprise.length) surprises++;
@@ -135,6 +141,7 @@ for (let s = 1; s <= seeds; s++) {
   console.log(`  sickness  outbreaks ${outbreaks} (over ${over})  sick rabbit-days ${sickDays.toFixed(0)}  deaths ${d.rabbit.sickness || 0}  rabbits per burrow at peak ${perBurrow.toFixed(1)}  old cap: at it ${oldCapDays.toFixed(0)} days, crashes ${oldCrashes} recovered ${oldRecovered}  resist ${resist.map(v => v === undefined ? '-' : v.toFixed(2)).join(' ')}`);
   for (let i = 0; i < rows.length; i += 8) console.log('  ' + rows.slice(i, i + 8).join('  '));
   if (keeper) console.log(`  soil  ${soil.join(' ')}  bare ${worn.join(' ')}`);
+  if (keeper) console.log(`  guests  ${guests.join('  ') || 'none came'}  (+ came, ! settled, ? restless, - left, x died out)`);
   const eaten = w.stats.voles;
   console.log(`  voles  ${voles.join(' ')}  eaten ${eaten} (${Math.round(100 * eaten / Math.max(1, eaten + kills))}% of fox meals)  fox hunger ${d.fox.hunger || 0}  vole years ${voleNews.boom} crashes ${voleNews.bust}`);
   const st = w.stats, rm = st.remains;

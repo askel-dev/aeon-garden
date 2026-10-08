@@ -2410,7 +2410,7 @@ function makeCreature(w, species, x, y, genes, parents) {
     alive: true, died: 0, cause: '',
     energy: 0, stamina: 1, heading: r.range(0, Math.PI * 2), facing: 1, turnBias: 1,
     mode: 'wander', target: null, targetId: 0, timer: 0, moved: 0,
-    sprinting: false, sleeping: false, hidden: false, burrow: null, home: null, refuge: null, hideAt: null, dig: null, arrive: null,
+    sprinting: false, sleeping: false, hidden: false, burrow: null, home: null, refuge: null, hideAt: null, dig: null, arrive: null, away: null,
     alert: 0, threatId: 0, chaseT: 0, fright: 0, frightX: 0, frightY: 0, frightWhat: '',
     wary: 0, waryX: 0, waryY: 0, detour: 0, detourX: 0, detourY: 0, nemesisId: 0, haunt: null,
     pregnantUntil: 0, cooldownUntil: 0, dadGenes: null, dadIdPending: 0, dadGenPending: 0,
@@ -3084,6 +3084,7 @@ function foxTick(w, c) {
   if (w.weather.kind === 'storm' && e > 0.45) { c.mode = 'shelter'; c.sleeping = true; return; }
 
   if (seekLove(w, c)) return;
+  if (c.arrive && e > 0.4) return arriving(w, c);              // a newcomer makes for where it came for (guestArrives)
 
   if (e < 0.75 && growth(w, c) > 0.3 && (hunt(w, c) || mouse(w, c))) return;   // rabbits first; none in sight, voles
 
@@ -5402,7 +5403,7 @@ const BANK_ROW = 4;             // trees in the row
 const BANK_ROW_REACH = 7;       // tiles from the first that the others stand, at most
 const BANK_EDGE = 10;           // and tiles from the meadow's edge, out of the mist (and never on an island)
 function bankTrees(w) {
-  if (w.drawn?.empty || w.decor.some(d => d.holt) || holtTree(w)) return;
+  if (w.drawn?.empty || w.field || w.decor.some(d => d.holt) || holtTree(w)) return;   // (a worn field's banks are the keepers' to plant)
   const T = w.terrain, high = T.level + T.springFlood, spots = [], R = HOLT_BANK - 0.5, bank = nearLasting(w, HOLT_BANK);
   for (let y = BANK_EDGE; y < H - BANK_EDGE; y++) for (let x = BANK_EDGE; x < W - BANK_EDGE; x++) {
     const i = y * W + x, p = { x: x + 0.5, y: y + 0.5 };
@@ -5566,7 +5567,8 @@ function die(w, c, cause, killer) {
   c.hidden = false;
   const age = Math.floor(ageDays(w, c));
   const text = cause === 'fox' || cause === 'owl' ? `Caught by ${killer.name}${cause === 'owl' ? ' the owl' : ''}` :
-    cause === 'left' ? (c.species === 'otter' ? 'Went off down the water to find a stretch of its own' : 'Flew off over the trees to find a wood of its own') :
+    cause === 'left' ? (c.mode === 'leave' ? `Left the field${w.guests[c.species].why ? ': ' + w.guests[c.species].why : ''}`
+      : c.species === 'otter' ? 'Went off down the water to find a stretch of its own' : 'Flew off over the trees to find a wood of its own') :
     cause === 'hunger' ? (seasonOf(w.tick) === 3 ? 'Starved in the winter' : 'Starved') :
     cause === 'lightning' ? 'Struck by lightning' :
     cause === 'fire' ? 'Caught in a wildfire' :
@@ -5690,6 +5692,7 @@ function createWorld(seed, opts = {}) {
     }
   }
   flushNewborn(w);
+  if (keeper) startGuests(w);
   for (const f of w.fields) if (f.season === seasonOf(w.tick)) f.bloomed = yearOf(w.tick);   // no news of what's out already
   hivesTick(w);
   w.founderMeans = perKind(s => traitMeans(w, s));
@@ -5842,15 +5845,15 @@ function planArrivals(w, n) {
 }
 
 // The family: mum, expecting, the dad, and two kits born on the way, who scamper along behind.
-// They step in right at the edge, half out of the meadow still.
-function familyArrives(w) {
-  const { entry, spot, side } = w.family, r = w.rng, t = w.tick;
+// They step in right at the edge, half out of the meadow still. fam: { entry, spot, side } (w.family, or a keeper
+// field's newcomers, guestArrives); until: when they give up on getting there and dig where they are.
+function familyArrives(w, fam = w.family, until = w.tick + TPD) {
+  const { entry, spot, side } = fam, r = w.rng, t = w.tick;
   const at = (inward, dy) => ({ x: side ? W - 0.55 - inward : 0.55 + inward, y: entry.y + dy });
   const come = (sex, age, p, genes) => addCreature(w, 'rabbit', p.x, p.y, { sex, age, genes, note: 'Moved into the meadow with the family' })
     || addCreature(w, 'rabbit', entry.x, entry.y, { sex, age, genes, note: 'Moved into the meadow with the family' });
   const mum = come('F', r.range(6, 8), at(0.6, -0.3)), dad = come('M', r.range(6, 9), at(0.2, 0.7));
-  mum.name = 'Juni';
-  w.nameCounts.set('rabbit:Juni', 1);
+  if (!w.nameCounts.has('rabbit:Juni')) { mum.name = 'Juni'; w.nameCounts.set('rabbit:Juni', 1); }   // (the first family's mum)
   const kits = [at(0, -0.8), at(0, 0.1)].map(p => come(r.next() < 0.5 ? 'F' : 'M', r.range(1, 1.2), p, childGenes(w, mum.genes, dad.genes)));
   for (const k of kits) {
     Object.assign(k, { mumId: mum.id, dadId: dad.id, gen: 2 });
@@ -5860,7 +5863,7 @@ function familyArrives(w) {
   mum.cooldownUntil = mum.pregnantUntil + mum.sp.cooldownDays * TPD;
   Object.assign(mum, { dadGenes: dad.genes, dadIdPending: dad.id, dadGenPending: dad.gen });
   dad.cooldownUntil = t + TPD;
-  mum.arrive = { x: spot.x, y: spot.y, dig: true, until: t + TPD };
+  mum.arrive = { x: spot.x, y: spot.y, dig: true, until };
   dad.arrive = { ...mum.arrive };
   for (const c of [mum, dad, ...kits]) { c.home = null; c.facing = side ? -1 : 1; c.heading = side ? Math.PI : 0; }
   mum.energy = mum.maxEnergy; dad.energy = dad.maxEnergy;
@@ -5950,6 +5953,226 @@ function migrate(w) {
   }
 }
 
+// ---------------------------------------------------------------- guests (a keeper field)
+//
+// In a keeper field nobody wanders in (no migrate). Each species has a short list of needs the keepers can make
+// (WANTS), looked at once a day (guestsDay), each saying whether they're met, why (for the news and the guestbook)
+// and where's best (where newcomers head). Met ARRIVE_DAYS running, and a few come in (guestArrives). Bred here and
+// here a year, they've settled. Unmet FRET_DAYS running, they're restless (the news says why); unmet LEAVE_DAYS, the
+// grown ones walk off the nearest edge (goAway; the voles and frogs, being fields, are left to thin out). Gone, or
+// all dead, coming back takes longer each time: ARRIVE_DAYS × (1 + left). Out of its season a need isn't judged
+// (met null). w.guests[s] keeps how each stands: state 'none', 'visiting', 'settled' or 'left'.
+
+const ARRIVE_DAYS = 3;          // days running a species' needs are met before a few come
+const FRET_DAYS = 2;            // days running unmet before they're restless
+const LEAVE_DAYS = SEASON_DAYS; // and before they leave
+const GOOD_GRASS = [0.45, 0.35];   // grass a family coming in looks for (worn soil never grows it), and that keeps one here
+const FAMILY_GRASS = 40;        // tiles of it within FAMILY_REACH of a burrow feed a family
+const FAMILY_REACH = 8;
+const RABBIT_COVER = 3;         // tiles of good cover (HIDE_IN) within 3 of the burrow: somewhere to run to
+const FOX_PREY = 20;            // rabbits that make prey enough for foxes (or a vole year)
+const FOX_DEN = 8;              // tiles of good cover within 3 of a spot: a thicket to den in
+const VOLE_PATCH = 30;          // tiles of long grass (VOLE_LONG) within 4: room for voles
+const VOLE_ARRIVE = 0.5;        // of the room in the patch the first voles fill
+const STILL = 0.2;              // water running slower than this (of CURRENT) is still
+const FROG_POOL = 4;            // tiles of still shallows within SPAWN_REACH, in spring
+const FROG_GRASS = 15;          // and of damp long grass (LONG, within FROG_REACH of the water)
+const FROG_ARRIVE = 0.4;        // of the room by the water the first frogs fill
+const BEE_FLOWERS = 60;          // flowers open within FORAGE_RANGE of a free hollow, in spring and summer (a worn field's thorns have ~50)
+const SWARM_BEES = 12;          // bees in a swarm that moves in
+const GUEST_A = new Float32Array(W * H), GUEST_B = new Float32Array(W * H), GUEST_C = new Float32Array(W * H), GUEST_T = new Float32Array(W * H);   // (scratch)
+
+function startGuests(w) {
+  w.guests = Object.fromEntries(GUESTS.map(s => [s, { state: 'none', cameAt: -1, firstCame: -1, settledAt: -1, leftAt: -1, metDays: 0, unmetDays: 0,
+    left: 0, births: 0, going: false, why: '', where: null }]));
+  Object.assign(w.guests.crow, { state: 'settled', cameAt: 0, firstCame: 0, settledAt: 0 });   // here from the start (they don't count)
+}
+
+// Counts of a grid's tiles where test(i) holds, summed within r of each tile, into dst.
+function tilesNear(dst, r, test) {
+  for (let i = 0; i < W * H; i++) GUEST_A[i] = test(i) ? 1 : 0;
+  boxSum(GUEST_A, dst, r, GUEST_T);
+}
+
+// The tile (every other one) where score is highest, where ok holds; { x, y, v } or null.
+function bestTile(score, ok = () => true) {
+  let best = null;
+  for (let y = 1; y < H; y += 2) for (let x = 1; x < W; x += 2) {
+    const v = score[y * W + x];
+    if ((!best || v > best.v) && ok(x + 0.5, y + 0.5)) best = { x: x + 0.5, y: y + 0.5, v };
+  }
+  return best;
+}
+
+const flowersOpen = (w, x, y) => {
+  let n = 0;
+  forEachPlantNear(w, x, y, FORAGE_RANGE, p => { if ((p.x - x) ** 2 + (p.y - y) ** 2 < FORAGE_RANGE ** 2 && isFlower(w, p)) n++; });
+  for (const p of w.blossoms) if ((p.x - x) ** 2 + (p.y - y) ** 2 < FORAGE_RANGE ** 2 && isFlower(w, p)) n++;
+  return n;
+};
+
+// What each needs: { met (null out of season), why, where }. here: they're in the field now.
+const WANTS = {
+  rabbit(w, here) {
+    if (seasonOf(w.tick) === 3) return { met: null };                         // winter: they sit it out on what they have
+    const food = GUEST_B, hide = GUEST_C, good = GOOD_GRASS[here ? 1 : 0];
+    tilesNear(food, FAMILY_REACH, i => w.grass[i] >= good);
+    tilesNear(hide, 3, i => w.cover[i] >= HIDE_IN);
+    const fed = bestTile(food);
+    if (fed.v < FAMILY_GRASS) return { met: false, why: 'the grass is too thin for a family to live on', where: fed };
+    const at = bestTile(food, (x, y) => hide[idx(x, y)] >= RABBIT_COVER && canDig(w, x, y));   // (the best fed spot by cover they can dig)
+    if (!at || at.v < FAMILY_GRASS) return { met: false, why: 'nowhere to hide near good grass', where: fed };
+    return { met: true, why: 'good grass, and cover to run to by dry ground to dig', where: at };
+  },
+  fox(w) {
+    tilesNear(GUEST_B, 3, i => w.cover[i] >= HIDE_IN);
+    const den = bestTile(GUEST_B, (x, y) => dry(w, x, y));
+    if (w.count.rabbit < FOX_PREY && !w.voleYear) return { met: false, why: 'not prey enough to hunt', where: den };
+    if (!den || den.v < FOX_DEN) return { met: false, why: 'no thicket to den in', where: den };
+    return { met: true, why: w.count.rabbit < FOX_PREY ? 'voles in the long grass, and a thicket to den in' : 'rabbits to hunt, and a thicket to den in', where: den };
+  },
+  bee(w, here) {
+    if (seasonOf(w.tick) >= 2) return { met: null };                         // autumn and winter they live on their honey
+    const trees = here ? w.hives.filter(h => h.tree && h.queen).map(h => h.tree) : w.decor.filter(d => hollowTree(w, d));
+    if (!trees.length) return { met: false, why: 'no hollow tree for a hive', where: null };
+    let best = null, most = -1;
+    for (const d of trees) { const n = flowersOpen(w, d.x, d.y); if (n > most) { best = d; most = n; } }
+    if (most < BEE_FLOWERS) return { met: false, why: `too few flowers open near the ${best.name || 'old oak'}`, where: best };
+    return { met: true, why: 'flowers open about a hollow tree', where: best };
+  },
+  frog(w, here) {
+    const s = seasonOf(w.tick);
+    if (s === 3 || (!here && s !== 0)) return { met: null };                 // they come in spring, to spawn; in winter they're in the mud
+    const grass = GUEST_B, pool = GUEST_C, damp = w.damp, cur = w.current, still = STILL * CURRENT;
+    tilesNear(grass, SPAWN_REACH, i => !w.water[i] && damp[i] <= FROG_REACH && w.grass[i] >= LONG);
+    if (s !== 0) {
+      const at = bestTile(grass);
+      return at.v >= FROG_GRASS ? { met: true, why: 'damp long grass by the water', where: at } : { met: false, why: 'no damp long grass by the water', where: at };
+    }
+    tilesNear(pool, SPAWN_REACH, i => w.water[i] === SHALLOW && Math.hypot(cur.x[i], cur.y[i]) < still);
+    const at = bestTile(grass, (x, y) => pool[idx(x, y)] >= FROG_POOL);
+    if (!at) return { met: false, why: 'no still shallow water to spawn in', where: null };
+    if (at.v < FROG_GRASS) return { met: false, why: 'no damp long grass by the still water', where: at };
+    return { met: true, why: 'still shallows, and damp long grass by them', where: at };
+  },
+  vole(w) {
+    if (seasonOf(w.tick) === 3) return { met: null };
+    tilesNear(GUEST_B, 4, i => !w.water[i] && w.grass[i] >= VOLE_LONG);
+    const at = bestTile(GUEST_B);
+    return at.v >= VOLE_PATCH ? { met: true, why: 'a stretch of long grass', where: at } : { met: false, why: 'no long grass over a stretch', where: at };
+  },
+  otter(w, here) {
+    const held = here && w.decor.some(d => d.holt && holds(d)), holt = held ? null : holtTree(w);
+    if (held || holt) return { met: true, why: 'fish in the water, and a bank for a holt', where: holt };
+    return { met: false, why: 'no bank with fish enough by it for a holt', where: null };
+  },
+  crow(w) {
+    return w.roost ? { met: true, why: 'a tall tree to roost in', where: w.roost } : { met: false, why: 'no tall tree to roost in', where: null };
+  },
+};
+
+// Whether any are in the field, and whether any were born here since they came.
+const FIELD_COUNTS = { vole: w => w.voleCount, frog: w => w.frogCount };
+const guestsHere = (w, s) => (FIELD_COUNTS[s] ? FIELD_COUNTS[s](w) >= 1 : w.count[s] + w.expecting[s] > 0);
+const bredHere = (w, s, g) => (s === 'vole' ? w.voleCount > 2 * g.births : s === 'frog' ? w.frogYear.left > 0 && w.frogYear.at > g.cameAt
+  : w.stats.births[s] > g.births);
+
+function guestsDay(w) {
+  for (const s of GUESTS) {
+    const g = w.guests[s], here = g.state === 'visiting' || g.state === 'settled';
+    if (here && !guestsHere(w, s)) { guestsGone(w, s, g, true); continue; }   // all dead
+    const v = WANTS[s](w, here);
+    if (v.met === null) continue;
+    g.why = v.why; g.where = v.where ? { x: v.where.x, y: v.where.y } : null;
+    if (v.met) { g.metDays++; g.unmetDays = 0; } else { g.unmetDays++; g.metDays = 0; }
+    if (!here) {
+      if (v.met && v.where && g.metDays >= ARRIVE_DAYS * (1 + g.left)) guestArrives(w, s, g, v.where);
+      continue;
+    }
+    if (g.state === 'visiting' && w.tick - g.cameAt >= YEAR && bredHere(w, s, g)) {
+      g.state = 'settled'; g.settledAt = w.tick;
+      emit(w, { type: 'settled', species: s, why: g.why });
+    }
+    if (g.unmetDays === FRET_DAYS) emit(w, { type: 'fret', species: s, why: g.why, x: g.where?.x, y: g.where?.y });
+    if (g.unmetDays >= LEAVE_DAYS) guestsGone(w, s, g, false);
+  }
+}
+const GUESTS = KINDS.filter(s => WANTS[s] && (s !== 'owl' || OWLS)).concat(['vole', 'frog']);
+
+// They've gone: walked off (the grown ones and the young with them; a hive's bees fly off, the voles and frogs are left
+// to thin out), or died out (dead).
+function guestsGone(w, s, g, dead) {
+  Object.assign(g, { state: 'left', leftAt: w.tick, left: g.left + 1, metDays: 0, unmetDays: 0 });
+  if (!dead && !FIELD_COUNTS[s]) {
+    g.going = true;
+    if (s === 'bee') {                                               // the hive flies off, queen and all
+      for (const h of w.hives) if (h.tree) h.tree.hive = null;
+      w.hives.length = 0;
+      for (const c of [...w.creatures, ...w.newborn]) if (c.species === 'bee') { c.hidden = false; c.sleeping = false; }
+    }
+  }
+  emit(w, { type: 'leave', species: s, why: g.why, dead });
+}
+
+// A few come in, from the edge nearest where's best for them (at: a spot, or a bee's hollow tree, an otter's holt),
+// and head there.
+function guestArrives(w, s, g, at) {
+  const r = w.rng, t = w.tick, edge = nearEdge(at);
+  let who = [];
+  if (s === 'rabbit') {
+    const side = at.x > W / 2 ? 1 : 0;
+    who = familyArrives(w, { side, entry: { x: side ? W - 0.7 : 0.7, y: at.y }, spot: at }, t + 3 * TPD);
+  } else if (s === 'fox' || s === 'crow') {
+    for (let k = 0; k < (s === 'fox' ? 2 : 4); k++) {
+      const c = addCreature(w, s, edge.x + r.range(-1, 1), edge.y + r.range(-1, 1), { sex: k % 2 ? 'M' : 'F', age: SPECIES[s].matureDays + 1, arrived: true })
+        || addCreature(w, s, edge.x, edge.y, { sex: k % 2 ? 'M' : 'F', age: SPECIES[s].matureDays + 1, arrived: true });
+      if (!c) continue;
+      if (s === 'fox') c.arrive = { x: at.x + r.range(-1.5, 1.5), y: at.y + r.range(-1.5, 1.5), until: t + 2 * TPD };
+      who.push(c);
+    }
+  } else if (s === 'bee') {
+    const h = makeHive(w, at.x, at.y);
+    moveIn(h, at);
+    for (let k = 0; k < SWARM_BEES; k++) {
+      const c = addCreature(w, 'bee', at.x + r.range(-2, 2), at.y + r.range(-2, 2), { age: r.range(1, 2), arrived: true });
+      if (c) { c.home = h; who.push(c); }
+    }
+  } else if (s === 'otter') {
+    const up = otterWay(w, at);
+    for (let k = 0; k < 2 && up; k++) {
+      const c = addCreature(w, 'otter', up.x, up.y, { sex: k % 2 ? 'M' : 'F', age: SPECIES.otter.matureDays + 1, arrived: true });
+      if (c) { who.push(c); if (c.sex === 'F') moveInHolt(w, c, at); }
+    }
+  } else {                                                          // the voles and frogs, about the spot
+    const field = s === 'vole' ? w.voles : w.frogs, R = s === 'vole' ? 6 : SPAWN_REACH;
+    let n = 0;
+    for (let y = Math.max(0, Math.floor(at.y - R)); y <= Math.min(H - 1, at.y + R); y++) for (let x = Math.max(0, Math.floor(at.x - R)); x <= Math.min(W - 1, at.x + R); x++) {
+      const i = y * W + x;
+      if (w.water[i]) continue;
+      field[i] += s === 'vole' ? VOLE_ARRIVE * voleRoom(w.grass[i]) : FROG_ARRIVE * frogRoom(w.damp[i], w.grass[i], FROG_REACH);
+    }
+    for (let i = 0; i < W * H; i++) n += field[i];
+    if (s === 'vole') w.voleCount = n; else w.frogCount = n;
+  }
+  if (s !== 'vole' && s !== 'frog' && !who.length) return;
+  w.recount = true;
+  Object.assign(g, { state: 'visiting', cameAt: t, firstCame: g.firstCame < 0 ? t : g.firstCame, metDays: 0, unmetDays: 0, going: false,
+    births: s === 'vole' ? w.voleCount : s === 'frog' ? 0 : w.stats.births[s] });
+  emit(w, { type: 'arrive', species: s, who, guest: true, why: g.why, x: at.x, y: at.y, again: g.left > 0 });
+}
+
+// The nearest point on the edge of the meadow (just inside it).
+function nearEdge(p) {
+  const opts = [{ x: p.x, y: 0.7 }, { x: p.x, y: H - 0.7 }, { x: 0.7, y: p.y }, { x: W - 0.7, y: p.y }];
+  return opts.sort((a, b) => dist2(a, p) - dist2(b, p))[0];
+}
+
+// Walking (or flying) off the nearest edge, out of the field for good.
+function goAway(w, c) {
+  if (c.mode !== 'leave') { c.mode = 'leave'; c.sleeping = false; c.target = null; c.arrive = null; c.dig = null; c.away = nearEdge(c); }
+  if (go(w, c, c.away.x, c.away.y, c.walk * (c.sp.flies ? 1 : kidPace(w, c)))) die(w, c, 'left');
+}
+
 function step(w) {
   const t = ++w.tick;
   if (t % TPD === 0) newDay(w);
@@ -5969,7 +6192,8 @@ function step(w) {
     const c = list[i];
     if (!c.alive) continue;
     if (c.held) { lifeTick(w, c); continue; }               // dangling from the player's hand: it only waits
-    if (c.species === 'rabbit') rabbitTick(w, c);
+    if (w.guests && !c.hidden && w.guests[c.species]?.going) goAway(w, c);   // a keeper field's guests, leaving (guestsDay)
+    else if (c.species === 'rabbit') rabbitTick(w, c);
     else if (c.species === 'fox') foxTick(w, c);
     else if (c.species === 'bee') beeTick(w, c);
     else if (c.species === 'crow') crowTick(w, c);
@@ -5983,6 +6207,7 @@ function step(w) {
   flushNewborn(w);
   if (t % w.history.every === 0) record(w);
   if (t % (TPD / 4) === 0) migrate(w);
+  if (w.guests && t % TPD === 1) guestsDay(w);              // (just after the dawn's newDay, so it sees what the day's arrivals are)
   if (t % TPD === 0) { forgetTheLongDead(w); collapseBurrows(w); }
 }
 
@@ -6090,6 +6315,7 @@ function unpackWorld(kept) {
   for (const c of w.byId.values()) c.mine ??= false;         // (kept before the player could name them)
   w.orders ??= [];                                           // (or give orders, act)
   if (!w.cover) coverTick(w);                                // (or cover)
+  if (w.options.keeper && !w.guests) startGuests(w);         // (a keeper field from before the needs check)
   for (const d of w.decor) if (d.tree) { d.planted ??= 0; delete d.bank; }   // (or plant trees; d.bank: the holts' old reckoning, now d.holtFish)
   if (w.lake && !w.lake.near) {                              // (kept while a lake was circles)
     w.lake.near = new Uint8Array(W * H);
@@ -6266,6 +6492,7 @@ function mood(w, c) {
     case 'alarm': return { emoji: '‼️', text: `Spotted ${w.byId.get(c.threatId)?.name ?? 'a fox'}!` };
     case 'dig': return { emoji: '🕳️', text: 'Digging a burrow' };
     case 'arrive': return { emoji: '🧳', text: 'Moving into the meadow' };
+    case 'leave': return { emoji: '🧳', text: 'Leaving the field' };
     case 'hide': return { emoji: '🫣', text: 'Hiding in a burrow' };
     case 'cover': return { emoji: '🌿', text: 'Crouched in cover, keeping still' };
     case 'sleep': return { emoji: '💤', text: c.hidden ? (storm ? 'Snug in the burrow, out of the storm' : 'Asleep in the burrow') : 'Napping' };

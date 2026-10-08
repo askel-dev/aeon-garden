@@ -1129,7 +1129,7 @@ function drawBurrow(b, sx, sy, z, season, residents) {
 
 // ------------------------------------------------------------------ drawing
 
-const MOVING = new Set(['wander', 'food', 'flee', 'chase', 'stalk', 'prowl', 'home', 'love', 'follow', 'friends', 'dig', 'arrive']);
+const MOVING = new Set(['wander', 'food', 'flee', 'chase', 'stalk', 'prowl', 'home', 'love', 'follow', 'friends', 'dig', 'arrive', 'leave']);
 const REMAINS_SIZE = 0.75;                // remains, next to a rabbit (drawRemains)
 const HOLT_SIZE = 0.8;                    // the way into an otters' holt
 const BODY_SIZE = 1;                      // a dead rabbit, lying on its side
@@ -5567,7 +5567,7 @@ function goneLine(c, cause, killer) {
   const at = cause === 'left' ? '' : placeNear(c.x, c.y), who = link(c);
   const how = {
     fox: `${link(killer)} the fox took ${who}`, owl: `${link(killer)} the owl took ${who}`,
-    left: `${who} flew off over the trees, to find a wood of its own`, hunger: `${who} starved`,
+    left: c.mode === 'leave' ? `${who} left the field` : `${who} flew off over the trees, to find a wood of its own`, hunger: `${who} starved`,
     lightning: `Lightning struck ${who}`, fire: `The fire took ${who}`, flood: `${who} drowned in the flooded burrow`,
     ice: `${who} went through the ice`, sickness: `The sickness took ${who}`,
   }[cause] || `${who} died of old age`;
@@ -5793,7 +5793,8 @@ function handleEvent(e) {
         const t = `🦉 ${link(e.killer)} the owl dropped silently out of the dusk and took ${link(c)}, a young rabbit still out.`;
         if (mine) addNews(t); else addNews(t, 'owlcatch', 20000);
       } else if (e.cause === 'left') {
-        if (mine) addNews(c.species === 'otter' ? `🦦 ${link(c)} has gone off down the water to find a stretch of its own.`
+        if (mine && c.mode === 'leave') addNews(`🧳 ${link(c)} has left the field.`);
+        else if (mine) addNews(c.species === 'otter' ? `🦦 ${link(c)} has gone off down the water to find a stretch of its own.`
           : `🦉 ${link(c)} has flown off over the trees to find a wood of its own.`);   // the rest: the 'owlleaves' and 'otterleaves' news
       } else if (e.cause === 'hunger') {
         const t = c.species === 'fox' ? `🥀 ${link(c)} the fox starved. There weren't enough rabbits or voles.`
@@ -5970,7 +5971,11 @@ function handleEvent(e) {
     case 'pollinate':
       puffPollen(e.x, e.y);
       break;
+    case 'settled': case 'fret': case 'leave':
+      guestNews(e);
+      break;
     case 'arrive': {
+      if (e.guest) { guestNews(e); break; }
       if (e.family) intro.family = e.who;
       if (e.family) addNews(`🧳 ${link(e.who[0])} and ${link(e.who[1])} moved into the meadow, with their kits ${link(e.who[2])} and ${link(e.who[3])}.`);
       if (e.founding && e.species === 'rabbit') break;   // the rest come in quietly, a few at a time all day
@@ -5988,6 +5993,27 @@ function handleEvent(e) {
       break;
     }
   }
+}
+
+// A keeper field's guests (sim.js guestsDay): who came and why, who settled, who's restless and why, who left.
+const GUEST_NAMES = { rabbit: 'rabbits', fox: 'foxes', bee: 'bees', crow: 'crows', otter: 'otters', vole: 'voles', frog: 'frogs', owl: 'owls' };
+const GUEST_COME = {
+  rabbit: n => `🧳 A family of rabbits has moved into the field: ${n}.`, fox: n => `🦊 A pair of foxes has come into the field: ${n}.`,
+  bee: () => '🐝 A swarm has moved into the hollow tree.', crow: n => `🐦‍⬛ Crows have flown in over the field: ${n}.`,
+  otter: n => `🦦 A pair of otters has come up the water: ${n}.`, vole: () => '🐭 Voles have found the long grass.',
+  frog: () => '🐸 Frogs have come up the brook to the still water.',
+};
+function guestNews(e) {
+  const who = GUEST_NAMES[e.species], Who = who[0].toUpperCase() + who.slice(1);
+  if (e.type === 'arrive') {
+    addNews(GUEST_COME[e.species](e.who.map(link).join(', ')) + ` They came for ${esc(e.why)}.` + (e.again ? ' They\'re back.' : ''));
+    for (const c of e.who) addEffect('✨', c.x, c.y);
+    hear('arrive', e.x, e.y, { species: e.species }, true);
+  } else if (e.type === 'settled') addNews(`🏡 <b>The ${who} have settled.</b> Born here, and here a year.`);
+  else if (e.type === 'fret') addNews(`😟 The ${who} are restless: ${esc(e.why)}.`);
+  else if (e.dead) { chime('extinct'); addNews(`😢 <b>The last of the ${who} are gone.</b>`); }
+  else addNews(e.species === 'vole' || e.species === 'frog' ? `🍂 <b>${Who} won't stay:</b> ${esc(e.why)}. They'll dwindle away.`
+    : `🧳 <b>The ${who} are leaving the field:</b> ${esc(e.why)}.`);
 }
 
 // How many make a record worth telling, and how big a peak has to be before its crash is news.
