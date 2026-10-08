@@ -5479,7 +5479,8 @@ function createWorld(seed, opts = {}) {
     treeRng: makeRng(seed ^ 0x5eed7ee), nextTree: 1, seeds: [], mast: false, mastYear: 0, orchard: [], treeCount: 0,
     blossoms: [], blossomCells: Array.from({ length: GW * GH }, () => []), nextBloom: 0, decorCells: [], treesMoved: true,
     bitten: new Int32Array(W * H), scorched: new Uint16Array(W * H), sprouted: 0, sproutedBurnt: 0, treeStats: {},
-    options: { migration: true, ...opts },
+    orders: [],                                                           // (see act)
+    options: { migration: !opts.keeper, ...opts },                        // a keeper field: nobody wanders in (keeper, below)
   };
   makeTerrain(w);
   placeHive(w);
@@ -5493,7 +5494,7 @@ function createWorld(seed, opts = {}) {
   const n = { rabbit: opts.rabbits ?? Math.round(30 * w.room), fox: opts.foxes ?? Math.round(4 * w.room), bee: opts.bees ?? 12, crow: opts.crows ?? Math.round(8 * w.room),
     owl: opts.owls ?? (OWLS ? 2 * Math.max(1, Math.round(w.room)) : 0), otter: opts.otters ?? 0 };   // a pair or two; the otters come up the water (migrate)
   w.arrivals = []; w.family = null;
-  if (opts.arrival) planArrivals(w, n);
+  if (opts.arrival && !opts.keeper) planArrivals(w, n);
   else for (const species of KINDS) {
     for (let k = 0; k < n[species]; k++) {
       let x, y;
@@ -5765,6 +5766,7 @@ function migrate(w) {
 function step(w) {
   const t = ++w.tick;
   if (t % TPD === 0) newDay(w);
+  if (w.orders.length && w.orders[0].t <= t) carryOut(w);
   buildGrid(w);
   weatherTick(w);
   if (t % 4 === 0) { growGrass(w, 4); fireTick(w, 4); iceTick(w, 4); }
@@ -5899,6 +5901,7 @@ function unpackWorld(kept) {
   }
   for (const c of w.creatures) delete c.held;                // (kept while the player held one up)
   for (const c of w.byId.values()) c.mine ??= false;         // (kept before the player could name them)
+  w.orders ??= [];                                           // (or give orders, act)
   for (const d of w.decor) if (d.tree) { d.planted ??= 0; delete d.bank; }   // (or plant trees; d.bank: the holts' old reckoning, now d.holtFish)
   if (w.lake && !w.lake.near) {                              // (kept while a lake was circles)
     w.lake.near = new Uint8Array(W * H);
@@ -5960,6 +5963,45 @@ function nameQueen(w, h, name) {
   if (!h.queen || !name || name === h.queen.name) return false;
   h.queen.name = name; h.queen.mine = true;
   return true;
+}
+
+// ---------------------------------------------------------------- the keepers' orders
+//
+// Everything a keeper does goes through one door: act(w, { t, by, kind, x, y, ... }) is an order, due at
+// tick t, from keeper by (0 alone). The orders wait in w.orders, soonest first (then by keeper), and step
+// carries out the ones due before anything moves (carryOut). Each kind checks what it needs and says how it
+// went, 'acted' or 'refused' and why, as an event. So two screens running the same meadow show the same
+// thing, and balance.js plays by the same rules. A keeper meadow (createWorld's keeper option) is the game:
+// a worn field to mend (PLAN.md), with no newcomers wandering in (migrate) and no first-visit arrivals.
+
+function act(w, o) {
+  const list = w.orders;
+  let k = list.length;
+  while (k > 0 && (list[k - 1].t > o.t || list[k - 1].t === o.t && list[k - 1].by > o.by)) k--;
+  list.splice(k, 0, o);
+}
+
+// What each order does: what it made or touched (told with 'acted'), or a word for why not ('refused').
+const ORDERS = {
+  plant(w, o) {                                              // { tree: its kind }
+    const d = plantTree(w, o.x, o.y, o.tree);
+    return typeof d === 'string' ? d : { it: d };
+  },
+  name(w, o) {                                               // { who: an animal's id, or hive: a hive's (its queen), name }
+    const c = o.who && w.byId.get(o.who), h = o.hive && w.hives.find(h => h.id === o.hive);
+    const was = c ? c.mine : h?.queen?.mine;
+    if (c) return c.alive && nameCreature(w, c, o.name) ? { c, was } : 'name';
+    if (h) return nameQueen(w, h, o.name) ? { hive: h, queen: h.queen, was } : 'name';
+    return 'gone';
+  },
+};
+
+// The orders due by now, in turn. Paused, game.js calls it itself.
+function carryOut(w) {
+  while (w.orders.length && w.orders[0].t <= w.tick) {
+    const o = w.orders.shift(), r = ORDERS[o.kind] ? ORDERS[o.kind](w, o) : 'unknown';
+    emit(w, typeof r === 'string' ? { type: 'refused', order: o, why: r } : { type: 'acted', order: o, ...r });
+  }
 }
 
 function paintGrass(w, x, y, radius) {
@@ -6067,7 +6109,7 @@ function mood(w, c) {
 const api = {
   W, H, TPD, SHALLOW, DEEP, SEASON_DAYS, YEAR_DAYS, SEASONS, SPECIES, GENES, COATS, GROUND, WEATHER,
   createWorld, step, clock, isNight, phaseOf, seasonOf, mood, ageDays, growth, isAdult, patchFresh,
-  addCreature, paintGrass, setSky, lockSky, zap, burnLine, lift, putDown, nameCreature, nameQueen, NAME_MAX, plantTree, traitMeans, walkable, packWorld, unpackWorld,
+  addCreature, paintGrass, setSky, lockSky, zap, burnLine, lift, putDown, nameCreature, nameQueen, NAME_MAX, plantTree, act, carryOut, traitMeans, walkable, packWorld, unpackWorld,
   coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT, KINDS, OWLS,
   TERRAIN, drawnToLink, drawnFromLink, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE,

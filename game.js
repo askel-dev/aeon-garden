@@ -15,11 +15,16 @@ const perKind = make => Object.fromEntries(S.KINDS.map(s => [s, make(s)]));   //
 // drawn on it (Sim.drawnToLink; older links have it as ?drawn={...}), as the terrain lab hands them
 // over. ?lab opens that lab: the meadow without animals, and terrain-lab.js on top.
 const params = new URLSearchParams(location.search), LAB = params.has('lab');
+// ?field is the keeper game (PLAN.md, "The Field"): a worn field to mend. What you do there goes to the sim as an
+// order (order, sim.js act), and the meadow's powers are off: releasing animals, lightning, fire, grass, the
+// weather, picking an animal up, and the season it runs on while you're away.
+const FIELD = params.has('field') && !LAB;
+let me = 0;                               // the keeper you are: 0 alone (the second player's comes with Milestone B)
 const fromUrl = key => { try { return JSON.parse(params.get(key) || '{}'); } catch (e) { return {}; } };   // a broken link: the usual meadow
 let terrain = fromUrl('terrain'), drawn = location.hash.length > 1 ? S.drawnFromLink(location.hash) : fromUrl('drawn');
 const terrainQuery = () => (Object.keys(terrain).length ? '&terrain=' + encodeURIComponent(JSON.stringify(terrain)) : '')
   + (S.drawnToLink(drawn) ? '#' + S.drawnToLink(drawn) : '');
-const meadowLink = seed => '?seed=' + seed + terrainQuery();   // the address of a meadow, and the name it's kept under
+const meadowLink = seed => (FIELD ? '?field&seed=' : '?seed=') + seed + terrainQuery();   // the address of a meadow, and the name it's kept under
 
 // How many people come, and from where, counted by GoatCounter (goatcounter.com: free, no cookies,
 // nothing to agree to). Off until COUNTER holds the site's code: sign up there, pick a code, put it
@@ -5709,6 +5714,18 @@ function handleEvent(e) {
     case 'plantgrew':
       addNews(`🌿 The ${plantedLink(e.tree)} you planted is a sapling now, out of the rabbits' reach.`);
       break;
+    case 'acted':                       // an order carried out (order, sim.js act)
+      if (e.order.kind === 'plant') planted(e.it);
+      else if (e.order.kind === 'name') {
+        if (e.c) named(link(e.c), e.was, e.c.sex === 'F' ? 'her' : 'him');
+        else named(`Queen ${esc(e.queen.name)}`, e.was, 'her hive');
+        renderInspector();
+        if (yoursOpen()) renderYours();
+      }
+      break;
+    case 'refused':
+      if (e.order.kind === 'plant') addNews(NO_PLANT[e.why], 'noplant', 3000);
+      break;
     case 'plantseeds':
       addNews(`🌰 The ${plantedLink(e.tree)} you planted in the ${plantedWhen(e.tree)} is bearing its first seed.`);
       break;
@@ -7375,13 +7392,9 @@ function endNaming(keep) {
   if (!key) return;
   ui.naming = 0;
   if (keep && el) {
-    if (typeof key === 'number') {
-      const c = world.byId.get(key), was = c?.mine;
-      if (c && c.alive && S.nameCreature(world, c, el.value)) named(link(c), was, c.sex === 'F' ? 'her' : 'him');
-    } else {
-      const h = world.hives.find(o => 'hive:' + o.id === key), was = h?.queen?.mine;
-      if (h && S.nameQueen(world, h, el.value)) named(`Queen ${esc(h.queen.name)}`, was, 'her hive');
-    }
+    const h = typeof key !== 'number' && world.hives.find(o => 'hive:' + o.id === key);
+    if (h) order({ kind: 'name', hive: h.id, name: el.value });
+    else if (typeof key === 'number') order({ kind: 'name', who: key, name: el.value });
   }
   renderInspector();
   if (yoursOpen()) renderYours();
@@ -7457,6 +7470,7 @@ function creatureAt(sx, sy) {
 // Tap an animal tool already in your hand and it releases more at a time: ×1, ×2, ×5, ×10.
 const GROUPS = [1, 2, 5, 10];
 function setTool(tool) {
+  if (FIELD && !FIELD_TOOLS.has(tool)) return;
   if (tool === ui.tool && S.KINDS.includes(tool)) {
     ui.group[tool] = GROUPS[(GROUPS.indexOf(ui.group[tool]) + 1) % GROUPS.length];
     try { localStorage.setItem('aeon-garden-group', JSON.stringify(ui.group)); } catch (e) { /* fine */ }
@@ -7585,7 +7599,7 @@ canvas.addEventListener('pointerdown', e => {
   if (fingers.size >= 2) { startPinch(); return; }
   drag = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y, moved: false, paint: (ui.tool === 'grass' || ui.tool === 'fire') && e.button === 0,
     t: e.timeStamp, lx: e.clientX, ly: e.clientY, vx: 0, vy: 0, id: e.pointerId,
-    grab: ui.tool === 'look' && e.button === 0 && !LAB ? grabAt(e.clientX, e.clientY) : null };   // dragged, it's picked up
+    grab: ui.tool === 'look' && e.button === 0 && !LAB && !FIELD ? grabAt(e.clientX, e.clientY) : null };   // dragged, it's picked up
   if (drag.paint) paintAt(e.clientX, e.clientY);
   else if (fingerTap && !LAB) {
     const d = drag;
@@ -7820,13 +7834,21 @@ const NO_PLANT = { water: '💧 Trees don’t grow in the water.', field: '🌼 
   burrow: '🕳️ Too close to a burrow or a hive for a tree.', crowded: '🌳 Too close to another tree or a rock.' };
 const an = w => (/^[aeiou]/.test(w) ? 'an ' : 'a ') + w;
 const plantedWhen = d => { const day = Math.floor(d.planted / S.TPD); return `${seasonName(S.seasonOf(d.planted))} of year ${Math.floor(day / S.YEAR_DAYS) + 1}`; };
-function plantAt(kind, wx, wy) {
-  const d = S.plantTree(world, wx, wy, kind);
-  if (typeof d === 'string') { addNews(NO_PLANT[d], 'noplant', 3000); return; }
-  hear('grass', wx, wy);
-  addEffect('🌱', wx, wy, 0.8, 1400);
+function plantAt(kind, wx, wy) { order({ kind: 'plant', tree: kind, x: wx, y: wy }); }
+// It's in (the event 'acted'): a sound, a sprout, and the news.
+function planted(d) {
+  hear('grass', d.x, d.y);
+  addEffect('🌱', d.x, d.y, 0.8, 1400);
   tried('plant');
-  addNews(`🌱 You planted ${thingLink('tree', d.id, an(TREE_NAMES[kind].toLowerCase()))}. ${PLANT_SAY[kind]}`);
+  addNews(`🌱 You planted ${thingLink('tree', d.id, an(TREE_NAMES[d.kind].toLowerCase()))}. ${PLANT_SAY[d.kind]}`);
+}
+
+// What you do to the meadow as an order (sim.js act), carried out on the next tick, and told of when it is
+// ('acted', 'refused' in handleEvent), the way it will be for two. Paused, or in the meadow you watch, at once.
+function order(cmd) {
+  const now = !FIELD || !ui.speed;
+  S.act(world, { t: world.tick + (now ? 0 : 1), by: me, ...cmd });
+  if (now) { S.carryOut(world); flushEvents(); }
 }
 // What the news calls one: a link while it stands.
 const plantedLink = d => { const k = treeName(d).toLowerCase(); return world.decor.includes(d) ? thingLink('tree', d.id, k) : k; };
@@ -7891,9 +7913,17 @@ const RING_TOOLS = [['rabbit', '🐇', 'Release a rabbit'], ['fox', '🦊', 'Rel
   ['plant', '🌳', 'Plant a tree'], ['zap', '⚡', 'Strike lightning'], ['fire', '🔥', 'Wall of fire'], ['sky', '🌦️', 'Weather']].filter(([k]) => k !== 'owl' || S.OWLS);
 // Owls off for now (sim.js OWLS): their tool, counters and graph button stay in the page, hidden.
 if (!S.OWLS) for (const e of document.querySelectorAll('[data-tool="owl"], [data-show="owl"], #mini-owl, #n-owl')) (e.closest('.mini-pop, .pop') || e).classList.add('hidden');
+// A field keeps the keepers' tools only. The weather still shows, but isn't yours to pick.
+const FIELD_TOOLS = new Set(['look', 'plant']);
+if (FIELD) {
+  for (const b of document.querySelectorAll('[data-tool]')) if (!FIELD_TOOLS.has(b.dataset.tool)) b.classList.add('hidden');
+  for (const b of document.querySelectorAll('#more-menu [data-act="sky"], #more-menu [data-act="guide"]')) b.classList.add('hidden');
+  $('.hud-top [data-act="sky"]').title = 'The weather';
+}
 
 // which: '' the tools, 'sky' the weather, 'plant' the kinds of tree.
 function openRing(sx, sy, which = '') {
+  if (FIELD && !which) which = 'plant';                // a field's only tool in the ring, for now
   const items = which === 'sky'
     ? [...Object.entries(S.WEATHER).map(([k, wx]) => ['sky:' + k, wx.emoji, wx.name]), ['lock', world.skyLocked ? '🔒' : '🔓', world.skyLocked ? 'Unlock the weather' : 'Keep this weather']]
     : which === 'plant' ? PLANT_KINDS.map(([k, e, label]) => ['plant:' + k, e, label]) : RING_TOOLS;
@@ -7944,6 +7974,7 @@ $('#ring').addEventListener('contextmenu', e => e.preventDefault());
 addEventListener('pointerdown', e => { if (ui.ring && !e.target.closest('#ring,#world')) closeRing(); });
 
 function toggleSkyMenu(open = !ui.sky.menu) {
+  if (FIELD) return;
   ui.sky.menu = open;
   $('#sky-menu').classList.toggle('hidden', !open);
   $('[data-act="sky"]').classList.toggle('on', open);
@@ -8080,6 +8111,7 @@ function showSkyLock() {
 }
 
 function toggleSkyLock() {
+  if (FIELD) return;
   S.lockSky(world, !world.skyLocked);
   addNews(world.skyLocked
     ? `🔒 <b>Weather locked</b> on ${S.WEATHER[world.weather.kind].emoji} ${S.WEATHER[world.weather.kind].name.toLowerCase()} until you unlock it.`
@@ -8851,10 +8883,10 @@ function keepMeadow() {
   }).catch(e => console.warn('Could not keep the meadow', e));
 }
 
-// The kept meadow to open: this seed's, or with none, the one watched last. Null if there's none, or
+// The kept meadow to open: this seed's, or with none, the one watched last (at ?field, the field played last). Null if there's none, or
 // no IndexedDB, or it takes too long to say (a new meadow then).
 function keptMeadow(seed) {
-  const list = keptList(), link = seed ? meadowLink(seed) : list[0]?.link;
+  const list = keptList(), link = seed ? meadowLink(seed) : list.find(k => k.link.startsWith('?field') === FIELD)?.link;
   if (!link || !list.some(k => k.link === link)) return Promise.resolve(null);
   let broke = false;
   try { broke = localStorage.getItem(OPENING) === link; } catch (e) { /* fine */ }
@@ -8905,7 +8937,7 @@ function resumeWorld(rec) {
 let hiddenAt = 0;
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) { hiddenAt = Date.now(); keepMeadow(); }
-  else if (hiddenAt && Date.now() - hiddenAt > AWAY_MIN && world && ui.speed > 0 && (!ui.hush || idle.on) && !LAB && !away.on) startAway();
+  else if (hiddenAt && Date.now() - hiddenAt > AWAY_MIN && world && ui.speed > 0 && (!ui.hush || idle.on) && !LAB && !FIELD && !away.on) startAway();
 });
 addEventListener('pagehide', keepMeadow);
 
@@ -8989,10 +9021,11 @@ function flushEvents() {
 function randomSeed() { return Math.floor(Math.random() * 1e6); }
 
 function newWorld(seed, arrival = false) {
-  showWorld(S.createWorld(seed, LAB ? { terrain, drawn, rabbits: 0, foxes: 0, bees: 0 } : { terrain, drawn, arrival }));
+  showWorld(S.createWorld(seed, LAB ? { terrain, drawn, rabbits: 0, foxes: 0, bees: 0 } : { terrain, drawn, arrival, keeper: FIELD }));
   const big = [world.waters.find(v => v.kind === 'river'), world.lake].filter(Boolean).map(v => `<b>${v.name}</b>`);
   const by = big.length ? ' by ' + big.join(' and ') : '';
-  addNews(arrival ? `🌱 A new meadow${by}. Nobody lives here yet.`
+  addNews(FIELD ? `🌾 A worn-out field${by}. Nobody will move in for you: mend the land, and see who comes.`
+    : arrival ? `🌱 A new meadow${by}. Nobody lives here yet.`
     : `🌱 A new meadow${by}. <b>${world.count.rabbit} rabbits</b> and <b>${world.count.fox} foxes</b> have just moved in.`);
   if (!LAB) history.replaceState(null, '', meadowLink(seed));
 }
@@ -9166,7 +9199,7 @@ resize();
 const seedParam = +params.get('seed');
 let seen = false;
 try { seen = localStorage.getItem('aeon-garden-welcomed') === '1'; } catch (e) { /* private window */ }
-const firstVisit = !LAB && (!seen || params.has('intro'));   // ?intro plays it again
+const firstVisit = !LAB && !FIELD && (!seen || params.has('intro'));   // ?intro plays it again
 // The kept meadow if there is one (keeping the meadow, above), else a new one. The rest below doesn't wait for it.
 function begin(rec) {
   const back = rec && resumeWorld(rec);
@@ -9184,8 +9217,8 @@ function begin(rec) {
     hush(true);                                         // nothing to count yet: the bars and cards wait
     setSpeed(0);
     if (world.family && !calm) introShot();
-  } else { homeTip(30000); setTimeout(() => startGuide(false), 2500); }
-  if (back && !rec.paused && Date.now() - rec.at > AWAY_MIN) startAway();
+  } else { homeTip(30000); if (!FIELD) setTimeout(() => startGuide(false), 2500); }
+  if (back && !rec.paused && !FIELD && Date.now() - rec.at > AWAY_MIN) startAway();
   requestAnimationFrame(frame);
 }
 (firstVisit || LAB ? Promise.resolve(null) : keptMeadow(seedParam)).then(begin);

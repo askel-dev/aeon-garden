@@ -2,18 +2,28 @@
 // `node balance.js 5 4 v` adds grass and lows; `arrival` anywhere starts them the way a first
 // visit does, everyone moving in over the first days. `plant` has a player plant 5 trees a year, any kind,
 // anywhere they'll go, and tells how they did.
+// `keeper` plays the keeper game (PLAN.md, "The Field") through the keepers' one door (Sim.act), with a bot:
+// `none` does nothing, `lazy` (the default) plants anywhere, as `plant` does. `node balance.js 6 8 keeper none`.
 const Sim = require('./sim.js');
 const years = +(process.argv[2] || 5), seeds = +(process.argv[3] || 4), verbose = process.argv[4] === 'v';
-const arrival = process.argv.includes('arrival'), plant = process.argv.includes('plant');
+const arrival = process.argv.includes('arrival'), keeper = process.argv.includes('keeper');
+const bot = keeper ? ['none', 'lazy'].find(b => process.argv.includes(b)) || 'lazy' : '';
+const plant = process.argv.includes('plant') || bot === 'lazy';
 const PLANT_KINDS = ['oak', 'beech', 'maple', 'birch', 'alder', 'hawthorn', 'apple', 'cherry', 'pine'];
 const perSeason = Sim.SEASON_DAYS * Sim.TPD;
 for (let s = 1; s <= seeds; s++) {
-  const w = Sim.createWorld(s * 7919, { arrival });
+  const w = Sim.createWorld(s * 7919, { arrival, keeper });
   const t0 = Date.now();
   const rows = [];
   let pr = s * 2654435761 % 4294967296;                    // the planter's own random numbers, so the meadow's stay its own
   const rand = () => (pr = (pr * 1664525 + 1013904223) % 4294967296) / 4294967296;
   const planted = { tried: 0, ok: 0, lost: {}, sapling: 0, seeded: 0 };
+  // A keeper plants by order: a spot a tick, till one takes (the 'acted' event) or 20 were refused.
+  let want = 0, spots = 0, asked = false;
+  const order = () => {
+    Sim.act(w, { t: w.tick + 1, by: 0, kind: 'plant', tree: PLANT_KINDS[Math.floor(rand() * PLANT_KINDS.length)], x: rand() * Sim.W, y: rand() * Sim.H });
+    asked = true; spots++;
+  };
   let arrivals = Object.fromEntries(Sim.KINDS.map(k => [k, 0])), surprises = 0, kills = 0, escapes = 0, strikes = 0, fires = 0, burned = 0, swarms = 0;
   // The crows at each season's end, their gatherings at remains, and the oaks and beeches at the start and the end.
   const crows = [], oaks = () => ['oak', 'beech'].map(k => w.decor.filter(d => d.kind === k && Sim.standing(d) && d.size >= Sim.SEEDLING).length).join('/');
@@ -43,10 +53,14 @@ for (let s = 1; s <= seeds; s++) {
     for (let i = 0; i < perSeason; i++) {
       if (plant && rand() < 5 / (Sim.YEAR_DAYS * Sim.TPD)) {
         planted.tried++;
-        for (let k = 0; k < 20; k++) if (typeof Sim.plantTree(w, rand() * Sim.W, rand() * Sim.H, PLANT_KINDS[Math.floor(rand() * PLANT_KINDS.length)]) !== 'string') { planted.ok++; break; }
+        if (keeper) want++;
+        else for (let k = 0; k < 20; k++) if (typeof Sim.plantTree(w, rand() * Sim.W, rand() * Sim.H, PLANT_KINDS[Math.floor(rand() * PLANT_KINDS.length)]) !== 'string') { planted.ok++; break; }
       }
+      if (want && !asked) order();
       Sim.step(w);
       for (const e of w.events) {
+        if (e.type === 'acted' && e.order.kind === 'plant') { planted.ok++; want--; spots = 0; asked = false; }
+        if (e.type === 'refused' && e.order.kind === 'plant') { asked = false; if (spots >= 20) { want--; spots = 0; } }
         if (e.type === 'plantlost') planted.lost[e.cause] = (planted.lost[e.cause] || 0) + 1;
         if (e.type === 'plantgrew') planted.sapling++;
         if (e.type === 'plantseeds') planted.seeded++;
