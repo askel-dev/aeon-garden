@@ -22,7 +22,7 @@ for (let s = 1; s <= seeds; s++) {
   const rand = () => (pr = (pr * 1664525 + 1013904223) % 4294967296) / 4294967296;
   const planted = { tried: 0, ok: 0, lost: {}, sapling: 0, seeded: 0 };
   // A lazy keeper: three times a day, while it has hours, one of the tools at random, anywhere, with seed it has.
-  const pick = a => a[Math.floor(rand() * a.length)], did = {}, surveys = [];
+  const pick = a => a[Math.floor(rand() * a.length)], did = {}, surveys = [], troubles = [];
   let spent = 0;
   const lazyTurn = () => {
     const p = w.pouch, kinds = Object.keys(p).filter(k => p[k] > 0), trees = kinds.filter(k => Sim.TREES[k]), flowers = kinds.filter(k => !Sim.TREES[k]);
@@ -74,6 +74,10 @@ for (let s = 1; s <= seeds; s++) {
         if (e.type === 'acted' && e.order.kind === 'plant') { planted.tried++; planted.ok++; }
         if (e.type === 'acted' && e.order.kind === 'hedge') { planted.tried += e.trees.length; planted.ok += e.trees.length; }
         if (e.type === 'survey') surveys.push(`Y${e.year} ${e.had}/${e.want}${e.won ? ' won' : e.passed ? '' : ' PLOUGHED'}`);
+        if (e.type === 'almanac' && e.now.trouble) troubles.push(`Y${e.now.year}${Sim.SEASONS[e.now.season].name.slice(0, 2)} ${e.now.trouble.kind}`);
+        if (e.type === 'almanac' && e.lifeline) troubles.push(`Y${e.next.year} gentle`);
+        if (e.type === 'trouble') troubles.push(`(${e.n} sick)`);
+        if (e.type === 'arrive' && e.scouts) troubles.push(`(${e.who.length} scouts)`);
         if (e.type === 'plantlost') planted.lost[e.cause] = (planted.lost[e.cause] || 0) + 1;
         if (e.type === 'plantgrew') planted.sapling++;
         if (e.type === 'plantseeds') planted.seeded++;
@@ -155,6 +159,7 @@ for (let s = 1; s <= seeds; s++) {
   if (keeper) console.log(`  guests  ${guests.join('  ') || 'none came'}  (+ came, ! settled, ? restless, - left, x died out)`);
   if (keeper) console.log(`  keeper  did ${JSON.stringify(did)}  hours ${spent}  pouch ${pouches.join(' | ')}  surveyor ${surveys.join('  ') || '-'}`
     + `${w.over ? `  OVER spring Y${w.over.year} ${w.over.had}/${w.over.want}${w.over.won ? ' WON' : ''}` : ''}`);
+  if (keeper) console.log(`  almanac  ${troubles.join('  ') || 'no troubles'}`);
   const eaten = w.stats.voles;
   console.log(`  voles  ${voles.join(' ')}  eaten ${eaten} (${Math.round(100 * eaten / Math.max(1, eaten + kills))}% of fox meals)  fox hunger ${d.fox.hunger || 0}  vole years ${voleNews.boom} crashes ${voleNews.bust}`);
   const st = w.stats, rm = st.remains;

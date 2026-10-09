@@ -264,6 +264,20 @@ Today the weather is rolled one spell at a time (`pickWeather`, as each spell en
 - **In the game:** a small almanac card by the clock shows next season's line ("A dry summer is coming") and
   points at the place if there is one. The news repeats it on the season's first day.
 
+Built (2026-10-09), and where it differs:
+- Only the trouble is rolled a season ahead (`foresee`, into `w.almanac.next`). The spells are still rolled one at a
+  time, from the trouble's own odds (`TROUBLES[kind].odds`, `weatherOdds`). The forecast is just as true, and it's smaller.
+- The year's trouble falls in a season still to come that year, as likely in any (odds 1/4 in spring, 1/3 in summer and
+  so on). The budget is 1 + the kinds here + the kinds settled. A trouble can come only if its `hard` (1 to 3) fits the
+  budget, and the hardest that fits is likeliest. A winter that can't have one (hard 3) leaves the year calm.
+- Flood: the water line +0.04 in spring (2–4× the land of a usual flood). Drought: −0.04 in summer, grass cap ×0.6.
+  Storms: storm and heat spells, with dry lightning in the heat (1 in 150 ticks). Hard winter: mostly snow in longer
+  spells, grass cap ×0.25, and out in the snow `cold` 1.6× the burn. It hits the foxes hardest (no burrow).
+  Sickness: 3 first cases at the warren named, 3 days in, spreading as if crowded all season. Scouts: a fox pair to the
+  warren named, 3 days in, as guests (they leave if the needs aren't met), or added if foxes are here already.
+- The lifeline is checked as the new year is looked into (the first day of winter): 3 seeds or fewer, and fewer kinds
+  here than at the same time a year before.
+
 ### A9. Readable, not helped (game.js, index.html)
 
 - **Lenses:** Soil (mended against potential), Cover, Food (grass and flowers in bloom), Danger (where

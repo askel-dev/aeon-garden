@@ -71,6 +71,18 @@ again) and mow (`mowAt`: grass cut to `MOWN`, most of the voles and frogs gone, 
 the day's guests are settled, the Surveyor counts the kinds that have settled (`surveyDay`, `settledCount`, not the crows): the
 second spring he only looks, from the third he wants `SURVEY[year - 1]`, and he says so a season ahead (event 'surveyor', the
 first day of winter). Short of it, `w.over` and every order is refused; the last count passed wins the run (`w.over.won`).
+The Almanac (sim.js, `w.almanac`): in a keeper field the year's trouble is known a season ahead. On each season's first day
+`almanacSeason` makes the season foreseen the one under way (`now`) and looks into the next (`foresee`, `next`): at most one
+trouble a year, none in the first (`CALM_YEARS`), falling in any season still to come that year as likely as another, picked
+from those of that season (`TROUBLES`) whose `hard` fits the budget (`troubleBudget`: 1 + kinds here + kinds settled), the
+hardest likeliest. A trouble's weather comes from its own odds (`weatherOdds` in `pickWeather`, longer spells, `longer`); the
+rest is read as it goes (`troubleOf`): the water line (`waterGoal`, `rise`, `drop`), the grass cap (`growGrass`, `grass`), dry
+lightning in the heat (`weatherTick`, `strikes`), the cold out in the snow (`lifeTick`, `cold`) and the sickness spreading as
+if crowded (`sicknessTick`, `SICK_CROWD`). `TROUBLE_DAY` days in, the sickness's first cases (`SICK_SEED`) and the fox scouts
+(`pairIn`, as guests unless foxes are here) come to the warren named (`biggestWarren`, `troubleStarts`). Looking into a new
+year, a field with `LIFELINE_SEEDS` or fewer and fewer kinds here than a year before gets a gentle year and a bird's seed
+(`gift`). Events 'almanac' (now, next, lifeline), 'trouble' (the sickness's start), 'arrive' with `scouts`. The meadow you
+watch has no almanac and its weather is as it was.
 Reeds and lily pads (`drawShore`) are a look too: a scatter `updateWater` works out along the shore whenever the water changes.
 Shallow water is waded slowly; deep water blocks.
 The rivers run (`makeCurrent`, `w.current`: worked out when a meadow is made or opened, never kept). Each point of a river

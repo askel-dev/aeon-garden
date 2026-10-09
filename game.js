@@ -5736,11 +5736,18 @@ function handleEvent(e) {
       addNews(`🧺 Into the pouch: ${Object.entries(e.got).map(([k, n]) => `${n} ${pouchName(k)}`).join(', ')}.`);
       break;
     case 'gift':
-      addNews(GIFT_SAY(e.kind));
+      addNews(e.lifeline ? `🕊️ <b>A gentle year ahead.</b> The almanac sees no trouble in it, and a bird brought ${an(pouchName(e.kind))} seed for the pouch.` : GIFT_SAY(e.kind));
       chime('named');
       break;
     case 'surveyor': case 'survey':
       surveyorSays(e);
+      break;
+    case 'almanac':
+      almanacNews(e);
+      break;
+    case 'trouble':                       // the sickness's first cases (the fox scouts come as guests, guestNews)
+      addNews(e.n ? `🤒 <b>The sickness has reached the warren ${whereAt(e.x, e.y)}.</b> ${e.n === 1 ? 'A rabbit has' : e.n + ' rabbits have'} caught it.`
+        : '🌤️ The sickness passed the field by: there were no rabbits for it to catch.', 'guest');
       break;
     case 'plantseeds':
       addNews(`🌰 The ${plantedLink(e.tree)} you planted in the ${plantedWhen(e.tree)} is bearing its first seed.`);
@@ -6022,7 +6029,8 @@ const GUEST_COME = {
 function guestNews(e) {
   const who = GUEST_NAMES[e.species], Who = who[0].toUpperCase() + who.slice(1);
   if (e.type === 'arrive') {
-    addNews(GUEST_COME[e.species](e.who.map(link).join(', ')) + ` They came for ${esc(e.why)}.` + (e.again ? ' They\'re back.' : ''), 'guest');
+    if (e.scouts) addNews(`🦊 <b>Foxes have come scouting the warren ${whereAt(e.x, e.y)}</b>, as the almanac said: ${e.who.map(link).join(', ')}.`, 'guest');
+    else addNews(GUEST_COME[e.species](e.who.map(link).join(', ')) + ` They came for ${esc(e.why)}.` + (e.again ? ' They\'re back.' : ''), 'guest');
     for (const c of e.who) addEffect('✨', c.x, c.y);
     hear('arrive', e.x, e.y, { species: e.species }, true);
   } else if (e.type === 'settled') addNews(`🏡 <b>The ${who} have settled.</b> Born here, and here a year.`, 'guest');
@@ -7973,6 +7981,9 @@ function updateKeeper() {
   if (!world.pouch) return;
   const p = world.pouch, hours = S.hoursLeft(world, me), seeds = ks => ks.reduce((n, k) => n + (p[k] || 0), 0);
   setHTML($('#survey-line'), surveyLine());
+  const al = almanacLine(), el = $('#almanac-line');
+  setHTML(el, al);
+  el.classList.toggle('at', [world.almanac?.next.trouble, world.almanac?.now.trouble].some(t => t && t.x !== undefined));
   const kinds = Object.keys(POUCH_EMOJI).filter(k => p[k]);
   setHTML($('#pouch'), kinds.length ? kinds.map(k => `<span title="${esc(TREE_NAMES[k] || pouchName(k))}">${POUCH_EMOJI[k]} <b>${p[k]}</b></span>`).join(' ')
     : '<span class="quiet">Empty. It fills in autumn, from the trees and the flowers.</span>');
@@ -7995,7 +8006,8 @@ const kindsOf = n => `${n} ${n === 1 ? 'kind' : 'kinds'} of animal`;
 function surveyLine() {
   const o = world.over, had = S.settledCount(world);
   if (o) return o.won ? '🏡 <b>The field is yours.</b> The Surveyor has gone for good.' : `🚜 <b>Ploughed</b> in the spring of year ${o.year}.`;
-  const year = S.clock(world).year + 1, want = S.SURVEY[year - 1] ?? 0;
+  const now = S.clock(world).year, countAt = ((now - 1) * S.YEAR_DAYS + S.SEASON_DAYS - 1) * S.TPD + 1;   // (this year's count, on the last day of spring)
+  const year = Math.max(2, world.tick < countAt ? now : now + 1), want = S.SURVEY[year - 1] ?? 0;   // (none the first spring)
   return want ? `📋 Spring, year ${year}: the Surveyor wants <b>${kindsOf(want)}</b> settled. <span class="quiet">So far ${had}.</span>`
     : `📋 Spring, year ${year}: the Surveyor comes to look the field over.`;
 }
@@ -8018,6 +8030,50 @@ function surveyorSays(e) {
   }
   addNews(`📋 <b>The Surveyor counted ${kindsOf(e.had)}</b> (he wanted ${e.want}). Next spring he’ll want ${e.next}.`);
   showSurvey('The Surveyor counted', `He counted ${settled}. “That’ll do. For now.”`, `Next spring he’ll want ${kindsOf(e.next)}.`);
+}
+
+// ------------------------------------------------------------------ the Almanac (a field)
+//
+// A season ahead the Almanac knows the year's trouble, if it has one (sim.js foresee). The meadow card says what the
+// next season brings, and what's on now; a click on it shows where. The news tells of it on the season's first day.
+const TROUBLE_SAY = {
+  flood: { e: '🌊', name: () => 'a wet spring', what: () => 'The brook will burst its banks further than it ever has, and a burrow near it will flood.', on: 'The brook is in flood.' },
+  storms: { e: '⛈️', name: s => `a stormy ${s}`, what: () => 'Thunder, and lightning in the dry heat: long grass will burn.', on: 'The storms have come.' },
+  drought: { e: '🌵', name: () => 'a dry summer', what: () => 'The brook will run low, the shallows dry up and the grass go brown.', on: 'The drought has come.' },
+  sickness: { e: '🤒', name: () => 'a sickness', what: (s, at) => `It’s going round the farms, and a few days in it’ll reach the warren ${at}. Crowded, it spreads.`, on: '' },
+  foxes: { e: '🦊', name: () => 'foxes', what: (s, at) => `A pair from over the hill will come scouting the warren ${at} a few days in, whatever the field is like.`, on: '' },
+  winter: { e: '❄️', name: () => 'a hard winter', what: () => 'Deep snow, the brook frozen and the grass gone. Out in the open, nothing keeps warm.', on: 'The hard winter has come.' },
+};
+// Where, in words: by the nearest thing with a name, or which way from the middle of the field.
+const whereAt = (x, y) => placeNear(x, y) || `in the ${compass(x - S.W / 2, y - S.H / 2)} of the field`;
+const troubleWhat = (t, s) => TROUBLE_SAY[t.kind].what(seasonName(s), t.x === undefined ? '' : whereAt(t.x, t.y));
+
+function almanacNews(e) {
+  const now = e.now.trouble, next = e.next.trouble, say = now && TROUBLE_SAY[now.kind];
+  if (say?.on) addNews(`${say.e} <b>${say.on}</b> ${troubleWhat(now, e.now.season)}`, 'guest');
+  if (next) {
+    const s = seasonName(e.next.season), it = TROUBLE_SAY[next.kind];
+    addNews(`📖 <b>The almanac says ${it.name(s)} ${next.kind === 'foxes' ? 'are' : 'is'} coming in ${s}.</b> ${troubleWhat(next, e.next.season)}`, 'guest');
+  }
+}
+
+// The meadow card's lines: what's on now, if it's a trouble, and what the next season brings.
+function almanacLine() {
+  const a = world.almanac;
+  if (!a) return '';
+  const now = a.now.trouble, next = a.next.trouble, Season = S.SEASONS[a.next.season].name;
+  const on = now && TROUBLE_SAY[now.kind].on ? `<span class="now">${TROUBLE_SAY[now.kind].e} <b>${TROUBLE_SAY[now.kind].on}</b></span>` : '';
+  if (next) return on + `${TROUBLE_SAY[next.kind].e} <b>${Season}:</b> ${TROUBLE_SAY[next.kind].name(seasonName(a.next.season))}. ${troubleWhat(next, a.next.season)}`;
+  return on + (a.gentle === a.next.year ? '📖 <b>A gentle year ahead.</b> <span class="quiet">The almanac sees no trouble in it.</span>'
+    : `📖 <b>${Season}:</b> <span class="quiet">nothing in the almanac to worry about.</span>`);
+}
+// A click on it: to the place it names, if it names one.
+function almanacLook() {
+  const a = world.almanac, t = [a?.next.trouble, a?.now.trouble].find(t => t && t.x !== undefined);
+  if (!t) return;
+  ui.follow = false; flick.vx = flick.vy = 0;
+  cam.x = t.x; cam.y = t.y;
+  addEffect('📍', t.x, t.y, 0.6, 2600);
 }
 
 // A card from the Surveyor: what he says, and a line on it. The end card says how the run went (endRun).
@@ -8406,6 +8462,7 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'home-install') install();
   else if (t.dataset.act === 'ask-later') askIdeas(false);
   else if (t.dataset.act === 'away-ok') closeAway();
+  else if (t.dataset.act === 'almanac') almanacLook();
   else if (t.dataset.act === 'survey-ok') { closeSurvey(); if (world.over && !ui.speed) setSpeed(lastSpeed); }   // (the end card paused it: look the field over)
   else if (t.dataset.act === 'field-again' || t.dataset.act === 'field-new') { closeSurvey(); newWorld(t.dataset.act === 'field-again' ? world.seed : randomSeed()); setSpeed(lastSpeed); }
   else if (t.dataset.act === 'ask-send') sendIdea();

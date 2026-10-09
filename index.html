@@ -450,6 +450,11 @@
   /* ---- a keeper field's part of the meadow card: the Surveyor, the pouch, the hours (game.js, updateKeeper) */
   .field-part { font-size: 13px; line-height: 1.5; }
   #survey-line { margin-top: 6px; color: var(--ink); }
+  #almanac-line { margin-top: 6px; color: var(--ink); }
+  #almanac-line.at { cursor: pointer; }
+  #almanac-line.at:hover b { text-decoration: underline; }
+  #almanac-line .now { display: block; }
+  #almanac-line .quiet { color: var(--muted); }
   #survey-line .quiet, #pouch .quiet { color: var(--muted); }
   #pouch span { display: inline-block; margin-right: 6px; white-space: nowrap; }
   #hours-line { color: var(--muted); font-weight: 700; margin-top: 2px; }
@@ -738,6 +743,7 @@
     <div id="sky">☀️ <b>Clear skies</b></div>
 
     <div class="keeper field-part">
+      <div id="almanac-line" data-act="almanac" title="The Almanac: what the next season brings, a season ahead"></div>
       <div id="survey-line"></div>
       <h3 class="sec">The pouch <span>shared</span></h3>
       <div id="pouch"></div>

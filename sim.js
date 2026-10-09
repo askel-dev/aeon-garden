@@ -1103,8 +1103,8 @@ const SILT_DAYS = 3;             // how long the ground the water left grows fas
 const KIT_DAYS = 1;              // kits younger than this can't get out of a flooding burrow
 
 function waterGoal(w) {
-  const T = w.terrain, s = seasonOf(w.tick);
-  return T.level + (s === 0 ? T.springFlood : s === 1 ? -T.summerLow : 0) + T.rainRise * (w.wet - 0.5);
+  const T = w.terrain, s = seasonOf(w.tick), t = troubleOf(w);   // (a flood or a drought from the Almanac)
+  return T.level + (s === 0 ? T.springFlood : s === 1 ? -T.summerLow : 0) + T.rainRise * (w.wet - 0.5) + (t?.rise || 0) - (t?.drop || 0);
 }
 
 // Straight to this season's level, for a new meadow (or the terrain lab picking a season).
@@ -1915,7 +1915,7 @@ function waterBetween(w, x0, y0, x1, y1) {
 
 function growGrass(w, dt) {
   const s = SEASONS[seasonOf(w.tick)], grow = sky(w).grow;
-  const capK = s.cap * (w.weather.kind === 'heat' ? 0.8 : 1);   // a heatwave browns the grass
+  const capK = s.cap * (w.weather.kind === 'heat' ? 0.8 : 1) * (troubleOf(w)?.grass || 1);   // a heatwave browns the grass, a drought more
   const r = GRASS_RATE * s.growth * grow * dt / TPD;
   const seed = SEED_RATE * Math.max(s.growth, 0.05) * grow * dt / TPD;
   const die = DIEBACK * dt / TPD, ashFade = dt / (ASH_DAYS * TPD);
@@ -2159,11 +2159,11 @@ function setWeather(w, kind, ticks, player = false) {
 }
 
 function pickWeather(w) {
-  const odds = WEATHER_ODDS[seasonOf(w.tick)];
+  const odds = weatherOdds(w);                               // (the season's, or in a keeper field its trouble's: the Almanac)
   let roll = w.rng.next() * Object.values(odds).reduce((a, b) => a + b, 0), kind = 'clear';
   for (const k in odds) { roll -= odds[k]; if (roll < 0) { kind = k; break; } }
   const [a, b] = WEATHER[kind].days;
-  setWeather(w, kind, w.rng.range(a, b) * TPD);
+  setWeather(w, kind, w.rng.range(a, b) * (troubleOf(w)?.longer || 1) * TPD);
 }
 
 function weatherTick(w) {
@@ -2179,7 +2179,7 @@ function weatherTick(w) {
     w.snow -= melt; w.wet = Math.min(1, w.wet + melt);
   }
   // Storms bring lightning. Now and then a heatwave brings a dry strike, with no rain after it.
-  if (w.rng.next() < (kind === 'storm' ? 1 / 80 : kind === 'heat' ? 1 / 900 : 0)) {
+  if (w.rng.next() < (kind === 'storm' ? 1 / 80 : kind === 'heat' ? troubleOf(w)?.strikes || 1 / 900 : 0)) {
     let x, y;
     do { x = w.rng.range(1, W - 1); y = w.rng.range(1, H - 1); } while (isWater(w, x, y));
     strike(w, x, y);
@@ -3017,7 +3017,7 @@ function getBetter(w, c) {
 // Every SICK_EVERY ticks: count the sick (w.sick, and b.sick in each burrow). Then each sick rabbit gets
 // better, dies of it, or passes it on to those close by, and those in a burrow with the sick may catch it.
 function sicknessTick(w) {
-  const crowd = crowding(w), day = SICK_EVERY / TPD;
+  const crowd = troubleNow(w) === 'sickness' ? Math.max(SICK_CROWD, crowding(w)) : crowding(w), day = SICK_EVERY / TPD;
   let sick = 0, first = null;
   for (const b of w.burrows) b.sick = 0;
   for (const c of w.creatures) {
@@ -5599,7 +5599,7 @@ function lifeTick(w, c) {
   if (c.pregnantUntil) b *= 1.25;
   if (c.sick) b *= SICK_BURN;                                             // a fever
   const kind = w.weather.kind;
-  if (kind === 'snow' && !c.hidden) b *= 1 + 0.5 * (1 - c.genes.size);   // small bodies feel the cold
+  if (kind === 'snow' && !c.hidden) b *= (1 + 0.5 * (1 - c.genes.size)) * (troubleOf(w)?.cold || 1);   // small bodies feel the cold (more in a hard winter)
   if (w.snow > 0.3 && !c.hidden) b *= 1 - MOULT_WARM * whiteness(w, c);
   b += MOVE_COST * c.moved * c.moved / c.sp.walk * (kind === 'heat' ? 1.5 : 1) * (c.sp.glide || 1);
   c.energy -= b;
@@ -5701,7 +5701,7 @@ function createWorld(seed, opts = {}) {
     }
   }
   flushNewborn(w);
-  if (keeper) { startGuests(w); startPouch(w); }
+  if (keeper) { startGuests(w); startPouch(w); startAlmanac(w); }
   for (const f of w.fields) if (f.season === seasonOf(w.tick)) f.bloomed = yearOf(w.tick);   // no news of what's out already
   hivesTick(w);
   w.founderMeans = perKind(s => traitMeans(w, s));
@@ -5775,7 +5775,8 @@ function newDay(w) {
   if (d % SEASON_DAYS === 0) {
     const s = seasonOf(w.tick);
     emit(w, { type: 'season', season: s, year: yearOf(w.tick) });
-    if (!w.skyLocked && !WEATHER_ODDS[s][w.weather.kind]) pickWeather(w);      // no snow in spring
+    if (w.almanac) almanacSeason(w, s);
+    if (!w.skyLocked && (!weatherOdds(w)[w.weather.kind] || troubleNow(w))) pickWeather(w);   // no snow in spring, and a trouble's weather at once
     if (s === 0) {
       for (const c of w.creatures) {
         if (c.alive && c.born < w.tick - SEASON_DAYS * TPD) note(w, c, '🌸', 'Made it through the winter');
@@ -5788,6 +5789,7 @@ function newDay(w) {
     if (w.pouch) pouchSeason(w, s);
     if (w.guests && s === 3 && !w.over) emit(w, { type: 'surveyor', year: yearOf(w.tick) + 1, want: SURVEY[yearOf(w.tick)] ?? 0, had: settledCount(w) });
   }
+  if (w.almanac && d % SEASON_DAYS === TROUBLE_DAY) troubleStarts(w);
   treesTick(w);
   if (w.options.keeper) soilTick(w);
   groundTick(w);
@@ -6104,6 +6106,109 @@ function surveyDay(w) {
     settled: GUESTS.filter(s => s !== 'crow' && w.guests[s].state === 'settled') });
 }
 
+// ---------------------------------------------------------------- the Almanac
+//
+// In a keeper field the troubles are known a season ahead. On each season's first day the Almanac looks into the next
+// (almanacSeason, foresee): w.almanac.next is what's coming, w.almanac.now the season under way, each with its trouble
+// or none. At most one trouble a year, none in the first (CALM_YEARS). It falls in a season still to come that year, as
+// likely in any: a quarter of the time in spring, a third of what's left in summer, and so on. Which one is weighed by how
+// well the field does (troubleBudget): an empty field gets only the mild ones, one doing well the hard ones too, and the
+// hardest likeliest. With the pouch near empty and fewer kinds here than a year before, the next year is gentle, and a
+// bird brings a seed (the lifeline). A trouble's weather comes from its own odds (weatherOdds, pickWeather); the water,
+// the grass and the sickness read it as they go (troubleOf), and TROUBLE_DAY days in, the sickness and the fox scouts
+// come to the warren the Almanac named (troubleStarts).
+const TROUBLES = {
+  flood:    { seasons: [0], hard: 1, odds: { rain: 5, storm: 2, cloudy: 3, clear: 2 }, rise: 0.04 },   // rise: the water line this much higher
+  storms:   { seasons: [1, 2], hard: 1, odds: { storm: 5, heat: 2, clear: 3, cloudy: 1 }, strikes: 1 / 150 },   // dry lightning in the heat (a tick)
+  drought:  { seasons: [1], hard: 2, odds: { clear: 5, heat: 6, cloudy: 1 }, drop: 0.04, grass: 0.6 },   // the water lower, the grass held to this
+  sickness: { seasons: [0, 1, 2], hard: 2 },
+  foxes:    { seasons: [0, 1, 2], hard: 2 },
+  winter:   { seasons: [3], hard: 3, odds: { snow: 8, cloudy: 2, fog: 1 }, longer: 1.6, grass: 0.25, cold: 1.6 },   // longer spells; out in the snow, burning this much more
+};
+const TROUBLE_DAY = 3;          // days into its season the sickness and the scouts come
+const WARREN_R = 6;             // burrows this close are one warren
+const SICK_MIN = 6;             // rabbits a warren needs for the sickness to be a trouble
+const SICK_SEED = 3;            // the first cases there
+const SICK_CROWD = 1;           // and while its season lasts it spreads as in a crowded meadow, however few
+const LIFELINE_SEEDS = 3;       // seeds in the pouch, all told, that make it near empty
+
+const troubleNow = w => w.almanac?.now.trouble?.kind;
+const troubleOf = w => TROUBLES[troubleNow(w)];
+const weatherOdds = w => troubleOf(w)?.odds || WEATHER_ODDS[seasonOf(w.tick)];
+// The kinds in the field now (visiting or settled, not the crows); with those settled counted twice, the budget.
+const kindsHere = w => GUESTS.filter(s => s !== 'crow' && (w.guests[s].state === 'visiting' || w.guests[s].state === 'settled')).length;
+const troubleBudget = w => 1 + kindsHere(w) + settledCount(w);
+
+function startAlmanac(w) {
+  const s = seasonOf(w.tick);
+  w.almanac = { now: { season: s, year: yearOf(w.tick), trouble: null }, next: null, troubleYear: 0, gentle: 0, had: 0 };
+  w.almanac.next = foresee(w, (s + 1) % 4);
+}
+
+// The season s to come: its year, and its trouble if it brings the year's ({ kind, x, y }: where, for the sickness and
+// the scouts).
+function foresee(w, s) {
+  const a = w.almanac, year = yearOf(w.tick) + (s === 0 ? 1 : 0), next = { season: s, year, trouble: null };
+  if (year <= CALM_YEARS || a.troubleYear === year || a.gentle === year || w.rng.next() >= 1 / (4 - s)) return next;
+  const budget = troubleBudget(w), warren = biggestWarren(w);
+  const can = Object.keys(TROUBLES).filter(k => TROUBLES[k].seasons.includes(s) && TROUBLES[k].hard <= budget
+    && (k !== 'sickness' || warren?.n >= SICK_MIN) && (k !== 'foxes' || warren));
+  if (!can.length) return next;
+  let roll = w.rng.next() * can.reduce((n, k) => n + TROUBLES[k].hard, 0), kind = can[0];
+  for (const k of can) { roll -= TROUBLES[k].hard; if (roll < 0) { kind = k; break; } }
+  a.troubleYear = year;
+  next.trouble = kind === 'sickness' || kind === 'foxes' ? { kind, x: warren.x, y: warren.y } : { kind };
+  return next;
+}
+
+// The burrow with most rabbits living in it and about it (within WARREN_R): { x, y, n }, or null with none.
+function biggestWarren(w) {
+  const homes = [];
+  for (const c of w.creatures) if (c.alive && c.species === 'rabbit' && c.home) homes.push(c.home);
+  let best = null;
+  for (const b of w.burrows) {
+    let n = 0;
+    for (const h of homes) if (dist2(h, b) < WARREN_R * WARREN_R) n++;
+    if (n && (!best || n > best.n)) best = { x: b.x, y: b.y, n };
+  }
+  return best;
+}
+
+// Each season's first day: the season foreseen begins, and the next is looked into. Looking into a new year, a
+// struggling field gets the lifeline.
+function almanacSeason(w, s) {
+  const a = w.almanac;
+  a.now = a.next?.season === s ? a.next : { season: s, year: yearOf(w.tick), trouble: null };
+  let lifeline = false;
+  if (s === 3) {
+    const seeds = Object.values(w.pouch).reduce((n, v) => n + v, 0), had = kindsHere(w);
+    lifeline = seeds <= LIFELINE_SEEDS && had < a.had;
+    a.had = had;
+    if (lifeline) { a.gentle = yearOf(w.tick) + 1; gift(w, true); }
+  }
+  a.next = foresee(w, (s + 1) % 4);
+  emit(w, { type: 'almanac', now: a.now, next: a.next, lifeline });
+}
+
+// TROUBLE_DAY days in: the sickness's first cases, or the fox scouts, at the warren named (or the biggest now, if that
+// one's empty). With no rabbits about, the sickness passes the field by.
+function troubleStarts(w) {
+  const t = w.almanac.now.trouble;
+  if (!t || t.started || (t.kind !== 'sickness' && t.kind !== 'foxes')) return;
+  t.started = true;
+  const named = w.creatures.some(c => c.alive && c.species === 'rabbit' && c.home && dist2(c.home, t) < WARREN_R * WARREN_R);
+  const at = named ? t : biggestWarren(w);
+  if (t.kind === 'sickness') {
+    const sick = at ? w.creatures.filter(c => c.alive && c.species === 'rabbit' && c.home && dist2(c.home, at) < WARREN_R * WARREN_R && canCatch(w, c)) : [];
+    for (const c of sick.slice(0, SICK_SEED)) fallIll(w, c);
+    emit(w, { type: 'trouble', kind: 'sickness', x: at?.x ?? t.x, y: at?.y ?? t.y, n: Math.min(SICK_SEED, sick.length) });
+    return;
+  }
+  const g = w.guests.fox, to = at || t;                       // the scouts come whatever the needs say: as guests, unless foxes are here
+  if (g.state === 'visiting' || g.state === 'settled') emit(w, { type: 'arrive', species: 'fox', who: pairIn(w, 'fox', to), guest: true, scouts: true, x: to.x, y: to.y });
+  else guestArrives(w, 'fox', g, to, true);
+}
+
 // Whether any are in the field, and whether any were born here since they came.
 const FIELD_COUNTS = { vole: w => w.voleCount, frog: w => w.frogCount };
 const guestsHere = (w, s) => (FIELD_COUNTS[s] ? FIELD_COUNTS[s](w) >= 1 : w.count[s] + w.expecting[s] > 0);
@@ -6149,20 +6254,14 @@ function guestsGone(w, s, g, dead) {
 
 // A few come in, from the edge nearest where's best for them (at: a spot, or a bee's hollow tree, an otter's holt),
 // and head there.
-function guestArrives(w, s, g, at) {
-  const r = w.rng, t = w.tick, edge = nearEdge(at);
+function guestArrives(w, s, g, at, scouts = false) {
+  const r = w.rng, t = w.tick;
   let who = [];
   if (s === 'rabbit') {
     const side = at.x > W / 2 ? 1 : 0;
     who = familyArrives(w, { side, entry: { x: side ? W - 0.7 : 0.7, y: at.y }, spot: at }, t + 3 * TPD);
   } else if (s === 'fox' || s === 'crow') {
-    for (let k = 0; k < (s === 'fox' ? 2 : 4); k++) {
-      const c = addCreature(w, s, edge.x + r.range(-1, 1), edge.y + r.range(-1, 1), { sex: k % 2 ? 'M' : 'F', age: SPECIES[s].matureDays + 1, arrived: true })
-        || addCreature(w, s, edge.x, edge.y, { sex: k % 2 ? 'M' : 'F', age: SPECIES[s].matureDays + 1, arrived: true });
-      if (!c) continue;
-      if (s === 'fox') c.arrive = { x: at.x + r.range(-1.5, 1.5), y: at.y + r.range(-1.5, 1.5), until: t + 2 * TPD };
-      who.push(c);
-    }
+    who = pairIn(w, s, at);
   } else if (s === 'bee') {
     const h = makeHive(w, at.x, at.y);
     moveIn(h, at);
@@ -6191,7 +6290,20 @@ function guestArrives(w, s, g, at) {
   w.recount = true;
   Object.assign(g, { state: 'visiting', cameAt: t, firstCame: g.firstCame < 0 ? t : g.firstCame, metDays: 0, unmetDays: 0, going: false,
     births: s === 'vole' ? w.voleCount : s === 'frog' ? 0 : w.stats.births[s] });
-  emit(w, { type: 'arrive', species: s, who, guest: true, why: g.why, x: at.x, y: at.y, again: g.left > 0 });
+  emit(w, { type: 'arrive', species: s, who, guest: true, why: g.why, x: at.x, y: at.y, again: g.left > 0, scouts });
+}
+
+// A pair of foxes (or four crows) in from the edge nearest at, the foxes heading there.
+function pairIn(w, s, at) {
+  const r = w.rng, edge = nearEdge(at), who = [];
+  for (let k = 0; k < (s === 'fox' ? 2 : 4); k++) {
+    const c = addCreature(w, s, edge.x + r.range(-1, 1), edge.y + r.range(-1, 1), { sex: k % 2 ? 'M' : 'F', age: SPECIES[s].matureDays + 1, arrived: true })
+      || addCreature(w, s, edge.x, edge.y, { sex: k % 2 ? 'M' : 'F', age: SPECIES[s].matureDays + 1, arrived: true });
+    if (!c) continue;
+    if (s === 'fox') c.arrive = { x: at.x + r.range(-1.5, 1.5), y: at.y + r.range(-1.5, 1.5), until: w.tick + 2 * TPD };
+    who.push(c);
+  }
+  return who;
 }
 
 // The nearest point on the edge of the meadow (just inside it).
@@ -6353,6 +6465,7 @@ function unpackWorld(kept) {
   if (!w.cover) coverTick(w);                                // (or cover)
   if (w.options.keeper && !w.guests) startGuests(w);         // (a keeper field from before the needs check)
   if (w.options.keeper && !w.pouch) startPouch(w);           // (or the pouch)
+  if (w.options.keeper && !w.almanac) startAlmanac(w);       // (or the Almanac)
   for (const d of w.decor) if (d.tree) { d.planted ??= 0; delete d.bank; }   // (or plant trees; d.bank: the holts' old reckoning, now d.holtFish)
   if (w.lake && !w.lake.near) {                              // (kept while a lake was circles)
     w.lake.near = new Uint8Array(W * H);
@@ -6561,12 +6674,17 @@ function pouchSeason(w, s) {
   for (const f of w.fields) if (f.season === last && f.bloomed === year) add(f.kind.key, 1);
   if (s === 2) for (const d of w.decor) if (d.tree && bearing(w, d)) add(d.kind, TREES[d.kind].mast && w.mast ? 2 : 1);
   if (Object.keys(got).length) emit(w, { type: 'harvest', got });
-  const none = [...Object.keys(TREES), ...FIELD_KINDS.map(k => k.key)].filter(k => !w.pouch[k]);
-  if (s !== 3 && none.length && w.rng.next() < GIFT_ODDS) {
-    const k = w.rng.pick(none);
-    w.pouch[k] = 1;
-    emit(w, { type: 'gift', kind: k });
-  }
+  if (s !== 3 && outOf(w).length && w.rng.next() < GIFT_ODDS) gift(w);
+}
+
+// The kinds the pouch has none of; a bird (or the wind) brings one of them. lifeline: the Almanac's, in a hard year.
+const outOf = w => [...Object.keys(TREES), ...FIELD_KINDS.map(k => k.key)].filter(k => !w.pouch[k]);
+function gift(w, lifeline = false) {
+  const none = outOf(w);
+  if (!none.length) return;
+  const k = w.rng.pick(none);
+  w.pouch[k] = 1;
+  emit(w, { type: 'gift', kind: k, lifeline });
 }
 
 // When a patch sown now comes up: the next time its season comes round (sown in its season, next year).
@@ -6790,6 +6908,7 @@ const api = {
   createWorld, step, clock, isNight, phaseOf, seasonOf, mood, ageDays, growth, isAdult, patchFresh,
   addCreature, paintGrass, setSky, lockSky, zap, burnLine, lift, putDown, nameCreature, nameQueen, NAME_MAX, plantTree, act, carryOut, soilMended, traitMeans, walkable, packWorld, unpackWorld,
   HOURS, POUCH_CAP, HEDGE_GAP, HEDGE_HOUR, SOW_R, DIG_R, DIG_HOURS, MOW_R, FIELD_KINDS, SURVEY, settledCount, comesUp, hoursLeft, GUESTS,
+  TROUBLES, TROUBLE_DAY, troubleNow,
   coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT, KINDS, OWLS,
   TERRAIN, drawnToLink, drawnFromLink, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE,
