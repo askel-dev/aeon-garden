@@ -291,6 +291,17 @@ Built (2026-10-09), and where it differs:
   keeper mode.
 - **The guide:** three steps (lay a hedge, sow flowers, open the guestbook), then nothing. `TRIES` is off in keeper mode.
 
+Built (2026-10-09), and where it differs:
+- Lenses: buttons in the meadow card, or Shift and S, C, F, D or W. A lens is painted a pixel a tile, then smoothed once into
+  a canvas 4 times as big, since stretching the small one showed every tile. It's drawn above the dark, so it reads at night.
+  Where a lens has nothing to say it lays a parchment wash, so its colours stand out from the grass. It's painted again daily
+  or after an order. Render time is the same with one on (headless, 0.9–1.1 ms median either way).
+- `w.danger` (sim.js, keeper only): a catch adds 1 and a rabbit that got away 0.5, fading ×0.85 a day.
+- The guestbook opens with G, from the Surveyor's line in the card, or from ••• › The guestbook. A kind never seen is
+  a shadow with its vague line. Once it has come, the row shows the needs check's `why`, and the days: restless for
+  so long and leaving in so many, or so many days met of what it takes to come (back). That's a reason, not advice.
+- The guide keeps its own place (`aeon-garden-field-guide`) and ends with "That's all the help you get".
+
 ### A10. balance.js: keeper bots
 
 `node balance.js 6 8 keeper [none|lazy|good]` plays through `act` (A1), with the same pouch and hours. It

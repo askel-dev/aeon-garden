@@ -82,7 +82,9 @@ if crowded (`sicknessTick`, `SICK_CROWD`). `TROUBLE_DAY` days in, the sickness's
 (`pairIn`, as guests unless foxes are here) come to the warren named (`biggestWarren`, `troubleStarts`). Looking into a new
 year, a field with `LIFELINE_SEEDS` or fewer and fewer kinds here than a year before gets a gentle year and a bird's seed
 (`gift`). Events 'almanac' (now, next, lifeline), 'trouble' (the sickness's start), 'arrive' with `scouts`. The meadow you
-watch has no almanac and its weather is as it was.
+watch has no almanac and its weather is as it was. A keeper field also keeps where the foxes have hunted (`w.danger`, for the
+Danger lens: `hunted` adds `DANGER_KILL` where a fox catches something and `DANGER_CHASE` where a rabbit gets away, fading by
+`DANGER_KEEP` a day in `newDay`).
 Reeds and lily pads (`drawShore`) are a look too: a scatter `updateWater` works out along the shore whenever the water changes.
 Shallow water is waded slowly; deep water blocks.
 The rivers run (`makeCurrent`, `w.current`: worked out when a meadow is made or opened, never kept). Each point of a river

@@ -451,6 +451,29 @@
   .field-part { font-size: 13px; line-height: 1.5; }
   #survey-line { margin-top: 6px; color: var(--ink); }
   #almanac-line { margin-top: 6px; color: var(--ink); }
+  #survey-line { cursor: pointer; }
+  #survey-line:hover b { text-decoration: underline; }
+  .lenses { display: flex; flex-wrap: wrap; gap: 4px; }
+  .lenses button { border: none; border-radius: 9px; padding: 3px 7px; background: #fffaf0; box-shadow: 0 0 0 1px var(--line) inset; font-size: 12px; font-weight: 800; color: var(--muted); }
+  .lenses button:hover { color: var(--ink); }
+  .lenses button.on { background: var(--accent-soft); color: #9a5024; }
+  #lens-say { margin: 4px 0 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
+  #lens-say:empty { display: none; }
+
+  /* ---- a keeper field's guestbook (game.js, renderGuests). Like #yours. */
+  #guests { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 9; box-sizing: border-box; width: min(420px, calc(100% - 32px));
+    max-height: calc(100% - 24px); overflow: hidden auto; scrollbar-width: thin; padding: 16px 20px 14px;
+    background: var(--paper, none) #f7eedc; border-radius: 22px; box-shadow: 0 20px 60px rgba(50, 40, 15, 0.3); }
+  #guests:not(.hidden) > * { animation: pop-in 0.18s ease-out; }
+  #guests-head { margin: 8px 0 4px; font-size: 13.5px; line-height: 1.45; }
+  #guests-head .quiet { color: var(--muted); }
+  #guests-list li > span:first-child { font-size: 17px; line-height: 1.2; }
+  #guests-list small { display: block; margin-top: 2px; color: var(--muted); font-size: 12.5px; line-height: 1.4; }
+  #guests-list .shade { filter: brightness(0) opacity(0.3); }
+  #guests-list .unseen b { color: var(--muted); }
+  #guests-list .left { opacity: 0.8; }
+  #guests-list .fret { color: #9a5024; font-weight: 800; }
+  #guests-list .soon { display: block; font-style: italic; }
   #almanac-line.at { cursor: pointer; }
   #almanac-line.at:hover b { text-decoration: underline; }
   #almanac-line .now { display: block; }
@@ -744,10 +767,19 @@
 
     <div class="keeper field-part">
       <div id="almanac-line" data-act="almanac" title="The Almanac: what the next season brings, a season ahead"></div>
-      <div id="survey-line"></div>
+      <div id="survey-line" data-act="guests" title="The guestbook: who has come to the field, and why they stay or go (G)"></div>
       <h3 class="sec">The pouch <span>shared</span></h3>
       <div id="pouch"></div>
       <div id="hours-line" title="Each keeper's hours of work this season. They come back on the season's first day, whatever's left"></div>
+      <h3 class="sec">Lenses <span>Shift + letter</span></h3>
+      <div class="lenses">
+        <button data-lens="soil" data-act="lens:soil" title="Soil: how far it's mended (Shift+S)">🟫 Soil</button>
+        <button data-lens="cover" data-act="lens:cover" title="Cover: where a rabbit can hide (Shift+C)">🌿 Cover</button>
+        <button data-lens="food" data-act="lens:food" title="Food: good grass, and flowers open (Shift+F)">🌾 Food</button>
+        <button data-lens="danger" data-act="lens:danger" title="Danger: where the foxes have hunted lately (Shift+D)">⚠️ Danger</button>
+        <button data-lens="water" data-act="lens:water" title="Water: still shallows, damp ground and frogspawn (Shift+W)">💧 Water</button>
+      </div>
+      <p id="lens-say"></p>
     </div>
 
     <h3 class="sec">Population <span>last 2 years</span></h3>
@@ -835,6 +867,7 @@
     <button class="menu-item phone-only" data-act="stats"><span class="e">📊</span> <span class="l">Graphs<span class="x"> and records</span></span></button>
     <button class="menu-item" data-act="web" title="This meadow's food web: who ate whom, and how much"><span class="e">🕸️</span> <span class="l">Who ate whom</span></button>
     <button class="menu-item" data-act="yours" title="The animals you named, and how they're doing"><span class="e">🏷️</span> <span class="l">Yours</span></button>
+    <button class="menu-item keeper" data-act="guests" title="Who has come to the field, and why they stay or go (G)"><span class="e">📒</span> <span class="l">The guestbook</span></button>
     <button class="menu-item phone-only" data-act="sound" id="sound-item"><span class="e">🔇</span> <span class="l">Sound is off</span></button>
     <button class="menu-item hidden" data-act="home" id="home-item"><span class="e">📱</span> <span class="l">Add to<span class="x"> your</span> home screen</span></button>
     <button class="menu-item" data-act="guide" title="A few things to do in the meadow, gentle and not"><span class="e">📓</span> <span class="l">Things to try</span></button>
@@ -959,6 +992,13 @@
 <div id="yours" class="hidden" role="dialog" aria-labelledby="yours-title">
   <div class="web-head"><h2 class="fr" id="yours-title">Yours</h2><button class="close" data-act="yours" title="Back to the meadow (Esc)">✕</button></div>
   <ul id="yours-list" class="story"></ul>
+</div>
+
+<!-- a keeper field: who has come, and how each kind stands (game.js, renderGuests) -->
+<div id="guests" class="hidden" role="dialog" aria-labelledby="guests-title">
+  <div class="web-head"><h2 class="fr" id="guests-title">The guestbook</h2><button class="close" data-act="guests" title="Back to the field (Esc)">✕</button></div>
+  <p id="guests-head"></p>
+  <ul id="guests-list" class="story"></ul>
 </div>
 
 <div id="away" class="hidden" role="dialog" aria-labelledby="away-title" aria-live="polite">

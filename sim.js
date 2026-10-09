@@ -3151,6 +3151,7 @@ function hunt(w, c) {
 
 function escaped(w, rabbit, fox, how, water) {
   rabbit.escapes++;
+  hunted(w, rabbit.x, rabbit.y, DANGER_CHASE);
   rabbit.nemesisId = fox.id;   // it won't forget this one
   missed(fox);
   note(w, rabbit, '💨', how === 'burrow' ? `Dived into a burrow to escape ${fox.name}`
@@ -3159,6 +3160,12 @@ function escaped(w, rabbit, fox, how, water) {
   note(w, fox, '😤', `${rabbit.name} got away`);
   emit(w, { type: 'escape', rabbit, fox, how, water });
 }
+
+// Where the foxes have hunted lately, for a keeper field's Danger lens (game.js): a kill marks the ground, a rabbit that
+// got away half that, and it fades by DANGER_KEEP a day (newDay). The meadow you watch keeps none.
+const DANGER_KEEP = 0.85;
+const DANGER_KILL = 1, DANGER_CHASE = 0.5;
+function hunted(w, x, y, v) { if (w.danger) w.danger[idx(x, y)] += v; }
 
 // A hunt that came to nothing. Three of those and the old hunting ground is forgotten.
 function missed(fox) {
@@ -3173,6 +3180,7 @@ function catchPrey(w, fox, prey) {
   fox.kills++;
   fox.mode = 'eat'; fox.timer = 80; fox.targetId = 0;
   note(w, fox, '🍖', `Caught ${prey.name}`);
+  hunted(w, prey.x, prey.y, DANGER_KILL);
   if (prey.species === 'rabbit') {
     fox.prey = 'rabbit';
     fox.haunt = { x: prey.x, y: prey.y, n: 3 };   // good hunting here; worth a few more tries
@@ -5701,7 +5709,7 @@ function createWorld(seed, opts = {}) {
     }
   }
   flushNewborn(w);
-  if (keeper) { startGuests(w); startPouch(w); startAlmanac(w); }
+  if (keeper) { startGuests(w); startPouch(w); startAlmanac(w); w.danger = new Float32Array(W * H); }
   for (const f of w.fields) if (f.season === seasonOf(w.tick)) f.bloomed = yearOf(w.tick);   // no news of what's out already
   hivesTick(w);
   w.founderMeans = perKind(s => traitMeans(w, s));
@@ -5790,6 +5798,7 @@ function newDay(w) {
     if (w.guests && s === 3 && !w.over) emit(w, { type: 'surveyor', year: yearOf(w.tick) + 1, want: SURVEY[yearOf(w.tick)] ?? 0, had: settledCount(w) });
   }
   if (w.almanac && d % SEASON_DAYS === TROUBLE_DAY) troubleStarts(w);
+  if (w.danger) for (let i = 0; i < W * H; i++) w.danger[i] *= DANGER_KEEP;
   treesTick(w);
   if (w.options.keeper) soilTick(w);
   groundTick(w);
@@ -6466,6 +6475,7 @@ function unpackWorld(kept) {
   if (w.options.keeper && !w.guests) startGuests(w);         // (a keeper field from before the needs check)
   if (w.options.keeper && !w.pouch) startPouch(w);           // (or the pouch)
   if (w.options.keeper && !w.almanac) startAlmanac(w);       // (or the Almanac)
+  if (w.options.keeper && !w.danger) w.danger = new Float32Array(W * H);   // (or where the foxes hunt)
   for (const d of w.decor) if (d.tree) { d.planted ??= 0; delete d.bank; }   // (or plant trees; d.bank: the holts' old reckoning, now d.holtFish)
   if (w.lake && !w.lake.near) {                              // (kept while a lake was circles)
     w.lake.near = new Uint8Array(W * H);
@@ -6908,7 +6918,7 @@ const api = {
   createWorld, step, clock, isNight, phaseOf, seasonOf, mood, ageDays, growth, isAdult, patchFresh,
   addCreature, paintGrass, setSky, lockSky, zap, burnLine, lift, putDown, nameCreature, nameQueen, NAME_MAX, plantTree, act, carryOut, soilMended, traitMeans, walkable, packWorld, unpackWorld,
   HOURS, POUCH_CAP, HEDGE_GAP, HEDGE_HOUR, SOW_R, DIG_R, DIG_HOURS, MOW_R, FIELD_KINDS, SURVEY, settledCount, comesUp, hoursLeft, GUESTS,
-  TROUBLES, TROUBLE_DAY, troubleNow,
+  TROUBLES, TROUBLE_DAY, troubleNow, HIDE_IN, GOOD_GRASS, FROG_REACH, STILL, CURRENT, WORN, LONG, ARRIVE_DAYS, LEAVE_DAYS,
   coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT, KINDS, OWLS,
   TERRAIN, drawnToLink, drawnFromLink, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE,

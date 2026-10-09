@@ -1248,6 +1248,7 @@ function render(now) {
   if (dusk > 0) wash(`rgba(${DUSK_RGB}, ${dusk})`);
   drawFire(now);
   drawWeather(now, ck);
+  if (lens.on) drawLens(z, ox, oy);                  // a keeper's lens, above the dark
 
   // Burrow snores at night.
   if (ck.night && z >= 8) {
@@ -5717,6 +5718,7 @@ function handleEvent(e) {
       addNews(`🌿 The ${plantedLink(e.tree)} you planted is a sapling now, out of the rabbits' reach.`);
       break;
     case 'acted':                       // an order carried out (order, sim.js act)
+      lens.dirty++;
       if (e.order.kind === 'plant') planted(e.it);
       else if (KEEPER_DID[e.order.kind]) { KEEPER_DID[e.order.kind](e); terrainTick = -1; }
       else if (e.order.kind === 'name') {
@@ -7920,6 +7922,7 @@ function upWhen(f) {
 }
 const KEEPER_DID = {
   hedge(e) {
+    ui.laid = true;                                         // (the field's guide)
     for (const d of e.trees) addEffect('🌱', d.x, d.y, 0.8, 1400);
     hear('grass', e.trees[0].x, e.trees[0].y);
     const n = e.trees.length;
@@ -7928,6 +7931,7 @@ const KEEPER_DID = {
   },
   sow(e) {
     const f = e.field;
+    ui.sowed = true;
     hear('grass', e.order.x, e.order.y);
     for (let k = 0; k < 5; k++) addEffect('🌱', e.order.x + (Math.random() - 0.5) * 4, e.order.y + (Math.random() - 0.5) * 4, 0.6, 900);
     const kind = pouchName(f.kind.key);
@@ -8074,6 +8078,127 @@ function almanacLook() {
   ui.follow = false; flick.vx = flick.vy = 0;
   cam.x = t.x; cam.y = t.y;
   addEffect('📍', t.x, t.y, 0.6, 2600);
+}
+
+// ------------------------------------------------------------------ lenses (a field)
+//
+// A lens colours the field by one thing the keepers need to read: the soil mended, the cover, the food, where the foxes
+// have hunted lately (sim.js w.danger) and the water. One at a time, from the buttons in the meadow card or Shift and its
+// letter. Each is painted a pixel a tile, smoothed once into a canvas LENS_UP times as big (stretching the small one each
+// frame showed every tile), and that is stretched over the meadow above the dark (so it reads at night too). It's painted
+// again once a day or when the keepers change something (lens.dirty). Off, it costs nothing.
+const LENS_OPEN = [240, 231, 206, 0.45];                 // a parchment wash where a lens has nothing to say, so its colours stand out
+const LENSES = {
+  soil: { e: '🟫', name: 'Soil', say: 'Tan is worn out, green mended: the grass grows only to what the soil holds.',
+    paint(i, w) { const t = clamp((w.fert[i] / (w.potential[i] || 1) - S.WORN) / (1 - S.WORN), 0, 1); return [lerp(190, 40, t), lerp(132, 122, t), lerp(72, 70, t), 0.65]; } },
+  cover: { e: '🌿', name: 'Cover', say: 'Dark green is cover thick enough to hide in, light green a little. Pale is open ground.',
+    paint(i, w) { const c = w.cover[i]; return c >= S.HIDE_IN ? [18, 74, 34, 0.78] : c > 0.05 ? [118, 160, 88, 0.45 + 0.4 * c] : null; } },
+  food: { e: '🌾', name: 'Food', say: 'Gold is grass good enough for a family of rabbits, dull gold thin grass. Pink are flowers open for the bees.',
+    paint(i, w) { const g = w.grass[i]; return g >= S.GOOD_GRASS[0] ? [236, 190, 24, 0.7] : g >= S.GOOD_GRASS[1] ? [198, 172, 104, 0.6] : null; } },
+  danger: { e: '⚠️', name: 'Danger', say: 'Red is where the foxes have hunted lately: a catch, or a chase.',
+    paint(i, w, v) { return v > 0.04 ? [206, 40, 30, Math.min(0.8, 0.35 + 0.5 * v)] : null; } },
+  water: { e: '💧', name: 'Water', say: 'Teal is still shallow water, blue the rest. Pale blue is damp ground by it, white frogspawn.',
+    paint(i, w) {
+      if (w.water[i]) return w.spawn[i] > 0 ? [250, 252, 255, 0.9] : w.water[i] === S.SHALLOW && Math.hypot(w.current.x[i], w.current.y[i]) < S.STILL * S.CURRENT ? [24, 170, 160, 0.8] : [40, 84, 196, 0.6];
+      return w.damp[i] <= S.FROG_REACH ? [126, 184, 228, 0.75 - 0.3 * w.damp[i] / S.FROG_REACH] : null;
+    } },
+};
+const lens = { on: '', key: '', dirty: 0, canvas: null, big: null, img: null, blur: null };
+const LENS_UP = 4;
+const LENS_KEYS = { S: 'soil', C: 'cover', F: 'food', D: 'danger', W: 'water' };
+
+function setLens(k) {
+  lens.on = lens.on === k ? '' : k;
+  for (const b of document.querySelectorAll('[data-lens]')) b.classList.toggle('on', b.dataset.lens === lens.on);
+  setHTML($('#lens-say'), lens.on ? LENSES[lens.on].say : '');
+}
+
+// Paint the lens on, if its day or the field has changed since.
+function paintLens() {
+  const key = `${lens.on}:${Math.floor(world.tick / S.TPD)}:${lens.dirty}`;
+  if (key === lens.key) return;
+  lens.key = key;
+  if (!lens.canvas) {
+    lens.canvas = document.createElement('canvas'); lens.canvas.width = S.W; lens.canvas.height = S.H;
+    lens.big = document.createElement('canvas'); lens.big.width = S.W * LENS_UP; lens.big.height = S.H * LENS_UP;
+    lens.img = new ImageData(S.W, S.H); lens.blur = new Float32Array(S.W * S.H);
+  }
+  const L = LENSES[lens.on], d = lens.img.data, w = world, v = lens.on === 'danger' ? spreadOut(w.danger, lens.blur) : null;
+  for (let i = 0; i < S.W * S.H; i++) {
+    const c = L.paint(i, w, v && v[i]) || LENS_OPEN, o = i * 4;
+    d[o] = c[0]; d[o + 1] = c[1]; d[o + 2] = c[2]; d[o + 3] = 255 * c[3] * (1 - mistAt(i % S.W + 0.5, Math.floor(i / S.W) + 0.5));   // (into the mist with the meadow)
+  }
+  if (lens.on === 'food') {                              // the flowers open, on top
+    const pink = p => { if (S.isFlower(w, p)) { const o = (Math.floor(p.y) * S.W + Math.floor(p.x)) * 4; d[o] = 232; d[o + 1] = 70; d[o + 2] = 160; d[o + 3] = 230; } };
+    for (const p of w.plants) if (!w.water[p.i]) pink(p);
+    for (const p of w.blossoms) pink(p);
+  }
+  lens.canvas.getContext('2d').putImageData(lens.img, 0, 0);
+  const b = lens.big.getContext('2d');
+  b.clearRect(0, 0, lens.big.width, lens.big.height);
+  b.imageSmoothingEnabled = true; b.imageSmoothingQuality = 'high';
+  b.drawImage(lens.canvas, 0, 0, lens.big.width, lens.big.height);
+}
+// Where the foxes hunted, spread over a few tiles each way (a box blur, across then down), so a catch reads as a place.
+function spreadOut(src, out) {
+  const R = 2, tmp = lens.tmp ||= new Float32Array(S.W * S.H);
+  for (let y = 0; y < S.H; y++) for (let x = 0; x < S.W; x++) {
+    let n = 0;
+    for (let k = Math.max(0, x - R); k <= Math.min(S.W - 1, x + R); k++) n += src[y * S.W + k];
+    tmp[y * S.W + x] = n;
+  }
+  for (let y = 0; y < S.H; y++) for (let x = 0; x < S.W; x++) {
+    let n = 0;
+    for (let k = Math.max(0, y - R); k <= Math.min(S.H - 1, y + R); k++) n += tmp[k * S.W + x];
+    out[y * S.W + x] = n / (2 * R + 1);
+  }
+  return out;
+}
+function drawLens(z, ox, oy) {
+  if (!lens.on) return;
+  paintLens();
+  ctx.drawImage(lens.big, ox, oy, S.W * z, S.H * z);
+}
+
+// ------------------------------------------------------------------ the guestbook (a field)
+//
+// Who has come to the field, and how each kind stands (sim.js w.guests): here and settled, visiting, gone, or not come
+// yet. A kind that has been once shows the needs check's reason (why) and, while it's restless or about to come, how long;
+// one never seen is a shadow with a vague line about what it likes. Its head is the Surveyor's count.
+const GUEST_HINT = {
+  rabbit: 'Something that grazes, and hides when it must.', fox: 'Something that hunts what grazes, and dens in a thicket.',
+  bee: 'Something that likes flowers, and an old hollow tree.', frog: 'Something that likes still water with long grass by it.',
+  vole: 'Something small that lives in long grass.', otter: 'Something that fishes, and wants a bank to live in.',
+  crow: 'Something that roosts in a tall tree.', owl: 'Something that hunts at night from a hollow tree.',
+};
+const GUEST_EMOJI = { ...SETTLED_EMOJI, crow: '🐦‍⬛' };
+const guestsOpen = () => !$('#guests').classList.contains('hidden');
+function toggleGuests(open = !guestsOpen()) {
+  $('#guests').classList.toggle('hidden', !open);
+  if (open) renderGuests();
+}
+const daysWord = n => (n === 1 ? 'a day' : `${n} days`);
+function renderGuests() {
+  const g = world.guests;
+  if (!g) return;
+  const yearOf = t => Math.floor(t / S.TPD / S.YEAR_DAYS) + 1, when = t => `${seasonName(S.seasonOf(t))}, year ${yearOf(t)}`;
+  const rows = [...S.GUESTS.filter(s => s !== 'crow'), 'crow'].map(s => {
+    const st = g[s], Name = GUEST_NAMES[s][0].toUpperCase() + GUEST_NAMES[s].slice(1);
+    if (st.firstCame < 0 && st.state === 'none') {
+      const soon = st.metDays > 0 ? ` <span class="soon">Something has been seen about the edge of the field.</span>` : '';
+      return `<li class="unseen"><span class="shade">${GUEST_EMOJI[s]}</span><span><b>Not yet</b><small>${GUEST_HINT[s]}${soon}</small></span></li>`;
+    }
+    const here = st.state === 'visiting' || st.state === 'settled';
+    const head = st.state === 'settled' ? (s === 'crow' ? 'here from the start (they don’t count)' : `settled since ${when(st.settledAt)}`)
+      : st.state === 'visiting' ? `visiting since ${when(st.cameAt)}` : st.state === 'left' ? `gone since ${when(st.leftAt)}${st.left > 1 ? ` (${st.left} times)` : ''}` : 'not here';
+    let line = st.why ? esc(st.why[0].toUpperCase() + st.why.slice(1)) + '.' : '';
+    if (here && st.unmetDays >= 2) line = `<span class="fret">Restless ${daysWord(st.unmetDays)}:</span> ${esc(st.why)}. They’ll leave in ${daysWord(Math.max(1, S.LEAVE_DAYS - st.unmetDays))}.`;
+    else if (st.state === 'visiting' && s !== 'crow') line += ' They settle once young are born here and they’ve been here a year.';
+    else if (!here && st.metDays > 0) line += ` ${st.metDays} ${st.metDays === 1 ? 'day' : 'days'} of ${S.ARRIVE_DAYS * (1 + st.left)} before they come${st.left ? ' back' : ''}.`;
+    return `<li class="${st.state}"><span>${GUEST_EMOJI[s]}</span><span><b>${Name}</b> · ${head}<small>${line}</small></span></li>`;
+  });
+  setHTML($('#guests-head'), surveyLine());
+  setHTML($('#guests-list'), rows.join(''));
 }
 
 // A card from the Surveyor: what he says, and a line on it. The end card says how the run went (endRun).
@@ -8463,6 +8588,8 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'ask-later') askIdeas(false);
   else if (t.dataset.act === 'away-ok') closeAway();
   else if (t.dataset.act === 'almanac') almanacLook();
+  else if (t.dataset.act === 'guests') toggleGuests();
+  else if (t.dataset.act?.startsWith('lens:')) setLens(t.dataset.act.slice(5));
   else if (t.dataset.act === 'survey-ok') { closeSurvey(); if (world.over && !ui.speed) setSpeed(lastSpeed); }   // (the end card paused it: look the field over)
   else if (t.dataset.act === 'field-again' || t.dataset.act === 'field-new') { closeSurvey(); newWorld(t.dataset.act === 'field-again' ? world.seed : randomSeed()); setSpeed(lastSpeed); }
   else if (t.dataset.act === 'ask-send') sendIdea();
@@ -8527,9 +8654,11 @@ document.addEventListener('keydown', e => {
   } else if ('1234'.includes(e.key) && e.key.length === 1) setSpeed([1, 4, 15, 60][+e.key - 1]);
   else if (e.key === 'Escape') {
     const more = !$('#more-menu').classList.contains('hidden');
-    surveyOpen() ? closeSurvey() : awayOpen() ? closeAway() : homeOpen() ? homeGuide(false) : webOpen() ? toggleWeb(false) : yoursOpen() ? toggleYours(false) : ui.ring ? closeRing() : $('#toolbar').classList.contains('open') ? toggleTools(false) : ui.sky.menu ? toggleSkyMenu(false) : more ? toggleMore(false) : ui.stats.open ? toggleStats(false)
+    surveyOpen() ? closeSurvey() : guestsOpen() ? toggleGuests(false) : awayOpen() ? closeAway() : homeOpen() ? homeGuide(false) : webOpen() ? toggleWeb(false) : yoursOpen() ? toggleYours(false) : ui.ring ? closeRing() : $('#toolbar').classList.contains('open') ? toggleTools(false) : ui.sky.menu ? toggleSkyMenu(false) : more ? toggleMore(false) : ui.stats.open ? toggleStats(false)
       : ui.tool !== 'look' ? setTool('look') : select(0);
   }
+  else if (FIELD && e.shiftKey && LENS_KEYS[e.key]) setLens(LENS_KEYS[e.key]);   // a keeper's lenses: Shift and its letter
+  else if (FIELD && e.key === 'g') toggleGuests();
   else if (e.key === 's') toggleStats();
   else if (e.key === 'f' && ui.selectedId) { ui.follow = !ui.follow; renderInspector(); }
   else if (e.key === 'l') setTool('look');
@@ -8740,10 +8869,11 @@ const SKY_SAID = {
   fog: 'In fog a fox can’t see far.', heat: 'The grass dries out. A fire now would spread.',
   snow: 'In winter snow freezes the water over, and foxes walk across.',
 };
-const GUIDE_STEPS = 3, GUIDE_BYE = 4000, GUIDE_KEY = 'aeon-garden-tried';   // the last tick shows this long before the goodbye
+const GUIDE_STEPS = 3, GUIDE_BYE = 4000, GUIDE_KEY = FIELD ? 'aeon-garden-field-guide' : 'aeon-garden-tried';   // the last tick shows this long before the goodbye
 const guide = { on: false, step: 0, tried: [], said: {}, fresh: '', shut: false, fold: false, auto: false, wait: 0, fast: 0, tickWas: 0, html: '', doneAt: 0 };
 try { Object.assign(guide, JSON.parse(localStorage.getItem(GUIDE_KEY) || '{}')); } catch (e) { /* fine */ }
-const guideDone = () => TRIES.every(t => guide.tried.includes(t.k));
+// A field has only the three steps (lay a hedge, sow, open the guestbook), then a goodbye: the rest is the field's to show.
+const guideDone = () => (FIELD ? guide.step >= GUIDE_STEPS : TRIES.every(t => guide.tried.includes(t.k)));
 
 function saveGuide() {
   const { step, tried, shut, fold, auto } = guide;
@@ -8772,7 +8902,7 @@ function shutGuide() {
 
 // Something on the list was done. It counts whenever it's done, even with the notebook closed.
 function tried(k, said) {
-  if (guide.tried.includes(k) || intro.on || away.on || idle.on) return false;
+  if (FIELD || guide.tried.includes(k) || intro.on || away.on || idle.on) return false;
   guide.tried.push(k);
   guide.said[k] = said || TRIES.find(t => t.k === k).said || '';
   saveGuide();
@@ -8809,7 +8939,8 @@ function guideTick(now) {
   if (ui.speed === 60 && ran > 0 && (guide.fast += ran) >= S.YEAR_DAYS * S.TPD) tried('fast');
 
   if (guide.step < GUIDE_STEPS) {
-    const done = [() => world.byId.has(ui.selectedId), () => ui.speed >= 4, () => !!ui.ring || ui.tool !== 'look'][guide.step]();
+    const done = (FIELD ? [() => ui.laid, () => ui.sowed, () => guestsOpen()]
+      : [() => world.byId.has(ui.selectedId), () => ui.speed >= 4, () => !!ui.ring || ui.tool !== 'look'])[guide.step]();
     if (done && !guide.wait) guide.wait = now + (guide.step < GUIDE_STEPS - 1 ? 1600 : 400);
     if (guide.wait && now >= guide.wait) {
       guide.wait = 0; guide.step++;
@@ -8817,6 +8948,7 @@ function guideTick(now) {
       chime('tick');
     }
   }
+  if (FIELD && guide.step >= GUIDE_STEPS && !guide.doneAt) guide.doneAt = now - GUIDE_BYE;   // (straight to the goodbye)
   if (guide.doneAt && now - guide.doneAt > GUIDE_BYE + 12000) { shutGuide(); guideTick(now); return; }
   if (guide.fresh && narrow() && !guide.fold && now - (guide.freshAt ||= now) > 5000) { guide.fold = true; guide.fresh = ''; guide.freshAt = 0; saveGuide(); }
   renderGuide(now);
@@ -8827,7 +8959,11 @@ function renderGuide(now) {
   let html;
   if (guide.step < GUIDE_STEPS) {
     const mum = intro.family[0], click = touch ? 'Tap' : 'Click';
-    const steps = [
+    const steps = FIELD ? [
+      [`Lay a hedge: take 🌿 <b>Hedge</b>${touch ? '' : ' (H)'} and drag a line across the field.`, 'A seed a thorn, and an hour for every three. They grow up quickly.'],
+      [`Sow some flowers: take 🌼 <b>Sow</b>${touch ? '' : ' (O)'} and ${click.toLowerCase()} the field.`, 'They come up when their season next comes round.'],
+      [touch ? 'Open the guestbook: ••• at the top, then 📒 <b>The guestbook</b>.' : 'Open the guestbook: click the Surveyor’s line in the card (G).', 'Who has come, and why they stay or go.'],
+    ] : [
       [mum && mum.alive ? `${click} ${link(mum)} to follow her.` : `${click} any animal to follow their life.`,
         touch ? 'Pinch to zoom, drag to look around.' : 'Scroll to zoom, drag to look around.'],
       [touch ? 'Time can run faster. Tap <b>1×</b> at the top.' : 'Time can run faster. Press <kbd>3</kbd>, or pick <b>15×</b> at the top.',
@@ -8837,8 +8973,10 @@ function renderGuide(now) {
     const [line, hint] = steps[guide.step];
     html = `<div class="g-top"><span class="g-step">${guide.step + 1} of ${GUIDE_STEPS}</span><button class="g-skip" data-act="guide-skip">Skip</button></div>
       <p class="g-line${guide.wait ? ' done' : ''}" data-step="${guide.step}">${line}</p><p class="g-hint">${hint}</p>`;
-  } else if (guide.doneAt && now - guide.doneAt > GUIDE_BYE) {
-    html = `<div class="g-top"><b class="g-title fr">📓 That’s all of them</b><button class="g-x" data-act="guide-shut" aria-label="Close">✕</button></div>
+  } else if (FIELD || guide.doneAt && now - guide.doneAt > GUIDE_BYE) {
+    html = FIELD ? `<div class="g-top"><b class="g-title fr">📓 That’s all the help you get</b><button class="g-x" data-act="guide-shut" aria-label="Close">✕</button></div>
+      <p class="g-hint">The rest is the field’s to show you. Mind the almanac, and the Surveyor’s count.</p>`
+      : `<div class="g-top"><b class="g-title fr">📓 That’s all of them</b><button class="g-x" data-act="guide-shut" aria-label="Close">✕</button></div>
       <p class="g-hint">Now sit back. The meadow gets on with it, whether you watch or not.</p>`;
   } else {
     const n = guide.tried.length;
@@ -9442,6 +9580,7 @@ function frame(now) {
   }
   if (webOpen() && now - web.at > 1000) { web.at = now; updateWeb(); }
   if (yoursOpen() && now - yours.at > 1000) { yours.at = now; renderYours(); }
+  if (FIELD && guestsOpen() && now - (lens.guestsAt || 0) > 1000) { lens.guestsAt = now; renderGuests(); }
   if (world.history.t.length !== lastRecord) { lastRecord = world.history.t.length; checkPopulationNews(); }
   if (opening > 1 && ++opening > 4) cleared();       // a kept meadow that opened fine
   requestAnimationFrame(frame);
@@ -9500,7 +9639,7 @@ function begin(rec) {
     hush(true);                                         // nothing to count yet: the bars and cards wait
     setSpeed(0);
     if (world.family && !calm) introShot();
-  } else { homeTip(30000); if (!FIELD) setTimeout(() => startGuide(false), 2500); }
+  } else { homeTip(30000); setTimeout(() => startGuide(FIELD && !guide.auto), 2500); }   // (a first field starts the field's steps)
   if (back && !rec.paused && !FIELD && Date.now() - rec.at > AWAY_MIN) startAway();
   requestAnimationFrame(frame);
 }
