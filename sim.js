@@ -2014,6 +2014,9 @@ const WEAR_DAYS = 2;                      // and bare for longer than this, the 
 const WEAR = 0.1 / SEASON_DAYS;           // this much a day: a season of it loses a tenth
 const WORN_OUT = 0.1;                     // never below this of what it could be
 const WORN_TURF = 0.5;                    // and the sheep left the grass this short, of what the soil holds
+const LARDER = 3;                         // grass the ground holds through a winter for each rabbit it has room for (one eats about 2.6)
+const LARDER_MIN = 0.15;                  // winter grass this long or longer is worth walking to (findFood); thinner isn't counted
+const LARDER_LEFT = 0.06;                 // and a rabbit leaves this much on a tile
 const FIELD_TREE_ROOM = 150;              // a worn field's woods can grow to this many trees (times w.room), in time
 const FIELD_CROWS = 3;                    // the crows a worn field starts with (times w.room)
 
@@ -2029,13 +2032,17 @@ function wornSoil(w) {
 function soilTick(w) {
   const s = seasonOf(w.tick), fert = w.fert, could = w.potential, bare = w.bare, grass = w.grass, holds = w.shadedFert;
   const short = BARE * SEASONS[s].cap, leaves = s >= 2 ? MEND_LEAVES : 0;   // the leaves come down in autumn and rot in over the winter
+  const winter = SEASONS[3].cap;
+  let larder = 0;
   for (let i = 0; i < W * H; i++) {
     if (w.water[i]) { bare[i] = 0; continue; }
+    if (holds[i] * winter >= LARDER_MIN) larder += holds[i] * winter - LARDER_LEFT;
     let mend = leaves * w.wood[i] + MEND_RICH * w.rich[i] + (w.fieldAt[i] >= 0 ? MEND_FLOWERS : 0);
     if (grass[i] >= short * holds[i]) bare[i] = 0;
     else if (++bare[i] > WEAR_DAYS) { mend -= WEAR; bare[i] = WEAR_DAYS + 1; }
     if (mend) fert[i] = clamp(fert[i] + mend * could[i], WORN_OUT * could[i], could[i]);
   }
+  w.larder = larder;                                         // (the rabbits' room, roomFor)
 }
 
 // How much of what the soil could be it is, over the whole field: 1 is all mended.
@@ -2547,11 +2554,15 @@ const go = (w, c, tx, ty, v) => (c.sp.flies ? fly(c, tx, ty, v) : moveToward(w, 
 
 // ---------------------------------------------------------------- love
 
+// How many of a kind the meadow has room for: its cap, and in a keeper field no more rabbits than the ground mended
+// feeds through a winter (w.larder, counted daily by soilTick).
+const roomFor = (w, s) => (s === 'rabbit' && w.larder !== undefined ? Math.min(SPECIES[s].cap * w.room, w.larder / LARDER) : SPECIES[s].cap * w.room);
+
 function readyToMate(w, c) {
   return c.alive && !c.hidden && isAdult(w, c) && c.pregnantUntil === 0
     && w.tick >= c.cooldownUntil && c.energy >= c.sp.breedEnergy * c.maxEnergy
     && c.sp.breedSeasons.includes(seasonOf(w.tick))
-    && w.count[c.species] + w.expecting[c.species] < c.sp.cap * w.room
+    && w.count[c.species] + w.expecting[c.species] < roomFor(w, c.species)
     && (c.species !== 'owl' || owlReady(w, c)) && (c.species !== 'otter' || otterReady(c));
 }
 
@@ -5584,7 +5595,7 @@ function die(w, c, cause, killer) {
   c.hidden = false;
   const age = Math.floor(ageDays(w, c));
   const text = cause === 'fox' || cause === 'owl' ? `Caught by ${killer.name}${cause === 'owl' ? ' the owl' : ''}` :
-    cause === 'left' ? (c.mode === 'leave' ? `Left the field${w.guests[c.species].why ? ': ' + w.guests[c.species].why : ''}`
+    cause === 'left' ? (w.guests?.[c.species]?.going ? `Left the field${w.guests[c.species].why ? ': ' + w.guests[c.species].why : ''}`   // (a keeper field's guests; a young otter or owl leaving home is mode 'leave' too)
       : c.species === 'otter' ? 'Went off down the water to find a stretch of its own' : 'Flew off over the trees to find a wood of its own') :
     cause === 'hunger' ? (seasonOf(w.tick) === 3 ? 'Starved in the winter' : 'Starved') :
     cause === 'lightning' ? 'Struck by lightning' :
@@ -5988,7 +5999,7 @@ function migrate(w) {
 const ARRIVE_DAYS = 3;          // days running a species' needs are met before a few come
 const FRET_DAYS = 2;            // days running unmet before they're restless
 const LEAVE_DAYS = SEASON_DAYS; // and before they leave
-const GOOD_GRASS = [0.45, 0.35];   // grass a family coming in looks for (worn soil never grows it), and that keeps one here
+const GOOD_GRASS = [0.45, 0.35];   // grass the ground grows (w.shadedFert) that a family coming in looks for (worn soil never grows it), and that keeps one here
 const FAMILY_GRASS = 40;        // tiles of it within FAMILY_REACH of a burrow feed a family
 const FAMILY_REACH = 8;
 const RABBIT_COVER = 3;         // tiles of good cover (HIDE_IN) within 3 of the burrow: somewhere to run to
@@ -6002,6 +6013,7 @@ const FROG_GRASS = 15;          // and of damp long grass (LONG, within FROG_REA
 const FROG_ARRIVE = 0.4;        // of the room by the water the first frogs fill
 const BEE_FLOWERS = 60;          // flowers open within FORAGE_RANGE of a free hollow, in spring and summer (a worn field's thorns have ~50)
 const SWARM_BEES = 12;          // bees in a swarm that moves in
+const OTTER_FROGS = 20;         // frogs in the field to see a pair of otters through a winter with the water frozen (rooted)
 const GUEST_A = new Float32Array(W * H), GUEST_B = new Float32Array(W * H), GUEST_C = new Float32Array(W * H), GUEST_T = new Float32Array(W * H);   // (scratch)
 
 function startGuests(w) {
@@ -6038,11 +6050,12 @@ const WANTS = {
   rabbit(w, here) {
     if (seasonOf(w.tick) === 3) return { met: null };                         // winter: they sit it out on what they have
     const food = GUEST_B, hide = GUEST_C, good = GOOD_GRASS[here ? 1 : 0];
-    tilesNear(food, FAMILY_REACH, i => w.grass[i] >= good);
+    tilesNear(food, FAMILY_REACH, i => w.shadedFert[i] >= good);             // (what the ground grows, not what's standing: grazed or autumn-short is fine)
     tilesNear(hide, 3, i => w.cover[i] >= HIDE_IN);
     const fed = bestTile(food);
-    if (fed.v < FAMILY_GRASS) return { met: false, why: 'the grass is too thin for a family to live on', where: fed };
-    const at = bestTile(food, (x, y) => hide[idx(x, y)] >= RABBIT_COVER && canDig(w, x, y));   // (the best fed spot by cover they can dig)
+    if (fed.v < FAMILY_GRASS) return { met: false, why: 'the ground grows too little grass for a family', where: fed };
+    const home = (x, y) => canDig(w, x, y) || here && w.burrows.some(b => (b.x - x) ** 2 + (b.y - y) ** 2 < 9);   // (or by the burrow they dug)
+    const at = bestTile(food, (x, y) => hide[idx(x, y)] >= RABBIT_COVER && home(x, y));   // (the best fed spot by cover they can dig)
     if (!at || at.v < FAMILY_GRASS) return { met: false, why: 'nowhere to hide near good grass', where: fed };
     return { met: true, why: 'good grass, and cover to run to by dry ground to dig', where: at };
   },
@@ -6066,7 +6079,7 @@ const WANTS = {
     const s = seasonOf(w.tick);
     if (s === 3 || (!here && s !== 0)) return { met: null };                 // they come in spring, to spawn; in winter they're in the mud
     const grass = GUEST_B, pool = GUEST_C, damp = w.damp, cur = w.current, still = STILL * CURRENT;
-    tilesNear(grass, SPAWN_REACH, i => !w.water[i] && damp[i] <= FROG_REACH && w.grass[i] >= LONG);
+    tilesNear(grass, SPAWN_REACH, i => !w.water[i] && damp[i] <= FROG_REACH && w.shadedFert[i] >= LONG);   // (ground that grows it: in early spring it's short)
     if (s !== 0) {
       const at = bestTile(grass);
       return at.v >= FROG_GRASS ? { met: true, why: 'damp long grass by the water', where: at } : { met: false, why: 'no damp long grass by the water', where: at };
@@ -6079,14 +6092,15 @@ const WANTS = {
   },
   vole(w) {
     if (seasonOf(w.tick) === 3) return { met: null };
-    tilesNear(GUEST_B, 4, i => !w.water[i] && w.grass[i] >= VOLE_LONG);
+    tilesNear(GUEST_B, 4, i => !w.water[i] && w.shadedFert[i] >= VOLE_LONG);   // (ground that grows it, as the rabbits')
     const at = bestTile(GUEST_B);
     return at.v >= VOLE_PATCH ? { met: true, why: 'a stretch of long grass', where: at } : { met: false, why: 'no long grass over a stretch', where: at };
   },
   otter(w, here) {
     const held = here && w.decor.some(d => d.holt && holds(d)), holt = held ? null : holtTree(w);
-    if (held || holt) return { met: true, why: 'fish in the water, and a bank for a holt', where: holt };
-    return { met: false, why: 'no bank with fish enough by it for a holt', where: null };
+    if (!held && !holt) return { met: false, why: 'no bank with fish enough by it for a holt', where: null };
+    if (w.frogCount < OTTER_FROGS) return { met: false, why: 'no frogs in the mud to see them through a frozen winter', where: holt };
+    return { met: true, why: 'fish in the water, frogs in the mud, and a bank for a holt', where: holt };
   },
   crow(w) {
     return w.roost ? { met: true, why: 'a tall tree to roost in', where: w.roost } : { met: false, why: 'no tall tree to roost in', where: null };
@@ -6752,6 +6766,7 @@ function digAt(w, x, y) {
   }
   const lost = w.burrows.filter(b => (b.x - x) ** 2 + (b.y - y) ** 2 < R * R);
   loseBurrows(w, lost, false);
+  for (const d of w.decor) if (d.holtFish !== undefined && (d.x - x) ** 2 + (d.y - y) ** 2 < (HOLT_REACH + R) ** 2) delete d.holtFish;   // (the water about a holt is new)
   refreshWater(w);
   floodBurrows(w);
   w.waterVersion++;                                          // (game.js repaints the ground's height with the water)
@@ -6924,6 +6939,7 @@ const api = {
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE,
   TREES, treeStage, treeAge, standing, bearing, hollow, inBloom, SEEDLING, SAPLING, GROWN, KIND_NAMES,
   VOLE_K, POUNCE_TICKS, CROWDED, FROG_K, SPAWN_WORTH, FISH_K, FISH_EAT, webCounts, CROW_SEATS,
+  fishNear, HOLT_FISH, HOLT_BANK, HOLT_ROCK, DIG, DIG_FLOOR,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 else root.Sim = api;

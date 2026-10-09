@@ -8093,8 +8093,8 @@ const LENSES = {
     paint(i, w) { const t = clamp((w.fert[i] / (w.potential[i] || 1) - S.WORN) / (1 - S.WORN), 0, 1); return [lerp(190, 40, t), lerp(132, 122, t), lerp(72, 70, t), 0.65]; } },
   cover: { e: '🌿', name: 'Cover', say: 'Dark green is cover thick enough to hide in, light green a little. Pale is open ground.',
     paint(i, w) { const c = w.cover[i]; return c >= S.HIDE_IN ? [18, 74, 34, 0.78] : c > 0.05 ? [118, 160, 88, 0.45 + 0.4 * c] : null; } },
-  food: { e: '🌾', name: 'Food', say: 'Gold is grass good enough for a family of rabbits, dull gold thin grass. Pink are flowers open for the bees.',
-    paint(i, w) { const g = w.grass[i]; return g >= S.GOOD_GRASS[0] ? [236, 190, 24, 0.7] : g >= S.GOOD_GRASS[1] ? [198, 172, 104, 0.6] : null; } },
+  food: { e: '🌾', name: 'Food', say: 'Gold is ground that grows grass enough for a family of rabbits, dull gold thinner. Pink are flowers open for the bees.',
+    paint(i, w) { const g = w.shadedFert[i]; return g >= S.GOOD_GRASS[0] ? [236, 190, 24, 0.7] : g >= S.GOOD_GRASS[1] ? [198, 172, 104, 0.6] : null; } },
   danger: { e: '⚠️', name: 'Danger', say: 'Red is where the foxes have hunted lately: a catch, or a chase.',
     paint(i, w, v) { return v > 0.04 ? [206, 40, 30, Math.min(0.8, 0.35 + 0.5 * v)] : null; } },
   water: { e: '💧', name: 'Water', say: 'Teal is still shallow water, blue the rest. Pale blue is damp ground by it, white frogspawn.',
@@ -8168,7 +8168,7 @@ function drawLens(z, ox, oy) {
 const GUEST_HINT = {
   rabbit: 'Something that grazes, and hides when it must.', fox: 'Something that hunts what grazes, and dens in a thicket.',
   bee: 'Something that likes flowers, and an old hollow tree.', frog: 'Something that likes still water with long grass by it.',
-  vole: 'Something small that lives in long grass.', otter: 'Something that fishes, and wants a bank to live in.',
+  vole: 'Something small that lives in long grass.', otter: 'Something that fishes, wants a bank to live in, and digs frogs from the mud in a hard frost.',
   crow: 'Something that roosts in a tall tree.', owl: 'Something that hunts at night from a hollow tree.',
 };
 const GUEST_EMOJI = { ...SETTLED_EMOJI, crow: '🐦‍⬛' };

@@ -3,17 +3,120 @@
 // visit does, everyone moving in over the first days. `plant` has a player plant 5 trees a year, any kind,
 // anywhere they'll go, and tells how they did.
 // `keeper` plays the keeper game (PLAN.md, "The Field") through the keepers' one door (Sim.act), with a bot:
-// `none` does nothing, `lazy` (the default) spends its hours and its seed on any tool, anywhere, a few times a day.
-// `node balance.js 6 8 keeper none`. It prints the soil and the bare land each season, the guests' comings and goings
-// (sim.js guestsDay), the pouch and what the bot did each year, and the Surveyor's counts; the run ends when the field
-// is ploughed (or won).
+// `none` does nothing, `lazy` (the default) spends its hours and its seed on any tool, anywhere, a few times a day,
+// `good` follows a careful player's script (goodBot). `node balance.js 7 8 keeper good`. It prints a line a year: the
+// Surveyor's count that spring, the soil mended and the land grazed bare, the hours and what the bot did with them, the
+// Almanac's trouble, the guests' comings and goings (sim.js guestsDay), who's settled and visiting, and the pouch; the
+// run ends when the field is ploughed (or won), and the last line tallies how the runs ended. `endless` notes a missed
+// count and plays on, to see how far a bot could get.
 const Sim = require('./sim.js');
 const years = +(process.argv[2] || 5), seeds = +(process.argv[3] || 4), verbose = process.argv[4] === 'v';
 const arrival = process.argv.includes('arrival'), keeper = process.argv.includes('keeper');
-const bot = keeper ? ['none', 'lazy'].find(b => process.argv.includes(b)) || 'lazy' : '';
-const plant = process.argv.includes('plant');
+const bot = keeper ? ['none', 'lazy', 'good'].find(b => process.argv.includes(b)) || 'lazy' : '';
+const plant = process.argv.includes('plant'), endless = keeper && process.argv.includes('endless');
 const PLANT_KINDS = ['oak', 'beech', 'maple', 'birch', 'alder', 'hawthorn', 'apple', 'cherry', 'pine'];
 const perSeason = Sim.SEASON_DAYS * Sim.TPD;
+const { W, H } = Sim, YEAR = Sim.YEAR_DAYS * Sim.TPD, dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y), FLOWERS = Sim.FIELD_KINDS.map(k => k.key);
+
+// A good keeper (PLAN.md, A10): a script a careful player might follow, one order at a time through the day. Its plan
+// is laid out from the old oak, along its stub of hedge (u) and across it (v): the flower patches in rows either side
+// of the stub, each packet a patch of its own (each one that blooms gives a packet back), the thorns in hedges between
+// the rows, the other trees on along the stub. A pond is dug off the brook by the bank boulder with most water about
+// it (the frogs' still shallows, then deeper, fish enough for an otter's holt), with a patch beside it for the frogs'
+// long grass, and the hours left over go into it. It reads the Almanac: on the first day of a storm season it mows a
+// break round the oak and the hedges, and when the fox scouts are coming it lays a hedge by the warren they'll come to.
+function goodBot(w) {
+  const T = w.terrain, oak = w.decor.find(d => d.kind === 'oak'), stub = w.decor.filter(d => d.kind === 'hawthorn' && dist(d, oak) < 9);
+  let ux = 0, uy = 0;
+  for (const d of stub) { ux += (d.x - oak.x) / dist(d, oak); uy += (d.y - oak.y) / dist(d, oak); }
+  const l = Math.hypot(ux, uy) || 1;
+  ux /= l; uy /= l;
+  const at = (u, v) => ({ x: oak.x + ux * u - uy * v, y: oak.y + uy * u + ux * v });
+  const tile = p => Math.floor(p.y) * W + Math.floor(p.x);
+  const ok = p => p.x > 4 && p.y > 4 && p.x < W - 4 && p.y < H - 4 && !w.water[tile(p)];
+  const byNear = (list, o) => list.filter(ok).sort((a, b) => dist(a, o) - dist(b, o));
+  const heart = at(5, 0), patches = [], rows = [], trees = [];
+  for (let i = -16; i <= 16; i++) for (let j = -11; j <= 10; j++) patches.push(at(5 + 9 * i, 4.5 + 9 * j));
+  for (let i = -3; i <= 3; i++) for (const v of [9, -9, 18, -18]) rows.push(at(-4 + 9 * i, v));
+  for (let i = 1; i <= 8; i++) trees.push(at(7 + 2.5 * i, 0), at(-3 - 2.5 * i, 0));
+  const slots = { patch: byNear(patches, heart), hedge: byNear(rows, heart), tree: byNear(trees, heart) };
+  // The pond: by the boulder on the brook's bank (above the flood) with the most water about it.
+  const brook = Sim.distanceTo(w.ground.map(g => (g <= T.level ? 1 : 0)));
+  const rock = w.decor.filter(d => !d.tree && !d.stone && d.size >= Sim.HOLT_ROCK && w.ground[tile(d)] > T.level + T.springFlood && brook[tile(d)] <= Sim.HOLT_BANK)
+    .sort((a, b) => Sim.fishNear(w, b) - Sim.fishNear(w, a))[0];
+  const room = g => (g > T.level ? 0 : T.level - g >= T.deepAt ? 1 : 0.2);
+  // Where a stroke of the spade adds most room for fish about the rock: on the bank, not in the brook (a still pond
+  // beside it, for the frogs) and not under the rock.
+  const stroke = () => {
+    let best = null, most = 0.2;
+    for (let y = rock.y - 13; y <= rock.y + 13; y += 1.5) for (let x = rock.x - 13; x <= rock.x + 13; x += 1.5) {
+      const p = { x, y };
+      if (dist(p, rock) < 4 || dist(p, rock) > 13 || x < 3 || y < 3 || x > W - 3 || y > H - 3 || brook[tile(p)] < 1) continue;
+      let gain = 0;
+      for (let ty = Math.floor(y - Sim.DIG_R); ty <= y + Sim.DIG_R; ty++) for (let tx = Math.floor(x - Sim.DIG_R); tx <= x + Sim.DIG_R; tx++) {
+        const q = ((tx + 0.5 - x) ** 2 + (ty + 0.5 - y) ** 2) / Sim.DIG_R ** 2, g = w.ground[ty * W + tx];
+        if (q < 1) gain += room(Math.max(Math.min(g, T.level + Sim.DIG_FLOOR), g - Sim.DIG * (1 - q) ** 2)) - room(g);
+      }
+      if (gain > most) { best = p; most = gain; }
+    }
+    return best;
+  };
+  // The frogs' patch: about 6 tiles from the pond's first stroke, as far from the brook as that goes. The pond's trees:
+  // round the rock.
+  let pondAt = null, frogPatch = null, banked = 0, strokes = 0;
+  const pondPatch = () => {
+    let best = null;
+    for (let k = 0; k < 12; k++) {
+      const s = { x: pondAt.x + 6 * Math.cos(k * Math.PI / 6), y: pondAt.y + 6 * Math.sin(k * Math.PI / 6) };
+      if (ok(s) && (!best || brook[tile(s)] > brook[tile(best)])) best = s;
+    }
+    return best;
+  };
+  const pondTree = () => {
+    const a = (banked++ % 8) * Math.PI / 4, s = { x: rock.x + 3 * Math.cos(a), y: rock.y + 3 * Math.sin(a) };
+    return ok(s) ? s : null;
+  };
+  const done = new Set(), hedges = [];
+  const lay = p => ({ kind: 'hedge', x: p.x, y: p.y, x1: p.x + ux * 7.5, y1: p.y + uy * 7.5 });
+  const next = () => {
+    const p = w.pouch, hours = Sim.hoursLeft(w, 0), a = w.almanac, year = Math.floor(w.tick / YEAR) + 1;
+    const scouts = a.next?.trouble?.kind === 'foxes' && a.next.trouble;
+    if (scouts && !done.has(`scouts ${year}`) && p.hawthorn >= 3) {   // a hedge by the warren the scouts will come to
+      done.add(`scouts ${year}`);
+      return lay({ x: scouts.x - 3 * uy, y: scouts.y + 3 * ux });
+    }
+    if (a.now.trouble?.kind === 'storms') {                  // a break mown round the oak and the hedges
+      const spot = [oak, ...hedges].find(s => !done.has(`mow ${year} ${s.x}`));
+      if (spot) { done.add(`mow ${year} ${spot.x}`); return { kind: 'mow', x: spot.x, y: spot.y }; }
+    }
+    if (rock && strokes < 3 && hours >= Sim.DIG_HOURS) return spade();   // first a still pool for the frogs, with a patch by it
+    const packet = FLOWERS.find(k => p[k] > 0);
+    if (packet) {
+      const spot = pondAt && !frogPatch ? (frogPatch = pondPatch()) : slots.patch.shift();
+      if (spot) return { kind: 'sow', flower: packet, x: spot.x, y: spot.y };
+    }
+    if (p.hawthorn >= (year > 1 ? 6 : 3)) {                    // (from the second year, three kept back for the scouts)
+      const spot = slots.hedge.shift();
+      if (spot) { hedges.push(spot); return lay(spot); }
+    }
+    const kind = Object.keys(p).find(k => Sim.TREES[k] && k !== 'hawthorn' && p[k] > 0);
+    if (kind) {
+      const spot = (kind === 'alder' || kind === 'birch') && rock ? pondTree() : null;
+      const s = spot || slots.tree.shift();
+      if (s) return { kind: 'plant', tree: kind, x: s.x, y: s.y };
+    }
+    if (rock && hours >= Sim.DIG_HOURS && Sim.fishNear(w, rock) < Sim.HOLT_FISH + 5) return spade();
+    return null;
+  };
+  const spade = () => {
+    const s = stroke();
+    if (!s) return null;
+    pondAt ||= s; strokes++;
+    return { kind: 'dig', x: s.x, y: s.y };
+  };
+  return { turn() { const o = Sim.hoursLeft(w, 0) > 0 && next(); if (o) Sim.act(w, { t: w.tick + 1, by: 0, ...o }); }, rock };
+}
+const runs = [];                                            // how each keeper run ended: ploughed in spring 'Y3', 'won', or still 'on'
 for (let s = 1; s <= seeds; s++) {
   const w = Sim.createWorld(s * 7919, { arrival, keeper });
   const t0 = Date.now();
@@ -22,8 +125,11 @@ for (let s = 1; s <= seeds; s++) {
   const rand = () => (pr = (pr * 1664525 + 1013904223) % 4294967296) / 4294967296;
   const planted = { tried: 0, ok: 0, lost: {}, sapling: 0, seeded: 0 };
   // A lazy keeper: three times a day, while it has hours, one of the tools at random, anywhere, with seed it has.
-  const pick = a => a[Math.floor(rand() * a.length)], did = {}, surveys = [], troubles = [];
-  let spent = 0;
+  const pick = a => a[Math.floor(rand() * a.length)];
+  // A keeper field's book, a page a year: what the keeper did and the hours it took, the guests' comings and goings,
+  // the year's trouble, and the Surveyor's count that spring; at the year's end the soil, the pouch and who's here.
+  const book = [], page = () => (book[Math.floor(w.tick / YEAR)] ||= { did: {}, hours: 0, news: [], trouble: [], count: '' });
+  const good = bot === 'good' && goodBot(w);
   const lazyTurn = () => {
     const p = w.pouch, kinds = Object.keys(p).filter(k => p[k] > 0), trees = kinds.filter(k => Sim.TREES[k]), flowers = kinds.filter(k => !Sim.TREES[k]);
     const x = rand() * Sim.W, y = rand() * Sim.H, what = pick(['plant', 'hedge', 'sow', 'dig', 'mow']), a = rand() * Math.PI * 2;
@@ -51,9 +157,6 @@ for (let s = 1; s <= seeds; s++) {
   const voles = [], voleNews = { boom: 0, bust: 0 };   // the meadow's voles at each season's end, and its vole years and crashes
   const frogs = [], frogNews = { spawn: 0, stranded: 0, froglets: 0, big: 0, poor: 0 };   // the frogs at each season's end, and the frog news
   const fish = [];                                       // the fish at each season's end
-  const soil = [], worn = [];                            // a keeper field's soil at each season's end (of what it could be), and the land grazed bare
-  const guests = [];                                     // and its guests' comings and goings: 'Y2Sp rabbit+' came, ! settled, ? fretted, - left, x died out
-  const pouches = [];                                    // and the pouch at each year's end
   // The sickness: outbreaks begun and over, rabbit-days of it, rabbits per burrow at the peak, the resist gene
   // each winter's end, and the cap's numbers again against the old cap (CROWDED), to compare with before it rose.
   const oldCap = Sim.CROWDED * w.room, resist = [Sim.traitMeans(w, 'rabbit')?.resist];
@@ -66,26 +169,26 @@ for (let s = 1; s <= seeds; s++) {
         for (let k = 0; k < 20; k++) if (typeof Sim.plantTree(w, rand() * Sim.W, rand() * Sim.H, PLANT_KINDS[Math.floor(rand() * PLANT_KINDS.length)]) !== 'string') { planted.ok++; break; }
       }
       if (bot === 'lazy' && w.tick % (Sim.TPD / 3) === 0 && !w.over && Sim.hoursLeft(w, 0) > 0) lazyTurn();
+      if (good && w.tick % 20 === 0 && w.tick % Sim.TPD > 100 && w.tick % Sim.TPD < 500 && !w.over) good.turn();
       const hours = keeper && Sim.hoursLeft(w, 0);
       Sim.step(w);
-      if (keeper && Sim.hoursLeft(w, 0) < hours) spent += hours - Sim.hoursLeft(w, 0);
+      if (endless && w.over && !w.over.won) w.over = null;     // (the Surveyor's count noted, and on it goes)
+      if (keeper && Sim.hoursLeft(w, 0) < hours) page().hours += hours - Sim.hoursLeft(w, 0);
       for (const e of w.events) {
-        if (e.type === 'acted') did[e.order.kind] = (did[e.order.kind] || 0) + 1;
+        const when = Sim.SEASONS[Sim.seasonOf(w.tick)].name.slice(0, 2);
+        if (e.type === 'acted') page().did[e.order.kind] = (page().did[e.order.kind] || 0) + 1;
         if (e.type === 'acted' && e.order.kind === 'plant') { planted.tried++; planted.ok++; }
         if (e.type === 'acted' && e.order.kind === 'hedge') { planted.tried += e.trees.length; planted.ok += e.trees.length; }
-        if (e.type === 'survey') surveys.push(`Y${e.year} ${e.had}/${e.want}${e.won ? ' won' : e.passed ? '' : ' PLOUGHED'}`);
-        if (e.type === 'almanac' && e.now.trouble) troubles.push(`Y${e.now.year}${Sim.SEASONS[e.now.season].name.slice(0, 2)} ${e.now.trouble.kind}`);
-        if (e.type === 'almanac' && e.lifeline) troubles.push(`Y${e.next.year} gentle`);
-        if (e.type === 'trouble') troubles.push(`(${e.n} sick)`);
-        if (e.type === 'arrive' && e.scouts) troubles.push(`(${e.who.length} scouts)`);
+        if (e.type === 'survey') page().count = `${e.had}/${e.want}${e.won ? ' WON' : e.passed ? '' : ' PLOUGHED'}`;
+        if (e.type === 'almanac' && e.now.trouble) page().trouble.push(`${when} ${e.now.trouble.kind}`);
+        if (e.type === 'almanac' && e.lifeline) page().trouble.push('lifeline: next year gentle');
+        if (e.type === 'trouble') page().trouble.push(`(${e.n} sick)`);
+        if (e.type === 'arrive' && e.scouts) page().trouble.push(`(${e.who.length} scouts)`);
         if (e.type === 'plantlost') planted.lost[e.cause] = (planted.lost[e.cause] || 0) + 1;
         if (e.type === 'plantgrew') planted.sapling++;
         if (e.type === 'plantseeds') planted.seeded++;
         if (e.type === 'arrive' && !e.founding) arrivals[e.species]++;
-        if (e.guest || ['settled', 'fret', 'leave'].includes(e.type)) {
-          const d = Math.floor(w.tick / Sim.TPD);
-          guests.push(`Y${Math.floor(d / Sim.YEAR_DAYS) + 1}${Sim.SEASONS[Sim.seasonOf(w.tick)].name.slice(0, 2)} ${e.species}${{ arrive: '+', settled: '!', fret: '?', leave: e.dead ? 'x' : '-' }[e.type]}`);
-        }
+        if (e.guest || ['settled', 'fret', 'leave'].includes(e.type)) page().news.push(`${when} ${{ arrive: '+', settled: '!', fret: '?', leave: e.dead ? 'x' : '-' }[e.type]}${e.species}`);
         if (e.type === 'death' && e.cause === 'fox') kills++;
         if (e.type === 'escape') escapes++;
         if (e.type === 'birth' && e.surprise.length) surprises++;
@@ -132,10 +235,12 @@ for (let s = 1; s <= seeds; s++) {
     voles.push(Math.round(w.voleCount));
     frogs.push(Math.round(w.frogCount));
     fish.push(Math.round(w.fishCount));
-    if (keeper) {
-      soil.push(Math.round(100 * Sim.soilMended(w)) + '%');
-      worn.push(Math.round(100 * w.bare.reduce((n, d) => n + (d > 2), 0) / w.land) + '%');
-      if (k % 4 === 3) pouches.push(Object.entries(w.pouch).filter(([, n]) => n).map(([k, n]) => k.slice(0, 4) + n).join(','));
+    if (keeper && (k % 4 === 3 || w.over)) {
+      const g = w.guests, here = st => Sim.GUESTS.filter(s => s !== 'crow' && g[s].state === st).join(',') || '-';
+      Object.assign(book[Math.floor(k / 4)] ||= { did: {}, hours: 0, news: [], trouble: [], count: '' }, {
+        soil: Math.round(100 * Sim.soilMended(w)) + '%', bare: Math.round(100 * w.bare.reduce((n, d) => n + (d > 2), 0) / w.land) + '%',
+        pouch: Object.entries(w.pouch).filter(([, n]) => n).map(([k, n]) => k.slice(0, 4) + n).join(',') || 'empty',
+        here: `settled ${here('settled')} visiting ${here('visiting')}` });
     }
     crows.push(w.count.crow);
     owls.push(`${w.count.owl}(${w.decor.filter(d => d.owl).length})`);
@@ -155,11 +260,11 @@ for (let s = 1; s <= seeds; s++) {
   console.log(`  ground  at cap ${capDays.toFixed(0)}/${years * Sim.SPECIES.rabbit.breedSeasons.length * Sim.SEASON_DAYS} breeding days  crashes ${crashes} recovered ${recovered}  trees ${trees.join(' ')}  summer grass wood ${(shade.wood / shade.n).toFixed(2)} open ${(shade.open / shade.n).toFixed(2)}  rich ${rich.join(' ')}`);
   console.log(`  sickness  outbreaks ${outbreaks} (over ${over})  sick rabbit-days ${sickDays.toFixed(0)}  deaths ${d.rabbit.sickness || 0}  rabbits per burrow at peak ${perBurrow.toFixed(1)}  old cap: at it ${oldCapDays.toFixed(0)} days, crashes ${oldCrashes} recovered ${oldRecovered}  resist ${resist.map(v => v === undefined ? '-' : v.toFixed(2)).join(' ')}`);
   for (let i = 0; i < rows.length; i += 8) console.log('  ' + rows.slice(i, i + 8).join('  '));
-  if (keeper) console.log(`  soil  ${soil.join(' ')}  bare ${worn.join(' ')}`);
-  if (keeper) console.log(`  guests  ${guests.join('  ') || 'none came'}  (+ came, ! settled, ? restless, - left, x died out)`);
-  if (keeper) console.log(`  keeper  did ${JSON.stringify(did)}  hours ${spent}  pouch ${pouches.join(' | ')}  surveyor ${surveys.join('  ') || '-'}`
-    + `${w.over ? `  OVER spring Y${w.over.year} ${w.over.had}/${w.over.want}${w.over.won ? ' WON' : ''}` : ''}`);
-  if (keeper) console.log(`  almanac  ${troubles.join('  ') || 'no troubles'}`);
+  if (keeper) {                                              // (+ came, ! settled, ? restless, - left, x died out)
+    book.forEach((b, y) => b.soil && console.log(`  Y${y + 1}  count ${b.count || '-'}  soil ${b.soil} bare ${b.bare}  ${b.hours}h ${Object.entries(b.did).map(([k, n]) => k + n).join(' ') || 'idle'}`
+      + `  | ${b.trouble.join(' ') || 'calm'} | ${b.news.join(' ') || 'nobody'} | ${b.here} | pouch ${b.pouch}`));
+    runs.push(w.over ? (w.over.won ? 'won' : `Y${w.over.year}`) : 'on');
+  }
   const eaten = w.stats.voles;
   console.log(`  voles  ${voles.join(' ')}  eaten ${eaten} (${Math.round(100 * eaten / Math.max(1, eaten + kills))}% of fox meals)  fox hunger ${d.fox.hunger || 0}  vole years ${voleNews.boom} crashes ${voleNews.bust}`);
   const st = w.stats, rm = st.remains;
@@ -178,4 +283,9 @@ for (let s = 1; s <= seeds; s++) {
     for (const t of up) { const g = Sim.treeStage(w, t); stages[g] = (stages[g] || 0) + 1; }
     console.log(`  planted  ${planted.ok}/${planted.tried}  lost ${JSON.stringify(planted.lost)}  grew past the rabbits ${planted.sapling}  bore seed ${planted.seeded}  standing ${JSON.stringify(stages)}`);
   }
+}
+if (keeper) {
+  const tally = {};
+  for (const r of runs) tally[r] = (tally[r] || 0) + 1;
+  console.log(`keeper ${bot}: ${runs.join(' ')}  (${Object.entries(tally).sort().map(([r, n]) => `${r} ×${n}`).join(', ')}: ploughed that spring, won, or still going)`);
 }

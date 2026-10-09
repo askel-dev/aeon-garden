@@ -101,7 +101,8 @@ told to just do it.
   who, what they're up to, and the tummy. Tap it for the rest.
 - `trees.js`, `tree-worker.js`, `tree-lab.html`: the trees, painted in code. How they're painted, cached and
   drawn is in `.claude/rules/trees.md`, which loads when one of those files is opened.
-- `balance.js`: headless check, `node balance.js [years] [seeds]` (add `plant` for a player planting 5 trees a year).
+- `balance.js`: headless check, `node balance.js [years] [seeds]` (add `plant` for a player planting 5 trees a year;
+  `keeper none|lazy|good` plays a keeper field with a bot, a line a year, and `endless` plays on past the plough).
 - `terrain-lab.js`: the terrain lab, `index.html?lab`. Sliders for every number in `TERRAIN` (sim.js),
   drawn by the game itself, plus hidden layers and a strip of other seeds. Its "Copy as code" gives
   back the `TERRAIN` block to paste over the one in sim.js. New terrain numbers belong in `TERRAIN`

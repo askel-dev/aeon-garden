@@ -39,12 +39,18 @@ lake, ponds, woods, flower fields or burrows. Its trees are one old hollow oak o
 boulders stand on the brook's bank above the spring flood (`fieldBoulders`, a holt one day). It starts with only crows
 (`FIELD_CROWS`), no voles or frogs, fish in the brook, the turf grazed short (`WORN_TURF`), and woods that can grow to
 `FIELD_TREE_ROOM` trees in time. In a keeper field nobody wanders in (no `migrate`): each species comes, settles, frets and leaves by its needs (`WANTS`,
-one check each a day, `guestsDay`, just after dawn; each says whether its needs are met, `why`, and `where` is best). Rabbits:
-good grass (`GOOD_GRASS`: 0.45 to come, which worn soil never grows; 0.35 to stay) over `FAMILY_GRASS` tiles within
-`FAMILY_REACH`, by good cover (`RABBIT_COVER`) on ground they can dig. Foxes: `FOX_PREY` rabbits (or a vole year) and a thicket
-to den in (`FOX_DEN`). Bees: `BEE_FLOWERS` open within reach of a free hollow, in spring and summer. Frogs: still shallows
-(`STILL`, `FROG_POOL`) in spring with damp long grass by them (`FROG_GRASS`), then the grass alone. Voles: long grass over a
-stretch (`VOLE_PATCH`). Otters: a holt with fish enough (`holtTree`). Crows: a roost (here from the start; they don't count).
+one check each a day, `guestsDay`, just after dawn; each says whether its needs are met, `why`, and `where` is best). The grass
+a need asks for is what the ground grows (`w.shadedFert`), not what's standing that day: grazed short, or short in autumn
+and the first days of spring, is fine; worn-out ground isn't. Rabbits: good grass (`GOOD_GRASS`: 0.45 to come, which worn
+soil never grows; 0.35 to stay) over `FAMILY_GRASS` tiles within `FAMILY_REACH`, by good cover (`RABBIT_COVER`) on ground they
+can dig (or by the burrow they dug). Foxes: `FOX_PREY` rabbits (or a vole year) and a thicket to den in (`FOX_DEN`). Bees:
+`BEE_FLOWERS` open within reach of a free hollow, in spring and summer. Frogs: still shallows (`STILL`, `FROG_POOL`) in spring
+with damp long grass by them (`FROG_GRASS`), then the grass alone. Voles: long grass over a stretch (`VOLE_PATCH`). Otters: a
+holt with fish enough (`holtTree`; a stroke of the spade near one has it looked at again), and `OTTER_FROGS` frogs in the field,
+as with the water frozen they live on frogs dug from the mud (`rooted`). Crows: a roost (here from the start; they don't count).
+And a keeper field has room for only as many rabbits as the mended ground feeds through a winter (`roomFor`: the winter grass
+on ground worth walking to, `LARDER_MIN`, counted daily as `w.larder` by `soilTick`, `LARDER` a rabbit): no more breed, so the
+warren stays at dozens and doesn't starve to the last one.
 Out of season a need isn't judged (met null). Met `ARRIVE_DAYS` running and a few come from the nearest edge (`guestArrives`: a
 rabbit family, `familyArrives`; a fox pair; a swarm into the hollow; an otter pair up the water; voles and frogs put down
 about the spot). Bred here (`bredHere`) and here a year, they've settled. Unmet `FRET_DAYS`, they're restless (event `fret`,

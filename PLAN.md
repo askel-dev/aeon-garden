@@ -318,6 +318,28 @@ comes in with A1 and grows with each step, so every sim change is checked agains
 
 Done with Milestone A when: the bots hit those targets, and it feels hard but fair to us after five runs each.
 
+Started (2026-10-09). The `good` bot (balance.js `goodBot`) lays its plan out from the old oak: every packet a patch of its
+own (each that blooms pays a packet back) in rows either side of the hedge stub, thorns in hedges between the rows, the other
+trees on along the stub, a still pond dug on the bank by the boulder with most water about it (three strokes and a patch beside
+it first, for the frogs, then deeper for an otter's holt with the hours left), a break mown round the oak and hedges in a storm
+season, and a hedge at the warren the fox scouts are coming to. The report is a line a year; `endless` plays on past the plough.
+What the bots found, and changed in the sim:
+- Bugs: rabbits already here failed their own needs check once they'd dug (no spot within `DIG_GAP` of a burrow can be dug);
+  a boulder's fish room was worked out once (`d.holtFish`) and never again after digging; and in the meadow you watch, a young
+  otter or owl leaving home crashed `die` (it read `w.guests`, which only a keeper field has). That last one is live.
+- Rabbits, voles and frogs judge the ground (`w.shadedFert`), not the grass standing that day: they fretted every autumn as
+  the grass thinned and left in the first days of spring before it grew back. The Food lens paints the same.
+- Rabbits boomed to a few hundred on a few hundred mended tiles and starved to the last one each winter. Now a keeper field has
+  room for as many as the mended ground feeds through a winter (`roomFor`, `w.larder`, `LARDER`): dozens.
+- Otters starved every frozen winter (they dig frogs from the mud, and a new field has none). They now need `OTTER_FROGS`.
+- Tried and dropped: foxes judging prey by the rabbits' room (they ate the warren out; leaving when prey is short is what lets
+  it recover), a family needing more ground to come (it came too late to settle by the first count).
+Where it stands, 8 seeds: `none` ploughed at Y3 8/8, `lazy` Y3 7/8 and Y4 1/8 (both on target). `good` ploughed Y3 3/8, Y4 2/8,
+Y5 3/8, short of its target. Played on (`endless`), it averages 2.0, 2.4 and 2.9 kinds settled at the Y5, Y6 and Y7 counts
+against `SURVEY`'s 4, 5 and 6. Rabbits settle on most seeds, bees, frogs and voles by Y5–Y7 on half or more; foxes almost
+never (they leave whenever they've eaten the rabbits under `FOX_PREY`), otters rarely (frogs dip under `OTTER_FROGS` in winter).
+Open: lower the later counts, make foxes and otters sturdier, or both.
+
 ---
 
 ## Milestone B: two players
