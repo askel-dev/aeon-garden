@@ -3,13 +3,15 @@
 // visit does, everyone moving in over the first days. `plant` has a player plant 5 trees a year, any kind,
 // anywhere they'll go, and tells how they did.
 // `keeper` plays the keeper game (PLAN.md, "The Field") through the keepers' one door (Sim.act), with a bot:
-// `none` does nothing, `lazy` (the default) plants anywhere, as `plant` does. `node balance.js 6 8 keeper none`.
-// It prints the soil and the bare land each season, and the guests' comings and goings (sim.js guestsDay).
+// `none` does nothing, `lazy` (the default) spends its hours and its seed on any tool, anywhere, a few times a day.
+// `node balance.js 6 8 keeper none`. It prints the soil and the bare land each season, the guests' comings and goings
+// (sim.js guestsDay), the pouch and what the bot did each year, and the Surveyor's counts; the run ends when the field
+// is ploughed (or won).
 const Sim = require('./sim.js');
 const years = +(process.argv[2] || 5), seeds = +(process.argv[3] || 4), verbose = process.argv[4] === 'v';
 const arrival = process.argv.includes('arrival'), keeper = process.argv.includes('keeper');
 const bot = keeper ? ['none', 'lazy'].find(b => process.argv.includes(b)) || 'lazy' : '';
-const plant = process.argv.includes('plant') || bot === 'lazy';
+const plant = process.argv.includes('plant');
 const PLANT_KINDS = ['oak', 'beech', 'maple', 'birch', 'alder', 'hawthorn', 'apple', 'cherry', 'pine'];
 const perSeason = Sim.SEASON_DAYS * Sim.TPD;
 for (let s = 1; s <= seeds; s++) {
@@ -19,11 +21,15 @@ for (let s = 1; s <= seeds; s++) {
   let pr = s * 2654435761 % 4294967296;                    // the planter's own random numbers, so the meadow's stay its own
   const rand = () => (pr = (pr * 1664525 + 1013904223) % 4294967296) / 4294967296;
   const planted = { tried: 0, ok: 0, lost: {}, sapling: 0, seeded: 0 };
-  // A keeper plants by order: a spot a tick, till one takes (the 'acted' event) or 20 were refused.
-  let want = 0, spots = 0, asked = false;
-  const order = () => {
-    Sim.act(w, { t: w.tick + 1, by: 0, kind: 'plant', tree: PLANT_KINDS[Math.floor(rand() * PLANT_KINDS.length)], x: rand() * Sim.W, y: rand() * Sim.H });
-    asked = true; spots++;
+  // A lazy keeper: three times a day, while it has hours, one of the tools at random, anywhere, with seed it has.
+  const pick = a => a[Math.floor(rand() * a.length)], did = {}, surveys = [];
+  let spent = 0;
+  const lazyTurn = () => {
+    const p = w.pouch, kinds = Object.keys(p).filter(k => p[k] > 0), trees = kinds.filter(k => Sim.TREES[k]), flowers = kinds.filter(k => !Sim.TREES[k]);
+    const x = rand() * Sim.W, y = rand() * Sim.H, what = pick(['plant', 'hedge', 'sow', 'dig', 'mow']), a = rand() * Math.PI * 2;
+    const o = what === 'plant' ? trees.length && { kind: 'plant', tree: pick(trees) } : what === 'hedge' ? p.hawthorn && { kind: 'hedge', x1: x + Math.cos(a) * 6, y1: y + Math.sin(a) * 6 }
+      : what === 'sow' ? flowers.length && { kind: 'sow', flower: pick(flowers) } : { kind: what };
+    if (o) Sim.act(w, { t: w.tick + 1, by: 0, x, y, ...o });
   };
   let arrivals = Object.fromEntries(Sim.KINDS.map(k => [k, 0])), surprises = 0, kills = 0, escapes = 0, strikes = 0, fires = 0, burned = 0, swarms = 0;
   // The crows at each season's end, their gatherings at remains, and the oaks and beeches at the start and the end.
@@ -47,23 +53,27 @@ for (let s = 1; s <= seeds; s++) {
   const fish = [];                                       // the fish at each season's end
   const soil = [], worn = [];                            // a keeper field's soil at each season's end (of what it could be), and the land grazed bare
   const guests = [];                                     // and its guests' comings and goings: 'Y2Sp rabbit+' came, ! settled, ? fretted, - left, x died out
+  const pouches = [];                                    // and the pouch at each year's end
   // The sickness: outbreaks begun and over, rabbit-days of it, rabbits per burrow at the peak, the resist gene
   // each winter's end, and the cap's numbers again against the old cap (CROWDED), to compare with before it rose.
   const oldCap = Sim.CROWDED * w.room, resist = [Sim.traitMeans(w, 'rabbit')?.resist];
   let outbreaks = 0, over = 0, sickDays = 0, perBurrow = 0, oldCapDays = 0, oldCrashes = 0, oldRecovered = 0, oldLow = null;
-  for (let k = 0; k < years * 4; k++) {
+  for (let k = 0; k < years * 4 && !w.over; k++) {
     let minR = 1e9, minF = 1e9;
     for (let i = 0; i < perSeason; i++) {
       if (plant && rand() < 5 / (Sim.YEAR_DAYS * Sim.TPD)) {
         planted.tried++;
-        if (keeper) want++;
-        else for (let k = 0; k < 20; k++) if (typeof Sim.plantTree(w, rand() * Sim.W, rand() * Sim.H, PLANT_KINDS[Math.floor(rand() * PLANT_KINDS.length)]) !== 'string') { planted.ok++; break; }
+        for (let k = 0; k < 20; k++) if (typeof Sim.plantTree(w, rand() * Sim.W, rand() * Sim.H, PLANT_KINDS[Math.floor(rand() * PLANT_KINDS.length)]) !== 'string') { planted.ok++; break; }
       }
-      if (want && !asked) order();
+      if (bot === 'lazy' && w.tick % (Sim.TPD / 3) === 0 && !w.over && Sim.hoursLeft(w, 0) > 0) lazyTurn();
+      const hours = keeper && Sim.hoursLeft(w, 0);
       Sim.step(w);
+      if (keeper && Sim.hoursLeft(w, 0) < hours) spent += hours - Sim.hoursLeft(w, 0);
       for (const e of w.events) {
-        if (e.type === 'acted' && e.order.kind === 'plant') { planted.ok++; want--; spots = 0; asked = false; }
-        if (e.type === 'refused' && e.order.kind === 'plant') { asked = false; if (spots >= 20) { want--; spots = 0; } }
+        if (e.type === 'acted') did[e.order.kind] = (did[e.order.kind] || 0) + 1;
+        if (e.type === 'acted' && e.order.kind === 'plant') { planted.tried++; planted.ok++; }
+        if (e.type === 'acted' && e.order.kind === 'hedge') { planted.tried += e.trees.length; planted.ok += e.trees.length; }
+        if (e.type === 'survey') surveys.push(`Y${e.year} ${e.had}/${e.want}${e.won ? ' won' : e.passed ? '' : ' PLOUGHED'}`);
         if (e.type === 'plantlost') planted.lost[e.cause] = (planted.lost[e.cause] || 0) + 1;
         if (e.type === 'plantgrew') planted.sapling++;
         if (e.type === 'plantseeds') planted.seeded++;
@@ -121,6 +131,7 @@ for (let s = 1; s <= seeds; s++) {
     if (keeper) {
       soil.push(Math.round(100 * Sim.soilMended(w)) + '%');
       worn.push(Math.round(100 * w.bare.reduce((n, d) => n + (d > 2), 0) / w.land) + '%');
+      if (k % 4 === 3) pouches.push(Object.entries(w.pouch).filter(([, n]) => n).map(([k, n]) => k.slice(0, 4) + n).join(','));
     }
     crows.push(w.count.crow);
     owls.push(`${w.count.owl}(${w.decor.filter(d => d.owl).length})`);
@@ -142,6 +153,8 @@ for (let s = 1; s <= seeds; s++) {
   for (let i = 0; i < rows.length; i += 8) console.log('  ' + rows.slice(i, i + 8).join('  '));
   if (keeper) console.log(`  soil  ${soil.join(' ')}  bare ${worn.join(' ')}`);
   if (keeper) console.log(`  guests  ${guests.join('  ') || 'none came'}  (+ came, ! settled, ? restless, - left, x died out)`);
+  if (keeper) console.log(`  keeper  did ${JSON.stringify(did)}  hours ${spent}  pouch ${pouches.join(' | ')}  surveyor ${surveys.join('  ') || '-'}`
+    + `${w.over ? `  OVER spring Y${w.over.year} ${w.over.had}/${w.over.want}${w.over.won ? ' WON' : ''}` : ''}`);
   const eaten = w.stats.voles;
   console.log(`  voles  ${voles.join(' ')}  eaten ${eaten} (${Math.round(100 * eaten / Math.max(1, eaten + kills))}% of fox meals)  fox hunger ${d.fox.hunger || 0}  vole years ${voleNews.boom} crashes ${voleNews.bust}`);
   const st = w.stats, rm = st.remains;
@@ -155,7 +168,7 @@ for (let s = 1; s <= seeds; s++) {
     `  voles eaten ${st.owlVoles} (foxes ${eaten})  kits taken ${d.rabbit.owl || 0}`);
   console.log(`  otters (holts)  ${otters.join(' ')}  holts made ${holts}  cubs ${st.births.otter} out ${cubsOut} left ${otterLeft}` +
     `  fish caught ${st.fish} frogs ${st.otterFrogs}`);
-  if (plant) {
+  if (plant || bot === 'lazy') {
     const up = w.decor.filter(t => t.planted && Sim.standing(t)), stages = {};
     for (const t of up) { const g = Sim.treeStage(w, t); stages[g] = (stages[g] || 0) + 1; }
     console.log(`  planted  ${planted.ok}/${planted.tried}  lost ${JSON.stringify(planted.lost)}  grew past the rabbits ${planted.sapling}  bore seed ${planted.seeded}  standing ${JSON.stringify(stages)}`);

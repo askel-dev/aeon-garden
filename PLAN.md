@@ -196,8 +196,10 @@ A new start, `createWorld(seed, { keeper: true })`, its numbers in `TERRAIN` wit
 
 **The pouch** (`w.pouch`, shared): seeds by kind.
 - Start: 6 hawthorn, 1 oak, 2 birch, 1 apple, a packet of a spring flower and one of a summer flower.
-- Income in autumn (`seedFall`): each tree old enough gives one of its kind (more in a mast year). Each flower
-  patch that bloomed gives a packet. Each kind has a cap of about 9.
+- Income (`pouchSeason`): in autumn each tree old enough gives one of its kind (more in a mast year). Each flower
+  patch that bloomed gives a packet as its season ends. Each kind has a cap of 9.
+- Built: a packet sows about 22 flowers (`SOW_FLOWERS`), not a made field's thinner 8, since the bees want 60. The
+  spade's emoji is ⛏️ (🪏 is too new for most devices).
 - Gifts: now and then a bird brings a kind you have none of. The Almanac's lifeline (A8) gives one too.
 
 **Hours** (`w.hours[by]`): each keeper has `HOURS` (about 12) a season, reset on the season's first day. They're
@@ -225,8 +227,10 @@ refreshed once a stroke, not every frame.
 
 ### A7. The Surveyor (sim.js, game.js)
 
-- On the first day of each spring from year 2 (`newDay`), he counts the settled species that are still here
-  against `SURVEY = [_, 1, 2, 4, 5, 6]` by year.
+- On the last day of each spring (`surveyDay`, after that day's settling), he counts the settled species that are
+  still here against `SURVEY = [0, 0, 1, 2, 4, 5, 6]`, by the year that spring begins. Built so: a kind settles only
+  after a year here, so in year 2 he only looks the field over, and the first count is in year 3. On the first day
+  of spring, kinds that came the spring before settled a few days too late.
 - A season ahead (the first day of winter), the news and a card say: "In spring I'll want to see 4."
 - Passed: a short card with his line and next year's number.
 - Missed: `w.over = { year, had, wanted }`. The sim stops taking orders, and the end card shows:
@@ -234,7 +238,8 @@ refreshed once a stroke, not every frame.
   - the named animals (Yours)
   - three or four lines from the year's news
   - "Again on this field" (same seed) / "A new field" (new seed)
-- Passing year 6 wins: the same card, with "Nobody's Meadow is somebody's now."
+- Passing the last count (year 7's spring, after six full years) wins: the same card, with "Nobody's Meadow is
+  somebody's now."
 
 ### A8. The Almanac (sim.js, game.js)
 

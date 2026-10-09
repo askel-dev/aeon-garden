@@ -56,6 +56,21 @@ In a keeper field the soil moves, and only there (`soilTick`, daily before `grou
 `WORN` of what it could be (`w.potential`, the soil as made), heals in a flower patch, under a crown in autumn and winter,
 and on rich ground, and wears where grazed bare for days (`w.bare`). Rabbits won't graze grass under 0.3, so on worn soil
 they starve rather than graze it down: wear bites only where the soil was mended. The meadow you watch keeps its soil.
+In a keeper field the keepers pay for what they do (sim.js "the keepers' hands"): seed from the pouch they share (`w.pouch`, by
+tree kind and by flower, `FIELD_KINDS`' `key`; it starts with `POUCH` and a packet of a spring and a summer flower) and `HOURS`
+of work a season each (`w.hours[by]`, fresh on each season's first day). An order is checked (`afford`: 'hours', 'seed', 'over')
+and paid once it's done (`spend`); the meadow you watch has no pouch and pays nothing. The pouch fills as the field grows it
+(`pouchSeason`): in autumn a seed from every tree old enough to bear (two from an oak or a beech in a mast year), a packet from each
+sown patch as its season ends if it bloomed, up to `POUCH_CAP` a kind, and now and then (`GIFT_ODDS`) a bird or the wind brings a
+kind they have none of. Orders: plant (a seed, an hour), hedge (a row of hawthorns `HEDGE_GAP` apart, a seed each and an hour for
+`HEDGE_HOUR`), sow (`sowField`: a patch of `SOW_R` like the fields a meadow is made with, thick with flowers, `SOW_FLOWERS`, that
+comes up the next time its season comes round, `comesUp`, `p.from`/`f.from`; sown by one of its kind, that one grows), dig
+(`digAt`: the ground lower in a soft brush, `DIG` a stroke, two hours; its grass, voles, frogs, cover and burrows gone; below the
+water line the water comes in, joined to the brook or a pond dug before, or a new pond with a name, `digWater`, and `nearWaters`
+again) and mow (`mowAt`: grass cut to `MOWN`, most of the voles and frogs gone, no cover). On the last day of each spring, once
+the day's guests are settled, the Surveyor counts the kinds that have settled (`surveyDay`, `settledCount`, not the crows): the
+second spring he only looks, from the third he wants `SURVEY[year - 1]`, and he says so a season ahead (event 'surveyor', the
+first day of winter). Short of it, `w.over` and every order is refused; the last count passed wins the run (`w.over.won`).
 Reeds and lily pads (`drawShore`) are a look too: a scatter `updateWater` works out along the shore whenever the water changes.
 Shallow water is waded slowly; deep water blocks.
 The rivers run (`makeCurrent`, `w.current`: worked out when a meadow is made or opened, never kept). Each point of a river

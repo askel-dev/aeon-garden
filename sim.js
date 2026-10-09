@@ -313,12 +313,13 @@ const WATER_NAMES = {
 
 // Each flower field is one kind, blooming in its season: its flowers, its name, and the tint
 // it gives the ground while in bloom (game.js paints it too).
+// key: its seed in a keeper's pouch (w.pouch).
 const FIELD_KINDS = [
-  { season: 0, emoji: ['🌷', '🌷', '🌷', '🌸'], names: ['Tulip'], tint: [226, 150, 170] },
-  { season: 0, emoji: ['🪻'], names: ['Bluebell', 'Hyacinth'], tint: [160, 150, 214] },
-  { season: 1, emoji: ['🌻'], names: ['Sunflower'], tint: [230, 200, 80] },
-  { season: 1, emoji: ['🌼', '🌼', '🌼', '🌻'], names: ['Buttercup', 'Daisy'], tint: [232, 218, 120] },
-  { season: 2, emoji: ['🪻', '🪻', '🌸'], names: ['Heather', 'Aster'], tint: [200, 130, 176] },   // the last food before winter
+  { season: 0, key: 'tulip', emoji: ['🌷', '🌷', '🌷', '🌸'], names: ['Tulip'], tint: [226, 150, 170] },
+  { season: 0, key: 'bluebell', emoji: ['🪻'], names: ['Bluebell', 'Hyacinth'], tint: [160, 150, 214] },
+  { season: 1, key: 'sunflower', emoji: ['🌻'], names: ['Sunflower'], tint: [230, 200, 80] },
+  { season: 1, key: 'buttercup', emoji: ['🌼', '🌼', '🌼', '🌻'], names: ['Buttercup', 'Daisy'], tint: [232, 218, 120] },
+  { season: 2, key: 'heather', emoji: ['🪻', '🪻', '🌸'], names: ['Heather', 'Aster'], tint: [200, 130, 176] },   // the last food before winter
 ];
 const FIELD_PLACES = ['Field', 'Meadow', 'Bank', 'Patch'];
 
@@ -1126,23 +1127,27 @@ function waterTick(w) {
   floodBurrows(w);
 }
 
-function floodBurrows(w) {
-  const flooded = new Set(w.burrows.filter(b => w.water[idx(b.x, b.y)]));
-  if (!flooded.size) return;
-  w.burrows = w.burrows.filter(b => !flooded.has(b));
+function floodBurrows(w) { loseBurrows(w, w.burrows.filter(b => w.water[idx(b.x, b.y)]), true); }
+
+// Burrows gone (lost: a list), flooded or dug up (the spade, ORDERS.dig): everyone inside scrambles out, but in a flood
+// kits too young to climb out drown.
+function loseBurrows(w, lost, flood) {
+  const gone = new Set(lost);
+  if (!gone.size) return;
+  w.burrows = w.burrows.filter(b => !gone.has(b));
   const out = new Map();                                     // burrow: { drowned, escaped }
   for (const c of w.creatures) {
     if (!c.alive) continue;
-    if (flooded.has(c.home)) c.home = null;
-    if (flooded.has(c.refuge)) c.refuge = null;
-    if (flooded.has(c.dig)) { c.dig = null; c.mode = 'wander'; }
+    if (gone.has(c.home)) c.home = null;
+    if (gone.has(c.refuge)) c.refuge = null;
+    if (gone.has(c.dig)) { c.dig = null; c.mode = 'wander'; }
     const b = c.hidden && c.burrow;
-    if (!flooded.has(b)) continue;
+    if (!gone.has(b)) continue;
     if (!out.has(b)) out.set(b, { burrow: b, drowned: [], escaped: [] });
-    if (ageDays(w, c) < KIT_DAYS) { die(w, c, 'flood'); out.get(b).drowned.push(c); }
+    if (flood && ageDays(w, c) < KIT_DAYS) { die(w, c, 'flood'); out.get(b).drowned.push(c); }
     else { exitBurrow(w, c); out.get(b).escaped.push(c); }
   }
-  for (const e of out.values()) emit(w, { type: 'flooded', ...e });
+  if (flood) for (const e of out.values()) emit(w, { type: 'flooded', ...e });
 }
 
 // ---------------------------------------------------------------- the current
@@ -1837,6 +1842,20 @@ function blurred(src, reach) {
   return out;
 }
 
+// On dry land, which water is nearest (w.nearBody): a flood belongs to the water it spilled from.
+function nearWaters(w) {
+  const near = Int16Array.from(w.body), queue = [];
+  for (let i = 0; i < near.length; i++) if (near[i] >= 0) queue.push(i);
+  for (let q = 0; q < queue.length; q++) {
+    const i = queue[q], x = i % W, y = (i / W) | 0;
+    for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
+      if (nx < 0 || ny < 0 || nx >= W || ny >= H || near[ny * W + nx] >= 0) continue;
+      near[ny * W + nx] = near[i]; queue.push(ny * W + nx);
+    }
+  }
+  w.nearBody = near;
+}
+
 // Each stretch of connected water gets a name, and w.body says which one a tile is in.
 // A lake the river runs through shares its water but keeps a name of its own.
 function nameWaters(w, lake) {
@@ -1864,17 +1883,7 @@ function nameWaters(w, lake) {
     w.waters.push({ id, kind, name, size, x: sx / size + 0.5, y: sy / size + 0.5 });
   }
   w.body = body;
-  // And on dry land, which water is nearest: a flood belongs to the water it spilled from.
-  const near = Int16Array.from(body), queue = [];
-  for (let i = 0; i < near.length; i++) if (near[i] >= 0) queue.push(i);
-  for (let q = 0; q < queue.length; q++) {
-    const i = queue[q], x = i % W, y = (i / W) | 0;
-    for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
-      if (nx < 0 || ny < 0 || nx >= W || ny >= H || near[ny * W + nx] >= 0) continue;
-      near[ny * W + nx] = near[i]; queue.push(ny * W + nx);
-    }
-  }
-  w.nearBody = near;
+  nearWaters(w);
   w.lake = null;
   // The brook runs in the river's water, but has a name of its own too.
   for (const rv of w.rivers) if (rv.brook) rv.name = `${firsts[(w.waters.length + 1) % firsts.length]} ${r.pick(WATER_NAMES.brook)}`;
@@ -2079,7 +2088,7 @@ function groundRGB(w, x, y) {
 
 // How strongly a field tints the ground at tile i: only in its season, where the grass is lush.
 const FIELD_TINT = 0.3;          // at most this much of the field's colour
-const fieldBloom = (w, f, i, v) => (f && f.season === seasonOf(w.tick) ? FIELD_TINT * w.fieldIn[i] * v : 0);
+const fieldBloom = (w, f, i, v) => (f && f.season === seasonOf(w.tick) && !(f.from > w.tick) ? FIELD_TINT * w.fieldIn[i] * v : 0);
 
 // How far off a fox can pick this rabbit out, as a share of its sight: nearer on cover (w.cover).
 function visibility(w, c) {
@@ -4164,7 +4173,7 @@ function isFlower(w, p) {
   if (p.tree) return inBloom(w, p.tree);                   // blossom in a tree (addBlossoms)
   if (w.water[p.i]) return false;
   const s = seasonOf(w.tick);
-  if (p.field) return s === p.field.season && w.grass[p.i] >= FIELD_GRASS;
+  if (p.field) return s === p.field.season && w.grass[p.i] >= FIELD_GRASS && !(p.from > w.tick);   // (a sown one comes up in its season, sow)
   if (w.grass[p.i] < 0.55) return false;
   return (s === 0 && p.kind < 0.35) || (s === 1 && p.kind < 0.22);
 }
@@ -5692,7 +5701,7 @@ function createWorld(seed, opts = {}) {
     }
   }
   flushNewborn(w);
-  if (keeper) startGuests(w);
+  if (keeper) { startGuests(w); startPouch(w); }
   for (const f of w.fields) if (f.season === seasonOf(w.tick)) f.bloomed = yearOf(w.tick);   // no news of what's out already
   hivesTick(w);
   w.founderMeans = perKind(s => traitMeans(w, s));
@@ -5776,6 +5785,8 @@ function newDay(w) {
     if (s === 2) seedFall(w);
     if (s === 3 && w.cached) emit(w, { type: 'buried', n: w.cached });   // the crows' autumn
     webSnapshot(w);
+    if (w.pouch) pouchSeason(w, s);
+    if (w.guests && s === 3 && !w.over) emit(w, { type: 'surveyor', year: yearOf(w.tick) + 1, want: SURVEY[yearOf(w.tick)] ?? 0, had: settledCount(w) });
   }
   treesTick(w);
   if (w.options.keeper) soilTick(w);
@@ -6071,6 +6082,28 @@ const WANTS = {
   },
 };
 
+// ---------------------------------------------------------------- the Surveyor
+//
+// On the last day of each spring the Surveyor walks the field and counts the species that have settled in it (not the
+// crows: they were here first). The last day, so what came in the spring before and bred has been here a year. From the
+// third spring he wants SURVEY[year - 1] of them; the second he only looks the field over, as nothing can have settled
+// by then. He says a season ahead what he'll want (event 'surveyor', on the first day of winter). Short of it, the
+// field goes under the plough: w.over, and the keepers' orders are refused from then on (afford). The last count
+// passed, it's theirs.
+const SURVEY = [0, 0, 1, 2, 4, 5, 6];   // by the year that spring begins (the 1st, 2nd, ...): the last passed is the run won
+
+const settledCount = w => GUESTS.filter(s => s !== 'crow' && w.guests[s].state === 'settled').length;
+
+function surveyDay(w) {
+  const year = yearOf(w.tick), want = SURVEY[year - 1] ?? 0, had = settledCount(w);
+  if (year < 2 || w.over) return;
+  const passed = had >= want, won = passed && year >= SURVEY.length;
+  if (!passed || won) w.over = { year, had, want, won, at: w.tick };
+  if (!passed) w.orders.length = 0;
+  emit(w, { type: 'survey', year, had, want, passed, won, next: SURVEY[year] ?? 0,
+    settled: GUESTS.filter(s => s !== 'crow' && w.guests[s].state === 'settled') });
+}
+
 // Whether any are in the field, and whether any were born here since they came.
 const FIELD_COUNTS = { vole: w => w.voleCount, frog: w => w.frogCount };
 const guestsHere = (w, s) => (FIELD_COUNTS[s] ? FIELD_COUNTS[s](w) >= 1 : w.count[s] + w.expecting[s] > 0);
@@ -6207,7 +6240,10 @@ function step(w) {
   flushNewborn(w);
   if (t % w.history.every === 0) record(w);
   if (t % (TPD / 4) === 0) migrate(w);
-  if (w.guests && t % TPD === 1) guestsDay(w);              // (just after the dawn's newDay, so it sees what the day's arrivals are)
+  if (w.guests && t % TPD === 1) {                          // (just after the dawn's newDay, so it sees what the day's arrivals are)
+    guestsDay(w);
+    if (dayOf(t) % YEAR_DAYS === SEASON_DAYS - 1) surveyDay(w);   // the last day of spring, once who has settled is known
+  }
   if (t % TPD === 0) { forgetTheLongDead(w); collapseBurrows(w); }
 }
 
@@ -6316,6 +6352,7 @@ function unpackWorld(kept) {
   w.orders ??= [];                                           // (or give orders, act)
   if (!w.cover) coverTick(w);                                // (or cover)
   if (w.options.keeper && !w.guests) startGuests(w);         // (a keeper field from before the needs check)
+  if (w.options.keeper && !w.pouch) startPouch(w);           // (or the pouch)
   for (const d of w.decor) if (d.tree) { d.planted ??= 0; delete d.bank; }   // (or plant trees; d.bank: the holts' old reckoning, now d.holtFish)
   if (w.lake && !w.lake.near) {                              // (kept while a lake was circles)
     w.lake.near = new Uint8Array(W * H);
@@ -6395,11 +6432,57 @@ function act(w, o) {
   list.splice(k, 0, o);
 }
 
-// What each order does: what it made or touched (told with 'acted'), or a word for why not ('refused').
+// What each order does: what it made or touched (told with 'acted'), or a word for why not ('refused'). In a keeper
+// field each costs hours and seed (afford, spend, below): 'hours', 'seed', or 'over' once the Surveyor has been.
 const ORDERS = {
   plant(w, o) {                                              // { tree: its kind }
+    const no = afford(w, o, 1, o.tree);
+    if (no) return no;
     const d = plantTree(w, o.x, o.y, o.tree);
-    return typeof d === 'string' ? d : { it: d };
+    if (typeof d === 'string') return d;
+    spend(w, o, 1, o.tree);
+    return { it: d };
+  },
+  hedge(w, o) {                                              // { x1, y1 }: a row of hawthorn from x, y to there
+    const no = afford(w, o, 1, 'hawthorn');
+    if (no) return no;
+    const most = w.pouch ? Math.min(w.pouch.hawthorn, HEDGE_HOUR * hoursLeft(w, o.by)) : Infinity;
+    const len = Math.hypot(o.x1 - o.x, o.y1 - o.y), ux = len ? (o.x1 - o.x) / len : 0, uy = len ? (o.y1 - o.y) / len : 0;
+    const n = Math.floor(len / HEDGE_GAP) + 1, trees = [];
+    let why = '';
+    for (let k = 0; k < n && trees.length < most; k++) {
+      const d = plantTree(w, o.x + ux * k * HEDGE_GAP, o.y + uy * k * HEDGE_GAP, 'hawthorn');
+      if (typeof d === 'string') why ||= d; else trees.push(d);
+    }
+    if (!trees.length) return why;
+    spend(w, o, Math.ceil(trees.length / HEDGE_HOUR), 'hawthorn', trees.length);
+    return { trees, short: trees.length < n && trees.length === most };
+  },
+  sow(w, o) {                                                // { flower: a FIELD_KINDS key }
+    const kind = FIELD_KINDS.find(k => k.key === o.flower), no = kind ? afford(w, o, 1, o.flower) : 'seed';
+    if (no) return no;
+    if (!dry(w, o.x, o.y)) return 'water';
+    const was = w.fields.length, f = sowField(w, kind, o.x, o.y);
+    if (!f) return 'full';
+    spend(w, o, 1, o.flower);
+    return { field: f, grew: w.fields.length === was };
+  },
+  dig(w, o) {                                                // a stroke of the spade
+    const no = afford(w, o, DIG_HOURS);
+    if (no) return no;
+    if (!inBounds(o.x, o.y)) return 'edge';
+    if (w.ground[idx(o.x, o.y)] <= w.terrain.level + DIG_FLOOR + 0.01) return 'deep';
+    const ponds = w.waters.length, burrows = digAt(w, o.x, o.y), water = digWater(w, o.x, o.y);
+    spend(w, o, DIG_HOURS);
+    return { x: o.x, y: o.y, burrows, water, made: w.waters.length > ponds };
+  },
+  mow(w, o) {                                                // a patch of grass cut short
+    const no = afford(w, o, 1);
+    if (no) return no;
+    if (!inBounds(o.x, o.y)) return 'edge';
+    mowAt(w, o.x, o.y);
+    spend(w, o, 1);
+    return { x: o.x, y: o.y };
   },
   name(w, o) {                                               // { who: an animal's id, or hive: a hive's (its queen), name }
     const c = o.who && w.byId.get(o.who), h = o.hive && w.hives.find(h => h.id === o.hive);
@@ -6416,6 +6499,186 @@ function carryOut(w) {
     const o = w.orders.shift(), r = ORDERS[o.kind] ? ORDERS[o.kind](w, o) : 'unknown';
     emit(w, typeof r === 'string' ? { type: 'refused', order: o, why: r } : { type: 'acted', order: o, ...r });
   }
+}
+
+// ---------------------------------------------------------------- the keepers' hands
+//
+// In a keeper field what the keepers do costs them (PLAN.md, A6). Seed comes from the pouch they share (w.pouch, by
+// kind: the trees as in TREES, the flowers by FIELD_KINDS' key), filled as the meadow grows it: in autumn a seed from
+// every tree old enough to bear, and as a sown patch finishes blooming, a packet of its kind (pouchSeason). Now and
+// then a bird brings a kind they have none of. And each keeper has HOURS of work a season (w.hours[by]), the same
+// again each season, whatever was left. An order is checked against both before it's carried out (afford) and paid
+// once it is (spend). In the meadow you watch there's no pouch, and everything is free.
+
+const HOURS = 12;               // a keeper's hours of work a season
+const POUCH = { hawthorn: 6, oak: 1, birch: 2, apple: 1 };   // what the keepers start with, and a packet of a spring and a summer flower
+const POUCH_CAP = 9;            // the most seed of a kind the pouch holds
+const GIFT_ODDS = 0.3;          // a season's odds a bird brings a kind the pouch is out of (not in winter)
+const HEDGE_GAP = 1.5;          // tiles between the thorns of a hedge
+const HEDGE_HOUR = 3;           // thorns laid in an hour
+const SOW_R = 3;                // a sown patch's radius
+const SOW_FLOWERS = 0.8;        // share of its tiles with a flower (a field as made has fieldFlowers): about 22 a packet
+const SOW_JOIN = 2;             // a patch sown this close to one of its kind grows that one
+const DIG_R = 2.5;              // the spade's brush
+const DIG = 0.08;               // how much lower a stroke leaves the ground in its middle (by the brook, one makes a spring pool, two a pond)
+const DIG_HOURS = 2;
+const DIG_FLOOR = -0.5;         // never deeper than this under the usual water line
+const MOW_R = 2.5;              // a mown patch's radius
+const MOWN = 0.15;              // the grass is cut to this
+const MOW_SPARES = 0.3;         // of the voles and frogs in it, this many are left
+
+function startPouch(w) {
+  const r = w.rng, kinds = s => FIELD_KINDS.filter(k => k.season === s);
+  w.pouch = { ...POUCH, [r.pick(kinds(0)).key]: 1, [r.pick(kinds(1)).key]: 1 };
+  w.hours = [HOURS];
+}
+
+const hoursLeft = (w, by) => w.hours[by] ?? HOURS;   // (a keeper's first order)
+// Why a keeper can't do this now ('over', 'hours', 'seed'), or '' if they can.
+function afford(w, o, hours, kind, n = 1) {
+  if (!w.pouch) return '';
+  if (w.over) return 'over';
+  if (hoursLeft(w, o.by) < hours) return 'hours';
+  if (kind && (w.pouch[kind] || 0) < n) return 'seed';
+  return '';
+}
+function spend(w, o, hours, kind, n = 1) {
+  if (!w.pouch) return;
+  w.hours[o.by] = hoursLeft(w, o.by) - hours;
+  if (kind) w.pouch[kind] -= n;
+}
+
+// Each season's first day: fresh hours, a packet from each patch that bloomed in the season just gone, in autumn a
+// seed from every tree old enough to bear (two from an oak or a beech in a mast year), and maybe a bird's gift.
+function pouchSeason(w, s) {
+  w.hours.fill(HOURS);
+  const got = {}, add = (k, n) => {
+    const v = Math.min(POUCH_CAP, (w.pouch[k] || 0) + n);
+    if (v > (w.pouch[k] || 0)) got[k] = (got[k] || 0) + v - (w.pouch[k] || 0);
+    w.pouch[k] = v;
+  };
+  const last = (s + 3) % 4, year = yearOf(w.tick - 1);
+  for (const f of w.fields) if (f.season === last && f.bloomed === year) add(f.kind.key, 1);
+  if (s === 2) for (const d of w.decor) if (d.tree && bearing(w, d)) add(d.kind, TREES[d.kind].mast && w.mast ? 2 : 1);
+  if (Object.keys(got).length) emit(w, { type: 'harvest', got });
+  const none = [...Object.keys(TREES), ...FIELD_KINDS.map(k => k.key)].filter(k => !w.pouch[k]);
+  if (s !== 3 && none.length && w.rng.next() < GIFT_ODDS) {
+    const k = w.rng.pick(none);
+    w.pouch[k] = 1;
+    emit(w, { type: 'gift', kind: k });
+  }
+}
+
+// When a patch sown now comes up: the next time its season comes round (sown in its season, next year).
+function comesUp(t, season) {
+  const start = (Math.floor(dayOf(t) / YEAR_DAYS) * YEAR_DAYS + season * SEASON_DAYS) * TPD;
+  return season <= seasonOf(t) ? start + YEAR : start;
+}
+
+// A patch of flowers sown about x, y: a field like the ones a meadow is made with (placeFields), its flowers coming
+// up when its season next comes round (p.from, f.from). Sown close by one of its kind, that one grows. It mends the
+// soil it's on (soilTick); no richer at once. The field, or null if the meadow has all the fields it can.
+function sowField(w, kind, x, y) {
+  const r = w.rng, up = comesUp(w.tick, kind.season);
+  let f = w.fields.find(f => f.kind === kind && f.shape.some(b => Math.hypot(b.x - x, b.y - y) < b.r + SOW_R + SOW_JOIN));
+  if (!f) {
+    if (w.fields.length >= 127) return null;                 // (w.fieldAt is an Int8Array)
+    const id = w.fields.length, taken = new Set(w.fields.map(f => f.name));
+    let name = '';
+    for (let k = 0; k < 8 && (!name || taken.has(name)); k++) name = `${r.pick(kind.names)} ${r.pick(FIELD_PLACES)}`;
+    f = { id, kind, season: kind.season, emoji: kind.emoji, tint: kind.tint, x, y, shape: [], name, from: up };
+    w.fields.push(f);
+  }
+  f.shape.push({ x, y, r: SOW_R });
+  const R = SOW_R + 2, had = new Set();
+  forEachPlantNear(w, x, y, SOW_R + 1, p => {
+    if ((p.x - x) ** 2 + (p.y - y) ** 2 >= SOW_R * SOW_R || p.tree) return;
+    had.add(p.i);
+    if (p.field !== f) { p.field = f; p.from = up; }
+  });
+  for (let ty = Math.max(0, Math.floor(y - R)); ty <= Math.min(H - 1, y + R); ty++) {
+    for (let tx = Math.max(0, Math.floor(x - R)); tx <= Math.min(W - 1, x + R); tx++) {
+      const i = ty * W + tx, d = outside(f.shape, tx + 0.5, ty + 0.5);
+      if (d >= 0 || w.water[i]) continue;
+      w.fieldAt[i] = f.id; w.fieldIn[i] = clamp(-d / 2, 0, 1);
+      if ((tx + 0.5 - x) ** 2 + (ty + 0.5 - y) ** 2 >= SOW_R * SOW_R || had.has(i) || r.next() > SOW_FLOWERS) continue;
+      const p = { x: tx + r.next(), y: ty + r.next(), i, kind: r.next(), field: f, n: w.plants.length, from: up };
+      w.plants.push(p);
+      cellOf(w.plantCells, p).push(p);
+    }
+  }
+  return f;
+}
+
+// A stroke of the spade: the ground lower in a soft round brush, its grass and what lived in it gone, and any burrow
+// under it dug up. Where it's now below the water line the water comes in (refreshWater). The burrows lost.
+function digAt(w, x, y) {
+  const floor = w.terrain.level + DIG_FLOOR, R = DIG_R;
+  for (let ty = Math.max(0, Math.floor(y - R)); ty <= Math.min(H - 1, y + R); ty++) {
+    for (let tx = Math.max(0, Math.floor(x - R)); tx <= Math.min(W - 1, x + R); tx++) {
+      const i = ty * W + tx, q = ((tx + 0.5 - x) ** 2 + (ty + 0.5 - y) ** 2) / (R * R);
+      if (q >= 1) continue;
+      w.ground[i] = Math.max(Math.min(w.ground[i], floor), w.ground[i] - DIG * (1 - q) ** 2);
+      w.grass[i] = 0; w.voles[i] = 0; w.frogs[i] = 0; w.cover[i] = 0;
+    }
+  }
+  const lost = w.burrows.filter(b => (b.x - x) ** 2 + (b.y - y) ** 2 < R * R);
+  loseBurrows(w, lost, false);
+  refreshWater(w);
+  floodBurrows(w);
+  w.waterVersion++;                                          // (game.js repaints the ground's height with the water)
+  return lost.length;
+}
+
+// The water the spade let in: joined to the brook, or to a pond dug before (dugAt), it's that water; on its own, a new
+// pond with a name. Then which water each dry tile is nearest is worked out again, so a flood pool that dries in
+// summer is that pond again when the water comes back. The water at x, y, or null.
+function digWater(w, x, y) {
+  const s = idx(x, y);
+  if (!w.water[s]) return null;
+  const river = new Uint8Array(W * H);
+  for (const rv of w.rivers) for (const p of rv.pts) if (inBounds(p.x, p.y)) river[idx(p.x, p.y)] = 1;
+  const seen = new Uint8Array(W * H), tiles = [s];
+  let joins = null;
+  seen[s] = 1;
+  for (let k = 0; k < tiles.length; k++) {
+    const i = tiles[k], tx = i % W, ty = (i / W) | 0, v = w.waters[w.body[i]];
+    if (river[i] && v) joins = v;
+    else if (!joins && v?.dugAt !== undefined) joins = v;
+    for (const [nx, ny] of [[tx + 1, ty], [tx - 1, ty], [tx, ty + 1], [tx, ty - 1]]) {
+      const n = ny * W + nx;
+      if (nx >= 0 && ny >= 0 && nx < W && ny < H && w.water[n] && !seen[n]) { seen[n] = 1; tiles.push(n); }
+    }
+  }
+  if (!joins) {
+    const used = new Set([...w.waters.map(v => v.name.split(' ')[0]), ...w.rivers.map(rv => rv.name?.split(' ')[0])]);
+    const free = WATER_NAMES.first.filter(n => !used.has(n)), first = w.rng.pick(free.length ? free : WATER_NAMES.first);
+    joins = { id: w.waters.length, kind: 'pond', name: `${first} ${w.rng.pick(WATER_NAMES.pond)}`, size: 0, x, y, dugAt: w.tick };
+    w.waters.push(joins);
+  }
+  for (const i of tiles) w.body[i] = joins.id;
+  if (joins.kind === 'pond') {
+    let sx = 0, sy = 0;
+    for (const i of tiles) { sx += i % W; sy += (i / W) | 0; }
+    Object.assign(joins, { size: tiles.length, x: sx / tiles.length + 0.5, y: sy / tiles.length + 0.5 });
+  }
+  nearWaters(w);
+  return joins;
+}
+
+// A patch mown short: food for the rabbits and the crows as it grows back, but no cover, and the voles and frogs in
+// it mostly gone. A fire won't cross it (it burns in long grass).
+function mowAt(w, x, y) {
+  const R = MOW_R;
+  for (let ty = Math.max(0, Math.floor(y - R)); ty <= Math.min(H - 1, y + R); ty++) {
+    for (let tx = Math.max(0, Math.floor(x - R)); tx <= Math.min(W - 1, x + R); tx++) {
+      const i = ty * W + tx;
+      if (w.water[i] || (tx + 0.5 - x) ** 2 + (ty + 0.5 - y) ** 2 >= R * R) continue;
+      w.grass[i] = Math.min(w.grass[i], MOWN);
+      w.voles[i] *= MOW_SPARES; w.frogs[i] *= MOW_SPARES;
+    }
+  }
+  coverTick(w);
 }
 
 function paintGrass(w, x, y, radius) {
@@ -6526,6 +6789,7 @@ const api = {
   W, H, TPD, SHALLOW, DEEP, SEASON_DAYS, YEAR_DAYS, SEASONS, SPECIES, GENES, COATS, GROUND, WEATHER,
   createWorld, step, clock, isNight, phaseOf, seasonOf, mood, ageDays, growth, isAdult, patchFresh,
   addCreature, paintGrass, setSky, lockSky, zap, burnLine, lift, putDown, nameCreature, nameQueen, NAME_MAX, plantTree, act, carryOut, soilMended, traitMeans, walkable, packWorld, unpackWorld,
+  HOURS, POUCH_CAP, HEDGE_GAP, HEDGE_HOUR, SOW_R, DIG_R, DIG_HOURS, MOW_R, FIELD_KINDS, SURVEY, settledCount, comesUp, hoursLeft, GUESTS,
   coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT, KINDS, OWLS,
   TERRAIN, drawnToLink, drawnFromLink, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE,
