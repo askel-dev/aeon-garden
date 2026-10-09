@@ -228,7 +228,8 @@ refreshed once a stroke, not every frame.
 ### A7. The Surveyor (sim.js, game.js)
 
 - On the last day of each spring (`surveyDay`, after that day's settling), he counts the settled species that are
-  still here against `SURVEY = [0, 0, 1, 2, 4, 5, 6]`, by the year that spring begins. Built so: a kind settles only
+  still here against `SURVEY = [0, 0, 1, 1, 3, 3, 4]`, by the year that spring begins (first 1, 2, 4, 5, 6; lowered
+  2026-10-09 to where the `good` bot lands, A10). Built so: a kind settles only
   after a year here, so in year 2 he only looks the field over, and the first count is in year 3. On the first day
   of spring, kinds that came the spring before settled a few days too late.
 - A season ahead (the first day of winter), the news and a card say: "In spring I'll want to see 4."
@@ -339,6 +340,23 @@ Y5 3/8, short of its target. Played on (`endless`), it averages 2.0, 2.4 and 2.9
 against `SURVEY`'s 4, 5 and 6. Rabbits settle on most seeds, bees, frogs and voles by Y5–Y7 on half or more; foxes almost
 never (they leave whenever they've eaten the rabbits under `FOX_PREY`), otters rarely (frogs dip under `OTTER_FROGS` in winter).
 Open: lower the later counts, make foxes and otters sturdier, or both.
+
+Then (2026-10-09, 24 seeds): the foxes. They left every lean autumn and winter, and staying only starved them, as a keeper
+field had hardly any voles (8 on average, 11% of a fox's meals; the meadow you watch has about a thousand, half its foxes'
+meals). Voles spilled only next door, and never crossed the grazed and mown ground between a field's patches of long grass.
+Now:
+- Voles here find long grass anywhere in the field, spring to autumn (`volesFind`, `VOLE_FIND`): 57 on average, 43% of a
+  fox's meals. Leaving a stretch unmown is how the keepers carry foxes through a rabbit low.
+- Foxes judge prey as what feeds them (`foxPrey`: rabbits, and voles and frogs by what they're worth to a fox) and only in
+  summer and autumn, when a warren has bred (judged in spring too, they settled less: 16 against 22).
+- A fox born in the field leaves once grown unless there's prey for one more (`foxesGrown`, `FOX_EACH`): a pair bred up to ten
+  and ate the warren out.
+- A rabbit family came in at the edge level with where it wanted to go, and crashed when that was the brook.
+Good bot, `endless`, Surveyor's count Y3–Y7: 0.8/1.2/1.8/2.1/2.4 before, 1.4/1.7/2.5/2.8/2.6 after; foxes settled at a year's end
+18 → 22 of 96. `SURVEY` set from that to 1, 1, 3, 3, 4: the good bot gets through Y4 on 22 of 24 seeds, through Y6 on 14, and
+wins 5. Played by one keeper's hours; two have twice. none and lazy still ploughed at Y3 (lazy Y4 once).
+Still open: otters rarely settle (the frogs dip under `OTTER_FROGS` in winter); foxes still die out in a spring after a hard
+winter about as often as they settle.
 
 ---
 

@@ -43,9 +43,12 @@ one check each a day, `guestsDay`, just after dawn; each says whether its needs 
 a need asks for is what the ground grows (`w.shadedFert`), not what's standing that day: grazed short, or short in autumn
 and the first days of spring, is fine; worn-out ground isn't. Rabbits: good grass (`GOOD_GRASS`: 0.45 to come, which worn
 soil never grows; 0.35 to stay) over `FAMILY_GRASS` tiles within `FAMILY_REACH`, by good cover (`RABBIT_COVER`) on ground they
-can dig (or by the burrow they dug). Foxes: `FOX_PREY` rabbits (or a vole year) and a thicket to den in (`FOX_DEN`). Bees:
+can dig (or by the burrow they dug). Foxes: a thicket to den in (`FOX_DEN`), and in summer and autumn (winter and spring every
+warren is low) `FOX_PREY` prey, rabbits and the voles and frogs by what they feed a fox (`foxPrey`, `RABBIT_MEAL`); a fox born
+here leaves once grown unless there's prey for one more (`foxesGrown`, `FOX_EACH`, `c.grownUp`, `c.away`). Bees:
 `BEE_FLOWERS` open within reach of a free hollow, in spring and summer. Frogs: still shallows (`STILL`, `FROG_POOL`) in spring
-with damp long grass by them (`FROG_GRASS`), then the grass alone. Voles: long grass over a stretch (`VOLE_PATCH`). Otters: a
+with damp long grass by them (`FROG_GRASS`), then the grass alone. Voles: long grass over a stretch (`VOLE_PATCH`); once here they find long grass anywhere in the field, spring to autumn
+(`volesFind`, `VOLE_FIND`), as spilling next door never crossed the grazed ground between a field's patches. Otters: a
 holt with fish enough (`holtTree`; a stroke of the spade near one has it looked at again), and `OTTER_FROGS` frogs in the field,
 as with the water frozen they live on frogs dug from the mud (`rooted`). Crows: a roost (here from the start; they don't count).
 And a keeper field has room for only as many rabbits as the mended ground feeds through a winter (`roomFor`: the winter grass

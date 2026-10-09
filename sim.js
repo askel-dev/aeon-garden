@@ -5596,7 +5596,8 @@ function die(w, c, cause, killer) {
   const age = Math.floor(ageDays(w, c));
   const text = cause === 'fox' || cause === 'owl' ? `Caught by ${killer.name}${cause === 'owl' ? ' the owl' : ''}` :
     cause === 'left' ? (w.guests?.[c.species]?.going ? `Left the field${w.guests[c.species].why ? ': ' + w.guests[c.species].why : ''}`   // (a keeper field's guests; a young otter or owl leaving home is mode 'leave' too)
-      : c.species === 'otter' ? 'Went off down the water to find a stretch of its own' : 'Flew off over the trees to find a wood of its own') :
+      : c.species === 'otter' ? 'Went off down the water to find a stretch of its own' : c.species === 'fox' ? 'Went off to find ground of its own'
+      : 'Flew off over the trees to find a wood of its own') :
     cause === 'hunger' ? (seasonOf(w.tick) === 3 ? 'Starved in the winter' : 'Starved') :
     cause === 'lightning' ? 'Struck by lightning' :
     cause === 'fire' ? 'Caught in a wildfire' :
@@ -6003,7 +6004,9 @@ const GOOD_GRASS = [0.45, 0.35];   // grass the ground grows (w.shadedFert) that
 const FAMILY_GRASS = 40;        // tiles of it within FAMILY_REACH of a burrow feed a family
 const FAMILY_REACH = 8;
 const RABBIT_COVER = 3;         // tiles of good cover (HIDE_IN) within 3 of the burrow: somewhere to run to
-const FOX_PREY = 20;            // rabbits that make prey enough for foxes (or a vole year)
+const FOX_PREY = 20;            // rabbits (or voles and frogs that feed a fox as well) that make prey enough for foxes
+const foxPrey = w => w.count.rabbit + (w.voleCount * VOLE_ENERGY + w.frogCount * FROG_ENERGY) / RABBIT_MEAL;
+const RABBIT_MEAL = 60;         // a grown rabbit to a fox (VOLE_ENERGY, FROG_ENERGY)
 const FOX_DEN = 8;              // tiles of good cover within 3 of a spot: a thicket to den in
 const VOLE_PATCH = 30;          // tiles of long grass (VOLE_LONG) within 4: room for voles
 const VOLE_ARRIVE = 0.5;        // of the room in the patch the first voles fill
@@ -6062,9 +6065,10 @@ const WANTS = {
   fox(w) {
     tilesNear(GUEST_B, 3, i => w.cover[i] >= HIDE_IN);
     const den = bestTile(GUEST_B, (x, y) => dry(w, x, y));
-    if (w.count.rabbit < FOX_PREY && !w.voleYear) return { met: false, why: 'not prey enough to hunt', where: den };
     if (!den || den.v < FOX_DEN) return { met: false, why: 'no thicket to den in', where: den };
-    return { met: true, why: w.count.rabbit < FOX_PREY ? 'voles in the long grass, and a thicket to den in' : 'rabbits to hunt, and a thicket to den in', where: den };
+    if (seasonOf(w.tick) % 3 === 0) return { met: null };                     // winter and spring every warren is low till the kits come: they sit it out
+    if (foxPrey(w) < FOX_PREY) return { met: false, why: 'not prey enough to hunt', where: den };
+    return { met: true, why: w.count.rabbit < FOX_PREY ? 'rabbits, voles and frogs to hunt, and a thicket to den in' : 'rabbits to hunt, and a thicket to den in', where: den };
   },
   bee(w, here) {
     if (seasonOf(w.tick) >= 2) return { met: null };                         // autumn and winter they live on their honey
@@ -6115,7 +6119,7 @@ const WANTS = {
 // by then. He says a season ahead what he'll want (event 'surveyor', on the first day of winter). Short of it, the
 // field goes under the plough: w.over, and the keepers' orders are refused from then on (afford). The last count
 // passed, it's theirs.
-const SURVEY = [0, 0, 1, 2, 4, 5, 6];   // by the year that spring begins (the 1st, 2nd, ...): the last passed is the run won
+const SURVEY = [0, 0, 1, 1, 3, 3, 4];   // by the year that spring begins (the 1st, 2nd, ...): the last passed is the run won
 
 const settledCount = w => GUESTS.filter(s => s !== 'crow' && w.guests[s].state === 'settled').length;
 
@@ -6257,6 +6261,40 @@ function guestsDay(w) {
     if (g.unmetDays === FRET_DAYS) emit(w, { type: 'fret', species: s, why: g.why, x: g.where?.x, y: g.where?.y });
     if (g.unmetDays >= LEAVE_DAYS) guestsGone(w, s, g, false);
   }
+  foxesGrown(w);
+  volesFind(w);
+}
+
+// Voles here find long grass the keepers let grow anywhere in the field, from spring to autumn: a few turn up in each tile
+// of it that has hardly any (VOLE_FIND of its room a day). Spilling next door alone (volesTick) never crossed the grazed and
+// mown ground between a field's patches, so its voles stayed a dozen and fed no fox.
+const VOLE_FIND = 0.05;
+function volesFind(w) {
+  const g = w.guests.vole;
+  if ((g.state !== 'visiting' && g.state !== 'settled') || seasonOf(w.tick) === 3) return;
+  const v = w.voles, grass = w.grass;
+  for (let i = 0; i < W * H; i++) {
+    const room = w.water[i] ? 0 : voleRoom(grass[i]);
+    if (room > 0 && v[i] < VOLE_FIND * room) v[i] += VOLE_FIND * room;
+  }
+}
+
+// A fox born in the field, once grown, stays only while there's prey for one more (FOX_EACH a fox); otherwise it goes
+// off to find ground of its own, as young foxes do in autumn. Without it a pair bred up to ten, ate the warren out,
+// and starved or left.
+const FOX_EACH = FOX_PREY / 2;
+function foxesGrown(w) {
+  let grown = 0;
+  for (const c of w.creatures) if (c.alive && c.species === 'fox' && isAdult(w, c) && c.mode !== 'leave') grown++;
+  const room = Math.max(2, Math.floor(foxPrey(w) / FOX_EACH));
+  for (const c of w.creatures) {
+    if (!c.alive || c.species !== 'fox' || !c.mumId || c.grownUp || !isAdult(w, c)) continue;
+    c.grownUp = true;
+    if (grown <= room) continue;
+    grown--;
+    c.mode = 'leave'; c.sleeping = false; c.target = null; c.away = nearEdge(c);
+    note(w, c, '🍂', 'Grown, and off to find ground of its own');
+  }
 }
 const GUESTS = KINDS.filter(s => WANTS[s] && (s !== 'owl' || OWLS)).concat(['vole', 'frog']);
 
@@ -6282,7 +6320,10 @@ function guestArrives(w, s, g, at, scouts = false) {
   let who = [];
   if (s === 'rabbit') {
     const side = at.x > W / 2 ? 1 : 0;
-    who = familyArrives(w, { side, entry: { x: side ? W - 0.7 : 0.7, y: at.y }, spot: at }, t + 3 * TPD);
+    const x = side ? W - 0.7 : 0.7, ok = y => y > 1 && y < H - 1 && dry(w, x, y) && dry(w, side ? W - 1.3 : 1.3, y);
+    let y = at.y;
+    for (let k = 1; k < H && !ok(y); k++) y = at.y + (k % 2 ? 1 : -1) * Math.ceil(k / 2);   // (not in the brook where it runs off, or a flood)
+    if (ok(y)) who = familyArrives(w, { side, entry: { x, y }, spot: at }, t + 3 * TPD);
   } else if (s === 'fox' || s === 'crow') {
     who = pairIn(w, s, at);
   } else if (s === 'bee') {
@@ -6360,7 +6401,7 @@ function step(w) {
     const c = list[i];
     if (!c.alive) continue;
     if (c.held) { lifeTick(w, c); continue; }               // dangling from the player's hand: it only waits
-    if (w.guests && !c.hidden && w.guests[c.species]?.going) goAway(w, c);   // a keeper field's guests, leaving (guestsDay)
+    if (w.guests && !c.hidden && (w.guests[c.species]?.going || c.away)) goAway(w, c);   // a keeper field's guests, leaving (guestsDay), or a grown fox (foxesGrown)
     else if (c.species === 'rabbit') rabbitTick(w, c);
     else if (c.species === 'fox') foxTick(w, c);
     else if (c.species === 'bee') beeTick(w, c);
