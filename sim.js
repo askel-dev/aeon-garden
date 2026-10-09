@@ -231,7 +231,7 @@ const TERRAIN = {
   summerLow: 0.03,             // and how far it drops in summer
   rainRise: 0.03,              // how much a soaked meadow adds to it (a dry one takes it away)
   deepAt: 0.3,                 // water at least this deep can't be waded
-  layouts: { valley: 2, river: 1, lake: 1, field: 0 },   // odds of each: a river through a lake, a river, a lake, a worn field (fieldBrook)
+  layouts: { valley: 2, river: 1, lake: 1 },   // odds of each: a river through a lake, a river, a lake
   lakeEdge: 0.4,               // odds a lake lies by the edge of the meadow, running off it (else in a hollow)
   lakeReach: [11, 18],         // how far a lake reaches from its middle, across it
   lakeStretch: [1, 1.7],       // how much longer it is than wide
@@ -289,12 +289,6 @@ const TERRAIN = {
   fieldFlowers: 0.45,          // share of a field's tiles with a flower
   fieldSoil: 0.25,             // how much richer the soil is in a field
   fieldGather: 60,             // the first three fields lie this close together, so one hive can reach all three
-  // A worn field (the layout a keeper game is played on, PLAN.md): a brook along one side, an old oak, a few thorns.
-  fieldBrook: [8, 20],         // how far in from its side the brook runs, about
-  fieldSway: 5,                // how far its bends swing
-  fieldBoulders: [3, 5],       // boulders on the brook's bank (an otter's holt one day)
-  fieldHedge: 4,               // hawthorns in the stub of hedge by the old oak
-  fieldThorns: [3, 6],         // lone hawthorns out in the field
 };
 
 const idx = (x, y) => (y | 0) * W + (x | 0);
@@ -313,13 +307,12 @@ const WATER_NAMES = {
 
 // Each flower field is one kind, blooming in its season: its flowers, its name, and the tint
 // it gives the ground while in bloom (game.js paints it too).
-// key: its seed in a keeper's pouch (w.pouch).
 const FIELD_KINDS = [
-  { season: 0, key: 'tulip', emoji: ['🌷', '🌷', '🌷', '🌸'], names: ['Tulip'], tint: [226, 150, 170] },
-  { season: 0, key: 'bluebell', emoji: ['🪻'], names: ['Bluebell', 'Hyacinth'], tint: [160, 150, 214] },
-  { season: 1, key: 'sunflower', emoji: ['🌻'], names: ['Sunflower'], tint: [230, 200, 80] },
-  { season: 1, key: 'buttercup', emoji: ['🌼', '🌼', '🌼', '🌻'], names: ['Buttercup', 'Daisy'], tint: [232, 218, 120] },
-  { season: 2, key: 'heather', emoji: ['🪻', '🪻', '🌸'], names: ['Heather', 'Aster'], tint: [200, 130, 176] },   // the last food before winter
+  { season: 0, emoji: ['🌷', '🌷', '🌷', '🌸'], names: ['Tulip'], tint: [226, 150, 170] },
+  { season: 0, emoji: ['🪻'], names: ['Bluebell', 'Hyacinth'], tint: [160, 150, 214] },
+  { season: 1, emoji: ['🌻'], names: ['Sunflower'], tint: [230, 200, 80] },
+  { season: 1, emoji: ['🌼', '🌼', '🌼', '🌻'], names: ['Buttercup', 'Daisy'], tint: [232, 218, 120] },
+  { season: 2, emoji: ['🪻', '🪻', '🌸'], names: ['Heather', 'Aster'], tint: [200, 130, 176] },   // the last food before winter
 ];
 const FIELD_PLACES = ['Field', 'Meadow', 'Bank', 'Patch'];
 
@@ -558,16 +551,6 @@ function brookPath(r, T, river, lake, wiggle) {
   return null;
 }
 
-// A worn field's brook: along one long side, not far in, running off the map at both ends.
-function fieldBrook(r, T, wiggle) {
-  const top = r.next() < 0.5, n = Math.max(2, Math.round(W / T.riverBends)), ctrl = [];
-  for (let j = 0; j <= n; j++) {
-    const v = r.range(...T.fieldBrook) + (j && j < n ? r.range(-T.fieldSway, T.fieldSway) : 0);
-    ctrl.push({ x: lerp(-6, W + 6, j / n), y: top ? v : H - v });
-  }
-  return smoothRiver(T, ctrl, null, wiggle);
-}
-
 // Carves a river into the ground. It widens as it goes, and has a few fords: stretches shallow
 // enough to wade across, never where it runs through a lake (`wet`). A brook is narrower and
 // shallower, with one ford.
@@ -676,14 +659,12 @@ function makeTerrain(w) {
   for (let i = 0; i < N; i++) hill[i] = hills((i % W) / T.hillSize, ((i / W) | 0) / T.hillSize, T.hillDetail);
   const each = fn => { for (let i = 0; i < N; i++) fn(i, (i % W) + 0.5, ((i / W) | 0) + 0.5); };
 
-  // First where the water will go: the lake, the river, and whatever was drawn. A keeper's field is always
-  // a worn field: a brook and nothing else (w.field).
-  const picked = drawn.empty ? 'none' : pickOdds(r, T.layouts), layout = w.options.keeper && !drawn.empty ? 'field' : picked;   // (the lab's Worn field is the same)
-  const field = w.field = layout === 'field';
-  const lake = layout === 'river' || layout === 'none' || field ? null : placeLake(r, T, hills);
+  // First where the water will go: the lake, the river, and whatever was drawn.
+  const layout = drawn.empty ? 'none' : pickOdds(r, T.layouts);
+  const lake = layout === 'river' || layout === 'none' ? null : placeLake(r, T, hills);
   const river = layout === 'valley' || layout === 'river' ? riverPath(r, T, lake, hills) : null;
   if (lake) shapeLake(wr, T, shores, lake, river);
-  const brook = field ? fieldBrook(r, T, hills) : river && r.next() < T.brooks ? brookPath(r, T, river, lake, hills) : null;
+  const brook = river && r.next() < T.brooks ? brookPath(r, T, river, lake, hills) : null;
   // A drawn river that nearly reaches the edge runs on off the map.
   const drawnRivers = drawn.rivers.map(bends => {
     const ends = [bends[0], bends[bends.length - 1]].map((p, k) => {
@@ -729,7 +710,7 @@ function makeTerrain(w) {
   const inLake = p => (lake && lakeGap(lake, p.x, p.y) < 6) || outside(drawn.water, p.x, p.y) < 3;
   w.rivers = []; w.fords = [];
   if (river) carveRiver(w, T, river, inLake, carve);
-  if (brook) carveRiver(w, T, brook, p => inLake(p) || !field && Math.hypot(p.x - brook.at(-1).x, p.y - brook.at(-1).y) < 12, carve, true);
+  if (brook) carveRiver(w, T, brook, p => inLake(p) || Math.hypot(p.x - brook.at(-1).x, p.y - brook.at(-1).y) < 12, carve, true);
   if (drawn.water.length) carveDrawnWater(w, drawn.water, carve);
   for (const pts of drawnRivers) carveRiver(w, T, pts, inLake, carve);
 
@@ -752,7 +733,7 @@ function makeTerrain(w) {
     for (const i of mask.isles) w.isle[i] = 1;
     refreshWater(w);
   };
-  if (!drawn.empty && !field) {
+  if (!drawn.empty) {
     for (let p = wr.int(...T.ponds), tries = 0; p > 0 && tries < 200; tries++) {
       const size = lerp(...T.pondSize, wr.next() ** 1.8), at = lowSpot(14, 12, W - 14, H - 12, size * 1.8 + 8);
       if (at) { pond(at, size); p--; }
@@ -793,16 +774,15 @@ function makeTerrain(w) {
   w.grass = new Float32Array(N);
   for (let i = 0; i < N; i++) w.grass[i] = water[i] ? 0 : fert[i] * r.range(0.5, 0.9);
 
-  // A few old burrows to start with (none in a worn field); the rabbits dig the rest themselves.
+  // A few old burrows to start with; the rabbits dig the rest themselves.
   w.burrows = []; w.nextBurrow = 1; w.decor = [];
-  for (let tries = 0; w.burrows.length < (field ? 0 : Math.round(6 * w.room)) && tries < 4000; tries++) {
+  for (let tries = 0; w.burrows.length < Math.round(6 * w.room) && tries < 4000; tries++) {
     const x = r.range(6, W - 6), y = r.range(6, H - 6);
     if (canDig(w, x, y)) newBurrow(w, x, y, 1);
   }
 
-  // Decoration only: the forest, some rocks, stepping stones at the fords, flower spots. A worn field has its
-  // old oak and a few thorns instead, and no flower fields.
-  if (field) fieldTrees(w, near); else plantTrees(w, hills, hill, near);
+  // Decoration only: the forest, some rocks, stepping stones at the fords, flower spots.
+  plantTrees(w, hills, hill, near);
   placeFields(w, near);
   for (let k = 0; k < T.rocks; k++) {
     const x = r.range(3, W - 3), y = r.range(3, H - 3);
@@ -816,7 +796,6 @@ function makeTerrain(w) {
     w.decor.push({ x, y, emoji: '🪨', size, big: true });
     n--;
   }
-  if (field) fieldBoulders(w);
   for (const f of w.fords) {
     const p = w.rivers[f.river].pts, a = p[Math.min(p.length - 1, f.k + 1)], b = p[Math.max(0, f.k - 1)];
     const d = Math.hypot(a.x - b.x, a.y - b.y) || 1, nx = -(a.y - b.y) / d, ny = (a.x - b.x) / d;   // across the river
@@ -848,7 +827,7 @@ function placeFields(w, near) {
   const r = w.rng, T = w.terrain, N = W * H;
   w.fields = []; w.fieldAt = new Int8Array(N).fill(-1); w.fieldIn = new Float32Array(N);
   const kinds = r.shuffle(FIELD_KINDS.slice()), places = r.shuffle(FIELD_PLACES.slice()), seasons = r.shuffle([0, 1, 2]);
-  for (let n = w.drawn.empty || w.field ? 0 : r.int(...T.fields), tries = 0; w.fields.length < n && tries < 1000; tries++) {
+  for (let n = w.drawn.empty ? 0 : r.int(...T.fields), tries = 0; w.fields.length < n && tries < 1000; tries++) {
     const cx = r.range(14, W - 14), cy = r.range(12, H - 12), reach = T.fieldSpread + T.fieldSize[1];
     if (!dry(w, cx, cy) || near[idx(cx, cy)] < reach * 0.6 || w.fert[idx(cx, cy)] < 0.5) continue;
     if (w.fields.some(f => Math.hypot(f.x - cx, f.y - cy) < reach * 2.5)) continue;
@@ -997,51 +976,6 @@ function plantTrees(w, hills, hill, near) {
   }
 }
 
-// A worn field's trees: one old oak, hollow, out in the open on the best ground (the bees' and the crows'), a short
-// stub of hawthorn hedge by it, and a few lone thorns about. Like a wood's trees, they're as old as their size says.
-function fieldTrees(w, near) {
-  const r = w.rng, T = w.terrain, [small, big] = T.treeSize;
-  const tree = (x, y, kind, size) => {
-    const d = { x, y, emoji: '🌳', size, tree: true, stump: 0, kind, fruit: '' };
-    w.decor.push(d); foundTree(w, d);
-    return d;
-  };
-  const open = (x, y, gap) => dry(w, x, y) && near[idx(x, y)] > 8 && !w.decor.some(d => dist2(d, { x, y }) < gap * gap);
-  let at = null, best = -Infinity;
-  for (let k = 0; k < 60; k++) {
-    const x = r.range(W * 0.25, W * 0.75), y = r.range(H * 0.25, H * 0.75);
-    const v = w.fert[idx(x, y)] - Math.hypot(x - W / 2, y - H / 2) / W;
-    if (open(x, y, 0) && near[idx(x, y)] > 14 && v > best) { at = { x, y }; best = v; }
-  }
-  at ??= { x: W / 2, y: H / 2 };
-  const oak = tree(at.x, at.y, 'oak', big);
-  const age = TREES.oak.life * w.treeRng.range(0.55, 0.65);                  // (as placeHive's: hollow, with years in it yet)
-  Object.assign(oak, { born: w.tick - age * YEAR, life: age + w.treeRng.range(12, 18), size: HIVE_TREE, max: HIVE_TREE });
-  const a = r.range(0, Math.PI * 2), ax = Math.cos(a), ay = Math.sin(a);   // the hedge, along one way from beside the oak
-  for (let k = 0; k < T.fieldHedge; k++) {
-    const x = at.x + ax * (3 + 1.5 * k) + r.range(-0.2, 0.2), y = at.y + ay * (3 + 1.5 * k) + r.range(-0.2, 0.2);
-    if (dry(w, x, y)) tree(x, y, 'hawthorn', r.range(GROWN, small));
-  }
-  for (let n = r.int(...T.fieldThorns), tries = 0; n > 0 && tries < 400; tries++) {
-    const x = r.range(6, W - 6), y = r.range(6, H - 6);
-    if (open(x, y, 10)) { tree(x, y, 'hawthorn', r.range(GROWN, small + 0.5)); n--; }
-  }
-  w.forest = [];
-  w.pineLand = new Float32Array(W * H).fill(0.4);
-  shadeWoods(w);
-}
-
-// And boulders on the brook's bank above the spring flood: where an otter might make a holt one day.
-function fieldBoulders(w) {
-  const r = w.rng, T = w.terrain, bank = nearLasting(w, HOLT_BANK), high = T.level + T.springFlood;
-  for (let n = r.int(...T.fieldBoulders), tries = 0; n > 0 && tries < 2000; tries++) {
-    const x = r.range(3, W - 3), y = r.range(3, H - 3), i = idx(x, y);
-    if (!bank[i] || w.ground[i] <= high || w.decor.some(d => dist2(d, { x, y }) < 64)) continue;
-    w.decor.push({ x, y, emoji: '🪨', size: r.range(1.8, T.rockSize[1]) });
-    n--;
-  }
-}
-
 // Which kind of tree each is, by where it stands: alders by the water, hawthorn scrub and old
 // oaks out in the open, birches at the wood's edge, beech, oak and maple in the wood. Each row
 // gives the kinds and the share of each (from a hash, so the meadow's other randomness is untouched).
@@ -1103,8 +1037,8 @@ const SILT_DAYS = 3;             // how long the ground the water left grows fas
 const KIT_DAYS = 1;              // kits younger than this can't get out of a flooding burrow
 
 function waterGoal(w) {
-  const T = w.terrain, s = seasonOf(w.tick), t = troubleOf(w);   // (a flood or a drought from the Almanac)
-  return T.level + (s === 0 ? T.springFlood : s === 1 ? -T.summerLow : 0) + T.rainRise * (w.wet - 0.5) + (t?.rise || 0) - (t?.drop || 0);
+  const T = w.terrain, s = seasonOf(w.tick);
+  return T.level + (s === 0 ? T.springFlood : s === 1 ? -T.summerLow : 0) + T.rainRise * (w.wet - 0.5);
 }
 
 // Straight to this season's level, for a new meadow (or the terrain lab picking a season).
@@ -1127,27 +1061,23 @@ function waterTick(w) {
   floodBurrows(w);
 }
 
-function floodBurrows(w) { loseBurrows(w, w.burrows.filter(b => w.water[idx(b.x, b.y)]), true); }
-
-// Burrows gone (lost: a list), flooded or dug up (the spade, ORDERS.dig): everyone inside scrambles out, but in a flood
-// kits too young to climb out drown.
-function loseBurrows(w, lost, flood) {
-  const gone = new Set(lost);
-  if (!gone.size) return;
-  w.burrows = w.burrows.filter(b => !gone.has(b));
+function floodBurrows(w) {
+  const flooded = new Set(w.burrows.filter(b => w.water[idx(b.x, b.y)]));
+  if (!flooded.size) return;
+  w.burrows = w.burrows.filter(b => !flooded.has(b));
   const out = new Map();                                     // burrow: { drowned, escaped }
   for (const c of w.creatures) {
     if (!c.alive) continue;
-    if (gone.has(c.home)) c.home = null;
-    if (gone.has(c.refuge)) c.refuge = null;
-    if (gone.has(c.dig)) { c.dig = null; c.mode = 'wander'; }
+    if (flooded.has(c.home)) c.home = null;
+    if (flooded.has(c.refuge)) c.refuge = null;
+    if (flooded.has(c.dig)) { c.dig = null; c.mode = 'wander'; }
     const b = c.hidden && c.burrow;
-    if (!gone.has(b)) continue;
+    if (!flooded.has(b)) continue;
     if (!out.has(b)) out.set(b, { burrow: b, drowned: [], escaped: [] });
-    if (flood && ageDays(w, c) < KIT_DAYS) { die(w, c, 'flood'); out.get(b).drowned.push(c); }
+    if (ageDays(w, c) < KIT_DAYS) { die(w, c, 'flood'); out.get(b).drowned.push(c); }
     else { exitBurrow(w, c); out.get(b).escaped.push(c); }
   }
-  if (flood) for (const e of out.values()) emit(w, { type: 'flooded', ...e });
+  for (const e of out.values()) emit(w, { type: 'flooded', ...e });
 }
 
 // ---------------------------------------------------------------- the current
@@ -1630,8 +1560,7 @@ function treesTick(w, grow = true) {
       }
       if (young && shade > k.shade && r.next() < SHADE_DEATH) { treeDies(w, d, 'shade'); continue; }
       const was = d.size;
-      const hedge = d.planted && d.kind === 'hawthorn' && d.size < SAPLING && w.options.keeper ? HEDGE_PACE : 1;   // (cover)
-      if (d.size < d.max) d.size += k.grow * (d.sprouted ? 2 : 1) * hedge * (1 - shade) * g * d.size * (1 - d.size / d.max);
+      if (d.size < d.max) d.size += k.grow * (d.sprouted ? 2 : 1) * (1 - shade) * g * d.size * (1 - d.size / d.max);
       if (d.planted && was < SAPLING && d.size >= SAPLING) emit(w, { type: 'plantgrew', tree: d });   // out of the rabbits' reach
       if (!d.named && treeAge(w, d) > d.life * 0.7) {    // an old giant gets a name
         d.named = true;
@@ -1842,20 +1771,6 @@ function blurred(src, reach) {
   return out;
 }
 
-// On dry land, which water is nearest (w.nearBody): a flood belongs to the water it spilled from.
-function nearWaters(w) {
-  const near = Int16Array.from(w.body), queue = [];
-  for (let i = 0; i < near.length; i++) if (near[i] >= 0) queue.push(i);
-  for (let q = 0; q < queue.length; q++) {
-    const i = queue[q], x = i % W, y = (i / W) | 0;
-    for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
-      if (nx < 0 || ny < 0 || nx >= W || ny >= H || near[ny * W + nx] >= 0) continue;
-      near[ny * W + nx] = near[i]; queue.push(ny * W + nx);
-    }
-  }
-  w.nearBody = near;
-}
-
 // Each stretch of connected water gets a name, and w.body says which one a tile is in.
 // A lake the river runs through shares its water but keeps a name of its own.
 function nameWaters(w, lake) {
@@ -1883,7 +1798,17 @@ function nameWaters(w, lake) {
     w.waters.push({ id, kind, name, size, x: sx / size + 0.5, y: sy / size + 0.5 });
   }
   w.body = body;
-  nearWaters(w);
+  // And on dry land, which water is nearest: a flood belongs to the water it spilled from.
+  const near = Int16Array.from(body), queue = [];
+  for (let i = 0; i < near.length; i++) if (near[i] >= 0) queue.push(i);
+  for (let q = 0; q < queue.length; q++) {
+    const i = queue[q], x = i % W, y = (i / W) | 0;
+    for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
+      if (nx < 0 || ny < 0 || nx >= W || ny >= H || near[ny * W + nx] >= 0) continue;
+      near[ny * W + nx] = near[i]; queue.push(ny * W + nx);
+    }
+  }
+  w.nearBody = near;
   w.lake = null;
   // The brook runs in the river's water, but has a name of its own too.
   for (const rv of w.rivers) if (rv.brook) rv.name = `${firsts[(w.waters.length + 1) % firsts.length]} ${r.pick(WATER_NAMES.brook)}`;
@@ -1915,7 +1840,7 @@ function waterBetween(w, x0, y0, x1, y1) {
 
 function growGrass(w, dt) {
   const s = SEASONS[seasonOf(w.tick)], grow = sky(w).grow;
-  const capK = s.cap * (w.weather.kind === 'heat' ? 0.8 : 1) * (troubleOf(w)?.grass || 1);   // a heatwave browns the grass, a drought more
+  const capK = s.cap * (w.weather.kind === 'heat' ? 0.8 : 1);   // a heatwave browns the grass
   const r = GRASS_RATE * s.growth * grow * dt / TPD;
   const seed = SEED_RATE * Math.max(s.growth, 0.05) * grow * dt / TPD;
   const die = DIEBACK * dt / TPD, ashFade = dt / (ASH_DAYS * TPD);
@@ -1995,63 +1920,6 @@ function groundTick(w) {
   }
 }
 
-// ---------------------------------------------------------------- the living soil
-//
-// In a keeper field (act) the soil moves. What each tile's soil could be (w.potential) is what the meadow was
-// made with: the valley, the damp, the hills. It starts worn out, WORN of that (a little more by the water), and
-// heals only where something is on it: a flower patch, a tree's crown as its leaves come down and rot in, rich
-// ground (droppings, remains, a rotting log). Ground grazed bare for days on end wears down again (w.bare counts
-// the days). Once a day, before groundTick works out the grass it holds, so mended land greens up as the grass
-// follows it. The meadow you watch never runs it: its soil stays as it was made.
-
-const WORN = 0.3;                         // a keeper field's soil, of what it could be
-const WORN_WET = 0.2;                     // and up to this much more by the water, fading out over a few tiles
-const MEND_FLOWERS = 0.7 / YEAR_DAYS;     // a day in a flower patch mends this much of what it could be: a year heals it
-const MEND_LEAVES = 0.7 / (4 * SEASON_DAYS);   // a day under a full crown in autumn and winter: two years heal it
-const MEND_RICH = 0.05;                   // a day on fully rich ground
-const BARE = 0.3;                         // grass under this share of what its soil holds now is bare ground
-const WEAR_DAYS = 2;                      // and bare for longer than this, the soil wears
-const WEAR = 0.1 / SEASON_DAYS;           // this much a day: a season of it loses a tenth
-const WORN_OUT = 0.1;                     // never below this of what it could be
-const WORN_TURF = 0.5;                    // and the sheep left the grass this short, of what the soil holds
-const LARDER = 3;                         // grass the ground holds through a winter for each rabbit it has room for (one eats about 2.6)
-const LARDER_MIN = 0.15;                  // winter grass this long or longer is worth walking to (findFood); thinner isn't counted
-const LARDER_LEFT = 0.06;                 // and a rabbit leaves this much on a tile
-const FIELD_TREE_ROOM = 150;              // a worn field's woods can grow to this many trees (times w.room), in time
-const FIELD_CROWS = 3;                    // the crows a worn field starts with (times w.room)
-
-function wornSoil(w) {
-  const near = distanceToWater(w);
-  w.potential = w.fert.slice(); w.bare = new Uint8Array(W * H);
-  for (let i = 0; i < W * H; i++) {
-    w.fert[i] *= WORN + WORN_WET * Math.exp(-near[i] / 3);
-    w.grass[i] = WORN_TURF * w.fert[i];
-  }
-}
-
-function soilTick(w) {
-  const s = seasonOf(w.tick), fert = w.fert, could = w.potential, bare = w.bare, grass = w.grass, holds = w.shadedFert;
-  const short = BARE * SEASONS[s].cap, leaves = s >= 2 ? MEND_LEAVES : 0;   // the leaves come down in autumn and rot in over the winter
-  const winter = SEASONS[3].cap;
-  let larder = 0;
-  for (let i = 0; i < W * H; i++) {
-    if (w.water[i]) { bare[i] = 0; continue; }
-    if (holds[i] * winter >= LARDER_MIN) larder += holds[i] * winter - LARDER_LEFT;
-    let mend = leaves * w.wood[i] + MEND_RICH * w.rich[i] + (w.fieldAt[i] >= 0 ? MEND_FLOWERS : 0);
-    if (grass[i] >= short * holds[i]) bare[i] = 0;
-    else if (++bare[i] > WEAR_DAYS) { mend -= WEAR; bare[i] = WEAR_DAYS + 1; }
-    if (mend) fert[i] = clamp(fert[i] + mend * could[i], WORN_OUT * could[i], could[i]);
-  }
-  w.larder = larder;                                         // (the rabbits' room, roomFor)
-}
-
-// How much of what the soil could be it is, over the whole field: 1 is all mended.
-function soilMended(w) {
-  let f = 0, p = 0;
-  for (let i = 0; i < W * H; i++) if (!w.water[i]) { f += w.fert[i]; p += w.potential[i]; }
-  return p ? f / p : 1;
-}
-
 // ---------------------------------------------------------------- weather
 //
 // The sky picks a weather from the season's odds. The ground remembers it: rain soaks it,
@@ -2095,67 +1963,14 @@ function groundRGB(w, x, y) {
 
 // How strongly a field tints the ground at tile i: only in its season, where the grass is lush.
 const FIELD_TINT = 0.3;          // at most this much of the field's colour
-const fieldBloom = (w, f, i, v) => (f && f.season === seasonOf(w.tick) && !(f.from > w.tick) ? FIELD_TINT * w.fieldIn[i] * v : 0);
+const fieldBloom = (w, f, i, v) => (f && f.season === seasonOf(w.tick) ? FIELD_TINT * w.fieldIn[i] * v : 0);
 
-// How far off a fox can pick this rabbit out, as a share of its sight: nearer on cover (w.cover).
+// How far off a fox can pick this rabbit out, as a share of its sight.
 function visibility(w, c) {
   if (c.mode === 'flee') return CAMO[1];       // running, it's seen whatever its coat
   const a = coatRGB(w, c), b = groundRGB(w, c.x, c.y);
   const d = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) / 255;
-  return clamp(CAMO[0] + CAMO_CLASH * d, CAMO[0], CAMO[1]) * (1 - HIDE * w.cover[idx(c.x, c.y)]);
-}
-
-// ---------------------------------------------------------------- cover
-//
-// Somewhere to hide, 0 to 1 a tile (w.cover): a thorn bush (a hedge is a row of them), the scrub where a wood
-// thins out, and a little in long grass. A fox picks out a still rabbit on cover only from nearer (visibility).
-// A rabbit with no burrow in reach runs for good cover instead (flee, coverNear) and crouches there (mode
-// 'cover'), and a fox loses it as it does at a burrow. Rebuilt once a day after the trees (coverTick), and a
-// fire takes it as it burns (ignite).
-
-const COVER_THORN = 1.3;        // a hawthorn hides what's within this many tiles of its trunk, fully once it's young
-const COVER_EDGE = 0.6;         // the scrub where a wood thins out (w.wood about 0.6 to 0.95), at most
-const COVER_GRASS = 0.35;       // long grass, at most (grass at its fullest)
-const LONG = 0.5;               // grass longer than this is long grass (VOLE_LONG)
-const HIDE = 0.7;               // a still rabbit on full cover is seen from this much nearer
-const HIDE_IN = 0.5;            // cover this thick is good to crouch in: a fox loses a rabbit there
-const HIDE_REACH = 5;           // how far a rabbit with no burrow near runs for it
-const HIDE_TICKS = [150, 300];  // how long it keeps still there
-const HEDGE_PACE = 2.5;         // a hawthorn the keepers plant grows up this much faster than a wild one: young (full cover) in a year
-
-const crouched = (w, c) => c.mode === 'cover' && w.cover[idx(c.x, c.y)] >= HIDE_IN;
-
-function coverTick(w) {
-  const cover = w.cover ??= new Float32Array(W * H), wood = w.wood, grass = w.grass;
-  for (let i = 0; i < W * H; i++) {
-    const v = wood[i], edge = COVER_EDGE * clamp((v - 0.5) / 0.15, 0, 1) * clamp((1 - v) / 0.1, 0, 1);
-    cover[i] = w.water[i] ? 0 : Math.max(edge, COVER_GRASS * clamp((grass[i] - LONG) / (1 - LONG), 0, 1));
-  }
-  for (const d of w.decor) {
-    if (d.kind !== 'hawthorn' || !standing(d) || d.size <= SEEDLING) continue;
-    const f = clamp((d.size - SEEDLING) / (SAPLING - SEEDLING), 0, 1), r = COVER_THORN;
-    for (let y = Math.max(0, Math.floor(d.y - r)); y <= Math.min(H - 1, d.y + r); y++) {
-      for (let x = Math.max(0, Math.floor(d.x - r)); x <= Math.min(W - 1, d.x + r); x++) {
-        const i = y * W + x;
-        if ((x + 0.5 - d.x) ** 2 + (y + 0.5 - d.y) ** 2 < r * r && !w.water[i] && cover[i] < f) cover[i] = f;
-      }
-    }
-  }
-}
-
-// The nearest good cover within reach, not toward the fox, or null.
-function coverNear(w, c, fox) {
-  const fx = fox.x - c.x, fy = fox.y - c.y, fd = Math.hypot(fx, fy) || 1, R = HIDE_REACH;
-  let best = null, bd = R * R;
-  for (let y = Math.max(0, Math.floor(c.y - R)); y <= Math.min(H - 1, c.y + R); y++) {
-    for (let x = Math.max(0, Math.floor(c.x - R)); x <= Math.min(W - 1, c.x + R); x++) {
-      if (w.cover[y * W + x] < HIDE_IN) continue;
-      const dx = x + 0.5 - c.x, dy = y + 0.5 - c.y, d2 = dx * dx + dy * dy;
-      if (d2 >= bd || (d2 > 2 && (dx * fx + dy * fy) / (Math.sqrt(d2) * fd) > 0.3)) continue;
-      if (clearPath(w, c.x, c.y, x + 0.5, y + 0.5)) { best = { x: x + 0.5, y: y + 0.5 }; bd = d2; }
-    }
-  }
-  return best;
+  return clamp(CAMO[0] + CAMO_CLASH * d, CAMO[0], CAMO[1]);
 }
 
 function setWeather(w, kind, ticks, player = false) {
@@ -2166,11 +1981,11 @@ function setWeather(w, kind, ticks, player = false) {
 }
 
 function pickWeather(w) {
-  const odds = weatherOdds(w);                               // (the season's, or in a keeper field its trouble's: the Almanac)
+  const odds = WEATHER_ODDS[seasonOf(w.tick)];
   let roll = w.rng.next() * Object.values(odds).reduce((a, b) => a + b, 0), kind = 'clear';
   for (const k in odds) { roll -= odds[k]; if (roll < 0) { kind = k; break; } }
   const [a, b] = WEATHER[kind].days;
-  setWeather(w, kind, w.rng.range(a, b) * (troubleOf(w)?.longer || 1) * TPD);
+  setWeather(w, kind, w.rng.range(a, b) * TPD);
 }
 
 function weatherTick(w) {
@@ -2186,7 +2001,7 @@ function weatherTick(w) {
     w.snow -= melt; w.wet = Math.min(1, w.wet + melt);
   }
   // Storms bring lightning. Now and then a heatwave brings a dry strike, with no rain after it.
-  if (w.rng.next() < (kind === 'storm' ? 1 / 80 : kind === 'heat' ? troubleOf(w)?.strikes || 1 / 900 : 0)) {
+  if (w.rng.next() < (kind === 'storm' ? 1 / 80 : kind === 'heat' ? 1 / 900 : 0)) {
     let x, y;
     do { x = w.rng.range(1, W - 1); y = w.rng.range(1, H - 1); } while (isWater(w, x, y));
     strike(w, x, y);
@@ -2214,7 +2029,7 @@ function ignite(w, i, ticks = FIRE_TICKS, set = false) {
   if (w.fire[i] || w.water[i]) return false;
   if (!w.blaze) { emit(w, { type: 'fire', x: i % W + 0.5, y: ((i / W) | 0) + 0.5, set }); w.blazeTrees = 0; }
   w.fire[i] = ticks; w.burning.push(i); w.blaze++;
-  w.voles[i] = 0; w.frogs[i] = 0; w.cover[i] = 0;
+  w.voles[i] = 0; w.frogs[i] = 0;
   burnTrees(w, i);
   return true;
 }
@@ -2426,7 +2241,7 @@ function makeCreature(w, species, x, y, genes, parents) {
     alive: true, died: 0, cause: '',
     energy: 0, stamina: 1, heading: r.range(0, Math.PI * 2), facing: 1, turnBias: 1,
     mode: 'wander', target: null, targetId: 0, timer: 0, moved: 0,
-    sprinting: false, sleeping: false, hidden: false, burrow: null, home: null, refuge: null, hideAt: null, dig: null, arrive: null, away: null,
+    sprinting: false, sleeping: false, hidden: false, burrow: null, home: null, refuge: null, dig: null, arrive: null,
     alert: 0, threatId: 0, chaseT: 0, fright: 0, frightX: 0, frightY: 0, frightWhat: '',
     wary: 0, waryX: 0, waryY: 0, detour: 0, detourX: 0, detourY: 0, nemesisId: 0, haunt: null,
     pregnantUntil: 0, cooldownUntil: 0, dadGenes: null, dadIdPending: 0, dadGenPending: 0,
@@ -2554,15 +2369,11 @@ const go = (w, c, tx, ty, v) => (c.sp.flies ? fly(c, tx, ty, v) : moveToward(w, 
 
 // ---------------------------------------------------------------- love
 
-// How many of a kind the meadow has room for: its cap, and in a keeper field no more rabbits than the ground mended
-// feeds through a winter (w.larder, counted daily by soilTick).
-const roomFor = (w, s) => (s === 'rabbit' && w.larder !== undefined ? Math.min(SPECIES[s].cap * w.room, w.larder / LARDER) : SPECIES[s].cap * w.room);
-
 function readyToMate(w, c) {
   return c.alive && !c.hidden && isAdult(w, c) && c.pregnantUntil === 0
     && w.tick >= c.cooldownUntil && c.energy >= c.sp.breedEnergy * c.maxEnergy
     && c.sp.breedSeasons.includes(seasonOf(w.tick))
-    && w.count[c.species] + w.expecting[c.species] < roomFor(w, c.species)
+    && w.count[c.species] + w.expecting[c.species] < c.sp.cap * w.room
     && (c.species !== 'owl' || owlReady(w, c)) && (c.species !== 'otter' || otterReady(c));
 }
 
@@ -2778,7 +2589,7 @@ function rabbitTick(w, c) {
   smellSmoke(w, c);
   if (c.fright > 0) { c.fright--; return flee(w, c, { id: 0, x: c.frightX, y: c.frightY }); }
   if (c.mode === 'flee') { c.mode = 'wander'; c.target = null; c.sleeping = false; }
-  if (c.mode === 'alarm' || c.mode === 'cover') { if (--c.timer > 0) return; c.mode = 'wander'; c.target = null; }
+  if (c.mode === 'alarm') { if (--c.timer > 0) return; c.mode = 'wander'; c.target = null; }
 
   // 2. Babies stay near mum. Once it sets off after her, it goes all the way back.
   if (growth(w, c) < 0.5) {
@@ -2919,14 +2730,11 @@ function thump(w, c, fox) {
   }, 'rabbit');
 }
 
-// Runs from a fox, or from anything with an x and a y (thunder, fire): to a burrow, or from a fox to cover
-// (coverNear), or away. Crouched in cover, it keeps still while the fox is about.
+// Runs from a fox, or from anything with an x and a y (thunder, fire).
 function flee(w, c, fox) {
-  if (fox.id && crouched(w, c)) return;
   if (c.mode !== 'flee') {
     c.mode = 'flee'; c.sleeping = false; c.threatId = fox.id; c.target = null;
     c.refuge = pickRefuge(w, c, fox);
-    c.hideAt = c.refuge || !fox.id ? null : coverNear(w, c, fox);
     if (fox.id) thump(w, c, fox);
   }
   let tx, ty;
@@ -2936,12 +2744,6 @@ function flee(w, c, fox) {
     tx = b.x; ty = b.y;
     if ((b.x - c.x) ** 2 + (b.y - c.y) ** 2 < 0.8) {
       enterBurrow(w, c, b, w.rng.int(150, 350), false);
-      return;
-    }
-  } else if (c.hideAt) {
-    tx = c.hideAt.x; ty = c.hideAt.y;
-    if ((tx - c.x) ** 2 + (ty - c.y) ** 2 < 0.25) {
-      c.mode = 'cover'; c.timer = w.rng.int(...HIDE_TICKS); c.hideAt = null; c.target = null;
       return;
     }
   } else {
@@ -3028,7 +2830,7 @@ function getBetter(w, c) {
 // Every SICK_EVERY ticks: count the sick (w.sick, and b.sick in each burrow). Then each sick rabbit gets
 // better, dies of it, or passes it on to those close by, and those in a burrow with the sick may catch it.
 function sicknessTick(w) {
-  const crowd = troubleNow(w) === 'sickness' ? Math.max(SICK_CROWD, crowding(w)) : crowding(w), day = SICK_EVERY / TPD;
+  const crowd = crowding(w), day = SICK_EVERY / TPD;
   let sick = 0, first = null;
   for (const b of w.burrows) b.sick = 0;
   for (const c of w.creatures) {
@@ -3104,7 +2906,6 @@ function foxTick(w, c) {
   if (w.weather.kind === 'storm' && e > 0.45) { c.mode = 'shelter'; c.sleeping = true; return; }
 
   if (seekLove(w, c)) return;
-  if (c.arrive && e > 0.4) return arriving(w, c);              // a newcomer makes for where it came for (guestArrives)
 
   if (e < 0.75 && growth(w, c) > 0.3 && (hunt(w, c) || mouse(w, c))) return;   // rabbits first; none in sight, voles
 
@@ -3125,8 +2926,8 @@ function hunt(w, c) {
   // A frog is small prey too: it keeps the same eye for the grass.
   const sight = c.sight * sky(w).sight * (c.prey === 'vole' || c.prey === 'frog' ? MOUSE_EYES : 1);
   // Lost from view: a little further off than the furthest a fox spots one, or it'd flicker.
-  if (prey && (!prey.alive || prey.hidden || crouched(w, prey) || dist2(c, prey) > (sight * CAMO[1] * 1.2) ** 2)) {
-    if (prey.alive && c.mode === 'chase') escaped(w, prey, c, prey.hidden ? 'burrow' : crouched(w, prey) ? 'cover' : 'outran');
+  if (prey && (!prey.alive || prey.hidden || dist2(c, prey) > (sight * CAMO[1] * 1.2) ** 2)) {
+    if (prey.alive && c.mode === 'chase') escaped(w, prey, c, prey.hidden ? 'burrow' : 'outran');
     prey = null; c.targetId = 0; c.mode = 'wander';
   }
   // Foxes don't swim. A rabbit across deep water is out of reach, and one that gets deep water
@@ -3137,7 +2938,7 @@ function hunt(w, c) {
   }
   if (!prey && (w.tick + c.id) % 5 === 0) {
     // Only a rabbit that isn't already watching this fox is worth sneaking up on.
-    prey = nearest(w, c, sight * CAMO[1], 'rabbit', o => !(o.alert > 0 && o.threatId === c.id) && !crouched(w, o)
+    prey = nearest(w, c, sight * CAMO[1], 'rabbit', o => !(o.alert > 0 && o.threatId === c.id)
       && dist2(c, o) < (sight * visibility(w, o)) ** 2 && clearPath(w, c.x, c.y, o.x, o.y));
     if (prey) { c.targetId = prey.id; c.mode = 'stalk'; }
   }
@@ -3162,21 +2963,13 @@ function hunt(w, c) {
 
 function escaped(w, rabbit, fox, how, water) {
   rabbit.escapes++;
-  hunted(w, rabbit.x, rabbit.y, DANGER_CHASE);
   rabbit.nemesisId = fox.id;   // it won't forget this one
   missed(fox);
   note(w, rabbit, '💨', how === 'burrow' ? `Dived into a burrow to escape ${fox.name}`
-    : how === 'cover' ? `Hid in cover, and ${fox.name} lost sight of it`
     : how === 'pond' ? `Got away from ${fox.name} across ${water ? water.name : 'the water'}` : `Outran ${fox.name}`);
   note(w, fox, '😤', `${rabbit.name} got away`);
   emit(w, { type: 'escape', rabbit, fox, how, water });
 }
-
-// Where the foxes have hunted lately, for a keeper field's Danger lens (game.js): a kill marks the ground, a rabbit that
-// got away half that, and it fades by DANGER_KEEP a day (newDay). The meadow you watch keeps none.
-const DANGER_KEEP = 0.85;
-const DANGER_KILL = 1, DANGER_CHASE = 0.5;
-function hunted(w, x, y, v) { if (w.danger) w.danger[idx(x, y)] += v; }
 
 // A hunt that came to nothing. Three of those and the old hunting ground is forgotten.
 function missed(fox) {
@@ -3191,7 +2984,6 @@ function catchPrey(w, fox, prey) {
   fox.kills++;
   fox.mode = 'eat'; fox.timer = 80; fox.targetId = 0;
   note(w, fox, '🍖', `Caught ${prey.name}`);
-  hunted(w, prey.x, prey.y, DANGER_KILL);
   if (prey.species === 'rabbit') {
     fox.prey = 'rabbit';
     fox.haunt = { x: prey.x, y: prey.y, n: 3 };   // good hunting here; worth a few more tries
@@ -4192,7 +3984,7 @@ function isFlower(w, p) {
   if (p.tree) return inBloom(w, p.tree);                   // blossom in a tree (addBlossoms)
   if (w.water[p.i]) return false;
   const s = seasonOf(w.tick);
-  if (p.field) return s === p.field.season && w.grass[p.i] >= FIELD_GRASS && !(p.from > w.tick);   // (a sown one comes up in its season, sow)
+  if (p.field) return s === p.field.season && w.grass[p.i] >= FIELD_GRASS;
   if (w.grass[p.i] < 0.55) return false;
   return (s === 0 && p.kind < 0.35) || (s === 1 && p.kind < 0.22);
 }
@@ -5431,7 +5223,7 @@ const BANK_ROW = 4;             // trees in the row
 const BANK_ROW_REACH = 7;       // tiles from the first that the others stand, at most
 const BANK_EDGE = 10;           // and tiles from the meadow's edge, out of the mist (and never on an island)
 function bankTrees(w) {
-  if (w.drawn?.empty || w.field || w.decor.some(d => d.holt) || holtTree(w)) return;   // (a worn field's banks are the keepers' to plant)
+  if (w.drawn?.empty || w.decor.some(d => d.holt) || holtTree(w)) return;
   const T = w.terrain, high = T.level + T.springFlood, spots = [], R = HOLT_BANK - 0.5, bank = nearLasting(w, HOLT_BANK);
   for (let y = BANK_EDGE; y < H - BANK_EDGE; y++) for (let x = BANK_EDGE; x < W - BANK_EDGE; x++) {
     const i = y * W + x, p = { x: x + 0.5, y: y + 0.5 };
@@ -5595,9 +5387,7 @@ function die(w, c, cause, killer) {
   c.hidden = false;
   const age = Math.floor(ageDays(w, c));
   const text = cause === 'fox' || cause === 'owl' ? `Caught by ${killer.name}${cause === 'owl' ? ' the owl' : ''}` :
-    cause === 'left' ? (w.guests?.[c.species]?.going ? `Left the field${w.guests[c.species].why ? ': ' + w.guests[c.species].why : ''}`   // (a keeper field's guests; a young otter or owl leaving home is mode 'leave' too)
-      : c.species === 'otter' ? 'Went off down the water to find a stretch of its own' : c.species === 'fox' ? 'Went off to find ground of its own'
-      : 'Flew off over the trees to find a wood of its own') :
+    cause === 'left' ? (c.species === 'otter' ? 'Went off down the water to find a stretch of its own' : 'Flew off over the trees to find a wood of its own') :
     cause === 'hunger' ? (seasonOf(w.tick) === 3 ? 'Starved in the winter' : 'Starved') :
     cause === 'lightning' ? 'Struck by lightning' :
     cause === 'fire' ? 'Caught in a wildfire' :
@@ -5619,7 +5409,7 @@ function lifeTick(w, c) {
   if (c.pregnantUntil) b *= 1.25;
   if (c.sick) b *= SICK_BURN;                                             // a fever
   const kind = w.weather.kind;
-  if (kind === 'snow' && !c.hidden) b *= (1 + 0.5 * (1 - c.genes.size)) * (troubleOf(w)?.cold || 1);   // small bodies feel the cold (more in a hard winter)
+  if (kind === 'snow' && !c.hidden) b *= 1 + 0.5 * (1 - c.genes.size);   // small bodies feel the cold
   if (w.snow > 0.3 && !c.hidden) b *= 1 - MOULT_WARM * whiteness(w, c);
   b += MOVE_COST * c.moved * c.moved / c.sp.walk * (kind === 'heat' ? 1.5 : 1) * (c.sp.glide || 1);
   c.energy -= b;
@@ -5689,28 +5479,21 @@ function createWorld(seed, opts = {}) {
     treeRng: makeRng(seed ^ 0x5eed7ee), nextTree: 1, seeds: [], mast: false, mastYear: 0, orchard: [], treeCount: 0,
     blossoms: [], blossomCells: Array.from({ length: GW * GH }, () => []), nextBloom: 0, decorCells: [], treesMoved: true,
     bitten: new Int32Array(W * H), scorched: new Uint16Array(W * H), sprouted: 0, sproutedBurnt: 0, treeStats: {},
-    orders: [],                                                           // (see act)
-    options: { migration: !opts.keeper, ...opts },                        // a keeper field: nobody wanders in (keeper, below)
+    options: { migration: true, ...opts },
   };
   makeTerrain(w);
-  // A keeper's field starts worn out (wornSoil), its oak's hollow empty, with no voles or frogs and a few crows: the
-  // rest come as the keepers make room for them.
-  const keeper = !!opts.keeper;
-  if (keeper) wornSoil(w);
-  else placeHive(w);
-  w.treeRoom = keeper ? FIELD_TREE_ROOM * w.room : TREE_ROOM * w.decor.filter(d => d.tree).length;
+  placeHive(w);
+  w.treeRoom = TREE_ROOM * w.decor.filter(d => d.tree).length;
   startTrees(w);
   groundTick(w);
-  coverTick(w);
-  if (keeper) dampen(w);
-  else { startVoles(w); startFrogs(w); }
+  startVoles(w);
+  startFrogs(w);
   startFish(w);
   w.roost = pickRoost(w);
-  const n = keeper ? { ...perKind(() => 0), crow: opts.crows ?? Math.round(FIELD_CROWS * w.room) }
-    : { rabbit: opts.rabbits ?? Math.round(30 * w.room), fox: opts.foxes ?? Math.round(4 * w.room), bee: opts.bees ?? 12, crow: opts.crows ?? Math.round(8 * w.room),
-      owl: opts.owls ?? (OWLS ? 2 * Math.max(1, Math.round(w.room)) : 0), otter: opts.otters ?? 0 };   // a pair or two; the otters come up the water (migrate)
+  const n = { rabbit: opts.rabbits ?? Math.round(30 * w.room), fox: opts.foxes ?? Math.round(4 * w.room), bee: opts.bees ?? 12, crow: opts.crows ?? Math.round(8 * w.room),
+    owl: opts.owls ?? (OWLS ? 2 * Math.max(1, Math.round(w.room)) : 0), otter: opts.otters ?? 0 };   // a pair or two; the otters come up the water (migrate)
   w.arrivals = []; w.family = null;
-  if (opts.arrival && !opts.keeper) planArrivals(w, n);
+  if (opts.arrival) planArrivals(w, n);
   else for (const species of KINDS) {
     for (let k = 0; k < n[species]; k++) {
       let x, y;
@@ -5721,7 +5504,6 @@ function createWorld(seed, opts = {}) {
     }
   }
   flushNewborn(w);
-  if (keeper) { startGuests(w); startPouch(w); startAlmanac(w); w.danger = new Float32Array(W * H); }
   for (const f of w.fields) if (f.season === seasonOf(w.tick)) f.bloomed = yearOf(w.tick);   // no news of what's out already
   hivesTick(w);
   w.founderMeans = perKind(s => traitMeans(w, s));
@@ -5795,8 +5577,7 @@ function newDay(w) {
   if (d % SEASON_DAYS === 0) {
     const s = seasonOf(w.tick);
     emit(w, { type: 'season', season: s, year: yearOf(w.tick) });
-    if (w.almanac) almanacSeason(w, s);
-    if (!w.skyLocked && (!weatherOdds(w)[w.weather.kind] || troubleNow(w))) pickWeather(w);   // no snow in spring, and a trouble's weather at once
+    if (!w.skyLocked && !WEATHER_ODDS[s][w.weather.kind]) pickWeather(w);      // no snow in spring
     if (s === 0) {
       for (const c of w.creatures) {
         if (c.alive && c.born < w.tick - SEASON_DAYS * TPD) note(w, c, '🌸', 'Made it through the winter');
@@ -5806,15 +5587,9 @@ function newDay(w) {
     if (s === 2) seedFall(w);
     if (s === 3 && w.cached) emit(w, { type: 'buried', n: w.cached });   // the crows' autumn
     webSnapshot(w);
-    if (w.pouch) pouchSeason(w, s);
-    if (w.guests && s === 3 && !w.over) emit(w, { type: 'surveyor', year: yearOf(w.tick) + 1, want: SURVEY[yearOf(w.tick)] ?? 0, had: settledCount(w) });
   }
-  if (w.almanac && d % SEASON_DAYS === TROUBLE_DAY) troubleStarts(w);
-  if (w.danger) for (let i = 0; i < W * H; i++) w.danger[i] *= DANGER_KEEP;
   treesTick(w);
-  if (w.options.keeper) soilTick(w);
   groundTick(w);
-  coverTick(w);
   if (!w.roost || !perchable(w.roost)) w.roost = pickRoost(w);   // gone, or bees or an owl moved in
   owlsDay(w);
   holtsDay(w);
@@ -5879,15 +5654,15 @@ function planArrivals(w, n) {
 }
 
 // The family: mum, expecting, the dad, and two kits born on the way, who scamper along behind.
-// They step in right at the edge, half out of the meadow still. fam: { entry, spot, side } (w.family, or a keeper
-// field's newcomers, guestArrives); until: when they give up on getting there and dig where they are.
-function familyArrives(w, fam = w.family, until = w.tick + TPD) {
-  const { entry, spot, side } = fam, r = w.rng, t = w.tick;
+// They step in right at the edge, half out of the meadow still.
+function familyArrives(w) {
+  const { entry, spot, side } = w.family, r = w.rng, t = w.tick;
   const at = (inward, dy) => ({ x: side ? W - 0.55 - inward : 0.55 + inward, y: entry.y + dy });
   const come = (sex, age, p, genes) => addCreature(w, 'rabbit', p.x, p.y, { sex, age, genes, note: 'Moved into the meadow with the family' })
     || addCreature(w, 'rabbit', entry.x, entry.y, { sex, age, genes, note: 'Moved into the meadow with the family' });
   const mum = come('F', r.range(6, 8), at(0.6, -0.3)), dad = come('M', r.range(6, 9), at(0.2, 0.7));
-  if (!w.nameCounts.has('rabbit:Juni')) { mum.name = 'Juni'; w.nameCounts.set('rabbit:Juni', 1); }   // (the first family's mum)
+  mum.name = 'Juni';
+  w.nameCounts.set('rabbit:Juni', 1);
   const kits = [at(0, -0.8), at(0, 0.1)].map(p => come(r.next() < 0.5 ? 'F' : 'M', r.range(1, 1.2), p, childGenes(w, mum.genes, dad.genes)));
   for (const k of kits) {
     Object.assign(k, { mumId: mum.id, dadId: dad.id, gen: 2 });
@@ -5897,7 +5672,7 @@ function familyArrives(w, fam = w.family, until = w.tick + TPD) {
   mum.cooldownUntil = mum.pregnantUntil + mum.sp.cooldownDays * TPD;
   Object.assign(mum, { dadGenes: dad.genes, dadIdPending: dad.id, dadGenPending: dad.gen });
   dad.cooldownUntil = t + TPD;
-  mum.arrive = { x: spot.x, y: spot.y, dig: true, until };
+  mum.arrive = { x: spot.x, y: spot.y, dig: true, until: t + TPD };
   dad.arrive = { ...mum.arrive };
   for (const c of [mum, dad, ...kits]) { c.home = null; c.facing = side ? -1 : 1; c.heading = side ? Math.PI : 0; }
   mum.energy = mum.maxEnergy; dad.energy = dad.maxEnergy;
@@ -5987,405 +5762,9 @@ function migrate(w) {
   }
 }
 
-// ---------------------------------------------------------------- guests (a keeper field)
-//
-// In a keeper field nobody wanders in (no migrate). Each species has a short list of needs the keepers can make
-// (WANTS), looked at once a day (guestsDay), each saying whether they're met, why (for the news and the guestbook)
-// and where's best (where newcomers head). Met ARRIVE_DAYS running, and a few come in (guestArrives). Bred here and
-// here a year, they've settled. Unmet FRET_DAYS running, they're restless (the news says why); unmet LEAVE_DAYS, the
-// grown ones walk off the nearest edge (goAway; the voles and frogs, being fields, are left to thin out). Gone, or
-// all dead, coming back takes longer each time: ARRIVE_DAYS × (1 + left). Out of its season a need isn't judged
-// (met null). w.guests[s] keeps how each stands: state 'none', 'visiting', 'settled' or 'left'.
-
-const ARRIVE_DAYS = 3;          // days running a species' needs are met before a few come
-const FRET_DAYS = 2;            // days running unmet before they're restless
-const LEAVE_DAYS = SEASON_DAYS; // and before they leave
-const GOOD_GRASS = [0.45, 0.35];   // grass the ground grows (w.shadedFert) that a family coming in looks for (worn soil never grows it), and that keeps one here
-const FAMILY_GRASS = 40;        // tiles of it within FAMILY_REACH of a burrow feed a family
-const FAMILY_REACH = 8;
-const RABBIT_COVER = 3;         // tiles of good cover (HIDE_IN) within 3 of the burrow: somewhere to run to
-const FOX_PREY = 20;            // rabbits (or voles and frogs that feed a fox as well) that make prey enough for foxes
-const foxPrey = w => w.count.rabbit + (w.voleCount * VOLE_ENERGY + w.frogCount * FROG_ENERGY) / RABBIT_MEAL;
-const RABBIT_MEAL = 60;         // a grown rabbit to a fox (VOLE_ENERGY, FROG_ENERGY)
-const FOX_DEN = 8;              // tiles of good cover within 3 of a spot: a thicket to den in
-const VOLE_PATCH = 30;          // tiles of long grass (VOLE_LONG) within 4: room for voles
-const VOLE_ARRIVE = 0.5;        // of the room in the patch the first voles fill
-const STILL = 0.2;              // water running slower than this (of CURRENT) is still
-const FROG_POOL = 4;            // tiles of still shallows within SPAWN_REACH, in spring
-const FROG_GRASS = 15;          // and of damp long grass (LONG, within FROG_REACH of the water)
-const FROG_ARRIVE = 0.4;        // of the room by the water the first frogs fill
-const BEE_FLOWERS = 60;          // flowers open within FORAGE_RANGE of a free hollow, in spring and summer (a worn field's thorns have ~50)
-const SWARM_BEES = 12;          // bees in a swarm that moves in
-const OTTER_FROGS = 20;         // frogs in the field to see a pair of otters through a winter with the water frozen (rooted)
-const GUEST_A = new Float32Array(W * H), GUEST_B = new Float32Array(W * H), GUEST_C = new Float32Array(W * H), GUEST_T = new Float32Array(W * H);   // (scratch)
-
-function startGuests(w) {
-  w.guests = Object.fromEntries(GUESTS.map(s => [s, { state: 'none', cameAt: -1, firstCame: -1, settledAt: -1, leftAt: -1, metDays: 0, unmetDays: 0,
-    left: 0, births: 0, going: false, why: '', where: null }]));
-  Object.assign(w.guests.crow, { state: 'settled', cameAt: 0, firstCame: 0, settledAt: 0 });   // here from the start (they don't count)
-}
-
-// Counts of a grid's tiles where test(i) holds, summed within r of each tile, into dst.
-function tilesNear(dst, r, test) {
-  for (let i = 0; i < W * H; i++) GUEST_A[i] = test(i) ? 1 : 0;
-  boxSum(GUEST_A, dst, r, GUEST_T);
-}
-
-// The tile (every other one) where score is highest, where ok holds; { x, y, v } or null.
-function bestTile(score, ok = () => true) {
-  let best = null;
-  for (let y = 1; y < H; y += 2) for (let x = 1; x < W; x += 2) {
-    const v = score[y * W + x];
-    if ((!best || v > best.v) && ok(x + 0.5, y + 0.5)) best = { x: x + 0.5, y: y + 0.5, v };
-  }
-  return best;
-}
-
-const flowersOpen = (w, x, y) => {
-  let n = 0;
-  forEachPlantNear(w, x, y, FORAGE_RANGE, p => { if ((p.x - x) ** 2 + (p.y - y) ** 2 < FORAGE_RANGE ** 2 && isFlower(w, p)) n++; });
-  for (const p of w.blossoms) if ((p.x - x) ** 2 + (p.y - y) ** 2 < FORAGE_RANGE ** 2 && isFlower(w, p)) n++;
-  return n;
-};
-
-// What each needs: { met (null out of season), why, where }. here: they're in the field now.
-const WANTS = {
-  rabbit(w, here) {
-    if (seasonOf(w.tick) === 3) return { met: null };                         // winter: they sit it out on what they have
-    const food = GUEST_B, hide = GUEST_C, good = GOOD_GRASS[here ? 1 : 0];
-    tilesNear(food, FAMILY_REACH, i => w.shadedFert[i] >= good);             // (what the ground grows, not what's standing: grazed or autumn-short is fine)
-    tilesNear(hide, 3, i => w.cover[i] >= HIDE_IN);
-    const fed = bestTile(food);
-    if (fed.v < FAMILY_GRASS) return { met: false, why: 'the ground grows too little grass for a family', where: fed };
-    const home = (x, y) => canDig(w, x, y) || here && w.burrows.some(b => (b.x - x) ** 2 + (b.y - y) ** 2 < 9);   // (or by the burrow they dug)
-    const at = bestTile(food, (x, y) => hide[idx(x, y)] >= RABBIT_COVER && home(x, y));   // (the best fed spot by cover they can dig)
-    if (!at || at.v < FAMILY_GRASS) return { met: false, why: 'nowhere to hide near good grass', where: fed };
-    return { met: true, why: 'good grass, and cover to run to by dry ground to dig', where: at };
-  },
-  fox(w) {
-    tilesNear(GUEST_B, 3, i => w.cover[i] >= HIDE_IN);
-    const den = bestTile(GUEST_B, (x, y) => dry(w, x, y));
-    if (!den || den.v < FOX_DEN) return { met: false, why: 'no thicket to den in', where: den };
-    if (seasonOf(w.tick) % 3 === 0) return { met: null };                     // winter and spring every warren is low till the kits come: they sit it out
-    if (foxPrey(w) < FOX_PREY) return { met: false, why: 'not prey enough to hunt', where: den };
-    return { met: true, why: w.count.rabbit < FOX_PREY ? 'rabbits, voles and frogs to hunt, and a thicket to den in' : 'rabbits to hunt, and a thicket to den in', where: den };
-  },
-  bee(w, here) {
-    if (seasonOf(w.tick) >= 2) return { met: null };                         // autumn and winter they live on their honey
-    const trees = here ? w.hives.filter(h => h.tree && h.queen).map(h => h.tree) : w.decor.filter(d => hollowTree(w, d));
-    if (!trees.length) return { met: false, why: 'no hollow tree for a hive', where: null };
-    let best = null, most = -1;
-    for (const d of trees) { const n = flowersOpen(w, d.x, d.y); if (n > most) { best = d; most = n; } }
-    if (most < BEE_FLOWERS) return { met: false, why: `too few flowers open near the ${best.name || 'old oak'}`, where: best };
-    return { met: true, why: 'flowers open about a hollow tree', where: best };
-  },
-  frog(w, here) {
-    const s = seasonOf(w.tick);
-    if (s === 3 || (!here && s !== 0)) return { met: null };                 // they come in spring, to spawn; in winter they're in the mud
-    const grass = GUEST_B, pool = GUEST_C, damp = w.damp, cur = w.current, still = STILL * CURRENT;
-    tilesNear(grass, SPAWN_REACH, i => !w.water[i] && damp[i] <= FROG_REACH && w.shadedFert[i] >= LONG);   // (ground that grows it: in early spring it's short)
-    if (s !== 0) {
-      const at = bestTile(grass);
-      return at.v >= FROG_GRASS ? { met: true, why: 'damp long grass by the water', where: at } : { met: false, why: 'no damp long grass by the water', where: at };
-    }
-    tilesNear(pool, SPAWN_REACH, i => w.water[i] === SHALLOW && Math.hypot(cur.x[i], cur.y[i]) < still);
-    const at = bestTile(grass, (x, y) => pool[idx(x, y)] >= FROG_POOL);
-    if (!at) return { met: false, why: 'no still shallow water to spawn in', where: null };
-    if (at.v < FROG_GRASS) return { met: false, why: 'no damp long grass by the still water', where: at };
-    return { met: true, why: 'still shallows, and damp long grass by them', where: at };
-  },
-  vole(w) {
-    if (seasonOf(w.tick) === 3) return { met: null };
-    tilesNear(GUEST_B, 4, i => !w.water[i] && w.shadedFert[i] >= VOLE_LONG);   // (ground that grows it, as the rabbits')
-    const at = bestTile(GUEST_B);
-    return at.v >= VOLE_PATCH ? { met: true, why: 'a stretch of long grass', where: at } : { met: false, why: 'no long grass over a stretch', where: at };
-  },
-  otter(w, here) {
-    const held = here && w.decor.some(d => d.holt && holds(d)), holt = held ? null : holtTree(w);
-    if (!held && !holt) return { met: false, why: 'no bank with fish enough by it for a holt', where: null };
-    if (w.frogCount < OTTER_FROGS) return { met: false, why: 'no frogs in the mud to see them through a frozen winter', where: holt };
-    return { met: true, why: 'fish in the water, frogs in the mud, and a bank for a holt', where: holt };
-  },
-  crow(w) {
-    return w.roost ? { met: true, why: 'a tall tree to roost in', where: w.roost } : { met: false, why: 'no tall tree to roost in', where: null };
-  },
-};
-
-// ---------------------------------------------------------------- the Surveyor
-//
-// On the last day of each spring the Surveyor walks the field and counts the species that have settled in it (not the
-// crows: they were here first). The last day, so what came in the spring before and bred has been here a year. From the
-// third spring he wants SURVEY[year - 1] of them; the second he only looks the field over, as nothing can have settled
-// by then. He says a season ahead what he'll want (event 'surveyor', on the first day of winter). Short of it, the
-// field goes under the plough: w.over, and the keepers' orders are refused from then on (afford). The last count
-// passed, it's theirs.
-const SURVEY = [0, 0, 1, 1, 3, 3, 4];   // by the year that spring begins (the 1st, 2nd, ...): the last passed is the run won
-
-const settledCount = w => GUESTS.filter(s => s !== 'crow' && w.guests[s].state === 'settled').length;
-
-function surveyDay(w) {
-  const year = yearOf(w.tick), want = SURVEY[year - 1] ?? 0, had = settledCount(w);
-  if (year < 2 || w.over) return;
-  const passed = had >= want, won = passed && year >= SURVEY.length;
-  if (!passed || won) w.over = { year, had, want, won, at: w.tick };
-  if (!passed) w.orders.length = 0;
-  emit(w, { type: 'survey', year, had, want, passed, won, next: SURVEY[year] ?? 0,
-    settled: GUESTS.filter(s => s !== 'crow' && w.guests[s].state === 'settled') });
-}
-
-// ---------------------------------------------------------------- the Almanac
-//
-// In a keeper field the troubles are known a season ahead. On each season's first day the Almanac looks into the next
-// (almanacSeason, foresee): w.almanac.next is what's coming, w.almanac.now the season under way, each with its trouble
-// or none. At most one trouble a year, none in the first (CALM_YEARS). It falls in a season still to come that year, as
-// likely in any: a quarter of the time in spring, a third of what's left in summer, and so on. Which one is weighed by how
-// well the field does (troubleBudget): an empty field gets only the mild ones, one doing well the hard ones too, and the
-// hardest likeliest. With the pouch near empty and fewer kinds here than a year before, the next year is gentle, and a
-// bird brings a seed (the lifeline). A trouble's weather comes from its own odds (weatherOdds, pickWeather); the water,
-// the grass and the sickness read it as they go (troubleOf), and TROUBLE_DAY days in, the sickness and the fox scouts
-// come to the warren the Almanac named (troubleStarts).
-const TROUBLES = {
-  flood:    { seasons: [0], hard: 1, odds: { rain: 5, storm: 2, cloudy: 3, clear: 2 }, rise: 0.04 },   // rise: the water line this much higher
-  storms:   { seasons: [1, 2], hard: 1, odds: { storm: 5, heat: 2, clear: 3, cloudy: 1 }, strikes: 1 / 150 },   // dry lightning in the heat (a tick)
-  drought:  { seasons: [1], hard: 2, odds: { clear: 5, heat: 6, cloudy: 1 }, drop: 0.04, grass: 0.6 },   // the water lower, the grass held to this
-  sickness: { seasons: [0, 1, 2], hard: 2 },
-  foxes:    { seasons: [0, 1, 2], hard: 2 },
-  winter:   { seasons: [3], hard: 3, odds: { snow: 8, cloudy: 2, fog: 1 }, longer: 1.6, grass: 0.25, cold: 1.6 },   // longer spells; out in the snow, burning this much more
-};
-const TROUBLE_DAY = 3;          // days into its season the sickness and the scouts come
-const WARREN_R = 6;             // burrows this close are one warren
-const SICK_MIN = 6;             // rabbits a warren needs for the sickness to be a trouble
-const SICK_SEED = 3;            // the first cases there
-const SICK_CROWD = 1;           // and while its season lasts it spreads as in a crowded meadow, however few
-const LIFELINE_SEEDS = 3;       // seeds in the pouch, all told, that make it near empty
-
-const troubleNow = w => w.almanac?.now.trouble?.kind;
-const troubleOf = w => TROUBLES[troubleNow(w)];
-const weatherOdds = w => troubleOf(w)?.odds || WEATHER_ODDS[seasonOf(w.tick)];
-// The kinds in the field now (visiting or settled, not the crows); with those settled counted twice, the budget.
-const kindsHere = w => GUESTS.filter(s => s !== 'crow' && (w.guests[s].state === 'visiting' || w.guests[s].state === 'settled')).length;
-const troubleBudget = w => 1 + kindsHere(w) + settledCount(w);
-
-function startAlmanac(w) {
-  const s = seasonOf(w.tick);
-  w.almanac = { now: { season: s, year: yearOf(w.tick), trouble: null }, next: null, troubleYear: 0, gentle: 0, had: 0 };
-  w.almanac.next = foresee(w, (s + 1) % 4);
-}
-
-// The season s to come: its year, and its trouble if it brings the year's ({ kind, x, y }: where, for the sickness and
-// the scouts).
-function foresee(w, s) {
-  const a = w.almanac, year = yearOf(w.tick) + (s === 0 ? 1 : 0), next = { season: s, year, trouble: null };
-  if (year <= CALM_YEARS || a.troubleYear === year || a.gentle === year || w.rng.next() >= 1 / (4 - s)) return next;
-  const budget = troubleBudget(w), warren = biggestWarren(w);
-  const can = Object.keys(TROUBLES).filter(k => TROUBLES[k].seasons.includes(s) && TROUBLES[k].hard <= budget
-    && (k !== 'sickness' || warren?.n >= SICK_MIN) && (k !== 'foxes' || warren));
-  if (!can.length) return next;
-  let roll = w.rng.next() * can.reduce((n, k) => n + TROUBLES[k].hard, 0), kind = can[0];
-  for (const k of can) { roll -= TROUBLES[k].hard; if (roll < 0) { kind = k; break; } }
-  a.troubleYear = year;
-  next.trouble = kind === 'sickness' || kind === 'foxes' ? { kind, x: warren.x, y: warren.y } : { kind };
-  return next;
-}
-
-// The burrow with most rabbits living in it and about it (within WARREN_R): { x, y, n }, or null with none.
-function biggestWarren(w) {
-  const homes = [];
-  for (const c of w.creatures) if (c.alive && c.species === 'rabbit' && c.home) homes.push(c.home);
-  let best = null;
-  for (const b of w.burrows) {
-    let n = 0;
-    for (const h of homes) if (dist2(h, b) < WARREN_R * WARREN_R) n++;
-    if (n && (!best || n > best.n)) best = { x: b.x, y: b.y, n };
-  }
-  return best;
-}
-
-// Each season's first day: the season foreseen begins, and the next is looked into. Looking into a new year, a
-// struggling field gets the lifeline.
-function almanacSeason(w, s) {
-  const a = w.almanac;
-  a.now = a.next?.season === s ? a.next : { season: s, year: yearOf(w.tick), trouble: null };
-  let lifeline = false;
-  if (s === 3) {
-    const seeds = Object.values(w.pouch).reduce((n, v) => n + v, 0), had = kindsHere(w);
-    lifeline = seeds <= LIFELINE_SEEDS && had < a.had;
-    a.had = had;
-    if (lifeline) { a.gentle = yearOf(w.tick) + 1; gift(w, true); }
-  }
-  a.next = foresee(w, (s + 1) % 4);
-  emit(w, { type: 'almanac', now: a.now, next: a.next, lifeline });
-}
-
-// TROUBLE_DAY days in: the sickness's first cases, or the fox scouts, at the warren named (or the biggest now, if that
-// one's empty). With no rabbits about, the sickness passes the field by.
-function troubleStarts(w) {
-  const t = w.almanac.now.trouble;
-  if (!t || t.started || (t.kind !== 'sickness' && t.kind !== 'foxes')) return;
-  t.started = true;
-  const named = w.creatures.some(c => c.alive && c.species === 'rabbit' && c.home && dist2(c.home, t) < WARREN_R * WARREN_R);
-  const at = named ? t : biggestWarren(w);
-  if (t.kind === 'sickness') {
-    const sick = at ? w.creatures.filter(c => c.alive && c.species === 'rabbit' && c.home && dist2(c.home, at) < WARREN_R * WARREN_R && canCatch(w, c)) : [];
-    for (const c of sick.slice(0, SICK_SEED)) fallIll(w, c);
-    emit(w, { type: 'trouble', kind: 'sickness', x: at?.x ?? t.x, y: at?.y ?? t.y, n: Math.min(SICK_SEED, sick.length) });
-    return;
-  }
-  const g = w.guests.fox, to = at || t;                       // the scouts come whatever the needs say: as guests, unless foxes are here
-  if (g.state === 'visiting' || g.state === 'settled') emit(w, { type: 'arrive', species: 'fox', who: pairIn(w, 'fox', to), guest: true, scouts: true, x: to.x, y: to.y });
-  else guestArrives(w, 'fox', g, to, true);
-}
-
-// Whether any are in the field, and whether any were born here since they came.
-const FIELD_COUNTS = { vole: w => w.voleCount, frog: w => w.frogCount };
-const guestsHere = (w, s) => (FIELD_COUNTS[s] ? FIELD_COUNTS[s](w) >= 1 : w.count[s] + w.expecting[s] > 0);
-const bredHere = (w, s, g) => (s === 'vole' ? w.voleCount > 2 * g.births : s === 'frog' ? w.frogYear.left > 0 && w.frogYear.at > g.cameAt
-  : w.stats.births[s] > g.births);
-
-function guestsDay(w) {
-  for (const s of GUESTS) {
-    const g = w.guests[s], here = g.state === 'visiting' || g.state === 'settled';
-    if (here && !guestsHere(w, s)) { guestsGone(w, s, g, true); continue; }   // all dead
-    const v = WANTS[s](w, here);
-    if (v.met === null) continue;
-    g.why = v.why; g.where = v.where ? { x: v.where.x, y: v.where.y } : null;
-    if (v.met) { g.metDays++; g.unmetDays = 0; } else { g.unmetDays++; g.metDays = 0; }
-    if (!here) {
-      if (v.met && v.where && g.metDays >= ARRIVE_DAYS * (1 + g.left)) guestArrives(w, s, g, v.where);
-      continue;
-    }
-    if (g.state === 'visiting' && w.tick - g.cameAt >= YEAR && bredHere(w, s, g)) {
-      g.state = 'settled'; g.settledAt = w.tick;
-      emit(w, { type: 'settled', species: s, why: g.why });
-    }
-    if (g.unmetDays === FRET_DAYS) emit(w, { type: 'fret', species: s, why: g.why, x: g.where?.x, y: g.where?.y });
-    if (g.unmetDays >= LEAVE_DAYS) guestsGone(w, s, g, false);
-  }
-  foxesGrown(w);
-  volesFind(w);
-}
-
-// Voles here find long grass the keepers let grow anywhere in the field, from spring to autumn: a few turn up in each tile
-// of it that has hardly any (VOLE_FIND of its room a day). Spilling next door alone (volesTick) never crossed the grazed and
-// mown ground between a field's patches, so its voles stayed a dozen and fed no fox.
-const VOLE_FIND = 0.05;
-function volesFind(w) {
-  const g = w.guests.vole;
-  if ((g.state !== 'visiting' && g.state !== 'settled') || seasonOf(w.tick) === 3) return;
-  const v = w.voles, grass = w.grass;
-  for (let i = 0; i < W * H; i++) {
-    const room = w.water[i] ? 0 : voleRoom(grass[i]);
-    if (room > 0 && v[i] < VOLE_FIND * room) v[i] += VOLE_FIND * room;
-  }
-}
-
-// A fox born in the field, once grown, stays only while there's prey for one more (FOX_EACH a fox); otherwise it goes
-// off to find ground of its own, as young foxes do in autumn. Without it a pair bred up to ten, ate the warren out,
-// and starved or left.
-const FOX_EACH = FOX_PREY / 2;
-function foxesGrown(w) {
-  let grown = 0;
-  for (const c of w.creatures) if (c.alive && c.species === 'fox' && isAdult(w, c) && c.mode !== 'leave') grown++;
-  const room = Math.max(2, Math.floor(foxPrey(w) / FOX_EACH));
-  for (const c of w.creatures) {
-    if (!c.alive || c.species !== 'fox' || !c.mumId || c.grownUp || !isAdult(w, c)) continue;
-    c.grownUp = true;
-    if (grown <= room) continue;
-    grown--;
-    c.mode = 'leave'; c.sleeping = false; c.target = null; c.away = nearEdge(c);
-    note(w, c, '🍂', 'Grown, and off to find ground of its own');
-  }
-}
-const GUESTS = KINDS.filter(s => WANTS[s] && (s !== 'owl' || OWLS)).concat(['vole', 'frog']);
-
-// They've gone: walked off (the grown ones and the young with them; a hive's bees fly off, the voles and frogs are left
-// to thin out), or died out (dead).
-function guestsGone(w, s, g, dead) {
-  Object.assign(g, { state: 'left', leftAt: w.tick, left: g.left + 1, metDays: 0, unmetDays: 0 });
-  if (!dead && !FIELD_COUNTS[s]) {
-    g.going = true;
-    if (s === 'bee') {                                               // the hive flies off, queen and all
-      for (const h of w.hives) if (h.tree) h.tree.hive = null;
-      w.hives.length = 0;
-      for (const c of [...w.creatures, ...w.newborn]) if (c.species === 'bee') { c.hidden = false; c.sleeping = false; }
-    }
-  }
-  emit(w, { type: 'leave', species: s, why: g.why, dead });
-}
-
-// A few come in, from the edge nearest where's best for them (at: a spot, or a bee's hollow tree, an otter's holt),
-// and head there.
-function guestArrives(w, s, g, at, scouts = false) {
-  const r = w.rng, t = w.tick;
-  let who = [];
-  if (s === 'rabbit') {
-    const side = at.x > W / 2 ? 1 : 0;
-    const x = side ? W - 0.7 : 0.7, ok = y => y > 1 && y < H - 1 && dry(w, x, y) && dry(w, side ? W - 1.3 : 1.3, y);
-    let y = at.y;
-    for (let k = 1; k < H && !ok(y); k++) y = at.y + (k % 2 ? 1 : -1) * Math.ceil(k / 2);   // (not in the brook where it runs off, or a flood)
-    if (ok(y)) who = familyArrives(w, { side, entry: { x, y }, spot: at }, t + 3 * TPD);
-  } else if (s === 'fox' || s === 'crow') {
-    who = pairIn(w, s, at);
-  } else if (s === 'bee') {
-    const h = makeHive(w, at.x, at.y);
-    moveIn(h, at);
-    for (let k = 0; k < SWARM_BEES; k++) {
-      const c = addCreature(w, 'bee', at.x + r.range(-2, 2), at.y + r.range(-2, 2), { age: r.range(1, 2), arrived: true });
-      if (c) { c.home = h; who.push(c); }
-    }
-  } else if (s === 'otter') {
-    const up = otterWay(w, at);
-    for (let k = 0; k < 2 && up; k++) {
-      const c = addCreature(w, 'otter', up.x, up.y, { sex: k % 2 ? 'M' : 'F', age: SPECIES.otter.matureDays + 1, arrived: true });
-      if (c) { who.push(c); if (c.sex === 'F') moveInHolt(w, c, at); }
-    }
-  } else {                                                          // the voles and frogs, about the spot
-    const field = s === 'vole' ? w.voles : w.frogs, R = s === 'vole' ? 6 : SPAWN_REACH;
-    let n = 0;
-    for (let y = Math.max(0, Math.floor(at.y - R)); y <= Math.min(H - 1, at.y + R); y++) for (let x = Math.max(0, Math.floor(at.x - R)); x <= Math.min(W - 1, at.x + R); x++) {
-      const i = y * W + x;
-      if (w.water[i]) continue;
-      field[i] += s === 'vole' ? VOLE_ARRIVE * voleRoom(w.grass[i]) : FROG_ARRIVE * frogRoom(w.damp[i], w.grass[i], FROG_REACH);
-    }
-    for (let i = 0; i < W * H; i++) n += field[i];
-    if (s === 'vole') w.voleCount = n; else w.frogCount = n;
-  }
-  if (s !== 'vole' && s !== 'frog' && !who.length) return;
-  w.recount = true;
-  Object.assign(g, { state: 'visiting', cameAt: t, firstCame: g.firstCame < 0 ? t : g.firstCame, metDays: 0, unmetDays: 0, going: false,
-    births: s === 'vole' ? w.voleCount : s === 'frog' ? 0 : w.stats.births[s] });
-  emit(w, { type: 'arrive', species: s, who, guest: true, why: g.why, x: at.x, y: at.y, again: g.left > 0, scouts });
-}
-
-// A pair of foxes (or four crows) in from the edge nearest at, the foxes heading there.
-function pairIn(w, s, at) {
-  const r = w.rng, edge = nearEdge(at), who = [];
-  for (let k = 0; k < (s === 'fox' ? 2 : 4); k++) {
-    const c = addCreature(w, s, edge.x + r.range(-1, 1), edge.y + r.range(-1, 1), { sex: k % 2 ? 'M' : 'F', age: SPECIES[s].matureDays + 1, arrived: true })
-      || addCreature(w, s, edge.x, edge.y, { sex: k % 2 ? 'M' : 'F', age: SPECIES[s].matureDays + 1, arrived: true });
-    if (!c) continue;
-    if (s === 'fox') c.arrive = { x: at.x + r.range(-1.5, 1.5), y: at.y + r.range(-1.5, 1.5), until: w.tick + 2 * TPD };
-    who.push(c);
-  }
-  return who;
-}
-
-// The nearest point on the edge of the meadow (just inside it).
-function nearEdge(p) {
-  const opts = [{ x: p.x, y: 0.7 }, { x: p.x, y: H - 0.7 }, { x: 0.7, y: p.y }, { x: W - 0.7, y: p.y }];
-  return opts.sort((a, b) => dist2(a, p) - dist2(b, p))[0];
-}
-
-// Walking (or flying) off the nearest edge, out of the field for good.
-function goAway(w, c) {
-  if (c.mode !== 'leave') { c.mode = 'leave'; c.sleeping = false; c.target = null; c.arrive = null; c.dig = null; c.away = nearEdge(c); }
-  if (go(w, c, c.away.x, c.away.y, c.walk * (c.sp.flies ? 1 : kidPace(w, c)))) die(w, c, 'left');
-}
-
 function step(w) {
   const t = ++w.tick;
   if (t % TPD === 0) newDay(w);
-  if (w.orders.length && w.orders[0].t <= t) carryOut(w);
   buildGrid(w);
   weatherTick(w);
   if (t % 4 === 0) { growGrass(w, 4); fireTick(w, 4); iceTick(w, 4); }
@@ -6401,8 +5780,7 @@ function step(w) {
     const c = list[i];
     if (!c.alive) continue;
     if (c.held) { lifeTick(w, c); continue; }               // dangling from the player's hand: it only waits
-    if (w.guests && !c.hidden && (w.guests[c.species]?.going || c.away)) goAway(w, c);   // a keeper field's guests, leaving (guestsDay), or a grown fox (foxesGrown)
-    else if (c.species === 'rabbit') rabbitTick(w, c);
+    if (c.species === 'rabbit') rabbitTick(w, c);
     else if (c.species === 'fox') foxTick(w, c);
     else if (c.species === 'bee') beeTick(w, c);
     else if (c.species === 'crow') crowTick(w, c);
@@ -6416,10 +5794,6 @@ function step(w) {
   flushNewborn(w);
   if (t % w.history.every === 0) record(w);
   if (t % (TPD / 4) === 0) migrate(w);
-  if (w.guests && t % TPD === 1) {                          // (just after the dawn's newDay, so it sees what the day's arrivals are)
-    guestsDay(w);
-    if (dayOf(t) % YEAR_DAYS === SEASON_DAYS - 1) surveyDay(w);   // the last day of spring, once who has settled is known
-  }
   if (t % TPD === 0) { forgetTheLongDead(w); collapseBurrows(w); }
 }
 
@@ -6525,12 +5899,6 @@ function unpackWorld(kept) {
   }
   for (const c of w.creatures) delete c.held;                // (kept while the player held one up)
   for (const c of w.byId.values()) c.mine ??= false;         // (kept before the player could name them)
-  w.orders ??= [];                                           // (or give orders, act)
-  if (!w.cover) coverTick(w);                                // (or cover)
-  if (w.options.keeper && !w.guests) startGuests(w);         // (a keeper field from before the needs check)
-  if (w.options.keeper && !w.pouch) startPouch(w);           // (or the pouch)
-  if (w.options.keeper && !w.almanac) startAlmanac(w);       // (or the Almanac)
-  if (w.options.keeper && !w.danger) w.danger = new Float32Array(W * H);   // (or where the foxes hunt)
   for (const d of w.decor) if (d.tree) { d.planted ??= 0; delete d.bank; }   // (or plant trees; d.bank: the holts' old reckoning, now d.holtFish)
   if (w.lake && !w.lake.near) {                              // (kept while a lake was circles)
     w.lake.near = new Uint8Array(W * H);
@@ -6592,277 +5960,6 @@ function nameQueen(w, h, name) {
   if (!h.queen || !name || name === h.queen.name) return false;
   h.queen.name = name; h.queen.mine = true;
   return true;
-}
-
-// ---------------------------------------------------------------- the keepers' orders
-//
-// Everything a keeper does goes through one door: act(w, { t, by, kind, x, y, ... }) is an order, due at
-// tick t, from keeper by (0 alone). The orders wait in w.orders, soonest first (then by keeper), and step
-// carries out the ones due before anything moves (carryOut). Each kind checks what it needs and says how it
-// went, 'acted' or 'refused' and why, as an event. So two screens running the same meadow show the same
-// thing, and balance.js plays by the same rules. A keeper meadow (createWorld's keeper option) is the game:
-// a worn field to mend (PLAN.md), with no newcomers wandering in (migrate) and no first-visit arrivals.
-
-function act(w, o) {
-  const list = w.orders;
-  let k = list.length;
-  while (k > 0 && (list[k - 1].t > o.t || list[k - 1].t === o.t && list[k - 1].by > o.by)) k--;
-  list.splice(k, 0, o);
-}
-
-// What each order does: what it made or touched (told with 'acted'), or a word for why not ('refused'). In a keeper
-// field each costs hours and seed (afford, spend, below): 'hours', 'seed', or 'over' once the Surveyor has been.
-const ORDERS = {
-  plant(w, o) {                                              // { tree: its kind }
-    const no = afford(w, o, 1, o.tree);
-    if (no) return no;
-    const d = plantTree(w, o.x, o.y, o.tree);
-    if (typeof d === 'string') return d;
-    spend(w, o, 1, o.tree);
-    return { it: d };
-  },
-  hedge(w, o) {                                              // { x1, y1 }: a row of hawthorn from x, y to there
-    const no = afford(w, o, 1, 'hawthorn');
-    if (no) return no;
-    const most = w.pouch ? Math.min(w.pouch.hawthorn, HEDGE_HOUR * hoursLeft(w, o.by)) : Infinity;
-    const len = Math.hypot(o.x1 - o.x, o.y1 - o.y), ux = len ? (o.x1 - o.x) / len : 0, uy = len ? (o.y1 - o.y) / len : 0;
-    const n = Math.floor(len / HEDGE_GAP) + 1, trees = [];
-    let why = '';
-    for (let k = 0; k < n && trees.length < most; k++) {
-      const d = plantTree(w, o.x + ux * k * HEDGE_GAP, o.y + uy * k * HEDGE_GAP, 'hawthorn');
-      if (typeof d === 'string') why ||= d; else trees.push(d);
-    }
-    if (!trees.length) return why;
-    spend(w, o, Math.ceil(trees.length / HEDGE_HOUR), 'hawthorn', trees.length);
-    return { trees, short: trees.length < n && trees.length === most };
-  },
-  sow(w, o) {                                                // { flower: a FIELD_KINDS key }
-    const kind = FIELD_KINDS.find(k => k.key === o.flower), no = kind ? afford(w, o, 1, o.flower) : 'seed';
-    if (no) return no;
-    if (!dry(w, o.x, o.y)) return 'water';
-    const was = w.fields.length, f = sowField(w, kind, o.x, o.y);
-    if (!f) return 'full';
-    spend(w, o, 1, o.flower);
-    return { field: f, grew: w.fields.length === was };
-  },
-  dig(w, o) {                                                // a stroke of the spade
-    const no = afford(w, o, DIG_HOURS);
-    if (no) return no;
-    if (!inBounds(o.x, o.y)) return 'edge';
-    if (w.ground[idx(o.x, o.y)] <= w.terrain.level + DIG_FLOOR + 0.01) return 'deep';
-    const ponds = w.waters.length, burrows = digAt(w, o.x, o.y), water = digWater(w, o.x, o.y);
-    spend(w, o, DIG_HOURS);
-    return { x: o.x, y: o.y, burrows, water, made: w.waters.length > ponds };
-  },
-  mow(w, o) {                                                // a patch of grass cut short
-    const no = afford(w, o, 1);
-    if (no) return no;
-    if (!inBounds(o.x, o.y)) return 'edge';
-    mowAt(w, o.x, o.y);
-    spend(w, o, 1);
-    return { x: o.x, y: o.y };
-  },
-  name(w, o) {                                               // { who: an animal's id, or hive: a hive's (its queen), name }
-    const c = o.who && w.byId.get(o.who), h = o.hive && w.hives.find(h => h.id === o.hive);
-    const was = c ? c.mine : h?.queen?.mine;
-    if (c) return c.alive && nameCreature(w, c, o.name) ? { c, was } : 'name';
-    if (h) return nameQueen(w, h, o.name) ? { hive: h, queen: h.queen, was } : 'name';
-    return 'gone';
-  },
-};
-
-// The orders due by now, in turn. Paused, game.js calls it itself.
-function carryOut(w) {
-  while (w.orders.length && w.orders[0].t <= w.tick) {
-    const o = w.orders.shift(), r = ORDERS[o.kind] ? ORDERS[o.kind](w, o) : 'unknown';
-    emit(w, typeof r === 'string' ? { type: 'refused', order: o, why: r } : { type: 'acted', order: o, ...r });
-  }
-}
-
-// ---------------------------------------------------------------- the keepers' hands
-//
-// In a keeper field what the keepers do costs them (PLAN.md, A6). Seed comes from the pouch they share (w.pouch, by
-// kind: the trees as in TREES, the flowers by FIELD_KINDS' key), filled as the meadow grows it: in autumn a seed from
-// every tree old enough to bear, and as a sown patch finishes blooming, a packet of its kind (pouchSeason). Now and
-// then a bird brings a kind they have none of. And each keeper has HOURS of work a season (w.hours[by]), the same
-// again each season, whatever was left. An order is checked against both before it's carried out (afford) and paid
-// once it is (spend). In the meadow you watch there's no pouch, and everything is free.
-
-const HOURS = 12;               // a keeper's hours of work a season
-const POUCH = { hawthorn: 6, oak: 1, birch: 2, apple: 1 };   // what the keepers start with, and a packet of a spring and a summer flower
-const POUCH_CAP = 9;            // the most seed of a kind the pouch holds
-const GIFT_ODDS = 0.3;          // a season's odds a bird brings a kind the pouch is out of (not in winter)
-const HEDGE_GAP = 1.5;          // tiles between the thorns of a hedge
-const HEDGE_HOUR = 3;           // thorns laid in an hour
-const SOW_R = 3;                // a sown patch's radius
-const SOW_FLOWERS = 0.8;        // share of its tiles with a flower (a field as made has fieldFlowers): about 22 a packet
-const SOW_JOIN = 2;             // a patch sown this close to one of its kind grows that one
-const DIG_R = 2.5;              // the spade's brush
-const DIG = 0.08;               // how much lower a stroke leaves the ground in its middle (by the brook, one makes a spring pool, two a pond)
-const DIG_HOURS = 2;
-const DIG_FLOOR = -0.5;         // never deeper than this under the usual water line
-const MOW_R = 2.5;              // a mown patch's radius
-const MOWN = 0.15;              // the grass is cut to this
-const MOW_SPARES = 0.3;         // of the voles and frogs in it, this many are left
-
-function startPouch(w) {
-  const r = w.rng, kinds = s => FIELD_KINDS.filter(k => k.season === s);
-  w.pouch = { ...POUCH, [r.pick(kinds(0)).key]: 1, [r.pick(kinds(1)).key]: 1 };
-  w.hours = [HOURS];
-}
-
-const hoursLeft = (w, by) => w.hours[by] ?? HOURS;   // (a keeper's first order)
-// Why a keeper can't do this now ('over', 'hours', 'seed'), or '' if they can.
-function afford(w, o, hours, kind, n = 1) {
-  if (!w.pouch) return '';
-  if (w.over) return 'over';
-  if (hoursLeft(w, o.by) < hours) return 'hours';
-  if (kind && (w.pouch[kind] || 0) < n) return 'seed';
-  return '';
-}
-function spend(w, o, hours, kind, n = 1) {
-  if (!w.pouch) return;
-  w.hours[o.by] = hoursLeft(w, o.by) - hours;
-  if (kind) w.pouch[kind] -= n;
-}
-
-// Each season's first day: fresh hours, a packet from each patch that bloomed in the season just gone, in autumn a
-// seed from every tree old enough to bear (two from an oak or a beech in a mast year), and maybe a bird's gift.
-function pouchSeason(w, s) {
-  w.hours.fill(HOURS);
-  const got = {}, add = (k, n) => {
-    const v = Math.min(POUCH_CAP, (w.pouch[k] || 0) + n);
-    if (v > (w.pouch[k] || 0)) got[k] = (got[k] || 0) + v - (w.pouch[k] || 0);
-    w.pouch[k] = v;
-  };
-  const last = (s + 3) % 4, year = yearOf(w.tick - 1);
-  for (const f of w.fields) if (f.season === last && f.bloomed === year) add(f.kind.key, 1);
-  if (s === 2) for (const d of w.decor) if (d.tree && bearing(w, d)) add(d.kind, TREES[d.kind].mast && w.mast ? 2 : 1);
-  if (Object.keys(got).length) emit(w, { type: 'harvest', got });
-  if (s !== 3 && outOf(w).length && w.rng.next() < GIFT_ODDS) gift(w);
-}
-
-// The kinds the pouch has none of; a bird (or the wind) brings one of them. lifeline: the Almanac's, in a hard year.
-const outOf = w => [...Object.keys(TREES), ...FIELD_KINDS.map(k => k.key)].filter(k => !w.pouch[k]);
-function gift(w, lifeline = false) {
-  const none = outOf(w);
-  if (!none.length) return;
-  const k = w.rng.pick(none);
-  w.pouch[k] = 1;
-  emit(w, { type: 'gift', kind: k, lifeline });
-}
-
-// When a patch sown now comes up: the next time its season comes round (sown in its season, next year).
-function comesUp(t, season) {
-  const start = (Math.floor(dayOf(t) / YEAR_DAYS) * YEAR_DAYS + season * SEASON_DAYS) * TPD;
-  return season <= seasonOf(t) ? start + YEAR : start;
-}
-
-// A patch of flowers sown about x, y: a field like the ones a meadow is made with (placeFields), its flowers coming
-// up when its season next comes round (p.from, f.from). Sown close by one of its kind, that one grows. It mends the
-// soil it's on (soilTick); no richer at once. The field, or null if the meadow has all the fields it can.
-function sowField(w, kind, x, y) {
-  const r = w.rng, up = comesUp(w.tick, kind.season);
-  let f = w.fields.find(f => f.kind === kind && f.shape.some(b => Math.hypot(b.x - x, b.y - y) < b.r + SOW_R + SOW_JOIN));
-  if (!f) {
-    if (w.fields.length >= 127) return null;                 // (w.fieldAt is an Int8Array)
-    const id = w.fields.length, taken = new Set(w.fields.map(f => f.name));
-    let name = '';
-    for (let k = 0; k < 8 && (!name || taken.has(name)); k++) name = `${r.pick(kind.names)} ${r.pick(FIELD_PLACES)}`;
-    f = { id, kind, season: kind.season, emoji: kind.emoji, tint: kind.tint, x, y, shape: [], name, from: up };
-    w.fields.push(f);
-  }
-  f.shape.push({ x, y, r: SOW_R });
-  const R = SOW_R + 2, had = new Set();
-  forEachPlantNear(w, x, y, SOW_R + 1, p => {
-    if ((p.x - x) ** 2 + (p.y - y) ** 2 >= SOW_R * SOW_R || p.tree) return;
-    had.add(p.i);
-    if (p.field !== f) { p.field = f; p.from = up; }
-  });
-  for (let ty = Math.max(0, Math.floor(y - R)); ty <= Math.min(H - 1, y + R); ty++) {
-    for (let tx = Math.max(0, Math.floor(x - R)); tx <= Math.min(W - 1, x + R); tx++) {
-      const i = ty * W + tx, d = outside(f.shape, tx + 0.5, ty + 0.5);
-      if (d >= 0 || w.water[i]) continue;
-      w.fieldAt[i] = f.id; w.fieldIn[i] = clamp(-d / 2, 0, 1);
-      if ((tx + 0.5 - x) ** 2 + (ty + 0.5 - y) ** 2 >= SOW_R * SOW_R || had.has(i) || r.next() > SOW_FLOWERS) continue;
-      const p = { x: tx + r.next(), y: ty + r.next(), i, kind: r.next(), field: f, n: w.plants.length, from: up };
-      w.plants.push(p);
-      cellOf(w.plantCells, p).push(p);
-    }
-  }
-  return f;
-}
-
-// A stroke of the spade: the ground lower in a soft round brush, its grass and what lived in it gone, and any burrow
-// under it dug up. Where it's now below the water line the water comes in (refreshWater). The burrows lost.
-function digAt(w, x, y) {
-  const floor = w.terrain.level + DIG_FLOOR, R = DIG_R;
-  for (let ty = Math.max(0, Math.floor(y - R)); ty <= Math.min(H - 1, y + R); ty++) {
-    for (let tx = Math.max(0, Math.floor(x - R)); tx <= Math.min(W - 1, x + R); tx++) {
-      const i = ty * W + tx, q = ((tx + 0.5 - x) ** 2 + (ty + 0.5 - y) ** 2) / (R * R);
-      if (q >= 1) continue;
-      w.ground[i] = Math.max(Math.min(w.ground[i], floor), w.ground[i] - DIG * (1 - q) ** 2);
-      w.grass[i] = 0; w.voles[i] = 0; w.frogs[i] = 0; w.cover[i] = 0;
-    }
-  }
-  const lost = w.burrows.filter(b => (b.x - x) ** 2 + (b.y - y) ** 2 < R * R);
-  loseBurrows(w, lost, false);
-  for (const d of w.decor) if (d.holtFish !== undefined && (d.x - x) ** 2 + (d.y - y) ** 2 < (HOLT_REACH + R) ** 2) delete d.holtFish;   // (the water about a holt is new)
-  refreshWater(w);
-  floodBurrows(w);
-  w.waterVersion++;                                          // (game.js repaints the ground's height with the water)
-  return lost.length;
-}
-
-// The water the spade let in: joined to the brook, or to a pond dug before (dugAt), it's that water; on its own, a new
-// pond with a name. Then which water each dry tile is nearest is worked out again, so a flood pool that dries in
-// summer is that pond again when the water comes back. The water at x, y, or null.
-function digWater(w, x, y) {
-  const s = idx(x, y);
-  if (!w.water[s]) return null;
-  const river = new Uint8Array(W * H);
-  for (const rv of w.rivers) for (const p of rv.pts) if (inBounds(p.x, p.y)) river[idx(p.x, p.y)] = 1;
-  const seen = new Uint8Array(W * H), tiles = [s];
-  let joins = null;
-  seen[s] = 1;
-  for (let k = 0; k < tiles.length; k++) {
-    const i = tiles[k], tx = i % W, ty = (i / W) | 0, v = w.waters[w.body[i]];
-    if (river[i] && v) joins = v;
-    else if (!joins && v?.dugAt !== undefined) joins = v;
-    for (const [nx, ny] of [[tx + 1, ty], [tx - 1, ty], [tx, ty + 1], [tx, ty - 1]]) {
-      const n = ny * W + nx;
-      if (nx >= 0 && ny >= 0 && nx < W && ny < H && w.water[n] && !seen[n]) { seen[n] = 1; tiles.push(n); }
-    }
-  }
-  if (!joins) {
-    const used = new Set([...w.waters.map(v => v.name.split(' ')[0]), ...w.rivers.map(rv => rv.name?.split(' ')[0])]);
-    const free = WATER_NAMES.first.filter(n => !used.has(n)), first = w.rng.pick(free.length ? free : WATER_NAMES.first);
-    joins = { id: w.waters.length, kind: 'pond', name: `${first} ${w.rng.pick(WATER_NAMES.pond)}`, size: 0, x, y, dugAt: w.tick };
-    w.waters.push(joins);
-  }
-  for (const i of tiles) w.body[i] = joins.id;
-  if (joins.kind === 'pond') {
-    let sx = 0, sy = 0;
-    for (const i of tiles) { sx += i % W; sy += (i / W) | 0; }
-    Object.assign(joins, { size: tiles.length, x: sx / tiles.length + 0.5, y: sy / tiles.length + 0.5 });
-  }
-  nearWaters(w);
-  return joins;
-}
-
-// A patch mown short: food for the rabbits and the crows as it grows back, but no cover, and the voles and frogs in
-// it mostly gone. A fire won't cross it (it burns in long grass).
-function mowAt(w, x, y) {
-  const R = MOW_R;
-  for (let ty = Math.max(0, Math.floor(y - R)); ty <= Math.min(H - 1, y + R); ty++) {
-    for (let tx = Math.max(0, Math.floor(x - R)); tx <= Math.min(W - 1, x + R); tx++) {
-      const i = ty * W + tx;
-      if (w.water[i] || (tx + 0.5 - x) ** 2 + (ty + 0.5 - y) ** 2 >= R * R) continue;
-      w.grass[i] = Math.min(w.grass[i], MOWN);
-      w.voles[i] *= MOW_SPARES; w.frogs[i] *= MOW_SPARES;
-    }
-  }
-  coverTick(w);
 }
 
 function paintGrass(w, x, y, radius) {
@@ -6939,9 +6036,7 @@ function mood(w, c) {
     case 'alarm': return { emoji: '‼️', text: `Spotted ${w.byId.get(c.threatId)?.name ?? 'a fox'}!` };
     case 'dig': return { emoji: '🕳️', text: 'Digging a burrow' };
     case 'arrive': return { emoji: '🧳', text: 'Moving into the meadow' };
-    case 'leave': return { emoji: '🧳', text: 'Leaving the field' };
     case 'hide': return { emoji: '🫣', text: 'Hiding in a burrow' };
-    case 'cover': return { emoji: '🌿', text: 'Crouched in cover, keeping still' };
     case 'sleep': return { emoji: '💤', text: c.hidden ? (storm ? 'Snug in the burrow, out of the storm' : 'Asleep in the burrow') : 'Napping' };
     case 'home': return { emoji: '🏠', text: storm ? 'Hurrying home out of the storm' : 'Heading home for the night' };
     case 'shelter': return { emoji: '🌧️', text: 'Curled up, waiting out the storm' };
@@ -6972,15 +6067,12 @@ function mood(w, c) {
 const api = {
   W, H, TPD, SHALLOW, DEEP, SEASON_DAYS, YEAR_DAYS, SEASONS, SPECIES, GENES, COATS, GROUND, WEATHER,
   createWorld, step, clock, isNight, phaseOf, seasonOf, mood, ageDays, growth, isAdult, patchFresh,
-  addCreature, paintGrass, setSky, lockSky, zap, burnLine, lift, putDown, nameCreature, nameQueen, NAME_MAX, plantTree, act, carryOut, soilMended, traitMeans, walkable, packWorld, unpackWorld,
-  HOURS, POUCH_CAP, HEDGE_GAP, HEDGE_HOUR, SOW_R, DIG_R, DIG_HOURS, MOW_R, FIELD_KINDS, SURVEY, settledCount, comesUp, hoursLeft, GUESTS,
-  TROUBLES, TROUBLE_DAY, troubleNow, HIDE_IN, GOOD_GRASS, FROG_REACH, STILL, CURRENT, WORN, LONG, ARRIVE_DAYS, LEAVE_DAYS,
+  addCreature, paintGrass, setSky, lockSky, zap, burnLine, lift, putDown, nameCreature, nameQueen, NAME_MAX, plantTree, traitMeans, walkable, packWorld, unpackWorld,
   coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT, KINDS, OWLS,
   TERRAIN, drawnToLink, drawnFromLink, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE,
   TREES, treeStage, treeAge, standing, bearing, hollow, inBloom, SEEDLING, SAPLING, GROWN, KIND_NAMES,
   VOLE_K, POUNCE_TICKS, CROWDED, FROG_K, SPAWN_WORTH, FISH_K, FISH_EAT, webCounts, CROW_SEATS,
-  fishNear, HOLT_FISH, HOLT_BANK, HOLT_ROCK, DIG, DIG_FLOOR,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 else root.Sim = api;

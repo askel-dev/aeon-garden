@@ -31,69 +31,6 @@ day's droppings for each rabbit home at dawn) and a log rotting away feed the so
 and a little past the soil's cap (`RICH_GROW`, `RICH_SOIL`, never over 1), and it fades over about a season (`RICH_DAYS`).
 Rabbits won't graze ground that rich (`fouled`: fresh droppings, or where a body lay), so a busy warren's latrines and
 an old kill site stand out as lusher patches (the ground's colour follows `w.grass`) until they fade and get grazed.
-A keeper field (`?field`, createWorld's `keeper` option, PLAN.md) is always the `'field'` layout (`w.field`; odds 0 in
-`TERRAIN.layouts`, so the lab's Layout › Worn field shows one, the same map for the same seed): the hills, and one brook
-along a long side (`fieldBrook`, `TERRAIN.fieldBrook`, `fieldSway`) running off the map at both ends, carved as a brook; no
-lake, ponds, woods, flower fields or burrows. Its trees are one old hollow oak out in the open on the best ground, empty (no
-`placeHive`), a stub of hawthorn hedge beside it (`fieldHedge`) and a few lone thorns (`fieldThorns`, `fieldTrees`); a few
-boulders stand on the brook's bank above the spring flood (`fieldBoulders`, a holt one day). It starts with only crows
-(`FIELD_CROWS`), no voles or frogs, fish in the brook, the turf grazed short (`WORN_TURF`), and woods that can grow to
-`FIELD_TREE_ROOM` trees in time. In a keeper field nobody wanders in (no `migrate`): each species comes, settles, frets and leaves by its needs (`WANTS`,
-one check each a day, `guestsDay`, just after dawn; each says whether its needs are met, `why`, and `where` is best). The grass
-a need asks for is what the ground grows (`w.shadedFert`), not what's standing that day: grazed short, or short in autumn
-and the first days of spring, is fine; worn-out ground isn't. Rabbits: good grass (`GOOD_GRASS`: 0.45 to come, which worn
-soil never grows; 0.35 to stay) over `FAMILY_GRASS` tiles within `FAMILY_REACH`, by good cover (`RABBIT_COVER`) on ground they
-can dig (or by the burrow they dug). Foxes: a thicket to den in (`FOX_DEN`), and in summer and autumn (winter and spring every
-warren is low) `FOX_PREY` prey, rabbits and the voles and frogs by what they feed a fox (`foxPrey`, `RABBIT_MEAL`); a fox born
-here leaves once grown unless there's prey for one more (`foxesGrown`, `FOX_EACH`, `c.grownUp`, `c.away`). Bees:
-`BEE_FLOWERS` open within reach of a free hollow, in spring and summer. Frogs: still shallows (`STILL`, `FROG_POOL`) in spring
-with damp long grass by them (`FROG_GRASS`), then the grass alone. Voles: long grass over a stretch (`VOLE_PATCH`); once here they find long grass anywhere in the field, spring to autumn
-(`volesFind`, `VOLE_FIND`), as spilling next door never crossed the grazed ground between a field's patches. Otters: a
-holt with fish enough (`holtTree`; a stroke of the spade near one has it looked at again), and `OTTER_FROGS` frogs in the field,
-as with the water frozen they live on frogs dug from the mud (`rooted`). Crows: a roost (here from the start; they don't count).
-And a keeper field has room for only as many rabbits as the mended ground feeds through a winter (`roomFor`: the winter grass
-on ground worth walking to, `LARDER_MIN`, counted daily as `w.larder` by `soilTick`, `LARDER` a rabbit): no more breed, so the
-warren stays at dozens and doesn't starve to the last one.
-Out of season a need isn't judged (met null). Met `ARRIVE_DAYS` running and a few come from the nearest edge (`guestArrives`: a
-rabbit family, `familyArrives`; a fox pair; a swarm into the hollow; an otter pair up the water; voles and frogs put down
-about the spot). Bred here (`bredHere`) and here a year, they've settled. Unmet `FRET_DAYS`, they're restless (event `fret`,
-with why); unmet `LEAVE_DAYS`, every one of them walks (or flies) off the nearest edge (`g.going`, `goAway`, mode `'leave'`,
-cause `'left'`, no remains; a hive goes queen and all), or, voles and frogs, they're left to thin out. All dead counts as
-gone too. Coming back takes `ARRIVE_DAYS × (1 + left)`. `w.guests[s]` keeps how each stands (state `none`, `visiting`,
-`settled`, `left`); events `arrive` (with `guest`), `settled`, `fret`, `leave`. With nobody keeping it, nothing settles.
-In a keeper field the soil moves, and only there (`soilTick`, daily before `groundTick`): it starts at
-`WORN` of what it could be (`w.potential`, the soil as made), heals in a flower patch, under a crown in autumn and winter,
-and on rich ground, and wears where grazed bare for days (`w.bare`). Rabbits won't graze grass under 0.3, so on worn soil
-they starve rather than graze it down: wear bites only where the soil was mended. The meadow you watch keeps its soil.
-In a keeper field the keepers pay for what they do (sim.js "the keepers' hands"): seed from the pouch they share (`w.pouch`, by
-tree kind and by flower, `FIELD_KINDS`' `key`; it starts with `POUCH` and a packet of a spring and a summer flower) and `HOURS`
-of work a season each (`w.hours[by]`, fresh on each season's first day). An order is checked (`afford`: 'hours', 'seed', 'over')
-and paid once it's done (`spend`); the meadow you watch has no pouch and pays nothing. The pouch fills as the field grows it
-(`pouchSeason`): in autumn a seed from every tree old enough to bear (two from an oak or a beech in a mast year), a packet from each
-sown patch as its season ends if it bloomed, up to `POUCH_CAP` a kind, and now and then (`GIFT_ODDS`) a bird or the wind brings a
-kind they have none of. Orders: plant (a seed, an hour), hedge (a row of hawthorns `HEDGE_GAP` apart, a seed each and an hour for
-`HEDGE_HOUR`), sow (`sowField`: a patch of `SOW_R` like the fields a meadow is made with, thick with flowers, `SOW_FLOWERS`, that
-comes up the next time its season comes round, `comesUp`, `p.from`/`f.from`; sown by one of its kind, that one grows), dig
-(`digAt`: the ground lower in a soft brush, `DIG` a stroke, two hours; its grass, voles, frogs, cover and burrows gone; below the
-water line the water comes in, joined to the brook or a pond dug before, or a new pond with a name, `digWater`, and `nearWaters`
-again) and mow (`mowAt`: grass cut to `MOWN`, most of the voles and frogs gone, no cover). On the last day of each spring, once
-the day's guests are settled, the Surveyor counts the kinds that have settled (`surveyDay`, `settledCount`, not the crows): the
-second spring he only looks, from the third he wants `SURVEY[year - 1]`, and he says so a season ahead (event 'surveyor', the
-first day of winter). Short of it, `w.over` and every order is refused; the last count passed wins the run (`w.over.won`).
-The Almanac (sim.js, `w.almanac`): in a keeper field the year's trouble is known a season ahead. On each season's first day
-`almanacSeason` makes the season foreseen the one under way (`now`) and looks into the next (`foresee`, `next`): at most one
-trouble a year, none in the first (`CALM_YEARS`), falling in any season still to come that year as likely as another, picked
-from those of that season (`TROUBLES`) whose `hard` fits the budget (`troubleBudget`: 1 + kinds here + kinds settled), the
-hardest likeliest. A trouble's weather comes from its own odds (`weatherOdds` in `pickWeather`, longer spells, `longer`); the
-rest is read as it goes (`troubleOf`): the water line (`waterGoal`, `rise`, `drop`), the grass cap (`growGrass`, `grass`), dry
-lightning in the heat (`weatherTick`, `strikes`), the cold out in the snow (`lifeTick`, `cold`) and the sickness spreading as
-if crowded (`sicknessTick`, `SICK_CROWD`). `TROUBLE_DAY` days in, the sickness's first cases (`SICK_SEED`) and the fox scouts
-(`pairIn`, as guests unless foxes are here) come to the warren named (`biggestWarren`, `troubleStarts`). Looking into a new
-year, a field with `LIFELINE_SEEDS` or fewer and fewer kinds here than a year before gets a gentle year and a bird's seed
-(`gift`). Events 'almanac' (now, next, lifeline), 'trouble' (the sickness's start), 'arrive' with `scouts`. The meadow you
-watch has no almanac and its weather is as it was. A keeper field also keeps where the foxes have hunted (`w.danger`, for the
-Danger lens: `hunted` adds `DANGER_KILL` where a fox catches something and `DANGER_CHASE` where a rabbit gets away, fading by
-`DANGER_KEEP` a day in `newDay`).
 Reeds and lily pads (`drawShore`) are a look too: a scatter `updateWater` works out along the shore whenever the water changes.
 Shallow water is waded slowly; deep water blocks.
 The rivers run (`makeCurrent`, `w.current`: worked out when a meadow is made or opened, never kept). Each point of a river
@@ -242,15 +179,6 @@ Rabbit coats: two letter-pair genes (`coat`, e.g. 'AaDd') give four colours, plu
 `moult` gene that whitens the coat in winter. Foxes spot a still rabbit from further off when its
 coat stands out from the ground under it (`visibility`); the ground colours (`GROUND`) live in the
 sim and the drawing uses them too.
-
-Cover (`w.cover`, 0 to 1 a tile, `coverTick` once a day after the trees, and a fire takes it as it burns): a hawthorn
-within `COVER_THORN` of its trunk (full once it's young), the scrub where a wood thins out (`COVER_EDGE`), and a little in
-long grass (`COVER_GRASS` over `LONG`). A still rabbit on cover is seen from nearer (`visibility`, `HIDE`). A rabbit fleeing
-a fox with no burrow in reach runs for the nearest good cover (`coverNear`, `HIDE_IN`, within `HIDE_REACH`, not toward the
-fox) and crouches there (mode `'cover'`, `HIDE_TICKS`, `crouched`): a fox can't pick it out, and one chasing it loses it
-(`escaped`, how `'cover'`). In a keeper field a planted hawthorn grows up `HEDGE_PACE` times as fast till it's young, so a
-hedge planted in spring hides a little that summer and fully the next. With it, about a fifth of the meadow's escapes are
-into cover; the foxes still cycle with the rabbits.
 
 Rabbits catch a sickness from each other (`sicknessTick`, every `SICK_EVERY` ticks): from a sick one sharing their
 burrow (`BURROW_CATCH`), and from one within `CONTACT` tiles out in the open (`OPEN_CATCH`), both times how crowded

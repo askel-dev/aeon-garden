@@ -15,16 +15,11 @@ const perKind = make => Object.fromEntries(S.KINDS.map(s => [s, make(s)]));   //
 // drawn on it (Sim.drawnToLink; older links have it as ?drawn={...}), as the terrain lab hands them
 // over. ?lab opens that lab: the meadow without animals, and terrain-lab.js on top.
 const params = new URLSearchParams(location.search), LAB = params.has('lab');
-// ?field is the keeper game (PLAN.md, "The Field"): a worn field to mend. What you do there goes to the sim as an
-// order (order, sim.js act), and the meadow's powers are off: releasing animals, lightning, fire, grass, the
-// weather, picking an animal up, and the season it runs on while you're away.
-const FIELD = params.has('field') && !LAB;
-let me = 0;                               // the keeper you are: 0 alone (the second player's comes with Milestone B)
 const fromUrl = key => { try { return JSON.parse(params.get(key) || '{}'); } catch (e) { return {}; } };   // a broken link: the usual meadow
 let terrain = fromUrl('terrain'), drawn = location.hash.length > 1 ? S.drawnFromLink(location.hash) : fromUrl('drawn');
 const terrainQuery = () => (Object.keys(terrain).length ? '&terrain=' + encodeURIComponent(JSON.stringify(terrain)) : '')
   + (S.drawnToLink(drawn) ? '#' + S.drawnToLink(drawn) : '');
-const meadowLink = seed => (FIELD ? '?field&seed=' : '?seed=') + seed + terrainQuery();   // the address of a meadow, and the name it's kept under
+const meadowLink = seed => '?seed=' + seed + terrainQuery();   // the address of a meadow, and the name it's kept under
 
 // How many people come, and from where, counted by GoatCounter (goatcounter.com: free, no cookies,
 // nothing to agree to). Off until COUNTER holds the site's code: sign up there, pick a code, put it
@@ -628,7 +623,6 @@ const unfade = () => fadeTo(1);
 
 function plantEmoji(season, p, g) {
   const kind = p.kind, f = p.field;
-  if (p.from > world.tick) return kind < 0.3 && g > 0.1 ? '🌱' : null;   // sown, not up till its season
   if (f && season === f.season) return g >= S.FIELD_GRASS ? f.emoji[Math.floor(kind * f.emoji.length)] : '🌱';
   if (f && season < 2) return g > 0.4 ? '🌿' : null;      // a field out of bloom is just grass
   switch (season) {
@@ -658,7 +652,7 @@ function plantLook(p, season, z) {
 // flower's painting (flowerSprite's code + 1; 0: it's drawn as its emoji).
 let plantKeys = null, plantArt = null, plantKeysWorld = null, plantKeysTick = -1, plantKeysZoom = 0, plantKeysDpr = 0;
 function updatePlantLooks(z, season) {
-  if (plantKeysWorld !== world || plantKeys.length !== world.plants.length) {   // (a new meadow, or a patch sown)
+  if (plantKeysWorld !== world) {
     plantKeys = new Int32Array(world.plants.length); plantArt = new Int32Array(world.plants.length);
     plantKeysWorld = world; plantKeysTick = -1;
   }
@@ -1130,7 +1124,7 @@ function drawBurrow(b, sx, sy, z, season, residents) {
 
 // ------------------------------------------------------------------ drawing
 
-const MOVING = new Set(['wander', 'food', 'flee', 'chase', 'stalk', 'prowl', 'home', 'love', 'follow', 'friends', 'dig', 'arrive', 'leave']);
+const MOVING = new Set(['wander', 'food', 'flee', 'chase', 'stalk', 'prowl', 'home', 'love', 'follow', 'friends', 'dig', 'arrive']);
 const REMAINS_SIZE = 0.75;                // remains, next to a rabbit (drawRemains)
 const HOLT_SIZE = 0.8;                    // the way into an otters' holt
 const BODY_SIZE = 1;                      // a dead rabbit, lying on its side
@@ -1248,7 +1242,6 @@ function render(now) {
   if (dusk > 0) wash(`rgba(${DUSK_RGB}, ${dusk})`);
   drawFire(now);
   drawWeather(now, ck);
-  if (lens.on) drawLens(z, ox, oy);                  // a keeper's lens, above the dark
 
   // Burrow snores at night.
   if (ck.night && z >= 8) {
@@ -1272,7 +1265,6 @@ function render(now) {
 
   drawEffects(now);
   drawZaps(now);
-  if (FIELD) drawKeeperHand();
   if (held) drawHeld(now);
   if (sel) drawSelectionOver(sel, now);
   if (ui.picked) drawPickedOver();
@@ -5533,7 +5525,7 @@ function addNews(html, category, minGapMs = 0) {
   const now = performance.now();
   if (category && minGapMs && ui.lastNews[category] && now - ui.lastNews[category] < minGapMs) return;
   if (category) ui.lastNews[category] = now;
-  ui.newsLog.unshift(category ? { html, tick: world.tick, category } : { html, tick: world.tick });
+  ui.newsLog.unshift({ html, tick: world.tick });
   ui.newsLog.length = Math.min(ui.newsLog.length, NEWS_LOG_MAX);
   if (away.on) { awayNews(html); ui.newsStale = true; return; }   // catching up: the log, and the card if it's big
   if (ui.newsOpen) { ui.newsStale = true; return; }   // the frame rebuilds it, once however much happened
@@ -5570,7 +5562,7 @@ function goneLine(c, cause, killer) {
   const at = cause === 'left' ? '' : placeNear(c.x, c.y), who = link(c);
   const how = {
     fox: `${link(killer)} the fox took ${who}`, owl: `${link(killer)} the owl took ${who}`,
-    left: c.mode === 'leave' ? `${who} left the field` : `${who} flew off over the trees, to find a wood of its own`, hunger: `${who} starved`,
+    left: `${who} flew off over the trees, to find a wood of its own`, hunger: `${who} starved`,
     lightning: `Lightning struck ${who}`, fire: `The fire took ${who}`, flood: `${who} drowned in the flooded burrow`,
     ice: `${who} went through the ice`, sickness: `The sickness took ${who}`,
   }[cause] || `${who} died of old age`;
@@ -5717,40 +5709,6 @@ function handleEvent(e) {
     case 'plantgrew':
       addNews(`🌿 The ${plantedLink(e.tree)} you planted is a sapling now, out of the rabbits' reach.`);
       break;
-    case 'acted':                       // an order carried out (order, sim.js act)
-      lens.dirty++;
-      if (e.order.kind === 'plant') planted(e.it);
-      else if (KEEPER_DID[e.order.kind]) { KEEPER_DID[e.order.kind](e); terrainTick = -1; }
-      else if (e.order.kind === 'name') {
-        if (e.c) named(link(e.c), e.was, e.c.sex === 'F' ? 'her' : 'him');
-        else named(`Queen ${esc(e.queen.name)}`, e.was, 'her hive');
-        renderInspector();
-        if (yoursOpen()) renderYours();
-      }
-      break;
-    case 'refused':
-      if (e.order.kind === 'sow' && e.why === 'water') addNews('💧 Flowers don’t grow in the water.', 'noplant', 3000);
-      else if (NO_PLANT[e.why]) addNews(NO_PLANT[e.why], 'noplant', 3000);
-      else if (e.why === 'seed') addNews(`👝 No ${pouchName(e.order.tree || e.order.flower || 'hawthorn')} seed in the pouch.`, 'noplant', 3000);
-      else if (NO_KEEPER[e.why]) addNews(NO_KEEPER[e.why], 'noplant', 3000);
-      break;
-    case 'harvest':
-      addNews(`🧺 Into the pouch: ${Object.entries(e.got).map(([k, n]) => `${n} ${pouchName(k)}`).join(', ')}.`);
-      break;
-    case 'gift':
-      addNews(e.lifeline ? `🕊️ <b>A gentle year ahead.</b> The almanac sees no trouble in it, and a bird brought ${an(pouchName(e.kind))} seed for the pouch.` : GIFT_SAY(e.kind));
-      chime('named');
-      break;
-    case 'surveyor': case 'survey':
-      surveyorSays(e);
-      break;
-    case 'almanac':
-      almanacNews(e);
-      break;
-    case 'trouble':                       // the sickness's first cases (the fox scouts come as guests, guestNews)
-      addNews(e.n ? `🤒 <b>The sickness has reached the warren ${whereAt(e.x, e.y)}.</b> ${e.n === 1 ? 'A rabbit has' : e.n + ' rabbits have'} caught it.`
-        : '🌤️ The sickness passed the field by: there were no rabbits for it to catch.', 'guest');
-      break;
     case 'plantseeds':
       addNews(`🌰 The ${plantedLink(e.tree)} you planted in the ${plantedWhen(e.tree)} is bearing its first seed.`);
       break;
@@ -5818,8 +5776,7 @@ function handleEvent(e) {
         const t = `🦉 ${link(e.killer)} the owl dropped silently out of the dusk and took ${link(c)}, a young rabbit still out.`;
         if (mine) addNews(t); else addNews(t, 'owlcatch', 20000);
       } else if (e.cause === 'left') {
-        if (mine && c.mode === 'leave') addNews(`🧳 ${link(c)} has left the field.`);
-        else if (mine) addNews(c.species === 'otter' ? `🦦 ${link(c)} has gone off down the water to find a stretch of its own.`
+        if (mine) addNews(c.species === 'otter' ? `🦦 ${link(c)} has gone off down the water to find a stretch of its own.`
           : `🦉 ${link(c)} has flown off over the trees to find a wood of its own.`);   // the rest: the 'owlleaves' and 'otterleaves' news
       } else if (e.cause === 'hunger') {
         const t = c.species === 'fox' ? `🥀 ${link(c)} the fox starved. There weren't enough rabbits or voles.`
@@ -5970,7 +5927,6 @@ function handleEvent(e) {
     case 'escape': {
       hear('escape', e.rabbit.x, e.rabbit.y, { how: e.how }, mine);
       const t = e.how === 'burrow' ? `💨 ${link(e.rabbit)} dived into a burrow just before ${link(e.fox)} could pounce!`
-        : e.how === 'cover' ? `🌿 ${link(e.rabbit)} slipped into cover and kept still, and ${link(e.fox)} lost sight of it.`
         : e.how === 'pond' ? `🌊 ${link(e.rabbit)} put ${e.water ? e.water.name : 'the water'} between itself and ${link(e.fox)}, and got away!`
         : `💨 ${link(e.rabbit)} outran ${link(e.fox)}!`;
       if (mine) addNews(t); else addNews(t, 'escape', 11000);
@@ -5996,11 +5952,7 @@ function handleEvent(e) {
     case 'pollinate':
       puffPollen(e.x, e.y);
       break;
-    case 'settled': case 'fret': case 'leave':
-      guestNews(e);
-      break;
     case 'arrive': {
-      if (e.guest) { guestNews(e); break; }
       if (e.family) intro.family = e.who;
       if (e.family) addNews(`🧳 ${link(e.who[0])} and ${link(e.who[1])} moved into the meadow, with their kits ${link(e.who[2])} and ${link(e.who[3])}.`);
       if (e.founding && e.species === 'rabbit') break;   // the rest come in quietly, a few at a time all day
@@ -6018,28 +5970,6 @@ function handleEvent(e) {
       break;
     }
   }
-}
-
-// A keeper field's guests (sim.js guestsDay): who came and why, who settled, who's restless and why, who left.
-const GUEST_NAMES = { rabbit: 'rabbits', fox: 'foxes', bee: 'bees', crow: 'crows', otter: 'otters', vole: 'voles', frog: 'frogs', owl: 'owls' };
-const GUEST_COME = {
-  rabbit: n => `🧳 A family of rabbits has moved into the field: ${n}.`, fox: n => `🦊 A pair of foxes has come into the field: ${n}.`,
-  bee: () => '🐝 A swarm has moved into the hollow tree.', crow: n => `🐦‍⬛ Crows have flown in over the field: ${n}.`,
-  otter: n => `🦦 A pair of otters has come up the water: ${n}.`, vole: () => '🐭 Voles have found the long grass.',
-  frog: () => '🐸 Frogs have come up the brook to the still water.',
-};
-function guestNews(e) {
-  const who = GUEST_NAMES[e.species], Who = who[0].toUpperCase() + who.slice(1);
-  if (e.type === 'arrive') {
-    if (e.scouts) addNews(`🦊 <b>Foxes have come scouting the warren ${whereAt(e.x, e.y)}</b>, as the almanac said: ${e.who.map(link).join(', ')}.`, 'guest');
-    else addNews(GUEST_COME[e.species](e.who.map(link).join(', ')) + ` They came for ${esc(e.why)}.` + (e.again ? ' They\'re back.' : ''), 'guest');
-    for (const c of e.who) addEffect('✨', c.x, c.y);
-    hear('arrive', e.x, e.y, { species: e.species }, true);
-  } else if (e.type === 'settled') addNews(`🏡 <b>The ${who} have settled.</b> Born here, and here a year.`, 'guest');
-  else if (e.type === 'fret') addNews(`😟 The ${who} are restless: ${esc(e.why)}.`, 'guest');
-  else if (e.dead) { chime('extinct'); addNews(`😢 <b>The last of the ${who} are gone.</b>`, 'guest'); }
-  else addNews(e.species === 'vole' || e.species === 'frog' ? `🍂 <b>${Who} won't stay:</b> ${esc(e.why)}. They'll dwindle away.`
-    : `🧳 <b>The ${who} are leaving the field:</b> ${esc(e.why)}.`, 'guest');
 }
 
 // How many make a record worth telling, and how big a peak has to be before its crash is news.
@@ -6200,7 +6130,6 @@ function updateMeadowCard() {
   setText($('#sky-btn'), wx.emoji);
   setHTML($('#mini-sky'), `<span id="mini-season">${S.SEASONS[ck.season].emoji}</span>${icon}`);   // phones hide the season
   updateFavicon(ck);
-  updateKeeper();
   for (const s of S.KINDS) {
     if (!SERIES[s]) continue;                              // (the owls, while they're off: sim.js OWLS)
     setText($('#mini-' + s), String(world.count[s]));
@@ -7289,8 +7218,7 @@ const THINGS = {
       const season = S.seasonOf(world.tick), plants = world.plants.filter(p => p.field === f), open = plants.filter(p => S.isFlower(world, p)).length;
       let tiles = 0, grass = 0, voles = 0;
       for (let i = 0; i < world.fieldAt.length; i++) if (world.fieldAt[i] === f.id && !world.water[i]) { tiles++; grass += world.grass[i]; voles += world.voles[i]; }
-      const status = f.from > world.tick ? `🌱 Sown: it comes up in ${seasonName(f.season)}`
-        : season === f.season ? (open ? `${f.emoji[0]} In bloom: ${open} of ${plants.length} flowers open` : '🐇 Grazed down: no flowers open')
+      const status = season === f.season ? (open ? `${f.emoji[0]} In bloom: ${open} of ${plants.length} flowers open` : '🐇 Grazed down: no flowers open')
         : `🌿 Resting: it blooms in ${seasonName(f.season)}`;
       const inField = c => world.fieldAt[tileOf(c.x, c.y)] === f.id;
       const now = world.creatures.filter(c => c.alive && !c.hidden && inField(c));
@@ -7447,9 +7375,13 @@ function endNaming(keep) {
   if (!key) return;
   ui.naming = 0;
   if (keep && el) {
-    const h = typeof key !== 'number' && world.hives.find(o => 'hive:' + o.id === key);
-    if (h) order({ kind: 'name', hive: h.id, name: el.value });
-    else if (typeof key === 'number') order({ kind: 'name', who: key, name: el.value });
+    if (typeof key === 'number') {
+      const c = world.byId.get(key), was = c?.mine;
+      if (c && c.alive && S.nameCreature(world, c, el.value)) named(link(c), was, c.sex === 'F' ? 'her' : 'him');
+    } else {
+      const h = world.hives.find(o => 'hive:' + o.id === key), was = h?.queen?.mine;
+      if (h && S.nameQueen(world, h, el.value)) named(`Queen ${esc(h.queen.name)}`, was, 'her hive');
+    }
   }
   renderInspector();
   if (yoursOpen()) renderYours();
@@ -7525,7 +7457,6 @@ function creatureAt(sx, sy) {
 // Tap an animal tool already in your hand and it releases more at a time: ×1, ×2, ×5, ×10.
 const GROUPS = [1, 2, 5, 10];
 function setTool(tool) {
-  if (FIELD ? !FIELD_TOOLS.has(tool) : KEEPER_TOOLS.has(tool)) return;
   if (tool === ui.tool && S.KINDS.includes(tool)) {
     ui.group[tool] = GROUPS[(GROUPS.indexOf(ui.group[tool]) + 1) % GROUPS.length];
     try { localStorage.setItem('aeon-garden-group', JSON.stringify(ui.group)); } catch (e) { /* fine */ }
@@ -7653,9 +7584,8 @@ canvas.addEventListener('pointerdown', e => {
   if (fingerTap) fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (fingers.size >= 2) { startPinch(); return; }
   drag = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y, moved: false, paint: (ui.tool === 'grass' || ui.tool === 'fire') && e.button === 0,
-    line: ui.tool === 'hedge' && e.button === 0 ? { from: toWorld(e.clientX, e.clientY), to: null } : null,   // dragged, a hedge
     t: e.timeStamp, lx: e.clientX, ly: e.clientY, vx: 0, vy: 0, id: e.pointerId,
-    grab: ui.tool === 'look' && e.button === 0 && !LAB && !FIELD ? grabAt(e.clientX, e.clientY) : null };   // dragged, it's picked up
+    grab: ui.tool === 'look' && e.button === 0 && !LAB ? grabAt(e.clientX, e.clientY) : null };   // dragged, it's picked up
   if (drag.paint) paintAt(e.clientX, e.clientY);
   else if (fingerTap && !LAB) {
     const d = drag;
@@ -7669,7 +7599,6 @@ canvas.addEventListener('pointerdown', e => {
 });
 canvas.addEventListener('pointermove', e => {
   if (fingers.has(e.pointerId)) fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-  ui.at = e.pointerType === 'mouse' ? [e.clientX, e.clientY] : null;   // (where a tool's reach shows, drawKeeperHand)
   if (pinch) { movePinch(); return; }
   if (intro.on) return;
   if (held) { if (e.pointerId === held.id) { held.sx = e.clientX; held.sy = e.clientY; } return; }
@@ -7683,10 +7612,9 @@ canvas.addEventListener('pointermove', e => {
   if (!drag.moved && Math.abs(dx) + Math.abs(dy) > (e.pointerType === 'touch' ? 10 : 4)) {
     if (drag.grab && drag.grab.alive && !drag.grab.hidden) { pickUp(drag.grab, e.clientX, e.clientY, e.pointerId); drag = null; return; }
     drag.moved = true;
-    if (!drag.paint && !drag.line) { drag.x = e.clientX; drag.y = e.clientY; dx = dy = 0; }   // start from here, no jump
+    if (!drag.paint) { drag.x = e.clientX; drag.y = e.clientY; dx = dy = 0; }   // start from here, no jump
   }
   if (drag.paint) { paintAt(e.clientX, e.clientY); return; }
-  if (drag.line) { if (drag.moved) drag.line.to = toWorld(e.clientX, e.clientY); return; }
   const ms = e.timeStamp - drag.t;
   if (ms > 0) {                           // how fast the finger moves, smoothed over the last few moves
     const a = Math.min(1, ms / 40);
@@ -7706,7 +7634,6 @@ canvas.addEventListener('pointerup', e => {
   if (liftFinger(e)) return;
   canvas.classList.remove('dragging');
   if (drag && !drag.moved) click(e.clientX, e.clientY);
-  else if (drag?.line?.to) { const [x, y] = drag.line.from, [x1, y1] = drag.line.to; order({ kind: 'hedge', x, y, x1, y1 }); }
   else if (drag && !drag.paint && e.pointerType === 'touch' && e.timeStamp - drag.t < 60 && Math.hypot(drag.vx, drag.vy) > 250) {
     flick.vx = drag.vx; flick.vy = drag.vy;
   }
@@ -7720,7 +7647,7 @@ canvas.addEventListener('pointercancel', e => {
 });
 // Safari ignores the viewport's no-zoom, and a zoomed page makes the whole meadow blurry.
 document.addEventListener('gesturestart', e => e.preventDefault());
-canvas.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') { ui.hoverId = 0; ui.hoverHive = null; ui.at = null; } });   // a lifted finger leaves too
+canvas.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') { ui.hoverId = 0; ui.hoverHive = null; } });   // a lifted finger leaves too
 canvas.addEventListener('contextmenu', e => { e.preventDefault(); if (!LAB && !ui.ring) openRing(e.clientX, e.clientY); });   // Android's long-press sends one too
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
@@ -7867,9 +7794,7 @@ function click(sx, sy) {
     ui.hoverHive = null;
   } else if (S.KINDS.includes(ui.tool)) release(ui.tool, wx, wy);
   else if (ui.tool === 'zap') zapAt(wx, wy);
-  else if (ui.tool === 'plant' || ui.tool === 'sow') openRing(sx, sy, ui.tool);
-  else if (ui.tool === 'hedge') order({ kind: 'hedge', x: wx, y: wy, x1: wx, y1: wy });   // a tap: one thorn
-  else if (ui.tool === 'dig' || ui.tool === 'mow') order({ kind: ui.tool, x: wx, y: wy });
+  else if (ui.tool === 'plant') openRing(sx, sy, 'plant');
 }
 
 // ------------------------------------------------------------------ planting a tree
@@ -7895,352 +7820,13 @@ const NO_PLANT = { water: '💧 Trees don’t grow in the water.', field: '🌼 
   burrow: '🕳️ Too close to a burrow or a hive for a tree.', crowded: '🌳 Too close to another tree or a rock.' };
 const an = w => (/^[aeiou]/.test(w) ? 'an ' : 'a ') + w;
 const plantedWhen = d => { const day = Math.floor(d.planted / S.TPD); return `${seasonName(S.seasonOf(d.planted))} of year ${Math.floor(day / S.YEAR_DAYS) + 1}`; };
-function plantAt(kind, wx, wy) { order({ kind: 'plant', tree: kind, x: wx, y: wy }); }
-// It's in (the event 'acted'): a sound, a sprout, and the news.
-function planted(d) {
-  hear('grass', d.x, d.y);
-  addEffect('🌱', d.x, d.y, 0.8, 1400);
+function plantAt(kind, wx, wy) {
+  const d = S.plantTree(world, wx, wy, kind);
+  if (typeof d === 'string') { addNews(NO_PLANT[d], 'noplant', 3000); return; }
+  hear('grass', wx, wy);
+  addEffect('🌱', wx, wy, 0.8, 1400);
   tried('plant');
-  addNews(`🌱 You planted ${thingLink('tree', d.id, an(TREE_NAMES[d.kind].toLowerCase()))}. ${PLANT_SAY[d.kind]}`);
-}
-
-// ------------------------------------------------------------------ the keepers' hands (a field)
-//
-// In a field the keepers lay hedges, sow flowers, dig and mow as well as plant (sim.js ORDERS), each costing hours of
-// their season's work and seed from the pouch they share (w.pouch, w.hours). A hedge is dragged out as a line; the
-// spade, the scythe and the seed bag show their reach under the pointer (drawKeeperHand).
-const POUCH_EMOJI = { ...Object.fromEntries(PLANT_KINDS.map(([k, e]) => [k, e])), ...Object.fromEntries(S.FIELD_KINDS.map(k => [k.key, k.emoji[0]])) };
-const pouchName = k => (TREE_NAMES[k] || S.FIELD_KINDS.find(f => f.key === k)?.names[0] || k).toLowerCase();
-const NO_KEEPER = { hours: '⏳ You’ve no hours left this season. You get them back on its first day.', over: '🚜 The field is going under the plough.',
-  deep: '⛏️ That’s as deep as you can dig.', full: '🌼 There’s no room for another patch of flowers.' };
-const GIFT_SAY = k => S.FIELD_KINDS.some(f => f.key === k) ? `🌬️ The wind blew in some ${pouchName(k)} seed: a packet of it is in the pouch.`
-  : `🪶 A bird dropped ${an(pouchName(k))} seed in the field: you have one in the pouch now.`;
-// When a patch sown now comes up, in words.
-function upWhen(f) {
-  const up = S.comesUp(world.tick, f.season), soon = S.clock(world).year === Math.floor(up / S.TPD / S.YEAR_DAYS) + 1;
-  return `${soon ? 'this' : 'next'} ${seasonName(f.season)}`;
-}
-const KEEPER_DID = {
-  hedge(e) {
-    ui.laid = true;                                         // (the field's guide)
-    for (const d of e.trees) addEffect('🌱', d.x, d.y, 0.8, 1400);
-    hear('grass', e.trees[0].x, e.trees[0].y);
-    const n = e.trees.length;
-    addNews(n === 1 ? `🌿 You planted ${thingLink('tree', e.trees[0].id, 'a hawthorn')}. A row of them is a hedge: somewhere to hide.`
-      : `🌿 You laid a hedge of ${n} hawthorns.${e.short ? ' That’s as far as your thorns and hours went.' : ''} Once they’re up, it’s somewhere to hide.`);
-  },
-  sow(e) {
-    const f = e.field;
-    ui.sowed = true;
-    hear('grass', e.order.x, e.order.y);
-    for (let k = 0; k < 5; k++) addEffect('🌱', e.order.x + (Math.random() - 0.5) * 4, e.order.y + (Math.random() - 0.5) * 4, 0.6, 900);
-    const kind = pouchName(f.kind.key);
-    addNews(`${f.emoji[0]} You sowed ${kind === 'heather' ? kind : kind + 's'} ${e.grew ? 'in' : 'and made'} ${thingLink('field', f.id, esc(f.name))}. They come up ${upWhen(f)}.`);
-  },
-  dig(e) {
-    hear('grass', e.x, e.y);
-    addEffect('⛏️', e.x, e.y, 0.8, 1000);
-    const dug = e.burrows ? ` You dug up ${e.burrows === 1 ? 'a burrow' : e.burrows + ' burrows'}.` : '';
-    if (e.made) addNews(`💧 <b>You dug a pond:</b> the water came in, and it’s ${esc(e.water.name)} now.${dug}`);
-    else if (e.water) addNews(`⛏️ You dug, and the water of ${esc(e.water.name)} came in.${dug}`, 'dig-wet', 4000);
-    else addNews(`⛏️ You dug a hollow.${dug}`, dug ? '' : 'dig', dug ? 0 : 4000);
-  },
-  mow(e) {
-    hear('grass', e.x, e.y);
-    addEffect('✂️', e.x, e.y, 0.8, 1000);
-    addNews('✂️ You mowed a patch short.', 'mow', 8000);
-  },
-};
-
-// The hedge as it's dragged out: a dot where each thorn would go, faded past what the pouch and the hours allow. With
-// the spade, the scythe or the seed bag in hand, a ring under the pointer shows what a click reaches.
-const BRUSH = { dig: S.DIG_R, mow: S.MOW_R, sow: S.SOW_R };
-function drawKeeperHand() {
-  const z = cam.zoom, line = drag?.line?.to && drag.line;
-  if (line) {
-    const [x0, y0] = line.from, [x1, y1] = line.to, len = Math.hypot(x1 - x0, y1 - y0), n = Math.floor(len / S.HEDGE_GAP) + 1;
-    const most = world.pouch ? Math.min(world.pouch.hawthorn || 0, S.HEDGE_HOUR * S.hoursLeft(world, me)) : n;
-    ctx.save();
-    for (let k = 0; k < n; k++) {
-      const [sx, sy] = toScreen(x0 + (x1 - x0) / (len || 1) * k * S.HEDGE_GAP, y0 + (y1 - y0) / (len || 1) * k * S.HEDGE_GAP);
-      ctx.globalAlpha = k < most ? 0.9 : 0.3;
-      ctx.fillStyle = k < most ? '#4f7f3a' : '#8a7a62';
-      ctx.beginPath(); ctx.arc(sx, sy, Math.max(3, z * 0.3), 0, TAU); ctx.fill();
-    }
-    ctx.restore();
-    return;
-  }
-  const r = BRUSH[ui.tool];
-  if (!r || !ui.at || drag) return;
-  const [sx, sy] = ui.at;
-  ctx.save();
-  ctx.strokeStyle = '#fff7ec'; ctx.globalAlpha = 0.7; ctx.lineWidth = 2; ctx.setLineDash([6, 5]);
-  ctx.beginPath(); ctx.arc(sx, sy, r * z, 0, TAU); ctx.stroke();
-  ctx.restore();
-}
-
-// The field's part of the meadow card: what the Surveyor wants next, the pouch, and the hours left. And the seed on the
-// tools: tree seeds on Plant, thorns on Hedge, packets on Sow, the hours on the folded tools button.
-function updateKeeper() {
-  if (!world.pouch) return;
-  const p = world.pouch, hours = S.hoursLeft(world, me), seeds = ks => ks.reduce((n, k) => n + (p[k] || 0), 0);
-  setHTML($('#survey-line'), surveyLine());
-  const al = almanacLine(), el = $('#almanac-line');
-  setHTML(el, al);
-  el.classList.toggle('at', [world.almanac?.next.trouble, world.almanac?.now.trouble].some(t => t && t.x !== undefined));
-  const kinds = Object.keys(POUCH_EMOJI).filter(k => p[k]);
-  setHTML($('#pouch'), kinds.length ? kinds.map(k => `<span title="${esc(TREE_NAMES[k] || pouchName(k))}">${POUCH_EMOJI[k]} <b>${p[k]}</b></span>`).join(' ')
-    : '<span class="quiet">Empty. It fills in autumn, from the trees and the flowers.</span>');
-  setHTML($('#hours-line'), `<span class="pips" aria-hidden="true">${'●'.repeat(hours)}<i>${'●'.repeat(Math.max(0, S.HOURS - hours))}</i></span> ${hours} of ${S.HOURS} hours left`);
-  const badge = (tool, n) => { const b = $(`[data-tool="${tool}"]`); if (b.dataset.n !== String(n)) b.dataset.n = n; };
-  badge('plant', seeds(PLANT_KINDS.map(([k]) => k))); badge('hedge', p.hawthorn || 0); badge('sow', seeds(S.FIELD_KINDS.map(k => k.key)));
-  const hand = $('#toolbar .hand');
-  if (hand.dataset.n !== hours + 'h') hand.dataset.n = hours + 'h';
-  setHTML($('#hours-pips'), '<i class="on"></i>'.repeat(hours) + '<i></i>'.repeat(Math.max(0, S.HOURS - hours)));
-  $('#hours-pips').title = `${hours} of ${S.HOURS} hours of work left this season`;
-}
-
-// ------------------------------------------------------------------ the Surveyor (a field)
-//
-// Each spring the Surveyor counts the kinds of animal that have settled in the field (sim.js surveyDay): from the third,
-// short of what he wants, it goes under the plough and the run is over. He says what he'll want a season ahead (the
-// first day of winter). A card for each visit, and the end card says how the run went.
-const SETTLED_EMOJI = { rabbit: '🐇', fox: '🦊', bee: '🐝', otter: '🦦', vole: '🐁', frog: '🐸', owl: '🦉' };
-const kindsOf = n => `${n} ${n === 1 ? 'kind' : 'kinds'} of animal`;
-function surveyLine() {
-  const o = world.over, had = S.settledCount(world);
-  if (o) return o.won ? '🏡 <b>The field is yours.</b> The Surveyor has gone for good.' : `🚜 <b>Ploughed</b> in the spring of year ${o.year}.`;
-  const now = S.clock(world).year, countAt = ((now - 1) * S.YEAR_DAYS + S.SEASON_DAYS - 1) * S.TPD + 1;   // (this year's count, on the last day of spring)
-  const year = Math.max(2, world.tick < countAt ? now : now + 1), want = S.SURVEY[year - 1] ?? 0;   // (none the first spring)
-  return want ? `📋 Spring, year ${year}: the Surveyor wants <b>${kindsOf(want)}</b> settled. <span class="quiet">So far ${had}.</span>`
-    : `📋 Spring, year ${year}: the Surveyor comes to look the field over.`;
-}
-function surveyorSays(e) {
-  const settled = e.settled && andList(e.settled.map(s => `the ${SETTLED_EMOJI[s]} ${GUEST_NAMES[s]}`));
-  if (e.type === 'surveyor') {
-    addNews(e.want ? `📋 <b>A letter from the Surveyor:</b> “In spring I’ll want to see ${kindsOf(e.want)} settled in the field.” So far ${e.had}.`
-      : '📋 <b>A letter from the Surveyor:</b> “I’ll be round in spring to look the field over.”');
-    if (e.want) showSurvey('A letter from the Surveyor', `“In the spring I’ll come to count the animals that have made a home in the field. I’ll want to see ${kindsOf(e.want)}. Fewer, and it goes under the plough.”`,
-      `${e.had ? `So far ${settled || kindsOf(e.had)} ${e.had === 1 ? 'has' : 'have'} settled.` : 'So far nothing has settled: born here, and here a year.'} A season to go.`);
-    return;
-  }
-  chime('season', { season: 0 });
-  if (!e.passed) { endRun(e); return; }
-  if (e.won) { endRun(e); return; }
-  if (!e.want) {
-    addNews(`📋 <b>The Surveyor walked the field.</b> Next spring he’ll want to see ${kindsOf(e.next)} settled.`);
-    showSurvey('The Surveyor walked the field', '“Well. It’s a start. Next spring I’ll count who has made a home here.”', `He’ll want ${kindsOf(e.next)} settled. A kind settles once it has been here a year and young ones have been born here.`);
-    return;
-  }
-  addNews(`📋 <b>The Surveyor counted ${kindsOf(e.had)}</b> (he wanted ${e.want}). Next spring he’ll want ${e.next}.`);
-  showSurvey('The Surveyor counted', `He counted ${settled}. “That’ll do. For now.”`, `Next spring he’ll want ${kindsOf(e.next)}.`);
-}
-
-// ------------------------------------------------------------------ the Almanac (a field)
-//
-// A season ahead the Almanac knows the year's trouble, if it has one (sim.js foresee). The meadow card says what the
-// next season brings, and what's on now; a click on it shows where. The news tells of it on the season's first day.
-const TROUBLE_SAY = {
-  flood: { e: '🌊', name: () => 'a wet spring', what: () => 'The brook will burst its banks further than it ever has, and a burrow near it will flood.', on: 'The brook is in flood.' },
-  storms: { e: '⛈️', name: s => `a stormy ${s}`, what: () => 'Thunder, and lightning in the dry heat: long grass will burn.', on: 'The storms have come.' },
-  drought: { e: '🌵', name: () => 'a dry summer', what: () => 'The brook will run low, the shallows dry up and the grass go brown.', on: 'The drought has come.' },
-  sickness: { e: '🤒', name: () => 'a sickness', what: (s, at) => `It’s going round the farms, and a few days in it’ll reach the warren ${at}. Crowded, it spreads.`, on: '' },
-  foxes: { e: '🦊', name: () => 'foxes', what: (s, at) => `A pair from over the hill will come scouting the warren ${at} a few days in, whatever the field is like.`, on: '' },
-  winter: { e: '❄️', name: () => 'a hard winter', what: () => 'Deep snow, the brook frozen and the grass gone. Out in the open, nothing keeps warm.', on: 'The hard winter has come.' },
-};
-// Where, in words: by the nearest thing with a name, or which way from the middle of the field.
-const whereAt = (x, y) => placeNear(x, y) || `in the ${compass(x - S.W / 2, y - S.H / 2)} of the field`;
-const troubleWhat = (t, s) => TROUBLE_SAY[t.kind].what(seasonName(s), t.x === undefined ? '' : whereAt(t.x, t.y));
-
-function almanacNews(e) {
-  const now = e.now.trouble, next = e.next.trouble, say = now && TROUBLE_SAY[now.kind];
-  if (say?.on) addNews(`${say.e} <b>${say.on}</b> ${troubleWhat(now, e.now.season)}`, 'guest');
-  if (next) {
-    const s = seasonName(e.next.season), it = TROUBLE_SAY[next.kind];
-    addNews(`📖 <b>The almanac says ${it.name(s)} ${next.kind === 'foxes' ? 'are' : 'is'} coming in ${s}.</b> ${troubleWhat(next, e.next.season)}`, 'guest');
-  }
-}
-
-// The meadow card's lines: what's on now, if it's a trouble, and what the next season brings.
-function almanacLine() {
-  const a = world.almanac;
-  if (!a) return '';
-  const now = a.now.trouble, next = a.next.trouble, Season = S.SEASONS[a.next.season].name;
-  const on = now && TROUBLE_SAY[now.kind].on ? `<span class="now">${TROUBLE_SAY[now.kind].e} <b>${TROUBLE_SAY[now.kind].on}</b></span>` : '';
-  if (next) return on + `${TROUBLE_SAY[next.kind].e} <b>${Season}:</b> ${TROUBLE_SAY[next.kind].name(seasonName(a.next.season))}. ${troubleWhat(next, a.next.season)}`;
-  return on + (a.gentle === a.next.year ? '📖 <b>A gentle year ahead.</b> <span class="quiet">The almanac sees no trouble in it.</span>'
-    : `📖 <b>${Season}:</b> <span class="quiet">nothing in the almanac to worry about.</span>`);
-}
-// A click on it: to the place it names, if it names one.
-function almanacLook() {
-  const a = world.almanac, t = [a?.next.trouble, a?.now.trouble].find(t => t && t.x !== undefined);
-  if (!t) return;
-  ui.follow = false; flick.vx = flick.vy = 0;
-  cam.x = t.x; cam.y = t.y;
-  addEffect('📍', t.x, t.y, 0.6, 2600);
-}
-
-// ------------------------------------------------------------------ lenses (a field)
-//
-// A lens colours the field by one thing the keepers need to read: the soil mended, the cover, the food, where the foxes
-// have hunted lately (sim.js w.danger) and the water. One at a time, from the buttons in the meadow card or Shift and its
-// letter. Each is painted a pixel a tile, smoothed once into a canvas LENS_UP times as big (stretching the small one each
-// frame showed every tile), and that is stretched over the meadow above the dark (so it reads at night too). It's painted
-// again once a day or when the keepers change something (lens.dirty). Off, it costs nothing.
-const LENS_OPEN = [240, 231, 206, 0.45];                 // a parchment wash where a lens has nothing to say, so its colours stand out
-const LENSES = {
-  soil: { e: '🟫', name: 'Soil', say: 'Tan is worn out, green mended: the grass grows only to what the soil holds.',
-    paint(i, w) { const t = clamp((w.fert[i] / (w.potential[i] || 1) - S.WORN) / (1 - S.WORN), 0, 1); return [lerp(190, 40, t), lerp(132, 122, t), lerp(72, 70, t), 0.65]; } },
-  cover: { e: '🌿', name: 'Cover', say: 'Dark green is cover thick enough to hide in, light green a little. Pale is open ground.',
-    paint(i, w) { const c = w.cover[i]; return c >= S.HIDE_IN ? [18, 74, 34, 0.78] : c > 0.05 ? [118, 160, 88, 0.45 + 0.4 * c] : null; } },
-  food: { e: '🌾', name: 'Food', say: 'Gold is ground that grows grass enough for a family of rabbits, dull gold thinner. Pink are flowers open for the bees.',
-    paint(i, w) { const g = w.shadedFert[i]; return g >= S.GOOD_GRASS[0] ? [236, 190, 24, 0.7] : g >= S.GOOD_GRASS[1] ? [198, 172, 104, 0.6] : null; } },
-  danger: { e: '⚠️', name: 'Danger', say: 'Red is where the foxes have hunted lately: a catch, or a chase.',
-    paint(i, w, v) { return v > 0.04 ? [206, 40, 30, Math.min(0.8, 0.35 + 0.5 * v)] : null; } },
-  water: { e: '💧', name: 'Water', say: 'Teal is still shallow water, blue the rest. Pale blue is damp ground by it, white frogspawn.',
-    paint(i, w) {
-      if (w.water[i]) return w.spawn[i] > 0 ? [250, 252, 255, 0.9] : w.water[i] === S.SHALLOW && Math.hypot(w.current.x[i], w.current.y[i]) < S.STILL * S.CURRENT ? [24, 170, 160, 0.8] : [40, 84, 196, 0.6];
-      return w.damp[i] <= S.FROG_REACH ? [126, 184, 228, 0.75 - 0.3 * w.damp[i] / S.FROG_REACH] : null;
-    } },
-};
-const lens = { on: '', key: '', dirty: 0, canvas: null, big: null, img: null, blur: null };
-const LENS_UP = 4;
-const LENS_KEYS = { S: 'soil', C: 'cover', F: 'food', D: 'danger', W: 'water' };
-
-function setLens(k) {
-  lens.on = lens.on === k ? '' : k;
-  for (const b of document.querySelectorAll('[data-lens]')) b.classList.toggle('on', b.dataset.lens === lens.on);
-  setHTML($('#lens-say'), lens.on ? LENSES[lens.on].say : '');
-}
-
-// Paint the lens on, if its day or the field has changed since.
-function paintLens() {
-  const key = `${lens.on}:${Math.floor(world.tick / S.TPD)}:${lens.dirty}`;
-  if (key === lens.key) return;
-  lens.key = key;
-  if (!lens.canvas) {
-    lens.canvas = document.createElement('canvas'); lens.canvas.width = S.W; lens.canvas.height = S.H;
-    lens.big = document.createElement('canvas'); lens.big.width = S.W * LENS_UP; lens.big.height = S.H * LENS_UP;
-    lens.img = new ImageData(S.W, S.H); lens.blur = new Float32Array(S.W * S.H);
-  }
-  const L = LENSES[lens.on], d = lens.img.data, w = world, v = lens.on === 'danger' ? spreadOut(w.danger, lens.blur) : null;
-  for (let i = 0; i < S.W * S.H; i++) {
-    const c = L.paint(i, w, v && v[i]) || LENS_OPEN, o = i * 4;
-    d[o] = c[0]; d[o + 1] = c[1]; d[o + 2] = c[2]; d[o + 3] = 255 * c[3] * (1 - mistAt(i % S.W + 0.5, Math.floor(i / S.W) + 0.5));   // (into the mist with the meadow)
-  }
-  if (lens.on === 'food') {                              // the flowers open, on top
-    const pink = p => { if (S.isFlower(w, p)) { const o = (Math.floor(p.y) * S.W + Math.floor(p.x)) * 4; d[o] = 232; d[o + 1] = 70; d[o + 2] = 160; d[o + 3] = 230; } };
-    for (const p of w.plants) if (!w.water[p.i]) pink(p);
-    for (const p of w.blossoms) pink(p);
-  }
-  lens.canvas.getContext('2d').putImageData(lens.img, 0, 0);
-  const b = lens.big.getContext('2d');
-  b.clearRect(0, 0, lens.big.width, lens.big.height);
-  b.imageSmoothingEnabled = true; b.imageSmoothingQuality = 'high';
-  b.drawImage(lens.canvas, 0, 0, lens.big.width, lens.big.height);
-}
-// Where the foxes hunted, spread over a few tiles each way (a box blur, across then down), so a catch reads as a place.
-function spreadOut(src, out) {
-  const R = 2, tmp = lens.tmp ||= new Float32Array(S.W * S.H);
-  for (let y = 0; y < S.H; y++) for (let x = 0; x < S.W; x++) {
-    let n = 0;
-    for (let k = Math.max(0, x - R); k <= Math.min(S.W - 1, x + R); k++) n += src[y * S.W + k];
-    tmp[y * S.W + x] = n;
-  }
-  for (let y = 0; y < S.H; y++) for (let x = 0; x < S.W; x++) {
-    let n = 0;
-    for (let k = Math.max(0, y - R); k <= Math.min(S.H - 1, y + R); k++) n += tmp[k * S.W + x];
-    out[y * S.W + x] = n / (2 * R + 1);
-  }
-  return out;
-}
-function drawLens(z, ox, oy) {
-  if (!lens.on) return;
-  paintLens();
-  ctx.drawImage(lens.big, ox, oy, S.W * z, S.H * z);
-}
-
-// ------------------------------------------------------------------ the guestbook (a field)
-//
-// Who has come to the field, and how each kind stands (sim.js w.guests): here and settled, visiting, gone, or not come
-// yet. A kind that has been once shows the needs check's reason (why) and, while it's restless or about to come, how long;
-// one never seen is a shadow with a vague line about what it likes. Its head is the Surveyor's count.
-const GUEST_HINT = {
-  rabbit: 'Something that grazes, and hides when it must.', fox: 'Something that hunts what grazes, and dens in a thicket.',
-  bee: 'Something that likes flowers, and an old hollow tree.', frog: 'Something that likes still water with long grass by it.',
-  vole: 'Something small that lives in long grass.', otter: 'Something that fishes, wants a bank to live in, and digs frogs from the mud in a hard frost.',
-  crow: 'Something that roosts in a tall tree.', owl: 'Something that hunts at night from a hollow tree.',
-};
-const GUEST_EMOJI = { ...SETTLED_EMOJI, crow: '🐦‍⬛' };
-const guestsOpen = () => !$('#guests').classList.contains('hidden');
-function toggleGuests(open = !guestsOpen()) {
-  $('#guests').classList.toggle('hidden', !open);
-  if (open) renderGuests();
-}
-const daysWord = n => (n === 1 ? 'a day' : `${n} days`);
-function renderGuests() {
-  const g = world.guests;
-  if (!g) return;
-  const yearOf = t => Math.floor(t / S.TPD / S.YEAR_DAYS) + 1, when = t => `${seasonName(S.seasonOf(t))}, year ${yearOf(t)}`;
-  const rows = [...S.GUESTS.filter(s => s !== 'crow'), 'crow'].map(s => {
-    const st = g[s], Name = GUEST_NAMES[s][0].toUpperCase() + GUEST_NAMES[s].slice(1);
-    if (st.firstCame < 0 && st.state === 'none') {
-      const soon = st.metDays > 0 ? ` <span class="soon">Something has been seen about the edge of the field.</span>` : '';
-      return `<li class="unseen"><span class="shade">${GUEST_EMOJI[s]}</span><span><b>Not yet</b><small>${GUEST_HINT[s]}${soon}</small></span></li>`;
-    }
-    const here = st.state === 'visiting' || st.state === 'settled';
-    const head = st.state === 'settled' ? (s === 'crow' ? 'here from the start (they don’t count)' : `settled since ${when(st.settledAt)}`)
-      : st.state === 'visiting' ? `visiting since ${when(st.cameAt)}` : st.state === 'left' ? `gone since ${when(st.leftAt)}${st.left > 1 ? ` (${st.left} times)` : ''}` : 'not here';
-    let line = st.why ? esc(st.why[0].toUpperCase() + st.why.slice(1)) + '.' : '';
-    if (here && st.unmetDays >= 2) line = `<span class="fret">Restless ${daysWord(st.unmetDays)}:</span> ${esc(st.why)}. They’ll leave in ${daysWord(Math.max(1, S.LEAVE_DAYS - st.unmetDays))}.`;
-    else if (st.state === 'visiting' && s !== 'crow') line += ' They settle once young are born here and they’ve been here a year.';
-    else if (!here && st.metDays > 0) line += ` ${st.metDays} ${st.metDays === 1 ? 'day' : 'days'} of ${S.ARRIVE_DAYS * (1 + st.left)} before they come${st.left ? ' back' : ''}.`;
-    return `<li class="${st.state}"><span>${GUEST_EMOJI[s]}</span><span><b>${Name}</b> · ${head}<small>${line}</small></span></li>`;
-  });
-  setHTML($('#guests-head'), surveyLine());
-  setHTML($('#guests-list'), rows.join(''));
-}
-
-// A card from the Surveyor: what he says, and a line on it. The end card says how the run went (endRun).
-const surveyOpen = () => !$('#survey').classList.contains('hidden');
-function showSurvey(title, say, more, end = '') {
-  setText($('#survey-title'), title);
-  $('#survey-say').innerHTML = say;
-  $('#survey-more').innerHTML = more;
-  $('#survey').classList.toggle('end', !!end);
-  $('#survey-end').innerHTML = end;
-  $('#survey').classList.remove('hidden');
-}
-function closeSurvey() { $('#survey').classList.add('hidden'); }
-
-function endRun(e) {
-  const won = e.won, g = world.guests, years = e.year - 1;
-  const rows = S.GUESTS.filter(s => s !== 'crow' && g[s].firstCame >= 0).map(s => {
-    const st = g[s], when = t => `year ${Math.floor(t / S.TPD / S.YEAR_DAYS) + 1}`;
-    const what = st.state === 'settled' ? `settled in ${when(st.settledAt)}` : st.state === 'left' ? `came in ${when(st.firstCame)}, gone by ${when(st.leftAt)}`
-      : `came in ${when(st.firstCame)}, not settled yet`;
-    return `<li>${SETTLED_EMOJI[s]} <b>${GUEST_NAMES[s][0].toUpperCase() + GUEST_NAMES[s].slice(1)}</b> ${what}${st.left > 1 ? ` (left ${st.left} times)` : ''}</li>`;
-  });
-  const mine = [...world.byId.values()].filter(c => c.mine);
-  const yearAgo = world.tick - S.YEAR_DAYS * S.TPD, told = ui.newsLog.filter(n => n.tick >= yearAgo && n.category === 'guest').slice(0, 4);
-  const end = `<ul>${rows.join('') || '<li>Nobody came.</li>'}</ul>`
-    + (mine.length ? `<p class="named">Yours: ${linkList(mine)}</p>` : '')
-    + (told.length ? `<h3>The last year</h3><ul class="told">${told.map(n => `<li>${n.html}</li>`).join('')}</ul>` : '');
-  addNews(won ? '🏡 <b>The Surveyor has been for the last time. Nobody’s Meadow is somebody’s now.</b>'
-    : `🚜 <b>The Surveyor counted ${kindsOf(e.had)}, and wanted ${e.want}.</b> The field goes under the plough.`);
-  showSurvey(won ? 'Nobody’s Meadow is somebody’s now' : 'Under the plough',
-    won ? `He counted ${e.settled.map(s => SETTLED_EMOJI[s]).join(' ')} and put his pencil away. “I’ll not be back.”`
-      : `He counted ${e.had ? e.settled.map(s => SETTLED_EMOJI[s]).join(' ') : 'nothing that had settled'}, and wanted ${e.want}. “I’m sorry. It goes under the plough.”`,
-    `You kept the field ${years === 1 ? 'a year' : years + ' years'}.`, end);
-  setSpeed(0);
-}
-
-// What you do to the meadow as an order (sim.js act), carried out on the next tick, and told of when it is
-// ('acted', 'refused' in handleEvent), the way it will be for two. Paused, or in the meadow you watch, at once.
-function order(cmd) {
-  const now = !FIELD || !ui.speed;
-  S.act(world, { t: world.tick + (now ? 0 : 1), by: me, ...cmd });
-  if (now) { S.carryOut(world); flushEvents(); }
+  addNews(`🌱 You planted ${thingLink('tree', d.id, an(TREE_NAMES[kind].toLowerCase()))}. ${PLANT_SAY[kind]}`);
 }
 // What the news calls one: a link while it stands.
 const plantedLink = d => { const k = treeName(d).toLowerCase(); return world.decor.includes(d) ? thingLink('tree', d.id, k) : k; };
@@ -8305,36 +7891,22 @@ const RING_TOOLS = [['rabbit', '🐇', 'Release a rabbit'], ['fox', '🦊', 'Rel
   ['plant', '🌳', 'Plant a tree'], ['zap', '⚡', 'Strike lightning'], ['fire', '🔥', 'Wall of fire'], ['sky', '🌦️', 'Weather']].filter(([k]) => k !== 'owl' || S.OWLS);
 // Owls off for now (sim.js OWLS): their tool, counters and graph button stay in the page, hidden.
 if (!S.OWLS) for (const e of document.querySelectorAll('[data-tool="owl"], [data-show="owl"], #mini-owl, #n-owl')) (e.closest('.mini-pop, .pop') || e).classList.add('hidden');
-// A field keeps the keepers' tools only (and only a field has them). The weather still shows, but isn't yours to pick.
-const FIELD_TOOLS = new Set(['look', 'plant', 'hedge', 'sow', 'dig', 'mow']), KEEPER_TOOLS = new Set(['hedge', 'sow', 'dig', 'mow']);
-if (FIELD) {
-  for (const b of document.querySelectorAll('[data-tool]')) if (!FIELD_TOOLS.has(b.dataset.tool)) b.classList.add('hidden');
-  for (const b of document.querySelectorAll('#more-menu [data-act="sky"], #more-menu [data-act="guide"], #meadow .evo-h, #meadow .evo')) b.classList.add('hidden');
-  $('.hud-top [data-act="sky"]').title = 'The weather';
-} else for (const b of document.querySelectorAll('.keeper')) b.classList.add('hidden');
-// In a field the ring holds the keepers' tools that act right where you clicked.
-const FIELD_RING = [['plant', '🌳', 'Plant a tree'], ['sow', '🌼', 'Sow flowers'], ['dig', '⛏️', 'Dig here'], ['mow', '✂️', 'Mow here']];
 
-// which: '' the tools, 'sky' the weather, 'plant' the kinds of tree, 'sow' the flowers. In a field each kind
-// shows how many seeds of it are in the pouch, and an empty one is faded.
+// which: '' the tools, 'sky' the weather, 'plant' the kinds of tree.
 function openRing(sx, sy, which = '') {
-  const pouch = world.pouch, has = k => pouch && (pouch[k] || 0);
   const items = which === 'sky'
     ? [...Object.entries(S.WEATHER).map(([k, wx]) => ['sky:' + k, wx.emoji, wx.name]), ['lock', world.skyLocked ? '🔒' : '🔓', world.skyLocked ? 'Unlock the weather' : 'Keep this weather']]
-    : which === 'plant' ? PLANT_KINDS.map(([k, e, label]) => ['plant:' + k, e, label, has(k)])
-    : which === 'sow' ? S.FIELD_KINDS.map(k => ['sow:' + k.key, k.emoji[0], `${k.names[0]}: blooms in ${seasonName(k.season)}`, has(k.key)])
-    : FIELD ? FIELD_RING : RING_TOOLS;
+    : which === 'plant' ? PLANT_KINDS.map(([k, e, label]) => ['plant:' + k, e, label]) : RING_TOOLS;
   if (!ui.ring) { ui.ring = { at: toWorld(sx, sy) }; chime('click'); }
   ui.ring.t0 = performance.now();
   const r = Math.max(which ? 80 : 72, items.length * 56 / TAU);   // room for every 50 px button; near an edge the ring moves in, but still acts where you clicked
   sx = clamp(sx, r + 34, vw - r - 34); sy = clamp(sy, r + 34, vh - r - 34);
   const ring = $('#ring');
   ring.style.left = sx + 'px'; ring.style.top = sy + 'px';
-  ring.innerHTML = `<div class="ring-hub">${which === 'plant' ? 'Which tree?' : which === 'sow' ? 'Which flower?' : ''}</div>` + items.map(([k, e, label, n], i) => {
+  ring.innerHTML = `<div class="ring-hub">${which === 'plant' ? 'Which tree?' : ''}</div>` + items.map(([k, e, label], i) => {
     const a = -Math.PI / 2 + i / items.length * TAU;
     const on = k === 'sky:' + world.weather.kind || (k === 'lock' && world.skyLocked);
-    const count = pouch && n !== undefined ? ` data-n="${n}"` : '', none = count && !n ? ' none' : '';
-    return `<button class="ring-item${on ? ' on' : ''}${none}" data-ring="${k}" data-label="${label}" aria-label="${label}"${count}
+    return `<button class="ring-item${on ? ' on' : ''}" data-ring="${k}" data-label="${label}" aria-label="${label}"
       style="--dx:${(Math.cos(a) * r).toFixed(1)}px;--dy:${(Math.sin(a) * r).toFixed(1)}px;animation-delay:${i * 18}ms">${e}</button>`;
   }).join('');
   ring.classList.remove('hidden');
@@ -8348,10 +7920,8 @@ function closeRing() {
 
 function ringPick(k) {
   const [wx, wy] = ui.ring.at;
-  if (k === 'sky' || k === 'plant' || k === 'sow') { const [sx, sy] = toScreen(wx, wy); openRing(sx, sy, k); return; }
+  if (k === 'sky' || k === 'plant') { const [sx, sy] = toScreen(wx, wy); openRing(sx, sy, k); return; }
   closeRing();
-  if (k === 'dig' || k === 'mow') { order({ kind: k, x: wx, y: wy }); return; }
-  if (k.startsWith('sow:')) { order({ kind: 'sow', flower: k.slice(4), x: wx, y: wy }); return; }
   if (S.KINDS.includes(k)) release(k, wx, wy);
   else if (k === 'zap') zapAt(wx, wy);
   else if (k === 'fire') { setFire(wx, wy); S.burnLine(world, wx - 3, wy, wx + 3, wy); flushEvents(); }   // a short wall across the spot
@@ -8374,7 +7944,6 @@ $('#ring').addEventListener('contextmenu', e => e.preventDefault());
 addEventListener('pointerdown', e => { if (ui.ring && !e.target.closest('#ring,#world')) closeRing(); });
 
 function toggleSkyMenu(open = !ui.sky.menu) {
-  if (FIELD) return;
   ui.sky.menu = open;
   $('#sky-menu').classList.toggle('hidden', !open);
   $('[data-act="sky"]').classList.toggle('on', open);
@@ -8511,7 +8080,6 @@ function showSkyLock() {
 }
 
 function toggleSkyLock() {
-  if (FIELD) return;
   S.lockSky(world, !world.skyLocked);
   addNews(world.skyLocked
     ? `🔒 <b>Weather locked</b> on ${S.WEATHER[world.weather.kind].emoji} ${S.WEATHER[world.weather.kind].name.toLowerCase()} until you unlock it.`
@@ -8587,11 +8155,6 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'home-install') install();
   else if (t.dataset.act === 'ask-later') askIdeas(false);
   else if (t.dataset.act === 'away-ok') closeAway();
-  else if (t.dataset.act === 'almanac') almanacLook();
-  else if (t.dataset.act === 'guests') toggleGuests();
-  else if (t.dataset.act?.startsWith('lens:')) setLens(t.dataset.act.slice(5));
-  else if (t.dataset.act === 'survey-ok') { closeSurvey(); if (world.over && !ui.speed) setSpeed(lastSpeed); }   // (the end card paused it: look the field over)
-  else if (t.dataset.act === 'field-again' || t.dataset.act === 'field-new') { closeSurvey(); newWorld(t.dataset.act === 'field-again' ? world.seed : randomSeed()); setSpeed(lastSpeed); }
   else if (t.dataset.act === 'ask-send') sendIdea();
   else if (t.dataset.act === 'sound') toggleSound();
   else if (t.dataset.act === 'stats') toggleStats();
@@ -8654,21 +8217,15 @@ document.addEventListener('keydown', e => {
   } else if ('1234'.includes(e.key) && e.key.length === 1) setSpeed([1, 4, 15, 60][+e.key - 1]);
   else if (e.key === 'Escape') {
     const more = !$('#more-menu').classList.contains('hidden');
-    surveyOpen() ? closeSurvey() : guestsOpen() ? toggleGuests(false) : awayOpen() ? closeAway() : homeOpen() ? homeGuide(false) : webOpen() ? toggleWeb(false) : yoursOpen() ? toggleYours(false) : ui.ring ? closeRing() : $('#toolbar').classList.contains('open') ? toggleTools(false) : ui.sky.menu ? toggleSkyMenu(false) : more ? toggleMore(false) : ui.stats.open ? toggleStats(false)
+    awayOpen() ? closeAway() : homeOpen() ? homeGuide(false) : webOpen() ? toggleWeb(false) : yoursOpen() ? toggleYours(false) : ui.ring ? closeRing() : $('#toolbar').classList.contains('open') ? toggleTools(false) : ui.sky.menu ? toggleSkyMenu(false) : more ? toggleMore(false) : ui.stats.open ? toggleStats(false)
       : ui.tool !== 'look' ? setTool('look') : select(0);
   }
-  else if (FIELD && e.shiftKey && LENS_KEYS[e.key]) setLens(LENS_KEYS[e.key]);   // a keeper's lenses: Shift and its letter
-  else if (FIELD && e.key === 'g') toggleGuests();
   else if (e.key === 's') toggleStats();
   else if (e.key === 'f' && ui.selectedId) { ui.follow = !ui.follow; renderInspector(); }
   else if (e.key === 'l') setTool('look');
   else if (e.key === 'z') setTool('zap');
   else if (e.key === 'b') setTool('fire');
   else if (e.key === 't') setTool('plant');
-  else if (e.key === 'h') setTool('hedge');
-  else if (e.key === 'o') setTool('sow');
-  else if (e.key === 'd') setTool('dig');
-  else if (e.key === 'x') setTool('mow');
   else if (e.key === 'w') toggleSkyMenu();
   else if (e.key === 'k') toggleSkyLock();
   else if (e.key === 'n') toggleNewsLog();
@@ -8869,11 +8426,10 @@ const SKY_SAID = {
   fog: 'In fog a fox can’t see far.', heat: 'The grass dries out. A fire now would spread.',
   snow: 'In winter snow freezes the water over, and foxes walk across.',
 };
-const GUIDE_STEPS = 3, GUIDE_BYE = 4000, GUIDE_KEY = FIELD ? 'aeon-garden-field-guide' : 'aeon-garden-tried';   // the last tick shows this long before the goodbye
+const GUIDE_STEPS = 3, GUIDE_BYE = 4000, GUIDE_KEY = 'aeon-garden-tried';   // the last tick shows this long before the goodbye
 const guide = { on: false, step: 0, tried: [], said: {}, fresh: '', shut: false, fold: false, auto: false, wait: 0, fast: 0, tickWas: 0, html: '', doneAt: 0 };
 try { Object.assign(guide, JSON.parse(localStorage.getItem(GUIDE_KEY) || '{}')); } catch (e) { /* fine */ }
-// A field has only the three steps (lay a hedge, sow, open the guestbook), then a goodbye: the rest is the field's to show.
-const guideDone = () => (FIELD ? guide.step >= GUIDE_STEPS : TRIES.every(t => guide.tried.includes(t.k)));
+const guideDone = () => TRIES.every(t => guide.tried.includes(t.k));
 
 function saveGuide() {
   const { step, tried, shut, fold, auto } = guide;
@@ -8902,7 +8458,7 @@ function shutGuide() {
 
 // Something on the list was done. It counts whenever it's done, even with the notebook closed.
 function tried(k, said) {
-  if (FIELD || guide.tried.includes(k) || intro.on || away.on || idle.on) return false;
+  if (guide.tried.includes(k) || intro.on || away.on || idle.on) return false;
   guide.tried.push(k);
   guide.said[k] = said || TRIES.find(t => t.k === k).said || '';
   saveGuide();
@@ -8939,8 +8495,7 @@ function guideTick(now) {
   if (ui.speed === 60 && ran > 0 && (guide.fast += ran) >= S.YEAR_DAYS * S.TPD) tried('fast');
 
   if (guide.step < GUIDE_STEPS) {
-    const done = (FIELD ? [() => ui.laid, () => ui.sowed, () => guestsOpen()]
-      : [() => world.byId.has(ui.selectedId), () => ui.speed >= 4, () => !!ui.ring || ui.tool !== 'look'])[guide.step]();
+    const done = [() => world.byId.has(ui.selectedId), () => ui.speed >= 4, () => !!ui.ring || ui.tool !== 'look'][guide.step]();
     if (done && !guide.wait) guide.wait = now + (guide.step < GUIDE_STEPS - 1 ? 1600 : 400);
     if (guide.wait && now >= guide.wait) {
       guide.wait = 0; guide.step++;
@@ -8948,7 +8503,6 @@ function guideTick(now) {
       chime('tick');
     }
   }
-  if (FIELD && guide.step >= GUIDE_STEPS && !guide.doneAt) guide.doneAt = now - GUIDE_BYE;   // (straight to the goodbye)
   if (guide.doneAt && now - guide.doneAt > GUIDE_BYE + 12000) { shutGuide(); guideTick(now); return; }
   if (guide.fresh && narrow() && !guide.fold && now - (guide.freshAt ||= now) > 5000) { guide.fold = true; guide.fresh = ''; guide.freshAt = 0; saveGuide(); }
   renderGuide(now);
@@ -8959,11 +8513,7 @@ function renderGuide(now) {
   let html;
   if (guide.step < GUIDE_STEPS) {
     const mum = intro.family[0], click = touch ? 'Tap' : 'Click';
-    const steps = FIELD ? [
-      [`Lay a hedge: take 🌿 <b>Hedge</b>${touch ? '' : ' (H)'} and drag a line across the field.`, 'A seed a thorn, and an hour for every three. They grow up quickly.'],
-      [`Sow some flowers: take 🌼 <b>Sow</b>${touch ? '' : ' (O)'} and ${click.toLowerCase()} the field.`, 'They come up when their season next comes round.'],
-      [touch ? 'Open the guestbook: ••• at the top, then 📒 <b>The guestbook</b>.' : 'Open the guestbook: click the Surveyor’s line in the card (G).', 'Who has come, and why they stay or go.'],
-    ] : [
+    const steps = [
       [mum && mum.alive ? `${click} ${link(mum)} to follow her.` : `${click} any animal to follow their life.`,
         touch ? 'Pinch to zoom, drag to look around.' : 'Scroll to zoom, drag to look around.'],
       [touch ? 'Time can run faster. Tap <b>1×</b> at the top.' : 'Time can run faster. Press <kbd>3</kbd>, or pick <b>15×</b> at the top.',
@@ -8973,10 +8523,8 @@ function renderGuide(now) {
     const [line, hint] = steps[guide.step];
     html = `<div class="g-top"><span class="g-step">${guide.step + 1} of ${GUIDE_STEPS}</span><button class="g-skip" data-act="guide-skip">Skip</button></div>
       <p class="g-line${guide.wait ? ' done' : ''}" data-step="${guide.step}">${line}</p><p class="g-hint">${hint}</p>`;
-  } else if (FIELD || guide.doneAt && now - guide.doneAt > GUIDE_BYE) {
-    html = FIELD ? `<div class="g-top"><b class="g-title fr">📓 That’s all the help you get</b><button class="g-x" data-act="guide-shut" aria-label="Close">✕</button></div>
-      <p class="g-hint">The rest is the field’s to show you. Mind the almanac, and the Surveyor’s count.</p>`
-      : `<div class="g-top"><b class="g-title fr">📓 That’s all of them</b><button class="g-x" data-act="guide-shut" aria-label="Close">✕</button></div>
+  } else if (guide.doneAt && now - guide.doneAt > GUIDE_BYE) {
+    html = `<div class="g-top"><b class="g-title fr">📓 That’s all of them</b><button class="g-x" data-act="guide-shut" aria-label="Close">✕</button></div>
       <p class="g-hint">Now sit back. The meadow gets on with it, whether you watch or not.</p>`;
   } else {
     const n = guide.tried.length;
@@ -9303,10 +8851,10 @@ function keepMeadow() {
   }).catch(e => console.warn('Could not keep the meadow', e));
 }
 
-// The kept meadow to open: this seed's, or with none, the one watched last (at ?field, the field played last). Null if there's none, or
+// The kept meadow to open: this seed's, or with none, the one watched last. Null if there's none, or
 // no IndexedDB, or it takes too long to say (a new meadow then).
 function keptMeadow(seed) {
-  const list = keptList(), link = seed ? meadowLink(seed) : list.find(k => k.link.startsWith('?field') === FIELD)?.link;
+  const list = keptList(), link = seed ? meadowLink(seed) : list[0]?.link;
   if (!link || !list.some(k => k.link === link)) return Promise.resolve(null);
   let broke = false;
   try { broke = localStorage.getItem(OPENING) === link; } catch (e) { /* fine */ }
@@ -9357,7 +8905,7 @@ function resumeWorld(rec) {
 let hiddenAt = 0;
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) { hiddenAt = Date.now(); keepMeadow(); }
-  else if (hiddenAt && Date.now() - hiddenAt > AWAY_MIN && world && ui.speed > 0 && (!ui.hush || idle.on) && !LAB && !FIELD && !away.on) startAway();
+  else if (hiddenAt && Date.now() - hiddenAt > AWAY_MIN && world && ui.speed > 0 && (!ui.hush || idle.on) && !LAB && !away.on) startAway();
 });
 addEventListener('pagehide', keepMeadow);
 
@@ -9441,13 +8989,11 @@ function flushEvents() {
 function randomSeed() { return Math.floor(Math.random() * 1e6); }
 
 function newWorld(seed, arrival = false) {
-  showWorld(S.createWorld(seed, LAB ? { terrain, drawn, rabbits: 0, foxes: 0, bees: 0 } : { terrain, drawn, arrival, keeper: FIELD }));
+  showWorld(S.createWorld(seed, LAB ? { terrain, drawn, rabbits: 0, foxes: 0, bees: 0 } : { terrain, drawn, arrival }));
   const big = [world.waters.find(v => v.kind === 'river'), world.lake].filter(Boolean).map(v => `<b>${v.name}</b>`);
   const by = big.length ? ' by ' + big.join(' and ') : '';
-  addNews(FIELD ? `🌾 A worn-out field${by}. Nobody will move in for you: mend the land, and see who comes.`
-    : arrival ? `🌱 A new meadow${by}. Nobody lives here yet.`
+  addNews(arrival ? `🌱 A new meadow${by}. Nobody lives here yet.`
     : `🌱 A new meadow${by}. <b>${world.count.rabbit} rabbits</b> and <b>${world.count.fox} foxes</b> have just moved in.`);
-  if (FIELD) addNews('📋 Every spring the Surveyor comes to count the animals that have made a home here. From the third, he wants more each year.');
   if (!LAB) history.replaceState(null, '', meadowLink(seed));
 }
 
@@ -9580,7 +9126,6 @@ function frame(now) {
   }
   if (webOpen() && now - web.at > 1000) { web.at = now; updateWeb(); }
   if (yoursOpen() && now - yours.at > 1000) { yours.at = now; renderYours(); }
-  if (FIELD && guestsOpen() && now - (lens.guestsAt || 0) > 1000) { lens.guestsAt = now; renderGuests(); }
   if (world.history.t.length !== lastRecord) { lastRecord = world.history.t.length; checkPopulationNews(); }
   if (opening > 1 && ++opening > 4) cleared();       // a kept meadow that opened fine
   requestAnimationFrame(frame);
@@ -9621,7 +9166,7 @@ resize();
 const seedParam = +params.get('seed');
 let seen = false;
 try { seen = localStorage.getItem('aeon-garden-welcomed') === '1'; } catch (e) { /* private window */ }
-const firstVisit = !LAB && !FIELD && (!seen || params.has('intro'));   // ?intro plays it again
+const firstVisit = !LAB && (!seen || params.has('intro'));   // ?intro plays it again
 // The kept meadow if there is one (keeping the meadow, above), else a new one. The rest below doesn't wait for it.
 function begin(rec) {
   const back = rec && resumeWorld(rec);
@@ -9639,8 +9184,8 @@ function begin(rec) {
     hush(true);                                         // nothing to count yet: the bars and cards wait
     setSpeed(0);
     if (world.family && !calm) introShot();
-  } else { homeTip(30000); setTimeout(() => startGuide(FIELD && !guide.auto), 2500); }   // (a first field starts the field's steps)
-  if (back && !rec.paused && !FIELD && Date.now() - rec.at > AWAY_MIN) startAway();
+  } else { homeTip(30000); setTimeout(() => startGuide(false), 2500); }
+  if (back && !rec.paused && Date.now() - rec.at > AWAY_MIN) startAway();
   requestAnimationFrame(frame);
 }
 (firstVisit || LAB ? Promise.resolve(null) : keptMeadow(seedParam)).then(begin);

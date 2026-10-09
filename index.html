@@ -74,7 +74,7 @@
   canvas#world.tool-look { cursor: grab; }
   canvas#world.tool-look.dragging { cursor: grabbing; }
   canvas#world.tool-rabbit, canvas#world.tool-fox { cursor: copy; }
-  canvas#world.tool-grass, canvas#world.tool-zap, canvas#world.tool-fire, canvas#world.tool-plant, canvas#world:is(.tool-hedge, .tool-sow, .tool-dig, .tool-mow) { cursor: crosshair; }
+  canvas#world.tool-grass, canvas#world.tool-zap, canvas#world.tool-fire, canvas#world.tool-plant { cursor: crosshair; }
 
   .card {
     position: fixed; background: var(--paper, none) var(--card); border-radius: var(--radius);
@@ -427,70 +427,6 @@
   #away .go:hover { background: #44702f; }
   #away:not(.done) :is(.life, ul, .go) { display: none; }
 
-  /* ---- a keeper field: the Surveyor's card (game.js, showSurvey), like #away; the end of a run has more */
-  #survey { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 10; width: min(440px, calc(100% - 32px)); padding: 22px 24px 20px;
-    max-height: calc(100% - 32px); box-sizing: border-box; overflow: hidden auto; scrollbar-width: thin;
-    background: var(--paper, none) #f7eedc; border-radius: 22px; box-shadow: 0 20px 60px rgba(50, 40, 15, 0.3); }
-  #survey:not(.hidden) > * { animation: pop-in 0.18s ease-out; }
-  #survey h2 { margin: 0 0 8px; font-size: 24px; font-weight: 650; line-height: 1.15; }
-  #survey p { margin: 0 0 12px; line-height: 1.5; }
-  #survey .more { color: var(--muted); }
-  #survey h3 { margin: 12px 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); }
-  #survey ul { margin: 0 0 12px; padding: 0; list-style: none; }
-  #survey li { padding: 6px 0; border-top: 1px solid rgba(90, 70, 40, 0.15); line-height: 1.45; }
-  #survey .told li { font-size: 13.5px; }
-  #survey .ok { display: block; width: 100%; border-radius: 14px; background: #4f7f3a; color: #fff; font-size: 16px; padding: 12px; box-shadow: none; }
-  #survey .end-btns { display: none; gap: 8px; }
-  #survey.end .ok { display: none; }
-  #survey.end .end-btns { display: flex; flex-wrap: wrap; }
-  #survey .end-btns .btn { border-radius: 14px; padding: 12px 14px; }
-  #survey .end-btns .later { flex: none; background: #fbf5e8; box-shadow: none; }
-  #survey .end-btns .go { background: #4f7f3a; color: #fff; box-shadow: none; }
-
-  /* ---- a keeper field's part of the meadow card: the Surveyor, the pouch, the hours (game.js, updateKeeper) */
-  .field-part { font-size: 13px; line-height: 1.5; }
-  #survey-line { margin-top: 6px; color: var(--ink); }
-  #almanac-line { margin-top: 6px; color: var(--ink); }
-  #survey-line { cursor: pointer; }
-  #survey-line:hover b { text-decoration: underline; }
-  .lenses { display: flex; flex-wrap: wrap; gap: 4px; }
-  .lenses button { border: none; border-radius: 9px; padding: 3px 7px; background: #fffaf0; box-shadow: 0 0 0 1px var(--line) inset; font-size: 12px; font-weight: 800; color: var(--muted); }
-  .lenses button:hover { color: var(--ink); }
-  .lenses button.on { background: var(--accent-soft); color: #9a5024; }
-  #lens-say { margin: 4px 0 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
-  #lens-say:empty { display: none; }
-
-  /* ---- a keeper field's guestbook (game.js, renderGuests). Like #yours. */
-  #guests { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 9; box-sizing: border-box; width: min(420px, calc(100% - 32px));
-    max-height: calc(100% - 24px); overflow: hidden auto; scrollbar-width: thin; padding: 16px 20px 14px;
-    background: var(--paper, none) #f7eedc; border-radius: 22px; box-shadow: 0 20px 60px rgba(50, 40, 15, 0.3); }
-  #guests:not(.hidden) > * { animation: pop-in 0.18s ease-out; }
-  #guests-head { margin: 8px 0 4px; font-size: 13.5px; line-height: 1.45; }
-  #guests-head .quiet { color: var(--muted); }
-  #guests-list li > span:first-child { font-size: 17px; line-height: 1.2; }
-  #guests-list small { display: block; margin-top: 2px; color: var(--muted); font-size: 12.5px; line-height: 1.4; }
-  #guests-list .shade { filter: brightness(0) opacity(0.3); }
-  #guests-list .unseen b { color: var(--muted); }
-  #guests-list .left { opacity: 0.8; }
-  #guests-list .fret { color: #9a5024; font-weight: 800; }
-  #guests-list .soon { display: block; font-style: italic; }
-  #almanac-line.at { cursor: pointer; }
-  #almanac-line.at:hover b { text-decoration: underline; }
-  #almanac-line .now { display: block; }
-  #almanac-line .quiet { color: var(--muted); }
-  #survey-line .quiet, #pouch .quiet { color: var(--muted); }
-  #pouch span { display: inline-block; margin-right: 6px; white-space: nowrap; }
-  #hours-line { color: var(--muted); font-weight: 700; margin-top: 2px; }
-  #hours-line .pips { color: #4f7f3a; font-size: 9px; letter-spacing: 0; margin-right: 4px; vertical-align: 1px; }
-  #hours-line .pips i { font-style: normal; color: rgba(90, 70, 40, 0.2); }
-  .ring-item[data-n]::after { content: attr(data-n); position: absolute; top: -2px; right: -4px; padding: 1px 5px; border-radius: 9px;
-    background: var(--accent); color: #fff; font-size: 11px; font-weight: 800; line-height: 1.3; pointer-events: none; }
-  .ring-item.none { opacity: 0.45; }
-  #hours-pips { display: grid; grid-template-columns: repeat(6, 6px); gap: 4px; padding-left: 12px; border-left: 1px dashed var(--line); cursor: help; }
-  #hours-pips i { width: 6px; height: 6px; border-radius: 50%; background: rgba(90, 70, 40, 0.18); }
-  #hours-pips i.on { background: #4f7f3a; }
-  .ring-item.none::after { background: #9a8f7e; }
-
   /* ---- things to try (game.js, the guide): bottom left, the news toasts stacked above it */
   #guide { left: var(--left); bottom: calc(var(--bar, 92px) + 8px); width: 320px; padding: 9px 10px 10px 14px; animation: pop-in 0.35s ease-out; transition: bottom 0.35s ease; }
   .g-top { display: flex; align-items: center; gap: 6px; }
@@ -640,8 +576,6 @@
     #toolbar .tool .l { font-size: 11.5px; line-height: 1; }
     #toolbar .tool[data-tool="fire"] { order: 1; } #toolbar .tool[data-tool="zap"] { order: 2; } #toolbar .tool[data-tool="plant"] { order: 3; }
     #toolbar .tool[data-tool="grass"] { order: 4; } #toolbar .tool[data-tool="look"] { order: 5; }
-    #toolbar .tool:is([data-tool="hedge"], [data-tool="sow"], [data-tool="dig"], [data-tool="mow"]) { order: 3; }
-    #hours-pips { display: none; }   /* (the folded button says the hours) */
     /* time: pause and one button that steps through the speeds; the rest waits in ••• */
     #time { --hud-h: 44px; gap: 2px; padding: 0 4px; }
     #time .speed[data-speed]:not([data-speed="0"]), #time .hud-btn:not(.more), #time .hud-sep { display: none; }
@@ -765,23 +699,6 @@
     <div class="clock"><span id="season-emoji">🌸</span><b id="season-name">Spring</b><span id="clock-rest">day 1 · year 1</span></div>
     <div id="sky">☀️ <b>Clear skies</b></div>
 
-    <div class="keeper field-part">
-      <div id="almanac-line" data-act="almanac" title="The Almanac: what the next season brings, a season ahead"></div>
-      <div id="survey-line" data-act="guests" title="The guestbook: who has come to the field, and why they stay or go (G)"></div>
-      <h3 class="sec">The pouch <span>shared</span></h3>
-      <div id="pouch"></div>
-      <div id="hours-line" title="Each keeper's hours of work this season. They come back on the season's first day, whatever's left"></div>
-      <h3 class="sec">Lenses <span>Shift + letter</span></h3>
-      <div class="lenses">
-        <button data-lens="soil" data-act="lens:soil" title="Soil: how far it's mended (Shift+S)">🟫 Soil</button>
-        <button data-lens="cover" data-act="lens:cover" title="Cover: where a rabbit can hide (Shift+C)">🌿 Cover</button>
-        <button data-lens="food" data-act="lens:food" title="Food: good grass, and flowers open (Shift+F)">🌾 Food</button>
-        <button data-lens="danger" data-act="lens:danger" title="Danger: where the foxes have hunted lately (Shift+D)">⚠️ Danger</button>
-        <button data-lens="water" data-act="lens:water" title="Water: still shallows, damp ground and frogspawn (Shift+W)">💧 Water</button>
-      </div>
-      <p id="lens-say"></p>
-    </div>
-
     <h3 class="sec">Population <span>last 2 years</span></h3>
     <div class="pop" data-act="stats" title="Rabbits alive right now, and the last two years. Click for all the statistics (S)">
       <span class="emoji">🐇</span><span class="n" id="n-rabbit">0</span><canvas id="spark-rabbit"></canvas>
@@ -830,15 +747,9 @@
   <button class="tool" data-tool="owl" title="Click the meadow to release an owl. A female looks for a free hollow oak to nest in"><span class="e">🦉</span><span class="l">Owl</span></button>
   <button class="tool" data-tool="grass" title="Click and drag to grow lush grass"><span class="e">🌱</span><span class="l">Grass</span></button>
   <button class="tool" data-tool="plant" title="Click the meadow to plant a tree, and pick its kind (T)"><span class="e">🌳</span><span class="l">Plant</span></button>
-  <button class="tool keeper" data-tool="hedge" title="Drag to lay a hedge: a row of hawthorns, a seed each and an hour for every three. A click plants one (H)"><span class="e">🌿</span><span class="l">Hedge</span></button>
-  <button class="tool keeper" data-tool="sow" title="Click to sow a patch of flowers: a packet and an hour. It comes up when its season next comes round (O)"><span class="e">🌼</span><span class="l">Sow</span></button>
-  <button class="tool keeper" data-tool="dig" title="Click to dig: two hours a stroke. Below the water line, water comes in (D)"><span class="e">⛏️</span><span class="l">Dig</span></button>
-  <button class="tool keeper" data-tool="mow" title="Click to mow a patch short: an hour. Food for rabbits and crows, but no cover, and few voles or frogs (X)"><span class="e">✂️</span><span class="l">Mow</span></button>
   <button class="tool" data-tool="zap" title="Click the meadow to strike lightning. On dry ground it starts a fire (Z)"><span class="e">⚡</span><span class="l">Zap</span></button>
   <button class="tool" data-tool="fire" title="Click and drag to draw a wall of fire. It burns half a day, and on dry grass it spreads (B)"><span class="e">🔥</span><span class="l">Fire</span></button>
   </div>
-  <!-- a keeper field: the hours of work left this season (game.js, updateKeeper) -->
-  <span id="hours-pips" class="keeper" aria-hidden="true"></span>
   <!-- phones: the tools fold into one round button in the corner, showing the one in your hand -->
   <button class="hand" data-act="tools" title="Tools" aria-expanded="false">🔍</button>
 </nav>
@@ -867,7 +778,6 @@
     <button class="menu-item phone-only" data-act="stats"><span class="e">📊</span> <span class="l">Graphs<span class="x"> and records</span></span></button>
     <button class="menu-item" data-act="web" title="This meadow's food web: who ate whom, and how much"><span class="e">🕸️</span> <span class="l">Who ate whom</span></button>
     <button class="menu-item" data-act="yours" title="The animals you named, and how they're doing"><span class="e">🏷️</span> <span class="l">Yours</span></button>
-    <button class="menu-item keeper" data-act="guests" title="Who has come to the field, and why they stay or go (G)"><span class="e">📒</span> <span class="l">The guestbook</span></button>
     <button class="menu-item phone-only" data-act="sound" id="sound-item"><span class="e">🔇</span> <span class="l">Sound is off</span></button>
     <button class="menu-item hidden" data-act="home" id="home-item"><span class="e">📱</span> <span class="l">Add to<span class="x"> your</span> home screen</span></button>
     <button class="menu-item" data-act="guide" title="A few things to do in the meadow, gentle and not"><span class="e">📓</span> <span class="l">Things to try</span></button>
@@ -994,33 +904,12 @@
   <ul id="yours-list" class="story"></ul>
 </div>
 
-<!-- a keeper field: who has come, and how each kind stands (game.js, renderGuests) -->
-<div id="guests" class="hidden" role="dialog" aria-labelledby="guests-title">
-  <div class="web-head"><h2 class="fr" id="guests-title">The guestbook</h2><button class="close" data-act="guests" title="Back to the field (Esc)">✕</button></div>
-  <p id="guests-head"></p>
-  <ul id="guests-list" class="story"></ul>
-</div>
-
 <div id="away" class="hidden" role="dialog" aria-labelledby="away-title" aria-live="polite">
   <h2 class="fr" id="away-title">While you were away…</h2>
   <p id="away-text"></p>
   <p class="life" id="away-life"></p>
   <ul id="away-news"></ul>
   <button class="btn go" data-act="away-ok">Back to the meadow</button>
-</div>
-
-<!-- a keeper field: the Surveyor's letters and visits, and the end of the run (game.js, surveyorSays) -->
-<div id="survey" class="hidden" role="dialog" aria-labelledby="survey-title" aria-live="polite">
-  <h2 class="fr" id="survey-title"></h2>
-  <p id="survey-say"></p>
-  <p class="more" id="survey-more"></p>
-  <div id="survey-end"></div>
-  <button class="btn go ok" data-act="survey-ok">Back to the field</button>
-  <div class="btns end-btns">
-    <button class="btn later" data-act="survey-ok">Look at it</button>
-    <button class="btn" data-act="field-again">Again on this field</button>
-    <button class="btn go" data-act="field-new">A new field</button>
-  </div>
 </div>
 
 <div id="intro" aria-live="polite">
