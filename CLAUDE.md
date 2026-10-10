@@ -122,6 +122,7 @@ Shortcuts for that: set `localStorage['aeon-garden-welcomed'] = '1'` before load
 card; `window.garden` has `world`, `cam` (set `x`, `y`, `zoom`, `goal = null` to look somewhere) and
 `ui` (`ui.speed = 0` pauses); the CSS `body > *:not(#world, #ground) { visibility: hidden }` hides every panel.
 In a cloud session with no Chrome, Playwright is installed globally (`npm root -g`) with Chromium.
+You don't have to test everything: check what a change could plausibly break, and leave the rest.
 
 The meadow's ecology (terrain and water, grass and soil, voles, frogs, fish, rabbit coats, sickness, remains, crows,
 owls, otters, bees, the trees' lives) is in `.claude/rules/ecology.md`, which loads when sim.js or balance.js is opened.
@@ -153,9 +154,10 @@ new feature must not slow it down. If it would, make it cheaper or leave it out.
 - The sim can run 2000 ticks in one frame. In hot loops, don't make new objects or arrays, and don't
   scan every creature: use the neighbour grid. Recount things only after they change.
 - The page (cards, inspector, news) updates a few times a second at most, and only rewrites what changed.
-- Measure it. Before and after a drawing change, time `render` over a few seconds in a busy meadow,
-  following an animal, zoomed out, at 60x. If it got slower, fix it before committing, and put the
-  numbers in the commit message.
+- Measure it, but only when a change will obviously cost something you could notice: a new full-screen
+  pass, much more drawn each frame, new work in a hot loop. Then time `render` before and after over a few
+  seconds in a busy meadow, following an animal, zoomed out, at 60x. If it got slower, fix it before
+  committing, and put the numbers in the commit message. A caption, a card or a small drawing tweak doesn't need it.
 
 After touching the sim, run `balance.js` over several seeds. The goal is visible
 boom-and-bust cycles that recover, not a flat line and not extinction.
