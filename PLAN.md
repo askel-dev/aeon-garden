@@ -91,12 +91,14 @@ Then a quick look: five minutes of digging ponds, before anything else is built.
 
 ### K3. The flower strip
 
-- Drag a line: a strip about 2 tiles wide and up to 12 long, a field like the made ones (`w.fields`), built
-  as a few blobs along the line so the bees fly to it as to any field.
+- Drawn like the pond: a stroke sows a strip about 2 tiles wide along the drag, up to `STRIP_TILES` (30) tiles,
+  a field like the made ones (`w.fields`, `strip: true`), with a few blobs along the line as its shape so the
+  bees fly to it as to any field. Water, trees, burrows, rocks and fields under it are skipped.
 - It's a meadow mix: at each season's start it turns to that season's flower (winter waits for spring's),
   so it always blooms within a season.
-- Sown, it's bare earth at once (rich, for the crows), with sprouts; it blooms when the grass is back past
-  `FIELD_GRASS`, two or three days in spring and summer. Bees, butterflies and voles find it.
+- Sown, it's bare earth at once (rich, for the crows), with sprouts, and the soil is dug over to at least
+  `STRIP_SOIL`; it blooms when the grass is back past `FIELD_GRASS`: within a day in spring, two to four in
+  summer, and sown after autumn's first day it waits for spring. Bees, butterflies and voles find it.
 - At most 127 fields (`fieldAt` is an Int8Array). Fields that spread and die wait for after this step.
 
 ### K4. The hedge
