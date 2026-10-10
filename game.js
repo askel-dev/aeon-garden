@@ -8209,7 +8209,7 @@ function dugFacts(p) {
 }
 
 // Where to look at a pond from a link: the middle of its water, or of where it was dug.
-function pondSpot(id) {
+function dugSpot(id) {
   let sx = 0, sy = 0, n = 0;
   for (let i = 0; i < world.water.length; i++) if (world.body[i] === id && world.water[i]) { sx += i % S.W + 0.5; sy += Math.floor(i / S.W) + 0.5; n++; }
   const v = world.waters[id];
@@ -8579,7 +8579,7 @@ document.addEventListener('click', e => {
   else if (t.dataset.thing?.startsWith('water:')) {     // a pond the keeper dug: off to look at it
     const v = world.waters[+t.dataset.thing.slice(6)];
     if (t.closest('#yours')) toggleYours(false);
-    if (v) { const at = pondSpot(v.id); select(0); ui.follow = false; cam.x = at.x; cam.y = at.y; clampCam(); pick('water', { body: v, ...at }); }
+    if (v) { const at = dugSpot(v.id); select(0); ui.follow = false; cam.x = at.x; cam.y = at.y; clampCam(); pick('water', { body: v, ...at }); }
   }
   else if (t.dataset.thing) {
     const [kind, id] = t.dataset.thing.split(':'), it = (kind === 'hive' ? world.hives : kind === 'tree' ? world.decor.filter(o => o.tree) : world.fields).find(o => o.id === +id);
