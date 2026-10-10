@@ -43,7 +43,7 @@ const ui = {
   lastNews: {}, newsLog: [], newsOpen: false, records: perKind(() => 0), crashSaid: perKind(() => -1), seenHistory: 0,
   releaseSex: perKind(() => 'F'), group: perKind(() => 1), mini: false, ring: null, sheetUp: false, naming: 0,
   stats: { open: false, show: 'rabbit', range: 'five', hover: null },
-  sky: { mix: {}, tick: 0, bolts: [], boom: -1e9, rainbow: 0, menu: false },
+  sky: { mix: {}, tick: 0, bolts: [], boom: -1e9, rainbow: -1e9, bowEnd: -1e9, menu: false },
 };
 const cam = { x: S.W / 2, y: S.H / 2, zoom: 10, goal: null };
 
@@ -597,7 +597,7 @@ function mistAt(x, y) {                           // how thick the mist is here,
 const over = (c, rgb, a) => c.map((v, i) => v + (rgb[i] - v) * a);
 function fogColour(high, phase) {
   const fog = MIST_RGB.map((v, i) => lerp(lerp(v, high[i], MIST_TINT), MIST_SNOW[i], Math.min(1, world.snow)));
-  const d = darkness(phase), k = duskGlow(phase);
+  const d = shownDark(phase), k = shownDusk(phase);
   if (d <= 0 && k <= 0) return fog.map(v => Math.round(v / 4) * 4);
   const seen = over(over(over(over(fog, NIGHT_RGB, d), DUSK_RGB, k), MIST_NIGHT, 0.7 * d), MIST_DUSK, 2.2 * k);
   return seen.map((v, i) => Math.round(clamp(((v - DUSK_RGB[i] * k) / (1 - k) - NIGHT_RGB[i] * d) / (1 - d), 0, 255) / 4) * 4);   // (each step paints the ground again)
@@ -1140,6 +1140,20 @@ function darkness(phase) {
 }
 const duskGlow = phase => phase > 0.58 && phase < 0.74 ? 0.10 * Math.sin(Math.PI * (phase - 0.58) / 0.16) : 0;
 
+// At speed a night comes and goes in a blink (at 60x three a second), so the light keeps near the day's:
+// the night still breathes, but nothing flashes. The dial in the time pill shows the days going by instead.
+// lightSwing is how much of the swing is shown; it eases to the speed's (lightFrame) so a change never jumps.
+const LIGHT_SWING = [[60, 0.12], [15, 0.5], [0, 1]];   // from this speed up: this much of the swing
+const LIGHT_MID = 0.1;                                 // the darkness it keeps near, a little dimmer than day
+let lightSwing = 1;
+function lightFrame(dt) {
+  if (!ui.speed) return;
+  const to = LIGHT_SWING.find(([s]) => ui.speed >= s)[1];
+  lightSwing += (to - lightSwing) * (1 - Math.pow(0.02, dt));
+}
+const shownDark = phase => LIGHT_MID + (darkness(phase) - LIGHT_MID) * lightSwing;
+const shownDusk = phase => duskGlow(phase) * lightSwing;
+
 function render(now) {
   // Thunder rumbles the whole screen a little.
   const q = now - ui.sky.boom < 350 && ui.speed <= 4 ? 3 * (1 - (now - ui.sky.boom) / 350) : 0;
@@ -1236,10 +1250,10 @@ function render(now) {
   drawButterflies(now, ck);
 
   // Dusk and night.
-  const dark = darkness(ck.phase), dusk = duskGlow(ck.phase);
+  const dark = shownDark(ck.phase), dusk = shownDusk(ck.phase);
   if (dark > 0) wash(`rgba(${NIGHT_RGB}, ${dark})`);
   drawFireflies(now, dark);
-  if (dusk > 0) wash(`rgba(${DUSK_RGB}, ${dusk})`);
+  if (dusk > 0.005) wash(`rgba(${DUSK_RGB}, ${dusk})`);
   drawFire(now);
   drawWeather(now, ck);
 
@@ -3418,7 +3432,7 @@ function drawSelectionOver(c, now) {
 function sun(ck) {
   const m = ui.sky.mix;
   const cover = clamp(0.5 * m.cloudy + 0.7 * m.rain + 0.9 * m.storm + 0.8 * m.fog + 0.5 * m.snow, 0, 0.85);
-  return { lean: clamp((ck.phase - 0.36) / 0.34, -1, 1), a: (1 - 1.6 * darkness(ck.phase)) * (1 - cover) };
+  return { lean: clamp((ck.phase - 0.36) / 0.34, -1, 1) * lightSwing, a: (1 - 1.6 * shownDark(ck.phase)) * (1 - cover) };
 }
 
 // Trees and rocks cast a soft shadow, a cool green-blue, painted once and stretched under each.
@@ -4912,7 +4926,7 @@ const drops = Array.from({ length: 300 }, () => ({ x: Math.random(), y: Math.ran
 const clouds = Array.from({ length: 9 }, () => ({ x: Math.random(), y: Math.random(), r: 9 + Math.random() * 12, s: 0.7 + Math.random() * 0.6 }));
 
 // The weather's clock, in ms: real time while the game runs, whatever the speed, and still while it's paused, so
-// the rain hangs in the air and the waves on the water hold (drawWaves). (The rainbow and lightning keep to real time.)
+// the rain hangs in the air and the waves on the water hold (drawWaves). (Lightning keeps to real time.)
 let weatherClock = 0, weatherLast = 0;
 function weatherTick(now) {
   if (ui.speed > 0) weatherClock += clamp(now - weatherLast, 0, 100);
@@ -4927,7 +4941,7 @@ function drawWeather(now, ck) {
   const dim = 0.05 * m.cloudy + 0.09 * m.rain + 0.30 * m.storm + 0.04 * m.snow;
   if (dim > 0.005) wash(`rgba(50, 62, 92, ${dim})`);
   if (m.heat > 0.01) wash(`rgba(255, 168, 60, ${0.11 * m.heat})`);
-  if (!ck.night) drawRainbow(now);
+  if (!ck.night) drawRainbow();
   if (m.fog > 0.01) drawFog(t, m.fog);
   const rain = m.rain + 1.8 * m.storm;
   if (rain > 0.02) drawRain(t, rain, m.storm);
@@ -4997,11 +5011,13 @@ function drawFog(now, amount) {
   ctx.restore();
 }
 
-// Just for looks, so it keeps to real time: a rainbow should last a moment even at 60x.
+// A rainbow keeps to game time like the rest of the sky, lasting most of a day (14 s at 1x) and holding while it's
+// paused. At BOW_FAST and up it would only flash, so none comes out; rain coming back washes one out (rainbowWet).
 // It stands over the part of the meadow in view when it came out, sized to the window then, and stays there:
 // panning and zooming move it like the ground. Painted once (bow), then copied; while it comes out it's copied
 // in slices, from one foot.
-const BOW_MS = 14000, BOW_IN = 4000, BOW_OUT = 5000, BOW_RES = 0.5, BOW_OUTER = 1.3, BOW_SLICES = 32;
+const BOW_LIFE = 14 * TICKS_PER_SECOND, BOW_IN = 4 * TICKS_PER_SECOND, BOW_OUT = 5 * TICKS_PER_SECOND, BOW_FAST = 15;   // in ticks
+const BOW_RES = 0.5, BOW_OUTER = 1.3, BOW_SLICES = 32;
 const BOW_HUES = [[160, 105, 225], [95, 105, 240], [60, 160, 250], [80, 205, 125], [250, 228, 85], [255, 160, 60], [240, 75, 70]];
 const bow = { t: 0, x: 0, y: 0, r: 0, R: 0, c: null };   // x, y, r: its centre and radius in the meadow
 
@@ -5041,9 +5057,17 @@ function paintBow(R) {
   bow.c = c; bow.R = R;
 }
 
-function drawRainbow(now) {
-  const age = now - ui.sky.rainbow;
-  if (!ui.sky.rainbow || age > BOW_MS) return;
+const bowNow = () => world.tick + Math.min(acc, 1);   // in ticks, gliding between them
+function rainbowOut() {
+  if (ui.speed >= BOW_FAST || bowNow() < ui.sky.bowEnd) return;   // one still out stays
+  ui.sky.rainbow = world.tick; ui.sky.bowEnd = world.tick + BOW_LIFE;
+  return true;
+}
+function rainbowWet() { ui.sky.bowEnd = Math.min(ui.sky.bowEnd, world.tick + BOW_OUT); }   // the rain's back: it fades
+
+function drawRainbow() {
+  const t = bowNow(), age = t - ui.sky.rainbow;
+  if (t > ui.sky.bowEnd) return;
   if (bow.t !== ui.sky.rainbow) {
     const R = Math.round(Math.min(vh * 0.74, vw * 0.7) / 8) * 8;    // its top a quarter down; a whole arch on a phone
     if (bow.R !== R) paintBow(R);
@@ -5053,7 +5077,7 @@ function drawRainbow(now) {
   const [cx, cy] = toScreen(bow.x, bow.y), Ro = bow.r * cam.zoom * BOW_OUTER;
   if (cx + Ro < 0 || cx - Ro > vw || cy < 0 || cy - Ro > vh) return;
   const x0 = cx - Ro, y0 = cy - Ro, w = 2 * Ro, h = Ro;
-  const fade = Math.min(1, (BOW_MS - age) / BOW_OUT), peak = 0.85 * fade * fade * (3 - 2 * fade);
+  const fade = Math.min(1, (ui.sky.bowEnd - t) / BOW_OUT), peak = 0.85 * fade * fade * (3 - 2 * fade);
   ctx.save();
   if (age >= BOW_IN) {
     ctx.globalAlpha = peak;
@@ -5664,13 +5688,13 @@ function handleEvent(e) {
       chime('season', { season: e.season });
       break;
     case 'weather': {
-      if (WET.has(e.kind) && !WET.has(e.prev)) chime('rain');
+      if (WET.has(e.kind) && !WET.has(e.prev)) { chime('rain'); rainbowWet(); }
       const text = WEATHER_NEWS[e.kind];
       if (e.player) { addNews(text); tried('sky', SKY_SAID[e.kind]); }
       else if (e.kind === 'clear' || e.kind === 'cloudy') addNews(text, 'sky-calm', 40000);
       else addNews(text, 'sky', 12000);
-      if (WET.has(e.prev) && (e.kind === 'clear' || e.kind === 'cloudy') && !S.isNight(world.tick)) {
-        ui.sky.rainbow = performance.now();
+      if (WET.has(e.prev) && (e.kind === 'clear' || e.kind === 'cloudy') && !S.isNight(world.tick)
+        && rainbowOut()) {
         chime('rainbow');
         addNews('🌈 A rainbow over the meadow.', 'rainbow', 60000);
       }
@@ -6112,8 +6136,180 @@ function updateFavicon(ck) {
   $('#favicon').href = markIcons.get(key);
 }
 
+// The watch at the top: a hand going round the day (day, dusk, night, dawn; noon at the top), and round it the
+// year's days, the ones still to come pale and a dot on today. The hand and the dot turn every frame, each a
+// transform on a layer of its own, so nothing is repainted; the pale part moves once a day, the plaque's words
+// a few times a second (dialTitle).
+const DIAL_NOON = 0.36;                                // the day's phase at the top of the dial (sun, lean 0)
+const dial = { el: $('#dial'), box: $('#watch'), hand: $('#dial .hand'), mark: $('#dial .mark'), a: NaN, m: NaN, day: -1, title: '' };
+function updateDial() {
+  const t = world.tick + Math.min(acc, 1), p = (t % S.TPD) / S.TPD, day = Math.floor(t / S.TPD) % S.YEAR_DAYS;
+  const a = Math.round(((p - DIAL_NOON + 1) % 1) * 1440) / 4, m = Math.round((day + p) / S.YEAR_DAYS * 1440) / 4;
+  if (a !== dial.a) { dial.a = a; dial.hand.style.transform = `rotate(${a}deg)`; }
+  if (m !== dial.m) { dial.m = m; dial.mark.style.transform = `rotate(${m}deg)`; }
+  if (day !== dial.day) { dial.day = day; dial.el.style.setProperty('--done', `${(day + 1) / S.YEAR_DAYS * 360}deg`); }
+}
+function dialTitle(ck) {
+  const part = ck.night ? 'night' : ck.phase < 0.1 ? 'sunrise' : ck.phase < 0.28 ? 'morning' : ck.phase < 0.44 ? 'midday'
+    : ck.phase < 0.6 ? 'afternoon' : 'evening';
+  const title = `${S.SEASONS[ck.season].name}, day ${ck.dayInSeason} of ${S.SEASON_DAYS} · year ${ck.year} · ${part}`;
+  if (title === dial.title) return;
+  dial.title = dial.box.title = title;
+  dial.box.setAttribute('aria-label', title);
+  setHTML($('#watch-day'), `${S.SEASONS[ck.season].name} · day ${ck.dayInSeason}<span> · year ${ck.year}</span>`);
+}
+
+// A new day, softly, at the top of the meadow ("Spring, day 3"), with a line about the meadow under it: who's
+// oldest, who's caught most, how many generations of rabbits. A new season says how the last one went, a new
+// year how the year went. The faster time runs, the bigger the step it waits for, so a line comes every few
+// seconds whatever the speed: each day up to 4x, each season at 15x, each year at 60x. A round number of years
+// (MILESTONES) gets a bigger line of its own and goes in the news. Never over the intro or the away card,
+// which have their own words, and never for days skipped (a meadow opened, a catch-up).
+const DAYBREAK_MS = { day: [6000, 3800], season: 4800, year: 4800, milestone: 8000 };   // how long a line stays up (a day's: at 1x, and faster)
+const MILESTONES = [1, 5, 10, 25, 50, 75];             // and every 50 after
+const YEAR_WORDS = { 1: 'One', 5: 'Five', 10: 'Ten', 25: 'Twenty-five', 50: 'Fifty', 75: 'Seventy-five', 100: 'A hundred' };
+const YOUNG_WORD = { rabbit: 'kits', fox: 'cubs', crow: 'chicks', owl: 'owlets', otter: 'cubs' };
+const daybreak = { el: $('#daybreak'), day: -1, timer: 0, said: [], season: null, year: null };
+const isMilestone = y => MILESTONES.includes(y) || (y > 0 && y % 50 === 0);
+const kindsHere = () => S.KINDS.filter(s => s !== 'bee' && (s !== 'owl' || S.OWLS));
+const anA = s => `${/^[aeiou]/i.test(s) ? 'an' : 'a'} ${s}`;
+const nth = n => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
+const treeLink = (d, text) => thingLink('tree', d.id, text);
+const yearsOld = n => `${n} ${n === 1 ? 'year' : 'years'} old`;
+
+function daybreakTick() {
+  const day = Math.floor(world.tick / S.TPD), last = daybreak.day;
+  daybreak.day = day;
+  if (last < 0 || day === last) return;
+  const step = day === last + 1;
+  if (!step && !away.on) { daybreak.season = daybreak.year = null; return; }   // a meadow opened: the round-ups start from here
+  for (let y = Math.floor(last / S.YEAR_DAYS) + 1; y <= Math.floor(day / S.YEAR_DAYS); y++) if (isMilestone(y)) milestone(y, step);
+  if (!step) { daybreak.season = daybreak.year = null; return; }
+
+  const ck = S.clock(world), seasonStart = ck.dayInSeason === 1, yearStart = seasonStart && ck.season === 0;
+  const roundSeason = seasonStart ? roundUp('season', ck) : '', roundYear = yearStart ? roundUp('year', ck) : '';
+  if (yearStart && isMilestone(ck.year - 1)) return;      // it has its own line
+  const unit = ui.speed <= 4 ? 'day' : ui.speed <= 15 ? 'season' : 'year';
+  if (unit === 'season' && !seasonStart || unit === 'year' && !yearStart || !canBreak()) return;
+  const name = S.SEASONS[ck.season].name;
+  let head, more;
+  if (unit === 'year') { head = `<b class="fr">Year ${ck.year}</b>`; more = roundYear; }
+  else if (seasonStart) { head = `<b class="fr">${name}</b><small>year ${ck.year}</small>`; more = roundYear || roundSeason; }
+  else head = `<b class="fr">${name}, day ${ck.dayInSeason}</b>`;
+  showBreak(seasonStart ? 'season' : 'day', head, more || meadowFact(),
+    unit === 'day' && !seasonStart ? DAYBREAK_MS.day[ui.speed > 1 ? 1 : 0] : DAYBREAK_MS[unit === 'year' ? 'year' : 'season']);
+}
+
+const canBreak = () => !(intro.on || idle.on || away.on || ui.stats.open || document.hidden
+  || document.body.classList.contains('lab') || document.body.classList.contains('hush'));
+
+function showBreak(kind, head, more, ms) {
+  const el = daybreak.el;
+  el.className = `on ${kind}`;
+  el.innerHTML = head + (more ? `<p>${more}</p>` : '');
+  clearTimeout(daybreak.timer);
+  daybreak.timer = setTimeout(() => el.classList.remove('on'), ms);
+}
+
+// How the season or year just gone went: born and died since the last one began, and at a year the rabbits' peak.
+// Empty the first time round (a meadow just opened has nothing to count from).
+function roundUp(unit, ck) {
+  const was = daybreak[unit], kinds = kindsHere();
+  const now = { t: world.tick, born: perKind(s => world.stats.births[s] || 0),
+    gone: perKind(s => Object.values(world.stats.deaths[s] || {}).reduce((a, n) => a + n, 0)) };
+  daybreak[unit] = now;
+  if (!was) return '';
+  const born = kinds.filter(s => now.born[s] > was.born[s]).map(s => many(now.born[s] - was.born[s], S.SPECIES[s].name.toLowerCase()));
+  const gone = kinds.reduce((a, s) => a + now.gone[s] - was.gone[s], 0), nBorn = kinds.reduce((a, s) => a + now.born[s] - was.born[s], 0);
+  const when = unit === 'year' ? `In year ${ck.year - 1}` : `In the ${S.SEASONS[(ck.season + 3) % 4].name.toLowerCase()}`;
+  if (!nBorn && !gone) return `${when}, nobody was born and nobody died.`;
+  let line = `${when}, ${born.length ? `${andList(born)} ${nBorn === 1 ? 'was' : 'were'} born` : 'nobody was born'}${gone ? `, and ${many(gone, 'animal')} died` : ', and nobody died'}.`;
+  if (unit === 'year') {
+    const h = world.history;
+    let peak = -1, at = 0;
+    for (let i = 0; i < h.t.length; i++) if (h.t[i] >= was.t && h.rabbit[i] > peak) { peak = h.rabbit[i]; at = h.t[i]; }
+    if (peak > 0) line += ` The rabbits peaked at ${big(peak)} in the ${S.SEASONS[S.clock({ tick: at }).season].name.toLowerCase()}.`;
+  }
+  return line;
+}
+
+// Something worth knowing about the meadow today, not one said lately. One look over the animals and trees.
+function meadowFact() {
+  const facts = [], add = (key, w, text) => { if (!daybreak.said.includes(key)) facts.push([key, w, text]); };
+  let oldTree = null, planted = null, trees = 0;
+  for (const d of world.decor) {
+    if (!S.standing(d)) continue;
+    trees++;
+    if (!oldTree || d.born < oldTree.born) oldTree = d;
+    if (d.planted && (!planted || d.planted < planted.planted)) planted = d;
+  }
+  const treeIs = d => d.name ? `the ${treeLink(d, esc(d.name))}` : anA(treeLink(d, treeName(d).toLowerCase()));
+  if (oldTree) add('oldtree', 3, `The oldest tree is ${treeIs(oldTree)}, ${yearsOld(Math.floor(S.treeAge(world, oldTree)))}.`);
+  if (planted && S.treeAge(world, planted) >= 1) add('planted', 3, `The ${treeLink(planted, treeName(planted).toLowerCase())} you planted is ${yearsOld(Math.floor(S.treeAge(world, planted)))} now.`);
+  if (trees > 20) add('trees', 0.5, `${big(trees)} trees stand in the meadow.`);
+
+  const best = {}, mine = [];
+  for (const c of world.creatures) {
+    if (!c.alive || c.species === 'bee') continue;
+    const b = best[c.species] ||= { old: c, kids: c, kills: c, esc: c, fish: c, gen: c };
+    if (c.born < b.old.born) b.old = c;
+    for (const k of ['kids', 'kills', 'fish', 'gen']) if (c[k] > b[k][k]) b[k] = c;
+    if (c.escapes > b.esc.escapes) b.esc = c;
+    if (c.mine) mine.push(c);
+  }
+  for (const c of mine) add(`mine${c.id}`, 4, `Your ${link(c)} is ${days(S.ageDays(world, c))} old`
+    + (c.kids ? ` and has had ${c.kids} ${YOUNG_WORD[c.species]}.` : '.'));
+  for (const s of kindsHere()) {
+    const b = best[s], sp = S.SPECIES[s].name.toLowerCase();
+    if (!b) {
+      const since = world.goneSince[s];
+      if (since >= 0 && world.stats.deaths[s] && Object.keys(world.stats.deaths[s]).length) add(`gone${s}`, 2, `No ${S.SPECIES[s].plural.toLowerCase()} for ${ago(since)} now.`);
+      continue;
+    }
+    if (S.ageDays(world, b.old) >= S.SPECIES[s].matureDays) add(`old${s}`, 1.5, `${link(b.old)} is the oldest ${sp}, ${days(S.ageDays(world, b.old))} old.`);
+    if (b.kids.kids >= 6) add(`kids${s}`, 1.5, `${link(b.kids)} has had ${b.kids.kids} ${YOUNG_WORD[s]}, more than any ${sp} alive.`);
+    if (b.gen.gen >= 3) add(`gen${s}`, s === 'rabbit' ? 1.5 : 0.7, `The ${S.SPECIES[s].plural.toLowerCase()} here are on their ${nth(b.gen.gen)} generation.`);
+    const record = world.tick > S.TPD * S.YEAR_DAYS && world.count[s] >= 8 && world.count[s] >= ui.records[s];   // (a new meadow's count is its record)
+    if (record) add(`record${s}`, 2.5, `There have never been more ${S.SPECIES[s].plural.toLowerCase()} here: ${big(world.count[s])} of them.`);
+    if (world.stats.births[s] >= 50) add(`born${s}`, 0.8, `${big(world.stats.births[s])} ${S.SPECIES[s].plural.toLowerCase()} have been born in this meadow.`);
+  }
+  const fox = best.fox?.kills, rab = best.rabbit?.esc, otter = best.otter?.fish;
+  if (fox && fox.kills >= 5) add('kills', 2, `${link(fox)} has caught ${fox.kills}, more than any fox alive.`);
+  if (rab && rab.escapes >= 3) add('escapes', 2, `${link(rab)} has got away from a hunter ${rab.escapes} times.`);
+  if (otter && otter.fish >= 10) add('fish', 1.5, `${link(otter)} has caught ${big(otter.fish)} fish, the most of any otter.`);
+  let hive = null;
+  for (const h of world.hives) if (h.queen && (!hive || h.queen.kids > hive.queen.kids)) hive = h;
+  if (hive && hive.queen.kids >= 30) add('queen', 1.5, `${thingLink('hive', hive.id, `Queen ${esc(hive.queen.name)}`)} has raised ${big(hive.queen.kids)} bees.`);
+
+  if (!facts.length) { daybreak.said.length = 0; return ''; }   // all said lately: start again tomorrow
+  let r = Math.random() * facts.reduce((a, [, w]) => a + w, 0);
+  const [key, , text] = facts.find(([, w]) => (r -= w) <= 0) || facts[facts.length - 1];
+  daybreak.said.push(key);
+  if (daybreak.said.length > 8) daybreak.said.shift();
+  return text;
+}
+
+// A round number of years: a bigger line, a chime and a line in the news. While away it's only the news; in the
+// film, the film's caption.
+function milestone(y, show) {
+  const words = YEAR_WORDS[y] || big(y), born = kindsHere().filter(s => world.stats.births[s] > 0)
+    .map(s => many(world.stats.births[s], S.SPECIES[s].name.toLowerCase()));
+  let oldTree = null;
+  for (const d of world.decor) if (S.standing(d) && (!oldTree || d.born < oldTree.born)) oldTree = d;
+  const was = oldTree && Math.floor(S.treeAge(world, oldTree)) - y;
+  let more = born.length ? `${upper(andList(born))} born here so far.` : '';
+  if (oldTree && was >= 2) more += ` ${oldTree.name ? `The ${treeLink(oldTree, esc(oldTree.name))}` : `The oldest ${treeLink(oldTree, treeName(oldTree).toLowerCase())}`} was already ${yearsOld(was)} when it began.`;
+  addNews(`🎂 <b>The meadow is ${words.toLowerCase()} ${y === 1 ? 'year' : 'years'} old!</b> ${more}`);
+  if (!show) return;
+  if (idle.on) { idleLine(`${words} ${y === 1 ? 'year' : 'years'} of the meadow`); return; }
+  if (!canBreak()) return;
+  showBreak('milestone', `<small>the meadow is</small><b class="fr">${words} ${y === 1 ? 'year' : 'years'} old</b>`, more, DAYBREAK_MS.milestone);
+  chime('rainbow');
+}
+
 function updateMeadowCard() {
   const ck = S.clock(world);
+  dialTitle(ck);
   setText($('#season-emoji'), S.SEASONS[ck.season].emoji);
   setText($('#season-name'), S.SEASONS[ck.season].name);
   setText($('#clock-rest'), `· day ${ck.dayInSeason} · year ${ck.year}`);
@@ -9009,7 +9205,7 @@ function showWorld(w) {
   ui.crashSaid = perKind(() => -1);
   ui.seenHistory = 0;
   const mix = Object.fromEntries(Object.keys(S.WEATHER).map(k => [k, k === world.weather.kind ? 1 : 0]));
-  Object.assign(ui.sky, { mix, tick: world.tick, bolts: [], rainbow: 0 });
+  Object.assign(ui.sky, { mix, tick: world.tick, bolts: [], rainbow: -1e9, bowEnd: -1e9 });
   showSkyLock();
   $('#news').innerHTML = '';
   renderNewsLog();
@@ -9063,6 +9259,9 @@ function frame(now) {
   }
   if (ui.newsStale && ui.newsOpen) renderNewsLog();
   updateSky();
+  lightFrame(dt);
+  updateDial();
+  daybreakTick();
 
   const sel = world.byId.get(ui.selectedId);
   if (sel && sel.alive && !sel.hidden) {

@@ -184,6 +184,52 @@
   .hud-top { position: relative; display: flex; flex-direction: column; align-items: flex-end; }
   #time { display: flex; align-items: center; gap: 3px; height: var(--hud-h); padding: 0 5px; border-radius: 16px; }
   #time .speeds { background: transparent; padding: 0; }
+  /* The watch, top middle (game.js updateDial): a brass case, round its rim the year's 20 days in their seasons'
+     colours from spring at the top, the ones to come pale (--done) and a dot on today; on the face the day, noon at
+     the top, dusk on the right, night at the bottom, and the hand on now. A plaque under it says the day. */
+  :root { --watch-d: 84px; }
+  #watch { position: fixed; z-index: 4; top: calc(var(--top) - 4px); left: 50%; transform: translateX(-50%); display: flex; flex-direction: column;
+    align-items: center; cursor: help; --d: var(--watch-d); --b: calc(var(--d) * 0.07); --r: calc(var(--d) * 0.15); }
+  #dial { position: relative; width: var(--d); height: var(--d); border-radius: 50%; --done: 18deg;
+    background: radial-gradient(circle at 34% 26%, #f6d98c, #d9a441 42%, #a8742a 100%);
+    box-shadow: var(--shadow), inset 0 0 0 1px rgba(110, 70, 20, 0.45); }
+  #dial > span { position: absolute; inset: var(--b); border-radius: 50%; }
+  #dial .year { background:
+    repeating-conic-gradient(var(--card) 0 1.3deg, transparent 0 18deg),
+    conic-gradient(transparent 0 var(--done), rgba(248, 240, 222, 0.58) 0),
+    conic-gradient(#8fc45e 0 90deg, #e8bb3c 0 180deg, #d9733a 0 270deg, #9dbcd8 0);
+    box-shadow: inset 0 1px 2px rgba(80, 50, 10, 0.45); }
+  #dial .mark { will-change: transform; }
+  #dial .mark::after { content: ''; position: absolute; left: 50%; top: calc(var(--r) * 0.12); width: calc(var(--r) * 0.76); height: calc(var(--r) * 0.76);
+    transform: translateX(-50%); border-radius: 50%; background: var(--ink); box-shadow: 0 0 0 1.5px var(--card); }
+  #dial .face { inset: calc(var(--b) + var(--r)); box-shadow: 0 0 0 2px var(--card), inset 0 -2px 4px rgba(30, 30, 60, 0.3);
+    background: radial-gradient(circle at 38% 30%, rgba(255, 255, 255, 0.5), transparent 62%),
+      conic-gradient(#f6d46e 0 76deg, #ec8a4e 104deg, #39457a 132deg 234deg, #e7968a 252deg, #f6d46e 274deg); }
+  #dial .hand { inset: auto; left: 50%; bottom: 50%; width: calc(var(--d) * 0.06); height: calc((var(--d) / 2 - var(--b) - var(--r)) * 0.84);
+    margin-left: calc(var(--d) * -0.03); background: var(--ink); clip-path: polygon(38% 0, 62% 0, 100% 100%, 0 100%);
+    transform-origin: 50% 100%; will-change: transform; }
+  #dial::after { content: ''; position: absolute; left: 50%; top: 50%; width: calc(var(--d) * 0.1); height: calc(var(--d) * 0.1); transform: translate(-50%, -50%);
+    border-radius: 50%; background: radial-gradient(circle at 35% 30%, #f6d98c, #b8812f); box-shadow: 0 0 0 1px rgba(80, 50, 10, 0.4); }
+  #watch .plaque { position: relative; margin-top: calc(var(--d) * -0.05); padding: 2px 11px 3px; border-radius: 10px; white-space: nowrap;
+    background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); font-size: 14px; font-weight: 600; color: var(--ink); }
+  #watch .plaque span { color: var(--muted); font-weight: 450; }
+  /* A new day at the top of the meadow (game.js daybreakTick), fading in and out, with a line about the meadow
+     under it; a new season or year bigger, and a round number of years biggest, in gold. */
+  #daybreak { position: fixed; left: 50%; top: calc(var(--top) + var(--watch-d) + 36px); z-index: 2; pointer-events: none; text-align: center;
+    width: max-content; max-width: min(calc(100vw - 32px), 460px); padding: 6px 22px 10px;
+    background: radial-gradient(closest-side, rgba(35, 28, 15, 0.3), transparent); color: #fff7e4;
+    text-shadow: 0 1px 2px rgba(40, 30, 15, 0.6), 0 0 16px rgba(40, 30, 15, 0.4);
+    opacity: 0; transform: translate(-50%, -6px); transition: opacity 0.9s ease, transform 0.9s ease; }
+  #daybreak.on { opacity: 1; transform: translate(-50%, 0); }
+  #daybreak b { display: block; font-size: 22px; font-style: italic; font-weight: 500; white-space: nowrap; }
+  #daybreak.season b { font-size: 36px; line-height: 1.1; }
+  #daybreak small { display: block; font-size: 12px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.85; white-space: nowrap; }
+  #daybreak p { margin: 5px 0 0; font-size: 15px; font-weight: 650; line-height: 1.35; text-wrap: balance; }
+  #daybreak.on a { pointer-events: auto; }   /* clicks go through to the meadow, except on names (off to see it) */
+  #daybreak a { color: #ffc77e; }
+  #daybreak.milestone b { font-size: 44px; line-height: 1.1; color: #ffe39a;
+    text-shadow: 0 1px 2px rgba(60, 35, 5, 0.7), 0 0 22px rgba(255, 190, 80, 0.55), 0 0 40px rgba(40, 30, 15, 0.4); }
+  #daybreak.milestone b::before, #daybreak.milestone b::after { content: '✦'; font-size: 0.45em; vertical-align: middle; margin: 0 0.5em; font-style: normal; }
   .hud-sep { width: 1px; height: 24px; margin: 0 5px; background: var(--line); }
   .hud-btn { border: none; background: transparent; border-radius: 9px; height: 36px; min-width: 36px; padding: 0 6px;
     font-size: 17px; position: relative; transition: background 0.15s; }
@@ -281,7 +327,7 @@
 
   /* ---- welcome */
   /* the terrain lab (?lab) brings its own panel, see terrain-lab.js */
-  body.lab #meadow, body.lab #news, body.lab #guide, body.lab #toolbar, body.lab #hud-right, body.lab #ring { display: none; }
+  body.lab #meadow, body.lab #watch, body.lab #news, body.lab #guide, body.lab #toolbar, body.lab #hud-right, body.lab #ring { display: none; }
 
   #welcome { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(60, 70, 30, 0.28); z-index: 10; transition: opacity 0.7s ease; }
   #welcome.leaving { opacity: 0; pointer-events: none; }
@@ -470,8 +516,8 @@
     border: none; background: none; padding: 8px 4px; font: 800 13px Nunito, ui-rounded, system-ui, sans-serif; color: rgba(243, 231, 207, 0.5); cursor: pointer; }
   #intro .skip:hover { color: #f3e7cf; }
   body:not(.intro) #intro .skip { visibility: hidden; }
-  body.hush :is(#meadow, #news, #guide, #toolbar, #hud-right) { visibility: hidden; }
-  body.ui-in :is(#meadow, #news, #guide, #toolbar, #hud-right) { animation: ui-in 1s ease both; }
+  body.hush :is(#meadow, #watch, #news, #guide, #toolbar, #hud-right) { visibility: hidden; }
+  body.ui-in :is(#meadow, #watch, #news, #guide, #toolbar, #hud-right) { animation: ui-in 1s ease both; }
   @keyframes ui-in { from { opacity: 0; } }
   @media (prefers-reduced-motion: reduce) { #intro .bar, #intro .line, #welcome, #welcome .card { transition-duration: 0.01s; } }
   /* ---- the idle camera (game.js, startIdle): the intro's bars and lines, the cards faded away, and a dip to
@@ -479,7 +525,7 @@
   #intro .dip { position: absolute; inset: 0; background: #1d1a15; opacity: 0; transition: opacity 0.4s ease; }
   #intro .dip.on { opacity: 1; }
   body.idle #intro .bar { transform: none; }
-  body.idle :is(#meadow, #news, #guide, #toolbar, #hud-right) { opacity: 0; visibility: hidden; transition: opacity 1s ease, visibility 0s 1s; }
+  body.idle :is(#meadow, #watch, #news, #guide, #toolbar, #hud-right) { opacity: 0; visibility: hidden; transition: opacity 1s ease, visibility 0s 1s; }
   .hidden { display: none !important; }
 
   /* ---- the stats page, over everything */
@@ -580,6 +626,10 @@
     #time { --hud-h: 44px; gap: 2px; padding: 0 4px; }
     #time .speed[data-speed]:not([data-speed="0"]), #time .hud-btn:not(.more), #time .hud-sep { display: none; }
     #time .speed.cycle { display: block; }
+    :root { --watch-d: 56px; }
+    #watch .plaque { font-size: 12.5px; padding: 1px 8px 2px; }
+    #watch .plaque span { display: none; }
+    #daybreak b { font-size: 19px; } #daybreak.season b { font-size: 30px; } #daybreak.milestone b { font-size: 34px; } #daybreak p { font-size: 14px; }
     .speed { min-width: 40px; height: 38px; padding: 0 6px; font-size: 15px; }
     .hud-btn.more { min-width: 40px; height: 38px; }
     /* ••• as tiles, three to a row; starting over stays a row of its own at the bottom */
@@ -651,6 +701,8 @@
   }
   /* Upright phones: five kinds and the time pill don't fit in a row, so each count sits under its emoji,
      and the whole pill opens the card. */
+  /* Upright, the big card spans the top and says the day itself: the watch waits till it's small. */
+  @media (max-width: 760px) and (min-height: 501px) { #meadow:not(.mini) ~ #watch { display: none; } }
   @media (max-width: 540px) and (min-height: 501px) {
     #meadow.mini .win-btn { display: none; }
     .mini-line { gap: 9px; padding: 0 10px; }
@@ -732,6 +784,11 @@
     </footer>
   </div>
 </section>
+<!-- top middle: the meadow's pocket watch, the day going round it and the year round that (game.js updateDial) -->
+<div id="watch" role="img">
+  <div id="dial"><span class="year"></span><span class="mark"></span><span class="face"></span><span class="hand"></span></div>
+  <div class="plaque fr" id="watch-day"></div>
+</div>
 
 <div id="news"></div>
 <!-- after the intro: three steps, then things to try (game.js, the guide) -->
@@ -912,6 +969,7 @@
   <button class="btn go" data-act="away-ok">Back to the meadow</button>
 </div>
 
+<div id="daybreak" aria-hidden="true"></div>
 <div id="intro" aria-live="polite">
   <div class="dip"></div>
   <div class="bar top"><button class="skip" id="intro-skip">Skip ›</button></div>
