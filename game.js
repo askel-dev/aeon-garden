@@ -15,11 +15,15 @@ const perKind = make => Object.fromEntries(S.KINDS.map(s => [s, make(s)]));   //
 // drawn on it (Sim.drawnToLink; older links have it as ?drawn={...}), as the terrain lab hands them
 // over. ?lab opens that lab: the meadow without animals, and terrain-lab.js on top.
 const params = new URLSearchParams(location.search), LAB = params.has('lab');
+// ?keep: the meadow as something you keep, not just watch (PLAN.md). You shape the land (a pond, a hedge, a strip
+// of flowers) and the god tools are gone: no releasing animals, no grass, lightning or fire, no picking the
+// weather, no picking animals up. Kept apart from the meadows you watch, under links of its own.
+const KEEP = params.has('keep') && !LAB;
 const fromUrl = key => { try { return JSON.parse(params.get(key) || '{}'); } catch (e) { return {}; } };   // a broken link: the usual meadow
 let terrain = fromUrl('terrain'), drawn = location.hash.length > 1 ? S.drawnFromLink(location.hash) : fromUrl('drawn');
 const terrainQuery = () => (Object.keys(terrain).length ? '&terrain=' + encodeURIComponent(JSON.stringify(terrain)) : '')
   + (S.drawnToLink(drawn) ? '#' + S.drawnToLink(drawn) : '');
-const meadowLink = seed => '?seed=' + seed + terrainQuery();   // the address of a meadow, and the name it's kept under
+const meadowLink = seed => '?seed=' + seed + (KEEP ? '&keep' : '') + terrainQuery();   // the address of a meadow, and the name it's kept under
 
 // How many people come, and from where, counted by GoatCounter (goatcounter.com: free, no cookies,
 // nothing to agree to). Off until COUNTER holds the site's code: sign up there, pick a code, put it
@@ -7781,7 +7785,7 @@ canvas.addEventListener('pointerdown', e => {
   if (fingers.size >= 2) { startPinch(); return; }
   drag = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y, moved: false, paint: (ui.tool === 'grass' || ui.tool === 'fire') && e.button === 0,
     t: e.timeStamp, lx: e.clientX, ly: e.clientY, vx: 0, vy: 0, id: e.pointerId,
-    grab: ui.tool === 'look' && e.button === 0 && !LAB ? grabAt(e.clientX, e.clientY) : null };   // dragged, it's picked up
+    grab: ui.tool === 'look' && e.button === 0 && !LAB && !KEEP ? grabAt(e.clientX, e.clientY) : null };   // dragged, it's picked up (not at ?keep)
   if (drag.paint) paintAt(e.clientX, e.clientY);
   else if (fingerTap && !LAB) {
     const d = drag;
@@ -8083,16 +8087,27 @@ function release(species, wx, wy) {
 
 // ------------------------------------------------------------------ the ring: right-click the meadow
 
-const RING_TOOLS = [['rabbit', '🐇', 'Release a rabbit'], ['fox', '🦊', 'Release a fox'], ['bee', '🐝', 'Release a bee'], ['crow', '🐦‍⬛', 'Release a crow'], ['owl', '🦉', 'Release an owl'], ['grass', '🌱', 'Grow grass'],
-  ['plant', '🌳', 'Plant a tree'], ['zap', '⚡', 'Strike lightning'], ['fire', '🔥', 'Wall of fire'], ['sky', '🌦️', 'Weather']].filter(([k]) => k !== 'owl' || S.OWLS);
+// The keeper's tools at ?keep: the button, its emoji and what it does.
+const KEEP_TOOLS = [['look', '🔍', 'Look around']];
+// At ?keep the ring holds only the keeper's tools (without Look); an empty ring doesn't open.
+const RING_TOOLS = KEEP ? KEEP_TOOLS.filter(([k]) => k !== 'look')
+  : [['rabbit', '🐇', 'Release a rabbit'], ['fox', '🦊', 'Release a fox'], ['bee', '🐝', 'Release a bee'], ['crow', '🐦‍⬛', 'Release a crow'], ['owl', '🦉', 'Release an owl'], ['grass', '🌱', 'Grow grass'],
+    ['plant', '🌳', 'Plant a tree'], ['zap', '⚡', 'Strike lightning'], ['fire', '🔥', 'Wall of fire'], ['sky', '🌦️', 'Weather']].filter(([k]) => k !== 'owl' || S.OWLS);
 // Owls off for now (sim.js OWLS): their tool, counters and graph button stay in the page, hidden.
 if (!S.OWLS) for (const e of document.querySelectorAll('[data-tool="owl"], [data-show="owl"], #mini-owl, #n-owl')) (e.closest('.mini-pop, .pop') || e).classList.add('hidden');
+// And at ?keep every tool but the keeper's, the weather menu, the notebook of things to try and filming itself.
+if (KEEP) {
+  for (const b of document.querySelectorAll('[data-tool]')) if (!KEEP_TOOLS.some(([k]) => k === b.dataset.tool)) b.classList.add('hidden');
+  for (const b of document.querySelectorAll('#more-menu [data-act="sky"], [data-act="guide"], [data-act="watch"]')) b.classList.add('hidden');
+  $('#hud-right [data-act="sky"]').title = 'The weather';
+}
 
 // which: '' the tools, 'sky' the weather, 'plant' the kinds of tree.
 function openRing(sx, sy, which = '') {
   const items = which === 'sky'
     ? [...Object.entries(S.WEATHER).map(([k, wx]) => ['sky:' + k, wx.emoji, wx.name]), ['lock', world.skyLocked ? '🔒' : '🔓', world.skyLocked ? 'Unlock the weather' : 'Keep this weather']]
     : which === 'plant' ? PLANT_KINDS.map(([k, e, label]) => ['plant:' + k, e, label]) : RING_TOOLS;
+  if (!items.length) return;
   if (!ui.ring) { ui.ring = { at: toWorld(sx, sy) }; chime('click'); }
   ui.ring.t0 = performance.now();
   const r = Math.max(which ? 80 : 72, items.length * 56 / TAU);   // room for every 50 px button; near an edge the ring moves in, but still acts where you clicked
@@ -8140,6 +8155,11 @@ $('#ring').addEventListener('contextmenu', e => e.preventDefault());
 addEventListener('pointerdown', e => { if (ui.ring && !e.target.closest('#ring,#world')) closeRing(); });
 
 function toggleSkyMenu(open = !ui.sky.menu) {
+  if (KEEP && open) {                     // at ?keep the sky isn't yours to pick: the button only says what it's doing
+    const k = world.weather.kind;
+    addNews(`${S.WEATHER[k].emoji} <b>${S.WEATHER[k].name}.</b> ${WEATHER_HINT[k]}.`, 'weather', 3000);
+    return;
+  }
   ui.sky.menu = open;
   $('#sky-menu').classList.toggle('hidden', !open);
   $('[data-act="sky"]').classList.toggle('on', open);
@@ -8343,6 +8363,7 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'watch') startIdle();
   else if (t.dataset.act === 'guide') { openGuide(); guideTick(performance.now()); }
   else if (t.dataset.act === 'guide-shut') { shutGuide(); guideTick(performance.now()); }
+  else if (t.dataset.act === 'keep-shut') { shutKeepCard(); guideTick(performance.now()); }
   else if (t.dataset.act === 'guide-skip') { Object.assign(guide, { step: GUIDE_STEPS, wait: 0 }); saveGuide(); guideTick(performance.now()); }
   else if (t.dataset.act === 'guide-fold') { guide.fold = !guide.fold; guide.fresh = ''; saveGuide(); guideTick(performance.now()); }
   else if (t.dataset.act?.startsWith('try:')) tryThing(t.dataset.act.slice(4));
@@ -8407,6 +8428,8 @@ document.addEventListener('keydown', e => {
     return;
   }
   if (LAB && !'+=-'.includes(e.key)) return;            // the lab has keys of its own
+  if ((e.metaKey || e.ctrlKey || e.altKey) && /^[a-z]$/i.test(e.key)) return;   // ⌘C, Ctrl+Z…: the browser's, never a tool
+  if (KEEP && 'zbtwkv'.includes(e.key)) return;         // the tools ?keep doesn't have
   if (e.key === ' ') {
     e.preventDefault();
     setSpeed(ui.speed ? 0 : lastSpeed);
@@ -8678,9 +8701,33 @@ function tryThing(k) {
   guideTick(performance.now());
 }
 
+// ?keep has no guide and no goal: one small card in its place says what the keeper's tools do, till it's
+// closed (KEEP_CARD), and a tap on one puts it in your hand.
+const KEEP_CARD = 'aeon-garden-keep-card';
+const keepCard = { on: false, html: '' };
+function startKeepCard() {
+  try { keepCard.on = localStorage.getItem(KEEP_CARD) !== '1'; } catch (e) { keepCard.on = true; }
+}
+function shutKeepCard() {
+  keepCard.on = false;
+  try { localStorage.setItem(KEEP_CARD, '1'); } catch (e) { /* fine */ }
+}
+function keepCardTick() {
+  const show = keepCard.on && !away.on;
+  if ($('#guide').classList.contains('hidden') === show) $('#guide').classList.toggle('hidden', !show);
+  if (!show) return;
+  const verbs = KEEP_TOOLS.filter(([k]) => k !== 'look'), touch = matchMedia('(pointer: coarse)').matches;
+  const html = `<div class="g-top"><b class="g-title fr">🌱 Shape the meadow</b><button class="g-x" data-act="keep-shut" aria-label="Close">✕</button></div>
+    ${verbs.length ? `<ul class="g-list">${verbs.map(([k, e, label, hint]) => `<li><button data-tool="${k}"><span class="e">${e}</span>
+      <span><b>${label}</b><small>${hint}</small></span><span class="tick"></span></button></li>`).join('')}</ul>` : ''}
+    <p class="g-hint">${touch ? '⏸ stops time' : 'Space stops time'}, and you can still work while it’s stopped. Then see who comes.</p>`;
+  if (html !== keepCard.html) { $('#guide').innerHTML = html; keepCard.html = html; }
+}
+
 // A few times a second (the cards' beat): the steps wait for what they ask, and a few things on the list
 // are easier to see done than to catch.
 function guideTick(now) {
+  if (KEEP) { keepCardTick(); return; }
   const show = guide.on && !intro.on && !away.on;
   if ($('#guide').classList.contains('hidden') === show) $('#guide').classList.toggle('hidden', !show);
   if (!show || idle.on) { guide.tickWas = world.tick; return; }
@@ -8768,12 +8815,12 @@ const idle = { on: false, since: 0, shot: null, next: null, dipAt: 0, news: null
 const between = (a, b) => a + Math.random() * (b - a);
 const anyOf = a => a.length ? a[Math.floor(Math.random() * a.length)] : null;
 
-const idleMayStart = now => !idle.on && !held && now - lastInput > IDLE_MS && ui.speed > 0 && !ui.hush && !LAB && !calm && !document.hidden
+const idleMayStart = now => !idle.on && !held && now - lastInput > IDLE_MS && ui.speed > 0 && !ui.hush && !LAB && !KEEP && !calm && !document.hidden
   && !askOpen() && !awayOpen() && !ui.selectedId && !ui.picked && !ui.ring && !ui.stats.open && !webOpen() && !ui.newsOpen && !ui.sky.menu
   && $('#more-menu').classList.contains('hidden') && !homeOpen() && !$('#toolbar').classList.contains('open');
 
 function startIdle(now = performance.now()) {
-  if (idle.on || ui.hush || LAB) return;
+  if (idle.on || ui.hush || LAB || KEEP) return;
   closeRing(); toggleTools(false); toggleSkyMenu(false); toggleMore(false);
   if (homeOpen()) homeGuide(false);
   if (ui.stats.open) toggleStats(false);
@@ -9007,7 +9054,7 @@ function idleFrame(now, dt) {
 // A kept meadow that won't open, or that broke the page the last time it opened (OPENING), is let go.
 const KEEP_MEADOWS = 3;
 const KEEP_IDLE_MS = 10 * 60e3;            // and while it films itself (nobody at the keys to see the hitch), this often
-const KEPT = 'aeon-garden-kept', OPENING = 'aeon-garden-opening';   // in localStorage
+const KEPT = KEEP ? 'aeon-garden-kept-keep' : 'aeon-garden-kept', OPENING = 'aeon-garden-opening';   // in localStorage (?keep keeps its own few)
 let keepOpen = null, keptTick = -1, keptWhen = Date.now();
 let opening = 0;                           // a kept meadow just opened: 1 until a frame starts, then counts frames that got to the end
 
@@ -9185,7 +9232,7 @@ function flushEvents() {
 function randomSeed() { return Math.floor(Math.random() * 1e6); }
 
 function newWorld(seed, arrival = false) {
-  showWorld(S.createWorld(seed, LAB ? { terrain, drawn, rabbits: 0, foxes: 0, bees: 0 } : { terrain, drawn, arrival }));
+  showWorld(S.createWorld(seed, LAB ? { terrain, drawn, rabbits: 0, foxes: 0, bees: 0 } : KEEP ? { terrain, drawn, keep: true } : { terrain, drawn, arrival }));
   const big = [world.waters.find(v => v.kind === 'river'), world.lake].filter(Boolean).map(v => `<b>${v.name}</b>`);
   const by = big.length ? ' by ' + big.join(' and ') : '';
   addNews(arrival ? `🌱 A new meadow${by}. Nobody lives here yet.`
@@ -9365,7 +9412,7 @@ resize();
 const seedParam = +params.get('seed');
 let seen = false;
 try { seen = localStorage.getItem('aeon-garden-welcomed') === '1'; } catch (e) { /* private window */ }
-const firstVisit = !LAB && (!seen || params.has('intro'));   // ?intro plays it again
+const firstVisit = !LAB && !KEEP && (!seen || params.has('intro'));   // ?intro plays it again (?keep has none)
 // The kept meadow if there is one (keeping the meadow, above), else a new one. The rest below doesn't wait for it.
 function begin(rec) {
   const back = rec && resumeWorld(rec);
@@ -9383,7 +9430,8 @@ function begin(rec) {
     hush(true);                                         // nothing to count yet: the bars and cards wait
     setSpeed(0);
     if (world.family && !calm) introShot();
-  } else { homeTip(30000); setTimeout(() => startGuide(false), 2500); }
+  } else if (KEEP) setTimeout(startKeepCard, 1500);
+  else { homeTip(30000); setTimeout(() => startGuide(false), 2500); }
   if (back && !rec.paused && Date.now() - rec.at > AWAY_MIN) startAway();
   requestAnimationFrame(frame);
 }
