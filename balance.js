@@ -3,10 +3,12 @@
 // visit does, everyone moving in over the first days. `plant` has a player plant 5 trees a year, any kind,
 // anywhere they'll go, and tells how they did. `keep` makes keeper meadows (?keep) where a keeper digs one pond early in
 // the first spring, and tells who came to it: the crows to its turned earth, the frogs, the reeds, the spawn; and sows
-// two flower strips near the hive, and tells when they flowered, when the bees found them and how much they sipped there.
+// two flower strips near the hive, and tells when they flowered, when the bees found them and how much they sipped there;
+// and plants a hedge by a burrow, and tells when it was young, blossomed and bore haws, its whips, and the rabbits that got
+// away from a fox into it. `nohedge` leaves the hedge out, to compare the rabbits with and without it.
 const Sim = require('./sim.js');
 const years = +(process.argv[2] || 5), seeds = +(process.argv[3] || 4), verbose = process.argv[4] === 'v';
-const arrival = process.argv.includes('arrival'), plant = process.argv.includes('plant'), keep = process.argv.includes('keep');
+const arrival = process.argv.includes('arrival'), plant = process.argv.includes('plant'), keep = process.argv.includes('keep'), nohedge = process.argv.includes('nohedge');
 const PLANT_KINDS = ['oak', 'beech', 'maple', 'birch', 'alder', 'hawthorn', 'apple', 'cherry', 'pine'];
 const perSeason = Sim.SEASON_DAYS * Sim.TPD;
 for (let s = 1; s <= seeds; s++) {
@@ -25,6 +27,12 @@ for (let s = 1; s <= seeds; s++) {
   // first bee, and the sips on them each season.
   const strips = { list: [], tries: 0, hives: [], bloom: [], bees: [], sips: [], last: 0 };
   const sipped = () => strips.list.reduce((a, f) => a + f.sips, 0);
+  // And a hedge: a straight stroke of about 12 whips (HEDGE_LONG tiles) across open grass (good grass, if it can) within 10
+  // of one of the three busiest burrows, as a keeper would plant one to shelter a warren. The days
+  // from planting to young, to its first blossom and its first haws, the whips standing at each year's end, and the rabbits
+  // that got away from a fox into it each season; and the rabbits' most and mean, with it and without (nohedge).
+  const HEDGE_LONG = 16.5, hedge = { h: null, tries: 0, young: '-', bloom: '-', haws: '-', standing: [], esc: [] };
+  let sumR = 0, ticks = 0;
   const day = () => (w.tick / Sim.TPD).toFixed(1);
   const pondAround = field => {
     const p = kept.pond;
@@ -77,6 +85,14 @@ for (let s = 1; s <= seeds; s++) {
           const pts = [{ x, y }, { x: x + Math.cos(b) * 7, y: y + Math.sin(b) * 7 }], p = Sim.stripPlan(w, pts);
           if (p.ok && p.sown >= 10) { strips.list.push(Sim.sowStrip(w, pts)); strips.hives.push(p.hives); }
         }
+        const lives = b => w.creatures.filter(c => c.alive && c.home === b).length;
+        const homes = w.burrows.filter(b => b.dug >= 1).sort((a, b) => lives(b) - lives(a)).slice(0, 3);
+        for (; !nohedge && homes.length && hedge.tries < 4000 && !hedge.h; hedge.tries++) {
+          const b = homes[Math.floor(rand() * homes.length)], a = rand() * Math.PI * 2, d = rand() * 10, x = b.x + Math.cos(a) * d, y = b.y + Math.sin(a) * d, c = rand() * Math.PI;
+          const pts = [{ x, y }, { x: x + Math.cos(c) * HEDGE_LONG, y: y + Math.sin(c) * HEDGE_LONG }], p = Sim.hedgePlan(w, pts);
+          const at = s => Math.floor(s.y) * Sim.W + Math.floor(s.x), ok = p.spots.filter(s => !s.blocker);
+          if (p.ok && p.whips >= 10 && ok.every(s => w.wood[at(s)] < 0.3) && (hedge.tries > 2000 || ok.reduce((n, s) => n + w.fert[at(s)], 0) / ok.length > 0.4)) hedge.h = Sim.plantHedge(w, pts);
+        }
       }
       Sim.step(w);
       if (kept.pond && kept.crows < 0) {
@@ -94,6 +110,8 @@ for (let s = 1; s <= seeds; s++) {
         if (e.type === 'pondgrew' && kept.reeds < 0) kept.reeds = day();
         if (e.type === 'stripbloom') strips.bloom[strips.list.indexOf(e.field)] = ((e.t - e.field.sown) / Sim.TPD).toFixed(1);
         if (e.type === 'beesfound') strips.bees[strips.list.indexOf(e.field)] = ((e.t - e.field.sown) / Sim.TPD).toFixed(1);
+        if (e.type === 'hedgeyoung' || e.type === 'hedgebloom' || e.type === 'hedgehaws') hedge[e.type.slice(5)] = ((e.t - e.hedge.planted) / Sim.TPD).toFixed(1);
+        if (e.type === 'escape' && e.how === 'hedge') hedge.esc[k] = (hedge.esc[k] || 0) + 1;
         if (e.type === 'plantlost') planted.lost[e.cause] = (planted.lost[e.cause] || 0) + 1;
         if (e.type === 'plantgrew') planted.sapling++;
         if (e.type === 'plantseeds') planted.seeded++;
@@ -120,6 +138,7 @@ for (let s = 1; s <= seeds; s++) {
       }
       w.events.length = 0;
       minR = Math.min(minR, w.count.rabbit); minF = Math.min(minF, w.count.fox);
+      sumR += w.count.rabbit; ticks++;
       if (w.count.rabbit > maxR) perBurrow = w.count.rabbit / w.burrows.filter(b => b.dug >= 1).length;
       maxR = Math.max(maxR, w.count.rabbit); maxF = Math.max(maxF, w.count.fox);
       sickDays += w.sick / Sim.TPD;
@@ -131,6 +150,7 @@ for (let s = 1; s <= seeds; s++) {
       else if (low === false && w.count.rabbit < 0.25 * capR) { low = true; crashes++; }
     }
     if (k % 4 === 3) { trees.push(w.treeCount); resist.push(Sim.traitMeans(w, 'rabbit')?.resist); }
+    if (k % 4 === 3 && hedge.h) hedge.standing.push(w.decor.filter(d => d.hedge === hedge.h.id && Sim.standing(d)).length);
     if (k % 4 === 1) {                                       // end of summer: grass under the trees and out in the open
       let gw = 0, nw = 0, go = 0, no = 0, r = 0;
       for (let i = 0; i < w.grass.length; i++) {
@@ -187,6 +207,10 @@ for (let s = 1; s <= seeds; s++) {
     console.log(sl.length ? `  strips  sowed ${sl.map(f => f.name).join(' and ')} day ${kept.dug} (${strips.tries} tries, ${sl.map(f => w.plants.filter(p => p.field === f).length).join(', ')} flowers, `
       + `${strips.hives.join(', ')} hives in reach)  in flower after ${sl.map((f, k) => strips.bloom[k] ?? '-').join(' ')} days  bees after ${sl.map((f, k) => strips.bees[k] ?? '-').join(' ')} days`
       + `  sips on them by season ${strips.sips.join(' ')}` : `  strips  found nowhere to sow in ${strips.tries} tries`);
+    const hd = hedge.h, esc = Array.from({ length: years * 4 }, (_, k) => hedge.esc[k] || 0);
+    console.log((hd ? `  hedge  planted ${hd.name} day ${(hd.planted / Sim.TPD).toFixed(1)} (${hedge.tries} tries, ${hd.whips} whips)  young after ${hedge.young} days`
+      + `  blossom after ${hedge.bloom}  haws after ${hedge.haws}  whips standing by year ${hedge.standing.join(' ')}  escapes into it by season ${esc.join(' ')} (${hd.escapes} in all)`
+      : nohedge ? '  hedge  none (nohedge)' : `  hedge  found nowhere to plant in ${hedge.tries} tries`) + `  rabbits max ${maxR} mean ${(sumR / ticks).toFixed(1)}`);
   }
   if (plant) {
     const up = w.decor.filter(t => t.planted && Sim.standing(t)), stages = {};

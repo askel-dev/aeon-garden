@@ -103,13 +103,30 @@ Then a quick look: five minutes of digging ponds, before anything else is built.
 
 ### K4. The hedge
 
-- Drag a line: a hawthorn every 1.5 tiles, one hedge (`w.hedges`), one news line and one row in Yours.
-- Planted as two-year-old whips, big enough to see from the start, and never too small to draw. A line of
-  turned earth under them.
-- A hedge grows about 3 times as fast as a wild hawthorn: young within two seasons, blossom the next spring if
-  planted by early summer, haws that autumn.
-- Cover, as little as works: a rabbit running from a fox with no burrow nearer makes for a hedge, and the fox
-  loses it there ("Juni dived into your hedge"). Only hedges do it, so the meadow you watch is as it was.
+- Drawn like the pond and the strip (🌿, H): a drag plants a hawthorn whip every `HEDGE_GAP` (1.5) tiles along the
+  line, up to `HEDGE_MOST` (20) a stroke, and a tap plants one. The ghost is a dot at each whip, red where it's skipped:
+  water (a dug pond too), ground the spring flood reaches (the whips drowned there), a flower field, within 2 of a
+  burrow or a hive, or too close to a trunk or a rock. The label says how many whips, when it hides a rabbit and when
+  it blossoms (`hedgeForecast`), and when it goes on with one of yours: a stroke that starts or ends within 2 of a whip
+  of a hedge makes that hedge longer.
+- One hedge (`w.hedges`, made on the first, its name by hash), one news line and one row in Yours. Each whip is a tree
+  of `w.decor` with `d.hedge`, living by `treesTick`: planted two years old at about 1.1 (`HEDGE_WHIP`, so the age gate
+  for bearing is met), growing to about 3 (`HEDGE_MAX`, a hedge and not a row of trees), `HEDGE_GROW` (3) times as fast
+  as a wild hawthorn, guarded by its own thorns, and never shading out its neighbours. It's never too small to draw
+  (game.js `HEDGE_PX`, 12 px), and under it is a line of turned earth (the grass gone, the ground rich, the crows come).
+- Measured (a year is 20 days): planted on spring's day 1 it's young (hides a rabbit) at the start of summer, 4 days
+  on; planted early in summer, early in autumn; planted mid-summer or in autumn, at the start of spring. Planted any
+  time up to the end of autumn it blossoms the next spring (its day 2 to 4) and bears haws that autumn; planted in
+  winter it waits a year for both (faster than planned for a spring or early-summer planting). The news
+  tells each once (`hedgeyoung`, `hedgebloom`, `hedgehaws`: the haws only after the blossom, and once they show red).
+- Cover, as little as works: a rabbit running from a fox with no burrow nearer makes for a young whip within 8 by the
+  burrow's rules (`hedgeRefuge`, through the decor grid), and within 0.8 it's in the hedge: it creeps in behind the
+  stems, crouched, and sits tight while the fox is close (`c.covered`, `inUnder`). The fox loses it there and passes
+  it by (`hunt`): "🌿 Juni dived into your hedge, Thorn Row, and Marmdle lost it" (the first into each hedge always
+  told). Only hedges do it, so the meadow you watch is as it was: `node balance.js 6 4 v` and `3 4 v plant` print the same.
+- `node balance.js 3 4 keep` plants one by a busy warren on day 1 (`nohedge` leaves it out): 5 to 58 rabbits get away
+  into it in three years, in bursts while a fox hunts that warren, and over 10 seeds the rabbits' most is 440 with it
+  and 435 without, their mean 244 and 220 (seed by seed it goes both ways, -101 to +141): no boom.
 
 ### K5. The pouch
 

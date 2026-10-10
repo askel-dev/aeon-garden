@@ -1204,7 +1204,7 @@ function render(now) {
   // Trees, rocks and animals, back to front.
   const items = [];
   for (const d of world.decor) {                           // (a hive is in one of the trees)
-    if (d.tree && d.size * z < SEEDLING_PX && !d.stump) continue;   // a seedling too small to see from here
+    if (d.tree && d.size * z < SEEDLING_PX && !d.stump && !d.hedge) continue;   // a seedling too small to see from here (a hedge's whips always show)
     const [sx, sy] = toScreen(d.x, d.y);
     if (visible(sx, sy, d.tree ? treePx(d) : d.size * z)) items.push({ y: d.y, d, sx, sy, f: 1 - mistAt(d.x, d.y) });
   }
@@ -3143,7 +3143,7 @@ function rabbitArt(c, now) {
   if (c.sleeping) return art('sleep');
   if (c.mode === 'alarm') return art('alarm');
   if (c.mode === 'graze' || c.mode === 'munch') return art('graze');
-  if (c.mode === 'rest') return art('loaf');
+  if (c.mode === 'rest' || c.hedgeTo && S.inHedge(world, c)) return art('loaf');   // (?keep: tucked in under a hedge, crouched)
   if (atHole(c)) return art('dig');
   if (!movedLately(c)) return art('sit');
   const f = fastGait(c) ? 1 : 0, A = HOP.air[f], u = gaitOf(c).step % 1, v = u / A, poses = RABBIT_GAIT[f];
@@ -3769,7 +3769,8 @@ const TREE_BYTES = 48e6;                 // the paintings kept, in memory
 // cloud in spring, hawthorn a thicket. Kept small enough that you see between trees. The hive oak is
 // an old giant already (HIVE_TREE). Emoji trees keep their size.
 const TREE_SCALE = { oak: 1.41, hive: 1, beech: 1.36, maple: 1.14, birch: 0.92, alder: 1.05, pine: 1.01, apple: 1.28, cherry: 1.72, hawthorn: 1.1, log: 1.2, stump: 1 };
-const treePx = d => d.size * cam.zoom * (d.tree && treeWorker ? TREE_SCALE[d.fallen ? 'log' : d.stump ? 'stump' : treeKind(d)] || 1 : 1);
+const treePx = d => Math.max(d.hedge ? HEDGE_PX : 0, d.size * cam.zoom * (d.tree && treeWorker ? TREE_SCALE[d.fallen ? 'log' : d.stump ? 'stump' : treeKind(d)] || 1 : 1));
+const HEDGE_PX = 12;                                     // ?keep: a hedge's whip is never drawn smaller than this, so a new one reads as a row from afar
 const LOG_BARK = { beech: 'grey', birch: 'birch' };      // whose bark a log or a stump has (trees.js); the rest are brown
 const YOUNG = new Set(['seedling', 'sapling', 'young']);
 const SEEDLING_PX = 6;                                   // a seedling smaller than this on screen isn't drawn
@@ -5780,6 +5781,22 @@ function handleEvent(e) {
     case 'beesfound':
       addNews(`🐝 Bees found your strip ${thingLink('field', e.field.id, esc(e.field.name))}${e.queen ? `, from Queen ${esc(e.queen.name)}’s hive` : ''}.`);
       break;
+    case 'hedgeplant': {                // (?keep) the keeper planted a hedge, or made one longer
+      const h = e.hedge, where = placeNear(e.x, e.y), n = `${e.whips} ${e.whips === 1 ? 'hawthorn' : 'hawthorns'}`;
+      if (e.bigger) addNews(`🌿 You planted ${n} more along ${hedgeLink(h, `<b>${esc(h.name)}</b>`)}.`);
+      else addNews(`🌿 You planted ${hedgeLink(h, `<b>${esc(h.name)}</b>`)}, a hedge of ${n}${where ? ' ' + where : ''}: `
+        + `thick enough to hide a rabbit ${comingWhen(e.young)}, and blossom ${comingWhen(e.blossom)}.`);
+      break;
+    }
+    case 'hedgeyoung':
+      addNews(`🌿 Your hedge ${hedgeLink(e.hedge, esc(e.hedge.name))} is thick enough now to hide a rabbit from a fox.`);
+      break;
+    case 'hedgebloom':
+      addNews(`🌸 Your hedge ${hedgeLink(e.hedge, esc(e.hedge.name))} is white with may blossom, and the bees come.`);
+      break;
+    case 'hedgehaws':
+      addNews(`🔴 Your hedge ${hedgeLink(e.hedge, esc(e.hedge.name))} is red with haws: the birds will carry them off.`);
+      break;
     case 'plantgrew':
       addNews(`🌿 The ${plantedLink(e.tree)} you planted is a sapling now, out of the rabbits' reach.`);
       break;
@@ -6002,8 +6019,9 @@ function handleEvent(e) {
       hear('escape', e.rabbit.x, e.rabbit.y, { how: e.how }, mine);
       const t = e.how === 'burrow' ? `💨 ${link(e.rabbit)} dived into a burrow just before ${link(e.fox)} could pounce!`
         : e.how === 'pond' ? `🌊 ${link(e.rabbit)} put ${e.water ? e.water.name : 'the water'} between itself and ${link(e.fox)}, and got away!`
+        : e.how === 'hedge' ? `🌿 ${link(e.rabbit)} dived into your hedge${e.hedge ? `, ${hedgeLink(e.hedge, esc(e.hedge.name))},` : ''} and ${link(e.fox)} lost it.`
         : `💨 ${link(e.rabbit)} outran ${link(e.fox)}!`;
-      if (mine) addNews(t); else addNews(t, 'escape', 11000);
+      if (mine || e.first) addNews(t); else addNews(t, 'escape', 11000);   // (the first into each hedge always)
       break;
     }
     case 'spotted': {
@@ -6411,7 +6429,7 @@ const SERIES = {
 const SEASON_TINT = ['#f6dde5', '#f7ecb8', '#f4d6b6', '#dfe8f0'];
 const RANGES = { year: S.YEAR_DAYS * S.TPD, five: 5 * S.YEAR_DAYS * S.TPD, all: Infinity };
 const RANGE_WORDS = { year: 'the last year', five: 'the last 5 years', all: 'the whole story' };
-const MARK_EMOJI = { extinct: '😢', arrive: '🧳', fire: '🔥', outbreak: '🤒', dugpond: '⛏️', frogsfound: '🐸', sowstrip: '🌼', beesfound: '🐝' };
+const MARK_EMOJI = { extinct: '😢', arrive: '🧳', fire: '🔥', outbreak: '🤒', dugpond: '⛏️', frogsfound: '🐸', sowstrip: '🌼', beesfound: '🐝', hedgeplant: '🌿', hedgebloom: '🌸' };
 const CAUSES = [['fox', '🦊', 'Caught by a fox'], ['hunger', '🥀', 'Starved'], ['age', '🌙', 'Old age'],
   ['sickness', '🤒', 'Sickness'], ['lightning', '⚡', 'Lightning'], ['fire', '🔥', 'Wildfire'], ['flood', '🌊', 'Drowned in a flood'],
   ['ice', '🧊', 'Fell through the ice'], ['owl', '🦉', 'Taken by an owl'], ['left', '🧳', 'Left to find a home of its own']];
@@ -7281,11 +7299,13 @@ const THINGS = {
       else if (stage === 'dead') status = d.burnt ? `🔥 Killed by a fire ${ago(d.dead)} ago. It stands black and bare, and one day it will fall.`
         : `🪾 Died ${ago(d.dead)} ago. It stands grey and bare, and one day it will fall.`;
       else if (young && world.fire[i] === 0 && wood > k.shade) status = k.shade > 0.6 ? '🌑 Waiting in the shade for an old tree to fall' : '🌑 Too much shade: it is struggling';
-      else if (young && d.size < S.SAPLING) status = thornGuard(d) ? '🌿 Safe among the thorns from hungry rabbits' : '🐇 Small enough for a rabbit to nibble';
+      else if (young && d.size < S.SAPLING) status = d.hedge ? '🌿 A young whip: the thorns keep the rabbits off it, mostly' : thornGuard(d) ? '🌿 Safe among the thorns from hungry rabbits' : '🐇 Small enough for a rabbit to nibble';
       else status = treeSeason(d);
       const facts = [], parent = d.parent && world.decor.find(o => o.id === d.parent);
       const from = parent ? thingLink('tree', parent.id, treeTitle(parent).replace(/^The /, 'the ')) : `an old ${kind} long gone`;
       if (d.planted) facts.push(['🤲', `You planted this in the ${plantedWhen(d)}`]);
+      const hedge = d.hedge && world.hedges?.find(h => h.id === d.hedge);
+      if (hedge) facts.push(...hedgeFacts(hedge));
       if (living || d.stump) facts.push(['🎂', `${age < 1 ? days(age * S.YEAR_DAYS) : `${Math.floor(age)} ${Math.floor(age) === 1 ? 'year' : 'years'}`} old`]);
       if (d.sprouted) facts.push(['🪵', 'Grew again from the stump of a tree lightning took']);
       else if (d.by === 'crow') facts.push(['🐦‍⬛', `Grew from ${k.mast === 'acorns' ? 'an acorn' : 'a beechnut'} a crow carried off from ${from}, buried, and forgot`]);
@@ -7324,7 +7344,7 @@ const THINGS = {
       const STAGES = { seedling: 'Seedling', sapling: 'Sapling', young: 'Young', grown: 'Grown', old: 'Old', dead: 'Dead', log: 'Fallen', stump: 'Stump' };
       return {
         emoji: d.stump || d.fallen ? '🪵' : d.dead ? '🪾' : stage === 'seedling' ? '🌱' : d.emoji, tint: d.dead ? '#b8a47a' : '#7fb24a', name,
-        sub: `${STAGES[stage]} · ${where}`, status, facts,
+        sub: hedge ? `${STAGES[stage]} · part of ${esc(hedge.name)}` : `${STAGES[stage]} · ${where}`, status, facts,
         meters: living ? [['Grown', d.size / Math.max(d.max, d.size), ''], ['Age', age / d.life, age > d.life * 0.85 ? 'low' : '']] : null,
       };
     },
@@ -7668,8 +7688,12 @@ function renderYours() {
     rows.push(`<li><span>${c.sp.emoji}</span><span>${link(c)} · ${esc(m.text.toLowerCase())}<div class="when">${lifeStage(c)}, ${days(S.ageDays(world, c))} old</div></span></li>`);
   }
   for (const d of world.decor) if (d.planted) rows.push(`<li><span>🌳</span><span>${thingLink('tree', d.id, esc(treeTitle(d)))}<div class="when">planted in the ${plantedWhen(d)}</div></span></li>`);
+  for (const h of world.hedges || []) {
+    const n = hedgeWhips(h).length;
+    rows.push(`<li${n ? '' : ' class="gone"'}><span>🌿</span><span>${hedgeLink(h, esc(h.name))} · ${n ? `${n} ${n === 1 ? 'whip' : 'whips'}, ${HEDGE_STAGE[hedgeStage(h)]}` : 'gone'}<div class="when">planted in the ${whenIn(h.planted)}</div></span></li>`);
+  }
   for (const c of gone) rows.push(`<li class="gone"><span>🪦</span><span>${link(c)} · ${GONE_SAY[c.cause] || 'gone'}<div class="when">${when(c.died)}, ${days(S.ageDays(world, c))} old</div></span></li>`);
-  setHTML($('#yours-list'), rows.join('') || `<li class="none">Nobody yet. Click an animal and tap its name to give it one of your own: you'll hear how its life goes. A bee is named at its hive, by its queen. The trees you plant are here too.</li>`);
+  setHTML($('#yours-list'), rows.join('') || `<li class="none">Nobody yet. Click an animal and tap its name to give it one of your own: you'll hear how its life goes. A bee is named at its hive, by its queen. The trees you plant are here too, and at ?keep your hedges.</li>`);
 }
 
 // The sheet on a phone: tap the folded line for more and the handle for less (the click handler), or
@@ -8093,12 +8117,14 @@ function plantAt(kind, wx, wy) {
 // What the news calls one: a link while it stands.
 const plantedLink = d => { const k = treeName(d).toLowerCase(); return world.decor.includes(d) ? thingLink('tree', d.id, k) : k; };
 
-// ------------------------------------------------------------------ the keeper's hand: drawing a pond, sowing a strip
+// ------------------------------------------------------------------ the keeper's hand: drawing a pond, sowing a strip, planting a hedge
 //
 // At ?keep the keeper places things with a drag (PLAN.md, K2). With the spade in hand a press and a drag paint water
 // along the way, like a brush (sim.js pondPlan: every tile within POND_BRUSH of the line, deeper the further inside),
 // and a tap digs a small round pond; a mouse shows where a tap would dig before the press. With the seed in hand a
-// drag sows a strip of flowers along the way, about two tiles wide (sim.js stripPlan, sowStrip), the same way. Meanwhile a ghost shades
+// drag sows a strip of flowers along the way, about two tiles wide (sim.js stripPlan, sowStrip), the same way. With the
+// whips in hand a drag plants a hedge, a hawthorn every 1.5 tiles along it (sim.js hedgePlan, plantHedge), its ghost a dot
+// at each whip (hedgeGhost), green or red where something's in the way, and a tap plants one. Meanwhile a ghost shades
 // each tile by what it will be and a line by the hand says what it will bring. Letting go digs it at once, paused or
 // not (digPond); Esc, or a second finger, calls it off. The plan and its ghost are made again only when the stroke
 // reaches a new tile: the ghost is one small canvas over the stroke's box, GHOST_PX a tile, a soft blob a tile.
@@ -8107,7 +8133,7 @@ const GHOST = { dry: 'rgb(166, 124, 82)', spring: 'rgb(150, 204, 236)', lasting:
   blocked: 'rgb(214, 96, 80)' };
 const GHOST_ORDER = ['dry', 'spring', 'lasting', 'deep', 'sow', 'blocked'];   // (the deep over the shallows, the islands over all)
 const BLOCKED = { tree: 'a tree', hive: 'a hive’s tree', holt: 'the otters’ holt', rock: 'a rock', burrow: 'a burrow',
-  field: 'a flower field', edge: 'the meadow’s edge', water: 'the water' };
+  field: 'a flower field', edge: 'the meadow’s edge', water: 'the water', flood: 'the spring flood', hedge: 'your hedge' };
 const NO_POND = { many: 'The meadow has as many ponds as it can take', water: 'That’s water already',
   high: 'Too high: the water won’t reach', blocked: 'Something’s in the way' };
 let placing = null;                       // { tool, pts (the stroke, in tiles), press (the button is down), moved, tile, plan, full, sx, sy (the hand) }
@@ -8122,7 +8148,11 @@ const BLOOM_WHEN = { soon: 'Flowers in a day or so', days: 'Flowers in 2 or 3 da
 const flowersOf = n => (n === 'Heather' ? 'heather' : n === 'Daisy' ? 'daisies' : n.toLowerCase() + 's');
 const kindWords = k => k.names.map(flowersOf).join(' and ');   // a field's flowers: 'bluebells and hyacinths'
 const hivesNear = n => (n ? `${n === 1 ? 'A hive' : n + ' hives'} in reach` : 'No hive in reach: no bees will come');
-const placeTool = t => t === 'pond' || t === 'sow';   // the tools that place with a drag
+const placeTool = t => t === 'pond' || t === 'sow' || t === 'hedge';   // the tools that place with a drag
+const NO_HEDGE = { water: 'Hawthorns don’t grow in the water', flood: 'The spring flood comes up here: the whips would drown', field: 'That’s a flower field: the bees need it open', burrow: 'Too close to a burrow: rabbits live there',
+  hive: 'Too close to the hive’s tree', hedge: 'Your hedge is there already', tree: 'Too close to the trees there', rock: 'A rock’s in the way', edge: 'Too near the edge of the meadow' };
+const HEDGE_GHOST_PX = 14;                // the hedge's ghost is dots, so it's painted finer than a pond's
+const HEDGE_GHOST = { whip: 'rgb(74, 150, 62)', ring: 'rgb(36, 92, 34)', earth: 'rgb(150, 112, 74)' };
 // A strip's ghost: its flower's tint, bolder (the soft tints go grey over the grass).
 const sowTint = t => { const m = (t[0] + t[1] + t[2]) / 3; return `rgb(${t.map(v => Math.round(clamp(m + (v - m) * 2.2, 0, 255)))})`; };
 
@@ -8146,9 +8176,10 @@ function placeAt(sx, sy, press) {
 function planPlace() {
   const p = placing;
   p.planMoved = p.moved;
-  p.plan = p.tool === 'sow' ? S.stripPlan(world, p.pts) : S.pondPlan(world, p.pts, p.moved ? S.POND_BRUSH : S.POND_DAB);
+  p.plan = p.tool === 'sow' ? S.stripPlan(world, p.pts) : p.tool === 'hedge' ? S.hedgePlan(world, p.pts) : S.pondPlan(world, p.pts, p.moved ? S.POND_BRUSH : S.POND_DAB);
   if (p.plan.full) p.full = true;
-  paintGhost(p.plan, p.tool === 'sow' ? { ...GHOST, sow: sowTint(p.plan.kind.tint) } : GHOST);
+  if (p.tool === 'hedge') hedgeGhost(p.plan);
+  else paintGhost(p.plan, p.tool === 'sow' ? { ...GHOST, sow: sowTint(p.plan.kind.tint) } : GHOST);
   placeLabel(p);
 }
 
@@ -8176,11 +8207,41 @@ function paintGhost(p, colours) {
   }
 }
 
+// A hedge's ghost: the earth along the row, faint, and a dot at each whip, green, or red where something's in the way.
+function hedgeGhost(p) {
+  const u = HEDGE_GHOST_PX, w = (p.x1 - p.x0 + 3) * u, h = (p.y1 - p.y0 + 3) * u, at = s => [(s.x - p.x0 + 1) * u, (s.y - p.y0 + 1) * u];
+  if (ghost.width !== w || ghost.height !== h) { ghost.width = w; ghost.height = h; } else ghostCtx.clearRect(0, 0, w, h);
+  ghostCtx.lineCap = ghostCtx.lineJoin = 'round';
+  ghostCtx.strokeStyle = HEDGE_GHOST.earth; ghostCtx.lineWidth = u * 1.2; ghostCtx.globalAlpha = 0.45;
+  ghostCtx.beginPath();
+  p.spots.forEach((s, k) => { const [x, y] = at(s); if (k) ghostCtx.lineTo(x, y); else { ghostCtx.moveTo(x, y); ghostCtx.lineTo(x + 0.01, y); } });
+  ghostCtx.stroke();
+  ghostCtx.globalAlpha = 1; ghostCtx.lineWidth = u * 0.1;
+  for (const s of p.spots) {
+    const [x, y] = at(s);
+    ghostCtx.fillStyle = s.blocker ? GHOST.blocked : HEDGE_GHOST.whip; ghostCtx.strokeStyle = s.blocker ? 'rgb(140, 50, 40)' : HEDGE_GHOST.ring;
+    ghostCtx.beginPath(); ghostCtx.arc(x, y - u * 0.15, u * 0.34, 0, TAU); ghostCtx.fill(); ghostCtx.stroke();
+  }
+}
+
+// When a tick to come is, in words: 'this summer', 'by autumn', 'next spring', 'in the spring of year 3'.
+const yearAt = t => Math.floor(t / S.TPD / S.YEAR_DAYS) + 1;
+function comingWhen(t) {
+  if (!t) return 'in a few years';
+  const s = seasonName(S.seasonOf(t)), now = world.tick, years = yearAt(t) - yearAt(now);
+  if (!years) return S.seasonOf(t) === S.seasonOf(now) ? `this ${s}` : `by ${s}`;
+  return years === 1 ? `next ${s}` : `in the ${s} of year ${yearAt(t)}`;
+}
+
 // What it will bring, in a line: how big, water all year or a spring pool, a deep middle or not, and the frogs.
 function placeLabel(pl) {
   const p = pl.plan;
   let text;
-  if (pl.tool === 'sow') text = p.ok ? `<b>A strip of ${kindWords(p.kind)} · ${p.sown} tiles · ${BLOOM_WHEN[p.bloom]}</b><small>${hivesNear(p.hives)}`
+  if (pl.tool === 'hedge') text = p.ok ? `<b>A hawthorn hedge · ${p.whips} ${p.whips === 1 ? 'whip' : 'whips'} · thick enough to hide a rabbit ${comingWhen(p.young)} · blossom ${comingWhen(p.blossom)}</b>`
+    + `<small>${[p.grows ? `Goes on with ${esc(p.grows.name)}` : '', p.blocked ? `${BLOCKED[p.blocker][0].toUpperCase() + BLOCKED[p.blocker].slice(1)}${p.blocked > 1 ? ' and more' : ''} in the way: skipped` : '',
+      pl.full ? 'as long as one row goes' : ''].filter(Boolean).join(' · ')}</small>`
+    : `<b>${NO_HEDGE[p.why]}</b>`;
+  else if (pl.tool === 'sow') text = p.ok ? `<b>A strip of ${kindWords(p.kind)} · ${p.sown} tiles · ${BLOOM_WHEN[p.bloom]}</b><small>${hivesNear(p.hives)}`
     + `${p.blocked ? ` · ${BLOCKED[p.blocker][0].toUpperCase() + BLOCKED[p.blocker].slice(1)}${p.blocked > 1 ? ' and more' : ''} left out` : ''}${pl.full ? ' · as long as one strip goes' : ''}</small>`
     : `<b>${NO_SOW[p.why]}</b>`;
   else if (!p.ok) text = `<b>${NO_POND[p.why]}</b>`;
@@ -8211,6 +8272,14 @@ function digPlaced() {
   const p = placing;
   dropPlace();
   if (!p?.press) return;
+  if (p.tool === 'hedge') {
+    const h = S.plantHedge(world, p.pts);
+    if (typeof h === 'string') { addNews(`🌿 ${NO_HEDGE[h]}.`, 'nohedge', 1500); return; }
+    terrainTick = -1;                                      // the turned earth under it, this very frame
+    hear('grass', h.x, h.y, {}, true);
+    flushEvents();
+    return;
+  }
   if (p.tool === 'sow') {
     const f = S.sowStrip(world, p.pts);
     if (typeof f === 'string') { addNews(`🌼 ${NO_SOW[f]}.`, 'nosow', 1500); return; }
@@ -8293,6 +8362,30 @@ function stripFacts(f, hives) {
   return out;
 }
 
+// A hedge the keeper planted: its whips standing, the one in its middle (what a link to it opens), its stage, and in
+// the inspector what it is and what comes next.
+const hedgeWhips = h => world.decor.filter(d => d.hedge === h.id && S.standing(d));
+function hedgeLink(h, text) {
+  let best = null, bd = Infinity;
+  for (const d of world.decor) if (d.hedge === h.id && S.standing(d) && (d.x - h.x) ** 2 + (d.y - h.y) ** 2 < bd) { best = d; bd = (d.x - h.x) ** 2 + (d.y - h.y) ** 2; }
+  return best ? thingLink('tree', best.id, text) : text;
+}
+const HEDGE_STAGE = { whips: 'newly planted', young: 'thick enough to hide a rabbit', blossom: 'blossomed', haws: 'bearing haws' };
+const hedgeStage = h => (h.haws ? 'haws' : h.blossom ? 'blossom' : h.young ? 'young' : 'whips');
+function hedgeFacts(h) {
+  const whips = hedgeWhips(h), n = whips.length, lost = h.whips - n, size = n ? whips.reduce((a, d) => a + d.size, 0) / n : 0;
+  const next = S.hedgeForecast(world, size);
+  const out = [['🌿', `Part of ${esc(h.name)}, the hedge you planted in the ${whenIn(h.planted)}`],
+    ['🌳', `${n} of its ${h.whips} whips standing${lost > 0 ? `, ${lost} lost` : ''}`]];
+  out.push(h.young ? ['🐇', 'Thick enough to hide a rabbit from a fox'] : ['🐇', `Thick enough to hide a rabbit ${comingWhen(next.young)}`]);
+  if (h.blossom) out.push(['🌸', `First blossomed in the ${whenIn(h.blossom)}`]);
+  else out.push(['🌸', `Blossom ${comingWhen(next.blossom)}, for the bees`]);
+  if (h.haws) out.push(['🔴', `First bore haws in the ${whenIn(h.haws)}: the birds carry them off`]);
+  else if (h.blossom || next.haws) out.push(['🔴', `Haws ${h.blossom ? 'in autumn' : comingWhen(next.haws)}`]);
+  out.push(['💨', h.escapes ? `${h.escapes} ${h.escapes === 1 ? 'rabbit has' : 'rabbits have'} got away from a fox into it` : 'No rabbit has hidden in it from a fox yet']);
+  return out;
+}
+
 // Where to look at a pond from a link: the middle of its water, or of where it was dug.
 function dugSpot(id) {
   let sx = 0, sy = 0, n = 0;
@@ -8360,7 +8453,8 @@ function release(species, wx, wy) {
 // The keeper's tools at ?keep: the button, its emoji, what it does, and the keep card's hint. (Their buttons are
 // hidden in the page till ?keep shows them.)
 const KEEP_TOOLS = [['look', '🔍', 'Look around'], ['pond', '⛏️', 'Dig a pond', 'Paint the water with a drag. A wide blob gets a deep middle; the lower the ground, the longer it lasts'],
-  ['sow', '🌼', 'Sow flowers', 'Drag a strip of meadow flowers. Sown in spring or summer it blooms within days, a new flower each season, and the bees come']];
+  ['sow', '🌼', 'Sow flowers', 'Drag a strip of meadow flowers. Sown in spring or summer it blooms within days, a new flower each season, and the bees come'],
+  ['hedge', '🌿', 'Plant a hedge', 'Drag a row of hawthorn whips. Within a season or two a rabbit running from a fox can hide in it, and the spring after it blossoms']];
 // At ?keep the ring holds only the keeper's tools (without Look); an empty ring doesn't open.
 const RING_TOOLS = KEEP ? KEEP_TOOLS.filter(([k]) => k !== 'look')
   : [['rabbit', '🐇', 'Release a rabbit'], ['fox', '🦊', 'Release a fox'], ['bee', '🐝', 'Release a bee'], ['crow', '🐦‍⬛', 'Release a crow'], ['owl', '🦉', 'Release an owl'], ['grass', '🌱', 'Grow grass'],
@@ -8405,7 +8499,7 @@ function ringPick(k) {
   const [wx, wy] = ui.ring.at;
   if (k === 'sky' || k === 'plant') { const [sx, sy] = toScreen(wx, wy); openRing(sx, sy, k); return; }
   closeRing();
-  if (k === 'pond' || k === 'sow') { setTool(k); return; }   // the spade or the seed in hand: a drag places it
+  if (k === 'pond' || k === 'sow' || k === 'hedge') { setTool(k); return; }   // the spade, the seed or the whips in hand: a drag places it
   if (S.KINDS.includes(k)) release(k, wx, wy);
   else if (k === 'zap') zapAt(wx, wy);
   else if (k === 'fire') { setFire(wx, wy); S.burnLine(world, wx - 3, wy, wx + 3, wy); flushEvents(); }   // a short wall across the spot
@@ -8670,7 +8764,7 @@ document.addEventListener('click', e => {
   else if (t.dataset.thing) {
     const [kind, id] = t.dataset.thing.split(':'), it = (kind === 'hive' ? world.hives : kind === 'tree' ? world.decor.filter(o => o.tree) : world.fields).find(o => o.id === +id);
     if (t.closest('#yours')) toggleYours(false);
-    if (it?.strip) { select(0); ui.follow = false; cam.x = it.x; cam.y = it.y; clampCam(); }   // a strip the keeper sowed: off to look at it
+    if (it?.strip || it?.hedge) { select(0); ui.follow = false; cam.x = it.x; cam.y = it.y; clampCam(); }   // a strip or a hedge the keeper made: off to look at it
     if (it) pick(kind, it);
   }
   else if (t.dataset.id) {
@@ -8727,6 +8821,7 @@ document.addEventListener('keydown', e => {
   else if (e.key === 't') setTool('plant');
   else if (e.key === 'd' && KEEP) setTool('pond');
   else if (e.key === 'g' && KEEP) setTool('sow');
+  else if (e.key === 'h' && KEEP) setTool('hedge');
   else if (e.key === 'w') toggleSkyMenu();
   else if (e.key === 'k') toggleSkyLock();
   else if (e.key === 'n') toggleNewsLog();
@@ -9442,7 +9537,7 @@ addEventListener('pagehide', keepMeadow);
 const AWAY_MIN = 5 * 60e3;                 // gone at least this long, in real time
 const AWAY_TICKS = S.SEASON_DAYS * S.TPD;  // and it moves on a season, however long it was
 const AWAY_MS = 40;                        // of each frame the catching up gets
-const AWAY_BIG = ['extinct', 'swarm', 'settle', 'hivestruck', 'queenlost', 'fire', 'outbreak', 'outbreakover', 'mast', 'voles', 'frogyear', 'treedied', 'windthrow', 'frogsfound', 'pondgrew', 'stripbloom', 'beesfound'];   // news for the card, the first told first
+const AWAY_BIG = ['extinct', 'swarm', 'settle', 'hivestruck', 'queenlost', 'fire', 'outbreak', 'outbreakover', 'mast', 'voles', 'frogyear', 'treedied', 'windthrow', 'frogsfound', 'pondgrew', 'stripbloom', 'beesfound', 'hedgeyoung', 'hedgebloom', 'hedgehaws'];   // news for the card, the first told first
 const away = { on: false, frames: 0, left: 0, from: 0, day: -1, births: null, deaths: null, news: [], type: '', mine: false };
 const awayOpen = () => !$('#away').classList.contains('hidden');
 const deathsOf = s => Object.values(world.stats.deaths[s]).reduce((a, b) => a + b, 0);

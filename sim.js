@@ -1376,7 +1376,7 @@ function tidyTrees(w) {
 function shadeOver(w, d) {
   let s = 0;
   forEachDecorNear(w, d.x, d.y, 3, o => {
-    if (o === d || !standing(o) || o.size <= d.size) return;
+    if (o === d || !standing(o) || o.size <= d.size || d.hedge && o.hedge === d.hedge) return;   // (a hedge's whips don't shade each other out)
     const q = ((o.x - d.x) ** 2 + (o.y - d.y) ** 2) / 3.2;
     if (q < 3) s += 0.45 * shadeOf(o) * Math.exp(-q);
   });
@@ -1550,7 +1550,7 @@ function treesTick(w, grow = true) {
       if (d.size < SAPLING) {
         if (w.water[i] && r.next() < 0.5) { treeDies(w, d, 'flood'); continue; }
         if (w.burrows.some(b => (b.x - d.x) ** 2 + (b.y - d.y) ** 2 < 1)) { treeDies(w, d, 'dug'); continue; }
-        if (w.bitten[i] && r.next() < k.taste * (thornNear(w, d.x, d.y, THORNS) ? 0.1 : 1)) {
+        if (w.bitten[i] && r.next() < k.taste * (d.hedge || thornNear(w, d.x, d.y, THORNS) ? 0.1 : 1)) {   // (a hedge's whips guard each other)
           const c = w.byId.get(w.bitten[i]), what = `Nibbled a young ${KIND_NAMES[d.kind].toLowerCase()}`;
           if (c && c.alive && c.story[c.story.length - 1].text !== what) note(w, c, '🌱', what);
           if (d.size < SEEDLING) { treeDies(w, d, 'eaten', c); continue; }
@@ -1560,7 +1560,7 @@ function treesTick(w, grow = true) {
       }
       if (young && shade > k.shade && r.next() < SHADE_DEATH) { treeDies(w, d, 'shade'); continue; }
       const was = d.size;
-      if (d.size < d.max) d.size += k.grow * (d.sprouted ? 2 : 1) * (1 - shade) * g * d.size * (1 - d.size / d.max);
+      if (d.size < d.max) d.size += k.grow * (d.sprouted ? 2 : 1) * (d.hedge ? HEDGE_GROW : 1) * (1 - shade) * g * d.size * (1 - d.size / d.max);
       if (d.planted && was < SAPLING && d.size >= SAPLING) emit(w, { type: 'plantgrew', tree: d });   // out of the rabbits' reach
       if (!d.named && treeAge(w, d) > d.life * 0.7) {    // an old giant gets a name
         d.named = true;
@@ -2272,7 +2272,7 @@ function note(w, c, emoji, text) {
   if (c.story.length > 40) c.story.splice(1, 1);   // keep the birth line
 }
 
-const MARKED = new Set(['extinct', 'arrive', 'fire', 'outbreak', 'dugpond', 'frogsfound', 'sowstrip', 'beesfound']);   // moments the stats chart pins on its timeline
+const MARKED = new Set(['extinct', 'arrive', 'fire', 'outbreak', 'dugpond', 'frogsfound', 'sowstrip', 'beesfound', 'hedgeplant', 'hedgebloom']);   // moments the stats chart pins on its timeline
 function emit(w, e) {
   e.t = w.tick; w.events.push(e);
   if (MARKED.has(e.type) && !e.founding) w.history.marks.push({ t: e.t, type: e.type, species: e.species, kind: e.kind });
@@ -2741,14 +2741,16 @@ function flee(w, c, fox) {
   if (c.mode !== 'flee') {
     c.mode = 'flee'; c.sleeping = false; c.threatId = fox.id; c.target = null;
     c.refuge = pickRefuge(w, c, fox);
+    if (w.hedges) { c.hedgeTo = fox.id ? hedgeRefuge(w, c, fox, c.refuge) : null; if (c.hedgeTo) c.refuge = null; }   // (?keep: a hedge nearer than any burrow)
     if (fox.id) thump(w, c, fox);
   }
   let tx, ty;
   if (c.refuge && !hasRoom(c.refuge)) c.refuge = pickRefuge(w, c, fox);   // filled up: try another
-  const b = c.refuge;
+  if (c.hedgeTo && inUnder(w, c)) return;                  // (?keep) in under the hedge, sitting tight
+  const b = c.refuge || c.hedgeTo;
   if (b) {
     tx = b.x; ty = b.y;
-    if ((b.x - c.x) ** 2 + (b.y - c.y) ** 2 < 0.8) {
+    if (b === c.refuge && (b.x - c.x) ** 2 + (b.y - c.y) ** 2 < 0.8) {
       enterBurrow(w, c, b, w.rng.int(150, 350), false);
       return;
     }
@@ -2785,6 +2787,36 @@ function pickRefuge(w, c, fox) {
   }
   return best;
 }
+
+// ?keep: a rabbit running from a fox makes for the nearest whip of a hedge that's thick enough to hide it (at least a
+// sapling), by the burrow's rules (within HEDGE_REACH, a clear way there, not towards the fox), if it's nearer than the
+// burrow it picked. Found through the decor grid. Only at ?keep: flee asks only when the keeper has planted a hedge.
+function hedgeRefuge(w, c, fox, burrow) {
+  const fx = fox.x - c.x, fy = fox.y - c.y, fd = Math.hypot(fx, fy) || 1;
+  let best = null, bd = burrow ? (burrow.x - c.x) ** 2 + (burrow.y - c.y) ** 2 : HEDGE_REACH * HEDGE_REACH;
+  forEachDecorNear(w, c.x, c.y, HEDGE_REACH, d => {
+    if (!d.hedge || d.size < SAPLING || !standing(d)) return;
+    const dx = d.x - c.x, dy = d.y - c.y, d2 = dx * dx + dy * dy;
+    if (d2 >= bd) return;
+    const dl = Math.sqrt(d2) || 1;
+    if ((dl < 2.5 || (dx * fx + dy * fy) / (dl * fd) < 0.3) && clearPath(w, c.x, c.y, d.x, d.y)) { best = d; bd = d2; }
+  });
+  return best;
+}
+
+// Within HEDGE_IN of the whip it ran for, the rabbit is in the hedge (c.covered: the tick, renewed each tick flee is
+// asked, so while the fox is still close): it creeps in under the whip, behind its stems, and sits tight. True while
+// it's there; false (on its way, or the whip gone) and flee runs on.
+const inHedge = (w, c) => c.covered >= w.tick - 1;
+function inUnder(w, c) {
+  const d = c.hedgeTo;
+  if (!standing(d)) { c.hedgeTo = null; return false; }
+  if (!inHedge(w, c) && (d.x - c.x) ** 2 + (d.y - c.y) ** 2 > HEDGE_IN * HEDGE_IN) return false;
+  c.covered = w.tick; c.target = null;
+  moveToward(w, c, d.x + (c.id % 2 ? 0.22 : -0.22), d.y - 0.12, c.walk * 0.5);   // just behind the stems
+  return true;
+}
+const hedgeOf = (w, d) => (d && d.hedge && w.hedges ? w.hedges.find(h => h.id === d.hedge) : null);
 
 // ---------------------------------------------------------------- sickness
 //
@@ -2936,6 +2968,10 @@ function hunt(w, c) {
     if (prey.alive && c.mode === 'chase') escaped(w, prey, c, prey.hidden ? 'burrow' : 'outran');
     prey = null; c.targetId = 0; c.mode = 'wander';
   }
+  if (prey && w.hedges && inHedge(w, prey)) {                // (?keep) gone into a hedge: lost, like one gone to ground
+    if (c.mode === 'chase') escaped(w, prey, c, 'hedge', null, hedgeOf(w, prey.hedgeTo));
+    prey = null; c.targetId = 0; c.mode = 'wander';
+  }
   // Foxes don't swim. A rabbit across deep water is out of reach, and one that gets deep water
   // between itself and the fox mid-chase has got away. Shallow water only slows them both.
   if (prey && (w.tick + c.id) % 5 === 0 && !clearPath(w, c.x, c.y, prey.x, prey.y)) {
@@ -2945,7 +2981,7 @@ function hunt(w, c) {
   if (!prey && (w.tick + c.id) % 5 === 0) {
     // Only a rabbit that isn't already watching this fox is worth sneaking up on.
     prey = nearest(w, c, sight * CAMO[1], 'rabbit', o => !(o.alert > 0 && o.threatId === c.id)
-      && dist2(c, o) < (sight * visibility(w, o)) ** 2 && clearPath(w, c.x, c.y, o.x, o.y));
+      && dist2(c, o) < (sight * visibility(w, o)) ** 2 && !(w.hedges && inHedge(w, o)) && clearPath(w, c.x, c.y, o.x, o.y));
     if (prey) { c.targetId = prey.id; c.mode = 'stalk'; }
   }
   if (!prey) return false;
@@ -2967,14 +3003,16 @@ function hunt(w, c) {
   return true;
 }
 
-function escaped(w, rabbit, fox, how, water) {
+function escaped(w, rabbit, fox, how, water, hedge) {
   rabbit.escapes++;
   rabbit.nemesisId = fox.id;   // it won't forget this one
   missed(fox);
   note(w, rabbit, '💨', how === 'burrow' ? `Dived into a burrow to escape ${fox.name}`
-    : how === 'pond' ? `Got away from ${fox.name} across ${water ? water.name : 'the water'}` : `Outran ${fox.name}`);
+    : how === 'pond' ? `Got away from ${fox.name} across ${water ? water.name : 'the water'}`
+    : how === 'hedge' ? `Dived into ${hedge ? hedge.name : 'the hedge'} to escape ${fox.name}` : `Outran ${fox.name}`);
   note(w, fox, '😤', `${rabbit.name} got away`);
-  emit(w, { type: 'escape', rabbit, fox, how, water });
+  if (hedge) hedge.escapes++;                                // (?keep) one more into the keeper's hedge
+  emit(w, { type: 'escape', rabbit, fox, how, water, hedge, first: hedge ? hedge.escapes === 1 : false });
 }
 
 // A hunt that came to nothing. Three of those and the old hunting ground is forgotten.
@@ -5978,7 +6016,8 @@ function plantTree(w, x, y, kind) {
 // banks are turned earth, bare and rich for a few days, and the crows come down to them as they follow a plough
 // (turned). From spring to autumn frogs within reach find it (findWater), and after a season the reeds come up
 // round it (keeperDay). None of this runs at the bare address: it all hangs off w.ponds, w.turned and w.dug, made
-// on the first dig, and draws on no random numbers.
+// on the first dig, and draws on no random numbers. The strips (sowStrip) and the hedges (plantHedge, w.hedges, d.hedge)
+// are below; the hedges' whips draw on w.treeRng as any tree does.
 
 const POND_BRUSH = 1.8;         // a stroke digs every tile whose middle is within this of the line drawn
 const POND_DAB = 2.3;           // a tap with no drag digs a round pond this big
@@ -6254,11 +6293,12 @@ const atTurned = (w, c) => !!w.turned?.length && (c.mode === 'forage' && !!c.tar
   || w.turned.some(s => s.until > w.tick && dist2(c, s) < s.r * s.r));
 
 // Once a day in a meadow the keeper has worked: the turned earth that's spent, the strips turning to the new
-// season's flower, the reeds, and the frogs finding the ponds.
+// season's flower, the hedges' milestones, the reeds, and the frogs finding the ponds.
 function keeperDay(w) {
   w.turned = w.turned.filter(s => s.until > w.tick);
   const season = Math.floor(dayOf(w.tick) / SEASON_DAYS);
   for (const f of w.fields) if (f.strip && f.swapped !== season) swapStrip(w, f);
+  if (w.hedges) hedgesDay(w);
   if (!w.ponds || seasonOf(w.tick) === 3) return;
   for (const p of w.ponds) {
     if (!p.reeds && w.tick - p.dug >= REED_DAYS * TPD) { p.reeds = true; emit(w, { type: 'pondgrew', what: 'reeds', water: p.id }); }
@@ -6445,6 +6485,165 @@ function stripSip(w, f, c) {
   if (!f.found) { f.found = w.tick; emit(w, { type: 'beesfound', field: f, hive: c.home, queen: c.home.queen }); }
 }
 
+// A hedge (plantHedge): a stroke plants a row of hawthorn whips along the line, one every HEDGE_GAP measured along it,
+// up to HEDGE_MOST; a tap plants one. A spot that's water (a dug pond too) or floods in spring, a flower field, by a
+// burrow or a hive, or too close to a trunk or a rock is skipped. Each whip is a tree of w.decor (d.hedge, the hedge's id) living by
+// treesTick like any tree, but planted two years old (HEDGE_WHIP, born HEDGE_AGE back), grown HEDGE_GROW times as fast
+// as a wild hawthorn up to a hedge's size (HEDGE_MAX), guarded by its own thorns from the rabbits, and never shaded out by
+// the whips next to it. So it's young (cover for a rabbit) within two seasons, and planted by early summer it blossoms
+// the next spring and bears haws that autumn (hedgeForecast says when, hedgesDay tells it). Under it is a line of turned
+// earth, and the crows come. A stroke that starts or ends by one of your hedges goes on with it. A rabbit running from
+// a fox with no burrow nearer makes for a young whip (flee, hedgeRefuge) and the fox loses it there (hunt, inHedge).
+const HEDGE_GAP = 1.5;          // tiles between two whips, along the stroke
+const HEDGE_MOST = 20;          // whips one stroke plants at most
+const HEDGE_WHIP = [1.0, 1.2];  // a whip's size when planted: past a seedling, short of a sapling (it isn't drawn smaller, game.js)
+const HEDGE_AGE = 2;            // years old it's planted at: old enough to bear (a hawthorn's seedAge) once it's grown
+const HEDGE_MAX = [2.8, 3.2];   // the size it grows to: a little past GROWN, a hedge and not a row of trees
+const HEDGE_GROW = 3;           // it grows this many times as fast as a wild hawthorn
+const HEDGE_JOIN = 2;           // a stroke that starts or ends this close to a whip of a hedge goes on with that hedge
+const HEDGE_CLEAR = 2;          // whips stay this far from a burrow or a hive
+const HEDGE_EARTH = 1.05;       // the turned earth: every tile whose middle is this close to the row (a strip's width)
+const HEDGE_BARE = 0.05;        // and the grass on it once planted
+const HEDGE_REACH = 8;          // tiles off a rabbit running from a fox makes for a hedge (as for a burrow, pickRefuge)
+const HEDGE_IN = 0.8;           // and this close to a whip, it's in the hedge
+const HAWS_FROM = 0.4;          // how far into autumn the haws show red (game.js turns the leaves from early autumn)
+const HEDGE_NAMES = ['Thorn', 'Wren', 'May', 'Blackbird', 'Bramble', 'Haw', 'Linnet', 'Dunnock', 'Finch', 'Robin', 'Yellowhammer', 'Sloe'];
+const HEDGE_ENDS = ['Row', 'Hedge'];
+
+// What's in the way of a whip at x, y ('' nothing): 'edge', 'water' (a dug pond too, dry or not), 'flood' (under the
+// spring flood, where a whip drowns: treesTick), 'field', 'burrow', 'hive', 'hedge' (a whip of a hedge already there),
+// 'tree' or 'rock' (as plantTree, or a whip of the same stroke, own).
+function hedgeBlock(w, x, y, own) {
+  if (x < 1 || y < 1 || x >= W - 1 || y >= H - 1) return 'edge';
+  const i = idx(x, y), near = (o, r) => (o.x - x) ** 2 + (o.y - y) ** 2 < r * r;
+  if (w.water[i] || w.dug && w.dug[i] >= 0) return 'water';
+  if (w.ground[i] < w.terrain.level + w.terrain.springFlood + w.terrain.rainRise / 2) return 'flood';   // (as the trees along the water keep above it, plantTrees)
+  if (w.fieldAt[i] >= 0) return 'field';
+  if (w.burrows.some(b => near(b, HEDGE_CLEAR))) return 'burrow';
+  if (w.hives.some(h => near(h, HEDGE_CLEAR))) return 'hive';
+  let what = '';
+  forEachDecorNear(w, x, y, 3, o => { if (!what && near(o, o.tree ? SPACE : o.size * 0.5 + 0.3)) what = o.hedge ? 'hedge' : o.tree ? 'tree' : 'rock'; });
+  return what || (own.some(s => !s.blocker && near(s, SPACE)) ? 'tree' : '');
+}
+
+// What a stroke of whips through pts would plant, changing nothing: its spots ({ x, y, blocker }: one at the start,
+// then every HEDGE_GAP along the line), the whips and the spots blocked (blocker: the first thing in the way), its box
+// in tiles and its middle, the hedge it goes on with (grows), full (it reached HEDGE_MOST), ok or why not (what was in
+// the way of every spot), and when it will be young, blossom and bear haws (hedgeForecast).
+function hedgePlan(w, pts) {
+  const spots = [];
+  let whips = 0, blocker = '', full = false;
+  const add = (x, y) => {
+    const s = { x, y, blocker: hedgeBlock(w, x, y, spots) };
+    spots.push(s);
+    if (s.blocker) blocker ||= s.blocker; else if (++whips >= HEDGE_MOST) full = true;
+  };
+  add(pts[0].x, pts[0].y);
+  let left = HEDGE_GAP;                                       // how far along the line the next spot is
+  for (let k = 1; k < pts.length && !full; k++) {
+    const a = pts[k - 1], b = pts[k], len = Math.hypot(b.x - a.x, b.y - a.y);
+    let s = left;
+    for (; s <= len && !full; s += HEDGE_GAP) add(a.x + (b.x - a.x) * s / len, a.y + (b.y - a.y) * s / len);
+    left = s - len;
+  }
+  let x0 = W, y0 = H, x1 = 0, y1 = 0, sx = 0, sy = 0;
+  for (const s of spots) {
+    x0 = Math.min(x0, Math.floor(s.x)); y0 = Math.min(y0, Math.floor(s.y)); x1 = Math.max(x1, Math.floor(s.x)); y1 = Math.max(y1, Math.floor(s.y));
+    if (!s.blocker) { sx += s.x; sy += s.y; }
+  }
+  let grows = null;                                           // a hedge of yours it starts or ends by
+  if (w.hedges) {
+    for (const p of [pts[0], pts[pts.length - 1]]) {
+      forEachDecorNear(w, p.x, p.y, HEDGE_JOIN, d => {
+        if (!grows && d.hedge && standing(d) && (d.x - p.x) ** 2 + (d.y - p.y) ** 2 < HEDGE_JOIN * HEDGE_JOIN) grows = hedgeOf(w, d);
+      });
+    }
+  }
+  const why = whips ? '' : blocker || 'edge';
+  return { spots, whips, blocked: spots.length - whips, blocker, x0, y0, x1, y1, x: whips ? sx / whips : pts[0].x, y: whips ? sy / whips : pts[0].y,
+    grows, full, ok: !why, why, ...hedgeForecast(w) };
+}
+
+// When whips of `size` (a new one's, by default) will be young, first blossom and first bear haws, if nothing holds
+// them back: the ticks of the days treesTick would see it (young: past SAPLING; blossom: past GROWN in the part of
+// spring a hawthorn flowers, inBloom; haws: HAWS_FROM into the autumn after that). 0 for one that's past already.
+function hedgeForecast(w, size = (HEDGE_WHIP[0] + HEDGE_WHIP[1]) / 2) {
+  const k = TREES.hawthorn, max = (HEDGE_MAX[0] + HEDGE_MAX[1]) / 2, out = { young: 0, blossom: 0, haws: 0 };
+  for (let day = dayOf(w.tick) + 1, end = day + 3 * YEAR_DAYS; day < end && !(out.blossom && out.haws); day++) {
+    const t = day * TPD, s = seasonOf(t), sp = springPart(t);
+    if (size < max) size += k.grow * HEDGE_GROW * SEASONS[s].growth / GROW_DAYS * size * (1 - size / max);
+    if (!out.young && size >= SAPLING) out.young = t;
+    if (size < GROWN) continue;
+    if (!out.blossom && s === 0 && sp >= k.blossom[0] && sp <= k.blossom[1]) out.blossom = t;
+    if (!out.haws && out.blossom && s === 2 && sp >= HAWS_FROM) out.haws = t;
+  }
+  return out;
+}
+
+// A name no hedge has yet, by the meadow's seed and the hedge's id (never w.rng).
+function hedgeName(w, id) {
+  const used = new Set((w.hedges || []).map(h => h.name)), n = HEDGE_NAMES.length * HEDGE_ENDS.length, start = Math.floor(hash2(id, 47, w.seed) * n);
+  for (let k = 0; k < n; k++) {
+    const j = (start + k * 5) % n, name = `${HEDGE_NAMES[j % HEDGE_NAMES.length]} ${HEDGE_ENDS[Math.floor(j / HEDGE_NAMES.length)]}`;   // (5: prime to n)
+    if (!used.has(name)) return name;
+  }
+  return `${HEDGE_NAMES[start % HEDGE_NAMES.length]} Hedge ${id}`;
+}
+
+// Plant a stroke of whips: the hedge (of w.hedges, made on the first), or why not (hedgePlan's why).
+function plantHedge(w, pts) {
+  const plan = hedgePlan(w, pts);
+  if (!plan.ok) return plan.why;
+  w.hedges ??= []; w.turned ??= [];
+  const id = w.hedges.length + 1, h = plan.grows
+    || { id, name: hedgeName(w, id), planted: w.tick, tone: Math.floor(hash2(id, 53, w.seed) * 3), whips: 0, escapes: 0, young: 0, blossom: 0, haws: 0, x: plan.x, y: plan.y };
+  if (!plan.grows) w.hedges.push(h);
+  for (const s of plan.spots) {
+    if (s.blocker) continue;
+    const hx = Math.floor(s.x * 100), hy = Math.floor(s.y * 100);
+    const d = newTree(w, s.x, s.y, 'hawthorn', { by: 'you', hedge: h.id, tone: h.tone, born: w.tick - HEDGE_AGE * YEAR,
+      size: HEDGE_WHIP[0] + (HEDGE_WHIP[1] - HEDGE_WHIP[0]) * hash2(hx, hy, 57), max: HEDGE_MAX[0] + (HEDGE_MAX[1] - HEDGE_MAX[0]) * hash2(hx, hy, 59) });
+    cellOf(w.decorCells, d).push(d);                          // in the grid now, so the next one can't go on top of it
+    h.whips++;
+  }
+  tally(w, 'hawthorn', 'planted');
+  let sx = 0, sy = 0, n = 0;                                  // its middle, now
+  for (const d of w.decor) if (d.hedge === h.id && standing(d)) { sx += d.x; sy += d.y; n++; }
+  if (n) { h.x = sx / n; h.y = sy / n; }
+  h.standing = n;
+  // The turned earth under it: the grass thinned and the ground rich, and the crows come down to it.
+  const line = plan.spots.length > 1 ? plan.spots : [plan.spots[0], { x: plan.spots[0].x + 0.01, y: plan.spots[0].y }];
+  const { set } = brushTiles(line, HEDGE_EARTH, 400), spots = [];
+  for (const i of set) {
+    if (w.water[i] || w.fieldAt[i] >= 0) continue;
+    w.grass[i] = Math.min(w.grass[i], HEDGE_BARE); w.rich[i] = Math.max(w.rich[i], TURNED_RICH);
+    spots.push({ x: i % W + 0.5, y: ((i / W) | 0) + 0.5 });
+  }
+  w.turned.push({ x: plan.x, y: plan.y, r: Math.hypot(plan.x1 - plan.x0 + 1, plan.y1 - plan.y0 + 1) / 2 + 1.5,
+    spots: evenly(spots, TURNED_SPOTS), until: w.tick + TURNED_DAYS * TPD });
+  emit(w, { type: 'hedgeplant', hedge: h, whips: plan.whips, bigger: !!plan.grows, x: plan.x, y: plan.y, young: plan.young, blossom: plan.blossom });
+  return h;
+}
+
+// Once a day: each hedge's milestones, each told once. Young when half its whips standing are past SAPLING (cover for a
+// rabbit), its first blossom (a whip in bloom), its first haws (a whip bearing, in the autumn after its blossom).
+function hedgesDay(w) {
+  for (const h of w.hedges) {
+    let n = 0, young = 0, bloom = false, bear = false;
+    for (const d of w.decor) {
+      if (d.hedge !== h.id || !standing(d)) continue;
+      n++;
+      if (d.size >= SAPLING) young++;
+      if (inBloom(w, d)) bloom = true;
+      if (bearing(w, d)) bear = true;
+    }
+    h.standing = n;
+    if (!h.young && n && young * 2 >= n) { h.young = w.tick; emit(w, { type: 'hedgeyoung', hedge: h }); }
+    if (!h.blossom && bloom) { h.blossom = w.tick; emit(w, { type: 'hedgebloom', hedge: h }); }
+    if (!h.haws && h.blossom && bear && seasonOf(w.tick) === 2 && springPart(w.tick) >= HAWS_FROM) { h.haws = w.tick; emit(w, { type: 'hedgehaws', hedge: h }); }
+  }
+}
+
 function nameQueen(w, h, name) {
   name = String(name).replace(/\s+/g, ' ').trim().slice(0, NAME_MAX);
   if (!h.queen || !name || name === h.queen.name) return false;
@@ -6522,6 +6721,7 @@ function mood(w, c) {
     case 'flee':
       if (c.fright > 0) return c.frightWhat === 'fire' ? { emoji: '🔥', text: 'Running from the fire!' }
         : { emoji: '⚡', text: 'Spooked by thunder!' };
+      if (c.hedgeTo && inHedge(w, c)) return { emoji: '🌿', text: `Tucked into ${hedgeOf(w, c.hedgeTo)?.name ?? 'the hedge'}, hiding from ${w.byId.get(c.threatId)?.name ?? 'a fox'}` };
       return { emoji: '😱', text: `Running from ${w.byId.get(c.threatId)?.name ?? 'a fox'}!` };
     case 'alarm': return { emoji: '‼️', text: `Spotted ${w.byId.get(c.threatId)?.name ?? 'a fox'}!` };
     case 'dig': return { emoji: '🕳️', text: 'Digging a burrow' };
@@ -6557,7 +6757,7 @@ function mood(w, c) {
 const api = {
   W, H, TPD, SHALLOW, DEEP, SEASON_DAYS, YEAR_DAYS, SEASONS, SPECIES, GENES, COATS, GROUND, WEATHER,
   createWorld, step, clock, isNight, phaseOf, seasonOf, mood, ageDays, growth, isAdult, patchFresh,
-  addCreature, paintGrass, setSky, lockSky, zap, burnLine, lift, putDown, nameCreature, nameQueen, NAME_MAX, plantTree, pondPlan, digPond, frogsNear, POND_BRUSH, POND_DAB, POND_TILES, REED_DAYS, stripPlan, sowStrip, stripKind, STRIP_TILES, traitMeans, walkable, packWorld, unpackWorld,
+  addCreature, paintGrass, setSky, lockSky, zap, burnLine, lift, putDown, nameCreature, nameQueen, NAME_MAX, plantTree, pondPlan, digPond, frogsNear, POND_BRUSH, POND_DAB, POND_TILES, REED_DAYS, stripPlan, sowStrip, stripKind, STRIP_TILES, hedgePlan, plantHedge, hedgeForecast, inHedge, HEDGE_MOST, traitMeans, walkable, packWorld, unpackWorld,
   coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT, KINDS, OWLS,
   TERRAIN, drawnToLink, drawnFromLink, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE,
