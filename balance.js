@@ -1,19 +1,31 @@
 // Headless balance check: run several worlds for N years, print populations each season.
 // `node balance.js 5 4 v` adds grass and lows; `arrival` anywhere starts them the way a first
 // visit does, everyone moving in over the first days. `plant` has a player plant 5 trees a year, any kind,
-// anywhere they'll go, and tells how they did.
+// anywhere they'll go, and tells how they did. `keep` makes keeper meadows (?keep) where a keeper digs one pond early in
+// the first spring, and tells who came to it: the crows to its turned earth, the frogs, the reeds, the spawn.
 const Sim = require('./sim.js');
 const years = +(process.argv[2] || 5), seeds = +(process.argv[3] || 4), verbose = process.argv[4] === 'v';
-const arrival = process.argv.includes('arrival'), plant = process.argv.includes('plant');
+const arrival = process.argv.includes('arrival'), plant = process.argv.includes('plant'), keep = process.argv.includes('keep');
 const PLANT_KINDS = ['oak', 'beech', 'maple', 'birch', 'alder', 'hawthorn', 'apple', 'cherry', 'pine'];
 const perSeason = Sim.SEASON_DAYS * Sim.TPD;
 for (let s = 1; s <= seeds; s++) {
-  const w = Sim.createWorld(s * 7919, { arrival });
+  const w = Sim.createWorld(s * 7919, keep ? { arrival, keep } : { arrival });
   const t0 = Date.now();
   const rows = [];
   let pr = s * 2654435761 % 4294967296;                    // the planter's own random numbers, so the meadow's stay its own
   const rand = () => (pr = (pr * 1664525 + 1013904223) % 4294967296) / 4294967296;
   const planted = { tried: 0, ok: 0, lost: {}, sapling: 0, seeded: 0 };
+  // The keeper's pond: dug on the first morning after DIG_DAY, the day the crows first came down to it, the frogs
+  // found it (and from how far), the reeds came up, the spawn laid in it each spring, the frogs round it each season's end.
+  const DIG_DAY = 1, kept = { pond: null, tries: 0, crows: -1, frogs: -1, from: 0, reeds: -1, spawn: [], round: [] };
+  const day = () => (w.tick / Sim.TPD).toFixed(1);
+  const pondAround = field => {
+    const p = kept.pond;
+    let n = 0;
+    for (let y = Math.max(0, Math.floor(p.y - p.ry - 3)); y <= Math.min(Sim.H - 1, p.y + p.ry + 3); y++)
+      for (let x = Math.max(0, Math.floor(p.x - p.rx - 3)); x <= Math.min(Sim.W - 1, p.x + p.rx + 3); x++) n += field[y * Sim.W + x];
+    return n;
+  };
   let arrivals = Object.fromEntries(Sim.KINDS.map(k => [k, 0])), surprises = 0, kills = 0, escapes = 0, strikes = 0, fires = 0, burned = 0, swarms = 0;
   // The crows at each season's end, their gatherings at remains, and the oaks and beeches at the start and the end.
   const crows = [], oaks = () => ['oak', 'beech'].map(k => w.decor.filter(d => d.kind === k && Sim.standing(d) && d.size >= Sim.SEEDLING).length).join('/');
@@ -45,8 +57,28 @@ for (let s = 1; s <= seeds; s++) {
         planted.tried++;
         for (let k = 0; k < 20; k++) if (typeof Sim.plantTree(w, rand() * Sim.W, rand() * Sim.H, PLANT_KINDS[Math.floor(rand() * PLANT_KINDS.length)]) !== 'string') { planted.ok++; break; }
       }
+      if (keep && !kept.pond && w.tick >= DIG_DAY * Sim.TPD) {
+        for (; kept.tries < 4000 && !kept.pond; kept.tries++) {
+          const x = Math.floor(rand() * Sim.W) + 0.5, y = Math.floor(rand() * Sim.H) + 0.5, r = 2.5 + rand();
+          const p = Sim.pondPlan(w, x, y, r, r);
+          if (p.ok && p.lasting >= 6) kept.pond = Sim.digPond(w, x, y, r, r);
+        }
+        kept.dug = day();
+      }
       Sim.step(w);
+      if (kept.pond && kept.crows < 0) {
+        const p = kept.pond;
+        if (w.creatures.some(c => c.alive && c.species === 'crow' && ((c.x - p.x) / p.rx) ** 2 + ((c.y - p.y) / p.ry) ** 2 < 1.96)) kept.crows = day();
+      }
+      if (kept.pond && Sim.seasonOf(w.tick) === 0) {
+        let n = 0;
+        for (let i = 0; i < w.dug.length; i++) if (w.dug[i] === kept.pond.id) n += w.spawn[i];
+        const y = Sim.clock(w).year - 1;
+        kept.spawn[y] = Math.max(kept.spawn[y] || 0, n);
+      }
       for (const e of w.events) {
+        if (e.type === 'frogsfound' && kept.frogs < 0) { kept.frogs = day(); kept.from = e.from; }
+        if (e.type === 'pondgrew' && kept.reeds < 0) kept.reeds = day();
         if (e.type === 'plantlost') planted.lost[e.cause] = (planted.lost[e.cause] || 0) + 1;
         if (e.type === 'plantgrew') planted.sapling++;
         if (e.type === 'plantseeds') planted.seeded++;
@@ -95,6 +127,7 @@ for (let s = 1; s <= seeds; s++) {
       rich.push(w.rich ? (100 * r / w.land).toFixed(1) + '%' : '-');
     }
     voles.push(Math.round(w.voleCount));
+    if (kept.pond) kept.round.push(Math.round(pondAround(w.frogs)));
     frogs.push(Math.round(w.frogCount));
     fish.push(Math.round(w.fishCount));
     crows.push(w.count.crow);
@@ -128,6 +161,13 @@ for (let s = 1; s <= seeds; s++) {
     `  voles eaten ${st.owlVoles} (foxes ${eaten})  kits taken ${d.rabbit.owl || 0}`);
   console.log(`  otters (holts)  ${otters.join(' ')}  holts made ${holts}  cubs ${st.births.otter} out ${cubsOut} left ${otterLeft}` +
     `  fish caught ${st.fish} frogs ${st.otterFrogs}`);
+  if (keep) {
+    const p = kept.pond;
+    console.log(p ? `  keeper  dug ${w.waters[p.id].name} day ${kept.dug} (${kept.tries} tries, r${p.rx.toFixed(1)}: lasting ${p.lasting} spring ${p.spring} deep ${p.deep})`
+      + `  crows day ${kept.crows}  frogs found it day ${kept.frogs} from ${kept.from} tiles  reeds day ${kept.reeds}`
+      + `  spawn in it by spring ${kept.spawn.slice(0, years).map(n => (n || 0).toFixed(1)).join(' ')}  frogs round it ${kept.round.join(' ')}`
+      : `  keeper  found nowhere to dig in ${kept.tries} tries`);
+  }
   if (plant) {
     const up = w.decor.filter(t => t.planted && Sim.standing(t)), stages = {};
     for (const t of up) { const g = Sim.treeStage(w, t); stages[g] = (stages[g] || 0) + 1; }

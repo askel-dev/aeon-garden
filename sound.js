@@ -264,6 +264,7 @@ const RULES = {
   rain:    { gap: 3,    maxSpeed: 60 },
   release: { gap: 0.08, maxSpeed: 60 },
   grass:   { gap: 0.09, maxSpeed: 60 },
+  dig:     { gap: 0.3,  maxSpeed: 60 },
   click:   { gap: 0.04, maxSpeed: 60 },
   tick:    { gap: 0.5,  maxSpeed: 60, always: true },
   named:   { gap: 0.5,  maxSpeed: 60, always: true },
@@ -368,6 +369,19 @@ const SOUNDS = {
   // Dropping an animal in: a tiny pop in its own voice.
   release(t, o, { species }) { voiceOf(species)(o, note(pick([0, 2, 4]), octOf(species) + 1), t, 0.45); },
   grass(t, o) { noise(o, t, 0.18, { from: 2500, to: 5000, q: 2, peak: 0.05 }); },
+  // A pond dug (?keep): a spade into soft earth, the water welling in, and two notes down to it.
+  dig(t, o) {
+    const osc = ac.createOscillator(), g = ac.createGain();
+    osc.frequency.setValueAtTime(120, t); osc.frequency.exponentialRampToValueAtTime(60, t + 0.12);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.22, t + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+    osc.connect(g).connect(o); osc.start(t); osc.stop(t + 0.22);
+    noise(o, t, 0.14, { from: 900, to: 250, q: 0.7, peak: 0.16, type: 'lowpass', attack: 0.003 });
+    noise(o, t + 0.16, 0.5, { from: 400, to: 1400, q: 0.8, peak: 0.07, type: 'lowpass' });
+    [0.22, 0.31, 0.43].forEach(d => partial(o, rand(500, 900), t + d, 0.035, 0.004, 0.09));
+    marimba(o, note(4, -1), t + 0.3, 0.3);
+    marimba(o, note(2, -1), t + 0.48, 0.26);
+  },
   click(t, o) { partial(o, 1320, t, 0.06, 0.002, 0.05, 'triangle'); partial(o, 660, t, 0.05, 0.002, 0.08); },
   // Something tried off the list (game.js, the guide): three notes up.
   tick(t, o) { for (let i = 0; i < 3; i++) kalimba(o, note(2 + i * 2, 1), t + i * 0.08, 0.3); },

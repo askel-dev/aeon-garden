@@ -74,7 +74,12 @@
   canvas#world.tool-look { cursor: grab; }
   canvas#world.tool-look.dragging { cursor: grabbing; }
   canvas#world.tool-rabbit, canvas#world.tool-fox { cursor: copy; }
-  canvas#world.tool-grass, canvas#world.tool-zap, canvas#world.tool-fire, canvas#world.tool-plant { cursor: crosshair; }
+  canvas#world.tool-grass, canvas#world.tool-zap, canvas#world.tool-fire, canvas#world.tool-plant, canvas#world.tool-pond { cursor: crosshair; }
+  /* ?keep: what the pond you're placing will bring, by the hand (game.js placeLabel) */
+  #place-label { position: fixed; top: 0; left: 0; z-index: 3; pointer-events: none; max-width: 300px; padding: 5px 10px 6px;
+    background: var(--paper, none) var(--card); border-radius: 10px; box-shadow: var(--shadow); font-size: 13px; line-height: 1.3; color: var(--ink); }
+  #place-label b { font-weight: 800; }
+  #place-label small { display: block; color: var(--muted); font-size: 12px; font-weight: 700; }
 
   .card {
     position: fixed; background: var(--paper, none) var(--card); border-radius: var(--radius);
@@ -621,7 +626,7 @@
     #toolbar .tool .e { font-size: 24px; width: auto; }
     #toolbar .tool .l { font-size: 11.5px; line-height: 1; }
     #toolbar .tool[data-tool="fire"] { order: 1; } #toolbar .tool[data-tool="zap"] { order: 2; } #toolbar .tool[data-tool="plant"] { order: 3; }
-    #toolbar .tool[data-tool="grass"] { order: 4; } #toolbar .tool[data-tool="look"] { order: 5; }
+    #toolbar .tool[data-tool="grass"] { order: 4; } #toolbar .tool[data-tool="pond"] { order: 4; } #toolbar .tool[data-tool="look"] { order: 5; }
     /* time: pause and one button that steps through the speeds; the rest waits in ••• */
     #time { --hud-h: 44px; gap: 2px; padding: 0 4px; }
     #time .speed[data-speed]:not([data-speed="0"]), #time .hud-btn:not(.more), #time .hud-sep { display: none; }
@@ -793,6 +798,7 @@
 <div id="news"></div>
 <!-- after the intro: three steps, then things to try (game.js, the guide) -->
 <aside id="guide" class="card hidden" aria-live="polite"></aside>
+<div id="place-label" class="hidden"></div>
 
 <nav id="toolbar" class="card">
   <div class="tools">
@@ -806,6 +812,7 @@
   <button class="tool" data-tool="plant" title="Click the meadow to plant a tree, and pick its kind (T)"><span class="e">🌳</span><span class="l">Plant</span></button>
   <button class="tool" data-tool="zap" title="Click the meadow to strike lightning. On dry ground it starts a fire (Z)"><span class="e">⚡</span><span class="l">Zap</span></button>
   <button class="tool" data-tool="fire" title="Click and drag to draw a wall of fire. It burns half a day, and on dry grass it spreads (B)"><span class="e">🔥</span><span class="l">Fire</span></button>
+  <button class="tool hidden" data-tool="pond" title="Drag on the meadow to dig a pond: the lower the ground, the longer it holds water (D)"><span class="e">⛏️</span><span class="l">Pond</span></button>
   </div>
   <!-- phones: the tools fold into one round button in the corner, showing the one in your hand -->
   <button class="hand" data-act="tools" title="Tools" aria-expanded="false">🔍</button>

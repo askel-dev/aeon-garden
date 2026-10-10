@@ -1799,16 +1799,7 @@ function nameWaters(w, lake) {
   }
   w.body = body;
   // And on dry land, which water is nearest: a flood belongs to the water it spilled from.
-  const near = Int16Array.from(body), queue = [];
-  for (let i = 0; i < near.length; i++) if (near[i] >= 0) queue.push(i);
-  for (let q = 0; q < queue.length; q++) {
-    const i = queue[q], x = i % W, y = (i / W) | 0;
-    for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
-      if (nx < 0 || ny < 0 || nx >= W || ny >= H || near[ny * W + nx] >= 0) continue;
-      near[ny * W + nx] = near[i]; queue.push(ny * W + nx);
-    }
-  }
-  w.nearBody = near;
+  fillNear(w, Int16Array.from(body));
   w.lake = null;
   // The brook runs in the river's water, but has a name of its own too.
   for (const rv of w.rivers) if (rv.brook) rv.name = `${firsts[(w.waters.length + 1) % firsts.length]} ${r.pick(WATER_NAMES.brook)}`;
@@ -1821,6 +1812,21 @@ function nameWaters(w, lake) {
     w.lake.near = Uint8Array.from(lake.out, d => (d < 2 ? 1 : 0));    // the lake, and its shore: where it keeps its name
     w.lake.middle = { x: lake.x, y: lake.y, reach: lake.reach, turn: lake.turn, stretch: lake.stretch };   // (for the terrain lab)
   }
+}
+
+// Which water each tile of dry land is nearest (w.nearBody), filled out from the tiles of `near` that have one
+// (a water's id; -1 elsewhere), a step at a time. A flood belongs to the water it spilled from.
+function fillNear(w, near) {
+  const queue = [];
+  for (let i = 0; i < near.length; i++) if (near[i] >= 0) queue.push(i);
+  for (let q = 0; q < queue.length; q++) {
+    const i = queue[q], x = i % W, y = (i / W) | 0;
+    for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
+      if (nx < 0 || ny < 0 || nx >= W || ny >= H || near[ny * W + nx] >= 0) continue;
+      near[ny * W + nx] = near[i]; queue.push(ny * W + nx);
+    }
+  }
+  w.nearBody = near;
 }
 
 // The named water at a spot: the lake keeps its own name where the river runs through it.
@@ -2266,7 +2272,7 @@ function note(w, c, emoji, text) {
   if (c.story.length > 40) c.story.splice(1, 1);   // keep the birth line
 }
 
-const MARKED = new Set(['extinct', 'arrive', 'fire', 'outbreak']);   // moments the stats chart pins on its timeline
+const MARKED = new Set(['extinct', 'arrive', 'fire', 'outbreak', 'dugpond', 'frogsfound']);   // moments the stats chart pins on its timeline
 function emit(w, e) {
   e.t = w.tick; w.events.push(e);
   if (MARKED.has(e.type) && !e.founding) w.history.marks.push({ t: e.t, type: e.type, species: e.species, kind: e.kind });
@@ -4236,7 +4242,7 @@ function crowTick(w, c) {
   if (c.mode === 'sleep' || c.mode === 'roost') { c.perch = null; flyOut(w, c); }
   const g = w.roost && gatherSpot(w);                  // the gathering: pecking about by the roost (setting off in time to be there)
   if (g && ph > GATHER_AT + own - Math.sqrt(dist2(c, g)) / (c.walk * TPD) && growth(w, c) >= 0.6 && !c.pregnantUntil
-    && c.mode !== 'fetch' && c.mode !== 'cache' && c.mode !== 'bury') {   // (one busy with acorns sees to them first)
+    && c.mode !== 'fetch' && c.mode !== 'cache' && c.mode !== 'bury' && !atTurned(w, c)) {   // (one busy with acorns, or at turned earth, sees to them first)
     if (c.mode === 'gather' && !go(w, c, c.target.x, c.target.y, c.walk)) return;
     if (c.mode !== 'peck' || (t + c.id) % 10 === 0) {
       if (dist2(c, g) > GATHER_NEAR ** 2) {
@@ -4271,7 +4277,7 @@ function crowTick(w, c) {
   const eating = c.mode === 'carrion' || c.mode === 'munch', caching = c.mode === 'cache' || c.mode === 'bury';
   if (!eating && e > (caching ? CACHE_FED / 2 : CACHE_FED) && cacheNut(w, c)) return;
   if (e < (eating ? 0.97 : CROW_FULL)) {
-    if (carrion(w, c) || (w.windfalls && e < CROW_HUNGRY && windfall(w, c)) || unbury(w, c) || tadpoles(w, c)) return;
+    if (carrion(w, c) || (w.windfalls && e < CROW_HUNGRY && windfall(w, c)) || unbury(w, c) || turned(w, c) || tadpoles(w, c)) return;
     return peck(w, c, true);
   }
   if (eating || c.mode === 'remains' || c.mode === 'apple' || c.mode === 'unbury' || c.mode === 'pool' || c.mode === 'tadpole') { c.mode = 'wander'; c.target = null; }
@@ -5593,6 +5599,7 @@ function newDay(w) {
   if (!w.roost || !perchable(w.roost)) w.roost = pickRoost(w);   // gone, or bees or an owl moved in
   owlsDay(w);
   holtsDay(w);
+  if (w.ponds) keeperDay(w);                                 // (a keeper's meadow, once a pond is dug)
 }
 
 // ---------------------------------------------------------------- moving in
@@ -5955,6 +5962,245 @@ function plantTree(w, x, y, kind) {
   return d;
 }
 
+// ---------------------------------------------------------------- the keeper
+//
+// At ?keep (createWorld's keep option) the player shapes the land with an unseen hand, and it happens at once.
+// A pond (digPond): the ground in an oval is dug down, deepest in the middle, so how high it stood decides what
+// it becomes: water all year, a spring pool that dries out in summer (the frogs' favourite), or dug earth the
+// water never reaches. It's a water of its own with a name. Its banks are turned earth, bare and rich for a few
+// days, and the crows come down to them as they follow a plough (turned). From spring to autumn frogs within
+// reach find it (findWater), and after a season the reeds come up round it (keeperDay). None of this runs at the
+// bare address: it all hangs off w.ponds, w.turned and w.dug, made on the first dig, and draws on no random numbers.
+
+const POND_R = [2, 7];          // tiles from a pond's middle each way, the smallest and the biggest
+const POND_DIG = [0.18, 0.45];  // how far its middle is dug down, smallest pond to biggest (water past deepAt is deep)
+const POND_MAX = 40;            // ponds a meadow can have
+const STONE_DUG = 1.3;          // stones smaller than this are dug out with the earth; bigger rocks are in the way
+const TURNED_DAYS = 4;          // days the turned earth round a new pond draws the crows
+const TURNED_RICH = 0.8;        // how rich it is (w.rich): grubs aplenty, and the grass comes back fast
+const TURNED_RANGE = 80;        // tiles off a crow sees it from (the roost can be across the meadow)
+const FIND_REACH = 30;          // tiles off the frogs find a dug pond from
+const FIND_SHARE = 0.04;        // share of those that set off for it a day, from spring to autumn
+const FIND_MOST = 25;           // and at most this many a day
+const FIND_ENOUGH = 12;         // till this many live round it
+const REED_DAYS = SEASON_DAYS;  // days after it's dug the reeds and lilies come up (not in winter)
+
+// What a pond here would be, changing nothing: each tile of the oval with the ground it would have (after) and
+// what it would be (k): 'lasting' water all year, 'spring' water only in the spring flood, 'dry' dug but never
+// wet, 'water' already water that lasts (left as it is), or 'blocked' (blocker says by what). ok, or why not:
+// 'many' (POND_MAX dug), 'water' (its middle is water already), 'blocked', 'high' (no tile would ever hold water).
+// frogs: how far the nearest frogs are, -1 with none within FIND_REACH.
+function pondPlan(w, cx, cy, rx, ry) {
+  const T = w.terrain;
+  rx = clamp(rx, POND_R[0], POND_R[1]); ry = clamp(ry, POND_R[0], POND_R[1]);
+  const D = lerp(POND_DIG[0], POND_DIG[1], ((rx + ry) / 2 - POND_R[0]) / (POND_R[1] - POND_R[0]));
+  const lasts = T.level - T.summerLow - T.rainRise / 2, floods = T.level + T.springFlood, deep = T.level - T.deepAt;
+  const x0 = Math.floor(cx - rx), y0 = Math.floor(cy - ry), x1 = Math.floor(cx + rx), y1 = Math.floor(cy + ry);
+  const tiles = [], at = new Map();
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      const p = ((x + 0.5 - cx) / rx) ** 2 + ((y + 0.5 - cy) / ry) ** 2;
+      if (p > 1) continue;
+      const i = y * W + x, out = x < 2 || y < 2 || x >= W - 2 || y >= H - 2;
+      const g = out ? 0 : w.ground[i], was = !out && g <= T.level, after = was ? g : g - D * (1 - p);
+      const t = { i, x, y, after, k: was && g < lasts ? 'water' : after < lasts ? 'lasting' : after < floods ? 'spring' : 'dry', deep: after < deep, blocker: '' };
+      if (out) t.blocker = 'edge';
+      else if (w.fieldAt[i] >= 0) t.blocker = 'field';
+      tiles.push(t); at.set(i, t);
+    }
+  }
+  const block = (x, y, r, what) => {                         // the tiles within r of x, y
+    for (let ty = Math.floor(y - r); ty <= y + r; ty++) {
+      for (let tx = Math.floor(x - r); tx <= x + r; tx++) {
+        const t = at.get(ty * W + tx);
+        if (t && tx >= 0 && tx < W && !t.blocker && (tx + 0.5 - x) ** 2 + (ty + 0.5 - y) ** 2 < r * r) t.blocker = what;
+      }
+    }
+  };
+  for (const b of w.burrows) if (Math.abs(b.x - cx) < rx + 2 && Math.abs(b.y - cy) < ry + 2) block(b.x, b.y, 1.5, 'burrow');
+  const stones = [];
+  forEachDecorNear(w, cx, cy, Math.max(rx, ry) + 3, d => {    // grown trees (dead too), a hive's or a holt's, and rocks but small stones
+    if (d.hive || d.holt) block(d.x, d.y, 0.9, d.hive ? 'hive' : 'holt');
+    else if (d.tree) { if (d.size >= SAPLING) block(d.x, d.y, 0.8, 'tree'); }
+    else if (d.size >= STONE_DUG || d.stone) block(d.x, d.y, d.size * 0.5 + 0.3, 'rock');
+    else { const t = at.get(idx(d.x, d.y)); if (t && t.k !== 'water') stones.push(d); }
+  });
+  const n = { lasting: 0, spring: 0, deep: 0, dry: 0, blocked: 0 };
+  let blocker = '';
+  for (const t of tiles) {
+    if (t.blocker) { t.k = 'blocked'; n.blocked++; blocker ||= t.blocker; continue; }
+    if (t.k === 'water') continue;
+    n[t.k]++;
+    if (t.k === 'lasting' && t.deep) n.deep++;
+  }
+  const mid = at.get(Math.floor(cy) * W + Math.floor(cx));
+  const why = (w.ponds?.length || 0) >= POND_MAX ? 'many' : mid && mid.k === 'water' ? 'water' : n.blocked ? 'blocked'
+    : !n.lasting && !n.spring ? 'high' : '';
+  return { x: cx, y: cy, rx, ry, x0, y0, x1, y1, tiles, stones, ...n, blocker, ok: !why, why, frogs: frogsNear(w, cx, cy) };
+}
+
+// How far the nearest frogs are from x, y (a tile with any to speak of), -1 with none within FIND_REACH.
+function frogsNear(w, x, y) {
+  const fx = Math.floor(x), fy = Math.floor(y);
+  let best = FIND_REACH * FIND_REACH + 1;
+  for (let ty = Math.max(0, fy - FIND_REACH); ty <= Math.min(H - 1, fy + FIND_REACH); ty++) {
+    for (let tx = Math.max(0, fx - FIND_REACH); tx <= Math.min(W - 1, fx + FIND_REACH); tx++) {
+      if (w.frogs[ty * W + tx] <= 0.05) continue;
+      const d = (tx + 0.5 - x) ** 2 + (ty + 0.5 - y) ** 2;
+      if (d < best) best = d;
+    }
+  }
+  return best > FIND_REACH * FIND_REACH ? -1 : Math.round(Math.sqrt(best));
+}
+
+// A name no water has yet, picked by the meadow's seed and the pond's id (never w.rng).
+function pondName(w, id) {
+  const used = new Set(w.waters.map(v => v.name));
+  if (w.lake) used.add(w.lake.name);
+  for (const rv of w.rivers) if (rv.name) used.add(rv.name);
+  const F = WATER_NAMES.first, P = WATER_NAMES.pond, n = F.length * P.length, start = Math.floor(hash2(id, 41, w.seed) * n);
+  for (let k = 0; k < n; k++) {
+    const j = (start + k * 7) % n, name = `${F[j % F.length]} ${P[Math.floor(j / F.length)]}`;   // (7: prime to n, so it visits them all)
+    if (!used.has(name)) return name;
+  }
+  return `Little ${F[start % F.length]} ${P[0]}`;
+}
+
+// Dig a pond: the pond (a water of w.waters, plus w.ponds' record of it), or why not (pondPlan's why).
+function digPond(w, cx, cy, rx, ry) {
+  const plan = pondPlan(w, cx, cy, rx, ry);
+  if (!plan.ok) return plan.why;
+  ({ rx, ry } = plan);
+  if (!w.dug) { w.dug = new Int16Array(W * H).fill(-1); w.ponds = []; w.turned = []; }
+  const id = w.waters.length, name = pondName(w, id);
+  for (const t of plan.tiles) {
+    if (t.k === 'water') continue;
+    const i = t.i;
+    w.ground[i] = t.after; w.grass[i] = 0; w.voles[i] = 0; w.frogs[i] = 0; w.spawn[i] = 0;
+    w.dug[i] = id;
+  }
+  if (plan.stones.length) { for (const d of plan.stones) d.gone = true; w.treesMoved = true; tidyTrees(w); }
+  w.waters.push({ id, kind: 'pond', name, size: plan.lasting + plan.spring, x: cx, y: cy });
+  const near = Int16Array.from(w.body);                      // the water about now, and the pond's own ground, dry or not
+  for (const t of plan.tiles) if (t.k !== 'water') near[t.i] = id;
+  fillNear(w, near);
+  refreshWater(w);
+  for (const t of plan.tiles) if (t.k !== 'water' && w.water[t.i]) w.body[t.i] = id;   // (a flood pool it was dug in is the pond's now)
+  w.waterVersion++;
+  floodBurrows(w);
+  dampen(w);
+  forEachDecorNear(w, cx, cy, Math.max(rx, ry) + 12, d => { delete d.holtFish; });   // (the water about a holt has changed)
+  for (const c of w.creatures) {                              // nobody is left standing in deep water
+    if (!c.alive || c.hidden || c.held || c.sp.flies || c.sp.swims || walkable(w, c.x, c.y)) continue;
+    const to = nearestFooting(w, c.x, c.y);
+    c.x = to.x; c.y = to.y; c.target = null; c.detour = 0;
+  }
+  // The turned earth: the bare dug ground and a ring round it, rich for a few days.
+  for (let y = Math.max(0, Math.floor(cy - ry * 1.4)); y <= Math.min(H - 1, cy + ry * 1.4); y++) {
+    for (let x = Math.max(0, Math.floor(cx - rx * 1.4)); x <= Math.min(W - 1, cx + rx * 1.4); x++) {
+      const i = y * W + x, p = ((x + 0.5 - cx) / rx) ** 2 + ((y + 0.5 - cy) / ry) ** 2;
+      if (p > 1.96 || w.water[i]) continue;
+      w.rich[i] = Math.max(w.rich[i], TURNED_RICH);
+      if (p > 1 && w.dug[i] < 0) w.grass[i] *= 0.5;          // (trodden and spread with spoil)
+    }
+  }
+  const pond = { id, x: cx, y: cy, rx, ry, dug: w.tick, reeds: false, found: false, lasting: plan.lasting, spring: plan.spring, deep: plan.deep };
+  w.ponds.push(pond);
+  w.turned.push({ x: cx, y: cy, rx, ry, r: Math.max(rx, ry) + 1, until: w.tick + TURNED_DAYS * TPD });
+  emit(w, { type: 'dugpond', water: id, name, x: cx, y: cy, lasting: plan.lasting, spring: plan.spring, deep: plan.deep, frogs: plan.frogs });
+  return pond;
+}
+
+// A crow pecking about (hungry, or not quite full): down to the turned earth round a new pond, if there's some
+// within TURNED_RANGE, to a spot on its bank of its own. Once there, peck takes over, and it stays out of the
+// evening's gathering till it's time to roost (atTurned). Looks every 10 ticks.
+const TURNED_NOTE = 'Down to the fresh earth for grubs';
+function turned(w, c) {
+  if (!w.turned?.length || (w.tick + c.id) % 10) return false;
+  let best = null, bd = TURNED_RANGE * TURNED_RANGE;
+  for (const s of w.turned) {
+    if (s.until <= w.tick) continue;
+    if (((c.x - s.x) / s.rx) ** 2 + ((c.y - s.y) / s.ry) ** 2 < 1.96) return false;   // there already: peck on
+    const d = dist2(c, s);
+    if (d < bd) { best = s; bd = d; }
+  }
+  if (!best) return false;
+  for (let k = 0; k < 8; k++) {                               // a dry spot on its bank, each crow its own way round
+    const a = c.id * 2.4 + k * Math.PI / 4, p = 1 + 0.25 * hash2(c.id, k, 17);
+    const x = best.x + Math.cos(a) * best.rx * p, y = best.y + Math.sin(a) * best.ry * p;
+    if (!dry(w, x, y)) continue;
+    c.mode = 'forage'; c.target = { x, y, turned: true };
+    if (c.story[c.story.length - 1].text !== TURNED_NOTE) note(w, c, '🪱', TURNED_NOTE);
+    return true;
+  }
+  return false;
+}
+
+// On its way down to the turned earth, or pecking there: it stays till it's time to roost, gathering or not.
+const atTurned = (w, c) => !!w.turned?.length && (c.mode === 'forage' && !!c.target.turned
+  || w.turned.some(s => s.until > w.tick && ((c.x - s.x) / s.rx) ** 2 + ((c.y - s.y) / s.ry) ** 2 < 1.96));
+
+// Once a day in a meadow with ponds dug: the turned earth that's spent, the reeds, and the frogs finding them.
+function keeperDay(w) {
+  w.turned = w.turned.filter(s => s.until > w.tick);
+  if (seasonOf(w.tick) === 3) return;
+  for (const p of w.ponds) {
+    if (!p.reeds && w.tick - p.dug >= REED_DAYS * TPD) { p.reeds = true; emit(w, { type: 'pondgrew', what: 'reeds', water: p.id }); }
+    findWater(w, p);
+  }
+}
+
+// Frogs about find a dug pond: a share of those within FIND_REACH (outside its shore) move to the dry ground round
+// its water each day, till FIND_ENOUGH live there. Once a frog's worth has come (p.came), it's news.
+function findWater(w, p) {
+  const f = w.frogs, water = w.water, dug = w.dug;
+  const bx0 = Math.max(0, Math.floor(p.x - p.rx - 3)), bx1 = Math.min(W - 1, Math.floor(p.x + p.rx + 3));
+  const by0 = Math.max(0, Math.floor(p.y - p.ry - 3)), by1 = Math.min(H - 1, Math.floor(p.y + p.ry + 3));
+  let wet = false, here = 0;
+  for (let y = by0; y <= by1; y++) for (let x = bx0, i = y * W + x; x <= bx1; x++, i++) {
+    if (dug[i] === p.id && water[i]) wet = true;
+    here += f[i];
+  }
+  if (!wet) return;
+  if (here >= FIND_ENOUGH) {                                  // dug where frogs live already: they're in it at once
+    if (!p.found) { p.found = true; emit(w, { type: 'frogsfound', water: p.id, n: here, from: 0 }); }
+    return;
+  }
+  const fx = Math.floor(p.x), fy = Math.floor(p.y), R = FIND_REACH;
+  let there = 0, far = 0;
+  for (let y = Math.max(0, fy - R); y <= Math.min(H - 1, fy + R); y++) {
+    for (let x = Math.max(0, fx - R); x <= Math.min(W - 1, fx + R); x++) {
+      const i = y * W + x, d2 = (x + 0.5 - p.x) ** 2 + (y + 0.5 - p.y) ** 2;
+      if (!f[i] || d2 > R * R || (x >= bx0 && x <= bx1 && y >= by0 && y <= by1)) continue;
+      there += f[i]; far += f[i] * Math.sqrt(d2);
+    }
+  }
+  const go = Math.min(FIND_MOST, FIND_SHARE * there, FIND_ENOUGH - here);
+  if (go <= 0 || there <= 0) return;
+  const shore = [];                                           // the dry ground within 2 tiles of its water
+  for (let y = by0 + 1; y < by1; y++) for (let x = bx0 + 1, i = y * W + x; x < bx1; x++, i++) {
+    if (water[i] || w.damp[i] > 2) continue;
+    let by = false;
+    for (let dy = -2; dy <= 2 && !by; dy++) for (let dx = -2; dx <= 2 && !by; dx++) {
+      const j = i + dy * W + dx;
+      by = y + dy >= 0 && y + dy < H && x + dx >= 0 && x + dx < W && dug[j] === p.id && water[j] > 0;
+    }
+    if (by) shore.push(i);
+  }
+  if (!shore.length) return;
+  const k = go / there;
+  for (let y = Math.max(0, fy - R); y <= Math.min(H - 1, fy + R); y++) {
+    for (let x = Math.max(0, fx - R); x <= Math.min(W - 1, fx + R); x++) {
+      const i = y * W + x;
+      if (!f[i] || (x + 0.5 - p.x) ** 2 + (y + 0.5 - p.y) ** 2 > R * R || (x >= bx0 && x <= bx1 && y >= by0 && y <= by1)) continue;
+      f[i] -= f[i] * k;
+    }
+  }
+  for (const i of shore) f[i] += go / shore.length;
+  p.came = (p.came || 0) + go;
+  if (!p.found && p.came >= 1) { p.found = true; emit(w, { type: 'frogsfound', water: p.id, n: p.came, from: Math.round(far / there) }); }   // (from: how far they came, on average)
+}
+
 function nameQueen(w, h, name) {
   name = String(name).replace(/\s+/g, ' ').trim().slice(0, NAME_MAX);
   if (!h.queen || !name || name === h.queen.name) return false;
@@ -6067,7 +6313,7 @@ function mood(w, c) {
 const api = {
   W, H, TPD, SHALLOW, DEEP, SEASON_DAYS, YEAR_DAYS, SEASONS, SPECIES, GENES, COATS, GROUND, WEATHER,
   createWorld, step, clock, isNight, phaseOf, seasonOf, mood, ageDays, growth, isAdult, patchFresh,
-  addCreature, paintGrass, setSky, lockSky, zap, burnLine, lift, putDown, nameCreature, nameQueen, NAME_MAX, plantTree, traitMeans, walkable, packWorld, unpackWorld,
+  addCreature, paintGrass, setSky, lockSky, zap, burnLine, lift, putDown, nameCreature, nameQueen, NAME_MAX, plantTree, pondPlan, digPond, frogsNear, POND_R, REED_DAYS, traitMeans, walkable, packWorld, unpackWorld,
   coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT, KINDS, OWLS,
   TERRAIN, drawnToLink, drawnFromLink, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE,
