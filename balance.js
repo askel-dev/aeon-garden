@@ -2,7 +2,8 @@
 // `node balance.js 5 4 v` adds grass and lows; `arrival` anywhere starts them the way a first
 // visit does, everyone moving in over the first days. `plant` has a player plant 5 trees a year, any kind,
 // anywhere they'll go, and tells how they did. `keep` makes keeper meadows (?keep) where a keeper digs one pond early in
-// the first spring, and tells who came to it: the crows to its turned earth, the frogs, the reeds, the spawn.
+// the first spring, and tells who came to it: the crows to its turned earth, the frogs, the reeds, the spawn; and sows
+// two flower strips near the hive, and tells when they flowered, when the bees found them and how much they sipped there.
 const Sim = require('./sim.js');
 const years = +(process.argv[2] || 5), seeds = +(process.argv[3] || 4), verbose = process.argv[4] === 'v';
 const arrival = process.argv.includes('arrival'), plant = process.argv.includes('plant'), keep = process.argv.includes('keep');
@@ -20,6 +21,10 @@ for (let s = 1; s <= seeds; s++) {
   // The keeper digs it with a short scribble of the spade (SCRIBBLE, tiles from where it starts), about 30 tiles.
   const DIG_DAY = 1, kept = { pond: null, tries: 0, tiles: 0, spot: null, crows: -1, frogs: -1, from: 0, reeds: -1, spawn: [], round: [] };
   const SCRIBBLE = [[-1.2, -0.8], [1.2, -0.8], [-1.2, 0], [1.2, 0], [-1.2, 0.8], [1.2, 0.8]];
+  // Then two strips, each a straight stroke 7 tiles long within 12 of the hive: the days from sowing to flowers and to the
+  // first bee, and the sips on them each season.
+  const strips = { list: [], tries: 0, hives: [], bloom: [], bees: [], sips: [], last: 0 };
+  const sipped = () => strips.list.reduce((a, f) => a + f.sips, 0);
   const day = () => (w.tick / Sim.TPD).toFixed(1);
   const pondAround = field => {
     const p = kept.pond;
@@ -66,6 +71,12 @@ for (let s = 1; s <= seeds; s++) {
           if (p.ok && p.lasting >= 6) { kept.pond = Sim.digPond(w, pts); kept.tiles = p.lasting + p.spring + p.dry; kept.spot = w.turned[w.turned.length - 1]; }
         }
         kept.dug = day();
+        const h = w.hives.find(h => !h.cluster);
+        for (; h && strips.tries < 4000 && strips.list.length < 2; strips.tries++) {
+          const a = rand() * Math.PI * 2, d = rand() * 12, x = h.x + Math.cos(a) * d, y = h.y + Math.sin(a) * d, b = rand() * Math.PI;
+          const pts = [{ x, y }, { x: x + Math.cos(b) * 7, y: y + Math.sin(b) * 7 }], p = Sim.stripPlan(w, pts);
+          if (p.ok && p.sown >= 10) { strips.list.push(Sim.sowStrip(w, pts)); strips.hives.push(p.hives); }
+        }
       }
       Sim.step(w);
       if (kept.pond && kept.crows < 0) {
@@ -81,6 +92,8 @@ for (let s = 1; s <= seeds; s++) {
       for (const e of w.events) {
         if (e.type === 'frogsfound' && kept.frogs < 0) { kept.frogs = day(); kept.from = e.from; }
         if (e.type === 'pondgrew' && kept.reeds < 0) kept.reeds = day();
+        if (e.type === 'stripbloom') strips.bloom[strips.list.indexOf(e.field)] = ((e.t - e.field.sown) / Sim.TPD).toFixed(1);
+        if (e.type === 'beesfound') strips.bees[strips.list.indexOf(e.field)] = ((e.t - e.field.sown) / Sim.TPD).toFixed(1);
         if (e.type === 'plantlost') planted.lost[e.cause] = (planted.lost[e.cause] || 0) + 1;
         if (e.type === 'plantgrew') planted.sapling++;
         if (e.type === 'plantseeds') planted.seeded++;
@@ -130,6 +143,7 @@ for (let s = 1; s <= seeds; s++) {
     }
     voles.push(Math.round(w.voleCount));
     if (kept.pond) kept.round.push(Math.round(pondAround(w.frogs)));
+    if (strips.list.length) { strips.sips.push(sipped() - strips.last); strips.last = sipped(); }
     frogs.push(Math.round(w.frogCount));
     fish.push(Math.round(w.fishCount));
     crows.push(w.count.crow);
@@ -169,6 +183,10 @@ for (let s = 1; s <= seeds; s++) {
       + `  crows day ${kept.crows}  frogs found it day ${kept.frogs} from ${kept.from} tiles  reeds day ${kept.reeds}`
       + `  spawn in it by spring ${kept.spawn.slice(0, years).map(n => (n || 0).toFixed(1)).join(' ')}  frogs round it ${kept.round.join(' ')}`
       : `  keeper  found nowhere to dig in ${kept.tries} tries`);
+    const sl = strips.list;
+    console.log(sl.length ? `  strips  sowed ${sl.map(f => f.name).join(' and ')} day ${kept.dug} (${strips.tries} tries, ${sl.map(f => w.plants.filter(p => p.field === f).length).join(', ')} flowers, `
+      + `${strips.hives.join(', ')} hives in reach)  in flower after ${sl.map((f, k) => strips.bloom[k] ?? '-').join(' ')} days  bees after ${sl.map((f, k) => strips.bees[k] ?? '-').join(' ')} days`
+      + `  sips on them by season ${strips.sips.join(' ')}` : `  strips  found nowhere to sow in ${strips.tries} tries`);
   }
   if (plant) {
     const up = w.decor.filter(t => t.planted && Sim.standing(t)), stages = {};

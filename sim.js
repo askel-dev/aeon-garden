@@ -2272,7 +2272,7 @@ function note(w, c, emoji, text) {
   if (c.story.length > 40) c.story.splice(1, 1);   // keep the birth line
 }
 
-const MARKED = new Set(['extinct', 'arrive', 'fire', 'outbreak', 'dugpond', 'frogsfound']);   // moments the stats chart pins on its timeline
+const MARKED = new Set(['extinct', 'arrive', 'fire', 'outbreak', 'dugpond', 'frogsfound', 'sowstrip', 'beesfound']);   // moments the stats chart pins on its timeline
 function emit(w, e) {
   e.t = w.tick; w.events.push(e);
   if (MARKED.has(e.type) && !e.founding) w.history.marks.push({ t: e.t, type: e.type, species: e.species, kind: e.kind });
@@ -3619,7 +3619,8 @@ function hivesTick(w) {
     if (isFlower(w, p)) { w.flowers++; if (p.field) p.field.open++; }
   }
   for (const p of w.blossoms) if (isFlower(w, p)) w.flowers++;
-  for (const f of w.fields) {                             // the news, once a year: a field has come out
+  for (const f of w.fields) {                             // the news, once a year: a field has come out (a strip the keeper sowed: the first time)
+    if (f.strip && !f.flowered && f.open > BLOOM_NEWS * f.all) { f.flowered = w.tick; f.bloomed = yearOf(w.tick); emit(w, { type: 'stripbloom', field: f }); }
     if (f.bloomed !== yearOf(w.tick) && f.open > BLOOM_NEWS * f.all) { f.bloomed = yearOf(w.tick); emit(w, { type: 'bloom', field: f }); }
   }
   for (const h of w.hives) { h.bees = 0; h.winterBees = 0; }
@@ -3784,7 +3785,8 @@ const SEASON_FIELD = 150;       // what each season with a field in reach is wor
 function siteScore(w, d) {
   const { x, y } = d;
   let seasons = 0;
-  for (const s of new Set(w.fields.filter(f => Math.hypot(f.x - x, f.y - y) < FORAGE_RANGE).map(f => f.season))) seasons += s === 2 ? 0.5 : 1;
+  const near = w.fields.filter(f => Math.hypot(f.x - x, f.y - y) < FORAGE_RANGE);   // (a strip the keeper sowed flowers all three)
+  for (const s of new Set(near.flatMap(f => (f.strip ? [0, 1, 2] : [f.season])))) seasons += s === 2 ? 0.5 : 1;
   let flowers = 0;
   forEachPlantNear(w, x, y, FORAGE_RANGE, p => {
     if (!p.field && p.kind < 0.35 && w.fert[p.i] > 0.7 && Math.hypot(p.x - x, p.y - y) < FORAGE_RANGE) flowers++;   // rich soil: they'll bloom
@@ -3926,6 +3928,7 @@ function beeForage(w, c) {
     pollinate(w, c.target); c.target.sipped = w.tick;
     emit(w, { type: 'pollinate', x: c.target.x, y: c.target.y });
     c.load += HONEY; c.visits++; w.stats.sips++;
+    if (c.target.field?.strip) stripSip(w, c.target.field, c);   // (?keep: one the keeper sowed)
     const rich = freshAround(w, c.target);
     if (rich >= RICH && (!c.find || rich > c.find.rich)) c.find = { x: c.target.x, y: c.target.y, rich, field: c.target.field };
     c.mode = 'wander'; c.target = null;
@@ -6250,10 +6253,12 @@ function turned(w, c) {
 const atTurned = (w, c) => !!w.turned?.length && (c.mode === 'forage' && !!c.target.turned
   || w.turned.some(s => s.until > w.tick && dist2(c, s) < s.r * s.r));
 
-// Once a day in a meadow the keeper has worked: the turned earth that's spent, the reeds, and the frogs finding
-// the ponds.
+// Once a day in a meadow the keeper has worked: the turned earth that's spent, the strips turning to the new
+// season's flower, the reeds, and the frogs finding the ponds.
 function keeperDay(w) {
   w.turned = w.turned.filter(s => s.until > w.tick);
+  const season = Math.floor(dayOf(w.tick) / SEASON_DAYS);
+  for (const f of w.fields) if (f.strip && f.swapped !== season) swapStrip(w, f);
   if (!w.ponds || seasonOf(w.tick) === 3) return;
   for (const p of w.ponds) {
     if (!p.reeds && w.tick - p.dug >= REED_DAYS * TPD) { p.reeds = true; emit(w, { type: 'pondgrew', what: 'reeds', water: p.id }); }
@@ -6310,6 +6315,134 @@ function findWater(w, p) {
   for (const i of shore) f[i] += go / shore.length;
   p.came = (p.came || 0) + go;
   if (!p.found && p.came >= 1) { p.found = true; emit(w, { type: 'frogsfound', water: p.id, n: p.came, from: Math.round(far / there) }); }   // (from: how far they came, on average)
+}
+
+// A flower strip (sowStrip): a stroke sows a strip about two tiles wide along the line, a flower field like the
+// made ones (w.fields, with strip: true), so the bees fly to it as to any field. It's a meadow mix: at each season's
+// start it turns to that season's flower (stripKind; winter waits for spring's), so it always blooms within a
+// season. Sown, it's bare rich earth with sprouts at once, the crows come down to it (w.turned), and it blooms when
+// its grass is back past FIELD_GRASS: two or three days in spring and summer, with no clock of its own.
+const STRIP_BRUSH = 1.05;       // a stroke sows every tile whose middle is within this of the line: a strip about 2 wide
+const STRIP_TILES = 30;         // tiles one stroke sows at most
+const STRIP_PLANTS = 1.6;       // flowers a tile (a made field has fieldFlowers, 0.45): a sown strip is dense
+const STRIP_BLOB = 2.5;         // its shape, for the bees: a circle every this many tiles along the line
+const STRIP_SOIL = 0.7;         // the soil of a sown tile is dug over to at least this (w.fert), however poor it was
+const STRIP_SPROUTS = 0.03;     // the grass on it once sown: bare earth to look at, but the seed is in and coming up
+const FIELD_MAX = 127;          // flower fields a meadow can have (w.fieldAt is an Int8Array)
+const STRIP_NAMES = ['Honey', 'Bumble', 'Sunny', 'Long', 'Nectar', 'Lark', 'Linnet', 'Wren', 'Clover', 'Hum', 'Pollen', 'Thistle'];
+
+// Which of FIELD_KINDS a strip flowers as in the season of tick t (in winter, the spring one to come), by hash.
+function stripKind(w, f, t) {
+  const s = seasonOf(t), season = s === 3 ? 0 : s, year = yearOf(t) + (s === 3 ? 1 : 0);
+  const kinds = FIELD_KINDS.filter(k => k.season === season);
+  return kinds[Math.floor(hash2(f.id, year * 4 + season, w.seed) * kinds.length)];
+}
+function swapStrip(w, f) {
+  const k = stripKind(w, f, w.tick);
+  Object.assign(f, { kind: k, season: k.season, emoji: k.emoji, tint: k.tint, swapped: Math.floor(dayOf(w.tick) / SEASON_DAYS) });
+}
+
+// What a stroke of seed through pts would sow, changing nothing: each tile it covers, and what's in the way of one
+// (blocker: water, a tree's trunk, a hive's tree, a rock, a burrow, a flower field or the edge), skipped. ok, or why
+// not: 'fields' (FIELD_MAX of them), or what was in the way of every tile. full: it reached STRIP_TILES. kind: what it
+// will flower as first; bloom: when (stripBloom); hives: the hives in reach.
+function stripPlan(w, pts) {
+  const { set, full } = brushTiles(pts, STRIP_BRUSH, STRIP_TILES);
+  const tiles = [], at = new Map();
+  let x0 = W, y0 = H, x1 = 0, y1 = 0, sx = 0, sy = 0, sown = 0, blocker = '';
+  for (const i of set) {
+    const x = i % W, y = (i / W) | 0, out = x < 2 || y < 2 || x >= W - 2 || y >= H - 2;
+    const t = { i, x, y, k: 'sow', blocker: out ? 'edge' : w.water[i] ? 'water' : w.fieldAt[i] >= 0 ? 'field' : '' };
+    tiles.push(t); at.set(i, t);
+    x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
+  }
+  for (const b of w.burrows) {                                // the holes, and a tile round them
+    if (b.x < x0 - 2 || b.x > x1 + 3 || b.y < y0 - 2 || b.y > y1 + 3) continue;
+    for (let ty = Math.floor(b.y - 1); ty <= b.y + 1; ty++) for (let tx = Math.floor(b.x - 1); tx <= b.x + 1; tx++) {
+      const t = tx >= 0 && tx < W ? at.get(ty * W + tx) : null;
+      if (t && !t.blocker && (tx + 0.5 - b.x) ** 2 + (ty + 0.5 - b.y) ** 2 < 1.2) t.blocker = 'burrow';
+    }
+  }
+  forEachDecorNear(w, (x0 + x1 + 1) / 2, (y0 + y1 + 1) / 2, Math.hypot(x1 - x0 + 1, y1 - y0 + 1) / 2 + 2, d => {   // trees by their trunk, and rocks
+    const t = at.get(idx(d.x, d.y));
+    if (!t || t.blocker || !d.tree && d.size < STONE_DUG && !d.big) return;
+    t.blocker = d.hive ? 'hive' : d.tree ? 'tree' : 'rock';
+  });
+  for (const t of tiles) {
+    if (t.blocker) { t.k = 'blocked'; blocker ||= t.blocker; continue; }
+    sown++; sx += t.x + 0.5; sy += t.y + 0.5;
+  }
+  const x = sown ? sx / sown : (x0 + x1 + 1) / 2, y = sown ? sy / sown : (y0 + y1 + 1) / 2;
+  const why = w.fields.length >= FIELD_MAX ? 'fields' : !sown ? blocker || 'edge' : '';
+  return { x, y, x0, y0, x1, y1, tiles, sown, blocked: tiles.length - sown, blocker, full, ok: !why, why,
+    kind: stripKind(w, { id: w.fields.length }, w.tick), bloom: stripBloom(w),
+    hives: w.hives.filter(h => !h.cluster && Math.hypot(h.x - x, h.y - y) < FORAGE_RANGE).length };
+}
+
+// When a strip sown now will flower: 'soon' (spring: in half a day to a day), 'days' (summer: one and a half to four,
+// slower in a heatwave), 'autumn' (on autumn's first day: three or so, just before winter) or 'spring' (sown later in
+// autumn or in winter). Measured: the grass on a sown tile is back past FIELD_GRASS that soon.
+function stripBloom(w) {
+  const s = seasonOf(w.tick);
+  return s === 0 ? 'soon' : s === 1 ? 'days' : s === 2 && dayOf(w.tick) % SEASON_DAYS < 1 ? 'autumn' : 'spring';
+}
+
+// A name no field has yet, by the meadow's seed and the strip's id (never w.rng).
+function stripName(w, id) {
+  const used = new Set(w.fields.map(f => f.name)), start = Math.floor(hash2(id, 43, w.seed) * STRIP_NAMES.length);
+  for (let k = 0; k < STRIP_NAMES.length; k++) {
+    const name = `${STRIP_NAMES[(start + k) % STRIP_NAMES.length]} Strip`;
+    if (!used.has(name)) return name;
+  }
+  return `${STRIP_NAMES[start]} Strip ${id}`;
+}
+
+// Sow a stroke of seed: the strip (a field of w.fields), or why not (stripPlan's why).
+function sowStrip(w, pts) {
+  const plan = stripPlan(w, pts);
+  if (!plan.ok) return plan.why;
+  w.turned ??= [];
+  const T = w.terrain, id = w.fields.length;
+  const f = { id, strip: true, sown: w.tick, x: plan.x, y: plan.y, name: stripName(w, id), shape: [], flowered: 0, found: 0, sips: 0 };
+  swapStrip(w, f);
+  const sown = plan.tiles.filter(t => !t.blocker), on = new Set(sown.map(t => t.i));
+  const shade = SHADE_GRASS * (leafless(w.tick) ? BARE_SHADE : 1);   // (as groundTick works it out)
+  for (const t of sown) {
+    const i = t.i, fert = Math.max(STRIP_SOIL, Math.min(1, w.fert[i] + T.fieldSoil));
+    w.fert[i] = fert; w.shadedFert[i] = fert * (1 - shade * w.wood[i]);
+    w.fieldAt[i] = id; w.fieldIn[i] = 1;
+    w.grass[i] = STRIP_SPROUTS; w.voles[i] = 0; w.frogs[i] = 0;
+    w.rich[i] = Math.max(w.rich[i], TURNED_RICH);
+    for (let k = 0, n = 1 + (hash2(t.x, t.y, w.seed + id) < STRIP_PLANTS - 1); k < n; k++) {
+      const p = { x: t.x + 0.15 + 0.7 * hash2(t.x, t.y * 4 + k, 51), y: t.y + 0.15 + 0.7 * hash2(t.y, t.x * 4 + k, 53), i, kind: hash2(t.x * 4 + k, t.y, 55), field: f, n: w.plants.length };
+      w.plants.push(p);
+      cellOf(w.plantCells, p).push(p);
+    }
+  }
+  forEachPlantNear(w, plan.x, plan.y, Math.hypot(plan.x1 - plan.x0 + 1, plan.y1 - plan.y0 + 1) / 2 + 1, p => {
+    if (!p.tree && !p.field && on.has(p.i)) p.field = f;      // the wild flowers it was sown over join it
+  });
+  // Its shape, for the bees and the butterflies: a circle every STRIP_BLOB tiles along the line, and at its end.
+  let px = pts[0].x, py = pts[0].y, gone = STRIP_BLOB;
+  const blob = (x, y) => { if (on.has(idx(x, y)) && f.shape.length < 12) f.shape.push({ x, y, r: 1.2 }); };
+  for (let k = 1; k < pts.length; k++) {
+    const d = Math.hypot(pts[k].x - px, pts[k].y - py);
+    for (let s = 0; s < d; s += 0.25) if ((gone += 0.25) >= STRIP_BLOB) { gone = 0; blob(px + (pts[k].x - px) * s / d, py + (pts[k].y - py) * s / d); }
+    px = pts[k].x; py = pts[k].y;
+  }
+  if (gone > 1) blob(px, py);
+  if (!f.shape.length) f.shape.push({ x: plan.x, y: plan.y, r: 1.5 });
+  w.fields.push(f);
+  w.turned.push({ x: plan.x, y: plan.y, r: Math.hypot(plan.x1 - plan.x0 + 1, plan.y1 - plan.y0 + 1) / 2 + 1.5,
+    spots: evenly(sown.map(t => ({ x: t.x + 0.5, y: t.y + 0.5 })), TURNED_SPOTS), until: w.tick + TURNED_DAYS * TPD });
+  emit(w, { type: 'sowstrip', field: f, x: plan.x, y: plan.y, tiles: sown.length, hives: plan.hives, bloom: plan.bloom });
+  return f;
+}
+
+// A bee sipped at a strip's flower: counted, and the first time it's news.
+function stripSip(w, f, c) {
+  f.sips++;
+  if (!f.found) { f.found = w.tick; emit(w, { type: 'beesfound', field: f, hive: c.home, queen: c.home.queen }); }
 }
 
 function nameQueen(w, h, name) {
@@ -6424,7 +6557,7 @@ function mood(w, c) {
 const api = {
   W, H, TPD, SHALLOW, DEEP, SEASON_DAYS, YEAR_DAYS, SEASONS, SPECIES, GENES, COATS, GROUND, WEATHER,
   createWorld, step, clock, isNight, phaseOf, seasonOf, mood, ageDays, growth, isAdult, patchFresh,
-  addCreature, paintGrass, setSky, lockSky, zap, burnLine, lift, putDown, nameCreature, nameQueen, NAME_MAX, plantTree, pondPlan, digPond, frogsNear, POND_BRUSH, POND_DAB, POND_TILES, REED_DAYS, traitMeans, walkable, packWorld, unpackWorld,
+  addCreature, paintGrass, setSky, lockSky, zap, burnLine, lift, putDown, nameCreature, nameQueen, NAME_MAX, plantTree, pondPlan, digPond, frogsNear, POND_BRUSH, POND_DAB, POND_TILES, REED_DAYS, stripPlan, sowStrip, stripKind, STRIP_TILES, traitMeans, walkable, packWorld, unpackWorld,
   coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT, KINDS, OWLS,
   TERRAIN, drawnToLink, drawnFromLink, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE,

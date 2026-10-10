@@ -74,7 +74,7 @@
   canvas#world.tool-look { cursor: grab; }
   canvas#world.tool-look.dragging { cursor: grabbing; }
   canvas#world.tool-rabbit, canvas#world.tool-fox { cursor: copy; }
-  canvas#world.tool-grass, canvas#world.tool-zap, canvas#world.tool-fire, canvas#world.tool-plant, canvas#world.tool-pond { cursor: crosshair; }
+  canvas#world.tool-grass, canvas#world.tool-zap, canvas#world.tool-fire, canvas#world.tool-plant, canvas#world.tool-pond, canvas#world.tool-sow { cursor: crosshair; }
   /* ?keep: what the pond you're placing will bring, by the hand (game.js placeLabel) */
   #place-label { position: fixed; top: 0; left: 0; z-index: 3; pointer-events: none; max-width: 300px; padding: 5px 10px 6px;
     background: var(--paper, none) var(--card); border-radius: 10px; box-shadow: var(--shadow); font-size: 13px; line-height: 1.3; color: var(--ink); }
@@ -626,7 +626,7 @@
     #toolbar .tool .e { font-size: 24px; width: auto; }
     #toolbar .tool .l { font-size: 11.5px; line-height: 1; }
     #toolbar .tool[data-tool="fire"] { order: 1; } #toolbar .tool[data-tool="zap"] { order: 2; } #toolbar .tool[data-tool="plant"] { order: 3; }
-    #toolbar .tool[data-tool="grass"] { order: 4; } #toolbar .tool[data-tool="pond"] { order: 4; } #toolbar .tool[data-tool="look"] { order: 5; }
+    #toolbar .tool[data-tool="grass"] { order: 4; } #toolbar .tool[data-tool="pond"] { order: 4; } #toolbar .tool[data-tool="sow"] { order: 4; } #toolbar .tool[data-tool="look"] { order: 5; }
     /* time: pause and one button that steps through the speeds; the rest waits in ••• */
     #time { --hud-h: 44px; gap: 2px; padding: 0 4px; }
     #time .speed[data-speed]:not([data-speed="0"]), #time .hud-btn:not(.more), #time .hud-sep { display: none; }
@@ -813,6 +813,7 @@
   <button class="tool" data-tool="zap" title="Click the meadow to strike lightning. On dry ground it starts a fire (Z)"><span class="e">⚡</span><span class="l">Zap</span></button>
   <button class="tool" data-tool="fire" title="Click and drag to draw a wall of fire. It burns half a day, and on dry grass it spreads (B)"><span class="e">🔥</span><span class="l">Fire</span></button>
   <button class="tool hidden" data-tool="pond" title="Drag on the meadow to paint a pond, like a brush: the lower the ground, the longer it holds water (D)"><span class="e">⛏️</span><span class="l">Pond</span></button>
+  <button class="tool hidden" data-tool="sow" title="Drag on the meadow to sow a strip of meadow flowers: sown in spring or summer it blooms within days, and the bees come (G)"><span class="e">🌼</span><span class="l">Sow</span></button>
   </div>
   <!-- phones: the tools fold into one round button in the corner, showing the one in your hand -->
   <button class="hand" data-act="tools" title="Tools" aria-expanded="false">🔍</button>
