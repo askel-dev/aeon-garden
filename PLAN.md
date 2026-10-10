@@ -147,8 +147,16 @@ on its own. Then one or two people who've never seen it. If it fails, the notes 
 
 ## After this step (settle first)
 
-- **Step 2, the pressure:** drought, a long winter or farmland creeping in; six years to the Dry Year or three;
-  whether a species leaving is loss enough, or someone has to say it. The ghost's "dries in summer" and the
-  green by the water are already the drought's hooks.
+- **Step 2, the pressure (pulled forward, 2026-10-11).** K1 to K4 were built and played. Axel: "I'm just worried
+  the things you do just look random with no purpose." In Frostpunk the cold is everywhere and the generator's heat
+  circle shows what to do at once; here the meadow gets by without you, so the verbs answer needs nobody can see.
+  So the pouch (K5) waits, and the pressure comes next. Settled:
+  - **A drought, the Dry Year, on a clock:** ordinary years round it, and a warning a season or more ahead (the
+    water dropping first), so the years before have a reason.
+  - **Losing is the meadow going barren and species going extinct.**
+  - The picture first: a mock of the Dry Year (straw away from the water, green rings round it) next to a summer
+    now, and a pond dug in it, to see if it says "dig here" before any sim is built.
+  - Open: how many years to the Dry Year; the one number on screen (the share still green?); what the hedge does
+    in a drought; the result at summer's end.
 - **Step 3, the first year:** a valley made by hand or a generated meadow; a keeper you can see, later or never;
   the owls; the game's name.
