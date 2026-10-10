@@ -17,13 +17,15 @@ for (let s = 1; s <= seeds; s++) {
   const planted = { tried: 0, ok: 0, lost: {}, sapling: 0, seeded: 0 };
   // The keeper's pond: dug on the first morning after DIG_DAY, the day the crows first came down to it, the frogs
   // found it (and from how far), the reeds came up, the spawn laid in it each spring, the frogs round it each season's end.
-  const DIG_DAY = 1, kept = { pond: null, tries: 0, crows: -1, frogs: -1, from: 0, reeds: -1, spawn: [], round: [] };
+  // The keeper digs it with a short scribble of the spade (SCRIBBLE, tiles from where it starts), about 30 tiles.
+  const DIG_DAY = 1, kept = { pond: null, tries: 0, tiles: 0, spot: null, crows: -1, frogs: -1, from: 0, reeds: -1, spawn: [], round: [] };
+  const SCRIBBLE = [[-1.2, -0.8], [1.2, -0.8], [-1.2, 0], [1.2, 0], [-1.2, 0.8], [1.2, 0.8]];
   const day = () => (w.tick / Sim.TPD).toFixed(1);
   const pondAround = field => {
     const p = kept.pond;
     let n = 0;
-    for (let y = Math.max(0, Math.floor(p.y - p.ry - 3)); y <= Math.min(Sim.H - 1, p.y + p.ry + 3); y++)
-      for (let x = Math.max(0, Math.floor(p.x - p.rx - 3)); x <= Math.min(Sim.W - 1, p.x + p.rx + 3); x++) n += field[y * Sim.W + x];
+    for (let y = Math.max(0, p.box.y0 - 3); y <= Math.min(Sim.H - 1, p.box.y1 + 3); y++)
+      for (let x = Math.max(0, p.box.x0 - 3); x <= Math.min(Sim.W - 1, p.box.x1 + 3); x++) n += field[y * Sim.W + x];
     return n;
   };
   let arrivals = Object.fromEntries(Sim.KINDS.map(k => [k, 0])), surprises = 0, kills = 0, escapes = 0, strikes = 0, fires = 0, burned = 0, swarms = 0;
@@ -59,16 +61,16 @@ for (let s = 1; s <= seeds; s++) {
       }
       if (keep && !kept.pond && w.tick >= DIG_DAY * Sim.TPD) {
         for (; kept.tries < 4000 && !kept.pond; kept.tries++) {
-          const x = Math.floor(rand() * Sim.W) + 0.5, y = Math.floor(rand() * Sim.H) + 0.5, r = 2.5 + rand();
-          const p = Sim.pondPlan(w, x, y, r, r);
-          if (p.ok && p.lasting >= 6) kept.pond = Sim.digPond(w, x, y, r, r);
+          const x = Math.floor(rand() * Sim.W) + 0.5, y = Math.floor(rand() * Sim.H) + 0.5, pts = SCRIBBLE.map(([dx, dy]) => ({ x: x + dx, y: y + dy }));
+          const p = Sim.pondPlan(w, pts);
+          if (p.ok && p.lasting >= 6) { kept.pond = Sim.digPond(w, pts); kept.tiles = p.lasting + p.spring + p.dry; kept.spot = w.turned[w.turned.length - 1]; }
         }
         kept.dug = day();
       }
       Sim.step(w);
       if (kept.pond && kept.crows < 0) {
-        const p = kept.pond;
-        if (w.creatures.some(c => c.alive && c.species === 'crow' && ((c.x - p.x) / p.rx) ** 2 + ((c.y - p.y) / p.ry) ** 2 < 1.96)) kept.crows = day();
+        const p = kept.spot;
+        if (w.creatures.some(c => c.alive && c.species === 'crow' && (c.x - p.x) ** 2 + (c.y - p.y) ** 2 < p.r * p.r)) kept.crows = day();
       }
       if (kept.pond && Sim.seasonOf(w.tick) === 0) {
         let n = 0;
@@ -163,7 +165,7 @@ for (let s = 1; s <= seeds; s++) {
     `  fish caught ${st.fish} frogs ${st.otterFrogs}`);
   if (keep) {
     const p = kept.pond;
-    console.log(p ? `  keeper  dug ${w.waters[p.id].name} day ${kept.dug} (${kept.tries} tries, r${p.rx.toFixed(1)}: lasting ${p.lasting} spring ${p.spring} deep ${p.deep})`
+    console.log(p ? `  keeper  dug ${w.waters[p.id].name} day ${kept.dug} (${kept.tries} tries, ${kept.tiles} tiles: lasting ${p.lasting} spring ${p.spring} deep ${p.deep})`
       + `  crows day ${kept.crows}  frogs found it day ${kept.frogs} from ${kept.from} tiles  reeds day ${kept.reeds}`
       + `  spawn in it by spring ${kept.spawn.slice(0, years).map(n => (n || 0).toFixed(1)).join(' ')}  frogs round it ${kept.round.join(' ')}`
       : `  keeper  found nowhere to dig in ${kept.tries} tries`);

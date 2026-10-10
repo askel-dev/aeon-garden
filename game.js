@@ -4374,6 +4374,22 @@ function blurred(src) {
   return out;
 }
 
+// (?keep) The tiles within 2 of a pond the keeper dug that has no reeds yet (they come later), or null with none.
+function reedsLater() {
+  const young = world.ponds ? world.ponds.filter(p => !p.reeds) : [];
+  if (!young.length) return null;
+  const out = new Uint8Array(S.W * S.H);
+  for (const p of young) {
+    for (let y = p.box.y0; y <= p.box.y1; y++) {
+      for (let x = p.box.x0; x <= p.box.x1; x++) {
+        if (world.dug[y * S.W + x] !== p.id) continue;
+        for (let ty = Math.max(0, y - 2); ty <= Math.min(S.H - 1, y + 2); ty++) out.fill(1, ty * S.W + Math.max(0, x - 2), ty * S.W + Math.min(S.W - 1, x + 2) + 1);
+      }
+    }
+  }
+  return out;
+}
+
 function updateWater() {
   const now = performance.now();
   if (pond && pond.world === world && (pond.version === world.waterVersion || now - pond.at < 1000)) return;
@@ -4386,13 +4402,13 @@ function updateWater() {
     if (f2[i] > 0.9 && h < 0.14 && !running[i]) waves.push({ x: x + hash2(y, x, 7), y: y + hash2(x, y, 11), ph: h / 0.14 });
   }
   // Reeds in patches along the shore, and lily pads out on quiet shallows away from the deep (drawShore).
-  const shore = [], young = world.ponds ? world.ponds.filter(p => !p.reeds) : [];
+  const shore = [], later = reedsLater();
   for (let i = 0; i < f1.length; i++) {
     const x = i % S.W, y = (i / S.W) | 0, h = hash2(x, y, world.seed + 5), wet = world.water[i];
     const reed = hash2(x >> 2, y >> 2, world.seed + 6) < 0.55 && (wet ? wet !== S.DEEP && f1[i] < 0.8 && h < 0.3 : f1[i] > 0.2 && h < 0.4);
     const lily = !reed && wet === S.SHALLOW && f4[i] > 0.6 && d2[i] < 0.35 && h > 0.88 && !running[i];   // in still water
     if (!reed && !lily) continue;
-    if (young.length && young.some(p => ((x + 0.5 - p.x) / (p.rx + 2)) ** 2 + ((y + 0.5 - p.y) / (p.ry + 2)) ** 2 <= 1)) continue;   // (a new pond's come later)
+    if (later && later[i]) continue;      // (a new pond's come later)
     const px = x + 0.2 + 0.6 * hash2(y, x, 8), py = y + 0.2 + 0.6 * hash2(y, x, 9);
     if (reed && world.burrows.some(b => Math.abs(b.x - px) < 1.5 && Math.abs(b.y - py) < 1.5)) continue;
     const shape = Math.floor(hash2(x, y, 10) * 3);
@@ -5740,7 +5756,8 @@ function handleEvent(e) {
     case 'dugpond': {                   // (?keep) the keeper dug a pond
       const what = e.lasting ? `water all year${e.deep ? ', deep in the middle' : ''}` : 'a spring pool, dry by summer';
       const frogs = e.frogs < 0 ? 'No frogs live near enough to find it yet.' : e.frogs <= 2 ? 'Frogs live right by it.' : `Frogs ${e.frogs} tiles off could find it.`;
-      addNews(`⛏️ You dug ${thingLink('water', e.water, `<b>${esc(e.name)}</b>`)}: ${what}. ${frogs}`);
+      if (e.bigger) addNews(`⛏️ You made ${thingLink('water', e.water, `<b>${esc(e.name)}</b>`)} bigger, by ${e.tiles} tiles.`);
+      else addNews(`⛏️ You dug ${thingLink('water', e.water, `<b>${esc(e.name)}</b>`)}: ${what}. ${frogs}`);
       break;
     }
     case 'frogsfound':
@@ -7682,7 +7699,7 @@ function setTool(tool) {
     return;                               // the tools stay open, so a phone can tap again
   }
   ui.tool = tool;
-  if (tool !== 'pond') dropPlace();
+  if (placing?.tool !== tool) dropPlace();
   document.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === tool));
   canvas.className = 'tool-' + tool;
   const hand = $('#toolbar .hand');
@@ -7804,7 +7821,7 @@ canvas.addEventListener('pointerdown', e => {
   if (fingerTap) fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (fingers.size >= 2) { startPinch(); return; }
   drag = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y, moved: false, paint: (ui.tool === 'grass' || ui.tool === 'fire') && e.button === 0,
-    place: ui.tool === 'pond' && e.button === 0, t: e.timeStamp, lx: e.clientX, ly: e.clientY, vx: 0, vy: 0, id: e.pointerId,
+    place: placeTool(ui.tool) && e.button === 0, t: e.timeStamp, lx: e.clientX, ly: e.clientY, vx: 0, vy: 0, id: e.pointerId,
     grab: ui.tool === 'look' && e.button === 0 && !LAB && !KEEP ? grabAt(e.clientX, e.clientY) : null };   // dragged, it's picked up (not at ?keep)
   if (drag.paint) paintAt(e.clientX, e.clientY);
   else if (drag.place) placeAt(e.clientX, e.clientY, true);
@@ -7823,7 +7840,7 @@ canvas.addEventListener('pointermove', e => {
   if (pinch) { movePinch(); return; }
   if (intro.on) return;
   if (held) { if (e.pointerId === held.id) { held.sx = e.clientX; held.sy = e.clientY; } return; }
-  if (!drag && ui.tool === 'pond' && e.pointerType === 'mouse') { placeAt(e.clientX, e.clientY, false); return; }   // where a tap would dig
+  if (!drag && placeTool(ui.tool) && e.pointerType === 'mouse') { placeAt(e.clientX, e.clientY, false); return; }   // where a tap would dig
   if (!drag) {
     const c = creatureAt(e.clientX, e.clientY);
     ui.hoverId = c ? c.id : 0;
@@ -7831,7 +7848,7 @@ canvas.addEventListener('pointermove', e => {
     return;
   }
   let dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-  if (drag.place) {                       // dragging a pond out from its middle
+  if (drag.place) {                       // drawing a stroke (a pond, a strip)
     if (!placing) return;                 // (called off)
     if (!placing.moved && Math.abs(dx) + Math.abs(dy) > (e.pointerType === 'touch' ? 10 : 4)) placing.moved = drag.moved = true;
     placeAt(e.clientX, e.clientY, true);
@@ -8061,42 +8078,52 @@ function plantAt(kind, wx, wy) {
 // What the news calls one: a link while it stands.
 const plantedLink = d => { const k = treeName(d).toLowerCase(); return world.decor.includes(d) ? thingLink('tree', d.id, k) : k; };
 
-// ------------------------------------------------------------------ the keeper's hand: digging a pond
+// ------------------------------------------------------------------ the keeper's hand: drawing a pond
 //
-// At ?keep the keeper places things with a drag (PLAN.md, K2). With the spade in hand a press is the pond's middle and
-// the drag sets how far it reaches each way (a tap is a round one); a mouse shows where a tap would dig before the
-// press. Meanwhile a ghost shades each tile by what it will be (sim.js pondPlan) and a line by the hand says what it
-// will bring. Letting go digs it at once, paused or not (digPond); Esc, or a second finger, calls it off. The ghost is
-// one small canvas of a pixel a tile over the pond's box, painted again only when the plan changes.
-const POND_TAP = 3;                       // a tap digs a round pond this big
-const GHOST = { lasting: 'rgba(96, 160, 212, 0.62)', deep: 'rgba(70, 128, 192, 0.7)', spring: 'rgba(160, 204, 230, 0.5)',
-  dry: 'rgba(150, 112, 72, 0.3)', blocked: 'rgba(206, 106, 90, 0.6)' };
-const BLOCKED = { tree: 'A tree in the way', hive: 'A hive’s tree in the way', holt: 'The otters’ holt is in the way',
-  rock: 'A rock in the way', burrow: 'A burrow in the way: rabbits live there', field: 'A flower field: the bees need it',
-  edge: 'Too near the edge of the meadow' };
+// At ?keep the keeper places things with a drag (PLAN.md, K2). With the spade in hand a press and a drag paint water
+// along the way, like a brush (sim.js pondPlan: every tile within POND_BRUSH of the line, deeper the further inside),
+// and a tap digs a small round pond; a mouse shows where a tap would dig before the press. Meanwhile a ghost shades
+// each tile by what it will be and a line by the hand says what it will bring. Letting go digs it at once, paused or
+// not (digPond); Esc, or a second finger, calls it off. The plan and its ghost are made again only when the stroke
+// reaches a new tile: the ghost is one small canvas over the stroke's box, GHOST_PX a tile, a soft blob a tile.
+const GHOST_PX = 6;
+const GHOST = { dry: 'rgb(166, 124, 82)', spring: 'rgb(150, 204, 236)', lasting: 'rgb(84, 156, 216)', deep: 'rgb(52, 112, 186)',
+  blocked: 'rgb(214, 96, 80)' };
+const GHOST_ORDER = ['dry', 'spring', 'lasting', 'deep', 'blocked'];   // (the deep over the shallows, the islands over all)
+const BLOCKED = { tree: 'a tree', hive: 'a hive’s tree', holt: 'the otters’ holt', rock: 'a rock', burrow: 'a burrow',
+  field: 'a flower field', edge: 'the meadow’s edge' };
 const NO_POND = { many: 'The meadow has as many ponds as it can take', water: 'That’s water already',
   high: 'Too high: the water won’t reach', blocked: 'Something’s in the way' };
-let placing = null;                       // { cx, cy, rx, ry, press (the button is down), plan, sx, sy (the hand) }
+let placing = null;                       // { tool, pts (the stroke, in tiles), press (the button is down), moved, tile, plan, full, sx, sy (the hand) }
 const ghost = document.createElement('canvas'), ghostCtx = ghost.getContext('2d');
 const ripples = [];                       // a new pond's water rings out from its middle: { x, y, rx, ry, t0 }
 const RIPPLE_MS = 1800;
+const placeTool = t => t === 'pond';      // the tools that place with a drag
 
-// The pond a press at the hand's spot would dig (or, pressed, the one being dragged out), and its ghost.
+// The stroke so far (or, before the press, the dab a tap would make here), and its plan and ghost when it has
+// reached a new tile.
 function placeAt(sx, sy, press) {
-  const [wx, wy] = toWorld(sx, sy), p = placing;
-  let cx = Math.floor(wx) + 0.5, cy = Math.floor(wy) + 0.5, rx = POND_TAP, ry = POND_TAP;
-  if (press && p?.press) {
-    ({ cx, cy } = p);
-    if (p.moved) { rx = clamp(Math.round(Math.abs(wx - cx)), ...S.POND_R); ry = clamp(Math.round(Math.abs(wy - cy)), ...S.POND_R); }
-  }
-  if (!p || p.cx !== cx || p.cy !== cy || p.rx !== rx || p.ry !== ry || p.press !== press || p.world !== world) {
-    const plan = S.pondPlan(world, cx, cy, rx, ry);
-    placing = { cx, cy, rx, ry, press, moved: !!p?.moved && press, plan, world };
-    paintGhost(plan);
-    placeLabel(plan);
+  const [wx, wy] = toWorld(sx, sy), p = placing, tool = ui.tool, tile = Math.floor(wy) * S.W + Math.floor(wx);
+  if (press && p?.press && p.world === world && p.tool === tool) {
+    const last = p.pts[p.pts.length - 1];
+    if (p.moved && !p.full && Math.hypot(wx - last.x, wy - last.y) >= 0.3) p.pts.push({ x: wx, y: wy });
+    if (tile !== p.tile || p.moved !== p.planMoved) { p.tile = tile; planPlace(); }
+  } else if (!p || p.press !== press || p.tile !== tile || p.world !== world || p.tool !== tool) {
+    if (wx < 0 || wy < 0 || wx >= S.W || wy >= S.H) { dropPlace(); return; }   // (off the meadow)
+    placing = { tool, pts: [{ x: Math.floor(wx) + 0.5, y: Math.floor(wy) + 0.5 }], press, moved: false, tile, world, full: false };
+    planPlace();
   }
   placing.sx = sx; placing.sy = sy;
   moveLabel();
+}
+
+function planPlace() {
+  const p = placing;
+  p.planMoved = p.moved;
+  p.plan = S.pondPlan(world, p.pts, p.moved ? S.POND_BRUSH : S.POND_DAB);
+  if (p.plan.full) p.full = true;
+  paintGhost(p.plan);
+  placeLabel(p);
 }
 
 function dropPlace() {
@@ -8106,25 +8133,36 @@ function dropPlace() {
   if (drag?.place) drag = null;
 }
 
+// Each tile a soft round blob in the colour of what it will be, one colour at a time, so they make one shape.
 function paintGhost(p) {
-  const w = p.x1 - p.x0 + 1, h = p.y1 - p.y0 + 1;
+  const w = (p.x1 - p.x0 + 3) * GHOST_PX, h = (p.y1 - p.y0 + 3) * GHOST_PX, r = 0.72 * GHOST_PX;
   if (ghost.width !== w || ghost.height !== h) { ghost.width = w; ghost.height = h; } else ghostCtx.clearRect(0, 0, w, h);
-  for (const t of p.tiles) {
-    const c = t.k === 'lasting' && t.deep ? GHOST.deep : GHOST[t.k];
-    if (!c) continue;                     // (water already)
-    ghostCtx.fillStyle = c;
-    ghostCtx.fillRect(t.x - p.x0, t.y - p.y0, 1, 1);
+  for (const k of GHOST_ORDER) {
+    ghostCtx.beginPath();
+    let any = false;
+    for (const t of p.tiles) {
+      if ((t.k === 'lasting' && t.deep ? 'deep' : t.k) !== k) continue;
+      const x = (t.x - p.x0 + 1.5) * GHOST_PX, y = (t.y - p.y0 + 1.5) * GHOST_PX;
+      ghostCtx.moveTo(x + r, y); ghostCtx.arc(x, y, r, 0, TAU);
+      any = true;
+    }
+    if (any) { ghostCtx.fillStyle = GHOST[k]; ghostCtx.fill(); }
   }
 }
 
-// What it will bring, in a line, and how far the frogs are.
-function placeLabel(p) {
+// What it will bring, in a line: how big, water all year or a spring pool, a deep middle or not, and the frogs.
+function placeLabel(pl) {
+  const p = pl.plan;
   let text;
-  if (!p.ok) text = `<b>${p.why === 'blocked' ? BLOCKED[p.blocker] : NO_POND[p.why]}</b>`;
+  if (!p.ok) text = `<b>${NO_POND[p.why]}</b>`;
   else {
-    const what = p.lasting ? `Water all year · ${p.lasting + p.spring} tiles · ${p.deep ? 'deep middle: a rabbit can escape a fox there' : 'all shallows, as the frogs like it'}`
-      : 'A spring pool: it dries out in summer, the frogs’ favourite';
-    text = `<b>${what}</b><small>${frogsOff(p.frogs)}</small>`;
+    const n = p.lasting + p.spring + p.dry, grows = p.grows ? `Makes ${esc(world.waters[p.grows.id].name)} bigger · ` : '';
+    const what = p.lasting ? `${grows}Water all year · ${n} tiles · ${p.deep ? 'deep middle: a rabbit can escape a fox there' : 'all shallows, as the frogs like it'}`
+      : `${grows}A spring pool · ${n} tiles: it dries out in summer, the frogs’ favourite`;
+    const also = [frogsOff(p.frogs)];
+    if (p.blocked) also.push(`${BLOCKED[p.blocker][0].toUpperCase() + BLOCKED[p.blocker].slice(1)}${p.blocked > 1 ? ' and more' : ''} left standing`);
+    if (pl.full) also.push('as big as one stroke goes');
+    text = `<b>${what}</b><small>${also.join(' · ')}</small>`;
   }
   const el = $('#place-label');
   if (el.innerHTML !== text) el.innerHTML = text;
@@ -8144,32 +8182,21 @@ function digPlaced() {
   const p = placing;
   dropPlace();
   if (!p?.press) return;
-  const r = S.digPond(world, p.cx, p.cy, p.rx, p.ry);
-  if (typeof r === 'string') {
-    addNews(`⛏️ ${r === 'blocked' && p.plan.why === 'blocked' ? BLOCKED[p.plan.blocker] : NO_POND[r]}.`, 'nopond', 1500);
-    return;
-  }
+  const r = S.digPond(world, p.pts, p.moved ? S.POND_BRUSH : S.POND_DAB);
+  if (typeof r === 'string') { addNews(`⛏️ ${NO_POND[r]}.`, 'nopond', 1500); return; }
   pond = null; terrainTick = -1;                           // the water and the bare banks, this very frame
-  hear('dig', r.x, r.y, {}, true);
-  ripples.push({ x: r.x, y: r.y, rx: r.rx, ry: r.ry, t0: performance.now() });
+  const q = p.plan;
+  hear('dig', q.x, q.y, {}, true);
+  ripples.push({ x: q.x, y: q.y, rx: (q.x1 - q.x0 + 1) / 2, ry: (q.y1 - q.y0 + 1) / 2, t0: performance.now() });
   flushEvents();
 }
 
-// The ghost, over the ground: each tile shaded by what it will be, and a soft dashed rim round it.
+// The ghost, over the ground.
 function drawPlacing(z, ox, oy) {
   const p = placing.plan;
   ctx.save();
-  ctx.imageSmoothingEnabled = false;
-  ctx.globalAlpha = placing.press ? 1 : 0.65;
-  ctx.drawImage(ghost, ox + p.x0 * z, oy + p.y0 * z, (p.x1 - p.x0 + 1) * z, (p.y1 - p.y0 + 1) * z);
-  ctx.imageSmoothingEnabled = true;
-  ctx.globalAlpha = placing.press ? 0.85 : 0.55;
-  ctx.strokeStyle = p.ok ? '#f6efdc' : '#efb2a2';
-  ctx.lineWidth = Math.max(1.2, z * 0.08);
-  ctx.setLineDash([Math.max(4, z * 0.45), Math.max(3, z * 0.3)]);
-  ctx.beginPath();
-  ctx.ellipse(ox + p.x * z, oy + p.y * z, p.rx * z, p.ry * z, 0, 0, TAU);
-  ctx.stroke();
+  ctx.globalAlpha = placing.press ? 0.62 : 0.4;
+  ctx.drawImage(ghost, ox + (p.x0 - 1) * z, oy + (p.y0 - 1) * z, (p.x1 - p.x0 + 3) * z, (p.y1 - p.y0 + 3) * z);
   ctx.restore();
 }
 
@@ -8198,7 +8225,7 @@ function drawRipples(now, z) {
 // The keeper's pond in the inspector: when it was dug, whether it lasts the summer, and what comes next.
 const whenIn = t => `${seasonName(S.seasonOf(t))} of year ${Math.floor(t / S.TPD / S.YEAR_DAYS) + 1}`;
 function dugFacts(p) {
-  const out = [['⛏️', `You dug it in the ${whenIn(p.dug)}`],
+  const out = [['⛏️', `You dug it in the ${whenIn(p.dug)}${p.grown ? `, and made it bigger in the ${whenIn(p.grown)}` : ''}`],
     p.lasting ? ['💧', `Water all year: it lasts the summer${p.deep ? ', and it’s deep in the middle' : ''}`] : ['⏳', 'A spring pool: it dries out in summer']];
   if (!p.reeds) out.push(['🌾', 'Reeds come up round it after a season']);
   if (!p.found) {
@@ -8274,7 +8301,7 @@ function release(species, wx, wy) {
 
 // The keeper's tools at ?keep: the button, its emoji, what it does, and the keep card's hint. (Their buttons are
 // hidden in the page till ?keep shows them.)
-const KEEP_TOOLS = [['look', '🔍', 'Look around'], ['pond', '⛏️', 'Dig a pond', 'Drag out its size. The lower the ground, the longer it holds water']];
+const KEEP_TOOLS = [['look', '🔍', 'Look around'], ['pond', '⛏️', 'Dig a pond', 'Paint the water with a drag. A wide blob gets a deep middle; the lower the ground, the longer it lasts']];
 // At ?keep the ring holds only the keeper's tools (without Look); an empty ring doesn't open.
 const RING_TOOLS = KEEP ? KEEP_TOOLS.filter(([k]) => k !== 'look')
   : [['rabbit', '🐇', 'Release a rabbit'], ['fox', '🦊', 'Release a fox'], ['bee', '🐝', 'Release a bee'], ['crow', '🐦‍⬛', 'Release a crow'], ['owl', '🦉', 'Release an owl'], ['grass', '🌱', 'Grow grass'],

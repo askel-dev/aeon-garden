@@ -67,12 +67,16 @@ every stage they must print the same, seed for seed, since everything new is for
 - Every verb is a drag: a ghost shows what you'll get, letting go makes it, Esc calls it off. It happens at
   once, paused or not, and the ground and the water show it in that frame. One finger places, two pan and
   pinch; with a mouse you pan with Look in hand.
-- Drag out a pond (2 to 7 tiles across each way). The ghost shades each tile by what it will be: water all
-  year, a spring pool that dries in summer (the frogs' favourite, and a gamble), or too high for water.
-  Grown trees, a hive's tree and burrows are red too: a pond never drowns anything you didn't see coming.
-  A line says what it will bring ("Frogs 14 tiles off").
-- `digPond` lowers the ground by a fixed depth, so how high it stood decides what it becomes. A small pond is
-  all shallows (the frogs want no deep water near); a big one gets a deep middle, where a rabbit escapes a fox.
+- Draw a pond (K2b, after Axel's "would be nice if you could just drag the cursor and draw the water"): a drag
+  paints water along the way like a brush (`POND_BRUSH`, about 1.8 tiles, up to `POND_TILES` a stroke), and a tap
+  digs a small round one. The ghost shades each tile by what it will be: water all year, a spring pool that dries
+  in summer (the frogs' favourite, and a gamble), or too high for water. Grown trees, a hive's tree, rocks,
+  burrows and flower fields under the brush are red, and stay as islands: a pond never drowns anything you didn't
+  see coming. A line says what it will bring ("Frogs 14 tiles off"). A stroke that touches a pond you dug makes
+  it bigger.
+- `digPond` digs each tile deeper the further it lies inside the stroke's edge, so how high it stood and the
+  shape decide what it becomes. A thin stroke is all shallows (the frogs want no deep water near); a wide blob gets
+  a deep middle, where a rabbit escapes a fox.
 - A pond of its own: it gets a name and a body in `w.waters` (picked by its own hash, never `w.rng`), and
   `nearBody` is filled again round it (the fill split out of `nameWaters`, which reshuffles every name).
 - Its banks are turned earth: bare, and rich for a few days. Crows come down to them (`turned`, like the
