@@ -8620,15 +8620,16 @@ if (KEEP) {
 // GREEN (?keep, in the bottom bar; on a phone a slot after the tools and a rim along the bar's top): the share of the
 // land whose grass is still green (sim.js greenShare, a scan of every tile, so once a sim day), by what it was on the
 // first day of this season, or as the meadow opened mid-season ("when you came"). Written only when it changes; its card is greenTip.
-const green = { world: null, day: -1, season: -1, share: 0, ref: 0, came: false };
+// Every winter it falls to about a fifth and comes back in spring, so it turns rust (low) only while the Dry Year bites.
+const green = { world: null, day: -1, season: -1, share: 0, ref: 0, came: false, low: false };
 function updateGreen() {
   const day = Math.floor(world.tick / S.TPD), season = Math.floor(day / S.SEASON_DAYS);
   if (green.world === world && green.day === day) return;
   const share = Math.round(S.greenShare(world) * 100), el = $('#green');
   if (green.world !== world || green.season !== season) Object.assign(green, { ref: share, season, came: green.world !== world && day % S.SEASON_DAYS > 0 });
-  Object.assign(green, { world, day, share });
+  Object.assign(green, { world, day, share, low: share < 50 && S.dryStage(world) >= 2 });
   const trend = share < green.ref - 3 ? '<i>▼</i>' : share > green.ref + 3 ? '<i class="up">▲</i>' : '';
-  el.classList.toggle('low', share < 50);
+  el.classList.toggle('low', green.low);
   el.style.setProperty('--v', share + '%');
   el.style.setProperty('--ref', green.ref + '%');
   setHTML(el.querySelector('.g-v'), share + '%' + trend);
@@ -8638,8 +8639,9 @@ function updateGreen() {
 }
 function greenTip() {
   const s = S.SEASONS[green.season % 4].name.toLowerCase();
-  return `<h4 class="fr">🌱 Green <b${green.share < 50 ? ' class="low"' : ''}>${green.share}%</b></h4><p>Land whose grass is still green</p>`
-    + tipList([['📅', green.came ? 'When you came' : `When the ${s} began`, green.ref + '%'], ['☀️', 'In the Dry Year', 'by the water only', true]]);
+  return `<h4 class="fr">🌱 Green <b${green.low ? ' class="low"' : ''}>${green.share}%</b></h4><p>Land whose grass is still green</p>`
+    + tipList([['📅', green.came ? 'When you came' : `When the ${s} began`, green.ref + '%'], ...(s === 'winter' ? [['❄️', 'In winter', 'the grass rests']] : []),
+      ['☀️', 'In the Dry Year', 'by the water only', true]]);
 }
 
 // which: '' the tools, 'sky' the weather, 'plant' the kinds of tree.
