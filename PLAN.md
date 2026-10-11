@@ -164,8 +164,8 @@ on its own. Then one or two people who've never seen it. If it fails, the notes 
   - **Losing is the meadow going barren and species going extinct.**
   - The picture first: a mock of the Dry Year (straw away from the water, green rings round it) next to a summer
     now, and a pond dug in it, to see if it says "dig here" before any sim is built.
-  - Open: how many years to the Dry Year; the one number on screen (the share still green?); ~~what the hedge does
-    in a drought~~ (a green lane along it, D2); the result at summer's end.
+  - Open: how many years to the Dry Year; ~~the one number on screen~~ (GREEN, the HUD's U5); ~~what the hedge does
+    in a drought~~ (a green lane along it, D2); ~~the result at summer's end~~ (D3: a card at the end of the autumn after).
   - Later (Axel wants it): sound and sight cues for the coming Dry Year, after Frostpunk, where you hear the cold
     coming and its arrival is unmistakable.
 - **Step 2, D1: the Dry Year itself (built 2026-10-11).** Only at `?keep`; the bare address prints the same, seed for seed.
@@ -223,22 +223,32 @@ on its own. Then one or two people who've never seen it. If it fails, the notes 
     strips alike, and game.js `plantEmoji` follows (a wilted field shows 🌾); the inspector says "🥀 Wilted: too far from
     the water". In the Dry Year bees go out while `DRY_FEW` (8) flowers are open, not `FEW_FLOWERS`, so a strip by the water
     still feeds a hive and one with none in reach lives on its honey.
-  - Losing: from its spring to the end of the autumn after, either (`dryDay`, `dryGone`, `dryLost`, event `dryloss`,
-    `w.dryYear.lost = { why, species, t }`, once): **barren**, `greenShare` under `BARREN` (0.08) for `BARREN_DAYS` (5)
-    days running; or **extinct**, a species with two at least as its spring started (`dryRollCall`: rabbits, foxes, bees,
-    crows, otters, and frogs) dying out. The last one gone hooks onto `migrate`'s `w.diedOut` moment (dd42abf), so a
-    newcomer on its way doesn't hide it; the frogs are looked at each day. The meadow runs on after.
+  - Losing: from its spring to `DRY_AFTER` (3) days after the rain comes back (`dryCounting`), either (`dryDay`, `dryGone`,
+    `dryLost`, event `dryloss`, `w.dryYear.lost = { why, species, t }`, once): **barren**, `greenShare` under `BARREN` (0.08)
+    for `BARREN_DAYS` (5) days running; or **extinct**, a species that lived here in that time with two at least dying out
+    (`dryRollCall`, at its spring's start and each day after, so a swarm that comes in its spring counts: rabbits, foxes,
+    bees, crows, otters, and frogs). The last one gone hooks onto `migrate`'s `w.diedOut` moment (dd42abf), so a newcomer on
+    its way doesn't hide it; the frogs are looked at each day. The meadow runs on after.
+  - Why it ends 3 days into the autumn (the lead's review): nearly every loss comes after the rain is back, barren on days 31
+    and 32 (its summer is days 25 to 29) and the bees on 30 to 34. But bees die out late in any autumn: in keeper meadows with
+    no Dry Year, in 5 of 16 that autumn, all but one on its days 33 and 34. Counted to the autumn's end, a third of the bee
+    losses were their usual crash; and counted only from the spring's first tick, a swarm that came days later could die out
+    in the drought with no loss (idle would have lost 14 of 16 had they counted). Ending 3 days after the rain (the end of
+    day 32) catches every barren and leaves the usual crash out (1 seed in 16); no hive died out on day 32 without a Dry Year.
   - The card (`#lost`, `showLost`, `lostWords`, `LOST_WHY`): "🥀 The meadow went barren in the Dry Year." or "😢 The last
     bee is gone: the Dry Year was too much for them.", one line why, Start again (`startAgain`: the same seed, a fresh keeper
     meadow with its Dry Year in the same year, kept in place of the lost one) and Keep watching (or Esc). Shown after the
     away card if it came while you were away; on the away card, in the news and pinned on the graph (🥀).
   - A keeper meadow kept mid-drought before D2 works out its `w.parched` when it opens (`unpackWorld`). No `KEEP_VERSION` bump.
-  - Balance, `node balance.js 3 16 <mode>` (seeds 1 to 8 are `3 8`): **idle** lost 10 of 16 (5 bees, 5 barren; 5 of the
-    first 8), **keep** 9 of 16 (5 bees, 4 barren), **diligent** 0 of 16 (8 of 8). Green at its lowest 4 to 15% idle, 5 to 19%
-    diligent. Most bee losses come in the autumn after (days 31 to 35), as the honey runs out. `keep` barely beats idle because
-    its strips are sown near the hive but not by the water: in 5 of its first 8 seeds both wilt in the Dry summer (open 0/0),
-    and those lost 4 times in 5; the 3 whose strips stayed open all came through.
-  - Fire: with the heatwave's lightning off in the Dry Year, idle still lost 10 of 16, keep 7, diligent 1 (5 barren).
+  - Balance, `node balance.js 3 16 <mode>` (seeds 1 to 8 are `3 8`): **idle** lost 12 of 16 (7 bees, 5 barren; 6 of the
+    first 8), **keep** 8 of 16 (4 bees, 4 barren), **diligent** 1 of 16 (bees, day 32.8). Green at its lowest 4 to 15% idle,
+    5 to 19% diligent. The bees go from day 27 to 32, as the honey runs out; barren on days 31 and 32. (Counted to the
+    autumn's end and from the spring's first tick only, as first built, it was 10, 9 and 0.) Idle loses a little more than
+    the half to two thirds aimed for. `keep` does less well than it might because its strips are sown near the hive but not
+    by the water: in 5 of its first 8 seeds both wilt in the Dry summer (open 0/0), and those lost 4 times in 5; the 3 whose
+    strips stayed open all came through.
+  - Fire (counted to the autumn's end): with the heatwave's lightning off in the Dry Year, idle still lost 10 of 16, keep 7,
+    diligent 1, against 10, 9 and 0 with it.
     The seeds shift (a fire is a coin flip on which ones), but fire alone hardly decides whether one is lost, so it stays.
   - The foxes with a keeper (D1 saw them higher in all 6 seeds): over 16 seeds mean fox-days were 602 with nothing done,
     626 with one extra random draw on day 1 and nothing else, 640 with the pond; foxes ate 32, 38 and 48 frogs. Mostly
@@ -247,6 +257,11 @@ on its own. Then one or two people who've never seen it. If it fails, the notes 
     out a frame's work 7.1 ms (sim 3.9) against 7.7 (4.1); following a rabbit at zoom 24, 6.0 (4.3) against 6.3 (4.2); sim
     130 to 145 µs a tick either way. In node, `greenSpots` 0.15% and `parch` 0.3% of the time, `greenSpot` and `hedgeLanes` too
     small to show.
+- **Step 2, D3: coming through (next, after Axel plays D2).** Decided 2026-10-11: play D2 first. Then:
+  - The number while placing: the pond's and the hedge's ghost says how many tiles it keeps green in the Dry Year (Terra
+    Nil's number before you commit). The meter itself is the HUD's GREEN (U5).
+  - Coming through: a card at the end of the autumn after (losses stop counting `DRY_AFTER` days after the rain, so by then
+    it's settled), who made it and how low the green went. The rain coming back stays its own news line before it.
 - **Step 2, the keeper's HUD (agreed 2026-10-11).** Axel: "Right now all the instructions just sit in a little box down
   in the left corner." Frostpunk puts the threat front and centre with its forecast, what you have along the top, a build
   menu at the bottom where each building explains itself, and a few short missions. At `?keep` only (the bare address

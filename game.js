@@ -5806,8 +5806,8 @@ function handleEvent(e) {
       addNews('🌧️ <b>The rain is back:</b> the Dry Year is over.');
       break;
     case 'dryloss': {                   // (?keep) the Dry Year was lost: a card, and the meadow runs on
-      const [title, line] = lostWords(e);
-      addNews(`${title.replace(/^(\S+) (.*)$/, '$1 <b>$2</b>')} ${line}`);
+      const why = e.why === 'barren' ? ' The meadow went barren.' : e.species === 'frogs' ? ' The last frog is gone.' : '';   // (the last of any other kind was just told)
+      addNews(`${e.why === 'barren' ? '🥀' : '😢'} <b>The Dry Year is lost.</b>${why}`);
       lostCard.pending = true;
       break;
     }

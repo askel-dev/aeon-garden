@@ -6785,6 +6785,7 @@ const GREEN_FOOD = 0.2;         // a hungry rabbit makes for one with this much 
 const GREEN_REACH = 40;         // from this far off at most
 const BARREN = 0.08;            // the Dry Year is lost if the green share stays under this
 const BARREN_DAYS = 5;          // for this many days running
+const DRY_AFTER = 3;            // a loss still counts this many days after the rain comes back (bees die out late in any autumn)
 
 // Where the meadow is in its Dry Year at tick t: 1 its spring, 2 its summer, 3 the autumn after, 0 before or after.
 function dryStage(w, t = w.tick) {
@@ -6916,31 +6917,34 @@ function drySeason(w) {
   }
 }
 
-// Losing the Dry Year: from its spring to the end of the autumn after, the meadow going barren (the green share under
-// BARREN for BARREN_DAYS days running) or a species it had at the start of its spring dying out (frogs too). Told once
-// (event 'dryloss', w.dryYear.lost); the meadow runs on after. A die-out before its spring is only news, as ever.
+// Losing the Dry Year: from its spring to DRY_AFTER days after the rain comes back (dryCounting), the meadow going barren
+// (the green share under BARREN for BARREN_DAYS days running) or a species that lived here in that time dying out (frogs
+// too). Told once (event 'dryloss', w.dryYear.lost); the meadow runs on after. A die-out outside it is only news, as ever.
+const dryCounting = w => dryStage(w) > 0 && w.tick < dryTo(w) + DRY_AFTER * TPD;
 
-// Who lives in the meadow as the Dry Year's spring starts, two at least (one left over from the winter is all but gone
-// already): those it can be lost by.
+// Who lives in the meadow, two at least (one left over from the winter is all but gone already), added to those the Dry
+// Year can be lost by: at the start of its spring, and each day after (a swarm that comes in its spring counts too).
 function dryRollCall(w) {
-  w.dryYear.had = KINDS.filter(s => (s !== 'owl' || OWLS) && w.count[s] >= 2);
-  if (w.frogCount >= 1) w.dryYear.had.push('frogs');
+  const had = w.dryYear.had ??= [];
+  for (const s of KINDS) if ((s !== 'owl' || OWLS) && w.count[s] >= 2 && !had.includes(s)) had.push(s);
+  if (w.frogCount >= 1 && !had.includes('frogs')) had.push('frogs');
 }
 
-// Once a day (newDay): barren, or the frogs gone.
+// Once a day (newDay): barren, or the frogs gone; then the roll call.
 function dryDay(w) {
-  const dy = w.dryYear, stage = dryStage(w);
-  if (!stage || dy.lost) return;
+  const dy = w.dryYear;
+  if (!dryCounting(w) || dy.lost) return;
   dy.had ??= [];
   dy.barren = greenShare(w) < BARREN ? (dy.barren || 0) + 1 : 0;
   if (dy.barren >= BARREN_DAYS) dryLost(w, 'barren');
   else if (dy.had.includes('frogs') && w.frogCount < 1) dryLost(w, 'extinct', 'frogs');
+  else dryRollCall(w);
 }
 
-// The last of a species gone (migrate, before any newcomers): lost, if it lived here as the Dry Year's spring started.
+// The last of a species gone (migrate, before any newcomers): lost, if it lived here in the Dry Year.
 function dryGone(w, s) {
   const dy = w.dryYear;
-  if (!dy.lost && dy.had && dy.had.includes(s) && dryStage(w)) dryLost(w, 'extinct', s);
+  if (!dy.lost && dy.had && dy.had.includes(s) && dryCounting(w)) dryLost(w, 'extinct', s);
 }
 
 function dryLost(w, why, species = '') {
