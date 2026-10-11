@@ -6319,7 +6319,7 @@ const DAYBREAK_MS = { day: [6000, 3800], season: 4800, year: 4800, milestone: 80
 const MILESTONES = [1, 5, 10, 25, 50, 75];             // and every 50 after
 const YEAR_WORDS = { 1: 'One', 5: 'Five', 10: 'Ten', 25: 'Twenty-five', 50: 'Fifty', 75: 'Seventy-five', 100: 'A hundred' };
 const YOUNG_WORD = { rabbit: 'kits', fox: 'cubs', crow: 'chicks', owl: 'owlets', otter: 'cubs' };
-const daybreak = { el: $('#daybreak'), day: -1, timer: 0, said: [], season: null, year: null };
+const daybreak = { el: $('#daybreak'), day: -1, timer: 0, said: [], season: null, year: null, hold: 0 };   // hold: no day's line till then (?keep: a task done)
 const isMilestone = y => MILESTONES.includes(y) || (y > 0 && y % 50 === 0);
 const kindsHere = () => S.KINDS.filter(s => s !== 'bee' && (s !== 'owl' || S.OWLS));
 const anA = s => `${/^[aeiou]/i.test(s) ? 'an' : 'a'} ${s}`;
@@ -6340,7 +6340,7 @@ function daybreakTick() {
   const roundSeason = seasonStart ? roundUp('season', ck) : '', roundYear = yearStart ? roundUp('year', ck) : '';
   if (yearStart && isMilestone(ck.year - 1)) return;      // it has its own line
   const unit = ui.speed <= 4 ? 'day' : ui.speed <= 15 ? 'season' : 'year';
-  if (unit === 'season' && !seasonStart || unit === 'year' && !yearStart || !canBreak()) return;
+  if (unit === 'season' && !seasonStart || unit === 'year' && !yearStart || !canBreak() || performance.now() < daybreak.hold) return;
   const name = S.SEASONS[ck.season].name;
   let head, more;
   if (unit === 'year') { head = `<b class="fr">Year ${ck.year}</b>`; more = roundYear; }
@@ -8487,10 +8487,14 @@ function stripFacts(f, hives) {
 // A hedge the keeper planted: its whips standing, the one in its middle (what a link to it opens), its stage, and in
 // the inspector what it is and what comes next.
 const hedgeWhips = h => world.decor.filter(d => d.hedge === h.id && S.standing(d));
-function hedgeLink(h, text) {
+function hedgeMiddle(h) {
   let best = null, bd = Infinity;
   for (const d of world.decor) if (d.hedge === h.id && S.standing(d) && (d.x - h.x) ** 2 + (d.y - h.y) ** 2 < bd) { best = d; bd = (d.x - h.x) ** 2 + (d.y - h.y) ** 2; }
-  return best ? thingLink('tree', best.id, text) : text;
+  return best;
+}
+function hedgeLink(h, text) {
+  const d = hedgeMiddle(h);
+  return d ? thingLink('tree', d.id, text) : text;
 }
 const HEDGE_STAGE = { whips: 'newly planted', young: 'thick enough to hide a rabbit', blossom: 'blossomed', haws: 'bearing haws' };
 const hedgeStage = h => (h.haws ? 'haws' : h.blossom ? 'blossom' : h.young ? 'young' : 'whips');
@@ -8572,11 +8576,9 @@ function release(species, wx, wy) {
 
 // ------------------------------------------------------------------ the ring: right-click the meadow
 
-// The keeper's tools at ?keep: the button, its emoji, what it does, and the keep card's hint. (Their buttons are
-// hidden in the page till ?keep shows them.)
-const KEEP_TOOLS = [['look', '🔍', 'Look around'], ['pond', '⛏️', 'Dig a pond', 'Paint the water with a drag. A wide blob gets a deep middle; the lower the ground, the longer it lasts'],
-  ['sow', '🌼', 'Sow flowers', 'Drag a strip of meadow flowers. Sown in spring or summer it blooms within days, a new flower each season, and the bees come'],
-  ['hedge', '🌿', 'Plant a hedge', 'Drag a row of hawthorn whips. Within a season or two a rabbit running from a fox can hide in it, and the spring after it blossoms']];
+// The keeper's tools at ?keep: the button, its emoji and what it does. (Their buttons are hidden in the page till
+// ?keep shows them.)
+const KEEP_TOOLS = [['look', '🔍', 'Look around'], ['pond', '⛏️', 'Dig a pond'], ['sow', '🌼', 'Sow flowers'], ['hedge', '🌿', 'Plant a hedge']];
 // At ?keep the ring holds only the keeper's tools (without Look); an empty ring doesn't open.
 const RING_TOOLS = KEEP ? KEEP_TOOLS.filter(([k]) => k !== 'look')
   : [['rabbit', '🐇', 'Release a rabbit'], ['fox', '🦊', 'Release a fox'], ['bee', '🐝', 'Release a bee'], ['crow', '🐦‍⬛', 'Release a crow'], ['owl', '🦉', 'Release an owl'], ['grass', '🌱', 'Grow grass'],
@@ -8969,9 +8971,10 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'forecast' && canBreak()) showBreak('day', '<b class="fr">The Dry Year</b>', forecast.el.title.replace(/^The Dry Year: n/, 'N'), 9000);
   else if (t.dataset.act === 'guide') { openGuide(); guideTick(performance.now()); }
   else if (t.dataset.act === 'guide-shut') { shutGuide(); guideTick(performance.now()); }
-  else if (t.dataset.act === 'keep-fold') { foldKeepCard(); guideTick(performance.now()); }
   else if (t.dataset.act === 'lost-again') startAgain();
   else if (t.dataset.act === 'lost-watch') showLost(false);
+  else if (t.dataset.act === 'tasks-fold') foldTasks();
+  else if (t.dataset.act?.startsWith('task:')) taskTap(t.dataset.act.slice(5));
   else if (t.dataset.act === 'guide-skip') { Object.assign(guide, { step: GUIDE_STEPS, wait: 0 }); saveGuide(); guideTick(performance.now()); }
   else if (t.dataset.act === 'guide-fold') { guide.fold = !guide.fold; guide.fresh = ''; saveGuide(); guideTick(performance.now()); }
   else if (t.dataset.act?.startsWith('try:')) tryThing(t.dataset.act.slice(4));
@@ -8997,16 +9000,9 @@ document.addEventListener('click', e => {
     if (yoursOpen()) toggleYours(false);
     if (c && c.alive) { select(c.id); startNaming(); }
   }
-  else if (t.dataset.thing?.startsWith('water:')) {     // a pond the keeper dug: off to look at it
-    const v = world.waters[+t.dataset.thing.slice(6)];
-    if (t.closest('#yours')) toggleYours(false);
-    if (v) { const at = dugSpot(v.id); select(0); ui.follow = false; cam.x = at.x; cam.y = at.y; clampCam(); pick('water', { body: v, ...at }); }
-  }
   else if (t.dataset.thing) {
-    const [kind, id] = t.dataset.thing.split(':'), it = (kind === 'hive' ? world.hives : kind === 'tree' ? world.decor.filter(o => o.tree) : world.fields).find(o => o.id === +id);
     if (t.closest('#yours')) toggleYours(false);
-    if (it?.strip || it?.hedge) { select(0); ui.follow = false; cam.x = it.x; cam.y = it.y; clampCam(); }   // a strip or a hedge the keeper made: off to look at it
-    if (it) pick(kind, it);
+    goToThing(t.dataset.thing);
   }
   else if (t.dataset.id) {
     if (ui.stats.open) toggleStats(false);
@@ -9015,6 +9011,20 @@ document.addEventListener('click', e => {
     if (c) select(c.id);
   }
 });
+
+// A thing a link names ('water:3', 'field:12', 'tree:40', 'hive:2'), shown in the inspector; one the keeper made
+// (a pond, a strip, a hedge's whip) is far off, likely, so the camera goes to look at it too.
+function goToThing(thing) {
+  const [kind, id] = thing.split(':');
+  if (kind === 'water') {
+    const v = world.waters[+id];
+    if (v) { const at = dugSpot(v.id); select(0); ui.follow = false; cam.x = at.x; cam.y = at.y; clampCam(); pick('water', { body: v, ...at }); }
+    return;
+  }
+  const it = (kind === 'hive' ? world.hives : kind === 'tree' ? world.decor.filter(o => o.tree) : world.fields).find(o => o.id === +id);
+  if (it?.strip || it?.hedge) { select(0); ui.follow = false; cam.x = it.x; cam.y = it.y; clampCam(); }
+  if (it) pick(kind, it);
+}
 
 // P copies a picture of the whole meadow, SHOT pixels a tile, as the game draws it. The camera
 // looks at all of it for one frame and is put straight back, so the screen never shows it.
@@ -9320,18 +9330,34 @@ function tryThing(k) {
   guideTick(performance.now());
 }
 
-// ?keep has no guide: one small card in its place says what the keeper's tools do, and a tap on one puts it in your
-// hand. (The Dry Year's countdown is on the ribbon under the watch, forecastTick.) A tap on its head folds it to its
-// title (KEEP_CARD keeps that).
+// ?keep has no guide: TASKS, top left (#tasks), three of them, each a verb and → what to wait for, and done, what
+// happened. Worked out from the world on the cards' beat, never kept: a pond the frogs found, a strip the bees found,
+// a hedge a rabbit hid in. The rows are built once a meadow, so a tap never lands on a new button; then only their
+// small line and classes change. What's slow to work out (how far the frogs are, when a strip blooms or a hedge is
+// thick) only when the day does, or the number of ponds, strips or hedges. A task done chimes, flashes and gets the
+// big line under the watch; one already done as the meadow opens (or while you were away) is only noted. A tap on a
+// task puts its tool in your hand, or on a done one goes to look at what did it. On a phone the card folds to a chip
+// of the icons (KEEP_CARD keeps the fold) and opens for a while when a task gets done.
 const KEEP_CARD = 'aeon-garden-keep-card';
-const keepCard = { on: false, fold: false, html: '' };
-function startKeepCard() {
-  keepCard.on = true;
-  try { keepCard.fold = localStorage.getItem(KEEP_CARD) === '1'; } catch (e) { /* unfolded, then */ }
+const TASKS = [
+  { k: 'pond', e: '⛏️', verb: 'Dig a pond', wait: 'frogs move in', got: '🐸' },
+  { k: 'sow', e: '🌼', verb: 'Sow flowers', wait: 'bees come', got: '🐝' },
+  { k: 'hedge', e: '🌿', verb: 'Plant a hedge', wait: 'a rabbit hides in it', got: '🐇' },
+];
+const TASK_PEEK_MS = 5000;                // a phone shows the card this long when one gets done
+const TASK_LINE_MS = 7000;                // and a task done stays up under the watch this long
+const tasks = { el: $('#tasks'), on: false, w: null, fold: false, peek: 0, key: '', strips: [], more: {}, done: null, fresh: {}, shown: [] };
+
+function startTasks() {
+  tasks.on = true;
+  let kept = null;
+  try { kept = localStorage.getItem(KEEP_CARD); } catch (e) { /* as it starts, then */ }
+  tasks.fold = kept ? kept === '1' : narrow();   // open on a desktop, folded on a phone
 }
-function foldKeepCard() {
-  keepCard.fold = !keepCard.fold;
-  try { localStorage.setItem(KEEP_CARD, keepCard.fold ? '1' : '0'); } catch (e) { /* fine */ }
+function foldTasks(fold = !tasks.el.classList.contains('fold')) {
+  tasks.fold = fold; tasks.peek = 0;
+  try { localStorage.setItem(KEEP_CARD, fold ? '1' : '0'); } catch (e) { /* fine */ }
+  tasksTick(performance.now());
 }
 
 // (?keep) Losing the Dry Year (sim.js dryLost): one plain card, the meadow going on behind it. Start again: the same seed,
@@ -9368,25 +9394,88 @@ function startAgain() {
 }
 $('#lost').addEventListener('click', e => { if (e.target.id === 'lost') showLost(false); });
 
-function keepCardTick() {
-  if (lostCard.pending && !away.on && !awayOpen()) showLost();
-  const show = keepCard.on && !away.on, box = $('#guide');
-  if (box.classList.contains('hidden') === show) box.classList.toggle('hidden', !show);
-  if (!show) return;
-  const verbs = KEEP_TOOLS.filter(([k]) => k !== 'look'), touch = matchMedia('(pointer: coarse)').matches;
-  const html = `<div class="g-top"><button class="g-head" data-act="keep-fold" aria-expanded="${!keepCard.fold}"><b class="g-title fr">🌱 Shape the meadow</b>
-      <span class="win-btn${keepCard.fold ? ' grow' : ''}" aria-hidden="true"></span></button></div>
-    ${verbs.length ? `<ul class="g-list">${verbs.map(([k, e, label, hint]) => `<li><button data-tool="${k}"><span class="e">${e}</span>
-      <span><b>${label}</b><small>${hint}</small></span><span class="tick"></span></button></li>`).join('')}</ul>` : ''}
-    <p class="g-hint g-sub">${touch ? '⏸ stops time' : 'Space stops time'}, and you can still work while it’s stopped. Then see who comes.</p>`;
-  if (html !== keepCard.html) { box.innerHTML = html; keepCard.html = html; }
-  if (box.classList.contains('fold') !== keepCard.fold) box.classList.toggle('fold', keepCard.fold);
+function buildTasks() {
+  Object.assign(tasks, { w: world, key: '', done: null, fresh: {}, shown: [] });
+  tasks.el.innerHTML = `<button class="t-head" data-act="tasks-fold"><span class="cap">Tasks</span><b class="t-count"></b>
+    <span class="t-chip" aria-hidden="true">${TASKS.map(t => `<span class="ce">${t.e}</span>`).join('')}</span><span class="t-fold" aria-hidden="true"></span></button>
+    <ul>${TASKS.map(t => `<li><button data-act="task:${t.k}"><span class="e">${t.e}</span><span><b>${t.verb}</b><small></small></span><span class="tick"></span></button></li>`).join('')}</ul>`;
+  tasks.rows = [...tasks.el.querySelectorAll('li')];
+  tasks.chips = [...tasks.el.querySelectorAll('.ce')];
+}
+
+// What each task is waiting on, once a day: how far the nearest frogs are from a pond they haven't found, when a strip
+// not yet in flower blooms (as the Flowers tool's card says it), and when a hedge will be thick enough.
+function tasksMore(ponds, hedges) {
+  const more = {};
+  let near = Infinity;
+  for (const p of ponds) if (!p.found) { const n = S.frogsNear(world, p.x, p.y); if (n >= 0 && n < near) near = n; }
+  if (ponds.some(p => !p.found)) more.pond = near === Infinity ? 'none in reach' : near <= 2 ? 'right here' : `${near} tiles away`;
+  if (tasks.strips.length && !tasks.strips.some(f => f.flowered)) more.sow = `blooms ${BLOOM_SOON[S.stripBloom(world)]}`;
+  const h = hedges.find(h => !h.young), whips = h ? hedgeWhips(h) : [];
+  if (whips.length) more.hedge = `thick ${comingWhen(S.hedgeForecast(world, whips.reduce((a, d) => a + d.size, 0) / whips.length).young)}`;
+  return more;
+}
+
+function tasksTick(now) {
+  if (lostCard.pending && !away.on && !awayOpen()) showLost();   // (?keep: the Dry Year lost, once the away card is done)
+  const show = tasks.on && !away.on;
+  if (tasks.el.classList.contains('hidden') === show) tasks.el.classList.toggle('hidden', !show);
+  if (!tasks.on) return;
+  if (world !== tasks.w) buildTasks();
+  const ponds = world.ponds || [], hedges = world.hedges || [];
+  const key = `${Math.floor(world.tick / S.TPD)}:${ponds.length}:${world.fields.length}:${hedges.length}`;
+  if (key !== tasks.key) { tasks.key = key; tasks.strips = world.fields.filter(f => f.strip); tasks.more = tasksMore(ponds, hedges); }
+  const pond = ponds.find(p => p.found), strip = tasks.strips.find(f => f.found), hedge = hedges.find(h => h.escapes > 0);
+  const got = { pond: pond && `Frogs moved into ${world.waters[pond.id].name}`, sow: strip && `Bees found ${strip.name}`, hedge: hedge && `A rabbit hid in ${hedge.name}` };
+  const begun = { pond: ponds.length, sow: tasks.strips.length, hedge: hedges.length }, n = TASKS.filter(t => got[t.k]).length;
+  const first = !tasks.done;
+  tasks.done ??= {};
+  for (const t of TASKS) {
+    if (!got[t.k] || tasks.done[t.k]) continue;
+    tasks.done[t.k] = true;
+    if (first || away.on) continue;         // already done as the meadow opened, or the away card tells it
+    tasks.fresh[t.k] = now + 1200;
+    chime('tick');
+    if (narrow()) tasks.peek = now + TASK_PEEK_MS;
+    if (canBreak()) {
+      showBreak('day', `<b class="fr">${t.got} ${esc(got[t.k])}</b>`, `Task done · ${n}/${TASKS.length}`, TASK_LINE_MS);
+      daybreak.hold = now + TASK_LINE_MS;   // the next day's line waits
+    }
+  }
+  const next = TASKS.find(t => !got[t.k] && !begun[t.k]);
+  TASKS.forEach((t, i) => {
+    const small = got[t.k] ? `${t.got} ${got[t.k]}` : `→ ${t.wait}${begun[t.k] && tasks.more[t.k] ? ` · ${tasks.more[t.k]}` : ''}`;
+    const cls = [got[t.k] ? 'done' : begun[t.k] ? 'wait' : '', t === next ? 'next' : '', now < (tasks.fresh[t.k] || 0) ? 'fresh' : ''].filter(Boolean).join(' ');
+    const was = tasks.shown[i] || [];
+    if (was[0] !== small) tasks.rows[i].querySelector('small').textContent = small;
+    if (was[1] !== cls) { tasks.rows[i].className = cls; tasks.chips[i].className = `ce ${cls}`; }
+    tasks.shown[i] = [small, cls];
+  });
+  const count = `${n}/${TASKS.length}`, fold = tasks.fold && now >= tasks.peek;
+  if (tasks.shown.count !== count) { tasks.shown.count = count; tasks.el.querySelector('.t-count').textContent = count; }
+  if (tasks.el.classList.contains('fold') !== fold) {
+    tasks.el.classList.toggle('fold', fold);
+    tasks.el.querySelector('.t-head').setAttribute('aria-expanded', !fold);
+  }
+  const html = document.documentElement, open = !fold && show, peek = open && now < tasks.peek;   // (a phone makes room for it)
+  if (html.classList.contains('tasks-open') !== open) html.classList.toggle('tasks-open', open);
+  if (html.classList.contains('tasks-peek') !== peek) html.classList.toggle('tasks-peek', peek);
+}
+
+// A tap on a task: its tool in your hand, or a done one, off to look at what did it. A phone folds the card away.
+function taskTap(k) {
+  if (tasks.done?.[k]) {
+    const pond = world.ponds?.find(p => p.found), strip = tasks.strips.find(f => f.found), d = k === 'hedge' && hedgeMiddle(world.hedges.find(h => h.escapes > 0));
+    const thing = k === 'pond' ? pond && `water:${pond.id}` : k === 'sow' ? strip && `field:${strip.id}` : d && `tree:${d.id}`;
+    if (thing) goToThing(thing);
+  } else if (ui.tool !== k) setTool(k);
+  if (narrow()) foldTasks(true);
 }
 
 // A few times a second (the cards' beat): the steps wait for what they ask, and a few things on the list
 // are easier to see done than to catch.
 function guideTick(now) {
-  if (KEEP) { keepCardTick(); return; }
+  if (KEEP) { tasksTick(now); return; }
   const show = guide.on && !intro.on && !away.on;
   if ($('#guide').classList.contains('hidden') === show) $('#guide').classList.toggle('hidden', !show);
   if (!show || idle.on) { guide.tickWas = world.tick; return; }
@@ -10090,7 +10179,7 @@ function begin(rec) {
     hush(true);                                         // nothing to count yet: the bars and cards wait
     setSpeed(0);
     if (world.family && !calm) introShot();
-  } else if (KEEP) setTimeout(startKeepCard, 1500);
+  } else if (KEEP) setTimeout(startTasks, 1500);
   else { homeTip(30000); setTimeout(() => startGuide(false), 2500); }
   if (back && !rec.paused && Date.now() - rec.at > AWAY_MIN) startAway();
   requestAnimationFrame(frame);

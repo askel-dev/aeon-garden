@@ -334,7 +334,7 @@
 
   /* ---- welcome */
   /* the terrain lab (?lab) brings its own panel, see terrain-lab.js */
-  body.lab #meadow, body.lab #watch, body.lab #news, body.lab #guide, body.lab #toolbar, body.lab #hud-right, body.lab #ring, body.lab #keep-top, body.lab #tool-tip, body.lab #forecast { display: none; }
+  body.lab #meadow, body.lab #watch, body.lab #news, body.lab #guide, body.lab #toolbar, body.lab #hud-right, body.lab #ring, body.lab #keep-top, body.lab #tool-tip, body.lab #forecast, body.lab #tasks { display: none; }
 
   #welcome { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(60, 70, 30, 0.28); z-index: 10; transition: opacity 0.7s ease; }
   #welcome.leaving { opacity: 0; pointer-events: none; }
@@ -533,8 +533,8 @@
     border: none; background: none; padding: 8px 4px; font: 800 13px Nunito, ui-rounded, system-ui, sans-serif; color: rgba(243, 231, 207, 0.5); cursor: pointer; }
   #intro .skip:hover { color: #f3e7cf; }
   body:not(.intro) #intro .skip { visibility: hidden; }
-  body.hush :is(#meadow, #watch, #news, #guide, #toolbar, #hud-right, #keep-top, #tool-tip, #forecast) { visibility: hidden; }
-  body.ui-in :is(#meadow, #watch, #news, #guide, #toolbar, #hud-right, #keep-top, #tool-tip, #forecast) { animation: ui-in 1s ease both; }
+  body.hush :is(#meadow, #watch, #news, #guide, #toolbar, #hud-right, #keep-top, #tool-tip, #forecast, #tasks) { visibility: hidden; }
+  body.ui-in :is(#meadow, #watch, #news, #guide, #toolbar, #hud-right, #keep-top, #tool-tip, #forecast, #tasks) { animation: ui-in 1s ease both; }
   @keyframes ui-in { from { opacity: 0; } }
   @media (prefers-reduced-motion: reduce) { #intro .bar, #intro .line, #welcome, #welcome .card { transition-duration: 0.01s; } }
   /* ---- the idle camera (game.js, startIdle): the intro's bars and lines, the cards faded away, and a dip to
@@ -542,7 +542,7 @@
   #intro .dip { position: absolute; inset: 0; background: #1d1a15; opacity: 0; transition: opacity 0.4s ease; }
   #intro .dip.on { opacity: 1; }
   body.idle #intro .bar { transform: none; }
-  body.idle :is(#meadow, #watch, #news, #guide, #toolbar, #hud-right, #keep-top, #tool-tip, #forecast) { opacity: 0; visibility: hidden; transition: opacity 1s ease, visibility 0s 1s; }
+  body.idle :is(#meadow, #watch, #news, #guide, #toolbar, #hud-right, #keep-top, #tool-tip, #forecast, #tasks) { opacity: 0; visibility: hidden; transition: opacity 1s ease, visibility 0s 1s; }
   .hidden { display: none !important; }
 
   /* ---- the stats page, over everything */
@@ -773,8 +773,6 @@
   html.keep #meadow { z-index: 4; }
   html.keep #meadow.mini { top: calc(env(safe-area-inset-top, 0px) + 6px); left: calc(env(safe-area-inset-left, 0px) + 6px); background: none; box-shadow: none; }
   html.keep #meadow:not(.mini) { top: calc(var(--keep-top-h) + env(safe-area-inset-top, 0px) + 16px); }
-  /* the keep card grows up from the bar and stops under the top one (a phone on its side has little room between) */
-  html.keep #guide { max-height: calc(100% - var(--bar, 92px) - var(--keep-top-h) - env(safe-area-inset-top, 0px) - 24px); overflow-y: auto; }
   html.keep #mini-sky { display: none; }   /* the season is on the watch, the weather by the time */
   /* the time and the menus in the top bar on the right; the inspector hangs under the bar and ends over the tools */
   html.keep #meadow ~ #hud-right { top: calc(env(safe-area-inset-top, 0px) + 6px); right: calc(env(safe-area-inset-right, 0px) + 8px); bottom: var(--bar, 100px); gap: 20px; }
@@ -812,7 +810,7 @@
   html.keep #tool-tip li em { font-style: normal; font-size: 12.5px; font-weight: 800; color: var(--muted); white-space: nowrap; }
   html.keep #tool-tip li.dry, html.keep #tool-tip li.dry em { color: #8a4b12; font-weight: 800; }
   @media (pointer: coarse) { html.keep :is(#toolbar, #tool-tip) kbd { display: none; } }   /* no keys to press */
-  /* phones: slimmer bars, the four tools one row in the middle (no corner button), the news and the keep card full width */
+  /* phones: slimmer bars, the four tools one row in the middle (no corner button), the news full width */
   @media (max-width: 760px), (max-height: 500px) {
     html.keep { --keep-top-h: 52px; --keep-foot-h: 68px; --gauge-room: 0px; }
     html.keep #meadow.mini { top: calc(env(safe-area-inset-top, 0px) + 4px); left: calc(env(safe-area-inset-left, 0px) + 2px); }
@@ -822,15 +820,13 @@
     html.keep #toolbar .tool { width: 60px; height: 52px; gap: 3px; }
     html.keep #toolbar .tool .e { font-size: 25px; }
     html.keep #toolbar .tool .l { font-size: 11.5px; }
-    html.keep #news { bottom: calc(var(--bar, 84px) + 8px + var(--guide-h, 0px)); width: calc(100% - var(--left) - var(--right)); }
-    html.keep #guide { bottom: calc(var(--bar, 84px) + 8px); width: calc(100% - var(--left) - var(--right)); max-width: none; }
+    html.keep #news { bottom: calc(var(--bar, 84px) + 8px); width: calc(100% - var(--left) - var(--right)); }
   }
   @media (max-width: 760px) and (min-height: 501px) {
     html.keep #inspector.strip { width: 100%; }   /* folded, the whole width just over the bar */
-    html.keep body.ins-strip #news { bottom: calc(var(--bar, 84px) + 64px + var(--guide-h, 0px)); }
-    html.keep body.ins-strip #guide { bottom: calc(var(--bar, 84px) + 64px); }
+    html.keep body.ins-strip #news { bottom: calc(var(--bar, 84px) + 64px); }
   }
-  @media (max-height: 500px) { html.keep :is(#news, #guide) { width: min(330px, calc(100% - var(--left) - var(--right))); } }
+  @media (max-height: 500px) { html.keep #news { width: min(330px, calc(100% - var(--left) - var(--right))); } }
   /* ?keep: how each kind is doing, in the small card in the top bar (game.js updateSpeciesMarks). The mark hangs off the
      count and takes no width, so the row doesn't shift when one changes. */
   html.keep .mini-pop { cursor: pointer; }
@@ -910,7 +906,58 @@
     html.keep.ribbon #daybreak { top: calc(var(--forecast-top) + 54px); }
   }
   @media (max-width: 760px) and (min-height: 501px) { html.keep #meadow:not(.mini) ~ #forecast { display: none; } }   /* (with the watch) */
-  @media (max-height: 500px) { html.keep.ribbon :is(#news, #guide) { width: min(330px, calc(50% - 96px - var(--left))); } }   /* (on its side, clear of the ribbon) */
+  @media (max-height: 500px) { html.keep.ribbon #news { width: min(330px, calc(50% - 96px - var(--left))); } }   /* (on its side, clear of the ribbon) */
+  /* ---- ?keep: TASKS, top left under the top bar (game.js tasksTick), with a brass top edge like a tool's card: a brass
+     capital label and the count, then the three tasks, the next one lit and a done one struck through with what
+     happened. A tap on its head folds it to that; on a phone, folded, it's a chip of the three icons (html.tasks-open
+     while it isn't, to make room). Away while the meadow's big card is open, which hangs in the same place. */
+  #tasks { display: none; }
+  html.keep #tasks:not(.hidden) { display: block; position: fixed; z-index: 4; left: var(--left); top: calc(var(--keep-top-h) + env(safe-area-inset-top, 0px) + 18px);
+    width: 236px; max-height: calc(100% - var(--keep-top-h) - var(--bar, 100px) - 30px); overflow-y: auto; padding: 13px 10px 8px 14px;
+    border-radius: 0 0 16px 16px; background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); color: var(--ink); animation: pop-in 0.35s ease-out; }
+  html.keep #tasks::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 4px; background: var(--brass); border-radius: 2px 2px 0 0; }
+  html.keep #meadow:not(.mini) ~ #tasks { display: none; }
+  html.keep #tasks .t-head { display: flex; align-items: center; gap: 8px; width: 100%; padding: 1px 4px 0 0; border: none; background: none;
+    font: inherit; color: inherit; text-align: left; cursor: pointer; }
+  html.keep #tasks .cap { flex: 1; text-transform: uppercase; letter-spacing: 0.11em; font-size: 11.5px; font-weight: 900; color: #8a5e22; }
+  html.keep #tasks .t-count { font-size: 14px; font-weight: 900; font-variant-numeric: tabular-nums; }
+  html.keep #tasks .t-fold::after { content: '▴'; color: var(--muted); font-size: 12px; }
+  html.keep #tasks.fold .t-fold::after { content: '▾'; }
+  html.keep #tasks .t-chip, html.keep #tasks.fold ul { display: none; }
+  html.keep #tasks ul { list-style: none; margin: 6px 0 0 -6px; padding: 0; }
+  html.keep #tasks li button { display: grid; grid-template-columns: 26px 1fr 14px; gap: 8px; align-items: start; width: 100%; padding: 6px; border: none;
+    border-radius: 10px; background: transparent; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+  html.keep #tasks li button:hover { background: rgba(0, 0, 0, 0.045); }
+  html.keep #tasks li.next button { background: rgba(233, 138, 75, 0.13); }
+  html.keep #tasks li.fresh button { animation: tried 1.2s ease-out; }
+  html.keep #tasks li .e { font-size: 19px; text-align: center; line-height: 1.2; }
+  html.keep #tasks li b { display: block; font-weight: 800; font-size: 15px; line-height: 1.25; }
+  html.keep #tasks li small { display: block; margin-top: 2px; color: var(--muted); font-size: 13px; font-weight: 700; line-height: 1.3; }
+  html.keep #tasks li.wait small::before { content: '⏳ '; }
+  html.keep #tasks li.done b { color: var(--muted); text-decoration: line-through; text-decoration-color: rgba(90, 70, 40, 0.35); }
+  html.keep #tasks li.done small { color: #4f7f3a; font-style: italic; }
+  html.keep #tasks li.done .e { opacity: 0.6; }
+  html.keep #tasks li.done .tick::before { content: '✓'; color: #4f8a35; font-weight: 900; }
+  html.keep #tasks li.next .tick::before { content: '›'; color: var(--accent); font-weight: 900; font-size: 16px; }
+  @media (max-width: 760px), (max-height: 500px) {
+    html.keep #tasks:not(.hidden) { z-index: 5; left: calc(env(safe-area-inset-left, 0px) + 10px); top: calc(var(--keep-top-h) + env(safe-area-inset-top, 0px) + 12px); }
+    html.keep #tasks.fold { width: auto; padding: 0 9px; border-radius: 0 0 12px 12px; }
+    html.keep #tasks.fold .t-head { height: 36px; padding: 2px 0 0; gap: 6px; }
+    html.keep #tasks.fold :is(.cap, .t-count) { display: none; }
+    html.keep #tasks.fold .t-chip { display: flex; align-items: center; gap: 6px; }
+    html.keep #tasks .ce { position: relative; font-size: 18px; line-height: 1; }
+    html.keep #tasks .ce.done { opacity: 0.55; }
+    html.keep #tasks .ce.done::after { content: '✓'; position: absolute; right: -5px; bottom: -3px; display: grid; place-items: center; width: 13px; height: 13px;
+      border-radius: 50%; background: #4f8a35; color: #fff; font-size: 11px; font-weight: 900; line-height: 1; }
+    html.keep #tasks .ce.next { filter: drop-shadow(0 0 3px rgba(233, 138, 75, 0.9)); }
+  }
+  /* on its side there's little height: closer rows, and the news waits while it opens to show a task done (html.tasks-peek) */
+  @media (max-height: 500px) {
+    html.keep #tasks:not(.fold) { padding-top: 11px; } html.keep #tasks li button { padding: 4px 6px; } html.keep #tasks li small { margin-top: 0; font-size: 12.5px; }
+    html.keep.tasks-peek #news { visibility: hidden; }
+  }
+  /* upright, there's no room beside the watch: open, the card hangs over the ribbon, and the big line goes under it */
+  @media (max-width: 760px) and (min-height: 501px) { html.keep.tasks-open #daybreak { top: calc(var(--keep-top-h) + env(safe-area-inset-top, 0px) + 236px); } }
 </style>
 </head>
 <body>
@@ -973,6 +1020,8 @@
 <div id="forecast" class="hidden" data-act="forecast"><div class="pips"></div><div class="pip-line"></div></div>
 
 <div id="news"></div>
+<!-- ?keep: TASKS, top left (game.js tasksTick) -->
+<aside id="tasks" class="hidden" aria-live="polite"></aside>
 <!-- after the intro: three steps, then things to try (game.js, the guide) -->
 <aside id="guide" class="card hidden" aria-live="polite"></aside>
 <div id="place-label" class="hidden"></div>
