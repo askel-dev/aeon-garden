@@ -516,6 +516,7 @@
   .g-list .fresh { animation: tried 1.2s ease-out; }
   .g-list .tick { color: #4f8a35; font-weight: 900; }
   @keyframes tried { from { background: var(--accent-soft); } }
+  @keyframes task-done { 30% { transform: scale(1.5); } }
   #guide.fold .g-list, #guide.fold .g-sub { display: none; }
 
   /* ---- the first visit's intro (game.js, startIntro): bars top and bottom, the story under the
@@ -950,11 +951,11 @@
     html.keep #tasks .ce.done::after { content: '✓'; position: absolute; right: -5px; bottom: -3px; display: grid; place-items: center; width: 13px; height: 13px;
       border-radius: 50%; background: #4f8a35; color: #fff; font-size: 11px; font-weight: 900; line-height: 1; }
     html.keep #tasks .ce.next { filter: drop-shadow(0 0 3px rgba(233, 138, 75, 0.9)); }
+    html.keep #tasks .ce.fresh { animation: task-done 1.2s ease-out; }   /* a task just done, folded */
   }
-  /* on its side there's little height: closer rows, and the news waits while it opens to show a task done (html.tasks-peek) */
+  /* on its side there's little height: closer rows */
   @media (max-height: 500px) {
     html.keep #tasks:not(.fold) { padding-top: 11px; } html.keep #tasks li button { padding: 4px 6px; } html.keep #tasks li small { margin-top: 0; font-size: 12.5px; }
-    html.keep.tasks-peek #news { visibility: hidden; }
   }
   /* upright, there's no room beside the watch: open, the card hangs over the ribbon, and the big line goes under it */
   @media (max-width: 760px) and (min-height: 501px) { html.keep.tasks-open #daybreak { top: calc(var(--keep-top-h) + env(safe-area-inset-top, 0px) + 236px); } }

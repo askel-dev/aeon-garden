@@ -9330,36 +9330,6 @@ function tryThing(k) {
   guideTick(performance.now());
 }
 
-// ?keep has no guide: TASKS, top left (#tasks), three of them, each a verb and → what to wait for, and done, what
-// happened. Worked out from the world on the cards' beat, never kept: a pond the frogs found, a strip the bees found,
-// a hedge a rabbit hid in. The rows are built once a meadow, so a tap never lands on a new button; then only their
-// small line and classes change. What's slow to work out (how far the frogs are, when a strip blooms or a hedge is
-// thick) only when the day does, or the number of ponds, strips or hedges. A task done chimes, flashes and gets the
-// big line under the watch; one already done as the meadow opens (or while you were away) is only noted. A tap on a
-// task puts its tool in your hand, or on a done one goes to look at what did it. On a phone the card folds to a chip
-// of the icons (KEEP_CARD keeps the fold) and opens for a while when a task gets done.
-const KEEP_CARD = 'aeon-garden-keep-card';
-const TASKS = [
-  { k: 'pond', e: '⛏️', verb: 'Dig a pond', wait: 'frogs move in', got: '🐸' },
-  { k: 'sow', e: '🌼', verb: 'Sow flowers', wait: 'bees come', got: '🐝' },
-  { k: 'hedge', e: '🌿', verb: 'Plant a hedge', wait: 'a rabbit hides in it', got: '🐇' },
-];
-const TASK_PEEK_MS = 5000;                // a phone shows the card this long when one gets done
-const TASK_LINE_MS = 7000;                // and a task done stays up under the watch this long
-const tasks = { el: $('#tasks'), on: false, w: null, fold: false, peek: 0, key: '', strips: [], more: {}, done: null, fresh: {}, shown: [] };
-
-function startTasks() {
-  tasks.on = true;
-  let kept = null;
-  try { kept = localStorage.getItem(KEEP_CARD); } catch (e) { /* as it starts, then */ }
-  tasks.fold = kept ? kept === '1' : narrow();   // open on a desktop, folded on a phone
-}
-function foldTasks(fold = !tasks.el.classList.contains('fold')) {
-  tasks.fold = fold; tasks.peek = 0;
-  try { localStorage.setItem(KEEP_CARD, fold ? '1' : '0'); } catch (e) { /* fine */ }
-  tasksTick(performance.now());
-}
-
 // (?keep) Losing the Dry Year (sim.js dryLost): one plain card, the meadow going on behind it. Start again: the same seed,
 // a fresh keeper meadow, its Dry Year in the same year, in place of this one (kept at once). Shown once the away card
 // is done with, if it came while you were away.
@@ -9393,6 +9363,35 @@ function startAgain() {
   keepMeadow();                                         // (in place of the one lost)
 }
 $('#lost').addEventListener('click', e => { if (e.target.id === 'lost') showLost(false); });
+
+// ?keep has no guide: TASKS, top left (#tasks), three of them, each a verb and → what to wait for, and done, what
+// happened. Worked out from the world on the cards' beat, never kept: a pond the frogs found, a strip the bees found,
+// a hedge a rabbit hid in. The rows are built once a meadow, so a tap never lands on a new button; then only their
+// small line and classes change. What's slow to work out (how far the frogs are, when a strip blooms or a hedge is
+// thick) only when the day does, or the number of ponds, strips or hedges. A task done chimes, flashes and gets the
+// big line under the watch; one already done as the meadow opens (or while you were away) is only noted. A tap on a
+// task puts its tool in your hand, or on a done one goes to look at what did it. On a phone the card folds to a chip
+// of the icons (KEEP_CARD keeps the fold); a task done flashes its icon there, the big line saying what happened.
+const KEEP_CARD = 'aeon-garden-keep-card';
+const TASKS = [
+  { k: 'pond', e: '⛏️', verb: 'Dig a pond', wait: 'frogs move in', got: '🐸' },
+  { k: 'sow', e: '🌼', verb: 'Sow flowers', wait: 'bees come', got: '🐝' },
+  { k: 'hedge', e: '🌿', verb: 'Plant a hedge', wait: 'a rabbit hides in it', got: '🐇' },
+];
+const TASK_LINE_MS = 7000;                // and a task done stays up under the watch this long
+const tasks = { el: $('#tasks'), on: false, w: null, fold: false, key: '', strips: [], more: {}, done: null, fresh: {}, shown: [] };
+
+function startTasks() {
+  tasks.on = true;
+  let kept = null;
+  try { kept = localStorage.getItem(KEEP_CARD); } catch (e) { /* as it starts, then */ }
+  tasks.fold = kept ? kept === '1' : narrow();   // open on a desktop, folded on a phone
+}
+function foldTasks(fold = !tasks.el.classList.contains('fold')) {
+  tasks.fold = fold;
+  try { localStorage.setItem(KEEP_CARD, fold ? '1' : '0'); } catch (e) { /* fine */ }
+  tasksTick(performance.now());
+}
 
 function buildTasks() {
   Object.assign(tasks, { w: world, key: '', done: null, fresh: {}, shown: [] });
@@ -9436,7 +9435,6 @@ function tasksTick(now) {
     if (first || away.on) continue;         // already done as the meadow opened, or the away card tells it
     tasks.fresh[t.k] = now + 1200;
     chime('tick');
-    if (narrow()) tasks.peek = now + TASK_PEEK_MS;
     if (canBreak()) {
       showBreak('day', `<b class="fr">${t.got} ${esc(got[t.k])}</b>`, `Task done · ${n}/${TASKS.length}`, TASK_LINE_MS);
       daybreak.hold = now + TASK_LINE_MS;   // the next day's line waits
@@ -9451,15 +9449,14 @@ function tasksTick(now) {
     if (was[1] !== cls) { tasks.rows[i].className = cls; tasks.chips[i].className = `ce ${cls}`; }
     tasks.shown[i] = [small, cls];
   });
-  const count = `${n}/${TASKS.length}`, fold = tasks.fold && now >= tasks.peek;
+  const count = `${n}/${TASKS.length}`, fold = tasks.fold;
   if (tasks.shown.count !== count) { tasks.shown.count = count; tasks.el.querySelector('.t-count').textContent = count; }
   if (tasks.el.classList.contains('fold') !== fold) {
     tasks.el.classList.toggle('fold', fold);
     tasks.el.querySelector('.t-head').setAttribute('aria-expanded', !fold);
   }
-  const html = document.documentElement, open = !fold && show, peek = open && now < tasks.peek;   // (a phone makes room for it)
-  if (html.classList.contains('tasks-open') !== open) html.classList.toggle('tasks-open', open);
-  if (html.classList.contains('tasks-peek') !== peek) html.classList.toggle('tasks-peek', peek);
+  const open = !fold && show;                // (an upright phone moves the big line under it)
+  if (document.documentElement.classList.contains('tasks-open') !== open) document.documentElement.classList.toggle('tasks-open', open);
 }
 
 // A tap on a task: its tool in your hand, or a done one, off to look at what did it. A phone folds the card away.
