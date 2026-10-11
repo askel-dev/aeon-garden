@@ -6255,6 +6255,40 @@ function dialTitle(ck) {
   setHTML($('#watch-day'), `${S.SEASONS[ck.season].name} · day ${ck.dayInSeason}<span> · year ${ck.year}</span>`);
 }
 
+// ?keep: under the watch, the Dry Year's ribbon (#forecast), like Frostpunk's forecast. A pip a season from this one on
+// (8, a phone 6) in the dial's colours, the Dry Year's summer parched, and under them one line: how long till it comes,
+// or till its summer ends. This season's pip fills as the days go, like the dial's year. The pips are built once a
+// season, a meadow or a crossing between phone and desktop size; then only the fill moves, once a day, and the line when
+// its words change. In the autumn after, the line says the rain is back, and then the ribbon goes. While the Dry Year
+// is on, the dial's year ring shows its summer parched too (#dial.dry). A hover says more, a tap says it under the watch.
+const forecast = { el: $('#forecast'), on: false, w: null, key: '', day: -1, line: '', dry: false };
+const DRY_ABOUT = 'The Dry Year: no rain from its spring to the end of its summer. The water drops, and the grass away '
+  + 'from it turns to straw. What helps: water, flowers and cover near where the animals live.';
+function forecastTick() {
+  if (!KEEP) return;
+  const stage = S.dryStage(world), on = S.dryComing(world) || stage === 3;
+  if (on !== forecast.on) { forecast.on = on; forecast.el.classList.toggle('hidden', !on); document.documentElement.classList.toggle('ribbon', on); }
+  if (!stage !== !forecast.dry) { forecast.dry = !!stage; dial.el.classList.toggle('dry', forecast.dry); }
+  if (!on) return;
+  const season = S.SEASON_DAYS * S.TPD, now = Math.floor(world.tick / season), dry = (world.dryYear.year - 1) * 4 + 1;
+  const n = narrow() ? 6 : 8, key = `${now}:${n}`;
+  if (key !== forecast.key || world !== forecast.w) {
+    forecast.key = key; forecast.w = world; forecast.day = -1;
+    forecast.el.title = stage === 3 ? 'The Dry Year is over and the rain is back. The grass greens again through the autumn.'
+      : stage === 2 ? DRY_ABOUT : `${DRY_ABOUT} It comes in the summer of year ${world.dryYear.year}.`;
+    let pips = '';
+    for (let i = now; i < now + n; i++) pips += `<span class="pip s${i % 4}${i === dry ? ' dry' : ''}${i === now ? ' now' : ''}">${i === dry ? '<i>☀️</i>' : ''}</span>`;
+    forecast.el.querySelector('.pips').innerHTML = pips;
+  }
+  const day = Math.floor(world.tick / S.TPD) % S.SEASON_DAYS;
+  if (day !== forecast.day) { forecast.day = day; forecast.el.querySelector('.pip.now').style.setProperty('--p', `${(day + 1) / S.SEASON_DAYS * 100}%`); }
+  const ahead = dry - now, left = Math.ceil((S.dryTo(world) - world.tick) / S.TPD * 2) / 2;
+  const line = stage === 3 ? '🌧️ <b>Rain again</b>'
+    : stage === 2 ? `<span class="cap">Dry Year</span> <b>${Math.floor(left) || ''}${left % 1 ? '½' : ''} ${left > 1 ? 'days' : 'day'}</b> left`
+    : `<span class="cap">Dry Year</span> ${ahead <= 1 ? '<b>next season</b>' : `in <b>${ahead} seasons</b>`}`;
+  if (line !== forecast.line) { forecast.line = line; forecast.el.querySelector('.pip-line').innerHTML = line; }
+}
+
 // A new day, softly, at the top of the meadow ("Spring, day 3"), with a line about the meadow under it: who's
 // oldest, who's caught most, how many generations of rabbits. A new season says how the last one went, a new
 // year how the year went. The faster time runs, the bigger the step it waits for, so a line comes every few
@@ -8909,6 +8943,7 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'ideas') { played = -Infinity; askIdeas(true); }   // found it themselves: no need to ask
   else if (t.dataset.act === 'lab') openLab();
   else if (t.dataset.act === 'watch') startIdle();
+  else if (t.dataset.act === 'forecast' && canBreak()) showBreak('day', '<b class="fr">The Dry Year</b>', forecast.el.title.replace(/^The Dry Year: n/, 'N'), 9000);
   else if (t.dataset.act === 'guide') { openGuide(); guideTick(performance.now()); }
   else if (t.dataset.act === 'guide-shut') { shutGuide(); guideTick(performance.now()); }
   else if (t.dataset.act === 'keep-fold') { foldKeepCard(); guideTick(performance.now()); }
@@ -9260,11 +9295,11 @@ function tryThing(k) {
   guideTick(performance.now());
 }
 
-// ?keep has no guide: one small card in its place opens with the goal, the Dry Year and how long till it comes
-// (or till the rain comes back), then says what the keeper's tools do, and a tap on one puts it in your hand. A tap on
-// its head folds it to the goal (KEEP_CARD keeps that).
+// ?keep has no guide: one small card in its place says what the keeper's tools do, and a tap on one puts it in your
+// hand. (The Dry Year's countdown is on the ribbon under the watch, forecastTick.) A tap on its head folds it to its
+// title (KEEP_CARD keeps that).
 const KEEP_CARD = 'aeon-garden-keep-card';
-const keepCard = { on: false, fold: false, html: '', goal: '' };
+const keepCard = { on: false, fold: false, html: '' };
 function startKeepCard() {
   keepCard.on = true;
   try { keepCard.fold = localStorage.getItem(KEEP_CARD) === '1'; } catch (e) { /* unfolded, then */ }
@@ -9274,36 +9309,17 @@ function foldKeepCard() {
   try { localStorage.setItem(KEEP_CARD, keepCard.fold ? '1' : '0'); } catch (e) { /* fine */ }
 }
 
-// How long till tick t, in seasons and days: '1 season and 3 days', '2 days', '1 day'.
-function timeTill(t) {
-  const days = Math.max(1, Math.ceil((t - world.tick) / S.TPD)), n = Math.floor(days / S.SEASON_DAYS), d = days % S.SEASON_DAYS;
-  const ss = n === 1 ? '1 season' : `${n} seasons`, ds = d === 1 ? '1 day' : `${d} days`;
-  return n && d ? `${ss} and ${ds}` : n ? ss : ds;
-}
-
-// The keeper's goal, in a line: the Dry Year to come, on, or just over (its autumn). Empty before a meadow has one.
-function dryGoal() {
-  if (!world.dryYear) return '';
-  const stage = S.dryStage(world);
-  if (stage === 2) return `☀️ The Dry Year: rain again in ${timeTill(S.dryTo(world))}`;
-  if (S.dryComing(world)) return `☀️ The Dry Year comes in the summer of year ${world.dryYear.year} <span class="g-when">(${timeTill(S.dryFrom(world))})</span>`;
-  return stage === 3 ? '🌧️ The rain is back: the Dry Year is over' : '';
-}
-
 function keepCardTick() {
   const show = keepCard.on && !away.on, box = $('#guide');
   if (box.classList.contains('hidden') === show) box.classList.toggle('hidden', !show);
   if (!show) return;
-  const verbs = KEEP_TOOLS.filter(([k]) => k !== 'look'), touch = matchMedia('(pointer: coarse)').matches, goal = dryGoal();
-  const html = (goal ? '<p class="g-line g-goal"></p>'      // (the goal's line is written on its own: its countdown ticks)
-      + (S.dryComing(world) ? '<p class="g-hint g-goal-hint">What helps: water, flowers and cover near where the animals live.</p>' : '') : '')
-    + `<div class="g-top"><button class="g-head" data-act="keep-fold" aria-expanded="${!keepCard.fold}"><b class="g-title fr">🌱 Shape the meadow</b>
+  const verbs = KEEP_TOOLS.filter(([k]) => k !== 'look'), touch = matchMedia('(pointer: coarse)').matches;
+  const html = `<div class="g-top"><button class="g-head" data-act="keep-fold" aria-expanded="${!keepCard.fold}"><b class="g-title fr">🌱 Shape the meadow</b>
       <span class="win-btn${keepCard.fold ? ' grow' : ''}" aria-hidden="true"></span></button></div>
     ${verbs.length ? `<ul class="g-list">${verbs.map(([k, e, label, hint]) => `<li><button data-tool="${k}"><span class="e">${e}</span>
       <span><b>${label}</b><small>${hint}</small></span><span class="tick"></span></button></li>`).join('')}</ul>` : ''}
     <p class="g-hint g-sub">${touch ? '⏸ stops time' : 'Space stops time'}, and you can still work while it’s stopped. Then see who comes.</p>`;
-  if (html !== keepCard.html) { box.innerHTML = html; keepCard.html = html; keepCard.goal = ''; }
-  if (goal !== keepCard.goal) { if (goal) box.querySelector('.g-goal').innerHTML = goal; keepCard.goal = goal; }
+  if (html !== keepCard.html) { box.innerHTML = html; keepCard.html = html; }
   if (box.classList.contains('fold') !== keepCard.fold) box.classList.toggle('fold', keepCard.fold);
 }
 
@@ -9939,6 +9955,7 @@ function frame(now) {
     if (idleMayStart(now)) startIdle(now);
     if (idle.on && Date.now() - keptWhen > KEEP_IDLE_MS) keepMeadow();
     updateMeadowCard();
+    forecastTick();
     if (ui.sound) {
       const ck = S.clock(world);
       const life = world.count.rabbit / (S.CROWDED * world.room);   // a crowded meadow, not the cap (only a safety net now)
