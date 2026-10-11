@@ -4324,9 +4324,9 @@ function drawBeeTree(d, sx, sy, now, ck) {
   // Bees on the sill, a few wandering on the bark; they shuffle while time runs.
   const ry = OLD_HOLE.ry;
   // A full hive has honey oozing over the sill.
-  if (h.honey > 800) {
+  if (h.honey > 0.5 * S.HIVE_FULL) {
     const x = hx - rx * px * 0.85, y = sill - ry * px * 0.45, r = px * 0.011;
-    const len = r * (1 + 1.5 * Math.min(1, (h.honey - 800) / 700));
+    const len = r * (1 + 1.5 * Math.min(1, 2 * h.honey / S.HIVE_FULL - 1));
     const g = ctx.createLinearGradient(x - r, y, x + r, y + len);
     g.addColorStop(0, 'rgba(255, 205, 90, 0.95)'); g.addColorStop(1, 'rgba(205, 125, 15, 0.95)');
     ctx.fillStyle = g;

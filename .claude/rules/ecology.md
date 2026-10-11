@@ -257,8 +257,11 @@ carcasses): it buzzes between wings up and down in flight (`beeArt`, `BEE_BUZZ`;
 `BEE_STILL`), sits with its wings folded on a flower, and carries its pollen on its hind legs (`drawBaskets`).
 They stay in while few flowers are open (`w.flowers`) and live on honey. Bees don't pair up: each hive has a
 queen (`h.queen`, just a name and genes on the hive) who lays in `layEggs`, in spring and summer on whatever
-honey there is, in autumn only once there's honey put by for every bee (`broodTime`). Summer bees live a few
+honey there is, in autumn only once there's honey put by for every bee (`broodTime`, `WINTER_HONEY`). Summer bees live a few
 days, autumn-born ones last the winter (`winterLifeDays`), and a small winter cluster burns more (`clusterCold`).
+A full hive holds about a season's food for a big hive (`HIVE_FULL`), so a good summer carries it through autumn and
+winter, and a hive short of flowers runs its larder down over days, not hours. A hive whose flowers are out of reach
+lives hand to mouth all summer and still dies in autumn; the Dry Year can still take the bees.
 A crowded hive (`HIVE_ROOM`) swarms in spring or summer (`swarm`): the old queen takes half the bees to hang in
 a tree (a hive with `cluster: true`, drawn by `drawSwarm`) while scouts fly to the sites from `hiveSites`, then
 `settle` moves them into the best hollow tree or empty hive; a daughter queen stays behind.
