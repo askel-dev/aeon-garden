@@ -5530,7 +5530,7 @@ function createWorld(seed, opts = {}) {
       remains: { left: 0, eaten: 0, rotted: 0, crows: 0 }, cached: 0, dugUp: 0, planted: 0,   // remains, and how they went (crows: the crows fed at); the crows' acorns
       ...webStats() },
     history: { every: 60, t: [], grass: [], voles: [], frogs: [], fish: [], ...perKind(() => []), traits: perKind(() => []), marks: [] },
-    goneSince: perKind(() => -1), hives: [],
+    goneSince: perKind(() => -1), diedOut: perKind(() => false), hives: [],
     // The trees (see treesTick). They have their own random numbers, so the rest of the meadow comes out as it did before they grew.
     treeRng: makeRng(seed ^ 0x5eed7ee), nextTree: 1, seeds: [], mast: false, mastYear: 0, orchard: [], treeCount: 0,
     blossoms: [], blossomCells: Array.from({ length: GW * GH }, () => []), nextBloom: 0, decorCells: [], treesMoved: true,
@@ -5793,8 +5793,12 @@ function migrate(w) {
   for (const s of KINDS) {
     if (s === 'owl' && !OWLS) continue;
     const n = s === 'otter' && !w.decor.some(d => d.holt) ? 0 : w.count[s];   // (otters with no holt are only passing through)
+    // The last one gone is told once, however slowly they went (otters that never came aren't gone), and again if
+    // they come back and die out again.
+    if (w.count[s] > 0) w.diedOut[s] = false;
+    else if (!w.diedOut[s] && Object.keys(w.stats.deaths[s]).length) { w.diedOut[s] = true; emit(w, { type: 'extinct', species: s }); }
     if (n >= few[s] || w.arrivals.some(a => a.species === s)) { w.goneSince[s] = -1; continue; }
-    if (w.goneSince[s] < 0) { w.goneSince[s] = w.tick; if (w.count[s] === 0 && Object.keys(w.stats.deaths[s]).length) emit(w, { type: 'extinct', species: s }); continue; }   // (otters that never came aren't gone)
+    if (w.goneSince[s] < 0) { w.goneSince[s] = w.tick; continue; }
     if (w.tick - w.goneSince[s] < wait[s] * TPD) continue;
     if (s === 'fox' && w.count.rabbit < 60 * w.room) continue;   // foxes only come where there is food
     if (s === 'bee' && w.flowers < FEW_FLOWERS) continue;         // a swarm comes when the flowers are out
@@ -5955,6 +5959,7 @@ function unpackWorld(kept) {
   for (const s of KINDS) {                                   // (kept before the otters)
     for (const o of [w.count, w.expecting, w.stats.births, w.stats.apples, w.stats.nuts, w.stats.bodies]) o[s] ??= 0;
     w.stats.deaths[s] ??= {}; w.goneSince[s] ??= -1; w.founderMeans[s] ??= null;
+    (w.diedOut ??= {})[s] ??= w.count[s] === 0;              // (kept before the last one gone was told whenever: none now was told already)
     w.history[s] ??= w.history.t.map(() => 0); w.history.traits[s] ??= w.history.t.map(() => null);
   }
   for (const c of w.creatures) delete c.held;                // (kept while the player held one up)

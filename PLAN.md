@@ -193,8 +193,9 @@ on its own. Then one or two people who've never seen it. If it fails, the notes 
     strips that summer 175 to 458 a seed, as many as the summer before). The flowers and bees aren't tuned for it (D2).
   - The news: `dryahead`, `dryspring`, `drystart`, `dryend` (the last three on the away card, the start and end pinned).
   - `node balance.js 3 6 keep`, the keeper (a 27-tile pond, two strips, a hedge on day 1) against a keeper who does
-    nothing (`idle`): nothing died out in the keepers' meadows; in the idle ones the bees died out in 4 of 6 (2 of them
-    in year 1, before it). The rabbits crash after it either way (33 to 95 by its winter with a keeper, 27 to 141 idle),
+    nothing (`idle`): in the keepers' meadows the rabbits died out in 1 of 6 (seed 3, the autumn of year 3), in the idle
+    ones the bees in 5 of 6, twice in two of them (counted again after U3b: a slow dying out was never told before, and
+    this said "nothing" and "4 of 6"). The rabbits crash after it either way (33 to 95 by its winter with a keeper, 27 to 141 idle),
     and the keepers' meadows came back worse in 3 of 6, with more foxes about in all 6 (fed, likely, by the pond's frogs: for D2).
   - Perf (headless Chrome, 1280x800, seed 31, zoomed out): `render` at 60x 2.4 ms median against 2.1 in an ordinary
     summer, 2.0 against 1.9 at 1x; the ground repaints as often (131 against 145 in 12 s at 1x, none paused); the shader
