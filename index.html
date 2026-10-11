@@ -31,6 +31,8 @@
 <meta property="og:image:alt" content="Nobody's Meadow: a brass pocket watch with the living meadow inside it, over a green hill where a rabbit's ears peek out">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://meadow.cryptoler.net/assets/og.png?v=2">
+<!-- ?keep wears the keeper's frame (html.keep, at the end of the styles) from the first paint, before game.js runs -->
+<script>(q => { if (q.has('keep') && !q.has('lab')) document.documentElement.classList.add('keep'); })(new URLSearchParams(location.search));</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!-- Fraunces only for the name and the season chips: italic 450, upright 600 to 680, soft and wonky -->
@@ -332,7 +334,7 @@
 
   /* ---- welcome */
   /* the terrain lab (?lab) brings its own panel, see terrain-lab.js */
-  body.lab #meadow, body.lab #watch, body.lab #news, body.lab #guide, body.lab #toolbar, body.lab #hud-right, body.lab #ring { display: none; }
+  body.lab #meadow, body.lab #watch, body.lab #news, body.lab #guide, body.lab #toolbar, body.lab #hud-right, body.lab #ring, body.lab #keep-top, body.lab #tool-tip { display: none; }
 
   #welcome { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(60, 70, 30, 0.28); z-index: 10; transition: opacity 0.7s ease; }
   #welcome.leaving { opacity: 0; pointer-events: none; }
@@ -524,8 +526,8 @@
     border: none; background: none; padding: 8px 4px; font: 800 13px Nunito, ui-rounded, system-ui, sans-serif; color: rgba(243, 231, 207, 0.5); cursor: pointer; }
   #intro .skip:hover { color: #f3e7cf; }
   body:not(.intro) #intro .skip { visibility: hidden; }
-  body.hush :is(#meadow, #watch, #news, #guide, #toolbar, #hud-right) { visibility: hidden; }
-  body.ui-in :is(#meadow, #watch, #news, #guide, #toolbar, #hud-right) { animation: ui-in 1s ease both; }
+  body.hush :is(#meadow, #watch, #news, #guide, #toolbar, #hud-right, #keep-top, #tool-tip) { visibility: hidden; }
+  body.ui-in :is(#meadow, #watch, #news, #guide, #toolbar, #hud-right, #keep-top, #tool-tip) { animation: ui-in 1s ease both; }
   @keyframes ui-in { from { opacity: 0; } }
   @media (prefers-reduced-motion: reduce) { #intro .bar, #intro .line, #welcome, #welcome .card { transition-duration: 0.01s; } }
   /* ---- the idle camera (game.js, startIdle): the intro's bars and lines, the cards faded away, and a dip to
@@ -533,7 +535,7 @@
   #intro .dip { position: absolute; inset: 0; background: #1d1a15; opacity: 0; transition: opacity 0.4s ease; }
   #intro .dip.on { opacity: 1; }
   body.idle #intro .bar { transform: none; }
-  body.idle :is(#meadow, #watch, #news, #guide, #toolbar, #hud-right) { opacity: 0; visibility: hidden; transition: opacity 1s ease, visibility 0s 1s; }
+  body.idle :is(#meadow, #watch, #news, #guide, #toolbar, #hud-right, #keep-top, #tool-tip) { opacity: 0; visibility: hidden; transition: opacity 1s ease, visibility 0s 1s; }
   .hidden { display: none !important; }
 
   /* ---- the stats page, over everything */
@@ -741,10 +743,93 @@
     .stats-grid { grid-template-columns: 1fr 1fr; }
     .evo-grid { grid-template-columns: repeat(3, 1fr); }
   }
+
+  /* ---- ?keep: the keeper's frame (html.keep, set in the head and by game.js; nothing here reaches the bare address).
+     A parchment bar along the top and one along the bottom, each with a brass rule like the watch's case where it meets
+     the meadow. The species and the time sit in the top bar and the watch hangs from it; the bottom bar is the toolbar,
+     always up, its tools brass plates, each with a card that says what it brings (#tool-tip, game.js showTip). */
+  #keep-top { display: none; }
+  html.keep {
+    --brass: linear-gradient(180deg, #f6d98c, #d9a441 45%, #8a5e22);
+    --brass-edges: inset 0 -1px 0 rgba(90, 55, 15, 0.55), inset 0 1px 0 rgba(255, 240, 200, 0.6);
+    --keep-top-h: 58px;      /* the top bar, under the notch */
+    --keep-foot-h: 84px;     /* the bottom bar, over the home bar */
+    --gauge-room: 260px;     /* left free on the left of the bottom bar, for GREEN */
+  }
+  html.keep #keep-top { display: block; position: fixed; left: 0; right: 0; top: 0; z-index: 3; pointer-events: none;
+    height: calc(var(--keep-top-h) + env(safe-area-inset-top, 0px)); background: var(--paper, none) var(--card); box-shadow: 0 6px 16px rgba(70, 55, 25, 0.22); }
+  html.keep #keep-top::after, html.keep #toolbar::before { content: ''; position: absolute; left: 0; right: 0; height: 6px; pointer-events: none;
+    background: var(--brass); box-shadow: var(--brass-edges); }
+  html.keep #keep-top::after { bottom: -6px; }
+  html.keep #toolbar::before { top: -6px; transform: scaleY(-1); }   /* (its dark edge toward the meadow, like the top one's) */
+  /* the species in the top bar on the left, with no card of their own; opened (C), the card hangs under the bar */
+  html.keep #meadow { z-index: 4; }
+  html.keep #meadow.mini { top: calc(env(safe-area-inset-top, 0px) + 6px); left: calc(env(safe-area-inset-left, 0px) + 6px); background: none; box-shadow: none; }
+  html.keep #meadow:not(.mini) { top: calc(var(--keep-top-h) + env(safe-area-inset-top, 0px) + 16px); }
+  /* the keep card grows up from the bar and stops under the top one (a phone on its side has little room between) */
+  html.keep #guide { max-height: calc(100% - var(--bar, 92px) - var(--keep-top-h) - env(safe-area-inset-top, 0px) - 24px); overflow-y: auto; }
+  html.keep #mini-sky { display: none; }   /* the season is on the watch, the weather by the time */
+  /* the time and the menus in the top bar on the right; the inspector hangs under the bar and ends over the tools */
+  html.keep #meadow ~ #hud-right { top: calc(env(safe-area-inset-top, 0px) + 6px); right: calc(env(safe-area-inset-right, 0px) + 8px); bottom: var(--bar, 100px); gap: 20px; }
+  html.keep #time { background: none; box-shadow: none; }
+  html.keep #hud-right .drop { top: calc(100% + 18px); }
+  html.keep #watch { top: calc(env(safe-area-inset-top, 0px) + 4px); }   /* hung from the bar, its plaque just under it */
+  /* the toolbar is the bottom bar: the tools in the middle, room on the left for GREEN, never sliding away (game.js updateBar) */
+  html.keep #toolbar { left: 0; right: 0; bottom: 0; transform: none; z-index: 3; border-radius: 0; animation: none;
+    height: calc(var(--keep-foot-h) + var(--home-bar, env(safe-area-inset-bottom, 0px)));
+    padding: 0 calc(10px + env(safe-area-inset-right, 0px)) var(--home-bar, env(safe-area-inset-bottom, 0px)) calc(10px + env(safe-area-inset-left, 0px));
+    box-shadow: 0 -6px 16px rgba(70, 55, 25, 0.22); display: grid; grid-template-columns: minmax(var(--gauge-room), 1fr) auto minmax(0, 1fr); align-items: center; }
+  html.keep #toolbar .tools { grid-column: 2; display: flex; gap: 8px; position: static; padding: 0; background: none; box-shadow: none; animation: none; }
+  html.keep #toolbar .hand { display: none; }
+  html.keep #toolbar .tool { order: 0; flex-direction: column; justify-content: center; gap: 4px; width: 84px; height: 62px; padding: 0; border-radius: 14px;
+    background: linear-gradient(180deg, #fffaf0, #f1e5c9); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 2px 0 #a8742a; }
+  html.keep #toolbar .tool:hover { background: linear-gradient(180deg, #fffdf7, #f6ecd5); }
+  html.keep #toolbar .tool.on { background: linear-gradient(180deg, #fff1df, #fbd9b9); box-shadow: inset 0 0 0 2px #d9a441, 0 2px 0 #a8742a; }
+  html.keep #toolbar .tool .e { font-size: 30px; width: auto; }
+  html.keep #toolbar .tool .l { font-size: 14px; line-height: 1; }
+  html.keep #toolbar .tool kbd { position: absolute; top: 5px; right: 6px; padding: 0 4px; border-radius: 4px; background: rgba(0, 0, 0, 0.06);
+    font: 800 10.5px Nunito, ui-rounded, system-ui, sans-serif; color: var(--muted); }
+  /* a tool's card, over its button: a brass top edge and a little arrow down to it (game.js sets its left and --arrow) */
+  html.keep #tool-tip { position: fixed; left: 0; bottom: calc(var(--bar, 100px) + 4px); z-index: 6; width: min(290px, calc(100vw - 16px)); padding: 15px 15px 13px;
+    border-radius: 0 0 16px 16px; background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); color: var(--ink); pointer-events: none;
+    animation: pop-in 0.18s ease-out; }
+  html.keep #tool-tip::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 4px; background: var(--brass); border-radius: 2px 2px 0 0; }
+  html.keep #tool-tip::after { content: ''; position: absolute; left: var(--arrow, 50%); bottom: -9px; margin-left: -9px; width: 18px; height: 18px;
+    background: var(--card); transform: rotate(45deg); box-shadow: 3px 3px 4px rgba(70, 55, 25, 0.12); }
+  html.keep #tool-tip h4 { margin: 0; font-size: 20px; font-weight: 650; display: flex; align-items: center; gap: 6px; }
+  html.keep #tool-tip h4 kbd { margin-left: auto; padding: 1px 6px; border-radius: 5px; background: rgba(0, 0, 0, 0.06); box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.15);
+    font: 800 11px Nunito, ui-rounded, system-ui, sans-serif; color: var(--muted); }
+  html.keep #tool-tip p { margin: 1px 0 8px; font-size: 13px; line-height: 1.4; font-weight: 700; color: var(--muted); }
+  html.keep #tool-tip ul { list-style: none; margin: 0; padding: 9px 0 0; border-top: 1px dashed var(--line); display: grid; gap: 6px; }
+  html.keep #tool-tip li { display: grid; grid-template-columns: 22px 1fr auto; gap: 6px; align-items: baseline; font-size: 14px; font-weight: 700; line-height: 1.35; }
+  html.keep #tool-tip li em { font-style: normal; font-size: 12.5px; font-weight: 800; color: var(--muted); white-space: nowrap; }
+  html.keep #tool-tip li.dry, html.keep #tool-tip li.dry em { color: #8a4b12; font-weight: 800; }
+  @media (pointer: coarse) { html.keep :is(#toolbar, #tool-tip) kbd { display: none; } }   /* no keys to press */
+  /* phones: slimmer bars, the four tools one row in the middle (no corner button), the news and the keep card full width */
+  @media (max-width: 760px), (max-height: 500px) {
+    html.keep { --keep-top-h: 52px; --keep-foot-h: 68px; --gauge-room: 0px; }
+    html.keep #meadow.mini { top: calc(env(safe-area-inset-top, 0px) + 4px); left: calc(env(safe-area-inset-left, 0px) + 2px); }
+    html.keep #meadow ~ #hud-right { top: calc(env(safe-area-inset-top, 0px) + 4px); right: calc(env(safe-area-inset-right, 0px) + 4px); }
+    html.keep #toolbar { padding-left: calc(6px + env(safe-area-inset-left, 0px)); padding-right: calc(6px + env(safe-area-inset-right, 0px)); }
+    html.keep #toolbar .tools { gap: 5px; }
+    html.keep #toolbar .tool { width: 60px; height: 52px; gap: 3px; }
+    html.keep #toolbar .tool .e { font-size: 25px; }
+    html.keep #toolbar .tool .l { font-size: 11.5px; }
+    html.keep #news { bottom: calc(var(--bar, 84px) + 8px + var(--guide-h, 0px)); width: calc(100% - var(--left) - var(--right)); }
+    html.keep #guide { bottom: calc(var(--bar, 84px) + 8px); width: calc(100% - var(--left) - var(--right)); max-width: none; }
+  }
+  @media (max-width: 760px) and (min-height: 501px) {
+    html.keep #inspector.strip { width: 100%; }   /* folded, the whole width just over the bar */
+    html.keep body.ins-strip #news { bottom: calc(var(--bar, 84px) + 64px + var(--guide-h, 0px)); }
+    html.keep body.ins-strip #guide { bottom: calc(var(--bar, 84px) + 64px); }
+  }
+  @media (max-height: 500px) { html.keep :is(#news, #guide) { width: min(330px, calc(100% - var(--left) - var(--right))); } }
 </style>
 </head>
 <body>
 <canvas id="world" class="tool-look"></canvas>
+<!-- ?keep: the brass frame's top bar, under the species, the watch and the time (its bottom bar is the toolbar) -->
+<div id="keep-top" aria-hidden="true"></div>
 
 <section id="meadow" class="card">
   <button class="mini-line" data-act="mini" title="Show the whole card (C)">
@@ -802,6 +887,8 @@
 <!-- after the intro: three steps, then things to try (game.js, the guide) -->
 <aside id="guide" class="card hidden" aria-live="polite"></aside>
 <div id="place-label" class="hidden"></div>
+<!-- ?keep: what a keeper's tool brings, over its button (game.js, showTip) -->
+<div id="tool-tip" class="hidden" role="tooltip"></div>
 
 <nav id="toolbar" class="card">
   <div class="tools">

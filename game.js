@@ -19,6 +19,7 @@ const params = new URLSearchParams(location.search), LAB = params.has('lab');
 // of flowers) and the god tools are gone: no releasing animals, no grass, lightning or fire, no picking the
 // weather, no picking animals up. Kept apart from the meadows you watch, under links of its own.
 const KEEP = params.has('keep') && !LAB;
+document.documentElement.classList.toggle('keep', KEEP);   // its frame (index.html's head says so too, before this runs)
 const DRY_PARAM = +params.get('dry') || 0;   // ?keep&dry=N: a new keeper meadow's Dry Year comes in the summer of year N (1: this one)
 const fromUrl = key => { try { return JSON.parse(params.get(key) || '{}'); } catch (e) { return {}; } };   // a broken link: the usual meadow
 let terrain = fromUrl('terrain'), drawn = location.hash.length > 1 ? S.drawnFromLink(location.hash) : fromUrl('drawn');
@@ -59,6 +60,7 @@ const ctx = canvas.getContext('2d');
 let vw = 0, vh = 0, dpr = 1, minZoom = 1, fitZoom = 1;
 const FIT = 0.92;                                 // zoomed right out, how much of the window the meadow fills (it fades into mist, mistField)
 let barPad = 0;                                   // screen pixels the toolbar covers at the bottom (on a phone, its button in the corner)
+let topPad = 0;                                   // and the top bar at ?keep covers at the top
 let sheet = null;                                 // the edges of the meadow the inspector and the bars hide, while it's open
 // A phone upright or on its side: slim bars, and the tools fold into a button. On its side (a short screen)
 // the inspector is a panel down the right.
@@ -140,18 +142,19 @@ function measureSheet() {
 // (MIST_FULL tiles out), at any zoom, so an edge can be looked at up close.
 // A bit further where the toolbar or the inspector covers the screen, so nothing is ever stuck under them.
 // Not while they're away for the intro (hush). This far past the bottom edge, in screen pixels:
-// In the lab, its own sheet on a phone (lab.cover).
+// In the lab, its own sheet on a phone (lab.cover). And at ?keep past the top edge too, under the top bar (topPad).
 const lookPast = () => Math.max(ui.hush ? 0 : barPad, sheet ? sheet.bottom : 0, LAB ? lab.cover.bottom : 0);
 function clampCam() {
   const left = (sheet ? sheet.left : 0) / cam.zoom, right = Math.max(sheet ? sheet.right : 0, LAB ? lab.cover.right : 0) / cam.zoom;
   cam.x = clamp(cam.x, -MIST_FULL - left, S.W + MIST_FULL + right);
-  cam.y = clamp(cam.y, -MIST_FULL, S.H + MIST_FULL + lookPast() / cam.zoom);
+  cam.y = clamp(cam.y, -MIST_FULL - topPad / cam.zoom, S.H + MIST_FULL + lookPast() / cam.zoom);
 }
 
 new ResizeObserver(() => {
   barPad = $('#toolbar').offsetHeight + 16;
   document.documentElement.style.setProperty('--bar', barPad + 'px');
 }).observe($('#toolbar'));
+if (KEEP) new ResizeObserver(() => { topPad = $('#keep-top').offsetHeight + 6; }).observe($('#keep-top'));   // (6: its brass rule)
 new ResizeObserver(() => {            // on a phone the time pill sits under the meadow card
   document.documentElement.style.setProperty('--meadow-h', $('#meadow').offsetHeight + 'px');
 }).observe($('#meadow'));
@@ -7797,15 +7800,15 @@ addEventListener('pointerdown', e => { if (!e.target.closest('#toolbar')) toggle
 // The toolbar slides away while you just watch and comes back as soon as the mouse enters the spot
 // where it lives, so you stop on the buttons instead of running into the screen edge and back.
 // It stays up while a tool other than Look is in your hand.
-// Touch screens have no hover, so there the CSS keeps it up for good.
+// Touch screens have no hover, so there the CSS keeps it up for good. At ?keep it's the bottom bar, always up.
 let barNear = true, barTimer = 0;
 function updateBar() {
   clearTimeout(barTimer);
-  if (barNear || ui.tool !== 'look') document.body.classList.remove('bar-away');
+  if (barNear || ui.tool !== 'look' || KEEP) document.body.classList.remove('bar-away');
   else barTimer = setTimeout(() => document.body.classList.add('bar-away'), 200);
 }
 addEventListener('pointermove', e => {
-  if (e.pointerType !== 'mouse') return;
+  if (e.pointerType !== 'mouse' || KEEP) return;
   const bar = $('#toolbar').getBoundingClientRect(), up = !document.body.classList.contains('bar-away');
   const pad = up ? 12 : 0;                     // once it's up, a little slack so it doesn't flicker at the rim
   const over = e.clientX > bar.left - pad && e.clientX < bar.right + pad;
@@ -7814,11 +7817,12 @@ addEventListener('pointermove', e => {
 });
 document.documentElement.addEventListener('mouseleave', () => { barNear = false; updateBar(); });
 
+const MINI_KEY = KEEP ? 'aeon-garden-mini-keep' : 'aeon-garden-mini';   // in localStorage: the meadow card small (?keep keeps its own)
 function toggleMini(on = !ui.mini) {
   ui.mini = on;
   $('#meadow').classList.toggle('mini', on);
   resize();                              // the sparklines need their real size again
-  try { localStorage.setItem('aeon-garden-mini', on ? '1' : '0'); } catch (e) { /* fine */ }
+  try { localStorage.setItem(MINI_KEY, on ? '1' : '0'); } catch (e) { /* fine */ }
 }
 
 // A phone has no room for four speed buttons: one steps through them instead, and pause toggles.
@@ -8283,6 +8287,7 @@ function placeLabel(pl) {
   const el = $('#place-label');
   if (el.innerHTML !== text) el.innerHTML = text;
   el.classList.remove('hidden');
+  hideTip();                              // (?keep: the tool's card gives way to this)
 }
 const frogsOff = n => (n < 0 ? 'No frogs within reach' : n <= 2 ? 'Frogs live right here' : `Frogs ${n} tiles off`);
 
@@ -8490,10 +8495,92 @@ const RING_TOOLS = KEEP ? KEEP_TOOLS.filter(([k]) => k !== 'look')
 // Owls off for now (sim.js OWLS): their tool, counters and graph button stay in the page, hidden.
 if (!S.OWLS) for (const e of document.querySelectorAll('[data-tool="owl"], [data-show="owl"], #mini-owl, #n-owl')) (e.closest('.mini-pop, .pop') || e).classList.add('hidden');
 // And at ?keep every tool but the keeper's, the weather menu, the notebook of things to try and filming itself.
+// The keeper's tools are named for what they make (the seed is Flowers), show their key, and say the rest in their
+// card (showTip) in place of a title: its name, its key, how, and what it brings (tipRows).
+const TIP_TOOLS = { look: { name: 'Look', key: 'L', how: 'Drag to look around' }, pond: { name: 'Pond', key: 'D', how: 'Drag to dig' },
+  sow: { name: 'Flowers', key: 'G', how: 'Drag to sow' }, hedge: { name: 'Hedge', key: 'H', how: 'Drag to plant' } };
 if (KEEP) {
   for (const b of document.querySelectorAll('[data-tool]')) b.classList.toggle('hidden', !KEEP_TOOLS.some(([k]) => k === b.dataset.tool));
+  for (const [k, { name, key }] of Object.entries(TIP_TOOLS)) {
+    const b = $(`#toolbar [data-tool="${k}"]`);
+    b.querySelector('.l').textContent = name;
+    b.insertAdjacentHTML('beforeend', `<kbd>${key}</kbd>`);
+    b.removeAttribute('title');
+    b.setAttribute('aria-describedby', 'tool-tip');
+  }
   for (const b of document.querySelectorAll('#more-menu [data-act="sky"], [data-act="guide"], [data-act="watch"]')) b.classList.add('hidden');
   $('#hud-right [data-act="sky"]').title = 'The weather';
+}
+
+// A keeper's tool explains itself in a card over its button (#tool-tip): with a mouse 250 ms after the pointer comes
+// onto it, gone when it leaves; tapped (touch or pen), for 4 s, a second tap on it while it shows hiding it; its key,
+// for 2.5 s. A press on the meadow, Esc or a stroke being placed puts it away, so placeLabel takes over by the hand.
+// Written as it opens, never per frame.
+const TIP_HOVER_MS = 250, TIP_TAP_MS = 4000, TIP_KEY_MS = 2500;
+const tip = { tool: '', by: '', timer: 0, hover: 0, gone: -1e9, press: '' };   // by: 'mouse', 'touch' or 'key'
+const BLOOM_SOON = { soon: 'in a day', days: 'in 2 or 3 days', autumn: 'in 3 days', spring: 'next spring' };   // (sim.js stripBloom)
+
+// What a tool brings, with when or where: [icon, what, when, the Dry Year's].
+function tipRows(k, touch) {
+  if (k === 'look') return [['🐇', 'Follow an animal', touch ? 'tap it' : 'click it'], ['🏷️', 'Make it yours', touch ? 'tap its name' : 'click its name'],
+    ['⏸', 'Stop time', touch ? 'the ⏸ button' : 'space']];
+  const crows = ['🐦‍⬛', 'Crows come', 'at once'];
+  if (k === 'pond') return [...(S.dryComing(world) ? [['☀️', 'Green banks in the Dry Year', `${S.DRY_NEAR} tiles`, true]] : []),
+    ['🐸', 'Frogs move in', S.seasonOf(world.tick) === 3 ? 'in spring' : 'in days'], crows, ['💧', 'Lasts all year', 'on low ground']];
+  if (k === 'sow') return [['🌸', 'In bloom', BLOOM_SOON[S.stripBloom(world)]], ['🐝', 'Bees come', 'near a hive'], crows];
+  const f = S.hedgeForecast(world);
+  return [['🐇', 'Hides rabbits from foxes', comingWhen(f.young)], ['🌸', 'Blossom', comingWhen(f.blossom)], crows];
+}
+
+function showTip(k, ms, by) {
+  const b = $(`#toolbar [data-tool="${k}"]`), el = $('#tool-tip'), t = TIP_TOOLS[k];
+  if (!KEEP || !t || !b) return;
+  clearTimeout(tip.timer); clearTimeout(tip.hover);
+  const rows = tipRows(k, by === 'touch').map(([icon, what, when, dry]) => `<li${dry ? ' class="dry"' : ''}><span>${icon}</span><span>${what}</span><em>${when}</em></li>`);
+  setHTML(el, `<h4 class="fr">${b.querySelector('.e').textContent} ${t.name} <kbd>${t.key}</kbd></h4><p>${t.how}</p><ul class="stats">${rows.join('')}</ul>`);
+  if (tip.tool !== k) {                    // over its button, once, kept on screen
+    el.classList.remove('hidden');
+    const r = b.getBoundingClientRect(), w = el.offsetWidth, mid = r.left + r.width / 2, x = clamp(mid - w / 2, 8, vw - w - 8);
+    el.style.left = Math.round(x) + 'px';
+    el.style.setProperty('--arrow', Math.round(mid - x) + 'px');
+  }
+  tip.tool = k; tip.by = by;
+  if (ms) tip.timer = setTimeout(hideTip, ms);
+}
+
+function hideTip() {
+  clearTimeout(tip.hover);
+  if (!tip.tool) return;
+  clearTimeout(tip.timer);
+  if (tip.by === 'mouse') tip.gone = performance.now();
+  tip.tool = '';
+  $('#tool-tip').classList.add('hidden');
+}
+
+if (KEEP) {
+  const bar = $('#toolbar'), toolOf = e => e.target.closest('[data-tool]');
+  bar.addEventListener('pointerover', e => {
+    const b = toolOf(e);
+    if (e.pointerType !== 'mouse' || !b || b.contains(e.relatedTarget)) return;
+    clearTimeout(tip.hover);
+    if ((tip.tool && tip.by === 'mouse') || performance.now() - tip.gone < 300) showTip(b.dataset.tool, 0, 'mouse');   // gliding along the bar: at once
+    else tip.hover = setTimeout(() => showTip(b.dataset.tool, 0, 'mouse'), TIP_HOVER_MS);
+  });
+  bar.addEventListener('pointerout', e => {
+    const b = toolOf(e);
+    if (e.pointerType !== 'mouse' || !b || b.contains(e.relatedTarget)) return;
+    clearTimeout(tip.hover);
+    if (tip.by === 'mouse') hideTip();
+  });
+  bar.addEventListener('pointerdown', e => { tip.press = e.pointerType; });
+  bar.addEventListener('click', e => {     // a tap takes the tool, as ever (the click handler below), and shows its card
+    const b = toolOf(e), how = e.pointerType ?? tip.press;   // ('' from a key on a focused button)
+    if (!b || how === 'mouse') return;
+    if (tip.tool === b.dataset.tool && tip.by === 'touch') hideTip();
+    else showTip(b.dataset.tool, how ? TIP_TAP_MS : TIP_KEY_MS, how ? 'touch' : 'key');
+  });
+  canvas.addEventListener('pointerdown', hideTip);
+  addEventListener('resize', hideTip);
 }
 
 // which: '' the tools, 'sky' the weather, 'plant' the kinds of tree.
@@ -8835,6 +8922,7 @@ document.addEventListener('keydown', e => {
     e.preventDefault();
     setSpeed(ui.speed ? 0 : lastSpeed);
   } else if ('1234'.includes(e.key) && e.key.length === 1) setSpeed([1, 4, 15, 60][+e.key - 1]);
+  else if (e.key === 'Escape' && tip.tool) hideTip();   // ?keep: a tool's card, put away
   else if (e.key === 'Escape' && placing) dropPlace();   // a pond being placed: called off
   else if (e.key === 'Escape') {
     const more = !$('#more-menu').classList.contains('hidden');
@@ -8843,13 +8931,13 @@ document.addEventListener('keydown', e => {
   }
   else if (e.key === 's') toggleStats();
   else if (e.key === 'f' && ui.selectedId) { ui.follow = !ui.follow; renderInspector(); }
-  else if (e.key === 'l') setTool('look');
+  else if (e.key === 'l') { setTool('look'); showTip('look', TIP_KEY_MS, 'key'); }   // (the card only at ?keep)
   else if (e.key === 'z') setTool('zap');
   else if (e.key === 'b') setTool('fire');
   else if (e.key === 't') setTool('plant');
-  else if (e.key === 'd' && KEEP) setTool('pond');
-  else if (e.key === 'g' && KEEP) setTool('sow');
-  else if (e.key === 'h' && KEEP) setTool('hedge');
+  else if (e.key === 'd' && KEEP) { setTool('pond'); showTip('pond', TIP_KEY_MS, 'key'); }
+  else if (e.key === 'g' && KEEP) { setTool('sow'); showTip('sow', TIP_KEY_MS, 'key'); }
+  else if (e.key === 'h' && KEEP) { setTool('hedge'); showTip('hedge', TIP_KEY_MS, 'key'); }
   else if (e.key === 'w') toggleSkyMenu();
   else if (e.key === 'k') toggleSkyLock();
   else if (e.key === 'n') toggleNewsLog();
@@ -9882,9 +9970,10 @@ $('#go').addEventListener('click', () => {
 // make sound after a click or key press, so a remembered "on" waits for the first one.
 try { if (localStorage.getItem('aeon-garden-sound') === '1') toggleSound(true); } catch (e) { /* fine */ }
 
-// The card remembers being small. A phone starts it small, there's not much room up there.
-let mini = narrow();
-try { const m = localStorage.getItem('aeon-garden-mini'); if (m) mini = m === '1'; } catch (e) { /* fine */ }
+// The card remembers being small. A phone starts it small, there's not much room up there. At ?keep it starts small
+// everywhere, the species in the top bar, and remembers that under a key of its own (MINI_KEY).
+let mini = KEEP || narrow();
+try { const m = localStorage.getItem(MINI_KEY); if (m) mini = m === '1'; } catch (e) { /* fine */ }
 if (mini) toggleMini(true);
 
 // The animal tools remember how many they release at a time.
