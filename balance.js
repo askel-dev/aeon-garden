@@ -6,13 +6,19 @@
 // two flower strips near the hive, and tells when they flowered, when the bees found them and how much they sipped there;
 // and plants a hedge by a burrow, and tells when it was young, blossomed and bore haws, its whips, and the rabbits that got
 // away from a fox into it. `nohedge` leaves the hedge out, to compare the rabbits with and without it.
+// A keeper meadow has its Dry Year in the summer of year 2: `keep` then runs each seed again with a keeper who does
+// nothing, and prints the two side by side, season by season (the green share, the water, rabbits, bees and hives,
+// frogs, foxes, and anything that died out). `idle` runs only the meadows where the keeper does nothing.
 const Sim = require('./sim.js');
 const years = +(process.argv[2] || 5), seeds = +(process.argv[3] || 4), verbose = process.argv[4] === 'v';
-const arrival = process.argv.includes('arrival'), plant = process.argv.includes('plant'), keep = process.argv.includes('keep'), nohedge = process.argv.includes('nohedge');
+const arrival = process.argv.includes('arrival'), plant = process.argv.includes('plant'), nohedge = process.argv.includes('nohedge');
+const idle = process.argv.includes('idle'), keep = process.argv.includes('keep') || idle;
 const PLANT_KINDS = ['oak', 'beech', 'maple', 'birch', 'alder', 'hawthorn', 'apple', 'cherry', 'pine'];
 const perSeason = Sim.SEASON_DAYS * Sim.TPD;
-for (let s = 1; s <= seeds; s++) {
+// One seed's meadow, run for the years (the keeper idle or not), printing through log; gives back its Dry Year rows.
+function runSeed(s, idleRun, log) {
   const w = Sim.createWorld(s * 7919, keep ? { arrival, keep } : { arrival });
+  const dryRows = [], extinct = [];                          // (keep) each season's end; what died out, and when
   const t0 = Date.now();
   const rows = [];
   let pr = s * 2654435761 % 4294967296;                    // the planter's own random numbers, so the meadow's stay its own
@@ -72,7 +78,7 @@ for (let s = 1; s <= seeds; s++) {
         planted.tried++;
         for (let k = 0; k < 20; k++) if (typeof Sim.plantTree(w, rand() * Sim.W, rand() * Sim.H, PLANT_KINDS[Math.floor(rand() * PLANT_KINDS.length)]) !== 'string') { planted.ok++; break; }
       }
-      if (keep && !kept.pond && w.tick >= DIG_DAY * Sim.TPD) {
+      if (keep && !idleRun && !kept.pond && w.tick >= DIG_DAY * Sim.TPD) {
         for (; kept.tries < 4000 && !kept.pond; kept.tries++) {
           const x = Math.floor(rand() * Sim.W) + 0.5, y = Math.floor(rand() * Sim.H) + 0.5, pts = SCRIBBLE.map(([dx, dy]) => ({ x: x + dx, y: y + dy }));
           const p = Sim.pondPlan(w, pts);
@@ -106,6 +112,7 @@ for (let s = 1; s <= seeds; s++) {
         kept.spawn[y] = Math.max(kept.spawn[y] || 0, n);
       }
       for (const e of w.events) {
+        if (e.type === 'extinct') extinct.push(`${e.species} ${Sim.SEASONS[Sim.seasonOf(w.tick)].name[0]}${Sim.clock(w).year}`);
         if (e.type === 'frogsfound' && kept.frogs < 0) { kept.frogs = day(); kept.from = e.from; }
         if (e.type === 'pondgrew' && kept.reeds < 0) kept.reeds = day();
         if (e.type === 'stripbloom') strips.bloom[strips.list.indexOf(e.field)] = ((e.t - e.field.sown) / Sim.TPD).toFixed(1);
@@ -170,51 +177,72 @@ for (let s = 1; s <= seeds; s++) {
     owls.push(`${w.count.owl}(${w.decor.filter(d => d.owl).length})`);
     otters.push(`${w.count.otter}(${w.decor.filter(d => d.holt).length})`);
     const grass = w.grass.reduce((a, b) => a + b, 0);
+    if (keep) {
+      let water = 0;
+      for (const v of w.water) if (v) water++;
+      dryRows.push({ at: `${Sim.SEASONS[k % 4].name.slice(0, 2)}${Math.floor(k / 4) + 1}`, green: Math.round(100 * Sim.greenShare(w)), water, r: w.count.rabbit,
+        b: w.count.bee, hives: w.hives.filter(h => h.queen && !h.cluster).length, frogs: Math.round(w.frogCount), f: w.count.fox });
+    }
     rows.push(`${Sim.SEASONS[k % 4].name[0]}${Math.floor(k / 4) + 1}:${w.count.rabbit}/${w.count.fox}/${w.count.bee}` + (verbose ? `(g${grass.toFixed(0)} min${minR}/${minF})` : ''));
   }
   const d = w.stats.deaths;
   const hives = w.hives.filter(h => h.queen && !h.cluster).length;
-  console.log(`seed ${s}  ${((Date.now() - t0) / 1000).toFixed(1)}s  max ${maxR}/${maxF}  arrivals r${arrivals.rabbit} f${arrivals.fox} b${arrivals.bee} c${arrivals.crow} o${arrivals.owl} ot${arrivals.otter}  kills ${kills} escapes ${escapes}  swarms ${swarms}  hives ${hives}/${w.hives.length}`);
-  console.log(`  weather ${JSON.stringify(sky)}  strikes ${strikes}  fires ${fires} (biggest ${burned} tiles)`);
-  console.log('  deaths rabbit', JSON.stringify(d.rabbit), 'fox', JSON.stringify(d.fox), 'bee', JSON.stringify(d.bee), 'crow', JSON.stringify(d.crow), 'owl', JSON.stringify(d.owl), 'otter', JSON.stringify(d.otter));
+  log(`seed ${s}  ${((Date.now() - t0) / 1000).toFixed(1)}s  max ${maxR}/${maxF}  arrivals r${arrivals.rabbit} f${arrivals.fox} b${arrivals.bee} c${arrivals.crow} o${arrivals.owl} ot${arrivals.otter}  kills ${kills} escapes ${escapes}  swarms ${swarms}  hives ${hives}/${w.hives.length}`);
+  log(`  weather ${JSON.stringify(sky)}  strikes ${strikes}  fires ${fires} (biggest ${burned} tiles)`);
+  log('  deaths rabbit', JSON.stringify(d.rabbit), 'fox', JSON.stringify(d.fox), 'bee', JSON.stringify(d.bee), 'crow', JSON.stringify(d.crow), 'owl', JSON.stringify(d.owl), 'otter', JSON.stringify(d.otter));
   const tm = Sim.traitMeans(w, 'rabbit'), fm = Sim.traitMeans(w, 'fox');
   const fmt = m => m ? Object.entries(m).map(([k, v]) => `${k}${v.toFixed(2)}`).join(' ') : '-';
-  console.log('  rabbit genes', fmt(tm), '| fox genes', fmt(fm));
-  console.log('  rabbit coats', JSON.stringify(Sim.coatCounts(w)), ' surprise litters', surprises);
-  console.log(`  ground  at cap ${capDays.toFixed(0)}/${years * Sim.SPECIES.rabbit.breedSeasons.length * Sim.SEASON_DAYS} breeding days  crashes ${crashes} recovered ${recovered}  trees ${trees.join(' ')}  summer grass wood ${(shade.wood / shade.n).toFixed(2)} open ${(shade.open / shade.n).toFixed(2)}  rich ${rich.join(' ')}`);
-  console.log(`  sickness  outbreaks ${outbreaks} (over ${over})  sick rabbit-days ${sickDays.toFixed(0)}  deaths ${d.rabbit.sickness || 0}  rabbits per burrow at peak ${perBurrow.toFixed(1)}  old cap: at it ${oldCapDays.toFixed(0)} days, crashes ${oldCrashes} recovered ${oldRecovered}  resist ${resist.map(v => v === undefined ? '-' : v.toFixed(2)).join(' ')}`);
-  for (let i = 0; i < rows.length; i += 8) console.log('  ' + rows.slice(i, i + 8).join('  '));
+  log('  rabbit genes', fmt(tm), '| fox genes', fmt(fm));
+  log('  rabbit coats', JSON.stringify(Sim.coatCounts(w)), ' surprise litters', surprises);
+  log(`  ground  at cap ${capDays.toFixed(0)}/${years * Sim.SPECIES.rabbit.breedSeasons.length * Sim.SEASON_DAYS} breeding days  crashes ${crashes} recovered ${recovered}  trees ${trees.join(' ')}  summer grass wood ${(shade.wood / shade.n).toFixed(2)} open ${(shade.open / shade.n).toFixed(2)}  rich ${rich.join(' ')}`);
+  log(`  sickness  outbreaks ${outbreaks} (over ${over})  sick rabbit-days ${sickDays.toFixed(0)}  deaths ${d.rabbit.sickness || 0}  rabbits per burrow at peak ${perBurrow.toFixed(1)}  old cap: at it ${oldCapDays.toFixed(0)} days, crashes ${oldCrashes} recovered ${oldRecovered}  resist ${resist.map(v => v === undefined ? '-' : v.toFixed(2)).join(' ')}`);
+  for (let i = 0; i < rows.length; i += 8) log('  ' + rows.slice(i, i + 8).join('  '));
   const eaten = w.stats.voles;
-  console.log(`  voles  ${voles.join(' ')}  eaten ${eaten} (${Math.round(100 * eaten / Math.max(1, eaten + kills))}% of fox meals)  fox hunger ${d.fox.hunger || 0}  vole years ${voleNews.boom} crashes ${voleNews.bust}`);
+  log(`  voles  ${voles.join(' ')}  eaten ${eaten} (${Math.round(100 * eaten / Math.max(1, eaten + kills))}% of fox meals)  fox hunger ${d.fox.hunger || 0}  vole years ${voleNews.boom} crashes ${voleNews.bust}`);
   const st = w.stats, rm = st.remains;
   const yrs = st.frogYears, pc = k => Math.round(100 * yrs.reduce((a, y) => a + y[k], 0) / Math.max(1, yrs.reduce((a, y) => a + y.laid, 0)));
-  console.log(`  frogs  ${frogs.join(' ')}  news ${JSON.stringify(frogNews)}  froglets per spawner ${yrs.map(y => (y.left / Math.max(1, y.spawners)).toFixed(1)).join(' ')}` +
+  log(`  frogs  ${frogs.join(' ')}  news ${JSON.stringify(frogNews)}  froglets per spawner ${yrs.map(y => (y.left / Math.max(1, y.spawners)).toFixed(1)).join(' ')}` +
     `  spawn stranded ${pc('stranded')}% eaten by crows ${pc('eaten')}%  frogs eaten by foxes ${st.frogs} (${Math.round(100 * st.frogs / Math.max(1, st.frogs + eaten))}% of their mousing) by owls ${st.owlFrogs}`);
-  console.log(`  fish  ${fish.join(' ')}`);
-  console.log(`  crows  ${crows.join(' ')}  remains ${rm.left} (eaten up by crows ${rm.eaten}, rotted ${rm.rotted})  gatherings ${gatherings}` +
+  log(`  fish  ${fish.join(' ')}`);
+  log(`  crows  ${crows.join(' ')}  remains ${rm.left} (eaten up by crows ${rm.eaten}, rotted ${rm.rotted})  gatherings ${gatherings}` +
     `  acorns buried ${st.cached} dug up ${st.dugUp} came up ${st.planted}  oaks/beeches ${oaks0} -> ${oaks()}`);
-  console.log(`  owls (hollows)  ${owls.join(' ')}  hollows taken ${owlNests}  owlets ${st.births.owl} fledged ${fledged} flew off ${leaving}` +
+  log(`  owls (hollows)  ${owls.join(' ')}  hollows taken ${owlNests}  owlets ${st.births.owl} fledged ${fledged} flew off ${leaving}` +
     `  voles eaten ${st.owlVoles} (foxes ${eaten})  kits taken ${d.rabbit.owl || 0}`);
-  console.log(`  otters (holts)  ${otters.join(' ')}  holts made ${holts}  cubs ${st.births.otter} out ${cubsOut} left ${otterLeft}` +
+  log(`  otters (holts)  ${otters.join(' ')}  holts made ${holts}  cubs ${st.births.otter} out ${cubsOut} left ${otterLeft}` +
     `  fish caught ${st.fish} frogs ${st.otterFrogs}`);
   if (keep) {
     const p = kept.pond;
-    console.log(p ? `  keeper  dug ${w.waters[p.id].name} day ${kept.dug} (${kept.tries} tries, ${kept.tiles} tiles: lasting ${p.lasting} spring ${p.spring} deep ${p.deep})`
+    log(p ? `  keeper  dug ${w.waters[p.id].name} day ${kept.dug} (${kept.tries} tries, ${kept.tiles} tiles: lasting ${p.lasting} spring ${p.spring} deep ${p.deep})`
       + `  crows day ${kept.crows}  frogs found it day ${kept.frogs} from ${kept.from} tiles  reeds day ${kept.reeds}`
       + `  spawn in it by spring ${kept.spawn.slice(0, years).map(n => (n || 0).toFixed(1)).join(' ')}  frogs round it ${kept.round.join(' ')}`
       : `  keeper  found nowhere to dig in ${kept.tries} tries`);
     const sl = strips.list;
-    console.log(sl.length ? `  strips  sowed ${sl.map(f => f.name).join(' and ')} day ${kept.dug} (${strips.tries} tries, ${sl.map(f => w.plants.filter(p => p.field === f).length).join(', ')} flowers, `
+    log(sl.length ? `  strips  sowed ${sl.map(f => f.name).join(' and ')} day ${kept.dug} (${strips.tries} tries, ${sl.map(f => w.plants.filter(p => p.field === f).length).join(', ')} flowers, `
       + `${strips.hives.join(', ')} hives in reach)  in flower after ${sl.map((f, k) => strips.bloom[k] ?? '-').join(' ')} days  bees after ${sl.map((f, k) => strips.bees[k] ?? '-').join(' ')} days`
       + `  sips on them by season ${strips.sips.join(' ')}` : `  strips  found nowhere to sow in ${strips.tries} tries`);
     const hd = hedge.h, esc = Array.from({ length: years * 4 }, (_, k) => hedge.esc[k] || 0);
-    console.log((hd ? `  hedge  planted ${hd.name} day ${(hd.planted / Sim.TPD).toFixed(1)} (${hedge.tries} tries, ${hd.whips} whips)  young after ${hedge.young} days`
+    log((hd ? `  hedge  planted ${hd.name} day ${(hd.planted / Sim.TPD).toFixed(1)} (${hedge.tries} tries, ${hd.whips} whips)  young after ${hedge.young} days`
       + `  blossom after ${hedge.bloom}  haws after ${hedge.haws}  whips standing by year ${hedge.standing.join(' ')}  escapes into it by season ${esc.join(' ')} (${hd.escapes} in all)`
       : nohedge ? '  hedge  none (nohedge)' : `  hedge  found nowhere to plant in ${hedge.tries} tries`) + `  rabbits max ${maxR} mean ${(sumR / ticks).toFixed(1)}`);
   }
   if (plant) {
     const up = w.decor.filter(t => t.planted && Sim.standing(t)), stages = {};
     for (const t of up) { const g = Sim.treeStage(w, t); stages[g] = (stages[g] || 0) + 1; }
-    console.log(`  planted  ${planted.ok}/${planted.tried}  lost ${JSON.stringify(planted.lost)}  grew past the rabbits ${planted.sapling}  bore seed ${planted.seeded}  standing ${JSON.stringify(stages)}`);
+    log(`  planted  ${planted.ok}/${planted.tried}  lost ${JSON.stringify(planted.lost)}  grew past the rabbits ${planted.sapling}  bore seed ${planted.seeded}  standing ${JSON.stringify(stages)}`);
   }
+  return { rows: dryRows, extinct, maxR, meanR: sumR / ticks };
+}
+
+// The Dry Year, season by season: the keeper's meadow (a) against the idle one (b), or just one.
+const dryLine = r => `green ${String(r.green).padStart(2)}% water ${String(r.water).padStart(4)}  r${String(r.r).padStart(3)} b${String(r.b).padStart(3)}(${r.hives}) frogs ${String(r.frogs).padStart(4)} f${String(r.f).padStart(2)}`;
+function printDry(a, b) {
+  console.log(b ? '  dry year (summer of year 2)  keeper' + ' '.repeat(36) + '| idle' : '  dry year (summer of year 2)  idle');
+  for (let k = 0; k < Math.min(12, a.rows.length); k++) console.log(`    ${a.rows[k].at}  ${dryLine(a.rows[k])}` + (b ? `  | ${dryLine(b.rows[k])}` : ''));
+  console.log(`    died out  ${a.extinct.join(', ') || 'none'}` + (b ? `  | ${b.extinct.join(', ') || 'none'}` : '')
+    + `   rabbits max ${a.maxR} mean ${a.meanR.toFixed(0)}` + (b ? ` | max ${b.maxR} mean ${b.meanR.toFixed(0)}` : ''));
+}
+
+for (let s = 1; s <= seeds; s++) {
+  const a = runSeed(s, idle, console.log);
+  if (keep) printDry(a, idle ? null : runSeed(s, true, () => {}));
 }

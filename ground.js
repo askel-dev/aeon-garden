@@ -36,9 +36,23 @@ const FRAGMENT = `#version 300 es
 precision highp float;
 uniform sampler2D tile, bloom, shape, water, mist;
 uniform vec2 size, off, seed;
-uniform float top, zoom, dpr, snow, damp, lx, ly, ice, cold, mistOut;
+uniform float top, zoom, dpr, snow, damp, lx, ly, ice, cold, mistOut, drought;
 uniform vec3 low, high, sand, fog;
 out vec4 o;
+
+// The Dry Year (?keep): drought is how hard it bites, 0 to 1 (game.js, in steps of 1/16).
+#define DRY_NEAR 3.                       // tiles from the water the grass stays green
+#define DRY_FAR 10.                       // and by this far out it's straw
+#define DRY_RAGGED 5.                     // tiles the edge wanders in and out
+#define DRY_HIGH 4.                       // higher ground browns this many tiles sooner (from a quarter of the way up)
+#define DRY_WOODS 0.6                     // the woods' shade spares this much of it
+#define DRY_STRAW vec3(0.86, 0.78, 0.50)
+#define DRY_OLIVE vec3(0.70, 0.69, 0.44)  // here and there, through the straw
+#define DRY_EARTH vec3(0.74, 0.64, 0.49)  // baked earth
+#define DRY_MUD vec3(0.50, 0.43, 0.34)    // wet mud where the water has drawn back past any summer's line (the shape's 4th)
+#define DRY_LUSH 0.6                      // how much lusher the ring by the water goes
+#define DRY_GREEN 0.75                    // and how thick its grass shows at least, whatever the sim's (a pond just dug)
+#define DRY_THIN 0.7                      // the straw this much thinner where the bare earth shows
 
 // Hashes the float's own bits, so it stays exact at any coordinate: a float trick like
 // fract(p * 123.34) runs out of digits in the fine grain and paints it in streaks.
@@ -160,12 +174,27 @@ void main() {
   grass = mix(grass, golden, smoothstep(0.45, 0.85, dry));
   grass = mix(grass, grass * vec3(0.82, 0.94, 0.98), 0.45 * exp(-H.b / 3.));   // cool shade by the woods
   grass *= 1. - 0.08 * exp(-max(toWater, 0.) / 1.4);             // wet grass along the water
-  float clover = 0.4 * smoothstep(0.55, 0.75, fbm(q * 0.28 + 90.)) * clamp(0.4 + moist - dry, 0., 1.);
+  // The Dry Year: straw away from the water, ragged at the edge (lower ground and the woods' shade hold on longer), bare
+  // baked earth in patches, and a lush ring within a few tiles of the water. The ring reads green at once round a pond
+  // just dug, however short the sim's grass is there (it grows back over a day or two).
+  float parch = 0.;
+  if (drought > 0.) {
+    float ragged = DRY_RAGGED * (fbm(q * 0.12 + 520.) - 0.5);
+    parch = drought * smoothstep(DRY_NEAR, DRY_FAR, toWater + ragged + DRY_HIGH * (height - 0.25)) * (1. - DRY_WOODS * exp(-H.b / 4.));
+    float ring = drought * (1. - smoothstep(DRY_NEAR - 1.5, DRY_NEAR + 1., toWater + 0.4 * ragged)) * (1. - smoothstep(0.2, 0.7, H.a));
+    float bald = smoothstep(0.42, 0.72, fbm(q * 0.45 + 600.));             // where the bare earth shows first
+    vec3 straw = mix(DRY_STRAW, DRY_OLIVE, smoothstep(0.35, 0.75, fbm(q * 0.25 + 640.)) * 0.55);
+    grass = mix(mix(grass, straw, parch), lush * vec3(0.92, 1.04, 0.9), DRY_LUSH * ring);
+    g = mix(g * (1. - DRY_THIN * parch * bald), max(g, DRY_GREEN), ring);
+  }
+  float clover = 0.4 * smoothstep(0.55, 0.75, fbm(q * 0.28 + 90.)) * clamp(0.4 + moist - dry, 0., 1.) * (1. - parch);
   grass = mix(grass, grass * vec3(0.8, 0.9, 0.86), 0.8 * clover);
   vec3 earth = mix(low * vec3(0.95, 0.93, 0.9), low * vec3(0.66, 0.6, 0.55), moist);
+  if (parch > 0.) earth = mix(earth, DRY_EARTH, parch);
 
   // The grass itself, over the earth, with a nibbled edge.
   vec3 col = mix(earth, grass, smoothstep(0., 1., clamp(g + 0.15 * (n2 - 0.5), 0., 1.))) * (0.97 + 0.06 * n1);
+  if (drought > 0.) col = mix(col, mix(DRY_MUD, DRY_EARTH, smoothstep(0.5, 3., toWater)) * (0.92 + 0.16 * n2), drought * smoothstep(0.2, 0.7, H.a));
   float detail = clamp((zoom - 12.) / 6., 0., 1.);               // further out the tufts would only read as speckle
 
   // A thin edge of wet moss along the water, fuller here and there. Not tan: tan is grazed ground.
@@ -306,7 +335,7 @@ function set(name, data) {
 // zoom): the margin would only make every paint bigger.
 const PAD = 64;
 let last = null, stale = true, busy = 0, panned = -1e9;   // busy: how often lately more than the camera moved
-const NEAR = { snow: 0.004, damp: 0.002, ice: 0.004, cold: 0.004, lx: 0.08, ly: 0.08 };
+const NEAR = { drought: 0.004, snow: 0.004, damp: 0.002, ice: 0.004, cold: 0.004, lx: 0.08, ly: 0.08 };
 const EXACT = ['width', 'height', 'zoom', 'dpr'];
 const was = { ox: 0, oy: 0 }, view = { x: 0, y: 0 };
 function steady(u) {                                    // all but where the camera is
@@ -337,7 +366,7 @@ function draw(u) {
   gl.viewport(0, ch - u.height - 2 * m, u.width + 2 * m, u.height + 2 * m);   // the canvas's top left
   gl.uniform1f(U.top, ch);
   gl.uniform2f(U.off, u.ox + pad, u.oy + pad); gl.uniform2fv(U.seed, u.seed);
-  for (const k of ['zoom', 'dpr', 'snow', 'damp', 'lx', 'ly', 'ice', 'cold']) gl.uniform1f(U[k], u[k]);
+  for (const k of ['zoom', 'dpr', 'snow', 'damp', 'lx', 'ly', 'ice', 'cold', 'drought']) gl.uniform1f(U[k], u[k]);
   for (const k of ['low', 'high', 'sand', 'fog']) gl.uniform3fv(U[k], u[k].map(v => v / 255));
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   last = { ...u, pad }; stale = false; view.x = view.y = m;

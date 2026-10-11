@@ -80,8 +80,11 @@ every stage they must print the same, seed for seed, since everything new is for
 - Bigger ponds dig deeper (D1): past `POND_SLOPE` (3 tiles in, 0.45 down) a tile goes on deepening, by up to
   `POND_MIDDLE` (0.5) more at `POND_WIDE` (6) tiles in, still never below `POND_FLOOR`. So a blob of 100 to 160 tiles, or
   a pond grown by a few strokes, holds water in its middle on high ground: a 120-tile blob 12+ tiles from any water lasts
-  the year (and the Dry Year's low) in 88 to 100% of the open spots on seeds 31, 314, 1000, 9001 and 123, against 65 to
-  100% before. `edgeIn` looks out a ring at a time and stops early, so the deeper reach costs no more per tile of a drag.
+  the year, the Dry Year's summer too, in 93 to 100% of the open spots on seeds 31, 314, 1000, 9001 and 123 (drawn as a
+  spiral of the brush, 86 to 100%), against 65 to 100% before. `edgeIn` looks out a ring at a time and stops early, so
+  the deeper reach costs no more per tile of a drag. While the Dry Year is to come or on, the ghost's "water all year"
+  is water that lasts it: a tile that would last only an ordinary summer shows as a spring pool, and the label and the
+  inspector say it "dries out in the Dry Year" (`dryOut`, `p.dryLasting`).
 - A pond of its own: it gets a name and a body in `w.waters` (picked by its own hash, never `w.rng`), and
   `nearBody` is filled again round it (the fill split out of `nameWaters`, which reshuffles every name).
 - Its banks are turned earth: bare, and rich for a few days. Crows come down to them (`turned`, like the
@@ -163,5 +166,38 @@ on its own. Then one or two people who've never seen it. If it fails, the notes 
     now, and a pond dug in it, to see if it says "dig here" before any sim is built.
   - Open: how many years to the Dry Year; the one number on screen (the share still green?); what the hedge does
     in a drought; the result at summer's end.
+- **Step 2, D1: the Dry Year itself (built 2026-10-11).** Only at `?keep`; the bare address prints the same, seed for seed.
+  - The clock: `w.dryYear = { year }`, the summer of year 2 (`DRY_YEAR`; `&dry=N` in a new keeper meadow's link sets it,
+    1 being this year's). A keeper meadow kept from before it gets one the next summer when it opens (`unpackWorld`).
+    `dryStage` (1 its spring, 2 its summer, 3 the autumn after), `dryComing`, and `dryness` (0 to 1: on over the first
+    day of its summer, off over the autumn) say where it is. Once it's over the years are ordinary again.
+  - The goal from the start: the keep card opens with it and a countdown ("☀️ The Dry Year comes in the summer of year 2
+    (5 seasons)", then "☀️ The Dry Year: rain again in 3 days", then "🌧️ The rain is back") and "What helps: water,
+    flowers and cover near where the animals live". Its head folds it to the goal (the ✕ is gone: the goal stays).
+  - The water first: its spring flood fails (`DRY_FLOOD`, 15% of an ordinary one); no rain from its spring to the end of
+    its summer (`DRY_ODDS` in `pickWeather`: clear, cloudy, heat); in its summer the water drops `DRY_LOW` (0.05) below an
+    ordinary summer's low. At its height the line is 0.093 under the meadow's level (an ordinary summer's 0.043): the
+    brook dries to pools, the tiny pools go, the lakes, rivers and big ponds lose 8 to 38% of their tiles (seed 314's lake 443 to
+    275), and none drains. The rain comes back on the first day of autumn.
+  - The grass: once a day `parch` (in `shadeSoil`, split out of `groundTick`) cuts what each tile holds by its distance to
+    the water, full within `DRY_NEAR` (3), straw (`DRY_GRASS`, 0.12) from `DRY_FAR` (10), its edge ragged in soft patches
+    (`patchy`), spared a little under the trees. Green share (`greenShare`: dry land with grass 0.3 or more) at the end
+    of its summer: 7 to 28% over 6 seeds, against 70 to 88% in the summer after.
+  - The look: ground.js's `drought` uniform (game.js hands it `dryness` in 16ths, so the ground repaints only on a step):
+    straw away from the water, bare baked earth in patches, a lush ring within 3 tiles that reads green at once round a
+    pond just dug, and mud where the water has drawn back past any summer's line (the shape texture's 4th channel).
+    The tufts out in the straw go tawny. A pond dug in it soaks its banks (silt): the grass by it is back to 0.3 to 0.7
+    in two days (slower in a heatwave).
+  - The flowers feel it through the grass, a few days late: the grass withers to the cap at `DIEBACK` (about two thirds
+    in three days), so the strips and the wild fields still flowered for the first days of its summer (sips on the
+    strips that summer 175 to 458 a seed, as many as the summer before). The flowers and bees aren't tuned for it (D2).
+  - The news: `dryahead`, `dryspring`, `drystart`, `dryend` (the last three on the away card, the start and end pinned).
+  - `node balance.js 3 6 keep`, the keeper (a 27-tile pond, two strips, a hedge on day 1) against a keeper who does
+    nothing (`idle`): nothing died out in the keepers' meadows; in the idle ones the bees died out in 4 of 6 (2 of them
+    in year 1, before it). The rabbits crash after it either way (33 to 95 by its winter with a keeper, 27 to 141 idle),
+    and the keepers' meadows came back worse in 3 of 6, with more foxes about in all 6 (fed, likely, by the pond's frogs: for D2).
+  - Perf (headless Chrome, 1280x800, seed 31, zoomed out): `render` at 60x 2.4 ms median against 2.1 in an ordinary
+    summer, 2.0 against 1.9 at 1x; the ground repaints as often (131 against 145 in 12 s at 1x, none paused); the shader
+    alone 1.3 against 1.2 ms a full repaint.
 - **Step 3, the first year:** a valley made by hand or a generated meadow; a keeper you can see, later or never;
   the owls; the game's name.

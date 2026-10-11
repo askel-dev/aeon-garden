@@ -19,6 +19,7 @@ const params = new URLSearchParams(location.search), LAB = params.has('lab');
 // of flowers) and the god tools are gone: no releasing animals, no grass, lightning or fire, no picking the
 // weather, no picking animals up. Kept apart from the meadows you watch, under links of its own.
 const KEEP = params.has('keep') && !LAB;
+const DRY_PARAM = +params.get('dry') || 0;   // ?keep&dry=N: a new keeper meadow's Dry Year comes in the summer of year N (1: this one)
 const fromUrl = key => { try { return JSON.parse(params.get(key) || '{}'); } catch (e) { return {}; } };   // a broken link: the usual meadow
 let terrain = fromUrl('terrain'), drawn = location.hash.length > 1 ? S.drawnFromLink(location.hash) : fromUrl('drawn');
 const terrainQuery = () => (Object.keys(terrain).length ? '&terrain=' + encodeURIComponent(JSON.stringify(terrain)) : '')
@@ -557,6 +558,7 @@ function drawGround(z, ox, oy, shx, shy) {
   Ground.draw({
     width: w, height: h, zoom: z, ox, oy, dpr: gd, seed: groundSeed, low, high, sand: shoreSand, fog: fogColour(high, ck.phase),
     snow: world.snow, damp: 1 - 0.12 * world.wet, ice: iceOver(), cold: coldness(), lx: k * sn.lean, ly: k * 0.8,
+    drought: Math.round(S.dryness(world) * 16) / 16,     // (?keep, the Dry Year: in steps, so the ground repaints only on a step)
   });
   if (groundIn) { ctx.drawImage(Ground.canvas, Ground.view.x, Ground.view.y, w, h, 0, 0, vw, vh); return; }
   const g = Ground.canvas, cw = g.width / gd, ch = g.height / gd, x = shx - Ground.view.x / gd, y = shy - Ground.view.y / gd;
@@ -663,8 +665,11 @@ function updatePlantLooks(z, season) {
   }
   if (plantKeysTick === terrainTick && plantKeysZoom === z && plantKeysDpr === dpr) return;
   plantKeysTick = terrainTick; plantKeysZoom = z; plantKeysDpr = dpr;
+  const parched = S.dryness(world) > 0.5;                // (?keep, the Dry Year: the tufts out in the straw go tawny)
   for (let i = 0; i < world.plants.length; i++) {
-    const p = world.plants[i], l = plantLook(p, season, z), art = l ? flowerArt(l.e, season) : -1;
+    const p = world.plants[i], l = plantLook(p, season, z);
+    let art = l ? flowerArt(l.e, season) : -1;
+    if (art === 7 && parched && world.grass[p.i] < 0.3) art = 8;
     plantKeys[i] = l ? l.px * 16 + PLANT_EMOJI.indexOf(l.e) + 1 : 0;
     plantArt[i] = art < 0 ? 0 : flowerCode(art, Math.imul(p.n + 1, 2654435761) >>> 0, l.px) + 1;
   }
@@ -4419,12 +4424,13 @@ function updateWater() {
   const woods = pond && pond.world === world ? pond.woods : S.distanceTo(Uint8Array.from(world.wood, v => v > 0.25 ? 1 : 0));
   pond = { world, version: world.waterVersion, at: now, waves, woods, shore, wet: f1 };
   if (!Ground.ok) return;
-  const toWater = S.distanceToWater(world);
+  const toWater = S.distanceToWater(world), T = world.terrain, bed = T.level - T.summerLow - T.rainRise / 2;   // (bed: what an ordinary summer keeps under water)
   for (let i = 0; i < f1.length; i++) {
     const o = i * 4;
     waterData[o] = f1[i]; waterData[o + 1] = f2[i]; waterData[o + 2] = f4[i]; waterData[o + 3] = d2[i];
     shapeData[o] = (world.ground[i] - world.level) / 0.6;     // about 0 at the water to 1 on the hilltops
     shapeData[o + 1] = Math.min(toWater[i], 50); shapeData[o + 2] = Math.min(woods[i], 50);
+    shapeData[o + 3] = !world.water[i] && world.ground[i] < bed ? 1 : 0;   // (the Dry Year: mud the water left, see ground.js)
   }
   Ground.set('water', waterData); Ground.set('shape', shapeData);
 }
@@ -5703,6 +5709,12 @@ function placeNear(x, y, skip = null) {
   return name ? `by the ${esc(name)}` : '';
 }
 
+// The meadow's big water, by name: its river, else its lake, else the first.
+function bigWater() {
+  const big = world.waters.find(b => b.kind === 'river') || world.lake || world.waters[0];
+  return big ? big.name : 'The water';
+}
+
 function handleEvent(e) {
   const mine = involvesSelected(e);
   if (idle.on) idleNews(e);
@@ -5756,12 +5768,26 @@ function handleEvent(e) {
       break;
     }
     case 'dugpond': {                   // (?keep) the keeper dug a pond
-      const what = e.lasting ? `water all year${e.deep ? ', deep in the middle' : ''}` : 'a spring pool, dry by summer';
+      const what = e.lasting ? `water all year${e.deep ? ', deep in the middle' : ''}${S.dryComing(world) ? ', even through the Dry Year' : ''}`
+        : e.dryOut ? 'it lasts an ordinary summer, but dries out in the Dry Year' : 'a spring pool, dry by summer';
       const frogs = e.frogs < 0 ? 'No frogs live near enough to find it yet.' : e.frogs <= 2 ? 'Frogs live right by it.' : `Frogs ${e.frogs} tiles off could find it.`;
       if (e.bigger) addNews(`⛏️ You made ${thingLink('water', e.water, `<b>${esc(e.name)}</b>`)} bigger, by ${e.tiles} tiles.`);
       else addNews(`⛏️ You dug ${thingLink('water', e.water, `<b>${esc(e.name)}</b>`)}: ${what}. ${frogs}`);
       break;
     }
+    case 'dryahead':                    // (?keep) the Dry Year, from the start
+      addNews(`☀️ <b>The Dry Year comes in the summer of year ${e.year}.</b> No rain from spring till autumn, and the meadow will brown away from the water. `
+        + 'Ponds, flowers and cover where the animals live will see them through.');
+      break;
+    case 'dryspring':
+      addNews(`🌧️ <b>The spring rains failed:</b> ${esc(bigWater())} is low, and the Dry Year is coming.`);
+      break;
+    case 'drystart':
+      addNews('☀️ <b>The Dry Year:</b> no rain till autumn, and the meadow browns away from the water.');
+      break;
+    case 'dryend':
+      addNews('🌧️ <b>The rain is back:</b> the Dry Year is over.');
+      break;
     case 'frogsfound':
       addNews(`🐸 Frogs found ${thingLink('water', e.water, esc(world.waters[e.water].name))}${e.from > 2 ? `, from ${e.from} tiles off` : ''}.`);
       break;
@@ -5921,8 +5947,7 @@ function handleEvent(e) {
       addNews(`🏡 Queen ${esc(e.queen.name)}'s swarm has moved into ${e.reused ? 'an empty hive, old comb and all' : 'a hollow tree'}.`);
       break;
     case 'water': {
-      const river = world.waters.find(b => b.kind === 'river') || world.lake || world.waters[0];
-      const name = river ? river.name : 'The water';
+      const name = bigWater();
       addNews(e.rising ? `🌊 ${esc(name)} has risen over its banks. The low meadows are under water.`
         : `☀️ ${esc(name)} has dropped low for the summer. There are more places to wade across.`);
       break;
@@ -6429,7 +6454,7 @@ const SERIES = {
 const SEASON_TINT = ['#f6dde5', '#f7ecb8', '#f4d6b6', '#dfe8f0'];
 const RANGES = { year: S.YEAR_DAYS * S.TPD, five: 5 * S.YEAR_DAYS * S.TPD, all: Infinity };
 const RANGE_WORDS = { year: 'the last year', five: 'the last 5 years', all: 'the whole story' };
-const MARK_EMOJI = { extinct: '😢', arrive: '🧳', fire: '🔥', outbreak: '🤒', dugpond: '⛏️', frogsfound: '🐸', sowstrip: '🌼', beesfound: '🐝', hedgeplant: '🌿', hedgebloom: '🌸' };
+const MARK_EMOJI = { extinct: '😢', arrive: '🧳', fire: '🔥', outbreak: '🤒', drystart: '☀️', dryend: '🌧️', dugpond: '⛏️', frogsfound: '🐸', sowstrip: '🌼', beesfound: '🐝', hedgeplant: '🌿', hedgebloom: '🌸' };
 const CAUSES = [['fox', '🦊', 'Caught by a fox'], ['hunger', '🥀', 'Starved'], ['age', '🌙', 'Old age'],
   ['sickness', '🤒', 'Sickness'], ['lightning', '⚡', 'Lightning'], ['fire', '🔥', 'Wildfire'], ['flood', '🌊', 'Drowned in a flood'],
   ['ice', '🧊', 'Fell through the ice'], ['owl', '🦉', 'Taken by an owl'], ['left', '🧳', 'Left to find a home of its own']];
@@ -8247,7 +8272,8 @@ function placeLabel(pl) {
   else if (!p.ok) text = `<b>${NO_POND[p.why]}</b>`;
   else {
     const n = p.lasting + p.spring + p.dry, grows = p.grows ? `Makes ${esc(world.waters[p.grows.id].name)} bigger · ` : '';
-    const what = p.lasting ? `${grows}Water all year · ${n} tiles · ${p.deep ? 'deep middle: a rabbit can escape a fox there' : 'all shallows, as the frogs like it'}`
+    const what = p.lasting ? `${grows}Water all year${S.dryComing(world) ? ', even in the Dry Year' : ''} · ${n} tiles · ${p.deep ? 'deep middle: a rabbit can escape a fox there' : 'all shallows, as the frogs like it'}`
+      : p.dryOut ? `${grows}A spring pool · ${n} tiles: it lasts an ordinary summer, but dries out in the Dry Year`
       : `${grows}A spring pool · ${n} tiles: it dries out in summer, the frogs’ favourite`;
     const also = [frogsOff(p.frogs)];
     if (p.blocked) also.push(`${BLOCKED[p.blocker][0].toUpperCase() + BLOCKED[p.blocker].slice(1)}${p.blocked > 1 ? ' and more' : ''} left standing`);
@@ -8332,7 +8358,9 @@ function drawRipples(now, z) {
 const whenIn = t => `${seasonName(S.seasonOf(t))} of year ${Math.floor(t / S.TPD / S.YEAR_DAYS) + 1}`;
 function dugFacts(p) {
   const out = [['⛏️', `You dug it in the ${whenIn(p.dug)}${p.grown ? `, and made it bigger in the ${whenIn(p.grown)}` : ''}`],
-    p.lasting ? ['💧', `Water all year: it lasts the summer${p.deep ? ', and it’s deep in the middle' : ''}`] : ['⏳', 'A spring pool: it dries out in summer']];
+    p.lasting && S.dryComing(world) && !p.dryLasting ? ['⏳', 'It lasts an ordinary summer, but dries out in the Dry Year']
+      : p.lasting ? ['💧', `Water all year: it lasts the summer${S.dryComing(world) ? ', even the Dry Year’s' : ''}${p.deep ? ', and it’s deep in the middle' : ''}`]
+      : ['⏳', 'A spring pool: it dries out in summer']];
   if (!p.reeds) out.push(['🌾', 'Reeds come up round it after a season']);
   if (!p.found) {
     const n = S.frogsNear(world, p.x, p.y);
@@ -8730,7 +8758,7 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'watch') startIdle();
   else if (t.dataset.act === 'guide') { openGuide(); guideTick(performance.now()); }
   else if (t.dataset.act === 'guide-shut') { shutGuide(); guideTick(performance.now()); }
-  else if (t.dataset.act === 'keep-shut') { shutKeepCard(); guideTick(performance.now()); }
+  else if (t.dataset.act === 'keep-fold') { foldKeepCard(); guideTick(performance.now()); }
   else if (t.dataset.act === 'guide-skip') { Object.assign(guide, { step: GUIDE_STEPS, wait: 0 }); saveGuide(); guideTick(performance.now()); }
   else if (t.dataset.act === 'guide-fold') { guide.fold = !guide.fold; guide.fresh = ''; saveGuide(); guideTick(performance.now()); }
   else if (t.dataset.act?.startsWith('try:')) tryThing(t.dataset.act.slice(4));
@@ -9078,27 +9106,51 @@ function tryThing(k) {
   guideTick(performance.now());
 }
 
-// ?keep has no guide and no goal: one small card in its place says what the keeper's tools do, till it's
-// closed (KEEP_CARD), and a tap on one puts it in your hand.
+// ?keep has no guide: one small card in its place opens with the goal, the Dry Year and how long till it comes
+// (or till the rain comes back), then says what the keeper's tools do, and a tap on one puts it in your hand. A tap on
+// its head folds it to the goal (KEEP_CARD keeps that).
 const KEEP_CARD = 'aeon-garden-keep-card';
-const keepCard = { on: false, html: '' };
+const keepCard = { on: false, fold: false, html: '', goal: '' };
 function startKeepCard() {
-  try { keepCard.on = localStorage.getItem(KEEP_CARD) !== '1'; } catch (e) { keepCard.on = true; }
+  keepCard.on = true;
+  try { keepCard.fold = localStorage.getItem(KEEP_CARD) === '1'; } catch (e) { /* unfolded, then */ }
 }
-function shutKeepCard() {
-  keepCard.on = false;
-  try { localStorage.setItem(KEEP_CARD, '1'); } catch (e) { /* fine */ }
+function foldKeepCard() {
+  keepCard.fold = !keepCard.fold;
+  try { localStorage.setItem(KEEP_CARD, keepCard.fold ? '1' : '0'); } catch (e) { /* fine */ }
 }
+
+// How long till tick t, in seasons and days: '1 season and 3 days', '2 days', '1 day'.
+function timeTill(t) {
+  const days = Math.max(1, Math.ceil((t - world.tick) / S.TPD)), n = Math.floor(days / S.SEASON_DAYS), d = days % S.SEASON_DAYS;
+  const ss = n === 1 ? '1 season' : `${n} seasons`, ds = d === 1 ? '1 day' : `${d} days`;
+  return n && d ? `${ss} and ${ds}` : n ? ss : ds;
+}
+
+// The keeper's goal, in a line: the Dry Year to come, on, or just over (its autumn). Empty before a meadow has one.
+function dryGoal() {
+  if (!world.dryYear) return '';
+  const stage = S.dryStage(world);
+  if (stage === 2) return `☀️ The Dry Year: rain again in ${timeTill(S.dryTo(world))}`;
+  if (S.dryComing(world)) return `☀️ The Dry Year comes in the summer of year ${world.dryYear.year} <span class="g-when">(${timeTill(S.dryFrom(world))})</span>`;
+  return stage === 3 ? '🌧️ The rain is back: the Dry Year is over' : '';
+}
+
 function keepCardTick() {
-  const show = keepCard.on && !away.on;
-  if ($('#guide').classList.contains('hidden') === show) $('#guide').classList.toggle('hidden', !show);
+  const show = keepCard.on && !away.on, box = $('#guide');
+  if (box.classList.contains('hidden') === show) box.classList.toggle('hidden', !show);
   if (!show) return;
-  const verbs = KEEP_TOOLS.filter(([k]) => k !== 'look'), touch = matchMedia('(pointer: coarse)').matches;
-  const html = `<div class="g-top"><b class="g-title fr">🌱 Shape the meadow</b><button class="g-x" data-act="keep-shut" aria-label="Close">✕</button></div>
+  const verbs = KEEP_TOOLS.filter(([k]) => k !== 'look'), touch = matchMedia('(pointer: coarse)').matches, goal = dryGoal();
+  const html = (goal ? '<p class="g-line g-goal"></p>'      // (the goal's line is written on its own: its countdown ticks)
+      + (S.dryComing(world) ? '<p class="g-hint g-goal-hint">What helps: water, flowers and cover near where the animals live.</p>' : '') : '')
+    + `<div class="g-top"><button class="g-head" data-act="keep-fold" aria-expanded="${!keepCard.fold}"><b class="g-title fr">🌱 Shape the meadow</b>
+      <span class="win-btn${keepCard.fold ? ' grow' : ''}" aria-hidden="true"></span></button></div>
     ${verbs.length ? `<ul class="g-list">${verbs.map(([k, e, label, hint]) => `<li><button data-tool="${k}"><span class="e">${e}</span>
       <span><b>${label}</b><small>${hint}</small></span><span class="tick"></span></button></li>`).join('')}</ul>` : ''}
-    <p class="g-hint">${touch ? '⏸ stops time' : 'Space stops time'}, and you can still work while it’s stopped. Then see who comes.</p>`;
-  if (html !== keepCard.html) { $('#guide').innerHTML = html; keepCard.html = html; }
+    <p class="g-hint g-sub">${touch ? '⏸ stops time' : 'Space stops time'}, and you can still work while it’s stopped. Then see who comes.</p>`;
+  if (html !== keepCard.html) { box.innerHTML = html; keepCard.html = html; keepCard.goal = ''; }
+  if (goal !== keepCard.goal) { if (goal) box.querySelector('.g-goal').innerHTML = goal; keepCard.goal = goal; }
+  if (box.classList.contains('fold') !== keepCard.fold) box.classList.toggle('fold', keepCard.fold);
 }
 
 // A few times a second (the cards' beat): the steps wait for what they ask, and a few things on the list
@@ -9537,7 +9589,7 @@ addEventListener('pagehide', keepMeadow);
 const AWAY_MIN = 5 * 60e3;                 // gone at least this long, in real time
 const AWAY_TICKS = S.SEASON_DAYS * S.TPD;  // and it moves on a season, however long it was
 const AWAY_MS = 40;                        // of each frame the catching up gets
-const AWAY_BIG = ['extinct', 'swarm', 'settle', 'hivestruck', 'queenlost', 'fire', 'outbreak', 'outbreakover', 'mast', 'voles', 'frogyear', 'treedied', 'windthrow', 'frogsfound', 'pondgrew', 'stripbloom', 'beesfound', 'hedgeyoung', 'hedgebloom', 'hedgehaws'];   // news for the card, the first told first
+const AWAY_BIG = ['extinct', 'dryend', 'drystart', 'dryspring', 'swarm', 'settle', 'hivestruck', 'queenlost', 'fire', 'outbreak', 'outbreakover', 'mast', 'voles', 'frogyear', 'treedied', 'windthrow', 'frogsfound', 'pondgrew', 'stripbloom', 'beesfound', 'hedgeyoung', 'hedgebloom', 'hedgehaws'];   // news for the card, the first told first
 const away = { on: false, frames: 0, left: 0, from: 0, day: -1, births: null, deaths: null, news: [], type: '', mine: false };
 const awayOpen = () => !$('#away').classList.contains('hidden');
 const deathsOf = s => Object.values(world.stats.deaths[s]).reduce((a, b) => a + b, 0);
@@ -9609,7 +9661,7 @@ function flushEvents() {
 function randomSeed() { return Math.floor(Math.random() * 1e6); }
 
 function newWorld(seed, arrival = false) {
-  showWorld(S.createWorld(seed, LAB ? { terrain, drawn, rabbits: 0, foxes: 0, bees: 0 } : KEEP ? { terrain, drawn, keep: true } : { terrain, drawn, arrival }));
+  showWorld(S.createWorld(seed, LAB ? { terrain, drawn, rabbits: 0, foxes: 0, bees: 0 } : KEEP ? { terrain, drawn, keep: true, dry: DRY_PARAM } : { terrain, drawn, arrival }));
   const big = [world.waters.find(v => v.kind === 'river'), world.lake].filter(Boolean).map(v => `<b>${v.name}</b>`);
   const by = big.length ? ' by ' + big.join(' and ') : '';
   addNews(arrival ? `🌱 A new meadow${by}. Nobody lives here yet.`

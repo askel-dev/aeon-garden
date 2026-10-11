@@ -1038,6 +1038,9 @@ const KIT_DAYS = 1;              // kits younger than this can't get out of a fl
 
 function waterGoal(w) {
   const T = w.terrain, s = seasonOf(w.tick);
+  if (w.dryYear && s < 2 && dryStage(w)) {                  // (?keep) the Dry Year: the flood fails, then a low past any summer's
+    return T.level + (s === 0 ? T.springFlood * DRY_FLOOD : -T.summerLow - DRY_LOW) + T.rainRise * (w.wet - 0.5);
+  }
   return T.level + (s === 0 ? T.springFlood : s === 1 ? -T.summerLow : 0) + T.rainRise * (w.wet - 0.5);
 }
 
@@ -1911,12 +1914,10 @@ function enrich(w, x, y, amount, radius) {
   }
 }
 
-// Once a day, at dawn when everyone is home: how much grass each tile's soil holds in the shade on it
-// now (w.shadedFert, which growGrass reads), and each warren's latrines, a ring of dung heaps round
-// the hole, get a day's droppings from the rabbits in it.
+// Once a day, at dawn when everyone is home: how much grass each tile's soil holds (shadeSoil), and each
+// warren's latrines, a ring of dung heaps round the hole, get a day's droppings from the rabbits in it.
 function groundTick(w) {
-  const shade = SHADE_GRASS * (leafless(w.tick) ? BARE_SHADE : 1);
-  for (let i = 0; i < W * H; i++) w.shadedFert[i] = w.fert[i] * (1 - shade * w.wood[i]);
+  shadeSoil(w);
   for (const b of w.burrows) {
     if (!b.count) continue;
     for (let k = 0; k < LATRINES; k++) {
@@ -1924,6 +1925,14 @@ function groundTick(w) {
       enrich(w, b.x + Math.cos(a) * LATRINE_OUT, b.y + Math.sin(a) * LATRINE_OUT, LATRINE_RICH * b.count, LATRINE_REACH);
     }
   }
+}
+
+// How much grass each tile's soil holds in the shade on it now (w.shadedFert, which growGrass reads), and in the
+// Dry Year less away from the water (parch).
+function shadeSoil(w) {
+  const shade = SHADE_GRASS * (leafless(w.tick) ? BARE_SHADE : 1);
+  for (let i = 0; i < W * H; i++) w.shadedFert[i] = w.fert[i] * (1 - shade * w.wood[i]);
+  if (w.dryYear) parch(w);
 }
 
 // ---------------------------------------------------------------- weather
@@ -1987,7 +1996,7 @@ function setWeather(w, kind, ticks, player = false) {
 }
 
 function pickWeather(w) {
-  const odds = WEATHER_ODDS[seasonOf(w.tick)];
+  const odds = w.dryYear && seasonOf(w.tick) < 2 && dryStage(w) ? DRY_ODDS : WEATHER_ODDS[seasonOf(w.tick)];   // (?keep: no rain in the Dry Year)
   let roll = w.rng.next() * Object.values(odds).reduce((a, b) => a + b, 0), kind = 'clear';
   for (const k in odds) { roll -= odds[k]; if (roll < 0) { kind = k; break; } }
   const [a, b] = WEATHER[kind].days;
@@ -2272,7 +2281,7 @@ function note(w, c, emoji, text) {
   if (c.story.length > 40) c.story.splice(1, 1);   // keep the birth line
 }
 
-const MARKED = new Set(['extinct', 'arrive', 'fire', 'outbreak', 'dugpond', 'frogsfound', 'sowstrip', 'beesfound', 'hedgeplant', 'hedgebloom']);   // moments the stats chart pins on its timeline
+const MARKED = new Set(['extinct', 'arrive', 'fire', 'outbreak', 'drystart', 'dryend', 'dugpond', 'frogsfound', 'sowstrip', 'beesfound', 'hedgeplant', 'hedgebloom']);   // moments the stats chart pins on its timeline
 function emit(w, e) {
   e.t = w.tick; w.events.push(e);
   if (MARKED.has(e.type) && !e.founding) w.history.marks.push({ t: e.t, type: e.type, species: e.species, kind: e.kind });
@@ -5528,6 +5537,7 @@ function createWorld(seed, opts = {}) {
     bitten: new Int32Array(W * H), scorched: new Uint16Array(W * H), sprouted: 0, sproutedBurnt: 0, treeStats: {},
     options: { migration: true, ...opts },
   };
+  if (opts.keep) w.dryYear = { year: opts.dry >= 1 ? Math.floor(opts.dry) : DRY_YEAR };   // (made in its spring, &dry=1: no flood from the start)
   makeTerrain(w);
   placeHive(w);
   w.treeRoom = TREE_ROOM * w.decor.filter(d => d.tree).length;
@@ -5556,6 +5566,7 @@ function createWorld(seed, opts = {}) {
   w.founderMeans = perKind(s => traitMeans(w, s));
   w.weather.until = w.tick + (opts.arrival ? 1.5 : w.rng.range(0.3, 0.8)) * TPD;   // moving day, and the morning after, are fine
   record(w);
+  if (w.dryYear) dryWarning(w);
   return w;
 }
 
@@ -5633,6 +5644,7 @@ function newDay(w) {
     if (s === 1) setFruit(w);
     if (s === 2) seedFall(w);
     if (s === 3 && w.cached) emit(w, { type: 'buried', n: w.cached });   // the crows' autumn
+    if (w.dryYear) drySeason(w);                             // (?keep) the Dry Year, as it comes and goes
     webSnapshot(w);
   }
   treesTick(w);
@@ -5967,6 +5979,11 @@ function unpackWorld(kept) {
     for (const d of w.decor) d.owl = 0;
     w.creatures = w.creatures.filter(c => c.alive); w.count.owl = 0; w.events = [];
   }
+  if (w.options.keep && !w.dryYear) {                        // (?keep, kept before the Dry Year: it comes next summer)
+    w.dryYear = { year: yearOf(w.tick) + 1 };
+    for (const p of w.ponds || []) pondShape(w, p);
+    dryWarning(w);
+  }
   buildGrid(w);
   return w;
 }
@@ -6095,10 +6112,13 @@ function edgeIn(inside, most) {
 // a rock, a burrow, a flower field or the meadow's edge (blocker says which), left standing as an island. grows: the
 // keeper's pond it touches, which it makes bigger. ok, or why not: 'many' (POND_MAX dug), 'high' (no tile would ever
 // hold water), 'water' (it's all water already), 'blocked' (it's all in the way). full: the stroke reached
-// POND_TILES and stopped there. frogs: how far the nearest frogs are, -1 with none within FIND_REACH.
+// POND_TILES and stopped there. frogs: how far the nearest frogs are, -1 with none within FIND_REACH. While the Dry
+// Year is still to come or on (dryComing), 'lasting' is water that lasts its summer, and a tile that would last only
+// an ordinary summer is 'spring' with dryOut (counted in dryOut).
 function pondPlan(w, pts, r = POND_BRUSH) {
   const T = w.terrain, { set, full } = brushTiles(pts, r, POND_TILES);
   const lasts = T.level - T.summerLow - T.rainRise / 2, floods = T.level + T.springFlood, deep = T.level - T.deepAt;
+  const coming = dryComing(w), dryLasts = lasts - DRY_LOW;   // (with the Dry Year to come, water all year is water that lasts it)
   const tiles = [], at = new Map();
   let x0 = W, y0 = H, x1 = 0, y1 = 0, sx = 0, sy = 0;
   for (const i of set) {
@@ -6143,7 +6163,7 @@ function pondPlan(w, pts, r = POND_BRUSH) {
     }
   }
   const depth = edgeIn(inside, POND_WIDE), floor = T.level - POND_FLOOR;
-  const n = { lasting: 0, spring: 0, deep: 0, dry: 0, blocked: 0, water: 0 };
+  const n = { lasting: 0, spring: 0, deep: 0, dry: 0, blocked: 0, water: 0, dryOut: 0 };
   let blocker = '';
   for (const t of tiles) {
     if (t.blocker) { t.k = 'blocked'; n.blocked++; blocker ||= t.blocker; continue; }
@@ -6151,7 +6171,8 @@ function pondPlan(w, pts, r = POND_BRUSH) {
     const g = w.ground[t.i];
     const d = depth.get(t.i), dig = POND_DIG * clamp(d / POND_SLOPE, 0, 1) + POND_MIDDLE * clamp((d - POND_SLOPE) / (POND_WIDE - POND_SLOPE), 0, 1);
     t.after = Math.min(g, Math.max(floor, g - dig));          // (never raised)
-    t.k = t.after < lasts ? 'lasting' : t.after < floods ? 'spring' : 'dry';
+    t.k = t.after < (coming ? dryLasts : lasts) ? 'lasting' : t.after < floods ? 'spring' : 'dry';
+    if (coming && t.k === 'spring' && t.after < lasts) { t.dryOut = true; n.dryOut++; }   // (lasts an ordinary summer, not the Dry Year)
     t.deep = t.after < deep;
     n[t.k]++;
     if (t.k === 'lasting' && t.deep) n.deep++;
@@ -6191,22 +6212,24 @@ function pondName(w, id) {
 }
 
 // A keeper's pond as its tiles have it (w.dug): its box, its middle, and how many of its tiles hold water all year
-// (lasting), only in spring (spring), and are deep (deep). Looks within its box and `also` (a plan's), or everywhere.
+// (lasting; dryLasting through the Dry Year's summer too), only in spring (spring), and are deep (deep). Looks within
+// its box and `also` (a plan's), or everywhere.
 function pondShape(w, p, also) {
   const T = w.terrain, lasts = T.level - T.summerLow - T.rainRise / 2, floods = T.level + T.springFlood, deep = T.level - T.deepAt;
+  const dryLasts = lasts - DRY_LOW;
   const b = p.box && also ? { x0: Math.min(p.box.x0, also.x0), y0: Math.min(p.box.y0, also.y0), x1: Math.max(p.box.x1, also.x1), y1: Math.max(p.box.y1, also.y1) }
     : p.box || also || { x0: 0, y0: 0, x1: W - 1, y1: H - 1 };
-  let x0 = W, y0 = H, x1 = 0, y1 = 0, sx = 0, sy = 0, n = 0, lasting = 0, spring = 0, deeps = 0;
+  let x0 = W, y0 = H, x1 = 0, y1 = 0, sx = 0, sy = 0, n = 0, lasting = 0, spring = 0, deeps = 0, dryLasting = 0;
   for (let y = b.y0; y <= b.y1; y++) {
     for (let x = b.x0, i = y * W + x; x <= b.x1; x++, i++) {
       if (w.dug[i] !== p.id) continue;
       x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); sx += x + 0.5; sy += y + 0.5; n++;
       const g = w.ground[i];
-      if (g < lasts) { lasting++; if (g < deep) deeps++; } else if (g < floods) spring++;
+      if (g < lasts) { lasting++; if (g < deep) deeps++; if (g < dryLasts) dryLasting++; } else if (g < floods) spring++;
     }
   }
   if (!n) return;
-  Object.assign(p, { x: sx / n, y: sy / n, box: { x0, y0, x1, y1 }, lasting, spring, deep: deeps });
+  Object.assign(p, { x: sx / n, y: sy / n, box: { x0, y0, x1, y1 }, lasting, spring, deep: deeps, dryLasting });
 }
 
 // Dig a stroke of the spade: the pond it made or made bigger (a water of w.waters, plus w.ponds' record of it), or
@@ -6233,6 +6256,8 @@ function digPond(w, pts, r = POND_BRUSH) {
   w.waterVersion++;
   floodBurrows(w);
   dampen(w);
+  const parched = dryness(w) > 0;
+  if (parched) shadeSoil(w);                                  // (in the Dry Year: the grass by the new water holds on again)
   const reach = Math.hypot(plan.x1 - plan.x0 + 1, plan.y1 - plan.y0 + 1) / 2;
   forEachDecorNear(w, plan.x, plan.y, reach + 12, d => { delete d.holtFish; });   // (the water about a holt has changed)
   for (const c of w.creatures) {                              // nobody is left standing in deep water
@@ -6253,6 +6278,7 @@ function digPond(w, pts, r = POND_BRUSH) {
         if (seen.has(i)) continue;
         seen.add(i);
         w.rich[i] = Math.max(w.rich[i], TURNED_RICH);
+        if (parched) w.silt[i] = 1;                           // (in the Dry Year the new water soaks its banks: green in a day or two)
         if (!covered.has(i) && w.dug[i] < 0) w.grass[i] *= 0.5;   // (trodden and spread with spoil)
       }
     }
@@ -6262,7 +6288,7 @@ function digPond(w, pts, r = POND_BRUSH) {
   pondShape(w, pond, plan);
   Object.assign(w.waters[id], { size: pond.lasting + pond.spring, x: pond.x, y: pond.y });
   w.turned.push({ x: plan.x, y: plan.y, r: reach + 2, spots: evenly(spots, TURNED_SPOTS), until: w.tick + TURNED_DAYS * TPD });
-  emit(w, { type: 'dugpond', water: id, name, x: plan.x, y: plan.y, tiles: dug.length, lasting: plan.lasting, spring: plan.spring, deep: plan.deep,
+  emit(w, { type: 'dugpond', water: id, name, x: plan.x, y: plan.y, tiles: dug.length, lasting: plan.lasting, spring: plan.spring, deep: plan.deep, dryOut: plan.dryOut,
     frogs: plan.frogs, bigger: !!old, r: reach });
   return pond;
 }
@@ -6710,6 +6736,97 @@ function burnLine(w, x0, y0, x1, y1) {
   }
 }
 
+// ---------------------------------------------------------------- the Dry Year
+//
+// At ?keep the meadow has a pressure on a clock (PLAN.md, step 2): the Dry Year, by default the summer of year 2
+// (createWorld's dry option; a keeper meadow kept from before it gets one the next summer, unpackWorld). In its spring
+// the flood fails, and from then to the end of its summer no rain falls (pickWeather). In its summer the water drops
+// further than in any ordinary one (waterGoal): the brook and the spring pools dry up and the lakes show mud banks.
+// And the grass browns away from the water (parch, once a day into w.shadedFert): it holds on within DRY_NEAR tiles of
+// it and is straw by DRY_FAR. That comes on over the first day of its summer and goes over the autumn after, as the
+// rain comes back (dryness); then the years are ordinary again. It all hangs off w.dryYear, which only ?keep has.
+
+const DRY_YEAR = 2;             // a keeper meadow's Dry Year comes in the summer of this year
+const DRY_FLOOD = 0.15;         // its spring flood fails: this much of an ordinary one
+const DRY_LOW = 0.05;           // in its summer the water drops this much further than in an ordinary summer
+const DRY_ODDS = { clear: 5, cloudy: 3, heat: 2 };   // the sky from its spring to the end of its summer: no rain
+const DRY_NEAR = 3;             // tiles from the water the grass holds on in its summer
+const DRY_FAR = 10;             // and by this far out it's straw
+const DRY_GRASS = 0.12;         // straw: the most grass a tile out there holds
+const DRY_RAGGED = 4;           // tiles the green's edge wanders in and out, in soft patches
+const DRY_PATCH = 6;            // tiles across a patch
+const DRY_SHADE = 0.5;          // the woods' shade spares this much of it
+const DRY_IN = 1;               // days it takes to come on at the start of its summer (it goes over the autumn after)
+const GREEN_GRASS = 0.3;        // a tile with this much grass counts as green (greenShare)
+
+// Where the meadow is in its Dry Year at tick t: 1 its spring, 2 its summer, 3 the autumn after, 0 before or after.
+function dryStage(w, t = w.tick) {
+  if (!w.dryYear) return 0;
+  const k = Math.floor(dayOf(t) / SEASON_DAYS) - (w.dryYear.year - 1) * 4 + 1;
+  return k >= 1 && k <= 3 ? k : 0;
+}
+
+// The tick its summer starts and ends (when the rain comes back).
+const dryFrom = w => ((w.dryYear.year - 1) * YEAR_DAYS + SEASON_DAYS) * TPD;
+const dryTo = w => dryFrom(w) + SEASON_DAYS * TPD;
+
+// Whether the Dry Year is still to come, or on: till the end of its summer.
+const dryComing = w => !!w.dryYear && w.tick < dryTo(w);
+
+// How hard the Dry Year bites at tick t, 0 to 1: on over DRY_IN days from the start of its summer, off over the autumn.
+function dryness(w, t = w.tick) {
+  if (!w.dryYear) return 0;
+  const d = (t - dryFrom(w)) / TPD;
+  if (d <= 0 || d >= 2 * SEASON_DAYS) return 0;
+  const u = d < SEASON_DAYS ? Math.min(1, d / DRY_IN) : 1 - (d - SEASON_DAYS) / SEASON_DAYS;
+  return u * u * (3 - 2 * u);
+}
+
+// Soft value noise from hash2, about 0 to 1: a cell a unit, smooth between.
+function patchy(x, y, seed) {
+  const x0 = Math.floor(x), y0 = Math.floor(y), u = x - x0, v = y - y0, su = u * u * (3 - 2 * u), sv = v * v * (3 - 2 * v);
+  return lerp(lerp(hash2(x0, y0, seed), hash2(x0 + 1, y0, seed), su), lerp(hash2(x0, y0 + 1, seed), hash2(x0 + 1, y0 + 1, seed), su), sv);
+}
+
+// Once a day through the Dry Year (shadeSoil, after the shade): each tile away from the water holds less grass, down to
+// DRY_GRASS from DRY_FAR tiles out, its edge ragged in soft patches and spared a little under the trees. growGrass
+// withers what's over that back to it over a couple of days.
+function parch(w) {
+  const k = dryness(w, w.tick + TPD / 2);                   // (as it will be through the day)
+  if (k <= 0) return;
+  const d = distanceToWater(w), f = w.shadedFert, wood = w.wood, seed = w.seed % 65536;
+  for (let i = 0; i < W * H; i++) {
+    if (!d[i] || f[i] <= DRY_GRASS) continue;
+    const x = i % W, y = (i / W) | 0, reach = d[i] + DRY_RAGGED * (patchy(x / DRY_PATCH, y / DRY_PATCH, seed) - 0.5);
+    const u = clamp((reach - DRY_NEAR) / (DRY_FAR - DRY_NEAR), 0, 1);
+    f[i] += (DRY_GRASS - f[i]) * k * u * u * (3 - 2 * u) * (1 - DRY_SHADE * wood[i]);
+  }
+}
+
+// The Dry Year said from the start: a new keeper meadow (createWorld), or one kept from before it (unpackWorld).
+function dryWarning(w) {
+  emit(w, { type: 'dryahead', year: w.dryYear.year });
+  if (dryStage(w) === 1) emit(w, { type: 'dryspring', year: w.dryYear.year });   // (made in its spring: &dry=1)
+}
+
+// At the start of each season: the news of the Dry Year as it comes, and the rain back at the end of it.
+function drySeason(w) {
+  const stage = dryStage(w), year = w.dryYear.year;
+  if (stage === 1) emit(w, { type: 'dryspring', year });
+  else if (stage === 2) emit(w, { type: 'drystart', year });
+  else if (stage === 3) {
+    emit(w, { type: 'dryend', year });
+    if (!w.skyLocked) setWeather(w, 'rain', TPD * 0.6);
+  }
+}
+
+// The share of the dry land that's green (GREEN_GRASS or more), 0 to 1: for balance.js now, a meter later.
+function greenShare(w) {
+  let land = 0, green = 0;
+  for (let i = 0; i < W * H; i++) if (!w.water[i]) { land++; if (w.grass[i] >= GREEN_GRASS) green++; }
+  return land ? green / land : 0;
+}
+
 // ---------------------------------------------------------------- reading an animal
 
 function mood(w, c) {
@@ -6764,7 +6881,8 @@ function mood(w, c) {
 const api = {
   W, H, TPD, SHALLOW, DEEP, SEASON_DAYS, YEAR_DAYS, SEASONS, SPECIES, GENES, COATS, GROUND, WEATHER,
   createWorld, step, clock, isNight, phaseOf, seasonOf, mood, ageDays, growth, isAdult, patchFresh,
-  addCreature, paintGrass, setSky, lockSky, zap, burnLine, lift, putDown, nameCreature, nameQueen, NAME_MAX, plantTree, pondPlan, digPond, frogsNear, POND_BRUSH, POND_DAB, POND_TILES, REED_DAYS, stripPlan, sowStrip, stripKind, STRIP_TILES, hedgePlan, plantHedge, hedgeForecast, inHedge, HEDGE_MOST, traitMeans, walkable, packWorld, unpackWorld,
+  addCreature, paintGrass, setSky, lockSky, zap, burnLine, lift, putDown, nameCreature, nameQueen, NAME_MAX, plantTree, pondPlan, digPond, frogsNear, POND_BRUSH, POND_DAB, POND_TILES, REED_DAYS, stripPlan, sowStrip, stripKind, STRIP_TILES, hedgePlan, plantHedge, hedgeForecast, inHedge, HEDGE_MOST,
+  dryStage, dryness, dryComing, dryFrom, dryTo, greenShare, traitMeans, walkable, packWorld, unpackWorld,
   coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT, KINDS, OWLS,
   TERRAIN, drawnToLink, drawnFromLink, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE,
