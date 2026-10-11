@@ -5787,9 +5787,11 @@ function arrivalsTick(w) {
   if (!w.arrivals.some(b => b.species === a.species)) w.founderMeans[a.species] = traitMeans(w, a.species, [...w.creatures, ...w.newborn]);
 }
 
+// Fewer than this and a kind is in danger: migration sends more, and the keeper's top bar marks it.
+const FEW = { rabbit: 4, fox: 3, bee: 4, crow: 3, owl: 2, otter: 2 };
 function migrate(w) {
   if (!w.options.migration) return;
-  const wait = { rabbit: 1, fox: 3, bee: 2, crow: 3, owl: 10, otter: 3 }, arrive = { rabbit: 6, fox: 2, bee: 8, crow: 4, owl: 2, otter: 2 }, few = { rabbit: 4, fox: 3, bee: 4, crow: 3, owl: 2, otter: 2 };
+  const wait = { rabbit: 1, fox: 3, bee: 2, crow: 3, owl: 10, otter: 3 }, arrive = { rabbit: 6, fox: 2, bee: 8, crow: 4, owl: 2, otter: 2 };
   for (const s of KINDS) {
     if (s === 'owl' && !OWLS) continue;
     const n = s === 'otter' && !w.decor.some(d => d.holt) ? 0 : w.count[s];   // (otters with no holt are only passing through)
@@ -5797,7 +5799,7 @@ function migrate(w) {
     // they come back and die out again.
     if (w.count[s] > 0) w.diedOut[s] = false;
     else if (!w.diedOut[s] && Object.keys(w.stats.deaths[s]).length) { w.diedOut[s] = true; emit(w, { type: 'extinct', species: s }); }
-    if (n >= few[s] || w.arrivals.some(a => a.species === s)) { w.goneSince[s] = -1; continue; }
+    if (n >= FEW[s] || w.arrivals.some(a => a.species === s)) { w.goneSince[s] = -1; continue; }
     if (w.goneSince[s] < 0) { w.goneSince[s] = w.tick; continue; }
     if (w.tick - w.goneSince[s] < wait[s] * TPD) continue;
     if (s === 'fox' && w.count.rabbit < 60 * w.room) continue;   // foxes only come where there is food
@@ -6888,7 +6890,7 @@ const api = {
   createWorld, step, clock, isNight, phaseOf, seasonOf, mood, ageDays, growth, isAdult, patchFresh,
   addCreature, paintGrass, setSky, lockSky, zap, burnLine, lift, putDown, nameCreature, nameQueen, NAME_MAX, plantTree, pondPlan, digPond, frogsNear, POND_BRUSH, POND_DAB, POND_TILES, REED_DAYS, stripPlan, sowStrip, stripKind, STRIP_TILES, hedgePlan, plantHedge, hedgeForecast, inHedge, HEDGE_MOST,
   dryStage, dryness, dryComing, dryFrom, dryTo, DRY_NEAR, greenShare, stripBloom, traitMeans, walkable, packWorld, unpackWorld,
-  coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT, KINDS, OWLS,
+  coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT, KINDS, OWLS, FEW,
   TERRAIN, drawnToLink, drawnFromLink, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE,
   TREES, treeStage, treeAge, standing, bearing, hollow, inBloom, SEEDLING, SAPLING, GROWN, KIND_NAMES,

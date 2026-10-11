@@ -824,6 +824,16 @@
     html.keep body.ins-strip #guide { bottom: calc(var(--bar, 84px) + 64px); }
   }
   @media (max-height: 500px) { html.keep :is(#news, #guide) { width: min(330px, calc(100% - var(--left) - var(--right))); } }
+  /* ?keep: how each kind is doing, in the small card in the top bar (game.js updateSpeciesMarks). The mark hangs off the
+     count and takes no width, so the row doesn't shift when one changes. */
+  html.keep .mini-pop { cursor: pointer; }
+  html.keep .mini-pop b { position: relative; font-variant-numeric: tabular-nums; }
+  html.keep .mini-pop b::after { position: absolute; left: 100%; top: 0; margin-left: 1px; font-size: 9px; line-height: 1; }
+  html.keep .mini-pop[data-st="thriving"] b::after { content: '▲'; color: #5a9a3a; }
+  html.keep .mini-pop[data-st="fewer"] b::after { content: '▼'; color: #c46a2a; }
+  html.keep .mini-pop[data-st="endangered"] b { color: #c23b2b; }
+  html.keep .mini-pop[data-st="endangered"] b::after { content: '!'; top: -1px; font-size: 12px; font-weight: 900; color: #c23b2b; }
+  html.keep .mini-pop[data-st="gone"] { opacity: 0.45; text-decoration: line-through; }
 </style>
 </head>
 <body>

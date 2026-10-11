@@ -6403,6 +6403,36 @@ function milestone(y, show) {
   chime('rainbow');
 }
 
+// ?keep: how each kind is doing, marked in the top bar. Worked out once a sim day (and when a meadow opens): gone,
+// in danger (fewer than S.FEW), fewer or thriving against the same time last year (so the bees' winter dip isn't
+// a worry every winter), else steady. Nothing to compare in the first year.
+const SPECIES_WORD = { rabbit: 'Rabbits', fox: 'Foxes', bee: 'Bees', crow: 'Crows', owl: 'Owls', otter: 'Otters' };
+const speciesMarks = { world: null, day: -1 };
+function speciesStatus(s) {
+  const n = world.count[s], h = world.history[s], then = world.tick - S.YEAR_DAYS * S.TPD;
+  if (!n) return h.some(v => v > 0) ? { st: 'gone' } : { st: 'steady', n };
+  if (n < S.FEW[s]) return { st: 'endangered', n };
+  const before = world.history.t[0] > then + world.history.every ? 0 : h[since(then)];   // (0: no last year yet)
+  if (before > 0 && n < 0.6 * before) return { st: 'fewer', n, before };
+  if (before > 0 && n >= 1.25 * before) return { st: 'thriving', n, before };
+  return { st: 'steady', n };
+}
+function updateSpeciesMarks() {
+  const day = Math.floor(world.tick / S.TPD);
+  if (speciesMarks.world === world && speciesMarks.day === day) return;
+  speciesMarks.world = world; speciesMarks.day = day;
+  for (const s of S.KINDS) {
+    if (!SERIES[s]) continue;
+    const { st, n, before } = speciesStatus(s), pop = $('#mini-' + s).parentNode, name = SPECIES_WORD[s];
+    const title = st === 'gone' ? `${name} · gone from the meadow`
+      : st === 'endangered' ? `${name} · only ${n} left`
+      : st === 'steady' ? `${name} · ${n ? 'steady: ' + n + ' now' : 'none yet'}`
+      : `${name} · ${st}: ${n} now, ${before} this time last year`;
+    if (pop.dataset.st !== st) pop.dataset.st = st;
+    if (pop.title !== title) pop.title = title;
+  }
+}
+
 function updateMeadowCard() {
   const ck = S.clock(world);
   dialTitle(ck);
@@ -6426,8 +6456,9 @@ function updateMeadowCard() {
     if (!SERIES[s]) continue;                              // (the owls, while they're off: sim.js OWLS)
     setText($('#mini-' + s), String(world.count[s]));
     setText($('#n-' + s), String(world.count[s]));
-    sparkline($('#spark-' + s), world.history[s], SERIES[s].color);
+    if (!(KEEP && ui.mini)) sparkline($('#spark-' + s), world.history[s], SERIES[s].color);   // (?keep: a small card's are hidden)
   }
+  if (KEEP) updateSpeciesMarks();
   // In the first year the averages wobble with every litter: that is luck, not evolution.
   const r = world.tick < S.YEAR_DAYS * S.TPD ? 'wait' : evolutionLine('rabbit'), f = r === 'wait' ? 'wait' : evolutionLine('fox');
   const quiet = v => !v.includes('<');
@@ -8819,6 +8850,11 @@ document.addEventListener('click', e => {
   const t = e.target.closest('[data-tool],[data-speed],[data-action],[data-act],[data-show],[data-range],[data-sky],[data-ring],a[data-id],a[data-thing]');
   if (ui.sky.menu && !(t && (t.dataset.sky || t.dataset.act === 'sky' || t.dataset.act === 'sky-lock'))) toggleSkyMenu(false);
   if (!(t && t.dataset.act === 'more')) toggleMore(false);
+  if (KEEP && ui.mini && e.target.closest('.mini-pop')) {   // ?keep: a tap on a kind in the bar opens its graph; the ˅ still opens the card
+    ui.stats.show = e.target.closest('.mini-pop').querySelector('b').id.slice(5);
+    toggleStats(true);
+    return;
+  }
   if (!t) return;
   if (t.closest('#toolbar,#hud-right .hud-top,#ring')) chime('click');
   if (t.dataset.ring) ringPick(t.dataset.ring);
