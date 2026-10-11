@@ -199,5 +199,32 @@ on its own. Then one or two people who've never seen it. If it fails, the notes 
   - Perf (headless Chrome, 1280x800, seed 31, zoomed out): `render` at 60x 2.4 ms median against 2.1 in an ordinary
     summer, 2.0 against 1.9 at 1x; the ground repaints as often (131 against 145 in 12 s at 1x, none paused); the shader
     alone 1.3 against 1.2 ms a full repaint.
+- **Step 2, the keeper's HUD (agreed 2026-10-11).** Axel: "Right now all the instructions just sit in a little box down
+  in the left corner." Frostpunk puts the threat front and centre with its forecast, what you have along the top, a build
+  menu at the bottom where each building explains itself, and a few short missions. At `?keep` only (the bare address
+  keeps its screen), in the "brass frame" look picked from a mock (`hud-mock.html`, never committed): a parchment bar along
+  the top and one along the bottom, each with a brass rule like the watch's case, the watch hanging from the top bar.
+  - **What goes where.** Top: the species, each with a mark when it isn't steady (▲ thriving, ▼ fewer, ! endangered, struck
+    through when gone), the watch, the time and menus. Under the watch a ribbon, a pip a season ahead with the Dry Year's
+    summer parched: DRY YEAR in 3 seasons, then DRY YEAR 1½ days left. Left: TASKS. Bottom: GREEN, the share of the
+    meadow still green with what it was, and the build bar, always up: Look, Pond, Flowers, Hedge, each with a card.
+    The news over the bar. On a phone the tasks fold to a chip of their icons and GREEN to a slot in the bar.
+  - **The tasks** are a verb and what to wait for, worked out from the world each beat (never kept, no `KEEP_VERSION` bump):
+    Dig a pond → frogs move in; Sow flowers → bees come; Plant a hedge → a rabbit hides in it. Done, each says what
+    happened, ticks, and gets the big line under the watch.
+  - **The words** (after "there is just way too much text … maybe it's the wrong wording"):
+    1. Each part has a small brass capital label (TASKS, DRY YEAR, GREEN); the number by it is the biggest thing there.
+    2. A line says one thing in five words or fewer: an icon, a few words, a value on the right.
+    3. A task is a verb and → what to wait for; done, what happened.
+    4. A tool is named for what it makes (Pond, Flowers, Hedge). Its card: the name, how ("Drag to dig"), then what it
+       brings with when: ☀️ Green banks in the Dry Year · 3 tiles; 🐸 Frogs move in · in days; 🐦‍⬛ Crows come · at once;
+       💧 Lasts all year · on low ground.
+    5. The same word for the same thing everywhere: the Dry Year, never the drought.
+    6. Sentences only in the news, and short: "**The Dry Year has begun.** No rain till autumn."
+    7. Details on a hover, a tap or the inspector, never on the HUD.
+  - **Stages**, each its own commit, `node balance.js 6 4 v` and `3 4 v plant` printing the same after each:
+    U1 the frame and the build bar with its cards (no more sliding away; a row on a phone, not the corner button);
+    U2 the tasks in place of the keep card; U3 the species' marks; U3b "the last fox is gone" said whenever a species
+    reaches none (`migrate` only says it if it was already none when it first fell under `few`); U4 the ribbon; U5 GREEN.
 - **Step 3, the first year:** a valley made by hand or a generated meadow; a keeper you can see, later or never;
   the owls; the game's name.
