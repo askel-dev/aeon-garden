@@ -77,6 +77,11 @@ every stage they must print the same, seed for seed, since everything new is for
 - `digPond` digs each tile deeper the further it lies inside the stroke's edge, so how high it stood and the
   shape decide what it becomes. A thin stroke is all shallows (the frogs want no deep water near); a wide blob gets
   a deep middle, where a rabbit escapes a fox.
+- Bigger ponds dig deeper (D1): past `POND_SLOPE` (3 tiles in, 0.45 down) a tile goes on deepening, by up to
+  `POND_MIDDLE` (0.5) more at `POND_WIDE` (6) tiles in, still never below `POND_FLOOR`. So a blob of 100 to 160 tiles, or
+  a pond grown by a few strokes, holds water in its middle on high ground: a 120-tile blob 12+ tiles from any water lasts
+  the year (and the Dry Year's low) in 88 to 100% of the open spots on seeds 31, 314, 1000, 9001 and 123, against 65 to
+  100% before. `edgeIn` looks out a ring at a time and stops early, so the deeper reach costs no more per tile of a drag.
 - A pond of its own: it gets a name and a body in `w.waters` (picked by its own hash, never `w.rng`), and
   `nearBody` is filled again round it (the fill split out of `nameWaters`, which reshuffles every name).
 - Its banks are turned earth: bare, and rich for a few days. Crows come down to them (`turned`, like the

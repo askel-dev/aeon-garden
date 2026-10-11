@@ -6009,7 +6009,8 @@ function plantTree(w, x, y, kind) {
 //
 // At ?keep (createWorld's keep option) the player shapes the land with an unseen hand, and it happens at once.
 // A pond (digPond) is drawn like paint: a stroke digs every tile within POND_BRUSH of the line, deeper the further
-// a tile is inside the stroke's edge (a thin stroke is all shallows, a wide blob gets a deep middle), so how high
+// a tile is inside the stroke's edge (a thin stroke is all shallows, a wide blob gets a deep middle, and a big one
+// a deeper one still, so it can hold water on higher ground away from the river), so how high
 // the ground stood decides what it becomes: water all year, a spring pool that dries out in summer (the frogs'
 // favourite), or dug earth the water never reaches. A tree, a hive, a rock or a burrow under the brush is left
 // standing as an island. It's a water of its own with a name, and a stroke that touches it makes it bigger. Its
@@ -6024,6 +6025,8 @@ const POND_DAB = 2.3;           // a tap with no drag digs a round pond this big
 const POND_TILES = 160;         // tiles one stroke covers at most
 const POND_DIG = 0.45;          // how far a tile POND_SLOPE or more inside a pond's edge is dug down (water past deepAt is deep)
 const POND_SLOPE = 3;           // tiles in from the edge the bank takes to get that deep, so a thin stroke is all shallows
+const POND_MIDDLE = 0.5;        // and deeper still further in, by this much more POND_WIDE tiles in: a big pond holds water
+const POND_WIDE = 6;            // in its middle on higher ground (a blob of 120 tiles is about 5.5 tiles in at its middle)
 const POND_FLOOR = 0.5;         // and never further than this below the water line
 const POND_MAX = 40;            // ponds a meadow can have
 const STROKE_STEP = 0.4;        // a stroke's line is stamped every this many tiles, so a quick drag leaves no gaps
@@ -6066,16 +6069,19 @@ function brushTiles(pts, r, max) {
 }
 
 // How far inside its edge each tile of `inside` (a Set of tiles) lies: from its middle to the nearest tile that
-// isn't in it, less half a tile, so one on the edge is half a tile in. Up to `most`.
+// isn't in it, less half a tile, so one on the edge is half a tile in. Up to `most`. It looks out a square ring at a
+// time and stops once no ring further out could be nearer, so a tile by the edge costs a ring or two.
 function edgeIn(inside, most) {
   const out = new Map(), R = Math.ceil(most + 0.5);
+  const off = (nx, ny) => nx < 0 || ny < 0 || nx >= W || ny >= H || !inside.has(ny * W + nx);
   for (const i of inside) {
     const x = i % W, y = (i / W) | 0;
     let best = (most + 0.5) ** 2;
-    for (let dy = -R; dy <= R; dy++) {
-      for (let dx = -R; dx <= R; dx++) {
-        const d = dx * dx + dy * dy, nx = x + dx, ny = y + dy;
-        if (d < best && (nx < 0 || ny < 0 || nx >= W || ny >= H || !inside.has(ny * W + nx))) best = d;
+    for (let r = 1; r <= R && r * r < best; r++) {
+      for (let k = -r; k <= r; k++) {                        // the ring r out: its top and bottom rows, then its sides
+        const d = r * r + k * k;
+        if (d >= best) continue;
+        if (off(x + k, y - r) || off(x + k, y + r) || (Math.abs(k) < r && (off(x - r, y + k) || off(x + r, y + k)))) best = d;
       }
     }
     out.set(i, Math.sqrt(best) - 0.5);
@@ -6132,18 +6138,19 @@ function pondPlan(w, pts, r = POND_BRUSH) {
   const inside = new Set();
   for (const t of tiles) if (!t.blocker) inside.add(t.i);
   if (grows) {
-    for (let y = Math.max(0, y0 - POND_SLOPE - 1); y <= Math.min(H - 1, y1 + POND_SLOPE + 1); y++) {
-      for (let x = Math.max(0, x0 - POND_SLOPE - 1); x <= Math.min(W - 1, x1 + POND_SLOPE + 1); x++) if (w.dug[y * W + x] === grows.id) inside.add(y * W + x);
+    for (let y = Math.max(0, y0 - POND_WIDE - 1); y <= Math.min(H - 1, y1 + POND_WIDE + 1); y++) {
+      for (let x = Math.max(0, x0 - POND_WIDE - 1); x <= Math.min(W - 1, x1 + POND_WIDE + 1); x++) if (w.dug[y * W + x] === grows.id) inside.add(y * W + x);
     }
   }
-  const depth = edgeIn(inside, POND_SLOPE), floor = T.level - POND_FLOOR;
+  const depth = edgeIn(inside, POND_WIDE), floor = T.level - POND_FLOOR;
   const n = { lasting: 0, spring: 0, deep: 0, dry: 0, blocked: 0, water: 0 };
   let blocker = '';
   for (const t of tiles) {
     if (t.blocker) { t.k = 'blocked'; n.blocked++; blocker ||= t.blocker; continue; }
     if (t.k === 'water') { n.water++; continue; }
     const g = w.ground[t.i];
-    t.after = Math.min(g, Math.max(floor, g - POND_DIG * clamp(depth.get(t.i) / POND_SLOPE, 0, 1)));   // (never raised)
+    const d = depth.get(t.i), dig = POND_DIG * clamp(d / POND_SLOPE, 0, 1) + POND_MIDDLE * clamp((d - POND_SLOPE) / (POND_WIDE - POND_SLOPE), 0, 1);
+    t.after = Math.min(g, Math.max(floor, g - dig));          // (never raised)
     t.k = t.after < lasts ? 'lasting' : t.after < floods ? 'spring' : 'dry';
     t.deep = t.after < deep;
     n[t.k]++;
