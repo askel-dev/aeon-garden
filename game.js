@@ -6452,6 +6452,7 @@ function updateMeadowCard() {
   setText($('#sky-btn'), wx.emoji);
   setHTML($('#mini-sky'), `<span id="mini-season">${S.SEASONS[ck.season].emoji}</span>${icon}`);   // phones hide the season
   updateFavicon(ck);
+  if (KEEP) updateGreen();                                 // (once a sim day)
   for (const s of S.KINDS) {
     if (!SERIES[s]) continue;                              // (the owls, while they're off: sim.js OWLS)
     setText($('#mini-' + s), String(world.count[s]));
@@ -8563,12 +8564,14 @@ function tipRows(k, touch) {
   return [['🐇', 'Hides rabbits from foxes', comingWhen(f.young)], ['🌸', 'Blossom', comingWhen(f.blossom)], crows];
 }
 
+const tipList = rows => `<ul class="stats">${rows.map(([icon, what, when, dry]) => `<li${dry ? ' class="dry"' : ''}><span>${icon}</span><span>${what}</span><em>${when}</em></li>`).join('')}</ul>`;
+
+// k: a tool, or 'green' for GREEN's slot in the bar (greenTip), which isn't one.
 function showTip(k, ms, by) {
-  const b = $(`#toolbar [data-tool="${k}"]`), el = $('#tool-tip'), t = TIP_TOOLS[k];
-  if (!KEEP || !t || !b) return;
+  const b = k === 'green' ? $('#green') : $(`#toolbar [data-tool="${k}"]`), el = $('#tool-tip'), t = TIP_TOOLS[k];
+  if (!KEEP || !(t || k === 'green') || !b) return;
   clearTimeout(tip.timer); clearTimeout(tip.hover);
-  const rows = tipRows(k, by === 'touch').map(([icon, what, when, dry]) => `<li${dry ? ' class="dry"' : ''}><span>${icon}</span><span>${what}</span><em>${when}</em></li>`);
-  setHTML(el, `<h4 class="fr">${b.querySelector('.e').textContent} ${t.name} <kbd>${t.key}</kbd></h4><p>${t.how}</p><ul class="stats">${rows.join('')}</ul>`);
+  setHTML(el, k === 'green' ? greenTip() : `<h4 class="fr">${b.querySelector('.e').textContent} ${t.name} <kbd>${t.key}</kbd></h4><p>${t.how}</p>${tipList(tipRows(k, by === 'touch'))}`);
   if (tip.tool !== k) {                    // over its button, once, kept on screen
     el.classList.remove('hidden');
     const r = b.getBoundingClientRect(), w = el.offsetWidth, mid = r.left + r.width / 2, x = clamp(mid - w / 2, 8, vw - w - 8);
@@ -8589,13 +8592,13 @@ function hideTip() {
 }
 
 if (KEEP) {
-  const bar = $('#toolbar'), toolOf = e => e.target.closest('[data-tool]');
+  const bar = $('#toolbar'), toolOf = e => e.target.closest('[data-tool], #green'), keyOf = b => b.dataset.tool || 'green';
   bar.addEventListener('pointerover', e => {
     const b = toolOf(e);
     if (e.pointerType !== 'mouse' || !b || b.contains(e.relatedTarget)) return;
     clearTimeout(tip.hover);
-    if ((tip.tool && tip.by === 'mouse') || performance.now() - tip.gone < 300) showTip(b.dataset.tool, 0, 'mouse');   // gliding along the bar: at once
-    else tip.hover = setTimeout(() => showTip(b.dataset.tool, 0, 'mouse'), TIP_HOVER_MS);
+    if ((tip.tool && tip.by === 'mouse') || performance.now() - tip.gone < 300) showTip(keyOf(b), 0, 'mouse');   // gliding along the bar: at once
+    else tip.hover = setTimeout(() => showTip(keyOf(b), 0, 'mouse'), TIP_HOVER_MS);
   });
   bar.addEventListener('pointerout', e => {
     const b = toolOf(e);
@@ -8607,11 +8610,36 @@ if (KEEP) {
   bar.addEventListener('click', e => {     // a tap takes the tool, as ever (the click handler below), and shows its card
     const b = toolOf(e), how = e.pointerType ?? tip.press;   // ('' from a key on a focused button)
     if (!b || how === 'mouse') return;
-    if (tip.tool === b.dataset.tool && tip.by === 'touch') hideTip();
-    else showTip(b.dataset.tool, how ? TIP_TAP_MS : TIP_KEY_MS, how ? 'touch' : 'key');
+    if (tip.tool === keyOf(b) && tip.by === 'touch') hideTip();
+    else showTip(keyOf(b), how ? TIP_TAP_MS : TIP_KEY_MS, how ? 'touch' : 'key');
   });
   canvas.addEventListener('pointerdown', hideTip);
   addEventListener('resize', hideTip);
+}
+
+// GREEN (?keep, in the bottom bar; on a phone a slot after the tools and a rim along the bar's top): the share of the
+// land whose grass is still green (sim.js greenShare, a scan of every tile, so once a sim day), by what it was on the
+// first day of this season, or as the meadow opened mid-season ("when you came"). Written only when it changes; its card is greenTip.
+const green = { world: null, day: -1, season: -1, share: 0, ref: 0, came: false };
+function updateGreen() {
+  const day = Math.floor(world.tick / S.TPD), season = Math.floor(day / S.SEASON_DAYS);
+  if (green.world === world && green.day === day) return;
+  const share = Math.round(S.greenShare(world) * 100), el = $('#green');
+  if (green.world !== world || green.season !== season) Object.assign(green, { ref: share, season, came: green.world !== world && day % S.SEASON_DAYS > 0 });
+  Object.assign(green, { world, day, share });
+  const trend = share < green.ref - 3 ? '<i>▼</i>' : share > green.ref + 3 ? '<i class="up">▲</i>' : '';
+  el.classList.toggle('low', share < 50);
+  el.style.setProperty('--v', share + '%');
+  el.style.setProperty('--ref', green.ref + '%');
+  setHTML(el.querySelector('.g-v'), share + '%' + trend);
+  setText(el.querySelector('.g-ref'), `was ${green.ref}%`);
+  el.setAttribute('aria-label', `Green ${share}%, was ${green.ref}%`);
+  if (tip.tool === 'green') setHTML($('#tool-tip'), greenTip());
+}
+function greenTip() {
+  const s = S.SEASONS[green.season % 4].name.toLowerCase();
+  return `<h4 class="fr">🌱 Green <b${green.share < 50 ? ' class="low"' : ''}>${green.share}%</b></h4><p>Land whose grass is still green</p>`
+    + tipList([['📅', green.came ? 'When you came' : `When the ${s} began`, green.ref + '%'], ['☀️', 'In the Dry Year', 'by the water only', true]]);
 }
 
 // which: '' the tools, 'sky' the weather, 'plant' the kinds of tree.

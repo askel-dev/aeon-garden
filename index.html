@@ -834,6 +834,37 @@
   html.keep .mini-pop[data-st="endangered"] b { color: #c23b2b; }
   html.keep .mini-pop[data-st="endangered"] b::after { content: '!'; top: -1px; font-size: 12px; font-weight: 900; color: #c23b2b; }
   html.keep .mini-pop[data-st="gone"] { opacity: 0.45; text-decoration: line-through; }
+
+  /* ---- ?keep: GREEN, the share of the meadow still green (game.js updateGreen), on the left of the bottom bar: a brass
+     capital label, the share big (▼ ▲ against what it was as the season began), a bar filled to it with a mark at that,
+     and "was 80%" under the mark. Rust under half. A hover (a tap on a phone) shows its card (#tool-tip, greenTip). */
+  #green { display: none; }
+  html.keep #green { display: grid; grid-column: 1; grid-row: 1; justify-self: start; grid-template-columns: 1fr auto; align-items: baseline;
+    width: 220px; margin-left: 8px; padding: 0; border: none; background: none; font: inherit; color: var(--ink); text-align: left; cursor: default; }
+  html.keep #green .g-l { align-self: center; text-transform: uppercase; letter-spacing: 0.11em; font-size: 11.5px; font-weight: 900; color: #8a5e22; }
+  html.keep #green .g-v { justify-self: end; font-weight: 900; font-size: 22px; line-height: 1.15; font-variant-numeric: tabular-nums; }
+  html.keep #green .g-v i { font-style: normal; font-size: 13px; margin-left: 3px; vertical-align: 3px; color: #c46a2a; }
+  html.keep #green .g-v i.up { color: #5a9a3a; }
+  html.keep #green .g-bar { grid-column: 1 / -1; position: relative; height: 10px; margin: 4px 0 3px; border-radius: 99px; background: #e6d7b8;
+    box-shadow: inset 0 1px 1px rgba(80, 60, 30, 0.25); }
+  html.keep #green .g-bar i { position: absolute; left: 0; top: 0; bottom: 0; width: var(--v, 0%); border-radius: inherit; background: linear-gradient(90deg, #5f9346, #8fc45e); }
+  html.keep #green .g-bar em { position: absolute; top: -4px; bottom: -4px; left: var(--ref, 0%); width: 2px; margin-left: -1px; border-radius: 1px; background: var(--ink); opacity: 0.55; }
+  html.keep #green .g-ref { grid-column: 1 / -1; justify-self: start; margin-left: clamp(0px, calc(var(--ref, 0%) - 18px), calc(100% - 52px));
+    font-size: 11px; font-weight: 800; color: var(--muted); }
+  html.keep #green.low .g-v, html.keep #tool-tip h4 b.low { color: #8a4b12; }
+  html.keep #green.low .g-bar i { background: linear-gradient(90deg, #a7802f, #d9b25a); }
+  html.keep #tool-tip h4 b { margin-left: auto; font: 900 22px Nunito, ui-rounded, system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+  /* phones: no room on the left, so a slot after the tools, the same size, 🌱 over the share, and a rim along the bar's top */
+  @media (max-width: 760px), (max-height: 500px) {
+    html.keep #toolbar { grid-template-columns: minmax(0, 1fr) auto auto minmax(0, 1fr); column-gap: 5px; }
+    html.keep #green { grid-column: 3; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+      width: 60px; height: 52px; margin: 0; text-align: center; }
+    html.keep #green .g-l { font-size: 25px; line-height: 1; letter-spacing: 0; }
+    html.keep #green .g-l b, html.keep #green .g-ref, html.keep #green .g-v i { display: none; }
+    html.keep #green .g-v { font-size: 13.5px; line-height: 1; justify-self: auto; }
+    html.keep #green .g-bar { position: absolute; grid-column: auto; left: 0; right: 0; top: 0; height: 4px; margin: 0; border-radius: 0; box-shadow: none; }   /* (auto: else it spans the bar's grid, not all of it) */
+    html.keep #green .g-bar em { top: 0; bottom: -2px; }
+  }
 </style>
 </head>
 <body>
@@ -916,6 +947,8 @@
   <button class="tool hidden" data-tool="sow" title="Drag on the meadow to sow a strip of meadow flowers: sown in spring or summer it blooms within days, and the bees come (G)"><span class="e">🌼</span><span class="l">Sow</span></button>
   <button class="tool hidden" data-tool="hedge" title="Drag on the meadow to plant a row of hawthorn whips: within a season or two it hides a rabbit from a fox, and the spring after it blossoms (H)"><span class="e">🌿</span><span class="l">Hedge</span></button>
   </div>
+  <!-- ?keep: GREEN, the share of the meadow still green (game.js updateGreen); not a tool -->
+  <button id="green" type="button" aria-describedby="tool-tip"><span class="g-l">🌱 <b>Green</b></span><span class="g-v"></span><span class="g-bar"><i></i><em></em></span><span class="g-ref"></span></button>
   <!-- phones: the tools fold into one round button in the corner, showing the one in your hand -->
   <button class="hand" data-act="tools" title="Tools" aria-expanded="false">🔍</button>
 </nav>
