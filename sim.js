@@ -1917,7 +1917,7 @@ function enrich(w, x, y, amount, radius) {
 // Once a day, at dawn when everyone is home: how much grass each tile's soil holds (shadeSoil), and each
 // warren's latrines, a ring of dung heaps round the hole, get a day's droppings from the rabbits in it.
 function groundTick(w) {
-  shadeSoil(w);
+  shadeSoil(w, true);
   for (const b of w.burrows) {
     if (!b.count) continue;
     for (let k = 0; k < LATRINES; k++) {
@@ -1928,11 +1928,11 @@ function groundTick(w) {
 }
 
 // How much grass each tile's soil holds in the shade on it now (w.shadedFert, which growGrass reads), and in the
-// Dry Year less away from the water (parch).
-function shadeSoil(w) {
+// Dry Year less away from the water (parch; at dawn the parched grass withers too).
+function shadeSoil(w, dawn = false) {
   const shade = SHADE_GRASS * (leafless(w.tick) ? BARE_SHADE : 1);
   for (let i = 0; i < W * H; i++) w.shadedFert[i] = w.fert[i] * (1 - shade * w.wood[i]);
-  if (w.dryYear) parch(w);
+  if (w.dryYear) parch(w, dawn);
 }
 
 // ---------------------------------------------------------------- weather
@@ -2281,7 +2281,7 @@ function note(w, c, emoji, text) {
   if (c.story.length > 40) c.story.splice(1, 1);   // keep the birth line
 }
 
-const MARKED = new Set(['extinct', 'arrive', 'fire', 'outbreak', 'drystart', 'dryend', 'dugpond', 'frogsfound', 'sowstrip', 'beesfound', 'hedgeplant', 'hedgebloom']);   // moments the stats chart pins on its timeline
+const MARKED = new Set(['extinct', 'arrive', 'fire', 'outbreak', 'drystart', 'dryend', 'dryloss', 'dugpond', 'frogsfound', 'sowstrip', 'beesfound', 'hedgeplant', 'hedgebloom']);   // moments the stats chart pins on its timeline
 function emit(w, e) {
   e.t = w.tick; w.events.push(e);
   if (MARKED.has(e.type) && !e.founding) w.history.marks.push({ t: e.t, type: e.type, species: e.species, kind: e.kind });
@@ -2389,7 +2389,8 @@ function readyToMate(w, c) {
     && w.tick >= c.cooldownUntil && c.energy >= c.sp.breedEnergy * c.maxEnergy
     && c.sp.breedSeasons.includes(seasonOf(w.tick))
     && w.count[c.species] + w.expecting[c.species] < c.sp.cap * w.room
-    && (c.species !== 'owl' || owlReady(w, c)) && (c.species !== 'otter' || otterReady(c));
+    && (c.species !== 'owl' || owlReady(w, c)) && (c.species !== 'otter' || otterReady(c))
+    && (!w.parched || c.species !== 'rabbit' || w.grass[idx(c.x, c.y)] >= GREEN_GRASS);   // (?keep: in the Dry Year, only on the green)
 }
 
 function seekLove(w, c) {
@@ -2649,7 +2650,7 @@ function rabbitTick(w, c) {
     const skittish = c.wary > 0 && e > 0.4 && (c.x - c.waryX) ** 2 + (c.y - c.waryY) ** 2 < 36;
     if (w.grass[i] > 0.3 && !skittish && !fouled(w, i)) { c.mode = 'graze'; eat(w, c, i); return; }
     if (c.mode !== 'food' || !c.target || w.grass[idx(c.target.x, c.target.y)] < 0.12) {   // stick with a patch till it's gone
-      const spot = findFood(w, c);
+      const spot = findFood(w, c) || (w.greenSpots && (t + c.id) % 10 === 0 ? greenSpot(w, c) : null);   // (?keep, the Dry Year: off to the green)
       if (spot) { c.mode = 'food'; c.target = spot; }
     }
     if (c.mode === 'food' && c.target) {
@@ -3653,7 +3654,7 @@ const SCOUTS = 6;               // one bee in this many is a scout
 
 // Bees stay in at night, in rain and storms, and while there's hardly a flower open.
 const hiveTime = w => isNight(w.tick) || w.weather.kind === 'rain' || w.weather.kind === 'storm'
-  || w.flowers < FEW_FLOWERS;
+  || w.flowers < (w.parched ? DRY_FEW : FEW_FLOWERS);       // (?keep: in the Dry Year they go out for a few)
 
 const BLOOM_NEWS = 0.3;          // share of a field's flowers out when the news says it's in bloom
 
@@ -4039,6 +4040,7 @@ const FIELD_GRASS = 0.35;
 function isFlower(w, p) {
   if (p.tree) return inBloom(w, p.tree);                   // blossom in a tree (addBlossoms)
   if (w.water[p.i]) return false;
+  if (w.parched && w.parched[p.i] > WILT) return false;   // (?keep: wilted in the Dry Year, away from the water)
   const s = seasonOf(w.tick);
   if (p.field) return s === p.field.season && w.grass[p.i] >= FIELD_GRASS;
   if (w.grass[p.i] < 0.55) return false;
@@ -4093,7 +4095,7 @@ function beeMood(w, c) {
   if (c.hidden && c.energy < 0.5 * c.maxEnergy && c.home.honey > 0) return { emoji: '🍯', text: 'Eating honey in the hive' };
   if (c.hidden && !isAdult(w, c)) return { emoji: '🐣', text: 'A young house bee, feeding the brood' };
   if (c.hidden) return clusterCold(w, c.home) > 1.5 ? { emoji: '🥶', text: 'Shivering in a small winter cluster' }
-    : { emoji: '💤', text: w.flowers < FEW_FLOWERS ? 'Waiting in the hive for the flowers' : 'Asleep in the hive' };
+    : { emoji: '💤', text: w.flowers < (w.parched ? DRY_FEW : FEW_FLOWERS) ? 'Waiting in the hive for the flowers' : 'Asleep in the hive' };
   switch (c.mode) {
     case 'sip': return { emoji: '🌼', text: 'Sipping nectar' };
     case 'flower': return { emoji: '🌸', text: 'Off to a flower' };
@@ -5649,6 +5651,7 @@ function newDay(w) {
   }
   treesTick(w);
   groundTick(w);
+  if (w.dryYear) dryDay(w);                                  // (?keep) lost to the Dry Year?
   if (!w.roost || !perchable(w.roost)) w.roost = pickRoost(w);   // gone, or bees or an owl moved in
   owlsDay(w);
   holtsDay(w);
@@ -5798,7 +5801,11 @@ function migrate(w) {
     // The last one gone is told once, however slowly they went (otters that never came aren't gone), and again if
     // they come back and die out again.
     if (w.count[s] > 0) w.diedOut[s] = false;
-    else if (!w.diedOut[s] && Object.keys(w.stats.deaths[s]).length) { w.diedOut[s] = true; emit(w, { type: 'extinct', species: s }); }
+    else if (!w.diedOut[s] && Object.keys(w.stats.deaths[s]).length) {
+      w.diedOut[s] = true;
+      emit(w, { type: 'extinct', species: s });
+      if (w.dryYear) dryGone(w, s);                               // (?keep: the Dry Year lost)
+    }
     if (n >= FEW[s] || w.arrivals.some(a => a.species === s)) { w.goneSince[s] = -1; continue; }
     if (w.goneSince[s] < 0) { w.goneSince[s] = w.tick; continue; }
     if (w.tick - w.goneSince[s] < wait[s] * TPD) continue;
@@ -5991,6 +5998,7 @@ function unpackWorld(kept) {
     for (const p of w.ponds || []) pondShape(w, p);
     dryWarning(w);
   }
+  if (w.dryYear && !w.parched && dryness(w) > 0) shadeSoil(w);   // (kept mid-drought before w.parched: the straw, now)
   buildGrid(w);
   return w;
 }
@@ -6647,6 +6655,7 @@ function plantHedge(w, pts) {
     h.whips++;
   }
   tally(w, 'hawthorn', 'planted');
+  if (dryness(w) > 0) shadeSoil(w);                           // (in the Dry Year: its green lane, at once)
   let sx = 0, sy = 0, n = 0;                                  // its middle, now
   for (const d of w.decor) if (d.hedge === h.id && standing(d)) { sx += d.x; sy += d.y; n++; }
   if (n) { h.x = sx / n; h.y = sy / n; }
@@ -6764,7 +6773,18 @@ const DRY_RAGGED = 4;           // tiles the green's edge wanders in and out, in
 const DRY_PATCH = 6;            // tiles across a patch
 const DRY_SHADE = 0.5;          // the woods' shade spares this much of it
 const DRY_IN = 1;               // days it takes to come on at the start of its summer (it goes over the autumn after)
-const GREEN_GRASS = 0.3;        // a tile with this much grass counts as green (greenShare)
+const GREEN_GRASS = 0.3;        // a tile with this much grass counts as green (greenShare), and a rabbit courts only on it
+const DRY_WITHER = 0.6;         // at dawn the parched grass loses this much of what it has over what it holds now
+const WILT = 0.4;               // a flower on a tile parched more than this doesn't bloom (isFlower)
+const DRY_FEW = 8;              // and the bees go out while this many are open in the meadow (FEW_FLOWERS in an ordinary year)
+const LANE = [1, 2.5];          // tiles each side of a hedge's whip the ground stays green: a whip just planted, a grown one
+const LANE_EDGE = 1;            // and over this many more it browns
+const GREEN_CELL = 4;           // a green spot for the rabbits each square this many tiles across (greenSpots)
+const GREEN_SOIL = 0.4;         // a spot's soil holds at least this much grass
+const GREEN_FOOD = 0.2;         // a hungry rabbit makes for one with this much on it still
+const GREEN_REACH = 40;         // from this far off at most
+const BARREN = 0.08;            // the Dry Year is lost if the green share stays under this
+const BARREN_DAYS = 5;          // for this many days running
 
 // Where the meadow is in its Dry Year at tick t: 1 its spring, 2 its summer, 3 the autumn after, 0 before or after.
 function dryStage(w, t = w.tick) {
@@ -6796,35 +6816,136 @@ function patchy(x, y, seed) {
 }
 
 // Once a day through the Dry Year (shadeSoil, after the shade): each tile away from the water holds less grass, down to
-// DRY_GRASS from DRY_FAR tiles out, its edge ragged in soft patches and spared a little under the trees. growGrass
-// withers what's over that back to it over a couple of days.
-function parch(w) {
+// DRY_GRASS from DRY_FAR tiles out, its edge ragged in soft patches and spared a little under the trees, and along a
+// hedge (hedgeLanes). How parched each tile is, 0 to 1, is w.parched (the flowers wilt by it, isFlower; the ground
+// shader paints by it), and the green spots a hungry rabbit makes for are w.greenSpots (greenSpot). At dawn (groundTick)
+// the parched grass withers most of the way down to that at once (DRY_WITHER), so the straw is straw within a day;
+// growGrass takes it the rest of the way. Once it's over, w.parched goes: nothing hangs off it in an ordinary year.
+function parch(w, dawn) {
   const k = dryness(w, w.tick + TPD / 2);                   // (as it will be through the day)
-  if (k <= 0) return;
-  const d = distanceToWater(w), f = w.shadedFert, wood = w.wood, seed = w.seed % 65536;
+  if (k <= 0) { w.parched = w.greenSpots = null; return; }
+  const d = distanceToWater(w), f = w.shadedFert, wood = w.wood, g = w.grass, seed = w.seed % 65536;
+  const p = w.parched ??= new Float32Array(W * H);
   for (let i = 0; i < W * H; i++) {
-    if (!d[i] || f[i] <= DRY_GRASS) continue;
+    if (!d[i]) { p[i] = 0; continue; }
     const x = i % W, y = (i / W) | 0, reach = d[i] + DRY_RAGGED * (patchy(x / DRY_PATCH, y / DRY_PATCH, seed) - 0.5);
     const u = clamp((reach - DRY_NEAR) / (DRY_FAR - DRY_NEAR), 0, 1);
-    f[i] += (DRY_GRASS - f[i]) * k * u * u * (3 - 2 * u) * (1 - DRY_SHADE * wood[i]);
+    p[i] = k * u * u * (3 - 2 * u) * (1 - DRY_SHADE * wood[i]);
   }
+  if (w.hedges) hedgeLanes(w, p);
+  for (let i = 0; i < W * H; i++) {
+    if (!p[i] || f[i] <= DRY_GRASS) continue;
+    f[i] += (DRY_GRASS - f[i]) * p[i];
+    if (dawn && g[i] > f[i]) g[i] -= (g[i] - f[i]) * DRY_WITHER * p[i];
+  }
+  w.greenSpots = greenSpots(w, p, w.greenSpots);
+  w.parchStamp = (w.parchStamp || 0) + 1;                   // (game.js hands it to the ground when it changes)
+}
+
+// A hedge keeps the ground along it green in the Dry Year, as the water does: a lane each side of each whip, LANE[0]
+// tiles wide for one just planted and LANE[1] for one grown. The whips are found through w.hedges' ids, not the tiles.
+function hedgeLanes(w, p) {
+  const ids = new Set(w.hedges.map(h => h.id));
+  for (const d of w.decor) {
+    if (!d.hedge || !ids.has(d.hedge) || !standing(d)) continue;
+    const lane = LANE[0] + (LANE[1] - LANE[0]) * clamp((d.size - HEDGE_WHIP[0]) / (GROWN - HEDGE_WHIP[0]), 0, 1), r = lane + LANE_EDGE;
+    for (let y = Math.max(0, Math.floor(d.y - r)); y <= Math.min(H - 1, d.y + r); y++) {
+      for (let x = Math.max(0, Math.floor(d.x - r)); x <= Math.min(W - 1, d.x + r); x++) {
+        const i = y * W + x, dist = Math.hypot(x + 0.5 - d.x, y + 0.5 - d.y);
+        if (dist < r && p[i]) p[i] *= clamp((dist - lane) / LANE_EDGE, 0, 1);
+      }
+    }
+  }
+}
+
+// The green a hungry rabbit can make for in the Dry Year: one spot a GREEN_CELL square (w.greenSpots, the tile, or -1),
+// the dry tile there least parched, if its soil still holds green grass.
+function greenSpots(w, p, out) {
+  const cw = Math.ceil(W / GREEN_CELL), ch = Math.ceil(H / GREEN_CELL);
+  out ??= new Int32Array(cw * ch);
+  for (let cy = 0; cy < ch; cy++) {
+    for (let cx = 0; cx < cw; cx++) {
+      let best = -1, most = GREEN_SOIL;
+      for (let y = cy * GREEN_CELL; y < Math.min(H, (cy + 1) * GREEN_CELL); y++) {
+        for (let x = cx * GREEN_CELL, i = y * W + x; x < Math.min(W, (cx + 1) * GREEN_CELL); x++, i++) {
+          if (!w.water[i] && p[i] < WILT && w.shadedFert[i] > most) { best = i; most = w.shadedFert[i]; }
+        }
+      }
+      out[cy * cw + cx] = best;
+    }
+  }
+  return out;
+}
+
+// The nearest green spot within GREEN_REACH of a hungry rabbit with grass on it still, looked for a ring of squares
+// at a time out from its own; null if none.
+function greenSpot(w, c) {
+  const spots = w.greenSpots, cw = Math.ceil(W / GREEN_CELL), ch = Math.ceil(H / GREEN_CELL);
+  const cx = Math.floor(c.x / GREEN_CELL), cy = Math.floor(c.y / GREEN_CELL), rings = Math.ceil(GREEN_REACH / GREEN_CELL);
+  let best = -1, bd = GREEN_REACH * GREEN_REACH;
+  for (let r = 0; r <= rings && (best < 0 || (r - 1) * GREEN_CELL * (r - 1) * GREEN_CELL < bd); r++) {
+    for (let y = cy - r; y <= cy + r; y++) {
+      if (y < 0 || y >= ch) continue;
+      const edge = y === cy - r || y === cy + r;
+      for (let x = cx - r; x <= cx + r; x += edge ? 1 : 2 * r || 1) {
+        if (x < 0 || x >= cw) continue;
+        const i = spots[y * cw + x];
+        if (i < 0 || w.grass[i] < GREEN_FOOD || fouled(w, i)) continue;
+        const d2 = (i % W + 0.5 - c.x) ** 2 + (((i / W) | 0) + 0.5 - c.y) ** 2;
+        if (d2 < bd) { bd = d2; best = i; }
+      }
+    }
+  }
+  return best < 0 ? null : { x: best % W + 0.5, y: ((best / W) | 0) + 0.5 };
 }
 
 // The Dry Year said from the start: a new keeper meadow (createWorld), or one kept from before it (unpackWorld).
 function dryWarning(w) {
   emit(w, { type: 'dryahead', year: w.dryYear.year });
-  if (dryStage(w) === 1) emit(w, { type: 'dryspring', year: w.dryYear.year });   // (made in its spring: &dry=1)
+  if (dryStage(w) === 1) { emit(w, { type: 'dryspring', year: w.dryYear.year }); dryRollCall(w); }   // (made in its spring: &dry=1)
 }
 
 // At the start of each season: the news of the Dry Year as it comes, and the rain back at the end of it.
 function drySeason(w) {
   const stage = dryStage(w), year = w.dryYear.year;
-  if (stage === 1) emit(w, { type: 'dryspring', year });
+  if (stage === 1) { emit(w, { type: 'dryspring', year }); dryRollCall(w); }
   else if (stage === 2) emit(w, { type: 'drystart', year });
   else if (stage === 3) {
     emit(w, { type: 'dryend', year });
     if (!w.skyLocked) setWeather(w, 'rain', TPD * 0.6);
   }
+}
+
+// Losing the Dry Year: from its spring to the end of the autumn after, the meadow going barren (the green share under
+// BARREN for BARREN_DAYS days running) or a species it had at the start of its spring dying out (frogs too). Told once
+// (event 'dryloss', w.dryYear.lost); the meadow runs on after. A die-out before its spring is only news, as ever.
+
+// Who lives in the meadow as the Dry Year's spring starts, two at least (one left over from the winter is all but gone
+// already): those it can be lost by.
+function dryRollCall(w) {
+  w.dryYear.had = KINDS.filter(s => (s !== 'owl' || OWLS) && w.count[s] >= 2);
+  if (w.frogCount >= 1) w.dryYear.had.push('frogs');
+}
+
+// Once a day (newDay): barren, or the frogs gone.
+function dryDay(w) {
+  const dy = w.dryYear, stage = dryStage(w);
+  if (!stage || dy.lost) return;
+  dy.had ??= [];
+  dy.barren = greenShare(w) < BARREN ? (dy.barren || 0) + 1 : 0;
+  if (dy.barren >= BARREN_DAYS) dryLost(w, 'barren');
+  else if (dy.had.includes('frogs') && w.frogCount < 1) dryLost(w, 'extinct', 'frogs');
+}
+
+// The last of a species gone (migrate, before any newcomers): lost, if it lived here as the Dry Year's spring started.
+function dryGone(w, s) {
+  const dy = w.dryYear;
+  if (!dy.lost && dy.had && dy.had.includes(s) && dryStage(w)) dryLost(w, 'extinct', s);
+}
+
+function dryLost(w, why, species = '') {
+  w.dryYear.lost = { why, species, t: w.tick };
+  emit(w, { type: 'dryloss', why, species });
 }
 
 // The share of the dry land that's green (GREEN_GRASS or more), 0 to 1: for balance.js now, a meter later.
@@ -6889,7 +7010,7 @@ const api = {
   W, H, TPD, SHALLOW, DEEP, SEASON_DAYS, YEAR_DAYS, SEASONS, SPECIES, GENES, COATS, GROUND, WEATHER,
   createWorld, step, clock, isNight, phaseOf, seasonOf, mood, ageDays, growth, isAdult, patchFresh,
   addCreature, paintGrass, setSky, lockSky, zap, burnLine, lift, putDown, nameCreature, nameQueen, NAME_MAX, plantTree, pondPlan, digPond, frogsNear, POND_BRUSH, POND_DAB, POND_TILES, REED_DAYS, stripPlan, sowStrip, stripKind, STRIP_TILES, hedgePlan, plantHedge, hedgeForecast, inHedge, HEDGE_MOST,
-  dryStage, dryness, dryComing, dryFrom, dryTo, DRY_NEAR, greenShare, stripBloom, traitMeans, walkable, packWorld, unpackWorld,
+  dryStage, dryness, dryComing, dryFrom, dryTo, DRY_NEAR, greenShare, stripBloom, GREEN_GRASS, WILT, BARREN, BARREN_DAYS, traitMeans, walkable, packWorld, unpackWorld,
   coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT, KINDS, OWLS, FEW,
   TERRAIN, drawnToLink, drawnFromLink, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE,

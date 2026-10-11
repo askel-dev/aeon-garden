@@ -6,19 +6,25 @@
 // two flower strips near the hive, and tells when they flowered, when the bees found them and how much they sipped there;
 // and plants a hedge by a burrow, and tells when it was young, blossomed and bore haws, its whips, and the rabbits that got
 // away from a fox into it. `nohedge` leaves the hedge out, to compare the rabbits with and without it.
-// A keeper meadow has its Dry Year in the summer of year 2: `keep` then runs each seed again with a keeper who does
-// nothing, and prints the two side by side, season by season (the green share, the water, rabbits, bees and hives,
-// frogs, foxes, and anything that died out). `idle` runs only the meadows where the keeper does nothing.
+// A keeper meadow has its Dry Year in the summer of year 2, and each one prints it season by season from the winter
+// before to the winter after (the green share, the water, rabbits, bees and hives, frogs, foxes), the fires in it, and
+// whether it was lost to it (barren, or which species died out, and the day). `idle` is a keeper meadow where the keeper
+// does nothing. `diligent` is one where the keeper, early in the first spring, digs three big ponds (a spiral of the
+// spade, 100 to 150 tiles) on open grass by the three warrens furthest from the water that lasts the Dry Year, plants two
+// hedges from that water out towards the two furthest, and sows two strips along it near the hive. Then a line for all
+// the seeds: how many were lost, and to what.
 const Sim = require('./sim.js');
 const years = +(process.argv[2] || 5), seeds = +(process.argv[3] || 4), verbose = process.argv[4] === 'v';
 const arrival = process.argv.includes('arrival'), plant = process.argv.includes('plant'), nohedge = process.argv.includes('nohedge');
-const idle = process.argv.includes('idle'), keep = process.argv.includes('keep') || idle;
+const idle = process.argv.includes('idle'), diligent = process.argv.includes('diligent'), keep = process.argv.includes('keep') || idle || diligent;
+const keeper = keep && !idle && !diligent;                  // the keeper of `keep`: one pond, two strips and a hedge
 const PLANT_KINDS = ['oak', 'beech', 'maple', 'birch', 'alder', 'hawthorn', 'apple', 'cherry', 'pine'];
 const perSeason = Sim.SEASON_DAYS * Sim.TPD;
 // One seed's meadow, run for the years (the keeper idle or not), printing through log; gives back its Dry Year rows.
-function runSeed(s, idleRun, log) {
+function runSeed(s, log) {
   const w = Sim.createWorld(s * 7919, keep ? { arrival, keep } : { arrival });
   const dryRows = [], extinct = [];                          // (keep) each season's end; what died out, and when
+  const dryFires = { n: 0, burned: 0 }, dryGreen = { low: 1 }, did = { ponds: [], hedges: [], strips: [] };   // (keep) fires in the Dry Year; (diligent) what the keeper did
   const t0 = Date.now();
   const rows = [];
   let pr = s * 2654435761 % 4294967296;                    // the planter's own random numbers, so the meadow's stay its own
@@ -78,7 +84,8 @@ function runSeed(s, idleRun, log) {
         planted.tried++;
         for (let k = 0; k < 20; k++) if (typeof Sim.plantTree(w, rand() * Sim.W, rand() * Sim.H, PLANT_KINDS[Math.floor(rand() * PLANT_KINDS.length)]) !== 'string') { planted.ok++; break; }
       }
-      if (keep && !idleRun && !kept.pond && w.tick >= DIG_DAY * Sim.TPD) {
+      if (diligent && !did.done && w.tick >= DIG_DAY * Sim.TPD) { did.done = true; diligentKeeper(w, rand, did); }
+      if (keeper && !kept.pond && w.tick >= DIG_DAY * Sim.TPD) {
         for (; kept.tries < 4000 && !kept.pond; kept.tries++) {
           const x = Math.floor(rand() * Sim.W) + 0.5, y = Math.floor(rand() * Sim.H) + 0.5, pts = SCRIBBLE.map(([dx, dy]) => ({ x: x + dx, y: y + dy }));
           const p = Sim.pondPlan(w, pts);
@@ -101,6 +108,14 @@ function runSeed(s, idleRun, log) {
         }
       }
       Sim.step(w);
+      if (keep && w.tick % Sim.TPD === 0 && Sim.dryStage(w)) {   // each day of the Dry Year: how green, at the lowest
+        const g = Sim.greenShare(w);
+        dryGreen.low = Math.min(dryGreen.low, g);
+        if (verbose) {
+          const honey = w.hives.reduce((a, h) => a + h.honey, 0), open = w.fields.filter(f => f.strip).map(f => f.open).join('/');
+          log(`    seed ${s} day ${w.tick / Sim.TPD}  green ${(100 * g).toFixed(1)}%  r${w.count.rabbit} b${w.count.bee} honey ${honey.toFixed(0)} flowers ${w.flowers} strips open ${open || '-'}  f${w.count.fox} frogs ${Math.round(w.frogCount)}`);
+        }
+      }
       if (kept.pond && kept.crows < 0) {
         const p = kept.spot;
         if (w.creatures.some(c => c.alive && c.species === 'crow' && (c.x - p.x) ** 2 + (c.y - p.y) ** 2 < p.r * p.r)) kept.crows = day();
@@ -128,7 +143,7 @@ function runSeed(s, idleRun, log) {
         if (e.type === 'birth' && e.surprise.length) surprises++;
         if (e.type === 'lightning') strikes++;
         if (e.type === 'swarm') swarms++;
-        if (e.type === 'fireout') { fires++; burned = Math.max(burned, e.burned); }
+        if (e.type === 'fireout') { fires++; burned = Math.max(burned, e.burned); if (Sim.dryStage(w)) { dryFires.n++; dryFires.burned += e.burned; } }
         if (e.type === 'weather') sky[e.kind] = (sky[e.kind] || 0) + 1;
         if (e.type === 'voles') voleNews[e.boom ? 'boom' : 'bust']++;
         if (e.type === 'frogs') frogNews[e.what]++;
@@ -210,7 +225,11 @@ function runSeed(s, idleRun, log) {
     `  voles eaten ${st.owlVoles} (foxes ${eaten})  kits taken ${d.rabbit.owl || 0}`);
   log(`  otters (holts)  ${otters.join(' ')}  holts made ${holts}  cubs ${st.births.otter} out ${cubsOut} left ${otterLeft}` +
     `  fish caught ${st.fish} frogs ${st.otterFrogs}`);
-  if (keep) {
+  if (diligent) {
+    log(`  diligent  ponds ${did.ponds.map(p => `${p.tiles} tiles (lasting ${p.lasting}, deep ${p.deep}) ${p.from} from water${p.hive ? ' by the hive' : ''}`).join(', ') || 'none'}`
+      + `  hedges ${did.hedges.map(h => `${h.whips} whips`).join(', ') || 'none'}  strips ${did.strips.map(f => `${f.sown} tiles`).join(', ') || 'none'}`);
+  }
+  if (keeper) {
     const p = kept.pond;
     log(p ? `  keeper  dug ${w.waters[p.id].name} day ${kept.dug} (${kept.tries} tries, ${kept.tiles} tiles: lasting ${p.lasting} spring ${p.spring} deep ${p.deep})`
       + `  crows day ${kept.crows}  frogs found it day ${kept.frogs} from ${kept.from} tiles  reeds day ${kept.reeds}`
@@ -230,19 +249,98 @@ function runSeed(s, idleRun, log) {
     for (const t of up) { const g = Sim.treeStage(w, t); stages[g] = (stages[g] || 0) + 1; }
     log(`  planted  ${planted.ok}/${planted.tried}  lost ${JSON.stringify(planted.lost)}  grew past the rabbits ${planted.sapling}  bore seed ${planted.seeded}  standing ${JSON.stringify(stages)}`);
   }
-  return { rows: dryRows, extinct, maxR, meanR: sumR / ticks };
+  const lost = w.dryYear && w.dryYear.lost;
+  return { rows: dryRows, extinct, maxR, meanR: sumR / ticks, fires: dryFires, low: Math.round(100 * dryGreen.low),
+    lost: lost ? `${lost.why === 'barren' ? 'barren' : lost.species} day ${(lost.t / Sim.TPD).toFixed(1)}` : '' };
 }
 
-// The Dry Year, season by season: the keeper's meadow (a) against the idle one (b), or just one.
+// The Dry Year, season by season from the winter before to the winter after, and whether it was lost.
 const dryLine = r => `green ${String(r.green).padStart(2)}% water ${String(r.water).padStart(4)}  r${String(r.r).padStart(3)} b${String(r.b).padStart(3)}(${r.hives}) frogs ${String(r.frogs).padStart(4)} f${String(r.f).padStart(2)}`;
-function printDry(a, b) {
-  console.log(b ? '  dry year (summer of year 2)  keeper' + ' '.repeat(36) + '| idle' : '  dry year (summer of year 2)  idle');
-  for (let k = 0; k < Math.min(12, a.rows.length); k++) console.log(`    ${a.rows[k].at}  ${dryLine(a.rows[k])}` + (b ? `  | ${dryLine(b.rows[k])}` : ''));
-  console.log(`    died out  ${a.extinct.join(', ') || 'none'}` + (b ? `  | ${b.extinct.join(', ') || 'none'}` : '')
-    + `   rabbits max ${a.maxR} mean ${a.meanR.toFixed(0)}` + (b ? ` | max ${b.maxR} mean ${b.meanR.toFixed(0)}` : ''));
+function printDry(a) {
+  console.log(`  dry year (summer of year 2, ${idle ? 'idle' : diligent ? 'diligent' : 'keeper'})`);
+  for (let k = 3; k < Math.min(8, a.rows.length); k++) console.log(`    ${a.rows[k].at}  ${dryLine(a.rows[k])}`);
+  console.log(`    lost  ${a.lost || 'no, came through'}   green at its lowest ${a.low}%   fires in it ${a.fires.n} (${a.fires.burned} tiles)   died out ${a.extinct.join(', ') || 'none'}   rabbits max ${a.maxR} mean ${a.meanR.toFixed(0)}`);
 }
 
+// The diligent keeper (see the top). The water that lasts the Dry Year: below an ordinary summer's line by Sim's DRY_LOW
+// (0.05), as the pond tool's ghost says. The tiles to it from each tile (far).
+function diligentKeeper(w, rand, did) {
+  const T = w.terrain, lasts = T.level - T.summerLow - T.rainRise / 2 - 0.05, W = Sim.W, H = Sim.H;
+  const lasting = () => Sim.distanceTo(Uint8Array.from(w.ground, (g, i) => (g < lasts || w.water[i] === Sim.DEEP ? 1 : 0)));
+  let far = lasting();
+  const at = (x, y) => Math.floor(y) * W + Math.floor(x);
+  const lives = b => w.creatures.filter(c => c.alive && c.home === b).length;
+  const warrens = w.burrows.filter(b => b.dug >= 1 && lives(b) > 0).sort((a, b) => far[at(b.x, b.y)] - far[at(a.x, a.y)]), picked = [];
+  for (const b of warrens) if (picked.length < 3 && picked.every(o => Math.hypot(o.x - b.x, o.y - b.y) > 15)) picked.push(b);
+  // A big pond by each: a spiral of the spade about 6 tiles across, on open grass 5 to 10 tiles from the warren. With
+  // no lasting water in the bees' reach of the hive, the third goes by the hive instead, for the strips.
+  const hive = w.hives.find(h => !h.cluster), reach = Sim.FORAGE_RANGE * 0.8;
+  let dry = !!hive;
+  for (let i = 0; hive && dry && i < W * H; i++) if (!far[i] && (i % W - hive.x) ** 2 + (Math.floor(i / W) - hive.y) ** 2 < reach * reach) dry = false;
+  const sites = dry ? [...picked.slice(0, 2), hive] : picked;
+  const spiral = (x, y) => Array.from({ length: 60 }, (_, k) => { const a = k * 0.42, r = 0.25 + k * 0.075; return { x: x + Math.cos(a) * r, y: y + Math.sin(a) * r }; });
+  for (const b of sites) {
+    for (let k = 0; k < 900; k++) {
+      const a = rand() * Math.PI * 2, r = 5 + rand() * 5, x = b.x + Math.cos(a) * r, y = b.y + Math.sin(a) * r, pts = spiral(x, y);
+      if (x < 8 || y < 8 || x > W - 8 || y > H - 8 || w.wood[at(x, y)] > 0.3) continue;
+      const p = Sim.pondPlan(w, pts), n = p.lasting + p.spring + p.dry;
+      if (!p.ok || n < 100 || n > 150 || p.blocked > 8 || p.lasting < (k < 600 ? 30 : 12) || (k < 400 && p.grows)) continue;
+      Sim.digPond(w, pts);
+      did.ponds.push({ tiles: n, lasting: p.lasting, deep: p.deep, from: Math.round(far[at(b.x, b.y)]), hive: b === hive });
+      break;
+    }
+  }
+  const before = far;                                       // (the hedges go out from the water that was there)
+  far = lasting();                                          // (with the ponds)
+  // A hedge from the water out towards each of the two furthest: from the nearest water downhill of the warren's
+  // distance, a straight stroke (HEDGE_MOST whips at most) starting 2 to 6 tiles out, turned a little either way.
+  for (const b of picked.slice(0, 2)) {
+    let x = Math.floor(b.x), y = Math.floor(b.y);
+    for (let k = 0; k < 200 && before[y * W + x] > 0; k++) {
+      let bx = x, by = y;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx, ny = y + dy;
+        if (nx >= 0 && ny >= 0 && nx < W && ny < H && before[ny * W + nx] < before[by * W + bx]) { bx = nx; by = ny; }
+      }
+      if (bx === x && by === y) break;
+      x = bx; y = by;
+    }
+    const wx = x + 0.5, wy = y + 0.5, a0 = Math.atan2(b.y - wy, b.x - wx);
+    for (let k = 0; k < 400; k++) {
+      const a = a0 + (rand() - 0.5) * 0.6, s = 2 + rand() * 4, len = Math.min(29, Math.hypot(b.x - wx, b.y - wy) - 3);
+      if (len < 6) break;
+      const x0 = wx + Math.cos(a) * s, y0 = wy + Math.sin(a) * s, pts = [{ x: x0, y: y0 }, { x: x0 + Math.cos(a) * len, y: y0 + Math.sin(a) * len }];
+      const p = Sim.hedgePlan(w, pts);
+      if (!p.ok || p.whips < Math.min(12, len / 1.5 - 2) || (k < 300 && p.blocked > 3)) continue;
+      const h = Sim.plantHedge(w, pts);
+      did.hedges.push({ whips: p.whips, name: h.name });
+      break;
+    }
+  }
+  // Two strips along the lasting water within reach of the hive: a stroke of 7 tiles from a tile by it, every tile sown
+  // within 3 of it.
+  const by = [];
+  for (let i = 0; hive && i < W * H; i++) {
+    const x = i % W + 0.5, y = Math.floor(i / W) + 0.5;
+    if (far[i] >= 1 && far[i] <= 2.5 && x > 3 && y > 3 && x < W - 3 && y < H - 3 && (x - hive.x) ** 2 + (y - hive.y) ** 2 < reach * reach) by.push({ x, y });
+  }
+  for (let k = 0; by.length && k < 4000 && did.strips.length < 2; k++) {
+    const { x, y } = by[Math.floor(rand() * by.length)], c = rand() * Math.PI;
+    const pts = [{ x, y }, { x: x + Math.cos(c) * 7, y: y + Math.sin(c) * 7 }], p = Sim.stripPlan(w, pts);
+    if (!p.ok || p.sown < 10 || p.tiles.some(t => !t.blocker && far[t.i] > 3)) continue;
+    Sim.sowStrip(w, pts);
+    did.strips.push({ sown: p.sown });
+  }
+}
+
+const results = [];
 for (let s = 1; s <= seeds; s++) {
-  const a = runSeed(s, idle, console.log);
-  if (keep) printDry(a, idle ? null : runSeed(s, true, () => {}));
+  const a = runSeed(s, console.log);
+  if (keep) { printDry(a); results.push(a); }
+}
+if (keep) {
+  const why = {};
+  for (const a of results) if (a.lost) { const k = a.lost.split(' ')[0]; why[k] = (why[k] || 0) + 1; }
+  console.log(`${idle ? 'idle' : diligent ? 'diligent' : 'keeper'}: lost ${results.filter(a => a.lost).length} of ${results.length}  ${JSON.stringify(why)}`
+    + `  (${results.map((a, k) => `${k + 1}:${a.lost ? a.lost.split(' day')[0] : 'ok'}`).join(' ')})`);
 }

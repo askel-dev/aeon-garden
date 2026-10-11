@@ -164,8 +164,10 @@ on its own. Then one or two people who've never seen it. If it fails, the notes 
   - **Losing is the meadow going barren and species going extinct.**
   - The picture first: a mock of the Dry Year (straw away from the water, green rings round it) next to a summer
     now, and a pond dug in it, to see if it says "dig here" before any sim is built.
-  - Open: how many years to the Dry Year; the one number on screen (the share still green?); what the hedge does
-    in a drought; the result at summer's end.
+  - Open: how many years to the Dry Year; the one number on screen (the share still green?); ~~what the hedge does
+    in a drought~~ (a green lane along it, D2); the result at summer's end.
+  - Later (Axel wants it): sound and sight cues for the coming Dry Year, after Frostpunk, where you hear the cold
+    coming and its arrival is unmistakable.
 - **Step 2, D1: the Dry Year itself (built 2026-10-11).** Only at `?keep`; the bare address prints the same, seed for seed.
   - The clock: `w.dryYear = { year }`, the summer of year 2 (`DRY_YEAR`; `&dry=N` in a new keeper meadow's link sets it,
     1 being this year's). A keeper meadow kept from before it gets one the next summer when it opens (`unpackWorld`).
@@ -200,6 +202,51 @@ on its own. Then one or two people who've never seen it. If it fails, the notes 
   - Perf (headless Chrome, 1280x800, seed 31, zoomed out): `render` at 60x 2.4 ms median against 2.1 in an ordinary
     summer, 2.0 against 1.9 at 1x; the ground repaints as often (131 against 145 in 12 s at 1x, none paused); the shader
     alone 1.3 against 1.2 ms a full repaint.
+- **Step 2, D2: who suffers, and losing (built 2026-10-11).** Only at `?keep`, hung off `w.parched` (made only while
+  `dryness > 0`, dropped after) or `w.dryYear`; `balance.js 6 4 v` and `3 4 v plant` print the same, seed for seed.
+  - How parched: `parch(w, dawn)` now writes `w.parched` (0 to 1 a tile, D1's falloff from the water, ragged and spared
+    under the trees) and cuts the soil's cap by it. At dawn (`groundTick` → `shadeSoil(w, true)`) the parched grass
+    withers most of the way to that at once (`DRY_WITHER`, 0.6), so the straw is straw within a day, not three.
+  - The hedge in a drought (the open item): a green lane each side of each whip, as by the water (`hedgeLanes`, found
+    through `w.hedges`' ids, never a scan): `LANE` 1 tile for a whip just planted to 2.5 for a grown one, browning over
+    `LANE_EDGE` more. `plantHedge` re-parches at once, so a hedge planted mid-drought shows its narrow lane that frame.
+  - The ground agrees with the sim: ground.js paints the straw from the sim's `parched` (texture unit 5, red), not from
+    `toWater`, wobbling a little finer than a tile (`DRY_WOBBLE`). game.js `updateParch` hands it over when
+    `w.parchStamp` changes (a dawn, a pond dug, a hedge planted), so the pond's ring and the hedge's lane show at once.
+  - Rabbits need the green: in the Dry Year a rabbit courts only on green grass (`readyToMate`, `GREEN_GRASS`, a tile
+    read). A hungry one with no food about makes for the nearest green spot within `GREEN_REACH` (40) tiles
+    (`greenSpot`, every 10th tick it looks), from `w.greenSpots`: one spot a `GREEN_CELL` (4) square, the dry tile there
+    least parched if its soil holds `GREEN_SOIL` (0.4), worked out in `parch` (`greenSpots`); it goes only to one with
+    `GREEN_FOOD` (0.2) still on it. So a warren out in the straw empties (seed 7919's furthest: 28 rabbits about it the day
+    before the Dry summer, 0 at its end) and they crowd the green by the water, the ponds and the hedges.
+  - The flowers wilt away from the water: `isFlower` is false where `parched > WILT` (0.4), wild flowers, fields and
+    strips alike, and game.js `plantEmoji` follows (a wilted field shows 🌾); the inspector says "🥀 Wilted: too far from
+    the water". In the Dry Year bees go out while `DRY_FEW` (8) flowers are open, not `FEW_FLOWERS`, so a strip by the water
+    still feeds a hive and one with none in reach lives on its honey.
+  - Losing: from its spring to the end of the autumn after, either (`dryDay`, `dryGone`, `dryLost`, event `dryloss`,
+    `w.dryYear.lost = { why, species, t }`, once): **barren**, `greenShare` under `BARREN` (0.08) for `BARREN_DAYS` (5)
+    days running; or **extinct**, a species with two at least as its spring started (`dryRollCall`: rabbits, foxes, bees,
+    crows, otters, and frogs) dying out. The last one gone hooks onto `migrate`'s `w.diedOut` moment (dd42abf), so a
+    newcomer on its way doesn't hide it; the frogs are looked at each day. The meadow runs on after.
+  - The card (`#lost`, `showLost`, `lostWords`, `LOST_WHY`): "🥀 The meadow went barren in the Dry Year." or "😢 The last
+    bee is gone: the Dry Year was too much for them.", one line why, Start again (`startAgain`: the same seed, a fresh keeper
+    meadow with its Dry Year in the same year, kept in place of the lost one) and Keep watching (or Esc). Shown after the
+    away card if it came while you were away; on the away card, in the news and pinned on the graph (🥀).
+  - A keeper meadow kept mid-drought before D2 works out its `w.parched` when it opens (`unpackWorld`). No `KEEP_VERSION` bump.
+  - Balance, `node balance.js 3 16 <mode>` (seeds 1 to 8 are `3 8`): **idle** lost 10 of 16 (5 bees, 5 barren; 5 of the
+    first 8), **keep** 9 of 16 (5 bees, 4 barren), **diligent** 0 of 16 (8 of 8). Green at its lowest 4 to 15% idle, 5 to 19%
+    diligent. Most bee losses come in the autumn after (days 31 to 35), as the honey runs out. `keep` barely beats idle because
+    its strips are sown near the hive but not by the water: in 5 of its first 8 seeds both wilt in the Dry summer (open 0/0),
+    and those lost 4 times in 5; the 3 whose strips stayed open all came through.
+  - Fire: with the heatwave's lightning off in the Dry Year, idle still lost 10 of 16, keep 7, diligent 1 (5 barren).
+    The seeds shift (a fire is a coin flip on which ones), but fire alone hardly decides whether one is lost, so it stays.
+  - The foxes with a keeper (D1 saw them higher in all 6 seeds): over 16 seeds mean fox-days were 602 with nothing done,
+    626 with one extra random draw on day 1 and nothing else, 640 with the pond; foxes ate 32, 38 and 48 frogs. Mostly
+    chaos on few seeds, a little from the pond's frogs: fair ecology, left as it is.
+  - Perf (headless Chrome 1280x800, seed 7919, 60x through the Dry summer, against D1 at dd42abf, mean of 3 runs): zoomed
+    out a frame's work 7.1 ms (sim 3.9) against 7.7 (4.1); following a rabbit at zoom 24, 6.0 (4.3) against 6.3 (4.2); sim
+    130 to 145 µs a tick either way. In node, `greenSpots` 0.15% and `parch` 0.3% of the time, `greenSpot` and `hedgeLanes` too
+    small to show.
 - **Step 2, the keeper's HUD (agreed 2026-10-11).** Axel: "Right now all the instructions just sit in a little box down
   in the left corner." Frostpunk puts the threat front and centre with its forecast, what you have along the top, a build
   menu at the bottom where each building explains itself, and a few short missions. At `?keep` only (the bare address

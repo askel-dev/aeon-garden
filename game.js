@@ -550,6 +550,7 @@ let groundIn = false;
 function drawGround(z, ox, oy, shx, shy) {
   groundStill = z === lastZoom ? groundStill + 1 : 0; lastZoom = z;
   updateWater();
+  updateParch();
   if (!Ground.ok) {
     if (groundLayer) groundLayer.style.display = 'none';
     ctx.drawImage(flat, ox, oy, S.W * z, S.H * z); return;
@@ -631,14 +632,14 @@ function fadeAt(x, y) {                           // false: it's lost in the mis
 const unfade = () => fadeTo(1);
 
 function plantEmoji(season, p, g) {
-  const kind = p.kind, f = p.field;
-  if (f && season === f.season) return g >= S.FIELD_GRASS ? f.emoji[Math.floor(kind * f.emoji.length)] : '🌱';
+  const kind = p.kind, f = p.field, wilted = world.parched && world.parched[p.i] > S.WILT;   // (?keep: the Dry Year, as isFlower)
+  if (f && season === f.season) return wilted ? '🌾' : g >= S.FIELD_GRASS ? f.emoji[Math.floor(kind * f.emoji.length)] : '🌱';
   if (f?.strip && season === 3) return '🌱';             // a strip the keeper sowed waits out the winter as seedlings
   if (f && season < 2) return g > 0.4 ? '🌿' : null;      // a field out of bloom is just grass
   switch (season) {
-    case 0: if (g > 0.55 && kind < 0.35) return kind < 0.12 ? '🌷' : kind < 0.24 ? '🌼' : '🌸';
+    case 0: if (g > 0.55 && kind < 0.35 && !wilted) return kind < 0.12 ? '🌷' : kind < 0.24 ? '🌼' : '🌸';
       return g > 0.4 ? '🌿' : kind < 0.3 ? '🌱' : null;
-    case 1: if (g > 0.55 && kind < 0.22) return kind < 0.06 ? '🌻' : '🌼';
+    case 1: if (g > 0.55 && kind < 0.22 && !wilted) return kind < 0.06 ? '🌻' : '🌼';
       return g > 0.4 ? '🌿' : null;
     case 2: if (kind < 0.25) return '🍂';
       return g > 0.35 ? (kind < 0.5 ? '🌾' : '🌿') : null;
@@ -4438,6 +4439,19 @@ function updateWater() {
   Ground.set('water', waterData); Ground.set('shape', shapeData);
 }
 
+// (?keep) The Dry Year: how parched each tile is, as the sim has it (world.parched), for the ground to paint the straw and
+// the green by the water and along the hedges. Handed over only when the sim works it out again (once a day, and on a dig
+// or a planting: world.parchStamp), so that very frame.
+const dryData = new Float32Array(S.W * S.H * 4);
+const parchSent = { world: null, stamp: 0 };
+function updateParch() {
+  const p = world.parched;
+  if (!Ground.ok || !p || (parchSent.world === world && parchSent.stamp === world.parchStamp)) return;
+  for (let i = 0; i < p.length; i++) dryData[i * 4] = p[i];
+  Ground.set('parched', dryData);
+  parchSent.world = world; parchSent.stamp = world.parchStamp;
+}
+
 const iceOver = () => world.ice * 0.72;   // frozen over (the sim's w.ice: it holds once it's all the way)
 
 // Little waves on open water: a small ~ that rises, drifts downwind and settles again.
@@ -5791,6 +5805,12 @@ function handleEvent(e) {
     case 'dryend':
       addNews('🌧️ <b>The rain is back:</b> the Dry Year is over.');
       break;
+    case 'dryloss': {                   // (?keep) the Dry Year was lost: a card, and the meadow runs on
+      const [title, line] = lostWords(e);
+      addNews(`${title.replace(/^(\S+) (.*)$/, '$1 <b>$2</b>')} ${line}`);
+      lostCard.pending = true;
+      break;
+    }
     case 'frogsfound':
       addNews(`🐸 Frogs found ${thingLink('water', e.water, esc(world.waters[e.water].name))}${e.from > 2 ? `, from ${e.from} tiles off` : ''}.`);
       break;
@@ -6523,7 +6543,7 @@ const SERIES = {
 const SEASON_TINT = ['#f6dde5', '#f7ecb8', '#f4d6b6', '#dfe8f0'];
 const RANGES = { year: S.YEAR_DAYS * S.TPD, five: 5 * S.YEAR_DAYS * S.TPD, all: Infinity };
 const RANGE_WORDS = { year: 'the last year', five: 'the last 5 years', all: 'the whole story' };
-const MARK_EMOJI = { extinct: '😢', arrive: '🧳', fire: '🔥', outbreak: '🤒', drystart: '☀️', dryend: '🌧️', dugpond: '⛏️', frogsfound: '🐸', sowstrip: '🌼', beesfound: '🐝', hedgeplant: '🌿', hedgebloom: '🌸' };
+const MARK_EMOJI = { extinct: '😢', arrive: '🧳', fire: '🔥', outbreak: '🤒', drystart: '☀️', dryend: '🌧️', dryloss: '🥀', dugpond: '⛏️', frogsfound: '🐸', sowstrip: '🌼', beesfound: '🐝', hedgeplant: '🌿', hedgebloom: '🌸' };
 const CAUSES = [['fox', '🦊', 'Caught by a fox'], ['hunger', '🥀', 'Starved'], ['age', '🌙', 'Old age'],
   ['sickness', '🤒', 'Sickness'], ['lightning', '⚡', 'Lightning'], ['fire', '🔥', 'Wildfire'], ['flood', '🌊', 'Drowned in a flood'],
   ['ice', '🧊', 'Fell through the ice'], ['owl', '🦉', 'Taken by an owl'], ['left', '🧳', 'Left to find a home of its own']];
@@ -7559,6 +7579,7 @@ const THINGS = {
       let status;
       if (world.water[p.i]) status = '🌊 Under the flood';
       else if (open) status = p.sipped && world.tick - p.sipped < S.REFILL ? '🐝 Sipped dry, filling up with nectar again' : '🍯 Open and full of nectar';
+      else if (world.parched && world.parched[p.i] > S.WILT) status = '🥀 Wilted: too far from the water in the Dry Year';
       else if (f && season === f.season) status = '🐇 Nibbled down: it blooms once the grass grows back';
       else if (f) status = `🌿 Just leaves: it blooms in ${seasonName(f.season)}`;
       else status = '🌿 Not in flower';
@@ -7578,7 +7599,9 @@ const THINGS = {
       const season = S.seasonOf(world.tick), plants = world.plants.filter(p => p.field === f), open = plants.filter(p => S.isFlower(world, p)).length;
       let tiles = 0, grass = 0, voles = 0;
       for (let i = 0; i < world.fieldAt.length; i++) if (world.fieldAt[i] === f.id && !world.water[i]) { tiles++; grass += world.grass[i]; voles += world.voles[i]; }
-      const status = season === f.season ? (open ? `${f.emoji[0]} In bloom: ${open} of ${plants.length} flowers open` : '🐇 Grazed down: no flowers open')
+      const wilted = world.parched && plants.some(p => world.parched[p.i] > S.WILT);   // (?keep, the Dry Year)
+      const status = season === f.season ? (open ? `${f.emoji[0]} In bloom: ${open} of ${plants.length} flowers open`
+        : wilted ? '🥀 Wilted: too far from the water in the Dry Year' : '🐇 Grazed down: no flowers open')
         : `🌿 Resting: it blooms in ${seasonName(f.season)}`;
       const inField = c => world.fieldAt[tileOf(c.x, c.y)] === f.id;
       const now = world.creatures.filter(c => c.alive && !c.hidden && inField(c));
@@ -8947,6 +8970,8 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'guide') { openGuide(); guideTick(performance.now()); }
   else if (t.dataset.act === 'guide-shut') { shutGuide(); guideTick(performance.now()); }
   else if (t.dataset.act === 'keep-fold') { foldKeepCard(); guideTick(performance.now()); }
+  else if (t.dataset.act === 'lost-again') startAgain();
+  else if (t.dataset.act === 'lost-watch') showLost(false);
   else if (t.dataset.act === 'guide-skip') { Object.assign(guide, { step: GUIDE_STEPS, wait: 0 }); saveGuide(); guideTick(performance.now()); }
   else if (t.dataset.act === 'guide-fold') { guide.fold = !guide.fold; guide.fresh = ''; saveGuide(); guideTick(performance.now()); }
   else if (t.dataset.act?.startsWith('try:')) tryThing(t.dataset.act.slice(4));
@@ -9027,7 +9052,7 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'Escape' && placing) dropPlace();   // a pond being placed: called off
   else if (e.key === 'Escape') {
     const more = !$('#more-menu').classList.contains('hidden');
-    awayOpen() ? closeAway() : homeOpen() ? homeGuide(false) : webOpen() ? toggleWeb(false) : yoursOpen() ? toggleYours(false) : ui.ring ? closeRing() : $('#toolbar').classList.contains('open') ? toggleTools(false) : ui.sky.menu ? toggleSkyMenu(false) : more ? toggleMore(false) : ui.stats.open ? toggleStats(false)
+    awayOpen() ? closeAway() : lostOpen() ? showLost(false) : homeOpen() ? homeGuide(false) : webOpen() ? toggleWeb(false) : yoursOpen() ? toggleYours(false) : ui.ring ? closeRing() : $('#toolbar').classList.contains('open') ? toggleTools(false) : ui.sky.menu ? toggleSkyMenu(false) : more ? toggleMore(false) : ui.stats.open ? toggleStats(false)
       : ui.tool !== 'look' ? setTool('look') : select(0);
   }
   else if (e.key === 's') toggleStats();
@@ -9309,7 +9334,42 @@ function foldKeepCard() {
   try { localStorage.setItem(KEEP_CARD, keepCard.fold ? '1' : '0'); } catch (e) { /* fine */ }
 }
 
+// (?keep) Losing the Dry Year (sim.js dryLost): one plain card, the meadow going on behind it. Start again: the same seed,
+// a fresh keeper meadow, its Dry Year in the same year, in place of this one (kept at once). Shown once the away card
+// is done with, if it came while you were away.
+const lostCard = { pending: false };
+const LOST_WHY = {
+  rabbit: 'The grass out in the straw gave them nothing, and the green by the water wasn’t enough for them all.',
+  fox: 'The rabbits and the voles went with the grass, and the foxes had nothing left to hunt.',
+  bee: 'The flowers wilted away from the water, and the hives ran through their honey.',
+  crow: 'There were too few grubs in the baked earth, and too little else.',
+  owl: 'The voles went with the long grass, and the owls had nothing left to hunt.',
+  otter: 'The water fell, and there were too few fish left in it.',
+  frogs: 'The pools dried up, and the damp grass by the water went with them.',
+};
+function lostWords(e) {
+  if (e.why === 'barren') return ['🥀 The meadow went barren in the Dry Year.', `For ${S.BARREN_DAYS} days running, hardly a patch of it was green.`];
+  const name = e.species === 'frogs' ? 'frog' : S.SPECIES[e.species].name.toLowerCase();
+  return [`😢 The last ${name} is gone: the Dry Year was too much for them.`, LOST_WHY[e.species] || ''];
+}
+const lostOpen = () => !$('#lost').classList.contains('hidden');
+function showLost(open = true) {
+  lostCard.pending = false;
+  if (open && world.dryYear?.lost) {
+    const [title, line] = lostWords(world.dryYear.lost);
+    $('#lost-title').textContent = title; $('#lost-text').textContent = line;
+  }
+  $('#lost').classList.toggle('hidden', !open);
+}
+function startAgain() {
+  showLost(false);
+  newWorld(world.seed, false, world.dryYear?.year);
+  keepMeadow();                                         // (in place of the one lost)
+}
+$('#lost').addEventListener('click', e => { if (e.target.id === 'lost') showLost(false); });
+
 function keepCardTick() {
+  if (lostCard.pending && !away.on && !awayOpen()) showLost();
   const show = keepCard.on && !away.on, box = $('#guide');
   if (box.classList.contains('hidden') === show) box.classList.toggle('hidden', !show);
   if (!show) return;
@@ -9759,7 +9819,7 @@ addEventListener('pagehide', keepMeadow);
 const AWAY_MIN = 5 * 60e3;                 // gone at least this long, in real time
 const AWAY_TICKS = S.SEASON_DAYS * S.TPD;  // and it moves on a season, however long it was
 const AWAY_MS = 40;                        // of each frame the catching up gets
-const AWAY_BIG = ['extinct', 'dryend', 'drystart', 'dryspring', 'swarm', 'settle', 'hivestruck', 'queenlost', 'fire', 'outbreak', 'outbreakover', 'mast', 'voles', 'frogyear', 'treedied', 'windthrow', 'frogsfound', 'pondgrew', 'stripbloom', 'beesfound', 'hedgeyoung', 'hedgebloom', 'hedgehaws'];   // news for the card, the first told first
+const AWAY_BIG = ['dryloss', 'extinct', 'dryend', 'drystart', 'dryspring', 'swarm', 'settle', 'hivestruck', 'queenlost', 'fire', 'outbreak', 'outbreakover', 'mast', 'voles', 'frogyear', 'treedied', 'windthrow', 'frogsfound', 'pondgrew', 'stripbloom', 'beesfound', 'hedgeyoung', 'hedgebloom', 'hedgehaws'];   // news for the card, the first told first
 const away = { on: false, frames: 0, left: 0, from: 0, day: -1, births: null, deaths: null, news: [], type: '', mine: false };
 const awayOpen = () => !$('#away').classList.contains('hidden');
 const deathsOf = s => Object.values(world.stats.deaths[s]).reduce((a, b) => a + b, 0);
@@ -9830,8 +9890,8 @@ function flushEvents() {
 
 function randomSeed() { return Math.floor(Math.random() * 1e6); }
 
-function newWorld(seed, arrival = false) {
-  showWorld(S.createWorld(seed, LAB ? { terrain, drawn, rabbits: 0, foxes: 0, bees: 0 } : KEEP ? { terrain, drawn, keep: true, dry: DRY_PARAM } : { terrain, drawn, arrival }));
+function newWorld(seed, arrival = false, dry = DRY_PARAM) {
+  showWorld(S.createWorld(seed, LAB ? { terrain, drawn, rabbits: 0, foxes: 0, bees: 0 } : KEEP ? { terrain, drawn, keep: true, dry } : { terrain, drawn, arrival }));
   const big = [world.waters.find(v => v.kind === 'river'), world.lake].filter(Boolean).map(v => `<b>${v.name}</b>`);
   const by = big.length ? ' by ' + big.join(' and ') : '';
   addNews(arrival ? `🌱 A new meadow${by}. Nobody lives here yet.`

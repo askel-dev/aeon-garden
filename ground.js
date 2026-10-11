@@ -14,8 +14,10 @@
  *
  * Use: Ground.set(name, data) with a Float32Array of 4 values a tile: 'tile' (grass, water,
  * ash, wood), 'bloom' (a field's tint times how much it shows, then how much), 'shape' (height,
- * tiles to the water, tiles to the woods) and 'water' (the water softened by 1, 2 and 4 blurs,
- * and the deep water by 2), and once Ground.mist(...) with how thick the mist is near the edges. Then Ground.draw(uniforms) paints Ground.canvas if it has to, and
+ * tiles to the water, tiles to the woods, mud the Dry Year's water left), 'water' (the water
+ * softened by 1, 2 and 4 blurs, and the deep water by 2) and 'parched' (?keep, the Dry Year: how
+ * parched, the first of the four), and once Ground.mist(...) with how thick the mist is near the
+ * edges. Then Ground.draw(uniforms) paints Ground.canvas if it has to, and
  * Ground.view says where in it the screen's corner is. game.js shows the canvas as a layer of its own
  * under the meadow, slid so that corner is on the screen's.
  * Ground.ok is false where there is no WebGL2.
@@ -34,18 +36,15 @@ void main() { gl_Position = vec4(a, 0., 1.); }`;
 
 const FRAGMENT = `#version 300 es
 precision highp float;
-uniform sampler2D tile, bloom, shape, water, mist;
+uniform sampler2D tile, bloom, shape, water, mist, parched;
 uniform vec2 size, off, seed;
 uniform float top, zoom, dpr, snow, damp, lx, ly, ice, cold, mistOut, drought;
 uniform vec3 low, high, sand, fog;
 out vec4 o;
 
-// The Dry Year (?keep): drought is how hard it bites, 0 to 1 (game.js, in steps of 1/16).
-#define DRY_NEAR 3.                       // tiles from the water the grass stays green
-#define DRY_FAR 10.                       // and by this far out it's straw
-#define DRY_RAGGED 5.                     // tiles the edge wanders in and out
-#define DRY_HIGH 4.                       // higher ground browns this many tiles sooner (from a quarter of the way up)
-#define DRY_WOODS 0.6                     // the woods' shade spares this much of it
+// The Dry Year (?keep): drought is how hard it bites, 0 to 1 (game.js, in steps of 1/16), and the parched texture's red how
+// parched each tile is, as the sim has it (sim.js parch: away from the water and a hedge's lane, less under the trees).
+#define DRY_WOBBLE 0.25                   // how much the edge between the green and the straw wanders, finer than a tile
 #define DRY_STRAW vec3(0.86, 0.78, 0.50)
 #define DRY_OLIVE vec3(0.70, 0.69, 0.44)  // here and there, through the straw
 #define DRY_EARTH vec3(0.74, 0.64, 0.49)  // baked earth
@@ -174,14 +173,14 @@ void main() {
   grass = mix(grass, golden, smoothstep(0.45, 0.85, dry));
   grass = mix(grass, grass * vec3(0.82, 0.94, 0.98), 0.45 * exp(-H.b / 3.));   // cool shade by the woods
   grass *= 1. - 0.08 * exp(-max(toWater, 0.) / 1.4);             // wet grass along the water
-  // The Dry Year: straw away from the water, ragged at the edge (lower ground and the woods' shade hold on longer), bare
-  // baked earth in patches, and a lush ring within a few tiles of the water. The ring reads green at once round a pond
-  // just dug, however short the sim's grass is there (it grows back over a day or two).
+  // The Dry Year: straw where the sim says it's parched (away from the water, and from a hedge's lane), its edge wobbling a
+  // little finer than the tiles, bare baked earth in patches, and a lush ring where it's spared. The ring reads green at once
+  // round a pond just dug or along a hedge just planted, however short the sim's grass is there (it grows back after).
   float parch = 0.;
   if (drought > 0.) {
-    float ragged = DRY_RAGGED * (fbm(q * 0.12 + 520.) - 0.5);
-    parch = drought * smoothstep(DRY_NEAR, DRY_FAR, toWater + ragged + DRY_HIGH * (height - 0.25)) * (1. - DRY_WOODS * exp(-H.b / 4.));
-    float ring = drought * (1. - smoothstep(DRY_NEAR - 1.5, DRY_NEAR + 1., toWater + 0.4 * ragged)) * (1. - smoothstep(0.2, 0.7, H.a));
+    float raw = smooth4(parched, p).r;
+    parch = clamp(raw + DRY_WOBBLE * (fbm(q * 0.3 + 520.) - 0.5) * smoothstep(0., 0.15, raw), 0., 1.);
+    float ring = drought * (1. - smoothstep(0.03, 0.3, parch / drought)) * (1. - smoothstep(0.2, 0.7, H.a));
     float bald = smoothstep(0.42, 0.72, fbm(q * 0.45 + 600.));             // where the bare earth shows first
     vec3 straw = mix(DRY_STRAW, DRY_OLIVE, smoothstep(0.35, 0.75, fbm(q * 0.25 + 640.)) * 0.55);
     grass = mix(mix(grass, straw, parch), lush * vec3(0.92, 1.04, 0.9), DRY_LUSH * ring);
@@ -289,7 +288,7 @@ if (gl) {
     gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a, 2, gl.FLOAT, false, 0, 0);
     const n = gl.getProgramParameter(prog, gl.ACTIVE_UNIFORMS);
     for (let i = 0; i < n; i++) { const name = gl.getActiveUniform(prog, i).name; U[name] = gl.getUniformLocation(prog, name); }
-    ['tile', 'bloom', 'shape', 'water'].forEach((name, unit) => {
+    [['tile', 0], ['bloom', 1], ['shape', 2], ['water', 3], ['parched', 5]].forEach(([name, unit]) => {   // (4: the mist)
       const t = gl.createTexture();
       gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t);
       for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR],

@@ -364,6 +364,16 @@
   #welcome .card-sound { flex: none; width: 52px; border-radius: 14px; font-size: 19px; padding: 0; background: #fbf5e8; }
   #welcome .card-sound[aria-pressed="true"] { background: var(--accent-soft); }
 
+  /* ---- ?keep: the Dry Year lost (game.js, showLost): plain, like the home screen's card */
+  #lost { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(60, 70, 30, 0.28); z-index: 10; }
+  #lost .card { position: static; width: min(420px, calc(100% - 32px)); padding: 22px 24px 20px; animation: pop-in 0.18s ease-out; }
+  #lost h2 { margin: 0 0 6px; font-size: 24px; font-weight: 650; line-height: 1.15; }
+  #lost p { margin: 0 0 16px; line-height: 1.5; color: var(--muted); }
+  #lost .btns { display: flex; gap: 10px; }
+  #lost .go { flex: 1; border-radius: 14px; background: #4f7f3a; color: #fff; font-size: 16px; padding: 12px; box-shadow: none; }
+  #lost .go:hover { background: #44702f; }
+  #lost .later { flex: none; border-radius: 14px; background: #fbf5e8; padding: 12px 16px; box-shadow: none; }
+
   /* ---- how to put the meadow on the home screen, from ••• */
   #home-guide { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(60, 70, 30, 0.28); z-index: 10; }
   #home-guide .card { position: static; width: min(420px, calc(100% - 32px)); max-height: calc(100% - 24px); overflow: hidden auto; padding: 22px 24px 20px;
@@ -1107,6 +1117,18 @@
       <button class="btn go prompt-only" data-act="home-install">Install</button>
       <button class="btn later prompt-only" data-act="home-done">Maybe later</button>
       <button class="btn go no-prompt" data-act="home-done">Got it</button>
+    </div>
+  </div>
+</div>
+
+<!-- ?keep: the Dry Year lost (game.js, showLost) -->
+<div id="lost" class="hidden" role="dialog" aria-modal="true" aria-labelledby="lost-title">
+  <div class="card">
+    <h2 class="fr" id="lost-title"></h2>
+    <p id="lost-text"></p>
+    <div class="btns">
+      <button class="btn go" data-act="lost-again">Start again</button>
+      <button class="btn later" data-act="lost-watch">Keep watching</button>
     </div>
   </div>
 </div>
