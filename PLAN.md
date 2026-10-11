@@ -289,5 +289,13 @@ on its own. Then one or two people who've never seen it. If it fails, the notes 
     U1 the frame and the build bar with its cards (no more sliding away; a row on a phone, not the corner button);
     U2 the tasks in place of the keep card; U3 the species' marks; U3b "the last fox is gone" said whenever a species
     reaches none (`migrate` only says it if it was already none when it first fell under `few`); U4 the ribbon; U5 GREEN.
+  - **As built (2026-10-11),** all in game.js and index.html's `html.keep` block, nothing kept in the world:
+    U1 c0a8a71 (`#keep-top`, the toolbar as the bottom bar, `#tool-tip` / `showTip` / `tipRows`); U3 6a9d0e5
+    (`speciesStatus`, `updateSpeciesMarks`, once a sim day; sim.js `FEW`; a tap on a kind opens its graph); U5 3978544
+    (`updateGreen`, `greenTip`: the share against the season's first day, once a sim day; on a phone a fifth slot and a
+    rim on the bar) and f580428 (rust only in the Dry Year's summer and the autumn after: every ordinary winter falls to
+    about 20%); U4 24af2ea (`#forecast`, `forecastTick`; the dial's year ring parched, `#dial.dry`; a tap tells it under
+    the watch); U2 b56c82e + a7c460f (`#tasks`, `tasksTick`, `taskTap`, `goToThing`; a task done chimes and gets the line
+    under the watch, held by `daybreak.hold`; on a phone its icon pops in the folded chip, the card stays folded).
 - **Step 3, the first year:** a valley made by hand or a generated meadow; a keeper you can see, later or never;
   the owls; the game's name.
