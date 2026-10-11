@@ -267,7 +267,7 @@ on its own. Then one or two people who've never seen it. If it fails, the notes 
   menu at the bottom where each building explains itself, and a few short missions. At `?keep` only (the bare address
   keeps its screen), in the "brass frame" look picked from a mock (`hud-mock.html`, never committed): a parchment bar along
   the top and one along the bottom, each with a brass rule like the watch's case, the watch hanging from the top bar.
-  - **What goes where.** Top: the species, each with a mark when it isn't steady (▲ thriving, ▼ fewer, ! endangered, struck
+  - **What goes where.** Top: the species, each with a mark when it isn't steady (▲ thriving, ▼ fewer, ! in danger, struck
     through when gone), the watch, the time and menus. Under the watch a ribbon, a pip a season ahead with the Dry Year's
     summer parched: DRY YEAR in 3 seasons, then DRY YEAR 1½ days left. Left: TASKS. Bottom: GREEN, the share of the
     meadow still green with what it was, and the build bar, always up: Look, Pond, Flowers, Hedge, each with a card.
@@ -297,5 +297,12 @@ on its own. Then one or two people who've never seen it. If it fails, the notes 
     about 20%); U4 24af2ea (`#forecast`, `forecastTick`; the dial's year ring parched, `#dial.dry`; a tap tells it under
     the watch); U2 b56c82e + a7c460f (`#tasks`, `tasksTick`, `taskTap`, `goToThing`; a task done chimes and gets the line
     under the watch, held by `daybreak.hold`; on a phone its icon pops in the folded chip, the card stays folded).
+  - **Alerts (ed0ee39),** Frostpunk's way, asked for after the HUD: a state, not a message. Red chips over the build bar
+    (`#alerts`, `alertsTick`), three at most: a kind in danger (under sim.js `DANGER`, the frogs too; up till a quarter
+    past it) and `🥀 Barren 2/5` while the Dry Year counts. A new one pulses, plays `warn` and flashes its mark (the top
+    bar's ! is the same "in danger"); a hover or tap shows what it means and what helps by tool (`alertTip`), a click goes
+    to the next of them (`alertGo`). `DANGER` tuned over balance.js's idle, keep and diligent runs (16 seeds, 3 years): up
+    on 1 to 9% of ordinary days, 1 to 16 days before a fox die-out, but only about a day before the bees' (they go from 60
+    to none in 2 or 3 days as the honey runs out: a warning on the honey would serve them better).
 - **Step 3, the first year:** a valley made by hand or a generated meadow; a keeper you can see, later or never;
   the owls; the game's name.
