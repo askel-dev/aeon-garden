@@ -6457,15 +6457,15 @@ function milestone(y, show) {
   chime('rainbow');
 }
 
-// ?keep: how each kind is doing, marked in the top bar. Worked out once a sim day (and when a meadow opens): gone,
-// in danger (fewer than S.FEW), fewer or thriving against the same time last year (so the bees' winter dip isn't
+// ?keep: how each kind is doing, marked in the top bar. Worked out once a sim day (and when a meadow opens, or an alert
+// comes or goes): gone, in danger (as the alerts over the bar have it: alertsTick), fewer or thriving against the same time last year (so the bees' winter dip isn't
 // a worry every winter), else steady. Nothing to compare in the first year.
 const SPECIES_WORD = { rabbit: 'Rabbits', fox: 'Foxes', bee: 'Bees', crow: 'Crows', owl: 'Owls', otter: 'Otters' };
 const speciesMarks = { world: null, day: -1 };
 function speciesStatus(s) {
   const n = world.count[s], h = world.history[s], then = world.tick - S.YEAR_DAYS * S.TPD;
   if (!n) return h.some(v => v > 0) ? { st: 'gone' } : { st: 'steady', n };
-  if (n < S.FEW[s]) return { st: 'endangered', n };
+  if (alerts.on[s]) return { st: 'danger', n };
   const before = world.history.t[0] > then + world.history.every ? 0 : h[since(then)];   // (0: no last year yet)
   if (before > 0 && n < 0.6 * before) return { st: 'fewer', n, before };
   if (before > 0 && n >= 1.25 * before) return { st: 'thriving', n, before };
@@ -6479,7 +6479,7 @@ function updateSpeciesMarks() {
     if (!SERIES[s]) continue;
     const { st, n, before } = speciesStatus(s), pop = $('#mini-' + s).parentNode, name = SPECIES_WORD[s];
     const title = st === 'gone' ? `${name} · gone from the meadow`
-      : st === 'endangered' ? `${name} · only ${n} left`
+      : st === 'danger' ? `${name} · in danger: ${n} left`
       : st === 'steady' ? `${name} · ${n ? 'steady: ' + n + ' now' : 'none yet'}`
       : `${name} · ${st}: ${n} now, ${before} this time last year`;
     if (pop.dataset.st !== st) pop.dataset.st = st;
@@ -8625,15 +8625,18 @@ function tipRows(k, touch) {
 
 const tipList = rows => `<ul class="stats">${rows.map(([icon, what, when, dry]) => `<li${dry ? ' class="dry"' : ''}><span>${icon}</span><span>${what}</span><em>${when}</em></li>`).join('')}</ul>`;
 
-// k: a tool, or 'green' for GREEN's slot in the bar (greenTip), which isn't one.
+// k: a tool, 'green' for GREEN's slot in the bar (greenTip), or 'alert:fox' for an alert over it (alertTip).
 function showTip(k, ms, by) {
-  const b = k === 'green' ? $('#green') : $(`#toolbar [data-tool="${k}"]`), el = $('#tool-tip'), t = TIP_TOOLS[k];
-  if (!KEEP || !(t || k === 'green') || !b) return;
+  const alert = k.startsWith('alert:') && k.slice(6), el = $('#tool-tip'), t = TIP_TOOLS[k];
+  const b = k === 'green' ? $('#green') : alert ? alerts.btn[alert] : $(`#toolbar [data-tool="${k}"]`);
+  if (!KEEP || !(t || k === 'green' || alert) || !b || b.hidden) return;
   clearTimeout(tip.timer); clearTimeout(tip.hover);
-  setHTML(el, k === 'green' ? greenTip() : `<h4 class="fr">${b.querySelector('.e').textContent} ${t.name} <kbd>${t.key}</kbd></h4><p>${t.how}</p>${tipList(tipRows(k, by === 'touch'))}`);
+  setHTML(el, k === 'green' ? greenTip() : alert ? alertTip(alert) : `<h4 class="fr">${b.querySelector('.e').textContent} ${t.name} <kbd>${t.key}</kbd></h4><p>${t.how}</p>${tipList(tipRows(k, by === 'touch'))}`);
   if (tip.tool !== k) {                    // over its button, once, kept on screen
+    el.classList.toggle('wide', !!alert);
     el.classList.remove('hidden');
     const r = b.getBoundingClientRect(), w = el.offsetWidth, mid = r.left + r.width / 2, x = clamp(mid - w / 2, 8, vw - w - 8);
+    el.style.bottom = alert ? Math.round(vh - r.top + 10) + 'px' : '';   // (an alert's over the alert, above the bar)
     el.style.left = Math.round(x) + 'px';
     el.style.setProperty('--arrow', Math.round(mid - x) + 'px');
   }
@@ -8650,8 +8653,8 @@ function hideTip() {
   $('#tool-tip').classList.add('hidden');
 }
 
-if (KEEP) {
-  const bar = $('#toolbar'), toolOf = e => e.target.closest('[data-tool], #green'), keyOf = b => b.dataset.tool || 'green';
+if (KEEP) for (const bar of [$('#toolbar'), $('#alerts')]) {   // (the alerts over the bar have cards too)
+  const toolOf = e => e.target.closest('[data-tool], #green, [data-alert]'), keyOf = b => b.dataset.tool || (b.dataset.alert ? 'alert:' + b.dataset.alert : 'green');
   bar.addEventListener('pointerover', e => {
     const b = toolOf(e);
     if (e.pointerType !== 'mouse' || !b || b.contains(e.relatedTarget)) return;
@@ -8669,9 +8672,11 @@ if (KEEP) {
   bar.addEventListener('click', e => {     // a tap takes the tool, as ever (the click handler below), and shows its card
     const b = toolOf(e), how = e.pointerType ?? tip.press;   // ('' from a key on a focused button)
     if (!b || how === 'mouse') return;
-    if (tip.tool === keyOf(b) && tip.by === 'touch') hideTip();
+    if (tip.tool === keyOf(b) && tip.by === 'touch' && !b.dataset.alert) hideTip();   // (a tap on an alert again: its next one)
     else showTip(keyOf(b), how ? TIP_TAP_MS : TIP_KEY_MS, how ? 'touch' : 'key');
   });
+}
+if (KEEP) {
   canvas.addEventListener('pointerdown', hideTip);
   addEventListener('resize', hideTip);
 }
@@ -8701,6 +8706,114 @@ function greenTip() {
   return `<h4 class="fr">🌱 Green <b${green.low ? ' class="low"' : ''}>${green.share}%</b></h4><p>Land whose grass is still green</p>`
     + tipList([['📅', green.came ? 'When you came' : `When the ${s} began`, green.ref + '%'], ...(s === 'winter' ? [['❄️', 'In winter', 'the grass rests']] : []),
       ['☀️', 'In the Dry Year', 'by the water only', true]]);
+}
+
+// ?keep's alerts, Frostpunk's way (#alerts, over the bar): a state, not a message. A chip for each kind in danger (fewer
+// than sim.js DANGER, and up till a quarter past it, so 7, 8, 7 doesn't blink; none left is the news's) and for the days
+// running gone barren while the Dry Year counts. Up as long as it lasts, never put away: barren first, then the kinds
+// by how close to none, three at most. On the cards' beat, from counts the sim keeps, written only when they change.
+// A new one pulses, sounds once and flashes its mark in the top bar; those up as a meadow opens, or that came while you
+// were away, are only noted. A hover or a tap shows its card (alertTip), a click goes to the next of them (alertGo).
+const ALERT_KINDS = [...S.KINDS.filter(s => s !== 'owl' || S.OWLS), 'frogs'];
+const ALERT_ICON = { rabbit: '🐇', fox: '🦊', bee: '🐝', crow: '🐦‍⬛', owl: '🦉', otter: '🦦', frogs: '🐸', barren: '🥀' };
+const ALERT_PULSE_MS = 1200;
+const alerts = { el: $('#alerts'), w: null, on: {}, btn: {}, shown: {}, fresh: {}, next: {}, first: true, up: false };
+const alertCount = k => k === 'frogs' ? Math.round(world.frogCount) : world.count[k];
+if (KEEP) {
+  for (const k of [...ALERT_KINDS, 'barren']) {
+    alerts.el.insertAdjacentHTML('beforeend', `<button type="button" class="alert" data-alert="${k}" aria-describedby="tool-tip" hidden><span class="e">${ALERT_ICON[k]}</span>`
+      + (k === 'barren' ? '<span class="l">Barren</span><b></b>' : '<b></b><span class="l">left</span>') + '</button>');
+  }
+  for (const b of alerts.el.children) alerts.btn[b.dataset.alert] = b;
+  alerts.el.addEventListener('click', e => { const b = e.target.closest('[data-alert]'); if (b) alertGo(b.dataset.alert); });
+}
+
+function alertsTick(now) {
+  if (!KEEP) return;
+  if (world !== alerts.w) Object.assign(alerts, { w: world, on: {}, fresh: {}, next: {}, first: true });
+  const dy = world.dryYear, list = [], fresh = [];
+  let kinds = false;
+  for (const k of ALERT_KINDS) {
+    const n = alertCount(k), T = S.DANGER[k], on = n > 0 && n < (alerts.on[k] ? T + Math.max(1, Math.round(T / 4)) : T);
+    if (on !== !!alerts.on[k]) { alerts.on[k] = on; kinds = true; if (on) fresh.push(k); }
+    if (on) list.push([k, n / T, `${n}`]);
+  }
+  list.sort((a, b) => a[1] - b[1]);
+  const barren = dy && !dy.lost && S.dryCounting(world) ? dy.barren || 0 : 0;
+  if (!barren !== !alerts.on.barren) { alerts.on.barren = barren > 0; if (barren) fresh.push('barren'); }
+  if (barren) list.unshift(['barren', 0, `${barren}/${S.BARREN_DAYS}`]);
+  list.length = Math.min(list.length, 3);
+  if (alerts.first || away.on) fresh.length = 0;          // (already up as the meadow opened, or the away card tells it)
+  alerts.first = false;
+  for (const k of fresh) {
+    alerts.fresh[k] = now + ALERT_PULSE_MS;
+    const pop = $('#mini-' + k)?.parentNode;               // (the frogs and barren have no mark)
+    if (pop) { pop.classList.remove('flash'); void pop.offsetWidth; pop.classList.add('flash'); }
+  }
+  if (fresh.length) chime('warn');
+  if (kinds) { speciesMarks.day = -1; updateSpeciesMarks(); }
+  for (const [k, b] of Object.entries(alerts.btn)) {
+    const i = list.findIndex(a => a[0] === k), v = i < 0 ? '' : list[i][2], cls = now < (alerts.fresh[k] || 0) ? 'alert fresh' : 'alert';
+    const was = alerts.shown[k] || [];
+    if (was[0] !== v) { b.hidden = i < 0; if (v) b.querySelector('b').textContent = v; }
+    if (was[1] !== i) b.style.order = i;
+    if (was[2] !== cls) b.className = cls;
+    if (was[0] !== v && tip.tool === 'alert:' + k) { if (v) setHTML($('#tool-tip'), alertTip(k)); else hideTip(); }
+    alerts.shown[k] = [v, i, cls];
+  }
+  const up = list.length > 0 && !away.on && !awayOpen() && !lostOpen();
+  if (up !== alerts.up) {
+    alerts.up = up;
+    alerts.el.classList.toggle('hidden', !up);
+    document.documentElement.classList.toggle('alerts-up', up);   // (the news stands over them)
+    if (!up && tip.tool.startsWith('alert:')) hideTip();
+  }
+}
+
+// An alert's card: the kind and how many left, what it means, and what helps, by the tool's name. The Dry Year's rows
+// (rust) only while it's coming or counting.
+const ALERT_HELP = {
+  rabbit: [['🌿', 'Hedge', 'cover from foxes'], ['⛏️', 'Pond', 'green in the Dry Year', true]],
+  fox: [['🐇', 'They follow the rabbits', 'help them']],
+  bee: [['🌼', 'Flowers', 'near a hive'], ['☀️', 'In the Dry Year', 'by the water', true]],
+  crow: [['🪱', 'They eat grubs, remains', 'nothing to do']],
+  owl: [['🐁', 'They eat the voles', 'nothing to do']],
+  otter: [['⛏️', 'Pond, big and deep', 'fish in it']],
+  frogs: [['⛏️', 'Pond', 'frogs move in']],
+  barren: [['⛏️', 'Pond', 'a green ring'], ['🌿', 'Hedge', 'a green lane']],
+};
+function alertTip(k) {
+  const dy = world.dryYear, stakes = dy && !dy.lost && (S.dryComing(world) || S.dryCounting(world));
+  const help = ALERT_HELP[k].filter(r => stakes || !r[3]);
+  if (k === 'barren') return `<h4 class="fr">🥀 Barren <b class="danger">${dy.barren || 0}/${S.BARREN_DAYS}</b></h4><p>Days running with hardly any green</p>`
+    + tipList([['🥀', `${S.BARREN_DAYS} days: meadow lost`, 'the Dry Year', true], ...help]);
+  return `<h4 class="fr">${ALERT_ICON[k]} ${k === 'frogs' ? 'Frogs' : SPECIES_WORD[k]} <b class="danger">${alertCount(k)}</b></h4><p>In danger: so few left</p>`
+    + tipList([stakes ? ['🥀', 'None left: meadow lost', 'the Dry Year', true] : ['🧭', 'Newcomers may come', 'still a sign'], ...help]);
+}
+
+// A click on an alert goes to them, the next one each click: an animal followed, a hive with bees looked at, the water
+// with the most frogs about. A scan, but only on a click.
+function alertGo(k) {
+  const next = list => list.find(o => o.id > (alerts.next[k] ?? -1)) || list[0];
+  const look = (x, y) => { select(0); ui.follow = false; cam.x = x; cam.y = y; clampCam(); if (cam.zoom < 14) cam.goal = narrow() ? 16 : 22; };
+  if (k === 'bee') {
+    const h = next(world.hives.filter(h => h.bees > 0).sort((a, b) => a.id - b.id));
+    if (h) { alerts.next[k] = h.id; look(h.x, h.y); pick('hive', h); }
+  } else if (k === 'frogs') {
+    const sum = new Float64Array(world.waters.length), near = world.nearBody;
+    for (let i = 0; i < world.frogs.length; i++) if (world.frogs[i] > 0 && near[i] >= 0) sum[near[i]] += world.frogs[i];
+    let b = 0, sx = 0, sy = 0, n = 0, at = -1, d = Infinity;
+    for (let j = 1; j < sum.length; j++) if (sum[j] > sum[b]) b = j;
+    if (!sum[b]) return;
+    for (let i = 0; i < world.frogs.length; i++) if (near[i] === b && world.frogs[i] > 0) { sx += (i % S.W + 0.5) * world.frogs[i]; sy += (Math.floor(i / S.W) + 0.5) * world.frogs[i]; n += world.frogs[i]; }
+    const x = sx / n, y = sy / n;
+    for (let i = 0; i < world.water.length; i++) if (world.water[i] && world.body[i] === b) { const e = (i % S.W + 0.5 - x) ** 2 + (Math.floor(i / S.W) + 0.5 - y) ** 2; if (e < d) { d = e; at = i; } }
+    look(x, y);
+    if (at >= 0) pick('water', { body: world.waters[b], x: at % S.W + 0.5, y: Math.floor(at / S.W) + 0.5 });
+  } else if (k !== 'barren') {
+    const c = next(world.creatures.filter(c => c.alive && c.species === k && !c.held).sort((a, b) => a.id - b.id));
+    if (c) { alerts.next[k] = c.id; select(c.id); }
+  }
 }
 
 // which: '' the tools, 'sky' the weather, 'plant' the kinds of tree.
@@ -10097,6 +10210,7 @@ function frame(now) {
   if (now - lastCard > 250) {
     askTick(Math.min(now - lastCard, 1000));
     guideTick(now);
+    alertsTick(now);                                     // (?keep)
     lastCard = now;
     if (idleMayStart(now)) startIdle(now);
     if (idle.on && Date.now() - keptWhen > KEEP_IDLE_MS) keepMeadow();

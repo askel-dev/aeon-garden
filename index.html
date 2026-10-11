@@ -334,7 +334,7 @@
 
   /* ---- welcome */
   /* the terrain lab (?lab) brings its own panel, see terrain-lab.js */
-  body.lab #meadow, body.lab #watch, body.lab #news, body.lab #guide, body.lab #toolbar, body.lab #hud-right, body.lab #ring, body.lab #keep-top, body.lab #tool-tip, body.lab #forecast, body.lab #tasks { display: none; }
+  body.lab #meadow, body.lab #watch, body.lab #news, body.lab #guide, body.lab #toolbar, body.lab #hud-right, body.lab #ring, body.lab #keep-top, body.lab #tool-tip, body.lab #forecast, body.lab #tasks, body.lab #alerts { display: none; }
 
   #welcome { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(60, 70, 30, 0.28); z-index: 10; transition: opacity 0.7s ease; }
   #welcome.leaving { opacity: 0; pointer-events: none; }
@@ -534,8 +534,8 @@
     border: none; background: none; padding: 8px 4px; font: 800 13px Nunito, ui-rounded, system-ui, sans-serif; color: rgba(243, 231, 207, 0.5); cursor: pointer; }
   #intro .skip:hover { color: #f3e7cf; }
   body:not(.intro) #intro .skip { visibility: hidden; }
-  body.hush :is(#meadow, #watch, #news, #guide, #toolbar, #hud-right, #keep-top, #tool-tip, #forecast, #tasks) { visibility: hidden; }
-  body.ui-in :is(#meadow, #watch, #news, #guide, #toolbar, #hud-right, #keep-top, #tool-tip, #forecast, #tasks) { animation: ui-in 1s ease both; }
+  body.hush :is(#meadow, #watch, #news, #guide, #toolbar, #hud-right, #keep-top, #tool-tip, #forecast, #tasks, #alerts) { visibility: hidden; }
+  body.ui-in :is(#meadow, #watch, #news, #guide, #toolbar, #hud-right, #keep-top, #tool-tip, #forecast, #tasks, #alerts) { animation: ui-in 1s ease both; }
   @keyframes ui-in { from { opacity: 0; } }
   @media (prefers-reduced-motion: reduce) { #intro .bar, #intro .line, #welcome, #welcome .card { transition-duration: 0.01s; } }
   /* ---- the idle camera (game.js, startIdle): the intro's bars and lines, the cards faded away, and a dip to
@@ -543,7 +543,7 @@
   #intro .dip { position: absolute; inset: 0; background: #1d1a15; opacity: 0; transition: opacity 0.4s ease; }
   #intro .dip.on { opacity: 1; }
   body.idle #intro .bar { transform: none; }
-  body.idle :is(#meadow, #watch, #news, #guide, #toolbar, #hud-right, #keep-top, #tool-tip, #forecast, #tasks) { opacity: 0; visibility: hidden; transition: opacity 1s ease, visibility 0s 1s; }
+  body.idle :is(#meadow, #watch, #news, #guide, #toolbar, #hud-right, #keep-top, #tool-tip, #forecast, #tasks, #alerts) { opacity: 0; visibility: hidden; transition: opacity 1s ease, visibility 0s 1s; }
   .hidden { display: none !important; }
 
   /* ---- the stats page, over everything */
@@ -835,8 +835,8 @@
   html.keep .mini-pop b::after { position: absolute; left: 100%; top: 0; margin-left: 1px; font-size: 9px; line-height: 1; }
   html.keep .mini-pop[data-st="thriving"] b::after { content: '▲'; color: #5a9a3a; }
   html.keep .mini-pop[data-st="fewer"] b::after { content: '▼'; color: #c46a2a; }
-  html.keep .mini-pop[data-st="endangered"] b { color: #c23b2b; }
-  html.keep .mini-pop[data-st="endangered"] b::after { content: '!'; top: -1px; font-size: 12px; font-weight: 900; color: #c23b2b; }
+  html.keep .mini-pop[data-st="danger"] b { color: #c23b2b; }
+  html.keep .mini-pop[data-st="danger"] b::after { content: '!'; top: -1px; font-size: 12px; font-weight: 900; color: #c23b2b; }
   html.keep .mini-pop[data-st="gone"] { opacity: 0.45; text-decoration: line-through; }
 
   /* ---- ?keep: GREEN, the share of the meadow still green (game.js updateGreen), on the left of the bottom bar: a brass
@@ -959,6 +959,48 @@
   }
   /* upright, there's no room beside the watch: open, the card hangs over the ribbon, and the big line goes under it */
   @media (max-width: 760px) and (min-height: 501px) { html.keep.tasks-open #daybreak { top: calc(var(--keep-top-h) + env(safe-area-inset-top, 0px) + 236px); } }
+
+  /* ---- ?keep: the alerts (game.js alertsTick), Frostpunk's way: a row of red-edged chips over the middle of the bar, an
+     icon and the number, there as long as the trouble lasts. Each has a card (#tool-tip), and a click goes to them.
+     A new one pops in with a ring going out; its kind's mark in the top bar flashes. Where the news would be under
+     them, it stands over them while they're up (html.alerts-up). */
+  #alerts { display: none; }
+  html.keep #alerts:not(.hidden) { display: flex; position: fixed; z-index: 4; left: 50%; bottom: calc(var(--bar, 100px) - 4px); transform: translateX(-50%);
+    gap: 8px; pointer-events: none; }
+  html.keep #alerts .alert { pointer-events: auto; display: flex; align-items: center; gap: 5px; padding: 4px 12px 4px 9px; border: none; border-radius: 12px;
+    background: var(--paper, none) var(--card); box-shadow: inset 0 0 0 2px #c23b2b, 0 3px 10px rgba(70, 55, 25, 0.25); color: var(--ink);
+    font: inherit; white-space: nowrap; cursor: pointer; }
+  html.keep #alerts .alert[hidden] { display: none; }
+  html.keep #alerts .alert:hover { background: #fff6ea; }
+  html.keep #alerts .e { font-size: 18px; line-height: 1; }
+  html.keep #alerts b { font-size: 20px; font-weight: 900; line-height: 1.15; color: #c23b2b; font-variant-numeric: tabular-nums; }
+  html.keep #alerts .l { font-size: 12.5px; font-weight: 800; color: var(--muted); }
+  html.keep #alerts [data-alert="barren"] .l { text-transform: uppercase; letter-spacing: 0.11em; font-size: 11.5px; font-weight: 900; color: #8a5e22; }
+  html.keep #alerts .alert.fresh { animation: alert-in 1.2s ease-out; }
+  @keyframes alert-in {
+    0% { transform: scale(0.6); box-shadow: inset 0 0 0 2px #c23b2b, 0 0 0 0 rgba(194, 59, 43, 0.75); }
+    25% { transform: scale(1.12); }
+    50% { transform: none; }
+    100% { box-shadow: inset 0 0 0 2px #c23b2b, 0 0 0 16px rgba(194, 59, 43, 0); }
+  }
+  html.keep .mini-pop.flash { border-radius: 8px; animation: mark-flash 1.2s ease-out; }
+  @keyframes mark-flash { 0%, 45% { background: rgba(194, 59, 43, 0.3); } 100% { background: rgba(194, 59, 43, 0); } }
+  html.keep #tool-tip h4 b.danger { color: #c23b2b; }
+  html.keep #tool-tip.wide { width: min(320px, calc(100vw - 16px)); }
+  @media (max-width: 1100px), (max-height: 500px) { html.keep.alerts-up #news { bottom: calc(var(--bar, 84px) + 46px); } }
+  /* phones: smaller, the icon and the number; upright, over the folded inspector, and away under the open sheet */
+  @media (max-width: 760px), (max-height: 500px) {
+    html.keep #alerts:not(.hidden) { gap: 6px; }
+    html.keep #alerts .alert { padding: 3px 9px 3px 7px; gap: 4px; border-radius: 10px; }
+    html.keep #alerts .e { font-size: 15px; } html.keep #alerts b { font-size: 16px; }
+    html.keep #alerts .l { display: none; }
+    html.keep.alerts-up #news { bottom: calc(var(--bar, 84px) + 38px); }
+  }
+  @media (max-width: 760px) and (min-height: 501px) {
+    html.keep body.ins-strip #alerts { bottom: calc(var(--bar, 84px) + 70px); }
+    html.keep.alerts-up body.ins-strip #news { bottom: calc(var(--bar, 84px) + 104px); }
+    html.keep body.inspecting:not(.ins-strip) #alerts { display: none; }
+  }
 </style>
 </head>
 <body>
@@ -1028,6 +1070,8 @@
 <div id="place-label" class="hidden"></div>
 <!-- ?keep: what a keeper's tool brings, over its button (game.js, showTip) -->
 <div id="tool-tip" class="hidden" role="tooltip"></div>
+<!-- ?keep: the alerts over the bar, a kind in danger or the meadow going barren (game.js, alertsTick) -->
+<div id="alerts" class="hidden" aria-live="polite"></div>
 
 <nav id="toolbar" class="card">
   <div class="tools">

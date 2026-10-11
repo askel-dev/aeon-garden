@@ -268,6 +268,7 @@ const RULES = {
   click:   { gap: 0.04, maxSpeed: 60 },
   tick:    { gap: 0.5,  maxSpeed: 60, always: true },
   named:   { gap: 0.5,  maxSpeed: 60, always: true },
+  warn:    { gap: 2,    maxSpeed: 60, always: true },
 };
 
 const SOUNDS = {
@@ -387,6 +388,8 @@ const SOUNDS = {
   tick(t, o) { for (let i = 0; i < 3; i++) kalimba(o, note(2 + i * 2, 1), t + i * 0.08, 0.3); },
   // A little ring put on: a bell, and its answer a fifth up.
   named(t, o) { bell(o, note(0, 1), t, 0.35); kalimba(o, note(4, 1), t + 0.16, 0.28); bell(o, note(7, 1), t + 0.34, 0.22); },
+  // An alert (game.js, ?keep: a kind in danger, the meadow going barren): two low felt notes, down a step.
+  warn(t, o) { marimba(o, note(1, -2), t, 0.5); marimba(o, note(0, -2), t + 0.24, 0.42); },
 };
 
 // opts: { species, pan (-1..1), near (0..1, how close to the camera), ...sound-specific }

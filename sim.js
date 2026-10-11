@@ -5792,6 +5792,9 @@ function arrivalsTick(w) {
 
 // Fewer than this and a kind is in danger: migration sends more, and the keeper's top bar marks it.
 const FEW = { rabbit: 4, fox: 3, bee: 4, crow: 3, owl: 2, otter: 2 };
+// And under this a kind is in danger for the keeper (?keep: an alert over the bar, game.js alertsTick, and the mark in the top
+// bar), the frogs too (w.frogCount). Tuned over balance.js's keeper meadows to be up on few ordinary days but before a die-out.
+const DANGER = { rabbit: 8, fox: 5, bee: 10, crow: 5, owl: 4, otter: 2, frogs: 30 };
 function migrate(w) {
   if (!w.options.migration) return;
   const wait = { rabbit: 1, fox: 3, bee: 2, crow: 3, owl: 10, otter: 3 }, arrive = { rabbit: 6, fox: 2, bee: 8, crow: 4, owl: 2, otter: 2 };
@@ -7015,7 +7018,7 @@ const api = {
   createWorld, step, clock, isNight, phaseOf, seasonOf, mood, ageDays, growth, isAdult, patchFresh,
   addCreature, paintGrass, setSky, lockSky, zap, burnLine, lift, putDown, nameCreature, nameQueen, NAME_MAX, plantTree, pondPlan, digPond, frogsNear, POND_BRUSH, POND_DAB, POND_TILES, REED_DAYS, stripPlan, sowStrip, stripKind, STRIP_TILES, hedgePlan, plantHedge, hedgeForecast, inHedge, HEDGE_MOST,
   dryStage, dryness, dryComing, dryFrom, dryTo, DRY_NEAR, greenShare, stripBloom, GREEN_GRASS, WILT, BARREN, BARREN_DAYS, traitMeans, walkable, packWorld, unpackWorld,
-  coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT, KINDS, OWLS, FEW,
+  coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT, KINDS, OWLS, FEW, DANGER, dryCounting,
   TERRAIN, drawnToLink, drawnFromLink, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE,
   TREES, treeStage, treeAge, standing, bearing, hollow, inBloom, SEEDLING, SAPLING, GROWN, KIND_NAMES,
