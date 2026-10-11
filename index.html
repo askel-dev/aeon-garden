@@ -31,8 +31,8 @@
 <meta property="og:image:alt" content="Nobody's Meadow: a brass pocket watch with the living meadow inside it, over a green hill where a rabbit's ears peek out">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://meadow.cryptoler.net/assets/og.png?v=2">
-<!-- ?keep wears the keeper's frame (html.keep, at the end of the styles) from the first paint, before game.js runs -->
-<script>(q => { if (q.has('keep') && !q.has('lab')) document.documentElement.classList.add('keep'); })(new URLSearchParams(location.search));</script>
+<!-- ?keep (the default for now; ?watch is the other) wears the keeper's frame (html.keep, at the end of the styles) from the first paint, before game.js runs -->
+<script>(q => { if (!q.has('watch') && !q.has('lab')) document.documentElement.classList.add('keep'); })(new URLSearchParams(location.search));</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!-- Fraunces only for the name and the season chips: italic 450, upright 600 to 680, soft and wonky -->

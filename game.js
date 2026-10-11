@@ -18,14 +18,15 @@ const params = new URLSearchParams(location.search), LAB = params.has('lab');
 // ?keep: the meadow as something you keep, not just watch (PLAN.md). You shape the land (a pond, a hedge, a strip
 // of flowers) and the god tools are gone: no releasing animals, no grass, lightning or fire, no picking the
 // weather, no picking animals up. Kept apart from the meadows you watch, under links of its own.
-const KEEP = params.has('keep') && !LAB;
+// For now it's the default; ?watch opens the meadow you only watch.
+const KEEP = !params.has('watch') && !LAB;
 document.documentElement.classList.toggle('keep', KEEP);   // its frame (index.html's head says so too, before this runs)
 const DRY_PARAM = +params.get('dry') || 0;   // ?keep&dry=N: a new keeper meadow's Dry Year comes in the summer of year N (1: this one)
 const fromUrl = key => { try { return JSON.parse(params.get(key) || '{}'); } catch (e) { return {}; } };   // a broken link: the usual meadow
 let terrain = fromUrl('terrain'), drawn = location.hash.length > 1 ? S.drawnFromLink(location.hash) : fromUrl('drawn');
 const terrainQuery = () => (Object.keys(terrain).length ? '&terrain=' + encodeURIComponent(JSON.stringify(terrain)) : '')
   + (S.drawnToLink(drawn) ? '#' + S.drawnToLink(drawn) : '');
-const meadowLink = seed => '?seed=' + seed + (KEEP ? '&keep' : '') + terrainQuery();   // the address of a meadow, and the name it's kept under
+const meadowLink = seed => '?seed=' + seed + (KEEP ? '&keep' : '&watch') + terrainQuery();   // the address of a meadow, and the name it's kept under
 
 // How many people come, and from where, counted by GoatCounter (goatcounter.com: free, no cookies,
 // nothing to agree to). Off until COUNTER holds the site's code: sign up there, pick a code, put it
