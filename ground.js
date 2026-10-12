@@ -166,9 +166,11 @@ void main() {
   // Where it is: damp by the water, dry up high and in big drifts, shaded by the woods.
   float moist = exp(-max(toWater, 0.) / 4.);
   float dry = clamp(0.4 * height + 0.75 * (fbm(q * 0.03 + 5.) - 0.5) - 0.6 * moist + 0.2, 0., 1.);
-  // Golden only as far as the season's grass is green: winter's grey-green would turn sickly yellow.
+  // Golden only as far as the season's grass is green: winter's grey-green would turn sickly yellow. A green season's
+  // drifts dry to straw rather than going lime; autumn's and winter's keep the old warm tint.
   float hue = clamp((max(high.r, max(high.g, high.b)) - min(high.r, min(high.g, high.b))) / 0.35, 0., 1.);
-  vec3 green = high, lush = green * vec3(0.84, 0.95, 0.9), golden = green * mix(vec3(1.), vec3(1.16, 1.07, 0.62), hue);
+  vec3 green = high, lush = green * vec3(0.84, 0.95, 0.9), golden = mix(green * mix(vec3(1.), vec3(1.16, 1.07, 0.62), hue),
+    mix(green, vec3(0.84, 0.77, 0.47), 0.4 * hue), smoothstep(0.12, 0.22, high.g - high.r));
   vec3 grass = mix(lush, green, smoothstep(0.05, 0.45, dry));
   grass = mix(grass, golden, smoothstep(0.45, 0.85, dry));
   grass = mix(grass, grass * vec3(0.82, 0.94, 0.98), 0.45 * exp(-H.b / 3.));   // cool shade by the woods

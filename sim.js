@@ -1951,8 +1951,8 @@ const sky = w => WEATHER[w.weather.kind];
 
 const GROUND = {
   seasons: [   // [bare ground, lush grass] per season
-    [[214, 197, 150], [118, 196, 92]],
-    [[226, 206, 142], [104, 178, 70]],
+    [[214, 197, 150], [128, 193, 107]],
+    [[226, 206, 142], [113, 175, 87]],
     [[226, 214, 178], [184, 146, 72]],   // amber, so grazed ground shows paler
     [[226, 231, 238], [168, 196, 200]],  // frost-blue
   ],
