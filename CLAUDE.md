@@ -27,8 +27,10 @@ told to just do it.
   on each repaint of a big ground. While the camera pans (following, dragging) it paints a margin round the screen (`PAD`)
   and slides the picture along (`Ground.view`) until the margin runs out. The picture is a canvas of its own
   under the meadow's (`#ground`), slid into place with a CSS transform, never copied onto a frame (only into
-  the P photo, `groundIn`); so nothing drawn on the meadow can blend with the ground (a `'lighter'` glow lays a
-  light over it instead of adding to it). The loop gives the sim at most `SIM_MS` a frame (a slow phone runs 60x a bit slower
+  the P photo, laid under the rest, `groundIn`); so nothing drawn on the meadow can blend with the ground (a `'lighter'` glow lays a
+  light over it instead of adding to it). The golden hour lights it in the shader (`light`, game.js `goldLight`, in
+  `GOLD_STEPS` so it repaints only on a step); what stands on it gets the same warmth as one `'source-atop'` fill, and
+  the night is a navy `wash` over everything. The loop gives the sim at most `SIM_MS` a frame (a slow phone runs 60x a bit slower
   instead of dropping frames), and a paused meadow nobody is touching draws at 30 fps (`resting`).
 - `sound.js`: all the sounds, made with Web Audio (no files). Off until the 🔊 button or M.
   `sound-lab.html` plays each one on its own. Keep it minimal: one scale, few sounds. Every 5 to 10

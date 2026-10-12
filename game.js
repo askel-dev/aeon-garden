@@ -549,7 +549,7 @@ function edgeColour(r, g, b) {
 // difference, and the shader has half the pixels to work out.
 // It is a canvas of its own under the meadow's (#ground), slid into place, not copied onto every frame:
 // Chrome lets a frame draw only so many pictures' bytes before it pays extra on every call, and a copy
-// of the ground took most of them. The photo still draws it in (groundIn).
+// of the ground took most of them. The photo still draws it in, under the rest (groundIn).
 // Safari (and every browser on an iPhone: they're all WebKit) misses a frame each time it repaints a big
 // ground, however cheap the shader: on a MacBook at 2x, five times a second at 1x speed. There the ground
 // is kept to GROUND_WEBKIT pixels, but never below 1x. A phone's small screen stays at 2x.
@@ -572,10 +572,11 @@ function drawGround(z, ox, oy, shx, shy) {
   const w = Math.round(vw * gd), h = Math.round(vh * gd);
   Ground.draw({
     width: w, height: h, zoom: z, ox, oy, dpr: gd, seed: groundSeed, low, high, sand: shoreSand, fog: fogColour(high, ck.phase),
+    light: goldLight(shownGold(ck.phase)),
     snow: world.snow, damp: 1 - 0.12 * world.wet, ice: iceOver(), cold: coldness(), lx: k * sn.lean, ly: k * 0.8,
     drought: Math.round(S.dryness(world) * 16) / 16,     // (?keep, the Dry Year: in steps, so the ground repaints only on a step)
   });
-  if (groundIn) { ctx.drawImage(Ground.canvas, Ground.view.x, Ground.view.y, w, h, 0, 0, vw, vh); return; }
+  if (groundIn) { groundIn = [Ground.view.x, Ground.view.y, w, h]; return; }   // the photo lays it under the meadow after (copyMeadow)
   const g = Ground.canvas, cw = g.width / gd, ch = g.height / gd, x = shx - Ground.view.x / gd, y = shy - Ground.view.y / gd;
   if (cw !== laid.w || ch !== laid.h) { g.style.width = cw + 'px'; g.style.height = ch + 'px'; laid.w = cw; laid.h = ch; }
   if (x !== laid.x || y !== laid.y) { g.style.transform = `translate(${x}px, ${y}px)`; laid.x = x; laid.y = y; }
@@ -586,14 +587,14 @@ function drawGround(z, ox, oy, shx, shy) {
 // a rectangle. How thick it is everywhere is worked out once, MIST_PX a tile (mist.field), and the ground shader
 // paints the ground into it from that, in big pale clouds, while whatever stands in it is drawn that much
 // see-through (fadeAt), so the trees and the animals fade into it too. Nothing is laid over the meadow for it.
-// At dusk and at night the mist is painted lighter, so that under the dark it comes out a rose or lavender light
-// instead of a muddy grey (fogColour).
+// In the golden hour the mist takes a rose light, and at night it's painted lighter, so that under the dark it comes
+// out a lavender light instead of a muddy grey (fogColour).
 const MIST_RGB = [230, 231, 214], MIST_TINT = 0.12, MIST_SNOW = [238, 242, 246];   // and white over the snow
 const MIST_DUSK = [240, 176, 160], MIST_NIGHT = [124, 118, 176];
 const MIST_IN = 6, MIST_FULL = 4, MIST_OUT = 10, MIST_PX = 3, MIST_ROUND = 14;
 const MIST_WAVER = 8;                             // tiles the edge wavers in and out, all told
 const MIST_DEEP = MIST_IN + MIST_WAVER / 2 + 2;   // further in than this there's none, wherever a bank of it rolls in
-const NIGHT_RGB = [22, 30, 78], DUSK_RGB = [255, 140, 60];   // the dark and the dusk glow, washed over everything
+const NIGHT_RGB = [12, 20, 90];   // the dark, washed over everything
 const MIST_W = (S.W + 2 * MIST_OUT) * MIST_PX, MIST_H = (S.H + 2 * MIST_OUT) * MIST_PX;
 const mist = { field: null };
 function mistField() {
@@ -613,15 +614,17 @@ function mistAt(x, y) {                           // how thick the mist is here,
   const i = clamp(Math.floor((x + MIST_OUT) * MIST_PX), 0, MIST_W - 1), j = clamp(Math.floor((y + MIST_OUT) * MIST_PX), 0, MIST_H - 1);
   return mist.field[j * MIST_W + i] / 255;
 }
-// The mist's colour for the shader. At dusk and at night it's what, washed over by the dark and the dusk glow,
-// comes out as the mist with a lavender (MIST_NIGHT) and a rose light (MIST_DUSK) laid over it.
+// The mist's colour for the shader. In the golden hour and at night it's what, lit by the shader's light and washed
+// over by the dark, comes out as the mist in the warm light with a rose glow (MIST_DUSK) in it, and a lavender light
+// (MIST_NIGHT) over it at night.
+const MIST_GLOW = 0.25;                           // how much rose in the golden hour's mist
 const over = (c, rgb, a) => c.map((v, i) => v + (rgb[i] - v) * a);
 function fogColour(high, phase) {
   const fog = MIST_RGB.map((v, i) => lerp(lerp(v, high[i], MIST_TINT), MIST_SNOW[i], Math.min(1, world.snow)));
-  const d = shownDark(phase), k = shownDusk(phase);
+  const d = shownDark(phase), k = shownGold(phase), lit = goldLight(k);
   if (d <= 0 && k <= 0) return fog.map(v => Math.round(v / 4) * 4);
-  const seen = over(over(over(over(fog, NIGHT_RGB, d), DUSK_RGB, k), MIST_NIGHT, 0.7 * d), MIST_DUSK, 2.2 * k);
-  return seen.map((v, i) => Math.round(clamp(((v - DUSK_RGB[i] * k) / (1 - k) - NIGHT_RGB[i] * d) / (1 - d), 0, 255) / 4) * 4);   // (each step paints the ground again)
+  const seen = over(over(over(fog.map((v, i) => v * lit[i]), MIST_DUSK, MIST_GLOW * k), NIGHT_RGB, d), MIST_NIGHT, 0.7 * d);
+  return seen.map((v, i) => Math.round(clamp((v - NIGHT_RGB[i] * d) / (1 - d) / lit[i], 0, 255) / 4) * 4);   // (each step paints the ground again)
 }
 
 // While fade is below 1, everything drawn is that much see-through, whatever alpha its drawing sets: a thing
@@ -1157,19 +1160,27 @@ const FOX_BODY = 1.4;                     // and a dead fox, next to that
 
 function visible(sx, sy, pad) { return sx > -pad && sy > -pad && sx < vw + pad && sy < vh + pad; }
 
+const DARK = 0.55;                        // how much of NIGHT_RGB the night lays over everything
 function darkness(phase) {
-  if (phase >= 0.72 || phase < 0.02) return 0.45;
-  if (phase >= 0.6) return 0.45 * (phase - 0.6) / 0.12;
-  if (phase < 0.1) return 0.45 * (1 - (phase - 0.02) / 0.08);
+  if (phase >= 0.72 || phase < 0.02) return DARK;
+  if (phase >= 0.6) return DARK * (phase - 0.6) / 0.12;
+  if (phase < 0.1) return DARK * (1 - (phase - 0.02) / 0.08);
   return 0;
 }
-const duskGlow = phase => phase > 0.58 && phase < 0.74 ? 0.10 * Math.sin(Math.PI * (phase - 0.58) / 0.16) : 0;
+// The golden hour: from mid-afternoon the light warms, fullest just before the dark comes in and gone as it deepens,
+// so the two hardly lie on each other (a navy and an orange laid together cancel out into grey). The shader lights the
+// ground with it (goldLight multiplies it, so the grass leans gold and stays as green), and what's drawn on it gets
+// GOLD_RGB laid over just what's there (render), the nearest one fill comes to the same light.
+const GOLD_LIGHT = [1.05, 0.95, 0.82], GOLD_RGB = [180, 70, 0], GOLD_A = 0.08;
+const GOLD_STEPS = 10;                    // the ground is lit in this many steps: each one paints it again
+const goldenHour = phase => smooth(0.45, 0.57, phase) * (1 - smooth(0.59, 0.67, phase));
+const goldLight = k => GOLD_LIGHT.map(v => 1 + (v - 1) * k);
 
 // At speed a night comes and goes in a blink (at 60x three a second), so the light keeps near the day's:
 // the night still breathes, but nothing flashes. The dial in the time pill shows the days going by instead.
 // lightSwing is how much of the swing is shown; it eases to the speed's (lightFrame) so a change never jumps.
 const LIGHT_SWING = [[60, 0.12], [15, 0.5], [0, 1]];   // from this speed up: this much of the swing
-const LIGHT_MID = 0.1;                                 // the darkness it keeps near, a little dimmer than day
+const LIGHT_MID = 0.095;                               // the darkness it keeps near, a little dimmer than day
 let lightSwing = 1;
 function lightFrame(dt) {
   if (!ui.speed) return;
@@ -1177,7 +1188,7 @@ function lightFrame(dt) {
   lightSwing += (to - lightSwing) * (1 - Math.pow(0.02, dt));
 }
 const shownDark = phase => LIGHT_MID + (darkness(phase) - LIGHT_MID) * lightSwing;
-const shownDusk = phase => duskGlow(phase) * lightSwing;
+const shownGold = phase => Math.round(goldenHour(phase) * lightSwing * GOLD_STEPS) / GOLD_STEPS;
 
 function render(now) {
   // Thunder rumbles the whole screen a little.
@@ -1281,11 +1292,16 @@ function render(now) {
   drawPollen(now);
   drawButterflies(now, ck);
 
-  // Dusk and night.
-  const dark = shownDark(ck.phase), dusk = shownDusk(ck.phase);
+  // The golden hour and the night. The ground is lit by the shader; what's drawn on it gets the warm light laid over
+  // just what's there (source-atop), before the dark goes over everything.
+  const dark = shownDark(ck.phase), gold = shownGold(ck.phase);
+  if (gold > 0) {
+    ctx.globalCompositeOperation = 'source-atop';
+    wash(`rgba(${GOLD_RGB}, ${GOLD_A * gold})`);
+    ctx.globalCompositeOperation = 'source-over';
+  }
   if (dark > 0) wash(`rgba(${NIGHT_RGB}, ${dark})`);
   drawFireflies(now, dark);
-  if (dusk > 0.005) wash(`rgba(${DUSK_RGB}, ${dusk})`);
   drawFire(now);
   drawWeather(now, ck);
 
@@ -4161,23 +4177,30 @@ function sun(ck) {
   return { lean: clamp((ck.phase - 0.36) / 0.34, -1, 1) * lightSwing, a: (1 - 1.6 * shownDark(ck.phase)) * (1 - cover) };
 }
 
-// Trees and rocks cast a soft shadow, a cool green-blue, painted once and stretched under each.
-let SOFT_SHADOW = (() => {                // (an ImageBitmap once it's ready: asBitmap)
+// Trees and rocks cast a soft shadow, a cool green-blue, painted once and stretched under each. On snow a shadow
+// is lit by the sky: as the snow lies it turns a pale blue and lighter, in a few steps (shadeStep), each painted once.
+const SHADE_RGB = [24, 48, 44], SNOW_SHADE = [92, 120, 178], SNOW_SHADE_A = 0.6;   // on deep snow: this blue, this much as strong
+const SHADE_STEPS = 4;
+const SOFT_SHADOWS = Array.from({ length: SHADE_STEPS + 1 }, (_, i) => {   // (each an ImageBitmap once it's ready: asBitmap)
+  const k = i / SHADE_STEPS, rgb = SHADE_RGB.map((v, j) => Math.round(lerp(v, SNOW_SHADE[j], k))), a = lerp(1, SNOW_SHADE_A, k);
   const c = document.createElement('canvas'); c.width = 64; c.height = 32;
   const g = c.getContext('2d'), r = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-  r.addColorStop(0, 'rgba(24, 48, 44, 1)'); r.addColorStop(0.5, 'rgba(24, 48, 44, 0.85)'); r.addColorStop(1, 'rgba(24, 48, 44, 0)');
+  r.addColorStop(0, `rgba(${rgb}, ${a})`); r.addColorStop(0.5, `rgba(${rgb}, ${0.85 * a})`); r.addColorStop(1, `rgba(${rgb}, 0)`);
   g.scale(1, 0.5); g.fillStyle = r; g.fillRect(0, 0, 64, 64);
+  asBitmap(c, b => { SOFT_SHADOWS[i] = b; });
   return c;
-})();
-asBitmap(SOFT_SHADOW, b => { SOFT_SHADOW = b; });
+});
+// How far the shadows have gone over to the snow's: as far as the ground shows snow (ground.js: snow × 1.4 − 0.2, at most 0.9).
+const shadeStep = () => Math.round(clamp((world.snow * 1.4 - 0.2) / 0.9, 0, 1) * SHADE_STEPS);
 // A tree also keeps a dark patch at its foot, day and night, so it stands on the ground.
 function drawDecorShadow(d, sx, sy, sn) {
   if (treeWaits.get(d) === 0) return;                      // not drawn yet (drawPaintedTree)
   if (d.tree && d.size < S.SAPLING && !d.stump && (d.size < S.SEEDLING || d.size * cam.zoom < 20)) return;   // too small for one
+  const shade = SOFT_SHADOWS[shadeStep()];
   if (d.fallen) {                                         // a log: along it
     const s = treePx(d);
     ctx.globalAlpha = 0.35 + 0.2 * Math.max(0, sn.a);
-    ctx.drawImage(SOFT_SHADOW, sx - s * 0.5, sy - s * 0.05, s, s * 0.12);
+    ctx.drawImage(shade, sx - s * 0.5, sy - s * 0.05, s, s * 0.12);
     ctx.globalAlpha = 1;
     return;
   }
@@ -4185,25 +4208,27 @@ function drawDecorShadow(d, sx, sy, sn) {
   if (tree) {
     const cw = s * 0.2, ch = s * 0.06;
     ctx.globalAlpha = 0.4 + 0.25 * Math.max(0, sn.a);
-    ctx.drawImage(SOFT_SHADOW, sx - cw, sy - ch * 0.8, cw * 2, ch * 2);
+    ctx.drawImage(shade, sx - cw, sy - ch * 0.8, cw * 2, ch * 2);
     ctx.globalAlpha = 1;
   }
   if (sn.a <= 0.02) return;
   const w = s * (d.tree ? 0.34 : 0.42), h = s * 0.12, off = sn.lean * s * 0.22;
   const W = (w + Math.abs(off) * 0.6) * 2.5, H = h * 2.6;   // the soft edge takes a bit off, so a bit bigger
   ctx.globalAlpha = (tree ? 0.55 : 0.3) * sn.a;
-  ctx.drawImage(SOFT_SHADOW, sx + off - W / 2, sy + h * 0.4 - H / 2, W, H);
+  ctx.drawImage(shade, sx + off - W / 2, sy + h * 0.4 - H / 2, W, H);
   ctx.globalAlpha = 1;
 }
 
 // Animals lean their shadow with the sun like the trees do, and keep a faint one at their feet
 // at night and under cloud so they never float. A hop lifts them off it and it shrinks, less for a
-// pouncing fox than a flier, so the leap reads.
+// pouncing fox than a flier, so the leap reads. On snow it goes the snow's pale blue, like the trees'.
+const FEET_RGB = [40, 50, 20];
+const FEET_SHADES = Array.from({ length: SHADE_STEPS + 1 }, (_, i) => FEET_RGB.map((v, j) => Math.round(lerp(v, SNOW_SHADE[j], i / SHADE_STEPS))).join(', '));
 function drawCreatureShadow(c, sx, sy, now, sn) {
   if (wading(c)) return;
   const px = creaturePx(c), lift = c.held ? 0.55 : 1 - Math.min(c.sp.flies ? 0.8 : 0.5, liftOf(c, px, now) / px);
-  const a = 0.14 + 0.16 * Math.max(0, sn.a), off = Math.max(0, sn.a) * sn.lean * px * 0.2;
-  ctx.fillStyle = `rgba(40, 50, 20, ${a * lift})`;
+  const n = shadeStep(), a = (0.14 + 0.16 * Math.max(0, sn.a)) * lerp(1, SNOW_SHADE_A, n / SHADE_STEPS), off = Math.max(0, sn.a) * sn.lean * px * 0.2;
+  ctx.fillStyle = `rgba(${FEET_SHADES[n]}, ${a * lift})`;
   ctx.beginPath();
   ctx.ellipse(sx + off, sy + px * 0.36, (px * 0.34 + Math.abs(off) * 0.6) * lift, px * 0.1 * lift, 0, 0, TAU);
   ctx.fill();
@@ -4861,16 +4886,18 @@ function rockSprite(t, U, snowy) {
   if (rockLayer.width < c.width || rockLayer.height < c.height) { rockLayer.width = c.width; rockLayer.height = c.height; }
   const g = c.getContext('2d');
   g.translate(c.width / 2, c.height * ROCK_FOOT);
-  // A dark line where the stones meet the ground, under them all.
-  g.save(); g.scale(U, U);
+  // A dark line where the stones meet the ground, under them all. On the snow layer, the snow's pale blue over it
+  // (each stone cuts its own shape out of that layer as it's painted, so only the ground round it goes pale).
+  g.save(); g.scale(U, U); sg?.save(); sg?.scale(U, U);
   for (const p of t.stones) {
     if (t.kind === 'ford') {                              // a ring of lighter water round a wet stone
       g.strokeStyle = 'rgba(235,245,255,0.55)'; g.lineWidth = 0.035;
       rockPath(g, p, -0.01, 1.12); g.stroke();
     }
     softSpot(g, p.x, p.y + p.s * 0.08, p.s * 1.25, p.s * ROCK_SQUASH * 1.1, '30,34,16', 0.5);
+    if (sg) softSpot(sg, p.x, p.y + p.s * 0.08, p.s * 1.25, p.s * ROCK_SQUASH * 1.1, '196,208,232', 0.7);
   }
-  g.restore();
+  g.restore(); sg?.restore();
   for (const p of t.stones) paintStone(g, p, t, U, sg);
   Object.assign(t, { sprite: c, px: U, snow: sc });
   paintedMs += performance.now() - t0;
@@ -10133,7 +10160,13 @@ function copyMeadow() {
   vw = S.W * SHOT; vh = S.H * SHOT; dpr = 1;
   Object.assign(cam, { x: S.W / 2, y: S.H / 2, zoom: SHOT });
   canvas.width = vw; canvas.height = vh;
-  groundIn = true; render(now); groundIn = false;   // the ground drawn in, as it's a layer of its own on screen
+  groundIn = true; render(now);
+  if (groundIn !== true) {   // the ground drawn in under it all, as it's a layer of its own on screen (the dark and the light already on it)
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'destination-over';
+    ctx.drawImage(Ground.canvas, ...groundIn, 0, 0, vw, vh);
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  groundIn = false;
   if (lab?.draw) lab.draw(ctx, dpr, true);
   const png = new Promise(ok => canvas.toBlob(ok, 'image/png'));   // takes the picture now, encodes it later
   ({ vw, vh, dpr } = keep);

@@ -20,8 +20,8 @@
  * tiles to the water, tiles to the woods, mud the Dry Year's water left), 'water' (the water
  * softened by 1, 2 and 4 blurs, and the deep water by 2) and 'parched' (?keep, the Dry Year: how
  * parched, the first of the four), and once Ground.mist(...) with how thick the mist is near the
- * edges. Then Ground.draw(uniforms) paints Ground.canvas if it has to, and
- * Ground.view says where in it the screen's corner is. game.js shows the canvas as a layer of its own
+ * edges. Then Ground.draw(uniforms) paints Ground.canvas if it has to, all of it times its light
+ * (white by day), and Ground.view says where in it the screen's corner is. game.js shows the canvas as a layer of its own
  * under the meadow, slid so that corner is on the screen's.
  * Ground.ok is false where there is no WebGL2.
  */
@@ -43,6 +43,7 @@ uniform sampler2D tile, bloom, shape, water, mist, parched;
 uniform vec2 size, off, seed;
 uniform float top, zoom, dpr, snow, damp, lx, ly, ice, cold, mistOut, drought;
 uniform vec3 low, high, sand, fog;
+uniform vec3 light;                      // what it's all lit by: white by day, warm in the golden hour (game.js goldLight)
 out vec4 o;
 
 // The Dry Year (?keep): drought is how hard it bites, 0 to 1 (game.js, in steps of 1/16), and the parched texture's red how
@@ -204,7 +205,7 @@ void main() {
   float m = texture(mist, (at + mistOut) / (size + 2. * mistOut)).r;
   vec3 fogC = fog;
   if (m > 0.) fogC = mix(fog, min(fog * 1.04 + 0.04, 1.), smoothstep(0.4, 0.8, fbm(at * 0.03 + 950.)));
-  if (m > 0.996) { o = vec4(fogC, 1.); return; }
+  if (m > 0.996) { o = vec4(fogC * light, 1.); return; }
   vec2 p = size - abs(size - abs(at));                           // the meadow, mirrored back in from past its edges
   float px = 1. / (zoom * dpr);
   vec2 q = p + seed;                                              // the same noise, moved for each meadow
@@ -223,7 +224,9 @@ void main() {
   // cool washes over it all, like watercolour laid wet: the hue moves, the grass stays saturated.
   float moist = exp(-max(toWater, 0.) / 4.);
   float dry = clamp(0.45 * height + 0.8 * (fbm(q * 0.03 + 5.) - 0.5) - 0.6 * moist + 0.2, 0., 1.);
-  vec3 grass = high, golden = high * mix(vec3(1.), vec3(1.2, 1.06, 0.5), hue);
+  // A green season's drifts dry to straw rather than going lime; autumn's and winter's keep the warm tint.
+  vec3 grass = high, golden = mix(high * mix(vec3(1.), vec3(1.2, 1.06, 0.5), hue),
+    mix(high, vec3(0.84, 0.77, 0.47), 0.4 * hue), smoothstep(0.12, 0.22, high.g - high.r));
   grass = mix(grass, golden, smoothstep(0.4, 0.85, dry));
   float cool = max(0.85 * moist, 0.75 * exp(-H.b / 3.));
   grass = mix(grass, grass * mix(vec3(0.94), vec3(0.8, 0.93, 0.96), hue), cool);
@@ -337,7 +340,7 @@ void main() {
   }
 
   col = mix(col, fogC, m);
-  o = vec4(col, 1.);
+  o = vec4(col * mix(light, vec3(1.), 0.6 * open * (1. - m)), 1.);   // open water shows the sky, so it keeps most of its blue
 }`;
 
 let ok = !!gl, U = {}, textures = {}, shader, mistOut = 0;
@@ -416,6 +419,7 @@ function steady(u) {                                    // all but where the cam
   for (const k of EXACT) if (u[k] !== last[k]) return false;
   for (const k in NEAR) if (Math.abs(u[k] - last[k]) > NEAR[k]) return false;
   for (const k of ['low', 'high', 'sand', 'fog']) for (let i = 0; i < 3; i++) if (Math.abs(u[k][i] - last[k][i]) > 0.5) return false;
+  for (let i = 0; i < 3; i++) if (Math.abs(u.light[i] - last.light[i]) > 0.002) return false;   // (game.js moves it in steps)
   return true;
 }
 const within = (d, pad, dpr) => d === 0 || Math.abs(d) <= pad - 1 / dpr;
@@ -441,6 +445,7 @@ function draw(u) {
   gl.uniform2f(U.off, u.ox + pad, u.oy + pad); gl.uniform2fv(U.seed, u.seed);
   for (const k of ['zoom', 'dpr', 'snow', 'damp', 'lx', 'ly', 'ice', 'cold', 'drought']) gl.uniform1f(U[k], u[k]);
   for (const k of ['low', 'high', 'sand', 'fog']) gl.uniform3fv(U[k], u[k].map(v => v / 255));
+  gl.uniform3fv(U.light, u.light);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   last = { ...u, pad }; stale = false; view.x = view.y = m;
   return true;
