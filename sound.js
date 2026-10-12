@@ -268,6 +268,7 @@ const RULES = {
   click:   { gap: 0.04, maxSpeed: 60 },
   tick:    { gap: 0.5,  maxSpeed: 60, always: true },
   named:   { gap: 0.5,  maxSpeed: 60, always: true },
+  seen:    { gap: 0.8,  maxSpeed: 60, always: true },
   warn:    { gap: 2,    maxSpeed: 60, always: true },
 };
 
@@ -387,6 +388,8 @@ const SOUNDS = {
   // Something tried off the list (game.js, the guide): three notes up.
   tick(t, o) { for (let i = 0; i < 3; i++) kalimba(o, note(2 + i * 2, 1), t + i * 0.08, 0.3); },
   // A little ring put on: a bell, and its answer a fifth up.
+  // You came to look at something worth seeing (game.js, a spot's caption): two bright notes, up a third.
+  seen(t, o) { bell(o, note(2, 1), t, 0.26); kalimba(o, note(4, 1), t + 0.13, 0.22); },
   named(t, o) { bell(o, note(0, 1), t, 0.35); kalimba(o, note(4, 1), t + 0.16, 0.28); bell(o, note(7, 1), t + 0.34, 0.22); },
   // An alert (game.js, ?keep: a kind in danger, the meadow going barren): two low felt notes, down a step.
   warn(t, o) { marimba(o, note(1, -2), t, 0.5); marimba(o, note(0, -2), t + 0.24, 0.42); },

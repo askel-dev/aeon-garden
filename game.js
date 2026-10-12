@@ -3385,10 +3385,13 @@ function drawBubble(emoji, sx, sy, px, grow = 1) {
 // When something worth seeing happens (cubs out of the holt, a swarm, frogs in your pond, your hedge in flower), a
 // marker waits over the spot till you've looked: a parchment badge with what it was, bobbing, and a ring on the ground.
 // Off screen it waits at the screen's edge, pointing the way. A tap on it, or "Go see" on its line in the news, takes
-// the camera there (an animal is followed). It's seen once it's been on screen up close (SPOT_ZOOM) for SPOT_LOOK_MS,
-// and goes anyway after SPOT_S; only the newest SPOT_MAX wait. A few a frame at most: the badge is painted once.
-const SPOT_MAX = 3, SPOT_S = 90, SPOT_LOOK_MS = 1200, SPOT_FADE = 500, SPOT_R = 17, SPOT_ZOOM = 12, SPOT_EDGE = 30;
-const spots = [];                    // { id, o, x, y, emoji, thing, at, look, seenAt, bx, by }
+// the camera there (an animal is followed). It's seen once it's been on screen up close (SPOT_ZOOM) for SPOT_LOOK_MS
+// (SPOT_LOOK_GO when you came on purpose), and goes anyway after SPOT_S; only the newest SPOT_MAX wait. Seen, the badge
+// gives way to its caption (say) for SAY_MS, with a sparkle and a soft chime: that's the reward for coming to look.
+// A few a frame at most: the badge and the caption are painted once.
+const SPOT_MAX = 3, SPOT_S = 90, SPOT_LOOK_MS = 1200, SPOT_LOOK_GO = 400, SPOT_FADE = 500, SPOT_R = 17, SPOT_ZOOM = 12, SPOT_EDGE = 30;
+const SAY_MS = 4200, SAY_IN = 220, SAY_OUT = 700;
+const spots = [];                    // { id, o, x, y, emoji, say, thing, at, look, going, seenAt, bx, by }
 let spotId = 0, glide = null;        // glide: where the camera's going, { x, y } (a tap on a marker)
 // The cards a marker at the edge keeps clear of (it's drawn under them), measured when they change size.
 const spotCovers = new Map();
@@ -3397,28 +3400,35 @@ for (const id of ['news', 'tasks', 'guide']) {
   if (el) new ResizeObserver(() => spotCovers.set(id, el.getBoundingClientRect())).observe(el);
 }
 
-// What an event leaves to see: the emoji, and what it's at (o: anything with an x and y, followed as it moves).
+// What an event leaves to see: the emoji, what it's at (o: anything with an x and y, followed as it moves), and a
+// caption (say) that comes up over it once you've looked, so you know why you were brought there.
+const kitsOf = (sp, n) => sp === 'owl' ? (n === 1 ? 'owlet' : 'owlets') : n === 1 ? 'cub' : 'cubs';
+const NEWCOMERS = { rabbit: 'New rabbits, from the next valley', fox: 'Foxes, drawn by the rabbits', bee: 'A swarm moved into the empty hive',
+  crow: 'Crows, in over the trees', owl: 'Owls, looking for hollow oaks', otter: 'Otters, come up the water' };
 function spotOf(e) {
   switch (e.type) {
-    case 'birth': return ['fox', 'otter', 'owl'].includes(e.mum.species) && { emoji: { fox: '🦊', otter: '🦦', owl: '🦉' }[e.mum.species], o: e.mum };
-    case 'cubsout': case 'holt': return { emoji: '🦦', o: e.c };
-    case 'fledge': return { emoji: '🦉', o: e.c };
-    case 'arrive': return !e.founding && e.who?.length && { emoji: '🧳', o: e.who[0] };
-    case 'swarm': return { emoji: '🐝', o: e.swarm };
-    case 'settle': return { emoji: '🐝', o: e.hive, thing: ['hive', e.hive] };
-    case 'lightning': return e.tree && { emoji: '⚡', x: e.x, y: e.y };
-    case 'windthrow': return { emoji: '🪵', x: e.tree.x, y: e.tree.y };
-    case 'fire': return { emoji: '🔥', x: e.x, y: e.y };
-    case 'outbreak': return { emoji: '🤒', x: e.x, y: e.y };
+    case 'birth': return ['fox', 'otter', 'owl'].includes(e.mum.species) && { emoji: { fox: '🦊', otter: '🦦', owl: '🦉' }[e.mum.species], o: e.mum,
+      say: `${e.mum.name} has had ${e.kids.length} ${kitsOf(e.mum.species, e.kids.length)}` };
+    case 'cubsout': return { emoji: '🦦', o: e.c, say: `${e.c.name}, an otter cub, out of the holt` };
+    case 'holt': return { emoji: '🦦', o: e.c, say: `${e.c.name} has made a holt here` };
+    case 'fledge': return { emoji: '🦉', o: e.c, say: `${e.c.name} the owlet has left the nest` };
+    case 'arrive': return !e.founding && e.who?.length && { emoji: '🧳', o: e.who[0], say: NEWCOMERS[e.species] || 'Newcomers' };
+    case 'swarm': return { emoji: '🐝', o: e.swarm, say: `Queen ${e.queen.name}'s swarm, looking for a home` };
+    case 'settle': return { emoji: '🐝', o: e.hive, thing: ['hive', e.hive], say: `Queen ${e.queen.name}'s swarm has moved in here` };
+    case 'lightning': return e.tree && { emoji: '⚡', x: e.x, y: e.y, say: 'Lightning split this tree' };
+    case 'windthrow': return { emoji: '🪵', x: e.tree.x, y: e.tree.y, say: 'The storm brought this tree down' };
+    case 'fire': return { emoji: '🔥', x: e.x, y: e.y, say: 'Wildfire! It started here' };
+    case 'outbreak': return { emoji: '🤒', x: e.x, y: e.y, say: 'A sickness in this warren' };
     case 'frogsfound': case 'pondgrew': {
       const v = world.waters[e.water], at = dugSpot(e.water);
-      return v && { emoji: e.type === 'frogsfound' ? '🐸' : '🌾', ...at, thing: ['water', { body: v, ...at }] };
+      return v && { emoji: e.type === 'frogsfound' ? '🐸' : '🌾', ...at, thing: ['water', { body: v, ...at }],
+        say: e.type === 'frogsfound' ? `Frogs have found ${v.name}` : `Reeds have come up round ${v.name}` };
     }
-    case 'stripbloom': return { emoji: '🌼', o: e.field, thing: ['field', e.field] };
-    case 'beesfound': return { emoji: '🐝', o: e.field, thing: ['field', e.field] };
-    case 'hedgeyoung': return { emoji: '🌿', o: e.hedge };
-    case 'hedgebloom': return { emoji: '🌸', o: e.hedge };
-    case 'hedgehaws': return { emoji: '🔴', o: e.hedge };
+    case 'stripbloom': return { emoji: '🌼', o: e.field, thing: ['field', e.field], say: `${e.field.name} is in flower` };
+    case 'beesfound': return { emoji: '🐝', o: e.field, thing: ['field', e.field], say: `Bees have found ${e.field.name}` };
+    case 'hedgeyoung': return { emoji: '🌿', o: e.hedge, say: `${e.hedge.name} can hide a rabbit now` };
+    case 'hedgebloom': return { emoji: '🌸', o: e.hedge, say: `${e.hedge.name} is white with blossom` };
+    case 'hedgehaws': return { emoji: '🔴', o: e.hedge, say: `${e.hedge.name} is red with haws` };
   }
   return null;
 }
@@ -3441,7 +3451,7 @@ function spotAt(s) {
 }
 
 function goSpot(s) {
-  s.seenAt ||= performance.now();
+  s.going = true;
   if (isAnimal(s.o) && s.o.alive) { select(s.o.id); return; }   // followed: the camera goes with it
   const { x, y } = spotAt(s), close = narrow() ? 16 : 22;
   if (s.thing) pick(...s.thing); else select(0);
@@ -3454,6 +3464,35 @@ function goSpot(s) {
 function spotHit(sx, sy) {
   const r = SPOT_R + (fingerTap ? 10 : 4);
   return spots.find(s => !s.seenAt && (s.bx - sx) ** 2 + (s.by - sy) ** 2 < r * r);
+}
+
+// A spot's caption, painted once it's seen: the emoji and a line, on a parchment pill with a brass rim.
+function sayArt(s) {
+  const font = '800 13px Nunito, ui-rounded, system-ui, sans-serif', h = 28, pad = 12, e = 18;
+  const g0 = document.createElement('canvas').getContext('2d');
+  g0.font = font;
+  const w = Math.ceil(g0.measureText(s.say).width) + pad * 2 + e + 6, c = g0.canvas;
+  c.width = Math.ceil((w + 4) * dpr); c.height = Math.ceil((h + 6) * dpr);
+  const g = c.getContext('2d');
+  g.scale(dpr, dpr);
+  g.fillStyle = 'rgba(70, 55, 25, 0.22)';
+  g.beginPath(); g.roundRect(2, 3.5, w, h, h / 2); g.fill();
+  g.fillStyle = '#fffaf0';
+  g.beginPath(); g.roundRect(2, 2, w, h, h / 2); g.fill();
+  g.lineWidth = 1.6; g.strokeStyle = '#c99a3e'; g.stroke();
+  const em = sprite(s.emoji, e, undefined, undefined, true);
+  g.drawImage(em.canvas, 2 + pad - 2, 2 + (h - em.size) / 2, em.size, em.size);
+  g.font = font; g.fillStyle = '#3b372f'; g.textBaseline = 'middle';
+  g.fillText(s.say, 2 + pad + e + 4, 2 + h / 2 + 0.5);
+  return { canvas: c, w: w + 4, h: h + 6 };
+}
+
+function seeSpot(s, x, y, now) {
+  s.seenAt = now;
+  if (!s.say) return;
+  s.art = sayArt(s);
+  addEffect('✨', x, y, 0.6);
+  chime('seen');
 }
 
 const spotBadges = new Map();        // a badge for each emoji, painted once: a parchment disc, a brass rim, the emoji
@@ -3484,14 +3523,24 @@ function drawSpots(now) {
   for (let i = spots.length - 1; i >= 0; i--) {
     const s = spots[i], dt = Math.min(100, now - (s.last || now));
     s.last = now;
-    if (s.seenAt ? now - s.seenAt > SPOT_FADE : now - s.at > SPOT_S * 1000 || (isAnimal(s.o) && !s.o.alive)) { spots.splice(i, 1); continue; }
+    if (s.seenAt ? now - s.seenAt > (s.art ? SAY_MS : SPOT_FADE) : now - s.at > SPOT_S * 1000 || (isAnimal(s.o) && !s.o.alive)) { spots.splice(i, 1); continue; }
     const { x, y } = spotAt(s), [sx, sy] = toScreen(x, y);
     const lift = isAnimal(s.o) ? creaturePx(s.o) * 0.75 : 14, bob = Math.sin(now / 420 + s.id) * 3;
     let bx = sx, by = sy - lift - SPOT_R - 8 + bob;
     const on = bx > left && bx < right && by > top && by < bottom;
-    if (on && cam.zoom >= SPOT_ZOOM && Math.abs(sx - cx) < (right - left) * 0.4 && Math.abs(sy - cy) < (bottom - top) * 0.4) {
+    if (!s.seenAt && on && cam.zoom >= SPOT_ZOOM && Math.abs(sx - cx) < (right - left) * 0.4 && Math.abs(sy - cy) < (bottom - top) * 0.4) {
       s.look += dt;
-      if (s.look >= SPOT_LOOK_MS) s.seenAt = now;
+      if (s.look >= (s.going ? SPOT_LOOK_GO : SPOT_LOOK_MS)) seeSpot(s, x, y, now);
+    }
+    if (s.art) {                                                      // seen: its caption, where the badge was
+      const t = now - s.seenAt, a = s.art;
+      if (on) {
+        const grow = t < SAY_IN ? 0.85 + 0.15 * t / SAY_IN : 1, w = a.w * grow, h = a.h * grow;
+        const qx = clamp(bx, left + w / 2 - SPOT_EDGE + 8, right - w / 2 + SPOT_EDGE - 8), qy = by + 4 - Math.min(1, t / SAY_IN) * 6;
+        ctx.globalAlpha = Math.min(1, t / SAY_IN, (SAY_MS - t) / SAY_OUT);
+        ctx.drawImage(a.canvas, qx - w / 2, qy - h / 2, w, h);
+      }
+      continue;
     }
     ctx.globalAlpha = s.seenAt ? Math.max(0, 1 - (now - s.seenAt) / SPOT_FADE) : Math.min(1, (now - s.at) / 250);
     if (on) {
