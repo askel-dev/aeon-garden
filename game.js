@@ -3452,23 +3452,30 @@ function sun(ck) {
   return { lean: clamp((ck.phase - 0.36) / 0.34, -1, 1) * lightSwing, a: (1 - 1.6 * shownDark(ck.phase)) * (1 - cover) };
 }
 
-// Trees and rocks cast a soft shadow, a cool green-blue, painted once and stretched under each.
-let SOFT_SHADOW = (() => {                // (an ImageBitmap once it's ready: asBitmap)
+// Trees and rocks cast a soft shadow, a cool green-blue, painted once and stretched under each. On snow a shadow
+// is lit by the sky: as the snow lies it turns a pale blue and lighter, in a few steps (shadeStep), each painted once.
+const SHADE_RGB = [24, 48, 44], SNOW_SHADE = [92, 120, 178], SNOW_SHADE_A = 0.6;   // on deep snow: this blue, this much as strong
+const SHADE_STEPS = 4;
+const SOFT_SHADOWS = Array.from({ length: SHADE_STEPS + 1 }, (_, i) => {   // (each an ImageBitmap once it's ready: asBitmap)
+  const k = i / SHADE_STEPS, rgb = SHADE_RGB.map((v, j) => Math.round(lerp(v, SNOW_SHADE[j], k))), a = lerp(1, SNOW_SHADE_A, k);
   const c = document.createElement('canvas'); c.width = 64; c.height = 32;
   const g = c.getContext('2d'), r = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-  r.addColorStop(0, 'rgba(24, 48, 44, 1)'); r.addColorStop(0.5, 'rgba(24, 48, 44, 0.85)'); r.addColorStop(1, 'rgba(24, 48, 44, 0)');
+  r.addColorStop(0, `rgba(${rgb}, ${a})`); r.addColorStop(0.5, `rgba(${rgb}, ${0.85 * a})`); r.addColorStop(1, `rgba(${rgb}, 0)`);
   g.scale(1, 0.5); g.fillStyle = r; g.fillRect(0, 0, 64, 64);
+  asBitmap(c, b => { SOFT_SHADOWS[i] = b; });
   return c;
-})();
-asBitmap(SOFT_SHADOW, b => { SOFT_SHADOW = b; });
+});
+// How far the shadows have gone over to the snow's: as far as the ground shows snow (ground.js: snow × 1.4 − 0.2, at most 0.9).
+const shadeStep = () => Math.round(clamp((world.snow * 1.4 - 0.2) / 0.9, 0, 1) * SHADE_STEPS);
 // A tree also keeps a dark patch at its foot, day and night, so it stands on the ground.
 function drawDecorShadow(d, sx, sy, sn) {
   if (treeWaits.get(d) === 0) return;                      // not drawn yet (drawPaintedTree)
   if (d.tree && d.size < S.SAPLING && !d.stump && (d.size < S.SEEDLING || d.size * cam.zoom < 20)) return;   // too small for one
+  const shade = SOFT_SHADOWS[shadeStep()];
   if (d.fallen) {                                         // a log: along it
     const s = treePx(d);
     ctx.globalAlpha = 0.35 + 0.2 * Math.max(0, sn.a);
-    ctx.drawImage(SOFT_SHADOW, sx - s * 0.5, sy - s * 0.05, s, s * 0.12);
+    ctx.drawImage(shade, sx - s * 0.5, sy - s * 0.05, s, s * 0.12);
     ctx.globalAlpha = 1;
     return;
   }
@@ -3476,25 +3483,27 @@ function drawDecorShadow(d, sx, sy, sn) {
   if (tree) {
     const cw = s * 0.2, ch = s * 0.06;
     ctx.globalAlpha = 0.4 + 0.25 * Math.max(0, sn.a);
-    ctx.drawImage(SOFT_SHADOW, sx - cw, sy - ch * 0.8, cw * 2, ch * 2);
+    ctx.drawImage(shade, sx - cw, sy - ch * 0.8, cw * 2, ch * 2);
     ctx.globalAlpha = 1;
   }
   if (sn.a <= 0.02) return;
   const w = s * (d.tree ? 0.34 : 0.42), h = s * 0.12, off = sn.lean * s * 0.22;
   const W = (w + Math.abs(off) * 0.6) * 2.5, H = h * 2.6;   // the soft edge takes a bit off, so a bit bigger
   ctx.globalAlpha = (tree ? 0.55 : 0.3) * sn.a;
-  ctx.drawImage(SOFT_SHADOW, sx + off - W / 2, sy + h * 0.4 - H / 2, W, H);
+  ctx.drawImage(shade, sx + off - W / 2, sy + h * 0.4 - H / 2, W, H);
   ctx.globalAlpha = 1;
 }
 
 // Animals lean their shadow with the sun like the trees do, and keep a faint one at their feet
 // at night and under cloud so they never float. A hop lifts them off it and it shrinks, less for a
-// pouncing fox than a flier, so the leap reads.
+// pouncing fox than a flier, so the leap reads. On snow it goes the snow's pale blue, like the trees'.
+const FEET_RGB = [40, 50, 20];
+const FEET_SHADES = Array.from({ length: SHADE_STEPS + 1 }, (_, i) => FEET_RGB.map((v, j) => Math.round(lerp(v, SNOW_SHADE[j], i / SHADE_STEPS))).join(', '));
 function drawCreatureShadow(c, sx, sy, now, sn) {
   if (wading(c)) return;
   const px = creaturePx(c), lift = c.held ? 0.55 : 1 - Math.min(c.sp.flies ? 0.8 : 0.5, liftOf(c, px, now) / px);
-  const a = 0.14 + 0.16 * Math.max(0, sn.a), off = Math.max(0, sn.a) * sn.lean * px * 0.2;
-  ctx.fillStyle = `rgba(40, 50, 20, ${a * lift})`;
+  const n = shadeStep(), a = (0.14 + 0.16 * Math.max(0, sn.a)) * lerp(1, SNOW_SHADE_A, n / SHADE_STEPS), off = Math.max(0, sn.a) * sn.lean * px * 0.2;
+  ctx.fillStyle = `rgba(${FEET_SHADES[n]}, ${a * lift})`;
   ctx.beginPath();
   ctx.ellipse(sx + off, sy + px * 0.36, (px * 0.34 + Math.abs(off) * 0.6) * lift, px * 0.1 * lift, 0, 0, TAU);
   ctx.fill();
@@ -4152,16 +4161,18 @@ function rockSprite(t, U, snowy) {
   if (rockLayer.width < c.width || rockLayer.height < c.height) { rockLayer.width = c.width; rockLayer.height = c.height; }
   const g = c.getContext('2d');
   g.translate(c.width / 2, c.height * ROCK_FOOT);
-  // A dark line where the stones meet the ground, under them all.
-  g.save(); g.scale(U, U);
+  // A dark line where the stones meet the ground, under them all. On the snow layer, the snow's pale blue over it
+  // (each stone cuts its own shape out of that layer as it's painted, so only the ground round it goes pale).
+  g.save(); g.scale(U, U); sg?.save(); sg?.scale(U, U);
   for (const p of t.stones) {
     if (t.kind === 'ford') {                              // a ring of lighter water round a wet stone
       g.strokeStyle = 'rgba(235,245,255,0.55)'; g.lineWidth = 0.035;
       rockPath(g, p, -0.01, 1.12); g.stroke();
     }
     softSpot(g, p.x, p.y + p.s * 0.08, p.s * 1.25, p.s * ROCK_SQUASH * 1.1, '30,34,16', 0.5);
+    if (sg) softSpot(sg, p.x, p.y + p.s * 0.08, p.s * 1.25, p.s * ROCK_SQUASH * 1.1, '196,208,232', 0.7);
   }
-  g.restore();
+  g.restore(); sg?.restore();
   for (const p of t.stones) paintStone(g, p, t, U, sg);
   Object.assign(t, { sprite: c, px: U, snow: sc });
   paintedMs += performance.now() - t0;
