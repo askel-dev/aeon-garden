@@ -838,10 +838,11 @@
   html.keep .mini-pop[data-st="danger"] b { color: #c23b2b; }
   html.keep .mini-pop[data-st="danger"] b::after { content: '!'; top: -1px; font-size: 12px; font-weight: 900; color: #c23b2b; }
   html.keep .mini-pop[data-st="gone"] { opacity: 0.45; text-decoration: line-through; }
+  html.keep .mini-pop[data-st="none"] { opacity: 0.45; }
 
   /* ---- ?keep: GREEN, the share of the meadow still green (game.js updateGreen), on the left of the bottom bar: a brass
      capital label, the share big (▼ ▲ against what it was as the season began), a bar filled to it with a mark at that,
-     and "was 80%" under the mark. Rust under half. A hover (a tap on a phone) shows its card (#tool-tip, greenTip). */
+     and "was 80%" under the mark (both hidden while it's the same: .same). Rust under half. A hover (a tap on a phone) shows its card (#tool-tip, greenTip). */
   #green { display: none; }
   html.keep #green { display: grid; grid-column: 1; grid-row: 1; justify-self: start; grid-template-columns: 1fr auto; align-items: baseline;
     width: 220px; margin-left: 8px; padding: 0; border: none; background: none; font: inherit; color: var(--ink); text-align: left; cursor: default; }
@@ -855,6 +856,7 @@
   html.keep #green .g-bar em { position: absolute; top: -4px; bottom: -4px; left: var(--ref, 0%); width: 2px; margin-left: -1px; border-radius: 1px; background: var(--ink); opacity: 0.55; }
   html.keep #green .g-ref { grid-column: 1 / -1; justify-self: start; margin-left: clamp(0px, calc(var(--ref, 0%) - 18px), calc(100% - 52px));
     font-size: 11px; font-weight: 800; color: var(--muted); }
+  html.keep #green.same :is(.g-ref, .g-bar em) { visibility: hidden; }
   html.keep #green.low .g-v, html.keep #tool-tip h4 b.low { color: #8a4b12; }
   html.keep #green.low .g-bar i { background: linear-gradient(90deg, #a7802f, #d9b25a); }
   html.keep #tool-tip h4 b { margin-left: auto; font: 900 22px Nunito, ui-rounded, system-ui, sans-serif; font-variant-numeric: tabular-nums; }

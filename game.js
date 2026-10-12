@@ -22,11 +22,12 @@ const params = new URLSearchParams(location.search), LAB = params.has('lab');
 const KEEP = !params.has('watch') && !LAB;
 document.documentElement.classList.toggle('keep', KEEP);   // its frame (index.html's head says so too, before this runs)
 const DRY_PARAM = +params.get('dry') || 0;   // ?keep&dry=N: a new keeper meadow's Dry Year comes in the summer of year N (1: this one)
+let dryAt = DRY_PARAM;                       // and the meadow on screen's (its options.dry), kept in its link
 const fromUrl = key => { try { return JSON.parse(params.get(key) || '{}'); } catch (e) { return {}; } };   // a broken link: the usual meadow
 let terrain = fromUrl('terrain'), drawn = location.hash.length > 1 ? S.drawnFromLink(location.hash) : fromUrl('drawn');
 const terrainQuery = () => (Object.keys(terrain).length ? '&terrain=' + encodeURIComponent(JSON.stringify(terrain)) : '')
   + (S.drawnToLink(drawn) ? '#' + S.drawnToLink(drawn) : '');
-const meadowLink = seed => '?seed=' + seed + (KEEP ? '&keep' : '&watch') + terrainQuery();   // the address of a meadow, and the name it's kept under
+const meadowLink = seed => '?seed=' + seed + (KEEP ? '&keep' + (dryAt ? '&dry=' + dryAt : '') : '&watch') + terrainQuery();   // the address of a meadow, and the name it's kept under
 
 // How many people come, and from where, counted by GoatCounter (goatcounter.com: free, no cookies,
 // nothing to agree to). Off until COUNTER holds the site's code: sign up there, pick a code, put it
@@ -6284,7 +6285,7 @@ function dialTitle(ck) {
 // is on, the dial's year ring shows its summer parched too (#dial.dry). A hover says more, a tap says it under the watch.
 const forecast = { el: $('#forecast'), on: false, w: null, key: '', day: -1, line: '', dry: false };
 const DRY_ABOUT = 'The Dry Year: no rain from its spring to the end of its summer. The water drops, and the grass away '
-  + 'from it turns to straw. What helps: water, flowers and cover near where the animals live.';
+  + 'from it turns to straw. What helps: a pond, flowers and a hedge near where the animals live.';
 function forecastTick() {
   if (!KEEP) return;
   const stage = S.dryStage(world), on = S.dryComing(world) || stage === 3;
@@ -6460,12 +6461,13 @@ function milestone(y, show) {
 
 // ?keep: how each kind is doing, marked in the top bar. Worked out once a sim day (and when a meadow opens, or an alert
 // comes or goes): gone, in danger (as the alerts over the bar have it: alertsTick), fewer or thriving against the same time last year (so the bees' winter dip isn't
-// a worry every winter), else steady. Nothing to compare in the first year.
+// a worry every winter), else steady. Nothing to compare in the first year. A kind that never lived here is none yet (–, not
+// a 0 that reads as a loss).
 const SPECIES_WORD = { rabbit: 'Rabbits', fox: 'Foxes', bee: 'Bees', crow: 'Crows', owl: 'Owls', otter: 'Otters' };
 const speciesMarks = { world: null, day: -1 };
 function speciesStatus(s) {
   const n = world.count[s], h = world.history[s], then = world.tick - S.YEAR_DAYS * S.TPD;
-  if (!n) return h.some(v => v > 0) ? { st: 'gone' } : { st: 'steady', n };
+  if (!n) return h.some(v => v > 0) ? { st: 'gone' } : { st: 'none' };
   if (alerts.on[s]) return { st: 'danger', n };
   const before = world.history.t[0] > then + world.history.every ? 0 : h[since(then)];   // (0: no last year yet)
   if (before > 0 && n < 0.6 * before) return { st: 'fewer', n, before };
@@ -6481,7 +6483,8 @@ function updateSpeciesMarks() {
     const { st, n, before } = speciesStatus(s), pop = $('#mini-' + s).parentNode, name = SPECIES_WORD[s];
     const title = st === 'gone' ? `${name} · gone from the meadow`
       : st === 'danger' ? `${name} · in danger: ${n} left`
-      : st === 'steady' ? `${name} · ${n ? 'steady: ' + n + ' now' : 'none yet'}`
+      : st === 'none' ? `${name} · none yet`
+      : st === 'steady' ? `${name} · steady: ${n} now`
       : `${name} · ${st}: ${n} now, ${before} this time last year`;
     if (pop.dataset.st !== st) pop.dataset.st = st;
     if (pop.title !== title) pop.title = title;
@@ -6507,14 +6510,14 @@ function updateMeadowCard() {
   setText($('#sky-btn'), wx.emoji);
   setHTML($('#mini-sky'), `<span id="mini-season">${S.SEASONS[ck.season].emoji}</span>${icon}`);   // phones hide the season
   updateFavicon(ck);
-  if (KEEP) updateGreen();                                 // (once a sim day)
+  if (KEEP) { updateGreen(); updateSpeciesMarks(); }      // (once a sim day)
   for (const s of S.KINDS) {
     if (!SERIES[s]) continue;                              // (the owls, while they're off: sim.js OWLS)
-    setText($('#mini-' + s), String(world.count[s]));
+    const mini = $('#mini-' + s);
+    setText(mini, KEEP && !world.count[s] && mini.parentNode.dataset.st === 'none' ? '–' : String(world.count[s]));
     setText($('#n-' + s), String(world.count[s]));
     if (!(KEEP && ui.mini)) sparkline($('#spark-' + s), world.history[s], SERIES[s].color);   // (?keep: a small card's are hidden)
   }
-  if (KEEP) updateSpeciesMarks();
   // In the first year the averages wobble with every litter: that is luck, not evolution.
   const r = world.tick < S.YEAR_DAYS * S.TPD ? 'wait' : evolutionLine('rabbit'), f = r === 'wait' ? 'wait' : evolutionLine('fox');
   const quiet = v => !v.includes('<');
@@ -8684,7 +8687,8 @@ if (KEEP) {
 
 // GREEN (?keep, in the bottom bar; on a phone a slot after the tools and a rim along the bar's top): the share of the
 // land whose grass is still green (sim.js greenShare, a scan of every tile, so once a sim day), by what it was on the
-// first day of this season, or as the meadow opened mid-season ("when you came"). Written only when it changes; its card is greenTip.
+// first day of this season, or as the meadow opened mid-season ("when you came"), its "was" and mark hidden till the share
+// moves off it (on day 1 there's nothing to compare). Written only when it changes; its card is greenTip.
 // Every winter it falls to about a fifth and comes back in spring, so it turns rust (low) only while the Dry Year bites.
 const green = { world: null, day: -1, season: -1, share: 0, ref: 0, came: false, low: false };
 function updateGreen() {
@@ -8695,11 +8699,12 @@ function updateGreen() {
   Object.assign(green, { world, day, share, low: share < 50 && S.dryStage(world) >= 2 });
   const trend = share < green.ref - 3 ? '<i>▼</i>' : share > green.ref + 3 ? '<i class="up">▲</i>' : '';
   el.classList.toggle('low', green.low);
+  el.classList.toggle('same', share === green.ref);
   el.style.setProperty('--v', share + '%');
   el.style.setProperty('--ref', green.ref + '%');
   setHTML(el.querySelector('.g-v'), share + '%' + trend);
   setText(el.querySelector('.g-ref'), `was ${green.ref}%`);
-  el.setAttribute('aria-label', `Green ${share}%, was ${green.ref}%`);
+  el.setAttribute('aria-label', share === green.ref ? `Green ${share}%` : `Green ${share}%, was ${green.ref}%`);
   if (tip.tool === 'green') setHTML($('#tool-tip'), greenTip());
 }
 function greenTip() {
@@ -9473,7 +9478,7 @@ function showLost(open = true) {
 }
 function startAgain() {
   showLost(false);
-  newWorld(world.seed, false, world.dryYear?.year);
+  newWorld(world.seed, false, world.options.dry || 0);
   keepMeadow();                                         // (in place of the one lost)
 }
 $('#lost').addEventListener('click', e => { if (e.target.id === 'lost') showLost(false); });
@@ -9485,7 +9490,8 @@ $('#lost').addEventListener('click', e => { if (e.target.id === 'lost') showLost
 // thick) only when the day does, or the number of ponds, strips or hedges. A task done chimes, flashes and gets the
 // big line under the watch; one already done as the meadow opens (or while you were away) is only noted. A tap on a
 // task puts its tool in your hand, or on a done one goes to look at what did it. On a phone the card folds to a chip
-// of the icons (KEEP_CARD keeps the fold); a task done flashes its icon there, the big line saying what happened.
+// of the icons (KEEP_CARD keeps the fold); a task done flashes its icon there, the big line saying what happened. Its
+// heading ties them to the threat: "Before the Dry Year", "Through the Dry Year" in its summer, then plain "Tasks".
 const KEEP_CARD = 'aeon-garden-keep-card';
 const TASKS = [
   { k: 'pond', e: '⛏️', verb: 'Dig a pond', wait: 'frogs move in', got: '🐸' },
@@ -9565,6 +9571,8 @@ function tasksTick(now) {
   });
   const count = `${n}/${TASKS.length}`, fold = tasks.fold;
   if (tasks.shown.count !== count) { tasks.shown.count = count; tasks.el.querySelector('.t-count').textContent = count; }
+  const head = S.dryStage(world) === 2 ? 'Through the Dry Year' : S.dryComing(world) ? 'Before the Dry Year' : 'Tasks';
+  if (tasks.shown.head !== head) { tasks.shown.head = head; tasks.el.querySelector('.cap').textContent = head; }
   if (tasks.el.classList.contains('fold') !== fold) {
     tasks.el.classList.toggle('fold', fold);
     tasks.el.querySelector('.t-head').setAttribute('aria-expanded', !fold);
@@ -9985,7 +9993,7 @@ function resumeWorld(rec) {
     localStorage.setItem(OPENING, rec.link);          // cleared once it has run a few frames (frame)
     const w = S.unpackWorld(rec.kept);
     if (!w) throw new Error('kept by another version');
-    terrain = w.options.terrain || {}; drawn = w.options.drawn || {};
+    terrain = w.options.terrain || {}; drawn = w.options.drawn || {}; dryAt = w.options.dry || 0;
     showWorld(w);
     S.step(world);                                    // a meadow that can't take a step is no good
     flushEvents();
@@ -10091,6 +10099,7 @@ function flushEvents() {
 function randomSeed() { return Math.floor(Math.random() * 1e6); }
 
 function newWorld(seed, arrival = false, dry = DRY_PARAM) {
+  dryAt = KEEP ? dry : 0;
   showWorld(S.createWorld(seed, LAB ? { terrain, drawn, rabbits: 0, foxes: 0, bees: 0 } : KEEP ? { terrain, drawn, keep: true, dry } : { terrain, drawn, arrival }));
   const big = [world.waters.find(v => v.kind === 'river'), world.lake].filter(Boolean).map(v => `<b>${v.name}</b>`);
   const by = big.length ? ' by ' + big.join(' and ') : '';
@@ -10274,6 +10283,21 @@ const seedParam = +params.get('seed');
 let seen = false;
 try { seen = localStorage.getItem('aeon-garden-welcomed') === '1'; } catch (e) { /* private window */ }
 const firstVisit = !LAB && !KEEP && (!seen || params.has('intro'));   // ?intro plays it again (?keep has none)
+// ?keep's first visit gets the welcome card too, in its own words (keepWelcome), remembered under its own key: what the
+// meadow is, what you do, and the Dry Year coming. No intro: a keeper meadow starts lived in. ?intro shows it again.
+const KEEP_WELCOMED = 'aeon-garden-keep-welcomed';
+let keepSeen = false;
+try { keepSeen = localStorage.getItem(KEEP_WELCOMED) === '1'; } catch (e) { /* private window */ }
+function keepWelcome() {
+  const dy = world.dryYear, when = !dy ? '' : dy.year <= S.clock(world).year ? 'this summer' : `in the summer of year ${dy.year}`;
+  $('#welcome .body p').outerHTML = '<p>A small meadow where rabbits, foxes and bees live their own lives. You keep it: dig ponds, sow flowers, plant hedges.</p>'
+    + (S.dryComing(world) ? `<p>☀️ <b>A Dry Year is coming ${when}:</b> no rain, and the grass away from the water turns to straw. `
+      + 'Get the meadow ready, and keep it green and every kind alive through it.</p>' : '');
+  $('#go').textContent = 'Start keeping';
+  $('#welcome').classList.remove('hidden');
+  hush(true);
+  setSpeed(0);
+}
 // The kept meadow if there is one (keeping the meadow, above), else a new one. The rest below doesn't wait for it.
 function begin(rec) {
   const back = rec && resumeWorld(rec);
@@ -10291,9 +10315,10 @@ function begin(rec) {
     hush(true);                                         // nothing to count yet: the bars and cards wait
     setSpeed(0);
     if (world.family && !calm) introShot();
-  } else if (KEEP) setTimeout(startTasks, 1500);
+  } else if (KEEP && (params.has('intro') || (!keepSeen && !back))) keepWelcome();
+  else if (KEEP) setTimeout(startTasks, 1500);
   else { homeTip(30000); setTimeout(() => startGuide(false), 2500); }
-  if (back && !rec.paused && Date.now() - rec.at > AWAY_MIN) startAway();
+  if (back && !rec.paused && Date.now() - rec.at > AWAY_MIN && $('#welcome').classList.contains('hidden')) startAway();
   requestAnimationFrame(frame);
 }
 (firstVisit || LAB ? Promise.resolve(null) : keptMeadow(seedParam)).then(begin);
@@ -10305,8 +10330,9 @@ $('#go').addEventListener('click', () => {
   const card = $('#welcome');
   card.classList.add('leaving');
   setTimeout(() => card.classList.add('hidden'), 700);
-  try { localStorage.setItem('aeon-garden-welcomed', '1'); } catch (e) { /* fine */ }
-  if (world.family && !calm) startIntro();
+  try { localStorage.setItem(KEEP ? KEEP_WELCOMED : 'aeon-garden-welcomed', '1'); } catch (e) { /* fine */ }
+  if (KEEP) { hush(false); setSpeed(1); setTimeout(startTasks, 900); }
+  else if (world.family && !calm) startIntro();
   else { hush(false); setSpeed(1); welcomeTips(); }
 });
 
