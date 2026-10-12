@@ -1,7 +1,8 @@
 # Visitors and the field journal: plan (2026-10-12)
 
 The user agreed to this ("do both"). Part 1 (arrival captions) is built and committed. The hedgehog (2a and 2b, plus the
-journal's store and the first-sighting moment from 2c) is built (2026-10-12); the heron, the journal's card and 2d are next. This note is for the session
+journal's store and the first-sighting moment from 2c) is built (2026-10-12), and naming and Yours are out (2d, same day);
+the heron and the journal's card are next. The journal's card goes in the ••• menu where Yours was. This note is for the session
 that builds part 2. CLAUDE.md's "discuss before implementing" is already settled for what's below: build it, then
 show the user. Anything beyond it gets discussed first.
 

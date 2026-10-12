@@ -9,11 +9,8 @@ paths:
 Drawing, UI, news feed, the inspector. The inspector shows
 animals and every other thing you click (hives, trees, rocks, remains, burrows, flowers, fields, water): each
 kind is an entry in `THINGS`, saying how to find one on screen and what its panel shows.
-A tap on the name at the top of the inspector (`nameButton`) makes an animal yours (sim.js `nameCreature`, `c.mine`; a bee by its queen, `nameQueen`,
-`q.mine`): its news always comes and heads the away card (`involvesSelected`), its death gets a line of its own
-that offers a young one left behind to name (`goneLine`, `data-act="adopt"`), it wears a brass ring in its label
-and on the ground (`RING`, `drawRingUnder`), and ••• Yours lists everyone you named, gone or not (`#yours`,
-`renderYours`). The named are kept with the meadow for good (`remembered`). No `KEEP_VERSION` bump.
+The animal you follow has its news always come, and first on the away card (`involvesSelected`). Animals can't be
+named by the player (naming and the ••• Yours card were taken out on 2026-10-12: they gave the player no reason to care).
 With Look in hand, a press on an animal dragged (or a finger held on it) picks it up by the scruff (`pickUp`,
 `grabAt`: on its body as drawn, so a pan from near one stays a pan): it dangles from the hand as a pendulum the
 hand's speeding up swings (`heldFrame`, `drawHeld`), kicks in fits, and drops with a hop where you let go
@@ -39,8 +36,8 @@ and a soft chime (`seeSpot`, sound.js `seen`). A visitor (sim.js `w.visitors`, s
 (`paintHedgehog`: walking, snuffling, curled up asleep; `visitorArt`, `drawVisitor`), fading in and out at the ends of its way
 (`visitorFade`). Its marker waits as long as it's here (`stay`), and a tap on it sees it too (`tapVisitor`). Seen, it goes in the
 player's field journal (`sightVisitor`, `JOURNAL` in the browser, not with the meadow): the first of a kind ever gets "First
-sighting" for its caption, a 📖 and the `named` chime. The inspector has it (`THINGS.visitor`). The journal's card, more visitors
-and taking naming out are still to come (`research/visitors-and-journal.md`). A new meadow opens close, over the open ground with the most animals (`homeView`, `HOME_TILES`).
+sighting" for its caption, a 📖 and the `named` chime. The inspector has it (`THINGS.visitor`). The journal's card and more visitors
+are still to come (`research/visitors-and-journal.md`). A new meadow opens close, over the open ground with the most animals (`homeView`, `HOME_TILES`).
 The tab's icon follows the season and the part of day (`updateFavicon`, at most once a second), and
 the news log dates each line with a season chip (`seasonChip`).
 The rivers run (`drawFlow`, worked out once a meadow by `flowOf` from the sim's `w.current`): streaks of current, quicker

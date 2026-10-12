@@ -58,7 +58,7 @@ const ui = {
   speed: 1, sound: false, tool: 'look', selectedId: 0, picked: null, hoverId: 0, follow: false,
   trail: [], effects: [], zaps: [], zapNext: 0, allTraits: false, allStory: false,
   lastNews: {}, newsLog: [], newsOpen: false, records: perKind(() => 0), crashSaid: perKind(() => -1), seenHistory: 0,
-  releaseSex: perKind(() => 'F'), group: perKind(() => 1), mini: false, ring: null, sheetUp: false, naming: 0,
+  releaseSex: perKind(() => 'F'), group: perKind(() => 1), mini: false, ring: null, sheetUp: false,
   stats: { open: false, show: 'rabbit', range: 'five', hover: null },
   sky: { mix: {}, tick: 0, bolts: [], boom: -1e9, rainbow: -1e9, bowEnd: -1e9, menu: false },
 };
@@ -1261,7 +1261,6 @@ function render(now) {
     if (it.d) drawDecorShadow(it.d, it.sx, it.sy, sn);
     else if (it.c) {
       drawCreatureShadow(it.c, it.sx, it.sy, now, sn);
-      if (it.c.mine && !it.c.held && it.c.id !== ui.selectedId) drawRingUnder(it.c, it.sx, it.sy);
     } else if (it.v) drawVisitorShadow(it.v, it.sx, it.sy, sn);
   }
   for (const it of items) {
@@ -1318,7 +1317,7 @@ function render(now) {
   const hov = world.byId.get(ui.hoverId);
   if (hov && hov.alive && !hov.hidden && hov.id !== ui.selectedId) {
     const [sx, sy] = screenOf(hov);
-    drawLabel(`${hov.name} · ${S.mood(world, hov).text}`, sx, sy + creaturePx(hov) * 0.55 + 6, hov.mine);
+    drawLabel(`${hov.name} · ${S.mood(world, hov).text}`, sx, sy + creaturePx(hov) * 0.55 + 6);
   } else if (ui.hoverHive && ui.hoverHive !== ui.picked?.it) {
     const h = ui.hoverHive, [sx, sy] = toScreen(h.x, h.y);
     const where = h.patch && h.patch.field ? `the ${h.patch.field.name}` : 'flowers';
@@ -3512,10 +3511,10 @@ function drawPops(shown, now) {
     if (!p) { pops.set(c, { mode: c.mode, emoji: '', at: 0 }); continue; }
     if (p.mode !== c.mode) {
       p.mode = c.mode;
-      const yours = c.id === ui.selectedId;
-      if ((POPS.has(c.mode) || yours && c.mode === 'love') && ui.speed > 0 && ui.speed <= POP_SPEED && (yours || popsUp.length < POP_LIVE)) {
+      const followed = c.id === ui.selectedId;
+      if ((POPS.has(c.mode) || followed && c.mode === 'love') && ui.speed > 0 && ui.speed <= POP_SPEED && (followed || popsUp.length < POP_LIVE)) {
         p.emoji = S.mood(world, c).emoji; p.at = now;
-        if (!yours) popsUp.push(now);
+        if (!followed) popsUp.push(now);
       }
     }
     const t = now - p.at;
@@ -3749,35 +3748,13 @@ function drawSpots(now) {
   ctx.globalAlpha = 1;
 }
 
-function drawLabel(text, x, y, ring = false) {
+function drawLabel(text, x, y) {
   ctx.font = '800 12px Nunito, ui-rounded, system-ui, sans-serif';
-  const tw = ctx.measureText(text).width, w = tw + 16 + (ring ? 15 : 0);
+  const tw = ctx.measureText(text).width, w = tw + 16;
   ctx.fillStyle = 'rgba(255, 250, 240, 0.95)';
   ctx.beginPath(); ctx.roundRect(x - w / 2, y, w, 22, 11); ctx.fill();
-  if (ring) ctx.drawImage(RING, x - w / 2 + 7, y + 4, 14, 14);
   ctx.fillStyle = '#3b372f'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(text, x + (ring ? 7.5 : 0), y + 11.5);
-}
-
-// Yours wear a little brass ring, like a ringed bird: in their label, and as a thin band on the ground
-// under them, so you can pick them out of a crowd. Painted once.
-const RING = (() => {
-  const c = document.createElement('canvas'); c.width = c.height = 28;
-  const g = c.getContext('2d');
-  g.beginPath(); g.arc(14, 14, 9, 0, TAU);
-  g.lineWidth = 6; g.strokeStyle = '#7a5a1e'; g.stroke();
-  g.lineWidth = 3.5; g.strokeStyle = '#d9a640'; g.stroke();
-  g.beginPath(); g.arc(14, 14, 9, -2.7, -1.3);
-  g.lineWidth = 1.5; g.strokeStyle = '#fff1c2'; g.stroke();
-  return c;
-})();
-function drawRingUnder(c, sx, sy) {
-  const px = creaturePx(c);
-  if (px < 10) return;
-  const r = Math.max(7, px * 0.38), lw = Math.max(1.5, px * 0.05);
-  ctx.beginPath(); ctx.ellipse(sx, sy + px * 0.3, r, r * 0.4, 0, 0, TAU);
-  ctx.lineWidth = lw + 2; ctx.strokeStyle = 'rgba(92, 66, 20, 0.7)'; ctx.stroke();
-  ctx.lineWidth = lw; ctx.strokeStyle = '#e0ad45'; ctx.stroke();
+  ctx.fillText(text, x, y + 11.5);
 }
 
 function drawSelectionUnder(c, now) {
@@ -3826,9 +3803,9 @@ function drawSelectionOver(c, now) {
     ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ox, oy); ctx.stroke();
     ctx.restore();
   }
-  if (c.held && held) { const [hx, hy] = heldAt(held, now); drawLabel(c.name, hx, hy + creaturePx(c) * 0.55 + 6, c.mine); return; }
+  if (c.held && held) { const [hx, hy] = heldAt(held, now); drawLabel(c.name, hx, hy + creaturePx(c) * 0.55 + 6); return; }
   const label = c.hidden ? `${c.name} is ${c.species === 'crow' ? 'in the nest' : c.species === 'owl' ? 'in the hollow' : c.species === 'otter' ? 'in the holt' : `inside the ${c.species === 'bee' ? 'hive' : 'burrow'}`}` : c.name;
-  drawLabel(label, sx, sy + (c.hidden ? cam.zoom : creaturePx(c) * 0.55) + 6, c.mine);
+  drawLabel(label, sx, sy + (c.hidden ? cam.zoom : creaturePx(c) * 0.55) + 6);
 }
 
 // Where the sun is: shadows lean west in the morning and east in the evening,
@@ -6016,31 +5993,6 @@ function toggleNewsLog() {
 
 const link = c => c ? `<a data-id="${c.id}">${esc(c.name)}</a>` : 'someone';
 
-// One of yours gone: a line of its own, what took it and where. If it leaves young, one of them is offered
-// (never named for you): a tap on it opens the inspector to name it.
-const YOUNG_ONE = { rabbit: 'kit', fox: 'cub', crow: 'chick', owl: 'owlet', otter: 'cub' };
-const GONE_EMOJI = { fox: '🦊', owl: '🦉', left: '🧳', hunger: '🥀', lightning: '⚡', fire: '🔥', flood: '🌊', ice: '🧊', sickness: '🤒' };
-function goneLine(c, cause, killer) {
-  const at = cause === 'left' ? '' : placeNear(c.x, c.y), who = link(c);
-  const how = {
-    fox: `${link(killer)} the fox took ${who}`, owl: `${link(killer)} the owl took ${who}`,
-    left: `${who} flew off over the trees, to find a wood of its own`, hunger: `${who} starved`,
-    lightning: `Lightning struck ${who}`, fire: `The fire took ${who}`, flood: `${who} drowned in the flooded burrow`,
-    ice: `${who} went through the ice`, sickness: `The sickness took ${who}`,
-  }[cause] || `${who} died of old age`;
-  let t = `${GONE_EMOJI[cause] || '🌙'} <b>${how}</b>${at ? ' ' + at : ''}, ${days(S.ageDays(world, c))} old.`;
-  let kit = null, kd = Infinity;
-  for (const k of world.creatures) {
-    if (!k.alive || k.mine || k.mumId !== c.id && k.dadId !== c.id || S.growth(world, k) >= 1) continue;
-    const d = (k.x - c.x) ** 2 + (k.y - c.y) ** 2;
-    if (d < kd) { kit = k; kd = d; }
-  }
-  if (kit) {
-    const where = kit.hidden ? (kit.species === 'crow' ? 'in the nest' : kit.species === 'owl' ? 'in the hollow' : kit.species === 'otter' ? 'in the holt' : 'in the burrow') : placeNear(kit.x, kit.y) || 'not far off';
-    t += ` <a class="adopt" data-act="adopt" data-id="${kit.id}">${c.sex === 'F' ? 'Her' : 'His'} ${YOUNG_ONE[kit.species] || 'young one'} ${esc(kit.name)} is ${where} →</a>`;
-  }
-  return t;
-}
 const esc = s => String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
 
 const SEASON_NEWS = [
@@ -6095,10 +6047,10 @@ function toggleSound(on = !ui.sound) {
   try { localStorage.setItem('aeon-garden-sound', on ? '1' : '0'); } catch (e) { /* fine */ }
 }
 
-// The one you follow, or one of yours (you named it, or its hive's queen): its news always comes.
+// The one you follow: its news always comes.
 function involvesSelected(e) {
   const id = ui.selectedId;
-  return !!e.queen?.mine || [e.c, e.a, e.b, e.mum, e.dad, e.rabbit, e.fox, e.killer].some(x => x && (x.mine || id && x.id === id));
+  return !!id && [e.c, e.a, e.b, e.mum, e.dad, e.rabbit, e.fox, e.killer].some(x => x && x.id === id);
 }
 
 // Where something happened, by the nearest thing with a name (but skip): a flower field, an old tree or the water. '' with none near.
@@ -6305,11 +6257,9 @@ function handleEvent(e) {
     }
     case 'death': {
       const c = e.c;
-      if (c.mine) addNews(goneLine(c, e.cause, e.killer));
       if (e.cause !== 'left') hear(e.cause === 'fox' || e.cause === 'owl' ? 'catch' : e.cause === 'age' ? 'old' : 'starve', c.x, c.y, { species: c.species }, mine);   // (one flying off makes no sound)
       if (e.cause === 'fox' || e.cause === 'owl') addEffect('🦴', c.x, c.y, 0.3, 1800);
       else if (e.cause !== 'left') addEffect('👻', c.x, c.y, 1.6, 2000);
-      if (c.mine) break;
       if (e.cause === 'fox') {
         const t = `🦊 ${link(e.killer)} caught ${link(c)}${c.species === 'crow' ? ' the crow, off its guard' : ''}.`;
         if (mine) addNews(t); else addNews(t, 'catch', 7000);
@@ -6799,17 +6749,14 @@ function meadowFact() {
   if (planted && S.treeAge(world, planted) >= 1) add('planted', 3, `The ${treeLink(planted, treeName(planted).toLowerCase())} you planted is ${yearsOld(Math.floor(S.treeAge(world, planted)))} now.`);
   if (trees > 20) add('trees', 0.5, `${big(trees)} trees stand in the meadow.`);
 
-  const best = {}, mine = [];
+  const best = {};
   for (const c of world.creatures) {
     if (!c.alive || c.species === 'bee') continue;
     const b = best[c.species] ||= { old: c, kids: c, kills: c, esc: c, fish: c, gen: c };
     if (c.born < b.old.born) b.old = c;
     for (const k of ['kids', 'kills', 'fish', 'gen']) if (c[k] > b[k][k]) b[k] = c;
     if (c.escapes > b.esc.escapes) b.esc = c;
-    if (c.mine) mine.push(c);
   }
-  for (const c of mine) add(`mine${c.id}`, 4, `Your ${link(c)} is ${days(S.ageDays(world, c))} old`
-    + (c.kids ? ` and has had ${c.kids} ${YOUNG_WORD[c.species]}.` : '.'));
   for (const s of kindsHere()) {
     const b = best[s], sp = S.SPECIES[s].name.toLowerCase();
     if (!b) {
@@ -7578,11 +7525,7 @@ const stripHTML = (tint, face, name, line, meter) => `
   </div>`;
 
 const STORY_SHORT = 4;                    // life-story lines shown before "Show all"
-const RING_HTML = '<span class="ring" title="Yours: you named it"></span>';
-// The name at the top of the inspector, when you can name it: a tap turns it into a field (startNaming).
-const nameButton = (html, title) => `<button class="name-edit" data-act="name" title="${title}">${html}<span class="pen" aria-hidden="true">✏️</span></button>`;
 function renderInspector() {
-  if (ui.naming && document.activeElement?.id === 'name-input') return;   // not under your typing
   const box = $('#inspector');
   const c = world.byId.get(ui.selectedId), thing = !c && ui.picked;
   const strip = !!(c || thing) && !ui.sheetUp && narrow();
@@ -7597,7 +7540,7 @@ function renderInspector() {
   const mood = S.mood(world, c);
   const e = c.energy / c.maxEnergy;
   if (strip) {
-    setHTML(box, stripHTML(furCss(c), portraitHTML(c), `${esc(c.name)}${c.mine ? RING_HTML : ''} <span class="sex">${sex}</span>`,
+    setHTML(box, stripHTML(furCss(c), portraitHTML(c), `${esc(c.name)} <span class="sex">${sex}</span>`,
       `${mood.emoji || '🙂'} ${esc(mood.text)}`, c.alive && [e, e < 0.3 ? 'low' : '']));
     return;
   }
@@ -7626,7 +7569,6 @@ function renderInspector() {
   else if (c.alive && c.immune > world.tick) chips.push(`🛡️ Immune to the sickness for ${days((c.immune - world.tick) / S.TPD)}`);
   const story = c.story.slice().reverse().slice(0, ui.allStory ? Infinity : STORY_SHORT).map(s =>
     `<li><span>${s.emoji}</span><span>${esc(s.text)}<div class="when">${when(s.t)}</div></span></li>`).join('');
-  const nameable = c.alive && c.species !== 'bee', named = esc(c.name) + (c.mine ? RING_HTML : '');
   const living = c.alive ? '' : world.creatures.find(k => k.mumId === c.id || k.dadId === c.id);
 
   setHTML(box, `
@@ -7634,8 +7576,7 @@ function renderInspector() {
     <div class="ins-head">
       <div class="portrait" style="background:${furCss(c)}33">${portraitHTML(c)}</div>
       <div>
-        <div class="ins-name">${ui.naming === c.id ? nameInput(c.name) : nameable
-          ? nameButton(named, c.mine ? 'Rename it' : "Give it a name of your own: you'll hear how its life goes") : named} <span style="color:var(--muted)">${sex}</span></div>
+        <div class="ins-name">${esc(c.name)} <span style="color:var(--muted)">${sex}</span></div>
         <div class="ins-sub">${c.alive ? `${c.sp.name} · ${lifeStage(c)} · ${age} ${age === 1 ? 'day' : 'days'} old`
           : `${c.sp.name} · lived ${age} ${age === 1 ? 'day' : 'days'}`}</div>
       </div>
@@ -7820,7 +7761,6 @@ const THINGS = {
       if (bees.length) sections.push(['Bees', linkList(bees)]);
       return {
         emoji: h.cluster ? '🐝' : '🌳', tint: '#e8b83a', name: h.cluster ? `Queen ${q.name}'s swarm` : q ? `Queen ${q.name}'s hive` : 'Empty hive',
-        queen: q && { key: 'hive:' + h.id, name: q.name, mine: q.mine, what: h.cluster ? 'swarm' : 'hive' },
         sub: h.cluster ? 'A swarm looking for a home' : `A hollow in an old ${treeName(h.tree).toLowerCase()}`, status, chips, facts, sections,
         meters: [['Honey', h.honey / S.HIVE_FULL, 'honey'], ['Room', h.bees / S.HIVE_ROOM, h.bees >= S.HIVE_ROOM * 0.8 ? 'low' : '']],
       };
@@ -8111,7 +8051,7 @@ function thingAt(sx, sy) {
 }
 
 function pick(kind, it, at) {
-  Object.assign(ui, { selectedId: 0, follow: false, trail: [], sheetUp: false, naming: 0, picked: { kind, it, at, name: '' } });
+  Object.assign(ui, { selectedId: 0, follow: false, trail: [], sheetUp: false, picked: { kind, it, at, name: '' } });
   renderInspector();
 }
 
@@ -8128,8 +8068,7 @@ function renderThing(box, strip) {
     <div class="ins-head">
       <div class="portrait" style="background:${v.tint || '#d9c9a8'}33">${v.emoji}</div>
       <div>
-        <div class="ins-name">${!v.queen ? esc(v.name) : ui.naming === v.queen.key ? `Queen ${nameInput(v.queen.name)}`
-          : nameButton(esc(v.name) + (v.queen.mine ? RING_HTML : ''), v.queen.mine ? 'Rename the queen' : "Name the queen: her hive is yours, and you'll hear how it goes")}</div>
+        <div class="ins-name">${esc(v.name)}</div>
         <div class="ins-sub">${esc(v.sub)}</div>
       </div>
       <button class="close" data-act="close" title="Close (Esc)">✕</button>
@@ -8167,82 +8106,10 @@ function select(id, zoomIn = true) {
   ui.trail = [];
   ui.follow = !!id;
   ui.sheetUp = false;
-  ui.naming = 0;
   flick.vx = flick.vy = 0;
   const close = narrow() ? 16 : 22;           // a phone keeps a little more of the meadow around it
   if (id && zoomIn && cam.zoom < close - 2) cam.goal = close;
   renderInspector();
-}
-
-// ------------------------------------------------------------------ naming
-//
-// A tap on the name at the top of the inspector (nameButton) turns it into a field: Enter or a tap away keeps it,
-// Esc lets it be. A named animal is yours (sim.js nameCreature): its news comes first and on the away card, its death
-// gets a line of its own (goneLine), it wears a ring (RING), and it's in the Yours card, gone or not. A bee is named
-// at its hive: the queen.
-const nameInput = name => `<input id="name-input" class="name-input" maxlength="${S.NAME_MAX}" value="${esc(name)}" aria-label="Its name" enterkeyhint="done" autocomplete="off" spellcheck="false">`;
-function startNaming() {
-  const key = ui.picked ? ui.picked.kind === 'hive' && ui.picked.it.queen && 'hive:' + ui.picked.it.id : ui.selectedId;
-  if (!key) return;
-  ui.naming = key; ui.sheetUp = true;
-  renderInspector();
-  const el = $('#name-input');
-  if (el) { el.focus(); el.select(); }
-}
-function endNaming(keep) {
-  const el = $('#name-input'), key = ui.naming;
-  if (!key) return;
-  ui.naming = 0;
-  if (keep && el) {
-    if (typeof key === 'number') {
-      const c = world.byId.get(key), was = c?.mine;
-      if (c && c.alive && S.nameCreature(world, c, el.value)) named(link(c), was, c.sex === 'F' ? 'her' : 'him');
-    } else {
-      const h = world.hives.find(o => 'hive:' + o.id === key), was = h?.queen?.mine;
-      if (h && S.nameQueen(world, h, el.value)) named(`Queen ${esc(h.queen.name)}`, was, 'her hive');
-    }
-  }
-  renderInspector();
-  if (yoursOpen()) renderYours();
-}
-function named(who, was, them) {
-  chime('named');
-  tried('name');
-  addNews(was ? `🏷️ Renamed ${who}.` : `🏷️ <b>${who}</b> is yours now. You'll hear how it goes for ${them}.`);
-}
-document.addEventListener('keydown', e => {
-  if (e.target.id !== 'name-input') return;
-  if (e.key === 'Enter') { e.preventDefault(); endNaming(true); }
-  else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); endNaming(false); }
-}, true);
-document.addEventListener('focusout', e => { if (e.target.id === 'name-input') endNaming(true); });
-
-// The Yours card (••• Yours): everyone you named, the living first, each a tap away. While open, it updates
-// once a second.
-const yours = { at: 0 };
-const yoursOpen = () => !$('#yours').classList.contains('hidden');
-function toggleYours(open = !yoursOpen()) {
-  $('#yours').classList.toggle('hidden', !open);
-  if (open) { renderYours(); yours.at = performance.now(); }
-}
-const GONE_SAY = { fox: 'taken by a fox', owl: 'taken by an owl', left: 'flew off to a wood of its own', hunger: 'starved', lightning: 'struck by lightning',
-  fire: 'caught in a fire', flood: 'drowned in the burrow', ice: 'went through the ice', sickness: 'died of the sickness', age: 'died of old age' };
-function renderYours() {
-  const mine = [...world.byId.values()].filter(c => c.mine);
-  const living = mine.filter(c => c.alive).sort((a, b) => a.born - b.born), gone = mine.filter(c => !c.alive).sort((a, b) => b.died - a.died);
-  const rows = [];
-  for (const h of world.hives) if (h.queen?.mine) rows.push(`<li><span>👑</span><span>${thingLink('hive', h.id, `Queen ${esc(h.queen.name)}`)} · ${h.bees} ${h.bees === 1 ? 'bee' : 'bees'}, ${Math.round(h.honey)} honey</span></li>`);
-  for (const c of living) {
-    const m = S.mood(world, c);
-    rows.push(`<li><span>${c.sp.emoji}</span><span>${link(c)} · ${esc(m.text.toLowerCase())}<div class="when">${lifeStage(c)}, ${days(S.ageDays(world, c))} old</div></span></li>`);
-  }
-  for (const d of world.decor) if (d.planted) rows.push(`<li><span>🌳</span><span>${thingLink('tree', d.id, esc(treeTitle(d)))}<div class="when">planted in the ${plantedWhen(d)}</div></span></li>`);
-  for (const h of world.hedges || []) {
-    const n = hedgeWhips(h).length;
-    rows.push(`<li${n ? '' : ' class="gone"'}><span>🌿</span><span>${hedgeLink(h, esc(h.name))} · ${n ? `${n} ${n === 1 ? 'whip' : 'whips'}, ${HEDGE_STAGE[hedgeStage(h)]}` : 'gone'}<div class="when">planted in the ${whenIn(h.planted)}</div></span></li>`);
-  }
-  for (const c of gone) rows.push(`<li class="gone"><span>🪦</span><span>${link(c)} · ${GONE_SAY[c.cause] || 'gone'}<div class="when">${when(c.died)}, ${days(S.ageDays(world, c))} old</div></span></li>`);
-  setHTML($('#yours-list'), rows.join('') || `<li class="none">Nobody yet. Click an animal and tap its name to give it one of your own: you'll hear how its life goes. A bee is named at its hive, by its queen. The trees you plant are here too, and at ?keep your hedges.</li>`);
 }
 
 // The sheet on a phone: tap the folded line for more and the handle for less (the click handler), or
@@ -8919,7 +8786,7 @@ function stripFacts(f, hives) {
   return out;
 }
 
-// A hedge the keeper planted: its whips standing, the one in its middle (what a link to it opens), its stage, and in
+// A hedge the keeper planted: its whips standing, the one in its middle (what a link to it opens), and in
 // the inspector what it is and what comes next.
 const hedgeWhips = h => world.decor.filter(d => d.hedge === h.id && S.standing(d));
 function hedgeMiddle(h) {
@@ -8931,8 +8798,6 @@ function hedgeLink(h, text) {
   const d = hedgeMiddle(h);
   return d ? thingLink('tree', d.id, text) : text;
 }
-const HEDGE_STAGE = { whips: 'newly planted', young: 'thick enough to hide a rabbit', blossom: 'blossomed', haws: 'bearing haws' };
-const hedgeStage = h => (h.haws ? 'haws' : h.blossom ? 'blossom' : h.young ? 'young' : 'whips');
 function hedgeFacts(h) {
   const whips = hedgeWhips(h), n = whips.length, lost = h.whips - n, size = n ? whips.reduce((a, d) => a + d.size, 0) / n : 0;
   const next = S.hedgeForecast(world, size);
@@ -9048,7 +8913,7 @@ const BLOOM_SOON = { soon: 'in a day', days: 'in 2 or 3 days', autumn: 'in 3 day
 
 // What a tool brings, with when or where: [icon, what, when, the Dry Year's].
 function tipRows(k, touch) {
-  if (k === 'look') return [['🐇', 'Follow an animal', touch ? 'tap it' : 'click it'], ['🏷️', 'Make it yours', touch ? 'tap its name' : 'click its name'],
+  if (k === 'look') return [['🐇', 'Follow an animal', touch ? 'tap it' : 'click it'], ['🌳', 'Read a tree, a hive, the water', touch ? 'tap it' : 'click it'],
     ['⏸', 'Stop time', touch ? 'the ⏸ button' : 'space']];
   const crows = ['🐦‍⬛', 'Crows come', 'at once'];
   if (k === 'pond') return [...(S.dryComing(world) ? [['☀️', 'Green banks in the Dry Year', `${S.DRY_NEAR} tiles`, true]] : []),
@@ -9540,24 +9405,12 @@ document.addEventListener('click', e => {
   else if (t.dataset.show) { ui.stats.show = t.dataset.show; renderStats(); }
   else if (t.dataset.range) { ui.stats.range = t.dataset.range; renderStats(); }
   else if (t.dataset.act === 'follow') { ui.follow = !ui.follow; renderInspector(); }
-  else if (t.dataset.act === 'name') startNaming();
   else if (t.dataset.act === 'traits') { ui.allTraits = !ui.allTraits; renderInspector(); }
   else if (t.dataset.act === 'story') { ui.allStory = !ui.allStory; renderInspector(); }
   else if (t.dataset.act === 'spot') { const s = spots.find(s => s.id === +t.dataset.spot); if (s) goSpot(s); }
-  else if (t.dataset.act === 'yours') toggleYours();
-  else if (t.dataset.act === 'adopt') {
-    const c = world.byId.get(+t.dataset.id);
-    if (ui.stats.open) toggleStats(false);
-    if (yoursOpen()) toggleYours(false);
-    if (c && c.alive) { select(c.id); startNaming(); }
-  }
-  else if (t.dataset.thing) {
-    if (t.closest('#yours')) toggleYours(false);
-    goToThing(t.dataset.thing);
-  }
+  else if (t.dataset.thing) goToThing(t.dataset.thing);
   else if (t.dataset.id) {
     if (ui.stats.open) toggleStats(false);
-    if (yoursOpen()) toggleYours(false);
     const c = world.byId.get(+t.dataset.id);
     if (c) select(c.id);
   }
@@ -9613,7 +9466,7 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'Escape' && placing) dropPlace();   // a pond being placed: called off
   else if (e.key === 'Escape') {
     const more = !$('#more-menu').classList.contains('hidden');
-    awayOpen() ? closeAway() : lostOpen() ? showLost(false) : homeOpen() ? homeGuide(false) : webOpen() ? toggleWeb(false) : yoursOpen() ? toggleYours(false) : ui.ring ? closeRing() : $('#toolbar').classList.contains('open') ? toggleTools(false) : ui.sky.menu ? toggleSkyMenu(false) : more ? toggleMore(false) : ui.stats.open ? toggleStats(false)
+    awayOpen() ? closeAway() : lostOpen() ? showLost(false) : homeOpen() ? homeGuide(false) : webOpen() ? toggleWeb(false) : ui.ring ? closeRing() : $('#toolbar').classList.contains('open') ? toggleTools(false) : ui.sky.menu ? toggleSkyMenu(false) : more ? toggleMore(false) : ui.stats.open ? toggleStats(false)
       : ui.tool !== 'look' ? setTool('look') : select(0);
   }
   else if (e.key === 's') toggleStats();
@@ -9813,7 +9666,6 @@ const TRIES = [                          // what to try, a hint, and what it say
   { k: 'fox', e: '🦊', text: 'Let a fox loose by the rabbits', hint: 'They know what to do.', said: 'Run, rabbits!' },
   { k: 'sky', e: '🌦️', text: 'Change the weather', hint: 'A heatwave dries the grass out for a fire.' },
   { k: 'look', e: '🌳', text: 'Click a tree, a hive or a burrow', hint: 'Everything here has a story.', said: 'Rocks, flowers and water have theirs too.' },
-  { k: 'name', e: '🏷️', text: 'Give an animal a name', hint: 'Click one, then tap its name.', said: 'It’s yours now: you’ll hear how it goes.' },
   { k: 'plant', e: '🌳', text: 'Plant a tree', hint: 'Pick the kind: an oak is slow, a birch quick, a hawthorn guards its neighbours.', said: 'Mind the rabbits: a seedling is a mouthful.' },
   { k: 'carry', e: '🫳', text: 'Pick up an animal and carry it', hint: 'Press on it and drag. On a phone, hold a finger on it.', said: 'Mind where you put it down.' },
   { k: 'fast', e: '⏩', text: 'Watch a year go by at 60×', hint: 'The rabbits boom and crash.', said: 'The meadow keeps going while you’re away, too.' },
@@ -10507,7 +10359,7 @@ function awayProgress() {
   $('#away-text').textContent = `The meadow kept its own time. ${S.SEASONS[S.seasonOf(world.tick)].emoji} ${when(world.tick)}…`;
 }
 
-// Called by addNews while catching up: yours, or big news, goes on the card.
+// Called by addNews while catching up: the one you follow, or big news, goes on the card.
 function awayNews(html) {
   const rank = away.mine ? -1 : AWAY_BIG.indexOf(away.type);
   if ((away.mine || rank >= 0) && !away.news.some(n => n.html === html)) away.news.push({ html, rank });
@@ -10525,7 +10377,7 @@ function awayDone() {
     + (to === S.SEASONS[0] ? ` Year ${S.clock(world).year} has begun.` : '')
     + (away.waited ? ' Then it stopped to wait for you: the Dry Year is coming.' : '');
   $('#away-life').textContent = [born && `🐣 Born: ${born}.`, died && `🥀 Gone: ${died}.`].filter(Boolean).join('\n') || 'A quiet season.';
-  const own = away.news.filter(n => n.rank < 0).length;   // yours first, and a few more of them
+  const own = away.news.filter(n => n.rank < 0).length;   // the one you follow first, and a few more of its
   const top = away.news.sort((a, b) => a.rank - b.rank).slice(0, clamp(own, 3, 5));
   $('#away-news').innerHTML = top.map(n => `<li>${n.html}</li>`).join('');
   away.news = [];
@@ -10592,7 +10444,7 @@ function showWorld(w) {
   const seed = w.seed;
   intro.family = [];
   groundSeed = [(seed % 97) * 3.7, (seed % 89) * 4.3];
-  Object.assign(ui, { selectedId: 0, picked: null, hoverId: 0, follow: false, trail: [], effects: [], zaps: [], lastNews: {}, newsLog: [], naming: 0 });
+  Object.assign(ui, { selectedId: 0, picked: null, hoverId: 0, follow: false, trail: [], effects: [], zaps: [], lastNews: {}, newsLog: [] });
   pollen.until = 0; pollen.t0.fill(-1e9);
   ui.records = perKind(s => world.count[s]);
   ui.crashSaid = perKind(() => -1);
@@ -10610,7 +10462,6 @@ function showWorld(w) {
   updateMeadowCard();
   if (ui.stats.open) renderStats();
   if (webOpen()) updateWeb();
-  if (yoursOpen()) renderYours();
 }
 
 let last = performance.now(), acc = 0, lastCard = 0, lastRecord = 0, lastStatsCards = 0;
@@ -10728,7 +10579,6 @@ function frame(now) {
     renderStatsCards();
   }
   if (webOpen() && now - web.at > 1000) { web.at = now; updateWeb(); }
-  if (yoursOpen() && now - yours.at > 1000) { yours.at = now; renderYours(); }
   if (world.history.t.length !== lastRecord) { lastRecord = world.history.t.length; checkPopulationNews(); }
   if (opening > 1 && ++opening > 4) cleared();       // a kept meadow that opened fine
   requestAnimationFrame(frame);

@@ -286,12 +286,6 @@
   .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
   .chip { background: var(--accent-soft); color: #9a5024; border-radius: 99px; padding: 4px 11px; font-weight: 800; font-size: 12px; }
   #inspector h4 { margin: 24px 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); }
-  /* the name at the top: tap it to name (game.js, nameButton) */
-  .name-edit { border: none; background: none; padding: 0; font: inherit; color: inherit; text-align: left; cursor: text;
-    text-decoration: underline dashed transparent 1.5px; text-underline-offset: 4px; }
-  .name-edit .pen { font-size: 0.6em; margin: 0 3px 0 7px; vertical-align: 0.2em; opacity: 0.7; }
-  .name-edit:hover { text-decoration-color: #c9b38c; }
-  .name-edit:hover .pen { opacity: 1; }
   /* the traits that stand out; a tap shows them all */
   .traits { display: flex; align-items: center; gap: 6px; width: 100%; margin-top: 20px; padding: 0; border: none; background: none;
     font: inherit; font-size: 13.5px; font-weight: 700; color: var(--ink); text-align: left; }
@@ -410,22 +404,6 @@
   #ask .go:hover { background: #44702f; }
   #ask .go:disabled { opacity: 0.5; }
   #ask.sent :is(textarea, .btns, .ask-q), #ask:not(.sent) .ask-thanks { display: none; }
-
-  /* ---- the animals you named (game.js, renderYours). Like #web. */
-  #yours { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 9; box-sizing: border-box; width: min(400px, calc(100% - 32px));
-    max-height: calc(100% - 24px); overflow: hidden auto; scrollbar-width: thin; padding: 16px 20px 14px;
-    background: var(--paper, none) #f7eedc; border-radius: 22px; box-shadow: 0 20px 60px rgba(50, 40, 15, 0.3); }
-  #yours:not(.hidden) > * { animation: pop-in 0.18s ease-out; }
-  #yours-list { margin: 10px 0 0; }
-  #yours-list .gone { opacity: 0.75; }
-  #yours-list .none { display: block; color: var(--muted); line-height: 1.5; }
-  /* yours wear a brass ring (game.js RING) */
-  .ring { display: inline-block; width: 0.5em; height: 0.5em; margin: 0 0 0.08em 0.3em; vertical-align: middle; border-radius: 50%;
-    border: 0.12em solid #d9a640; box-shadow: 0 0 0 1px #7a5a1e, inset 0 0 0 1px #7a5a1e; }
-  .name-input { width: 9em; max-width: 100%; box-sizing: border-box; padding: 0 6px; font: inherit; color: var(--ink);
-    border: 1.5px solid #4f7f3a; border-radius: 8px; background: #fffaf0; }
-  .name-input:focus { outline: none; }
-  a.adopt { white-space: nowrap; }
 
   /* ---- who ate whom: the food web (game.js, updateWeb). Like #ask. */
   #web { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 9; box-sizing: border-box; width: min(470px, calc(100% - 32px));
@@ -1121,7 +1099,6 @@
     <button class="menu-item phone-only" data-act="sky"><span class="e">🌦️</span> <span class="l">Weather</span></button>
     <button class="menu-item phone-only" data-act="stats"><span class="e">📊</span> <span class="l">Graphs<span class="x"> and records</span></span></button>
     <button class="menu-item" data-act="web" title="This meadow's food web: who ate whom, and how much"><span class="e">🕸️</span> <span class="l">Who ate whom</span></button>
-    <button class="menu-item" data-act="yours" title="The animals you named, and how they're doing"><span class="e">🏷️</span> <span class="l">Yours</span></button>
     <button class="menu-item phone-only" data-act="sound" id="sound-item"><span class="e">🔇</span> <span class="l">Sound is off</span></button>
     <button class="menu-item hidden" data-act="home" id="home-item"><span class="e">📱</span> <span class="l">Add to<span class="x"> your</span> home screen</span></button>
     <button class="menu-item" data-act="guide" title="A few things to do in the meadow, gentle and not"><span class="e">📓</span> <span class="l">Things to try</span></button>
@@ -1255,10 +1232,6 @@
   <p class="ask-thanks">Thank you! 🌼 It's on its way.</p>
 </div>
 
-<div id="yours" class="hidden" role="dialog" aria-labelledby="yours-title">
-  <div class="web-head"><h2 class="fr" id="yours-title">Yours</h2><button class="close" data-act="yours" title="Back to the meadow (Esc)">✕</button></div>
-  <ul id="yours-list" class="story"></ul>
-</div>
 
 <div id="away" class="hidden" role="dialog" aria-labelledby="away-title" aria-live="polite">
   <h2 class="fr" id="away-title">While you were away…</h2>

@@ -2265,7 +2265,6 @@ function makeCreature(w, species, x, y, genes, parents) {
     caches: null,         // a crow's acorns and beechnuts buried this autumn (cacheNut)
     mate: 0,              // a crow's mate, for life (by id; mateOf)
     perch: null,          // an owl's branch: where it sits hunting, or sleeps by day (owlTick)
-    mine: false,          // the player gave it its name (nameCreature)
   };
   computeTraits(c);
   c.energy = c.maxEnergy * (parents ? 0.6 : 0.8);
@@ -5901,8 +5900,7 @@ const UNKEPT = ['grid', 'grids', 'events', 'newborn', 'current'];   // on the wo
 let tableNames = null;                                     // object -> 'SPECIES.fox', made the first time
 // Of the dead (w.byId keeps them a few years), a kept meadow keeps only those still spoken of: parents
 // (the family in the inspector), foxes (a rabbit's nemesis) and the lately gone (the news).
-// Yours are never forgotten.
-const remembered = (w, c) => c.alive || c.mine || c.kids || c.species === 'fox' || w.tick - c.died < SEASON_DAYS * TPD;
+const remembered = (w, c) => c.alive || c.kids || c.species === 'fox' || w.tick - c.died < SEASON_DAYS * TPD;
 
 function nameTables() {
   tableNames = new Map();
@@ -5979,7 +5977,8 @@ function unpackWorld(kept) {
     w.history[s] ??= w.history.t.map(() => 0); w.history.traits[s] ??= w.history.t.map(() => null);
   }
   for (const c of w.creatures) delete c.held;                // (kept while the player held one up)
-  for (const c of w.byId.values()) c.mine ??= false;         // (kept before the player could name them)
+  for (const c of w.byId.values()) delete c.mine;           // (kept while the player could name them: theirs, then)
+  for (const h of w.hives) if (h.queen) delete h.queen.mine;
   for (const d of w.decor) if (d.tree) { d.planted ??= 0; delete d.bank; }   // (or plant trees; d.bank: the holts' old reckoning, now d.holtFish)
   if (w.lake && !w.lake.near) {                              // (kept while a lake was circles)
     w.lake.near = new Uint8Array(W * H);
@@ -6013,16 +6012,6 @@ function unpackWorld(kept) {
 
 // ---------------------------------------------------------------- player powers
 
-// The player names an animal, and it's theirs: the news and the away card tell of it first. A bee is named
-// at its hive: the player names the queen.
-const NAME_MAX = 24;
-function nameCreature(w, c, name) {
-  name = String(name).replace(/\s+/g, ' ').trim().slice(0, NAME_MAX);
-  if (!name || name === c.name && c.mine) return false;
-  note(w, c, '🏷️', c.mine ? `Renamed ${name}` : `Given the name ${name}`);
-  c.name = name; c.mine = true;
-  return true;
-}
 // The player plants a tree: a seedling of that kind, the smallest there is. From then on it lives by the
 // same rules as a wild one (treesTick): rabbits eat it unless thorns guard it, the shade holds it back, fire
 // and flood kill it. It needs a spot a wild seed could come up in, but neither luck nor room in the woods.
@@ -6825,13 +6814,6 @@ function potter(w, v, up) {
   snuffle(w, v);
 }
 
-function nameQueen(w, h, name) {
-  name = String(name).replace(/\s+/g, ' ').trim().slice(0, NAME_MAX);
-  if (!h.queen || !name || name === h.queen.name) return false;
-  h.queen.name = name; h.queen.mine = true;
-  return true;
-}
-
 function paintGrass(w, x, y, radius) {
   const s = SEASONS[seasonOf(w.tick)];
   for (let yy = Math.floor(y - radius); yy <= y + radius; yy++) {
@@ -7164,7 +7146,7 @@ function mood(w, c) {
 const api = {
   W, H, TPD, SHALLOW, DEEP, SEASON_DAYS, YEAR_DAYS, SEASONS, SPECIES, GENES, COATS, GROUND, WEATHER,
   createWorld, step, clock, isNight, phaseOf, seasonOf, mood, ageDays, growth, isAdult, patchFresh,
-  addCreature, paintGrass, setSky, lockSky, zap, burnLine, lift, putDown, nameCreature, nameQueen, NAME_MAX, plantTree, pondPlan, digPond, frogsNear, POND_BRUSH, POND_DAB, POND_TILES, REED_DAYS, stripPlan, sowStrip, stripKind, STRIP_TILES, hedgePlan, plantHedge, hedgeForecast, inHedge, HEDGE_MOST,
+  addCreature, paintGrass, setSky, lockSky, zap, burnLine, lift, putDown, plantTree, pondPlan, digPond, frogsNear, POND_BRUSH, POND_DAB, POND_TILES, REED_DAYS, stripPlan, sowStrip, stripKind, STRIP_TILES, hedgePlan, plantHedge, hedgeForecast, inHedge, HEDGE_MOST,
   hedgehogComes, VISIT_FADE,
   dryStage, dryness, dryComing, dryFrom, dryTo, DRY_NEAR, greenShare, wildGreen, stripBloom, GREEN_GRASS, WILT, BARREN, BARREN_DAYS, traitMeans, walkable, packWorld, unpackWorld,
   coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT, KINDS, OWLS, FEW, DANGER, dryCounting,

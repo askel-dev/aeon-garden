@@ -77,8 +77,8 @@ The player plants trees too: the 🌳 Plant tool (T, or 🌳 in the ring) opens 
 (game.js `PLANT_KINDS`, `plantAt`), and `plantTree` (sim.js) sets down a seedling the smallest there is, with
 `d.planted` (when; `by: 'you'`), where a wild seed could come up but with no luck or room roll. It lives by the
 wild ones' rules from then on. The news tells how it does (events `plantlost` with its cause and the rabbit that
-ate it, `plantgrew` past the rabbits' reach, `plantseeds` its first seed), the inspector says when you planted it,
-and the Yours card lists the ones still standing. No `KEEP_VERSION` bump.
+ate it, `plantgrew` past the rabbits' reach, `plantseeds` its first seed), and the inspector says when you planted it.
+No `KEEP_VERSION` bump.
 
 Apple trees (`w.orchard`) drop windfalls early in autumn (`windfallTick`, `d.apples`), a big meal that hungry rabbits
 walk a way for (`windfall`), so the apple trees are where they gather in autumn, and where the foxes find them.
