@@ -216,7 +216,7 @@ const spriteStep = px => px < 16 ? Math.round(px) : Math.round(2 ** (Math.round(
 // through sizes all the time: their sprites come in steps of about 19%, the size above, drawn a little smaller. Below
 // the size they're painted at (shrunk) they're tiny and many, so one size an octave does, drawn up to half as big.
 const poseStep = px => px < FUR_PAINTED / dpr ? 2 ** Math.ceil(Math.log2(px)) : Math.ceil(2 ** (Math.ceil(Math.log2(px) * 4) / 4));
-const posed = art => art.startsWith('fox:') || art.startsWith('rabbit:') || art.startsWith('hog:');
+const posed = art => art.startsWith('fox:') || art.startsWith('rabbit:') || art.startsWith('hog:') || art.startsWith('heron:');
 function sprite(emoji, want, tint, leaf, center) {
   want = Math.max(4, want);
   const px = posed(emoji) ? poseStep(want) : spriteStep(want), s = paintedSprite(emoji, px, tint, leaf, center);
@@ -1248,9 +1248,9 @@ function render(now) {
     items.push(it);
     if (!c.held) shown.push(it);                           // (one held up has its shadow here, and is drawn last, in the hand)
   }
-  if (world.visitors) for (const v of world.visitors) {    // (?keep: a hedgehog at a hedge)
+  if (world.visitors) for (const v of world.visitors) {    // (?keep: a hedgehog at a hedge, a heron at a pond)
     const d = drawnAt(v), [sx, sy] = toScreen(d.x, d.y);
-    if (visible(sx, sy, 40)) items.push({ y: d.y, v, sx, sy, f: 1 - mistAt(d.x, d.y) });
+    if (visible(sx, sy, 40 + 2 * visitorPx(v))) items.push({ y: d.y, v, sx, sy, f: 1 - mistAt(d.x, d.y) });
   }
   items.sort((a, b) => a.y - b.y);
   // Shadows first, all together, so a tree's shadow never lands on a rabbit behind it.
@@ -1618,46 +1618,122 @@ const wading = c => !c.hidden && !c.sp.flies && !world.frozen && world.water[(c.
 
 // ------------------------------------------------------------------ visitors
 //
-// A visitor (sim.js w.visitors) is no creature: a hedgehog the keeper's hedge drew in. It's painted like the animals
-// (paintHedgehog): its legs go round with the ground it covers, it snuffles with its nose down, and curled up asleep
-// under the hedge by day it breathes, a 💤 over it close up. It fades in and out over the first and last VISIT_FADE
-// tiles of its way, as if out of the long grass.
+// A visitor (sim.js w.visitors) is no creature: a hedgehog the keeper's hedge drew in, or a heron at a pond the keeper
+// dug. Each is painted like the animals. A hedgehog (paintHedgehog): its legs go round with the ground it covers, it
+// snuffles with its nose down, and curled up asleep under the hedge by day it breathes, a 💤 over it close up. It fades
+// in and out over the first and last VISIT_FADE tiles of its way, as if out of the long grass. A heron (paintHeron,
+// drawHeron) fades in and out of the sky over HERON_FADE.
+// size: next to a rabbit (a hedgehog a little bigger than life, to be seen); badge: its marker's picture; glyph: painted,
+// with no emoji, so a line of text shows its portrait (visitorGlyph).
 const VISITORS = {
-  hedgehog: { name: 'hedgehog', emoji: '🦔', art: 'hog:0', tint: '#a07c5a', for: 'the beetles under' },
+  hedgehog: { name: 'hedgehog', emoji: '🦔', badge: '🦔', art: 'hog:0', tint: '#a07c5a', for: 'the beetles under', home: 'hedge', size: 1, fade: S.VISIT_FADE },
+  heron: { name: 'heron', emoji: '', badge: 'heron:1', art: 'heron:1', tint: '#a9b4bf', for: 'the frogs in', home: 'pond', size: 1.85, fade: S.HERON_FADE, glyph: true },
 };
 const visitorFace = kind => {      // its painting, for the inspector
   const art = VISITORS[kind].art;
   if (!portraits.has(art)) portraits.set(art, dataURL(sprite(art, 38).canvas));
-  return `<img src="${portraits.get(art)}" alt="${VISITORS[kind].emoji}">`;
+  return `<img src="${portraits.get(art)}" alt="${VISITORS[kind].name}"${VISITORS[kind].glyph ? ' style="width: 115%"' : ''}>`;   // (a painting has room round it)
 };
-const HOG_SIZE = 1;                // next to a rabbit (a little bigger than life, to be seen)
+// Its emoji, in a line of text (the news, the away card); or a painted one's portrait, as a CSS background
+// (--glyph-heron), so the news kept with the meadow holds a few bytes, not the picture.
+function visitorGlyph(kind) {
+  const k = VISITORS[kind];
+  if (!k.glyph) return k.emoji;
+  if (!k.glyphed) { visitorFace(kind); document.documentElement.style.setProperty('--glyph-' + kind, `url(${portraits.get(k.art)})`); k.glyphed = true; }
+  return `<i class="visitor-glyph" style="background-image: var(--glyph-${kind})" role="img" aria-label="${k.name}"></i>`;
+}
+// Where it came to: the hedge, or the pond; and a link to it.
+const visitorPlace = v => (v.hedge ? v.hedge.name : world.waters[v.pond.id].name);
+const placeLink = v => (v.hedge ? hedgeLink(v.hedge, esc(v.hedge.name)) : thingLink('water', v.pond.id, esc(visitorPlace(v))));
 const HOG_STEP = 0.16;             // tiles a step of its walk
-const visitorPx = () => (8 + cam.zoom) * HOG_SIZE;
-const hogSteps = new WeakMap();     // how far it has walked, as drawn: { x, y, walked, at }
+const HERON_STEP = 0.2;            // and of a heron's stalk
+const visitorPx = v => (8 + cam.zoom) * VISITORS[v.kind].size;
+// Its feet are on the ground where a rabbit's would be, however big it's drawn: this far below the point it's drawn round.
+const visitorFeet = () => 0.36 * (8 + cam.zoom);
+// How far above that point the top of its head is drawn (for its marker).
+const visitorTop = v => (v.kind === 'heron' ? visitorPx(v) * 0.8 - visitorFeet() + heronLift(v, visitorPx(v)) : visitorPx(v) * 0.6);
+const visitorSteps = new WeakMap();     // how far it has walked, as drawn: { x, y, walked, at }
 function visitorFade(v) {
-  if (v.mode === 'in') return clamp(Math.hypot(v.x - v.fx, v.y - v.fy) / S.VISIT_FADE, 0, 1);
-  if (v.mode === 'out') return clamp(Math.hypot(v.x - v.tx, v.y - v.ty) / S.VISIT_FADE, 0, 1);
+  const f = VISITORS[v.kind].fade;
+  if (v.mode === 'in') return clamp(Math.hypot(v.x - v.fx, v.y - v.fy) / f, 0, 1);
+  if (v.mode === 'out') return clamp(Math.hypot(v.x - v.tx, v.y - v.ty) / f, 0, 1);
   return 1;
 }
-function visitorArt(v) {
-  if (v.mode === 'sleep') return 'hog:3';
-  if (v.mode === 'snuffle') return 'hog:2';
+// Which of the two steps of its walk it's on: the next one each `step` tiles it has covered as drawn, so it stops when it stops.
+function stepOf(v, step) {
   const d = drawnAt(v);
-  let w = hogSteps.get(v);
-  if (!w) hogSteps.set(v, w = { x: d.x, y: d.y, walked: 0, at: -1 });
+  let w = visitorSteps.get(v);
+  if (!w) visitorSteps.set(v, w = { x: d.x, y: d.y, walked: 0, at: -1 });
   if (w.at !== spriteFrame) {
     const k = Math.hypot(d.x - w.x, d.y - w.y);
     if (k < 1) w.walked += k;
     w.x = d.x; w.y = d.y; w.at = spriteFrame;
   }
-  return ui.speed > FEW_FRAMES ? 'hog:0' : 'hog:' + (Math.floor(w.walked / HOG_STEP) & 1);
+  return Math.floor(w.walked / step) & 1;
+}
+function visitorArt(v) {
+  if (v.mode === 'sleep') return 'hog:3';
+  if (v.mode === 'snuffle') return 'hog:2';
+  const s = stepOf(v, HOG_STEP);
+  return ui.speed > FEW_FRAMES ? 'hog:0' : 'hog:' + s;
 }
 function drawVisitor(v, sx, sy, now, z) {
-  const px = visitorPx(), a = visitorFade(v);
+  const px = visitorPx(v), a = visitorFade(v);
   if (a < 0.02) return;
+  if (v.kind === 'heron') { drawHeron(v, sx, sy, now, z, px, a); return; }
   const asleep = v.mode === 'sleep', squash = 1 + (asleep && ui.speed > 0 ? Math.sin(now / 650 + v.id) * 0.035 : 0);
   drawEmoji(visitorArt(v), sx, sy + px * 0.4 * (1 - squash), px, { flip: v.facing > 0, squash, alpha: a < 1 ? a : undefined });
   if (asleep && z >= 8) drawEmoji('💤', sx + px * 0.3, sy - px * 0.55 + Math.sin(now / 600 + v.id) * 3, Math.max(11, z * 0.7), { alpha: 0.85 });
+}
+// A heron (sim.js heronTick) flies in high and glides down over its last HERON_GLIDE tiles, climbs as it goes, and
+// crosses the pond in a low arc. It wades in the shallows to its shins, rings round its legs, and its stab ends in a
+// splash. Watching, it's poised, now and then stretched up (by its watch's timer, so it keeps the sim's time); at night
+// it sleeps on one leg, a 💤 over it close up.
+const HERON_GLIDE = 2.5;           // tiles it glides down over, landing (and climbs over, taking off)
+const HERON_HIGH = 1.1;            // how high it flies, in its size
+const HERON_BEAT = 280;            // ms a wingbeat: slow and deep
+function heronLift(v, px) {
+  const d = drawnAt(v), x = d.x, y = d.y;
+  if (v.mode === 'in') return px * HERON_HIGH * clamp(Math.hypot(v.tx - x, v.ty - y) / HERON_GLIDE, 0, 1);
+  if (v.mode === 'out') return px * HERON_HIGH * clamp(Math.hypot(x - v.ox, y - v.oy) / HERON_GLIDE, 0, 1);
+  if (v.mode !== 'hop') return 0;
+  const all = Math.hypot(v.tx - v.ox, v.ty - v.oy);
+  return all ? px * 0.45 * Math.sin(Math.PI * clamp(Math.hypot(x - v.ox, y - v.oy) / all, 0, 1)) : 0;
+}
+function heronArt(v, up, px, now) {
+  if (v.mode === 'sleep') return 'heron:9';
+  if (v.mode === 'in' || v.mode === 'out' || v.mode === 'hop') {
+    if (up < px * 0.12) return 'heron:0';                   // (just down, or not yet up)
+    return ui.speed > 0 && ui.speed <= FEW_FRAMES ? 'heron:' + (7 + ((now / HERON_BEAT + v.id) & 1)) : 'heron:7';
+  }
+  if (v.mode === 'stab') return 'heron:4';
+  if (v.mode === 'gulp') return v.caught === 'fish' ? 'heron:6' : 'heron:5';
+  if (v.mode === 'stalk') { const s = stepOf(v, HERON_STEP); return 'heron:' + (ui.speed > FEW_FRAMES ? 2 : 2 + s); }
+  return v.timer % 100 >= 70 ? 'heron:0' : 'heron:1';
+}
+const wadingAt = v => !world.frozen && world.water[(v.y | 0) * S.W + (v.x | 0)] > 0;
+function drawHeron(v, sx, sy, now, z, px, a) {
+  const feet = sy + visitorFeet(), up = heronLift(v, px), art = heronArt(v, up, px, now), flip = v.facing > 0, alpha = a < 1 ? a : undefined;
+  const y = feet - px * 0.36 - up;
+  if (up > 1 || !wadingAt(v)) drawEmoji(art, sx, y, px, { flip, alpha });
+  else {
+    const line = feet - px * 0.04, legs = sx + (flip ? -1 : 1) * px * 0.1, rip = 1 + 0.12 * Math.sin(now / 300 + v.id);
+    ctx.save();
+    ctx.beginPath(); ctx.rect(sx - px, line - px * 2, px * 2, px * 2); ctx.clip();
+    drawEmoji(art, sx, y + px * 0.04, px, { flip, alpha });
+    ctx.restore();
+    ctx.strokeStyle = 'rgba(240, 250, 255, 0.7)';
+    ctx.lineWidth = Math.max(1, px * 0.025);
+    ctx.beginPath(); ctx.ellipse(legs, line, px * 0.13 * rip, px * 0.035 * rip, 0, 0, TAU); ctx.stroke();
+    const reach = (flip ? 1 : -1) * px * 0.36;
+    if (v.mode === 'stab' && world.water[(v.y | 0) * S.W + ((v.x + reach / cam.zoom) | 0)] > 0) {   // the splash, ringing out from the bill
+      const u = clamp((S.HERON_STAB - v.timer + acc) / S.HERON_STAB, 0, 1), bill = sx + reach;
+      ctx.globalAlpha = 0.8 * (1 - u);
+      ctx.beginPath(); ctx.ellipse(bill, line, px * (0.05 + 0.16 * u), px * (0.015 + 0.045 * u), 0, 0, TAU); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  }
+  if (v.mode === 'sleep' && z >= 8) drawEmoji('💤', sx + px * 0.18, y - px * 0.22 + Math.sin(now / 600 + v.id) * 3, Math.max(11, z * 0.7), { alpha: 0.85 });
 }
 // Seeing one (its marker looked at, or a tap on it) puts it in the field journal, once a visit (v.seen, kept with the
 // meadow). The journal is the player's, not the meadow's (JOURNAL, in the browser): each kind ever seen, when it was
@@ -1682,9 +1758,12 @@ function tapVisitor(v) {
   seeSpot(s, d.x, d.y, performance.now());
 }
 function drawVisitorShadow(v, sx, sy, sn) {
-  const px = visitorPx(), a = (0.14 + 0.16 * Math.max(0, sn.a)) * visitorFade(v), off = Math.max(0, sn.a) * sn.lean * px * 0.2;
+  const px = visitorPx(v), heron = v.kind === 'heron', up = heron ? heronLift(v, px) : 0;
+  if (heron && up <= 1 && wadingAt(v)) return;               // (wading: the rings round its legs are its shadow)
+  const a = (0.14 + 0.16 * Math.max(0, sn.a)) * visitorFade(v) / (1 + 2 * up / px), off = Math.max(0, sn.a) * sn.lean * (px * 0.2 + up * 0.5);
+  const rx = heron ? px * (up > 1 ? 0.4 : 0.2) : px * 0.38, ry = heron ? px * 0.05 : px * 0.1;
   ctx.fillStyle = `rgba(40, 50, 20, ${a})`;
-  ctx.beginPath(); ctx.ellipse(sx + off, sy + px * 0.36, px * 0.38 + Math.abs(off) * 0.6, px * 0.1, 0, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(sx + off, sy + visitorFeet(), rx + Math.abs(off) * 0.6, ry, 0, 0, TAU); ctx.fill();
 }
 
 function drawCreature(c, sx, sy, now) {
@@ -2026,6 +2105,169 @@ function paintHedgehog(g, size, U, pose) {
     (x, y) => Math.atan2(y - 0.3, x - 0.15) + 1.15, 0.2, 91);
   furGlow(g, [255, 242, 214], 0.24, 0.1, -0.14, 0.42, 0.13);                   // the light along the top
   feet(true);
+}
+
+// A grey heron, facing left, soft-shaded like the hedgehog: a blue-grey back and folded wing with a black patch at its
+// bend, long pale plumes drooping over the tail, a long white neck streaked black down the front, a white head with a
+// black stripe back from the eye into a trailing crest, a yellow dagger of a bill, long yellowish legs. Box -1 to 1,
+// feet on the ground at 0.72. Each pose: the body [x, y, rx, ry, tilt], the neck from its root to the head (a bezier's
+// 4 points), the head [x, y, tilt] (the bill down for a tilt over 0), the legs far then near [hip, heel, foot] (null:
+// tucked up out of sight), fly: the wings up (1) or down (2), and catch: a frog (1) or a fish (2) held up in the bill.
+// 'heron:0' standing up, 1 poised (neck drawn back, looking down into the water), 2 and 3 the two steps of a stalk,
+// 4 the stab, 5 and 6 a frog and a fish held up, 7 and 8 flying with the wings up and down, 9 asleep on one leg.
+const HERON_BACK = [146, 156, 168], HERON_WING = [118, 128, 144], HERON_PALE = [230, 230, 224], HERON_INK = [40, 41, 48];
+const HERON_BILL = [232, 176, 62], HERON_LEG = [176, 150, 96];
+const HERON_POSES = [
+  { body: [0.22, -0.02, 0.33, 0.165, 0.5], neck: [-0.04, -0.14, -0.26, -0.36, 0.02, -0.56, -0.12, -0.74], head: [-0.13, -0.76, 0],
+    legs: [[0.26, 0.1, 0.27, 0.42, 0.26, 0.71], [0.16, 0.1, 0.16, 0.42, 0.13, 0.71]] },
+  { body: [0.24, 0.06, 0.33, 0.165, 0.3], neck: [-0.02, -0.02, 0.06, -0.38, -0.3, -0.44, -0.34, -0.3], head: [-0.36, -0.28, 0.5],
+    legs: [[0.28, 0.16, 0.34, 0.44, 0.27, 0.71], [0.18, 0.16, 0.24, 0.44, 0.14, 0.71]] },
+  { body: [0.22, 0.0, 0.33, 0.165, 0.28], neck: [-0.04, -0.08, -0.22, -0.2, -0.26, -0.44, -0.4, -0.54], head: [-0.42, -0.55, 0.25],
+    legs: [[0.26, 0.12, 0.38, 0.38, 0.22, 0.52], [0.16, 0.12, 0.18, 0.42, 0.08, 0.71]] },
+  { body: [0.22, 0.0, 0.33, 0.165, 0.28], neck: [-0.04, -0.08, -0.24, -0.22, -0.28, -0.46, -0.42, -0.54], head: [-0.44, -0.55, 0.25],
+    legs: [[0.26, 0.12, 0.28, 0.42, 0.32, 0.71], [0.16, 0.12, 0.28, 0.4, 0.08, 0.52]] },
+  { body: [0.26, 0.06, 0.33, 0.165, 0.02], neck: [-0.04, 0.0, -0.22, 0.08, -0.36, 0.22, -0.46, 0.38], head: [-0.48, 0.4, 1.0],
+    legs: [[0.3, 0.16, 0.36, 0.44, 0.32, 0.71], [0.2, 0.16, 0.24, 0.44, 0.12, 0.71]] },
+  { body: [0.22, -0.02, 0.33, 0.165, 0.5], neck: [-0.04, -0.14, -0.22, -0.4, 0.04, -0.6, -0.08, -0.76], head: [-0.1, -0.78, -0.55],
+    legs: [[0.26, 0.1, 0.27, 0.42, 0.26, 0.71], [0.16, 0.1, 0.16, 0.42, 0.13, 0.71]], catch: 1 },
+  { body: [0.22, -0.02, 0.33, 0.165, 0.5], neck: [-0.04, -0.14, -0.22, -0.4, 0.04, -0.6, -0.08, -0.76], head: [-0.1, -0.78, -0.55],
+    legs: [[0.26, 0.1, 0.27, 0.42, 0.26, 0.71], [0.16, 0.1, 0.16, 0.42, 0.13, 0.71]], catch: 2 },
+  { body: [0.1, 0.0, 0.34, 0.13, 0.04], neck: [-0.16, 0.0, -0.3, 0.14, -0.44, 0.1, -0.42, -0.04], head: [-0.42, -0.05, 0.08], fly: 1 },
+  { body: [0.1, 0.0, 0.34, 0.13, 0.04], neck: [-0.16, 0.0, -0.3, 0.14, -0.44, 0.1, -0.42, -0.04], head: [-0.42, -0.05, 0.08], fly: 2 },
+  { body: [0.16, 0.06, 0.3, 0.2, 0.8], neck: [0.0, -0.14, -0.14, -0.18, -0.14, -0.34, -0.06, -0.4], head: [-0.06, -0.42, 0.65],
+    legs: [null, [0.15, 0.24, 0.15, 0.46, 0.12, 0.71]], sleep: true },
+];
+// A point and the way along the neck's bezier n at t.
+const bez = (n, t) => {
+  const u = 1 - t, a = u * u * u, b = 3 * u * u * t, c = 3 * u * t * t, d = t * t * t;
+  const da = -3 * u * u, db = 3 * u * u - 6 * u * t, dc = 6 * u * t - 3 * t * t, dd = 3 * t * t;
+  return [a * n[0] + b * n[2] + c * n[4] + d * n[6], a * n[1] + b * n[3] + c * n[5] + d * n[7],
+    da * n[0] + db * n[2] + dc * n[4] + dd * n[6], da * n[1] + db * n[3] + dc * n[5] + dd * n[7]];
+};
+function heronLeg(g, leg, near) {
+  if (!leg) return;
+  const [hx, hy, kx, ky, fx, fy] = leg, rgb = near ? HERON_LEG : tone(HERON_LEG, 0.72), up = fy < 0.66;
+  strokeIn(g, rockRGB(near ? HERON_BACK : tone(HERON_BACK, 0.8)), 0.075, () => { g.moveTo(hx, hy); g.lineTo(hx + (kx - hx) * 0.35, hy + (ky - hy) * 0.35); });   // the feathered thigh
+  strokeIn(g, rockRGB(rgb), 0.034, () => { g.moveTo(hx + (kx - hx) * 0.2, hy + (ky - hy) * 0.2); g.lineTo(kx, ky); g.lineTo(fx, fy); });
+  strokeIn(g, rockRGB(rgb), 0.022, () => {                                       // the toes: three forward, one back (curled, lifted)
+    if (up) { g.moveTo(fx, fy); g.lineTo(fx - 0.04, fy + 0.07); g.moveTo(fx, fy); g.lineTo(fx - 0.08, fy + 0.05); return; }
+    g.moveTo(fx + 0.05, fy + 0.005); g.lineTo(fx - 0.11, fy + 0.012);
+    g.moveTo(fx, fy); g.lineTo(fx - 0.07, fy + 0.03);
+  });
+}
+// A wing spread, side on: from its root along the back (r0 to r1) out to the wrist, bent forward, and on to the tip,
+// swept back: broad and grey, darkening out along the hand of long flight feathers to a black fingered tip, the
+// feathers along the trailing edge dark too. W: [r0x, r0y, r1x, r1y, wristx, wristy, tipx, tipy, trailx, traily]
+// (trail: where the hand's fingers end on the trailing edge); far: the one behind, in shade.
+const HERON_WINGS = {
+  up: [-0.1, -0.03, 0.26, -0.03, -0.2, -0.46, 0.22, -0.86, 0.36, -0.5],
+  down: [-0.1, 0.04, 0.26, 0.04, -0.16, 0.34, 0.26, 0.66, 0.36, 0.34],
+};
+function heronWing(g, W, far, dx = 0, dy = 0) {
+  const [r0x, r0y, r1x, r1y, wx, wy, tx, ty, ex, ey] = W.map((v, i) => v + (i % 2 ? dy : dx)), k = far ? 0.74 : 1;
+  const shape = () => {
+    g.moveTo(r0x, r0y); g.quadraticCurveTo(r0x - 0.16, (r0y + wy) / 2, wx, wy);
+    g.quadraticCurveTo(wx + 0.04, ty, tx, ty);
+    for (let f = 1; f <= 4; f++) {                                             // the fingers, back along the end of the hand
+      const u = f / 5, x = tx + (ex - tx) * u, y = ty + (ey - ty) * u;
+      g.lineTo(x - 0.035, y - (ey - ty) * 0.08); g.lineTo(x, y);
+    }
+    g.quadraticCurveTo(ex + 0.02, (ey + r1y) / 2, r1x, r1y); g.closePath();
+  };
+  const mx = (r0x + r1x) / 2, my = (r0y + r1y) / 2, gr = g.createLinearGradient(mx, my, tx, ty);
+  gr.addColorStop(0, rockRGB(tone(HERON_WING, k * 1.12, 8))); gr.addColorStop(0.42, rockRGB(tone(HERON_WING, k)));
+  gr.addColorStop(0.62, rockRGB(tone(HERON_INK, k * 1.25))); gr.addColorStop(1, rockRGB(tone(HERON_INK, k)));
+  g.fillStyle = gr; g.beginPath(); shape(); g.fill();
+  g.save(); g.beginPath(); shape(); g.clip();
+  strokeIn(g, rockRGB(tone(HERON_INK, k * 1.5), 0.55), 0.12, () => { g.moveTo(r1x + 0.05, r1y); g.quadraticCurveTo(ex + 0.07, (ey + r1y) / 2, ex + 0.05, ey); });   // the trailing edge
+  strokeIn(g, rockRGB(tone(HERON_PALE, k * 0.95), 0.5), 0.035, () => { g.moveTo(r0x - 0.02, r0y); g.quadraticCurveTo(r0x - 0.16, (r0y + wy) / 2, wx, wy); });   // the leading edge, pale
+  g.restore();
+}
+// What it holds up in its bill: a frog, legs dangling, or a silver fish, across the bill at (x, y).
+function heronCatch(g, x, y, fish) {
+  g.save(); g.translate(x, y);
+  if (fish) {
+    g.rotate(0.35);
+    softIn(g, [196, 204, 206], -0.05, 0.05, () => { g.moveTo(-0.15, 0); g.quadraticCurveTo(0, -0.07, 0.12, 0); g.quadraticCurveTo(0, 0.07, -0.15, 0); }, 1.25, 0.65);
+    fillIn(g, rockRGB([150, 160, 160]), () => { g.moveTo(0.1, 0); g.lineTo(0.2, -0.05); g.lineTo(0.19, 0.05); g.closePath(); });
+    fillIn(g, '#1c1c1c', () => discAt(g, -0.1, -0.01, 0.012));
+  } else {
+    g.rotate(1.3); g.scale(0.2, 0.2);
+    frogAt(g, true);
+  }
+  g.restore();
+}
+function paintHeron(g, size, U, pose) {
+  if (shrunk(g, size, U, 'heron:' + pose)) return;
+  const P = HERON_POSES[pose] || HERON_POSES[0], [bx, by, rx, ry, tilt] = P.body, n = P.neck, [hx, hy, ha] = P.head;
+  g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
+  g.lineCap = g.lineJoin = 'round';
+  if (P.fly) heronWing(g, P.fly === 1 ? HERON_WINGS.up : HERON_WINGS.down, true, 0.15, P.fly === 1 ? -0.1 : -0.04);   // the far wing
+  if (P.legs) heronLeg(g, P.legs[0], false);
+  if (P.fly) {                                                                    // the legs, trailing behind
+    strokeIn(g, rockRGB(tone(HERON_LEG, 0.85)), 0.03, () => { g.moveTo(0.34, 0.04); g.lineTo(0.94, 0.02); g.moveTo(0.34, 0.08); g.lineTo(0.92, 0.07); });
+  }
+  const back = () => {                                                            // the body, and the plumes drooping over the tail
+    g.save(); g.translate(bx, by); g.rotate(tilt); g.ellipse(0, 0, rx, ry, 0, 0, TAU); g.restore();
+  };
+  const ca = Math.cos(tilt), sa = Math.sin(tilt), at = (u, v) => [bx + u * ca - v * sa, by + u * sa + v * ca];   // a point in the body's own frame
+  const [tx, ty] = at(rx * 0.95, ry * 0.2);
+  softIn(g, HERON_BACK, by - ry - 0.1, by + ry + 0.1, () => {                     // the tail
+    g.moveTo(...at(rx * 0.6, -ry * 0.6)); g.lineTo(tx + 0.12 * ca, ty + 0.12 * sa); g.lineTo(...at(rx * 0.6, ry * 0.8)); g.closePath();
+  }, 1.1, 0.7);
+  softIn(g, HERON_BACK, by - ry * 1.2, by + ry * 1.2, back, 1.2, 0.62);
+  // The neck: a pale tube, lit along its front, the black streaks down it; its root sunk into the breast.
+  const neckW = P.sleep ? 0.15 : P.fly ? 0.12 : 0.095;
+  strokeIn(g, rockRGB(tone(HERON_PALE, 0.8)), neckW, () => { g.moveTo(n[0], n[1]); g.bezierCurveTo(n[2], n[3], n[4], n[5], n[6], n[7]); });
+  strokeIn(g, rockRGB(HERON_PALE), neckW * 0.62, () => { g.moveTo(n[0] - 0.012, n[1] - 0.006); g.bezierCurveTo(n[2] - 0.016, n[3] - 0.006, n[4] - 0.016, n[5] - 0.006, n[6] - 0.012, n[7] - 0.004); });
+  if (!P.sleep) {
+    for (let t = 0.22; t < 0.86; t += 0.09) {                                     // the streaks down its front (the side the head faces)
+      const [x, y, dx, dy] = bez(n, t), l = Math.hypot(dx, dy) || 1, nx = dy / l, ny = -dx / l, s = nx < 0 ? 1 : -1;
+      fillIn(g, rockRGB(HERON_INK, 0.75), () => ovalAt(g, x + nx * s * neckW * 0.32, y + ny * s * neckW * 0.32, 0.018, 0.009, Math.atan2(dy, dx)));
+    }
+  }
+  if (P.fly) softIn(g, HERON_PALE, n[1], n[1] + 0.2, () => ovalAt(g, n[0] - 0.12, n[1] + 0.07, 0.1, 0.07, 0.3), 1.05, 0.7);   // the neck, folded down under the head
+  // The breast: pale plumes hanging over the front of the body.
+  if (!P.fly) softIn(g, HERON_PALE, n[1] - 0.04, n[1] + 0.26, () => {
+    const [px, py] = at(-rx * 0.82, 0);
+    g.moveTo(n[0] + 0.06, n[1] - 0.02); g.quadraticCurveTo(px - 0.1, py - 0.02, px - 0.02, py + 0.16); g.lineTo(px + 0.08, py + 0.04); g.closePath();
+  }, 1.05, 0.78);
+  // The folded wing (or the near wing spread), the black patch at its bend, the grey plumes over the tail.
+  if (P.fly) heronWing(g, P.fly === 1 ? HERON_WINGS.up : HERON_WINGS.down, false);
+  else {
+    const wing = () => { g.save(); g.translate(...at(rx * 0.12, -ry * 0.12)); g.rotate(tilt); g.ellipse(0, 0, rx * 0.8, ry * 0.7, 0, 0, TAU); g.restore(); };
+    softIn(g, HERON_WING, by - ry, by + ry * 0.6, wing, 1.15, 0.7);
+    fillIn(g, rockRGB(HERON_INK, 0.85), () => { const [x, y] = at(-rx * 0.62, -ry * 0.42); ovalAt(g, x, y, 0.06, 0.04, tilt); });
+    const [p0x, p0y] = at(rx * 0.05, -ry * 0.8), [p1x, p1y] = at(rx * 1.5, ry * 0.55), [p2x, p2y] = at(rx * 0.35, ry * 0.25);
+    softIn(g, tone(HERON_BACK, 1.1), by - ry, by + ry + 0.1, () => {          // the long grey plumes drooping off the back
+      g.moveTo(p0x, p0y); g.quadraticCurveTo(...at(rx * 1.0, -ry * 0.9), p1x, p1y);
+      g.quadraticCurveTo(...at(rx * 0.9, ry * 0.45), p2x, p2y); g.closePath();
+    }, 1.12, 0.8);
+    strokeIn(g, rockRGB(tone(HERON_BACK, 0.75), 0.55), 0.011, () => {
+      for (const v of [-0.45, -0.05]) { const [x0, y0] = at(rx * 0.5, ry * v); g.moveTo(x0, y0); g.quadraticCurveTo(...at(rx * 1.1, ry * (v + 0.35)), p1x - 0.02, p1y - 0.005); }
+    });
+    if (!P.sleep) fillIn(g, rockRGB(HERON_INK, 0.6), () => { const [x, y] = at(-rx * 0.3, ry * 0.75); ovalAt(g, x, y, rx * 0.42, 0.018, tilt); });   // the dark band down its flank
+  }
+  heronLeg(g, P.legs?.[1], true);
+  // The head: white, a black stripe back from the eye into a trailing crest, the bill a long yellow dagger.
+  g.save(); g.translate(hx, hy); g.rotate(-ha);
+  const bill = () => { g.moveTo(-0.06, -0.035); g.quadraticCurveTo(-0.24, -0.03, -0.42, 0.012); g.quadraticCurveTo(-0.24, 0.03, -0.06, 0.038); g.closePath(); };
+  softIn(g, HERON_BILL, -0.04, 0.04, bill, 1.2, 0.72);
+  strokeIn(g, rockRGB(tone(HERON_BILL, 0.6), 0.6), 0.008, () => { g.moveTo(-0.07, 0.004); g.lineTo(-0.38, 0.01); });
+  softIn(g, HERON_PALE, -0.07, 0.07, () => ovalAt(g, 0, 0, 0.088, 0.066), 1.1, 0.78);
+  fillIn(g, rockRGB(HERON_INK), () => { g.moveTo(-0.04, -0.03); g.quadraticCurveTo(0.04, -0.08, 0.09, -0.02); g.quadraticCurveTo(0.03, -0.02, -0.04, -0.012); g.closePath(); });
+  strokeIn(g, rockRGB(HERON_INK), 0.016, () => { g.moveTo(0.06, -0.035); g.quadraticCurveTo(0.16, -0.05, 0.26, -0.02); g.moveTo(0.06, -0.025); g.quadraticCurveTo(0.14, -0.03, 0.22, 0.0); });
+  if (P.sleep) strokeIn(g, rockRGB(HERON_INK, 0.8), 0.012, () => { g.moveTo(-0.055, -0.012); g.quadraticCurveTo(-0.035, -0.002, -0.015, -0.012); });
+  else {
+    fillIn(g, '#e8cf52', () => discAt(g, -0.035, -0.014, 0.017));
+    fillIn(g, '#16130f', () => discAt(g, -0.038, -0.014, 0.009));
+  }
+  g.restore();
+  if (P.catch) {
+    const c = Math.cos(ha), s = Math.sin(ha);
+    heronCatch(g, hx - 0.26 * c, hy + 0.26 * s + 0.01, P.catch === 2);
+  }
+  furGlow(g, [255, 255, 255], 0.16, bx - 0.04, by - ry * 0.7, rx * 0.6, ry * 0.4, tilt);   // the light along the back
 }
 
 // Otters are painted, not the 🦦 emoji: it floats on its back, and differs from system to system.
@@ -3598,8 +3840,8 @@ function spotOf(e) {
     case 'hedgeyoung': return { emoji: '🌿', o: e.hedge, say: `${e.hedge.name} can hide a rabbit now` };
     case 'hedgebloom': return { emoji: '🌸', o: e.hedge, say: `${e.hedge.name} is white with blossom` };
     case 'hedgehaws': return { emoji: '🔴', o: e.hedge, say: `${e.hedge.name} is red with haws` };
-    case 'visitor': return { emoji: VISITORS[e.v.kind].emoji, o: e.v, thing: ['visitor', e.v], visitor: e.v.kind, stay: true,
-      say: `A ${VISITORS[e.v.kind].name}, come for ${VISITORS[e.v.kind].for} ${e.v.hedge.name}` };
+    case 'visitor': return { emoji: VISITORS[e.v.kind].badge, o: e.v, thing: ['visitor', e.v], visitor: e.v.kind, stay: true,
+      say: `A ${VISITORS[e.v.kind].name}, come for ${VISITORS[e.v.kind].for} ${visitorPlace(e.v)}` };
   }
   return null;
 }
@@ -3651,8 +3893,8 @@ function sayArt(s) {
   g.fillStyle = '#fffaf0';
   g.beginPath(); g.roundRect(2, 2, w, h, h / 2); g.fill();
   g.lineWidth = 1.6; g.strokeStyle = '#c99a3e'; g.stroke();
-  const em = sprite(s.emoji, e, undefined, undefined, true);
-  g.drawImage(em.canvas, 2 + pad - 2, 2 + (h - em.size) / 2, em.size, em.size);
+  const big = paintedBig(s.emoji), em = sprite(s.emoji, e * big, undefined, undefined, true);
+  g.drawImage(em.canvas, 2 + pad - 2 - (big - 1) * e * 0.65, 2 + (h - em.size) / 2, em.size, em.size);   // (a painting's middle where an emoji's would be)
   g.font = font; g.fillStyle = '#3b372f'; g.textBaseline = 'middle';
   g.fillText(s.say, 2 + pad + e + 4, 2 + h / 2 + 0.5);
   return { canvas: c, w: w + 4, h: h + 6 };
@@ -3669,6 +3911,8 @@ function seeSpot(s, x, y, now) {
   chime(first ? 'named' : 'seen');
 }
 
+// A painting (a visitor's: 'heron:1') sits in a box with room round it, where an emoji fills its own: asked this much bigger.
+const paintedBig = emoji => (emoji.includes(':') ? 1.5 : 1);
 const spotBadges = new Map();        // a badge for each emoji, painted once: a parchment disc, a brass rim, the emoji
 function spotBadge(emoji) {
   const key = emoji + '|' + dpr;
@@ -3683,7 +3927,7 @@ function spotBadge(emoji) {
   g.fillStyle = '#fffaf0';
   g.beginPath(); g.arc(0, 0, r, 0, TAU); g.fill();
   g.lineWidth = 2.2; g.strokeStyle = '#c99a3e'; g.stroke();
-  const e = sprite(emoji, r * 1.25, undefined, undefined, true);
+  const e = sprite(emoji, r * 1.25 * paintedBig(emoji), undefined, undefined, true);
   g.drawImage(e.canvas, -e.size / 2, -e.size / 2, e.size, e.size);
   b = { canvas: c, size };
   spotBadges.set(key, b);
@@ -3699,7 +3943,7 @@ function drawSpots(now) {
     s.last = now;
     if (s.seenAt ? now - s.seenAt > (s.art ? SAY_MS : SPOT_FADE) : (s.stay ? s.o.gone : now - s.at > SPOT_S * 1000) || (isAnimal(s.o) && !s.o.alive)) { spots.splice(i, 1); continue; }
     const { x, y } = spotAt(s), [sx, sy] = toScreen(x, y);
-    const lift = isAnimal(s.o) ? creaturePx(s.o) * 0.75 : s.visitor ? visitorPx() * 0.6 : 14, bob = Math.sin(now / 420 + s.id) * 3;
+    const lift = isAnimal(s.o) ? creaturePx(s.o) * 0.75 : s.visitor ? visitorTop(s.o) : 14, bob = Math.sin(now / 420 + s.id) * 3;
     let bx = sx, by = sy - lift - SPOT_R - 8 + bob;
     const on = bx > left && bx < right && by > top && by < bottom;
     if (!s.seenAt && on && cam.zoom >= SPOT_ZOOM && Math.abs(sx - cx) < (right - left) * 0.4 && Math.abs(sy - cy) < (bottom - top) * 0.4) {
@@ -4330,7 +4574,7 @@ function putPainting(p, f, alpha, snow, ox, oy) {
   if (snow && p.snow) { ctx.globalAlpha = alpha * snow; ctx.drawImage(p.snow, x, y, w, h); }
   ctx.globalAlpha = 1;
 }
-const PAINTERS = { fox: paintFox, rabbit: paintRabbit, hog: paintHedgehog, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, vole: paintVole, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody, bee: paintBee, fall: paintFall, tuft: paintTuftSprite };
+const PAINTERS = { fox: paintFox, rabbit: paintRabbit, hog: paintHedgehog, heron: paintHeron, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, vole: paintVole, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody, bee: paintBee, fall: paintFall, tuft: paintTuftSprite };
 function drawDecor(d, sx, sy, now, ck, clipLeaves) {
   const z = cam.zoom, px = d.tree ? treePx(d) : d.size * z;
   if (d.emoji === '🪨') { drawRock(d, sx, sy); return; }
@@ -6188,15 +6432,17 @@ function handleEvent(e) {
     case 'hedgehaws':
       addNews(`🔴 Your hedge ${hedgeLink(e.hedge, esc(e.hedge.name))} is red with haws: the birds will carry them off.`);
       break;
-    case 'visitor': {                   // (?keep) a hedgehog come to a hedge
-      const v = e.v, k = VISITORS[v.kind], h = hedgeLink(v.hedge, esc(v.hedge.name));
-      addNews(v.n > 1 ? `${k.emoji} A ${thingLink('visitor', v.id, k.name)} is at your hedge ${h} again, snuffling for beetles.`
-        : `${k.emoji} <b>A ${thingLink('visitor', v.id, k.name)} has come to your hedge ${h}</b>, for ${k.for} it.`);
+    case 'visitor': {                   // (?keep) a hedgehog come to a hedge, a heron to a pond
+      const v = e.v, k = VISITORS[v.kind], at = placeLink(v), who = thingLink('visitor', v.id, k.name), em = visitorGlyph(v.kind);
+      if (v.kind === 'heron') addNews(v.n > 1 ? `${em} A ${who} is back at ${at}, the pond you dug, after its frogs.`
+        : `${em} <b>A ${who} is flying in to ${at}</b>, the pond you dug, for its frogs.`);
+      else addNews(v.n > 1 ? `${em} A ${who} is at your hedge ${at} again, snuffling for beetles.`
+        : `${em} <b>A ${who} has come to your hedge ${at}</b>, for ${k.for} it.`);
       break;
     }
     case 'visitorleft': {
-      const v = e.v, k = VISITORS[v.kind];
-      addNews(`${k.emoji} The ${k.name} has left ${hedgeLink(v.hedge, esc(v.hedge.name))} after ${days((world.tick - v.came) / S.TPD)}.`);
+      const v = e.v, k = VISITORS[v.kind], stayed = days((world.tick - v.came) / S.TPD), fed = v.kind === 'heron' && heronCaught(v);
+      addNews(`${visitorGlyph(v.kind)} The ${k.name} has ${v.kind === 'heron' ? 'flown off from' : 'left'} ${placeLink(v)} after ${stayed}${fed ? `, ${fed} the fatter` : ''}.`);
       break;
     }
     case 'plantgrew':
@@ -7696,34 +7942,58 @@ function waterLine() {
   return ['〰️', 'The water is at its usual line'];
 }
 
+// A visitor in the inspector: what it's up to, what drew it, what it has found, how long it stays.
+function hogPanel(v, here) {
+  const k = VISITORS.hedgehog, h = v.hedge, hedge = placeLink(v), face = visitorFace(v.kind);
+  if (!here) return { emoji: face, tint: k.tint, name: 'Hedgehog', sub: 'A visitor · gone', status: `🌙 Gone back the way it came. One may come again to ${hedge}.` };
+  const status = {
+    in: `🌿 Making for your hedge ${hedge}`, out: '🌙 Off back the way it came',
+    potter: `👃 Pottering along ${hedge}, after beetles`, snuffle: `🪲 Snuffling for beetles under ${hedge}`,
+    home: `🍂 Off to its bed of leaves under ${hedge}`, sleep: `💤 Curled up asleep under ${hedge} till dusk`,
+  }[v.mode];
+  const facts = [['🌿', `Came for ${k.for} ${hedge}, the hedge you planted`],
+    ['🪲', v.finds ? `${v.finds} beetles, slugs and worms found so far` : 'Nothing found yet'],
+    ['🌙', 'Up from dusk till dawn; by day it sleeps in the leaves at the foot of the hedge']];
+  if (v.mode !== 'out') facts.push(['🗓️', v.until - world.tick < S.TPD ? 'Off again at dusk' : `Here for ${days((v.until - world.tick) / S.TPD)} more`]);
+  if (v.n > 1) facts.push(['🔁', `${v.n} visits to your hedges so far`]);
+  return { emoji: face, tint: k.tint, name: 'Hedgehog', sub: `A visitor at ${h.name}`, status, facts };
+}
+// What a heron has caught: "3 frogs and a fish", or '' for nothing.
+const heronCaught = v => [v.frogs && (v.frogs === 1 ? 'a frog' : `${v.frogs} frogs`), v.fish && (v.fish === 1 ? 'a fish' : `${v.fish} fish`)].filter(Boolean).join(' and ');
+function heronPanel(v, here) {
+  const k = VISITORS.heron, pond = placeLink(v), face = visitorFace(v.kind);
+  if (!here) return { emoji: face, tint: k.tint, name: 'Grey heron', sub: 'A visitor · gone', status: `🌅 Flown off. One may come again to ${pond}.` };
+  const status = {
+    in: `🪶 Flying in to ${pond}`, out: '🌅 Flying off', hop: `🪶 Flying across ${pond}`,
+    stalk: `🦶 Stalking slowly through the shallows of ${pond}`, watch: '👀 Stock still, watching the water',
+    stab: '💦 A stab at the water!', gulp: v.caught === 'fish' ? '🐟 Got a fish! Down it goes' : '🐸 Got a frog! Down it goes',
+    sleep: `💤 Asleep on one leg at ${pond}`,
+  }[v.mode];
+  const caught = heronCaught(v), off = (v.until - world.tick) / S.TPD;
+  const facts = [['🐸', `Came for ${k.for} ${pond}, the pond you dug`],
+    ['🎣', caught ? `${caught[0].toUpperCase() + caught.slice(1)} caught so far` : 'Nothing caught yet'],
+    ['☀️', 'Fishes from dawn till dusk; at night it sleeps where it stands, on one leg']];
+  if (v.mode !== 'out') facts.push(['🗓️', off < 0.5 ? 'Off again at dusk' : `Here for ${days(off + 0.6)} more`]);
+  if (v.n > 1) facts.push(['🔁', `${v.n} visits to your ponds so far`]);
+  return { emoji: face, tint: k.tint, name: 'Grey heron', sub: `A visitor at ${visitorPlace(v)}`, status, facts };
+}
+
 const THINGS = {
-  visitor: {                                               // (?keep) a hedgehog at a hedge: before the trees, as it's at the foot of one
+  visitor: {                                               // (?keep) a hedgehog at a hedge, a heron at a pond: before the trees, as a hedgehog is at the foot of one
     at(sx, sy) {
       if (!world.visitors) return null;
-      const px = visitorPx();
       for (const v of world.visitors) {
-        const d = drawnAt(v), [x, y] = toScreen(d.x, d.y);
-        if (visitorFade(v) > 0.3 && Math.abs(sx - x) < px * 0.5 && sy > y - px * 0.35 && sy < y + px * 0.45) return v;
+        const d = drawnAt(v), [x, y] = toScreen(d.x, d.y), px = visitorPx(v);
+        if (visitorFade(v) <= 0.3) continue;
+        if (v.kind !== 'heron') { if (Math.abs(sx - x) < px * 0.5 && sy > y - px * 0.35 && sy < y + px * 0.45) return v; continue; }
+        const up = heronLift(v, px), feet = y + visitorFeet() - up;
+        if (Math.abs(sx - x) < px * (up > 1 ? 0.48 : 0.32) && sy > feet - px * 0.85 && sy < feet + px * 0.06) return v;
       }
       return null;
     },
     here: v => !v.gone && !!world.visitors?.includes(v),
     spot: v => { const d = drawnAt(v); return { x: d.x, y: d.y + 0.15, r: 0.5 }; },
-    show(v) {
-      const k = VISITORS[v.kind], h = v.hedge, hedge = hedgeLink(h, esc(h.name)), face = visitorFace(v.kind);
-      if (!this.here(v)) return { emoji: face, tint: k.tint, name: 'Hedgehog', sub: 'A visitor · gone', status: `🌙 Gone back the way it came. One may come again to ${hedge}.` };
-      const status = {
-        in: `🌿 Making for your hedge ${hedge}`, out: '🌙 Off back the way it came',
-        potter: `👃 Pottering along ${hedge}, after beetles`, snuffle: `🪲 Snuffling for beetles under ${hedge}`,
-        home: `🍂 Off to its bed of leaves under ${hedge}`, sleep: `💤 Curled up asleep under ${hedge} till dusk`,
-      }[v.mode];
-      const facts = [['🌿', `Came for ${k.for} ${hedge}, the hedge you planted`],
-        ['🪲', v.finds ? `${v.finds} beetles, slugs and worms found so far` : 'Nothing found yet'],
-        ['🌙', 'Up from dusk till dawn; by day it sleeps in the leaves at the foot of the hedge']];
-      if (v.mode !== 'out') facts.push(['🗓️', v.until - world.tick < S.TPD ? 'Off again at dusk' : `Here for ${days((v.until - world.tick) / S.TPD)} more`]);
-      if (v.n > 1) facts.push(['🔁', `${v.n} visits to your hedges so far`]);
-      return { emoji: face, tint: k.tint, name: 'Hedgehog', sub: `A visitor at ${h.name}`, status, facts };
-    },
+    show(v) { return (v.kind === 'heron' ? heronPanel : hogPanel)(v, this.here(v)); },
   },
 
   hive: {
@@ -8762,6 +9032,8 @@ function dugFacts(p) {
     const n = S.frogsNear(world, p.x, p.y);
     out.push(['🐸', n < 0 ? 'No frogs live near enough to find it yet' : `${frogsOff(n)}: they’ll find it between spring and autumn`]);
   } else if (!world.spawn.some((v, i) => v > 0 && world.dug[i] === p.id) && S.seasonOf(world.tick) !== 0) out.push(['🫧', 'The frogs will spawn in it in spring']);
+  const heron = world.visitors?.find(v => v.kind === 'heron' && v.pond === p && v.mode !== 'out');
+  if (heron) out.push(['🪶', `A ${thingLink('visitor', heron.id, 'heron')} is ${heron.mode === 'sleep' ? 'asleep here, on one leg' : 'fishing here'}`]);
   return out;
 }
 
@@ -10045,7 +10317,7 @@ function idleNews(e) {
     case 'fledge': n = { c: e.c, w: 4, line: `${e.c.name}, an owlet out of the hollow` }; break;
     case 'cubsout': n = { c: e.c, w: 4, line: `${e.c.name}, an otter cub out of the holt` }; break;
     case 'holt': n = { c: e.c, w: 4, line: `${e.c.name}'s new holt on the bank` }; break;
-    case 'visitor': n = { x: e.v.nx, y: e.v.ny, w: 8, line: `A ${VISITORS[e.v.kind].name}, come to the hedge`, big: true }; break;
+    case 'visitor': n = { x: e.v.tx, y: e.v.ty, w: 8, line: `A ${VISITORS[e.v.kind].name}, come to the ${VISITORS[e.v.kind].home}`, big: true }; break;
   }
   if (!n) return;
   if (n.c || n.x !== undefined) idle.news = Object.assign(n, { at });
@@ -10640,6 +10912,7 @@ function begin(rec) {
   const back = rec && resumeWorld(rec);
   if (!back) newWorld(seedParam || randomSeed(), firstVisit);
   if (rec && !back) addNews("🌱 Your meadow couldn't come along into this version of the game, so here is a new one.");
+  if (ui.newsLog.some(n => n.html.includes('--glyph-'))) for (const kind in VISITORS) visitorGlyph(kind);   // (its picture, for the news kept)
 
   if (LAB) {
     document.body.classList.add('lab');

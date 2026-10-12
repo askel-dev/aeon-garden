@@ -273,5 +273,12 @@ evening after `VISIT_REST` days), walks in from `VISIT_FROM` tiles off, stays `V
 day, pottering along the hedge at night and snuffling for beetles, `potter`, `snuffle`, `v.finds`) and goes back the way it
 came at dusk, or at once from a fire or a hedge gone (`leave`). A visitor isn't a creature: nothing hunts it, it eats nothing
 the meadow counts, and its chances are hashed from the day, not drawn from `w.rng`, so `balance.js` prints the same with it.
+A heron comes of a morning to the dug pond with the most frogs about it (`heronComes`, `frogsAbout`), once frogs have found it
+a day or more ago (`p.found`, `p.foundDay`), spring to autumn, on the same odds. It flies in from `HERON_FROM` tiles off, fishes
+from dawn till dusk (`HERON_DAY`) among its spots (`heronSpots`: the pond's shallow tiles, or its bank if it's all deep, worked out
+again each morning): it stands watching (`heronWatch`, facing the pond's middle), stalks to a spot close by (`heronStalk`; one
+further off it flies to, `hop`), and stabs (`HERON_STABS`), now and then coming up with a frog, or a fish where `w.fish` is thick
+(`HERON_CATCH`, `v.frogs`, `v.fish`, `gulp`). At night it sleeps where it stands. It flies off of an evening once its days are up,
+or at once from a fire, the ice or the pond gone dry (`heronOff`). It takes nothing from `w.frogs` or `w.fish` (`FROG_DIE` has the herons in it).
 `w.visitors` (the ones here), `w.visited` (how often each kind came, the day the last left); events `visitor`, `visitorleft`.
 A meadow kept before them gets both empty (`unpackWorld`), no `KEEP_VERSION` bump.

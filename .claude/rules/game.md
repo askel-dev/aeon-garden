@@ -32,11 +32,14 @@ courts) a little bubble pops up and fades (`drawPops`, `POPS`), at most 3 at onc
 Something worth seeing (cubs, a swarm, frogs in your pond: `spotOf`) leaves a marker over the spot till you've looked,
 or at the screen's edge pointing the way; a tap on it or "Go see" on its news line glides there (`spots`, `drawSpots`,
 `goSpot`). Once you've looked, the marker gives way to a caption saying what it was (`say`, `sayArt`), with a sparkle
-and a soft chime (`seeSpot`, sound.js `seen`). A visitor (sim.js `w.visitors`, so far the hedgehog at a hedge) is drawn in with the trees and animals, painted like them
+and a soft chime (`seeSpot`, sound.js `seen`). A visitor (sim.js `w.visitors`: the hedgehog at a hedge, the heron at a pond) is drawn in with the trees and animals, painted like them
 (`paintHedgehog`: walking, snuffling, curled up asleep; `visitorArt`, `drawVisitor`), fading in and out at the ends of its way
-(`visitorFade`). Its marker waits as long as it's here (`stay`), and a tap on it sees it too (`tapVisitor`). Seen, it goes in the
+(`visitorFade`). The heron (`paintHeron`, `HERON_POSES`: upright, poised, two stalking steps, the stab, a frog or a fish held up,
+two wingbeats, asleep on one leg; `heronArt`, `drawHeron`) flies in high and glides down (`heronLift`), wades to its shins with rings
+round its legs, and splashes where it stabs. It has no emoji: its marker and caption show its painting (`badge`, `paintedBig`), and
+a line of news its portrait as a CSS background (`visitorGlyph`, `--glyph-heron`, `.visitor-glyph`). The pond's panel says when one is there. Its marker waits as long as it's here (`stay`), and a tap on it sees it too (`tapVisitor`). Seen, it goes in the
 player's field journal (`sightVisitor`, `JOURNAL` in the browser, not with the meadow): the first of a kind ever gets "First
-sighting" for its caption, a 📖 and the `named` chime. The inspector has it (`THINGS.visitor`). The journal's card and more visitors
+sighting" for its caption, a 📖 and the `named` chime. The inspector has it (`THINGS.visitor`, `hogPanel`, `heronPanel`). The journal's card and more visitors
 are still to come (`research/visitors-and-journal.md`). A new meadow opens close, over the open ground with the most animals (`homeView`, `HOME_TILES`).
 The tab's icon follows the season and the part of day (`updateFavicon`, at most once a second), and
 the news log dates each line with a season chip (`seasonChip`).
