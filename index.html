@@ -138,6 +138,7 @@
     font-size: 13px; line-height: 1.35; animation: pop-in 0.35s ease-out; transition: opacity 0.8s, transform 0.8s;
   }
   .news-item a[data-id] { pointer-events: auto; }   /* clicks go through to the meadow, except on names */
+  .news-item a[data-act="spot"] { pointer-events: auto; white-space: nowrap; }   /* and "Go see" */
   .news-item.gone { opacity: 0; transform: translateY(-6px); }
   .brand-btn { border: none; background: transparent; border-radius: 8px; padding: 1px 6px; font-size: 16px; }
   .brand-btn:hover { background: rgba(0,0,0,0.06); }

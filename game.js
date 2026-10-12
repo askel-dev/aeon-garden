@@ -44,6 +44,15 @@ if (COUNTER && !['localhost', '127.0.0.1'].includes(location.hostname)) {
   document.head.append(js);
 }
 
+// Something worth counting, as a GoatCounter event (no cookies either): 'meadow-back' is a visit the away card
+// greeted. Before count.js has come, it's counted once the page has loaded; with it blocked, not at all.
+function countEvent(path) {
+  if (!COUNTER || ['localhost', '127.0.0.1'].includes(location.hostname)) return;
+  const go = () => window.goatcounter?.count?.({ path, title: path, event: true });
+  if (window.goatcounter?.count || document.readyState === 'complete') go();
+  else addEventListener('load', go, { once: true });
+}
+
 let world;
 const ui = {
   speed: 1, sound: false, tool: 'look', selectedId: 0, picked: null, hoverId: 0, follow: false,
@@ -1300,6 +1309,7 @@ function render(now) {
   if (held) drawHeld(now);
   if (sel) drawSelectionOver(sel, now);
   if (ui.picked) drawPickedOver();
+  if (!intro.on && !idle.on) drawSpots(now);
   const hov = world.byId.get(ui.hoverId);
   if (hov && hov.alive && !hov.hidden && hov.id !== ui.selectedId) {
     const [sx, sy] = screenOf(hov);
@@ -3317,11 +3327,14 @@ const BUBBLE_ART = new Map(BUBBLE_ICONS.map(([e], i) => [e, 'bubble:' + i]));
 // When an animal starts doing something worth seeing (POPS: it spots a fox, runs, gives chase, falls for someone), a
 // little bubble with what it's thinking pops up over its head, stays a moment and fades. Nothing stays up, so nobody
 // is covered; what each is up to is in the label on hover and in the inspector. Only for those on screen, and only up
-// to POP_SPEED: quicker, moods change faster than they'd read.
-const POPS = new Set(['alarm', 'flee', 'chase', 'stalk', 'love', 'pounce']);
-const POP_MS = 1700, POP_IN = 160, POP_OUT = 450, POP_SPEED = 4;
+// to POP_SPEED: quicker, moods change faster than they'd read. At most POP_LIVE up at once, so a pop still means
+// something when a fox walks through a warren; and love only for the one you follow (in spring it's everyone).
+const POPS = new Set(['alarm', 'flee', 'chase', 'stalk', 'pounce']);
+const POP_MS = 1700, POP_IN = 160, POP_OUT = 450, POP_SPEED = 4, POP_LIVE = 3;
 const pops = new WeakMap();          // { mode, emoji, at }: the mode it was last seen in, and its pop
+const popsUp = [];                   // when the pops up now began (the one you follow's aren't counted)
 function drawPops(shown, now) {
+  while (popsUp.length && now - popsUp[0] >= POP_MS) popsUp.shift();
   for (const it of shown) {
     const c = it.c;
     if (LOOKS[c.species].quiet) continue;
@@ -3329,7 +3342,11 @@ function drawPops(shown, now) {
     if (!p) { pops.set(c, { mode: c.mode, emoji: '', at: 0 }); continue; }
     if (p.mode !== c.mode) {
       p.mode = c.mode;
-      if (POPS.has(c.mode) && ui.speed > 0 && ui.speed <= POP_SPEED) { p.emoji = S.mood(world, c).emoji; p.at = now; }
+      const yours = c.id === ui.selectedId;
+      if ((POPS.has(c.mode) || yours && c.mode === 'love') && ui.speed > 0 && ui.speed <= POP_SPEED && (yours || popsUp.length < POP_LIVE)) {
+        p.emoji = S.mood(world, c).emoji; p.at = now;
+        if (!yours) popsUp.push(now);
+      }
     }
     const t = now - p.at;
     if (t >= POP_MS || !p.emoji) continue;
@@ -3361,6 +3378,151 @@ function drawBubble(emoji, sx, sy, px, grow = 1) {
   ctx.fill(); ctx.stroke();
   const e = sprite(emoji, r * 1.3, undefined, undefined, true), size = e.size * grow;
   ctx.drawImage(e.canvas, bx - size / 2, by - size / 2, size, size);
+}
+
+// ------------------------------------------------------------------ worth seeing
+//
+// When something worth seeing happens (cubs out of the holt, a swarm, frogs in your pond, your hedge in flower), a
+// marker waits over the spot till you've looked: a parchment badge with what it was, bobbing, and a ring on the ground.
+// Off screen it waits at the screen's edge, pointing the way. A tap on it, or "Go see" on its line in the news, takes
+// the camera there (an animal is followed). It's seen once it's been on screen up close (SPOT_ZOOM) for SPOT_LOOK_MS,
+// and goes anyway after SPOT_S; only the newest SPOT_MAX wait. A few a frame at most: the badge is painted once.
+const SPOT_MAX = 3, SPOT_S = 90, SPOT_LOOK_MS = 1200, SPOT_FADE = 500, SPOT_R = 17, SPOT_ZOOM = 12, SPOT_EDGE = 30;
+const spots = [];                    // { id, o, x, y, emoji, thing, at, look, seenAt, bx, by }
+let spotId = 0, glide = null;        // glide: where the camera's going, { x, y } (a tap on a marker)
+// The cards a marker at the edge keeps clear of (it's drawn under them), measured when they change size.
+const spotCovers = new Map();
+for (const id of ['news', 'tasks', 'guide']) {
+  const el = document.getElementById(id);
+  if (el) new ResizeObserver(() => spotCovers.set(id, el.getBoundingClientRect())).observe(el);
+}
+
+// What an event leaves to see: the emoji, and what it's at (o: anything with an x and y, followed as it moves).
+function spotOf(e) {
+  switch (e.type) {
+    case 'birth': return ['fox', 'otter', 'owl'].includes(e.mum.species) && { emoji: { fox: '🦊', otter: '🦦', owl: '🦉' }[e.mum.species], o: e.mum };
+    case 'cubsout': case 'holt': return { emoji: '🦦', o: e.c };
+    case 'fledge': return { emoji: '🦉', o: e.c };
+    case 'arrive': return !e.founding && e.who?.length && { emoji: '🧳', o: e.who[0] };
+    case 'swarm': return { emoji: '🐝', o: e.swarm };
+    case 'settle': return { emoji: '🐝', o: e.hive, thing: ['hive', e.hive] };
+    case 'lightning': return e.tree && { emoji: '⚡', x: e.x, y: e.y };
+    case 'windthrow': return { emoji: '🪵', x: e.tree.x, y: e.tree.y };
+    case 'fire': return { emoji: '🔥', x: e.x, y: e.y };
+    case 'outbreak': return { emoji: '🤒', x: e.x, y: e.y };
+    case 'frogsfound': case 'pondgrew': {
+      const v = world.waters[e.water], at = dugSpot(e.water);
+      return v && { emoji: e.type === 'frogsfound' ? '🐸' : '🌾', ...at, thing: ['water', { body: v, ...at }] };
+    }
+    case 'stripbloom': return { emoji: '🌼', o: e.field, thing: ['field', e.field] };
+    case 'beesfound': return { emoji: '🐝', o: e.field, thing: ['field', e.field] };
+    case 'hedgeyoung': return { emoji: '🌿', o: e.hedge };
+    case 'hedgebloom': return { emoji: '🌸', o: e.hedge };
+    case 'hedgehaws': return { emoji: '🔴', o: e.hedge };
+  }
+  return null;
+}
+
+// After an event's news (flushEvents): its marker, and "Go see" on the line it made, if it made one.
+function spotNews(e, toast) {
+  if (LAB || intro.on) return;
+  const s = spotOf(e);
+  if (!s) return;
+  Object.assign(s, { id: ++spotId, at: performance.now(), look: 0, seenAt: 0, bx: -1e9, by: -1e9 });
+  spots.push(s);
+  if (spots.length > SPOT_MAX) spots.shift();
+  toast?.insertAdjacentHTML('beforeend', ` <a class="go-see" data-act="spot" data-spot="${s.id}">Go see →</a>`);
+}
+
+const isAnimal = o => !!o?.species;
+function spotAt(s) {
+  if (isAnimal(s.o)) return drawnAt(s.o);
+  return s.o ? s.o : s;
+}
+
+function goSpot(s) {
+  s.seenAt ||= performance.now();
+  if (isAnimal(s.o) && s.o.alive) { select(s.o.id); return; }   // followed: the camera goes with it
+  const { x, y } = spotAt(s), close = narrow() ? 16 : 22;
+  if (s.thing) pick(...s.thing); else select(0);
+  ui.follow = false; flick.vx = flick.vy = 0;
+  glide = { x, y };
+  if (cam.zoom < close - 2) cam.goal = close;
+}
+
+// The marker a tap at (sx, sy) lands on, if any.
+function spotHit(sx, sy) {
+  const r = SPOT_R + (fingerTap ? 10 : 4);
+  return spots.find(s => !s.seenAt && (s.bx - sx) ** 2 + (s.by - sy) ** 2 < r * r);
+}
+
+const spotBadges = new Map();        // a badge for each emoji, painted once: a parchment disc, a brass rim, the emoji
+function spotBadge(emoji) {
+  const key = emoji + '|' + dpr;
+  let b = spotBadges.get(key);
+  if (b) return b;
+  const r = SPOT_R, size = r * 2 + 6, c = document.createElement('canvas');
+  c.width = c.height = Math.ceil(size * dpr);
+  const g = c.getContext('2d');
+  g.scale(dpr, dpr); g.translate(size / 2, size / 2);
+  g.fillStyle = 'rgba(70, 55, 25, 0.22)';
+  g.beginPath(); g.arc(0, 1.5, r + 1, 0, TAU); g.fill();
+  g.fillStyle = '#fffaf0';
+  g.beginPath(); g.arc(0, 0, r, 0, TAU); g.fill();
+  g.lineWidth = 2.2; g.strokeStyle = '#c99a3e'; g.stroke();
+  const e = sprite(emoji, r * 1.25, undefined, undefined, true);
+  g.drawImage(e.canvas, -e.size / 2, -e.size / 2, e.size, e.size);
+  b = { canvas: c, size };
+  spotBadges.set(key, b);
+  return b;
+}
+
+function drawSpots(now) {
+  if (!spots.length) return;
+  const top = topPad + SPOT_EDGE + 6, bottom = vh - Math.max(barPad, sheet ? sheet.bottom : 0) - SPOT_EDGE;
+  const left = SPOT_EDGE, right = vw - SPOT_EDGE - (sheet ? sheet.right : 0), cx = (left + right) / 2, cy = (top + bottom) / 2;
+  for (let i = spots.length - 1; i >= 0; i--) {
+    const s = spots[i], dt = Math.min(100, now - (s.last || now));
+    s.last = now;
+    if (s.seenAt ? now - s.seenAt > SPOT_FADE : now - s.at > SPOT_S * 1000 || (isAnimal(s.o) && !s.o.alive)) { spots.splice(i, 1); continue; }
+    const { x, y } = spotAt(s), [sx, sy] = toScreen(x, y);
+    const lift = isAnimal(s.o) ? creaturePx(s.o) * 0.75 : 14, bob = Math.sin(now / 420 + s.id) * 3;
+    let bx = sx, by = sy - lift - SPOT_R - 8 + bob;
+    const on = bx > left && bx < right && by > top && by < bottom;
+    if (on && cam.zoom >= SPOT_ZOOM && Math.abs(sx - cx) < (right - left) * 0.4 && Math.abs(sy - cy) < (bottom - top) * 0.4) {
+      s.look += dt;
+      if (s.look >= SPOT_LOOK_MS) s.seenAt = now;
+    }
+    ctx.globalAlpha = s.seenAt ? Math.max(0, 1 - (now - s.seenAt) / SPOT_FADE) : Math.min(1, (now - s.at) / 250);
+    if (on) {
+      const pulse = (now / 1400 + s.id * 0.3) % 1, r = Math.max(10, lift * 0.9) * (0.7 + pulse * 0.8);
+      ctx.strokeStyle = `rgba(255, 246, 220, ${0.85 * (1 - pulse)})`; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.ellipse(sx, sy + lift * 0.3, r, r * 0.42, 0, 0, TAU); ctx.stroke();
+      ctx.fillStyle = '#fffaf0';                                    // the badge's tail, down to the spot
+      ctx.beginPath(); ctx.moveTo(bx - 6, by + SPOT_R - 3); ctx.lineTo(bx, by + SPOT_R + 7); ctx.lineTo(bx + 6, by + SPOT_R - 3); ctx.fill();
+    } else {                                                          // at the edge, on the line from the middle to it
+      const dx = bx - cx, dy = by - cy;
+      const t = Math.min(dx > 0 ? (right - cx) / dx : dx < 0 ? (left - cx) / dx : Infinity, dy > 0 ? (bottom - cy) / dy : dy < 0 ? (top - cy) / dy : Infinity);
+      bx = cx + dx * t; by = cy + dy * t;
+      const side = Math.abs(bx - left) < 1 || Math.abs(bx - right) < 1, m = SPOT_R + 6;
+      for (const r of spotCovers.values()) {               // out from under a card, along the edge it's on
+        if (!r.height || bx < r.left - m || bx > r.right + m || by < r.top - m || by > r.bottom + m) continue;
+        if (side) by = r.top - m > top ? r.top - m : Math.min(bottom, r.bottom + m);
+        else bx = r.right + m < right ? r.right + m : Math.max(left, r.left - m);
+      }
+      const a = Math.atan2(dy, dx), ax = bx + Math.cos(a) * (SPOT_R + 7), ay = by + Math.sin(a) * (SPOT_R + 7);
+      ctx.fillStyle = '#c99a3e';
+      ctx.beginPath();
+      ctx.moveTo(ax + Math.cos(a) * 6, ay + Math.sin(a) * 6);
+      ctx.lineTo(ax + Math.cos(a + 2.2) * 7, ay + Math.sin(a + 2.2) * 7);
+      ctx.lineTo(ax + Math.cos(a - 2.2) * 7, ay + Math.sin(a - 2.2) * 7);
+      ctx.fill();
+    }
+    const b = spotBadge(s.emoji);
+    ctx.drawImage(b.canvas, bx - b.size / 2, by - b.size / 2, b.size, b.size);
+    s.bx = bx; s.by = by;
+  }
+  ctx.globalAlpha = 1;
 }
 
 function drawLabel(text, x, y, ring = false) {
@@ -5595,16 +5757,18 @@ function drawSipping(c, sx, sy, px, now) {
 // ------------------------------------------------------------------ news
 
 const NEWS_TOASTS = 3, NEWS_TOAST_MS = 7000, NEWS_LOG_MAX = 80;
+let newsMade = 0, lastToast = null;  // lines told so far, and the last one's toast if it got one (for "Go see", spotNews)
 function addNews(html, category, minGapMs = 0) {
   const now = performance.now();
   if (category && minGapMs && ui.lastNews[category] && now - ui.lastNews[category] < minGapMs) return;
   if (category) ui.lastNews[category] = now;
+  newsMade++; lastToast = null;
   ui.newsLog.unshift({ html, tick: world.tick });
   ui.newsLog.length = Math.min(ui.newsLog.length, NEWS_LOG_MAX);
   if (away.on) { awayNews(html); ui.newsStale = true; return; }   // catching up: the log, and the card if it's big
   if (ui.newsOpen) { ui.newsStale = true; return; }   // the frame rebuilds it, once however much happened
   const box = $('#news');
-  const el = document.createElement('div');
+  const el = lastToast = document.createElement('div');
   el.className = 'news-item';
   el.innerHTML = html;
   box.prepend(el);
@@ -8068,9 +8232,9 @@ canvas.addEventListener('wheel', e => {
     const dx = wholePx(scrollRest.x + ddx), dy = wholePx(scrollRest.y + ddy);
     scrollRest = { x: scrollRest.x + ddx - dx, y: scrollRest.y + ddy - dy };   // the rest comes next time
     cam.x += dx / cam.zoom; cam.y += dy / cam.zoom;
-    ui.follow = false; clampCam();
+    ui.follow = false; glide = null; clampCam();
   } else {                            // mouse wheel or pinch: zoom
-    cam.goal = null;
+    cam.goal = null; glide = null;
     zoomAt(e.clientX, e.clientY, cam.zoom * Math.exp(-ddy * (e.ctrlKey ? 0.012 : 0.0018)));
   }
 }, { passive: false });
@@ -8195,6 +8359,8 @@ function drawFalling(c, f, sx, sy, now) {
 }
 
 function click(sx, sy) {
+  const sp = spotHit(sx, sy);
+  if (sp) { goSpot(sp); return; }
   const [wx, wy] = toWorld(sx, sy);
   if (ui.tool === 'look') {
     const c = creatureAt(sx, sy), t = !c && thingAt(sx, sy);
@@ -9112,6 +9278,7 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'name') startNaming();
   else if (t.dataset.act === 'traits') { ui.allTraits = !ui.allTraits; renderInspector(); }
   else if (t.dataset.act === 'story') { ui.allStory = !ui.allStory; renderInspector(); }
+  else if (t.dataset.act === 'spot') { const s = spots.find(s => s.id === +t.dataset.spot); if (s) goSpot(s); }
   else if (t.dataset.act === 'yours') toggleYours();
   else if (t.dataset.act === 'adopt') {
     const c = world.byId.get(+t.dataset.id);
@@ -10023,18 +10190,32 @@ addEventListener('pagehide', keepMeadow);
 //
 // The meadow keeps its own time. Back after a while (the page closed, or hidden), it runs on by a
 // season while a card says so, then the card says what happened. Nothing is drawn meanwhile: days
-// flashing by would flicker. Paused, it waited for you.
+// flashing by would flicker. Paused, it waited for you. And at ?keep it waits at the Dry Year's spring
+// (awayTicks): from then till it's over the Dry Year can be lost, and that's for the keeper to see.
 const AWAY_MIN = 5 * 60e3;                 // gone at least this long, in real time
 const AWAY_TICKS = S.SEASON_DAYS * S.TPD;  // and it moves on a season, however long it was
 const AWAY_MS = 40;                        // of each frame the catching up gets
 const AWAY_BIG = ['dryloss', 'extinct', 'dryend', 'drystart', 'dryspring', 'swarm', 'settle', 'hivestruck', 'queenlost', 'fire', 'outbreak', 'outbreakover', 'mast', 'voles', 'frogyear', 'treedied', 'windthrow', 'frogsfound', 'pondgrew', 'stripbloom', 'beesfound', 'hedgeyoung', 'hedgebloom', 'hedgehaws'];   // news for the card, the first told first
-const away = { on: false, frames: 0, left: 0, from: 0, day: -1, births: null, deaths: null, news: [], type: '', mine: false };
+const away = { on: false, frames: 0, left: 0, from: 0, day: -1, births: null, deaths: null, news: [], type: '', mine: false, waited: false };
 const awayOpen = () => !$('#away').classList.contains('hidden');
 const deathsOf = s => Object.values(world.stats.deaths[s]).reduce((a, b) => a + b, 0);
 
+// How far catching up runs: a season, but (?keep) never into the Dry Year while it can still be lost. It stops at the
+// start of its spring, as the flood fails; back in its spring, summer or the days after, it doesn't run on at all.
+function awayTicks() {
+  const dy = world.dryYear;
+  if (!dy || dy.lost) return AWAY_TICKS;
+  const spring = S.dryFrom(world) - S.SEASON_DAYS * S.TPD;
+  if (world.tick < spring) return Math.min(AWAY_TICKS, spring - world.tick);
+  return S.dryCounting(world) ? 0 : AWAY_TICKS;
+}
+
 function startAway() {
   if (idle.on) wakeIdle();
-  Object.assign(away, { on: true, frames: 0, left: AWAY_TICKS, from: world.tick, day: -1, news: [],
+  const left = awayTicks();
+  if (!left) { addNews('⏸️ <b>The meadow waited for you:</b> it doesn’t run on without you in the Dry Year.'); return; }
+  countEvent('meadow-back');
+  Object.assign(away, { on: true, frames: 0, left, from: world.tick, day: -1, news: [], waited: left < AWAY_TICKS,
     births: perKind(s => world.stats.births[s]), deaths: perKind(deathsOf) });
   $('#away').classList.remove('hidden', 'done');
   awayProgress();
@@ -10075,7 +10256,8 @@ function awayDone() {
     .map(s => { const n = now(s) - was[s]; return `${n} ${(n === 1 ? S.SPECIES[s].name : S.SPECIES[s].plural).toLowerCase()}`; }));
   const born = tally(away.births, s => world.stats.births[s]), died = tally(away.deaths, deathsOf);
   $('#away-text').textContent = `${from.emoji} ${from.name} turned to ${to.name.toLowerCase()}.`
-    + (to === S.SEASONS[0] ? ` Year ${S.clock(world).year} has begun.` : '');
+    + (to === S.SEASONS[0] ? ` Year ${S.clock(world).year} has begun.` : '')
+    + (away.waited ? ' Then it stopped to wait for you: the Dry Year is coming.' : '');
   $('#away-life').textContent = [born && `🐣 Born: ${born}.`, died && `🥀 Gone: ${died}.`].filter(Boolean).join('\n') || 'A quiet season.';
   const own = away.news.filter(n => n.rank < 0).length;   // yours first, and a few more of them
   const top = away.news.sort((a, b) => a.rank - b.rank).slice(0, clamp(own, 3, 5));
@@ -10092,7 +10274,11 @@ $('#away').addEventListener('click', e => { if (e.target.closest('a[data-id], a[
 // ------------------------------------------------------------------ the loop
 
 function flushEvents() {
-  for (const e of world.events) handleEvent(e);
+  for (const e of world.events) {
+    const told = newsMade;
+    handleEvent(e);
+    spotNews(e, newsMade > told ? lastToast : null);
+  }
   world.events.length = 0;
 }
 
@@ -10106,6 +10292,32 @@ function newWorld(seed, arrival = false, dry = DRY_PARAM) {
   addNews(arrival ? `🌱 A new meadow${by}. Nobody lives here yet.`
     : `🌱 A new meadow${by}. <b>${world.count.rabbit} rabbits</b> and <b>${world.count.fox} foxes</b> have just moved in.`);
   if (!LAB) history.replaceState(null, '', meadowLink(seed));
+  if (!LAB && !arrival) homeView();
+}
+
+// A new meadow opens close enough to see who lives there, HOME_TILES across the screen, over where most of them are:
+// the square a screen across with the most animals in the open (under the trees they'd be hidden), counted on a coarse
+// grid, once. All of it is a pinch away.
+const HOME_TILES = [45, 24];              // tiles across: a computer, a phone
+const HOME_CELL = 8;                      // tiles a cell of the count
+function homeView() {
+  const zoom = Math.max(minZoom, vw / HOME_TILES[narrow() ? 1 : 0]);
+  const gw = Math.ceil(S.W / HOME_CELL), gh = Math.ceil(S.H / HOME_CELL), n = new Uint16Array(gw * gh);
+  for (const c of world.creatures) {
+    if (c.alive && c.species !== 'bee' && world.wood[Math.floor(c.y) * S.W + Math.floor(c.x)] < 0.4) n[Math.min(gh - 1, Math.floor(c.y / HOME_CELL)) * gw + Math.min(gw - 1, Math.floor(c.x / HOME_CELL))]++;
+  }
+  const rx = Math.max(1, Math.round(vw / zoom / HOME_CELL / 2)), ry = Math.max(1, Math.round(vh / zoom / HOME_CELL / 2));
+  let best = -1, bx = S.W / 2, by = S.H / 2;
+  for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
+    let sum = 0;
+    for (let j = 1 - ry; j < ry; j++) for (let i = 1 - rx; i < rx; i++) {
+      const a = x + i, b = y + j;
+      if (a >= 0 && b >= 0 && a < gw && b < gh) sum += n[b * gw + a];
+    }
+    if (sum > best) { best = sum; bx = (x + 0.5) * HOME_CELL; by = (y + 0.5) * HOME_CELL; }
+  }
+  Object.assign(cam, { zoom, x: bx, y: by, goal: null });
+  clampCam();
 }
 
 // Everything a meadow needs to be the one on screen, a new one or a kept one (resumeWorld).
@@ -10126,6 +10338,7 @@ function showWorld(w) {
   renderNewsLog();
   cam.zoom = minZoom; cam.x = S.W / 2; cam.y = S.H / 2; cam.goal = null;
   clampCam();
+  spots.length = 0; glide = null;
   paintTerrain();
   renderInspector();
   updateMeadowCard();
@@ -10192,6 +10405,14 @@ function frame(now) {
     const gx = sheet ? x + (sheet.right - sheet.left) / 2 / cam.zoom : x;
     const gy = sheet ? y + (sheet.bottom - sheet.top) / 2 / cam.zoom : y;
     cam.x += (gx - cam.x) * k; cam.y += (gy - cam.y) * k;
+  }
+  if (glide) {                            // off to a marker, unless a hand takes the camera
+    if (ui.follow || drag?.moved || pinch || held || idle.on) glide = null;
+    else {
+      const k = 1 - Math.pow(0.02, dt);
+      cam.x += (glide.x - cam.x) * k; cam.y += (glide.y - cam.y) * k;
+      if (Math.hypot(glide.x - cam.x, glide.y - cam.y) < 0.05) glide = null;
+    }
   }
   if (idle.on) idleFrame(now, dt);
   if (flick.vx || flick.vy) {             // a flicked pan glides to a stop

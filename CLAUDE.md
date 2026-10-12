@@ -43,7 +43,10 @@ told to just do it.
   its back level at a trot), a rabbit hops in bursts, drawn a little ahead of or behind the sim along its way and
   stopping between hops (`hopSurge`), and up to 2x everything is drawn between the sim's last two ticks (`drawnAt`,
   `keepLast`). No bubbles stay over the animals: when one starts something worth seeing (spots a fox, runs, chases,
-  courts) a little bubble pops up and fades (`drawPops`, `POPS`).
+  courts) a little bubble pops up and fades (`drawPops`, `POPS`), at most 3 at once, love only for the one followed.
+  Something worth seeing (cubs, a swarm, frogs in your pond: `spotOf`) leaves a marker over the spot till you've looked,
+  or at the screen's edge pointing the way; a tap on it or "Go see" on its news line glides there (`spots`, `drawSpots`,
+  `goSpot`). A new meadow opens close, over the open ground with the most animals (`homeView`, `HOME_TILES`).
   The tab's icon follows the season and the part of day (`updateFavicon`, at most once a second), and
   the news log dates each line with a season chip (`seasonChip`).
   The rivers run (`drawFlow`, worked out once a meadow by `flowOf` from the sim's `w.current`): streaks of current, quicker
