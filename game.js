@@ -1161,7 +1161,7 @@ function darkness(phase) {
 // so the two hardly lie on each other (a navy and an orange laid together cancel out into grey). The shader lights the
 // ground with it (goldLight multiplies it, so the grass leans gold and stays as green), and what's drawn on it gets
 // GOLD_RGB laid over just what's there (render), the nearest one fill comes to the same light.
-const GOLD_LIGHT = [1.06, 0.92, 0.72], GOLD_RGB = [180, 70, 0], GOLD_A = 0.12;
+const GOLD_LIGHT = [1.05, 0.95, 0.82], GOLD_RGB = [180, 70, 0], GOLD_A = 0.08;
 const GOLD_STEPS = 10;                    // the ground is lit in this many steps: each one paints it again
 const goldenHour = phase => smooth(0.45, 0.57, phase) * (1 - smooth(0.59, 0.67, phase));
 const goldLight = k => GOLD_LIGHT.map(v => 1 + (v - 1) * k);

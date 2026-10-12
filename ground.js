@@ -267,7 +267,7 @@ void main() {
   }
 
   col = mix(col, fogC, m);
-  o = vec4(col * light, 1.);
+  o = vec4(col * mix(light, vec3(1.), 0.6 * open * (1. - m)), 1.);   // open water shows the sky, so it keeps most of its blue
 }`;
 
 let ok = !!gl, U = {}, textures = {};
