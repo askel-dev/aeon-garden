@@ -216,7 +216,7 @@ const spriteStep = px => px < 16 ? Math.round(px) : Math.round(2 ** (Math.round(
 // through sizes all the time: their sprites come in steps of about 19%, the size above, drawn a little smaller. Below
 // the size they're painted at (shrunk) they're tiny and many, so one size an octave does, drawn up to half as big.
 const poseStep = px => px < FUR_PAINTED / dpr ? 2 ** Math.ceil(Math.log2(px)) : Math.ceil(2 ** (Math.ceil(Math.log2(px) * 4) / 4));
-const posed = art => art.startsWith('fox:') || art.startsWith('rabbit:');
+const posed = art => art.startsWith('fox:') || art.startsWith('rabbit:') || art.startsWith('hog:');
 function sprite(emoji, want, tint, leaf, center) {
   want = Math.max(4, want);
   const px = posed(emoji) ? poseStep(want) : spriteStep(want), s = paintedSprite(emoji, px, tint, leaf, center);
@@ -1248,6 +1248,10 @@ function render(now) {
     items.push(it);
     if (!c.held) shown.push(it);                           // (one held up has its shadow here, and is drawn last, in the hand)
   }
+  if (world.visitors) for (const v of world.visitors) {    // (?keep: a hedgehog at a hedge)
+    const d = drawnAt(v), [sx, sy] = toScreen(d.x, d.y);
+    if (visible(sx, sy, 40)) items.push({ y: d.y, v, sx, sy, f: 1 - mistAt(d.x, d.y) });
+  }
   items.sort((a, b) => a.y - b.y);
   // Shadows first, all together, so a tree's shadow never lands on a rabbit behind it.
   const sn = sun(ck);
@@ -1258,7 +1262,7 @@ function render(now) {
     else if (it.c) {
       drawCreatureShadow(it.c, it.sx, it.sy, now, sn);
       if (it.c.mine && !it.c.held && it.c.id !== ui.selectedId) drawRingUnder(it.c, it.sx, it.sy);
-    }
+    } else if (it.v) drawVisitorShadow(it.v, it.sx, it.sy, sn);
   }
   for (const it of items) {
     if (it.f < 0.02) continue;
@@ -1266,6 +1270,7 @@ function render(now) {
     if (it.d) (it.d.hive ? drawBeeTree : drawDecor)(it.d, it.sx, it.sy, now, ck);
     else if (it.h) drawSwarm(it.h, it.sx, it.sy);
     else if (it.rustle) drawRustle(it.rustle, it.to, it.sx, it.sy, z);
+    else if (it.v) drawVisitor(it.v, it.sx, it.sy, now, z);
     else if (it.c.held) continue;
     else if (falls.size && falls.has(it.c)) drawFalling(it.c, falls.get(it.c), it.sx, it.sy, now);
     else drawCreature(it.c, it.sx, it.sy, now);
@@ -1519,11 +1524,13 @@ function weaveOf(c) {
 const SMOOTH_SPEED = 2;
 const lastTick = new WeakMap(), drawnPos = { x: 0, y: 0 };
 function keepLast() {
-  for (const c of world.creatures) {
-    let p = lastTick.get(c);
-    if (!p) lastTick.set(c, p = { x: 0, y: 0, tick: 0 });
-    p.x = c.x; p.y = c.y; p.tick = world.tick + 1;
-  }
+  for (const c of world.creatures) keepAt(c);
+  if (world.visitors) for (const v of world.visitors) keepAt(v);   // (and a visitor, sim.js w.visitors)
+}
+function keepAt(c) {
+  let p = lastTick.get(c);
+  if (!p) lastTick.set(c, p = { x: 0, y: 0, tick: 0 });
+  p.x = c.x; p.y = c.y; p.tick = world.tick + 1;
 }
 function drawnAt(c) {
   const p = ui.speed <= SMOOTH_SPEED && !c.held && lastTick.get(c);
@@ -1609,6 +1616,77 @@ function drawDigging(c, sx, y, px, now, back = c.x > c.dig.x ? 1 : -1) {
 
 // In shallow water an animal sits lower, its legs hidden below a little ring of ripples. Fliers fly over.
 const wading = c => !c.hidden && !c.sp.flies && !world.frozen && world.water[(c.y | 0) * S.W + (c.x | 0)] > 0;
+
+// ------------------------------------------------------------------ visitors
+//
+// A visitor (sim.js w.visitors) is no creature: a hedgehog the keeper's hedge drew in. It's painted like the animals
+// (paintHedgehog): its legs go round with the ground it covers, it snuffles with its nose down, and curled up asleep
+// under the hedge by day it breathes, a 💤 over it close up. It fades in and out over the first and last VISIT_FADE
+// tiles of its way, as if out of the long grass.
+const VISITORS = {
+  hedgehog: { name: 'hedgehog', emoji: '🦔', art: 'hog:0', tint: '#a07c5a', for: 'the beetles under' },
+};
+const visitorFace = kind => {      // its painting, for the inspector
+  const art = VISITORS[kind].art;
+  if (!portraits.has(art)) portraits.set(art, dataURL(sprite(art, 38).canvas));
+  return `<img src="${portraits.get(art)}" alt="${VISITORS[kind].emoji}">`;
+};
+const HOG_SIZE = 1;                // next to a rabbit (a little bigger than life, to be seen)
+const HOG_STEP = 0.16;             // tiles a step of its walk
+const visitorPx = () => (8 + cam.zoom) * HOG_SIZE;
+const hogSteps = new WeakMap();     // how far it has walked, as drawn: { x, y, walked, at }
+function visitorFade(v) {
+  if (v.mode === 'in') return clamp(Math.hypot(v.x - v.fx, v.y - v.fy) / S.VISIT_FADE, 0, 1);
+  if (v.mode === 'out') return clamp(Math.hypot(v.x - v.tx, v.y - v.ty) / S.VISIT_FADE, 0, 1);
+  return 1;
+}
+function visitorArt(v) {
+  if (v.mode === 'sleep') return 'hog:3';
+  if (v.mode === 'snuffle') return 'hog:2';
+  const d = drawnAt(v);
+  let w = hogSteps.get(v);
+  if (!w) hogSteps.set(v, w = { x: d.x, y: d.y, walked: 0, at: -1 });
+  if (w.at !== spriteFrame) {
+    const k = Math.hypot(d.x - w.x, d.y - w.y);
+    if (k < 1) w.walked += k;
+    w.x = d.x; w.y = d.y; w.at = spriteFrame;
+  }
+  return ui.speed > FEW_FRAMES ? 'hog:0' : 'hog:' + (Math.floor(w.walked / HOG_STEP) & 1);
+}
+function drawVisitor(v, sx, sy, now, z) {
+  const px = visitorPx(), a = visitorFade(v);
+  if (a < 0.02) return;
+  const asleep = v.mode === 'sleep', squash = 1 + (asleep && ui.speed > 0 ? Math.sin(now / 650 + v.id) * 0.035 : 0);
+  drawEmoji(visitorArt(v), sx, sy + px * 0.4 * (1 - squash), px, { flip: v.facing > 0, squash, alpha: a < 1 ? a : undefined });
+  if (asleep && z >= 8) drawEmoji('💤', sx + px * 0.3, sy - px * 0.55 + Math.sin(now / 600 + v.id) * 3, Math.max(11, z * 0.7), { alpha: 0.85 });
+}
+// Seeing one (its marker looked at, or a tap on it) puts it in the field journal, once a visit (v.seen, kept with the
+// meadow). The journal is the player's, not the meadow's (JOURNAL, in the browser): each kind ever seen, when it was
+// first seen and how often. True the first time ever.
+const JOURNAL = 'aeon-garden-journal';
+let journal = {};
+try { journal = JSON.parse(localStorage.getItem(JOURNAL) || '{}') || {}; } catch (e) { /* a private window: this visit only */ }
+function sightVisitor(v) {
+  if (v.seen) return false;
+  v.seen = true;
+  const page = journal[v.kind], first = !page;
+  journal[v.kind] = { first: page?.first ?? Date.now(), season: page?.season ?? S.seasonOf(world.tick), seen: (page?.seen || 0) + 1 };
+  try { localStorage.setItem(JOURNAL, JSON.stringify(journal)); } catch (e) { /* this visit only, then */ }
+  return first;
+}
+// A tap on one sees it there and then: its marker if it's waiting, or a caption of its own the first time this visit.
+function tapVisitor(v) {
+  let s = spots.find(o => o.o === v && !o.seenAt);
+  if (!s && v.seen) return;
+  if (!s) spots.push(s = Object.assign(spotOf({ type: 'visitor', v }), { id: ++spotId, at: performance.now(), look: 0, bx: -1e9, by: -1e9 }));
+  const d = drawnAt(v);
+  seeSpot(s, d.x, d.y, performance.now());
+}
+function drawVisitorShadow(v, sx, sy, sn) {
+  const px = visitorPx(), a = (0.14 + 0.16 * Math.max(0, sn.a)) * visitorFade(v), off = Math.max(0, sn.a) * sn.lean * px * 0.2;
+  ctx.fillStyle = `rgba(40, 50, 20, ${a})`;
+  ctx.beginPath(); ctx.ellipse(sx + off, sy + px * 0.36, px * 0.38 + Math.abs(off) * 0.6, px * 0.1, 0, 0, TAU); ctx.fill();
+}
 
 function drawCreature(c, sx, sy, now) {
   if (c.species === 'otter') return drawOtter(c, sx, sy, now);
@@ -1858,6 +1936,98 @@ function paintBee(g, size, U, pose) {
 const BEE_BUZZ = 38;               // ms a wingbeat painting shows
 const BEE_STILL = 10;              // px: smaller, the wings can't be seen beating, so they don't
 const beeArt = (c, px, now) => c.mode === 'sip' || c.sleeping ? 'bee:2' : ui.speed === 0 || px < BEE_STILL ? 'bee:0' : 'bee:' + ((now / BEE_BUZZ + c.id) & 1);
+
+// A hedgehog, facing left, soft-shaded like the carcasses: a round dome of spines, each dark at the root and pale at the
+// tip, lying back over it and bristling at its edge; under it a brown face with a darker mask, a shiny black nose and a
+// bead of an eye, a small round ear, little dark feet. 'hog:0' and 'hog:1' the two steps of a walk, 'hog:2' snuffling
+// with its nose down, 'hog:3' curled up asleep on a few dry leaves. Box -1 to 1, feet on the ground at 0.72.
+const HOG_SPINE = [92, 72, 56], HOG_FACE = [172, 134, 100], HOG_MASK = [92, 66, 46], HOG_FEET = '#4a372b';
+const HOG_ROOTS = ['#46362a', '#33271f'], HOG_TIPS = ['#e9dcc0', '#c2b090'];
+const HOG_LEAVES = [[176, 116, 56], [150, 98, 50], [194, 150, 74]];
+// The spines: n of them, from points inside the dome (inside) lying along at(x, y), the ones lower down over the ones
+// above and darker, with the light on the top. The same every time (its own random numbers, seed).
+function hogSpines(g, n, inside, at, len, seed) {
+  const rnd = () => (seed = seed * 16807 % 2147483647) / 2147483647, list = [];
+  for (let k = 0; k < n * 6 && list.length < n; k++) {
+    const x = -1 + rnd() * 2, y = -1 + rnd() * 2;
+    if (!inside(x, y)) continue;
+    const a = at(x, y) + (rnd() - 0.5) * 0.45, l = len * (0.7 + rnd() * 0.6);
+    list.push([x, y, Math.cos(a) * l, Math.sin(a) * l]);
+  }
+  list.sort((p, q) => p[1] - q[1]);
+  for (const [x, y, dx, dy] of list) {
+    const low = y > 0.18 ? 1 : 0;
+    g.strokeStyle = HOG_ROOTS[low]; g.lineWidth = 0.034;
+    g.beginPath(); g.moveTo(x, y); g.lineTo(x + dx * 0.7, y + dy * 0.7); g.stroke();
+    g.strokeStyle = HOG_TIPS[low]; g.lineWidth = 0.026;
+    g.beginPath(); g.moveTo(x + dx * 0.62, y + dy * 0.62); g.lineTo(x + dx, y + dy); g.stroke();
+  }
+}
+// A dry leaf: pointed at both ends, a darker midrib.
+const hogLeaf = (g, x, y, l, a, rgb) => {
+  g.save(); g.translate(x, y); g.rotate(a);
+  softIn(g, rgb, -0.06, 0.06, () => { g.moveTo(-l, 0); g.quadraticCurveTo(0, -l * 0.7, l, 0); g.quadraticCurveTo(0, l * 0.7, -l, 0); }, 1.15, 0.78);
+  strokeIn(g, rockRGB(tone(rgb, 0.7)), 0.014, () => { g.moveTo(-l * 0.9, 0); g.lineTo(l * 0.9, 0); });
+  g.restore();
+};
+function paintHedgehog(g, size, U, pose) {
+  if (shrunk(g, size, U, 'hog:' + pose)) return;
+  g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
+  g.lineCap = g.lineJoin = 'round';
+  if (pose === 3) {                                                             // curled up asleep, on a few dry leaves
+    hogLeaf(g, -0.42, 0.68, 0.17, -0.3, HOG_LEAVES[0]);
+    hogLeaf(g, 0.44, 0.67, 0.18, 0.35, HOG_LEAVES[1]);
+    hogLeaf(g, 0.06, 0.73, 0.17, 0.08, HOG_LEAVES[2]);
+    const ball = () => ovalAt(g, 0.02, 0.36, 0.48, 0.36);
+    softIn(g, HOG_SPINE, 0.0, 0.72, ball, 1.3, 0.55);
+    softIn(g, HOG_FACE, 0.46, 0.72, () => ovalAt(g, -0.34, 0.58, 0.16, 0.1, 0.25), 1.12, 0.75);   // the face, tucked in
+    fillIn(g, '#1c1512', () => ovalAt(g, -0.47, 0.62, 0.045, 0.04));
+    strokeIn(g, '#3a2a20', 0.02, () => { g.moveTo(-0.38, 0.55); g.quadraticCurveTo(-0.34, 0.575, -0.29, 0.56); });   // its eye, shut
+    hogSpines(g, 170, (x, y) => ((x - 0.02) / 0.45) ** 2 + ((y - 0.36) / 0.33) ** 2 < 1 && !(x < -0.16 && y > 0.48),
+      (x, y) => Math.atan2(y - 0.36, x - 0.02) + 1.25, 0.18, 77);
+    furGlow(g, [255, 242, 214], 0.26, -0.06, 0.12, 0.3, 0.12);                // the light on the top
+    return;
+  }
+  const nose = pose === 2, step = pose === 1;
+  const feet = near => fillIn(g, near ? HOG_FEET : '#33261e', () => {
+    const f = near ? [nose ? -0.4 : step ? -0.24 : -0.4, step ? 0.42 : 0.26] : [nose ? -0.3 : step ? -0.34 : -0.18, step ? 0.5 : 0.34];
+    for (const x of f) { ovalAt(g, x, 0.62, 0.05, 0.09); ovalAt(g, x - 0.04, 0.7, 0.07, 0.03); }
+  });
+  feet(false);
+  softIn(g, HOG_FACE, 0.28, 0.64, () => ovalAt(g, 0.08, 0.48, 0.58, 0.15), 1.05, 0.7);   // the belly fur under the spines
+  const mantle = () => {                                                        // the dome of spines
+    g.moveTo(-0.44, 0.48);
+    g.bezierCurveTo(-0.52, -0.06, -0.2, -0.34, 0.14, -0.34);
+    g.bezierCurveTo(0.52, -0.34, 0.8, 0.02, 0.74, 0.46);
+    g.bezierCurveTo(0.5, 0.56, -0.2, 0.56, -0.44, 0.48);
+  };
+  softIn(g, HOG_SPINE, -0.34, 0.56, mantle, 1.3, 0.55);
+  // The head: a pointed snout, tipped down to the ground when it snuffles.
+  g.save(); g.translate(-0.34, 0.34); g.rotate(nose ? 0.5 : 0); g.translate(0.34, -0.34);
+  const head = () => {
+    g.moveTo(-0.26, 0.04);
+    g.bezierCurveTo(-0.48, 0.08, -0.7, 0.26, -0.84, 0.36);
+    g.quadraticCurveTo(-0.91, 0.42, -0.82, 0.47);
+    g.bezierCurveTo(-0.66, 0.55, -0.42, 0.6, -0.24, 0.56);
+    g.closePath();
+  };
+  softIn(g, HOG_FACE, 0.04, 0.6, head, 1.2, 0.72);
+  g.save(); g.beginPath(); head(); g.clip();
+  furGlow(g, HOG_MASK, 0.7, -0.5, 0.3, 0.2, 0.12, -0.35);                       // the dark mask over the eye
+  furGlow(g, [238, 218, 190], 0.65, -0.56, 0.5, 0.28, 0.08, -0.2);             // the pale cheek and chin
+  g.restore();
+  fillIn(g, rockRGB(tone(HOG_FACE, 0.78)), () => discAt(g, -0.3, 0.15, 0.065)); // the ear
+  fillIn(g, rockRGB(tone(HOG_FACE, 0.5)), () => discAt(g, -0.3, 0.16, 0.035));
+  fillIn(g, '#120d0a', () => ovalAt(g, -0.53, 0.3, 0.05, 0.045, -0.3));        // the eye, a black bead
+  fillIn(g, 'rgba(255,255,255,0.85)', () => discAt(g, -0.545, 0.285, 0.016));
+  fillIn(g, '#16100d', () => ovalAt(g, -0.85, 0.41, 0.055, 0.048, 0.4));      // the nose
+  fillIn(g, 'rgba(255,255,255,0.5)', () => discAt(g, -0.86, 0.395, 0.014));
+  g.restore();
+  hogSpines(g, 190, (x, y) => ((x - 0.15) / 0.58) ** 2 + ((y - 0.12) / 0.44) ** 2 < 1 && y < 0.44 && x > -0.4,
+    (x, y) => Math.atan2(y - 0.3, x - 0.15) + 1.15, 0.2, 91);
+  furGlow(g, [255, 242, 214], 0.24, 0.1, -0.14, 0.42, 0.13);                   // the light along the top
+  feet(true);
+}
 
 // Otters are painted, not the 🦦 emoji: it floats on its back, and differs from system to system.
 // A Eurasian otter, facing left: warm brown, a pale chin and throat, a broad flat head with small low ears,
@@ -3429,6 +3599,8 @@ function spotOf(e) {
     case 'hedgeyoung': return { emoji: '🌿', o: e.hedge, say: `${e.hedge.name} can hide a rabbit now` };
     case 'hedgebloom': return { emoji: '🌸', o: e.hedge, say: `${e.hedge.name} is white with blossom` };
     case 'hedgehaws': return { emoji: '🔴', o: e.hedge, say: `${e.hedge.name} is red with haws` };
+    case 'visitor': return { emoji: VISITORS[e.v.kind].emoji, o: e.v, thing: ['visitor', e.v], visitor: e.v.kind, stay: true,
+      say: `A ${VISITORS[e.v.kind].name}, come for ${VISITORS[e.v.kind].for} ${e.v.hedge.name}` };
   }
   return null;
 }
@@ -3446,7 +3618,7 @@ function spotNews(e, toast) {
 
 const isAnimal = o => !!o?.species;
 function spotAt(s) {
-  if (isAnimal(s.o)) return drawnAt(s.o);
+  if (isAnimal(s.o) || s.visitor) return drawnAt(s.o);
   return s.o ? s.o : s;
 }
 
@@ -3489,10 +3661,13 @@ function sayArt(s) {
 
 function seeSpot(s, x, y, now) {
   s.seenAt = now;
+  const first = s.visitor && sightVisitor(s.o);
+  if (first) s.say = `First sighting: a ${VISITORS[s.visitor].name}!`;
   if (!s.say) return;
   s.art = sayArt(s);
   addEffect('✨', x, y, 0.6);
-  chime('seen');
+  if (first) addEffect('📖', x, y, 1.6, 2200);
+  chime(first ? 'named' : 'seen');
 }
 
 const spotBadges = new Map();        // a badge for each emoji, painted once: a parchment disc, a brass rim, the emoji
@@ -3523,9 +3698,9 @@ function drawSpots(now) {
   for (let i = spots.length - 1; i >= 0; i--) {
     const s = spots[i], dt = Math.min(100, now - (s.last || now));
     s.last = now;
-    if (s.seenAt ? now - s.seenAt > (s.art ? SAY_MS : SPOT_FADE) : now - s.at > SPOT_S * 1000 || (isAnimal(s.o) && !s.o.alive)) { spots.splice(i, 1); continue; }
+    if (s.seenAt ? now - s.seenAt > (s.art ? SAY_MS : SPOT_FADE) : (s.stay ? s.o.gone : now - s.at > SPOT_S * 1000) || (isAnimal(s.o) && !s.o.alive)) { spots.splice(i, 1); continue; }
     const { x, y } = spotAt(s), [sx, sy] = toScreen(x, y);
-    const lift = isAnimal(s.o) ? creaturePx(s.o) * 0.75 : 14, bob = Math.sin(now / 420 + s.id) * 3;
+    const lift = isAnimal(s.o) ? creaturePx(s.o) * 0.75 : s.visitor ? visitorPx() * 0.6 : 14, bob = Math.sin(now / 420 + s.id) * 3;
     let bx = sx, by = sy - lift - SPOT_R - 8 + bob;
     const on = bx > left && bx < right && by > top && by < bottom;
     if (!s.seenAt && on && cam.zoom >= SPOT_ZOOM && Math.abs(sx - cx) < (right - left) * 0.4 && Math.abs(sy - cy) < (bottom - top) * 0.4) {
@@ -4178,7 +4353,7 @@ function putPainting(p, f, alpha, snow, ox, oy) {
   if (snow && p.snow) { ctx.globalAlpha = alpha * snow; ctx.drawImage(p.snow, x, y, w, h); }
   ctx.globalAlpha = 1;
 }
-const PAINTERS = { fox: paintFox, rabbit: paintRabbit, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, vole: paintVole, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody, bee: paintBee, fall: paintFall, tuft: paintTuftSprite };
+const PAINTERS = { fox: paintFox, rabbit: paintRabbit, hog: paintHedgehog, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, vole: paintVole, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody, bee: paintBee, fall: paintFall, tuft: paintTuftSprite };
 function drawDecor(d, sx, sy, now, ck, clipLeaves) {
   const z = cam.zoom, px = d.tree ? treePx(d) : d.size * z;
   if (d.emoji === '🪨') { drawRock(d, sx, sy); return; }
@@ -6061,6 +6236,17 @@ function handleEvent(e) {
     case 'hedgehaws':
       addNews(`🔴 Your hedge ${hedgeLink(e.hedge, esc(e.hedge.name))} is red with haws: the birds will carry them off.`);
       break;
+    case 'visitor': {                   // (?keep) a hedgehog come to a hedge
+      const v = e.v, k = VISITORS[v.kind], h = hedgeLink(v.hedge, esc(v.hedge.name));
+      addNews(v.n > 1 ? `${k.emoji} A ${thingLink('visitor', v.id, k.name)} is at your hedge ${h} again, snuffling for beetles.`
+        : `${k.emoji} <b>A ${thingLink('visitor', v.id, k.name)} has come to your hedge ${h}</b>, for ${k.for} it.`);
+      break;
+    }
+    case 'visitorleft': {
+      const v = e.v, k = VISITORS[v.kind];
+      addNews(`${k.emoji} The ${k.name} has left ${hedgeLink(v.hedge, esc(v.hedge.name))} after ${days((world.tick - v.came) / S.TPD)}.`);
+      break;
+    }
     case 'plantgrew':
       addNews(`🌿 The ${plantedLink(e.tree)} you planted is a sapling now, out of the rabbits' reach.`);
       break;
@@ -7570,6 +7756,35 @@ function waterLine() {
 }
 
 const THINGS = {
+  visitor: {                                               // (?keep) a hedgehog at a hedge: before the trees, as it's at the foot of one
+    at(sx, sy) {
+      if (!world.visitors) return null;
+      const px = visitorPx();
+      for (const v of world.visitors) {
+        const d = drawnAt(v), [x, y] = toScreen(d.x, d.y);
+        if (visitorFade(v) > 0.3 && Math.abs(sx - x) < px * 0.5 && sy > y - px * 0.35 && sy < y + px * 0.45) return v;
+      }
+      return null;
+    },
+    here: v => !v.gone && !!world.visitors?.includes(v),
+    spot: v => { const d = drawnAt(v); return { x: d.x, y: d.y + 0.15, r: 0.5 }; },
+    show(v) {
+      const k = VISITORS[v.kind], h = v.hedge, hedge = hedgeLink(h, esc(h.name)), face = visitorFace(v.kind);
+      if (!this.here(v)) return { emoji: face, tint: k.tint, name: 'Hedgehog', sub: 'A visitor · gone', status: `🌙 Gone back the way it came. One may come again to ${hedge}.` };
+      const status = {
+        in: `🌿 Making for your hedge ${hedge}`, out: '🌙 Off back the way it came',
+        potter: `👃 Pottering along ${hedge}, after beetles`, snuffle: `🪲 Snuffling for beetles under ${hedge}`,
+        home: `🍂 Off to its bed of leaves under ${hedge}`, sleep: `💤 Curled up asleep under ${hedge} till dusk`,
+      }[v.mode];
+      const facts = [['🌿', `Came for ${k.for} ${hedge}, the hedge you planted`],
+        ['🪲', v.finds ? `${v.finds} beetles, slugs and worms found so far` : 'Nothing found yet'],
+        ['🌙', 'Up from dusk till dawn; by day it sleeps in the leaves at the foot of the hedge']];
+      if (v.mode !== 'out') facts.push(['🗓️', v.until - world.tick < S.TPD ? 'Off again at dusk' : `Here for ${days((v.until - world.tick) / S.TPD)} more`]);
+      if (v.n > 1) facts.push(['🔁', `${v.n} visits to your hedges so far`]);
+      return { emoji: face, tint: k.tint, name: 'Hedgehog', sub: `A visitor at ${h.name}`, status, facts };
+    },
+  },
+
   hive: {
     at: (sx, sy) => hiveAt(sx, sy, true),
     here: h => world.hives.includes(h),
@@ -8414,6 +8629,7 @@ function click(sx, sy) {
   if (ui.tool === 'look') {
     const c = creatureAt(sx, sy), t = !c && thingAt(sx, sy);
     if (t) pick(t.kind, t.it, [wx, wy]); else select(c ? c.id : 0);
+    if (t?.kind === 'visitor') tapVisitor(t.it);
     ui.hoverHive = null;
   } else if (S.KINDS.includes(ui.tool)) release(ui.tool, wx, wy);
   else if (ui.tool === 'zap') zapAt(wx, wy);
@@ -9356,8 +9572,8 @@ function goToThing(thing) {
     if (v) { const at = dugSpot(v.id); select(0); ui.follow = false; cam.x = at.x; cam.y = at.y; clampCam(); pick('water', { body: v, ...at }); }
     return;
   }
-  const it = (kind === 'hive' ? world.hives : kind === 'tree' ? world.decor.filter(o => o.tree) : world.fields).find(o => o.id === +id);
-  if (it?.strip || it?.hedge) { select(0); ui.follow = false; cam.x = it.x; cam.y = it.y; clampCam(); }
+  const it = (kind === 'hive' ? world.hives : kind === 'tree' ? world.decor.filter(o => o.tree) : kind === 'visitor' ? world.visitors || [] : world.fields).find(o => o.id === +id);
+  if (it?.strip || it?.hedge || kind === 'visitor' && it) { select(0); ui.follow = false; cam.x = it.x; cam.y = it.y; clampCam(); }
   if (it) pick(kind, it);
 }
 
@@ -9977,6 +10193,7 @@ function idleNews(e) {
     case 'fledge': n = { c: e.c, w: 4, line: `${e.c.name}, an owlet out of the hollow` }; break;
     case 'cubsout': n = { c: e.c, w: 4, line: `${e.c.name}, an otter cub out of the holt` }; break;
     case 'holt': n = { c: e.c, w: 4, line: `${e.c.name}'s new holt on the bank` }; break;
+    case 'visitor': n = { x: e.v.nx, y: e.v.ny, w: 8, line: `A ${VISITORS[e.v.kind].name}, come to the hedge`, big: true }; break;
   }
   if (!n) return;
   if (n.c || n.x !== undefined) idle.news = Object.assign(n, { at });
@@ -10244,7 +10461,7 @@ addEventListener('pagehide', keepMeadow);
 const AWAY_MIN = 5 * 60e3;                 // gone at least this long, in real time
 const AWAY_TICKS = S.SEASON_DAYS * S.TPD;  // and it moves on a season, however long it was
 const AWAY_MS = 40;                        // of each frame the catching up gets
-const AWAY_BIG = ['dryloss', 'extinct', 'dryend', 'drystart', 'dryspring', 'swarm', 'settle', 'hivestruck', 'queenlost', 'fire', 'outbreak', 'outbreakover', 'mast', 'voles', 'frogyear', 'treedied', 'windthrow', 'frogsfound', 'pondgrew', 'stripbloom', 'beesfound', 'hedgeyoung', 'hedgebloom', 'hedgehaws'];   // news for the card, the first told first
+const AWAY_BIG = ['dryloss', 'extinct', 'dryend', 'drystart', 'dryspring', 'swarm', 'settle', 'hivestruck', 'queenlost', 'fire', 'outbreak', 'outbreakover', 'mast', 'voles', 'frogyear', 'treedied', 'windthrow', 'frogsfound', 'pondgrew', 'stripbloom', 'beesfound', 'hedgeyoung', 'hedgebloom', 'hedgehaws', 'visitor'];   // news for the card, the first told first
 const away = { on: false, frames: 0, left: 0, from: 0, day: -1, births: null, deaths: null, news: [], type: '', mine: false, waited: false };
 const awayOpen = () => !$('#away').classList.contains('hidden');
 const deathsOf = s => Object.values(world.stats.deaths[s]).reduce((a, b) => a + b, 0);

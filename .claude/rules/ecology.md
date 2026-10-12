@@ -266,3 +266,12 @@ A crowded hive (`HIVE_ROOM`) swarms in spring or summer (`swarm`): the old queen
 a tree (a hive with `cluster: true`, drawn by `drawSwarm`) while scouts fly to the sites from `hiveSites`, then
 `settle` moves them into the best hollow tree or empty hive; a daughter queen stays behind.
 Colony-level things go in `hivesTick`.
+
+Visitors (`?keep`, `visitorsTick`): now and then the keeper's work draws one in. A hedgehog comes at dusk to the longest hedge
+thick enough to hide in (`h.young`), spring to autumn (`hedgehogComes`: `VISIT_FIRST` the first time, then `VISIT_ODDS` an
+evening after `VISIT_REST` days), walks in from `VISIT_FROM` tiles off, stays `VISIT_DAYS` (asleep at the foot of a whip by
+day, pottering along the hedge at night and snuffling for beetles, `potter`, `snuffle`, `v.finds`) and goes back the way it
+came at dusk, or at once from a fire or a hedge gone (`leave`). A visitor isn't a creature: nothing hunts it, it eats nothing
+the meadow counts, and its chances are hashed from the day, not drawn from `w.rng`, so `balance.js` prints the same with it.
+`w.visitors` (the ones here), `w.visited` (how often each kind came, the day the last left); events `visitor`, `visitorleft`.
+A meadow kept before them gets both empty (`unpackWorld`), no `KEEP_VERSION` bump.

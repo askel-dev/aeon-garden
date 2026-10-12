@@ -5870,6 +5870,7 @@ function step(w) {
   }
   if (w.anyDied) { w.creatures = w.creatures.filter(c => c.alive); w.anyDied = false; }
   if (w.arrivals.length && t >= w.arrivals[0].t) arrivalsTick(w);
+  if (w.hedges) visitorsTick(w);                             // (?keep: a hedgehog at a hedge)
   flushNewborn(w);
   if (t % w.history.every === 0) record(w);
   if (t % (TPD / 4) === 0) migrate(w);
@@ -5991,6 +5992,7 @@ function unpackWorld(kept) {
   }
   if (w.ponds) for (const p of w.ponds) if (!p.box) { pondShape(w, p); delete p.rx; delete p.ry; }   // (?keep: dug while ponds were ovals)
   if (w.turned) w.turned = w.turned.filter(s => s.spots);
+  if (w.hedges) { w.visitors ??= []; w.visited ??= {}; }     // (?keep: kept before the visitors)
   w.grid = makeGrid(); w.grids = perKind(makeGrid); w.events = []; w.newborn = [];
   makeCurrent(w);
   bankTrees(w);                                              // (kept with no tree for a holt)
@@ -6649,7 +6651,7 @@ function hedgeName(w, id) {
 function plantHedge(w, pts) {
   const plan = hedgePlan(w, pts);
   if (!plan.ok) return plan.why;
-  w.hedges ??= []; w.turned ??= [];
+  w.hedges ??= []; w.turned ??= []; w.visitors ??= []; w.visited ??= {};
   const id = w.hedges.length + 1, h = plan.grows
     || { id, name: hedgeName(w, id), planted: w.tick, tone: Math.floor(hash2(id, 53, w.seed) * 3), whips: 0, escapes: 0, young: 0, blossom: 0, haws: 0, x: plan.x, y: plan.y };
   if (!plan.grows) w.hedges.push(h);
@@ -6698,6 +6700,129 @@ function hedgesDay(w) {
     if (!h.blossom && bloom) { h.blossom = w.tick; emit(w, { type: 'hedgebloom', hedge: h }); }
     if (!h.haws && h.blossom && bear && seasonOf(w.tick) === 2 && springPart(w.tick) >= HAWS_FROM) { h.haws = w.tick; emit(w, { type: 'hedgehaws', hedge: h }); }
   }
+}
+
+// ---------------------------------------------------------------- visitors
+//
+// (?keep) Now and then the keeper's work draws a visitor. The first is a hedgehog: once a hedge is thick enough to hide
+// in (h.young), one may come to it at dusk, spring to autumn (it sleeps the winter away somewhere else). A visitor isn't
+// a creature: nothing hunts it, it eats nothing the meadow counts, and its chances are hashed from the day, not drawn
+// from w.rng, so the meadow plays out the same with it or without. It comes in from a little way off (VISIT_FROM), stays
+// VISIT_DAYS, curled up asleep at the foot of the hedge by day and pottering along it at night, snuffling for beetles,
+// and goes back the way it came at dusk. w.visitors are the ones here now (one of a kind), w.visited how often each kind
+// has come and the day the last one left. Events: 'visitor' as one comes, 'visitorleft' as it goes.
+const VISIT_FIRST = 0.5;        // the chance an evening of the first visit, once there's a hedge to come to
+const VISIT_ODDS = 0.15;        // and of each one after
+const VISIT_REST = SEASON_DAYS; // days after one leaves before another can come
+const VISIT_DAYS = [3, 5];      // days it stays
+const VISIT_FROM = 5;           // tiles off it comes in from (game.js fades it in and out over VISIT_FADE of them)
+const VISIT_FADE = 1.5;
+const HOG_WALK = 0.04;          // tiles a tick (a rabbit walks 0.06)
+const HOG_UP = [0.62, 0.03];    // it's up from dusk till dawn (phaseOf)
+const HOG_SNUFFLE = [60, 150];  // ticks it snuffles about in one spot
+const HOG_REACH = 1.6;          // how far from the foot of its hedge it potters
+const HOG_NEXT = 3.5;           // and how far it goes on to the next spot, mostly
+const HOG_FINDS = 0.6;          // the chance a snuffle turns up a beetle, a slug or a worm (or two or three)
+
+function visitorsTick(w) {
+  if (w.tick % TPD === Math.round(HOG_UP[0] * TPD)) visitorsDusk(w);
+  const p = phaseOf(w.tick), up = p >= HOG_UP[0] || p < HOG_UP[1];
+  for (let k = 0; k < w.visitors.length; k++) hedgehogTick(w, w.visitors[k], up);
+  if (w.visitGone) { w.visitors = w.visitors.filter(v => !v.gone); w.visitGone = false; }
+}
+
+// At dusk: who's going, and who's coming.
+function visitorsDusk(w) {
+  for (const v of w.visitors) {
+    v.whips = v.whips.filter(standing);
+    if (w.tick >= v.until || !v.whips.length) leave(w, v);
+  }
+  hedgehogComes(w);
+}
+
+// A hedgehog comes to the longest young hedge, if one has a chance tonight (force: one comes now, whatever the day).
+function hedgehogComes(w, force = false) {
+  const day = dayOf(w.tick), last = w.visited.hedgehog;
+  if (w.visitors.some(v => v.kind === 'hedgehog')) return null;
+  const stay = force ? VISIT_DAYS[1] : Math.min(VISIT_DAYS[0] + Math.floor(hash2(day, 3, w.seed) * (VISIT_DAYS[1] - VISIT_DAYS[0] + 1)),
+    3 * SEASON_DAYS - 1 - day % YEAR_DAYS);                  // (gone by the last dusk of autumn)
+  if (!force && (seasonOf(w.tick) === 3 || stay < 2 || last && day < last.left + VISIT_REST
+    || hash2(day, 1, w.seed) >= (last ? VISIT_ODDS : VISIT_FIRST))) return null;
+  let h = null;
+  for (const o of w.hedges) if ((o.young || force) && o.standing && (!h || o.standing > h.standing)) h = o;
+  const whips = h ? w.decor.filter(d => d.hedge === h.id && standing(d)) : [];
+  if (!whips.length) return null;
+  const d = whips[Math.floor(hash2(day, 5, w.seed) * whips.length)], side = hash2(day, 6, w.seed) < 0.5 ? -1 : 1;
+  const nx = d.x + 0.3 * side, ny = d.y + 0.35;             // its bed: at the foot of a whip, in front of it
+  const a0 = hash2(day, 7, w.seed) * 2 * Math.PI;
+  for (let k = 0; k < 12; k++) {                             // where it comes in from: dry ground with a clear way to the hedge
+    const a = a0 + k * 2 * Math.PI / 12, fx = nx + Math.cos(a) * VISIT_FROM, fy = ny + Math.sin(a) * VISIT_FROM;
+    if (!footing(w, fx, fy) || !clearPath(w, fx, fy, nx, ny)) continue;
+    const seen = w.visited.hedgehog ??= { n: 0, left: -99 };
+    seen.n++;
+    const v = { id: w.visitId = (w.visitId || 0) + 1, kind: 'hedgehog', hedge: h, whips, x: fx, y: fy, fx, fy, nx, ny,
+      tx: nx, ty: ny, mode: 'in', came: w.tick, until: w.tick + stay * TPD, timer: 0, facing: Math.cos(a) > 0 ? -1 : 1, moved: 0, finds: 0, gone: false, n: seen.n };
+    w.visitors.push(v);
+    emit(w, { type: 'visitor', v });
+    return v;
+  }
+  return null;
+}
+
+// Off back the way it came (at dusk when its days are up, or at once from a fire or a hedge gone).
+function leave(w, v) {
+  if (v.mode === 'out') return;
+  v.mode = 'out'; v.tx = v.fx; v.ty = v.fy;
+  if (!clearPath(w, v.x, v.y, v.fx, v.fy)) { v.tx = v.x; v.ty = v.y; }   // (the way's gone under water: it slips off where it is)
+}
+
+// A step towards (tx, ty), true there.
+function visitorWalk(v, pace) {
+  const dx = v.tx - v.x, dy = v.ty - v.y, d = Math.hypot(dx, dy);
+  if (d <= pace) { v.x = v.tx; v.y = v.ty; v.moved = d; return true; }
+  v.x += dx / d * pace; v.y += dy / d * pace; v.moved = pace;
+  if (Math.abs(dx) > d * 0.3) v.facing = dx > 0 ? 1 : -1;
+  return false;
+}
+
+function hedgehogTick(w, v, up) {
+  v.moved = 0;
+  if (v.mode !== 'out' && w.fire[idx(v.x, v.y)] > 0) leave(w, v);
+  switch (v.mode) {
+    case 'in': if (visitorWalk(v, HOG_WALK)) potter(w, v, up); return;
+    case 'out':
+      if (visitorWalk(v, HOG_WALK)) { v.gone = true; w.visitGone = true; w.visited.hedgehog.left = dayOf(w.tick); emit(w, { type: 'visitorleft', v }); }
+      return;
+    case 'potter': if (!up) { home(v); return; } if (visitorWalk(v, HOG_WALK * 0.7)) snuffle(w, v); return;
+    case 'snuffle': if (!up) home(v); else if (--v.timer <= 0) potter(w, v, up); return;
+    case 'home': if (visitorWalk(v, HOG_WALK)) v.mode = 'sleep'; return;
+    case 'sleep': if (up && w.tick < v.until) potter(w, v, up); return;
+  }
+}
+
+const home = v => { v.mode = 'home'; v.tx = v.nx; v.ty = v.ny; };
+function snuffle(w, v) {
+  v.mode = 'snuffle';
+  const r = hash2(w.tick, v.id, 61);
+  v.timer = HOG_SNUFFLE[0] + Math.floor(r * (HOG_SNUFFLE[1] - HOG_SNUFFLE[0]));
+  if (hash2(w.tick, v.id, 67) < HOG_FINDS) v.finds += 1 + Math.floor(3 * hash2(w.tick, v.id, 69));
+}
+
+// Off along the hedge to a spot near the foot of one of its whips close by (now and then any), or a snuffle where it
+// is if there's no clear way.
+function potter(w, v, up) {
+  if (!up) { home(v); return; }
+  for (let k = 0; k < 6; k++) {
+    const d = v.whips[Math.floor(hash2(w.tick, v.id * 6 + k, 71) * v.whips.length)];
+    if (!d) break;
+    if (k < 5 && (d.x - v.x) ** 2 + (d.y - v.y) ** 2 > HOG_NEXT * HOG_NEXT) continue;
+    const a = hash2(w.tick, k, 73) * 2 * Math.PI, r = HOG_REACH * Math.sqrt(hash2(w.tick, k, 79));
+    const x = d.x + Math.cos(a) * r, y = d.y + 0.2 + Math.sin(a) * r * 0.6;
+    if (!dry(w, x, y) || !clearPath(w, v.x, v.y, x, y)) continue;
+    v.mode = 'potter'; v.tx = x; v.ty = y;
+    return;
+  }
+  snuffle(w, v);
 }
 
 function nameQueen(w, h, name) {
@@ -7040,6 +7165,7 @@ const api = {
   W, H, TPD, SHALLOW, DEEP, SEASON_DAYS, YEAR_DAYS, SEASONS, SPECIES, GENES, COATS, GROUND, WEATHER,
   createWorld, step, clock, isNight, phaseOf, seasonOf, mood, ageDays, growth, isAdult, patchFresh,
   addCreature, paintGrass, setSky, lockSky, zap, burnLine, lift, putDown, nameCreature, nameQueen, NAME_MAX, plantTree, pondPlan, digPond, frogsNear, POND_BRUSH, POND_DAB, POND_TILES, REED_DAYS, stripPlan, sowStrip, stripKind, STRIP_TILES, hedgePlan, plantHedge, hedgeForecast, inHedge, HEDGE_MOST,
+  hedgehogComes, VISIT_FADE,
   dryStage, dryness, dryComing, dryFrom, dryTo, DRY_NEAR, greenShare, wildGreen, stripBloom, GREEN_GRASS, WILT, BARREN, BARREN_DAYS, traitMeans, walkable, packWorld, unpackWorld,
   coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT, KINDS, OWLS, FEW, DANGER, dryCounting,
   TERRAIN, drawnToLink, drawnFromLink, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,

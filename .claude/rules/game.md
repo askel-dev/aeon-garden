@@ -35,7 +35,12 @@ courts) a little bubble pops up and fades (`drawPops`, `POPS`), at most 3 at onc
 Something worth seeing (cubs, a swarm, frogs in your pond: `spotOf`) leaves a marker over the spot till you've looked,
 or at the screen's edge pointing the way; a tap on it or "Go see" on its news line glides there (`spots`, `drawSpots`,
 `goSpot`). Once you've looked, the marker gives way to a caption saying what it was (`say`, `sayArt`), with a sparkle
-and a soft chime (`seeSpot`, sound.js `seen`). Visitors and a field journal are planned in `research/visitors-and-journal.md`. A new meadow opens close, over the open ground with the most animals (`homeView`, `HOME_TILES`).
+and a soft chime (`seeSpot`, sound.js `seen`). A visitor (sim.js `w.visitors`, so far the hedgehog at a hedge) is drawn in with the trees and animals, painted like them
+(`paintHedgehog`: walking, snuffling, curled up asleep; `visitorArt`, `drawVisitor`), fading in and out at the ends of its way
+(`visitorFade`). Its marker waits as long as it's here (`stay`), and a tap on it sees it too (`tapVisitor`). Seen, it goes in the
+player's field journal (`sightVisitor`, `JOURNAL` in the browser, not with the meadow): the first of a kind ever gets "First
+sighting" for its caption, a 📖 and the `named` chime. The inspector has it (`THINGS.visitor`). The journal's card, more visitors
+and taking naming out are still to come (`research/visitors-and-journal.md`). A new meadow opens close, over the open ground with the most animals (`homeView`, `HOME_TILES`).
 The tab's icon follows the season and the part of day (`updateFavicon`, at most once a second), and
 the news log dates each line with a season chip (`seasonChip`).
 The rivers run (`drawFlow`, worked out once a meadow by `flowOf` from the sim's `w.current`): streaks of current, quicker
