@@ -3,12 +3,15 @@
  * game.js hands over the meadow as a few tiny textures, one texel a tile, and the shader works
  * out every pixel on the screen. It paints again only when something it shows has moved (the
  * camera, a texture, the light), so the grass changes the moment it grows and the ground is sharp
- * at any zoom, but a still camera costs the GPU next to nothing. The look, from big to small:
+ * at any zoom, but a still camera costs the GPU next to nothing. The look, from big to small,
+ * in watercolour, saturated: lights toward a near-pure lime, shade toward a deep emerald, never grey:
  *   - where it is: a cooler, deeper green by the water and the woods, golden up high and in big
- *     drifts (the hue shifts, the grass stays bright);
- *   - the grass itself (what the rabbits eat): lush grass, or the bare earth where it is grazed;
- *   - where the grass is thick: soft brush dabs from afar, crisp filled tufts once you're close;
- *   - a faint painterly mottle and, up close, a fine grain and the odd pebble;
+ *     drifts, and broad warm and cool washes (the hue shifts, the grass stays bright);
+ *   - the grass itself (what the rabbits eat): long meadow grass, a deeper wash with the pigment
+ *     pooled dark along its edge; short grass where it's grazed, paler, sunnier and more
+ *     straw-coloured; bare earth only where it's bitten right down. The long grass's edge is lit on
+ *     the sun's side and shades the short below;
+ *   - the paper's grain over it all and, up close, a few dry-brush dabs in the longest grass;
  *   - the sun on the slopes, wet moss at the water's edge, then the water in soft layers,
  *     deepest well out from the shore, with long brushed strokes on its surface.
  *
@@ -52,6 +55,14 @@ out vec4 o;
 #define DRY_LUSH 0.6                      // how much lusher the ring by the water goes
 #define DRY_GREEN 0.75                    // and how thick its grass shows at least, whatever the sim's (a pond just dug)
 #define DRY_THIN 0.7                      // the straw this much thinner where the bare earth shows
+
+// The grass, as the rabbits leave it, and how it's painted.
+#define LONG vec2(0.46, 0.64)             // from short grass to long, over this
+#define BITTEN vec2(0.06, 0.2)            // from bare earth to short grass, over this
+#define EDGE 0.45                         // how strongly the long grass's edge is lit on the sun's side, and shades the other
+#define POOL 0.4                          // how dark the pigment pools along the long grass's edge
+#define GRAIN 0.07                        // how much the paper's grain darkens its hollows
+#define DABS 0.5                          // how strongly the dry-brush dabs show in the longest grass, up close
 
 // Hashes the float's own bits, so it stays exact at any coordinate: a float trick like
 // fract(p * 123.34) runs out of digits in the fine grain and paints it in streaks.
@@ -146,6 +157,46 @@ float layers(float f, float t0, float t1, float n, float a) {
   return 1. - pow(1. - a, clamp((f - t0) / (t1 - t0) * (n - 1.) + 1., 0., n));
 }
 
+// ---------------------------------------------------------------- the grass, in watercolour
+
+// The season's grass in the light (l > 0, toward a near-pure lime) or the shade (l < 0, a deep emerald, bluer).
+// Winter's grey-green only gets lighter and darker: no lime in the frost. Set once a pixel, from the season (main).
+#define SATURATE 0.3                      // how much more colour than the season's palette, in the green and golden seasons
+#define LIME vec3(1.17, 1.16, 0.62)       // the grass in full sun, times its colour (and LIME_ADD)
+#define LIME_ADD vec3(0.035, 0.055, 0.)
+#define EMERALD vec3(0.42, 0.64, 0.68)    // in deep shade, times its colour
+#define FROST_LIT vec3(1.07, 1.07, 1.05)  // the same two in winter
+#define FROST_DEEP vec3(0.76, 0.82, 0.88)
+vec3 LIT, LIT_ADD, DEEP;
+vec3 tone(vec3 c, float l) {
+  return l > 0. ? mix(c, c * LIT + LIT_ADD, min(l, 1.)) : mix(c, c * DEEP, min(-l, 1.));
+}
+
+// Brush dabs: one to a cell, a short pointed blade of paint standing up out of the grass and leaning with its
+// neighbours, each a touch lighter or darker than the light where it sits. Where two overlap the lighter is on top,
+// as a painter works from shade to light. Gives (how much of the pixel the top dab covers, its shade -1 to 1).
+vec2 dabs2(vec2 p, float px, float cell, float len, float wid, float lean, float thick) {
+  vec2 c = floor(p / cell);
+  float cover = 0., top = -9.;
+  for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) {
+    vec2 id = c + vec2(dx, dy);
+    vec4 a = hash4(id + seed + 11.);
+    if (a.w > thick) continue;                                     // thin grass: fewer dabs
+    vec2 foot = (id + 0.1 + 0.8 * a.xy) * cell;
+    vec2 dir = normalize(vec2(lean + 0.7 * (a.z - 0.5), -1.));
+    vec2 d = p - foot;
+    float L = len * (0.75 + 0.5 * a.x);
+    float t = dot(d, dir) / L, v = abs(dot(d, vec2(-dir.y, dir.x)));
+    if (t < -0.2 || t > 1.) continue;
+    // a leaf of paint: round at its foot, widest a third of the way up, a point at the tip
+    float w = wid * 2.6 * sqrt(max(t + 0.08, 0.)) * (1. - t);
+    float cov = 1. - smoothstep(w - px, w + px, v);
+    float sh = 2. * fract(a.z * 7.31 + a.y * 3.17) - 1.;            // its own touch lighter or darker
+    if (cov > 0.02 && sh > top) { top = sh; cover = cov; }
+  }
+  return vec2(cover, top);
+}
+
 void main() {
   vec2 at = ((vec2(gl_FragCoord.x, top - gl_FragCoord.y) / dpr) - off) / zoom;    // in tiles (top: the canvas's height)
   // Near the edges the meadow fades into the mist, in big pale clouds; past them (zoomed right out, or looking a
@@ -163,69 +214,91 @@ void main() {
   float n1 = fbm(q * 0.35), n2 = fbm(q * 1.7 + 31.);
   float toWater = H.g + 0.9 * (n2 - 0.5) + 0.8 * (n1 - 0.5);     // a wobbly shore
 
-  // Where it is: damp by the water, dry up high and in big drifts, shaded by the woods.
-  float moist = exp(-max(toWater, 0.) / 4.);
-  float dry = clamp(0.4 * height + 0.75 * (fbm(q * 0.03 + 5.) - 0.5) - 0.6 * moist + 0.2, 0., 1.);
-  // Golden only as far as the season's grass is green: winter's grey-green would turn sickly yellow.
+  // ---- The grass.
   float hue = clamp((max(high.r, max(high.g, high.b)) - min(high.r, min(high.g, high.b))) / 0.35, 0., 1.);
-  vec3 green = high, lush = green * vec3(0.84, 0.95, 0.9), golden = green * mix(vec3(1.), vec3(1.16, 1.07, 0.62), hue);
-  vec3 grass = mix(lush, green, smoothstep(0.05, 0.45, dry));
-  grass = mix(grass, golden, smoothstep(0.45, 0.85, dry));
-  grass = mix(grass, grass * vec3(0.82, 0.94, 0.98), 0.45 * exp(-H.b / 3.));   // cool shade by the woods
-  grass *= 1. - 0.08 * exp(-max(toWater, 0.) / 1.4);             // wet grass along the water
-  // The Dry Year: straw where the sim says it's parched (away from the water, and from a hedge's lane), its edge wobbling a
-  // little finer than the tiles, bare baked earth in patches, and a lush ring where it's spared. The ring reads green at once
-  // round a pond just dug or along a hedge just planted, however short the sim's grass is there (it grows back after).
+  LIT = mix(FROST_LIT, LIME, hue); LIT_ADD = LIME_ADD * hue;
+  DEEP = mix(FROST_DEEP, EMERALD, hue);
+
+  // Where it is: deeper and cooler by the water and the woods, golden up high and in big drifts, and broad warm and
+  // cool washes over it all, like watercolour laid wet: the hue moves, the grass stays saturated.
+  float moist = exp(-max(toWater, 0.) / 4.);
+  float dry = clamp(0.45 * height + 0.8 * (fbm(q * 0.03 + 5.) - 0.5) - 0.6 * moist + 0.2, 0., 1.);
+  vec3 grass = high, golden = high * mix(vec3(1.), vec3(1.2, 1.06, 0.5), hue);
+  grass = mix(grass, golden, smoothstep(0.4, 0.85, dry));
+  float cool = max(0.85 * moist, 0.75 * exp(-H.b / 3.));
+  grass = mix(grass, grass * mix(vec3(0.94), vec3(0.8, 0.93, 0.96), hue), cool);
+  float wash = 0.65 * noise(q * 0.07 + 300.) + 0.35 * noise(q * 0.16 + 310.) - 0.5;
+  grass *= 1. + vec3(0.16, 0.06, -0.16) * wash * hue;
+  grass = max(mix(vec3(dot(grass, vec3(0.3, 0.59, 0.11))), grass, 1. + SATURATE * hue), 0.);   // more colour, never greyer
+  vec3 lush = grass * vec3(0.84, 0.95, 0.9);
+  vec3 longC = lush;                                             // the long grass's own colour, before its light
+
+  // The Dry Year, as today: straw where the sim says it's parched, a lush ring where it's spared.
   float parch = 0.;
   if (drought > 0.) {
     float raw = smooth4(parched, p).r;
     parch = clamp(raw + DRY_WOBBLE * (fbm(q * 0.3 + 520.) - 0.5) * smoothstep(0., 0.15, raw), 0., 1.);
     float ring = drought * (1. - smoothstep(0.03, 0.3, parch / drought)) * (1. - smoothstep(0.2, 0.7, H.a));
-    float bald = smoothstep(0.42, 0.72, fbm(q * 0.45 + 600.));             // where the bare earth shows first
+    float bald = smoothstep(0.42, 0.72, fbm(q * 0.45 + 600.));
     vec3 straw = mix(DRY_STRAW, DRY_OLIVE, smoothstep(0.35, 0.75, fbm(q * 0.25 + 640.)) * 0.55);
     grass = mix(mix(grass, straw, parch), lush * vec3(0.92, 1.04, 0.9), DRY_LUSH * ring);
     g = mix(g * (1. - DRY_THIN * parch * bald), max(g, DRY_GREEN), ring);
+    longC = mix(lush, grass * vec3(0.94, 0.95, 0.9), clamp(parch + DRY_LUSH * ring, 0., 1.));
   }
-  float clover = 0.4 * smoothstep(0.55, 0.75, fbm(q * 0.28 + 90.)) * clamp(0.4 + moist - dry, 0., 1.) * (1. - parch);
-  grass = mix(grass, grass * vec3(0.8, 0.9, 0.86), 0.8 * clover);
-  vec3 earth = mix(low * vec3(0.95, 0.93, 0.9), low * vec3(0.66, 0.6, 0.55), moist);
+
+  // How long the grass is (what the rabbits eat): long meadow grass; short grass where it's grazed, paler and sunnier,
+  // straw-coloured as it gets shorter; bare earth only where it's bitten right down. The edges ragged, finer than a tile.
+  float ragC = 0.15 * (noise(q * 0.9 + 40.) - 0.5) + 0.1 * (noise(q * 2.1 + 43.) - 0.5), rag = ragC + 0.05 * (noise(q * 4.7 + 45.) - 0.5);
+  float gw = clamp(g + rag, 0., 1.);
+  float fine = clamp((zoom - 10.) / 6., 0., 1.);                 // up close: brushwork; further out it'd only read as speckle
+  float far = 1. - clamp((zoom - 8.) / 6., 0., 1.);
+  float tall = smoothstep(LONG.x, LONG.y, gw), turf = smoothstep(BITTEN.x, BITTEN.y, gw);
+  vec3 earth = low * mix(vec3(0.97, 0.97, 0.98), vec3(0.93, 0.85, 0.72), hue) * (1. - 0.3 * moist);
   if (parch > 0.) earth = mix(earth, DRY_EARTH, parch);
-
-  // The grass itself, over the earth, with a nibbled edge.
-  vec3 col = mix(earth, grass, smoothstep(0., 1., clamp(g + 0.15 * (n2 - 0.5), 0., 1.))) * (0.97 + 0.06 * n1);
-  if (drought > 0.) col = mix(col, mix(DRY_MUD, DRY_EARTH, smoothstep(0.5, 3., toWater)) * (0.92 + 0.16 * n2), drought * smoothstep(0.2, 0.7, H.a));
-  float detail = clamp((zoom - 12.) / 6., 0., 1.);               // further out the tufts would only read as speckle
-
-  // A thin edge of wet moss along the water, fuller here and there. Not tan: tan is grazed ground.
-  float cove = smoothstep(0.4, 0.65, fbm(q * 0.5 + 70.));
-  col = mix(col, grass * vec3(0.62, 0.72, 0.64), 0.7 * (1. - smoothstep(0.1, 0.8, toWater)) * mix(0.35, 1., cove));
-  col *= 0.95 + 0.1 * height;
-  // A painterly surface: every tile a touch lighter or darker, warm and cool patches, a fine grain up close.
-  col *= 1. + 0.07 * (noise(q * 1.1 + 200.) - 0.5) + 0.035 * (noise(q * 3.1 + 250.) - 0.5);
-  col += vec3(1., 0.33, -1.) * 0.035 * (fbm(q * 0.22 + 300.) - 0.5);
-  // Zoomed out, brush dabs where the grass is thick; zoomed in, the tufts take over.
-  float brush = clamp((zoom - 4.) / 4., 0., 1.) * (1. - clamp((zoom - 11.) / 3., 0., 1.)) * smoothstep(0.3, 0.9, g);
-  if (brush > 0.) col *= 1. + 0.12 * brush * dabs(q, px);
-  if (detail > 0.) {
-    col *= 1. + 0.06 * detail * (noise(q * 13. + 400.) - 0.5 + 0.6 * (noise(q * 29. + 500.) - 0.5));
-    vec2 tf = tufts(p, px);
-    col = mix(col, grass * mix(vec3(0.7, 0.82, 0.68), vec3(0.86, 0.94, 0.82), tf.y), 0.85 * detail * tf.x);
-    // A pebble here and there, more on bare earth: one to a cell at most, lit from the top left.
-    vec2 pc = floor(p / 0.7);
-    vec4 ph = hash4(pc + seed + 13.3);
-    if (ph.x < 0.03 + 0.1 * (1. - g) * (1. - g)) {
-      vec2 c = (pc + 0.2 + 0.6 * ph.yz) * 0.7, rr = vec2(0.05 + 0.06 * ph.w) * vec2(1., 0.7);
-      vec2 d = (p - c) / rr;
-      float f = length(d), aa = px / rr.x * 1.5;
-      col *= 1. - 0.25 * detail * (1. - smoothstep(0.8, 1.3, length((p - c - vec2(0.012, 0.018)) / rr)));   // its shadow
-      vec3 stone = mix(vec3(0.6, 0.58, 0.54), vec3(0.74, 0.69, 0.6), ph.w) * (0.9 - 0.18 * clamp(d.x + d.y, -1., 1.));
-      col = mix(col, stone, detail * (1. - smoothstep(1. - aa, 1. + aa, f)));
-    }
+  vec3 lawn = mix(tone(grass, 0.3), low * mix(vec3(1.), vec3(1.02, 1.0, 0.9), hue), 0.22 + 0.15 * far + 0.45 * (1. - smoothstep(0.16, 0.48, gw)));   // (paler from afar, so it reads)
+  if (parch > 0.) {
+    lawn = mix(lawn, grass, parch);
+    turf = mix(turf, smoothstep(-0.2, 0.5, gw), parch);
   }
+  // The long grass's edge, toward the sun: where it stands higher than the short grass by it, a light along its top
+  // and a soft shadow falling on the lawn below. (One more look at the grass a little way toward the sun.)
+  // (Its slope from the pixels about it: dFdx and dFdy, in tiles, and toward the sun.)
+  // (Only the coarser wobble: the finest would make the light along it jagged.)
+  float tallC = smoothstep(LONG.x, LONG.y, clamp(g + ragC, 0., 1.));
+  float rise = dot(vec2(dFdx(tallC), -dFdy(tallC)) / px, normalize(vec2(-0.55, -0.75)));   // (screen y runs up)
+  float castOn = clamp(-EDGE * rise, 0., 1.), rimOf = clamp(EDGE * rise, 0., 1.);
+
+  // Watercolour: washes laid wet, the long grass a deeper wash than the lawn with the pigment pooled dark along
+  // its edge, granulation in the hollows of the paper, and a few dry-brush dabs where it's longest.
+  float pool = smoothstep(0.08, 0.5, tall) * (1. - smoothstep(0.5, 0.95, tall));
+  float gran = noise(q * 4.5 + 870.) * 0.6 + noise(q * 11. + 880.) * 0.4;
+  float bloomW = fbm(q * 0.5 + 860.);
+  vec3 meadow = tone(longC, 0.25 * (bloomW - 0.5) * 2. - 0.05);
+  vec3 col = mix(lawn, meadow, tall);
+  col = mix(col, tone(longC, -0.75), POOL * pool);
+  col *= 1. - GRAIN * smoothstep(0.45, 0.8, gran) * (0.4 + 0.6 * tall);
+  if (fine > 0.) {
+    vec2 db = dabs2(p, px, 0.5, 0.55, 0.1, 0.25, 0.55 * smoothstep(0.7, 1., gw));
+    col = mix(col, tone(longC, -0.35 + 0.25 * db.y), DABS * db.x * fine);
+  }
+  // The light along the long grass's sunny edge, and its shadow on the short grass below.
+  col = mix(col, tone(longC, 0.8), 0.2 * rimOf);
+  col = mix(col, col * DEEP, 0.3 * castOn);
+  col = mix(earth, col, turf);
+  if (turf < 1.) col *= 1. - 0.05 * (1. - turf) * noise(q * 2.2 + 900.);   // the earth a little uneven
+  // Wet mud where the Dry Year's water has drawn back past any summer's line (the shape's 4th).
+  if (drought > 0.) col = mix(col, mix(DRY_MUD, DRY_EARTH, smoothstep(0.5, 3., toWater)) * (0.92 + 0.16 * n2), drought * smoothstep(0.2, 0.7, H.a));
+
+  // A thin edge of wet moss along the water, fuller here and there: a deep cool green, never tan.
+  float cove = smoothstep(0.4, 0.65, 0.62 * noise(q * 0.5 + 70.) + 0.38 * noise(q * 1.1 + 75.));
+  col = mix(col, tone(grass * vec3(0.78, 0.92, 0.9), -0.5), 0.65 * (1. - smoothstep(0.1, 0.8, toWater)) * mix(0.35, 1., cove));
+  col *= 0.96 + 0.08 * height;
+
   col = col * (1. - B.a) + B.rgb;                                // a flower field in bloom
   col = mix(col, vec3(74., 66., 60.) / 255., T.b * (1. - g) * 0.85);   // burnt, until the grass returns
-  float s = snow > 0. ? clamp(snow * 1.4 - 0.2 - 0.25 * (2. * n1 - 1.) - 0.1 * (2. * n2 - 1.), 0., 0.9) : 0.;
-  col = mix(col, vec3(246., 248., 252.) / 255., s);             // snow settles in patches first
+  // Snow settles in patches first, on the long grass's sunny tops before its hollows; blue in the shade.
+  float s0 = snow > 0. ? clamp(snow * 1.4 - 0.2 - 0.25 * (2. * n1 - 1.) - 0.1 * (2. * n2 - 1.), 0., 0.92) : 0.;
+  col = mix(col, mix(vec3(0.8, 0.86, 0.96), vec3(246., 248., 252.) / 255., 0.6 + 0.4 * (1. - castOn)), s0);
   col *= damp * (1. - 0.3 * T.a) * (1. - 0.1 * wet);
 
   // The sun on the slopes: lighter where the ground falls toward it, gently. Water lies flat.
@@ -267,9 +340,9 @@ void main() {
   o = vec4(col, 1.);
 }`;
 
-let ok = !!gl, U = {}, textures = {};
+let ok = !!gl, U = {}, textures = {}, shader, mistOut = 0;
 if (gl) {
-  const shader = (type, src) => {
+  shader = (type, src) => {
     const s = gl.createShader(type);
     gl.shaderSource(s, src); gl.compileShader(s);
     if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
@@ -279,6 +352,7 @@ if (gl) {
     const prog = gl.createProgram();
     gl.attachShader(prog, shader(gl.VERTEX_SHADER, VERTEX));
     gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, FRAGMENT));
+    gl.bindAttribLocation(prog, 0, 'a');
     gl.linkProgram(prog);
     if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
     gl.useProgram(prog);
@@ -314,7 +388,7 @@ function mist(data, w, h, out) {
     [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
   gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, w, h, 0, gl.RED, gl.UNSIGNED_BYTE, data);
-  gl.uniform1f(U.mistOut, out);
+  gl.uniform1f(U.mistOut, out); mistOut = out;
 }
 
 function set(name, data) {

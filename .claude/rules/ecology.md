@@ -22,7 +22,7 @@ A flooded burrow is lost and kits too young to climb out drown (`floodBurrows`);
 drowns and grows back fast in the silt (`w.silt`). Flooded water keeps the name of the water it spilled
 from (`w.nearBody`). Snow lying in winter freezes it over (`iceTick`, `w.ice`, `w.frozen`): the ice takes any weight, so
 foxes cross where they couldn't, and whoever is out on deep water when it thaws goes through (`breakUp`). The ground shader shades the slopes by the sun, and colours the grass by where it is: lusher by the water
-and the woods, golden up high, wet moss at the water's edge, with a faint painterly mottle. That colouring is only a look; the grass the animals eat is `w.grass`.
+and the woods, golden up high, wet moss at the water's edge, in watercolour washes with a paper grain. It reads the grass the rabbits leave in three states: long (a deeper wash, the pigment pooled along its edge, lit on the sun's side), short where it's grazed (paler, sunnier) and bare earth only where it's bitten right down. That colouring is only a look; the grass the animals eat is `w.grass`.
 The woods' shade thins that grass (`SHADE_GRASS`, half that while the broadleaves are bare, `leafless`): once a day
 `groundTick` works out how much grass each tile's soil holds under the shade on it (`w.shadedFert`, which `growGrass`
 reads), so woods that creep out cost the rabbits grazing. And the ground remembers what lives and dies on it (`w.rich`,
