@@ -17,8 +17,8 @@
  * tiles to the water, tiles to the woods, mud the Dry Year's water left), 'water' (the water
  * softened by 1, 2 and 4 blurs, and the deep water by 2) and 'parched' (?keep, the Dry Year: how
  * parched, the first of the four), and once Ground.mist(...) with how thick the mist is near the
- * edges. Then Ground.draw(uniforms) paints Ground.canvas if it has to, and
- * Ground.view says where in it the screen's corner is. game.js shows the canvas as a layer of its own
+ * edges. Then Ground.draw(uniforms) paints Ground.canvas if it has to, all of it times its light
+ * (white by day), and Ground.view says where in it the screen's corner is. game.js shows the canvas as a layer of its own
  * under the meadow, slid so that corner is on the screen's.
  * Ground.ok is false where there is no WebGL2.
  */
@@ -40,6 +40,7 @@ uniform sampler2D tile, bloom, shape, water, mist, parched;
 uniform vec2 size, off, seed;
 uniform float top, zoom, dpr, snow, damp, lx, ly, ice, cold, mistOut, drought;
 uniform vec3 low, high, sand, fog;
+uniform vec3 light;                      // what it's all lit by: white by day, warm in the golden hour (game.js goldLight)
 out vec4 o;
 
 // The Dry Year (?keep): drought is how hard it bites, 0 to 1 (game.js, in steps of 1/16), and the parched texture's red how
@@ -153,7 +154,7 @@ void main() {
   float m = texture(mist, (at + mistOut) / (size + 2. * mistOut)).r;
   vec3 fogC = fog;
   if (m > 0.) fogC = mix(fog, min(fog * 1.04 + 0.04, 1.), smoothstep(0.4, 0.8, fbm(at * 0.03 + 950.)));
-  if (m > 0.996) { o = vec4(fogC, 1.); return; }
+  if (m > 0.996) { o = vec4(fogC * light, 1.); return; }
   vec2 p = size - abs(size - abs(at));                           // the meadow, mirrored back in from past its edges
   float px = 1. / (zoom * dpr);
   vec2 q = p + seed;                                              // the same noise, moved for each meadow
@@ -266,7 +267,7 @@ void main() {
   }
 
   col = mix(col, fogC, m);
-  o = vec4(col, 1.);
+  o = vec4(col * light, 1.);
 }`;
 
 let ok = !!gl, U = {}, textures = {};
@@ -344,6 +345,7 @@ function steady(u) {                                    // all but where the cam
   for (const k of EXACT) if (u[k] !== last[k]) return false;
   for (const k in NEAR) if (Math.abs(u[k] - last[k]) > NEAR[k]) return false;
   for (const k of ['low', 'high', 'sand', 'fog']) for (let i = 0; i < 3; i++) if (Math.abs(u[k][i] - last[k][i]) > 0.5) return false;
+  for (let i = 0; i < 3; i++) if (Math.abs(u.light[i] - last.light[i]) > 0.002) return false;   // (game.js moves it in steps)
   return true;
 }
 const within = (d, pad, dpr) => d === 0 || Math.abs(d) <= pad - 1 / dpr;
@@ -369,6 +371,7 @@ function draw(u) {
   gl.uniform2f(U.off, u.ox + pad, u.oy + pad); gl.uniform2fv(U.seed, u.seed);
   for (const k of ['zoom', 'dpr', 'snow', 'damp', 'lx', 'ly', 'ice', 'cold', 'drought']) gl.uniform1f(U[k], u[k]);
   for (const k of ['low', 'high', 'sand', 'fog']) gl.uniform3fv(U[k], u[k].map(v => v / 255));
+  gl.uniform3fv(U.light, u.light);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   last = { ...u, pad }; stale = false; view.x = view.y = m;
   return true;
