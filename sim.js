@@ -5796,19 +5796,22 @@ const FEW = { rabbit: 4, fox: 3, bee: 4, crow: 3, owl: 2, otter: 2 };
 // bar), the frogs too (w.frogCount). Tuned over balance.js's keeper meadows to be up on few ordinary days but before a die-out.
 const DANGER = { rabbit: 8, fox: 5, bee: 10, crow: 5, owl: 4, otter: 2, frogs: 30 };
 function migrate(w) {
-  if (!w.options.migration) return;
-  const wait = { rabbit: 1, fox: 3, bee: 2, crow: 3, owl: 10, otter: 3 }, arrive = { rabbit: 6, fox: 2, bee: 8, crow: 4, owl: 2, otter: 2 };
+  // The last one gone is told once, however slowly they went (otters that never came aren't gone), and again if
+  // they come back and die out again. Migration or none.
   for (const s of KINDS) {
     if (s === 'owl' && !OWLS) continue;
-    const n = s === 'otter' && !w.decor.some(d => d.holt) ? 0 : w.count[s];   // (otters with no holt are only passing through)
-    // The last one gone is told once, however slowly they went (otters that never came aren't gone), and again if
-    // they come back and die out again.
     if (w.count[s] > 0) w.diedOut[s] = false;
     else if (!w.diedOut[s] && Object.keys(w.stats.deaths[s]).length) {
       w.diedOut[s] = true;
       emit(w, { type: 'extinct', species: s });
       if (w.dryYear) dryGone(w, s);                               // (?keep: the Dry Year lost)
     }
+  }
+  if (!w.options.migration) return;
+  const wait = { rabbit: 1, fox: 3, bee: 2, crow: 3, owl: 10, otter: 3 }, arrive = { rabbit: 6, fox: 2, bee: 8, crow: 4, owl: 2, otter: 2 };
+  for (const s of KINDS) {
+    if (s === 'owl' && !OWLS) continue;
+    const n = s === 'otter' && !w.decor.some(d => d.holt) ? 0 : w.count[s];   // (otters with no holt are only passing through)
     if (n >= FEW[s] || w.arrivals.some(a => a.species === s)) { w.goneSince[s] = -1; continue; }
     if (w.goneSince[s] < 0) { w.goneSince[s] = w.tick; continue; }
     if (w.tick - w.goneSince[s] < wait[s] * TPD) continue;
@@ -6524,6 +6527,7 @@ function sowStrip(w, pts) {
   if (gone > 1) blob(px, py);
   if (!f.shape.length) f.shape.push({ x: plan.x, y: plan.y, r: 1.5 });
   w.fields.push(f);
+  if (dryness(w) > 0) shadeSoil(w);                           // (in the Dry Year: parched as the ground about it, at once)
   w.turned.push({ x: plan.x, y: plan.y, r: Math.hypot(plan.x1 - plan.x0 + 1, plan.y1 - plan.y0 + 1) / 2 + 1.5,
     spots: evenly(sown.map(t => ({ x: t.x + 0.5, y: t.y + 0.5 })), TURNED_SPOTS), until: w.tick + TURNED_DAYS * TPD });
   emit(w, { type: 'sowstrip', field: f, x: plan.x, y: plan.y, tiles: sown.length, hives: plan.hives, bloom: plan.bloom });
