@@ -6966,6 +6966,25 @@ function greenShare(w) {
   return land ? green / land : 0;
 }
 
+// The green share the meadow's own water could keep at the Dry summer's low with nobody tending it: the land its parch
+// leaves soil enough for green grass (GREEN_GRASS), with no grazing, no keeper's ponds (w.dug) and no hedges.
+function wildGreen(w, level) {
+  const T = w.terrain, g = w.ground, dug = w.dug, wood = w.wood, seed = w.seed % 65536;
+  const wild = new Uint8Array(W * H);
+  for (let i = 0; i < W * H; i++) wild[i] = g[i] < level && !(dug && dug[i] >= 0) ? 1 : 0;
+  const d = distanceTo(wild);
+  let land = 0, green = 0;
+  for (let i = 0; i < W * H; i++) {
+    if (wild[i]) continue;
+    land++;
+    const x = i % W, y = (i / W) | 0, reach = d[i] + DRY_RAGGED * (patchy(x / DRY_PATCH, y / DRY_PATCH, seed) - 0.5);
+    const u = clamp((reach - DRY_NEAR) / (DRY_FAR - DRY_NEAR), 0, 1), p = u * u * (3 - 2 * u) * (1 - DRY_SHADE * wood[i]);
+    const f = w.fert[i] * (1 - SHADE_GRASS * wood[i]);
+    if ((f > DRY_GRASS ? f + (DRY_GRASS - f) * p : f) >= GREEN_GRASS) green++;
+  }
+  return land ? green / land : 0;
+}
+
 // ---------------------------------------------------------------- reading an animal
 
 function mood(w, c) {
@@ -7021,7 +7040,7 @@ const api = {
   W, H, TPD, SHALLOW, DEEP, SEASON_DAYS, YEAR_DAYS, SEASONS, SPECIES, GENES, COATS, GROUND, WEATHER,
   createWorld, step, clock, isNight, phaseOf, seasonOf, mood, ageDays, growth, isAdult, patchFresh,
   addCreature, paintGrass, setSky, lockSky, zap, burnLine, lift, putDown, nameCreature, nameQueen, NAME_MAX, plantTree, pondPlan, digPond, frogsNear, POND_BRUSH, POND_DAB, POND_TILES, REED_DAYS, stripPlan, sowStrip, stripKind, STRIP_TILES, hedgePlan, plantHedge, hedgeForecast, inHedge, HEDGE_MOST,
-  dryStage, dryness, dryComing, dryFrom, dryTo, DRY_NEAR, greenShare, stripBloom, GREEN_GRASS, WILT, BARREN, BARREN_DAYS, traitMeans, walkable, packWorld, unpackWorld,
+  dryStage, dryness, dryComing, dryFrom, dryTo, DRY_NEAR, greenShare, wildGreen, stripBloom, GREEN_GRASS, WILT, BARREN, BARREN_DAYS, traitMeans, walkable, packWorld, unpackWorld,
   coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT, KINDS, OWLS, FEW, DANGER, dryCounting,
   TERRAIN, drawnToLink, drawnFromLink, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE,
