@@ -1189,6 +1189,7 @@ function render(now) {
   // for it on every draw, GPU or not: with it, a wood on screen dropped frames.
   ctx.imageSmoothingQuality = 'low';
   spriteFrame++; paintedMs = 0; standIns = true; turned = 0;
+  lookFrame(now);                                    // (?keep: the journal's look at what's drawn)
   ctx.clearRect(-8, -8, vw + 16, vh + 16);          // past the meadow's edge the page shows through
   const [ox, oy] = toScreen(0, 0);
   const z = cam.zoom, ck = S.clock(world);
@@ -1715,6 +1716,7 @@ const wadingAt = v => !world.frozen && world.water[(v.y | 0) * S.W + (v.x | 0)] 
 function drawHeron(v, sx, sy, now, z, px, a) {
   const feet = sy + visitorFeet(), up = heronLift(v, px), art = heronArt(v, up, px, now), flip = v.facing > 0, alpha = a < 1 ? a : undefined;
   const y = feet - px * 0.36 - up;
+  if (gaze.on && art === 'heron:6') lookAt('fish', sx, y, v);
   if (up > 1 || !wadingAt(v)) drawEmoji(art, sx, y, px, { flip, alpha });
   else {
     const line = feet - px * 0.04, legs = sx + (flip ? -1 : 1) * px * 0.1, rip = 1 + 0.12 * Math.sin(now / 300 + v.id);
@@ -1735,19 +1737,116 @@ function drawHeron(v, sx, sy, now, z, px, a) {
   }
   if (v.mode === 'sleep' && z >= 8) drawEmoji('💤', sx + px * 0.18, y - px * 0.22 + Math.sin(now / 600 + v.id) * 3, Math.max(11, z * 0.7), { alpha: 0.85 });
 }
-// Seeing one (its marker looked at, or a tap on it) puts it in the field journal, once a visit (v.seen, kept with the
-// meadow). The journal is the player's, not the meadow's (JOURNAL, in the browser): each kind ever seen, when it was
-// first seen and how often. True the first time ever.
+// The field journal (?keep): a page for each kind that lives here or comes by, filled the first time you see one. It's
+// the player's, not the meadow's (JOURNAL, in the browser), so a new meadow keeps it. A page: { first: when (ms), t: the
+// meadow's tick then (older pages have its season), seen: how many visits seen (a visitor's), most: the most of them
+// alive at once in a meadow of yours (a kind that lives here), glimpsed: a visitor came and went unseen, new: not yet
+// looked at in the journal }. A visitor is seen once a visit (v.seen, kept with the meadow): its marker looked at, or a
+// tap on it. A kind that lives here, once you've looked at one up close (lookAt) or followed one.
 const JOURNAL = 'aeon-garden-journal';
 let journal = {};
 try { journal = JSON.parse(localStorage.getItem(JOURNAL) || '{}') || {}; } catch (e) { /* a private window: this visit only */ }
+const saveJournal = () => { try { localStorage.setItem(JOURNAL, JSON.stringify(journal)); } catch (e) { /* this visit only, then */ } };
+// Its pages in order, numbered. art: its painting (a function where it's worked out), fit: how much bigger it's shown (a
+// tall one painted with room round it); a: its name in a sentence; note: what a found page says; hint: an empty one's; a
+// visitor's tool (KEEP_TOOLS) is what draws it, where and when it comes, glimpse: its page once one's come and gone unseen.
+const PAGES = [
+  { k: 'rabbit', name: 'Rabbit', a: 'a rabbit', art: () => rabbitArtOf(COAT.wild, 'sit'),
+    note: 'Grazes the open grass at dawn and dusk and digs its burrows there. Stamps and bolts when a fox comes.',
+    hint: 'Something nibbles the short grass round the burrows.' },
+  { k: 'fox', name: 'Fox', a: 'a fox', art: () => foxArtOf(0.2, 'stand'),
+    note: 'Hunts the rabbits, and pounces on voles in the long grass when rabbits are few.',
+    hint: 'Something red trots the meadow at dusk, after the rabbits.' },
+  { k: 'bee', name: 'Honeybee', a: 'a honeybee', art: 'bee:2',
+    note: 'Lives in a hollow oak and sips from the flowers in reach. One back from a rich patch dances the way.',
+    hint: 'Something hums over the flowers by an old hollow oak.' },
+  { k: 'crow', name: 'Crow', a: 'a crow', art: 'crow:0',
+    note: 'Walks the short grass for grubs and clears up what the foxes leave. Buries acorns in autumn, and some grow into oaks.',
+    hint: 'Something black walks the short grass, pecking.' },
+  ...(S.OWLS ? [{ k: 'owl', name: 'Tawny owl', a: 'a tawny owl', art: '🦉',
+    note: 'Sleeps in a hollow oak by day, and drops on the voles in the long grass at night.',
+    hint: 'Something calls from the hollow oaks at night.' }] : []),
+  { k: 'vole', name: 'Vole', a: 'a vole', art: 'vole:0',
+    note: 'Lives hidden in the long grass the rabbits leave, in thousands in a vole year. The foxes listen for them.',
+    hint: 'Something rustles in the long grass. Watch a fox listening there.' },
+  { k: 'frog', name: 'Common frog', a: 'a frog', art: 'frog:0',
+    note: 'Spawns in still shallows early in spring. A flood pool is best, unless it dries before the tadpoles leave.',
+    hint: 'Something hops at the water’s edge, spring to autumn.' },
+  { k: 'fish', name: 'Trout', a: 'a trout', art: '🐟',
+    note: 'Lives in the water that lasts the year round, the deeper the better, and eats the tadpoles. Otters dive for it.',
+    hint: 'Something silver lives in the deep water. Watch an otter fishing.' },
+  { k: 'otter', name: 'Otter', a: 'an otter', art: 'otter:3',
+    note: 'Makes its holt in the roots of a big tree on the bank. Fishes from dusk into the morning, and slides down the bank for fun.',
+    hint: 'Something slides into the water at dusk, by a big tree on the bank.' },
+  { k: 'hedgehog', name: 'Hedgehog', a: 'a hedgehog', art: 'hog:0', visits: true, tool: 'hedge', where: 'A thick hedge', when: 'Dusk, spring to autumn',
+    note: 'Comes to a thick hedge at dusk for the beetles under it, and sleeps curled up at its foot by day. Gone in a few days.',
+    hint: 'Something snuffles under a thick hedge at dusk.', glimpse: 'One came to your hedge and left before you saw it. It will be back.' },
+  { k: 'heron', name: 'Heron', a: 'a heron', art: 'heron:0', fit: 1.45, visits: true, tool: 'pond', where: 'A pond with frogs', when: 'By day, spring to autumn',
+    note: 'Comes to a pond you dug once the frogs have found it. Stands stock still in the shallows, then stabs for a frog or a fish.',
+    hint: 'Something tall stalks the frogs in a pond you dug.', glimpse: 'One came to your pond and flew off before you saw it. It will be back.' },
+];
+PAGES.forEach((p, i) => { p.no = String(i + 1).padStart(2, '0'); p.i = i; });
+const PAGE = Object.fromEntries(PAGES.map(p => [p.k, p]));
+const artOf = p => (typeof p.art === 'function' ? p.art() : p.art);
+// In the journal (a kind with no page, the owls while they're off, always is).
+const found = k => !PAGE[k] || !!journal[k]?.first;
+// How many of a kind that lives here are alive now.
+const livingCount = k => Math.round(k === 'vole' ? world.voleCount : k === 'frog' ? world.frogCount : k === 'fish' ? world.fishCount : world.count[k] || 0);
+// A sighting of a kind into the journal (visit: a visitor's, counted): true the first time ever.
+function noteSighting(kind, visit) {
+  const page = journal[kind] ||= {}, first = !page.first;
+  if (first) { Object.assign(page, { first: Date.now(), t: world.tick, new: true }); delete page.glimpsed; }
+  if (visit) page.seen = (page.seen || 0) + 1;
+  else if (first) page.most = livingCount(kind);
+  saveJournal();
+  if (first) book.held.add(kind);                  // (counted in the book once its stamp lands, stampFly)
+  journalChanged();
+  return first;
+}
 function sightVisitor(v) {
   if (v.seen) return false;
   v.seen = true;
-  const page = journal[v.kind], first = !page;
-  journal[v.kind] = { first: page?.first ?? Date.now(), season: page?.season ?? S.seasonOf(world.tick), seen: (page?.seen || 0) + 1 };
-  try { localStorage.setItem(JOURNAL, JSON.stringify(journal)); } catch (e) { /* this visit only, then */ }
-  return first;
+  return noteSighting(v.kind, true);
+}
+// A visitor that left unseen: its page half filled, its name and where it comes to.
+function glimpse(kind) {
+  const page = journal[kind] ||= {};
+  if (page.first || page.glimpsed) return;
+  Object.assign(page, { glimpsed: true, new: true });
+  saveJournal();
+  journalChanged();
+}
+// A kind that lives here is found once you've looked at one up close: drawn near the middle of the screen, as a marker
+// is seen (SPOT_ZOOM or closer), for LOOK_MS all told (a vole or a fish shows only for a moment, so a glimpse does).
+// The drawing says what it drew (lookAt, behind gaze.on, worked out once a frame), so it costs nothing at a distance
+// or once a kind is in. One find at a time, FIND_GAP apart, so a meadow's first minute isn't a pile of them.
+const LOOK_MS = { vole: 250, fish: 250 }, FIND_GAP = 2500;
+const gaze = { on: false, frame: 0, now: 0, dt: 0, x0: 0, x1: 0, y0: 0, y1: 0, calm: 0, ms: {}, at: {} };
+function lookFrame(now) {
+  gaze.dt = Math.min(100, now - gaze.now); gaze.now = now; gaze.frame++;
+  gaze.on = KEEP && !ui.hush && !away.on && !groundIn && !journalOpen() && cam.zoom >= SPOT_ZOOM && world.tick > 0;
+  if (!gaze.on) return;
+  const top = topPad + SPOT_EDGE + 6, bottom = vh - Math.max(barPad, sheet ? sheet.bottom : 0) - SPOT_EDGE;
+  const right = vw - SPOT_EDGE - (sheet ? sheet.right : 0), cx = (SPOT_EDGE + right) / 2, cy = (top + bottom) / 2;
+  const hw = (right - SPOT_EDGE) * 0.4, hh = (bottom - top) * 0.4;
+  gaze.x0 = cx - hw; gaze.x1 = cx + hw; gaze.y0 = cy - hh; gaze.y1 = cy + hh;
+}
+// Drawn at (sx, sy) on screen: one (o, a creature or a visitor, for its caption to follow), or something at (x, y).
+function lookAt(kind, sx, sy, o, x, y) {
+  if (found(kind) || sx < gaze.x0 || sx > gaze.x1 || sy < gaze.y0 || sy > gaze.y1) return;
+  if (gaze.at[kind] !== gaze.frame) { gaze.at[kind] = gaze.frame; gaze.ms[kind] = (gaze.ms[kind] || 0) + gaze.dt; }
+  if (gaze.ms[kind] >= (LOOK_MS[kind] ?? SPOT_LOOK_MS) && gaze.now >= gaze.calm) findKind(kind, o, x, y);
+}
+// First seen: into the journal, with a caption over it (seeSpot), as a visitor's first sighting has.
+function findKind(kind, o, x, y) {
+  if (!noteSighting(kind)) return;
+  const now = performance.now();
+  gaze.calm = now + FIND_GAP;
+  const s = { id: ++spotId, at: now, look: 0, bx: -1e9, by: -1e9, emoji: artOf(PAGE[kind]), first: kind, o, x, y };
+  if (o && !o.species) s.visitor = o.kind;          // (a heron with a fish: the caption over the heron)
+  spots.push(s);
+  const at = spotAt(s);
+  seeSpot(s, at.x, at.y, now);
 }
 // A tap on one sees it there and then: its marker if it's waiting, or a caption of its own the first time this visit.
 function tapVisitor(v) {
@@ -1768,6 +1867,7 @@ function drawVisitorShadow(v, sx, sy, sn) {
 
 function drawCreature(c, sx, sy, now) {
   if (c.species === 'otter') return drawOtter(c, sx, sy, now);
+  if (gaze.on) lookAt(c.species, sx, sy, c);
   const px = creaturePx(c);
   if (wading(c)) {
     const line = sy + px * 0.3, rip = 1 + 0.12 * Math.sin(now / 260 + c.id);
@@ -2829,6 +2929,7 @@ function drawOtter(c, sx, sy, now) {
   if (wet && otterGoes(c)) drawWake(ctx, sx, sy, px, flip ? -1 : 1, now);
   const breathe = c.sleeping && ui.speed > 0 ? Math.sin(now / 650 + c.id) * 0.035 : 0;
   drawEmoji(art, sx, sy - px * 0.4 * breathe, px, { flip, squash: 1 + breathe });   // feet stay on the ground
+  if (gaze.on) { lookAt('otter', sx, sy, c); if (c.mode === 'eat') lookAt('fish', sx, sy, c); }
   if (c.mode === 'root' && px > 18 && ui.speed > 0 && ui.speed <= 4) drawDigging(c, sx, sy, px, now, flip ? -1 : 1);
 }
 // Where one slid (or slipped) into the water: drops thrown up and out, and a ring spreading. Seen at 4x or slower.
@@ -3902,12 +4003,12 @@ function sayArt(s) {
 
 function seeSpot(s, x, y, now) {
   s.seenAt = now;
-  const first = s.visitor && sightVisitor(s.o);
-  if (first) s.say = `First sighting: a ${VISITORS[s.visitor].name}!`;
+  const first = s.first || (s.visitor && sightVisitor(s.o) ? s.visitor : '');   // (a kind seen for the first time ever)
+  if (first) s.say = `First sighting: ${PAGE[first].a}!`;
   if (!s.say) return;
   s.art = sayArt(s);
   addEffect('✨', x, y, 0.6);
-  if (first) addEffect('📖', x, y, 1.6, 2200);
+  if (first) stampFly(first, x, y);
   chime(first ? 'named' : 'seen');
 }
 
@@ -5909,6 +6010,7 @@ function drawDashes(now, z) {
     const sx = (dashes.x[k] + dashes.dx[k] * go - cam.x) * z + vw / 2, sy = (dashes.y[k] + dashes.dy[k] * go - cam.y) * z + vh / 2;
     if (!fadeAt(dashes.x[k], dashes.y[k])) continue;
     const s = sprite(frog ? 'frog:1' : 'vole:0', Math.max(9, (8 + z) * RUSTLE_PREY));
+    if (gaze.on) lookAt(frog ? 'frog' : 'vole', sx, sy, null, dashes.x[k] + dashes.dx[k] * go, dashes.y[k] + dashes.dy[k] * go);
     peepAt(s, sx, sy - (frog ? Math.sin(Math.PI * a) * s.size * 0.4 : 0), a < 0.7 ? 0.75 : 0.75 * (1 - a) / 0.3, dashes.dx[k] > 0);
   }
   unfade();
@@ -5934,7 +6036,10 @@ function drawRustle(c, to, sx, sy, z) {
   const look = c.species === 'owl' ? clamp(1 - Math.hypot(c.x - to.x, c.y - to.y) / OWL_SEEN, 0, 1)
     : c.mode === 'pounce' ? 1 : clamp(1 - (c.timer - acc) / CROUCH, 0, 1);
   const up = Math.max(look, fit > 0.8 ? RUSTLE_PEEK : 0);   // its back now and then, then up it looks
-  if (up > 0) peepAt(sprite(frogThere(to) ? 'frog:0' : 'vole:0', Math.max(9, px * RUSTLE_PREY)), sx, sy, up, c.x < to.x);
+  if (up <= 0) return;
+  const frog = frogThere(to);
+  peepAt(sprite(frog ? 'frog:0' : 'vole:0', Math.max(9, px * RUSTLE_PREY)), sx, sy, up, c.x < to.x);
+  if (gaze.on && up > 0.5) lookAt(frog ? 'frog' : 'vole', sx, sy, null, to.x, to.y);
 }
 
 // Caught: the vole (or frog) crosswise in the fox's jaws or the owl's beak while it's gulped down, gone at the last.
@@ -5943,6 +6048,7 @@ function drawRustle(c, to, sx, sy, z) {
 const MOUTH = { fox: [-0.38, 0.08, 0.3, -0.3], owl: [0.06, -0.09, 0.42, 1.35] };
 function drawCatch(c, sx, y, px) {
   const [mx, my, mz, turn] = MOUTH[c.species], s = sprite(c.prey === 'frog' ? 'frog:0' : 'vole:0', px * mz), side = flipOf(c) ? -1 : 1;
+  if (gaze.on) lookAt(c.prey === 'frog' ? 'frog' : 'vole', sx, y, c);
   ctx.save();
   ctx.globalAlpha = clamp((c.timer - acc) / 6, 0, 1);
   ctx.translate(sx + side * px * mx, y + px * my);
@@ -6023,6 +6129,7 @@ function drawPond(now, z) {
     const sx = (x - cam.x) * z + vw / 2, sy = (y - cam.y) * z + vh / 2 - lift * z;   // (toScreen, without an array)
     const size = kind === 0 ? px * 2 : kind === 1 ? px * 1.6 : px;
     if (!visible(sx, sy, size)) continue;
+    if (gaze.on && kind >= 2) lookAt('frog', sx, sy, null, x, y);
     const s = sprite(art, size);
     ctx.globalAlpha = Math.min(1, 6 * a, 6 * (1 - a)) * (kind === 0 ? 0.85 : 1);
     if (kind >= 2 && P.dx[k] > 0) {                     // (painted facing left)
@@ -6441,6 +6548,7 @@ function handleEvent(e) {
       break;
     }
     case 'visitorleft': {
+      if (KEEP && !e.v.seen) glimpse(e.v.kind);
       const v = e.v, k = VISITORS[v.kind], stayed = days((world.tick - v.came) / S.TPD), fed = v.kind === 'heron' && heronCaught(v);
       addNews(`${visitorGlyph(v.kind)} The ${k.name} has ${v.kind === 'heron' ? 'flown off from' : 'left'} ${placeLink(v)} after ${stayed}${fed ? `, ${fed} the fatter` : ''}.`);
       break;
@@ -7102,7 +7210,7 @@ function updateMeadowCard() {
   setText($('#sky-btn'), wx.emoji);
   setHTML($('#mini-sky'), `<span id="mini-season">${S.SEASONS[ck.season].emoji}</span>${icon}`);   // phones hide the season
   updateFavicon(ck);
-  if (KEEP) { updateGreen(); updateSpeciesMarks(); }      // (once a sim day)
+  if (KEEP) { updateGreen(); updateSpeciesMarks(); journalTick(); }   // (once a sim day)
   for (const s of S.KINDS) {
     if (!SERIES[s]) continue;                              // (the owls, while they're off: sim.js OWLS)
     const mini = $('#mini-' + s);
@@ -8371,6 +8479,8 @@ function drawPickedOver() {
 // ------------------------------------------------------------------ selection and input
 
 function select(id, zoomIn = true) {
+  const c = KEEP && id && world.byId.get(id);
+  if (c?.alive && !found(c.species)) findKind(c.species, c);   // (?keep: following one is seeing it, for the journal)
   ui.selectedId = id;
   ui.picked = null;
   ui.trail = [];
@@ -9388,6 +9498,319 @@ function alertGo(k) {
     const c = next(world.creatures.filter(c => c.alive && c.species === k && !c.held).sort((a, b) => a.id - b.id));
     if (c) { alerts.next[k] = c.id; select(c.id); }
   }
+}
+
+// ------------------------------------------------------------------ the field journal (?keep)
+//
+// Its book is in the bottom bar (#jbook, drawBook): the pages found, a pip each, and "New" with a glow till it's opened.
+// Open (the book, or J), a parchment card (#journal): the pages in two sections, Lives here and Comes by, a tile each (a
+// silhouette till it's found), and the page picked beside them, turned with ‹ › or the arrow keys. An empty page has a
+// hint, and a visitor's a button that puts the tool that draws it in your hand. On an upright phone the journal is a
+// sheet from the bottom, ✕ at the bottom in the middle; a page is a layer over the pages with ‹ ✕ › in the same place,
+// turned with a sideways swipe, and a handle dragged down lays a layer down. Each layer is a step in the browser's
+// history, so Back steps out. Written as it opens and as a page turns, never per frame; the paintings are made once (jArt).
+// A first sighting's stamp flies from it into the book (stampFly), which counts it as it lands.
+const book = { el: $('#jbook'), held: new Set() };      // held: found, its stamp still on its way
+const jr = { el: $('#journal'), scrim: $('#jscrim'), depth: 0, pick: '', art: new Map(), going: false, quietTill: 0, drag: null, swipe: null,
+  token: Math.random().toString(36).slice(2) };          // (its steps in the history are this page's, not a reload's)
+const journalOpen = () => jr.depth > 0;
+const upright = () => matchMedia('(max-width: 760px) and (min-height: 501px)').matches;
+const still = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const pageState = k => (found(k) ? 'found' : journal[k]?.glimpsed ? 'glimpsed' : 'unseen');
+const inBook = k => found(k) && !book.held.has(k);
+const fitStyle = p => (p.fit ? ` style="transform: scale(${p.fit})"` : '');
+
+// A page's painting as an <img> source, made once a visit: small for its tile and the stamp, large for its page.
+function jArt(p, large) {
+  const key = p.k + (large ? '+' : '');
+  let url = jr.art.get(key);
+  if (!url) {
+    const was = standIns;
+    standIns = false;                                    // (always painted at the size asked, even mid-frame)
+    url = dataURL(sprite(artOf(p), large ? 132 : 60).canvas);
+    standIns = was;
+    jr.art.set(key, url);
+  }
+  return url;
+}
+
+function drawBook() {
+  if (!KEEP) return;
+  const n = PAGES.filter(p => inBook(p.k)).length, fresh = PAGES.some(p => journal[p.k]?.new && !book.held.has(p.k));
+  const pips = PAGES.map((p, i) => `<i class="${inBook(p.k) ? 'on' : journal[p.k]?.glimpsed ? 'half' : ''}${p.visits && !PAGES[i - 1].visits ? ' gap' : ''}"></i>`).join('');
+  setHTML(book.el, `<span class="j-l">📖 <b>Journal</b></span><span class="j-v">${n}<small>/${PAGES.length}</small></span><span class="pips">${pips}</span><span class="newdot">New</span>`);
+  book.el.classList.toggle('new', fresh);
+  book.el.setAttribute('aria-label', `Field journal: ${n} of ${PAGES.length} found${fresh ? ', a new page' : ''}`);
+}
+// Something changed in it: the book, and the journal if it's open.
+function journalChanged() {
+  drawBook();
+  if (jr.depth) fillJournal();
+}
+
+const jsvg = d => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const J_X = jsvg('M6.5 6.5l11 11M17.5 6.5l-11 11'), J_PREV = jsvg('M14.5 5.5L8 12l6.5 6.5'), J_NEXT = jsvg('M9.5 5.5L16 12l-6.5 6.5');
+if (KEEP) jr.el.innerHTML = `<button class="jb j-x" data-j="close" aria-label="Close the journal" title="Back to the meadow (Esc)">${J_X}</button>
+  <header class="j-top"><div class="grab"></div>
+    <div class="j-head"><h2 class="fr" id="j-title">Field journal</h2><span class="n"></span></div>
+    <div class="j-bar"><i></i></div>
+  </header>
+  <section class="pages">
+    <h3 class="sec">Lives here<span class="got-lives"></span></h3><div class="grid lives"></div>
+    <h3 class="sec">Comes by<span class="got-visits"></span></h3><div class="grid visits"></div>
+  </section>
+  <footer class="j-foot"><button class="jb x" data-j="close" aria-label="Close the journal">${J_X}</button></footer>
+  <section class="page"></section>`;
+
+function tileHTML(p) {
+  const st = pageState(p.k), named = st !== 'unseen';
+  return `<button class="tile ${st}${journal[p.k]?.new ? ' new' : ''}" data-k="${p.k}" aria-label="No. ${p.no}, ${named ? p.name : 'not found yet'}">`
+    + `<span class="no">${p.no}</span><img src="${jArt(p)}" class="${st === 'found' ? '' : st === 'glimpsed' ? 'half' : 'sil'}"${fitStyle(p)} alt="">`
+    + `<span class="nm">${named ? p.name : '?'}</span></button>`;
+}
+// When it was first seen: the season and the year of the meadow it was in (an older page has only the season).
+function firstSeen(pg) {
+  const s = pg.t != null ? S.seasonOf(pg.t) : pg.season;
+  if (s == null) return '';
+  return `${S.SEASONS[s].emoji} ${S.SEASONS[s].name}${pg.t != null ? `, year ${yearAt(pg.t)}` : ''}`;
+}
+function pageHTML(p) {
+  const st = pageState(p.k), pg = journal[p.k] || {}, named = st !== 'unseen', facts = [];
+  if (st === 'found' && firstSeen(pg)) facts.push(['📅', 'First seen', firstSeen(pg)]);
+  if (st === 'found' && !p.visits && pg.most > 0) facts.push(['🏆', 'Most at once', big(pg.most)]);
+  if (st === 'found' && p.visits) facts.push(['👁️', 'Seen', pg.seen > 1 ? `${pg.seen} times` : 'once']);
+  if (p.visits) facts.push(['🧭', 'Comes to', p.where]);
+  if (p.visits && named) facts.push(['🕰️', 'When', p.when]);
+  const tool = st !== 'found' && p.tool && KEEP_TOOLS.find(([k]) => k === p.tool);
+  return `<div class="pg-grab"><div class="no">No. ${p.no} · ${p.visits ? 'Comes by' : 'Lives here'}</div></div>
+    <div class="pg-body"><div class="pg-in">
+      <div class="art"><img src="${jArt(p, true)}" class="${st === 'found' ? '' : st === 'glimpsed' ? 'half' : 'sil'}"${fitStyle(p)} alt=""></div>
+      <h3 class="fr${named ? '' : ' q'}">${named ? p.name : '? ? ?'}</h3>
+      ${st === 'found' ? `<p>${p.note}</p>` : `<p class="hint">${st === 'glimpsed' ? p.glimpse : p.hint}</p>`}
+      ${facts.length ? `<ul>${facts.map(([i, a, b]) => `<li><i>${i}</i><span>${a}</span><em>${b}</em></li>`).join('')}</ul>` : ''}
+      ${tool ? `<button class="go" data-j-tool="${tool[0]}"><span class="e">${tool[1]}</span>${tool[2]}</button>` : ''}
+    </div></div>
+    <div class="pg-foot">
+      <button class="jb" data-j="prev" aria-label="Page before" title="Page before (←)"${p.i ? '' : ' disabled'}>${J_PREV}</button>
+      <span class="of">${p.i + 1} / ${PAGES.length}</span>
+      <button class="jb x" data-j="back" aria-label="Back to all pages" title="Back to all pages (Esc)">${J_X}</button>
+      <button class="jb" data-j="next" aria-label="Next page" title="Next page (→)"${p.i < PAGES.length - 1 ? '' : ' disabled'}>${J_NEXT}</button>
+    </div>`;
+}
+const pageEl = () => jr.el.querySelector('.page');
+const drawPage = () => setHTML(pageEl(), pageHTML(PAGE[jr.pick] || PAGES[0]));
+const markTiles = () => jr.el.querySelectorAll('.tile').forEach(t => t.classList.toggle('on', t.dataset.k === jr.pick));
+// Its count, the two sections and the page picked, each written only if it changed.
+function fillJournal() {
+  const n = PAGES.filter(p => inBook(p.k)).length, el = jr.el, lives = PAGES.filter(p => !p.visits), visits = PAGES.filter(p => p.visits);
+  const got = list => `${list.filter(p => inBook(p.k)).length}/${list.length}`;
+  setHTML(el.querySelector('.j-head .n'), `${n}<small>/${PAGES.length}</small>`);
+  el.querySelector('.j-bar i').style.width = (n / PAGES.length * 100).toFixed(1) + '%';
+  setText(el.querySelector('.got-lives'), got(lives));
+  setText(el.querySelector('.got-visits'), got(visits));
+  setHTML(el.querySelector('.grid.lives'), lives.map(tileHTML).join(''));
+  setHTML(el.querySelector('.grid.visits'), visits.map(tileHTML).join(''));
+  markTiles();
+  drawPage();
+}
+
+// How deep it's open: 0 shut, 1 the pages, 2 a page laid over them (upright phones; elsewhere the page is always beside them).
+const slide = (el, frames, ms = 240, fill = 'none') => el.animate(frames, { duration: still() ? 1 : ms, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)', fill });
+const slideDown = el => [{ transform: el.style.transform || 'none' }, { transform: 'translateY(105%)' }];
+function showJournal(n) {
+  const was = jr.depth, J = jr.el;
+  jr.depth = n;
+  if (n && !was) {
+    fillJournal();
+    J.classList.remove('hidden'); jr.scrim.classList.remove('hidden');
+    J.focus({ preventScroll: true });
+    J.querySelector('.tile.on')?.scrollIntoView({ block: 'nearest' });
+    if (upright()) slide(J, [{ transform: 'translateY(100%)' }, { transform: 'none' }], 320);
+    jr.scrim.animate([{ opacity: 0 }, { opacity: 1 }], { duration: still() ? 1 : 200 });
+  }
+  if (n === 2 && was < 2) {
+    J.classList.add('reading');
+    if (was && upright()) slide(pageEl(), [{ transform: 'translateY(100%)' }, { transform: 'none' }], 300);
+  }
+  if (n === 1 && was === 2) {
+    const el = pageEl();
+    if (!upright()) J.classList.remove('reading');
+    else { const a = slide(el, slideDown(el), 220, 'forwards'); a.finished.then(() => { el.style.transform = ''; a.cancel(); if (jr.depth < 2) J.classList.remove('reading'); }); }
+  }
+  if (!n && was) {
+    const done = () => {
+      if (jr.depth) return;
+      J.classList.add('hidden'); jr.scrim.classList.add('hidden'); J.classList.remove('reading'); J.style.transform = '';
+      let read = false;                                  // what was new has been seen now
+      for (const p of PAGES) if (journal[p.k]?.new && !book.held.has(p.k)) { delete journal[p.k].new; read = true; }
+      if (read) { saveJournal(); drawBook(); }
+    };
+    if (upright()) { const a = slide(J, slideDown(J), 240, 'forwards'); a.finished.then(() => { done(); a.cancel(); }); }
+    else done();
+    jr.scrim.animate([{ opacity: 1 }, { opacity: 0 }], { duration: still() ? 1 : 200, fill: 'forwards' }).finished.then(a => a.cancel());
+    book.el.focus({ preventScroll: true });
+  }
+}
+// To depth n, by the history: deeper pushes a step a layer, shallower goes back over them (popstate then shows it).
+function journalTo(n) {
+  n = Math.max(0, n);
+  if (jr.going || n === jr.depth) return;
+  const st = history.state;
+  if (n > jr.depth) { for (let i = jr.depth + 1; i <= n; i++) history.pushState({ journal: i, j: jr.token }, ''); showJournal(n); }
+  else if (st?.j === jr.token && st.journal === jr.depth) { jr.going = true; history.go(n - jr.depth); setTimeout(() => { jr.going = false; }, 600); }
+  else showJournal(n);
+}
+addEventListener('popstate', e => {
+  jr.going = false;
+  const n = e.state?.j === jr.token ? Math.min(e.state.journal, jr.depth) : 0;
+  if (n !== jr.depth) showJournal(n);
+});
+
+// Turning a page: ‹ ›, the arrow keys or a swipe. The new one slides in from the side it came from.
+function turnPage(dir, from) {
+  const p = PAGES[(PAGE[jr.pick] || PAGES[0]).i + dir];
+  if (!p) return;
+  jr.pick = p.k; drawPage(); markTiles();
+  if (!upright()) jr.el.querySelector('.tile.on')?.scrollIntoView({ block: 'nearest' });
+  slide(jr.el.querySelector('.pg-in'), [{ transform: from || `translateX(${dir * 48}px)`, opacity: from ? 1 : 0 }, { transform: 'none', opacity: 1 }], 220);
+}
+
+function openJournal() {
+  if (!KEEP || jr.depth || jr.going) return;
+  if (ui.stats.open) toggleStats(false);
+  if (webOpen()) toggleWeb(false);
+  toggleMore(false); toggleSkyMenu(false); closeRing(); hideTip();
+  const fresh = PAGES.filter(p => journal[p.k]?.new && !book.held.has(p.k)).sort((a, b) => (journal[b.k].first || 0) - (journal[a.k].first || 0))[0];
+  jr.pick = fresh?.k || jr.pick || PAGES[0].k;
+  journalTo(fresh && upright() ? 2 : 1);
+}
+
+if (KEEP) {
+  drawBook();
+  book.el.addEventListener('click', e => { e.stopPropagation(); chime('click'); if (jr.depth) journalTo(0); else openJournal(); });
+  jr.scrim.addEventListener('click', () => journalTo(0));
+  jr.el.addEventListener('click', e => {
+    const t = e.target.closest('.tile, [data-j], [data-j-tool]');
+    if (!t) return;
+    e.stopPropagation();
+    if (performance.now() < jr.quietTill) return;          // (no tap right after a swipe)
+    if (t.dataset.k) { jr.pick = t.dataset.k; drawPage(); markTiles(); if (upright()) journalTo(2); return; }
+    const act = t.dataset.j;
+    if (act === 'close') journalTo(0);
+    else if (act === 'back') journalTo(1);
+    else if (act === 'prev' || act === 'next') turnPage(act === 'next' ? 1 : -1);
+    else if (t.dataset.jTool) { const k = t.dataset.jTool; journalTo(0); setTool(k); showTip(k, TIP_TAP_MS, 'touch'); }
+  });
+
+  // Fingers, on an upright phone: a handle dragged down lays its sheet down (the journal's shuts it, a page's goes back
+  // to the pages); a page swiped sideways turns. Anything shorter springs back.
+  jr.el.addEventListener('pointerdown', e => {
+    const grab = upright() && e.button === 0 && e.target.closest('.j-top, .pg-grab');
+    if (grab) { jr.drag = { el: grab.classList.contains('pg-grab') ? pageEl() : jr.el, y: e.clientY, t: e.timeStamp, dy: 0 }; jr.el.setPointerCapture(e.pointerId); return; }
+    if (e.pointerType !== 'mouse' && e.target.closest('.pg-body')) jr.swipe = { x: e.clientX, y: e.clientY, dx: 0, side: false };
+  });
+  jr.el.addEventListener('pointermove', e => {
+    const d = jr.drag, s = jr.swipe;
+    if (d) { d.dy = Math.max(0, e.clientY - d.y); d.el.style.transform = d.dy ? `translateY(${d.dy}px)` : ''; return; }
+    if (!s) return;
+    const dx = e.clientX - s.x, dy = e.clientY - s.y;
+    if (!s.side) {
+      if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx)) { jr.swipe = null; return; }   // (a scroll)
+      if (Math.abs(dx) < 12) return;
+      s.side = true; jr.el.setPointerCapture(e.pointerId);
+    }
+    s.dx = dx;
+    const more = PAGES[(PAGE[jr.pick] || PAGES[0]).i + (dx < 0 ? 1 : -1)];
+    jr.el.querySelector('.pg-in').style.transform = `translateX(${more ? dx : dx * 0.25}px)`;   // (at the last page, it only gives)
+  });
+  const lift = e => {
+    const d = jr.drag, s = jr.swipe;
+    jr.drag = jr.swipe = null;
+    if (d) {
+      if (d.dy > 110 || d.dy > 30 && d.dy / (e.timeStamp - d.t) > 0.5) journalTo(d.el === jr.el ? 0 : 1);
+      else if (d.dy) { const from = d.el.style.transform; d.el.style.transform = ''; slide(d.el, [{ transform: from }, { transform: 'none' }], 200); }
+      return;
+    }
+    if (!s?.side) return;
+    jr.quietTill = performance.now() + 350;
+    const dir = s.dx < 0 ? 1 : -1, el = jr.el.querySelector('.pg-in'), from = el.style.transform;
+    el.style.transform = '';
+    if (Math.abs(s.dx) > 56 && PAGES[(PAGE[jr.pick] || PAGES[0]).i + dir]) turnPage(dir, `translateX(${-dir * 40}px)`);
+    else slide(el, [{ transform: from }, { transform: 'none' }], 200);
+  };
+  jr.el.addEventListener('pointerup', lift);
+  jr.el.addEventListener('pointercancel', lift);
+
+  // Keys: J opens and shuts it, Esc steps back, ← → turn. While it's open no key reaches the meadow (on the window,
+  // first: before the meadow's own keys).
+  addEventListener('keydown', e => {
+    if (e.target.closest?.('input,textarea') || e.metaKey || e.ctrlKey || e.altKey) return;
+    const j = e.key === 'j' || e.key === 'J';
+    if (!jr.depth) {
+      if (j && !ui.hush && !away.on && !awayOpen() && !lostOpen()) { e.stopPropagation(); openJournal(); }
+      return;
+    }
+    if (e.key === 'Tab') return;
+    e.stopPropagation();
+    if (e.key === 'Escape' || j) { e.preventDefault(); journalTo(j ? 0 : jr.depth - 1); }
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); turnPage(e.key === 'ArrowRight' ? 1 : -1); }
+  }, true);
+}
+
+// A first sighting's stamp: it pops up over the one seen, then flies on an arc into the book, which bumps and counts it.
+// One at a time; the rest wait their turn (each already in the journal, held back from the book's count till it lands).
+const stamps = [];
+let stamping = false;
+function stampFly(kind, x, y) {
+  stamps.push({ kind, x, y });
+  if (!stamping) { stamping = true; setTimeout(nextStamp, 0); }   // (out of the frame being drawn)
+}
+function nextStamp() {
+  const q = stamps.shift();
+  if (!q) { stamping = false; return; }
+  const land = () => {
+    book.held.delete(q.kind);
+    journalChanged();
+    book.el.classList.remove('bump'); void book.el.offsetWidth; book.el.classList.add('bump');
+    setTimeout(() => book.el.classList.remove('bump'), 500);
+    setTimeout(nextStamp, 300);
+  };
+  const r = book.el.getBoundingClientRect();
+  if (!r.width || still() || document.hidden || away.on) { land(); return; }
+  const [sx, sy] = toScreen(q.x, q.y), x = clamp(sx, 50, vw - 50), y = clamp(sy, topPad + 60, vh - barPad - 40);
+  const bx = r.left + r.width / 2, by = r.top + r.height / 2;
+  const cx = (x + bx) / 2 + (bx > x ? 1 : -1) * 60, cy = Math.min(y, by) - 160;      // the arc's pull
+  const el = document.createElement('div');
+  el.id = 'jstamp';
+  el.innerHTML = `<img src="${jArt(PAGE[q.kind])}"${fitStyle(PAGE[q.kind])} alt="">`;
+  document.body.append(el);
+  const fly = Array.from({ length: 12 }, (_, i) => {
+    const t = (i + 1) / 12, u = 1 - t, px = u * u * x + 2 * u * t * cx + t * t * bx, py = u * u * (y - 24) + 2 * u * t * cy + t * t * by;
+    return { transform: `translate(${px}px, ${py}px) scale(${1 - 0.55 * t}) rotate(${t * 20}deg)`, offset: 0.4 + 0.6 * t, easing: 'ease-in' };
+  });
+  el.animate([
+    { transform: `translate(${x}px, ${y}px) scale(0)`, offset: 0 },
+    { transform: `translate(${x}px, ${y - 30}px) scale(1.15)`, offset: 0.14 },
+    { transform: `translate(${x}px, ${y - 24}px) scale(1)`, offset: 0.22 },
+    { transform: `translate(${x}px, ${y - 24}px) scale(1)`, offset: 0.4 },
+    ...fly,
+  ], { duration: 2100, fill: 'forwards' }).onfinish = () => { el.remove(); land(); };
+}
+
+// The most of each kind that lives here alive at once, in any meadow of yours: looked at once a sim day.
+let journalDay = -1;
+function journalTick() {
+  const day = Math.floor(world.tick / S.TPD);
+  if (!KEEP || day === journalDay) return;
+  journalDay = day;
+  let more = false;
+  for (const p of PAGES) {
+    const pg = journal[p.k];
+    if (p.visits || !pg?.first) continue;
+    const n = livingCount(p.k);
+    if (n > (pg.most || 0)) { pg.most = n; more = true; }
+  }
+  if (more) { saveJournal(); if (jr.depth) drawPage(); }
 }
 
 // which: '' the tools, 'sky' the weather, 'plant' the kinds of tree.
@@ -10602,6 +11025,7 @@ function awayTicks() {
 
 function startAway() {
   if (idle.on) wakeIdle();
+  if (jr.depth) journalTo(0);
   const left = awayTicks();
   if (!left) { addNews('⏸️ <b>The meadow waited for you:</b> it doesn’t run on without you in the Dry Year.'); return; }
   countEvent('meadow-back');

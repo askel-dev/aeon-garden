@@ -1,0 +1,682 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Field journal mock</title>
+<!-- A mock of the field journal (not committed). The frame is the real game at ?seed=4127 (game.js loaded with a few of its
+     functions handed out, its keeping switched off and its journal under another key), a hedge planted on the first
+     morning, run to a summer dusk with a hedgehog come. The book, the journal card and the first-sighting flight are
+     placeholders laid into the game's own page. ?device=desktop|phone, ?book=bar|top, ?k=1 for the frame at full size. -->
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT,WONK@0,9..144,600..680,100,1;1,9..144,450,100,1&family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; background: #24211b; color: #f3e7cf; font-family: Nunito, system-ui, sans-serif; }
+  header { padding: 14px 24px 4px; display: flex; align-items: center; gap: 10px 18px; flex-wrap: wrap; }
+  h1 { font-family: Fraunces, Georgia, serif; font-variation-settings: 'SOFT' 100, 'WONK' 1; font-weight: 650; font-size: 22px; margin: 0; }
+  .seg { display: flex; background: #36312a; border-radius: 10px; padding: 3px; }
+  .seg a { color: #bfae8c; text-decoration: none; font-weight: 800; font-size: 13px; padding: 5px 11px; border-radius: 8px; }
+  .seg a.on { background: #f3e7cf; color: #3b372f; }
+  header button { border: none; border-radius: 10px; padding: 7px 13px; font: 800 13px Nunito, system-ui, sans-serif; background: #e98a4b; color: #fff; cursor: pointer; }
+  header button.quiet { background: #36312a; color: #d9ccb0; }
+  header button:disabled { opacity: 0.4; cursor: default; }
+  .note { color: #bfae8c; font-size: 13px; font-weight: 700; margin: 4px 24px 0; max-width: 1100px; line-height: 1.45; }
+  .note b { color: #f3e7cf; }
+  #stage { display: flex; justify-content: center; padding: 12px 24px 28px; }
+  .box { position: relative; overflow: hidden; border-radius: 10px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45); background: #9cc77e; }
+  .box iframe { position: absolute; left: 0; top: 0; border: 0; transform-origin: 0 0; }
+  .wait { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(36, 33, 27, 0.75); font-weight: 800; transition: opacity 0.4s; }
+  .wait.gone { opacity: 0; pointer-events: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>The field journal: a mock</h1>
+  <div class="seg" id="devices"></div>
+  <div class="seg" id="books"></div>
+  <button id="play" disabled>▶ Play a first sighting</button>
+  <button id="open" class="quiet" disabled>📖 Open the journal</button>
+  <button id="reset" class="quiet" disabled>↺ Reset</button>
+</header>
+<p class="note">The real game, paused at a summer dusk, with a hedge you planted and a hedgehog that has just come to it. <b>Play a first
+sighting</b>, then tap the book. <b>Phone:</b> the journal is a sheet from the bottom. Its ✕ is at the bottom in the middle, where either
+thumb reaches it, and stays in that spot on a page too (there it goes back to all the pages), with ‹ › beside it. Swipe a page sideways to turn
+it, drag a handle down to close, or tap the meadow above. The browser's Back steps out one layer at a time. <b>Desktop:</b> ✕ top right,
+‹ › or the arrow keys turn pages, Esc closes. On an unseen page, the button puts that tool in your hand. Placeholders: the book, the journal card
+and the flight. The animal paintings are the game's own. The silhouettes of visitors that aren't built yet are stand-ins.</p>
+<main id="stage"><div class="box" id="box"><iframe id="game" src="about:blank" title="The meadow"></iframe><div class="wait" id="wait">Running the meadow into summer…</div></div></main>
+<script>
+const P = new URLSearchParams(location.search);
+const DEVICES = { desktop: [1280, 800, 'Desktop'], phone: [390, 844, 'Phone'] };
+const device = DEVICES[P.get('device')] ? P.get('device') : 'desktop';
+const BOOKS = { bar: 'Book in the bottom bar', top: 'Book in the top bar' };
+const book = BOOKS[P.get('book')] ? P.get('book') : 'bar';
+const SEED = 4127;
+const nav = (k, v) => { const q = new URLSearchParams(location.search); q.set(k, v); return '?' + q; };
+document.querySelector('#devices').innerHTML = Object.entries(DEVICES).map(([k, [, , name]]) => `<a href="${nav('device', k)}" class="${k === device ? 'on' : ''}">${name}</a>`).join('');
+document.querySelector('#books').innerHTML = Object.entries(BOOKS).map(([k, name]) => `<a href="${nav('book', k)}" class="${k === book ? 'on' : ''}">${name}</a>`).join('');
+
+const until = (f, ms = 30000) => new Promise((ok, fail) => {
+  const t0 = performance.now();
+  (function poll() { let v; try { v = f(); } catch (e) { /* not yet */ } if (v) ok(v); else if (performance.now() - t0 > ms) fail(new Error('timed out')); else setTimeout(poll, 50); })();
+});
+const nextFrame = () => new Promise(ok => setTimeout(ok, 0));
+
+// ------------------------------------------------------------------ the game, with a few of its insides handed out
+
+async function loadGame(frame) {
+  try { localStorage.setItem('aeon-garden-welcomed', '1'); localStorage.setItem('aeon-garden-keep-welcomed', '1'); } catch (e) { /* fine */ }
+  const [html, js] = await Promise.all(['index.html', 'game.js'].map(f => fetch(f, { cache: 'no-store' }).then(r => r.text())));
+  const swaps = [
+    ['window.garden = { get world() { return world; },', 'window.garden = { get world() { return world; }, sprite, dataURL, foxArtOf, rabbitArtOf, COAT,'],
+    ["const JOURNAL = 'aeon-garden-journal';", "const JOURNAL = 'aeon-garden-journal-mock';"],   // (never the player's own)
+    ['function keepMeadow() {', 'function keepMeadow() { return;'],                               // (nor over their meadows)
+  ];
+  let code = js;
+  for (const [a, b] of swaps) { if (!code.includes(a)) throw new Error('game.js changed: ' + a); code = code.replace(a, b); }
+  const url = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
+  const page = html.replace('<script src="game.js"><\/script>', `<script src="${url}"><\/script>`);
+  const doc = frame.contentDocument;
+  doc.open();
+  frame.contentWindow.history.replaceState(null, '', `index.html?seed=${SEED}`);
+  doc.write(page);
+  doc.close();
+}
+
+async function prepare(win) {
+  await until(() => win.garden && win.garden.world && win.Sim);
+  const S = win.Sim, g = win.garden, w = g.world;
+  await new Promise(ok => setTimeout(ok, 1500));   // (the game sets its own pace as it opens)
+  const pause = () => { if (g.ui.speed !== 0) win.document.querySelector('#time [data-speed="0"]').click(); };
+  pause();
+  while (w.tick < 300) { S.step(w); w.events.length = 0; }
+  // A hedge: a stroke of 7 tiles on open dry ground, where the most rabbits live.
+  const d = S.distanceToWater(w), lives = b => w.creatures.filter(c => c.alive && c.home === b).length;
+  let pr = 777, best = null;
+  const rand = () => (pr = (pr * 1664525 + 1013904223) % 4294967296) / 4294967296;
+  for (let t = 0; t < 4000; t++) {
+    const x = Math.floor(rand() * S.W) + 0.5, y = Math.floor(rand() * S.H) + 0.5, i = Math.floor(y) * S.W + Math.floor(x);
+    if (d[i] < 6 || x < 25 || x > S.W - 25 || y < 20 || y > S.H - 20) continue;
+    const pts = [{ x: x - 4.5, y }, { x: x + 4.5, y: y + 0.8 }], p = S.hedgePlan(w, pts);
+    if (!p.ok || p.blocked > 1 || p.whips < 5) continue;
+    const near = w.burrows.filter(b => (b.x - x) ** 2 + (b.y - y) ** 2 < 100).reduce((n, b) => n + lives(b), 0);
+    if (!best || near > best.near) best = { x, y, pts, near };
+  }
+  if (best) S.plantHedge(w, best.pts);
+  // On to the first summer evening, then a hedgehog, and on till it's pottering along the hedge at dusk.
+  const evening = S.SEASON_DAYS * S.TPD + 0.5 * S.TPD;
+  while (w.tick < evening) { for (let i = 0; i < 400 && w.tick < evening; i++) S.step(w); w.events.length = 0; await nextFrame(); }
+  w.visited ??= {}; w.visitors ??= [];
+  const v = w.visitors.find(o => o.kind === 'hedgehog') || best && S.hedgehogComes(w, true);   // (one may have come already)
+  if (v) v.seen = true;                        // (a sighting is the mock's to show; none goes in any journal)
+  for (let n = 0; n < 900 && v; n++) {
+    S.step(w); w.events.length = 0;
+    if (v.mode === 'snuffle' && S.phaseOf(w.tick) > 0.66) break;
+  }
+  pause();
+  g.ui.follow = false;
+  const at = v || best || { x: S.W / 2, y: S.H / 2 };
+  Object.assign(g.cam, { x: at.x, y: at.y - (device === 'phone' ? 1.5 : 0.5), zoom: device === 'phone' ? 30 : 40, goal: null });
+  setTimeout(pause, 300); setTimeout(pause, 1200);
+  return { S, g, w, v };
+}
+
+// ------------------------------------------------------------------ the journal's pages
+
+const DRAGONFLY = 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><g fill="#000">
+  <ellipse cx="31" cy="30" rx="21" ry="6" transform="rotate(-10 31 30)"/><ellipse cx="69" cy="30" rx="21" ry="6" transform="rotate(10 69 30)"/>
+  <ellipse cx="32" cy="41" rx="19" ry="5.5" transform="rotate(12 32 41)"/><ellipse cx="68" cy="41" rx="19" ry="5.5" transform="rotate(-12 68 41)"/>
+  <circle cx="50" cy="17" r="6"/><ellipse cx="50" cy="32" rx="5" ry="9"/><rect x="47.6" y="38" width="4.8" height="52" rx="2.4"/></g></svg>`);
+const KINGFISHER = 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><g fill="#000">
+  <ellipse cx="46" cy="56" rx="22" ry="15" transform="rotate(-25 46 56)"/><circle cx="64" cy="38" r="13"/>
+  <polygon points="74,33 99,40 74,43"/><polygon points="30,64 12,82 18,86 36,70"/>
+  <rect x="44" y="68" width="3" height="10"/><rect x="51" y="66" width="3" height="11"/><rect x="30" y="77" width="40" height="3" rx="1.5"/></g></svg>`);
+const GOLDFINCH = 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><g fill="#000">
+  <ellipse cx="52" cy="56" rx="21" ry="14" transform="rotate(-18 52 56)"/><circle cx="33" cy="43" r="11.5"/>
+  <polygon points="24,39 9,44 24,48"/><polygon points="66,58 93,70 94,63 96,75 64,68"/>
+  <rect x="47" y="67" width="3" height="11"/><rect x="54" y="66" width="3" height="12"/><rect x="34" y="77" width="40" height="3" rx="1.5"/></g></svg>`);
+const BULLFINCH = 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><g fill="#000">
+  <ellipse cx="50" cy="54" rx="23" ry="19" transform="rotate(-12 50 54)"/><circle cx="33" cy="38" r="13"/>
+  <polygon points="22,34 13,39 22,43"/><polygon points="70,56 90,64 88,72 68,64"/>
+  <rect x="45" y="70" width="3" height="9"/><rect x="53" y="69" width="3" height="10"/><rect x="32" y="78" width="40" height="3" rx="1.5"/></g></svg>`);
+// The game paints emoji in its own outline font; a stand-in silhouette wants a filled shape, so these come from the colour font.
+function emojiArt(e, px, flip) {
+  const c = document.createElement('canvas'), g = c.getContext('2d');
+  c.width = c.height = Math.round(px * 1.4);
+  g.font = `${px}px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`;
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  if (flip) { g.translate(c.width, 0); g.scale(-1, 1); }
+  g.fillText(e, c.width / 2, c.height / 2 + px * 0.05);
+  return c.toDataURL();
+}
+
+// state: found | glimpsed | unseen. tool: what a hint puts in your hand (data-tool), with its button.
+const TOOLS = { pond: '⛏️ Dig a pond', sow: '🌼 Sow flowers', hedge: '🌿 Plant a hedge' };
+const PAGES = [
+  { k: 'rabbit', name: 'Rabbit', home: 'lives', state: 'found', when: '🌱 Spring, year 1', most: 52,
+    note: 'Grazes the open grass at dawn and dusk and digs its burrows there. Stamps and bolts when a fox comes.' },
+  { k: 'fox', name: 'Fox', home: 'lives', state: 'found', when: '🌱 Spring, year 1', most: 7,
+    note: 'Hunts the rabbits, and pounces on voles in the long grass when rabbits are few.' },
+  { k: 'bee', name: 'Honeybee', home: 'lives', state: 'found', when: '🌱 Spring, year 1', most: 140,
+    note: 'Lives in a hollow oak and sips from the flowers in reach. One back from a rich patch dances the way.' },
+  { k: 'crow', name: 'Crow', home: 'lives', state: 'found', when: '🌱 Spring, year 1', most: 14,
+    note: 'Walks the short grass for grubs and clears up what the foxes leave. Buries acorns in autumn, and some grow into oaks.' },
+  { k: 'vole', name: 'Vole', home: 'lives', state: 'unseen', hint: 'Something rustles in long grass the rabbits leave alone.' },
+  { k: 'frog', name: 'Frog', home: 'lives', state: 'found', when: '🌱 Spring, year 1', most: 310,
+    note: 'Spawns in still shallows early in spring. A flood pool is best, unless it dries before the tadpoles leave.' },
+  { k: 'fish', name: 'Trout', home: 'lives', state: 'unseen', hint: 'Something flickers in deep, still water.' },
+  { k: 'otter', name: 'Otter', home: 'lives', state: 'unseen', hint: 'Something slides into the water at dusk, by a big tree on the bank.' },
+  { k: 'hedgehog', name: 'Hedgehog', home: 'visits', state: 'unseen', tool: 'hedge', where: '🌿 A thick hedge', time: '🌙 Dusk, spring to autumn',
+    hint: 'Something snuffles under a thick hedge at dusk.',
+    note: 'Comes to a thick hedge at dusk for the beetles under it, and sleeps curled at its foot by day. Gone in a few days.' },
+  { k: 'heron', name: 'Heron', home: 'visits', state: 'glimpsed', tool: 'pond', where: '⛏️ A pond with frogs', time: '☀️ By day',
+    hint: 'Came by your pond while you were away. It will be back.' },
+  { k: 'dragonfly', name: 'Dragonfly', home: 'visits', state: 'unseen', tool: 'pond', where: '⛏️ A pond with reeds', time: '☀️ Summer days',
+    hint: 'Something hums over a pond, once its reeds are up.' },
+  { k: 'butterfly', name: 'Peacock butterfly', home: 'visits', state: 'unseen', tool: 'sow', where: '🌼 Flowers in bloom', time: '☀️ Summer days',
+    hint: 'Something with eyes on its wings, on summer flowers.' },
+  { k: 'goldfinch', name: 'Goldfinch', home: 'visits', state: 'unseen', tool: 'sow', where: '🌼 Flowers gone to seed', time: '🍂 Autumn',
+    hint: 'Something small and gold, on flowers gone to seed.' },
+  { k: 'bullfinch', name: 'Bullfinch', home: 'visits', state: 'unseen', tool: 'hedge', where: '🌿 A hedge in berry', time: '❄️ Winter',
+    hint: 'Something rosy, at a hedge’s berries in winter.' },
+  { k: 'kingfisher', name: 'Kingfisher', home: 'visits', state: 'unseen', where: '🏞️ The river', time: '☀️ Any season',
+    hint: 'A flash of blue, low over the river where the fish are.' },
+  { k: 'deer', name: 'Roe deer', home: 'visits', state: 'unseen', where: '🌳 The wood’s edge', time: '🌅 First light',
+    hint: 'Something steps out of the wood at first light.' },
+];
+PAGES.forEach((p, i) => p.no = String(i + 1).padStart(2, '0'));
+
+function paintings(g) {
+  const at = (art, px) => g.dataURL(g.sprite(art, px).canvas);
+  const ART = { rabbit: g.rabbitArtOf(g.COAT.wild, 'sit'), fox: g.foxArtOf(0.2, 'stand'), bee: 'bee:2', crow: 'crow:0', vole: 'vole:0', frog: 'frog:0',
+    fish: '🐟', otter: 'otter:3', hedgehog: 'hog:0' };
+  const STANDIN = { heron: ['🦩'], butterfly: ['🦋'], deer: ['🦌', true] };
+  for (const p of PAGES) {
+    if (p.k === 'dragonfly') p.img = p.big = DRAGONFLY;
+    else if (p.k === 'kingfisher') p.img = p.big = KINGFISHER;
+    else if (p.k === 'goldfinch') p.img = p.big = GOLDFINCH;
+    else if (p.k === 'bullfinch') p.img = p.big = BULLFINCH;
+    else if (STANDIN[p.k]) { p.img = emojiArt(STANDIN[p.k][0], 80, STANDIN[p.k][1]); p.big = emojiArt(STANDIN[p.k][0], 160, STANDIN[p.k][1]); }
+    else { p.img = at(ART[p.k], 60); p.big = at(ART[p.k], 132); }
+  }
+}
+
+// ------------------------------------------------------------------ laid into the game's page
+
+const CSS = `
+  /* the book: in the bottom bar, the mirror of GREEN (bar), or with the time in the top bar (top) */
+  html.keep #jbook { display: grid; grid-column: 3; grid-row: 1; justify-self: end; grid-template-columns: 1fr auto; align-items: baseline;
+    width: 220px; margin-right: 8px; padding: 6px 8px 7px; border: none; border-radius: 12px; background: none; font: inherit; color: var(--ink);
+    text-align: left; cursor: pointer; position: relative; transition: background 0.15s; }
+  html.keep #jbook:hover { background: rgba(160, 110, 40, 0.09); }
+  #jbook .j-l { align-self: center; text-transform: uppercase; letter-spacing: 0.11em; font-size: 11.5px; font-weight: 900; color: #8a5e22; }
+  #jbook .j-v { justify-self: end; font-weight: 900; font-size: 22px; line-height: 1.15; font-variant-numeric: tabular-nums; }
+  #jbook .j-v small { font-size: 14px; color: var(--muted); font-weight: 800; }
+  #jbook .pips { grid-column: 1 / -1; display: flex; gap: 3px; margin-top: 5px; }
+  #jbook .pips i { width: 9px; height: 9px; border-radius: 50%; background: #e6d7b8; box-shadow: inset 0 1px 1px rgba(80, 60, 30, 0.25); }
+  #jbook .pips i.on { background: radial-gradient(circle at 35% 30%, #f6d98c, #b07a2a 70%); box-shadow: 0 0 0 1px #8a5e22; }
+  #jbook .pips i.half { background: #e6d7b8; box-shadow: inset 0 0 0 1.5px #b07a2a; }
+  #jbook .pips i.gap { margin-left: 6px; }
+  #jbook .newdot, #jtop .newdot { position: absolute; top: -10px; right: 10px; padding: 1px 6px; border-radius: 99px; background: #c4562a; color: #fff;
+    font-size: 10.5px; font-weight: 900; letter-spacing: 0.03em; box-shadow: 0 1px 0 #7a3214; opacity: 0; transform: scale(0.4); transition: 0.25s; pointer-events: none; }
+  .new > .newdot { opacity: 1 !important; transform: none !important; }
+  #jbook.new, #jtop.new { animation: jglow 1.8s ease-in-out infinite; }
+  @keyframes jglow { 50% { box-shadow: 0 0 0 3px rgba(217, 164, 65, 0.55), 0 0 18px rgba(246, 217, 140, 0.9); } }
+  .jbump { animation: jbump 0.45s ease-out !important; }
+  @keyframes jbump { 30% { transform: scale(1.14); } }
+  @media (max-width: 760px), (max-height: 500px) {
+    html.keep #toolbar { grid-template-columns: minmax(0, 1fr) auto auto auto minmax(0, 1fr); }
+    html.keep #toolbar .tool { width: 54px; }
+    html.keep #jbook { grid-column: 4; justify-self: start; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+      width: 54px; height: 52px; margin: 0; padding: 0; text-align: center;
+      background: linear-gradient(180deg, #fffaf0, #f1e5c9); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 2px 0 #a8742a; border-radius: 14px; }
+    html.keep #jbook .j-l { font-size: 25px; line-height: 1; letter-spacing: 0; }
+    html.keep #jbook .j-l b, html.keep #jbook .pips { display: none; }
+    html.keep #jbook .j-v { font-size: 13.5px; line-height: 1; justify-self: auto; }
+    html.keep #jbook .j-v small { font-size: 11px; }
+    html.keep #jbook .newdot { top: -7px; right: -6px; }
+  }
+  /* the smallest phones (320-370 px): four tools, GREEN and the book only fit a little narrower, still 44 px and up */
+  @media (max-width: 370px) {
+    html.keep #toolbar { padding-left: calc(4px + env(safe-area-inset-left, 0px)); padding-right: calc(4px + env(safe-area-inset-right, 0px)); }
+    html.keep #toolbar .tools { gap: 4px; }
+    html.keep #toolbar .tool { width: 46px; }
+    html.keep #toolbar .tool .l { font-size: 10.5px; }
+    html.keep #jbook { width: 48px; }
+  }
+  #jtop { position: relative; display: inline-flex !important; align-items: center; gap: 4px; min-height: 44px; padding: 0 9px 0 7px; font: 900 15px Nunito, ui-rounded, system-ui, sans-serif;
+    color: var(--ink); font-variant-numeric: tabular-nums; border-radius: 10px; }
+  #jtop span.e { font-size: 19px; }
+  #jtop small { font-size: 12px; color: var(--muted); font-weight: 800; }
+  #jtop .newdot { top: -9px; right: -8px; }
+
+  /* the journal: a book open on the meadow, the pages on the left, the one you picked on the right.
+     Every target is 44 px or more (52-60 on an upright phone), with 8 px or more between them. */
+  #jscrim { position: fixed; inset: 0; z-index: 8; background: rgba(40, 32, 18, 0.32); }
+  #journal { position: fixed; z-index: 9; left: 50%; transform: translateX(-50%);
+    top: calc(var(--keep-top-h, 58px) + env(safe-area-inset-top, 0px) + 18px); bottom: calc(var(--keep-foot-h, 84px) + 18px);
+    width: min(900px, calc(100% - 32px)); max-height: 640px; margin: auto 0; outline: none;
+    display: grid; grid-template-columns: 1.12fr 1fr; grid-template-rows: auto minmax(0, 1fr); grid-template-areas: 'top page' 'pages page';
+    border-radius: 18px; overflow: hidden;
+    background: var(--paper, none) var(--card); box-shadow: 0 20px 60px rgba(50, 40, 15, 0.35), inset 0 0 0 1px rgba(150, 115, 60, 0.22); }
+  #journal::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 5px; background: var(--brass); box-shadow: var(--brass-edges); z-index: 3; }
+  #journal:not(.hidden) > * { animation: pop-in 0.18s ease-out; }
+  #journal button { font-family: inherit; color: var(--ink); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  #journal :focus-visible { outline: 3px solid #d9a441; outline-offset: 2px; }
+  /* a round brass button: ✕, ‹ and › */
+  #journal .jb { display: grid; place-items: center; flex: none; width: 44px; height: 44px; padding: 0; border: none; border-radius: 50%;
+    background: linear-gradient(180deg, #fffaf0, #f1e5c9); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 2px 0 #a8742a; transition: transform 0.08s, box-shadow 0.08s; }
+  #journal .jb svg { display: block; width: 20px; height: 20px; }
+  #journal .jb:active:not(:disabled) { transform: translateY(2px); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 0 0 #a8742a; }
+  #journal .jb:disabled { opacity: 0.32; cursor: default; }
+  #journal .j-x { position: absolute; top: 14px; right: 14px; z-index: 3; }
+  #journal .j-top { grid-area: top; padding: 22px 20px 2px 24px; background: linear-gradient(90deg, transparent 88%, rgba(120, 85, 30, 0.10)); }
+  #journal .grab, #journal .j-foot { display: none; }
+  #journal .j-foot { grid-area: foot; }
+  #journal .j-head { display: flex; align-items: baseline; gap: 10px; }
+  #journal .j-head h2 { margin: 0; font-size: 26px; font-weight: 650; }
+  #journal .j-head .n { margin-left: auto; font-weight: 900; font-size: 22px; font-variant-numeric: tabular-nums; }
+  #journal .j-head .n small { font-size: 14px; color: var(--muted); font-weight: 800; }
+  #journal .j-bar { position: relative; height: 8px; margin: 6px 0 4px; border-radius: 99px; background: #e6d7b8; box-shadow: inset 0 1px 1px rgba(80, 60, 30, 0.25); }
+  #journal .j-bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: inherit; background: linear-gradient(90deg, #b07a2a, #e2b75c); transition: width 0.6s; }
+  #journal .pages { grid-area: pages; padding: 0 20px 18px 24px; overflow: hidden auto; overscroll-behavior: contain; scrollbar-width: thin;
+    background: linear-gradient(90deg, transparent 88%, rgba(120, 85, 30, 0.10)); }
+  #journal h3.sec { display: flex; align-items: baseline; margin: 16px 0 8px; text-transform: uppercase; letter-spacing: 0.11em; font-size: 12px; font-weight: 900; color: #8a5e22; }
+  #journal h3.sec span { margin-left: auto; letter-spacing: 0; font-size: 13px; color: var(--muted); }
+  #journal .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  #journal .tile { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 3px; min-height: 92px; padding: 16px 4px 8px;
+    border: none; border-radius: 12px; background: rgba(255, 250, 238, 0.55); box-shadow: inset 0 0 0 1px rgba(150, 115, 60, 0.2); transition: background 0.12s, transform 0.08s; }
+  #journal .tile:active { transform: scale(0.96); }
+  #journal .tile.on { background: #fff6e4; box-shadow: inset 0 0 0 2px #d9a441, 0 2px 0 #a8742a; }
+  #journal .tile .no { position: absolute; top: 4px; left: 7px; font-size: 11px; font-weight: 900; color: #a8916a; font-variant-numeric: tabular-nums; }
+  #journal .tile img { width: 56px; height: 56px; object-fit: contain; pointer-events: none; }
+  #journal .tile .nm { font-size: 12.5px; font-weight: 800; line-height: 1.15; text-align: center; min-height: 1.15em; }
+  #journal .tile.unseen { background: rgba(120, 95, 50, 0.07); box-shadow: inset 0 0 0 1px rgba(150, 115, 60, 0.12); }
+  #journal .tile.unseen.on { box-shadow: inset 0 0 0 2px #d9a441; }
+  #journal .tile.unseen .nm { color: #9c8a66; letter-spacing: 0.15em; }
+  #journal .tile.glimpsed .nm { color: var(--muted); }
+  #journal .tile.new::after { content: 'New'; position: absolute; top: 4px; right: 5px; padding: 0 6px; border-radius: 99px; background: #c4562a; color: #fff;
+    font-size: 11px; font-weight: 900; }
+  @media (hover: hover) {
+    #journal .jb:not(:disabled):hover { background: linear-gradient(180deg, #fff1df, #fbd9b9); }
+    #journal .tile:hover { background: rgba(255, 250, 238, 0.95); }
+    #journal .page .go:hover { background: linear-gradient(180deg, #fff1df, #fbd9b9); }
+  }
+  #journal img.sil { filter: brightness(0); opacity: 0.2; }
+  #journal img.half { filter: brightness(0); opacity: 0.55; }
+  /* the page you picked: its number on top (clear of the ✕), what it says, and ‹ n / 16 › at its foot */
+  #journal .page { grid-area: page; position: relative; display: flex; flex-direction: column; min-height: 0;
+    background: linear-gradient(90deg, rgba(120, 85, 30, 0.16), transparent 9%); }
+  #journal .pg-grab { padding: 26px 72px 0 26px; }
+  #journal .page .no { text-transform: uppercase; letter-spacing: 0.11em; font-size: 12px; font-weight: 900; color: #8a5e22; }
+  #journal .pg-body { flex: 1; min-height: 0; padding: 0 26px 8px; overflow: hidden auto; overscroll-behavior: contain; scrollbar-width: thin; touch-action: pan-y; }
+  #journal .page .art { display: grid; place-items: center; height: 168px; margin: 6px 0 2px; border-radius: 14px;
+    background: radial-gradient(ellipse at 50% 70%, rgba(150, 190, 110, 0.35), transparent 70%); }
+  #journal .page .art img { width: 150px; height: 150px; object-fit: contain; pointer-events: none; }
+  #journal .page h3 { margin: 0; font-size: 30px; font-weight: 650; }
+  #journal .page h3.q { color: #9c8a66; letter-spacing: 0.2em; }
+  #journal .page p { margin: 6px 0 12px; font-size: 15px; line-height: 1.45; font-weight: 700; color: var(--muted); }
+  #journal .page p.hint { font-family: Fraunces, Georgia, serif; font-style: italic; font-weight: 450; font-size: 18px; color: var(--ink); }
+  #journal .page ul { list-style: none; margin: 0; padding: 10px 0 0; border-top: 1px dashed var(--line); display: grid; gap: 8px; }
+  #journal .page li { display: grid; grid-template-columns: 26px 1fr auto; gap: 4px; align-items: baseline; font-size: 15px; font-weight: 700; }
+  #journal .page li i { font-style: normal; }
+  #journal .page li em { font-style: normal; font-weight: 800; color: var(--ink); text-align: right; }
+  #journal .page li span { color: var(--muted); }
+  #journal .page .go { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 16px 0 4px; width: 100%; min-height: 52px; padding: 10px 14px;
+    border: none; border-radius: 14px; font-size: 16px; font-weight: 800;
+    background: linear-gradient(180deg, #fffaf0, #f1e5c9); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 3px 0 #a8742a; transition: transform 0.08s; }
+  #journal .page .go:active { transform: translateY(2px); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 1px 0 #a8742a; }
+  #journal .page .go .e { font-size: 22px; }
+  #journal .pg-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 22px 16px; border-top: 1px dashed var(--line); }
+  #journal .pg-foot .of { font-weight: 900; font-size: 15px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  #journal .pg-foot .x { display: none; }
+
+  /* Upright phones: a sheet from the bottom, nearly the whole height. Nothing to reach for at the top: its handle drags it
+     down, and ✕ sits at the bottom in the middle, where either thumb reaches it. A page is a card laid over the pages,
+     with ‹ ✕ › in the same place (✕ lays it back down); a swipe sideways turns to the next one. Back closes either. */
+  @media (max-width: 760px) and (min-height: 501px) {
+    #journal { left: 0; right: 0; width: auto; transform: none; top: calc(env(safe-area-inset-top, 0px) + 44px); bottom: 0; max-height: none; margin: 0;
+      grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; grid-template-areas: 'top' 'pages' 'foot';
+      border-radius: 22px 22px 0 0; box-shadow: 0 -8px 40px rgba(50, 40, 15, 0.35), inset 0 0 0 1px rgba(150, 115, 60, 0.22); }
+    #journal:not(.hidden) > * { animation: none; }
+    #journal .j-x { display: none; }
+    #journal .j-top { padding: 0 18px 6px; background: none; touch-action: none; }
+    #journal .grab { display: block; height: 26px; position: relative; }
+    #journal .grab::before, #journal .pg-grab::before { content: ''; position: absolute; left: 50%; top: 11px; width: 44px; height: 5px; margin-left: -22px;
+      border-radius: 99px; background: #d4c4a6; }
+    #journal .j-head h2 { font-size: 24px; }
+    #journal .pages { padding: 0 14px 14px; background: none; }
+    #journal h3.sec { margin: 14px 2px 8px; }
+    #journal .tile { min-height: 88px; }
+    #journal .tile img { width: 50px; height: 50px; }
+    #journal .j-foot, #journal .pg-foot { display: flex; justify-content: center; align-items: center; gap: 28px;
+      padding: 10px 16px calc(14px + var(--home-bar, env(safe-area-inset-bottom, 0px))); border-top: 1px dashed var(--line); }
+    #journal .jb { width: 52px; height: 52px; }
+    #journal .jb.x { width: 60px; height: 60px; }
+    #journal .jb.x svg { width: 24px; height: 24px; }
+    #journal .page { display: none; grid-area: auto; grid-row: 2 / 4; grid-column: 1; z-index: 2; margin: 0 6px; border-radius: 18px 18px 0 0;
+      background: var(--paper, none) var(--card); box-shadow: 0 -6px 18px rgba(50, 40, 15, 0.2), inset 0 0 0 1px rgba(150, 115, 60, 0.22); }
+    #journal.reading .page { display: flex; }
+    #journal .pg-grab { position: relative; padding: 26px 20px 2px; touch-action: none; }
+    #journal .pg-body { padding: 0 20px 10px; }
+    #journal .pg-foot { margin: 0 -6px; }
+    #journal .pg-foot .of { display: none; }
+    #journal .pg-foot .x { display: grid; }
+    #journal .page .art { height: 150px; }
+    #journal .page .art img { width: 132px; height: 132px; }
+    #journal .page p { font-size: 16px; }
+  }
+  /* Phones on their side: the open book over the whole screen, its ✕ and ‹ › big enough for a thumb from either side. */
+  @media (max-height: 500px) {
+    #journal { left: calc(env(safe-area-inset-left, 0px) + 10px); right: calc(env(safe-area-inset-right, 0px) + 10px); width: auto; transform: none;
+      top: 8px; bottom: 8px; max-height: none; margin: 0; border-radius: 16px; }
+    #journal .jb { width: 48px; height: 48px; }
+    #journal .j-x { top: 10px; right: 10px; }
+    #journal .j-top { padding: 14px 16px 0 18px; }
+    #journal .j-head h2 { font-size: 21px; }
+    #journal .j-head .n { font-size: 19px; }
+    #journal .pages { padding: 0 16px 12px 18px; }
+    #journal h3.sec { margin: 12px 0 6px; }
+    #journal .grid { gap: 6px; }
+    #journal .tile { min-height: 76px; padding-top: 14px; }
+    #journal .tile img { width: 42px; height: 42px; }
+    #journal .pg-grab { padding: 18px 70px 0 22px; }
+    #journal .pg-body { padding: 0 22px 6px; }
+    #journal .page .art { height: 84px; margin-top: 2px; }
+    #journal .page .art img { width: 80px; height: 80px; }
+    #journal .page h3 { font-size: 24px; }
+    #journal .page p { margin-bottom: 8px; }
+    #journal .pg-foot { padding: 6px 16px 10px; }
+  }
+  @media (prefers-reduced-motion: reduce) { #journal:not(.hidden) > * { animation: none; } }
+
+  /* the first sighting: a caption over it, then a stamp of its painting flying into the book */
+  #jsay { position: fixed; z-index: 7; transform: translate(-50%, -100%); padding: 7px 14px 8px; border-radius: 14px; white-space: nowrap; pointer-events: none;
+    background: var(--paper, none) var(--card); box-shadow: 0 6px 18px rgba(50, 40, 15, 0.3); text-align: center; animation: jsay 2.6s ease-out forwards; }
+  #jsay small { display: block; text-transform: uppercase; letter-spacing: 0.12em; font: 900 10.5px Nunito, system-ui, sans-serif; color: #b0702a; }
+  #jsay b { font-family: Fraunces, Georgia, serif; font-weight: 650; font-size: 20px; }
+  @keyframes jsay { 0% { opacity: 0; margin-top: 8px; } 12% { opacity: 1; margin-top: 0; } 80% { opacity: 1; } 100% { opacity: 0; margin-top: -6px; } }
+  #jstamp { position: fixed; z-index: 7; left: 0; top: 0; width: 68px; height: 68px; margin: -34px 0 0 -34px; border-radius: 50%; pointer-events: none;
+    background: var(--paper, none) #fff6e4; box-shadow: inset 0 0 0 3px #d9a441, inset 0 0 0 4.5px #8a5e22, 0 6px 16px rgba(50, 40, 15, 0.35);
+    display: grid; place-items: center; }
+  #jstamp img { width: 50px; height: 50px; object-fit: contain; }
+`;
+
+// fresh: the page just found (New on its tile till the journal shuts); unread: the book glows till it's opened
+const fresh = () => ({ found: new Set(PAGES.filter(p => p.state === 'found').map(p => p.k)), fresh: null, unread: false, pick: null, sighted: false });
+let view = fresh();
+
+function inject(win, env) {
+  const doc = win.document, $ = s => doc.querySelector(s);
+  const st = doc.createElement('style'); st.textContent = CSS; doc.head.appendChild(st);
+  const pips = () => PAGES.map((p, i) => `<i class="${view.found.has(p.k) ? 'on' : p.state === 'glimpsed' ? 'half' : ''}${i === 8 ? ' gap' : ''}"></i>`).join('');
+  const total = PAGES.length;
+  if (book === 'bar') {
+    const b = doc.createElement('button');
+    b.id = 'jbook'; b.type = 'button'; b.title = 'Field journal (J)';
+    $('#toolbar').insertBefore(b, $('#toolbar .hand'));
+  } else {
+    const b = doc.createElement('button');
+    b.id = 'jtop'; b.className = 'hud-btn'; b.title = 'Field journal (J)';
+    $('#time').insertBefore(b, $('#time .hud-btn'));
+  }
+  const bookEl = () => $('#jbook') || $('#jtop');
+  const drawBook = () => {
+    const n = view.found.size, el = bookEl();
+    el.innerHTML = book === 'bar'
+      ? `<span class="j-l">📖 <b>Journal</b></span><span class="j-v">${n}<small>/${total}</small></span><span class="pips">${pips()}</span><span class="newdot">New</span>`
+      : `<span class="e">📖</span>${n}<small>/${total}</small><span class="newdot">New</span>`;
+    el.classList.toggle('new', view.unread);
+  };
+  drawBook();
+  bookEl().addEventListener('click', e => { e.stopPropagation(); openJournal(); });
+
+  const scrim = doc.createElement('div'); scrim.id = 'jscrim'; scrim.className = 'hidden';
+  const J = doc.createElement('div'); J.id = 'journal'; J.className = 'hidden'; J.tabIndex = -1;
+  J.setAttribute('role', 'dialog'); J.setAttribute('aria-modal', 'true'); J.setAttribute('aria-labelledby', 'j-title');
+  doc.body.append(scrim, J);
+  const upright = () => win.matchMedia('(max-width: 760px) and (min-height: 501px)').matches;
+  const still = () => win.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const svg = d => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  const X = svg('M6.5 6.5l11 11M17.5 6.5l-11 11'), PREV = svg('M14.5 5.5L8 12l6.5 6.5'), NEXT = svg('M9.5 5.5L16 12l-6.5 6.5');
+  const at = () => PAGES.findIndex(q => q.k === view.pick);
+  const tile = p => {
+    const found = view.found.has(p.k), cls = found ? 'found' : p.state === 'glimpsed' ? 'glimpsed' : 'unseen';
+    return `<button class="tile ${cls}${view.fresh === p.k ? ' new' : ''}${view.pick === p.k ? ' on' : ''}" data-k="${p.k}"
+      aria-label="No. ${p.no}, ${found || cls === 'glimpsed' ? p.name : 'not found yet'}"><span class="no">${p.no}</span>
+      <img src="${p.img}" class="${found ? '' : cls === 'glimpsed' ? 'half' : 'sil'}" alt=""><span class="nm">${found || cls === 'glimpsed' ? p.name : '?'}</span></button>`;
+  };
+  const page = p => {
+    const found = view.found.has(p.k), glimpsed = !found && p.state === 'glimpsed', i = PAGES.indexOf(p);
+    const home = p.home === 'lives' ? 'Lives here' : 'Comes by';
+    const facts = [];
+    if (found) facts.push(['📅 First seen', p.when]);
+    if (found && p.most) facts.push(['🏆 Most at once', p.most]);
+    if (found && p.home === 'visits') facts.push(['👁️ Seen', p.times === 1 ? '1 time' : `${p.times || 3} times`]);
+    if (p.home === 'visits' && (found || glimpsed)) facts.push(['🧭 Comes to', p.where], ['🕰️ When', p.time]);
+    if (p.home === 'visits' && !found && !glimpsed) facts.push(['🧭 Comes to', p.where]);
+    const [ic, ...words] = !found && p.tool ? TOOLS[p.tool].split(' ') : [];
+    return `<div class="pg-grab"><div class="no">No. ${p.no} · ${home}</div></div>
+      <div class="pg-body"><div class="pg-in">
+        <div class="art"><img src="${p.big}" class="${found ? '' : glimpsed ? 'half' : 'sil'}" alt=""></div>
+        <h3 class="fr${found || glimpsed ? '' : ' q'}">${found || glimpsed ? p.name : '? ? ?'}</h3>
+        ${found ? `<p>${p.note}</p>` : `<p class="hint">${p.hint}</p>`}
+        ${facts.length ? `<ul>${facts.map(([a, b]) => { const [ic, ...w] = a.split(' '); return `<li><i>${ic}</i><span>${w.join(' ')}</span><em>${String(b).replace(/^[^\w\s]+\s+/, '')}</em></li>`; }).join('')}</ul>` : ''}
+        ${ic ? `<button class="go" data-tool-go="${p.tool}"><span class="e">${ic}</span>${words.join(' ')}</button>` : ''}
+      </div></div>
+      <div class="pg-foot">
+        <button class="jb" data-act="prev" aria-label="Page before" title="Page before (←)"${i ? '' : ' disabled'}>${PREV}</button>
+        <span class="of">${i + 1} / ${PAGES.length}</span>
+        <button class="jb x" data-act="back" aria-label="Back to all pages" title="Back to all pages (Esc)">${X}</button>
+        <button class="jb" data-act="next" aria-label="Next page" title="Next page (→)"${i < PAGES.length - 1 ? '' : ' disabled'}>${NEXT}</button>
+      </div>`;
+  };
+  const pageEl = () => J.querySelector('.page');
+  const drawPage = () => { pageEl().innerHTML = page(PAGES[at()] || PAGES[0]); };
+  const markTiles = () => J.querySelectorAll('.tile').forEach(t => t.classList.toggle('on', t.dataset.k === view.pick));
+  const drawJournal = () => {
+    const n = view.found.size, lives = PAGES.filter(p => p.home === 'lives'), visits = PAGES.filter(p => p.home === 'visits');
+    const got = list => list.filter(p => view.found.has(p.k)).length;
+    J.innerHTML = `<button class="jb j-x" data-act="close" aria-label="Close the journal" title="Back to the meadow (Esc)">${X}</button>
+      <header class="j-top"><div class="grab"></div>
+        <div class="j-head"><h2 class="fr" id="j-title">Field journal</h2><span class="n">${n}<small>/${total}</small></span></div>
+        <div class="j-bar"><i style="width:${(n / total * 100).toFixed(1)}%"></i></div>
+      </header>
+      <section class="pages">
+        <h3 class="sec">Lives here<span>${got(lives)}/${lives.length}</span></h3>
+        <div class="grid">${lives.map(tile).join('')}</div>
+        <h3 class="sec">Comes by<span>${got(visits)}/${visits.length}</span></h3>
+        <div class="grid">${visits.map(tile).join('')}</div>
+      </section>
+      <footer class="j-foot"><button class="jb x" data-act="close" aria-label="Close the journal">${X}</button></footer>
+      <section class="page"></section>`;
+    drawPage();
+  };
+
+  // How deep it's open: 0 shut, 1 the pages, 2 a page laid over them (upright phones; elsewhere the page is always beside them).
+  // Each step is a step in the browser's history, so a phone's back button or swipe shuts the page, then the journal.
+  // (The mock's frame was written in by hand and can't step back within itself, so the page around it keeps the steps.)
+  let depth = 0;
+  const top = win.top;
+  const slide = (el, frames, ms = 240, fill = 'none') => el.animate(frames, { duration: still() ? 1 : ms, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)', fill });
+  const down = el => [{ transform: el.style.transform || 'none' }, { transform: 'translateY(105%)' }];
+  function show(n) {
+    const was = depth;
+    depth = n;
+    if (n && !was) {
+      drawJournal();
+      J.classList.remove('hidden'); scrim.classList.remove('hidden');
+      J.focus({ preventScroll: true });
+      if (upright()) slide(J, [{ transform: 'translateY(100%)' }, { transform: 'none' }], 320);
+      scrim.animate([{ opacity: 0 }, { opacity: 1 }], { duration: still() ? 1 : 200 });
+    }
+    if (n === 2 && was < 2) {
+      J.classList.add('reading');
+      if (was && upright()) slide(pageEl(), [{ transform: 'translateY(100%)' }, { transform: 'none' }], 300);
+    }
+    if (n === 1 && was === 2) {
+      const el = pageEl();
+      if (!upright()) J.classList.remove('reading');
+      else { const a = slide(el, down(el), 220, 'forwards'); a.finished.then(() => { el.style.transform = ''; a.cancel(); if (depth < 2) J.classList.remove('reading'); }); }
+    }
+    if (!n && was) {
+      const done = () => { if (depth) return; J.classList.add('hidden'); scrim.classList.add('hidden'); J.classList.remove('reading'); J.style.transform = ''; view.fresh = null; };
+      if (upright()) { const a = slide(J, down(J), 240, 'forwards'); a.finished.then(() => { done(); a.cancel(); }); }
+      else done();
+      scrim.animate([{ opacity: 1 }, { opacity: 0 }], { duration: still() ? 1 : 200, fill: 'forwards' }).finished.then(a => a.cancel());
+      bookEl().focus({ preventScroll: true });
+    }
+  }
+  function to(n) {
+    n = Math.max(0, n);
+    if (n > depth) { for (let i = depth + 1; i <= n; i++) top.history.pushState({ journal: i }, ''); show(n); }
+    else if (n < depth) { if (top.history.state?.journal === depth) top.history.go(n - depth); else show(n); }   // (popstate shows it)
+  }
+  top.addEventListener('popstate', e => { const n = Math.min(e.state?.journal || 0, depth); if (n !== depth) show(n); });
+
+  // Turning a page: ‹ ›, the arrow keys, or a swipe. The new one slides in from the side it came from.
+  function turn(dir, from) {
+    const p = PAGES[at() + dir];
+    if (!p) return;
+    view.pick = p.k; drawPage(); markTiles();
+    if (!upright()) J.querySelector('.tile.on')?.scrollIntoView({ block: 'nearest' });
+    slide(J.querySelector('.pg-in'), [{ transform: from || `translateX(${dir * 48}px)`, opacity: from ? 1 : 0 }, { transform: 'none', opacity: 1 }], 220);
+  }
+
+  function openJournal() {
+    if (depth) { to(0); return; }
+    view.pick = view.fresh || view.pick || 'rabbit';
+    to(view.fresh && upright() ? 2 : 1);
+    view.unread = false; drawBook();
+  }
+  let quietTill = 0;   // (no click right after a swipe)
+  J.addEventListener('click', e => {
+    const t = e.target.closest('.tile, [data-act], [data-tool-go]');
+    if (!t || performance.now() < quietTill) return;
+    e.stopPropagation();
+    if (t.classList.contains('tile')) { view.pick = t.dataset.k; drawPage(); markTiles(); if (upright()) to(2); return; }
+    const act = t.dataset.act;
+    if (act === 'close') to(0);
+    else if (act === 'back') to(1);
+    else if (act === 'prev' || act === 'next') turn(act === 'next' ? 1 : -1);
+    else if (t.dataset.toolGo) { to(0); const b = $(`#toolbar [data-tool="${t.dataset.toolGo}"]`); if (b) b.click(); }
+  });
+  scrim.addEventListener('click', () => to(0));
+
+  // Fingers, on an upright phone: a handle dragged down lays its sheet down (the journal's shuts it, a page's goes back to
+  // the pages); a page swiped sideways turns. Anything shorter springs back.
+  let drag = null, swipe = null;
+  J.addEventListener('pointerdown', e => {
+    const grab = upright() && e.button === 0 && e.target.closest('.j-top, .pg-grab');
+    if (grab) { drag = { el: grab.classList.contains('pg-grab') ? pageEl() : J, y: e.clientY, t: e.timeStamp, dy: 0 }; J.setPointerCapture(e.pointerId); return; }
+    if (e.pointerType !== 'mouse' && e.target.closest('.pg-body')) swipe = { x: e.clientX, y: e.clientY, dx: 0, side: false };
+  });
+  J.addEventListener('pointermove', e => {
+    if (drag) { drag.dy = Math.max(0, e.clientY - drag.y); drag.el.style.transform = drag.dy ? `translateY(${drag.dy}px)` : ''; return; }
+    if (!swipe) return;
+    const dx = e.clientX - swipe.x, dy = e.clientY - swipe.y;
+    if (!swipe.side) {
+      if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx)) { swipe = null; return; }   // (a scroll)
+      if (Math.abs(dx) < 12) return;
+      swipe.side = true; J.setPointerCapture(e.pointerId);
+    }
+    swipe.dx = dx;
+    J.querySelector('.pg-in').style.transform = `translateX(${PAGES[at() + (dx < 0 ? 1 : -1)] ? dx : dx * 0.25}px)`;   // (at the last page, it only gives)
+  });
+  const lift = e => {
+    if (drag) {
+      const d = drag; drag = null;
+      if (d.dy > 110 || d.dy > 30 && d.dy / (e.timeStamp - d.t) > 0.5) to(d.el === J ? 0 : 1);
+      else if (d.dy) { const from = d.el.style.transform; d.el.style.transform = ''; slide(d.el, [{ transform: from }, { transform: 'none' }], 200); }
+      return;
+    }
+    const s = swipe; swipe = null;
+    if (!s?.side) return;
+    quietTill = performance.now() + 350;
+    const dir = s.dx < 0 ? 1 : -1, el = J.querySelector('.pg-in'), from = el.style.transform;
+    el.style.transform = '';
+    if (Math.abs(s.dx) > 56 && PAGES[at() + dir]) turn(dir, `translateX(${-dir * 40}px)`);
+    else slide(el, [{ transform: from }, { transform: 'none' }], 200);
+  };
+  J.addEventListener('pointerup', lift); J.addEventListener('pointercancel', lift);
+
+  // Keys: J opens and shuts it, Esc steps back, ← → turn. While it's open no key reaches the meadow.
+  doc.addEventListener('keydown', e => {
+    if (e.target.closest?.('input,textarea')) return;
+    const jkey = (e.key === 'j' || e.key === 'J') && !e.metaKey && !e.ctrlKey && !e.altKey;
+    if (!depth) { if (jkey) { openJournal(); e.stopPropagation(); } return; }
+    if (e.key === 'Tab') return;
+    e.stopPropagation();
+    if (e.key === 'Escape') to(depth - 1);
+    else if (jkey) to(0);
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); turn(e.key === 'ArrowRight' ? 1 : -1); }
+  }, true);
+
+  // The first sighting: the caption, then the stamp flies on an arc into the book; the book bumps, counts it and glows.
+  win.mockSighting = () => {
+    if (view.sighted) return;
+    view.sighted = true;
+    const hog = PAGES.find(p => p.k === 'hedgehog');
+    const x = win.innerWidth / 2, y = win.innerHeight / 2 + 0.5 * env.g.cam.zoom * (device === 'phone' ? 3 : 1);
+    const say = doc.createElement('div'); say.id = 'jsay';
+    say.innerHTML = '<small>✨ First sighting</small><b>Hedgehog</b>';
+    say.style.left = x + 'px'; say.style.top = (y - env.g.cam.zoom * 1.2) + 'px';
+    doc.body.appendChild(say);
+    setTimeout(() => say.remove(), 2700);
+    const s = doc.createElement('div'); s.id = 'jstamp'; s.innerHTML = `<img src="${hog.img}" alt="">`;
+    doc.body.appendChild(s);
+    const r = bookEl().getBoundingClientRect(), bx = r.left + r.width / 2, by = r.top + r.height / 2;
+    const cx = (x + bx) / 2 + (bx > x ? 1 : -1) * 60, cy = Math.min(y, by) - 160;     // the arc's pull
+    const at = t => { const u = 1 - t; return [u * u * x + 2 * u * t * cx + t * t * bx, u * u * y + 2 * u * t * cy + t * t * by]; };
+    const fly = Array.from({ length: 13 }, (_, i) => { const t = i / 12, [px, py] = at(t);
+      return { transform: `translate(${px}px, ${py}px) scale(${1 - 0.55 * t}) rotate(${t * 20}deg)`, offset: 0.4 + 0.6 * t, easing: 'ease-in' }; });
+    const anim = s.animate([
+      { transform: `translate(${x}px, ${y}px) scale(0)`, offset: 0 },
+      { transform: `translate(${x}px, ${y - 30}px) scale(1.15)`, offset: 0.14 },
+      { transform: `translate(${x}px, ${y - 24}px) scale(1)`, offset: 0.22 },
+      { transform: `translate(${x}px, ${y - 24}px) scale(1)`, offset: 0.4 },
+      ...fly.slice(1),
+    ], { duration: 2100, fill: 'forwards' });
+    fly[0]; // (the arc starts where the hold ends)
+    anim.onfinish = () => {
+      s.remove();
+      view.found.add('hedgehog'); view.fresh = 'hedgehog'; view.unread = true;
+      Object.assign(hog, { when: '☀️ Summer, year 1', times: 1 });
+      drawBook();
+      const el = bookEl(); el.classList.remove('jbump'); void el.offsetWidth; el.classList.add('jbump');
+      setTimeout(() => el.classList.remove('jbump'), 500);
+    };
+  };
+  win.mockReset = () => {
+    to(0); show(0);
+    view = fresh(); drawBook();
+  };
+  win.mockOpen = openJournal;
+}
+
+// ------------------------------------------------------------------ go
+
+(async () => {
+  const [vw, vh] = DEVICES[device], box = document.querySelector('#box'), frame = document.querySelector('#game');
+  const fit = () => {
+    const k = +P.get('k') || Math.min(1, (innerWidth - 48) / vw, Math.max(0.45, (innerHeight - 150) / vh));
+    box.style.width = vw * k + 'px'; box.style.height = vh * k + 'px';
+    frame.style.width = vw + 'px'; frame.style.height = vh + 'px'; frame.style.transform = `scale(${k})`;
+  };
+  fit(); addEventListener('resize', fit);
+  try {
+    await loadGame(frame);
+    const win = frame.contentWindow, env = await prepare(win);
+    paintings(env.g);
+    inject(win, env);
+    document.querySelector('#wait').classList.add('gone');
+    for (const [id, f] of [['play', 'mockSighting'], ['open', 'mockOpen'], ['reset', 'mockReset']]) {
+      const b = document.querySelector('#' + id); b.disabled = false; b.onclick = () => win[f]();
+    }
+  } catch (e) {
+    document.querySelector('#wait').textContent = 'The mock broke: ' + e.message;
+    console.error(e);
+  }
+})();
+</script>
+</body>
+</html>
