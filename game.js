@@ -69,6 +69,7 @@ const cam = { x: S.W / 2, y: S.H / 2, zoom: 10, goal: null };
 const canvas = $('#world');
 const ctx = canvas.getContext('2d');
 let vw = 0, vh = 0, dpr = 1, minZoom = 1, fitZoom = 1;
+let pageDpr = 1;                                 // the screen's own: the charts on the cards are drawn at it, the meadow at dpr (sharp)
 const FIT = 0.92;                                 // zoomed right out, how much of the window the meadow fills (it fades into mist, mistField)
 let barPad = 0;                                   // screen pixels the toolbar covers at the bottom (on a phone, its button in the corner)
 let topPad = 0;                                   // and the top bar at ?keep covers at the top
@@ -81,10 +82,12 @@ const canHover = matchMedia('(hover: hover)');
 
 // Safari's fingerprinting protection (iOS 26, private tabs) can report a ratio of 1 on a
 // retina phone, which leaves the meadow blurry. Ask the media queries too, and failing that,
-// trust that a touch screen is sharp.
+// trust that a touch screen is sharp. Only in Safari: elsewhere the ratio is true, and a
+// Chromebook folded into a tablet would be drawn at 2x on a 1x screen.
+const WEBKIT = /AppleWebKit/.test(navigator.userAgent) && !/Chrome\/|Chromium|Edg\//.test(navigator.userAgent);
 function pixelRatio() {
   const r = window.devicePixelRatio || 1;
-  if (r >= 2) return r;
+  if (r >= 2 || !WEBKIT) return r;
   for (const n of [3, 2]) if (matchMedia(`(min-resolution: ${n}dppx)`).matches) return n;
   if (matchMedia('(pointer: coarse)').matches) return Math.min(innerWidth, innerHeight) < 600 ? 3 : 2;
   return r;
@@ -123,7 +126,8 @@ function shortOfScreen() {
 function resize() {
   if (shortOfScreen()) document.documentElement.style.setProperty('--home-bar', '0px');
   else document.documentElement.style.removeProperty('--home-bar');
-  dpr = pixelRatio();
+  pageDpr = pixelRatio();
+  dpr = sharpAt(sharp.step);                     // the meadow: maybe a step less sharp on a slow machine (watchFrames)
   // The CSS sizes the canvas: in Safari on a phone it reaches under the clock and the address bar, past innerHeight.
   vw = canvas.clientWidth || innerWidth; vh = canvas.clientHeight || innerHeight;
   canvas.width = Math.round(vw * dpr); canvas.height = Math.round(vh * dpr);
@@ -133,7 +137,7 @@ function resize() {
   clampCam();
   for (const s of S.KINDS) {
     const c = $('#spark-' + s);
-    c.width = Math.round(c.clientWidth * dpr); c.height = Math.round(c.clientHeight * dpr);
+    c.width = Math.round(c.clientWidth * pageDpr); c.height = Math.round(c.clientHeight * pageDpr);
   }
   measureSheet();
 }
@@ -553,8 +557,7 @@ function edgeColour(r, g, b) {
 // Safari (and every browser on an iPhone: they're all WebKit) misses a frame each time it repaints a big
 // ground, however cheap the shader: on a MacBook at 2x, five times a second at 1x speed. There the ground
 // is kept to GROUND_WEBKIT pixels, but never below 1x. A phone's small screen stays at 2x.
-const GROUND_DPR = 2, GROUND_WEBKIT = 1.5e6;
-const WEBKIT = /AppleWebKit/.test(navigator.userAgent) && !/Chrome\/|Chromium|Edg\//.test(navigator.userAgent);
+const GROUND_DPR = 2, GROUND_WEBKIT = 1.5e6;   // (WEBKIT: by pixelRatio)
 const groundLayer = Ground.ok ? Ground.canvas : null, laid = { w: 0, h: 0, x: 0, y: 0 };
 if (groundLayer) { groundLayer.id = 'ground'; canvas.before(groundLayer); }
 let groundIn = false;
@@ -594,6 +597,7 @@ const MIST_IN = 6, MIST_FULL = 4, MIST_OUT = 10, MIST_PX = 3, MIST_ROUND = 14;
 const MIST_WAVER = 8;                             // tiles the edge wavers in and out, all told
 const MIST_DEEP = MIST_IN + MIST_WAVER / 2 + 2;   // further in than this there's none, wherever a bank of it rolls in
 const NIGHT_RGB = [22, 30, 78], DUSK_RGB = [255, 140, 60];   // the dark and the dusk glow, washed over everything
+const WEATHER_RGB = [50, 62, 92], HEAT_RGB = [255, 168, 60];  // and a grey sky's dimming, a heatwave's glow
 const MIST_W = (S.W + 2 * MIST_OUT) * MIST_PX, MIST_H = (S.H + 2 * MIST_OUT) * MIST_PX;
 const mist = { field: null };
 function mistField() {
@@ -1281,11 +1285,16 @@ function render(now) {
   drawPollen(now);
   drawButterflies(now, ck);
 
-  // Dusk and night.
-  const dark = shownDark(ck.phase), dusk = shownDusk(ck.phase);
-  if (dark > 0) wash(`rgba(${NIGHT_RGB}, ${dark})`);
+  // Dusk and night, and the weather's grey or the heat's glow over them, laid on in one wash.
+  const dark = shownDark(ck.phase), dusk = shownDusk(ck.phase), m = ui.sky.mix;
+  tint.a = 0;
+  if (dark > 0) tintWith(NIGHT_RGB, dark);
+  if (dusk > 0.005) tintWith(DUSK_RGB, dusk);
+  const dim = 0.05 * m.cloudy + 0.09 * m.rain + 0.30 * m.storm + 0.04 * m.snow;
+  if (dim > 0.005) tintWith(WEATHER_RGB, dim);
+  if (m.heat > 0.01) tintWith(HEAT_RGB, 0.11 * m.heat);
+  if (tint.a > 0) wash(`rgba(${Math.round(tint.r)}, ${Math.round(tint.g)}, ${Math.round(tint.b)}, ${tint.a.toFixed(3)})`);
   drawFireflies(now, dark);
-  if (dusk > 0.005) wash(`rgba(${DUSK_RGB}, ${dusk})`);
   drawFire(now);
   drawWeather(now, ck);
 
@@ -5654,6 +5663,13 @@ function floatPaint(g, kind, rgb, px) {
 
 // Paints over the whole view, with a margin for the thunder shake.
 function wash(color) { ctx.fillStyle = color; ctx.fillRect(-10, -10, vw + 20, vh + 20); }
+// Washes one over another, as one: each full-screen pass costs a slow GPU (a Chromebook's) a lot.
+const tint = { r: 0, g: 0, b: 0, a: 0 };
+function tintWith(rgb, a) {
+  const over = tint.a * (1 - a), all = over + a;
+  tint.r = (tint.r * over + rgb[0] * a) / all; tint.g = (tint.g * over + rgb[1] * a) / all; tint.b = (tint.b * over + rgb[2] * a) / all;
+  tint.a = all;
+}
 
 // ------------------------------------------------------------------ weather
 
@@ -5695,10 +5711,7 @@ function weatherTick(now) {
 function drawWeather(now, ck) {
   const m = ui.sky.mix, t = weatherTick(now);
   const shade = 0.12 * m.cloudy + 0.08 * m.rain + 0.10 * m.storm;
-  if (shade > 0.01) drawCloudShadows(t, shade);
-  const dim = 0.05 * m.cloudy + 0.09 * m.rain + 0.30 * m.storm + 0.04 * m.snow;
-  if (dim > 0.005) wash(`rgba(50, 62, 92, ${dim})`);
-  if (m.heat > 0.01) wash(`rgba(255, 168, 60, ${0.11 * m.heat})`);
+  if (shade > 0.01) drawCloudShadows(t, shade);   // (its grey and the heat are in the dark's wash: render)
   if (!ck.night) drawRainbow();
   if (m.fog > 0.01) drawFog(t, m.fog);
   const rain = m.rain + 1.8 * m.storm;
@@ -5707,21 +5720,30 @@ function drawWeather(now, ck) {
   drawLightning(now);
 }
 
+// A soft round blob of one colour, fading out to its edge: painted once, then stretched and drawn at any strength
+// (a cloud's shadow, a bank of fog), instead of a new gradient for each one every frame.
+function softBlob(rgb) {
+  const blob = { img: document.createElement('canvas') }, c = blob.img, n = 128, g = c.getContext('2d');
+  c.width = c.height = n;
+  const grad = g.createRadialGradient(n / 2, n / 2, 0, n / 2, n / 2, n / 2);
+  grad.addColorStop(0, `rgba(${rgb}, 1)`);
+  grad.addColorStop(1, `rgba(${rgb}, 0)`);
+  g.fillStyle = grad; g.fillRect(0, 0, n, n);
+  asBitmap(c, b => { blob.img = b; });
+  return blob;
+}
+const CLOUD_BLOB = softBlob([30, 40, 70]), FOG_BLOB = softBlob([244, 246, 250]);
+
 // Soft shadows that pan and zoom with the meadow, drifting east.
 function drawCloudShadows(now, a) {
-  const z = cam.zoom, span = S.W + 60;
+  const z = cam.zoom, span = S.W + 60, wide = 1.6;     // stretched sideways
   ctx.save();
+  ctx.globalAlpha = Math.min(1, a * 1.6);
   for (const c of clouds) {
     const wx = ((c.x * span + now / 1000 * 0.5 * c.s) % span) - 30, wy = c.y * S.H;
-    const [sx, sy] = toScreen(wx, wy), r = c.r * z;
-    if (!visible(sx, sy, r * 1.6)) continue;
-    const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, r * 1.6);
-    grad.addColorStop(0, `rgba(30, 40, 70, ${a * 1.6})`);
-    grad.addColorStop(1, 'rgba(30, 40, 70, 0)');
-    ctx.fillStyle = grad;
-    ctx.setTransform(dpr * 1.6, 0, 0, dpr, sx * dpr * (1 - 1.6), 0);   // stretch sideways
-    ctx.beginPath(); ctx.arc(sx, sy, r * 1.6, 0, TAU); ctx.fill();
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const [sx, sy] = toScreen(wx, wy), r = c.r * z * 1.6;
+    if (!visible(sx, sy, r * wide)) continue;
+    ctx.drawImage(CLOUD_BLOB.img, sx - r * wide, sy - r, 2 * r * wide, 2 * r);
   }
   ctx.restore();
 }
@@ -5758,13 +5780,10 @@ function drawSnow(now, amount) {
 function drawFog(now, amount) {
   wash(`rgba(236, 240, 244, ${0.30 * amount})`);
   ctx.save();
+  ctx.globalAlpha = Math.min(1, 0.35 * amount);
   for (let i = 0; i < 6; i++) {                  // slow banks rolling past
     const x = ((i / 6 + now / 60000) % 1.4 - 0.2) * vw, y = vh * (0.15 + 0.14 * i), r = vw * 0.35;
-    const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
-    grad.addColorStop(0, `rgba(244, 246, 250, ${0.35 * amount})`);
-    grad.addColorStop(1, 'rgba(244, 246, 250, 0)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(x - r, y - r, r * 2, r * 2);
+    ctx.drawImage(FOG_BLOB.img, x - r, y - r, r * 2, r * 2);
   }
   ctx.restore();
 }
@@ -6864,14 +6883,14 @@ function sparkline(canvas, data, color) {
   const pts = data.slice(since(world.tick - 2 * S.YEAR_DAYS * S.TPD));
   if (pts.length < 2) return;
   const peak = Math.max(...pts), max = Math.max(4, peak);
-  const gut = 30 * dpr, pad = 6 * dpr, cw = w - gut, top = 6 * dpr, base = h - 6 * dpr;
+  const gut = 30 * pageDpr, pad = 6 * pageDpr, cw = w - gut, top = 6 * pageDpr, base = h - 6 * pageDpr;
   const x = i => (i / (pts.length - 1)) * cw, y = v => base - (v / max) * (base - top);
-  g.font = `800 ${10 * dpr}px Nunito, sans-serif`; g.textAlign = 'right'; g.textBaseline = 'middle'; g.fillStyle = MUTED;
-  g.strokeStyle = '#e2d4ba'; g.lineWidth = dpr;
-  g.beginPath(); g.moveTo(0, base + 0.5 * dpr); g.lineTo(cw, base + 0.5 * dpr); g.stroke();
+  g.font = `800 ${10 * pageDpr}px Nunito, sans-serif`; g.textAlign = 'right'; g.textBaseline = 'middle'; g.fillStyle = MUTED;
+  g.strokeStyle = '#e2d4ba'; g.lineWidth = pageDpr;
+  g.beginPath(); g.moveTo(0, base + 0.5 * pageDpr); g.lineTo(cw, base + 0.5 * pageDpr); g.stroke();
   g.fillText('0', w - pad, base);
   if (peak > 0) {
-    g.setLineDash([3 * dpr, 3 * dpr]);
+    g.setLineDash([3 * pageDpr, 3 * pageDpr]);
     g.beginPath(); g.moveTo(0, y(peak)); g.lineTo(cw, y(peak)); g.stroke();
     g.setLineDash([]);
     g.fillText(Math.round(peak), w - pad, y(peak));
@@ -6885,7 +6904,7 @@ function sparkline(canvas, data, color) {
   g.fill();
   g.beginPath();
   pts.forEach((v, i) => (i ? g.lineTo(x(i), y(v)) : g.moveTo(x(i), y(v))));
-  g.strokeStyle = color; g.lineWidth = 2 * dpr; g.lineJoin = 'round';
+  g.strokeStyle = color; g.lineWidth = 2 * pageDpr; g.lineJoin = 'round';
   g.stroke();
 }
 
@@ -7278,9 +7297,9 @@ function niceStep(v) {
 function fitCanvas(c, cssH) {
   const w = c.clientWidth;
   c.style.height = cssH + 'px';
-  c.width = Math.round(w * dpr); c.height = Math.round(cssH * dpr);
+  c.width = Math.round(w * pageDpr); c.height = Math.round(cssH * pageDpr);
   const g = c.getContext('2d');
-  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.setTransform(pageDpr, 0, 0, pageDpr, 0, 0);
   return [g, w];
 }
 
@@ -11166,10 +11185,50 @@ const TERRAIN_MS = 250;                   // real time between hand-overs of the
 // than drop frames: the ticks that don't fit are let go, and don't pile up for the next frame.
 const SIM_MS = 6;
 
+// A slow GPU (a Chromebook's, or any screen at 2x and up) can't fill every pixel sixty times a second. When it
+// keeps missing frames, the meadow is drawn a step less sharp (SHARP_STEPS, never below 1x) and stretched to the
+// screen; the cards stay sharp. The step is kept for the next visit (SHARP_KEY), which first tries one sharper
+// again and keeps that if it holds (SHARP_HOLD). Frames are judged only while the meadow is drawn every frame.
+const SHARP_STEPS = [Infinity, 2, 1.5, 1.25, 1];
+const SHARP_KEY = 'aeon-garden-sharp';
+const SLOW_MS = 22;              // a stretch of frames this slow, on the median (under 45 a second), is missing frames
+const SLOW_RUN = 60;             // frames in a stretch
+const SLOW_RUNS = 2;             // slow stretches in a row before it steps down
+const SHARP_SETTLE = 2500;       // ms not judged after the page opens or a step down (the sprites are painted again)
+const SHARP_HOLD = 30000;        // ms of drawing a sharper step has to hold to be kept
+const sharp = (() => {
+  let kept = 0;
+  try { kept = clamp(Math.round(+localStorage.getItem(SHARP_KEY)) || 0, 0, SHARP_STEPS.length - 1); } catch (e) { /* private window */ }
+  return { step: Math.max(0, kept - 1), kept, runs: new Float32Array(SLOW_RUN), n: 0, slow: 0, held: 0, from: performance.now() + SHARP_SETTLE };
+})();
+const sharpAt = step => Math.min(pageDpr, Math.max(1, SHARP_STEPS[step]));
+function keepSharp(step) {
+  sharp.kept = step;
+  try { localStorage.setItem(SHARP_KEY, String(step)); } catch (e) { /* fine */ }
+}
+// ms since the last frame; drew: this frame and the last were both drawn.
+function watchFrames(ms, drew, now) {
+  if (!drew || now < sharp.from || LAB) { sharp.n = 0; return; }   // resting, the stats page, settling
+  if (ms > 250) return;                                            // back from a hidden tab, or a hitch
+  sharp.held += ms;
+  if (sharp.held > SHARP_HOLD && sharp.step < sharp.kept) keepSharp(sharp.step);
+  sharp.runs[sharp.n++] = ms;
+  if (sharp.n < SLOW_RUN) return;
+  sharp.n = 0;
+  sharp.runs.sort();
+  sharp.slow = sharp.runs[SLOW_RUN >> 1] > SLOW_MS ? sharp.slow + 1 : 0;
+  if (sharp.slow < SLOW_RUNS || dpr <= 1) return;
+  while (sharp.step < SHARP_STEPS.length - 1 && sharpAt(sharp.step) >= dpr) sharp.step++;
+  keepSharp(sharp.step);
+  sharp.slow = 0; sharp.held = 0; sharp.from = now + SHARP_SETTLE;
+  resize();
+  dropSprites(Infinity);                 // (painted at the old sharpness: let them go)
+}
+
 // Paused, the world stands still, but the water, the weather and the trees still move a little:
 // 30 frames a second are plenty for that, unless you're looking around or something is happening.
 const RESTING_MS = 30, WOKEN_MS = 500;
-let lastDrawn = 0, lastInput = 0;
+let lastDrawn = 0, lastInput = 0, drewLast = false;
 const camWas = { x: 0, y: 0, zoom: 0 };
 for (const type of ['pointerdown', 'pointermove', 'wheel', 'keydown', 'resize']) addEventListener(type, () => { lastInput = performance.now(); }, { passive: true });
 function resting(now) {
@@ -11181,7 +11240,7 @@ function resting(now) {
 
 function frame(now) {
   if (opening === 1) opening = 2;
-  const dt = Math.min(0.1, (now - last) / 1000);
+  const ms = now - last, dt = Math.min(0.1, ms / 1000);
   last = now;
   if (intro.on) introFrame(now, dt);
 
@@ -11243,7 +11302,10 @@ function frame(now) {
   clampCam();
 
   const rest = resting(now) && now - lastDrawn < RESTING_MS;
-  if (!rest && !(away.on && away.frames > 1) && !ui.stats.open && canvas.width && canvas.height) {   // the stats page covers the meadow; a hidden tab can have no size
+  const draws = !rest && !(away.on && away.frames > 1) && !ui.stats.open && canvas.width && canvas.height;
+  watchFrames(ms, draws && drewLast, now);
+  drewLast = draws;
+  if (draws) {   // the stats page covers the meadow; a hidden tab can have no size
     lastDrawn = now;
     // Every 12 ticks, and no more than a few times a second: grass changes too slowly to see the difference.
     if (terrainTick < 0 || (world.tick - terrainTick >= 12 && now - terrainAt >= TERRAIN_MS)) paintTerrain();
@@ -11389,6 +11451,6 @@ showGroup();
 setTimeout(() => { barNear = false; updateBar(); }, 4000);   // show the toolbar for a moment, then let the meadow breathe
 for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => { if (ui.sound) Sound.start(); }, { once: true });
 
-window.garden = { get world() { return world; }, ui, cam, lab, installed,   // handy in the console
+window.garden = { get world() { return world; }, ui, cam, lab, installed, sharp, get dpr() { return dpr; },   // handy in the console
   get trees() { return { worker: !!treeWorker, workers: treeWorkers.length, art: treeArt, bytes: treeBytes, asked: treeAsked.size, busy: treeBusy }; } };
 })();

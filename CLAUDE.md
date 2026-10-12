@@ -91,6 +91,10 @@ new feature must not slow it down. If it would, make it cheaper or leave it out.
   image or canvas `drawImage`d that frame). Past that it flushes mid-frame and every canvas call costs more,
   which a profile blames on whatever call comes next. So keep big pictures off the canvas (the ground is a
   layer of its own), paint sprites near the size they're drawn at, and don't draw many different large ones.
+- A slow GPU (a Chromebook's) can't fill a sharp screen every frame. When frames keep running slow the meadow is
+  drawn a step less sharp, down to 1x (`watchFrames`, `SHARP_STEPS`, kept under `aeon-garden-sharp`; the next visit
+  tries one step sharper again). The cards and their charts stay sharp (`pageDpr`). Full-screen tints are blended
+  into one fill (`tintWith`), and soft blobs (cloud shadows, fog banks) are painted once (`softBlob`).
 - Draw only what's on screen (`visible`). A full-screen pass (a `wash`, an overlay, a composite mode)
   costs the most, so add one only when it's clearly worth it, and skip it while it wouldn't show.
 - The sim can run 2000 ticks in one frame. In hot loops, don't make new objects or arrays, and don't
