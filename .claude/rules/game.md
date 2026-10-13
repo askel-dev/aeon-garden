@@ -2,6 +2,8 @@
 paths:
   - game.js
   - index.html
+  - fur.js
+  - fur-worker.js
 ---
 
 # game.js
@@ -16,15 +18,20 @@ With Look in hand, a press on an animal dragged (or a finger held on it) picks i
 hand's speeding up swings (`heldFrame`, `drawHeld`), kicks in fits, and drops with a hop where you let go
 (`letGo`, `drawFalling`). In the sim (`lift`, `putDown`) a held one (`c.held`) skips its turn and is out of the
 grid, so nothing hunts it; its place is the ground under the hand, and it lands on the nearest dry footing.
-Foxes and rabbits are painted (`paintFox`, `paintRabbit`, styled on the carcasses): one rig posed for
+Foxes and rabbits are painted (fur.js: `paintFox`, `paintRabbit`, styled on the carcasses): one rig posed for
 what each is doing (`FOX_POSES`, `RABBIT_POSES`, picked by `foxArt`, `rabbitArt`), painted as one animal by `paintFur`
 (one shading over it all, each part's form and the markings soft, a part in front casting a soft shadow, a softened
 outline and a faint grain), so its parts don't read as separate shapes. A rabbit's coat is painted in its own colours;
 in winter it whitens in 5 steps, only the brown and the white painted and the steps between the two mixed. A painting
 is costly (each pass through the scratch layer is a flush), so parts can share one (`joined`) and the parts behind are
 just shaded (`flat`). It's painted only at doublings of its size (`FUR_PAINTED`) and shrunk for the sizes between,
-which keeps a dozen poses, growing young and zooming cheap. A pose not painted yet waits a frame once the frame has done
-its painting (`shownPose`, as a tree's new colours do): the animal holds the pose it was last drawn in.
+which keeps a dozen poses, growing young and zooming cheap. In the meadow the paintings are made off the main thread
+(fur-worker.js, which loads fur.js; game.js `furReady` asks for them, and shrinking or a part-white mix is done on the
+page once what it's made from has come). Till a pose comes the animal holds the one it was last drawn in (`shownPose`,
+as a tree's new colours do), or the same at another size or one of its kin stands in (`furKin`), and each look about the
+screen is asked for ahead (`furAhead`), so only the first of a look is painted on the page. Without a worker (no
+OffscreenCanvas) they're painted on the page, a new pose waiting a frame once the frame has done its painting. The
+inspector's portrait and the P photo are always painted on the page.
 On the move their legs go round with the ground they cover (`gaitOf`: a fox trots and gallops four paintings a stride,
 its back level at a trot), a rabbit hops in bursts, drawn a little ahead of or behind the sim along its way and
 stopping between hops (`hopSurge`), and up to 2x everything is drawn between the sim's last two ticks (`drawnAt`,
