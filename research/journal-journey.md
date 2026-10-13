@@ -12,6 +12,17 @@ Built so far:
   has them as one; "5 of 6 in the Dry Year" on the card adds the two up). A chapter with no pages yet isn't shown, so
   for now it's the first spring and the first summer. The tally on the cards counts the kinds seen in that meadow
   (sim.js `w.sighted`), so a second keeper meadow has a tally of its own while the journal keeps everything.
+- **Step 2, places and the first visitors that pull against each other** (sim.js `placesDay`, `placeNeeds`, `visitDay`,
+  `firstBlocked`; game.js `placeLines`). A pond's water, fish and a tree at its edge (`p.wet`, `p.fish`, `p.perch`), a
+  strip's room in the open (`f.clear`), once a day. Dragonflies (the first summer: a pond on its own, no fish, reeds up, in
+  summer), the kingfisher (the first summer: fish in it, so dug onto the river or a lake, and a tree at its edge; summer and
+  autumn) and the skylark (the first spring: a strip with nothing standing within 8 tiles, spring and summer). Painted in
+  fur.js, in the worker as the foxes are. A pond's, a strip's and a hedge's panel says what each visitor still lacks. Their
+  first visit comes on 3 days in 4 once the place is ready in its season (`VISIT_SURE`, the hedgehog's and heron's stay at
+  1 in 2), and at most one kind comes for the first time a day. Signs (tracks, a feather) are only the first two's still.
+  `node balance.js 3 8 journal`, out of the 13 pages built: idle 8.0, keep 11.0, diligent 13.0 (there the diligent keeper
+  also digs round a tree on the river's bank and sows a strip in the open). With the other 18 still to come, idle stays
+  at about 8 to 10; keep and diligent are where the later steps' visitors come in.
 
 ## Why
 
@@ -182,7 +193,7 @@ Each its own commit, `node balance.js 6 4 v` and `3 4 v plant` printing the same
    on the came-through card. No new visitors yet. **Built** (hints in two steps: a riddle, then plain after a glimpse;
    the inspector's third step comes with step 2).
 2. Place qualities, and the first pair pulling against each other: the dragonflies (a pond on its own) and the
-   kingfisher (fish, a tree at the edge); then the skylark (a strip in the open).
+   kingfisher (fish, a tree at the edge); then the skylark (a strip in the open). **Built**, with the pacing check.
 3. The Dry Year's chapter: it's what makes getting ready count.
 4. The rest of the first year.
 5. The shy ones and the rain coming back.

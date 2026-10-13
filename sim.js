@@ -6081,7 +6081,9 @@ function unpackWorld(kept) {
   }
   if (w.ponds) for (const p of w.ponds) if (!p.box) { pondShape(w, p); delete p.rx; delete p.ry; }   // (?keep: dug while ponds were ovals)
   if (w.turned) w.turned = w.turned.filter(s => s.spots);
-  if (w.hedges || w.ponds) { w.visitors ??= []; w.visited ??= {}; }   // (?keep: kept before the visitors)
+  if (w.turned) { w.visitors ??= []; w.visited ??= {}; }   // (?keep: kept before the visitors)
+  for (const p of w.ponds || []) { p.wet ??= 0; p.fish ??= -0; p.perch ??= null; }   // (?keep: kept before the places' qualities)
+  for (const f of w.fields) if (f.strip) f.clear ??= -0;
   w.grid = makeGrid(); w.grids = perKind(makeGrid); w.events = []; w.newborn = [];
   makeCurrent(w);
   bankTrees(w);                                              // (kept with no tree for a holt)
@@ -6096,6 +6098,7 @@ function unpackWorld(kept) {
     dryWarning(w);
   }
   if (w.dryYear && !w.parched && dryness(w) > 0) shadeSoil(w);   // (kept mid-drought before w.parched: the straw, now)
+  if (w.turned) placesDay(w);
   buildGrid(w);
   return w;
 }
@@ -6385,9 +6388,10 @@ function digPond(w, pts, r = POND_BRUSH) {
       }
     }
   }
-  const pond = old || { id, dug: w.tick, reeds: false, found: false };
+  const pond = old || { id, dug: w.tick, reeds: false, found: false, wet: 0, fish: -0, perch: null };
   if (old) old.grown = w.tick; else w.ponds.push(pond);
   pondShape(w, pond, plan);
+  pondPlace(w, pond);
   Object.assign(w.waters[id], { size: pond.lasting + pond.spring, x: pond.x, y: pond.y });
   w.turned.push({ x: plan.x, y: plan.y, r: reach + 2, spots: evenly(spots, TURNED_SPOTS), until: w.tick + TURNED_DAYS * TPD });
   emit(w, { type: 'dugpond', water: id, name, x: plan.x, y: plan.y, tiles: dug.length, lasting: plan.lasting, spring: plan.spring, deep: plan.deep, dryOut: plan.dryOut,
@@ -6428,12 +6432,14 @@ const atTurned = (w, c) => !!w.turned?.length && (c.mode === 'forage' && !!c.tar
   || w.turned.some(s => s.until > w.tick && dist2(c, s) < s.r * s.r));
 
 // Once a day in a meadow the keeper has worked: the turned earth that's spent, the strips turning to the new
-// season's flower, the hedges' milestones, the reeds, and the frogs finding the ponds.
+// season's flower, the hedges' milestones, what each pond and strip is like (placesDay), the reeds, and the frogs
+// finding the ponds.
 function keeperDay(w) {
   w.turned = w.turned.filter(s => s.until > w.tick);
   const season = Math.floor(dayOf(w.tick) / SEASON_DAYS);
   for (const f of w.fields) if (f.strip && f.swapped !== season) swapStrip(w, f);
   if (w.hedges) hedgesDay(w);
+  placesDay(w);
   if (!w.ponds || seasonOf(w.tick) === 3) return;
   for (const p of w.ponds) {
     if (!p.reeds && w.tick - p.dug >= REED_DAYS * TPD) { p.reeds = true; emit(w, { type: 'pondgrew', what: 'reeds', water: p.id }); }
@@ -6578,7 +6584,7 @@ function sowStrip(w, pts) {
   if (!plan.ok) return plan.why;
   w.turned ??= [];
   const T = w.terrain, id = w.fields.length;
-  const f = { id, strip: true, sown: w.tick, x: plan.x, y: plan.y, name: stripName(w, id), shape: [], flowered: 0, found: 0, sips: 0, open: 0, all: 0, bloomed: 0 };
+  const f = { id, strip: true, sown: w.tick, x: plan.x, y: plan.y, name: stripName(w, id), shape: [], flowered: 0, found: 0, sips: 0, open: 0, all: 0, bloomed: 0, clear: -0 };
   swapStrip(w, f);
   const sown = plan.tiles.filter(t => !t.blocker), on = new Set(sown.map(t => t.i));
   const shade = SHADE_GRASS * (leafless(w.tick) ? BARE_SHADE : 1);   // (as groundTick works it out)
@@ -6608,6 +6614,8 @@ function sowStrip(w, pts) {
   if (gone > 1) blob(px, py);
   if (!f.shape.length) f.shape.push({ x: plan.x, y: plan.y, r: 1.5 });
   w.fields.push(f);
+  stripPlace(w, f);
+  w.visitors ??= []; w.visited ??= {};
   if (dryness(w) > 0) shadeSoil(w);                           // (in the Dry Year: parched as the ground about it, at once)
   w.turned.push({ x: plan.x, y: plan.y, r: hypot(plan.x1 - plan.x0 + 1, plan.y1 - plan.y0 + 1) / 2 + 1.5,
     spots: evenly(sown.map(t => ({ x: t.x + 0.5, y: t.y + 0.5 })), TURNED_SPOTS), until: w.tick + TURNED_DAYS * TPD });
@@ -6815,14 +6823,26 @@ const HOG_DUSK = Math.round(HOG_UP[0] * TPD);
 
 function visitorsTick(w) {
   const t = w.tick % TPD;
+  if (t === 0) visitorSigns(w);
+  if (t === LARK_MORNING) skylarkMorning(w);
+  if (t === HERON_MORNING) heronMorning(w);
+  if (t === KF_MORNING) kingfisherMorning(w);
+  if (t === DRAGON_WARM) dragonMorning(w);
+  if (t === DRAGON_COOL) dragonEvening(w);
   if (t === HOG_DUSK) visitorsDusk(w);
-  else if (t === 0) visitorSigns(w);
-  else if (t === HERON_MORNING) heronMorning(w);
-  else if (t === HERON_EVENING) heronEvening(w);
+  if (t === LARK_EVENING) skylarkEvening(w);
+  if (t === KF_EVENING) kingfisherEvening(w);
+  if (t === HERON_EVENING) heronEvening(w);
   const p = phaseOf(w.tick), up = p >= HOG_UP[0] || p < HOG_UP[1], day = p >= HERON_DAY[0] && p < HERON_DAY[1];
   for (let k = 0; k < w.visitors.length; k++) {
     const v = w.visitors[k];
-    if (v.kind === 'heron') heronTick(w, v, day); else hedgehogTick(w, v, up);
+    switch (v.kind) {
+      case 'heron': heronTick(w, v, day); break;
+      case 'hedgehog': hedgehogTick(w, v, up); break;
+      case 'dragonfly': dragonflyTick(w, v); break;
+      case 'kingfisher': kingfisherTick(w, v); break;
+      case 'skylark': skylarkTick(w, v); break;
+    }
   }
   if (w.visitGone) { w.visitors = w.visitors.filter(v => !v.gone); w.visitGone = false; }
 }
@@ -6850,12 +6870,12 @@ function visitorGone(w, v) {
 function hedgehogComes(w, force = false) {
   const day = dayOf(w.tick);
   if (w.visitors.some(v => v.kind === 'hedgehog')) return null;
-  const stay = force ? VISIT_DAYS[1] : hogDay(w, day), at = stay && hogPlace(w, day, force);
+  const stay = force ? VISIT_DAYS[1] : firstBlocked(w, 'hedgehog', day) ? 0 : hogDay(w, day), at = stay && hogPlace(w, day, force);
   if (!at) return null;
-  const { h, whips, nx, ny, fx, fy, a } = at, seen = w.visited.hedgehog ??= { n: 0, left: -99 };
-  seen.n++;
+  const { h, whips, nx, ny, fx, fy, a } = at;
   const v = { id: w.visitId = (w.visitId || 0) + 1, kind: 'hedgehog', hedge: h, whips, x: fx, y: fy, fx, fy, nx, ny,
-    tx: nx, ty: ny, mode: 'in', came: w.tick, until: w.tick + stay * TPD, timer: 0, facing: Math.cos(a) > 0 ? -1 : 1, moved: 0, finds: 0, gone: false, n: seen.n };
+    tx: nx, ty: ny, mode: 'in', came: w.tick, until: w.tick + stay * TPD, timer: 0, facing: Math.cos(a) > 0 ? -1 : 1, moved: 0, finds: 0, gone: false,
+    seen: false, wait: false, n: visitedOne(w, 'hedgehog') };
   w.visitors.push(v);
   dropSign(w, 'hedgehog');
   emit(w, { type: 'visitor', v });
@@ -6900,7 +6920,7 @@ function visitorSigns(w) {
   const has = k => w.visitors.some(v => v.kind === k) || w.signs.some(s => s.kind === k);
   if (w.hedges && !has('hedgehog')) {
     for (let d = day; d <= day + SIGN_DAYS; d++) {
-      if (!hogDay(w, d)) continue;
+      if (!hogDay(w, d) || firstBlocked(w, 'hedgehog', d)) continue;
       const at = hogPlace(w, d);
       if (at) addSign(w, { kind: 'hedgehog', day: d, x: at.nx, y: at.ny, a: at.a, hedge: at.h });
       break;
@@ -6908,7 +6928,7 @@ function visitorSigns(w) {
   }
   if (w.ponds && !has('heron')) {
     for (let d = day + 1; d <= day + SIGN_DAYS; d++) {
-      if (!heronDay(w, d)) continue;
+      if (!heronDay(w, d) || firstBlocked(w, 'heron', d)) continue;
       const at = heronPlace(w, d);
       if (at) addSign(w, { kind: 'heron', day: d, ...bankOf(w, at.p, at.s), a: hash2(d, 19, w.seed) * 2 * Math.PI, pond: at.p });
       break;
@@ -7024,13 +7044,12 @@ function heronEvening(w) {
 function heronComes(w, force = false) {
   const day = dayOf(w.tick);
   if (!w.ponds || w.visitors.some(v => v.kind === 'heron')) return null;
-  const stay = force ? VISIT_DAYS[1] : !w.frozen && heronDay(w, day), at = stay && heronPlace(w, day, force);
+  const stay = force ? VISIT_DAYS[1] : !w.frozen && !firstBlocked(w, 'heron', day) && heronDay(w, day), at = stay && heronPlace(w, day, force);
   if (!at) return null;
-  const { p, spots, s, fx, fy } = at, seen = w.visited.heron ??= { n: 0, left: -99 };
-  seen.n++;
+  const { p, spots, s, fx, fy } = at;
   const v = { id: w.visitId = (w.visitId || 0) + 1, kind: 'heron', pond: p, spots, x: fx, y: fy, fx, fy, ox: fx, oy: fy, tx: s.x, ty: s.y,
     mode: 'in', came: w.tick, until: w.tick + (stay - 1) * TPD, timer: 0, facing: s.x > fx ? 1 : -1, moved: 0,
-    frogs: 0, fish: 0, caught: '', gone: false, n: seen.n };
+    frogs: 0, fish: 0, caught: '', gone: false, seen: false, wait: false, n: visitedOne(w, 'heron') };
   w.visitors.push(v);
   dropSign(w, 'heron');
   emit(w, { type: 'visitor', v });
@@ -7133,6 +7152,445 @@ function heronStalk(w, v) {
     return;
   }
   heronWatch(w, v);
+}
+
+// ---------------------------------------------------------------- the keeper's places
+//
+// (?keep) What each of the keeper's ponds and strips is like, worked out once a day (keeperDay, placesDay) and as one
+// is dug or sown, so a visitor asking for a kind of place looks it up and never scans: a pond's water now (p.wet,
+// tiles of it), the fish in it (p.fish) and a tree at its edge or on an island in it (p.perch: standing, SAPLING or
+// bigger, within EDGE_REACH of its water, the nearest); a strip's room in the open (f.clear: tiles from its line to the
+// nearest tree or hedge standing, up to OPEN_MOST). The places pull against each other. Fish come into a pond only
+// through water joined to water that has them (fishTick: a pond dug on its own never gets any, one dug onto the river or
+// a lake fills with them) and eat the dragonflies' young, so a pond has dragonflies or a kingfisher, never both; a strip
+// out in the open has no hedge of yours or tree by the water near it. placeNeeds says what a place lacks for a kind.
+const EDGE_REACH = 1.5;         // tiles from a pond's water a tree stands and still leans out over it
+const OPEN_MOST = 12;           // f.clear counts no further
+const FISHLESS = 0.5;           // fish in a pond under which there are none to speak of (pondFacts says "about 1" at 1)
+const KF_FISH = 1;              // and the fish a kingfisher wants in it (a small pond of shallows on the river holds one or two)
+
+function placesDay(w) {
+  for (const p of w.ponds || []) pondPlace(w, p);
+  for (const f of w.fields) if (f.strip) stripPlace(w, f);
+}
+
+function pondPlace(w, p) {
+  const b = p.box;
+  let wet = 0, fish = 0;
+  for (let y = b.y0; y <= b.y1; y++) {
+    for (let x = b.x0, i = y * W + x; x <= b.x1; x++, i++) if (w.dug[i] === p.id && w.water[i]) { wet++; fish += w.fish[i]; }
+  }
+  p.wet = wet; p.fish = fish; p.perch = null;
+  if (!wet) return;
+  let best = Infinity;
+  forEachDecorNear(w, p.x, p.y, hypot(b.x1 - b.x0 + 1, b.y1 - b.y0 + 1) / 2 + EDGE_REACH + 1, d => {
+    if (!standing(d) || d.size < SAPLING) return;
+    const r = Math.ceil(EDGE_REACH);
+    for (let y = Math.max(0, Math.floor(d.y) - r); y <= Math.min(H - 1, Math.floor(d.y) + r); y++) {
+      for (let x = Math.max(0, Math.floor(d.x) - r), i = y * W + x; x <= Math.min(W - 1, Math.floor(d.x) + r); x++, i++) {
+        if (w.dug[i] !== p.id || !w.water[i]) continue;
+        const e = (x + 0.5 - d.x) ** 2 + (y + 0.5 - d.y) ** 2;
+        if (e < EDGE_REACH * EDGE_REACH && e < best) { best = e; p.perch = d; }
+      }
+    }
+  });
+}
+
+function stripPlace(w, f) {
+  let near = OPEN_MOST;
+  for (const s of f.shape) {
+    forEachDecorNear(w, s.x, s.y, near, d => {
+      if (!standing(d) || d.size < SAPLING && !d.hedge) return;   // (a hedge is a hedge from the day it's planted)
+      const r = hypot(d.x - s.x, d.y - s.y);
+      if (r < near) near = r;
+    });
+  }
+  f.clear = near;
+}
+
+// What a place (a pond, or a strip) lacks for a visitor of a kind: a list, empty when it has it all. 'water' (none in
+// it now), 'reeds' (not up yet), 'fish' (fish in it, for dragonflies) or 'nofish' (too few for a kingfisher), 'perch'
+// (no tree at its edge), 'open' (something standing near the strip), 'flowers' (it hasn't flowered yet). Not the
+// season: a kind's seasons are its own (VISIT_SEASONS).
+function placeNeeds(w, kind, o) {
+  const out = [];
+  if (kind === 'dragonfly' || kind === 'kingfisher') {
+    if (!o.wet) out.push('water');
+    if (kind === 'dragonfly') { if (!o.reeds) out.push('reeds'); if (o.fish >= FISHLESS) out.push('fish'); }
+    else { if (o.fish < KF_FISH) out.push('nofish'); if (!o.perch) out.push('perch'); }
+  } else if (kind === 'skylark') {
+    if (o.clear < LARK_OPEN) out.push('open');
+    if (!o.flowered) out.push('flowers');
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- more visitors
+//
+// Each asks for a kind of place (placeNeeds) in its own seasons (VISIT_SEASONS), and comes as the hedgehog and the heron
+// do: a day it may come is hashed (visitDay: VISIT_FIRST the first time, then VISIT_ODDS, VISIT_REST after the last one
+// left), to the place that suits it best as things are that morning. Dragonflies come to a pond on its own (no fish)
+// with its reeds up, in summer; a kingfisher to a pond with fish and a tree at its edge, in summer and autumn (the young
+// ones out looking for water of their own); a skylark to a strip out in the open, in spring and summer. And at most one
+// kind comes for the first time a day (firstBlocked), so a season's new pages come one by one.
+const VISIT_SEASONS = { dragonfly: [1], kingfisher: [1, 2], skylark: [0, 1] };
+const VISIT_SURE = 0.75;        // the chance a day of their first visit, once the place is ready in their seasons: a season is
+                                // only five days, and the place, not the luck, is the hard part
+
+// How many days one of kind that came on day d would stay, or 0 if none may come then (as hogDay): in its seasons, not
+// till VISIT_REST after the last one left, on a day the hash says (VISIT_SURE the first time, then VISIT_ODDS), and gone by
+// the end of its last season (so on its last day only for that day: one of a kind never seen waits for you anyway, waits).
+function visitDay(w, kind, d, salt) {
+  const seasons = VISIT_SEASONS[kind], s = seasonOf(d * TPD), last = w.visited[kind];
+  if (!seasons.includes(s)) return 0;
+  let end = (Math.floor(d / SEASON_DAYS) + 1) * SEASON_DAYS;  // (the end of this season, or of the run of its seasons)
+  for (let k = s + 1; seasons.includes(k % 4) && k < s + 4; k++) end += SEASON_DAYS;
+  const stay = Math.min(VISIT_DAYS[0] + Math.floor(hash2(d, salt + 2, w.seed) * (VISIT_DAYS[1] - VISIT_DAYS[0] + 1)), end - d);
+  return stay < 1 || last && d < last.left + VISIT_REST || hash2(d, salt, w.seed) >= (last ? VISIT_ODDS : VISIT_SURE) ? 0 : stay;
+}
+
+// At most one kind comes for the first time a day: one that has never come here can't come on a day another came for
+// the first time, or another's first coming is foretold for (its sign).
+function firstBlocked(w, kind, d) {
+  if (w.visited[kind]) return false;
+  for (const k in w.visited) if (w.visited[k].first === d) return true;
+  return !!w.signs?.some(s => s.kind !== kind && s.day === d && !w.visited[s.kind]);
+}
+
+// The record of a kind's visits (w.visited), one more.
+function visitedOne(w, kind) {
+  const seen = w.visited[kind] ??= { n: 0, left: -99, first: dayOf(w.tick) };
+  return ++seen.n;
+}
+
+// Its wet tiles a little off their middles (by hash): all of them, or only those by its edge (where the reeds are).
+function pondTiles(w, p, edge) {
+  const out = [], b = p.box, its = j => w.dug[j] === p.id && w.water[j] > 0;
+  for (let y = Math.max(1, b.y0); y <= Math.min(H - 2, b.y1); y++) {
+    for (let x = Math.max(1, b.x0), i = y * W + x; x <= Math.min(W - 2, b.x1); x++, i++) {
+      if (!its(i) || edge && its(i - 1) && its(i + 1) && its(i - W) && its(i + W)) continue;
+      out.push({ x: x + 0.25 + 0.5 * hash2(x, y, 101), y: y + 0.25 + 0.5 * hash2(y, x, 103) });
+    }
+  }
+  return out;
+}
+
+// A point off (x, y) at a hashed angle, `far` tiles away, in the meadow.
+const offFrom = (w, x, y, far, a) => ({ x: clamp(x + Math.cos(a) * far, 1, W - 1), y: clamp(y + Math.sin(a) * far, 1, H - 1) });
+
+// Dragonflies: a few at a pond, by day hawking over the water in quick darts and stops, now and then landing on the reeds
+// by its edge; at night, and in the rain, roosting there. The sim moves one of them (the visitor); game.js draws the rest
+// about it. They fly in when the day warms and off of an afternoon once their days are up, or at once if the pond goes dry
+// or a fire comes.
+const DRAGON_DAY = [0.2, 0.62]; // they're up from when the day warms till the evening (phaseOf)
+const DRAGON_LEAVE = 0.55;      // and leave of an afternoon
+const DRAGON_FROM = 14;         // tiles off they fly in from (game.js fades them in over VISIT_FADE)
+const DRAGON_FLY = 0.12;        // tiles a tick, flying in
+const DRAGON_DART = 0.09;       // and darting about over the water
+const DRAGON_HOVER = [12, 50];  // ticks they hang still in the air between darts
+const DRAGON_PERCH = [60, 200]; // ticks on a reed
+const DRAGON_REACH = 3;         // how far one dart goes, at most
+const DRAGON_LANDS = 0.25;      // the chance a dart ends on a reed
+const DRAGON_WARM = Math.round(DRAGON_DAY[0] * TPD), DRAGON_COOL = Math.round(DRAGON_LEAVE * TPD);
+
+function dragonflyComes(w, force = false) {
+  const day = dayOf(w.tick);
+  if (!w.ponds || w.visitors.some(v => v.kind === 'dragonfly')) return null;
+  const stay = force ? VISIT_DAYS[1] : firstBlocked(w, 'dragonfly', day) ? 0 : visitDay(w, 'dragonfly', day, 21);
+  const at = stay && dragonflyPlace(w, day, force);
+  if (!at) return null;
+  const { p, spots, edge, s } = at, from = offFrom(w, s.x, s.y, DRAGON_FROM, hash2(day, 24, w.seed) * 2 * Math.PI);
+  const v = { id: w.visitId = (w.visitId || 0) + 1, kind: 'dragonfly', pond: p, spots, edge, x: from.x, y: from.y, fx: from.x, fy: from.y,
+    ox: from.x, oy: from.y, tx: s.x, ty: s.y, mode: 'in', came: w.tick, until: w.tick + (stay - 1) * TPD, timer: 0, facing: s.x > from.x ? 1 : -1, moved: -0,
+    gone: false, seen: false, wait: false, n: visitedOne(w, 'dragonfly') };
+  w.visitors.push(v);
+  emit(w, { type: 'visitor', v });
+  return v;
+}
+
+// The pond with all a dragonfly needs and the most water (force: any with water), and where it comes down; or null.
+function dragonflyPlace(w, d, force) {
+  let p = null;
+  for (const o of w.ponds) if (o.wet && (force || !placeNeeds(w, 'dragonfly', o).length) && (!p || o.wet > p.wet)) p = o;
+  if (!p) return null;
+  const spots = pondTiles(w, p), edge = pondTiles(w, p, true);
+  if (!spots.length) return null;
+  return { p, spots, edge: edge.length ? edge : spots, s: spots[Math.floor(hash2(d, 23, w.seed) * spots.length)] };
+}
+
+// When the day warms: the dragonflies at a pond see to it (off if it's gone dry or has fish now), and more may come.
+function dragonMorning(w) {
+  for (const v of w.visitors) {
+    if (v.kind !== 'dragonfly' || v.mode === 'out') continue;
+    v.spots = pondTiles(w, v.pond); v.edge = pondTiles(w, v.pond, true);
+    if (!v.spots.length) visitorOff(w, v); else if (!v.edge.length) v.edge = v.spots;
+  }
+  dragonflyComes(w);
+}
+function dragonEvening(w) {
+  for (const v of w.visitors) if (v.kind === 'dragonfly' && w.tick >= v.until && !waits(w, v)) visitorOff(w, v);
+}
+
+// Off they go, back the way they came (any visitor that flies).
+function visitorOff(w, v) {
+  if (v.mode === 'out') return;
+  v.mode = 'out'; v.ox = v.x; v.oy = v.y; v.tx = v.fx; v.ty = v.fy;
+}
+
+function dragonflyTick(w, v) {
+  v.moved = 0;
+  const p = phaseOf(w.tick), up = p >= DRAGON_DAY[0] && p < DRAGON_DAY[1] && w.weather.kind !== 'rain' && w.weather.kind !== 'storm';
+  if (v.mode !== 'out' && w.fire[idx(v.x, v.y)] > 0) visitorOff(w, v);
+  switch (v.mode) {
+    case 'in': if (visitorWalk(v, DRAGON_FLY)) dragonHover(w, v); return;
+    case 'out': if (visitorWalk(v, DRAGON_FLY)) visitorGone(w, v); return;
+    case 'dart':
+      if (!up) { dragonRoost(w, v); return; }
+      if (visitorWalk(v, DRAGON_DART)) { if (v.timer < 0) { v.mode = 'perch'; v.timer = between(w, v, DRAGON_PERCH, 105); } else dragonHover(w, v); }
+      return;
+    case 'hover': if (!up) dragonRoost(w, v); else if (--v.timer <= 0) dragonDart(w, v); return;
+    case 'perch': if (!up) v.mode = 'roost'; else if (--v.timer <= 0) dragonDart(w, v); return;
+    case 'roost': if (up) dragonDart(w, v); return;
+    case 'home': if (visitorWalk(v, DRAGON_DART)) v.mode = 'roost'; return;
+  }
+}
+// A whole number of ticks in a span, by hash.
+const between = (w, v, span, salt) => span[0] + Math.floor(hash2(w.tick, v.id, salt) * (span[1] - span[0]));
+function dragonHover(w, v) { v.mode = 'hover'; v.timer = between(w, v, DRAGON_HOVER, 107); }
+// A dart to another spot over the water close by (now and then one by the edge, to land on a reed: timer -1).
+function dragonDart(w, v) {
+  const land = hash2(w.tick, v.id, 109) < DRAGON_LANDS, list = land ? v.edge : v.spots;
+  for (let k = 0; k < 6; k++) {
+    const s = list[Math.floor(hash2(w.tick, v.id * 6 + k, 111) * list.length)];
+    if (!s) break;
+    const d2 = (s.x - v.x) ** 2 + (s.y - v.y) ** 2;
+    if (k < 5 && (d2 > DRAGON_REACH * DRAGON_REACH || d2 < 0.2)) continue;
+    v.mode = 'dart'; v.tx = s.x; v.ty = s.y; v.timer = land ? -1 : 0;
+    return;
+  }
+  dragonHover(w, v);
+}
+// To a reed for the night (or out of the rain).
+function dragonRoost(w, v) {
+  let best = null, bd = Infinity;
+  for (const s of v.edge) { const d2 = (s.x - v.x) ** 2 + (s.y - v.y) ** 2; if (d2 < bd) { bd = d2; best = s; } }
+  if (!best) { v.mode = 'roost'; return; }
+  v.mode = 'home'; v.tx = best.x; v.ty = best.y;
+}
+
+// A kingfisher: it sits on a low branch of the tree at the pond's edge (p.perch) watching the water, now and then drops
+// in a dive and comes up with a fish where they're thick (or nothing), back to its branch, where it beats the fish on the
+// branch and swallows it head first. By night it sleeps there. It comes in fast and low over the water of a morning, and
+// goes the same way of an evening once its days are up, or at once if its tree comes down or the pond goes dry or freezes.
+// It takes nothing from w.fish: it's a look.
+const KF_DAY = [0.06, 0.66];    // it fishes from just after sunrise till the evening, and comes and goes at the ends
+const KF_FROM = 26;             // tiles off it flies in from, low and fast (game.js fades it in over KF_FADE)
+const KF_FADE = 3;
+const KF_FLY = 0.2;             // tiles a tick on the wing: a blue streak
+const KF_WATCH = [50, 160];     // ticks it sits watching between dives
+const KF_DIVES = 0.6;           // the chance a watch ends in a dive (else it watches on)
+const KF_DIVE = 0.16;           // tiles a tick, dropping to the water
+const KF_UNDER = 8;             // ticks under
+const KF_CATCH = 0.5;           // the chance a dive comes up with a fish (more where they're thick, KF_THICK)
+const KF_THICK = 0.3;           // fish on the tile past which a dive is twice as likely to
+const KF_BEAT = 70;             // ticks it beats a fish on the branch and swallows it
+const KF_MORNING = Math.round(KF_DAY[0] * TPD), KF_EVENING = Math.round(KF_DAY[1] * TPD);
+
+function kingfisherComes(w, force = false) {
+  const day = dayOf(w.tick);
+  if (!w.ponds || w.frozen || w.visitors.some(v => v.kind === 'kingfisher')) return null;
+  const stay = force ? VISIT_DAYS[1] : firstBlocked(w, 'kingfisher', day) ? 0 : visitDay(w, 'kingfisher', day, 31);
+  const at = stay && kingfisherPlace(w, day, force);
+  if (!at) return null;
+  const { p, tree, sx, sy, dives } = at, from = offFrom(w, sx, sy, KF_FROM, hash2(day, 34, w.seed) * 2 * Math.PI);
+  const v = { id: w.visitId = (w.visitId || 0) + 1, kind: 'kingfisher', pond: p, tree, sx, sy, dives, x: from.x, y: from.y, fx: from.x, fy: from.y,
+    ox: from.x, oy: from.y, tx: sx, ty: sy, mode: 'in', came: w.tick, until: w.tick + (stay - 1) * TPD, timer: 0, facing: sx > from.x ? 1 : -1, moved: -0,
+    fish: 0, caught: false, gone: false, seen: false, wait: false, n: visitedOne(w, 'kingfisher') };
+  w.visitors.push(v);
+  emit(w, { type: 'visitor', v });
+  return v;
+}
+
+// The pond with all a kingfisher needs and the most fish (force: any with water and a tree at its edge, or any with
+// water), its tree, the spot on the ground under its branch (out from the trunk towards the water) and the water it
+// dives into from there; or null.
+function kingfisherPlace(w, d, force) {
+  let p = null;
+  for (const o of w.ponds) if (o.wet && (force ? o.perch || !p : !placeNeeds(w, 'kingfisher', o).length) && (!p || !p.perch && o.perch || o.fish > p.fish)) p = o;
+  if (!p) return null;
+  const tree = p.perch, water = pondTiles(w, p);
+  if (!water.length) return null;
+  let near = water[0], nd = Infinity;
+  const tx = tree ? tree.x : p.x, ty = tree ? tree.y : p.y;
+  for (const s of water) { const e = (s.x - tx) ** 2 + (s.y - ty) ** 2; if (e < nd) { nd = e; near = s; } }
+  const l = Math.sqrt(nd) || 1, out = tree ? Math.min(0.7, l * 0.5) : 0;   // its branch reaches out over the water
+  const sx = tx + (near.x - tx) / l * out, sy = ty + (near.y - ty) / l * out;
+  const dives = water.filter(s => (s.x - sx) ** 2 + (s.y - sy) ** 2 < 2.5 * 2.5);
+  return { p, tree, sx, sy, dives: dives.length ? dives : [near] };
+}
+
+function kingfisherMorning(w) {
+  for (const v of w.visitors) if (v.kind === 'kingfisher' && v.mode !== 'out' && !kingfisherStays(w, v)) visitorOff(w, v);
+  kingfisherComes(w);
+}
+function kingfisherEvening(w) {
+  for (const v of w.visitors) if (v.kind === 'kingfisher' && w.tick >= v.until && !waits(w, v)) visitorOff(w, v);
+}
+// Its tree still standing and its pond wet (looked at each morning, and in a dive).
+const kingfisherStays = (w, v) => (!v.tree || standing(v.tree)) && v.pond.wet > 0;
+
+function kingfisherTick(w, v) {
+  v.moved = 0;
+  const p = phaseOf(w.tick), day = p >= KF_DAY[0] && p < KF_DAY[1];
+  if (v.mode !== 'out' && (w.frozen || w.fire[idx(v.sx, v.sy)] > 0)) visitorOff(w, v);
+  switch (v.mode) {
+    case 'in': if (visitorWalk(v, KF_FLY)) kingfisherWatch(w, v); return;
+    case 'out': if (visitorWalk(v, KF_FLY)) visitorGone(w, v); return;
+    case 'watch':
+      if (!day) { v.mode = 'sleep'; return; }
+      if (--v.timer > 0) return;
+      if (hash2(w.tick, v.id, 121) < KF_DIVES && v.dives.length) {
+        const s = v.dives[Math.floor(hash2(w.tick, v.id, 123) * v.dives.length)];
+        v.mode = 'dive'; v.ox = v.x; v.oy = v.y; v.tx = s.x; v.ty = s.y;
+        if (Math.abs(s.x - v.x) > 0.1) v.facing = s.x > v.x ? 1 : -1;
+      } else kingfisherWatch(w, v);
+      return;
+    case 'dive':
+      if (!visitorWalk(v, KF_DIVE)) return;
+      if (!w.water[idx(v.x, v.y)]) { v.mode = 'back'; v.tx = v.sx; v.ty = v.sy; return; }   // (the water fell back: up again)
+      v.mode = 'under'; v.timer = KF_UNDER;
+      return;
+    case 'under': {
+      if (--v.timer > 0) return;
+      const odds = KF_CATCH * (w.fish[idx(v.x, v.y)] > KF_THICK ? 2 : 1);
+      v.caught = hash2(w.tick, v.id, 125) < odds;
+      if (v.caught) v.fish++;
+      v.mode = 'back'; v.ox = v.x; v.oy = v.y; v.tx = v.sx; v.ty = v.sy;
+      return;
+    }
+    case 'back':
+      if (!visitorWalk(v, KF_DIVE)) return;
+      if (v.caught) { v.mode = 'beat'; v.timer = KF_BEAT; } else kingfisherWatch(w, v);
+      return;
+    case 'beat': if (--v.timer <= 0) { v.caught = false; kingfisherWatch(w, v); } return;
+    case 'sleep': if (day) kingfisherWatch(w, v); return;
+  }
+}
+// Still on its branch, facing the water.
+function kingfisherWatch(w, v) {
+  v.mode = 'watch'; v.timer = between(w, v, KF_WATCH, 127);
+  const s = v.dives[0];
+  if (s && Math.abs(s.x - v.sx) > 0.1) v.facing = s.x > v.sx ? 1 : -1;
+}
+
+// A skylark: on a strip out in the open it walks about among the flowers, stopping to peck at seeds and beetles, and
+// now and then rises straight up singing, hangs high over the strip singing for a while, and drops back down to it.
+// By night it sleeps on the ground in the strip. It comes in high of a morning and goes the same way of an evening once
+// its days are up, or at once from a fire, or something come up standing near the strip (in the morning's look).
+const LARK_DAY = [0.03, 0.64];  // it's about from dawn (the first to sing) till the evening, and comes and goes at the ends
+const LARK_OPEN = 8;            // tiles from the strip to the nearest tree or hedge standing: about nothing standing near
+const LARK_FROM = 22;           // tiles off it flies in from, high (game.js fades it over LARK_FADE)
+const LARK_FADE = 3;
+const LARK_FLY = 0.14;          // tiles a tick on the wing
+const LARK_WALK = 0.03;         // and walking (a rabbit walks 0.06)
+const LARK_PECK = [30, 100];    // ticks it stops to peck
+const LARK_SINGS = 0.3;         // the chance a stop ends in a song flight, by day (more in the morning)
+const LARK_RISE = 60;           // ticks to climb to its height
+const LARK_SONG = [180, 420];   // ticks it hangs up there singing
+const LARK_DRIFT = 0.006;       // tiles a tick it drifts up there
+const LARK_MORNING = Math.round(LARK_DAY[0] * TPD), LARK_EVENING = Math.round(LARK_DAY[1] * TPD);
+
+function skylarkComes(w, force = false) {
+  const day = dayOf(w.tick);
+  if (w.visitors.some(v => v.kind === 'skylark')) return null;
+  const stay = force ? VISIT_DAYS[1] : firstBlocked(w, 'skylark', day) ? 0 : visitDay(w, 'skylark', day, 41);
+  const at = stay && skylarkPlace(w, day, force);
+  if (!at) return null;
+  const { f, s } = at, from = offFrom(w, s.x, s.y, LARK_FROM, hash2(day, 44, w.seed) * 2 * Math.PI);
+  const v = { id: w.visitId = (w.visitId || 0) + 1, kind: 'skylark', strip: f, spots: at.spots, x: from.x, y: from.y, fx: from.x, fy: from.y,
+    ox: from.x, oy: from.y, tx: s.x, ty: s.y, mode: 'in', came: w.tick, until: w.tick + (stay - 1) * TPD, timer: 0, facing: s.x > from.x ? 1 : -1,
+    moved: -0, high: -0, songs: 0, gone: false, seen: false, wait: false, n: visitedOne(w, 'skylark') };
+  w.visitors.push(v);
+  emit(w, { type: 'visitor', v });
+  return v;
+}
+
+// The strip most in the open of those with all a skylark needs (force: any), the dry tiles of it to walk about on, and
+// where it comes down; or null.
+function skylarkPlace(w, d, force) {
+  let f = null;
+  for (const o of w.fields) if (o.strip && (force || !placeNeeds(w, 'skylark', o).length) && (!f || o.clear > f.clear)) f = o;
+  if (!f) return null;
+  const spots = [];
+  for (const c of f.shape) {
+    for (let k = 0; k < 3; k++) {
+      const x = c.x + (hash2(f.id * 16 + k, c.x * 8, 131) - 0.5) * c.r * 1.4, y = c.y + (hash2(f.id * 16 + k, c.y * 8, 133) - 0.5) * c.r * 1.4;
+      if (dry(w, x, y)) spots.push({ x, y });
+    }
+  }
+  if (!spots.length) return null;
+  return { f, spots, s: spots[Math.floor(hash2(d, 43, w.seed) * spots.length)] };
+}
+
+function skylarkMorning(w) {
+  for (const v of w.visitors) {
+    if (v.kind === 'skylark' && v.mode !== 'out' && v.strip.clear < LARK_OPEN) visitorOff(w, v);
+  }
+  skylarkComes(w);
+}
+function skylarkEvening(w) {
+  for (const v of w.visitors) if (v.kind === 'skylark' && w.tick >= v.until && !waits(w, v)) visitorOff(w, v);
+}
+
+function skylarkTick(w, v) {
+  v.moved = 0;
+  const p = phaseOf(w.tick), day = p >= LARK_DAY[0] && p < LARK_DAY[1];
+  if (v.mode !== 'out' && v.mode !== 'in' && w.fire[idx(v.x, v.y)] > 0) visitorOff(w, v);
+  switch (v.mode) {
+    case 'in':
+      if (visitorWalk(v, LARK_FLY)) { v.high = 0; larkPeck(w, v); }
+      return;
+    case 'out': if (visitorWalk(v, LARK_FLY)) visitorGone(w, v); return;
+    case 'walk':
+      if (!day) { v.mode = 'sleep'; return; }
+      if (visitorWalk(v, LARK_WALK)) larkPeck(w, v);
+      return;
+    case 'peck':
+      if (!day) { v.mode = 'sleep'; return; }
+      if (--v.timer > 0) return;
+      if (hash2(w.tick, v.id, 141) < LARK_SINGS * (p < 0.3 ? 1.5 : 1)) { v.mode = 'rise'; v.timer = LARK_RISE; v.songs++; }
+      else larkWalk(w, v);
+      return;
+    case 'rise':
+      v.high = Math.min(1, v.high + 1 / LARK_RISE);
+      if (--v.timer <= 0) { v.mode = 'sing'; v.timer = between(w, v, LARK_SONG, 143); }
+      return;
+    case 'sing': {
+      if (--v.timer <= 0 || !day) { v.mode = 'drop'; return; }
+      const a = hash2(Math.floor(w.tick / 60), v.id, 145) * 2 * Math.PI;  // (a slow wander, a new way each minute of meadow time)
+      const x = v.x + Math.cos(a) * LARK_DRIFT, y = v.y + Math.sin(a) * LARK_DRIFT;
+      if (hypot(x - v.strip.x, y - v.strip.y) < 4) { v.x = x; v.y = y; v.moved = LARK_DRIFT; }
+      return;
+    }
+    case 'drop':
+      v.high = Math.max(0, v.high - 1.5 / LARK_RISE);
+      if (v.high > 0) return;
+      if (!dry(w, v.x, v.y)) { const s = v.spots[0]; v.x = s.x; v.y = s.y; }   // (come down on the strip, not in water)
+      larkPeck(w, v);
+      return;
+    case 'sleep': if (day) larkPeck(w, v); return;
+  }
+}
+function larkPeck(w, v) { v.mode = 'peck'; v.timer = between(w, v, LARK_PECK, 147); }
+function larkWalk(w, v) {
+  for (let k = 0; k < 6; k++) {
+    const s = v.spots[Math.floor(hash2(w.tick, v.id * 6 + k, 149) * v.spots.length)];
+    if (!s) break;
+    if (k < 5 && (s.x - v.x) ** 2 + (s.y - v.y) ** 2 > 9) continue;
+    v.mode = 'walk'; v.tx = s.x; v.ty = s.y;
+    return;
+  }
+  larkPeck(w, v);
 }
 
 function paintGrass(w, x, y, radius) {
@@ -7540,7 +7998,8 @@ const api = {
   W, H, TPD, SHALLOW, DEEP, SEASON_DAYS, YEAR_DAYS, SEASONS, SPECIES, GENES, COATS, GROUND, WEATHER,
   createWorld, step, clock, isNight, phaseOf, seasonOf, mood, ageDays, growth, isAdult, patchFresh,
   addCreature, paintGrass, setSky, lockSky, zap, burnLine, lift, putDown, plantTree, pondPlan, digPond, frogsNear, POND_BRUSH, POND_DAB, POND_TILES, REED_DAYS, stripPlan, sowStrip, stripKind, STRIP_TILES, hedgePlan, plantHedge, hedgeForecast, inHedge, HEDGE_MOST,
-  hedgehogComes, heronComes, VISIT_FADE, HERON_FADE, HERON_STAB,
+  hedgehogComes, heronComes, dragonflyComes, kingfisherComes, skylarkComes, placeNeeds, VISIT_SEASONS, VISIT_FADE, HERON_FADE, HERON_STAB,
+  DRAGON_FROM, KF_FADE, KF_UNDER, KF_BEAT, LARK_FADE, LARK_OPEN, LARK_RISE, EDGE_REACH, OPEN_MOST,
   dryStage, dryness, dryComing, dryFrom, dryTo, DRY_NEAR, greenShare, dryForecast, dryGain, stripBloom, GREEN_GRASS, WILT, BARREN, BARREN_DAYS, traitMeans, walkable, packWorld, unpackWorld,
   coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT, KINDS, OWLS, FEW, DANGER, dryCounting,
   TERRAIN, drawnToLink, drawnFromLink, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
