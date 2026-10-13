@@ -7633,6 +7633,7 @@ function seasonChip(t, year) {
 }
 
 function when(t) {
+  t = Math.max(0, t);                    // (the intro's kits were born on the way here, before the meadow's first day)
   const s = S.seasonOf(t), day = Math.floor(t / S.TPD);
   return `${S.SEASONS[s].name} ${day % S.SEASON_DAYS + 1}, Y${Math.floor(day / S.YEAR_DAYS) + 1}`;
 }
