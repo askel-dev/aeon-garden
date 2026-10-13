@@ -37,7 +37,8 @@ closed); none of that project's rules apply here.
 - `index.html`: layout and styles. The cards are opaque parchment with a painted grain (`--paper`), never a `backdrop-filter`. Phones get slim bars (`narrow()`: up to 760px wide, or up to 500px tall
   on their side). The tools fold into one round button in the bottom right showing the one in hand (`toggleTools`),
   and a finger held on the meadow opens the ring there (`HOLD_MS`). Upright, the inspector is a bottom sheet;
-  on their side (`short()`) it is a panel down the right. Either way it opens folded to one line (`stripHTML`):
+  on their side (`short()`) it is a panel down the right, and in `?keep` the bottom bar becomes a rail down the left (`rail()`), GREEN and the Dry Year's ribbon
+  move into the top bar where they fit (`fitTopBar`), and the rail slides away while an animal's panel is open. Either way it opens folded to one line (`stripHTML`):
   who, what they're up to, and the tummy. Tap it for the rest. On a touch screen every target is 44 px or more and a ✕ is
   the journal's round brass button; on an upright phone a card is a sheet from the bottom with its ✕ at the foot in the
   middle (the journal, Who ate whom, the graphs' page), and Back shuts what's open (`stepOut`).

@@ -699,7 +699,7 @@
   /* ---- phones on their side: the inspector is a panel down the right, and the meadow keeps the middle.
      Open, the panel covers the tools' button; fold it or close it to get them back. */
   @media (max-height: 500px) {
-    #meadow:not(.mini) { width: 280px; max-height: calc(100vh - var(--top) - var(--bottom)); overflow-y: auto; overscroll-behavior: contain; z-index: 4; }
+    #meadow:not(.mini) { width: 280px; max-height: calc(100vh - var(--top) - var(--bottom)); max-height: calc(100dvh - var(--top) - var(--bottom)); overflow-y: auto; overscroll-behavior: contain; z-index: 4; }
     #meadow:not(.mini) ~ #hud-right, #hud-right { top: var(--top); left: auto; }
     #news, #guide { width: min(330px, calc(100% - var(--left) - var(--right) - 60px)); }
     #inspector { width: min(320px, 42vw); padding: 6px 16px 16px; overscroll-behavior: contain; }
@@ -707,13 +707,17 @@
     #inspector.strip { width: min(280px, 42vw); }
     .ins-name { font-size: 18px; }
     #news-log ol { max-height: none; }
-    #welcome .banner { height: 168px; }
-    #welcome .watch { right: 28px; top: -12px; width: 94px; }
-    #welcome .hills { height: 70px; }
-    #welcome h1 { left: 22px; top: 20px; }
-    #welcome h1 .to { font-size: 14px; } #welcome h1 .n1 { font-size: 24px; } #welcome h1 .n2 { font-size: 58px; }
-    #welcome .body { padding: 14px 22px 16px; }
-    #welcome p { margin-bottom: 12px; }
+    /* the welcome side by side: the banner down the left (the watch hung from the top, the name over the hills), the
+       words and the button on the right, so "Start keeping" shows without a scroll down to 320 px tall */
+    #welcome .card { display: flex; width: min(760px, calc(100% - 32px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px))); max-height: calc(100% - 16px); }
+    #welcome .banner { flex: none; width: 38%; max-width: 280px; height: auto; min-height: 276px; }
+    #welcome .watch { right: 16px; top: -12px; width: 90px; }
+    #welcome .hills { height: 74px; }
+    #welcome h1 { left: 18px; top: auto; bottom: 74px; }
+    #welcome h1 .to { font-size: 14px; } #welcome h1 .n1 { font-size: 24px; } #welcome h1 .n2 { font-size: min(56px, calc(9.5vw - 12px)); }   /* (in the banner, down to 568 wide) */
+    #welcome .body { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; padding: 16px 22px; }
+    #welcome p { font-size: 14px; line-height: 1.5; margin-bottom: 10px; }
+    #welcome .go-row { margin-top: 4px; }
     #home-guide .card { width: min(560px, calc(100% - 32px)); padding: 14px 20px; }
     #home-guide h2 { font-size: 20px; } #home-guide p { margin-bottom: 6px; }
     #home-guide li { padding: 3px 0; } #home-guide ol { margin-bottom: 10px; }
@@ -831,7 +835,6 @@
     html.keep #inspector.strip { width: 100%; }   /* folded, the whole width just over the bar */
     html.keep body.ins-strip #news { bottom: calc(var(--bar, 84px) + 64px); }
   }
-  @media (max-height: 500px) { html.keep #news { width: min(330px, calc(100% - var(--left) - var(--right))); } }
   /* ?keep: how each kind is doing, in the small card in the top bar (game.js updateSpeciesMarks). The mark hangs off the
      count and takes no width, so the row doesn't shift when one changes. */
   html.keep .mini-pop { cursor: pointer; }
@@ -913,7 +916,6 @@
     html.keep.ribbon #daybreak { top: calc(var(--forecast-top) + 54px); }
   }
   @media (max-width: 760px) and (min-height: 501px) { html.keep #meadow:not(.mini) ~ #forecast { display: none; } }   /* (with the watch) */
-  @media (max-height: 500px) { html.keep.ribbon #news { width: min(330px, calc(50% - 96px - var(--left))); } }   /* (on its side, clear of the ribbon) */
   /* ---- ?keep: TASKS, top left under the top bar (game.js tasksTick), with a brass top edge like a tool's card: a brass
      capital label and the count, then the three tasks, the next one lit and a done one struck through with what
      happened. A tap on its head folds it to that; on a phone, folded, it's a chip of the three icons (html.tasks-open
@@ -1062,6 +1064,94 @@
     html.keep #green { width: 52px; }
     html.keep #jbook { width: 48px; }
   }
+  /* ---- ?keep on a phone on its side: height is what's short, so the bottom bar becomes a rail down the left, under the
+     top bar's brass, its own brass rule on the meadow side. The tools, GREEN and the book stand in a column in the middle
+     (a second column if the screen's too short for one), GREEN's rim runs up the rail's inner edge like a thermometer, and
+     a tool's card opens beside its button (.side, game.js showTip). game.js sets --rail to where it ends, and --bar to
+     just the home bar's room, so the news, the alerts and the inspector reach down to the bottom. */
+  @media (max-height: 500px) {
+    html.keep { --keep-top-h: 48px; --keep-foot-h: 0px; --left: calc(var(--rail, 76px) + 16px); }
+    html.keep #toolbar { top: calc(var(--keep-top-h) + env(safe-area-inset-top, 0px) + 6px); right: auto; height: auto;
+      padding: 6px 6px calc(6px + var(--home-bar, env(safe-area-inset-bottom, 0px))) calc(6px + env(safe-area-inset-left, 0px));
+      display: grid; grid-auto-flow: column; grid-template-columns: none; grid-template-rows: repeat(auto-fit, 44px); grid-auto-columns: 58px; gap: 4px;
+      align-content: center; box-shadow: 6px 0 16px rgba(70, 55, 25, 0.22); }
+    html.keep #toolbar::before { top: 0; bottom: 0; left: auto; right: -6px; width: 6px; height: auto; transform: none;
+      background: linear-gradient(90deg, #f6d98c, #d9a441 45%, #8a5e22); box-shadow: inset -1px 0 0 rgba(90, 55, 15, 0.55), inset 1px 0 0 rgba(255, 240, 200, 0.6); }
+    html.keep #toolbar .tools { display: contents; }
+    html.keep #toolbar .tool, html.keep #jbook { width: 58px; height: 44px; gap: 2px; grid-column: auto; grid-row: auto; justify-self: stretch; }
+    html.keep #toolbar .tool .e, html.keep #jbook .j-l { font-size: 21px; }
+    html.keep #toolbar .tool .l { font-size: 11px; }
+    html.keep #jbook .j-v { font-size: 12.5px; }
+    html.keep #tasks:not(.hidden) { left: var(--left); }
+    /* The top bar: the counts closed up and reaching to each other (a tap on one opens its graph; no ˅, the card is in
+       •••), then GREEN, compact: 🌱 and the share over a thin bar. It stays in the toolbar (its card's taps) but stands
+       in the bar, right after the counts, or right of the watch where they leave no room (game.js fitTopBar: --green-x).
+       The Dry Year's ribbon stands in the bar right of the watch too, its pips over its line, where there's room
+       (html.ribbon-bar, --forecast-x), else it hangs under the watch as before. */
+    html.keep #meadow.mini .win-btn.grow { display: none; }
+    html.keep .mini-line { gap: 0; padding: 0 2px; }
+    html.keep .mini-pop { align-self: stretch; line-height: 44px; padding: 0 4px; }
+    html.keep #green { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 4px); left: var(--green-x, 50%); width: auto; height: 44px;
+      flex-direction: row; gap: 3px; padding: 0 6px 5px; border-radius: 10px; }
+    html.keep #green .g-l { font-size: 18px; }
+    html.keep #green .g-v { font-size: 16px; font-weight: 900; }
+    html.keep #green .g-bar { left: 6px; right: 6px; top: auto; bottom: 8px; height: 4px; border-radius: 2px; background: #e6d7b8; }
+    html.keep #green .g-bar em { top: -2px; bottom: -2px; }
+    html.keep #meadow:not(.mini) { max-height: calc(100vh - var(--keep-top-h) - env(safe-area-inset-top, 0px) - 16px - var(--bottom));
+      max-height: calc(100dvh - var(--keep-top-h) - env(safe-area-inset-top, 0px) - 16px - var(--bottom)); }   /* (under the bar, Safari's bar too) */
+    html.keep #meadow:not(.mini) ~ #forecast { display: none; }   /* (the card hangs where it would) */
+    html.keep #news, html.keep.ribbon #news { width: min(360px, calc(100% - var(--left) - var(--right))); }   /* (one line at a time, at the bottom) */
+    html.keep.ribbon-bar #forecast:not(.hidden) { top: calc(env(safe-area-inset-top, 0px) + 4px); left: var(--forecast-x, 50%); height: 44px; transform: none;
+      gap: 1px; justify-content: center; align-items: flex-start; }
+    html.keep.ribbon-bar #forecast :is(.pips, .pip-line) { background: none; box-shadow: none; }
+    html.keep.ribbon-bar #forecast .pips { padding: 0 4px; }
+    html.keep.ribbon-bar #forecast .pip-line { padding: 0 4px; }
+    html.keep.ribbon.ribbon-bar #daybreak { top: calc(var(--keep-top-h) + env(safe-area-inset-top, 0px) + 40px); }
+    /* reading about an animal, the panel open: the rail slides away to the left (by left: a transform would unfix GREEN),
+       and back when it folds or shuts; the news and the tasks follow it (game.js measureSheet keeps the one you follow in
+       the middle of what's left) */
+    html.keep #toolbar { transition: left 0.25s ease; }
+    html.keep body.inspecting:not(.ins-strip) #toolbar { left: calc(-12px - var(--rail, 76px)); visibility: hidden; transition: left 0.25s ease, visibility 0s 0.25s; }
+    html.keep body.inspecting:not(.ins-strip) #toolbar #green { visibility: visible; }   /* (GREEN stays in the top bar) */
+    html.keep body.inspecting:not(.ins-strip) { --left: calc(env(safe-area-inset-left, 0px) + 12px); }
+    html.keep #inspector:not(.strip) { width: min(300px, 40vw); }
+    html.keep body.inspecting:not(.ins-strip) #news { width: min(360px, calc(100% - var(--left) - var(--right) - min(300px, 40vw) - 8px)); }
+  }
+  #more-menu .menu-item.rail-only { display: none; }
+  @media (max-height: 500px) { html.keep #more-menu .menu-item.rail-only { display: flex; } }
+  /* ?keep on its side, the graphs page: its head stays at the top while it scrolls, the range of time in it (game.js
+     placeStatsRange), the kinds one row that scrolls sideways, and the chart as tall as the screen leaves (drawStatsChart) */
+  @media (max-height: 500px) {
+    html.keep .stats-wrap { padding: 0 calc(16px + env(safe-area-inset-right, 0px)) 24px calc(16px + env(safe-area-inset-left, 0px)); }
+    html.keep .stats-head { position: sticky; top: 0; z-index: 2; gap: 10px; padding: 8px calc(16px + env(safe-area-inset-right, 0px)) 8px calc(16px + env(safe-area-inset-left, 0px));
+      margin: 0 calc(-16px - env(safe-area-inset-right, 0px)) 0 calc(-16px - env(safe-area-inset-left, 0px)); background: #f3ead8; box-shadow: 0 6px 10px -8px rgba(70, 55, 25, 0.35); }
+    html.keep .stats-head h1 { flex: 1 1 auto; min-width: 0; font-size: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    html.keep #stats-clock { display: none; }
+    html.keep .stats-head .web-btn { margin-left: 0; white-space: nowrap; }
+    html.keep .stats-head .seg { flex: none; flex-wrap: nowrap; }
+    html.keep .stats-head .seg button { padding: 6px 10px; white-space: nowrap; }
+    html.keep .stats-filters { margin: 4px 0 8px; }
+    html.keep .stats-kinds { flex-wrap: nowrap; max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; }
+    html.keep .stats-kinds::-webkit-scrollbar { display: none; }
+    html.keep .stats-kinds button { flex: none; white-space: nowrap; }
+    html.keep .stats-card { padding: 10px 14px; }
+    html.keep .chart-title { font-size: 16px; }
+  }
+  /* ?keep on its side, Who ate whom reads left to right (game.js placeWeb, WEB_WIDE): the web the card's width, its
+     sentence under it */
+  @media (max-height: 500px) {
+    html.keep #web { padding: 8px 14px 6px; }
+    html.keep .web-body { display: block; }
+    html.keep #web-svg { width: 100%; height: auto; max-width: none; max-height: calc(100vh - 124px); max-height: calc(100dvh - 124px); }
+    html.keep #web-say { min-height: 2.8em; margin: 0 2px; font-size: 14px; line-height: 1.4; }
+  }
+  /* GREEN's card, under it in the top bar, the arrow pointing up (game.js sets its top, left and --arrow) */
+  html.keep #tool-tip.down { bottom: auto; max-height: calc(100% - 72px - env(safe-area-inset-top, 0px)); overflow-y: auto; }
+  html.keep #tool-tip.down::after { top: -9px; bottom: auto; box-shadow: -3px -3px 4px rgba(70, 55, 25, 0.12); }
+  /* a tool's card beside its button on the rail, the brass edge and the arrow on its left (game.js sets its top and --arrow) */
+  html.keep #tool-tip.side { bottom: auto; border-radius: 0 16px 16px 0; max-height: calc(100% - 16px); overflow-y: auto; }
+  html.keep #tool-tip.side::before { right: auto; bottom: 0; width: 4px; height: auto; border-radius: 2px 0 0 2px; }
+  html.keep #tool-tip.side::after { left: -9px; top: var(--arrow, 50%); bottom: auto; margin: -9px 0 0; box-shadow: -3px 3px 4px rgba(70, 55, 25, 0.12); }
 
   /* The journal: a book open on the meadow, the pages on the left, the one you picked on the right. Every target is
      44 px or more (52-60 on an upright phone), with 8 px or more between them. */
@@ -1335,6 +1425,8 @@
   @media (max-height: 500px) and (pointer: coarse) { .web-when { top: 8px; right: 64px; } }
   @media (max-width: 360px) { .web-when button { padding: 5px 6px; } }   /* (its three choices in one row on the smallest phones) */
   @media (prefers-reduced-motion: reduce) { .close { transition: none; } }
+  /* ?keep on its side: the panel down the right has no drag handle (a swipe to the right folds it, game.js) */
+  @media (max-height: 500px) { html.keep #inspector .sheet-handle { display: none; } html.keep #inspector:not(.strip) { touch-action: pan-y; } }
 </style>
 </head>
 <body>
@@ -1451,6 +1543,9 @@
   </div>
   <div id="sky-menu" class="card drop hidden"></div>
   <div id="more-menu" class="card drop hidden">
+    <!-- ?keep on a phone on its side: the species card (no ˅ in the bar there), and full screen where a page may ask for it -->
+    <button class="menu-item rail-only" data-act="mini"><span class="e">🐾</span> <span class="l">Species</span></button>
+    <button class="menu-item rail-only hidden" data-act="fullscreen" id="full-item"><span class="e">🖼️</span> <span class="l">Full screen</span></button>
     <button class="menu-item phone-only" data-act="sky"><span class="e">🌦️</span> <span class="l">Weather</span></button>
     <button class="menu-item phone-only" data-act="stats"><span class="e">📊</span> <span class="l">Graphs<span class="x"> and records</span></span></button>
     <button class="menu-item" data-act="web" title="This meadow's food web: who ate whom, and how much"><span class="e">🕸️</span> <span class="l">Who ate whom</span></button>
@@ -1481,10 +1576,10 @@
       <button class="close" data-act="stats" title="Back to the meadow (Esc)" aria-label="Back to the meadow">✕</button>
     </header>
     <div class="stats-filters">
-      <div class="seg">
+      <div class="seg stats-kinds">
         <button data-show="rabbit">🐇 Rabbits</button><button data-show="fox">🦊 Foxes</button><button data-show="bee">🐝 Bees</button><button data-show="crow">🐦‍⬛ Crows</button><button data-show="owl">🦉 Owls</button><button data-show="otter">🦦 Otters</button><button data-show="voles">🐁 Voles</button><button data-show="frogs">🐸 Frogs</button><button data-show="fish">🐟 Fish</button><button data-show="grass">🌱 Grass</button><button data-show="all">All</button>
       </div>
-      <div class="seg">
+      <div class="seg stats-range">
         <button data-range="year">Last year</button><button data-range="five">5 years</button><button data-range="all">Everything</button>
       </div>
     </div>

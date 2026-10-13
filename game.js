@@ -79,6 +79,7 @@ let sheet = null;                                 // the edges of the meadow the
 // the inspector is a panel down the right.
 const narrow = () => matchMedia('(max-width: 760px), (max-height: 500px)').matches;
 const short = () => matchMedia('(max-height: 500px)').matches;
+const rail = () => KEEP && short();   // ?keep on a phone on its side: the tools are a rail down the left, not a bar along the bottom
 const canHover = matchMedia('(hover: hover)');
 
 // Safari's fingerprinting protection (iOS 26, private tabs) can report a ratio of 1 on a
@@ -143,12 +144,13 @@ function resize() {
 // On a phone the inspector is a sheet over the bottom of the meadow, or on its side a panel down the
 // right. The one you follow is kept in the middle of what's still showing, instead of under the panel.
 function measureSheet() {
-  const ins = $('#inspector').getBoundingClientRect();
-  if (!ins.height) sheet = null;
+  const ins = $('#inspector').getBoundingClientRect(), panel = ins.height && !$('#inspector').classList.contains('strip');
+  const side = rail() && !panel ? $('#toolbar').offsetWidth + 6 : 0;   // (6: its brass rule; the open panel sends the rail away)
+  if (!ins.height) sheet = side ? { top: 0, bottom: 0, left: side, right: 0 } : null;
   else if (narrow() && !short()) {
     const top = Math.max($('#meadow').getBoundingClientRect().bottom, $('#hud-right .hud-top').getBoundingClientRect().bottom);
     sheet = { top, bottom: vh - ins.top, left: 0, right: 0 };
-  } else sheet = short() ? { top: 0, bottom: 0, left: 0, right: $('#inspector').classList.contains('strip') ? 0 : vw - ins.left } : null;
+  } else sheet = short() ? { top: 0, bottom: 0, left: side, right: $('#inspector').classList.contains('strip') ? 0 : vw - ins.left } : null;
 }
 
 // You may look out past the edges into the mist: the middle of the view goes as far as the mist is thick
@@ -163,15 +165,39 @@ function clampCam() {
   cam.y = clamp(cam.y, -MIST_FULL - topPad / cam.zoom, S.H + MIST_FULL + lookPast() / cam.zoom);
 }
 
-new ResizeObserver(() => {
-  barPad = $('#toolbar').offsetHeight + 16;
+new ResizeObserver(() => {             // (a rail covers no bottom: just the home bar's room, which its padding keeps)
+  const bar = $('#toolbar');
+  barPad = rail() ? parseFloat(getComputedStyle(bar).paddingBottom) + 8 : bar.offsetHeight + 16;
   document.documentElement.style.setProperty('--bar', barPad + 'px');
+  document.documentElement.style.setProperty('--rail', (rail() ? bar.offsetWidth : 0) + 'px');   // (its width: it may be sliding away)
+  measureSheet();
 }).observe($('#toolbar'));
 if (KEEP) new ResizeObserver(() => { topPad = $('#keep-top').offsetHeight + 6; }).observe($('#keep-top'));   // (6: its brass rule)
 new ResizeObserver(() => {            // on a phone the time pill sits under the meadow card
   document.documentElement.style.setProperty('--meadow-h', $('#meadow').offsetHeight + 'px');
 }).observe($('#meadow'));
 new ResizeObserver(measureSheet).observe($('#inspector'));
+
+// ?keep on a phone on its side (the rail): GREEN and the Dry Year's ribbon stand in the top bar where there's room. GREEN
+// right after the counts, else right of the watch; the ribbon right of the watch (after GREEN if it's there too), else it
+// hangs under the watch as before. Phones differ in their notch, so it's measured, whenever the counts, the time, the
+// ribbon or the rail change size. (The ribbon is narrower in the bar, so once in it stays, and once out stays out.)
+function fitTopBar() {
+  const root = document.documentElement;
+  if (!rail()) { root.classList.remove('ribbon-bar'); return; }
+  if (!ui.mini) return;                                  // (the counts are in the big card: left as they were)
+  const dial = $('#dial').getBoundingClientRect(), edge = $('#meadow .mini-line').getBoundingClientRect().right + 4;
+  const gw = $('#green').offsetWidth, fw = $('#forecast').offsetWidth, end = $('#time').getBoundingClientRect().left - 4;
+  const after = edge + gw <= dial.left - 8, gx = after ? edge : dial.right + 8, fx = after ? dial.right + 8 : gx + gw + 4;
+  root.style.setProperty('--green-x', Math.round(gx) + 'px');
+  root.style.setProperty('--forecast-x', Math.round(fx) + 'px');
+  root.classList.toggle('ribbon-bar', fw > 0 && fx + fw <= end);
+}
+if (KEEP) {
+  const fit = new ResizeObserver(fitTopBar);
+  for (const s of ['#meadow', '#time', '#forecast', '#green', '#toolbar']) fit.observe($(s));
+  addEventListener('resize', fitTopBar);
+}
 
 const toScreen = (x, y) => [(x - cam.x) * cam.zoom + vw / 2, (y - cam.y) * cam.zoom + vh / 2];
 const toWorld = (sx, sy) => [(sx - vw / 2) / cam.zoom + cam.x, (sy - vh / 2) / cam.zoom + cam.y];
@@ -1969,8 +1995,8 @@ function lookFrame(now) {
   gaze.on = KEEP && !ui.hush && !away.on && !groundIn && !journalOpen() && !reveal.on && cam.zoom >= SPOT_ZOOM && world.tick > 0;
   if (!gaze.on) return;
   const top = topPad + SPOT_EDGE + 6, bottom = vh - Math.max(barPad, sheet ? sheet.bottom : 0) - SPOT_EDGE;
-  const right = vw - SPOT_EDGE - (sheet ? sheet.right : 0), cx = (SPOT_EDGE + right) / 2, cy = (top + bottom) / 2;
-  const hw = (right - SPOT_EDGE) * 0.4, hh = (bottom - top) * 0.4;
+  const left = SPOT_EDGE + (sheet ? sheet.left : 0), right = vw - SPOT_EDGE - (sheet ? sheet.right : 0), cx = (left + right) / 2, cy = (top + bottom) / 2;
+  const hw = (right - left) * 0.4, hh = (bottom - top) * 0.4;
   gaze.x0 = cx - hw; gaze.x1 = cx + hw; gaze.y0 = cy - hh; gaze.y1 = cy + hh;
 }
 // Drawn at (sx, sy) on screen: one (o, a creature or a visitor, for its caption to follow), or something at (x, y).
@@ -3912,7 +3938,7 @@ function spotBadge(emoji, mystery) {
 function drawSpots(now) {
   if (!spots.length) return;
   const top = topPad + SPOT_EDGE + 6, bottom = vh - Math.max(barPad, sheet ? sheet.bottom : 0) - SPOT_EDGE;
-  const left = SPOT_EDGE, right = vw - SPOT_EDGE - (sheet ? sheet.right : 0), cx = (left + right) / 2, cy = (top + bottom) / 2;
+  const left = SPOT_EDGE + (sheet ? sheet.left : 0), right = vw - SPOT_EDGE - (sheet ? sheet.right : 0), cx = (left + right) / 2, cy = (top + bottom) / 2;
   for (let i = spots.length - 1; i >= 0; i--) {
     const s = spots[i], dt = Math.min(100, now - (s.last || now));
     s.last = now;
@@ -7288,7 +7314,13 @@ function toggleStats(open = !ui.stats.open) {
   ui.stats.hover = null;
   $('#stats').classList.toggle('hidden', !open);
   $('[data-act="stats"]').classList.toggle('on', open);
-  if (open) { renderStats(); $('#stats').scrollTop = 0; }
+  if (open) { placeStatsRange(); renderStats(); $('#stats').scrollTop = 0; }
+}
+// ?keep on a phone on its side: the range of time goes up into the page's head, which stays at the top
+function placeStatsRange() {
+  const seg = $('.stats-range'), head = KEEP && short();
+  if (head === (seg.parentElement.tagName === 'HEADER')) return;
+  if (head) $('.stats-head').insertBefore(seg, $('.stats-head .web-btn')); else $('.stats-filters').append(seg);
 }
 
 function statsWindow() {
@@ -7315,7 +7347,11 @@ function fitCanvas(c, cssH) {
 function drawStatsChart() {
   const c = $('#stats-chart'), keys = shownKeys();
   const TOP = 24, AXIS = 26, L = 48, R = 20;
-  const panelH = keys.length > 1 ? 150 : Math.max(260, Math.min(420, window.innerHeight * 0.45));
+  let panelH = keys.length > 1 ? 150 : Math.max(260, Math.min(420, window.innerHeight * 0.45));
+  if (KEEP && short()) {                 // on its side, as tall as the screen leaves under the head, so it shows straight away
+    const page = $('#stats'), top = c.getBoundingClientRect().top - page.getBoundingClientRect().top + page.scrollTop;
+    panelH = Math.round(clamp(window.innerHeight - top - TOP - AXIS - 18, 90, 420));
+  }
   const [g, w] = fitCanvas(c, keys.length * (panelH + TOP) + AXIS);
   const { h, i0, t0, t1 } = statsWindow();
   const X = t => L + (t - t0) / (t1 - t0) * (w - L - R);
@@ -7614,7 +7650,7 @@ if (!S.OWLS) {                                             // (owls are off for 
   for (let i = WEB_LINKS.length - 1; i >= 0; i--) if (WEB_LINKS[i].from === 'owl' || WEB_LINKS[i].to === 'owl') WEB_LINKS.splice(i, 1);
 }
 const WEB_WHEN = { season: null, year: 'Last year', all: 'Since the start' };
-const web = { open: false, when: 'year', at: 0, hover: null, pin: null, v: null, live: null, built: false };
+const web = { open: false, when: 'year', at: 0, hover: null, pin: null, v: null, live: null, built: false, wide: null, rows: null };
 const webOpen = () => web.open;
 
 const PLURALS = { body: 'bodies', fox: 'foxes', fish: 'fish' };
@@ -7678,12 +7714,20 @@ function webGeometry(l, w) {
   };
 }
 
+// ?keep on a phone on its side the web reads left to right instead, to fill a wide, short card: what grows, then the
+// foragers, then the hunters, each two columns zigzagging so the names fit under the discs, the remains top right and the
+// rich soil bottom right closing the loop. Each link's bend bows to its left either way. (placeWeb, on a turn too.)
+const WEB_WIDE = { w: 760, h: 242, rows: [[8, 'what grows'], [276, 'the foragers'], [548, 'the hunters']], at: {
+  flowers: [50, 26], fruit: [150, 59], grass: [50, 92], seedlings: [150, 125], nuts: [50, 158],
+  bee: [320, 26], rabbit: [420, 59], vole: [320, 92], frog: [420, 125], fish: [320, 158], crow: [420, 191],
+  fox: [590, 59], owl: [590, 125], otter: [590, 158], remains: [700, 26], soil: [700, 191] } };
+const WEB_TALL = { w: WEB_W, h: WEB_H, rows: [[140, 'the hunters'], [270, 'the foragers'], [404, 'what grows']], at: {} };
+for (const k in WEB_NODES) WEB_TALL.at[k] = [WEB_NODES[k].x, WEB_NODES[k].y];
+const webWide = () => KEEP && short();
+
 function buildWeb() {
   const svg = $('#web-svg');
-  svg.setAttribute('viewBox', `0 0 ${WEB_W} ${WEB_H}`);
-  for (const [y, t] of [[140, 'the hunters'], [270, 'the foragers'], [404, 'what grows']]) {
-    svgEl('text', { x: 8, y, class: 'web-row' }, svg).textContent = t;
-  }
+  web.rows = [0, 1, 2].map(() => svgEl('text', { class: 'web-row' }, svg));
   const links = svgEl('g', {}, svg), nodes = svgEl('g', {}, svg);
   WEB_LINKS.forEach((l, i) => {
     const n = WEB_NODES[l.from];
@@ -7694,11 +7738,10 @@ function buildWeb() {
   });
   for (const k in WEB_NODES) {
     const n = WEB_NODES[k], g = n.el = svgEl('g', { class: 'web-node', 'data-pick': 'node:' + k }, nodes);
-    svgEl('circle', { cx: n.x, cy: n.y, r: WEB_R, class: 'disc', stroke: n.color }, g);
-    svgEl('image', { href: webIcon(n.art), x: n.x - 15, y: n.y - 15, width: 30, height: 30 }, g);
-    const up = n.y < 100;                                   // the top row's names above, clear of the arrows coming up
-    svgEl('text', { x: n.x, y: up ? n.y - WEB_R - 19 : n.y + WEB_R + 13, class: 'name' }, g).textContent = n.name;
-    n.now = svgEl('text', { x: n.x, y: up ? n.y - WEB_R - 7 : n.y + WEB_R + 25, class: 'now' }, g);
+    n.disc = svgEl('circle', { r: WEB_R, class: 'disc', stroke: n.color }, g);
+    n.img = svgEl('image', { href: webIcon(n.art), width: 30, height: 30 }, g);
+    n.label = svgEl('text', { class: 'name' }, g); n.label.textContent = n.name;
+    n.now = svgEl('text', { class: 'now' }, g);
   }
   svg.addEventListener('pointerover', e => {
     if (e.pointerType !== 'mouse') return;
@@ -7715,6 +7758,25 @@ function buildWeb() {
     if (b) { web.when = b.dataset.web; updateWeb(); }
   });
   web.built = true;
+}
+
+// Where everything goes, tall or wide (WEB_TALL, WEB_WIDE): the discs, their names (the tall top row's above, clear of
+// the arrows coming up), the rows' captions; the links are drawn again by updateWeb.
+function placeWeb(wide) {
+  const L = wide ? WEB_WIDE : WEB_TALL, svg = $('#web-svg');
+  web.wide = wide;
+  svg.setAttribute('viewBox', `0 0 ${L.w} ${L.h}`);
+  svg.classList.toggle('wide', wide);
+  L.rows.forEach(([at, t], i) => { const e = web.rows[i]; e.textContent = t; e.setAttribute('x', wide ? at : 8); e.setAttribute('y', wide ? L.h - 6 : at); });
+  for (const k in WEB_NODES) {
+    const n = WEB_NODES[k], [x, y] = L.at[k], up = !wide && y < 100;
+    n.x = x; n.y = y;
+    setAttr(n.disc, 'cx', x); setAttr(n.disc, 'cy', y);
+    setAttr(n.img, 'x', x - 15); setAttr(n.img, 'y', y - 15);
+    setAttr(n.label, 'x', x); setAttr(n.label, 'y', up ? y - WEB_R - 19 : y + WEB_R + 13);
+    setAttr(n.now, 'x', x); setAttr(n.now, 'y', up ? y - WEB_R - 7 : y + WEB_R + 25);
+  }
+  for (const l of WEB_LINKS) l.w = -1;                     // (drawn again)
 }
 
 // The counts for the period, from the snapshot the sim took at its start (none: since the meadow began).
@@ -7820,6 +7882,7 @@ function sayWeb() {
 
 function updateWeb() {
   if (!web.built) buildWeb();
+  if (web.wide !== webWide()) placeWeb(webWide());
   const cur = S.webCounts(world), base = webPeriod(), b = base ? base.n : null;
   const v = key => Math.max(0, (cur[key] || 0) - (b ? b[key] || 0 : 0));
   const L = webLive();
@@ -8611,6 +8674,22 @@ function sheetLetGo(e) {
 addEventListener('pointerup', sheetLetGo);   // (on the window: the finger may be anywhere by now)
 addEventListener('pointercancel', e => { if (swipe) sheetLetGo(e); pressing = false; });
 $('#inspector').addEventListener('click', e => { if (performance.now() < sheetQuiet) e.stopPropagation(); }, true);
+// On its side the open panel folds to its line with a swipe to the right, the way it hangs (?keep has no handle there).
+let sideSwipe = null;
+$('#inspector').addEventListener('pointerdown', e => {
+  sideSwipe = short() && e.pointerType !== 'mouse' && !$('#inspector').classList.contains('strip') ? { id: e.pointerId, x: e.clientX, y: e.clientY } : null;
+});
+addEventListener('pointermove', e => {
+  const s = sideSwipe;
+  if (!s || e.pointerId !== s.id) return;
+  const dx = e.clientX - s.x, dy = Math.abs(e.clientY - s.y);
+  if (dy > 24 && dy > dx) sideSwipe = null;                      // a scroll
+  else if (dx > 56 && dx > dy * 2) {
+    sideSwipe = null; sheetQuiet = performance.now() + 350;
+    ui.sheetUp = false; $('#inspector').scrollTop = 0; renderInspector();
+  }
+});
+for (const type of ['pointerup', 'pointercancel']) addEventListener(type, () => { sideSwipe = null; });
 
 function creatureAt(sx, sy) {
   const [wx, wy] = toWorld(sx, sy);
@@ -9506,12 +9585,19 @@ function showTip(k, ms, by) {
   clearTimeout(tip.timer); clearTimeout(tip.hover);
   setHTML(el, k === 'green' ? greenTip() : alert ? alertTip(alert) : `<h4 class="fr">${b.querySelector('.e').textContent} ${t.name} <kbd>${t.key}</kbd></h4><p>${t.how}</p>${tipList(tipRows(k, by === 'touch'))}`);
   if (tip.tool !== k) {                    // over its button, once, kept on screen
+    const side = rail() && !alert && k !== 'green';   // on the rail: beside its button, the arrow pointing left
+    const down = rail() && k === 'green';             // GREEN in the top bar: under it, the arrow pointing up
     el.classList.toggle('wide', !!alert);
+    el.classList.toggle('side', side);
+    el.classList.toggle('down', down);
     el.classList.remove('hidden');
-    const r = b.getBoundingClientRect(), w = el.offsetWidth, mid = r.left + r.width / 2, x = clamp(mid - w / 2, 8, vw - w - 8);
+    const r = b.getBoundingClientRect(), w = el.offsetWidth, h = el.offsetHeight;
+    const mid = side ? r.top + r.height / 2 : r.left + r.width / 2, x = side ? r.right + 16 : clamp(mid - w / 2, 8, vw - w - 8);
+    const y = side ? clamp(mid - h / 2, topPad + 8, Math.max(topPad + 8, vh - h - 8)) : down ? r.bottom + 14 : 0;   // (under the top bar)
     el.style.bottom = alert ? Math.round(vh - r.top + 10) + 'px' : '';   // (an alert's over the alert, above the bar)
+    el.style.top = side || down ? Math.round(y) + 'px' : '';
     el.style.left = Math.round(x) + 'px';
-    el.style.setProperty('--arrow', Math.round(mid - x) + 'px');
+    el.style.setProperty('--arrow', Math.round(side ? mid - y : mid - x) + 'px');
   }
   tip.tool = k; tip.by = by;
   if (ms) tip.timer = setTimeout(hideTip, ms);
@@ -10099,6 +10185,20 @@ function openRing(sx, sy, which = '') {
   ui.ring.t0 = performance.now();
   const r = Math.max(which ? 80 : 72, items.length * 56 / TAU);   // room for every 50 px button; near an edge the ring moves in, but still acts where you clicked
   sx = clamp(sx, r + 34, vw - r - 34); sy = clamp(sy, r + 34, vh - r - 34);
+  if (rail()) {                       // on its side, inside the clear meadow: right of the rail, under the top bar and what hangs from it
+    const m = r + 28, bottom = Math.min(vh, innerHeight) - barPad - m;   // (Safari's bar: the meadow reaches under it, the ring mustn't)
+    const x0 = (sheet ? sheet.left : 0) + m, x1 = Math.max(x0, vw - (sheet ? sheet.right : 0) - m);
+    sx = clamp(sx, x0, x1);
+    let top = topPad + m;
+    for (const el of [$('#watch'), $('#forecast'), $('#tasks')]) {
+      const b = el.getBoundingClientRect();
+      if (!b.height || b.left >= sx + m || b.right <= sx - m) continue;
+      if (b.bottom + m <= bottom) { top = Math.max(top, b.bottom + m); continue; }
+      const l = b.left - m, rr = b.right + m;                // no room under it: beside it, the nearer side that fits
+      sx = l >= x0 && (sx - l < rr - sx || rr > x1) ? l : rr <= x1 ? rr : sx;
+    }
+    sy = clamp(sy, Math.min(top, Math.max(topPad + m, bottom)), Math.max(topPad + m, bottom));
+  }
   const ring = $('#ring');
   ring.style.left = sx + 'px'; ring.style.top = sy + 'px';
   ring.innerHTML = `<div class="ring-hub">${which === 'plant' ? 'Which tree?' : ''}</div>` + items.map(([k, e, label], i) => {
@@ -10194,6 +10294,26 @@ function install() {
   homeGuide(false);
 }
 const homeOpen = () => !$('#home-guide').classList.contains('hidden');
+
+// An iPhone in Safari keeps its address bar over a page that never scrolls: on its side, a seventh of the screen. From the
+// home screen the meadow has none, so ?keep shows the card once by itself, the first time it's held on its side (SIDE_HOME).
+// Android may go full screen instead (••• Full screen, on its side; an iPhone doesn't let a page).
+const SIDE_HOME = 'aeon-garden-side-home';
+const safari = iOS && !/CriOS|FxiOS|EdgiOS/.test(navigator.userAgent);
+function sideHome() {
+  if (!KEEP || !safari || installed() || !rail() || !$('#welcome').classList.contains('hidden') || intro.on || reveal.on || jr.depth
+    || awayOpen() || lostOpen() || homeOpen() || askOpen()) return;
+  try { if (localStorage.getItem(SIDE_HOME) === '1') return; localStorage.setItem(SIDE_HOME, '1'); } catch (e) { return; }
+  homeGuide(true, true);
+}
+matchMedia('(max-height: 500px)').addEventListener('change', e => { if (e.matches) setTimeout(sideHome, 800); });
+const canFull = !iOS && !!document.fullscreenEnabled && matchMedia('(pointer: coarse)').matches;
+function showFullItem() {
+  $('#full-item').classList.toggle('hidden', !canFull);
+  setText($('#full-item .l'), document.fullscreenElement ? 'Leave full screen' : 'Full screen');
+}
+document.addEventListener('fullscreenchange', showFullItem);
+showFullItem();
 $('#home-guide').addEventListener('click', e => { if (e.target.id === 'home-guide') homeGuide(false); });
 
 // Once ever, on a phone or tablet that hasn't added it yet.
@@ -10348,7 +10468,7 @@ document.addEventListener('click', e => {
     renderInspector();
   }
   else if (t.dataset.act === 'news') toggleNewsLog();
-  else if (t.dataset.act === 'mini') toggleMini();
+  else if (t.dataset.act === 'mini') { if (!(rail() && t.classList.contains('mini-line'))) toggleMini(); }   // (on the rail the card is in •••)
   else if (t.dataset.act === 'more') toggleMore();
   else if (t.dataset.act === 'copy-link') copyLink();
   else if (t.dataset.act === 'ideas') { played = -Infinity; askIdeas(true); }   // found it themselves: no need to ask
@@ -10365,6 +10485,7 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'guide-fold') { guide.fold = !guide.fold; guide.fresh = ''; saveGuide(); guideTick(performance.now()); }
   else if (t.dataset.act?.startsWith('try:')) tryThing(t.dataset.act.slice(4));
   else if (t.dataset.act === 'home') homeGuide();
+  else if (t.dataset.act === 'fullscreen') { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen().catch(() => {}); }
   else if (t.dataset.act === 'home-done') homeGuide(false);
   else if (t.dataset.act === 'home-install') install();
   else if (t.dataset.act === 'ask-later') askIdeas(false);
@@ -10478,7 +10599,7 @@ function opened() {
   if (LAB || intro.on || jr.depth) return back.depth;
   const ins = $('#inspector').classList, sheetUp = ins.contains('open') && narrow() && !ins.contains('strip');
   return [awayOpen(), lostOpen(), homeOpen(), askOpen(), webOpen(), ui.ring, $('#toolbar').classList.contains('open'), ui.sky.menu,
-    moreOpen(), ui.stats.open, tasksOpen(), ui.tool !== 'look', ins.contains('open'), sheetUp].filter(Boolean).length;
+    moreOpen(), ui.stats.open, tasksOpen(), rail() && !ui.mini, ui.tool !== 'look', ins.contains('open'), sheetUp].filter(Boolean).length;
 }
 // The one on top shuts (Esc, and Back once for each step it takes).
 function stepOut() {
@@ -10494,6 +10615,7 @@ function stepOut() {
   else if (moreOpen()) toggleMore(false);
   else if (ui.stats.open) toggleStats(false);
   else if (tasksOpen()) foldTasks(true);
+  else if (rail() && !ui.mini) toggleMini(true);
   else if (ui.tool !== 'look') setTool('look');
   else if (ins.contains('open') && narrow() && !ins.contains('strip')) { ui.sheetUp = false; $('#inspector').scrollTop = 0; renderInspector(); }
   else if (ins.contains('open')) select(0);
@@ -11707,7 +11829,7 @@ const lab = LAB ? {
 
 // ------------------------------------------------------------------ start
 
-const refit = () => { resize(); if (ui.stats.open) renderStats(); };
+const refit = () => { resize(); if (ui.stats.open) { placeStatsRange(); renderStats(); } if (web.open) updateWeb(); };
 window.addEventListener('resize', refit);
 // Turning a phone, iOS fires 'resize' before the page is laid out again, so the canvas still has its
 // old size and would be stretched to the new one. Watch the canvas itself for when it really changes.
@@ -11751,7 +11873,7 @@ function begin(rec) {
     setSpeed(0);
     if (world.family && !calm) introShot();
   } else if (KEEP && (params.has('intro') || (!keepSeen && !back))) keepWelcome();
-  else if (KEEP) setTimeout(startTasks, 1500);
+  else if (KEEP) { setTimeout(startTasks, 1500); setTimeout(sideHome, 2500); }
   else { homeTip(30000); setTimeout(() => startGuide(false), 2500); }
   if (back && !rec.paused && Date.now() - rec.at > AWAY_MIN && $('#welcome').classList.contains('hidden')) startAway();
   requestAnimationFrame(frame);
@@ -11766,7 +11888,7 @@ $('#go').addEventListener('click', () => {
   card.classList.add('leaving');
   setTimeout(() => card.classList.add('hidden'), 700);
   try { localStorage.setItem(KEEP ? KEEP_WELCOMED : 'aeon-garden-welcomed', '1'); } catch (e) { /* fine */ }
-  if (KEEP) { hush(false); setSpeed(1); setTimeout(startTasks, 900); }
+  if (KEEP) { hush(false); setSpeed(1); setTimeout(startTasks, 900); setTimeout(sideHome, 2500); }
   else if (world.family && !calm) startIntro();
   else { hush(false); setSpeed(1); welcomeTips(); }
 });

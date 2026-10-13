@@ -118,3 +118,19 @@ two (`tapAway`). A held finger grows a ring under it till the ring of tools open
 lands and for a first sighting (`buzz`; iPhones give a page no vibration), and on a touch screen the screen stays awake
 while time runs, till nobody has touched it for `WAKE_MS` (`wakeTick`, the Screen Wake Lock API). Headless Chrome's
 emulated touches stick after a tap on a button that hides itself in that tap (a ••• item): test those with a mouse click.
+
+A phone on its side at ?keep (`rail()`): the bottom bar is a rail down the left (Look, the three keeper's tools, the book),
+a tool's card opening beside its button (`showTip`'s `.side`). The top bar has the counts closed up, each reaching to the
+next (a tap opens its graph; no ˅, the species card is ••• Species, and Back shuts it), then GREEN, compact, with its card
+opening under it (`.down`), and the Dry Year's ribbon as pips over its line right of the watch. Both are placed by measuring
+(`fitTopBar`, on a ResizeObserver: the notches differ): GREEN right after the counts, else right of the watch; the ribbon in
+the bar where it fits (`html.ribbon-bar`), else under the watch as before (an SE). While an animal's panel is open the rail
+slides away left (by `left`, not a transform, which would unfix GREEN inside it) and `measureSheet` drops it from the
+clear meadow; a swipe right folds the panel (no drag handle there). The hold ring opens inside the clear meadow (`openRing`:
+right of the rail, under the bar and what hangs from it, beside it where there's no room under). The welcome card (?watch's
+too, on any phone on its side) lays out side by side, the button showing down to 300 px tall. The graphs page keeps its head (with the range of time,
+`placeStatsRange`) at the top while it scrolls, the kinds in one sideways row, and sizes the chart to what the screen leaves;
+Who ate whom reads left to right (`WEB_WIDE`, `placeWeb`, rebuilt on a turn). An iPhone in Safari shows the home screen
+card once by itself the first time it's held on its side (`sideHome`, `aeon-garden-side-home`: Safari keeps its address bar
+on a page that never scrolls), and Android gets ••• Full screen. Upright, on a desktop or a tablet, and in ?watch the rest
+doesn't apply.
