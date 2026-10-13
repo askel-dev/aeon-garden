@@ -42,7 +42,9 @@ told to just do it.
   on their side). The tools fold into one round button in the bottom right showing the one in hand (`toggleTools`),
   and a finger held on the meadow opens the ring there (`HOLD_MS`). Upright, the inspector is a bottom sheet;
   on their side (`short()`) it is a panel down the right. Either way it opens folded to one line (`stripHTML`):
-  who, what they're up to, and the tummy. Tap it for the rest.
+  who, what they're up to, and the tummy. Tap it for the rest. On a touch screen every target is 44 px or more and a ✕ is
+  the journal's round brass button; on an upright phone a card is a sheet from the bottom with its ✕ at the foot in the
+  middle (the journal, Who ate whom, the graphs' page), and Back shuts what's open (`stepOut`).
 - `trees.js`, `tree-worker.js`, `tree-lab.html`: the trees, painted in code. How they're painted, cached and
   drawn is in `.claude/rules/trees.md`, which loads when one of those files is opened.
 - `balance.js`: headless check, `node balance.js [years] [seeds]` (add `plant` for a player planting 5 trees a year).

@@ -92,19 +92,19 @@
   }
   button { font: inherit; color: inherit; cursor: pointer; }
   a[data-id], a[data-thing], a[data-act] { color: var(--accent-ink); font-weight: 800; text-decoration: none; cursor: pointer; }
-  a[data-id]:hover, a[data-thing]:hover, a[data-act]:hover { text-decoration: underline; }
+  @media (hover: hover) { a[data-id]:hover, a[data-thing]:hover, a[data-act]:hover { text-decoration: underline; } }
 
   /* ---- the meadow card, top left */
   #meadow { top: var(--top); left: var(--left); width: 272px; padding: calc((var(--hud-h) - 30px) / 2) 10px 10px 16px; }
   #meadow.mini { width: auto; height: var(--hud-h); padding: 0 4px; display: flex; align-items: center; }
   #meadow.mini .full, #meadow:not(.mini) .mini-line { display: none; }
   .mini-line { display: flex; align-items: center; gap: 12px; border: none; background: transparent; border-radius: 12px; height: 38px; padding: 0 5px 0 12px; font-size: 15px; }
-  .mini-line:hover { background: rgba(0,0,0,0.04); }
+  @media (hover: hover) { .mini-line:hover { background: rgba(0,0,0,0.04); } }
   .mini-line b { font-weight: 900; font-variant-numeric: tabular-nums; }
   #mini-sky { letter-spacing: 3px; }
   /* the card's one window control: a chevron, up to fold the card away, down to open it again */
   .win-btn { flex: none; width: 28px; height: 28px; border: none; border-radius: 8px; background: transparent; position: relative; transition: background 0.15s; }
-  .win-btn:hover, .mini-line:hover .win-btn { background: rgba(0,0,0,0.06); }
+  @media (hover: hover) { .win-btn:hover, .mini-line:hover .win-btn { background: rgba(0,0,0,0.06); } }
   .win-btn::before { content: ''; position: absolute; left: 50%; top: 50%; width: 7px; height: 7px;
     border: solid var(--muted); border-width: 2.5px 0 0 2.5px; border-radius: 1px; transform: translate(-50%, -25%) rotate(45deg); }
   .win-btn.grow::before { transform: translate(-50%, -75%) rotate(225deg); }
@@ -131,7 +131,7 @@
   .evo .down { color: var(--down-ink); font-weight: 800; }
   .card-actions { display: flex; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line); }
   .card-actions .act { flex: 1; border: none; border-radius: 10px; padding: 6px 8px; background: rgba(0,0,0,0.04); font-weight: 800; font-size: 12.5px; color: var(--ink); }
-  .card-actions .act:hover { background: rgba(0,0,0,0.08); }
+  @media (hover: hover) { .card-actions .act:hover { background: rgba(0,0,0,0.08); } }
   .card-actions .act.on { background: var(--accent-soft); color: #9a5024; }
 
   /* ---- news: a few short-lived toasts bottom left, the full log in the meadow card */
@@ -142,10 +142,11 @@
   }
   .news-item a[data-id] { pointer-events: auto; }   /* clicks go through to the meadow, except on names */
   .news-item a[data-act="spot"] { pointer-events: auto; white-space: nowrap; }   /* and "Go see" */
+  .visitor-glyph.sil { filter: brightness(0); opacity: 0.45; }   /* one never seen: its shadow */
   .visitor-glyph { display: inline-block; width: 1.35em; height: 1.35em; margin: -0.3em 0 -0.25em; vertical-align: -0.2em; background: 43% 57% / 180% no-repeat; }   /* a painted visitor in a line of text (game.js visitorGlyph), its painting's room round it cropped off */
   .news-item.gone { opacity: 0; transform: translateY(-6px); }
   .brand-btn { border: none; background: transparent; border-radius: 8px; padding: 1px 6px; font-size: 16px; }
-  .brand-btn:hover { background: rgba(0,0,0,0.06); }
+  @media (hover: hover) { .brand-btn:hover { background: rgba(0,0,0,0.06); } }
   .brand-btn.on { background: var(--accent-soft); }
   #news-log ol { list-style: none; margin: 0; padding: 0; max-height: min(340px, 45vh); overflow-y: auto; font-size: 13px; line-height: 1.35; }
   #news-log li { padding: 4px 0; border-bottom: 1px dashed var(--line); }
@@ -179,7 +180,7 @@
   }
   .tool .e { font-size: clamp(24px, 1.9vw, 30px); line-height: 1; width: 1.2em; text-align: center; }
   .tool .l { font-size: clamp(14px, 1vw, 16px); font-weight: 800; color: var(--muted); }
-  .tool:hover { background: rgba(0,0,0,0.05); }
+  @media (hover: hover) { .tool:hover { background: rgba(0,0,0,0.05); } }
   .tool:active { transform: scale(0.95); }
   .tool.on { background: var(--accent-soft); }
   .tool.on .l { color: var(--accent-ink); }
@@ -245,7 +246,7 @@
   .hud-sep { width: 1px; height: 24px; margin: 0 5px; background: var(--line); }
   .hud-btn { border: none; background: transparent; border-radius: 9px; height: 36px; min-width: 36px; padding: 0 6px;
     font-size: 17px; position: relative; transition: background 0.15s; }
-  .hud-btn:hover { background: rgba(0,0,0,0.06); }
+  @media (hover: hover) { .hud-btn:hover { background: rgba(0,0,0,0.06); } }
   .hud-btn.on { background: var(--accent-soft); }
   .hud-btn.more { font-size: 10px; letter-spacing: 1px; color: var(--muted); font-weight: 900; }
   .hud-btn.locked::after { content: '🔒'; position: absolute; bottom: -2px; right: -2px; font-size: 11px; }
@@ -253,14 +254,14 @@
   #hud-right .drop { position: absolute; top: calc(100% + 8px); right: 0; z-index: 2; padding: 6px; animation: pop-in 0.18s ease-out; }
   #more-menu { display: flex; flex-direction: column; min-width: 230px; }
   .menu-item { border: none; background: transparent; text-align: left; border-radius: 10px; padding: 8px 10px; font-weight: 800; }
-  .menu-item:hover { background: rgba(0,0,0,0.05); }
+  @media (hover: hover) { .menu-item:hover { background: rgba(0,0,0,0.05); } }
   .menu-item.danger { color: #a4452a; }
-  .menu-item.danger:hover { background: #fbe3d9; }
+  @media (hover: hover) { .menu-item.danger:hover { background: #fbe3d9; } }
   .speed {
     border: none; background: transparent; border-radius: 9px; min-width: 36px; height: 36px; padding: 0 8px;
     font-size: 15px; font-weight: 900; color: var(--muted); transition: background 0.15s;
   }
-  .speed:hover { background: rgba(0,0,0,0.06); }
+  @media (hover: hover) { .speed:hover { background: rgba(0,0,0,0.06); } }
   .speed.on { background: var(--card); color: var(--accent-ink); box-shadow: 0 1px 3px rgba(70, 55, 25, 0.18); }
   .speed.cycle { display: none; min-width: 44px; }
   #sky-menu:not(.hidden) { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; }
@@ -279,7 +280,7 @@
   .ins-name { font-family: Fraunces, Georgia, serif; font-variation-settings: 'SOFT' 100, 'WONK' 1; font-weight: 650; font-size: 22px; line-height: 1.1; }
   .ins-sub { color: var(--muted); font-weight: 700; font-size: 12.5px; margin-top: 4px; }
   .close { margin-left: auto; align-self: flex-start; border: none; background: transparent; font-size: 16px; color: var(--muted); border-radius: 8px; padding: 2px 6px; }
-  .close:hover { background: rgba(0,0,0,0.06); }
+  @media (hover: hover) { .close:hover { background: rgba(0,0,0,0.06); } }
   .mood { margin-top: 16px; background: #fffaf0; border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; font-weight: 800; font-size: 15px; }
   .meters { margin-top: 14px; display: grid; gap: 9px; }
   .meter-row { display: grid; grid-template-columns: 70px 1fr; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 800; color: var(--muted); }
@@ -314,7 +315,7 @@
   .ins-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
   .ins-actions .btn { white-space: nowrap; padding: 8px 9px; }
   .btn { border: none; border-radius: 12px; padding: 8px 12px; font-weight: 800; background: #fff; box-shadow: 0 1px 0 var(--line), 0 0 0 1px var(--line) inset; flex: 1; }
-  .btn:hover { background: #fff7ec; }
+  @media (hover: hover) { .btn:hover { background: #fff7ec; } }
   .btn.on { background: var(--accent-soft); color: #9a5024; }
 
   /* ---- the ring menu: right-click the meadow */
@@ -324,7 +325,7 @@
     font-size: 25px; display: grid; place-items: center; transform: translate(calc(var(--dx) - 50%), calc(var(--dy) - 50%));
     animation: ring-out 0.22s ease-out backwards; transition: background 0.15s, scale 0.15s;
   }
-  .ring-item:hover { background: #fff; scale: 1.12; }
+  @media (hover: hover) { .ring-item:hover { background: #fff; scale: 1.12; } }
   .ring-item.on { background: var(--accent-soft); }
   .ring-hub { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; background: var(--card); box-shadow: var(--shadow);
     border-radius: 99px; padding: 3px 10px; font-size: 12px; font-weight: 800; color: var(--muted); pointer-events: none; }
@@ -359,7 +360,7 @@
   #welcome p { font-size: 15px; line-height: 1.6; margin: 0 0 18px; }
   #welcome .go-row { display: flex; gap: 10px; }
   #welcome .go { border-radius: 14px; background: #4f7f3a; color: #fff; font-size: 17px; padding: 13px; box-shadow: none; }
-  #welcome .go:hover { background: #44702f; }
+  @media (hover: hover) { #welcome .go:hover { background: #44702f; } }
   #welcome .card-sound { flex: none; width: 52px; border-radius: 14px; font-size: 19px; padding: 0; background: #fbf5e8; }
   #welcome .card-sound[aria-pressed="true"] { background: var(--accent-soft); }
 
@@ -370,7 +371,7 @@
   #lost p { margin: 0 0 16px; line-height: 1.5; color: var(--muted); }
   #lost .btns { display: flex; gap: 10px; }
   #lost .go { flex: 1; border-radius: 14px; background: #4f7f3a; color: #fff; font-size: 16px; padding: 12px; box-shadow: none; }
-  #lost .go:hover { background: #44702f; }
+  @media (hover: hover) { #lost .go:hover { background: #44702f; } }
   #lost .later { flex: none; border-radius: 14px; background: #fbf5e8; padding: 12px 16px; box-shadow: none; }
 
   /* ---- how to put the meadow on the home screen, from ••• */
@@ -391,7 +392,7 @@
   #home-guide .btns { display: flex; gap: 10px; }
   #home-guide .later { flex: none; border-radius: 14px; background: #fbf5e8; padding: 12px 16px; box-shadow: none; }
   #home-guide .go { border-radius: 14px; background: #4f7f3a; color: #fff; font-size: 16px; padding: 12px; box-shadow: none; }
-  #home-guide .go:hover { background: #44702f; }
+  @media (hover: hover) { #home-guide .go:hover { background: #44702f; } }
 
   /* ---- asking for ideas, once, after two minutes of play (game.js, askIdeas). No backdrop: the meadow goes on behind it. */
   #ask { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 10; width: min(400px, calc(100% - 32px)); padding: 22px 24px 20px;
@@ -405,7 +406,7 @@
   #ask .btns { display: flex; gap: 10px; }
   #ask .later { flex: none; border-radius: 14px; background: #fbf5e8; padding: 12px 16px; box-shadow: none; }
   #ask .go { border-radius: 14px; background: #4f7f3a; color: #fff; font-size: 16px; padding: 12px; box-shadow: none; }
-  #ask .go:hover { background: #44702f; }
+  @media (hover: hover) { #ask .go:hover { background: #44702f; } }
   #ask .go:disabled { opacity: 0.5; }
   #ask.sent :is(textarea, .btns, .ask-q), #ask:not(.sent) .ask-thanks { display: none; }
 
@@ -470,7 +471,7 @@
   #away ul { margin: 0 0 14px; padding: 0; list-style: none; }
   #away li { padding: 8px 0; border-top: 1px solid rgba(90, 70, 40, 0.15); line-height: 1.45; }
   #away .go { display: block; width: 100%; border-radius: 14px; background: #4f7f3a; color: #fff; font-size: 16px; padding: 12px; box-shadow: none; }
-  #away .go:hover { background: #44702f; }
+  @media (hover: hover) { #away .go:hover { background: #44702f; } }
   #away:not(.done) :is(.life, ul, .go) { display: none; }
 
   /* ---- things to try (game.js, the guide): bottom left, the news toasts stacked above it */
@@ -478,7 +479,7 @@
   .g-top { display: flex; align-items: center; gap: 6px; }
   .g-step { flex: 1; font-size: 11px; font-weight: 800; letter-spacing: 0.8px; text-transform: uppercase; color: var(--muted); }
   .g-skip, .g-x { flex: none; border: none; background: transparent; border-radius: 8px; color: var(--muted); font-weight: 800; font-size: 12.5px; padding: 3px 7px; }
-  .g-skip:hover, .g-x:hover { background: rgba(0,0,0,0.06); color: var(--ink); }
+  @media (hover: hover) { .g-skip:hover, .g-x:hover { background: rgba(0,0,0,0.06); color: var(--ink); } }
   .g-line { margin: 3px 0 0; font-size: 15px; font-weight: 800; line-height: 1.3; animation: pop-in 0.35s ease-out; }
   .g-line.done::after { content: ' ✓'; color: var(--good-ink); font-weight: 900; }
   .g-line kbd { font: 800 12px Nunito, ui-rounded, system-ui, sans-serif; padding: 1px 6px; border-radius: 5px; background: rgba(0,0,0,0.06); box-shadow: inset 0 -1px 0 rgba(0,0,0,0.15); }
@@ -486,10 +487,10 @@
   .g-head { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; border: none; background: transparent; border-radius: 10px; padding: 2px 2px 2px 0; text-align: left; }
   .g-title { flex: 1; font-size: 16px; font-weight: 650; white-space: nowrap; }
   .g-count { color: var(--muted); font-weight: 800; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .g-head:hover .win-btn { background: rgba(0,0,0,0.06); }
+  @media (hover: hover) { .g-head:hover .win-btn { background: rgba(0,0,0,0.06); } }
   .g-list { list-style: none; margin: 6px 0 0 -6px; padding: 0; }
   .g-list button { display: grid; grid-template-columns: 24px 1fr 14px; gap: 8px; align-items: center; width: 100%; text-align: left; border: none; background: transparent; border-radius: 10px; padding: 4px 6px; }
-  .g-list button:hover { background: rgba(0,0,0,0.045); }
+  @media (hover: hover) { .g-list button:hover { background: rgba(0,0,0,0.045); } }
   .g-list .e { font-size: 18px; text-align: center; }
   .g-list b { display: block; font-weight: 800; font-size: 13.5px; line-height: 1.25; }
   .g-list small { display: block; color: var(--muted); font-size: 12px; font-weight: 700; line-height: 1.25; }
@@ -515,7 +516,7 @@
   #intro .line.on { opacity: 1; transform: none; }
   #intro .skip { position: absolute; right: var(--right); bottom: 0; height: min(var(--lb), 56px); pointer-events: auto;
     border: none; background: none; padding: 8px 4px; font: 800 13px Nunito, ui-rounded, system-ui, sans-serif; color: rgba(243, 231, 207, 0.55); cursor: pointer; }
-  #intro .skip:hover { color: #f3e7cf; }
+  @media (hover: hover) { #intro .skip:hover { color: #f3e7cf; } }
   body:not(.intro) #intro .skip { visibility: hidden; }
   body.hush :is(#meadow, #watch, #news, #guide, #toolbar, #hud-right, #keep-top, #tool-tip, #forecast, #tasks, #alerts) { visibility: hidden; }
   body.ui-in :is(#meadow, #watch, #news, #guide, #toolbar, #hud-right, #keep-top, #tool-tip, #forecast, #tasks, #alerts) { animation: ui-in 1s ease both; }
@@ -527,13 +528,27 @@
   #intro .dip.on { opacity: 1; }
   body.idle #intro .bar { transform: none; }
   body.idle :is(#meadow, #watch, #news, #guide, #toolbar, #hud-right, #keep-top, #tool-tip, #forecast, #tasks, #alerts) { opacity: 0; visibility: hidden; transition: opacity 1s ease, visibility 0s 1s; }
+  /* ---- a visitor's first sighting (game.js, startReveal): the intro's bars, "First sighting" in the top one and its
+     name in the bottom one, and the cards stepped away for a moment */
+  #intro .top { display: grid; place-items: center; padding-top: env(safe-area-inset-top, 0px); }
+  #intro .bottom > * { grid-area: 1 / 1; }
+  body.reveal #intro .bar { transform: none; transition-duration: 0.7s; }
+  body.reveal :is(#meadow, #watch, #news, #guide, #toolbar, #hud-right, #keep-top, #tool-tip, #forecast, #tasks, #alerts, #inspector, #daybreak) { opacity: 0; visibility: hidden; transition: opacity 0.4s ease, visibility 0s 0.4s; }
+  #intro .rv { margin: 0 16px; text-align: center; color: #f3e7cf; opacity: 0; transform: translateY(5px); transition: opacity 0.3s ease, transform 0.3s ease; }
+  body.reveal #intro .rv { opacity: 1; transform: none; transition: opacity 0.7s ease 0.45s, transform 0.7s ease 0.45s; }
+  #reveal-top { font: 900 12px Nunito, ui-rounded, system-ui, sans-serif; letter-spacing: 0.16em; text-transform: uppercase; color: #f0c870; }
+  #reveal-name { display: block; font-size: clamp(22px, 3.8vh, 36px); font-weight: 600; line-height: 1.1; }
+  #reveal-why { display: block; max-width: calc(100vw - 32px); overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+    font: italic 450 clamp(13px, 1.8vh, 16px)/1.35 Fraunces, Georgia, serif; color: rgba(243, 231, 207, 0.75); }
+  @media (max-height: 560px) { #reveal-why { display: none; } }
   .hidden { display: none !important; }
 
   /* ---- the stats page, over everything */
   .pop[data-act] { cursor: pointer; border-radius: 10px; }
-  .pop[data-act]:hover { background: rgba(0,0,0,0.04); }
+  @media (hover: hover) { .pop[data-act]:hover { background: rgba(0,0,0,0.04); } }
   #stats { position: fixed; inset: 0; z-index: 8; overflow-y: auto; background: #f3ead8; animation: pop-in 0.25s ease-out; }
-  .stats-wrap { max-width: 1180px; margin: 0 auto; padding: 22px 24px 40px; }
+  .stats-wrap { max-width: 1180px; margin: 0 auto;   /* clear of the notch and the clock on the home screen */
+    padding: calc(22px + env(safe-area-inset-top, 0px)) calc(24px + env(safe-area-inset-right, 0px)) 40px calc(24px + env(safe-area-inset-left, 0px)); }
   .stats-head { display: flex; align-items: center; gap: 14px; }
   .stats-head h1 { margin: 0; font-size: 24px; font-weight: 900; }
   #stats-clock { color: var(--muted); font-weight: 800; }
@@ -541,7 +556,7 @@
   .stats-filters { display: flex; flex-wrap: wrap; gap: 10px 18px; margin: 16px 0 14px; }
   .seg { display: flex; flex-wrap: wrap; background: #fffaf0; border-radius: 12px; padding: 3px; box-shadow: 0 0 0 1px var(--line) inset; }
   .seg button { border: none; background: transparent; border-radius: 9px; padding: 6px 12px; font-weight: 800; color: var(--muted); }
-  .seg button:hover { color: var(--ink); }
+  @media (hover: hover) { .seg button:hover { color: var(--ink); } }
   .seg button.on { background: var(--accent-soft); color: #9a5024; }
   .stats-card { background: #fffaf0; border-radius: var(--radius); box-shadow: 0 1px 3px rgba(70,55,25,0.10), 0 0 0 1px var(--line); padding: 16px 18px; }
   .stats-card h3 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); }
@@ -722,7 +737,7 @@
   @media (max-width: 360px) {
     .mini-line { gap: 4px; padding: 0 7px; }
     .mini-pop b { font-size: 11px; }
-    .stats-wrap { padding: 16px 16px 32px; }
+    .stats-wrap { padding: calc(16px + env(safe-area-inset-top, 0px)) 16px 32px; }
     .stats-head { flex-wrap: wrap; gap: 4px 12px; }
     .stats-head h1 { font-size: 20px; }
     .stats-head .close { position: absolute; top: 12px; right: 12px; }
@@ -772,7 +787,7 @@
   html.keep #toolbar .hand { display: none; }
   html.keep #toolbar .tool { order: 0; flex-direction: column; justify-content: center; gap: 4px; width: 84px; height: 62px; padding: 0; border-radius: 14px;
     background: linear-gradient(180deg, #fffaf0, #f1e5c9); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 2px 0 #a8742a; }
-  html.keep #toolbar .tool:hover { background: linear-gradient(180deg, #fffdf7, #f6ecd5); }
+  @media (hover: hover) { html.keep #toolbar .tool:hover { background: linear-gradient(180deg, #fffdf7, #f6ecd5); } }
   html.keep #toolbar .tool.on { background: linear-gradient(180deg, #fff1df, #fbd9b9); box-shadow: inset 0 0 0 2px #d9a441, 0 2px 0 #a8742a; }
   html.keep #toolbar .tool .e { font-size: 30px; width: auto; }
   html.keep #toolbar .tool .l { font-size: 14px; line-height: 1; }
@@ -913,7 +928,7 @@
   html.keep #tasks ul { list-style: none; margin: 6px 0 0 -6px; padding: 0; }
   html.keep #tasks li button { display: grid; grid-template-columns: 26px 1fr 14px; gap: 8px; align-items: start; width: 100%; padding: 6px; border: none;
     border-radius: 10px; background: transparent; font: inherit; color: inherit; text-align: left; cursor: pointer; }
-  html.keep #tasks li button:hover { background: rgba(0, 0, 0, 0.045); }
+  @media (hover: hover) { html.keep #tasks li button:hover { background: rgba(0, 0, 0, 0.045); } }
   html.keep #tasks li.next button { background: rgba(233, 138, 75, 0.13); }
   html.keep #tasks li.fresh button { animation: tried 1.2s ease-out; }
   html.keep #tasks li .e { font-size: 19px; text-align: center; line-height: 1.2; }
@@ -956,7 +971,7 @@
     background: var(--paper, none) var(--card); box-shadow: inset 0 0 0 2px #c23b2b, 0 3px 10px rgba(70, 55, 25, 0.25); color: var(--ink);
     font: inherit; white-space: nowrap; cursor: pointer; }
   html.keep #alerts .alert[hidden] { display: none; }
-  html.keep #alerts .alert:hover { background: #fff6ea; }
+  @media (hover: hover) { html.keep #alerts .alert:hover { background: #fff6ea; } }
   html.keep #alerts .e { font-size: 18px; line-height: 1; }
   html.keep #alerts b { font-size: 20px; font-weight: 900; line-height: 1.15; color: #c23b2b; font-variant-numeric: tabular-nums; }
   html.keep #alerts .l { font-size: 12.5px; font-weight: 800; color: var(--muted); }
@@ -1119,6 +1134,27 @@
     background: linear-gradient(180deg, #fffaf0, #f1e5c9); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 3px 0 #a8742a; transition: transform 0.08s; }
   #journal .page .go:active { transform: translateY(2px); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 1px 0 #a8742a; }
   #journal .page .go .e { font-size: 22px; }
+  /* a visitor's page: the picture from its first sighting pasted in (game.js snapReveal), its painting stuck on the corner,
+     and the moments it's been seen in, a chip each (MOMENTS) */
+  #journal .page .art.snap { height: auto; padding: 16px 0 14px; background: none; }
+  #journal .page .art.snap figure { position: relative; margin: 0; padding: 7px 7px 28px; border-radius: 2px; background: #fffdf6; transform: rotate(-2deg);
+    box-shadow: 0 1px 2px rgba(60, 40, 10, 0.2), 0 6px 14px rgba(60, 40, 10, 0.18); }
+  #journal .page .art.snap figure::before { content: ''; position: absolute; top: -9px; left: 50%; width: 72px; height: 18px; margin-left: -36px;
+    background: rgba(236, 220, 172, 0.8); transform: rotate(3deg); box-shadow: 0 1px 2px rgba(60, 40, 10, 0.12); }
+  #journal .page .art.snap figure > img:first-child { display: block; width: min(240px, 62vw); height: auto; aspect-ratio: 3 / 2; object-fit: cover; }
+  #journal .page .art.snap figcaption { position: absolute; left: 8px; right: 30px; bottom: 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+    text-align: left; font: italic 450 13px/1.2 Fraunces, Georgia, serif; color: #6b5a3e; }
+  #journal .page .art.snap .stamp { position: absolute; right: -22px; bottom: -16px; width: 64px; height: 64px; object-fit: contain;
+    filter: drop-shadow(0 2px 2px rgba(60, 40, 10, 0.3)); }
+  #journal .page .moments { margin: 14px 0 4px; padding-top: 10px; border-top: 1px dashed var(--line); }
+  #journal .page .moments h4 { display: flex; margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.11em; font-size: 12px; font-weight: 900; color: #8a5e22; }
+  #journal .page .moments h4 span { margin-left: auto; letter-spacing: 0; font-size: 13px; color: var(--muted); }
+  #journal .m-list { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  #journal .m { display: flex; align-items: center; gap: 7px; min-height: 40px; padding: 6px 9px; border-radius: 10px; font-size: 13px; font-weight: 800;
+    line-height: 1.2; font-style: italic; color: #8f7d5a; background: rgba(120, 95, 50, 0.05); box-shadow: inset 0 0 0 1px rgba(150, 115, 60, 0.25); }
+  #journal .m.on { font-style: normal; color: var(--ink); background: #fff6e4; box-shadow: inset 0 0 0 1.5px #d9a441; }
+  #journal .m i { flex: none; width: 22px; text-align: center; font-style: normal; font-size: 18px; }
+  #journal .m:not(.on) i { font-size: 14px; font-weight: 900; color: #b8a27a; }
   #journal .pg-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 22px 16px; border-top: 1px dashed var(--line); }
   #journal .pg-foot .of { font-weight: 900; font-size: 15px; color: var(--muted); font-variant-numeric: tabular-nums; }
   #journal .pg-foot .x { display: none; }
@@ -1188,6 +1224,111 @@
     background: var(--paper, none) #fff6e4; box-shadow: inset 0 0 0 3px #d9a441, inset 0 0 0 4.5px #8a5e22, 0 6px 16px rgba(50, 40, 15, 0.35);
     display: grid; place-items: center; }
   #jstamp img { width: 50px; height: 50px; object-fit: contain; }
+
+  /* ---- phones and tablets: a finger's way round the meadow. Every target 44 px or more either way (Apple; Material
+     says 48) with room between, a press that shows at once (:active, not the browser's grey box), hover only where
+     there's a mouse, and none of the browser's own pulls: no pull-to-refresh, no text grown on its side. */
+  html, body { overscroll-behavior-y: none; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  button, a, [data-act], [data-tool] { -webkit-tap-highlight-color: transparent; }
+  .sheet-foot, #web .grab, #web-scrim { display: none; }
+  .scrim { position: fixed; inset: 0; z-index: 8; background: rgba(40, 32, 18, 0.32); }
+  /* ✕ at a sheet's foot, and every ✕ on a touch screen: the journal's round brass button, its cross drawn as lines (the
+     same in every font); a mouse's small one keeps its letter */
+  :root { --x-lines: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6.5 6.5l11 11M17.5 6.5l-11 11' fill='none' stroke='black' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E"); }
+  .close.big { position: relative; width: 60px; height: 60px; margin: 0; padding: 0; border-radius: 50%; font-size: 0; color: var(--ink);
+    background: linear-gradient(180deg, #fffaf0, #f1e5c9); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 2px 0 #a8742a; }
+  .close.big::before { content: ''; position: absolute; inset: 0; margin: auto; width: 24px; height: 24px; background: currentColor;
+    -webkit-mask: var(--x-lines) center / contain no-repeat; mask: var(--x-lines) center / contain no-repeat; }
+  .hud-btn:active, .speed:active, .menu-item:active, .seg button:active, .g-list button:active, .g-skip:active, .g-x:active, .g-head:active, .card-actions .act:active,
+    html:not(.keep) .mini-line:active, .pop[data-act]:active, .traits:active, .story-more:active, .win-btn:active, html.keep #tasks li button:active, html.keep #tasks .t-head:active { background-color: rgba(0, 0, 0, 0.08); }
+  html.keep .mini-pop:active { background: rgba(0, 0, 0, 0.07); border-radius: 8px; }
+  .btn:active, html.keep #alerts .alert:active, #web-svg .web-node:active { filter: brightness(0.94); }
+  /* a finger held on the meadow: a ring grows under it till the hold opens the ring of tools (game.js holdShow) */
+  #hold { position: fixed; z-index: 2; left: 0; top: 0; width: 76px; height: 76px; margin: -38px 0 0 -38px; border-radius: 50%; pointer-events: none; opacity: 0;
+    box-shadow: inset 0 0 0 3px rgba(255, 250, 238, 0.95), 0 0 0 1px rgba(70, 55, 25, 0.22), 0 0 16px 2px rgba(255, 250, 238, 0.45); }
+  @media (pointer: coarse) {
+    .close { position: relative; flex: none; width: 44px; height: 44px; padding: 0; border-radius: 50%; font-size: 0; color: var(--ink);
+      background: linear-gradient(180deg, #fffaf0, #f1e5c9); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 2px 0 #a8742a; transition: transform 0.08s, box-shadow 0.08s; }
+    .close::before { content: ''; position: absolute; inset: 0; margin: auto; width: 20px; height: 20px; background: currentColor;
+      -webkit-mask: var(--x-lines) center / contain no-repeat; mask: var(--x-lines) center / contain no-repeat; }
+    .close:active { transform: translateY(2px); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 0 0 #a8742a; }
+    .close.big { width: 60px; height: 60px; }
+    .close.big::before { width: 24px; height: 24px; }
+    #inspector .ins-head .close { margin: -4px -6px 0 auto; padding: 0; font-size: 0; }
+    #inspector.strip .close { margin: 0 3px 0 0; padding: 0; font-size: 0; }
+    .web-head .close, .stats-head .close { margin: 0 0 0 auto; font-size: 0; }
+    .web-btn + .close { margin-left: 0; }
+    .seg button, .web-btn, .btn, .card-actions .act, .story-more, .traits, .menu-item, .g-list button, .g-head, .pop[data-act] { min-height: 44px; }
+    .g-skip, .g-x, .win-btn { min-width: 44px; min-height: 44px; }
+    .sheet-handle { height: 30px; }
+    .sheet-handle::before { top: 11px; }
+    /* a link in a line of text: a fingertip's height to hit, the line where it was */
+    :is(.news-item, #inspector, #daybreak, #away) :is(a[data-id], a[data-thing], a[data-act]) { padding: 7px 2px; margin: -7px -2px; }
+    html.keep #alerts .alert { min-height: 44px; }
+    html.keep #tasks:not(.fold) .t-head { min-height: 44px; margin: -13px 0 -6px; }   /* (open, its head reaches up into the card's rim) */
+    html.keep #tasks li button { min-height: 44px; }
+    html.keep #forecast::before { content: ''; position: absolute; inset: -6px -10px; }   /* (the ribbon is thin: its tap reaches round it) */
+  }
+  /* The top bar on a phone: pause, the speed and ••• 44 px tall and as wide as fits beside the watch; each kind's count
+     (a tap opens its graph, ?keep) reaches to the next, so the row has no gaps to miss in. */
+  @media (max-width: 760px), (max-height: 500px) {
+    .speed, .hud-btn.more { min-width: 44px; height: 44px; }
+    .mini-line { height: 44px; }
+    html.keep #tasks.fold .t-head { height: 44px; }
+  }
+  @media (max-width: 440px) { #time .speed, .hud-btn.more { min-width: 42px; padding: 0 3px; } }
+  @media (max-width: 350px) { #time .speed, .hud-btn.more { min-width: 38px; padding: 0 2px; } }
+  @media (max-width: 540px) and (min-height: 501px) {
+    html.keep .mini-line { gap: 0; padding: 0 5px; }
+    html.keep .mini-pop { align-self: stretch; justify-content: center; padding: 0 4.5px; }
+  }
+  @media (max-width: 360px) and (min-height: 501px) { html.keep .mini-pop { padding: 0 2px; } }
+  /* The smallest phones (?keep): 40 px each, the three still clear of the watch */
+  @media (max-width: 350px) {
+    html.keep #time .speed, html.keep .hud-btn.more { min-width: 40px; padding: 0 2px; }
+    html.keep #time { padding: 0 2px; }
+    html.keep #time .speeds { gap: 2px; }
+  }
+  /* A tablet (a touch screen with the desktop's row of buttons): a fingertip's size there too, and each kind's count as
+     tall as the bar. Upright (761-900 px) the row would run into the watch, so the time waits behind one button as on a
+     phone, and the weather, the graphs and the sound go in •••. */
+  @media (pointer: coarse) and (min-width: 761px) and (min-height: 501px) {
+    .speed, .hud-btn { min-width: 44px; height: 44px; }
+    html.keep .mini-line { height: 44px; gap: 0; padding: 0 0 0 6px; }
+    html.keep .mini-pop { align-self: stretch; line-height: 44px; padding: 0 6px; }
+  }
+  @media (pointer: coarse) and (min-width: 761px) and (max-width: 900px) and (min-height: 501px) {
+    #time .speed[data-speed]:not([data-speed="0"]), #time .hud-btn:not(.more), #time .hud-sep { display: none; }
+    #time .speed.cycle { display: block; }
+    #more-menu .phone-only { display: revert; }
+  }
+  /* Upright phones: Who ate whom is a sheet from the bottom like the journal, its handle dragged down or the dimmed
+     meadow above it tapped to shut it, ✕ at its foot in the middle; the graphs page has its ✕ at the foot too. */
+  @media (max-width: 760px) and (min-height: 501px) {
+    #web-scrim:not(.hidden) { display: block; }
+    #web { left: 0; right: 0; top: auto; bottom: 0; transform: none; width: auto; max-height: calc(100% - env(safe-area-inset-top, 0px) - 44px);
+      display: flex; flex-direction: column; overflow: hidden; padding: 0 12px; border-radius: 22px 22px 0 0;
+      box-shadow: 0 -8px 40px rgba(50, 40, 15, 0.35), inset 0 0 0 1px rgba(150, 115, 60, 0.22); }
+    #web:not(.hidden) > * { animation: none; }
+    #web .grab { display: block; flex: none; height: 24px; position: relative; touch-action: none; }
+    #web .grab::before { content: ''; position: absolute; left: 50%; top: 10px; width: 44px; height: 5px; margin-left: -22px; border-radius: 99px; background: #d4c4a6; }
+    #web .web-head { touch-action: none; }
+    #web .web-head .close { display: none; }
+    #web .web-when { flex: none; }
+    #web .web-body { flex: 1 1 auto; min-height: 0; overflow: hidden auto; overscroll-behavior: contain; }
+    #web .sheet-foot { display: flex; flex: none; justify-content: center; margin: 0 -12px; padding: 10px 16px calc(14px + var(--home-bar, env(safe-area-inset-bottom, 0px)));
+      border-top: 1px dashed var(--line); }
+    .stats-head .close { display: none; }
+    .stats-wrap { padding-bottom: 0; }
+    #stats .stats-foot { display: flex; justify-content: center; position: sticky; bottom: 0; z-index: 1; margin: 6px -24px 0; padding: 22px 0 calc(16px + var(--home-bar, env(safe-area-inset-bottom, 0px)));
+      background: linear-gradient(rgba(243, 234, 216, 0), #f3ead8 45%); pointer-events: none; }
+    #stats .stats-foot .close { pointer-events: auto; }
+  }
+  @media (max-width: 360px) and (min-height: 501px) { #stats .stats-foot { margin: 6px -16px 0; } }
+  /* On its side the ✕ stays top right, now a thumb's size: the food web's choice of when moves over for it */
+  @media (max-height: 500px) and (pointer: coarse) { .web-when { top: 8px; right: 64px; } }
+  @media (max-width: 360px) { .web-when button { padding: 5px 6px; } }   /* (its three choices in one row on the smallest phones) */
+  @media (prefers-reduced-motion: reduce) { .close { transition: none; } }
 </style>
 </head>
 <body>
@@ -1322,6 +1463,8 @@
 
 <!-- right-click the meadow: tools that act right where you clicked -->
 <div id="ring" class="hidden"></div>
+<!-- a finger held on the meadow: a ring grows under it till the ring of tools opens (game.js holdShow) -->
+<div id="hold" aria-hidden="true"></div>
 
 <section id="stats" class="hidden">
   <div class="stats-wrap">
@@ -1329,7 +1472,7 @@
       <h1>📊 Meadow statistics</h1>
       <span id="stats-clock"></span>
       <button class="web-btn" data-act="web" title="This meadow's food web: who ate whom, and how much">🕸️ Who ate whom</button>
-      <button class="close" data-act="stats" title="Back to the meadow (Esc)">✕</button>
+      <button class="close" data-act="stats" title="Back to the meadow (Esc)" aria-label="Back to the meadow">✕</button>
     </header>
     <div class="stats-filters">
       <div class="seg">
@@ -1354,6 +1497,8 @@
       <div class="stats-card"><h3>How they died <span style="text-transform:none;letter-spacing:0">(since the start)</span></h3><div id="stats-deaths"></div></div>
       <div class="stats-card wide"><h3>Evolution</h3><div id="stats-evo"></div></div>
     </div>
+    <!-- an upright phone: ✕ at the foot, in the middle, where a thumb reaches it -->
+    <footer class="sheet-foot stats-foot"><button class="close big" data-act="stats" aria-label="Back to the meadow">✕</button></footer>
   </div>
 </section>
 
@@ -1417,16 +1562,19 @@
 
 <!-- once, after two minutes of play (game.js, askIdeas) -->
 <!-- the food web as it ran (game.js, updateWeb) -->
+<div id="web-scrim" class="scrim hidden"></div>
 <div id="web" class="hidden" role="dialog" aria-labelledby="web-title">
+  <div class="grab" aria-hidden="true"></div>
   <header class="web-head">
     <h2 class="fr" id="web-title">Who ate whom</h2>
-    <button class="close" data-act="web" title="Back to the meadow (Esc)">✕</button>
+    <button class="close" data-act="web" title="Back to the meadow (Esc)" aria-label="Back to the meadow">✕</button>
   </header>
   <div class="seg web-when"><button data-web="season">This season</button><button data-web="year">Last year</button><button data-web="all">Since the start</button></div>
   <div class="web-body">
     <svg id="web-svg" role="img" aria-label="The meadow's food web: arrows from the eaten to the eater, as thick as how many"></svg>
     <p id="web-say" aria-live="polite"></p>
   </div>
+  <footer class="sheet-foot"><button class="close big" data-act="web" aria-label="Back to the meadow">✕</button></footer>
 </div>
 
 <!-- ?keep: the field journal (game.js, the field journal) -->
@@ -1456,8 +1604,8 @@
 <div id="daybreak" aria-hidden="true"></div>
 <div id="intro" aria-live="polite">
   <div class="dip"></div>
-  <div class="bar top"><button class="skip" id="intro-skip">Skip ›</button></div>
-  <div class="bar bottom"><p class="line fr" id="intro-line"></p></div>
+  <div class="bar top"><button class="skip" id="intro-skip">Skip ›</button><p class="rv" id="reveal-top"></p></div>
+  <div class="bar bottom"><p class="line fr" id="intro-line"></p><p class="rv"><b class="fr" id="reveal-name"></b><span id="reveal-why"></span></p></div>
 </div>
 
 <script src="sim.js"></script>

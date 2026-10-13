@@ -6700,7 +6700,8 @@ function hedgesDay(w) {
 // VISIT_DAYS, curled up asleep at the foot of the hedge by day and pottering along it at night, snuffling for beetles,
 // and goes back the way it came at dusk. The other is a heron, at a dug pond (below). w.visitors are the ones here now
 // (one of a kind), w.visited how often each kind has come and the day the last one left. Events: 'visitor' as one comes,
-// 'visitorleft' as it goes.
+// 'visitorleft' as it goes. One whose kind the player has never seen (game.js sets v.wait) stays on past its days till
+// they've seen it, but never into winter.
 const VISIT_FIRST = 0.5;        // the chance an evening (a morning, for a heron) of the first visit, once there's somewhere to come to
 const VISIT_ODDS = 0.15;        // and of each one after
 const VISIT_REST = SEASON_DAYS; // days after one leaves before another can come
@@ -6719,6 +6720,7 @@ const HOG_DUSK = Math.round(HOG_UP[0] * TPD);
 function visitorsTick(w) {
   const t = w.tick % TPD;
   if (t === HOG_DUSK) visitorsDusk(w);
+  else if (t === 0) visitorSigns(w);
   else if (t === HERON_MORNING) heronMorning(w);
   else if (t === HERON_EVENING) heronEvening(w);
   const p = phaseOf(w.tick), up = p >= HOG_UP[0] || p < HOG_UP[1], day = p >= HERON_DAY[0] && p < HERON_DAY[1];
@@ -6734,10 +6736,13 @@ function visitorsDusk(w) {
   for (const v of w.visitors) {
     if (v.kind !== 'hedgehog') continue;
     v.whips = v.whips.filter(standing);
-    if (w.tick >= v.until || !v.whips.length) leave(w, v);
+    if (w.tick >= v.until && !waits(w, v) || !v.whips.length) leave(w, v);
   }
   if (w.hedges) hedgehogComes(w);
 }
+
+// Still waiting to be seen (v.wait), and not yet the last day of autumn.
+const waits = (w, v) => v.wait && dayOf(w.tick) % YEAR_DAYS < 3 * SEASON_DAYS - 1;
 
 // Gone off the map.
 function visitorGone(w, v) {
@@ -6747,31 +6752,84 @@ function visitorGone(w, v) {
 
 // A hedgehog comes to the longest young hedge, if one has a chance tonight (force: one comes now, whatever the day).
 function hedgehogComes(w, force = false) {
-  const day = dayOf(w.tick), last = w.visited.hedgehog;
+  const day = dayOf(w.tick);
   if (w.visitors.some(v => v.kind === 'hedgehog')) return null;
-  const stay = force ? VISIT_DAYS[1] : Math.min(VISIT_DAYS[0] + Math.floor(hash2(day, 3, w.seed) * (VISIT_DAYS[1] - VISIT_DAYS[0] + 1)),
-    3 * SEASON_DAYS - 1 - day % YEAR_DAYS);                  // (gone by the last dusk of autumn)
-  if (!force && (seasonOf(w.tick) === 3 || stay < 2 || last && day < last.left + VISIT_REST
-    || hash2(day, 1, w.seed) >= (last ? VISIT_ODDS : VISIT_FIRST))) return null;
+  const stay = force ? VISIT_DAYS[1] : hogDay(w, day), at = stay && hogPlace(w, day, force);
+  if (!at) return null;
+  const { h, whips, nx, ny, fx, fy, a } = at, seen = w.visited.hedgehog ??= { n: 0, left: -99 };
+  seen.n++;
+  const v = { id: w.visitId = (w.visitId || 0) + 1, kind: 'hedgehog', hedge: h, whips, x: fx, y: fy, fx, fy, nx, ny,
+    tx: nx, ty: ny, mode: 'in', came: w.tick, until: w.tick + stay * TPD, timer: 0, facing: Math.cos(a) > 0 ? -1 : 1, moved: 0, finds: 0, gone: false, n: seen.n };
+  w.visitors.push(v);
+  dropSign(w, 'hedgehog');
+  emit(w, { type: 'visitor', v });
+  return v;
+}
+
+// How many days a hedgehog that came at dusk on day d would stay, or 0 if none may come then: not in winter, not till
+// VISIT_REST after the last one left, and only on a day the hash says (VISIT_FIRST the first time, then VISIT_ODDS).
+function hogDay(w, d) {
+  const last = w.visited.hedgehog, stay = Math.min(VISIT_DAYS[0] + Math.floor(hash2(d, 3, w.seed) * (VISIT_DAYS[1] - VISIT_DAYS[0] + 1)),
+    3 * SEASON_DAYS - 1 - d % YEAR_DAYS);                    // (gone by the last dusk of autumn)
+  return seasonOf(d * TPD) === 3 || stay < 2 || last && d < last.left + VISIT_REST
+    || hash2(d, 1, w.seed) >= (last ? VISIT_ODDS : VISIT_FIRST) ? 0 : stay;
+}
+
+// Where one that came on day d would come to (its bed at the foot of a whip of the longest young hedge, force: any
+// hedge) and in from (dry ground with a clear way to the hedge), as things are now; or null.
+function hogPlace(w, d, force) {
   let h = null;
   for (const o of w.hedges) if ((o.young || force) && o.standing && (!h || o.standing > h.standing)) h = o;
-  const whips = h ? w.decor.filter(d => d.hedge === h.id && standing(d)) : [];
+  const whips = h ? w.decor.filter(o => o.hedge === h.id && standing(o)) : [];
   if (!whips.length) return null;
-  const d = whips[Math.floor(hash2(day, 5, w.seed) * whips.length)], side = hash2(day, 6, w.seed) < 0.5 ? -1 : 1;
-  const nx = d.x + 0.3 * side, ny = d.y + 0.35;             // its bed: at the foot of a whip, in front of it
-  const a0 = hash2(day, 7, w.seed) * 2 * Math.PI;
-  for (let k = 0; k < 12; k++) {                             // where it comes in from: dry ground with a clear way to the hedge
+  const b = whips[Math.floor(hash2(d, 5, w.seed) * whips.length)], side = hash2(d, 6, w.seed) < 0.5 ? -1 : 1;
+  const nx = b.x + 0.3 * side, ny = b.y + 0.35;             // its bed: at the foot of a whip, in front of it
+  const a0 = hash2(d, 7, w.seed) * 2 * Math.PI;
+  for (let k = 0; k < 12; k++) {
     const a = a0 + k * 2 * Math.PI / 12, fx = nx + Math.cos(a) * VISIT_FROM, fy = ny + Math.sin(a) * VISIT_FROM;
-    if (!footing(w, fx, fy) || !clearPath(w, fx, fy, nx, ny)) continue;
-    const seen = w.visited.hedgehog ??= { n: 0, left: -99 };
-    seen.n++;
-    const v = { id: w.visitId = (w.visitId || 0) + 1, kind: 'hedgehog', hedge: h, whips, x: fx, y: fy, fx, fy, nx, ny,
-      tx: nx, ty: ny, mode: 'in', came: w.tick, until: w.tick + stay * TPD, timer: 0, facing: Math.cos(a) > 0 ? -1 : 1, moved: 0, finds: 0, gone: false, n: seen.n };
-    w.visitors.push(v);
-    emit(w, { type: 'visitor', v });
-    return v;
+    if (footing(w, fx, fy) && clearPath(w, fx, fy, nx, ny)) return { h, whips, nx, ny, fx, fy, a };
   }
   return null;
+}
+
+// A day or two ahead, a visitor on its way leaves a sign where it'll come (w.signs, looked for each sunrise): a hedgehog
+// its tracks in the dew, along the way it'll come in to the hedge; a heron a feather on the bank of the pond. Its
+// days are hashed (hogDay, heronDay), so the first day within SIGN_DAYS that one would come is known, and where to as
+// things are now (hogPlace, heronPlace). A sign goes when its visitor comes, or the sunrise after its day. A heron's
+// sign is for a morning after this one (it comes just after sunrise). Event: 'visitorsign'.
+const SIGN_DAYS = 2;
+function visitorSigns(w) {
+  const day = dayOf(w.tick);
+  w.signs = (w.signs || []).filter(s => s.day >= day);
+  const has = k => w.visitors.some(v => v.kind === k) || w.signs.some(s => s.kind === k);
+  if (w.hedges && !has('hedgehog')) {
+    for (let d = day; d <= day + SIGN_DAYS; d++) {
+      if (!hogDay(w, d)) continue;
+      const at = hogPlace(w, d);
+      if (at) addSign(w, { kind: 'hedgehog', day: d, x: at.nx, y: at.ny, a: at.a, hedge: at.h });
+      break;
+    }
+  }
+  if (w.ponds && !has('heron')) {
+    for (let d = day + 1; d <= day + SIGN_DAYS; d++) {
+      if (!heronDay(w, d)) continue;
+      const at = heronPlace(w, d);
+      if (at) addSign(w, { kind: 'heron', day: d, ...bankOf(w, at.p, at.s), a: hash2(d, 19, w.seed) * 2 * Math.PI, pond: at.p });
+      break;
+    }
+  }
+}
+function addSign(w, s) { w.signs.push(s); emit(w, { type: 'visitorsign', s }); }
+function dropSign(w, kind) { if (w.signs) w.signs = w.signs.filter(s => s.kind !== kind); }
+
+// Dry ground at the edge of pond p, out from its spot s, for a heron's feather.
+function bankOf(w, p, s) {
+  const dx = s.x - p.x, dy = s.y - p.y, l = Math.hypot(dx, dy) || 1;
+  for (let r = 0; r <= 5; r += 0.5) {
+    const x = s.x + dx / l * r, y = s.y + dy / l * r;
+    if (inBounds(x, y) && !w.water[idx(x, y)]) return { x, y };
+  }
+  return { x: s.x, y: s.y };
 }
 
 // Off back the way it came (at dusk when its days are up, or at once from a fire or a hedge gone).
@@ -6862,35 +6920,47 @@ function heronMorning(w) {
 
 // Of an evening: off, once its days are up.
 function heronEvening(w) {
-  for (const v of w.visitors) if (v.kind === 'heron' && w.tick >= v.until) heronOff(w, v);
+  for (const v of w.visitors) if (v.kind === 'heron' && w.tick >= v.until && !waits(w, v)) heronOff(w, v);
 }
 
 // A heron comes to the dug pond with the most frogs about it, if one has a chance this morning (force: one comes now,
 // whatever the day, to any pond with water).
 function heronComes(w, force = false) {
-  const day = dayOf(w.tick), last = w.visited.heron;
+  const day = dayOf(w.tick);
   if (!w.ponds || w.visitors.some(v => v.kind === 'heron')) return null;
-  const stay = force ? VISIT_DAYS[1] : Math.min(VISIT_DAYS[0] + Math.floor(hash2(day, 13, w.seed) * (VISIT_DAYS[1] - VISIT_DAYS[0] + 1)),
-    3 * SEASON_DAYS - day % YEAR_DAYS);                      // (gone by the last evening of autumn)
-  if (!force && (seasonOf(w.tick) === 3 || w.frozen || stay < 2 || last && day < last.left + VISIT_REST
-    || hash2(day, 11, w.seed) >= (last ? VISIT_ODDS : VISIT_FIRST))) return null;
-  let p = null, spots = null, most = -1;
-  for (const o of w.ponds) {
-    if (!force && (!o.found || o.foundDay >= day)) continue;
-    const s = heronSpots(w, o), f = s.length ? frogsAbout(w, o) : -1;
-    if (f > most) { p = o; spots = s; most = f; }
-  }
-  if (!p || !spots.length) return null;
-  const s = spots[Math.floor(hash2(day, 15, w.seed) * spots.length)], a = hash2(day, 17, w.seed) * 2 * Math.PI;
-  const fx = clamp(s.x + Math.cos(a) * HERON_FROM, 1, W - 1), fy = clamp(s.y + Math.sin(a) * HERON_FROM, 1, H - 1);
-  const seen = w.visited.heron ??= { n: 0, left: -99 };
+  const stay = force ? VISIT_DAYS[1] : !w.frozen && heronDay(w, day), at = stay && heronPlace(w, day, force);
+  if (!at) return null;
+  const { p, spots, s, fx, fy } = at, seen = w.visited.heron ??= { n: 0, left: -99 };
   seen.n++;
   const v = { id: w.visitId = (w.visitId || 0) + 1, kind: 'heron', pond: p, spots, x: fx, y: fy, fx, fy, ox: fx, oy: fy, tx: s.x, ty: s.y,
     mode: 'in', came: w.tick, until: w.tick + (stay - 1) * TPD, timer: 0, facing: s.x > fx ? 1 : -1, moved: 0,
     frogs: 0, fish: 0, caught: '', gone: false, n: seen.n };
   w.visitors.push(v);
+  dropSign(w, 'heron');
   emit(w, { type: 'visitor', v });
   return v;
+}
+
+// As hogDay, for a heron of a morning (the frozen pond aside, which only the morning itself knows).
+function heronDay(w, d) {
+  const last = w.visited.heron, stay = Math.min(VISIT_DAYS[0] + Math.floor(hash2(d, 13, w.seed) * (VISIT_DAYS[1] - VISIT_DAYS[0] + 1)),
+    3 * SEASON_DAYS - d % YEAR_DAYS);                        // (gone by the last evening of autumn)
+  return seasonOf(d * TPD) === 3 || stay < 2 || last && d < last.left + VISIT_REST
+    || hash2(d, 11, w.seed) >= (last ? VISIT_ODDS : VISIT_FIRST) ? 0 : stay;
+}
+
+// The dug pond with the most frogs about it that frogs found before day d (force: any with water), and the spot it
+// would come down at and the place it'd fly in from; or null.
+function heronPlace(w, d, force) {
+  let p = null, spots = null, most = -1;
+  for (const o of w.ponds) {
+    if (!force && (!o.found || o.foundDay >= d)) continue;
+    const s = heronSpots(w, o), f = s.length ? frogsAbout(w, o) : -1;
+    if (f > most) { p = o; spots = s; most = f; }
+  }
+  if (!p || !spots.length) return null;
+  const s = spots[Math.floor(hash2(d, 15, w.seed) * spots.length)], a = hash2(d, 17, w.seed) * 2 * Math.PI;
+  return { p, spots, s, fx: clamp(s.x + Math.cos(a) * HERON_FROM, 1, W - 1), fy: clamp(s.y + Math.sin(a) * HERON_FROM, 1, H - 1) };
 }
 
 // The frogs about a dug pond: on its tiles and within 3 of them.

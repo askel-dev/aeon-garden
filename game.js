@@ -557,7 +557,7 @@ const GROUND_DPR = 2, GROUND_WEBKIT = 1.5e6;
 const WEBKIT = /AppleWebKit/.test(navigator.userAgent) && !/Chrome\/|Chromium|Edg\//.test(navigator.userAgent);
 const groundLayer = Ground.ok ? Ground.canvas : null, laid = { w: 0, h: 0, x: 0, y: 0 };
 if (groundLayer) { groundLayer.id = 'ground'; canvas.before(groundLayer); }
-let groundIn = false;
+let groundIn = false, snapping = false;   // (snapping: the journal's picture of a visitor, snapReveal)
 function drawGround(z, ox, oy, shx, shy) {
   groundStill = z === lastZoom ? groundStill + 1 : 0; lastZoom = z;
   updateWater();
@@ -1263,8 +1263,10 @@ function render(now) {
   if (world.visitors) for (const v of world.visitors) {    // (?keep: a hedgehog at a hedge, a heron at a pond)
     const d = drawnAt(v), [sx, sy] = toScreen(d.x, d.y);
     if (visible(sx, sy, 40 + 2 * visitorPx(v))) items.push({ y: d.y, v, sx, sy, f: 1 - mistAt(d.x, d.y) });
+    if (KEEP) watchVisitor(v, d.x, d.y, sx, sy);              // (the journal's moments)
   }
   items.sort((a, b) => a.y - b.y);
+  if (world.signs?.length && z >= 8) drawSigns(z);          // (?keep: a visitor on its way)
   // Shadows first, all together, so a tree's shadow never lands on a rabbit behind it.
   const sn = sun(ck);
   for (const it of items) {
@@ -1294,7 +1296,7 @@ function render(now) {
 
   // The golden hour and the night. The ground is lit by the shader; what's drawn on it gets the warm light laid over
   // just what's there (source-atop), before the dark goes over everything.
-  const dark = shownDark(ck.phase), gold = shownGold(ck.phase);
+  const dark = shownDark(ck.phase) * (snapping ? SNAP_DARK : 1), gold = shownGold(ck.phase);
   if (gold > 0) {
     ctx.globalCompositeOperation = 'source-atop';
     wash(`rgba(${GOLD_RGB}, ${GOLD_A * gold})`);
@@ -1652,12 +1654,17 @@ const visitorFace = kind => {      // its painting, for the inspector
   return `<img src="${portraits.get(art)}" alt="${VISITORS[kind].name}"${VISITORS[kind].glyph ? ' style="width: 115%"' : ''}>`;   // (a painting has room round it)
 };
 // Its emoji, in a line of text (the news, the away card); or a painted one's portrait, as a CSS background
-// (--glyph-heron), so the news kept with the meadow holds a few bytes, not the picture.
-function visitorGlyph(kind) {
+// (--glyph-heron), so the news kept with the meadow holds a few bytes, not the picture. sil: its shadow, for a kind not
+// yet seen (as on its empty page in the journal).
+function visitorGlyph(kind, sil) {
   const k = VISITORS[kind];
-  if (!k.glyph) return k.emoji;
+  if (!k.glyph && !sil) return k.emoji;
+  glyphVar(kind);
+  return `<i class="visitor-glyph${sil ? ' sil' : ''}" style="background-image: var(--glyph-${kind})" role="img" aria-label="${sil ? 'something' : k.name}"></i>`;
+}
+function glyphVar(kind) {
+  const k = VISITORS[kind];
   if (!k.glyphed) { visitorFace(kind); document.documentElement.style.setProperty('--glyph-' + kind, `url(${portraits.get(k.art)})`); k.glyphed = true; }
-  return `<i class="visitor-glyph" style="background-image: var(--glyph-${kind})" role="img" aria-label="${k.name}"></i>`;
 }
 // Where it came to: the hedge, or the pond; and a link to it.
 const visitorPlace = v => (v.hedge ? v.hedge.name : world.waters[v.pond.id].name);
@@ -1753,6 +1760,21 @@ function drawHeron(v, sx, sy, now, z, px, a) {
   }
   if (v.mode === 'sleep' && z >= 8) drawEmoji('💤', sx + px * 0.18, y - px * 0.22 + Math.sin(now / 600 + v.id) * 3, Math.max(11, z * 0.7), { alpha: 0.85 });
 }
+// A visitor's sign (sim.js w.signs), flat on the ground: a hedgehog's tracks, a few prints along the way it'll come in to
+// the hedge, or a heron's feather on the bank of its pond.
+function drawSigns(z) {
+  for (const s of world.signs) {
+    if (s.kind === 'heron') {
+      const [sx, sy] = toScreen(s.x, s.y);
+      if (visible(sx, sy, 30)) drawEmoji('🪶', sx, sy, Math.max(10, z * 0.7), { alpha: 0.95 });
+      continue;
+    }
+    for (let k = 1; k <= 3; k++) {
+      const [sx, sy] = toScreen(s.x + Math.cos(s.a) * k * 0.9, s.y + Math.sin(s.a) * k * 0.9);
+      if (visible(sx, sy, 20)) drawEmoji('🐾', sx, sy, Math.max(8, z * 0.45), { alpha: 0.7 });
+    }
+  }
+}
 // The field journal (?keep): a page for each kind that lives here or comes by, filled the first time you see one. It's
 // the player's, not the meadow's (JOURNAL, in the browser), so a new meadow keeps it. A page: { first: when (ms), t: the
 // meadow's tick then (older pages have its season), seen: how many visits seen (a visitor's), most: the most of them
@@ -1763,6 +1785,11 @@ const JOURNAL = 'aeon-garden-journal';
 let journal = {};
 try { journal = JSON.parse(localStorage.getItem(JOURNAL) || '{}') || {}; } catch (e) { /* a private window: this visit only */ }
 const saveJournal = () => { try { localStorage.setItem(JOURNAL, JSON.stringify(journal)); } catch (e) { /* this visit only, then */ } };
+// A visitor's picture from its first sighting (snapReveal), kept apart from the journal as it's a few tens of KB:
+// { kind: { src (a JPEG data URL), where, t } }.
+const PHOTOS = 'aeon-garden-journal-photos';
+let photos = {};
+try { photos = JSON.parse(localStorage.getItem(PHOTOS) || '{}') || {}; } catch (e) { /* a private window: this visit only */ }
 // Its pages in order, numbered. art: its painting (a function where it's worked out), fit: how much bigger it's shown (a
 // tall one painted with room round it); a: its name in a sentence; note: what a found page says; hint: an empty one's; a
 // visitor's tool (KEEP_TOOLS) is what draws it, where and when it comes, glimpse: its page once one's come and gone unseen.
@@ -1803,6 +1830,21 @@ const PAGES = [
 ];
 PAGES.forEach((p, i) => { p.no = String(i + 1).padStart(2, '0'); p.i = i; });
 const PAGE = Object.fromEntries(PAGES.map(p => [p.k, p]));
+// The moments to catch a visitor in, once its kind is in the journal (watchVisitor): its emoji, its name on the page, a
+// hint till it's seen, the caption's words, and quick: over in a moment, so seen as it happens (else after MOMENT_MS).
+const MOMENTS = {
+  hedgehog: [
+    { k: 'way', e: '🌙', name: 'On its way', hint: 'At dusk, as it comes or goes', say: 'a hedgehog on its way' },
+    { k: 'beetle', e: '🪲', name: 'Found a beetle', hint: 'Watch it snuffle at night', say: 'a hedgehog with a beetle', quick: true },
+    { k: 'asleep', e: '💤', name: 'Curled up asleep', hint: 'By day, at the foot of the hedge', say: 'a hedgehog curled up asleep' },
+  ],
+  heron: [
+    { k: 'wing', e: '🪶', name: 'On the wing', hint: 'As it flies in, or off', say: 'a heron on the wing' },
+    { k: 'frog', e: '🐸', name: 'Caught a frog', hint: 'Stock still, then a stab', say: 'a heron with a frog', quick: true },
+    { k: 'fish', e: '🐟', name: 'Caught a fish', hint: 'Where the fish are thick', say: 'a heron with a fish', quick: true },
+    { k: 'asleep', e: '💤', name: 'Asleep on one leg', hint: 'After dark', say: 'a heron asleep on one leg' },
+  ],
+};
 const artOf = p => (typeof p.art === 'function' ? p.art() : p.art);
 // In the journal (a kind with no page, the owls while they're off, always is).
 const found = k => !PAGE[k] || !!journal[k]?.first;
@@ -1822,6 +1864,7 @@ function noteSighting(kind, visit) {
 function sightVisitor(v) {
   if (v.seen) return false;
   v.seen = true;
+  if (v.wait) { v.wait = false; v.until = Math.max(v.until, world.tick + 2 * S.TPD); }   // (it waited for you: two days more to watch it)
   return noteSighting(v.kind, true);
 }
 // A visitor that left unseen: its page half filled, its name and where it comes to.
@@ -1840,7 +1883,7 @@ const LOOK_MS = { vole: 250, fish: 250 }, FIND_GAP = 2500;
 const gaze = { on: false, frame: 0, now: 0, dt: 0, x0: 0, x1: 0, y0: 0, y1: 0, calm: 0, ms: {}, at: {} };
 function lookFrame(now) {
   gaze.dt = Math.min(100, now - gaze.now); gaze.now = now; gaze.frame++;
-  gaze.on = KEEP && !ui.hush && !away.on && !groundIn && !journalOpen() && cam.zoom >= SPOT_ZOOM && world.tick > 0;
+  gaze.on = KEEP && !ui.hush && !away.on && !groundIn && !journalOpen() && !reveal.on && cam.zoom >= SPOT_ZOOM && world.tick > 0;
   if (!gaze.on) return;
   const top = topPad + SPOT_EDGE + 6, bottom = vh - Math.max(barPad, sheet ? sheet.bottom : 0) - SPOT_EDGE;
   const right = vw - SPOT_EDGE - (sheet ? sheet.right : 0), cx = (SPOT_EDGE + right) / 2, cy = (top + bottom) / 2;
@@ -1852,6 +1895,45 @@ function lookAt(kind, sx, sy, o, x, y) {
   if (found(kind) || sx < gaze.x0 || sx > gaze.x1 || sy < gaze.y0 || sy > gaze.y1) return;
   if (gaze.at[kind] !== gaze.frame) { gaze.at[kind] = gaze.frame; gaze.ms[kind] = (gaze.ms[kind] || 0) + gaze.dt; }
   if (gaze.ms[kind] >= (LOOK_MS[kind] ?? SPOT_LOOK_MS) && gaze.now >= gaze.calm) findKind(kind, o, x, y);
+}
+// A visitor in a moment of MOMENTS is seen in it when it's on screen up close where a find would be (gaze): a quick one
+// as it happens, the others after MOMENT_MS. The first time ever: a caption over it, the seen chime and its emoji's stamp
+// flying into the book, and a chip on its page. Not in the first MOMENT_AFTER of its first sighting, so the reveal has its
+// moment alone; one at a time, FIND_GAP apart, as finds are. A hedgehog's finds pop up over it as a 🪲, close up.
+const MOMENT_MS = 900, MOMENT_AFTER = 15000;
+const watched = new WeakMap(), hogFinds = new WeakMap();
+function momentOf(v) {
+  if (v.kind === 'hedgehog') return v.mode === 'sleep' ? 'asleep' : v.mode === 'in' || v.mode === 'out' ? 'way' : '';
+  if (v.mode === 'gulp') return v.caught;
+  if (v.mode === 'sleep') return 'asleep';
+  return (v.mode === 'in' || v.mode === 'out' || v.mode === 'hop') && heronLift(v, visitorPx(v)) > visitorPx(v) * 0.3 ? 'wing' : '';
+}
+// Drawn at (x, y), (sx, sy) on screen (or off it): each frame, for each visitor.
+function watchVisitor(v, x, y, sx, sy) {
+  let key = momentOf(v);
+  if (v.kind === 'hedgehog' && hogFinds.get(v) !== v.finds) {
+    const was = hogFinds.get(v);
+    hogFinds.set(v, v.finds);
+    if (was !== undefined && v.finds > was) { key = 'beetle'; if (cam.zoom >= 10) addEffect('🪲', x, y - 0.25, 0.5, 1100); }
+  }
+  if (!key || !gaze.on || gaze.now < gaze.calm || sx < gaze.x0 || sx > gaze.x1 || sy < gaze.y0 || sy > gaze.y1) return;
+  const pg = journal[v.kind], m = MOMENTS[v.kind]?.find(o => o.k === key);
+  if (!m || !pg?.first || Date.now() - pg.first < MOMENT_AFTER || pg.moments?.[key]) return;
+  if (!m.quick) {
+    let w = watched.get(v);
+    if (!w || w.k !== key) watched.set(v, w = { k: key, ms: 0, frame: -1 });
+    if (w.frame !== gaze.frame) { w.frame = gaze.frame; w.ms += gaze.dt; }
+    if (w.ms < MOMENT_MS) return;
+  }
+  const now = performance.now();
+  (pg.moments ||= {})[key] = Date.now();
+  pg.new = true;
+  saveJournal();
+  gaze.calm = now + FIND_GAP;
+  const s = { id: ++spotId, at: now, look: 0, bx: -1e9, by: -1e9, emoji: m.e, say: `New moment: ${m.say}`, o: v, visitor: v.kind };
+  spots.push(s);
+  seeSpot(s, x, y, now);
+  setTimeout(() => stampFly(v.kind, x, y, m.e), 1300);       // (once its caption's been read)
 }
 // First seen: into the journal, with a caption over it (seeSpot), as a visitor's first sighting has.
 function findKind(kind, o, x, y) {
@@ -3957,8 +4039,16 @@ function spotOf(e) {
     case 'hedgeyoung': return { emoji: '🌿', o: e.hedge, say: `${e.hedge.name} can hide a rabbit now` };
     case 'hedgebloom': return { emoji: '🌸', o: e.hedge, say: `${e.hedge.name} is white with blossom` };
     case 'hedgehaws': return { emoji: '🔴', o: e.hedge, say: `${e.hedge.name} is red with haws` };
-    case 'visitor': return { emoji: VISITORS[e.v.kind].badge, o: e.v, thing: ['visitor', e.v], visitor: e.v.kind, stay: true,
-      say: `A ${VISITORS[e.v.kind].name}, come for ${VISITORS[e.v.kind].for} ${visitorPlace(e.v)}` };
+    case 'visitorsign': {                // (tracks, a feather: what made them comes in a day or two)
+      const heron = e.s.kind === 'heron', known = found(e.s.kind);
+      return { emoji: heron ? '🪶' : '🐾', x: e.s.x, y: e.s.y, say: known ? (heron ? 'A heron’s feather: one may come soon' : 'Hedgehog tracks: one may come soon')
+        : heron ? 'A long feather. Who left it?' : 'Tracks in the dew. Who made them?' };
+    }
+    case 'visitor': {                    // (a kind never seen: a mystery, startReveal)
+      const k = VISITORS[e.v.kind], mystery = !found(e.v.kind);
+      return { emoji: k.badge, o: e.v, thing: !mystery && ['visitor', e.v], visitor: e.v.kind, stay: true, mystery,
+        say: `A ${k.name}, come for ${k.for} ${visitorPlace(e.v)}` };
+    }
   }
   return null;
 }
@@ -3970,7 +4060,7 @@ function spotNews(e, toast) {
   if (!s) return;
   Object.assign(s, { id: ++spotId, at: performance.now(), look: 0, seenAt: 0, bx: -1e9, by: -1e9 });
   spots.push(s);
-  if (spots.length > SPOT_MAX) spots.shift();
+  if (spots.length > SPOT_MAX) spots.splice(Math.max(0, spots.findIndex(o => !o.mystery)), 1);   // (a mystery waits)
   toast?.insertAdjacentHTML('beforeend', ` <a class="go-see" data-act="spot" data-spot="${s.id}">Go see →</a>`);
 }
 
@@ -3982,6 +4072,7 @@ function spotAt(s) {
 
 function goSpot(s) {
   s.going = true;
+  if (s.mystery && ui.speed > 1) setSpeed(1);                  // something new: time slows so you can see it
   if (isAnimal(s.o) && s.o.alive) { select(s.o.id); return; }   // followed: the camera goes with it
   const { x, y } = spotAt(s), close = narrow() ? 16 : 22;
   if (s.thing) pick(...s.thing); else select(0);
@@ -4020,19 +4111,22 @@ function sayArt(s) {
 function seeSpot(s, x, y, now) {
   s.seenAt = now;
   const first = s.first || (s.visitor && sightVisitor(s.o) ? s.visitor : '');   // (a kind seen for the first time ever)
+  if (first && !s.first && startReveal(first, s.o)) return;     // a visitor's: a moment of its own
   if (first) s.say = `First sighting: ${PAGE[first].a}!`;
   if (!s.say) return;
   s.art = sayArt(s);
   addEffect('✨', x, y, 0.6);
-  if (first) stampFly(first, x, y);
+  if (first) { stampFly(first, x, y); buzz([18, 70, 28]); }
   chime(first ? 'named' : 'seen');
 }
 
 // A painting (a visitor's: 'heron:1') sits in a box with room round it, where an emoji fills its own: asked this much bigger.
 const paintedBig = emoji => (emoji.includes(':') ? 1.5 : 1);
 const spotBadges = new Map();        // a badge for each emoji, painted once: a parchment disc, a brass rim, the emoji
-function spotBadge(emoji) {
-  const key = emoji + '|' + dpr;
+// (mystery: a gold disc and the emoji's shadow, for a visitor of a kind never seen)
+const MYSTERY_GOLD = ['#fbeab8', '#e2b75a'];
+function spotBadge(emoji, mystery) {
+  const key = emoji + '|' + dpr + (mystery ? '|?' : '');
   let b = spotBadges.get(key);
   if (b) return b;
   const r = SPOT_R, size = r * 2 + 6, c = document.createElement('canvas');
@@ -4041,11 +4135,21 @@ function spotBadge(emoji) {
   g.scale(dpr, dpr); g.translate(size / 2, size / 2);
   g.fillStyle = 'rgba(70, 55, 25, 0.22)';
   g.beginPath(); g.arc(0, 1.5, r + 1, 0, TAU); g.fill();
-  g.fillStyle = '#fffaf0';
+  if (mystery) { const gold = g.createRadialGradient(-r * 0.3, -r * 0.4, 1, 0, 0, r); gold.addColorStop(0, MYSTERY_GOLD[0]); gold.addColorStop(1, MYSTERY_GOLD[1]); g.fillStyle = gold; }
+  else g.fillStyle = '#fffaf0';
   g.beginPath(); g.arc(0, 0, r, 0, TAU); g.fill();
-  g.lineWidth = 2.2; g.strokeStyle = '#c99a3e'; g.stroke();
-  const e = sprite(emoji, r * 1.25 * paintedBig(emoji), undefined, undefined, true);
+  g.lineWidth = 2.2; g.strokeStyle = mystery ? '#8a5e22' : '#c99a3e'; g.stroke();
+  let e = sprite(emoji, r * 1.25 * paintedBig(emoji), undefined, undefined, true);
+  if (mystery) {                                       // its shadow, in a scratch canvas of its own
+    const sh = document.createElement('canvas'), h = sh.getContext('2d');
+    sh.width = e.canvas.width; sh.height = e.canvas.height;
+    h.drawImage(e.canvas, 0, 0);
+    h.globalCompositeOperation = 'source-in'; h.fillStyle = '#4a3820'; h.fillRect(0, 0, sh.width, sh.height);
+    e = { canvas: sh, size: e.size };
+    g.globalAlpha = 0.85;
+  }
   g.drawImage(e.canvas, -e.size / 2, -e.size / 2, e.size, e.size);
+  g.globalAlpha = 1;
   b = { canvas: c, size };
   spotBadges.set(key, b);
   return b;
@@ -4059,6 +4163,7 @@ function drawSpots(now) {
     const s = spots[i], dt = Math.min(100, now - (s.last || now));
     s.last = now;
     if (s.seenAt ? now - s.seenAt > (s.art ? SAY_MS : SPOT_FADE) : (s.stay ? s.o.gone : now - s.at > SPOT_S * 1000) || (isAnimal(s.o) && !s.o.alive)) { spots.splice(i, 1); continue; }
+    if (reveal.on) continue;                                          // (a first sighting has the screen to itself)
     const { x, y } = spotAt(s), [sx, sy] = toScreen(x, y);
     const lift = isAnimal(s.o) ? creaturePx(s.o) * 0.75 : s.visitor ? visitorTop(s.o) : 14, bob = Math.sin(now / 420 + s.id) * 3;
     let bx = sx, by = sy - lift - SPOT_R - 8 + bob;
@@ -4080,9 +4185,9 @@ function drawSpots(now) {
     ctx.globalAlpha = s.seenAt ? Math.max(0, 1 - (now - s.seenAt) / SPOT_FADE) : Math.min(1, (now - s.at) / 250);
     if (on) {
       const pulse = (now / 1400 + s.id * 0.3) % 1, r = Math.max(10, lift * 0.9) * (0.7 + pulse * 0.8);
-      ctx.strokeStyle = `rgba(255, 246, 220, ${0.85 * (1 - pulse)})`; ctx.lineWidth = 2.5;
+      ctx.strokeStyle = s.mystery ? `rgba(246, 210, 120, ${0.95 * (1 - pulse)})` : `rgba(255, 246, 220, ${0.85 * (1 - pulse)})`; ctx.lineWidth = 2.5;
       ctx.beginPath(); ctx.ellipse(sx, sy + lift * 0.3, r, r * 0.42, 0, 0, TAU); ctx.stroke();
-      ctx.fillStyle = '#fffaf0';                                    // the badge's tail, down to the spot
+      ctx.fillStyle = s.mystery ? MYSTERY_GOLD[1] : '#fffaf0';    // the badge's tail, down to the spot
       ctx.beginPath(); ctx.moveTo(bx - 6, by + SPOT_R - 3); ctx.lineTo(bx, by + SPOT_R + 7); ctx.lineTo(bx + 6, by + SPOT_R - 3); ctx.fill();
     } else {                                                          // at the edge, on the line from the middle to it
       const dx = bx - cx, dy = by - cy;
@@ -4102,7 +4207,7 @@ function drawSpots(now) {
       ctx.lineTo(ax + Math.cos(a - 2.2) * 7, ay + Math.sin(a - 2.2) * 7);
       ctx.fill();
     }
-    const b = spotBadge(s.emoji);
+    const b = spotBadge(s.emoji, s.mystery);
     ctx.drawImage(b.canvas, bx - b.size / 2, by - b.size / 2, b.size, b.size);
     s.bx = bx; s.by = by;
   }
@@ -6568,10 +6673,26 @@ function handleEvent(e) {
       break;
     case 'visitor': {                   // (?keep) a hedgehog come to a hedge, a heron to a pond
       const v = e.v, k = VISITORS[v.kind], at = placeLink(v), who = thingLink('visitor', v.id, k.name), em = visitorGlyph(v.kind);
-      if (v.kind === 'heron') addNews(v.n > 1 ? `${em} A ${who} is back at ${at}, the pond you dug, after its frogs.`
+      if (!found(v.kind)) {             // a kind never seen: it waits for you (sim.js v.wait), and its news doesn't say what it is
+        v.wait = true;
+        addNews(`${visitorGlyph(v.kind, true)} <b>Something ${v.kind === 'heron' ? `tall is flying in to ${at}</b>, the pond you dug.` : `is snuffling under your hedge ${at}.</b>`} A new page for your journal?`);
+      } else if (v.kind === 'heron') addNews(v.n > 1 ? `${em} A ${who} is back at ${at}, the pond you dug, after its frogs.`
         : `${em} <b>A ${who} is flying in to ${at}</b>, the pond you dug, for its frogs.`);
       else addNews(v.n > 1 ? `${em} A ${who} is at your hedge ${at} again, snuffling for beetles.`
         : `${em} <b>A ${who} has come to your hedge ${at}</b>, for ${k.for} it.`);
+      break;
+    }
+    case 'visitorsign': {               // (?keep) tracks by a hedge, a feather by a pond: a visitor on its way (sim.js w.signs)
+      const s = e.s, known = found(s.kind);
+      if (s.kind === 'heron') {
+        const at = thingLink('water', s.pond.id, esc(world.waters[s.pond.id].name));
+        addNews(known ? `🪶 A heron's feather on the bank of ${at}: one has been looking it over, and may be back soon.`
+          : `🪶 <b>A long feather</b> on the bank of ${at}, the pond you dug. Something tall has been looking at it.`);
+      } else {
+        const at = hedgeLink(s.hedge, esc(s.hedge.name)), when = s.day === Math.floor(world.tick / S.TPD) ? 'tonight' : 'soon';
+        addNews(known ? `🐾 Hedgehog tracks in the dew along ${at}: one has been looking round, and may come ${when}.`
+          : `🐾 <b>Little tracks in the dew</b> along your hedge ${at}. Something has been snuffling round it in the night.`);
+      }
       break;
     }
     case 'visitorleft': {
@@ -7854,8 +7975,42 @@ function toggleWeb(open = !web.open) {
   web.open = open;
   if (open && ui.stats.open) toggleStats(false);
   $('#web').classList.toggle('hidden', !open);
-  if (open) { web.pin = web.hover = null; updateWeb(); web.at = performance.now(); }
+  $('#web-scrim').classList.toggle('hidden', !open);
+  if (open) {
+    web.pin = web.hover = null; updateWeb(); web.at = performance.now();
+    if (upright()) slide($('#web'), [{ transform: 'translateY(100%)' }, { transform: 'none' }], 320);
+  }
 }
+$('#web-scrim').addEventListener('click', () => toggleWeb(false));
+
+// On an upright phone it's a sheet from the bottom, like the journal (the CSS): dragged down by its handle or its head
+// it follows the finger, and let go far enough down (or quickly) it shuts; short of that it springs back. The dimmed
+// meadow above it, ✕ at its foot and Back shut it too.
+function dragShut(el, grips, shut) {
+  let d = null;
+  el.addEventListener('pointerdown', e => {
+    if (!upright() || e.button || !e.target.closest(grips) || e.target.closest('button')) return;
+    d = { id: e.pointerId, y: e.clientY, t: e.timeStamp, dy: 0, moved: false };
+  });
+  el.addEventListener('pointermove', e => {
+    if (!d || e.pointerId !== d.id) return;
+    d.dy = Math.max(0, e.clientY - d.y);
+    if (!d.moved) { if (d.dy < 8) return; d.moved = true; el.setPointerCapture(e.pointerId); }
+    el.style.transform = `translateY(${Math.round(d.dy)}px)`;
+  });
+  const lift = e => {
+    if (!d || e.pointerId !== d.id) return;
+    const { dy, t, moved } = d, from = el.style.transform;
+    d = null;
+    if (!moved) return;
+    el.style.transform = '';
+    if (e.type === 'pointerup' && (dy > 110 || dy > 30 && dy / (e.timeStamp - t) > 0.5)) shut();
+    else slide(el, [{ transform: from }, { transform: 'none' }], 200);
+  };
+  el.addEventListener('pointerup', lift);
+  el.addEventListener('pointercancel', lift);
+}
+dragShut($('#web'), '.grab, .web-head', () => toggleWeb(false));
 
 // ------------------------------------------------------------------ the inspector
 
@@ -7902,7 +8057,7 @@ const stripHTML = (tint, face, name, line, meter) => `
     <div class="strip-text"><div class="strip-name">${name}</div><div class="strip-line">${line}</div>
       ${meter ? `<div class="meter strip-meter ${meter[1]}"><span style="width:${Math.round(clamp(meter[0], 0, 1) * 100)}%"></span></div>` : ''}</div>
     <span class="strip-more" aria-hidden="true">︿</span>
-    <button class="close" data-act="close" title="Close (Esc)">✕</button>
+    <button class="close" data-act="close" title="Close (Esc)" aria-label="Close">✕</button>
   </div>`;
 
 const STORY_SHORT = 4;                    // life-story lines shown before "Show all"
@@ -7961,7 +8116,7 @@ function renderInspector() {
         <div class="ins-sub">${c.alive ? `${c.sp.name} · ${lifeStage(c)} · ${age} ${age === 1 ? 'day' : 'days'} old`
           : `${c.sp.name} · lived ${age} ${age === 1 ? 'day' : 'days'}`}</div>
       </div>
-      <button class="close" data-act="close" title="Close (Esc)">✕</button>
+      <button class="close" data-act="close" title="Close (Esc)" aria-label="Close">✕</button>
     </div>
     <div class="mood">${mood.emoji || '🙂'} ${esc(mood.text)}</div>
     ${c.alive ? `<div class="meters">
@@ -8476,7 +8631,7 @@ function renderThing(box, strip) {
         <div class="ins-name">${esc(v.name)}</div>
         <div class="ins-sub">${esc(v.sub)}</div>
       </div>
-      <button class="close" data-act="close" title="Close (Esc)">✕</button>
+      <button class="close" data-act="close" title="Close (Esc)" aria-label="Close">✕</button>
     </div>
     <div class="mood">${v.status}</div>
     ${v.meters ? `<div class="meters">${v.meters.map(([label, k, cls]) =>
@@ -8519,25 +8674,62 @@ function select(id, zoomIn = true) {
   renderInspector();
 }
 
-// The sheet on a phone: tap the folded line for more and the handle for less (the click handler), or
-// swipe the line, the handle or the name, up for more and down for less. Swiping the line down puts it away.
-let swipe = null, pressing = false;          // while a finger is down on it, it isn't rebuilt under the tap
-addEventListener('pointercancel', () => { pressing = false; swipe = null; });
+// The sheet on an upright phone follows the finger: drag the folded line, the handle or the name, and it comes with you
+// (pulled up off the line, it's the whole sheet, its top under the finger); let go and it settles open, folded or away by
+// where it is and how fast it was going. A tap on the line opens it and on the handle folds it (the click handler).
+let swipe = null, pressing = false;          // swipe: a finger on the sheet's grip; while one's down, it isn't rebuilt under it
+let sheetQuiet = 0;                          // (no tap on it just after a drag)
+const SHEET_FLICK = 0.4;                     // px a ms: let go this fast and it goes the way it was going
 $('#inspector').addEventListener('pointerdown', e => {
   pressing = true;
-  if (sheet && sheet.bottom && e.target.closest('.sheet-handle, .ins-head, .strip-row') && !e.target.closest('button:not(.sheet-handle), input')) swipe = { y: e.clientY };
+  if (!(sheet && sheet.bottom) || e.button || !e.target.closest('.sheet-handle, .ins-head, .strip-row') || e.target.closest('button:not(.sheet-handle), input')) return;
+  const box = $('#inspector');
+  box.getAnimations().forEach(a => a.cancel());
+  swipe = { id: e.pointerId, y: e.clientY, ly: e.clientY, lt: e.timeStamp, v: 0, dy: 0, moved: false, strip: box.classList.contains('strip'), h: box.offsetHeight, lift: 0 };
 });
-addEventListener('pointerup', e => {         // on the window: a swipe up soon leaves the folded line
+addEventListener('pointermove', e => {
+  const s = swipe;
+  if (!s || e.pointerId !== s.id) return;
+  const box = $('#inspector'), dy = e.clientY - s.y;
+  if (!s.moved) {
+    if (Math.abs(dy) < 8) return;
+    s.moved = true;
+    box.setPointerCapture(e.pointerId);
+  }
+  if (e.timeStamp > s.lt) { s.v = s.v * 0.4 + (e.clientY - s.ly) / (e.timeStamp - s.lt) * 0.6; s.ly = e.clientY; s.lt = e.timeStamp; }
+  if (s.strip && dy < 0 && !s.lift) {        // up off the folded line: the whole sheet, standing this far above the line
+    ui.sheetUp = true; box.scrollTop = 0; renderInspector();
+    s.lift = Math.max(1, box.offsetHeight - s.h);
+  }
+  s.dy = dy;
+  const y = s.lift ? s.lift + dy : dy;       // its top, down from where it rests
+  box.style.transform = `translateY(${Math.round(y < 0 ? y * 0.2 : y)}px)`;   // (past open it only gives a little)
+});
+function sheetLetGo(e) {
   pressing = false;
-  if (!swipe) return;
-  const dy = e.clientY - swipe.y;
+  const s = swipe;
+  if (!s || e.pointerId !== s.id) return;
   swipe = null;
-  if (dy < -24) ui.sheetUp = true;
-  else if (dy > 24) { if (ui.sheetUp) ui.sheetUp = false; else { select(0); return; } }
-  else return;
-  $('#inspector').scrollTop = 0;
-  renderInspector();
-});
+  if (!s.moved) return;                      // a tap: the click handler has it
+  sheetQuiet = performance.now() + 350;
+  const box = $('#inspector'), y = s.lift ? s.lift + s.dy : s.dy, from = box.style.transform, v = e.type === 'pointercancel' ? 0 : s.v;
+  box.style.transform = '';
+  const settle = (start, ms = 220) => slide(box, [{ transform: start }, { transform: 'none' }], ms).finished.then(measureSheet, () => {});
+  if (s.lift) {                              // pulled up off the line: open, or back down to it
+    if (y < s.lift * 0.65 || v < -SHEET_FLICK) settle(from);
+    else { ui.sheetUp = false; renderInspector(); settle(`translateY(${Math.min(0, Math.round(s.dy))}px)`); }
+  } else if (s.strip) {                      // the line pushed down: away
+    if (y > 28 || v > SHEET_FLICK) select(0);
+    else settle(from, 160);
+  } else if (y > s.h * 0.75) select(0);      // the open sheet dragged most of the way off: away
+  else if (y > 70 || v > SHEET_FLICK) {      // down: folded to its line
+    ui.sheetUp = false; box.scrollTop = 0; renderInspector();
+    settle(`translateY(${Math.min(0, Math.round(y - (s.h - box.offsetHeight)))}px)`);
+  } else settle(from, 160);
+}
+addEventListener('pointerup', sheetLetGo);   // (on the window: the finger may be anywhere by now)
+addEventListener('pointercancel', e => { if (swipe) sheetLetGo(e); pressing = false; });
+$('#inspector').addEventListener('click', e => { if (performance.now() < sheetQuiet) e.stopPropagation(); }, true);
 
 function creatureAt(sx, sy) {
   const [wx, wy] = toWorld(sx, sy);
@@ -8640,17 +8832,29 @@ let fingerTap = false;                    // the last press was a finger: taps m
 const flick = { vx: 0, vy: 0 };
 const fingers = new Map();
 
+// Zoom with one hand, with Look in hand, as Google's and Apple's maps do: a double tap zooms in on the spot, a double
+// tap held and dragged zooms as it goes (down for closer, up for further off), and a tap of two fingers zooms out.
+// A tap that would only put the inspector away waits to see if it's the first of two (tapAway), so a double tap
+// next to the one you follow doesn't lose it.
+const DOUBLE_MS = 300, DOUBLE_PX = 40;    // the second tap: this soon after the first, this near it
+const ZOOM_DRAG = 0.009;                  // a double tap dragged: the zoom doubles every 77 px or so
+let lastTap = null, zoomDrag = null;      // the last tap of a finger { t, x, y }; a double tap held { id, y, z, sx, sy, moved }
+let zoomTo = null;                        // a zoom easing in or out on a spot { sx, sy, z } (frame)
+let tapAway = 0;
+
 function startPinch() {
   const [a, b] = fingers.values(), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
   const [wx, wy] = toWorld(mx, my);
-  pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, zoom: cam.zoom, wx, wy };
+  pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, zoom: cam.zoom, wx, wy, mx, my, t0: performance.now(), moved: false };
   dropPlace();                            // (a pond being placed: two fingers pinch instead)
-  drag = null; cam.goal = null; ui.follow = false;
+  drag = null; zoomDrag = null; zoomTo = null; cam.goal = null; ui.follow = false;
+  holdHide();
 }
 
 function movePinch() {
-  const [a, b] = fingers.values(), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-  cam.zoom = clamp(pinch.zoom * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d, fitZoom, 64);
+  const [a, b] = fingers.values(), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, d = Math.hypot(a.x - b.x, a.y - b.y);
+  if (Math.abs(d - pinch.d) > 12 || Math.hypot(mx - pinch.mx, my - pinch.my) > 12) pinch.moved = true;
+  cam.zoom = clamp(pinch.zoom * d / pinch.d, fitZoom, 64);
   cam.x = pinch.wx - (mx - vw / 2) / cam.zoom; cam.y = pinch.wy - (my - vh / 2) / cam.zoom;
   clampCam();
 }
@@ -8660,6 +8864,7 @@ function liftFinger(e) {
   if (!pinch) return false;
   if (fingers.size >= 2) startPinch();
   else {                                  // one finger left: carry on as a plain drag, never a tap
+    if (!pinch.moved && performance.now() - pinch.t0 < DOUBLE_MS) zoomTo = { sx: pinch.mx, sy: pinch.my, z: clamp(cam.zoom / 2, fitZoom, 64) };   // two fingers tapped: out
     pinch = null;
     const [f] = fingers.values();
     if (f) drag = { x: f.x, y: f.y, cx: cam.x, cy: cam.y, moved: true, paint: false, t: e.timeStamp, lx: f.x, ly: f.y, vx: 0, vy: 0 };
@@ -8668,8 +8873,21 @@ function liftFinger(e) {
 }
 
 // A finger held still on the meadow opens the ring there, as a right-click does (iPhones never send one).
+// While it's held a ring grows under it, so it's plain the hold is going somewhere (a quick tap is over before it shows).
 const HOLD_MS = 450;
-let holdTimer = 0;
+const HOLD_SHOW = 140;                    // the ring under a held finger waits this long before it shows
+let holdTimer = 0, holdAnim = null;
+function holdShow(x, y) {
+  holdHide();
+  if (still()) return;
+  const el = $('#hold');
+  el.style.left = x + 'px'; el.style.top = y + 'px';
+  holdAnim = el.animate([{ opacity: 0, transform: 'scale(0.35)' }, { opacity: 1, transform: 'none' }],
+    { duration: HOLD_MS - HOLD_SHOW, delay: HOLD_SHOW, easing: 'ease-out', fill: 'both' });
+}
+function holdHide() { holdAnim?.cancel(); holdAnim = null; }
+// Android buzzes a little where a hold lands, and for a first sighting. (iPhones give a web page no vibration.)
+const buzz = pattern => { try { navigator.userActivation?.hasBeenActive !== false && navigator.vibrate?.(pattern); } catch (e) { /* fine */ } };
 
 canvas.addEventListener('pointerdown', e => {
   if (intro.on) { endIntro(true); return; }
@@ -8680,9 +8898,19 @@ canvas.addEventListener('pointerdown', e => {
   canvas.setPointerCapture(e.pointerId);
   fingerTap = e.pointerType === 'touch';
   flick.vx = flick.vy = 0;
+  zoomTo = null;
   clearTimeout(holdTimer);
   if (fingerTap) fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (fingers.size >= 2) { startPinch(); return; }
+  const tap = lastTap;
+  lastTap = null;
+  if (fingerTap && ui.tool === 'look' && !LAB && tap && e.timeStamp - tap.t < DOUBLE_MS && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) < DOUBLE_PX) {
+    clearTimeout(tapAway); tapAway = 0;   // (the first tap put nothing away after all)
+    const sel = ui.follow && world.byId.get(ui.selectedId), [sx, sy] = sel ? toScreen(drawnAt(sel).x, drawnAt(sel).y) : [e.clientX, e.clientY];
+    zoomDrag = { id: e.pointerId, y: e.clientY, z: cam.zoom, sx, sy, moved: false };
+    drag = null; cam.goal = null;
+    return;
+  }
   drag = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y, moved: false, paint: (ui.tool === 'grass' || ui.tool === 'fire') && e.button === 0,
     place: placeTool(ui.tool) && e.button === 0, t: e.timeStamp, lx: e.clientX, ly: e.clientY, vx: 0, vy: 0, id: e.pointerId,
     grab: ui.tool === 'look' && e.button === 0 && !LAB && !KEEP ? grabAt(e.clientX, e.clientY) : null };   // dragged, it's picked up (not at ?keep)
@@ -8690,9 +8918,12 @@ canvas.addEventListener('pointerdown', e => {
   else if (drag.place) placeAt(e.clientX, e.clientY, true);
   else if (fingerTap && !LAB) {
     const d = drag;
+    holdShow(d.x, d.y);
     holdTimer = setTimeout(() => {
+      holdHide();
       if (drag !== d || d.moved || fingers.size !== 1) return;
       drag = null;                        // lifting the finger now is no tap
+      buzz(12);
       if (d.grab && d.grab.alive && !d.grab.hidden) pickUp(d.grab, d.x, d.y, d.id);   // held on an animal: up it comes
       else openRing(d.x, d.y);
     }, HOLD_MS);
@@ -8701,6 +8932,11 @@ canvas.addEventListener('pointerdown', e => {
 canvas.addEventListener('pointermove', e => {
   if (fingers.has(e.pointerId)) fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (pinch) { movePinch(); return; }
+  if (zoomDrag && e.pointerId === zoomDrag.id) {
+    const dy = e.clientY - zoomDrag.y;
+    if (zoomDrag.moved || Math.abs(dy) > 8) { zoomDrag.moved = true; zoomAt(zoomDrag.sx, zoomDrag.sy, zoomDrag.z * Math.exp(dy * ZOOM_DRAG)); }
+    return;
+  }
   if (intro.on) return;
   if (held) { if (e.pointerId === held.id) { held.sx = e.clientX; held.sy = e.clientY; } return; }
   if (!drag && placeTool(ui.tool) && e.pointerType === 'mouse') { placeAt(e.clientX, e.clientY, false); return; }   // where a tap would dig
@@ -8718,6 +8954,7 @@ canvas.addEventListener('pointermove', e => {
     return;
   }
   if (!drag.moved && Math.abs(dx) + Math.abs(dy) > (e.pointerType === 'touch' ? 10 : 4)) {
+    holdHide();
     if (drag.grab && drag.grab.alive && !drag.grab.hidden) { pickUp(drag.grab, e.clientX, e.clientY, e.pointerId); drag = null; return; }
     drag.moved = true;
     if (!drag.paint) { drag.x = e.clientX; drag.y = e.clientY; dx = dy = 0; }   // start from here, no jump
@@ -8738,18 +8975,30 @@ canvas.addEventListener('pointermove', e => {
   }
 });
 canvas.addEventListener('pointerup', e => {
+  holdHide();
   if (held && e.pointerId === held.id) { fingers.delete(e.pointerId); letGo(); return; }
+  if (zoomDrag && e.pointerId === zoomDrag.id) {           // a double tap: in on the spot, unless it was dragged
+    fingers.delete(e.pointerId);
+    if (!zoomDrag.moved) zoomTo = { sx: zoomDrag.sx, sy: zoomDrag.sy, z: clamp(cam.zoom * 2, fitZoom, 64) };
+    zoomDrag = null;
+    return;
+  }
   if (liftFinger(e)) return;
   canvas.classList.remove('dragging');
   if (drag?.place) { drag = null; digPlaced(); return; }
-  if (drag && !drag.moved) click(e.clientX, e.clientY);
+  if (drag && !drag.moved) {
+    click(e.clientX, e.clientY);
+    if (fingerTap) lastTap = { t: e.timeStamp, x: e.clientX, y: e.clientY };
+  }
   else if (drag && !drag.paint && e.pointerType === 'touch' && e.timeStamp - drag.t < 60 && Math.hypot(drag.vx, drag.vy) > 250) {
     flick.vx = drag.vx; flick.vy = drag.vy;
   }
   drag = null;
 });
 canvas.addEventListener('pointercancel', e => {
+  holdHide();
   if (held && e.pointerId === held.id) { fingers.delete(e.pointerId); letGo(); return; }
+  if (zoomDrag && e.pointerId === zoomDrag.id) { fingers.delete(e.pointerId); zoomDrag = null; return; }
   if (liftFinger(e)) return;
   canvas.classList.remove('dragging');
   if (drag?.place) dropPlace();
@@ -8757,6 +9006,8 @@ canvas.addEventListener('pointercancel', e => {
 });
 // Safari ignores the viewport's no-zoom, and a zoomed page makes the whole meadow blurry.
 document.addEventListener('gesturestart', e => e.preventDefault());
+// Safari on a phone shows a button pressed (:active) only where something listens for touches.
+document.addEventListener('touchstart', () => {}, { passive: true });
 canvas.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') { ui.hoverId = 0; ui.hoverHive = null; if (placing && !placing.press) dropPlace(); } });   // a lifted finger leaves too
 canvas.addEventListener('contextmenu', e => { e.preventDefault(); if (!LAB && !ui.ring) openRing(e.clientX, e.clientY); });   // Android's long-press sends one too
 canvas.addEventListener('wheel', e => {
@@ -8772,7 +9023,7 @@ canvas.addEventListener('wheel', e => {
     cam.x += dx / cam.zoom; cam.y += dy / cam.zoom;
     ui.follow = false; glide = null; clampCam();
   } else {                            // mouse wheel or pinch: zoom
-    cam.goal = null; glide = null;
+    cam.goal = null; glide = null; zoomTo = null;
     zoomAt(e.clientX, e.clientY, cam.zoom * Math.exp(-ddy * (e.ctrlKey ? 0.012 : 0.0018)));
   }
 }, { passive: false });
@@ -8897,12 +9148,15 @@ function drawFalling(c, f, sx, sy, now) {
 }
 
 function click(sx, sy) {
+  clearTimeout(tapAway); tapAway = 0;
   const sp = spotHit(sx, sy);
   if (sp) { goSpot(sp); return; }
   const [wx, wy] = toWorld(sx, sy);
   if (ui.tool === 'look') {
     const c = creatureAt(sx, sy), t = !c && thingAt(sx, sy);
-    if (t) pick(t.kind, t.it, [wx, wy]); else select(c ? c.id : 0);
+    if (t) pick(t.kind, t.it, [wx, wy]);
+    else if (!c && fingerTap && (ui.selectedId || ui.picked)) tapAway = setTimeout(() => { tapAway = 0; select(0); syncBack(); }, DOUBLE_MS);   // (unless it's a double tap)
+    else select(c ? c.id : 0);
     if (t?.kind === 'visitor') tapVisitor(t.it);
     ui.hoverHive = null;
   } else if (S.KINDS.includes(ui.tool)) release(ui.tool, wx, wy);
@@ -9323,7 +9577,7 @@ const BLOOM_SOON = { soon: 'in a day', days: 'in 2 or 3 days', autumn: 'in 3 day
 // What a tool brings, with when or where: [icon, what, when, the Dry Year's].
 function tipRows(k, touch) {
   if (k === 'look') return [['🐇', 'Follow an animal', touch ? 'tap it' : 'click it'], ['🌳', 'Read a tree, a hive, the water', touch ? 'tap it' : 'click it'],
-    ['⏸', 'Stop time', touch ? 'the ⏸ button' : 'space']];
+    ...(touch ? [['🔎', 'Zoom in', 'double-tap']] : []), ['⏸', 'Stop time', touch ? 'the ⏸ button' : 'space']];
   const crows = ['🐦‍⬛', 'Crows come', 'at once'];
   if (k === 'pond') return [...(S.dryComing(world) ? [['☀️', 'Green banks in the Dry Year', `${S.DRY_NEAR} tiles`, true]] : []),
     ['🐸', 'Frogs move in', S.seasonOf(world.tick) === 3 ? 'in spring' : 'in days'], crows, ['💧', 'Lasts all year', 'on low ground']];
@@ -9609,12 +9863,17 @@ function pageHTML(p) {
   if (p.visits) facts.push(['🧭', 'Comes to', p.where]);
   if (p.visits && named) facts.push(['🕰️', 'When', p.when]);
   const tool = st !== 'found' && p.tool && KEEP_TOOLS.find(([k]) => k === p.tool);
+  const shot = st === 'found' && photos[p.k], mo = st === 'found' && MOMENTS[p.k], got = mo ? mo.filter(m => pg.moments?.[m.k]).length : 0;
   return `<div class="pg-grab"><div class="no">No. ${p.no} · ${p.visits ? 'Comes by' : 'Lives here'}</div></div>
     <div class="pg-body"><div class="pg-in">
-      <div class="art"><img src="${jArt(p, true)}" class="${st === 'found' ? '' : st === 'glimpsed' ? 'half' : 'sil'}"${fitStyle(p)} alt=""></div>
+      ${shot ? `<div class="art snap"><figure><img src="${shot.src}" alt="Your first sighting"><figcaption>${esc(shot.where)}${firstSeen(pg) ? ` · ${firstSeen(pg)}` : ''}</figcaption>`
+        + `<img class="stamp" src="${jArt(p, true)}" alt=""></figure></div>`
+        : `<div class="art"><img src="${jArt(p, true)}" class="${st === 'found' ? '' : st === 'glimpsed' ? 'half' : 'sil'}"${fitStyle(p)} alt=""></div>`}
       <h3 class="fr${named ? '' : ' q'}">${named ? p.name : '? ? ?'}</h3>
       ${st === 'found' ? `<p>${p.note}</p>` : `<p class="hint">${st === 'glimpsed' ? p.glimpse : p.hint}</p>`}
       ${facts.length ? `<ul>${facts.map(([i, a, b]) => `<li><i>${i}</i><span>${a}</span><em>${b}</em></li>`).join('')}</ul>` : ''}
+      ${mo ? `<div class="moments"><h4>Moments<span>${got}/${mo.length}</span></h4><div class="m-list">${mo.map(m => (pg.moments?.[m.k]
+        ? `<span class="m on"><i>${m.e}</i>${m.name}</span>` : `<span class="m"><i>?</i>${m.hint}</span>`)).join('')}</div></div>` : ''}
       ${tool ? `<button class="go" data-j-tool="${tool[0]}"><span class="e">${tool[1]}</span>${tool[2]}</button>` : ''}
     </div></div>
     <div class="pg-foot">
@@ -9788,8 +10047,8 @@ if (KEEP) {
 // One at a time; the rest wait their turn (each already in the journal, held back from the book's count till it lands).
 const stamps = [];
 let stamping = false;
-function stampFly(kind, x, y) {
-  stamps.push({ kind, x, y });
+function stampFly(kind, x, y, emoji) {           // (emoji: a moment's, flown in place of the painting)
+  stamps.push({ kind, x, y, emoji });
   if (!stamping) { stamping = true; setTimeout(nextStamp, 0); }   // (out of the frame being drawn)
 }
 function nextStamp() {
@@ -9809,7 +10068,7 @@ function nextStamp() {
   const cx = (x + bx) / 2 + (bx > x ? 1 : -1) * 60, cy = Math.min(y, by) - 160;      // the arc's pull
   const el = document.createElement('div');
   el.id = 'jstamp';
-  el.innerHTML = `<img src="${jArt(PAGE[q.kind])}"${fitStyle(PAGE[q.kind])} alt="">`;
+  el.innerHTML = q.emoji ? `<img src="${jArt({ k: '~' + q.emoji, art: q.emoji })}" alt="">` : `<img src="${jArt(PAGE[q.kind])}"${fitStyle(PAGE[q.kind])} alt="">`;
   document.body.append(el);
   const fly = Array.from({ length: 12 }, (_, i) => {
     const t = (i + 1) / 12, u = 1 - t, px = u * u * x + 2 * u * t * cx + t * t * bx, py = u * u * (y - 24) + 2 * u * t * cy + t * t * by;
@@ -9822,6 +10081,76 @@ function nextStamp() {
     { transform: `translate(${x}px, ${y - 24}px) scale(1)`, offset: 0.4 },
     ...fly,
   ], { duration: 2100, fill: 'forwards' }).onfinish = () => { el.remove(); land(); };
+}
+
+// A visitor of a kind you've never seen comes as a mystery: its news says "Something…", its marker is gold with the
+// shadow from its empty page (spotBadge), it waits for you (sim.js v.wait), and "Go see" slows time to 1x. Seen, it
+// gets a moment of its own: time eases down to 1x, the camera leans in, the cards step away and the intro's bars slide
+// in with "First sighting" over the meadow and its name under it, and the meadow hushes for a breath before the bells
+// (sound.js found). Then the bars go, its stamp flies into the book and its panel opens. Only a visitor's first
+// sighting gets this, a few times ever (a kind that lives here gets its caption and stamp); any key, click or touch
+// ends it early, and while the intro or the idle camera has the bars it's the caption and stamp too.
+const REVEAL_MS = 3600, REVEAL_TILES = 15, REVEAL_SNAP = 2400;   // (the snapshot once it has leaned in and the sparkles are gone)   // (it leans in till the screen's short side is REVEAL_TILES tiles, if it's further out)
+const reveal = { on: false, kind: '', v: null, at: 0 };
+function startReveal(kind, v) {
+  if (reveal.on || intro.on || idle.on || away.on || document.hidden) return false;
+  Object.assign(reveal, { on: true, kind, v, at: performance.now(), snapped: false });
+  gaze.calm = reveal.at + REVEAL_MS + FIND_GAP;         // (no other find in the middle of it, or straight after)
+  $('#reveal-top').textContent = `✨ First sighting · No. ${PAGE[kind].no}`;
+  $('#reveal-name').textContent = PAGE[kind].name;
+  $('#reveal-why').textContent = `come for ${VISITORS[kind].for} ${visitorPlace(v)}`;
+  document.body.classList.add('reveal');
+  const d = drawnAt(v);
+  for (let i = 0; i < 6; i++) { const a = i * TAU / 6; addEffect('✨', d.x + Math.cos(a) * 1.5, d.y + Math.sin(a) * 0.8, 0.4 + 0.5 * (i & 1), 1500 + i * 120); }
+  const close = Math.min(56, Math.min(vw, vh) / REVEAL_TILES);
+  if (!still() && cam.zoom < close) cam.goal = close;
+  chime('found');
+  return true;
+}
+function revealFrame(now, dt) {
+  if (!still() && !ui.follow) { const d = drawnAt(reveal.v); glide = { x: d.x, y: d.y }; }   // (the camera goes with it)
+  if (ui.speed > 1) {                                  // eased down to 1x, from 60x in under a second
+    ui.speed = Math.max(1, ui.speed * Math.pow(0.005, dt));
+    if (ui.speed === 1) setSpeed(1);
+  }
+  if (now - reveal.at > REVEAL_MS) endReveal();
+}
+function endReveal() {
+  if (!reveal.on) return;
+  if (!reveal.snapped) snapReveal(performance.now());
+  reveal.on = false;
+  if (ui.speed > 1) setSpeed(1);
+  document.body.classList.remove('reveal');
+  document.body.classList.add('ui-in');
+  setTimeout(() => document.body.classList.remove('ui-in'), 1100);
+  const v = reveal.v, d = drawnAt(v);
+  stampFly(reveal.kind, d.x, d.y);
+  if (!ui.selectedId && !ui.picked && world.visitors?.includes(v) && !v.gone) pick('visitor', v);
+}
+for (const type of ['pointerdown', 'keydown', 'wheel']) {
+  addEventListener(type, () => { if (reveal.on && performance.now() - reveal.at > 300) endReveal(); }, { capture: true, passive: true });
+}
+// Its picture for the journal: SNAP_TILES of the meadow across round it, the ground drawn in under the rest as copyMeadow
+// does, as a small JPEG of SNAP (CSS px, SNAP_K of it in pixels), once.
+const SNAP = [300, 200], SNAP_K = 1.5, SNAP_TILES = 8, SNAP_DARK = 0.35;   // (how much of the night's dark it keeps: enough to tell, not to hide it)
+function snapReveal(now) {
+  reveal.snapped = true;
+  const v = reveal.v, d = drawnAt(v), [sx, sy] = toScreen(d.x, d.y), w = Math.min(vw, Math.max(160, SNAP_TILES * cam.zoom)), h = Math.min(vh, w * SNAP[1] / SNAP[0]);
+  const x = clamp(sx - w / 2, 0, vw - w), y = clamp(sy - visitorPx(v) * 0.2 - h / 2, 0, vh - h);
+  groundIn = snapping = true; render(now);
+  if (groundIn !== true) {
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'destination-over';
+    ctx.drawImage(Ground.canvas, ...groundIn, 0, 0, canvas.width, canvas.height);
+    ctx.restore();
+  }
+  groundIn = snapping = false;
+  const c = document.createElement('canvas');
+  c.width = Math.round(SNAP[0] * SNAP_K); c.height = Math.round(SNAP[1] * SNAP_K);
+  const g = c.getContext('2d');
+  g.fillStyle = '#7d9a55'; g.fillRect(0, 0, c.width, c.height);   // (under it, should the ground not be drawn in)
+  g.drawImage(canvas, x * dpr, y * dpr, w * dpr, h * dpr, 0, 0, c.width, c.height);
+  photos[reveal.kind] = { src: c.toDataURL('image/jpeg', 0.8), where: visitorPlace(v), t: world.tick };
+  try { localStorage.setItem(PHOTOS, JSON.stringify(photos)); } catch (e) { /* this visit only, then */ }
 }
 
 // The most of each kind that lives here alive at once, in any meadow of yours: looked at once a sim day.
@@ -10192,11 +10521,7 @@ document.addEventListener('keydown', e => {
   } else if ('1234'.includes(e.key) && e.key.length === 1) setSpeed([1, 4, 15, 60][+e.key - 1]);
   else if (e.key === 'Escape' && tip.tool) hideTip();   // ?keep: a tool's card, put away
   else if (e.key === 'Escape' && placing) dropPlace();   // a pond being placed: called off
-  else if (e.key === 'Escape') {
-    const more = !$('#more-menu').classList.contains('hidden');
-    awayOpen() ? closeAway() : lostOpen() ? showLost(false) : homeOpen() ? homeGuide(false) : webOpen() ? toggleWeb(false) : ui.ring ? closeRing() : $('#toolbar').classList.contains('open') ? toggleTools(false) : ui.sky.menu ? toggleSkyMenu(false) : more ? toggleMore(false) : ui.stats.open ? toggleStats(false)
-      : ui.tool !== 'look' ? setTool('look') : select(0);
-  }
+  else if (e.key === 'Escape') stepOut();
   else if (e.key === 's') toggleStats();
   else if (e.key === 'f' && ui.selectedId) { ui.follow = !ui.follow; renderInspector(); }
   else if (e.key === 'l') { setTool('look'); showTip('look', TIP_KEY_MS, 'key'); }   // (the card only at ?keep)
@@ -10215,6 +10540,67 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'p') copyMeadow().then(([w, h]) => addNews(`📋 Copied the meadow, ${w} × ${h}`), () => addNews('📋 The browser would not let me copy the meadow.'));
   else if (e.key === '+' || e.key === '=') zoomAt(vw / 2, vh / 2, cam.zoom * 1.25);
   else if (e.key === '-') zoomAt(vw / 2, vh / 2, cam.zoom / 1.25);
+});
+
+// ------------------------------------------------------------------ Back
+//
+// Back (Android's button, Safari's swipe from the edge) steps out of what's open, as Esc does, instead of leaving the
+// meadow: a card or a menu shuts, the inspector's open sheet folds and then it shuts, a tool goes back to Look (stepOut).
+// Each thing open holds a step of this page's in the browser's history (back.token). They're counted, not named
+// (opened): after every tap or key, once everything else has had it, the history is brought level with what's open, a
+// step pushed for each one opened and taken back for each one shut (one shut and another opened in the same tap leave
+// it be). Safari skips a step a page adds outside a tap, so they're only ever added in one. The journal keeps steps of
+// its own (journalTo), over these while it's open.
+const back = { token: Math.random().toString(36).slice(2), depth: 0, going: false, timer: 0 };
+const moreOpen = () => !$('#more-menu').classList.contains('hidden');
+const tasksOpen = () => KEEP && tasks.on && !tasks.fold && narrow();   // (a phone's is folded; open, it's a card over the meadow)
+function opened() {
+  if (LAB || intro.on || jr.depth) return back.depth;
+  const ins = $('#inspector').classList, sheetUp = ins.contains('open') && narrow() && !ins.contains('strip');
+  return [awayOpen(), lostOpen(), homeOpen(), askOpen(), webOpen(), ui.ring, $('#toolbar').classList.contains('open'), ui.sky.menu,
+    moreOpen(), ui.stats.open, tasksOpen(), ui.tool !== 'look', ins.contains('open'), sheetUp].filter(Boolean).length;
+}
+// The one on top shuts (Esc, and Back once for each step it takes).
+function stepOut() {
+  const ins = $('#inspector').classList;
+  if (awayOpen()) closeAway();
+  else if (lostOpen()) showLost(false);
+  else if (homeOpen()) homeGuide(false);
+  else if (askOpen()) askIdeas(false);
+  else if (webOpen()) toggleWeb(false);
+  else if (ui.ring) closeRing();
+  else if ($('#toolbar').classList.contains('open')) toggleTools(false);
+  else if (ui.sky.menu) toggleSkyMenu(false);
+  else if (moreOpen()) toggleMore(false);
+  else if (ui.stats.open) toggleStats(false);
+  else if (tasksOpen()) foldTasks(true);
+  else if (ui.tool !== 'look') setTool('look');
+  else if (ins.contains('open') && narrow() && !ins.contains('strip')) { ui.sheetUp = false; $('#inspector').scrollTop = 0; renderInspector(); }
+  else if (ins.contains('open')) select(0);
+  else return false;
+  return true;
+}
+function syncBack() {
+  if (back.going || jr.depth || jr.going || LAB) return;
+  const n = opened();
+  while (back.depth < n) history.pushState({ meadow: back.token, n: ++back.depth }, '');
+  if (n < back.depth && history.state?.meadow === back.token && history.state.n === back.depth) goBack(back.depth - n);
+}
+function goBack(k) {
+  back.going = true;
+  clearTimeout(back.timer); back.timer = setTimeout(() => { back.going = false; }, 800);   // (in case no popstate comes)
+  history.go(-k);
+}
+for (const type of ['click', 'pointerup', 'keydown']) addEventListener(type, syncBack);
+addEventListener('popstate', e => {
+  if (e.state?.j === jr.token) return;                     // a step of the journal's: its own
+  const n = e.state?.meadow === back.token ? e.state.n : 0;
+  if (!LAB && location.search !== meadowLink(world.seed)) history.replaceState(history.state, '', meadowLink(world.seed));   // (a step taken before a new meadow)
+  if (back.going) { back.going = false; back.depth = n; return; }   // ours, taking back steps for what was shut
+  for (let i = 0; i < 16 && opened() > n; i++) if (!stepOut()) break;
+  back.depth = n;
+  const now = opened();
+  if (now < n) goBack(n - now);                             // past steps for what shut by itself, or Forward into old ones
 });
 
 // ------------------------------------------------------------------ the intro
@@ -10773,7 +11159,7 @@ function idleNews(e) {
     case 'fledge': n = { c: e.c, w: 4, line: `${e.c.name}, an owlet out of the hollow` }; break;
     case 'cubsout': n = { c: e.c, w: 4, line: `${e.c.name}, an otter cub out of the holt` }; break;
     case 'holt': n = { c: e.c, w: 4, line: `${e.c.name}'s new holt on the bank` }; break;
-    case 'visitor': n = { x: e.v.tx, y: e.v.ty, w: 8, line: `A ${VISITORS[e.v.kind].name}, come to the ${VISITORS[e.v.kind].home}`, big: true }; break;
+    case 'visitor': n = { x: e.v.tx, y: e.v.ty, w: 8, line: found(e.v.kind) ? `A ${VISITORS[e.v.kind].name}, come to the ${VISITORS[e.v.kind].home}` : `Something has come to the ${VISITORS[e.v.kind].home}`, big: true }; break;
   }
   if (!n) return;
   if (n.c || n.x !== undefined) idle.news = Object.assign(n, { at });
@@ -11021,7 +11407,7 @@ function resumeWorld(rec) {
   if (rec.cam) { cam.zoom = Math.max(rec.cam.zoom, fitZoom); cam.x = rec.cam.x; cam.y = rec.cam.y; clampCam(); }
   const c = world.byId.get(rec.selectedId);
   if (c) { select(c.id, false); ui.follow = rec.follow; }
-  history.replaceState(null, '', meadowLink(world.seed));
+  history.replaceState(history.state, '', meadowLink(world.seed));
   return true;
 }
 
@@ -11138,7 +11524,7 @@ function newWorld(seed, arrival = false, dry = DRY_PARAM) {
   const by = big.length ? ' by ' + big.join(' and ') : '';
   addNews(arrival ? `🌱 A new meadow${by}. Nobody lives here yet.`
     : `🌱 A new meadow${by}. <b>${world.count.rabbit} rabbits</b> and <b>${world.count.fox} foxes</b> have just moved in.`);
-  if (!LAB) history.replaceState(null, '', meadowLink(seed));
+  if (!LAB) history.replaceState(history.state, '', meadowLink(seed));   // (the state: Back's step, if one's open)
   if (!LAB && !arrival) homeView();
 }
 
@@ -11203,6 +11589,23 @@ const SIM_MS = 6;
 // 30 frames a second are plenty for that, unless you're looking around or something is happening.
 const RESTING_MS = 30, WOKEN_MS = 500;
 let lastDrawn = 0, lastInput = 0;
+
+// A meadow is for watching, so on a phone or tablet the screen stays on while time runs, till nobody has touched it
+// for WAKE_MS; then it dims and locks as it always would. Paused or hidden, it's let go (the Screen Wake Lock API;
+// a browser without it does as it likes).
+const WAKE_MS = 10 * 60 * 1000;
+const wake = { lock: null, asking: false, retry: 0, touch: matchMedia('(pointer: coarse)') };
+function wakeTick(now) {
+  if (!navigator.wakeLock || !wake.touch.matches) return;
+  const want = ui.speed > 0 && !document.hidden && now - lastInput < WAKE_MS && !LAB;
+  if (want && !wake.lock && !wake.asking && now > wake.retry) {
+    wake.asking = true;
+    navigator.wakeLock.request('screen').then(l => {
+      wake.lock = l;
+      l.addEventListener('release', () => { if (wake.lock === l) wake.lock = null; });   // (hidden, the browser lets it go itself)
+    }, () => { wake.retry = now + 30000; }).finally(() => { wake.asking = false; });
+  } else if (!want && wake.lock) { wake.lock.release().catch(() => {}); wake.lock = null; }
+}
 const camWas = { x: 0, y: 0, zoom: 0 };
 for (const type of ['pointerdown', 'pointermove', 'wheel', 'keydown', 'resize']) addEventListener(type, () => { lastInput = performance.now(); }, { passive: true });
 function resting(now) {
@@ -11217,6 +11620,7 @@ function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   if (intro.on) introFrame(now, dt);
+  if (reveal.on) revealFrame(now, dt);
 
   if (away.on) awayFrame();
   else if (ui.speed > 0) {
@@ -11273,6 +11677,11 @@ function frame(now) {
     if (Math.abs(cam.goal - cam.zoom) < 0.05) cam.goal = null;
     cam.zoom = Math.max(cam.zoom, fitZoom);
   }
+  if (zoomTo) {                           // a double tap's zoom (or two fingers'), eased in or out on its spot
+    const goal = clamp(zoomTo.z, fitZoom, 64), z = cam.zoom + (goal - cam.zoom) * (1 - Math.pow(0.0002, dt));
+    zoomAt(zoomTo.sx, zoomTo.sy, Math.abs(goal - z) < goal * 0.01 ? goal : z);
+    if (cam.zoom === goal || drag?.moved || pinch || held) zoomTo = null;
+  }
   clampCam();
 
   const rest = resting(now) && now - lastDrawn < RESTING_MS;
@@ -11282,9 +11691,11 @@ function frame(now) {
     if (terrainTick < 0 || (world.tick - terrainTick >= 12 && now - terrainAt >= TERRAIN_MS)) paintTerrain();
     render(now);
     if (lab?.draw) lab.draw(ctx, dpr);
+    if (reveal.on && !reveal.snapped && now - reveal.at > REVEAL_SNAP) snapReveal(now);
   }
 
   if (now - lastCard > 250) {
+    wakeTick(now);
     askTick(Math.min(now - lastCard, 1000));
     guideTick(now);
     alertsTick(now);                                     // (?keep)
@@ -11369,7 +11780,7 @@ function begin(rec) {
   const back = rec && resumeWorld(rec);
   if (!back) newWorld(seedParam || randomSeed(), firstVisit);
   if (rec && !back) addNews("🌱 Your meadow couldn't come along into this version of the game, so here is a new one.");
-  if (ui.newsLog.some(n => n.html.includes('--glyph-'))) for (const kind in VISITORS) visitorGlyph(kind);   // (its picture, for the news kept)
+  if (ui.newsLog.some(n => n.html.includes('--glyph-'))) for (const kind in VISITORS) glyphVar(kind);   // (its picture, for the news kept)
 
   if (LAB) {
     document.body.classList.add('lab');

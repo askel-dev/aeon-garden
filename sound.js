@@ -227,6 +227,16 @@ function duck(t, depth, back) {
 }
 let farAt = -1e9;                                  // when the last distant roll started
 
+// The meadow and the music step back for a moment (a first sighting), then come in again over a second or two.
+function lull(t, sec) {
+  for (const [bus, v] of [[ambBus, 0.8], [musicBus, 0.45]]) {
+    bus.gain.cancelScheduledValues(t);
+    bus.gain.setValueAtTime(bus.gain.value, t);
+    bus.gain.linearRampToValueAtTime(v * 0.2, t + 0.25);
+    bus.gain.setTargetAtTime(v, t + sec, 0.5);
+  }
+}
+
 // Filtered noise with a moving band: whooshes, rustles, gusts. attack: seconds to full volume
 // (by default a third of the sound, so it swells; a crack wants a couple of milliseconds).
 function noise(dest, t, dur, { from = 800, to = 2400, q = 1.2, peak = 0.3, type = 'bandpass', attack = dur * 0.35 } = {}) {
@@ -268,6 +278,7 @@ const RULES = {
   click:   { gap: 0.04, maxSpeed: 60 },
   tick:    { gap: 0.5,  maxSpeed: 60, always: true },
   named:   { gap: 0.5,  maxSpeed: 60, always: true },
+  found:   { gap: 2,    maxSpeed: 60, always: true },
   seen:    { gap: 0.8,  maxSpeed: 60, always: true },
   warn:    { gap: 2,    maxSpeed: 60, always: true },
 };
@@ -391,6 +402,16 @@ const SOUNDS = {
   // You came to look at something worth seeing (game.js, a spot's caption): two bright notes, up a third.
   seen(t, o) { bell(o, note(2, 1), t, 0.26); kalimba(o, note(4, 1), t + 0.13, 0.22); },
   named(t, o) { bell(o, note(0, 1), t, 0.35); kalimba(o, note(4, 1), t + 0.16, 0.28); bell(o, note(7, 1), t + 0.34, 0.22); },
+  // A visitor seen for the first time ever (game.js, startReveal): the meadow and the music step back for a breath, then
+  // tines climb a chord to the octave over a low bell, and a high bell rings out with its answer.
+  found(t, o) {
+    lull(t, 3.2);
+    const s = t + 0.4;
+    bell(o, note(0, -1), s, 0.45);
+    [0, 2, 3, 5].forEach((d, i) => kalimba(o, note(d, 1), s + i * 0.11, 0.3));
+    bell(o, note(7, 1), s + 0.5, 0.3);
+    bell(o, note(4, 1), s + 0.95, 0.18);
+  },
   // An alert (game.js, ?keep: a kind in danger, the meadow going barren): two low felt notes, down a step.
   warn(t, o) { marimba(o, note(1, -2), t, 0.5); marimba(o, note(0, -2), t + 0.24, 0.42); },
 };

@@ -280,5 +280,12 @@ again each morning): it stands watching (`heronWatch`, facing the pond's middle)
 further off it flies to, `hop`), and stabs (`HERON_STABS`), now and then coming up with a frog, or a fish where `w.fish` is thick
 (`HERON_CATCH`, `v.frogs`, `v.fish`, `gulp`). At night it sleeps where it stands. It flies off of an evening once its days are up,
 or at once from a fire, the ice or the pond gone dry (`heronOff`). It takes nothing from `w.frogs` or `w.fish` (`FROG_DIE` has the herons in it).
+One of a kind the player has never seen (game.js sets `v.wait`) stays on past its days till it's seen, then two days more, but
+leaves on the last day of autumn whatever happens (`waits`); fire, the ice, a hedge or the pond gone still send it off.
+A visit is foretold: its days are hashed (`hogDay`, `heronDay`) and where it'd come is worked out as things are now
+(`hogPlace`, `heronPlace`), so each sunrise `visitorSigns` looks `SIGN_DAYS` ahead for the first day one would come and leaves
+a sign there (`w.signs`, event `visitorsign`): a hedgehog's tracks along the way it'll come in, a heron's feather on the bank
+(`bankOf`). It goes when the visitor comes (`dropSign`) or the sunrise after its day. `hedgehogComes` and `heronComes` use the
+same functions, so the visits themselves come on the same days as before the signs.
 `w.visitors` (the ones here), `w.visited` (how often each kind came, the day the last left); events `visitor`, `visitorleft`.
 A meadow kept before them gets both empty (`unpackWorld`), no `KEEP_VERSION` bump.

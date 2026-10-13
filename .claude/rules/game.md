@@ -39,7 +39,19 @@ two wingbeats, asleep on one leg; `heronArt`, `drawHeron`) flies in high and gli
 round its legs, and splashes where it stabs. It has no emoji: its marker and caption show its painting (`badge`, `paintedBig`), and
 a line of news its portrait as a CSS background (`visitorGlyph`, `--glyph-heron`, `.visitor-glyph`). The pond's panel says when one is there. Its marker waits as long as it's here (`stay`), and a tap on it sees it too (`tapVisitor`). Seen, it goes in the
 player's field journal (`sightVisitor`, `JOURNAL` in the browser, not with the meadow): the first of a kind ever gets "First
-sighting" for its caption, a 📖 and the `named` chime. The inspector has it (`THINGS.visitor`, `hogPanel`, `heronPanel`). The journal's card and more visitors
+sighting" for its caption, a 📖 and the `named` chime. The inspector has it (`THINGS.visitor`, `hogPanel`, `heronPanel`).
+A visitor of a kind never seen comes as a mystery: "Something…" in the news (`visitorGlyph`'s `sil`, its shadow), a gold
+marker with its shadow (`spotBadge`'s `mystery`) that is never pushed out by newer ones, and it waits till you've seen it
+(sim.js `v.wait`, never into winter); "Go see" slows time to 1x. Its first sighting is a moment of its own (`startReveal`,
+`revealFrame`, `endReveal`): time eases down to 1x, the camera leans in, the cards step away and the intro's bars come in
+with "First sighting" and its name, the meadow hushes for the `found` bells, then its stamp flies to the book and its panel
+opens. Any input ends it; a kind that lives here gets only the caption and the stamp. At `REVEAL_SNAP` it takes a picture round
+the visitor, the ground drawn in as for P (`snapReveal`, kept under `aeon-garden-journal-photos`, `photos`), and its journal page
+shows it pasted in, the painting stuck on its corner. Once a kind is in the journal, its visitors have moments to be caught in
+(`MOMENTS`, `momentOf`, `watchVisitor`: asleep, on its way or on the wing for `MOMENT_MS`, a catch or a find as it happens, a 🪲
+popping up over a hedgehog's finds); the first time each is a caption, the seen chime and its emoji's stamp into the book, and a
+chip on the page. A day or two before a visit, its sign (sim.js `w.signs`): 🐾 tracks along the way it'll come in to the hedge,
+or a 🪶 on the bank (`drawSigns`), with a line of news and a marker. The journal's card and more visitors
 are still to come (`research/visitors-and-journal.md`). A new meadow opens close, over the open ground with the most animals (`homeView`, `HOME_TILES`).
 The tab's icon follows the season and the part of day (`updateFavicon`, at most once a second), and
 the news log dates each line with a season chip (`seasonChip`).
@@ -75,3 +87,16 @@ sim.js `webCounts` (the old `w.stats` counters plus plain increments: `grazed`, 
 for "this season" and "last year". Open, it updates once a second, writing only what changed; closed, nothing.
 A meadow kept before them gets the new counters at 0 (`unpackWorld`), no `KEEP_VERSION` bump. Visits are counted by GoatCounter (`COUNTER`: cryptoler.goatcounter.com, no cookies), all as the
 page `/meadow` whatever the seed, and a link posted with `?ref=reddit` says where they came from.
+
+On a phone (and Back anywhere): Back steps out of what's open as Esc does (`stepOut`: a card or menu shuts, the inspector's
+open sheet folds and then shuts, a tool goes back to Look). Each thing open holds a step in the history, counted, not
+named (`opened`), and `syncBack` levels the history with what's open after every tap or key: pushed only inside a tap,
+as Safari skips a step a page adds outside one. The journal keeps steps of its own on top (`journalTo`). The inspector's
+sheet follows the finger and settles open, folded or away by where and how fast it's let go (`sheetLetGo`); Who ate whom
+is a sheet the same way on an upright phone (`dragShut`, a scrim, ✕ at its foot). With Look in hand a double tap zooms in
+on the spot, a double tap held and dragged zooms as it goes, and two fingers tapped zoom out (`zoomTo`, `zoomDrag`, as
+Google's and Apple's maps do); a tap that would only put the inspector away waits `DOUBLE_MS` in case it's the first of
+two (`tapAway`). A held finger grows a ring under it till the ring of tools opens (`holdShow`), Android buzzes where a hold
+lands and for a first sighting (`buzz`; iPhones give a page no vibration), and on a touch screen the screen stays awake
+while time runs, till nobody has touched it for `WAKE_MS` (`wakeTick`, the Screen Wake Lock API). Headless Chrome's
+emulated touches stick after a tap on a button that hides itself in that tap (a ••• item): test those with a mouse click.
