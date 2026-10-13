@@ -6604,10 +6604,10 @@ function handleEvent(e) {
       break;
     }
     case 'dugpond': {                   // (?keep) the keeper dug a pond
-      const what = e.lasting ? `water all year${e.deep ? ', deep in the middle' : ''}${S.dryComing(world) ? ', even through the Dry Year' : ''}`
-        : e.dryOut ? 'it lasts an ordinary summer, but dries out in the Dry Year' : 'a spring pool, dry by summer';
+      const q = pondWords({ water: e.lasting + e.spring, summer: e.lasting + e.dryOut, dry: e.lasting });
+      const what = `${q.head[0].toLowerCase()}${q.head.slice(1)}, ${q.size}${q.lasts ? `, ${q.lasts}` : ''}${e.deep ? ', deep in the middle' : ''}`;
       const frogs = e.frogs < 0 ? 'No frogs live near enough to find it yet.' : e.frogs <= 2 ? 'Frogs live right by it.' : `Frogs ${e.frogs} tiles off could find it.`;
-      if (e.bigger) addNews(`⛏️ You made ${thingLink('water', e.water, `<b>${esc(e.name)}</b>`)} bigger, by ${e.tiles} tiles.`);
+      if (e.bigger) addNews(`⛏️ You made ${thingLink('water', e.water, `<b>${esc(e.name)}</b>`)} bigger, by ${q.size}${q.lasts ? ` (${q.lasts})` : ''}.`);
       else addNews(`⛏️ You dug ${thingLink('water', e.water, `<b>${esc(e.name)}</b>`)}: ${what}. ${frogs}`);
       break;
     }
@@ -6623,6 +6623,10 @@ function handleEvent(e) {
       break;
     case 'dryend':
       addNews('🌧️ <b>The rain is back:</b> the Dry Year is over.');
+      break;
+    case 'drythrough':                  // (?keep) came through it: the news, and a card saying what it came to
+      addNews(`🌈 <b>The meadow came through the Dry Year.</b> At its worst, ${Math.round(e.low * 100)}% of it was still green.`);
+      lostCard.pending = true;
       break;
     case 'dryloss': {                   // (?keep) the Dry Year was lost: a card, and the meadow runs on
       const why = e.why === 'barren' ? ' The meadow went barren.' : e.species === 'frogs' ? ' The last frog is gone.' : '';   // (the last of any other kind was just told)
@@ -7134,8 +7138,10 @@ function forecastTick() {
   const day = Math.floor(world.tick / S.TPD) % S.SEASON_DAYS;
   if (day !== forecast.day) { forecast.day = day; forecast.el.querySelector('.pip.now').style.setProperty('--p', `${(day + 1) / S.SEASON_DAYS * 100}%`); }
   const ahead = dry - now, left = Math.ceil((S.dryTo(world) - world.tick) / S.TPD * 2) / 2;
+  const days = `${Math.floor(left) || ''}${left % 1 ? '½' : ''} ${left > 1 ? 'days' : 'day'}`;
   const line = stage === 3 ? '🌧️ <b>Rain again</b>'
-    : stage === 2 ? `<span class="cap">Dry Year</span> <b>${Math.floor(left) || ''}${left % 1 ? '½' : ''} ${left > 1 ? 'days' : 'day'}</b> left`
+    : world.dryYear.lost ? `🥀 <b>Lost</b> · rain in <b>${days}</b>`   // (lost: nothing more at stake, only the wait for the rain)
+    : stage === 2 ? `<span class="cap">Dry Year</span> <b>${days}</b> left`
     : `<span class="cap">Dry Year</span> ${ahead <= 1 ? '<b>next season</b>' : `in <b>${ahead} seasons</b>`}`;
   if (line !== forecast.line) { forecast.line = line; forecast.el.querySelector('.pip-line').innerHTML = line; }
 }
@@ -7373,7 +7379,7 @@ const SERIES = {
 const SEASON_TINT = ['#f6dde5', '#f7ecb8', '#f4d6b6', '#dfe8f0'];
 const RANGES = { year: S.YEAR_DAYS * S.TPD, five: 5 * S.YEAR_DAYS * S.TPD, all: Infinity };
 const RANGE_WORDS = { year: 'the last year', five: 'the last 5 years', all: 'the whole story' };
-const MARK_EMOJI = { extinct: '😢', arrive: '🧳', fire: '🔥', outbreak: '🤒', drystart: '☀️', dryend: '🌧️', dryloss: '🥀', dugpond: '⛏️', frogsfound: '🐸', sowstrip: '🌼', beesfound: '🐝', hedgeplant: '🌿', hedgebloom: '🌸' };
+const MARK_EMOJI = { extinct: '😢', arrive: '🧳', fire: '🔥', outbreak: '🤒', drystart: '☀️', dryend: '🌧️', dryloss: '🥀', drythrough: '🌈', dugpond: '⛏️', frogsfound: '🐸', sowstrip: '🌼', beesfound: '🐝', hedgeplant: '🌿', hedgebloom: '🌸' };
 const CAUSES = [['fox', '🦊', 'Caught by a fox'], ['hunger', '🥀', 'Starved'], ['age', '🌙', 'Old age'],
   ['sickness', '🤒', 'Sickness'], ['lightning', '⚡', 'Lightning'], ['fire', '🔥', 'Wildfire'], ['flood', '🌊', 'Drowned in a flood'],
   ['ice', '🧊', 'Fell through the ice'], ['owl', '🦉', 'Taken by an owl'], ['left', '🧳', 'Left to find a home of its own']];
@@ -9160,12 +9166,41 @@ function comingWhen(t) {
   return years === 1 ? `next ${s}` : `in the ${s} of year ${yearAt(t)}`;
 }
 
-// What it will bring, in a line: how big, water all year or a spring pool, a deep middle or not, and the frogs.
+// A pond's water in words (a plan's, a pond's or its news'), q: { water: its tiles that hold water in spring, summer: those
+// that last an ordinary summer, dry: those that last the Dry Year's }. head: what most of it does; size: how much water
+// (never the dug tiles too high to hold any); lasts: how much of it lasts the summer to come, when not all or most of it.
+function pondWords(q) {
+  const coming = S.dryComing(world), most = n => n * 2 >= q.water, last = n => `${n} last${n === 1 ? 's' : ''}`;
+  const head = !q.water ? 'Dry: the water doesn’t reach it' : coming && most(q.dry) ? 'Water all year, even in the Dry Year'
+    : most(q.summer) ? (coming ? 'Water through an ordinary summer' : 'Water all year') : 'A spring pool, dry by summer';
+  const lasts = !q.water ? '' : coming ? (q.dry >= q.water ? '' : q.dry ? `${last(q.dry)} the Dry Year` : 'none of it lasts the Dry Year')
+    : q.summer && q.summer < q.water ? `${last(q.summer)} the summer` : '';
+  return { head, size: `${q.water} ${q.water === 1 ? 'tile' : 'tiles'} of water`, lasts };
+}
+
+// (?keep, while the Dry Year is to come or on) The Dry Year's green as the meadow is now (sim.js dryForecast), worked
+// out again only when a day, a pond or a hedge changes; and what a stroke would add to it, in a line.
+const dryBase = { key: '', f: null, wild: null };
+function dryNow() {
+  const key = `${Math.floor(world.tick / S.TPD)}:${(world.ponds || []).map(p => p.grown || p.dug).join()}:${(world.hedges || []).map(h => h.whips).join()}`;
+  if (dryBase.w !== world) dryBase.wild = S.dryForecast(world, true);   // (the meadow with no keeper: only its ground)
+  if (dryBase.key !== key || dryBase.w !== world) Object.assign(dryBase, { key, w: world, f: S.dryForecast(world) });
+  return dryBase.f;
+}
+const dryKept = () => Math.max(0, dryNow().green - dryBase.wild.green);   // the green tiles your ponds and hedges keep
+function dryLine(plan) {
+  if (!S.dryComing(world)) return '';
+  const n = S.dryGain(world, dryNow(), plan).more;
+  return n > 0 ? `☀️ Keeps ${n} more ${n === 1 ? 'tile' : 'tiles'} green in the Dry Year` : '☀️ No more green in the Dry Year';
+}
+
+// What it will bring, in a line: how much water, how much of it lasts, a deep middle or not, the green it keeps in the
+// Dry Year, and the frogs.
 function placeLabel(pl) {
   const p = pl.plan;
   let text;
   if (pl.tool === 'hedge') text = p.ok ? `<b>A hawthorn hedge · ${p.whips} ${p.whips === 1 ? 'whip' : 'whips'} · thick enough to hide a rabbit ${comingWhen(p.young)} · blossom ${comingWhen(p.blossom)}</b>`
-    + `<small>${[p.grows ? `Goes on with ${esc(p.grows.name)}` : '', p.blocked ? `${BLOCKED[p.blocker][0].toUpperCase() + BLOCKED[p.blocker].slice(1)}${p.blocked > 1 ? ' and more' : ''} in the way: skipped` : '',
+    + `<small>${[dryLine(p), p.grows ? `Goes on with ${esc(p.grows.name)}` : '', p.blocked ? `${BLOCKED[p.blocker][0].toUpperCase() + BLOCKED[p.blocker].slice(1)}${p.blocked > 1 ? ' and more' : ''} in the way: skipped` : '',
       pl.full ? 'as long as one row goes' : ''].filter(Boolean).join(' · ')}</small>`
     : `<b>${NO_HEDGE[p.why]}</b>`;
   else if (pl.tool === 'sow') text = p.ok ? `<b>A strip of ${kindWords(p.kind)} · ${p.sown} tiles · ${BLOOM_WHEN[p.bloom]}</b><small>${hivesNear(p.hives)}`
@@ -9173,11 +9208,10 @@ function placeLabel(pl) {
     : `<b>${NO_SOW[p.why]}</b>`;
   else if (!p.ok) text = `<b>${NO_POND[p.why]}</b>`;
   else {
-    const n = p.lasting + p.spring + p.dry, grows = p.grows ? `Makes ${esc(world.waters[p.grows.id].name)} bigger · ` : '';
-    const what = p.lasting ? `${grows}Water all year${S.dryComing(world) ? ', even in the Dry Year' : ''} · ${n} tiles · ${p.deep ? 'deep middle: a rabbit can escape a fox there' : 'all shallows, as the frogs like it'}`
-      : p.dryOut ? `${grows}A spring pool · ${n} tiles: it lasts an ordinary summer, but dries out in the Dry Year`
-      : `${grows}A spring pool · ${n} tiles: it dries out in summer, the frogs’ favourite`;
-    const also = [frogsOff(p.frogs)];
+    const q = pondWords({ water: p.lasting + p.spring, summer: p.lasting + p.dryOut, dry: p.lasting }), grows = p.grows ? `Makes ${esc(world.waters[p.grows.id].name)} bigger · ` : '';
+    const what = `${grows}${q.head} · ${q.size}${q.lasts ? ` · ${q.lasts}` : ''}`;
+    const also = [dryLine(p), q.head.startsWith('A spring') ? 'The frogs’ favourite' : p.deep ? 'Deep middle: a rabbit can escape a fox there' : 'All shallows, as the frogs like it',
+      frogsOff(p.frogs)].filter(Boolean);
     if (p.blocked) also.push(`${BLOCKED[p.blocker][0].toUpperCase() + BLOCKED[p.blocker].slice(1)}${p.blocked > 1 ? ' and more' : ''} left standing`);
     if (pl.full) also.push('as big as one stroke goes');
     text = `<b>${what}</b><small>${also.join(' · ')}</small>`;
@@ -9260,10 +9294,9 @@ function drawRipples(now, z) {
 // The keeper's pond in the inspector: when it was dug, whether it lasts the summer, and what comes next.
 const whenIn = t => `${seasonName(S.seasonOf(t))} of year ${Math.floor(t / S.TPD / S.YEAR_DAYS) + 1}`;
 function dugFacts(p) {
+  const q = pondWords({ water: p.lasting + p.spring, summer: p.lasting, dry: p.dryLasting });
   const out = [['⛏️', `You dug it in the ${whenIn(p.dug)}${p.grown ? `, and made it bigger in the ${whenIn(p.grown)}` : ''}`],
-    p.lasting && S.dryComing(world) && !p.dryLasting ? ['⏳', 'It lasts an ordinary summer, but dries out in the Dry Year']
-      : p.lasting ? ['💧', `Water all year: it lasts the summer${S.dryComing(world) ? ', even the Dry Year’s' : ''}${p.deep ? ', and it’s deep in the middle' : ''}`]
-      : ['⏳', 'A spring pool: it dries out in summer']];
+    [q.head.startsWith('Water all year') ? '💧' : '⏳', `${q.head}: ${q.size}${q.lasts ? `, ${q.lasts}` : ''}${p.deep ? ', deep in the middle' : ''}`]];
   if (!p.reeds) out.push(['🌾', 'Reeds come up round it after a season']);
   if (!p.found) {
     const n = S.frogsNear(world, p.x, p.y);
@@ -9516,12 +9549,13 @@ function greenTip() {
   const s = S.SEASONS[green.season % 4].name.toLowerCase();
   return `<h4 class="fr">🌱 Green <b${green.low ? ' class="low"' : ''}>${green.share}%</b></h4><p>Land whose grass is still green</p>`
     + tipList([['📅', green.came ? 'When you came' : `When the ${s} began`, green.ref + '%'], ...(s === 'winter' ? [['❄️', 'In winter', 'the grass rests']] : []),
-      ['☀️', 'In the Dry Year', 'by the water only', true]]);
+      ['☀️', 'In the Dry Year', 'by the water only', true],
+      ...(S.dryComing(world) ? [['⛏️', 'Your ponds and hedges keep', `${dryKept()} tiles`, true]] : [])]);
 }
 
 // ?keep's alerts, Frostpunk's way (#alerts, over the bar): a state, not a message. A chip for each kind in danger (fewer
 // than sim.js DANGER, and up till a quarter past it, so 7, 8, 7 doesn't blink; none left is the news's) and for the days
-// running gone barren while the Dry Year counts. Up as long as it lasts, never put away: barren first, then the kinds
+// running gone barren while the Dry Year counts (before that, GREEN under twice BARREN: "🥀 Green 14%"). Up as long as it lasts, never put away: barren first, then the kinds
 // by how close to none, three at most. On the cards' beat, from counts the sim keeps, written only when they change.
 // A new one pulses, sounds once and flashes its mark in the top bar; those up as a meadow opens, or that came while you
 // were away, are only noted. A hover or a tap shows its card (alertTip), a click goes to the next of them (alertGo).
@@ -9550,9 +9584,12 @@ function alertsTick(now) {
     if (on) list.push([k, n / T, `${n}`]);
   }
   list.sort((a, b) => a[1] - b[1]);
-  const barren = dy && !dy.lost && S.dryCounting(world) ? dy.barren || 0 : 0;
-  if (!barren !== !alerts.on.barren) { alerts.on.barren = barren > 0; if (barren) fresh.push('barren'); }
+  const counting = dy && !dy.lost && S.dryCounting(world), barren = counting ? dy.barren || 0 : 0;
+  const low = counting && !barren && green.world === world && green.share < S.BARREN * 200 ? green.share : -1;   // (under twice barren: a warning first)
+  const warn = barren > 0 || low >= 0;
+  if (warn !== !!alerts.on.barren) { alerts.on.barren = warn; if (warn) fresh.push('barren'); }
   if (barren) list.unshift(['barren', 0, `${barren}/${S.BARREN_DAYS}`]);
+  else if (low >= 0) list.unshift(['barren', 0, `${low}%`]);
   list.length = Math.min(list.length, 3);
   if (alerts.first || away.on) fresh.length = 0;          // (already up as the meadow opened, or the away card tells it)
   alerts.first = false;
@@ -9566,7 +9603,11 @@ function alertsTick(now) {
   for (const [k, b] of Object.entries(alerts.btn)) {
     const i = list.findIndex(a => a[0] === k), v = i < 0 ? '' : list[i][2], cls = now < (alerts.fresh[k] || 0) ? 'alert fresh' : 'alert';
     const was = alerts.shown[k] || [];
-    if (was[0] !== v) { b.hidden = i < 0; if (v) b.querySelector('b').textContent = v; }
+    if (was[0] !== v) {
+      b.hidden = i < 0;
+      if (v) b.querySelector('b').textContent = v;
+      if (v && k === 'barren') b.querySelector('.l').textContent = v.endsWith('%') ? 'Green' : 'Barren';
+    }
     if (was[1] !== i) b.style.order = i;
     if (was[2] !== cls) b.className = cls;
     if (was[0] !== v && tip.tool === 'alert:' + k) { if (v) setHTML($('#tool-tip'), alertTip(k)); else hideTip(); }
@@ -9596,6 +9637,8 @@ const ALERT_HELP = {
 function alertTip(k) {
   const dy = world.dryYear, stakes = dy && !dy.lost && (S.dryComing(world) || S.dryCounting(world));
   const help = ALERT_HELP[k].filter(r => stakes || !r[3]);
+  if (k === 'barren' && !dy.barren) return `<h4 class="fr">🥀 Green <b class="danger">${green.share}%</b></h4><p>Hardly any green left</p>`
+    + tipList([['🥀', `Under ${Math.round(S.BARREN * 100)}% for ${S.BARREN_DAYS} days: meadow lost`, 'the Dry Year', true], ...help]);
   if (k === 'barren') return `<h4 class="fr">🥀 Barren <b class="danger">${dy.barren || 0}/${S.BARREN_DAYS}</b></h4><p>Days running with hardly any green</p>`
     + tipList([['🥀', `${S.BARREN_DAYS} days: meadow lost`, 'the Dry Year', true], ...help]);
   return `<h4 class="fr">${ALERT_ICON[k]} ${k === 'frogs' ? 'Frogs' : SPECIES_WORD[k]} <b class="danger">${alertCount(k)}</b></h4><p>In danger: so few left</p>`
@@ -10563,7 +10606,8 @@ function tryThing(k) {
 
 // (?keep) Losing the Dry Year (sim.js dryLost): one plain card, the meadow going on behind it. Start again: the same seed,
 // a fresh keeper meadow, its Dry Year in the same year, in place of this one (kept at once). Shown once the away card
-// is done with, if it came while you were away.
+// is done with, if it came while you were away. Coming through it gets the same card (#lost.through), saying what it
+// came to, with only Carry on.
 const lostCard = { pending: false };
 const LOST_WHY = {
   rabbit: 'The grass out in the straw gave them nothing, and the green by the water wasn’t enough for them all.',
@@ -10574,6 +10618,23 @@ const LOST_WHY = {
   otter: 'The water fell, and there were too few fish left in it.',
   frogs: 'The pools dried up, and the damp grass by the water went with them.',
 };
+// Coming through (sim.js dryThrough, at the end of the autumn after): how green it stayed at its worst, who made it (a kind
+// whose hives ran dry once the counting stopped, said plainly), and what the keeper's work came to; or that it got by alone.
+function throughWords(t) {
+  const kinds = Object.entries(t.here), gone = kinds.filter(([, n]) => !n).map(([k]) => (k === 'frogs' ? 'frogs' : SPECIES_WORD[k].toLowerCase()));
+  const who = kinds.filter(([, n]) => n).map(([k, n]) => `${ALERT_ICON[k]} ${n}`).join(' · ');
+  const close = S.BARREN_DAYS - (t.close || 0), days = close === 1 ? 'a day' : `${close} days`;
+  let line = `At its worst, ${Math.round(t.low * 100)}% of the meadow was still green${t.close ? `: ${days} more and it would have gone barren` : ''}.`
+    + `${who ? ` Made it: ${who}.` : ''}`;
+  if (gone.length) line += ` The ${gone.join(' and the ')} got through the summer, but not the autumn after.`;
+  const times = n => `${n} ${n === 1 ? 'time' : 'times'}`, rows = [];
+  if (t.kept > 0) rows.push(['⛏️', 'Your ponds and hedges kept green', `${t.kept} tiles`]);
+  if (t.sips > 0) rows.push(['🌼', 'Bees sipped at your flowers', times(t.sips)]);
+  if (t.hid > 0) rows.push(['🌿', 'Rabbits hid from a fox in your hedges', times(t.hid)]);
+  if (t.ponds > 0) rows.push(['🐸', `Frogs live in your ${t.ponds === 1 ? 'pond' : 'ponds'}`, `${t.ponds}`]);
+  if (!rows.length) rows.push(['🌱', 'You left it to itself', 'it got by']);
+  return ['🌈 The meadow came through the Dry Year.', line, rows];
+}
 function lostWords(e) {
   if (e.why === 'barren') return ['🥀 The meadow went barren in the Dry Year.', `For ${S.BARREN_DAYS} days running, hardly a patch of it was green.`];
   const name = e.species === 'frogs' ? 'frog' : S.SPECIES[e.species].name.toLowerCase();
@@ -10582,9 +10643,14 @@ function lostWords(e) {
 const lostOpen = () => !$('#lost').classList.contains('hidden');
 function showLost(open = true) {
   lostCard.pending = false;
-  if (open && world.dryYear?.lost) {
-    const [title, line] = lostWords(world.dryYear.lost);
+  const dy = world.dryYear, through = !dy?.lost && dy?.through;
+  if (open && !dy?.lost && !through) return;
+  if (open) {
+    const [title, line, rows] = through ? throughWords(through) : [...lostWords(dy.lost), []];
     $('#lost-title').textContent = title; $('#lost-text').textContent = line;
+    setHTML($('#lost-list'), rows.map(([icon, what, n]) => `<li><span>${icon}</span><span>${what}</span><em>${n}</em></li>`).join(''));
+    $('#lost-list').hidden = !rows.length;
+    $('#lost').classList.toggle('through', !!through);
   }
   $('#lost').classList.toggle('hidden', !open);
 }
@@ -10609,7 +10675,9 @@ const TASKS = [
   { k: 'pond', e: '⛏️', verb: 'Dig a pond', wait: 'frogs move in', got: '🐸' },
   { k: 'sow', e: '🌼', verb: 'Sow flowers', wait: 'bees come', got: '🐝' },
   { k: 'hedge', e: '🌿', verb: 'Plant a hedge', wait: 'a rabbit hides in it', got: '🐇' },
+  { k: 'green', e: '☀️', verb: 'Keep it green', wait: 'tiles in the Dry Year', got: '☀️' },
 ];
+const GREEN_GOAL = 500;                   // the green tiles your ponds and hedges keep in the Dry Year, for the last task
 const TASK_LINE_MS = 7000;                // and a task done stays up under the watch this long
 const tasks = { el: $('#tasks'), on: false, w: null, fold: false, key: '', strips: [], more: {}, done: null, fresh: {}, shown: [] };
 
@@ -10635,9 +10703,10 @@ function buildTasks() {
 }
 
 // What each task is waiting on, once a day: how far the nearest frogs are from a pond they haven't found, when a strip
-// not yet in flower blooms (as the Flowers tool's card says it), and when a hedge will be thick enough.
+// not yet in flower blooms (as the Flowers tool's card says it), and when a hedge will be thick enough. And the green
+// tiles your ponds and hedges would keep if the Dry Year came now (dryKept), while it's to come or on.
 function tasksMore(ponds, hedges) {
-  const more = {};
+  const more = { kept: S.dryComing(world) ? dryKept() : -1 };
   let near = Infinity;
   for (const p of ponds) if (!p.found) { const n = S.frogsNear(world, p.x, p.y); if (n >= 0 && n < near) near = n; }
   if (ponds.some(p => !p.found)) more.pond = near === Infinity ? 'none in reach' : near <= 2 ? 'right here' : `${near} tiles away`;
@@ -10648,17 +10717,20 @@ function tasksMore(ponds, hedges) {
 }
 
 function tasksTick(now) {
-  if (lostCard.pending && !away.on && !awayOpen()) showLost();   // (?keep: the Dry Year lost, once the away card is done)
+  if (lostCard.pending && !away.on && !awayOpen()) showLost();   // (?keep: the Dry Year lost or come through, once the away card is done)
   const show = tasks.on && !away.on;
   if (tasks.el.classList.contains('hidden') === show) tasks.el.classList.toggle('hidden', !show);
   if (!tasks.on) return;
   if (world !== tasks.w) buildTasks();
   const ponds = world.ponds || [], hedges = world.hedges || [];
-  const key = `${Math.floor(world.tick / S.TPD)}:${ponds.length}:${world.fields.length}:${hedges.length}`;
+  const key = `${Math.floor(world.tick / S.TPD)}:${ponds.map(p => p.grown || p.dug).join()}:${world.fields.length}:${hedges.map(h => h.whips).join()}`;
   if (key !== tasks.key) { tasks.key = key; tasks.strips = world.fields.filter(f => f.strip); tasks.more = tasksMore(ponds, hedges); }
   const pond = ponds.find(p => p.found), strip = tasks.strips.find(f => f.found), hedge = hedges.find(h => h.escapes > 0);
-  const got = { pond: pond && `Frogs moved into ${world.waters[pond.id].name}`, sow: strip && `Bees found ${strip.name}`, hedge: hedge && `A rabbit hid in ${hedge.name}` };
-  const begun = { pond: ponds.length, sow: tasks.strips.length, hedge: hedges.length }, n = TASKS.filter(t => got[t.k]).length;
+  const kept = tasks.more.kept, dy = world.dryYear;
+  const got = { pond: pond && `Frogs moved into ${world.waters[pond.id].name}`, sow: strip && `Bees found ${strip.name}`, hedge: hedge && `A rabbit hid in ${hedge.name}`,
+    green: (kept >= GREEN_GOAL || tasks.done?.green) && `Your work keeps ${Math.max(kept, GREEN_GOAL)} tiles green` };
+  const begun = { pond: ponds.length, sow: tasks.strips.length, hedge: hedges.length, green: kept > 0 }, n = TASKS.filter(t => got[t.k]).length;
+  const gone = { green: !got.green && (kept < 0 || dy?.lost) };   // (the Dry Year over or lost: the last task goes, done or not)
   const first = !tasks.done;
   tasks.done ??= {};
   for (const t of TASKS) {
@@ -10668,22 +10740,25 @@ function tasksTick(now) {
     tasks.fresh[t.k] = now + 1200;
     chime('tick');
     if (canBreak()) {
-      showBreak('day', `<b class="fr">${t.got} ${esc(got[t.k])}</b>`, `Task done · ${n}/${TASKS.length}`, TASK_LINE_MS);
+      showBreak('day', `<b class="fr">${t.got} ${esc(got[t.k])}</b>`, `Task done · ${n}/${TASKS.filter(t => !gone[t.k]).length}`, TASK_LINE_MS);
       daybreak.hold = now + TASK_LINE_MS;   // the next day's line waits
     }
   }
-  const next = TASKS.find(t => !got[t.k] && !begun[t.k]);
+  const next = TASKS.find(t => !got[t.k] && !begun[t.k] && !gone[t.k]);
+  tasks.more.green = kept > 0 ? `${kept} so far` : '';
   TASKS.forEach((t, i) => {
-    const small = got[t.k] ? `${t.got} ${got[t.k]}` : `→ ${t.wait}${begun[t.k] && tasks.more[t.k] ? ` · ${tasks.more[t.k]}` : ''}`;
+    if (tasks.rows[i].hidden !== !!gone[t.k]) tasks.rows[i].hidden = tasks.chips[i].hidden = !!gone[t.k];
+    const wait = t.k === 'green' ? `${GREEN_GOAL} ${t.wait}` : t.wait;
+    const small = got[t.k] ? `${t.got} ${got[t.k]}` : `→ ${wait}${begun[t.k] && tasks.more[t.k] ? ` · ${tasks.more[t.k]}` : ''}`;
     const cls = [got[t.k] ? 'done' : begun[t.k] ? 'wait' : '', t === next ? 'next' : '', now < (tasks.fresh[t.k] || 0) ? 'fresh' : ''].filter(Boolean).join(' ');
     const was = tasks.shown[i] || [];
     if (was[0] !== small) tasks.rows[i].querySelector('small').textContent = small;
     if (was[1] !== cls) { tasks.rows[i].className = cls; tasks.chips[i].className = `ce ${cls}`; }
     tasks.shown[i] = [small, cls];
   });
-  const count = `${n}/${TASKS.length}`, fold = tasks.fold;
+  const count = `${n}/${TASKS.filter(t => !gone[t.k]).length}`, fold = tasks.fold;
   if (tasks.shown.count !== count) { tasks.shown.count = count; tasks.el.querySelector('.t-count').textContent = count; }
-  const head = S.dryStage(world) === 2 ? 'Through the Dry Year' : S.dryComing(world) ? 'Before the Dry Year' : 'Tasks';
+  const head = dy?.lost ? 'Tasks' : S.dryStage(world) === 2 ? 'Through the Dry Year' : S.dryComing(world) ? 'Before the Dry Year' : 'Tasks';
   if (tasks.shown.head !== head) { tasks.shown.head = head; tasks.el.querySelector('.cap').textContent = head; }
   if (tasks.el.classList.contains('fold') !== fold) {
     tasks.el.classList.toggle('fold', fold);
@@ -10695,11 +10770,12 @@ function tasksTick(now) {
 
 // A tap on a task: its tool in your hand, or a done one, off to look at what did it. A phone folds the card away.
 function taskTap(k) {
-  if (tasks.done?.[k]) {
+  if (tasks.done?.[k] && k !== 'green') {
     const pond = world.ponds?.find(p => p.found), strip = tasks.strips.find(f => f.found), d = k === 'hedge' && hedgeMiddle(world.hedges.find(h => h.escapes > 0));
     const thing = k === 'pond' ? pond && `water:${pond.id}` : k === 'sow' ? strip && `field:${strip.id}` : d && `tree:${d.id}`;
     if (thing) goToThing(thing);
-  } else if (ui.tool !== k) setTool(k);
+  } else if (k === 'green') { if (ui.tool !== 'pond') setTool('pond'); }   // (ponds keep the most green)
+  else if (ui.tool !== k) setTool(k);
   if (narrow()) foldTasks(true);
 }
 
@@ -11142,7 +11218,7 @@ addEventListener('pagehide', keepMeadow);
 const AWAY_MIN = 5 * 60e3;                 // gone at least this long, in real time
 const AWAY_TICKS = S.SEASON_DAYS * S.TPD;  // and it moves on a season, however long it was
 const AWAY_MS = 40;                        // of each frame the catching up gets
-const AWAY_BIG = ['dryloss', 'extinct', 'dryend', 'drystart', 'dryspring', 'swarm', 'settle', 'hivestruck', 'queenlost', 'fire', 'outbreak', 'outbreakover', 'mast', 'voles', 'frogyear', 'treedied', 'windthrow', 'frogsfound', 'pondgrew', 'stripbloom', 'beesfound', 'hedgeyoung', 'hedgebloom', 'hedgehaws', 'visitor'];   // news for the card, the first told first
+const AWAY_BIG = ['dryloss', 'drythrough', 'extinct', 'dryend', 'drystart', 'dryspring', 'swarm', 'settle', 'hivestruck', 'queenlost', 'fire', 'outbreak', 'outbreakover', 'mast', 'voles', 'frogyear', 'treedied', 'windthrow', 'frogsfound', 'pondgrew', 'stripbloom', 'beesfound', 'hedgeyoung', 'hedgebloom', 'hedgehaws', 'visitor'];   // news for the card, the first told first
 const away = { on: false, frames: 0, left: 0, from: 0, day: -1, births: null, deaths: null, news: [], type: '', mine: false, waited: false };
 const awayOpen = () => !$('#away').classList.contains('hidden');
 const deathsOf = s => Object.values(world.stats.deaths[s]).reduce((a, b) => a + b, 0);

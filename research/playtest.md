@@ -51,6 +51,9 @@ The pond is the main tool against the Dry Year, and its label overstates what a 
   tile does (`p.dryLasting`).
 - Fix: count only the water, and say how much of it lasts: "15 tiles of water · 1 lasts the Dry Year". Or headline by
   what most of it does.
+- **Fixed 2026-10-13** (game.js `pondWords`): the label, the news and the inspector count only the water and headline by
+  what most of it does: "Water through an ordinary summer · 15 tiles of water · 1 lasts the Dry Year", with "☀️ Keeps
+  N more tiles green in the Dry Year" under it.
 
 ### 2. The Dry Year gives no verdict, and nothing to do
 
@@ -68,6 +71,9 @@ The pond is the main tool against the Dry Year, and its label overstates what a 
   ponds, the sips on your strips, the rabbits that hid in your hedge); before it, a number for GREEN in the Dry Year if
   it came today, that moves as you dig and plant; and tasks that keep going towards it (a pond by each warren far from
   the water).
+- **Fixed 2026-10-13** (PLAN.md, D3 as built): the came-through card, the green tiles a stroke keeps in the Dry Year on its
+  ghost, a fourth task that keeps going (500 tiles kept green), a "🥀 Green 14%" alert before barren, and the HUD after a
+  loss. The forecast is shown as tiles, not as GREEN in the Dry Year: the rabbits graze the real green to about half of it.
 
 ### 3. The bees die out just after the loss stops counting
 
