@@ -1186,6 +1186,10 @@
     background: linear-gradient(90deg, transparent 88%, rgba(120, 85, 30, 0.10)); }
   #journal h3.sec { display: flex; align-items: baseline; margin: 16px 0 8px; text-transform: uppercase; letter-spacing: 0.11em; font-size: 12px; font-weight: 900; color: #8a5e22; }
   #journal h3.sec span { margin-left: auto; letter-spacing: 0; font-size: 13px; color: var(--muted); }
+  /* the chapter the meadow is in now */
+  #journal h3.sec .now { display: none; align-self: center; margin-left: 8px; padding: 1px 7px; border-radius: 99px; background: #4f7f3a; color: #fff;
+    letter-spacing: 0.06em; font-size: 10.5px; font-weight: 900; }
+  #journal h3.sec.here .now { display: inline-block; }
   #journal .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
   #journal .tile { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 3px; min-height: 92px; padding: 16px 4px 8px;
     border: none; border-radius: 12px; background: rgba(255, 250, 238, 0.55); box-shadow: inset 0 0 0 1px rgba(150, 115, 60, 0.2); transition: background 0.12s, transform 0.08s; }
@@ -1198,6 +1202,11 @@
   #journal .tile.unseen.on { box-shadow: inset 0 0 0 2px #d9a441; }
   #journal .tile.unseen .nm { color: #9c8a66; letter-spacing: 0.15em; }
   #journal .tile.glimpsed .nm { color: var(--muted); }
+  /* past the frontier: a blank, its riddle not come yet */
+  #journal .tile.later { background: none; box-shadow: none; border: 1.5px dashed rgba(150, 115, 60, 0.3); }
+  #journal .tile.later.on { border-color: #d9a441; }
+  #journal .tile.later .nm { color: #b8a680; letter-spacing: 0.15em; }
+  #journal .tile .blank { width: 56px; height: 56px; }
   #journal .tile.new::after { content: 'New'; position: absolute; top: 4px; right: 5px; padding: 0 6px; border-radius: 99px; background: #c4562a; color: #fff;
     font-size: 11px; font-weight: 900; }
   @media (hover: hover) {
@@ -1273,7 +1282,7 @@
     #journal .pages { padding: 0 14px 14px; background: none; }
     #journal h3.sec { margin: 14px 2px 8px; }
     #journal .tile { min-height: 88px; }
-    #journal .tile img { width: 50px; height: 50px; }
+    #journal .tile img, #journal .tile .blank { width: 50px; height: 50px; }
     #journal .j-foot, #journal .pg-foot { display: flex; justify-content: center; align-items: center; gap: 28px;
       padding: 10px 16px calc(14px + var(--home-bar, env(safe-area-inset-bottom, 0px))); border-top: 1px dashed var(--line); }
     #journal .jb { width: 52px; height: 52px; }
@@ -1304,7 +1313,7 @@
     #journal h3.sec { margin: 12px 0 6px; }
     #journal .grid { gap: 6px; }
     #journal .tile { min-height: 76px; padding-top: 14px; }
-    #journal .tile img { width: 42px; height: 42px; }
+    #journal .tile img, #journal .tile .blank { width: 42px; height: 42px; }
     #journal .pg-grab { padding: 18px 70px 0 22px; }
     #journal .pg-body { padding: 0 22px 6px; }
     #journal .page .art { height: 84px; margin-top: 2px; }

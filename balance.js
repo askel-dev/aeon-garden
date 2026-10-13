@@ -13,12 +13,17 @@
 // does nothing. `diligent` is one where the keeper, early in the first spring, digs three big ponds (a spiral of the
 // spade, 100 to 150 tiles) on open grass by the three warrens furthest from the water that lasts the Dry Year, plants two
 // hedges from that water out towards the two furthest, and sows two strips along it near the hive. Then a line for all
-// the seeds: how many were lost, and to what.
+// the seeds: how many were lost, and to what. `journal` is the journal's pacing: for each seed the idle, keep and diligent
+// keepers each make a meadow, and it prints which of the journal's pages each could have had by the came-through card (a
+// kind that lives here: it lived in the meadow; a visitor: one came), and on which day; and those that came only after.
+// There the diligent keeper also digs a pond round a tree on the river's bank and sows a strip out in the open, as the
+// plan's full journal asks (research/journal-journey.md).
 const Sim = require('./sim.js');
 const years = +(process.argv[2] || 5), seeds = +(process.argv[3] || 4), verbose = process.argv[4] === 'v';
 const arrival = process.argv.includes('arrival'), plant = process.argv.includes('plant'), nohedge = process.argv.includes('nohedge');
-const idle = process.argv.includes('idle'), diligent = process.argv.includes('diligent'), keep = process.argv.includes('keep') || idle || diligent;
-const keeper = keep && !idle && !diligent;                  // the keeper of `keep`: one pond, two strips and a hedge
+const journal = process.argv.includes('journal');
+let idle = process.argv.includes('idle'), diligent = process.argv.includes('diligent'), keep = process.argv.includes('keep') || idle || diligent || journal;
+let keeper = keep && !idle && !diligent;                    // the keeper of `keep`: one pond, two strips and a hedge (set for each run in journal mode)
 const PLANT_KINDS = ['oak', 'beech', 'maple', 'birch', 'alder', 'hawthorn', 'apple', 'cherry', 'pine'];
 const perSeason = Sim.SEASON_DAYS * Sim.TPD;
 // One seed's meadow, run for the years (the keeper idle or not), printing through log; gives back its Dry Year rows.
@@ -31,6 +36,7 @@ function runSeed(s, log) {
   let pr = s * 2654435761 % 4294967296;                    // the planter's own random numbers, so the meadow's stay its own
   const rand = () => (pr = (pr * 1664525 + 1013904223) % 4294967296) / 4294967296;
   const planted = { tried: 0, ok: 0, lost: {}, sapling: 0, seeded: 0 };
+  const pages = {};                                          // (journal) the day each page's kind could first have been seen
   // The keeper's pond: dug on the first morning after DIG_DAY, the day the crows first came down to it, the frogs
   // found it (and from how far), the reeds came up, the spawn laid in it each spring, the frogs round it each season's end.
   // The keeper digs it with a short scribble of the spade (SCRIBBLE, tiles from where it starts), about 30 tiles.
@@ -85,7 +91,7 @@ function runSeed(s, log) {
         planted.tried++;
         for (let k = 0; k < 20; k++) if (typeof Sim.plantTree(w, rand() * Sim.W, rand() * Sim.H, PLANT_KINDS[Math.floor(rand() * PLANT_KINDS.length)]) !== 'string') { planted.ok++; break; }
       }
-      if (diligent && !did.done && w.tick >= DIG_DAY * Sim.TPD) { did.done = true; diligentKeeper(w, rand, did); }
+      if (diligent && !did.done && w.tick >= DIG_DAY * Sim.TPD) { did.done = true; diligentKeeper(w, rand, did); if (journal) journalPlaces(w, rand, did); }
       if (keeper && !kept.pond && w.tick >= DIG_DAY * Sim.TPD) {
         for (; kept.tries < 4000 && !kept.pond; kept.tries++) {
           const x = Math.floor(rand() * Sim.W) + 0.5, y = Math.floor(rand() * Sim.H) + 0.5, pts = SCRIBBLE.map(([dx, dy]) => ({ x: x + dx, y: y + dy }));
@@ -128,7 +134,14 @@ function runSeed(s, log) {
         const y = Sim.clock(w).year - 1;
         kept.spawn[y] = Math.max(kept.spawn[y] || 0, n);
       }
+      if (journal && w.tick % Sim.TPD === 0) {               // the kinds that live here: living in the meadow
+        for (const k of Sim.KINDS) if (w.count[k] > 0 && (k !== 'owl' || Sim.OWLS)) pages[k] ??= w.tick;
+        if (w.voleCount >= 1) pages.vole ??= w.tick;
+        if (w.frogCount >= 1) pages.frog ??= w.tick;
+        if (w.fishCount >= 1) pages.fish ??= w.tick;
+      }
       for (const e of w.events) {
+        if (e.type === 'visitor') pages[e.v.kind] ??= w.tick;
         if (e.type === 'extinct') extinct.push(`${e.species} ${Sim.SEASONS[Sim.seasonOf(w.tick)].name[0]}${Sim.clock(w).year}`);
         if (e.type === 'frogsfound' && kept.frogs < 0) { kept.frogs = day(); kept.from = e.from; }
         if (e.type === 'pondgrew' && kept.reeds < 0) kept.reeds = day();
@@ -254,7 +267,8 @@ function runSeed(s, log) {
   const lost = w.dryYear && w.dryYear.lost;
   return { rows: dryRows, extinct, maxR, meanR: sumR / ticks, fires: dryFires, low: Math.round(100 * dryGreen.low),
     fc: Math.round(100 * dryGreen.fc), wild: Math.round(100 * dryGreen.wild),
-    lost: lost ? `${lost.why === 'barren' ? 'barren' : lost.species} day ${(lost.t / Sim.TPD).toFixed(1)}` : '', through: w.dryYear && w.dryYear.through };
+    lost: lost ? `${lost.why === 'barren' ? 'barren' : lost.species} day ${(lost.t / Sim.TPD).toFixed(1)}` : '', through: w.dryYear && w.dryYear.through,
+    pages, river: did.river, arcEnd: w.dryYear ? (w.dryYear.through ? w.dryYear.through.t : ((w.dryYear.year - 1) * Sim.YEAR_DAYS + 3 * Sim.SEASON_DAYS) * Sim.TPD) : Infinity };
 }
 
 // The Dry Year, season by season from the winter before to the winter after, and whether it was lost.
@@ -336,12 +350,53 @@ function diligentKeeper(w, rand, did) {
   }
 }
 
+// (journal) The diligent keeper's two more places: a pond dug round a tree on the bank of the lasting water and out to it
+// (fish come in from the water, and the tree stands in it as an island), and a strip of 7 tiles out in the open (nothing
+// standing within LARK_OPEN).
+function journalPlaces(w, rand, did) {
+  const T = w.terrain, lasts = T.level - T.summerLow - T.rainRise / 2, W = Sim.W, H = Sim.H, at = (x, y) => Math.floor(y) * W + Math.floor(x);
+  const far = Sim.distanceTo(Uint8Array.from(w.ground, g => (g < lasts ? 1 : 0)));
+  const banks = w.decor.filter(d => Sim.standing(d) && d.size >= Sim.SAPLING && far[at(d.x, d.y)] >= 1 && far[at(d.x, d.y)] <= 3.5);
+  const spiral = (x, y) => Array.from({ length: 30 }, (_, k) => { const a = k * 0.42, r = 0.25 + k * 0.075; return { x: x + Math.cos(a) * r, y: y + Math.sin(a) * r }; });
+  for (let k = 0; k < banks.length * 2 && !did.river; k++) {   // dug round a tree on the bank (it stays as an island) out to the water
+    const d = banks[Math.floor(rand() * banks.length)], pts = spiral(d.x, d.y), p = Sim.pondPlan(w, pts);
+    if (p.ok && p.lasting >= 8 && !p.grows) { Sim.digPond(w, pts); did.river = true; }   // (room for a fish or two: 0.2 a tile of shallows)
+  }
+  const trees = w.decor.filter(d => Sim.standing(d) && (d.size >= Sim.SAPLING || d.hedge));
+  for (let k = 0; k < 4000 && !did.open; k++) {
+    const x = 6 + rand() * (W - 12), y = 6 + rand() * (H - 12), b = rand() * Math.PI, pts = [{ x, y }, { x: x + Math.cos(b) * 7, y: y + Math.sin(b) * 7 }];
+    if (trees.some(d => Math.min(Math.hypot(d.x - x, d.y - y), Math.hypot(d.x - pts[1].x, d.y - pts[1].y)) < Sim.LARK_OPEN + 1)) continue;
+    const p = Sim.stripPlan(w, pts);
+    if (p.ok && p.sown >= 10) { Sim.sowStrip(w, pts); did.open = true; }
+  }
+}
+
 const results = [];
-for (let s = 1; s <= seeds; s++) {
+if (journal) {
+  // The journal's pages (as game.js PAGES has them, for now), and what each keeper could have had of them.
+  const PAGES = ['rabbit', 'fox', 'bee', 'crow', ...(Sim.OWLS ? ['owl'] : []), 'vole', 'frog', 'fish', 'otter', 'heron', 'skylark', 'hedgehog', 'dragonfly', 'kingfisher'];
+  const sum = { idle: [], keep: [], diligent: [] };
+  const day = t => (t / Sim.TPD).toFixed(1);
+  for (let s = 1; s <= seeds; s++) {
+    console.log(`seed ${s}`);
+    for (const who of ['idle', 'keep', 'diligent']) {
+      idle = who === 'idle'; diligent = who === 'diligent'; keeper = who === 'keep';
+      const a = runSeed(s, () => {}), had = PAGES.filter(k => a.pages[k] <= a.arcEnd), later = PAGES.filter(k => a.pages[k] > a.arcEnd);
+      if (who === 'diligent' && !a.river) console.log('    (no pond dug onto the water by a tree: no room for one)');
+      sum[who].push(had.length);
+      const gone = PAGES.filter(k => a.pages[k] === undefined);
+      console.log(`  ${who.padEnd(8)} ${String(had.length).padStart(2)} of ${PAGES.length} by the card (day ${day(a.arcEnd)}${a.lost ? `, lost: ${a.lost}` : ''})  `
+        + had.filter(k => a.pages[k] > Sim.TPD).map(k => `${k} d${day(a.pages[k])}`).join(', ')
+        + (later.length ? `  | later: ${later.map(k => `${k} d${day(a.pages[k])}`).join(', ')}` : '') + (gone.length ? `  | never: ${gone.join(', ')}` : ''));
+    }
+  }
+  const mean = l => (l.reduce((a, b) => a + b, 0) / l.length).toFixed(1);
+  console.log(`journal, pages by the came-through card out of ${PAGES.length} (mean, and each seed):  idle ${mean(sum.idle)} (${sum.idle.join(' ')})  keep ${mean(sum.keep)} (${sum.keep.join(' ')})  diligent ${mean(sum.diligent)} (${sum.diligent.join(' ')})`);
+} else for (let s = 1; s <= seeds; s++) {
   const a = runSeed(s, console.log);
   if (keep) { printDry(a); results.push(a); }
 }
-if (keep) {
+if (keep && !journal) {
   const why = {};
   for (const a of results) if (a.lost) { const k = a.lost.split(' ')[0]; why[k] = (why[k] || 0) + 1; }
   console.log(`${idle ? 'idle' : diligent ? 'diligent' : 'keeper'}: lost ${results.filter(a => a.lost).length} of ${results.length}  ${JSON.stringify(why)}`

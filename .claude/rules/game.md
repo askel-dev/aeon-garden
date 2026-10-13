@@ -40,14 +40,14 @@ courts) a little bubble pops up and fades (`drawPops`, `POPS`), at most 3 at onc
 Something worth seeing (cubs, a swarm, frogs in your pond: `spotOf`) leaves a marker over the spot till you've looked,
 or at the screen's edge pointing the way; a tap on it or "Go see" on its news line glides there (`spots`, `drawSpots`,
 `goSpot`). Once you've looked, the marker gives way to a caption saying what it was (`say`, `sayArt`), with a sparkle
-and a soft chime (`seeSpot`, sound.js `seen`). A visitor (sim.js `w.visitors`: the hedgehog at a hedge, the heron at a pond) is drawn in with the trees and animals, painted like them
+and a soft chime (`seeSpot`, sound.js `seen`). A visitor (sim.js `w.visitors`: the hedgehog at a hedge, the heron at a pond, and those below) is drawn in with the trees and animals, painted like them
 (`paintHedgehog`: walking, snuffling, curled up asleep; `visitorArt`, `drawVisitor`), fading in and out at the ends of its way
 (`visitorFade`). The heron (`paintHeron`, `HERON_POSES`: upright, poised, two stalking steps, the stab, a frog or a fish held up,
 two wingbeats, asleep on one leg; `heronArt`, `drawHeron`) flies in high and glides down (`heronLift`), wades to its shins with rings
 round its legs, and splashes where it stabs. It has no emoji: its marker and caption show its painting (`badge`, `paintedBig`), and
 a line of news its portrait as a CSS background (`visitorGlyph`, `--glyph-heron`, `.visitor-glyph`). The pond's panel says when one is there. Its marker waits as long as it's here (`stay`), and a tap on it sees it too (`tapVisitor`). Seen, it goes in the
 player's field journal (`sightVisitor`, `JOURNAL` in the browser, not with the meadow): the first of a kind ever gets "First
-sighting" for its caption, a 📖 and the `named` chime. The inspector has it (`THINGS.visitor`, `hogPanel`, `heronPanel`).
+sighting" for its caption, a 📖 and the `named` chime. The inspector has it (`THINGS.visitor`, `VISITOR_PANELS`: `hogPanel`, `heronPanel`, `dragonPanel`, `kingPanel`, `larkPanel`).
 A visitor of a kind never seen comes as a mystery: "Something…" in the news (`visitorGlyph`'s `sil`, its shadow), a gold
 marker with its shadow (`spotBadge`'s `mystery`) that is never pushed out by newer ones, and it waits till you've seen it
 (sim.js `v.wait`, never into winter); "Go see" slows time to 1x. Its first sighting is a moment of its own (`startReveal`,
@@ -59,8 +59,25 @@ shows it pasted in, the painting stuck on its corner. Once a kind is in the jour
 (`MOMENTS`, `momentOf`, `watchVisitor`: asleep, on its way or on the wing for `MOMENT_MS`, a catch or a find as it happens, a 🪲
 popping up over a hedgehog's finds); the first time each is a caption, the seen chime and its emoji's stamp into the book, and a
 chip on the page. A day or two before a visit, its sign (sim.js `w.signs`): 🐾 tracks along the way it'll come in to the hedge,
-or a 🪶 on the bank (`drawSigns`), with a line of news and a marker. The journal's card and more visitors
-are still to come (`research/visitors-and-journal.md`). A new meadow opens close, over the open ground with the most animals (`homeView`, `HOME_TILES`).
+or a 🪶 on the bank (`drawSigns`), with a line of news and a marker. The journal's card (`#journal`) goes a chapter at a time through a keeper
+meadow's arc (`CHAPTERS`, `BOOK`: the first spring, summer, autumn and winter, the Dry Year's spring and summer, the rain
+coming back; `research/journal-journey.md`), each page in the first season its kind can come in, each chapter with its count
+and "Now" on the season the meadow is in (`arcSeason`, counted from `w.dryYear`). The frontier (`hinted`): a page's riddle
+shows from the season before its chapter's, the Dry Year's from the start, all once the arc is over; past it a page is a
+dashed blank saying when its riddle comes. An empty page has its riddle, plain (`plain`: what it wants, its place and time)
+once one came and went unseen (`glimpse`); only the first two visitors' pages put their tool in your hand (`tool`). Each kind
+seen in a meadow is kept with it (sim.js `w.sighted`, `noteSighting`; one in the journal from another meadow is noted
+silently, `noted`), and the came-through card and the loss card give that arc's tally (`arcTally`). Dragonflies, a kingfisher
+and a skylark (sim.js: a pond on its own, one with fish and a tree at its edge, a strip in the open) are painted in fur.js
+(`Fur.painters`: `paintDragonfly`, `paintKingfisher`, `paintSkylark`, with `softIn` and `furGlow`, which game.js takes from Fur
+now), at doublings of their size and shrunk between (`furPaint`, `shrunk`), and in the meadow by the worker as a fox is (`isFur`,
+`furReady`, `furKin`, `furAhead`; fur-worker.js paints any kind in `Fur.painters`). Dragonflies are seen from above, turned the
+way they go, the one the sim moves and `DRAGON_MORE` drawn about the pond by the clock (`drawDragonflies`); the kingfisher sits on a
+low branch of its tree (`KF_SIT`, drawn just in front of it), dives in a splash of rings and beats a fish on its twig
+(`drawKingfisher`, `kfUp`); the skylark walks its strip and sings high over it with a note drifting off it (`drawSkylark`,
+`larkUp`, drawn over all while up). How high each is drawn is `visitorUp`. A pond's, a strip's and a hedge's panel has a
+Visitors section: who's here, or that all a kind wants is there, or what it lacks (`placeLines`, sim.js `placeNeeds`), only
+for kinds whose riddle has come. A new meadow opens close, over the open ground with the most animals (`homeView`, `HOME_TILES`).
 The tab's icon follows the season and the part of day (`updateFavicon`, at most once a second), and
 the news log dates each line with a season chip (`seasonChip`).
 The rivers run (`drawFlow`, worked out once a meadow by `flowOf` from the sim's `w.current`): streaks of current, quicker

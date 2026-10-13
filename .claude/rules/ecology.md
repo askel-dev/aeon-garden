@@ -267,7 +267,8 @@ a tree (a hive with `cluster: true`, drawn by `drawSwarm`) while scouts fly to t
 `settle` moves them into the best hollow tree or empty hive; a daughter queen stays behind.
 Colony-level things go in `hivesTick`.
 
-Visitors (`?keep`, `visitorsTick`): now and then the keeper's work draws one in. A hedgehog comes at dusk to the longest hedge
+Visitors (`?keep`, `visitorsTick`): now and then the keeper's work draws one in (and more below: dragonflies, a kingfisher,
+a skylark). A hedgehog comes at dusk to the longest hedge
 thick enough to hide in (`h.young`), spring to autumn (`hedgehogComes`: `VISIT_FIRST` the first time, then `VISIT_ODDS` an
 evening after `VISIT_REST` days), walks in from `VISIT_FROM` tiles off, stays `VISIT_DAYS` (asleep at the foot of a whip by
 day, pottering along the hedge at night and snuffling for beetles, `potter`, `snuffle`, `v.finds`) and goes back the way it
@@ -289,3 +290,18 @@ a sign there (`w.signs`, event `visitorsign`): a hedgehog's tracks along the way
 same functions, so the visits themselves come on the same days as before the signs.
 `w.visitors` (the ones here), `w.visited` (how often each kind came, the day the last left); events `visitor`, `visitorleft`.
 A meadow kept before them gets both empty (`unpackWorld`), no `KEEP_VERSION` bump.
+The keeper's places have qualities, worked out once a day (`keeperDay`, `placesDay`) and as one is dug or sown, so a visitor
+asking for a kind of place looks it up: a pond's water now (`p.wet`), its fish (`p.fish`) and a tree at its edge or on an island
+in it (`p.perch`, within `EDGE_REACH` of its water, `pondPlace`); a strip's room in the open (`f.clear`: tiles to the nearest tree
+or hedge standing, `stripPlace`). `placeNeeds` says what a place lacks for a kind (the inspector shows it). They pull against
+each other: fish come into a pond only through water joined to water that has them (`fishTick`), so a pond on its own has none
+(`FISHLESS`) and one dug onto the river or a lake has them (`KF_FISH`). Dragonflies come to a pond on its own with its reeds up,
+in summer (`dragonflyComes`: hawking over it in darts and stops, `DRAGON_DAY`, roosting on the reeds at night and in the rain);
+a kingfisher to a pond with fish and a tree at its edge, in summer and autumn (`kingfisherComes`: on a low branch over the water,
+diving, `KF_CATCH`, beating a fish on the branch); a skylark to a strip out in the open, nothing standing within `LARK_OPEN`, in
+spring and summer (`skylarkComes`: walking and pecking, rising to sing high over it, `v.high`). Each kind's seasons are
+`VISIT_SEASONS`, its days hashed by `visitDay` (as `hogDay`, but `VISIT_SURE` the first time: a season is five days and
+the place is the hard part; on the last day of its seasons a visit of a day), and at most one kind comes for the first time a day
+(`firstBlocked`, `w.visited[kind].first`; a sign foretelling another's first visit holds it back too). None takes anything
+from the meadow. `w.sighted` (in `LATER`) is game.js's:
+each kind the player has seen in this meadow and the tick, for the journal's tally of its arc; the sim never reads it.

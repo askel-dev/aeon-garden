@@ -1,8 +1,8 @@
 /* Nobody's Meadow — the painted foxes and rabbits: their rigs and poses, painted as one animal (paintFur), and the few
  * drawing helpers every painting in game.js uses. The page loads it before game.js, which takes these from Fur, and
- * fur-worker.js loads it to paint foxes and rabbits off the main thread. It knows nothing of the meadow or the screen:
- * paintFox(g, size, U, n) and paintRabbit(g, size, U, n) paint one into a canvas size pixels square, U pixels to the
- * animal's size, n as in game.js's names for them ('fox:' + n, 'rabbit:' + n).
+ * fur-worker.js loads it to paint them off the main thread. It knows nothing of the meadow or the screen: each of
+ * painters (paintFox, paintRabbit, and the visitors' paintDragonfly, paintKingfisher, paintSkylark) paints one into a
+ * canvas size pixels square, U pixels to the animal's size, n as in game.js's names for them ('fox:' + n, 'dfly:' + n).
  */
 (root => {
 'use strict';
@@ -21,6 +21,21 @@ const fillIn = (g, colour, path) => { g.fillStyle = colour; g.beginPath(); path(
 const strokeIn = (g, colour, w, path) => { g.strokeStyle = colour; g.lineWidth = w; g.beginPath(); path(); g.stroke(); };
 const discAt = (g, x, y, r) => { g.moveTo(x + r, y); g.arc(x, y, r, 0, TAU); };
 const ovalAt = (g, x, y, rx, ry, a = 0) => { g.moveTo(x + Math.cos(a) * rx, y + Math.sin(a) * rx); g.ellipse(x, y, rx, ry, a, 0, TAU); };
+// A part, shaded soft from its lit top to its dark underside (painted once, so a gradient is fine).
+function softIn(g, rgb, y0, y1, path, lit = 1.18, dim = 0.68) {
+  const gr = g.createLinearGradient(0, y0, 0, y1);
+  gr.addColorStop(0, rockRGB(tone(rgb, lit, 12)));
+  gr.addColorStop(0.5, rockRGB(rgb));
+  gr.addColorStop(1, rockRGB(tone(rgb, dim)));
+  g.fillStyle = gr; g.beginPath(); path(); g.fill();
+}
+// A soft glow or shade: an oval of colour fading out to nothing past hard (a share of its size).
+function furGlow(g, rgb, a, x, y, rx, ry, rot = 0, hard = 0) {
+  g.save(); g.translate(x, y); g.rotate(rot); g.scale(rx, ry);
+  const gr = g.createRadialGradient(0, 0, 0, 0, 0, 1);
+  gr.addColorStop(0, rockRGB(rgb, a)); gr.addColorStop(hard, rockRGB(rgb, a)); gr.addColorStop(1, rockRGB(rgb, 0));
+  g.fillStyle = gr; g.beginPath(); g.arc(0, 0, 1, 0, TAU); g.fill(); g.restore();
+}
 const OTTER_EDGE = 0.5;                  // how soft the markings' edges are (round 4 was 1)
 // A soft-edged shape that follows the body: filled far off to the side, so only its blurred shadow falls here.
 function blurIn(g, rgb, a, blur, path, tf) {
@@ -468,6 +483,192 @@ function paintRabbit(g, size, U, n) {
     }) });
 }
 
-root.Fur = { tone, rockRGB, fillIn, strokeIn, discAt, ovalAt, blurIn, foxRGB, FOX_WHITE, FOX_SOCK,
-  FOX_POSE, RABBIT_POSE, RABBIT_KINDS, setCoats, paintFox, paintRabbit };
+// ------------------------------------------------------------------ visitors: dragonflies, a kingfisher, a skylark
+//
+// Visitors the keeper's places draw in (game.js VISITORS), soft-shaded like the hedgehog and the heron, and painted in
+// the worker as the foxes and the rabbits are. Each faces left, its box -1 to 1 the size asked for.
+
+// A dragonfly seen from above, its four wings out to the sides: 'dfly:' + (look << 4) + pose. Look 0 a broad-bodied
+// chaser (a broad powder-blue body, yellow spots down its sides, dark at the wings' roots), 1 a common darter (slim and
+// red). Pose 0 and 1 the wings swept forward and back (in flight it beats between them), 2 settled, the wings still.
+const DRAGON_LOOKS = [
+  { body: [128, 172, 214], side: [228, 200, 86], thorax: [106, 94, 64], eye: [64, 100, 118], root: [62, 42, 26], slim: 1 },
+  { body: [198, 66, 42], side: null, thorax: [142, 84, 50], eye: [146, 68, 48], root: [190, 130, 46], slim: 0.6 },
+];
+function dragonWing(g, x, y, len, wid, a, look, alpha) {
+  g.save(); g.translate(x, y); g.rotate(a);
+  const shape = () => { g.moveTo(0, 0); g.bezierCurveTo(len * 0.3, -wid, len * 0.85, -wid * 0.8, len, -wid * 0.1); g.bezierCurveTo(len * 0.9, wid * 0.5, len * 0.3, wid * 0.6, 0, 0); };
+  fillIn(g, `rgba(234, 242, 250, ${alpha})`, shape);
+  strokeIn(g, `rgba(80, 92, 104, ${alpha})`, 0.014, shape);
+  strokeIn(g, `rgba(80, 92, 104, ${alpha * 0.6})`, 0.009, () => { g.moveTo(0.02, 0); g.quadraticCurveTo(len * 0.5, -wid * 0.35, len * 0.96, -wid * 0.12); });
+  fillIn(g, rockRGB(look.root, alpha * 1.3), () => ovalAt(g, len * 0.12, 0, len * 0.13, wid * 0.34));
+  fillIn(g, `rgba(44, 32, 26, ${Math.min(1, alpha * 1.6)})`, () => ovalAt(g, len * 0.84, -wid * 0.2, len * 0.05, wid * 0.13));   // the spot near its tip
+  g.restore();
+}
+function paintDragonfly(g, size, U, n) {
+  const look = DRAGON_LOOKS[(n >> 4) % DRAGON_LOOKS.length], pose = n & 15, still = pose === 2;
+  g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
+  g.lineCap = g.lineJoin = 'round';
+  const b = still ? 0 : pose === 0 ? 0.2 : -0.16, alpha = still ? 0.6 : 0.45, h = Math.PI / 2;
+  for (const side of [-1, 1]) {                               // the far pair (up the picture, a little shorter), then the near
+    const k = side < 0 ? 0.84 : 1;
+    dragonWing(g, -0.3, 0, 0.8 * k, 0.17, side * (h + 0.14 + b), look, alpha);          // the forewing, swept forward
+    dragonWing(g, -0.2, 0, 0.76 * k, 0.22, side * (h - 0.26 + b * 0.7), look, alpha);   // the hindwing, back
+  }
+  const w = 0.1 * look.slim;
+  softIn(g, look.body, -w, w, () => {                       // its long body, tapering to the tip
+    g.moveTo(-0.26, -w * 0.8); g.quadraticCurveTo(0.1, -w * 1.2, 0.5, -w * 0.72); g.lineTo(0.86, -w * 0.28);
+    g.quadraticCurveTo(0.9, 0, 0.86, w * 0.28); g.lineTo(0.5, w * 0.72); g.quadraticCurveTo(0.1, w * 1.2, -0.26, w * 0.8); g.closePath();
+  }, 1.25, 0.66);
+  for (const x of [0.02, 0.18, 0.34, 0.5, 0.65]) strokeIn(g, rockRGB(tone(look.body, 0.5), 0.6), 0.014, () => { g.moveTo(x, -w * 0.95); g.lineTo(x, w * 0.95); });
+  if (look.side) for (const x of [0.1, 0.26, 0.42]) fillIn(g, rockRGB(look.side, 0.9), () => { ovalAt(g, x, -w * 0.72, 0.05, w * 0.2); ovalAt(g, x, w * 0.72, 0.05, w * 0.2); });
+  softIn(g, look.thorax, -0.12, 0.12, () => ovalAt(g, -0.37, 0, 0.15, 0.115), 1.25, 0.68);
+  furGlow(g, [255, 255, 255], 0.3, -0.4, -0.04, 0.08, 0.04);
+  softIn(g, look.eye, -0.15, 0.15, () => { discAt(g, -0.58, -0.07, 0.08); discAt(g, -0.58, 0.07, 0.08); }, 1.3, 0.7);   // the eyes, meeting on top
+  fillIn(g, 'rgba(255,255,255,0.75)', () => { discAt(g, -0.61, -0.1, 0.022); discAt(g, -0.61, 0.045, 0.022); });
+}
+
+// A kingfisher, side on: brilliant blue-green above with a turquoise streak down its back, orange below, a white throat
+// and a white patch on its neck, an orange cheek, a long black dagger of a bill, tiny red feet. 'kfisher:' + pose:
+// 0 perched upright on a twig, 1 perched peering down into the water, 2 diving headlong, 3 and 4 flying (the wings up and
+// down: in flight it whirrs between them), 5 perched with a fish across its bill, 6 asleep on its twig, fluffed up.
+// Its feet (on the twig) are at 0.42; it turns about them, so a perched pose sits on its twig whatever its tilt.
+const KF_BLUE = [36, 128, 178], KF_BACK = [70, 204, 220], KF_ORANGE = [224, 116, 42], KF_PALE = [246, 240, 226], KF_INK = [26, 24, 26];
+const KF_POSES = [                                         // tilt: up at the front (+), look: the head down (-)
+  { tilt: 0.5, look: -0.32, twig: true }, { tilt: 0.3, look: -0.8, twig: true }, { tilt: -1.15, look: 0, dive: true },
+  { tilt: 0.05, look: 0, wing: -1 }, { tilt: 0.05, look: 0, wing: 1 }, { tilt: 0.5, look: -0.32, twig: true, fish: true },
+  { tilt: 0.2, look: -0.1, twig: true, sleep: true },
+];
+function kfWing(g, up) {                                    // a wing spread, from the shoulder, up or down: blue, darker to the tip
+  softIn(g, KF_BLUE, up ? -0.7 : -0.05, up ? 0.05 : 0.6, () => {
+    g.moveTo(-0.12, -0.04);
+    if (up) { g.quadraticCurveTo(-0.08, -0.5, 0.18, -0.66); g.quadraticCurveTo(0.22, -0.3, 0.26, -0.02); }
+    else { g.quadraticCurveTo(-0.06, 0.36, 0.2, 0.52); g.quadraticCurveTo(0.24, 0.24, 0.26, 0.06); }
+    g.closePath();
+  }, 1.15, 0.6);
+}
+function paintKingfisher(g, size, U, n) {
+  const P = KF_POSES[n] || KF_POSES[0];
+  g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
+  g.lineCap = g.lineJoin = 'round';
+  if (P.twig) {                                             // the twig it sits on, level whatever its tilt
+    strokeIn(g, rockRGB([96, 72, 50]), 0.07, () => { g.moveTo(-0.62, 0.47); g.quadraticCurveTo(0, 0.42, 0.66, 0.46); });
+    strokeIn(g, rockRGB([96, 72, 50]), 0.04, () => { g.moveTo(0.3, 0.44); g.quadraticCurveTo(0.42, 0.34, 0.5, 0.28); });
+    strokeIn(g, rockRGB([150, 120, 88], 0.6), 0.02, () => { g.moveTo(-0.6, 0.45); g.quadraticCurveTo(0, 0.4, 0.64, 0.44); });
+  }
+  const fx = 0, fy = P.twig ? 0.42 : 0.1;                   // about its feet on the twig, or its middle in the air
+  g.translate(fx, fy); g.rotate(P.tilt); g.translate(-fx, -fy);
+  if (P.wing === -1) kfWing(g, true);                       // the far wing, up behind it
+  const by = P.twig ? 0.18 : -0.12, fluff = P.sleep ? 1.18 : 1;
+  softIn(g, KF_BLUE, by - 0.04, by + 0.12, () => { g.moveTo(0.3, by - 0.02); g.lineTo(0.72, by + 0.06); g.lineTo(0.7, by + 0.13); g.lineTo(0.3, by + 0.1); g.closePath(); }, 1.1, 0.6);   // the short tail
+  const body = () => ovalAt(g, 0.04, by, 0.36 * fluff, 0.2 * fluff, 0.06);
+  softIn(g, KF_ORANGE, by - 0.2, by + 0.22, body, 1.15, 0.7);
+  g.save(); g.beginPath(); body(); g.clip();
+  softIn(g, KF_BLUE, by - 0.24, by + 0.04, () => ovalAt(g, 0.08, by - 0.1, 0.42 * fluff, 0.15 * fluff, 0.06), 1.2, 0.7);   // blue above
+  g.restore();
+  if (!P.wing) {                                            // the folded wing, scaled with paler spots, and the bright streak down its back
+    softIn(g, KF_BLUE, by - 0.16, by + 0.08, () => ovalAt(g, 0.14, by - 0.04, 0.26 * fluff, 0.12 * fluff, 0.12), 1.2, 0.62);
+    for (const [x, y] of [[0.02, -0.08], [0.1, -0.07], [0.06, -0.02], [0.16, -0.03]]) fillIn(g, rockRGB(KF_BACK, 0.7), () => discAt(g, x, by + y, 0.016));
+    strokeIn(g, rockRGB(KF_BACK), P.dive ? 0.035 : 0.045, () => { g.moveTo(-0.1, by - 0.15 * fluff); g.quadraticCurveTo(0.14, by - 0.2 * fluff, 0.36, by - 0.06); });
+  }
+  // The head, big for it: a blue cap, the orange cheek, the white throat and neck patch, a black eye; the long bill.
+  const hx = P.sleep ? -0.22 : -0.28, hy = by - (P.sleep ? 0.06 : 0.12);
+  g.save(); g.translate(hx, hy); g.rotate(P.look);
+  if (!P.sleep) {
+    fillIn(g, rockRGB(KF_INK), () => { g.moveTo(-0.12, -0.02); g.quadraticCurveTo(-0.38, -0.01, -0.6, 0.04); g.quadraticCurveTo(-0.38, 0.05, -0.12, 0.06); g.closePath(); });
+    strokeIn(g, rockRGB([90, 80, 76], 0.7), 0.01, () => { g.moveTo(-0.14, 0.02); g.lineTo(-0.52, 0.035); });
+  } else fillIn(g, rockRGB(KF_INK), () => { g.moveTo(-0.12, 0.0); g.lineTo(-0.3, 0.05); g.lineTo(-0.12, 0.07); g.closePath(); });   // tucked in
+  softIn(g, KF_BLUE, -0.17, 0.15, () => discAt(g, 0, 0, 0.16), 1.25, 0.7);
+  g.save(); g.beginPath(); discAt(g, 0, 0, 0.16); g.clip();
+  fillIn(g, rockRGB(KF_ORANGE), () => ovalAt(g, -0.01, 0.03, 0.12, 0.05, -0.15));      // the cheek, through the eye
+  fillIn(g, rockRGB(KF_PALE), () => ovalAt(g, -0.08, 0.14, 0.1, 0.06));                 // the throat
+  fillIn(g, rockRGB(KF_PALE), () => ovalAt(g, 0.12, 0.06, 0.05, 0.035, 0.4));           // the patch on its neck
+  g.restore();
+  for (const x of [-0.08, -0.02, 0.04]) fillIn(g, rockRGB(KF_BACK, 0.6), () => discAt(g, x, -0.1, 0.014));   // its barred cap
+  if (P.sleep) strokeIn(g, rockRGB(KF_INK), 0.022, () => { g.moveTo(-0.08, 0.0); g.quadraticCurveTo(-0.05, 0.02, -0.02, 0.0); });
+  else { fillIn(g, rockRGB(KF_INK), () => discAt(g, -0.05, 0.0, 0.032)); fillIn(g, 'rgba(255,255,255,0.85)', () => discAt(g, -0.06, -0.012, 0.011)); }
+  if (P.fish) {                                            // a little fish crosswise in its bill
+    g.save(); g.translate(-0.46, 0.04); g.rotate(1.35);
+    softIn(g, [192, 202, 204], -0.04, 0.04, () => { g.moveTo(-0.13, 0); g.quadraticCurveTo(0, -0.055, 0.1, 0); g.quadraticCurveTo(0, 0.055, -0.13, 0); }, 1.25, 0.65);
+    fillIn(g, rockRGB([150, 160, 160]), () => { g.moveTo(0.08, 0); g.lineTo(0.17, -0.04); g.lineTo(0.16, 0.04); g.closePath(); });
+    g.restore();
+  }
+  g.restore();
+  if (P.wing === 1) kfWing(g, false);                       // the near wing, down
+  else if (P.wing === -1) kfWing(g, true);
+  if (P.dive) strokeIn(g, rockRGB(KF_BLUE), 0.09, () => { g.moveTo(0.02, by - 0.04); g.quadraticCurveTo(0.24, by - 0.02, 0.42, by + 0.05); });   // the wings swept back tight
+  if (P.twig) fillIn(g, rockRGB([212, 84, 62]), () => { ovalAt(g, -0.02, 0.4, 0.035, 0.02); ovalAt(g, 0.06, 0.41, 0.035, 0.02); });   // its feet
+  furGlow(g, [255, 255, 255], 0.18, 0.02, by - 0.12, 0.2, 0.06, 0.06);
+}
+
+// A skylark, side on: streaky brown above, buff below with a streaked breast, a pale stripe over its eye, a short crest,
+// a stout little bill, white edges to its tail. 'lark:' + pose: 0 and 1 the two steps of a walk, 2 pecking, 3 singing on
+// the ground (crest up, bill open), 4 and 5 singing in the air (the wings up and down: it flutters between them, hanging
+// high over its strip), 6 asleep, crouched in the grass. Feet on the ground at 0.72.
+const LARK_BACK = [150, 114, 74], LARK_DARK = [78, 58, 38], LARK_PALE = [236, 222, 192], LARK_BILL = [120, 98, 76], LARK_LEG = [206, 166, 134];
+function larkStreaks(g, x0, y0, x1, y1, n, seed, len, a = 0.4) {
+  for (let k = 0; k < n; k++) {
+    seed = seed * 16807 % 2147483647; const u = seed / 2147483647;
+    seed = seed * 16807 % 2147483647; const v = seed / 2147483647;
+    const x = x0 + (x1 - x0) * u, y = y0 + (y1 - y0) * v;
+    strokeIn(g, rockRGB(LARK_DARK, 0.75), 0.018, () => { g.moveTo(x, y); g.lineTo(x + len, y + len * a); });
+  }
+}
+function paintSkylark(g, size, U, n) {
+  const pose = n, fly = pose === 4 || pose === 5, peck = pose === 2, sing = pose === 3, sleep = pose === 6;
+  g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
+  g.lineCap = g.lineJoin = 'round';
+  const by = fly ? 0.1 : sleep ? 0.5 : 0.4, tilt = fly ? 0.35 : peck ? -0.15 : 0;   // (up at the front: +)
+  g.save(); g.translate(0, by); g.rotate(tilt); g.translate(0, -by);
+  if (fly) {                                                // the far wing, and the tail fanned, its white edges showing
+    softIn(g, LARK_BACK, -0.6, 0.1, () => { g.moveTo(-0.1, by - 0.06); g.quadraticCurveTo(-0.02, by - (pose === 4 ? 0.62 : -0.5), 0.3, by - (pose === 4 ? 0.7 : -0.56)); g.quadraticCurveTo(0.26, by - 0.2, 0.22, by); g.closePath(); }, 1.1, 0.7);
+    fillIn(g, rockRGB(LARK_PALE), () => { g.moveTo(0.3, by); g.lineTo(0.68, by - 0.1); g.lineTo(0.7, by + 0.1); g.closePath(); });
+  } else {
+    strokeIn(g, rockRGB(LARK_LEG), 0.03, () => {             // its legs, a step apart or together
+      const s = pose === 0 ? 0.08 : pose === 1 ? -0.02 : 0.03;
+      if (!sleep) { g.moveTo(-0.02, by + 0.12); g.lineTo(-0.02 - s, 0.72); g.moveTo(0.06, by + 0.12); g.lineTo(0.06 + s, 0.72); }
+    });
+  }
+  softIn(g, LARK_BACK, by - 0.08, by + 0.06, () => { g.moveTo(0.26, by - 0.06); g.lineTo(0.66, by - (fly ? 0.04 : 0.12)); g.lineTo(0.68, by - (fly ? -0.06 : 0.02)); g.lineTo(0.26, by + 0.06); g.closePath(); }, 1.1, 0.65);
+  fillIn(g, rockRGB(LARK_PALE, 0.9), () => { g.moveTo(0.32, by + 0.04); g.lineTo(0.68, by - (fly ? -0.06 : 0.02)); g.lineTo(0.66, by + (fly ? 0.0 : -0.04)); g.closePath(); });   // the white edge of its tail
+  const body = () => ovalAt(g, 0.02, by, sleep ? 0.38 : 0.34, sleep ? 0.2 : 0.18, -0.06);
+  softIn(g, LARK_PALE, by - 0.18, by + 0.2, body, 1.08, 0.78);
+  g.save(); g.beginPath(); body(); g.clip();
+  softIn(g, LARK_BACK, by - 0.24, by + 0.04, () => ovalAt(g, 0.06, by - 0.08, 0.4, 0.15, -0.06), 1.2, 0.72);   // brown above
+  larkStreaks(g, -0.24, by - 0.2, 0.32, by - 0.04, 14, 7, 0.08);
+  larkStreaks(g, -0.3, by - 0.02, -0.08, by + 0.12, 7, 11, 0.04, 1.4);                    // its streaked breast
+  g.restore();
+  if (!fly) {                                               // the folded wing, its feathers edged pale
+    softIn(g, LARK_BACK, by - 0.12, by + 0.08, () => ovalAt(g, 0.1, by - 0.02, 0.24, 0.1, -0.08), 1.2, 0.66);
+    strokeIn(g, rockRGB(LARK_PALE, 0.7), 0.014, () => { for (const x of [0.0, 0.1, 0.2]) { g.moveTo(x, by - 0.07); g.quadraticCurveTo(x + 0.06, by + 0.0, x + 0.08, by + 0.07); } });
+  }
+  // The head: brown with a pale stripe over the eye and a short crest; a stout bill.
+  const hx = peck ? -0.36 : sleep ? -0.24 : -0.3, hy = by - (peck ? -0.08 : sleep ? 0.04 : 0.15) - (sing ? 0.05 : 0);
+  g.save(); g.translate(hx, hy); g.rotate(sing ? -0.45 : peck ? 0.5 : 0);
+  if (!sleep) {
+    fillIn(g, rockRGB(LARK_BILL), () => { g.moveTo(-0.08, -0.03); g.lineTo(-0.22, sing ? -0.03 : 0.0); g.lineTo(-0.08, 0.02); g.closePath(); });
+    if (sing) fillIn(g, rockRGB(LARK_BILL), () => { g.moveTo(-0.08, 0.02); g.lineTo(-0.2, 0.06); g.lineTo(-0.08, 0.04); g.closePath(); });   // its bill open in song
+  }
+  softIn(g, LARK_BACK, -0.13, 0.12, () => discAt(g, 0, 0, 0.12), 1.2, 0.72);
+  g.save(); g.beginPath(); discAt(g, 0, 0, 0.12); g.clip();
+  fillIn(g, rockRGB(LARK_PALE), () => ovalAt(g, -0.03, 0.08, 0.1, 0.05));             // its pale chin
+  strokeIn(g, rockRGB(LARK_PALE, 0.9), 0.026, () => { g.moveTo(-0.09, -0.04); g.quadraticCurveTo(0.0, -0.06, 0.08, -0.02); });   // the stripe over its eye
+  larkStreaks(g, -0.06, -0.11, 0.08, -0.06, 4, 3, 0.04);
+  g.restore();
+  softIn(g, LARK_BACK, -0.2, -0.06, () => { g.moveTo(0.02, -0.1); g.lineTo(0.13, sing ? -0.24 : -0.17); g.lineTo(0.1, -0.06); g.closePath(); }, 1.1, 0.7);   // the crest
+  if (sleep) strokeIn(g, rockRGB(LARK_DARK), 0.02, () => { g.moveTo(-0.06, 0.0); g.quadraticCurveTo(-0.03, 0.02, 0.0, 0.0); });
+  else { fillIn(g, '#1c1612', () => discAt(g, -0.04, 0.0, 0.026)); fillIn(g, 'rgba(255,255,255,0.8)', () => discAt(g, -0.048, -0.01, 0.009)); }
+  g.restore();
+  if (fly) softIn(g, LARK_BACK, -0.1, 0.6, () => {          // the near wing, its trailing edge white
+    g.moveTo(-0.14, by - 0.02); g.quadraticCurveTo(-0.08, by + (pose === 4 ? -0.6 : 0.52), 0.24, by + (pose === 4 ? -0.66 : 0.6)); g.quadraticCurveTo(0.22, by + 0.2, 0.2, by + 0.04); g.closePath();
+  }, 1.15, 0.66);
+  if (fly) strokeIn(g, rockRGB(LARK_PALE, 0.85), 0.03, () => { g.moveTo(0.24, by + (pose === 4 ? -0.64 : 0.58)); g.quadraticCurveTo(0.22, by + (pose === 4 ? -0.24 : 0.22), 0.2, by + 0.04); });
+  g.restore();
+  furGlow(g, [255, 246, 222], 0.2, 0.0, by - 0.12, 0.22, 0.07);
+}
+
+const painters = { fox: paintFox, rabbit: paintRabbit, dfly: paintDragonfly, kfisher: paintKingfisher, lark: paintSkylark };
+
+root.Fur = { tone, rockRGB, fillIn, strokeIn, discAt, ovalAt, blurIn, softIn, furGlow, foxRGB, FOX_WHITE, FOX_SOCK,
+  FOX_POSE, RABBIT_POSE, RABBIT_KINDS, setCoats, paintFox, paintRabbit, painters };
 })(typeof window !== 'undefined' ? window : globalThis);

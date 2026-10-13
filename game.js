@@ -3,7 +3,7 @@
 'use strict';
 const S = window.Sim;
 const Fur = window.Fur;                 // the painted foxes and rabbits, and the drawing helpers every painting here uses
-const { tone, rockRGB, fillIn, strokeIn, discAt, ovalAt, blurIn, foxRGB, FOX_WHITE, FOX_SOCK, FOX_POSE, RABBIT_POSE, RABBIT_KINDS } = Fur;
+const { tone, rockRGB, fillIn, strokeIn, discAt, ovalAt, blurIn, softIn, furGlow, foxRGB, FOX_WHITE, FOX_SOCK, FOX_POSE, RABBIT_POSE, RABBIT_KINDS } = Fur;
 const $ = sel => document.querySelector(sel);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -244,7 +244,7 @@ const spriteStep = px => px < 16 ? Math.round(px) : Math.round(2 ** (Math.round(
 // through sizes all the time: their sprites come in steps of about 19%, the size above, drawn a little smaller. Below
 // the size they're painted at (shrunk) they're tiny and many, so one size an octave does, drawn up to half as big.
 const poseStep = px => px < FUR_PAINTED / dpr ? 2 ** Math.ceil(Math.log2(px)) : Math.ceil(2 ** (Math.ceil(Math.log2(px) * 4) / 4));
-const posed = art => art.startsWith('fox:') || art.startsWith('rabbit:') || art.startsWith('hog:') || art.startsWith('heron:');
+const posed = art => isFur(art) || art.startsWith('hog:') || art.startsWith('heron:');
 function sprite(emoji, want, tint, leaf, center) {
   want = Math.max(4, want);
   const px = posed(emoji) ? poseStep(want) : spriteStep(want), s = paintedSprite(emoji, px, tint, leaf, center);
@@ -1367,9 +1367,11 @@ function render(now) {
     if (c.species === 'crow' && crowSeat(c)) it.y -= (seat.y - seat.tree.y) * SEAT_SORT;   // up a tree: just after it, not after the trees just in front
     if (!c.held) shown.push(it);                           // (one held up has its shadow here, and is drawn last, in the hand)
   }
-  if (world.visitors) for (const v of world.visitors) {    // (?keep: a hedgehog at a hedge, a heron at a pond)
+  if (world.visitors) for (const v of world.visitors) {    // (?keep: a hedgehog at a hedge, a heron at a pond, ...)
     const d = drawnAt(v), [sx, sy] = toScreen(d.x, d.y);
-    if (visible(sx, sy, 40 + 2 * visitorPx(v))) itemOf(items, d.y, sx, sy, 1 - mistAt(d.x, d.y)).v = v;
+    const sort = v.kind === 'kingfisher' && v.tree && v.mode !== 'in' && v.mode !== 'out' ? Math.max(d.y, v.tree.y + 0.02)   // (in front of its tree)
+      : v.kind === 'skylark' && v.high > 0.3 ? OWL_FRONT : d.y;                                                       // (singing high over all)
+    if (visible(sx, sy, 40 + 2 * visitorPx(v) + visitorUp(v, visitorPx(v)))) itemOf(items, sort, sx, sy, 1 - mistAt(d.x, d.y)).v = v;
     if (KEEP) watchVisitor(v, d.x, d.y, sx, sy);              // (the journal's moments)
   }
   sortByY(items);
@@ -1751,12 +1753,18 @@ const wading = c => !c.hidden && !c.sp.flies && !world.frozen && world.water[(c.
 // snuffles with its nose down, and curled up asleep under the hedge by day it breathes, a 💤 over it close up. It fades
 // in and out over the first and last VISIT_FADE tiles of its way, as if out of the long grass. A heron (paintHeron,
 // drawHeron) fades in and out of the sky over HERON_FADE.
-// size: next to a rabbit (a hedgehog a little bigger than life, to be seen); badge: its marker's picture; glyph: painted,
-// with no emoji, so a line of text shows its portrait (visitorGlyph).
+// Dragonflies (drawDragonflies), a kingfisher (drawKingfisher) and a skylark (drawSkylark) are painted by fur.js, in the
+// worker as the foxes are, and fade in and out over their kind's fade.
+// a: its name in a sentence; size: next to a rabbit (a hedgehog a little bigger than life, to be seen, a dragonfly much
+// bigger); badge: its marker's picture; glyph: painted, with no emoji, so a line of text shows its portrait (visitorGlyph).
 const VISITORS = {
-  hedgehog: { name: 'hedgehog', emoji: '🦔', badge: '🦔', art: 'hog:0', tint: '#a07c5a', for: 'the beetles under', home: 'hedge', size: 1, fade: S.VISIT_FADE },
-  heron: { name: 'heron', emoji: '', badge: 'heron:1', art: 'heron:1', tint: '#a9b4bf', for: 'the frogs in', home: 'pond', size: 1.85, fade: S.HERON_FADE, glyph: true },
+  hedgehog: { name: 'hedgehog', a: 'a hedgehog', emoji: '🦔', badge: '🦔', art: 'hog:0', tint: '#a07c5a', for: 'the beetles under', home: 'hedge', size: 1, fade: S.VISIT_FADE },
+  heron: { name: 'heron', a: 'a heron', emoji: '', badge: 'heron:1', art: 'heron:1', tint: '#a9b4bf', for: 'the frogs in', home: 'pond', size: 1.85, fade: S.HERON_FADE, glyph: true },
+  dragonfly: { name: 'dragonflies', a: 'dragonflies', emoji: '', badge: 'dfly:2', art: 'dfly:2', tint: '#8fb3d6', for: 'the reeds and still water of', home: 'pond', size: 0.75, fade: S.VISIT_FADE, glyph: true },
+  kingfisher: { name: 'kingfisher', a: 'a kingfisher', emoji: '', badge: 'kfisher:0', art: 'kfisher:0', tint: '#3d9cc6', for: 'the fish in', home: 'pond', size: 1.1, fade: S.KF_FADE, glyph: true },
+  skylark: { name: 'skylark', a: 'a skylark', emoji: '', badge: 'lark:3', art: 'lark:3', tint: '#a8895f', for: 'the open ground of', home: 'strip', size: 1.1, fade: S.LARK_FADE, glyph: true },
 };
+const capital = t => t[0].toUpperCase() + t.slice(1);
 const visitorFace = kind => {      // its painting, for the inspector
   const art = VISITORS[kind].art;
   if (!portraits.has(art)) portraits.set(art, dataURL(sprite(art, 38).canvas));
@@ -1775,16 +1783,28 @@ function glyphVar(kind) {
   const k = VISITORS[kind];
   if (!k.glyphed) { visitorFace(kind); document.documentElement.style.setProperty('--glyph-' + kind, `url(${portraits.get(k.art)})`); k.glyphed = true; }
 }
-// Where it came to: the hedge, or the pond; and a link to it.
-const visitorPlace = v => (v.hedge ? v.hedge.name : world.waters[v.pond.id].name);
-const placeLink = v => (v.hedge ? hedgeLink(v.hedge, esc(v.hedge.name)) : thingLink('water', v.pond.id, esc(visitorPlace(v))));
+// Where it came to: the hedge, the pond or the strip; and a link to it.
+const visitorPlace = v => (v.hedge ? v.hedge.name : v.strip ? v.strip.name : world.waters[v.pond.id].name);
+const placeLink = v => (v.hedge ? hedgeLink(v.hedge, esc(v.hedge.name)) : v.strip ? thingLink('field', v.strip.id, esc(v.strip.name))
+  : thingLink('water', v.pond.id, esc(visitorPlace(v))));
 const HOG_STEP = 0.16;             // tiles a step of its walk
 const HERON_STEP = 0.2;            // and of a heron's stalk
 const visitorPx = v => (8 + cam.zoom) * VISITORS[v.kind].size;
 // Its feet are on the ground where a rabbit's would be, however big it's drawn: this far below the point it's drawn round.
 const visitorFeet = () => 0.36 * (8 + cam.zoom);
 // How far above that point the top of its head is drawn (for its marker).
-const visitorTop = v => (v.kind === 'heron' ? visitorPx(v) * 0.8 - visitorFeet() + heronLift(v, visitorPx(v)) : visitorPx(v) * 0.6);
+const TOPS = { heron: 0.8, kingfisher: 0.62, skylark: 0.5, dragonfly: 0.4 };   // the top of its head over its feet, in its size
+const visitorTop = v => { const px = visitorPx(v); return v.kind === 'hedgehog' ? px * 0.6 : visitorUp(v, px) + px * TOPS[v.kind] - visitorFeet(); };
+// How high over the ground it's drawn (its feet, or a dragonfly's middle), in px.
+function visitorUp(v, px) {
+  switch (v.kind) {
+    case 'heron': return heronLift(v, px);
+    case 'kingfisher': return kfUp(v, px);
+    case 'skylark': return larkUp(v);
+    case 'dragonfly': return px * (v.mode === 'perch' || v.mode === 'roost' ? DRAGON_SIT : DRAGON_HANG);
+  }
+  return 0;
+}
 const visitorSteps = new WeakMap();     // how far it has walked, as drawn: { x, y, walked, at }
 function visitorFade(v) {
   const f = VISITORS[v.kind].fade;
@@ -1814,6 +1834,9 @@ function drawVisitor(v, sx, sy, now, z) {
   const px = visitorPx(v), a = visitorFade(v);
   if (a < 0.02) return;
   if (v.kind === 'heron') { drawHeron(v, sx, sy, now, z, px, a); return; }
+  if (v.kind === 'dragonfly') { drawDragonflies(v, sx, sy, now, z, px, a); return; }
+  if (v.kind === 'kingfisher') { drawKingfisher(v, sx, sy, now, z, px, a); return; }
+  if (v.kind === 'skylark') { drawSkylark(v, sx, sy, now, z, px, a); return; }
   const asleep = v.mode === 'sleep', squash = 1 + (asleep && ui.speed > 0 ? Math.sin(now / 650 + v.id) * 0.035 : 0);
   drawEmoji(visitorArt(v), sx, sy + px * 0.4 * (1 - squash), px, { flip: v.facing > 0, squash, alpha: a < 1 ? a : undefined });
   if (asleep && z >= 8) drawEmoji('💤', sx + px * 0.3, sy - px * 0.55 + Math.sin(now / 600 + v.id) * 3, Math.max(11, z * 0.7), { alpha: 0.85 });
@@ -1869,6 +1892,115 @@ function drawHeron(v, sx, sy, now, z, px, a) {
   }
   if (v.mode === 'sleep' && z >= 8) drawEmoji('💤', sx + px * 0.18, y - px * 0.22 + Math.sin(now / 600 + v.id) * 3, Math.max(11, z * 0.7), { alpha: 0.85 });
 }
+// Dragonflies (sim.js dragonflyTick) seen from above: one the sim moves, and DRAGON_MORE drawn about it (a look: each
+// hangs over a spot of the pond's water a while, then darts to the next, by the meadow's clock), turned the way they go.
+// In flight their wings beat between two paintings; settled on a reed they're still. Fade in and out with the visitor.
+const DRAGON_MORE = 2;             // more about the pond than the one the sim moves
+const DRAGON_HANG = 1.1;           // how high they hang over the water, in their size
+const DRAGON_SIT = 0.5;            // and sit up a reed
+const DRAGON_BEAT = 45;            // ms a wingbeat painting shows
+const dragonWay = new WeakMap();   // the way the one the sim moves last went
+function drawDragonflies(v, sx, sy, now, z, px, a) {
+  const t = world.tick + acc, still = ui.speed === 0 || ui.speed > FEW_FRAMES, ground = sy + visitorFeet(), sat = v.mode === 'perch' || v.mode === 'roost';
+  let way = dragonWay.get(v) ?? (v.facing > 0 ? 0 : Math.PI);
+  if (!sat && (v.tx !== v.x || v.ty !== v.y)) way = Math.atan2(v.ty - v.y, v.tx - v.x);
+  dragonWay.set(v, way);
+  dragonfly(v, 0, sx, ground - visitorUp(v, px), px, way, sat, still, now, a);
+  for (let k = 1; k <= DRAGON_MORE; k++) {                // the others, about the pond
+    const list = sat ? v.edge : v.spots, n = list.length;
+    if (!n) break;
+    let x, y, w2 = way, sit = sat;
+    if (v.mode === 'in' || v.mode === 'out') { x = v.x + Math.cos(k * 2.4) * 0.8; y = v.y + Math.sin(k * 2.4) * 0.5; }
+    else {
+      const span = 70 + 50 * hash2(v.id, k, 151), u = (t + span * hash2(v.id, k, 153)) / span, j = Math.floor(u), f = u - j;
+      const p0 = list[Math.floor(hash2(j, k, v.id) * n)], p1 = list[Math.floor(hash2(j + 1, k, v.id) * n)], d = f < 0.7 ? 0 : (f - 0.7) / 0.3, e = d * d * (3 - 2 * d);
+      x = p0.x + (p1.x - p0.x) * e; y = p0.y + (p1.y - p0.y) * e;
+      if (!sat) { w2 = Math.atan2(p1.y - p0.y, p1.x - p0.x); sit = hash2(j, k, v.id + 7) < 0.3 && d === 0; }
+    }
+    const [ox, oy] = toScreen(x, y);
+    dragonfly(v, k, ox, oy + visitorFeet() - px * (sit ? DRAGON_SIT : DRAGON_HANG), px * (k === 2 ? 0.85 : 1), w2, sit, still, now, a);
+  }
+}
+// One of them: k 0 and 1 the blue chasers, 2 a red darter. (A wingbeat not painted yet: another stands in, paintedSprite.)
+function dragonfly(v, k, x, y, px, way, sat, still, now, a) {
+  const look = k === 2 ? 1 << 4 : 0, pose = sat ? 2 : still ? 0 : (now / DRAGON_BEAT + k + v.id) & 1;
+  const s = sprite('dfly:' + (look + pose), px);
+  ctx.save();
+  if (a < 1) ctx.globalAlpha = a;
+  ctx.translate(x, y); ctx.rotate(way + Math.PI);          // (the painting faces left: the way it goes)
+  ctx.drawImage(s.canvas, -s.size / 2, -s.size / 2, s.size, s.size);
+  ctx.restore();
+}
+
+// A kingfisher (sim.js kingfisherTick) sits on a low branch of the tree at the pond's edge (KF_SIT of the tree's height,
+// drawn just in front of it), now and then peering down; drops in a dive to the water, is under a moment in a splash
+// of rings, and flies back up, with a fish it beats on the branch. In flight its wings whirr. It comes in low and fast.
+const KF_SIT = 0.3;                // how far up its tree's painting its branch is
+const KF_FLY_UP = 0.9;             // how high it flies coming and going, in its size
+const KF_WHIRR = 55;               // ms a wingbeat painting shows
+const kfSit = (v, px) => (v.tree ? treePx(v.tree) * KF_SIT : px * 0.5);
+function kfUp(v, px) {
+  const sit = kfSit(v, px), d = drawnAt(v), part = (ax, ay, bx, by) => clamp(Math.hypot(d.x - ax, d.y - ay) / (Math.hypot(bx - ax, by - ay) || 1), 0, 1);
+  switch (v.mode) {
+    case 'in': return lerp(sit, px * KF_FLY_UP, clamp(Math.hypot(v.tx - d.x, v.ty - d.y) / 2, 0, 1));
+    case 'out': return lerp(sit, px * KF_FLY_UP, clamp(Math.hypot(d.x - v.ox, d.y - v.oy) / 2, 0, 1));
+    case 'dive': return sit * (1 - part(v.ox, v.oy, v.tx, v.ty));
+    case 'under': return 0;
+    case 'back': return sit * part(v.ox, v.oy, v.tx, v.ty);
+  }
+  return sit;
+}
+function kfArt(v, now) {
+  switch (v.mode) {
+    case 'in': case 'out': case 'back': return ui.speed > 0 && ui.speed <= FEW_FRAMES ? 'kfisher:' + (3 + ((now / KF_WHIRR + v.id) & 1)) : 'kfisher:3';
+    case 'dive': return 'kfisher:2';
+    case 'beat': return 'kfisher:5';
+    case 'sleep': return 'kfisher:6';
+  }
+  return v.timer % 90 >= 60 ? 'kfisher:1' : 'kfisher:0';
+}
+function drawKingfisher(v, sx, sy, now, z, px, a) {
+  const ground = sy + visitorFeet(), up = kfUp(v, px), alpha = a < 1 ? a : undefined;
+  if (v.mode === 'under' || v.mode === 'back' && up < px * 0.3) {   // the splash, ringing out where it went in
+    const u = v.mode === 'under' ? clamp((S.KF_UNDER - v.timer + acc) / S.KF_UNDER, 0, 1) : 1;
+    const [rx, ry] = v.mode === 'under' ? [sx, ground] : toScreen(v.ox, v.oy);
+    ctx.strokeStyle = 'rgba(240, 250, 255, 0.8)'; ctx.lineWidth = Math.max(1, px * 0.04);
+    ctx.globalAlpha = 0.9 * (1 - 0.6 * u);
+    ctx.beginPath(); ctx.ellipse(rx, v.mode === 'under' ? ry : ry + visitorFeet(), px * (0.12 + 0.3 * u), px * (0.04 + 0.1 * u), 0, 0, TAU); ctx.stroke();
+    ctx.globalAlpha = 1;
+    if (v.mode === 'under') return;
+  }
+  drawEmoji(shownPose(v, kfArt(v, now), px), sx, ground - up - px * 0.21, px, { flip: v.facing > 0, alpha });
+  if (v.mode === 'sleep' && z >= 8) drawEmoji('💤', sx + px * 0.25, ground - up - px * 0.6 + Math.sin(now / 600 + v.id) * 3, Math.max(11, z * 0.7), { alpha: 0.85 });
+}
+
+// A skylark (sim.js skylarkTick) walks the strip and pecks; rises singing (v.high, up to LARK_HIGH over it), hangs there
+// fluttering with a note now and then drifting off it, and drops back down. It comes in and goes off high.
+const LARK_HIGH = 3.6;             // how high it sings, in a rabbit's size (8 + the zoom)
+const LARK_STEP = 0.1;             // tiles a step of its walk
+const LARK_FLUTTER = 70;           // ms a wingbeat painting shows
+function larkUp(v) {
+  const high = LARK_HIGH * (8 + cam.zoom), d = drawnAt(v);
+  if (v.mode === 'in') return high * 0.8 * clamp(Math.hypot(v.tx - d.x, v.ty - d.y) / 3, 0, 1);
+  if (v.mode === 'out') return high * 0.8 * Math.max(v.high, clamp(Math.hypot(d.x - v.ox, d.y - v.oy) / 3, 0, 1));
+  return high * v.high;
+}
+function larkArt(v, up, px, now) {
+  if (v.mode === 'sleep') return 'lark:6';
+  if (up > px * 0.15 || v.mode === 'rise') return ui.speed > 0 && ui.speed <= FEW_FRAMES ? 'lark:' + (4 + ((now / LARK_FLUTTER + v.id) & 1)) : 'lark:4';
+  if (v.mode === 'peck') return v.timer % 40 < 22 ? 'lark:2' : 'lark:3';
+  if (v.mode === 'walk') return 'lark:' + (ui.speed > FEW_FRAMES ? 0 : stepOf(v, LARK_STEP));
+  return 'lark:0';
+}
+function drawSkylark(v, sx, sy, now, z, px, a) {
+  const ground = sy + visitorFeet(), up = larkUp(v), y = ground - up - px * 0.36;
+  drawEmoji(shownPose(v, larkArt(v, up, px, now), px), sx, y, px, { flip: v.facing > 0, alpha: a < 1 ? a : undefined });
+  if ((v.mode === 'sing' || v.mode === 'rise') && z >= 6) {   // its song: a note drifting up off it now and then
+    const u = (now / 1400 + v.id * 0.37) % 1;
+    if (u < 0.8) drawEmoji('🎵', sx + (v.facing > 0 ? 1 : -1) * px * (0.3 + 0.4 * u), y - px * (0.2 + 0.9 * u), Math.max(9, px * 0.45), { alpha: 0.85 * (1 - u / 0.8) });
+  }
+  if (v.mode === 'sleep' && z >= 8) drawEmoji('💤', sx + px * 0.25, y - px * 0.4 + Math.sin(now / 600 + v.id) * 3, Math.max(11, z * 0.7), { alpha: 0.85 });
+}
 // A visitor's sign (sim.js w.signs), flat on the ground: a hedgehog's tracks, a few prints along the way it'll come in to
 // the hedge, or a heron's feather on the bank of its pond.
 function drawSigns(z) {
@@ -1899,46 +2031,85 @@ const saveJournal = () => { try { localStorage.setItem(JOURNAL, JSON.stringify(j
 const PHOTOS = 'aeon-garden-journal-photos';
 let photos = {};
 try { photos = JSON.parse(localStorage.getItem(PHOTOS) || '{}') || {}; } catch (e) { /* a private window: this visit only */ }
-// Its pages in order, numbered. art: its painting (a function where it's worked out), fit: how much bigger it's shown (a
-// tall one painted with room round it); a: its name in a sentence; note: what a found page says; hint: an empty one's; a
-// visitor's tool (KEEP_TOOLS) is what draws it, where and when it comes, glimpse: its page once one's come and gone unseen.
-const PAGES = [
-  { k: 'rabbit', name: 'Rabbit', a: 'a rabbit', art: () => rabbitArtOf(COAT.wild, 'sit'),
-    note: 'Grazes the open grass at dawn and dusk and digs its burrows there. Stamps and bolts when a fox comes.',
-    hint: 'Something nibbles the short grass round the burrows.' },
-  { k: 'fox', name: 'Fox', a: 'a fox', art: () => foxArtOf(0.2, 'stand'),
-    note: 'Hunts the rabbits, and pounces on voles in the long grass when rabbits are few.',
-    hint: 'Something red trots the meadow at dusk, after the rabbits.' },
-  { k: 'bee', name: 'Honeybee', a: 'a honeybee', art: 'bee:2',
-    note: 'Lives in a hollow oak and sips from the flowers in reach. One back from a rich patch dances the way.',
-    hint: 'Something hums over the flowers by an old hollow oak.' },
-  { k: 'crow', name: 'Crow', a: 'a crow', art: 'crow:0',
-    note: 'Walks the short grass for grubs and clears up what the foxes leave. Buries acorns in autumn, and some grow into oaks.',
-    hint: 'Something black walks the short grass, pecking.' },
-  ...(S.OWLS ? [{ k: 'owl', name: 'Tawny owl', a: 'a tawny owl', art: '🦉',
-    note: 'Sleeps in a hollow oak by day, and drops on the voles in the long grass at night.',
-    hint: 'Something calls from the hollow oaks at night.' }] : []),
-  { k: 'vole', name: 'Vole', a: 'a vole', art: 'vole:0',
-    note: 'Lives hidden in the long grass the rabbits leave, in thousands in a vole year. The foxes listen for them.',
-    hint: 'Something rustles in the long grass. Watch a fox listening there.' },
-  { k: 'frog', name: 'Common frog', a: 'a frog', art: 'frog:0',
-    note: 'Spawns in still shallows early in spring. A flood pool is best, unless it dries before the tadpoles leave.',
-    hint: 'Something hops at the water’s edge, spring to autumn.' },
-  { k: 'fish', name: 'Trout', a: 'a trout', art: '🐟',
-    note: 'Lives in the water that lasts the year round, the deeper the better, and eats the tadpoles. Otters dive for it.',
-    hint: 'Something silver lives in the deep water. Watch an otter fishing.' },
-  { k: 'otter', name: 'Otter', a: 'an otter', art: 'otter:3',
-    note: 'Makes its holt in the roots of a big tree on the bank. Fishes from dusk into the morning, and slides down the bank for fun.',
-    hint: 'Something slides into the water at dusk, by a big tree on the bank.' },
-  { k: 'hedgehog', name: 'Hedgehog', a: 'a hedgehog', art: 'hog:0', visits: true, tool: 'hedge', where: 'A thick hedge', when: 'Dusk, spring to autumn',
-    note: 'Comes to a thick hedge at dusk for the beetles under it, and sleeps curled up at its foot by day. Gone in a few days.',
-    hint: 'Something snuffles under a thick hedge at dusk.', glimpse: 'One came to your hedge and left before you saw it. It will be back.' },
-  { k: 'heron', name: 'Heron', a: 'a heron', art: 'heron:0', fit: 1.45, visits: true, tool: 'pond', where: 'A pond with frogs', when: 'By day, spring to autumn',
-    note: 'Comes to a pond you dug once the frogs have found it. Stands stock still in the shallows, then stabs for a frog or a fish.',
-    hint: 'Something tall stalks the frogs in a pond you dug.', glimpse: 'One came to your pond and flew off before you saw it. It will be back.' },
+// Its chapters: the seasons of a keeper meadow's arc, from the first spring through the Dry Year to the came-through
+// card at the start of the winter after (arc: which season of it, arcSeason's count). A page sits in the first season its
+// kind can come in. dry: the Dry Year's, its hints there from the start.
+const CHAPTERS = [
+  { k: 'spring', name: 'The first spring', arc: 0 },
+  { k: 'summer', name: 'The first summer', arc: 1 },
+  { k: 'autumn', name: 'The first autumn', arc: 2 },
+  { k: 'winter', name: 'The first winter', arc: 3 },
+  { k: 'dryspring', name: 'The Dry Year’s spring', arc: 4, dry: true },
+  { k: 'drysummer', name: 'The Dry Year’s summer', arc: 5, dry: true },
+  { k: 'rain', name: 'The rain comes back', arc: 6 },
 ];
+const CHAPTER = Object.fromEntries(CHAPTERS.map(c => [c.k, c]));
+// Its pages in order, numbered, a chapter at a time. art: its painting (a function where it's worked out), fit: how much
+// bigger it's shown (a tall one painted with room round it); a: its name in a sentence; ch: its chapter; note: what a
+// found page says; riddle: an empty one's hint, and plain (a visitor's) once one's come and gone unseen, saying what it
+// wants; where and when it comes. tool: the one that draws it (KEEP_TOOLS), on its empty page: only the first two
+// visitors have one, the rest are for working out.
+const PAGES = [
+  { k: 'rabbit', name: 'Rabbit', a: 'a rabbit', ch: 'spring', art: () => rabbitArtOf(COAT.wild, 'sit'),
+    note: 'Grazes the open grass at dawn and dusk and digs its burrows there. Stamps and bolts when a fox comes.',
+    riddle: 'Something nibbles the short grass round the burrows.' },
+  { k: 'fox', name: 'Fox', a: 'a fox', ch: 'spring', art: () => foxArtOf(0.2, 'stand'),
+    note: 'Hunts the rabbits, and pounces on voles in the long grass when rabbits are few.',
+    riddle: 'Something red trots the meadow at dusk, after the rabbits.' },
+  { k: 'bee', name: 'Honeybee', a: 'a honeybee', ch: 'spring', art: 'bee:2',
+    note: 'Lives in a hollow oak and sips from the flowers in reach. One back from a rich patch dances the way.',
+    riddle: 'Something hums over the flowers by an old hollow oak.' },
+  { k: 'crow', name: 'Crow', a: 'a crow', ch: 'spring', art: 'crow:0',
+    note: 'Walks the short grass for grubs and clears up what the foxes leave. Buries acorns in autumn, and some grow into oaks.',
+    riddle: 'Something black walks the short grass, pecking.' },
+  ...(S.OWLS ? [{ k: 'owl', name: 'Tawny owl', a: 'a tawny owl', ch: 'spring', art: '🦉',
+    note: 'Sleeps in a hollow oak by day, and drops on the voles in the long grass at night.',
+    riddle: 'Something calls from the hollow oaks at night.' }] : []),
+  { k: 'vole', name: 'Vole', a: 'a vole', ch: 'spring', art: 'vole:0',
+    note: 'Lives hidden in the long grass the rabbits leave, in thousands in a vole year. The foxes listen for them.',
+    riddle: 'Something rustles in the long grass. Watch a fox listening there.' },
+  { k: 'frog', name: 'Common frog', a: 'a frog', ch: 'spring', art: 'frog:0',
+    note: 'Spawns in still shallows early in spring. A flood pool is best, unless it dries before the tadpoles leave.',
+    riddle: 'Something hops at the water’s edge, spring to autumn.' },
+  { k: 'fish', name: 'Trout', a: 'a trout', ch: 'spring', art: '🐟',
+    note: 'Lives in the water that lasts the year round, the deeper the better, and eats the tadpoles. Otters dive for it.',
+    riddle: 'Something silver lives in the deep water. Watch an otter fishing.' },
+  { k: 'otter', name: 'Otter', a: 'an otter', ch: 'spring', art: 'otter:3',
+    note: 'Makes its holt in the roots of a big tree on the bank. Fishes from dusk into the morning, and slides down the bank for fun.',
+    riddle: 'Something slides into the water at dusk, by a big tree on the bank.' },
+  { k: 'heron', name: 'Heron', a: 'a heron', ch: 'spring', art: 'heron:0', fit: 1.45, visits: true, tool: 'pond', where: 'A pond with frogs', when: 'By day, spring to autumn',
+    note: 'Comes to a pond you dug once the frogs have found it. Stands stock still in the shallows, then stabs for a frog or a fish.',
+    riddle: 'Something tall stalks the frogs in a pond you dug.',
+    plain: 'A heron: it wants a pond you dug that the frogs have found. One came and flew off before you saw it, and it will be back.' },
+  { k: 'skylark', name: 'Skylark', a: 'a skylark', ch: 'spring', art: 'lark:3', fit: 1.15, visits: true, where: 'A strip in the open', when: 'By day, spring and summer',
+    note: 'Nests on the ground in open flowers and grass, far from any tree. Rises singing till it’s a speck, hangs there singing, and drops back down.',
+    riddle: 'Something sings from high over flowers out in the open, where no tree or hedge stands near.',
+    plain: `A skylark: it wants a strip of flowers out in the open, nothing standing within ${S.LARK_OPEN} tiles of it, no tree and no hedge. One came and went before you saw it, and it will be back.` },
+  { k: 'hedgehog', name: 'Hedgehog', a: 'a hedgehog', ch: 'summer', art: 'hog:0', visits: true, tool: 'hedge', where: 'A thick hedge', when: 'Dusk, spring to autumn',
+    note: 'Comes to a thick hedge at dusk for the beetles under it, and sleeps curled up at its foot by day. Gone in a few days.',
+    riddle: 'Something snuffles under a thick hedge at dusk.',
+    plain: 'A hedgehog: it wants a hedge thick enough to hide in. One came at dusk and left before you saw it, and it will be back.' },
+  { k: 'dragonfly', name: 'Dragonflies', a: 'dragonflies', ch: 'summer', art: 'dfly:2', fit: 1.1, visits: true, where: 'A pond on its own, with reeds', when: 'Summer, by day',
+    note: 'Lay their eggs in still water with no fish to eat their young. Hawk for midges over a pond on its own and rest on its reeds.',
+    riddle: 'Something blue darts over still water where no fish swim, and rests on the reeds.',
+    plain: 'Dragonflies: they want a pond on its own with its reeds up, in summer; fish eat their young, so not a pond joined to the river. They came and went before you saw them, and they will be back.' },
+  { k: 'kingfisher', name: 'Kingfisher', a: 'a kingfisher', ch: 'summer', art: 'kfisher:0', fit: 1.15, visits: true, where: 'A pond with fish, a tree at its edge', when: 'By day, summer and autumn',
+    note: 'Sits on a low branch over the water, drops in a dive and comes up with a fish, and beats it on the branch. The young roam in summer and autumn, looking for water of their own.',
+    riddle: 'Something blue waits over water where the fish are, on a branch that leans out over it.',
+    plain: 'A kingfisher: it wants a pond with fish in it, dug onto the river or a lake, and a tree at its edge to fish from. One came and went before you saw it, and it will be back.' },
+];
+PAGES.sort((a, b) => CHAPTER[a.ch].arc - CHAPTER[b.ch].arc);   // (a stable sort: in their order within a chapter)
 PAGES.forEach((p, i) => { p.no = String(i + 1).padStart(2, '0'); p.i = i; });
 const PAGE = Object.fromEntries(PAGES.map(p => [p.k, p]));
+// The chapters with pages in them (one with none yet isn't shown), each with its pages.
+const BOOK = CHAPTERS.map(c => ({ ...c, pages: PAGES.filter(p => p.ch === c.k) })).filter(c => c.pages.length);
+// Which season of its arc the meadow is in (CHAPTERS' arc), from its Dry Year: 0 its first spring, the four before the
+// Dry Year's spring, to 6 the autumn after; 7 or more once the arc is over. (Under 0 for a meadow whose Dry Year is
+// further off, as &dry=3 makes.)
+const arcSeason = () => (world.dryYear ? Math.floor(world.tick / S.TPD / S.SEASON_DAYS) - (world.dryYear.year - 2) * 4 : 7);
+// The frontier: a page's hint shows from the season before its chapter's (this season's and the next season's pages),
+// the Dry Year's from the start, and all of them once the arc is over.
+const hinted = p => { const c = CHAPTER[p.ch]; return c.dry || c.arc <= Math.max(0, arcSeason()) + 1; };
 // The moments to catch a visitor in, once its kind is in the journal (watchVisitor): its emoji, its name on the page, a
 // hint till it's seen, the caption's words, and quick: over in a moment, so seen as it happens (else after MOMENT_MS).
 const MOMENTS = {
@@ -1953,18 +2124,37 @@ const MOMENTS = {
     { k: 'fish', e: '🐟', name: 'Caught a fish', hint: 'Where the fish are thick', say: 'a heron with a fish', quick: true },
     { k: 'asleep', e: '💤', name: 'Asleep on one leg', hint: 'After dark', say: 'a heron asleep on one leg' },
   ],
+  skylark: [
+    { k: 'song', e: '🎵', name: 'Singing high', hint: 'Up over its strip', say: 'a skylark singing high' },
+    { k: 'ground', e: '🌼', name: 'Among the flowers', hint: 'Walking its strip', say: 'a skylark among the flowers' },
+    { k: 'asleep', e: '💤', name: 'Asleep in the strip', hint: 'After dark', say: 'a skylark asleep in the flowers' },
+  ],
+  dragonfly: [
+    { k: 'hawk', e: '💨', name: 'Hawking', hint: 'Darting over the water by day', say: 'dragonflies hawking over the water' },
+    { k: 'reed', e: '🌾', name: 'On a reed', hint: 'Settled, its wings flat out', say: 'a dragonfly on a reed' },
+  ],
+  kingfisher: [
+    { k: 'dive', e: '💦', name: 'A dive', hint: 'Watch its branch', say: 'a kingfisher diving', quick: true },
+    { k: 'fish', e: '🐟', name: 'Caught a fish', hint: 'Beaten on the branch', say: 'a kingfisher with a fish', quick: true },
+    { k: 'asleep', e: '💤', name: 'Asleep on its branch', hint: 'After dark', say: 'a kingfisher asleep over the water' },
+  ],
 };
 const artOf = p => (typeof p.art === 'function' ? p.art() : p.art);
 // In the journal (a kind with no page, the owls while they're off, always is).
 const found = k => !PAGE[k] || !!journal[k]?.first;
+// Seen in this meadow (world.sighted, kept with it: its arc's tally, arcTally), and in the journal: nothing more to note.
+const seenHere = k => !PAGE[k] || world.sighted?.[k] != null;
+const noted = k => found(k) && seenHere(k);
 // How many of a kind that lives here are alive now.
 const livingCount = k => Math.round(k === 'vole' ? world.voleCount : k === 'frog' ? world.frogCount : k === 'fish' ? world.fishCount : world.count[k] || 0);
-// A sighting of a kind into the journal (visit: a visitor's, counted): true the first time ever.
+// A sighting of a kind into the journal (visit: a visitor's, counted), and this meadow's: true the first time ever.
 function noteSighting(kind, visit) {
+  (world.sighted ||= {})[kind] ??= world.tick;
   const page = journal[kind] ||= {}, first = !page.first;
+  if (!first && !visit) return false;              // (one that lives here, seen in another meadow before)
   if (first) { Object.assign(page, { first: Date.now(), t: world.tick, new: true }); delete page.glimpsed; }
   if (visit) page.seen = (page.seen || 0) + 1;
-  else if (first) page.most = livingCount(kind);
+  else page.most = livingCount(kind);
   saveJournal();
   if (first) book.held.add(kind);                  // (counted in the book once its stamp lands, stampFly)
   journalChanged();
@@ -2001,7 +2191,7 @@ function lookFrame(now) {
 }
 // Drawn at (sx, sy) on screen: one (o, a creature or a visitor, for its caption to follow), or something at (x, y).
 function lookAt(kind, sx, sy, o, x, y) {
-  if (found(kind) || sx < gaze.x0 || sx > gaze.x1 || sy < gaze.y0 || sy > gaze.y1) return;
+  if (noted(kind) || sx < gaze.x0 || sx > gaze.x1 || sy < gaze.y0 || sy > gaze.y1) return;
   if (gaze.at[kind] !== gaze.frame) { gaze.at[kind] = gaze.frame; gaze.ms[kind] = (gaze.ms[kind] || 0) + gaze.dt; }
   if (gaze.ms[kind] >= (LOOK_MS[kind] ?? SPOT_LOOK_MS) && gaze.now >= gaze.calm) findKind(kind, o, x, y);
 }
@@ -2013,6 +2203,9 @@ const MOMENT_MS = 900, MOMENT_AFTER = 15000;
 const watched = new WeakMap(), hogFinds = new WeakMap();
 function momentOf(v) {
   if (v.kind === 'hedgehog') return v.mode === 'sleep' ? 'asleep' : v.mode === 'in' || v.mode === 'out' ? 'way' : '';
+  if (v.kind === 'skylark') return v.mode === 'sing' ? 'song' : v.mode === 'walk' || v.mode === 'peck' ? 'ground' : v.mode === 'sleep' ? 'asleep' : '';
+  if (v.kind === 'dragonfly') return v.mode === 'dart' || v.mode === 'hover' ? 'hawk' : v.mode === 'perch' || v.mode === 'roost' ? 'reed' : '';
+  if (v.kind === 'kingfisher') return v.mode === 'under' ? 'dive' : v.mode === 'beat' ? 'fish' : v.mode === 'sleep' ? 'asleep' : '';
   if (v.mode === 'gulp') return v.caught;
   if (v.mode === 'sleep') return 'asleep';
   return (v.mode === 'in' || v.mode === 'out' || v.mode === 'hop') && heronLift(v, visitorPx(v)) > visitorPx(v) * 0.3 ? 'wing' : '';
@@ -2064,8 +2257,9 @@ function tapVisitor(v) {
   seeSpot(s, d.x, d.y, performance.now());
 }
 function drawVisitorShadow(v, sx, sy, sn) {
-  const px = visitorPx(v), heron = v.kind === 'heron', up = heron ? heronLift(v, px) : 0;
-  if (heron && up <= 1 && wadingAt(v)) return;               // (wading: the rings round its legs are its shadow)
+  const px = visitorPx(v), heron = v.kind === 'heron', up = visitorUp(v, px);
+  if (heron && up <= 1 && wadingAt(v) || v.kind === 'kingfisher' && v.mode === 'under') return;   // (wading: the rings round its legs are its shadow)
+  if (v.kind === 'dragonfly' && world.water[(v.y | 0) * S.W + (v.x | 0)]) return;                    // (over the water: none to speak of)
   const a = (0.14 + 0.16 * Math.max(0, sn.a)) * visitorFade(v) / (1 + 2 * up / px), off = Math.max(0, sn.a) * sn.lean * (px * 0.2 + up * 0.5);
   const rx = heron ? px * (up > 1 ? 0.4 : 0.2) : px * 0.38, ry = heron ? px * 0.05 : px * 0.1;
   ctx.fillStyle = `rgba(40, 50, 20, ${a})`;
@@ -2594,13 +2788,6 @@ function furShade(g, rgb, y0, y1) {
 function furPart(g, style, path, tf, w) {
   g.save(); if (tf) tf(g); g.beginPath(); path(g); g.restore();
   if (w) { g.strokeStyle = style; g.lineWidth = w; g.stroke(); } else { g.fillStyle = style; g.fill(); }
-}
-// A soft glow or shade: an oval of colour fading out to nothing past hard (a share of its size).
-function furGlow(g, rgb, a, x, y, rx, ry, rot = 0, hard = 0) {
-  g.save(); g.translate(x, y); g.rotate(rot); g.scale(rx, ry);
-  const gr = g.createRadialGradient(0, 0, 0, 0, 0, 1);
-  gr.addColorStop(0, rockRGB(rgb, a)); gr.addColorStop(hard, rockRGB(rgb, a)); gr.addColorStop(1, rockRGB(rgb, 0));
-  g.fillStyle = gr; g.beginPath(); g.arc(0, 0, 1, 0, TAU); g.fill(); g.restore();
 }
 
 
@@ -3192,14 +3379,6 @@ const REMAINS_ARTS = [0, 1, 2].map(k => 'remains:' + k);
 const BODY_COATS = [S.COATS.wild.rgb, S.COATS.sand.rgb, S.COATS.black.rgb, S.COATS.blue.rgb, S.WINTER_COAT];
 const BODY_COAT_OF = { wild: 0, sand: 1, black: 2, blue: 3 };
 const BONE = '#ece2cc', BONE_DARK = '#b3a283', GUT = '#6a3a2e', GUT_DARK = '#3a221c';
-// A part, shaded soft from its lit top to its dark underside (painted once, so a gradient is fine).
-function softIn(g, rgb, y0, y1, path, lit = 1.18, dim = 0.68) {
-  const gr = g.createLinearGradient(0, y0, 0, y1);
-  gr.addColorStop(0, rockRGB(tone(rgb, lit, 12)));
-  gr.addColorStop(0.5, rockRGB(rgb));
-  gr.addColorStop(1, rockRGB(tone(rgb, dim)));
-  g.fillStyle = gr; g.beginPath(); path(); g.fill();
-}
 // A little bone: a shaft with two knobs at each end, a darker copy under it for shade.
 const boneAt = (g, x, y, l, a, s = 1) => {
   const dx = Math.cos(a) * l / 2, dy = Math.sin(a) * l / 2, nx = -Math.sin(a) * 0.028 * s, ny = Math.cos(a) * 0.028 * s;
@@ -3382,7 +3561,9 @@ function paintFox(g, size, U, n) {
 // A painting is 3 to 10 ms, more close up, and each new pose or size of a fox or a rabbit wants one: in the meadow
 // they're painted off the main thread, by fur-worker.js. Shrinking one for the sizes between, or mixing a part-white
 // rabbit's brown and white, is quick, and done here once what it's made from has come.
-const isFur = art => art.startsWith('fox:') || art.startsWith('rabbit:');
+const furKind = art => art.slice(0, art.indexOf(':'));
+const FUR_STARTS = Object.keys(Fur.painters).map(k => k + ':');   // (sprite asks isFur of every picture it draws: no new strings)
+const isFur = art => { for (let i = 0; i < FUR_STARTS.length; i++) if (art.startsWith(FUR_STARTS[i])) return true; return false; };
 const furSent = new Map();                       // the paintings asked of the worker: key -> { px, dpr, look }
 let furWorker = null;
 if (window.Worker && window.OffscreenCanvas) {
@@ -3407,7 +3588,7 @@ if (window.Worker && window.OffscreenCanvas) {
 // asked for the ones it's made from.
 function furReady(art, px) {
   if (spriteCache.has(px + '|' + art + '||')) return true;
-  const P = furPainted(px), fox = art.startsWith('fox:'), n = +art.slice(fox ? 4 : 7), white = fox ? 0 : (n >> 4) % 5;
+  const P = furPainted(px), kind = furKind(art), n = +art.slice(kind.length + 1), white = kind === 'rabbit' ? (n >> 4) % 5 : 0;
   if (white % 4 === 0) return furHas(art, P);
   const brown = n - (white << 4), a = furHas(RABBIT_ARTS[brown], P), b = furHas(RABBIT_ARTS[brown + (4 << 4)], P);
   return a && b;
@@ -3417,9 +3598,9 @@ function furHas(art, P) {
   const key = P + '|' + art + '||';
   if (spriteCache.has(key)) return true;
   if (!furSent.has(key)) {
-    const fox = art.startsWith('fox:');
+    const kind = furKind(art);
     furSent.set(key, { px: P, dpr, look: art + '||' });
-    furWorker.postMessage({ key, kind: fox ? 'fox' : 'rabbit', n: +art.slice(fox ? 4 : 7), px: P, dpr });
+    furWorker.postMessage({ key, kind, n: +art.slice(kind.length + 1), px: P, dpr });
   }
   return false;
 }
@@ -3444,12 +3625,19 @@ function furAhead(now) {
     furAsked.set(look, now);
     furReady(art, poseStep(Math.max(4, creaturePx(c))));
   }
+  if (world.visitors) for (const v of world.visitors) {    // (and a visitor fur.js paints: the dragonflies, the kingfisher, the skylark)
+    const art = VISITORS[v.kind].art;
+    if (!isFur(art) || furKin(art) || now - (furAsked.get(art) ?? -Infinity) < FUR_AGAIN) continue;
+    furAsked.set(art, now);
+    furReady(art, poseStep(Math.max(4, visitorPx(v))));
+  }
 }
-// The same fox or rabbit in another pose, at any size: it stands in for one being painted.
+// The same fox or rabbit (or visitor) in another pose, at any size: it stands in for one being painted. (A painting's
+// look is its number past the last 16, its pose the rest.)
 function furKin(art) {
-  const fox = art.startsWith('fox:'), n = +art.slice(fox ? 4 : 7) & ~15;
+  const kind = furKind(art), n = +art.slice(kind.length + 1) & ~15;
   for (let p = 0; p < 16; p++) {
-    const s = latestLook.get((fox ? 'fox:' : 'rabbit:') + (n + p) + '||');
+    const s = latestLook.get(kind + ':' + (n + p) + '||');
     if (s) return s;
   }
   return null;
@@ -3827,7 +4015,7 @@ function spotOf(e) {
     case 'visitor': {                    // (a kind never seen: a mystery, startReveal)
       const k = VISITORS[e.v.kind], mystery = !found(e.v.kind);
       return { emoji: k.badge, o: e.v, thing: !mystery && ['visitor', e.v], visitor: e.v.kind, stay: true, mystery,
-        say: `A ${k.name}, come for ${k.for} ${visitorPlace(e.v)}` };
+        say: `${capital(k.a)}, come for ${k.for} ${visitorPlace(e.v)}` };
     }
   }
   return null;
@@ -4694,7 +4882,11 @@ function putPainting(p, f, alpha, snow, ox, oy) {
   if (snow && p.snow) { ctx.globalAlpha = alpha * snow; ctx.drawImage(p.snow, x, y, w, h); }
   ctx.globalAlpha = 1;
 }
-const PAINTERS = { fox: paintFox, rabbit: paintRabbit, hog: paintHedgehog, heron: paintHeron, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, vole: paintVole, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody, bee: paintBee, fall: paintFall, tuft: paintTuftSprite };
+// A visitor fur.js paints (Fur.painters: the dragonflies, the kingfisher, the skylark), at the doublings of its size and
+// shrunk between (shrunk), as a fox is; in the meadow the worker paints it (furReady).
+const furPaint = kind => (g, size, U, n) => { if (!shrunk(g, size, U, kind + ':' + n)) Fur.painters[kind](g, size, U, n); };
+const PAINTERS = { fox: paintFox, rabbit: paintRabbit, hog: paintHedgehog, heron: paintHeron, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, vole: paintVole, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody, bee: paintBee, fall: paintFall, tuft: paintTuftSprite,
+  dfly: furPaint('dfly'), kfisher: furPaint('kfisher'), lark: furPaint('lark') };
 function drawDecor(d, sx, sy, now, ck, clipLeaves, px = d.tree ? treePx(d) : d.size * cam.zoom) {   // (px: render has it already)
   if (d.emoji === '🪨') { drawRock(d, sx, sy); return; }
   if (!d.stump && !d.tree) { drawEmoji(d.emoji, sx, sy - px * 0.35, px); return; }
@@ -6574,15 +6766,25 @@ function handleEvent(e) {
     case 'hedgehaws':
       addNews(`🔴 Your hedge ${hedgeLink(e.hedge, esc(e.hedge.name))} is red with haws: the birds will carry them off.`);
       break;
-    case 'visitor': {                   // (?keep) a hedgehog come to a hedge, a heron to a pond
+    case 'visitor': {                   // (?keep) a hedgehog come to a hedge, a heron to a pond, ...
       const v = e.v, k = VISITORS[v.kind], at = placeLink(v), who = thingLink('visitor', v.id, k.name), em = visitorGlyph(v.kind);
       if (!found(v.kind)) {             // a kind never seen: it waits for you (sim.js v.wait), and its news doesn't say what it is
         v.wait = true;
-        addNews(`${visitorGlyph(v.kind, true)} <b>Something ${v.kind === 'heron' ? `tall is flying in to ${at}</b>, the pond you dug.` : `is snuffling under your hedge ${at}.</b>`} A new page for your journal?`);
-      } else if (v.kind === 'heron') addNews(v.n > 1 ? `${em} A ${who} is back at ${at}, the pond you dug, after its frogs.`
-        : `${em} <b>A ${who} is flying in to ${at}</b>, the pond you dug, for its frogs.`);
-      else addNews(v.n > 1 ? `${em} A ${who} is at your hedge ${at} again, snuffling for beetles.`
-        : `${em} <b>A ${who} has come to your hedge ${at}</b>, for ${k.for} it.`);
+        const what = { heron: `tall is flying in to ${at}</b>, the pond you dug.`, hedgehog: `is snuffling under your hedge ${at}.</b>`,
+          dragonfly: `is darting over ${at}</b>, the pond you dug.`, kingfisher: `blue is flashing low over the water to ${at}</b>, the pond you dug.`,
+          skylark: `is singing high over your strip ${at}.</b>` }[v.kind];
+        addNews(`${visitorGlyph(v.kind, true)} <b>Something ${what} A new page for your journal?`);
+        break;
+      }
+      const again = v.n > 1;
+      addNews(`${em} ${{
+        heron: again ? `A ${who} is back at ${at}, the pond you dug, after its frogs.` : `<b>A ${who} is flying in to ${at}</b>, the pond you dug, for its frogs.`,
+        hedgehog: again ? `A ${who} is at your hedge ${at} again, snuffling for beetles.` : `<b>A ${who} has come to your hedge ${at}</b>, for ${k.for} it.`,
+        dragonfly: again ? `${thingLink('visitor', v.id, 'Dragonflies')} are back over ${at}, the pond you dug.`
+          : `<b>${thingLink('visitor', v.id, 'Dragonflies')} have come to ${at}</b>, the pond you dug, for its still water with no fish.`,
+        kingfisher: again ? `A ${who} is back on its branch over ${at}.` : `<b>A ${who} has come to ${at}</b>, for the fish in it, and the tree at its edge to fish from.`,
+        skylark: again ? `A ${who} is singing over your strip ${at} again.` : `<b>A ${who} has come down to your strip ${at}</b>, out in the open.`,
+      }[v.kind]}`);
       break;
     }
     case 'visitorsign': {               // (?keep) tracks by a hedge, a feather by a pond: a visitor on its way (sim.js w.signs)
@@ -6600,8 +6802,10 @@ function handleEvent(e) {
     }
     case 'visitorleft': {
       if (KEEP && !e.v.seen) glimpse(e.v.kind);
-      const v = e.v, k = VISITORS[v.kind], stayed = days((world.tick - v.came) / S.TPD), fed = v.kind === 'heron' && heronCaught(v);
-      addNews(`${visitorGlyph(v.kind)} The ${k.name} has ${v.kind === 'heron' ? 'flown off from' : 'left'} ${placeLink(v)} after ${stayed}${fed ? `, ${fed} the fatter` : ''}.`);
+      const v = e.v, k = VISITORS[v.kind], stayed = days((world.tick - v.came) / S.TPD);
+      const fed = v.kind === 'heron' ? heronCaught(v) : v.kind === 'kingfisher' && v.fish ? (v.fish === 1 ? 'a fish' : `${v.fish} fish`) : '';
+      const went = { hedgehog: 'has left', dragonfly: 'have left' }[v.kind] || 'has flown off from';
+      addNews(`${visitorGlyph(v.kind)} The ${k.name} ${went} ${placeLink(v)} after ${stayed}${fed ? `, ${fed} the fatter` : ''}.`);
       break;
     }
     case 'plantgrew':
@@ -8212,22 +8416,99 @@ function heronPanel(v, here) {
   return { emoji: face, tint: k.tint, name: 'Grey heron', sub: `A visitor at ${visitorPlace(v)}`, status, facts };
 }
 
+// The days a visitor has left, for its panel: off again at its time of day on its last, or here for so many more.
+const staysFor = (v, when) => { const off = (v.until - world.tick) / S.TPD; return off < 0.5 ? `Off again ${when}` : `Here for ${days(off + 0.6)} more`; };
+function dragonPanel(v, here) {
+  const k = VISITORS.dragonfly, pond = placeLink(v), face = visitorFace(v.kind);
+  if (!here) return { emoji: face, tint: k.tint, name: 'Dragonflies', sub: 'Visitors · gone', status: `💨 Gone. More may come to ${pond} another summer.` };
+  const status = {
+    in: `💨 Flying in to ${pond}`, out: '💨 Off over the meadow', dart: `💨 Darting over ${pond}, after midges`, hover: `👀 Hanging still over ${pond}`,
+    perch: `🌾 Resting on a reed at the edge of ${pond}`, home: '🌾 Off to the reeds', roost: `🌾 Settled on the reeds of ${pond}, till the day warms`,
+  }[v.mode];
+  const facts = [['💧', `Came for ${k.for} ${pond}, the pond you dug`], ['🐟', 'No fish in it to eat their young, so they lay their eggs there'],
+    ['☀️', 'Out from when the day warms till the evening; at night and in the rain, on the reeds']];
+  if (v.mode !== 'out') facts.push(['🗓️', staysFor(v, 'this afternoon')]);
+  if (v.n > 1) facts.push(['🔁', `${v.n} visits to your ponds so far`]);
+  return { emoji: face, tint: k.tint, name: 'Dragonflies', sub: `Visitors at ${visitorPlace(v)}`, status, facts };
+}
+function kingPanel(v, here) {
+  const k = VISITORS.kingfisher, pond = placeLink(v), face = visitorFace(v.kind);
+  if (!here) return { emoji: face, tint: k.tint, name: 'Kingfisher', sub: 'A visitor · gone', status: `🪶 Flown off. One may come again to ${pond}.` };
+  const tree = v.tree ? thingLink('tree', v.tree.id, treeName(v.tree).toLowerCase()) : 'bank';
+  const status = {
+    in: `🪶 Coming in low and fast over the water to ${pond}`, out: '🪶 Off low over the water', watch: `👀 On a low branch of the ${tree}, watching the water`,
+    dive: '💦 Diving!', under: '💦 Under the water!', back: v.caught ? '🐟 Up with a fish!' : '🪶 Back up to its branch, with nothing',
+    beat: '🐟 Beating its fish on the branch, then down it goes, head first', sleep: `💤 Asleep on its branch over ${pond}`,
+  }[v.mode];
+  const facts = [['🐟', `Came for ${k.for} ${pond}, the pond you dug onto the water`], ['🌳', `Fishes from the ${tree} at its edge`],
+    ['🎣', v.fish ? `${v.fish === 1 ? 'A fish' : `${v.fish} fish`} caught so far` : 'Nothing caught yet']];
+  if (v.mode !== 'out') facts.push(['🗓️', staysFor(v, 'this evening')]);
+  if (v.n > 1) facts.push(['🔁', `${v.n} visits to your ponds so far`]);
+  return { emoji: face, tint: k.tint, name: 'Kingfisher', sub: `A visitor at ${visitorPlace(v)}`, status, facts };
+}
+function larkPanel(v, here) {
+  const k = VISITORS.skylark, strip = placeLink(v), face = visitorFace(v.kind);
+  if (!here) return { emoji: face, tint: k.tint, name: 'Skylark', sub: 'A visitor · gone', status: `🎵 Flown off. One may come again to ${strip}.` };
+  const status = {
+    in: `🪶 Coming down to ${strip}`, out: '🪶 Off, high over the meadow', walk: `🌼 Walking among the flowers of ${strip}`, peck: '🌱 Pecking for seeds and beetles',
+    rise: '🎵 Rising straight up, singing', sing: `🎵 Singing, high over ${strip}`, drop: `🪂 Dropping back down to ${strip}`, sleep: `💤 Asleep in the flowers of ${strip}`,
+  }[v.mode];
+  const facts = [['🌼', `Came for ${k.for} ${strip}, the strip you sowed`], ['🌳', `Nothing standing within ${Math.floor(v.strip.clear)} tiles of it: no tree, no hedge`],
+    ['🎵', v.songs ? `Has sung over it ${v.songs === 1 ? 'once' : `${v.songs} times`}` : 'Hasn’t sung yet']];
+  if (v.mode !== 'out') facts.push(['🗓️', staysFor(v, 'this evening')]);
+  if (v.n > 1) facts.push(['🔁', `${v.n} visits to your strips so far`]);
+  return { emoji: face, tint: k.tint, name: 'Skylark', sub: `A visitor at ${visitorPlace(v)}`, status, facts };
+}
+
+// What a place of yours draws, or lacks, for each visitor that comes to its kind of place (the inspector: a pond's, a
+// strip's, a hedge's), each a line: here now, ready (one may come in its seasons), or what it lacks. Only kinds whose page's
+// riddle has come (hinted), so the inspector doesn't run ahead of the journal.
+const VISIT_WHEN = { hedgehog: [0, 1, 2], heron: [0, 1, 2], ...S.VISIT_SEASONS };
+const NEED_WORDS = {
+  water: 'water in it', reeds: 'its reeds up, a season after you dug it', frogs: 'frogs: they find a pond from nearby water',
+  fish: 'no fish in it (they eat the young): a pond on its own, not joined to the river or a lake',
+  nofish: 'fish in it, which come in only from the river or a lake it joins', perch: 'a tree at its edge, or on an island in it, to fish from',
+  open: `nothing standing within ${S.LARK_OPEN} tiles of it, no tree and no hedge`, flowers: 'its first flowers', young: 'to be thick enough to hide in',
+};
+function seasonsWords(list) {
+  const names = list.map(seasonName);
+  return list.length === 3 ? 'spring to autumn' : names.join(' and ');
+}
+function placeLines(kinds, o) {
+  const lines = [], season = S.seasonOf(world.tick);
+  for (const kind of kinds) {
+    if (pageState(kind) === 'later') continue;
+    const k = VISITORS[kind], here = world.visitors?.find(v => v.kind === kind && (v.pond === o || v.strip === o || v.hedge === o) && v.mode !== 'out');
+    const who = capital(k.a), glyph = visitorGlyph(kind);
+    if (here) { lines.push(`${glyph} ${thingLink('visitor', here.id, who)} ${kind === 'dragonfly' ? 'are' : 'is'} here now`); continue; }
+    const needs = kind === 'heron' ? [!o.wet && 'water', !o.found && 'frogs'].filter(Boolean) : kind === 'hedgehog' ? (o.young ? [] : ['young']) : S.placeNeeds(world, kind, o);
+    const when = VISIT_WHEN[kind], they = kind === 'dragonfly';
+    if (needs.length) lines.push(`${glyph} ${who} would want ${needs.map(n => NEED_WORDS[n]).join(', and ')}`);
+    else lines.push(`${glyph} Everything ${k.a} ${they ? 'want' : 'wants'} is here: ${when.includes(season) ? (they ? 'they may come any day' : 'one may come any day')
+      : `${they ? 'they come' : 'one comes'} ${seasonsWords(when)}`}`);
+  }
+  return lines.length ? [['Visitors', lines.join('<br>')]] : [];
+}
+
+const VISITOR_PANELS = { hedgehog: (v, here) => hogPanel(v, here), heron: (v, here) => heronPanel(v, here), dragonfly: dragonPanel, kingfisher: kingPanel, skylark: larkPanel };
 const THINGS = {
-  visitor: {                                               // (?keep) a hedgehog at a hedge, a heron at a pond: before the trees, as a hedgehog is at the foot of one
+  visitor: {                                               // (?keep) a hedgehog at a hedge, a heron at a pond, ...: before the trees, as a hedgehog is at the foot of one
     at(sx, sy) {
       if (!world.visitors) return null;
       for (const v of world.visitors) {
         const d = drawnAt(v), [x, y] = toScreen(d.x, d.y), px = visitorPx(v);
-        if (visitorFade(v) <= 0.3) continue;
-        if (v.kind !== 'heron') { if (Math.abs(sx - x) < px * 0.5 && sy > y - px * 0.35 && sy < y + px * 0.45) return v; continue; }
-        const up = heronLift(v, px), feet = y + visitorFeet() - up;
-        if (Math.abs(sx - x) < px * (up > 1 ? 0.48 : 0.32) && sy > feet - px * 0.85 && sy < feet + px * 0.06) return v;
+        if (visitorFade(v) <= 0.3 || v.kind === 'kingfisher' && v.mode === 'under') continue;
+        if (v.kind === 'hedgehog') { if (Math.abs(sx - x) < px * 0.5 && sy > y - px * 0.35 && sy < y + px * 0.45) return v; continue; }
+        const up = visitorUp(v, px), feet = y + visitorFeet() - up;
+        if (v.kind === 'heron') { if (Math.abs(sx - x) < px * (up > 1 ? 0.48 : 0.32) && sy > feet - px * 0.85 && sy < feet + px * 0.06) return v; continue; }
+        const r = Math.max(fingerTap ? 24 : 16, px * 0.55), cy = feet - px * (v.kind === 'dragonfly' ? 0 : v.kind === 'kingfisher' ? 0.21 : 0.36);
+        if ((sx - x) ** 2 + (sy - cy) ** 2 < r * r) return v;   // (a small one: a round target, big enough for a finger)
       }
       return null;
     },
     here: v => !v.gone && !!world.visitors?.includes(v),
     spot: v => { const d = drawnAt(v); return { x: d.x, y: d.y + 0.15, r: 0.5 }; },
-    show(v) { return (v.kind === 'heron' ? heronPanel : hogPanel)(v, this.here(v)); },
+    show(v) { return VISITOR_PANELS[v.kind](v, this.here(v)); },
   },
 
   hive: {
@@ -8335,6 +8616,7 @@ const THINGS = {
       return {
         emoji: d.stump || d.fallen ? '🪵' : d.dead ? '🪾' : stage === 'seedling' ? '🌱' : d.emoji, tint: d.dead ? '#b8a47a' : '#7fb24a', name,
         sub: hedge ? `${STAGES[stage]} · part of ${esc(hedge.name)}` : `${STAGES[stage]} · ${where}`, status, facts,
+        sections: hedge ? placeLines(['hedgehog'], hedge) : [],
         meters: living ? [['Grown', d.size / Math.max(d.max, d.size), ''], ['Age', age / d.life, age > d.life * 0.85 ? 'low' : '']] : null,
       };
     },
@@ -8489,7 +8771,8 @@ const THINGS = {
       const thick = tiles ? voles / tiles / S.VOLE_K : 0;         // (sim.js volesTick)
       const facts = thick > 0.15 ? [['🐁', thick > 0.5 ? 'Voles run all through the long grass here, and the foxes come mousing' : 'A few voles run in the long grass here']] : [];
       if (f.strip) return { emoji: f.emoji[0], tint: `rgb(${f.tint})`, name: f.name, sub: `A strip of meadow flowers you sowed · ${tiles} tiles`,
-        status: stripStatus(f, open, tiles ? grass / tiles : 0), sections, facts: [...stripFacts(f, hives.length), ...facts], meters: [['Grass', tiles ? grass / tiles : 0, '']] };
+        status: stripStatus(f, open, tiles ? grass / tiles : 0), sections: [...sections, ...placeLines(['skylark'], f)], facts: [...stripFacts(f, hives.length), ...facts],
+        meters: [['Grass', tiles ? grass / tiles : 0, '']] };
       return {
         emoji: f.emoji[0], tint: `rgb(${f.tint})`, name: f.name, sub: `A field of ${f.kind.names.join(' and ').toLowerCase()} · ${tiles} tiles`,
         status, sections, facts, meters: [['Grass', tiles ? grass / tiles : 0, '']],
@@ -8516,12 +8799,13 @@ const THINGS = {
       const dug = world.ponds?.find(p => p.id === body.id);   // (?keep: one you dug, dry where you clicked or not)
       facts.push(...pondFacts(i, dug ? dug.id : world.body[i]));
       if (dug) facts.push(...dugFacts(dug));
+      const sections = dug ? placeLines(['heron', 'dragonfly', 'kingfisher'], dug) : [];
       const who = whoNear(x, y, 4, c => world.water[tileOf(c.x, c.y)] && !c.sp.flies);
       if (who) facts.push(world.frozen ? ['⛸️', `On the ice: ${who}`] : ['🏊', `In the water: ${who}`]);
       const kind = body.kind[0].toUpperCase() + body.kind.slice(1);
       return {
         emoji: WATER_LOOKS[body.kind] || '💧', tint: '#6aa6d8', name: body.name,
-        sub: body.size ? `${kind} · ${body.size} tiles` : kind, facts,
+        sub: body.size ? `${kind} · ${body.size} tiles` : kind, facts, sections,
         status: world.frozen ? '🧊 Frozen over' : deep ? '🌊 Deep water' : '💧 Shallow water',
       };
     },
@@ -8606,7 +8890,7 @@ function drawPickedOver() {
 
 function select(id, zoomIn = true) {
   const c = KEEP && id && world.byId.get(id);
-  if (c?.alive && !found(c.species)) findKind(c.species, c);   // (?keep: following one is seeing it, for the journal)
+  if (c?.alive && !noted(c.species)) findKind(c.species, c);   // (?keep: following one is seeing it, for the journal)
   ui.selectedId = id;
   ui.picked = null;
   ui.trail = [];
@@ -9789,10 +10073,12 @@ function alertGo(k) {
 
 // ------------------------------------------------------------------ the field journal (?keep)
 //
-// Its book is in the bottom bar (#jbook, drawBook): the pages found, a pip each, and "New" with a glow till it's opened.
-// Open (the book, or J), a parchment card (#journal): the pages in two sections, Lives here and Comes by, a tile each (a
-// silhouette till it's found), and the page picked beside them, turned with ‹ › or the arrow keys. An empty page has a
-// hint, and a visitor's a button that puts the tool that draws it in your hand. On an upright phone the journal is a
+// Its book is in the bottom bar (#jbook, drawBook): the pages found, a pip each (a gap between chapters), and "New" with
+// a glow till it's opened. Open (the book, or J), a parchment card (#journal): the pages a chapter at a time (BOOK), each
+// chapter with its count and "Now" on the season the meadow is in, a tile each (a silhouette till it's found, blank past
+// the frontier), and the page picked beside them, turned with ‹ › or the arrow keys. An empty page has its riddle, plain
+// once one came and went unseen, and the first two visitors' a button that puts the tool that draws them in your hand; one
+// past the frontier says when its riddle comes (hinted). On an upright phone the journal is a
 // sheet from the bottom, ✕ at the bottom in the middle; a page is a layer over the pages with ‹ ✕ › in the same place,
 // turned with a sideways swipe, and a handle dragged down lays a layer down. Each layer is a step in the browser's
 // history, so Back steps out. Written as it opens and as a page turns, never per frame; the paintings are made once (jArt).
@@ -9803,7 +10089,7 @@ const jr = { el: $('#journal'), scrim: $('#jscrim'), depth: 0, pick: '', art: ne
 const journalOpen = () => jr.depth > 0;
 const upright = () => matchMedia('(max-width: 760px) and (min-height: 501px)').matches;
 const still = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
-const pageState = k => (found(k) ? 'found' : journal[k]?.glimpsed ? 'glimpsed' : 'unseen');
+const pageState = k => (found(k) ? 'found' : journal[k]?.glimpsed ? 'glimpsed' : hinted(PAGE[k]) ? 'unseen' : 'later');
 const inBook = k => found(k) && !book.held.has(k);
 const fitStyle = p => (p.fit ? ` style="transform: scale(${p.fit})"` : '');
 
@@ -9824,7 +10110,7 @@ function jArt(p, large) {
 function drawBook() {
   if (!KEEP) return;
   const n = PAGES.filter(p => inBook(p.k)).length, fresh = PAGES.some(p => journal[p.k]?.new && !book.held.has(p.k));
-  const pips = PAGES.map((p, i) => `<i class="${inBook(p.k) ? 'on' : journal[p.k]?.glimpsed ? 'half' : ''}${p.visits && !PAGES[i - 1].visits ? ' gap' : ''}"></i>`).join('');
+  const pips = PAGES.map((p, i) => `<i class="${inBook(p.k) ? 'on' : journal[p.k]?.glimpsed ? 'half' : ''}${i && p.ch !== PAGES[i - 1].ch ? ' gap' : ''}"></i>`).join('');
   setHTML(book.el, `<span class="j-l">📖 <b>Journal</b></span><span class="j-v">${n}<small>/${PAGES.length}</small></span><span class="pips">${pips}</span><span class="newdot">New</span>`);
   book.el.classList.toggle('new', fresh);
   book.el.setAttribute('aria-label', `Field journal: ${n} of ${PAGES.length} found${fresh ? ', a new page' : ''}`);
@@ -9842,19 +10128,21 @@ if (KEEP) jr.el.innerHTML = `<button class="jb j-x" data-j="close" aria-label="C
     <div class="j-head"><h2 class="fr" id="j-title">Field journal</h2><span class="n"></span></div>
     <div class="j-bar"><i></i></div>
   </header>
-  <section class="pages">
-    <h3 class="sec">Lives here<span class="got-lives"></span></h3><div class="grid lives"></div>
-    <h3 class="sec">Comes by<span class="got-visits"></span></h3><div class="grid visits"></div>
+  <section class="pages">${BOOK.map(c => `
+    <h3 class="sec" data-ch="${c.k}">${c.name}<b class="now">Now</b><span class="got"></span></h3><div class="grid" data-ch="${c.k}"></div>`).join('')}
   </section>
   <footer class="j-foot"><button class="jb x" data-j="close" aria-label="Close the journal">${J_X}</button></footer>
   <section class="page"></section>`;
 
 function tileHTML(p) {
-  const st = pageState(p.k), named = st !== 'unseen';
-  return `<button class="tile ${st}${journal[p.k]?.new ? ' new' : ''}" data-k="${p.k}" aria-label="No. ${p.no}, ${named ? p.name : 'not found yet'}">`
-    + `<span class="no">${p.no}</span><img src="${jArt(p)}" class="${st === 'found' ? '' : st === 'glimpsed' ? 'half' : 'sil'}"${fitStyle(p)} alt="">`
+  const st = pageState(p.k), named = st === 'found' || st === 'glimpsed';
+  return `<button class="tile ${st}${journal[p.k]?.new ? ' new' : ''}" data-k="${p.k}" aria-label="No. ${p.no}, ${named ? p.name : st === 'later' ? 'for later' : 'not found yet'}">`
+    + `<span class="no">${p.no}</span>${st === 'later' ? '<span class="blank"></span>'
+      : `<img src="${jArt(p)}" class="${st === 'found' ? '' : st === 'glimpsed' ? 'half' : 'sil'}"${fitStyle(p)} alt="">`}`
     + `<span class="nm">${named ? p.name : '?'}</span></button>`;
 }
+// A chapter's name in a sentence: "the first spring".
+const chapterIn = c => c.name[0].toLowerCase() + c.name.slice(1);
 // When it was first seen: the season and the year of the meadow it was in (an older page has only the season).
 function firstSeen(pg) {
   const s = pg.t != null ? S.seasonOf(pg.t) : pg.season;
@@ -9862,21 +10150,22 @@ function firstSeen(pg) {
   return `${S.SEASONS[s].emoji} ${S.SEASONS[s].name}${pg.t != null ? `, year ${yearAt(pg.t)}` : ''}`;
 }
 function pageHTML(p) {
-  const st = pageState(p.k), pg = journal[p.k] || {}, named = st !== 'unseen', facts = [];
+  const st = pageState(p.k), pg = journal[p.k] || {}, named = st === 'found' || st === 'glimpsed', facts = [], ch = CHAPTER[p.ch];
   if (st === 'found' && firstSeen(pg)) facts.push(['📅', 'First seen', firstSeen(pg)]);
   if (st === 'found' && !p.visits && pg.most > 0) facts.push(['🏆', 'Most at once', big(pg.most)]);
   if (st === 'found' && p.visits) facts.push(['👁️', 'Seen', pg.seen > 1 ? `${pg.seen} times` : 'once']);
-  if (p.visits) facts.push(['🧭', 'Comes to', p.where]);
-  if (p.visits && named) facts.push(['🕰️', 'When', p.when]);
-  const tool = st !== 'found' && p.tool && KEEP_TOOLS.find(([k]) => k === p.tool);
+  if (p.visits && named) facts.push(['🧭', 'Comes to', p.where], ['🕰️', 'When', p.when]);
+  const tool = (st === 'unseen' || st === 'glimpsed') && p.tool && KEEP_TOOLS.find(([k]) => k === p.tool);
   const shot = st === 'found' && photos[p.k], mo = st === 'found' && MOMENTS[p.k], got = mo ? mo.filter(m => pg.moments?.[m.k]).length : 0;
-  return `<div class="pg-grab"><div class="no">No. ${p.no} · ${p.visits ? 'Comes by' : 'Lives here'}</div></div>
+  const hint = st === 'glimpsed' ? p.plain : st === 'later' ? `A page for ${chapterIn(ch)}: its riddle comes in ${chapterIn(CHAPTERS[ch.arc - 1])}.` : p.riddle;
+  return `<div class="pg-grab"><div class="no">No. ${p.no} · ${ch.name}</div></div>
     <div class="pg-body"><div class="pg-in">
       ${shot ? `<div class="art snap"><figure><img src="${shot.src}" alt="Your first sighting"><figcaption>${esc(shot.where)}${firstSeen(pg) ? ` · ${firstSeen(pg)}` : ''}</figcaption>`
         + `<img class="stamp" src="${jArt(p, true)}" alt=""></figure></div>`
+        : st === 'later' ? '<div class="art"></div>'
         : `<div class="art"><img src="${jArt(p, true)}" class="${st === 'found' ? '' : st === 'glimpsed' ? 'half' : 'sil'}"${fitStyle(p)} alt=""></div>`}
       <h3 class="fr${named ? '' : ' q'}">${named ? p.name : '? ? ?'}</h3>
-      ${st === 'found' ? `<p>${p.note}</p>` : `<p class="hint">${st === 'glimpsed' ? p.glimpse : p.hint}</p>`}
+      ${st === 'found' ? `<p>${p.note}</p>` : `<p class="hint">${hint}</p>`}
       ${facts.length ? `<ul>${facts.map(([i, a, b]) => `<li><i>${i}</i><span>${a}</span><em>${b}</em></li>`).join('')}</ul>` : ''}
       ${mo ? `<div class="moments"><h4>Moments<span>${got}/${mo.length}</span></h4><div class="m-list">${mo.map(m => (pg.moments?.[m.k]
         ? `<span class="m on"><i>${m.e}</i>${m.name}</span>` : `<span class="m"><i>?</i>${m.hint}</span>`)).join('')}</div></div>` : ''}
@@ -9892,16 +10181,17 @@ function pageHTML(p) {
 const pageEl = () => jr.el.querySelector('.page');
 const drawPage = () => setHTML(pageEl(), pageHTML(PAGE[jr.pick] || PAGES[0]));
 const markTiles = () => jr.el.querySelectorAll('.tile').forEach(t => t.classList.toggle('on', t.dataset.k === jr.pick));
-// Its count, the two sections and the page picked, each written only if it changed.
+// Its count, each chapter's (and "Now" on the one the meadow is in) and the page picked, each written only if it changed.
 function fillJournal() {
-  const n = PAGES.filter(p => inBook(p.k)).length, el = jr.el, lives = PAGES.filter(p => !p.visits), visits = PAGES.filter(p => p.visits);
-  const got = list => `${list.filter(p => inBook(p.k)).length}/${list.length}`;
+  const n = PAGES.filter(p => inBook(p.k)).length, el = jr.el, now = arcSeason();
   setHTML(el.querySelector('.j-head .n'), `${n}<small>/${PAGES.length}</small>`);
   el.querySelector('.j-bar i').style.width = (n / PAGES.length * 100).toFixed(1) + '%';
-  setText(el.querySelector('.got-lives'), got(lives));
-  setText(el.querySelector('.got-visits'), got(visits));
-  setHTML(el.querySelector('.grid.lives'), lives.map(tileHTML).join(''));
-  setHTML(el.querySelector('.grid.visits'), visits.map(tileHTML).join(''));
+  for (const c of BOOK) {
+    const head = el.querySelector(`h3.sec[data-ch="${c.k}"]`);
+    head.classList.toggle('here', c.arc === now);
+    setText(head.querySelector('.got'), `${c.pages.filter(p => inBook(p.k)).length}/${c.pages.length}`);
+    setHTML(el.querySelector(`.grid[data-ch="${c.k}"]`), c.pages.map(tileHTML).join(''));
+  }
   markTiles();
   drawPage();
 }
@@ -10925,6 +11215,13 @@ function lostWords(e) {
   const name = e.species === 'frogs' ? 'frog' : S.SPECIES[e.species].name.toLowerCase();
   return [`😢 The last ${name} is gone: the Dry Year was too much for them.`, LOST_WHY[e.species] || ''];
 }
+// This meadow's arc in the journal, for the card: its pages seen in this meadow (world.sighted), all told and the Dry Year's.
+function arcTally() {
+  const seen = list => list.filter(p => world.sighted?.[p.k] != null).length, dry = PAGES.filter(p => CHAPTER[p.ch].dry);
+  const rows = [['📖', 'Journal pages seen in this meadow', `${seen(PAGES)} of ${PAGES.length}`]];
+  if (dry.length) rows.push(['☀️', 'Of them, the Dry Year’s', `${seen(dry)} of ${dry.length}`]);
+  return rows;
+}
 const lostOpen = () => !$('#lost').classList.contains('hidden');
 function showLost(open = true) {
   lostCard.pending = false;
@@ -10932,6 +11229,7 @@ function showLost(open = true) {
   if (open && !dy?.lost && !through) return;
   if (open) {
     const [title, line, rows] = through ? throughWords(through) : [...lostWords(dy.lost), []];
+    rows.push(...arcTally());
     $('#lost-title').textContent = title; $('#lost-text').textContent = line;
     setHTML($('#lost-list'), rows.map(([icon, what, n]) => `<li><span>${icon}</span><span>${what}</span><em>${n}</em></li>`).join(''));
     $('#lost-list').hidden = !rows.length;
@@ -11234,7 +11532,7 @@ function idleNews(e) {
     case 'fledge': n = { c: e.c, w: 4, line: `${e.c.name}, an owlet out of the hollow` }; break;
     case 'cubsout': n = { c: e.c, w: 4, line: `${e.c.name}, an otter cub out of the holt` }; break;
     case 'holt': n = { c: e.c, w: 4, line: `${e.c.name}'s new holt on the bank` }; break;
-    case 'visitor': n = { x: e.v.tx, y: e.v.ty, w: 8, line: found(e.v.kind) ? `A ${VISITORS[e.v.kind].name}, come to the ${VISITORS[e.v.kind].home}` : `Something has come to the ${VISITORS[e.v.kind].home}`, big: true }; break;
+    case 'visitor': n = { x: e.v.tx, y: e.v.ty, w: 8, line: found(e.v.kind) ? `${capital(VISITORS[e.v.kind].a)}, come to the ${VISITORS[e.v.kind].home}` : `Something has come to the ${VISITORS[e.v.kind].home}`, big: true }; break;
   }
   if (!n) return;
   if (n.c || n.x !== undefined) idle.news = Object.assign(n, { at });

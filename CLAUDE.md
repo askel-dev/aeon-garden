@@ -42,9 +42,10 @@ closed); none of that project's rules apply here.
   who, what they're up to, and the tummy. Tap it for the rest. On a touch screen every target is 44 px or more and a ✕ is
   the journal's round brass button; on an upright phone a card is a sheet from the bottom with its ✕ at the foot in the
   middle (the journal, Who ate whom, the graphs' page), and Back shuts what's open (`stepOut`).
-- `fur.js`, `fur-worker.js`: the painted foxes and rabbits (their rigs, poses and `paintFur`) and the few drawing
-  helpers every painting in game.js uses (`fillIn`, `ovalAt`, `blurIn`, `rockRGB`, `tone`...), which game.js takes from
-  `Fur`. In the meadow the worker paints them off the main thread; notes in `.claude/rules/game.md`.
+- `fur.js`, `fur-worker.js`: the painted foxes and rabbits (their rigs, poses and `paintFur`), the visitors painted the
+  same way (dragonflies, the kingfisher, the skylark: `Fur.painters`), and the few drawing helpers every painting in game.js
+  uses (`fillIn`, `ovalAt`, `blurIn`, `softIn`, `furGlow`, `rockRGB`, `tone`...), which game.js takes from `Fur`. In the
+  meadow the worker paints them off the main thread; notes in `.claude/rules/game.md`.
 - `trees.js`, `tree-worker.js`, `tree-lab.html`: the trees, painted in code. How they're painted, cached and
   drawn is in `.claude/rules/trees.md`, which loads when one of those files is opened.
 - `balance.js`: headless check, `node balance.js [years] [seeds]` (add `plant` for a player planting 5 trees a year).
