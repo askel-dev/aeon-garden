@@ -1,10 +1,16 @@
 /* Nobody's Meadow — paints trees (trees.js) off the main thread, so a paint never holds up a frame.
  * game.js posts { key, kind, seed, season, scale, ss, snow, tone?, young?, bark? } and gets back
- * { key, bx, by, image, snow? } with the pictures as ImageBitmaps.
+ * { key, bx, by, image, snow? } with the pictures as ImageBitmaps; or { key, leaves } (leaves px long) and gets back
+ * the falling leaves' sheet, { key, image, cell, cols, pick } (trees.js leafSheet).
  */
 importScripts('trees.js');
 onmessage = e => {
-  const { key, kind, seed, season, scale, ss, snow, tone, young, bark } = e.data;
+  const { key, kind, seed, season, scale, ss, snow, tone, young, bark, leaves } = e.data;
+  if (leaves) {
+    const s = Trees.leafSheet(leaves), image = s.canvas.transferToImageBitmap();
+    postMessage({ key, image, cell: s.cell, cols: s.cols, pick: s.pick }, [image]);
+    return;
+  }
   const cv = Trees.paint(kind, { seed, season, scale, ss, snowLayer: snow, tone, young, bark });
   const out = { key, bx: cv.bx, by: cv.by, image: cv.transferToImageBitmap() };
   if (cv.snow) out.snow = cv.snow.transferToImageBitmap();

@@ -1351,11 +1351,12 @@ function render(now) {
   for (const it of items) {
     if (it.f < 0.02) continue;                             // lost in the mist
     fadeTo(it.f);
-    if (it.d) drawDecorShadow(it.d, it.sx, it.sy, sn, it.px);
+    if (it.d) { drawDecorShadow(it.d, it.sx, it.sy, sn, it.px); if (it.d.tree) treeLeaves(it.d, it.sx, it.sy, it.px, ck, it.f); }
     else if (it.c) {
       drawCreatureShadow(it.c, it.sx, it.sy, now, sn);
     } else if (it.v) drawVisitorShadow(it.v, it.sx, it.sy, sn);
   }
+  drawLeaves(now, true);                                   // the leaves lying round the trees' feet, on the ground under all that stands
   for (const it of items) {
     if (it.f < 0.02) continue;
     fadeTo(it.f);
@@ -1369,7 +1370,8 @@ function render(now) {
   }
   unfade();
   if (splashes.length) drawSplashes(now);
-  drawFallingLeaves(now);
+  drawFallingLeaves(now);                                  // (an emoji tree's)
+  drawLeaves(now, false);                                  // and the painted trees' leaves coming down
   drawPollen(now);
   drawButterflies(now, ck);
 
@@ -4061,7 +4063,7 @@ function treeLook(d, ck, full = true) {   // full: with the look and the bare lo
       const turn = clamp((sp - 0.05 - lag) / 0.4, 0, 1);
       rgb = mix(mix(green, hue, turn), DRY, clamp((sp - 0.65 - lag) / 0.35, 0, 1) * (oak ? 1 : 0.5));
       fall = oak ? 0 : clamp((sp - 0.6 - lag) / 0.35, 0, 1);
-      drop = clamp(turn * 1.5 - 0.4, 0, 1) * (1 - fall * fall) * (oak ? 0.3 : 1);
+      drop = leafDrop(sp, lag, oak);
       if (info.fruit === 'apple') {
         if (sp < 0.4) fruit = { e: kind.e, n: Math.ceil(n * (1 - sp / 0.4)) };
         ground = { e: kind.e, n: d.windfall, size: 0.12 };        // the sim's windfalls (windfallTick)
@@ -4130,8 +4132,8 @@ function drawUnderTree(bits, h, sx, sy, px, front) {
   }
 }
 
-// Leaves let go in autumn and tumble down, drifting east with the wind. Trees queue them up
-// as they are drawn, and they are drawn on top of everything once the trees are done.
+// An emoji tree's leaves let go in autumn and tumble down, drifting east with the wind. Trees queue them up
+// as they are drawn, and they are drawn on top of everything once the trees are done. (A painted tree's: drawLeaves.)
 const leafFall = [];
 function drawFallingLeaves(now) {
   const m = ui.sky.mix, wind = 0.4 + 0.6 * m.cloudy + 1.5 * m.rain + 3 * m.storm;
@@ -4156,6 +4158,104 @@ function drawFallingLeaves(now) {
   unfade();
   ctx.restore();
   leafFall.length = 0;
+}
+
+// How fast a tree's leaves are coming down, sp into autumn: from when it's a third turned till it's bare, an oak
+// (which keeps its dry leaves) a third as fast.
+function leafDrop(sp, lag, oak) {
+  const turn = clamp((sp - 0.05 - lag) / 0.4, 0, 1), fall = oak ? 0 : clamp((sp - 0.6 - lag) / 0.35, 0, 1);
+  return clamp(turn * 1.5 - 0.4, 0, 1) * (1 - fall * fall) * (oak ? 0.3 : 1);
+}
+
+// A painted tree's leaves come down in autumn as its kind's own leaf (trees.js leafSheet, painted in the tree workers
+// once in every colour its crown takes, on one sheet a size). A crown still turning drops green ones, then its autumn
+// colour (an oak's last ones dry), and a few in its kind's other colours, as its crown has a few clumps another. Each
+// glides down swinging from side to side and tipping into each swing, turns over now and then (its back is paler),
+// drifts on the wind, and lands round the foot, where it lies a moment and fades. A leaf goes round and round its life
+// on the clock, so nothing is kept: where it is comes from the time and a few hash numbers. The trees dropping leaves
+// are listed as the shadows go down (treeLeaves) and their leaves drawn twice (drawLeaves): those lying then, over the
+// shadows and under all that stands, and those in the air at the end, over everything.
+const LEAF_TIERS = [8, 16, 32, 48];      // leaf lengths painted, in device pixels: a sheet each, asked for when one's wanted
+const LEAF_LEN = 0.085;                  // a leaf's length, of its tree's px
+const LEAF_SLOTS = 14;                   // leaves a tree has on the go at the height of its fall
+const LEAF_MIN = 22, LEAF_FULL = 56;     // none from a tree drawn smaller than this many px, and fewer up to this (specks, further out:
+                                         // each is a draw of its own, and a wood zoomed out had nearly 2000)
+const LEAF_FALL_MS = 5400, LEAF_LIE_MS = 2600, LEAF_FADE_MS = 1400;   // a leaf's fall (give or take a fifth), then lying, fading at the end
+const LEAF_SETTLE_MS = 300;              // landing, it lies down flat
+const LEAF_OTHER = 0.15;                 // the share of a tree's autumn leaves in its kind's other colours
+const LEAF_GREEN = 0.25;                 // and of those from a crown still green that are green: they fall when they've turned
+const LEAF_FLAT = 0.6;                   // a leaf lying on the ground, as squashed as we see the meadow at a slant (ROCK_SQUASH)
+const LEAF_GROUP = { summer: 0, spring: 0, bud: 0, autumn: 1, thin: 1, winter: 1, bare: 1 };   // the leaves a crown's look drops: green, or its autumn ones
+const LEAF_KEY = -1000;                  // (the sheets' keys among the tree workers' jobs, below the stand-ins')
+const leafSheets = [], leafWanted = [];  // by tier: { image, cell, cols }; the tiers to ask the workers for
+let leafPick = null;                     // trees.js's pick: the colours a tree of each kind and tone drops
+const leafTrees = [];                    // this frame's trees dropping leaves (records kept from frame to frame)
+let leafN = 0;
+
+// A tree on screen, as its shadow goes down: if its leaves are coming down, it's listed for drawLeaves.
+function treeLeaves(d, sx, sy, px, ck, f) {
+  if (ck.season !== 2 || px < LEAF_MIN || !treeWorker || !S.standing(d) || treeWaits.get(d) === 0) return;
+  const kind = treeKind(d), oak = kind === 'oak' || kind === 'hive';
+  if (kind === 'pine') return;
+  const info = treeInfo(d), drop = leafDrop((ck.dayInSeason - 1 + ck.phase) / S.SEASON_DAYS, (info.h % 5) * 0.04, oak);
+  const n = Math.round(LEAF_SLOTS * drop * clamp((px - LEAF_MIN) / (LEAF_FULL - LEAF_MIN), 0.15, 1));
+  if (!n) return;
+  let tier = 0;
+  while (tier < LEAF_TIERS.length - 1 && LEAF_TIERS[tier] < px * LEAF_LEN * dpr) tier++;
+  if (!leafSheets[tier]) {                                 // asked for, and till it comes, the nearest size there is
+    if (!leafWanted.includes(tier) && !treeSent.has(LEAF_KEY - tier)) { leafWanted.push(tier); askTrees(); }
+    let near = -1;
+    for (let i = 0; i < LEAF_TIERS.length; i++) if (leafSheets[i] && (near < 0 || Math.abs(i - tier) < Math.abs(near - tier))) near = i;
+    if (near < 0) return;
+    tier = near;
+  }
+  const [a, b, m] = treeStage(kind, d, ck);
+  const r = leafTrees[leafN] || (leafTrees[leafN] = { sx: 0, sy: 0, px: 0, n: 0, h: 0, f: 0, tier: 0, pick: null, ga: 0, gb: 0, m: 0 });
+  leafN++;
+  r.sx = sx; r.sy = sy; r.px = px; r.n = n; r.h = info.h; r.f = f; r.tier = tier; r.pick = leafPick[oak ? 'oak' : kind][d.tone ?? 0];
+  r.ga = oak && a === 'winter' ? 2 : LEAF_GROUP[a]; r.gb = b ? LEAF_GROUP[b] : r.ga; r.m = m;   // (an oak's winter look: its dry leaves)
+}
+
+// The listed trees' leaves lying round their feet (lying), or coming down. Each is one setTransform and one drawImage.
+function drawLeaves(now, lying) {
+  const sky = ui.sky.mix, wind = 0.4 + 0.6 * sky.cloudy + 1.5 * sky.rain + 3 * sky.storm;
+  if (leafN) ctx.beginPath();   // Chrome carries the path along through every setTransform: what was drawn last would cost each leaf dear
+  for (let i = 0; i < leafN; i++) {
+    const r = leafTrees[i], sheet = leafSheets[r.tier], cell = sheet.cell, pick = r.pick, px = r.px, h = r.h;
+    const k = px * LEAF_LEN / LEAF_TIERS[r.tier] * dpr;     // device pixels to a pixel of the sheet
+    fadeTo(r.f);                                            // as its tree is, in the mist
+    for (let j = 0; j < r.n; j++) {
+      const fallMs = LEAF_FALL_MS * (0.8 + 0.4 * hash2(h, j, 1)), life = fallMs + LEAF_LIE_MS;
+      const t = now / life + hash2(h, j, 2), c = Math.floor(t), q = (t - c) * life;
+      if ((q >= fallMs) !== lying) continue;
+      const g = h * 31 + j, at = Math.min(q, fallMs), u = at / fallMs;
+      // From up in the crown down to the ground round the foot, swinging from side to side and hanging a moment at each
+      // end, tipping into each swing, and turning over now and then.
+      const x0 = (hash2(g, c, 3) - 0.5) * px * 0.7, y0 = -px * (0.8 - 0.35 * hash2(g, c, 4)), y1 = (hash2(g, c, 5) - 0.5) * px * 0.22;
+      const swing = hash2(g, c, 6) * TAU + TAU * at / (1300 + 700 * hash2(g, c, 7)), sw = Math.sin(swing), reach = px * (0.04 + 0.05 * hash2(g, c, 8));
+      const x = r.sx + x0 + reach * sw + wind * u * px * 0.25;
+      const y = r.sy + y0 + (y1 - y0) * u - reach * 0.5 * sw * sw * Math.min(1, (1 - u) * 6);
+      const turn = hash2(g, c, 9) * TAU + 0.5 * Math.cos(swing);
+      let side = Math.cos(hash2(g, c, 10) * TAU + (hash2(g, c, 11) - 0.5) * 4.4 * at / 1000), flat = 1, alpha;
+      side = side < 0 ? Math.min(side, -0.15) : Math.max(side, 0.15);   // (edge on, still a sliver)
+      if (lying) {
+        const lay = q - fallMs, w = smooth(0, LEAF_SETTLE_MS, lay);
+        side += ((side < 0 ? -1 : 1) - side) * w; flat = 1 - (1 - LEAF_FLAT) * w;
+        alpha = Math.min(1, (LEAF_LIE_MS - lay) / LEAF_FADE_MS);
+      } else alpha = Math.min(1, q / 500);
+      // Its colour, as its crown is: green or its own autumn colour, a few in its kind's others; lit or a little less.
+      let group = hash2(g, c, 12) < r.m ? r.gb : r.ga;
+      if (group === 0 && hash2(g, c, 16) > LEAF_GREEN) group = 1;
+      let col = group === 0 ? pick[0] : group === 2 && pick[2] >= 0 ? pick[2] : pick[1];
+      if (group === 1 && pick.length > 3 && hash2(g, c, 13) < LEAF_OTHER) col = pick[3 + Math.floor(hash2(g, c, 14) * (pick.length - 3))];
+      const at4 = col * 4 + (hash2(g, c, 15) < 0.5 ? 0 : 2) + (side < 0 ? 1 : 0), cs = Math.cos(turn) * k, sn = Math.sin(turn) * k;
+      ctx.globalAlpha = alpha;
+      ctx.setTransform(cs * side, sn * side * flat, -sn, cs * flat, x * dpr + shakeX, y * dpr + shakeY);
+      ctx.drawImage(sheet.image, (at4 % sheet.cols) * cell, ((at4 / sheet.cols) | 0) * cell, cell, cell, -cell / 2, -cell / 2, cell, cell);
+    }
+  }
+  if (leafN) { ctx.setTransform(dpr, 0, 0, dpr, shakeX, shakeY); ctx.globalAlpha = 1; unfade(); }
+  if (!lying) leafN = 0;
 }
 
 // A tree turning colour is painted afresh at every step, and at 15x or 60x the seasons go by so fast
@@ -4301,7 +4401,12 @@ if (!params.has('emoji') && window.Worker && window.OffscreenCanvas) {
       const tw = { worker: new Worker('tree-worker.js'), busy: 0 };
       tw.worker.onmessage = e => {
         const { key, bx, by, image, snow } = e.data, job = treeSent.get(key);
-        const p = { image, snow, bx, by, scale: job.scale, used: spriteFrame, w: image.width, h: image.height, bytes: image.width * image.height * 4 * (snow ? 2 : 1) };   // (w, h: an image's own are slow to ask)
+        if (job.leaves) {                                // the falling leaves' sheet at a size (drawLeaves)
+          leafSheets[job.tier] = { image, cell: e.data.cell, cols: e.data.cols }; leafPick = e.data.pick;
+          treeSent.delete(key); treeBusy--; tw.busy--; askTrees();
+          return;
+        }
+        const p ={ image, snow, bx, by, scale: job.scale, used: spriteFrame, w: image.width, h: image.height, bytes: image.width * image.height * 4 * (snow ? 2 : 1) };   // (w, h: an image's own are slow to ask)
         treeSent.delete(key); treeBusy--; tw.busy--;
         if (job.kin !== undefined) { treeKin.set(job.kin, p); kinBusy = false; }
         else {
@@ -4345,9 +4450,9 @@ function kinAhead() {
   for (let k = 0; k < 4; k++) for (const l of [['bare', 'bud', 'spring'], ['summer'], ['autumn', 'thin'], ['winter']][(s + k) % 4]) looks.add(l);
   for (const look of [...looks, 'dead']) for (const kind in KIN_LOOKS) if (KIN_LOOKS[kind].includes(look)) wantKin(kind, look, false);
 }
-// Hands the workers the next painting wanted, two each at a time: a stand-in while none is being painted
-// (one at a time, so the rest go on), then the ones wanted this frame, small sizes before big so something
-// shows soon. What hasn't been wanted for a while is forgotten.
+// Hands the workers the next painting wanted, two each at a time: a sheet of falling leaves first, then a stand-in
+// while none is being painted (one at a time, so the rest go on), then the ones wanted this frame, small sizes before
+// big so something shows soon. What hasn't been wanted for a while is forgotten.
 function sendTree(key, job) {
   const tw = treeWorkers.reduce((a, b) => b.busy < a.busy ? b : a);
   treeSent.set(key, job); treeBusy++; tw.busy++;
@@ -4355,6 +4460,7 @@ function sendTree(key, job) {
 }
 function askTrees() {
   while (treeWorker && treeBusy < 2 * treeWorkers.length) {
+    if (leafWanted.length) { const tier = leafWanted.shift(); sendTree(LEAF_KEY - tier, { leaves: LEAF_TIERS[tier], tier }); continue; }   // (quick, and many leaves wait on one)
     if (kinWanted.length && !kinBusy) {
       const job = kinWanted.shift();
       kinBusy = true; sendTree(-1 - job.kin, job);               // (its own keys, below the others)
@@ -4475,8 +4581,7 @@ function drawDecor(d, sx, sy, now, ck, clipLeaves, px = d.tree ? treePx(d) : d.s
   if (under) drawUnderTree(t.ground, t.h, sx, sy, px, false);
   if (!clipLeaves && drawPaintedTree(d, sx, sy, now, ck, stage, px)) {
     if (under) drawUnderTree(t.ground, t.h, sx, sy, px, true);
-    if (t.drop && px >= 22) leafFall.push({ sx, sy, px, drop: t.drop, rgb: t.rgb, h: t.h, fade });
-    return;
+    return;                                                  // (its falling leaves: treeLeaves)
   }
   if (treeWorker) return;                                    // nothing to show yet: it fades in when its painting comes
   t.look = shownLook(d, t.look, px);

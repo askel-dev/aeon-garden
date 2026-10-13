@@ -57,6 +57,15 @@ all placed by the flow's clock alone (`flowTick`: the sim's `riverPace`, faster 
 the summer low). A frame only looks at the stretches of river on screen (`R.box`). What floats comes mostly from the trees
 on the bank (`floatSources`, once a day: blossom off one in flower, its leaves as `treeLook` draws them while they come
 down), and a little from upstream; a tree you plant by the river drops its leaves in.
+In autumn a painted tree's leaves come down as its kind's own leaf, in its crown's colours (trees.js `leafSheet`, a sheet
+a size from the tree workers, `LEAF_TIERS`): green ones only now and then from a crown still turning (`LEAF_GREEN`),
+then its own autumn colour (an oak's last ones dry), a few in its kind's others (`LEAF_OTHER`). Each glides down swinging
+from side to side and tipping into each swing, turns over now and then (the paler back), drifts on the wind, and lands
+round the foot, where it lies flat a moment and fades. Nothing is kept: a leaf goes round its life on the clock (where it
+is comes from the time and hash numbers). The trees dropping leaves are listed as the shadows go down (`treeLeaves`), and
+drawn twice by `drawLeaves`: those lying then, under all that stands, those in the air at the end. Each leaf is a
+transform and a draw of its own, so they're thinned on trees drawn small (`LEAF_MIN`, `LEAF_FULL`: zoomed out, a wood had
+nearly 2000). An emoji tree keeps the old tumbling ovals (`drawFallingLeaves`).
 A first visit (or `?intro`) gets a short welcome card, then the intro (`startIntro`, `introFrame`): an
 empty meadow (createWorld's `arrival` option, `planArrivals` in sim.js) where a family hops in at dawn,
 digs its burrow and turns in for the night, while the camera, the clock's pace and a caption at a time
