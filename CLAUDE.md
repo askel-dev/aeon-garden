@@ -43,6 +43,9 @@ told to just do it.
   and a finger held on the meadow opens the ring there (`HOLD_MS`). Upright, the inspector is a bottom sheet;
   on their side (`short()`) it is a panel down the right. Either way it opens folded to one line (`stripHTML`):
   who, what they're up to, and the tummy. Tap it for the rest.
+- `fur.js`, `fur-worker.js`: the painted foxes and rabbits (their rigs, poses and `paintFur`) and the few drawing
+  helpers every painting in game.js uses (`fillIn`, `ovalAt`, `blurIn`, `rockRGB`, `tone`...), which game.js takes from
+  `Fur`. In the meadow the worker paints them off the main thread; notes in `.claude/rules/game.md`.
 - `trees.js`, `tree-worker.js`, `tree-lab.html`: the trees, painted in code. How they're painted, cached and
   drawn is in `.claude/rules/trees.md`, which loads when one of those files is opened.
 - `balance.js`: headless check, `node balance.js [years] [seeds]` (add `plant` for a player planting 5 trees a year).
