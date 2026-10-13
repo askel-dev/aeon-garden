@@ -1947,6 +1947,7 @@ function drawDragonflies(v, sx, sy, now, z, px, a) {
   let way = dragonWay.get(v) ?? (v.facing > 0 ? 0 : Math.PI);
   if (!sat && (v.tx !== v.x || v.ty !== v.y)) way = Math.atan2(v.ty - v.y, v.tx - v.x);
   dragonWay.set(v, way);
+  if (!sat && !still) pace.moved = Math.max(pace.moved, LULL_PX_S);   // (the others dart about by the clock: no lull while they're on the wing)
   dragonfly(v, 0, sx, ground - visitorUp(v, px), px, way, sat, still, now, a);
   for (let k = 1; k <= DRAGON_MORE; k++) {                // the others, about the pond
     const list = sat ? v.edge : v.spots, n = list.length;
@@ -6278,6 +6279,7 @@ function drawDashes(now, z) {
   for (let k = 0; k < DASHES; k++) {
     const a = (now - dashes.t0[k]) / DASH_MS;
     if (a >= 1) continue;
+    pace.moved = Math.max(pace.moved, LULL_PX_S);                          // (quick: no lull while one darts off)
     const go = 1 - (1 - a) * (1 - a), frog = dashes.frog[k];               // quick off, slowing into the grass
     const sx = (dashes.x[k] + dashes.dx[k] * go - cam.x) * z + vw / 2, sy = (dashes.y[k] + dashes.dy[k] * go - cam.y) * z + vh / 2;
     if (!fadeAt(dashes.x[k], dashes.y[k])) continue;
@@ -12108,8 +12110,8 @@ function paceDue(now) {
 }
 
 // A lull: time runs, nobody's touching it, and nothing on screen (the camera neither) moves fast enough for a frame in
-// two to show. pace.moved is the fastest of the animals and visitors drawn, the river's current and the effects rising
-// (render, drawFlow, drawEffects).
+// two to show. pace.moved is the fastest of the animals and visitors drawn, the river's current, the effects rising, and
+// dragonflies on the wing or a vole darting off (render, drawFlow, drawEffects, drawDragonflies, drawDashes).
 function inLull(now) {
   const m = ui.sky.mix, c = pace.cam, s = Math.max(1, pace.gap) / 1000;
   const camMoved = c.zoom !== cam.zoom || Math.hypot(cam.x - c.x, cam.y - c.y) * cam.zoom / s >= LULL_PX_S;
