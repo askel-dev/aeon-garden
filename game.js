@@ -8772,6 +8772,7 @@ const HOLD_MS = 450;
 let holdTimer = 0;
 
 canvas.addEventListener('pointerdown', e => {
+  if (!world) return;                     // (a kept meadow still opening)
   if (intro.on) { endIntro(true); return; }
   if (ui.ring) { closeRing(); return; }
   if ($('#toolbar').classList.contains('open')) { toggleTools(false); return; }   // that tap only folds the tools away
@@ -8799,6 +8800,7 @@ canvas.addEventListener('pointerdown', e => {
   }
 });
 canvas.addEventListener('pointermove', e => {
+  if (!world) return;
   if (fingers.has(e.pointerId)) fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (pinch) { movePinch(); return; }
   if (intro.on) return;
@@ -10278,7 +10280,7 @@ function copyMeadow() {
 }
 
 document.addEventListener('keydown', e => {
-  if (e.target.closest('input,textarea')) return;
+  if (e.target.closest('input,textarea') || !world) return;
   if (intro.on) {                                      // any key skips the intro
     if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key !== 'Shift' && e.key !== 'Tab') { e.preventDefault(); endIntro(true); }
     return;
