@@ -1,5 +1,7 @@
 # Visitors and the field journal: plan (2026-10-12)
 
+More visitors, and the journal paced over a real year: `a-year-of-visitors.md` (2026-10-13).
+
 The user agreed to this ("do both"). Part 1 (arrival captions) is built and committed. The hedgehog (2a and 2b, plus the
 journal's store and the first-sighting moment from 2c) is built (2026-10-12), and naming and Yours are out (2d, same day);
 the heron is built too (same day, painted: `paintHeron`); the journal's card is next. The journal's card goes in the ••• menu where Yours was. This note is for the session
