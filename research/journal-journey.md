@@ -1,9 +1,17 @@
 # The journal as a journey: one Dry Year arc (plan, 2026-10-13)
 
-Not built. A plan for when the visitors grow past the hedgehog and the heron. The three decisions below are settled
+A plan for when the visitors grow past the hedgehog and the heron. The three decisions below are settled
 (Axel, 2026-10-13); the rest is a proposal to talk over before building, as CLAUDE.md asks. (A first draft read "one
 year" as a real year and paced the journal by the real calendar; Axel meant one Dry Year arc. The real calendar is under
-"Left for later".)
+"Left for later".) Steps 1 and 2 of the order below were settled with Axel on 2026-10-13 and are being built; what's
+built is marked there.
+
+Built so far:
+- **Step 1, the journal's shape** (game.js `CHAPTERS`, `BOOK`, `arcSeason`, `hinted`, `arcTally`). One chapter for each
+  season of the arc, as Axel put it: seven, the Dry Year's spring and summer each a chapter of its own (the table below
+  has them as one; "5 of 6 in the Dry Year" on the card adds the two up). A chapter with no pages yet isn't shown, so
+  for now it's the first spring and the first summer. The tally on the cards counts the kinds seen in that meadow
+  (sim.js `w.sighted`), so a second keeper meadow has a tally of its own while the journal keeps everything.
 
 ## Why
 
@@ -171,7 +179,8 @@ settles on.
 Each its own commit, `node balance.js 6 4 v` and `3 4 v plant` printing the same after each.
 
 1. The journal's shape: the arc's chapters, the frontier, hints in steps, the Dry Year's hints from the start, the tally
-   on the came-through card. No new visitors yet.
+   on the came-through card. No new visitors yet. **Built** (hints in two steps: a riddle, then plain after a glimpse;
+   the inspector's third step comes with step 2).
 2. Place qualities, and the first pair pulling against each other: the dragonflies (a pond on its own) and the
    kingfisher (fish, a tree at the edge); then the skylark (a strip in the open).
 3. The Dry Year's chapter: it's what makes getting ready count.

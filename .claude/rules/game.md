@@ -59,8 +59,15 @@ shows it pasted in, the painting stuck on its corner. Once a kind is in the jour
 (`MOMENTS`, `momentOf`, `watchVisitor`: asleep, on its way or on the wing for `MOMENT_MS`, a catch or a find as it happens, a 🪲
 popping up over a hedgehog's finds); the first time each is a caption, the seen chime and its emoji's stamp into the book, and a
 chip on the page. A day or two before a visit, its sign (sim.js `w.signs`): 🐾 tracks along the way it'll come in to the hedge,
-or a 🪶 on the bank (`drawSigns`), with a line of news and a marker. The journal's card and more visitors
-are still to come (`research/visitors-and-journal.md`). A new meadow opens close, over the open ground with the most animals (`homeView`, `HOME_TILES`).
+or a 🪶 on the bank (`drawSigns`), with a line of news and a marker. The journal's card (`#journal`) goes a chapter at a time through a keeper
+meadow's arc (`CHAPTERS`, `BOOK`: the first spring, summer, autumn and winter, the Dry Year's spring and summer, the rain
+coming back; `research/journal-journey.md`), each page in the first season its kind can come in, each chapter with its count
+and "Now" on the season the meadow is in (`arcSeason`, counted from `w.dryYear`). The frontier (`hinted`): a page's riddle
+shows from the season before its chapter's, the Dry Year's from the start, all once the arc is over; past it a page is a
+dashed blank saying when its riddle comes. An empty page has its riddle, plain (`plain`: what it wants, its place and time)
+once one came and went unseen (`glimpse`); only the first two visitors' pages put their tool in your hand (`tool`). Each kind
+seen in a meadow is kept with it (sim.js `w.sighted`, `noteSighting`; one in the journal from another meadow is noted
+silently, `noted`), and the came-through card and the loss card give that arc's tally (`arcTally`). A new meadow opens close, over the open ground with the most animals (`homeView`, `HOME_TILES`).
 The tab's icon follows the season and the part of day (`updateFavicon`, at most once a second), and
 the news log dates each line with a season chip (`seasonChip`).
 The rivers run (`drawFlow`, worked out once a meadow by `flowOf` from the sim's `w.current`): streaks of current, quicker

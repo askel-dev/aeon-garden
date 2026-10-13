@@ -1873,46 +1873,73 @@ const saveJournal = () => { try { localStorage.setItem(JOURNAL, JSON.stringify(j
 const PHOTOS = 'aeon-garden-journal-photos';
 let photos = {};
 try { photos = JSON.parse(localStorage.getItem(PHOTOS) || '{}') || {}; } catch (e) { /* a private window: this visit only */ }
-// Its pages in order, numbered. art: its painting (a function where it's worked out), fit: how much bigger it's shown (a
-// tall one painted with room round it); a: its name in a sentence; note: what a found page says; hint: an empty one's; a
-// visitor's tool (KEEP_TOOLS) is what draws it, where and when it comes, glimpse: its page once one's come and gone unseen.
-const PAGES = [
-  { k: 'rabbit', name: 'Rabbit', a: 'a rabbit', art: () => rabbitArtOf(COAT.wild, 'sit'),
-    note: 'Grazes the open grass at dawn and dusk and digs its burrows there. Stamps and bolts when a fox comes.',
-    hint: 'Something nibbles the short grass round the burrows.' },
-  { k: 'fox', name: 'Fox', a: 'a fox', art: () => foxArtOf(0.2, 'stand'),
-    note: 'Hunts the rabbits, and pounces on voles in the long grass when rabbits are few.',
-    hint: 'Something red trots the meadow at dusk, after the rabbits.' },
-  { k: 'bee', name: 'Honeybee', a: 'a honeybee', art: 'bee:2',
-    note: 'Lives in a hollow oak and sips from the flowers in reach. One back from a rich patch dances the way.',
-    hint: 'Something hums over the flowers by an old hollow oak.' },
-  { k: 'crow', name: 'Crow', a: 'a crow', art: 'crow:0',
-    note: 'Walks the short grass for grubs and clears up what the foxes leave. Buries acorns in autumn, and some grow into oaks.',
-    hint: 'Something black walks the short grass, pecking.' },
-  ...(S.OWLS ? [{ k: 'owl', name: 'Tawny owl', a: 'a tawny owl', art: '🦉',
-    note: 'Sleeps in a hollow oak by day, and drops on the voles in the long grass at night.',
-    hint: 'Something calls from the hollow oaks at night.' }] : []),
-  { k: 'vole', name: 'Vole', a: 'a vole', art: 'vole:0',
-    note: 'Lives hidden in the long grass the rabbits leave, in thousands in a vole year. The foxes listen for them.',
-    hint: 'Something rustles in the long grass. Watch a fox listening there.' },
-  { k: 'frog', name: 'Common frog', a: 'a frog', art: 'frog:0',
-    note: 'Spawns in still shallows early in spring. A flood pool is best, unless it dries before the tadpoles leave.',
-    hint: 'Something hops at the water’s edge, spring to autumn.' },
-  { k: 'fish', name: 'Trout', a: 'a trout', art: '🐟',
-    note: 'Lives in the water that lasts the year round, the deeper the better, and eats the tadpoles. Otters dive for it.',
-    hint: 'Something silver lives in the deep water. Watch an otter fishing.' },
-  { k: 'otter', name: 'Otter', a: 'an otter', art: 'otter:3',
-    note: 'Makes its holt in the roots of a big tree on the bank. Fishes from dusk into the morning, and slides down the bank for fun.',
-    hint: 'Something slides into the water at dusk, by a big tree on the bank.' },
-  { k: 'hedgehog', name: 'Hedgehog', a: 'a hedgehog', art: 'hog:0', visits: true, tool: 'hedge', where: 'A thick hedge', when: 'Dusk, spring to autumn',
-    note: 'Comes to a thick hedge at dusk for the beetles under it, and sleeps curled up at its foot by day. Gone in a few days.',
-    hint: 'Something snuffles under a thick hedge at dusk.', glimpse: 'One came to your hedge and left before you saw it. It will be back.' },
-  { k: 'heron', name: 'Heron', a: 'a heron', art: 'heron:0', fit: 1.45, visits: true, tool: 'pond', where: 'A pond with frogs', when: 'By day, spring to autumn',
-    note: 'Comes to a pond you dug once the frogs have found it. Stands stock still in the shallows, then stabs for a frog or a fish.',
-    hint: 'Something tall stalks the frogs in a pond you dug.', glimpse: 'One came to your pond and flew off before you saw it. It will be back.' },
+// Its chapters: the seasons of a keeper meadow's arc, from the first spring through the Dry Year to the came-through
+// card at the start of the winter after (arc: which season of it, arcSeason's count). A page sits in the first season its
+// kind can come in. dry: the Dry Year's, its hints there from the start.
+const CHAPTERS = [
+  { k: 'spring', name: 'The first spring', arc: 0 },
+  { k: 'summer', name: 'The first summer', arc: 1 },
+  { k: 'autumn', name: 'The first autumn', arc: 2 },
+  { k: 'winter', name: 'The first winter', arc: 3 },
+  { k: 'dryspring', name: 'The Dry Year’s spring', arc: 4, dry: true },
+  { k: 'drysummer', name: 'The Dry Year’s summer', arc: 5, dry: true },
+  { k: 'rain', name: 'The rain comes back', arc: 6 },
 ];
+const CHAPTER = Object.fromEntries(CHAPTERS.map(c => [c.k, c]));
+// Its pages in order, numbered, a chapter at a time. art: its painting (a function where it's worked out), fit: how much
+// bigger it's shown (a tall one painted with room round it); a: its name in a sentence; ch: its chapter; note: what a
+// found page says; riddle: an empty one's hint, and plain (a visitor's) once one's come and gone unseen, saying what it
+// wants; where and when it comes. tool: the one that draws it (KEEP_TOOLS), on its empty page: only the first two
+// visitors have one, the rest are for working out.
+const PAGES = [
+  { k: 'rabbit', name: 'Rabbit', a: 'a rabbit', ch: 'spring', art: () => rabbitArtOf(COAT.wild, 'sit'),
+    note: 'Grazes the open grass at dawn and dusk and digs its burrows there. Stamps and bolts when a fox comes.',
+    riddle: 'Something nibbles the short grass round the burrows.' },
+  { k: 'fox', name: 'Fox', a: 'a fox', ch: 'spring', art: () => foxArtOf(0.2, 'stand'),
+    note: 'Hunts the rabbits, and pounces on voles in the long grass when rabbits are few.',
+    riddle: 'Something red trots the meadow at dusk, after the rabbits.' },
+  { k: 'bee', name: 'Honeybee', a: 'a honeybee', ch: 'spring', art: 'bee:2',
+    note: 'Lives in a hollow oak and sips from the flowers in reach. One back from a rich patch dances the way.',
+    riddle: 'Something hums over the flowers by an old hollow oak.' },
+  { k: 'crow', name: 'Crow', a: 'a crow', ch: 'spring', art: 'crow:0',
+    note: 'Walks the short grass for grubs and clears up what the foxes leave. Buries acorns in autumn, and some grow into oaks.',
+    riddle: 'Something black walks the short grass, pecking.' },
+  ...(S.OWLS ? [{ k: 'owl', name: 'Tawny owl', a: 'a tawny owl', ch: 'spring', art: '🦉',
+    note: 'Sleeps in a hollow oak by day, and drops on the voles in the long grass at night.',
+    riddle: 'Something calls from the hollow oaks at night.' }] : []),
+  { k: 'vole', name: 'Vole', a: 'a vole', ch: 'spring', art: 'vole:0',
+    note: 'Lives hidden in the long grass the rabbits leave, in thousands in a vole year. The foxes listen for them.',
+    riddle: 'Something rustles in the long grass. Watch a fox listening there.' },
+  { k: 'frog', name: 'Common frog', a: 'a frog', ch: 'spring', art: 'frog:0',
+    note: 'Spawns in still shallows early in spring. A flood pool is best, unless it dries before the tadpoles leave.',
+    riddle: 'Something hops at the water’s edge, spring to autumn.' },
+  { k: 'fish', name: 'Trout', a: 'a trout', ch: 'spring', art: '🐟',
+    note: 'Lives in the water that lasts the year round, the deeper the better, and eats the tadpoles. Otters dive for it.',
+    riddle: 'Something silver lives in the deep water. Watch an otter fishing.' },
+  { k: 'otter', name: 'Otter', a: 'an otter', ch: 'spring', art: 'otter:3',
+    note: 'Makes its holt in the roots of a big tree on the bank. Fishes from dusk into the morning, and slides down the bank for fun.',
+    riddle: 'Something slides into the water at dusk, by a big tree on the bank.' },
+  { k: 'heron', name: 'Heron', a: 'a heron', ch: 'spring', art: 'heron:0', fit: 1.45, visits: true, tool: 'pond', where: 'A pond with frogs', when: 'By day, spring to autumn',
+    note: 'Comes to a pond you dug once the frogs have found it. Stands stock still in the shallows, then stabs for a frog or a fish.',
+    riddle: 'Something tall stalks the frogs in a pond you dug.',
+    plain: 'A heron: it wants a pond you dug that the frogs have found. One came and flew off before you saw it, and it will be back.' },
+  { k: 'hedgehog', name: 'Hedgehog', a: 'a hedgehog', ch: 'summer', art: 'hog:0', visits: true, tool: 'hedge', where: 'A thick hedge', when: 'Dusk, spring to autumn',
+    note: 'Comes to a thick hedge at dusk for the beetles under it, and sleeps curled up at its foot by day. Gone in a few days.',
+    riddle: 'Something snuffles under a thick hedge at dusk.',
+    plain: 'A hedgehog: it wants a hedge thick enough to hide in. One came at dusk and left before you saw it, and it will be back.' },
+];
+PAGES.sort((a, b) => CHAPTER[a.ch].arc - CHAPTER[b.ch].arc);   // (a stable sort: in their order within a chapter)
 PAGES.forEach((p, i) => { p.no = String(i + 1).padStart(2, '0'); p.i = i; });
 const PAGE = Object.fromEntries(PAGES.map(p => [p.k, p]));
+// The chapters with pages in them (one with none yet isn't shown), each with its pages.
+const BOOK = CHAPTERS.map(c => ({ ...c, pages: PAGES.filter(p => p.ch === c.k) })).filter(c => c.pages.length);
+// Which season of its arc the meadow is in (CHAPTERS' arc), from its Dry Year: 0 its first spring, the four before the
+// Dry Year's spring, to 6 the autumn after; 7 or more once the arc is over. (Under 0 for a meadow whose Dry Year is
+// further off, as &dry=3 makes.)
+const arcSeason = () => (world.dryYear ? Math.floor(world.tick / S.TPD / S.SEASON_DAYS) - (world.dryYear.year - 2) * 4 : 7);
+// The frontier: a page's hint shows from the season before its chapter's (this season's and the next season's pages),
+// the Dry Year's from the start, and all of them once the arc is over.
+const hinted = p => { const c = CHAPTER[p.ch]; return c.dry || c.arc <= Math.max(0, arcSeason()) + 1; };
 // The moments to catch a visitor in, once its kind is in the journal (watchVisitor): its emoji, its name on the page, a
 // hint till it's seen, the caption's words, and quick: over in a moment, so seen as it happens (else after MOMENT_MS).
 const MOMENTS = {
@@ -1931,14 +1958,19 @@ const MOMENTS = {
 const artOf = p => (typeof p.art === 'function' ? p.art() : p.art);
 // In the journal (a kind with no page, the owls while they're off, always is).
 const found = k => !PAGE[k] || !!journal[k]?.first;
+// Seen in this meadow (world.sighted, kept with it: its arc's tally, arcTally), and in the journal: nothing more to note.
+const seenHere = k => !PAGE[k] || world.sighted?.[k] != null;
+const noted = k => found(k) && seenHere(k);
 // How many of a kind that lives here are alive now.
 const livingCount = k => Math.round(k === 'vole' ? world.voleCount : k === 'frog' ? world.frogCount : k === 'fish' ? world.fishCount : world.count[k] || 0);
-// A sighting of a kind into the journal (visit: a visitor's, counted): true the first time ever.
+// A sighting of a kind into the journal (visit: a visitor's, counted), and this meadow's: true the first time ever.
 function noteSighting(kind, visit) {
+  (world.sighted ||= {})[kind] ??= world.tick;
   const page = journal[kind] ||= {}, first = !page.first;
+  if (!first && !visit) return false;              // (one that lives here, seen in another meadow before)
   if (first) { Object.assign(page, { first: Date.now(), t: world.tick, new: true }); delete page.glimpsed; }
   if (visit) page.seen = (page.seen || 0) + 1;
-  else if (first) page.most = livingCount(kind);
+  else page.most = livingCount(kind);
   saveJournal();
   if (first) book.held.add(kind);                  // (counted in the book once its stamp lands, stampFly)
   journalChanged();
@@ -1975,7 +2007,7 @@ function lookFrame(now) {
 }
 // Drawn at (sx, sy) on screen: one (o, a creature or a visitor, for its caption to follow), or something at (x, y).
 function lookAt(kind, sx, sy, o, x, y) {
-  if (found(kind) || sx < gaze.x0 || sx > gaze.x1 || sy < gaze.y0 || sy > gaze.y1) return;
+  if (noted(kind) || sx < gaze.x0 || sx > gaze.x1 || sy < gaze.y0 || sy > gaze.y1) return;
   if (gaze.at[kind] !== gaze.frame) { gaze.at[kind] = gaze.frame; gaze.ms[kind] = (gaze.ms[kind] || 0) + gaze.dt; }
   if (gaze.ms[kind] >= (LOOK_MS[kind] ?? SPOT_LOOK_MS) && gaze.now >= gaze.calm) findKind(kind, o, x, y);
 }
@@ -8543,7 +8575,7 @@ function drawPickedOver() {
 
 function select(id, zoomIn = true) {
   const c = KEEP && id && world.byId.get(id);
-  if (c?.alive && !found(c.species)) findKind(c.species, c);   // (?keep: following one is seeing it, for the journal)
+  if (c?.alive && !noted(c.species)) findKind(c.species, c);   // (?keep: following one is seeing it, for the journal)
   ui.selectedId = id;
   ui.picked = null;
   ui.trail = [];
@@ -9703,10 +9735,12 @@ function alertGo(k) {
 
 // ------------------------------------------------------------------ the field journal (?keep)
 //
-// Its book is in the bottom bar (#jbook, drawBook): the pages found, a pip each, and "New" with a glow till it's opened.
-// Open (the book, or J), a parchment card (#journal): the pages in two sections, Lives here and Comes by, a tile each (a
-// silhouette till it's found), and the page picked beside them, turned with ‹ › or the arrow keys. An empty page has a
-// hint, and a visitor's a button that puts the tool that draws it in your hand. On an upright phone the journal is a
+// Its book is in the bottom bar (#jbook, drawBook): the pages found, a pip each (a gap between chapters), and "New" with
+// a glow till it's opened. Open (the book, or J), a parchment card (#journal): the pages a chapter at a time (BOOK), each
+// chapter with its count and "Now" on the season the meadow is in, a tile each (a silhouette till it's found, blank past
+// the frontier), and the page picked beside them, turned with ‹ › or the arrow keys. An empty page has its riddle, plain
+// once one came and went unseen, and the first two visitors' a button that puts the tool that draws them in your hand; one
+// past the frontier says when its riddle comes (hinted). On an upright phone the journal is a
 // sheet from the bottom, ✕ at the bottom in the middle; a page is a layer over the pages with ‹ ✕ › in the same place,
 // turned with a sideways swipe, and a handle dragged down lays a layer down. Each layer is a step in the browser's
 // history, so Back steps out. Written as it opens and as a page turns, never per frame; the paintings are made once (jArt).
@@ -9717,7 +9751,7 @@ const jr = { el: $('#journal'), scrim: $('#jscrim'), depth: 0, pick: '', art: ne
 const journalOpen = () => jr.depth > 0;
 const upright = () => matchMedia('(max-width: 760px) and (min-height: 501px)').matches;
 const still = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
-const pageState = k => (found(k) ? 'found' : journal[k]?.glimpsed ? 'glimpsed' : 'unseen');
+const pageState = k => (found(k) ? 'found' : journal[k]?.glimpsed ? 'glimpsed' : hinted(PAGE[k]) ? 'unseen' : 'later');
 const inBook = k => found(k) && !book.held.has(k);
 const fitStyle = p => (p.fit ? ` style="transform: scale(${p.fit})"` : '');
 
@@ -9738,7 +9772,7 @@ function jArt(p, large) {
 function drawBook() {
   if (!KEEP) return;
   const n = PAGES.filter(p => inBook(p.k)).length, fresh = PAGES.some(p => journal[p.k]?.new && !book.held.has(p.k));
-  const pips = PAGES.map((p, i) => `<i class="${inBook(p.k) ? 'on' : journal[p.k]?.glimpsed ? 'half' : ''}${p.visits && !PAGES[i - 1].visits ? ' gap' : ''}"></i>`).join('');
+  const pips = PAGES.map((p, i) => `<i class="${inBook(p.k) ? 'on' : journal[p.k]?.glimpsed ? 'half' : ''}${i && p.ch !== PAGES[i - 1].ch ? ' gap' : ''}"></i>`).join('');
   setHTML(book.el, `<span class="j-l">📖 <b>Journal</b></span><span class="j-v">${n}<small>/${PAGES.length}</small></span><span class="pips">${pips}</span><span class="newdot">New</span>`);
   book.el.classList.toggle('new', fresh);
   book.el.setAttribute('aria-label', `Field journal: ${n} of ${PAGES.length} found${fresh ? ', a new page' : ''}`);
@@ -9756,19 +9790,21 @@ if (KEEP) jr.el.innerHTML = `<button class="jb j-x" data-j="close" aria-label="C
     <div class="j-head"><h2 class="fr" id="j-title">Field journal</h2><span class="n"></span></div>
     <div class="j-bar"><i></i></div>
   </header>
-  <section class="pages">
-    <h3 class="sec">Lives here<span class="got-lives"></span></h3><div class="grid lives"></div>
-    <h3 class="sec">Comes by<span class="got-visits"></span></h3><div class="grid visits"></div>
+  <section class="pages">${BOOK.map(c => `
+    <h3 class="sec" data-ch="${c.k}">${c.name}<b class="now">Now</b><span class="got"></span></h3><div class="grid" data-ch="${c.k}"></div>`).join('')}
   </section>
   <footer class="j-foot"><button class="jb x" data-j="close" aria-label="Close the journal">${J_X}</button></footer>
   <section class="page"></section>`;
 
 function tileHTML(p) {
-  const st = pageState(p.k), named = st !== 'unseen';
-  return `<button class="tile ${st}${journal[p.k]?.new ? ' new' : ''}" data-k="${p.k}" aria-label="No. ${p.no}, ${named ? p.name : 'not found yet'}">`
-    + `<span class="no">${p.no}</span><img src="${jArt(p)}" class="${st === 'found' ? '' : st === 'glimpsed' ? 'half' : 'sil'}"${fitStyle(p)} alt="">`
+  const st = pageState(p.k), named = st === 'found' || st === 'glimpsed';
+  return `<button class="tile ${st}${journal[p.k]?.new ? ' new' : ''}" data-k="${p.k}" aria-label="No. ${p.no}, ${named ? p.name : st === 'later' ? 'for later' : 'not found yet'}">`
+    + `<span class="no">${p.no}</span>${st === 'later' ? '<span class="blank"></span>'
+      : `<img src="${jArt(p)}" class="${st === 'found' ? '' : st === 'glimpsed' ? 'half' : 'sil'}"${fitStyle(p)} alt="">`}`
     + `<span class="nm">${named ? p.name : '?'}</span></button>`;
 }
+// A chapter's name in a sentence: "the first spring".
+const chapterIn = c => c.name[0].toLowerCase() + c.name.slice(1);
 // When it was first seen: the season and the year of the meadow it was in (an older page has only the season).
 function firstSeen(pg) {
   const s = pg.t != null ? S.seasonOf(pg.t) : pg.season;
@@ -9776,21 +9812,22 @@ function firstSeen(pg) {
   return `${S.SEASONS[s].emoji} ${S.SEASONS[s].name}${pg.t != null ? `, year ${yearAt(pg.t)}` : ''}`;
 }
 function pageHTML(p) {
-  const st = pageState(p.k), pg = journal[p.k] || {}, named = st !== 'unseen', facts = [];
+  const st = pageState(p.k), pg = journal[p.k] || {}, named = st === 'found' || st === 'glimpsed', facts = [], ch = CHAPTER[p.ch];
   if (st === 'found' && firstSeen(pg)) facts.push(['📅', 'First seen', firstSeen(pg)]);
   if (st === 'found' && !p.visits && pg.most > 0) facts.push(['🏆', 'Most at once', big(pg.most)]);
   if (st === 'found' && p.visits) facts.push(['👁️', 'Seen', pg.seen > 1 ? `${pg.seen} times` : 'once']);
-  if (p.visits) facts.push(['🧭', 'Comes to', p.where]);
-  if (p.visits && named) facts.push(['🕰️', 'When', p.when]);
-  const tool = st !== 'found' && p.tool && KEEP_TOOLS.find(([k]) => k === p.tool);
+  if (p.visits && named) facts.push(['🧭', 'Comes to', p.where], ['🕰️', 'When', p.when]);
+  const tool = (st === 'unseen' || st === 'glimpsed') && p.tool && KEEP_TOOLS.find(([k]) => k === p.tool);
   const shot = st === 'found' && photos[p.k], mo = st === 'found' && MOMENTS[p.k], got = mo ? mo.filter(m => pg.moments?.[m.k]).length : 0;
-  return `<div class="pg-grab"><div class="no">No. ${p.no} · ${p.visits ? 'Comes by' : 'Lives here'}</div></div>
+  const hint = st === 'glimpsed' ? p.plain : st === 'later' ? `A page for ${chapterIn(ch)}: its riddle comes in ${chapterIn(CHAPTERS[ch.arc - 1])}.` : p.riddle;
+  return `<div class="pg-grab"><div class="no">No. ${p.no} · ${ch.name}</div></div>
     <div class="pg-body"><div class="pg-in">
       ${shot ? `<div class="art snap"><figure><img src="${shot.src}" alt="Your first sighting"><figcaption>${esc(shot.where)}${firstSeen(pg) ? ` · ${firstSeen(pg)}` : ''}</figcaption>`
         + `<img class="stamp" src="${jArt(p, true)}" alt=""></figure></div>`
+        : st === 'later' ? '<div class="art"></div>'
         : `<div class="art"><img src="${jArt(p, true)}" class="${st === 'found' ? '' : st === 'glimpsed' ? 'half' : 'sil'}"${fitStyle(p)} alt=""></div>`}
       <h3 class="fr${named ? '' : ' q'}">${named ? p.name : '? ? ?'}</h3>
-      ${st === 'found' ? `<p>${p.note}</p>` : `<p class="hint">${st === 'glimpsed' ? p.glimpse : p.hint}</p>`}
+      ${st === 'found' ? `<p>${p.note}</p>` : `<p class="hint">${hint}</p>`}
       ${facts.length ? `<ul>${facts.map(([i, a, b]) => `<li><i>${i}</i><span>${a}</span><em>${b}</em></li>`).join('')}</ul>` : ''}
       ${mo ? `<div class="moments"><h4>Moments<span>${got}/${mo.length}</span></h4><div class="m-list">${mo.map(m => (pg.moments?.[m.k]
         ? `<span class="m on"><i>${m.e}</i>${m.name}</span>` : `<span class="m"><i>?</i>${m.hint}</span>`)).join('')}</div></div>` : ''}
@@ -9806,16 +9843,17 @@ function pageHTML(p) {
 const pageEl = () => jr.el.querySelector('.page');
 const drawPage = () => setHTML(pageEl(), pageHTML(PAGE[jr.pick] || PAGES[0]));
 const markTiles = () => jr.el.querySelectorAll('.tile').forEach(t => t.classList.toggle('on', t.dataset.k === jr.pick));
-// Its count, the two sections and the page picked, each written only if it changed.
+// Its count, each chapter's (and "Now" on the one the meadow is in) and the page picked, each written only if it changed.
 function fillJournal() {
-  const n = PAGES.filter(p => inBook(p.k)).length, el = jr.el, lives = PAGES.filter(p => !p.visits), visits = PAGES.filter(p => p.visits);
-  const got = list => `${list.filter(p => inBook(p.k)).length}/${list.length}`;
+  const n = PAGES.filter(p => inBook(p.k)).length, el = jr.el, now = arcSeason();
   setHTML(el.querySelector('.j-head .n'), `${n}<small>/${PAGES.length}</small>`);
   el.querySelector('.j-bar i').style.width = (n / PAGES.length * 100).toFixed(1) + '%';
-  setText(el.querySelector('.got-lives'), got(lives));
-  setText(el.querySelector('.got-visits'), got(visits));
-  setHTML(el.querySelector('.grid.lives'), lives.map(tileHTML).join(''));
-  setHTML(el.querySelector('.grid.visits'), visits.map(tileHTML).join(''));
+  for (const c of BOOK) {
+    const head = el.querySelector(`h3.sec[data-ch="${c.k}"]`);
+    head.classList.toggle('here', c.arc === now);
+    setText(head.querySelector('.got'), `${c.pages.filter(p => inBook(p.k)).length}/${c.pages.length}`);
+    setHTML(el.querySelector(`.grid[data-ch="${c.k}"]`), c.pages.map(tileHTML).join(''));
+  }
   markTiles();
   drawPage();
 }
@@ -10803,6 +10841,13 @@ function lostWords(e) {
   const name = e.species === 'frogs' ? 'frog' : S.SPECIES[e.species].name.toLowerCase();
   return [`😢 The last ${name} is gone: the Dry Year was too much for them.`, LOST_WHY[e.species] || ''];
 }
+// This meadow's arc in the journal, for the card: its pages seen in this meadow (world.sighted), all told and the Dry Year's.
+function arcTally() {
+  const seen = list => list.filter(p => world.sighted?.[p.k] != null).length, dry = PAGES.filter(p => CHAPTER[p.ch].dry);
+  const rows = [['📖', 'Journal pages seen in this meadow', `${seen(PAGES)} of ${PAGES.length}`]];
+  if (dry.length) rows.push(['☀️', 'Of them, the Dry Year’s', `${seen(dry)} of ${dry.length}`]);
+  return rows;
+}
 const lostOpen = () => !$('#lost').classList.contains('hidden');
 function showLost(open = true) {
   lostCard.pending = false;
@@ -10810,6 +10855,7 @@ function showLost(open = true) {
   if (open && !dy?.lost && !through) return;
   if (open) {
     const [title, line, rows] = through ? throughWords(through) : [...lostWords(dy.lost), []];
+    rows.push(...arcTally());
     $('#lost-title').textContent = title; $('#lost-text').textContent = line;
     setHTML($('#lost-list'), rows.map(([icon, what, n]) => `<li><span>${icon}</span><span>${what}</span><em>${n}</em></li>`).join(''));
     $('#lost-list').hidden = !rows.length;

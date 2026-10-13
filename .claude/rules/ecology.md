@@ -288,4 +288,5 @@ a sign there (`w.signs`, event `visitorsign`): a hedgehog's tracks along the way
 (`bankOf`). It goes when the visitor comes (`dropSign`) or the sunrise after its day. `hedgehogComes` and `heronComes` use the
 same functions, so the visits themselves come on the same days as before the signs.
 `w.visitors` (the ones here), `w.visited` (how often each kind came, the day the last left); events `visitor`, `visitorleft`.
-A meadow kept before them gets both empty (`unpackWorld`), no `KEEP_VERSION` bump.
+A meadow kept before them gets both empty (`unpackWorld`), no `KEEP_VERSION` bump. `w.sighted` (in `LATER`) is game.js's:
+each kind the player has seen in this meadow and the tick, for the journal's tally of its arc; the sim never reads it.
