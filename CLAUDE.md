@@ -10,10 +10,6 @@ the DNS record is in Vercel, see the `askel-dev/cryptoler.net` README). The old 
 optional. It grew out of the AEON artificial-life lab (`~/programming/AEON`, finished and
 closed); none of that project's rules apply here.
 
-**Discuss before implementing.** When asked for a change, first talk it through (what you
-found, the options, what you'd recommend) and wait for a go-ahead before editing code, unless
-told to just do it.
-
 - `sim.js`: the world. No drawing. Runs in the browser and under node. `packWorld` / `unpackWorld` turn a
   world into plain data and back, for keeping it between visits (the tables like `SPECIES` go by name, the
   random numbers as where they'd got to). A change a kept meadow can't take (a new field on the world, a
@@ -76,9 +72,6 @@ You don't have to test everything: check what a change could plausibly break, an
 The meadow's ecology (terrain and water, grass and soil, voles, frogs, fish, rabbit coats, sickness, remains, crows,
 owls, otters, bees, the trees' lives) is in `.claude/rules/ecology.md`, which loads when sim.js or balance.js is opened.
 Species lists come from `KINDS` / `perKind`, so a new species needs no hand-written `{ rabbit, fox, bee }` lists.
-
-Every animal uses one ladder: danger > sleep > love > food > friends > wander. Keep new
-behaviour small and readable. If a rule needs a paragraph to explain, it's probably too big.
 
 Keep it smooth. The game has to run without lag on a phone, zoomed out, at 60x, in rain at night.
 A lot of work already went into this (the cached ground, the sprite cache, the neighbour grid). A
