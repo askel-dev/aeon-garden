@@ -182,6 +182,17 @@ function makeRng(seed) {
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const lerp = (a, b, t) => a + (b - a) * t;
 const dist2 = (a, b) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
+// Math.hypot of two numbers, worked out just as the browsers do (Chrome and Safari: the larger of the two, times the
+// root of the sum of both squared over it), so it comes out the same to the last digit, without the builtin's cost:
+// it was the sim's busiest call.
+function hypot(x, y) {
+  const a = Math.abs(x), b = Math.abs(y), m = a !== a ? b : b !== b || a > b ? a : b;
+  if (m === Infinity) return Infinity;
+  if (x !== x || y !== y) return NaN;
+  if (m === 0) return 0;
+  const p = a / m, q = b / m;
+  return Math.sqrt(p * p + q * q) * m;
+}
 function hash2(x, y, seed) {                             // 0..1 from three whole numbers, the same every time
   let h = Math.imul(x, 374761393) + Math.imul(y, 668265263) + Math.imul(seed, 982451653) | 0;
   h = Math.imul(h ^ (h >>> 13), 1274126177);
@@ -338,7 +349,7 @@ const blobs = (r, cx, cy, n, spread, rMin, rMax) => Array.from({ length: n },
   () => ({ x: cx + r.range(-spread, spread), y: cy + r.range(-spread, spread) * 0.7, r: r.range(rMin, rMax) }));
 function outside(shape, x, y) {    // tiles from the shape's edge; negative inside it
   let d = Infinity;
-  for (const c of shape) d = Math.min(d, Math.hypot(x - c.x, y - c.y) - c.r);
+  for (const c of shape) d = Math.min(d, hypot(x - c.x, y - c.y) - c.r);
   return d;
 }
 
@@ -504,7 +515,7 @@ function smoothRiver(T, ctrl, lake, wiggle) {
   const pts = [];
   for (let k = 0; k < ctrl.length - 1; k++) {
     const p0 = ctrl[Math.max(0, k - 1)], p1 = ctrl[k], p2 = ctrl[k + 1], p3 = ctrl[Math.min(ctrl.length - 1, k + 2)];
-    const n = Math.ceil(Math.hypot(p2.x - p1.x, p2.y - p1.y) * 2);
+    const n = Math.ceil(hypot(p2.x - p1.x, p2.y - p1.y) * 2);
     for (let j = 0; j < n; j++) {
       const t = j / n, t2 = t * t, t3 = t2 * t;
       const f = (a, b, c, d) => 0.5 * (2 * b + (c - a) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (3 * b - a - 3 * c + d) * t3);
@@ -515,7 +526,7 @@ function smoothRiver(T, ctrl, lake, wiggle) {
   // Small meanders on top of the bends: each point nudged sideways, calm near the lake.
   return pts.map((p, k) => {
     const a = pts[Math.max(0, k - 1)], b = pts[Math.min(pts.length - 1, k + 1)];
-    const d = Math.hypot(b.x - a.x, b.y - a.y) || 1, calm = lake ? clamp(Math.hypot(p.x - lake.x, p.y - lake.y) / 15 - 0.5, 0, 1) : 1;
+    const d = hypot(b.x - a.x, b.y - a.y) || 1, calm = lake ? clamp(hypot(p.x - lake.x, p.y - lake.y) / 15 - 0.5, 0, 1) : 1;
     const off = T.meander * (wiggle(k / T.meanderLength, 3.3) - 0.5) * calm;
     return { x: p.x - (b.y - a.y) / d * off, y: p.y + (b.x - a.x) / d * off };
   });
@@ -528,10 +539,10 @@ function brookPath(r, T, river, lake, wiggle) {
     const k = Math.floor(river.length * r.range(0.25, 0.75)), join = river[k];
     if (!inBounds(join.x, join.y) || (lake && lakeGap(lake, join.x, join.y) < 8)) continue;
     const a = river[Math.max(0, k - 6)], b = river[Math.min(river.length - 1, k + 6)];
-    const d = Math.hypot(b.x - a.x, b.y - a.y) || 1, fx = (b.x - a.x) / d, fy = (b.y - a.y) / d;   // the way the river flows
+    const d = hypot(b.x - a.x, b.y - a.y) || 1, fx = (b.x - a.x) / d, fy = (b.y - a.y) / d;   // the way the river flows
     const side = r.next() < 0.5 ? 1 : -1;
     let ox = -fy * side - fx * 0.7, oy = fx * side - fy * 0.7;                   // out to one side, and back upstream
-    const o = Math.hypot(ox, oy); ox /= o; oy /= o;
+    const o = hypot(ox, oy); ox /= o; oy /= o;
     let len = 0;
     while (inBounds(join.x + ox * len, join.y + oy * len)) len++;
     if (len < 25) continue;
@@ -544,7 +555,7 @@ function brookPath(r, T, river, lake, wiggle) {
     }
     ctrl.push(join);
     const pts = smoothRiver(T, ctrl, join, wiggle);
-    const clear = pts.every(p => Math.hypot(p.x - join.x, p.y - join.y) < 10 ||
+    const clear = pts.every(p => hypot(p.x - join.x, p.y - join.y) < 10 ||
       (!(lake && lakeGap(lake, p.x, p.y) < 4) && river.every(q => Math.abs(p.x - q.x) > 6 || Math.abs(p.y - q.y) > 6)));
     if (clear) return pts;
   }
@@ -572,7 +583,7 @@ function carveRiver(w, T, pts, wet, carve, brook = false) {
     const deep = depth - Math.max(0, depth - T.fordDepth) * ford, reach = half + 8;
     for (let y = Math.max(0, Math.floor(p.y - reach)); y <= Math.min(H - 1, p.y + reach); y++) {
       for (let x = Math.max(0, Math.floor(p.x - reach)); x <= Math.min(W - 1, p.x + reach); x++) {
-        carve(y * W + x, Math.hypot(x + 0.5 - p.x, y + 0.5 - p.y) - half, deep, half);
+        carve(y * W + x, hypot(x + 0.5 - p.x, y + 0.5 - p.y) - half, deep, half);
       }
     }
   });
@@ -588,7 +599,7 @@ function carveDrawnWater(w, circles, carve) {
     for (let y = Math.max(0, Math.floor(c.y - c.r)); y <= Math.min(H - 1, c.y + c.r); y++) {
       for (let x = Math.max(0, Math.floor(c.x - c.r)); x <= Math.min(W - 1, c.x + c.r); x++) {
         const i = y * W + x;
-        if (Math.hypot(x + 0.5 - c.x, y + 0.5 - c.y) < c.r) { inside[i] = 1; deep[i] = Math.max(deep[i], c.deep); }
+        if (hypot(x + 0.5 - c.x, y + 0.5 - c.y) < c.r) { inside[i] = 1; deep[i] = Math.max(deep[i], c.deep); }
       }
     }
   }
@@ -648,6 +659,10 @@ function pickOdds(r, odds) {
   return keys[keys.length - 1];
 }
 
+// A rock: a pebble, a stone or a boulder, a great rock (big) or a flat stone at a ford (stone). Every rock laid out
+// alike (see blankCreature), with room for the fish about it should otters make their holt under it (holtFish).
+const rockOf = (x, y, size, big = false, stone = false) => ({ x, y, emoji: '🪨', size, big, stone, holtFish: NaN });
+
 function makeTerrain(w) {
   const r = w.rng, N = W * H;
   const T = w.terrain = { ...TERRAIN, ...w.options.terrain };
@@ -668,7 +683,7 @@ function makeTerrain(w) {
   // A drawn river that nearly reaches the edge runs on off the map.
   const drawnRivers = drawn.rivers.map(bends => {
     const ends = [bends[0], bends[bends.length - 1]].map((p, k) => {
-      const next = bends[k ? bends.length - 2 : 1], d = Math.hypot(p.x - next.x, p.y - next.y) || 1;
+      const next = bends[k ? bends.length - 2 : 1], d = hypot(p.x - next.x, p.y - next.y) || 1;
       const edge = Math.min(p.x, p.y, W - p.x, H - p.y);
       return edge < 4 ? { x: p.x + (p.x - next.x) / d * 8, y: p.y + (p.y - next.y) / d * 8 } : p;
     });
@@ -710,7 +725,7 @@ function makeTerrain(w) {
   const inLake = p => (lake && lakeGap(lake, p.x, p.y) < 6) || outside(drawn.water, p.x, p.y) < 3;
   w.rivers = []; w.fords = [];
   if (river) carveRiver(w, T, river, inLake, carve);
-  if (brook) carveRiver(w, T, brook, p => inLake(p) || Math.hypot(p.x - brook.at(-1).x, p.y - brook.at(-1).y) < 12, carve, true);
+  if (brook) carveRiver(w, T, brook, p => inLake(p) || hypot(p.x - brook.at(-1).x, p.y - brook.at(-1).y) < 12, carve, true);
   if (drawn.water.length) carveDrawnWater(w, drawn.water, carve);
   for (const pts of drawnRivers) carveRiver(w, T, pts, inLake, carve);
 
@@ -786,22 +801,22 @@ function makeTerrain(w) {
   placeFields(w, near);
   for (let k = 0; k < T.rocks; k++) {
     const x = r.range(3, W - 3), y = r.range(3, H - 3);
-    if (dry(w, x, y)) w.decor.push({ x, y, emoji: '🪨', size: r.range(...T.rockSize) });
+    if (dry(w, x, y)) w.decor.push(rockOf(x, y, r.range(...T.rockSize)));
   }
   for (let n = r.int(...T.bigRocks), tries = 0; n > 0 && tries < 500; tries++) {   // away from the water, woods and burrows
     const x = r.range(8, W - 8), y = r.range(8, H - 8), size = r.range(...T.bigRockSize), i = idx(x, y);
     if (!dry(w, x, y) || near[i] < size + 2 || w.fieldAt[i] >= 0) continue;
-    if (w.decor.some(d => Math.hypot(d.x - x, d.y - y) < size + (d.tree ? 2 : 0))) continue;
-    if (w.burrows.some(b => Math.hypot(b.x - x, b.y - y) < size + 2)) continue;
-    w.decor.push({ x, y, emoji: '🪨', size, big: true });
+    if (w.decor.some(d => hypot(d.x - x, d.y - y) < size + (d.tree ? 2 : 0))) continue;
+    if (w.burrows.some(b => hypot(b.x - x, b.y - y) < size + 2)) continue;
+    w.decor.push(rockOf(x, y, size, true));
     n--;
   }
   for (const f of w.fords) {
     const p = w.rivers[f.river].pts, a = p[Math.min(p.length - 1, f.k + 1)], b = p[Math.max(0, f.k - 1)];
-    const d = Math.hypot(a.x - b.x, a.y - b.y) || 1, nx = -(a.y - b.y) / d, ny = (a.x - b.x) / d;   // across the river
+    const d = hypot(a.x - b.x, a.y - b.y) || 1, nx = -(a.y - b.y) / d, ny = (a.x - b.x) / d;   // across the river
     for (let s = -2; s <= 2; s++) {
       const x = f.x + nx * s * 1.1 + r.range(-0.3, 0.3), y = f.y + ny * s * 1.1 + r.range(-0.3, 0.3);
-      if (isWater(w, x, y)) w.decor.push({ x, y, emoji: '🪨', size: r.range(0.7, 1), stone: true });
+      if (isWater(w, x, y)) w.decor.push(rockOf(x, y, r.range(0.7, 1), false, true));
     }
   }
   w.plants = [];
@@ -830,14 +845,14 @@ function placeFields(w, near) {
   for (let n = w.drawn.empty ? 0 : r.int(...T.fields), tries = 0; w.fields.length < n && tries < 1000; tries++) {
     const cx = r.range(14, W - 14), cy = r.range(12, H - 12), reach = T.fieldSpread + T.fieldSize[1];
     if (!dry(w, cx, cy) || near[idx(cx, cy)] < reach * 0.6 || w.fert[idx(cx, cy)] < 0.5) continue;
-    if (w.fields.some(f => Math.hypot(f.x - cx, f.y - cy) < reach * 2.5)) continue;
-    if (w.fields.length < 3 && w.fields.some(f => Math.hypot(f.x - cx, f.y - cy) > T.fieldGather)) continue;
-    if (w.decor.some(d => d.tree && Math.hypot(d.x - cx, d.y - cy) < reach)) continue;
+    if (w.fields.some(f => hypot(f.x - cx, f.y - cy) < reach * 2.5)) continue;
+    if (w.fields.length < 3 && w.fields.some(f => hypot(f.x - cx, f.y - cy) > T.fieldGather)) continue;
+    if (w.decor.some(d => d.tree && hypot(d.x - cx, d.y - cy) < reach)) continue;
     const season = seasons[w.fields.length % 3];
     const kind = kinds.find(k => k.season === season && !w.fields.some(f => f.kind === k)) || kinds.find(k => k.season === season);
     const id = w.fields.length, shape = blobs(r, cx, cy, 4, T.fieldSpread, ...T.fieldSize);
     const f = { id, kind, season, emoji: kind.emoji, tint: kind.tint, x: cx, y: cy, shape,
-      name: `${r.pick(kind.names)} ${places[id % places.length]}` };
+      name: `${r.pick(kind.names)} ${places[id % places.length]}`, open: 0, all: 0, bloomed: 0 };   // (open, all: hivesTick)
     w.fields.push(f);
     for (let y = Math.max(0, Math.floor(cy - reach)); y < Math.min(H, cy + reach); y++) {
       for (let x = Math.max(0, Math.floor(cx - reach)); x < Math.min(W, cx + reach); x++) {
@@ -863,7 +878,7 @@ function plantTrees(w, hills, hill, near) {
   const flood = T.level + T.springFlood + T.rainRise / 2;
   const nearFlood = distanceTo(w.ground.map(g => g < flood ? 1 : 0));
   const plant = (x, y, pine) => {
-    if (inBounds(x, y) && w.ground[idx(x, y)] > flood && !w.burrows.some(b => Math.hypot(b.x - x, b.y - y) < 3)) {
+    if (inBounds(x, y) && w.ground[idx(x, y)] > flood && !w.burrows.some(b => hypot(b.x - x, b.y - y) < 3)) {
       const size = small0 + (big - small0) * r.next() ** 2;           // squared: big trees are rare
       w.decor.push({ x, y, emoji: pine ? '🌲' : '🌳', size, tree: true, stump: 0 });
     }
@@ -917,7 +932,7 @@ function plantTrees(w, hills, hill, near) {
     return {
       dense: (x, y) => {
         const n = nearFlood[idx(x, y)];
-        return n < 1 ? 0 : ramp(reach - Math.hypot(x - c.x, (y - c.y) * 1.2) - ragged(x, y)) * ramp(9 - n - ragged(x, y) * 0.6);
+        return n < 1 ? 0 : ramp(reach - hypot(x - c.x, (y - c.y) * 1.2) - ragged(x, y)) * ramp(9 - n - ragged(x, y) * 0.6);
       },
       pine: () => 0.12,
     };
@@ -966,13 +981,14 @@ function plantTrees(w, hills, hill, near) {
   }
   shadeWoods(w);
   // Some broadleaf trees are fruit trees, apple or cherry, mostly out in the open.
-  for (const d of w.decor) {
+  for (let i = 0; i < w.decor.length; i++) {
+    const d = w.decor[i];
     if (!d.tree) continue;
     const hx = Math.floor(d.x * 100), hy = Math.floor(d.y * 100), open = 1 - w.wood[idx(d.x, d.y)];
     const fruity = d.emoji === '🌳' && hash2(hx, hy, 41) < clamp(open * 1.1, 0.04, 0.5);
     d.fruit = fruity ? (hash2(hx, hy, 42) < 0.5 ? 'apple' : 'cherry') : '';
     d.kind = treeKind(d, w.wood[idx(d.x, d.y)], nearFlood[idx(d.x, d.y)]);
-    foundTree(w, d);
+    w.decor[i] = foundTree(w, d);
   }
 }
 
@@ -1109,7 +1125,7 @@ function makeCurrent(w) {
     const R = { tx: F(), ty: F(), half: F(), mid: F(), still: F(), rif: F(), pace: F(), end: n - 1, joins: null };
     const l = F(), r = F(), inLake = F();
     for (let k = 0; k < n; k++) {
-      const a = pts[Math.max(0, k - 2)], b = pts[Math.min(n - 1, k + 2)], d = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+      const a = pts[Math.max(0, k - 2)], b = pts[Math.min(n - 1, k + 2)], d = hypot(b.x - a.x, b.y - a.y) || 1;
       const tx = (b.x - a.x) / d, ty = (b.y - a.y) / d, p = pts[k];
       R.tx[k] = tx; R.ty[k] = ty;
       if (!wetAt(p.x, p.y)) continue;
@@ -1171,7 +1187,7 @@ function drift(w, c) {
   if (w.frozen || c.hidden) return;
   const i = idx(c.x, c.y), vx = w.current.x[i], vy = w.current.y[i];
   if ((!vx && !vy) || !w.water[i]) return;
-  const v = Math.hypot(vx, vy) * riverPace(w), k = Math.min(v, CARRY * c.walk * c.sp.wade) / Math.hypot(vx, vy);
+  const v = hypot(vx, vy) * riverPace(w), k = Math.min(v, CARRY * c.walk * c.sp.wade) / hypot(vx, vy);
   const nx = c.x + vx * k, ny = c.y + vy * k;
   if (inBounds(nx, ny) && w.water[idx(nx, ny)]) { c.x = nx; c.y = ny; }
 }
@@ -1303,30 +1319,41 @@ function treeStage(w, d) {
   return treeAge(w, d) > d.life * 0.7 ? 'old' : 'grown';
 }
 
+// Every field a tree ever has, in one order, so all trees are laid out alike (see blankCreature): newTree and
+// foundTree fill it in, and unpackWorld a kept one. (-0: a fraction's zero; crop starts at 1, filled in.)
+const blankTree = () => ({
+  id: 0, x: -0, y: -0, emoji: '', tree: true, kind: '', fruit: '', size: -0, max: -0, born: -0, life: -0, tone: 0, parent: 0, by: '',
+  stump: 0, dead: 0, fallen: 0, until: -0, windfall: 0, nuts: 0, owl: 0, crop: -0, visits: 0, blooms: false, name: '', named: false,
+  planted: 0,       // when the player planted it (plantTree); 0 for a wild one
+  hedge: 0,         // the hedge it's a whip of (plantHedge)
+  hive: null, holt: 0, door: null, holtFish: NaN,    // a hive in its hollow; an otters' holt in its roots, the way in, the fish about it (NaN: not worked out)
+  sprouted: false, seeded: false, burnt: false, gone: false,   // grown again from its stump; the player's, bearing; burnt; rotted away
+});
+
 // A tree comes up. o: what it inherits (tone, parent, how its seed got here).
 function newTree(w, x, y, kind, o = {}) {
   const r = w.treeRng, T = w.terrain, k = TREES[kind];
-  const d = {
-    id: w.nextTree++, x, y, emoji: kind === 'pine' ? '🌲' : '🌳', tree: true, kind,
-    fruit: kind === 'apple' || kind === 'cherry' ? kind : '', size: SPROUT,
-    max: (T.treeSize[0] + (T.treeSize[1] - T.treeSize[0]) * r.next() ** 2) * (0.85 + 0.3 * w.fert[idx(x, y)]),   // most middling, a few giants, bigger on good soil
-    born: w.tick, life: k.life * r.range(0.7, 1.3), tone: r.int(0, 2), parent: 0, by: '',
-    stump: 0, dead: 0, fallen: 0, until: 0, windfall: 0, nuts: 0, owl: 0, crop: 1, visits: 0, blooms: false, name: '', named: false,
-    planted: 0,   // when the player planted it (plantTree); 0 for a wild one
-    ...o,
-  };
+  const d = blankTree();
+  d.id = w.nextTree++; d.x = x; d.y = y; d.emoji = kind === 'pine' ? '🌲' : '🌳'; d.kind = kind;
+  d.fruit = kind === 'apple' || kind === 'cherry' ? kind : ''; d.size = SPROUT;
+  d.max = (T.treeSize[0] + (T.treeSize[1] - T.treeSize[0]) * r.next() ** 2) * (0.85 + 0.3 * w.fert[idx(x, y)]);   // most middling, a few giants, bigger on good soil
+  d.born = w.tick; d.life = k.life * r.range(0.7, 1.3); d.tone = r.int(0, 2); d.crop = 1;
+  Object.assign(d, o);
   w.decor.push(d); w.treesMoved = true;
   return d;
 }
 
-// A tree the meadow starts with: as old as its size says, give or take, and a few near their end.
+// A tree the meadow starts with: as old as its size says, give or take, and a few near their end. It's made afresh,
+// to stand in for the first sketch of it (d): added a few at a time, the fields left the trees slow to read.
 function foundTree(w, d) {
   const r = w.treeRng, k = TREES[d.kind], hx = Math.floor(d.x * 100), hy = Math.floor(d.y * 100);
-  const tone = d.kind === 'beech' && hash2(hx, hy, 49) < RARE_TONE ? 3 : Math.floor(hash2(hx, hy, 48) * 3);
-  Object.assign(d, { id: w.nextTree++, max: d.size * r.range(1.04, 1.3), life: k.life * r.range(0.7, 1.3), tone, parent: 0, by: '',
-    dead: 0, fallen: 0, until: 0, windfall: 0, nuts: 0, owl: 0, crop: 1, visits: 0, blooms: false, name: '', named: false });
-  const grew = yearsTo(k, d.max, d.size), left = Math.max(0, d.life - grew);
-  d.born = w.tick - Math.min(d.life * 0.97, grew + r.next() * left * (d.size > d.max * 0.9 ? 1 : 0.3)) * YEAR;
+  const t = blankTree();
+  t.tone = d.kind === 'beech' && hash2(hx, hy, 49) < RARE_TONE ? 3 : Math.floor(hash2(hx, hy, 48) * 3);
+  t.id = w.nextTree++; t.x = d.x; t.y = d.y; t.emoji = d.emoji; t.kind = d.kind; t.fruit = d.fruit; t.size = d.size; t.stump = d.stump;
+  t.max = d.size * r.range(1.04, 1.3); t.life = k.life * r.range(0.7, 1.3); t.crop = 1;
+  const grew = yearsTo(k, t.max, t.size), left = Math.max(0, t.life - grew);
+  t.born = w.tick - Math.min(t.life * 0.97, grew + r.next() * left * (t.size > t.max * 0.9 ? 1 : 0.3)) * YEAR;
+  return t;
 }
 
 // The meadow doesn't start out new: in and around the woods are young trees from the last few
@@ -1437,7 +1464,7 @@ function sprout(w, s) {
   if (w.burrows.some(b => (b.x - s.x) ** 2 + (b.y - s.y) ** 2 < 4) || w.hives.some(h => (h.x - s.x) ** 2 + (h.y - s.y) ** 2 < 4)) return null;
   let crowded = false;
   forEachDecorNear(w, s.x, s.y, 3, o => {
-    if (!crowded && Math.hypot(o.x - s.x, o.y - s.y) < (o.tree ? SPACE : o.size * 0.5 + 0.3)) crowded = true;
+    if (!crowded && hypot(o.x - s.x, o.y - s.y) < (o.tree ? SPACE : o.size * 0.5 + 0.3)) crowded = true;
   });
   if (crowded) return null;
   const burnt = yearOf(w.tick) - w.scorched[i] <= 1, bare = burnt ? BURNT_SPROUT : w.silt[i] > 0 ? BURNT_SPROUT / 2 : 1;
@@ -1583,15 +1610,29 @@ function treesTick(w, grow = true) {
     if (TREES[d.kind].blossom && !d.blooms && bearing(w, d)) addBlossoms(w, d);
     const a = 0.45 * shadeOf(d);
     if (!a) continue;
-    for (let y = Math.max(0, Math.floor(d.y - 3)); y <= Math.min(H - 1, d.y + 3); y++) {
-      for (let x = Math.max(0, Math.floor(d.x - 3)); x <= Math.min(W - 1, d.x + 3); x++) {
-        const q = ((x + 0.5 - d.x) ** 2 + (y + 0.5 - d.y) ** 2) / 3.2;
-        if (q < 3) wood[y * W + x] = Math.min(1, wood[y * W + x] + a * Math.exp(-q));
-      }
-    }
+    const { tiles, fall } = shadeSpots(d);
+    for (let k = 0; k < tiles.length; k++) wood[tiles[k]] = Math.min(1, wood[tiles[k]] + a * fall[k]);
   }
   w.treeCount = n;
   w.orchard = w.decor.filter(d => bearing(w, d) && (d.kind === 'apple' || TREES[d.kind].mast));
+}
+
+// The tiles a tree shades, and how much of its shade falls on each (less further off): worked out once a tree, as a
+// tree never moves; worked out afresh every day for every tree, it was most of a day's work.
+const shadeSpotsOf = new WeakMap();
+function shadeSpots(d) {
+  let s = shadeSpotsOf.get(d);
+  if (s) return s;
+  const tiles = [], fall = [];
+  for (let y = Math.max(0, Math.floor(d.y - 3)); y <= Math.min(H - 1, d.y + 3); y++) {
+    for (let x = Math.max(0, Math.floor(d.x - 3)); x <= Math.min(W - 1, d.x + 3); x++) {
+      const q = ((x + 0.5 - d.x) ** 2 + (y + 0.5 - d.y) ** 2) / 3.2;
+      if (q < 3) { tiles.push(y * W + x); fall.push(Math.exp(-q)); }
+    }
+  }
+  s = { tiles: Int32Array.from(tiles), fall: Float64Array.from(fall) };
+  shadeSpotsOf.set(d, s);
+  return s;
 }
 
 function oldName(w, d) {
@@ -1838,7 +1879,7 @@ const waterAt = (w, x, y) => nearLake(w, x, y) ? w.lake : w.waters[w.body[idx(x,
 
 // The water a straight walk from one point to another would have to swim, if any.
 function waterBetween(w, x0, y0, x1, y1) {
-  const n = Math.ceil(Math.hypot(x1 - x0, y1 - y0) * 2);
+  const n = Math.ceil(hypot(x1 - x0, y1 - y0) * 2);
   for (let k = 1; k <= n; k++) {
     const x = x0 + (x1 - x0) * k / n, y = y0 + (y1 - y0) * k / n;
     if (!inBounds(x, y) || w.water[idx(x, y)] !== DEEP) continue;
@@ -2141,13 +2182,22 @@ function forEachPlantNear(w, x, y, radius, fn) {
   }
 }
 
-function nearest(w, c, radius, species, pred) {
+function nearest(w, c, radius, species, pred) {   // (forEachNear's walk, written out: it's the busiest)
+  const grid = species ? w.grids[species] : w.grid, x = c.x, y = c.y;
+  const x0 = clamp(((x - radius) / CELL) | 0, 0, GW - 1), x1 = clamp(((x + radius) / CELL) | 0, 0, GW - 1);
+  const y0 = clamp(((y - radius) / CELL) | 0, 0, GH - 1), y1 = clamp(((y + radius) / CELL) | 0, 0, GH - 1);
+  const r2 = radius * radius;
   let best = null, bd = Infinity;
-  forEachNear(w, c.x, c.y, radius, (o, d2) => {
-    if (o === c || d2 >= bd) return;
-    if (pred && !pred(o)) return;
-    best = o; bd = d2;
-  }, species);
+  for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) {
+    const k = gy * GW + gx, cell = grid.cells[k];
+    for (let j = 0, n = grid.n[k]; j < n; j++) {
+      const o = cell[j];
+      if (!o.alive || o.hidden) continue;
+      const d2 = (o.x - x) ** 2 + (o.y - y) ** 2;
+      if (d2 > r2 || o === c || d2 >= bd || pred && !pred(o)) continue;
+      best = o; bd = d2;
+    }
+  }
   return best;
 }
 
@@ -2243,29 +2293,46 @@ function computeTraits(c) {
   c.scale = 0.8 + 0.4 * g.size;
 }
 
+// Every field a creature ever has, in one place: makeCreature fills it in, and so does unpackWorld for a kept one.
+// So all creatures are laid out alike, and the browser keeps reading their fields fast: a field added later (or deleted),
+// or one that first holds a whole number and later a fraction, gives the objects a new layout, and the code that has met
+// more than a few layouts reads every field the slow way, for good. -0 is a zero that's kept like a fraction: the fields
+// that ever hold one start as it.
+const blankCreature = () => ({
+  id: 0, species: '', sp: null, x: -0, y: -0, genes: null,
+  name: '', sex: '', gen: 0, mumId: 0, dadId: 0,
+  born: -0, lifespan: -0,
+  alive: true, died: 0, cause: '',
+  energy: -0, stamina: -0, heading: -0, facing: 1, turnBias: 1,
+  mode: 'wander', target: null, targetId: 0, timer: 0, moved: -0,
+  sprinting: false, sleeping: false, hidden: false, burrow: null, home: null, refuge: null, dig: null, arrive: null,
+  alert: 0, threatId: 0, chaseT: 0, fright: 0, frightX: -0, frightY: -0, frightWhat: '',
+  wary: 0, waryX: -0, waryY: -0, detour: 0, detourX: -0, detourY: -0, nemesisId: 0, haunt: null,
+  pregnantUntil: 0, cooldownUntil: 0, dadGenes: null, dadIdPending: 0, dadGenPending: 0,
+  kids: 0, kills: 0, voles: 0, frogs: 0, fish: 0, prey: '', rustle: null, escapes: 0, visits: 0, load: 0, find: null, story: null,
+  sick: 0, immune: 0,   // ticks when the sickness ends, and when immunity does (see sicknessTick)
+  caches: null,         // a crow's acorns and beechnuts buried this autumn (cacheNut)
+  mate: 0,              // a crow's mate, for life (by id; mateOf)
+  perch: null,          // an owl's branch: where it sits hunting, or sleeps by day (owlTick)
+  maxEnergy: -0, burnRate: -0, walk: -0, sprint: -0, sight: -0, fleeDist: -0, pounce: -0, scale: -0,   // (computeTraits)
+  snack: '',            // a rabbit's windfall: 'apple', or what a nut tree drops (windfall)
+  queen: null,          // a bee's mother, the queen (layEggs)
+  calm: 0, cubsIn: 0, slide: null,   // an otter's: paying foxes no mind till then; cubs still in the holt; its slide (otterTick)
+  held: false,          // up in the player's hand (lift)
+});
+
 function makeCreature(w, species, x, y, genes, parents) {
   const sp = SPECIES[species];
   const r = w.rng;
-  const c = {
-    id: w.nextId++, species, sp, x, y, genes,
-    name: pickName(w, species),
-    sex: species === 'bee' || r.next() < 0.5 ? 'F' : 'M',
-    gen: parents ? Math.max(parents.mum.gen, parents.dadGen) + 1 : 1,
-    mumId: parents ? parents.mum.id : 0, dadId: parents ? parents.dadId : 0,
-    born: w.tick, lifespan: (sp.winterLifeDays && seasonOf(w.tick) >= 2 ? sp.winterLifeDays : sp.lifeDays) * TPD * r.range(0.8, 1.2),
-    alive: true, died: 0, cause: '',
-    energy: 0, stamina: 1, heading: r.range(0, Math.PI * 2), facing: 1, turnBias: 1,
-    mode: 'wander', target: null, targetId: 0, timer: 0, moved: 0,
-    sprinting: false, sleeping: false, hidden: false, burrow: null, home: null, refuge: null, dig: null, arrive: null,
-    alert: 0, threatId: 0, chaseT: 0, fright: 0, frightX: 0, frightY: 0, frightWhat: '',
-    wary: 0, waryX: 0, waryY: 0, detour: 0, detourX: 0, detourY: 0, nemesisId: 0, haunt: null,
-    pregnantUntil: 0, cooldownUntil: 0, dadGenes: null, dadIdPending: 0, dadGenPending: 0,
-    kids: 0, kills: 0, voles: 0, frogs: 0, fish: 0, prey: '', rustle: null, escapes: 0, visits: 0, load: 0, find: null, story: [],
-    sick: 0, immune: 0,   // ticks when the sickness ends, and when immunity does (see sicknessTick)
-    caches: null,         // a crow's acorns and beechnuts buried this autumn (cacheNut)
-    mate: 0,              // a crow's mate, for life (by id; mateOf)
-    perch: null,          // an owl's branch: where it sits hunting, or sleeps by day (owlTick)
-  };
+  const c = blankCreature();
+  c.id = w.nextId++; c.species = species; c.sp = sp; c.x = x; c.y = y; c.genes = genes;
+  c.name = pickName(w, species);
+  c.sex = species === 'bee' || r.next() < 0.5 ? 'F' : 'M';
+  c.gen = parents ? Math.max(parents.mum.gen, parents.dadGen) + 1 : 1;
+  c.mumId = parents ? parents.mum.id : 0; c.dadId = parents ? parents.dadId : 0;
+  c.born = w.tick; c.lifespan = (sp.winterLifeDays && seasonOf(w.tick) >= 2 ? sp.winterLifeDays : sp.lifeDays) * TPD * r.range(0.8, 1.2);
+  c.stamina = 1; c.heading = r.range(0, Math.PI * 2);
+  c.story = [];
   computeTraits(c);
   c.energy = c.maxEnergy * (parents ? 0.6 : 0.8);
   return c;
@@ -2313,7 +2380,7 @@ function addCreature(w, species, x, y, opts = {}) {
 
 // True when the straight walk from one point to another stays on land (checked every half tile).
 function clearPath(w, x0, y0, x1, y1) {
-  const n = Math.ceil(Math.hypot(x1 - x0, y1 - y0) * 2);
+  const n = Math.ceil(hypot(x1 - x0, y1 - y0) * 2);
   for (let k = 1; k <= n; k++) if (!walkable(w, x0 + (x1 - x0) * k / n, y0 + (y1 - y0) * k / n)) return false;
   return true;
 }
@@ -2332,7 +2399,7 @@ const HUGS = [1, -1].map(bias => HUG.map(o => o * bias));
 
 function moveToward(w, c, tx, ty, v) {
   if (w.water[idx(c.x, c.y)] && !w.frozen) v *= c.sp.wade;   // wading: rabbits hate it more than foxes
-  const dx = tx - c.x, dy = ty - c.y, d = Math.hypot(dx, dy);
+  const dx = tx - c.x, dy = ty - c.y, d = hypot(dx, dy);
   if (d < 1e-6) return true;
   const stepLen = Math.min(v, d);
   if (c.detour > 0) {
@@ -2343,14 +2410,13 @@ function moveToward(w, c, tx, ty, v) {
   const lean = c.turnBias < 0 ? 1 : 0;
   const a = c.detour ? c.heading : Math.atan2(dy, dx), offs = c.detour ? HUGS[lean] : TURNS[lean];
   for (const off of offs) {
-    const nx = c.x + Math.cos(a + off) * stepLen, ny = c.y + Math.sin(a + off) * stepLen;
+    const h = a + off, cx = Math.cos(h), nx = c.x + cx * stepLen, ny = c.y + Math.sin(h) * stepLen;
     if (!(c.sp.swims ? inBounds(nx, ny) : walkable(w, nx, ny))) continue;   // (an otter swims the deep water)
     if (!c.detour && off !== 0) {
       c.turnBias = off > 0 ? 1 : -1;
       c.detour = 500; c.detourX = tx; c.detourY = ty;
     }
-    c.x = nx; c.y = ny; c.heading = a + off; c.moved = stepLen;
-    const cx = Math.cos(c.heading);
+    c.x = nx; c.y = ny; c.heading = h; c.moved = stepLen;
     if (Math.abs(cx) > 0.4) c.facing = cx > 0 ? 1 : -1;   // going up or down a shore, it wobbles: keep facing
     return d <= v;
   }
@@ -2513,13 +2579,14 @@ const DIG_TICKS = 300;     // one rabbit digging on its own: half a day
 function canDig(w, x, y) {
   if (w.isle && w.isle[idx(x, y)]) return false;                 // (a kept meadow from before the islands has none)
   for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) if (!dry(w, x + dx, y + dy)) return false;
-  return !w.burrows.some(b => Math.hypot(b.x - x, b.y - y) < DIG_GAP)
-    && !w.decor.some(d => !d.stone && !(standing(d) && d.size < SAPLING) && Math.hypot(d.x - x, d.y - y) < (d.big ? d.size * 0.6 : 2))
-    && !w.hives.some(h => Math.hypot(h.x - x, h.y - y) < 3);
+  return !w.burrows.some(b => hypot(b.x - x, b.y - y) < DIG_GAP)
+    && !w.decor.some(d => !d.stone && !(standing(d) && d.size < SAPLING) && hypot(d.x - x, d.y - y) < (d.big ? d.size * 0.6 : 2))
+    && !w.hives.some(h => hypot(h.x - x, h.y - y) < 3);
 }
 
 function newBurrow(w, x, y, dug) {
-  const b = { id: w.nextBurrow++, x, y, count: 0, dug, used: w.tick, sick: 0 };
+  const b = { id: w.nextBurrow++, x: -0, y: -0, count: 0, dug: -0, used: w.tick, sick: 0 };   // (the fractions as -0: see blankCreature)
+  b.x = x; b.y = y; b.dug = dug;
   w.burrows.push(b);
   return b;
 }
@@ -2625,7 +2692,7 @@ function rabbitTick(w, c) {
   const bedtime = c.mode === 'home' ? 0.2 : c.mode === 'graze' || c.mode === 'food' ? 0.5 : 0.3;
   if (night && e > bedtime) {
     // Home full (or far)? The nearest burrow with room becomes home. None: sleep out.
-    const b = c.home && hasRoom(c.home) && Math.hypot(c.home.x - c.x, c.home.y - c.y) < 35 ? c.home
+    const b = c.home && hasRoom(c.home) && hypot(c.home.x - c.x, c.home.y - c.y) < 35 ? c.home
       : nearestBurrow(w, c.x, c.y, 35, roomy);
     if (b) { c.home = b; return goHome(w, c, b); }
     c.mode = 'sleep'; c.sleeping = true; return;
@@ -2713,9 +2780,8 @@ function findFood(w, c) {
   for (let k = 0; k < 14; k++) {
     const a = w.rng.range(0, Math.PI * 2), r = w.rng.range(1, c.sight);
     const x = c.x + Math.cos(a) * r, y = c.y + Math.sin(a) * r;
-    if (!clearPath(w, c.x, c.y, x, y)) continue;   // grass across the pond doesn't count
-    const j = idx(x, y), score = (fouled(w, j) ? 0 : w.grass[j]) / (1 + 0.1 * r);
-    if (score > bestScore) { bestScore = score; best = { x: (x | 0) + 0.5, y: (y | 0) + 0.5 }; }
+    const j = idx(x, y), score = (fouled(w, j) ? 0 : w.grass[j]) / (1 + 0.1 * r);   // (off the map: no score, or no clear path)
+    if (score > bestScore && clearPath(w, c.x, c.y, x, y)) { bestScore = score; best = { x: (x | 0) + 0.5, y: (y | 0) + 0.5 }; }   // grass across the pond doesn't count
   }
   return best;
 }
@@ -2785,7 +2851,7 @@ function flee(w, c, fox) {
 }
 
 function pickRefuge(w, c, fox) {
-  const fx = fox.x - c.x, fy = fox.y - c.y, fd = Math.hypot(fx, fy) || 1;
+  const fx = fox.x - c.x, fy = fox.y - c.y, fd = hypot(fx, fy) || 1;
   let best = null, bd = 8 * 8;
   for (const b of w.burrows) {
     const bx = b.x - c.x, by = b.y - c.y, d2 = bx * bx + by * by;
@@ -2801,7 +2867,7 @@ function pickRefuge(w, c, fox) {
 // sapling), by the burrow's rules (within HEDGE_REACH, a clear way there, not towards the fox), if it's nearer than the
 // burrow it picked. Found through the decor grid. Only at ?keep: flee asks only when the keeper has planted a hedge.
 function hedgeRefuge(w, c, fox, burrow) {
-  const fx = fox.x - c.x, fy = fox.y - c.y, fd = Math.hypot(fx, fy) || 1;
+  const fx = fox.x - c.x, fy = fox.y - c.y, fd = hypot(fx, fy) || 1;
   let best = null, bd = burrow ? (burrow.x - c.x) ** 2 + (burrow.y - c.y) ** 2 : HEDGE_REACH * HEDGE_REACH;
   forEachDecorNear(w, c.x, c.y, HEDGE_REACH, d => {
     if (!d.hedge || d.size < SAPLING || !standing(d)) return;
@@ -3733,7 +3799,9 @@ function daughterQueen(w, mum) {
 
 function makeHive(w, x, y) {
   const id = w.hives.reduce((m, o) => Math.max(m, o.id), 0) + 1;
-  const h = { id, x, y, tree: null, honey: HIVE_HONEY, bees: 0, queen: null, brood: 0, swarmed: -Infinity, cluster: false, patch: null };
+  const h = { id, x: -0, y: -0, tree: null, honey: -0, bees: 0, queen: null, brood: -0, swarmed: -Infinity, cluster: false, patch: null,
+    winterBees: 0, sites: null, settleAt: 0 };   // (every field it'll have, the fractions as -0: see blankCreature)
+  h.x = x; h.y = y; h.honey = HIVE_HONEY;
   w.hives.push(h);
   return h;
 }
@@ -3832,16 +3900,16 @@ const SEASON_FIELD = 150;       // what each season with a field in reach is wor
 function siteScore(w, d) {
   const { x, y } = d;
   let seasons = 0;
-  const near = w.fields.filter(f => Math.hypot(f.x - x, f.y - y) < FORAGE_RANGE);   // (a strip the keeper sowed flowers all three)
+  const near = w.fields.filter(f => hypot(f.x - x, f.y - y) < FORAGE_RANGE);   // (a strip the keeper sowed flowers all three)
   for (const s of new Set(near.flatMap(f => (f.strip ? [0, 1, 2] : [f.season])))) seasons += s === 2 ? 0.5 : 1;
   let flowers = 0;
   forEachPlantNear(w, x, y, FORAGE_RANGE, p => {
-    if (!p.field && p.kind < 0.35 && w.fert[p.i] > 0.7 && Math.hypot(p.x - x, p.y - y) < FORAGE_RANGE) flowers++;   // rich soil: they'll bloom
+    if (!p.field && p.kind < 0.35 && w.fert[p.i] > 0.7 && hypot(p.x - x, p.y - y) < FORAGE_RANGE) flowers++;   // rich soil: they'll bloom
   });
   let crowd = 0, front = 0;
   for (const o of w.decor) {
     if (!standing(o) || o.size < SAPLING || o === d) continue;
-    if (Math.hypot(o.x - x, o.y - y) < 4) crowd++;
+    if (hypot(o.x - x, o.y - y) < 4) crowd++;
     if (o.y > y && o.y - y < 5 && Math.abs(o.x - x) < 3) front++;
   }
   return flowers + SEASON_FIELD * seasons - CROWD * crowd - IN_FRONT * front;
@@ -3855,11 +3923,11 @@ const hiveGround = (w, x, y) => dry(w, x, y) &&
 // in it (no hive, no owls: d.owl), clear of the water and of the other hives. any: an oak of any age
 // will do (placeHive makes it old).
 const hollowTree = (w, d, any = false) => (any ? standing(d) : hollow(w, d)) && !d.hive && !d.owl && hiveGround(w, d.x, d.y)
-  && !w.hives.some(o => !o.cluster && Math.hypot(o.x - d.x, o.y - d.y) < HIVE_GAP);
+  && !w.hives.some(o => !o.cluster && hypot(o.x - d.x, o.y - d.y) < HIVE_GAP);
 
 // Where a swarm from hive h could live, best first: an empty hive, or a tree clear of the others.
 function hiveSites(w, h) {
-  const near = o => Math.hypot(o.x - h.x, o.y - h.y) < SWARM_RANGE;
+  const near = o => hypot(o.x - h.x, o.y - h.y) < SWARM_RANGE;
   const sites = [];
   for (const o of w.hives) {
     if (!o.queen && !o.cluster && near(o)) sites.push({ x: o.x, y: o.y, hive: o, tree: o.tree, score: siteScore(w, o.tree) + OLD_COMB });
@@ -3904,7 +3972,7 @@ function placeHive(w) {
 
 function nearestHive(w, x, y) {
   let best = null;
-  for (const h of w.hives) if (!best || Math.hypot(h.x - x, h.y - y) < Math.hypot(best.x - x, best.y - y)) best = h;
+  for (const h of w.hives) if (!best || hypot(h.x - x, h.y - y) < hypot(best.x - x, best.y - y)) best = h;
   return best;
 }
 
@@ -3922,7 +3990,7 @@ function beeSwarm(w, c) {
   const h = c.home;
   if (!h.cluster) return false;
   if (c.energy < 0.5 * c.maxEnergy && h.honey > 0) { const bite = Math.min(h.honey, HONEY_BITE); h.honey -= bite; c.energy += bite; }
-  const scout = c.id % SCOUTS === 0, near = Math.hypot(c.x - h.x, c.y - h.y) < 2;
+  const scout = c.id % SCOUTS === 0, near = hypot(c.x - h.x, c.y - h.y) < 2;
   if (c.target && !fly(c, c.target.x, c.target.y, c.walk * (near && c.mode === 'swarm' ? 0.3 : 1))) return true;
   if (scout && c.mode === 'swarm' && c.target && h.sites.length) {
     const site = h.sites[(c.id / SCOUTS) % h.sites.length];
@@ -3993,11 +4061,11 @@ function beeForage(w, c) {
   }
   if (h.honey >= HIVE_FULL && c.energy >= 0.8 * c.maxEnergy) return false;   // workers gather all day, till the hive is full
   if (c.mode !== 'flower' && c.mode !== 'patch' && (w.tick + c.id) % 10 === 0) {   // look around now and then
-    if (patchFresh(w, h) && Math.hypot(h.x - c.x, h.y - c.y) < 2) {
+    if (patchFresh(w, h) && hypot(h.x - c.x, h.y - c.y) < 2) {
       const s = PATCH_SPREAD;
       c.mode = 'patch'; c.target = { x: clamp(h.patch.x + w.rng.range(-s, s), 1, W - 1), y: clamp(h.patch.y + w.rng.range(-s, s), 1, H - 1), field: h.patch.field };
     } else if (!pickFlower(w, c)) {               // nothing free in sight: off to a field she knows is in bloom
-      const f = w.rng.pick(w.fields.filter(f => f.season === seasonOf(w.tick) && Math.hypot(f.x - h.x, f.y - h.y) < FORAGE_RANGE).concat([null]));
+      const f = w.rng.pick(w.fields.filter(f => f.season === seasonOf(w.tick) && hypot(f.x - h.x, f.y - h.y) < FORAGE_RANGE).concat([null]));
       const b = f && w.rng.pick(f.shape);
       if (b) { c.mode = 'patch'; c.target = { x: clamp(b.x + w.rng.range(-b.r, b.r) * 0.7, 1, W - 1), y: clamp(b.y + w.rng.range(-b.r, b.r) * 0.7, 1, H - 1), field: f }; }
     }
@@ -4005,7 +4073,7 @@ function beeForage(w, c) {
   if (c.mode === 'patch') {                       // off where a dancer said
     if (!fly(c, c.target.x, c.target.y, c.walk)) return true;
     if (!pickFlower(w, c)) {                      // all sipped: that patch is done
-      if (h.patch && Math.hypot(h.patch.x - c.x, h.patch.y - c.y) < PATCH_SPREAD) h.patch = null;
+      if (h.patch && hypot(h.patch.x - c.x, h.patch.y - c.y) < PATCH_SPREAD) h.patch = null;
       c.mode = 'wander'; c.target = null;
       return false;
     }
@@ -4025,7 +4093,7 @@ function beeWander(w, c) {
 
 // Flying: straight there, over water, trees and all. True once it's there.
 function fly(c, tx, ty, v) {
-  const dx = tx - c.x, dy = ty - c.y, d = Math.hypot(dx, dy);
+  const dx = tx - c.x, dy = ty - c.y, d = hypot(dx, dy);
   if (Math.abs(dx) > 0.05) c.facing = dx > 0 ? 1 : -1;
   if (d <= v) { c.x = tx; c.y = ty; c.moved = d; return true; }
   c.x += dx / d * v; c.y += dy / d * v; c.moved = v;
@@ -4131,7 +4199,7 @@ function leaveRemains(w, c, killed) {
   if (w.water[idx(c.x, c.y)]) return;                     // (in the water: gone)
   const meat = c.maxEnergy * (0.4 + 0.6 * growth(w, c)) * (killed ? KILL_LEFT : 1);
   // fed, fox: when a crow, a fox was last at them (a fox's catch: it's eating the rest right there); eaten: the crows had the last of them
-  w.carcasses.push({ x: c.x, y: c.y, c, meat, full: meat, fed: -1e9, fox: killed ? w.tick : -1e9, eaten: false });
+  w.carcasses.push({ x: c.x, y: c.y, c, meat, full: meat, fed: -1e9, fox: killed ? w.tick : -1e9, eaten: false, seats: null });   // (seats: carrion)
   w.stats.remains.left++; w.stats.bodies[c.species]++;
 }
 
@@ -4588,7 +4656,7 @@ function pickRoost(w) {
     if (!perchable(d)) continue;
     let room = 0;
     forEachDecorNear(w, d.x, d.y, ROOST_GROVE, o => { if (dist2(o, d) < ROOST_GROVE ** 2 && perchable(o)) room += perches(o); });
-    const v = Math.min(room, ROOST_ROOM) + d.size - Math.hypot(d.x - W / 2, d.y - H / 2) / ROOST_MIDDLE;
+    const v = Math.min(room, ROOST_ROOM) + d.size - hypot(d.x - W / 2, d.y - H / 2) / ROOST_MIDDLE;
     if (v > most) { best = d; most = v; }
   }
   return best;
@@ -4612,7 +4680,7 @@ function crowMood(w, c) {
     case 'unbury': return { emoji: '🌰', text: `Digging up ${one} it buried in the autumn` };
     case 'pool': return { emoji: '🫧', text: `Off to the ${w.frogYear.grown < 0.3 ? 'frogspawn' : 'tadpoles'} in the shallows` };
     case 'tadpole': return { emoji: '🫧', text: w.frogYear.grown < 0.3 ? 'Pecking at the frogspawn at the water\'s edge' : 'Picking tadpoles out of the shallows' };
-    case 'flock': { const m = mateOf(w, c); return { emoji: '', text: m && Math.hypot(c.target.x - m.x, c.target.y - m.y) < 5 ? `Flying over to its mate ${m.name}` : 'Flying over to another crow' }; }   // no bubble: 🤝 is painted as paws
+    case 'flock': { const m = mateOf(w, c); return { emoji: '', text: m && hypot(c.target.x - m.x, c.target.y - m.y) < 5 ? `Flying over to its mate ${m.name}` : 'Flying over to another crow' }; }   // no bubble: 🤝 is painted as paws
     case 'drive': return { emoji: '‼️', text: `Chasing ${w.byId.get(c.targetId)?.name ?? 'another crow'} off its patch` };
     case 'gather': return { emoji: '', text: 'Off to the others, gathering by the roost for the night' };
     case 'mob': return { emoji: '‼️', text: `Mobbing ${w.byId.get(c.targetId)?.name ?? 'an owl'} the owl, cawing` };
@@ -5176,7 +5244,7 @@ function mostNear(w, field, x, y, far, tries, worth, shore = Infinity) {
 // Into the water from trouble on the bank: the nearest water, the side away from it best, deep better. On the
 // ice, or with no water near, it just runs.
 function slip(w, c, x, y, fox) {
-  const ax = c.x - x, ay = c.y - y, ad = Math.hypot(ax, ay) || 1;
+  const ax = c.x - x, ay = c.y - y, ad = hypot(ax, ay) || 1;
   let best = null, low = Infinity;
   for (let r = 1; r <= 8 && !w.frozen; r++) {
     for (let k = 0; k < 12; k++) {
@@ -5261,7 +5329,7 @@ function slideNear(w, c) {
 // with room for at least HOLT_FISH: the roots of a big tree, or under a boulder. (The fish about a holt go by the ground,
 // so they're worked out once, d.holtFish.)
 const HOLT_ROCK = 1.5;          // a rock this big on the bank can have a holt under it
-const holtFish = (w, d) => (d.holtFish ??= holtDoor(w, d) ? fishNear(w, d) : 0);
+const holtFish = (w, d) => (d.holtFish === d.holtFish ? d.holtFish : (d.holtFish = holtDoor(w, d) ? fishNear(w, d) : 0));   // (NaN: not worked out yet)
 const holtSite = (w, d) => (d.tree ? standing(d) && d.size >= GROWN && !d.hive && !d.owl
   : d.size >= HOLT_ROCK && !d.stone && w.ground[idx(d.x, d.y)] > w.terrain.level + w.terrain.springFlood);   // (a rock above the spring flood)
 function holtTree(w) {
@@ -5508,20 +5576,32 @@ function webSnapshot(w) {
   if (w.stats.web.length > WEB_KEEP) w.stats.web.shift();
 }
 
+// The world's fields that come later, or only to some meadows, all made at the start (createWorld, unpackWorld), so the
+// world is laid out the same from its first tick to its last (see blankCreature: one added mid-game, or a whole number
+// turning a fraction, left the sim's busiest code slow for good; snow, ice and the counts start as -0 for that).
+const LATER = {
+  appleYear: 0, namePools: null, recount: false,
+  dryYear: null, parched: null, greenSpots: null, parchStamp: 0,                    // (?keep: the Dry Year)
+  turned: null, dug: null, ponds: null, hedges: null, visitors: null, visited: null, visitGone: false, visitId: 0,   // (?keep: the keeper's work, and who it draws in)
+};
+// A kept meadow's fractions come back as whole numbers where they were (0, 1): made fractions again, so they can't
+// change the layout later (an object's field that holds a fraction once holds any number after).
+function asFractions(o, keys) { for (const k of keys) { const v = o[k]; o[k] = 0.5; o[k] = v; } }
+
 function createWorld(seed, opts = {}) {
   const w = {
     seed, rng: makeRng(seed), tick: Math.floor(TPD * 0.04),
     nextId: 1, creatures: [], newborn: [], byId: new Map(), events: [],
     grid: makeGrid(), grids: perKind(makeGrid),
     nameCounts: new Map(), anyDied: false,
-    weather: { kind: 'clear', until: 0 }, skyLocked: false, wet: 0.3, snow: 0, ice: 0, frozen: false, windfalls: 0,
+    weather: { kind: 'clear', until: 0 }, skyLocked: false, wet: 0.3, snow: -0, ice: -0, frozen: false, windfalls: 0,
     fire: new Float32Array(W * H), ash: new Float32Array(W * H), silt: new Float32Array(W * H), burning: [], blaze: 0, blazeTrees: 0,
     rich: new Float32Array(W * H), shadedFert: new Float32Array(W * H),   // (see groundTick)
-    voles: new Float32Array(W * H), voleCount: 0, voleYear: false,          // (see volesTick)
-    frogs: new Float32Array(W * H), spawn: new Float32Array(W * H), frogCount: 0, spawnCount: 0, frogsOut: true,   // (see frogsTick; damp: tiles to the water, as of the tick dampAt)
+    voles: new Float32Array(W * H), voleCount: -0, voleYear: false,          // (see volesTick)
+    frogs: new Float32Array(W * H), spawn: new Float32Array(W * H), frogCount: -0, spawnCount: -0, frogsOut: true,   // (see frogsTick; damp: tiles to the water, as of the tick dampAt)
     damp: new Float32Array(W * H), dampOf: -1, dampAt: 0, spawnSpots: new Int32Array(SPAWN_SPOTS).fill(-1), spawnTiles: new Int32Array(W * H), spawnN: 0,
     frogYear: { year: 0, at: -1, grown: 0, laid: 0, spawners: 0, stranded: 0, eaten: 0, left: 0, told: 0, dryDay: -1 },   // this spring's spawn, and how it went
-    fish: new Float32Array(W * H), fishCount: 0,                          // (see fishTick)
+    fish: new Float32Array(W * H), fishCount: -0,                         // (see fishTick)
     sick: 0, outbreak: null,                                              // (see sicknessTick)
     carcasses: [], roost: null, cached: 0, gatherSaid: -1,                // (see carrionTick and crowTick; cached: this autumn; gatherSaid: the outbreak told of)
     count: perKind(() => 0), expecting: perKind(() => 0),
@@ -5537,6 +5617,7 @@ function createWorld(seed, opts = {}) {
     blossoms: [], blossomCells: Array.from({ length: GW * GH }, () => []), nextBloom: 0, decorCells: [], treesMoved: true,
     bitten: new Int32Array(W * H), scorched: new Uint16Array(W * H), sprouted: 0, sproutedBurnt: 0, treeStats: {},
     options: { migration: true, ...opts },
+    ...LATER,
   };
   if (opts.keep) w.dryYear = { year: opts.dry >= 1 ? Math.floor(opts.dry) : DRY_YEAR };   // (made in its spring, &dry=1: no flood from the start)
   makeTerrain(w);
@@ -5683,13 +5764,13 @@ function familySpot(w) {
     let ok = true;
     for (let t = 0; t <= 1 && ok; t += 0.05) ok = dry(w, lerp(entry.x, spot.x, t), lerp(entry.y, spot.y, t));
     for (let dx = -3; dx <= 3 && ok; dx++) for (let dy = -3; dy <= 3; dy++) if (w.ground[idx(spot.x + dx, spot.y + dy)] < flood) ok = false;
-    if (!ok || w.hives.some(h => Math.hypot(h.x - spot.x, h.y - spot.y) < 12)) continue;
+    if (!ok || w.hives.some(h => hypot(h.x - spot.x, h.y - spot.y) < 12)) continue;
     let score = 0, trees = 0;
     for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) score += w.grass[idx(spot.x + dx, spot.y + dy)] / 25;
     if (score < 0.35) score -= 1;                                 // lush if at all possible
     for (const d of w.decor) {
       if (!d.tree || d.size < GROWN) continue;
-      const dd = Math.hypot(d.x - spot.x, d.y - spot.y);
+      const dd = hypot(d.x - spot.x, d.y - spot.y);
       if (dd < 3.5) score -= 0.3;                                   // not in the woods
       else if (dd < 10) trees++;
     }
@@ -5946,11 +6027,16 @@ function packWorld(w) {
 }
 
 // Null for a meadow kept by another version.
+// Fields older versions kept that are gone now, left behind: an animal's or a queen's mine (the player named it, theirs
+// then), a tree's bank (the holts' old reckoning, now d.holtFish). Left out, not deleted after: a deleted field leaves
+// an object slow to read.
+const gone = (e, k) => (k === 'mine' && e.genes !== undefined) || (k === 'bank' && e.tree === true);
 function unpackWorld(kept) {
   if (!kept || kept.version !== KEEP_VERSION) return null;
   const list = kept.list;
   const made = list.map(e => (Array.isArray(e) ? new Array(e.length) : ArrayBuffer.isView(e) ? e
-    : e.$map ? new Map() : e.$set ? new Set() : {}));
+    : e.$map ? new Map() : e.$set ? new Set() : e.sp !== undefined && e.genes !== undefined ? blankCreature()   // (laid out like new ones)
+    : e.tree === true ? blankTree() : e.emoji === '🪨' ? rockOf(-0, -0, -0) : {}));
   const table = path => path.split('.').reduce((o, k) => {
     if (!o || !(k in o)) throw new Error('unpackWorld: no table ' + path);
     return o[k];
@@ -5963,9 +6049,15 @@ function unpackWorld(kept) {
     else if (ArrayBuffer.isView(e)) continue;
     else if (e.$map) for (let k = 0; k < e.$map.length; k += 2) o.set(value(e.$map[k]), value(e.$map[k + 1]));
     else if (e.$set) for (const v of e.$set) o.add(value(v));
-    else for (const k in e) o[k] = value(e[k]);
+    else for (const k in e) if (!gone(e, k)) o[k] = value(e[k]);
   }
   const w = made[0];
+  for (const k in LATER) if (!(k in w)) w[k] = LATER[k];
+  asFractions(w, ['wet', 'snow', 'ice', 'level', 'voleCount', 'frogCount', 'spawnCount', 'fishCount']);
+  for (const h of w.hives) { h.winterBees ??= 0; h.sites ??= null; h.settleAt ??= 0; asFractions(h, ['x', 'y', 'honey', 'brood']); }
+  for (const b of w.burrows) asFractions(b, ['x', 'y', 'dug']);
+  for (const f of w.fields) { f.open ??= 0; f.all ??= 0; f.bloomed ??= 0; }
+  for (const k of w.carcasses) k.seats ??= null;
   const fresh = webStats();                                  // (kept before the food web's counters)
   for (const k in fresh) w.stats[k] ??= fresh[k];
   w.stats.remains.crows ??= 0;
@@ -5976,10 +6068,7 @@ function unpackWorld(kept) {
     (w.diedOut ??= {})[s] ??= w.count[s] === 0;              // (kept before the last one gone was told whenever: none now was told already)
     w.history[s] ??= w.history.t.map(() => 0); w.history.traits[s] ??= w.history.t.map(() => null);
   }
-  for (const c of w.creatures) delete c.held;                // (kept while the player held one up)
-  for (const c of w.byId.values()) delete c.mine;           // (kept while the player could name them: theirs, then)
-  for (const h of w.hives) if (h.queen) delete h.queen.mine;
-  for (const d of w.decor) if (d.tree) { d.planted ??= 0; delete d.bank; }   // (or plant trees; d.bank: the holts' old reckoning, now d.holtFish)
+  for (const c of w.creatures) c.held = false;               // (kept while the player held one up)
   if (w.lake && !w.lake.near) {                              // (kept while a lake was circles)
     w.lake.near = new Uint8Array(W * H);
     for (let i = 0; i < W * H; i++) if (outside(w.lake.shape, i % W + 0.5, ((i / W) | 0) + 0.5) < 2) w.lake.near[i] = 1;
@@ -6024,7 +6113,7 @@ function plantTree(w, x, y, kind) {
   if (w.burrows.some(b => (b.x - x) ** 2 + (b.y - y) ** 2 < 4) || w.hives.some(h => (h.x - x) ** 2 + (h.y - y) ** 2 < 4)) return 'burrow';
   let crowded = false;
   forEachDecorNear(w, x, y, 3, o => {
-    if (!crowded && !o.gone && Math.hypot(o.x - x, o.y - y) < (o.tree ? SPACE : o.size * 0.5 + 0.3)) crowded = true;
+    if (!crowded && !o.gone && hypot(o.x - x, o.y - y) < (o.tree ? SPACE : o.size * 0.5 + 0.3)) crowded = true;
   });
   if (crowded) return 'crowded';
   const d = newTree(w, x, y, kind, { by: 'you', planted: Math.max(1, w.tick) });
@@ -6090,7 +6179,7 @@ function brushTiles(pts, r, max) {
   let px = pts[0].x, py = pts[0].y;
   stamp(px, py);
   for (let k = 1; k < pts.length && !full; k++) {
-    const { x, y } = pts[k], n = Math.ceil(Math.hypot(x - px, y - py) / STROKE_STEP);
+    const { x, y } = pts[k], n = Math.ceil(hypot(x - px, y - py) / STROKE_STEP);
     for (let s = 1; s <= n && !full; s++) stamp(px + (x - px) * s / n, py + (y - py) * s / n);
     px = x; py = y;
   }
@@ -6150,7 +6239,7 @@ function pondPlan(w, pts, r = POND_BRUSH) {
   };
   for (const b of w.burrows) if (b.x > x0 - 2 && b.x < x1 + 3 && b.y > y0 - 2 && b.y < y1 + 3) block(b.x, b.y, 1.5, 'burrow');
   const stones = [];
-  forEachDecorNear(w, (x0 + x1 + 1) / 2, (y0 + y1 + 1) / 2, Math.hypot(x1 - x0 + 1, y1 - y0 + 1) / 2 + 3, d => {
+  forEachDecorNear(w, (x0 + x1 + 1) / 2, (y0 + y1 + 1) / 2, hypot(x1 - x0 + 1, y1 - y0 + 1) / 2 + 3, d => {
     if (d.hive || d.holt) block(d.x, d.y, 0.9, d.hive ? 'hive' : 'holt');   // grown trees (dead too), a hive's or a holt's, and rocks but small stones
     else if (d.tree) { if (d.size >= SAPLING) block(d.x, d.y, 0.8, 'tree'); }
     else if (d.size >= STONE_DUG || d.stone) block(d.x, d.y, d.size * 0.5 + 0.3, 'rock');
@@ -6270,8 +6359,8 @@ function digPond(w, pts, r = POND_BRUSH) {
   dampen(w);
   const parched = dryness(w) > 0;
   if (parched) shadeSoil(w);                                  // (in the Dry Year: the grass by the new water holds on again)
-  const reach = Math.hypot(plan.x1 - plan.x0 + 1, plan.y1 - plan.y0 + 1) / 2;
-  forEachDecorNear(w, plan.x, plan.y, reach + 12, d => { delete d.holtFish; });   // (the water about a holt has changed)
+  const reach = hypot(plan.x1 - plan.x0 + 1, plan.y1 - plan.y0 + 1) / 2;
+  forEachDecorNear(w, plan.x, plan.y, reach + 12, d => { d.holtFish = NaN; });   // (the water about a holt has changed: worked out again)
   for (const c of w.creatures) {                              // nobody is left standing in deep water
     if (!c.alive || c.hidden || c.held || c.sp.flies || c.sp.swims || walkable(w, c.x, c.y)) continue;
     const to = nearestFooting(w, c.x, c.y);
@@ -6448,7 +6537,7 @@ function stripPlan(w, pts) {
       if (t && !t.blocker && (tx + 0.5 - b.x) ** 2 + (ty + 0.5 - b.y) ** 2 < 1.2) t.blocker = 'burrow';
     }
   }
-  forEachDecorNear(w, (x0 + x1 + 1) / 2, (y0 + y1 + 1) / 2, Math.hypot(x1 - x0 + 1, y1 - y0 + 1) / 2 + 2, d => {   // trees by their trunk, and rocks
+  forEachDecorNear(w, (x0 + x1 + 1) / 2, (y0 + y1 + 1) / 2, hypot(x1 - x0 + 1, y1 - y0 + 1) / 2 + 2, d => {   // trees by their trunk, and rocks
     const t = at.get(idx(d.x, d.y));
     if (!t || t.blocker || !d.tree && d.size < STONE_DUG && !d.big) return;
     t.blocker = d.hive ? 'hive' : d.tree ? 'tree' : 'rock';
@@ -6461,7 +6550,7 @@ function stripPlan(w, pts) {
   const why = w.fields.length >= FIELD_MAX ? 'fields' : !sown ? blocker || 'edge' : '';
   return { x, y, x0, y0, x1, y1, tiles, sown, blocked: tiles.length - sown, blocker, full, ok: !why, why,
     kind: stripKind(w, { id: w.fields.length }, w.tick), bloom: stripBloom(w),
-    hives: w.hives.filter(h => !h.cluster && Math.hypot(h.x - x, h.y - y) < FORAGE_RANGE).length };
+    hives: w.hives.filter(h => !h.cluster && hypot(h.x - x, h.y - y) < FORAGE_RANGE).length };
 }
 
 // When a strip sown now will flower: 'soon' (spring: in half a day to a day), 'days' (summer: one and a half to four,
@@ -6488,7 +6577,7 @@ function sowStrip(w, pts) {
   if (!plan.ok) return plan.why;
   w.turned ??= [];
   const T = w.terrain, id = w.fields.length;
-  const f = { id, strip: true, sown: w.tick, x: plan.x, y: plan.y, name: stripName(w, id), shape: [], flowered: 0, found: 0, sips: 0 };
+  const f = { id, strip: true, sown: w.tick, x: plan.x, y: plan.y, name: stripName(w, id), shape: [], flowered: 0, found: 0, sips: 0, open: 0, all: 0, bloomed: 0 };
   swapStrip(w, f);
   const sown = plan.tiles.filter(t => !t.blocker), on = new Set(sown.map(t => t.i));
   const shade = SHADE_GRASS * (leafless(w.tick) ? BARE_SHADE : 1);   // (as groundTick works it out)
@@ -6504,14 +6593,14 @@ function sowStrip(w, pts) {
       cellOf(w.plantCells, p).push(p);
     }
   }
-  forEachPlantNear(w, plan.x, plan.y, Math.hypot(plan.x1 - plan.x0 + 1, plan.y1 - plan.y0 + 1) / 2 + 1, p => {
+  forEachPlantNear(w, plan.x, plan.y, hypot(plan.x1 - plan.x0 + 1, plan.y1 - plan.y0 + 1) / 2 + 1, p => {
     if (!p.tree && !p.field && on.has(p.i)) p.field = f;      // the wild flowers it was sown over join it
   });
   // Its shape, for the bees and the butterflies: a circle every STRIP_BLOB tiles along the line, and at its end.
   let px = pts[0].x, py = pts[0].y, gone = STRIP_BLOB;
   const blob = (x, y) => { if (on.has(idx(x, y)) && f.shape.length < 12) f.shape.push({ x, y, r: 1.2 }); };
   for (let k = 1; k < pts.length; k++) {
-    const d = Math.hypot(pts[k].x - px, pts[k].y - py);
+    const d = hypot(pts[k].x - px, pts[k].y - py);
     for (let s = 0; s < d; s += 0.25) if ((gone += 0.25) >= STRIP_BLOB) { gone = 0; blob(px + (pts[k].x - px) * s / d, py + (pts[k].y - py) * s / d); }
     px = pts[k].x; py = pts[k].y;
   }
@@ -6519,7 +6608,7 @@ function sowStrip(w, pts) {
   if (!f.shape.length) f.shape.push({ x: plan.x, y: plan.y, r: 1.5 });
   w.fields.push(f);
   if (dryness(w) > 0) shadeSoil(w);                           // (in the Dry Year: parched as the ground about it, at once)
-  w.turned.push({ x: plan.x, y: plan.y, r: Math.hypot(plan.x1 - plan.x0 + 1, plan.y1 - plan.y0 + 1) / 2 + 1.5,
+  w.turned.push({ x: plan.x, y: plan.y, r: hypot(plan.x1 - plan.x0 + 1, plan.y1 - plan.y0 + 1) / 2 + 1.5,
     spots: evenly(sown.map(t => ({ x: t.x + 0.5, y: t.y + 0.5 })), TURNED_SPOTS), until: w.tick + TURNED_DAYS * TPD });
   emit(w, { type: 'sowstrip', field: f, x: plan.x, y: plan.y, tiles: sown.length, hives: plan.hives, bloom: plan.bloom });
   return f;
@@ -6587,7 +6676,7 @@ function hedgePlan(w, pts) {
   add(pts[0].x, pts[0].y);
   let left = HEDGE_GAP;                                       // how far along the line the next spot is
   for (let k = 1; k < pts.length && !full; k++) {
-    const a = pts[k - 1], b = pts[k], len = Math.hypot(b.x - a.x, b.y - a.y);
+    const a = pts[k - 1], b = pts[k], len = hypot(b.x - a.x, b.y - a.y);
     let s = left;
     for (; s <= len && !full; s += HEDGE_GAP) add(a.x + (b.x - a.x) * s / len, a.y + (b.y - a.y) * s / len);
     left = s - len;
@@ -6666,7 +6755,7 @@ function plantHedge(w, pts) {
     w.grass[i] = Math.min(w.grass[i], HEDGE_BARE); w.rich[i] = Math.max(w.rich[i], TURNED_RICH);
     spots.push({ x: i % W + 0.5, y: ((i / W) | 0) + 0.5 });
   }
-  w.turned.push({ x: plan.x, y: plan.y, r: Math.hypot(plan.x1 - plan.x0 + 1, plan.y1 - plan.y0 + 1) / 2 + 1.5,
+  w.turned.push({ x: plan.x, y: plan.y, r: hypot(plan.x1 - plan.x0 + 1, plan.y1 - plan.y0 + 1) / 2 + 1.5,
     spots: evenly(spots, TURNED_SPOTS), until: w.tick + TURNED_DAYS * TPD });
   emit(w, { type: 'hedgeplant', hedge: h, whips: plan.whips, bigger: !!plan.grows, x: plan.x, y: plan.y, young: plan.young, blossom: plan.blossom });
   return h;
@@ -6783,7 +6872,7 @@ function leave(w, v) {
 
 // A step towards (tx, ty), true there.
 function visitorWalk(v, pace) {
-  const dx = v.tx - v.x, dy = v.ty - v.y, d = Math.hypot(dx, dy);
+  const dx = v.tx - v.x, dy = v.ty - v.y, d = hypot(dx, dy);
   if (d <= pace) { v.x = v.tx; v.y = v.ty; v.moved = d; return true; }
   v.x += dx / d * pace; v.y += dy / d * pace; v.moved = pace;
   if (Math.abs(dx) > d * 0.3) v.facing = dx > 0 ? 1 : -1;
@@ -7001,7 +7090,7 @@ function lift(w, c) {
 
 // And puts it down: on the nearest dry footing (a flier anywhere), with whatever it was up to forgotten.
 function putDown(w, c, x, y) {
-  delete c.held;
+  c.held = false;
   const at = c.sp.flies || c.sp.swims ? { x: clamp(x, 0.5, W - 0.5), y: clamp(y, 0.5, H - 0.5) } : walkable(w, x, y) ? { x, y } : nearestFooting(w, x, y);
   c.x = at.x; c.y = at.y;
   c.mode = 'wander'; c.target = null; c.targetId = 0; c.timer = 0; c.perch = null; c.rustle = null; c.detour = 0;
@@ -7011,7 +7100,7 @@ function putDown(w, c, x, y) {
 
 // A wall of fire along a stroke. It burns long, grass or none, and spreads like any fire.
 function burnLine(w, x0, y0, x1, y1) {
-  const n = Math.ceil(Math.hypot(x1 - x0, y1 - y0) * 2);
+  const n = Math.ceil(hypot(x1 - x0, y1 - y0) * 2);
   for (let k = 0; k <= n; k++) {
     const x = Math.floor(x0 + (x1 - x0) * k / (n || 1)), y = Math.floor(y0 + (y1 - y0) * k / (n || 1));
     if (x < 0 || y < 0 || x >= W || y >= H) continue;
@@ -7121,7 +7210,7 @@ function hedgeLanes(w, p) {
     const lane = LANE[0] + (LANE[1] - LANE[0]) * clamp((d.size - HEDGE_WHIP[0]) / (GROWN - HEDGE_WHIP[0]), 0, 1), r = lane + LANE_EDGE;
     for (let y = Math.max(0, Math.floor(d.y - r)); y <= Math.min(H - 1, d.y + r); y++) {
       for (let x = Math.max(0, Math.floor(d.x - r)); x <= Math.min(W - 1, d.x + r); x++) {
-        const i = y * W + x, dist = Math.hypot(x + 0.5 - d.x, y + 0.5 - d.y);
+        const i = y * W + x, dist = hypot(x + 0.5 - d.x, y + 0.5 - d.y);
         if (dist < r && p[i]) p[i] *= clamp((dist - lane) / LANE_EDGE, 0, 1);
       }
     }
