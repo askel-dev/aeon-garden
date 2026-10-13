@@ -8,7 +8,8 @@
 // away from a fox into it. `nohedge` leaves the hedge out, to compare the rabbits with and without it.
 // A keeper meadow has its Dry Year in the summer of year 2, and each one prints it season by season from the winter
 // before to the winter after (the green share, the water, rabbits, bees and hives, frogs, foxes), the fires in it, and
-// whether it was lost to it (barren, or which species died out, and the day). `idle` is a keeper meadow where the keeper
+// whether it was lost to it (barren, or which species died out, and the day), with the green the forecast gave it as its
+// summer began (sim.js dryForecast) and what the came-through card would say. `idle` is a keeper meadow where the keeper
 // does nothing. `diligent` is one where the keeper, early in the first spring, digs three big ponds (a spiral of the
 // spade, 100 to 150 tiles) on open grass by the three warrens furthest from the water that lasts the Dry Year, plants two
 // hedges from that water out towards the two furthest, and sows two strips along it near the hive. Then a line for all
@@ -110,6 +111,7 @@ function runSeed(s, log) {
       Sim.step(w);
       if (keep && w.tick % Sim.TPD === 0 && Sim.dryStage(w)) {   // each day of the Dry Year: how green, at the lowest
         const g = Sim.greenShare(w);
+        if (Sim.dryStage(w) === 2 && !dryGreen.fc) { dryGreen.fc = Sim.dryForecast(w).share; dryGreen.wild = Sim.dryForecast(w, true).share; }
         dryGreen.low = Math.min(dryGreen.low, g);
         if (verbose) {
           const honey = w.hives.reduce((a, h) => a + h.honey, 0), open = w.fields.filter(f => f.strip).map(f => f.open).join('/');
@@ -251,7 +253,8 @@ function runSeed(s, log) {
   }
   const lost = w.dryYear && w.dryYear.lost;
   return { rows: dryRows, extinct, maxR, meanR: sumR / ticks, fires: dryFires, low: Math.round(100 * dryGreen.low),
-    lost: lost ? `${lost.why === 'barren' ? 'barren' : lost.species} day ${(lost.t / Sim.TPD).toFixed(1)}` : '' };
+    fc: Math.round(100 * dryGreen.fc), wild: Math.round(100 * dryGreen.wild),
+    lost: lost ? `${lost.why === 'barren' ? 'barren' : lost.species} day ${(lost.t / Sim.TPD).toFixed(1)}` : '', through: w.dryYear && w.dryYear.through };
 }
 
 // The Dry Year, season by season from the winter before to the winter after, and whether it was lost.
@@ -259,7 +262,7 @@ const dryLine = r => `green ${String(r.green).padStart(2)}% water ${String(r.wat
 function printDry(a) {
   console.log(`  dry year (summer of year 2, ${idle ? 'idle' : diligent ? 'diligent' : 'keeper'})`);
   for (let k = 3; k < Math.min(8, a.rows.length); k++) console.log(`    ${a.rows[k].at}  ${dryLine(a.rows[k])}`);
-  console.log(`    lost  ${a.lost || 'no, came through'}   green at its lowest ${a.low}%   fires in it ${a.fires.n} (${a.fires.burned} tiles)   died out ${a.extinct.join(', ') || 'none'}   rabbits max ${a.maxR} mean ${a.meanR.toFixed(0)}`);
+  console.log(`    lost  ${a.lost || 'no, came through'}   green at its lowest ${a.low}% (forecast ${a.fc}%, ${a.wild}% with nothing done)${a.through ? `   the card: kept ${a.through.kept} tiles green, ${a.through.hid} hid, ${a.through.sips} sips, frogs in ${a.through.ponds}, ${a.through.close} days barren` : ''}   fires in it ${a.fires.n} (${a.fires.burned} tiles)   died out ${a.extinct.join(', ') || 'none'}   rabbits max ${a.maxR} mean ${a.meanR.toFixed(0)}`);
 }
 
 // The diligent keeper (see the top). The water that lasts the Dry Year: below an ordinary summer's line by Sim's DRY_LOW

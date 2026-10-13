@@ -409,6 +409,20 @@ function litter(cv, R, cols, rx, n = 40) {
 
 const BARK = { mat: 'bark', ramp: 'bark' }, DEADWOOD = { mat: 'bark', ramp: 'deadwood' }, CHAR = { mat: 'bark', ramp: 'char' };
 
+// Each kind's leaf colours by season: a tree takes one of each list by its tone, and a few clumps another (leafy).
+// The leaves coming down in autumn are the same (leafSheet). A copper beech (beech, tone 3) has its own.
+const CROWNS = {
+  oak:      { spring: ['spring', 'fresh', 'lemon'], summer: ['summer', 'deep', 'olive'], autumn: ['russet', 'copper', 'scarlet'], winter: ['dry'] },
+  maple:    { spring: ['spring', 'fresh', 'summer'], summer: ['summer', 'fresh', 'deep'], autumn: ['maple', 'scarlet', 'gold'], winter: null },
+  beech:    { spring: ['spring', 'fresh', 'lemon'], summer: ['summer', 'olive', 'fresh'], autumn: ['copper', 'gold', 'russet'], winter: null },
+  copper:   { spring: ['purple'], summer: ['purple'], autumn: ['copper'], winter: null },
+  birch:    { spring: ['spring', 'fresh', 'lemon'], summer: ['spring', 'summer', 'fresh'], autumn: ['gold', 'lemon', 'gold'], winter: null },
+  apple:    { spring: ['olive', 'spring', 'fresh'], summer: ['olive', 'summer', 'deep'], autumn: ['olive', 'lemon', 'gold'], winter: null },
+  cherry:   { spring: ['pink'], summer: ['olive', 'summer', 'deep'], autumn: ['scarlet', 'copper', 'gold'], winter: null },
+  alder:    { spring: ['fresh', 'alder', 'spring'], summer: ['alder', 'deep', 'alder'], autumn: ['alder', 'olive', 'alderfall'], winter: null },
+  hawthorn: { spring: ['summer', 'spring', 'fresh'], summer: ['summer', 'deep', 'olive'], autumn: ['russet', 'copper', 'summer'], winter: null },
+};
+
 function oak(R, season, o) {
   const old = o.hive, sc = old ? new Scene(390, 345, 195, 318) : new Scene(340, 330, 170, 310), base = [...sc.base, 0], trunkR = old ? 21 : 12;
   roots(sc, R, base, trunkR, old ? 5 : 4);
@@ -416,7 +430,7 @@ function oak(R, season, o) {
     { prune: true, kids: d => d > 3 ? 3 : 2 + (R() < 0.4), spread: old ? 1.05 : 0.95, shrink: 0.74, up: 0.12, taper: 0.64, wobble: 0.22 }, [], BARK);
   // Oaks hold on to their dry leaves all winter: a thin, pale buff over the bare branches, so it never
   // reads as autumn (a full copper crown in early spring looked like the wrong season).
-  const winter = season === 'winter', ramps = { spring: ['spring', 'fresh', 'lemon'], summer: ['summer', 'deep', 'olive'], autumn: ['russet', 'copper', 'scarlet'], winter: ['dry'] }[season];
+  const winter = season === 'winter', ramps = CROWNS.oak[season];
   const { crown } = leafy(sc, R, tips, { lo: 1, hi: 2, clumpR: 25, leafR: 6, density: winter ? 0.6 : season === 'spring' ? 0.8 : 1, ramps, bare: o.bare, keep: winter ? 0.5 : 1, size: winter ? 0.7 : 1 }, { mat: 'leaf', ramp: 'summer' });
   if (old) hive(sc, R, base, trunkR);
   return [sc, { aoR: 7, shade: winter ? null : [crown.y + crown.ry * 0.6, 40] }, cv => season === 'autumn' && litter(cv, R, ['#c0622a', '#d8903a', '#a4481e'], 55, 24)];
@@ -448,7 +462,7 @@ function maple(R, season) {
   const sc = new Scene(300, 285, 150, 270), base = [150, 270, 0];
   roots(sc, R, base, 9, 3);
   const tips = grow(sc, R, base, [0, -1, 0], 58, 9, 4, { prune: true, kids: d => 2 + (R() < 0.5), spread: 0.7, shrink: 0.74, up: 0.25, taper: 0.66 }, [], BARK);
-  const ramps = { spring: ['spring', 'fresh', 'summer'], summer: ['summer', 'fresh', 'deep'], autumn: ['maple', 'scarlet', 'gold'], winter: null }[season];
+  const ramps = CROWNS.maple[season];
   const { crown } = leafy(sc, R, tips, { lo: 1, hi: 2, clumpR: 23, leafR: 5.4, ramps, bare: season === 'winter' }, { mat: 'leaf', ramp: 'summer' });
   return [sc, { aoR: 7, shade: season === 'winter' ? null : [crown.y + crown.ry * 0.6, 36] }, cv => season === 'autumn' && litter(cv, R, ['#e07a22', '#c9481c', '#f0a83a'], 55)];
 }
@@ -458,8 +472,7 @@ function beech(R, season) {
   const sc = new Scene(320, 285, 160, 270), base = [160, 270, 0], GREY = { mat: 'bark', ramp: 'grey' };
   roots(sc, R, base, 10, 4);
   const tips = grow(sc, R, base, norm([0.03, -1, 0]), 54, 10, 4, { prune: true, kids: d => d > 3 ? 3 : 2 + (R() < 0.5), spread: 0.85, shrink: 0.74, up: 0.2, taper: 0.66, wobble: 0.14 }, [], GREY);
-  const ramps = TONE === 3 ? { spring: ['purple'], summer: ['purple'], autumn: ['copper'], winter: null }[season]   // a copper beech
-    : { spring: ['spring', 'fresh', 'lemon'], summer: ['summer', 'olive', 'fresh'], autumn: ['copper', 'gold', 'russet'], winter: null }[season];
+  const ramps = CROWNS[TONE === 3 ? 'copper' : 'beech'][season];   // (3: a copper beech)
   const { crown } = leafy(sc, R, tips, { lo: 1, hi: 2, clumpR: 24, leafR: 5.6, ramps, bare: season === 'winter' }, { mat: 'leaf', ramp: 'summer' });
   return [sc, { aoR: 7, shade: season === 'winter' ? null : [crown.y + crown.ry * 0.6, 36] }, cv => season === 'autumn' && litter(cv, R, ['#c0622a', '#d8a03a', '#a4481e'], 55, 26)];
 }
@@ -478,7 +491,7 @@ function birch(R, season) {
     grow(sc, R, p, dir, (42 * Math.sin(Math.PI * Math.min(1, (h - 0.2) * 1.3)) + 12) * (0.75 + 0.4 * R()) * (1 - 0.3 * YOUNG), 2 * (1 - h * 0.6), 2,
       { kids: () => 2, spread: 0.55, shrink: 0.62, up: -0.35, taper: 0.6, wobble: 0.2 }, tips, BARK);
   }
-  const ramps = { spring: ['spring', 'fresh', 'lemon'], summer: ['spring', 'summer', 'fresh'], autumn: ['gold', 'lemon', 'gold'], winter: null }[season];
+  const ramps = CROWNS.birch[season];
   const { crown } = leafy(sc, R, tips, { hi: 2, along: 1, droop: 6, clumpR: 11, leafR: 3.4, density: 0.85, ramps, bare: season === 'winter' }, { mat: 'leaf', ramp: 'spring' });
   return [sc, { aoR: 5, shade: season === 'winter' ? null : [crown.y + crown.ry * 0.8, 30], birchFoot: 306 }];
 }
@@ -490,7 +503,7 @@ function fruitTree(R, season, kind) {
   roots(sc, R, base, 9, 3);
   const tips = grow(sc, R, base, [0, -1, 0], 30, 10, 4, { prune: true, kids: d => d === 4 ? 4 : 2, spread: 1.0, shrink: 0.9, up: 0.02, taper: 0.66, wobble: 0.3 }, [], BARK);
   const cherry = kind === 'cherry', pinkCloud = cherry && season === 'spring';
-  const ramps = { spring: cherry ? ['pink'] : ['olive', 'spring', 'fresh'], summer: ['olive', 'summer', 'deep'], autumn: cherry ? ['scarlet', 'copper', 'gold'] : ['olive', 'lemon', 'gold'], winter: null }[season];
+  const ramps = CROWNS[kind][season];
   const { crown, cs } = leafy(sc, R, tips, { lo: 1, hi: 2, clumpR: 21, leafR: 5, ramps, bare: season === 'winter' }, { mat: pinkCloud ? 'bloom' : 'leaf', ramp: 'olive' });
   if (season === 'spring' && !cherry) dot(sc, R, cs, 260, 2.6, ['white', 'white', 'pink'], [1.6, -0.9]);
   if (!cherry && (season === 'summer' || season === 'autumn')) dot(sc, R, cs, season === 'summer' ? 22 : 10, 4.6, ['apple']);
@@ -576,7 +589,7 @@ function alder(R, season, o) {
     }
     for (let h = 0.8; h < 0.99; h += 0.06) tips.push({ p: on(h), from: on(h - 0.05), depth: 0, dir: [0, -1, 0] });   // leaves up the leader: a pointed top
   }
-  const ramps = { spring: ['fresh', 'alder', 'spring'], summer: ['alder', 'deep', 'alder'], autumn: ['alder', 'olive', 'alderfall'], winter: null }[season];
+  const ramps = CROWNS.alder[season];
   const { crown } = leafy(sc, R, tips, { hi: 1, along: 0, clumpR: 14, leafR: 4.4, density: 0.95, ramps, bare: season === 'winter' || o.bare }, { mat: 'leaf', ramp: 'alder' });
   // Catkins and cones on the bare twigs, and among the first leaves.
   const gold = o.bare || (season === 'spring' && LEAVES.size < 1);
@@ -599,7 +612,7 @@ function hawthorn(R, season) {
     const a = (i / 7) * 3.2 - 0.05 + (R() - 0.5) * 0.3, dir = norm([Math.cos(a) * 0.75, -1, Math.sin(a) * 0.5]);
     grow(sc, R, add(base, [(R() - 0.5) * 10, 0, (R() - 0.5) * 6]), dir, 30 + R() * 14, 3.2, 2, { kids: () => 2, spread: 0.7, shrink: 0.7, up: 0.1, taper: 0.7, wobble: 0.3 }, tips, BARK);
   }
-  const ramps = { spring: ['summer', 'spring', 'fresh'], summer: ['summer', 'deep', 'olive'], autumn: ['russet', 'copper', 'summer'], winter: null }[season];
+  const ramps = CROWNS.hawthorn[season];
   const { crown, cs } = leafy(sc, R, tips, { lo: 0, hi: 1, clumpR: 17, leafR: 4.6, ramps, bare: season === 'winter' }, { mat: 'leaf', ramp: 'summer' });
   if (season === 'spring') dot(sc, R, cs, 200, 2.2, ['white', 'white', 'white', 'pink'], [1.6, -0.9]);
   if (!DEAD && (season === 'autumn' || season === 'winter')) {
@@ -651,6 +664,97 @@ function stump(R, season, o) {
   return [sc, { aoR: 5, birchFoot: 1e9 }];
 }
 
+// ------------------------------------------------------------------ falling leaves
+//
+// The leaves coming down in autumn (game.js drawLeaves) are each kind's own leaf, painted once in every colour its crown
+// takes (CROWNS) onto one sheet a size: a flat colour, the half away from the light a shade darker, a midrib and a stem,
+// and its paler back for when it turns over, each lit and a little less. A kind's colours lie one after another, four
+// cells to a colour: lit top, lit back, less lit top, less lit back.
+const LEAF_KINDS = ['oak', 'beech', 'maple', 'birch', 'alder', 'apple', 'cherry', 'hawthorn'];
+const LEAF_COLS = 16;                                    // cells a row
+const LEAF_LIGHT = [0.66, 0.5];                          // where on its ramp a leaf's colour is, lit and less lit
+const LEAF_BACK = [236, 226, 196], LEAF_BACK_MIX = 0.35; // the back: this much paler
+const LEAF_MID = 0.45;                                   // the leaf's middle, a leaf from its stem's foot: in the middle of its cell
+// A kind's colours: those of its tones in summer and autumn, an oak's dry ones and a copper beech's own.
+const leafColours = kind => [...new Set([...CROWNS[kind].summer, ...CROWNS[kind].autumn, ...(CROWNS[kind].winter || []),
+  ...(kind === 'beech' ? [...CROWNS.copper.summer, ...CROWNS.copper.autumn] : [])])];
+
+// A leaf's outline, a leaf long: its stem's foot at (0, 0), its tip at (0, -1).
+function leafOutline(g, kind) {
+  g.beginPath();
+  const sided = (lobes, tip) => {                         // up one side and down the other: each lobe's tip, then the sinus after it
+    g.moveTo(0, 0);
+    for (const [lx, ly, sx, sy] of lobes) g.quadraticCurveTo(lx, ly, sx, sy);
+    const last = lobes[lobes.length - 1];
+    g.quadraticCurveTo(tip[0], tip[1], 0, -1); g.quadraticCurveTo(-tip[0], tip[1], -last[2], last[3]);
+    for (let i = lobes.length - 1; i >= 0; i--) g.quadraticCurveTo(-lobes[i][0], lobes[i][1], i ? -lobes[i - 1][2] : 0, i ? lobes[i - 1][3] : 0);
+  };
+  switch (kind) {
+    case 'oak': sided([[0.24, -0.12, 0.1, -0.27], [0.4, -0.36, 0.13, -0.5], [0.42, -0.6, 0.12, -0.72], [0.3, -0.82, 0.07, -0.88]], [0.16, -1.04]); break;
+    case 'hawthorn': sided([[0.12, -0.2, 0.13, -0.36], [0.56, -0.44, 0.15, -0.6], [0.48, -0.78, 0.08, -0.84]], [0.2, -1.04]); break;
+    case 'maple': {                                       // five pointed lobes
+      const pts = [[0, -1], [0.12, -0.62], [0.42, -0.78], [0.3, -0.42], [0.55, -0.35], [0.28, -0.18], [0.24, 0.02], [0, -0.1]];
+      g.moveTo(0, -0.1);
+      for (const [x, y] of pts) g.lineTo(x, y);
+      for (let i = pts.length - 1; i >= 0; i--) g.lineTo(-pts[i][0], pts[i][1]);
+      break;
+    }
+    case 'birch':                                         // small and pointed, its edge toothed
+      g.moveTo(0, 0);
+      for (const s of [1, -1]) for (let i = 0; i <= 10; i++) {
+        const t = s > 0 ? i / 10 : 1 - i / 10;
+        g.lineTo(s * 0.34 * Math.sin(Math.PI * Math.pow(t, 0.75)) * (1 - 0.25 * t) * (i % 2 ? 1.12 : 1), -t);
+      }
+      break;
+    case 'alder':                                         // round, a notch at the tip
+      g.moveTo(0, -0.95); g.bezierCurveTo(0.2, -1.05, 0.48, -0.85, 0.44, -0.5); g.bezierCurveTo(0.4, -0.18, 0.15, -0.02, 0, 0);
+      g.bezierCurveTo(-0.15, -0.02, -0.4, -0.18, -0.44, -0.5); g.bezierCurveTo(-0.48, -0.85, -0.2, -1.05, 0, -0.95);
+      break;
+    default: {                                            // beech, cherry, apple: an oval to a point
+      const w = kind === 'cherry' ? 0.26 : kind === 'apple' ? 0.34 : 0.32;
+      g.moveTo(0, 0); g.bezierCurveTo(w * 1.5, -0.12, w * 1.3, -0.72, 0, -1); g.bezierCurveTo(-w * 1.3, -0.72, -w * 1.5, -0.12, 0, 0);
+    }
+  }
+  g.closePath();
+}
+function paintLeaf(g, kind, rgb, back) {
+  const css = c => `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`, mix = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
+  const c = back ? mix(rgb, LEAF_BACK, LEAF_BACK_MIX) : rgb;
+  g.lineCap = 'round';
+  g.strokeStyle = css(mix(c, [60, 40, 20], 0.45)); g.lineWidth = 0.05;
+  g.beginPath(); g.moveTo(0, 0.12); g.lineTo(0, -0.1); g.stroke();                       // the stem
+  leafOutline(g, kind);
+  g.fillStyle = css(c); g.fill();
+  g.save(); g.clip();                                                                      // the half away from the light
+  g.fillStyle = css(mix(c, [20, 10, 0], back ? 0.1 : 0.2)); g.fillRect(0, -1.2, 1, 1.4);
+  g.restore();
+  g.strokeStyle = css(back ? mix(c, [255, 250, 230], 0.45) : mix(c, [40, 20, 0], 0.3)); g.lineWidth = 0.035;
+  g.beginPath(); g.moveTo(0, -0.05); g.lineTo(0, -0.88); g.stroke();                     // the midrib
+}
+// The sheet of leaves px long (device pixels), cell px square. pick[kind][tone]: the colours a tree of that kind and tone
+// drops, as their places on the sheet (a cell's number over 4): its summer one, its autumn one, its dry one (an oak's; -1
+// for the rest), then its kind's other autumn ones, which a few of its leaves are, as a few of its crown's clumps.
+function leafSheet(px) {
+  const cell = Math.ceil(px * 1.25) + 2, n = LEAF_KINDS.reduce((s, k) => s + leafColours(k).length, 0) * 4;
+  const cv = canvas(LEAF_COLS * cell, Math.ceil(n / LEAF_COLS) * cell), g = cv.getContext('2d'), pick = {};
+  let at = 0;
+  for (const kind of LEAF_KINDS) {
+    const cols = leafColours(kind), first = at;
+    for (const name of cols) for (const light of LEAF_LIGHT) for (const back of [false, true]) {
+      const x = (at % LEAF_COLS) * cell + cell / 2, y = ((at / LEAF_COLS) | 0) * cell + cell / 2 + LEAF_MID * px;
+      g.setTransform(px, 0, 0, px, x, y);
+      paintLeaf(g, kind, ramp(RAMPS[name], light, []), back);
+      at++;
+    }
+    pick[kind] = [0, 1, 2, 3].map(tone => {
+      const c = kind === 'beech' && tone === 3 ? CROWNS.copper : CROWNS[kind], of = name => first / 4 + cols.indexOf(name);
+      const autumn = c.autumn[tone % c.autumn.length];
+      return [of(c.summer[tone % c.summer.length]), of(autumn), c.winter ? of(c.winter[0]) : -1, ...[...new Set(c.autumn)].filter(a => a !== autumn).map(of)];
+    });
+  }
+  return { canvas: cv, cell, cols: LEAF_COLS, pick };
+}
+
 const KINDS = {
   oak:      { name: 'Oak', paint: oak },
   hive:     { name: 'Hive oak', paint: (R, s, o) => oak(R, s, { ...o, hive: true }) },   // its door's sill: 1, -38 from the foot (game.js HIVE_DOOR)
@@ -684,5 +788,5 @@ function paint(kind, o = {}) {
   return cv;
 }
 
-self.Trees = { paint, KINDS, SEASONS, LOOKS, LOOK, RAMPS };
+self.Trees = { paint, leafSheet, KINDS, SEASONS, LOOKS, LOOK, RAMPS };
 })();

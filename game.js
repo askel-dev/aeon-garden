@@ -2,6 +2,8 @@
 (() => {
 'use strict';
 const S = window.Sim;
+const Fur = window.Fur;                 // the painted foxes and rabbits, and the drawing helpers every painting here uses
+const { tone, rockRGB, fillIn, strokeIn, discAt, ovalAt, blurIn, foxRGB, FOX_WHITE, FOX_SOCK, FOX_POSE, RABBIT_POSE, RABBIT_KINDS } = Fur;
 const $ = sel => document.querySelector(sel);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -224,7 +226,7 @@ function sprite(emoji, want, tint, leaf, center) {
 }
 const lookKey = (emoji, tint, leaf, center) => emoji + '|' + (tint || '') + '|' + (leaf ? leaf.key : '') + (center ? '|c' : '');
 // Whether drawEmoji would find this one painted already.
-const spriteReady = (emoji, want, leaf) => spriteCache.has(spriteStep(Math.max(4, want)) + '|' + lookKey(emoji, '', leaf));
+const spriteReady = (emoji, want, leaf) => spriteCache.has((posed(emoji) ? poseStep : spriteStep)(Math.max(4, want)) + '|' + lookKey(emoji, '', leaf));
 function paintedSprite(emoji, px, tint, leaf, center) {
   const look = lookKey(emoji, tint, leaf, center);
   const key = px + '|' + look;
@@ -235,6 +237,12 @@ function paintedSprite(emoji, px, tint, leaf, center) {
   // the next frames.
   const near = standIns && paintedMs > PAINT_MS && latestLook.get(look);
   if (near) { near.used = spriteFrame; return { canvas: near.canvas, size: near.size * px / near.px }; }
+  // A fox's or a rabbit's painting comes from the worker (furReady asks for it): meanwhile the same at another size
+  // stands in, or one of its kin. Only the first of a look is painted here (and the P photo's, all of them).
+  if (furWorker && standIns && !groundIn && !tint && !leaf && !center && isFur(emoji) && !furReady(emoji, px)) {
+    const kin = latestLook.get(look) || furKin(emoji);
+    if (kin) { kin.used = spriteFrame; return { canvas: kin.canvas, size: kin.size * px / kin.px }; }
+  }
   const t0 = performance.now();
   const size = Math.ceil(px * 1.3 * dpr);
   if (spriteCache.size > 2000 || spriteBytes + size * size * 4 > SPRITE_BYTES) dropSprites(size * size * 4);
@@ -245,7 +253,12 @@ function paintedSprite(emoji, px, tint, leaf, center) {
   // Painted things ('reeds:0', 'lily:2', 'bubble:5': PAINTERS) are painted in their colours, never read back.
   const colon = emoji.indexOf(':'), art = colon > 0 && PAINTERS[emoji.slice(0, colon)];
   const g = c.getContext('2d', !art && (leaf || center) && { willReadFrequently: true });
-  if (art) art(g, size, px * dpr, +emoji.slice(colon + 1), leaf);
+  if (art) {
+    const was = standIns;
+    standIns = false;                                  // (what it's made from is never a stand-in)
+    art(g, size, px * dpr, +emoji.slice(colon + 1), leaf);
+    standIns = was;
+  }
   else {
     g.textAlign = 'center'; g.textBaseline = 'middle';
     g.font = `${px * dpr}px ${EMOJI_FONT}`;
@@ -437,16 +450,11 @@ const COAT = {
   blue: { key: 'blue', rgb: S.COATS.blue.rgb, speckle: 0, swatch: '#808696', n: 15 },
 };
 const coatLook = c => c.genes.coat ? COAT[S.coatOf(c.genes)] : undefined;
+const furCoats = () => RABBIT_KINDS.map(k => ({ rgb: S.COATS[k].rgb, speckle: COAT[k].speckle }));   // for fur.js
+Fur.setCoats(furCoats(), S.WINTER_COAT);
 // In winter a coat pales toward white, in a few steps (0 to 4) to keep the sprite cache small.
 const whiteStep = c => Math.round(S.whiteness(world, c) * 4);
 
-// Fox fur: one sliding shade that families share. The grey is warm, so the shades between stay fox-coloured.
-const FOX_FUR = [[245, 150, 60], [214, 92, 42], [176, 98, 62], [186, 176, 162], [250, 248, 244]];
-function foxRGB(f) {
-  const p = clamp(f, 0, 0.999) * (FOX_FUR.length - 1);
-  const i = Math.floor(p), t = p - i, a = FOX_FUR[i], b = FOX_FUR[i + 1];
-  return [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)].map(Math.round);
-}
 const furCss = c => c.genes.coat ? coatLook(c).swatch
   : c.species === 'fox' ? `rgb(${foxRGB(c.genes.fur).join(',')})` : LOOKS[c.species].swatch;
 
@@ -506,21 +514,23 @@ function coldness() {
   return 0.6 * lerp(now === 3 ? 1 : 0, next === 3 ? 1 : 0, t);
 }
 
+const FLAT_WATER = [110, 175, 215];                // (no WebGL: the water's flat colour)
 function paintTerrain() {
   const g = world.grass, water = world.water, [low, high] = groundColours(), damp = 1 - 0.12 * world.wet;
   shoreSand = low.map(v => v * 0.9 * damp);
   let sum = 0;
+  const ok = Ground.ok, fieldAt = world.fieldAt, fields = world.fields, ash = world.ash, wood = world.wood, deep = S.DEEP;
   for (let i = 0; i < g.length; i++) {
     let v = water[i] ? 0 : clamp(g[i] / 0.85, 0, 1);
     v = v * (2 - v);
-    const o = i * 4, fi = world.fieldAt[i], f = fi >= 0 ? world.fields[fi] : null;
+    const o = i * 4, fi = fieldAt[i], f = fi >= 0 ? fields[fi] : null;
     const bloom = f ? S.fieldBloom(world, f, i, v) : 0;
-    tileData[o] = v; tileData[o + 1] = water[i] / S.DEEP; tileData[o + 2] = world.ash[i]; tileData[o + 3] = world.wood[i];
+    tileData[o] = v; tileData[o + 1] = water[i] / deep; tileData[o + 2] = ash[i]; tileData[o + 3] = wood[i];
     for (let k = 0; k < 3; k++) bloomData[o + k] = bloom > 0 ? f.tint[k] / 255 * bloom : 0;   // premultiplied, so it blends smoothly between tiles
     bloomData[o + 3] = bloom;
     sum += v;
-    if (!Ground.ok) {
-      for (let k = 0; k < 3; k++) flatImg.data[o + k] = water[i] ? [110, 175, 215][k] : lerp(low[k], high[k], v) * damp;
+    if (!ok) {
+      for (let k = 0; k < 3; k++) flatImg.data[o + k] = water[i] ? FLAT_WATER[k] : lerp(low[k], high[k], v) * damp;
       flatImg.data[o + 3] = 255;
     }
   }
@@ -629,9 +639,19 @@ function fogColour(high, phase) {
 
 // While fade is below 1, everything drawn is that much see-through, whatever alpha its drawing sets: a thing
 // standing in the mist is faded into it (fadeAt), and unfade() puts it back.
+// The canvas's own alpha is kept here too (alphaNow), so a set that wouldn't change it (most of the thousands a frame:
+// back to 1 after a drawing, then 1 again before the next) never reaches the canvas. A restore() brings back an alpha
+// of its own, a new canvas size (resize, the photo) starts it afresh (render reads it again), and the canvas ignores
+// one outside 0..1, as this does.
 let fade = 1;
 const ALPHA = Object.getOwnPropertyDescriptor(CanvasRenderingContext2D.prototype, 'globalAlpha');
-Object.defineProperty(ctx, 'globalAlpha', { get() { return ALPHA.get.call(ctx) / fade; }, set(v) { ALPHA.set.call(ctx, v * fade); } });
+let alphaNow = ALPHA.get.call(ctx);
+Object.defineProperty(ctx, 'globalAlpha', {
+  get() { return alphaNow / fade; },
+  set(v) { const a = v * fade; if (a !== alphaNow && a >= 0 && a <= 1) { alphaNow = a; ALPHA.set.call(ctx, a); } },
+});
+const RESTORE = ctx.restore;
+ctx.restore = () => { RESTORE.call(ctx); alphaNow = ALPHA.get.call(ctx); };
 function fadeTo(f) {
   if (f === fade) return;
   const a = ctx.globalAlpha;
@@ -778,7 +798,6 @@ function flowerSprite(code) {
 }
 
 const LEAF_DARK = [64, 110, 46], LEAF_LIGHT = [104, 154, 66], STEM = [84, 132, 56];
-const tone = (c, k, add = 0) => [c[0] * k + add, c[1] * k + add, c[2] * k + add];
 
 // A leaf standing from the foot at x, len long, its tip leaning out by lean; lit down one side.
 function flowerLeaf(g, x, len, lean, w) {
@@ -1040,12 +1059,17 @@ const FRESH_DAYS = 3;
 const burrowRand = (id, k) => { const s = Math.sin(id * 12.9898 + k * 78.233) * 43758.5453; return s - Math.floor(s); };
 
 // A flat-bottomed arch standing on y0, w to each side and h tall.
-function arch(w, h, y0) {
-  ctx.moveTo(-w, y0);
-  ctx.bezierCurveTo(-w, y0 - h * 1.33, w, y0 - h * 1.33, w, y0);
-  ctx.quadraticCurveTo(0, y0 + h * 0.2, -w, y0);
+function arch(g, w, h, y0) {
+  g.moveTo(-w, y0);
+  g.bezierCurveTo(-w, y0 - h * 1.33, w, y0 - h * 1.33, w, y0);
+  g.quadraticCurveTo(0, y0 + h * 0.2, -w, y0);
 }
 
+// The bank, the spilled earth and the way in are painted once (paintBurrow) and stretched to the zoom between its
+// sizes, like a sprite: drawn by hand every frame they cost a few gradients and a dozen fills a burrow. How fresh its
+// earth is, how long it's been left and how far it's dug go in BURROW_STEPS. The paths worn round it are drawn as ever.
+const BURROW_STEPS = 16;
+const burrowArt = new WeakMap();                // a burrow's painting: { key, canvas, r, w, h } (its middle at w/2, h/2)
 function drawBurrow(b, sx, sy, z, season, residents) {
   const rnd = k => burrowRand(b.id, k);
   const r = Math.max(5, z * 0.8) * (0.9 + 0.2 * rnd(0));
@@ -1054,17 +1078,11 @@ function drawBurrow(b, sx, sy, z, season, residents) {
   const idle = b.count > 0 ? 0 : (world.tick - b.used) / (S.SEASON_DAYS * S.TPD);   // it falls in at 1
   const neglect = done ? clamp((idle - 0.4) / 0.6, 0, 1) : 0;
   const wear = clamp(residents / 3, 0, 1) * (1 - neglect);
-  const pile = done ? 1 : 0.35 + 0.65 * Math.sqrt(b.dug);          // how much earth is out
-  const open = clamp((b.dug - 0.35) / 0.65, 0, 1);                 // the hole shows once the scrape is deep
-  const detail = r >= 9, flip = rnd(1) < 0.5 ? -1 : 1;
-  const earth = [lerp(120, 158, fresh), lerp(92, 116, fresh), lerp(58, 70, fresh)];
-  const rgba = (c, k, a) => `rgba(${c[0] * k | 0}, ${c[1] * k | 0}, ${c[2] * k | 0}, ${a})`;
-
-  ctx.save();
-  ctx.translate(sx, sy);
 
   // Paths worn into the grass by the rabbits who live here.
-  if (detail && wear > 0.05) {
+  if (r >= 9 && wear > 0.05) {
+    ctx.save();
+    ctx.translate(sx, sy);
     ctx.lineCap = 'round';
     const n = rnd(3) < 0.5 ? 2 : 3;
     for (let i = 0; i < n; i++) {
@@ -1077,77 +1095,108 @@ function drawBurrow(b, sx, sy, z, season, residents) {
         ctx.strokeStyle = `rgba(214, 198, 140, ${al * wear})`; ctx.lineWidth = r * lw; ctx.stroke();
       }
     }
+    ctx.restore();
   }
 
-  ctx.rotate((rnd(2) - 0.5) * 0.25);
+  const R = spriteStep(r), q = v => Math.round(v * BURROW_STEPS);
+  const key = ((((R * 17 + q(fresh)) * 17 + q(neglect)) * 17 + q(done ? 1 : b.dug)) * 4 + season) * 8 + Math.round(dpr * 2);
+  let a = burrowArt.get(b);
+  if (!a || a.key !== key && !(standIns && paintedMs > PAINT_MS)) {   // (painting a lot this frame: the last one stands in)
+    if (a) freeImage(a.canvas);
+    const t0 = performance.now();
+    burrowArt.set(b, a = paintBurrow(b, R, q(fresh) / BURROW_STEPS, q(neglect) / BURROW_STEPS, done ? 1 : q(b.dug) / BURROW_STEPS, season, key));
+    paintedMs += performance.now() - t0;
+  }
+  const k = r / a.r;
+  ctx.drawImage(a.canvas, sx - a.w / 2 * k, sy - a.h / 2 * k, a.w * k, a.h * k);
+}
+
+// A burrow at r (its size on screen), as fresh, left and dug as that: the low bank the hole goes into, the earth spilled in
+// front, and the way in, turned a little, into a canvas of its own.
+function paintBurrow(b, r, fresh, neglect, dug, season, key) {
+  const rnd = k => burrowRand(b.id, k), done = dug >= 1;
+  const pile = done ? 1 : 0.35 + 0.65 * Math.sqrt(dug);           // how much earth is out
+  const open = clamp((dug - 0.35) / 0.65, 0, 1);                 // the hole shows once the scrape is deep
+  const detail = r >= 9, flip = rnd(1) < 0.5 ? -1 : 1;
+  const earth = [lerp(120, 158, fresh), lerp(92, 116, fresh), lerp(58, 70, fresh)];
+  const rgba = (c, k, a) => `rgba(${c[0] * k | 0}, ${c[1] * k | 0}, ${c[2] * k | 0}, ${a})`;
+  const W = 2.1 * r, H = 1.9 * r;                                // its reach from the middle, turned and all
+  const c = document.createElement('canvas');
+  c.width = Math.ceil(2 * W * dpr); c.height = Math.ceil(2 * H * dpr);
+  const g = c.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, c.width / 2, c.height / 2);
+  g.rotate((rnd(2) - 0.5) * 0.25);
+  g.lineCap = 'round';
 
   // The low bank the hole goes into: light on top, a soft shadow along its foot.
   const mh = r * 0.8 * pile, mw = r * 1.3 * pile;
-  const foot = ctx.createRadialGradient(mw * 0.1, 0, mw * 0.5, mw * 0.1, 0, mw * 1.15);
+  const foot = g.createRadialGradient(mw * 0.1, 0, mw * 0.5, mw * 0.1, 0, mw * 1.15);
   foot.addColorStop(0, 'rgba(35, 45, 15, 0.3)'); foot.addColorStop(1, 'rgba(35, 45, 15, 0)');
-  ctx.fillStyle = foot;
-  ctx.beginPath(); ctx.ellipse(mw * 0.1, 0, mw * 1.15, mh * 0.8, 0, 0, TAU); ctx.fill();
-  const lit = ctx.createRadialGradient(-mw * 0.2, -mh * 0.55, 0, -mw * 0.1, -mh * 0.3, mw * 0.95);
+  g.fillStyle = foot;
+  g.beginPath(); g.ellipse(mw * 0.1, 0, mw * 1.15, mh * 0.8, 0, 0, TAU); g.fill();
+  const lit = g.createRadialGradient(-mw * 0.2, -mh * 0.55, 0, -mw * 0.1, -mh * 0.3, mw * 0.95);
   lit.addColorStop(0, 'rgba(255, 250, 210, 0.42)'); lit.addColorStop(0.6, 'rgba(255, 250, 210, 0.12)');
   lit.addColorStop(1, 'rgba(255, 250, 210, 0)');
-  ctx.fillStyle = lit;
-  ctx.beginPath(); ctx.ellipse(0, -mh * 0.2, mw * 0.95, mh * 0.66, 0, 0, TAU); ctx.fill();
+  g.fillStyle = lit;
+  g.beginPath(); g.ellipse(0, -mh * 0.2, mw * 0.95, mh * 0.66, 0, 0, TAU); g.fill();
 
   // The spilled earth in front, soft at the edge. Grass takes it back once it's left alone.
   const ea = (done ? lerp(0.5, 0.9, fresh) : 0.9) * (1 - 0.85 * neglect);
   const spoil = s => {
-    ctx.beginPath();
-    ctx.ellipse(flip * r * 0.15, r * 0.55, r * 1.2 * s * pile, r * 0.5 * s * pile, 0, 0, TAU);
-    ctx.ellipse(flip * r * 0.8, r * 0.7, r * 0.55 * s * pile, r * 0.32 * s * pile, 0, 0, TAU);
-    ctx.ellipse(-flip * r * 0.7, r * 0.45, r * 0.45 * s * pile, r * 0.26 * s * pile, 0, 0, TAU);
+    g.beginPath();
+    g.ellipse(flip * r * 0.15, r * 0.55, r * 1.2 * s * pile, r * 0.5 * s * pile, 0, 0, TAU);
+    g.ellipse(flip * r * 0.8, r * 0.7, r * 0.55 * s * pile, r * 0.32 * s * pile, 0, 0, TAU);
+    g.ellipse(-flip * r * 0.7, r * 0.45, r * 0.45 * s * pile, r * 0.26 * s * pile, 0, 0, TAU);
   };
-  ctx.fillStyle = rgba(earth, 1, ea * 0.35); spoil(1.25); ctx.fill();
-  ctx.fillStyle = rgba(earth, 1, ea); spoil(1); ctx.fill();
+  g.fillStyle = rgba(earth, 1, ea * 0.35); spoil(1.25); g.fill();
+  g.fillStyle = rgba(earth, 1, ea); spoil(1); g.fill();
   if (detail) {
     for (let i = 0; i < 8; i++) {                                    // clods and a pebble or two
       const a = rnd(20 + i) * TAU, d = Math.sqrt(rnd(30 + i)) * pile;
       const x = flip * r * 0.15 + Math.cos(a) * d * r * 1.3, y = r * 0.6 + Math.sin(a) * d * r * 0.55;
       const pebble = i < 2, s = r * (0.05 + 0.06 * rnd(40 + i));
-      ctx.fillStyle = pebble ? `rgba(150, 146, 136, ${ea})` : rgba(earth, 0.7, ea);
-      ctx.beginPath(); ctx.ellipse(x, y, s * 1.3, s, 0, 0, TAU); ctx.fill();
+      g.fillStyle = pebble ? `rgba(150, 146, 136, ${ea})` : rgba(earth, 0.7, ea);
+      g.beginPath(); g.ellipse(x, y, s * 1.3, s, 0, 0, TAU); g.fill();
     }
   }
 
   // A half-dug burrow is only a scrape at first.
   if (!done) {
-    ctx.fillStyle = rgba(earth, 0.55, 0.7);
-    ctx.beginPath(); ctx.ellipse(0, r * 0.2, r * 0.6 * pile, r * 0.25 * pile, 0, 0, TAU); ctx.fill();
+    g.fillStyle = rgba(earth, 0.55, 0.7);
+    g.beginPath(); g.ellipse(0, r * 0.2, r * 0.6 * pile, r * 0.25 * pile, 0, 0, TAU); g.fill();
   }
 
   // The way in: an earth lip, then the dark tunnel, darkest at the back. It sinks as it falls in.
   if (open > 0) {
     const w = r * 0.62 * (0.5 + 0.5 * open), h = r * 0.72 * open * (1 - 0.35 * neglect), y0 = r * 0.28;
-    ctx.fillStyle = rgba(earth, 0.78, 0.95 - 0.35 * neglect);
-    ctx.beginPath(); arch(w * 1.25, h * 1.2, y0 + r * 0.06); ctx.fill();
-    ctx.strokeStyle = `rgba(255, 235, 190, ${0.3 * (1 - 0.5 * neglect)})`;   // the sun on its rim
-    ctx.lineWidth = Math.max(1, r * 0.06);
-    ctx.beginPath(); ctx.moveTo(-w * 1.2, y0 - h * 0.35);
-    ctx.bezierCurveTo(-w * 1.1, y0 - h * 1.5, w * 1.1, y0 - h * 1.5, w * 1.2, y0 - h * 0.35); ctx.stroke();
-    const dark = ctx.createLinearGradient(0, y0 - h, 0, y0);
+    g.fillStyle = rgba(earth, 0.78, 0.95 - 0.35 * neglect);
+    g.beginPath(); arch(g, w * 1.25, h * 1.2, y0 + r * 0.06); g.fill();
+    g.strokeStyle = `rgba(255, 235, 190, ${0.3 * (1 - 0.5 * neglect)})`;   // the sun on its rim
+    g.lineWidth = Math.max(1, r * 0.06);
+    g.beginPath(); g.moveTo(-w * 1.2, y0 - h * 0.35);
+    g.bezierCurveTo(-w * 1.1, y0 - h * 1.5, w * 1.1, y0 - h * 1.5, w * 1.2, y0 - h * 0.35); g.stroke();
+    const dark = g.createLinearGradient(0, y0 - h, 0, y0);
     dark.addColorStop(0, '#0d0906'); dark.addColorStop(0.6, '#1f160f'); dark.addColorStop(1, '#46331f');
-    ctx.fillStyle = dark;
-    ctx.beginPath(); arch(w, h, y0); ctx.fill();
+    g.fillStyle = dark;
+    g.beginPath(); arch(g, w, h, y0); g.fill();
 
     // Grass on the bank above, leaning out over the rim, more of it the longer it's been left.
     if (detail) {
-      const g = PALETTE[season][1], n = 4 + Math.round(6 * neglect), wl = w * 1.3;
-      ctx.strokeStyle = rgba(g, 0.66, 0.95); ctx.lineWidth = Math.max(1, r * 0.055); ctx.lineCap = 'round';
-      ctx.beginPath();
+      const gr = PALETTE[season][1], n = 4 + Math.round(6 * neglect), wl = w * 1.3;
+      g.strokeStyle = rgba(gr, 0.66, 0.95); g.lineWidth = Math.max(1, r * 0.055);
+      g.beginPath();
       for (let i = 0; i < n; i++) {
         const t = (i / (n - 1) - 0.5) * 1.7 + (rnd(50 + i) - 0.5) * 0.25;
         const x = t * wl, top = y0 - h * 1.25 * Math.sqrt(Math.max(0, 1 - t * t)) - r * 0.02;
         const len = r * (0.16 + 0.12 * rnd(60 + i)) * (1 + 0.8 * neglect), out = t * r * 0.25;
-        ctx.moveTo(x, top); ctx.quadraticCurveTo(x + out * 0.3, top - len * 0.8, x + out, top - len * (0.6 - 0.9 * neglect));
+        g.moveTo(x, top); g.quadraticCurveTo(x + out * 0.3, top - len * 0.8, x + out, top - len * (0.6 - 0.9 * neglect));
       }
-      ctx.stroke();
+      g.stroke();
     }
   }
-  ctx.restore();
+  const a = { key, canvas: c, r, w: c.width / dpr, h: c.height / dpr };
+  asBitmap(c, bm => { if (burrowArt.get(b) === a) { a.canvas = bm; c.width = 0; } else bm.close(); });
+  return a;
 }
 
 // ------------------------------------------------------------------ drawing
@@ -1190,11 +1239,42 @@ function lightFrame(dt) {
 const shownDark = phase => LIGHT_MID + (darkness(phase) - LIGHT_MID) * lightSwing;
 const shownGold = phase => Math.round(goldenHour(phase) * lightSwing * GOLD_STEPS) / GOLD_STEPS;
 
+// The things a frame draws (a tree or a rock d, a swarm h, a fox's rustle, a creature c, a visitor v), each a record of the
+// one shape, kept from frame to frame: a few hundred new objects a frame, of five shapes, were felt in every loop over them.
+const frameItems = [], itemPool = [];
+function itemOf(items, y, sx, sy, f) {
+  let it = itemPool[items.length];
+  if (!it) itemPool.push(it = { y: -0, sx: -0, sy: -0, f: -0, px: -0, d: null, h: null, rustle: null, to: null, c: null, v: null });
+  it.y = y; it.sx = sx; it.sy = sy; it.f = f; it.px = 0; it.d = it.h = it.rustle = it.to = it.c = it.v = null;
+  items.push(it);
+  return it;
+}
+// Puts the things in a frame back to front, by y (the same y: as they came). Sorting numbers is several times quicker than
+// sorting the things with a comparison, so each one's sort key is a number: its y to a millionth of a tile, then its place.
+let byY = new Float64Array(2048), bySorted = [];
+function sortByY(items) {
+  const n = items.length;
+  if (byY.length < n) byY = new Float64Array(n * 2);
+  for (let i = 0; i < n; i++) {
+    const k = Math.floor((items[i].y + 64) * 1048576) * 4096 + i;
+    if (!(k >= 0) || n > 4096) { items.sort((a, b) => a.y - b.y); return; }   // (far off the map, or a crowd: the slow way)
+    byY[i] = k;
+  }
+  const keys = byY.subarray(0, n).sort();
+  bySorted.length = n;
+  for (let i = 0; i < n; i++) bySorted[i] = items[i];
+  for (let i = 0; i < n; i++) items[i] = bySorted[keys[i] % 4096];
+  bySorted.length = 0;
+}
+
+let shakeX = 0, shakeY = 0;                          // the frame's own transform (render's), in device pixels: see drawPaintedTree
 function render(now) {
   // Thunder rumbles the whole screen a little.
   const q = now - ui.sky.boom < 350 && ui.speed <= 4 ? 3 * (1 - (now - ui.sky.boom) / 350) : 0;
   const shx = q * Math.sin(now / 17), shy = q * Math.cos(now / 23);
-  ctx.setTransform(dpr, 0, 0, dpr, shx * dpr, shy * dpr);
+  shakeX = shx * dpr; shakeY = shy * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, shakeX, shakeY);
+  alphaNow = ALPHA.get.call(ctx);                    // (the canvas may have been made afresh: see fade)
   ctx.imageSmoothingEnabled = true;
   // Sprites are painted near the size they're drawn at, so 'high' looks the same, but Chrome pays
   // for it on every draw, GPU or not: with it, a wood on screen dropped frames.
@@ -1214,9 +1294,9 @@ function render(now) {
   if (placing) drawPlacing(z, ox, oy);               // (?keep: a pond being placed)
   if (ripples.length) drawRipples(now, z);
 
-  // Burrows, drawn by hand: some browsers clip the 🕳️ glyph in half.
+  // Burrows, drawn by hand: some browsers clip the 🕳️ glyph in half. Who lives where only shows close up (the paths, r >= 9).
   const residents = new Map();
-  for (const c of world.creatures) if (c.alive && c.home) residents.set(c.home, (residents.get(c.home) || 0) + 1);
+  if (z * 0.8 * 1.1 >= 9) for (const c of world.creatures) if (c.alive && c.home) residents.set(c.home, (residents.get(c.home) || 0) + 1);
   for (const b of world.burrows) {
     const [sx, sy] = toScreen(b.x, b.y);
     if (visible(sx, sy, z * 5) && fadeAt(b.x, b.y)) drawBurrow(b, sx, sy, z, ck.season, residents.get(b) || 0);
@@ -1234,16 +1314,17 @@ function render(now) {
   if (ui.picked) drawPickedUnder(now);
 
   // Trees, rocks and animals, back to front.
-  const items = [];
+  const items = frameItems;
+  items.length = 0;
   for (const d of world.decor) {                           // (a hive is in one of the trees)
     if (d.tree && d.size * z < SEEDLING_PX && !d.stump && !d.hedge) continue;   // a seedling too small to see from here (a hedge's whips always show)
-    const [sx, sy] = toScreen(d.x, d.y);
-    if (visible(sx, sy, d.tree ? treePx(d) : d.size * z)) items.push({ y: d.y, d, sx, sy, f: 1 - mistAt(d.x, d.y) });
+    const [sx, sy] = toScreen(d.x, d.y), px = d.tree ? treePx(d) : d.size * z;
+    if (visible(sx, sy, px)) { const it = itemOf(items, d.y, sx, sy, 1 - mistAt(d.x, d.y)); it.d = d; it.px = px; }
   }
   for (const h of world.hives) {                           // a swarm hanging in a tree
     if (!h.cluster) continue;
     const [sx, sy] = toScreen(h.x, h.y);
-    if (visible(sx, sy, 3 * z)) items.push({ y: h.y, h, sx, sy, f: 1 - mistAt(h.x, h.y) });
+    if (visible(sx, sy, 3 * z)) itemOf(items, h.y, sx, sy, 1 - mistAt(h.x, h.y)).h = h;
   }
   const shown = [];
   for (const c of world.creatures) {
@@ -1251,36 +1332,37 @@ function render(now) {
     if (c.species === 'fox' || c.species === 'owl') {      // hunting voles: the rustle it's after
       watchLeap(c, now);
       const to = rustleOf(c);
-      if (to) { const [rx, ry] = toScreen(to.x, to.y); if (visible(rx, ry, 30)) items.push({ y: to.y, rustle: c, to, sx: rx, sy: ry, f: 1 - mistAt(to.x, to.y) }); }
+      if (to) { const [rx, ry] = toScreen(to.x, to.y); if (visible(rx, ry, 30)) { const it = itemOf(items, to.y, rx, ry, 1 - mistAt(to.x, to.y)); it.rustle = c; it.to = to; } }
     }
     const [sx, sy] = screenOf(c);
     if (!visible(sx, sy, 60)) continue;
-    const it = { y: c.y + (c.mode === 'dance' ? DANCE_FRONT : c.species === 'owl' && c.mode !== 'gulp' ? OWL_FRONT : 0), c, sx, sy, f: c.held ? 1 : 1 - mistAt(c.x, c.y) };
+    const it = itemOf(items, c.y + (c.mode === 'dance' ? DANCE_FRONT : c.species === 'owl' && c.mode !== 'gulp' ? OWL_FRONT : 0), sx, sy, c.held ? 1 : 1 - mistAt(c.x, c.y));
+    it.c = c;
     if (c.species === 'crow' && crowSeat(c)) it.y -= (seat.y - seat.tree.y) * SEAT_SORT;   // up a tree: just after it, not after the trees just in front
-    items.push(it);
     if (!c.held) shown.push(it);                           // (one held up has its shadow here, and is drawn last, in the hand)
   }
   if (world.visitors) for (const v of world.visitors) {    // (?keep: a hedgehog at a hedge, a heron at a pond)
     const d = drawnAt(v), [sx, sy] = toScreen(d.x, d.y);
-    if (visible(sx, sy, 40 + 2 * visitorPx(v))) items.push({ y: d.y, v, sx, sy, f: 1 - mistAt(d.x, d.y) });
+    if (visible(sx, sy, 40 + 2 * visitorPx(v))) itemOf(items, d.y, sx, sy, 1 - mistAt(d.x, d.y)).v = v;
     if (KEEP) watchVisitor(v, d.x, d.y, sx, sy);              // (the journal's moments)
   }
-  items.sort((a, b) => a.y - b.y);
+  sortByY(items);
   if (world.signs?.length && z >= 8) drawSigns(z);          // (?keep: a visitor on its way)
   // Shadows first, all together, so a tree's shadow never lands on a rabbit behind it.
   const sn = sun(ck);
   for (const it of items) {
     if (it.f < 0.02) continue;                             // lost in the mist
     fadeTo(it.f);
-    if (it.d) drawDecorShadow(it.d, it.sx, it.sy, sn);
+    if (it.d) { drawDecorShadow(it.d, it.sx, it.sy, sn, it.px); if (it.d.tree) treeLeaves(it.d, it.sx, it.sy, it.px, ck, it.f); }
     else if (it.c) {
       drawCreatureShadow(it.c, it.sx, it.sy, now, sn);
     } else if (it.v) drawVisitorShadow(it.v, it.sx, it.sy, sn);
   }
+  drawLeaves(now, true);                                   // the leaves lying round the trees' feet, on the ground under all that stands
   for (const it of items) {
     if (it.f < 0.02) continue;
     fadeTo(it.f);
-    if (it.d) (it.d.hive ? drawBeeTree : drawDecor)(it.d, it.sx, it.sy, now, ck);
+    if (it.d) it.d.hive ? drawBeeTree(it.d, it.sx, it.sy, now, ck) : drawDecor(it.d, it.sx, it.sy, now, ck, null, it.px);
     else if (it.h) drawSwarm(it.h, it.sx, it.sy);
     else if (it.rustle) drawRustle(it.rustle, it.to, it.sx, it.sy, z);
     else if (it.v) drawVisitor(it.v, it.sx, it.sy, now, z);
@@ -1290,7 +1372,8 @@ function render(now) {
   }
   unfade();
   if (splashes.length) drawSplashes(now);
-  drawFallingLeaves(now);
+  drawFallingLeaves(now);                                  // (an emoji tree's)
+  drawLeaves(now, false);                                  // and the painted trees' leaves coming down
   drawPollen(now);
   drawButterflies(now, ck);
 
@@ -2029,10 +2112,6 @@ function paintBubble(g, size, U, i) {
 }
 
 // The icons, each in a box from -1 to 1, flat colours with a lighter or darker side.
-const fillIn = (g, colour, path) => { g.fillStyle = colour; g.beginPath(); path(); g.fill(); };
-const strokeIn = (g, colour, w, path) => { g.strokeStyle = colour; g.lineWidth = w; g.beginPath(); path(); g.stroke(); };
-const discAt = (g, x, y, r) => { g.moveTo(x + r, y); g.arc(x, y, r, 0, TAU); };
-const ovalAt = (g, x, y, rx, ry, a = 0) => { g.moveTo(x + Math.cos(a) * rx, y + Math.sin(a) * rx); g.ellipse(x, y, rx, ry, a, 0, TAU); };
 const heartAt = (g, x, y, s) => {
   g.moveTo(x, y + s * 0.9);
   g.bezierCurveTo(x - s * 1.5, y - s * 0.1, x - s * 0.6, y - s * 1.15, x, y - s * 0.4);
@@ -2498,17 +2577,6 @@ function furGlow(g, rgb, a, x, y, rx, ry, rot = 0, hard = 0) {
   g.fillStyle = gr; g.beginPath(); g.arc(0, 0, 1, 0, TAU); g.fill(); g.restore();
 }
 
-const OTTER_EDGE = 0.5;                  // how soft the markings' edges are (round 4 was 1)
-// A soft-edged shape that follows the body: filled far off to the side, so only its blurred shadow falls here.
-function blurIn(g, rgb, a, blur, path, tf) {
-  const m = g.getTransform(), off = g.canvas.width * 2;
-  g.save();
-  g.setTransform(m.a, m.b, m.c, m.d, m.e - off, m.f);
-  if (tf) tf(g);
-  g.shadowColor = rockRGB(rgb, a); g.shadowBlur = blur * OTTER_EDGE * Math.hypot(m.a, m.b); g.shadowOffsetX = off;
-  g.fillStyle = '#000'; g.beginPath(); path(g); g.fill();
-  g.restore();
-}
 
 // The head, in its own space: nose to the left at -0.35, the back of the skull at 0.28. h places it.
 const headAt = h => g => { g.translate(h.x, h.y); g.rotate(h.a || 0); g.scale(h.flip ? -h.s : h.s, h.s); };
@@ -3193,7 +3261,7 @@ function paintBody(g, size, U, look, leaf, up = 0) {     // up: raised in its bo
 }
 // A dead fox, lying on its side facing left like the rabbit ('body:20' to 'body:23'): long and slim, a pointed
 // snout, a white chest and chin, dark stockings, and the bushy white-tipped tail, which lasts the longest.
-const FOX_COAT = [206, 108, 58], FOX_WHITE = [240, 234, 222], FOX_SOCK = [74, 54, 46];
+const FOX_COAT = [206, 108, 58];   // (its white and socks: FOX_WHITE, FOX_SOCK, in fur.js)
 const foxTail = (g, rgb, x, y, a = 0.12) => {      // from the rump at x, y out to the right
   g.save(); g.translate(x, y); g.rotate(a);
   softIn(g, rgb, -0.12, 0.12, () => { g.moveTo(0, -0.04); g.bezierCurveTo(0.14, -0.14, 0.4, -0.12, 0.54, -0.02); g.bezierCurveTo(0.56, 0.06, 0.4, 0.12, 0.2, 0.09); g.bezierCurveTo(0.08, 0.08, 0, 0.05, 0, -0.04); });
@@ -3263,285 +3331,102 @@ const BODY_ARTS = Array.from({ length: (FOX_LOOK + 1) * 4 }, (_, k) => 'body:' +
 
 // ------------------------------------------------------------------ the fox
 //
-// A living fox is painted like its carcass, not the 🦊 emoji (that's only a face). One rig, posed for what it's
-// doing (FOX_POSES): the chest, the hip and the head placed, each paw set down and its leg bent to reach it (jointAt),
-// the brush along a curve. It's painted as one animal: one shading runs over the whole fox, so where its parts
-// overlap nothing starts again; each part gets its form from soft shade and light inside its own outline, a part in
-// front casts a soft shadow on the one behind, and the white, the socks and the ear tips have soft edges, as fur
-// does. The outline is softened a little and a faint grain laid over it, so it sits in the painted meadow.
-// Facing left, box -1 to 1, feet on the ground at 0.72. 'fox:' + (fur step << 4) + pose.
-const FOX_SHADE = [70, 30, 12], FOX_LIGHT = [255, 236, 205];
-const FOX_STAND = {
-  chest: [-0.22, 0.2], hip: [0.28, 0.19], arch: 0,             // arch: the back raised between them
-  head: [-0.5, -0.02, 0], ear: 0, eye: 'open',                 // head: where the skull is, and its tilt (minus: nose down); ear: laid back (+)
-  tail: { base: [0.42, 0.1], c1: [0.64, 0.16], c2: [0.84, 0.3], tip: [1.0, 0.42], w: 1 },
-  fore: { near: [-0.27, 0.71], far: [-0.2, 0.71] }, foreBend: 1,   // the paws; foreBend 1: the wrist bends forward, -1: the elbow back
-  hind: { near: [0.32, 0.71], far: [0.39, 0.71] },
-};
-const FOX_TROT_TAIL = { base: [0.42, 0.1], c1: [0.64, 0.14], c2: [0.86, 0.22], tip: [1.04, 0.3], w: 1 };
-// A trot, a quarter stride a frame: the diagonal pairs (the near fore with the far hind) half a stride apart, each paw
-// drawn back along the ground under the fox, then lifted and swung forward, TROT_REACH either side of where it stands.
-const TROT_REACH = 0.13, TROT_LIFT = 0.1;
-function foxTrot(k) {
-  const paw = (x, half) => {
-    const a = (k / 4 + 1 / 8 + half / 2) * TAU, up = a % TAU > Math.PI ? -Math.sin(a) : 0;
-    return [x - TROT_REACH * Math.cos(a), 0.71 - TROT_LIFT * up];
-  };
-  return { ...FOX_STAND, chest: [-0.22, 0.21], hip: [0.27, 0.2], head: [-0.52, 0.02, -0.05], tail: FOX_TROT_TAIL,
-    fore: { near: paw(-0.25, 0), far: paw(-0.2, 1) }, hind: { near: paw(0.3, 1), far: paw(0.35, 0) } };
-}
-const FOX_RUN_TAIL = { base: [0.44, 0.08], c1: [0.64, 0.07], c2: [0.84, 0.1], tip: [1.06, 0.14], w: 1 };
-const FOX_POSES = {
-  stand: FOX_STAND,
-  trot1: foxTrot(0), trot2: foxTrot(1), trot3: foxTrot(2), trot4: foxTrot(3),
-  // A gallop: stretched out in the air, down on the forepaws, gathered in the air, then the hind paws push it off again.
-  run1: { ...FOX_STAND, chest: [-0.27, 0.17], hip: [0.3, 0.16], head: [-0.62, 0.05, -0.1], ear: 0.35, tail: FOX_RUN_TAIL,
-    fore: { near: [-0.62, 0.52], far: [-0.54, 0.57] }, hind: { near: [0.5, 0.6], far: [0.56, 0.6] } },
-  run2: { ...FOX_STAND, chest: [-0.24, 0.22], hip: [0.25, 0.16], head: [-0.58, 0.1, -0.14], ear: 0.35, tail: FOX_RUN_TAIL,
-    fore: { near: [-0.42, 0.71], far: [-0.2, 0.69] }, hind: { near: [0.32, 0.55], far: [0.38, 0.53] } },
-  run3: { ...FOX_STAND, chest: [-0.18, 0.2], hip: [0.17, 0.17], arch: 0.05, head: [-0.5, 0.07, -0.12], ear: 0.35,
-    tail: { base: [0.32, 0.08], c1: [0.52, 0.04], c2: [0.72, 0.1], tip: [0.92, 0.18], w: 1 },
-    fore: { near: [-0.07, 0.7], far: [-0.01, 0.62] }, hind: { near: [0.09, 0.66], far: [0.15, 0.68] } },
-  run4: { ...FOX_STAND, chest: [-0.24, 0.18], hip: [0.24, 0.22], arch: 0.02, head: [-0.58, 0.03, -0.08], ear: 0.35, tail: FOX_RUN_TAIL,
-    fore: { near: [-0.64, 0.5], far: [-0.56, 0.55] }, hind: { near: [0.38, 0.71], far: [0.27, 0.7] } },
-  sit: { ...FOX_STAND, chest: [-0.12, 0.2], hip: [0.1, 0.5], head: [-0.3, -0.15, -0.05],
-    tail: { base: [0.26, 0.58], c1: [0.44, 0.8], c2: [0.02, 0.86], tip: [-0.36, 0.75], w: 0.95, front: [0, 0.55, 0, 0.67] },
-    fore: { near: [-0.24, 0.71], far: [-0.18, 0.71] }, hind: { near: [-0.06, 0.71], far: [0, 0.71] } },
-  crouch: { ...FOX_STAND, chest: [-0.22, 0.36], hip: [0.26, 0.3], head: [-0.52, 0.24, -0.3], ear: -0.2,   // mousing, about to leap
-    tail: { base: [0.4, 0.24], c1: [0.6, 0.28], c2: [0.8, 0.36], tip: [0.98, 0.42], w: 1 },
-    fore: { near: [-0.34, 0.71], far: [-0.28, 0.71] }, foreBend: -1, hind: { near: [0.34, 0.71], far: [0.4, 0.71] } },
-  pounce: { ...FOX_STAND, chest: [-0.2, 0.3], hip: [0.18, 0.02], arch: 0.025, head: [-0.42, 0.44, -0.8], ear: 0.45,
-    tail: { base: [0.32, -0.02], c1: [0.48, -0.14], c2: [0.64, -0.3], tip: [0.78, -0.46], w: 1 },
-    fore: { near: [-0.46, 0.72], far: [-0.4, 0.7] }, hind: { near: [0.52, 0.02], far: [0.48, 0.08] } },
-  gulp: { ...FOX_STAND, head: [-0.5, 0.02, -0.2] },
-  feed: { ...FOX_STAND, chest: [-0.22, 0.24], head: [-0.58, 0.4, -0.65], ear: 0.45,
-    tail: { base: [0.42, 0.12], c1: [0.62, 0.2], c2: [0.8, 0.36], tip: [0.96, 0.5], w: 1 },
-    fore: { near: [-0.3, 0.71], far: [-0.22, 0.71] } },
-  sleep: { ...FOX_STAND, sleep: true, head: [-0.27, 0.45, -0.32], ear: 0.45, eye: 'shut',          // curled up, the brush round over the nose
-    tail: { base: [0.36, 0.5], c1: [0.56, 0.86], c2: [-0.1, 0.9], tip: [-0.58, 0.6], w: 1.05, sink: 0, front: [0.36, 0, 0.16, 0] } },
-  hang: { ...FOX_STAND, chest: [-0.01, -0.22], hip: [0.09, 0.28], head: [-0.21, -0.5, -0.25], ear: 0.3,   // by the scruff, which is at 0, -0.4
-    tail: { base: [0.15, 0.42], c1: [0.21, 0.62], c2: [0.21, 0.8], tip: [0.15, 0.96], w: 0.95 },
-    fore: { near: [-0.17, 0.16], far: [-0.11, 0.2] }, hind: { near: [0.07, 0.75], far: [0.13, 0.77] } },
-};
-// (tail.sink: how far its root is buried toward the hip; tail.front: wrapped round in front, it's painted again over the
-// legs, faded in from the first point to the second, so its root stays behind.)
-const FOX_POSE_NAMES = Object.keys(FOX_POSES), FOX_POSE = Object.fromEntries(FOX_POSE_NAMES.map((p, i) => [p, i]));
+// A living fox is painted (fur.js: FOX_POSES, paintFox), not the 🦊 emoji. 'fox:' + (fur step << 4) + pose.
 const foxArtOf = (fur, pose) => 'fox:' + ((Math.round(fur * 10) << 4) + FOX_POSE[pose]);   // a few shades keep the sprite cache small
-
-// The outline round two circles (a tapering limb), added to the path.
-function limbAt(g, x0, y0, r0, x1, y1, r1) {
-  const dx = x1 - x0, dy = y1 - y0, d = Math.hypot(dx, dy);
-  if (d <= Math.abs(r0 - r1)) { discAt(g, x0, y0, Math.max(r0, r1)); return; }
-  const a = Math.atan2(dy, dx), b = Math.acos((r0 - r1) / d);
-  g.moveTo(x0 + Math.cos(a + b) * r0, y0 + Math.sin(a + b) * r0);
-  g.arc(x0, y0, r0, a + b, a - b + TAU);
-  g.arc(x1, y1, r1, a - b, a + b);
-  g.closePath();
-}
-// A leg of two bones, l1 and l2 long, from its top to the paw: where the joint is, bent to side (1: forward). Too far
-// for it, it stretches rather than leave the paw in the air.
-function jointAt(ax, ay, px, py, l1, l2, side) {
-  const dx = px - ax, dy = py - ay, reach = Math.hypot(dx, dy);
-  if (reach > (l1 + l2) * 0.999) { const k = reach / (l1 + l2) * 1.001; l1 *= k; l2 *= k; }
-  const d = clamp(reach, 1e-4, l1 + l2 - 1e-4), a = Math.atan2(dy, dx) + side * Math.acos(clamp((l1 * l1 + d * d - l2 * l2) / (2 * l1 * d), -1, 1));
-  return [ax + Math.cos(a) * l1, ay + Math.sin(a) * l1];
-}
-const sockAt = (g, x0, y0, kx, ky, paw) => {      // a dark stocking, from partway down the leg to the paw
-  limbAt(g, x0, y0, 0.05, kx, ky, 0.046); limbAt(g, kx, ky, 0.046, paw[0], paw[1] - 0.02, 0.04); ovalAt(g, paw[0] - 0.025, paw[1] - 0.012, 0.06, 0.035);
-};
-const foxPawAt = (g, kx, ky, r, paw) => { limbAt(g, kx, ky, r, paw[0], paw[1] - 0.02, 0.033); ovalAt(g, paw[0] - 0.025, paw[1] - 0.012, 0.05, 0.027); };
-
-// The fox's parts for a pose, back to front. Each: its outline, its markings ([colour, alpha, blur, outline]), and
-// casts (a soft shadow on what's behind), far (in the shade, behind), leg (the line above which it melts into the
-// body), plain (no form of its own), fade (painted again in front, faded in along that line).
-function foxParts(P) {
-  const parts = [], add = (path, o = {}) => parts.push({ path, ...o });
-  const [hdx, hdy, hda] = P.head, hc = Math.cos(hda) * 1.08, hn = Math.sin(hda) * 1.08;
-  const onHead = (x, y) => [hdx + x * hc - y * hn, hdy + x * hn + y * hc];
-  const inHead = draw => g => { g.save(); g.translate(hdx, hdy); g.rotate(hda); g.scale(1.08, 1.08); draw(g); g.restore(); };
-  const ear = (dx, dy, far) => {                     // grown from behind the crown, so the head covers its root
-    const at = draw => inHead(g => { g.translate(dx, dy); g.rotate(P.ear); draw(g); });
-    const marks = [[FOX_SOCK, 1, 0.03, at(g => { g.moveTo(-0.2, -0.21); g.lineTo(0.2, -0.25); g.lineTo(0.2, -0.5); g.lineTo(-0.2, -0.5); g.closePath(); })]];
-    if (!far) marks.push([FOX_WHITE, 0.75, 0.03, at(g => { g.moveTo(-0.07, -0.06); g.quadraticCurveTo(-0.05, -0.18, -0.025, -0.24); g.quadraticCurveTo(0, -0.16, 0.02, -0.07); g.closePath(); })]);
-    add(at(g => { g.moveTo(-0.085, 0); g.quadraticCurveTo(-0.065, -0.24, 0, -0.36); g.quadraticCurveTo(0.085, -0.23, 0.115, 0); g.closePath(); }), { far, marks });
-  };
-  const ears = () => { ear(0.1, 0.03, true); ear(-0.01, 0, false); };
-  const head = () => add(inHead(g => {
-    ovalAt(g, 0, 0, 0.17, 0.145);
-    g.moveTo(-0.04, 0.13); g.quadraticCurveTo(-0.2, 0.1, -0.33, 0.075); g.quadraticCurveTo(-0.37, 0.055, -0.335, 0.025); g.quadraticCurveTo(-0.22, -0.07, -0.06, -0.09); g.closePath();   // the snout
-    ovalAt(g, 0.05, 0.06, 0.14, 0.11, 0.2);                                          // the cheek ruff
-  }), { casts: true, marks: [[FOX_WHITE, 1, 0.04, inHead(g => {                    // the white chin and cheek, below the line of the mouth
-    g.moveTo(-0.42, 0.05); g.quadraticCurveTo(-0.22, 0.055, -0.1, 0.03); g.quadraticCurveTo(0.06, 0, 0.2, 0.08); g.lineTo(0.22, 0.4); g.lineTo(-0.42, 0.4); g.closePath();
-  })]] });
-  // the brush: thick at the root, buried in the rump, white at the tip
-  const T = P.tail, sink = T.sink ?? 0.4, x0 = lerp(T.base[0], P.hip[0], sink), y0 = lerp(T.base[1], P.hip[1], sink);
-  const [x1, y1] = T.c1, [x2, y2] = T.c2, [x3, y3] = T.tip;
-  const along = t => { const u = 1 - t; return [u * u * u * x0 + 3 * u * u * t * x1 + 3 * u * t * t * x2 + t * t * t * x3, u * u * u * y0 + 3 * u * u * t * y1 + 3 * u * t * t * y2 + t * t * t * y3]; };
-  const top = [], bot = [];
-  for (let i = 0; i <= 24; i++) {
-    const t = i / 24, [x, y] = along(t), [xa, ya] = along(Math.max(0, t - 0.01)), [xb, yb] = along(Math.min(1, t + 0.01));
-    const w = T.w * (t < 0.5 ? lerp(0.085, 0.135, Math.sin(t * Math.PI)) : lerp(0.135, 0.028, ((t - 0.5) / 0.5) ** 1.7)), nl = Math.hypot(yb - ya, xb - xa) || 1;
-    top.push([x - (yb - ya) / nl * w, y + (xb - xa) / nl * w]); bot.push([x + (yb - ya) / nl * w, y - (xb - xa) / nl * w]);
-  }
-  const brush = g => {
-    g.moveTo(top[0][0], top[0][1]);
-    for (let i = 1; i <= 24; i++) g.lineTo(top[i][0], top[i][1]);
-    const [ex, ey] = along(1), [px, py] = along(0.97);
-    g.quadraticCurveTo(ex + (ex - px) * 2.5, ey + (ey - py) * 2.5, bot[24][0], bot[24][1]);
-    for (let i = 23; i >= 0; i--) g.lineTo(bot[i][0], bot[i][1]);
-    g.closePath();
-  };
-  const [tx, ty] = along(0.84), ta = Math.atan2(y3 - ty, x3 - tx);
-  const brushMarks = [[FOX_WHITE, 1, 0.04, g => { g.moveTo(tx, ty); g.ellipse(tx + Math.cos(ta) * 0.2, ty + Math.sin(ta) * 0.2, 0.2, 0.24, ta, Math.PI, Math.PI * 3); }]];
-  const behind = () => add(brush, { marks: brushMarks }), wrapped = () => add(brush, { marks: brushMarks, casts: true, fade: T.front });
-  if (P.sleep) {
-    behind();
-    add(g => { ovalAt(g, 0.08, 0.5, 0.42, 0.22); discAt(g, 0.3, 0.45, 0.2); }, { casts: true, marks: [[FOX_SOCK, 1, 0.03, g => ovalAt(g, 0.42, 0.69, 0.07, 0.03)]] });
-    ears(); head(); wrapped();
-    return { parts, inHead };
-  }
-  const fore = (paw, far) => {
-    const sx = P.chest[0] - 0.02 + (far ? 0.05 : 0), sy = P.chest[1] + 0.04, [kx, ky] = jointAt(sx, sy, paw[0], paw[1], 0.27, 0.22, P.foreBend);
-    add(g => { limbAt(g, sx, sy, 0.085, kx, ky, 0.042); foxPawAt(g, kx, ky, 0.042, paw); },
-      { far, casts: !far, leg: sy + 0.06, marks: [[FOX_SOCK, 1, 0.035, g => sockAt(g, lerp(sx, kx, 0.5), lerp(sy, ky, 0.5), kx, ky, paw)]] });
-  };
-  const hind = (paw, far) => {
-    const hx = P.hip[0] + (far ? 0.05 : 0), hy = P.hip[1], sx = hx - 0.06, sy = hy + 0.2, [kx, ky] = jointAt(sx, sy, paw[0], paw[1], 0.2, 0.15, -1);   // the stifle forward, the hock back
-    add(g => { ovalAt(g, hx - 0.02, hy + 0.08, 0.15, 0.17, 0.25); limbAt(g, sx + 0.02, sy - 0.03, 0.08, kx, ky, 0.04); foxPawAt(g, kx, ky, 0.04, paw); },
-      { far, casts: !far, leg: hy + 0.1, marks: [[FOX_SOCK, 1, 0.035, g => sockAt(g, lerp(sx, kx, 0.6), lerp(sy, ky, 0.6), kx, ky, paw)]] });
-  };
-  const [cx, cy] = P.chest, [hx, hy] = P.hip, len = Math.hypot(hx - cx, hy - cy);
-  const ux = (hx - cx) / len, uy = (hy - cy) / len, ang = Math.atan2(uy, ux);   // along the body; (uy, -ux) is up off its back
-  fore(P.fore.far, true); hind(P.hind.far, true); behind();
-  add(g => {
-    ovalAt(g, cx, cy, 0.2, 0.18, ang - 0.1);
-    limbAt(g, cx + ux * 0.04, cy + uy * 0.04, 0.165, hx - ux * 0.04, hy - uy * 0.04, 0.15);
-    discAt(g, hx, hy - 0.01, 0.17);
-    if (P.arch) discAt(g, (cx + hx) / 2 + uy * P.arch, (cy + hy) / 2 - ux * P.arch, 0.15);
-  }, { casts: true, marks: [[FOX_WHITE, 1, 0.05, g => ovalAt(g, cx - ux * 0.14 - uy * 0.04, cy - uy * 0.14 + ux * 0.04, 0.09, 0.12, ang + 0.3)]] });   // the white chest
-  hind(P.hind.near, false); fore(P.fore.near, false);
-  if (T.front) wrapped();
-  const [ax, ay] = onHead(0.06, 0.05), [wx, wy] = onHead(-0.04, 0.12);
-  add(g => limbAt(g, cx - 0.02, cy - 0.02, 0.16, ax, ay, 0.12),                 // the neck, and its white throat
-    { plain: true, marks: [[FOX_WHITE, 1, 0.05, g => limbAt(g, wx, wy, 0.075, lerp(wx, cx - 0.14, 0.7), lerp(wy, cy + 0.03, 0.7), 0.06)]] });
-  ears(); head();
-  return { parts, inHead };
-}
-
-// Scratch canvases for painting one: the fox, a part's shade or light, a part painted apart, the soft outline.
-const foxLayers = [];
-function foxLayer(i, size, m) {
-  const c = foxLayers[i] || (foxLayers[i] = document.createElement('canvas'));
-  if (c.width < size || c.height < size) c.width = c.height = Math.max(size, c.width);   // (a new one is 300 by 150)
-  const g = c.getContext('2d');
-  g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = 'source-over'; g.clearRect(0, 0, size, size);
-  g.setTransform(m); g.lineCap = g.lineJoin = 'round';
-  return g;
-}
-// A soft-edged shape (blurIn), moved by dx, dy.
-const softFill = (g, rgb, a, blur, path, dx = 0, dy = 0) => blurIn(g, rgb, a, blur / OTTER_EDGE, path, dx || dy ? g => g.translate(dx, dy) : null);
-// Fades what's there along a line, from nothing at its first point to all of it at its second.
-function foxFade(g, op, [x0, y0, x1, y1]) {
-  const m = g.createLinearGradient(x0, y0, x1, y1);
-  m.addColorStop(0, 'rgba(0,0,0,0)'); m.addColorStop(1, '#000');
-  g.globalCompositeOperation = op; g.fillStyle = m; g.fillRect(-2, -2, 4, 4);
-}
 
 // Painting a fox takes a few times longer than the emoji did, and a dozen poses, cubs growing and zooming all ask
 // for new sizes: so a painted animal (a fox, a rabbit) is painted only at doublings of its size (from FUR_PAINTED
 // pixels up, so a phone's sharp screen doesn't paint three times over), and each size between is the painting the
 // next size up, shrunk. True if it was.
 const FUR_PAINTED = 64;
+// The size a fox's or a rabbit's sprite px across is painted at: px itself at a doubling, else the doubling above.
+const furPainted = px => 2 ** Math.ceil(Math.max(Math.log2(FUR_PAINTED / dpr), Math.log2(px) - 1e-6));   // (a power of two, as poseStep keeps it)
 function shrunk(g, size, U, art) {
-  const px = U / dpr, painted = 2 ** Math.ceil(Math.max(Math.log2(FUR_PAINTED / dpr), Math.log2(px) - 1e-6));   // (a power of two, as poseStep keeps it)
+  const px = U / dpr, painted = furPainted(px);
   if (px >= painted - 0.5) return false;
   const m = sprite(art, painted);
   g.imageSmoothingQuality = 'high';                                             // (once, not every frame)
   g.drawImage(m.canvas, 0, 0, size, size);
   return true;
 }
-const FOX_GRAIN = [['rgba(60,25,10,0.035)', 1, 6], ['rgba(255,240,215,0.035)', 1, 6]];
 function paintFox(g, size, U, n) {
-  if (shrunk(g, size, U, 'fox:' + n)) return;
-  const P = FOX_POSES[FOX_POSE_NAMES[n & 15]] || FOX_STAND, coat = foxRGB((n >> 4) / 10), { parts, inHead } = foxParts(P);
-  paintFur(g, size, U, parts, { coat, top: P.sleep ? 0.26 : Math.min(P.chest[1], P.hip[1]) - 0.2, shade: FOX_SHADE, light: FOX_LIGHT, grain: FOX_GRAIN,
-    face: inHead(g => {                                                         // the face, crisp
-      fillIn(g, '#2a211d', () => discAt(g, -0.34, 0.045, 0.03));
-      fillIn(g, 'rgba(255,255,255,0.35)', () => ovalAt(g, -0.345, 0.033, 0.012, 0.007));
-      if (P.eye === 'shut') strokeIn(g, '#3a2a22', 0.03, () => { g.moveTo(-0.15, -0.02); g.quadraticCurveTo(-0.1, 0.015, -0.04, -0.015); });
-      else {
-        fillIn(g, '#241a16', () => ovalAt(g, -0.1, -0.025, 0.036, 0.03, -0.2));
-        fillIn(g, 'rgba(255,255,255,0.9)', () => discAt(g, -0.112, -0.038, 0.011));
-      }
-      strokeIn(g, rockRGB(tone(coat, 0.55), 0.6), 0.016, () => { g.moveTo(-0.32, 0.075); g.quadraticCurveTo(-0.25, 0.085, -0.19, 0.07); });   // the mouth
-    }) });
+  if (!shrunk(g, size, U, 'fox:' + n)) Fur.paintFox(g, size, U, n);
 }
 
-// Paints an animal's parts (foxParts, rabbitParts) as one animal. look: its coat, where the fur's light starts (top),
-// the colours of its shade and light, its grain ([ink, how thick, stroke length]), its face, painted crisp at the end,
-// and flat: if given, the parts behind are only that much in the shade, with no form of their own. Each pass through
-// the scratch layer (a part's shadow, its shade, its light) is most of what a painting costs (it's flushed), so a part
-// can be joined to the next one: the two get their form as one shape.
-function paintFur(g, size, U, parts, look) {
-  const k = look.scale || 1, m = new DOMMatrix([U / 2 * k, 0, 0, U / 2 * k, size / 2, size / 2 + U / 2 * 0.72 * (1 - k)]), { coat, shade, light } = look;
-  const L = foxLayer(0, size, m), T = foxLayer(1, size, m);
-  const onto = (from, to) => { to.save(); to.setTransform(1, 0, 0, 1, 0, 0); to.drawImage(from.canvas, 0, 0); to.restore(); };
-  const fresh = () => { T.setTransform(1, 0, 0, 1, 0, 0); T.globalCompositeOperation = 'source-over'; T.clearRect(0, 0, size, size); T.setTransform(m); };
-  const fur = L.createLinearGradient(0, look.top, 0, 0.74);                     // one shading, over the whole animal
-  fur.addColorStop(0, rockRGB(tone(coat, 1.16, 12))); fur.addColorStop(0.5, rockRGB(coat)); fur.addColorStop(1, rockRGB(tone(coat, 0.72)));
-  let joined = null;                                                            // parts waiting for the next one's form
-  for (const p of parts) {
-    if (p.casts) {                                                              // its soft shadow on what's behind
-      fresh();
-      softFill(T, shade, 0.32, 0.07, p.path, 0.025, 0.02);
-      if (p.leg !== undefined) foxFade(T, 'destination-out', [0, p.leg + 0.12, 0, p.leg - 0.02]);   // a leg's only below the body: above, it rings the leg's top
-      if (p.fade) foxFade(T, 'destination-in', p.fade);
-      L.save(); L.globalCompositeOperation = 'source-atop'; onto(T, L); L.restore();
-    }
-    const D = p.fade ? foxLayer(2, size, m) : L;                                 // one that's faded in is painted apart first
-    D.fillStyle = fur; D.beginPath(); p.path(D); D.fill();
-    D.save(); D.beginPath(); p.path(D); D.clip();
-    for (const [rgb, a, b, path] of p.marks || []) softFill(D, rgb, 1 - (1 - a) ** 2, b * 0.35, path);   // solid, soft only at the rim
-    D.restore();
-    if (p.far && look.flat) { D.fillStyle = rockRGB(shade, look.flat); D.beginPath(); p.path(D); D.fill(); }
-    else if (p.joined) { const before = joined; joined = before ? g => { before(g); p.path(g); } : p.path; }
-    else if (!p.plain) {                                                        // its form (and any joined to it), inside its outline: shade along the underside...
-      const before = joined, path = before ? g => { before(g); p.path(g); } : p.path;
-      joined = null;
-      fresh();
-      T.fillStyle = rockRGB(shade, p.far ? 0.55 : 0.32); T.beginPath(); path(T); T.fill();
-      T.globalCompositeOperation = 'destination-out';
-      softFill(T, [0, 0, 0], 1, 0.09, path, -0.015, -0.05);
-      if (p.leg !== undefined) foxFade(T, 'destination-out', [0, p.leg + 0.14, 0, p.leg - 0.04]);   // (a leg's top melts into the body)
-      onto(T, D);
-      if (!p.far && p.leg === undefined) {                                      // ...and light along the top
-        fresh();
-        T.fillStyle = rockRGB(light, 0.32); T.beginPath(); path(T); T.fill();
-        T.globalCompositeOperation = 'destination-out';
-        softFill(T, [0, 0, 0], 1, 0.08, path, 0.01, 0.045);
-        onto(T, D);
-      }
-    }
-    if (p.fade) { foxFade(D, 'destination-in', p.fade); onto(D, L); }
+// A painting is 3 to 10 ms, more close up, and each new pose or size of a fox or a rabbit wants one: in the meadow
+// they're painted off the main thread, by fur-worker.js. Shrinking one for the sizes between, or mixing a part-white
+// rabbit's brown and white, is quick, and done here once what it's made from has come.
+const isFur = art => art.startsWith('fox:') || art.startsWith('rabbit:');
+const furSent = new Map();                       // the paintings asked of the worker: key -> { px, dpr, look }
+let furWorker = null;
+if (window.Worker && window.OffscreenCanvas) {
+  try {
+    furWorker = new Worker('fur-worker.js');
+    furWorker.postMessage({ coats: furCoats(), winter: S.WINTER_COAT });
+    furWorker.onmessage = e => {
+      const { key, image } = e.data, job = furSent.get(key);
+      furSent.delete(key);
+      if (!image) { furWorker = null; return; }  // it can't paint there: they're painted here, as before
+      if (spriteCache.has(key)) { image.close(); return; }   // (painted here meanwhile)
+      const bytes = image.width * image.height * 4;
+      if (spriteCache.size > 2000 || spriteBytes + bytes > SPRITE_BYTES) dropSprites(bytes);
+      spriteBytes += bytes;
+      const s = { canvas: image, size: image.width / job.dpr, px: job.px, look: job.look, used: spriteFrame };
+      spriteCache.set(key, s); latestLook.set(job.look, s);
+    };
+    furWorker.onerror = () => { furWorker = null; };
+  } catch (e) { furWorker = null; }
+}
+// Whether this fox's or rabbit's sprite is there or can be made now from paintings that are; if not, the worker is
+// asked for the ones it's made from.
+function furReady(art, px) {
+  if (spriteCache.has(px + '|' + art + '||')) return true;
+  const P = furPainted(px), fox = art.startsWith('fox:'), n = +art.slice(fox ? 4 : 7), white = fox ? 0 : (n >> 4) % 5;
+  if (white % 4 === 0) return furHas(art, P);
+  const brown = n - (white << 4), a = furHas(RABBIT_ARTS[brown], P), b = furHas(RABBIT_ARTS[brown + (4 << 4)], P);
+  return a && b;
+}
+// A painting at P there, or asked for.
+function furHas(art, P) {
+  const key = P + '|' + art + '||';
+  if (spriteCache.has(key)) return true;
+  if (!furSent.has(key)) {
+    const fox = art.startsWith('fox:');
+    furSent.set(key, { px: P, dpr, look: art + '||' });
+    furWorker.postMessage({ key, kind: fox ? 'fox' : 'rabbit', n: +art.slice(fox ? 4 : 7), px: P, dpr });
   }
-  look.face(L);
-  L.save(); L.setTransform(1, 0, 0, 1, 0, 0); L.globalCompositeOperation = 'source-atop';   // a faint grain of fur
-  const r = Math.max(0.7, size / 220);
-  let seed = 12345;
-  const rnd = () => (seed = seed * 16807 % 2147483647) / 2147483647;
-  for (const [ink, thick, long] of look.grain) {
-    L.strokeStyle = ink; L.lineWidth = r; L.beginPath();
-    for (let i = size * size / 180 * thick; i > 0; i--) { const x = rnd() * size, y = rnd() * size; L.moveTo(x, y); L.lineTo(x + r * long, y + r * long * 0.2); }
-    L.stroke();
+  return false;
+}
+// Each look of fox and rabbit about the screen (a fox's shade, a rabbit's coat and how white it's gone) is asked of the
+// worker before the first of it is on screen, so there's kin to stand in while its poses come (furKin); otherwise that
+// first one is painted here. One whose paintings were let go (dropSprites) is asked for again after FUR_AGAIN.
+const furAsked = new Map(), FUR_AGAIN = 5000;    // look: when it was last asked for
+function furAhead(now) {
+  if (!furWorker) return;
+  const reach = Math.max(vw, vh), seen = new Set();
+  for (const c of world.creatures) {
+    const fox = c.species === 'fox';
+    if (!c.alive || !fox && c.species !== 'rabbit') continue;
+    const coat = fox ? null : coatLook(c) || COAT.wild, white = fox ? 0 : whiteStep(c);
+    const look = fox ? Math.round(c.genes.fur * 10) : 100 + coat.n + white;
+    if (seen.has(look) || now - (furAsked.get(look) ?? -Infinity) < FUR_AGAIN) continue;
+    const [sx, sy] = toScreen(c.x, c.y);
+    if (!visible(sx, sy, reach)) continue;
+    seen.add(look);
+    const art = fox ? foxArtOf(c.genes.fur, 'stand') : rabbitArtOf(coat, 'sit', white);
+    if (furKin(art)) continue;
+    furAsked.set(look, now);
+    furReady(art, poseStep(Math.max(4, creaturePx(c))));
   }
-  L.restore();
-  const S = foxLayer(3, size, new DOMMatrix());                                 // onto the sprite, its outline a little soft:
-  S.drawImage(L.canvas, 0, 0, size, size, 0, 0, size / 2, size / 2);           // a half-size copy, stretched back, under it
-  S.globalCompositeOperation = 'copy';
-  S.drawImage(S.canvas, 0, 0, size / 2, size / 2, 0, 0, size, size);
-  S.globalCompositeOperation = 'source-atop';
-  S.drawImage(L.canvas, 0, 0, size, size, 0, 0, size, size);
-  g.drawImage(S.canvas, 0, 0, size, size, 0, 0, size, size);
+}
+// The same fox or rabbit in another pose, at any size: it stands in for one being painted.
+function furKin(art) {
+  const fox = art.startsWith('fox:'), n = +art.slice(fox ? 4 : 7) & ~15;
+  for (let p = 0; p < 16; p++) {
+    const s = latestLook.get((fox ? 'fox:' : 'rabbit:') + (n + p) + '||');
+    if (s) return s;
+  }
+  return null;
 }
 
 // How a fox or a rabbit is getting along, worked out once a frame from where it's drawn (drawnAt): the frames since it
@@ -3583,7 +3468,20 @@ function hopSurge(c) {
   const done = u < A ? P * u / A : P + (1 - P) * (u - A) / (1 - A), mean = A * P / 2 + (1 - A) * (1 + P) / 2;
   return (done - u - (mean - 0.5)) * strideOf(c);
 }
-const walkerArt = (c, px, now) => c.species === 'fox' ? foxArt(c, px) : c.species === 'rabbit' ? rabbitArt(c, now) : c.species === 'bee' ? beeArt(c, px, now) : c.sp.emoji;
+const walkerArt = (c, px, now) => c.species === 'fox' ? shownPose(c, foxArt(c, px), px) : c.species === 'rabbit' ? shownPose(c, rabbitArt(c, now), px)
+  : c.species === 'bee' ? beeArt(c, px, now) : c.sp.emoji;
+// A pose not painted yet waits, as a tree's new colours do (shownLook): the fox or rabbit holds the pose it was last
+// drawn in till the worker has painted it (it's not painted at any size yet), or without a worker, a frame longer
+// once the frame has done its painting (PAINT_MS). A crowd all setting off at once wanted a dozen in one frame.
+const poseShown = new WeakMap();                         // fox or rabbit: the painting it was last drawn in
+function shownPose(c, art, px) {
+  const was = poseShown.get(c);
+  if (was !== undefined && was !== art && standIns && !groundIn && (furWorker
+    ? !furReady(art, poseStep(Math.max(4, px))) && !latestLook.has(art + '||')
+    : paintedMs > PAINT_MS && !spriteReady(art, px))) return was;
+  poseShown.set(c, art);
+  return art;
+}
 
 // Which painting, for what the fox is doing. On the move its legs go round with the ground it covers (gaitOf), a quarter
 // stride a painting, so they stop when it stops; standing still a while in a mode that moves, it just stands.
@@ -3604,140 +3502,13 @@ function foxArt(c, px) {
 
 // ------------------------------------------------------------------ the rabbit
 //
-// Painted like the fox (paintFur), not the 🐇 emoji: one rig posed for what it's doing (RABBIT_POSES). The big round
-// haunch, the long hind foot flat on the ground, short forelegs, a round head with a big dark eye, the long ears, the
-// scut. Its coat is painted in its own colours (no reading back): a pale belly, chin and eye ring on the wild and sandy
-// ones, black ear tips and a rusty nape on a wild one, and agouti ticking in the grain. In winter it pales by steps:
-// only brown and white are painted, the steps between are the two mixed.
-// Facing left, box -1 to 1, feet on the ground at 0.72. 'rabbit:' + (look << 4) + pose; look = coat * 5 + white step.
-const RABBIT_SCALE = 1.3;            // painted this much bigger, about its feet (so it's the emoji's size)
-const RABBIT_CREAM = [240, 230, 210], RABBIT_PINK = [222, 160, 156], RABBIT_SUN = [255, 240, 210];
-const RABBIT_EYE = { x: -0.065, y: -0.015, rx: 0.07, ry: 0.078 };   // in the head's space: big and round
-const RABBIT_SIT = {
-  chest: [-0.2, 0.42], hip: [0.22, 0.38], arch: 0.04, rump: 0.3,   // rump: the haunch's size
-  head: [-0.44, 0.1, 0], ear: 0.3, eye: 'open',                    // ear: laid back (+), 0 straight up
-  fore: { near: [-0.32, 0.71], far: [-0.24, 0.71] }, foreBend: 1,
-  hind: { near: [0.44, 0.68, -0.02, 0.71], far: [0.5, 0.67, 0.04, 0.7] },   // the hock (heel), then the toes
-  scut: [0.52, 0.22, 0],                                            // where, and flicked up how far
-};
-const RABBIT_POSES = {
-  sit: RABBIT_SIT,
-  hop1: { ...RABBIT_SIT, chest: [-0.22, 0.36], hip: [0.16, 0.3], arch: 0.05, head: [-0.46, 0.06, 0.05], ear: 0.45,   // landed, the hind feet coming through
-    fore: { near: [-0.3, 0.71], far: [-0.22, 0.7] }, hind: { near: [0.3, 0.6, -0.02, 0.66], far: [0.36, 0.58, 0.04, 0.64] }, scut: [0.46, 0.18, 0.4] },
-  hop2: { ...RABBIT_SIT, chest: [-0.26, 0.32], hip: [0.22, 0.24], head: [-0.54, 0.06, -0.1], ear: 0.7,   // in the air, stretched
-    fore: { near: [-0.56, 0.64], far: [-0.48, 0.67] }, hind: { near: [0.46, 0.5, 0.72, 0.62], far: [0.42, 0.52, 0.68, 0.65] }, scut: [0.5, 0.12, 0.6] },
-  run1: { ...RABBIT_SIT, chest: [-0.3, 0.3], hip: [0.24, 0.22], head: [-0.6, 0.14, -0.2], ear: 1.15,   // flat out, the ears laid back
-    fore: { near: [-0.68, 0.6], far: [-0.6, 0.64] }, hind: { near: [0.52, 0.46, 0.8, 0.54], far: [0.48, 0.48, 0.76, 0.58] }, scut: [0.52, 0.1, 0.9] },
-  run2: { ...RABBIT_SIT, chest: [-0.16, 0.36], hip: [0.12, 0.26], arch: 0.07, head: [-0.46, 0.16, -0.15], ear: 1.15,   // and bunched
-    fore: { near: [0.0, 0.68], far: [0.06, 0.66] }, hind: { near: [0.06, 0.56, -0.3, 0.64], far: [0.12, 0.54, -0.24, 0.62] }, scut: [0.42, 0.12, 0.9] },
-  push: { ...RABBIT_SIT, chest: [-0.26, 0.28], hip: [0.2, 0.34], arch: 0.03, head: [-0.52, -0.02, 0.05], ear: 0.55,   // off the hind feet
-    fore: { near: [-0.38, 0.52], far: [-0.31, 0.54] }, hind: { near: [0.44, 0.58, 0.7, 0.71], far: [0.49, 0.57, 0.74, 0.7] }, scut: [0.44, 0.22, 0.5] },
-  land: { ...RABBIT_SIT, chest: [-0.24, 0.36], hip: [0.2, 0.24], arch: 0.05, head: [-0.5, 0.14, -0.15], ear: 0.6,   // down on the forefeet
-    fore: { near: [-0.46, 0.71], far: [-0.36, 0.7] }, hind: { near: [0.38, 0.46, 0.6, 0.52], far: [0.42, 0.46, 0.64, 0.53] }, scut: [0.46, 0.12, 0.5] },
-  rpush: { ...RABBIT_SIT, chest: [-0.3, 0.27], hip: [0.2, 0.32], arch: 0.02, head: [-0.6, 0.06, -0.12], ear: 1.15,
-    fore: { near: [-0.46, 0.46], far: [-0.4, 0.5] }, hind: { near: [0.48, 0.56, 0.78, 0.71], far: [0.53, 0.55, 0.82, 0.7] }, scut: [0.44, 0.16, 0.9] },
-  rland: { ...RABBIT_SIT, chest: [-0.28, 0.35], hip: [0.22, 0.2], arch: 0.04, head: [-0.58, 0.18, -0.25], ear: 1.15,
-    fore: { near: [-0.52, 0.71], far: [-0.4, 0.7] }, hind: { near: [0.42, 0.4, 0.66, 0.46], far: [0.46, 0.41, 0.7, 0.48] }, scut: [0.48, 0.08, 0.9] },
-  graze: { ...RABBIT_SIT, chest: [-0.2, 0.46], hip: [0.24, 0.36], head: [-0.48, 0.44, -0.55], ear: 0.75 },
-  alarm: { ...RABBIT_SIT, chest: [-0.12, 0.06], hip: [0.14, 0.4], rump: 0.28, head: [-0.24, -0.24, 0.08], ear: -0.08,   // sat up tall
-    fore: { near: [-0.24, 0.26], far: [-0.18, 0.28] }, foreBend: -1, hind: { near: [0.38, 0.68, -0.04, 0.71], far: [0.44, 0.67, 0.02, 0.7] }, scut: [0.42, 0.5, 0], top: -0.4 },
-  loaf: { ...RABBIT_SIT, chest: [-0.18, 0.5], hip: [0.2, 0.46], rump: 0.27, head: [-0.42, 0.3, 0.05], ear: 1.25,   // lying low, the paws tucked in
-    fore: { near: [-0.32, 0.72], far: [-0.26, 0.72] }, hind: { near: [0.4, 0.7, 0.0, 0.72], far: [0.46, 0.7, 0.06, 0.72] }, scut: [0.46, 0.36, 0] },
-  sleep: { ...RABBIT_SIT, chest: [-0.18, 0.5], hip: [0.2, 0.46], rump: 0.27, head: [-0.4, 0.36, -0.12], ear: 1.35, eye: 'shut',
-    fore: { near: [-0.32, 0.72], far: [-0.26, 0.72] }, hind: { near: [0.4, 0.7, 0.0, 0.72], far: [0.46, 0.7, 0.06, 0.72] }, scut: [0.46, 0.36, 0] },
-  dig: { ...RABBIT_SIT, chest: [-0.24, 0.48], hip: [0.2, 0.3], head: [-0.5, 0.46, -0.6], ear: 0.8,   // scrabbling, the rump up
-    fore: { near: [-0.52, 0.68], far: [-0.4, 0.6] }, scut: [0.5, 0.14, 0.3] },
-  hang: { ...RABBIT_SIT, chest: [-0.02, -0.1], hip: [0.04, 0.32], rump: 0.26, head: [-0.2, -0.34, -0.4], ear: 2.3,   // by the scruff, which is at 0, -0.4
-    fore: { near: [-0.16, 0.2], far: [-0.1, 0.22] }, hind: { near: [0.12, 0.6, 0.0, 0.8], far: [0.18, 0.58, 0.06, 0.78] }, scut: [0.2, 0.54, 0.6], top: -0.6 },
-};
-const RABBIT_POSE_NAMES = Object.keys(RABBIT_POSES), RABBIT_POSE = Object.fromEntries(RABBIT_POSE_NAMES.map((p, i) => [p, i]));
-const RABBIT_KINDS = ['wild', 'sand', 'black', 'blue'];            // (BODY_COAT_OF's order)
+// Painted (fur.js: RABBIT_POSES, paintRabbit), not the 🐇 emoji. 'rabbit:' + (look << 4) + pose; look = coat * 5 + white step.
 const RABBIT_ARTS = Array.from({ length: RABBIT_KINDS.length * 5 << 4 }, (_, n) => 'rabbit:' + n);
 const rabbitArtOf = (look, pose, white = 0) => RABBIT_ARTS[((look.n + white) << 4) + RABBIT_POSE[pose]];
 
-// Its colours, for a coat and how far it's gone white (0 to 1).
-function rabbitColours(kind, q) {
-  const rgb = S.COATS[RABBIT_KINDS[kind]].rgb.map((v, i) => lerp(v, S.WINTER_COAT[i], q)), pale = kind < 2;
-  const mix = (a, b, t) => a.map((v, i) => lerp(v, b[i], t));
-  return {
-    rgb, speckle: COAT[RABBIT_KINDS[kind]].speckle * (1 - q),
-    shade: tone(rgb, 0.3), light: mix(rgb, RABBIT_SUN, 0.7),                 // its own colour, darker and lit, so it stays warm
-    cream: mix(rgb, RABBIT_CREAM, [0.85, 0.7, 0.14, 0.26][kind]),
-    scut: pale ? [248, 245, 238] : mix(rgb, RABBIT_CREAM, 0.3),
-    tip: kind === 0 ? [48, 38, 34] : kind === 1 ? tone(rgb, 0.72) : null,    // a wild one keeps its black ear tips in winter, as hares do
-    nape: kind === 0 && q < 1 ? mix([178, 108, 58], rgb, q) : null,
-    ring: pale ? mix(rgb, RABBIT_CREAM, 0.9) : null,
-  };
-}
-
-// The rabbit's parts for a pose, back to front (as foxParts).
-function rabbitParts(P, C) {
-  const parts = [], add = (path, o = {}) => parts.push({ path, ...o });
-  const [hdx, hdy, hda] = P.head, hc = Math.cos(hda), hn = Math.sin(hda);
-  const onHead = (x, y) => [hdx + x * hc - y * hn, hdy + x * hn + y * hc];
-  const inHead = draw => g => { g.save(); g.translate(hdx, hdy); g.rotate(hda); draw(g); g.restore(); };
-  const ear = (dx, dy, a, far) => {                  // grown from behind the crown, so the head covers its root
-    const at = draw => inHead(g => { g.translate(dx, dy); g.rotate(a); draw(g); });
-    const marks = [];
-    if (!far) marks.push([RABBIT_PINK, 0.55, 0.03, at(g => { g.moveTo(-0.045, -0.05); g.bezierCurveTo(-0.075, -0.17, -0.055, -0.34, -0.02, -0.42); g.quadraticCurveTo(-0.005, -0.28, 0.0, -0.05); g.closePath(); })]);
-    if (C.tip) marks.push([C.tip, 0.9, 0.05, at(g => { g.moveTo(-0.2, -0.41); g.quadraticCurveTo(0, -0.45, 0.2, -0.39); g.lineTo(0.2, -0.6); g.lineTo(-0.2, -0.6); g.closePath(); })]);
-    add(at(g => {
-      g.moveTo(-0.05, 0.02);
-      g.bezierCurveTo(-0.1, -0.15, -0.085, -0.38, -0.025, -0.46);    // the front edge, up to the tip
-      g.quadraticCurveTo(0.03, -0.5, 0.06, -0.43);
-      g.bezierCurveTo(0.095, -0.32, 0.09, -0.12, 0.065, 0.02);       // and down the back
-      g.closePath();
-    }), { far, joined: !far, marks });
-  };
-  const ears = () => { ear(0.1, -0.1, P.ear + 0.14, true); ear(0.04, -0.12, P.ear, false); };   // (the near one's form is the head's)
-  const head = () => add(inHead(g => {
-    ovalAt(g, 0.02, 0, 0.19, 0.165);                                 // the skull
-    ovalAt(g, -0.15, 0.065, 0.13, 0.105, 0.15);                      // the muzzle
-    ovalAt(g, 0.04, 0.08, 0.15, 0.12, 0.1);                          // the cheek
-  }), { casts: true, marks: [
-    [C.cream, 1, 0.05, inHead(g => { g.moveTo(-0.32, 0.1); g.quadraticCurveTo(-0.2, 0.085, -0.08, 0.13); g.quadraticCurveTo(0.08, 0.16, 0.22, 0.12); g.lineTo(0.22, 0.4); g.lineTo(-0.32, 0.4); g.closePath(); })],   // the chin
-    [C.cream, 0.7, 0.05, inHead(g => ovalAt(g, -0.2, 0.06, 0.07, 0.045, 0.2))],   // the whisker pad
-    ...C.ring ? [[C.ring, 0.6, 0.04, inHead(g => { const { x, y, rx, ry } = RABBIT_EYE; ovalAt(g, x, y, rx + 0.03, ry + 0.021, -0.1); })]] : [],   // round the eye
-  ] });
-  const [cx, cy] = P.chest, [hx, hy] = P.hip, R = P.rump, len = Math.hypot(hx - cx, hy - cy);
-  const ux = (hx - cx) / len, uy = (hy - cy) / len, ang = Math.atan2(uy, ux);   // along the body; (-uy, ux) is down
-  const fore = (paw, far) => {
-    const sx = cx - 0.04 + (far ? 0.05 : 0), sy = cy + 0.06, [kx, ky] = jointAt(sx, sy, paw[0], paw[1], 0.17, 0.15, P.foreBend);
-    add(g => { limbAt(g, sx, sy, 0.07, kx, ky, 0.04); limbAt(g, kx, ky, 0.04, paw[0], paw[1] - 0.02, 0.034); ovalAt(g, paw[0] - 0.025, paw[1] - 0.016, 0.05, 0.026); },
-      { far, casts: !far, leg: sy + 0.05, marks: [[C.cream, 0.5, 0.03, g => ovalAt(g, paw[0] - 0.025, paw[1] - 0.016, 0.05, 0.026)]] });
-  };
-  const hind = ([kx, ky, tx, ty], far) => {
-    const ox = hx + (far ? 0.05 : 0), oy = hy;
-    add(g => {
-      ovalAt(g, ox + 0.02, oy + 0.08, R * 0.68, R * 0.76, -0.5);    // the thigh
-      limbAt(g, ox + 0.1, oy + 0.18, 0.12, kx, ky, 0.068);           // down to the hock
-      limbAt(g, kx, ky, 0.064, tx, ty - 0.026, 0.04);                // and the long foot
-    }, { far, leg: oy + 0.06, marks: [[C.cream, 0.55, 0.03, g => limbAt(g, kx, ky + 0.02, 0.035, tx, ty - 0.005, 0.025)]] });
-  };
-  const [sx, sy, flick] = P.scut;
-  fore(P.fore.far, true); hind(P.hind.far, true);
-  add(g => ovalAt(g, sx, sy, 0.1, 0.085, flick), { joined: true, marks: [[C.scut, 1, 0.04, g => ovalAt(g, sx + 0.02 + flick * 0.03, sy + 0.05 - flick * 0.06, 0.085, 0.065 + flick * 0.025)]] });   // the scut, white under
-  add(g => {
-    ovalAt(g, cx, cy, 0.19, 0.2, ang);
-    limbAt(g, cx + ux * 0.04, cy + uy * 0.04, 0.18, hx - ux * 0.04, hy - uy * 0.04, R * 0.92);
-    discAt(g, hx, hy, R);
-    if (P.arch) discAt(g, (cx + hx) / 2 + uy * P.arch, (cy + hy) / 2 - ux * P.arch, 0.2);
-  }, { casts: true, marks: [
-    [C.cream, 1, 0.07, g => ovalAt(g, lerp(cx, hx, 0.4) - uy * 0.17, lerp(cy, hy, 0.4) + ux * 0.17, 0.22, 0.06, ang)],   // the belly
-    [C.cream, 0.9, 0.06, g => ovalAt(g, cx - ux * 0.1 - uy * 0.08, cy - uy * 0.1 + ux * 0.08, 0.08, 0.11, ang + 0.3)],   // and chest
-  ] });
-  hind(P.hind.near, false); fore(P.fore.near, false);
-  const [ax, ay] = onHead(0.08, 0.06), [wx, wy] = onHead(0.0, 0.14), [nx, ny] = onHead(0.2, -0.02);
-  add(g => limbAt(g, cx - 0.02, cy - 0.04, 0.16, ax, ay, 0.13),      // the neck, and its pale throat
-    { plain: true, marks: [[C.cream, 0.9, 0.05, g => limbAt(g, wx, wy, 0.07, lerp(wx, cx - 0.14, 0.7), lerp(wy, cy + 0.04, 0.7), 0.06)],
-      ...C.nape ? [[C.nape, 0.4, 0.09, g => ovalAt(g, nx, ny, 0.08, 0.1)]] : []] });
-  ears(); head();
-  return { parts, inHead };
-}
-
 function paintRabbit(g, size, U, n) {
   if (shrunk(g, size, U, RABBIT_ARTS[n])) return;
-  const look = n >> 4, step = look % 5;
+  const step = (n >> 4) % 5;
   if (step % 4) {                    // part white: only brown and white are painted, the steps between are the two mixed
     const brown = n - (step << 4), px = U / dpr;
     g.drawImage(sprite(RABBIT_ARTS[brown], px).canvas, 0, 0, size, size);
@@ -3746,24 +3517,7 @@ function paintRabbit(g, size, U, n) {
     g.globalAlpha = 1;
     return;
   }
-  const P = RABBIT_POSES[RABBIT_POSE_NAMES[n & 15]] || RABBIT_SIT, C = rabbitColours(Math.floor(look / 5), step / 4);
-  const { parts, inHead } = rabbitParts(P, C), tick = 0.09 * C.speckle;
-  const grain = [['rgba(60,40,25,0.02)', 1, 5], ['rgba(255,245,225,0.02)', 1, 5]];
-  if (tick) grain.push([`rgba(25,15,8,${tick})`, 1.2, 2.5], [`rgba(255,240,210,${tick})`, 0.9, 2.5]);   // agouti: each hair banded
-  paintFur(g, size, U, parts, { coat: C.rgb, scale: RABBIT_SCALE, top: P.top ?? Math.min(P.chest[1], P.hip[1]) - P.rump - 0.05, shade: C.shade, light: C.light, grain, flat: 0.22,
-    face: inHead(g => {
-      const { x, y, rx, ry } = RABBIT_EYE;
-      if (P.eye === 'shut') strokeIn(g, '#3a2a22', 0.03, () => { g.moveTo(x - 0.065, y + 0.005); g.quadraticCurveTo(x, y + 0.05, x + 0.07, y + 0.01); });
-      else {                                                                    // dark, a warm brown glow low in it, two catchlights
-        const ink = g.createLinearGradient(0, y - ry, 0, y + ry);
-        ink.addColorStop(0.3, '#150e0b'); ink.addColorStop(1, '#7a4a28');
-        fillIn(g, ink, () => ovalAt(g, x, y, rx, ry, -0.1));
-        fillIn(g, 'rgba(255,255,255,0.9)', () => ovalAt(g, x - rx * 0.36, y - ry * 0.4, 0.028, 0.031, -0.4));
-        fillIn(g, 'rgba(255,255,255,0.85)', () => discAt(g, x + rx * 0.4, y + ry * 0.45, 0.013));
-      }
-      fillIn(g, '#8a5a54', () => ovalAt(g, -0.272, 0.038, 0.022, 0.016, 0.3));   // the nose
-      strokeIn(g, rockRGB(tone(C.rgb, 0.5), 0.6), 0.014, () => { g.moveTo(-0.268, 0.052); g.quadraticCurveTo(-0.262, 0.085, -0.235, 0.098); });   // the mouth
-    }) });
+  Fur.paintRabbit(g, size, U, n);
 }
 
 // Which painting, for what the rabbit is doing. On the move, where it is in its hop (HOP): down and gathered, then off
@@ -4298,25 +4052,24 @@ const SOFT_SHADOWS = Array.from({ length: SHADE_STEPS + 1 }, (_, i) => {   // (e
 // How far the shadows have gone over to the snow's: as far as the ground shows snow (ground.js: snow × 1.4 − 0.2, at most 0.9).
 const shadeStep = () => Math.round(clamp((world.snow * 1.4 - 0.2) / 0.9, 0, 1) * SHADE_STEPS);
 // A tree also keeps a dark patch at its foot, day and night, so it stands on the ground.
-function drawDecorShadow(d, sx, sy, sn) {
+function drawDecorShadow(d, sx, sy, sn, px = d.tree ? treePx(d) : d.size * cam.zoom) {   // (px: render has it already)
   if (treeWaits.get(d) === 0) return;                      // not drawn yet (drawPaintedTree)
   if (d.tree && d.size < S.SAPLING && !d.stump && (d.size < S.SEEDLING || d.size * cam.zoom < 20)) return;   // too small for one
   const shade = SOFT_SHADOWS[shadeStep()];
   if (d.fallen) {                                         // a log: along it
-    const s = treePx(d);
+    const s = px;
     ctx.globalAlpha = 0.35 + 0.2 * Math.max(0, sn.a);
     ctx.drawImage(shade, sx - s * 0.5, sy - s * 0.05, s, s * 0.12);
     ctx.globalAlpha = 1;
     return;
   }
-  const tree = d.tree && !d.stump, s = (d.tree ? treePx(d) : d.size * cam.zoom) * (d.stump ? 0.45 : d.dead ? 0.6 : 1);
+  const tree = d.tree && !d.stump, s = px * (d.stump ? 0.45 : d.dead ? 0.6 : 1);
   if (tree) {
     const cw = s * 0.2, ch = s * 0.06;
     ctx.globalAlpha = 0.4 + 0.25 * Math.max(0, sn.a);
     ctx.drawImage(shade, sx - cw, sy - ch * 0.8, cw * 2, ch * 2);
-    ctx.globalAlpha = 1;
   }
-  if (sn.a <= 0.02) return;
+  if (sn.a <= 0.02) { ctx.globalAlpha = 1; return; }
   const w = s * (d.tree ? 0.34 : 0.42), h = s * 0.12, off = sn.lean * s * 0.22;
   const W = (w + Math.abs(off) * 0.6) * 2.5, H = h * 2.6;   // the soft edge takes a bit off, so a bit bigger
   ctx.globalAlpha = (tree ? 0.55 : 0.3) * sn.a;
@@ -4328,15 +4081,18 @@ function drawDecorShadow(d, sx, sy, sn) {
 // at night and under cloud so they never float. A hop lifts them off it and it shrinks, less for a
 // pouncing fox than a flier, so the leap reads. On snow it goes the snow's pale blue, like the trees'.
 const FEET_RGB = [40, 50, 20];
-const FEET_SHADES = Array.from({ length: SHADE_STEPS + 1 }, (_, i) => FEET_RGB.map((v, j) => Math.round(lerp(v, SNOW_SHADE[j], i / SHADE_STEPS))).join(', '));
+// (Its colour a style made once, its strength the alpha: a colour string made and read for every animal every frame cost.)
+const FEET_SHADES = Array.from({ length: SHADE_STEPS + 1 }, (_, i) => `rgb(${FEET_RGB.map((v, j) => Math.round(lerp(v, SNOW_SHADE[j], i / SHADE_STEPS)))})`);
 function drawCreatureShadow(c, sx, sy, now, sn) {
   if (wading(c)) return;
   const px = creaturePx(c), lift = c.held ? 0.55 : 1 - Math.min(c.sp.flies ? 0.8 : 0.5, liftOf(c, px, now) / px);
   const n = shadeStep(), a = (0.14 + 0.16 * Math.max(0, sn.a)) * lerp(1, SNOW_SHADE_A, n / SHADE_STEPS), off = Math.max(0, sn.a) * sn.lean * px * 0.2;
-  ctx.fillStyle = `rgba(${FEET_SHADES[n]}, ${a * lift})`;
+  ctx.fillStyle = FEET_SHADES[n];
+  ctx.globalAlpha = a * lift;
   ctx.beginPath();
   ctx.ellipse(sx + off, sy + px * 0.36, (px * 0.34 + Math.abs(off) * 0.6) * lift, px * 0.1 * lift, 0, 0, TAU);
   ctx.fill();
+  ctx.globalAlpha = 1;
 }
 
 // Trees sway from the trunk. Gusts roll across the meadow, harder in rain and storms.
@@ -4394,7 +4150,7 @@ function treeInfo(d) {
   return t;
 }
 
-function treeLook(d, ck) {
+function treeLook(d, ck, full = true) {   // full: with the look and the bare look an emoji tree is drawn in (not a painted one)
   const sp = (ck.dayInSeason - 1 + ck.phase) / S.SEASON_DAYS, s = ck.season;
   const info = treeInfo(d), h = info.h, lag = (h % 5) * 0.04;
   let rgb = SPRING, m = 0, where = '', fall = 0, drop = 0, blossom = 0, bloom = APPLE_WHITE, fruit = null, ground = null;
@@ -4412,7 +4168,7 @@ function treeLook(d, ck) {
       const turn = clamp((sp - 0.05 - lag) / 0.4, 0, 1);
       rgb = mix(mix(green, hue, turn), DRY, clamp((sp - 0.65 - lag) / 0.35, 0, 1) * (oak ? 1 : 0.5));
       fall = oak ? 0 : clamp((sp - 0.6 - lag) / 0.35, 0, 1);
-      drop = clamp(turn * 1.5 - 0.4, 0, 1) * (1 - fall * fall) * (oak ? 0.3 : 1);
+      drop = leafDrop(sp, lag, oak);
       if (info.fruit === 'apple') {
         if (sp < 0.4) fruit = { e: kind.e, n: Math.ceil(n * (1 - sp / 0.4)) };
         ground = { e: kind.e, n: d.windfall, size: 0.12 };        // the sim's windfalls (windfallTick)
@@ -4436,6 +4192,7 @@ function treeLook(d, ck) {
   }
   rgb = rgb.map(v => Math.round(v / 8) * 8);
   m = step(m, 8); fall = step(fall, 10); blossom = step(blossom, 4);
+  if (!full) return { look: undefined, fall, bare: undefined, drop, rgb, h, ground, flip: info.flip };
   const snow = step(world.snow * 1.6 - 0.1, 4), seed = h % 3;
   const look = m || fall || snow
     ? { rgb, m, where, fall, snow, seed, blossom, bloom, fruit,
@@ -4480,8 +4237,8 @@ function drawUnderTree(bits, h, sx, sy, px, front) {
   }
 }
 
-// Leaves let go in autumn and tumble down, drifting east with the wind. Trees queue them up
-// as they are drawn, and they are drawn on top of everything once the trees are done.
+// An emoji tree's leaves let go in autumn and tumble down, drifting east with the wind. Trees queue them up
+// as they are drawn, and they are drawn on top of everything once the trees are done. (A painted tree's: drawLeaves.)
 const leafFall = [];
 function drawFallingLeaves(now) {
   const m = ui.sky.mix, wind = 0.4 + 0.6 * m.cloudy + 1.5 * m.rain + 3 * m.storm;
@@ -4506,6 +4263,104 @@ function drawFallingLeaves(now) {
   unfade();
   ctx.restore();
   leafFall.length = 0;
+}
+
+// How fast a tree's leaves are coming down, sp into autumn: from when it's a third turned till it's bare, an oak
+// (which keeps its dry leaves) a third as fast.
+function leafDrop(sp, lag, oak) {
+  const turn = clamp((sp - 0.05 - lag) / 0.4, 0, 1), fall = oak ? 0 : clamp((sp - 0.6 - lag) / 0.35, 0, 1);
+  return clamp(turn * 1.5 - 0.4, 0, 1) * (1 - fall * fall) * (oak ? 0.3 : 1);
+}
+
+// A painted tree's leaves come down in autumn as its kind's own leaf (trees.js leafSheet, painted in the tree workers
+// once in every colour its crown takes, on one sheet a size). A crown still turning drops green ones, then its autumn
+// colour (an oak's last ones dry), and a few in its kind's other colours, as its crown has a few clumps another. Each
+// glides down swinging from side to side and tipping into each swing, turns over now and then (its back is paler),
+// drifts on the wind, and lands round the foot, where it lies a moment and fades. A leaf goes round and round its life
+// on the clock, so nothing is kept: where it is comes from the time and a few hash numbers. The trees dropping leaves
+// are listed as the shadows go down (treeLeaves) and their leaves drawn twice (drawLeaves): those lying then, over the
+// shadows and under all that stands, and those in the air at the end, over everything.
+const LEAF_TIERS = [8, 16, 32, 48];      // leaf lengths painted, in device pixels: a sheet each, asked for when one's wanted
+const LEAF_LEN = 0.085;                  // a leaf's length, of its tree's px
+const LEAF_SLOTS = 14;                   // leaves a tree has on the go at the height of its fall
+const LEAF_MIN = 22, LEAF_FULL = 56;     // none from a tree drawn smaller than this many px, and fewer up to this (specks, further out:
+                                         // each is a draw of its own, and a wood zoomed out had nearly 2000)
+const LEAF_FALL_MS = 5400, LEAF_LIE_MS = 2600, LEAF_FADE_MS = 1400;   // a leaf's fall (give or take a fifth), then lying, fading at the end
+const LEAF_SETTLE_MS = 300;              // landing, it lies down flat
+const LEAF_OTHER = 0.15;                 // the share of a tree's autumn leaves in its kind's other colours
+const LEAF_GREEN = 0.25;                 // and of those from a crown still green that are green: they fall when they've turned
+const LEAF_FLAT = 0.6;                   // a leaf lying on the ground, as squashed as we see the meadow at a slant (ROCK_SQUASH)
+const LEAF_GROUP = { summer: 0, spring: 0, bud: 0, autumn: 1, thin: 1, winter: 1, bare: 1 };   // the leaves a crown's look drops: green, or its autumn ones
+const LEAF_KEY = -1000;                  // (the sheets' keys among the tree workers' jobs, below the stand-ins')
+const leafSheets = [], leafWanted = [];  // by tier: { image, cell, cols }; the tiers to ask the workers for
+let leafPick = null;                     // trees.js's pick: the colours a tree of each kind and tone drops
+const leafTrees = [];                    // this frame's trees dropping leaves (records kept from frame to frame)
+let leafN = 0;
+
+// A tree on screen, as its shadow goes down: if its leaves are coming down, it's listed for drawLeaves.
+function treeLeaves(d, sx, sy, px, ck, f) {
+  if (ck.season !== 2 || px < LEAF_MIN || !treeWorker || !S.standing(d) || treeWaits.get(d) === 0) return;
+  const kind = treeKind(d), oak = kind === 'oak' || kind === 'hive';
+  if (kind === 'pine') return;
+  const info = treeInfo(d), drop = leafDrop((ck.dayInSeason - 1 + ck.phase) / S.SEASON_DAYS, (info.h % 5) * 0.04, oak);
+  const n = Math.round(LEAF_SLOTS * drop * clamp((px - LEAF_MIN) / (LEAF_FULL - LEAF_MIN), 0.15, 1));
+  if (!n) return;
+  let tier = 0;
+  while (tier < LEAF_TIERS.length - 1 && LEAF_TIERS[tier] < px * LEAF_LEN * dpr) tier++;
+  if (!leafSheets[tier]) {                                 // asked for, and till it comes, the nearest size there is
+    if (!leafWanted.includes(tier) && !treeSent.has(LEAF_KEY - tier)) { leafWanted.push(tier); askTrees(); }
+    let near = -1;
+    for (let i = 0; i < LEAF_TIERS.length; i++) if (leafSheets[i] && (near < 0 || Math.abs(i - tier) < Math.abs(near - tier))) near = i;
+    if (near < 0) return;
+    tier = near;
+  }
+  const [a, b, m] = treeStage(kind, d, ck);
+  const r = leafTrees[leafN] || (leafTrees[leafN] = { sx: 0, sy: 0, px: 0, n: 0, h: 0, f: 0, tier: 0, pick: null, ga: 0, gb: 0, m: 0 });
+  leafN++;
+  r.sx = sx; r.sy = sy; r.px = px; r.n = n; r.h = info.h; r.f = f; r.tier = tier; r.pick = leafPick[oak ? 'oak' : kind][d.tone ?? 0];
+  r.ga = oak && a === 'winter' ? 2 : LEAF_GROUP[a]; r.gb = b ? LEAF_GROUP[b] : r.ga; r.m = m;   // (an oak's winter look: its dry leaves)
+}
+
+// The listed trees' leaves lying round their feet (lying), or coming down. Each is one setTransform and one drawImage.
+function drawLeaves(now, lying) {
+  const sky = ui.sky.mix, wind = 0.4 + 0.6 * sky.cloudy + 1.5 * sky.rain + 3 * sky.storm;
+  if (leafN) ctx.beginPath();   // Chrome carries the path along through every setTransform: what was drawn last would cost each leaf dear
+  for (let i = 0; i < leafN; i++) {
+    const r = leafTrees[i], sheet = leafSheets[r.tier], cell = sheet.cell, pick = r.pick, px = r.px, h = r.h;
+    const k = px * LEAF_LEN / LEAF_TIERS[r.tier] * dpr;     // device pixels to a pixel of the sheet
+    fadeTo(r.f);                                            // as its tree is, in the mist
+    for (let j = 0; j < r.n; j++) {
+      const fallMs = LEAF_FALL_MS * (0.8 + 0.4 * hash2(h, j, 1)), life = fallMs + LEAF_LIE_MS;
+      const t = now / life + hash2(h, j, 2), c = Math.floor(t), q = (t - c) * life;
+      if ((q >= fallMs) !== lying) continue;
+      const g = h * 31 + j, at = Math.min(q, fallMs), u = at / fallMs;
+      // From up in the crown down to the ground round the foot, swinging from side to side and hanging a moment at each
+      // end, tipping into each swing, and turning over now and then.
+      const x0 = (hash2(g, c, 3) - 0.5) * px * 0.7, y0 = -px * (0.8 - 0.35 * hash2(g, c, 4)), y1 = (hash2(g, c, 5) - 0.5) * px * 0.22;
+      const swing = hash2(g, c, 6) * TAU + TAU * at / (1300 + 700 * hash2(g, c, 7)), sw = Math.sin(swing), reach = px * (0.04 + 0.05 * hash2(g, c, 8));
+      const x = r.sx + x0 + reach * sw + wind * u * px * 0.25;
+      const y = r.sy + y0 + (y1 - y0) * u - reach * 0.5 * sw * sw * Math.min(1, (1 - u) * 6);
+      const turn = hash2(g, c, 9) * TAU + 0.5 * Math.cos(swing);
+      let side = Math.cos(hash2(g, c, 10) * TAU + (hash2(g, c, 11) - 0.5) * 4.4 * at / 1000), flat = 1, alpha;
+      side = side < 0 ? Math.min(side, -0.15) : Math.max(side, 0.15);   // (edge on, still a sliver)
+      if (lying) {
+        const lay = q - fallMs, w = smooth(0, LEAF_SETTLE_MS, lay);
+        side += ((side < 0 ? -1 : 1) - side) * w; flat = 1 - (1 - LEAF_FLAT) * w;
+        alpha = Math.min(1, (LEAF_LIE_MS - lay) / LEAF_FADE_MS);
+      } else alpha = Math.min(1, q / 500);
+      // Its colour, as its crown is: green or its own autumn colour, a few in its kind's others; lit or a little less.
+      let group = hash2(g, c, 12) < r.m ? r.gb : r.ga;
+      if (group === 0 && hash2(g, c, 16) > LEAF_GREEN) group = 1;
+      let col = group === 0 ? pick[0] : group === 2 && pick[2] >= 0 ? pick[2] : pick[1];
+      if (group === 1 && pick.length > 3 && hash2(g, c, 13) < LEAF_OTHER) col = pick[3 + Math.floor(hash2(g, c, 14) * (pick.length - 3))];
+      const at4 = col * 4 + (hash2(g, c, 15) < 0.5 ? 0 : 2) + (side < 0 ? 1 : 0), cs = Math.cos(turn) * k, sn = Math.sin(turn) * k;
+      ctx.globalAlpha = alpha;
+      ctx.setTransform(cs * side, sn * side * flat, -sn, cs * flat, x * dpr + shakeX, y * dpr + shakeY);
+      ctx.drawImage(sheet.image, (at4 % sheet.cols) * cell, ((at4 / sheet.cols) | 0) * cell, cell, cell, -cell / 2, -cell / 2, cell, cell);
+    }
+  }
+  if (leafN) { ctx.setTransform(dpr, 0, 0, dpr, shakeX, shakeY); ctx.globalAlpha = 1; unfade(); }
+  if (!lying) leafN = 0;
 }
 
 // A tree turning colour is painted afresh at every step, and at 15x or 60x the seasons go by so fast
@@ -4651,7 +4506,12 @@ if (!params.has('emoji') && window.Worker && window.OffscreenCanvas) {
       const tw = { worker: new Worker('tree-worker.js'), busy: 0 };
       tw.worker.onmessage = e => {
         const { key, bx, by, image, snow } = e.data, job = treeSent.get(key);
-        const p = { image, snow, bx, by, scale: job.scale, used: spriteFrame, bytes: image.width * image.height * 4 * (snow ? 2 : 1) };
+        if (job.leaves) {                                // the falling leaves' sheet at a size (drawLeaves)
+          leafSheets[job.tier] = { image, cell: e.data.cell, cols: e.data.cols }; leafPick = e.data.pick;
+          treeSent.delete(key); treeBusy--; tw.busy--; askTrees();
+          return;
+        }
+        const p ={ image, snow, bx, by, scale: job.scale, used: spriteFrame, w: image.width, h: image.height, bytes: image.width * image.height * 4 * (snow ? 2 : 1) };   // (w, h: an image's own are slow to ask)
         treeSent.delete(key); treeBusy--; tw.busy--;
         if (job.kin !== undefined) { treeKin.set(job.kin, p); kinBusy = false; }
         else {
@@ -4695,9 +4555,9 @@ function kinAhead() {
   for (let k = 0; k < 4; k++) for (const l of [['bare', 'bud', 'spring'], ['summer'], ['autumn', 'thin'], ['winter']][(s + k) % 4]) looks.add(l);
   for (const look of [...looks, 'dead']) for (const kind in KIN_LOOKS) if (KIN_LOOKS[kind].includes(look)) wantKin(kind, look, false);
 }
-// Hands the workers the next painting wanted, two each at a time: a stand-in while none is being painted
-// (one at a time, so the rest go on), then the ones wanted this frame, small sizes before big so something
-// shows soon. What hasn't been wanted for a while is forgotten.
+// Hands the workers the next painting wanted, two each at a time: a sheet of falling leaves first, then a stand-in
+// while none is being painted (one at a time, so the rest go on), then the ones wanted this frame, small sizes before
+// big so something shows soon. What hasn't been wanted for a while is forgotten.
 function sendTree(key, job) {
   const tw = treeWorkers.reduce((a, b) => b.busy < a.busy ? b : a);
   treeSent.set(key, job); treeBusy++; tw.busy++;
@@ -4705,6 +4565,7 @@ function sendTree(key, job) {
 }
 function askTrees() {
   while (treeWorker && treeBusy < 2 * treeWorkers.length) {
+    if (leafWanted.length) { const tier = leafWanted.shift(); sendTree(LEAF_KEY - tier, { leaves: LEAF_TIERS[tier], tier }); continue; }   // (quick, and many leaves wait on one)
     if (kinWanted.length && !kinBusy) {
       const job = kinWanted.shift();
       kinBusy = true; sendTree(-1 - job.kin, job);               // (its own keys, below the others)
@@ -4769,12 +4630,12 @@ function treeStage(kind, d, ck) {
 // Draws a tree from its paintings, swaying from the foot; false if it has none yet. stage: sim.js treeStage.
 // Trees that had nothing to show: 0 while they wait, then when their painting came, to fade them in.
 const treeWaits = new WeakMap(), FADE_MS = 300;
-function drawPaintedTree(d, sx, sy, now, ck, stage = S.treeStage(world, d)) {
+function drawPaintedTree(d, sx, sy, now, ck, stage = S.treeStage(world, d), px = treePx(d)) {
   if (!treeWorker) return false;
   if (!kinAsked) kinAhead();
   const wood = stage === 'log' || stage === 'stump', kind = wood ? stage : treeKind(d), hx = Math.floor(d.x * 100), hy = Math.floor(d.y * 100);
   const form = YOUNG.has(stage) ? 1 : 0, shape = Math.floor(hash2(hx, hy, 46) * TREE_SHAPES) % (form ? 2 : TREE_SHAPES);
-  const px = treePx(d), f = px / TREE_UNIT, want = f * dpr, tier = TREE_TIERS.find(t => t >= want * 0.9) || TREE_TIERS[TREE_TIERS.length - 1];
+  const f = px / TREE_UNIT, want = f * dpr, tier = TREE_TIERS.find(t => t >= want * 0.9) || TREE_TIERS[TREE_TIERS.length - 1];
   const snow = step(world.snow * 1.6 - 0.1, 4), tone = wood ? LOG_BARK[d.kind] || 'bark' : d.tone ?? 0;
   const [a, b, m] = wood ? ['summer', null, 0] : stage === 'dead' ? [d.burnt ? 'burnt' : 'dead', null, 0] : treeStage(kind, d, ck);
   let A = m < 1 ? treePainting(kind, shape, bareLook(kind, a) ? 0 : tone, form, a, tier, snow > 0) : null;
@@ -4792,40 +4653,40 @@ function drawPaintedTree(d, sx, sy, now, ck, stage = S.treeStage(world, d)) {
     if (fade >= 1) treeWaits.delete(d);
   }
   const r = wood ? 0 : treeSway(d, now) * (stage === 'dead' ? 0.4 : 1), still = Math.abs(r) * px < 0.5;   // a sway too small to see isn't drawn
-  if (!still) { ctx.save(); ctx.translate(sx, sy); ctx.rotate(r); }   // swaying from the foot
+  // Swaying from the foot. A tree is only ever drawn in render's own transform, so it's set back as it was, with no
+  // save and restore (turning it back by the inverse leaves it a hair off, and Chrome then draws what follows another way).
+  if (!still) { const c = Math.cos(r) * dpr, s = Math.sin(r) * dpr; ctx.setTransform(c, s, -s, c, sx * dpr + shakeX, sy * dpr + shakeY); }
   if (A) putPainting(A, f, fade, snow, still ? sx : 0, still ? sy : 0);
   if (B) putPainting(B, f, (A ? m : 1) * fade, snow, still ? sx : 0, still ? sy : 0);
-  if (!still) ctx.restore();
+  if (!still) ctx.setTransform(dpr, 0, 0, dpr, shakeX, shakeY);
   return true;
 }
 function putPainting(p, f, alpha, snow, ox, oy) {
-  const k = f / p.scale, x = ox - p.bx * k, y = oy - p.by * k, w = p.image.width * k, h = p.image.height * k;
+  const k = f / p.scale, x = ox - p.bx * k, y = oy - p.by * k, w = p.w * k, h = p.h * k;
   ctx.globalAlpha = alpha;
   ctx.drawImage(p.image, x, y, w, h);
   if (snow && p.snow) { ctx.globalAlpha = alpha * snow; ctx.drawImage(p.snow, x, y, w, h); }
   ctx.globalAlpha = 1;
 }
 const PAINTERS = { fox: paintFox, rabbit: paintRabbit, hog: paintHedgehog, heron: paintHeron, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, vole: paintVole, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody, bee: paintBee, fall: paintFall, tuft: paintTuftSprite };
-function drawDecor(d, sx, sy, now, ck, clipLeaves) {
-  const z = cam.zoom, px = d.tree ? treePx(d) : d.size * z;
+function drawDecor(d, sx, sy, now, ck, clipLeaves, px = d.tree ? treePx(d) : d.size * cam.zoom) {   // (px: render has it already)
   if (d.emoji === '🪨') { drawRock(d, sx, sy); return; }
   if (!d.stump && !d.tree) { drawEmoji(d.emoji, sx, sy - px * 0.35, px); return; }
   const stage = d.tree && S.treeStage(world, d);
   if (stage === 'seedling' && !treeWorker) { if (px >= 3) drawEmoji('🌱', sx, sy - px * 0.3, px * 0.9); return; }   // (painted, it's a little young tree)
   if (stage === 'dead' || stage === 'log' || stage === 'stump') {   // grey and bare, fallen, or a stump till it sprouts again
-    if (drawPaintedTree(d, sx, sy, now, ck, stage) || treeWorker) return;
+    if (drawPaintedTree(d, sx, sy, now, ck, stage, px) || treeWorker) return;
     if (stage === 'dead') drawEmoji('🪾', sx, sy - px * 0.42, px * 1.15);
     else drawEmoji('🪵', sx, sy - px * (stage === 'log' ? 0.1 : 0.12), px * (stage === 'log' ? 0.5 : 0.45));
     return;
   }
-  if (px < 20 && !clipLeaves && (drawPaintedTree(d, sx, sy, now, ck, stage) || treeWorker)) return;   // too small for anything under it or in it
-  const t = treeLook(d, ck);
+  if (px < 20 && !clipLeaves && (drawPaintedTree(d, sx, sy, now, ck, stage, px) || treeWorker)) return;   // too small for anything under it or in it
+  const t = treeLook(d, ck, !treeWorker);
   const under = t.ground?.n && px >= 20 && !(treeWorker && t.ground.e === '🌸');   // a painted cherry has its own petals
   if (under) drawUnderTree(t.ground, t.h, sx, sy, px, false);
-  if (!clipLeaves && drawPaintedTree(d, sx, sy, now, ck, stage)) {
+  if (!clipLeaves && drawPaintedTree(d, sx, sy, now, ck, stage, px)) {
     if (under) drawUnderTree(t.ground, t.h, sx, sy, px, true);
-    if (t.drop && px >= 22) leafFall.push({ sx, sy, px, drop: t.drop, rgb: t.rgb, h: t.h, fade });
-    return;
+    return;                                                  // (its falling leaves: treeLeaves)
   }
   if (treeWorker) return;                                    // nothing to show yet: it fades in when its painting comes
   t.look = shownLook(d, t.look, px);
@@ -4924,7 +4785,6 @@ function rockPath(g, p, lift, k) {
   g.closePath();
 }
 
-const rockRGB = (c, a = 1) => `rgba(${c.map(v => Math.round(clamp(v, 0, 255))).join(',')},${a})`;
 
 function paintStone(g, p, t, U, sg) {
   const L = rockLayer, lg = L.getContext('2d'), h = p.s * p.tall;
@@ -5155,7 +5015,7 @@ function drawBeeTree(d, sx, sy, now, ck) {
     hx = sx + HIVE_DOOR[0] * f - HIVE_DOOR[1] * f * Math.sin(a); sill = sy + HIVE_DOOR[1] * f; rx = 0.02;
   } else {
     if (treeWorker) return;                                  // nothing to show yet: it fades in when its painting comes
-    const fall = treeLook(d, ck).fall;
+    const fall = treeLook(d, ck, false).fall;
     drawDecor(d, sx, sy, now, ck, clipFoot);
     const put = s => ctx.drawImage(s.canvas, sx - s.ox, sy - s.oy, s.W, s.H);
     if (fall < 1) { ctx.globalAlpha = 1 - fall; put(trunkSprite(px)); ctx.globalAlpha = 1; }
@@ -5218,11 +5078,13 @@ function hiveAt(sx, sy, swarms = false) {
 let pond = null;
 const waterData = new Float32Array(S.W * S.H * 4), shapeData = new Float32Array(S.W * S.H * 4);
 function blurred(src) {
-  const out = new Float32Array(S.W * S.H), at = (x, y) => src[clamp(y, 0, S.H - 1) * S.W + clamp(x, 0, S.W - 1)];
-  for (let y = 0; y < S.H; y++) for (let x = 0; x < S.W; x++) {
+  const W = S.W, H = S.H, out = new Float32Array(W * H), at = (x, y) => src[clamp(y, 0, H - 1) * W + clamp(x, 0, W - 1)];
+  for (let y = 0; y < H; y++) for (let x = 0, i = y * W; x < W; x++, i++) {
     let n = 0;
-    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) n += at(x + dx, y + dy);
-    out[y * S.W + x] = n / 9;
+    if (x > 0 && y > 0 && x < W - 1 && y < H - 1) {      // (away from the edge, straight from the tiles: the same sum, in the same order)
+      n = src[i - W - 1] + src[i - W] + src[i - W + 1] + src[i - 1] + src[i] + src[i + 1] + src[i + W - 1] + src[i + W] + src[i + W + 1];
+    } else for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) n += at(x + dx, y + dy);
+    out[i] = n / 9;
   }
   return out;
 }
@@ -5246,19 +5108,23 @@ function reedsLater() {
 function updateWater() {
   const now = performance.now();
   if (pond && pond.world === world && (pond.version === world.waterVersion || now - pond.at < 1000)) return;
-  const wet = Float32Array.from(world.water, v => v ? 1 : 0), deep = Float32Array.from(world.water, v => v === S.DEEP ? 1 : 0);
+  const water = world.water, seed = world.seed, W = S.W, wet = new Float32Array(water.length), deep = new Float32Array(water.length);
+  for (let i = 0; i < water.length; i++) { const v = water[i]; wet[i] = v ? 1 : 0; deep[i] = v === S.DEEP ? 1 : 0; }
   const f1 = blurred(wet), f2 = blurred(f1), f4 = blurred(blurred(f2)), d2 = blurred(blurred(deep));
   // Where little waves come and go: a scatter of spots well inside still water (the rivers have their current).
   const waves = [], running = flowOf().running;
   for (let i = 0; i < f2.length; i++) {
-    const x = i % S.W, y = (i / S.W) | 0, h = hash2(x, y, world.seed);
-    if (f2[i] > 0.9 && h < 0.14 && !running[i]) waves.push({ x: x + hash2(y, x, 7), y: y + hash2(x, y, 11), ph: h / 0.14 });
+    if (f2[i] <= 0.9 || running[i]) continue;
+    const x = i % W, y = (i / W) | 0, h = hash2(x, y, seed);
+    if (h < 0.14) waves.push({ x: x + hash2(y, x, 7), y: y + hash2(x, y, 11), ph: h / 0.14 });
   }
   // Reeds in patches along the shore, and lily pads out on quiet shallows away from the deep (drawShore).
   const shore = [], later = reedsLater();
   for (let i = 0; i < f1.length; i++) {
-    const x = i % S.W, y = (i / S.W) | 0, h = hash2(x, y, world.seed + 5), wet = world.water[i];
-    const reed = hash2(x >> 2, y >> 2, world.seed + 6) < 0.55 && (wet ? wet !== S.DEEP && f1[i] < 0.8 && h < 0.3 : f1[i] > 0.2 && h < 0.4);
+    const wet = water[i];
+    if (wet ? wet === S.DEEP : f1[i] <= 0.2) continue;   // (deep water, or dry land away from it: neither reeds nor lilies)
+    const x = i % W, y = (i / W) | 0, h = hash2(x, y, seed + 5);
+    const reed = hash2(x >> 2, y >> 2, seed + 6) < 0.55 && (wet ? f1[i] < 0.8 && h < 0.3 : h < 0.4);
     const lily = !reed && wet === S.SHALLOW && f4[i] > 0.6 && d2[i] < 0.35 && h > 0.88 && !running[i];   // in still water
     if (!reed && !lily) continue;
     if (later && later[i]) continue;      // (a new pond's come later)
@@ -6062,14 +5928,21 @@ function addEffect(emoji, x, y, rise = 1.2, dur = 1400) {
   ui.effects.push({ emoji, x, y, rise, dur, t0: performance.now() });
 }
 
+// An effect swells to 1.1x and back as it rises: painted once at its biggest and drawn smaller, as each size it
+// passed through would be a painting of its own (an emoji, 2 to 20 ms).
 function drawEffects(now) {
-  ui.effects = ui.effects.filter(e => now - e.t0 < e.dur);
+  let n = 0;
+  for (const e of ui.effects) if (now - e.t0 < e.dur) ui.effects[n++] = e;
+  ui.effects.length = n;
+  const px = Math.max(14, cam.zoom * 1.2);
   for (const e of ui.effects) {
     const a = (now - e.t0) / e.dur;
     const [sx, sy] = toScreen(e.x, e.y);
-    const px = Math.max(14, cam.zoom * 1.2);
-    drawEmoji(e.emoji, sx, sy - px * 0.8 - e.rise * px * a, px * (0.8 + 0.3 * Math.sin(a * Math.PI)), { alpha: 1 - a * a });
+    const s = sprite(e.emoji, px * 1.1), size = s.size * (0.8 + 0.3 * Math.sin(a * Math.PI)) / 1.1;
+    ctx.globalAlpha = 1 - a * a;
+    ctx.drawImage(s.canvas, sx - size / 2, sy - px * 0.8 - e.rise * px * a - size / 2, size, size);
   }
+  ctx.globalAlpha = 1;
 }
 
 // ------------------------------------------------------------------ voles
@@ -6610,10 +6483,10 @@ function handleEvent(e) {
       break;
     }
     case 'dugpond': {                   // (?keep) the keeper dug a pond
-      const what = e.lasting ? `water all year${e.deep ? ', deep in the middle' : ''}${S.dryComing(world) ? ', even through the Dry Year' : ''}`
-        : e.dryOut ? 'it lasts an ordinary summer, but dries out in the Dry Year' : 'a spring pool, dry by summer';
+      const q = pondWords({ water: e.lasting + e.spring, summer: e.lasting + e.dryOut, dry: e.lasting });
+      const what = `${q.head[0].toLowerCase()}${q.head.slice(1)}, ${q.size}${q.lasts ? `, ${q.lasts}` : ''}${e.deep ? ', deep in the middle' : ''}`;
       const frogs = e.frogs < 0 ? 'No frogs live near enough to find it yet.' : e.frogs <= 2 ? 'Frogs live right by it.' : `Frogs ${e.frogs} tiles off could find it.`;
-      if (e.bigger) addNews(`⛏️ You made ${thingLink('water', e.water, `<b>${esc(e.name)}</b>`)} bigger, by ${e.tiles} tiles.`);
+      if (e.bigger) addNews(`⛏️ You made ${thingLink('water', e.water, `<b>${esc(e.name)}</b>`)} bigger, by ${q.size}${q.lasts ? ` (${q.lasts})` : ''}.`);
       else addNews(`⛏️ You dug ${thingLink('water', e.water, `<b>${esc(e.name)}</b>`)}: ${what}. ${frogs}`);
       break;
     }
@@ -6629,6 +6502,10 @@ function handleEvent(e) {
       break;
     case 'dryend':
       addNews('🌧️ <b>The rain is back:</b> the Dry Year is over.');
+      break;
+    case 'drythrough':                  // (?keep) came through it: the news, and a card saying what it came to
+      addNews(`🌈 <b>The meadow came through the Dry Year.</b> At its worst, ${Math.round(e.low * 100)}% of it was still green.`);
+      lostCard.pending = true;
       break;
     case 'dryloss': {                   // (?keep) the Dry Year was lost: a card, and the meadow runs on
       const why = e.why === 'barren' ? ' The meadow went barren.' : e.species === 'frogs' ? ' The last frog is gone.' : '';   // (the last of any other kind was just told)
@@ -7156,8 +7033,10 @@ function forecastTick() {
   const day = Math.floor(world.tick / S.TPD) % S.SEASON_DAYS;
   if (day !== forecast.day) { forecast.day = day; forecast.el.querySelector('.pip.now').style.setProperty('--p', `${(day + 1) / S.SEASON_DAYS * 100}%`); }
   const ahead = dry - now, left = Math.ceil((S.dryTo(world) - world.tick) / S.TPD * 2) / 2;
+  const days = `${Math.floor(left) || ''}${left % 1 ? '½' : ''} ${left > 1 ? 'days' : 'day'}`;
   const line = stage === 3 ? '🌧️ <b>Rain again</b>'
-    : stage === 2 ? `<span class="cap">Dry Year</span> <b>${Math.floor(left) || ''}${left % 1 ? '½' : ''} ${left > 1 ? 'days' : 'day'}</b> left`
+    : world.dryYear.lost ? `🥀 <b>Lost</b> · rain in <b>${days}</b>`   // (lost: nothing more at stake, only the wait for the rain)
+    : stage === 2 ? `<span class="cap">Dry Year</span> <b>${days}</b> left`
     : `<span class="cap">Dry Year</span> ${ahead <= 1 ? '<b>next season</b>' : `in <b>${ahead} seasons</b>`}`;
   if (line !== forecast.line) { forecast.line = line; forecast.el.querySelector('.pip-line').innerHTML = line; }
 }
@@ -7395,7 +7274,7 @@ const SERIES = {
 const SEASON_TINT = ['#f6dde5', '#f7ecb8', '#f4d6b6', '#dfe8f0'];
 const RANGES = { year: S.YEAR_DAYS * S.TPD, five: 5 * S.YEAR_DAYS * S.TPD, all: Infinity };
 const RANGE_WORDS = { year: 'the last year', five: 'the last 5 years', all: 'the whole story' };
-const MARK_EMOJI = { extinct: '😢', arrive: '🧳', fire: '🔥', outbreak: '🤒', drystart: '☀️', dryend: '🌧️', dryloss: '🥀', dugpond: '⛏️', frogsfound: '🐸', sowstrip: '🌼', beesfound: '🐝', hedgeplant: '🌿', hedgebloom: '🌸' };
+const MARK_EMOJI = { extinct: '😢', arrive: '🧳', fire: '🔥', outbreak: '🤒', drystart: '☀️', dryend: '🌧️', dryloss: '🥀', drythrough: '🌈', dugpond: '⛏️', frogsfound: '🐸', sowstrip: '🌼', beesfound: '🐝', hedgeplant: '🌿', hedgebloom: '🌸' };
 const CAUSES = [['fox', '🦊', 'Caught by a fox'], ['hunger', '🥀', 'Starved'], ['age', '🌙', 'Old age'],
   ['sickness', '🤒', 'Sickness'], ['lightning', '⚡', 'Lightning'], ['fire', '🔥', 'Wildfire'], ['flood', '🌊', 'Drowned in a flood'],
   ['ice', '🧊', 'Fell through the ice'], ['owl', '🦉', 'Taken by an owl'], ['left', '🧳', 'Left to find a home of its own']];
@@ -7739,7 +7618,8 @@ const web = { open: false, when: 'year', at: 0, hover: null, pin: null, v: null,
 const webOpen = () => web.open;
 
 const PLURALS = { body: 'bodies', fox: 'foxes', fish: 'fish' };
-const big = n => (n >= 1e6 ? `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)} million` : Math.round(n).toLocaleString('en-US'));
+const BIG = new Intl.NumberFormat('en-US');             // (made once: toLocaleString makes one each time)
+const big = n => (n >= 1e6 ? `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)} million` : BIG.format(Math.round(n)));
 const many = (n, one) => { n = Math.round(n); return n <= 0 ? `no ${PLURALS[one] || one + 's'}` : n === 1 ? `one ${one}` : `${big(n)} ${PLURALS[one] || one + 's'}`; };
 const upper = s => s[0].toUpperCase() + s.slice(1);
 const andList = a => (a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1]);
@@ -8022,6 +7902,7 @@ function seasonChip(t, year) {
 }
 
 function when(t) {
+  t = Math.max(0, t);                    // (the intro's kits were born on the way here, before the meadow's first day)
   const s = S.seasonOf(t), day = Math.floor(t / S.TPD);
   return `${S.SEASONS[s].name} ${day % S.SEASON_DAYS + 1}, Y${Math.floor(day / S.YEAR_DAYS) + 1}`;
 }
@@ -8890,6 +8771,7 @@ function holdHide() { holdAnim?.cancel(); holdAnim = null; }
 const buzz = pattern => { try { navigator.userActivation?.hasBeenActive !== false && navigator.vibrate?.(pattern); } catch (e) { /* fine */ } };
 
 canvas.addEventListener('pointerdown', e => {
+  if (!world) return;                     // (a kept meadow still opening)
   if (intro.on) { endIntro(true); return; }
   if (ui.ring) { closeRing(); return; }
   if ($('#toolbar').classList.contains('open')) { toggleTools(false); return; }   // that tap only folds the tools away
@@ -8930,6 +8812,7 @@ canvas.addEventListener('pointerdown', e => {
   }
 });
 canvas.addEventListener('pointermove', e => {
+  if (!world) return;
   if (fingers.has(e.pointerId)) fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (pinch) { movePinch(); return; }
   if (zoomDrag && e.pointerId === zoomDrag.id) {
@@ -9314,12 +9197,41 @@ function comingWhen(t) {
   return years === 1 ? `next ${s}` : `in the ${s} of year ${yearAt(t)}`;
 }
 
-// What it will bring, in a line: how big, water all year or a spring pool, a deep middle or not, and the frogs.
+// A pond's water in words (a plan's, a pond's or its news'), q: { water: its tiles that hold water in spring, summer: those
+// that last an ordinary summer, dry: those that last the Dry Year's }. head: what most of it does; size: how much water
+// (never the dug tiles too high to hold any); lasts: how much of it lasts the summer to come, when not all or most of it.
+function pondWords(q) {
+  const coming = S.dryComing(world), most = n => n * 2 >= q.water, last = n => `${n} last${n === 1 ? 's' : ''}`;
+  const head = !q.water ? 'Dry: the water doesn’t reach it' : coming && most(q.dry) ? 'Water all year, even in the Dry Year'
+    : most(q.summer) ? (coming ? 'Water through an ordinary summer' : 'Water all year') : 'A spring pool, dry by summer';
+  const lasts = !q.water ? '' : coming ? (q.dry >= q.water ? '' : q.dry ? `${last(q.dry)} the Dry Year` : 'none of it lasts the Dry Year')
+    : q.summer && q.summer < q.water ? `${last(q.summer)} the summer` : '';
+  return { head, size: `${q.water} ${q.water === 1 ? 'tile' : 'tiles'} of water`, lasts };
+}
+
+// (?keep, while the Dry Year is to come or on) The Dry Year's green as the meadow is now (sim.js dryForecast), worked
+// out again only when a day, a pond or a hedge changes; and what a stroke would add to it, in a line.
+const dryBase = { key: '', f: null, wild: null };
+function dryNow() {
+  const key = `${Math.floor(world.tick / S.TPD)}:${(world.ponds || []).map(p => p.grown || p.dug).join()}:${(world.hedges || []).map(h => h.whips).join()}`;
+  if (dryBase.w !== world) dryBase.wild = S.dryForecast(world, true);   // (the meadow with no keeper: only its ground)
+  if (dryBase.key !== key || dryBase.w !== world) Object.assign(dryBase, { key, w: world, f: S.dryForecast(world) });
+  return dryBase.f;
+}
+const dryKept = () => Math.max(0, dryNow().green - dryBase.wild.green);   // the green tiles your ponds and hedges keep
+function dryLine(plan) {
+  if (!S.dryComing(world)) return '';
+  const n = S.dryGain(world, dryNow(), plan).more;
+  return n > 0 ? `☀️ Keeps ${n} more ${n === 1 ? 'tile' : 'tiles'} green in the Dry Year` : '☀️ No more green in the Dry Year';
+}
+
+// What it will bring, in a line: how much water, how much of it lasts, a deep middle or not, the green it keeps in the
+// Dry Year, and the frogs.
 function placeLabel(pl) {
   const p = pl.plan;
   let text;
   if (pl.tool === 'hedge') text = p.ok ? `<b>A hawthorn hedge · ${p.whips} ${p.whips === 1 ? 'whip' : 'whips'} · thick enough to hide a rabbit ${comingWhen(p.young)} · blossom ${comingWhen(p.blossom)}</b>`
-    + `<small>${[p.grows ? `Goes on with ${esc(p.grows.name)}` : '', p.blocked ? `${BLOCKED[p.blocker][0].toUpperCase() + BLOCKED[p.blocker].slice(1)}${p.blocked > 1 ? ' and more' : ''} in the way: skipped` : '',
+    + `<small>${[dryLine(p), p.grows ? `Goes on with ${esc(p.grows.name)}` : '', p.blocked ? `${BLOCKED[p.blocker][0].toUpperCase() + BLOCKED[p.blocker].slice(1)}${p.blocked > 1 ? ' and more' : ''} in the way: skipped` : '',
       pl.full ? 'as long as one row goes' : ''].filter(Boolean).join(' · ')}</small>`
     : `<b>${NO_HEDGE[p.why]}</b>`;
   else if (pl.tool === 'sow') text = p.ok ? `<b>A strip of ${kindWords(p.kind)} · ${p.sown} tiles · ${BLOOM_WHEN[p.bloom]}</b><small>${hivesNear(p.hives)}`
@@ -9327,11 +9239,10 @@ function placeLabel(pl) {
     : `<b>${NO_SOW[p.why]}</b>`;
   else if (!p.ok) text = `<b>${NO_POND[p.why]}</b>`;
   else {
-    const n = p.lasting + p.spring + p.dry, grows = p.grows ? `Makes ${esc(world.waters[p.grows.id].name)} bigger · ` : '';
-    const what = p.lasting ? `${grows}Water all year${S.dryComing(world) ? ', even in the Dry Year' : ''} · ${n} tiles · ${p.deep ? 'deep middle: a rabbit can escape a fox there' : 'all shallows, as the frogs like it'}`
-      : p.dryOut ? `${grows}A spring pool · ${n} tiles: it lasts an ordinary summer, but dries out in the Dry Year`
-      : `${grows}A spring pool · ${n} tiles: it dries out in summer, the frogs’ favourite`;
-    const also = [frogsOff(p.frogs)];
+    const q = pondWords({ water: p.lasting + p.spring, summer: p.lasting + p.dryOut, dry: p.lasting }), grows = p.grows ? `Makes ${esc(world.waters[p.grows.id].name)} bigger · ` : '';
+    const what = `${grows}${q.head} · ${q.size}${q.lasts ? ` · ${q.lasts}` : ''}`;
+    const also = [dryLine(p), q.head.startsWith('A spring') ? 'The frogs’ favourite' : p.deep ? 'Deep middle: a rabbit can escape a fox there' : 'All shallows, as the frogs like it',
+      frogsOff(p.frogs)].filter(Boolean);
     if (p.blocked) also.push(`${BLOCKED[p.blocker][0].toUpperCase() + BLOCKED[p.blocker].slice(1)}${p.blocked > 1 ? ' and more' : ''} left standing`);
     if (pl.full) also.push('as big as one stroke goes');
     text = `<b>${what}</b><small>${also.join(' · ')}</small>`;
@@ -9414,10 +9325,9 @@ function drawRipples(now, z) {
 // The keeper's pond in the inspector: when it was dug, whether it lasts the summer, and what comes next.
 const whenIn = t => `${seasonName(S.seasonOf(t))} of year ${Math.floor(t / S.TPD / S.YEAR_DAYS) + 1}`;
 function dugFacts(p) {
+  const q = pondWords({ water: p.lasting + p.spring, summer: p.lasting, dry: p.dryLasting });
   const out = [['⛏️', `You dug it in the ${whenIn(p.dug)}${p.grown ? `, and made it bigger in the ${whenIn(p.grown)}` : ''}`],
-    p.lasting && S.dryComing(world) && !p.dryLasting ? ['⏳', 'It lasts an ordinary summer, but dries out in the Dry Year']
-      : p.lasting ? ['💧', `Water all year: it lasts the summer${S.dryComing(world) ? ', even the Dry Year’s' : ''}${p.deep ? ', and it’s deep in the middle' : ''}`]
-      : ['⏳', 'A spring pool: it dries out in summer']];
+    [q.head.startsWith('Water all year') ? '💧' : '⏳', `${q.head}: ${q.size}${q.lasts ? `, ${q.lasts}` : ''}${p.deep ? ', deep in the middle' : ''}`]];
   if (!p.reeds) out.push(['🌾', 'Reeds come up round it after a season']);
   if (!p.found) {
     const n = S.frogsNear(world, p.x, p.y);
@@ -9670,12 +9580,13 @@ function greenTip() {
   const s = S.SEASONS[green.season % 4].name.toLowerCase();
   return `<h4 class="fr">🌱 Green <b${green.low ? ' class="low"' : ''}>${green.share}%</b></h4><p>Land whose grass is still green</p>`
     + tipList([['📅', green.came ? 'When you came' : `When the ${s} began`, green.ref + '%'], ...(s === 'winter' ? [['❄️', 'In winter', 'the grass rests']] : []),
-      ['☀️', 'In the Dry Year', 'by the water only', true]]);
+      ['☀️', 'In the Dry Year', 'by the water only', true],
+      ...(S.dryComing(world) ? [['⛏️', 'Your ponds and hedges keep', `${dryKept()} tiles`, true]] : [])]);
 }
 
 // ?keep's alerts, Frostpunk's way (#alerts, over the bar): a state, not a message. A chip for each kind in danger (fewer
 // than sim.js DANGER, and up till a quarter past it, so 7, 8, 7 doesn't blink; none left is the news's) and for the days
-// running gone barren while the Dry Year counts. Up as long as it lasts, never put away: barren first, then the kinds
+// running gone barren while the Dry Year counts (before that, GREEN under twice BARREN: "🥀 Green 14%"). Up as long as it lasts, never put away: barren first, then the kinds
 // by how close to none, three at most. On the cards' beat, from counts the sim keeps, written only when they change.
 // A new one pulses, sounds once and flashes its mark in the top bar; those up as a meadow opens, or that came while you
 // were away, are only noted. A hover or a tap shows its card (alertTip), a click goes to the next of them (alertGo).
@@ -9704,9 +9615,12 @@ function alertsTick(now) {
     if (on) list.push([k, n / T, `${n}`]);
   }
   list.sort((a, b) => a[1] - b[1]);
-  const barren = dy && !dy.lost && S.dryCounting(world) ? dy.barren || 0 : 0;
-  if (!barren !== !alerts.on.barren) { alerts.on.barren = barren > 0; if (barren) fresh.push('barren'); }
+  const counting = dy && !dy.lost && S.dryCounting(world), barren = counting ? dy.barren || 0 : 0;
+  const low = counting && !barren && green.world === world && green.share < S.BARREN * 200 ? green.share : -1;   // (under twice barren: a warning first)
+  const warn = barren > 0 || low >= 0;
+  if (warn !== !!alerts.on.barren) { alerts.on.barren = warn; if (warn) fresh.push('barren'); }
   if (barren) list.unshift(['barren', 0, `${barren}/${S.BARREN_DAYS}`]);
+  else if (low >= 0) list.unshift(['barren', 0, `${low}%`]);
   list.length = Math.min(list.length, 3);
   if (alerts.first || away.on) fresh.length = 0;          // (already up as the meadow opened, or the away card tells it)
   alerts.first = false;
@@ -9720,7 +9634,11 @@ function alertsTick(now) {
   for (const [k, b] of Object.entries(alerts.btn)) {
     const i = list.findIndex(a => a[0] === k), v = i < 0 ? '' : list[i][2], cls = now < (alerts.fresh[k] || 0) ? 'alert fresh' : 'alert';
     const was = alerts.shown[k] || [];
-    if (was[0] !== v) { b.hidden = i < 0; if (v) b.querySelector('b').textContent = v; }
+    if (was[0] !== v) {
+      b.hidden = i < 0;
+      if (v) b.querySelector('b').textContent = v;
+      if (v && k === 'barren') b.querySelector('.l').textContent = v.endsWith('%') ? 'Green' : 'Barren';
+    }
     if (was[1] !== i) b.style.order = i;
     if (was[2] !== cls) b.className = cls;
     if (was[0] !== v && tip.tool === 'alert:' + k) { if (v) setHTML($('#tool-tip'), alertTip(k)); else hideTip(); }
@@ -9750,6 +9668,8 @@ const ALERT_HELP = {
 function alertTip(k) {
   const dy = world.dryYear, stakes = dy && !dy.lost && (S.dryComing(world) || S.dryCounting(world));
   const help = ALERT_HELP[k].filter(r => stakes || !r[3]);
+  if (k === 'barren' && !dy.barren) return `<h4 class="fr">🥀 Green <b class="danger">${green.share}%</b></h4><p>Hardly any green left</p>`
+    + tipList([['🥀', `Under ${Math.round(S.BARREN * 100)}% for ${S.BARREN_DAYS} days: meadow lost`, 'the Dry Year', true], ...help]);
   if (k === 'barren') return `<h4 class="fr">🥀 Barren <b class="danger">${dy.barren || 0}/${S.BARREN_DAYS}</b></h4><p>Days running with hardly any green</p>`
     + tipList([['🥀', `${S.BARREN_DAYS} days: meadow lost`, 'the Dry Year', true], ...help]);
   return `<h4 class="fr">${ALERT_ICON[k]} ${k === 'frogs' ? 'Frogs' : SPECIES_WORD[k]} <b class="danger">${alertCount(k)}</b></h4><p>In danger: so few left</p>`
@@ -10507,7 +10427,7 @@ function copyMeadow() {
 }
 
 document.addEventListener('keydown', e => {
-  if (e.target.closest('input,textarea')) return;
+  if (e.target.closest('input,textarea') || !world) return;
   if (intro.on) {                                      // any key skips the intro
     if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key !== 'Shift' && e.key !== 'Tab') { e.preventDefault(); endIntro(true); }
     return;
@@ -10849,7 +10769,8 @@ function tryThing(k) {
 
 // (?keep) Losing the Dry Year (sim.js dryLost): one plain card, the meadow going on behind it. Start again: the same seed,
 // a fresh keeper meadow, its Dry Year in the same year, in place of this one (kept at once). Shown once the away card
-// is done with, if it came while you were away.
+// is done with, if it came while you were away. Coming through it gets the same card (#lost.through), saying what it
+// came to, with only Carry on.
 const lostCard = { pending: false };
 const LOST_WHY = {
   rabbit: 'The grass out in the straw gave them nothing, and the green by the water wasn’t enough for them all.',
@@ -10860,6 +10781,23 @@ const LOST_WHY = {
   otter: 'The water fell, and there were too few fish left in it.',
   frogs: 'The pools dried up, and the damp grass by the water went with them.',
 };
+// Coming through (sim.js dryThrough, at the end of the autumn after): how green it stayed at its worst, who made it (a kind
+// whose hives ran dry once the counting stopped, said plainly), and what the keeper's work came to; or that it got by alone.
+function throughWords(t) {
+  const kinds = Object.entries(t.here), gone = kinds.filter(([, n]) => !n).map(([k]) => (k === 'frogs' ? 'frogs' : SPECIES_WORD[k].toLowerCase()));
+  const who = kinds.filter(([, n]) => n).map(([k, n]) => `${ALERT_ICON[k]} ${n}`).join(' · ');
+  const close = S.BARREN_DAYS - (t.close || 0), days = close === 1 ? 'a day' : `${close} days`;
+  let line = `At its worst, ${Math.round(t.low * 100)}% of the meadow was still green${t.close ? `: ${days} more and it would have gone barren` : ''}.`
+    + `${who ? ` Made it: ${who}.` : ''}`;
+  if (gone.length) line += ` The ${gone.join(' and the ')} got through the summer, but not the autumn after.`;
+  const times = n => `${n} ${n === 1 ? 'time' : 'times'}`, rows = [];
+  if (t.kept > 0) rows.push(['⛏️', 'Your ponds and hedges kept green', `${t.kept} tiles`]);
+  if (t.sips > 0) rows.push(['🌼', 'Bees sipped at your flowers', times(t.sips)]);
+  if (t.hid > 0) rows.push(['🌿', 'Rabbits hid from a fox in your hedges', times(t.hid)]);
+  if (t.ponds > 0) rows.push(['🐸', `Frogs live in your ${t.ponds === 1 ? 'pond' : 'ponds'}`, `${t.ponds}`]);
+  if (!rows.length) rows.push(['🌱', 'You left it to itself', 'it got by']);
+  return ['🌈 The meadow came through the Dry Year.', line, rows];
+}
 function lostWords(e) {
   if (e.why === 'barren') return ['🥀 The meadow went barren in the Dry Year.', `For ${S.BARREN_DAYS} days running, hardly a patch of it was green.`];
   const name = e.species === 'frogs' ? 'frog' : S.SPECIES[e.species].name.toLowerCase();
@@ -10868,9 +10806,14 @@ function lostWords(e) {
 const lostOpen = () => !$('#lost').classList.contains('hidden');
 function showLost(open = true) {
   lostCard.pending = false;
-  if (open && world.dryYear?.lost) {
-    const [title, line] = lostWords(world.dryYear.lost);
+  const dy = world.dryYear, through = !dy?.lost && dy?.through;
+  if (open && !dy?.lost && !through) return;
+  if (open) {
+    const [title, line, rows] = through ? throughWords(through) : [...lostWords(dy.lost), []];
     $('#lost-title').textContent = title; $('#lost-text').textContent = line;
+    setHTML($('#lost-list'), rows.map(([icon, what, n]) => `<li><span>${icon}</span><span>${what}</span><em>${n}</em></li>`).join(''));
+    $('#lost-list').hidden = !rows.length;
+    $('#lost').classList.toggle('through', !!through);
   }
   $('#lost').classList.toggle('hidden', !open);
 }
@@ -10895,7 +10838,9 @@ const TASKS = [
   { k: 'pond', e: '⛏️', verb: 'Dig a pond', wait: 'frogs move in', got: '🐸' },
   { k: 'sow', e: '🌼', verb: 'Sow flowers', wait: 'bees come', got: '🐝' },
   { k: 'hedge', e: '🌿', verb: 'Plant a hedge', wait: 'a rabbit hides in it', got: '🐇' },
+  { k: 'green', e: '☀️', verb: 'Keep it green', wait: 'tiles in the Dry Year', got: '☀️' },
 ];
+const GREEN_GOAL = 500;                   // the green tiles your ponds and hedges keep in the Dry Year, for the last task
 const TASK_LINE_MS = 7000;                // and a task done stays up under the watch this long
 const tasks = { el: $('#tasks'), on: false, w: null, fold: false, key: '', strips: [], more: {}, done: null, fresh: {}, shown: [] };
 
@@ -10921,9 +10866,10 @@ function buildTasks() {
 }
 
 // What each task is waiting on, once a day: how far the nearest frogs are from a pond they haven't found, when a strip
-// not yet in flower blooms (as the Flowers tool's card says it), and when a hedge will be thick enough.
+// not yet in flower blooms (as the Flowers tool's card says it), and when a hedge will be thick enough. And the green
+// tiles your ponds and hedges would keep if the Dry Year came now (dryKept), while it's to come or on.
 function tasksMore(ponds, hedges) {
-  const more = {};
+  const more = { kept: S.dryComing(world) ? dryKept() : -1 };
   let near = Infinity;
   for (const p of ponds) if (!p.found) { const n = S.frogsNear(world, p.x, p.y); if (n >= 0 && n < near) near = n; }
   if (ponds.some(p => !p.found)) more.pond = near === Infinity ? 'none in reach' : near <= 2 ? 'right here' : `${near} tiles away`;
@@ -10934,17 +10880,20 @@ function tasksMore(ponds, hedges) {
 }
 
 function tasksTick(now) {
-  if (lostCard.pending && !away.on && !awayOpen()) showLost();   // (?keep: the Dry Year lost, once the away card is done)
+  if (lostCard.pending && !away.on && !awayOpen()) showLost();   // (?keep: the Dry Year lost or come through, once the away card is done)
   const show = tasks.on && !away.on;
   if (tasks.el.classList.contains('hidden') === show) tasks.el.classList.toggle('hidden', !show);
   if (!tasks.on) return;
   if (world !== tasks.w) buildTasks();
   const ponds = world.ponds || [], hedges = world.hedges || [];
-  const key = `${Math.floor(world.tick / S.TPD)}:${ponds.length}:${world.fields.length}:${hedges.length}`;
+  const key = `${Math.floor(world.tick / S.TPD)}:${ponds.map(p => p.grown || p.dug).join()}:${world.fields.length}:${hedges.map(h => h.whips).join()}`;
   if (key !== tasks.key) { tasks.key = key; tasks.strips = world.fields.filter(f => f.strip); tasks.more = tasksMore(ponds, hedges); }
   const pond = ponds.find(p => p.found), strip = tasks.strips.find(f => f.found), hedge = hedges.find(h => h.escapes > 0);
-  const got = { pond: pond && `Frogs moved into ${world.waters[pond.id].name}`, sow: strip && `Bees found ${strip.name}`, hedge: hedge && `A rabbit hid in ${hedge.name}` };
-  const begun = { pond: ponds.length, sow: tasks.strips.length, hedge: hedges.length }, n = TASKS.filter(t => got[t.k]).length;
+  const kept = tasks.more.kept, dy = world.dryYear;
+  const got = { pond: pond && `Frogs moved into ${world.waters[pond.id].name}`, sow: strip && `Bees found ${strip.name}`, hedge: hedge && `A rabbit hid in ${hedge.name}`,
+    green: (kept >= GREEN_GOAL || tasks.done?.green) && `Your work keeps ${Math.max(kept, GREEN_GOAL)} tiles green` };
+  const begun = { pond: ponds.length, sow: tasks.strips.length, hedge: hedges.length, green: kept > 0 }, n = TASKS.filter(t => got[t.k]).length;
+  const gone = { green: !got.green && (kept < 0 || dy?.lost) };   // (the Dry Year over or lost: the last task goes, done or not)
   const first = !tasks.done;
   tasks.done ??= {};
   for (const t of TASKS) {
@@ -10954,22 +10903,25 @@ function tasksTick(now) {
     tasks.fresh[t.k] = now + 1200;
     chime('tick');
     if (canBreak()) {
-      showBreak('day', `<b class="fr">${t.got} ${esc(got[t.k])}</b>`, `Task done · ${n}/${TASKS.length}`, TASK_LINE_MS);
+      showBreak('day', `<b class="fr">${t.got} ${esc(got[t.k])}</b>`, `Task done · ${n}/${TASKS.filter(t => !gone[t.k]).length}`, TASK_LINE_MS);
       daybreak.hold = now + TASK_LINE_MS;   // the next day's line waits
     }
   }
-  const next = TASKS.find(t => !got[t.k] && !begun[t.k]);
+  const next = TASKS.find(t => !got[t.k] && !begun[t.k] && !gone[t.k]);
+  tasks.more.green = kept > 0 ? `${kept} so far` : '';
   TASKS.forEach((t, i) => {
-    const small = got[t.k] ? `${t.got} ${got[t.k]}` : `→ ${t.wait}${begun[t.k] && tasks.more[t.k] ? ` · ${tasks.more[t.k]}` : ''}`;
+    if (tasks.rows[i].hidden !== !!gone[t.k]) tasks.rows[i].hidden = tasks.chips[i].hidden = !!gone[t.k];
+    const wait = t.k === 'green' ? `${GREEN_GOAL} ${t.wait}` : t.wait;
+    const small = got[t.k] ? `${t.got} ${got[t.k]}` : `→ ${wait}${begun[t.k] && tasks.more[t.k] ? ` · ${tasks.more[t.k]}` : ''}`;
     const cls = [got[t.k] ? 'done' : begun[t.k] ? 'wait' : '', t === next ? 'next' : '', now < (tasks.fresh[t.k] || 0) ? 'fresh' : ''].filter(Boolean).join(' ');
     const was = tasks.shown[i] || [];
     if (was[0] !== small) tasks.rows[i].querySelector('small').textContent = small;
     if (was[1] !== cls) { tasks.rows[i].className = cls; tasks.chips[i].className = `ce ${cls}`; }
     tasks.shown[i] = [small, cls];
   });
-  const count = `${n}/${TASKS.length}`, fold = tasks.fold;
+  const count = `${n}/${TASKS.filter(t => !gone[t.k]).length}`, fold = tasks.fold;
   if (tasks.shown.count !== count) { tasks.shown.count = count; tasks.el.querySelector('.t-count').textContent = count; }
-  const head = S.dryStage(world) === 2 ? 'Through the Dry Year' : S.dryComing(world) ? 'Before the Dry Year' : 'Tasks';
+  const head = dy?.lost ? 'Tasks' : S.dryStage(world) === 2 ? 'Through the Dry Year' : S.dryComing(world) ? 'Before the Dry Year' : 'Tasks';
   if (tasks.shown.head !== head) { tasks.shown.head = head; tasks.el.querySelector('.cap').textContent = head; }
   if (tasks.el.classList.contains('fold') !== fold) {
     tasks.el.classList.toggle('fold', fold);
@@ -10981,11 +10933,12 @@ function tasksTick(now) {
 
 // A tap on a task: its tool in your hand, or a done one, off to look at what did it. A phone folds the card away.
 function taskTap(k) {
-  if (tasks.done?.[k]) {
+  if (tasks.done?.[k] && k !== 'green') {
     const pond = world.ponds?.find(p => p.found), strip = tasks.strips.find(f => f.found), d = k === 'hedge' && hedgeMiddle(world.hedges.find(h => h.escapes > 0));
     const thing = k === 'pond' ? pond && `water:${pond.id}` : k === 'sow' ? strip && `field:${strip.id}` : d && `tree:${d.id}`;
     if (thing) goToThing(thing);
-  } else if (ui.tool !== k) setTool(k);
+  } else if (k === 'green') { if (ui.tool !== 'pond') setTool('pond'); }   // (ponds keep the most green)
+  else if (ui.tool !== k) setTool(k);
   if (narrow()) foldTasks(true);
 }
 
@@ -11287,6 +11240,7 @@ function idleFrame(now, dt) {
   if (idle.dipAt) {                       // dark: cut to the next shot, then light again
     if (now - idle.dipAt < DIP_MS) return;
     idle.dipAt = 0;
+    if (Date.now() - keptWhen > KEEP_IDLE_MS) keepMeadow();   // (a save's hitch, where it can't be seen)
     beginShot(idle.next, now, false);
     $('#intro .dip').classList.remove('on');
   }
@@ -11319,7 +11273,7 @@ function idleFrame(now, dt) {
 // take the place of your own: the bare address opens the last one, a link its own. Not in the lab.
 // A kept meadow that won't open, or that broke the page the last time it opened (OPENING), is let go.
 const KEEP_MEADOWS = 3;
-const KEEP_IDLE_MS = 10 * 60e3;            // and while it films itself (nobody at the keys to see the hitch), this often
+const KEEP_IDLE_MS = 10 * 60e3;            // and while it films itself (nobody at the keys to see the hitch, in a dip to dark), this often
 const KEPT = KEEP ? 'aeon-garden-kept-keep' : 'aeon-garden-kept', OPENING = 'aeon-garden-opening';   // in localStorage (?keep keeps its own few)
 let keepOpen = null, keptTick = -1, keptWhen = Date.now();
 let opening = 0;                           // a kept meadow just opened: 1 until a frame starts, then counts frames that got to the end
@@ -11427,7 +11381,7 @@ addEventListener('pagehide', keepMeadow);
 const AWAY_MIN = 5 * 60e3;                 // gone at least this long, in real time
 const AWAY_TICKS = S.SEASON_DAYS * S.TPD;  // and it moves on a season, however long it was
 const AWAY_MS = 40;                        // of each frame the catching up gets
-const AWAY_BIG = ['dryloss', 'extinct', 'dryend', 'drystart', 'dryspring', 'swarm', 'settle', 'hivestruck', 'queenlost', 'fire', 'outbreak', 'outbreakover', 'mast', 'voles', 'frogyear', 'treedied', 'windthrow', 'frogsfound', 'pondgrew', 'stripbloom', 'beesfound', 'hedgeyoung', 'hedgebloom', 'hedgehaws', 'visitor'];   // news for the card, the first told first
+const AWAY_BIG = ['dryloss', 'drythrough', 'extinct', 'dryend', 'drystart', 'dryspring', 'swarm', 'settle', 'hivestruck', 'queenlost', 'fire', 'outbreak', 'outbreakover', 'mast', 'voles', 'frogyear', 'treedied', 'windthrow', 'frogsfound', 'pondgrew', 'stripbloom', 'beesfound', 'hedgeyoung', 'hedgebloom', 'hedgehaws', 'visitor'];   // news for the card, the first told first
 const away = { on: false, frames: 0, left: 0, from: 0, day: -1, births: null, deaths: null, news: [], type: '', mine: false, waited: false };
 const awayOpen = () => !$('#away').classList.contains('hidden');
 const deathsOf = s => Object.values(world.stats.deaths[s]).reduce((a, b) => a + b, 0);
@@ -11629,10 +11583,12 @@ function frame(now) {
     const n = Math.min(Math.floor(acc), 2000), t0 = performance.now();
     acc -= n;
     for (let i = 0; i < n; i++) {
+      // A new day's tick is the heaviest by far (the trees, the ground): it starts a frame rather than ends a full one.
+      if (i && (world.tick + 1) % S.TPD === 0 && performance.now() - t0 > SIM_MS / 2) break;
       if (ui.speed <= SMOOTH_SPEED) keepLast();
       S.step(world);
       if (world.events.length) flushEvents();
-      if ((i & 7) === 7 && performance.now() - t0 > SIM_MS) break;
+      if (performance.now() - t0 > SIM_MS) break;            // (each tick: on a phone a few are a frame's worth)
     }
   }
   if (ui.newsStale && ui.newsOpen) renderNewsLog();
@@ -11699,9 +11655,10 @@ function frame(now) {
     askTick(Math.min(now - lastCard, 1000));
     guideTick(now);
     alertsTick(now);                                     // (?keep)
+    if (!away.on) furAhead(now);
     lastCard = now;
     if (idleMayStart(now)) startIdle(now);
-    if (idle.on && Date.now() - keptWhen > KEEP_IDLE_MS) keepMeadow();
+    if (idle.on && Date.now() - keptWhen > KEEP_IDLE_MS * 1.5) keepMeadow();   // (kept in a dip to dark, idleFrame, unless the shots glide on)
     updateMeadowCard();
     forecastTick();
     if (ui.sound) {

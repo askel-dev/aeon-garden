@@ -262,6 +262,25 @@ on its own. Then one or two people who've never seen it. If it fails, the notes 
     Nil's number before you commit). The meter itself is the HUD's GREEN (U5).
   - Coming through: a card at the end of the autumn after (losses stop counting `DRY_AFTER` days after the rain, so by then
     it's settled), who made it and how low the green went. The rain coming back stays its own news line before it.
+  - **As built (2026-10-13),** after the keeper-mode playtest (`research/playtest.md`, findings 1 and 2):
+    - The forecast: sim.js `dryForecast(w, wild)`, the share of the land the Dry summer's low would leave green if it
+      came now, with no grazing (the water that lasts it, the keeper's ponds too, the hedges' lanes as wide as their whips
+      will be by then; `wild`: no ponds, no hedges), and `dryGain(w, base, plan)`, what a pond's or a hedge's stroke adds,
+      looked at only within its reach. About 2 ms a forecast. It's never shown as a share: the green the rabbits leave is
+      about half of it (over 36 meadows, 12 seeds each idle, `keep` and `diligent`, the lowest green was mostly half the forecast, from a tenth to three quarters), so a "GREEN in the Dry Year: 18%"
+      would promise what the meadow won't keep. What's shown is the tiles: the ghost's line "☀️ Keeps 201 more tiles
+      green in the Dry Year" (or "No more green"), GREEN's card "Your ponds and hedges keep N tiles", and the card after.
+    - A fourth task, ☀️ Keep it green → 500 tiles in the Dry Year (`GREEN_GOAL`; game.js `dryNow`, `dryKept`): the one
+      that keeps going once the first three are done, and moves with every pond and hedge. The `keep` keeper's pond and
+      hedge keep 100 to 300 tiles, the `diligent` one's 600 to 1,000. It goes once the Dry Year is over or lost, done or not.
+    - The verdict: sim.js `dryThrough` at the start of the winter after, if not lost (`w.dryYear.through`, event
+      `drythrough`, 🌈 on the graph and the away card): the green at its lowest and how close it came to barren (`close`),
+      who made it, the most tiles the ponds and hedges kept green in its summer (`kept`, from the forecast with and without
+      them), the rabbits that hid in the hedges and the sips on the strips since its spring (`keeperTally`, `from`), the
+      ponds the frogs found. game.js shows it on the loss card (`#lost.through`, `throughWords`, only Carry on); a kind
+      whose hives ran dry after the counting stopped is said plainly ("got through the summer, but not the autumn after").
+    - GREEN under twice `BARREN` while the Dry Year counts raises the barren chip as "🥀 Green 14%", before the days start.
+    - Lost and watching on: the tasks' heading is plain "Tasks" and the ribbon "🥀 Lost · rain in 3½ days".
 - **Step 2, the keeper's HUD (agreed 2026-10-11).** Axel: "Right now all the instructions just sit in a little box down
   in the left corner." Frostpunk puts the threat front and centre with its forecast, what you have along the top, a build
   menu at the bottom where each building explains itself, and a few short missions. At `?keep` only (the bare address

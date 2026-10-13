@@ -373,6 +373,12 @@
   #lost .go { flex: 1; border-radius: 14px; background: #4f7f3a; color: #fff; font-size: 16px; padding: 12px; box-shadow: none; }
   @media (hover: hover) { #lost .go:hover { background: #44702f; } }
   #lost .later { flex: none; border-radius: 14px; background: #fbf5e8; padding: 12px 16px; box-shadow: none; }
+  #lost .carry, #lost.through .again, #lost.through .later { display: none; }
+  #lost.through .carry { display: block; }
+  /* coming through: what the keeper's work came to, a row each */
+  #lost ul { list-style: none; margin: -4px 0 18px; padding: 10px 0 0; border-top: 1px dashed var(--line); display: grid; gap: 7px; }
+  #lost li { display: grid; grid-template-columns: 24px 1fr auto; gap: 6px; align-items: baseline; font-size: 15px; font-weight: 700; line-height: 1.35; }
+  #lost li em { font-style: normal; font-size: 13px; font-weight: 800; color: var(--muted); white-space: nowrap; }
 
   /* ---- how to put the meadow on the home screen, from ••• */
   #home-guide { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(60, 70, 30, 0.28); z-index: 10; }
@@ -1548,14 +1554,16 @@
   </div>
 </div>
 
-<!-- ?keep: the Dry Year lost (game.js, showLost) -->
+<!-- ?keep: the Dry Year lost, or come through (game.js, showLost) -->
 <div id="lost" class="hidden" role="dialog" aria-modal="true" aria-labelledby="lost-title">
   <div class="card">
     <h2 class="fr" id="lost-title"></h2>
     <p id="lost-text"></p>
+    <ul id="lost-list" hidden></ul>
     <div class="btns">
-      <button class="btn go" data-act="lost-again">Start again</button>
+      <button class="btn go again" data-act="lost-again">Start again</button>
       <button class="btn later" data-act="lost-watch">Keep watching</button>
+      <button class="btn go carry" data-act="lost-watch">Carry on</button>
     </div>
   </div>
 </div>
@@ -1609,6 +1617,7 @@
 </div>
 
 <script src="sim.js"></script>
+<script src="fur.js"></script>
 <script src="sound.js"></script>
 <script src="ground.js"></script>
 <script src="game.js"></script>

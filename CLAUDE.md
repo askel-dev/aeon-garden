@@ -45,6 +45,9 @@ told to just do it.
   who, what they're up to, and the tummy. Tap it for the rest. On a touch screen every target is 44 px or more and a ✕ is
   the journal's round brass button; on an upright phone a card is a sheet from the bottom with its ✕ at the foot in the
   middle (the journal, Who ate whom, the graphs' page), and Back shuts what's open (`stepOut`).
+- `fur.js`, `fur-worker.js`: the painted foxes and rabbits (their rigs, poses and `paintFur`) and the few drawing
+  helpers every painting in game.js uses (`fillIn`, `ovalAt`, `blurIn`, `rockRGB`, `tone`...), which game.js takes from
+  `Fur`. In the meadow the worker paints them off the main thread; notes in `.claude/rules/game.md`.
 - `trees.js`, `tree-worker.js`, `tree-lab.html`: the trees, painted in code. How they're painted, cached and
   drawn is in `.claude/rules/trees.md`, which loads when one of those files is opened.
 - `balance.js`: headless check, `node balance.js [years] [seeds]` (add `plant` for a player planting 5 trees a year).
@@ -99,6 +102,11 @@ new feature must not slow it down. If it would, make it cheaper or leave it out.
   costs the most, so add one only when it's clearly worth it, and skip it while it wouldn't show.
 - The sim can run 2000 ticks in one frame. In hot loops, don't make new objects or arrays, and don't
   scan every creature: use the neighbour grid. Recount things only after they change.
+- The sim's objects keep one layout for life: every field a creature, a tree, a rock or the world will ever have is
+  made with it (`blankCreature`, `blankTree`, `rockOf`, the world's `LATER`), a field that ever holds a fraction starts
+  as `-0`, and nothing is `delete`d (set it to its blank value). A field added mid-game, or a whole number turning a
+  fraction, gives V8 a new layout: it then reads those objects the slow way for good and keeps rerunning stale compiled
+  loops, which once halved the sim's speed. A new field goes into the blank.
 - The page (cards, inspector, news) updates a few times a second at most, and only rewrites what changed.
 - Measure it, but only when a change will obviously cost something you could notice: a new full-screen
   pass, much more drawn each frame, new work in a hot loop. Then time `render` before and after over a few
