@@ -97,6 +97,11 @@ new feature must not slow it down. If it would, make it cheaper or leave it out.
   costs the most, so add one only when it's clearly worth it, and skip it while it wouldn't show.
 - The sim can run 2000 ticks in one frame. In hot loops, don't make new objects or arrays, and don't
   scan every creature: use the neighbour grid. Recount things only after they change.
+- The sim's objects keep one layout for life: every field a creature, a tree, a rock or the world will ever have is
+  made with it (`blankCreature`, `blankTree`, `rockOf`, the world's `LATER`), a field that ever holds a fraction starts
+  as `-0`, and nothing is `delete`d (set it to its blank value). A field added mid-game, or a whole number turning a
+  fraction, gives V8 a new layout: it then reads those objects the slow way for good and keeps rerunning stale compiled
+  loops, which once halved the sim's speed. A new field goes into the blank.
 - The page (cards, inspector, news) updates a few times a second at most, and only rewrites what changed.
 - Measure it, but only when a change will obviously cost something you could notice: a new full-screen
   pass, much more drawn each frame, new work in a hot loop. Then time `render` before and after over a few
