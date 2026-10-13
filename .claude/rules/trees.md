@@ -36,3 +36,9 @@ paths:
   Small paintings are sculpted coarser (`ss`), which is most of the saving.
   `tree-lab.html` shows every kind in every season, close and far, in any tone, young or grown, dead, as a log and
   as a stump, with sliders for `LOOK` and a "Copy as code".
+- Each kind's leaf colours by season are one table, `CROWNS` (a tree takes one of each list by its tone; a copper beech
+  has its own), shared by the crowns and the falling leaves. The leaves coming down in autumn are each kind's own leaf
+  (`leafOutline`: lobed oak and hawthorn, a five-pointed maple, a small toothed birch, a round alder, pointed ovals for
+  beech, cherry and apple), painted once in every colour its crown takes onto one sheet a size (`leafSheet`, in the tree
+  workers): a flat colour, the half away from the light a shade darker, a midrib and a stem, and a paler back. The sheet
+  comes with `pick`: the colours a tree of each kind and tone drops (game.js `drawLeaves` draws them).

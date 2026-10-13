@@ -2,6 +2,8 @@
 paths:
   - game.js
   - index.html
+  - fur.js
+  - fur-worker.js
 ---
 
 # game.js
@@ -16,15 +18,20 @@ With Look in hand, a press on an animal dragged (or a finger held on it) picks i
 hand's speeding up swings (`heldFrame`, `drawHeld`), kicks in fits, and drops with a hop where you let go
 (`letGo`, `drawFalling`). In the sim (`lift`, `putDown`) a held one (`c.held`) skips its turn and is out of the
 grid, so nothing hunts it; its place is the ground under the hand, and it lands on the nearest dry footing.
-Foxes and rabbits are painted (`paintFox`, `paintRabbit`, styled on the carcasses): one rig posed for
+Foxes and rabbits are painted (fur.js: `paintFox`, `paintRabbit`, styled on the carcasses): one rig posed for
 what each is doing (`FOX_POSES`, `RABBIT_POSES`, picked by `foxArt`, `rabbitArt`), painted as one animal by `paintFur`
 (one shading over it all, each part's form and the markings soft, a part in front casting a soft shadow, a softened
 outline and a faint grain), so its parts don't read as separate shapes. A rabbit's coat is painted in its own colours;
 in winter it whitens in 5 steps, only the brown and the white painted and the steps between the two mixed. A painting
 is costly (each pass through the scratch layer is a flush), so parts can share one (`joined`) and the parts behind are
 just shaded (`flat`). It's painted only at doublings of its size (`FUR_PAINTED`) and shrunk for the sizes between,
-which keeps a dozen poses, growing young and zooming cheap. A pose not painted yet waits a frame once the frame has done
-its painting (`shownPose`, as a tree's new colours do): the animal holds the pose it was last drawn in.
+which keeps a dozen poses, growing young and zooming cheap. In the meadow the paintings are made off the main thread
+(fur-worker.js, which loads fur.js; game.js `furReady` asks for them, and shrinking or a part-white mix is done on the
+page once what it's made from has come). Till a pose comes the animal holds the one it was last drawn in (`shownPose`,
+as a tree's new colours do), or the same at another size or one of its kin stands in (`furKin`), and each look about the
+screen is asked for ahead (`furAhead`), so only the first of a look is painted on the page. Without a worker (no
+OffscreenCanvas) they're painted on the page, a new pose waiting a frame once the frame has done its painting. The
+inspector's portrait and the P photo are always painted on the page.
 On the move their legs go round with the ground they cover (`gaitOf`: a fox trots and gallops four paintings a stride,
 its back level at a trot), a rabbit hops in bursts, drawn a little ahead of or behind the sim along its way and
 stopping between hops (`hopSurge`), and up to 2x everything is drawn between the sim's last two ticks (`drawnAt`,
@@ -50,6 +57,15 @@ all placed by the flow's clock alone (`flowTick`: the sim's `riverPace`, faster 
 the summer low). A frame only looks at the stretches of river on screen (`R.box`). What floats comes mostly from the trees
 on the bank (`floatSources`, once a day: blossom off one in flower, its leaves as `treeLook` draws them while they come
 down), and a little from upstream; a tree you plant by the river drops its leaves in.
+In autumn a painted tree's leaves come down as its kind's own leaf, in its crown's colours (trees.js `leafSheet`, a sheet
+a size from the tree workers, `LEAF_TIERS`): green ones only now and then from a crown still turning (`LEAF_GREEN`),
+then its own autumn colour (an oak's last ones dry), a few in its kind's others (`LEAF_OTHER`). Each glides down swinging
+from side to side and tipping into each swing, turns over now and then (the paler back), drifts on the wind, and lands
+round the foot, where it lies flat a moment and fades. Nothing is kept: a leaf goes round its life on the clock (where it
+is comes from the time and hash numbers). The trees dropping leaves are listed as the shadows go down (`treeLeaves`), and
+drawn twice by `drawLeaves`: those lying then, under all that stands, those in the air at the end. Each leaf is a
+transform and a draw of its own, so they're thinned on trees drawn small (`LEAF_MIN`, `LEAF_FULL`: zoomed out, a wood had
+nearly 2000). An emoji tree keeps the old tumbling ovals (`drawFallingLeaves`).
 A first visit (or `?intro`) gets a short welcome card, then the intro (`startIntro`, `introFrame`): an
 empty meadow (createWorld's `arrival` option, `planArrivals` in sim.js) where a family hops in at dawn,
 digs its burrow and turns in for the night, while the camera, the clock's pace and a caption at a time
