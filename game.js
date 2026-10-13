@@ -1267,11 +1267,13 @@ function sortByY(items) {
   bySorted.length = 0;
 }
 
+let shakeX = 0, shakeY = 0;                          // the frame's own transform (render's), in device pixels: see drawPaintedTree
 function render(now) {
   // Thunder rumbles the whole screen a little.
   const q = now - ui.sky.boom < 350 && ui.speed <= 4 ? 3 * (1 - (now - ui.sky.boom) / 350) : 0;
   const shx = q * Math.sin(now / 17), shy = q * Math.cos(now / 23);
-  ctx.setTransform(dpr, 0, 0, dpr, shx * dpr, shy * dpr);
+  shakeX = shx * dpr; shakeY = shy * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, shakeX, shakeY);
   alphaNow = ALPHA.get.call(ctx);                    // (the canvas may have been made afresh: see fade)
   ctx.imageSmoothingEnabled = true;
   // Sprites are painted near the size they're drawn at, so 'high' looks the same, but Chrome pays
@@ -3959,9 +3961,8 @@ function drawDecorShadow(d, sx, sy, sn, px = d.tree ? treePx(d) : d.size * cam.z
     const cw = s * 0.2, ch = s * 0.06;
     ctx.globalAlpha = 0.4 + 0.25 * Math.max(0, sn.a);
     ctx.drawImage(shade, sx - cw, sy - ch * 0.8, cw * 2, ch * 2);
-    ctx.globalAlpha = 1;
   }
-  if (sn.a <= 0.02) return;
+  if (sn.a <= 0.02) { ctx.globalAlpha = 1; return; }
   const w = s * (d.tree ? 0.34 : 0.42), h = s * 0.12, off = sn.lean * s * 0.22;
   const W = (w + Math.abs(off) * 0.6) * 2.5, H = h * 2.6;   // the soft edge takes a bit off, so a bit bigger
   ctx.globalAlpha = (tree ? 0.55 : 0.3) * sn.a;
@@ -4441,10 +4442,12 @@ function drawPaintedTree(d, sx, sy, now, ck, stage = S.treeStage(world, d), px =
     if (fade >= 1) treeWaits.delete(d);
   }
   const r = wood ? 0 : treeSway(d, now) * (stage === 'dead' ? 0.4 : 1), still = Math.abs(r) * px < 0.5;   // a sway too small to see isn't drawn
-  if (!still) { ctx.save(); ctx.translate(sx, sy); ctx.rotate(r); }   // swaying from the foot
+  // Swaying from the foot. A tree is only ever drawn in render's own transform, so it's set back as it was, with no
+  // save and restore (turning it back by the inverse leaves it a hair off, and Chrome then draws what follows another way).
+  if (!still) { const c = Math.cos(r) * dpr, s = Math.sin(r) * dpr; ctx.setTransform(c, s, -s, c, sx * dpr + shakeX, sy * dpr + shakeY); }
   if (A) putPainting(A, f, fade, snow, still ? sx : 0, still ? sy : 0);
   if (B) putPainting(B, f, (A ? m : 1) * fade, snow, still ? sx : 0, still ? sy : 0);
-  if (!still) ctx.restore();
+  if (!still) ctx.setTransform(dpr, 0, 0, dpr, shakeX, shakeY);
   return true;
 }
 function putPainting(p, f, alpha, snow, ox, oy) {
