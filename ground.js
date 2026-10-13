@@ -409,16 +409,25 @@ function set(name, data) {
 // CSS pixels all round, and while the screen stays inside it, it is only copied from further along,
 // in whole pixels. Not while something else makes it paint often anyway (the light at 15x or 60x, a
 // zoom): the margin would only make every paint bigger.
+//
+// Each paint is a full pass of the shader over the screen, which a phone's GPU feels. So when only the light or the
+// grass has moved (not the camera, the zoom or the size), the paint waits till u.calm ms after the last one, and
+// whatever else moved meanwhile goes in the same paint; unless something was just done to the ground (u.now: a pond dug,
+// flowers sown, a hedge planted). The mist's colour only counts while there's mist about the screen (u.fogShown).
 const PAD = 64;
-let last = null, stale = true, busy = 0, panned = -1e9;   // busy: how often lately more than the camera moved
+let last = null, stale = true, busy = 0, panned = -1e9, paintedAt = -1e9;   // busy: how often lately more than the camera moved
 const NEAR = { drought: 0.004, snow: 0.004, damp: 0.002, ice: 0.004, cold: 0.004, lx: 0.08, ly: 0.08 };
 const EXACT = ['width', 'height', 'zoom', 'dpr'];
 const was = { ox: 0, oy: 0 }, view = { x: 0, y: 0 };
-function steady(u) {                                    // all but where the camera is
-  if (stale || !last || u.seed[0] !== last.seed[0] || u.seed[1] !== last.seed[1]) return false;
+function framed(u) {                                    // the same size, zoom and meadow as the last paint
+  if (!last || u.seed[0] !== last.seed[0] || u.seed[1] !== last.seed[1]) return false;
   for (const k of EXACT) if (u[k] !== last[k]) return false;
+  return true;
+}
+function steady(u) {                                    // all but where the camera is
+  if (stale || !framed(u)) return false;
   for (const k in NEAR) if (Math.abs(u[k] - last[k]) > NEAR[k]) return false;
-  for (const k of ['low', 'high', 'sand', 'fog']) for (let i = 0; i < 3; i++) if (Math.abs(u[k][i] - last[k][i]) > 0.5) return false;
+  for (const k of u.fogShown ? ['low', 'high', 'sand', 'fog'] : ['low', 'high', 'sand']) for (let i = 0; i < 3; i++) if (Math.abs(u[k][i] - last[k][i]) > 0.5) return false;
   for (let i = 0; i < 3; i++) if (Math.abs(u.light[i] - last.light[i]) > 0.002) return false;   // (game.js moves it in steps)
   return true;
 }
@@ -426,17 +435,20 @@ const within = (d, pad, dpr) => d === 0 || Math.abs(d) <= pad - 1 / dpr;
 
 //   width, height   the screen, in the canvas's pixels
 //   zoom, ox, oy    CSS pixels a tile, and where the meadow's corner lands
+//   calm, now       how long since the last paint a paint for the light or the grass waits; and none, this once
+//   fogShown        whether the mist shows anywhere it paints
 //   the rest        see the uniforms in the shader
 function draw(u) {
   const now = performance.now();
   if (u.ox !== was.ox || u.oy !== was.oy) panned = now;
   was.ox = u.ox; was.oy = u.oy;
-  const still = steady(u);
-  busy = busy * 0.95 + (last && !still ? 0.05 : 0);
-  if (still && within(last.ox - u.ox, last.pad, u.dpr) && within(last.oy - u.oy, last.pad, u.dpr)) {
+  const still = steady(u), wait = !still && !u.now && now - paintedAt < u.calm && framed(u);
+  busy = busy * 0.95 + (last && !still && !wait ? 0.05 : 0);
+  if ((still || wait) && within(last.ox - u.ox, last.pad, u.dpr) && within(last.oy - u.oy, last.pad, u.dpr)) {
     view.x = Math.round((last.pad + last.ox - u.ox) * u.dpr); view.y = Math.round((last.pad + last.oy - u.oy) * u.dpr);
     return false;
   }
+  paintedAt = now;
   const most = Math.round(PAD * u.dpr), cw = u.width + 2 * most, ch = u.height + 2 * most;
   const m = now - panned < 1000 && busy < 0.5 ? most : 0, pad = m / u.dpr;
   if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }

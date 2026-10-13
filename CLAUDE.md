@@ -19,16 +19,20 @@ closed); none of that project's rules apply here.
 - `ground.js`: the ground (grass, earth, shores, water) as a WebGL shader, painted from a
   few small textures of one texel a tile that game.js keeps up to date (`paintTerrain`, `updateWater`).
   It paints again only when a texture, the zoom or the light has moved (`steady`), and at most at 2x
-  (`GROUND_DPR`). In Safari (`WEBKIT`) it keeps to `GROUND_WEBKIT` pixels, never below 1x: Safari misses a frame
+  (`GROUND_DPR`). A paint for the light or the grass alone waits till `calm` ms after the last (game.js `GROUND_CALM_MS`,
+  by the pace's rung; what the keeper just did is painted at once, `groundNow`), and the mist's colour only counts
+  with mist on screen (`fogShown`). In Safari (`WEBKIT`) it keeps to `GROUND_WEBKIT` pixels, never below 1x: Safari misses a frame
   on each repaint of a big ground. While the camera pans (following, dragging) it paints a margin round the screen (`PAD`)
   and slides the picture along (`Ground.view`) until the margin runs out. The picture is a canvas of its own
   under the meadow's (`#ground`), slid into place with a CSS transform, never copied onto a frame (only into
   the P photo, laid under the rest, `groundIn`); so nothing drawn on the meadow can blend with the ground (a `'lighter'` glow lays a
   light over it instead of adding to it). The golden hour lights it in the shader (`light`, game.js `goldLight`, in
   `GOLD_STEPS` so it repaints only on a step); what stands on it gets the same warmth as one `'source-atop'` fill, and
-  the night is a navy `wash` over everything. The loop gives the sim at most `SIM_MS` a frame (a slow phone runs 60x a bit slower
-  instead of dropping frames), and a paused meadow nobody is touching draws at 30 fps (`resting`).
-- `sound.js`: all the sounds, made with Web Audio (no files). Off until the 🔊 button or M.
+  the night is a navy `wash` over everything. The loop draws only as often as the picture needs (game.js `pace`, see
+  Keep it smooth), and gives the sim at most `SIM_MS` a 60th of a second (a slow phone runs 60x a bit slower instead of
+  dropping frames).
+- `sound.js`: all the sounds, made with Web Audio (no files). Off until the 🔊 button or M. Off, or with the page
+  hidden (its meadow stands still then), the whole engine pauses, its timer too (`hear`, `ticking`).
   `sound-lab.html` plays each one on its own. Keep it minimal: one scale, few sounds. Every 5 to 10
   minutes a short felt-piano piece plays (`TUNES`, written out note by note and played a little
   differently each time); the lab plays each piece on demand. Like C418's Minecraft music, the
@@ -103,6 +107,14 @@ new feature must not slow it down. If it would, make it cheaper or leave it out.
   fraction, gives V8 a new layout: it then reads those objects the slow way for good and keeps rerunning stale compiled
   loops, which once halved the sim's speed. A new field goes into the blank.
 - The page (cards, inspector, news) updates a few times a second at most, and only rewrites what changed.
+- Battery is part of smooth: a frame is drawn only as often as the picture needs (game.js `pace`). At most 60 a second
+  whatever the screen, the meadow at most 2x sharp, 30 a second in a lull (time running, nobody touching it for a few
+  seconds, nothing on screen moving faster than `LULL_PX_S`), 30 and then 15 paused, and none after a minute paused and
+  untouched (a touch, a key or the tab coming back wakes it, `wakePace`). Frames coming late step it down `RUNGS` (fewer
+  pixels, then 30 a second), and it tries the rung above again later; the battery saver (••• menu, or by itself on a
+  low battery) holds it low. So anything new that moves fast across the screen must count in the lull, raising
+  `pace.moved` by its speed in screen px a second as `movedOn`, `drawFlow` and `drawEffects` do, or it judders at 30;
+  and nothing may change the picture without a frame to show it.
 - Measure it, but only when a change will obviously cost something you could notice: a new full-screen
   pass, much more drawn each frame, new work in a hot loop. Then time `render` before and after over a few
   seconds in a busy meadow, following an animal, zoomed out, at 60x. If it got slower, fix it before

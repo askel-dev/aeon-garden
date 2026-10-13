@@ -71,6 +71,7 @@ const cam = { x: S.W / 2, y: S.H / 2, zoom: 10, goal: null };
 const canvas = $('#world');
 const ctx = canvas.getContext('2d');
 let vw = 0, vh = 0, dpr = 1, minZoom = 1, fitZoom = 1;
+let uiDpr = 1;                                    // the cards' own canvases (the graphs): as sharp as the screen, whatever the meadow's dpr
 const FIT = 0.92;                                 // zoomed right out, how much of the window the meadow fills (it fades into mist, mistField)
 let barPad = 0;                                   // screen pixels the toolbar covers at the bottom (on a phone, its button in the corner)
 let topPad = 0;                                   // and the top bar at ?keep covers at the top
@@ -126,19 +127,23 @@ function shortOfScreen() {
 function resize() {
   if (shortOfScreen()) document.documentElement.style.setProperty('--home-bar', '0px');
   else document.documentElement.style.removeProperty('--home-bar');
-  dpr = pixelRatio();
+  const sharp = sharpness();                     // (the pace's rung: at most 2x, less on a device that can't keep up)
+  if (sharp !== dpr) { dpr = sharp; newSharpness(); }
   // The CSS sizes the canvas: in Safari on a phone it reaches under the clock and the address bar, past innerHeight.
   vw = canvas.clientWidth || innerWidth; vh = canvas.clientHeight || innerHeight;
-  canvas.width = Math.round(vw * dpr); canvas.height = Math.round(vh * dpr);
+  const w = Math.round(vw * dpr), h = Math.round(vh * dpr);
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }   // (setting it at all clears it)
   minZoom = Math.max(vw / S.W, vh / S.H);        // the meadow fills the window: the wide shot
   fitZoom = Math.min(vw / S.W, vh / S.H) * FIT;  // and you may look further out, at all of it
   cam.zoom = Math.max(cam.zoom, fitZoom);
   clampCam();
+  uiDpr = pixelRatio();
   for (const s of S.KINDS) {
     const c = $('#spark-' + s);
-    c.width = Math.round(c.clientWidth * dpr); c.height = Math.round(c.clientHeight * dpr);
+    c.width = Math.round(c.clientWidth * uiDpr); c.height = Math.round(c.clientHeight * uiDpr);
   }
   measureSheet();
+  pace.settle = performance.now() + PACE_SETTLE_MS;   // (a new size paints sprites afresh: those frames aren't the device's pace)
 }
 
 // On a phone the inspector is a sheet over the bottom of the meadow, or on its side a panel down the
@@ -330,6 +335,19 @@ function dropSprites(need) {
   if (spriteCache.size <= 2000 && spriteBytes + need <= SPRITE_BYTES) return;
   for (const s of spriteCache.values()) freeImage(s.canvas);
   spriteCache.clear(); latestLook.clear(); spriteBytes = 0;
+}
+// The meadow is drawn at another sharpness (the pace's rung, or another screen): sprites are painted afresh at it, the
+// old ones standing in meanwhile as for a new size (latestLook), and let go once the new ones have had time to come.
+function newSharpness() {
+  const old = [...spriteCache.values()];
+  spriteCache.clear(); spriteBytes = 0;
+  furSent.clear(); furAsked.clear();                     // (asked again at the new one; what comes for the old is dropped)
+  setTimeout(() => {
+    for (const s of old) {
+      if (latestLook.get(s.look) === s) latestLook.delete(s.look);
+      freeImage(s.canvas);
+    }
+  }, 5000);
 }
 
 // Trees wear the seasons by repainting their emoji (once per look; the sprite cache keeps it).
@@ -542,6 +560,7 @@ function coldness() {
 
 const FLAT_WATER = [110, 175, 215];                // (no WebGL: the water's flat colour)
 function paintTerrain() {
+  if (terrainTick < 0) groundNow = true;                 // (something done to the ground: shown this very frame)
   const g = world.grass, water = world.water, [low, high] = groundColours(), damp = 1 - 0.12 * world.wet;
   shoreSand = low.map(v => v * 0.9 * damp);
   let sum = 0;
@@ -590,6 +609,10 @@ function edgeColour(r, g, b) {
 // ground, however cheap the shader: on a MacBook at 2x, five times a second at 1x speed. There the ground
 // is kept to GROUND_WEBKIT pixels, but never below 1x. A phone's small screen stays at 2x.
 const GROUND_DPR = 2, GROUND_WEBKIT = 1.5e6;
+// A paint of the ground for the light or the grass alone waits this long after the last one (ground.js), by the pace's
+// rung: each is a pass of the shader over the whole screen. What the keeper just did is painted at once (groundNow).
+const GROUND_CALM_MS = [250, 400, 700, 1000];
+let groundNow = false;
 const WEBKIT = /AppleWebKit/.test(navigator.userAgent) && !/Chrome\/|Chromium|Edg\//.test(navigator.userAgent);
 const groundLayer = Ground.ok ? Ground.canvas : null, laid = { w: 0, h: 0, x: 0, y: 0 };
 if (groundLayer) { groundLayer.id = 'ground'; canvas.before(groundLayer); }
@@ -606,12 +629,17 @@ function drawGround(z, ox, oy, shx, shy) {
   if (!mist.field) { mistField(); Ground.mist(mist.field, MIST_W, MIST_H, MIST_OUT); }
   const gd = Math.min(dpr, GROUND_DPR, WEBKIT ? Math.max(1, Math.sqrt(GROUND_WEBKIT / (vw * vh))) : Infinity);
   const w = Math.round(vw * gd), h = Math.round(vh * gd);
+  // The mist shows where it paints (the screen and the margin it keeps for a pan, ground.js PAD) only near the edges.
+  const hw = (vw / 2 + 64) / z, hh = (vh / 2 + 64) / z;
+  const fogShown = cam.x - hw < MIST_DEEP || cam.y - hh < MIST_DEEP || cam.x + hw > S.W - MIST_DEEP || cam.y + hh > S.H - MIST_DEEP;
   Ground.draw({
     width: w, height: h, zoom: z, ox, oy, dpr: gd, seed: groundSeed, low, high, sand: shoreSand, fog: fogColour(high, ck.phase),
     light: goldLight(shownGold(ck.phase)),
     snow: world.snow, damp: 1 - 0.12 * world.wet, ice: iceOver(), cold: coldness(), lx: k * sn.lean, ly: k * 0.8,
     drought: Math.round(S.dryness(world) * 16) / 16,     // (?keep, the Dry Year: in steps, so the ground repaints only on a step)
+    calm: LAB ? 0 : Math.max(GROUND_CALM_MS[pace.rung], saving() ? SAVER_TERRAIN_MS : 0), now: groundNow, fogShown,
   });
+  groundNow = false;
   if (groundIn) { groundIn = [Ground.view.x, Ground.view.y, w, h]; return; }   // the photo lays it under the meadow after (copyMeadow)
   const g = Ground.canvas, cw = g.width / gd, ch = g.height / gd, x = shx - Ground.view.x / gd, y = shy - Ground.view.y / gd;
   if (cw !== laid.w || ch !== laid.h) { g.style.width = cw + 'px'; g.style.height = ch + 'px'; laid.w = cw; laid.h = ch; }
@@ -1293,8 +1321,20 @@ function sortByY(items) {
   bySorted.length = 0;
 }
 
+// How fast what's drawn moves across the screen, for the pace's lull: the fastest, in screen px a second (pace.moved),
+// from where each was drawn the frame before (without the camera's own moving, which the pace looks at itself).
+const drawnWhere = new WeakMap();                    // creature or visitor: { x, y, at }
+function movedOn(c, x, y, now) {
+  const p = drawnWhere.get(c);
+  if (!p) { drawnWhere.set(c, { x, y, at: now }); return; }
+  const dt = now - p.at;
+  if (dt > 0 && dt < 250) { const v = Math.hypot(x - p.x, y - p.y) * 1000 / dt; if (v > pace.moved) pace.moved = v; }
+  p.x = x; p.y = y; p.at = now;
+}
+
 let shakeX = 0, shakeY = 0;                          // the frame's own transform (render's), in device pixels: see drawPaintedTree
 function render(now) {
+  pace.moved = 0;
   // Thunder rumbles the whole screen a little.
   const q = now - ui.sky.boom < 350 && ui.speed <= 4 ? 3 * (1 - (now - ui.sky.boom) / 350) : 0;
   const shx = q * Math.sin(now / 17), shy = q * Math.cos(now / 23);
@@ -1362,6 +1402,7 @@ function render(now) {
     }
     const [sx, sy] = screenOf(c);
     if (!visible(sx, sy, 60)) continue;
+    if (c.species !== 'bee' && !c.held) movedOn(c, sx + cam.x * z, sy + cam.y * z, now);   // (the pace's lull: a bee is a speck)
     const it = itemOf(items, c.y + (c.mode === 'dance' ? DANCE_FRONT : c.species === 'owl' && c.mode !== 'gulp' ? OWL_FRONT : 0), sx, sy, c.held ? 1 : 1 - mistAt(c.x, c.y));
     it.c = c;
     if (c.species === 'crow' && crowSeat(c)) it.y -= (seat.y - seat.tree.y) * SEAT_SORT;   // up a tree: just after it, not after the trees just in front
@@ -1371,7 +1412,8 @@ function render(now) {
     const d = drawnAt(v), [sx, sy] = toScreen(d.x, d.y);
     const sort = v.kind === 'kingfisher' && v.tree && v.mode !== 'in' && v.mode !== 'out' ? Math.max(d.y, v.tree.y + 0.02)   // (in front of its tree)
       : v.kind === 'skylark' && v.high > 0.3 ? OWL_FRONT : d.y;                                                       // (singing high over all)
-    if (visible(sx, sy, 40 + 2 * visitorPx(v) + visitorUp(v, visitorPx(v)))) itemOf(items, sort, sx, sy, 1 - mistAt(d.x, d.y)).v = v;
+    const up = visitorUp(v, visitorPx(v));
+    if (visible(sx, sy, 40 + 2 * visitorPx(v) + up)) { itemOf(items, sort, sx, sy, 1 - mistAt(d.x, d.y)).v = v; movedOn(v, sx + cam.x * z, sy - up + cam.y * z, now); }
     if (KEEP) watchVisitor(v, d.x, d.y, sx, sy);              // (the journal's moments)
   }
   sortByY(items);
@@ -3572,8 +3614,9 @@ if (window.Worker && window.OffscreenCanvas) {
     furWorker.postMessage({ coats: furCoats(), winter: S.WINTER_COAT });
     furWorker.onmessage = e => {
       const { key, image } = e.data, job = furSent.get(key);
+      if (!image) { furSent.delete(key); furWorker = null; return; }   // it can't paint there: they're painted here, as before
+      if (!job || image.width !== Math.ceil(job.px * 1.3 * job.dpr)) { image.close(); return; }   // painted for the sharpness before (newSharpness)
       furSent.delete(key);
-      if (!image) { furWorker = null; return; }  // it can't paint there: they're painted here, as before
       if (spriteCache.has(key)) { image.close(); return; }   // (painted here meanwhile)
       const bytes = image.width * image.height * 4;
       if (spriteCache.size > 2000 || spriteBytes + bytes > SPRITE_BYTES) dropSprites(bytes);
@@ -5326,6 +5369,7 @@ function reedsLater() {
 function updateWater() {
   const now = performance.now();
   if (pond && pond.world === world && (pond.version === world.waterVersion || now - pond.at < 1000)) return;
+  if (!pond || pond.world !== world) groundNow = true;   // (a pond just dug, or a meadow just opened: shown this very frame)
   const water = world.water, seed = world.seed, W = S.W, wet = new Float32Array(water.length), deep = new Float32Array(water.length);
   for (let i = 0; i < water.length; i++) { const v = water[i]; wet[i] = v ? 1 : 0; deep[i] = v === S.DEEP ? 1 : 0; }
   const f1 = blurred(wet), f2 = blurred(f1), f4 = blurred(blurred(f2)), d2 = blurred(blurred(deep));
@@ -5376,6 +5420,7 @@ function updateParch() {
   for (let i = 0; i < p.length; i++) dryData[i * 4] = p[i];
   Ground.set('parched', dryData);
   parchSent.world = world; parchSent.stamp = world.parchStamp;
+  groundNow = true;                                      // (once a day, or on a dig or a planting)
 }
 
 const iceOver = () => world.ice * 0.72;   // frozen over (the sim's w.ice: it holds once it's all the way)
@@ -5654,6 +5699,9 @@ function drawFlow(now, ck) {
   // Under a pixel wide a line is still drawn a pixel wide, so it's fainter instead (by a bit less, or it'd be lost).
   const A = 0.75 * open * smooth(4, 9, z) * Math.sqrt(Math.min(1, z * 0.08));
   ctx.strokeStyle = '#f4fbff'; ctx.lineWidth = Math.max(1, z * 0.08);
+  if (A > 0.02 && streakN.some(n => n > 0)) {           // the current on screen, for the pace's lull: as fast as it runs down the middle
+    pace.moved = Math.max(pace.moved, FLOW_SPEED * water * z * (ui.speed > 1 ? ui.speed ** 0.17 : ui.speed > 0 ? 1 : 0));
+  }
   for (let shade = 1; shade <= SHADES && A > 0.02; shade++) {
     const n = streakN[shade], buf = streakBuf[shade];
     if (!n) continue;
@@ -6159,6 +6207,7 @@ function drawEffects(now) {
     const s = sprite(e.emoji, px * 1.1), size = s.size * (0.8 + 0.3 * Math.sin(a * Math.PI)) / 1.1;
     ctx.globalAlpha = 1 - a * a;
     ctx.drawImage(s.canvas, sx - size / 2, sy - px * 0.8 - e.rise * px * a - size / 2, size, size);
+    pace.moved = Math.max(pace.moved, e.rise * px * 1000 / e.dur);   // (how fast it rises, for the pace's lull)
   }
   ctx.globalAlpha = 1;
 }
@@ -7119,14 +7168,14 @@ function sparkline(canvas, data, color) {
   const pts = data.slice(since(world.tick - 2 * S.YEAR_DAYS * S.TPD));
   if (pts.length < 2) return;
   const peak = Math.max(...pts), max = Math.max(4, peak);
-  const gut = 30 * dpr, pad = 6 * dpr, cw = w - gut, top = 6 * dpr, base = h - 6 * dpr;
+  const gut = 30 * uiDpr, pad = 6 * uiDpr, cw = w - gut, top = 6 * uiDpr, base = h - 6 * uiDpr;
   const x = i => (i / (pts.length - 1)) * cw, y = v => base - (v / max) * (base - top);
-  g.font = `800 ${10 * dpr}px Nunito, sans-serif`; g.textAlign = 'right'; g.textBaseline = 'middle'; g.fillStyle = MUTED;
-  g.strokeStyle = '#e2d4ba'; g.lineWidth = dpr;
-  g.beginPath(); g.moveTo(0, base + 0.5 * dpr); g.lineTo(cw, base + 0.5 * dpr); g.stroke();
+  g.font = `800 ${10 * uiDpr}px Nunito, sans-serif`; g.textAlign = 'right'; g.textBaseline = 'middle'; g.fillStyle = MUTED;
+  g.strokeStyle = '#e2d4ba'; g.lineWidth = uiDpr;
+  g.beginPath(); g.moveTo(0, base + 0.5 * uiDpr); g.lineTo(cw, base + 0.5 * uiDpr); g.stroke();
   g.fillText('0', w - pad, base);
   if (peak > 0) {
-    g.setLineDash([3 * dpr, 3 * dpr]);
+    g.setLineDash([3 * uiDpr, 3 * uiDpr]);
     g.beginPath(); g.moveTo(0, y(peak)); g.lineTo(cw, y(peak)); g.stroke();
     g.setLineDash([]);
     g.fillText(Math.round(peak), w - pad, y(peak));
@@ -7140,7 +7189,7 @@ function sparkline(canvas, data, color) {
   g.fill();
   g.beginPath();
   pts.forEach((v, i) => (i ? g.lineTo(x(i), y(v)) : g.moveTo(x(i), y(v))));
-  g.strokeStyle = color; g.lineWidth = 2 * dpr; g.lineJoin = 'round';
+  g.strokeStyle = color; g.lineWidth = 2 * uiDpr; g.lineJoin = 'round';
   g.stroke();
 }
 
@@ -7541,9 +7590,9 @@ function niceStep(v) {
 function fitCanvas(c, cssH) {
   const w = c.clientWidth;
   c.style.height = cssH + 'px';
-  c.width = Math.round(w * dpr); c.height = Math.round(cssH * dpr);
+  c.width = Math.round(w * uiDpr); c.height = Math.round(cssH * uiDpr);
   const g = c.getContext('2d');
-  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.setTransform(uiDpr, 0, 0, uiDpr, 0, 0);
   return [g, w];
 }
 
@@ -10782,6 +10831,7 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'away-ok') closeAway();
   else if (t.dataset.act === 'ask-send') sendIdea();
   else if (t.dataset.act === 'sound') toggleSound();
+  else if (t.dataset.act === 'saver') toggleSaver();
   else if (t.dataset.act === 'stats') toggleStats();
   else if (t.dataset.act === 'web') toggleWeb();
   else if (t.dataset.show) { ui.stats.show = t.dataset.show; renderStats(); }
@@ -11955,23 +12005,72 @@ function showWorld(w) {
 
 let last = performance.now(), acc = 0, lastCard = 0, lastRecord = 0, lastStatsCards = 0;
 const TERRAIN_MS = 250;                   // real time between hand-overs of the grass to the ground (painting grass skips the wait)
-// The most real time the sim gets in a frame. A slow phone at 60x would rather run a little slower
+// The most real time the sim gets in a frame, at 60 frames a second (a frame that comes less often gets as much more, so
+// the meadow keeps its pace; but not with the battery saver on). A slow phone at 60x would rather run a little slower
 // than drop frames: the ticks that don't fit are let go, and don't pile up for the next frame.
 const SIM_MS = 6;
 
-// Paused, the world stands still, but the water, the weather and the trees still move a little:
-// 30 frames a second are plenty for that, unless you're looking around or something is happening.
-const RESTING_MS = 30, WOKEN_MS = 500;
-let lastDrawn = 0, lastInput = 0;
+// ------------------------------------------------------------------ the pace
+//
+// Every frame drawn costs battery: the GPU fills the meadow's pixels and lays them over the ground. So a frame is drawn
+// only as often as the picture needs, with no more pixels than it needs, and a device that can't keep up does less
+// rather than stutter:
+//   - at most MAX_FPS frames a second, whatever the screen can do: a 120 Hz screen would draw every frame twice;
+//   - at most twice as sharp as the page's pixels (a rung's dpr): a 3x phone has 2.25 times fewer to fill, and on a painted
+//     meadow it doesn't show (the ground was already painted at 2x);
+//   - in a lull, LULL_FPS: time running, nobody touching it for LULL_AFTER_MS, and nothing on screen, the camera neither,
+//     going faster than LULL_PX_S (zoomed out, or the animals grazing), so nothing moves more than a pixel or so between
+//     frames. Not in rain or snow, a fire, or while anything flies up out of the hand or the sky;
+//   - paused and still, REST_FPS for the trees' sway, REST_SLOW_FPS after REST_SLOW_MS, and none at all after
+//     REST_SLEEP_MS: it looks in once a second (PACE_NAP_MS), and wakes at a touch, a key or the tab coming back;
+//   - frames coming late (a slow phone, a big screen) step it down a rung (RUNGS): fewer pixels, then 30 frames a second,
+//     then fewer pixels still. With frames on time for a while it tries the rung above again, waiting longer each time
+//     that one doesn't hold. The rung is kept in the browser (RUNG_KEY), so a slow phone starts where it got to;
+//   - the battery saver (••• menu, or by itself while the battery is low and not charging) keeps to SAVER_RUNG or below,
+//     hands the grass to the ground less often (paintTerrain, SAVER_TERRAIN_MS), rests sooner, gives the sim no more
+//     than SIM_MS a frame, so 60x runs slower, and lets the screen sleep as it would (wakeTick).
+// Without a worker or WebGL it's the same: the pace only decides when render runs, and how sharp the canvas is.
+const MAX_FPS = 60;
+const RUNGS = [{ dpr: 2, fps: 60 }, { dpr: 1.5, fps: 60 }, { dpr: 1.5, fps: 30 }, { dpr: 1, fps: 30 }];   // best first
+const SAVER_RUNG = 2, SAVER_TERRAIN_MS = 1000;
+const LULL_FPS = 30, LULL_AFTER_MS = 4000, LULL_PX_S = 80;   // (80 px a second: under 3 px a frame at 30, where a pan in a film may move 10)
+const REST_FPS = 30, REST_SLOW_FPS = 15, REST_SLOW_MS = 5000, REST_SLEEP_MS = 60000, SAVER_SLEEP_MS = 15000, PACE_NAP_MS = 1000;
+const WOKEN_MS = 500;                     // a touch or a thunderclap keeps it from resting this long
+const PACE_WINDOW_MS = 2000;              // frames are judged in windows this long
+const PACE_LATE = 0.25;                   // more of them than this late (a screen's frame or more), and it steps down
+const PACE_SETTLE_MS = 3000;              // after a change (a rung, a new size, back from another tab), frames aren't judged for this long
+const PACE_UP_MS = [10e3, 160e3];         // frames on time this long before trying the rung above: at first, and at most
+const PACE_HELD_MS = 10e3;                // a rung tried that holds this long has held
+const RUNG_KEY = 'aeon-garden-rung', SAVER_KEY = 'aeon-garden-saver';
+const pace = {
+  refresh: 1000 / 60, gaps: new Float32Array(64), sorted: new Float32Array(64), g: 0, raf: 0,   // the screen's frames: how long, and the last gaps between them
+  at: 0, gap: 0, every: 1, judge: false,  // the last frame: when, how long after the one before, how many of the screen's frames it was planned to take, and whether it's judged
+  rung: 0, saver: null, low: false,       // the rung; the saver (null: as the battery says), and the battery low and not charging
+  win: 0, n: 0, late: 0, full: 0, settle: 0,   // the window: since when, frames judged, late ones, ones at the rung's own pace; no judging till settle
+  onTime: 0, upWait: PACE_UP_MS[0], upAt: -1e9, drawMs: 0,   // frames on time on this rung, ms; how long to wait before trying the one above; when it was last tried; a drawing's ms, smoothed
+  restSince: -1, sleeping: false, timer: 0,
+  moved: 0, cam: { x: 0, y: 0, zoom: 0 }, // the fastest thing on screen last frame, in screen px a second (render); where the camera was
+};
+let lastInput = 0;
+try {
+  const r = +localStorage.getItem(RUNG_KEY), s = localStorage.getItem(SAVER_KEY);
+  if (r > 0 && r < RUNGS.length) pace.rung = r;
+  if (s) pace.saver = s === '1';
+} catch (e) { /* private window: from the top */ }
+const saving = () => pace.saver ?? pace.low;
+const paceFloor = () => (saving() ? SAVER_RUNG : 0);
+pace.rung = Math.max(pace.rung, paceFloor());
+// How sharp the meadow is drawn: the screen's own, at most the rung's.
+const sharpness = (r = pace.rung) => Math.min(pixelRatio(), RUNGS[r].dpr);
 
 // A meadow is for watching, so on a phone or tablet the screen stays on while time runs, till nobody has touched it
 // for WAKE_MS; then it dims and locks as it always would. Paused or hidden, it's let go (the Screen Wake Lock API;
-// a browser without it does as it likes).
+// a browser without it does as it likes); and with the battery saver on it's never held, the screen being what costs most.
 const WAKE_MS = 10 * 60 * 1000;
 const wake = { lock: null, asking: false, retry: 0, touch: matchMedia('(pointer: coarse)') };
 function wakeTick(now) {
   if (!navigator.wakeLock || !wake.touch.matches) return;
-  const want = ui.speed > 0 && !document.hidden && now - lastInput < WAKE_MS && !LAB;
+  const want = ui.speed > 0 && !document.hidden && now - lastInput < WAKE_MS && !LAB && !saving();
   if (want && !wake.lock && !wake.asking && now > wake.retry) {
     wake.asking = true;
     navigator.wakeLock.request('screen').then(l => {
@@ -11981,7 +12080,7 @@ function wakeTick(now) {
   } else if (!want && wake.lock) { wake.lock.release().catch(() => {}); wake.lock = null; }
 }
 const camWas = { x: 0, y: 0, zoom: 0 };
-for (const type of ['pointerdown', 'pointermove', 'wheel', 'keydown', 'resize']) addEventListener(type, () => { lastInput = performance.now(); }, { passive: true });
+for (const type of ['pointerdown', 'pointermove', 'wheel', 'keydown', 'resize']) addEventListener(type, () => { lastInput = performance.now(); wakePace(); }, { passive: true });
 function resting(now) {
   const still = cam.x === camWas.x && cam.y === camWas.y && cam.zoom === camWas.zoom;
   camWas.x = cam.x; camWas.y = cam.y; camWas.zoom = cam.zoom;
@@ -11989,7 +12088,155 @@ function resting(now) {
     && now - lastInput > WOKEN_MS && now - ui.sky.boom > WOKEN_MS;
 }
 
+// Whether a frame is due at this one of the screen's: pace.every of them after the last, with half of one to spare.
+// Every one is timed, for how long the screen's frames are (the lower quarter of the last 64 gaps: a slow frame only
+// ever makes one longer), taken as 60 Hz's at most, so a device that can't keep up still sees its frames come late.
+function paceDue(now) {
+  const d = now - pace.raf;
+  pace.raf = now;
+  if (d > 2 && d < 100) {
+    pace.gaps[pace.g++ & 63] = d;
+    if ((pace.g & 15) === 0) {
+      const n = Math.min(pace.g, 64), s = pace.sorted.subarray(0, n);
+      s.set(pace.gaps.subarray(0, n)); s.sort();
+      pace.refresh = Math.min(1000 / 60, s[n >> 2]);
+    }
+  }
+  if (!pace.sleeping && now - pace.at < (pace.every - 0.5) * pace.refresh) return false;
+  pace.gap = now - pace.at; pace.at = now;
+  return true;
+}
+
+// A lull: time runs, nobody's touching it, and nothing on screen (the camera neither) moves fast enough for a frame in
+// two to show. pace.moved is the fastest of the animals and visitors drawn, the river's current and the effects rising
+// (render, drawFlow, drawEffects).
+function inLull(now) {
+  const m = ui.sky.mix, c = pace.cam, s = Math.max(1, pace.gap) / 1000;
+  const camMoved = c.zoom !== cam.zoom || Math.hypot(cam.x - c.x, cam.y - c.y) * cam.zoom / s >= LULL_PX_S;
+  return ui.speed > 0 && now - lastInput > LULL_AFTER_MS && !camMoved && pace.moved < LULL_PX_S
+    && !drag && !pinch && !held && !falls.size && !zoomTo && !ui.zaps.length && !ripples.length && !splashes.length
+    && now > pollen.until && !world.burning.length && now - ui.sky.boom > WOKEN_MS
+    && (m.rain || 0) + (m.storm || 0) + (m.snow || 0) < 0.05 && !LAB;
+}
+
+// After a frame: judge it, and plan the next (pace.every). drew: whether it drew the meadow.
+function paceAfter(now, rest, drew, drawMs) {
+  if (pace.judge && pace.gap < 250) {                   // (a longer gap is the page coming back, not the device)
+    pace.n++;
+    if (pace.gap > (pace.every + 0.5) * pace.refresh) pace.late++;
+    if (pace.every * pace.refresh < 1000 / RUNGS[pace.rung].fps * 1.25) pace.full++;   // (planned at the rung's own pace)
+  }
+  if (drew) pace.drawMs += (drawMs - pace.drawMs) * 0.1;
+  if (now - pace.win >= PACE_WINDOW_MS) paceJudge(now);
+  if (!rest) pace.restSince = -1;
+  else if (pace.restSince < 0) pace.restSince = now;
+  let fps = Math.min(MAX_FPS, RUNGS[pace.rung].fps);
+  pace.sleeping = false;
+  if (rest) {
+    const still = now - pace.restSince;
+    fps = Math.min(fps, still > (saving() ? 0 : REST_SLOW_MS) ? REST_SLOW_FPS : REST_FPS);
+    pace.sleeping = still > (saving() ? SAVER_SLEEP_MS : REST_SLEEP_MS) && !document.hidden;
+  } else if (ui.stats.open || (away.on && away.frames > 1)) fps = Math.min(fps, 30);   // the meadow covered: just the sim, and the page
+  else if (inLull(now)) fps = Math.min(fps, LULL_FPS);
+  // In whole frames of the screen's, so they come evenly: the nearest (on a 90 Hz screen 45 a second), but while a hand moves
+  // the meadow the most it can (90 there).
+  const frames = 1000 / fps / pace.refresh;
+  pace.every = Math.max(1, drag || pinch || held || zoomTo ? Math.floor(frames + 0.01) : Math.round(frames));
+  // The next frame is judged if this one drew the meadow at an ordinary pace: not catching up after being away, the
+  // first few of a meadow, or straight after a change.
+  pace.judge = drew && !away.on && opening === 0 && now > pace.settle && pace.gap < 250;
+  pace.cam.x = cam.x; pace.cam.y = cam.y; pace.cam.zoom = cam.zoom;
+}
+
+// A window's frames: too many late, a rung down; all on time for long enough, the rung above is tried.
+function paceJudge(now) {
+  const { n, late, full } = pace;
+  pace.win = now; pace.n = pace.late = pace.full = 0;
+  if (n < 12) return;
+  if (late > n * PACE_LATE) { paceStep(1, now, late > n * 0.75 ? 2 : 1); return; }   // (most late: under half the frames came, so the next rung can't do)
+  if (late > n * 0.05 || full < 12) { pace.onTime = 0; return; }
+  pace.onTime += PACE_WINDOW_MS;
+  if (pace.upAt > 0 && now - pace.upAt > PACE_HELD_MS) { pace.upAt = -1e9; pace.upWait = PACE_UP_MS[0]; }   // the last one tried held
+  if (pace.rung <= paceFloor() || pace.onTime < pace.upWait) return;
+  // A rung of more frames is tried only if a frame's own work would fit in one: drawing it, and the sim's share.
+  const up = RUNGS[pace.rung - 1];
+  if (up.fps > RUNGS[pace.rung].fps && pace.drawMs + (ui.speed > 0 ? SIM_MS : 0) > 1000 / up.fps * 0.7) return;
+  paceStep(-1, now);
+}
+
+// Down (dir 1) or up (-1) a rung or two, past any that would be the same here (a 1x screen has no 1.5x), never below the floor.
+function paceStep(dir, now, steps = 1) {
+  const same = (a, b) => sharpness(a) === sharpness(b) && RUNGS[a].fps === RUNGS[b].fps;
+  let r = pace.rung;
+  for (let k = 0; k < steps; k++) { const from = r; do r += dir; while (r > 0 && r < RUNGS.length - 1 && same(r, from)); }
+  r = clamp(r, paceFloor(), RUNGS.length - 1);
+  if (r === pace.rung || same(r, pace.rung)) return;
+  if (dir > 0 && now - pace.upAt < 60e3) pace.upWait = Math.min(PACE_UP_MS[1], pace.upWait * 2);   // the one above didn't hold: try it less often
+  pace.upAt = dir < 0 ? now : -1e9;
+  pace.onTime = 0;
+  setRung(r);
+}
+function setRung(r) {
+  pace.rung = r;
+  if (!saving()) try { localStorage.setItem(RUNG_KEY, r); } catch (e) { /* fine */ }   // (the device's own, not the saver's)
+  if (sharpness() !== dpr) refit();                      // (and the sprites are painted afresh: newSharpness)
+  pace.settle = performance.now() + PACE_SETTLE_MS;
+}
+
+// Asleep, a frame comes once a second (PACE_NAP_MS) instead of with the screen's; a touch, a key, a new size or the tab
+// coming back wakes it straight away.
+function wakePace() {
+  if (!pace.sleeping) return;
+  pace.sleeping = false;
+  clearTimeout(pace.timer);
+  requestAnimationFrame(frame);
+}
+function napPace() {
+  if (!document.hidden) frame(performance.now());        // (hidden, it waits for the tab to come back: wakePace)
+}
+document.addEventListener('visibilitychange', () => { pace.settle = performance.now() + PACE_SETTLE_MS; wakePace(); });
+
+// The battery saver: in the ••• menu, and by itself while the battery is low and not charging (Chrome and its kin say
+// so; Safari keeps its own Low Power Mode, which already halves the frames). Turned on, it stays on; turned off, it's off
+// for this visit, and the next goes by the battery again.
+const LOW_BATTERY = 0.2;
+let saverWas = 0;                                        // the rung before the saver came on, to go back to
+function saverChanged() {
+  const floor = paceFloor();
+  if (floor && pace.rung < floor) { saverWas = pace.rung; setRung(floor); }
+  else if (!floor && pace.rung === SAVER_RUNG && saverWas < SAVER_RUNG) setRung(saverWas);
+  showSaver();
+}
+function showSaver() {
+  const on = saving();
+  $('#saver-item .l').textContent = on ? 'Battery saver is on' : 'Battery saver is off';
+  $('#saver-item').classList.toggle('on', on);
+}
+function toggleSaver(on = !saving()) {
+  pace.saver = on;
+  try {
+    if (on) localStorage.setItem(SAVER_KEY, '1');
+    else { localStorage.removeItem(SAVER_KEY); sessionStorage.setItem(SAVER_KEY, '0'); }
+  } catch (e) { /* this visit only, then */ }
+  saverChanged();
+}
+try { if (sessionStorage.getItem(SAVER_KEY) === '0') pace.saver = false; } catch (e) { /* fine */ }
+if (navigator.getBattery) {
+  navigator.getBattery().then(b => {
+    const look = () => {
+      const low = !b.charging && b.level <= LOW_BATTERY;
+      if (low === pace.low) return;
+      pace.low = low;
+      saverChanged();
+      if (low && pace.saver === null && world) addNews('🔋 <b>The battery is low</b>, so the meadow is saving it: fewer frames, a little softer. ••• Battery saver turns it off.');
+    };
+    look();
+    b.addEventListener('chargingchange', look); b.addEventListener('levelchange', look);
+  }, () => { /* not told */ });
+}
+
 function frame(now) {
+  if (!paceDue(now)) { requestAnimationFrame(frame); return; }   // (the pace: not every one of the screen's frames)
   if (opening === 1) opening = 2;
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
@@ -12000,15 +12247,17 @@ function frame(now) {
   else if (ui.speed > 0) {
     strikeZaps(now);
     acc += dt * TICKS_PER_SECOND * ui.speed;
+    // The sim's time: SIM_MS for a 60th of a second, as much more for a frame planned to come later (at most twice).
     const n = Math.min(Math.floor(acc), 2000), t0 = performance.now();
+    const simMs = saving() ? SIM_MS : SIM_MS * clamp(pace.every * pace.refresh * 60 / 1000, 0.5, 2);
     acc -= n;
     for (let i = 0; i < n; i++) {
       // A new day's tick is the heaviest by far (the trees, the ground): it starts a frame rather than ends a full one.
-      if (i && (world.tick + 1) % S.TPD === 0 && performance.now() - t0 > SIM_MS / 2) break;
+      if (i && (world.tick + 1) % S.TPD === 0 && performance.now() - t0 > simMs / 2) break;
       if (ui.speed <= SMOOTH_SPEED) keepLast();
       S.step(world);
       if (world.events.length) flushEvents();
-      if (performance.now() - t0 > SIM_MS) break;            // (each tick: on a phone a few are a frame's worth)
+      if (performance.now() - t0 > simMs) break;             // (each tick: on a phone a few are a frame's worth)
     }
   }
   if (ui.newsStale && ui.newsOpen) renderNewsLog();
@@ -12060,15 +12309,17 @@ function frame(now) {
   }
   clampCam();
 
-  const rest = resting(now) && now - lastDrawn < RESTING_MS;
-  if (!rest && !(away.on && away.frames > 1) && !ui.stats.open && canvas.width && canvas.height) {   // the stats page covers the meadow; a hidden tab can have no size
-    lastDrawn = now;
+  // Paused and still, it's drawn at the pace's resting rate, and asleep not at all (nothing has moved since).
+  const rest = resting(now), t0 = performance.now();
+  const drew = !(rest && pace.sleeping) && !(away.on && away.frames > 1) && !ui.stats.open && canvas.width > 0 && canvas.height > 0;   // the stats page covers the meadow; a hidden tab can have no size
+  if (drew) {
     // Every 12 ticks, and no more than a few times a second: grass changes too slowly to see the difference.
-    if (terrainTick < 0 || (world.tick - terrainTick >= 12 && now - terrainAt >= TERRAIN_MS)) paintTerrain();
+    if (terrainTick < 0 || (world.tick - terrainTick >= 12 && now - terrainAt >= (saving() ? SAVER_TERRAIN_MS : TERRAIN_MS))) paintTerrain();
     render(now);
     if (lab?.draw) lab.draw(ctx, dpr);
     if (reveal.on && !reveal.snapped && now - reveal.at > REVEAL_SNAP) snapReveal(now);
   }
+  const drawMs = performance.now() - t0;
 
   if (now - lastCard > 250) {
     wakeTick(now);
@@ -12098,7 +12349,9 @@ function frame(now) {
   if (webOpen() && now - web.at > 1000) { web.at = now; updateWeb(); }
   if (world.history.t.length !== lastRecord) { lastRecord = world.history.t.length; checkPopulationNews(); }
   if (opening > 1 && ++opening > 4) cleared();       // a kept meadow that opened fine
-  requestAnimationFrame(frame);
+  paceAfter(now, rest, drew, drawMs);
+  if (pace.sleeping) pace.timer = setTimeout(napPace, PACE_NAP_MS);
+  else requestAnimationFrame(frame);
 }
 
 // ------------------------------------------------------------------ the terrain lab
@@ -12179,6 +12432,7 @@ function begin(rec) {
 (firstVisit || LAB ? Promise.resolve(null) : keptMeadow(seedParam)).then(begin);
 if (!LAB) keepDb().catch(() => { /* not kept, then */ });   // opened now, so keeping at the last moment needn't wait for it
 showHomeItem();
+showSaver();
 if (canShare) $('[data-act="copy-link"] .l').innerHTML = 'Share<span class="x"> this meadow</span>';
 if (!IDEAS_KEY) $('[data-act="ideas"]').remove();
 $('#go').addEventListener('click', () => {
@@ -12210,6 +12464,6 @@ showGroup();
 setTimeout(() => { barNear = false; updateBar(); }, 4000);   // show the toolbar for a moment, then let the meadow breathe
 for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => { if (ui.sound) Sound.start(); }, { once: true });
 
-window.garden = { get world() { return world; }, ui, cam, lab, installed,   // handy in the console
+window.garden = { get world() { return world; }, ui, cam, lab, installed, pace,   // handy in the console
   get trees() { return { worker: !!treeWorker, workers: treeWorkers.length, art: treeArt, bytes: treeBytes, asked: treeAsked.size, busy: treeBusy }; } };
 })();

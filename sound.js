@@ -41,7 +41,7 @@ let recent = 0, recentAt = 0;                      // global voice budget
 // ------------------------------------------------------------------ setup
 
 function start() {
-  if (ac) { if (ac.state === 'suspended') ac.resume(); return; }
+  if (ac) { if (ac.state === 'suspended' && !document.hidden) { ac.resume(); ticking(true); } return; }
   ac = new (window.AudioContext || window.webkitAudioContext)();
 
   const comp = ac.createDynamicsCompressor();
@@ -71,7 +71,14 @@ function start() {
 
   noiseBuf = pinkNoise(4); brownBuf = brownNoise(4);
   buildAmbience();
-  setInterval(tickAmbience, 200);
+  ticking(true);
+}
+
+// The meadow's ambience is rolled a few times a second, but only while the sound engine runs: paused (sound off, or the
+// page hidden) the timer stops too, so the page needn't wake for it.
+let ticker = 0;
+function ticking(on) {
+  if (!on) { clearInterval(ticker); ticker = 0; } else if (!ticker) ticker = setInterval(tickAmbience, 200);
 }
 
 // A soft, dark room: decaying noise, low-passed a little more each second.
@@ -418,7 +425,7 @@ const SOUNDS = {
 
 // opts: { species, pan (-1..1), near (0..1, how close to the camera), ...sound-specific }
 function play(name, opts = {}) {
-  if (!ac || !enabled || !SOUNDS[name]) return false;
+  if (!ac || !heard() || !SOUNDS[name]) return false;
   const r = RULES[name], now = ac.currentTime;
   if (state.speed > r.maxSpeed) return false;
   if (now - (last[name] ?? -1e9) < r.gap * Math.max(1, state.speed / 2)) return false;
@@ -1015,7 +1022,7 @@ const music = { next: 0, piece: null, last: null };
 const GAP = [300, 600];                              // seconds of just the meadow between pieces
 
 function playTune(name) {
-  if (!ac || !enabled || !TUNES[name]) return false;
+  if (!ac || !heard() || !TUNES[name]) return false;
   stopTune();
   const now = ac.currentTime, { notes, length } = score(TUNES[name]);
   const out = ac.createGain(); out.connect(musicBus);
@@ -1064,16 +1071,25 @@ function update(s) { Object.assign(state, s); }
 
 // Silence isn't free: the reverb and the ambient loops keep running at zero volume. So once
 // the fade-out is done, the whole sound engine pauses, and picks up where it was when turned on.
+// A hidden page's meadow stands still (no frames are drawn), so it goes quiet with it, quickly, and comes back with it.
 let sleepTimer = 0;
+const heard = () => enabled && !document.hidden;
 function setEnabled(on) {
   enabled = on;
-  if (!master) return;
-  clearTimeout(sleepTimer);
-  if (on) ac.resume();
-  master.gain.setTargetAtTime(on ? volume : 0, ac.currentTime, 0.3);
-  loud.gain.setTargetAtTime(on ? volume * LOUD : 0, ac.currentTime, 0.3);
-  if (!on) sleepTimer = setTimeout(() => { if (!enabled) ac.suspend(); }, 2000);
+  hear();
 }
+function hear(fade = 0.3) {
+  if (!master) return;
+  const on = heard();
+  clearTimeout(sleepTimer);
+  if (on) { ac.resume(); ticking(true); }
+  master.gain.setTargetAtTime(on ? volume : 0, ac.currentTime, fade);
+  loud.gain.setTargetAtTime(on ? volume * LOUD : 0, ac.currentTime, fade);
+  if (!on) sleepTimer = setTimeout(() => { if (!heard()) { ac.suspend(); ticking(false); } }, fade * 6000);
+}
+document.addEventListener('visibilitychange', () => hear(0.05));
+// Some browsers only let a page's sound go on again from a touch or a key: if it's still paused when it should play, the next one does.
+for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => { if (ac && heard() && ac.state !== 'running') { ac.resume(); ticking(true); } }, { passive: true });
 function setVolume(v) {
   volume = v;
   if (!master || !enabled) return;

@@ -123,6 +123,15 @@ for "this season" and "last year". Open, it updates once a second, writing only 
 A meadow kept before them gets the new counters at 0 (`unpackWorld`), no `KEEP_VERSION` bump. Visits are counted by GoatCounter (`COUNTER`: cryptoler.goatcounter.com, no cookies), all as the
 page `/meadow` whatever the seed, and a link posted with `?ref=reddit` says where they came from.
 
+The pace (`pace`, `paceDue`, `paceAfter`, CLAUDE.md's Keep it smooth) decides when a frame runs and how sharp the meadow is
+drawn (`sharpness`, the rung's dpr; the cards' little graphs keep the screen's own, `uiDpr`). A rung changing its sharpness
+paints the sprites afresh with the old standing in meanwhile (`newSharpness`; what the fur worker sends for the old one is
+dropped). The rung a device settles on is kept (`RUNG_KEY`), so a slow phone starts there. ••• Battery saver (`toggleSaver`,
+`saverChanged`): on, it stays on (`SAVER_KEY`); turned off it's off for the visit, and the next goes by the battery: in Chrome
+and its kin it comes on by itself while the battery is low and not charging (`LOW_BATTERY`), with a line of news. It holds the
+pace at `SAVER_RUNG` (30 frames a second, 1.5x), hands the grass to the ground once a second (`SAVER_TERRAIN_MS`), rests
+and sleeps sooner, gives the sim no more than `SIM_MS` a frame, so 60x runs slower, and holds no wake lock (`wakeTick`).
+
 On a phone (and Back anywhere): Back steps out of what's open as Esc does (`stepOut`: a card or menu shuts, the inspector's
 open sheet folds and then shuts, a tool goes back to Look). Each thing open holds a step in the history, counted, not
 named (`opened`), and `syncBack` levels the history with what's open after every tap or key: pushed only inside a tap,
