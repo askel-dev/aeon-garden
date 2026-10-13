@@ -23,7 +23,8 @@ outline and a faint grain), so its parts don't read as separate shapes. A rabbit
 in winter it whitens in 5 steps, only the brown and the white painted and the steps between the two mixed. A painting
 is costly (each pass through the scratch layer is a flush), so parts can share one (`joined`) and the parts behind are
 just shaded (`flat`). It's painted only at doublings of its size (`FUR_PAINTED`) and shrunk for the sizes between,
-which keeps a dozen poses, growing young and zooming cheap.
+which keeps a dozen poses, growing young and zooming cheap. A pose not painted yet waits a frame once the frame has done
+its painting (`shownPose`, as a tree's new colours do): the animal holds the pose it was last drawn in.
 On the move their legs go round with the ground they cover (`gaitOf`: a fox trots and gallops four paintings a stride,
 its back level at a trot), a rabbit hops in bursts, drawn a little ahead of or behind the sim along its way and
 stopping between hops (`hopSurge`), and up to 2x everything is drawn between the sim's last two ticks (`drawnAt`,
@@ -63,7 +64,8 @@ itself (`startIdle`, `pickShot`, `idleFrame`): the intro's bars and lines, the c
 animal or drift past a place, what just happened first (`idleNews`). A shot keeps one zoom and only pans, and the next
 comes after a dip to dark or a glide. Any key, click, scroll or mouse move hands it back, the camera staying put.
 The meadow is kept in the browser when the page is hidden or closed, and while it films itself (`keepMeadow`:
-IndexedDB, under its link, the last `KEEP_MEADOWS`), never on a timer while someone watches (a save is a few frames).
+IndexedDB, under its link, the last `KEEP_MEADOWS`; filming, in a dip to dark between shots), never on a timer while
+someone watches (a save is a few frames).
 The next visit opens it where it was (`resumeWorld`): the bare address the one watched last, a `?seed=` link its
 own. Back after `AWAY_MIN` it runs on a season, drawing nothing (days would flicker), behind a card that then says
 what happened (`startAway`, `awayFrame`). The ••• menu shares the link (a phone's share sheet) and takes ideas

@@ -224,7 +224,7 @@ function sprite(emoji, want, tint, leaf, center) {
 }
 const lookKey = (emoji, tint, leaf, center) => emoji + '|' + (tint || '') + '|' + (leaf ? leaf.key : '') + (center ? '|c' : '');
 // Whether drawEmoji would find this one painted already.
-const spriteReady = (emoji, want, leaf) => spriteCache.has(spriteStep(Math.max(4, want)) + '|' + lookKey(emoji, '', leaf));
+const spriteReady = (emoji, want, leaf) => spriteCache.has((posed(emoji) ? poseStep : spriteStep)(Math.max(4, want)) + '|' + lookKey(emoji, '', leaf));
 function paintedSprite(emoji, px, tint, leaf, center) {
   const look = lookKey(emoji, tint, leaf, center);
   const key = px + '|' + look;
@@ -1285,9 +1285,9 @@ function render(now) {
   if (placing) drawPlacing(z, ox, oy);               // (?keep: a pond being placed)
   if (ripples.length) drawRipples(now, z);
 
-  // Burrows, drawn by hand: some browsers clip the 🕳️ glyph in half.
+  // Burrows, drawn by hand: some browsers clip the 🕳️ glyph in half. Who lives where only shows close up (the paths, r >= 9).
   const residents = new Map();
-  for (const c of world.creatures) if (c.alive && c.home) residents.set(c.home, (residents.get(c.home) || 0) + 1);
+  if (z * 0.8 * 1.1 >= 9) for (const c of world.creatures) if (c.alive && c.home) residents.set(c.home, (residents.get(c.home) || 0) + 1);
   for (const b of world.burrows) {
     const [sx, sy] = toScreen(b.x, b.y);
     if (visible(sx, sy, z * 5) && fadeAt(b.x, b.y)) drawBurrow(b, sx, sy, z, ck.season, residents.get(b) || 0);
@@ -3573,7 +3573,18 @@ function hopSurge(c) {
   const done = u < A ? P * u / A : P + (1 - P) * (u - A) / (1 - A), mean = A * P / 2 + (1 - A) * (1 + P) / 2;
   return (done - u - (mean - 0.5)) * strideOf(c);
 }
-const walkerArt = (c, px, now) => c.species === 'fox' ? foxArt(c, px) : c.species === 'rabbit' ? rabbitArt(c, now) : c.species === 'bee' ? beeArt(c, px, now) : c.sp.emoji;
+const walkerArt = (c, px, now) => c.species === 'fox' ? shownPose(c, foxArt(c, px), px) : c.species === 'rabbit' ? shownPose(c, rabbitArt(c, now), px)
+  : c.species === 'bee' ? beeArt(c, px, now) : c.sp.emoji;
+// A pose not painted at this size yet waits once the frame has done its painting (PAINT_MS), as a tree's new colours do
+// (shownLook): the fox or rabbit holds the pose it was last drawn in a frame longer. A painting takes 3 to 10 ms, more
+// close up, and a crowd all setting off at once wanted a dozen in one frame.
+const poseShown = new WeakMap();                         // fox or rabbit: the painting it was last drawn in
+function shownPose(c, art, px) {
+  const was = poseShown.get(c);
+  if (was !== undefined && was !== art && standIns && paintedMs > PAINT_MS && !spriteReady(art, px)) return was;
+  poseShown.set(c, art);
+  return art;
+}
 
 // Which painting, for what the fox is doing. On the move its legs go round with the ground it covers (gaitOf), a quarter
 // stride a painting, so they stop when it stops; standing still a while in a mode that moves, it just stands.
@@ -6038,14 +6049,21 @@ function addEffect(emoji, x, y, rise = 1.2, dur = 1400) {
   ui.effects.push({ emoji, x, y, rise, dur, t0: performance.now() });
 }
 
+// An effect swells to 1.1x and back as it rises: painted once at its biggest and drawn smaller, as each size it
+// passed through would be a painting of its own (an emoji, 2 to 20 ms).
 function drawEffects(now) {
-  ui.effects = ui.effects.filter(e => now - e.t0 < e.dur);
+  let n = 0;
+  for (const e of ui.effects) if (now - e.t0 < e.dur) ui.effects[n++] = e;
+  ui.effects.length = n;
+  const px = Math.max(14, cam.zoom * 1.2);
   for (const e of ui.effects) {
     const a = (now - e.t0) / e.dur;
     const [sx, sy] = toScreen(e.x, e.y);
-    const px = Math.max(14, cam.zoom * 1.2);
-    drawEmoji(e.emoji, sx, sy - px * 0.8 - e.rise * px * a, px * (0.8 + 0.3 * Math.sin(a * Math.PI)), { alpha: 1 - a * a });
+    const s = sprite(e.emoji, px * 1.1), size = s.size * (0.8 + 0.3 * Math.sin(a * Math.PI)) / 1.1;
+    ctx.globalAlpha = 1 - a * a;
+    ctx.drawImage(s.canvas, sx - size / 2, sy - px * 0.8 - e.rise * px * a - size / 2, size, size);
   }
+  ctx.globalAlpha = 1;
 }
 
 // ------------------------------------------------------------------ voles
@@ -10983,6 +11001,7 @@ function idleFrame(now, dt) {
   if (idle.dipAt) {                       // dark: cut to the next shot, then light again
     if (now - idle.dipAt < DIP_MS) return;
     idle.dipAt = 0;
+    if (Date.now() - keptWhen > KEEP_IDLE_MS) keepMeadow();   // (a save's hitch, where it can't be seen)
     beginShot(idle.next, now, false);
     $('#intro .dip').classList.remove('on');
   }
@@ -11015,7 +11034,7 @@ function idleFrame(now, dt) {
 // take the place of your own: the bare address opens the last one, a link its own. Not in the lab.
 // A kept meadow that won't open, or that broke the page the last time it opened (OPENING), is let go.
 const KEEP_MEADOWS = 3;
-const KEEP_IDLE_MS = 10 * 60e3;            // and while it films itself (nobody at the keys to see the hitch), this often
+const KEEP_IDLE_MS = 10 * 60e3;            // and while it films itself (nobody at the keys to see the hitch, in a dip to dark), this often
 const KEPT = KEEP ? 'aeon-garden-kept-keep' : 'aeon-garden-kept', OPENING = 'aeon-garden-opening';   // in localStorage (?keep keeps its own few)
 let keepOpen = null, keptTick = -1, keptWhen = Date.now();
 let opening = 0;                           // a kept meadow just opened: 1 until a frame starts, then counts frames that got to the end
@@ -11374,7 +11393,7 @@ function frame(now) {
     alertsTick(now);                                     // (?keep)
     lastCard = now;
     if (idleMayStart(now)) startIdle(now);
-    if (idle.on && Date.now() - keptWhen > KEEP_IDLE_MS) keepMeadow();
+    if (idle.on && Date.now() - keptWhen > KEEP_IDLE_MS * 1.5) keepMeadow();   // (kept in a dip to dark, idleFrame, unless the shots glide on)
     updateMeadowCard();
     forecastTick();
     if (ui.sound) {
