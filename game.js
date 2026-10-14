@@ -132,6 +132,9 @@ function clampCam() {
 new ResizeObserver(measureSheet).observe($('#inspector'));
 
 const toScreen = (x, y) => [(x - cam.x) * cam.zoom + vw / 2, (y - cam.y) * cam.zoom + vh / 2];
+// The same in one shared pair, for the loops over every animal, tree and burrow a frame: read it straight away.
+const SCR = [0, 0];
+const onScreen = (x, y) => { SCR[0] = (x - cam.x) * cam.zoom + vw / 2; SCR[1] = (y - cam.y) * cam.zoom + vh / 2; return SCR; };
 const toWorld = (sx, sy) => [(sx - vw / 2) / cam.zoom + cam.x, (sy - vh / 2) / cam.zoom + cam.y];
 // Drags and scrolls move the view by whole screen pixels, so the ground's tiles can slide along.
 const wholePx = v => Math.round(v * dpr) / dpr;
@@ -1273,7 +1276,7 @@ function render(now) {
   const residents = new Map();
   if (z * 0.8 * 1.1 >= 9) for (const c of world.creatures) if (c.alive && c.home) residents.set(c.home, (residents.get(c.home) || 0) + 1);
   for (const b of world.burrows) {
-    const [sx, sy] = toScreen(b.x, b.y);
+    const [sx, sy] = onScreen(b.x, b.y);
     if (visible(sx, sy, z * 5) && fadeAt(b.x, b.y)) drawBurrow(b, sx, sy, z, ck.season, residents.get(b) || 0);
   }
   for (const d of world.decor) {                            // and the otters' holts, in the roots of a tree on the bank
@@ -1294,12 +1297,12 @@ function render(now) {
   items.length = 0;
   for (const d of world.decor) {                           // (a hive is in one of the trees)
     if (d.tree && d.size * z < SEEDLING_PX && !d.stump && !d.hedge) continue;   // a seedling too small to see from here (a hedge's whips always show)
-    const [sx, sy] = toScreen(d.x, d.y), px = d.tree ? treePx(d) : d.size * z;
+    const [sx, sy] = onScreen(d.x, d.y), px = d.tree ? treePx(d) : d.size * z;
     if (visible(sx, sy, px)) { const it = itemOf(items, d.y, sx, sy, 1 - mistAt(d.x, d.y)); it.d = d; it.px = px; }
   }
   for (const h of world.hives) {                           // a swarm hanging in a tree
     if (!h.cluster || h.leaving) continue;
-    const [sx, sy] = toScreen(h.x, h.y);
+    const [sx, sy] = onScreen(h.x, h.y);
     if (visible(sx, sy, 3 * z)) itemOf(items, h.y, sx, sy, 1 - mistAt(h.x, h.y)).h = h;
   }
   for (const m of world.shrooms) {                         // mushrooms: on a log or a snag, just in front of it
@@ -1316,8 +1319,10 @@ function render(now) {
     if (visible(sx, sy, 3 * z + 20)) itemOf(items, b.y, sx, sy, 1 - mistAt(b.x, b.y)).s = b;
   }
   const shown = [];
+  const far = 60 + OFF_SIZES * (8 + z);                    // (a crow up a tree is drawn out on its seat: always worked out)
   for (const c of world.creatures) {
     if (c.hidden || !c.alive) continue;
+    if (c.species !== 'crow' && !visible((c.x - cam.x) * z + vw / 2, (c.y - cam.y) * z + vh / 2, far)) continue;
     const [sx, sy] = screenOf(c);
     if (!visible(sx, sy, 60)) continue;
     const it = itemOf(items, c.y + (c.mode === 'dance' ? DANCE_FRONT : 0), sx, sy, 1 - mistAt(c.x, c.y));
@@ -1339,9 +1344,10 @@ function render(now) {
     fadeTo(it.f);
     if (it.d) { drawDecorShadow(it.d, it.sx, it.sy, sn, it.px); if (it.d.tree) treeLeaves(it.d, it.sx, it.sy, it.px, ck, it.f); }
     else if (it.c) {
-      drawCreatureShadow(it.c, it.sx, it.sy, now, sn);
+      drawCreatureShadow(it.c, it.sx, it.sy, now, sn, it.f);
     } else if (it.v) drawVisitorShadow(it.v, it.sx, it.sy, sn);
   }
+  layShadows();
   drawLeaves(now, true);                                   // the leaves lying round the trees' feet, on the ground under all that stands
   for (const it of items) {
     if (it.f < 0.02) continue;
@@ -1597,8 +1603,9 @@ function drawnAt(c) {
 // Where a creature is drawn on screen: where it is (drawnAt), plus a flier's weave. A dancer is drawn a
 // little in front of her hive, where the tree doesn't hide her, and her eight a size bigger.
 const DANCE_FRONT = 0.45, DANCE_SIZE = 1.8;
-function screenOf(c) {
-  const d = drawnAt(c), p = toScreen(d.x, d.y), z = cam.zoom;
+const OFF_SIZES = 3;                       // screenOf never draws one further than this many of its sizes from where it is (a hop's surge, a weave, a dance)
+function screenOf(c) {                    // (onScreen's shared pair: read it straight away)
+  const d = drawnAt(c), p = onScreen(d.x, d.y), z = cam.zoom;
   if (c.species === 'rabbit') { const s = hopSurge(c), g = gaitOf(c); p[0] += s * g.hx * z; p[1] += s * g.hy * z; }
   if ((c.species === 'bee' || c.species === 'crow') && !c.hidden) { const s = weaveOf(c); p[0] += s.x * z; p[1] += s.y * z; }
   if (c.species === 'crow') p[0] += seatShift(c);                  // up a tree: onto its seat in the crown
@@ -1929,18 +1936,44 @@ function drawCreature(c, sx, sy, now) {
     ctx.beginPath(); ctx.ellipse(sx, line, px * 0.36 * rip, px * 0.09 * rip, 0, 0, TAU); ctx.stroke();
     return;
   }
-  const hop = liftOf(c, px, now);
-  // Standing still, everyone breathes: slow and deep asleep, quick and shallow awake.
-  const breathe = !hop && ui.speed > 0
+  const hop = liftOf(c, px, now), small = zoomedOut();
+  // Standing still, everyone breathes: slow and deep asleep, quick and shallow awake. (Zoomed far out, too little to see.)
+  const breathe = !small && !hop && ui.speed > 0
     ? Math.sin(now / (c.sleeping ? 650 : 330) + c.id) * (c.sleeping ? 0.035 : 0.02) : 0;
   const squash = 1 + breathe;
   const y = sy - hop + px * 0.4 * (1 - squash);
   if (c.species === 'crow' && c.sleeping && crowSeat(c)) sx += treeSway(seat.tree, now) * hop;   // up a tree, it sways with it
   if (c.mode === 'dance') drawDance(c, sx, y, px);
-  drawEmoji(c.species === 'crow' ? crowArt(c, hop, px, now) : walkerArt(c, px, now), sx, y, px, { flip: flipOf(c), squash });   // feet stay on the ground
+  const art = c.species === 'crow' ? crowArt(c, hop, px, now) : walkerArt(c, px, now);
+  if (small) drawSmall(art, sx, y, px, flipOf(c));
+  else drawEmoji(art, sx, y, px, { flip: flipOf(c), squash });   // feet stay on the ground
   if (c.load && c.species === 'bee') drawBaskets(c, sx, y, px);
   if (c.mode === 'sip') drawSipping(c, sx, sy, px, now);
   if (px > 18 && ui.speed > 0 && ui.speed <= 4 && atHole(c)) drawDigging(c, sx, y, px, now);
+}
+
+// Zoomed out further than the meadow fills the screen, a grown rabbit is under SMALL_PX and hundreds of animals can be
+// on screen: each is one plain draw, with no save, turn and restore. One facing the other way is drawn from a mirrored
+// copy of its painting, made the first time it's wanted (mirrored).
+const SMALL_PX = 14;
+const zoomedOut = () => 8 + cam.zoom < SMALL_PX;
+const mirrors = new WeakMap();
+function drawSmall(art, x, y, px, flip) {
+  const s = sprite(art, px), img = flip ? mirrored(s.canvas) : s.canvas;
+  ctx.drawImage(img, x - s.size / 2, y - s.size / 2, s.size, s.size);
+}
+function mirrored(img) {
+  let m = mirrors.get(img);
+  if (!m) {
+    const c = document.createElement('canvas');
+    c.width = img.width; c.height = img.height;
+    const g = c.getContext('2d');
+    g.setTransform(-1, 0, 0, 1, img.width, 0);
+    g.drawImage(img, 0, 0);
+    mirrors.set(img, m = { img: c });
+    asBitmap(c, b => { m.img = b; c.width = 0; });
+  }
+  return m.img;
 }
 
 // A forager packs pollen on her hind legs: two gold lumps that grow as she fills up.
@@ -4077,16 +4110,33 @@ function shadowPair(sn) {
 const FEET_RGB = [40, 50, 20];
 // (Its colour a style made once, its strength the alpha: a colour string made and read for every animal every frame cost.)
 const FEET_SHADES = Array.from({ length: SHADE_STEPS + 1 }, (_, i) => `rgb(${FEET_RGB.map((v, j) => Math.round(lerp(v, SNOW_SHADE[j], i / SHADE_STEPS)))})`);
-function drawCreatureShadow(c, sx, sy, now, sn) {
-  if (wading(c)) return;
+// The animals' shadows aren't filled one by one: each is put with those as dark (SHADOW_STEPS of SHADOW_MOST), and
+// layShadows fills each lot as one path once they're all in, a few fills a frame for hundreds of animals. Two that
+// overlap make one shadow. Zoomed far out (zoomedOut) there are none: they'd be smudges a pixel or two high.
+const SHADOW_STEPS = 24, SHADOW_MOST = 0.4;
+const shadowAt = Array.from({ length: SHADOW_STEPS + 1 }, () => []), shadowN = new Int32Array(SHADOW_STEPS + 1);
+function drawCreatureShadow(c, sx, sy, now, sn, f) {
+  if (zoomedOut() || wading(c)) return;
   const px = creaturePx(c), lift = 1 - Math.min(c.sp.flies ? 0.8 : 0.5, liftOf(c, px, now) / px);
   const n = shadeStep(), a = (0.14 + 0.16 * Math.max(0, sn.a)) * lerp(1, SNOW_SHADE_A, n / SHADE_STEPS), off = Math.max(0, sn.a) * sn.lean * px * 0.2;
-  ctx.fillStyle = FEET_SHADES[n];
-  ctx.globalAlpha = a * lift;
-  ctx.beginPath();
-  ctx.ellipse(sx + off, sy + px * 0.36, (px * 0.34 + Math.abs(off) * 0.6) * lift, px * 0.1 * lift, 0, 0, TAU);
-  ctx.fill();
+  const k = Math.round(clamp(a * lift * f / SHADOW_MOST, 0, 1) * SHADOW_STEPS), at = shadowAt[k], i = shadowN[k]++ * 4;
+  at[i] = sx + off; at[i + 1] = sy + px * 0.36; at[i + 2] = (px * 0.34 + Math.abs(off) * 0.6) * lift; at[i + 3] = px * 0.1 * lift;
+}
+function layShadows() {
+  const was = fade;
+  fadeTo(1);                                             // (the mist is in each one's step already)
+  ctx.fillStyle = FEET_SHADES[shadeStep()];
+  for (let k = 1; k <= SHADOW_STEPS; k++) {
+    const n = shadowN[k] * 4, at = shadowAt[k];
+    if (!n) continue;
+    ctx.globalAlpha = k / SHADOW_STEPS * SHADOW_MOST;
+    ctx.beginPath();
+    for (let i = 0; i < n; i += 4) { ctx.moveTo(at[i] + at[i + 2], at[i + 1]); ctx.ellipse(at[i], at[i + 1], at[i + 2], at[i + 3], 0, 0, TAU); }
+    ctx.fill();
+  }
+  shadowN.fill(0);
   ctx.globalAlpha = 1;
+  fadeTo(was);
 }
 
 // Trees sway from the trunk. Gusts roll across the meadow, harder in rain and storms.

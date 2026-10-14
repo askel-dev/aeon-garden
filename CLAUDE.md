@@ -97,7 +97,9 @@ new feature must not slow it down. If it would, make it cheaper or leave it out.
   with them, not as a fill of its own.
 - Many small draws cost by the call (each `drawImage` a microsecond or two, whatever its size): zoomed out a frame
   makes well over a thousand. Draws that are the same for every thing but its size go in one picture drawn once a thing
-  (a small tree's two shadows: `shadowPair`).
+  (a small tree's two shadows: `shadowPair`). The animals cost by the head: their shadows are gathered and filled a
+  few paths a frame (`layShadows`), zoomed far out each is one plain draw (`zoomedOut`, `drawSmall`), and one well off
+  screen is passed by before working out where it's drawn.
 - The sim can run 2000 ticks in one frame. In hot loops, don't make new objects or arrays, and don't
   scan every creature: use the neighbour grid. Recount things only after they change.
 - The sim's objects keep one layout for life: every field a creature, a tree, a rock, a flower or the world will ever have is
