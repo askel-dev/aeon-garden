@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meadow Recipes</title>
+<link rel="icon" href="assets/favicon.ico" sizes="any">
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
+<!-- Everything in recipes.js, laid out, with what's wrong with it at the top and a pot to try things in.
+     Edit recipes.js, then reload this page. -->
+<style>
+  :root {
+    --bg: #eef3df; --card: #fffaf0; --ink: #3b372f; --muted: #8b8272; --line: #ecdfc8;
+    --accent: #e98a4b; --accent-soft: #fde4cf; --good: #6fb350; --bad: #c4553a; --bad-soft: #fbe3dc;
+    --shadow: 0 8px 28px rgba(70, 55, 25, 0.14), 0 1px 3px rgba(70, 55, 25, 0.10);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 500 14px/1.45 Nunito, ui-rounded, system-ui, sans-serif; }
+  main { max-width: 880px; margin: 0 auto; padding: 28px 16px 60px; }
+  h1 { font-size: 26px; font-weight: 900; margin: 0 0 4px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); margin: 0 0 10px; }
+  p.lead { color: var(--muted); margin: 0 0 20px; max-width: 60ch; }
+  code { background: var(--accent-soft); border-radius: 6px; padding: 1px 5px; font-size: 13px; }
+  .card { background: var(--card); border-radius: 18px; box-shadow: var(--shadow); padding: 16px 18px; margin-bottom: 16px; }
+  #problems { background: var(--bad-soft); border: 1px solid var(--bad); }
+  #problems h2 { color: var(--bad); }
+  #problems li { margin: 3px 0; }
+  .ok { color: var(--good); font-weight: 800; }
+  button { font: inherit; color: inherit; cursor: pointer; border: 1px solid var(--line); background: #fff; border-radius: 12px; padding: 8px 12px; font-weight: 700; min-height: 44px; }
+  button:hover { background: var(--accent-soft); }
+  button.on { background: var(--accent-soft); border-color: var(--accent); }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .row + .row { margin-top: 12px; }
+  .pot { min-height: 52px; padding: 8px; border: 2px dashed var(--line); border-radius: 14px; flex: 1; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .pot:empty::before { content: 'Tap ingredients to put them in'; color: var(--muted); padding: 0 6px; }
+  #made { margin-top: 12px; font-size: 16px; }
+  #made b { font-size: 18px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; }
+  .dish { border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; background: #fff; }
+  .dish b { font-size: 15px; }
+  .dish .needs { margin: 4px 0; }
+  .dish .meta { color: var(--muted); font-size: 12px; font-weight: 700; }
+  .dish .text { color: var(--muted); font-style: italic; margin-top: 4px; }
+  .chip { display: inline-block; background: var(--accent-soft); border-radius: 999px; padding: 1px 8px; margin: 2px 2px 0 0; font-weight: 700; font-size: 13px; }
+  .chip.tag { background: #e5efd6; }
+  .chip.dishchip { background: #efe2f3; }
+  table { border-collapse: collapse; width: 100%; }
+  td, th { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .scroll { overflow-x: auto; }
+</style>
+</head>
+<body>
+<main>
+  <h1>🍲 Meadow Recipes</h1>
+  <p class="lead">Everything in <code>recipes.js</code>. To add a dish, copy a block in <code>RECIPES</code>, change the words,
+    and reload this page. Green chips are tags (any ingredient that has it), purple ones are other dishes.</p>
+
+  <div class="card" id="check"></div>
+
+  <div class="card">
+    <h2>Try the pot</h2>
+    <div class="row" id="stations"></div>
+    <div class="row"><div class="pot" id="pot"></div><button id="empty">Empty</button></div>
+    <div class="row" id="shelf"></div>
+    <div id="made"></div>
+  </div>
+
+  <div class="card">
+    <h2>Dishes</h2>
+    <div class="grid" id="dishes"></div>
+  </div>
+
+  <div class="card">
+    <h2>Ingredients</h2>
+    <div class="scroll"><table id="ingredients"></table></div>
+  </div>
+</main>
+<script src="recipes.js"></script>
+<script>
+'use strict';
+const { STATIONS, INGREDIENTS, RECIPES, cook, fillOf, recipeOf, checkRecipes } = Recipes;
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const label = id => INGREDIENTS[id] ? `${INGREDIENTS[id].icon || ''} ${INGREDIENTS[id].name}` : id;
+
+function chip(word) {
+  if (INGREDIENTS[word]) return `<span class="chip">${esc(label(word))}</span>`;
+  if (recipeOf(word)) return `<span class="chip dishchip">🍽 ${esc(word)}</span>`;
+  return `<span class="chip tag">any ${esc(word)}</span>`;
+}
+
+const problems = checkRecipes();
+$('check').innerHTML = problems.length
+  ? `<h2>${problems.length} thing${problems.length > 1 ? 's' : ''} to fix in recipes.js</h2><ul>${problems.map(p => `<li>${esc(p)}</li>`).join('')}</ul>`
+  : `<span class="ok">✓ recipes.js looks right:</span> ${Object.keys(INGREDIENTS).length} ingredients, ${RECIPES.length} dishes.`;
+if (problems.length) $('check').id = 'problems';
+
+$('dishes').innerHTML = RECIPES.map(r => {
+  const st = STATIONS[r.at || 'fire'];
+  const meta = [st ? st.name : r.at, `fills ${fillOf(r)}`, r.level ? `level ${r.level}` : '', r.from ? `taught by the ${r.from}` : '', r.warm ? 'warming' : '']
+    .filter(Boolean).join(' · ');
+  return `<div class="dish"><b>${esc(r.name)}</b><div class="needs">${r.needs.map(chip).join('')}</div>
+    <div class="meta">${esc(meta)}</div>${r.text ? `<div class="text">${esc(r.text)}</div>` : ''}</div>`;
+}).join('');
+
+$('ingredients').innerHTML = '<tr><th></th><th>id</th><th>Name</th><th>Tags</th><th>Fills</th><th>Raw</th></tr>' +
+  Object.entries(INGREDIENTS).map(([id, g]) => `<tr><td>${g.icon || ''}</td><td><code>${esc(id)}</code></td><td>${esc(g.name)}</td>
+    <td>${g.tags.map(t => `<span class="chip tag">${esc(t)}</span>`).join('')}</td><td>${g.fill}</td><td>${g.raw === false ? 'no' : 'yes'}</td></tr>`).join('');
+
+// The pot: tap ingredients (and dishes made here) in, see what comes out.
+let station = 'fire', pot = [];
+function draw() {
+  $('stations').innerHTML = Object.entries(STATIONS).map(([id, s]) =>
+    `<button data-st="${id}" class="${id === station ? 'on' : ''}">${esc(s.name)} (${s.slots})</button>`).join('');
+  $('pot').innerHTML = pot.map((t, i) => `<button data-out="${i}">${esc(INGREDIENTS[t] ? label(t) : '🍽 ' + t)} ✕</button>`).join('');
+  const dishes = RECIPES.filter(r => RECIPES.some(o => o.needs.some(w => recipeOf(w) === r)));
+  $('shelf').innerHTML = Object.keys(INGREDIENTS).map(id => `<button data-in="${esc(id)}">${esc(label(id))}</button>`).join('') +
+    dishes.map(r => `<button data-in="${esc(r.name)}">🍽 ${esc(r.name)}</button>`).join('');
+  if (!pot.length) { $('made').innerHTML = ''; return; }
+  const r = cook(pot, station);
+  $('made').innerHTML = `Makes <b>${esc(r.name)}</b>, fills ${fillOf(r)}${r.text ? ` <i style="color:var(--muted)">${esc(r.text)}</i>` : ''}`;
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.dataset.st) { station = b.dataset.st; pot = pot.slice(0, STATIONS[station].slots); }
+  else if (b.dataset.in && pot.length < STATIONS[station].slots) pot.push(b.dataset.in);
+  else if (b.dataset.out) pot.splice(+b.dataset.out, 1);
+  else if (b.id === 'empty') pot = [];
+  draw();
+});
+draw();
+</script>
+</body>
+</html>

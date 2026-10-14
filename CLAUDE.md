@@ -53,6 +53,10 @@ closed); none of that project's rules apply here.
   same way (dragonflies, the kingfisher, the skylark: `Fur.painters`), and the few drawing helpers every painting in game.js
   uses (`fillIn`, `ovalAt`, `blurIn`, `softIn`, `furGlow`, `rockRGB`, `tone`...), which game.js takes from `Fur`. In the
   meadow the worker paints them off the main thread; notes in `.claude/rules/game.md`.
+- `recipes.js`, `recipes.html`: every ingredient, station and dish, as plain data Axel adds to by hand (copy a block).
+  A word in a dish's `needs` is an ingredient, a tag or another dish; the pot must match exactly (`cook`). Keep the data at
+  the top easy to read and its fields optional; `checkRecipes` (console on load, and the top of `recipes.html`) says what's
+  wrong in plain words. The file is one block so its names don't clash with the game's; the game reads it as `Recipes`.
 - `trees.js`, `tree-worker.js`, `tree-lab.html`: the trees, painted in code. How they're painted, cached and
   drawn is in `.claude/rules/trees.md`, which loads when one of those files is opened.
 
