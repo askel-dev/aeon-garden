@@ -2,8 +2,10 @@
 
 A cozy cooking game in a painted meadow: you gather what the meadow gives (honey, fish, fruit, mushrooms, game),
 build up a kitchen from a campfire, and cook. It grew out of an ecology sim you watched (rabbits, foxes, bees,
-crows, otters...), and that sim is being cut down to what the cooking needs; the old watching and keeper game
-is in git history before the `cooking` branch (main at 1d79f03). It used to be called AEON Garden, and the repo and the
+crows, otters...), and that sim is cut down to a pantry: animals that roam, graze, hunt and come back if they're
+emptied out, hives that fill with honey, fish in the water. The old watching and keeper game is in git history
+before the `cooking` branch (main at 1d79f03). A day is 12 minutes at 1x and a season 7 days (sim.js `TPD`, `SEASON_DAYS`;
+how the rates follow, `SLOW` and `HUNGER`, is in `.claude/rules/ecology.md`). It used to be called AEON Garden, and the repo and the
 `aeon-garden-*` localStorage keys keep that name (renaming the keys would lose players' settings).
 It's played at https://meadow.cryptoler.net: GitHub Pages from `main` under a custom domain (`CNAME`;
 the DNS record is in Vercel, see the `askel-dev/cryptoler.net` README). The old github.io link redirects there. **This is a game.** Balancing for fun is allowed and is the job; realism is
@@ -19,7 +21,7 @@ closed); none of that project's rules apply here.
 - `ground.js`: the ground (grass, earth, shores, water) as a WebGL shader, painted from a
   few small textures of one texel a tile that game.js keeps up to date (`paintTerrain`, `updateWater`).
   It paints again only when a texture, the zoom or the light has moved (`steady`), and at most at 2x
-  (`GROUND_DPR`). At speed (15x and up: none now, only 1x and pause are left until the new clock) the light, the colours and
+  (`GROUND_DPR`). At speed (15x and up: none now, only 1x and pause) the light, the colours and
   the wet move a little every frame, so what only moves with them waits up to `GROUND_HOLD` ms. In Safari (`WEBKIT`) it keeps to
   `GROUND_WEBKIT` pixels, never below 1x: Safari misses a frame on each repaint of a big ground. While the camera pans
   (following, dragging) it paints a margin round the screen (`PAD`) and slides the picture along (`Ground.view`) until the margin runs out. The picture is a canvas of its own
@@ -32,7 +34,7 @@ closed); none of that project's rules apply here.
   `sound-lab.html` plays each one on its own. Keep it minimal: one scale, few sounds. Every 5 to 10
   minutes a short felt-piano piece plays (`TUNES`, written out note by note and played a little
   differently each time); the lab plays each piece on demand. Like C418's Minecraft music, the
-  silence between pieces is part of it, and no piece is about the time of day (a day is 20 s for now, a
+  silence between pieces is part of it, and no piece is about the time of day (a day is 12 minutes, a
   piece 90 s): they fit any moment, lean towards a season at 1x, and the piano plays darker at night.
 - `index.html`: layout and styles. The world fills the screen: on it only the watch (top middle), a small pill top right
   (pause, sound, ••• with a link, an idea and a new meadow; on a phone the sound waits in •••), a toast line under the
@@ -62,8 +64,9 @@ Shortcuts for that: `window.garden` has `world`, `cam` (set `x`, `y`, `zoom`, `g
 In a cloud session with no Chrome, Playwright is installed globally (`npm root -g`) with Chromium.
 You don't have to test everything: check what a change could plausibly break, and leave the rest.
 
-The meadow's ecology (terrain and water, grass and soil, voles, frogs, fish, rabbit coats, sickness, remains, crows,
-otters, bees, the trees' lives, the visitors) is in `.claude/rules/ecology.md`, which loads when sim.js is opened.
+The meadow's ecology (the clock and its rates, terrain and water, grass, rabbits and foxes, the respawn, frogs, fish,
+crows, otters, bees and their hives, the trees' lives, the visitors) is in `.claude/rules/ecology.md`, which loads when
+sim.js is opened.
 Species lists come from `KINDS` / `perKind`, so a new species needs no hand-written `{ rabbit, fox, bee }` lists.
 
 Keep it smooth. The game has to run without lag on a phone, zoomed out, at speed, in rain at night.
@@ -117,4 +120,6 @@ new feature must not slow it down. If it would, make it cheaper or leave it out.
   seconds in a busy meadow, following an animal, zoomed out, at the fastest speed there is. If it got slower, fix it before
   committing, and put the numbers in the commit message. A caption, a card or a small drawing tweak doesn't need it.
 
-After touching the sim, run a few years of it over several seeds: nothing that the cooking needs may die out.
+After touching the sim, run a few years of it over several seeds headless (node: `createWorld`, `step`, read `w.count`,
+`w.hives`, `w.fishCount`, `w.frogCount`; a year is about 8 s): nothing that the cooking needs may die out, and
+`packWorld` / `unpackWorld` (through `structuredClone`, as IndexedDB keeps it) must round-trip.

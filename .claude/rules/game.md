@@ -13,20 +13,22 @@ Drawing, the camera, the inspector. The world fills the screen; over it only the
 watching game's cards, news feed, stats, journal, tools, intro and idle camera were cut on the `cooking` branch
 (main at 1d79f03 has them).
 
-The inspector shows animals and every other thing you click (hives, trees, rocks, remains, burrows, flowers, fields,
-water, visitors): each kind is an entry in `THINGS`, saying how to find one on screen and what its panel shows. A tap
-on an animal follows it (`select`, `ui.follow`). Animals can't be named by the player.
+The inspector shows animals and every other thing you click (hives, trees, rocks, burrows, flowers, fields, water,
+visitors): each kind is an entry in `THINGS`, saying how to find one on screen and what its panel shows. A tap
+on an animal follows it (`select`, `ui.follow`). Animals can't be named by the player. Every animal of a kind is alike
+(sim.js has no genes), so an animal's panel is its mood, tummy, family and life story, and a hive's its honey (`honeyWord`)
+and the fields in reach; a hive goes by the field nearest it (`hiveName`).
 
-Foxes and rabbits are painted (fur.js: `paintFox`, `paintRabbit`, styled on the carcasses): one rig posed for
+Foxes and rabbits are painted (fur.js: `paintFox`, `paintRabbit`): one rig posed for
 what each is doing (`FOX_POSES`, `RABBIT_POSES`, picked by `foxArt`, `rabbitArt`), painted as one animal by `paintFur`
 (one shading over it all, each part's form and the markings soft, a part in front casting a soft shadow, a softened
-outline and a faint grain), so its parts don't read as separate shapes. A rabbit's coat is painted in its own colours;
-in winter it whitens in 5 steps, only the brown and the white painted and the steps between the two mixed. A painting
+outline and a faint grain), so its parts don't read as separate shapes. Every rabbit wears the wild coat all year (`COAT`;
+fur.js can still paint the sandy, black and blue-grey ones and a winter white), and a fox its own shade (`c.fur`). A painting
 is costly (each pass through the scratch layer is a flush), so parts can share one (`joined`) and the parts behind are
 just shaded (`flat`). It's painted only at doublings of its size (`FUR_PAINTED`) and shrunk for the sizes between,
 which keeps a dozen poses, growing young and zooming cheap. In the meadow the paintings are made off the main thread
-(fur-worker.js, which loads fur.js; game.js `furReady` asks for them, and shrinking or a part-white mix is done on the
-page once what it's made from has come). Till a pose comes the animal holds the one it was last drawn in (`shownPose`,
+(fur-worker.js, which loads fur.js; game.js `furReady` asks for them, and shrinking is done on the page once what it's
+made from has come). Till a pose comes the animal holds the one it was last drawn in (`shownPose`,
 as a tree's new colours do), or the same at another size or one of its kin stands in (`furKin`), and each look about the
 screen is asked for ahead (`furAhead`), so only the first of a look is painted on the page. Without a worker (no
 OffscreenCanvas) they're painted on the page, a new pose waiting a frame once the frame has done its painting. The
