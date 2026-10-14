@@ -28,9 +28,9 @@ closed); none of that project's rules apply here.
   the P photo, laid under the rest, `groundIn`); so nothing drawn on the meadow can blend with the ground (a `'lighter'` glow lays a
   light over it instead of adding to it). The golden hour lights it in the shader (`light`, game.js `goldLight`, in
   `GOLD_STEPS` so it repaints only on a step); what stands on it gets the same warmth as one `'source-atop'` fill, and
-  the night is a navy `wash` over everything. The loop draws only as often as the picture needs (game.js `pace`, see
-  Keep it smooth), and gives the sim at most `SIM_MS` a 60th of a second (a slow phone runs 60x a bit slower instead of
-  dropping frames).
+  the night is a navy `wash` over everything. The loop draws every one of the screen's frames (game.js `pace` only says
+  how sharp, see Keep it smooth), and gives the sim at most `SIM_MS` a 60th of a second (a slow phone runs 60x a bit
+  slower instead of dropping frames).
 - `sound.js`: all the sounds, made with Web Audio (no files). Off until the 🔊 button or M. Off, or with the page
   hidden (its meadow stands still then), the whole engine pauses, its timer too (`hear`, `ticking`).
   `sound-lab.html` plays each one on its own. Keep it minimal: one scale, few sounds. Every 5 to 10
@@ -107,14 +107,11 @@ new feature must not slow it down. If it would, make it cheaper or leave it out.
   fraction, gives V8 a new layout: it then reads those objects the slow way for good and keeps rerunning stale compiled
   loops, which once halved the sim's speed. A new field goes into the blank.
 - The page (cards, inspector, news) updates a few times a second at most, and only rewrites what changed.
-- Battery is part of smooth: a frame is drawn only as often as the picture needs (game.js `pace`). At most 60 a second
-  whatever the screen, the meadow at most 2x sharp, 30 a second in a lull (time running, nobody touching it for a few
-  seconds, nothing on screen moving faster than `LULL_PX_S`), 30 and then 15 paused, and none after a minute paused and
-  untouched (a touch, a key or the tab coming back wakes it, `wakePace`). Frames coming late step it down `RUNGS` (fewer
-  pixels, then 30 a second), and it tries the rung above again later; the battery saver (••• menu, or by itself on a
-  low battery) holds it low. So anything new that moves fast across the screen must count in the lull, raising
-  `pace.moved` by its speed in screen px a second as `movedOn`, `drawFlow` and `drawEffects` do, or it judders at 30;
-  and nothing may change the picture without a frame to show it.
+- Battery is part of smooth, but never by drawing fewer frames: the frame rate isn't limited (the owner's call,
+  2026-10-14), so a 120 Hz screen gets 120 a second (only a meadow paused and still rests, at 30: `RESTING_MS`). What
+  saves it is fewer pixels and less work: the meadow at most 2x sharp, a device whose frames come late stepping down
+  `RUNGS` (fewer pixels; it tries the rung above again later), the ground repainted only when it changes, and the
+  battery saver (••• menu, or by itself on a low battery) holding it at 1.5x.
 - Measure it, but only when a change will obviously cost something you could notice: a new full-screen
   pass, much more drawn each frame, new work in a hot loop. Then time `render` before and after over a few
   seconds in a busy meadow, following an animal, zoomed out, at 60x. If it got slower, fix it before
