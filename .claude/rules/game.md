@@ -80,6 +80,11 @@ Visitors section: who's here, or that all a kind wants is there, or what it lack
 for kinds whose riddle has come. A new meadow opens close, over the open ground with the most animals (`homeView`, `HOME_TILES`).
 The tab's icon follows the season and the part of day (`updateFavicon`, at most once a second), and
 the news log dates each line with a season chip (`seasonChip`).
+Every line of news goes in the log, but only some get a toast: the everyday ones (births, deaths of old age, escapes, blooms...:
+`QUIET_NEWS`, by category) are log-only unless they're about the animal you follow. Toasts come one at a time, `NEWS_GAP_MS`
+apart (`NEWS_GAP_ONE` on a phone, which shows one), queued in `newsWaiting` (`pumpNews`; past `NEWS_WAITING` the oldest plain
+one waiting is dropped). Big news (`bigNews`: seasons, the Dry Year, fire, swarms, records, a new visitor...) is gold
+(`.news-item.big`), stays `NEWS_BIG_MS`, and newer lines push the plain ones out first.
 The rivers run (`drawFlow`, worked out once a meadow by `flowOf` from the sim's `w.current`): streaks of current, quicker
 down the middle, white water at the fords and where the brook comes in or the river leaves the lake, and things floating by,
 all placed by the flow's clock alone (`flowTick`: the sim's `riverPace`, faster in the spring flood and at speed, slower at
