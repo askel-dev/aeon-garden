@@ -16,8 +16,8 @@
 
 const W = 150, H = 100;         // map size in tiles
 const ROOM_TILES = 9000;        // dry tiles the numbers below were tuned for; bigger meadows hold more
-const TPD = 600;                // ticks per day (20 s at 1x)
-const SEASON_DAYS = 5;
+const TPD = 21600;              // ticks per day: 12 minutes at 1x (30 ticks a second)
+const SEASON_DAYS = 7;
 const YEAR_DAYS = SEASON_DAYS * 4;
 const CELL = 8;                 // spatial grid cell, in tiles
 const GW = Math.ceil(W / CELL), GH = Math.ceil(H / CELL);
@@ -47,44 +47,57 @@ const WEATHER_ODDS = [             // per season
   { clear: 3, cloudy: 3, snow: 4, fog: 2 },
 ];
 
+// The clock. The meadow's numbers were first tuned on a 600-tick day (20 s). What happens in a day (grass grown and
+// eaten, fish caught, kits born, the old dying) stays as it was then, so a rate a tick of that kind is SLOW times
+// smaller now; what you watch (a step, a sip, a dive, a chase) takes as long as it did, in ticks. Hunger sits between:
+// an animal you follow should get hungry a few times a day, not once in a few days, so most burn HUNGER times what the
+// day's numbers say and their food fills them as much more, while a bite takes HUNGER times less of the grass, the
+// fish or the frogs (BITE, TAKES). A fox is the one that keeps to the day: its food comes one rabbit at a time.
+const SLOW = TPD / 600;
+const HUNGER = 8;
+const EAT = HUNGER / SLOW;      // a hungry kind's energy a tick, against the 600-tick day's
+const GRASS_EVERY = 60;         // ticks between growing the grass (and the ice)
+const SLEEP_BURN = 0.3;         // asleep, an animal burns this much: the nights are long against its hunger
+
 const GRASS_RATE = 0.4;         // logistic growth per day at full season
 const SEED_RATE = 0.06;         // regrowth trickle on bare ground, per day
 const DIEBACK = 0.35;           // per day, above the season's cap
-const BITE = 0.012;             // grass eaten per tick of grazing
-const GRASS_ENERGY = 40;        // energy per unit of grass
-const MOVE_COST = 0.25;         // energy per tick = MOVE_COST * v^2 / walk
+const BITE = 0.012 / SLOW;      // grass eaten per tick of grazing
+const GRASS_ENERGY = 40 * HUNGER;   // energy per unit of grass
+const MOVE_COST = 0.25;         // energy per tick = MOVE_COST * v^2 / walk, times its kind's hunger
 
 // Every animal of a kind is alike (SPECIES): no genes, and young don't take after their parents. Only a look
-// differs: a little bigger or smaller (c.scale), and a fox's shade (c.fur), which its cubs share.
+// differs: a little bigger or smaller (c.scale), and a fox's shade (c.fur), which its cubs share. burn: energy a
+// tick on the 600-tick day, and hunger: how much of that it burns a tick now (see HUNGER); walk and sprint: tiles a tick.
 const SPECIES = {
   rabbit: {
     key: 'rabbit', name: 'Rabbit', plural: 'Rabbits', emoji: '🐇',
-    maxEnergy: 100, burn: 0.035, walk: 0.06, sprint: 0.155, sight: 10, mateRange: 24, wade: 0.45,
-    matureDays: 4, lifeDays: 22, gestationDays: 1.5, litter: [2, 5], cooldownDays: 1.0,
-    breedSeasons: [0, 1], breedEnergy: 0.55, birthCost: 10, cap: 300,
+    maxEnergy: 100, burn: 0.035, hunger: EAT, walk: 0.06, sprint: 0.155, sight: 10, mateRange: 24, wade: 0.45,
+    matureDays: 6, lifeDays: 30, gestationDays: 2, litter: [2, 5], cooldownDays: 2,
+    breedSeasons: [0, 1], breedEnergy: 0.55, birthCost: 10, cap: 150,   // the cap holds them, with the foxes
   },
   fox: {
     key: 'fox', name: 'Fox', plural: 'Foxes', emoji: '🦊',
-    maxEnergy: 220, burn: 0.035, walk: 0.07, sprint: 0.21, sight: 18, mateRange: 45, wade: 0.6,
-    matureDays: 8, lifeDays: 40, gestationDays: 2.5, litter: [2, 4], cooldownDays: 8,
-    breedSeasons: [0, 1], breedEnergy: 0.65, birthCost: 25, cap: 60,
+    maxEnergy: 220, burn: 0.035, hunger: 1 / SLOW, walk: 0.07, sprint: 0.21, sight: 18, mateRange: 45, wade: 0.6,
+    matureDays: 11, lifeDays: 56, gestationDays: 3.5, litter: [2, 4], cooldownDays: 14,
+    breedSeasons: [0, 1], breedEnergy: 0.65, birthCost: 25, cap: 12,
   },
   bee: {
     key: 'bee', name: 'Bee', plural: 'Bees', emoji: '🐝',
-    maxEnergy: 30, burn: 0.02, walk: 0.2, sprint: 0.3, sight: 15, wade: 1, flies: true,
+    maxEnergy: 30, burn: 0.02, hunger: EAT, walk: 0.2, sprint: 0.3, sight: 15, wade: 1, flies: true,
     matureDays: 0.1, lifeDays: 28,   // a hive keeps its bees, raising one for each lost (hivesTick)
     breedSeasons: [], cap: 150,
   },
   crow: {
     key: 'crow', name: 'Crow', plural: 'Crows', emoji: '🐦‍⬛',   // (game.js paints them: older systems split this emoji in two)
-    maxEnergy: 80, burn: 0.028, walk: 0.35, sprint: 0.45, sight: 30, mateRange: 60, wade: 1, flies: true, glide: 0.2,   // walk: its flying pace; glide: what flying costs, of walking
-    matureDays: 6, lifeDays: 60, gestationDays: 2, litter: [1, 3], cooldownDays: 15,   // one brood a year, in a tall tree
+    maxEnergy: 80, burn: 0.028, hunger: EAT, walk: 0.35, sprint: 0.45, sight: 30, mateRange: 60, wade: 1, flies: true, glide: 0.2,   // walk: its flying pace; glide: what flying costs, of walking
+    matureDays: 8, lifeDays: 84, gestationDays: 3, litter: [1, 3], cooldownDays: 21,   // one brood a year, in a tall tree
     breedSeasons: [0], breedEnergy: 0.6, birthCost: 8, cap: 24,
   },
   otter: {
     key: 'otter', name: 'Otter', plural: 'Otters', emoji: '🦦',   // (game.js paints them: the emoji floats on its back, and differs from system to system)
-    maxEnergy: 150, burn: 0.03, walk: 0.055, sprint: 0.15, sight: 12, mateRange: 150, wade: 1.6, swims: true, glide: 0.4,   // wade: in the water it's quicker; glide: what moving costs it
-    matureDays: 10, lifeDays: 60, gestationDays: 2, litter: [2, 3], cooldownDays: 15,   // one litter a year, in the holt
+    maxEnergy: 150, burn: 0.03, hunger: EAT, walk: 0.055, sprint: 0.15, sight: 12, mateRange: 150, wade: 1.6, swims: true, glide: 0.4,   // wade: in the water it's quicker; glide: what moving costs it
+    matureDays: 14, lifeDays: 84, gestationDays: 3, litter: [2, 3], cooldownDays: 21,   // one litter a year, in the holt
     breedSeasons: [0], breedEnergy: 0.55, birthCost: 15, cap: 6,
   },
 };
@@ -936,11 +949,11 @@ function refreshWater(w) {
 // is lost: everyone inside scrambles out, except kits too young to, who drown. Grass under
 // water drowns too, and grows back fast in the silt once the water has gone.
 
-const WATER_EVERY = 30;          // ticks between moves of the water line
+const WATER_EVERY = 300;         // ticks between moves of the water line
 const WATER_DAYS = 1;            // about how long the water takes to reach its level for the season
 const DROWN_DAYS = 1;            // grass under water is gone in about this long
 const SILT_DAYS = 3;             // how long the ground the water left grows fast
-const KIT_DAYS = 1;              // kits younger than this can't get out of a flooding burrow
+const KIT_DAYS = 1.4;            // kits younger than this can't get out of a flooding burrow
 
 function waterGoal(w) {
   const T = w.terrain, s = seasonOf(w.tick);
@@ -1169,14 +1182,14 @@ const SILT_SPROUT = 1.5;        // how much likelier on fresh silt the flood lef
 const LEAN = 0.4, MAST = 4;     // an oak's or beech's seed in an ordinary year, and in a mast year, times its seeds
 const MAST_ODDS = [0, 0.15, 0.35, 0.6, 0.9];   // chance of a mast year, by years since the last
 const NUTS = 5;                 // acorns or beechnuts lying under one tree in a mast year, at most
-const NUT_ENERGY = 12;          // what one is worth to a rabbit
+const NUT_ENERGY = 12 * HUNGER;  // what one is worth to a rabbit
 const NUT_CROP = 4;             // acorns or beechnuts for the crows to carry off, for each seedling it tries for (d.nuts)
 const UNDER = 0.2;              // odds one just falls under its tree instead; the ones the crows leave, the mice eat
 const SHADE_DEATH = 0.02;       // odds a day a young tree in more shade than it bears dies
 const LOST = 0.004;             // odds a day a seedling dies anyway: slugs, drought, a hard frost
-const SNAG_DAYS = [15, 35];     // a dead tree stands this long, bare and grey, then falls
-const LOG_DAYS = [15, 30];      // and lies as a log this long, rotting away
-const STUMP_DAYS = 10;          // a broadleaf struck by lightning sprouts again from its stump after this
+const SNAG_DAYS = [21, 49];     // a dead tree stands this long, bare and grey, then falls
+const LOG_DAYS = [21, 42];      // and lies as a log this long, rotting away
+const STUMP_DAYS = 14;          // a broadleaf struck by lightning sprouts again from its stump after this
 const WINDTHROW = 0.1;          // odds, each tenth of a day in a storm, that it blows a big tree over
 const BLOOMS = 5;               // flowers for the bees in a tree's crown
 const VISITS = 10;              // bee visits to its blossom for a full crop
@@ -1577,8 +1590,9 @@ function struck(w, d) {
 // as the leaves come down (game.js hangs and drops them to match). An apple tree drops as many
 // as its blossom set (d.crop).
 
+const WINDFALL_EVERY = TPD / 10;   // ticks between windfalls dropping and rotting (and a storm blowing a tree over)
 const APPLES = 6;               // most windfalls lying under one tree
-const APPLE_ENERGY = 30;        // what one is worth to a rabbit
+const APPLE_ENERGY = 30 * HUNGER;   // what one is worth to a rabbit: a meal
 const APPLE_DROP = 0.35;        // odds a tree drops one, each time windfallTick runs, early in autumn
 const APPLE_ROT = 0.3;          // odds one rots, each time, late in autumn
 const APPLE_SMELL = 2;          // a rabbit finds apples this many times as far off as it sees a fox
@@ -1823,7 +1837,7 @@ function weatherTick(w) {
     w.snow -= melt; w.wet = Math.min(1, w.wet + melt);
   }
   // Storms bring lightning. Now and then a heatwave brings a dry strike, with no rain after it.
-  if (w.rng.next() < (kind === 'storm' ? 1 / 80 : kind === 'heat' ? 1 / 900 : 0)) {
+  if (w.rng.next() < (kind === 'storm' ? 1 / 80 : kind === 'heat' ? 1 / 900 : 0) / SLOW) {
     let x, y;
     do { x = w.rng.range(1, W - 1); y = w.rng.range(1, H - 1); } while (isWater(w, x, y));
     strike(w, x, y);
@@ -1962,7 +1976,7 @@ const FRIENDLY = 0.5;           // odds a check that a rabbit or a crow goes ove
 
 function computeTraits(c) {
   const sp = c.sp;
-  c.maxEnergy = sp.maxEnergy; c.burnRate = sp.burn;
+  c.maxEnergy = sp.maxEnergy; c.burnRate = sp.burn * sp.hunger;
   c.walk = sp.walk; c.sprint = sp.sprint; c.sight = sp.sight;
   c.fleeDist = c.sight * FLEE_DIST; c.pounce = POUNCE;
 }
@@ -2234,7 +2248,7 @@ function burrowTick(w, c) {
 // for a season falls in, and so does a half-dug one left alone for a day.
 
 const DIG_GAP = 14;        // tiles between burrows
-const DIG_TICKS = 300;     // one rabbit digging on its own: half a day
+const DIG_TICKS = 3600;    // one rabbit digging on its own: two minutes
 
 function canDig(w, x, y) {
   if (w.isle && w.isle[idx(x, y)]) return false;                 // (a kept meadow from before the islands has none)
@@ -2640,7 +2654,7 @@ function catchPrey(w, fox, prey) {
 // one that dries out die: an early spawning and a warm spring beat the drop, a late cold one doesn't. That's
 // what makes a frog year. The otters root them out of the shallows (rooted), and the crows pick the spawn and tadpoles out (tadpoles).
 
-const FROG_EVERY = 60;          // ticks between counts
+const FROG_EVERY = TPD / 10;     // ticks between counts
 const FROG_K = 0.3;             // frogs a tile of damp long grass right by the water has room for
 const FROG_REACH = 6;           // tiles from the water the grass is damp enough for them, fewer the further
 const FROG_DRY = 3;             // and in a heatwave, only this close
@@ -2653,21 +2667,21 @@ const FROG_ICE = 2;             // times that while the ice lies
 const FROG_SPREAD = 0.2;        // share that moves next door each count
 const FROG_START = 0.3;         // a new meadow's frogs, as a share of the room
 const DAMP_EVERY = TPD;         // ticks between workings-out of how far each tile is from the water (w.damp), at most
-const SPAWN_FROM = 1;           // days into spring before they spawn: the water's up by then
-const SPAWN_BY = 3.5;           // and by this many they have, mild night or not
+const SPAWN_FROM = 1.4;         // days into spring before they spawn: the water's up by then
+const SPAWN_BY = 4.9;           // and by this many they have, mild night or not
 const SPAWN_ODDS = 0.5;         // odds a night is mild enough (a wet night always is)
 const SPAWN_REACH = 6;          // frogs this close to the shallows spawn in them
 const EGGS = 8;                 // froglets one frog's spawn would come to, if nothing ate them and the water stayed
 const SPAWN_EDGE = 0.5;         // how good the lasting shallows are, against a flood pool on the floodplain
 const SPAWN_DEEP = 6;           // deep tiles within two that make shallows no good (the current, the fish)
-const TADPOLE_DAYS = 3.2;       // days from spawn to froglet, at an ordinary warmth
+const TADPOLE_DAYS = 4.5;       // days from spawn to froglet, at an ordinary warmth
 const WARMTH = { clear: 1.25, heat: 1.4, cloudy: 1, fog: 0.8, rain: 0.85, storm: 0.85, snow: 0.5 };   // how fast they grow, by the weather
 const TADPOLE_LOSS = 0.05;      // share gone a day anyway (beetles, newts)
 const TADPOLE_FISH = 0.5;       // and more where there are fish (w.fish), this much more at FISH_K
 const FROGLET_LEAVE = 2;        // share of the grown ones that leave the water a day
 const FROGLET_REACH = 4;        // tiles from the water the froglets get
-const SPAWN_BITE = 0.02;        // spawn a crow picks out a tick (twice the best grubs' worth)
-const SPAWN_ENERGY = 10;        // what each one is worth to it
+const SPAWN_BITE = 0.02 / SLOW;  // spawn a crow picks out a tick (twice the best grubs' worth)
+const SPAWN_ENERGY = 10 * HUNGER;   // what each one is worth to it
 const SPAWN_WORTH = 0.15;       // spawn on a tile worth flying down to
 const SPAWN_SPOTS = 12;         // the best tiles of spawn, a few apart, for the crows to find (w.spawnSpots)
 const SPAWN_RANGE = 30;         // how far off a crow flies for them
@@ -2914,12 +2928,12 @@ function spotSpawn(spots, sp, i) {
   if (slot >= 0) spots[slot] = i;
 }
 
-// One frog fewer about the tile x0, y0 (x0, y0 two tiles in from the edge).
-function takeFrog(w, x0, y0) {
+// n frogs fewer about the tile x0, y0 (x0, y0 two tiles in from the edge).
+function takeFrog(w, x0, y0, n) {
   let near = 0;
   for (let y = y0 - 2; y <= y0 + 2; y++) for (let x = x0 - 2; x <= x0 + 2; x++) near += w.frogs[y * W + x];
-  for (let y = y0 - 2; y <= y0 + 2; y++) for (let x = x0 - 2; x <= x0 + 2; x++) w.frogs[y * W + x] *= Math.max(0, 1 - 1 / near);
-  w.frogCount = Math.max(0, w.frogCount - Math.min(1, near));
+  for (let y = y0 - 2; y <= y0 + 2; y++) for (let x = x0 - 2; x <= x0 + 2; x++) w.frogs[y * W + x] *= Math.max(0, 1 - n / near);
+  w.frogCount = Math.max(0, w.frogCount - Math.min(n, near));
 }
 
 // A hungry crow in spring: down to the spawn in the shallows, standing at the water's edge by it, and
@@ -2967,7 +2981,7 @@ function tadpoles(w, c) {
 // on it as it drains are stranded. Winter thins them a little. They eat tadpoles (tadpolesTick: more are lost
 // where there are more fish), and the otters eat them.
 
-const FISH_EVERY = 60;          // ticks between counts
+const FISH_EVERY = TPD / 10;     // ticks between counts
 const FISH_K = 1;               // fish a tile of lasting deep water has room for
 const FISH_SHALLOW = 0.2;       // and a tile of lasting shallows, this share of that
 const FISH_BREED = 0.5;         // growth a day while there's room, in spring (less as the year goes on, SEASONS growth)
@@ -3011,12 +3025,12 @@ function fishTick(w) {
   w.fishCount = total;
 }
 
-// One fish fewer about the tile x0, y0 (x0, y0 two tiles in from the edge).
-function takeFish(w, x0, y0) {
+// n fish fewer about the tile x0, y0 (x0, y0 two tiles in from the edge).
+function takeFish(w, x0, y0, n) {
   let near = 0;
   for (let y = y0 - 2; y <= y0 + 2; y++) for (let x = x0 - 2; x <= x0 + 2; x++) near += w.fish[y * W + x];
-  for (let y = y0 - 2; y <= y0 + 2; y++) for (let x = x0 - 2; x <= x0 + 2; x++) w.fish[y * W + x] *= Math.max(0, 1 - 1 / near);
-  w.fishCount = Math.max(0, w.fishCount - Math.min(1, near));
+  for (let y = y0 - 2; y <= y0 + 2; y++) for (let x = x0 - 2; x <= x0 + 2; x++) w.fish[y * W + x] *= Math.max(0, 1 - n / near);
+  w.fishCount = Math.max(0, w.fishCount - Math.min(n, near));
 }
 
 // ---------------------------------------------------------------- bees
@@ -3030,10 +3044,10 @@ function takeFish(w, x0, y0) {
 // so water and woods don't stop them. Same ladder as everyone: danger > home > food > wander, one
 // function per rung.
 
-const NECTAR = 0.4;             // energy per tick of sipping
+const NECTAR = 0.4 * EAT;       // energy per tick of sipping
 const SIP_TICKS = 40;           // how long one flower takes
 const REFILL = 150;             // ticks a sipped flower needs to fill with nectar again
-const HONEY = 0.01;             // honey a flower's nectar makes, once home: a busy hive with flowers in reach fills in about a season
+const HONEY = 0.005;            // honey a flower's nectar makes, once home: a busy hive with flowers in reach fills in about two seasons
 const LOAD = 3;                 // flowers a forager visits before she flies home to unload
 const RICH = 3;                 // fresh flowers left around her last one (within 8 tiles) that make a patch worth dancing for
 const DANCE_TICKS = 40;         // how long she dances about it at the hive
@@ -3041,7 +3055,7 @@ const PATCH_DAYS = 0.5;         // how long the hive remembers a dance
 const PATCH_SPREAD = 4;         // how far apart the bees following a dance scatter over the patch
 const LEAVE = 0.05;             // chance each tick that a bee ready to go comes out, so the hive empties bit by bit
 const FILL_UP = 0.9;            // how full a bee eats herself in the hive before flying out
-const HONEY_BITE = 0.2;         // energy a tick a bee eats in the hive (the hive's own use is WINTER_EAT)
+const HONEY_BITE = 0.2 * EAT;   // energy a tick a bee eats in the hive (the hive's own use is WINTER_EAT)
 const POLLEN = 0.002;           // how much a visited flower thickens the grass around it
 const HIVE_HONEY = 20;          // what a new hive starts with
 const HIVE_FULL = 100;          // all the honey a hive can hold
@@ -3053,6 +3067,7 @@ const FORAGE_RANGE = 35;        // how far from its hive a bee roams
 const FEW_FLOWERS = 40;         // fewer open than this in the whole meadow, and bees stay in
 const HIVE_GAP = 20;            // a hive keeps this far from the others
 const HIVE_SHORE = 2;           // and this far from water, so the hollow tree isn't drawn over the pond
+const HIVE_EDGE = 10;           // and this far from the meadow's edge, out of the mist
 const HIVE_TREE = 8;            // a hollow tree is an old giant: the tree a hive moves into grows to this size
 const CROWD = 30;               // what each tree within 4 tiles takes off a site: the giant needs room
 const IN_FRONT = 60;            // and each tree in front of it (to the south), hiding the hollow
@@ -3136,13 +3151,14 @@ function siteScore(w, d) {
   return flowers + SEASON_FIELD * seasons - CROWD * crowd - IN_FRONT * front;
 }
 
+const inMist = (x, y) => x < HIVE_EDGE || y < HIVE_EDGE || x > W - HIVE_EDGE || y > H - HIVE_EDGE;
 // Dry ground all round, far enough out that the hollow tree stands clear of the water.
 const hiveGround = (w, x, y) => dry(w, x, y) &&
   [0, 1, 2, 3, 4, 5, 6, 7].every(a => dry(w, x + HIVE_SHORE * Math.cos(a * Math.PI / 4), y + HIVE_SHORE * Math.sin(a * Math.PI / 4)));
 
 // A tree a hive could move into: a big broadleaf standing, with nobody in it, clear of the water and of
 // the other hives (placeHive makes it an old oak).
-const hiveTree = (w, d) => d.emoji === '🌳' && !d.fruit && d.size >= GROWN && standing(d) && !d.hive && !d.holt
+const hiveTree = (w, d) => d.emoji === '🌳' && !d.fruit && d.size >= GROWN && standing(d) && !d.hive && !d.holt && !inMist(d.x, d.y)
   && hiveGround(w, d.x, d.y) && !w.hives.some(o => o.tree && hypot(o.x - d.x, o.y - d.y) < HIVE_GAP);
 
 // A hive in the best tree for one (siteScore), with flowers in reach and room to be seen, which becomes an
@@ -3388,8 +3404,9 @@ const CROW_HOP = 0.07;          // and hopping, now and then, over a longer way
 const CROW_STOP = [15, 60];     // ticks it stops to peck between walks
 const CROW_FULL = 0.85;         // a crow eats till its tummy is this full
 const CROW_HUNGRY = 0.25;       // and only this hungry takes the rabbits' windfalls (more, and the rabbits go into winter thin)
-const GRUB = 0.1;               // energy a tick pecking on short grass, at best
-const GRUB_SEASON = [1, 1, 0.8, 0.2];   // how many grubs there are, by season; none under snow
+const GRUB = 0.1 * EAT;         // energy a tick pecking on short grass, at best
+const GRUB_SEASON = [1, 1, 0.9, 0.8];   // how many grubs there are, by season (a crow eats what it finds in winter)
+const GRUB_SNOW = 0.7;          // and under snow, this share of them
 const GRUB_GRASS = 0.35;        // grass shorter than this is good pecking
 const GRUB_LONG = 0.6;          // and longer grass this good
 const GRUB_RANGE = 12;          // how far off a crow looks for better pecking
@@ -3428,7 +3445,7 @@ const PECKING = new Set(['peck', 'munch', 'bury', 'unbury', 'tadpole']);   // bu
 
 const grubs = (w, x, y) => {
   const i = idx(x, y);
-  return w.water[i] || w.snow > 0.3 ? 0 : GRUB * GRUB_SEASON[seasonOf(w.tick)] * (w.grass[i] < GRUB_GRASS ? 1 : GRUB_LONG);
+  return w.water[i] ? 0 : GRUB * GRUB_SEASON[seasonOf(w.tick)] * (w.grass[i] < GRUB_GRASS ? 1 : GRUB_LONG) * (w.snow > 0.3 ? GRUB_SNOW : 1);
 };
 
 function crowTick(w, c) {
@@ -3445,7 +3462,7 @@ function crowTick(w, c) {
     const fox = nearest(w, c, CROW_WARY, 'fox');
     if (fox && (c.mode === 'rest' || w.rng.next() < CROW_NOTICE)) {
       c.threatId = fox.id; flapUp(w, c, fox.x, fox.y); caw(w, c, fox);
-    } else if (fox && dist2(c, fox) < FOX_REACH ** 2 && !fox.sleeping && fox.mode !== 'eat' && fox.energy < 0.9 * fox.maxEnergy && growth(w, fox) > 0.3) {
+    } else if (fox && dist2(c, fox) < FOX_REACH ** 2 && !fox.sleeping && fox.mode !== 'eat' && fox.energy < 0.75 * fox.maxEnergy && growth(w, fox) > 0.3) {   // (a fox out hunting)
       caw(w, c, fox); catchPrey(w, fox, c);
       return;
     }
@@ -3777,12 +3794,12 @@ function crowMood(w, c) {
 //
 // Otters: a pair or two along the water. A female makes her holt in the roots of a big tree on the bank of
 // water that lasts (holtTree, HOLT_GAP from the other holts) and marks it (d.holt, her id; d.door, the way in;
-// holtsDay frees it once she's gone, and spreads their spraint on the bank by it). A male moves in with his
+// holtsDay frees it once she's gone). A male moves in with his
 // mate (mate). They're out from the evening to the middle of the morning, and sleep through the middle of the
 // day curled up at the holt (or on any bank, with none). They fish (w.fish): swim to where the fish are
 // thickest, dive, and come up with one as often as they're thick there, and eat it afloat. While the frogs
 // spawn they go after them along the shallows first, and in winter they dig them out of the mud by the water
-// (w.frogs), all there is while the ice shuts them out of the water. A fox, or a fire, near one on the bank
+// (w.frogs); under the ice they still fish where it meets the bank (atEdge). A fox near one on the bank
 // sends it into the water. Fed, they play: up the bank, and sliding down it into the water. In spring a
 // female with a holt has two or three cubs, who stay in the holt a while, follow mum about till they're
 // grown, and at a year (otterGrown) a young female finds a holt of her own and a young male goes off along
@@ -3813,9 +3830,10 @@ const DIVES = 3;                // dives in one place, coming up with nothing, b
 const FISH_CATCH = 0.7;         // odds it comes up with one where they're thickest, about
 const FISH_HALF = 0.3;          // fish on a tile where it comes up with one half as often as it could
 const FISH_ENERGY = 30;         // a fish to an otter
+const TAKES = 1 / HUNGER;       // of a fish (or a frog) in the water's stock one catch takes (see HUNGER)
 const FISH_EAT = 60;            // ticks eating one, afloat
 const CUB_SHARE = 15;           // what each cub close by gets of every fish mum catches, till it's grown
-const FROG_FEAST = 1.5;         // days after the frogs spawn that the otters go after them first
+const FROG_FEAST = 2;           // days after the frogs spawn that the otters go after them first
 const FROG_LOOK = 8;            // how far off it looks for the frogs
 const ROOT_WORTH = 0.02;        // frogs on a tile worth rooting about for
 const ROOT_TICKS = [30, 60];    // rooting along the shallows, or digging in the mud
@@ -3937,13 +3955,12 @@ function otterFood(w, c) {
       if (--c.timer <= 0) { c.mode = 'wander'; c.target = null; }
       return true;
     case 'dive': case 'root':
-      if (c.mode === 'dive' && w.frozen) break;      // the ice came over
       if (--c.timer > 0) return true;
       return c.mode === 'dive' ? surface(w, c) : rooted(w, c);
     case 'fish': case 'frog':
-      if (!c.target || c.mode === 'fish' && w.frozen) break;
+      if (!c.target) break;
       if (moveToward(w, c, c.target.x, c.target.y, c.walk)) {
-        if (c.mode === 'fish' && !swimming(w, c)) break;   // the water's gone from there
+        if (c.mode === 'fish' && !w.water[idx(c.x, c.y)]) break;   // the water's gone from there
         c.mode = c.mode === 'fish' ? 'dive' : 'root'; c.timer = w.rng.int(...(c.mode === 'dive' ? DIVE_TICKS : ROOT_TICKS));
       }
       return true;
@@ -3953,7 +3970,8 @@ function otterFood(w, c) {
   const range = nursing(w, c) ? HOLT_REACH : OTTER_RANGE;
   const yr = w.frogYear, h = holtOf(c) || c, at = dist2(c, h) > range ** 2 ? h : c;
   const frogsFirst = w.frozen || seasonOf(w.tick) === 0 && yr.at >= 0 && w.tick - yr.at < FROG_FEAST * TPD;
-  const fish = () => !w.frozen && (mostNear(w, w.fish, at.x, at.y, FISH_LOOK, 8, FISH_WORTH) || mostNear(w, w.fish, h.x, h.y, range, 12, FISH_WORTH));
+  const edge = w.frozen ? atEdge : null;            // (under the ice, only where it meets the bank)
+  const fish = () => mostNear(w, w.fish, at.x, at.y, FISH_LOOK, 8, FISH_WORTH, Infinity, edge) || mostNear(w, w.fish, h.x, h.y, range, 12, FISH_WORTH, Infinity, edge);
   const frogs = () => mostNear(w, w.frogs, at.x, at.y, FROG_LOOK, 8, ROOT_WORTH, OTTER_SHORE) || mostNear(w, w.frogs, h.x, h.y, range, 12, ROOT_WORTH, OTTER_SHORE);
   let spot = frogsFirst ? frogs() : fish();
   if (spot) c.mode = frogsFirst ? 'frog' : 'fish';
@@ -3968,7 +3986,7 @@ function otterFood(w, c) {
 function surface(w, c) {
   const x0 = clamp(c.x | 0, 2, W - 3), y0 = clamp(c.y | 0, 2, H - 3), n = w.fish[y0 * W + x0];
   if (w.rng.next() < FISH_CATCH * n / (n + FISH_HALF)) {
-    takeFish(w, x0, y0);
+    takeFish(w, x0, y0, TAKES);
     c.energy = Math.min(c.maxEnergy, c.energy + FISH_ENERGY);
     c.fish++;
     c.mode = 'eat'; c.timer = FISH_EAT; c.target = null;
@@ -3983,7 +4001,7 @@ function surface(w, c) {
 function rooted(w, c) {
   const x0 = clamp(c.x | 0, 2, W - 3), y0 = clamp(c.y | 0, 2, H - 3), n = w.frogs[y0 * W + x0];
   if (w.rng.next() < ROOT_CATCH * n / (n + ROOT_HALF)) {
-    takeFrog(w, x0, y0);
+    takeFrog(w, x0, y0, TAKES);
     c.energy = Math.min(c.maxEnergy, c.energy + OTTER_FROG);
     c.frogs++;
     c.mode = 'munch'; c.timer = FROG_MUNCH; c.target = null;
@@ -4005,16 +4023,18 @@ function tryAgain(w, c, mode) {
 
 // The tile with the most of `field` of a few tried within `far` of x, y, if any has more than `worth` (and, with
 // `shore`, is no further than that from the water).
-function mostNear(w, field, x, y, far, tries, worth, shore = Infinity) {
+function mostNear(w, field, x, y, far, tries, worth, shore = Infinity, ok = null) {
   let best = null, most = worth;
   for (let k = 0; k < tries; k++) {
     const a = w.rng.range(0, Math.PI * 2), r = w.rng.range(0, far), px = x + Math.cos(a) * r, py = y + Math.sin(a) * r;
     if (!inBounds(px, py)) continue;
     const i = idx(px, py);
-    if (field[i] > most && w.damp[i] <= shore) { best = { x: px, y: py }; most = field[i]; }
+    if (field[i] > most && w.damp[i] <= shore && (!ok || ok(w, i))) { best = { x: px, y: py }; most = field[i]; }
   }
   return best;
 }
+// Water by the bank, where an otter can get under the ice (tile i one in from the map's edge at least).
+const atEdge = (w, i) => w.water[i] > 0 && (!w.water[i + 1] || !w.water[i - 1] || !w.water[i + W] || !w.water[i - W]);
 
 // Into the water from trouble on the bank: the nearest water, the side away from it best, deep better. On the
 // ice, or with no water near, it just runs.
@@ -4119,39 +4139,6 @@ function holtTree(w) {
 
 // A kept meadow made before the trees along the water (plantTrees) may have no big tree on such a bank: it gets a
 // short row of them, young for their size, along the stretch with the most fish, above the spring flood.
-const BANK_ROW = 4;             // trees in the row
-const BANK_ROW_REACH = 7;       // tiles from the first that the others stand, at most
-const BANK_EDGE = 10;           // and tiles from the meadow's edge, out of the mist (and never on an island)
-function bankTrees(w) {
-  if (w.drawn?.empty || w.decor.some(d => d.holt) || holtTree(w)) return;
-  const T = w.terrain, high = T.level + T.springFlood, spots = [], R = HOLT_BANK - 0.5, bank = nearLasting(w, HOLT_BANK);
-  for (let y = BANK_EDGE; y < H - BANK_EDGE; y++) for (let x = BANK_EDGE; x < W - BANK_EDGE; x++) {
-    const i = y * W + x, p = { x: x + 0.5, y: y + 0.5 };
-    if (!bank[i] || w.ground[i] <= high || w.isle?.[i] || w.fieldAt[i] >= 0 || !waterWay(w, p, R, true)) continue;
-    if (w.burrows.some(b => dist2(b, p) < 4) || w.hives.some(h => dist2(h, p) < 4)) continue;
-    if (w.decor.some(d => dist2(d, p) < (d.tree ? 2.2 ** 2 : (d.size * 0.5 + 1) ** 2))) continue;
-    spots.push(p);
-  }
-  let first = null, most = 0;
-  for (const p of spots) { const n = fishNear(w, p); if (n > most && n >= HOLT_FISH) { first = p; most = n; } }
-  if (!first) return;
-  const row = [first];
-  for (const p of spots.sort((a, b) => dist2(a, first) - dist2(b, first))) {
-    if (row.length >= BANK_ROW || dist2(p, first) > BANK_ROW_REACH ** 2) break;
-    if (row.every(o => dist2(o, p) >= 2.2 ** 2)) row.push(p);
-  }
-  const r = w.treeRng;
-  for (const p of row) {
-    const x = p.x + r.range(-0.3, 0.3), y = p.y + r.range(-0.3, 0.3), kind = treeKind({ x, y, emoji: '🌳' }, 0.5, 0);
-    const d = newTree(w, x, y, kind);
-    d.size = r.range(GROWN + 0.6, 4.2);
-    d.max = Math.max(d.max, d.size * 1.1);
-    d.born = w.tick - yearsTo(TREES[kind], d.max, d.size) * YEAR;
-    if (w.decorCells.length) cellOf(w.decorCells, d).push(d);
-  }
-}
-
-// The tiles within reach (a square) of water that lasts, as a mask: a quick first look before waterWay, which is slow.
 function nearLasting(w, reach) {
   const m = new Uint8Array(W * H), level = w.terrain.level;
   for (let i = 0; i < W * H; i++) {
@@ -4300,12 +4287,13 @@ function die(w, c, cause, killer) {
 function lifeTick(w, c) {
   const g = growth(w, c);
   let b = c.burnRate * (0.5 + 0.5 * g);
-  if (c.sleeping) b *= 0.6;
+  if (c.sleeping) b *= SLEEP_BURN;
+  if (c.hidden && c.mode === 'nest') b = 0;                              // a chick in the nest, a cub in the holt: fed
   if (c.species === 'bee' && c.hidden) b *= 0.3;                           // huddled in the hive, barely burning
   if (c.pregnantUntil) b *= 1.25;
   const kind = w.weather.kind;
   if (kind === 'snow' && !c.hidden) b *= 1.25;                            // the cold
-  b += MOVE_COST * c.moved * c.moved / c.sp.walk * (kind === 'heat' ? 1.5 : 1) * (c.sp.glide || 1);
+  b += MOVE_COST * c.moved * c.moved / c.sp.walk * (kind === 'heat' ? 1.5 : 1) * (c.sp.glide || 1) * c.sp.hunger;
   c.energy -= b;
   if (!c.sprinting) c.stamina = Math.min(1, c.stamina + (c.sleeping || c.mode === 'tired' ? 1 / 150 : 1 / 400));
   c.sprinting = false;
@@ -4368,7 +4356,7 @@ function createWorld(seed, opts = {}) {
     for (let k = 0; k < n[species]; k++) {
       let x, y;
       do { x = w.rng.range(4, W - 4); y = w.rng.range(4, H - 4); } while (!dry(w, x, y));
-      const age = w.rng.range(4, 10);
+      const age = SPECIES[species].matureDays * w.rng.range(1, 1.8);   // grown, all of them
       const c = addCreature(w, species, x, y, { sex: k % 2 ? 'M' : 'F', age });
       if (c && species === 'rabbit' && k === 0) { c.name = 'Juni'; w.nameCounts.set('rabbit:Juni', 1); }
     }
@@ -4419,8 +4407,13 @@ function newDay(w) {
 
 // ---------------------------------------------------------------- moving in
 
-// Fewer than this and a kind is in danger: migration sends more.
-const FEW = { rabbit: 4, fox: 3, bee: 4, crow: 3, otter: 2 };
+// The gentle respawn: with fewer than FEW of a kind (times w.room), a few more wander in once they've been few for
+// COME_AFTER days, and a few more after as long again while they're still few. So neither the foxes nor, one day, the
+// player's hunting can empty the meadow, and a low still shows. Bees don't come this way: a hive raises its own.
+const FEW = { rabbit: 15, fox: 2, crow: 4, otter: 2 };
+const COME_AFTER = { rabbit: 1, fox: 3, crow: 3, otter: 3 };
+const ARRIVE = { rabbit: 4, fox: 2, crow: 3, otter: 2 };
+const FOX_FOOD = 30;            // foxes only come to a meadow with this many rabbits (times w.room)
 function migrate(w) {
   // The last one gone is told once, however slowly they went (otters that never came aren't gone), and again if
   // they come back and die out again. Migration or none.
@@ -4432,20 +4425,19 @@ function migrate(w) {
     }
   }
   if (!w.options.migration) return;
-  const wait = { rabbit: 1, fox: 3, bee: 2, crow: 3, otter: 3 }, arrive = { rabbit: 6, fox: 2, bee: 8, crow: 4, otter: 2 };
   for (const s of KINDS) {
-    if (s === 'bee') continue;                                   // (a hive raises its own: hivesTick)
+    if (s === 'bee') continue;
     const n = s === 'otter' && !w.decor.some(d => d.holt) ? 0 : w.count[s];   // (otters with no holt are only passing through)
-    if (n >= FEW[s]) { w.goneSince[s] = -1; continue; }
+    if (n >= (s === 'rabbit' ? FEW[s] * w.room : FEW[s])) { w.goneSince[s] = -1; continue; }
     if (w.goneSince[s] < 0) { w.goneSince[s] = w.tick; continue; }
-    if (w.tick - w.goneSince[s] < wait[s] * TPD) continue;
-    if (s === 'fox' && w.count.rabbit < 60 * w.room) continue;   // foxes only come where there is food
+    if (w.tick - w.goneSince[s] < COME_AFTER[s] * TPD) continue;
+    if (s === 'fox' && w.count.rabbit < FOX_FOOD * w.room) continue;
     if (s === 'otter' && (w.frozen || w.tick % TPD)) continue;     // (looked into once a day)
     const holt = s === 'otter' && holtTree(w), up = holt && otterWay(w, holt);
     if (s === 'otter' && !up) continue;                           // and a pair of otters up the water, to a free holt
     const side = w.rng.int(0, 3);
     const kids = [];
-    for (let k = 0; k < arrive[s]; k++) {
+    for (let k = 0; k < ARRIVE[s]; k++) {
       let x, y, tries = 0;
       do {
         const u = w.rng.range(4, (side % 2 ? H : W) - 4);
@@ -4466,12 +4458,12 @@ function step(w) {
   if (t % TPD === 0) newDay(w);
   buildGrid(w);
   weatherTick(w);
-  if (t % 4 === 0) { growGrass(w, 4); iceTick(w, 4); }
+  if (t % GRASS_EVERY === 0) { growGrass(w, GRASS_EVERY); iceTick(w, GRASS_EVERY); }
   if (t % WATER_EVERY === 0) waterTick(w);
-  if (t % FROG_EVERY === 15) frogsTick(w);
-  if (t % FISH_EVERY === 45) fishTick(w);
+  if (t % FROG_EVERY === FROG_EVERY / 4) frogsTick(w);
+  if (t % FISH_EVERY === FISH_EVERY * 3 / 4) fishTick(w);
   if (t % HIVES_EVERY === 0) hivesTick(w);
-  if (t % 60 === 0) { windfallTick(w); if (w.weather.kind === 'storm') windthrow(w); }
+  if (t % WINDFALL_EVERY === 0) { windfallTick(w); if (w.weather.kind === 'storm') windthrow(w); }
   const list = w.creatures;
   for (let i = 0; i < list.length; i++) {
     const c = list[i];
@@ -4507,9 +4499,10 @@ function forgetTheLongDead(w) {
 // where they'd got to. The neighbour grids and the events stay out, and are made again.
 // A change a kept meadow can't take (a new field the code counts on, on the world, a creature, a hive
 // or a tree) bumps KEEP_VERSION, and kept meadows start over.
-const KEEP_VERSION = 8;                 // 2: shade and rich ground (w.shadedFert, w.rich); 3: voles (w.voles); 4: the sickness (c.sick, c.immune, the resist gene);
+const KEEP_VERSION = 9;                 // 2: shade and rich ground (w.shadedFert, w.rich); 3: voles (w.voles); 4: the sickness (c.sick, c.immune, the resist gene);
                                         // 5: crows and remains (w.carcasses, w.roost, c.caches, d.nuts); 6: owls (d.owl, c.perch);
-                                        // 7: frogs (w.frogs, w.spawn, w.frogYear, c.frogs); 8: the cooking cut (no keeper, owls, fire or player powers)
+                                        // 7: frogs (w.frogs, w.spawn, w.frogYear, c.frogs); 8: the cooking cut (no keeper, owls, fire or player powers);
+                                        // 9: the pantry (no voles, sickness, remains or genes; hives that fill; the 12-minute day)
 const TABLES = { SPECIES, FIELD_KINDS, TREE_MIX, TREES, SEASONS, WEATHER };
 const UNKEPT = ['grid', 'grids', 'events', 'newborn', 'current'];   // on the world
 let tableNames = null;                                     // object -> 'SPECIES.fox', made the first time
@@ -4561,10 +4554,6 @@ function packWorld(w) {
 }
 
 // Null for a meadow kept by another version.
-// Fields older versions kept that are gone now, left behind: an animal's or a queen's mine (the player named it, theirs
-// then), a tree's bank (the holts' old reckoning, now d.holtFish). Left out, not deleted after: a deleted field leaves
-// an object slow to read.
-const gone = (e, k) => (k === 'mine' && e.sp !== undefined) || (k === 'bank' && e.tree === true);
 function unpackWorld(kept) {
   if (!kept || kept.version !== KEEP_VERSION) return null;
   const list = kept.list;
@@ -4584,30 +4573,15 @@ function unpackWorld(kept) {
     else if (ArrayBuffer.isView(e)) continue;
     else if (e.$map) for (let k = 0; k < e.$map.length; k += 2) o.set(value(e.$map[k]), value(e.$map[k + 1]));
     else if (e.$set) for (const v of e.$set) o.add(value(v));
-    else for (const k in e) if (!gone(e, k)) o[k] = value(e[k]);
+    else for (const k in e) o[k] = value(e[k]);
   }
   const w = made[0];
   for (const k in LATER) if (!(k in w)) w[k] = LATER[k];
   asFractions(w, ['wet', 'snow', 'ice', 'level', 'frogCount', 'spawnCount', 'fishCount']);
   for (const h of w.hives) asFractions(h, ['x', 'y', 'honey', 'raised']);
   for (const b of w.burrows) asFractions(b, ['x', 'y', 'dug']);
-  for (const f of w.fields) { f.open ??= 0; f.all ??= 0; f.bloomed ??= 0; }
-  for (const s of KINDS) {                                   // (kept before the otters)
-    for (const o of [w.count, w.expecting]) o[s] ??= 0;
-    w.stats.deaths[s] ??= {}; w.goneSince[s] ??= -1;
-    (w.diedOut ??= {})[s] ??= w.count[s] === 0;              // (kept before the last one gone was told whenever: none now was told already)
-  }
-  if (w.lake && !w.lake.near) {                              // (kept while a lake was circles)
-    w.lake.near = new Uint8Array(W * H);
-    for (let i = 0; i < W * H; i++) if (outside(w.lake.shape, i % W + 0.5, ((i / W) | 0) + 0.5) < 2) w.lake.near[i] = 1;
-    delete w.lake.shape;
-  }
-  if (!w.fish) {                                             // (kept before the fish)
-    w.fish = new Float32Array(W * H); startFish(w);
-  }
   w.grid = makeGrid(); w.grids = perKind(makeGrid); w.events = []; w.newborn = [];
   makeCurrent(w);
-  bankTrees(w);                                              // (kept with no tree for a holt)
   if (w.visitors) placesDay(w);
   buildGrid(w);
   return w;
