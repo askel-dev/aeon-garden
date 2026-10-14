@@ -680,7 +680,7 @@ function paintSkylark(g, size, U, n) {
 // FORAGER_REACH either side of the hips through half the stride, so game.js turns the stride over with the ground covered
 // (2 * FORAGER_REACH * 2 of its half-size a stride) and the feet don't slide. 'forager:' + (view << 4) + pose.
 // Box -1 to 1, feet on the ground at 0.72.
-const FORAGER_REACH = 0.16, FORAGER_LIFT = 0.075, FORAGER_BOB = 0.016;
+const FORAGER_REACH = 0.18, FORAGER_LIFT = 0.075, FORAGER_BOB = 0.016;
 const FORAGER_VIEWS = ['side', 'front', 'back'];
 const CLOAK = [100, 124, 68], HOOD = [178, 88, 52], HOOD_RIM = [140, 62, 38], SKIN = [246, 210, 180], CHEEK = [236, 136, 116];
 const HAIR = [118, 74, 44], TROUSER = [116, 94, 76], BOOT = [76, 54, 42], SATCHEL = [150, 100, 58], FLAP = [126, 82, 46], STRAP = [112, 74, 44];

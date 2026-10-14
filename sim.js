@@ -5172,9 +5172,9 @@ function lifeTick(w, c) {
 // corners come round in curves; it speeds up gently (FORAGER_ACCEL), slows to stop just where it was sent (FORAGER_BRAKE),
 // slows into a sharp turn, and wades at FORAGER_WADE of its pace. It moves on the sim's ticks, so pausing pauses it, and
 // game.js draws it between them.
-const FORAGER_WALK = 0.065;             // tiles a tick at a walk (a rabbit ambles 0.06)
+const FORAGER_WALK = 0.085;             // tiles a tick at a walk (a rabbit ambles 0.06)
 const FORAGER_WADE = 0.5;               // of that, in the shallows
-const FORAGER_ACCEL = 0.0045;           // tiles a tick it gains a tick, setting off (about half a second to a walk)
+const FORAGER_ACCEL = 0.0058;           // tiles a tick it gains a tick, setting off (about half a second to a walk)
 const FORAGER_BRAKE = 0.0035;           // and loses, stopping (it starts slowing about 0.7 tiles out)
 const FORAGER_TURN = 0.16;              // radians a tick it can turn at most at a walk (three times that from standing)
 const FORAGER_LOOK = 0.8;               // tiles ahead along its way it steers for
