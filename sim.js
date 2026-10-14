@@ -3776,6 +3776,114 @@ function freeSeat(k) {
   return -1;
 }
 
+// ---------------------------------------------------------------- mushrooms
+//
+// Mushrooms come up for a few days after rain, mostly in autumn: on the rotting logs (oyster mushrooms) and the
+// grey snags (chicken of the woods, a sulphur shelf), on rich ground (field mushrooms: a kill site, a warren's
+// latrines, an otters' spraint, where a log rotted away) and round their partner trees (ceps under oaks and pines,
+// chanterelles under birches and beeches). They're for the cook to gather, one day. Each clump is a short-lived
+// object (w.shrooms, at most SHROOM_MOST times w.room), all of one layout (shroomOf), looked at once an hour, with
+// random numbers of their own (w.shroomRng), so the rest of the meadow plays out the same with them. Nothing eats them yet.
+
+const SHROOM_EVERY = TPD / 24;          // ticks between looks (an hour)
+const SHROOM_MOST = 40;                 // clumps at once, times w.room
+const SHROOM_AFTER = [1, 2.5];          // days after the rain they come up, then fewer, then none
+const SHROOM_SEASON = [0.02, 0.05, 0.4, 0]; // the odds they come up, by season (and less as the rain is longer ago)
+const SHROOM_WOOD = 0.25;               // the chance an hour a log or a snag puts up a clump, times those odds
+const SHROOM_TREES = 12;                // tries an hour at a partner tree, picked at random
+const SHROOM_GROUND = 12;               // and at a tile, for rich ground
+const SHROOM_RICH = 0.2;                // rich ground this rich grows field mushrooms
+const SHROOM_DAYS = [2, 4];             // a clump lasts this long
+const SHROOM_GAP = 1;                   // tiles between clumps on the ground
+const SHROOM_REACH = [0.8, 2.2];        // a partner tree's come up this far from its trunk
+// They come up only where the player can see them: not on ground hidden behind something drawn in front of it (game.js
+// draws back to front), which reaches back about this far from its foot (in its size) and this far either side: a tree
+// standing or dead, a log, a rock.
+const SHROOM_HIDE = { tree: [1.4, 0.8], log: [0.4, 0.6], rock: [0.7, 0.6] };
+// The kinds: where each grows (on: 'log', 'snag', 'rich' or a partner tree, trees), and the fewest caps in a clump
+// (n: game.js paints three looks of each, with n, n + 1 and n + 2).
+const SHROOMS = {
+  cep:         { name: 'Ceps', one: 'Cep', on: 'tree', trees: ['oak', 'pine'], n: 1 },
+  chanterelle: { name: 'Chanterelles', one: 'Chanterelle', on: 'tree', trees: ['birch', 'beech'], n: 4 },
+  field:       { name: 'Field mushrooms', one: 'Field mushroom', on: 'rich', n: 2 },
+  oyster:      { name: 'Oyster mushrooms', one: 'Oyster mushroom', on: 'log', n: 2 },
+  sulphur:     { name: 'Chicken of the woods', one: 'Chicken of the woods', on: 'snag', n: 2 },
+};
+const SHROOM_KINDS = Object.keys(SHROOMS);
+
+// Every field a clump ever has, in one order (see blankCreature). kind: a key of SHROOMS; tree: the log, snag or
+// partner it's on or under (null on rich ground); born, until: ticks; n: caps in it; look: which of game.js's paintings (n's).
+const shroomOf = (kind, x, y, tree, born, until, n, look) => ({ shroom: true, kind, x, y, tree, born, until, n, look });
+
+// Once an hour: those past their days, under water or snow, or on a log that rotted away go. While it rains and for a few
+// days after (w.rainAt), new ones may come up: on each log and snag, round partner trees, on rich ground.
+function shroomsTick(w) {
+  const list = w.shrooms;
+  let n = 0;
+  for (const m of list) {
+    const d = m.tree, lost = d && (d.gone || (m.kind === 'oyster' ? !d.fallen : m.kind === 'sulphur' ? !d.dead || d.fallen : false));
+    if (w.tick < m.until && !w.water[idx(m.x, m.y)] && w.snow < 0.3 && !lost) list[n++] = m;
+  }
+  list.length = n;
+  const k = w.weather.kind;
+  if (k === 'rain' || k === 'storm') w.rainAt = w.tick;
+  const since = (w.tick - w.rainAt) / TPD, [full, none] = SHROOM_AFTER;
+  const odds = SHROOM_SEASON[seasonOf(w.tick)] * clamp((none - since) / (none - full), 0, 1);
+  if (odds <= 0 || w.snow > 0.2) return;
+  const r = w.shroomRng, most = Math.round(SHROOM_MOST * w.room);
+  for (const d of w.decor) {
+    if (list.length >= most) return;
+    if ((d.fallen || d.dead) && !d.gone && !d.stump && r.next() < odds * SHROOM_WOOD) shroomOnWood(w, r, d);
+  }
+  for (let k = 0; k < SHROOM_TREES && list.length < most; k++) if (r.next() < odds) shroomUnderTree(w, r);
+  for (let k = 0; k < SHROOM_GROUND && list.length < most; k++) if (r.next() < odds) shroomOnRich(w, r);
+}
+
+// Oyster mushrooms on a log, a sulphur shelf on a broadleaf snag (up its trunk). One clump a tree at a time.
+function shroomOnWood(w, r, d) {
+  if (d.size < SAPLING || w.shrooms.some(m => m.tree === d)) return;
+  if (d.fallen) {
+    const x = clamp(d.x + r.range(-0.35, 0.35) * d.size, 0.5, W - 0.5);
+    if (inSight(w, x, d.y - 0.1 * d.size, d)) addShroom(w, r, 'oyster', x, d.y + 0.05, d);
+  } else if (d.kind !== 'pine' && inSight(w, d.x, d.y - 0.25 * d.size, d)) addShroom(w, r, 'sulphur', d.x, d.y + 0.03, d);
+}
+
+// Whether ground at x, y shows, or something in front of it hides it (SHROOM_HIDE). own: the tree it's on, which doesn't.
+function inSight(w, x, y, own) {
+  let seen = true;
+  forEachDecorNear(w, x, y + 6, 8, d => {
+    if (!seen || d === own || d.stump || d.tree && d.size < SAPLING) return;
+    const [back, side] = SHROOM_HIDE[!d.tree ? 'rock' : d.fallen ? 'log' : 'tree'], dy = d.y - y;
+    if (dy > 0 && dy < back * d.size && Math.abs(d.x - x) < side * d.size) seen = false;
+  });
+  return seen;
+}
+
+// A tree picked at random: ceps or chanterelles round it, if it's a grown partner tree. One clump a tree at a time.
+function shroomUnderTree(w, r) {
+  const d = w.decor[r.int(0, w.decor.length - 1)];
+  if (!d || !standing(d) || d.size < GROWN || w.shrooms.some(m => m.tree === d)) return;
+  const kind = SHROOM_KINDS.find(k => SHROOMS[k].trees?.includes(d.kind));
+  if (!kind) return;
+  const a = r.range(-0.3, Math.PI + 0.3), far = r.range(...SHROOM_REACH);   // (in front of the trunk or to a side, not hidden behind it)
+  const x = d.x + Math.cos(a) * far, y = d.y + Math.sin(a) * far * 0.7;
+  if (dry(w, x, y) && roomForShroom(w, x, y) && inSight(w, x, y, null)) addShroom(w, r, kind, x, y, d);
+}
+
+// A tile picked at random: field mushrooms if it's rich enough.
+function shroomOnRich(w, r) {
+  const x = r.range(1, W - 1), y = r.range(1, H - 1);
+  if (w.rich[idx(x, y)] < SHROOM_RICH || !dry(w, x, y) || w.burrows.some(b => (b.x - x) ** 2 + (b.y - y) ** 2 < SHROOM_GAP * 2.25)) return;   // (not in a burrow's mouth)
+  if (roomForShroom(w, x, y) && inSight(w, x, y, null)) addShroom(w, r, 'field', x, y, null);
+}
+
+const roomForShroom = (w, x, y) => !w.shrooms.some(m => !m.tree?.fallen && !m.tree?.dead && (m.x - x) ** 2 + (m.y - y) ** 2 < SHROOM_GAP * SHROOM_GAP);
+
+function addShroom(w, r, kind, x, y, tree) {
+  const look = r.int(0, 2), until = w.tick + Math.round(r.range(...SHROOM_DAYS) * TPD);
+  w.shrooms.push(shroomOf(kind, x, y, tree, w.tick, until, SHROOMS[kind].n + look, look));
+}
+
 // ---------------------------------------------------------------- crows
 //
 // A few crows live in the meadow, flying over all of it (flies: true, like the bees). By day they walk
@@ -4764,6 +4872,7 @@ function createWorld(seed, opts = {}) {
     frogYear: { year: 0, at: -1, grown: 0, laid: 0, spawners: 0, stranded: 0, eaten: 0, left: 0, told: 0, dryDay: -1 },   // this spring's spawn, and how it went
     fish: new Float32Array(W * H), fishCount: -0,                         // (see fishTick)
     carcasses: [], roost: null, cached: 0,                                // (see carrionTick and crowTick; cached: this autumn)
+    shrooms: [], shroomRng: makeRng(seed ^ 0x5a2004), rainAt: -1e9,      // (see shroomsTick; rainAt: the last hour it rained)
     count: perKind(() => 0), expecting: perKind(() => 0),
     stats: { deaths: perKind(() => ({})) },                                 // deaths by cause, of each kind
     goneSince: perKind(() => -1), diedOut: perKind(() => false), hives: [],
@@ -4911,6 +5020,7 @@ function step(w) {
   if (t % FISH_EVERY === FISH_EVERY * 3 / 4) fishTick(w);
   if (t % HIVES_EVERY === 0) hivesTick(w);
   if (t % CARRION_EVERY === 0) carrionTick(w);
+  if (t % SHROOM_EVERY === SHROOM_EVERY / 2) shroomsTick(w);
   if (t % WINDFALL_EVERY === 0) { windfallTick(w); if (w.weather.kind === 'storm') windthrow(w); }
   const list = w.creatures;
   for (let i = 0; i < list.length; i++) {
@@ -4951,7 +5061,7 @@ const KEEP_VERSION = 10;                // 2: shade and rich ground (w.shadedFer
                                         // 5: crows and remains (w.carcasses, w.roost, c.caches, d.nuts); 6: owls (d.owl, c.perch);
                                         // 7: frogs (w.frogs, w.spawn, w.frogYear, c.frogs); 8: the cooking cut (no keeper, owls, fire or player powers);
                                         // 9: the pantry (no voles, sickness, remains or genes; hives that fill; the 12-minute day);
-                                        // 10: some ecology back (remains and rich ground again: w.carcasses, w.rich; winter coats: c.moult; bee colonies: h.queen, h.cluster...)
+                                        // 10: some ecology back (remains and rich ground again: w.carcasses, w.rich; winter coats: c.moult; bee colonies: h.queen, h.cluster...; mushrooms: w.shrooms, w.rainAt)
 const TABLES = { SPECIES, FIELD_KINDS, TREE_MIX, TREES, SEASONS, WEATHER };
 const UNKEPT = ['grid', 'grids', 'events', 'newborn', 'current'];   // on the world
 let tableNames = null;                                     // object -> 'SPECIES.fox', made the first time
@@ -5008,7 +5118,7 @@ function unpackWorld(kept) {
   const list = kept.list;
   const made = list.map(e => (Array.isArray(e) ? new Array(e.length) : ArrayBuffer.isView(e) ? e
     : e.$map ? new Map() : e.$set ? new Set() : e.sp !== undefined && e.species !== undefined ? blankCreature()   // (laid out like new ones)
-    : e.tree === true ? blankTree() : e.emoji === '🪨' ? rockOf(-0, -0, -0)
+    : e.tree === true ? blankTree() : e.emoji === '🪨' ? rockOf(-0, -0, -0) : e.shroom === true ? shroomOf('', -0, -0, null, 0, 0, 0, 0)
     : e.n !== undefined && e.i !== undefined && e.kind !== undefined && e.field !== undefined ? plantOf(-0, -0, 0, -0, null, 0) : {}));   // (a flower or blossom)
   const table = path => path.split('.').reduce((o, k) => {
     if (!o || !(k in o)) throw new Error('unpackWorld: no table ' + path);
@@ -5030,6 +5140,8 @@ function unpackWorld(kept) {
   for (const h of w.hives) asFractions(h, ['x', 'y', 'honey', 'brood']);
   for (const b of w.burrows) asFractions(b, ['x', 'y', 'dug']);
   for (const k of w.carcasses) asFractions(k, ['x', 'y', 'meat', 'full']);
+  if (!w.shrooms) { w.shrooms = []; w.shroomRng = makeRng(w.seed ^ 0x5a2004); w.rainAt = -1e9; }   // (kept on the cooking branch before them)
+  for (const m of w.shrooms) asFractions(m, ['x', 'y']);
   w.grid = makeGrid(); w.grids = perKind(makeGrid); w.events = []; w.newborn = [];
   makeCurrent(w);
   if (w.visitors) placesDay(w);
@@ -5882,7 +5994,7 @@ const api = {
   TERRAIN, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE, hollow,
   TREES, treeStage, treeAge, standing, bearing, inBloom, SEEDLING, SAPLING, GROWN, KIND_NAMES,
-  FROG_K, SPAWN_WORTH, FISH_K, FISH_EAT, CROW_SEATS,
+  FROG_K, SPAWN_WORTH, FISH_K, FISH_EAT, CROW_SEATS, SHROOMS, SHROOM_KINDS,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 else root.Sim = api;

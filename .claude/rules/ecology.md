@@ -226,6 +226,19 @@ stages as the meat goes (`BODY_STAGES`): whole, opened with the ribs showing (wh
 and a flat pelt that fades. A bird's remains are a few feathers, an otter's tufts of fur (`paintRemains`, `drawRemains`), and
 remains have a panel of their own (`THINGS.remains`). And game.js eases a crow's height in sim time (`birdLift`, `crowHeight`), so it glides down to land and up to its perch.
 
+Mushrooms come up for a few days after rain (`shroomsTick`, once an hour; `w.rainAt`, the last hour it rained: full odds for
+the first day after, none by `SHROOM_AFTER[1]`), mostly in autumn (`SHROOM_SEASON`), none under snow: oyster mushrooms on a log,
+chicken of the woods (a sulphur shelf) up a broadleaf snag (`shroomOnWood`, `SHROOM_WOOD` an hour each), ceps round a grown oak
+or pine and chanterelles round a birch or beech (`shroomUnderTree`, `SHROOMS[k].trees`, `SHROOM_REACH` from the trunk, in front of
+it or to a side), and field mushrooms on rich ground (`shroomOnRich`, `SHROOM_RICH`: a kill site, a warren's latrines, an otters'
+spraint, where a log rotted away; not in a burrow's mouth), so they chain on from the remains and the rabbits. Each clump is one
+object of one layout (`shroomOf`: kind, place, its tree, born and until, caps and look), in a short list (`w.shrooms`, at most
+`SHROOM_MOST` times `w.room`), lasting `SHROOM_DAYS`; it goes early if its log rots away, its snag falls, the water rises over
+it or snow lies. They come up only where the player can see them: not behind a tree, a log or a rock drawn in front (`inSight`,
+`SHROOM_HIDE`, by how game.js draws them), which keeps most of them to the woods' edges and the open. They have random numbers of
+their own (`w.shroomRng`), so the meadow plays out the same with them. An autumn has 10 to 20 clumps about on average, 15 to 30 at the
+height of a flush and next to none in a dry spell; a summer a few after a storm. Nothing eats them yet: they're for the cook. game.js paints them (below, and game.md).
+
 Bees live in hives (`w.hives`), each in an old hollow oak from `w.decor` (`h.tree`, `d.hive`, `moveIn`), a giant (`HIVE_TREE`)
 with a hollow low on its trunk (`drawBeeTree`). A meadow starts with `HIVES` of them (times `w.room`), each in the best tree
 left for one (`placeHive`, `hiveTree`, `siteScore`: fields in reach, open ground in front, `HIVE_GAP` from the others,

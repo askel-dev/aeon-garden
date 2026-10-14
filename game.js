@@ -1218,13 +1218,13 @@ function lightFrame(dt) {
 const shownDark = phase => LIGHT_MID + (darkness(phase) - LIGHT_MID) * lightSwing;
 const shownGold = phase => Math.round(goldenHour(phase) * lightSwing * GOLD_STEPS) / GOLD_STEPS;
 
-// The things a frame draws (a tree or a rock d, a swarm h, a creature c, a visitor v), each a record of the
+// The things a frame draws (a tree or a rock d, a swarm h, a creature c, a visitor v, mushrooms s), each a record of the
 // one shape, kept from frame to frame: a few hundred new objects a frame, of five shapes, were felt in every loop over them.
 const frameItems = [], itemPool = [];
 function itemOf(items, y, sx, sy, f) {
   let it = itemPool[items.length];
-  if (!it) itemPool.push(it = { y: -0, sx: -0, sy: -0, f: -0, px: -0, d: null, h: null, c: null, v: null });
-  it.y = y; it.sx = sx; it.sy = sy; it.f = f; it.px = 0; it.d = it.h = it.c = it.v = null;
+  if (!it) itemPool.push(it = { y: -0, sx: -0, sy: -0, f: -0, px: -0, d: null, h: null, c: null, v: null, s: null });
+  it.y = y; it.sx = sx; it.sy = sy; it.f = f; it.px = 0; it.d = it.h = it.c = it.v = it.s = null;
   items.push(it);
   return it;
 }
@@ -1301,6 +1301,10 @@ function render(now) {
     const [sx, sy] = toScreen(h.x, h.y);
     if (visible(sx, sy, 3 * z)) itemOf(items, h.y, sx, sy, 1 - mistAt(h.x, h.y)).h = h;
   }
+  for (const m of world.shrooms) {                         // mushrooms: on a log or a snag, just in front of it
+    const sx = (m.x - cam.x) * z + vw / 2, sy = (m.y - cam.y) * z + vh / 2;
+    if (visible(sx, sy, 2 * z + 20)) itemOf(items, m.tree && !S.standing(m.tree) ? Math.max(m.y, m.tree.y + 0.01) : m.y, sx, sy, 1 - mistAt(m.x, m.y)).s = m;
+  }
   const shown = [];
   for (const c of world.creatures) {
     if (c.hidden || !c.alive) continue;
@@ -1334,6 +1338,7 @@ function render(now) {
     fadeTo(it.f);
     if (it.d) it.d.hive ? drawBeeTree(it.d, it.sx, it.sy, now, ck) : drawDecor(it.d, it.sx, it.sy, now, ck, null, it.px);
     else if (it.h) drawSwarm(it.h, it.sx, it.sy);
+    else if (it.s) drawShroom(it.s, z);
     else if (it.v) drawVisitor(it.v, it.sx, it.sy, now, z);
     else drawCreature(it.c, it.sx, it.sy, now);
   }
@@ -2987,6 +2992,133 @@ function paintRemains(g, size, U, look) {
 }
 const REMAINS_ARTS = [0, 1, 2].map(k => 'remains:' + k);
 
+// ------------------------------------------------------------------ mushrooms
+//
+// A clump of mushrooms (sim.js w.shrooms) is painted once a look and size ('shroom:' + kind * 3 + look, SHROOM_ARTS; a
+// look is how many caps, sim.js SHROOMS n and up): ceps (a fat pale stem, a brown bun of a cap), chanterelles (little
+// golden trumpets), field mushrooms (white domes, the gills dark under the rim), oyster mushrooms (pale fans in a tier
+// out of a log's side) and chicken of the woods (sulphur shelves up a snag's trunk). It comes up over a few hours, in
+// steps, and fades as it goes over (drawShroom).
+const SHROOM_SIZE = 0.6;                  // a clump, next to a rabbit
+const SHROOM_GROW = 0.25;                 // days it takes to come up
+const SHROOM_OVER = 0.4;                  // its last days, going over, it fades
+const SHROOM_ARTS = S.SHROOM_KINDS.flatMap((k, i) => [0, 1, 2].map(v => 'shroom:' + (i * 3 + v)));
+const SHROOM_RGB = { cep: [140, 88, 46], chanterelle: [240, 172, 44], field: [242, 236, 224], oyster: [120, 110, 102], sulphur: [240, 140, 34] };
+const SHROOM_STEM = [236, 226, 204];
+const SHROOM_FILL = 1.8;                  // a clump's units, of the painting's box
+function paintShroom(g, size, U, look) {
+  g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
+  g.lineCap = g.lineJoin = 'round';
+  const kind = S.SHROOM_KINDS[Math.floor(look / 3)], n = S.SHROOMS[kind].n + look % 3, h = k => hash2(look, k, 41), rgb = SHROOM_RGB[kind];
+  if (kind === 'oyster' || kind === 'sulphur') { g.scale(SHROOM_FILL, SHROOM_FILL); paintShelves(g, kind, n, h, rgb); return; }
+  g.translate(0, 0.62); g.scale(SHROOM_FILL, SHROOM_FILL); g.translate(0, -0.62);   // (drawn in a clump's units, from its foot)
+  softSpot(g, 0, 0.62, 0.8, 0.18, '30, 40, 14', 0.4);   // pressed into the grass
+  const caps = [];                                      // spread across, the ones behind a little higher and smaller
+  for (let i = 0; i < n; i++) {
+    const back = n === 1 ? 0 : h(i) * 0.14;
+    caps.push({ x: n === 1 ? 0 : -0.5 + (i + 0.2 + 0.6 * h(10 + i)) / n, y: 0.62 - back, s: (1 - back * 2) * (0.8 + 0.25 * h(20 + i)) * (kind === 'chanterelle' ? 0.95 : 1), tilt: (h(30 + i) - 0.5) * 0.4 });
+  }
+  caps.sort((a, b) => a.y - b.y);
+  for (const c of caps) {
+    g.save(); g.translate(c.x, c.y); g.rotate(c.tilt * 0.4); g.scale(c.s, c.s);
+    if (kind === 'cep') {
+      softIn(g, SHROOM_STEM, -0.4, 0.02, () => { g.moveTo(-0.12, 0); g.bezierCurveTo(-0.22, -0.08, -0.16, -0.3, -0.1, -0.38); g.lineTo(0.1, -0.38); g.bezierCurveTo(0.16, -0.3, 0.22, -0.08, 0.12, 0); g.closePath(); }, 1.1, 0.78);
+      fillIn(g, 'rgba(226, 206, 140, 0.9)', () => ovalAt(g, 0, -0.39, 0.3, 0.06));     // the pale pores under the cap
+      softIn(g, rgb, -0.62, -0.36, () => { g.ellipse(0, -0.4, 0.34, 0.24, 0, Math.PI, TAU); g.ellipse(0, -0.4, 0.34, 0.06, 0, 0, Math.PI); }, 1.3, 0.7);
+      furGlow(g, [255, 220, 170], 0.4, -0.1, -0.54, 0.14, 0.06, -0.2);
+    } else if (kind === 'field') {
+      softIn(g, SHROOM_STEM, -0.26, 0.02, () => { g.moveTo(-0.06, 0); g.lineTo(-0.05, -0.26); g.lineTo(0.05, -0.26); g.lineTo(0.07, 0); g.closePath(); }, 1.1, 0.8);
+      fillIn(g, 'rgb(128, 84, 74)', () => ovalAt(g, 0, -0.27, 0.24, 0.05));          // the gills, dark under the rim
+      softIn(g, rgb, -0.46, -0.26, () => { g.ellipse(0, -0.28, 0.26, 0.19, 0, Math.PI, TAU); g.ellipse(0, -0.28, 0.26, 0.04, 0, 0, Math.PI); }, 1.05, 0.78);
+      furGlow(g, [255, 255, 250], 0.6, -0.07, -0.4, 0.1, 0.05);
+    } else {                                            // a chanterelle: a trumpet, its wavy rim turned up
+      const edge = () => { g.moveTo(-0.27, -0.44); g.quadraticCurveTo(-0.14, -0.53, 0, -0.48); g.quadraticCurveTo(0.14, -0.54, 0.27, -0.44); };
+      softIn(g, rgb, -0.48, 0.02, () => { g.moveTo(-0.045, 0); g.quadraticCurveTo(-0.07, -0.24, -0.27, -0.44); g.quadraticCurveTo(0, -0.36, 0.27, -0.44); g.quadraticCurveTo(0.07, -0.24, 0.045, 0); g.closePath(); }, 1.12, 0.74);
+      strokeIn(g, rockRGB(tone(rgb, 0.78), 0.7), 0.016, () => { for (const k of [-0.7, -0.25, 0.25, 0.7]) { g.moveTo(k * 0.04, -0.02); g.quadraticCurveTo(k * 0.08, -0.24, k * 0.26, -0.41); } });   // its ridges
+      fillIn(g, rockRGB(tone(rgb, 0.84)), () => { edge(); g.quadraticCurveTo(0, -0.37, -0.27, -0.44); });   // the hollow of its cap
+      strokeIn(g, rockRGB(tone(rgb, 1.12, 22)), 0.03, edge);
+    }
+    g.restore();
+  }
+}
+// Brackets: lobed fans in tiers, seen from a little above: the wood at the back, the top of each shelf in front of it and
+// the thickness of its rim under that (an oyster's pale gills, a sulphur shelf's yellow underside). Oyster mushrooms spread
+// along a log, chicken of the woods climbs a trunk. (0, 0) is where the middle of it grows out of the wood.
+function paintShelves(g, kind, n, h, rgb) {
+  const up = kind === 'sulphur', shelves = [];
+  for (let i = 0; i < n; i++) {
+    const t = n === 1 ? 0.5 : i / (n - 1);
+    shelves.push(up ? { x: (h(i) - 0.5) * 0.18, y: 0.28 - t * 0.5, s: 1 - t * 0.25, k: i }
+      : { x: -0.42 + t * 0.84 + (h(i) - 0.5) * 0.1, y: (h(10 + i) - 0.5) * 0.14, s: 0.85 + 0.25 * h(20 + i), k: i });
+  }
+  shelves.sort((a, b) => a.y - b.y);
+  const under = up ? [250, 214, 70] : [218, 208, 190], rim = up ? [252, 222, 90] : tone(rgb, 1.15, 16);
+  for (const f of shelves) {
+    g.save(); g.translate(f.x, f.y); g.scale(f.s, f.s);
+    const rx = up ? 0.34 : 0.28, ry = up ? 0.2 : 0.24, ph = h(40 + f.k) * TAU;
+    const fan = (dy, k = 1) => {                       // the front edge in lobes, then the back edge along the wood
+      g.moveTo(-rx * k, dy);
+      for (let i = 1; i <= 24; i++) {
+        const a = Math.PI - i / 24 * Math.PI, r = 1 + 0.07 * Math.sin(a * 6 + ph);
+        g.lineTo(Math.cos(a) * rx * r * k, dy + Math.sin(a) * ry * r * k);
+      }
+      g.quadraticCurveTo(0, dy - ry * 0.45 * k, -rx * k, dy);
+    };
+    fillIn(g, 'rgba(40, 30, 20, 0.3)', () => fan(0.07));                     // its shadow on the wood
+    fillIn(g, rockRGB(tone(under, 0.9)), () => fan(0.045));                   // the underside, showing under the rim
+    softIn(g, rgb, -ry * 0.4, ry, () => fan(0), 0.82, 1.12);                   // the top, darker where it grows out of the wood
+    strokeIn(g, rockRGB(rim, 0.85), 0.035, () => {                              // the rim, lit
+      for (let i = 0; i <= 24; i++) {
+        const a = Math.PI - i / 24 * Math.PI, r = 1 + 0.07 * Math.sin(a * 6 + ph), x = Math.cos(a) * rx * r * 0.93, y = Math.sin(a) * ry * r * 0.88;
+        i ? g.lineTo(x, y) : g.moveTo(x, y);
+      }
+    });
+    strokeIn(g, rockRGB(tone(rgb, 0.8), 0.35), 0.012, () => { for (let k = 1; k <= 3; k++) g.ellipse(0, 0, rx * k / 4, ry * k / 4, 0, 0.15, Math.PI - 0.15); });   // growth rings
+    g.restore();
+  }
+}
+
+// Where a clump is drawn (into shroomAt): its size, and its middle on screen, over a log's side or up a snag's trunk.
+const shroomAt = { px: 0, x: 0, y: 0 };
+function placeShroom(m, z) {
+  const d = m.tree, sx = (m.x - cam.x) * z + vw / 2, sy = (m.y - cam.y) * z + vh / 2;   // (toScreen, without an array)
+  const grown = clamp((world.tick - m.born) / (SHROOM_GROW * S.TPD), 0, 1), step = Math.max(1, Math.ceil(grown * 3)) / 3;
+  const px = Math.max(6, (8 + z) * SHROOM_SIZE * (m.kind === 'sulphur' ? 1.2 : m.kind === 'oyster' ? 1.7 : 1) * (0.4 + 0.6 * step));
+  shroomAt.px = px; shroomAt.x = sx;
+  shroomAt.y = m.kind === 'oyster' ? sy - treePx(d) * SHROOM_LOG : m.kind === 'sulphur' ? sy - treePx(d) * SHROOM_SNAG : sy - px * 0.31;
+}
+const SHROOM_LOG = 0.05, SHROOM_SNAG = 0.16;   // how high on a log's side and up a snag's trunk, in the tree's size
+// Its portrait in the inspector: its painting (the 🍄 emoji is a fly agaric, which no cook would pick).
+function shroomFace(m) {
+  const art = SHROOM_ARTS[S.SHROOM_KINDS.indexOf(m.kind) * 3 + m.look];
+  if (!portraits.has(art)) portraits.set(art, dataURL(sprite(art, 38).canvas));
+  return `<img src="${portraits.get(art)}" alt="${S.SHROOMS[m.kind].name}" style="width: 125%">`;
+}
+const SHROOM_TINT = { cep: '#8c582e', chanterelle: '#eeaa36', field: '#c8bca8', oyster: '#b8ae9c', sulphur: '#f6a828' };
+const SHROOM_COOK = {
+  cep: ['🍳', 'Firm and nutty: the cook\'s favourite, fried in butter or dried for winter'],
+  chanterelle: ['🍳', 'Golden, and smells faintly of apricots: lovely with eggs'],
+  field: ['🍳', 'The everyday mushroom: on toast, or in a stew'],
+  oyster: ['🍳', 'Soft and mild: torn up and fried'],
+  sulphur: ['🍳', 'Tastes like chicken, they say, while it\'s young and tender'],
+};
+// Why the ground under field mushrooms is rich (sim.js enrich): remains lying there, a warren's latrines, an otters' holt, or
+// something long gone (a body, a log rotted away).
+function richWhy(m) {
+  const near = (x, y, r) => (x - m.x) ** 2 + (y - m.y) ** 2 < r * r;
+  const k = world.carcasses.find(k => near(k.x, k.y, 2));
+  if (k) return ['🦴', `The ground is rich where the remains of ${link(k.c)} lie`];
+  if (world.burrows.some(b => b.count && near(b.x, b.y, 4.5))) return ['🐇', 'The ground is rich round a busy warren, where the rabbits leave their droppings'];
+  if (world.decor.some(d => d.holt && near(d.x, d.y, 4))) return ['🦦', 'The ground is rich by an otters\' holt, where they leave their spraint'];
+  return ['🌱', 'The ground is rich here: something lay and went back into it, a body or an old log'];
+}
+function drawShroom(m, z) {
+  placeShroom(m, z);
+  const left = (m.until - world.tick) / S.TPD;
+  drawEmoji(SHROOM_ARTS[S.SHROOM_KINDS.indexOf(m.kind) * 3 + m.look], shroomAt.x, shroomAt.y, shroomAt.px,
+    { alpha: left < SHROOM_OVER ? 0.3 + 0.7 * left / SHROOM_OVER : undefined, flip: m.born % 2 === 1 });
+}
+
 // A dead rabbit, lying on its side facing left, in four stages ('body:' + coat * 4 + stage): 0 whole, its eyes
 // closed; 1 opened, the ribs showing; 2 picked over, bones and scraps; 3 a flat pelt, a bone or two. Soft shapes in
 // the emoji rabbit's proportions, no red, in the wild coat or, white for winter, in white (BODY_COATS). A fox
@@ -4321,7 +4453,7 @@ function putPainting(p, f, alpha, snow, ox, oy) {
 // A visitor fur.js paints (Fur.painters: the dragonflies, the kingfisher, the skylark), at the doublings of its size and
 // shrunk between (shrunk), as a fox is; in the meadow the worker paints it (furReady).
 const furPaint = kind => (g, size, U, n) => { if (!shrunk(g, size, U, kind + ':' + n)) Fur.painters[kind](g, size, U, n); };
-const PAINTERS = { fox: paintFox, rabbit: paintRabbit, hog: paintHedgehog, heron: paintHeron, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody, bee: paintBee, fall: paintFall,
+const PAINTERS = { fox: paintFox, rabbit: paintRabbit, hog: paintHedgehog, heron: paintHeron, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody, bee: paintBee, fall: paintFall, shroom: paintShroom,
   dfly: furPaint('dfly'), kfisher: furPaint('kfisher'), lark: furPaint('lark') };
 function drawDecor(d, sx, sy, now, ck, clipLeaves, px = d.tree ? treePx(d) : d.size * cam.zoom) {   // (px: render has it already)
   if (d.emoji === '🪨') { drawRock(d, sx, sy); return; }
@@ -6398,6 +6530,34 @@ const THINGS = {
     },
   },
 
+  shroom: {                                                // (before the trees: they grow at the foot of one, or on it)
+    at(sx, sy) {
+      let best = null, bd = Infinity;
+      for (const m of world.shrooms) {
+        placeShroom(m, cam.zoom);
+        const r = Math.max(fingerTap ? 22 : 12, shroomAt.px * 0.55), d = (shroomAt.x - sx) ** 2 + (shroomAt.y - sy) ** 2;
+        if (d < r * r && d < bd) { best = m; bd = d; }
+      }
+      return best;
+    },
+    here: m => world.shrooms.includes(m),
+    spot: m => ({ x: m.x, y: m.y + (m.tree && !S.standing(m.tree) ? 0.2 : 0), r: 0.5 }),
+    show(m) {
+      const k = S.SHROOMS[m.kind], name = m.n === 1 ? `A ${k.one.toLowerCase()}` : k.name, d = m.tree, tint = SHROOM_TINT[m.kind];
+      const kind = d && treeName(d).toLowerCase(), a = d && /^[aeiou]/.test(kind) ? 'an' : 'a';
+      const tree = d && thingLink('tree', d.id, d.name ? 'the ' + esc(d.name) : `${m.kind === 'oyster' ? 'a fallen' : m.kind === 'sulphur' ? 'a dead' : a} ${kind}`);
+      const sub = m.kind === 'oyster' ? `On a fallen ${kind}` : m.kind === 'sulphur' ? `On a dead ${kind}` : d ? `Under ${a} ${kind}` : 'On rich ground';
+      if (!this.here(m)) return { emoji: shroomFace(m), tint, name, sub: 'Gone', status: '🍂 Gone over, back into the ground. More will come up after the next rain.' };
+      const age = (world.tick - m.born) / S.TPD, left = (m.until - world.tick) / S.TPD, life = (m.until - m.born) / S.TPD;
+      const status = age < SHROOM_GROW ? '🌧️ Just pushing up after the rain' : left < SHROOM_OVER ? '🍂 Going over: soft, and the slugs have found it' : '🧺 Fresh: just right for picking';
+      const why = m.kind === 'oyster' || m.kind === 'sulphur' ? ['🪵', `The fungus is rotting ${tree} away from the inside, and puts these out of the wood after rain`]
+        : d ? ['🌳', `The fungus lives on the roots of ${tree}, and puts these up round it after rain, mostly in autumn`] : richWhy(m);
+      const facts = [why, SHROOM_COOK[m.kind], ['🧺', `${m.n} ${m.n === 1 ? 'cap' : 'caps'} to pick`],
+        ['⏳', left < 1 ? `Gone in about ${hours(left * S.TPD)}` : `Good for about ${days(left)} more`]];
+      return { emoji: shroomFace(m), tint, name, sub, status, facts, meters: [['Fresh', clamp(1 - age / life, 0, 1), left < SHROOM_OVER ? 'low' : '']] };
+    },
+  },
+
   tree: {
     at: (sx, sy) => { const d = decorAt(sx, sy); return d && d.tree ? d : null; },
     here: d => world.decor.includes(d),
@@ -6443,6 +6603,8 @@ const THINGS = {
       if (living && !young && k.thorns) facts.push(['🌿', 'Its thorns keep rabbits off the seedlings under it']);
       const kids = world.decor.filter(o => o.parent === d.id && S.standing(o)).length;
       if (kids) facts.push(['🌱', `${kids} of its young ${kids === 1 ? 'grows' : 'grow'} in the meadow`]);
+      const shroom = world.shrooms.find(m => m.tree === d);
+      if (shroom) facts.push(['🍄', `${S.SHROOMS[shroom.kind].name} ${living ? 'under it' : 'on it'}`]);
       if (d === world.roost) facts.push(['🐦‍⬛', 'The crows\' roost: they all sleep here at night']);
       if (world.creatures.some(c => c.alive && c.species === 'crow' && c.home === d)) facts.push(['🪺', 'A crows\' nest is up in it']);
       if (d.nuts && S.seasonOf(world.tick) === 2) facts.push(['🌰', `${d.nuts} ${d.nuts === 1 ? k.mast.slice(0, -1) : k.mast} left for the crows to carry off and bury`]);

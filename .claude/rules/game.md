@@ -21,6 +21,15 @@ with its coat and how well it hides where it sits, `coatLine`), and a hive's its
 and the fields in reach; a hive goes by the field nearest it, a swarm by its queen (`hiveName`). A hanging swarm is drawn as a
 seething clump under its branch (`drawSwarm`) and picked where it's drawn (`hiveAt`); remains have a panel too (`THINGS.remains`).
 
+Mushrooms (sim.js `w.shrooms`) are painted once a look and size (`paintShroom`, `SHROOM_ARTS`: five kinds, three looks each,
+a look being how many caps): ceps, chanterelles and field mushrooms in a clump on the ground, oyster mushrooms and chicken of the
+woods as lobed brackets in tiers (`paintShelves`), out of a log's side and up a snag's trunk (`placeShroom`, `SHROOM_LOG`,
+`SHROOM_SNAG`). They're drawn with the trees and animals, back to front (a frame item's `s`), come up in three steps over
+`SHROOM_GROW` of a day and fade as they go over (`SHROOM_OVER`). Their panel (`THINGS.shroom`, before the trees so one at a
+tree's foot is picked first) has the painting for a portrait (`shroomFace`: the 🍄 emoji is a fly agaric), where it grows and
+why (`richWhy`: remains, a warren, a holt), what the cook would make of it (`SHROOM_COOK`) and how fresh it is; a tree's panel says
+when there are mushrooms under it or on it.
+
 Foxes and rabbits are painted (fur.js: `paintFox`, `paintRabbit`): one rig posed for
 what each is doing (`FOX_POSES`, `RABBIT_POSES`, picked by `foxArt`, `rabbitArt`), painted as one animal by `paintFur`
 (one shading over it all, each part's form and the markings soft, a part in front casting a soft shadow, a softened
