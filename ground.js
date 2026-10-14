@@ -311,7 +311,7 @@ void main() {
   o = vec4(col * mix(light, vec3(1.), 0.6 * open * (1. - m)), 1.);   // open water shows the sky, so it keeps most of its blue
 }`;
 
-let ok = !!gl, U = {}, textures = {}, shader, mistOut = 0;
+let ok = !!gl, U = {}, textures = {}, shader, mistOut = 0, mistSum = null;
 if (gl) {
   shader = (type, src) => {
     const s = gl.createShader(type);
@@ -360,6 +360,28 @@ function mist(data, w, h, out) {
   gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, w, h, 0, gl.RED, gl.UNSIGNED_BYTE, data);
   gl.uniform1f(U.mistOut, out); mistOut = out;
+  // How many texels have any mist in each rectangle from the corner, so misty() can tell in a few reads.
+  const sum = new Int32Array((w + 1) * (h + 1));
+  for (let y = 0; y < h; y++) for (let x = 0, row = 0; x < w; x++) {
+    row += data[y * w + x] > 0 ? 1 : 0;
+    sum[(y + 1) * (w + 1) + x + 1] = sum[y * (w + 1) + x + 1] + row;
+  }
+  mistSum = { sum, w, h };
+}
+
+// Whether a painting (its camera and margin, as draw had them) has any mist in it. Where it has none the shader's
+// m is 0 and the mist's colour can't change a pixel, so its creeping through the day needn't paint the ground again.
+function misty(u, pad) {
+  if (!mistSum) return false;
+  const { sum, w, h } = mistSum, tx = w / (S.W + 2 * mistOut), ty = h / (S.H + 2 * mistOut);
+  const ax = (-pad - u.ox) / u.zoom, bx = (u.width / u.dpr + pad - u.ox) / u.zoom;   // the tiles it covers
+  const ay = (-pad - u.oy) / u.zoom, by = (u.height / u.dpr + pad - u.oy) / u.zoom;
+  // the texels the shader's (linear) reads there could touch, a texel to spare; past the edges is all mist
+  const x0 = Math.floor((ax + mistOut) * tx) - 2, x1 = Math.ceil((bx + mistOut) * tx) + 2;
+  const y0 = Math.floor((ay + mistOut) * ty) - 2, y1 = Math.ceil((by + mistOut) * ty) + 2;
+  if (x0 < 0 || y0 < 0 || x1 >= w || y1 >= h) return true;
+  const W1 = w + 1;
+  return sum[(y1 + 1) * W1 + x1 + 1] - sum[y0 * W1 + x1 + 1] - sum[(y1 + 1) * W1 + x0] + sum[y0 * W1 + x0] > 0;
 }
 
 function set(name, data) {
@@ -391,7 +413,8 @@ function steady(u, now) {                               // all but where the cam
   for (const k of EXACT) if (u[k] !== last[k]) return false;
   if (now - paintedAt < u.hold) return true;
   for (const k in NEAR) if (Math.abs(u[k] - last[k]) > NEAR[k]) return false;
-  for (const k of ['low', 'high', 'sand', 'fog']) for (let i = 0; i < 3; i++) if (Math.abs(u[k][i] - last[k][i]) > 0.5) return false;
+  for (const k of ['low', 'high', 'sand']) for (let i = 0; i < 3; i++) if (Math.abs(u[k][i] - last[k][i]) > 0.5) return false;
+  if (last.misty) for (let i = 0; i < 3; i++) if (Math.abs(u.fog[i] - last.fog[i]) > 0.5) return false;   // (none in it: the fog can't show)
   for (let i = 0; i < 3; i++) if (Math.abs(u.light[i] - last.light[i]) > 0.002) return false;   // (game.js moves it in steps)
   return true;
 }
@@ -421,7 +444,7 @@ function draw(u) {
   for (const k of ['low', 'high', 'sand', 'fog']) gl.uniform3fv(U[k], u[k].map(v => v / 255));
   gl.uniform3fv(U.light, u.light);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
-  last = { ...u, pad }; stale = false; view.x = view.y = m; paintedAt = now;
+  last = { ...u, pad, misty: misty(u, pad) }; stale = false; view.x = view.y = m; paintedAt = now;
   return true;
 }
 
