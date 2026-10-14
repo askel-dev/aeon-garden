@@ -6110,8 +6110,7 @@ function toggleSound(on = !ui.sound) {
   ui.sound = on;
   if (on && navigator.userActivation?.hasBeenActive !== false) Sound.start();   // else the first click will
   Sound.setEnabled(on);
-  $('#sound-btn').textContent = $('#card-sound').textContent = on ? '🔊' : '🔇';
-  $('#card-sound').setAttribute('aria-pressed', on);
+  $('#sound-btn').textContent = on ? '🔊' : '🔇';
   $('#sound-btn').classList.toggle('on', on);
   $('#sound-item .e').textContent = on ? '🔊' : '🔇';
   $('#sound-item .l').textContent = on ? 'Sound is on' : 'Sound is off';

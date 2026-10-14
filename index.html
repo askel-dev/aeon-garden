@@ -31,11 +31,9 @@
 <meta property="og:image:alt" content="Nobody's Meadow: a brass pocket watch with the living meadow inside it, over a green hill where a rabbit's ears peek out">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://meadow.cryptoler.net/assets/og.png?v=2">
-<!-- ?keep (the default for now; ?watch is the other) wears the keeper's frame (html.keep, at the end of the styles) from the first paint, before game.js runs -->
-<script>(q => { if (!q.has('watch') && !q.has('lab')) document.documentElement.classList.add('keep'); })(new URLSearchParams(location.search));</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<!-- Fraunces only for the name and the season chips: italic 450, upright 600 to 680, soft and wonky -->
+<!-- Fraunces only for names: italic 450, upright 600 to 680, soft and wonky -->
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT,WONK@0,9..144,600..680,100,1;1,9..144,450,100,1&family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -54,7 +52,7 @@
     --fox: #e2702f;
     --shadow: 0 8px 28px rgba(70, 55, 25, 0.20), 0 1px 3px rgba(70, 55, 25, 0.12);
     --radius: 18px;
-    --hud-h: 46px;           /* the top-right pill, the mini card and the card's title row all share one centre line */
+    --hud-h: 46px;           /* the top-right pill */
     /* the edges of the screen, minus the notch, the clock and the home bar */
     --top: calc(16px + env(safe-area-inset-top, 0px));
     /* --home-bar: 0 when iOS already stops the page short of the home bar, see game.js */
@@ -72,20 +70,10 @@
   }
   /* The meadow fills the whole glass: under the clock and behind Safari's floating bar too (lvh). */
   canvas#world { position: fixed; top: 0; left: 0; width: 100%; height: 100vh; height: 100lvh; display: block; touch-action: none;
-    -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }   /* a held finger opens the ring, not Safari's menu */
+    -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }   /* a held finger never opens Safari's menu */
   /* The ground under it, a little bigger than the screen; game.js sizes it and slides it into place. */
   canvas#ground { position: fixed; top: 0; left: 0; display: block; pointer-events: none; transform-origin: 0 0; }
   .phone-only { display: none; }
-  canvas#world.tool-look { cursor: grab; }
-  canvas#world.tool-look.dragging { cursor: grabbing; }
-  canvas#world.tool-rabbit, canvas#world.tool-fox { cursor: copy; }
-  canvas#world.tool-grass, canvas#world.tool-zap, canvas#world.tool-fire, canvas#world.tool-plant, canvas#world.tool-pond, canvas#world.tool-sow, canvas#world.tool-hedge { cursor: crosshair; }
-  /* ?keep: what the pond you're placing will bring, by the hand (game.js placeLabel) */
-  #place-label { position: fixed; top: 0; left: 0; z-index: 3; pointer-events: none; max-width: 300px; padding: 5px 10px 6px;
-    background: var(--paper, none) var(--card); border-radius: 10px; box-shadow: var(--shadow); font-size: 13px; line-height: 1.3; color: var(--ink); }
-  #place-label b { font-weight: 800; }
-  #place-label small { display: block; color: var(--muted); font-size: 12px; font-weight: 700; }
-
   .card {
     position: fixed; background: var(--paper, none) var(--card); border-radius: var(--radius);
     box-shadow: var(--edge), var(--shadow);   /* opaque: a blur behind would redo itself every frame the meadow moves */
@@ -93,82 +81,23 @@
   button { font: inherit; color: inherit; cursor: pointer; }
   a[data-id], a[data-thing], a[data-act] { color: var(--accent-ink); font-weight: 800; text-decoration: none; cursor: pointer; }
   @media (hover: hover) { a[data-id]:hover, a[data-thing]:hover, a[data-act]:hover { text-decoration: underline; } }
-
-  /* a card's window control: a chevron, up to fold the card away, down to open it again */
-  .win-btn { flex: none; width: 28px; height: 28px; border: none; border-radius: 8px; background: transparent; position: relative; transition: background 0.15s; }
-  @media (hover: hover) { .win-btn:hover { background: rgba(0,0,0,0.06); } }
-  .win-btn::before { content: ''; position: absolute; left: 50%; top: 50%; width: 7px; height: 7px;
-    border: solid var(--muted); border-width: 2.5px 0 0 2.5px; border-radius: 1px; transform: translate(-50%, -25%) rotate(45deg); }
-  .win-btn.grow::before { transform: translate(-50%, -75%) rotate(225deg); }
   /* the name is Fraunces, soft and wonky; everything else stays Nunito */
   .fr { font-family: Fraunces, Georgia, serif; font-variation-settings: 'SOFT' 100, 'WONK' 1; }
-
-  /* ---- news: a few short-lived toasts bottom left, the full log in the meadow card */
-  #news { position: fixed; left: var(--left); bottom: calc(var(--bar, 92px) + 8px + var(--guide-h, 0px)); width: 330px; display: flex; flex-direction: column-reverse; gap: 5px; pointer-events: none; transition: bottom 0.35s ease; }
+  /* ---- a word now and then (game.js toast): one small line under the watch, gone in a few seconds */
+  #news { position: fixed; z-index: 4; left: 50%; top: calc(var(--top) + var(--watch-d) + 30px); transform: translateX(-50%); width: min(360px, calc(100% - var(--left) - var(--right)));
+    display: flex; flex-direction: column; align-items: center; pointer-events: none; }
   .news-item {
-    align-self: flex-start; background: var(--paper, none) var(--card); border-radius: 12px; padding: 5px 11px; box-shadow: var(--edge), var(--shadow);
+    background: var(--paper, none) var(--card); border-radius: 12px; padding: 5px 11px; box-shadow: var(--edge), var(--shadow);
     font-size: 13px; line-height: 1.35; animation: pop-in 0.35s ease-out; transition: opacity 0.8s, transform 0.8s;
   }
-  .news-item a[data-id] { pointer-events: auto; }   /* clicks go through to the meadow, except on names */
-  .news-item a[data-act="spot"] { pointer-events: auto; white-space: nowrap; }   /* and "Go see" */
-  .visitor-glyph.sil { filter: brightness(0); opacity: 0.45; }   /* one never seen: its shadow */
-  .visitor-glyph { display: inline-block; width: 1.35em; height: 1.35em; margin: -0.3em 0 -0.25em; vertical-align: -0.2em; background: 43% 57% / 180% no-repeat; }   /* a painted visitor in a line of text (game.js visitorGlyph), its painting's room round it cropped off */
   .news-item.gone { opacity: 0; transform: translateY(-6px); }
-  /* big news (game.js bigNews): a gold leaf gradient with a lit top edge, a little larger, a darker gold stripe down its left */
-  .news-item.big { background: var(--paper, none), linear-gradient(115deg, #fff1c4 0%, #f7d68a 38%, #eebc5c 72%, #f8dc93 100%);
-    font-size: 14px; padding: 7px 12px 7px 14px; box-shadow: inset 0 0 0 1px rgba(176, 120, 30, 0.45), inset 0 1px 0 rgba(255, 252, 235, 0.8), inset 4px 0 0 #c98a2a, var(--shadow); }
-  .brand-btn { border: none; background: transparent; border-radius: 8px; padding: 1px 6px; font-size: 16px; }
-  @media (hover: hover) { .brand-btn:hover { background: rgba(0,0,0,0.06); } }
-  .brand-btn.on { background: var(--accent-soft); }
-  #news-log ol { list-style: none; margin: 0; padding: 0; max-height: min(340px, 45vh); overflow-y: auto; font-size: 13px; line-height: 1.35; }
-  #news-log li { padding: 4px 0; border-bottom: 1px dashed var(--line); }
-  #news-log li:last-child { border-bottom: none; }
-  /* the season chips: when it happened, in the season's colour from the watch's ring */
-  .chip { display: inline-block; margin-bottom: 2px; border-radius: 7px; padding: 1px 7px; font-size: 12px; font-weight: 600; }
-  .chip.s0 { background: #f9e0de; color: #8c3b37; }
-  .chip.s1 { background: #fbf0cc; color: #7a5a0e; }
-  .chip.s2 { background: #f6e0cb; color: #7f4a17; }
-  .chip.s3 { background: #e3ecf0; color: #3d5a68; }
-  #news-log .chip + .yr { margin-left: 6px; color: var(--muted); font-size: 11px; font-weight: 700; }
   @keyframes pop-in { from { transform: translateY(8px) scale(0.97); opacity: 0; } to { transform: none; opacity: 1; } }
-
-  /* ---- toolbar, bottom centre */
-  /* The tools grow on big screens. --bar is the toolbar's height plus its gap, set by game.js.
-     With a mouse it slides away while you just watch, leaving a sliver. It comes back by fading in
-     right where it lives, so the buttons never move under the pointer on the way to them. */
-  #toolbar { left: 50%; bottom: var(--bottom); transform: translateX(-50%); padding: 8px 14px; display: flex; gap: 10px; align-items: center; }
-  #toolbar .tools { display: contents; }
-  #toolbar .hand { display: none; }
-  @media (hover: hover) and (min-width: 761px) and (min-height: 501px) {
-    body:not(.bar-away) #toolbar { animation: bar-in 0.45s cubic-bezier(0.22, 1, 0.36, 1); }
-    body.bar-away #toolbar { transform: translate(-50%, calc(100% + 10px)); opacity: 0.6; transition: transform 0.25s ease-in, opacity 0.25s; }
-    body.bar-away #news { bottom: calc(var(--bottom) + var(--guide-h, 0px)); }
-    body.bar-away #guide { bottom: var(--bottom); }
-  }
-  @keyframes bar-in { from { opacity: 0; transform: translate(-50%, 14px); } }
-  .tool {
-    border: none; background: transparent; border-radius: 13px; padding: 9px 18px 9px 14px;
-    display: flex; align-items: center; gap: 8px; transition: background 0.15s, transform 0.1s;
-  }
-  .tool .e { font-size: clamp(24px, 1.9vw, 30px); line-height: 1; width: 1.2em; text-align: center; }
-  .tool .l { font-size: clamp(14px, 1vw, 16px); font-weight: 800; color: var(--muted); }
-  @media (hover: hover) { .tool:hover { background: rgba(0,0,0,0.05); } }
-  .tool:active { transform: scale(0.95); }
-  .tool.on { background: var(--accent-soft); }
-  .tool.on .l { color: var(--accent-ink); }
-  /* how many an animal tool releases at a time, once it's more than one */
-  .tool, #toolbar .hand { position: relative; }
-  :is(.tool, #toolbar .hand)[data-n]::after { content: attr(data-n); position: absolute; top: 1px; right: 2px; padding: 1px 5px; border-radius: 9px;
-    background: var(--accent-ink); color: #fff; font-size: 11px; font-weight: 800; line-height: 1.3; pointer-events: none; }
-  .speeds { display: flex; gap: 3px; background: rgba(0,0,0,0.04); border-radius: 14px; padding: 4px; }
-
   /* ---- top right: time and sound, then the inspector below */
   #hud-right { position: fixed; top: var(--top); right: var(--right); bottom: var(--bottom); z-index: 5; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; pointer-events: none; }
   #hud-right > * { pointer-events: auto; }
   #hud-right .card { position: relative; }
   .hud-top { position: relative; display: flex; flex-direction: column; align-items: flex-end; }
   #time { display: flex; align-items: center; gap: 3px; height: var(--hud-h); padding: 0 5px; border-radius: 16px; }
-  #time .speeds { background: transparent; padding: 0; }
   /* The watch, top middle (game.js updateDial): a brass case, round its rim the year's 20 days in their seasons'
      colours from spring at the top, the ones to come pale (--done) and a dot on today; on the face the day, noon at
      the top, dusk on the right, night at the bottom, and the hand on now. A plaque under it says the day. */
@@ -198,13 +127,11 @@
   #watch .plaque { position: relative; margin-top: calc(var(--d) * -0.05); padding: 2px 11px 3px; border-radius: 10px; white-space: nowrap;
     background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); font-size: 14px; font-weight: 600; color: var(--ink); }
   #watch .plaque span { color: var(--muted); font-weight: 450; }
-  .hud-sep { width: 1px; height: 24px; margin: 0 5px; background: var(--line); }
   .hud-btn { border: none; background: transparent; border-radius: 9px; height: 36px; min-width: 36px; padding: 0 6px;
     font-size: 17px; position: relative; transition: background 0.15s; }
   @media (hover: hover) { .hud-btn:hover { background: rgba(0,0,0,0.06); } }
   .hud-btn.on { background: var(--accent-soft); }
   .hud-btn.more { font-size: 10px; letter-spacing: 1px; color: var(--muted); font-weight: 900; }
-  .hud-btn.locked::after { content: '🔒'; position: absolute; bottom: -2px; right: -2px; font-size: 11px; }
   /* menus drop from the top-right pill and float over the inspector */
   #hud-right .drop { position: absolute; top: calc(100% + 8px); right: 0; z-index: 2; padding: 6px; animation: pop-in 0.18s ease-out; }
   #more-menu { display: flex; flex-direction: column; min-width: 230px; }
@@ -212,19 +139,6 @@
   @media (hover: hover) { .menu-item:hover { background: rgba(0,0,0,0.05); } }
   .menu-item.danger { color: #a4452a; }
   @media (hover: hover) { .menu-item.danger:hover { background: #fbe3d9; } }
-  .speed {
-    border: none; background: transparent; border-radius: 9px; min-width: 36px; height: 36px; padding: 0 8px;
-    font-size: 15px; font-weight: 900; color: var(--muted); transition: background 0.15s;
-  }
-  @media (hover: hover) { .speed:hover { background: rgba(0,0,0,0.06); } }
-  .speed.on { background: var(--card); color: var(--accent-ink); box-shadow: 0 1px 3px rgba(70, 55, 25, 0.18); }
-  .speed.cycle { display: none; min-width: 44px; }
-  #sky-menu:not(.hidden) { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; }
-  #sky-menu .tool { flex-direction: column; gap: 3px; padding: 7px 8px 6px; min-width: 66px; }
-  #sky-menu .tool .e { font-size: 24px; }
-  #sky-menu .tool .l { font-size: 12px; }
-  #sky-menu .sep { display: none; }
-
   /* ---- inspector, right */
   #inspector { width: 340px; min-height: 0; overflow-y: auto; padding: 20px 20px 18px; display: none; }
   #inspector.open { display: block; animation: pop-in 0.3s ease-out; }
@@ -271,89 +185,6 @@
   .btn { border: none; border-radius: 12px; padding: 8px 12px; font-weight: 800; background: #fff; box-shadow: 0 1px 0 var(--line), 0 0 0 1px var(--line) inset; flex: 1; }
   @media (hover: hover) { .btn:hover { background: #fff7ec; } }
   .btn.on { background: var(--accent-soft); color: #9a5024; }
-
-  /* ---- the ring menu: right-click the meadow */
-  #ring { position: fixed; z-index: 6; width: 0; height: 0; }
-  .ring-item {
-    position: absolute; width: 50px; height: 50px; border: none; border-radius: 50%; background: var(--card); box-shadow: var(--shadow);
-    font-size: 25px; display: grid; place-items: center; transform: translate(calc(var(--dx) - 50%), calc(var(--dy) - 50%));
-    animation: ring-out 0.22s ease-out backwards; transition: background 0.15s, scale 0.15s;
-  }
-  @media (hover: hover) { .ring-item:hover { background: #fff; scale: 1.12; } }
-  .ring-item.on { background: var(--accent-soft); }
-  .ring-hub { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; background: var(--card); box-shadow: var(--shadow);
-    border-radius: 99px; padding: 3px 10px; font-size: 12px; font-weight: 800; color: var(--muted); pointer-events: none; }
-  .ring-hub:empty { width: 10px; height: 10px; padding: 0; }
-  @keyframes ring-out { from { transform: translate(-50%, -50%) scale(0.3); opacity: 0; } }
-
-  /* ---- welcome */
-  /* the terrain lab (?lab) brings its own panel, see terrain-lab.js */
-  body.lab #watch, body.lab #news, body.lab #guide, body.lab #toolbar, body.lab #hud-right, body.lab #ring, body.lab #keep-top, body.lab #tool-tip, body.lab #forecast, body.lab #tasks, body.lab #alerts { display: none; }
-
-  #welcome { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(60, 70, 30, 0.28); z-index: 10; transition: opacity 0.7s ease; }
-  #welcome.leaving { opacity: 0; pointer-events: none; }
-  #welcome.leaving .card { transform: translateY(12px) scale(0.98); }
-  /* The welcome card opens with the itch cover: a honey sky, the watch on its chain with the live
-     meadow inside, and the hills with a rabbit's ears peeking over. It's shown once, paused, so the
-     photo is lazy: players who have seen it never load it. */
-  #welcome .card { position: static; width: min(520px, calc(100% - 32px)); max-height: calc(100% - 24px); padding: 0; overflow: hidden auto; scrollbar-width: thin; text-align: left;
-    background: var(--paper, none) #f7eedc; border-radius: 22px; box-shadow: 0 20px 60px rgba(50, 40, 15, 0.3);
-    transition: transform 0.7s ease; }
-  #welcome .banner { position: relative; height: 232px; background: #f1ddb0; }
-  #welcome .watch { position: absolute; right: 33px; top: -14px; width: 151px; aspect-ratio: 104 / 134; }
-  #welcome .watch svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-  /* the face: the circle r 32.5 around (60, 70) in the watch's viewBox 8 -14 104 134 */
-  #welcome .watch img { position: absolute; left: 18.75%; top: 38.43%; width: 62.5%; height: 48.51%; border-radius: 50%; background: #8cc56a; object-fit: cover; }
-  #welcome .hills { position: absolute; left: 0; bottom: 0; width: 100%; height: 90px; }
-  #welcome h1 { position: absolute; left: 30px; top: 30px; margin: 0; font-weight: 450; line-height: 1; }
-  #welcome h1 span { display: block; }
-  #welcome h1 .to { font-size: 17px; font-style: italic; color: #5f574a; margin: 0 0 6px 4px; }
-  #welcome h1 .n1 { font-size: 32px; font-style: italic; margin-left: 4px; }
-  #welcome h1 .n2 { font-size: 80px; font-weight: 680; line-height: 0.92; letter-spacing: -0.02em; }
-  #welcome .body { padding: 20px 32px 26px; }
-  #welcome p { font-size: 15px; line-height: 1.6; margin: 0 0 18px; }
-  #welcome .go-row { display: flex; gap: 10px; }
-  #welcome .go { border-radius: 14px; background: #4f7f3a; color: #fff; font-size: 17px; padding: 13px; box-shadow: none; }
-  @media (hover: hover) { #welcome .go:hover { background: #44702f; } }
-  #welcome .card-sound { flex: none; width: 52px; border-radius: 14px; font-size: 19px; padding: 0; background: #fbf5e8; }
-  #welcome .card-sound[aria-pressed="true"] { background: var(--accent-soft); }
-
-  /* ---- ?keep: the Dry Year lost (game.js, showLost): plain, like the home screen's card */
-  #lost { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(60, 70, 30, 0.28); z-index: 10; }
-  #lost .card { position: static; width: min(420px, calc(100% - 32px)); padding: 22px 24px 20px; animation: pop-in 0.18s ease-out; }
-  #lost h2 { margin: 0 0 6px; font-size: 24px; font-weight: 650; line-height: 1.15; }
-  #lost p { margin: 0 0 16px; line-height: 1.5; color: var(--muted); }
-  #lost .btns { display: flex; gap: 10px; }
-  #lost .go { flex: 1; border-radius: 14px; background: #4f7f3a; color: #fff; font-size: 16px; padding: 12px; box-shadow: none; }
-  @media (hover: hover) { #lost .go:hover { background: #44702f; } }
-  #lost .later { flex: none; border-radius: 14px; background: #fbf5e8; padding: 12px 16px; box-shadow: none; }
-  #lost .carry, #lost.through .again, #lost.through .later { display: none; }
-  #lost.through .carry { display: block; }
-  /* coming through: what the keeper's work came to, a row each */
-  #lost ul { list-style: none; margin: -4px 0 18px; padding: 10px 0 0; border-top: 1px dashed var(--line); display: grid; gap: 7px; }
-  #lost li { display: grid; grid-template-columns: 24px 1fr auto; gap: 6px; align-items: baseline; font-size: 15px; font-weight: 700; line-height: 1.35; }
-  #lost li em { font-style: normal; font-size: 13px; font-weight: 800; color: var(--muted); white-space: nowrap; }
-
-  /* ---- how to put the meadow on the home screen, from ••• */
-  #home-guide { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(60, 70, 30, 0.28); z-index: 10; }
-  #home-guide .card { position: static; width: min(420px, calc(100% - 32px)); max-height: calc(100% - 24px); overflow: hidden auto; padding: 22px 24px 20px;
-    background: var(--paper, none) #f7eedc; border-radius: 22px; box-shadow: 0 20px 60px rgba(50, 40, 15, 0.3);
-    animation: pop-in 0.18s ease-out; }
-  #home-guide h2 { margin: 0 0 6px; font-size: 24px; font-weight: 650; line-height: 1.15; }
-  #home-guide p { margin: 0 0 14px; line-height: 1.5; color: var(--muted); }
-  #home-guide ol { margin: 0 0 18px; padding: 0; list-style: none; counter-reset: step; }
-  #home-guide li { counter-increment: step; display: flex; gap: 12px; align-items: flex-start; padding: 7px 0; line-height: 1.5; }
-  #home-guide li::before { content: counter(step); flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
-    background: #4f7f3a; color: #fff; font-weight: 900; font-size: 13px; margin-top: -1px; }
-  #home-guide .glyph { width: 20px; height: 20px; vertical-align: -4px; fill: none; stroke: #2f6fd6; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-  #home-guide[data-os="ios"] .other, #home-guide:not([data-os="ios"]) .ios { display: none; }
-  /* where Chrome can install it there are no steps, just the button */
-  #home-guide[data-os="prompt"] :is(ol, .no-prompt), #home-guide:not([data-os="prompt"]) .prompt-only { display: none; }
-  #home-guide .btns { display: flex; gap: 10px; }
-  #home-guide .later { flex: none; border-radius: 14px; background: #fbf5e8; padding: 12px 16px; box-shadow: none; }
-  #home-guide .go { border-radius: 14px; background: #4f7f3a; color: #fff; font-size: 16px; padding: 12px; box-shadow: none; }
-  @media (hover: hover) { #home-guide .go:hover { background: #44702f; } }
-
   /* ---- asking for ideas, once, after two minutes of play (game.js, askIdeas). No backdrop: the meadow goes on behind it. */
   #ask { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 10; width: min(400px, calc(100% - 32px)); padding: 22px 24px 20px;
     background: var(--paper, none) #f7eedc; border-radius: 22px; box-shadow: 0 20px 60px rgba(50, 40, 15, 0.3); }
@@ -369,123 +200,16 @@
   @media (hover: hover) { #ask .go:hover { background: #44702f; } }
   #ask .go:disabled { opacity: 0.5; }
   #ask.sent :is(textarea, .btns, .ask-q), #ask:not(.sent) .ask-thanks { display: none; }
-
-  /* ---- back after a while: the meadow runs on a season, then says what happened (game.js, startAway). Like #ask. */
-  #away { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 10; width: min(420px, calc(100% - 32px)); padding: 22px 24px 20px;
-    max-height: calc(100% - 32px); box-sizing: border-box; overflow: hidden auto; scrollbar-width: thin;
-    background: var(--paper, none) #f7eedc; border-radius: 22px; box-shadow: 0 20px 60px rgba(50, 40, 15, 0.3); }
-  #away:not(.hidden) > * { animation: pop-in 0.18s ease-out; }
-  #away h2 { margin: 0 0 6px; font-size: 24px; font-weight: 650; line-height: 1.15; }
-  #away p { margin: 0 0 12px; line-height: 1.5; }
-  #away .life { color: var(--muted); white-space: pre-line; }
-  #away ul { margin: 0 0 14px; padding: 0; list-style: none; }
-  #away li { padding: 8px 0; border-top: 1px solid rgba(90, 70, 40, 0.15); line-height: 1.45; }
-  #away .go { display: block; width: 100%; border-radius: 14px; background: #4f7f3a; color: #fff; font-size: 16px; padding: 12px; box-shadow: none; }
-  @media (hover: hover) { #away .go:hover { background: #44702f; } }
-  #away:not(.done) :is(.life, ul, .go) { display: none; }
-
-  /* ---- things to try (game.js, the guide): bottom left, the news toasts stacked above it */
-  #guide { left: var(--left); bottom: calc(var(--bar, 92px) + 8px); width: 320px; padding: 9px 10px 10px 14px; animation: pop-in 0.35s ease-out; transition: bottom 0.35s ease; }
-  .g-top { display: flex; align-items: center; gap: 6px; }
-  .g-step { flex: 1; font-size: 11px; font-weight: 800; letter-spacing: 0.8px; text-transform: uppercase; color: var(--muted); }
-  .g-skip, .g-x { flex: none; border: none; background: transparent; border-radius: 8px; color: var(--muted); font-weight: 800; font-size: 12.5px; padding: 3px 7px; }
-  @media (hover: hover) { .g-skip:hover, .g-x:hover { background: rgba(0,0,0,0.06); color: var(--ink); } }
-  .g-line { margin: 3px 0 0; font-size: 15px; font-weight: 800; line-height: 1.3; animation: pop-in 0.35s ease-out; }
-  .g-line.done::after { content: ' ✓'; color: var(--good-ink); font-weight: 900; }
-  .g-line kbd { font: 800 12px Nunito, ui-rounded, system-ui, sans-serif; padding: 1px 6px; border-radius: 5px; background: rgba(0,0,0,0.06); box-shadow: inset 0 -1px 0 rgba(0,0,0,0.15); }
-  .g-hint { margin: 2px 0 0; color: var(--muted); font-size: 12.5px; font-weight: 700; line-height: 1.3; }
-  .g-head { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; border: none; background: transparent; border-radius: 10px; padding: 2px 2px 2px 0; text-align: left; }
-  .g-title { flex: 1; font-size: 16px; font-weight: 650; white-space: nowrap; }
-  .g-count { color: var(--muted); font-weight: 800; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  @media (hover: hover) { .g-head:hover .win-btn { background: rgba(0,0,0,0.06); } }
-  .g-list { list-style: none; margin: 6px 0 0 -6px; padding: 0; }
-  .g-list button { display: grid; grid-template-columns: 24px 1fr 14px; gap: 8px; align-items: center; width: 100%; text-align: left; border: none; background: transparent; border-radius: 10px; padding: 4px 6px; }
-  @media (hover: hover) { .g-list button:hover { background: rgba(0,0,0,0.045); } }
-  .g-list .e { font-size: 18px; text-align: center; }
-  .g-list b { display: block; font-weight: 800; font-size: 13.5px; line-height: 1.25; }
-  .g-list small { display: block; color: var(--muted); font-size: 12px; font-weight: 700; line-height: 1.25; }
-  .g-list .done b { color: var(--muted); text-decoration: line-through; text-decoration-color: rgba(90, 70, 40, 0.35); }
-  .g-list .done small { color: var(--good-ink); font-style: italic; }
-  .g-list .done .e { opacity: 0.6; }
-  .g-list .fresh { animation: tried 1.2s ease-out; }
-  .g-list .tick { color: var(--good-ink); font-weight: 900; }
-  @keyframes tried { from { background: var(--accent-soft); } }
-  @keyframes task-done { 30% { transform: scale(1.5); } }
-  #guide.fold .g-list, #guide.fold .g-sub { display: none; }
-
-  /* ---- the first visit's intro (game.js, startIntro): bars top and bottom, the story under the
-     meadow a line at a time, and everything else away (hush) from the welcome card until it hands over */
-  #intro { position: fixed; inset: 0; pointer-events: none; z-index: 9; --lb: clamp(36px, 9vh, 84px); }
-  #intro .bar { position: absolute; left: 0; right: 0; background: #1d1a15; transition: transform 1.2s cubic-bezier(0.3, 0.7, 0.2, 1); }
-  #intro .top { top: 0; height: calc(var(--lb) + env(safe-area-inset-top, 0px)); transform: translateY(-101%); }
-  #intro .bottom { bottom: 0; height: calc(var(--lb) + env(safe-area-inset-bottom, 0px)); padding-bottom: env(safe-area-inset-bottom, 0px);
-    transform: translateY(101%); display: grid; place-items: center; }
-  body.intro #intro .bar { transform: none; }
-  #intro .line { margin: 0 24px; max-width: 760px; font-size: clamp(16px, 2.4vh, 23px); font-style: italic; font-weight: 450; line-height: 1.3; text-align: center;
-    color: #f3e7cf; opacity: 0; transform: translateY(4px); transition: opacity 0.8s ease, transform 0.8s ease; }
-  #intro .line.on { opacity: 1; transform: none; }
-  #intro .skip { position: absolute; right: var(--right); bottom: 0; height: min(var(--lb), 56px); pointer-events: auto;
-    border: none; background: none; padding: 8px 4px; font: 800 13px Nunito, ui-rounded, system-ui, sans-serif; color: rgba(243, 231, 207, 0.55); cursor: pointer; }
-  @media (hover: hover) { #intro .skip:hover { color: #f3e7cf; } }
-  body:not(.intro) #intro .skip { visibility: hidden; }
-  body.hush :is(#watch, #news, #guide, #toolbar, #hud-right, #keep-top, #tool-tip, #forecast, #tasks, #alerts) { visibility: hidden; }
-  body.ui-in :is(#watch, #news, #guide, #toolbar, #hud-right, #keep-top, #tool-tip, #forecast, #tasks, #alerts) { animation: ui-in 1s ease both; }
-  @keyframes ui-in { from { opacity: 0; } }
-  @media (prefers-reduced-motion: reduce) { #intro .bar, #intro .line, #welcome, #welcome .card { transition-duration: 0.01s; } }
-  /* ---- the idle camera (game.js, startIdle): the intro's bars and lines, the cards faded away, and a dip to
-     dark between shots (as long as DIP_MS) */
-  #intro .dip { position: absolute; inset: 0; background: #1d1a15; opacity: 0; transition: opacity 0.4s ease; }
-  #intro .dip.on { opacity: 1; }
-  body.idle #intro .bar { transform: none; }
-  body.idle :is(#watch, #news, #guide, #toolbar, #hud-right, #keep-top, #tool-tip, #forecast, #tasks, #alerts) { opacity: 0; visibility: hidden; transition: opacity 1s ease, visibility 0s 1s; }
-  /* ---- a visitor's first sighting (game.js, startReveal): the intro's bars, "First sighting" in the top one and its
-     name in the bottom one, and the cards stepped away for a moment */
-  #intro .top { display: grid; place-items: center; padding-top: env(safe-area-inset-top, 0px); }
-  #intro .bottom > * { grid-area: 1 / 1; }
-  body.reveal #intro .bar { transform: none; transition-duration: 0.7s; }
-  body.reveal :is(#watch, #news, #guide, #toolbar, #hud-right, #keep-top, #tool-tip, #forecast, #tasks, #alerts, #inspector) { opacity: 0; visibility: hidden; transition: opacity 0.4s ease, visibility 0s 0.4s; }
-  #intro .rv { margin: 0 16px; text-align: center; color: #f3e7cf; opacity: 0; transform: translateY(5px); transition: opacity 0.3s ease, transform 0.3s ease; }
-  body.reveal #intro .rv { opacity: 1; transform: none; transition: opacity 0.7s ease 0.45s, transform 0.7s ease 0.45s; }
-  #reveal-top { font: 900 12px Nunito, ui-rounded, system-ui, sans-serif; letter-spacing: 0.16em; text-transform: uppercase; color: #f0c870; }
-  #reveal-name { display: block; font-size: clamp(22px, 3.8vh, 36px); font-weight: 600; line-height: 1.1; }
-  #reveal-why { display: block; max-width: calc(100vw - 32px); overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
-    font: italic 450 clamp(13px, 1.8vh, 16px)/1.35 Fraunces, Georgia, serif; color: rgba(243, 231, 207, 0.75); }
-  @media (max-height: 560px) { #reveal-why { display: none; } }
   .hidden { display: none !important; }
-
-  /* ---- phones, upright or on their side: one slim row on top and a slim toolbar */
+  /* ---- phones, upright or on their side: one slim row on top */
   @media (max-width: 760px), (max-height: 500px) {
     .phone-only { display: revert; }
+    .wide-only { display: none; }   /* (no room beside the watch: the sound waits in •••) */
     #hud-right { left: var(--left); }
-    #news { bottom: calc(var(--bottom) + var(--guide-h, 0px)); width: calc(100% - var(--left) - var(--right) - 60px); }   /* beside the tools' button */
-    #guide { bottom: var(--bottom); width: calc(100% - var(--left) - var(--right) - 60px); max-width: 360px; }
-    .g-list small { display: none; } .g-list .fresh small { display: block; }   /* no room for every hint: just what the last one said */
-    #news-log ol { max-height: 30vh; }
-    /* The tools fold into one round button in the bottom right, showing the one in your hand.
-       Tap it and they rise above it as two rows, the animals on top and the rest below, Look nearest
-       the thumb; picking one folds them away again. */
-    #toolbar { left: auto; right: var(--right); transform: none; padding: 0; border-radius: 50%; z-index: 4; }
-    #toolbar .hand { display: grid; place-items: center; width: 52px; height: 52px; padding: 0; border: none; border-radius: 50%;
-      background: transparent; font-size: 26px; transition: background 0.15s, transform 0.1s; }
-    #toolbar .hand:active { transform: scale(0.93); }
-    #toolbar .hand.on, #toolbar.open .hand { background: var(--accent-soft); }
-    #toolbar .tools { display: none; position: absolute; right: 0; bottom: calc(100% + 8px); grid-template-columns: repeat(5, 56px); gap: 2px;
-      padding: 5px; background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); animation: pop-in 0.18s ease-out; }
-    #toolbar.open .tools { display: grid; }
-    #toolbar .tool { flex-direction: column; justify-content: center; gap: 3px; height: 58px; padding: 0; border-radius: 12px; }
-    #toolbar .tool .e { font-size: 24px; width: auto; }
-    #toolbar .tool .l { font-size: 11.5px; line-height: 1; }
-    #toolbar .tool[data-tool="fire"] { order: 1; } #toolbar .tool[data-tool="zap"] { order: 2; } #toolbar .tool[data-tool="plant"] { order: 3; }
-    #toolbar .tool[data-tool="grass"] { order: 4; } #toolbar .tool[data-tool="pond"] { order: 4; } #toolbar .tool[data-tool="sow"] { order: 4; } #toolbar .tool[data-tool="hedge"] { order: 4; } #toolbar .tool[data-tool="look"] { order: 5; }
-    /* time: pause and one button that steps through the speeds; the rest waits in ••• */
     #time { --hud-h: 44px; gap: 2px; padding: 0 4px; }
-    #time .speed[data-speed]:not([data-speed="0"]), #time .hud-btn:not(.more), #time .hud-sep { display: none; }
-    #time .speed.cycle { display: block; }
     :root { --watch-d: 56px; }
     #watch .plaque { font-size: 12.5px; padding: 1px 8px 2px; }
     #watch .plaque span { display: none; }
-    .speed { min-width: 40px; height: 38px; padding: 0 6px; font-size: 15px; }
-    .hud-btn.more { min-width: 40px; height: 38px; }
     /* ••• as tiles, three to a row; starting over stays a row of its own at the bottom */
     #more-menu:not(.hidden) { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; width: min(300px, calc(100vw - 32px)); min-width: 0; }
     #more-menu .menu-item { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 5px; padding: 10px 4px 9px;
@@ -494,9 +218,6 @@
     #more-menu .menu-item .x { display: none; }
     #more-menu .menu-item.danger { grid-column: 1 / -1; flex-direction: row; gap: 8px; padding: 11px 12px; margin-top: 2px; font-size: 14px; }
     #more-menu .menu-item.danger .e { font-size: 17px; }
-    #sky-menu { width: min(380px, calc(100vw - 32px)); }
-    #sky-menu:not(.hidden) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-    #sky-menu .tool { min-width: 0; padding: 7px 2px 6px; }
     .portrait { width: 52px; height: 52px; font-size: 32px; }
     .mood { margin-top: 14px; padding: 9px 13px; }
     /* The inspector opens folded to one line (game.js, stripHTML): tap it for the rest, the handle for less. */
@@ -516,647 +237,33 @@
   }
   /* ---- upright phones: the inspector as a bottom sheet */
   @media (max-width: 760px) and (min-height: 501px) {
-    /* The inspector sits at the bottom as a sheet. Folded, it's one line just over the toolbar;
-       tap or swipe it up for the rest. */
+    /* The inspector sits at the bottom as a sheet. Folded, it's one line; tap or swipe it up for the rest. */
     #inspector { margin-top: auto; width: 100%; max-height: 72%; padding: 6px 18px 20px;
       overscroll-behavior: contain; transition: max-height 0.25s ease; }
-    #inspector.strip { align-self: flex-start; width: calc(100% - 60px); }   /* folded, it shares the bottom row with the tools */
     #inspector .ins-head { touch-action: none; }
     .close { font-size: 18px; padding: 8px 12px; margin: -8px -10px 0 auto; }
-    body.inspecting:not(.ins-strip) #news { display: none; }  /* the sheet covers that corner anyway */
-    body.ins-strip #news { bottom: calc(var(--bottom) + 64px + var(--guide-h, 0px)); }  /* over the folded line */
-    body.inspecting:not(.ins-strip) #guide { display: none; }
-    body.ins-strip #guide { bottom: calc(var(--bottom) + 64px); }
   }
-  /* ---- phones on their side: the inspector is a panel down the right, and the meadow keeps the middle.
-     Open, the panel covers the tools' button; fold it or close it to get them back. */
+  /* ---- phones on their side: the inspector is a panel down the right, and the meadow keeps the middle. */
   @media (max-height: 500px) {
     #hud-right { left: auto; }
-    #news, #guide { width: min(330px, calc(100% - var(--left) - var(--right) - 60px)); }
     #inspector { width: min(320px, 42vw); padding: 6px 16px 16px; overscroll-behavior: contain; }
-    #more-menu:not(.hidden) { grid-template-columns: repeat(5, minmax(0, 1fr)); width: 440px; }
     #inspector.strip { width: min(280px, 42vw); }
     .ins-name { font-size: 18px; }
-    #news-log ol { max-height: none; }
-    /* the welcome side by side: the banner down the left (the watch hung from the top, the name over the hills), the
-       words and the button on the right, so "Start keeping" shows without a scroll down to 320 px tall */
-    #welcome .card { display: flex; width: min(760px, calc(100% - 32px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px))); max-height: calc(100% - 16px); }
-    #welcome .banner { flex: none; width: 38%; max-width: 280px; height: auto; min-height: 276px; }
-    #welcome .watch { right: 16px; top: -12px; width: 90px; }
-    #welcome .hills { height: 74px; }
-    #welcome h1 { left: 18px; top: auto; bottom: 74px; }
-    #welcome h1 .to { font-size: 14px; } #welcome h1 .n1 { font-size: 24px; } #welcome h1 .n2 { font-size: min(56px, calc(9.5vw - 12px)); }   /* (in the banner, down to 568 wide) */
-    #welcome .body { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; padding: 16px 22px; }
-    #welcome p { font-size: 14px; line-height: 1.5; margin-bottom: 10px; }
-    #welcome .go-row { margin-top: 4px; }
-    #home-guide .card { width: min(560px, calc(100% - 32px)); padding: 14px 20px; }
-    #home-guide h2 { font-size: 20px; } #home-guide p { margin-bottom: 6px; }
-    #home-guide li { padding: 3px 0; } #home-guide ol { margin-bottom: 10px; }
-    #home-guide :is(.go, .later) { padding: 9px 14px; }
-    #intro { --lb: clamp(36px, 11vh, 96px); }
-    #intro .line { margin: 0 18px; font-size: 16px; }
   }
-  @media (max-width: 440px) {
-    #welcome .banner { height: 168px; }
-    #welcome .watch { right: 14px; top: -10px; width: min(98px, 26vw); }   /* the name and the watch share the width, down to 320 px */
-    #welcome .hills { height: 72px; }
-    #welcome h1 { left: 20px; top: 20px; }
-    #welcome h1 .to { font-size: 13px; margin-bottom: 4px; } #welcome h1 .n1 { font-size: 22px; } #welcome h1 .n2 { font-size: min(50px, 12vw); }
-    #welcome .body { padding: 14px 20px 18px; }
-    #time .speed, .hud-btn.more { min-width: 36px; padding: 0 4px; }
-  }
-
-  /* ---- ?keep: the keeper's frame (html.keep, set in the head and by game.js; nothing here reaches the bare address).
-     A parchment bar along the top and one along the bottom, each with a brass rule like the watch's case where it meets
-     the meadow. The species and the time sit in the top bar and the watch hangs from it; the bottom bar is the toolbar,
-     always up, its tools brass plates, each with a card that says what it brings (#tool-tip, game.js showTip). */
-  #keep-top { display: none; }
-  html.keep {
-    --brass: linear-gradient(180deg, #f6d98c, #d9a441 45%, #8a5e22);
-    --brass-edges: inset 0 -1px 0 rgba(90, 55, 15, 0.55), inset 0 1px 0 rgba(255, 240, 200, 0.6);
-    --keep-top-h: 58px;      /* the top bar, under the notch */
-    --keep-foot-h: 84px;     /* the bottom bar, over the home bar */
-    --gauge-room: 260px;     /* left free on the left of the bottom bar, for GREEN */
-  }
-  html.keep #keep-top { display: block; position: fixed; left: 0; right: 0; top: 0; z-index: 3; pointer-events: none;
-    height: calc(var(--keep-top-h) + env(safe-area-inset-top, 0px)); background: var(--paper, none) var(--card); box-shadow: 0 6px 16px rgba(70, 55, 25, 0.22); }
-  html.keep #keep-top::after, html.keep #toolbar::before { content: ''; position: absolute; left: 0; right: 0; height: 6px; pointer-events: none;
-    background: var(--brass); box-shadow: var(--brass-edges); }
-  html.keep #keep-top::after { bottom: -6px; }
-  html.keep #toolbar::before { top: -6px; transform: scaleY(-1); }   /* (its dark edge toward the meadow, like the top one's) */
-  /* the species in the top bar on the left, with no card of their own; opened (C), the card hangs under the bar */
-  html.keep #meadow { z-index: 4; }
-  html.keep #meadow.mini { top: calc(env(safe-area-inset-top, 0px) + 6px); left: calc(env(safe-area-inset-left, 0px) + 6px); background: none; box-shadow: none; }
-  html.keep #meadow:not(.mini) { top: calc(var(--keep-top-h) + env(safe-area-inset-top, 0px) + 16px); }
-  html.keep #mini-sky { display: none; }   /* the season is on the watch, the weather by the time */
-  /* the time and the menus in the top bar on the right; the inspector hangs under the bar and ends over the tools */
-  html.keep #meadow ~ #hud-right { top: calc(env(safe-area-inset-top, 0px) + 6px); right: calc(env(safe-area-inset-right, 0px) + 8px); bottom: var(--bar, 100px); gap: 20px; }
-  html.keep #time { background: none; box-shadow: none; }
-  html.keep #hud-right .drop { top: calc(100% + 18px); }
-  html.keep #watch { top: calc(env(safe-area-inset-top, 0px) + 4px); }   /* hung from the bar, its plaque just under it */
-  /* the toolbar is the bottom bar: the tools in the middle, room on the left for GREEN, never sliding away (game.js updateBar) */
-  html.keep #toolbar { left: 0; right: 0; bottom: 0; transform: none; z-index: 3; border-radius: 0; animation: none;
-    height: calc(var(--keep-foot-h) + var(--home-bar, env(safe-area-inset-bottom, 0px)));
-    padding: 0 calc(10px + env(safe-area-inset-right, 0px)) var(--home-bar, env(safe-area-inset-bottom, 0px)) calc(10px + env(safe-area-inset-left, 0px));
-    box-shadow: 0 -6px 16px rgba(70, 55, 25, 0.22); display: grid; grid-template-columns: minmax(var(--gauge-room), 1fr) auto minmax(0, 1fr); align-items: center; }
-  html.keep #toolbar .tools { grid-column: 2; display: flex; gap: 8px; position: static; padding: 0; background: none; box-shadow: none; animation: none; }
-  html.keep #toolbar .hand { display: none; }
-  html.keep #toolbar .tool { order: 0; flex-direction: column; justify-content: center; gap: 4px; width: 84px; height: 62px; padding: 0; border-radius: 14px;
-    background: linear-gradient(180deg, #fffaf0, #f1e5c9); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 2px 0 #a8742a; }
-  @media (hover: hover) { html.keep #toolbar .tool:hover { background: linear-gradient(180deg, #fffdf7, #f6ecd5); } }
-  html.keep #toolbar .tool.on { background: linear-gradient(180deg, #fff1df, #fbd9b9); box-shadow: inset 0 0 0 2px #d9a441, 0 2px 0 #a8742a; }
-  html.keep #toolbar .tool .e { font-size: 30px; width: auto; }
-  html.keep #toolbar .tool .l { font-size: 14px; line-height: 1; }
-  html.keep #toolbar .tool kbd { position: absolute; top: 5px; right: 6px; padding: 0 4px; border-radius: 4px; background: rgba(0, 0, 0, 0.06);
-    font: 800 10.5px Nunito, ui-rounded, system-ui, sans-serif; color: var(--muted); }
-  /* a tool's card, over its button: a brass top edge and a little arrow down to it (game.js sets its left and --arrow) */
-  html.keep #tool-tip { position: fixed; left: 0; bottom: calc(var(--bar, 100px) + 4px); z-index: 6; width: min(290px, calc(100vw - 16px)); padding: 15px 15px 13px;
-    border-radius: 0 0 16px 16px; background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); color: var(--ink); pointer-events: none;
-    animation: pop-in 0.18s ease-out; }
-  html.keep #tool-tip::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 4px; background: var(--brass); border-radius: 2px 2px 0 0; }
-  html.keep #tool-tip::after { content: ''; position: absolute; left: var(--arrow, 50%); bottom: -9px; margin-left: -9px; width: 18px; height: 18px;
-    background: var(--card); transform: rotate(45deg); box-shadow: 3px 3px 4px rgba(70, 55, 25, 0.12); }
-  html.keep #tool-tip h4 { margin: 0; font-size: 20px; font-weight: 650; display: flex; align-items: center; gap: 6px; }
-  html.keep #tool-tip h4 kbd { margin-left: auto; padding: 1px 6px; border-radius: 5px; background: rgba(0, 0, 0, 0.06); box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.15);
-    font: 800 11px Nunito, ui-rounded, system-ui, sans-serif; color: var(--ink); }
-  html.keep #tool-tip p { margin: 1px 0 8px; font-size: 13px; line-height: 1.4; font-weight: 700; color: var(--muted); }
-  html.keep #tool-tip ul { list-style: none; margin: 0; padding: 9px 0 0; border-top: 1px dashed var(--line); display: grid; gap: 6px; }
-  html.keep #tool-tip li { display: grid; grid-template-columns: 22px 1fr auto; gap: 6px; align-items: baseline; font-size: 14px; font-weight: 700; line-height: 1.35; }
-  html.keep #tool-tip li em { font-style: normal; font-size: 12.5px; font-weight: 800; color: var(--muted); white-space: nowrap; }
-  html.keep #tool-tip li.dry, html.keep #tool-tip li.dry em { color: #8a4b12; font-weight: 800; }
-  @media (pointer: coarse) { html.keep :is(#toolbar, #tool-tip) kbd { display: none; } }   /* no keys to press */
-  /* phones: slimmer bars, the four tools one row in the middle (no corner button), the news full width */
-  @media (max-width: 760px), (max-height: 500px) {
-    html.keep { --keep-top-h: 52px; --keep-foot-h: 68px; --gauge-room: 0px; }
-    html.keep #meadow.mini { top: calc(env(safe-area-inset-top, 0px) + 4px); left: calc(env(safe-area-inset-left, 0px) + 2px); }
-    html.keep #meadow ~ #hud-right { top: calc(env(safe-area-inset-top, 0px) + 4px); right: calc(env(safe-area-inset-right, 0px) + 4px); }
-    html.keep #toolbar { padding-left: calc(6px + env(safe-area-inset-left, 0px)); padding-right: calc(6px + env(safe-area-inset-right, 0px)); }
-    html.keep #toolbar .tools { gap: 5px; }
-    html.keep #toolbar .tool { width: 60px; height: 52px; gap: 3px; }
-    html.keep #toolbar .tool .e { font-size: 25px; }
-    html.keep #toolbar .tool .l { font-size: 11.5px; }
-    html.keep #news { bottom: calc(var(--bar, 84px) + 8px); width: calc(100% - var(--left) - var(--right)); }
-  }
-  @media (max-width: 760px) and (min-height: 501px) {
-    html.keep #inspector.strip { width: 100%; }   /* folded, the whole width just over the bar */
-    html.keep body.ins-strip #news { bottom: calc(var(--bar, 84px) + 64px); }
-  }
-  /* ?keep: how each kind is doing, in the small card in the top bar (game.js updateSpeciesMarks). The mark hangs off the
-     count and takes no width, so the row doesn't shift when one changes. */
-  html.keep .mini-pop { cursor: pointer; }
-  html.keep .mini-pop b { position: relative; font-variant-numeric: tabular-nums; }
-  html.keep .mini-pop b::after { position: absolute; left: 100%; top: 0; margin-left: 1px; font-size: 9px; line-height: 1; }
-  html.keep .mini-pop[data-st="thriving"] b::after { content: '▲'; color: var(--good-ink); }
-  html.keep .mini-pop[data-st="fewer"] b::after { content: '▼'; color: var(--down-ink); }
-  html.keep .mini-pop[data-st="danger"] b { color: #c23b2b; }
-  html.keep .mini-pop[data-st="danger"] b::after { content: '!'; top: -1px; font-size: 12px; font-weight: 900; color: #c23b2b; }
-  html.keep .mini-pop[data-st="gone"] { opacity: 0.45; text-decoration: line-through; }
-  html.keep .mini-pop[data-st="none"] { opacity: 0.45; }
-
-  /* ---- ?keep: GREEN, the share of the meadow still green (game.js updateGreen), on the left of the bottom bar: a brass
-     capital label, the share big (▼ ▲ against what it was as the season began), a bar filled to it with a mark at that,
-     and "was 80%" under the mark (both hidden while it's the same: .same). Rust under half. A hover (a tap on a phone) shows its card (#tool-tip, greenTip). */
-  #green { display: none; }
-  html.keep #green { display: grid; grid-column: 1; grid-row: 1; justify-self: start; grid-template-columns: 1fr auto; align-items: baseline;
-    width: 220px; margin-left: 8px; padding: 0; border: none; background: none; font: inherit; color: var(--ink); text-align: left; cursor: default; }
-  html.keep #green .g-l { align-self: center; text-transform: uppercase; letter-spacing: 0.11em; font-size: 11.5px; font-weight: 900; color: #8a5e22; }
-  html.keep #green .g-v { justify-self: end; font-weight: 900; font-size: 22px; line-height: 1.15; font-variant-numeric: tabular-nums; }
-  html.keep #green .g-v i { font-style: normal; font-size: 13px; margin-left: 3px; vertical-align: 3px; color: var(--down-ink); }
-  html.keep #green .g-v i.up { color: var(--good-ink); }
-  html.keep #green .g-bar { grid-column: 1 / -1; position: relative; height: 10px; margin: 4px 0 3px; border-radius: 99px; background: #e6d7b8;
-    box-shadow: inset 0 1px 1px rgba(80, 60, 30, 0.25); }
-  html.keep #green .g-bar i { position: absolute; left: 0; top: 0; bottom: 0; width: var(--v, 0%); border-radius: inherit; background: linear-gradient(90deg, #5f9346, #8fc45e); }
-  html.keep #green .g-bar em { position: absolute; top: -4px; bottom: -4px; left: var(--ref, 0%); width: 2px; margin-left: -1px; border-radius: 1px; background: var(--ink); opacity: 0.55; }
-  html.keep #green .g-ref { grid-column: 1 / -1; justify-self: start; margin-left: clamp(0px, calc(var(--ref, 0%) - 18px), calc(100% - 52px));
-    font-size: 11px; font-weight: 800; color: var(--muted); }
-  html.keep #green.same :is(.g-ref, .g-bar em) { visibility: hidden; }
-  html.keep #green.low .g-v, html.keep #tool-tip h4 b.low { color: #8a4b12; }
-  html.keep #green.low .g-bar i { background: linear-gradient(90deg, #a7802f, #d9b25a); }
-  html.keep #tool-tip h4 b { margin-left: auto; font: 900 22px Nunito, ui-rounded, system-ui, sans-serif; font-variant-numeric: tabular-nums; }
-  /* phones: no room on the left, so a slot after the tools, the same size, 🌱 over the share, and a rim along the bar's top */
-  @media (max-width: 760px), (max-height: 500px) {
-    html.keep #toolbar { grid-template-columns: minmax(0, 1fr) auto auto minmax(0, 1fr); column-gap: 5px; }
-    html.keep #green { grid-column: 3; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
-      width: 60px; height: 52px; margin: 0; text-align: center; }
-    html.keep #green .g-l { font-size: 25px; line-height: 1; letter-spacing: 0; }
-    html.keep #green .g-l b, html.keep #green .g-ref, html.keep #green .g-v i { display: none; }
-    html.keep #green .g-v { font-size: 13.5px; line-height: 1; justify-self: auto; }
-    html.keep #green .g-bar { position: absolute; grid-column: auto; left: 0; right: 0; top: 0; height: 4px; margin: 0; border-radius: 0; box-shadow: none; }   /* (auto: else it spans the bar's grid, not all of it) */
-    html.keep #green .g-bar em { top: 0; bottom: -2px; }
-  }
-
-  /* ---- ?keep: the Dry Year's ribbon under the watch (game.js forecastTick), like Frostpunk's forecast: a pip a season
-     from this one on in the dial's colours, the Dry Year's summer parched, this season's filling as the days go (--p,
-     the part to come pale as on the dial), and a line under them. The dial's year ring parches its summer too (.dry).
-     The big line at daybreak moves down to clear it (html.ribbon, while it's up). */
-  #forecast { display: none; }
-  html.keep { --forecast-top: calc(env(safe-area-inset-top, 0px) + var(--watch-d) + 36px); }
-  html.keep #forecast:not(.hidden) { display: flex; position: fixed; z-index: 4; left: 50%; top: var(--forecast-top); transform: translateX(-50%);
-    flex-direction: column; align-items: center; gap: 5px; cursor: help; }
-  html.keep #forecast :is(.pips, .pip-line) { background: var(--paper, none) var(--card); box-shadow: var(--edge), 0 4px 12px rgba(70, 55, 25, 0.18); color: var(--ink); }
-  html.keep #forecast .pips { display: flex; align-items: center; gap: 3px; padding: 6px 9px; border-radius: 10px; }
-  html.keep .pip { position: relative; width: 22px; height: 8px; border-radius: 4px; }
-  html.keep .pip.s0 { background: #8fc45e; } html.keep .pip.s1 { background: #e8bb3c; } html.keep .pip.s2 { background: #d9733a; } html.keep .pip.s3 { background: #9dbcd8; }
-  html.keep .pip.dry { width: 34px; height: 14px; border-radius: 5px; background: repeating-linear-gradient(135deg, #b4823f 0 3px, #dcb878 3px 6px); box-shadow: 0 0 0 1.5px #8a5a22; }
-  html.keep .pip.dry i { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font-style: normal; font-size: 10px; line-height: 1; }
-  html.keep .pip.now::before { content: ''; position: absolute; top: 0; bottom: 0; right: 0; left: var(--p, 0%); border-radius: 0 4px 4px 0; background: rgba(248, 240, 222, 0.58); }
-  html.keep .pip.dry.now::before { border-radius: 0 5px 5px 0; background: rgba(248, 240, 222, 0.72); }
-  html.keep .pip.now::after { content: ''; position: absolute; left: var(--p, 0%); top: -9px; margin-left: -5px; border: 5px solid transparent; border-top-color: var(--ink); }
-  html.keep #forecast .pip-line { display: flex; align-items: baseline; gap: 6px; padding: 3px 12px 5px; border-radius: 10px; font-size: 13px; font-weight: 700; white-space: nowrap; }
-  html.keep #forecast .pip-line b { font-size: 17px; font-weight: 900; }
-  html.keep #forecast .cap { text-transform: uppercase; letter-spacing: 0.11em; font-size: 11.5px; font-weight: 900; color: #8a5e22; }
-  html.keep #dial.dry .year { background:
-    repeating-conic-gradient(var(--card) 0 1.3deg, transparent 0 18deg),
-    conic-gradient(transparent 0 var(--done), rgba(248, 240, 222, 0.58) 0),
-    conic-gradient(#8fc45e 0 90deg, transparent 0 180deg, #d9733a 0 270deg, #9dbcd8 0),
-    repeating-conic-gradient(#b4823f 0 3deg, #dcb878 0 6deg); }
-  html.keep.ribbon #daybreak { top: calc(var(--forecast-top) + 70px); }
-  @media (max-width: 760px), (max-height: 500px) {
-    html.keep { --forecast-top: calc(env(safe-area-inset-top, 0px) + var(--watch-d) + 27px); }
-    html.keep #forecast:not(.hidden) { gap: 3px; }
-    html.keep #forecast .pips { padding: 4px 6px; gap: 2px; }
-    html.keep .pip { width: 14px; height: 6px; } html.keep .pip.dry { width: 22px; height: 11px; } html.keep .pip.dry i { font-size: 8px; }
-    html.keep .pip.now::after { top: -8px; border-width: 4px; margin-left: -4px; }
-    html.keep #forecast .pip-line { font-size: 11px; padding: 2px 9px 3px; gap: 4px; }
-    html.keep #forecast .pip-line b { font-size: 14px; } html.keep #forecast .cap { font-size: 10px; }
-    html.keep.ribbon #daybreak { top: calc(var(--forecast-top) + 54px); }
-  }
-  @media (max-width: 760px) and (min-height: 501px) { html.keep #meadow:not(.mini) ~ #forecast { display: none; } }   /* (with the watch) */
-  /* ---- ?keep: TASKS, top left under the top bar (game.js tasksTick), with a brass top edge like a tool's card: a brass
-     capital label and the count, then the three tasks, the next one lit and a done one struck through with what
-     happened. A tap on its head folds it to that; on a phone, folded, it's a chip of the three icons (html.tasks-open
-     while it isn't, to make room). Away while the meadow's big card is open, which hangs in the same place. */
-  #tasks { display: none; }
-  html.keep #tasks:not(.hidden) { display: block; position: fixed; z-index: 4; left: var(--left); top: calc(var(--keep-top-h) + env(safe-area-inset-top, 0px) + 18px);
-    width: 236px; max-height: calc(100% - var(--keep-top-h) - var(--bar, 100px) - 30px); overflow-y: auto; padding: 13px 10px 8px 14px;
-    border-radius: 0 0 16px 16px; background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); color: var(--ink); animation: pop-in 0.35s ease-out; }
-  html.keep #tasks::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 4px; background: var(--brass); border-radius: 2px 2px 0 0; }
-  html.keep #meadow:not(.mini) ~ #tasks { display: none; }
-  html.keep #tasks .t-head { display: flex; align-items: center; gap: 8px; width: 100%; padding: 1px 4px 0 0; border: none; background: none;
-    font: inherit; color: inherit; text-align: left; cursor: pointer; }
-  html.keep #tasks .cap { flex: 1; text-transform: uppercase; letter-spacing: 0.11em; font-size: 11.5px; font-weight: 900; color: #8a5e22; }
-  html.keep #tasks .t-count { font-size: 14px; font-weight: 900; font-variant-numeric: tabular-nums; }
-  html.keep #tasks .t-fold::after { content: '▴'; color: var(--muted); font-size: 12px; }
-  html.keep #tasks.fold .t-fold::after { content: '▾'; }
-  html.keep #tasks .t-chip, html.keep #tasks.fold ul { display: none; }
-  html.keep #tasks ul { list-style: none; margin: 6px 0 0 -6px; padding: 0; }
-  html.keep #tasks li button { display: grid; grid-template-columns: 26px 1fr 14px; gap: 8px; align-items: start; width: 100%; padding: 6px; border: none;
-    border-radius: 10px; background: transparent; font: inherit; color: inherit; text-align: left; cursor: pointer; }
-  @media (hover: hover) { html.keep #tasks li button:hover { background: rgba(0, 0, 0, 0.045); } }
-  html.keep #tasks li.next button { background: rgba(233, 138, 75, 0.13); }
-  html.keep #tasks li.fresh button { animation: tried 1.2s ease-out; }
-  html.keep #tasks li .e { font-size: 19px; text-align: center; line-height: 1.2; }
-  html.keep #tasks li b { display: block; font-weight: 800; font-size: 15px; line-height: 1.25; }
-  html.keep #tasks li small { display: block; margin-top: 2px; color: var(--muted); font-size: 13px; font-weight: 700; line-height: 1.3; }
-  html.keep #tasks li.wait small::before { content: '⏳ '; }
-  html.keep #tasks li.done b { color: var(--muted); text-decoration: line-through; text-decoration-color: rgba(90, 70, 40, 0.35); }
-  html.keep #tasks li.done small { color: var(--good-ink); font-style: italic; }
-  html.keep #tasks li.done .e { opacity: 0.6; }
-  html.keep #tasks li.done .tick::before { content: '✓'; color: var(--good-ink); font-weight: 900; }
-  html.keep #tasks li.next .tick::before { content: '›'; color: var(--accent-ink); font-weight: 900; font-size: 16px; }
-  @media (max-width: 760px), (max-height: 500px) {
-    html.keep #tasks:not(.hidden) { z-index: 5; left: calc(env(safe-area-inset-left, 0px) + 10px); top: calc(var(--keep-top-h) + env(safe-area-inset-top, 0px) + 12px); }
-    html.keep #tasks.fold { width: auto; padding: 0 9px; border-radius: 0 0 12px 12px; }
-    html.keep #tasks.fold .t-head { height: 36px; padding: 2px 0 0; gap: 6px; }
-    html.keep #tasks.fold :is(.cap, .t-count) { display: none; }
-    html.keep #tasks.fold .t-chip { display: flex; align-items: center; gap: 6px; }
-    html.keep #tasks .ce { position: relative; font-size: 18px; line-height: 1; }
-    html.keep #tasks .ce.done { opacity: 0.55; }
-    html.keep #tasks .ce.done::after { content: '✓'; position: absolute; right: -5px; bottom: -3px; display: grid; place-items: center; width: 13px; height: 13px;
-      border-radius: 50%; background: var(--good-ink); color: #fff; font-size: 11px; font-weight: 900; line-height: 1; }
-    html.keep #tasks .ce.next { filter: drop-shadow(0 0 3px rgba(233, 138, 75, 0.9)); }
-    html.keep #tasks .ce.fresh { animation: task-done 1.2s ease-out; }   /* a task just done, folded */
-  }
-  /* on its side there's little height: closer rows */
-  @media (max-height: 500px) {
-    html.keep #tasks:not(.fold) { padding-top: 11px; } html.keep #tasks li button { padding: 4px 6px; } html.keep #tasks li small { margin-top: 0; font-size: 12.5px; }
-  }
-  /* upright, there's no room beside the watch: open, the card hangs over the ribbon, and the big line goes under it */
-  @media (max-width: 760px) and (min-height: 501px) { html.keep.tasks-open #daybreak { top: calc(var(--keep-top-h) + env(safe-area-inset-top, 0px) + 236px); } }
-
-  /* ---- ?keep: the alerts (game.js alertsTick), Frostpunk's way: a row of red-edged chips over the middle of the bar, an
-     icon and the number, there as long as the trouble lasts. Each has a card (#tool-tip), and a click goes to them.
-     A new one pops in with a ring going out; its kind's mark in the top bar flashes. Where the news would be under
-     them, it stands over them while they're up (html.alerts-up). */
-  #alerts { display: none; }
-  html.keep #alerts:not(.hidden) { display: flex; position: fixed; z-index: 4; left: 50%; bottom: calc(var(--bar, 100px) - 4px); transform: translateX(-50%);
-    gap: 8px; pointer-events: none; }
-  html.keep #alerts .alert { pointer-events: auto; display: flex; align-items: center; gap: 5px; padding: 4px 12px 4px 9px; border: none; border-radius: 12px;
-    background: var(--paper, none) var(--card); box-shadow: inset 0 0 0 2px #c23b2b, 0 3px 10px rgba(70, 55, 25, 0.25); color: var(--ink);
-    font: inherit; white-space: nowrap; cursor: pointer; }
-  html.keep #alerts .alert[hidden] { display: none; }
-  @media (hover: hover) { html.keep #alerts .alert:hover { background: #fff6ea; } }
-  html.keep #alerts .e { font-size: 18px; line-height: 1; }
-  html.keep #alerts b { font-size: 20px; font-weight: 900; line-height: 1.15; color: #c23b2b; font-variant-numeric: tabular-nums; }
-  html.keep #alerts .l { font-size: 12.5px; font-weight: 800; color: var(--muted); }
-  html.keep #alerts [data-alert="barren"] .l { text-transform: uppercase; letter-spacing: 0.11em; font-size: 11.5px; font-weight: 900; color: #8a5e22; }
-  html.keep #alerts .alert.fresh { animation: alert-in 1.2s ease-out; }
-  @keyframes alert-in {
-    0% { transform: scale(0.6); box-shadow: inset 0 0 0 2px #c23b2b, 0 0 0 0 rgba(194, 59, 43, 0.75); }
-    25% { transform: scale(1.12); }
-    50% { transform: none; }
-    100% { box-shadow: inset 0 0 0 2px #c23b2b, 0 0 0 16px rgba(194, 59, 43, 0); }
-  }
-  html.keep .mini-pop.flash { border-radius: 8px; animation: mark-flash 1.2s ease-out; }
-  @keyframes mark-flash { 0%, 45% { background: rgba(194, 59, 43, 0.3); } 100% { background: rgba(194, 59, 43, 0); } }
-  html.keep #tool-tip h4 b.danger { color: #c23b2b; }
-  html.keep #tool-tip.wide { width: min(320px, calc(100vw - 16px)); }
-  @media (max-width: 1100px), (max-height: 500px) { html.keep.alerts-up #news { bottom: calc(var(--bar, 84px) + 46px); } }
-  /* phones: smaller, the icon and the number; upright, over the folded inspector, and away under the open sheet */
-  @media (max-width: 760px), (max-height: 500px) {
-    html.keep #alerts:not(.hidden) { gap: 6px; }
-    html.keep #alerts .alert { padding: 3px 9px 3px 7px; gap: 4px; border-radius: 10px; }
-    html.keep #alerts .e { font-size: 15px; } html.keep #alerts b { font-size: 16px; }
-    html.keep #alerts .l { display: none; }
-    html.keep.alerts-up #news { bottom: calc(var(--bar, 84px) + 38px); }
-  }
-  @media (max-width: 760px) and (min-height: 501px) {
-    html.keep body.ins-strip #alerts { bottom: calc(var(--bar, 84px) + 70px); }
-    html.keep.alerts-up body.ins-strip #news { bottom: calc(var(--bar, 84px) + 104px); }
-    html.keep body.inspecting:not(.ins-strip) #alerts { display: none; }
-  }
-  /* ---- ?keep: the field journal (game.js, the field journal). The book is in the bottom bar, the mirror of GREEN on the
-     right: a brass capital label, the pages found big, and a pip for each page, gold once found (half for a visitor
-     that came and went unseen). A page just found bumps it, and it glows with "New" till the journal's opened.
-     On a phone it's a plate after GREEN, 📖 over the count. */
-  #jbook { display: none; }
-  html.keep #jbook { display: grid; grid-column: 3; grid-row: 1; justify-self: end; grid-template-columns: 1fr auto; align-items: baseline;
-    width: 220px; margin-right: 8px; padding: 6px 8px 7px; border: none; border-radius: 12px; background: none; font: inherit; color: var(--ink);
-    text-align: left; cursor: pointer; position: relative; transition: background 0.15s; -webkit-tap-highlight-color: transparent; }
-  @media (hover: hover) { html.keep #jbook:hover { background: rgba(160, 110, 40, 0.09); } }
-  html.keep #jbook:active { background: rgba(160, 110, 40, 0.14); }
-  #jbook .j-l { align-self: center; text-transform: uppercase; letter-spacing: 0.11em; font-size: 11.5px; font-weight: 900; color: #8a5e22; }
-  #jbook .j-v { justify-self: end; font-weight: 900; font-size: 22px; line-height: 1.15; font-variant-numeric: tabular-nums; }
-  #jbook .j-v small { font-size: 14px; color: var(--muted); font-weight: 800; }
-  #jbook .pips { grid-column: 1 / -1; display: flex; gap: 3px; margin-top: 5px; }
-  #jbook .pips i { width: 9px; height: 9px; border-radius: 50%; background: #e6d7b8; box-shadow: inset 0 1px 1px rgba(80, 60, 30, 0.25); }
-  #jbook .pips i.on { background: radial-gradient(circle at 35% 30%, #f6d98c, #b07a2a 70%); box-shadow: 0 0 0 1px #8a5e22; }
-  #jbook .pips i.half { background: #e6d7b8; box-shadow: inset 0 0 0 1.5px #b07a2a; }
-  #jbook .pips i.gap { margin-left: 6px; }
-  #jbook .newdot { position: absolute; top: -10px; right: 10px; padding: 1px 6px; border-radius: 99px; background: #c4562a; color: #fff;
-    font-size: 10.5px; font-weight: 900; letter-spacing: 0.03em; box-shadow: 0 1px 0 #7a3214; opacity: 0; transform: scale(0.4); transition: 0.25s; pointer-events: none; }
-  #jbook.new .newdot { opacity: 1; transform: none; }
-  /* the glow: a ring painted once, only its opacity breathing (no repaint a frame) */
-  #jbook::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0;
-    box-shadow: 0 0 0 3px rgba(217, 164, 65, 0.55), 0 0 18px rgba(246, 217, 140, 0.9); }
-  #jbook.new::after { animation: jglow 1.8s ease-in-out infinite; }
-  @keyframes jglow { 50% { opacity: 1; } }
-  #jbook.bump { animation: jbump 0.45s ease-out; }
-  @keyframes jbump { 30% { transform: scale(1.14); } }
-  /* a narrow window: no room for the pips */
-  @media (min-width: 761px) and (max-width: 880px) and (min-height: 501px) {
-    html.keep #jbook { width: 112px; grid-template-columns: auto; justify-items: end; padding: 4px 6px; }
-    html.keep #jbook .pips { display: none; }
-  }
-  @media (max-width: 760px), (max-height: 500px) {
-    html.keep #toolbar { grid-template-columns: minmax(0, 1fr) auto auto auto minmax(0, 1fr); }
-    html.keep #toolbar .tool { width: 54px; }
-    html.keep #jbook { grid-column: 4; justify-self: start; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
-      width: 54px; height: 52px; margin: 0; padding: 0; text-align: center;
-      background: linear-gradient(180deg, #fffaf0, #f1e5c9); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 2px 0 #a8742a; border-radius: 14px; }
-    html.keep #jbook:active { background: linear-gradient(180deg, #fff1df, #fbd9b9); }
-    html.keep #jbook .j-l { font-size: 25px; line-height: 1; letter-spacing: 0; }
-    html.keep #jbook .j-l b, html.keep #jbook .pips { display: none; }
-    html.keep #jbook .j-v { font-size: 13.5px; line-height: 1; justify-self: auto; }
-    html.keep #jbook .j-v small { font-size: 11px; }
-    html.keep #jbook .newdot { top: -7px; right: -6px; }
-  }
-  /* the smallest phones (320-380 px): four tools, GREEN and the book only fit a little narrower, still 44 px and up */
-  @media (max-width: 380px) {
-    html.keep #toolbar { column-gap: 3px; padding-left: calc(3px + env(safe-area-inset-left, 0px)); padding-right: calc(3px + env(safe-area-inset-right, 0px)); }
-    html.keep #toolbar .tools { gap: 3px; }
-    html.keep #toolbar .tool { width: 45px; }
-    html.keep #toolbar .tool .l { font-size: 10.5px; }
-    html.keep #green { width: 52px; }
-    html.keep #jbook { width: 48px; }
-  }
-  /* ---- ?keep on a phone on its side: height is what's short, so the bottom bar becomes a rail down the left, under the
-     top bar's brass, its own brass rule on the meadow side. The tools, GREEN and the book stand in a column in the middle
-     (a second column if the screen's too short for one), GREEN's rim runs up the rail's inner edge like a thermometer, and
-     a tool's card opens beside its button (.side, game.js showTip). game.js sets --rail to where it ends, and --bar to
-     just the home bar's room, so the news, the alerts and the inspector reach down to the bottom. */
-  @media (max-height: 500px) {
-    html.keep { --keep-top-h: 48px; --keep-foot-h: 0px; --left: calc(var(--rail, 76px) + 16px); }
-    html.keep #toolbar { top: calc(var(--keep-top-h) + env(safe-area-inset-top, 0px) + 6px); right: auto; height: auto;
-      padding: 6px 6px calc(6px + var(--home-bar, env(safe-area-inset-bottom, 0px))) calc(6px + env(safe-area-inset-left, 0px));
-      display: grid; grid-auto-flow: column; grid-template-columns: none; grid-template-rows: repeat(auto-fit, 44px); grid-auto-columns: 58px; gap: 4px;
-      align-content: center; box-shadow: 6px 0 16px rgba(70, 55, 25, 0.22); }
-    html.keep #toolbar::before { top: 0; bottom: 0; left: auto; right: -6px; width: 6px; height: auto; transform: none;
-      background: linear-gradient(90deg, #f6d98c, #d9a441 45%, #8a5e22); box-shadow: inset -1px 0 0 rgba(90, 55, 15, 0.55), inset 1px 0 0 rgba(255, 240, 200, 0.6); }
-    html.keep #toolbar .tools { display: contents; }
-    html.keep #toolbar .tool, html.keep #jbook { width: 58px; height: 44px; gap: 2px; grid-column: auto; grid-row: auto; justify-self: stretch; }
-    html.keep #toolbar .tool .e, html.keep #jbook .j-l { font-size: 21px; }
-    html.keep #toolbar .tool .l { font-size: 11px; }
-    html.keep #jbook .j-v { font-size: 12.5px; }
-    html.keep #tasks:not(.hidden) { left: var(--left); }
-    /* The top bar: the counts closed up and reaching to each other (a tap on one opens its graph; no ˅, the card is in
-       •••), then GREEN, compact: 🌱 and the share over a thin bar. It stays in the toolbar (its card's taps) but stands
-       in the bar, right after the counts, or right of the watch where they leave no room (game.js fitTopBar: --green-x).
-       The Dry Year's ribbon stands in the bar right of the watch too, its pips over its line, where there's room
-       (html.ribbon-bar, --forecast-x), else it hangs under the watch as before. */
-    html.keep #meadow.mini .win-btn.grow { display: none; }
-    html.keep .mini-line { gap: 0; padding: 0 2px; }
-    html.keep .mini-pop { align-self: stretch; line-height: 44px; padding: 0 4px; }
-    html.keep #green { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 4px); left: var(--green-x, 50%); width: auto; height: 44px;
-      flex-direction: row; gap: 3px; padding: 0 6px 5px; border-radius: 10px; }
-    html.keep #green .g-l { font-size: 18px; }
-    html.keep #green .g-v { font-size: 16px; font-weight: 900; }
-    html.keep #green .g-bar { left: 6px; right: 6px; top: auto; bottom: 8px; height: 4px; border-radius: 2px; background: #e6d7b8; }
-    html.keep #green .g-bar em { top: -2px; bottom: -2px; }
-    html.keep #meadow:not(.mini) { max-height: calc(100vh - var(--keep-top-h) - env(safe-area-inset-top, 0px) - 16px - var(--bottom));
-      max-height: calc(100dvh - var(--keep-top-h) - env(safe-area-inset-top, 0px) - 16px - var(--bottom)); }   /* (under the bar, Safari's bar too) */
-    html.keep #meadow:not(.mini) ~ #forecast { display: none; }   /* (the card hangs where it would) */
-    html.keep #news, html.keep.ribbon #news { width: min(360px, calc(100% - var(--left) - var(--right))); }   /* (one line at a time, at the bottom) */
-    html.keep.ribbon-bar #forecast:not(.hidden) { top: calc(env(safe-area-inset-top, 0px) + 4px); left: var(--forecast-x, 50%); height: 44px; transform: none;
-      gap: 1px; justify-content: center; align-items: flex-start; }
-    html.keep.ribbon-bar #forecast :is(.pips, .pip-line) { background: none; box-shadow: none; }
-    html.keep.ribbon-bar #forecast .pips { padding: 0 4px; }
-    html.keep.ribbon-bar #forecast .pip-line { padding: 0 4px; }
-    html.keep.ribbon.ribbon-bar #daybreak { top: calc(var(--keep-top-h) + env(safe-area-inset-top, 0px) + 40px); }
-    /* reading about an animal, the panel open: the rail slides away to the left (by left: a transform would unfix GREEN),
-       and back when it folds or shuts; the news and the tasks follow it (game.js measureSheet keeps the one you follow in
-       the middle of what's left) */
-    html.keep #toolbar { transition: left 0.25s ease; }
-    html.keep body.inspecting:not(.ins-strip) #toolbar { left: calc(-12px - var(--rail, 76px)); visibility: hidden; transition: left 0.25s ease, visibility 0s 0.25s; }
-    html.keep body.inspecting:not(.ins-strip) #toolbar #green { visibility: visible; }   /* (GREEN stays in the top bar) */
-    html.keep body.inspecting:not(.ins-strip) { --left: calc(env(safe-area-inset-left, 0px) + 12px); }
-    html.keep #inspector:not(.strip) { width: min(300px, 40vw); }
-    html.keep body.inspecting:not(.ins-strip) #news { width: min(360px, calc(100% - var(--left) - var(--right) - min(300px, 40vw) - 8px)); }
-  }
-  #more-menu .menu-item.rail-only { display: none; }
-  @media (max-height: 500px) { html.keep #more-menu .menu-item.rail-only { display: flex; } }
-  /* ?keep on its side, the graphs page: its head stays at the top while it scrolls, the range of time in it (game.js
-     placeStatsRange), the kinds one row that scrolls sideways, and the chart as tall as the screen leaves (drawStatsChart) */
-  @media (max-height: 500px) {
-    html.keep .stats-wrap { padding: 0 calc(16px + env(safe-area-inset-right, 0px)) 24px calc(16px + env(safe-area-inset-left, 0px)); }
-    html.keep .stats-head { position: sticky; top: 0; z-index: 2; gap: 10px; padding: 8px calc(16px + env(safe-area-inset-right, 0px)) 8px calc(16px + env(safe-area-inset-left, 0px));
-      margin: 0 calc(-16px - env(safe-area-inset-right, 0px)) 0 calc(-16px - env(safe-area-inset-left, 0px)); background: #f3ead8; box-shadow: 0 6px 10px -8px rgba(70, 55, 25, 0.35); }
-    html.keep .stats-head h1 { flex: 1 1 auto; min-width: 0; font-size: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    html.keep #stats-clock { display: none; }
-    html.keep .stats-head .web-btn { margin-left: 0; white-space: nowrap; }
-    html.keep .stats-head .seg { flex: none; flex-wrap: nowrap; }
-    html.keep .stats-head .seg button { padding: 6px 10px; white-space: nowrap; }
-    html.keep .stats-filters { margin: 4px 0 8px; }
-    html.keep .stats-kinds { flex-wrap: nowrap; max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; }
-    html.keep .stats-kinds::-webkit-scrollbar { display: none; }
-    html.keep .stats-kinds button { flex: none; white-space: nowrap; }
-    html.keep .stats-card { padding: 10px 14px; }
-    html.keep .chart-title { font-size: 16px; }
-  }
-  /* ?keep on its side, Who ate whom reads left to right (game.js placeWeb, WEB_WIDE): the web the card's width, its
-     sentence under it */
-  @media (max-height: 500px) {
-    html.keep #web { padding: 8px 14px 6px; }
-    html.keep .web-body { display: block; }
-    html.keep #web-svg { width: 100%; height: auto; max-width: none; max-height: calc(100vh - 124px); max-height: calc(100dvh - 124px); }
-    html.keep #web-say { min-height: 2.8em; margin: 0 2px; font-size: 14px; line-height: 1.4; }
-  }
-  /* GREEN's card, under it in the top bar, the arrow pointing up (game.js sets its top, left and --arrow) */
-  html.keep #tool-tip.down { bottom: auto; max-height: calc(100% - 72px - env(safe-area-inset-top, 0px)); overflow-y: auto; }
-  html.keep #tool-tip.down::after { top: -9px; bottom: auto; box-shadow: -3px -3px 4px rgba(70, 55, 25, 0.12); }
-  /* a tool's card beside its button on the rail, the brass edge and the arrow on its left (game.js sets its top and --arrow) */
-  html.keep #tool-tip.side { bottom: auto; border-radius: 0 16px 16px 0; max-height: calc(100% - 16px); overflow-y: auto; }
-  html.keep #tool-tip.side::before { right: auto; bottom: 0; width: 4px; height: auto; border-radius: 2px 0 0 2px; }
-  html.keep #tool-tip.side::after { left: -9px; top: var(--arrow, 50%); bottom: auto; margin: -9px 0 0; box-shadow: -3px 3px 4px rgba(70, 55, 25, 0.12); }
-
-  /* The journal: a book open on the meadow, the pages on the left, the one you picked on the right. Every target is
-     44 px or more (52-60 on an upright phone), with 8 px or more between them. */
-  #jscrim { position: fixed; inset: 0; z-index: 8; background: rgba(40, 32, 18, 0.32); }
-  #journal { position: fixed; z-index: 9; left: 50%; transform: translateX(-50%);
-    top: calc(var(--keep-top-h, 58px) + env(safe-area-inset-top, 0px) + 18px); bottom: calc(var(--keep-foot-h, 84px) + var(--home-bar, env(safe-area-inset-bottom, 0px)) + 18px);
-    width: min(900px, calc(100% - 32px)); max-height: 640px; margin: auto 0; outline: none; color: var(--ink);
-    display: grid; grid-template-columns: 1.12fr 1fr; grid-template-rows: auto minmax(0, 1fr); grid-template-areas: 'top page' 'pages page';
-    border-radius: 18px; overflow: hidden;
-    background: var(--paper, none) var(--card); box-shadow: 0 20px 60px rgba(50, 40, 15, 0.35), inset 0 0 0 1px rgba(150, 115, 60, 0.22); }
-  #journal::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 5px; background: var(--brass); box-shadow: var(--brass-edges); z-index: 3; }
-  #journal:not(.hidden) > * { animation: pop-in 0.18s ease-out; }
-  #journal button { font-family: inherit; color: var(--ink); cursor: pointer; -webkit-tap-highlight-color: transparent; }
-  #journal :focus-visible { outline: 3px solid #d9a441; outline-offset: 2px; }
-  /* a round brass button: ✕, ‹ and › */
-  #journal .jb { display: grid; place-items: center; flex: none; width: 44px; height: 44px; padding: 0; border: none; border-radius: 50%;
-    background: linear-gradient(180deg, #fffaf0, #f1e5c9); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 2px 0 #a8742a; transition: transform 0.08s, box-shadow 0.08s; }
-  #journal .jb svg { display: block; width: 20px; height: 20px; }
-  #journal .jb:active:not(:disabled) { transform: translateY(2px); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 0 0 #a8742a; }
-  #journal .jb:disabled { opacity: 0.32; cursor: default; }
-  #journal .j-x { position: absolute; top: 14px; right: 14px; z-index: 3; }
-  #journal .j-top { grid-area: top; padding: 22px 20px 2px 24px; background: linear-gradient(90deg, transparent 88%, rgba(120, 85, 30, 0.10)); }
-  #journal .grab, #journal .j-foot { display: none; }
-  #journal .j-foot { grid-area: foot; }
-  #journal .j-head { display: flex; align-items: baseline; gap: 10px; }
-  #journal .j-head h2 { margin: 0; font-size: 26px; font-weight: 650; }
-  #journal .j-head .n { margin-left: auto; font-weight: 900; font-size: 22px; font-variant-numeric: tabular-nums; }
-  #journal .j-head .n small { font-size: 14px; color: var(--muted); font-weight: 800; }
-  #journal .j-bar { position: relative; height: 8px; margin: 6px 0 4px; border-radius: 99px; background: #e6d7b8; box-shadow: inset 0 1px 1px rgba(80, 60, 30, 0.25); }
-  #journal .j-bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: inherit; background: linear-gradient(90deg, #b07a2a, #e2b75c); transition: width 0.6s; }
-  #journal .pages { grid-area: pages; padding: 0 20px 18px 24px; overflow: hidden auto; overscroll-behavior: contain; scrollbar-width: thin;
-    background: linear-gradient(90deg, transparent 88%, rgba(120, 85, 30, 0.10)); }
-  #journal h3.sec { display: flex; align-items: baseline; margin: 16px 0 8px; text-transform: uppercase; letter-spacing: 0.11em; font-size: 12px; font-weight: 900; color: #8a5e22; }
-  #journal h3.sec span { margin-left: auto; letter-spacing: 0; font-size: 13px; color: var(--muted); }
-  /* the chapter the meadow is in now */
-  #journal h3.sec .now { display: none; align-self: center; margin-left: 8px; padding: 1px 7px; border-radius: 99px; background: #4f7f3a; color: #fff;
-    letter-spacing: 0.06em; font-size: 10.5px; font-weight: 900; }
-  #journal h3.sec.here .now { display: inline-block; }
-  #journal .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
-  #journal .tile { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 3px; min-height: 92px; padding: 16px 4px 8px;
-    border: none; border-radius: 12px; background: rgba(255, 250, 238, 0.55); box-shadow: inset 0 0 0 1px rgba(150, 115, 60, 0.2); transition: background 0.12s, transform 0.08s; }
-  #journal .tile:active { transform: scale(0.96); }
-  #journal .tile.on { background: #fff6e4; box-shadow: inset 0 0 0 2px #d9a441, 0 2px 0 #a8742a; }
-  #journal .tile .no { position: absolute; top: 4px; left: 7px; font-size: 11px; font-weight: 900; color: #a8916a; font-variant-numeric: tabular-nums; }
-  #journal .tile img { width: 56px; height: 56px; object-fit: contain; pointer-events: none; }
-  #journal .tile .nm { font-size: 12.5px; font-weight: 800; line-height: 1.15; text-align: center; min-height: 1.15em; }
-  #journal .tile.unseen { background: rgba(120, 95, 50, 0.07); box-shadow: inset 0 0 0 1px rgba(150, 115, 60, 0.12); }
-  #journal .tile.unseen.on { box-shadow: inset 0 0 0 2px #d9a441; }
-  #journal .tile.unseen .nm { color: #9c8a66; letter-spacing: 0.15em; }
-  #journal .tile.glimpsed .nm { color: var(--muted); }
-  /* past the frontier: a blank, its riddle not come yet */
-  #journal .tile.later { background: none; box-shadow: none; border: 1.5px dashed rgba(150, 115, 60, 0.3); }
-  #journal .tile.later.on { border-color: #d9a441; }
-  #journal .tile.later .nm { color: #b8a680; letter-spacing: 0.15em; }
-  #journal .tile .blank { width: 56px; height: 56px; }
-  #journal .tile.new::after { content: 'New'; position: absolute; top: 4px; right: 5px; padding: 0 6px; border-radius: 99px; background: #c4562a; color: #fff;
-    font-size: 11px; font-weight: 900; }
-  @media (hover: hover) {
-    #journal .jb:not(:disabled):hover { background: linear-gradient(180deg, #fff1df, #fbd9b9); }
-    #journal .tile:hover { background: rgba(255, 250, 238, 0.95); }
-    #journal .page .go:hover { background: linear-gradient(180deg, #fff1df, #fbd9b9); }
-  }
-  #journal img.sil { filter: brightness(0); opacity: 0.2; }
-  #journal img.half { filter: brightness(0); opacity: 0.55; }
-  /* the page you picked: its number on top (clear of the ✕), what it says, and ‹ n / 10 › at its foot */
-  #journal .page { grid-area: page; position: relative; display: flex; flex-direction: column; min-height: 0;
-    background: linear-gradient(90deg, rgba(120, 85, 30, 0.16), transparent 9%); }
-  #journal .pg-grab { padding: 26px 72px 0 26px; }
-  #journal .page .no { text-transform: uppercase; letter-spacing: 0.11em; font-size: 12px; font-weight: 900; color: #8a5e22; }
-  #journal .pg-body { flex: 1; min-height: 0; padding: 0 26px 8px; overflow: hidden auto; overscroll-behavior: contain; scrollbar-width: thin; touch-action: pan-y; }
-  #journal .page .art { display: grid; place-items: center; height: 168px; margin: 6px 0 2px; border-radius: 14px;
-    background: radial-gradient(ellipse at 50% 70%, rgba(150, 190, 110, 0.35), transparent 70%); }
-  #journal .page .art img { width: 150px; height: 150px; object-fit: contain; pointer-events: none; }
-  #journal .page h3 { margin: 0; font-size: 30px; font-weight: 650; }
-  #journal .page h3.q { color: #9c8a66; letter-spacing: 0.2em; }
-  #journal .page p { margin: 6px 0 12px; font-size: 15px; line-height: 1.45; font-weight: 700; color: var(--muted); }
-  #journal .page p.hint { font-family: Fraunces, Georgia, serif; font-style: italic; font-weight: 450; font-size: 18px; color: var(--ink); }
-  #journal .page ul { list-style: none; margin: 0; padding: 10px 0 0; border-top: 1px dashed var(--line); display: grid; gap: 8px; }
-  #journal .page li { display: grid; grid-template-columns: 26px 1fr auto; gap: 4px; align-items: baseline; font-size: 15px; font-weight: 700; }
-  #journal .page li i { font-style: normal; }
-  #journal .page li em { font-style: normal; font-weight: 800; color: var(--ink); text-align: right; }
-  #journal .page li span { color: var(--muted); }
-  #journal .page .go { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 16px 0 4px; width: 100%; min-height: 52px; padding: 10px 14px;
-    border: none; border-radius: 14px; font-size: 16px; font-weight: 800;
-    background: linear-gradient(180deg, #fffaf0, #f1e5c9); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 3px 0 #a8742a; transition: transform 0.08s; }
-  #journal .page .go:active { transform: translateY(2px); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 1px 0 #a8742a; }
-  #journal .page .go .e { font-size: 22px; }
-  /* a visitor's page: the picture from its first sighting pasted in (game.js snapReveal), its painting stuck on the corner,
-     and the moments it's been seen in, a chip each (MOMENTS) */
-  #journal .page .art.snap { height: auto; padding: 16px 0 14px; background: none; }
-  #journal .page .art.snap figure { position: relative; margin: 0; padding: 7px 7px 28px; border-radius: 2px; background: #fffdf6; transform: rotate(-2deg);
-    box-shadow: 0 1px 2px rgba(60, 40, 10, 0.2), 0 6px 14px rgba(60, 40, 10, 0.18); }
-  #journal .page .art.snap figure::before { content: ''; position: absolute; top: -9px; left: 50%; width: 72px; height: 18px; margin-left: -36px;
-    background: rgba(236, 220, 172, 0.8); transform: rotate(3deg); box-shadow: 0 1px 2px rgba(60, 40, 10, 0.12); }
-  #journal .page .art.snap figure > img:first-child { display: block; width: min(240px, 62vw); height: auto; aspect-ratio: 3 / 2; object-fit: cover; }
-  #journal .page .art.snap figcaption { position: absolute; left: 8px; right: 30px; bottom: 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
-    text-align: left; font: italic 450 13px/1.2 Fraunces, Georgia, serif; color: #6b5a3e; }
-  #journal .page .art.snap .stamp { position: absolute; right: -22px; bottom: -16px; width: 64px; height: 64px; object-fit: contain;
-    filter: drop-shadow(0 2px 2px rgba(60, 40, 10, 0.3)); }
-  #journal .page .moments { margin: 14px 0 4px; padding-top: 10px; border-top: 1px dashed var(--line); }
-  #journal .page .moments h4 { display: flex; margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.11em; font-size: 12px; font-weight: 900; color: #8a5e22; }
-  #journal .page .moments h4 span { margin-left: auto; letter-spacing: 0; font-size: 13px; color: var(--muted); }
-  #journal .m-list { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-  #journal .m { display: flex; align-items: center; gap: 7px; min-height: 40px; padding: 6px 9px; border-radius: 10px; font-size: 13px; font-weight: 800;
-    line-height: 1.2; font-style: italic; color: #8f7d5a; background: rgba(120, 95, 50, 0.05); box-shadow: inset 0 0 0 1px rgba(150, 115, 60, 0.25); }
-  #journal .m.on { font-style: normal; color: var(--ink); background: #fff6e4; box-shadow: inset 0 0 0 1.5px #d9a441; }
-  #journal .m i { flex: none; width: 22px; text-align: center; font-style: normal; font-size: 18px; }
-  #journal .m:not(.on) i { font-size: 14px; font-weight: 900; color: #b8a27a; }
-  #journal .pg-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 22px 16px; border-top: 1px dashed var(--line); }
-  #journal .pg-foot .of { font-weight: 900; font-size: 15px; color: var(--muted); font-variant-numeric: tabular-nums; }
-  #journal .pg-foot .x { display: none; }
-
-  /* Upright phones: a sheet from the bottom, nearly the whole height. Nothing to reach for at the top: its handle drags it
-     down, and ✕ sits at the bottom in the middle, where either thumb reaches it. A page is a card laid over the pages,
-     with ‹ ✕ › in the same place (✕ lays it back down); a swipe sideways turns to the next one. Back closes either. */
-  @media (max-width: 760px) and (min-height: 501px) {
-    #journal { left: 0; right: 0; width: auto; transform: none; top: calc(env(safe-area-inset-top, 0px) + 44px); bottom: 0; max-height: none; margin: 0;
-      grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; grid-template-areas: 'top' 'pages' 'foot';
-      border-radius: 22px 22px 0 0; box-shadow: 0 -8px 40px rgba(50, 40, 15, 0.35), inset 0 0 0 1px rgba(150, 115, 60, 0.22); }
-    #journal::before { display: none; }
-    #journal:not(.hidden) > * { animation: none; }
-    #journal .j-x { display: none; }
-    #journal .j-top { padding: 0 18px 6px; background: none; touch-action: none; }
-    #journal .grab { display: block; height: 26px; position: relative; }
-    #journal .grab::before, #journal .pg-grab::before { content: ''; position: absolute; left: 50%; top: 11px; width: 44px; height: 5px; margin-left: -22px;
-      border-radius: 99px; background: #d4c4a6; }
-    #journal .j-head h2 { font-size: 24px; }
-    #journal .pages { padding: 0 14px 14px; background: none; }
-    #journal h3.sec { margin: 14px 2px 8px; }
-    #journal .tile { min-height: 88px; }
-    #journal .tile img, #journal .tile .blank { width: 50px; height: 50px; }
-    #journal .j-foot, #journal .pg-foot { display: flex; justify-content: center; align-items: center; gap: 28px;
-      padding: 10px 16px calc(14px + var(--home-bar, env(safe-area-inset-bottom, 0px))); border-top: 1px dashed var(--line); }
-    #journal .jb { width: 52px; height: 52px; }
-    #journal .jb.x { width: 60px; height: 60px; }
-    #journal .jb.x svg { width: 24px; height: 24px; }
-    #journal .page { display: none; grid-area: auto; grid-row: 2 / 4; grid-column: 1; z-index: 2; margin: 0 6px; border-radius: 18px 18px 0 0;
-      background: var(--paper, none) var(--card); box-shadow: 0 -6px 18px rgba(50, 40, 15, 0.2), inset 0 0 0 1px rgba(150, 115, 60, 0.22); }
-    #journal.reading .page { display: flex; }
-    #journal .pg-grab { position: relative; padding: 26px 20px 2px; touch-action: none; }
-    #journal .pg-body { padding: 0 20px 10px; }
-    #journal .pg-foot { margin: 0 -6px; }
-    #journal .pg-foot .of { display: none; }
-    #journal .pg-foot .x { display: grid; }
-    #journal .page .art { height: 150px; }
-    #journal .page .art img { width: 132px; height: 132px; }
-    #journal .page p { font-size: 16px; }
-  }
-  /* Phones on their side: the open book over the whole screen, its ✕ and ‹ › big enough for a thumb from either side. */
-  @media (max-height: 500px) {
-    #journal { left: calc(env(safe-area-inset-left, 0px) + 10px); right: calc(env(safe-area-inset-right, 0px) + 10px); width: auto; transform: none;
-      top: 8px; bottom: 8px; max-height: none; margin: 0; border-radius: 16px; }
-    #journal .jb { width: 48px; height: 48px; }
-    #journal .j-x { top: 10px; right: 10px; }
-    #journal .j-top { padding: 14px 16px 0 18px; }
-    #journal .j-head h2 { font-size: 21px; }
-    #journal .j-head .n { font-size: 19px; }
-    #journal .pages { padding: 0 16px 12px 18px; }
-    #journal h3.sec { margin: 12px 0 6px; }
-    #journal .grid { gap: 6px; }
-    #journal .tile { min-height: 76px; padding-top: 14px; }
-    #journal .tile img, #journal .tile .blank { width: 42px; height: 42px; }
-    #journal .pg-grab { padding: 18px 70px 0 22px; }
-    #journal .pg-body { padding: 0 22px 6px; }
-    #journal .page .art { height: 84px; margin-top: 2px; }
-    #journal .page .art img { width: 80px; height: 80px; }
-    #journal .page h3 { font-size: 24px; }
-    #journal .page p { margin-bottom: 8px; }
-    #journal .pg-foot { padding: 6px 16px 10px; }
-  }
-  @media (prefers-reduced-motion: reduce) { #journal:not(.hidden) > * { animation: none; } #jbook.new::after { animation: none; opacity: 0.8; } }
-
-  /* a first sighting: a stamp of its painting flies from it into the book (game.js stampFly) */
-  #jstamp { position: fixed; z-index: 7; left: 0; top: 0; width: 68px; height: 68px; margin: -34px 0 0 -34px; border-radius: 50%; pointer-events: none;
-    background: var(--paper, none) #fff6e4; box-shadow: inset 0 0 0 3px #d9a441, inset 0 0 0 4.5px #8a5e22, 0 6px 16px rgba(50, 40, 15, 0.35);
-    display: grid; place-items: center; }
-  #jstamp img { width: 50px; height: 50px; object-fit: contain; }
-
   /* ---- phones and tablets: a finger's way round the meadow. Every target 44 px or more either way (Apple; Material
      says 48) with room between, a press that shows at once (:active, not the browser's grey box), hover only where
      there's a mouse, and none of the browser's own pulls: no pull-to-refresh, no text grown on its side. */
   html, body { overscroll-behavior-y: none; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
-  button, a, [data-act], [data-tool] { -webkit-tap-highlight-color: transparent; }
-  .sheet-foot, #web .grab, #web-scrim { display: none; }
-  .scrim { position: fixed; inset: 0; z-index: 8; background: rgba(40, 32, 18, 0.32); }
-  /* ✕ at a sheet's foot, and every ✕ on a touch screen: the journal's round brass button, its cross drawn as lines (the
+  button, a, [data-act] { -webkit-tap-highlight-color: transparent; }
+  /* ✕ at a sheet's foot, and every ✕ on a touch screen: a round brass button, its cross drawn as lines (the
      same in every font); a mouse's small one keeps its letter */
   :root { --x-lines: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6.5 6.5l11 11M17.5 6.5l-11 11' fill='none' stroke='black' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E"); }
   .close.big { position: relative; width: 60px; height: 60px; margin: 0; padding: 0; border-radius: 50%; font-size: 0; color: var(--ink);
     background: linear-gradient(180deg, #fffaf0, #f1e5c9); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 2px 0 #a8742a; }
   .close.big::before { content: ''; position: absolute; inset: 0; margin: auto; width: 24px; height: 24px; background: currentColor;
     -webkit-mask: var(--x-lines) center / contain no-repeat; mask: var(--x-lines) center / contain no-repeat; }
-  .hud-btn:active, .speed:active, .menu-item:active, .seg button:active, .g-list button:active, .g-skip:active, .g-x:active, .g-head:active, .card-actions .act:active,
-    html:not(.keep) .mini-line:active, .pop[data-act]:active, .traits:active, .story-more:active, .win-btn:active, html.keep #tasks li button:active, html.keep #tasks .t-head:active { background-color: rgba(0, 0, 0, 0.08); }
-  html.keep .mini-pop:active { background: rgba(0, 0, 0, 0.07); border-radius: 8px; }
-  .btn:active, html.keep #alerts .alert:active, #web-svg .web-node:active { filter: brightness(0.94); }
-  /* a finger held on the meadow: a ring grows under it till the hold opens the ring of tools (game.js holdShow) */
-  #hold { position: fixed; z-index: 2; left: 0; top: 0; width: 76px; height: 76px; margin: -38px 0 0 -38px; border-radius: 50%; pointer-events: none; opacity: 0;
-    box-shadow: inset 0 0 0 3px rgba(255, 250, 238, 0.95), 0 0 0 1px rgba(70, 55, 25, 0.22), 0 0 16px 2px rgba(255, 250, 238, 0.45); }
+  .hud-btn:active, .menu-item:active, .traits:active, .story-more:active { background-color: rgba(0, 0, 0, 0.08); }
+  .btn:active { filter: brightness(0.94); }
   @media (pointer: coarse) {
     .close { position: relative; flex: none; width: 44px; height: 44px; padding: 0; border-radius: 50%; font-size: 0; color: var(--ink);
       background: linear-gradient(180deg, #fffaf0, #f1e5c9); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 2px 0 #a8742a; transition: transform 0.08s, box-shadow 0.08s; }
@@ -1167,337 +274,47 @@
     .close.big::before { width: 24px; height: 24px; }
     #inspector .ins-head .close { margin: -4px -6px 0 auto; padding: 0; font-size: 0; }
     #inspector.strip .close { margin: 0 3px 0 0; padding: 0; font-size: 0; }
-    .web-head .close, .stats-head .close { margin: 0 0 0 auto; font-size: 0; }
-    .web-btn + .close { margin-left: 0; }
-    .seg button, .web-btn, .btn, .card-actions .act, .story-more, .traits, .menu-item, .g-list button, .g-head, .pop[data-act] { min-height: 44px; }
-    .g-skip, .g-x, .win-btn { min-width: 44px; min-height: 44px; }
+     .btn, .story-more, .traits, .menu-item { min-height: 44px; }
     .sheet-handle { height: 30px; }
     .sheet-handle::before { top: 11px; }
     /* a link in a line of text: a fingertip's height to hit, the line where it was */
-    :is(.news-item, #inspector, #daybreak, #away) :is(a[data-id], a[data-thing], a[data-act]) { padding: 7px 2px; margin: -7px -2px; }
-    html.keep #alerts .alert { min-height: 44px; }
-    html.keep #tasks:not(.fold) .t-head { min-height: 44px; margin: -13px 0 -6px; }   /* (open, its head reaches up into the card's rim) */
-    html.keep #tasks li button { min-height: 44px; }
-    html.keep #forecast::before { content: ''; position: absolute; inset: -6px -10px; }   /* (the ribbon is thin: its tap reaches round it) */
+    #inspector :is(a[data-id], a[data-thing], a[data-act]) { padding: 7px 2px; margin: -7px -2px; }
   }
-  /* The top bar on a phone: pause, the speed and ••• 44 px tall and as wide as fits beside the watch; each kind's count
-     (a tap opens its graph, ?keep) reaches to the next, so the row has no gaps to miss in. */
-  @media (max-width: 760px), (max-height: 500px) {
-    .speed, .hud-btn.more { min-width: 44px; height: 44px; }
-    .mini-line { height: 44px; }
-    html.keep #tasks.fold .t-head { height: 44px; }
+  /* The buttons top right on a touch screen: a fingertip's size. */
+  @media (pointer: coarse) {
+    .hud-btn { min-width: 44px; height: 44px; }
   }
-  @media (max-width: 440px) { #time .speed, .hud-btn.more { min-width: 42px; padding: 0 3px; } }
-  @media (max-width: 350px) { #time .speed, .hud-btn.more { min-width: 38px; padding: 0 2px; } }
-  @media (max-width: 540px) and (min-height: 501px) {
-    html.keep .mini-line { gap: 0; padding: 0 5px; }
-    html.keep .mini-pop { align-self: stretch; justify-content: center; padding: 0 4.5px; }
-  }
-  @media (max-width: 360px) and (min-height: 501px) { html.keep .mini-pop { padding: 0 2px; } }
-  /* The smallest phones (?keep): 40 px each, the three still clear of the watch */
-  @media (max-width: 350px) {
-    html.keep #time .speed, html.keep .hud-btn.more { min-width: 40px; padding: 0 2px; }
-    html.keep #time { padding: 0 2px; }
-    html.keep #time .speeds { gap: 2px; }
-  }
-  /* A tablet (a touch screen with the desktop's row of buttons): a fingertip's size there too, and each kind's count as
-     tall as the bar. Upright (761-900 px) the row would run into the watch, so the time waits behind one button as on a
-     phone, and the weather, the graphs and the sound go in •••. */
-  @media (pointer: coarse) and (min-width: 761px) and (min-height: 501px) {
-    .speed, .hud-btn { min-width: 44px; height: 44px; }
-    html.keep .mini-line { height: 44px; gap: 0; padding: 0 0 0 6px; }
-    html.keep .mini-pop { align-self: stretch; line-height: 44px; padding: 0 6px; }
-  }
-  @media (pointer: coarse) and (min-width: 761px) and (max-width: 900px) and (min-height: 501px) {
-    #time .speed[data-speed]:not([data-speed="0"]), #time .hud-btn:not(.more), #time .hud-sep { display: none; }
-    #time .speed.cycle { display: block; }
-    #more-menu .phone-only { display: revert; }
-  }
-  /* Upright phones: Who ate whom is a sheet from the bottom like the journal, its handle dragged down or the dimmed
-     meadow above it tapped to shut it, ✕ at its foot in the middle; the graphs page has its ✕ at the foot too. */
-  @media (max-width: 760px) and (min-height: 501px) {
-    #web-scrim:not(.hidden) { display: block; }
-    #web { left: 0; right: 0; top: auto; bottom: 0; transform: none; width: auto; max-height: calc(100% - env(safe-area-inset-top, 0px) - 44px);
-      display: flex; flex-direction: column; overflow: hidden; padding: 0 12px; border-radius: 22px 22px 0 0;
-      box-shadow: 0 -8px 40px rgba(50, 40, 15, 0.35), inset 0 0 0 1px rgba(150, 115, 60, 0.22); }
-    #web:not(.hidden) > * { animation: none; }
-    #web .grab { display: block; flex: none; height: 24px; position: relative; touch-action: none; }
-    #web .grab::before { content: ''; position: absolute; left: 50%; top: 10px; width: 44px; height: 5px; margin-left: -22px; border-radius: 99px; background: #d4c4a6; }
-    #web .web-head { touch-action: none; }
-    #web .web-head .close { display: none; }
-    #web .web-when { flex: none; }
-    #web .web-body { flex: 1 1 auto; min-height: 0; overflow: hidden auto; overscroll-behavior: contain; }
-    #web .sheet-foot { display: flex; flex: none; justify-content: center; margin: 0 -12px; padding: 10px 16px calc(14px + var(--home-bar, env(safe-area-inset-bottom, 0px)));
-      border-top: 1px dashed var(--line); }
-    .stats-head .close { display: none; }
-    .stats-wrap { padding-bottom: 0; }
-    #stats .stats-foot { display: flex; justify-content: center; position: sticky; bottom: 0; z-index: 1; margin: 6px -24px 0; padding: 22px 0 calc(16px + var(--home-bar, env(safe-area-inset-bottom, 0px)));
-      background: linear-gradient(rgba(243, 234, 216, 0), #f3ead8 45%); pointer-events: none; }
-    #stats .stats-foot .close { pointer-events: auto; }
-  }
-  @media (max-width: 360px) and (min-height: 501px) { #stats .stats-foot { margin: 6px -16px 0; } }
-  /* On its side the ✕ stays top right, now a thumb's size: the food web's choice of when moves over for it */
-  @media (max-height: 500px) and (pointer: coarse) { .web-when { top: 8px; right: 64px; } }
-  @media (max-width: 360px) { .web-when button { padding: 5px 6px; } }   /* (its three choices in one row on the smallest phones) */
   @media (prefers-reduced-motion: reduce) { .close { transition: none; } }
-  /* ?keep on its side: the panel down the right has no drag handle (a swipe to the right folds it, game.js) */
-  @media (max-height: 500px) { html.keep #inspector .sheet-handle { display: none; } html.keep #inspector:not(.strip) { touch-action: pan-y; } }
 </style>
 </head>
 <body>
-<canvas id="world" class="tool-look"></canvas>
-<!-- ?keep: the brass frame's top bar, under the species, the watch and the time (its bottom bar is the toolbar) -->
-<div id="keep-top" aria-hidden="true"></div>
-
-<section id="meadow" class="card">
-  <button class="mini-line" data-act="mini" title="Show the whole card (C)">
-    <span id="mini-sky"><span id="mini-season">🌸</span>☀️</span><span class="mini-pop">🐇 <b id="mini-rabbit">0</b></span><span class="mini-pop">🦊 <b id="mini-fox">0</b></span><span class="mini-pop">🐝 <b id="mini-bee">0</b></span><span class="mini-pop">🐦‍⬛ <b id="mini-crow">0</b></span><span class="mini-pop">🦉 <b id="mini-owl">0</b></span><span class="mini-pop">🦦 <b id="mini-otter">0</b></span>
-    <span class="win-btn grow" aria-hidden="true"></span>
-  </button>
-  <div class="full">
-    <header class="head">
-      <div class="brand fr"><svg viewBox="8 0 104 120" aria-hidden="true"><rect x="50" y="10" width="20" height="16" rx="4" fill="#C08A38"/><circle cx="60" cy="70" r="48" fill="#D9A441"/><clipPath id="mark-mini"><circle cx="60" cy="70" r="37"/></clipPath><g clip-path="url(#mark-mini)"><rect x="20" y="30" width="80" height="80" fill="#F1DDB0"/><ellipse transform="rotate(-13 52 80)" cx="52" cy="80" rx="6.5" ry="14" fill="#FFFFFF"/><ellipse transform="rotate(10 66 79)" cx="66" cy="79" rx="6.5" ry="14.5" fill="#FFFFFF"/><path d="M20 98 C 40 86, 76 86, 100 96 L100 112 L20 112Z" fill="#5F9346"/></g></svg>Nobody's Meadow</div>
-      <button class="win-btn shrink" data-act="mini" title="Make this card small (C)" aria-label="Make this card small"></button>
-    </header>
-    <div class="clock"><span id="season-emoji">🌸</span><b id="season-name">Spring</b><span id="clock-rest">day 1 · year 1</span></div>
-    <div id="sky">☀️ <b>Clear skies</b></div>
-
-    <h3 class="sec">Population <span>last 2 years</span></h3>
-    <div class="pop" data-act="stats" title="Rabbits alive right now, and the last two years. Click for all the statistics (S)">
-      <span class="emoji">🐇</span><span class="n" id="n-rabbit">0</span><canvas id="spark-rabbit"></canvas>
-    </div>
-    <div class="pop" data-act="stats" title="Foxes alive right now, and the last two years. Click for all the statistics (S)">
-      <span class="emoji">🦊</span><span class="n" id="n-fox">0</span><canvas id="spark-fox"></canvas>
-    </div>
-    <div class="pop" data-act="stats" title="Bees alive right now, and the last two years. Click for all the statistics (S)">
-      <span class="emoji">🐝</span><span class="n" id="n-bee">0</span><canvas id="spark-bee"></canvas>
-    </div>
-    <div class="pop" data-act="stats" title="Crows alive right now, and the last two years. Click for all the statistics (S)">
-      <span class="emoji">🐦‍⬛</span><span class="n" id="n-crow">0</span><canvas id="spark-crow"></canvas>
-    </div>
-    <div class="pop" data-act="stats" title="Owls alive right now, and the last two years. Click for all the statistics (S)">
-      <span class="emoji">🦉</span><span class="n" id="n-owl">0</span><canvas id="spark-owl"></canvas>
-    </div>
-    <div class="pop" data-act="stats" title="Otters alive right now, and the last two years. Click for all the statistics (S)">
-      <span class="emoji">🦦</span><span class="n" id="n-otter">0</span><canvas id="spark-otter"></canvas>
-    </div>
-
-    <h3 class="sec evo-h">Evolution <span>since the start</span></h3>
-    <div class="evo">
-      <div class="row" id="evo-rabbit"></div>
-      <div class="row" id="evo-fox"></div>
-    </div>
-
-    <div id="news-log" class="hidden"><h3 class="sec">Meadow news</h3><ol></ol></div>
-
-    <footer class="card-actions">
-      <button class="act news-toggle" data-act="news" title="All the meadow news so far (N)">📰 Meadow news</button>
-    </footer>
-  </div>
-</section>
+<canvas id="world"></canvas>
 <!-- top middle: the meadow's pocket watch, the day going round it and the year round that (game.js updateDial) -->
 <div id="watch" role="img">
   <div id="dial"><span class="year"></span><span class="mark"></span><span class="face"></span><span class="hand"></span></div>
   <div class="plaque fr" id="watch-day"></div>
 </div>
-<!-- ?keep: under the watch, the Dry Year's ribbon, a pip a season (game.js forecastTick) -->
-<div id="forecast" class="hidden" data-act="forecast"><div class="pips"></div><div class="pip-line"></div></div>
 
+<!-- a word now and then, gone in a few seconds (game.js toast) -->
 <div id="news"></div>
-<!-- ?keep: TASKS, top left (game.js tasksTick) -->
-<aside id="tasks" class="hidden" aria-live="polite"></aside>
-<!-- after the intro: three steps, then things to try (game.js, the guide) -->
-<aside id="guide" class="card hidden" aria-live="polite"></aside>
-<div id="place-label" class="hidden"></div>
-<!-- ?keep: what a keeper's tool brings, over its button (game.js, showTip) -->
-<div id="tool-tip" class="hidden" role="tooltip"></div>
-<!-- ?keep: the alerts over the bar, a kind in danger or the meadow going barren (game.js, alertsTick) -->
-<div id="alerts" class="hidden" aria-live="polite"></div>
 
-<nav id="toolbar" class="card">
-  <div class="tools">
-  <button class="tool on" data-tool="look" title="Look around. Click an animal to follow it (L)"><span class="e">🔍</span><span class="l">Look</span></button>
-  <button class="tool" data-tool="rabbit" title="Click the meadow to release a rabbit"><span class="e">🐇</span><span class="l">Rabbit</span></button>
-  <button class="tool" data-tool="fox" title="Click the meadow to release a fox"><span class="e">🦊</span><span class="l">Fox</span></button>
-  <button class="tool" data-tool="bee" title="Click the meadow to release a bee. It moves into the nearest hive"><span class="e">🐝</span><span class="l">Bee</span></button>
-  <button class="tool" data-tool="crow" title="Click the meadow to release a crow"><span class="e">🐦‍⬛</span><span class="l">Crow</span></button>
-  <button class="tool" data-tool="owl" title="Click the meadow to release an owl. A female looks for a free hollow oak to nest in"><span class="e">🦉</span><span class="l">Owl</span></button>
-  <button class="tool" data-tool="grass" title="Click and drag to grow lush grass"><span class="e">🌱</span><span class="l">Grass</span></button>
-  <button class="tool" data-tool="plant" title="Click the meadow to plant a tree, and pick its kind (T)"><span class="e">🌳</span><span class="l">Plant</span></button>
-  <button class="tool" data-tool="zap" title="Click the meadow to strike lightning. On dry ground it starts a fire (Z)"><span class="e">⚡</span><span class="l">Zap</span></button>
-  <button class="tool" data-tool="fire" title="Click and drag to draw a wall of fire. It burns half a day, and on dry grass it spreads (B)"><span class="e">🔥</span><span class="l">Fire</span></button>
-  <button class="tool hidden" data-tool="pond" title="Drag on the meadow to paint a pond, like a brush: the lower the ground, the longer it holds water (D)"><span class="e">⛏️</span><span class="l">Pond</span></button>
-  <button class="tool hidden" data-tool="sow" title="Drag on the meadow to sow a strip of meadow flowers: sown in spring or summer it blooms within days, and the bees come (G)"><span class="e">🌼</span><span class="l">Sow</span></button>
-  <button class="tool hidden" data-tool="hedge" title="Drag on the meadow to plant a row of hawthorn whips: within a season or two it hides a rabbit from a fox, and the spring after it blossoms (H)"><span class="e">🌿</span><span class="l">Hedge</span></button>
-  </div>
-  <!-- ?keep: GREEN, the share of the meadow still green (game.js updateGreen); not a tool -->
-  <button id="green" type="button" aria-describedby="tool-tip"><span class="g-l">🌱 <b>Green</b></span><span class="g-v"></span><span class="g-bar"><i></i><em></em></span><span class="g-ref"></span></button>
-  <!-- ?keep: the field journal's book, its pages found (game.js drawBook); not a tool -->
-  <button id="jbook" type="button" title="Field journal (J)"></button>
-  <!-- phones: the tools fold into one round button in the corner, showing the one in your hand -->
-  <button class="hand" data-act="tools" title="Tools" aria-expanded="false">🔍</button>
-</nav>
-
-<!-- top right: time, then the meadow's controls; menus drop down, the inspector hangs underneath -->
+<!-- top right: pause, sound and the ••• menu; the inspector hangs underneath -->
 <div id="hud-right">
   <div class="hud-top">
   <div id="time" class="card">
-    <div class="speeds">
-      <button class="speed" data-speed="0" title="Pause (space)">⏸</button>
-      <button class="speed on" data-speed="1" title="Normal speed (1)">1×</button>
-      <button class="speed" data-speed="4" title="Fast (2)">4×</button>
-      <button class="speed" data-speed="15" title="Very fast (3)">15×</button>
-      <button class="speed" data-speed="60" title="Watch years go by (4)">60×</button>
-      <button class="speed cycle on" data-act="cycle" title="Faster: 1×, 4×, 15×, 60×">1×</button>
-    </div>
-    <span class="hud-sep"></span>
-    <button class="hud-btn" data-act="sky" title="Change the weather (W)"><span id="sky-btn">☀️</span></button>
-    <button class="hud-btn" data-act="stats" title="Graphs and records for this meadow (S)">📊</button>
-    <button class="hud-btn" id="sound-btn" data-act="sound" title="Sound on or off (M)">🔇</button>
+    <button class="hud-btn" data-act="pause" title="Pause (space)">⏸</button>
+    <button class="hud-btn wide-only" id="sound-btn" data-act="sound" title="Sound on or off (M)">🔇</button>
     <button class="hud-btn more" data-act="more" title="More">•••</button>
   </div>
-  <div id="sky-menu" class="card drop hidden"></div>
   <div id="more-menu" class="card drop hidden">
-    <!-- ?keep on a phone on its side: the species card (no ˅ in the bar there), and full screen where a page may ask for it -->
-    <button class="menu-item rail-only" data-act="mini"><span class="e">🐾</span> <span class="l">Species</span></button>
-    <button class="menu-item rail-only hidden" data-act="fullscreen" id="full-item"><span class="e">🖼️</span> <span class="l">Full screen</span></button>
-    <button class="menu-item phone-only" data-act="sky"><span class="e">🌦️</span> <span class="l">Weather</span></button>
-    <button class="menu-item phone-only" data-act="stats"><span class="e">📊</span> <span class="l">Graphs<span class="x"> and records</span></span></button>
-    <button class="menu-item" data-act="web" title="This meadow's food web: who ate whom, and how much"><span class="e">🕸️</span> <span class="l">Who ate whom</span></button>
     <button class="menu-item phone-only" data-act="sound" id="sound-item"><span class="e">🔇</span> <span class="l">Sound is off</span></button>
-    <button class="menu-item hidden" data-act="home" id="home-item"><span class="e">📱</span> <span class="l">Add to<span class="x"> your</span> home screen</span></button>
-    <button class="menu-item" data-act="guide" title="A few things to do in the meadow, gentle and not"><span class="e">📓</span> <span class="l">Things to try</span></button>
-    <button class="menu-item" data-act="watch" title="Let the meadow film itself, like when you leave it be (V)"><span class="e">🎥</span> <span class="l">Sit back and watch</span></button>
     <button class="menu-item" data-act="copy-link"><span class="e">🔗</span> <span class="l">Copy a link<span class="x"> to this meadow</span></span></button>
     <button class="menu-item" data-act="ideas" title="Tell me what you'd love to see in the meadow"><span class="e">💌</span> <span class="l">Send an idea</span></button>
-    <button class="menu-item" data-act="lab" title="Shape the ground, water and woods of this meadow"><span class="e">🗺️</span> <span class="l">Terrain lab</span></button>
     <button class="menu-item danger" data-action="new">🔄 Start a new meadow…</button>
   </div>
   </div>
   <aside id="inspector" class="card"></aside>
 </div>
-
-<!-- right-click the meadow: tools that act right where you clicked -->
-<div id="ring" class="hidden"></div>
-<!-- a finger held on the meadow: a ring grows under it till the ring of tools opens (game.js holdShow) -->
-<div id="hold" aria-hidden="true"></div>
-
-<section id="stats" class="hidden">
-  <div class="stats-wrap">
-    <header class="stats-head">
-      <h1>📊 Meadow statistics</h1>
-      <span id="stats-clock"></span>
-      <button class="web-btn" data-act="web" title="This meadow's food web: who ate whom, and how much">🕸️ Who ate whom</button>
-      <button class="close" data-act="stats" title="Back to the meadow (Esc)" aria-label="Back to the meadow">✕</button>
-    </header>
-    <div class="stats-filters">
-      <div class="seg stats-kinds">
-        <button data-show="rabbit">🐇 Rabbits</button><button data-show="fox">🦊 Foxes</button><button data-show="bee">🐝 Bees</button><button data-show="crow">🐦‍⬛ Crows</button><button data-show="owl">🦉 Owls</button><button data-show="otter">🦦 Otters</button><button data-show="voles">🐁 Voles</button><button data-show="frogs">🐸 Frogs</button><button data-show="fish">🐟 Fish</button><button data-show="grass">🌱 Grass</button><button data-show="all">All</button>
-      </div>
-      <div class="seg stats-range">
-        <button data-range="year">Last year</button><button data-range="five">5 years</button><button data-range="all">Everything</button>
-      </div>
-    </div>
-    <div class="stats-card">
-      <div class="chart-title"><span id="stats-title"></span><small id="stats-range-note"></small></div>
-      <div class="chart-box"><canvas id="stats-chart"></canvas><div id="stats-tip" class="hidden"></div></div>
-      <div class="legend">
-        <span><i class="sw" style="background:#f6dde5"></i>Spring</span><span><i class="sw" style="background:#f7ecb8"></i>Summer</span>
-        <span><i class="sw" style="background:#f4d6b6"></i>Autumn</span><span><i class="sw" style="background:#dfe8f0"></i>Winter</span>
-        <span>│ a new year</span><span>🧳 newcomers arrived</span><span>😢 died out</span><span>🤒 a sickness broke out</span><span>🔥 wildfire</span><span>🌦️ you changed the weather</span>
-      </div>
-    </div>
-    <div class="stats-grid" id="stats-cards">
-      <div class="stats-card"><h3>Records</h3><div id="stats-records"></div></div>
-      <div class="stats-card"><h3>Average by season</h3><div id="stats-seasons"></div></div>
-      <div class="stats-card"><h3>How they died <span style="text-transform:none;letter-spacing:0">(since the start)</span></h3><div id="stats-deaths"></div></div>
-      <div class="stats-card wide"><h3>Evolution</h3><div id="stats-evo"></div></div>
-    </div>
-    <!-- an upright phone: ✕ at the foot, in the middle, where a thumb reaches it -->
-    <footer class="sheet-foot stats-foot"><button class="close big" data-act="stats" aria-label="Back to the meadow">✕</button></footer>
-  </div>
-</section>
-
-<div id="welcome" class="hidden">
-  <div class="card">
-    <div class="banner">
-      <div class="watch">
-        <svg viewBox="8 -14 104 134" aria-hidden="true"><path d="M60 -14 C 63 -8, 57 -3, 60 3" fill="none" stroke="#C08A38" stroke-width="3.4" stroke-dasharray="5.5 2.8" stroke-linecap="round"/><circle cx="61.5" cy="72" r="46" fill="#C9A86A" opacity="0.35"/><circle cx="60" cy="10.5" r="6.5" fill="none" stroke="#C08A38" stroke-width="4"/><rect x="52" y="15" width="16" height="10" rx="3.5" fill="#C08A38"/><circle cx="60" cy="70" r="46" fill="#D9A441"/><circle cx="60" cy="70" r="42" fill="#F7EEDC"/><g fill="none" stroke-width="5.5" stroke-linecap="round"><path d="M63.27,32.64 A37.5 37.5 0 0 1 97.36,66.73" stroke="#E9A7A2"/><path d="M97.36,73.27 A37.5 37.5 0 0 1 63.27,107.36" stroke="#EDC34F" opacity="0.28"/><path d="M56.73,107.36 A37.5 37.5 0 0 1 22.64,73.27" stroke="#D5873A" opacity="0.28"/><path d="M22.64,66.73 A37.5 37.5 0 0 1 56.73,32.64" stroke="#A9C4CE" opacity="0.28"/></g></svg>
-        <img src="assets/meadow.jpg" alt="" loading="lazy" decoding="async" width="600" height="600">
-        <svg viewBox="8 -14 104 134" aria-hidden="true"><circle cx="60" cy="70" r="33" fill="none" stroke="#F7EEDC" stroke-width="1.4"/><path d="M38 50 C 42 43, 48 39.5, 55 38" fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/></svg>
-      </div>
-      <svg class="hills" viewBox="0 142 520 90" preserveAspectRatio="xMidYMax slice" aria-hidden="true"><path d="M-10 176 C 110 150, 260 146, 360 160 C 440 170, 490 160, 530 152 L530 240 L-10 240Z" fill="#B7D493"/><path d="M-10 200 C 130 172, 300 176, 400 190 C 460 198, 500 194, 530 188 L530 240 L-10 240Z" fill="#9CC47A"/><g transform="translate(214 200) scale(.72)"><ellipse transform="rotate(-13)" rx="11.5" ry="33" fill="#F6EFE3"/><ellipse transform="rotate(-13) translate(0 5)" rx="5" ry="22" fill="#E9A7A2"/><ellipse transform="rotate(10 25 -3)" cx="25" cy="-3" rx="11.5" ry="35" fill="#F6EFE3"/><ellipse transform="rotate(10 25 -3)" cx="25" cy="2" rx="5" ry="23" fill="#E9A7A2"/></g><path d="M-10 226 C 60 212, 140 204, 226 206 C 320 208, 420 222, 530 216 L530 240 L-10 240Z" fill="#5F9346"/><g fill="#E9A7A2"><circle cx="40" cy="226" r="3"/><circle cx="300" cy="224" r="3"/></g><g fill="#FBF0D2"><circle cx="52" cy="229" r="2.6"/><circle cx="480" cy="224" r="2.6"/></g></svg>
-      <h1 class="fr"><span class="to">Welcome to</span><span class="n1">Nobody's</span><span class="n2">Meadow</span></h1>
-    </div>
-    <div class="body">
-      <p>A small meadow where rabbits, foxes and bees live their own lives. Nobody tells them what to do.</p>
-      <div class="go-row">
-        <button class="btn go" id="go">Visit the meadow</button>
-        <button class="btn card-sound" id="card-sound" data-act="sound" aria-pressed="false" aria-label="Sound" title="Sound on or off (M)">🔇</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- the steps for Safari, which has no install button of its own (game.js, homeGuide) -->
-<div id="home-guide" class="hidden" role="dialog" aria-modal="true" aria-labelledby="home-title">
-  <div class="card">
-    <h2 class="fr" id="home-title">Keep the meadow on your home screen</h2>
-    <p>It opens full screen from its own icon, with no browser bars in the way.</p>
-    <ol class="ios">
-      <li><span>Tap <b>Share</b> <svg class="glyph" viewBox="0 0 24 24" aria-label="the Share button"><path d="M8.5 9.5H7a2 2 0 0 0-2 2V19a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7.5a2 2 0 0 0-2-2h-1.5M12 3v11.5M8.5 6.5 12 3l3.5 3.5"/></svg>.
-        In Safari on iOS 26 it's in the <b>•••</b> menu by the address bar.</span></li>
-      <li><span>Scroll down and pick <b>Add to Home Screen</b> <svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M12 8.5v7M8.5 12h7"/></svg>.
-        If it isn't there, tap <b>More</b> or <b>Edit Actions</b> first.</span></li>
-      <li><span>Leave <b>Open as Web App</b> on if it asks, and tap <b>Add</b>.</span></li>
-    </ol>
-    <ol class="other">
-      <li><span>Open your browser's menu, <b>⋮</b> or <b>☰</b>.</span></li>
-      <li><span>Pick <b>Add to Home screen</b> or <b>Install app</b>.</span></li>
-      <li><span>Tap <b>Add</b> or <b>Install</b>.</span></li>
-    </ol>
-    <div class="btns">
-      <button class="btn go prompt-only" data-act="home-install">Install</button>
-      <button class="btn later prompt-only" data-act="home-done">Maybe later</button>
-      <button class="btn go no-prompt" data-act="home-done">Got it</button>
-    </div>
-  </div>
-</div>
-
-<!-- ?keep: the Dry Year lost, or come through (game.js, showLost) -->
-<div id="lost" class="hidden" role="dialog" aria-modal="true" aria-labelledby="lost-title">
-  <div class="card">
-    <h2 class="fr" id="lost-title"></h2>
-    <p id="lost-text"></p>
-    <ul id="lost-list" hidden></ul>
-    <div class="btns">
-      <button class="btn go again" data-act="lost-again">Start again</button>
-      <button class="btn later" data-act="lost-watch">Keep watching</button>
-      <button class="btn go carry" data-act="lost-watch">Carry on</button>
-    </div>
-  </div>
-</div>
-
-<!-- once, after two minutes of play (game.js, askIdeas) -->
-<!-- the food web as it ran (game.js, updateWeb) -->
-<div id="web-scrim" class="scrim hidden"></div>
-<div id="web" class="hidden" role="dialog" aria-labelledby="web-title">
-  <div class="grab" aria-hidden="true"></div>
-  <header class="web-head">
-    <h2 class="fr" id="web-title">Who ate whom</h2>
-    <button class="close" data-act="web" title="Back to the meadow (Esc)" aria-label="Back to the meadow">✕</button>
-  </header>
-  <div class="seg web-when"><button data-web="season">This season</button><button data-web="year">Last year</button><button data-web="all">Since the start</button></div>
-  <div class="web-body">
-    <svg id="web-svg" role="img" aria-label="The meadow's food web: arrows from the eaten to the eater, as thick as how many"></svg>
-    <p id="web-say" aria-live="polite"></p>
-  </div>
-  <footer class="sheet-foot"><button class="close big" data-act="web" aria-label="Back to the meadow">✕</button></footer>
-</div>
-
-<!-- ?keep: the field journal (game.js, the field journal) -->
-<div id="jscrim" class="hidden"></div>
-<div id="journal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="j-title" tabindex="-1"></div>
 
 <div id="ask" class="hidden" role="dialog" aria-labelledby="ask-title">
   <h2 class="fr" id="ask-title">Enjoying the meadow? 🙂</h2>
@@ -1508,22 +325,6 @@
     <button class="btn go" id="ask-send" data-act="ask-send">Send</button>
   </div>
   <p class="ask-thanks">Thank you! 🌼 It's on its way.</p>
-</div>
-
-
-<div id="away" class="hidden" role="dialog" aria-labelledby="away-title" aria-live="polite">
-  <h2 class="fr" id="away-title">While you were away…</h2>
-  <p id="away-text"></p>
-  <p class="life" id="away-life"></p>
-  <ul id="away-news"></ul>
-  <button class="btn go" data-act="away-ok">Back to the meadow</button>
-</div>
-
-<div id="daybreak" aria-hidden="true"></div>
-<div id="intro" aria-live="polite">
-  <div class="dip"></div>
-  <div class="bar top"><button class="skip" id="intro-skip">Skip ›</button><p class="rv" id="reveal-top"></p></div>
-  <div class="bar bottom"><p class="line fr" id="intro-line"></p><p class="rv"><b class="fr" id="reveal-name"></b><span id="reveal-why"></span></p></div>
 </div>
 
 <script src="sim.js"></script>
