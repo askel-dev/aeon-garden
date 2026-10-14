@@ -38,6 +38,16 @@ animals (a frame item's `s`, like the mushrooms). They fade in as they come up a
 grows with `g.size`. Their panel (`THINGS.green`, after the trees and rocks, since the garlic lies under them) has the painting
 for a portrait (`greenFace`), when to pick them, why they grow there and what the cook would make of them.
 
+Brambles (sim.js `w.brambles`) are painted once a look and size too (`paintBramble`, `BRAMBLE_ARTS`: eight stages and two
+looks): a low mound of leaves of three or five toothed leaflets (`brambleLeaf`) over the shade inside it, with purple canes
+arching out of it to the ground at its sides and a couple over the top; in winter only the tangle of canes and a few dark
+leaves. Pale flowers early in summer, then berries (`brambleBerry`): green and red, ripe and black in three paintings by what's
+left on it (`brambleArt`: more than 0.6 of its crop, more than a quarter, fewer), and shrivelled among red leaves as it goes over.
+Drawn with the trees and animals (a frame item's `s`), bigger each spring (`b.size`). A crow eating from one is in `CROW_PECKS`.
+Its panel (`THINGS.bramble`, before the trees) has the painting for a portrait (`brambleFace`), the stage, a berries meter while
+they're ripe, how it came there (a crow's pips, a cane rooted, the wood's edge), what the cook would make of them and the crows
+eating off it.
+
 Foxes and rabbits are painted (fur.js: `paintFox`, `paintRabbit`): one rig posed for
 what each is doing (`FOX_POSES`, `RABBIT_POSES`, picked by `foxArt`, `rabbitArt`), painted as one animal by `paintFur`
 (one shading over it all, each part's form and the markings soft, a part in front casting a soft shadow, a softened

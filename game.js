@@ -1218,7 +1218,7 @@ function lightFrame(dt) {
 const shownDark = phase => LIGHT_MID + (darkness(phase) - LIGHT_MID) * lightSwing;
 const shownGold = phase => Math.round(goldenHour(phase) * lightSwing * GOLD_STEPS) / GOLD_STEPS;
 
-// The things a frame draws (a tree or a rock d, a swarm h, a creature c, a visitor v, mushrooms or nettles s), each a record of the
+// The things a frame draws (a tree or a rock d, a swarm h, a creature c, a visitor v, mushrooms, nettles or a bramble s), each a record of the
 // one shape, kept from frame to frame: a few hundred new objects a frame, of five shapes, were felt in every loop over them.
 const frameItems = [], itemPool = [];
 function itemOf(items, y, sx, sy, f) {
@@ -1311,6 +1311,10 @@ function render(now) {
     const sx = (g.x - cam.x) * z + vw / 2, sy = (g.y - cam.y) * z + vh / 2;
     if (visible(sx, sy, 2 * z + 20)) itemOf(items, g.y, sx, sy, 1 - mistAt(g.x, g.y)).s = g;
   }
+  for (const b of world.brambles) {
+    const sx = (b.x - cam.x) * z + vw / 2, sy = (b.y - cam.y) * z + vh / 2;
+    if (visible(sx, sy, 3 * z + 20)) itemOf(items, b.y, sx, sy, 1 - mistAt(b.x, b.y)).s = b;
+  }
   const shown = [];
   for (const c of world.creatures) {
     if (c.hidden || !c.alive) continue;
@@ -1344,7 +1348,7 @@ function render(now) {
     fadeTo(it.f);
     if (it.d) it.d.hive ? drawBeeTree(it.d, it.sx, it.sy, now, ck) : drawDecor(it.d, it.sx, it.sy, now, ck, null, it.px);
     else if (it.h) drawSwarm(it.h, it.sx, it.sy);
-    else if (it.s) it.s.green ? drawNettles(it.s, z) : drawShroom(it.s, z);
+    else if (it.s) it.s.green ? drawNettles(it.s, z) : it.s.bramble ? drawBramble(it.s, z) : drawShroom(it.s, z);
     else if (it.v) drawVisitor(it.v, it.sx, it.sy, now, z);
     else drawCreature(it.c, it.sx, it.sy, now);
   }
@@ -1502,7 +1506,7 @@ const seatShift = c => { const st = crowSeat(c); return st ? (st.dx - (st.x - st
 const CROW_AIR = new Set(['flap', 'flock', 'love', 'follow', 'drive']);                               // flying
 const CROW_LANDS = new Set(['remains', 'forage', 'fetch', 'cache', 'apple', 'unbury', 'pool', 'gather']); // flying there, and down
 const CROW_WEAVES = new Set(['flap', 'flock', 'remains', 'forage', 'fetch', 'cache', 'apple', 'pool', 'gather', 'roost']);   // on the wing, going somewhere
-const CROW_PECKS = new Set(['peck', 'carrion', 'munch', 'bury', 'unbury', 'tadpole']);       // heads down
+const CROW_PECKS = new Set(['peck', 'carrion', 'munch', 'bury', 'unbury', 'tadpole', 'berries']);       // heads down
 const birdLifts = new WeakMap();
 const near = (c, p, far) => clamp(Math.hypot(p.x - c.x, p.y - c.y) / far, 0, 1);
 function crowHeight(c, px) {
@@ -3196,6 +3200,105 @@ function drawNettles(g, z) {
   drawEmoji(greenArt(g, stage), (g.x - cam.x) * z + vw / 2, (g.y - cam.y) * z + vh / 2 - px * 0.31, px, { alpha: f < 1 ? f : undefined, flip: g.born % 2 === 1 });
 }
 
+// ------------------------------------------------------------------ brambles
+//
+// Brambles (sim.js w.brambles) are painted once a look and size ('bramble:' + (stage * 2 + look), BRAMBLE_ARTS): a mound
+// of arching purple canes with leaves of three or five toothed leaflets. Bare canes and a few dark leaves in winter,
+// fresh green in spring, pale pink-white flowers early in summer, berries green and red, then ripe and black (three
+// paintings, by how many the crows have left, bramblePicked), and red leaves with a few shrivelled berries as they go
+// over. Drawn with the trees and animals, back to front (a frame item's s); a patch is bigger each spring (b.size).
+const BRAMBLE_ARTS = Array.from({ length: 16 }, (_, i) => 'bramble:' + i);
+const BRAMBLE_PX = 2.4;                    // a grown patch's painting, next to a rabbit
+const CANE_RGB = [118, 48, 64];
+const BRAMBLE_LEAF = [[58, 82, 50], [92, 150, 58], [70, 128, 52], [70, 124, 50], [62, 112, 46], [62, 112, 46], [66, 108, 46], [150, 60, 58]];
+const BRAMBLE_BERRIES = [0, 0, 0, 14, 22, 11, 4, 4];   // berries painted at each stage
+// Its painting now: sim.js brambleStage, the ripe stage split by what's left on it. Ripe before its crop is in (the
+// hour sim.js sets it) still shows ripening.
+function brambleArt(b) {
+  let st = S.brambleStage(world, b);
+  if (st === 4) {
+    const year = Math.floor(world.tick / S.TPD / S.YEAR_DAYS) + 1, left = b.crop > 0 ? b.berries / b.crop : 0;
+    st = b.year !== year ? 3 : left > 0.6 ? 4 : left > 0.25 ? 5 : 6;
+  } else if (st === 5) st = 7;
+  return st;
+}
+function paintBramble(g, size, U, n) {
+  g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
+  g.lineCap = g.lineJoin = 'round';
+  const st = n >> 1, look = n & 1, h = k => hash2(look, k, 53), leaf = BRAMBLE_LEAF[st], foot = 0.62, bare = st === 0;
+  const top = x => foot - 0.78 * Math.sqrt(Math.max(0, 1 - (x / 0.95) ** 2)) * (1 + 0.12 * Math.sin(x * 3 + look * 2));   // the mound's top at x
+  softSpot(g, 0, foot, 1.2, 0.26, '28, 34, 14', 0.45);
+  // The canes, arching up out of the mound and down to the ground past its sides: from, the arch's pull, the tip.
+  const canes = [];
+  for (let i = 0; i < 8; i++) {
+    const side = i % 2 ? 1 : -1, x0 = side * (0.15 + 0.5 * h(i)), reach = 0.35 + 0.35 * h(10 + i);
+    canes.push({ x0, y0: top(x0) + 0.15, cx: x0 + side * reach * (0.6 + 0.4 * h(25 + i)), cy: top(x0) - 0.08 - 0.22 * h(20 + i), x1: clamp(x0 + side * reach * 1.7, -1.25, 1.25), y1: foot - 0.02 - 0.16 * h(30 + i), k: i });
+  }
+  const cane = c => strokeIn(g, rockRGB(tone(CANE_RGB, 0.75 + 0.3 * h(40 + c.k))), 0.024, () => { g.moveTo(c.x0, c.y0); g.quadraticCurveTo(c.cx, c.cy, c.x1, c.y1); });
+  if (bare) {                                           // winter: a tangle of canes, a few dark leaves hanging on
+    const dull = [100, 54, 62];
+    for (let i = 0; i < 12; i++) {
+      const side = i % 2 ? 1 : -1, x0 = (h(55 + i) - 0.5) * 0.7, x1 = clamp(x0 + side * (0.4 + 0.7 * h(45 + i)), -1.2, 1.2), cy = foot - 0.6 - 0.5 * h(65 + i);
+      strokeIn(g, rockRGB(tone(dull, 0.6 + 0.4 * h(50 + i))), 0.026, () => { g.moveTo(x0, foot); g.quadraticCurveTo(x0 + (x1 - x0) * (0.2 + 0.5 * h(85 + i)), cy, x1, foot - 0.03 - 0.12 * h(75 + i)); });
+    }
+    for (let i = 0; i < 14; i++) { const x = (h(90 + i) - 0.5) * 1.5, y = foot - 0.05 - 0.45 * h(95 + i) * (1 - Math.abs(x) / 1.2); brambleLeaf(g, x, y, (h(70 + i) - 0.5) * 2, 0.15, tone(i % 3 ? leaf : [92, 52, 64], 0.75 + 0.35 * h(80 + i)), 3); }
+    return;
+  }
+  for (const c of canes) cane(c);                       // (behind the leaves: only their arches and tips show)
+  softIn(g, tone(leaf, 0.55), foot - 0.85, foot, () => { g.moveTo(-0.8, foot - 0.02); for (let x = -0.9; x <= 0.901; x += 0.05) g.lineTo(x, Math.min(foot - 0.06, top(x) + 0.1)); g.lineTo(0.8, foot - 0.02); g.quadraticCurveTo(0, foot + 0.04, -0.8, foot - 0.02); }, 1.1, 0.7);   // the shade in the mound
+  const spots = [];                                     // leaves all over the mound, and flowers and berries among them
+  const leaves = st === 7 ? 56 : 72;
+  for (let i = 0; i < leaves; i++) { const x = (h(100 + i) * 2 - 1) * 0.95, y = foot - (foot - top(x) - 0.04) * h(200 + i) ** 0.8; spots.push({ x, y, k: i, leaf: true }); }
+  const flowers = st === 2 ? 16 : 0, berries = BRAMBLE_BERRIES[st];
+  for (let i = 0; i < flowers + berries; i++) { const x = (h(300 + i) * 2 - 1) * 0.82, y = foot - 0.12 - (foot - 0.12 - top(x) - 0.02) * (0.25 + 0.75 * h(400 + i)); spots.push({ x, y: y + 0.001, k: i, flower: i < flowers }); }
+  spots.sort((a, b) => a.y - b.y);
+  for (const p of spots) {
+    if (p.leaf) {
+      const lit = 1 - (p.y - top(p.x)) / Math.max(0.1, foot - top(p.x));   // (lit on top, shaded low down)
+      const rgb = st === 7 ? tone([[150, 60, 58], [122, 48, 70], [176, 118, 58], [96, 104, 50]][p.k % 4], 0.8 + 0.3 * lit) : tone(leaf, 0.72 + 0.42 * lit + 0.1 * h(500 + p.k));
+      brambleLeaf(g, p.x, p.y + 0.06, (h(600 + p.k) - 0.5) * 2.2, 0.15 + 0.05 * h(700 + p.k), rgb, p.k % 3 ? 3 : 5);
+    } else if (p.flower) {
+      for (let f = 0; f < 5; f++) { const a = f / 5 * TAU + h(800 + p.k), r = 0.05; fillIn(g, '#f8eaf0', () => discAt(g, p.x + Math.cos(a) * r, p.y + Math.sin(a) * r * 0.85, 0.038)); }
+      fillIn(g, '#e6cc6a', () => discAt(g, p.x, p.y, 0.024));
+    } else brambleBerry(g, p.x, p.y, st === 3 ? [0, 1, 1, 0, 2][p.k % 5] : st === 7 ? 4 : st === 4 && p.k % 6 === 5 ? 1 : st === 4 && p.k % 6 === 2 ? 2 : 3);
+  }
+  for (let i = 0; i < 2; i++) { const c = canes[(i * 3 + look) % canes.length]; g.save(); g.beginPath(); g.rect(-1.3, -1.3, 2.6, 1.3 + top(c.x0) + 0.02); g.clip(); cane(c); g.restore(); }   // (a few arching over the top)
+}
+// A leaf: n toothed leaflets fanned out from the stalk at x, y, turned a.
+function brambleLeaf(g, x, y, a, len, rgb, n) {
+  g.save(); g.translate(x, y); g.rotate(a);
+  for (let i = 0; i < n; i++) {
+    const t = n === 1 ? 0 : (i / (n - 1) - 0.5) * (n === 3 ? 1.5 : 2.2), l = len * (i === (n - 1) / 2 ? 1 : 0.8);
+    g.save(); g.rotate(t);
+    softIn(g, rgb, -l, 0, () => {
+      g.moveTo(0, 0);
+      for (let k = 1; k <= 6; k++) { const v = k / 6, wv = Math.sin(v * Math.PI) * l * 0.36 * (k % 2 ? 1 : 0.86); g.lineTo(wv, -v * l); }
+      for (let k = 5; k >= 0; k--) { const v = k / 6, wv = Math.sin(v * Math.PI) * l * 0.36 * (k % 2 ? 1 : 0.86); g.lineTo(-wv, -v * l); }
+    }, 1.15, 0.72);
+    g.restore();
+  }
+  g.restore();
+}
+// A berry: a cluster of drupelets. ripe: 0 green, 1 red, 2 going dark, 3 black, 4 shrivelled.
+const BERRY_RGB = [[150, 176, 84], [196, 44, 52], [104, 26, 50], [42, 20, 40], [70, 46, 48]];
+function brambleBerry(g, x, y, ripe) {
+  const rgb = BERRY_RGB[ripe], r = ripe === 4 ? 0.026 : 0.036;
+  fillIn(g, rockRGB(tone(rgb, 0.7)), () => ovalAt(g, x, y, r * 1.9, r * 2.2));
+  for (const [dx, dy] of [[-1, -1], [1, -1], [0, -0.3], [-1, 0.6], [1, 0.6], [0, 1.3]]) fillIn(g, rockRGB(rgb), () => discAt(g, x + dx * r * 0.9, y + dy * r, r * 0.8));
+  if (ripe !== 4) fillIn(g, 'rgba(255, 255, 255, 0.55)', () => discAt(g, x - r * 0.6, y - r * 0.9, r * 0.35));   // (a shine)
+}
+// Its size on screen, and its painting in the inspector.
+const bramblePx = (b, z) => Math.max(8, (8 + z) * BRAMBLE_PX * (0.6 + 0.2 * b.size));
+function brambleFace(b) {
+  const art = BRAMBLE_ARTS[brambleArt(b) * 2 + b.look];
+  if (!portraits.has(art)) portraits.set(art, dataURL(sprite(art, 38).canvas));
+  return `<img src="${portraits.get(art)}" alt="A bramble" style="width: 125%">`;
+}
+function drawBramble(b, z) {
+  const px = bramblePx(b, z);
+  drawEmoji(BRAMBLE_ARTS[brambleArt(b) * 2 + b.look], (b.x - cam.x) * z + vw / 2, (b.y - cam.y) * z + vh / 2 - px * 0.31, px, { flip: b.born % 2 === 1 });
+}
+
 // Where a clump is drawn (into shroomAt): its size, and its middle on screen, over a log's side or up a snag's trunk.
 const shroomAt = { px: 0, x: 0, y: 0 };
 function placeShroom(m, z) {
@@ -4571,7 +4674,7 @@ function putPainting(p, f, alpha, snow, ox, oy) {
 // A visitor fur.js paints (Fur.painters: the dragonflies, the kingfisher, the skylark), at the doublings of its size and
 // shrunk between (shrunk), as a fox is; in the meadow the worker paints it (furReady).
 const furPaint = kind => (g, size, U, n) => { if (!shrunk(g, size, U, kind + ':' + n)) Fur.painters[kind](g, size, U, n); };
-const PAINTERS = { fox: paintFox, rabbit: paintRabbit, hog: paintHedgehog, heron: paintHeron, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody, bee: paintBee, fall: paintFall, shroom: paintShroom, green: paintGreen,
+const PAINTERS = { fox: paintFox, rabbit: paintRabbit, hog: paintHedgehog, heron: paintHeron, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody, bee: paintBee, fall: paintFall, shroom: paintShroom, green: paintGreen, bramble: paintBramble,
   dfly: furPaint('dfly'), kfisher: furPaint('kfisher'), lark: furPaint('lark') };
 function drawDecor(d, sx, sy, now, ck, clipLeaves, px = d.tree ? treePx(d) : d.size * cam.zoom) {   // (px: render has it already)
   if (d.emoji === '🪨') { drawRock(d, sx, sy); return; }
@@ -6673,6 +6776,38 @@ const THINGS = {
       const facts = [why, SHROOM_COOK[m.kind], ['🧺', `${m.n} ${m.n === 1 ? 'cap' : 'caps'} to pick`],
         ['⏳', left < 1 ? `Gone in about ${hours(left * S.TPD)}` : `Good for about ${days(left)} more`]];
       return { emoji: shroomFace(m), tint, name, sub, status, facts, meters: [['Fresh', clamp(1 - age / life, 0, 1), left < SHROOM_OVER ? 'low' : '']] };
+    },
+  },
+
+  bramble: {                                               // (before the trees: it grows at the foot of one)
+    at(sx, sy) {
+      const z = cam.zoom;
+      let best = null, bd = Infinity;
+      for (const b of world.brambles) {
+        const px = bramblePx(b, z), x = (b.x - cam.x) * z + vw / 2, y = (b.y - cam.y) * z + vh / 2 - px * 0.18;
+        const d = ((sx - x) / Math.max(fingerTap ? 22 : 10, px * 0.5)) ** 2 + ((sy - y) / Math.max(fingerTap ? 22 : 8, px * 0.24)) ** 2;
+        if (d < 1 && d < bd) { best = b; bd = d; }
+      }
+      return best;
+    },
+    here: b => world.brambles.includes(b),
+    spot: b => ({ x: b.x, y: b.y - 0.15, r: bramblePx(b, cam.zoom) / cam.zoom * 0.45 }),
+    show(b) {
+      const name = 'Bramble', tint = '#5e3048', face = brambleFace(b);
+      const sub = b.by === 'crow' ? 'Sown by a crow' : b.by === 'tip' ? 'Rooted from the next one' : 'At the wood\'s edge';
+      if (!this.here(b)) return { emoji: face, tint, name, sub, status: '🌳 Gone: the wood closed over it, or the rabbits had it young' };
+      const art = brambleArt(b), left = b.crop > 0 ? b.berries / b.crop : 0;
+      const status = [
+        '❄️ Bare canes: nothing on it till summer', '🌿 In leaf', '🌸 In flower: blackberries late in the summer',
+        '🟢 Berries ripening, green and red', '🫐 Ripe blackberries: pick them', '🫐 Ripe blackberries, the crows have had some',
+        '🐦‍⬛ Nearly picked clean: the crows have had them', '🍂 Going over: they say the devil spits on them now'][art];
+      const crows = world.creatures.filter(c => c.alive && c.species === 'crow' && c.mode === 'berries' && c.target && c.target.b === b);
+      const why = b.by === 'crow' ? ['🐦‍⬛', 'A crow ate blackberries off another bramble and dropped the pips here'] : b.by === 'tip' ? ['🌿', 'A cane of the bramble next door arched over and rooted at its tip'] : ['🌳', 'Brambles like the sun at the wood\'s edge, and the thorn bushes'];
+      const years = Math.floor((world.tick - b.born) / S.YEAR_DAYS / S.TPD);
+      const facts = [why, ['🍳', 'Blackberry crumble with the windfall apples, jam, or a cordial for the winter'],
+        ['📅', b.size === 0 ? 'Young: it fruits from its second summer' : years < 1 ? 'Came up here last year' : `Has grown here for ${years === 1 ? 'a year' : `${years} years`}`]];
+      if (crows.length) facts.push(['🐦‍⬛', crows.length === 1 ? `${link(crows[0])} is eating the berries` : `${crows.length} crows are eating the berries`]);
+      return { emoji: face, tint, name, sub, status, facts, meters: art >= 4 && art <= 6 ? [['Berries', clamp(left, 0, 1), left < 0.25 ? 'low' : '']] : undefined };
     },
   },
 

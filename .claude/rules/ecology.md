@@ -200,7 +200,13 @@ away from one too close (`CROW_SPACE`), and fly down to remains they see, or now
 `remainsNear`, `GATHER_SIGHT`, `GATHER_NOTICE`), a few at a time: a crow claims a place there as it sets off (`k.seats`, `freeSeat`,
 `CARRION_SEATS`), and keeps off remains a fox is at (`FOX_NEAR`). A crow's bite fills it like its other food (`CROW_BITE`, times
 `EAT`) and takes `HUNGER` times less of the remains, so a rabbit feeds the crows about as many days as it did on the old clock.
-Only really hungry they take the rabbits' windfalls (`CROW_HUNGRY`). In autumn one that isn't hungry fetches a few acorns or beechnuts from an oak or a
+Only really hungry they take the rabbits' windfalls (`CROW_HUNGRY`). While the blackberries are ripe a hungry crow flies to
+the nearest bramble with berries on it, and one that isn't goes now and then for a feast all the same (`berries`,
+`BERRY_TREAT`, modes 'bramble' and 'berries'): it sits eating a while (`BERRY_TICKS`) from its own place along the front, taking
+`BERRY_BITE` a tick off the bramble whether it's full or not. It swallows the pips (`c.pips`) and drops them `PIP_GUT` later
+wherever it is (`dropPips`, `PIP_ODDS` of them any good, in `w.pips`), on its patch or under the roost, and in the first half of
+spring a bramble comes up there where it suits. So the brambles spread with the crows, a fifth to three quarters of the berries go to them (more
+while the brambles are few), and a few new patches come up each spring. In autumn one that isn't hungry fetches a few acorns or beechnuts from an oak or a
 beech (`d.nuts`, which `seedFall` leaves for them) and buries them one by one out in the open (`cacheNut`, `seedSpot`),
 each a seed in `w.seeds`. It remembers only its last few (`CACHE_MEMORY`) and digs those up if hungry in winter (`unbury`);
 the rest come up as oaks and beeches, so the woods spread with the crows.
@@ -251,6 +257,19 @@ kill sites, and die out a year after the ground stopped being rich (`g.fed`, `NE
 them (`inSight`, as the mushrooms), at most `GREENS_MOST` of each times `w.room`, with random numbers of their own
 (`w.greenRng`). A meadow has about 5 to 13 garlic carpets, and nettles build up to 10 to 25 patches over three years. Nothing eats
 them: they're for the cook.
+
+Brambles (`bramblesTick`, once an hour for the berries and once a day for the rest): thorny mounds that live for years and
+show all year (`w.brambles`, one layout, `brambleOf`). What a patch shows comes from the season (`brambleStage`): bare canes in
+winter and early spring, leaves, flowers till `FLOWER_TO` into summer, berries ripening, then ripe from `RIPE_FROM` into summer
+to `RIPE_TO` into autumn, and going over after that. A patch grows each spring (`b.size`, 0 to 2) and fruits from its second
+summer: the hour its berries ripen it gets a crop (`b.crop`, `BERRY_CROP`, half on a patch a year old, less in the shade), and
+what's left (`b.berries`) is gone when they go over. A meadow starts with some along the woods' edges (`BRAMBLE_EDGE`) and by
+the thorn bushes (`startBrambles`, `BRAMBLE_START`, a few years old). A grown patch roots a cane tip next door now and then in
+autumn (`BRAMBLE_ROOT`, `by: 'tip'`), a first-year one on grass grazed short is a rabbit's mouthful (`BRAMBLE_GRAZED`,
+`BRAMBLE_NIBBLE`), so the warrens keep them back, and one dies the spring the wood over it is thicker than `BRAMBLE_SHADE`. New
+ones come from the crows (`brambleAt`: dry ground above the spring flood, not a flower field or a burrow's mouth, in sight,
+`BRAMBLE_GAP` from the others, at most `BRAMBLE_MOST` times `w.room`). Random numbers of their own (`w.brambleRng`). A meadow has
+about 12 to 16, 20 to 30 by year three. Nothing but the crows eats the berries: the rest are the cook's.
 
 Bees live in hives (`w.hives`), each in an old hollow oak from `w.decor` (`h.tree`, `d.hive`, `moveIn`), a giant (`HIVE_TREE`)
 with a hollow low on its trunk (`drawBeeTree`). A meadow starts with `HIVES` of them (times `w.room`), each in the best tree

@@ -2113,6 +2113,7 @@ const blankCreature = () => ({
   pregnantUntil: 0, cooldownUntil: 0, dadIdPending: 0, dadGenPending: 0, dadMoult: -0,
   kids: 0, kills: 0, frogs: 0, fish: 0, escapes: 0, visits: 0, load: 0, find: null, story: null,
   caches: null,         // a crow's acorns and beechnuts buried this autumn (cacheNut)
+  pips: 0,              // a crow's: when it first ate the blackberries in it, whose pips it'll drop (dropPips)
   mate: 0,              // a crow's mate, for life (by id; mateOf)
   perch: null,          // a crow's seat in the roost (roostSeat)
   maxEnergy: -0, burnRate: -0, walk: -0, sprint: -0, sight: -0, fleeDist: -0, pounce: -0,   // (computeTraits)
@@ -3969,6 +3970,141 @@ function startGreens(w) {
   for (const g of w.greens) { g.born -= YEAR * 2; g.size = r.int(0, 1); }
 }
 
+// ---------------------------------------------------------------- brambles
+//
+// Brambles: thorny mounds at the wood's edge that live for years and show all year (w.brambles). Bare red canes in winter,
+// new leaves in spring, white flowers early in summer, then berries going green to red to black: ripe blackberries from
+// late summer to the middle of autumn (after that, they say, the devil spits on them), and the leaves go red. A patch
+// grows each spring (b.size), fruits from its second summer, and its arching canes root at the tip now and then, so a
+// thicket creeps out along the edge. Where the rabbits graze, a young one is a mouthful (BRAMBLE_NIBBLE): the warrens
+// keep them back, and they creep in after the rabbits crash. The crows eat the berries (crowTick, berries), swallow the
+// pips and drop them a few hours later wherever they are then (dropPips, w.pips): where it suits, a bramble comes up
+// there next spring. So brambles spring up under the roost and along the crows' patches. One dies once the wood closes
+// over it. Looked at once an hour (the berries) and once a day (the rest), with random numbers of their own (w.brambleRng).
+
+const BRAMBLE_EVERY = TPD / 24;         // ticks between looks (an hour)
+const BRAMBLE_EDGE = [0.05, 0.4];       // a new meadow's brambles stand where the wood is this thick: its edge
+const BRAMBLE_SHADE = 0.6;              // one under wood thicker than this dies back, a spring
+const BRAMBLE_START = 10;               // patches a meadow starts with, times w.room
+const BRAMBLE_MOST = 30;                // patches at most, times w.room
+const BRAMBLE_GAP = 2;                  // tiles between patches
+const BRAMBLE_ROOT = 0.04;              // the odds an autumn day a grown patch roots a cane tip next door
+const BRAMBLE_GRAZED = 0.35;            // a first-year patch on grass grazed shorter than this is a rabbit's mouthful,
+const BRAMBLE_NIBBLE = 0.15;            // at these odds a day
+const FLOWER_TO = 0.35;                 // in flower till this far into summer,
+const RIPE_FROM = 0.6;                  // ripe from this far into summer
+const RIPE_TO = 0.5;                    // to this far into autumn
+const BERRY_CROP = 400;                 // the berries on a grown patch in the sun, as a crow's food (a patch a year old has half)
+const BERRY_SIGHT = 30;                 // how far off a crow sees a bramble with berries on it
+const BERRY_WORTH = 20;                 // and what's worth flying to
+const BERRY_TREAT = 0.007;              // the odds a check (every 10 ticks) that a crow that isn't hungry goes for them anyway
+const BERRY_TICKS = [400, 900];         // ticks it sits eating them, a trip
+const BERRY_BITE = 0.03 * EAT;          // what it eats of them a tick (it gorges: they go even once it's full)
+const PIP_GUT = TPD / 12;               // ticks after a crow's first berries that it drops the pips
+const PIP_ODDS = 0.1;                   // the odds a crow's pips are any good: the rest are eaten, or rot
+const PIPS_MOST = 200;                  // pips waiting for spring
+const BERRY_NOTE = 'Ate blackberries off a bramble';
+
+// Every field a patch ever has, in one order (see blankCreature). born: tick; by: how it came ('' a new meadow's,
+// 'crow' from pips, 'tip' rooted from the patch next door); size: 0 to 2, how many springs it's grown; look: which of
+// game.js's paintings; crop, berries: this year's berries as they ripened, and what's left on it; year: the crop's year.
+const brambleOf = (x, y, born, by, look) => ({ bramble: true, x, y, born, by, size: 0, look, crop: -0, berries: -0, year: 0 });
+
+// What a patch shows now: 0 bare canes, 1 leaves, 2 in flower, 3 berries ripening, 4 ripe, 5 going over. A first-year
+// patch (size 0) only has leaves.
+function brambleStage(w, b) {
+  const s = seasonOf(w.tick), p = springPart(w.tick);
+  if (s === 3 || s === 0 && p < 0.15) return 0;
+  if (s === 2 && p >= RIPE_TO) return 5;
+  if (s === 0 || b.size === 0) return 1;
+  if (s === 1 && p < FLOWER_TO) return 2;
+  if (s === 1 && p < RIPE_FROM) return 3;
+  return 4;
+}
+
+function bramblesTick(w) {
+  const t = w.tick, r = w.brambleRng, list = w.brambles, year = yearOf(t);
+  for (const b of list) {                              // the berries: ripe, and gone over
+    if (brambleStage(w, b) === 4) {
+      if (b.year !== year) { b.year = year; b.crop = b.berries = BERRY_CROP * (b.size === 1 ? 0.5 : 1) * clamp(1.2 - 1.5 * w.wood[idx(b.x, b.y)], 0.4, 1); }
+    } else if (b.berries > 0) b.berries = 0;
+  }
+  if ((t % TPD) >= BRAMBLE_EVERY) return;              // once a day, the rest
+  const s = seasonOf(t), first = dayOf(t) % SEASON_DAYS === 0;
+  let n = 0;
+  for (const b of list) {
+    const i = idx(b.x, b.y);
+    if (w.water[i] || s === 0 && first && w.wood[i] > BRAMBLE_SHADE) { b.berries = 0; continue; }   // (the wood closed over it)
+    if (b.size === 0 && s < 3 && w.grass[i] < BRAMBLE_GRAZED && r.next() < BRAMBLE_NIBBLE) continue;   // (the rabbits had it)
+    if (s === 0 && first && t - b.born > YEAR / 2) b.size = Math.min(2, b.size + 1);
+    list[n++] = b;
+  }
+  list.length = n;
+  if (s === 2) for (let k = list.length - 1; k >= 0; k--) {   // a cane tip roots next door
+    const b = list[k];
+    if (b.size === 2 && r.next() < BRAMBLE_ROOT) { const a = r.range(0, 2 * Math.PI), d = r.range(BRAMBLE_GAP, 3.5); brambleAt(w, r, b.x + Math.cos(a) * d, b.y + Math.sin(a) * d * 0.7, 'tip'); }
+  }
+  if (s === 0 && w.pips.length) {                      // the crows' pips come up through the first half of spring
+    let m = 0;
+    for (const p of w.pips) if (p.at > t) w.pips[m++] = p; else brambleAt(w, r, p.x, p.y, 'crow');
+    w.pips.length = m;
+  }
+}
+
+// A bramble at x, y, if it's dry ground above the spring flood, not in deep wood, a flower field or a burrow's mouth,
+// in sight, with room. by: as brambleOf's.
+function brambleAt(w, r, x, y, by) {
+  if (!dry(w, x, y)) return false;
+  const i = idx(x, y), T = w.terrain;
+  if (w.wood[i] > BRAMBLE_SHADE || w.fieldAt[i] >= 0 || w.ground[i] <= T.level + T.springFlood) return false;
+  if (w.brambles.length >= Math.round(BRAMBLE_MOST * w.room) || w.brambles.some(b => (b.x - x) ** 2 + (b.y - y) ** 2 < BRAMBLE_GAP * BRAMBLE_GAP)) return false;
+  if (w.burrows.some(b => (b.x - x) ** 2 + (b.y - y) ** 2 < 4) || !inSight(w, x, y, null)) return false;
+  w.brambles.push(brambleOf(x, y, w.tick, by, r.int(0, 1)));
+  return true;
+}
+
+// A new meadow's brambles, a few years old, along the woods' edges and by the thorn bushes.
+function startBrambles(w) {
+  const r = w.brambleRng, most = Math.round(BRAMBLE_START * w.room);
+  for (let k = 0; k < 4000 && w.brambles.length < most; k++) {
+    const x = r.range(1, W - 1), y = r.range(1, H - 1), wood = inBounds(x, y) ? w.wood[idx(x, y)] : 0;
+    if (wood >= BRAMBLE_EDGE[0] && wood <= BRAMBLE_EDGE[1] || thornNear(w, x, y, 2.5)) brambleAt(w, r, x, y, '');
+  }
+  for (const b of w.brambles) { b.born -= YEAR * 3; b.size = r.int(1, 2); }
+}
+
+// Late summer into autumn, a hungry crow flies to the nearest bramble it sees with berries on it, and one that isn't
+// goes now and then for a feast all the same (BERRY_TREAT). It eats a while (c.timer) from its own place along the front
+// (by its id), swallowing the pips (c.pips), and drops them a few hours later (dropPips).
+function berries(w, c, hungry) {
+  let b = (c.mode === 'bramble' || c.mode === 'berries') && c.target ? c.target.b : null;
+  if (b && (b.berries <= 0 || c.mode === 'berries' && --c.timer <= 0)) { c.mode = 'wander'; c.target = null; return false; }
+  if (!b) {
+    if ((w.tick + c.id) % 10 || !hungry && w.rng.next() > BERRY_TREAT) return false;
+    let best = BERRY_SIGHT * BERRY_SIGHT;
+    for (const o of w.brambles) { const d = dist2(o, c); if (o.berries >= BERRY_WORTH && d < best) { b = o; best = d; } }
+    if (!b) return false;
+    const a = ((c.id * 0.618034) % 1 - 0.5) * 2.4, reach = 0.55 + 0.25 * b.size;
+    c.mode = 'bramble'; c.target = { x: clamp(b.x + Math.sin(a) * reach, 0.5, W - 0.5), y: b.y + 0.04 + Math.cos(a) * 0.08, b };   // (into its foot)
+  }
+  if (c.mode === 'bramble') {
+    if (!go(w, c, c.target.x, c.target.y, c.walk)) return true;
+    c.mode = 'berries'; c.facing = b.x > c.x ? 1 : -1; c.timer = w.rng.int(...BERRY_TICKS);
+    if (c.story[c.story.length - 1].text !== BERRY_NOTE) note(w, c, '🫐', BERRY_NOTE);
+  }
+  const bite = Math.min(b.berries, BERRY_BITE);
+  b.berries -= bite; c.energy = Math.min(c.maxEnergy, c.energy + bite);
+  if (!c.pips) c.pips = w.tick;
+  return true;
+}
+
+// The pips a crow swallowed come out wherever it is: a spot for a bramble next spring, if they're any good.
+function dropPips(w, c) {
+  c.pips = 0;
+  const r = w.brambleRng;
+  if (w.pips.length < PIPS_MOST && r.next() < PIP_ODDS) w.pips.push({ x: c.x, y: c.y, at: springAfter(w.tick) + r.range(0, 0.5) * SEASON_DAYS * TPD });
+}
+
 // ---------------------------------------------------------------- crows
 //
 // A few crows live in the meadow, flying over all of it (flies: true, like the bees). By day they walk
@@ -4033,7 +4169,7 @@ const CROW_SEATS = [[0.1, 0.8], [-0.6, 0.55], [0.65, 0.4], [-0.3, 0.92], [0.45, 
   [-0.5, 0.75], [0.55, 0.6], [0.25, 0.15], [-0.2, 0.12], [0.85, 0.55], [-0.85, 0.5]];
 const SEAT_REACH = 0.4;
 const WAKE_FLY = [3, 10];       // tiles it flies off from the roost at dawn, to a spot of its own
-const PECKING = new Set(['peck', 'carrion', 'munch', 'bury', 'unbury', 'tadpole']);   // busy on the ground, heads down
+const PECKING = new Set(['peck', 'carrion', 'munch', 'bury', 'unbury', 'tadpole', 'berries']);   // busy on the ground, heads down
 
 const grubs = (w, x, y) => {
   const i = idx(x, y);
@@ -4047,6 +4183,7 @@ function crowTick(w, c) {
     return;
   }
   c.sleeping = false;
+  if (c.pips && t - c.pips > PIP_GUT) dropPips(w, c);   // (wherever it is: on a branch at the roost too)
 
   // 1. Danger: fire, or a fox close by. Busy on the ground, it may not look up in time.
   if (c.fright > 0) { c.fright = 0; c.threatId = 0; flapUp(w, c, c.frightX, c.frightY); }
@@ -4117,15 +4254,16 @@ function crowTick(w, c) {
   if (seekLove(w, c)) return;
 
   // 4. Food. In autumn, not hungry, it buries acorns for the winter (and one carrying some buries them
-  // first). Otherwise remains first, then windfalls, then in winter its own buried acorns, then grubs.
-  // One eating eats its fill.
-  const eating = c.mode === 'carrion' || c.mode === 'munch', caching = c.mode === 'cache' || c.mode === 'bury';
+  // first). Otherwise remains first, then blackberries, then windfalls, then in winter its own buried acorns, then
+  // grubs. One eating eats its fill.
+  const eating = c.mode === 'carrion' || c.mode === 'munch' || c.mode === 'berries', caching = c.mode === 'cache' || c.mode === 'bury';
   if (!eating && e > (caching ? CACHE_FED / 2 : CACHE_FED) && cacheNut(w, c)) return;
   if (e < (eating ? 0.97 : CROW_FULL)) {
-    if (carrion(w, c) || (w.windfalls && e < CROW_HUNGRY && windfall(w, c)) || unbury(w, c) || tadpoles(w, c)) return;
+    if (carrion(w, c) || berries(w, c, true) || (w.windfalls && e < CROW_HUNGRY && windfall(w, c)) || unbury(w, c) || tadpoles(w, c)) return;
     return peck(w, c, true);
   }
-  if (eating || c.mode === 'remains' || c.mode === 'apple' || c.mode === 'unbury' || c.mode === 'pool' || c.mode === 'tadpole') { c.mode = 'wander'; c.target = null; }
+  if (berries(w, c, false)) return;                    // (a feast, though it isn't hungry)
+  if (eating || c.mode === 'remains' || c.mode === 'bramble' || c.mode === 'apple' || c.mode === 'unbury' || c.mode === 'pool' || c.mode === 'tadpole') { c.mode = 'wander'; c.target = null; }
 
   // 5. Fed: driving another crow off its patch in spring, back to its patch,
   // off to its mate (or with none, another crow) now and then, a rest, or pecking about.
@@ -4395,6 +4533,8 @@ function crowMood(w, c) {
     case 'remains': return { emoji: '👀', text: `Flying down to the remains of ${dead.name}` };
     case 'carrion': return { emoji: '🍖', text: `Pecking at the remains of ${dead.name}` };
     case 'peck': return { emoji: '🪱', text: 'Pecking for grubs' };
+    case 'bramble': return { emoji: '🫐', text: 'Off to the blackberries on a bramble' };
+    case 'berries': return { emoji: '🫐', text: 'Eating blackberries off a bramble' };
     case 'forage': return { emoji: '🪱', text: 'Off to better pecking' };
     case 'fetch': return { emoji: '🌰', text: `Off to the ${kind === 'beech' ? 'beeches for beechnuts' : 'oaks for acorns'} to bury` };
     case 'cache': return { emoji: '🌰', text: `Carrying ${one} off to bury` };
@@ -4959,6 +5099,7 @@ function createWorld(seed, opts = {}) {
     carcasses: [], roost: null, cached: 0,                                // (see carrionTick and crowTick; cached: this autumn)
     shrooms: [], shroomRng: makeRng(seed ^ 0x5a2004), rainAt: -1e9,      // (see shroomsTick; rainAt: the last hour it rained)
     greens: [], greenRng: makeRng(seed ^ 0x9a271c),                       // (see greensTick)
+    brambles: [], pips: [], brambleRng: makeRng(seed ^ 0xb4a3b1),          // (see bramblesTick)
     count: perKind(() => 0), expecting: perKind(() => 0),
     stats: { deaths: perKind(() => ({})) },                                 // deaths by cause, of each kind
     goneSince: perKind(() => -1), diedOut: perKind(() => false), hives: [],
@@ -4977,6 +5118,7 @@ function createWorld(seed, opts = {}) {
   startFrogs(w);
   startFish(w);
   startGreens(w);
+  startBrambles(w);
   w.roost = pickRoost(w);
   const n = { rabbit: opts.rabbits ?? Math.round(30 * w.room), fox: opts.foxes ?? Math.round(4 * w.room), bee: 0, crow: opts.crows ?? Math.round(8 * w.room),
     otter: opts.otters ?? 0 };   // the otters come up the water (migrate), and each hive has its bees
@@ -5109,6 +5251,7 @@ function step(w) {
   if (t % CARRION_EVERY === 0) carrionTick(w);
   if (t % SHROOM_EVERY === SHROOM_EVERY / 2) shroomsTick(w);
   if (t % GREENS_EVERY === GREENS_EVERY / 8) greensTick(w);
+  if (t % BRAMBLE_EVERY === BRAMBLE_EVERY / 4) bramblesTick(w);
   if (t % WINDFALL_EVERY === 0) { windfallTick(w); if (w.weather.kind === 'storm') windthrow(w); }
   const list = w.creatures;
   for (let i = 0; i < list.length; i++) {
@@ -5149,7 +5292,7 @@ const KEEP_VERSION = 10;                // 2: shade and rich ground (w.shadedFer
                                         // 5: crows and remains (w.carcasses, w.roost, c.caches, d.nuts); 6: owls (d.owl, c.perch);
                                         // 7: frogs (w.frogs, w.spawn, w.frogYear, c.frogs); 8: the cooking cut (no keeper, owls, fire or player powers);
                                         // 9: the pantry (no voles, sickness, remains or genes; hives that fill; the 12-minute day);
-                                        // 10: some ecology back (remains and rich ground again: w.carcasses, w.rich; winter coats: c.moult; bee colonies: h.queen, h.cluster...; mushrooms: w.shrooms, w.rainAt; spring greens: w.greens)
+                                        // 10: some ecology back (remains and rich ground again: w.carcasses, w.rich; winter coats: c.moult; bee colonies: h.queen, h.cluster...; mushrooms: w.shrooms, w.rainAt; spring greens: w.greens; brambles: w.brambles, w.pips, c.pips)
 const TABLES = { SPECIES, FIELD_KINDS, TREE_MIX, TREES, SEASONS, WEATHER };
 const UNKEPT = ['grid', 'grids', 'events', 'newborn', 'current'];   // on the world
 let tableNames = null;                                     // object -> 'SPECIES.fox', made the first time
@@ -5207,7 +5350,7 @@ function unpackWorld(kept) {
   const made = list.map(e => (Array.isArray(e) ? new Array(e.length) : ArrayBuffer.isView(e) ? e
     : e.$map ? new Map() : e.$set ? new Set() : e.sp !== undefined && e.species !== undefined ? blankCreature()   // (laid out like new ones)
     : e.tree === true ? blankTree() : e.emoji === '🪨' ? rockOf(-0, -0, -0) : e.shroom === true ? shroomOf('', -0, -0, null, 0, 0, 0, 0)
-    : e.green === true ? greenOf('', -0, -0, 0, 0)
+    : e.green === true ? greenOf('', -0, -0, 0, 0) : e.bramble === true ? brambleOf(-0, -0, 0, '', 0)
     : e.n !== undefined && e.i !== undefined && e.kind !== undefined && e.field !== undefined ? plantOf(-0, -0, 0, -0, null, 0) : {}));   // (a flower or blossom)
   const table = path => path.split('.').reduce((o, k) => {
     if (!o || !(k in o)) throw new Error('unpackWorld: no table ' + path);
@@ -5233,10 +5376,15 @@ function unpackWorld(kept) {
   for (const m of w.shrooms) asFractions(m, ['x', 'y']);
   if (!w.greens) { w.greens = []; w.greenRng = makeRng(w.seed ^ 0x9a271c); }      // (kept on the cooking branch before them)
   for (const g of w.greens) asFractions(g, ['x', 'y']);
+  const noBrambles = !w.brambles;                       // (kept on the cooking branch before them: a new meadow's come up, below)
+  if (noBrambles) { w.brambles = []; w.pips = []; w.brambleRng = makeRng(w.seed ^ 0xb4a3b1); }
+  for (const b of w.brambles) asFractions(b, ['x', 'y', 'crop', 'berries']);
+  for (const p of w.pips) asFractions(p, ['x', 'y', 'at']);
   w.grid = makeGrid(); w.grids = perKind(makeGrid); w.events = []; w.newborn = [];
   makeCurrent(w);
   if (w.visitors) placesDay(w);
   buildGrid(w);
+  if (noBrambles) startBrambles(w);
   return w;
 }
 
@@ -6085,7 +6233,7 @@ const api = {
   TERRAIN, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE, hollow,
   TREES, treeStage, treeAge, standing, bearing, inBloom, SEEDLING, SAPLING, GROWN, KIND_NAMES,
-  FROG_K, SPAWN_WORTH, FISH_K, FISH_EAT, CROW_SEATS, SHROOMS, SHROOM_KINDS, greenStage, GREEN_SEASONS,
+  FROG_K, SPAWN_WORTH, FISH_K, FISH_EAT, CROW_SEATS, SHROOMS, SHROOM_KINDS, greenStage, GREEN_SEASONS, brambleStage, RIPE_FROM, RIPE_TO,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 else root.Sim = api;
