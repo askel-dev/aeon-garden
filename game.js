@@ -17,19 +17,11 @@ const perKind = make => Object.fromEntries(S.KINDS.map(s => [s, make(s)]));   //
 // drawn on it (Sim.drawnToLink; older links have it as ?drawn={...}), as the terrain lab hands them
 // over. ?lab opens that lab: the meadow without animals, and terrain-lab.js on top.
 const params = new URLSearchParams(location.search), LAB = params.has('lab');
-// ?keep: the meadow as something you keep, not just watch (PLAN.md). You shape the land (a pond, a hedge, a strip
-// of flowers) and the god tools are gone: no releasing animals, no grass, lightning or fire, no picking the
-// weather, no picking animals up. Kept apart from the meadows you watch, under links of its own.
-// For now it's the default; ?watch opens the meadow you only watch.
-const KEEP = !params.has('watch') && !LAB;
-document.documentElement.classList.toggle('keep', KEEP);   // its frame (index.html's head says so too, before this runs)
-const DRY_PARAM = +params.get('dry') || 0;   // ?keep&dry=N: a new keeper meadow's Dry Year comes in the summer of year N (1: this one)
-let dryAt = DRY_PARAM;                       // and the meadow on screen's (its options.dry), kept in its link
 const fromUrl = key => { try { return JSON.parse(params.get(key) || '{}'); } catch (e) { return {}; } };   // a broken link: the usual meadow
 let terrain = fromUrl('terrain'), drawn = location.hash.length > 1 ? S.drawnFromLink(location.hash) : fromUrl('drawn');
 const terrainQuery = () => (Object.keys(terrain).length ? '&terrain=' + encodeURIComponent(JSON.stringify(terrain)) : '')
   + (S.drawnToLink(drawn) ? '#' + S.drawnToLink(drawn) : '');
-const meadowLink = seed => '?seed=' + seed + (KEEP ? '&keep' + (dryAt ? '&dry=' + dryAt : '') : '&watch') + terrainQuery();   // the address of a meadow, and the name it's kept under
+const meadowLink = seed => '?seed=' + seed + terrainQuery();   // the address of a meadow, and the name it's kept under
 
 // How many people come, and from where, counted by GoatCounter (goatcounter.com: free, no cookies,
 // nothing to agree to). Off until COUNTER holds the site's code: sign up there, pick a code, put it
@@ -72,14 +64,11 @@ const canvas = $('#world');
 const ctx = canvas.getContext('2d');
 let vw = 0, vh = 0, dpr = 1, minZoom = 1, fitZoom = 1;
 const FIT = 0.92;                                 // zoomed right out, how much of the window the meadow fills (it fades into mist, mistField)
-let barPad = 0;                                   // screen pixels the toolbar covers at the bottom (on a phone, its button in the corner)
-let topPad = 0;                                   // and the top bar at ?keep covers at the top
 let sheet = null;                                 // the edges of the meadow the inspector and the bars hide, while it's open
 // A phone upright or on its side: slim bars, and the tools fold into a button. On its side (a short screen)
 // the inspector is a panel down the right.
 const narrow = () => matchMedia('(max-width: 760px), (max-height: 500px)').matches;
 const short = () => matchMedia('(max-height: 500px)').matches;
-const rail = () => KEEP && short();   // ?keep on a phone on its side: the tools are a rail down the left, not a bar along the bottom
 const canHover = matchMedia('(hover: hover)');
 
 // Safari's fingerprinting protection (iOS 26, private tabs) can report a ratio of 1 on a
@@ -145,60 +134,29 @@ function resize() {
 // On a phone the inspector is a sheet over the bottom of the meadow, or on its side a panel down the
 // right. The one you follow is kept in the middle of what's still showing, instead of under the panel.
 function measureSheet() {
-  const ins = $('#inspector').getBoundingClientRect(), panel = ins.height && !$('#inspector').classList.contains('strip');
-  const side = rail() && !panel ? $('#toolbar').offsetWidth + 6 : 0;   // (6: its brass rule; the open panel sends the rail away)
-  if (!ins.height) sheet = side ? { top: 0, bottom: 0, left: side, right: 0 } : null;
+  const ins = $('#inspector').getBoundingClientRect();
+  if (!ins.height) sheet = null;
   else if (narrow() && !short()) {
     const top = Math.max($('#meadow').getBoundingClientRect().bottom, $('#hud-right .hud-top').getBoundingClientRect().bottom);
     sheet = { top, bottom: vh - ins.top, left: 0, right: 0 };
-  } else sheet = short() ? { top: 0, bottom: 0, left: side, right: $('#inspector').classList.contains('strip') ? 0 : vw - ins.left } : null;
+  } else sheet = short() ? { top: 0, bottom: 0, left: 0, right: $('#inspector').classList.contains('strip') ? 0 : vw - ins.left } : null;
 }
 
 // You may look out past the edges into the mist: the middle of the view goes as far as the mist is thick
 // (MIST_FULL tiles out), at any zoom, so an edge can be looked at up close.
-// A bit further where the toolbar or the inspector covers the screen, so nothing is ever stuck under them.
-// Not while they're away for the intro (hush). This far past the bottom edge, in screen pixels:
-// In the lab, its own sheet on a phone (lab.cover). And at ?keep past the top edge too, under the top bar (topPad).
-const lookPast = () => Math.max(ui.hush ? 0 : barPad, sheet ? sheet.bottom : 0, LAB ? lab.cover.bottom : 0);
+// A bit further where the inspector covers the screen, so nothing is ever stuck under it. This far past the bottom
+// edge, in screen pixels. In the lab, its own sheet on a phone (lab.cover).
+const lookPast = () => Math.max(sheet ? sheet.bottom : 0, LAB ? lab.cover.bottom : 0);
 function clampCam() {
   const left = (sheet ? sheet.left : 0) / cam.zoom, right = Math.max(sheet ? sheet.right : 0, LAB ? lab.cover.right : 0) / cam.zoom;
   cam.x = clamp(cam.x, -MIST_FULL - left, S.W + MIST_FULL + right);
-  cam.y = clamp(cam.y, -MIST_FULL - topPad / cam.zoom, S.H + MIST_FULL + lookPast() / cam.zoom);
+  cam.y = clamp(cam.y, -MIST_FULL, S.H + MIST_FULL + lookPast() / cam.zoom);
 }
 
-new ResizeObserver(() => {             // (a rail covers no bottom: just the home bar's room, which its padding keeps)
-  const bar = $('#toolbar');
-  barPad = rail() ? parseFloat(getComputedStyle(bar).paddingBottom) + 8 : bar.offsetHeight + 16;
-  document.documentElement.style.setProperty('--bar', barPad + 'px');
-  document.documentElement.style.setProperty('--rail', (rail() ? bar.offsetWidth : 0) + 'px');   // (its width: it may be sliding away)
-  measureSheet();
-}).observe($('#toolbar'));
-if (KEEP) new ResizeObserver(() => { topPad = $('#keep-top').offsetHeight + 6; }).observe($('#keep-top'));   // (6: its brass rule)
 new ResizeObserver(() => {            // on a phone the time pill sits under the meadow card
   document.documentElement.style.setProperty('--meadow-h', $('#meadow').offsetHeight + 'px');
 }).observe($('#meadow'));
 new ResizeObserver(measureSheet).observe($('#inspector'));
-
-// ?keep on a phone on its side (the rail): GREEN and the Dry Year's ribbon stand in the top bar where there's room. GREEN
-// right after the counts, else right of the watch; the ribbon right of the watch (after GREEN if it's there too), else it
-// hangs under the watch as before. Phones differ in their notch, so it's measured, whenever the counts, the time, the
-// ribbon or the rail change size. (The ribbon is narrower in the bar, so once in it stays, and once out stays out.)
-function fitTopBar() {
-  const root = document.documentElement;
-  if (!rail()) { root.classList.remove('ribbon-bar'); return; }
-  if (!ui.mini) return;                                  // (the counts are in the big card: left as they were)
-  const dial = $('#dial').getBoundingClientRect(), edge = $('#meadow .mini-line').getBoundingClientRect().right + 4;
-  const gw = $('#green').offsetWidth, fw = $('#forecast').offsetWidth, end = $('#time').getBoundingClientRect().left - 4;
-  const after = edge + gw <= dial.left - 8, gx = after ? edge : dial.right + 8, fx = after ? dial.right + 8 : gx + gw + 4;
-  root.style.setProperty('--green-x', Math.round(gx) + 'px');
-  root.style.setProperty('--forecast-x', Math.round(fx) + 'px');
-  root.classList.toggle('ribbon-bar', fw > 0 && fx + fw <= end);
-}
-if (KEEP) {
-  const fit = new ResizeObserver(fitTopBar);
-  for (const s of ['#meadow', '#time', '#forecast', '#green', '#toolbar']) fit.observe($(s));
-  addEventListener('resize', fitTopBar);
-}
 
 const toScreen = (x, y) => [(x - cam.x) * cam.zoom + vw / 2, (y - cam.y) * cam.zoom + vh / 2];
 const toWorld = (sx, sy) => [(sx - vw / 2) / cam.zoom + cam.x, (sy - vh / 2) / cam.zoom + cam.y];
