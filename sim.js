@@ -5328,6 +5328,7 @@ function foragerTo(w, x, y) {
     a = ok; ax = px(a); ay = py(a);
     pts.push(ax, ay);
   }
+  if (!last) pts.push(x, y);                             // (in its own tile: straight there, or the way had no leg)
   f.path.length = 0;
   for (const v of pts) f.path.push(v);
   f.leg = 1; f.walking = true; f.goalX = x; f.goalY = y;
