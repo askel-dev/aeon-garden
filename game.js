@@ -6680,9 +6680,18 @@ function drawSipping(c, sx, sy, px, now) {
 
 // ------------------------------------------------------------------ news
 
-const NEWS_TOASTS = 3, NEWS_TOAST_MS = 7000, NEWS_LOG_MAX = 80;
+// Every line goes in the log; only some get a toast, and those come one at a time, NEWS_GAP_MS apart (a phone, with room
+// for one, NEWS_GAP_ONE, longer after a big one), so each can be read. Big news (`how` 'big') is gold and stays longer,
+// and newer lines push the plain ones out first. The everyday lines in QUIET_NEWS go to the log only, unless they're
+// about the animal you follow (those come without a category).
+const NEWS_TOASTS = 3, NEWS_TOAST_MS = 9000, NEWS_BIG_MS = 18000, NEWS_GAP_MS = 1800, NEWS_GAP_ONE = [4500, 9000];
+const NEWS_WAITING = 3, NEWS_LOG_MAX = 80;
+const QUIET_NEWS = new Set(['birth', 'starve', 'burn', 'old', 'dug', 'escape', 'spotted', 'hatch', 'treedied', 'windthrow',
+  'fizzle', 'sky-calm', 'sprouts', 'bloom', 'surprise']);
 let newsMade = 0, lastToast = null;  // lines told so far, and the last one's toast if it got one (for "Go see", spotNews)
-function addNews(html, category, minGapMs = 0) {
+const newsWaiting = [];              // toasts made but not shown yet
+let newsShown = 0, newsShownBig = false, newsPump = 0;
+function addNews(html, category, minGapMs = 0, how = '') {
   const now = performance.now();
   if (category && minGapMs && ui.lastNews[category] && now - ui.lastNews[category] < minGapMs) return;
   if (category) ui.lastNews[category] = now;
@@ -6691,13 +6700,33 @@ function addNews(html, category, minGapMs = 0) {
   ui.newsLog.length = Math.min(ui.newsLog.length, NEWS_LOG_MAX);
   if (away.on) { awayNews(html); ui.newsStale = true; return; }   // catching up: the log, and the card if it's big
   if (ui.newsOpen) { ui.newsStale = true; return; }   // the frame rebuilds it, once however much happened
-  const box = $('#news');
+  if (QUIET_NEWS.has(category)) return;
   const el = lastToast = document.createElement('div');
-  el.className = 'news-item';
+  el.className = how === 'big' ? 'news-item big' : 'news-item';
   el.innerHTML = html;
+  newsWaiting.push(el);
+  if (newsWaiting.length > NEWS_WAITING) {          // too much at once: the oldest plain one waiting is only in the log
+    const i = newsWaiting.findIndex(t => !t.classList.contains('big'));
+    newsWaiting.splice(Math.max(0, i), 1);
+  }
+  pumpNews();
+}
+const bigNews = html => addNews(html, null, 0, 'big');
+
+function pumpNews() {
+  if (newsPump || !newsWaiting.length) return;
+  const one = narrow(), wait = newsShown + (one ? NEWS_GAP_ONE[+newsShownBig] : NEWS_GAP_MS) - performance.now();
+  if (wait > 0) { newsPump = setTimeout(() => { newsPump = 0; pumpNews(); }, wait); return; }
+  if (ui.newsOpen || away.on) { newsWaiting.length = 0; return; }
+  const el = newsWaiting.shift(), big = el.classList.contains('big'), box = $('#news');
   box.prepend(el);
-  while (box.children.length > (narrow() ? 1 : NEWS_TOASTS)) box.lastChild.remove();   // a phone has room for one
-  setTimeout(() => { el.classList.add('gone'); setTimeout(() => el.remove(), 800); }, NEWS_TOAST_MS);
+  newsShown = performance.now(); newsShownBig = big;
+  while (box.children.length > (one ? 1 : NEWS_TOASTS)) {   // a phone has room for one
+    const old = [...box.children].slice(1).reverse();
+    (old.find(t => !t.classList.contains('big')) || old[0]).remove();
+  }
+  setTimeout(() => { el.classList.add('gone'); setTimeout(() => el.remove(), 800); }, big ? NEWS_BIG_MS : NEWS_TOAST_MS);
+  pumpNews();
 }
 
 function renderNewsLog() {
@@ -6710,7 +6739,7 @@ function toggleNewsLog() {
   ui.newsOpen = !ui.newsOpen;
   $('#news-log').classList.toggle('hidden', !ui.newsOpen);
   $('.news-toggle').classList.toggle('on', ui.newsOpen);
-  $('#news').innerHTML = '';                        // it's all in the log now
+  $('#news').innerHTML = ''; newsWaiting.length = 0;   // it's all in the log now
   if (ui.newsOpen) renderNewsLog();
 }
 
@@ -6803,7 +6832,7 @@ function handleEvent(e) {
   if (away.on) { away.type = e.type; away.mine = mine; }
   switch (e.type) {
     case 'season':
-      addNews(SEASON_NEWS[e.season] + (e.season === 0 ? ` Year ${e.year} begins.` : ''));
+      bigNews(SEASON_NEWS[e.season] + (e.season === 0 ? ` Year ${e.year} begins.` : ''));
       chime('season', { season: e.season });
       break;
     case 'weather': {
@@ -6827,11 +6856,11 @@ function handleEvent(e) {
       if (zapping) tried('zap', e.tree ? 'Crack! Lightning goes for the tallest tree about.' : 'Lightning likes trees. Try it by one.');
       break;
     case 'hivestruck':
-      addNews(e.fell ? `🪵 <b>Queen ${esc(e.queen.name)}'s old tree has come down!</b> Her ${e.who.length} bees swarm out and hang in a tree nearby while scouts look for a new home.`
+      bigNews(e.fell ? `🪵 <b>Queen ${esc(e.queen.name)}'s old tree has come down!</b> Her ${e.who.length} bees swarm out and hang in a tree nearby while scouts look for a new home.`
         : `⚡ <b>Lightning struck Queen ${esc(e.queen.name)}'s tree!</b> Her ${e.who.length} bees swarm out and hang in a tree nearby while scouts look for a new home.`);
       break;
     case 'mast':
-      addNews('🌰 <b>A mast year!</b> The oaks and beeches are heavy with acorns and beechnuts. Rabbits will feast, jays will bury them, and next spring the woods will be full of seedlings.');
+      bigNews('🌰 <b>A mast year!</b> The oaks and beeches are heavy with acorns and beechnuts. Rabbits will feast, jays will bury them, and next spring the woods will be full of seedlings.');
       break;
     case 'sprouts': {
       const few = world.count.rabbit < 60 * world.room, burn = e.burnt >= Math.max(5, e.n / 4);
@@ -6858,25 +6887,25 @@ function handleEvent(e) {
       break;
     }
     case 'dryahead':                    // (?keep) the Dry Year, from the start
-      addNews(`☀️ <b>The Dry Year comes in the summer of year ${e.year}.</b> No rain from spring till autumn, and the meadow will brown away from the water. `
+      bigNews(`☀️ <b>The Dry Year comes in the summer of year ${e.year}.</b> No rain from spring till autumn, and the meadow will brown away from the water. `
         + 'Ponds, flowers and cover where the animals live will see them through.');
       break;
     case 'dryspring':
-      addNews(`🌧️ <b>The spring rains failed:</b> ${esc(bigWater())} is low, and the Dry Year is coming.`);
+      bigNews(`🌧️ <b>The spring rains failed:</b> ${esc(bigWater())} is low, and the Dry Year is coming.`);
       break;
     case 'drystart':
-      addNews('☀️ <b>The Dry Year:</b> no rain till autumn, and the meadow browns away from the water.');
+      bigNews('☀️ <b>The Dry Year:</b> no rain till autumn, and the meadow browns away from the water.');
       break;
     case 'dryend':
-      addNews('🌧️ <b>The rain is back:</b> the Dry Year is over.');
+      bigNews('🌧️ <b>The rain is back:</b> the Dry Year is over.');
       break;
     case 'drythrough':                  // (?keep) came through it: the news, and a card saying what it came to
-      addNews(`🌈 <b>The meadow came through the Dry Year.</b> At its worst, ${Math.round(e.low * 100)}% of it was still green.`);
+      bigNews(`🌈 <b>The meadow came through the Dry Year.</b> At its worst, ${Math.round(e.low * 100)}% of it was still green.`);
       lostCard.pending = true;
       break;
     case 'dryloss': {                   // (?keep) the Dry Year was lost: a card, and the meadow runs on
       const why = e.why === 'barren' ? ' The meadow went barren.' : e.species === 'frogs' ? ' The last frog is gone.' : '';   // (the last of any other kind was just told)
-      addNews(`${e.why === 'barren' ? '🥀' : '😢'} <b>The Dry Year is lost.</b>${why}`);
+      bigNews(`${e.why === 'barren' ? '🥀' : '😢'} <b>The Dry Year is lost.</b>${why}`);
       lostCard.pending = true;
       break;
     }
@@ -6922,11 +6951,11 @@ function handleEvent(e) {
         const what = { heron: `tall is flying in to ${at}</b>, the pond you dug.`, hedgehog: `is snuffling under your hedge ${at}.</b>`,
           dragonfly: `is darting over ${at}</b>, the pond you dug.`, kingfisher: `blue is flashing low over the water to ${at}</b>, the pond you dug.`,
           skylark: `is singing high over your strip ${at}.</b>` }[v.kind];
-        addNews(`${visitorGlyph(v.kind, true)} <b>Something ${what} A new page for your journal?`);
+        bigNews(`${visitorGlyph(v.kind, true)} <b>Something ${what} A new page for your journal?`);
         break;
       }
       const again = v.n > 1;
-      addNews(`${em} ${{
+      (again ? addNews : bigNews)(`${em} ${{
         heron: again ? `A ${who} is back at ${at}, the pond you dug, after its frogs.` : `<b>A ${who} is flying in to ${at}</b>, the pond you dug, for its frogs.`,
         hedgehog: again ? `A ${who} is at your hedge ${at} again, snuffling for beetles.` : `<b>A ${who} has come to your hedge ${at}</b>, for ${k.for} it.`,
         dragonfly: again ? `${thingLink('visitor', v.id, 'Dragonflies')} are back over ${at}, the pond you dug.`
@@ -6975,7 +7004,7 @@ function handleEvent(e) {
     }
     case 'fire':
       if (e.set) break;                 // the player's own: burnAt tells of it
-      addNews('🔥 <b>Wildfire!</b> Lightning set the dry grass alight. Everyone is running.');
+      bigNews('🔥 <b>Wildfire!</b> Lightning set the dry grass alight. Everyone is running.');
       hear('fire', e.x, e.y, {}, true);
       break;
     case 'fireout': {
@@ -7020,7 +7049,7 @@ function handleEvent(e) {
       else if (e.cause !== 'left') addEffect('👻', c.x, c.y, 1.6, 2000);
       if (e.cause === 'fox') {
         const t = `🦊 ${link(e.killer)} caught ${link(c)}${c.species === 'crow' ? ' the crow, off its guard' : ''}.`;
-        if (mine) addNews(t); else addNews(t, 'catch', 7000);
+        if (mine) addNews(t); else addNews(t, 'catch', 25000);
       } else if (e.cause === 'owl') {
         const t = `🦉 ${link(e.killer)} the owl dropped silently out of the dusk and took ${link(c)}, a young rabbit still out.`;
         if (mine) addNews(t); else addNews(t, 'owlcatch', 20000);
@@ -7072,7 +7101,7 @@ function handleEvent(e) {
     case 'swarm':
       addEffect('✨', e.swarm.x, e.swarm.y);
       hear('arrive', e.swarm.x, e.swarm.y, { species: 'bee' }, true);
-      addNews(`🐝 <b>A swarm!</b> Queen ${esc(e.queen.name)} has left her crowded hive with ${e.who.length} bees. They hang in a tree while scouts look for a new home. Her daughter, Queen ${esc(e.heir.name)}, stays behind.`);
+      bigNews(`🐝 <b>A swarm!</b> Queen ${esc(e.queen.name)} has left her crowded hive with ${e.who.length} bees. They hang in a tree while scouts look for a new home. Her daughter, Queen ${esc(e.heir.name)}, stays behind.`);
       break;
     case 'settle':
       addEffect('✨', e.hive.x, e.hive.y);
@@ -7087,7 +7116,7 @@ function handleEvent(e) {
     case 'ice': {
       const river = world.waters.find(b => b.kind === 'river') || world.lake || world.waters[0];
       const name = river ? esc(river.name) : 'The water';
-      if (e.frozen) { addNews(`🧊 <b>${name} has frozen over.</b> The ice will hold anyone now, foxes too.`); break; }
+      if (e.frozen) { bigNews(`🧊 <b>${name} has frozen over.</b> The ice will hold anyone now, foxes too.`); break; }
       const { fell, drowned } = e, who = fell.slice(0, 3).map(link).join(', ') + (fell.length > 3 ? ` and ${fell.length - 3} more` : '');
       let t = `💧 The ice is breaking up on ${name}.`;
       if (fell.length) t += ` ${who} went through and scrambled out, soaked.`;
@@ -7097,7 +7126,7 @@ function handleEvent(e) {
     }
     case 'outbreak': {
       const where = placeNear(e.x, e.y);
-      addNews(`🤒 <b>A sickness is going round the warren${where ? ' ' + where : ''}.</b> In a crowded meadow it spreads fast.`);
+      bigNews(`🤒 <b>A sickness is going round the warren${where ? ' ' + where : ''}.</b> In a crowded meadow it spreads fast.`);
       break;
     }
     case 'outbreakover':
@@ -7142,11 +7171,11 @@ function handleEvent(e) {
       break;
     }
     case 'frogyear':
-      if (e.big) addNews('🐸 <b>A big frog year!</b> The spring was kind and the tadpoles got out in time: the wet grass by the water is hopping with frogs.');
+      if (e.big) bigNews('🐸 <b>A big frog year!</b> The spring was kind and the tadpoles got out in time: the wet grass by the water is hopping with frogs.');
       else if (e.poor) addNews(`🐸 <b>A poor year for frogs.</b> ${e.stranded > 0.5 ? 'The water fell back before the tadpoles were grown, and hardly a froglet got out.' : 'Hardly a froglet made it out of the water this spring.'}`);
       break;
     case 'voles':
-      addNews(e.boom ? '🐁 <b>A vole year!</b> The long grass is alive with voles, and the foxes are out mousing, leaping high to pounce.'
+      (e.boom ? bigNews : addNews)(e.boom ? '🐁 <b>A vole year!</b> The long grass is alive with voles, and the foxes are out mousing, leaping high to pounce.'
         : '🐁 <b>The voles have crashed.</b> The long grass has gone quiet, and the foxes are back to hunting rabbits.');
       break;
     case 'windfall':
@@ -7154,7 +7183,7 @@ function handleEvent(e) {
         : '🍎 <b>The apples are falling.</b> Hungry rabbits are gathering under the apple trees.');
       break;
     case 'bloom':
-      addNews(`${e.field.emoji[0]} ${esc(e.field.name)} is in bloom.${e.field.season === 2 ? ' The last flowers before winter.' : ''}`);
+      addNews(`${e.field.emoji[0]} ${esc(e.field.name)} is in bloom.${e.field.season === 2 ? ' The last flowers before winter.' : ''}`, 'bloom', 1);
       break;
     case 'flooded': {
       const { burrow: b, drowned, escaped } = e, who = escaped.slice(0, 3).map(link).join(', ') + (escaped.length > 3 ? ` and ${escaped.length - 3} more` : '');
@@ -7189,7 +7218,7 @@ function handleEvent(e) {
     }
     case 'extinct':
       chime('extinct');
-      addNews({
+      bigNews({
         rabbit: '😢 <b>The last rabbit is gone.</b>',
         fox: '😢 <b>The last fox is gone.</b> The rabbits can relax, for now.',
         bee: '😢 <b>The hive has gone quiet.</b> The last bee is gone.',
@@ -7236,7 +7265,7 @@ function checkPopulationNews() {
       ui.records[s] = Math.max(ui.records[s], fresh);
     } else if (fresh > ui.records[s]) {
       if (fresh >= Math.max(big.record, Math.ceil(ui.records[s] * 1.12))) {
-        addNews(`📈 <b>${fresh} ${name}</b>, the most this meadow has ever had!`, 'record-' + s, 20000);
+        addNews(`📈 <b>${fresh} ${name}</b>, the most this meadow has ever had!`, 'record-' + s, 20000, 'big');
       }
       ui.records[s] = fresh;
     }
@@ -7245,7 +7274,7 @@ function checkPopulationNews() {
     const season = S.seasonOf(world.tick) + 4 * S.clock(world).year;
     if (peak >= big.crash && now <= peak * 0.3 && ui.crashSaid[s] !== season && now > 0) {
       ui.crashSaid[s] = season;
-      addNews(`📉 <b>The ${name} are crashing</b>: ${now} left, down from ${peak}.`);
+      bigNews(`📉 <b>The ${name} are crashing</b>: ${now} left, down from ${peak}.`);
     }
   }
 }
@@ -7563,7 +7592,7 @@ function milestone(y, show) {
   const was = oldTree && Math.floor(S.treeAge(world, oldTree)) - y;
   let more = born.length ? `${upper(andList(born))} born here so far.` : '';
   if (oldTree && was >= 2) more += ` ${oldTree.name ? `The ${treeLink(oldTree, esc(oldTree.name))}` : `The oldest ${treeLink(oldTree, treeName(oldTree).toLowerCase())}`} was already ${yearsOld(was)} when it began.`;
-  addNews(`🎂 <b>The meadow is ${words.toLowerCase()} ${y === 1 ? 'year' : 'years'} old!</b> ${more}`);
+  bigNews(`🎂 <b>The meadow is ${words.toLowerCase()} ${y === 1 ? 'year' : 'years'} old!</b> ${more}`);
   if (!show) return;
   if (idle.on) { idleLine(`${words} ${y === 1 ? 'year' : 'years'} of the meadow`); return; }
   if (!canBreak()) return;
