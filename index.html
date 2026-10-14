@@ -94,45 +94,14 @@
   a[data-id], a[data-thing], a[data-act] { color: var(--accent-ink); font-weight: 800; text-decoration: none; cursor: pointer; }
   @media (hover: hover) { a[data-id]:hover, a[data-thing]:hover, a[data-act]:hover { text-decoration: underline; } }
 
-  /* ---- the meadow card, top left */
-  #meadow { top: var(--top); left: var(--left); width: 272px; padding: calc((var(--hud-h) - 30px) / 2) 10px 10px 16px; }
-  #meadow.mini { width: auto; height: var(--hud-h); padding: 0 4px; display: flex; align-items: center; }
-  #meadow.mini .full, #meadow:not(.mini) .mini-line { display: none; }
-  .mini-line { display: flex; align-items: center; gap: 12px; border: none; background: transparent; border-radius: 12px; height: 38px; padding: 0 5px 0 12px; font-size: 15px; }
-  @media (hover: hover) { .mini-line:hover { background: rgba(0,0,0,0.04); } }
-  .mini-line b { font-weight: 900; font-variant-numeric: tabular-nums; }
-  #mini-sky { letter-spacing: 3px; }
-  /* the card's one window control: a chevron, up to fold the card away, down to open it again */
+  /* a card's window control: a chevron, up to fold the card away, down to open it again */
   .win-btn { flex: none; width: 28px; height: 28px; border: none; border-radius: 8px; background: transparent; position: relative; transition: background 0.15s; }
-  @media (hover: hover) { .win-btn:hover, .mini-line:hover .win-btn { background: rgba(0,0,0,0.06); } }
+  @media (hover: hover) { .win-btn:hover { background: rgba(0,0,0,0.06); } }
   .win-btn::before { content: ''; position: absolute; left: 50%; top: 50%; width: 7px; height: 7px;
     border: solid var(--muted); border-width: 2.5px 0 0 2.5px; border-radius: 1px; transform: translate(-50%, -25%) rotate(45deg); }
   .win-btn.grow::before { transform: translate(-50%, -75%) rotate(225deg); }
-  #meadow .head { display: flex; align-items: center; gap: 8px; height: 30px; }
   /* the name is Fraunces, soft and wonky; everything else stays Nunito */
   .fr { font-family: Fraunces, Georgia, serif; font-variation-settings: 'SOFT' 100, 'WONK' 1; }
-  #meadow .brand { display: flex; align-items: center; gap: 8px; font-size: 20px; font-weight: 650; letter-spacing: -0.01em; white-space: nowrap; flex: 1; }
-  #meadow .brand svg { flex: none; width: 30px; height: 30px; }
-  #meadow .clock { color: var(--muted); font-weight: 700; margin-top: 4px; display: flex; gap: 6px; align-items: center; }
-  #meadow .clock b { color: var(--ink); }
-  #sky { margin-top: 2px; color: var(--muted); font-weight: 700; font-size: 13px; cursor: help; }
-  #sky b { color: var(--ink); }
-  #sky .fire { color: #b0461a; font-weight: 900; }
-  #meadow h3.sec { margin: 12px 0 2px; padding-top: 10px; border-top: 1px dashed var(--line); font-size: 12px; text-transform: uppercase;
-    letter-spacing: 0.8px; color: var(--muted); }
-  #meadow h3.sec span { text-transform: none; letter-spacing: 0; font-weight: 700; margin-left: 4px; }
-  .pop { display: grid; grid-template-columns: 26px 38px 1fr; align-items: center; gap: 6px; margin-top: 4px; padding: 2px 0; }
-  .pop .emoji { font-size: 20px; }
-  .pop .n { font-weight: 900; font-size: 18px; font-variant-numeric: tabular-nums; }
-  .pop canvas { width: 100%; height: 34px; }
-  .evo .row { font-size: 13px; line-height: 1.5; }
-  .evo .quiet { color: var(--muted); }
-  .evo .up { color: var(--good-ink); font-weight: 800; }
-  .evo .down { color: var(--down-ink); font-weight: 800; }
-  .card-actions { display: flex; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line); }
-  .card-actions .act { flex: 1; border: none; border-radius: 10px; padding: 6px 8px; background: rgba(0,0,0,0.04); font-weight: 800; font-size: 12.5px; color: var(--ink); }
-  @media (hover: hover) { .card-actions .act:hover { background: rgba(0,0,0,0.08); } }
-  .card-actions .act.on { background: var(--accent-soft); color: #9a5024; }
 
   /* ---- news: a few short-lived toasts bottom left, the full log in the meadow card */
   #news { position: fixed; left: var(--left); bottom: calc(var(--bar, 92px) + 8px + var(--guide-h, 0px)); width: 330px; display: flex; flex-direction: column-reverse; gap: 5px; pointer-events: none; transition: bottom 0.35s ease; }
@@ -229,23 +198,6 @@
   #watch .plaque { position: relative; margin-top: calc(var(--d) * -0.05); padding: 2px 11px 3px; border-radius: 10px; white-space: nowrap;
     background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); font-size: 14px; font-weight: 600; color: var(--ink); }
   #watch .plaque span { color: var(--muted); font-weight: 450; }
-  /* A new day at the top of the meadow (game.js daybreakTick), fading in and out, with a line about the meadow
-     under it; a new season or year bigger, and a round number of years biggest, in gold. */
-  #daybreak { position: fixed; left: 50%; top: calc(var(--top) + var(--watch-d) + 36px); z-index: 2; pointer-events: none; text-align: center;
-    width: max-content; max-width: min(calc(100vw - 32px), 460px); padding: 6px 22px 10px;
-    background: radial-gradient(closest-side, rgba(35, 28, 15, 0.3), transparent); color: #fff7e4;
-    text-shadow: 0 1px 2px rgba(40, 30, 15, 0.6), 0 0 16px rgba(40, 30, 15, 0.4);
-    opacity: 0; transform: translate(-50%, -6px); transition: opacity 0.9s ease, transform 0.9s ease; }
-  #daybreak.on { opacity: 1; transform: translate(-50%, 0); }
-  #daybreak b { display: block; font-size: 22px; font-style: italic; font-weight: 500; white-space: nowrap; }
-  #daybreak.season b { font-size: 36px; line-height: 1.1; }
-  #daybreak small { display: block; font-size: 12px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.85; white-space: nowrap; }
-  #daybreak p { margin: 5px 0 0; font-size: 15px; font-weight: 650; line-height: 1.35; text-wrap: balance; }
-  #daybreak.on a { pointer-events: auto; }   /* clicks go through to the meadow, except on names (off to see it) */
-  #daybreak a { color: #ffc77e; }
-  #daybreak.milestone b { font-size: 44px; line-height: 1.1; color: #ffe39a;
-    text-shadow: 0 1px 2px rgba(60, 35, 5, 0.7), 0 0 22px rgba(255, 190, 80, 0.55), 0 0 40px rgba(40, 30, 15, 0.4); }
-  #daybreak.milestone b::before, #daybreak.milestone b::after { content: '✦'; font-size: 0.45em; vertical-align: middle; margin: 0 0.5em; font-style: normal; }
   .hud-sep { width: 1px; height: 24px; margin: 0 5px; background: var(--line); }
   .hud-btn { border: none; background: transparent; border-radius: 9px; height: 36px; min-width: 36px; padding: 0 6px;
     font-size: 17px; position: relative; transition: background 0.15s; }
@@ -272,7 +224,6 @@
   #sky-menu .tool .e { font-size: 24px; }
   #sky-menu .tool .l { font-size: 12px; }
   #sky-menu .sep { display: none; }
-  #sky .lock { font-size: 11px; }
 
   /* ---- inspector, right */
   #inspector { width: 340px; min-height: 0; overflow-y: auto; padding: 20px 20px 18px; display: none; }
@@ -337,7 +288,7 @@
 
   /* ---- welcome */
   /* the terrain lab (?lab) brings its own panel, see terrain-lab.js */
-  body.lab #meadow, body.lab #watch, body.lab #news, body.lab #guide, body.lab #toolbar, body.lab #hud-right, body.lab #ring, body.lab #keep-top, body.lab #tool-tip, body.lab #forecast, body.lab #tasks, body.lab #alerts { display: none; }
+  body.lab #watch, body.lab #news, body.lab #guide, body.lab #toolbar, body.lab #hud-right, body.lab #ring, body.lab #keep-top, body.lab #tool-tip, body.lab #forecast, body.lab #tasks, body.lab #alerts { display: none; }
 
   #welcome { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(60, 70, 30, 0.28); z-index: 10; transition: opacity 0.7s ease; }
   #welcome.leaving { opacity: 0; pointer-events: none; }
@@ -419,56 +370,6 @@
   #ask .go:disabled { opacity: 0.5; }
   #ask.sent :is(textarea, .btns, .ask-q), #ask:not(.sent) .ask-thanks { display: none; }
 
-  /* ---- who ate whom: the food web (game.js, updateWeb). Like #ask. */
-  #web { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 9; box-sizing: border-box; width: min(470px, calc(100% - 32px));
-    max-height: calc(100% - 24px); overflow: hidden auto; scrollbar-width: thin; padding: 16px 20px 14px;
-    background: var(--paper, none) #f7eedc; border-radius: 22px; box-shadow: 0 20px 60px rgba(50, 40, 15, 0.3); }
-  #web:not(.hidden) > * { animation: pop-in 0.18s ease-out; }
-  .web-head { display: flex; align-items: center; gap: 10px; }
-  .web-head h2 { margin: 0; font-size: 24px; font-weight: 650; line-height: 1.15; }
-  .web-head .close { margin-left: auto; font-size: 18px; }
-  .web-when { margin: 10px 0 4px; align-self: flex-start; width: fit-content; }
-  .web-when button { padding: 5px 10px; }
-  #web-svg { display: block; width: 100%; height: auto; user-select: none; -webkit-user-select: none; }
-  #web-say { min-height: 4.4em; margin: 2px 2px 0; line-height: 1.45; font-size: 14.5px; }
-  #web-svg text { text-anchor: middle; font-family: inherit; }
-  #web-svg .web-row { text-anchor: start; font-size: 11px; font-style: italic; fill: var(--muted); }
-  .web-node .disc { fill: #fffaf0; stroke-width: 2.5; }
-  :is(.web-node text, #web-svg .web-row) { paint-order: stroke; stroke: #f7eedc; stroke-width: 4px; stroke-linejoin: round; }
-  .web-node .name { font-size: 12.5px; font-weight: 800; fill: var(--ink); }
-  .web-node .now { font-size: 11px; font-weight: 700; fill: var(--muted); }
-  .web-node, .web-link { cursor: pointer; transition: opacity 0.3s; }
-  .web-link .ln { stroke-linecap: round; stroke-opacity: 0.72; }
-  .web-link .hd { fill-opacity: 0.85; }
-  .web-link .hit { stroke: transparent; stroke-width: 14; }
-  .web-link.body .ln { stroke: #8f8578; stroke-dasharray: 2 4; }
-  .web-link.body .hd { fill: #8f8578; }
-  .web-link.grow .ln { stroke-dasharray: 7 4; }
-  .web-link.uncounted .ln { stroke-dasharray: 1 4; stroke-opacity: 0.6; }
-  .web-link.none { opacity: 0.35; }
-  .web-link.none .ln { stroke-dasharray: 1 5; }
-  .web-node.gone { opacity: 0.35; }
-  .web-node.gone .disc { stroke-dasharray: 3 3; }
-  .web-link.gone { opacity: 0.2; }
-  #web-svg.picking :is(.web-node, .web-link):not(.hot) { opacity: 0.12; }
-  #web-svg.picking .web-node.gone.hot { opacity: 0.5; }
-  .web-btn { margin-left: auto; border-radius: 12px; background: #fffaf0; box-shadow: 0 0 0 1px var(--line) inset; padding: 6px 12px; font-weight: 800; color: var(--ink); }
-  .web-btn + .close { margin-left: 0; }
-  @media (max-width: 760px) and (min-height: 501px) {
-    #web { width: calc(100% - 16px); padding: 12px 12px 10px; border-radius: 18px; }
-    .web-head h2 { font-size: 21px; }
-    #web-say { font-size: 14px; }
-  }
-  @media (max-height: 500px) {
-    #web { width: calc(100% - 24px); max-width: 820px; padding: 10px 14px; }
-    .web-head h2 { font-size: 19px; }
-    .web-when { position: absolute; top: 9px; right: 48px; margin: 0; }
-    .web-body { display: flex; gap: 14px; align-items: center; }
-    #web-svg { width: auto; height: calc(100vh - 92px); height: calc(100dvh - 92px); flex: none; max-width: 62%; }
-    #web-say { flex: 1; min-height: 0; }
-  }
-  @media (max-width: 440px) { .stats-head .web-btn { padding: 6px 8px; font-size: 13px; } }
-
   /* ---- back after a while: the meadow runs on a season, then says what happened (game.js, startAway). Like #ask. */
   #away { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 10; width: min(420px, calc(100% - 32px)); padding: 22px 24px 20px;
     max-height: calc(100% - 32px); box-sizing: border-box; overflow: hidden auto; scrollbar-width: thin;
@@ -527,8 +428,8 @@
     border: none; background: none; padding: 8px 4px; font: 800 13px Nunito, ui-rounded, system-ui, sans-serif; color: rgba(243, 231, 207, 0.55); cursor: pointer; }
   @media (hover: hover) { #intro .skip:hover { color: #f3e7cf; } }
   body:not(.intro) #intro .skip { visibility: hidden; }
-  body.hush :is(#meadow, #watch, #news, #guide, #toolbar, #hud-right, #keep-top, #tool-tip, #forecast, #tasks, #alerts) { visibility: hidden; }
-  body.ui-in :is(#meadow, #watch, #news, #guide, #toolbar, #hud-right, #keep-top, #tool-tip, #forecast, #tasks, #alerts) { animation: ui-in 1s ease both; }
+  body.hush :is(#watch, #news, #guide, #toolbar, #hud-right, #keep-top, #tool-tip, #forecast, #tasks, #alerts) { visibility: hidden; }
+  body.ui-in :is(#watch, #news, #guide, #toolbar, #hud-right, #keep-top, #tool-tip, #forecast, #tasks, #alerts) { animation: ui-in 1s ease both; }
   @keyframes ui-in { from { opacity: 0; } }
   @media (prefers-reduced-motion: reduce) { #intro .bar, #intro .line, #welcome, #welcome .card { transition-duration: 0.01s; } }
   /* ---- the idle camera (game.js, startIdle): the intro's bars and lines, the cards faded away, and a dip to
@@ -536,13 +437,13 @@
   #intro .dip { position: absolute; inset: 0; background: #1d1a15; opacity: 0; transition: opacity 0.4s ease; }
   #intro .dip.on { opacity: 1; }
   body.idle #intro .bar { transform: none; }
-  body.idle :is(#meadow, #watch, #news, #guide, #toolbar, #hud-right, #keep-top, #tool-tip, #forecast, #tasks, #alerts) { opacity: 0; visibility: hidden; transition: opacity 1s ease, visibility 0s 1s; }
+  body.idle :is(#watch, #news, #guide, #toolbar, #hud-right, #keep-top, #tool-tip, #forecast, #tasks, #alerts) { opacity: 0; visibility: hidden; transition: opacity 1s ease, visibility 0s 1s; }
   /* ---- a visitor's first sighting (game.js, startReveal): the intro's bars, "First sighting" in the top one and its
      name in the bottom one, and the cards stepped away for a moment */
   #intro .top { display: grid; place-items: center; padding-top: env(safe-area-inset-top, 0px); }
   #intro .bottom > * { grid-area: 1 / 1; }
   body.reveal #intro .bar { transform: none; transition-duration: 0.7s; }
-  body.reveal :is(#meadow, #watch, #news, #guide, #toolbar, #hud-right, #keep-top, #tool-tip, #forecast, #tasks, #alerts, #inspector, #daybreak) { opacity: 0; visibility: hidden; transition: opacity 0.4s ease, visibility 0s 0.4s; }
+  body.reveal :is(#watch, #news, #guide, #toolbar, #hud-right, #keep-top, #tool-tip, #forecast, #tasks, #alerts, #inspector) { opacity: 0; visibility: hidden; transition: opacity 0.4s ease, visibility 0s 0.4s; }
   #intro .rv { margin: 0 16px; text-align: center; color: #f3e7cf; opacity: 0; transform: translateY(5px); transition: opacity 0.3s ease, transform 0.3s ease; }
   body.reveal #intro .rv { opacity: 1; transform: none; transition: opacity 0.7s ease 0.45s, transform 0.7s ease 0.45s; }
   #reveal-top { font: 900 12px Nunito, ui-rounded, system-ui, sans-serif; letter-spacing: 0.16em; text-transform: uppercase; color: #f0c870; }
@@ -552,81 +453,10 @@
   @media (max-height: 560px) { #reveal-why { display: none; } }
   .hidden { display: none !important; }
 
-  /* ---- the stats page, over everything */
-  .pop[data-act] { cursor: pointer; border-radius: 10px; }
-  @media (hover: hover) { .pop[data-act]:hover { background: rgba(0,0,0,0.04); } }
-  #stats { position: fixed; inset: 0; z-index: 8; overflow-y: auto; background: #f3ead8; animation: pop-in 0.25s ease-out; }
-  .stats-wrap { max-width: 1180px; margin: 0 auto;   /* clear of the notch and the clock on the home screen */
-    padding: calc(22px + env(safe-area-inset-top, 0px)) calc(24px + env(safe-area-inset-right, 0px)) 40px calc(24px + env(safe-area-inset-left, 0px)); }
-  .stats-head { display: flex; align-items: center; gap: 14px; }
-  .stats-head h1 { margin: 0; font-size: 24px; font-weight: 900; }
-  #stats-clock { color: var(--muted); font-weight: 800; }
-  .stats-head .close { font-size: 20px; margin-left: auto; align-self: center; }
-  .stats-filters { display: flex; flex-wrap: wrap; gap: 10px 18px; margin: 16px 0 14px; }
-  .seg { display: flex; flex-wrap: wrap; background: #fffaf0; border-radius: 12px; padding: 3px; box-shadow: 0 0 0 1px var(--line) inset; }
-  .seg button { border: none; background: transparent; border-radius: 9px; padding: 6px 12px; font-weight: 800; color: var(--muted); }
-  @media (hover: hover) { .seg button:hover { color: var(--ink); } }
-  .seg button.on { background: var(--accent-soft); color: #9a5024; }
-  .stats-card { background: #fffaf0; border-radius: var(--radius); box-shadow: 0 1px 3px rgba(70,55,25,0.10), 0 0 0 1px var(--line); padding: 16px 18px; }
-  .stats-card h3 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); }
-  .chart-title { font-size: 18px; font-weight: 900; }
-  .chart-title small { color: var(--muted); font-size: 13px; font-weight: 700; margin-left: 6px; }
-  .chart-box { position: relative; margin-top: 4px; }
-  #stats-chart { display: block; width: 100%; cursor: crosshair; touch-action: pan-y; }
-  #stats-tip { position: absolute; top: 34px; pointer-events: none; background: #fff; border-radius: 10px; padding: 7px 10px;
-    box-shadow: var(--shadow); font-size: 12.5px; white-space: nowrap; }
-  .tip-when { font-weight: 800; color: var(--muted); margin-bottom: 3px; }
-  .tip-row { display: flex; align-items: center; gap: 6px; line-height: 1.5; }
-  .tip-row i { width: 12px; height: 3px; border-radius: 2px; }
-  .tip-row b { font-size: 14px; font-variant-numeric: tabular-nums; }
-  .tip-row.dim { color: var(--muted); }
-  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px; font-size: 12px; font-weight: 700; color: var(--muted); }
-  .legend .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -2px; margin-right: 4px; }
-  .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 14px; }
-  .stats-grid .wide { grid-column: 1 / -1; }
-  .st-name { font-weight: 900; margin: 10px 0 4px; }
-  .st-name:first-child { margin-top: 0; }
-  .st-sub { color: var(--muted); font-weight: 700; font-size: 12px; }
-  .st-name .st-sub { margin-left: 6px; }
-  table.rec { width: 100%; border-collapse: collapse; font-size: 13px; }
-  table.rec td { padding: 3px 0; border-bottom: 1px dashed var(--line); }
-  table.rec tr:last-child td { border-bottom: none; }
-  table.rec td:first-child { color: var(--muted); font-weight: 700; width: 38%; }
-  table.rec td:last-child { color: var(--muted); font-size: 12px; text-align: right; white-space: nowrap; }
-  table.rec b { font-variant-numeric: tabular-nums; }
-  .sb-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-  .sb { text-align: center; }
-  .sb-val { font-weight: 900; font-size: 13px; font-variant-numeric: tabular-nums; }
-  .sb-bar { height: 64px; display: flex; align-items: flex-end; justify-content: center; margin: 3px 0; border-bottom: 1px solid var(--line); }
-  .sb-bar span { width: 60%; max-width: 38px; border-radius: 4px 4px 0 0; }
-  .sb-lbl { font-size: 15px; }
-  .dbar { display: grid; grid-template-columns: 120px 1fr 72px; align-items: center; gap: 8px; font-size: 13px; margin: 5px 0; }
-  .dbar .dl { font-weight: 700; }
-  .dbar .dt { height: 10px; background: #efe5d3; border-radius: 99px; overflow: hidden; }
-  .dbar .dt span { display: block; height: 100%; border-radius: 99px; }
-  .dbar .dn { text-align: right; color: var(--muted); font-size: 12px; }
-  .dbar .dn b { color: var(--ink); font-size: 13px; }
-  .evo-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 8px; }
-  .coats { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; margin-bottom: 8px; }
-  .coats i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
-  .evo-mini { background: #fff; border-radius: 12px; padding: 8px 10px 6px; box-shadow: 0 0 0 1px var(--line) inset; }
-  .em-head { font-weight: 800; font-size: 13px; }
-  .em-head .up { color: var(--good-ink); font-size: 12px; }
-  .em-head .down { color: var(--down-ink); font-size: 12px; }
-  .em-word { color: var(--muted); font-size: 12px; font-weight: 700; }
-  .evo-mini canvas { display: block; width: 100%; margin-top: 4px; }
-
   /* ---- phones, upright or on their side: one slim row on top and a slim toolbar */
   @media (max-width: 760px), (max-height: 500px) {
     .phone-only { display: revert; }
-    #meadow { --hud-h: 44px; }
-    #mini-sky { display: none; }   /* the weather waits in ••• */
-    #meadow:not(.mini) { width: calc(100% - 32px); }
-    /* The small card and the time pill share the top row. The big card pushes the pill below it. */
-    #hud-right { top: calc(var(--top) + var(--meadow-h, 0px) + 8px); left: var(--left); }
-    #meadow.mini ~ #hud-right { top: var(--top); }
-    #meadow .evo, #meadow .evo-h { display: none; }
-    .mini-line { gap: 10px; }
+    #hud-right { left: var(--left); }
     #news { bottom: calc(var(--bottom) + var(--guide-h, 0px)); width: calc(100% - var(--left) - var(--right) - 60px); }   /* beside the tools' button */
     #guide { bottom: var(--bottom); width: calc(100% - var(--left) - var(--right) - 60px); max-width: 360px; }
     .g-list small { display: none; } .g-list .fresh small { display: block; }   /* no room for every hint: just what the last one said */
@@ -654,7 +484,6 @@
     :root { --watch-d: 56px; }
     #watch .plaque { font-size: 12.5px; padding: 1px 8px 2px; }
     #watch .plaque span { display: none; }
-    #daybreak b { font-size: 19px; } #daybreak.season b { font-size: 30px; } #daybreak.milestone b { font-size: 34px; } #daybreak p { font-size: 14px; }
     .speed { min-width: 40px; height: 38px; padding: 0 6px; font-size: 15px; }
     .hud-btn.more { min-width: 40px; height: 38px; }
     /* ••• as tiles, three to a row; starting over stays a row of its own at the bottom */
@@ -702,8 +531,7 @@
   /* ---- phones on their side: the inspector is a panel down the right, and the meadow keeps the middle.
      Open, the panel covers the tools' button; fold it or close it to get them back. */
   @media (max-height: 500px) {
-    #meadow:not(.mini) { width: 280px; max-height: calc(100vh - var(--top) - var(--bottom)); max-height: calc(100dvh - var(--top) - var(--bottom)); overflow-y: auto; overscroll-behavior: contain; z-index: 4; }
-    #meadow:not(.mini) ~ #hud-right, #hud-right { top: var(--top); left: auto; }
+    #hud-right { left: auto; }
     #news, #guide { width: min(330px, calc(100% - var(--left) - var(--right) - 60px)); }
     #inspector { width: min(320px, 42vw); padding: 6px 16px 16px; overscroll-behavior: contain; }
     #more-menu:not(.hidden) { grid-template-columns: repeat(5, minmax(0, 1fr)); width: 440px; }
@@ -728,16 +556,6 @@
     #intro { --lb: clamp(36px, 11vh, 96px); }
     #intro .line { margin: 0 18px; font-size: 16px; }
   }
-  /* Upright phones: five kinds and the time pill don't fit in a row, so each count sits under its emoji,
-     and the whole pill opens the card. */
-  /* Upright, the big card spans the top and says the day itself: the watch waits till it's small. */
-  @media (max-width: 760px) and (min-height: 501px) { #meadow:not(.mini) ~ #watch { display: none; } }
-  @media (max-width: 540px) and (min-height: 501px) {
-    #meadow.mini .win-btn { display: none; }
-    .mini-line { gap: 9px; padding: 0 10px; }
-    .mini-pop { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 15px; line-height: 1; }
-    .mini-pop b { font-size: 12px; }
-  }
   @media (max-width: 440px) {
     #welcome .banner { height: 168px; }
     #welcome .watch { right: 14px; top: -10px; width: min(98px, 26vw); }   /* the name and the watch share the width, down to 320 px */
@@ -746,21 +564,6 @@
     #welcome h1 .to { font-size: 13px; margin-bottom: 4px; } #welcome h1 .n1 { font-size: 22px; } #welcome h1 .n2 { font-size: min(50px, 12vw); }
     #welcome .body { padding: 14px 20px 18px; }
     #time .speed, .hud-btn.more { min-width: 36px; padding: 0 4px; }
-  }
-  @media (max-width: 360px) {
-    .mini-line { gap: 4px; padding: 0 7px; }
-    .mini-pop b { font-size: 11px; }
-    .stats-wrap { padding: calc(16px + env(safe-area-inset-top, 0px)) 16px 32px; }
-    .stats-head { flex-wrap: wrap; gap: 4px 12px; }
-    .stats-head h1 { font-size: 20px; }
-    .stats-head .close { position: absolute; top: 12px; right: 12px; }
-    .stats-grid { grid-template-columns: 1fr; }
-    .evo-grid { grid-template-columns: repeat(2, 1fr); }
-    .dbar { grid-template-columns: 104px 1fr 64px; }
-  }
-  @media (min-width: 761px) and (max-width: 1000px) {
-    .stats-grid { grid-template-columns: 1fr 1fr; }
-    .evo-grid { grid-template-columns: repeat(3, 1fr); }
   }
 
   /* ---- ?keep: the keeper's frame (html.keep, set in the head and by game.js; nothing here reaches the bare address).

@@ -1375,9 +1375,6 @@ function startTrees(w) {
   }
 }
 
-// Counts for balance.js: seeds shed, seedlings come up, and deaths by cause, of each kind.
-const tally = (w, kind, what) => { const t = w.treeStats[kind] ??= {}; t[what] = (t[what] || 0) + 1; };
-
 const childTone = (w, d) => {
   const r = w.treeRng;
   if (d.tone === 3) return r.next() < 0.5 ? 3 : r.int(0, 2);
@@ -1474,7 +1471,6 @@ function sprout(w, s) {
   if (r.next() > SPROUT_ODDS * bare * room * suits) return null;
   const d = newTree(w, s.x, s.y, s.kind, { tone: s.tone, parent: s.parent, by: s.by });
   w.sprouted++; if (burnt) w.sproutedBurnt++;
-  tally(w, s.kind, 'sprouted');
   return d;
 }
 
@@ -1496,7 +1492,6 @@ function seedFall(w) {
     d.nuts = 0;
     const way = waterWay(w, d, FLOAT_REACH, true);
     for (n = Math.floor(n) + (r.next() < n % 1 ? 1 : 0); n > 0; n--) {
-      tally(w, d.kind, 'seeds');
       const wet = way && r.next() < (k.float ?? ON_WATER);
       if (k.by === 'crow' && !wet && r.next() > UNDER) { d.nuts += NUT_CROP; continue; }
       const s = wet ? floatSeed(w, d, way, r) : k.by === 'crow' ? underTree(d, r) : seedSpot(w, d, r);
@@ -1538,7 +1533,6 @@ function floatSeed(w, d, way, r) {
 // A tree dies. A seedling or a sapling is simply gone; a bigger one stands dead a while (a snag), then falls.
 // One the player planted is news (by: the rabbit that ate it).
 function treeDies(w, d, cause, by) {
-  tally(w, d.kind, cause);
   if (d.planted) emit(w, { type: 'plantlost', tree: d, cause, c: by });
   dropBlossoms(w, d);
   if (d.size < SAPLING && !d.hive) { d.gone = true; w.treesMoved = true; return; }
@@ -1559,7 +1553,7 @@ function treesTick(w, grow = true) {
   const r = w.treeRng, t = w.tick, s = seasonOf(t), g = SEASONS[s].growth / GROW_DAYS;
   if (grow) {
     if (s === 0 && w.seeds.length) {                    // the seed comes up through the first half of spring
-      for (const sd of w.seeds) if (sd.at <= t && sprout(w, sd) && sd.by === 'crow') w.stats.planted++;   // (a crow's, forgotten)
+      for (const sd of w.seeds) if (sd.at <= t) sprout(w, sd);
       w.seeds = w.seeds.filter(sd => sd.at > t);
       if (!w.seeds.length && w.sprouted) {
         emit(w, { type: 'sprouts', n: w.sprouted, burnt: w.sproutedBurnt });
@@ -1696,7 +1690,6 @@ function windthrow(w) {
     const d = w.decor[r.int(0, w.decor.length - 1)];
     if (!d.tree || d.fallen || d.stump || d.gone) continue;
     if (!d.dead && (d.size < 3.5 || r.next() > treeAge(w, d) / d.life)) continue;
-    if (!d.dead) tally(w, d.kind, 'storm');
     emit(w, { type: 'windthrow', tree: d, alive: !d.dead });
     treeFalls(w, d);
     return;
@@ -1706,7 +1699,6 @@ function windthrow(w) {
 // Lightning on a tree: a pine dies; a broadleaf loses its crown and grows again from the stump.
 function struck(w, d) {
   if (d.kind === 'pine') { treeDies(w, d, 'lightning'); return; }
-  tally(w, d.kind, 'lightning');
   dropBlossoms(w, d);
   d.stump = w.tick; d.until = w.tick + STUMP_DAYS * TPD;
 }
@@ -1759,7 +1751,6 @@ function windfall(w, c) {
   d.windfall--; w.windfalls--;
   const apple = d.kind === 'apple', found = apple ? WINDFALL_NOTE : `Found ${TREES[d.kind].mast} under ${d.kind === 'oak' ? 'an oak' : 'a beech'}`;
   c.energy = Math.min(c.maxEnergy, c.energy + (apple ? APPLE_ENERGY : NUT_ENERGY));
-  w.stats[apple ? 'apples' : 'nuts'][c.species]++;
   c.mode = 'munch'; c.timer = apple ? 90 : 45; c.target = null; c.snack = apple ? 'apple' : TREES[d.kind].mast;
   if (c.story[c.story.length - 1].text !== found) note(w, c, apple ? '🍎' : '🌰', found);
   return true;
@@ -2381,10 +2372,8 @@ function note(w, c, emoji, text) {
   if (c.story.length > 40) c.story.splice(1, 1);   // keep the birth line
 }
 
-const MARKED = new Set(['extinct', 'arrive', 'fire', 'outbreak', 'drystart', 'dryend', 'dryloss', 'drythrough', 'dugpond', 'frogsfound', 'sowstrip', 'beesfound', 'hedgeplant', 'hedgebloom']);   // moments the stats chart pins on its timeline
 function emit(w, e) {
   e.t = w.tick; w.events.push(e);
-  if (MARKED.has(e.type) && !e.founding) w.history.marks.push({ t: e.t, type: e.type, species: e.species, kind: e.kind });
 }
 
 function nearestBurrow(w, x, y, maxD, ok = b => b.dug >= 1) {
@@ -2558,7 +2547,6 @@ function giveBirth(w, mum) {
   if (dad) dad.kids += n;
   note(w, mum, '🍼', `Had ${n} ${n === 1 ? 'baby' : 'babies'}`);
   if (dad && dad.alive) note(w, dad, '🍼', `Became a dad to ${n} with ${mum.name}`);
-  w.stats.births[mum.species] += n;
   emit(w, { type: 'birth', mum, dad, kids, surprise });
 }
 
@@ -2804,7 +2792,6 @@ function eat(w, c, i) {
   const bite = Math.min(w.grass[i], BITE);
   w.grass[i] -= bite;
   w.bitten[i] = c.id;                                       // any seedling here is in danger (treesTick)
-  w.stats.grazed++;
   c.energy = Math.min(c.maxEnergy, c.energy + bite * GRASS_ENERGY);
 }
 
@@ -3211,13 +3198,13 @@ function mouse(w, c) {
     if (roll < odds * (n - w.voles[i]) / n) {                                  // a frog, as often as there are more of them
       takeFrog(w, x0, y0);
       c.energy = Math.min(c.maxEnergy, c.energy + FROG_ENERGY);
-      c.frogs++; w.stats.frogs++; c.prey = 'frog';
+      c.frogs++; c.prey = 'frog';
       if (c.story[c.story.length - 1].text !== FROG_NOTE) note(w, c, '🐸', FROG_NOTE);
       return true;
     }
     takeVole(w, x0, y0);
     c.energy = Math.min(c.maxEnergy, c.energy + VOLE_ENERGY);
-    c.voles++; w.stats.voles++; c.prey = 'vole';
+    c.voles++; c.prey = 'vole';
     if (c.story[c.story.length - 1].text !== VOLE_NOTE) note(w, c, '🐁', VOLE_NOTE);
     return true;
   }
@@ -3533,12 +3520,11 @@ function tadpolesTick(w, s, dt) {
     if (sp[i] > 0) list[kept++] = i;
   }
   w.spawnN = kept;
-  w.spawnCount = total; w.stats.fishSpawn += fishAte;
+  w.spawnCount = total;
   // The year's verdict, once the tadpoles are gone one way or another.
   if (!(yr.told & 2) && yr.laid > 1 && (total < 0.03 * yr.laid || s >= 2)) {
     yr.told |= 2;
     const per = yr.left / Math.max(1, yr.spawners);
-    w.stats.frogYears.push({ year: yr.year, spawners: +yr.spawners.toFixed(1), laid: +yr.laid.toFixed(1), stranded: +yr.stranded.toFixed(1), eaten: +yr.eaten.toFixed(1), left: +yr.left.toFixed(1) });
     emit(w, { type: 'frogyear', big: per >= FROG_BOOM, poor: per < FROG_POOR, per, stranded: yr.stranded / yr.laid });
   }
   if (total < 1e-3) { for (let k = 0; k < kept; k++) sp[list[k]] = 0; w.spawnN = 0; w.spawnCount = 0; }
@@ -3576,7 +3562,7 @@ function tadpoles(w, c) {
       return true;
     }
     const got = Math.min(sp[t.i], SPAWN_BITE);
-    sp[t.i] -= got; w.spawnCount -= got; w.frogYear.eaten += got; w.stats.crowSpawn += got;
+    sp[t.i] -= got; w.spawnCount -= got; w.frogYear.eaten += got;
     c.energy = Math.min(c.maxEnergy, c.energy + got * SPAWN_ENERGY);
     return true;
   }
@@ -3770,7 +3756,6 @@ function layEggs(w, h) {
     q.kids++;
   }
   if (!kids.length) return;
-  w.stats.births.bee += kids.length;
   emit(w, { type: 'hatch', hive: h, queen: h.queen, kids });
 }
 
@@ -4036,7 +4021,7 @@ function beeForage(w, c) {
     if (--c.timer > 0) return true;
     pollinate(w, c.target); c.target.sipped = w.tick;
     emit(w, { type: 'pollinate', x: c.target.x, y: c.target.y });
-    c.load += HONEY; c.visits++; w.stats.sips++;
+    c.load += HONEY; c.visits++;
     const rich = freshAround(w, c.target);
     if (rich >= RICH && (!c.find || rich > c.find.rich)) c.find = { x: c.target.x, y: c.target.y, rich, field: c.target.field };
     c.mode = 'wander'; c.target = null;
@@ -4140,7 +4125,7 @@ function freshAround(w, f) {
 // A visited flower spreads its seed: the grass around it grows back thicker. Good for rabbits.
 // Blossom on a tree sets fruit instead (setFruit).
 function pollinate(w, p) {
-  if (p.tree) { p.tree.visits++; w.stats.blossomSips++; return; }
+  if (p.tree) { p.tree.visits++; return; }
   for (let y = (p.y | 0) - 2; y <= (p.y | 0) + 2; y++) {
     for (let x = (p.x | 0) - 2; x <= (p.x | 0) + 2; x++) {
       if (!dry(w, x, y)) continue;
@@ -4192,7 +4177,6 @@ function leaveRemains(w, c, killed) {
   const meat = c.maxEnergy * (0.4 + 0.6 * growth(w, c)) * (killed ? KILL_LEFT : 1);
   // fed, fox: when a crow, a fox was last at them (a fox's catch: it's eating the rest right there); eaten: the crows had the last of them
   w.carcasses.push({ x: c.x, y: c.y, c, meat, full: meat, fed: -1e9, fox: killed ? w.tick : -1e9, eaten: false, seats: null });   // (seats: carrion)
-  w.stats.remains.left++; w.stats.bodies[c.species]++;
 }
 
 // The remains rot away. A big gathering of crows at them in an outbreak is news.
@@ -4209,7 +4193,6 @@ function carrionTick(w) {
     if (n >= GATHERING) { w.gatherSaid = w.outbreak.t; news = false; emit(w, { type: 'gathering', remains: k, n }); }
   }
   if (!gone) return;
-  for (const k of w.carcasses) if (k.meat <= 0) w.stats.remains[k.eaten ? 'eaten' : 'rotted']++;
   w.carcasses = w.carcasses.filter(k => k.meat > 0);
 }
 
@@ -4493,7 +4476,7 @@ function peck(w, c, hungry) {
     c.mode = 'peck'; c.target = { x: ok ? x : c.x, y: ok ? y : c.y, hop: ok && r > 1.1 && w.rng.next() < 0.5, stop: w.rng.int(CROW_STOP[0], CROW_STOP[1]) };
   }
   const g = grubs(w, c.x, c.y);
-  c.energy = Math.min(c.maxEnergy, c.energy + g); w.stats.grubs += g / GRUB;
+  c.energy = Math.min(c.maxEnergy, c.energy + g);
 }
 
 // The best of a few spots about with more grubs than here, if any.
@@ -4524,7 +4507,6 @@ function carrion(w, c) {
     if (!c.story[c.story.length - 1].text.startsWith(REMAINS_NOTE)) note(w, c, '🍖', `${REMAINS_NOTE} ${k.c.name}`);
   }
   const bite = Math.min(k.meat, CROW_BITE, c.maxEnergy - c.energy);
-  if (k.fed < 0) w.stats.remains.crows++;                 // the first crow at them
   k.meat -= bite; c.energy += bite; k.fed = w.tick;
   if (k.meat <= 0) k.eaten = true;
   return true;
@@ -4544,7 +4526,7 @@ function cacheNut(w, c) {
     w.seeds.push(s);
     if (!c.caches?.length || c.caches[0].at < w.tick) c.caches = [];   // (last year's are long come up)
     if (c.caches.push(s) > CACHE_MEMORY) c.caches.shift();
-    w.stats.cached++; w.cached++;
+    w.cached++;
     c.mode = 'wander'; c.target = null;
     if (--c.load > 0) cacheSpot(w, c, d);
     return true;
@@ -4589,7 +4571,7 @@ function unbury(w, c) {
   if (!go(w, c, s.x, s.y, c.walk) || --c.timer > 0) return true;
   c.caches.pop();
   const i = w.seeds.indexOf(s);
-  if (i >= 0) { w.seeds.splice(i, 1); c.energy = Math.min(c.maxEnergy, c.energy + NUT_ENERGY); w.stats.dugUp++; }
+  if (i >= 0) { w.seeds.splice(i, 1); c.energy = Math.min(c.maxEnergy, c.energy + NUT_ENERGY); }
   c.mode = 'wander'; c.target = null;
   return true;
 }
@@ -4819,7 +4801,7 @@ function owlHunt(w, c) {
     if (roll < odds * (n - w.voles[i]) / n) {                                  // a frog
       takeFrog(w, x0, y0);
       c.energy = Math.min(c.maxEnergy, c.energy + OWL_FROG);
-      c.frogs++; c.prey = 'frog'; w.stats.owlFrogs++;
+      c.frogs++; c.prey = 'frog';
       if (c.perch) c.perch.tries = 0;
       c.mode = 'gulp'; c.timer = OWL_GULP;
       if (c.story[c.story.length - 1].text !== OWL_FROG_NOTE) note(w, c, '🐸', OWL_FROG_NOTE);
@@ -4827,7 +4809,7 @@ function owlHunt(w, c) {
     }
     takeVole(w, x0, y0);
     c.energy = Math.min(c.maxEnergy, c.energy + OWL_VOLE);
-    c.voles++; c.prey = 'vole'; w.stats.owlVoles++;
+    c.voles++; c.prey = 'vole';
     if (c.perch) c.perch.tries = 0;
     c.mode = 'gulp'; c.timer = OWL_GULP;
     if (c.story[c.story.length - 1].text !== OWL_VOLE_NOTE) note(w, c, '🐁', OWL_VOLE_NOTE);
@@ -5187,7 +5169,7 @@ function surface(w, c) {
   if (w.rng.next() < FISH_CATCH * n / (n + FISH_HALF)) {
     takeFish(w, x0, y0);
     c.energy = Math.min(c.maxEnergy, c.energy + FISH_ENERGY);
-    c.fish++; w.stats.fish++; c.prey = 'fish';
+    c.fish++; c.prey = 'fish';
     c.mode = 'eat'; c.timer = FISH_EAT; c.target = null;
     forEachNear(w, c.x, c.y, 6, o => { if (o.mumId === c.id && growth(w, o) < 1) o.energy = Math.min(o.maxEnergy, o.energy + CUB_SHARE); }, 'otter');
     if (c.story[c.story.length - 1].text !== FISH_NOTE) note(w, c, '🐟', FISH_NOTE);
@@ -5202,7 +5184,7 @@ function rooted(w, c) {
   if (w.rng.next() < ROOT_CATCH * n / (n + ROOT_HALF)) {
     takeFrog(w, x0, y0);
     c.energy = Math.min(c.maxEnergy, c.energy + OTTER_FROG);
-    c.frogs++; w.stats.otterFrogs++; c.prey = 'frog';
+    c.frogs++; c.prey = 'frog';
     c.mode = 'munch'; c.timer = FROG_MUNCH; c.target = null;
     const what = seasonOf(w.tick) === 3 ? MUD_NOTE : SPAWN_NOTE;
     if (c.story[c.story.length - 1].text !== what) note(w, c, '🐸', what);
@@ -5541,33 +5523,6 @@ function lifeTick(w, c) {
 
 // ---------------------------------------------------------------- the world
 
-// The food web as it ran, for the "Who ate whom" card (game.js, renderWeb): a few more counters, plain
-// increments where the eating happens (grazed: mouthfuls of grass; sips: flowers the bees sipped, blossom
-// on the fruit trees too; grubs: a tick's best pecking each; apples, nuts: windfalls eaten, by who; bodies:
-// left lying, by who), and once a season all the counts as they stood (web), the last few kept, so the card
-// can tell a season or a year apart from the whole story. A meadow kept before them starts them at 0.
-const WEB_KEEP = 5;
-const webStats = () => ({ grazed: 0, sips: 0, blossomSips: 0, grubs: 0, apples: perKind(() => 0), nuts: perKind(() => 0),
-  bodies: perKind(() => 0), web: [] });
-// Every count the card reads, in one flat object: 'born:fox', 'died:rabbit:owl', 'ate:voles'. Made once a
-// season, and once a second while the card is open.
-function webCounts(w) {
-  const st = w.stats, n = { grazed: st.grazed, sips: st.sips, blossomSips: st.blossomSips, grubs: Math.round(st.grubs),
-    voles: st.voles, owlVoles: st.owlVoles, frogs: st.frogs, owlFrogs: st.owlFrogs, crowSpawn: Math.round(st.crowSpawn), fish: st.fish, otterFrogs: st.otterFrogs, fishSpawn: Math.round(st.fishSpawn),
-    cached: st.cached, dugUp: st.dugUp, planted: st.planted, seedlingsEaten: 0, seedlingsLost: 0,
-    remainsLeft: st.remains.left, remainsCrows: st.remains.crows, remainsRotted: st.remains.rotted };
-  for (const k in w.treeStats) { n.seedlingsEaten += w.treeStats[k].eaten || 0; n.seedlingsLost += w.treeStats[k].lost || 0; }
-  for (const s of KINDS) {
-    n['born:' + s] = st.births[s]; n['apples:' + s] = st.apples[s]; n['nuts:' + s] = st.nuts[s]; n['bodies:' + s] = st.bodies[s];
-    for (const c in st.deaths[s]) n['died:' + s + ':' + c] = st.deaths[s][c];
-  }
-  return n;
-}
-function webSnapshot(w) {
-  w.stats.web.push({ t: w.tick, n: webCounts(w) });
-  if (w.stats.web.length > WEB_KEEP) w.stats.web.shift();
-}
-
 // The world's fields that come later, or only to some meadows, all made at the start (createWorld, unpackWorld), so the
 // world is laid out the same from its first tick to its last (see blankCreature: one added mid-game, or a whole number
 // turning a fraction, left the sim's busiest code slow for good; snow, ice and the counts start as -0 for that).
@@ -5597,17 +5552,12 @@ function createWorld(seed, opts = {}) {
     sick: 0, outbreak: null,                                              // (see sicknessTick)
     carcasses: [], roost: null, cached: 0, gatherSaid: -1,                // (see carrionTick and crowTick; cached: this autumn; gatherSaid: the outbreak told of)
     count: perKind(() => 0), expecting: perKind(() => 0),
-    stats: { births: perKind(() => 0), deaths: perKind(() => ({})), voles: 0, owlVoles: 0,   // voles: the foxes caught, and the owls
-      frogs: 0, owlFrogs: 0, crowSpawn: 0, frogYears: [],                                   // frogs likewise; the spawn the crows ate; each spring's frogs
-      fish: 0, otterFrogs: 0, fishSpawn: 0,                                                 // what the otters caught; the tadpoles the fish ate
-      remains: { left: 0, eaten: 0, rotted: 0, crows: 0 }, cached: 0, dugUp: 0, planted: 0,   // remains, and how they went (crows: the crows fed at); the crows' acorns
-      ...webStats() },
-    history: { every: 60, t: [], grass: [], voles: [], frogs: [], fish: [], ...perKind(() => []), traits: perKind(() => []), marks: [] },
+    stats: { deaths: perKind(() => ({})) },                                 // deaths by cause, of each kind
     goneSince: perKind(() => -1), diedOut: perKind(() => false), hives: [],
     // The trees (see treesTick). They have their own random numbers, so the rest of the meadow comes out as it did before they grew.
     treeRng: makeRng(seed ^ 0x5eed7ee), nextTree: 1, seeds: [], mast: false, mastYear: 0, orchard: [], treeCount: 0,
     blossoms: [], blossomCells: Array.from({ length: GW * GH }, () => []), nextBloom: 0, decorCells: [], treesMoved: true,
-    bitten: new Int32Array(W * H), scorched: new Uint16Array(W * H), sprouted: 0, sproutedBurnt: 0, treeStats: {},
+    bitten: new Int32Array(W * H), scorched: new Uint16Array(W * H), sprouted: 0, sproutedBurnt: 0,
     options: { migration: true, ...opts },
     ...LATER,
   };
@@ -5636,9 +5586,7 @@ function createWorld(seed, opts = {}) {
   flushNewborn(w);
   for (const f of w.fields) if (f.season === seasonOf(w.tick)) f.bloomed = yearOf(w.tick);   // no news of what's out already
   hivesTick(w);
-  w.founderMeans = perKind(s => traitMeans(w, s));
   w.weather.until = w.tick + (opts.arrival ? 1.5 : w.rng.range(0.3, 0.8)) * TPD;   // moving day, and the morning after, are fine
-  record(w);
   return w;
 }
 
@@ -5657,52 +5605,6 @@ function flushNewborn(w) {
   }
 }
 
-function traitMeans(w, species, list = w.creatures) {
-  const m = {}; let n = 0;
-  const genes = genesOf(species);
-  for (const k of genes) m[k] = 0;
-  for (const c of list) {
-    if (!c.alive || c.species !== species) continue;
-    for (const k of genes) m[k] += c.genes[k];
-    n++;
-  }
-  if (!n) return null;
-  for (const k of genes) m[k] /= n;
-  return m;
-}
-
-function coatCounts(w) {
-  const n = { wild: 0, black: 0, sand: 0, blue: 0 };
-  for (const c of w.creatures) if (c.alive && c.genes.coat) n[coatOf(c.genes)]++;
-  return n;
-}
-
-// How full the meadow is: 1 when every tile holds all the grass its soil allows.
-function grassFullness(w) {
-  const water = w.water, grass = w.grass, fert = w.fert;
-  let g = 0, f = 0;
-  for (let i = 0; i < W * H; i++) if (!water[i]) { g += grass[i]; f += fert[i]; }
-  return f ? g / f : 0;
-}
-
-// The whole story is kept. When it gets long, every other sample goes and sampling slows down.
-const HISTORY_MAX = 4000;
-function record(w) {
-  const h = w.history;
-  h.t.push(w.tick);
-  h.grass.push(grassFullness(w));
-  h.voles.push(Math.round(w.voleCount));
-  h.frogs.push(Math.round(w.frogCount));
-  h.fish.push(Math.round(w.fishCount));
-  for (const s of KINDS) { h[s].push(w.count[s]); h.traits[s].push(traitMeans(w, s)); }
-  if (h.t.length > HISTORY_MAX) {
-    const half = a => a.filter((_, i) => i % 2 === 0);
-    for (const k of ['t', 'grass', 'voles', 'frogs', 'fish', ...KINDS]) h[k] = half(h[k]);
-    for (const s of KINDS) h.traits[s] = half(h.traits[s]);
-    h.every *= 2;
-  }
-}
-
 function newDay(w) {
   const d = dayOf(w.tick);
   if (d % SEASON_DAYS === 0) {
@@ -5717,7 +5619,6 @@ function newDay(w) {
     if (s === 1) setFruit(w);
     if (s === 2) seedFall(w);
     if (s === 3 && w.cached) emit(w, { type: 'buried', n: w.cached });   // the crows' autumn
-    webSnapshot(w);
   }
   treesTick(w);
   groundTick(w);
@@ -5835,7 +5736,7 @@ function groupArrives(w, a) {
   return who;
 }
 
-// Whoever is due next moves in. Once a kind is all here, its founders are counted (w.founderMeans).
+// Whoever is due next moves in.
 function arrivalsTick(w) {
   const a = w.arrivals.shift();
   let who;
@@ -5856,7 +5757,6 @@ function arrivalsTick(w) {
     }
   }
   if (who.length) emit(w, { type: 'arrive', species: a.species, who, family: !!a.family, founding: true });
-  if (!w.arrivals.some(b => b.species === a.species)) w.founderMeans[a.species] = traitMeans(w, a.species, [...w.creatures, ...w.newborn]);
 }
 
 // Fewer than this and a kind is in danger: migration sends more.
@@ -5937,7 +5837,6 @@ function step(w) {
   if (w.arrivals.length && t >= w.arrivals[0].t) arrivalsTick(w);
   if (w.visitors) visitorsTick(w);                           // (?keep: a hedgehog at a hedge, a heron at a pond)
   flushNewborn(w);
-  if (t % w.history.every === 0) record(w);
   if (t % (TPD / 4) === 0) migrate(w);
   if (t % TPD === 0) { forgetTheLongDead(w); collapseBurrows(w); }
 }
@@ -6044,15 +5943,10 @@ function unpackWorld(kept) {
   for (const b of w.burrows) asFractions(b, ['x', 'y', 'dug']);
   for (const f of w.fields) { f.open ??= 0; f.all ??= 0; f.bloomed ??= 0; }
   for (const k of w.carcasses) k.seats ??= null;
-  const fresh = webStats();                                  // (kept before the food web's counters)
-  for (const k in fresh) w.stats[k] ??= fresh[k];
-  w.stats.remains.crows ??= 0;
-  w.stats.fish ??= 0; w.stats.otterFrogs ??= 0; w.stats.fishSpawn ??= 0;
   for (const s of KINDS) {                                   // (kept before the otters)
-    for (const o of [w.count, w.expecting, w.stats.births, w.stats.apples, w.stats.nuts, w.stats.bodies]) o[s] ??= 0;
-    w.stats.deaths[s] ??= {}; w.goneSince[s] ??= -1; w.founderMeans[s] ??= null;
+    for (const o of [w.count, w.expecting]) o[s] ??= 0;
+    w.stats.deaths[s] ??= {}; w.goneSince[s] ??= -1;
     (w.diedOut ??= {})[s] ??= w.count[s] === 0;              // (kept before the last one gone was told whenever: none now was told already)
-    w.history[s] ??= w.history.t.map(() => 0); w.history.traits[s] ??= w.history.t.map(() => null);
   }
   for (const c of w.creatures) c.held = false;               // (kept while the player held one up)
   if (w.lake && !w.lake.near) {                              // (kept while a lake was circles)
@@ -6062,7 +5956,6 @@ function unpackWorld(kept) {
   }
   if (!w.fish) {                                             // (kept before the fish)
     w.fish = new Float32Array(W * H); startFish(w);
-    w.history.fish = w.history.t.map(() => Math.round(w.fishCount));
   }
   w.grid = makeGrid(); w.grids = perKind(makeGrid); w.events = []; w.newborn = [];
   makeCurrent(w);
@@ -6097,7 +5990,6 @@ function plantTree(w, x, y, kind) {
   const d = newTree(w, x, y, kind, { by: 'you', planted: Math.max(1, w.tick) });
   cellOf(w.decorCells, d).push(d);                            // in the grid now, so the next one can't go on top of it
   if (kind === 'beech' && w.treeRng.next() < RARE_TONE) d.tone = 3;
-  tally(w, kind, 'planted');
   return d;
 }
 
@@ -6914,7 +6806,6 @@ function paintGrass(w, x, y, radius) {
 // The player picks the weather: it lasts about a day (storms burn out sooner).
 function setSky(w, kind) {
   setWeather(w, kind, (kind === 'storm' ? 0.5 : 1) * TPD, true);
-  w.history.marks.push({ t: w.tick, type: 'sky', kind });
 }
 
 // A locked sky keeps whatever weather it has until it is unlocked.
@@ -7007,12 +6898,12 @@ const api = {
   addCreature, paintGrass, setSky, lockSky, zap, burnLine, lift, putDown, plantTree,
   hedgehogComes, heronComes, dragonflyComes, kingfisherComes, skylarkComes, placeNeeds, VISIT_SEASONS, VISIT_FADE, HERON_FADE, HERON_STAB,
   DRAGON_FROM, KF_FADE, KF_UNDER, KF_BEAT, LARK_FADE, LARK_OPEN, LARK_RISE, EDGE_REACH, OPEN_MOST,
-  traitMeans, walkable, packWorld, unpackWorld,
-  coatOf, hiddenCoats, coatCounts, visibility, whiteness, WINTER_COAT, KINDS, OWLS, FEW,
+  walkable, packWorld, unpackWorld,
+  coatOf, hiddenCoats, visibility, whiteness, WINTER_COAT, KINDS, OWLS, FEW,
   TERRAIN, drawnToLink, drawnFromLink, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE,
   TREES, treeStage, treeAge, standing, bearing, hollow, inBloom, SEEDLING, SAPLING, GROWN, KIND_NAMES,
-  VOLE_K, POUNCE_TICKS, CROWDED, FROG_K, SPAWN_WORTH, FISH_K, FISH_EAT, webCounts, CROW_SEATS,
+  VOLE_K, POUNCE_TICKS, CROWDED, FROG_K, SPAWN_WORTH, FISH_K, FISH_EAT, CROW_SEATS,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 else root.Sim = api;
