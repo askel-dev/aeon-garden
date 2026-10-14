@@ -31,6 +31,22 @@ go. The camera goes with it (`ui.lead`, `leadCam`): eased after it (`CAM_FOLLOW`
 (`CAM_AHEAD`, itself eased so setting off and stopping are soft), its feet a little below the middle (`CAM_FEET`). A drag or
 a pan lets it go, F or the next walk takes it back; the wheel zooms about the forager while the camera's with it. A kept
 meadow keeps where it is and whether the camera was with it (`rec.lead`).
+Gathering: a click or a tap on something to gather (`gatherAt`: a hive, a clump of mushrooms, a bramble, nettles, a fruit or mast
+tree, the garlic, looked for only near the point, the trees through the sim's grid) walks the forager to its near side a reach
+away, in front of a tree, a hive or a bramble so it isn't hidden (`goGather`, `standPoint`, `gatherSpot`), and once it's there
+(`gatherFrame`) it turns to it, stoops and reaches down (fur.js poses 3 and 4, `fg.pick`, `PICK_MS`), sim.js `gather` takes it, a
+"+3 Chanterelles" with its icon floats up from the spot (`pickFloats`, `floatOf`: a pill painted once), it flies into its slot
+(`flyToSlot`: one element, the browser's own animation) and the pick sound plays (sound.js `pick`). Hovered with a mouse, a thing
+with something to give glows (`GLOW_ART`, painted once, under it; a hive's over its hollow, where the trunk would hide it) with
+its name by it and a hand for the pointer; one with nothing says why (sim.js `whatThere`), as a click on it does (`say`). The hover
+is looked up again only when the mouse moves, or every `AIM_MS` while the camera glides (`hoverFrame`, `aim`). "Satchel's full"
+says so by the forager and leaves the thing be.
+The satchel (`#satchel`, `renderSatchel`, rewritten only after a pick or a drop): `S.SLOTS` small parchment slots at the bottom in
+the middle, a slim faint row while it's empty. Their paintings are one sheet painted once (`itemSheet`, `--items`): the meadow's own
+mushrooms, greens and windfalls (`ITEM_ART`) and `paintItem` for the blackberries, cherries, honeycomb and beechnuts; an
+ingredient with no painting gets its recipes.js emoji. A tap on a slot shows its name with Drop over it (`openSlot`, `#slot-tip`),
+and Esc or Back shuts it (`stepOut`). On a touch screen each slot is 44 px or more, and upright the satchel steps aside while the
+inspector's sheet is up.
 
 The inspector shows animals and every other thing you click (hives, trees, rocks, burrows, flowers, fields, water,
 visitors): each kind is an entry in `THINGS`, saying how to find one on screen and what its panel shows. A tap
