@@ -27,7 +27,7 @@ paths:
   cones when bare (purple-brown in winter, gold in the `bud` look); about half part into two stems at the foot. Axel tried a
   willow and didn't like it: it's gone, don't bring it back unasked. Snow is a layer of its own, laid on as thick as the snow lying. A painting is
   also of a tone (the sim's `d.tone`: one of three colours of its kind, or a copper beech), and of the grown or the
-  young form (slimmer, its branches more upright; a seedling is one, small); a dead tree is the grey `dead` look (one a fire killed, `d.burnt`, the charred `burnt` look) with
+  young form (slimmer, its branches more upright; a seedling is one, small); a dead tree is the grey `dead` look (trees.js can still paint a charred `burnt` one, unused since the wildfire went) with
   limbs broken off, a fallen one the `log` kind, and one lightning took the `stump` kind. The paintings go by number
   (`treeKey`), so a frame builds no names. Until its painting comes the same look at another size stands in, or a
   small painting of its kind in that look (`treeKin`: one of each, painted ahead at the start by `kinAhead` and kept

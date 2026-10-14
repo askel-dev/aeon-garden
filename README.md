@@ -55,28 +55,24 @@ with the ground they hide on, and the bees swarm off to find new hollow trees.
 - **Bees** live in a hollow in an old tree. They sip from the flower fields, dance to show the others the way to a rich patch, and put honey by for winter. A crowded hive swarms: the old queen takes half the bees off to hang in a tree while scouts look for a new home.
 - **Crows** peck for grubs on the short grass, gather at whatever the foxes and the winter leave lying, and all sleep in one big tree. In autumn they carry acorns off and bury them, and the ones they forget come up as oaks.
 - **Otters** come up the river in pairs and make a holt among the roots of a big tree on the bank, or under a boulder. They fish from the evening to the middle of the morning, eat their catch afloat and drift downstream with it, and when they're well fed they take turns sliding down the bank into the water. In spring there are cubs, who follow their mum and share her fish.
-- **The weather** has a life of its own: rain greens the meadow, fog hides the foxes, thunder sends rabbits home, and lightning on dry grass can start a wildfire.
+- **The weather** has a life of its own: rain greens the meadow, fog hides the foxes, thunder sends rabbits home, and lightning splits the tallest trees.
 
 Every meadow is different: a river, a lake or both, a few ponds, woods, great rocks and named flower fields.
 `?seed=123` in the address replays one.
 
 ## Playing
 
+It's turning into a cozy cooking game: gather what the meadow gives and cook it, starting at a campfire. That part
+isn't here yet; for now you can look around the meadow.
+
 - Click an animal to follow its whole life, or anything else (a hive, a tree, a burrow, a field) to see what it is
-- Scroll to zoom, drag to look around. On a phone: pinch and drag
-- The tools at the bottom (on a phone, the button in the corner; or right-click or hold a finger on the meadow) add rabbits, foxes, bees and crows, grow grass, or strike lightning
-- 🕸️ Who ate whom (in the ••• menu, or on the stats page) draws this meadow's food web as it ran: who caught whom, what they grazed, and what went back into the ground, this season, over the last year or since the start
-- Change the weather, or 🔒 lock it, from the sky button at the top
+- Scroll to zoom, drag to look around. On a phone: pinch and drag, double-tap to zoom in
 - Quiet sounds and a little felt piano now and then, off until you press 🔊 or M
 
-Keys: <kbd>Space</kbd> pause, <kbd>1</kbd>–<kbd>4</kbd> speed, <kbd>S</kbd> stats, <kbd>N</kbd> news, <kbd>W</kbd> weather,
-<kbd>K</kbd> lock the weather, <kbd>F</kbd> follow, <kbd>M</kbd> sound, <kbd>P</kbd> copy the meadow as a picture, <kbd>Esc</kbd> close.
+Keys: <kbd>Space</kbd> pause, <kbd>F</kbd> follow, <kbd>M</kbd> sound, <kbd>+</kbd> <kbd>-</kbd> zoom, <kbd>Esc</kbd> close.
 
-Your meadow is kept in your browser. Close it and come back, and it's where you left it. If you've been away a
-while, a season has passed, and a card tells you what happened. The ••• menu shares a link to your meadow, or sends me
-an idea.
-
-It runs on phones too. Add it to your home screen and it opens like an app.
+Your meadow is kept in your browser. Close it and come back, and it's where you left it. The ••• menu shares a link to
+your meadow, or sends me an idea.
 
 ## Running it yourself
 
@@ -89,7 +85,5 @@ python3 -m http.server 8765
 Then open http://localhost:8765.
 
 - `sim.js` is the world, `game.js` draws it, `ground.js` paints the ground with WebGL, `sound.js` makes every sound with Web Audio
-- `node balance.js [years] [seeds]` runs meadows headless and prints how the populations did
-- `index.html?lab` opens the terrain lab: sliders for every terrain number, and a brush to draw your own water, rivers and woods
 - `sound-lab.html` plays each sound and piece of music on its own
 - `tree-lab.html` shows the painted trees (trees.js) in every season, with sliders for the brush

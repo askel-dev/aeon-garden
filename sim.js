@@ -4999,7 +4999,6 @@ function lifeTick(w, c) {
 const LATER = {
   appleYear: 0, namePools: null, recount: false,
   dug: null, ponds: null, hedges: null, visitors: null, visited: null, visitGone: false, visitId: 0,   // the places visitors come to, and who's come
-  sighted: null,                                                                     // (?keep: game.js's) each kind seen in this meadow and when, for the journal's tally of its arc
 };
 // A kept meadow's fractions come back as whole numbers where they were (0, 1): made fractions again, so they can't
 // change the layout later (an object's field that holds a fraction once holds any number after).

@@ -8,16 +8,15 @@ paths:
 
 # game.js
 
-Drawing, UI, news feed, the inspector. The inspector shows
-animals and every other thing you click (hives, trees, rocks, remains, burrows, flowers, fields, water): each
-kind is an entry in `THINGS`, saying how to find one on screen and what its panel shows.
-The animal you follow has its news always come, and first on the away card (`involvesSelected`). Animals can't be
-named by the player (naming and the ••• Yours card were taken out on 2026-10-12: they gave the player no reason to care).
-With Look in hand, a press on an animal dragged (or a finger held on it) picks it up by the scruff (`pickUp`,
-`grabAt`: on its body as drawn, so a pan from near one stays a pan): it dangles from the hand as a pendulum the
-hand's speeding up swings (`heldFrame`, `drawHeld`), kicks in fits, and drops with a hop where you let go
-(`letGo`, `drawFalling`). In the sim (`lift`, `putDown`) a held one (`c.held`) skips its turn and is out of the
-grid, so nothing hunts it; its place is the ground under the hand, and it lands on the nearest dry footing.
+Drawing, the camera, the inspector. The world fills the screen; over it only the watch, a small pill top right
+(pause, sound, •••), a toast line (`toast`, for a copied link or an idea that couldn't go) and the inspector. The old
+watching game's cards, news feed, stats, journal, tools, intro and idle camera were cut on the `cooking` branch
+(main at 1d79f03 has them).
+
+The inspector shows animals and every other thing you click (hives, trees, rocks, remains, burrows, flowers, fields,
+water, visitors): each kind is an entry in `THINGS`, saying how to find one on screen and what its panel shows. A tap
+on an animal follows it (`select`, `ui.follow`). Animals can't be named by the player.
+
 Foxes and rabbits are painted (fur.js: `paintFox`, `paintRabbit`, styled on the carcasses): one rig posed for
 what each is doing (`FOX_POSES`, `RABBIT_POSES`, picked by `foxArt`, `rabbitArt`), painted as one animal by `paintFur`
 (one shading over it all, each part's form and the markings soft, a part in front casting a soft shadow, a softened
@@ -31,66 +30,31 @@ page once what it's made from has come). Till a pose comes the animal holds the 
 as a tree's new colours do), or the same at another size or one of its kin stands in (`furKin`), and each look about the
 screen is asked for ahead (`furAhead`), so only the first of a look is painted on the page. Without a worker (no
 OffscreenCanvas) they're painted on the page, a new pose waiting a frame once the frame has done its painting. The
-inspector's portrait and the P photo are always painted on the page.
+inspector's portrait is always painted on the page.
 On the move their legs go round with the ground they cover (`gaitOf`: a fox trots and gallops four paintings a stride,
 its back level at a trot), a rabbit hops in bursts, drawn a little ahead of or behind the sim along its way and
 stopping between hops (`hopSurge`), and up to 2x everything is drawn between the sim's last two ticks (`drawnAt`,
 `keepLast`). No bubbles stay over the animals: when one starts something worth seeing (spots a fox, runs, chases,
 courts) a little bubble pops up and fades (`drawPops`, `POPS`), at most 3 at once, love only for the one followed.
-Something worth seeing (cubs, a swarm, frogs in your pond: `spotOf`) leaves a marker over the spot till you've looked,
-or at the screen's edge pointing the way; a tap on it or "Go see" on its news line glides there (`spots`, `drawSpots`,
-`goSpot`). Once you've looked, the marker gives way to a caption saying what it was (`say`, `sayArt`), with a sparkle
-and a soft chime (`seeSpot`, sound.js `seen`). A visitor (sim.js `w.visitors`: the hedgehog at a hedge, the heron at a pond, and those below) is drawn in with the trees and animals, painted like them
-(`paintHedgehog`: walking, snuffling, curled up asleep; `visitorArt`, `drawVisitor`), fading in and out at the ends of its way
-(`visitorFade`). The heron (`paintHeron`, `HERON_POSES`: upright, poised, two stalking steps, the stab, a frog or a fish held up,
-two wingbeats, asleep on one leg; `heronArt`, `drawHeron`) flies in high and glides down (`heronLift`), wades to its shins with rings
-round its legs, and splashes where it stabs. It has no emoji: its marker and caption show its painting (`badge`, `paintedBig`), and
-a line of news its portrait as a CSS background (`visitorGlyph`, `--glyph-heron`, `.visitor-glyph`). The pond's panel says when one is there. Its marker waits as long as it's here (`stay`), and a tap on it sees it too (`tapVisitor`). Seen, it goes in the
-player's field journal (`sightVisitor`, `JOURNAL` in the browser, not with the meadow): the first of a kind ever gets "First
-sighting" for its caption, a 📖 and the `named` chime. The inspector has it (`THINGS.visitor`, `VISITOR_PANELS`: `hogPanel`, `heronPanel`, `dragonPanel`, `kingPanel`, `larkPanel`).
-A visitor of a kind never seen comes as a mystery: "Something…" in the news (`visitorGlyph`'s `sil`, its shadow), a gold
-marker with its shadow (`spotBadge`'s `mystery`) that is never pushed out by newer ones, and it waits till you've seen it
-(sim.js `v.wait`, never into winter); "Go see" slows time to 1x. Its first sighting is a moment of its own (`startReveal`,
-`revealFrame`, `endReveal`): time eases down to 1x, the camera leans in, the cards step away and the intro's bars come in
-with "First sighting" and its name, the meadow hushes for the `found` bells, then its stamp flies to the book and its panel
-opens. Any input ends it; a kind that lives here gets only the caption and the stamp. At `REVEAL_SNAP` it takes a picture round
-the visitor, the ground drawn in as for P (`snapReveal`, kept under `aeon-garden-journal-photos`, `photos`), and its journal page
-shows it pasted in, the painting stuck on its corner. Once a kind is in the journal, its visitors have moments to be caught in
-(`MOMENTS`, `momentOf`, `watchVisitor`: asleep, on its way or on the wing for `MOMENT_MS`, a catch or a find as it happens, a 🪲
-popping up over a hedgehog's finds); the first time each is a caption, the seen chime and its emoji's stamp into the book, and a
-chip on the page. A day or two before a visit, its sign (sim.js `w.signs`): 🐾 tracks along the way it'll come in to the hedge,
-or a 🪶 on the bank (`drawSigns`), with a line of news and a marker. The journal's card (`#journal`) goes a chapter at a time through a keeper
-meadow's arc (`CHAPTERS`, `BOOK`: the first spring, summer, autumn and winter, the Dry Year's spring and summer, the rain
-coming back; `research/journal-journey.md`), each page in the first season its kind can come in, each chapter with its count
-and "Now" on the season the meadow is in (`arcSeason`, counted from `w.dryYear`). The frontier (`hinted`): a page's riddle
-shows from the season before its chapter's, the Dry Year's from the start, all once the arc is over; past it a page is a
-dashed blank saying when its riddle comes. An empty page has its riddle, plain (`plain`: what it wants, its place and time)
-once one came and went unseen (`glimpse`); only the first two visitors' pages put their tool in your hand (`tool`). Each kind
-seen in a meadow is kept with it (sim.js `w.sighted`, `noteSighting`; one in the journal from another meadow is noted
-silently, `noted`), and the came-through card and the loss card give that arc's tally (`arcTally`). Dragonflies, a kingfisher
-and a skylark (sim.js: a pond on its own, one with fish and a tree at its edge, a strip in the open) are painted in fur.js
-(`Fur.painters`: `paintDragonfly`, `paintKingfisher`, `paintSkylark`, with `softIn` and `furGlow`, which game.js takes from Fur
-now), at doublings of their size and shrunk between (`furPaint`, `shrunk`), and in the meadow by the worker as a fox is (`isFur`,
-`furReady`, `furKin`, `furAhead`; fur-worker.js paints any kind in `Fur.painters`). Dragonflies are seen from above, turned the
-way they go, the one the sim moves and `DRAGON_MORE` drawn about the pond by the clock (`drawDragonflies`); the kingfisher sits on a
-low branch of its tree (`KF_SIT`, drawn just in front of it), dives in a splash of rings and beats a fish on its twig
-(`drawKingfisher`, `kfUp`); the skylark walks its strip and sings high over it with a note drifting off it (`drawSkylark`,
-`larkUp`, drawn over all while up). How high each is drawn is `visitorUp`. A pond's, a strip's and a hedge's panel has a
-Visitors section: who's here, or that all a kind wants is there, or what it lacks (`placeLines`, sim.js `placeNeeds`), only
-for kinds whose riddle has come. A new meadow opens close, over the open ground with the most animals (`homeView`, `HOME_TILES`).
-The tab's icon follows the season and the part of day (`updateFavicon`, at most once a second), and
-the news log dates each line with a season chip (`seasonChip`).
-Every line of news goes in the log, but only some get a toast: the everyday ones (births, deaths of old age, escapes, blooms...:
-`QUIET_NEWS`, by category) are log-only unless they're about the animal you follow. Toasts come one at a time, `NEWS_GAP_MS`
-apart (`NEWS_GAP_ONE` on a phone, which shows one), queued in `newsWaiting` (`pumpNews`; past `NEWS_WAITING` the oldest plain
-one waiting is dropped). Big news (`bigNews`: seasons, the Dry Year, fire, swarms, records, a new visitor...) is gold
-(`.news-item.big`), stays `NEWS_BIG_MS`, and newer lines push the plain ones out first.
+
+Visitors (sim.js `w.visitors`: a hedgehog, a heron, dragonflies, a kingfisher, a skylark) are drawn in with the trees and
+animals, painted like them, and the inspector has them (`THINGS.visitor`, `VISITOR_PANELS`). None arrives now: they only
+came to the keeper's places, and they'll come back as the cooking game's NPCs. The hedgehog (`paintHedgehog`: walking,
+snuffling, curled up asleep; `visitorArt`, `drawVisitor`) fades in and out at the ends of its way (`visitorFade`). The
+heron (`paintHeron`, `HERON_POSES`; `heronArt`, `drawHeron`) flies in high and glides down (`heronLift`), wades with rings
+round its legs, and splashes where it stabs. Dragonflies, the kingfisher and the skylark are painted in fur.js
+(`Fur.painters`: `paintDragonfly`, `paintKingfisher`, `paintSkylark`), at doublings of their size and shrunk between
+(`furPaint`, `shrunk`), and in the meadow by the worker as a fox is (`isFur`, `furReady`, `furKin`, `furAhead`). How high
+each is drawn is `visitorUp`.
+
+A new meadow opens close, over the open ground with the most animals (`homeView`, `HOME_TILES`).
+The tab's icon follows the season and the part of day (`updateFavicon`, at most once a second).
 The rivers run (`drawFlow`, worked out once a meadow by `flowOf` from the sim's `w.current`): streaks of current, quicker
 down the middle, white water at the fords and where the brook comes in or the river leaves the lake, and things floating by,
 all placed by the flow's clock alone (`flowTick`: the sim's `riverPace`, faster in the spring flood and at speed, slower at
 the summer low). A frame only looks at the stretches of river on screen (`R.box`). What floats comes mostly from the trees
 on the bank (`floatSources`, once a day: blossom off one in flower, its leaves as `treeLook` draws them while they come
-down), and a little from upstream; a tree you plant by the river drops its leaves in.
+down), and a little from upstream.
 In autumn a painted tree's leaves come down as its kind's own leaf, in its crown's colours (trees.js `leafSheet`, a sheet
 a size from the tree workers, `LEAF_TIERS`): green ones only now and then from a crown still turning (`LEAF_GREEN`),
 then its own autumn colour (an oak's last ones dry), a few in its kind's others (`LEAF_OTHER`). Each glides down swinging
@@ -100,59 +64,20 @@ is comes from the time and hash numbers). The trees dropping leaves are listed a
 drawn twice by `drawLeaves`: those lying then, under all that stands, those in the air at the end. Each leaf is a
 transform and a draw of its own, so they're thinned on trees drawn small (`LEAF_MIN`, `LEAF_FULL`: zoomed out, a wood had
 nearly 2000). An emoji tree keeps the old tumbling ovals (`drawFallingLeaves`).
-A first visit (or `?intro`) gets a short welcome card, then the intro (`startIntro`, `introFrame`): an
-empty meadow (createWorld's `arrival` option, `planArrivals` in sim.js) where a family hops in at dawn,
-digs its burrow and turns in for the night, while the camera, the clock's pace and a caption at a time
-follow along in letterbox bars. It never steers the animals, it waits for them. Any key, click or scroll skips it.
-Then the guide (`startGuide`, `guideTick`, a card bottom left with the news above it): three steps one at a time
-(follow an animal, run time faster, open the ring), each waiting till it's done, then a notebook of things to try
-(`TRIES`: lightning, fire, a fox, the weather, a tree, a year at 60×, the graphs) that tick off whenever they're done
-(`tried`), a tap on one putting its tool in hand. It keeps what's done under `aeon-garden-tried`, comes back on later
-visits till it's done or closed, and ••• "Things to try" opens it again.
-Left alone for a minute while it runs, with no card open (or on V, or ••• "Sit back and watch"), the meadow films
-itself (`startIdle`, `pickShot`, `idleFrame`): the intro's bars and lines, the cards faded away, shots that follow an
-animal or drift past a place, what just happened first (`idleNews`). A shot keeps one zoom and only pans, and the next
-comes after a dip to dark or a glide. Any key, click, scroll or mouse move hands it back, the camera staying put.
-The meadow is kept in the browser when the page is hidden or closed, and while it films itself (`keepMeadow`:
-IndexedDB, under its link, the last `KEEP_MEADOWS`; filming, in a dip to dark between shots), never on a timer while
-someone watches (a save is a few frames).
-The next visit opens it where it was (`resumeWorld`): the bare address the one watched last, a `?seed=` link its
-own. Back after `AWAY_MIN` it runs on a season, drawing nothing (days would flicker), behind a card that then says
-what happened (`startAway`, `awayFrame`). The ••• menu shares the link (a phone's share sheet) and takes ideas
-(the `#ask` card). The ••• menu and the stats page also open "Who ate whom" (`#web`, `toggleWeb`, `updateWeb`): the food
-web as an SVG made once (`WEB_NODES`, `WEB_LINKS`, placed by hand), each arrow from the eaten to the eater as thick as
-the log of what went along it, a thing gone now faded with its arrows, a sentence on a tap or hover. Its counts are
-sim.js `webCounts` (the old `w.stats` counters plus plain increments: `grazed`, `sips`, `blossomSips`, `grubs`, `apples`,
-`nuts`, `bodies`, `remains.crows`), minus the snapshot the sim keeps each season (`w.stats.web`, the last `WEB_KEEP`)
-for "this season" and "last year". Open, it updates once a second, writing only what changed; closed, nothing.
-A meadow kept before them gets the new counters at 0 (`unpackWorld`), no `KEEP_VERSION` bump. Visits are counted by GoatCounter (`COUNTER`: cryptoler.goatcounter.com, no cookies), all as the
-page `/meadow` whatever the seed, and a link posted with `?ref=reddit` says where they came from.
+
+The meadow is kept in the browser when the page is hidden or closed (`keepMeadow`: IndexedDB, under its link, the last
+`KEEP_MEADOWS`), never on a timer while someone watches (a save is a few frames). The next visit opens it where it was
+(`resumeWorld`): the bare address the one watched last, a `?seed=` link its own. A kept meadow that won't open, or broke
+the page the last time it opened (`OPENING`), is let go. The ••• menu shares the link (a phone's share sheet) and takes
+ideas (the `#ask` card, also once by itself after two minutes of play: `askTick`). Visits are counted by GoatCounter
+(`COUNTER`: cryptoler.goatcounter.com, no cookies), all as the page `/meadow` whatever the seed, and a link posted with
+`?ref=reddit` says where they came from.
 
 On a phone (and Back anywhere): Back steps out of what's open as Esc does (`stepOut`: a card or menu shuts, the inspector's
-open sheet folds and then shuts, a tool goes back to Look). Each thing open holds a step in the history, counted, not
-named (`opened`), and `syncBack` levels the history with what's open after every tap or key: pushed only inside a tap,
-as Safari skips a step a page adds outside one. The journal keeps steps of its own on top (`journalTo`). The inspector's
-sheet follows the finger and settles open, folded or away by where and how fast it's let go (`sheetLetGo`); Who ate whom
-is a sheet the same way on an upright phone (`dragShut`, a scrim, ✕ at its foot). With Look in hand a double tap zooms in
-on the spot, a double tap held and dragged zooms as it goes, and two fingers tapped zoom out (`zoomTo`, `zoomDrag`, as
-Google's and Apple's maps do); a tap that would only put the inspector away waits `DOUBLE_MS` in case it's the first of
-two (`tapAway`). A held finger grows a ring under it till the ring of tools opens (`holdShow`), Android buzzes where a hold
-lands and for a first sighting (`buzz`; iPhones give a page no vibration), and on a touch screen the screen stays awake
-while time runs, till nobody has touched it for `WAKE_MS` (`wakeTick`, the Screen Wake Lock API). Headless Chrome's
-emulated touches stick after a tap on a button that hides itself in that tap (a ••• item): test those with a mouse click.
-
-A phone on its side at ?keep (`rail()`): the bottom bar is a rail down the left (Look, the three keeper's tools, the book),
-a tool's card opening beside its button (`showTip`'s `.side`). The top bar has the counts closed up, each reaching to the
-next (a tap opens its graph; no ˅, the species card is ••• Species, and Back shuts it), then GREEN, compact, with its card
-opening under it (`.down`), and the Dry Year's ribbon as pips over its line right of the watch. Both are placed by measuring
-(`fitTopBar`, on a ResizeObserver: the notches differ): GREEN right after the counts, else right of the watch; the ribbon in
-the bar where it fits (`html.ribbon-bar`), else under the watch as before (an SE). While an animal's panel is open the rail
-slides away left (by `left`, not a transform, which would unfix GREEN inside it) and `measureSheet` drops it from the
-clear meadow; a swipe right folds the panel (no drag handle there). The hold ring opens inside the clear meadow (`openRing`:
-right of the rail, under the bar and what hangs from it, beside it where there's no room under). The welcome card (?watch's
-too, on any phone on its side) lays out side by side, the button showing down to 300 px tall. The graphs page keeps its head (with the range of time,
-`placeStatsRange`) at the top while it scrolls, the kinds in one sideways row, and sizes the chart to what the screen leaves;
-Who ate whom reads left to right (`WEB_WIDE`, `placeWeb`, rebuilt on a turn). An iPhone in Safari shows the home screen
-card once by itself the first time it's held on its side (`sideHome`, `aeon-garden-side-home`: Safari keeps its address bar
-on a page that never scrolls), and Android gets ••• Full screen. Upright, on a desktop or a tablet, and in ?watch the rest
-doesn't apply.
+open sheet folds and then shuts). Each thing open holds a step in the history, counted, not named (`opened`), and
+`syncBack` levels the history with what's open after every tap or key: pushed only inside a tap, as Safari skips a step a
+page adds outside one. The inspector's sheet follows the finger and settles open, folded or away by where and how fast
+it's let go (`sheetLetGo`). A double tap zooms in on the spot, a double tap held and dragged zooms as it goes, and two
+fingers tapped zoom out (`zoomTo`, `zoomDrag`, as Google's and Apple's maps do); a tap that would only put the inspector
+away waits `DOUBLE_MS` in case it's the first of two (`tapAway`). On a touch screen the screen stays awake while time
+runs, till nobody has touched it for `WAKE_MS` (`wakeTick`, the Screen Wake Lock API).

@@ -13,7 +13,7 @@ and turned (a lake on the river lies along it, `shapeLake`), its rim pushed in a
 steep drop in others, widest where the river comes in (`delta`). Some lakes have an island (`w.isle`: no burrows on it,
 `canDig`), clear of the river's way through and of the spring flood. Ponds are mostly small, some all shallows, now and then a big deep one an otter family can live by, and some
 meadows get a cluster of little pools in one low corner (`pools`) or none at all. The shores have random numbers of their
-own (`wr` in `makeTerrain`), so tuning them in the lab leaves the rest of the meadow be. The lake keeps its name on its
+own (`wr` in `makeTerrain`), so tuning them leaves the rest of the meadow be. The lake keeps its name on its
 tiles and shore (`w.lake.near`, `nearLake`). The land slopes down into a valley
 around the river and lake (`TERRAIN.valley`, half as wide by a brook). The water line follows the seasons (`waterTick`): up in
 spring, down in summer, a little with the rain, so the river spreads over its floodplain and back.
@@ -67,17 +67,11 @@ seed comes up where there's light enough for its kind (`sprout`, `shadeOver`; pi
 unless a thorn bush guards it (`THORNS`), so grazing keeps the meadow open, and after the rabbits crash the
 woods creep out. A tree grows through seedling, sapling, young, grown and old (`treeStage`, from `d.size`
 and its age), a young one waiting in the shade if its kind bears shade. It dies (`treeDies`) of shade,
-grazing, fire (as the fire reaches it, `burnTrees`, the odds from its bark, `burn`), flood, a storm or age, stands a while as a grey snag, falls as a log (`treeFalls`) and rots
+grazing, flood, a storm or age, stands a while as a grey snag, falls as a log (`treeFalls`) and rots
 away; a broadleaf struck by lightning grows again from its stump. Apple, cherry and hawthorn blossom for
 the bees in spring (`w.blossoms`) and bear as much fruit as the bees visited (`setFruit`). A tree takes its
 parent's tone (`d.tone`: which of its kind's colours; now and then a beech is a copper beech, `RARE_TONE`),
-and a tree that grows old may get a name (`oldName`), which the inspector and the news use.
-The player plants trees too: the 🌳 Plant tool (T, or 🌳 in the ring) opens a ring of kinds where you clicked
-(game.js `PLANT_KINDS`, `plantAt`), and `plantTree` (sim.js) sets down a seedling the smallest there is, with
-`d.planted` (when; `by: 'you'`), where a wild seed could come up but with no luck or room roll. It lives by the
-wild ones' rules from then on. The news tells how it does (events `plantlost` with its cause and the rabbit that
-ate it, `plantgrew` past the rabbits' reach, `plantseeds` its first seed), and the inspector says when you planted it.
-No `KEEP_VERSION` bump.
+and a tree that grows old may get a name (`oldName`), which the inspector uses.
 
 Apple trees (`w.orchard`) drop windfalls early in autumn (`windfallTick`, `d.apples`), a big meal that hungry rabbits
 walk a way for (`windfall`), so the apple trees are where they gather in autumn, and where the foxes find them.
@@ -85,7 +79,7 @@ walk a way for (`windfall`), so the apple trees are where they gather in autumn,
 Voles live in the long grass, too many and too small to be creatures: `w.voles` is how many are on each tile
 (`volesTick`, every `VOLE_EVERY` ticks). From spring to autumn they grow where the grass is long (`voleRoom`, up to
 `VOLE_K` a tile), spill over next door and fade where it's grazed short, so the rabbits keep them off the warrens;
-winter thins them, snow less. Floods and fire kill them, and they eat tree seedlings (`VOLE_SEEDS` in `treesTick`).
+winter thins them, snow less. Floods kill them, and they eat tree seedlings (`VOLE_SEEDS` in `treesTick`).
 A hungry fox with no rabbit in sight goes mousing (`mouse`: it steps softly to where they're thickest, listens,
 then pounces, `mode` 'mouse', 'pounce', 'gulp'); a vole is a snack (`VOLE_ENERGY`), so it takes several. A fox that
 last caught a vole (`c.prey`) sees rabbits only at `MOUSE_EYES` of its sight: that search image is what keeps the
@@ -94,29 +88,27 @@ look only, and a vole (`voleAt`, the mousing bubble's) shows only when something
 is a high arc (`hopOf`). The fox hears the rustle it'll leap at as it starts listening (`c.rustle`, `listen`), so you
 see it coming: the grass there twitches in fits and the vole's back shows (`drawRustle`, a frog by the water), and as the
 fox crouches (`crouchOf`) the vole looks up and freezes. Caught, it's in the fox's jaws while it gulps (`drawCatch`);
-missed, it darts off from under it (`watchLeap`, `drawDashes`). The news tells of a vole year and the crash after it (`VOLE_BOOM`, `VOLE_BUST`), and the
-stats chart has their meadow-wide count (`w.history.voles`).
+missed, it darts off from under it (`watchLeap`, `drawDashes`).
 
 Frogs are a field too, like the voles (`frogsTick`, every `FROG_EVERY` ticks): `w.frogs` on land, `w.spawn` (spawn,
 then tadpoles) on shallow water. From spring to autumn frogs live in the damp long grass near the water (`frogRoom`: up
 to `FROG_K` a tile, fewer the further from the water, `w.damp`, worked out at most once a day by `dampen`; grazed short
 holds `FROG_BARE` of it; a heatwave shrinks the reach to `FROG_DRY`); they winter in the mud (`FROG_COLD`, twice that
-under ice), and fire kills them. On a mild night early in spring (`SPAWN_FROM`, `SPAWN_ODDS`, a wet night always, by
+under ice). On a mild night early in spring (`SPAWN_FROM`, `SPAWN_ODDS`, a wet night always, by
 `SPAWN_BY` anyway) the frogs within `SPAWN_REACH` of the shallows spawn (`spawnFrogs`, shared out with `boxSum` and
 `shareOut`): still shallows best, a flood pool on the floodplain above all (`SPAWN_EDGE` for the lasting shallows, none by
 the deep or the current, `SPAWN_DEEP`; rich water a little more). The tadpoles grow as one (`w.frogYear.grown`,
 `TADPOLE_DAYS`, faster in the sun, `WARMTH`) and then leave for the grass about (`FROGLET_LEAVE`, `FROGLET_REACH`). That's
 the gamble: the flood pools go when the water falls back in summer (or in a dry spell), and tadpoles in one that dries
 out are stranded (`tadpolesTick`), so an early spawning in a warm spring makes a big frog year and a late cold one a
-poor one. Only the tiles spawned in are looked at (`w.spawnTiles`). A mousing fox and an owl take frogs with the voles
-(`smallAt`, `takeFrog`: whichever is thicker there, `FROG_ENERGY`, `OWL_FROG`), and a frog is small prey for the fox's
+poor one. Only the tiles spawned in are looked at (`w.spawnTiles`). A mousing fox takes frogs with the voles
+(`smallAt`, `takeFrog`: whichever is thicker there, `FROG_ENERGY`), and a frog is small prey for the fox's
 search image too (`c.prey` 'frog' sees rabbits at `MOUSE_EYES`; without that, rabbit lows dragged on). A hungry crow in
 spring flies down to the thickest spawn (`w.spawnSpots`) and pecks it out at the water's edge (`tadpoles`, modes 'pool'
 and 'tadpole'). game.js draws it all as a look, a fixed pool (`drawPond`): frogspawn clumps, then tadpoles, a painted
 common frog (`frogAt`, also the 🐸 bubble; 🫧 is the frogspawn) hopping at the water's edge or up on a lily pad. The water
-inspector says what's in it (`pondFacts`), the news tells of the spawning, a pool drying out with tadpoles in it,
-froglets leaving and a big or poor frog year (`FROG_BOOM`, `FROG_POOR`, event 'frogyear'), the stats chart has
-`w.history.frogs`, and a frog purrs now and then on spring nights while there's spawn about (sound.js `croak`).
+inspector says what's in it (`pondFacts`), the sim emits a big or poor frog year (`FROG_BOOM`, `FROG_POOR`, event
+'frogyear'), and a frog purrs now and then on spring nights while there's spawn about (sound.js `croak`).
 
 Fish are a field too (`fishTick`, every `FISH_EVERY` ticks): `w.fish` on water. They live in the water that lasts the year
 round (below `w.terrain.level`, so not the flood pools), deep water best (`fishRoom`: `FISH_K` a deep tile, `FISH_SHALLOW` of
@@ -124,7 +116,6 @@ that in the lasting shallows), breed from spring into summer and spill over next
 it's flooded; there's no room for them there, and those still on it as it drains are stranded. Winter thins them a little
 (`FISH_COLD`). They eat tadpoles: on top of `TADPOLE_LOSS`, a tile loses `TADPOLE_FISH` a day at `FISH_K` fish, so the
 frogs' gamble is the flood pools (no fish, but they dry up) against the lasting shallows. The otters eat them (`takeFish`).
-A meadow kept before them gets its fish when it opens (`unpackWorld`), no `KEEP_VERSION` bump; the history has `w.history.fish`.
 
 Otters (`otterTick`): a pair or two along the water, swimmers (`swims: true`: `moveToward` lets them through deep water, `wade`
 makes them quicker in it, `roamable` keeps their wandering within `OTTER_SHORE` of the water). A female makes her holt in the
@@ -142,7 +133,7 @@ cubs in the holt (`nursing`: they mark her, `c.cubsIn`) always goes home, and a 
 eat it afloat, and dive again close by a few times before moving on (`tryAgain`). For `FROG_FEAST` days after the frogs spawn they
 go after the frogs first, rooting along the shallows, and in winter they dig them out of the mud (`rooted`, `takeFrog`), which is
 all there is while the ice shuts them out of the water; only at the water's edge (`mostNear`'s `shore`, `OTTER_SHORE`). A fox up and
-about close to one on the bank, or a fire, sends it into the water (`slip`), and it watches the fox from there (mode `'watch'`) till
+about close to one on the bank sends it into the water (`slip`), and it watches the fox from there (mode `'watch'`) till
 it's `WARY_FAR` off or lies down, or `WATCH_TICKS` have gone, then pays foxes no mind for `CALM_TICKS` (`c.calm`). Asleep, it
 doesn't mind a fox (no fox hunts otters; before, one passing woke the family and sent cubs in and out of the water all night).
 A cub stays up while mum is (`mumUp`) and then sleeps by her; a bed is never in the water (`beside`).
@@ -156,7 +147,7 @@ cub busy with a catch finishes first) and get `CUB_SHARE` of every fish she catc
 female takes a free holt and a young male goes off along the water to find a mate, while the meadow has room; otherwise off down
 the water out of the meadow (`riverEnd`, cause `'left'`). A pair comes up the water (`otterWay`: where the lasting water runs off
 the edge, unless that's much further than the nearest edge) when there are none, or no holt is held (`migrate`, checked once a
-day), and the female takes the holt they came for. No release tool. game.js paints them (`paintOtter`, the prototype's painter:
+day), and the female takes the holt they came for. game.js paints them (`paintOtter`, the prototype's painter:
 one fur layer, `furLayer`, soft markings with `blurIn`; water poses sit in the water, `inWater`, `waterRing`), picks the pose from
 the mode and the water (`otterArt`), draws a wake while it swims somewhere (`drawWake`), a splash where one slides or slips into the water (`drawSplashes`, at 4x
 or slower), and only rings while it's under
@@ -189,8 +180,7 @@ and sees less far (`fallIll` scales its traits, `getBetter` puts them back), doe
 for a while (`c.immune`), nor can an immune mother's young kits (`KIT_IMMUNE`). The `resist` gene takes up to `RESIST`
 off the odds of catching it and of dying of it, but costs a little energy (`RESIST_BURN`), so it rises after
 outbreaks and slips back between them. The sickness and the foxes hold the rabbits now, and their cap (300) is
-only a safety net. The news tells when an outbreak starts (`OUTBREAK` sick at once, by the nearest named place,
-`placeNear`) and when it dies down (nobody sick), and the stats chart pins it. The inspector shows who is sick or
+only a safety net. The sim emits an outbreak starting (`OUTBREAK` sick at once) and dying down (nobody sick). The inspector shows who is sick or
 immune, and the sickness in a warren. A sick rabbit sits hunched, with a thermometer in its bubble.
 
 A body left out in the open lies a few days as remains (`leaveRemains`, `w.carcasses`; a fox's catch leaves what it
@@ -222,28 +212,9 @@ the others with them (`flapUp`, `caw`), but one busy on the ground may not see i
 (`CROW_MEAL`) that changes neither its search image nor its haunt. Foxes don't eat remains (tried: it fed them through the
 rabbits' lows). game.js paints a dead rabbit in its coat, or a dead fox (`paintBody`, `paintFox`; a fox `FOX_BODY` the
 size, its white-tipped tail lasting longest), lying on its side with its eyes closed, in four stages as the meat goes
-(`BODY_STAGES`): whole, opened with the ribs showing (where a fox's or an owl's catch starts), picked over to bones, and
+(`BODY_STAGES`): whole, opened with the ribs showing (where a fox's catch starts), picked over to bones, and
 a flat pelt that fades. A bird's remains are a few feathers (`drawRemains`). And game.js eases a
-crow's height in sim time (`birdLift`, `crowHeight`), so it glides down to land and up to its perch. The news tells of crows arriving,
-a gathering at remains in an outbreak (`GATHERING`), and the acorns they buried each autumn.
-
-Tawny owls (`owlTick`): a pair or two (`SPECIES.owl.cap` × `w.room`). A female nests in a hollow oak
-(`hollow`, `owlHollow`: no hive in it, not the crows' roost, `OWL_GAP` from the other owls' hollows) and marks it
-(`d.owl`, her id; `owlsDay` frees it once she's gone); the bees' `hollowTree` skips it, as the owls skip a hive's, so the
-two compete for the hollows. A male moves into his mate's (`mate`); one with no hollow roosts in any big tree and can't
-breed. They sleep in their tree by day (`OWL_WAKE`, `OWL_BED`; `roostTree`, `c.perch`) and hunt from dusk to dawn
-(`owlHunt`): sit on a branch by long grass with voles in (`perchSpot`), listen (`OWL_LISTEN`), drop on a vole
-(`rustle`, then `takeVole`, which the fox's mousing uses too; game.js shows the vole there as it drops, like a fox's
-rustle, and in its beak as it gulps) or now and then on a kit still out at dusk (`OWL_KIT`,
-`KIT_CATCH`), and after a few tries with nothing stirring move on. So owls and foxes share the voles. In spring a pair
-lays only in a year with voles about (`owlReady`, `OWL_BREED`), up to three owlets the more there are (`owlClutch`). The
-owlets stay in the hollow till they fledge (`OWLET_FLEDGE`), keep near mum, and once grown a young female takes a free
-hollow and a young male stays to find a mate while the meadow has room; otherwise it flies off out of the meadow
-(`comeOfAge`, cause `'left'`, no remains). A dead owl leaves remains for the crows (barred brown feathers). By day a fed
-crow that spots an owl asleep on a branch mobs it (`startMob`, `mob`, `MOB_ODDS`) and calls the others; the owl may
-move off to a quieter tree (`owlShift`). A pair flies in in autumn when there are none (`migrate`). game.js eases an
-owl's height like a crow's (`owlHeight`): on a branch, in the hollow, gliding, dropping to the grass. The news tells
-of a hollow taken, owlets hatched and fledged, and a young owl leaving; the night hoot in sound.js only plays with owls about.
+crow's height in sim time (`birdLift`, `crowHeight`), so it glides down to land and up to its perch.
 
 Bees: they live in hives (`w.hives`), each in an oak from `w.decor` (`h.tree`, `d.hive`, `moveIn`), which grows
 into an old giant (`HIVE_TREE`) with a hollow low on its trunk (`drawBeeTree`). The first hive takes the best broadleaf,
@@ -260,28 +231,30 @@ honey there is, in autumn only once there's honey put by for every bee (`broodTi
 days, autumn-born ones last the winter (`winterLifeDays`), and a small winter cluster burns more (`clusterCold`).
 A full hive holds about a season's food for a big hive (`HIVE_FULL`), so a good summer carries it through autumn and
 winter, and a hive short of flowers runs its larder down over days, not hours. A hive whose flowers are out of reach
-lives hand to mouth all summer and still dies in autumn; the Dry Year can still take the bees.
+lives hand to mouth all summer and still dies in autumn.
 A crowded hive (`HIVE_ROOM`) swarms in spring or summer (`swarm`): the old queen takes half the bees to hang in
 a tree (a hive with `cluster: true`, drawn by `drawSwarm`) while scouts fly to the sites from `hiveSites`, then
 `settle` moves them into the best hollow tree or empty hive; a daughter queen stays behind.
 Colony-level things go in `hivesTick`.
 
-Visitors (`?keep`, `visitorsTick`): now and then the keeper's work draws one in (and more below: dragonflies, a kingfisher,
+Visitors (`visitorsTick`): none comes now. They only ever came to the keeper's places (hedges, dug ponds, sown strips), and
+the keeper is gone; they'll come back as the cooking game's NPCs, by a new way in. Their code is kept as it was: now and
+then the keeper's work drew one in (and more below: dragonflies, a kingfisher,
 a skylark). A hedgehog comes at dusk to the longest hedge
 thick enough to hide in (`h.young`), spring to autumn (`hedgehogComes`: `VISIT_FIRST` the first time, then `VISIT_ODDS` an
 evening after `VISIT_REST` days), walks in from `VISIT_FROM` tiles off, stays `VISIT_DAYS` (asleep at the foot of a whip by
 day, pottering along the hedge at night and snuffling for beetles, `potter`, `snuffle`, `v.finds`) and goes back the way it
-came at dusk, or at once from a fire or a hedge gone (`leave`). A visitor isn't a creature: nothing hunts it, it eats nothing
-the meadow counts, and its chances are hashed from the day, not drawn from `w.rng`, so `balance.js` prints the same with it.
+came at dusk, or at once from a hedge gone (`leave`). A visitor isn't a creature: nothing hunts it, it eats nothing
+the meadow counts, and its chances are hashed from the day, not drawn from `w.rng`, so the rest of the meadow runs the same with it.
 A heron comes of a morning to the dug pond with the most frogs about it (`heronComes`, `frogsAbout`), once frogs have found it
 a day or more ago (`p.found`, `p.foundDay`), spring to autumn, on the same odds. It flies in from `HERON_FROM` tiles off, fishes
 from dawn till dusk (`HERON_DAY`) among its spots (`heronSpots`: the pond's shallow tiles, or its bank if it's all deep, worked out
 again each morning): it stands watching (`heronWatch`, facing the pond's middle), stalks to a spot close by (`heronStalk`; one
 further off it flies to, `hop`), and stabs (`HERON_STABS`), now and then coming up with a frog, or a fish where `w.fish` is thick
 (`HERON_CATCH`, `v.frogs`, `v.fish`, `gulp`). At night it sleeps where it stands. It flies off of an evening once its days are up,
-or at once from a fire, the ice or the pond gone dry (`heronOff`). It takes nothing from `w.frogs` or `w.fish` (`FROG_DIE` has the herons in it).
-One of a kind the player has never seen (game.js sets `v.wait`) stays on past its days till it's seen, then two days more, but
-leaves on the last day of autumn whatever happens (`waits`); fire, the ice, a hedge or the pond gone still send it off.
+or at once from the ice or the pond gone dry (`heronOff`). It takes nothing from `w.frogs` or `w.fish` (`FROG_DIE` has the herons in it).
+One of a kind the player had never seen (game.js set `v.wait`; nothing does now) stays on past its days till it's seen, then two days more, but
+leaves on the last day of autumn whatever happens (`waits`); the ice, a hedge or the pond gone still send it off.
 A visit is foretold: its days are hashed (`hogDay`, `heronDay`) and where it'd come is worked out as things are now
 (`hogPlace`, `heronPlace`), so each sunrise `visitorSigns` looks `SIGN_DAYS` ahead for the first day one would come and leaves
 a sign there (`w.signs`, event `visitorsign`): a hedgehog's tracks along the way it'll come in, a heron's feather on the bank
@@ -289,7 +262,7 @@ a sign there (`w.signs`, event `visitorsign`): a hedgehog's tracks along the way
 same functions, so the visits themselves come on the same days as before the signs.
 `w.visitors` (the ones here), `w.visited` (how often each kind came, the day the last left); events `visitor`, `visitorleft`.
 A meadow kept before them gets both empty (`unpackWorld`), no `KEEP_VERSION` bump.
-The keeper's places have qualities, worked out once a day (`keeperDay`, `placesDay`) and as one is dug or sown, so a visitor
+The keeper's places had qualities, worked out once a day (`placesDay`, still run while `w.visitors` exists), so a visitor
 asking for a kind of place looks it up: a pond's water now (`p.wet`), its fish (`p.fish`) and a tree at its edge or on an island
 in it (`p.perch`, within `EDGE_REACH` of its water, `pondPlace`); a strip's room in the open (`f.clear`: tiles to the nearest tree
 or hedge standing, `stripPlace`). `placeNeeds` says what a place lacks for a kind (the inspector shows it). They pull against
@@ -302,5 +275,4 @@ spring and summer (`skylarkComes`: walking and pecking, rising to sing high over
 `VISIT_SEASONS`, its days hashed by `visitDay` (as `hogDay`, but `VISIT_SURE` the first time: a season is five days and
 the place is the hard part; on the last day of its seasons a visit of a day), and at most one kind comes for the first time a day
 (`firstBlocked`, `w.visited[kind].first`; a sign foretelling another's first visit holds it back too). None takes anything
-from the meadow. `w.sighted` (in `LATER`) is game.js's:
-each kind the player has seen in this meadow and the tick, for the journal's tally of its arc; the sim never reads it.
+from the meadow.
