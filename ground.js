@@ -410,13 +410,18 @@ function set(name, data) {
 // in whole pixels. Not while something else makes it paint often anyway (the light at 15x or 60x, a
 // zoom): the margin would only make every paint bigger.
 const PAD = 64;
-let last = null, stale = true, busy = 0, panned = -1e9;   // busy: how often lately more than the camera moved
+let last = null, stale = true, busy = 0, panned = -1e9, paintedAt = -1e9;   // busy: how often lately more than the camera moved
 const NEAR = { drought: 0.004, snow: 0.004, damp: 0.002, ice: 0.004, cold: 0.004, lx: 0.08, ly: 0.08 };
 const EXACT = ['width', 'height', 'zoom', 'dpr'];
 const was = { ox: 0, oy: 0 }, view = { x: 0, y: 0 };
-function steady(u) {                                    // all but where the camera is
+// At speed a day goes by in a blink, and the light, the mist's colour, the wet and the season move a little every frame:
+// the ground was painted again in most frames (at 60x two in three). There what only moves with them waits u.hold ms
+// (game.js: none at 1x and 4x) and goes on in steps too small to see at that pace; the camera, the size and a texture
+// handed over never wait.
+function steady(u, now) {                               // all but where the camera is
   if (stale || !last || u.seed[0] !== last.seed[0] || u.seed[1] !== last.seed[1]) return false;
   for (const k of EXACT) if (u[k] !== last[k]) return false;
+  if (now - paintedAt < u.hold) return true;
   for (const k in NEAR) if (Math.abs(u[k] - last[k]) > NEAR[k]) return false;
   for (const k of ['low', 'high', 'sand', 'fog']) for (let i = 0; i < 3; i++) if (Math.abs(u[k][i] - last[k][i]) > 0.5) return false;
   for (let i = 0; i < 3; i++) if (Math.abs(u.light[i] - last.light[i]) > 0.002) return false;   // (game.js moves it in steps)
@@ -426,12 +431,13 @@ const within = (d, pad, dpr) => d === 0 || Math.abs(d) <= pad - 1 / dpr;
 
 //   width, height   the screen, in the canvas's pixels
 //   zoom, ox, oy    CSS pixels a tile, and where the meadow's corner lands
+//   hold            ms the light, the colours and the weather may wait to be painted (steady)
 //   the rest        see the uniforms in the shader
 function draw(u) {
   const now = performance.now();
   if (u.ox !== was.ox || u.oy !== was.oy) panned = now;
   was.ox = u.ox; was.oy = u.oy;
-  const still = steady(u);
+  const still = steady(u, now);
   busy = busy * 0.95 + (last && !still ? 0.05 : 0);
   if (still && within(last.ox - u.ox, last.pad, u.dpr) && within(last.oy - u.oy, last.pad, u.dpr)) {
     view.x = Math.round((last.pad + last.ox - u.ox) * u.dpr); view.y = Math.round((last.pad + last.oy - u.oy) * u.dpr);
@@ -447,7 +453,7 @@ function draw(u) {
   for (const k of ['low', 'high', 'sand', 'fog']) gl.uniform3fv(U[k], u[k].map(v => v / 255));
   gl.uniform3fv(U.light, u.light);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
-  last = { ...u, pad }; stale = false; view.x = view.y = m;
+  last = { ...u, pad }; stale = false; view.x = view.y = m; paintedAt = now;
   return true;
 }
 

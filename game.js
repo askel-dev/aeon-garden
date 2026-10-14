@@ -137,6 +137,7 @@ function resize() {
   for (const s of S.KINDS) {
     const c = $('#spark-' + s);
     c.width = Math.round(c.clientWidth * dpr); c.height = Math.round(c.clientHeight * dpr);
+    sparkShown.delete(c);                        // (a canvas given its size is blank again)
   }
   measureSheet();
 }
@@ -251,11 +252,27 @@ function sprite(emoji, want, tint, leaf, center) {
   return want === px ? s : { canvas: s.canvas, size: s.size * want / px };
 }
 const lookKey = (emoji, tint, leaf, center) => emoji + '|' + (tint || '') + '|' + (leaf ? leaf.key : '') + (center ? '|c' : '');
+// A plain sprite's look and its key at each size (no tint, leaf or centring: nearly all of them), kept, so finding one
+// builds no names: building them and hashing them each time was most of what it cost to find a sprite.
+const plainKeys = new Map(), leafKeys = new WeakMap();   // emoji -> { look, at: px -> key }; and the same for each leaf
+function plainLook(emoji, leaf) {
+  let keys = plainKeys;
+  if (leaf) { keys = leafKeys.get(leaf); if (!keys) leafKeys.set(leaf, keys = new Map()); }   // (a leaf is kept as it is: SHORE_LOOKS, a tree's look)
+  let k = keys.get(emoji);
+  if (!k) keys.set(emoji, k = { look: lookKey(emoji, '', leaf, false), at: new Map() });
+  return k;
+}
+function plainKey(k, px) {
+  let key = k.at.get(px);
+  if (key === undefined) { if (k.at.size > 64) k.at.clear(); k.at.set(px, key = px + '|' + k.look); }   // (zooming about makes sizes without end)
+  return key;
+}
 // Whether drawEmoji would find this one painted already.
 const spriteReady = (emoji, want, leaf) => spriteCache.has((posed(emoji) ? poseStep : spriteStep)(Math.max(4, want)) + '|' + lookKey(emoji, '', leaf));
 function paintedSprite(emoji, px, tint, leaf, center) {
-  const look = lookKey(emoji, tint, leaf, center);
-  const key = px + '|' + look;
+  const plain = !tint && !center && plainLook(emoji, leaf);
+  const look = plain ? plain.look : lookKey(emoji, tint, leaf, center);
+  const key = plain ? plainKey(plain, px) : px + '|' + look;
   let s = spriteCache.get(key);
   if (s) { s.used = spriteFrame; return s; }
   // Zooming asks for every tree on screen at a new size in the same frame. Past a few ms of
@@ -590,6 +607,9 @@ function edgeColour(r, g, b) {
 // ground, however cheap the shader: on a MacBook at 2x, five times a second at 1x speed. There the ground
 // is kept to GROUND_WEBKIT pixels, but never below 1x. A phone's small screen stays at 2x.
 const GROUND_DPR = 2, GROUND_WEBKIT = 1.5e6;
+// At 15x and 60x the light, the mist's colour, the wet and the season move every frame, too little a frame to see: what
+// only moves with them is painted at most every GROUND_HOLD ms (a full-screen shader, two frames in three at 60x).
+const GROUND_HOLD_SPEED = 15, GROUND_HOLD = 100;
 const WEBKIT = /AppleWebKit/.test(navigator.userAgent) && !/Chrome\/|Chromium|Edg\//.test(navigator.userAgent);
 const groundLayer = Ground.ok ? Ground.canvas : null, laid = { w: 0, h: 0, x: 0, y: 0 };
 if (groundLayer) { groundLayer.id = 'ground'; canvas.before(groundLayer); }
@@ -610,6 +630,7 @@ function drawGround(z, ox, oy, shx, shy) {
     width: w, height: h, zoom: z, ox, oy, dpr: gd, seed: groundSeed, low, high, sand: shoreSand, fog: fogColour(high, ck.phase),
     light: goldLight(shownGold(ck.phase)),
     snow: world.snow, damp: 1 - 0.12 * world.wet, ice: iceOver(), cold: coldness(), lx: k * sn.lean, ly: k * 0.8,
+    hold: ui.speed >= GROUND_HOLD_SPEED ? GROUND_HOLD : 0,   // (at speed the light and the colours may wait a moment: ground.js steady)
     drought: Math.round(S.dryness(world) * 16) / 16,     // (?keep, the Dry Year: in steps, so the ground repaints only on a step)
   });
   if (groundIn) { groundIn = [Ground.view.x, Ground.view.y, w, h]; return; }   // the photo lays it under the meadow after (copyMeadow)
@@ -1095,7 +1116,10 @@ function arch(g, w, h, y0) {
 // sizes, like a sprite: drawn by hand every frame they cost a few gradients and a dozen fills a burrow. How fresh its
 // earth is, how long it's been left and how far it's dug go in BURROW_STEPS. The paths worn round it are drawn as ever.
 const BURROW_STEPS = 16;
-const burrowArt = new WeakMap();                // a burrow's painting: { key, canvas, r, w, h } (its middle at w/2, h/2)
+// At speed a burrow's earth fades, the grass takes it back and a dig goes on in steps a frame or two apart, each a painting of
+// its own (at 60x a dozen a second a burrow): a step waits till its painting is BURROW_MS old. At 1x they're seconds apart.
+const BURROW_MS = 250;
+const burrowArt = new WeakMap();                // a burrow's painting: { shape, age, at, canvas, r, w, h } (its middle at w/2, h/2)
 function drawBurrow(b, sx, sy, z, season, residents) {
   const rnd = k => burrowRand(b.id, k);
   const r = Math.max(5, z * 0.8) * (0.9 + 0.2 * rnd(0));
@@ -1125,12 +1149,13 @@ function drawBurrow(b, sx, sy, z, season, residents) {
   }
 
   const R = spriteStep(r), q = v => Math.round(v * BURROW_STEPS);
-  const key = ((((R * 17 + q(fresh)) * 17 + q(neglect)) * 17 + q(done ? 1 : b.dug)) * 4 + season) * 8 + Math.round(dpr * 2);
+  const shape = ((R * 2 + (done ? 1 : 0)) * 4 + season) * 8 + Math.round(dpr * 2), age = (q(fresh) * 17 + q(neglect)) * 17 + q(done ? 1 : b.dug);
   let a = burrowArt.get(b);
-  if (!a || a.key !== key && !(standIns && paintedMs > PAINT_MS)) {   // (painting a lot this frame: the last one stands in)
+  const t0 = performance.now();
+  if (!a || (a.shape !== shape || a.age !== age && t0 - a.at >= BURROW_MS) && !(standIns && paintedMs > PAINT_MS)) {   // (painting a lot this frame: the last one stands in)
     if (a) freeImage(a.canvas);
-    const t0 = performance.now();
-    burrowArt.set(b, a = paintBurrow(b, R, q(fresh) / BURROW_STEPS, q(neglect) / BURROW_STEPS, done ? 1 : q(b.dug) / BURROW_STEPS, season, key));
+    burrowArt.set(b, a = paintBurrow(b, R, q(fresh) / BURROW_STEPS, q(neglect) / BURROW_STEPS, done ? 1 : q(b.dug) / BURROW_STEPS, season, shape, age));
+    a.at = t0;
     paintedMs += performance.now() - t0;
   }
   const k = r / a.r;
@@ -1139,7 +1164,7 @@ function drawBurrow(b, sx, sy, z, season, residents) {
 
 // A burrow at r (its size on screen), as fresh, left and dug as that: the low bank the hole goes into, the earth spilled in
 // front, and the way in, turned a little, into a canvas of its own.
-function paintBurrow(b, r, fresh, neglect, dug, season, key) {
+function paintBurrow(b, r, fresh, neglect, dug, season, shape, age) {
   const rnd = k => burrowRand(b.id, k), done = dug >= 1;
   const pile = done ? 1 : 0.35 + 0.65 * Math.sqrt(dug);           // how much earth is out
   const open = clamp((dug - 0.35) / 0.65, 0, 1);                 // the hole shows once the scrape is deep
@@ -1220,7 +1245,7 @@ function paintBurrow(b, r, fresh, neglect, dug, season, key) {
       g.stroke();
     }
   }
-  const a = { key, canvas: c, r, w: c.width / dpr, h: c.height / dpr };
+  const a = { shape, age, at: 0, canvas: c, r, w: c.width / dpr, h: c.height / dpr };
   asBitmap(c, bm => { if (burrowArt.get(b) === a) { a.canvas = bm; c.width = 0; } else bm.close(); });
   return a;
 }
@@ -1413,10 +1438,11 @@ function render(now) {
     wash(`rgba(${GOLD_RGB}, ${GOLD_A * gold})`);
     ctx.globalCompositeOperation = 'source-over';
   }
-  if (dark > 0) wash(`rgba(${NIGHT_RGB}, ${dark})`);
+  const glows = fireflyLight(dark) > 0.02 || world.burning.length > 0;   // (drawn over the dark, under the weather)
+  if (dark > 0 && glows) wash(`rgba(${NIGHT_RGB}, ${dark})`);
   drawFireflies(now, dark);
   drawFire(now);
-  drawWeather(now, ck);
+  drawWeather(now, ck, glows ? 0 : dark);                  // (else the dark is laid with the weather's washes, as one)
 
   // Burrow snores at night.
   if (ck.night && z >= 8) {
@@ -2510,7 +2536,7 @@ function paintBee(g, size, U, pose) {
 }
 const BEE_BUZZ = 38;               // ms a wingbeat painting shows
 const BEE_STILL = 10;              // px: smaller, the wings can't be seen beating, so they don't
-const beeArt = (c, px, now) => c.mode === 'sip' || c.sleeping ? 'bee:2' : ui.speed === 0 || px < BEE_STILL ? 'bee:0' : 'bee:' + ((now / BEE_BUZZ + c.id) & 1);
+const beeArt = (c, px, now) => c.mode === 'sip' || c.sleeping ? 'bee:2' : ui.speed === 0 || px < BEE_STILL ? 'bee:0' : ((now / BEE_BUZZ + c.id) & 1) ? 'bee:1' : 'bee:0';
 
 // A hedgehog, facing left, soft-shaded like the carcasses: a round dome of spines, each dark at the root and pale at the
 // tip, lying back over it and bristling at its edge; under it a brown face with a darker mask, a shiny black nose and a
@@ -3537,7 +3563,8 @@ const BODY_ARTS = Array.from({ length: (FOX_LOOK + 1) * 4 }, (_, k) => 'body:' +
 // ------------------------------------------------------------------ the fox
 //
 // A living fox is painted (fur.js: FOX_POSES, paintFox), not the 🦊 emoji. 'fox:' + (fur step << 4) + pose.
-const foxArtOf = (fur, pose) => 'fox:' + ((Math.round(fur * 10) << 4) + FOX_POSE[pose]);   // a few shades keep the sprite cache small
+const FOX_ARTS = Array.from({ length: 11 << 4 }, (_, n) => 'fox:' + n);   // (made once: a frame builds no names)
+const foxArtOf = (fur, pose) => FOX_ARTS[(Math.round(fur * 10) << 4) + FOX_POSE[pose]];   // a few shades keep the sprite cache small
 
 // Painting a fox takes a few times longer than the emoji did, and a dozen poses, cubs growing and zooming all ask
 // for new sizes: so a painted animal (a fox, a rabbit) is painted only at doublings of its size (from FUR_PAINTED
@@ -4182,13 +4209,25 @@ function drawSpots(now) {
   ctx.globalAlpha = 1;
 }
 
+// A label (the name over the one followed, or under the mouse) is painted once a text and copied after, in whole pixels so
+// it stays sharp: setting the font and measuring the text every frame was most of what drawing one cost.
+const LABEL_FONT = '800 12px Nunito, ui-rounded, system-ui, sans-serif', labels = new Map();
 function drawLabel(text, x, y) {
-  ctx.font = '800 12px Nunito, ui-rounded, system-ui, sans-serif';
-  const tw = ctx.measureText(text).width, w = tw + 16;
-  ctx.fillStyle = 'rgba(255, 250, 240, 0.95)';
-  ctx.beginPath(); ctx.roundRect(x - w / 2, y, w, 22, 11); ctx.fill();
-  ctx.fillStyle = '#3b372f'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(text, x, y + 11.5);
+  let l = labels.get(text);
+  if (!l || l.dpr !== dpr) {
+    if (labels.size > 40) { for (const o of labels.values()) freeImage(o.c); labels.clear(); }
+    const c = document.createElement('canvas'), g = c.getContext('2d');
+    g.font = LABEL_FONT;
+    const w = g.measureText(text).width + 16;
+    c.width = Math.ceil(w * dpr); c.height = Math.ceil(22 * dpr);
+    g.scale(dpr, dpr);
+    g.fillStyle = 'rgba(255, 250, 240, 0.95)';
+    g.beginPath(); g.roundRect(0, 0, w, 22, 11); g.fill();
+    g.font = LABEL_FONT; g.fillStyle = '#3b372f'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(text, w / 2, 11.5);
+    labels.set(text, l = { c, w, dpr });
+  }
+  ctx.drawImage(l.c, Math.round((x - l.w / 2) * dpr) / dpr, Math.round(y * dpr) / dpr, l.c.width / dpr, l.c.height / dpr);
 }
 
 function drawSelectionUnder(c, now) {
@@ -4278,6 +4317,10 @@ function drawDecorShadow(d, sx, sy, sn, px = d.tree ? treePx(d) : d.size * cam.z
     return;
   }
   const tree = d.tree && !d.stump, s = px * (d.stump ? 0.45 : d.dead ? 0.6 : 1);
+  if (tree && s < PAIR_PX && sn.a > 0.02 && fade === 1) {   // (in the mist the two fade apart: drawn apart)
+    const p = shadowPair(sn);
+    if (p) { ctx.drawImage(p.image, sx + p.x * s, sy + p.y * s, p.w * s, p.h * s); return; }
+  }
   if (tree) {
     const cw = s * 0.2, ch = s * 0.06;
     ctx.globalAlpha = 0.4 + 0.25 * Math.max(0, sn.a);
@@ -4289,6 +4332,37 @@ function drawDecorShadow(d, sx, sy, sn, px = d.tree ? treePx(d) : d.size * cam.z
   ctx.globalAlpha = (tree ? 0.55 : 0.3) * sn.a;
   ctx.drawImage(shade, sx + off - W / 2, sy + h * 0.4 - H / 2, W, H);
   ctx.globalAlpha = 1;
+}
+
+// A tree's two shadows, the dark patch at its foot and the one the sun casts, are the same in a frame for every tree but
+// for its size. So for a tree drawn small (PAIR_PX) they're painted together once, with the sun's lean and strength in
+// steps too fine to see at that size, and drawn in one go: zoomed out, they were half of all the drawing. Till that
+// picture is a bitmap, the two are drawn as before.
+const PAIR_PX = 64, PAIR_LEAN = 32, PAIR_A = 32, PAIR_RES = 96, PAIR_KEEP = 256;   // (PAIR_RES: its pixels to a tree's size; PAIR_KEEP of them, ~20 kB each)
+const shadowPairs = new Map();
+function shadowPair(sn) {
+  const step = shadeStep(), li = Math.round(sn.lean * PAIR_LEAN), ai = Math.round(clamp(sn.a, 0, 1) * PAIR_A);
+  const key = (step * (2 * PAIR_LEAN + 1) + li + PAIR_LEAN) * (PAIR_A + 1) + ai;
+  let p = shadowPairs.get(key);
+  if (p) return p.image ? p : null;
+  if (shadowPairs.size >= PAIR_KEEP) {                      // the oldest goes
+    const [k, q] = shadowPairs.entries().next().value;
+    if (q.image) freeImage(q.image);
+    shadowPairs.delete(k);
+  }
+  const lean = li / PAIR_LEAN, a = ai / PAIR_A, shade = SOFT_SHADOWS[step];   // (drawDecorShadow's, a tree's size 1)
+  const cw = 0.2, ch = 0.06, w = 0.34, h = 0.12, off = lean * 0.22, W = (w + Math.abs(off) * 0.6) * 2.5, H = h * 2.6;
+  const x0 = Math.min(-cw, off - W / 2), x1 = Math.max(cw, off + W / 2), y0 = Math.min(-ch * 0.8, h * 0.4 - H / 2), y1 = Math.max(ch * 1.2, h * 0.4 + H / 2);
+  const c = document.createElement('canvas');
+  c.width = Math.ceil((x1 - x0) * PAIR_RES); c.height = Math.ceil((y1 - y0) * PAIR_RES);
+  const g = c.getContext('2d');
+  g.scale(PAIR_RES, PAIR_RES); g.translate(-x0, -y0);
+  g.globalAlpha = 0.4 + 0.25 * a; g.drawImage(shade, -cw, -ch * 0.8, cw * 2, ch * 2);
+  g.globalAlpha = 0.55 * a; g.drawImage(shade, off - W / 2, h * 0.4 - H / 2, W, H);
+  p = { image: null, x: x0, y: y0, w: c.width / PAIR_RES, h: c.height / PAIR_RES };
+  shadowPairs.set(key, p);
+  asBitmap(c, b => { if (shadowPairs.get(key) === p) p.image = b; else b.close(); });
+  return null;
 }
 
 // Animals lean their shadow with the sun like the trees do, and keep a faint one at their feet
@@ -4413,6 +4487,16 @@ function treeLook(d, ck, full = true) {   // full: with the look and the bare lo
         key: [rgb, m, where, fall, snow, seed, blossom && bloom, blossom, fruit ? fruit.e + fruit.n : ''].join('|') } : undefined;
   const bare = fall && { snow, seed, m: 0, fall: 0, key: `bare|${snow}` };
   return { look, fall, bare, drop, rgb, h, ground, flip: info.flip };
+}
+
+// What lies under a painted tree (treeLook's ground, but a painted cherry has its own petals): in autumn the sim's
+// windfalls, apples under an apple tree, else acorns or beechnuts.
+const FALL_APPLES = { e: '🍎', n: 0, size: 0.12 }, FALL_NUTS = { e: '🌰', n: 0, size: 0.07 };
+function windfallsUnder(d, ck) {
+  if (ck.season !== 2 || !d.windfall || d.emoji === '🌲') return null;
+  const g = treeInfo(d).fruit === 'apple' ? FALL_APPLES : FALL_NUTS;
+  g.n = d.windfall;
+  return g;
 }
 
 // Windfalls lying in the grass, for the sprite cache: 'fall:0' an apple, 'fall:1' an acorn (or a beechnut).
@@ -4899,6 +4983,12 @@ function drawDecor(d, sx, sy, now, ck, clipLeaves, px = d.tree ? treePx(d) : d.s
     return;
   }
   if (px < 20 && !clipLeaves && (drawPaintedTree(d, sx, sy, now, ck, stage, px) || treeWorker)) return;   // too small for anything under it or in it
+  if (treeWorker && !clipLeaves) {                           // painted: of treeLook, only what lies under it
+    const ground = windfallsUnder(d, ck), h = ground && treeInfo(d).h;
+    if (ground) drawUnderTree(ground, h, sx, sy, px, false);
+    if (drawPaintedTree(d, sx, sy, now, ck, stage, px) && ground) drawUnderTree(ground, h, sx, sy, px, true);
+    return;                                                  // (its falling leaves: treeLeaves; none yet: it fades in when its painting comes)
+  }
   const t = treeLook(d, ck, !treeWorker);
   const under = t.ground?.n && px >= 20 && !(treeWorker && t.ground.e === '🌸');   // a painted cherry has its own petals
   if (under) drawUnderTree(t.ground, t.h, sx, sy, px, false);
@@ -5382,6 +5472,7 @@ const iceOver = () => world.ice * 0.72;   // frozen over (the sim's w.ice: it ho
 
 // Little waves on open water: a small ~ that rises, drifts downwind and settles again.
 // The wind makes more of them show and bigger; ice stills the water.
+const WAVE_X = Float64Array.from({ length: 13 }, (_, k) => 2 * (k / 12) - 1), WAVE_Y = Float64Array.from({ length: 13 }, (_, k) => Math.sin(k / 12 * 3 * Math.PI));
 function drawWaves(now) {
   const m = ui.sky.mix, wind = 0.4 * m.cloudy + 0.7 * m.rain + m.storm;
   const z = cam.zoom, a = (0.45 + 0.3 * Math.min(1, wind)) * (1 - iceOver() / 0.72) * clamp((z - 9) / 5, 0, 1);   // from afar they'd only be speckle
@@ -5399,10 +5490,7 @@ function drawWaves(now) {
     const s = 0.6 + 0.4 * b;                                     // rises, then settles
     ctx.globalAlpha = a * b;
     ctx.beginPath();
-    for (let k = 0; k <= 12; k++) {                             // a short ~ of a wave and a half
-      const u = k / 12;
-      ctx.lineTo(sx + w * s * (2 * u - 1), sy - h * s * Math.sin(u * 3 * Math.PI));
-    }
+    for (let k = 0; k <= 12; k++) ctx.lineTo(sx + w * s * WAVE_X[k], sy - h * s * WAVE_Y[k]);   // a short ~ of a wave and a half
     ctx.stroke();
   }
   unfade();
@@ -5908,38 +5996,92 @@ function weatherTick(now) {
   return weatherClock;
 }
 
-function drawWeather(now, ck) {
+function drawWeather(now, ck, dark) {
   const m = ui.sky.mix, t = weatherTick(now);
+  if (dark > 0) skyWash(NIGHT_RGB, dark);
   const shade = 0.12 * m.cloudy + 0.08 * m.rain + 0.10 * m.storm;
-  if (shade > 0.01) drawCloudShadows(t, shade);
+  if (shade > 0.01) skyLayer(SKY_CLOUDS, shade);
   const dim = 0.05 * m.cloudy + 0.09 * m.rain + 0.30 * m.storm + 0.04 * m.snow;
-  if (dim > 0.005) wash(`rgba(50, 62, 92, ${dim})`);
-  if (m.heat > 0.01) wash(`rgba(255, 168, 60, ${0.11 * m.heat})`);
-  if (!ck.night) drawRainbow();
-  if (m.fog > 0.01) drawFog(t, m.fog);
+  if (dim > 0.005) skyWash(DIM_RGB, dim);
+  if (m.heat > 0.01) skyWash(HEAT_RGB, 0.11 * m.heat);
+  if (!ck.night && rainbowShows()) { laySky(t); drawRainbow(); }   // (over what's laid so far, under the fog)
+  if (m.fog > 0.01) { skyWash(FOG_RGB, 0.30 * m.fog); skyLayer(SKY_FOG, m.fog); }
+  laySky(t);
   const rain = m.rain + 1.8 * m.storm;
   if (rain > 0.02) drawRain(t, rain, m.storm);
   if (m.snow > 0.02) drawSnow(t, m.snow);
   drawLightning(now);
 }
 
-// Soft shadows that pan and zoom with the meadow, drifting east.
-function drawCloudShadows(now, a) {
-  const z = cam.zoom, span = S.W + 60;
-  ctx.save();
+// The washes over the whole meadow, in order: the dark (render's), the cloud shadows, the weather's dim, the heat's glow and
+// the fog. Each was a screen's worth of pixels for the GPU to blend, a dozen at worst. Washes laid one over another come to
+// the same as one laid once, so they're gathered up (skyWash, skyLayer) and laid in one go (laySky): one fill if they're all
+// even, else one small picture of them all, painted at SKY_RES of the screen (they're soft all through) and stretched over it.
+const DIM_RGB = [50, 62, 92], HEAT_RGB = [255, 168, 60], FOG_RGB = [236, 240, 244];
+const SKY_EVEN = 0, SKY_CLOUDS = 1, SKY_FOG = 2;          // a layer: one colour all over, the cloud shadows, the fog's banks
+const SKY_RES = 0.125;                                     // the picture's pixels to a CSS pixel
+const SKY_MS = 50;                                         // and its clouds and fog drift on in steps this long (a pixel or two: they're soft)
+const sky = { n: 0, layers: Array.from({ length: 8 }, () => ({ kind: 0, rgb: null, a: 0 })), canvas: null, g: null,
+  was: new Float64Array(64), now: new Float64Array(64) };   // what the picture was painted from, and what it's wanted from now
+
+function skyLayer(kind, a, rgb = null) { const l = sky.layers[sky.n++]; l.kind = kind; l.a = a; l.rgb = rgb; }
+const skyWash = (rgb, a) => skyLayer(SKY_EVEN, a, rgb);
+function laySky(t) {
+  const n = sky.n;
+  if (!n) return;
+  sky.n = 0;
+  const L = sky.layers;
+  let even = true;
+  for (let i = 0; i < n; i++) if (L[i].kind !== SKY_EVEN) even = false;
+  if (even) {                                              // one colour, what they come to over what's under
+    if (n === 1) { wash(`rgba(${L[0].rgb}, ${L[0].a})`); return; }
+    let r = 0, g = 0, b = 0, through = 1;                  // (premultiplied, and how much of what's under shows through)
+    for (let i = 0; i < n; i++) {
+      const { rgb, a } = L[i];
+      r = rgb[0] * a + r * (1 - a); g = rgb[1] * a + g * (1 - a); b = rgb[2] * a + b * (1 - a); through *= 1 - a;
+    }
+    const a = 1 - through;
+    wash(`rgba(${r / a}, ${g / a}, ${b / a}, ${a})`);
+    return;
+  }
+  const k = SKY_RES, w = Math.ceil((vw + 20) * k), h = Math.ceil((vh + 20) * k);   // (as wash: 10 past the screen all round, for the thunder's shake)
+  if (!sky.canvas) { sky.canvas = document.createElement('canvas'); sky.g = sky.canvas.getContext('2d'); }
+  const c = sky.canvas, sg = sky.g;
+  // Painted again only if what it shows has moved (paused, with the camera still, it hasn't: the weather's clock stands too).
+  const f = sky.now;
+  f[0] = n; f[1] = vw; f[2] = vh; f[3] = cam.x; f[4] = cam.y; f[5] = cam.zoom; f[6] = shakeX; f[7] = shakeY; f[8] = dpr; f[9] = t;
+  for (let i = 0; i < n; i++) { const l = L[i], o = 10 + i * 5; f[o] = l.kind; f[o + 1] = l.a; f[o + 2] = l.rgb ? l.rgb[0] : -1; f[o + 3] = l.rgb ? l.rgb[1] : -1; f[o + 4] = l.rgb ? l.rgb[2] : -1; }
+  let same = c.width === w && c.height === h;
+  for (let i = 0, m = 10 + n * 5; same && i < m; i++) if (f[i] !== sky.was[i] && !(i === 9 && f[9] - sky.was[9] < SKY_MS)) same = false;
+  if (same) { ctx.drawImage(c, -10, -10, w / k, h / k); return; }
+  sky.was.set(f);
+  if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+  sg.setTransform(1, 0, 0, 1, 0, 0);
+  sg.clearRect(0, 0, w, h);
+  for (let i = 0; i < n; i++) {
+    const { kind, rgb, a } = L[i];
+    sg.setTransform(k, 0, 0, k, 10 * k, 10 * k);          // in CSS pixels, as the meadow's
+    if (kind === SKY_CLOUDS) paintCloudShadows(sg, t, a);
+    else if (kind === SKY_FOG) paintFogBanks(sg, t, a);
+    else { sg.fillStyle = `rgba(${rgb}, ${a})`; sg.fillRect(-10, -10, vw + 20, vh + 20); }
+  }
+  ctx.drawImage(c, -10, -10, w / k, h / k);
+}
+
+// Soft shadows that pan and zoom with the meadow, drifting east. (On the sky's picture; they keep still in the thunder's shake.)
+function paintCloudShadows(g, now, a) {
+  const z = cam.zoom, span = S.W + 60, k = SKY_RES, ox = 10 - shakeX / dpr, oy = 10 - shakeY / dpr;
   for (const c of clouds) {
     const wx = ((c.x * span + now / 1000 * 0.5 * c.s) % span) - 30, wy = c.y * S.H;
     const [sx, sy] = toScreen(wx, wy), r = c.r * z;
     if (!visible(sx, sy, r * 1.6)) continue;
-    const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, r * 1.6);
+    const grad = g.createRadialGradient(sx, sy, 0, sx, sy, r * 1.6);
     grad.addColorStop(0, `rgba(30, 40, 70, ${a * 1.6})`);
     grad.addColorStop(1, 'rgba(30, 40, 70, 0)');
-    ctx.fillStyle = grad;
-    ctx.setTransform(dpr * 1.6, 0, 0, dpr, sx * dpr * (1 - 1.6), 0);   // stretch sideways
-    ctx.beginPath(); ctx.arc(sx, sy, r * 1.6, 0, TAU); ctx.fill();
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.fillStyle = grad;
+    g.setTransform(k * 1.6, 0, 0, k, k * (sx * (1 - 1.6) + ox), k * oy);   // stretch sideways
+    g.beginPath(); g.arc(sx, sy, r * 1.6, 0, TAU); g.fill();
   }
-  ctx.restore();
 }
 
 function drawRain(now, amount, storm) {
@@ -5971,18 +6113,15 @@ function drawSnow(now, amount) {
   ctx.fill();
 }
 
-function drawFog(now, amount) {
-  wash(`rgba(236, 240, 244, ${0.30 * amount})`);
-  ctx.save();
+function paintFogBanks(g, now, amount) {
   for (let i = 0; i < 6; i++) {                  // slow banks rolling past
     const x = ((i / 6 + now / 60000) % 1.4 - 0.2) * vw, y = vh * (0.15 + 0.14 * i), r = vw * 0.35;
-    const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+    const grad = g.createRadialGradient(x, y, 0, x, y, r);
     grad.addColorStop(0, `rgba(244, 246, 250, ${0.35 * amount})`);
     grad.addColorStop(1, 'rgba(244, 246, 250, 0)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(x - r, y - r, r * 2, r * 2);
+    g.fillStyle = grad;
+    g.fillRect(x - r, y - r, r * 2, r * 2);
   }
-  ctx.restore();
 }
 
 // A rainbow keeps to game time like the rest of the sky, lasting most of a day (14 s at 1x) and holding while it's
@@ -6039,6 +6178,7 @@ function rainbowOut() {
 }
 function rainbowWet() { ui.sky.bowEnd = Math.min(ui.sky.bowEnd, world.tick + BOW_OUT); }   // the rain's back: it fades
 
+const rainbowShows = () => bowNow() <= ui.sky.bowEnd;
 function drawRainbow() {
   const t = bowNow(), age = t - ui.sky.rainbow;
   if (t > ui.sky.bowEnd) return;
@@ -6464,10 +6604,13 @@ function fireflyHaunts() {
 }
 
 // Summer, dark, and not raining: each firefly drifts about its spot and flashes every few seconds.
-function drawFireflies(now, dark) {
+function fireflyLight(dark) {                     // how brightly they're out tonight: 0 when they aren't
   const [season, next, turn] = seasonTurn(), m = ui.sky.mix;
   const summer = season === 1 ? 1 - turn : next === 1 ? turn : 0;
-  const a = summer * clamp((dark - 0.15) / 0.25, 0, 1) * clamp(1 - 1.5 * ((m.rain || 0) + (m.storm || 0)), 0, 1);
+  return summer * clamp((dark - 0.15) / 0.25, 0, 1) * clamp(1 - 1.5 * ((m.rain || 0) + (m.storm || 0)), 0, 1);
+}
+function drawFireflies(now, dark) {
+  const a = fireflyLight(dark);
   if (a <= 0.02) return;
   const spots = fireflyHaunts(), z = cam.zoom, d = Math.max(12, z * 1.1), t = now / 1000;
   ctx.globalCompositeOperation = 'lighter';
@@ -7113,10 +7256,16 @@ function since(t) {
 
 // The last two years as a small chart: a zero line, a dashed line at the peak, and both numbers
 // in a narrow gutter on the right so you can read the scale.
+// Drawn again only when what it shows has changed: a new sample (every 60 ticks, at 1x every 2 s) or its size. Not
+// while it has none (in a small card it's hidden).
+const sparkShown = new WeakMap();
 function sparkline(canvas, data, color) {
-  const g = canvas.getContext('2d'), w = canvas.width, h = canvas.height;
+  const w = canvas.width, h = canvas.height, from = since(world.tick - 2 * S.YEAR_DAYS * S.TPD), was = sparkShown.get(canvas);
+  if (!w || !h || (was && was.data === data && was.n === data.length && was.from === from)) return;
+  sparkShown.set(canvas, { data, n: data.length, from });
+  const g = canvas.getContext('2d');
   g.clearRect(0, 0, w, h);
-  const pts = data.slice(since(world.tick - 2 * S.YEAR_DAYS * S.TPD));
+  const pts = data.slice(from);
   if (pts.length < 2) return;
   const peak = Math.max(...pts), max = Math.max(4, peak);
   const gut = 30 * dpr, pad = 6 * dpr, cw = w - gut, top = 6 * dpr, base = h - 6 * dpr;
