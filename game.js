@@ -59,9 +59,8 @@ let world;
 const ui = {
   speed: 1, sound: false, tool: 'look', selectedId: 0, picked: null, hoverId: 0, follow: false,
   trail: [], effects: [], zaps: [], zapNext: 0, allTraits: false, allStory: false,
-  lastNews: {}, newsLog: [], newsOpen: false, records: perKind(() => 0), crashSaid: perKind(() => -1), seenHistory: 0,
+  lastNews: {}, newsLog: [], newsOpen: false,
   releaseSex: perKind(() => 'F'), group: perKind(() => 1), mini: false, ring: null, sheetUp: false,
-  stats: { open: false, show: 'rabbit', range: 'five', hover: null },
   sky: { mix: {}, tick: 0, bolts: [], boom: -1e9, rainbow: -1e9, bowEnd: -1e9, menu: false },
 };
 const cam = { x: S.W / 2, y: S.H / 2, zoom: 10, goal: null };
@@ -134,11 +133,6 @@ function resize() {
   fitZoom = Math.min(vw / S.W, vh / S.H) * FIT;  // and you may look further out, at all of it
   cam.zoom = Math.max(cam.zoom, fitZoom);
   clampCam();
-  for (const s of S.KINDS) {
-    const c = $('#spark-' + s);
-    c.width = Math.round(c.clientWidth * dpr); c.height = Math.round(c.clientHeight * dpr);
-    sparkShown.delete(c);                        // (a canvas given its size is blank again)
-  }
   measureSheet();
 }
 
@@ -149,7 +143,7 @@ function measureSheet() {
   const side = rail() && !panel ? $('#toolbar').offsetWidth + 6 : 0;   // (6: its brass rule; the open panel sends the rail away)
   if (!ins.height) sheet = side ? { top: 0, bottom: 0, left: side, right: 0 } : null;
   else if (narrow() && !short()) {
-    const top = Math.max($('#meadow').getBoundingClientRect().bottom, $('#hud-right .hud-top').getBoundingClientRect().bottom);
+    const top = $('#hud-right .hud-top').getBoundingClientRect().bottom;
     sheet = { top, bottom: vh - ins.top, left: 0, right: 0 };
   } else sheet = short() ? { top: 0, bottom: 0, left: side, right: $('#inspector').classList.contains('strip') ? 0 : vw - ins.left } : null;
 }
@@ -174,9 +168,6 @@ new ResizeObserver(() => {             // (a rail covers no bottom: just the hom
   measureSheet();
 }).observe($('#toolbar'));
 if (KEEP) new ResizeObserver(() => { topPad = $('#keep-top').offsetHeight + 6; }).observe($('#keep-top'));   // (6: its brass rule)
-new ResizeObserver(() => {            // on a phone the time pill sits under the meadow card
-  document.documentElement.style.setProperty('--meadow-h', $('#meadow').offsetHeight + 'px');
-}).observe($('#meadow'));
 new ResizeObserver(measureSheet).observe($('#inspector'));
 
 // ?keep on a phone on its side (the rail): GREEN and the Dry Year's ribbon stand in the top bar where there's room. GREEN
@@ -186,8 +177,7 @@ new ResizeObserver(measureSheet).observe($('#inspector'));
 function fitTopBar() {
   const root = document.documentElement;
   if (!rail()) { root.classList.remove('ribbon-bar'); return; }
-  if (!ui.mini) return;                                  // (the counts are in the big card: left as they were)
-  const dial = $('#dial').getBoundingClientRect(), edge = $('#meadow .mini-line').getBoundingClientRect().right + 4;
+  const dial = $('#dial').getBoundingClientRect(), edge = $('#keep-top').getBoundingClientRect().left + 8;
   const gw = $('#green').offsetWidth, fw = $('#forecast').offsetWidth, end = $('#time').getBoundingClientRect().left - 4;
   const after = edge + gw <= dial.left - 8, gx = after ? edge : dial.right + 8, fx = after ? dial.right + 8 : gx + gw + 4;
   root.style.setProperty('--green-x', Math.round(gx) + 'px');
@@ -196,7 +186,7 @@ function fitTopBar() {
 }
 if (KEEP) {
   const fit = new ResizeObserver(fitTopBar);
-  for (const s of ['#meadow', '#time', '#forecast', '#green', '#toolbar']) fit.observe($(s));
+  for (const s of ['#time', '#forecast', '#green', '#toolbar']) fit.observe($(s));
   addEventListener('resize', fitTopBar);
 }
 
@@ -7250,83 +7240,7 @@ function handleEvent(e) {
   }
 }
 
-// How many make a record worth telling, and how big a peak has to be before its crash is news.
-const NEWSWORTHY = { rabbit: { record: 20, crash: 80 }, fox: { record: 8, crash: 10 }, bee: { record: 20, crash: 40 }, crow: { record: 25, crash: 15 }, owl: { record: 8, crash: 99 },
-  otter: { record: 8, crash: 99 } };
-
-function checkPopulationNews() {
-  const h = world.history, n = h.rabbit.length;
-  const from = Math.max(0, Math.min(ui.seenHistory, n - 1));   // every sample since last look, even at 60x
-  ui.seenHistory = n;
-  for (const s of S.KINDS) {
-    const now = world.count[s], name = S.SPECIES[s].plural.toLowerCase(), big = NEWSWORTHY[s];
-    const fresh = Math.max(...h[s].slice(from));
-    if (world.tick < S.TPD * S.SEASON_DAYS) {                 // the first spring is not news
-      ui.records[s] = Math.max(ui.records[s], fresh);
-    } else if (fresh > ui.records[s]) {
-      if (fresh >= Math.max(big.record, Math.ceil(ui.records[s] * 1.12))) {
-        addNews(`📈 <b>${fresh} ${name}</b>, the most this meadow has ever had!`, 'record-' + s, 20000, 'big');
-      }
-      ui.records[s] = fresh;
-    }
-    const recent = h[s].slice(since(world.tick - S.YEAR_DAYS * S.TPD));
-    const peak = Math.max(...recent);
-    const season = S.seasonOf(world.tick) + 4 * S.clock(world).year;
-    if (peak >= big.crash && now <= peak * 0.3 && ui.crashSaid[s] !== season && now > 0) {
-      ui.crashSaid[s] = season;
-      bigNews(`📉 <b>The ${name} are crashing</b>: ${now} left, down from ${peak}.`);
-    }
-  }
-}
-
-// ------------------------------------------------------------------ the meadow card
-
-// Index of the first history sample at or after tick t.
-function since(t) {
-  const a = world.history.t;
-  let lo = 0, hi = a.length;
-  while (lo < hi) { const m = (lo + hi) >> 1; if (a[m] < t) lo = m + 1; else hi = m; }
-  return lo;
-}
-
-// The last two years as a small chart: a zero line, a dashed line at the peak, and both numbers
-// in a narrow gutter on the right so you can read the scale.
-// Drawn again only when what it shows has changed: a new sample (every 60 ticks, at 1x every 2 s) or its size. Not
-// while it has none (in a small card it's hidden).
-const sparkShown = new WeakMap();
-function sparkline(canvas, data, color) {
-  const w = canvas.width, h = canvas.height, from = since(world.tick - 2 * S.YEAR_DAYS * S.TPD), was = sparkShown.get(canvas);
-  if (!w || !h || (was && was.data === data && was.n === data.length && was.from === from)) return;
-  sparkShown.set(canvas, { data, n: data.length, from });
-  const g = canvas.getContext('2d');
-  g.clearRect(0, 0, w, h);
-  const pts = data.slice(from);
-  if (pts.length < 2) return;
-  const peak = Math.max(...pts), max = Math.max(4, peak);
-  const gut = 30 * dpr, pad = 6 * dpr, cw = w - gut, top = 6 * dpr, base = h - 6 * dpr;
-  const x = i => (i / (pts.length - 1)) * cw, y = v => base - (v / max) * (base - top);
-  g.font = `800 ${10 * dpr}px Nunito, sans-serif`; g.textAlign = 'right'; g.textBaseline = 'middle'; g.fillStyle = MUTED;
-  g.strokeStyle = '#e2d4ba'; g.lineWidth = dpr;
-  g.beginPath(); g.moveTo(0, base + 0.5 * dpr); g.lineTo(cw, base + 0.5 * dpr); g.stroke();
-  g.fillText('0', w - pad, base);
-  if (peak > 0) {
-    g.setLineDash([3 * dpr, 3 * dpr]);
-    g.beginPath(); g.moveTo(0, y(peak)); g.lineTo(cw, y(peak)); g.stroke();
-    g.setLineDash([]);
-    g.fillText(Math.round(peak), w - pad, y(peak));
-  }
-  g.beginPath();
-  g.moveTo(0, base);
-  pts.forEach((v, i) => g.lineTo(x(i), y(v)));
-  g.lineTo(cw, base);
-  g.closePath();
-  g.fillStyle = color + '2e';
-  g.fill();
-  g.beginPath();
-  pts.forEach((v, i) => (i ? g.lineTo(x(i), y(v)) : g.moveTo(x(i), y(v))));
-  g.strokeStyle = color; g.lineWidth = 2 * dpr; g.lineJoin = 'round';
-  g.stroke();
-}
+// ------------------------------------------------------------------ traits, the tab, the watch
 
 const TRAITS = [
   { k: 'speed', e: '⚡', name: 'Speed', words: ['sluggish', 'slow', 'average', 'quick', 'lightning fast'],
@@ -7347,21 +7261,6 @@ const TRAITS = [
 const traitsOf = species => TRAITS.filter(t => !t.only || t.only === species);
 const band = v => v < 0.3 ? 0 : v < 0.45 ? 1 : v < 0.55 ? 2 : v < 0.7 ? 3 : 4;   // 2, the middle, is "medium", "steady"…
 const word = (t, v) => t.words[band(v)];
-
-// Returns just the quiet words when there is nothing to show, so both species can share one line.
-function evolutionLine(species) {
-  const base = world.founderMeans[species], now = S.traitMeans(world, species);
-  if (!base || !now) return 'none alive';
-  const shifts = traitsOf(species).map(t => ({ t, d: (now[t.k] - base[t.k]) / base[t.k] }))
-    .filter(s => Math.abs(s.d) >= 0.05)
-    .sort((a, b) => Math.abs(b.d) - Math.abs(a.d))
-    .slice(0, 2);
-  if (!shifts.length) return 'no big changes yet';
-  return shifts.map(s => {
-    const up = s.d > 0;
-    return `${s.t.e} ${up ? s.t.up : s.t.down} <span class="${up ? 'up' : 'down'}">${up ? '▲' : '▼'}${Math.round(Math.abs(s.d) * 100)}%</span>`;
-  }).join(' · ');
-}
 
 // Rewriting part of the page with what it already shows still costs the browser a layout and
 // a repaint, and the card and inspector refresh four times a second. So only touch what changed.
@@ -7455,893 +7354,16 @@ function forecastTick() {
   if (line !== forecast.line) { forecast.line = line; forecast.el.querySelector('.pip-line').innerHTML = line; }
 }
 
-// A new day, softly, at the top of the meadow ("Spring, day 3"), with a line about the meadow under it: who's
-// oldest, who's caught most, how many generations of rabbits. A new season says how the last one went, a new
-// year how the year went. The faster time runs, the bigger the step it waits for, so a line comes every few
-// seconds whatever the speed: each day up to 4x, each season at 15x, each year at 60x. A round number of years
-// (MILESTONES) gets a bigger line of its own and goes in the news. Never over the intro or the away card,
-// which have their own words, and never for days skipped (a meadow opened, a catch-up).
-const DAYBREAK_MS = { day: [6000, 3800], season: 4800, year: 4800, milestone: 8000 };   // how long a line stays up (a day's: at 1x, and faster)
-const MILESTONES = [1, 5, 10, 25, 50, 75];             // and every 50 after
-const YEAR_WORDS = { 1: 'One', 5: 'Five', 10: 'Ten', 25: 'Twenty-five', 50: 'Fifty', 75: 'Seventy-five', 100: 'A hundred' };
-const YOUNG_WORD = { rabbit: 'kits', fox: 'cubs', crow: 'chicks', owl: 'owlets', otter: 'cubs' };
-const daybreak = { el: $('#daybreak'), day: -1, timer: 0, said: [], season: null, year: null, hold: 0 };   // hold: no day's line till then (?keep: a task done)
-const isMilestone = y => MILESTONES.includes(y) || (y > 0 && y % 50 === 0);
-const kindsHere = () => S.KINDS.filter(s => s !== 'bee' && (s !== 'owl' || S.OWLS));
-const anA = s => `${/^[aeiou]/i.test(s) ? 'an' : 'a'} ${s}`;
-const nth = n => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
-const treeLink = (d, text) => thingLink('tree', d.id, text);
-const yearsOld = n => `${n} ${n === 1 ? 'year' : 'years'} old`;
-
-function daybreakTick() {
-  const day = Math.floor(world.tick / S.TPD), last = daybreak.day;
-  daybreak.day = day;
-  if (last < 0 || day === last) return;
-  const step = day === last + 1;
-  if (!step && !away.on) { daybreak.season = daybreak.year = null; return; }   // a meadow opened: the round-ups start from here
-  for (let y = Math.floor(last / S.YEAR_DAYS) + 1; y <= Math.floor(day / S.YEAR_DAYS); y++) if (isMilestone(y)) milestone(y, step);
-  if (!step) { daybreak.season = daybreak.year = null; return; }
-
-  const ck = S.clock(world), seasonStart = ck.dayInSeason === 1, yearStart = seasonStart && ck.season === 0;
-  const roundSeason = seasonStart ? roundUp('season', ck) : '', roundYear = yearStart ? roundUp('year', ck) : '';
-  if (yearStart && isMilestone(ck.year - 1)) return;      // it has its own line
-  const unit = ui.speed <= 4 ? 'day' : ui.speed <= 15 ? 'season' : 'year';
-  if (unit === 'season' && !seasonStart || unit === 'year' && !yearStart || !canBreak() || performance.now() < daybreak.hold) return;
-  const name = S.SEASONS[ck.season].name;
-  let head, more;
-  if (unit === 'year') { head = `<b class="fr">Year ${ck.year}</b>`; more = roundYear; }
-  else if (seasonStart) { head = `<b class="fr">${name}</b><small>year ${ck.year}</small>`; more = roundYear || roundSeason; }
-  else head = `<b class="fr">${name}, day ${ck.dayInSeason}</b>`;
-  showBreak(seasonStart ? 'season' : 'day', head, more || meadowFact(),
-    unit === 'day' && !seasonStart ? DAYBREAK_MS.day[ui.speed > 1 ? 1 : 0] : DAYBREAK_MS[unit === 'year' ? 'year' : 'season']);
-}
-
-const canBreak = () => !(intro.on || idle.on || away.on || ui.stats.open || document.hidden
-  || document.body.classList.contains('lab') || document.body.classList.contains('hush'));
-
-function showBreak(kind, head, more, ms) {
-  const el = daybreak.el;
-  el.className = `on ${kind}`;
-  el.innerHTML = head + (more ? `<p>${more}</p>` : '');
-  clearTimeout(daybreak.timer);
-  daybreak.timer = setTimeout(() => el.classList.remove('on'), ms);
-}
-
-// How the season or year just gone went: born and died since the last one began, and at a year the rabbits' peak.
-// Empty the first time round (a meadow just opened has nothing to count from).
-function roundUp(unit, ck) {
-  const was = daybreak[unit], kinds = kindsHere();
-  const now = { t: world.tick, born: perKind(s => world.stats.births[s] || 0),
-    gone: perKind(s => Object.values(world.stats.deaths[s] || {}).reduce((a, n) => a + n, 0)) };
-  daybreak[unit] = now;
-  if (!was) return '';
-  const born = kinds.filter(s => now.born[s] > was.born[s]).map(s => many(now.born[s] - was.born[s], S.SPECIES[s].name.toLowerCase()));
-  const gone = kinds.reduce((a, s) => a + now.gone[s] - was.gone[s], 0), nBorn = kinds.reduce((a, s) => a + now.born[s] - was.born[s], 0);
-  const when = unit === 'year' ? `In year ${ck.year - 1}` : `In the ${S.SEASONS[(ck.season + 3) % 4].name.toLowerCase()}`;
-  if (!nBorn && !gone) return `${when}, nobody was born and nobody died.`;
-  let line = `${when}, ${born.length ? `${andList(born)} ${nBorn === 1 ? 'was' : 'were'} born` : 'nobody was born'}${gone ? `, and ${many(gone, 'animal')} died` : ', and nobody died'}.`;
-  if (unit === 'year') {
-    const h = world.history;
-    let peak = -1, at = 0;
-    for (let i = 0; i < h.t.length; i++) if (h.t[i] >= was.t && h.rabbit[i] > peak) { peak = h.rabbit[i]; at = h.t[i]; }
-    if (peak > 0) line += ` The rabbits peaked at ${big(peak)} in the ${S.SEASONS[S.clock({ tick: at }).season].name.toLowerCase()}.`;
-  }
-  return line;
-}
-
-// Something worth knowing about the meadow today, not one said lately. One look over the animals and trees.
-function meadowFact() {
-  const facts = [], add = (key, w, text) => { if (!daybreak.said.includes(key)) facts.push([key, w, text]); };
-  let oldTree = null, planted = null, trees = 0;
-  for (const d of world.decor) {
-    if (!S.standing(d)) continue;
-    trees++;
-    if (!oldTree || d.born < oldTree.born) oldTree = d;
-    if (d.planted && (!planted || d.planted < planted.planted)) planted = d;
-  }
-  const treeIs = d => d.name ? `the ${treeLink(d, esc(d.name))}` : anA(treeLink(d, treeName(d).toLowerCase()));
-  if (oldTree) add('oldtree', 3, `The oldest tree is ${treeIs(oldTree)}, ${yearsOld(Math.floor(S.treeAge(world, oldTree)))}.`);
-  if (planted && S.treeAge(world, planted) >= 1) add('planted', 3, `The ${treeLink(planted, treeName(planted).toLowerCase())} you planted is ${yearsOld(Math.floor(S.treeAge(world, planted)))} now.`);
-  if (trees > 20) add('trees', 0.5, `${big(trees)} trees stand in the meadow.`);
-
-  const best = {};
-  for (const c of world.creatures) {
-    if (!c.alive || c.species === 'bee') continue;
-    const b = best[c.species] ||= { old: c, kids: c, kills: c, esc: c, fish: c, gen: c };
-    if (c.born < b.old.born) b.old = c;
-    for (const k of ['kids', 'kills', 'fish', 'gen']) if (c[k] > b[k][k]) b[k] = c;
-    if (c.escapes > b.esc.escapes) b.esc = c;
-  }
-  for (const s of kindsHere()) {
-    const b = best[s], sp = S.SPECIES[s].name.toLowerCase();
-    if (!b) {
-      const since = world.goneSince[s];
-      if (since >= 0 && world.stats.deaths[s] && Object.keys(world.stats.deaths[s]).length) add(`gone${s}`, 2, `No ${S.SPECIES[s].plural.toLowerCase()} for ${ago(since)} now.`);
-      continue;
-    }
-    if (S.ageDays(world, b.old) >= S.SPECIES[s].matureDays) add(`old${s}`, 1.5, `${link(b.old)} is the oldest ${sp}, ${days(S.ageDays(world, b.old))} old.`);
-    if (b.kids.kids >= 6) add(`kids${s}`, 1.5, `${link(b.kids)} has had ${b.kids.kids} ${YOUNG_WORD[s]}, more than any ${sp} alive.`);
-    if (b.gen.gen >= 3) add(`gen${s}`, s === 'rabbit' ? 1.5 : 0.7, `The ${S.SPECIES[s].plural.toLowerCase()} here are on their ${nth(b.gen.gen)} generation.`);
-    const record = world.tick > S.TPD * S.YEAR_DAYS && world.count[s] >= 8 && world.count[s] >= ui.records[s];   // (a new meadow's count is its record)
-    if (record) add(`record${s}`, 2.5, `There have never been more ${S.SPECIES[s].plural.toLowerCase()} here: ${big(world.count[s])} of them.`);
-    if (world.stats.births[s] >= 50) add(`born${s}`, 0.8, `${big(world.stats.births[s])} ${S.SPECIES[s].plural.toLowerCase()} have been born in this meadow.`);
-  }
-  const fox = best.fox?.kills, rab = best.rabbit?.esc, otter = best.otter?.fish;
-  if (fox && fox.kills >= 5) add('kills', 2, `${link(fox)} has caught ${fox.kills}, more than any fox alive.`);
-  if (rab && rab.escapes >= 3) add('escapes', 2, `${link(rab)} has got away from a hunter ${rab.escapes} times.`);
-  if (otter && otter.fish >= 10) add('fish', 1.5, `${link(otter)} has caught ${big(otter.fish)} fish, the most of any otter.`);
-  let hive = null;
-  for (const h of world.hives) if (h.queen && (!hive || h.queen.kids > hive.queen.kids)) hive = h;
-  if (hive && hive.queen.kids >= 30) add('queen', 1.5, `${thingLink('hive', hive.id, `Queen ${esc(hive.queen.name)}`)} has raised ${big(hive.queen.kids)} bees.`);
-
-  if (!facts.length) { daybreak.said.length = 0; return ''; }   // all said lately: start again tomorrow
-  let r = Math.random() * facts.reduce((a, [, w]) => a + w, 0);
-  const [key, , text] = facts.find(([, w]) => (r -= w) <= 0) || facts[facts.length - 1];
-  daybreak.said.push(key);
-  if (daybreak.said.length > 8) daybreak.said.shift();
-  return text;
-}
-
-// A round number of years: a bigger line, a chime and a line in the news. While away it's only the news; in the
-// film, the film's caption.
-function milestone(y, show) {
-  const words = YEAR_WORDS[y] || big(y), born = kindsHere().filter(s => world.stats.births[s] > 0)
-    .map(s => many(world.stats.births[s], S.SPECIES[s].name.toLowerCase()));
-  let oldTree = null;
-  for (const d of world.decor) if (S.standing(d) && (!oldTree || d.born < oldTree.born)) oldTree = d;
-  const was = oldTree && Math.floor(S.treeAge(world, oldTree)) - y;
-  let more = born.length ? `${upper(andList(born))} born here so far.` : '';
-  if (oldTree && was >= 2) more += ` ${oldTree.name ? `The ${treeLink(oldTree, esc(oldTree.name))}` : `The oldest ${treeLink(oldTree, treeName(oldTree).toLowerCase())}`} was already ${yearsOld(was)} when it began.`;
-  bigNews(`🎂 <b>The meadow is ${words.toLowerCase()} ${y === 1 ? 'year' : 'years'} old!</b> ${more}`);
-  if (!show) return;
-  if (idle.on) { idleLine(`${words} ${y === 1 ? 'year' : 'years'} of the meadow`); return; }
-  if (!canBreak()) return;
-  showBreak('milestone', `<small>the meadow is</small><b class="fr">${words} ${y === 1 ? 'year' : 'years'} old</b>`, more, DAYBREAK_MS.milestone);
-  chime('rainbow');
-}
-
-// ?keep: how each kind is doing, marked in the top bar. Worked out once a sim day (and when a meadow opens, or an alert
-// comes or goes): gone, in danger (as the alerts over the bar have it: alertsTick), fewer or thriving against the same time last year (so the bees' winter dip isn't
-// a worry every winter), else steady. Nothing to compare in the first year. A kind that never lived here is none yet (–, not
-// a 0 that reads as a loss).
 const SPECIES_WORD = { rabbit: 'Rabbits', fox: 'Foxes', bee: 'Bees', crow: 'Crows', owl: 'Owls', otter: 'Otters' };
-const speciesMarks = { world: null, day: -1 };
-function speciesStatus(s) {
-  const n = world.count[s], h = world.history[s], then = world.tick - S.YEAR_DAYS * S.TPD;
-  if (!n) return h.some(v => v > 0) ? { st: 'gone' } : { st: 'none' };
-  if (alerts.on[s]) return { st: 'danger', n };
-  const before = world.history.t[0] > then + world.history.every ? 0 : h[since(then)];   // (0: no last year yet)
-  if (before > 0 && n < 0.6 * before) return { st: 'fewer', n, before };
-  if (before > 0 && n >= 1.25 * before) return { st: 'thriving', n, before };
-  return { st: 'steady', n };
-}
-function updateSpeciesMarks() {
-  const day = Math.floor(world.tick / S.TPD);
-  if (speciesMarks.world === world && speciesMarks.day === day) return;
-  speciesMarks.world = world; speciesMarks.day = day;
-  for (const s of S.KINDS) {
-    if (!SERIES[s]) continue;
-    const { st, n, before } = speciesStatus(s), pop = $('#mini-' + s).parentNode, name = SPECIES_WORD[s];
-    const title = st === 'gone' ? `${name} · gone from the meadow`
-      : st === 'danger' ? `${name} · in danger: ${n} left`
-      : st === 'none' ? `${name} · none yet`
-      : st === 'steady' ? `${name} · steady: ${n} now`
-      : `${name} · ${st}: ${n} now, ${before} this time last year`;
-    if (pop.dataset.st !== st) pop.dataset.st = st;
-    if (pop.title !== title) pop.title = title;
-  }
-}
 
-function updateMeadowCard() {
+// A few times a second: the watch's words, the weather button, the tab's icon.
+function updateClock() {
   const ck = S.clock(world);
   dialTitle(ck);
-  setText($('#season-emoji'), S.SEASONS[ck.season].emoji);
-  setText($('#season-name'), S.SEASONS[ck.season].name);
-  setText($('#clock-rest'), `· day ${ck.dayInSeason} · year ${ck.year}`);
-  const kind = world.weather.kind, wx = S.WEATHER[kind];
-  // One icon for the sky: clear weather shows the time of day instead of a plain sun.
-  const icon = kind !== 'clear' ? wx.emoji : ck.night ? '🌙' : ck.phase > 0.6 ? '🌇' : ck.phase < 0.1 ? '🌅' : wx.emoji;
-  const ground = world.burning.length ? '<span class="fire">🔥 wildfire!</span>'
-    : world.snow > 0.3 ? 'snow on the ground' : world.wet > 0.7 ? 'soaked ground'
-    : world.wet > 0.35 ? 'damp ground' : 'dry ground';
-  const clearNight = kind === 'clear' && ck.night;
-  const lock = world.skyLocked ? ' <span class="lock">🔒</span>' : '';
-  setHTML($('#sky'), `${icon} <b>${clearNight ? 'Clear night' : wx.name}</b>${lock} · ${ground}`);
-  $('#sky').title = WEATHER_HINT[kind] + (world.skyLocked ? '. Locked: it stays until you unlock it (K)' : '');
-  setText($('#sky-btn'), wx.emoji);
-  setHTML($('#mini-sky'), `<span id="mini-season">${S.SEASONS[ck.season].emoji}</span>${icon}`);   // phones hide the season
+  setText($('#sky-btn'), S.WEATHER[world.weather.kind].emoji);
   updateFavicon(ck);
-  if (KEEP) { updateGreen(); updateSpeciesMarks(); journalTick(); }   // (once a sim day)
-  for (const s of S.KINDS) {
-    if (!SERIES[s]) continue;                              // (the owls, while they're off: sim.js OWLS)
-    const mini = $('#mini-' + s);
-    setText(mini, KEEP && !world.count[s] && mini.parentNode.dataset.st === 'none' ? '–' : String(world.count[s]));
-    setText($('#n-' + s), String(world.count[s]));
-    if (!(KEEP && ui.mini)) sparkline($('#spark-' + s), world.history[s], SERIES[s].color);   // (?keep: a small card's are hidden)
-  }
-  // In the first year the averages wobble with every litter: that is luck, not evolution.
-  const r = world.tick < S.YEAR_DAYS * S.TPD ? 'wait' : evolutionLine('rabbit'), f = r === 'wait' ? 'wait' : evolutionLine('fox');
-  const quiet = v => !v.includes('<');
-  if (r === f) {
-    setHTML($('#evo-rabbit'), `<span class="quiet">${r === 'wait' ? 'Too early to tell. The animals start to drift after a year or two.' : '🐇 🦊 ' + r}</span>`);
-    setHTML($('#evo-fox'), '');
-  } else {
-    setHTML($('#evo-rabbit'), '🐇 ' + (quiet(r) ? `<span class="quiet">${r}</span>` : r));
-    setHTML($('#evo-fox'), '🦊 ' + (quiet(f) ? `<span class="quiet">${f}</span>` : f));
-  }
+  if (KEEP) { updateGreen(); journalTick(); }   // (once a sim day)
 }
-
-// ------------------------------------------------------------------ the stats page
-
-const SERIES = {
-  rabbit: { emoji: '🐇', name: 'Rabbits', title: 'Rabbits alive', color: '#a07850', fmt: v => Math.round(v) },
-  fox: { emoji: '🦊', name: 'Foxes', title: 'Foxes alive', color: '#e2702f', fmt: v => Math.round(v) },
-  bee: { emoji: '🐝', name: 'Bees', title: 'Bees alive', color: '#d9a21b', fmt: v => Math.round(v) },
-  crow: { emoji: '🐦‍⬛', name: 'Crows', title: 'Crows alive', color: '#4a4e5e', fmt: v => Math.round(v) },
-  owl: { emoji: '🦉', name: 'Owls', title: 'Owls alive', color: '#9a6a3e', fmt: v => Math.round(v) },
-  otter: { emoji: '🦦', name: 'Otters', title: 'Otters alive', color: '#7c5232', fmt: v => Math.round(v) },
-  voles: { emoji: '🐁', name: 'Voles', title: 'Voles in the long grass', color: '#8a6a4e', fmt: v => Math.round(v) },
-  frogs: { emoji: '🐸', name: 'Frogs', title: 'Frogs by the water', color: '#6f8f3e', fmt: v => Math.round(v) },
-  fish: { emoji: '🐟', name: 'Fish', title: 'Fish in the water', color: '#5a8aa6', fmt: v => Math.round(v) },
-  grass: { emoji: '🌱', name: 'Grass', title: 'How lush the meadow is', color: '#5f9e43', fmt: v => Math.round(v * 100) + '%' },
-};
-const SEASON_TINT = ['#f6dde5', '#f7ecb8', '#f4d6b6', '#dfe8f0'];
-const RANGES = { year: S.YEAR_DAYS * S.TPD, five: 5 * S.YEAR_DAYS * S.TPD, all: Infinity };
-const RANGE_WORDS = { year: 'the last year', five: 'the last 5 years', all: 'the whole story' };
-const MARK_EMOJI = { extinct: '😢', arrive: '🧳', fire: '🔥', outbreak: '🤒', drystart: '☀️', dryend: '🌧️', dryloss: '🥀', drythrough: '🌈', dugpond: '⛏️', frogsfound: '🐸', sowstrip: '🌼', beesfound: '🐝', hedgeplant: '🌿', hedgebloom: '🌸' };
-const CAUSES = [['fox', '🦊', 'Caught by a fox'], ['hunger', '🥀', 'Starved'], ['age', '🌙', 'Old age'],
-  ['sickness', '🤒', 'Sickness'], ['lightning', '⚡', 'Lightning'], ['fire', '🔥', 'Wildfire'], ['flood', '🌊', 'Drowned in a flood'],
-  ['ice', '🧊', 'Fell through the ice'], ['owl', '🦉', 'Taken by an owl'], ['left', '🧳', 'Left to find a home of its own']];
-const INK = '#3b372f', MUTED = '#6f6657';
-
-if (!S.OWLS) delete SERIES.owl;
-const shownKeys = () => ui.stats.show === 'all' ? Object.keys(SERIES) : [ui.stats.show];
-
-function toggleStats(open = !ui.stats.open) {
-  ui.stats.open = open;
-  ui.stats.hover = null;
-  $('#stats').classList.toggle('hidden', !open);
-  $('[data-act="stats"]').classList.toggle('on', open);
-  if (open) { placeStatsRange(); renderStats(); $('#stats').scrollTop = 0; }
-}
-// ?keep on a phone on its side: the range of time goes up into the page's head, which stays at the top
-function placeStatsRange() {
-  const seg = $('.stats-range'), head = KEEP && short();
-  if (head === (seg.parentElement.tagName === 'HEADER')) return;
-  if (head) $('.stats-head').insertBefore(seg, $('.stats-head .web-btn')); else $('.stats-filters').append(seg);
-}
-
-function statsWindow() {
-  const h = world.history, i0 = since(world.tick - RANGES[ui.stats.range]);
-  const t0 = Math.max(world.tick - RANGES[ui.stats.range], h.t[0]);
-  return { h, i0, t0, t1: Math.max(world.tick, t0 + S.TPD) };
-}
-
-function niceStep(v) {
-  const p = 10 ** Math.floor(Math.log10(v));
-  return [1, 2, 5, 10].map(m => m * p).find(s => s >= v);
-}
-
-function fitCanvas(c, cssH) {
-  const w = c.clientWidth;
-  c.style.height = cssH + 'px';
-  c.width = Math.round(w * dpr); c.height = Math.round(cssH * dpr);
-  const g = c.getContext('2d');
-  g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  return [g, w];
-}
-
-// The big chart: one panel per series, all sharing a time axis striped by season.
-function drawStatsChart() {
-  const c = $('#stats-chart'), keys = shownKeys();
-  const TOP = 24, AXIS = 26, L = 48, R = 20;
-  let panelH = keys.length > 1 ? 150 : Math.max(260, Math.min(420, window.innerHeight * 0.45));
-  if (KEEP && short()) {                 // on its side, as tall as the screen leaves under the head, so it shows straight away
-    const page = $('#stats'), top = c.getBoundingClientRect().top - page.getBoundingClientRect().top + page.scrollTop;
-    panelH = Math.round(clamp(window.innerHeight - top - TOP - AXIS - 18, 90, 420));
-  }
-  const [g, w] = fitCanvas(c, keys.length * (panelH + TOP) + AXIS);
-  const { h, i0, t0, t1 } = statsWindow();
-  const X = t => L + (t - t0) / (t1 - t0) * (w - L - R);
-  const seasonT = S.SEASON_DAYS * S.TPD, yearT = S.YEAR_DAYS * S.TPD;
-  const bottom = keys.length * (panelH + TOP);
-  g.textBaseline = 'middle';
-
-  // the hovered sample, snapped to the nearest one
-  let hi = -1;
-  if (ui.stats.hover !== null && h.t.length > i0) {
-    const t = t0 + (ui.stats.hover - L) / (w - L - R) * (t1 - t0);
-    hi = clamp(since(t), i0, h.t.length - 1);
-    if (hi > i0 && t - h.t[hi - 1] < h.t[hi] - t) hi--;
-  }
-
-  keys.forEach((k, p) => {
-    const top = p * (panelH + TOP) + TOP, bot = top + panelH, sr = SERIES[k];
-    const data = h[k];
-
-    // seasons, with their emoji above the first panel when there is room
-    for (let s = Math.floor(t0 / seasonT) * seasonT; s < t1; s += seasonT) {
-      const a = X(Math.max(s, t0)), b = X(Math.min(s + seasonT, t1)), si = S.seasonOf(s);
-      g.fillStyle = SEASON_TINT[si];
-      g.fillRect(a, top, b - a, panelH);
-      if (p === 0 && b - a > 24) {
-        g.font = '13px ' + EMOJI_FONT; g.textAlign = 'center'; g.fillStyle = INK;
-        const label = b - a > 110 ? '' : S.SEASONS[si].emoji;
-        if (label) g.fillText(label, (a + b) / 2, top - 11);
-        else {
-          g.font = '800 12px Nunito, sans-serif'; g.fillStyle = MUTED;
-          g.fillText(S.SEASONS[si].emoji + ' ' + S.SEASONS[si].name, (a + b) / 2, top - 11);
-        }
-      }
-    }
-
-    // y axis: a few round numbers
-    let max = 1, step = 0.25;
-    if (k !== 'grass') {
-      let m = 4;
-      for (let i = i0; i < data.length; i++) m = Math.max(m, data[i]);
-      step = niceStep(m / 4); max = Math.ceil(m * 1.05 / step) * step;
-    }
-    const Y = v => bot - (v / max) * (panelH - 8);
-    g.font = '700 11px Nunito, sans-serif'; g.textAlign = 'right';
-    for (let v = 0; v <= max + 1e-9; v += step) {
-      g.fillStyle = 'rgba(59,55,47,0.10)'; g.fillRect(L, Math.round(Y(v)), w - L - R, 1);
-      g.fillStyle = MUTED; g.fillText(sr.fmt(v), L - 8, Y(v));
-    }
-
-    // the line, with a soft fill under it
-    if (data.length - i0 >= 2) {
-      g.beginPath();
-      g.moveTo(X(h.t[i0]), bot);
-      for (let i = i0; i < data.length; i++) g.lineTo(X(h.t[i]), Y(data[i]));
-      g.lineTo(X(h.t[data.length - 1]), bot);
-      g.closePath();
-      g.fillStyle = sr.color + '30'; g.fill();
-      g.beginPath();
-      for (let i = i0; i < data.length; i++) i > i0 ? g.lineTo(X(h.t[i]), Y(data[i])) : g.moveTo(X(h.t[i]), Y(data[i]));
-      g.strokeStyle = sr.color; g.lineWidth = 2; g.lineJoin = 'round'; g.stroke();
-    }
-
-    // big moments: extinctions and newcomers for animals, fires and your weather for the grass
-    for (const m of h.marks) {
-      const onGrass = m.type === 'sky' || m.type === 'fire';
-      if (m.t < t0 || (onGrass ? k !== 'grass' : m.species !== k)) continue;
-      const x = X(m.t);
-      g.save(); g.setLineDash([3, 3]); g.strokeStyle = 'rgba(59,55,47,0.35)'; g.lineWidth = 1;
-      g.beginPath(); g.moveTo(x, top + 18); g.lineTo(x, bot); g.stroke(); g.restore();
-      g.font = '13px ' + EMOJI_FONT; g.textAlign = 'center'; g.fillStyle = INK;
-      g.fillText(m.type === 'sky' ? S.WEATHER[m.kind].emoji : MARK_EMOJI[m.type], x, top + 10);
-    }
-
-    // which panel is which, when there are several
-    if (keys.length > 1) {
-      g.font = '800 12px Nunito, sans-serif';
-      const label = sr.emoji + ' ' + sr.name, tw = g.measureText(label).width + 16;
-      g.fillStyle = 'rgba(255,250,240,0.9)';
-      g.beginPath(); g.roundRect(L + 6, top + 6, tw, 20, 10); g.fill();
-      g.fillStyle = INK; g.textAlign = 'left'; g.fillText(label, L + 14, top + 16);
-    }
-
-    // today's value, labelled at the end of the line
-    if (data.length > i0) {
-      const x = X(h.t[data.length - 1]), y = Y(data[data.length - 1]);
-      g.fillStyle = '#fffaf0'; g.beginPath(); g.arc(x, y, 6, 0, TAU); g.fill();
-      g.fillStyle = sr.color; g.beginPath(); g.arc(x, y, 4, 0, TAU); g.fill();
-      g.font = '900 13px Nunito, sans-serif'; g.fillStyle = INK; g.textAlign = 'right';
-      g.fillText(sr.fmt(data[data.length - 1]), x - 9, y < top + 20 ? y + 14 : y - 12);
-    }
-    if (hi >= 0) {
-      const x = X(h.t[hi]), y = Y(data[hi]);
-      g.fillStyle = '#fffaf0'; g.beginPath(); g.arc(x, y, 6, 0, TAU); g.fill();
-      g.fillStyle = sr.color; g.beginPath(); g.arc(x, y, 4, 0, TAU); g.fill();
-    }
-  });
-
-  // years: a line where each one begins, labelled along the bottom
-  const pxPerYear = yearT / (t1 - t0) * (w - L - R), every = Math.max(1, Math.ceil(56 / pxPerYear));
-  g.font = '800 11px Nunito, sans-serif'; g.textAlign = 'center';
-  for (let y = Math.ceil(t0 / yearT) * yearT; y <= t1; y += yearT) {
-    const x = Math.round(X(y)), n = y / yearT + 1;
-    g.fillStyle = 'rgba(59,55,47,0.28)'; g.fillRect(x, TOP, 1, bottom - TOP);
-    if ((n - 1) % every === 0) { g.fillStyle = MUTED; g.fillText('Year ' + n, x, bottom + 13); }
-  }
-
-  // hover: a hairline and one readout for every panel
-  const tip = $('#stats-tip');
-  if (hi < 0) { tip.classList.add('hidden'); return; }
-  const x = X(h.t[hi]);
-  g.fillStyle = 'rgba(59,55,47,0.55)'; g.fillRect(Math.round(x), TOP, 1, bottom - TOP);
-  const rows = Object.keys(SERIES).map(k =>
-    `<div class="tip-row${keys.includes(k) ? '' : ' dim'}"><i style="background:${SERIES[k].color}"></i><b>${SERIES[k].fmt(h[k][hi])}</b> ${SERIES[k].name.toLowerCase()}</div>`);
-  tip.innerHTML = `<div class="tip-when">${S.SEASONS[S.seasonOf(h.t[hi])].emoji} ${when(h.t[hi])}</div>` + rows.join('');
-  tip.classList.remove('hidden');
-  const tw = tip.offsetWidth;
-  tip.style.left = (x + 14 + tw > w ? x - 14 - tw : x + 14) + 'px';
-}
-
-function seasonBars(k, i0) {
-  const h = world.history, sum = [0, 0, 0, 0], n = [0, 0, 0, 0], sr = SERIES[k];
-  for (let i = i0; i < h.t.length; i++) { const s = S.seasonOf(h.t[i]); sum[s] += h[k][i]; n[s]++; }
-  const avg = sum.map((v, s) => n[s] ? v / n[s] : null);
-  const max = Math.max(1e-9, ...avg.filter(v => v !== null));
-  return `<div class="sbars"><div class="st-name">${sr.emoji} ${sr.name}</div><div class="sb-row">` + avg.map((v, s) =>
-    `<div class="sb" title="${S.SEASONS[s].name}"><div class="sb-val">${v === null ? '–' : sr.fmt(v)}</div>` +
-    `<div class="sb-bar"><span style="height:${v === null ? 0 : Math.max(2, v / max * 100)}%;background:${sr.color}"></span></div>` +
-    `<div class="sb-lbl">${S.SEASONS[s].emoji}</div></div>`).join('') + '</div></div>';
-}
-
-function recordRows(k, i0) {
-  const h = world.history, a = h[k], sr = SERIES[k];
-  if (a.length <= i0) return '';
-  let hi = i0, lo = i0, sum = 0;
-  for (let i = i0; i < a.length; i++) { if (a[i] > a[hi]) hi = i; if (a[i] < a[lo]) lo = i; sum += a[i]; }
-  const rows = [
-    ['Now', sr.fmt(a[a.length - 1]), ''],
-    ['Most', sr.fmt(a[hi]), when(h.t[hi])],
-    ['Fewest', sr.fmt(a[lo]), when(h.t[lo])],
-    ['Average', sr.fmt(sum / (a.length - i0)), ''],
-  ];
-  if (k === 'grass') { rows[1][0] = 'Lushest'; rows[2][0] = 'Barest'; }
-  else {
-    const alive = world.creatures.filter(c => c.alive && c.species === k);
-    const oldest = alive.reduce((b, c) => (!b || c.born < b.born ? c : b), null);
-    const parent = alive.reduce((b, c) => (!b || c.kids > b.kids ? c : b), null);
-    if (oldest) rows.push(['Oldest alive', link(oldest), `${Math.floor(S.ageDays(world, oldest))} days`]);
-    if (parent && parent.kids) rows.push(['Biggest family', link(parent), `${parent.kids} ${parent.kids === 1 ? 'child' : 'children'}`]);
-  }
-  return `<div class="st-name">${sr.emoji} ${sr.name}</div><table class="rec">` +
-    rows.map(([a, b, c]) => `<tr><td>${a}</td><td><b>${b}</b></td><td>${c}</td></tr>`).join('') + '</table>';
-}
-
-function deathRows(k) {
-  const d = world.stats.deaths[k], sr = SERIES[k];
-  const total = CAUSES.reduce((n, [c]) => n + (d[c] || 0), 0);
-  const head = `<div class="st-name">${sr.emoji} ${sr.name} <span class="st-sub">${world.stats.births[k]} born here · ${total} died</span></div>`;
-  if (!total) return head + '<div class="st-sub">Nobody has died yet.</div>';
-  return head + CAUSES.filter(([c]) => d[c]).map(([c, e, text]) => {
-    const pct = d[c] / total * 100;
-    return `<div class="dbar"><span class="dl">${e} ${text}</span><span class="dt"><span style="width:${pct}%;background:${sr.color}"></span></span>` +
-      `<span class="dn"><b>${Math.round(pct)}%</b> ${d[c]}</span></div>`;
-  }).join('');
-}
-
-function evoBlock(k) {
-  const base = world.founderMeans[k], now = S.traitMeans(world, k), sr = SERIES[k];
-  return `<div class="st-name">${sr.emoji} ${sr.name} <span class="st-sub">average of everyone alive · dashed line is where the first ones started</span></div><div class="evo-grid">` +
-    traitsOf(k).map(t => {
-      const d = base && now ? (now[t.k] - base[t.k]) / base[t.k] : 0;
-      const chip = Math.abs(d) >= 0.02 ? `<span class="${d > 0 ? 'up' : 'down'}">${d > 0 ? '▲' : '▼'}${Math.round(Math.abs(d) * 100)}%</span>` : '';
-      return `<div class="evo-mini" title="${t.tip}"><div class="em-head">${t.e} ${t.name} ${chip}</div>` +
-        `<div class="em-word">${now ? word(t, now[t.k]) : 'none alive'}</div><canvas data-evo="${k}|${t.k}"></canvas></div>`;
-    }).join('') + '</div>' + (k === 'rabbit' ? coatTally() : '');
-}
-
-function coatTally() {
-  const n = S.coatCounts(world), total = Object.values(n).reduce((a, b) => a + b, 0);
-  if (!total) return '';
-  return `<div class="coats"><b>🎨 Coats</b>` + Object.keys(COAT).filter(c => n[c]).map(c =>
-    `<span><i style="background:${COAT[c].swatch}"></i>${S.COATS[c].name} <b>${Math.round(n[c] / total * 100)}%</b></span>`).join('') + '</div>';
-}
-
-function drawTrait(c, k, gene, i0) {
-  const [g, w] = fitCanvas(c, 54);
-  const h = world.history, tr = h.traits[k], base = world.founderMeans[k]?.[gene];
-  const { t0, t1 } = statsWindow();
-  let lo = base ?? 0.5, hi = lo;
-  for (let i = i0; i < tr.length; i++) if (tr[i]) { lo = Math.min(lo, tr[i][gene]); hi = Math.max(hi, tr[i][gene]); }
-  const mid = (lo + hi) / 2, half = Math.max(0.06, (hi - lo) / 2 * 1.15);
-  const X = t => 2 + (t - t0) / (t1 - t0) * (w - 4), Y = v => 27 - (v - mid) / half * 23;
-  if (base !== undefined) {
-    g.setLineDash([3, 3]); g.strokeStyle = 'rgba(59,55,47,0.35)'; g.lineWidth = 1;
-    g.beginPath(); g.moveTo(0, Y(base)); g.lineTo(w, Y(base)); g.stroke(); g.setLineDash([]);
-  }
-  g.beginPath();
-  let pen = false;
-  for (let i = i0; i < tr.length; i++) {
-    if (!tr[i]) { pen = false; continue; }                 // nobody alive: a gap in the line
-    const x = X(h.t[i]), y = Y(tr[i][gene]);
-    pen ? g.lineTo(x, y) : g.moveTo(x, y); pen = true;
-  }
-  g.strokeStyle = SERIES[k].color; g.lineWidth = 2; g.lineJoin = 'round'; g.stroke();
-}
-
-function renderStatsCards() {
-  const keys = shownKeys(), animals = keys.filter(k => S.KINDS.includes(k)), { i0 } = statsWindow();   // (voles aren't creatures: no deaths or genes to show)
-  $('#stats-records').innerHTML = keys.map(k => recordRows(k, i0)).join('');
-  $('#stats-seasons').innerHTML = keys.map(k => seasonBars(k, i0)).join('');
-  $('#stats-deaths').innerHTML = animals.map(deathRows).join('');
-  $('#stats-evo').innerHTML = animals.map(evoBlock).join('');
-  $('#stats-deaths').parentElement.classList.toggle('hidden', !animals.length);
-  $('#stats-evo').parentElement.classList.toggle('hidden', !animals.length);
-  document.querySelectorAll('canvas[data-evo]').forEach(c => { const [k, gene] = c.dataset.evo.split('|'); drawTrait(c, k, gene, i0); });
-}
-
-function renderStats() {
-  const keys = shownKeys();
-  $('#stats-title').textContent = keys.length > 1 ? 'Rabbits, foxes, bees, voles, frogs and grass' : SERIES[keys[0]].emoji + ' ' + SERIES[keys[0]].title;
-  $('#stats-range-note').textContent = 'over ' + RANGE_WORDS[ui.stats.range];
-  $('#stats-clock').textContent = `${S.SEASONS[S.seasonOf(world.tick)].emoji} ${when(world.tick)}`;
-  document.querySelectorAll('[data-show]').forEach(b => b.classList.toggle('on', b.dataset.show === ui.stats.show));
-  document.querySelectorAll('[data-range]').forEach(b => b.classList.toggle('on', b.dataset.range === ui.stats.range));
-  drawStatsChart();
-  renderStatsCards();
-}
-
-$('#stats-chart').addEventListener('pointermove', e => { ui.stats.hover = e.offsetX; drawStatsChart(); });
-$('#stats-chart').addEventListener('pointerleave', () => { ui.stats.hover = null; drawStatsChart(); });
-
-// ------------------------------------------------------------------ who ate whom
-//
-// The meadow's food web as it ran (sim.js webCounts): the hunters on top, the plant-eaters under them, the
-// plants at the bottom, and down the right the remains and the rich ground closing the loop. An arrow runs
-// from the eaten to the eater, as thick as how much went along it, by the log (a million mouthfuls of grass
-// and forty young rabbits both have to show). A thing gone just now fades, and its arrows with it. It's an
-// SVG in a card of its own, made once. While it's open, once a second, only the attributes that changed are
-// written; closed, it costs nothing.
-const WEB_W = 400, WEB_H = 454, WEB_R = 19;
-const WEB_NODES = {
-  fox: { x: 110, y: 78, art: foxArtOf(0.2, 'stand'), name: 'Foxes', color: '#e2702f' },
-  owl: { x: 196, y: 78, art: '🦉', name: 'Owls', color: '#9a6a3e' },
-  otter: { x: 282, y: 78, art: 'otter:3', name: 'Otters', color: '#7c5232' },
-  remains: { x: 368, y: 78, art: 'body:1', name: 'Remains', color: '#857565' },
-  bee: { x: 36, y: 200, art: 'bee:0', name: 'Bees', color: '#d9a21b' },
-  rabbit: { x: 108, y: 200, art: rabbitArtOf(COAT.wild, 'sit'), name: 'Rabbits', color: '#a07850' },
-  vole: { x: 180, y: 200, art: 'vole:0', name: 'Voles', color: '#8a6a4e' },
-  frog: { x: 252, y: 200, art: 'frog:0', name: 'Frogs', color: '#6f8f3e' },
-  fish: { x: 316, y: 200, art: 'icon:🐟', name: 'Fish', color: '#5a8aa6' },
-  crow: { x: 376, y: 200, art: 'crow:0', name: 'Crows', color: '#4a4e5e' },
-  flowers: { x: 36, y: 340, art: 'flower', name: 'Flowers', color: '#c0609a' },
-  fruit: { x: 108, y: 340, art: 'icon:🍎', name: 'Fruit trees', color: '#c94a3a' },
-  grass: { x: 180, y: 340, art: 'icon:🌿', name: 'Grass', color: '#5f9e43' },
-  seedlings: { x: 252, y: 340, art: '🌱', name: 'Seedlings', color: '#7aa64a' },
-  nuts: { x: 324, y: 340, art: 'icon:🌰', name: 'Acorns', color: '#9a7040' },
-  soil: { x: 368, y: 412, art: 'icon:🪱', name: 'Rich soil', color: '#7a5a3a' },
-};
-// n: the count along it (a key of webCounts, or a function of v, the period's counts), none for a link that's
-// real but not counted (a thin line). kind: 'body' for the dead left lying, 'grow' for what feeds the ground
-// and the woods; bend: how far the curve bows out, to its left.
-const WEB_LINKS = [
-  { from: 'grass', to: 'rabbit', n: 'grazed', say: n => `Rabbits took ${many(n, 'mouthful')} of grass.` },
-  { from: 'grass', to: 'vole', say: () => 'Voles live on the long grass. The rabbits keep it short round their warrens, and the voles off it.' },
-  { from: 'seedlings', to: 'rabbit', n: 'seedlingsEaten', say: n => `Rabbits nibbled ${many(n, 'tree seedling')} to nothing.` },
-  { from: 'seedlings', to: 'vole', n: 'seedlingsLost', say: n => `${upper(many(n, 'tree seedling'))} went in the grass, most to the voles.` },
-  { from: 'fruit', to: 'rabbit', n: 'apples:rabbit', say: n => `Rabbits ate ${many(n, 'windfall apple')}.`, bend: -14 },
-  { from: 'fruit', to: 'crow', n: 'apples:crow', say: n => `Crows ate ${many(n, 'windfall apple')}.`, bend: 30 },
-  { from: 'fruit', to: 'bee', n: 'blossomSips', say: n => `Bees sipped ${many(n, 'blossom')} on the fruit trees, and the blossom they visit sets fruit.` },
-  { from: 'flowers', to: 'bee', n: v => v('sips') - v('blossomSips'), say: n => `Bees sipped ${many(n, 'flower')}.` },
-  { from: 'nuts', to: 'rabbit', n: 'nuts:rabbit', say: n => `Rabbits ate ${many(n, 'fallen nut')}, acorns and beechnuts.`, bend: -40 },
-  { from: 'nuts', to: 'crow', n: v => v('cached') + v('nuts:crow'), bend: 12,
-    say: (n, v) => `Crows carried off ${many(v('cached'), 'acorn')} to bury, and dug ${many(v('dugUp'), 'acorn')} up again${v('nuts:crow') ? `, and ate ${big(v('nuts:crow'))} where they fell` : ''}.` },
-  { from: 'crow', to: 'nuts', kind: 'grow', n: 'planted', say: n => `${upper(many(n, 'acorn'))} the crows forgot came up as trees.`, bend: 12 },
-  { from: 'rabbit', to: 'fox', n: 'died:rabbit:fox', say: n => `Foxes caught ${many(n, 'rabbit')}.` },
-  { from: 'rabbit', to: 'owl', n: 'died:rabbit:owl', say: n => `Owls took ${many(n, 'young rabbit')}.`, bend: 10 },
-  { from: 'vole', to: 'fox', n: 'voles', say: n => `Foxes caught ${many(n, 'vole')}, mousing in the long grass.`, bend: 10 },
-  { from: 'vole', to: 'owl', n: 'owlVoles', say: n => `Owls caught ${many(n, 'vole')}.`, bend: -10 },
-  { from: 'frog', to: 'fox', n: 'frogs', say: n => `Foxes caught ${many(n, 'frog')}.`, bend: -10 },
-  { from: 'frog', to: 'owl', n: 'owlFrogs', say: n => `Owls caught ${many(n, 'frog')}.` },
-  { from: 'frog', to: 'crow', n: 'crowSpawn', say: n => `Crows ate frogspawn and tadpoles, as many as would have made ${many(n, 'frog')}.`, bend: -16 },
-  { from: 'frog', to: 'fish', n: 'fishSpawn', say: n => `Fish ate tadpoles, as many as would have made ${many(n, 'frog')}. The flood pools have none.` },
-  { from: 'fish', to: 'otter', n: 'fish', say: n => `Otters caught ${many(n, 'fish')}, diving.` },
-  { from: 'frog', to: 'otter', n: 'otterFrogs', say: n => `Otters caught ${many(n, 'frog')}, at the spawning and dug out of the winter mud.`, bend: 10 },
-  { from: 'soil', to: 'crow', n: 'grubs', say: n => `Crows pecked ${many(n, 'grub')} out of the short grass and the rich ground.`, bend: 20 },
-  { from: 'remains', to: 'crow', n: 'remainsCrows', say: n => `Crows fed at the remains of ${many(n, 'animal')}.`, bend: 14 },
-  { from: 'remains', to: 'soil', kind: 'grow', n: 'remainsRotted', say: n => `${upper(many(n, 'body'))} rotted away where they lay, into the ground.`, bend: -26 },
-  { from: 'soil', to: 'grass', kind: 'grow', say: () => 'Rich ground grows lusher grass. What dies on it, the droppings round the warrens and old logs all feed it.', bend: -60 },
-  { from: 'rabbit', to: 'remains', kind: 'body', n: 'bodies:rabbit', say: n => `${upper(many(n, 'rabbit'))} were left lying, caught or dead out in the open.`, bend: 34 },
-  { from: 'fox', to: 'remains', kind: 'body', n: 'bodies:fox', say: n => `${upper(many(n, 'fox'))} died out in the open and were left lying.`, bend: 34 },
-  { from: 'owl', to: 'remains', kind: 'body', n: 'bodies:owl', say: n => `${upper(many(n, 'owl'))} died out in the open and were left lying.`, bend: 12 },
-  { from: 'otter', to: 'remains', kind: 'body', n: 'bodies:otter', say: n => `${upper(many(n, 'otter'))} died out on the bank and were left lying.`, bend: 12 },
-  { from: 'crow', to: 'remains', kind: 'body', n: 'bodies:crow', say: n => `${upper(many(n, 'crow'))} died out in the open and were left lying.`, bend: -14 },
-];
-if (!S.OWLS) {                                             // (owls are off for now: sim.js OWLS)
-  delete WEB_NODES.owl; WEB_NODES.fox.x = 150; WEB_NODES.otter.x = 260;
-  for (let i = WEB_LINKS.length - 1; i >= 0; i--) if (WEB_LINKS[i].from === 'owl' || WEB_LINKS[i].to === 'owl') WEB_LINKS.splice(i, 1);
-}
-const WEB_WHEN = { season: null, year: 'Last year', all: 'Since the start' };
-const web = { open: false, when: 'year', at: 0, hover: null, pin: null, v: null, live: null, built: false, wide: null, rows: null };
-const webOpen = () => web.open;
-
-const PLURALS = { body: 'bodies', fox: 'foxes', fish: 'fish' };
-const BIG = new Intl.NumberFormat('en-US');             // (made once: toLocaleString makes one each time)
-const big = n => (n >= 1e6 ? `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)} million` : BIG.format(Math.round(n)));
-const many = (n, one) => { n = Math.round(n); return n <= 0 ? `no ${PLURALS[one] || one + 's'}` : n === 1 ? `one ${one}` : `${big(n)} ${PLURALS[one] || one + 's'}`; };
-const upper = s => s[0].toUpperCase() + s.slice(1);
-const andList = a => (a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1]);
-
-// A node's picture, painted once into a little canvas of its own (not the sprite cache, which lets go):
-// the meadow's own painted animals and bubble icons where there are some, else the emoji.
-const webIcons = new Map();
-function webIcon(art) {
-  let url = webIcons.get(art);
-  if (url) return url;
-  const px = 34 * 3, size = Math.ceil(px * 1.3), c = document.createElement('canvas');
-  c.width = c.height = size;
-  const g = c.getContext('2d'), colon = art.indexOf(':');
-  if (art.startsWith('icon:')) {
-    const i = BUBBLE_ICONS.findIndex(([e]) => e === art.slice(5));
-    g.setTransform(px / 2, 0, 0, px / 2, size / 2, size / 2); g.lineCap = g.lineJoin = 'round';
-    BUBBLE_ICONS[i][1](g);
-  } else if (art === 'flower') {
-    const f = flowerSprite((2 * 8) * 64 + Math.min(FLOWER_MAX_K, Math.round(2 * Math.log2(px * 0.9))));   // daisies
-    const k = 1.5 * Math.min(size / f.width, size / f.height);   // (the clump is small in its box)
-    g.drawImage(f, (size - f.width * k) / 2, (size - f.height * k) / 2, f.width * k, f.height * k);
-  } else if (art.startsWith('body:')) paintBody(g, size, px * 1.3, +art.slice(5), null, 0.4);   // bigger, and in the middle
-  else if (colon > 0 && PAINTERS[art.slice(0, colon)]) PAINTERS[art.slice(0, colon)](g, size, px, +art.slice(colon + 1));
-  else {
-    g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `${px}px ${EMOJI_FONT}`;
-    g.fillText(art, size / 2, size / 2 + px * 0.06);
-  }
-  webIcons.set(art, url = c.toDataURL());
-  return url;
-}
-
-const svgEl = (tag, attrs, parent) => {
-  const e = document.createElementNS('http://www.w3.org/2000/svg', tag);
-  for (const k in attrs) e.setAttribute(k, attrs[k]);
-  if (parent) parent.appendChild(e);
-  return e;
-};
-// Set only what changed.
-const setAttr = (e, k, v) => { v = String(v); if (e.getAttribute(k) !== v) e.setAttribute(k, v); };
-
-// Where a link runs: a curve bowing out by its bend, from the edge of one node to the tip of its arrowhead
-// at the other; w its width.
-function webGeometry(l, w) {
-  const a = WEB_NODES[l.from], b = WEB_NODES[l.to], dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy);
-  const cx = (a.x + b.x) / 2 - dy / d * (l.bend || 0), cy = (a.y + b.y) / 2 + dx / d * (l.bend || 0);
-  const unit = (x, y, tx, ty) => { const k = Math.hypot(tx - x, ty - y); return [(tx - x) / k, (ty - y) / k]; };
-  const [sx, sy] = unit(a.x, a.y, cx, cy), [ex, ey] = unit(b.x, b.y, cx, cy);
-  const head = 5 + w * 0.9, half = 3.5 + w * 0.7;
-  const x0 = a.x + sx * (WEB_R + 3), y0 = a.y + sy * (WEB_R + 3);
-  const tx = b.x + ex * (WEB_R + 3), ty = b.y + ey * (WEB_R + 3);               // the arrow's tip
-  const bx = tx + ex * head, by = ty + ey * head;                              // the middle of its base
-  const f = n => n.toFixed(1);
-  return {
-    line: `M${f(x0)} ${f(y0)}Q${f(cx)} ${f(cy)} ${f(tx + ex * head * 0.8)} ${f(ty + ey * head * 0.8)}`,
-    head: `M${f(tx)} ${f(ty)}L${f(bx - ey * half)} ${f(by + ex * half)}L${f(bx + ey * half)} ${f(by - ex * half)}Z`,
-  };
-}
-
-// ?keep on a phone on its side the web reads left to right instead, to fill a wide, short card: what grows, then the
-// foragers, then the hunters, each two columns zigzagging so the names fit under the discs, the remains top right and the
-// rich soil bottom right closing the loop. Each link's bend bows to its left either way. (placeWeb, on a turn too.)
-const WEB_WIDE = { w: 760, h: 242, rows: [[8, 'what grows'], [276, 'the foragers'], [548, 'the hunters']], at: {
-  flowers: [50, 26], fruit: [150, 59], grass: [50, 92], seedlings: [150, 125], nuts: [50, 158],
-  bee: [320, 26], rabbit: [420, 59], vole: [320, 92], frog: [420, 125], fish: [320, 158], crow: [420, 191],
-  fox: [590, 59], owl: [590, 125], otter: [590, 158], remains: [700, 26], soil: [700, 191] } };
-const WEB_TALL = { w: WEB_W, h: WEB_H, rows: [[140, 'the hunters'], [270, 'the foragers'], [404, 'what grows']], at: {} };
-for (const k in WEB_NODES) WEB_TALL.at[k] = [WEB_NODES[k].x, WEB_NODES[k].y];
-const webWide = () => KEEP && short();
-
-function buildWeb() {
-  const svg = $('#web-svg');
-  web.rows = [0, 1, 2].map(() => svgEl('text', { class: 'web-row' }, svg));
-  const links = svgEl('g', {}, svg), nodes = svgEl('g', {}, svg);
-  WEB_LINKS.forEach((l, i) => {
-    const n = WEB_NODES[l.from];
-    const g = l.el = svgEl('g', { class: 'web-link' + (l.kind ? ' ' + l.kind : ''), 'data-pick': 'link:' + i, fill: n.color, stroke: n.color }, links);
-    l.hit = svgEl('path', { class: 'hit', fill: 'none' }, g);
-    l.line = svgEl('path', { class: 'ln', fill: 'none' }, g);
-    l.head = svgEl('path', { class: 'hd', stroke: 'none' }, g);
-  });
-  for (const k in WEB_NODES) {
-    const n = WEB_NODES[k], g = n.el = svgEl('g', { class: 'web-node', 'data-pick': 'node:' + k }, nodes);
-    n.disc = svgEl('circle', { r: WEB_R, class: 'disc', stroke: n.color }, g);
-    n.img = svgEl('image', { href: webIcon(n.art), width: 30, height: 30 }, g);
-    n.label = svgEl('text', { class: 'name' }, g); n.label.textContent = n.name;
-    n.now = svgEl('text', { class: 'now' }, g);
-  }
-  svg.addEventListener('pointerover', e => {
-    if (e.pointerType !== 'mouse') return;
-    const t = e.target.closest('[data-pick]');
-    web.hover = t ? t.dataset.pick : null; sayWeb();
-  });
-  svg.addEventListener('pointerleave', () => { web.hover = null; sayWeb(); });
-  svg.addEventListener('click', e => {
-    const t = e.target.closest('[data-pick]'), k = t ? t.dataset.pick : null;
-    web.pin = k && k !== web.pin ? k : null; sayWeb();
-  });
-  $('#web').addEventListener('click', e => {
-    const b = e.target.closest('[data-web]');
-    if (b) { web.when = b.dataset.web; updateWeb(); }
-  });
-  web.built = true;
-}
-
-// Where everything goes, tall or wide (WEB_TALL, WEB_WIDE): the discs, their names (the tall top row's above, clear of
-// the arrows coming up), the rows' captions; the links are drawn again by updateWeb.
-function placeWeb(wide) {
-  const L = wide ? WEB_WIDE : WEB_TALL, svg = $('#web-svg');
-  web.wide = wide;
-  svg.setAttribute('viewBox', `0 0 ${L.w} ${L.h}`);
-  svg.classList.toggle('wide', wide);
-  L.rows.forEach(([at, t], i) => { const e = web.rows[i]; e.textContent = t; e.setAttribute('x', wide ? at : 8); e.setAttribute('y', wide ? L.h - 6 : at); });
-  for (const k in WEB_NODES) {
-    const n = WEB_NODES[k], [x, y] = L.at[k], up = !wide && y < 100;
-    n.x = x; n.y = y;
-    setAttr(n.disc, 'cx', x); setAttr(n.disc, 'cy', y);
-    setAttr(n.img, 'x', x - 15); setAttr(n.img, 'y', y - 15);
-    setAttr(n.label, 'x', x); setAttr(n.label, 'y', up ? y - WEB_R - 19 : y + WEB_R + 13);
-    setAttr(n.now, 'x', x); setAttr(n.now, 'y', up ? y - WEB_R - 7 : y + WEB_R + 25);
-  }
-  for (const l of WEB_LINKS) l.w = -1;                     // (drawn again)
-}
-
-// The counts for the period, from the snapshot the sim took at its start (none: since the meadow began).
-function webPeriod() {
-  const snaps = world.stats.web || [];
-  if (web.when === 'all' || !snaps.length) return null;
-  if (web.when === 'season') return snaps[snaps.length - 1];
-  const from = world.tick - S.YEAR_DAYS * S.TPD;
-  return snaps.find(s => s.t >= from) || null;
-}
-
-// What's there now, for the second line under each node and for fading the ones gone.
-function webLive() {
-  const w = world, trees = { fruit: 0, nuts: 0, seedlings: 0 };
-  for (const d of w.decor) {
-    if (!d.tree || !S.standing(d)) continue;
-    if (d.size < S.SAPLING) trees.seedlings++;
-    else if (d.kind === 'apple' || d.kind === 'cherry' || d.kind === 'hawthorn') trees.fruit++;
-    else if (d.kind === 'oak' || d.kind === 'beech') trees.nuts++;
-  }
-  const g = w.history.grass;
-  return {
-    ...Object.fromEntries(S.KINDS.map(s => [s, w.count[s]])), ...trees,
-    vole: Math.round(w.voleCount), frog: Math.round(w.frogCount), spawn: w.spawnCount >= 0.5, fish: Math.round(w.fishCount), flowers: w.flowers,
-    remains: w.carcasses.length, grass: g.length ? g[g.length - 1] : 1, hives: w.hives.filter(h => h.bees > 0 && !h.cluster).length,
-    sick: w.sick, mast: w.mast, voleYear: w.voleYear, holts: w.decor.filter(d => d.holt).length,
-  };
-}
-const webGone = (k, live) => (k in live ? (k === 'grass' ? false : k === 'frog' ? !live.frog && !live.spawn : !live[k]) : false);
-function webNow(k, L) {
-  switch (k) {
-    case 'grass': return Math.round(L.grass * 100) + '% grown';
-    case 'soil': return '';
-    case 'vole': case 'frog': case 'fish': return L[k] ? '~' + big(L[k]) : k === 'frog' && L.spawn ? 'spawn' : 'none now';
-    case 'flowers': return L.flowers ? big(L.flowers) + ' open' : 'none open';
-    case 'remains': return L.remains ? L.remains + ' lying' : 'none lying';
-    case 'fruit': case 'nuts': return L[k] ? L[k] + (L[k] === 1 ? ' tree' : ' trees') : 'none now';
-    default: return L[k] ? big(L[k]) : 'none now';
-  }
-}
-
-// A deaths-and-births line for an animal over the period: "120 born; 80 caught by foxes and 12 starved."
-const WEB_DIED = { fox: 'caught by foxes', owl: 'taken by owls', sickness: 'died of the sickness', hunger: 'starved', age: 'died of old age', left: 'left the meadow' };
-function lifeLine(s, v, cur) {
-  const parts = [], rest = {};
-  for (const key in cur) {
-    if (!key.startsWith('died:' + s + ':')) continue;
-    const c = key.slice(6 + s.length), n = v(key);
-    if (n <= 0) continue;
-    if (WEB_DIED[c]) parts.push([n, `${big(n)} ${WEB_DIED[c]}`]); else rest[c] = n;
-  }
-  const other = Object.values(rest).reduce((a, b) => a + b, 0);
-  if (other) parts.push([other, `${big(other)} lost to ${andList(Object.keys(rest).map(c => ({ fire: 'fire', flood: 'floods', ice: 'the ice', lightning: 'lightning' })[c] || c))}`]);
-  parts.sort((a, b) => b[0] - a[0]);
-  const born = v('born:' + s);
-  return `${born ? big(born) : 'None'} born${parts.length ? '; ' + andList(parts.map(p => p[1])) : ''}.`;
-}
-
-function webNodeSay(k, v, L, cur) {
-  const n = WEB_NODES[k], count = L[k];
-  const head = count ? `${big(count)} ${n.name.toLowerCase()} now` : `No ${n.name.toLowerCase()} now`;
-  switch (k) {
-    case 'rabbit': return `${head}${L.sick ? `, ${L.sick} of them sick` : ''}. ${lifeLine(k, v, cur)}`;
-    case 'fox': return `${head}. They caught ${andList([many(v('died:rabbit:fox'), 'rabbit'), many(v('voles'), 'vole'), many(v('frogs'), 'frog')])}. ${lifeLine(k, v, cur)}`;
-    case 'owl': return `${head}. They caught ${andList([many(v('owlVoles'), 'vole'), many(v('owlFrogs'), 'frog'), many(v('died:rabbit:owl'), 'young rabbit')])}. ${lifeLine(k, v, cur)}`;
-    case 'otter': return `${head}${L.holts ? `, ${L.holts === 1 ? 'one holt' : L.holts + ' holts'} on the banks` : ''}. They caught ${andList([many(v('fish'), 'fish'), many(v('otterFrogs'), 'frog')])}, and their spraint feeds the bank by the holt. ${lifeLine(k, v, cur)}`;
-    case 'fish': return `${count ? `About ${big(count)} fish in the water that lasts the year round` : 'No fish in the water now'}. They ate tadpoles, as many as would have made ${many(v('fishSpawn'), 'frog')}, and the otters caught ${big(v('fish'))}.`;
-    case 'crow': return `${head}. They pecked ${many(v('grubs'), 'grub')}, fed at ${many(v('remainsCrows'), 'body')}, ate spawn worth ${many(v('crowSpawn'), 'frog')} and ${many(v('apples:crow'), 'windfall')}, and buried ${many(v('cached'), 'acorn')}. ${lifeLine(k, v, cur)}`;
-    case 'bee': return `${head}${count ? `, in ${L.hives === 1 ? 'one hive' : L.hives + ' hives'}` : ''}. They sipped ${many(v('sips') - v('blossomSips'), 'flower')} and ${many(v('blossomSips'), 'blossom')}. ${lifeLine(k, v, cur)}`;
-    case 'vole': return `${count ? `About ${big(count)} voles in the long grass now${L.voleYear ? ', a vole year' : ''}` : 'No voles in the grass now'}. Foxes caught ${big(v('voles'))}${S.OWLS ? ` and owls ${big(v('owlVoles'))}` : ''}.`;
-    case 'frog': return `${count ? `About ${big(count)} frogs by the water now` : L.spawn ? 'No frogs out now, but spawn in the pools' : 'No frogs now'}. Foxes caught ${big(v('frogs'))}, ${S.OWLS ? `owls ${big(v('owlFrogs'))}, ` : ''}otters ${big(v('otterFrogs'))}, crows ate spawn worth ${many(v('crowSpawn'), 'frog')} and fish tadpoles worth ${big(v('fishSpawn'))}.`;
-    case 'grass': return `The meadow's grass is ${Math.round(L.grass * 100)}% grown. Rabbits took ${many(v('grazed'), 'mouthful')} of it, and voles live in the long grass.`;
-    case 'flowers': return `${L.flowers ? `${big(L.flowers)} flowers open now` : 'No flowers open now'}. Bees sipped ${many(v('sips') - v('blossomSips'), 'flower')}.`;
-    case 'fruit': return `${L.fruit ? `${big(L.fruit)} apple, cherry and hawthorn trees` : 'No fruit trees now'}. They blossom for the bees in spring (${many(v('blossomSips'), 'visit')}) and bear as much as the bees visited: rabbits ate ${many(v('apples:rabbit'), 'windfall')}, crows ${big(v('apples:crow'))}.`;
-    case 'nuts': return `${L.nuts ? `${big(L.nuts)} oaks and beeches${L.mast ? ', and a mast year' : ''}` : 'No oaks or beeches now'}. Rabbits ate ${many(v('nuts:rabbit'), 'fallen nut')}, crows buried ${many(v('cached'), 'acorn')}, and ${many(v('planted'), 'forgotten one')} came up as trees.`;
-    case 'seedlings': return `${L.seedlings ? `${big(L.seedlings)} seedlings coming up now` : 'No seedlings coming up now'}. Rabbits nibbled ${many(v('seedlingsEaten'), 'seedling')} to nothing, and ${big(v('seedlingsLost'))} more went in the grass, most to the voles.`;
-    case 'remains': return `${L.remains ? `${big(L.remains)} remains lying now` : 'No remains lying now'}. ${upper(many(v('remainsLeft'), 'body'))} left lying; the crows fed at ${big(v('remainsCrows'))}, and ${big(v('remainsRotted'))} rotted away.`;
-    case 'soil': return 'The ground remembers what lived and died on it. Remains, the droppings round the warrens and old logs feed it, the grass grows back lusher there, and the crows peck grubs out of it.';
-  }
-  return '';
-}
-
-function sayWeb() {
-  if (!web.v) return;
-  const pick = web.hover || web.pin, svg = $('#web-svg');
-  let text = '';
-  const hot = new Set();
-  if (pick) {
-    const [kind, id] = pick.split(':');
-    if (kind === 'link') { const l = WEB_LINKS[+id]; text = l.say(l.value, web.v); hot.add(l.el); hot.add(WEB_NODES[l.from].el); hot.add(WEB_NODES[l.to].el); }
-    else {
-      text = webNodeSay(id, web.v, web.live, web.cur); hot.add(WEB_NODES[id].el);
-      for (const l of WEB_LINKS) if (l.from === id || l.to === id) { hot.add(l.el); hot.add(WEB_NODES[l.from].el); hot.add(WEB_NODES[l.to].el); }
-    }
-  } else {
-    const gone = ['fox', 'owl', 'otter', 'crow', 'bee', 'rabbit', 'vole', 'frog', 'fish'].filter(k => WEB_NODES[k] && webGone(k, web.live)).map(k => WEB_NODES[k].name.toLowerCase());
-    text = (gone.length ? `No ${andList(gone)} now. ` : '') + (canHover.matches ? 'Point at' : 'Tap') + ' an animal or an arrow to see who ate whom.';
-  }
-  svg.classList.toggle('picking', !!pick);
-  for (const e of svg.querySelectorAll('.web-node, .web-link')) e.classList.toggle('hot', hot.has(e));
-  setHTML($('#web-say'), text);
-}
-
-function updateWeb() {
-  if (!web.built) buildWeb();
-  if (web.wide !== webWide()) placeWeb(webWide());
-  const cur = S.webCounts(world), base = webPeriod(), b = base ? base.n : null;
-  const v = key => Math.max(0, (cur[key] || 0) - (b ? b[key] || 0 : 0));
-  const L = webLive();
-  web.v = v; web.cur = cur; web.live = L;
-  for (const k in WEB_NODES) {
-    const n = WEB_NODES[k], gone = webGone(k, L);
-    n.el.classList.toggle('gone', gone);
-    const now = webNow(k, L);
-    if (n.now.textContent !== now) n.now.textContent = now;
-  }
-  for (const l of WEB_LINKS) {
-    l.value = !l.n ? null : typeof l.n === 'function' ? Math.max(0, l.n(v)) : v(l.n);
-    const w = l.value === null ? 1.4 : l.value > 0 ? Math.min(9, 1.2 + 1.3 * Math.log10(1 + l.value)) * (l.kind === 'body' ? 0.6 : 1) : 1;
-    const wr = Math.round(w * 2) / 2;                        // a few widths: small changes don't show, nor get written
-    if (l.w !== wr) {
-      l.w = wr;
-      const geo = webGeometry(l, wr);
-      setAttr(l.line, 'd', geo.line); setAttr(l.hit, 'd', geo.line); setAttr(l.head, 'd', geo.head);
-      setAttr(l.line, 'stroke-width', wr);
-    }
-    l.el.classList.toggle('none', l.value === 0);
-    l.el.classList.toggle('uncounted', l.value === null);
-    l.el.classList.toggle('gone', webGone(l.from, L) || webGone(l.to, L));
-  }
-  const season = S.SEASONS[S.seasonOf(world.tick)].name.toLowerCase();
-  const seasonBtn = $('[data-web="season"]');
-  if (seasonBtn.textContent !== 'This ' + season) seasonBtn.textContent = 'This ' + season;
-  document.querySelectorAll('[data-web]').forEach(e => e.classList.toggle('on', e.dataset.web === web.when));
-  sayWeb();
-}
-
-function toggleWeb(open = !web.open) {
-  web.open = open;
-  if (open && ui.stats.open) toggleStats(false);
-  $('#web').classList.toggle('hidden', !open);
-  $('#web-scrim').classList.toggle('hidden', !open);
-  if (open) {
-    web.pin = web.hover = null; updateWeb(); web.at = performance.now();
-    if (upright()) slide($('#web'), [{ transform: 'translateY(100%)' }, { transform: 'none' }], 320);
-  }
-}
-$('#web-scrim').addEventListener('click', () => toggleWeb(false));
-
-// On an upright phone it's a sheet from the bottom, like the journal (the CSS): dragged down by its handle or its head
-// it follows the finger, and let go far enough down (or quickly) it shuts; short of that it springs back. The dimmed
-// meadow above it, ✕ at its foot and Back shut it too.
-function dragShut(el, grips, shut) {
-  let d = null;
-  el.addEventListener('pointerdown', e => {
-    if (!upright() || e.button || !e.target.closest(grips) || e.target.closest('button')) return;
-    d = { id: e.pointerId, y: e.clientY, t: e.timeStamp, dy: 0, moved: false };
-  });
-  el.addEventListener('pointermove', e => {
-    if (!d || e.pointerId !== d.id) return;
-    d.dy = Math.max(0, e.clientY - d.y);
-    if (!d.moved) { if (d.dy < 8) return; d.moved = true; el.setPointerCapture(e.pointerId); }
-    el.style.transform = `translateY(${Math.round(d.dy)}px)`;
-  });
-  const lift = e => {
-    if (!d || e.pointerId !== d.id) return;
-    const { dy, t, moved } = d, from = el.style.transform;
-    d = null;
-    if (!moved) return;
-    el.style.transform = '';
-    if (e.type === 'pointerup' && (dy > 110 || dy > 30 && dy / (e.timeStamp - t) > 0.5)) shut();
-    else slide(el, [{ transform: from }, { transform: 'none' }], 200);
-  };
-  el.addEventListener('pointerup', lift);
-  el.addEventListener('pointercancel', lift);
-}
-dragShut($('#web'), '.grab, .web-head', () => toggleWeb(false));
 
 // ------------------------------------------------------------------ the inspector
 
@@ -9232,14 +8254,6 @@ addEventListener('pointermove', e => {
 });
 document.documentElement.addEventListener('mouseleave', () => { barNear = false; updateBar(); });
 
-const MINI_KEY = KEEP ? 'aeon-garden-mini-keep' : 'aeon-garden-mini';   // in localStorage: the meadow card small (?keep keeps its own)
-function toggleMini(on = !ui.mini) {
-  ui.mini = on;
-  $('#meadow').classList.toggle('mini', on);
-  resize();                              // the sparklines need their real size again
-  try { localStorage.setItem(MINI_KEY, on ? '1' : '0'); } catch (e) { /* fine */ }
-}
-
 // A phone has no room for four speed buttons: one steps through them instead, and pause toggles.
 const SPEEDS = [1, 4, 15, 60];
 let lastSpeed = 1;
@@ -10046,8 +9060,8 @@ const KEEP_TOOLS = [['look', '🔍', 'Look around'], ['pond', '⛏️', 'Dig a p
 const RING_TOOLS = KEEP ? KEEP_TOOLS.filter(([k]) => k !== 'look')
   : [['rabbit', '🐇', 'Release a rabbit'], ['fox', '🦊', 'Release a fox'], ['bee', '🐝', 'Release a bee'], ['crow', '🐦‍⬛', 'Release a crow'], ['owl', '🦉', 'Release an owl'], ['grass', '🌱', 'Grow grass'],
     ['plant', '🌳', 'Plant a tree'], ['zap', '⚡', 'Strike lightning'], ['fire', '🔥', 'Wall of fire'], ['sky', '🌦️', 'Weather']].filter(([k]) => k !== 'owl' || S.OWLS);
-// Owls off for now (sim.js OWLS): their tool, counters and graph button stay in the page, hidden.
-if (!S.OWLS) for (const e of document.querySelectorAll('[data-tool="owl"], [data-show="owl"], #mini-owl, #n-owl')) (e.closest('.mini-pop, .pop') || e).classList.add('hidden');
+// Owls off for now (sim.js OWLS): their tool stays in the page, hidden.
+if (!S.OWLS) $('[data-tool="owl"]').classList.add('hidden');
 // And at ?keep every tool but the keeper's, the weather menu, the notebook of things to try and filming itself.
 // The keeper's tools are named for what they make (the seed is Flowers), show their key, and say the rest in their
 // card (showTip) in place of a title: its name, its key, how, and what it brings (tipRows).
@@ -10223,11 +9237,8 @@ function alertsTick(now) {
   alerts.first = false;
   for (const k of fresh) {
     alerts.fresh[k] = now + ALERT_PULSE_MS;
-    const pop = $('#mini-' + k)?.parentNode;               // (the frogs and barren have no mark)
-    if (pop) { pop.classList.remove('flash'); void pop.offsetWidth; pop.classList.add('flash'); }
   }
   if (fresh.length) chime('warn');
-  if (kinds) { speciesMarks.day = -1; updateSpeciesMarks(); }
   for (const [k, b] of Object.entries(alerts.btn)) {
     const i = list.findIndex(a => a[0] === k), v = i < 0 ? '' : list[i][2], cls = now < (alerts.fresh[k] || 0) ? 'alert fresh' : 'alert';
     const was = alerts.shown[k] || [];
@@ -10486,8 +9497,6 @@ function turnPage(dir, from) {
 
 function openJournal() {
   if (!KEEP || jr.depth || jr.going) return;
-  if (ui.stats.open) toggleStats(false);
-  if (webOpen()) toggleWeb(false);
   toggleMore(false); toggleSkyMenu(false); closeRing(); hideTip();
   const fresh = PAGES.filter(p => journal[p.k]?.new && !book.held.has(p.k)).sort((a, b) => (journal[b.k].first || 0) - (journal[a.k].first || 0))[0];
   jr.pick = fresh?.k || jr.pick || PAGES[0].k;
@@ -10748,7 +9757,7 @@ function ringPick(k) {
     terrainTick = -1;
   } else if (k === 'lock') toggleSkyLock();
   else if (k.startsWith('plant:')) plantAt(k.slice(6), wx, wy);
-  else if (k.startsWith('sky:')) { S.setSky(world, k.slice(4)); flushEvents(); showSkyLock(); updateMeadowCard(); }
+  else if (k.startsWith('sky:')) { S.setSky(world, k.slice(4)); flushEvents(); showSkyLock(); updateClock(); }
 }
 
 $('#ring').addEventListener('pointerover', e => {
@@ -10858,7 +9867,7 @@ const canShare = !!navigator.share && matchMedia('(pointer: coarse)').matches;  
 function askTick(ms) {
   if (!IDEAS_KEY || LAB || played < 0 || document.hidden || intro.on || !$('#welcome').classList.contains('hidden')) return;
   if ((played += ms) < ASK_MS) return;
-  if (idle.on || ui.hush || ui.ring || (guide.on && guide.step < GUIDE_STEPS) || ui.stats.open || webOpen() || ui.newsOpen || homeOpen() || awayOpen() || !$('#more-menu').classList.contains('hidden')) return;
+  if (idle.on || ui.hush || ui.ring || (guide.on && guide.step < GUIDE_STEPS) || ui.newsOpen || homeOpen() || awayOpen() || !$('#more-menu').classList.contains('hidden')) return;
   played = -Infinity;
   try { localStorage.setItem('aeon-garden-asked', '1'); } catch (e) { /* fine */ }
   askIdeas(true);
@@ -10926,7 +9935,7 @@ function toggleSkyLock() {
     ? `🔒 <b>Weather locked</b> on ${S.WEATHER[world.weather.kind].emoji} ${S.WEATHER[world.weather.kind].name.toLowerCase()} until you unlock it.`
     : '🔓 The weather is free to change again.');
   showSkyLock();
-  updateMeadowCard();
+  updateClock();
 }
 
 $('#sky-menu').innerHTML = Object.entries(S.WEATHER).map(([k, wx]) =>
@@ -10962,18 +9971,13 @@ document.addEventListener('click', e => {
   const t = e.target.closest('[data-tool],[data-speed],[data-action],[data-act],[data-show],[data-range],[data-sky],[data-ring],a[data-id],a[data-thing]');
   if (ui.sky.menu && !(t && (t.dataset.sky || t.dataset.act === 'sky' || t.dataset.act === 'sky-lock'))) toggleSkyMenu(false);
   if (!(t && t.dataset.act === 'more')) toggleMore(false);
-  if (KEEP && ui.mini && e.target.closest('.mini-pop')) {   // ?keep: a tap on a kind in the bar opens its graph; the ˅ still opens the card
-    ui.stats.show = e.target.closest('.mini-pop').querySelector('b').id.slice(5);
-    toggleStats(true);
-    return;
-  }
   if (!t) return;
   if (t.closest('#toolbar,#hud-right .hud-top,#ring')) chime('click');
   if (t.dataset.ring) ringPick(t.dataset.ring);
   else if (t.dataset.tool) setTool(t.dataset.tool);
   else if (t.dataset.speed !== undefined) setSpeed(+t.dataset.speed || (ui.speed ? 0 : lastSpeed));
   else if (t.dataset.act === 'cycle') setSpeed(ui.speed ? SPEEDS[(SPEEDS.indexOf(ui.speed) + 1) % SPEEDS.length] : lastSpeed);
-  else if (t.dataset.sky) { S.setSky(world, t.dataset.sky); flushEvents(); toggleSkyMenu(false); updateMeadowCard(); }
+  else if (t.dataset.sky) { S.setSky(world, t.dataset.sky); flushEvents(); toggleSkyMenu(false); updateClock(); }
   else if (t.dataset.act === 'sky') toggleSkyMenu();
   else if (t.dataset.act === 'tools') toggleTools();
   else if (t.dataset.act === 'sky-lock') toggleSkyLock();
@@ -10985,13 +9989,11 @@ document.addEventListener('click', e => {
     renderInspector();
   }
   else if (t.dataset.act === 'news') toggleNewsLog();
-  else if (t.dataset.act === 'mini') { if (!(rail() && t.classList.contains('mini-line'))) toggleMini(); }   // (on the rail the card is in •••)
   else if (t.dataset.act === 'more') toggleMore();
   else if (t.dataset.act === 'copy-link') copyLink();
   else if (t.dataset.act === 'ideas') { played = -Infinity; askIdeas(true); }   // found it themselves: no need to ask
   else if (t.dataset.act === 'lab') openLab();
   else if (t.dataset.act === 'watch') startIdle();
-  else if (t.dataset.act === 'forecast' && canBreak()) showBreak('day', '<b class="fr">The Dry Year</b>', forecast.el.title.replace(/^The Dry Year: n/, 'N'), 9000);
   else if (t.dataset.act === 'guide') { openGuide(); guideTick(performance.now()); }
   else if (t.dataset.act === 'guide-shut') { shutGuide(); guideTick(performance.now()); }
   else if (t.dataset.act === 'lost-again') startAgain();
@@ -11009,17 +10011,12 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'away-ok') closeAway();
   else if (t.dataset.act === 'ask-send') sendIdea();
   else if (t.dataset.act === 'sound') toggleSound();
-  else if (t.dataset.act === 'stats') toggleStats();
-  else if (t.dataset.act === 'web') toggleWeb();
-  else if (t.dataset.show) { ui.stats.show = t.dataset.show; renderStats(); }
-  else if (t.dataset.range) { ui.stats.range = t.dataset.range; renderStats(); }
   else if (t.dataset.act === 'follow') { ui.follow = !ui.follow; renderInspector(); }
   else if (t.dataset.act === 'traits') { ui.allTraits = !ui.allTraits; renderInspector(); }
   else if (t.dataset.act === 'story') { ui.allStory = !ui.allStory; renderInspector(); }
   else if (t.dataset.act === 'spot') { const s = spots.find(s => s.id === +t.dataset.spot); if (s) goSpot(s); }
   else if (t.dataset.thing) goToThing(t.dataset.thing);
   else if (t.dataset.id) {
-    if (ui.stats.open) toggleStats(false);
     const c = world.byId.get(+t.dataset.id);
     if (c) select(c.id);
   }
@@ -11080,7 +10077,6 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'Escape' && tip.tool) hideTip();   // ?keep: a tool's card, put away
   else if (e.key === 'Escape' && placing) dropPlace();   // a pond being placed: called off
   else if (e.key === 'Escape') stepOut();
-  else if (e.key === 's') toggleStats();
   else if (e.key === 'f' && ui.selectedId) { ui.follow = !ui.follow; renderInspector(); }
   else if (e.key === 'l') { setTool('look'); showTip('look', TIP_KEY_MS, 'key'); }   // (the card only at ?keep)
   else if (e.key === 'z') setTool('zap');
@@ -11092,7 +10088,6 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'w') toggleSkyMenu();
   else if (e.key === 'k') toggleSkyLock();
   else if (e.key === 'n') toggleNewsLog();
-  else if (e.key === 'c') toggleMini();
   else if (e.key === 'm') toggleSound();
   else if (e.key === 'v') startIdle();
   else if (e.key === 'p') copyMeadow().then(([w, h]) => addNews(`📋 Copied the meadow, ${w} × ${h}`), () => addNews('📋 The browser would not let me copy the meadow.'));
@@ -11115,8 +10110,8 @@ const tasksOpen = () => KEEP && tasks.on && !tasks.fold && narrow();   // (a pho
 function opened() {
   if (LAB || intro.on || jr.depth) return back.depth;
   const ins = $('#inspector').classList, sheetUp = ins.contains('open') && narrow() && !ins.contains('strip');
-  return [awayOpen(), lostOpen(), homeOpen(), askOpen(), webOpen(), ui.ring, $('#toolbar').classList.contains('open'), ui.sky.menu,
-    moreOpen(), ui.stats.open, tasksOpen(), rail() && !ui.mini, ui.tool !== 'look', ins.contains('open'), sheetUp].filter(Boolean).length;
+  return [awayOpen(), lostOpen(), homeOpen(), askOpen(), ui.ring, $('#toolbar').classList.contains('open'), ui.sky.menu,
+    moreOpen(), tasksOpen(), ui.tool !== 'look', ins.contains('open'), sheetUp].filter(Boolean).length;
 }
 // The one on top shuts (Esc, and Back once for each step it takes).
 function stepOut() {
@@ -11125,14 +10120,11 @@ function stepOut() {
   else if (lostOpen()) showLost(false);
   else if (homeOpen()) homeGuide(false);
   else if (askOpen()) askIdeas(false);
-  else if (webOpen()) toggleWeb(false);
   else if (ui.ring) closeRing();
   else if ($('#toolbar').classList.contains('open')) toggleTools(false);
   else if (ui.sky.menu) toggleSkyMenu(false);
   else if (moreOpen()) toggleMore(false);
-  else if (ui.stats.open) toggleStats(false);
   else if (tasksOpen()) foldTasks(true);
-  else if (rail() && !ui.mini) toggleMini(true);
   else if (ui.tool !== 'look') setTool('look');
   else if (ins.contains('open') && narrow() && !ins.contains('strip')) { ui.sheetUp = false; $('#inspector').scrollTop = 0; renderInspector(); }
   else if (ins.contains('open')) select(0);
@@ -11342,7 +10334,6 @@ const TRIES = [                          // what to try, a hint, and what it say
   { k: 'plant', e: '🌳', text: 'Plant a tree', hint: 'Pick the kind: an oak is slow, a birch quick, a hawthorn guards its neighbours.', said: 'Mind the rabbits: a seedling is a mouthful.' },
   { k: 'carry', e: '🫳', text: 'Pick up an animal and carry it', hint: 'Press on it and drag. On a phone, hold a finger on it.', said: 'Mind where you put it down.' },
   { k: 'fast', e: '⏩', text: 'Watch a year go by at 60×', hint: 'The rabbits boom and crash.', said: 'The meadow keeps going while you’re away, too.' },
-  { k: 'stats', e: '📊', text: 'Look at the graphs', hint: 'Every birth, death and fire is counted.', said: 'The records keep the meadow’s oldest and biggest.' },
 ];
 const SKY_SAID = {
   clear: 'Lock it (🔒) and it stays.', cloudy: 'Lock it (🔒) and it stays.',
@@ -11401,7 +10392,6 @@ function tryThing(k) {
   else if (k === 'look' || k === 'carry' || k === 'name') setTool('look');
   else if (k === 'sky') toggleSkyMenu(true);
   else if (k === 'fast') setSpeed(60);
-  else if (k === 'stats') toggleStats(true);
   if (narrow() && k !== 'sky') { guide.fold = true; saveGuide(); }   // out of the way of the meadow
   guideTick(performance.now());
 }
@@ -11549,10 +10539,6 @@ function tasksTick(now) {
     if (first || away.on) continue;         // already done as the meadow opened, or the away card tells it
     tasks.fresh[t.k] = now + 1200;
     chime('tick');
-    if (canBreak()) {
-      showBreak('day', `<b class="fr">${t.got} ${esc(got[t.k])}</b>`, `Task done · ${n}/${TASKS.filter(t => !gone[t.k]).length}`, TASK_LINE_MS);
-      daybreak.hold = now + TASK_LINE_MS;   // the next day's line waits
-    }
   }
   const next = TASKS.find(t => !got[t.k] && !begun[t.k] && !gone[t.k]);
   tasks.more.green = kept > 0 ? `${kept} so far` : '';
@@ -11597,7 +10583,6 @@ function guideTick(now) {
   if ($('#guide').classList.contains('hidden') === show) $('#guide').classList.toggle('hidden', !show);
   if (!show || idle.on) { guide.tickWas = world.tick; return; }
   if (ui.picked) tried('look');
-  if (ui.stats.open) tried('stats');
   const ran = world.tick - guide.tickWas;
   guide.tickWas = world.tick;
   if (ui.speed === 60 && ran > 0 && (guide.fast += ran) >= S.YEAR_DAYS * S.TPD) tried('fast');
@@ -11681,15 +10666,13 @@ const between = (a, b) => a + Math.random() * (b - a);
 const anyOf = a => a.length ? a[Math.floor(Math.random() * a.length)] : null;
 
 const idleMayStart = now => !idle.on && !held && now - lastInput > IDLE_MS && ui.speed > 0 && !ui.hush && !LAB && !KEEP && !calm && !document.hidden
-  && !askOpen() && !awayOpen() && !ui.selectedId && !ui.picked && !ui.ring && !ui.stats.open && !webOpen() && !ui.newsOpen && !ui.sky.menu
+  && !askOpen() && !awayOpen() && !ui.selectedId && !ui.picked && !ui.ring && !ui.newsOpen && !ui.sky.menu
   && $('#more-menu').classList.contains('hidden') && !homeOpen() && !$('#toolbar').classList.contains('open');
 
 function startIdle(now = performance.now()) {
   if (idle.on || ui.hush || LAB || KEEP) return;
   closeRing(); toggleTools(false); toggleSkyMenu(false); toggleMore(false);
   if (homeOpen()) homeGuide(false);
-  if (ui.stats.open) toggleStats(false);
-  if (webOpen()) toggleWeb(false);
   if (ui.newsOpen) toggleNewsLog();
   if (ui.selectedId || ui.picked) select(0);
   if (!ui.speed) setSpeed(lastSpeed);
@@ -11951,7 +10934,7 @@ function keepMeadow() {
   const link = meadowLink(world.seed), at = Date.now();
   const list = [{ link, at }, ...keptList().filter(k => k.link !== link)];
   if (!setKept(list.slice(0, KEEP_MEADOWS))) return;
-  const rec = { link, at, kept, paused: ui.speed === 0, news: ui.newsLog, records: ui.records, crashSaid: ui.crashSaid,
+  const rec = { link, at, kept, paused: ui.speed === 0, news: ui.newsLog,
     cam: { x: cam.x, y: cam.y, zoom: cam.zoom }, selectedId: ui.selectedId, follow: ui.follow };
   keepDb().then(db => {
     const tx = db.transaction('meadows', 'readwrite'), store = tx.objectStore('meadows');
@@ -12003,7 +10986,7 @@ function resumeWorld(rec) {
     return false;
   }
   opening = 1;
-  Object.assign(ui, { newsLog: rec.news || [], records: rec.records || ui.records, crashSaid: rec.crashSaid || ui.crashSaid });
+  ui.newsLog = rec.news || [];
   renderNewsLog();
   if (rec.cam) { cam.zoom = Math.max(rec.cam.zoom, fitZoom); cam.x = rec.cam.x; cam.y = rec.cam.y; clampCam(); }
   const c = world.byId.get(rec.selectedId);
@@ -12162,9 +11145,6 @@ function showWorld(w) {
   groundSeed = [(seed % 97) * 3.7, (seed % 89) * 4.3];
   Object.assign(ui, { selectedId: 0, picked: null, hoverId: 0, follow: false, trail: [], effects: [], zaps: [], lastNews: {}, newsLog: [] });
   pollen.until = 0; pollen.t0.fill(-1e9);
-  ui.records = perKind(s => world.count[s]);
-  ui.crashSaid = perKind(() => -1);
-  ui.seenHistory = 0;
   const mix = Object.fromEntries(Object.keys(S.WEATHER).map(k => [k, k === world.weather.kind ? 1 : 0]));
   Object.assign(ui.sky, { mix, tick: world.tick, bolts: [], rainbow: -1e9, bowEnd: -1e9 });
   showSkyLock();
@@ -12175,12 +11155,10 @@ function showWorld(w) {
   spots.length = 0; glide = null;
   paintTerrain();
   renderInspector();
-  updateMeadowCard();
-  if (ui.stats.open) renderStats();
-  if (webOpen()) updateWeb();
+  updateClock();
 }
 
-let last = performance.now(), acc = 0, lastCard = 0, lastRecord = 0, lastStatsCards = 0;
+let last = performance.now(), acc = 0, lastCard = 0;
 const TERRAIN_MS = 250;                   // real time between hand-overs of the grass to the ground (painting grass skips the wait)
 // The most real time the sim gets in a frame. A slow phone at 60x would rather run a little slower
 // than drop frames: the ticks that don't fit are let go, and don't pile up for the next frame.
@@ -12274,7 +11252,6 @@ function frame(now) {
   updateSky();
   lightFrame(dt);
   updateDial();
-  daybreakTick();
 
   const sel = world.byId.get(ui.selectedId);
   if (sel && sel.alive && !sel.hidden) {
@@ -12321,7 +11298,7 @@ function frame(now) {
   clampCam();
 
   const rest = resting(now) && now - lastDrawn < RESTING_MS;
-  if (!rest && !(away.on && away.frames > 1) && !ui.stats.open && canvas.width && canvas.height) {   // the stats page covers the meadow; a hidden tab can have no size
+  if (!rest && !(away.on && away.frames > 1) && canvas.width && canvas.height) {   // (a hidden tab can have no size)
     lastDrawn = now;
     // Every 12 ticks, and no more than a few times a second: grass changes too slowly to see the difference.
     if (terrainTick < 0 || (world.tick - terrainTick >= 12 && now - terrainAt >= TERRAIN_MS)) paintTerrain();
@@ -12342,7 +11319,7 @@ function frame(now) {
     lastCard = now;
     if (idleMayStart(now)) startIdle(now);
     if (idle.on && Date.now() - keptWhen > KEEP_IDLE_MS * 1.5) keepMeadow();   // (kept in a dip to dark, idleFrame, unless the shots glide on)
-    updateMeadowCard();
+    updateClock();
     forecastTick();
     if (ui.sound) {
       const ck = S.clock(world);
@@ -12352,14 +11329,7 @@ function frame(now) {
     }
     // Not under the mouse or a finger: a rebuilt button would swallow the click. (A finger leaves :hover stuck.)
     if ((ui.selectedId || ui.picked) && !pressing && !(canHover.matches && $('#inspector').matches(':hover'))) renderInspector();
-    if (ui.stats.open) { $('#stats-clock').textContent = `${S.SEASONS[S.seasonOf(world.tick)].emoji} ${when(world.tick)}`; drawStatsChart(); }
   }
-  if (ui.stats.open && now - lastStatsCards > 1000 && !$('#stats-cards').matches(':hover')) {
-    lastStatsCards = now;                // not while hovering: a rebuilt link would swallow the click
-    renderStatsCards();
-  }
-  if (webOpen() && now - web.at > 1000) { web.at = now; updateWeb(); }
-  if (world.history.t.length !== lastRecord) { lastRecord = world.history.t.length; checkPopulationNews(); }
   if (opening > 1 && ++opening > 4) cleared();       // a kept meadow that opened fine
   requestAnimationFrame(frame);
 }
@@ -12390,11 +11360,10 @@ const lab = LAB ? {
 
 // ------------------------------------------------------------------ start
 
-const refit = () => { resize(); if (ui.stats.open) { placeStatsRange(); renderStats(); } if (web.open) updateWeb(); };
-window.addEventListener('resize', refit);
+window.addEventListener('resize', resize);
 // Turning a phone, iOS fires 'resize' before the page is laid out again, so the canvas still has its
 // old size and would be stretched to the new one. Watch the canvas itself for when it really changes.
-new ResizeObserver(() => { if (canvas.clientWidth !== vw || canvas.clientHeight !== vh) refit(); }).observe(canvas);
+new ResizeObserver(() => { if (canvas.clientWidth !== vw || canvas.clientHeight !== vh) resize(); }).observe(canvas);
 resize();
 const seedParam = +params.get('seed');
 let seen = false;
@@ -12457,12 +11426,6 @@ $('#go').addEventListener('click', () => {
 // Sound stays off until you turn it on, and remembers your choice. Browsers only let a page
 // make sound after a click or key press, so a remembered "on" waits for the first one.
 try { if (localStorage.getItem('aeon-garden-sound') === '1') toggleSound(true); } catch (e) { /* fine */ }
-
-// The card remembers being small. A phone starts it small, there's not much room up there. At ?keep it starts small
-// everywhere, the species in the top bar, and remembers that under a key of its own (MINI_KEY).
-let mini = KEEP || narrow();
-try { const m = localStorage.getItem(MINI_KEY); if (m) mini = m === '1'; } catch (e) { /* fine */ }
-if (mini) toggleMini(true);
 
 // The animal tools remember how many they release at a time.
 try {
