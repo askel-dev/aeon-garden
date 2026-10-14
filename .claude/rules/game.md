@@ -17,8 +17,9 @@ The inspector shows animals and every other thing you click (hives, trees, rocks
 visitors): each kind is an entry in `THINGS`, saying how to find one on screen and what its panel shows. A tap
 on an animal follows it (`select`, `ui.follow`). Animals can't be named by the player. Every animal of a kind is alike
 (sim.js has no genes, only a rabbit's winter coat), so an animal's panel is its mood, tummy, family and life story (a rabbit's
-with its coat and how well it hides where it sits, `coatLine`), and a hive's its honey (`honeyWord`)
-and the fields in reach; a hive goes by the field nearest it (`hiveName`).
+with its coat and how well it hides where it sits, `coatLine`), and a hive's its honey (`honeyWord`), its queen
+and the fields in reach; a hive goes by the field nearest it, a swarm by its queen (`hiveName`). A hanging swarm is drawn as a
+seething clump under its branch (`drawSwarm`) and picked where it's drawn (`hiveAt`); remains have a panel too (`THINGS.remains`).
 
 Foxes and rabbits are painted (fur.js: `paintFox`, `paintRabbit`): one rig posed for
 what each is doing (`FOX_POSES`, `RABBIT_POSES`, picked by `foxArt`, `rabbitArt`), painted as one animal by `paintFur`
