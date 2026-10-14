@@ -1,0 +1,6 @@
+3 years, 6 seeds, the meadow you watch, honey careful (leaves 60 a bee)
+share  | a year: jars of honey  apples  nuts  fish  wood(log size) | means: rabbits foxes bees otters crows | bees died out (seeds) | hives at the end | lowest rabbits, bees
+0.25   |   0.1    16.2  23.2   585    8.9        |  236   19   41    6   18                  | 0/6 | 1.2 | 41/39/42/41/6/42; 8/15/8/4/4/16
+0.50   |   0.2    42.4  83.2   859   14.9        |  191   21   41    6   17                  | 4/6 | 1.0 | 27/3/1/41/23/34; 16/0/0/13/0/0
+0.80   |   0.4    51.6  46.1   851   19.4        |  241   18   46    4   18                  | 2/6 | 1.2 | 41/39/42/41/41/42; 16/0/0/16/5/16
+(123 s)

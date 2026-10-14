@@ -1,0 +1,6 @@
+3 years, 6 seeds, keeper meadows (the Dry Year in year 2), honey careful (leaves 60 a bee)
+share  | a year: jars of honey  apples  nuts  fish  wood(log size) | means: rabbits foxes bees otters crows | bees died out (seeds) | hives at the end | lowest rabbits, bees
+0.00   |   0.0     0.0   0.0     0    0.0        |  151   14   32    6   17                  | 6/6 | 0.7 | 3/8/0/23/2/1; 0/0/0/0/0/0
+0.25   |   0.0    20.0  37.9   571    6.7        |  156   13   34    6   16                  | 6/6 | 1.0 | 5/39/2/11/1/3; 0/0/0/0/0/0
+0.50   |   0.1    39.6  69.2   839   12.1        |  151   14   33    6   19                  | 6/6 | 1.0 | 3/0/2/33/3/2; 0/0/0/0/0/0
+(100 s)
