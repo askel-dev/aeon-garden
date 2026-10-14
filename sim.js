@@ -2433,6 +2433,7 @@ const shelterTime = w => isNight(w.tick) || w.weather.kind === 'storm';
 function rabbitTick(w, c) {
   const t = w.tick;
   if (c.hidden) return burrowTick(w, c);
+  if (c.mode === 'thicket' && thicket(w, c)) return;
   const night = shelterTime(w);
 
   // 1. Danger. Grazing heads-down means a fox is not always noticed; a charging one is.
@@ -2600,12 +2601,12 @@ function flee(w, c, fox) {
     if (fox.id) thump(w, c, fox);
   }
   let tx, ty;
-  if (c.refuge && !hasRoom(c.refuge)) c.refuge = pickRefuge(w, c, fox);   // filled up: try another
+  if (c.refuge && (c.refuge.bramble ? (w.tick + c.id) % 30 === 0 && !w.brambles.includes(c.refuge) : !hasRoom(c.refuge))) c.refuge = pickRefuge(w, c, fox);   // filled up, or gone: try another
   const b = c.refuge;
   if (b) {
     tx = b.x; ty = b.y;
-    if ((b.x - c.x) ** 2 + (b.y - c.y) ** 2 < 0.8) {
-      enterBurrow(w, c, b, w.rng.int(150, 350), false);
+    if ((b.x - c.x) ** 2 + (b.y - c.y) ** 2 < (b.bramble ? 0.3 + 0.2 * b.size : 0.8)) {
+      if (b.bramble) enterThicket(w, c, b, fox); else enterBurrow(w, c, b, w.rng.int(150, 350), false);
       return;
     }
   } else {
@@ -2629,17 +2630,39 @@ function flee(w, c, fox) {
   if (sprinting) { c.stamina -= 1 / 220; c.sprinting = true; }
 }
 
+// The nearest burrow with room, or grown bramble (thicket), that isn't towards the fox.
 function pickRefuge(w, c, fox) {
   const fx = fox.x - c.x, fy = fox.y - c.y, fd = hypot(fx, fy) || 1;
   let best = null, bd = 8 * 8;
-  for (const b of w.burrows) {
+  const consider = b => {
     const bx = b.x - c.x, by = b.y - c.y, d2 = bx * bx + by * by;
-    if (d2 >= bd || !roomy(b) || !clearPath(w, c.x, c.y, b.x, b.y)) continue;
+    if (d2 >= bd || !clearPath(w, c.x, c.y, b.x, b.y)) return;
     const bdl = Math.sqrt(d2) || 1;
     const towardFox = (bx * fx + by * fy) / (bdl * fd);
     if (bdl < 2.5 || towardFox < 0.3) { best = b; bd = d2; }
-  }
+  };
+  for (const b of w.burrows) if (roomy(b)) consider(b);
+  for (const b of w.brambles) if (b.size > 0) consider(b);
   return best;
+}
+
+// Into the thorns: it crouches deep in the bramble (c.refuge), its own spot by its id, and sits tight while the fox is
+// about (thicket), counting down c.alert. No fox follows it in (hunt), so it's safe there, but in sight.
+function enterThicket(w, c, b, fox) {
+  const side = c.id % 2 ? 1 : -1, u = side * (0.3 + 0.1 * b.size + 0.1 * ((c.id * 0.618034) % 1));
+  c.x = clamp(b.x + u, 0.5, W - 0.5); c.y = b.y + 0.03;           // (tucked in at its foot, under the arching canes)
+  c.mode = 'thicket'; c.timer = w.rng.int(...THICKET_TICKS); c.alert = THICKET_MOST; c.target = null; c.sprinting = false;
+  c.facing = fox.x > c.x ? 1 : -1;
+  if (fox.id && fox.targetId === c.id) { escaped(w, c, fox, 'bramble'); fox.targetId = 0; fox.mode = 'wander'; }
+}
+function thicket(w, c) {
+  const b = c.refuge;
+  if (b && --c.alert > 0 && c.energy > 0.3 * c.maxEnergy && ((w.tick + c.id) % 30 || w.brambles.includes(b))) {
+    if (--c.timer > 0) return true;
+    if (nearest(w, c, THICKET_FOX, 'fox', o => !o.sleeping)) { c.timer = 40; return true; }
+  }
+  c.mode = 'wander'; c.refuge = null; c.alert = 0;
+  return false;
 }
 
 // ---------------------------------------------------------------- foxes
@@ -2680,8 +2703,10 @@ function foxTick(w, c) {
   if (seekLove(w, c)) return;
 
   if (e < 0.75 && growth(w, c) > 0.3 && hunt(w, c)) return;
+  if (c.pips && t - c.pips > PIP_GUT) dropPips(w, c);
 
   if (c.mode === 'rest') { if (--c.timer > 0) return; c.mode = 'wander'; }
+  if (e < FOX_BERRY_FED && !young && foxBerries(w, c)) return;
   // Hungry, nothing in sight: back to where the last catch was. Arriving to nobody is a miss.
   if (e < 0.75 && c.haunt) {
     if (dist2(c, c.haunt) > 16) { c.mode = 'prowl'; moveToward(w, c, c.haunt.x, c.haunt.y, c.walk * 0.8); return; }
@@ -2695,6 +2720,7 @@ function hunt(w, c) {
   if (prey && prey.species !== 'rabbit') prey = null;
   const sight = c.sight * sky(w).sight;
   // Lost from view: a little further off than the furthest a fox spots one, or it'd flicker.
+  if (prey && prey.mode === 'thicket') { prey = null; c.targetId = 0; c.mode = 'wander'; }   // (into the thorns: enterThicket)
   if (prey && (!prey.alive || prey.hidden || dist2(c, prey) > (sight * CAMO[1] * 1.2) ** 2)) {
     if (prey.alive && c.mode === 'chase') escaped(w, prey, c, prey.hidden ? 'burrow' : 'outran');
     prey = null; c.targetId = 0; c.mode = 'wander';
@@ -2708,7 +2734,7 @@ function hunt(w, c) {
   if (!prey && (w.tick + c.id) % 5 === 0) {
     // Only a rabbit that isn't already watching this fox is worth sneaking up on.
     // And it spots one from as far off as its coat stands out from the ground under it (visibility).
-    prey = nearest(w, c, sight * CAMO[1], 'rabbit', o => !(o.alert > 0 && o.threatId === c.id)
+    prey = nearest(w, c, sight * CAMO[1], 'rabbit', o => o.mode !== 'thicket' && !(o.alert > 0 && o.threatId === c.id)
       && dist2(c, o) < (sight * visibility(w, o)) ** 2 && clearPath(w, c.x, c.y, o.x, o.y));
     if (prey) { c.targetId = prey.id; c.mode = 'stalk'; }
   }
@@ -2735,7 +2761,7 @@ function escaped(w, rabbit, fox, how, water) {
   rabbit.escapes++;
   rabbit.nemesisId = fox.id;   // it won't forget this one
   missed(fox);
-  note(w, rabbit, '💨', how === 'burrow' ? `Dived into a burrow to escape ${fox.name}`
+  note(w, rabbit, '💨', how === 'burrow' ? `Dived into a burrow to escape ${fox.name}` : how === 'bramble' ? `Hid deep in a bramble from ${fox.name}`
     : how === 'pond' ? `Got away from ${fox.name} across ${water ? water.name : 'the water'}` : `Outran ${fox.name}`);
   note(w, fox, '😤', `${rabbit.name} got away`);
   emit(w, { type: 'escape', rabbit, fox, how, water });
@@ -3645,7 +3671,7 @@ function fly(c, tx, ty, v) {
 const FIELD_GRASS = 0.35;
 // (Same rule as plantEmoji in game.js. If you change one, change the other.)
 function isFlower(w, p) {
-  if (p.tree) return inBloom(w, p.tree);                   // blossom in a tree (addBlossoms)
+  if (p.tree) return p.tree.bramble ? brambleStage(w, p.tree) === 2 : inBloom(w, p.tree);   // blossom in a tree (addBlossoms), or on a bramble
   if (w.water[p.i]) return false;
   const s = seasonOf(w.tick);
   if (p.field) return s === p.field.season && w.grass[p.i] >= FIELD_GRASS;
@@ -3687,7 +3713,7 @@ function freshAround(w, f) {
 // A visited flower spreads its seed: the grass around it grows back thicker. Good for rabbits.
 // Blossom on a tree sets fruit instead (setFruit).
 function pollinate(w, p) {
-  if (p.tree) { p.tree.visits++; return; }
+  if (p.tree) { p.tree.visits++; return; }                // (a tree's, or a bramble's)
   for (let y = (p.y | 0) - 2; y <= (p.y | 0) + 2; y++) {
     for (let x = (p.x | 0) - 2; x <= (p.x | 0) + 2; x++) {
       if (!dry(w, x, y)) continue;
@@ -3703,8 +3729,8 @@ function beeMood(w, c) {
   if (c.hidden) return clusterCold(w, c.home) > 1.5 ? { emoji: '🥶', text: 'Shivering in a small winter cluster' }
     : { emoji: '💤', text: w.flowers < FEW_FLOWERS ? 'Waiting in the hive for the flowers' : 'Asleep in the hive' };
   switch (c.mode) {
-    case 'sip': return { emoji: '🌼', text: 'Sipping nectar' };
-    case 'flower': return { emoji: '🌸', text: 'Off to a flower' };
+    case 'sip': return { emoji: '🌼', text: c.target?.tree?.bramble ? 'Sipping nectar from a bramble flower' : 'Sipping nectar' };
+    case 'flower': return { emoji: '🌸', text: c.target?.tree?.bramble ? 'Off to the bramble flowers' : 'Off to a flower' };
     case 'home': return { emoji: '🏠', text: 'Flying home to the hive' };
     case 'unload': return { emoji: '🍯', text: 'Carrying nectar home' };
     case 'dance': return { emoji: '💃', text: 'Dancing to tell the others about a rich patch of flowers' };
@@ -3981,6 +4007,10 @@ function startGreens(w) {
 // pips and drop them a few hours later wherever they are then (dropPips, w.pips): where it suits, a bramble comes up
 // there next spring. So brambles spring up under the roost and along the crows' patches. One dies once the wood closes
 // over it. Looked at once an hour (the berries) and once a day (the rest), with random numbers of their own (w.brambleRng).
+// In flower it's a few spots of blossom for the bees (w.blossoms, as a tree's: addBlossoms), and it sets as much of its
+// crop as they visited (BRAMBLE_VISITS). A grown patch is a rabbit's refuge from a fox (pickRefuge, thicket: no fox goes
+// into the thorns), and in its ripe weeks a fox not after a rabbit goes for the blackberries (foxBerries) and drops the
+// pips about like a crow.
 
 const BRAMBLE_EVERY = TPD / 24;         // ticks between looks (an hour)
 const BRAMBLE_EDGE = [0.05, 0.4];       // a new meadow's brambles stand where the wood is this thick: its edge
@@ -4004,11 +4034,24 @@ const PIP_GUT = TPD / 12;               // ticks after a crow's first berries th
 const PIP_ODDS = 0.1;                   // the odds a crow's pips are any good: the rest are eaten, or rot
 const PIPS_MOST = 200;                  // pips waiting for spring
 const BERRY_NOTE = 'Ate blackberries off a bramble';
+const BRAMBLE_BLOOMS = 3;               // spots of blossom on a patch in flower, for the bees
+const BRAMBLE_VISITS = 8;               // bee visits to them for a full crop
+const BRAMBLE_SELF = 0.4;               // the crop with no bees: brambles set some on their own
+const THICKET_TICKS = [200, 450];       // ticks a rabbit sits tight in the thorns after a fox, at least
+const THICKET_FOX = 7;                  // and it stays while a fox is this close,
+const THICKET_MOST = 1200;              // but this long at most, or till it's hungry
+const FOX_BERRY_SIGHT = 25;             // how far off a fox smells a bramble with ripe berries on it
+const FOX_BERRY_FED = 0.9;              // a fox fuller than this doesn't bother
+const FOX_BERRY_TICKS = [400, 800];     // ticks it eats them, a trip
+const FOX_BITE = 0.1;                   // berries (as BERRY_CROP counts them) it eats a tick,
+const FOX_BERRY = 0.3;                  // and the energy each is to a fox: a trip is about a day's keep
+const FOX_BERRY_NOTE = 'Ate blackberries off a bramble';
 
 // Every field a patch ever has, in one order (see blankCreature). born: tick; by: how it came ('' a new meadow's,
 // 'crow' from pips, 'tip' rooted from the patch next door); size: 0 to 2, how many springs it's grown; look: which of
 // game.js's paintings; crop, berries: this year's berries as they ripened, and what's left on it; year: the crop's year.
-const brambleOf = (x, y, born, by, look) => ({ bramble: true, x, y, born, by, size: 0, look, crop: -0, berries: -0, year: 0 });
+// visits: the bees' to its flowers this summer; blooms: whether its blossom is out (w.blossoms).
+const brambleOf = (x, y, born, by, look) => ({ bramble: true, x, y, born, by, size: 0, look, crop: -0, berries: -0, year: 0, visits: 0, blooms: false });
 
 // What a patch shows now: 0 bare canes, 1 leaves, 2 in flower, 3 berries ripening, 4 ripe, 5 going over. A first-year
 // patch (size 0) only has leaves.
@@ -4026,7 +4069,10 @@ function bramblesTick(w) {
   const t = w.tick, r = w.brambleRng, list = w.brambles, year = yearOf(t);
   for (const b of list) {                              // the berries: ripe, and gone over
     if (brambleStage(w, b) === 4) {
-      if (b.year !== year) { b.year = year; b.crop = b.berries = BERRY_CROP * (b.size === 1 ? 0.5 : 1) * clamp(1.2 - 1.5 * w.wood[idx(b.x, b.y)], 0.4, 1); }
+      if (b.year !== year) {
+        const set = clamp(BRAMBLE_SELF + (1 - BRAMBLE_SELF) * b.visits / BRAMBLE_VISITS, 0, 1);
+        b.year = year; b.visits = 0; b.crop = b.berries = BERRY_CROP * set * (b.size === 1 ? 0.5 : 1) * clamp(1.2 - 1.5 * w.wood[idx(b.x, b.y)], 0.4, 1);
+      }
     } else if (b.berries > 0) b.berries = 0;
   }
   if ((t % TPD) >= BRAMBLE_EVERY) return;              // once a day, the rest
@@ -4034,9 +4080,11 @@ function bramblesTick(w) {
   let n = 0;
   for (const b of list) {
     const i = idx(b.x, b.y);
-    if (w.water[i] || s === 0 && first && w.wood[i] > BRAMBLE_SHADE) { b.berries = 0; continue; }   // (the wood closed over it)
+    if (w.water[i] || s === 0 && first && w.wood[i] > BRAMBLE_SHADE) { b.berries = 0; dropBlossoms(w, b); continue; }   // (the wood closed over it)
     if (b.size === 0 && s < 3 && w.grass[i] < BRAMBLE_GRAZED && r.next() < BRAMBLE_NIBBLE) continue;   // (the rabbits had it)
     if (s === 0 && first && t - b.born > YEAR / 2) b.size = Math.min(2, b.size + 1);
+    const flowering = brambleStage(w, b) === 2;
+    if (flowering && !b.blooms) brambleBlossoms(w, b); else if (!flowering && b.blooms) dropBlossoms(w, b);
     list[n++] = b;
   }
   list.length = n;
@@ -4048,6 +4096,17 @@ function bramblesTick(w) {
     let m = 0;
     for (const p of w.pips) if (p.at > t) w.pips[m++] = p; else brambleAt(w, r, p.x, p.y, 'crow');
     w.pips.length = m;
+  }
+}
+
+// A patch in flower is a few spots of blossom for the bees along its top (as a tree's crown: addBlossoms). up: how high
+// on the mound, as a share of its painting (game.js liftOf).
+function brambleBlossoms(w, b) {
+  b.blooms = true;
+  for (let k = 0; k < BRAMBLE_BLOOMS; k++) {
+    const u = (k + 0.5) / BRAMBLE_BLOOMS * 2 - 1, reach = 0.45 + 0.15 * b.size;
+    const p = plantOf(clamp(b.x + u * reach, 0.5, W - 0.5), clamp(b.y + 0.03, 0.5, H - 0.5), idx(b.x, b.y), 1, null, 1e6 + w.nextBloom++, b, 0.4 - 0.15 * Math.abs(u));
+    w.blossoms.push(p); cellOf(w.blossomCells, p).push(p);
   }
 }
 
@@ -4098,7 +4157,33 @@ function berries(w, c, hungry) {
   return true;
 }
 
-// The pips a crow swallowed come out wherever it is: a spot for a bramble next spring, if they're any good.
+// Late summer into autumn, a fox not after a rabbit (or too full for one) goes for the blackberries on the nearest
+// bramble it smells, walks to its foot and eats a while, nosing them off the low canes (c.timer). It swallows the pips
+// too, and drops them about like a crow (dropPips).
+function foxBerries(w, c) {
+  let b = (c.mode === 'bramble' || c.mode === 'berries') && c.target ? c.target.b : null;
+  if (b && (b.berries <= 0 || c.mode === 'berries' && --c.timer <= 0)) { c.mode = 'rest'; c.timer = 60; c.target = null; return true; }
+  if (!b) {
+    if (c.mode === 'bramble' || c.mode === 'berries') c.mode = 'wander';   // (lost its way: moveToward)
+    if ((w.tick + c.id) % 20) return false;
+    let best = FOX_BERRY_SIGHT * FOX_BERRY_SIGHT;
+    for (const o of w.brambles) { const d = dist2(o, c); if (o.berries >= BERRY_WORTH && d < best && clearPath(w, c.x, c.y, o.x, o.y)) { b = o; best = d; } }
+    if (!b) return false;
+    const side = c.x < b.x ? -1 : 1, reach = 0.6 + 0.25 * b.size;
+    c.mode = 'bramble'; c.target = { x: clamp(b.x + side * reach, 0.5, W - 0.5), y: b.y + 0.15, b };
+  }
+  if (c.mode === 'bramble') {
+    if (!moveToward(w, c, c.target.x, c.target.y, c.walk)) return true;
+    c.mode = 'berries'; c.facing = b.x > c.x ? 1 : -1; c.timer = w.rng.int(...FOX_BERRY_TICKS);
+    if (c.story[c.story.length - 1].text !== FOX_BERRY_NOTE) note(w, c, '🫐', FOX_BERRY_NOTE);
+  }
+  const bite = Math.min(b.berries, FOX_BITE);
+  b.berries -= bite; c.energy = Math.min(c.maxEnergy, c.energy + bite * FOX_BERRY);
+  if (!c.pips) c.pips = w.tick;
+  return true;
+}
+
+// The pips a crow (or a fox) swallowed come out wherever it is: a spot for a bramble next spring, if they're any good.
 function dropPips(w, c) {
   c.pips = 0;
   const r = w.brambleRng;
@@ -6200,6 +6285,9 @@ function mood(w, c) {
     case 'alarm': return { emoji: '‼️', text: `Spotted ${w.byId.get(c.threatId)?.name ?? 'a fox'}!` };
     case 'dig': return { emoji: '🕳️', text: 'Digging a burrow' };
     case 'hide': return { emoji: '🫣', text: 'Hiding in a burrow' };
+    case 'thicket': return { emoji: '🫣', text: `Hiding deep in a bramble from ${w.byId.get(c.threatId)?.name ?? 'a fox'}` };
+    case 'bramble': return { emoji: '🫐', text: 'Off to a bramble for the blackberries' };
+    case 'berries': return { emoji: '🫐', text: 'Eating blackberries off a bramble' };
     case 'sleep': return { emoji: '💤', text: c.hidden ? (storm ? 'Snug in the burrow, out of the storm' : 'Asleep in the burrow') : 'Napping' };
     case 'home': return { emoji: '🏠', text: storm ? 'Hurrying home out of the storm' : 'Heading home for the night' };
     case 'shelter': return { emoji: '🌧️', text: 'Curled up, waiting out the storm' };

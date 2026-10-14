@@ -45,8 +45,9 @@ leaves. Pale flowers early in summer, then berries (`brambleBerry`): green and r
 left on it (`brambleArt`: more than 0.6 of its crop, more than a quarter, fewer), and shrivelled among red leaves as it goes over.
 Drawn with the trees and animals (a frame item's `s`), bigger each spring (`b.size`). A crow eating from one is in `CROW_PECKS`.
 Its panel (`THINGS.bramble`, before the trees) has the painting for a portrait (`brambleFace`), the stage, a berries meter while
-they're ripe, how it came there (a crow's pips, a cane rooted, the wood's edge), what the cook would make of them and the crows
-eating off it.
+they're ripe, how it came there (a crow's pips, a cane rooted, the wood's edge), what the cook would make of them, the crows
+and foxes eating off it, a rabbit hiding in it, and the bees at its flowers. A bee on its blossom sits on the mound (`liftOf`,
+`bramblePx` times the spot's `up`); a fox at the berries has its 'feed' pose, a rabbit in the thorns its 'alarm' one.
 
 Foxes and rabbits are painted (fur.js: `paintFox`, `paintRabbit`): one rig posed for
 what each is doing (`FOX_POSES`, `RABBIT_POSES`, picked by `foxArt`, `rabbitArt`), painted as one animal by `paintFur`

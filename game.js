@@ -1464,8 +1464,8 @@ function liftOf(c, px, now) {
   if (!c.sp.flies) return hopOf(c, px, now);
   if (c.species === 'crow') return birdLift(c, crowHeight(c, px), c.sleeping) + crowHop(c, px);
   const bob = ui.speed > 0 ? Math.sin(now / 90 + c.id) * px * 0.08 : 0, fly = px * (0.9 - 0.3 * loadOf(c)), tree = c.target?.tree;
-  if (tree && (c.mode === 'sip' || c.mode === 'flower')) {   // blossom in a tree (sim.js addBlossoms): up in its crown
-    const crown = treePx(tree) * (tree.kind === 'hawthorn' ? 0.9 : 1.25) * c.target.up;
+  if (tree && (c.mode === 'sip' || c.mode === 'flower')) {   // blossom in a tree (sim.js addBlossoms): up in its crown, or on a bramble
+    const crown = (tree.bramble ? bramblePx(tree, cam.zoom) : treePx(tree) * (tree.kind === 'hawthorn' ? 0.9 : 1.25)) * c.target.up;
     return lerp(fly, crown, c.mode === 'sip' ? 1 : clamp(1.5 - Math.hypot(c.target.x - c.x, c.target.y - c.y) / 2, 0, 1)) + bob;
   }
   return (c.mode === 'sip' ? px * 0.15 : fly) + bob;
@@ -3669,7 +3669,7 @@ function shownPose(c, art, px) {
 function foxArt(c, px) {
   const art = pose => foxArtOf(c.fur, pose);
   if (c.sleeping) return art('sleep');
-  if (c.mode === 'eat') return art('feed');
+  if (c.mode === 'eat' || c.mode === 'berries') return art('feed');
   if (c.mode === 'rest' || c.mode === 'tired') return art('sit');
   if (onTheMove(c)) {
     let k = Math.floor(gaitOf(c).step % 1 * 4);
@@ -3708,6 +3708,7 @@ function rabbitArt(c, now) {
   if (c.mode === 'alarm') return art('alarm');
   if (c.mode === 'graze' || c.mode === 'munch') return art('graze');
   if (c.mode === 'rest') return art('loaf');
+  if (c.mode === 'thicket') return art('alarm');        // (sitting tight in the thorns, ears up: sim.js enterThicket)
   if (atHole(c)) return art('dig');
   if (!movedLately(c)) return art('sit');
   const f = fastGait(c) ? 1 : 0, A = HOP.air[f], u = gaitOf(c).step % 1, v = u / A, poses = RABBIT_GAIT[f];
@@ -6802,11 +6803,18 @@ const THINGS = {
         '🟢 Berries ripening, green and red', '🫐 Ripe blackberries: pick them', '🫐 Ripe blackberries, the crows have had some',
         '🐦‍⬛ Nearly picked clean: the crows have had them', '🍂 Going over: they say the devil spits on them now'][art];
       const crows = world.creatures.filter(c => c.alive && c.species === 'crow' && c.mode === 'berries' && c.target && c.target.b === b);
+      const foxes = world.creatures.filter(c => c.alive && c.species === 'fox' && c.mode === 'berries' && c.target && c.target.b === b);
+      const hiding = world.creatures.filter(c => c.alive && c.mode === 'thicket' && c.refuge === b);
+      const bees = world.creatures.filter(c => c.alive && c.species === 'bee' && c.mode === 'sip' && c.target && c.target.tree === b).length;
       const why = b.by === 'crow' ? ['🐦‍⬛', 'A crow ate blackberries off another bramble and dropped the pips here'] : b.by === 'tip' ? ['🌿', 'A cane of the bramble next door arched over and rooted at its tip'] : ['🌳', 'Brambles like the sun at the wood\'s edge, and the thorn bushes'];
       const years = Math.floor((world.tick - b.born) / S.YEAR_DAYS / S.TPD);
       const facts = [why, ['🍳', 'Blackberry crumble with the windfall apples, jam, or a cordial for the winter'],
         ['📅', b.size === 0 ? 'Young: it fruits from its second summer' : years < 1 ? 'Came up here last year' : `Has grown here for ${years === 1 ? 'a year' : `${years} years`}`]];
       if (crows.length) facts.push(['🐦‍⬛', crows.length === 1 ? `${link(crows[0])} is eating the berries` : `${crows.length} crows are eating the berries`]);
+      if (foxes.length) facts.push(['🦊', foxes.length === 1 ? `${link(foxes[0])} is nosing blackberries off the low canes` : `${foxes.length} foxes are eating the berries`]);
+      if (hiding.length) facts.push(['🫣', hiding.length === 1 ? `${link(hiding[0])} is hiding deep in the thorns, safe from the foxes` : `${hiding.length} rabbits are hiding deep in the thorns, safe from the foxes`]);
+      else if (b.size > 0) facts.push(['🐇', 'Thorny enough to hide a rabbit: no fox follows one in']);
+      if (art === 2) facts.push(['🐝', bees ? `${bees === 1 ? 'A bee is' : `${bees} bees are`} at the flowers: ${b.visits} ${b.visits === 1 ? 'visit' : 'visits'} so far` : b.visits ? `The bees have been ${b.visits} ${b.visits === 1 ? 'time' : 'times'}: the more, the more berries` : 'No bees yet: the more they come, the more berries']);
       return { emoji: face, tint, name, sub, status, facts, meters: art >= 4 && art <= 6 ? [['Berries', clamp(left, 0, 1), left < 0.25 ? 'low' : '']] : undefined };
     },
   },

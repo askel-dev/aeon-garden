@@ -269,7 +269,16 @@ autumn (`BRAMBLE_ROOT`, `by: 'tip'`), a first-year one on grass grazed short is 
 `BRAMBLE_NIBBLE`), so the warrens keep them back, and one dies the spring the wood over it is thicker than `BRAMBLE_SHADE`. New
 ones come from the crows (`brambleAt`: dry ground above the spring flood, not a flower field or a burrow's mouth, in sight,
 `BRAMBLE_GAP` from the others, at most `BRAMBLE_MOST` times `w.room`). Random numbers of their own (`w.brambleRng`). A meadow has
-about 12 to 16, 20 to 30 by year three. Nothing but the crows eats the berries: the rest are the cook's.
+about 12 to 16, 20 to 30 by year three.
+In flower a patch (size 1 or more) is `BRAMBLE_BLOOMS` spots of blossom for the bees (`brambleBlossoms`, in `w.blossoms` like a
+tree's, `p.tree` the bramble, `b.blooms`; `isFlower` asks `brambleStage`), and its crop is `BRAMBLE_SELF` plus the rest by the
+bees' visits (`b.visits`, `BRAMBLE_VISITS`), so a bramble by a hive bears best. A grown patch is a rabbit's refuge: `pickRefuge`
+weighs it with the burrows, and a rabbit that reaches it sits tight in the thorns, visible, at its foot (`enterThicket`, mode
+'thicket', `thicket`: `THICKET_TICKS`, longer while an awake fox is within `THICKET_FOX`, never past `THICKET_MOST` or once
+hungry). No fox follows it in: `hunt` drops it and doesn't pick it (an escape, how 'bramble'). In the ripe weeks a fox fuller
+than a hunt but under `FOX_BERRY_FED`, not a cub, goes to the nearest ripe bramble it smells (`foxBerries`, `FOX_BERRY_SIGHT`,
+modes 'bramble' and 'berries'), eats `FOX_BITE` a tick for `FOX_BERRY_TICKS` (about a day's keep a trip) and drops the pips
+like a crow (`dropPips`). The crows and the foxes share the berries; the rest are the cook's.
 
 Bees live in hives (`w.hives`), each in an old hollow oak from `w.decor` (`h.tree`, `d.hive`, `moveIn`), a giant (`HIVE_TREE`)
 with a hollow low on its trunk (`drawBeeTree`). A meadow starts with `HIVES` of them (times `w.room`), each in the best tree
