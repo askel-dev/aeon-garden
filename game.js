@@ -1220,13 +1220,13 @@ function lightFrame(dt) {
 const shownDark = phase => LIGHT_MID + (darkness(phase) - LIGHT_MID) * lightSwing;
 const shownGold = phase => Math.round(goldenHour(phase) * lightSwing * GOLD_STEPS) / GOLD_STEPS;
 
-// The things a frame draws (a tree or a rock d, a swarm h, a fox's rustle, a creature c, a visitor v), each a record of the
+// The things a frame draws (a tree or a rock d, a swarm h, a creature c, a visitor v), each a record of the
 // one shape, kept from frame to frame: a few hundred new objects a frame, of five shapes, were felt in every loop over them.
 const frameItems = [], itemPool = [];
 function itemOf(items, y, sx, sy, f) {
   let it = itemPool[items.length];
-  if (!it) itemPool.push(it = { y: -0, sx: -0, sy: -0, f: -0, px: -0, d: null, h: null, rustle: null, to: null, c: null, v: null });
-  it.y = y; it.sx = sx; it.sy = sy; it.f = f; it.px = 0; it.d = it.h = it.rustle = it.to = it.c = it.v = null;
+  if (!it) itemPool.push(it = { y: -0, sx: -0, sy: -0, f: -0, px: -0, d: null, h: null, c: null, v: null });
+  it.y = y; it.sx = sx; it.sy = sy; it.f = f; it.px = 0; it.d = it.h = it.c = it.v = null;
   items.push(it);
   return it;
 }
@@ -1269,7 +1269,6 @@ function render(now) {
   drawFlow(now, ck);
   drawShore(z, ox, oy, ck.season);
   drawPlants(z, ox, oy, ck.season);                  // over the waves, which can pass a flower by the water
-  if (z >= 6) drawDashes(now, z);                    // voles a fox missed
   drawPond(now, z);
 
   // Burrows, drawn by hand: some browsers clip the 🕳️ glyph in half. Who lives where only shows close up (the paths, r >= 9).
@@ -1307,11 +1306,6 @@ function render(now) {
   const shown = [];
   for (const c of world.creatures) {
     if (c.hidden || !c.alive) continue;
-    if (c.species === 'fox') {      // hunting voles: the rustle it's after
-      watchLeap(c, now);
-      const to = rustleOf(c);
-      if (to) { const [rx, ry] = toScreen(to.x, to.y); if (visible(rx, ry, 30)) { const it = itemOf(items, to.y, rx, ry, 1 - mistAt(to.x, to.y)); it.rustle = c; it.to = to; } }
-    }
     const [sx, sy] = screenOf(c);
     if (!visible(sx, sy, 60)) continue;
     const it = itemOf(items, c.y + (c.mode === 'dance' ? DANCE_FRONT : 0), sx, sy, 1 - mistAt(c.x, c.y));
@@ -1342,7 +1336,6 @@ function render(now) {
     fadeTo(it.f);
     if (it.d) it.d.hive ? drawBeeTree(it.d, it.sx, it.sy, now, ck) : drawDecor(it.d, it.sx, it.sy, now, ck, null, it.px);
     else if (it.h) drawSwarm(it.h, it.sx, it.sy);
-    else if (it.rustle) drawRustle(it.rustle, it.to, it.sx, it.sy, z);
     else if (it.v) drawVisitor(it.v, it.sx, it.sy, now, z);
     else drawCreature(it.c, it.sx, it.sy, now);
   }
@@ -1629,12 +1622,9 @@ function drawDance(c, bx, by, px) {
 
 // How high off the ground it's lifted, in screen pixels. A rabbit's hop (HOP), a galloping fox rising a little in the
 // two moments it's in the air (run1, run3); a trotting fox keeps its back level. At the hole, a digger doesn't hop but
-// scrabbles: a quick small bob. A mousing fox's pounce is the high arc up and over onto the vole, in sim time (sim.js
-// mouse), so a paused one hangs in the air.
-const POUNCE_HIGH = 0.9;           // how high the pounce goes, in the fox's size
+// scrabbles: a quick small bob.
 const GALLOP_LIFT = 0.06;          // and a gallop's rise
 function hopOf(c, px, now) {
-  if (c.mode === 'pounce') return Math.sin(Math.PI * clamp((S.POUNCE_TICKS - c.timer + acc) / S.POUNCE_TICKS, 0, 1)) * px * POUNCE_HIGH;
   if (atHole(c)) return ui.speed > 0 ? Math.abs(Math.sin(now / 70 + c.id)) * px * 0.03 : 0;
   if (!STRIDE[c.species] || !onTheMove(c)) return 0;
   const u = gaitOf(c).step % 1;
@@ -1935,7 +1925,6 @@ function drawCreature(c, sx, sy, now) {
   if (c.species === 'crow' && c.sleeping && crowSeat(c)) sx += treeSway(seat.tree, now) * hop;   // up a tree, it sways with it
   if (c.mode === 'dance') drawDance(c, sx, y, px);
   drawEmoji(c.species === 'crow' ? crowArt(c, hop, px, now) : walkerArt(c, px, now), sx, y, px, { flip: flipOf(c), squash });   // feet stay on the ground
-  if (c.mode === 'gulp' && c.species === 'fox') drawCatch(c, sx, y, px);
   if (c.load && c.species === 'bee') drawBaskets(c, sx, y, px);
   if (c.mode === 'sip') drawSipping(c, sx, sy, px, now);
   if (px > 18 && ui.speed > 0 && ui.speed <= 4 && atHole(c)) drawDigging(c, sx, y, px, now);
@@ -1986,22 +1975,6 @@ const pawAt = (g, x, y, s) => fillIn(g, '#8a5a3c', () => {
   ovalAt(g, x, y + s * 0.35, s * 0.5, s * 0.42);
   for (const [tx, ty] of [[-0.58, -0.2], [-0.21, -0.58], [0.21, -0.58], [0.58, -0.2]]) ovalAt(g, x + tx * s, y + ty * s, s * 0.19, s * 0.25, tx * 0.6);
 });
-// A field vole, round and brown and short-tailed, facing left: the mousing bubble's, and the one a fox
-// is after (paintVole, drawRustle).
-const voleAt = g => {
-  strokeIn(g, '#7a5a42', 0.08, () => { g.moveTo(0.6, 0.45); g.quadraticCurveTo(0.95, 0.5, 0.9, 0.8); });
-  fillIn(g, '#8a6a4e', () => { ovalAt(g, 0.08, 0.25, 0.6, 0.42); ovalAt(g, -0.5, 0.12, 0.34, 0.3, -0.3); });
-  fillIn(g, '#a8876a', () => ovalAt(g, 0.12, 0.08, 0.36, 0.18));
-  fillIn(g, '#9c7b5e', () => discAt(g, -0.38, -0.22, 0.17));
-  fillIn(g, '#e3a8a0', () => { discAt(g, -0.38, -0.22, 0.08); discAt(g, -0.84, 0.18, 0.06); });
-  fillIn(g, '#2d261e', () => discAt(g, -0.6, 0.04, 0.06));
-};
-// The vole on its own, for the sprite cache ('vole:0'): its box -1 to 1 is the size asked for, like an emoji.
-function paintVole(g, size, U) {
-  g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
-  g.lineCap = g.lineJoin = 'round';
-  voleAt(g);
-}
 // A common frog, facing left, olive-brown with darker blotches and the dark patch behind its eye: sitting
 // (the frog bubble's, and the ones by the water, drawPond) or leaping with its hind legs out behind.
 const FROG_SKIN = '#7f7c46', FROG_DARK = '#5c5a31', FROG_BELLY = '#c2b784', FROG_MASK = '#3f3421';
@@ -3313,7 +3286,7 @@ function gaitOf(c) {
   return s;
 }
 const movedLately = c => gaitOf(c).frames < 12;
-const onTheMove = c => (MOVING.has(c.mode) || c.mode === 'mouse') && movedLately(c);
+const onTheMove = c => MOVING.has(c.mode) && movedLately(c);
 // Above this speed it's a blur: the gaits keep to two of their paintings, so a quick meadow doesn't paint the rest.
 const FEW_FRAMES = 4;
 
@@ -3347,10 +3320,8 @@ function shownPose(c, art, px) {
 function foxArt(c, px) {
   const art = pose => foxArtOf(c.genes.fur, pose);
   if (c.sleeping) return art('sleep');
-  if (c.mode === 'pounce' || c.mode === 'gulp') return art(c.mode);
   if (c.mode === 'eat') return art('feed');
   if (c.mode === 'rest' || c.mode === 'tired') return art('sit');
-  if (crouching(c)) return art('crouch');                                       // mousing: it crouches to leap
   if (onTheMove(c)) {
     let k = Math.floor(gaitOf(c).step % 1 * 4);
     if (ui.speed > FEW_FRAMES) k &= 2;
@@ -3525,8 +3496,7 @@ const BUBBLE_ICONS = [
     fillIn(g, '#5e3c22', () => ovalAt(g, 0, 0.02, 0.72, 0.16));
     fillIn(g, '#c99467', () => ovalAt(g, -0.45, 0.35, 0.16, 0.1, 0.3));
   }],
-  ['🐁', voleAt],                                       // mousing: a vole
-  ['🐸', g => frogAt(g)],                               // a frog (a fox after them)
+  ['🐸', g => frogAt(g)],                               // a frog (an otter after them)
   ['🫧', spawnAt],                                      // frogspawn (a crow at it)
   ['🪱', g => {                                          // a crow pecking for grubs: a worm
     strokeIn(g, '#d88a86', 0.32, () => { g.moveTo(-0.72, 0.42); g.bezierCurveTo(-0.45, -0.35, -0.05, 0.75, 0.3, 0.02); g.quadraticCurveTo(0.48, -0.36, 0.74, -0.3); });
@@ -3552,7 +3522,7 @@ const BUBBLE_ART = new Map(BUBBLE_ICONS.map(([e], i) => [e, 'bubble:' + i]));
 // is covered; what each is up to is in the label on hover and in the inspector. Only for those on screen, and only up
 // to POP_SPEED: quicker, moods change faster than they'd read. At most POP_LIVE up at once, so a pop still means
 // something when a fox walks through a warren; and love only for the one you follow (in spring it's everyone).
-const POPS = new Set(['alarm', 'flee', 'chase', 'stalk', 'pounce']);
+const POPS = new Set(['alarm', 'flee', 'chase', 'stalk']);
 const POP_MS = 1700, POP_IN = 160, POP_OUT = 450, POP_SPEED = 4, POP_LIVE = 3;
 const pops = new WeakMap();          // { mode, emoji, at }: the mode it was last seen in, and its pop
 const popsUp = [];                   // when the pops up now began (the one you follow's aren't counted)
@@ -4363,7 +4333,7 @@ function putPainting(p, f, alpha, snow, ox, oy) {
 // A visitor fur.js paints (Fur.painters: the dragonflies, the kingfisher, the skylark), at the doublings of its size and
 // shrunk between (shrunk), as a fox is; in the meadow the worker paints it (furReady).
 const furPaint = kind => (g, size, U, n) => { if (!shrunk(g, size, U, kind + ':' + n)) Fur.painters[kind](g, size, U, n); };
-const PAINTERS = { fox: paintFox, rabbit: paintRabbit, hog: paintHedgehog, heron: paintHeron, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, vole: paintVole, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody, bee: paintBee, fall: paintFall, tuft: paintTuftSprite,
+const PAINTERS = { fox: paintFox, rabbit: paintRabbit, hog: paintHedgehog, heron: paintHeron, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody, bee: paintBee, fall: paintFall,
   dfly: furPaint('dfly'), kfisher: furPaint('kfisher'), lark: furPaint('lark') };
 function drawDecor(d, sx, sy, now, ck, clipLeaves, px = d.tree ? treePx(d) : d.size * cam.zoom) {   // (px: render has it already)
   if (d.emoji === '🪨') { drawRock(d, sx, sy); return; }
@@ -5643,120 +5613,9 @@ function drawEffects(now) {
   ctx.globalAlpha = 1;
 }
 
-// ------------------------------------------------------------------ voles
-//
-// The sim keeps voles as a number on each tile (w.voles), too many and too small to follow, so a vole only
-// shows when something's after it: a fox listening or leaping (drawRustle below).
-// The vole (the painted one of the mousing bubble, voleAt) comes from the sprite cache, its top part only,
-// rising out of the grass line.
-const PEEP_FOOT = 0.76, PEEP_BODY = 0.41;   // in the sprite, from the top: where its feet are, and how tall it is
-
-// A vole (or a frog) up out of the grass, up of the way, its feet on the grass line at sx, sy.
-function peepAt(s, sx, sy, up, flip) {
-  const size = s.size, shown = PEEP_FOOT * size - (1 - up) * PEEP_BODY * size;
-  if (shown <= 0 || !visible(sx, sy, size)) return;
-  ctx.globalAlpha = Math.min(1, 3 * up);
-  const h = s.canvas.height * shown / size;
-  if (!flip) ctx.drawImage(s.canvas, 0, 0, s.canvas.width, h, sx - size / 2, sy - shown, size, shown);
-  else {
-    ctx.save(); ctx.translate(sx, 0); ctx.scale(-1, 1);
-    ctx.drawImage(s.canvas, 0, 0, s.canvas.width, h, -size / 2, sy - shown, size, shown);
-    ctx.restore();
-  }
-  ctx.globalAlpha = 1;
-}
-
-// ------------------------------------------------------------------ a fox mousing
-//
-// The sim says where a mousing fox heard the rustle it'll leap at (c.rustle while it listens, c.target in
-// the air, sim.js mouse). There the grass twitches in fits, and as the fox crouches to leap, the vole looks up out of
-// the grass and freezes (a frog, where there are more frogs). Caught, it's in the fox's jaws while it's gulped down
-// (drawCatch); missed, it darts off through the grass. Only a look, from
-// sprites in the cache, and a fixed pool for the ones darting off.
-const CROUCH = 6;                  // ticks before the leap that it crouches, and the vole looks up
-const RUSTLE_SIZE = 0.5;           // the twitching tuft, of a rabbit
-const RUSTLE_PREY = 0.6;           // the vole (or frog) there, of a rabbit
-const RUSTLE_PEEK = 0.35;          // how far up it shows while the grass twitches most
-const DASH_MS = 700;               // a vole the fox missed darting off
-const DASH_LEN = 2;                // tiles, out from under the fox
-const DASHES = 4;
-const dashes = { x: new Float32Array(DASHES), y: new Float32Array(DASHES), dx: new Float32Array(DASHES), dy: new Float32Array(DASHES),
-  t0: new Float64Array(DASHES).fill(-1e9), frog: new Uint8Array(DASHES), next: 0 };
-const leaps = new WeakMap();       // a fox in the air: where it'll land, to see if it missed once it's down
-
-// A fox leaping on a vole.
-const leaping = c => c.species === 'fox' && c.mode === 'pounce';
-// Where a mousing fox heard its rustle, or is coming down (null: it isn't).
-const rustleOf = c => leaping(c) ? c.target : c.species === 'fox' && c.mode === 'mouse' && !c.target ? c.rustle || null : null;
-const frogThere = p => { const i = (p.y | 0) * S.W + (p.x | 0); return world.frogs[i] > world.voles[i]; };
-const crouching = c => c.species === 'fox' && c.mode === 'mouse' && !c.target && !!c.rustle && c.timer - acc < CROUCH;
-
-// Every frame, for each fox: down from a leap that didn't end in a gulp, the vole darts off from under it.
-function watchLeap(c, now) {
-  if (leaping(c)) { if (c.target) leaps.set(c, c.target); return; }
-  const to = leaps.get(c);
-  if (!to) return;
-  leaps.delete(c);
-  if (c.mode === 'gulp' || ui.speed > 4 || world.snow >= 0.3) return;   // caught it, or too quick to see
-  const k = dashes.next, a = c.heading + (Math.random() - 0.5) * 2;       // on ahead, about
-  dashes.x[k] = to.x; dashes.y[k] = to.y; dashes.dx[k] = Math.cos(a) * DASH_LEN; dashes.dy[k] = Math.sin(a) * DASH_LEN * 0.6;
-  dashes.t0[k] = now; dashes.frog[k] = frogThere(to) ? 1 : 0; dashes.next = (k + 1) % DASHES;
-}
-
-function drawDashes(now, z) {
-  for (let k = 0; k < DASHES; k++) {
-    const a = (now - dashes.t0[k]) / DASH_MS;
-    if (a >= 1) continue;
-    const go = 1 - (1 - a) * (1 - a), frog = dashes.frog[k];               // quick off, slowing into the grass
-    const sx = (dashes.x[k] + dashes.dx[k] * go - cam.x) * z + vw / 2, sy = (dashes.y[k] + dashes.dy[k] * go - cam.y) * z + vh / 2;
-    if (!fadeAt(dashes.x[k], dashes.y[k])) continue;
-    const s = sprite(frog ? 'frog:1' : 'vole:0', Math.max(9, (8 + z) * RUSTLE_PREY));
-    peepAt(s, sx, sy - (frog ? Math.sin(Math.PI * a) * s.size * 0.4 : 0), a < 0.7 ? 0.75 : 0.75 * (1 - a) / 0.3, dashes.dx[k] > 0);
-  }
-  unfade();
-}
-
-// The twitching tuft on its own, square, for the sprite cache ('tuft:0'), its foot a little below the middle.
-function paintTuftSprite(g, size, U) {
-  g.setTransform(U, 0, 0, U, size / 2, size / 2 + 0.36 * U);
-  tuftAt(g, k => hash2(5, 29, k), 9, 0.7, 0.5, GRASS[0], 0.05);
-}
-// The rustle a fox is listening to or leaping at: the grass there twitching, and the vole looking up.
-function drawRustle(c, to, sx, sy, z) {
-  if (world.snow >= 0.3 || z < 6) return;              // (under the snow, nothing shows)
-  const t = world.tick + acc, px = 8 + z;
-  const tuft = sprite('tuft:0', px * RUSTLE_SIZE), fit = Math.max(0, Math.sin(t * 0.4 + c.id));
-  for (const side of [-1, 1]) {
-    ctx.save();
-    ctx.translate(sx + side * tuft.size * 0.3, sy);
-    ctx.rotate(fit * fit * 0.4 * Math.sin(t * 2.3 + side * 1.7));       // twitching in fits, at the foot
-    ctx.drawImage(tuft.canvas, -tuft.size / 2, -tuft.size * 0.8, tuft.size, tuft.size);
-    ctx.restore();
-  }
-  const look = c.mode === 'pounce' ? 1 : clamp(1 - (c.timer - acc) / CROUCH, 0, 1);
-  const up = Math.max(look, fit > 0.8 ? RUSTLE_PEEK : 0);   // its back now and then, then up it looks
-  if (up <= 0) return;
-  const frog = frogThere(to);
-  peepAt(sprite(frog ? 'frog:0' : 'vole:0', Math.max(9, px * RUSTLE_PREY)), sx, sy, up, c.x < to.x);
-}
-
-// Caught: the vole (or frog) crosswise in the fox's jaws while it's gulped down, gone at the last.
-// Where in its painting (facing left), of its size, how big, and turned how far (FOX_POSES.gulp).
-const MOUTH = { fox: [-0.38, 0.08, 0.3, -0.3] };
-function drawCatch(c, sx, y, px) {
-  const [mx, my, mz, turn] = MOUTH[c.species], s = sprite(c.prey === 'frog' ? 'frog:0' : 'vole:0', px * mz), side = flipOf(c) ? -1 : 1;
-  ctx.save();
-  ctx.globalAlpha = clamp((c.timer - acc) / 6, 0, 1);
-  ctx.translate(sx + side * px * mx, y + px * my);
-  ctx.rotate(side * turn);
-  ctx.scale(side, 1);
-  ctx.drawImage(s.canvas, -s.size / 2, -s.size / 2, s.size, s.size);
-  ctx.restore();
-}
-
 // ------------------------------------------------------------------ pond life
 //
-// The sim keeps frogs, and their spawn and tadpoles, as numbers on tiles (w.frogs, w.spawn), like the voles.
+// The sim keeps frogs, and their spawn and tadpoles, as numbers on tiles (w.frogs, w.spawn).
 // So the look is a fixed pool of spots, one tried a frame at a random place on screen, likelier to take the
 // more there are: a clump of frogspawn in the shallows early in spring, then a few tadpoles wriggling; a frog
 // that sits at the water's edge, hops once, and sits again; now and then one on a lily pad. Nothing kept.
@@ -6288,7 +6147,6 @@ function renderInspector() {
   const chips = [];
   if (c.alive && c.pregnantUntil) chips.push(c.species === 'fox' ? '🍼 Expecting cubs' : '🍼 Expecting babies');
   if (c.kills) chips.push(`🍖 ${c.kills} ${c.kills === 1 ? 'catch' : 'catches'}`);
-  if (c.voles) chips.push(`🐁 ${c.voles} ${c.voles === 1 ? 'vole' : 'voles'} caught`);
   if (c.fish) chips.push(`🐟 ${c.fish} fish caught`);
   if (c.frogs) chips.push(`🐸 ${c.frogs} ${c.frogs === 1 ? 'frog' : 'frogs'} caught`);
   if (c.escapes) chips.push(`💨 ${c.escapes} narrow ${c.escapes === 1 ? 'escape' : 'escapes'}`);
@@ -6767,8 +6625,8 @@ const THINGS = {
     here: () => true,
     show(f) {
       const season = S.seasonOf(world.tick), plants = world.plants.filter(p => p.field === f), open = plants.filter(p => S.isFlower(world, p)).length;
-      let tiles = 0, grass = 0, voles = 0;
-      for (let i = 0; i < world.fieldAt.length; i++) if (world.fieldAt[i] === f.id && !world.water[i]) { tiles++; grass += world.grass[i]; voles += world.voles[i]; }
+      let tiles = 0, grass = 0;
+      for (let i = 0; i < world.fieldAt.length; i++) if (world.fieldAt[i] === f.id && !world.water[i]) { tiles++; grass += world.grass[i]; }
       const status = season === f.season ? (open ? `${f.emoji[0]} In bloom: ${open} of ${plants.length} flowers open`
         : '🐇 Grazed down: no flowers open')
         : `🌿 Resting: it blooms in ${seasonName(f.season)}`;
@@ -6779,11 +6637,9 @@ const THINGS = {
         ? hives.map(h => `🐝 ${thingLink('hive', h.id, h.queen ? esc(`Queen ${h.queen.name}'s hive`) : 'Empty hive')}`).join('<br>')
         : 'None: only a bee from far off comes here']];
       if (now.length) sections.push(['Here now', linkList(now)]);
-      const thick = tiles ? voles / tiles / S.VOLE_K : 0;         // (sim.js volesTick)
-      const facts = thick > 0.15 ? [['🐁', thick > 0.5 ? 'Voles run all through the long grass here, and the foxes come mousing' : 'A few voles run in the long grass here']] : [];
       return {
         emoji: f.emoji[0], tint: `rgb(${f.tint})`, name: f.name, sub: `A field of ${f.kind.names.join(' and ').toLowerCase()} · ${tiles} tiles`,
-        status, sections, facts, meters: [['Grass', tiles ? grass / tiles : 0, '']],
+        status, sections, meters: [['Grass', tiles ? grass / tiles : 0, '']],
       };
     },
   },
