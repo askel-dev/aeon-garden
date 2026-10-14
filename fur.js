@@ -9,8 +9,10 @@
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const lerp = (a, b, t) => a + (b - a) * t;
 const TAU = Math.PI * 2;
-// A scratch canvas: the page's, or in the worker an OffscreenCanvas (a new one is 300 by 150 either way).
-const newCanvas = typeof document !== 'undefined' ? () => document.createElement('canvas') : () => new OffscreenCanvas(300, 150);
+// A scratch canvas: the page's, or in the worker an OffscreenCanvas (a new one is 300 by 150 either way), painted on the
+// CPU there (fur-worker.js says why).
+const newCanvas = typeof document !== 'undefined' ? () => document.createElement('canvas')
+  : () => { const c = new OffscreenCanvas(300, 150); c.getContext('2d', { willReadFrequently: true }); return c; };
 
 // ------------------------------------------------------------------ drawing helpers (game.js paints with them too)
 

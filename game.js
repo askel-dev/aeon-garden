@@ -221,6 +221,7 @@ let spriteBytes = 0, spriteFrame = 0;   // render counts the frames, so a full c
 let paintedMs = 0, standIns = false;    // spent painting sprites this frame; only render takes stand-ins
 const SPRITE_BYTES = 96e6;          // phones cap canvas memory in total, so mind the pixels, not the count
 const PAINT_MS = 3;                 // past this much painting in a frame, sprites wait for the next one
+const ZOOM_STRETCH = 1.4;           // while the zoom moves, a sprite painted within this of the size it's drawn at will do
 
 // Safari keeps a small canvas off the GPU and copies its pixels out every time it's drawn: with a meadow full of
 // rabbits that took most of its frame, and it stuttered. An ImageBitmap stays on the GPU, in every browser. So a
@@ -277,9 +278,12 @@ function paintedSprite(emoji, px, tint, leaf, center) {
   if (s) { s.used = spriteFrame; return s; }
   // Zooming asks for every tree on screen at a new size in the same frame. Past a few ms of
   // painting, the same look at another size stands in, stretched, and the rest are painted over
-  // the next frames.
-  const near = standIns && paintedMs > PAINT_MS && latestLook.get(look);
-  if (near) { near.used = spriteFrame; return { canvas: near.canvas, size: near.size * px / near.px }; }
+  // the next frames. While the zoom moves, one within ZOOM_STRETCH of the size stands in anyway, and it's painted
+  // sharp once the zoom comes to rest (groundStill), as a rock is: zooming painted dozens of sprites a second.
+  const near = standIns && latestLook.get(look);
+  if (near && (paintedMs > PAINT_MS || groundStill < 2 && near.px > px / ZOOM_STRETCH && near.px < px * ZOOM_STRETCH)) {
+    near.used = spriteFrame; return { canvas: near.canvas, size: near.size * px / near.px };
+  }
   // A fox's or a rabbit's painting comes from the worker (furReady asks for it): meanwhile the same at another size
   // stands in, or one of its kin. Only the first of a look is painted here (and the P photo's, all of them).
   if (furWorker && standIns && !groundIn && !tint && !leaf && !center && isFur(emoji) && !furReady(emoji, px)) {
@@ -1152,7 +1156,9 @@ function drawBurrow(b, sx, sy, z, season, residents) {
   const shape = ((R * 2 + (done ? 1 : 0)) * 4 + season) * 8 + Math.round(dpr * 2), age = (q(fresh) * 17 + q(neglect)) * 17 + q(done ? 1 : b.dug);
   let a = burrowArt.get(b);
   const t0 = performance.now();
-  if (!a || (a.shape !== shape || a.age !== age && t0 - a.at >= BURROW_MS) && !(standIns && paintedMs > PAINT_MS)) {   // (painting a lot this frame: the last one stands in)
+  // (While the zoom moves, one only a size off, within ZOOM_STRETCH, will do too: shape's last 64 are all but its size.)
+  const zoomed = a && groundStill < 2 && a.shape % 64 === shape % 64 && a.r > r / ZOOM_STRETCH && a.r < r * ZOOM_STRETCH;
+  if (!a || (a.shape !== shape || a.age !== age && t0 - a.at >= BURROW_MS) && !(standIns && paintedMs > PAINT_MS) && !zoomed) {   // (painting a lot this frame: the last one stands in)
     if (a) freeImage(a.canvas);
     burrowArt.set(b, a = paintBurrow(b, R, q(fresh) / BURROW_STEPS, q(neglect) / BURROW_STEPS, done ? 1 : q(b.dug) / BURROW_STEPS, season, shape, age));
     a.at = t0;
@@ -9225,6 +9231,47 @@ let fingerTap = false;                    // the last press was a finger: taps m
 const flick = { vx: 0, vy: 0 };
 const fingers = new Map();
 
+// A mouse, a trackpad or a finger sends its moves when it likes, not once a frame: Safari hands them over as they come,
+// so one frame got two moves and the next none, and a drag, a two-finger scroll or a pinch went in jerks at a steady
+// 60 fps (a quarter to a third of the frames in Safari, a few in Chrome). So the camera they move is drawn as it was a
+// moment ago (handLag: a move's time and a bit), read off the moves at their own times, the same delay every frame, as
+// phones resample a finger: it goes as evenly as the hand did. The camera itself (cam) is always where the last move
+// left it; only the drawing waits (handShow, handBack). A move after a pause starts from where it stood a move before.
+const HAND_N = 16, HAND_GAP = 60;         // moves kept; after a pause this long (ms) the next move starts afresh
+const hand = { t: new Float64Array(HAND_N), x: new Float64Array(HAND_N), y: new Float64Array(HAND_N), z: new Float64Array(HAND_N),
+  n: 0, every: 16, was: { x: 0, y: 0, zoom: 1 }, kept: { x: 0, y: 0, zoom: 1 } };   // every: ms between moves, learnt
+const handLag = () => Math.min(40, 1.25 * hand.every + 2);
+function handNote(t, c) {
+  const i = hand.n++ % HAND_N;
+  hand.t[i] = t; hand.x[i] = c.x; hand.y[i] = c.y; hand.z[i] = c.zoom;
+}
+// After a move has moved the camera: where it is now, at the move's own time (e.timeStamp).
+function handMoved(t) {
+  const h = hand, last = h.n ? h.t[(h.n - 1) % HAND_N] : -Infinity;
+  if (t - last > HAND_GAP) { h.n = 0; handNote(t - h.every, h.was); }   // (h.was: where the last frame left it)
+  else {
+    if (t <= last) t = last + 0.01;                    // (two moves in the same whole ms: Safari's times)
+    h.every += (clamp(t - last, 4, 40) - h.every) * 0.2;
+  }
+  handNote(t, cam);
+}
+// Before a frame draws: the camera put where the hand had it handLag() ago; true if it was (handBack puts it back).
+function handShow(now) {
+  const h = hand;
+  if (!h.n) return false;
+  const k = h.n - 1, last = k % HAND_N;
+  if (cam.x !== h.x[last] || cam.y !== h.y[last] || cam.zoom !== h.z[last]) { h.n = 0; return false; }   // something else moved it since
+  const T = now - handLag();
+  if (T >= h.t[last]) { if (T - h.t[last] > HAND_GAP) h.n = 0; return false; }   // caught up with the hand
+  let a = k;
+  while (a > Math.max(0, h.n - HAND_N) && h.t[a % HAND_N] > T) a--;
+  const i = a % HAND_N, j = (a + 1) % HAND_N, u = h.t[i] >= T ? 0 : (T - h.t[i]) / (h.t[j] - h.t[i]);
+  h.kept.x = cam.x; h.kept.y = cam.y; h.kept.zoom = cam.zoom;
+  cam.x = h.x[i] + (h.x[j] - h.x[i]) * u; cam.y = h.y[i] + (h.y[j] - h.y[i]) * u; cam.zoom = h.z[i] * (h.z[j] / h.z[i]) ** u;
+  return true;
+}
+function handBack() { cam.x = hand.kept.x; cam.y = hand.kept.y; cam.zoom = hand.kept.zoom; }
+
 // Zoom with one hand, with Look in hand, as Google's and Apple's maps do: a double tap zooms in on the spot, a double
 // tap held and dragged zooms as it goes (down for closer, up for further off), and a tap of two fingers zooms out.
 // A tap that would only put the inspector away waits to see if it's the first of two (tapAway), so a double tap
@@ -9326,10 +9373,10 @@ canvas.addEventListener('pointerdown', e => {
 canvas.addEventListener('pointermove', e => {
   if (!world) return;
   if (fingers.has(e.pointerId)) fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-  if (pinch) { movePinch(); return; }
+  if (pinch) { movePinch(); handMoved(e.timeStamp); return; }
   if (zoomDrag && e.pointerId === zoomDrag.id) {
     const dy = e.clientY - zoomDrag.y;
-    if (zoomDrag.moved || Math.abs(dy) > 8) { zoomDrag.moved = true; zoomAt(zoomDrag.sx, zoomDrag.sy, zoomDrag.z * Math.exp(dy * ZOOM_DRAG)); }
+    if (zoomDrag.moved || Math.abs(dy) > 8) { zoomDrag.moved = true; zoomAt(zoomDrag.sx, zoomDrag.sy, zoomDrag.z * Math.exp(dy * ZOOM_DRAG)); handMoved(e.timeStamp); }
     return;
   }
   if (intro.on) return;
@@ -9367,6 +9414,7 @@ canvas.addEventListener('pointermove', e => {
     ui.follow = false;
     cam.x = drag.cx - wholePx(dx) / cam.zoom; cam.y = drag.cy - wholePx(dy) / cam.zoom;
     clampCam();
+    handMoved(e.timeStamp);
   }
 });
 canvas.addEventListener('pointerup', e => {
@@ -9421,6 +9469,7 @@ canvas.addEventListener('wheel', e => {
     cam.goal = null; glide = null; zoomTo = null;
     zoomAt(e.clientX, e.clientY, cam.zoom * Math.exp(-ddy * (e.ctrlKey ? 0.012 : 0.0018)));
   }
+  handMoved(e.timeStamp);
 }, { passive: false });
 
 // ------------------------------------------------------------------ picking an animal up
@@ -12106,7 +12155,32 @@ let last = performance.now(), acc = 0, lastCard = 0, lastRecord = 0, lastStatsCa
 const TERRAIN_MS = 250;                   // real time between hand-overs of the grass to the ground (painting grass skips the wait)
 // The most real time the sim gets in a frame. A slow phone at 60x would rather run a little slower
 // than drop frames: the ticks that don't fit are let go, and don't pile up for the next frame.
-const SIM_MS = 6;
+// How many fit is learnt as it goes (simFit, from tickMs: a tick's cost, a new day's aside), and each frame runs that
+// many: ticks cut off wherever the time ran out made it 12 one frame and 30 the next, and the animals went in jerks.
+// SIM_STOP only stops a frame that runs far over (a cost that jumped before simFit could learn it).
+const SIM_MS = 6, SIM_STOP = 3 * SIM_MS;
+let tickMs = 0.05, simFit = Math.floor(SIM_MS / tickMs);
+
+// A frame's time. Safari gives it in whole ms (16, 17, 17, 16...): at 4x that ran one, two or three ticks a frame, and at
+// 60x 28 or 31, so the animals went in jerks at a steady 60 fps. So a frame's time is one beat on from the last, the beat
+// (the screen's refresh) learnt as it goes, kept within BEAT_SLACK ms of the browser's time; a frame off the beat (one
+// missed, a stall) starts it again from the browser's time, and BEAT_RELEARN of them in a row learn a new beat (a
+// phone saving power halves it).
+const BEAT_SLACK = 2.5, BEAT_RELEARN = 30;
+const beat = { at: 0, ms: 1000 / 60, off: 0 };
+function onBeat(now) {
+  const next = beat.at + beat.ms, off = now - next;
+  if (beat.at && Math.abs(off) < BEAT_SLACK) {
+    beat.ms += off * 0.02;                // (the refresh, learnt slowly)
+    beat.at = next + off * 0.1;           // (crept toward the browser's time, so it never drifts away)
+    beat.off = 0;
+  } else {
+    const ms = now - beat.at;
+    if (++beat.off >= BEAT_RELEARN && ms > 4 && ms < 50) { beat.ms = ms; beat.off = 0; }
+    beat.at = now;
+  }
+  return beat.at;
+}
 
 // Paused, the world stands still, but the water, the weather and the trees still move a little:
 // 30 frames a second are plenty for that, unless you're looking around or something is happening.
@@ -12140,6 +12214,7 @@ function resting(now) {
 
 function frame(now) {
   if (opening === 1) opening = 2;
+  now = onBeat(now);
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   if (intro.on) introFrame(now, dt);
@@ -12149,15 +12224,21 @@ function frame(now) {
   else if (ui.speed > 0) {
     strikeZaps(now);
     acc += dt * TICKS_PER_SECOND * ui.speed;
-    const n = Math.min(Math.floor(acc), 2000), t0 = performance.now();
-    acc -= n;
-    for (let i = 0; i < n; i++) {
-      // A new day's tick is the heaviest by far (the trees, the ground): it starts a frame rather than ends a full one.
-      if (i && (world.tick + 1) % S.TPD === 0 && performance.now() - t0 > SIM_MS / 2) break;
+    const want = Math.min(Math.floor(acc), 2000), n = Math.min(want, simFit), t0 = performance.now();
+    acc -= want;
+    let ran = 0, days = 0, dayMs = 0;
+    while (ran < n) {
       if (ui.speed <= SMOOTH_SPEED) keepLast();
+      const day = (world.tick + 1) % S.TPD === 0, t1 = day ? performance.now() : 0;   // (a new day's tick is the heaviest by far)
       S.step(world);
       if (world.events.length) flushEvents();
-      if (performance.now() - t0 > SIM_MS) break;            // (each tick: on a phone a few are a frame's worth)
+      if (day) { days++; dayMs += performance.now() - t1; }
+      ran++;
+      if (performance.now() - t0 > SIM_STOP) break;
+    }
+    if (ran > days) {
+      tickMs += ((performance.now() - t0 - dayMs) / (ran - days) - tickMs) * 0.05;
+      simFit = Math.max(1, Math.floor(SIM_MS / tickMs));
     }
   }
   if (ui.newsStale && ui.newsOpen) renderNewsLog();
@@ -12195,6 +12276,7 @@ function frame(now) {
     const f = Math.pow(0.02, dt);
     flick.vx *= f; flick.vy *= f;
     if (Math.abs(flick.vx) + Math.abs(flick.vy) < 20) flick.vx = flick.vy = 0;
+    if (hand.n) { clampCam(); handMoved(now); }   // (carrying on from the hand, still drawn a moment behind)
   }
   if (cam.goal) {
     const k = 1 - Math.pow(0.01, dt);
@@ -12214,10 +12296,13 @@ function frame(now) {
     lastDrawn = now;
     // Every 12 ticks, and no more than a few times a second: grass changes too slowly to see the difference.
     if (terrainTick < 0 || (world.tick - terrainTick >= 12 && now - terrainAt >= TERRAIN_MS)) paintTerrain();
+    const steadied = handShow(now);        // (a drag, a pinch: drawn where the hand had it a moment ago)
     render(now);
     if (lab?.draw) lab.draw(ctx, dpr);
     if (reveal.on && !reveal.snapped && now - reveal.at > REVEAL_SNAP) snapReveal(now);
+    if (steadied) handBack();
   }
+  hand.was.x = cam.x; hand.was.y = cam.y; hand.was.zoom = cam.zoom;
 
   if (now - lastCard > 250) {
     wakeTick(now);

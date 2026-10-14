@@ -113,6 +113,15 @@ new feature must not slow it down. If it would, make it cheaper or leave it out.
   fraction, gives V8 a new layout: it then reads those objects the slow way for good and keeps rerunning stale compiled
   loops, which once halved the sim's speed. A new field goes into the blank.
 - The page (cards, inspector, news) updates a few times a second at most, and only rewrites what changed.
+- Smooth is also even. Input comes when it likes (Safari hands a drag's moves over unaligned with the frames: two in one,
+  none in the next), so whatever moves the camera from input calls `handMoved(e.timeStamp)` after it, and the frame
+  draws the camera as the hand had it a moment ago (`handShow`). A frame's time is `onBeat`'s, not the browser's (Safari's
+  is whole ms), and the sim runs a steady `simFit` ticks a frame, not as many as fit before the time ran out.
+- While the zoom moves, a painting within `ZOOM_STRETCH` of the size wanted is stretched (sprites, burrows, rocks), and
+  painted sharp once it rests (`groundStill`).
+- In Safari a worker's canvas on the GPU paints in the GPU process the page's frames come from, so a heavy painting in a
+  worker can still drop the page's frames: the fur worker paints on the CPU (`willReadFrequently`). The tree workers
+  tried the same and got worse (they then fight the page for the CPU).
 - Measure it, but only when a change will obviously cost something you could notice: a new full-screen
   pass, much more drawn each frame, new work in a hot loop. Then time `render` before and after over a few
   seconds in a busy meadow, following an animal, zoomed out, at 60x. If it got slower, fix it before
