@@ -95,9 +95,17 @@ Apple trees (`w.orchard`) drop windfalls early in autumn (`windfallTick`, `d.win
 walk a way for (`windfall`), so the apple trees are where they gather in autumn, and where the foxes find them.
 
 Rabbits and foxes are simple: every animal of a kind is alike (`SPECIES`, `computeTraits`), with no genes, and young don't
-take after their parents; only a look differs (`c.scale`, and a fox's shade, `c.fur`, which its cubs share). Rabbits graze,
+take after their parents; only a look differs (`c.scale`, and a fox's shade, `c.fur`, which its cubs share), and a rabbit's
+winter coat. That one is passed on: `c.moult` (founders about `MOULT_START`, a kit one parent's, now and then a little changed,
+`MOULT_DRIFT`; `mate` keeps the dad's, `c.dadMoult`) is how white it turns, paling through late autumn and colouring again early
+in spring (`whiteness`). A white coat is a thick one (`MOULT_WARM` less burnt while snow lies). And a fox spots a still rabbit
+as far off as its coat stands out from the ground under it (`visibility`, `groundRGB`, `GROUND`: the ground's colours as game.js
+draws them, dark at night but where snow lies; `CAMO`, `CAMO_CLASH`; one running is seen at `CAMO[1]`), so a white rabbit is
+hidden on snow and plain to see on bare ground or the first spring grass after an early thaw: over a winter the white ones are
+caught about half as often as the brown, and in early spring about twice as often. Rabbits graze,
 dig burrows (`DIG_TICKS`: two minutes for one alone) and go home at night, thump and run for a burrow when they spot a fox, and
-breed in spring and summer up to their cap (`SPECIES.rabbit.cap` × `w.room`), which with the foxes holds them. A fox naps
+breed in spring and summer up to their cap (`SPECIES.rabbit.cap` × `w.room`), which with the foxes holds them. In autumn
+they walk a way for the windfalls, unless they're too hungry for the walk (`APPLE_HUNGRY`): then the grass at hand. A fox naps
 through the middle of a fed day, and hungry it stalks the nearest rabbit it sees, charges from `POUNCE`, and keeps to where
 it last caught one (`c.haunt`); a rabbit runs from it within `FLEE_DIST` of its sight. Rabbits boom through the summer and
 thin over the winter, every year.
@@ -197,6 +205,8 @@ beech (`d.nuts`, which `seedFall` leaves for them) and buries them one by one ou
 each a seed in `w.seeds`. It remembers only its last few (`CACHE_MEMORY`) and digs those up if hungry in winter (`unbury`);
 the rest come up as oaks and beeches, so the woods spread with the crows.
 Each crow keeps its own clock (`ownClock`): it wakes, gathers and goes to roost a little earlier or later than the others.
+They sleep through a storm too, but a hungry one (`CROW_HUNGRY`) goes out in one by day: mums sitting a storm out on their eggs
+starved, a spring's worth of them at once.
 Crows that mate stay a pair for life (`c.mate`, `mateOf`, `faithful`), and once they've nested the ground round their nest
 tree is their patch (`patchOf`, `PATCH`): fed, they fly back to it, keep near each other (a crow with no mate flies over to
 the nearest crow instead, `FRIEND_FAR`), and in spring drive other grown crows off it (`drive`). So by day paired crows are

@@ -421,10 +421,20 @@ function drawEmoji(emoji, x, y, px, opts = {}) {
 }
 
 // Every rabbit wears the wild coat: agouti, each hair banded, so speckled. fur.js can paint others (RABBIT_KINDS);
-// this is the first of them, and stays its own colour all year.
-const COAT = { rgb: [150, 114, 80], speckle: 0.35, swatch: '#96724f', n: 0 };
+// this is the first of them. In winter it pales toward white as far as its moult takes it (sim.js whiteness), in a
+// few steps (0 to 4) to keep the sprite cache small.
+const COAT = { rgb: S.WILD_COAT, speckle: 0.35, swatch: '#96724f', n: 0 };
 const furCoats = () => [{ rgb: COAT.rgb, speckle: COAT.speckle }];   // for fur.js
-Fur.setCoats(furCoats(), COAT.rgb);
+Fur.setCoats(furCoats(), S.WINTER_COAT);
+const whiteStep = c => Math.round(S.whiteness(world, c) * 4);
+
+// "Brown, white for winter · blends in here": how its moult goes, then how well it hides where it sits, as a fox sees it.
+function coatLine(c) {
+  const white = S.whiteness(world, c), v = c.alive && !c.hidden ? S.visibility(world, c) : 1;
+  const winter = c.moult > 0.6 ? 'turns white in winter' : c.moult > 0.4 ? 'pales in winter' : 'stays brown all winter';
+  return `🎨 ${white > 0.6 ? 'White for winter' : white > 0.15 ? 'Turning white for winter' : `Wild brown, ${winter}`}` +
+    (v < 0.95 ? ' · 🫥 blends in here' : v > 1.2 ? ' · 👁️ stands out here' : '');
+}
 
 const furCss = c => c.species === 'rabbit' ? COAT.swatch
   : c.species === 'fox' ? `rgb(${foxRGB(c.fur).join(',')})` : LOOKS[c.species].swatch;
@@ -432,7 +442,7 @@ const furCss = c => c.species === 'rabbit' ? COAT.swatch
 // The animal for the inspector, painted as in the meadow, drawn once per look.
 const portraits = new Map();
 function portraitHTML(c) {
-  const art = c.alive && (c.species === 'fox' ? foxArtOf(c.fur, 'stand') : c.species === 'rabbit' ? rabbitArtOf(COAT, 'sit')
+  const art = c.alive && (c.species === 'fox' ? foxArtOf(c.fur, 'stand') : c.species === 'rabbit' ? rabbitArtOf(COAT, 'sit', whiteStep(c))
     : { crow: CROW_ARTS[0], otter: OTTER_ARTS[3], bee: 'bee:2' }[c.species]);
   if (!art) return c.alive ? c.sp.emoji : '👻';
   if (!portraits.has(art)) portraits.set(art, dataURL(sprite(art, 38).canvas));
@@ -1387,7 +1397,7 @@ const bodyPx = z => Math.max(8, (8 + z) * BODY_SIZE);
 function remainsLook(c) {                 // a rabbit (BODY_COATS) or a fox (FOX_LOOK), or a bird's feathers, an otter's fur (REMAINS_ARTS)
   if (c.species === 'fox') return FOX_LOOK;
   if (c.species !== 'rabbit') return c.species === 'otter' ? 2 : 0;
-  return 0;
+  return S.whiteness(world, c) > 0.5 ? 1 : 0;
 }
 function drawRemains(z) {
   if (!world.carcasses.length) return;
@@ -2973,9 +2983,9 @@ const REMAINS_ARTS = [0, 1, 2].map(k => 'remains:' + k);
 
 // A dead rabbit, lying on its side facing left, in four stages ('body:' + coat * 4 + stage): 0 whole, its eyes
 // closed; 1 opened, the ribs showing; 2 picked over, bones and scraps; 3 a flat pelt, a bone or two. Soft shapes in
-// the emoji rabbit's proportions, no red, in the wild coat (COAT; BODY_COATS has room for others). A fox
+// the emoji rabbit's proportions, no red, in the wild coat or, white for winter, in white (BODY_COATS). A fox
 // is painted after them (paintDeadFox).
-const BODY_COATS = [COAT.rgb];
+const BODY_COATS = [COAT.rgb, S.WINTER_COAT];
 const BONE = '#ece2cc', BONE_DARK = '#b3a283', GUT = '#6a3a2e', GUT_DARK = '#3a221c';
 // A little bone: a shaft with two knobs at each end, a darker copy under it for shade.
 const boneAt = (g, x, y, l, a, s = 1) => {
@@ -3158,8 +3168,8 @@ function paintFox(g, size, U, n) {
 }
 
 // A painting is 3 to 10 ms, more close up, and each new pose or size of a fox or a rabbit wants one: in the meadow
-// they're painted off the main thread, by fur-worker.js. Shrinking one for the sizes between is quick, and done here
-// once what it's made from has come.
+// they're painted off the main thread, by fur-worker.js. Shrinking one for the sizes between, or mixing a part-white
+// rabbit's brown and white, is quick, and done here once what it's made from has come.
 const furKind = art => art.slice(0, art.indexOf(':'));
 const FUR_STARTS = Object.keys(Fur.painters).map(k => k + ':');   // (sprite asks isFur of every picture it draws: no new strings)
 const isFur = art => { for (let i = 0; i < FUR_STARTS.length; i++) if (art.startsWith(FUR_STARTS[i])) return true; return false; };
@@ -3168,7 +3178,7 @@ let furWorker = null;
 if (window.Worker && window.OffscreenCanvas) {
   try {
     furWorker = new Worker('fur-worker.js');
-    furWorker.postMessage({ coats: furCoats(), winter: COAT.rgb });
+    furWorker.postMessage({ coats: furCoats(), winter: S.WINTER_COAT });
     furWorker.onmessage = e => {
       const { key, image } = e.data, job = furSent.get(key);
       furSent.delete(key);
@@ -3187,7 +3197,10 @@ if (window.Worker && window.OffscreenCanvas) {
 // asked for the ones it's made from.
 function furReady(art, px) {
   if (spriteCache.has(px + '|' + art + '||')) return true;
-  return furHas(art, furPainted(px));
+  const P = furPainted(px), kind = furKind(art), n = +art.slice(kind.length + 1), white = kind === 'rabbit' ? (n >> 4) % 5 : 0;
+  if (white % 4 === 0) return furHas(art, P);
+  const brown = n - (white << 4), a = furHas(RABBIT_ARTS[brown], P), b = furHas(RABBIT_ARTS[brown + (4 << 4)], P);
+  return a && b;
 }
 // A painting at P there, or asked for.
 function furHas(art, P) {
@@ -3200,7 +3213,7 @@ function furHas(art, P) {
   }
   return false;
 }
-// Each look of fox and rabbit about the screen (a fox's shade, the rabbits' coat) is asked of the
+// Each look of fox and rabbit about the screen (a fox's shade, how white a rabbit's coat has gone) is asked of the
 // worker before the first of it is on screen, so there's kin to stand in while its poses come (furKin); otherwise that
 // first one is painted here. One whose paintings were let go (dropSprites) is asked for again after FUR_AGAIN.
 const furAsked = new Map(), FUR_AGAIN = 5000;    // look: when it was last asked for
@@ -3210,12 +3223,12 @@ function furAhead(now) {
   for (const c of world.creatures) {
     const fox = c.species === 'fox';
     if (!c.alive || !fox && c.species !== 'rabbit') continue;
-    const look = fox ? Math.round(c.fur * 10) : 100;
+    const white = fox ? 0 : whiteStep(c), look = fox ? Math.round(c.fur * 10) : 100 + white;
     if (seen.has(look) || now - (furAsked.get(look) ?? -Infinity) < FUR_AGAIN) continue;
     const [sx, sy] = toScreen(c.x, c.y);
     if (!visible(sx, sy, reach)) continue;
     seen.add(look);
-    const art = fox ? foxArtOf(c.fur, 'stand') : rabbitArtOf(COAT, 'sit');
+    const art = fox ? foxArtOf(c.fur, 'stand') : rabbitArtOf(COAT, 'sit', white);
     if (furKin(art)) continue;
     furAsked.set(look, now);
     furReady(art, poseStep(Math.max(4, creaturePx(c))));
@@ -3309,12 +3322,21 @@ function foxArt(c, px) {
 
 // ------------------------------------------------------------------ the rabbit
 //
-// Painted (fur.js: RABBIT_POSES, paintRabbit), not the 🐇 emoji. 'rabbit:' + (look << 4) + pose; look is the coat's n (COAT).
-const RABBIT_ARTS = Array.from({ length: 1 << 4 }, (_, n) => 'rabbit:' + n);
-const rabbitArtOf = (look, pose) => RABBIT_ARTS[(look.n << 4) + RABBIT_POSE[pose]];
+// Painted (fur.js: RABBIT_POSES, paintRabbit), not the 🐇 emoji. 'rabbit:' + (look << 4) + pose; look = coat * 5 + white step.
+const RABBIT_ARTS = Array.from({ length: 5 << 4 }, (_, n) => 'rabbit:' + n);
+const rabbitArtOf = (look, pose, white = 0) => RABBIT_ARTS[((look.n + white) << 4) + RABBIT_POSE[pose]];
 
 function paintRabbit(g, size, U, n) {
   if (shrunk(g, size, U, RABBIT_ARTS[n])) return;
+  const step = (n >> 4) % 5;
+  if (step % 4) {                    // part white: only brown and white are painted, the steps between are the two mixed
+    const brown = n - (step << 4), px = U / dpr;
+    g.drawImage(sprite(RABBIT_ARTS[brown], px).canvas, 0, 0, size, size);
+    g.globalAlpha = step / 4;
+    g.drawImage(sprite(RABBIT_ARTS[brown + (4 << 4)], px).canvas, 0, 0, size, size);
+    g.globalAlpha = 1;
+    return;
+  }
   Fur.paintRabbit(g, size, U, n);
 }
 
@@ -3322,7 +3344,7 @@ function paintRabbit(g, size, U, n) {
 // its hind feet, stretched out in the air and down on its forefeet; fleeing, the same flat out with its ears back.
 const RABBIT_GAIT = [['hop1', 'push', 'hop2', 'land'], ['run2', 'rpush', 'run1', 'rland']];
 function rabbitArt(c, now) {
-  const art = pose => rabbitArtOf(COAT, pose);
+  const white = whiteStep(c), art = pose => rabbitArtOf(COAT, pose, white);
   if (c.sleeping) return art('sleep');
   if (c.mode === 'alarm') return art('alarm');
   if (c.mode === 'graze' || c.mode === 'munch') return art('graze');
@@ -6087,6 +6109,7 @@ function renderInspector() {
     </div>` : ''}
     ${chips.length ? `<div class="chips">${chips.map(x => `<span class="chip">${x}</span>`).join('')}</div>` : ''}
     <div class="family">
+      ${c.species === 'rabbit' ? `${coatLine(c)}<br>` : ''}
       ${c.species === 'bee' ? `A worker of ${c.home ? hiveName(c.home).replace(/^The/, 'the') : 'a hive'}`
         : c.gen === 1 ? 'One of the first arrivals' : parents ? `${parents} <span class="dim">· generation ${c.gen}</span>` : `Generation ${c.gen}`}
       ${c.kids ? `<br>${c.kids} ${c.kids === 1 ? 'child' : 'children'}${kidsAlive ? `, ${kidsAlive} still alive` : ''}` : ''}

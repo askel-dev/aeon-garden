@@ -16,14 +16,17 @@ watching game's cards, news feed, stats, journal, tools, intro and idle camera w
 The inspector shows animals and every other thing you click (hives, trees, rocks, burrows, flowers, fields, water,
 visitors): each kind is an entry in `THINGS`, saying how to find one on screen and what its panel shows. A tap
 on an animal follows it (`select`, `ui.follow`). Animals can't be named by the player. Every animal of a kind is alike
-(sim.js has no genes), so an animal's panel is its mood, tummy, family and life story, and a hive's its honey (`honeyWord`)
+(sim.js has no genes, only a rabbit's winter coat), so an animal's panel is its mood, tummy, family and life story (a rabbit's
+with its coat and how well it hides where it sits, `coatLine`), and a hive's its honey (`honeyWord`)
 and the fields in reach; a hive goes by the field nearest it (`hiveName`).
 
 Foxes and rabbits are painted (fur.js: `paintFox`, `paintRabbit`): one rig posed for
 what each is doing (`FOX_POSES`, `RABBIT_POSES`, picked by `foxArt`, `rabbitArt`), painted as one animal by `paintFur`
 (one shading over it all, each part's form and the markings soft, a part in front casting a soft shadow, a softened
-outline and a faint grain), so its parts don't read as separate shapes. Every rabbit wears the wild coat all year (`COAT`;
-fur.js can still paint the sandy, black and blue-grey ones and a winter white), and a fox its own shade (`c.fur`). A painting
+outline and a faint grain), so its parts don't read as separate shapes. Every rabbit wears the wild coat (`COAT`; fur.js can
+still paint the sandy, black and blue-grey ones), and in winter whitens as far as its moult takes it (sim.js `whiteness`) in 5
+steps (`whiteStep`): only the brown and the white are painted, the steps between are the two mixed (`paintRabbit`, `furReady`).
+A fox wears its own shade (`c.fur`). A dead rabbit white for winter lies white (`remainsLook`, `BODY_COATS`). A painting
 is costly (each pass through the scratch layer is a flush), so parts can share one (`joined`) and the parts behind are
 just shaded (`flat`). It's painted only at doublings of its size (`FUR_PAINTED`) and shrunk for the sizes between,
 which keeps a dozen poses, growing young and zooming cheap. In the meadow the paintings are made off the main thread

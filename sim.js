@@ -1595,6 +1595,7 @@ const APPLES = 6;               // most windfalls lying under one tree
 const APPLE_ENERGY = 30 * HUNGER;   // what one is worth to a rabbit: a meal
 const APPLE_DROP = 0.35;        // odds a tree drops one, each time windfallTick runs, early in autumn
 const APPLE_ROT = 0.3;          // odds one rots, each time, late in autumn
+const APPLE_HUNGRY = 0.3;       // a rabbit hungrier than this eats the grass at hand rather than walk for a windfall
 const APPLE_SMELL = 2;          // a rabbit finds apples this many times as far off as it sees a fox
 
 function windfallTick(w) {
@@ -1852,6 +1853,50 @@ function shadeSoil(w) {
 
 const sky = w => WEATHER[w.weather.kind];
 
+// ---------------------------------------------------------------- camouflage
+//
+// A fox spots a still rabbit from further off when its coat stands out from the ground under it. The
+// ground is judged in the colours the meadow is drawn with (game.js PALETTE is GROUND.seasons). At night
+// it is shadow, where a brown coat vanishes and a white one shows, except where snow lies.
+
+const GROUND = {
+  seasons: [   // [bare ground, lush grass] per season
+    [[214, 197, 150], [128, 193, 107]],
+    [[226, 206, 142], [113, 175, 87]],
+    [[226, 214, 178], [184, 146, 72]],   // amber, so grazed ground shows paler
+    [[226, 231, 238], [168, 196, 200]],  // frost-blue
+  ],
+  snow: [246, 248, 252], night: [22, 30, 78],
+};
+const CAMO = [0.7, 1.4];        // a fox's spotting distance, of its sight, from a perfect match to a clash
+const CAMO_CLASH = 0.8;         // how much a colour difference (0 same, about 1 very unlike) adds
+const groundAt = [0, 0, 0];     // (groundRGB's answer: it's asked often, so no new arrays)
+
+// The ground's colour at x, y, into groundAt.
+function groundRGB(w, x, y) {
+  const i = idx(x, y), pal = GROUND.seasons[seasonOf(w.tick)], bare = pal[0], lush = pal[1];
+  let v = clamp(w.grass[i] / 0.85, 0, 1);
+  v = v * (2 - v);
+  const snow = clamp(w.snow * 1.4 - 0.3, 0, 0.9), night = isNight(w.tick) ? 0.6 * (1 - snow) : 0;   // moonlit snow stays bright
+  const f = w.fieldAt[i] >= 0 ? w.fields[w.fieldAt[i]] : null, bloom = fieldBloom(w, f, i, v);
+  for (let k = 0; k < 3; k++) {
+    let c = lerp(bare[k], lush[k], v);
+    if (bloom > 0) c = lerp(c, f.tint[k], bloom);
+    c = lerp(c, GROUND.snow[k], snow);
+    groundAt[k] = lerp(c, GROUND.night[k], night);
+  }
+  return groundAt;
+}
+
+// How far off a fox can pick this rabbit out, as a share of its sight.
+function visibility(w, c) {
+  if (c.mode === 'flee') return CAMO[1];       // running, it's seen whatever its coat
+  const b = groundRGB(w, c.x, c.y), q = whiteness(w, c);
+  const d = Math.hypot(lerp(WILD_COAT[0], WINTER_COAT[0], q) - b[0], lerp(WILD_COAT[1], WINTER_COAT[1], q) - b[1],
+    lerp(WILD_COAT[2], WINTER_COAT[2], q) - b[2]) / 255;
+  return clamp(CAMO[0] + CAMO_CLASH * d, CAMO[0], CAMO[1]);
+}
+
 // How strongly a field tints the ground at tile i: only in its season, where the grass is lush.
 const FIELD_TINT = 0.3;          // at most this much of the field's colour
 const fieldBloom = (w, f, i, v) => (f && f.season === seasonOf(w.tick) ? FIELD_TINT * w.fieldIn[i] * v : 0);
@@ -2016,6 +2061,29 @@ function pickName(w, species) {
   return n === 1 ? base : base + ' ' + roman(n);
 }
 
+// Winter coats: a rabbit's moult (c.moult, 0 to 1) is how white it turns for winter. It pales through late autumn
+// and colours again early in spring (whiteness). A kit takes one parent's, a little changed now and then, so over a
+// winter or two the meadow's rabbits lean whiter after snowy winters (hidden on snow, and a white coat is a thick one)
+// and browner after bare ones (a white rabbit on bare ground, or on spring grass after an early thaw, is easy to see).
+const WILD_COAT = [150, 114, 80];       // every rabbit's own colour (game.js COAT)
+const WINTER_COAT = [236, 236, 230];
+const MOULT_START = 0.5;        // founders: about half turn white in their first winter
+const MOULT_SPREAD = 0.12;      // and how far apart they are
+const MOULT_DRIFT = 0.045;      // a kit's differs from its parent's by about this, now and then (MOULT_ODDS)
+const MOULT_ODDS = 0.35;
+const MOULT_WARM = 0.3;         // a white winter coat is a thick one: this much less burnt while snow lies
+const MOULT_FROM = 0.3, MOULT_TO = 0.7;   // below this moult a coat stays; above, it turns fully white
+
+// How white a rabbit has turned (0 to 1).
+function whiteness(w, c) {
+  if (c.species !== 'rabbit') return 0;
+  const y = (w.tick / TPD % YEAR_DAYS) / SEASON_DAYS;       // 0 to 4 through the year, spring first
+  const winter = y >= 3 ? 1 : y > 2.5 ? (y - 2.5) / 0.5 : y < 0.5 ? 1 - y / 0.5 : 0;
+  if (winter === 0) return 0;
+  const m = clamp((c.moult - MOULT_FROM) / (MOULT_TO - MOULT_FROM), 0, 1);
+  return m * m * (3 - 2 * m) * winter;
+}
+
 const FLEE_DIST = 0.7;           // a rabbit runs from a fox this close, of how far it sees
 const POUNCE = 5.5;             // tiles: a stalking fox this close charges
 const FRIENDLY = 0.5;           // odds a check that a rabbit or a crow goes over to the others
@@ -2033,7 +2101,7 @@ function computeTraits(c) {
 // more than a few layouts reads every field the slow way, for good. -0 is a zero that's kept like a fraction: the fields
 // that ever hold one start as it.
 const blankCreature = () => ({
-  id: 0, species: '', sp: null, x: -0, y: -0, scale: -0, fur: -0,
+  id: 0, species: '', sp: null, x: -0, y: -0, scale: -0, fur: -0, moult: -0,   // (moult: a rabbit's winter coat)
   name: '', sex: '', gen: 0, mumId: 0, dadId: 0,
   born: -0, lifespan: -0,
   alive: true, died: 0, cause: '',
@@ -2042,7 +2110,7 @@ const blankCreature = () => ({
   sprinting: false, sleeping: false, hidden: false, burrow: null, home: null, refuge: null, dig: null,
   alert: 0, threatId: 0, chaseT: 0, fright: 0, frightX: -0, frightY: -0, frightWhat: '',
   wary: 0, waryX: -0, waryY: -0, detour: 0, detourX: -0, detourY: -0, nemesisId: 0, haunt: null,
-  pregnantUntil: 0, cooldownUntil: 0, dadIdPending: 0, dadGenPending: 0,
+  pregnantUntil: 0, cooldownUntil: 0, dadIdPending: 0, dadGenPending: 0, dadMoult: -0,
   kids: 0, kills: 0, frogs: 0, fish: 0, escapes: 0, visits: 0, load: 0, find: null, story: null,
   caches: null,         // a crow's acorns and beechnuts buried this autumn (cacheNut)
   mate: 0,              // a crow's mate, for life (by id; mateOf)
@@ -2060,6 +2128,11 @@ function makeCreature(w, species, x, y, parents) {
   const c = blankCreature();
   c.id = w.nextId++; c.species = species; c.sp = sp; c.x = x; c.y = y;
   c.scale = r.range(0.9, 1.1); c.fur = parents ? parents.mum.fur : r.next();
+  if (species === 'rabbit') {                                  // one parent's winter coat, now and then a little changed
+    const m = parents ? (r.next() < 0.5 ? parents.mum.moult : parents.dadMoult) + (r.next() < MOULT_ODDS ? MOULT_DRIFT * r.normal() : 0)
+      : MOULT_START + MOULT_SPREAD * r.normal();
+    c.moult = clamp(m, 0, 1);
+  }
   c.name = pickName(w, species);
   c.sex = species === 'bee' || r.next() < 0.5 ? 'F' : 'M';
   c.gen = parents ? Math.max(parents.mum.gen, parents.dadGen) + 1 : 1;
@@ -2208,7 +2281,7 @@ function mate(w, a, b) {
   const mum = a.sex === 'F' ? a : b, dad = a.sex === 'F' ? b : a;
   mum.pregnantUntil = w.tick + mum.sp.gestationDays * TPD;
   mum.cooldownUntil = mum.pregnantUntil + mum.sp.cooldownDays * TPD;
-  mum.dadIdPending = dad.id; mum.dadGenPending = dad.gen;
+  mum.dadIdPending = dad.id; mum.dadGenPending = dad.gen; mum.dadMoult = dad.moult;
   w.recount = true;
   dad.cooldownUntil = w.tick + 0.4 * TPD;
   for (const c of [mum, dad]) { c.mode = 'wander'; c.target = null; c.targetId = 0; }
@@ -2230,7 +2303,7 @@ function giveBirth(w, mum) {
   for (let k = 0; k < n; k++) {
     let x = mum.x + r.range(-1, 1), y = mum.y + r.range(-1, 1);
     if (!dry(w, x, y)) { x = mum.x; y = mum.y; }
-    const kid = makeCreature(w, mum.species, x, y, { mum, dadId: mum.dadIdPending, dadGen: mum.dadGenPending });
+    const kid = makeCreature(w, mum.species, x, y, { mum, dadId: mum.dadIdPending, dadGen: mum.dadGenPending, dadMoult: mum.dadMoult });
     kid.home = mum.home || mum.burrow;
     if (mum.hidden && mum.burrow) { kid.hidden = true; kid.burrow = mum.burrow; kid.sleeping = true; kid.mode = 'sleep'; kid.timer = 60; mum.burrow.count++; }
     if (mum.species === 'crow' || mum.species === 'otter') {   // chicks, in the nest till they fledge (crowTick), cubs in the holt (otterTick)
@@ -2422,9 +2495,11 @@ function rabbitTick(w, c) {
 
   // 5. Moving in: a newcomer makes for its spot first, unless it's hungry.
 
-  // 6. Food. Windfalls first, in autumn.
+  // 6. Food. Windfalls first, in autumn, unless it's too hungry to walk for them: then the grass at hand (a crowd
+  // milling about the orchard after the last apples, foxes among them, starved where the grass was all about).
   const satiation = seasonOf(t) === 2 ? 0.95 : 0.85;
-  if ((c.mode === 'munch' || e < satiation) && w.windfalls && windfall(w, c)) return;
+  if ((c.mode === 'munch' || e < satiation && e > APPLE_HUNGRY) && w.windfalls && windfall(w, c)) return;
+  if (c.mode === 'apple') { c.mode = 'wander'; c.target = null; }
   const i = idx(c.x, c.y);
   if (c.mode === 'graze') {
     if (w.grass[i] > 0.06 && e < 0.98) { eat(w, c, i); return; }
@@ -2619,7 +2694,7 @@ function hunt(w, c) {
   if (prey && prey.species !== 'rabbit') prey = null;
   const sight = c.sight * sky(w).sight;
   // Lost from view: a little further off than the furthest a fox spots one, or it'd flicker.
-  if (prey && (!prey.alive || prey.hidden || dist2(c, prey) > (sight * 1.3) ** 2)) {
+  if (prey && (!prey.alive || prey.hidden || dist2(c, prey) > (sight * CAMO[1] * 1.2) ** 2)) {
     if (prey.alive && c.mode === 'chase') escaped(w, prey, c, prey.hidden ? 'burrow' : 'outran');
     prey = null; c.targetId = 0; c.mode = 'wander';
   }
@@ -2631,7 +2706,9 @@ function hunt(w, c) {
   }
   if (!prey && (w.tick + c.id) % 5 === 0) {
     // Only a rabbit that isn't already watching this fox is worth sneaking up on.
-    prey = nearest(w, c, sight, 'rabbit', o => !(o.alert > 0 && o.threatId === c.id) && clearPath(w, c.x, c.y, o.x, o.y));
+    // And it spots one from as far off as its coat stands out from the ground under it (visibility).
+    prey = nearest(w, c, sight * CAMO[1], 'rabbit', o => !(o.alert > 0 && o.threatId === c.id)
+      && dist2(c, o) < (sight * visibility(w, o)) ** 2 && clearPath(w, c.x, c.y, o.x, o.y));
     if (prey) { c.targetId = prey.id; c.mode = 'stalk'; }
   }
   if (!prey) return false;
@@ -3583,9 +3660,10 @@ function crowTick(w, c) {
   }
 
   // 2. Sleep: from dusk to dawn, and through a storm, at the roost with the others, on a branch of its own; a
-  // mum on her eggs in her nest. Each keeps its own clock (ownClock), and gathers with the others first.
+  // mum on her eggs in her nest. Each keeps its own clock (ownClock), and gathers with the others first. A hungry
+  // one goes out in a storm by day all the same (mums sitting it out on their eggs starved, a spring's worth at once).
   const own = ownClock(c);
-  if (ph > ROOST_AT + own || ph < WAKE_AT + own || w.weather.kind === 'storm') {
+  if (ph > ROOST_AT + own || ph < WAKE_AT + own || w.weather.kind === 'storm' && e > CROW_HUNGRY) {
     if (c.pregnantUntil && c.home && standing(c.home)) {
       c.mode = 'nest';
       if (go(w, c, c.home.x, c.home.y + 0.1, c.walk)) c.sleeping = true;
@@ -4434,6 +4512,7 @@ function lifeTick(w, c) {
   if (c.pregnantUntil) b *= 1.25;
   const kind = w.weather.kind;
   if (kind === 'snow' && !c.hidden) b *= 1.25;                            // the cold
+  if (w.snow > 0.3 && c.species === 'rabbit' && !c.hidden) b *= 1 - MOULT_WARM * whiteness(w, c);   // a white coat is a thick one
   b += MOVE_COST * c.moved * c.moved / c.sp.walk * (kind === 'heat' ? 1.5 : 1) * (c.sp.glide || 1) * c.sp.hunger;
   c.energy -= b;
   if (!c.sprinting) c.stamina = Math.min(1, c.stamina + (c.sleeping || c.mode === 'tired' ? 1 / 150 : 1 / 400));
@@ -4645,7 +4724,7 @@ const KEEP_VERSION = 10;                // 2: shade and rich ground (w.shadedFer
                                         // 5: crows and remains (w.carcasses, w.roost, c.caches, d.nuts); 6: owls (d.owl, c.perch);
                                         // 7: frogs (w.frogs, w.spawn, w.frogYear, c.frogs); 8: the cooking cut (no keeper, owls, fire or player powers);
                                         // 9: the pantry (no voles, sickness, remains or genes; hives that fill; the 12-minute day);
-                                        // 10: some ecology back (remains and rich ground again: w.carcasses, w.rich)
+                                        // 10: some ecology back (remains and rich ground again: w.carcasses, w.rich; winter coats: c.moult)
 const TABLES = { SPECIES, FIELD_KINDS, TREE_MIX, TREES, SEASONS, WEATHER };
 const UNKEPT = ['grid', 'grids', 'events', 'newborn', 'current'];   // on the world
 let tableNames = null;                                     // object -> 'SPECIES.fox', made the first time
@@ -5572,7 +5651,7 @@ const api = {
   hedgehogComes, heronComes, dragonflyComes, kingfisherComes, skylarkComes, placeNeeds, VISIT_SEASONS, VISIT_FADE, HERON_FADE, HERON_STAB,
   DRAGON_FROM, KF_FADE, KF_UNDER, KF_BEAT, LARK_FADE, LARK_OPEN, LARK_RISE, EDGE_REACH, OPEN_MOST,
   walkable, packWorld, unpackWorld,
-  KINDS, FEW,
+  KINDS, FEW, whiteness, visibility, WINTER_COAT, WILD_COAT,
   TERRAIN, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_BEES, HIVE_FULL, REFILL, HIVE_TREE,
   TREES, treeStage, treeAge, standing, bearing, inBloom, SEEDLING, SAPLING, GROWN, KIND_NAMES,
