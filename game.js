@@ -1920,7 +1920,7 @@ function drawCreature(c, sx, sy, now) {
   // Standing still, everyone breathes: slow and deep asleep, quick and shallow awake.
   const breathe = !hop && ui.speed > 0
     ? Math.sin(now / (c.sleeping ? 650 : 330) + c.id) * (c.sleeping ? 0.035 : 0.02) : 0;
-  const squash = (c.sleeping ? 1 : c.sick ? 0.9 : 1) + breathe;   // a sick one sits hunched (the others' sleeping paintings are curled up already)
+  const squash = 1 + breathe;
   const y = sy - hop + px * 0.4 * (1 - squash);
   if (c.species === 'crow' && c.sleeping && crowSeat(c)) sx += treeSway(seat.tree, now) * hop;   // up a tree, it sways with it
   if (c.mode === 'dance') drawDance(c, sx, y, px);
@@ -3481,14 +3481,6 @@ const BUBBLE_ICONS = [
     fillIn(g, '#f4c64e', () => discAt(g, 0, 0, 0.88));
     fillIn(g, '#f19a7e', () => { ovalAt(g, -0.5, 0.2, 0.16, 0.1); ovalAt(g, 0.5, 0.2, 0.16, 0.1); });
     strokeIn(g, '#6b4a1e', 0.1, () => { g.arc(-0.32, -0.12, 0.17, 0.15, Math.PI - 0.15); g.moveTo(0.49, -0.1); g.arc(0.32, -0.12, 0.17, 0.15, Math.PI - 0.15); g.moveTo(0.28, 0.32); g.arc(0, 0.2, 0.3, 0.4, Math.PI - 0.4); });
-  }],
-  ['🤒', g => {                                          // sick: a thermometer, running hot
-    g.rotate(0.45);
-    const glass = e => { g.roundRect(-0.21 - e, -0.95 - e, 0.42 + 2 * e, 1.45 + e, 0.21 + e); discAt(g, 0, 0.55, 0.33 + e); };
-    fillIn(g, '#8d8a84', () => glass(0.08));
-    fillIn(g, '#fbf8f1', () => glass(0));
-    fillIn(g, '#d9372b', () => { discAt(g, 0, 0.55, 0.22); g.rect(-0.08, -0.5, 0.16, 1.05); });
-    strokeIn(g, '#8d8a84', 0.06, () => { for (const y of [-0.72, -0.48, -0.24, 0]) { g.moveTo(0.21, y); g.lineTo(0.1, y); } });
   }],
   ['🥺', g => {                                          // hungry: an empty bowl
     fillIn(g, '#b07a4a', () => { g.moveTo(-0.88, 0); g.ellipse(0, 0, 0.88, 0.7, 0, Math.PI, 0, true); g.closePath(); });
@@ -6158,8 +6150,6 @@ function renderInspector() {
   if (c.caches?.length && S.seasonOf(world.tick) >= 2) chips.push(`🌰 Remembers where ${c.caches.length === 1 ? 'one acorn is' : c.caches.length + ' acorns are'} buried`);
   const nemesis = world.byId.get(c.nemesisId);
   if (nemesis && nemesis.alive) chips.push(`😨 Afraid of ${link(nemesis)}`);
-  if (c.alive && c.sick) chips.push('🤒 Sick');
-  else if (c.alive && c.immune > world.tick) chips.push(`🛡️ Immune to the sickness for ${days((c.immune - world.tick) / S.TPD)}`);
   const story = c.story.slice().reverse().slice(0, ui.allStory ? Infinity : STORY_SHORT).map(s =>
     `<li><span>${s.emoji}</span><span>${esc(s.text)}<div class="when">${when(s.t)}</div></span></li>`).join('');
   const living = c.alive ? '' : world.creatures.find(k => k.mumId === c.id || k.dadId === c.id);
@@ -6529,7 +6519,7 @@ const THINGS = {
     spot: k => ({ x: k.x, y: k.y + 0.3, r: 0.6 }),
     show(k) {
       const c = k.c, killer = world.byId.get(c.killerId);
-      const how = { fox: `caught by ${killer ? killer.name : 'a fox'}`, hunger: 'starved', sickness: 'the sickness', age: 'old age',
+      const how = { fox: `caught by ${killer ? killer.name : 'a fox'}`, hunger: 'starved', age: 'old age',
         lightning: 'lightning' }[c.cause] || c.cause;
       const name = `The remains of ${c.name}`, sub = `${c.species === 'fox' ? 'A fox' : `A ${c.sp.name.toLowerCase()}`} (${how})`;
       if (!this.here(k)) return { emoji: '🌱', tint: '#9cc27a', name, sub, status: '🌱 Gone back into the ground. The grass will be lush here for a while.' };
@@ -6576,10 +6566,6 @@ const THINGS = {
       if (rich > 0.3) facts.push(['🌿', 'Lush grass round its latrines, which the rabbits won\'t graze']);
       const foxes = whoNear(b.x, b.y, 10, c => c.species === 'fox');
       if (foxes) facts.push(['⚠️', `A fox is prowling nearby`]);
-      let sick = 0, immune = 0;                                  // (sim.js sicknessTick)
-      for (const c of new Set([...home, ...inside])) { if (c.sick) sick++; else if (c.immune > world.tick) immune++; }
-      if (sick) facts.push(['🤒', `Sickness in this warren: ${sick} sick${immune ? `, ${immune} immune` : ''}`]);
-      else if (immune) facts.push(['🛡️', `${immune} here can't catch the sickness for now`]);
       return {
         emoji: '🕳️', tint: '#b89868', name: 'Burrow',
         sub: b.dug < 1 ? 'Being dug' : made !== undefined ? `Dug ${ago(made)} ago` : 'An old burrow, here before anyone',
@@ -7517,7 +7503,7 @@ function frame(now) {
     updateClock();
     if (ui.sound) {
       const ck = S.clock(world);
-      const life = world.count.rabbit / (S.CROWDED * world.room);   // a crowded meadow, not the cap (only a safety net now)
+      const life = world.count.rabbit / (S.SPECIES.rabbit.cap * world.room);   // a meadow full of rabbits
       Sound.update({ phase: ck.phase, season: ck.season, speed: ui.speed, sky: ui.sky.mix, bees: beesOnScreen(), life,
         frogs: world.spawnCount > 0 && ck.season === 0 ? Math.min(1, world.spawnCount / 300) : 0 });
     }
