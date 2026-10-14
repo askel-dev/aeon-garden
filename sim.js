@@ -1462,7 +1462,7 @@ function treesTick(w, grow = true) {
     for (const d of w.decor) {
       if (!d.tree || d.gone) continue;
       if (d.until && t >= d.until) {                     // a snag falls, a log rots away, a stump sprouts
-        if (d.fallen) { d.gone = true; w.treesMoved = true; enrich(w, d.x, d.y, LOG_RICH, 1 + d.size / 2); }
+        if (d.fallen) { d.gone = true; w.treesMoved = true; }
         else if (d.dead) treeFalls(w, d);
         else { d.stump = 0; d.until = 0; d.size = SEEDLING; d.born = t; d.sprouted = true; }
         continue;
@@ -1491,7 +1491,7 @@ function treesTick(w, grow = true) {
     w.bitten.fill(0);
   }
   tidyTrees(w);
-  // The shade on the ground (it thins the grass, see groundTick, and game.js darkens it), the trees with food to drop, how full the woods are.
+  // The shade on the ground (it thins the grass, see shadeSoil, and game.js darkens it), the trees with food to drop, how full the woods are.
   const wood = w.wood;
   wood.fill(0);
   let n = 0;
@@ -1770,15 +1770,13 @@ function growGrass(w, dt) {
   const die = DIEBACK * dt / TPD;
   const drown = dt / (DROWN_DAYS * TPD), siltFade = dt / (SILT_DAYS * TPD);
   const g = w.grass, f = w.shadedFert, water = w.water, silt = w.silt;   // (the soil, less under the trees)
-  const rich = w.rich, keep = 1 - dt / (RICH_DAYS * TPD);
   for (let i = 0; i < g.length; i++) {
     if (water[i]) { if (g[i] > 0) g[i] = Math.max(0, g[i] - drown); silt[i] = 1; continue; }
-    let cap = f[i] * capK, a = 1;
-    const silty = silt[i], k = rich[i];
-    if (silty + k > 0) {                                     // new shoots love silt, and rich ground (most tiles have neither)
-      a += 3 * silty + RICH_GROW * k;
-      if (silty > 0) silt[i] = Math.max(0, silty - siltFade);
-      if (k > 0) { cap = Math.min(1, cap + RICH_SOIL * k * capK); rich[i] = k < RICH_GONE ? 0 : k * keep; }
+    const cap = f[i] * capK, silty = silt[i];
+    let a = 1;
+    if (silty > 0) {                                         // new shoots love silt (most tiles have none)
+      a += 3 * silty;
+      silt[i] = Math.max(0, silty - siltFade);
     }
     let v = g[i];
     if (v < cap) v += r * a * v * (1 - v / cap) + seed * a * cap;
@@ -1787,58 +1785,15 @@ function growGrass(w, dt) {
   }
 }
 
-// ---------------------------------------------------------------- shade and rich ground
+// ---------------------------------------------------------------- shade
 //
 // The woods' shade thins the grass under them, less while the broadleaves are bare, so woods that
-// spread out cost the rabbits grazing. And the ground remembers what lives and dies on it (w.rich):
-// a body left out in the open, the latrines round a busy warren and a log rotting away feed the
-// soil, and the grass there grows back faster and a little past what the soil alone would hold.
-// Rabbits won't graze it while it's fresh, so it stands out as a lusher patch. It fades over a season or so.
+// spread out cost the rabbits grazing.
 
 const SHADE_GRASS = 0.5;        // how much of the grass deep shade takes
 const BARE_SHADE = 0.5;         // and how much of that it still takes while the broadleaves are bare
-const RICH_DAYS = 5;            // rich ground loses about two thirds of it in this long
-const RICH_GONE = 0.01;         // and below this it's plain ground again
-const RICH_SOIL = 0.3;          // fully rich ground holds as much grass as soil this much more fertile
-const RICH_GROW = 2;            // and grows it back this many times faster, on top
-const BODY_RICH = 0.8;          // remains left out in the open (leaveRemains), at the middle
-const BODY_REACH = 1.5;         // out to this many tiles
-const LATRINES = 5;             // dung heaps round a warren
-const LATRINE_OUT = 3;          // this far out from the hole
-const LATRINE_REACH = 1.3;      // each this wide
-const LATRINE_RICH = 0.015;     // a day's droppings, for each rabbit living there
-const LOG_RICH = 1;             // a log rotted away, at the middle, out to about half its size
-const FOULED = 0.3;             // rabbits won't graze ground richer than this: fresh droppings, or where a body lay
-
-// Rabbits won't graze fouled ground, so a busy warren's latrines and an old kill site stand out lush till it fades.
-const fouled = (w, i) => w.rich[i] > FOULED;
-
 // Winter and the first third of spring, when the broadleaves are bare (as game.js draws them).
 const leafless = t => seasonOf(t) === 3 || (seasonOf(t) === 0 && springPart(t) < 0.35);
-
-// The ground about (x, y) grows richer: by amount at the middle, less out to radius tiles. Not under water.
-function enrich(w, x, y, amount, radius) {
-  const rich = w.rich, r2 = radius * radius;
-  for (let yy = Math.max(0, Math.floor(y - radius)); yy <= Math.min(H - 1, y + radius); yy++) {
-    for (let xx = Math.max(0, Math.floor(x - radius)); xx <= Math.min(W - 1, x + radius); xx++) {
-      const i = yy * W + xx, d = ((xx + 0.5 - x) ** 2 + (yy + 0.5 - y) ** 2) / r2;
-      if (d < 1 && !w.water[i]) rich[i] = Math.min(1, rich[i] + amount * (1 - d));
-    }
-  }
-}
-
-// Once a day, at dawn when everyone is home: how much grass each tile's soil holds (shadeSoil), and each
-// warren's latrines, a ring of dung heaps round the hole, get a day's droppings from the rabbits in it.
-function groundTick(w) {
-  shadeSoil(w, true);
-  for (const b of w.burrows) {
-    if (!b.count) continue;
-    for (let k = 0; k < LATRINES; k++) {
-      const a = (k + hash2(b.id, k, 53)) / LATRINES * Math.PI * 2;
-      enrich(w, b.x + Math.cos(a) * LATRINE_OUT, b.y + Math.sin(a) * LATRINE_OUT, LATRINE_RICH * b.count, LATRINE_REACH);
-    }
-  }
-}
 
 // How much grass each tile's soil holds in the shade on it now (w.shadedFert, which growGrass reads).
 function shadeSoil(w) {
@@ -2530,7 +2485,7 @@ function rabbitTick(w, c) {
   }
   if (e < satiation) {
     const skittish = c.wary > 0 && e > 0.4 && (c.x - c.waryX) ** 2 + (c.y - c.waryY) ** 2 < 36;
-    if (w.grass[i] > 0.3 && !skittish && !fouled(w, i)) { c.mode = 'graze'; eat(w, c, i); return; }
+    if (w.grass[i] > 0.3 && !skittish) { c.mode = 'graze'; eat(w, c, i); return; }
     if (c.mode !== 'food' || !c.target || w.grass[idx(c.target.x, c.target.y)] < 0.12) {   // stick with a patch till it's gone
       const spot = findFood(w, c);
       if (spot) { c.mode = 'food'; c.target = spot; }
@@ -2583,7 +2538,7 @@ function findFood(w, c) {
   for (let k = 0; k < 14; k++) {
     const a = w.rng.range(0, Math.PI * 2), r = w.rng.range(1, c.sight);
     const x = c.x + Math.cos(a) * r, y = c.y + Math.sin(a) * r;
-    const j = idx(x, y), score = (fouled(w, j) ? 0 : w.grass[j]) / (1 + 0.1 * r);   // (off the map: no score, or no clear path)
+    const score = w.grass[idx(x, y)] / (1 + 0.1 * r);   // (off the map: no score, or no clear path)
     if (score > bestScore && clearPath(w, c.x, c.y, x, y)) { bestScore = score; best = { x: (x | 0) + 0.5, y: (y | 0) + 0.5 }; }   // grass across the pond doesn't count
   }
   return best;
@@ -2971,8 +2926,8 @@ function spawnFrogs(w) {
   yr.at = w.tick;
   for (let i = 0; i < W * H; i++) q[i] = water[i] === DEEP ? 1 : 0;
   boxSum(q, near, 2, FROG_T);
-  for (let i = 0; i < W * H; i++) {                  // how good each tile is: shallow, still, a flood pool best, rich water a little better (algae)
-    q[i] = water[i] !== SHALLOW ? 0 : Math.max(0, 1 - near[i] / SPAWN_DEEP) * (w.ground[i] > base ? 1 : SPAWN_EDGE) * (1 + w.rich[i]);
+  for (let i = 0; i < W * H; i++) {                  // how good each tile is: shallow, still, a flood pool best
+    q[i] = water[i] !== SHALLOW ? 0 : Math.max(0, 1 - near[i] / SPAWN_DEEP) * (w.ground[i] > base ? 1 : SPAWN_EDGE);
   }
   boxSum(q, near, SPAWN_REACH, FROG_T);
   const eggs = near;                                 // (in place: each tile reads only its own)
@@ -3684,77 +3639,11 @@ function beeMood(w, c) {
   return null;
 }
 
-// ---------------------------------------------------------------- remains
-//
-// A body left out in the open (not in a burrow, not a bee) lies a few days as remains (w.carcasses),
-// on ground it makes rich (enrich) as it goes into it. The crows find it, or it rots away. A fox's
-// catch leaves what the fox didn't eat. A crow sees remains from high up, and much further off where
-// other crows are already at them, so a few gather at once. (Foxes don't eat remains: tried, and it
-// fed them through the rabbits' lows and made those deeper.)
-
-const CARRION_EVERY = 30;       // ticks between rots
-const ROT_DAYS = [4, 2, 4, 8];  // remains rot away in about this long, by season: fast in the heat, slow in the cold
-const KILL_LEFT = 0.3;          // what a fox leaves of its catch
-const CROW_BITE = 0.4;          // remains a crow eats a tick
-const SCRAPS = 12;              // remains with less on them than this aren't worth flying to
-const GATHER_SIGHT = 45;        // how far off a crow sees others at remains, and comes too
-const GATHERING = 5;            // this many crows at one lot of remains in an outbreak is news (once an outbreak)
-const FOX_NEAR = 150;           // ticks the crows keep off remains a fox was at, or put them up from
-
-function leaveRemains(w, c, killed) {
-  enrich(w, c.x, c.y, BODY_RICH, BODY_REACH);             // the ground round it at once: rabbits won't graze a kill site
-  if (w.water[idx(c.x, c.y)]) return;                     // (in the water: gone)
-  const meat = c.maxEnergy * (0.4 + 0.6 * growth(w, c)) * (killed ? KILL_LEFT : 1);
-  // fed, fox: when a crow, a fox was last at them (a fox's catch: it's eating the rest right there); eaten: the crows had the last of them
-  w.carcasses.push({ x: c.x, y: c.y, c, meat, full: meat, fed: -1e9, fox: killed ? w.tick : -1e9, eaten: false, seats: null });   // (seats: carrion)
-}
-
-// The remains rot away. A big gathering of crows at them in an outbreak is news.
-function carrionTick(w) {
-  if (!w.carcasses.length) return;
-  const rot = CARRION_EVERY / (ROT_DAYS[seasonOf(w.tick)] * TPD);
-  let gone = false, news = w.outbreak && w.gatherSaid !== w.outbreak.t;
-  for (const k of w.carcasses) {
-    if (k.meat > 0) k.meat -= k.full * rot;
-    if (k.meat <= 0) { gone = true; continue; }
-    if (!news || w.tick - k.fed >= CARRION_EVERY) continue;
-    let n = 0;
-    forEachNear(w, k.x, k.y, 2, o => { if (o.mode === 'carrion') n++; }, 'crow');
-    if (n >= GATHERING) { w.gatherSaid = w.outbreak.t; news = false; emit(w, { type: 'gathering', remains: k, n }); }
-  }
-  if (!gone) return;
-  w.carcasses = w.carcasses.filter(k => k.meat > 0);
-}
-
-// The nearest remains a crow can see, or (now and then, GATHER_NOTICE) further off where other crows are at
-// them. Not where a fox is, nor the last scraps, nor where there's no room (freeSeat).
-function remainsNear(w, c) {
-  let best = null, bd = Infinity;
-  const far = w.rng.next() < GATHER_NOTICE ? GATHER_SIGHT : 0, eyes = c.sight * sky(w).sight;
-  for (const k of w.carcasses) {
-    if (k.meat < SCRAPS || w.tick - k.fox < FOX_NEAR) continue;
-    const d2 = (k.x - c.x) ** 2 + (k.y - c.y) ** 2;
-    if (d2 < bd && d2 < Math.max(eyes, w.tick - k.fed < CARRION_EVERY ? far : 0) ** 2 && freeSeat(k) >= 0) { best = k; bd = d2; }
-  }
-  return best;
-}
-
-// A place free at remains k (k.seats: the crows flying to them or eating there, CARRION_SEATS of them), or -1.
-// A place is free again once its crow is off doing something else.
-function freeSeat(k) {
-  for (let i = 0; i < CARRION_SEATS; i++) {
-    const o = k.seats?.[i];
-    if (!o || !o.alive || o.target !== k || (o.mode !== 'remains' && o.mode !== 'carrion')) return i;
-  }
-  return -1;
-}
-
 // ---------------------------------------------------------------- crows
 //
 // A few crows live in the meadow, flying over all of it (flies: true, like the bees). By day they walk
-// about pecking for grubs, best on short grass and on the rich ground round a warren (peck), and fly
-// down to remains wherever they see them or see other crows at them (carrion), and in autumn to the
-// windfalls. A fed crow in autumn carries acorns and beechnuts off from the oaks and beeches and buries
+// about pecking for grubs, best on short grass (peck), and when really hungry fly down to the
+// windfalls in autumn. A fed crow in autumn carries acorns and beechnuts off from the oaks and beeches and buries
 // them out in the open (cacheNut). In winter a hungry one digs its own up again (unbury); the ones nobody
 // digs up come up as oaks and beeches in spring. At night they sleep in the roost: a big tree (w.roost) and
 // the ones about it, each crow on a branch of its own (c.perch, roostSeat), a few to a tree. In
@@ -3795,8 +3684,6 @@ const GATHER_NEAR = 6;          // a crow this far from it flies back to the oth
 const CROW_SPACE = 1;           // tiles: a crow pecking about steps away from another this close
 const FRIEND_FAR = 6;           // a friendly one with no crow this close flies over to the nearest,
 const FRIEND_GAP = [2, 4];      // and lands this far from it
-const CARRION_SEATS = 4;        // crows at one lot of remains at once; more wait, pecking about, or go elsewhere
-const GATHER_NOTICE = 0.3;      // odds a check that a crow far off notices others at remains
 const PATCH = 12;               // tiles round its nest tree: a pair's own patch, where it forages when it isn't hungry
 const DRIVE_SIGHT = 6;          // in spring a pair drives off another grown crow this close, on its patch,
 const DRIVE_ODDS = 0.5;         // at these odds a check,
@@ -3812,11 +3699,11 @@ const CROW_SEATS = [[0.1, 0.8], [-0.6, 0.55], [0.65, 0.4], [-0.3, 0.92], [0.45, 
   [-0.5, 0.75], [0.55, 0.6], [0.25, 0.15], [-0.2, 0.12], [0.85, 0.55], [-0.85, 0.5]];
 const SEAT_REACH = 0.4;
 const WAKE_FLY = [3, 10];       // tiles it flies off from the roost at dawn, to a spot of its own
-const PECKING = new Set(['peck', 'carrion', 'munch', 'bury', 'unbury', 'tadpole']);   // busy on the ground, heads down
+const PECKING = new Set(['peck', 'munch', 'bury', 'unbury', 'tadpole']);   // busy on the ground, heads down
 
 const grubs = (w, x, y) => {
   const i = idx(x, y);
-  return w.water[i] || w.snow > 0.3 ? 0 : GRUB * GRUB_SEASON[seasonOf(w.tick)] * (w.grass[i] < GRUB_GRASS ? 1 : GRUB_LONG) * (1 + w.rich[i]);
+  return w.water[i] || w.snow > 0.3 ? 0 : GRUB * GRUB_SEASON[seasonOf(w.tick)] * (w.grass[i] < GRUB_GRASS ? 1 : GRUB_LONG);
 };
 
 function crowTick(w, c) {
@@ -3832,7 +3719,6 @@ function crowTick(w, c) {
   if ((t + c.id) % 4 === 0 && (c.mode === 'rest' || PECKING.has(c.mode))) {   // (in the air or up a tree, out of reach)
     const fox = nearest(w, c, CROW_WARY, 'fox');
     if (fox && (c.mode === 'rest' || w.rng.next() < CROW_NOTICE)) {
-      if (c.mode === 'carrion') c.target.fox = w.tick;          // the others keep off a while too
       c.threatId = fox.id; flapUp(w, c, fox.x, fox.y); caw(w, c, fox);
     } else if (fox && dist2(c, fox) < FOX_REACH ** 2 && !fox.sleeping && fox.mode !== 'eat' && fox.energy < 0.9 * fox.maxEnergy && growth(w, fox) > 0.3) {
       caw(w, c, fox); catchPrey(w, fox, c);
@@ -3895,15 +3781,14 @@ function crowTick(w, c) {
   if (seekLove(w, c)) return;
 
   // 4. Food. In autumn, not hungry, it buries acorns for the winter (and one carrying some buries them
-  // first). Otherwise remains first, then windfalls, then in winter its own buried acorns, then grubs.
-  // One eating eats its fill.
-  const eating = c.mode === 'carrion' || c.mode === 'munch', caching = c.mode === 'cache' || c.mode === 'bury';
+  // first). Otherwise windfalls, then in winter its own buried acorns, then grubs. One eating eats its fill.
+  const eating = c.mode === 'munch', caching = c.mode === 'cache' || c.mode === 'bury';
   if (!eating && e > (caching ? CACHE_FED / 2 : CACHE_FED) && cacheNut(w, c)) return;
   if (e < (eating ? 0.97 : CROW_FULL)) {
-    if (carrion(w, c) || (w.windfalls && e < CROW_HUNGRY && windfall(w, c)) || unbury(w, c) || tadpoles(w, c)) return;
+    if ((w.windfalls && e < CROW_HUNGRY && windfall(w, c)) || unbury(w, c) || tadpoles(w, c)) return;
     return peck(w, c, true);
   }
-  if (eating || c.mode === 'remains' || c.mode === 'apple' || c.mode === 'unbury' || c.mode === 'pool' || c.mode === 'tadpole') { c.mode = 'wander'; c.target = null; }
+  if (eating || c.mode === 'apple' || c.mode === 'unbury' || c.mode === 'pool' || c.mode === 'tadpole') { c.mode = 'wander'; c.target = null; }
 
   // 5. Fed: driving another crow off its patch in spring, back to its patch,
   // off to its mate (or with none, another crow) now and then, a rest, or pecking about.
@@ -4016,29 +3901,6 @@ function grubSpot(w, c) {
   }
   return best;
 }
-
-// Remains it can see, or other crows at: down to a place round them of its own, and peck away.
-function carrion(w, c) {
-  let k = c.mode === 'remains' || c.mode === 'carrion' ? c.target : null;
-  if (!k || k.meat <= 0 || w.tick - k.fox < FOX_NEAR) {          // (one flapping up puts them all up)
-    if (k) { c.mode = 'wander'; c.target = null; }
-    if ((w.tick + c.id) % 10 || !(k = remainsNear(w, c))) return false;
-    (k.seats ??= [])[freeSeat(k)] = c;
-    c.mode = 'remains'; c.target = k;
-  }
-  if (c.mode === 'remains') {
-    const a = (k.seats.indexOf(c) + 0.5) * Math.PI / 2;   // (its place round them)
-    if (!go(w, c, k.x + 0.7 * Math.cos(a), k.y + 0.35 * Math.sin(a), c.walk)) return true;
-    c.mode = 'carrion'; c.facing = k.x > c.x ? 1 : -1;
-    if (!c.story[c.story.length - 1].text.startsWith(REMAINS_NOTE)) note(w, c, '🍖', `${REMAINS_NOTE} ${k.c.name}`);
-  }
-  const bite = Math.min(k.meat, CROW_BITE, c.maxEnergy - c.energy);
-  k.meat -= bite; c.energy += bite; k.fed = w.tick;
-  if (k.meat <= 0) k.eaten = true;
-  return true;
-}
-
-const REMAINS_NOTE = 'Found the remains of';   // (once in a row in its story)
 
 // Autumn, and fed: fetch a few acorns or beechnuts from an oak or a beech (d.nuts, from seedFall; c.load),
 // carry them off one by one to spots out in the open (seedSpot) and bury them. Seeds for spring, if
@@ -4163,15 +4025,12 @@ function pickRoost(w) {
 }
 
 function crowMood(w, c) {
-  const dead = (c.mode === 'remains' || c.mode === 'carrion') && c.target.c;
   const kind = c.target && (c.target.tree ? c.target.tree.kind : c.target.kind), one = kind === 'beech' ? 'a beechnut' : 'an acorn';
   switch (c.mode) {
     case 'nest': return { emoji: '🪺', text: c.hidden ? 'A chick in the nest, calling for food' : c.sleeping ? 'Sitting on her eggs in the nest' : 'Flying to her nest' };
     case 'sleep': return { emoji: '💤', text: c.perch ? 'Asleep at the roost with the other crows' : 'Asleep' };
     case 'roost': return { emoji: '🏠', text: 'Flying to the roost for the night' };
     case 'flap': return { emoji: '😱', text: c.threatId ? `Flapped up, away from ${w.byId.get(c.threatId)?.name ?? 'a fox'}!` : 'Flapped up, away from the smoke!' };
-    case 'remains': return { emoji: '👀', text: `Flying down to the remains of ${dead.name}` };
-    case 'carrion': return { emoji: '🍖', text: `Pecking at the remains of ${dead.name}` };
     case 'peck': return { emoji: '🪱', text: 'Pecking for grubs' };
     case 'forage': return { emoji: '🪱', text: 'Off to better pecking' };
     case 'fetch': return { emoji: '🌰', text: `Off to the ${kind === 'beech' ? 'beeches for beechnuts' : 'oaks for acorns'} to bury` };
@@ -4250,8 +4109,6 @@ const SLIDE_SHADE = 0.3;
 const SLIDE_RUN = 0.8;          // and it slides on this far into the water,
 const SLIDE_ICE = 2.5;          // or out over the ice
 const SLIDE_GAP = 12;           // ticks between two setting off down the same slide: they take turns
-const SPRAINT_RICH = 0.1;       // what the spraint by a holt feeds the bank, a day
-const SPRAINT_REACH = 1.5;
 const FISH_NOTE = 'Caught a fish', MUD_NOTE = 'Dug a frog out of the mud', SPAWN_NOTE = 'Caught a frog at the spawning';
 const FEEDING = new Set(['dive', 'eat', 'root', 'munch']);   // busy with a catch: it finishes before anything but danger
 
@@ -4661,13 +4518,12 @@ function riverEnd(w, p, wet) {
   return { x: edges[0][1], y: edges[0][2] };
 }
 
-// Once a day: a holt whose otter is gone, or whose tree fell, is free again. Those still lived in get the day's spraint.
+// Once a day: a holt whose otter is gone, or whose tree fell, is free again.
 function holtsDay(w) {
   for (const d of w.decor) {
     if (!d.holt) continue;
     const o = w.byId.get(d.holt);
-    if (!o || !o.alive || o.home !== d || !holds(d)) { d.holt = 0; continue; }
-    enrich(w, d.door.x, d.door.y, SPRAINT_RICH, SPRAINT_REACH);
+    if (!o || !o.alive || o.home !== d || !holds(d)) d.holt = 0;
   }
 }
 
@@ -4698,7 +4554,6 @@ function otterMood(w, c) {
 
 function die(w, c, cause, killer) {
   if (!c.alive) return;
-  if (!c.hidden && c.species !== 'bee' && cause !== 'left') leaveRemains(w, c, cause === 'fox');   // a body left out
   c.alive = false; c.died = w.tick; c.cause = cause;
   c.killerId = killer ? killer.id : 0;
   if (c.hidden && c.burrow) c.burrow.count--;
@@ -4758,12 +4613,12 @@ function createWorld(seed, opts = {}) {
     nameCounts: new Map(), anyDied: false,
     weather: { kind: 'clear', until: 0 }, wet: 0.3, snow: -0, ice: -0, frozen: false, windfalls: 0,
     silt: new Float32Array(W * H),
-    rich: new Float32Array(W * H), shadedFert: new Float32Array(W * H),   // (see groundTick)
+    shadedFert: new Float32Array(W * H),                                  // (see groundTick)
     frogs: new Float32Array(W * H), spawn: new Float32Array(W * H), frogCount: -0, spawnCount: -0, frogsOut: true,   // (see frogsTick; damp: tiles to the water, as of the tick dampAt)
     damp: new Float32Array(W * H), dampOf: -1, dampAt: 0, spawnSpots: new Int32Array(SPAWN_SPOTS).fill(-1), spawnTiles: new Int32Array(W * H), spawnN: 0,
     frogYear: { year: 0, at: -1, grown: 0, laid: 0, spawners: 0, stranded: 0, eaten: 0, left: 0, told: 0, dryDay: -1 },   // this spring's spawn, and how it went
     fish: new Float32Array(W * H), fishCount: -0,                         // (see fishTick)
-    carcasses: [], roost: null, cached: 0, gatherSaid: -1,                // (see carrionTick and crowTick; cached: this autumn; gatherSaid: the outbreak told of)
+    roost: null, cached: 0,                                               // (see crowTick; cached: this autumn)
     count: perKind(() => 0), expecting: perKind(() => 0),
     stats: { deaths: perKind(() => ({})) },                                 // deaths by cause, of each kind
     goneSince: perKind(() => -1), diedOut: perKind(() => false), hives: [],
@@ -4778,7 +4633,7 @@ function createWorld(seed, opts = {}) {
   placeHive(w);
   w.treeRoom = TREE_ROOM * w.decor.filter(d => d.tree).length;
   startTrees(w);
-  groundTick(w);
+  shadeSoil(w);
   startFrogs(w);
   startFish(w);
   w.roost = pickRoost(w);
@@ -4831,7 +4686,7 @@ function newDay(w) {
     if (s === 3 && w.cached) emit(w, { type: 'buried', n: w.cached });   // the crows' autumn
   }
   treesTick(w);
-  groundTick(w);
+  shadeSoil(w);
   if (!w.roost || !perchable(w.roost)) w.roost = pickRoost(w);   // gone, or bees moved in
   holtsDay(w);
   if (w.visitors) placesDay(w);                              // (what each place a visitor comes to is like)
@@ -4860,7 +4715,6 @@ function migrate(w) {
     if (w.tick - w.goneSince[s] < wait[s] * TPD) continue;
     if (s === 'fox' && w.count.rabbit < 60 * w.room) continue;   // foxes only come where there is food
     if (s === 'bee' && w.flowers < FEW_FLOWERS) continue;         // a swarm comes when the flowers are out
-    if (s === 'crow' && seasonOf(w.tick) === 3 && !w.carcasses.length) continue;   // and crows when there's food: grubs, or remains
     if (s === 'otter' && (w.frozen || w.tick % TPD)) continue;     // (looked into once a day)
     const holt = s === 'otter' && holtTree(w), up = holt && otterWay(w, holt);
     if (s === 'otter' && !up) continue;                           // and a pair of otters up the water, to a free holt
@@ -4893,7 +4747,6 @@ function step(w) {
   if (t % FROG_EVERY === 15) frogsTick(w);
   if (t % FISH_EVERY === 45) fishTick(w);
   if (t % 60 === 0) { hivesTick(w); windfallTick(w); if (w.weather.kind === 'storm') windthrow(w); }
-  if (t % CARRION_EVERY === 0) carrionTick(w);
   const list = w.creatures;
   for (let i = 0; i < list.length; i++) {
     const c = list[i];
@@ -5014,7 +4867,6 @@ function unpackWorld(kept) {
   for (const h of w.hives) { h.winterBees ??= 0; h.sites ??= null; h.settleAt ??= 0; asFractions(h, ['x', 'y', 'honey', 'brood']); }
   for (const b of w.burrows) asFractions(b, ['x', 'y', 'dug']);
   for (const f of w.fields) { f.open ??= 0; f.all ??= 0; f.bloomed ??= 0; }
-  for (const k of w.carcasses) k.seats ??= null;
   for (const s of KINDS) {                                   // (kept before the otters)
     for (const o of [w.count, w.expecting]) o[s] ??= 0;
     w.stats.deaths[s] ??= {}; w.goneSince[s] ??= -1;

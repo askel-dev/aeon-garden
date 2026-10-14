@@ -62,7 +62,7 @@ const FOX_WHITE = [240, 234, 222], FOX_SOCK = [74, 54, 46];
 
 // ------------------------------------------------------------------ the fox
 //
-// A living fox is painted like its carcass, not the 🦊 emoji (that's only a face). One rig, posed for what it's
+// A living fox is painted, not the 🦊 emoji (that's only a face). One rig, posed for what it's
 // doing (FOX_POSES): the chest, the hip and the head placed, each paw set down and its leg bent to reach it (jointAt),
 // the brush along a curve. It's painted as one animal: one shading runs over the whole fox, so where its parts
 // overlap nothing starts again; each part gets its form from soft shade and light inside its own outline, a part in

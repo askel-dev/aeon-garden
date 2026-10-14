@@ -3,7 +3,7 @@
 'use strict';
 const S = window.Sim;
 const Fur = window.Fur;                 // the painted foxes and rabbits, and the drawing helpers every painting here uses
-const { tone, rockRGB, fillIn, strokeIn, discAt, ovalAt, blurIn, softIn, furGlow, foxRGB, FOX_WHITE, FOX_SOCK, FOX_POSE, RABBIT_POSE, RABBIT_KINDS } = Fur;
+const { tone, rockRGB, fillIn, strokeIn, discAt, ovalAt, blurIn, softIn, furGlow, foxRGB, FOX_POSE, RABBIT_POSE, RABBIT_KINDS } = Fur;
 const $ = sel => document.querySelector(sel);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -1183,10 +1183,7 @@ function paintBurrow(b, r, fresh, neglect, dug, season, shape, age) {
 // ------------------------------------------------------------------ drawing
 
 const MOVING = new Set(['wander', 'food', 'flee', 'chase', 'stalk', 'prowl', 'home', 'love', 'follow', 'friends', 'dig']);
-const REMAINS_SIZE = 0.75;                // remains, next to a rabbit (drawRemains)
 const HOLT_SIZE = 0.8;                    // the way into an otters' holt
-const BODY_SIZE = 1;                      // a dead rabbit, lying on its side
-const FOX_BODY = 1.4;                     // and a dead fox, next to that
 
 function visible(sx, sy, pad) { return sx > -pad && sy > -pad && sx < vw + pad && sy < vh + pad; }
 
@@ -1284,7 +1281,6 @@ function render(now) {
     if (visible(sx, sy, px) && fadeAt(d.door.x, d.door.y)) drawEmoji('holt:0', sx, sy, px);
   }
   unfade();
-  drawRemains(z);
 
   const sel = world.byId.get(ui.selectedId);
   if (sel) drawSelectionUnder(sel, now);
@@ -1395,37 +1391,6 @@ function render(now) {
   standIns = false;                                    // a portrait for the inspector is kept, so it's always painted
 }
 
-// Remains lying in the grass (sim.js leaveRemains). A rabbit or a fox lies whole, then opened, picked over and a
-// pelt as the meat goes (BODY_STAGES; one a fox caught starts opened), and the pelt fades. A bird's are
-// a few feathers, fading as they go. Painted once per look and size.
-const BODY_STAGES = [0.7, 0.4, 0.15];     // meat left, of what there was, where each next stage begins
-const remainsLooks = new WeakMap();
-const remainsPx = z => Math.max(8, (8 + z) * REMAINS_SIZE);
-const bodyPx = z => Math.max(8, (8 + z) * BODY_SIZE);
-function remainsLook(c) {                 // a rabbit's coat (BODY_COATS) or a fox (FOX_LOOK), or a bird's feathers, an otter's fur (REMAINS_ARTS)
-  if (c.species === 'fox') return FOX_LOOK;
-  if (c.species !== 'rabbit') return c.species === 'otter' ? 2 : 0;
-  return S.whiteness(world, c) > 0.5 ? 4 : BODY_COAT_OF[S.coatOf(c.genes)];
-}
-function drawRemains(z) {
-  if (!world.carcasses.length) return;
-  const rpx = remainsPx(z), bpx = bodyPx(z);
-  for (const k of world.carcasses) {
-    if (k.meat <= 0) continue;
-    const fox = k.c.species === 'fox', body = fox || k.c.species === 'rabbit', px = fox ? bpx * FOX_BODY : body ? bpx : rpx;
-    const sx = (k.x - cam.x) * z + vw / 2, sy = (k.y - cam.y) * z + vh / 2;   // (toScreen, without an array)
-    if (!visible(sx, sy, px) || !fadeAt(k.x, k.y)) continue;
-    let look = remainsLooks.get(k);
-    if (look === undefined) remainsLooks.set(k, look = remainsLook(k.c));
-    const m = k.meat / k.full, flip = k.c.id % 2 === 1;
-    if (!body) { drawEmoji(REMAINS_ARTS[look], sx, sy, px, { alpha: 0.45 + 0.55 * m, flip }); continue; }
-    const [open, picked, pelt] = BODY_STAGES, caught = k.c.cause === 'fox';
-    const stage = m > open && !caught ? 0 : m > picked ? 1 : m > pelt ? 2 : 3;
-    drawEmoji(BODY_ARTS[look * 4 + stage], sx, sy, px, { alpha: stage === 3 ? 0.4 + 0.6 * m / pelt : undefined, flip });
-  }
-  unfade();
-}
-
 // How each kind is drawn: its size next to a rabbit, and whether its emoji faces left (then it
 // is mirrored to face where it's going). Animals that fly (c.sp.flies) hover above their shadow.
 const LOOKS = {
@@ -1491,8 +1456,8 @@ function crowSeat(c) {
 // How far across a crow is drawn from where the sim has it: onto its seat, as it comes in to land there.
 const seatShift = c => { const st = crowSeat(c); return st ? (st.dx - (st.x - st.tree.x) * cam.zoom) * (1 - near(c, st, 4)) : 0; };
 const CROW_AIR = new Set(['flap', 'flock', 'love', 'follow', 'drive']);                               // flying
-const CROW_LANDS = new Set(['remains', 'forage', 'fetch', 'cache', 'apple', 'unbury', 'pool', 'gather']); // flying there, and down
-const CROW_WEAVES = new Set(['flap', 'flock', 'remains', 'forage', 'fetch', 'cache', 'apple', 'pool', 'gather', 'roost']);   // on the wing, going somewhere
+const CROW_LANDS = new Set(['forage', 'fetch', 'cache', 'apple', 'unbury', 'pool', 'gather']); // flying there, and down
+const CROW_WEAVES = new Set(['flap', 'flock', 'forage', 'fetch', 'cache', 'apple', 'pool', 'gather', 'roost']);   // on the wing, going somewhere
 const CROW_PECKS = new Set(['peck', 'carrion', 'munch', 'bury', 'unbury', 'tadpole']);       // heads down
 const birdLifts = new WeakMap();
 const near = (c, p, far) => clamp(Math.hypot(p.x - c.x, p.y - c.y) / far, 0, 1);
@@ -2085,7 +2050,7 @@ function paintCrow(g, size, U, pose) {
 }
 const CROW_ARTS = [0, 1, 2, 3, 4, 5, 6, 7, 8].map(k => 'crow:' + k);
 
-// A honeybee, facing left, soft-shaded like the carcasses: a golden abdomen with dark bands, a fuzzy thorax, a dark
+// A honeybee, facing left, soft-shaded like the foxes: a golden abdomen with dark bands, a fuzzy thorax, a dark
 // head with a big shiny eye, see-through wings. 'bee:0' wings up and 'bee:1' wings down (in flight it buzzes between
 // the two, beeArt), 'bee:2' sat with its wings folded back, on a flower. Its box -1 to 1 is the size asked for.
 const BEE_GOLD = [240, 182, 46], BEE_THORAX = [190, 128, 44], BEE_BAND = [70, 44, 24], BEE_HEAD = [72, 50, 34];
@@ -2130,7 +2095,7 @@ const BEE_BUZZ = 38;               // ms a wingbeat painting shows
 const BEE_STILL = 10;              // px: smaller, the wings can't be seen beating, so they don't
 const beeArt = (c, px, now) => c.mode === 'sip' || c.sleeping ? 'bee:2' : ui.speed === 0 || px < BEE_STILL ? 'bee:0' : ((now / BEE_BUZZ + c.id) & 1) ? 'bee:1' : 'bee:0';
 
-// A hedgehog, facing left, soft-shaded like the carcasses: a round dome of spines, each dark at the root and pale at the
+// A hedgehog, facing left, soft-shaded like the foxes: a round dome of spines, each dark at the root and pale at the
 // tip, lying back over it and bristling at its edge; under it a brown face with a darker mask, a shiny black nose and a
 // bead of an eye, a small round ear, little dark feet. 'hog:0' and 'hog:1' the two steps of a walk, 'hog:2' snuffling
 // with its nose down, 'hog:3' curled up asleep on a few dry leaves. Box -1 to 1, feet on the ground at 0.72.
@@ -2961,195 +2926,6 @@ function drawUnder(sx, y, px, now, id) {
     ctx.beginPath(); ctx.ellipse(sx, y, px * (0.12 + 0.4 * u), px * (0.04 + 0.12 * u), 0, 0, TAU); ctx.stroke();
   }
 }
-
-// A bird's remains are a few feathers: a crow's ('remains:0'; 'remains:1', an owl's barred brown ones, from when there were owls). An otter's
-// ('remains:2') are tufts of its brown fur and a bone or two. A rabbit's and a fox's are painted below (paintBody).
-function paintRemains(g, size, U, look) {
-  g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
-  g.lineCap = g.lineJoin = 'round';
-  fillIn(g, 'rgba(40, 50, 20, 0.2)', () => ovalAt(g, 0.02, 0.64, 0.86, 0.16));   // pressed into the grass
-  if (look === 2) {
-    for (const [x, y, a] of [[-0.4, 0.52, -0.3], [0.3, 0.58, 0.4], [0.0, 0.42, 0.1], [0.5, 0.42, -0.6]]) {
-      g.save(); g.translate(x, y); g.rotate(a);
-      softIn(g, OTTER, -0.12, 0.12, () => ovalAt(g, 0, 0, 0.2, 0.1));
-      strokeIn(g, rockRGB(tone(OTTER, 1.25, 10)), 0.025, () => { for (const k of [-0.1, 0, 0.1]) { g.moveTo(k - 0.12, k * 0.3); g.quadraticCurveTo(k, -0.08 + k * 0.2, k + 0.16, k * 0.4); } });
-      g.restore();
-    }
-    boneAt(g, -0.1, 0.66, 0.24, 0.2); boneAt(g, 0.36, 0.72, 0.18, -0.4, 0.8);
-    return;
-  }
-  const ink = look ? '#8a5c36' : CROW_INK, sheen = look ? '#d0a878' : CROW_SHEEN;
-  for (const [x, y, a, s] of [[-0.36, 0.5, -0.3, 1.5], [0.34, 0.56, 0.5, 1.2], [0.02, 0.4, 0.1, 1.1]]) {
-    g.save(); g.translate(x, y); g.rotate(a); g.scale(s, s * 0.7);
-    fillIn(g, ink, () => { g.moveTo(-0.34, 0); g.quadraticCurveTo(0, -0.16, 0.32, 0); g.quadraticCurveTo(0, 0.12, -0.34, 0); });
-    strokeIn(g, sheen, 0.04, () => { g.moveTo(-0.2, -0.05); g.quadraticCurveTo(0, -0.1, 0.2, -0.04); });
-    strokeIn(g, '#9a9eac', 0.03, () => { g.moveTo(-0.4, 0.01); g.lineTo(0.28, 0); });
-    g.restore();
-  }
-}
-const REMAINS_ARTS = [0, 1, 2].map(k => 'remains:' + k);
-
-// A dead rabbit, lying on its side facing left, in four stages ('body:' + coat * 4 + stage): 0 whole, its eyes
-// closed; 1 opened, the ribs showing; 2 picked over, bones and scraps; 3 a flat pelt, a bone or two. Soft shapes in
-// the emoji rabbit's proportions, no red. Coats: wild, sandy, black, blue-grey, a winter white (drawRemains). A fox
-// is painted after them (paintDeadFox).
-const BODY_COATS = [S.COATS.wild.rgb, S.COATS.sand.rgb, S.COATS.black.rgb, S.COATS.blue.rgb, S.WINTER_COAT];
-const BODY_COAT_OF = { wild: 0, sand: 1, black: 2, blue: 3 };
-const BONE = '#ece2cc', BONE_DARK = '#b3a283', GUT = '#6a3a2e', GUT_DARK = '#3a221c';
-// A little bone: a shaft with two knobs at each end, a darker copy under it for shade.
-const boneAt = (g, x, y, l, a, s = 1) => {
-  const dx = Math.cos(a) * l / 2, dy = Math.sin(a) * l / 2, nx = -Math.sin(a) * 0.028 * s, ny = Math.cos(a) * 0.028 * s;
-  const shape = off => { g.moveTo(x - dx, y - dy + off); g.lineTo(x + dx, y + dy + off); };
-  const knobs = (off, r) => { for (const e of [-1, 1]) { discAt(g, x + e * dx + nx, y + e * dy + ny + off, r); discAt(g, x + e * dx - nx, y + e * dy - ny + off, r); } };
-  strokeIn(g, BONE_DARK, 0.055 * s, () => shape(0.014));
-  fillIn(g, BONE_DARK, () => knobs(0.014, 0.036 * s));
-  strokeIn(g, BONE, 0.045 * s, () => shape(0));
-  fillIn(g, BONE, () => knobs(0, 0.032 * s));
-};
-// Ribs seen from the side: arcs hanging from the spine and curving back.
-const ribsAt = (g, x0, y, n, gap, h, w = 0.042) => {
-  for (let i = 0; i < n; i++) {
-    const x = x0 + i * gap, hh = h * (1 - 0.18 * i);
-    strokeIn(g, BONE_DARK, w * 1.35, () => { g.moveTo(x, y); g.bezierCurveTo(x - 0.1, y + hh * 0.2, x - 0.1, y + hh * 0.8, x + 0.02, y + hh); });
-    strokeIn(g, BONE, w, () => { g.moveTo(x - 0.008, y - 0.006); g.bezierCurveTo(x - 0.105, y + hh * 0.2, x - 0.105, y + hh * 0.78, x + 0.012, y + hh - 0.008); });
-  }
-};
-const tailAt = (g, x, y) => {                  // the white scut
-  fillIn(g, '#d9d3c6', () => { discAt(g, x + 0.02, y + 0.03, 0.1); });
-  fillIn(g, '#f6f3ec', () => { discAt(g, x, y, 0.085); discAt(g, x + 0.05, y + 0.04, 0.06); });
-};
-
-// The head, lying on the grass: a closed eye, its ear laid back.
-function bodyHead(g, rgb, cream) {
-  softIn(g, rgb, 0.12, 0.66, () => { g.ellipse(-0.52, 0.42, 0.28, 0.22, 0.1, 0, TAU); g.moveTo(-0.62, 0.5); g.ellipse(-0.74, 0.5, 0.13, 0.12, 0, 0, TAU); });
-  fillIn(g, rockRGB(cream, 0.9), () => { ovalAt(g, -0.7, 0.52, 0.13, 0.09, 0.2); });
-  fillIn(g, '#c98a86', () => discAt(g, -0.86, 0.47, 0.03));
-  strokeIn(g, rockRGB(tone(rgb, 0.35)), 0.032, () => { g.moveTo(-0.6, 0.38); g.quadraticCurveTo(-0.54, 0.43, -0.47, 0.39); });   // the closed eye
-  softIn(g, rgb, 0.14, 0.34, () => { g.ellipse(-0.22, 0.25, 0.32, 0.09, -0.2, 0, TAU); });   // the ear, laid back
-  fillIn(g, 'rgba(214,150,146,0.75)', () => ovalAt(g, -0.19, 0.255, 0.23, 0.038, -0.2));
-}
-// The body on its side: haunch, back, belly; the hind leg stretched out, a front paw.
-function bodyLying(g, rgb, cream, dark) {
-  softIn(g, dark, 0.5, 0.7, () => { g.ellipse(-0.24, 0.62, 0.14, 0.045, 0.1, 0, TAU); g.moveTo(0.62, 0.64); g.ellipse(0.5, 0.64, 0.16, 0.045, 0, 0, TAU); });   // the far legs
-  softIn(g, rgb, 0.46, 0.68, () => { g.ellipse(0.62, 0.58, 0.3, 0.085, 0.14, 0, TAU); });              // the hind leg, stretched out
-  softIn(g, rgb, 0.04, 0.66, () => { g.ellipse(0.02, 0.38, 0.5, 0.28, -0.05, 0, TAU); g.moveTo(0.64, 0.36); g.arc(0.34, 0.36, 0.3, 0, TAU); });   // body and haunch
-  fillIn(g, rockRGB(cream, 0.8), () => ovalAt(g, -0.02, 0.57, 0.38, 0.075, -0.03));                   // belly
-  fillIn(g, rockRGB(tone(rgb, 1.25, 20), 0.35), () => { ovalAt(g, -0.05, 0.2, 0.3, 0.06, -0.1); ovalAt(g, 0.32, 0.16, 0.16, 0.05, 0.1); });   // light on the back
-  softIn(g, rgb, 0.52, 0.66, () => { g.ellipse(-0.34, 0.6, 0.18, 0.055, 0.15, 0, TAU); });             // a front paw
-}
-
-function paintBody(g, size, U, look, leaf, up = 0) {     // up: raised in its box (lying low, it sits under the middle)
-  g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2 - up * U / 2);
-  g.lineCap = g.lineJoin = 'round';
-  const kind = Math.floor(look / 4), stage = look % 4;
-  fillIn(g, 'rgba(40, 50, 20, 0.22)', () => ovalAt(g, 0, 0.62, 0.95, 0.14));   // pressed into the grass
-  if (kind === FOX_LOOK) { paintDeadFox(g, stage); return; }
-  const rgb = tone(BODY_COATS[kind], 0.92, 8), cream = tone(rgb, 0.4, 150), dark = tone(rgb, 0.62);
-  if (stage <= 1) {
-    bodyLying(g, rgb, cream, dark);
-    tailAt(g, 0.64, 0.24);
-    if (stage === 1) {                                                          // opened up: a hole in the side, the ribs over it
-      fillIn(g, rockRGB(tone(rgb, 0.55)), () => ovalAt(g, 0.15, 0.36, 0.27, 0.17, -0.06));          // torn edge
-      fillIn(g, GUT, () => ovalAt(g, 0.15, 0.37, 0.24, 0.14, -0.06));
-      fillIn(g, GUT_DARK, () => ovalAt(g, 0.17, 0.41, 0.17, 0.08, -0.06));
-      ribsAt(g, 0.0, 0.25, 4, 0.1, 0.24, 0.036);
-      strokeIn(g, BONE_DARK, 0.06, () => { g.moveTo(-0.06, 0.25); g.quadraticCurveTo(0.14, 0.2, 0.36, 0.26); });   // a bit of spine
-      strokeIn(g, BONE, 0.045, () => { g.moveTo(-0.06, 0.24); g.quadraticCurveTo(0.14, 0.19, 0.36, 0.25); });
-    }
-    bodyHead(g, rgb, cream);
-    return;
-  }
-  if (stage === 2) {                                                            // picked over: the hind half, the spine and ribs, bones about
-    softIn(g, rgb, 0.3, 0.68, () => { g.ellipse(0.42, 0.5, 0.26, 0.15, 0.1, 0, TAU); g.moveTo(0.92, 0.6); g.ellipse(0.7, 0.6, 0.22, 0.065, 0.15, 0, TAU); });
-    softIn(g, rgb, 0.4, 0.66, () => { g.ellipse(-0.5, 0.56, 0.2, 0.09, -0.15, 0, TAU); });              // a scrap of the front
-    tailAt(g, 0.66, 0.4);
-    strokeIn(g, BONE_DARK, 0.075, () => { g.moveTo(-0.4, 0.44); g.quadraticCurveTo(-0.05, 0.3, 0.26, 0.42); });   // the spine
-    fillIn(g, BONE, () => { for (let i = 0; i <= 7; i++) { const t = i / 7, u = 1 - t; discAt(g, u * u * -0.4 + 2 * u * t * -0.05 + t * t * 0.26, u * u * 0.44 + 2 * u * t * 0.3 + t * t * 0.42 - 0.012, 0.034); } });
-    ribsAt(g, -0.22, 0.37, 4, 0.1, 0.24, 0.038);
-    boneAt(g, -0.66, 0.74, 0.22, -0.35); boneAt(g, 0.2, 0.74, 0.2, 0.15); boneAt(g, -0.1, 0.16, 0.16, 0.5, 0.8);
-    return;
-  }
-  // a flat pelt, going back to the earth, a bone or two on it
-  const pelt = tone(rgb, 0.85);
-  softIn(g, pelt, 0.3, 0.7, () => {
-    g.moveTo(-0.7, 0.52);
-    g.quadraticCurveTo(-0.62, 0.36, -0.36, 0.38); g.quadraticCurveTo(0, 0.3, 0.46, 0.36);
-    g.quadraticCurveTo(0.7, 0.36, 0.74, 0.46); g.lineTo(0.9, 0.5); g.lineTo(0.72, 0.56); g.quadraticCurveTo(0.6, 0.66, 0.36, 0.64);
-    g.lineTo(0.3, 0.74); g.lineTo(0.18, 0.65); g.quadraticCurveTo(-0.1, 0.7, -0.32, 0.66); g.lineTo(-0.44, 0.76); g.lineTo(-0.48, 0.64); g.quadraticCurveTo(-0.66, 0.62, -0.7, 0.52);
-  }, 1.1, 0.75);
-  fillIn(g, rockRGB(tone(pelt, 0.72), 0.5), () => { ovalAt(g, -0.24, 0.52, 0.18, 0.06, 0.1); ovalAt(g, 0.3, 0.5, 0.22, 0.07, -0.1); });   // it's gone dark in places
-  fillIn(g, rockRGB(tone(pelt, 1.2, 14), 0.4), () => { ovalAt(g, 0.02, 0.42, 0.26, 0.04, -0.05); });   // a little light along it
-  boneAt(g, -0.3, 0.5, 0.3, 0.2); boneAt(g, 0.22, 0.54, 0.24, -0.25, 0.9); boneAt(g, 0.62, 0.78, 0.18, 0.3, 0.8);
-}
-// A dead fox, lying on its side facing left like the rabbit ('body:20' to 'body:23'): long and slim, a pointed
-// snout, a white chest and chin, dark stockings, and the bushy white-tipped tail, which lasts the longest.
-const FOX_COAT = [206, 108, 58];   // (its white and socks: FOX_WHITE, FOX_SOCK, in fur.js)
-const foxTail = (g, rgb, x, y, a = 0.12) => {      // from the rump at x, y out to the right
-  g.save(); g.translate(x, y); g.rotate(a);
-  softIn(g, rgb, -0.12, 0.12, () => { g.moveTo(0, -0.04); g.bezierCurveTo(0.14, -0.14, 0.4, -0.12, 0.54, -0.02); g.bezierCurveTo(0.56, 0.06, 0.4, 0.12, 0.2, 0.09); g.bezierCurveTo(0.08, 0.08, 0, 0.05, 0, -0.04); });
-  softIn(g, FOX_WHITE, -0.08, 0.1, () => { g.moveTo(0.44, -0.07); g.bezierCurveTo(0.54, -0.06, 0.62, 0, 0.56, 0.05); g.bezierCurveTo(0.5, 0.08, 0.44, 0.06, 0.42, 0.02); g.closePath(); }, 1.05, 0.85);
-  g.restore();
-};
-function foxHead(g, rgb) {
-  softIn(g, rgb, 0.22, 0.6, () => { g.ellipse(-0.55, 0.42, 0.21, 0.17, 0.1, 0, TAU); g.moveTo(-0.68, 0.36); g.quadraticCurveTo(-0.8, 0.4, -0.88, 0.47); g.quadraticCurveTo(-0.8, 0.54, -0.62, 0.55); g.closePath(); });   // head and snout
-  softIn(g, FOX_WHITE, 0.44, 0.6, () => { g.moveTo(-0.86, 0.49); g.quadraticCurveTo(-0.76, 0.44, -0.56, 0.46); g.quadraticCurveTo(-0.42, 0.5, -0.44, 0.55); g.quadraticCurveTo(-0.64, 0.6, -0.86, 0.49); }, 1.05, 0.85);   // the pale cheek and chin
-  fillIn(g, '#2a211d', () => discAt(g, -0.878, 0.468, 0.03));                                      // nose
-  strokeIn(g, '#3a2a22', 0.03, () => { g.moveTo(-0.65, 0.38); g.quadraticCurveTo(-0.6, 0.415, -0.54, 0.385); });   // the closed eye
-  softIn(g, rgb, 0.16, 0.34, () => { g.moveTo(-0.58, 0.29); g.quadraticCurveTo(-0.44, 0.19, -0.28, 0.19); g.quadraticCurveTo(-0.36, 0.29, -0.45, 0.33); g.closePath(); });   // the ear, laid back
-  fillIn(g, rockRGB(FOX_SOCK), () => { g.moveTo(-0.35, 0.2); g.quadraticCurveTo(-0.32, 0.19, -0.28, 0.19); g.quadraticCurveTo(-0.31, 0.24, -0.36, 0.26); g.closePath(); });
-}
-function foxLying(g, rgb) {
-  const sock = rockRGB(FOX_SOCK);
-  strokeIn(g, rockRGB(tone(FOX_SOCK, 0.8)), 0.07, () => { g.moveTo(-0.28, 0.54); g.lineTo(-0.5, 0.64); g.moveTo(0.34, 0.54); g.lineTo(0.56, 0.66); });   // the far legs
-  foxTail(g, rgb, 0.34, 0.4);
-  softIn(g, rgb, 0.5, 0.64, () => { g.ellipse(0.4, 0.56, 0.18, 0.06, 0.35, 0, TAU); });              // the hind leg, stretched out
-  strokeIn(g, sock, 0.07, () => { g.moveTo(0.52, 0.61); g.lineTo(0.62, 0.64); });
-  softIn(g, rgb, 0.18, 0.62, () => { g.ellipse(-0.04, 0.41, 0.4, 0.17, -0.02, 0, TAU); g.moveTo(0.46, 0.4); g.arc(0.26, 0.4, 0.2, 0, TAU); });   // body and haunch
-  fillIn(g, rockRGB(tone(rgb, 1.2, 20), 0.35), () => ovalAt(g, -0.04, 0.3, 0.28, 0.045, -0.04));    // light on the back
-  softIn(g, FOX_WHITE, 0.46, 0.62, () => { g.ellipse(-0.36, 0.54, 0.11, 0.06, 0.1, 0, TAU); }, 1.05, 0.85);   // the white chest
-  softIn(g, rgb, 0.52, 0.66, () => { g.ellipse(-0.46, 0.58, 0.14, 0.045, 0.3, 0, TAU); });           // a front leg
-  strokeIn(g, sock, 0.065, () => { g.moveTo(-0.56, 0.61); g.lineTo(-0.66, 0.64); });
-}
-function paintDeadFox(g, stage) {
-  const rgb = FOX_COAT, pelt = tone(rgb, 0.85);
-  if (stage <= 1) {
-    foxLying(g, rgb);
-    if (stage === 1) {                                                          // opened up, as the rabbit
-      fillIn(g, rockRGB(tone(rgb, 0.55)), () => ovalAt(g, 0.02, 0.4, 0.22, 0.13, -0.04));
-      fillIn(g, GUT, () => ovalAt(g, 0.02, 0.41, 0.19, 0.11, -0.04));
-      fillIn(g, GUT_DARK, () => ovalAt(g, 0.04, 0.44, 0.13, 0.06, -0.04));
-      ribsAt(g, -0.1, 0.31, 4, 0.08, 0.19, 0.032);
-      strokeIn(g, BONE_DARK, 0.05, () => { g.moveTo(-0.16, 0.31); g.quadraticCurveTo(0.02, 0.27, 0.2, 0.31); });   // a bit of spine
-      strokeIn(g, BONE, 0.038, () => { g.moveTo(-0.16, 0.3); g.quadraticCurveTo(0.02, 0.26, 0.2, 0.3); });
-    }
-    foxHead(g, rgb);
-    return;
-  }
-  if (stage === 2) {                                                            // picked over: the tail and hind half, spine and ribs, bones
-    foxTail(g, rgb, 0.36, 0.46);
-    softIn(g, rgb, 0.36, 0.64, () => { g.ellipse(0.3, 0.5, 0.18, 0.1, 0.1, 0, TAU); g.moveTo(0.58, 0.6); g.ellipse(0.46, 0.6, 0.13, 0.045, 0.3, 0, TAU); });
-    strokeIn(g, rockRGB(FOX_SOCK), 0.055, () => { g.moveTo(0.56, 0.63); g.lineTo(0.66, 0.66); });
-    softIn(g, rgb, 0.44, 0.64, () => { g.ellipse(-0.56, 0.56, 0.17, 0.07, -0.1, 0, TAU); });           // a scrap of the front
-    strokeIn(g, BONE_DARK, 0.07, () => { g.moveTo(-0.46, 0.47); g.quadraticCurveTo(-0.12, 0.34, 0.16, 0.45); });   // the spine
-    fillIn(g, BONE, () => { for (let i = 0; i <= 7; i++) { const t = i / 7, u = 1 - t; discAt(g, u * u * -0.46 + 2 * u * t * -0.12 + t * t * 0.16, u * u * 0.47 + 2 * u * t * 0.34 + t * t * 0.45 - 0.012, 0.032); } });
-    ribsAt(g, -0.3, 0.4, 4, 0.09, 0.22, 0.036);
-    boneAt(g, -0.72, 0.74, 0.22, -0.35); boneAt(g, 0.1, 0.74, 0.22, 0.15); boneAt(g, -0.2, 0.2, 0.16, 0.5, 0.8);
-    return;
-  }
-  // a flat pelt, the tail still to it, a bone or two on it
-  foxTail(g, pelt, 0.4, 0.5, 0.18);
-  softIn(g, pelt, 0.32, 0.7, () => {
-    g.moveTo(-0.74, 0.54);
-    g.quadraticCurveTo(-0.66, 0.4, -0.4, 0.42); g.quadraticCurveTo(0, 0.34, 0.36, 0.4); g.quadraticCurveTo(0.5, 0.44, 0.46, 0.54);
-    g.lineTo(0.62, 0.64); g.lineTo(0.38, 0.62); g.lineTo(0.28, 0.72); g.lineTo(0.16, 0.64); g.quadraticCurveTo(-0.1, 0.7, -0.34, 0.66);
-    g.lineTo(-0.5, 0.76); g.lineTo(-0.5, 0.64); g.quadraticCurveTo(-0.68, 0.64, -0.74, 0.54);
-  }, 1.1, 0.75);
-  fillIn(g, rockRGB(tone(pelt, 0.72), 0.5), () => { ovalAt(g, -0.3, 0.54, 0.16, 0.05, 0.1); ovalAt(g, 0.16, 0.5, 0.18, 0.06, -0.1); });   // it's gone dark in places
-  fillIn(g, rockRGB(FOX_WHITE, 0.55), () => ovalAt(g, -0.56, 0.58, 0.1, 0.05, 0.2));             // what's left of the white chest
-  boneAt(g, -0.28, 0.52, 0.28, 0.2); boneAt(g, 0.14, 0.56, 0.22, -0.25, 0.9); boneAt(g, 0.02, 0.8, 0.18, 0.1, 0.8);
-}
-const FOX_LOOK = BODY_COATS.length;          // the fox's looks come after the rabbits' coats
-const BODY_ARTS = Array.from({ length: (FOX_LOOK + 1) * 4 }, (_, k) => 'body:' + k);
 
 // ------------------------------------------------------------------ the fox
 //
@@ -4325,7 +4101,7 @@ function putPainting(p, f, alpha, snow, ox, oy) {
 // A visitor fur.js paints (Fur.painters: the dragonflies, the kingfisher, the skylark), at the doublings of its size and
 // shrunk between (shrunk), as a fox is; in the meadow the worker paints it (furReady).
 const furPaint = kind => (g, size, U, n) => { if (!shrunk(g, size, U, kind + ':' + n)) Fur.painters[kind](g, size, U, n); };
-const PAINTERS = { fox: paintFox, rabbit: paintRabbit, hog: paintHedgehog, heron: paintHeron, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody, bee: paintBee, fall: paintFall,
+const PAINTERS = { fox: paintFox, rabbit: paintRabbit, hog: paintHedgehog, heron: paintHeron, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, bee: paintBee, fall: paintFall,
   dfly: furPaint('dfly'), kfisher: furPaint('kfisher'), lark: furPaint('lark') };
 function drawDecor(d, sx, sy, now, ck, clipLeaves, px = d.tree ? treePx(d) : d.size * cam.zoom) {   // (px: render has it already)
   if (d.emoji === '🪨') { drawRock(d, sx, sy); return; }
@@ -5938,8 +5714,7 @@ function handleEvent(e) {
     case 'death': {
       const c = e.c;
       if (e.cause !== 'left') hear(e.cause === 'fox' ? 'catch' : e.cause === 'age' ? 'old' : 'starve', c.x, c.y, { species: c.species }, mine);   // (one flying off makes no sound)
-      if (e.cause === 'fox') addEffect('🦴', c.x, c.y, 0.3, 1800);
-      else if (e.cause !== 'left') addEffect('👻', c.x, c.y, 1.6, 2000);
+      if (e.cause !== 'left' && e.cause !== 'fox') addEffect('👻', c.x, c.y, 1.6, 2000);
       break;
     }
     case 'hatch':
@@ -6190,7 +5965,7 @@ function renderInspector() {
 // ------------------------------------------------------------------ things: everything else you can click
 //
 // A click that finds no animal looks for a thing under it, in the order of THINGS (what's on top
-// first): a hive, a tree or rock, remains, a burrow, a flower, a flower field, water. Bare ground finds
+// first): a hive, a tree or rock, a burrow, a flower, a flower field, water. Bare ground finds
 // nothing and closes the inspector. Each kind says how to find one on the screen (at), whether it
 // is still there (here), where to ring it (spot, in tiles; fields and water are too big and get
 // only a label) and what the inspector shows (show):
@@ -6505,35 +6280,6 @@ const THINGS = {
     },
   },
 
-  remains: {
-    at(sx, sy) {
-      const r = Math.max(8, bodyPx(cam.zoom) * 0.5);
-      let best = null, bd = r * r;
-      for (const k of world.carcasses) {
-        const [x, y] = toScreen(k.x, k.y), d = (x - sx) ** 2 + (y + r * 0.4 - sy) ** 2;
-        if (k.meat > 0 && d < bd) { best = k; bd = d; }
-      }
-      return best;
-    },
-    here: k => k.meat > 0 && world.carcasses.includes(k),
-    spot: k => ({ x: k.x, y: k.y + 0.3, r: 0.6 }),
-    show(k) {
-      const c = k.c, killer = world.byId.get(c.killerId);
-      const how = { fox: `caught by ${killer ? killer.name : 'a fox'}`, hunger: 'starved', age: 'old age',
-        lightning: 'lightning' }[c.cause] || c.cause;
-      const name = `The remains of ${c.name}`, sub = `${c.species === 'fox' ? 'A fox' : `A ${c.sp.name.toLowerCase()}`} (${how})`;
-      if (!this.here(k)) return { emoji: '🌱', tint: '#9cc27a', name, sub, status: '🌱 Gone back into the ground. The grass will be lush here for a while.' };
-      const crows = world.creatures.filter(o => o.alive && o.target === k && o.mode === 'carrion');
-      const status = crows.length ? `🐦‍⬛ ${crows.length === 1 ? `${link(crows[0])} is` : `${crows.length} crows are`} pecking at them`
-        : world.tick - k.fox < 150 ? '🦊 A fox was here: the crows keep off a while' : '🍂 Lying in the grass, going back to the earth';
-      const ago = world.tick - c.died, facts = [['📖', `${link(c)} died ${ago < S.TPD ? hours(ago) : days(ago / S.TPD)} ago`]];
-      const s = S.seasonOf(world.tick);
-      facts.push(s === 1 ? ['☀️', 'In the summer heat they won\'t last long'] : s === 3 ? ['❄️', 'In the cold they keep a while'] : ['🍂', 'They\'ll be gone in a few days']);
-      if (crows.length > 1) facts.push(['🐦‍⬛', linkList(crows, 6)]);
-      return { emoji: c.species === 'crow' ? '🪶' : '🍂', tint: '#b8a47a', name, sub, status, facts, meters: [['Left', k.meat / k.full, '']] };
-    },
-  },
-
   burrow: {
     at(sx, sy) {
       const z = cam.zoom, r = Math.max(5, z * 0.8), reach = Math.max(10, r * 1.4);
@@ -6561,9 +6307,6 @@ const THINGS = {
       const high = T.level + T.springFlood + T.rainRise / 2;       // the highest the water gets, about (as plantTrees)
       facts.push(world.ground[tileOf(b.x, b.y)] < high ? ['🌊', 'Low ground: a spring flood could reach it'] : ['⛰️', 'High and dry, safe from floods']);
       if (b.dug >= 1) facts.push(['🐾', `Last used ${idle < 1 ? 'today' : `${days(idle)} ago`}`]);
-      let rich = 0;                                              // its latrines (sim.js groundTick), fouled past 0.3 (FOULED)
-      for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) rich = Math.max(rich, world.rich[tileOf(b.x + dx, b.y + dy)]);
-      if (rich > 0.3) facts.push(['🌿', 'Lush grass round its latrines, which the rabbits won\'t graze']);
       const foxes = whoNear(b.x, b.y, 10, c => c.species === 'fox');
       if (foxes) facts.push(['⚠️', `A fox is prowling nearby`]);
       return {
