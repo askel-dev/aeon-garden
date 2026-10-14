@@ -669,8 +669,176 @@ function paintSkylark(g, size, U, n) {
   furGlow(g, [255, 246, 222], 0.2, 0.0, by - 0.12, 0.22, 0.07);
 }
 
-const painters = { fox: paintFox, rabbit: paintRabbit, dfly: paintDragonfly, kfisher: paintKingfisher, lark: paintSkylark };
+// ------------------------------------------------------------------ the forager
+//
+// The player: a little hooded forager, painted as the fox and the rabbit are (paintFur: one shading over it all, each
+// part's form soft, a part in front casting a soft shadow, a soft outline and a faint grain, here of cloth). A rust hood
+// with a point that flops behind, a round face with rosy cheeks and a fringe of hair, a moss-green cloak, knitted mittens,
+// a leather satchel on a strap, short legs in brown boots. Three views (FORAGER_VIEWS): side on, three-quarters from the
+// front and from the back, each facing left (game.js mirrors it for the right). Poses: 0 standing, 1 a fidget (looking
+// up, a hand on the strap), 2 a blink, 8 to 15 a stride of the walk in eighths: each foot on the ground slides back
+// FORAGER_REACH either side of the hips through half the stride, so game.js turns the stride over with the ground covered
+// (2 * FORAGER_REACH * 2 of its half-size a stride) and the feet don't slide. 'forager:' + (view << 4) + pose.
+// Box -1 to 1, feet on the ground at 0.72.
+const FORAGER_REACH = 0.16, FORAGER_LIFT = 0.075, FORAGER_BOB = 0.016;
+const FORAGER_VIEWS = ['side', 'front', 'back'];
+const CLOAK = [100, 124, 68], HOOD = [178, 88, 52], HOOD_RIM = [140, 62, 38], SKIN = [246, 210, 180], CHEEK = [236, 136, 116];
+const HAIR = [118, 74, 44], TROUSER = [116, 94, 76], BOOT = [76, 54, 42], SATCHEL = [150, 100, 58], FLAP = [126, 82, 46], STRAP = [112, 74, 44];
+const MITTEN = [224, 204, 166];
+const FORAGER_SHADE = [34, 30, 26], FORAGER_LIGHT = [255, 240, 214];
+const smoothstep = t => t * t * (3 - 2 * t);
+
+// Where things are in a pose: the feet (x, y, and which is in front), the hips' bob, the arms' swing, the hood's point.
+function foragerPose(view, pose) {
+  const walk = pose >= 8, u = walk ? (pose - 8) / 8 : 0;
+  // A foot: how far ahead of the hips it is (+: forward) and how high off the ground, at phase v of the stride.
+  const foot = v => {
+    v = ((v % 1) + 1) % 1;
+    if (!walk) return [0, 0];
+    if (v < 0.5) return [FORAGER_REACH - 2 * FORAGER_REACH * v / 0.5, 0];
+    const s = (v - 0.5) / 0.5;
+    return [-FORAGER_REACH + 2 * FORAGER_REACH * smoothstep(s), FORAGER_LIFT * Math.sin(Math.PI * s)];
+  };
+  const fwd = view === 0 ? [-1, 0] : view === 1 ? [-0.62, 0.4] : [-0.62, -0.4];   // forward, on the picture
+  const base = view === 0 ? [[-0.035, 0.72], [0.045, 0.72]] : view === 1 ? [[-0.1, 0.71], [0.07, 0.735]] : [[-0.09, 0.735], [0.08, 0.71]];
+  const feet = [0, 0.5].map((off, i) => {
+    const [a, up] = foot(u + off);
+    return [base[i][0] + fwd[0] * a, base[i][1] + fwd[1] * a - up];
+  });
+  const bob = walk ? FORAGER_BOB * Math.cos(4 * Math.PI * u) : 0;   // (lowest with the feet apart)
+  const swing = walk ? 0.42 * Math.cos(2 * Math.PI * u) : 0;      // the near arm back as the near foot is ahead
+  return {
+    view, walk, u, feet, bob, swing, fwd,
+    tip: walk ? 0.05 * Math.cos(4 * Math.PI * u + 1.2) : 0,         // the hood's point flops with the step
+    sway: walk ? 0.018 * Math.sin(2 * Math.PI * u) : 0,             // and the cloak's hem swings
+    look: pose === 1 ? -0.07 : 0, tilt: pose === 1 ? 0.12 : 0, hand: pose === 1, blink: pose === 2,
+  };
+}
+
+function foragerParts(P) {
+  const parts = [], add = (path, o = {}) => parts.push({ path, ...o });
+  const side = P.view === 0, front = P.view === 1, back = P.view === 2;
+  const hx = 0, hy = 0.4 + P.bob;                                  // the hips
+  const cx = side ? 0.0 : front ? -0.01 : 0.01, cy = -0.2 + P.bob + P.look;   // the head (the hood's middle)
+  const R = 0.26;
+  // Legs: from the hips to the feet, the knee bent forward, in a boot. (Mostly under the cloak.)
+  const leg = (i, far) => {
+    const [fx, fy] = P.feet[i], sx = hx + (side ? (i ? 0.03 : -0.02) : (i ? 0.075 : -0.075)), sy = hy;
+    const knee = jointAt(sx, sy, fx, fy - 0.03, 0.17, 0.17, side ? -1 : 1);
+    const toe = side ? -1 : P.fwd[0] < 0 ? -0.8 : 0.8;
+    add(g => {
+      limbAt(g, sx, sy, 0.065, knee[0], knee[1], 0.05);
+      limbAt(g, knee[0], knee[1], 0.05, fx, fy - 0.03, 0.045);
+      ovalAt(g, fx + toe * 0.025, fy - 0.025, side ? 0.07 : 0.055, 0.04);   // the boot
+    }, { far, leg: 0.5, marks: [[TROUSER, 1, 0.02, g => { limbAt(g, sx, sy, 0.065, knee[0], knee[1], 0.05); limbAt(g, knee[0], knee[1], 0.05, fx, fy - 0.03, 0.045); }],
+      [BOOT, 1, 0.02, g => { ovalAt(g, fx + toe * 0.025, fy - 0.025, side ? 0.075 : 0.06, 0.045); g.rect(fx - 0.06, fy - 0.11, 0.12, 0.09); }]] });
+  };
+  // An arm: a sleeve from the shoulder, swung a forward (+), and a knitted mitten.
+  const arm = (x, a, far, casts) => {
+    const sx = x, sy = 0.06 + P.bob, L = 0.2;
+    const ex = sx + (side ? -Math.sin(a) : P.fwd[0] * Math.sin(a) * 0.9) * L, ey = sy + Math.cos(a) * L + (side ? 0 : P.fwd[1] * Math.sin(a) * 0.12);
+    add(g => { limbAt(g, sx, sy, 0.06, ex, ey, 0.05); discAt(g, ex, ey + 0.02, 0.048); },
+      { far, casts, marks: [[MITTEN, 1, 0.02, g => discAt(g, ex, ey + 0.025, 0.05)], [tone(CLOAK, 0.8), 0.6, 0.03, g => ovalAt(g, ex, ey - 0.02, 0.055, 0.02)]] });
+  };
+  // The cloak: a bell from the shoulders to the hem, the strap across it.
+  const hem = 0.47 + P.bob, sw = P.sway;
+  const cloak = () => add(g => {
+    g.moveTo(-0.11, -0.02 + P.bob);
+    g.quadraticCurveTo(-0.2, 0.18 + P.bob, -0.25 + sw, hem);
+    g.quadraticCurveTo(0, hem + 0.06, 0.25 + sw, hem);
+    g.quadraticCurveTo(0.2, 0.18 + P.bob, 0.11, -0.02 + P.bob);
+    g.closePath();
+  }, { casts: true, marks: [
+    [tone(CLOAK, 0.82), 0.7, 0.04, g => { g.moveTo(-0.3 + sw, hem - 0.04); g.quadraticCurveTo(0, hem + 0.02, 0.3 + sw, hem - 0.04); g.lineTo(0.3, hem + 0.1); g.lineTo(-0.3, hem + 0.1); g.closePath(); }],   // a darker hem
+    ...side ? [[STRAP, 1, 0.012, g => { g.moveTo(-0.04, -0.04 + P.bob); g.lineTo(0.03, -0.04 + P.bob); g.lineTo(0.13, 0.27 + P.bob); g.lineTo(0.08, 0.28 + P.bob); g.closePath(); }]]
+      : [[STRAP, 1, 0.012, g => { const s = front ? 1 : -1; g.moveTo(-0.12 * s, -0.02 + P.bob); g.lineTo(-0.06 * s, -0.04 + P.bob); g.lineTo(0.2 * s, 0.25 + P.bob); g.lineTo(0.15 * s, 0.28 + P.bob); g.closePath(); }]],
+  ] });
+  const satchel = () => {
+    const x = side ? 0.12 : front ? 0.19 : -0.19, y = 0.3 + P.bob + (P.walk ? 0.012 * Math.sin(4 * Math.PI * P.u + 0.6) : 0), w = side ? 0.085 : 0.075;
+    add(g => { g.moveTo(x - w, y - 0.06); g.lineTo(x + w, y - 0.06); g.quadraticCurveTo(x + w + 0.01, y + 0.08, x, y + 0.09); g.quadraticCurveTo(x - w - 0.01, y + 0.08, x - w, y - 0.06); g.closePath(); },
+      { casts: true, marks: [[SATCHEL, 1, 0.015, g => g.rect(x - 0.2, y - 0.2, 0.4, 0.4)],
+        [FLAP, 1, 0.012, g => { g.moveTo(x - w - 0.01, y - 0.065); g.lineTo(x + w + 0.01, y - 0.065); g.quadraticCurveTo(x + w, y + 0.03, x, y + 0.035); g.quadraticCurveTo(x - w, y + 0.03, x - w - 0.01, y - 0.065); g.closePath(); }],
+        [[214, 178, 96], 1, 0.008, g => discAt(g, x, y + 0.02, 0.013)]] });   // its brass button
+  };
+  // The hood's point: out behind the head, flopping.
+  const tip = () => {
+    const t = P.tip;
+    if (side) add(g => { g.moveTo(cx + 0.12, cy - 0.22); g.quadraticCurveTo(cx + 0.36, cy - 0.24 + t, cx + 0.42, cy - 0.06 + t * 1.6); g.quadraticCurveTo(cx + 0.3, cy - 0.05 + t, cx + 0.2, cy + 0.02); g.closePath(); },
+      { marks: [[HOOD, 1, 0.01, g => g.rect(cx - 1, cy - 1, 2, 2)]] });
+    else if (front) add(g => { g.moveTo(cx + 0.06, cy - 0.24); g.quadraticCurveTo(cx + 0.24, cy - 0.34 + t, cx + 0.33, cy - 0.22 + t * 1.6); g.quadraticCurveTo(cx + 0.22, cy - 0.16, cx + 0.17, cy - 0.12); g.closePath(); },
+      { marks: [[HOOD, 1, 0.01, g => g.rect(cx - 1, cy - 1, 2, 2)]] });
+    else add(g => {                                             // from the back: hanging down between the shoulders
+      g.moveTo(cx - 0.15, cy - 0.04);
+      g.bezierCurveTo(cx - 0.12, cy + 0.16, cx - 0.02 + t, cy + 0.26, cx + 0.03 + t * 1.5, cy + 0.42);
+      g.bezierCurveTo(cx + 0.08 + t, cy + 0.26, cx + 0.15, cy + 0.14, cx + 0.14, cy - 0.06);
+      g.quadraticCurveTo(cx, cy - 0.12, cx - 0.15, cy - 0.04);
+      g.closePath();
+    },
+      { casts: true, marks: [[HOOD, 1, 0.01, g => g.rect(cx - 1, cy - 1, 2, 2)]] });
+  };
+  // The head: the hood round it, the face in its opening (none from the back), a fringe of hair under the hood.
+  const fx = cx + (side ? -0.085 : -0.05), fy = cy + 0.035, frx = side ? 0.155 : 0.165, fry = 0.165;
+  const head = () => add(g => { ovalAt(g, cx, cy, R, R * 0.97); ovalAt(g, cx + 0.02, cy + 0.17, 0.17, 0.09); },   // and a little cowl at the neck
+    { casts: true, marks: back ? [[HOOD, 1, 0.01, g => g.rect(cx - 1, cy - 1, 2, 2)], [HOOD_RIM, 0.55, 0.04, g => ovalAt(g, cx, cy + 0.17, 0.17, 0.06)],
+      [SKIN, 1, 0.02, g => ovalAt(g, cx - 0.28, cy + 0.06, 0.06, 0.12)]]   // (a glimpse of a cheek)
+      : [[HOOD, 1, 0.01, g => g.rect(cx - 1, cy - 1, 2, 2)],
+        [HOOD_RIM, 1, 0.03, g => ovalAt(g, fx, fy, frx + 0.04, fry + 0.04)],
+        [SKIN, 1, 0.015, g => ovalAt(g, fx, fy, frx, fry)],
+        [HAIR, 1, 0.02, g => {                                   // the fringe: the top of the face, a wavy edge across the brow
+          g.moveTo(fx - frx, fy - 0.01);
+          g.ellipse(fx, fy, frx, fry, 0, Math.PI, 2 * Math.PI);
+          g.quadraticCurveTo(fx + frx * 0.6, fy - 0.06, fx + frx * 0.25, fy - 0.075);
+          g.quadraticCurveTo(fx + frx * 0.1, fy - 0.045, fx - frx * 0.15, fy - 0.08);
+          g.quadraticCurveTo(fx - frx * 0.55, fy - 0.07, fx - frx, fy - 0.01);
+          g.closePath();
+        }]] });
+  const shoulder = side ? 0.0 : 0.15;
+  if (side) {
+    leg(1, true); leg(0, false);
+    arm(0.03, -P.swing, true, false);
+    cloak(); satchel(); tip(); head();
+    arm(-0.01, P.hand ? 0.9 : P.swing, false, true);
+  } else {
+    const [a, b] = P.feet[0][1] > P.feet[1][1] ? [1, 0] : [0, 1];
+    leg(a, false); leg(b, false);
+    if (front) {
+      tip();
+      cloak(); satchel();
+      arm(-shoulder, P.swing, false, true); arm(shoulder, P.hand ? 2.4 : -P.swing, false, true);
+      head();
+    } else {
+      cloak(); satchel();
+      arm(-shoulder, P.swing, false, true); arm(shoulder, -P.swing, false, true);
+      head(); tip();
+    }
+  }
+  return { parts, fx, fy, frx, fry };
+}
+
+function paintForager(g, size, U, n) {
+  const view = (n >> 4) % 3, P = foragerPose(view, n & 15), { parts, fx, fy } = foragerParts(P);
+  paintFur(g, size, U, parts, { coat: CLOAK, top: -0.5, shade: FORAGER_SHADE, light: FORAGER_LIGHT, flat: 0.25,
+    grain: [['rgba(40,30,20,0.03)', 1, 3], ['rgba(255,245,225,0.03)', 1, 3]],
+    face: g => {
+      if (view === 2) return;
+      const eyes = view === 0 ? [[fx - 0.075, fy + 0.0]] : [[fx - 0.085, fy + 0.0], [fx + 0.06, fy + 0.005]];
+      for (const [x, y] of eyes) {
+        if (P.blink) strokeIn(g, '#3a2a22', 0.016, () => { g.moveTo(x - 0.024, y); g.quadraticCurveTo(x, y + 0.018, x + 0.024, y); });
+        else {
+          fillIn(g, '#2a1d17', () => ovalAt(g, x, y + P.look * 0.2, 0.022, 0.03));
+          fillIn(g, 'rgba(255,255,255,0.9)', () => discAt(g, x - 0.008, y - 0.012 + P.look * 0.2, 0.008));
+        }
+      }
+      const cheeks = view === 0 ? [[fx - 0.04, fy + 0.07]] : [[fx - 0.105, fy + 0.07], [fx + 0.085, fy + 0.07]];
+      for (const [x, y] of cheeks) furGlow(g, CHEEK, 0.55, x, y, 0.04, 0.026);
+      const mx = view === 0 ? fx - 0.115 : fx - 0.015, my = fy + 0.085;
+      strokeIn(g, 'rgba(120,64,50,0.8)', 0.012, () => { g.moveTo(mx - 0.016, my); g.quadraticCurveTo(mx, my + 0.014, mx + 0.016, my); });
+      if (view === 0) fillIn(g, rockRGB(tone(SKIN, 0.92)), () => ovalAt(g, fx - 0.155, fy + 0.035, 0.022, 0.018));   // the nose, just past the cheek
+    } });
+}
+
+const painters = { fox: paintFox, rabbit: paintRabbit, dfly: paintDragonfly, kfisher: paintKingfisher, lark: paintSkylark, forager: paintForager };
 
 root.Fur = { tone, rockRGB, fillIn, strokeIn, discAt, ovalAt, blurIn, softIn, furGlow, foxRGB, FOX_WHITE, FOX_SOCK,
-  FOX_POSE, RABBIT_POSE, RABBIT_KINDS, setCoats, paintFox, paintRabbit, painters };
+  FOX_POSE, RABBIT_POSE, RABBIT_KINDS, setCoats, paintFox, paintRabbit, paintForager, FORAGER_REACH, painters };
 })(typeof window !== 'undefined' ? window : globalThis);
