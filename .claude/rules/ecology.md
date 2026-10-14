@@ -187,6 +187,16 @@ straight legs (`taut`: `TAUT_CLEAR` off the deep, and no wading where the tiles'
 steering: it heads for a point `FORAGER_LOOK` along the way, turning at most `FORAGER_TURN` a tick (three times that from
 standing), speeds up by `FORAGER_ACCEL`, slows to stop where it was sent (`FORAGER_BRAKE`) and into a sharp turn, wades at
 `FORAGER_WADE` of `FORAGER_WALK`, and slides along the deep if a corner clips it.
+Gathering (`whatThere`, `gather`) takes from the sim for real, with no random numbers: a clump of mushrooms picked is gone
+(all its caps; only part if the satchel is nearly full), a patch of greens gives `GREEN_GIVES` (one more off a big patch) and
+`GREEN_TAKE` of itself, growing back `GREEN_REGROW` a day (`g.pick`, in `greensTick`), a ripe bramble `BERRY_PICK` blackberries at
+`BERRY_COST` each off `b.berries` (so fewer for the crows and foxes, who leave little by early autumn), a cherry tree `CHERRY_PICK`
+from the start of summer to `CHERRY_TO` into it, `CHERRY_CROP` a summer (two fifths of that with no bees: `d.picked`, `d.pickYear`),
+an apple, oak or beech up to `FALL_PICK` of its windfalls (`d.windfall`, the rabbits' too; `FALL_GIVES` each), and a hive `HONEY_GIVES`
+honey for `HONEY_TAKE` of its store, never taking it below `HONEY_KEEP`, which is more than a big colony eats in a winter: a
+greedy forager can't starve the bees. `whatThere` also says gently why not ("Not ripe yet", "Picked clean"...). What's picked goes
+in the satchel (`w.forager.bag`, `bagN`: `SLOTS` slots, `STACK` of a kind to one; `stow`, `roomFor`, `dropSlot`), kept with the meadow.
+No `KEEP_VERSION` bump: the new fields are in the blanks (`foragerOf`, `greenOf`, `blankTree`).
 
 Rocks are painted (`rockInfo`, `rockSprite` in game.js): pebbles, stones and boulders by
 size (`TERRAIN.rockSize`), flat stones at the fords, and two or three great rocks per meadow
