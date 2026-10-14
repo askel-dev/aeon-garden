@@ -6,15 +6,15 @@
  *  2. One instrument per species. Rabbits are a high kalimba, foxes a low felt marimba, bees
  *     a buzz that hums in tune, the meadow itself (seasons, old age) a soft glass bell.
  *     Rising = life, falling = loss. Lightning is the one loud thing, on purpose.
- *  3. The meadow is the music. Wind, birds, crickets, rain and fire follow the clock and the
+ *  3. The meadow is the music. Wind, birds, crickets and rain follow the clock and the
  *     sky, and events are rare, quiet and rate-limited so fast-forward never turns into noise.
  *     Every few minutes a short felt-piano piece drifts over it, like the music in Minecraft
  *     (see "music" below), in keys that hold the pentatonic so it still fits.
  *     Over it all hangs a wind chime that rings more the more rabbits there are.
  *
- * Use: Sound.start() from a click, then Sound.update({ phase, season, speed, sky, fire, bees, life, owls }) a
+ * Use: Sound.start() from a click, then Sound.update({ phase, season, speed, sky, bees, life, frogs }) a
  * few times a second (sky: how much of each weather is showing, 0..1; bees: how many are flying
- * on screen; life: how full the meadow is of rabbits, 0..1; owls: how many live there, for the hoots at night; frogs: 0..1,
+ * on screen; life: how full the meadow is of rabbits, 0..1; frogs: 0..1,
  * the spring's spawn, for a croak now and then at night) and
  * Sound.play('birth', { species, pan, near, seen }) on events.
  */
@@ -34,7 +34,7 @@ let ac = null, master, ducker, loud, fxBus, ambBus, musicBus, hush, reverb, nois
 let enabled = true, volume = 0.6;
 const amb = {};                                    // ambient layers
 const LOUD = 1.4;                                  // thunder's level against the rest
-const state = { phase: 0.3, season: 0, speed: 1, sky: { clear: 1 }, fire: 0, bees: 0, life: 0.3, owls: 1, frogs: 0 };
+const state = { phase: 0.3, season: 0, speed: 1, sky: { clear: 1 }, bees: 0, life: 0.3, frogs: 0 };
 const last = {};                                   // per-sound cooldowns
 let recent = 0, recentAt = 0;                      // global voice budget
 
@@ -227,16 +227,6 @@ function duck(t, depth, back) {
 }
 let farAt = -1e9;                                  // when the last distant roll started
 
-// The meadow and the music step back for a moment (a first sighting), then come in again over a second or two.
-function lull(t, sec) {
-  for (const [bus, v] of [[ambBus, 0.8], [musicBus, 0.45]]) {
-    bus.gain.cancelScheduledValues(t);
-    bus.gain.setValueAtTime(bus.gain.value, t);
-    bus.gain.linearRampToValueAtTime(v * 0.2, t + 0.25);
-    bus.gain.setTargetAtTime(v, t + sec, 0.5);
-  }
-}
-
 // Filtered noise with a moving band: whooshes, rustles, gusts. attack: seconds to full volume
 // (by default a third of the sound, so it swells; a crack wants a couple of milliseconds).
 function noise(dest, t, dur, { from = 800, to = 2400, q = 1.2, peak = 0.3, type = 'bandpass', attack = dur * 0.35 } = {}) {
@@ -266,21 +256,11 @@ const RULES = {
   queenlost: { gap: 4,  maxSpeed: 15 },
   arrive:  { gap: 2,    maxSpeed: 60 },
   thunder: { gap: 0.3,  maxSpeed: 15, always: true },   // a strike you see is always heard
-  fire:    { gap: 4,    maxSpeed: 60 },
-  fireout: { gap: 4,    maxSpeed: 60 },
   rainbow: { gap: 20,   maxSpeed: 4 },
   season:  { gap: 4,    maxSpeed: 60 },
   extinct: { gap: 4,    maxSpeed: 60 },
   rain:    { gap: 3,    maxSpeed: 60 },
-  release: { gap: 0.08, maxSpeed: 60 },
-  grass:   { gap: 0.09, maxSpeed: 60 },
-  dig:     { gap: 0.3,  maxSpeed: 60 },
   click:   { gap: 0.04, maxSpeed: 60 },
-  tick:    { gap: 0.5,  maxSpeed: 60, always: true },
-  named:   { gap: 0.5,  maxSpeed: 60, always: true },
-  found:   { gap: 2,    maxSpeed: 60, always: true },
-  seen:    { gap: 0.8,  maxSpeed: 60, always: true },
-  warn:    { gap: 2,    maxSpeed: 60, always: true },
 };
 
 const SOUNDS = {
@@ -374,46 +354,8 @@ const SOUNDS = {
       roll(out(pan, 0.8, 0.7, loud), t + d + rand(2.5, 3.5), rand(6, 8), { cut: 200, lumps: 5, peak: 0.22, mid: 0.12, heat: 1.1 });
     }
   },
-  // Dry grass catching: a soft whoomph.
-  fire(t, o) { noise(o, t, 1.4, { from: 200, to: 1400, q: 0.5, peak: 0.16, type: 'lowpass' }); },
-  // The fire is out and the ash will feed fresh shoots: a bell and a hopeful note above it.
-  fireout(t, o) { bell(o, note(0, -1), t, 0.5); kalimba(o, note(4, 1), t + 0.5, 0.35); kalimba(o, note(7, 1), t + 0.7, 0.3); },
   rainbow(t, o) { for (let i = 0; i < 8; i++) kalimba(o, note(i, 1), t + i * 0.09, 0.28 - i * 0.02); },
-  // Dropping an animal in: a tiny pop in its own voice.
-  release(t, o, { species }) { voiceOf(species)(o, note(pick([0, 2, 4]), octOf(species) + 1), t, 0.45); },
-  grass(t, o) { noise(o, t, 0.18, { from: 2500, to: 5000, q: 2, peak: 0.05 }); },
-  // A pond dug (?keep): a spade into soft earth, the water welling in, and two notes down to it.
-  dig(t, o) {
-    const osc = ac.createOscillator(), g = ac.createGain();
-    osc.frequency.setValueAtTime(120, t); osc.frequency.exponentialRampToValueAtTime(60, t + 0.12);
-    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.22, t + 0.004);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
-    osc.connect(g).connect(o); osc.start(t); osc.stop(t + 0.22);
-    noise(o, t, 0.14, { from: 900, to: 250, q: 0.7, peak: 0.16, type: 'lowpass', attack: 0.003 });
-    noise(o, t + 0.16, 0.5, { from: 400, to: 1400, q: 0.8, peak: 0.07, type: 'lowpass' });
-    [0.22, 0.31, 0.43].forEach(d => partial(o, rand(500, 900), t + d, 0.035, 0.004, 0.09));
-    marimba(o, note(4, -1), t + 0.3, 0.3);
-    marimba(o, note(2, -1), t + 0.48, 0.26);
-  },
   click(t, o) { partial(o, 1320, t, 0.06, 0.002, 0.05, 'triangle'); partial(o, 660, t, 0.05, 0.002, 0.08); },
-  // Something tried off the list (game.js, the guide): three notes up.
-  tick(t, o) { for (let i = 0; i < 3; i++) kalimba(o, note(2 + i * 2, 1), t + i * 0.08, 0.3); },
-  // A little ring put on: a bell, and its answer a fifth up.
-  // You came to look at something worth seeing (game.js, a spot's caption): two bright notes, up a third.
-  seen(t, o) { bell(o, note(2, 1), t, 0.26); kalimba(o, note(4, 1), t + 0.13, 0.22); },
-  named(t, o) { bell(o, note(0, 1), t, 0.35); kalimba(o, note(4, 1), t + 0.16, 0.28); bell(o, note(7, 1), t + 0.34, 0.22); },
-  // A visitor seen for the first time ever (game.js, startReveal): the meadow and the music step back for a breath, then
-  // tines climb a chord to the octave over a low bell, and a high bell rings out with its answer.
-  found(t, o) {
-    lull(t, 3.2);
-    const s = t + 0.4;
-    bell(o, note(0, -1), s, 0.45);
-    [0, 2, 3, 5].forEach((d, i) => kalimba(o, note(d, 1), s + i * 0.11, 0.3));
-    bell(o, note(7, 1), s + 0.5, 0.3);
-    bell(o, note(4, 1), s + 0.95, 0.18);
-  },
-  // An alert (game.js, ?keep: a kind in danger, the meadow going barren): two low felt notes, down a step.
-  warn(t, o) { marimba(o, note(1, -2), t, 0.5); marimba(o, note(0, -2), t + 0.24, 0.42); },
 };
 
 // opts: { species, pan (-1..1), near (0..1, how close to the camera), ...sound-specific }
@@ -473,7 +415,6 @@ function buildAmbience() {
   amb.wind = windVoice();
   amb.rainL = rainSide(-0.7, 2300); amb.rainR = rainSide(0.7, 2600);
   amb.rainLow = loopNoise('lowpass', 350, 0.5);
-  amb.fire = loopNoise('lowpass', 220, 0.6);
   amb.hum = hiveHum();
   amb.calm = 0.5; amb.blow = null; amb.gust = 0; amb.swell = 0.5; amb.tube = 2;
 }
@@ -495,7 +436,6 @@ function mix() {
     cicadas: dayness * sky('heat'),
     snow: Math.max(sky('snow'), s === 3 ? 0.3 * dayness : 0),
     hush: Math.max(sky('fog'), 0.7 * sky('snow')),
-    fire: Math.min(1, state.fire / 30),
     bees: state.speed >= 15 ? 0 : Math.min(1, state.bees / 12),
     chimes: Math.min(1, state.life) ** 1.5 * (0.5 + 0.5 * dayness),    // a busy meadow, a busy chime
   };
@@ -513,7 +453,6 @@ function tickAmbience() {
   amb.rainL.g.gain.setTargetAtTime((0.055 * m.rain + 0.025 * m.storm) * rainLvl * (1 + 0.2 * gust), now, 1.5);
   amb.rainR.g.gain.setTargetAtTime((0.055 * m.rain + 0.025 * m.storm) * rainLvl * (1 - 0.1 * gust), now, 1.5);
   amb.rainLow.g.gain.setTargetAtTime((0.10 * m.rain + 0.06 * m.storm) * rainLvl, now, 2);
-  amb.fire.g.gain.setTargetAtTime(0.12 * m.fire, now, 1.5);
   amb.hum.gain.setTargetAtTime(0.03 * m.bees, now, 1.5);
   hush.frequency.setTargetAtTime(12000 - 9500 * m.hush, now, 2);
 
@@ -521,7 +460,6 @@ function tickAmbience() {
   const dt = 0.2 * fastFactor;
   birdTick(now, m.birds * fastFactor);
   if (Math.random() < m.crickets * 2.2 * dt) cricket(now + rand(0, 0.2));
-  if (state.owls && Math.random() < (1 - m.day) * (state.season === 3 ? 0.02 : 0.05) * dt) owl(now);   // only with owls in the meadow
   if (Math.random() < (1 - m.day) * state.frogs * 0.5 * dt) croak(now + rand(0, 0.2));   // spring nights, while there's spawn about
   if (Math.random() < m.rain * 3 * dt) {
     const deg = drip(now + rand(0, 0.2), rand(0.5, 1.3));
@@ -529,7 +467,6 @@ function tickAmbience() {
   }
   if (Math.random() < m.snow * 0.15 * dt) snowChime(now);
   if (Math.random() < m.cicadas * 0.12 * dt) cicada(now);
-  for (let i = 0; i < 3; i++) if (Math.random() < m.fire * 4 * dt) crackle(now + rand(0, 0.2));
   if (Math.random() < (0.08 + 1.4 * m.chimes) * (0.5 + amb.gust) * dt) chime(now + rand(0, 0.2));
   musicTick(now, m);
 }
@@ -712,17 +649,6 @@ function cricket(t) {
   for (let i = 0; i < 3; i++) partial(o, f, t + i * 0.045, 0.03, 0.005, 0.025);
 }
 
-function owl(t) {
-  const o = out(rand(-0.8, 0.8), 0.6, 0.6);
-  [[0, 0.35], [0.55, 0.25], [0.85, 0.7]].forEach(([dt, len]) => {
-    const s = t + dt, osc = ac.createOscillator(), g = ac.createGain();
-    osc.frequency.setValueAtTime(390, s); osc.frequency.linearRampToValueAtTime(350, s + len);
-    g.gain.setValueAtTime(0.0001, s); g.gain.exponentialRampToValueAtTime(0.09, s + 0.08);
-    g.gain.exponentialRampToValueAtTime(0.0001, s + len);
-    osc.connect(g).connect(o); osc.start(s); osc.stop(s + len + 0.05);
-  });
-}
-
 // A common frog by the water: a soft low purr, two to four times, on the scale's root or its third.
 function croak(t) {
   const o = out(rand(-0.9, 0.9), 0.35, rand(0.2, 0.45)), f = note(pick([0, 2]), -1) * rand(0.99, 1.01);
@@ -762,9 +688,6 @@ function cicada(t) {
   osc.connect(am).connect(g).connect(o);
   osc.start(t); lfo.start(t); osc.stop(t + len + 0.05); lfo.stop(t + len + 0.05);
 }
-
-// A crackle of burning grass: a tiny click of noise.
-const crackle = t => noise(out(rand(-0.8, 0.8), 0.15, rand(0.3, 1)), t, rand(0.015, 0.04), { from: rand(900, 3500), to: rand(600, 2500), q: 1.5, peak: 0.25 });
 
 const rustle = (t, pan = rand(-1, 1), v = 1) => noise(out(pan, 0.2, 0.8 * v), t, rand(0.6, 1.2), { from: 1800, to: 4200, q: 0.9, peak: 0.08 });
 // The wind chime: six tubes from the scale. The clapper swings to a tube beside the last one,

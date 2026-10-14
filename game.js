@@ -497,13 +497,13 @@ function paintTerrain() {
   const g = world.grass, water = world.water, [low, high] = groundColours(), damp = 1 - 0.12 * world.wet;
   shoreSand = low.map(v => v * 0.9 * damp);
   let sum = 0;
-  const ok = Ground.ok, fieldAt = world.fieldAt, fields = world.fields, ash = world.ash, wood = world.wood, deep = S.DEEP;
+  const ok = Ground.ok, fieldAt = world.fieldAt, fields = world.fields, wood = world.wood, deep = S.DEEP;
   for (let i = 0; i < g.length; i++) {
     let v = water[i] ? 0 : clamp(g[i] / 0.85, 0, 1);
     v = v * (2 - v);
     const o = i * 4, fi = fieldAt[i], f = fi >= 0 ? fields[fi] : null;
     const bloom = f ? S.fieldBloom(world, f, i, v) : 0;
-    tileData[o] = v; tileData[o + 1] = water[i] / deep; tileData[o + 2] = ash[i]; tileData[o + 3] = wood[i];
+    tileData[o] = v; tileData[o + 1] = water[i] / deep; tileData[o + 3] = wood[i];
     for (let k = 0; k < 3; k++) bloomData[o + k] = bloom > 0 ? f.tint[k] / 255 * bloom : 0;   // premultiplied, so it blends smoothly between tiles
     bloomData[o + 3] = bloom;
     sum += v;
@@ -1182,7 +1182,7 @@ function paintBurrow(b, r, fresh, neglect, dug, season, shape, age) {
 
 // ------------------------------------------------------------------ drawing
 
-const MOVING = new Set(['wander', 'food', 'flee', 'chase', 'stalk', 'prowl', 'home', 'love', 'follow', 'friends', 'dig', 'arrive']);
+const MOVING = new Set(['wander', 'food', 'flee', 'chase', 'stalk', 'prowl', 'home', 'love', 'follow', 'friends', 'dig']);
 const REMAINS_SIZE = 0.75;                // remains, next to a rabbit (drawRemains)
 const HOLT_SIZE = 0.8;                    // the way into an otters' holt
 const BODY_SIZE = 1;                      // a dead rabbit, lying on its side
@@ -1269,7 +1269,7 @@ function render(now) {
   drawFlow(now, ck);
   drawShore(z, ox, oy, ck.season);
   drawPlants(z, ox, oy, ck.season);                  // over the waves, which can pass a flower by the water
-  if (z >= 6) drawDashes(now, z);                    // voles a fox or an owl missed
+  if (z >= 6) drawDashes(now, z);                    // voles a fox missed
   drawPond(now, z);
 
   // Burrows, drawn by hand: some browsers clip the 🕳️ glyph in half. Who lives where only shows close up (the paths, r >= 9).
@@ -1307,14 +1307,14 @@ function render(now) {
   const shown = [];
   for (const c of world.creatures) {
     if (c.hidden || !c.alive) continue;
-    if (c.species === 'fox' || c.species === 'owl') {      // hunting voles: the rustle it's after
+    if (c.species === 'fox') {      // hunting voles: the rustle it's after
       watchLeap(c, now);
       const to = rustleOf(c);
       if (to) { const [rx, ry] = toScreen(to.x, to.y); if (visible(rx, ry, 30)) { const it = itemOf(items, to.y, rx, ry, 1 - mistAt(to.x, to.y)); it.rustle = c; it.to = to; } }
     }
     const [sx, sy] = screenOf(c);
     if (!visible(sx, sy, 60)) continue;
-    const it = itemOf(items, c.y + (c.mode === 'dance' ? DANCE_FRONT : c.species === 'owl' && c.mode !== 'gulp' ? OWL_FRONT : 0), sx, sy, 1 - mistAt(c.x, c.y));
+    const it = itemOf(items, c.y + (c.mode === 'dance' ? DANCE_FRONT : 0), sx, sy, 1 - mistAt(c.x, c.y));
     it.c = c;
     if (c.species === 'crow' && crowSeat(c)) it.y -= (seat.y - seat.tree.y) * SEAT_SORT;   // up a tree: just after it, not after the trees just in front
     shown.push(it);
@@ -1322,7 +1322,7 @@ function render(now) {
   if (world.visitors) for (const v of world.visitors) {    // (?keep: a hedgehog at a hedge, a heron at a pond, ...)
     const d = drawnAt(v), [sx, sy] = toScreen(d.x, d.y);
     const sort = v.kind === 'kingfisher' && v.tree && v.mode !== 'in' && v.mode !== 'out' ? Math.max(d.y, v.tree.y + 0.02)   // (in front of its tree)
-      : v.kind === 'skylark' && v.high > 0.3 ? OWL_FRONT : d.y;                                                       // (singing high over all)
+      : v.kind === 'skylark' && v.high > 0.3 ? S.H : d.y;                                                       // (singing high over all)
     if (visible(sx, sy, 40 + 2 * visitorPx(v) + visitorUp(v, visitorPx(v)))) itemOf(items, sort, sx, sy, 1 - mistAt(d.x, d.y)).v = v;
   }
   sortByY(items);
@@ -1361,10 +1361,9 @@ function render(now) {
     wash(`rgba(${GOLD_RGB}, ${GOLD_A * gold})`);
     ctx.globalCompositeOperation = 'source-over';
   }
-  const glows = fireflyLight(dark) > 0.02 || world.burning.length > 0;   // (drawn over the dark, under the weather)
+  const glows = fireflyLight(dark) > 0.02;   // (drawn over the dark, under the weather)
   if (dark > 0 && glows) wash(`rgba(${NIGHT_RGB}, ${dark})`);
   drawFireflies(now, dark);
-  drawFire(now);
   drawWeather(now, ck, glows ? 0 : dark);                  // (else the dark is laid with the weather's washes, as one)
 
   // Burrow snores at night.
@@ -1404,7 +1403,7 @@ function render(now) {
 }
 
 // Remains lying in the grass (sim.js leaveRemains). A rabbit or a fox lies whole, then opened, picked over and a
-// pelt as the meat goes (BODY_STAGES; one a fox or an owl caught starts opened), and the pelt fades. A bird's are
+// pelt as the meat goes (BODY_STAGES; one a fox caught starts opened), and the pelt fades. A bird's are
 // a few feathers, fading as they go. Painted once per look and size.
 const BODY_STAGES = [0.7, 0.4, 0.15];     // meat left, of what there was, where each next stage begins
 const remainsLooks = new WeakMap();
@@ -1412,7 +1411,7 @@ const remainsPx = z => Math.max(8, (8 + z) * REMAINS_SIZE);
 const bodyPx = z => Math.max(8, (8 + z) * BODY_SIZE);
 function remainsLook(c) {                 // a rabbit's coat (BODY_COATS) or a fox (FOX_LOOK), or a bird's feathers, an otter's fur (REMAINS_ARTS)
   if (c.species === 'fox') return FOX_LOOK;
-  if (c.species !== 'rabbit') return c.species === 'owl' ? 1 : c.species === 'otter' ? 2 : 0;
+  if (c.species !== 'rabbit') return c.species === 'otter' ? 2 : 0;
   return S.whiteness(world, c) > 0.5 ? 4 : BODY_COAT_OF[S.coatOf(c.genes)];
 }
 function drawRemains(z) {
@@ -1427,7 +1426,7 @@ function drawRemains(z) {
     if (look === undefined) remainsLooks.set(k, look = remainsLook(k.c));
     const m = k.meat / k.full, flip = k.c.id % 2 === 1;
     if (!body) { drawEmoji(REMAINS_ARTS[look], sx, sy, px, { alpha: 0.45 + 0.55 * m, flip }); continue; }
-    const [open, picked, pelt] = BODY_STAGES, caught = k.c.cause === 'fox' || k.c.cause === 'owl';
+    const [open, picked, pelt] = BODY_STAGES, caught = k.c.cause === 'fox';
     const stage = m > open && !caught ? 0 : m > picked ? 1 : m > pelt ? 2 : 3;
     drawEmoji(BODY_ARTS[look * 4 + stage], sx, sy, px, { alpha: stage === 3 ? 0.4 + 0.6 * m / pelt : undefined, flip });
   }
@@ -1441,7 +1440,6 @@ const LOOKS = {
   fox: { size: 1.4, facesLeft: true },         // painted (paintFox), not the emoji
   bee: { size: 0.38, facesLeft: true, swatch: '#e8b83a', quiet: true },   // quiet: no pop-ups (drawPops)
   crow: { size: 0.95, facesLeft: true, swatch: '#4a4e5e' },               // painted (crowArt), not the emoji
-  owl: { size: 0.85, facesLeft: false, swatch: '#9a6a3e' },               // a face: it does not care
   otter: { size: 1.5, facesLeft: true, swatch: '#7c5232' },               // painted (paintOtter), not the emoji
 };
 
@@ -1459,7 +1457,6 @@ function liftOf(c, px, now) {
   if (c.species === 'otter') return 0;                // (it lopes: drawOtter)
   if (!c.sp.flies) return hopOf(c, px, now);
   if (c.species === 'crow') return birdLift(c, crowHeight(c, px), c.sleeping) + crowHop(c, px);
-  if (c.species === 'owl') return birdLift(c, owlHeight(c, px));
   const bob = ui.speed > 0 ? Math.sin(now / 90 + c.id) * px * 0.08 : 0, fly = px * (0.9 - 0.3 * loadOf(c)), tree = c.target?.tree;
   if (tree && (c.mode === 'sip' || c.mode === 'flower')) {   // blossom in a tree (sim.js addBlossoms): up in its crown
     const crown = treePx(tree) * (tree.kind === 'hawthorn' ? 0.9 : 1.25) * c.target.up;
@@ -1500,7 +1497,7 @@ function crowSeat(c) {
 }
 // How far across a crow is drawn from where the sim has it: onto its seat, as it comes in to land there.
 const seatShift = c => { const st = crowSeat(c); return st ? (st.dx - (st.x - st.tree.x) * cam.zoom) * (1 - near(c, st, 4)) : 0; };
-const CROW_AIR = new Set(['flap', 'flock', 'love', 'follow', 'drive']);                               // flying (and 'mob': round an owl)
+const CROW_AIR = new Set(['flap', 'flock', 'love', 'follow', 'drive']);                               // flying
 const CROW_LANDS = new Set(['remains', 'forage', 'fetch', 'cache', 'apple', 'unbury', 'pool', 'gather']); // flying there, and down
 const CROW_WEAVES = new Set(['flap', 'flock', 'remains', 'forage', 'fetch', 'cache', 'apple', 'pool', 'gather', 'roost']);   // on the wing, going somewhere
 const CROW_PECKS = new Set(['peck', 'carrion', 'munch', 'bury', 'unbury', 'tadpole']);       // heads down
@@ -1511,31 +1508,7 @@ function crowHeight(c, px) {
   if (st) return lerp(st.up, fly, near(c, st, 4));
   if (c.mode === 'roost') return fly;
   if (CROW_AIR.has(c.mode)) return fly;
-  if (c.mode === 'mob') { const o = world.byId.get(c.targetId); return Math.max(fly, owlSits(o) + px * 0.6); }   // round the owl in its tree
   return CROW_LANDS.has(c.mode) && c.target ? fly * near(c, c.target, 2) : 0;
-}
-// An owl sits up a tree: asleep on a branch by day, on its perch hunting, or in its hollow on her eggs. It glides
-// from tree to tree and drops to the grass on a vole (sim.js owlTick). Its height eases like a crow's.
-const OWL_FLY = 1.3;               // how high an owl flies, in its size
-const OWL_PERCH = 0.45;            // how far up a tree's painting it sits on a branch
-const OWL_HOLLOW = 0.3;            // and in the hollow
-const OWL_FRONT = S.H;             // up in a tree or gliding over, it's drawn over the trees (the ones in front would hide it); down on a vole, among them
-const OWL_SITS = new Set(['sleep', 'perch', 'hoot']);                   // sitting in its tree (c.perch)
-const OWL_LANDS = new Set(['roost', 'hunt', 'home', 'shift']);          // flying there, and up into it
-const owlSits = o => (o && o.perch && o.perch.tree && Math.hypot(o.perch.x - o.x, o.perch.y - o.y) < 0.5 ? treePx(o.perch.tree) * OWL_PERCH : 0);
-function owlHeight(c, px) {
-  const fly = px * OWL_FLY;
-  if (c.mode === 'nest') return c.home ? lerp(treePx(c.home) * OWL_HOLLOW, fly, near(c, c.home, 3)) : 0;
-  if (OWL_SITS.has(c.mode)) return owlSits(c);
-  if (OWL_LANDS.has(c.mode)) {
-    const to = c.mode === 'hunt' ? c.target : c.perch;
-    return to && to.tree ? lerp(treePx(to.tree) * OWL_PERCH, fly, near(c, to, 3)) : fly;
-  }
-  if (c.mode === 'swoop') {                        // down from its perch
-    const to = world.byId.get(c.targetId) || c.target;
-    return to ? (c.perch && c.perch.tree ? treePx(c.perch.tree) * OWL_PERCH : fly) * near(c, to, 4) : 0;
-  }
-  return c.mode === 'gulp' ? 0 : fly;
 }
 // A sitting bird (sit) is at its height at once: its tree grows with the zoom and its easing wouldn't.
 function birdLift(c, want, sit) {
@@ -1957,12 +1930,12 @@ function drawCreature(c, sx, sy, now) {
   // Standing still, everyone breathes: slow and deep asleep, quick and shallow awake.
   const breathe = !hop && ui.speed > 0
     ? Math.sin(now / (c.sleeping ? 650 : 330) + c.id) * (c.sleeping ? 0.035 : 0.02) : 0;
-  const squash = (c.sleeping ? c.species === 'owl' ? 0.82 : 1 : c.sick ? 0.9 : 1) + breathe;   // a sick one sits hunched (the others' sleeping paintings are curled up already)
+  const squash = (c.sleeping ? 1 : c.sick ? 0.9 : 1) + breathe;   // a sick one sits hunched (the others' sleeping paintings are curled up already)
   const y = sy - hop + px * 0.4 * (1 - squash);
   if (c.species === 'crow' && c.sleeping && crowSeat(c)) sx += treeSway(seat.tree, now) * hop;   // up a tree, it sways with it
   if (c.mode === 'dance') drawDance(c, sx, y, px);
   drawEmoji(c.species === 'crow' ? crowArt(c, hop, px, now) : walkerArt(c, px, now), sx, y, px, { flip: flipOf(c), squash });   // feet stay on the ground
-  if (c.mode === 'gulp' && (c.species === 'fox' || c.species === 'owl' && c.prey !== 'rabbit')) drawCatch(c, sx, y, px);
+  if (c.mode === 'gulp' && c.species === 'fox') drawCatch(c, sx, y, px);
   if (c.load && c.species === 'bee') drawBaskets(c, sx, y, px);
   if (c.mode === 'sip') drawSipping(c, sx, sy, px, now);
   if (px > 18 && ui.speed > 0 && ui.speed <= 4 && atHole(c)) drawDigging(c, sx, y, px, now);
@@ -2014,7 +1987,7 @@ const pawAt = (g, x, y, s) => fillIn(g, '#8a5a3c', () => {
   for (const [tx, ty] of [[-0.58, -0.2], [-0.21, -0.58], [0.21, -0.58], [0.58, -0.2]]) ovalAt(g, x + tx * s, y + ty * s, s * 0.19, s * 0.25, tx * 0.6);
 });
 // A field vole, round and brown and short-tailed, facing left: the mousing bubble's, and the one a fox
-// or an owl is after (paintVole, drawRustle).
+// is after (paintVole, drawRustle).
 const voleAt = g => {
   strokeIn(g, '#7a5a42', 0.08, () => { g.moveTo(0.6, 0.45); g.quadraticCurveTo(0.95, 0.5, 0.9, 0.8); });
   fillIn(g, '#8a6a4e', () => { ovalAt(g, 0.08, 0.25, 0.6, 0.42); ovalAt(g, -0.5, 0.12, 0.34, 0.3, -0.3); });
@@ -3016,7 +2989,7 @@ function drawUnder(sx, y, px, now, id) {
   }
 }
 
-// A bird's remains are a few feathers: a crow's ('remains:0') or an owl's barred brown ones ('remains:1'). An otter's
+// A bird's remains are a few feathers: a crow's ('remains:0'; 'remains:1', an owl's barred brown ones, from when there were owls). An otter's
 // ('remains:2') are tufts of its brown fur and a bone or two. A rabbit's and a fox's are painted below (paintBody).
 function paintRemains(g, size, U, look) {
   g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
@@ -3553,7 +3526,7 @@ const BUBBLE_ICONS = [
     fillIn(g, '#c99467', () => ovalAt(g, -0.45, 0.35, 0.16, 0.1, 0.3));
   }],
   ['🐁', voleAt],                                       // mousing: a vole
-  ['🐸', g => frogAt(g)],                               // a frog (a fox or an owl after them)
+  ['🐸', g => frogAt(g)],                               // a frog (a fox after them)
   ['🫧', spawnAt],                                      // frogspawn (a crow at it)
   ['🪱', g => {                                          // a crow pecking for grubs: a worm
     strokeIn(g, '#d88a86', 0.32, () => { g.moveTo(-0.72, 0.42); g.bezierCurveTo(-0.45, -0.35, -0.05, 0.75, 0.3, 0.02); g.quadraticCurveTo(0.48, -0.36, 0.74, -0.3); });
@@ -3698,7 +3671,7 @@ function drawSelectionOver(c, now) {
     ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ox, oy); ctx.stroke();
     ctx.restore();
   }
-  const label = c.hidden ? `${c.name} is ${c.species === 'crow' ? 'in the nest' : c.species === 'owl' ? 'in the hollow' : c.species === 'otter' ? 'in the holt' : `inside the ${c.species === 'bee' ? 'hive' : 'burrow'}`}` : c.name;
+  const label = c.hidden ? `${c.name} is ${c.species === 'crow' ? 'in the nest' : c.species === 'otter' ? 'in the holt' : `inside the ${c.species === 'bee' ? 'hive' : 'burrow'}`}` : c.name;
   drawLabel(label, sx, sy + (c.hidden ? cam.zoom : creaturePx(c) * 0.55) + 6);
 }
 
@@ -4356,7 +4329,7 @@ function drawPaintedTree(d, sx, sy, now, ck, stage = S.treeStage(world, d), px =
   const form = YOUNG.has(stage) ? 1 : 0, shape = Math.floor(hash2(hx, hy, 46) * TREE_SHAPES) % (form ? 2 : TREE_SHAPES);
   const f = px / TREE_UNIT, want = f * dpr, tier = TREE_TIERS.find(t => t >= want * 0.9) || TREE_TIERS[TREE_TIERS.length - 1];
   const snow = step(world.snow * 1.6 - 0.1, 4), tone = wood ? LOG_BARK[d.kind] || 'bark' : d.tone ?? 0;
-  const [a, b, m] = wood ? ['summer', null, 0] : stage === 'dead' ? [d.burnt ? 'burnt' : 'dead', null, 0] : treeStage(kind, d, ck);
+  const [a, b, m] = wood ? ['summer', null, 0] : stage === 'dead' ? ['dead', null, 0] : treeStage(kind, d, ck);
   let A = m < 1 ? treePainting(kind, shape, bareLook(kind, a) ? 0 : tone, form, a, tier, snow > 0) : null;
   let B = b && m > 0 ? treePainting(kind, shape, bareLook(kind, b) ? 0 : tone, form, b, tier, snow > 0) : null;
   if (!A && !B) {                                            // till this one comes: its kind in this look, or another look of it
@@ -4865,13 +4838,12 @@ function updateWater() {
   const woods = pond && pond.world === world ? pond.woods : S.distanceTo(Uint8Array.from(world.wood, v => v > 0.25 ? 1 : 0));
   pond = { world, version: world.waterVersion, at: now, waves, woods, shore, wet: f1 };
   if (!Ground.ok) return;
-  const toWater = S.distanceToWater(world), T = world.terrain, bed = T.level - T.summerLow - T.rainRise / 2;   // (bed: what an ordinary summer keeps under water)
+  const toWater = S.distanceToWater(world);
   for (let i = 0; i < f1.length; i++) {
     const o = i * 4;
     waterData[o] = f1[i]; waterData[o + 1] = f2[i]; waterData[o + 2] = f4[i]; waterData[o + 3] = d2[i];
     shapeData[o] = (world.ground[i] - world.level) / 0.6;     // about 0 at the water to 1 on the hilltops
     shapeData[o + 1] = Math.min(toWater[i], 50); shapeData[o + 2] = Math.min(woods[i], 50);
-    shapeData[o + 3] = !world.water[i] && world.ground[i] < bed ? 1 : 0;   // (the Dry Year: mud the water left, see ground.js)
   }
   Ground.set('water', waterData); Ground.set('shape', shapeData);
 }
@@ -5647,38 +5619,6 @@ function thunder(e) {
   ui.sky.boom = now;
 }
 
-// Flames glow, so they go on top of the night. The glow is painted once and stretched to size.
-// It can't add light to the ground (a layer of its own, under the canvas), so it lays a pale warm
-// light over it, which reads the same: the glows add up to it where many flames burn.
-let fireGlow = (() => {                   // (an ImageBitmap once it's ready: asBitmap)
-  const c = document.createElement('canvas'), n = 128, g = c.getContext('2d');
-  c.width = c.height = n;
-  const grad = g.createRadialGradient(n / 2, n / 2, 0, n / 2, n / 2, n / 2);
-  grad.addColorStop(0, 'rgba(255, 225, 110, 0.42)');
-  grad.addColorStop(1, 'rgba(255, 190, 90, 0)');
-  g.fillStyle = grad; g.fillRect(0, 0, n, n);
-  return c;
-})();
-asBitmap(fireGlow, b => { fireGlow = b; });
-function drawFire(now) {
-  if (!world.burning.length) return;
-  const z = cam.zoom, px = Math.max(8, z * 1.15);
-  ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  for (const i of world.burning) {
-    const [sx, sy] = toScreen(i % S.W + 0.5, Math.floor(i / S.W) + 0.5);
-    if (!visible(sx, sy, px * 2)) continue;
-    ctx.drawImage(fireGlow, sx - px * 1.6, sy - px * 1.6, px * 3.2, px * 3.2);
-  }
-  ctx.restore();
-  for (const i of world.burning) {
-    const [sx, sy] = toScreen(i % S.W + 0.5, Math.floor(i / S.W) + 0.5);
-    if (!visible(sx, sy, px)) continue;
-    const flick = Math.round(px * (0.85 + 0.15 * Math.sin(now / 90 + i * 1.7)));
-    drawEmoji('🔥', sx, sy - flick * 0.3, flick);
-  }
-}
-
 function addEffect(emoji, x, y, rise = 1.2, dur = 1400) {
   if (ui.effects.length > 120) return;
   const [sx, sy] = toScreen(x, y);
@@ -5706,7 +5646,7 @@ function drawEffects(now) {
 // ------------------------------------------------------------------ voles
 //
 // The sim keeps voles as a number on each tile (w.voles), too many and too small to follow, so a vole only
-// shows when something's after it: a fox listening or leaping, an owl dropping on it (drawRustle below).
+// shows when something's after it: a fox listening or leaping (drawRustle below).
 // The vole (the painted one of the mousing bubble, voleAt) comes from the sprite cache, its top part only,
 // rising out of the grass line.
 const PEEP_FOOT = 0.76, PEEP_BODY = 0.41;   // in the sprite, from the top: where its feet are, and how tall it is
@@ -5726,19 +5666,17 @@ function peepAt(s, sx, sy, up, flip) {
   ctx.globalAlpha = 1;
 }
 
-// ------------------------------------------------------------------ a fox mousing, an owl hunting
+// ------------------------------------------------------------------ a fox mousing
 //
 // The sim says where a mousing fox heard the rustle it'll leap at (c.rustle while it listens, c.target in
-// the air, sim.js mouse), and where an owl drops on one (c.target as it swoops, sim.js owlHunt). There the
-// grass twitches in fits, and as the fox crouches to leap, or the owl comes down, the vole looks up out of
-// the grass and freezes (a frog, where there are more frogs). Caught, it's in the fox's jaws or the owl's
-// beak while it's gulped down (drawCatch); missed, it darts off through the grass. Only a look, from
+// the air, sim.js mouse). There the grass twitches in fits, and as the fox crouches to leap, the vole looks up out of
+// the grass and freezes (a frog, where there are more frogs). Caught, it's in the fox's jaws while it's gulped down
+// (drawCatch); missed, it darts off through the grass. Only a look, from
 // sprites in the cache, and a fixed pool for the ones darting off.
 const CROUCH = 6;                  // ticks before the leap that it crouches, and the vole looks up
 const RUSTLE_SIZE = 0.5;           // the twitching tuft, of a rabbit
 const RUSTLE_PREY = 0.6;           // the vole (or frog) there, of a rabbit
 const RUSTLE_PEEK = 0.35;          // how far up it shows while the grass twitches most
-const OWL_SEEN = 3;                // tiles off: the vole sees the owl coming and looks up
 const DASH_MS = 700;               // a vole the fox missed darting off
 const DASH_LEN = 2;                // tiles, out from under the fox
 const DASHES = 4;
@@ -5746,14 +5684,14 @@ const dashes = { x: new Float32Array(DASHES), y: new Float32Array(DASHES), dx: n
   t0: new Float64Array(DASHES).fill(-1e9), frog: new Uint8Array(DASHES), next: 0 };
 const leaps = new WeakMap();       // a fox in the air: where it'll land, to see if it missed once it's down
 
-// A fox leaping on a vole, or an owl dropping on one (not on a kit).
-const leaping = c => (c.species === 'fox' ? c.mode === 'pounce' : c.mode === 'swoop' && !c.targetId);
-// Where a mousing fox heard its rustle, or a fox or an owl is coming down (null: it isn't).
+// A fox leaping on a vole.
+const leaping = c => c.species === 'fox' && c.mode === 'pounce';
+// Where a mousing fox heard its rustle, or is coming down (null: it isn't).
 const rustleOf = c => leaping(c) ? c.target : c.species === 'fox' && c.mode === 'mouse' && !c.target ? c.rustle || null : null;
 const frogThere = p => { const i = (p.y | 0) * S.W + (p.x | 0); return world.frogs[i] > world.voles[i]; };
 const crouching = c => c.species === 'fox' && c.mode === 'mouse' && !c.target && !!c.rustle && c.timer - acc < CROUCH;
 
-// Every frame, for each fox and owl: down from a leap that didn't end in a gulp, the vole darts off from under it.
+// Every frame, for each fox: down from a leap that didn't end in a gulp, the vole darts off from under it.
 function watchLeap(c, now) {
   if (leaping(c)) { if (c.target) leaps.set(c, c.target); return; }
   const to = leaps.get(c);
@@ -5783,7 +5721,7 @@ function paintTuftSprite(g, size, U) {
   g.setTransform(U, 0, 0, U, size / 2, size / 2 + 0.36 * U);
   tuftAt(g, k => hash2(5, 29, k), 9, 0.7, 0.5, GRASS[0], 0.05);
 }
-// The rustle a fox is listening to or leaping at, or an owl dropping on: the grass there twitching, and the vole looking up.
+// The rustle a fox is listening to or leaping at: the grass there twitching, and the vole looking up.
 function drawRustle(c, to, sx, sy, z) {
   if (world.snow >= 0.3 || z < 6) return;              // (under the snow, nothing shows)
   const t = world.tick + acc, px = 8 + z;
@@ -5795,18 +5733,16 @@ function drawRustle(c, to, sx, sy, z) {
     ctx.drawImage(tuft.canvas, -tuft.size / 2, -tuft.size * 0.8, tuft.size, tuft.size);
     ctx.restore();
   }
-  const look = c.species === 'owl' ? clamp(1 - Math.hypot(c.x - to.x, c.y - to.y) / OWL_SEEN, 0, 1)
-    : c.mode === 'pounce' ? 1 : clamp(1 - (c.timer - acc) / CROUCH, 0, 1);
+  const look = c.mode === 'pounce' ? 1 : clamp(1 - (c.timer - acc) / CROUCH, 0, 1);
   const up = Math.max(look, fit > 0.8 ? RUSTLE_PEEK : 0);   // its back now and then, then up it looks
   if (up <= 0) return;
   const frog = frogThere(to);
   peepAt(sprite(frog ? 'frog:0' : 'vole:0', Math.max(9, px * RUSTLE_PREY)), sx, sy, up, c.x < to.x);
 }
 
-// Caught: the vole (or frog) crosswise in the fox's jaws or the owl's beak while it's gulped down, gone at the last.
-// Where in its painting (facing left), of its size, how big, and turned how far: crosswise in a fox's jaws (FOX_POSES.gulp),
-// head first into an owl's beak.
-const MOUTH = { fox: [-0.38, 0.08, 0.3, -0.3], owl: [0.06, -0.09, 0.42, 1.35] };
+// Caught: the vole (or frog) crosswise in the fox's jaws while it's gulped down, gone at the last.
+// Where in its painting (facing left), of its size, how big, and turned how far (FOX_POSES.gulp).
+const MOUTH = { fox: [-0.38, 0.08, 0.3, -0.3] };
 function drawCatch(c, sx, y, px) {
   const [mx, my, mz, turn] = MOUTH[c.species], s = sprite(c.prey === 'frog' ? 'frog:0' : 'vole:0', px * mz), side = flipOf(c) ? -1 : 1;
   ctx.save();
@@ -5969,7 +5905,7 @@ function drawPollen(now) {
 // butterflies over a flower field in bloom. Only a look: each one is worked out from a hash and
 // the clock, so there is nothing to keep, and they are drawn from one small glow and the 🦋 sprite.
 
-// (The halo is laid over the dark ground, not added to it, like the fire's glow: so it's thicker.)
+// (The halo is laid over the dark ground, not added to it: so it's thicker.)
 let FIREFLY_GLOW = (() => {               // (an ImageBitmap once it's ready: asBitmap)
   const c = document.createElement('canvas'), n = 32, g = c.getContext('2d');
   c.width = c.height = n;
@@ -6012,7 +5948,7 @@ function drawFireflies(now, dark) {
   ctx.globalCompositeOperation = 'lighter';
   for (let s = 0; s < spots.x.length; s++) {
     const x0 = spots.x[s], y0 = spots.y[s], i = (y0 | 0) * S.W + (x0 | 0);
-    if (world.water[i] || world.grass[i] < 0.3 || world.fire[i] > 0) continue;
+    if (world.water[i] || world.grass[i] < 0.3) continue;
     const bx = (x0 - cam.x) * z + vw / 2, by = (y0 - cam.y) * z + vh / 2;     // (toScreen, without an array)
     if (!visible(bx, by, z * 2)) continue;
     for (let k = 0; k < FIREFLIES; k++) {
@@ -6140,12 +6076,6 @@ function handleEvent(e) {
       hear('thunder', e.x, e.y, {}, true);
       addEffect('💥', e.x, e.y, 0.2, 800);
       break;
-    case 'fire':
-      hear('fire', e.x, e.y, {}, true);
-      break;
-    case 'fireout':
-      if (e.burned >= 25) chime('fireout');
-      break;
     case 'love':
       addEffect('💕', (e.a.x + e.b.x) / 2, (e.a.y + e.b.y) / 2);
       hear('love', e.a.x, e.a.y, { species: e.a.species }, mine);
@@ -6156,8 +6086,8 @@ function handleEvent(e) {
       break;
     case 'death': {
       const c = e.c;
-      if (e.cause !== 'left') hear(e.cause === 'fox' || e.cause === 'owl' ? 'catch' : e.cause === 'age' ? 'old' : 'starve', c.x, c.y, { species: c.species }, mine);   // (one flying off makes no sound)
-      if (e.cause === 'fox' || e.cause === 'owl') addEffect('🦴', c.x, c.y, 0.3, 1800);
+      if (e.cause !== 'left') hear(e.cause === 'fox' ? 'catch' : e.cause === 'age' ? 'old' : 'starve', c.x, c.y, { species: c.species }, mine);   // (one flying off makes no sound)
+      if (e.cause === 'fox') addEffect('🦴', c.x, c.y, 0.3, 1800);
       else if (e.cause !== 'left') addEffect('👻', c.x, c.y, 1.6, 2000);
       break;
     }
@@ -6366,8 +6296,6 @@ function renderInspector() {
   const mate = c.species === 'crow' && c.mate && world.byId.get(c.mate);
   if (mate) chips.push(mate.alive ? `💞 Paired with ${link(mate)}` : `🥀 Lost its mate ${link(mate)}`);
   if (c.species === 'crow' && c.home) chips.push(`${c.sex === 'F' ? '🪺 Nests in' : '🌳 Its patch is round'} ${thingLink('tree', c.home.id, c.home.name ? 'the ' + esc(c.home.name) : 'a tall ' + treeName(c.home).toLowerCase())}`);
-  if (c.species === 'owl' && c.home && c.home.owl === c.id) chips.push(`🕳️ Nests in the hollow of ${thingLink('tree', c.home.id, c.home.name ? 'the ' + esc(c.home.name) : 'an old oak')}`);
-  else if (c.species === 'owl' && c.home) chips.push(`🌳 Lives in the wood round ${thingLink('tree', c.home.id, c.home.name ? 'the ' + esc(c.home.name) : 'an old oak')}`);
   if (c.species === 'otter' && c.home) chips.push(`🕳️ ${c.home.holt === c.id ? 'Her holt is' : 'Lives in the holt'} ${holtPlace(c.home, '')}`);
   if (c.caches?.length && S.seasonOf(world.tick) >= 2) chips.push(`🌰 Remembers where ${c.caches.length === 1 ? 'one acorn is' : c.caches.length + ' acorns are'} buried`);
   const nemesis = world.byId.get(c.nemesisId);
@@ -6466,7 +6394,7 @@ function treeTitle(d) {
     case 'sapling': return `${short[0].toUpperCase() + short.slice(1)} sapling`;
     case 'young': return `Young ${low}`;
     case 'old': return `Old ${low}`;
-    case 'dead': return `${d.burnt ? 'Burnt' : 'Dead'} ${low}`;
+    case 'dead': return `Dead ${low}`;
     case 'log': return `Fallen ${low}`;
     case 'stump': return `${kind} stump`;
     default: return kind;
@@ -6657,12 +6585,10 @@ const THINGS = {
       const where = wood >= 0.95 ? 'deep in the wood' : wood >= 0.6 ? 'at the edge of the wood' : 'standing on its own';   // as plantTrees tells them
       const living = S.standing(d), young = YOUNG.has(stage);
       let status;
-      if (world.fire[i] > 0) status = '🔥 On fire!';
-      else if (d.stump) status = `⚡ Struck by lightning ${ago(d.stump)} ago. It will sprout again from the stump.`;
+      if (d.stump) status = `⚡ Struck by lightning ${ago(d.stump)} ago. It will sprout again from the stump.`;
       else if (stage === 'log') status = `🪵 Down ${ago(d.fallen)}, rotting away. Beetles and fungi are at work.`;
-      else if (stage === 'dead') status = d.burnt ? `🔥 Killed by a fire ${ago(d.dead)} ago. It stands black and bare, and one day it will fall.`
-        : `🪾 Died ${ago(d.dead)} ago. It stands grey and bare, and one day it will fall.`;
-      else if (young && world.fire[i] === 0 && wood > k.shade) status = k.shade > 0.6 ? '🌑 Waiting in the shade for an old tree to fall' : '🌑 Too much shade: it is struggling';
+      else if (stage === 'dead') status = `🪾 Died ${ago(d.dead)} ago. It stands grey and bare, and one day it will fall.`;
+      else if (young && wood > k.shade) status = k.shade > 0.6 ? '🌑 Waiting in the shade for an old tree to fall' : '🌑 Too much shade: it is struggling';
       else if (young && d.size < S.SAPLING) status = d.hedge ? '🌿 A young whip: the thorns keep the rabbits off it, mostly' : thornGuard(d) ? '🌿 Safe among the thorns from hungry rabbits' : '🐇 Small enough for a rabbit to nibble';
       else status = treeSeason(d);
       const facts = [], parent = d.parent && world.decor.find(o => o.id === d.parent);
@@ -6674,12 +6600,10 @@ const THINGS = {
       else if (d.by === 'wind') facts.push(['🌬️', `Its seed blew in on the wind from ${from}`]);
       else if (d.by === 'water') facts.push(['🌊', `Its seed fell in the water from ${from}, floated off and washed up here`]);
       else if (d.by === 'drop') facts.push(k.mast ? ['🌰', `Grew from ${k.mast === 'acorns' ? 'an acorn' : 'a beechnut'} that fell from ${from}`] : ['🍎', `Grew from a pip of ${from}`]);
-      const owl = d.owl && world.byId.get(d.owl);
       if (d.hive) facts.push(['🐝', `${thingLink('hive', d.hive.id, d.hive.queen ? `Queen ${esc(d.hive.queen.name)}'s hive` : 'An empty hive')} is in its hollow`]);
-      else if (owl && owl.alive) facts.push(['🦉', `${link(owl)} the owl nests in its hollow`]);
       const otter = d.holt && world.byId.get(d.holt);
       if (otter && otter.alive) facts.push(['🦦', `${link(otter)} the otter has her holt in its roots, down by the water`]);
-      else if (S.hollow(world, d)) facts.push(['🕳️', `Old enough to have gone hollow: bees${S.OWLS ? ' or owls' : ''} could make a home in it`]);
+      else if (S.hollow(world, d)) facts.push(['🕳️', `Old enough to have gone hollow: bees could make a home in it`]);
       if (living && S.bearing(world, d)) {
         const bear = { wind: '🌬️ Sheds its seed on the wind each autumn', crow: `🌰 Its ${k.mast} are a feast in a mast year, and the crows bury them far and wide`,
           bird: `🐦 Birds carry off its ${d.kind === 'cherry' ? 'cherries' : 'haws'} and drop the stones far and wide`, drop: '🍎 Drops its apples for whoever comes by' }[k.by];
@@ -6747,8 +6671,8 @@ const THINGS = {
     spot: k => ({ x: k.x, y: k.y + 0.3, r: 0.6 }),
     show(k) {
       const c = k.c, killer = world.byId.get(c.killerId);
-      const how = { fox: `caught by ${killer ? killer.name : 'a fox'}`, owl: `caught by ${killer ? killer.name : 'an owl'} the owl`, hunger: 'starved', sickness: 'the sickness', age: 'old age',
-        lightning: 'lightning', fire: 'the wildfire' }[c.cause] || c.cause;
+      const how = { fox: `caught by ${killer ? killer.name : 'a fox'}`, hunger: 'starved', sickness: 'the sickness', age: 'old age',
+        lightning: 'lightning' }[c.cause] || c.cause;
       const name = `The remains of ${c.name}`, sub = `${c.species === 'fox' ? 'A fox' : `A ${c.sp.name.toLowerCase()}`} (${how})`;
       if (!this.here(k)) return { emoji: '🌱', tint: '#9cc27a', name, sub, status: '🌱 Gone back into the ground. The grass will be lush here for a while.' };
       const crows = world.creatures.filter(o => o.alive && o.target === k && o.mode === 'carrion');
@@ -6758,7 +6682,7 @@ const THINGS = {
       const s = S.seasonOf(world.tick);
       facts.push(s === 1 ? ['☀️', 'In the summer heat they won\'t last long'] : s === 3 ? ['❄️', 'In the cold they keep a while'] : ['🍂', 'They\'ll be gone in a few days']);
       if (crows.length > 1) facts.push(['🐦‍⬛', linkList(crows, 6)]);
-      return { emoji: c.species === 'crow' || c.species === 'owl' ? '🪶' : '🍂', tint: '#b8a47a', name, sub, status, facts, meters: [['Left', k.meat / k.full, '']] };
+      return { emoji: c.species === 'crow' ? '🪶' : '🍂', tint: '#b8a47a', name, sub, status, facts, meters: [['Left', k.meat / k.full, '']] };
     },
   },
 
@@ -7738,7 +7662,7 @@ function frame(now) {
     if (ui.sound) {
       const ck = S.clock(world);
       const life = world.count.rabbit / (S.CROWDED * world.room);   // a crowded meadow, not the cap (only a safety net now)
-      Sound.update({ phase: ck.phase, season: ck.season, speed: ui.speed, sky: ui.sky.mix, fire: world.burning.length, bees: beesOnScreen(), life, owls: world.count.owl || 0,
+      Sound.update({ phase: ck.phase, season: ck.season, speed: ui.speed, sky: ui.sky.mix, bees: beesOnScreen(), life,
         frogs: world.spawnCount > 0 && ck.season === 0 ? Math.min(1, world.spawnCount / 300) : 0 });
     }
     // Not under the mouse or a finger: a rebuilt button would swallow the click. (A finger leaves :hover stuck.)

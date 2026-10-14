@@ -16,10 +16,9 @@
  *     deepest well out from the shore, with long brushed strokes on its surface.
  *
  * Use: Ground.set(name, data) with a Float32Array of 4 values a tile: 'tile' (grass, water,
- * ash, wood), 'bloom' (a field's tint times how much it shows, then how much), 'shape' (height,
- * tiles to the water, tiles to the woods, mud the Dry Year's water left), 'water' (the water
- * softened by 1, 2 and 4 blurs, and the deep water by 2) and 'parched' (?keep, the Dry Year: how
- * parched, the first of the four), and once Ground.mist(...) with how thick the mist is near the
+ * nothing, wood), 'bloom' (a field's tint times how much it shows, then how much), 'shape' (height,
+ * tiles to the water, tiles to the woods, nothing) and 'water' (the water softened by 1, 2 and 4
+ * blurs, and the deep water by 2), and once Ground.mist(...) with how thick the mist is near the
  * edges. Then Ground.draw(uniforms) paints Ground.canvas if it has to, all of it times its light
  * (white by day), and Ground.view says where in it the screen's corner is. game.js shows the canvas as a layer of its own
  * under the meadow, slid so that corner is on the screen's.
@@ -39,23 +38,13 @@ void main() { gl_Position = vec4(a, 0., 1.); }`;
 
 const FRAGMENT = `#version 300 es
 precision highp float;
-uniform sampler2D tile, bloom, shape, water, mist, parched;
+uniform sampler2D tile, bloom, shape, water, mist;
 uniform vec2 size, off, seed;
-uniform float top, zoom, dpr, snow, damp, lx, ly, ice, cold, mistOut, drought;
+uniform float top, zoom, dpr, snow, damp, lx, ly, ice, cold, mistOut;
 uniform vec3 low, high, sand, fog;
 uniform vec3 light;                      // what it's all lit by: white by day, warm in the golden hour (game.js goldLight)
 out vec4 o;
 
-// The Dry Year (?keep): drought is how hard it bites, 0 to 1 (game.js, in steps of 1/16), and the parched texture's red how
-// parched each tile is, as the sim has it (sim.js parch: away from the water and a hedge's lane, less under the trees).
-#define DRY_WOBBLE 0.25                   // how much the edge between the green and the straw wanders, finer than a tile
-#define DRY_STRAW vec3(0.86, 0.78, 0.50)
-#define DRY_OLIVE vec3(0.70, 0.69, 0.44)  // here and there, through the straw
-#define DRY_EARTH vec3(0.74, 0.64, 0.49)  // baked earth
-#define DRY_MUD vec3(0.50, 0.43, 0.34)    // wet mud where the water has drawn back past any summer's line (the shape's 4th)
-#define DRY_LUSH 0.6                      // how much lusher the ring by the water goes
-#define DRY_GREEN 0.75                    // and how thick its grass shows at least, whatever the sim's (a pond just dug)
-#define DRY_THIN 0.7                      // the straw this much thinner where the bare earth shows
 
 // The grass, as the rabbits leave it, and how it's painted.
 #define LONG vec2(0.46, 0.64)             // from short grass to long, over this
@@ -236,19 +225,6 @@ void main() {
   vec3 lush = grass * vec3(0.84, 0.95, 0.9);
   vec3 longC = lush;                                             // the long grass's own colour, before its light
 
-  // The Dry Year, as today: straw where the sim says it's parched, a lush ring where it's spared.
-  float parch = 0.;
-  if (drought > 0.) {
-    float raw = smooth4(parched, p).r;
-    parch = clamp(raw + DRY_WOBBLE * (fbm(q * 0.3 + 520.) - 0.5) * smoothstep(0., 0.15, raw), 0., 1.);
-    float ring = drought * (1. - smoothstep(0.03, 0.3, parch / drought)) * (1. - smoothstep(0.2, 0.7, H.a));
-    float bald = smoothstep(0.42, 0.72, fbm(q * 0.45 + 600.));
-    vec3 straw = mix(DRY_STRAW, DRY_OLIVE, smoothstep(0.35, 0.75, fbm(q * 0.25 + 640.)) * 0.55);
-    grass = mix(mix(grass, straw, parch), lush * vec3(0.92, 1.04, 0.9), DRY_LUSH * ring);
-    g = mix(g * (1. - DRY_THIN * parch * bald), max(g, DRY_GREEN), ring);
-    longC = mix(lush, grass * vec3(0.94, 0.95, 0.9), clamp(parch + DRY_LUSH * ring, 0., 1.));
-  }
-
   // How long the grass is (what the rabbits eat): long meadow grass; short grass where it's grazed, paler and sunnier,
   // straw-coloured as it gets shorter; bare earth only where it's bitten right down. The edges ragged, finer than a tile.
   float ragC = 0.15 * (noise(q * 0.9 + 40.) - 0.5) + 0.1 * (noise(q * 2.1 + 43.) - 0.5), rag = ragC + 0.05 * (noise(q * 4.7 + 45.) - 0.5);
@@ -257,12 +233,7 @@ void main() {
   float far = 1. - clamp((zoom - 8.) / 6., 0., 1.);
   float tall = smoothstep(LONG.x, LONG.y, gw), turf = smoothstep(BITTEN.x, BITTEN.y, gw);
   vec3 earth = low * mix(vec3(0.97, 0.97, 0.98), vec3(0.93, 0.85, 0.72), hue) * (1. - 0.3 * moist);
-  if (parch > 0.) earth = mix(earth, DRY_EARTH, parch);
   vec3 lawn = mix(tone(grass, 0.3), low * mix(vec3(1.), vec3(1.02, 1.0, 0.9), hue), 0.22 + 0.15 * far + 0.45 * (1. - smoothstep(0.16, 0.48, gw)));   // (paler from afar, so it reads)
-  if (parch > 0.) {
-    lawn = mix(lawn, grass, parch);
-    turf = mix(turf, smoothstep(-0.2, 0.5, gw), parch);
-  }
   // The long grass's edge, toward the sun: where it stands higher than the short grass by it, a light along its top
   // and a soft shadow falling on the lawn below. (One more look at the grass a little way toward the sun.)
   // (Its slope from the pixels about it: dFdx and dFdy, in tiles, and toward the sun.)
@@ -289,8 +260,6 @@ void main() {
   col = mix(col, col * DEEP, 0.3 * castOn);
   col = mix(earth, col, turf);
   if (turf < 1.) col *= 1. - 0.05 * (1. - turf) * noise(q * 2.2 + 900.);   // the earth a little uneven
-  // Wet mud where the Dry Year's water has drawn back past any summer's line (the shape's 4th).
-  if (drought > 0.) col = mix(col, mix(DRY_MUD, DRY_EARTH, smoothstep(0.5, 3., toWater)) * (0.92 + 0.16 * n2), drought * smoothstep(0.2, 0.7, H.a));
 
   // A thin edge of wet moss along the water, fuller here and there: a deep cool green, never tan.
   float cove = smoothstep(0.4, 0.65, 0.62 * noise(q * 0.5 + 70.) + 0.38 * noise(q * 1.1 + 75.));
@@ -298,7 +267,6 @@ void main() {
   col *= 0.96 + 0.08 * height;
 
   col = col * (1. - B.a) + B.rgb;                                // a flower field in bloom
-  col = mix(col, vec3(74., 66., 60.) / 255., T.b * (1. - g) * 0.85);   // burnt, until the grass returns
   // Snow settles in patches first, on the long grass's sunny tops before its hollows; blue in the shade.
   float s0 = snow > 0. ? clamp(snow * 1.4 - 0.2 - 0.25 * (2. * n1 - 1.) - 0.1 * (2. * n2 - 1.), 0., 0.92) : 0.;
   col = mix(col, mix(vec3(0.8, 0.86, 0.96), vec3(246., 248., 252.) / 255., 0.6 + 0.4 * (1. - castOn)), s0);
@@ -365,7 +333,7 @@ if (gl) {
     gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a, 2, gl.FLOAT, false, 0, 0);
     const n = gl.getProgramParameter(prog, gl.ACTIVE_UNIFORMS);
     for (let i = 0; i < n; i++) { const name = gl.getActiveUniform(prog, i).name; U[name] = gl.getUniformLocation(prog, name); }
-    [['tile', 0], ['bloom', 1], ['shape', 2], ['water', 3], ['parched', 5]].forEach(([name, unit]) => {   // (4: the mist)
+    [['tile', 0], ['bloom', 1], ['shape', 2], ['water', 3]].forEach(([name, unit]) => {   // (4: the mist)
       const t = gl.createTexture();
       gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t);
       for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR],
@@ -411,7 +379,7 @@ function set(name, data) {
 // zoom): the margin would only make every paint bigger.
 const PAD = 64;
 let last = null, stale = true, busy = 0, panned = -1e9, paintedAt = -1e9;   // busy: how often lately more than the camera moved
-const NEAR = { drought: 0.004, snow: 0.004, damp: 0.002, ice: 0.004, cold: 0.004, lx: 0.08, ly: 0.08 };
+const NEAR = { snow: 0.004, damp: 0.002, ice: 0.004, cold: 0.004, lx: 0.08, ly: 0.08 };
 const EXACT = ['width', 'height', 'zoom', 'dpr'];
 const was = { ox: 0, oy: 0 }, view = { x: 0, y: 0 };
 // At speed a day goes by in a blink, and the light, the mist's colour, the wet and the season move a little every frame:
@@ -449,7 +417,7 @@ function draw(u) {
   gl.viewport(0, ch - u.height - 2 * m, u.width + 2 * m, u.height + 2 * m);   // the canvas's top left
   gl.uniform1f(U.top, ch);
   gl.uniform2f(U.off, u.ox + pad, u.oy + pad); gl.uniform2fv(U.seed, u.seed);
-  for (const k of ['zoom', 'dpr', 'snow', 'damp', 'lx', 'ly', 'ice', 'cold', 'drought']) gl.uniform1f(U[k], u[k]);
+  for (const k of ['zoom', 'dpr', 'snow', 'damp', 'lx', 'ly', 'ice', 'cold']) gl.uniform1f(U[k], u[k]);
   for (const k of ['low', 'high', 'sand', 'fog']) gl.uniform3fv(U[k], u[k].map(v => v / 255));
   gl.uniform3fv(U.light, u.light);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
