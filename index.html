@@ -145,6 +145,8 @@
   .visitor-glyph.sil { filter: brightness(0); opacity: 0.45; }   /* one never seen: its shadow */
   .visitor-glyph { display: inline-block; width: 1.35em; height: 1.35em; margin: -0.3em 0 -0.25em; vertical-align: -0.2em; background: 43% 57% / 180% no-repeat; }   /* a painted visitor in a line of text (game.js visitorGlyph), its painting's room round it cropped off */
   .news-item.gone { opacity: 0; transform: translateY(-6px); }
+  /* big news (game.js bigNews): gold, a little larger, an accent stripe down its left */
+  .news-item.big { background-color: #f9dca0; font-size: 14px; padding: 7px 12px 7px 14px; box-shadow: var(--edge), inset 4px 0 0 var(--accent), var(--shadow); }
   .brand-btn { border: none; background: transparent; border-radius: 8px; padding: 1px 6px; font-size: 16px; }
   @media (hover: hover) { .brand-btn:hover { background: rgba(0,0,0,0.06); } }
   .brand-btn.on { background: var(--accent-soft); }
