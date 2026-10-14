@@ -177,6 +177,17 @@ the mode and the water (`otterArt`), draws a wake while it swims somewhere (`dra
 or slower), and only rings while it's under
 (`drawUnder`), and the way into a holt (`paintHolt`).
 
+The forager (`w.forager`, `foragerOf`: one layout, kept with the meadow; a meadow kept before it gets one when it opens,
+no `KEEP_VERSION` bump) is the player: not a creature, so nothing hunts it and nothing it does touches the meadow's random
+numbers. It starts at a pleasant dry spot near the water and the woods, above the spring flood, nothing standing on it, near
+the middle (`startForager`). `foragerTo` finds its way: A* over the tiles (`tilePath`, its arrays made once; deep water
+blocks unless frozen, the shallows cost `SHALLOW_COST`, ground by the deep `BRINK_COST` more, no squeezing past the deep's
+corners), to the tile it can stand on nearest a click on the deep, or the nearest it can reach; then pulled tight into a few
+straight legs (`taut`: `TAUT_CLEAR` off the deep, and no wading where the tiles' way didn't). `foragerTick` walks them by
+steering: it heads for a point `FORAGER_LOOK` along the way, turning at most `FORAGER_TURN` a tick (three times that from
+standing), speeds up by `FORAGER_ACCEL`, slows to stop where it was sent (`FORAGER_BRAKE`) and into a sharp turn, wades at
+`FORAGER_WADE` of `FORAGER_WALK`, and slides along the deep if a corner clips it.
+
 Rocks are painted (`rockInfo`, `rockSprite` in game.js): pebbles, stones and boulders by
 size (`TERRAIN.rockSize`), flat stones at the fords, and two or three great rocks per meadow
 (`TERRAIN.bigRocks`, `big: true`) that burrows keep clear of. Like a tree's, a rock's snow is a layer of its

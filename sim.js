@@ -5161,6 +5161,234 @@ function lifeTick(w, c) {
   if (c.pregnantUntil && w.tick >= c.pregnantUntil) giveBirth(w, c);
 }
 
+// ---------------------------------------------------------------- the forager
+//
+// The player: a little hooded forager (w.forager) you walk about by clicking. Not a creature: nothing hunts it and it
+// eats nothing the meadow counts. A click asks foragerTo for a way there: A* over the tiles (deep water blocks unless
+// it's frozen; the shallows cost more, so it wades only where that saves a good way round; ground by the deep costs a
+// little more, so the way keeps off the brink), then pulled tight into a few straight legs (taut: each as long as it can
+// be without coming within TAUT_CLEAR of the deep, or wading where the tiles' way didn't). It walks them by steering, not
+// tile by tile: it heads for a point FORAGER_LOOK tiles further along the way, turning at most FORAGER_TURN a tick, so
+// corners come round in curves; it speeds up gently (FORAGER_ACCEL), slows to stop just where it was sent (FORAGER_BRAKE),
+// slows into a sharp turn, and wades at FORAGER_WADE of its pace. It moves on the sim's ticks, so pausing pauses it, and
+// game.js draws it between them.
+const FORAGER_WALK = 0.065;             // tiles a tick at a walk (a rabbit ambles 0.06)
+const FORAGER_WADE = 0.5;               // of that, in the shallows
+const FORAGER_ACCEL = 0.0045;           // tiles a tick it gains a tick, setting off (about half a second to a walk)
+const FORAGER_BRAKE = 0.0035;           // and loses, stopping (it starts slowing about 0.7 tiles out)
+const FORAGER_TURN = 0.16;              // radians a tick it can turn at most at a walk (three times that from standing)
+const FORAGER_LOOK = 0.8;               // tiles ahead along its way it steers for
+const SHALLOW_COST = 2.5;               // a step in the shallows costs this many on dry ground
+const BRINK_COST = 0.8;                 // and one next to deep water this much more
+const TAUT_CLEAR = 0.3;                 // a straightened leg keeps this far off the deep on either side
+
+// Every field it ever has, in one order (see blankCreature). path: the way, as x, y pairs; leg: the pair it's heading
+// for; speed, heading: tiles a tick, radians (0 east, pi / 2 down the screen); moved: how far it went last tick;
+// goalX, goalY: where it was sent.
+const foragerOf = (x, y) => ({ forager: true, x, y, path: [], leg: 0, speed: -0, heading: Math.PI / 2, moved: -0, walking: false, goalX: x, goalY: y });
+
+// Where it starts: a pleasant dry spot near the water and the woods, above the spring flood, nothing standing on it, not
+// far from the middle.
+function startForager(w) {
+  const T = w.terrain, high = T.level + T.springFlood + T.rainRise / 2, M = 12;
+  let best = -Infinity, bx = W / 2, by = H / 2;
+  for (let y = M; y < H - M; y++) for (let x = M; x < W - M; x++) {
+    const i = y * W + x;
+    if (w.water[i] || w.ground[i] <= high || w.wood[i] > 0.12 || w.damp[i] < 3) continue;
+    let wood = 0;
+    for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4; wood += w.wood[idx(clamp(x + Math.cos(a) * 5, 0, W - 1), clamp(y + Math.sin(a) * 5, 0, H - 1))]; }
+    const score = Math.min(wood / 8, 0.4) * 3 - Math.abs(w.damp[i] - 5) * 0.2 - Math.hypot(x - W / 2, y - H / 2) / 60;
+    if (score <= best) continue;
+    let clear = true;
+    forEachDecorNear(w, x + 0.5, y + 0.5, 3, d => { if (Math.hypot(d.x - x - 0.5, d.y - y - 0.5) < (d.tree ? 1.5 : d.size * 0.6 + 0.6)) clear = false; });
+    if (clear && !w.burrows.some(b => Math.hypot(b.x - x - 0.5, b.y - y - 0.5) < 2.5)) { best = score; bx = x + 0.5; by = y + 0.5; }
+  }
+  return foragerOf(bx, by);
+}
+
+// A step's cost onto tile i, or 0 where it can't go.
+const canStand = (w, i) => w.frozen || w.water[i] !== DEEP;
+function stepCost(w, i) {
+  if (w.frozen) return 1;
+  const v = w.water[i];
+  if (v === DEEP) return 0;
+  let c = v === SHALLOW ? SHALLOW_COST : 1;
+  const x = i % W, y = (i / W) | 0;
+  if ((x > 0 && w.water[i - 1] === DEEP) || (x < W - 1 && w.water[i + 1] === DEEP) || (y > 0 && w.water[i - W] === DEEP) || (y < H - 1 && w.water[i + W] === DEEP)) c += BRINK_COST;
+  return c;
+}
+
+// A* over the tiles, from tile a to tile b (or, if b can't be reached, to the tile reached nearest it). Its arrays are
+// made once and kept; a search is a few ms at most, once a click.
+let starG = null, starF = null, starFrom = null, starSeen = null, starHeap = null, starN = 0, starRun = 0;
+function heapPush(i) {
+  let k = starN++;
+  while (k > 0) { const p = (k - 1) >> 1; if (starF[starHeap[p]] <= starF[i]) break; starHeap[k] = starHeap[p]; k = p; }
+  starHeap[k] = i;
+}
+function heapPop() {
+  const top = starHeap[0], last = starHeap[--starN];
+  if (starN > 0) {
+    let k = 0;
+    for (;;) {
+      const l = 2 * k + 1, r = l + 1;
+      let m = k, fm = starF[last];
+      if (l < starN && starF[starHeap[l]] < fm) { m = l; fm = starF[starHeap[l]]; }
+      if (r < starN && starF[starHeap[r]] < fm) m = r;
+      if (m === k) break;
+      starHeap[k] = starHeap[m]; k = m;
+    }
+    starHeap[k] = last;
+  }
+  return top;
+}
+function tilePath(w, a, b) {
+  if (!starG) { starG = new Float32Array(W * H); starF = new Float32Array(W * H); starFrom = new Int32Array(W * H); starSeen = new Int32Array(W * H); starHeap = new Int32Array(W * H * 8); }
+  const run = ++starRun, bx = b % W, by = (b / W) | 0;
+  const h = i => { const dx = Math.abs(i % W - bx), dy = Math.abs(((i / W) | 0) - by); return dx + dy + (Math.SQRT2 - 2) * Math.min(dx, dy); };
+  starN = 0;
+  starSeen[a] = run; starG[a] = 0; starF[a] = h(a); starFrom[a] = -1; heapPush(a);
+  let near = a, nearH = h(a);
+  while (starN > 0) {
+    const i = heapPop();
+    if (starSeen[i] === -run) continue;                  // (closed already: a stale entry)
+    starSeen[i] = -run;
+    if (i === b) { near = b; break; }
+    const hi = h(i);
+    if (hi < nearH) { nearH = hi; near = i; }
+    const x = i % W, y = (i / W) | 0;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const nx = x + dx, ny = y + dy;
+      if ((!dx && !dy) || nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+      const j = ny * W + nx;
+      if (starSeen[j] === -run) continue;
+      const c = stepCost(w, j);
+      if (!c || (dx && dy && (!canStand(w, y * W + nx) || !canStand(w, ny * W + x)))) continue;   // (no squeezing past the deep's corner)
+      const g = starG[i] + c * (dx && dy ? Math.SQRT2 : 1);
+      if (starSeen[j] === run && g >= starG[j]) continue;
+      starSeen[j] = run; starG[j] = g; starF[j] = g + h(j) * 0.999; starFrom[j] = i;
+      if (starN < starHeap.length) heapPush(j);
+    }
+  }
+  const out = [];
+  for (let i = near; i >= 0; i = starFrom[i]) out.push(i);
+  return out.reverse();
+}
+
+// Whether the straight leg from x0, y0 to x1, y1 keeps TAUT_CLEAR off the deep, and (dry: the tiles' way didn't wade)
+// out of the shallows.
+function taut(w, x0, y0, x1, y1, dry) {
+  if (w.frozen) return true;
+  const dx = x1 - x0, dy = y1 - y0, d = Math.hypot(dx, dy), n = Math.max(1, Math.ceil(d / 0.2));
+  const px = d ? -dy / d * TAUT_CLEAR : 0, py = d ? dx / d * TAUT_CLEAR : 0;
+  for (let k = 0; k <= n; k++) {
+    const x = x0 + dx * k / n, y = y0 + dy * k / n;
+    for (let s = -1; s <= 1; s++) {
+      const sx = x + px * s, sy = y + py * s;
+      if (!inBounds(sx, sy)) return false;
+      const v = w.water[idx(sx, sy)];
+      if (v === DEEP || (dry && s === 0 && v === SHALLOW)) return false;
+    }
+  }
+  return true;
+}
+
+// Sends it to x, y: the way there found and pulled tight. Returns where it'll stop (the nearest it can get, for a click
+// on the deep or across it), or null if it's there already.
+function foragerTo(w, x, y) {
+  const f = w.forager;
+  x = clamp(x, 0.6, W - 0.6); y = clamp(y, 0.6, H - 0.6);
+  let goal = idx(x, y);
+  if (!canStand(w, goal)) {                              // on the deep: the nearest tile it can stand on
+    let best = -1, bd = Infinity;
+    for (let r = 1; r < 16 && best < 0; r++) for (let j = -r; j <= r; j++) for (let i = -r; i <= r; i++) {
+      const tx = (x | 0) + i, ty = (y | 0) + j;
+      if (tx < 0 || ty < 0 || tx >= W || ty >= H || !canStand(w, ty * W + tx)) continue;
+      const d = (tx + 0.5 - x) ** 2 + (ty + 0.5 - y) ** 2;
+      if (d < bd) { bd = d; best = ty * W + tx; }
+    }
+    if (best < 0) return null;
+    goal = best; x = best % W + 0.5; y = ((best / W) | 0) + 0.5;
+  }
+  const tiles = tilePath(w, idx(f.x, f.y), goal), last = tiles.length - 1;
+  if (tiles[last] !== goal) { x = tiles[last] % W + 0.5; y = ((tiles[last] / W) | 0) + 0.5; }   // (cut off: as near as it gets)
+  if (Math.hypot(x - f.x, y - f.y) < 0.15) return null;
+  // Pulled tight: from each corner, straight on to the furthest tile along the way it can reach in a line.
+  const wet = i => !w.frozen && w.water[i] === SHALLOW;
+  const px = k => (k === last ? x : tiles[k] % W + 0.5), py = k => (k === last ? y : ((tiles[k] / W) | 0) + 0.5);
+  const pts = [f.x, f.y];
+  let ax = f.x, ay = f.y, a = 0;
+  while (a < last) {
+    let dry = !wet(tiles[a]), ok = a + 1;
+    for (let b = a + 1; b <= last; b++) {
+      if (wet(tiles[b])) dry = false;
+      if (taut(w, ax, ay, px(b), py(b), dry)) ok = b;
+      else if (b - ok > 4) break;                        // (well past where it lost sight)
+    }
+    a = ok; ax = px(a); ay = py(a);
+    pts.push(ax, ay);
+  }
+  f.path.length = 0;
+  for (const v of pts) f.path.push(v);
+  f.leg = 1; f.walking = true; f.goalX = x; f.goalY = y;
+  return { x, y };
+}
+
+// How far x, y is from the segment from a to b.
+function segDist(x, y, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay, t = clamp(((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy || 1), 0, 1);
+  return Math.hypot(ax + dx * t - x, ay + dy * t - y);
+}
+
+// One tick of walking its way.
+function foragerTick(w) {
+  const f = w.forager, P = f.path;
+  f.moved = 0;
+  if (!f.walking) { f.speed = 0; return; }
+  const n = P.length / 2;
+  while (f.leg < n - 1) {                                // onto the next leg once near this one's end, past it, or nearer the next
+    const k = f.leg * 2, bx = P[k], by = P[k + 1];
+    const t = ((f.x - P[k - 2]) * (bx - P[k - 2]) + (f.y - P[k - 1]) * (by - P[k - 1])) / ((bx - P[k - 2]) ** 2 + (by - P[k - 1]) ** 2 || 1);
+    if (t < 1 && Math.hypot(bx - f.x, by - f.y) > FORAGER_LOOK * 0.5
+      && segDist(f.x, f.y, P[k - 2], P[k - 1], bx, by) <= segDist(f.x, f.y, bx, by, P[k + 2], P[k + 3])) break;
+    f.leg++;
+  }
+  // Where it is along this leg, the point FORAGER_LOOK further along the way that it steers for, and how far it is to the end.
+  const ax = P[f.leg * 2 - 2], ay = P[f.leg * 2 - 1], bx = P[f.leg * 2], by = P[f.leg * 2 + 1];
+  const lx = bx - ax, ly = by - ay, ll = Math.hypot(lx, ly) || 1;
+  const t = clamp(((f.x - ax) * lx + (f.y - ay) * ly) / (ll * ll), 0, 1);
+  let rest = (1 - t) * ll, left = FORAGER_LOOK, along = Math.min(left, rest);
+  let tx = ax + lx * t + lx / ll * along, ty = ay + ly * t + ly / ll * along;
+  left -= along;
+  for (let k = f.leg; k < n - 1; k++) {
+    const cx = P[k * 2], cy = P[k * 2 + 1], dx = P[k * 2 + 2] - cx, dy = P[k * 2 + 3] - cy, dl = Math.hypot(dx, dy) || 1;
+    rest += dl;
+    if (left > 0) { along = Math.min(left, dl); tx = cx + dx / dl * along; ty = cy + dy / dl * along; left -= along; }
+  }
+  rest = Math.max(rest, Math.hypot(f.goalX - f.x, f.goalY - f.y) * (f.leg === n - 1 ? 1 : 0));
+  // Turn toward it, at most FORAGER_TURN a tick, slowing into a sharp turn; up to speed gently, and down to stop at the end.
+  const want = Math.atan2(ty - f.y, tx - f.x);
+  let turn = want - f.heading;
+  turn -= Math.round(turn / (2 * Math.PI)) * 2 * Math.PI;
+  const most = FORAGER_TURN * (1 + 2 * clamp(1 - f.speed / FORAGER_WALK, 0, 1));   // (standing, it turns round quicker)
+  f.heading += clamp(turn, -most, most);
+  f.heading -= Math.round(f.heading / (2 * Math.PI)) * 2 * Math.PI;
+  const wade = !w.frozen && w.water[idx(f.x, f.y)] === SHALLOW;
+  const top = FORAGER_WALK * (wade ? FORAGER_WADE : 1) * clamp(Math.cos(turn) * 0.8 + 0.4, 0.15, 1);
+  const v = Math.min(top, Math.sqrt(2 * FORAGER_BRAKE * rest)), s = f.speed;
+  f.speed = v > s ? Math.min(v, s + FORAGER_ACCEL) : Math.max(v, s - FORAGER_BRAKE * 2);
+  if (rest < 0.02 || (rest < 0.1 && f.speed < 0.008)) { f.walking = false; f.speed = 0; f.path.length = 0; return; }
+  const step = Math.min(f.speed, rest);
+  let nx = f.x + Math.cos(f.heading) * step, ny = f.y + Math.sin(f.heading) * step;
+  if (!walkable(w, nx, ny)) {                            // (the water came up, or a corner clipped the deep: slide along it)
+    if (walkable(w, nx, f.y)) ny = f.y;
+    else if (walkable(w, f.x, ny)) nx = f.x;
+    else { f.speed = 0; if (!foragerTo(w, f.goalX, f.goalY)) f.walking = false; return; }
+  }
+  f.moved = Math.hypot(nx - f.x, ny - f.y);
+  f.x = nx; f.y = ny;
+}
+
 // ---------------------------------------------------------------- the world
 
 // The world's fields that come later, or only to some meadows, all made at the start (createWorld, unpackWorld), so the
@@ -5169,6 +5397,7 @@ function lifeTick(w, c) {
 const LATER = {
   appleYear: 0, namePools: null, recount: false,
   dug: null, ponds: null, hedges: null, visitors: null, visited: null, visitGone: false, visitId: 0,   // the places visitors come to, and who's come
+  forager: null,                                                                                    // the player (startForager)
 };
 // A kept meadow's fractions come back as whole numbers where they were (0, 1): made fractions again, so they can't
 // change the layout later (an object's field that holds a fraction once holds any number after).
@@ -5210,6 +5439,7 @@ function createWorld(seed, opts = {}) {
   startFish(w);
   startGreens(w);
   startBrambles(w);
+  w.forager = startForager(w);
   w.roost = pickRoost(w);
   const n = { rabbit: opts.rabbits ?? Math.round(30 * w.room), fox: opts.foxes ?? Math.round(4 * w.room), bee: 0, crow: opts.crows ?? Math.round(8 * w.room),
     otter: opts.otters ?? 0 };   // the otters come up the water (migrate), and each hive has its bees
@@ -5334,6 +5564,7 @@ function step(w) {
   if (t % TPD === 0) newDay(w);
   buildGrid(w);
   weatherTick(w);
+  foragerTick(w);
   if (t % GRASS_EVERY === 0) { growGrass(w, GRASS_EVERY); iceTick(w, GRASS_EVERY); }
   if (t % WATER_EVERY === 0) waterTick(w);
   if (t % FROG_EVERY === FROG_EVERY / 4) frogsTick(w);
@@ -5441,7 +5672,7 @@ function unpackWorld(kept) {
   const made = list.map(e => (Array.isArray(e) ? new Array(e.length) : ArrayBuffer.isView(e) ? e
     : e.$map ? new Map() : e.$set ? new Set() : e.sp !== undefined && e.species !== undefined ? blankCreature()   // (laid out like new ones)
     : e.tree === true ? blankTree() : e.emoji === '🪨' ? rockOf(-0, -0, -0) : e.shroom === true ? shroomOf('', -0, -0, null, 0, 0, 0, 0)
-    : e.green === true ? greenOf('', -0, -0, 0, 0) : e.bramble === true ? brambleOf(-0, -0, 0, '', 0)
+    : e.forager === true ? foragerOf(-0, -0) : e.green === true ? greenOf('', -0, -0, 0, 0) : e.bramble === true ? brambleOf(-0, -0, 0, '', 0)
     : e.n !== undefined && e.i !== undefined && e.kind !== undefined && e.field !== undefined ? plantOf(-0, -0, 0, -0, null, 0) : {}));   // (a flower or blossom)
   const table = path => path.split('.').reduce((o, k) => {
     if (!o || !(k in o)) throw new Error('unpackWorld: no table ' + path);
@@ -5476,6 +5707,8 @@ function unpackWorld(kept) {
   if (w.visitors) placesDay(w);
   buildGrid(w);
   if (noBrambles) startBrambles(w);
+  if (!w.forager) w.forager = startForager(w);            // (kept before the forager: it starts afresh)
+  asFractions(w.forager, ['x', 'y', 'speed', 'heading', 'moved', 'goalX', 'goalY']);
   return w;
 }
 
@@ -6322,7 +6555,7 @@ const api = {
   createWorld, step, clock, isNight, phaseOf, seasonOf, springPart, mood, ageDays, growth, isAdult, patchFresh,
   hedgehogComes, heronComes, dragonflyComes, kingfisherComes, skylarkComes, placeNeeds, VISIT_SEASONS, VISIT_FADE, HERON_FADE, HERON_STAB,
   DRAGON_FROM, KF_FADE, KF_UNDER, KF_BEAT, LARK_FADE, LARK_OPEN, LARK_RISE, EDGE_REACH, OPEN_MOST,
-  walkable, packWorld, unpackWorld,
+  walkable, packWorld, unpackWorld, foragerTo,
   KINDS, FEW, whiteness, visibility, WINTER_COAT, WILD_COAT,
   TERRAIN, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE, hollow,
