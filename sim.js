@@ -1782,26 +1782,32 @@ function waterWithin(w, x, y, radius) {
 const distanceToWater = w => distanceTo(w.water);
 
 // Tiles to the nearest tile that is set in `from` (two sweeps, straight steps 1 and diagonal 1.4).
+// (Written out as dampen is, with no callbacks: game.js runs it each time the water line moves.)
 function distanceTo(from) {
-  const d = Float32Array.from(from, v => v ? 0 : 1e9);
-  const sweep = (y0, y1, dy, x0, x1, dx) => {      // from the tile behind, the row behind, and its two corners
-    for (let y = y0; y !== y1; y += dy) {
-      const py = y - dy, row = py >= 0 && py < H;
-      for (let x = x0; x !== x1; x += dx) {
-        const i = y * W + x, bx = x - dx, fx = x + dx, back = bx >= 0 && bx < W;
-        let v = d[i];
-        if (back) v = Math.min(v, d[y * W + bx] + 1);
-        if (row) {
-          v = Math.min(v, d[py * W + x] + 1);
-          if (back) v = Math.min(v, d[py * W + bx] + 1.4);
-          if (fx >= 0 && fx < W) v = Math.min(v, d[py * W + fx] + 1.4);
-        }
-        d[i] = v;
-      }
+  const d = new Float32Array(W * H);
+  for (let i = 0; i < W * H; i++) d[i] = from[i] ? 0 : 1e9;
+  for (let y = 0; y < H; y++) for (let x = 0, i = y * W; x < W; x++, i++) {      // from the tile behind, the row above and its corners
+    let v = d[i];
+    if (v === 0) continue;
+    if (x > 0 && d[i - 1] + 1 < v) v = d[i - 1] + 1;
+    if (y > 0) {
+      if (d[i - W] + 1 < v) v = d[i - W] + 1;
+      if (x > 0 && d[i - W - 1] + 1.4 < v) v = d[i - W - 1] + 1.4;
+      if (x < W - 1 && d[i - W + 1] + 1.4 < v) v = d[i - W + 1] + 1.4;
     }
-  };
-  sweep(0, H, 1, 0, W, 1);
-  sweep(H - 1, -1, -1, W - 1, -1, -1);
+    d[i] = v;
+  }
+  for (let y = H - 1; y >= 0; y--) for (let x = W - 1, i = y * W + x; x >= 0; x--, i--) {   // and back the other way
+    let v = d[i];
+    if (v === 0) continue;
+    if (x < W - 1 && d[i + 1] + 1 < v) v = d[i + 1] + 1;
+    if (y < H - 1) {
+      if (d[i + W] + 1 < v) v = d[i + W] + 1;
+      if (x < W - 1 && d[i + W + 1] + 1.4 < v) v = d[i + W + 1] + 1.4;
+      if (x > 0 && d[i + W - 1] + 1.4 < v) v = d[i + W - 1] + 1.4;
+    }
+    d[i] = v;
+  }
   return d;
 }
 
