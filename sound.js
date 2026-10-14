@@ -252,8 +252,6 @@ const RULES = {
   old:     { gap: 1.5,  maxSpeed: 4 },
   escape:  { gap: 0.6,  maxSpeed: 4 },
   thump:   { gap: 0.5,  maxSpeed: 4 },
-  queen:   { gap: 4,    maxSpeed: 15 },
-  queenlost: { gap: 4,  maxSpeed: 15 },
   arrive:  { gap: 2,    maxSpeed: 60 },
   thunder: { gap: 0.3,  maxSpeed: 15, always: true },   // a strike you see is always heard
   rainbow: { gap: 20,   maxSpeed: 4 },
@@ -306,12 +304,6 @@ const SOUNDS = {
       noise(o, t + d, 0.05, { from: 700, to: 300, q: 0.8, peak: 0.2, type: 'lowpass', attack: 0.002 });
     }
   },
-  // A new queen for an empty hive: a bell, and the hive buzzing up to meet her.
-  queen(t, o) {
-    bell(o, note(4, -1), t, 0.45);
-    [0, 2, 4].forEach((d, i) => buzz(o, note(d, 0), t + 0.3 + i * 0.16, 0.8));
-  },
-  queenlost(t, o) { buzz(o, note(2, 0), t, 0.7, 0.5); buzz(o, note(0, 0), t + 0.4, 0.6, 0.7); },
   // Newcomers: a hopping arpeggio walking in.
   arrive(t, o, { species }) {
     const v = voiceOf(species), k = octOf(species);

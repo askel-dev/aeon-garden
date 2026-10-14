@@ -1205,13 +1205,13 @@ function lightFrame(dt) {
 const shownDark = phase => LIGHT_MID + (darkness(phase) - LIGHT_MID) * lightSwing;
 const shownGold = phase => Math.round(goldenHour(phase) * lightSwing * GOLD_STEPS) / GOLD_STEPS;
 
-// The things a frame draws (a tree or a rock d, a swarm h, a creature c, a visitor v), each a record of the
+// The things a frame draws (a tree or a rock d, a creature c, a visitor v), each a record of the
 // one shape, kept from frame to frame: a few hundred new objects a frame, of five shapes, were felt in every loop over them.
 const frameItems = [], itemPool = [];
 function itemOf(items, y, sx, sy, f) {
   let it = itemPool[items.length];
-  if (!it) itemPool.push(it = { y: -0, sx: -0, sy: -0, f: -0, px: -0, d: null, h: null, c: null, v: null });
-  it.y = y; it.sx = sx; it.sy = sy; it.f = f; it.px = 0; it.d = it.h = it.c = it.v = null;
+  if (!it) itemPool.push(it = { y: -0, sx: -0, sy: -0, f: -0, px: -0, d: null, c: null, v: null });
+  it.y = y; it.sx = sx; it.sy = sy; it.f = f; it.px = 0; it.d = it.c = it.v = null;
   items.push(it);
   return it;
 }
@@ -1282,11 +1282,6 @@ function render(now) {
     const [sx, sy] = toScreen(d.x, d.y), px = d.tree ? treePx(d) : d.size * z;
     if (visible(sx, sy, px)) { const it = itemOf(items, d.y, sx, sy, 1 - mistAt(d.x, d.y)); it.d = d; it.px = px; }
   }
-  for (const h of world.hives) {                           // a swarm hanging in a tree
-    if (!h.cluster) continue;
-    const [sx, sy] = toScreen(h.x, h.y);
-    if (visible(sx, sy, 3 * z)) itemOf(items, h.y, sx, sy, 1 - mistAt(h.x, h.y)).h = h;
-  }
   const shown = [];
   for (const c of world.creatures) {
     if (c.hidden || !c.alive) continue;
@@ -1319,7 +1314,6 @@ function render(now) {
     if (it.f < 0.02) continue;
     fadeTo(it.f);
     if (it.d) it.d.hive ? drawBeeTree(it.d, it.sx, it.sy, now, ck) : drawDecor(it.d, it.sx, it.sy, now, ck, null, it.px);
-    else if (it.h) drawSwarm(it.h, it.sx, it.sy);
     else if (it.v) drawVisitor(it.v, it.sx, it.sy, now, z);
     else drawCreature(it.c, it.sx, it.sy, now);
   }
@@ -1353,7 +1347,7 @@ function render(now) {
       drawEmoji('💤', sx + z * 0.8, sy - z * 1.1 + bob, Math.max(11, z * 0.8), { alpha: 0.85 });
     }
     for (const h of world.hives) {
-      if (!h.bees || h.cluster) continue;
+      if (!h.bees) continue;
       const [sx, sy] = toScreen(h.x, h.y);
       const px = z * h.tree.size;
       if (visible(sx, sy, 40)) drawEmoji('💤', sx + px * 0.12, sy - px * 0.2 + Math.sin(now / 600 + h.id) * 3, Math.max(11, z * 0.8), { alpha: 0.85 });
@@ -1374,7 +1368,7 @@ function render(now) {
     const h = ui.hoverHive, [sx, sy] = toScreen(h.x, h.y);
     const where = h.patch && h.patch.field ? `the ${h.patch.field.name}` : 'flowers';
     const dance = S.patchFresh(world, h) ? ` · 💃 ${where} to the ${compass(h.patch.x - h.x, h.patch.y - h.y)}` : '';
-    drawLabel(`🐝 ${h.queen ? `Queen ${h.queen.name}'s hive` : 'Empty hive'} · ${h.bees} ${h.bees === 1 ? 'bee' : 'bees'} · ${Math.round(h.honey)} honey${dance}`, sx, sy + z * 0.5 + 6);
+    drawLabel(`🐝 ${hiveName(h)} · ${h.bees} ${h.bees === 1 ? 'bee' : 'bees'} · ${honeyWord(h)}${dance}`, sx, sy + z * 0.5 + 6);
   }
   standIns = false;                                    // a portrait for the inspector is kept, so it's always painted
 }
@@ -1395,7 +1389,7 @@ const creaturePx = c => (8 + cam.zoom) * LOOKS[c.species].size * c.scale * (0.55
 const flipOf = c => LOOKS[c.species].facesLeft && c.facing > 0;
 
 // How full a forager's load is, 0..1.
-const loadOf = c => c.load ? Math.min(1, c.load / (S.LOAD * S.HONEY)) : 0;
+const loadOf = c => c.load ? Math.min(1, c.load / S.LOAD) : 0;
 
 // How high off the ground it is drawn: a hop, or a flier's hover. A sipping bee sits on the flower,
 // and a laden one flies lower.
@@ -4461,24 +4455,18 @@ function drawBeeTree(d, sx, sy, now, ck) {
   }
 }
 
-// A swarm hanging from a branch: a drooping clump of bees, widest near the bottom, bigger the
-// more bees there are, and seething while time runs.
-function drawSwarm(h, sx, sy) {
-  const z = cam.zoom, n = Math.min(80, 12 + 4 * h.bees), b = z * 0.09, t = ui.speed > 0 ? performance.now() / 500 : 0;
-  const top = sy - z * 1.6, len = z * (0.5 + 0.04 * Math.min(h.bees, 30)), wide = len * 0.4;
-  for (let i = 0; i < n; i++) {
-    const v = hash2(i, 3, h.id), u = hash2(3, i, h.id) - 0.5;
-    const bx = sx + u * 2 * wide * Math.sin(Math.PI * Math.pow(v, 0.6)) + Math.sin(t + i) * b * 0.3;
-    const by = top + v * len + Math.cos(t * 0.7 + i) * b * 0.3;
-    barkBee(bx, by, b, Math.PI / 2 + (hash2(i, 4, h.id) - 0.5) * 2);
-  }
+// A hive goes by the flower field nearest it, or by its tree; and how full of honey it is.
+function hiveName(h) {
+  let best = null, bd = Infinity;
+  for (const f of world.fields) { const d = Math.hypot(f.x - h.x, f.y - h.y); if (d < bd) { best = f; bd = d; } }
+  return best && bd < S.FORAGE_RANGE ? `The hive by the ${best.name}` : h.tree?.name ? `The hive in the ${h.tree.name}` : 'The bee tree';
 }
+const honeyWord = h => { const q = h.honey / S.HIVE_FULL; return q >= 0.98 ? 'full of honey' : q < 0.05 ? 'hardly any honey' : `${Math.round(q * 100)}% full of honey`; };
 
 // The trunk, from its foot up to where the crown begins, and never smaller than a fingertip.
 // (Above that is the tree: THINGS.tree.)
-function hiveAt(sx, sy, swarms = false) {
+function hiveAt(sx, sy) {
   return world.hives.find(h => {
-    if (h.cluster && !swarms) return false;
     const P = cam.zoom * (h.tree ? h.tree.size : S.HIVE_TREE), reach = Math.max(22, P * 0.12);
     const [hx, hy] = toScreen(h.x, h.y);
     return Math.abs(sx - hx) < reach && sy > hy - P * 0.3 - reach / 2 && sy < hy + reach / 2;
@@ -5692,21 +5680,9 @@ function handleEvent(e) {
       if (e.cause !== 'left' && e.cause !== 'fox') addEffect('👻', c.x, c.y, 1.6, 2000);
       break;
     }
-    case 'hatch':
-      hear('birth', e.hive.x, e.hive.y, { species: 'bee', kids: e.kids.length });
-      break;
-    case 'queen':
-      hear('queen', e.hive.x, e.hive.y, {}, true);
-      break;
-    case 'queenlost':
-      hear('queenlost', e.hive.x, e.hive.y, {}, true);
-      break;
-    case 'swarm':
-      addEffect('✨', e.swarm.x, e.swarm.y);
-      hear('arrive', e.swarm.x, e.swarm.y, { species: 'bee' }, true);
-      break;
-    case 'settle':
+    case 'hivemoved':
       addEffect('✨', e.hive.x, e.hive.y);
+      hear('arrive', e.hive.x, e.hive.y, { species: 'bee' }, true);
       break;
     case 'flooded':
       addEffect('🌊', e.burrow.x, e.burrow.y, 0.8);
@@ -5887,7 +5863,7 @@ function renderInspector() {
     </div>` : ''}
     ${chips.length ? `<div class="chips">${chips.map(x => `<span class="chip">${x}</span>`).join('')}</div>` : ''}
     <div class="family">
-      ${c.queen ? `A daughter of 👑 Queen ${esc(c.queen.name)}${c.queen.died ? ' 🪦' : ''}, who has raised ${c.queen.kids} bees`
+      ${c.species === 'bee' ? `A worker of ${c.home ? hiveName(c.home).replace(/^The/, 'the') : 'a hive'}`
         : c.gen === 1 ? 'One of the first arrivals' : parents ? `${parents} <span class="dim">· generation ${c.gen}</span>` : `Generation ${c.gen}`}
       ${c.kids ? `<br>${c.kids} ${c.kids === 1 ? 'child' : 'children'}${kidsAlive ? `, ${kidsAlive} still alive` : ''}` : ''}
     </div>
@@ -5912,7 +5888,6 @@ function renderInspector() {
 // Names from the sim go through esc; status, facts and sections are html.
 
 const days = n => { n = Math.max(0, Math.round(n)); return `${n} ${n === 1 ? 'day' : 'days'}`; };
-const hours = t => { const n = Math.max(1, Math.round(t / S.TPD * 24)); return `${n} ${n === 1 ? 'hour' : 'hours'}`; };
 const ago = t => days((world.tick - t) / S.TPD);
 const tileOf = (x, y) => clamp(Math.floor(y), 0, S.H - 1) * S.W + clamp(Math.floor(x), 0, S.W - 1);
 const seasonName = s => S.SEASONS[s].name.toLowerCase();
@@ -6094,42 +6069,26 @@ const THINGS = {
   },
 
   hive: {
-    at: (sx, sy) => hiveAt(sx, sy, true),
+    at: (sx, sy) => hiveAt(sx, sy),
     here: h => world.hives.includes(h),
     spot: h => ({ x: h.x, y: h.y, r: 1.1 }),
     show(h) {
-      if (!this.here(h)) {
-        if (h.queen) return { emoji: '🐝', name: 'A swarm', sub: 'Moved on', status: '🏡 The swarm has moved into its new home.' };
-        if (h.cluster) return { emoji: '🐝', name: 'A swarm', sub: 'Gone', status: '🥀 The swarm never found a home.' };
-        return { emoji: '🪵', name: 'Empty hive', sub: 'Gone', status: '⚡ Lightning took its tree.' };
-      }
-      const q = h.queen, ck = S.clock(world), s = ck.season;
+      const ck = S.clock(world), s = ck.season;
       const bees = world.creatures.filter(c => c.alive && c.home === h), out = bees.filter(c => !c.hidden).length;
       let status;
-      if (h.cluster) status = `🐝 Hanging in a tree while scouts look for a home. They move in ${hours(h.settleAt - world.tick)}.`;
-      else if (!q) status = '🕸️ Empty. The old comb waits for a swarm.';
-      else if (world.tick < q.laysFrom) status = '💒 The new queen is away on her wedding flight';
-      else if (S.patchFresh(world, h)) status = `💃 Dancing about ${h.patch.field ? esc(`the ${h.patch.field.name}`) : 'flowers'} to the ${compass(h.patch.x - h.x, h.patch.y - h.y)}`;
+      if (S.patchFresh(world, h)) status = `💃 Dancing about ${h.patch.field ? esc(`the ${h.patch.field.name}`) : 'flowers'} to the ${compass(h.patch.x - h.x, h.patch.y - h.y)}`;
       else if (out) status = `🌼 ${out} out among the flowers`;
       else status = ck.night ? '💤 Asleep for the night' : s === 3 ? '❄️ Huddled up for the winter, living on honey'
         : ['rain', 'storm'].includes(world.weather.kind) ? '🌧️ Waiting out the rain' : '🏠 Everyone is in';
-      const chips = [`🍯 ${Math.round(h.honey)} honey`, `🐝 ${h.bees} ${h.bees === 1 ? 'bee' : 'bees'}`];
-      if (s >= 2 && h.winterBees) chips.push(`❄️ ${h.winterBees} winter ${h.winterBees === 1 ? 'bee' : 'bees'}`);
-      if (h.swarmed > 0) chips.push(`🪽 Swarmed ${ago(h.swarmed)} ago`);
-      const facts = [];
-      if (h.bees >= S.HIVE_ROOM * 0.8 && !h.cluster) facts.push(['🏘️', 'Crowded: ready to swarm come spring or summer']);
-      if (q && s >= 2) facts.push(['🍯', `${Math.round(h.honey / Math.max(1, h.bees))} honey put by for each bee`]);
+      const chips = [`🍯 ${honeyWord(h)}`, `🐝 ${h.bees} ${h.bees === 1 ? 'bee' : 'bees'}`];
       const fields = world.fields.filter(f => Math.hypot(f.x - h.x, f.y - h.y) < S.FORAGE_RANGE);
-      const sections = [];
-      if (q) sections.push([`👑 Queen ${esc(q.name)}`, `<div class="family">Generation ${q.gen} · queen for ${ago(q.since)} · has raised ${q.kids} ${q.kids === 1 ? 'bee' : 'bees'}${q.mum ? `<br>A daughter of Queen ${esc(q.mum)}` : ''}</div>`]);
-      sections.push(['Flowers in reach', fields.length
+      const sections = [['Flowers in reach', fields.length
         ? fields.map(f => `${f.emoji[0]} ${thingLink('field', f.id, esc(f.name))} <span class="dim">· ${f.strip ? 'every season' : seasonName(f.season)} · to the ${compass(f.x - h.x, f.y - h.y)}</span>`).join('<br>')
-        : 'No flower fields, only the flowers scattered about']);
+        : 'No flower fields, only the flowers scattered about']];
       if (bees.length) sections.push(['Bees', linkList(bees)]);
       return {
-        emoji: h.cluster ? '🐝' : '🌳', tint: '#e8b83a', name: h.cluster ? `Queen ${q.name}'s swarm` : q ? `Queen ${q.name}'s hive` : 'Empty hive',
-        sub: h.cluster ? 'A swarm looking for a home' : `A hollow in an old ${treeName(h.tree).toLowerCase()}`, status, chips, facts, sections,
-        meters: [['Honey', h.honey / S.HIVE_FULL, 'honey'], ['Room', h.bees / S.HIVE_ROOM, h.bees >= S.HIVE_ROOM * 0.8 ? 'low' : '']],
+        emoji: '🌳', tint: '#e8b83a', name: hiveName(h), sub: `A hollow in an old ${treeName(h.tree).toLowerCase()}`, status, chips, sections,
+        meters: [['Honey', h.honey / S.HIVE_FULL, 'honey']],
       };
     },
   },
@@ -6161,10 +6120,9 @@ const THINGS = {
       else if (d.by === 'wind') facts.push(['🌬️', `Its seed blew in on the wind from ${from}`]);
       else if (d.by === 'water') facts.push(['🌊', `Its seed fell in the water from ${from}, floated off and washed up here`]);
       else if (d.by === 'drop') facts.push(k.mast ? ['🌰', `Grew from ${k.mast === 'acorns' ? 'an acorn' : 'a beechnut'} that fell from ${from}`] : ['🍎', `Grew from a pip of ${from}`]);
-      if (d.hive) facts.push(['🐝', `${thingLink('hive', d.hive.id, d.hive.queen ? `Queen ${esc(d.hive.queen.name)}'s hive` : 'An empty hive')} is in its hollow`]);
+      if (d.hive) facts.push(['🐝', `${thingLink('hive', d.hive.id, hiveName(d.hive))} is in its hollow`]);
       const otter = d.holt && world.byId.get(d.holt);
       if (otter && otter.alive) facts.push(['🦦', `${link(otter)} the otter has her holt in its roots, down by the water`]);
-      else if (S.hollow(world, d)) facts.push(['🕳️', `Old enough to have gone hollow: bees could make a home in it`]);
       if (living && S.bearing(world, d)) {
         const bear = { wind: '🌬️ Sheds its seed on the wind each autumn', crow: `🌰 Its ${k.mast} are a feast in a mast year, and the crows bury them far and wide`,
           bird: `🐦 Birds carry off its ${d.kind === 'cherry' ? 'cherries' : 'haws'} and drop the stones far and wide`, drop: '🍎 Drops its apples for whoever comes by' }[k.by];
@@ -6185,8 +6143,6 @@ const THINGS = {
       if (living && !young && world.wet < 0.5) facts.push(['⚡', 'Dry: a lightning strike would set it alight']);   // as strike does
       const shade = whoNear(d.x, d.y, Math.max(1.5, treePx(d) / cam.zoom * 0.4));
       if (shade) facts.push([d.fallen ? '🪵' : '🌳', `${d.fallen ? 'By it' : 'Under it'}: ${shade}`]);
-      const swarm = world.hives.find(h => h.cluster && Math.hypot(h.x - d.x, h.y - d.y) < 2);
-      if (swarm) facts.push(['🐝', `${thingLink('hive', swarm.id, 'A swarm')} is hanging in it`]);
       const STAGES = { seedling: 'Seedling', sapling: 'Sapling', young: 'Young', grown: 'Grown', old: 'Old', dead: 'Dead', log: 'Fallen', stump: 'Stump' };
       return {
         emoji: d.stump || d.fallen ? '🪵' : d.dead ? '🪾' : stage === 'seedling' ? '🌱' : d.emoji, tint: d.dead ? '#b8a47a' : '#7fb24a', name,
@@ -6299,9 +6255,9 @@ const THINGS = {
         : `🌿 Resting: it blooms in ${seasonName(f.season)}`;
       const inField = c => world.fieldAt[tileOf(c.x, c.y)] === f.id;
       const now = world.creatures.filter(c => c.alive && !c.hidden && inField(c));
-      const hives = world.hives.filter(h => !h.cluster && Math.hypot(f.x - h.x, f.y - h.y) < S.FORAGE_RANGE);
+      const hives = world.hives.filter(h => Math.hypot(f.x - h.x, f.y - h.y) < S.FORAGE_RANGE);
       const sections = [['Hives in reach', hives.length
-        ? hives.map(h => `🐝 ${thingLink('hive', h.id, h.queen ? esc(`Queen ${h.queen.name}'s hive`) : 'Empty hive')}`).join('<br>')
+        ? hives.map(h => `🐝 ${thingLink('hive', h.id, hiveName(h))}`).join('<br>')
         : 'None: only a bee from far off comes here']];
       if (now.length) sections.push(['Here now', linkList(now)]);
       return {
