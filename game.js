@@ -33,7 +33,7 @@ if (COUNTER && !['localhost', '127.0.0.1'].includes(location.hostname)) {
 
 let world;
 const ui = {
-  speed: 1, sound: false, selectedId: 0, picked: null, hoverId: 0, follow: false,
+  speed: 1, sound: false, selectedId: 0, picked: null, hoverId: 0, follow: false, lead: true, mark: null,   // lead: the camera goes with the forager; mark: where it was sent
   trail: [], effects: [], allStory: false, sheetUp: false,
   sky: { mix: {}, tick: 0, bolts: [], boom: -1e9, rainbow: -1e9, bowEnd: -1e9 },
 };
@@ -1226,8 +1226,8 @@ const shownGold = phase => Math.round(goldenHour(phase) * lightSwing * GOLD_STEP
 const frameItems = [], itemPool = [];
 function itemOf(items, y, sx, sy, f) {
   let it = itemPool[items.length];
-  if (!it) itemPool.push(it = { y: -0, sx: -0, sy: -0, f: -0, px: -0, d: null, h: null, c: null, v: null, s: null });
-  it.y = y; it.sx = sx; it.sy = sy; it.f = f; it.px = 0; it.d = it.h = it.c = it.v = it.s = null;
+  if (!it) itemPool.push(it = { y: -0, sx: -0, sy: -0, f: -0, px: -0, d: null, h: null, c: null, v: null, s: null, p: null });
+  it.y = y; it.sx = sx; it.sy = sy; it.f = f; it.px = 0; it.d = it.h = it.c = it.v = it.s = it.p = null;
   items.push(it);
   return it;
 }
@@ -1287,6 +1287,7 @@ function render(now) {
   unfade();
   drawRemains(z);
   drawGarlic(z);
+  if (ui.mark) drawMark(now);
 
   const sel = world.byId.get(ui.selectedId);
   if (sel) drawSelectionUnder(sel, now);
@@ -1336,6 +1337,11 @@ function render(now) {
       : v.kind === 'skylark' && v.high > 0.3 ? S.H : d.y;                                                       // (singing high over all)
     if (visible(sx, sy, 40 + 2 * visitorPx(v) + visitorUp(v, visitorPx(v)))) itemOf(items, sort, sx, sy, 1 - mistAt(d.x, d.y)).v = v;
   }
+  {                                                        // the forager
+    const F = world.forager, d = drawnAt(F), sx = (d.x - cam.x) * z + vw / 2, sy = (d.y - cam.y) * z + vh / 2;
+    foragerFrame(now, d);
+    if (visible(sx, sy, 2 * forPx())) itemOf(items, d.y, sx, sy, 1).p = F;
+  }
   sortByY(items);
   // Shadows first, all together, so a tree's shadow never lands on a rabbit behind it.
   const sn = sun(ck);
@@ -1346,6 +1352,7 @@ function render(now) {
     else if (it.c) {
       drawCreatureShadow(it.c, it.sx, it.sy, now, sn, it.f);
     } else if (it.v) drawVisitorShadow(it.v, it.sx, it.sy, sn);
+    else if (it.p) foragerShadow(it.sx, it.sy, sn);
   }
   layShadows();
   drawLeaves(now, true);                                   // the leaves lying round the trees' feet, on the ground under all that stands
@@ -1356,6 +1363,7 @@ function render(now) {
     else if (it.h) drawSwarm(it.h, it.sx, it.sy);
     else if (it.s) it.s.green ? drawNettles(it.s, z) : it.s.bramble ? drawBramble(it.s, z) : drawShroom(it.s, z);
     else if (it.v) drawVisitor(it.v, it.sx, it.sy, now, z);
+    else if (it.p) drawForager(it.sx, it.sy, now);
     else drawCreature(it.c, it.sx, it.sy, now);
   }
   unfade();
@@ -1585,6 +1593,7 @@ const SMOOTH_SPEED = 2;
 const lastTick = new WeakMap(), drawnPos = { x: 0, y: 0 };
 function keepLast() {
   for (const c of world.creatures) keepAt(c);
+  keepAt(world.forager);
   if (world.visitors) for (const v of world.visitors) keepAt(v);   // (and a visitor, sim.js w.visitors)
 }
 function keepAt(c) {
@@ -1950,6 +1959,122 @@ function drawCreature(c, sx, sy, now) {
   if (c.load && c.species === 'bee') drawBaskets(c, sx, y, px);
   if (c.mode === 'sip') drawSipping(c, sx, sy, px, now);
   if (px > 18 && ui.speed > 0 && ui.speed <= 4 && atHole(c)) drawDigging(c, sx, y, px, now);
+}
+
+// ------------------------------------------------------------------ the forager
+//
+// The player (sim.js w.forager), painted in fur.js (paintForager) in three views and a stride of eight paintings, by the
+// worker as a fox is. Its feet are where it is (a fox's middle is). Its legs go round with the ground it covers, a
+// stride for every 2 * FORAGER_REACH * 2 of its half-size it moves, so the foot on the ground stays put; the view comes
+// from its heading, held a little either side of a change so it doesn't flicker (side on, three-quarters from the front
+// or the back, mirrored going right). Standing it breathes, blinks now and then, after a moment turns to face you, and
+// now and then fidgets (FORAGER_FIDGET). In the shallows it's cut off at the water line with a ring round its legs, and
+// each step sends out a ring (fg.rings).
+const FORAGER_SIZE = 2.5;                  // its painting's box, next to a rabbit's
+const FORAGER_ARTS = Array.from({ length: 3 << 4 }, (_, n) => 'forager:' + n);   // (made once: a frame builds no names)
+const FORAGER_POSES = [0, 1, 2, 8, 9, 10, 11, 12, 13, 14, 15];
+const FORAGER_FIDGET = [7000, 14000];      // ms standing between fidgets, about
+const FORAGER_TURN_MS = 1100;              // standing this long, it turns to face you
+const FORAGER_STILL_MS = 70;               // no nearer than this to the last move, it's standing (it's drawn between ticks)
+const forPx = () => (8 + cam.zoom) * FORAGER_SIZE;
+const fg = { at: -1, x: 0, y: 0, step: 0, stillMs: 1e4, view: 1, flip: false, art: FORAGER_ARTS[16], blinkAt: -1e9, blinkIn: 3000,
+  fidgetAt: -1e9, fidgetIn: 9000, lastHalf: 0, rings: [], wet: false, lx: -0, ly: -0, sized: 0 };
+function foragerFrame(now, d) {
+  const f = world.forager, px = forPx();
+  if (fg.at < 0) { fg.x = d.x; fg.y = d.y; fg.at = now; }
+  const dx = d.x - fg.x, dy = d.y - fg.y, moved = Math.hypot(dx, dy), ms = now - fg.at;
+  fg.x = d.x; fg.y = d.y; fg.at = now;
+  if (moved > 1e-5 && moved < 2) {
+    fg.step += moved / (2 * Fur.FORAGER_REACH * px / cam.zoom);
+    fg.stillMs = 0;
+  } else if (ui.speed > 0) fg.stillMs += ms;            // (paused mid-stride, it holds the stride)
+  fg.wet = !world.frozen && world.water[(d.y | 0) * S.W + (d.x | 0)] > 0;
+  const walking = fg.stillMs < FORAGER_STILL_MS;
+  let pose = 0;
+  if (walking) {
+    const sy = Math.sin(f.heading), sx = Math.cos(f.heading), v = fg.view;
+    fg.view = sy > (v === 1 ? 0.45 : 0.62) ? 1 : sy < (v === 2 ? -0.45 : -0.62) ? 2 : 0;
+    if (sx > 0.18) fg.flip = true; else if (sx < -0.18) fg.flip = false;
+    pose = 8 + Math.floor(fg.step % 1 * 8);
+    const half = Math.floor(fg.step * 2);                 // a foot comes down: in the shallows, a ring
+    if (half !== fg.lastHalf && fg.wet && ui.speed > 0) fg.rings.push({ x: d.x, y: d.y, t: now });
+    fg.lastHalf = half;
+    fg.fidgetIn = fg.stillMs + FORAGER_FIDGET[0] * (0.6 + 0.4 * Math.random());
+  } else {
+    fg.step = Math.round(fg.step * 2) / 2;                // (it sets off again on the next foot)
+    if (fg.stillMs > FORAGER_TURN_MS && fg.view !== 1) { fg.view = 1; fg.blinkAt = now; }   // turned to you, with a blink
+    if (now - fg.blinkAt > fg.blinkIn) { fg.blinkAt = now; fg.blinkIn = 2200 + Math.random() * 3500; }
+    if (fg.view === 1 && fg.stillMs > fg.fidgetIn) { fg.fidgetAt = now; fg.fidgetIn = fg.stillMs + FORAGER_FIDGET[0] + Math.random() * (FORAGER_FIDGET[1] - FORAGER_FIDGET[0]); }
+    pose = now - fg.fidgetAt < 1500 ? 1 : now - fg.blinkAt < 150 ? 2 : 0;
+  }
+  if (fg.rings.length && now - fg.rings[0].t > 900) fg.rings.shift();
+  fg.art = shownPose(f, FORAGER_ARTS[(fg.view << 4) + pose], px);
+}
+function drawForager(sx, sy, now) {
+  const px = forPx(), art = fg.art, flip = fg.flip, top = sy - px * 0.36;   // (its painting's middle: the feet are at 0.72 of its half-size)
+  for (const r of fg.rings) {
+    const [rx, ry] = onScreen(r.x, r.y), u = (now - r.t) / 900;
+    ctx.strokeStyle = `rgba(240, 250, 255, ${0.6 * (1 - u)})`;
+    ctx.lineWidth = Math.max(1, px * 0.025);
+    ctx.beginPath(); ctx.ellipse(rx, ry, px * (0.12 + 0.3 * u), px * (0.04 + 0.1 * u), 0, 0, TAU); ctx.stroke();
+  }
+  if (zoomedOut()) { drawSmall(art, sx, top, px, flip); return; }
+  if (fg.wet) {
+    const line = sy - px * 0.02, rip = 1 + 0.08 * Math.sin(now / 280);   // (in to its shins)
+    ctx.save();
+    ctx.beginPath(); ctx.rect(sx - px, line - px * 2, px * 2, px * 2); ctx.clip();
+    drawEmoji(art, sx, top + px * 0.1, px, { flip });
+    ctx.restore();
+    ctx.strokeStyle = 'rgba(240, 250, 255, 0.7)';
+    ctx.lineWidth = Math.max(1, px * 0.025);
+    ctx.beginPath(); ctx.ellipse(sx, line, px * 0.17 * rip, px * 0.045 * rip, 0, 0, TAU); ctx.stroke();
+    return;
+  }
+  const breathe = fg.stillMs > FORAGER_STILL_MS && ui.speed > 0 ? Math.sin(now / 620) * 0.012 : 0, squash = 1 + breathe;
+  drawEmoji(art, sx, top + px * 0.36 * (1 - squash), px, { flip, squash });   // (feet stay on the ground)
+}
+function foragerShadow(sx, sy, sn) {
+  if (zoomedOut() || fg.wet) return;
+  const px = forPx(), n = shadeStep(), a = (0.16 + 0.18 * Math.max(0, sn.a)) * lerp(1, SNOW_SHADE_A, n / SHADE_STEPS), off = Math.max(0, sn.a) * sn.lean * px * 0.12;
+  const k = Math.round(clamp(a / SHADOW_MOST, 0, 1) * SHADOW_STEPS), at = shadowAt[k], i = shadowN[k]++ * 4;
+  at[i] = sx + off; at[i + 1] = sy - px * 0.01; at[i + 2] = px * 0.13 + Math.abs(off) * 0.5; at[i + 3] = px * 0.042;
+}
+// Each of its paintings at the size it's drawn, asked of the worker ahead, so the walk never waits for one.
+function foragerAhead() {
+  const P = poseStep(Math.max(4, forPx()));
+  if (!furWorker || P === fg.sized) return;
+  fg.sized = P;
+  for (let v = 0; v < 3; v++) for (const p of FORAGER_POSES) furReady(FORAGER_ARTS[(v << 4) + p], P);
+}
+
+// Where it was sent: a soft ring on the ground that comes in with a little bounce, breathes while it walks there and
+// fades once it's arrived. Painted once (MARK_ART), then only drawn.
+const MARK_MS = [220, 500];                // coming in, fading out
+let MARK_ART = null;
+function markArt() {
+  const W = 128, H = 64, c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  g.translate(W / 2, H / 2); g.scale(1, 0.5);
+  const gr = g.createRadialGradient(0, 0, 0, 0, 0, W / 2);
+  gr.addColorStop(0, 'rgba(255, 250, 230, 0.35)'); gr.addColorStop(0.45, 'rgba(255, 250, 230, 0.12)');
+  gr.addColorStop(0.68, 'rgba(255, 252, 240, 0.95)'); gr.addColorStop(0.8, 'rgba(255, 248, 225, 0.5)'); gr.addColorStop(1, 'rgba(255, 248, 225, 0)');
+  g.fillStyle = gr; g.beginPath(); g.arc(0, 0, W / 2, 0, TAU); g.fill();
+  MARK_ART = { img: c };
+  asBitmap(c, b => { MARK_ART.img = b; });
+  return MARK_ART;
+}
+function drawMark(now) {
+  const m = ui.mark, f = world.forager;
+  if (!m.end && !f.walking) m.end = now;
+  const t = now - m.t0, fade = m.end ? 1 - (now - m.end) / MARK_MS[1] : 1;
+  if (fade <= 0) { ui.mark = null; return; }
+  const pop = t < MARK_MS[0] ? 1 + 0.35 * Math.sin(Math.PI * t / MARK_MS[0]) * (1 - t / MARK_MS[0]) : 1;
+  const r = Math.max(10, (8 + cam.zoom) * 0.42) * pop * (1 + 0.05 * Math.sin(now / 260)) * (m.end ? 1 + 0.25 * (1 - fade) : 1);
+  const [sx, sy] = onScreen(m.x, m.y), art = MARK_ART || markArt();
+  ctx.globalAlpha = Math.min(1, t / 120) * fade * 0.9;
+  ctx.drawImage(art.img, sx - r, sy - r / 2, r * 2, r);
+  ctx.globalAlpha = 1;
 }
 
 // Zoomed out further than the meadow fills the screen, a grown rabbit is under SMALL_PX and hundreds of animals can be
@@ -3558,6 +3683,9 @@ function shrunk(g, size, U, art) {
 function paintFox(g, size, U, n) {
   if (!shrunk(g, size, U, 'fox:' + n)) Fur.paintFox(g, size, U, n);
 }
+function paintForager(g, size, U, n) {
+  if (!shrunk(g, size, U, FORAGER_ARTS[n])) Fur.paintForager(g, size, U, n);
+}
 
 // A painting is 3 to 10 ms, more close up, and each new pose or size of a fox or a rabbit wants one: in the meadow
 // they're painted off the main thread, by fur-worker.js. Shrinking one for the sizes between, or mixing a part-white
@@ -3611,6 +3739,7 @@ function furHas(art, P) {
 const furAsked = new Map(), FUR_AGAIN = 5000;    // look: when it was last asked for
 function furAhead(now) {
   if (!furWorker) return;
+  foragerAhead();
   const reach = Math.max(vw, vh), seen = new Set();
   for (const c of world.creatures) {
     const fox = c.species === 'fox';
@@ -4725,7 +4854,7 @@ function putPainting(p, f, alpha, snow, ox, oy) {
 // A visitor fur.js paints (Fur.painters: the dragonflies, the kingfisher, the skylark), at the doublings of its size and
 // shrunk between (shrunk), as a fox is; in the meadow the worker paints it (furReady).
 const furPaint = kind => (g, size, U, n) => { if (!shrunk(g, size, U, kind + ':' + n)) Fur.painters[kind](g, size, U, n); };
-const PAINTERS = { fox: paintFox, rabbit: paintRabbit, hog: paintHedgehog, heron: paintHeron, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody, bee: paintBee, fall: paintFall, shroom: paintShroom, green: paintGreen, bramble: paintBramble,
+const PAINTERS = { fox: paintFox, rabbit: paintRabbit, forager: paintForager, hog: paintHedgehog, heron: paintHeron, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody, bee: paintBee, fall: paintFall, shroom: paintShroom, green: paintGreen, bramble: paintBramble,
   dfly: furPaint('dfly'), kfisher: furPaint('kfisher'), lark: furPaint('lark') };
 function drawDecor(d, sx, sy, now, ck, clipLeaves, px = d.tree ? treePx(d) : d.size * cam.zoom) {   // (px: render has it already)
   if (d.emoji === '🪨') { drawRock(d, sx, sy); return; }
@@ -7157,7 +7286,8 @@ function pondFacts(i, b = world.body[i]) {
   return out;
 }
 
-// What a click lands on, if not an animal: { kind, it } or null for bare ground.
+// What's at a spot, if not an animal: { kind, it } or null for bare ground. (A click there walks the forager now, so
+// nothing asks; kept for when it gathers.)
 function thingAt(sx, sy) {
   for (const kind in THINGS) {
     const it = THINGS[kind].at(sx, sy);
@@ -7302,18 +7432,6 @@ addEventListener('pointermove', e => {
 });
 for (const type of ['pointerup', 'pointercancel']) addEventListener(type, () => { sideSwipe = null; });
 
-function creatureAt(sx, sy) {
-  const [wx, wy] = toWorld(sx, sy);
-  const reach = Math.max(1.4, (fingerTap ? 28 : 20) / cam.zoom);   // a fingertip is bigger than a pointer
-  let best = null, bd = reach * reach;
-  for (const c of world.creatures) {
-    if (c.hidden || !c.alive) continue;
-    const d = (c.x - wx) ** 2 + (c.y - (wy + 0.2)) ** 2;
-    if (d < bd) { best = c; bd = d; }
-  }
-  return best;
-}
-
 // Paused or running: the one button in the corner, and space.
 function setSpeed(s) {
   ui.speed = s;
@@ -7380,12 +7498,15 @@ const ZOOM_DRAG = 0.009;                  // a double tap dragged: the zoom doub
 let lastTap = null, zoomDrag = null;      // the last tap of a finger { t, x, y }; a double tap held { id, y, z, sx, sy, moved }
 let zoomTo = null;                        // a zoom easing in or out on a spot { sx, sy, z } (frame)
 let tapAway = 0;
+const HOLD_MS = 280, STEER_MS = 120;      // a press held this still this long walks toward the pointer, the way found again this often
+let holdTimer = 0;
 
 function startPinch() {
   const [a, b] = fingers.values(), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
   const [wx, wy] = toWorld(mx, my);
   pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, zoom: cam.zoom, wx, wy, mx, my, t0: performance.now(), moved: false };
   drag = null; zoomDrag = null; zoomTo = null; cam.goal = null; ui.follow = false;
+  clearTimeout(holdTimer);
 }
 
 function movePinch() {
@@ -7427,7 +7548,14 @@ canvas.addEventListener('pointerdown', e => {
     drag = null; cam.goal = null;
     return;
   }
-  drag = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y, moved: false, t: e.timeStamp, lx: e.clientX, ly: e.clientY, vx: 0, vy: 0, id: e.pointerId };
+  drag = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y, moved: false, t: e.timeStamp, lx: e.clientX, ly: e.clientY, vx: 0, vy: 0, id: e.pointerId,
+    steer: false, px: e.clientX, py: e.clientY, at: 0 };
+  clearTimeout(holdTimer);
+  holdTimer = setTimeout(() => {                        // held still on the ground: it walks toward the pointer while it's down
+    if (!drag || drag.moved || pinch || zoomDrag || fingers.size > 1 || animalAt(drag.x, drag.y)) return;
+    drag.steer = true; drag.at = performance.now();
+    walkTo(drag.px, drag.py, true);
+  }, HOLD_MS);
 });
 canvas.addEventListener('pointermove', e => {
   if (!world) return;
@@ -7438,10 +7566,12 @@ canvas.addEventListener('pointermove', e => {
     if (zoomDrag.moved || Math.abs(dy) > 8) { zoomDrag.moved = true; zoomAt(zoomDrag.sx, zoomDrag.sy, zoomDrag.z * Math.exp(dy * ZOOM_DRAG)); handMoved(e.timeStamp); }
     return;
   }
+  if (drag?.steer) { drag.px = e.clientX; drag.py = e.clientY; return; }   // (holding: it walks toward the pointer, frame)
   if (!drag) {
-    const c = creatureAt(e.clientX, e.clientY);
+    const c = e.pointerType === 'mouse' ? animalAt(e.clientX, e.clientY) : null;
     ui.hoverId = c ? c.id : 0;
-    ui.hoverHive = c ? null : hiveAt(e.clientX, e.clientY);
+    ui.hoverHive = null;
+    canvas.classList.toggle('on-animal', !!c);
     return;
   }
   let dx = e.clientX - drag.x, dy = e.clientY - drag.y;
@@ -7457,8 +7587,9 @@ canvas.addEventListener('pointermove', e => {
     drag.t = e.timeStamp; drag.lx = e.clientX; drag.ly = e.clientY;
   }
   if (drag.moved) {
+    clearTimeout(holdTimer);
     canvas.classList.add('dragging');
-    ui.follow = false;
+    ui.follow = false; ui.lead = false;
     cam.x = drag.cx - wholePx(dx) / cam.zoom; cam.y = drag.cy - wholePx(dy) / cam.zoom;
     clampCam();
     handMoved(e.timeStamp);
@@ -7471,9 +7602,11 @@ canvas.addEventListener('pointerup', e => {
     zoomDrag = null;
     return;
   }
+  clearTimeout(holdTimer);
   if (liftFinger(e)) return;
   canvas.classList.remove('dragging');
-  if (drag && !drag.moved) {
+  if (drag?.steer) walkTo(e.clientX, e.clientY, true);  // (held: it walks on to where it was let go)
+  else if (drag && !drag.moved) {
     click(e.clientX, e.clientY);
     if (fingerTap) lastTap = { t: e.timeStamp, x: e.clientX, y: e.clientY };
   }
@@ -7483,6 +7616,7 @@ canvas.addEventListener('pointerup', e => {
   drag = null;
 });
 canvas.addEventListener('pointercancel', e => {
+  clearTimeout(holdTimer);
   if (zoomDrag && e.pointerId === zoomDrag.id) { fingers.delete(e.pointerId); zoomDrag = null; return; }
   if (liftFinger(e)) return;
   canvas.classList.remove('dragging');
@@ -7503,21 +7637,43 @@ canvas.addEventListener('wheel', e => {
     const dx = wholePx(scrollRest.x + ddx), dy = wholePx(scrollRest.y + ddy);
     scrollRest = { x: scrollRest.x + ddx - dx, y: scrollRest.y + ddy - dy };   // the rest comes next time
     cam.x += dx / cam.zoom; cam.y += dy / cam.zoom;
-    ui.follow = false; clampCam();
+    ui.follow = false; ui.lead = false; clampCam();
   } else {                            // mouse wheel or pinch: zoom
     cam.goal = null; zoomTo = null;
-    zoomAt(e.clientX, e.clientY, cam.zoom * Math.exp(-ddy * (e.ctrlKey ? 0.012 : 0.0018)));
+    const [zx, zy] = ui.lead && !ui.follow ? toScreen(fg.x, fg.y) : [e.clientX, e.clientY];   // (with the forager: about it)
+    zoomAt(zx, zy, cam.zoom * Math.exp(-ddy * (e.ctrlKey ? 0.012 : 0.0018)));
   }
   handMoved(e.timeStamp);
 }, { passive: false });
 
+// A click or a tap on an animal (on it as it's drawn: animalAt) opens its panel and follows it; anywhere else, the
+// forager walks there, the panel shuts and the camera goes with the forager again (walkTo).
 function click(sx, sy) {
   clearTimeout(tapAway); tapAway = 0;
-  const c = creatureAt(sx, sy), t = !c && thingAt(sx, sy);
-  if (t) pick(t.kind, t.it, toWorld(sx, sy));
-  else if (!c && fingerTap && (ui.selectedId || ui.picked)) tapAway = setTimeout(() => { tapAway = 0; select(0); syncBack(); }, DOUBLE_MS);   // (unless it's a double tap)
-  else select(c ? c.id : 0);
+  const c = animalAt(sx, sy);
+  if (c) select(c.id);
+  else walkTo(sx, sy);
   ui.hoverHive = null;
+}
+function walkTo(sx, sy, steering = false) {
+  const [wx, wy] = toWorld(sx, sy), g = S.foragerTo(world, wx, wy);
+  if (ui.selectedId || ui.picked) select(0);
+  ui.lead = true; ui.follow = false; flick.vx = flick.vy = 0;
+  if (!g) return;
+  if (steering && ui.mark && !ui.mark.end) { ui.mark.x = g.x; ui.mark.y = g.y; }
+  else ui.mark = { x: g.x, y: g.y, t0: performance.now(), end: 0 };
+}
+// The animal drawn under a point: within its painting's body (a fingertip reaches a little further), the nearest.
+// Tighter than creatureAt, so a click on the grass beside a rabbit walks there.
+function animalAt(sx, sy) {
+  let best = null, bd = Infinity;
+  for (const c of world.creatures) {
+    if (c.hidden || !c.alive) continue;
+    const [x, y] = screenOf(c), px = creaturePx(c), r = Math.max(12, px * 0.42) + (fingerTap ? 8 : 0);
+    const d = Math.hypot(x - sx, y - sy);
+    if (d < r && d / r < bd) { best = c; bd = d / r; }
+  }
+  return best;
 }
 
 
@@ -7633,6 +7789,7 @@ document.addEventListener('keydown', e => {
   if (e.key === ' ') { e.preventDefault(); setSpeed(ui.speed ? 0 : 1); }
   else if (e.key === 'Escape') stepOut();
   else if (e.key === 'f' && ui.selectedId) { ui.follow = !ui.follow; renderInspector(); }
+  else if (e.key === 'f') ui.lead = true;                // back to the forager
   else if (e.key === 'm') toggleSound();
   else if (e.key === '+' || e.key === '=') zoomAt(vw / 2, vh / 2, cam.zoom * 1.25);
   else if (e.key === '-') zoomAt(vw / 2, vh / 2, cam.zoom / 1.25);
@@ -7723,7 +7880,7 @@ function keepMeadow() {
   const list = [{ link, at }, ...keptList().filter(k => k.link !== link)];
   if (!setKept(list.slice(0, KEEP_MEADOWS))) return;
   const rec = { link, at, kept, paused: ui.speed === 0,
-    cam: { x: cam.x, y: cam.y, zoom: cam.zoom }, selectedId: ui.selectedId, follow: ui.follow };
+    cam: { x: cam.x, y: cam.y, zoom: cam.zoom }, selectedId: ui.selectedId, follow: ui.follow, lead: ui.lead };
   keepDb().then(db => {
     const tx = db.transaction('meadows', 'readwrite'), store = tx.objectStore('meadows');
     store.put(rec, link);
@@ -7776,6 +7933,8 @@ function resumeWorld(rec) {
   if (rec.cam) { cam.zoom = Math.max(rec.cam.zoom, fitZoom); cam.x = rec.cam.x; cam.y = rec.cam.y; clampCam(); }
   const c = world.byId.get(rec.selectedId);
   if (c) { select(c.id, false); ui.follow = rec.follow; }
+  ui.lead = rec.lead ?? true;
+  if (ui.lead && !ui.follow) { cam.x = world.forager.x; cam.y = world.forager.y - CAM_FEET * forPx() / cam.zoom; clampCam(); }
   history.replaceState(history.state, '', meadowLink(world.seed));
   return true;
 }
@@ -7820,6 +7979,8 @@ function homeView() {
     if (sum > best) { best = sum; bx = (x + 0.5) * HOME_CELL; by = (y + 0.5) * HOME_CELL; }
   }
   Object.assign(cam, { zoom, x: bx, y: by, goal: null });
+  const f = world.forager;                                 // (with the forager, it opens on it)
+  if (f) Object.assign(cam, { x: f.x, y: f.y - CAM_FEET * forPx() / zoom });
   clampCam();
 }
 
@@ -7828,7 +7989,8 @@ function showWorld(w) {
   world = w;
   const seed = w.seed;
   groundSeed = [(seed % 97) * 3.7, (seed % 89) * 4.3];
-  Object.assign(ui, { selectedId: 0, picked: null, hoverId: 0, follow: false, trail: [], effects: [] });
+  Object.assign(ui, { selectedId: 0, picked: null, hoverId: 0, follow: false, lead: true, mark: null, trail: [], effects: [] });
+  fg.at = -1; fg.rings.length = 0; fg.sized = 0;
   pollen.until = 0; pollen.t0.fill(-1e9);
   const mix = Object.fromEntries(Object.keys(S.WEATHER).map(k => [k, k === world.weather.kind ? 1 : 0]));
   Object.assign(ui.sky, { mix, tick: world.tick, bolts: [], rainbow: -1e9, bowEnd: -1e9 });
@@ -7943,7 +8105,8 @@ function frame(now) {
     const gx = sheet ? x + (sheet.right - sheet.left) / 2 / cam.zoom : x;
     const gy = sheet ? y + (sheet.bottom - sheet.top) / 2 / cam.zoom : y;
     cam.x += (gx - cam.x) * k; cam.y += (gy - cam.y) * k;
-  }
+  } else if (ui.lead) leadCam(dt);
+  if (drag?.steer && now - drag.at > STEER_MS) { drag.at = now; walkTo(drag.px, drag.py, true); }
   if (flick.vx || flick.vy) {             // a flicked pan glides to a stop
     cam.x -= flick.vx * dt / cam.zoom; cam.y -= flick.vy * dt / cam.zoom;
     const f = Math.pow(0.02, dt);
@@ -7994,6 +8157,19 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
+// The camera goes with the forager: a little ahead of it the way it's walking (CAM_AHEAD seconds of its pace, eased in
+// and out over CAM_LEAD_S), easing after it (CAM_FOLLOW a second), so setting off, stopping and turning are all soft.
+// Its feet sit a little below the middle of the screen (CAM_FEET), the rest of it above them.
+const CAM_FOLLOW = 3.2, CAM_AHEAD = 0.55, CAM_LEAD_S = 0.9, CAM_FEET = 0.25;
+function leadCam(dt) {
+  const f = world.forager, p = drawnAt(f), v = f.walking ? f.speed * TICKS_PER_SECOND * ui.speed : 0;
+  const a = 1 - Math.exp(-dt / CAM_LEAD_S);
+  fg.lx += (Math.cos(f.heading) * v * CAM_AHEAD - fg.lx) * a; fg.ly += (Math.sin(f.heading) * v * CAM_AHEAD - fg.ly) * a;
+  const k = 1 - Math.exp(-dt * CAM_FOLLOW);
+  cam.x += (p.x + fg.lx - cam.x) * k;
+  cam.y += (p.y - CAM_FEET * forPx() / cam.zoom + fg.ly - cam.y) * k;
+}
+
 // ------------------------------------------------------------------ start
 
 window.addEventListener('resize', resize);
@@ -8018,6 +8194,6 @@ try { if (localStorage.getItem('aeon-garden-sound') === '1') toggleSound(true); 
 
 for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => { if (ui.sound) Sound.start(); }, { once: true });
 
-window.garden = { get world() { return world; }, ui, cam,   // handy in the console
+window.garden = { get world() { return world; }, ui, cam, forager: fg,   // handy in the console
   get trees() { return { worker: !!treeWorker, workers: treeWorkers.length, art: treeArt, bytes: treeBytes, asked: treeAsked.size, busy: treeBusy }; } };
 })();

@@ -7,7 +7,7 @@
 <p align="center"><em>A cozy cooking game in a painted meadow.</em></p>
 
 You'll gather what the meadow gives, build up a kitchen from a campfire, and cook. The cooking isn't built yet: for
-now there's the meadow, and you can look around it.
+now there's the meadow, and a little hooded forager to walk about it.
 
 The meadow lives on its own. Rabbits graze and dig their burrows, foxes hunt them, otters fish the river, crows
 peck about and bury acorns, frogs spawn in the flood pools, and bees fill their hives with honey while the flowers
@@ -19,11 +19,12 @@ Every meadow is different: a river, a lake or both, ponds, woods, great rocks an
 
 ## Playing
 
-- Click an animal to follow it, or anything else (a hive, a tree, a burrow, a field) to see what it is
+- Click or tap the ground to walk there; hold the button or your finger down to keep walking toward it
+- Click an animal to follow it and see what it's up to; click the ground again to go back to your forager
 - Scroll to zoom and drag to look around; on a phone, pinch and drag
 - Quiet sounds and a little felt piano now and then: press 🔊 or M
 
-Keys: <kbd>Space</kbd> pause, <kbd>F</kbd> follow, <kbd>M</kbd> sound, <kbd>+</kbd> <kbd>-</kbd> zoom, <kbd>Esc</kbd> close.
+Keys: <kbd>Space</kbd> pause, <kbd>F</kbd> follow (or back to the forager), <kbd>M</kbd> sound, <kbd>+</kbd> <kbd>-</kbd> zoom, <kbd>Esc</kbd> close.
 
 ## Running it yourself
 

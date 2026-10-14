@@ -13,6 +13,25 @@ Drawing, the camera, the inspector. The world fills the screen; over it only the
 watching game's cards, news feed, stats, journal, tools, intro and idle camera were cut on the `cooking` branch
 (main at 1d79f03 has them).
 
+The forager (sim.js `w.forager`; how it walks is in ecology.md) is painted in fur.js like a fox (`paintForager`,
+`foragerPose`, `foragerParts`: a rust hood with a flopping point, a round face, a moss cloak, mittens, a satchel, boots), in
+three views (side on, three-quarters from the front and the back, all facing left and mirrored going right) and eight
+paintings a stride, plus standing, a fidget and a blink: 'forager:' + (view << 4) + pose, painted by the worker
+(`foragerAhead` asks for every one at the size it's drawn, so a walk never waits). Its feet are where it is. game.js
+(`foragerFrame`, once a frame) turns the stride over with the ground it covers (a stride every `2 * FORAGER_REACH * 2` of its
+half-size, so the planted foot doesn't slide; fur.js `FORAGER_REACH`), picks the view from the sim's heading with a margin
+either side so it doesn't flicker, and standing lets it breathe, blink, turn to face you after `FORAGER_TURN_MS` and fidget
+now and then (`FORAGER_FIDGET`). In the shallows it's cut off at its shins with a ring round its legs, and each step sends out
+a ring (`fg.rings`). Its shadow goes in with the animals' (`foragerShadow`). `forager-lab.html` paints them all side by side.
+A click or a tap on an animal (on its body as drawn: `animalAt`, a little wider for a finger) opens its panel and follows it;
+anywhere else walks the forager there (`walkTo`, sim.js `foragerTo`), shuts the panel and puts the camera back on it, with a
+soft ring where it was sent (`drawMark`, `MARK_ART` painted once) that fades once it's there. A press held still for
+`HOLD_MS` walks toward the pointer while it's down, the way found again every `STEER_MS` (in `frame`), and on to where it's let
+go. The camera goes with it (`ui.lead`, `leadCam`): eased after it (`CAM_FOLLOW`), a little ahead the way it walks
+(`CAM_AHEAD`, itself eased so setting off and stopping are soft), its feet a little below the middle (`CAM_FEET`). A drag or
+a pan lets it go, F or the next walk takes it back; the wheel zooms about the forager while the camera's with it. A kept
+meadow keeps where it is and whether the camera was with it (`rec.lead`).
+
 The inspector shows animals and every other thing you click (hives, trees, rocks, burrows, flowers, fields, water,
 visitors): each kind is an entry in `THINGS`, saying how to find one on screen and what its panel shows. A tap
 on an animal follows it (`select`, `ui.follow`). Animals can't be named by the player. Every animal of a kind is alike
