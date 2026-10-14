@@ -54,24 +54,8 @@ const BITE = 0.012;             // grass eaten per tick of grazing
 const GRASS_ENERGY = 40;        // energy per unit of grass
 const MOVE_COST = 0.25;         // energy per tick = MOVE_COST * v^2 / walk
 
-const GENES = ['speed', 'size', 'eyes', 'bravery', 'friendly'];
-const RABBIT_GENES = [...GENES, 'moult'];   // moult: how white the coat turns for winter
-const genesOf = species => (species === 'rabbit' ? RABBIT_GENES : GENES);
-
-// Rabbit coats: two genes, each a pair of letters, one from each parent. A capital letter wins.
-//   A wild (speckled brown) over a solid (black);  D full colour over d pale.
-// So 'AaDD' looks wild brown but can pass on black. Foxes keep a simple sliding `fur` shade.
-const COATS = {
-  wild: { name: 'wild brown', rgb: [150, 114, 80] }, black: { name: 'black', rgb: [62, 56, 56] },
-  sand: { name: 'sandy', rgb: [212, 178, 128] }, blue: { name: 'blue-grey', rgb: [128, 134, 150] },
-};
-const COAT_RARE = 0.3;          // founders: how often each recessive letter turns up
-const COAT_FLIP = 0.002;        // per letter per birth: a new colour now and then
-const WINTER_COAT = [236, 236, 230];
-const MOULT_START = 0.5;        // founders: about half turn white in their first winter
-const MOULT_WARM = 0.3;         // a white winter coat is a thick one: this much less burnt while snow lies
-const MOULT_FROM = 0.3, MOULT_TO = 0.7;   // below this moult gene a coat stays; above, it turns fully white
-
+// Every animal of a kind is alike (SPECIES): no genes, and young don't take after their parents. Only a look
+// differs: a little bigger or smaller (c.scale), and a fox's shade (c.fur), which its cubs share.
 const SPECIES = {
   rabbit: {
     key: 'rabbit', name: 'Rabbit', plural: 'Rabbits', emoji: '🐇',
@@ -1809,49 +1793,9 @@ function shadeSoil(w) {
 
 const sky = w => WEATHER[w.weather.kind];
 
-// ---------------------------------------------------------------- camouflage
-//
-// A fox spots a still rabbit from further off when its coat stands out from the ground under
-// it. The ground is judged in the colours the meadow is drawn with. At night it is shadow, where
-// dark coats vanish and pale ones show, except where snow lies.
-
-const GROUND = {
-  seasons: [   // [bare ground, lush grass] per season
-    [[214, 197, 150], [128, 193, 107]],
-    [[226, 206, 142], [113, 175, 87]],
-    [[226, 214, 178], [184, 146, 72]],   // amber, so grazed ground shows paler
-    [[226, 231, 238], [168, 196, 200]],  // frost-blue
-  ],
-  snow: [246, 248, 252], night: [22, 30, 78],
-};
-const CAMO = [0.85, 1.5];        // a fox's spotting distance, from a perfect match to a clash
-const CAMO_CLASH = 0.8;         // how much a colour difference (0 same, about 1 very unlike) adds
-
-function groundRGB(w, x, y) {
-  const i = idx(x, y), [bare, lush] = GROUND.seasons[seasonOf(w.tick)];
-  let v = clamp(w.grass[i] / 0.85, 0, 1);
-  v = v * (2 - v);
-  const snow = clamp(w.snow * 1.4 - 0.3, 0, 0.9);
-  const f = w.fieldAt[i] >= 0 ? w.fields[w.fieldAt[i]] : null, bloom = fieldBloom(w, f, i, v);
-  return bare.map((b, k) => {
-    let c = lerp(b, lush[k], v);
-    if (bloom > 0) c = lerp(c, f.tint[k], bloom);
-    c = lerp(c, GROUND.snow[k], snow);
-    return isNight(w.tick) ? lerp(c, GROUND.night[k], 0.6 * (1 - snow)) : c;   // moonlit snow stays bright
-  });
-}
-
 // How strongly a field tints the ground at tile i: only in its season, where the grass is lush.
 const FIELD_TINT = 0.3;          // at most this much of the field's colour
 const fieldBloom = (w, f, i, v) => (f && f.season === seasonOf(w.tick) ? FIELD_TINT * w.fieldIn[i] * v : 0);
-
-// How far off a fox can pick this rabbit out, as a share of its sight.
-function visibility(w, c) {
-  if (c.mode === 'flee') return CAMO[1];       // running, it's seen whatever its coat
-  const a = coatRGB(w, c), b = groundRGB(w, c.x, c.y);
-  const d = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) / 255;
-  return clamp(CAMO[0] + CAMO_CLASH * d, CAMO[0], CAMO[1]);
-}
 
 function setWeather(w, kind, ticks) {
   if (kind === w.weather.kind) { w.weather.until = Math.max(w.weather.until, w.tick + ticks); return; }
@@ -2013,64 +1957,15 @@ function pickName(w, species) {
   return n === 1 ? base : base + ' ' + roman(n);
 }
 
-function founderGenes(w, species) {
-  const r = w.rng, g = {};
-  for (const k of genesOf(species)) g[k] = clamp((k === 'moult' ? MOULT_START : 0.5) + 0.12 * r.normal(), 0, 1);
-  if (species === 'rabbit') g.coat = ['A', 'A', 'D', 'D'].map(L => r.next() < COAT_RARE ? L.toLowerCase() : L).join('');
-  else g.fur = r.next();
-  return g;
-}
-
-function childGenes(w, mum, dad) {
-  const r = w.rng, g = {};
-  for (const k of mum.coat ? RABBIT_GENES : GENES) {
-    let v = r.next() < 0.5 ? mum[k] : dad[k];
-    if (r.next() < 0.35) v += 0.045 * r.normal();
-    g[k] = clamp(v, 0, 1);
-  }
-  if (mum.coat) {
-    // One letter of each gene from mum, one from dad. Rarely a letter flips.
-    const pick = (a, b) => [a[r.next() < 0.5 ? 0 : 1], b[r.next() < 0.5 ? 0 : 1]]
-      .map(L => r.next() < COAT_FLIP ? (L === L.toUpperCase() ? L.toLowerCase() : L.toUpperCase()) : L).join('');
-    g.coat = pick(mum.coat.slice(0, 2), dad.coat.slice(0, 2)) + pick(mum.coat.slice(2), dad.coat.slice(2));
-  } else g.fur = clamp((mum.fur + dad.fur) / 2 + 0.05 * r.normal(), 0, 1);   // fox families share a coat
-  return g;
-}
-
-// What a rabbit's coat looks like, and the colours it hides and can still pass on.
-function coatOf(g) {
-  const wild = g.coat.slice(0, 2).includes('A'), full = g.coat.slice(2).includes('D');
-  return wild ? (full ? 'wild' : 'sand') : (full ? 'black' : 'blue');
-}
-// How white a rabbit has turned: it pales through late autumn and colours again early in spring.
-function whiteness(w, c) {
-  if (!c.genes.coat) return 0;
-  const y = (w.tick / TPD % YEAR_DAYS) / SEASON_DAYS;       // 0 to 4 through the year, spring first
-  const winter = y >= 3 ? 1 : y > 2.5 ? (y - 2.5) / 0.5 : y < 0.5 ? 1 - y / 0.5 : 0;
-  const m = clamp((c.genes.moult - MOULT_FROM) / (MOULT_TO - MOULT_FROM), 0, 1);
-  return m * m * (3 - 2 * m) * winter;
-}
-const coatRGB = (w, c) => COATS[coatOf(c.genes)].rgb.map((v, k) => lerp(v, WINTER_COAT[k], whiteness(w, c)));
-
-function hiddenCoats(g) {
-  const out = [];
-  if (g.coat.slice(0, 2).includes('A') && g.coat.slice(0, 2).includes('a')) out.push('black');
-  if (g.coat.slice(2).includes('D') && g.coat.slice(2).includes('d')) out.push('pale');
-  return out;
-}
+const FLEE_DIST = 0.7;           // a rabbit runs from a fox this close, of how far it sees
+const POUNCE = 5.5;             // tiles: a stalking fox this close charges
+const FRIENDLY = 0.5;           // odds a check that a rabbit or a crow goes over to the others
 
 function computeTraits(c) {
-  const g = c.genes, sp = c.sp;
-  const sizeF = 0.75 + 0.5 * g.size;
-  const speedF = (0.75 + 0.5 * g.speed) * (1.1 - 0.2 * g.size);
-  c.maxEnergy = sp.maxEnergy * sizeF;
-  c.burnRate = sp.burn * Math.pow(sizeF, 0.75) * (0.9 + 0.2 * g.eyes);
-  c.walk = sp.walk * speedF;
-  c.sprint = sp.sprint * speedF;
-  c.sight = sp.sight * (0.7 + 0.6 * g.eyes);
-  c.fleeDist = c.sight * (0.95 - 0.5 * g.bravery);
-  c.pounce = 3 + 5 * g.bravery;
-  c.scale = 0.8 + 0.4 * g.size;
+  const sp = c.sp;
+  c.maxEnergy = sp.maxEnergy; c.burnRate = sp.burn;
+  c.walk = sp.walk; c.sprint = sp.sprint; c.sight = sp.sight;
+  c.fleeDist = c.sight * FLEE_DIST; c.pounce = POUNCE;
 }
 
 // Every field a creature ever has, in one place: makeCreature fills it in, and so does unpackWorld for a kept one.
@@ -2079,7 +1974,7 @@ function computeTraits(c) {
 // more than a few layouts reads every field the slow way, for good. -0 is a zero that's kept like a fraction: the fields
 // that ever hold one start as it.
 const blankCreature = () => ({
-  id: 0, species: '', sp: null, x: -0, y: -0, genes: null,
+  id: 0, species: '', sp: null, x: -0, y: -0, scale: -0, fur: -0,
   name: '', sex: '', gen: 0, mumId: 0, dadId: 0,
   born: -0, lifespan: -0,
   alive: true, died: 0, cause: '',
@@ -2088,23 +1983,24 @@ const blankCreature = () => ({
   sprinting: false, sleeping: false, hidden: false, burrow: null, home: null, refuge: null, dig: null,
   alert: 0, threatId: 0, chaseT: 0, fright: 0, frightX: -0, frightY: -0, frightWhat: '',
   wary: 0, waryX: -0, waryY: -0, detour: 0, detourX: -0, detourY: -0, nemesisId: 0, haunt: null,
-  pregnantUntil: 0, cooldownUntil: 0, dadGenes: null, dadIdPending: 0, dadGenPending: 0,
+  pregnantUntil: 0, cooldownUntil: 0, dadIdPending: 0, dadGenPending: 0,
   kids: 0, kills: 0, frogs: 0, fish: 0, escapes: 0, visits: 0, load: 0, find: null, story: null,
   caches: null,         // a crow's acorns and beechnuts buried this autumn (cacheNut)
   mate: 0,              // a crow's mate, for life (by id; mateOf)
   perch: null,          // a crow's seat in the roost (roostSeat)
-  maxEnergy: -0, burnRate: -0, walk: -0, sprint: -0, sight: -0, fleeDist: -0, pounce: -0, scale: -0,   // (computeTraits)
+  maxEnergy: -0, burnRate: -0, walk: -0, sprint: -0, sight: -0, fleeDist: -0, pounce: -0,   // (computeTraits)
   snack: '',            // a rabbit's windfall: 'apple', or what a nut tree drops (windfall)
   queen: null,          // a bee's mother, the queen (layEggs)
   calm: 0, cubsIn: 0, slide: null,   // an otter's: paying foxes no mind till then; cubs still in the holt; its slide (otterTick)
   killerId: 0,          // who caught it (die)
 });
 
-function makeCreature(w, species, x, y, genes, parents) {
+function makeCreature(w, species, x, y, parents) {
   const sp = SPECIES[species];
   const r = w.rng;
   const c = blankCreature();
-  c.id = w.nextId++; c.species = species; c.sp = sp; c.x = x; c.y = y; c.genes = genes;
+  c.id = w.nextId++; c.species = species; c.sp = sp; c.x = x; c.y = y;
+  c.scale = r.range(0.9, 1.1); c.fur = parents ? parents.mum.fur : r.next();
   c.name = pickName(w, species);
   c.sex = species === 'bee' || r.next() < 0.5 ? 'F' : 'M';
   c.gen = parents ? Math.max(parents.mum.gen, parents.dadGen) + 1 : 1;
@@ -2142,7 +2038,7 @@ function nearestBurrow(w, x, y, maxD, ok = b => b.dug >= 1) {
 
 function addCreature(w, species, x, y, opts = {}) {
   if (!(dry(w, x, y) || SPECIES[species].swims && inBounds(x, y))) return null;
-  const c = makeCreature(w, species, x, y, opts.genes || founderGenes(w, species), null);
+  const c = makeCreature(w, species, x, y, null);
   if (opts.sex && species !== 'bee') c.sex = opts.sex;          // bees out and about are all workers
   if (opts.age) c.born = w.tick - Math.min(opts.age * TPD, c.lifespan / 2);   // nobody arrives at death's door
   c.home = species === 'bee' ? nearestHive(w, x, y) : species === 'rabbit' || species === 'fox' ? nearestBurrow(w, x, y, 40) : null;   // (a crow's is its nest, an owl's its hollow, an otter's its holt)
@@ -2254,7 +2150,7 @@ function mate(w, a, b) {
   const mum = a.sex === 'F' ? a : b, dad = a.sex === 'F' ? b : a;
   mum.pregnantUntil = w.tick + mum.sp.gestationDays * TPD;
   mum.cooldownUntil = mum.pregnantUntil + mum.sp.cooldownDays * TPD;
-  mum.dadGenes = dad.genes; mum.dadIdPending = dad.id; mum.dadGenPending = dad.gen;
+  mum.dadIdPending = dad.id; mum.dadGenPending = dad.gen;
   w.recount = true;
   dad.cooldownUntil = w.tick + 0.4 * TPD;
   for (const c of [mum, dad]) { c.mode = 'wander'; c.target = null; c.targetId = 0; }
@@ -2272,14 +2168,11 @@ function giveBirth(w, mum) {
   let n = r.int(sp.litter[0], sp.litter[1]);
   if (well < 0.4) n = Math.max(1, n - 1);
   const dad = w.byId.get(mum.dadIdPending);
-  const kids = [], surprise = [];
-  // A coat neither parent shows came from colours both of them were hiding.
-  const shown = mum.genes.coat && [coatOf(mum.genes), coatOf(mum.dadGenes)];
+  const kids = [];
   for (let k = 0; k < n; k++) {
     let x = mum.x + r.range(-1, 1), y = mum.y + r.range(-1, 1);
     if (!dry(w, x, y)) { x = mum.x; y = mum.y; }
-    const kid = makeCreature(w, mum.species, x, y, childGenes(w, mum.genes, mum.dadGenes),
-      { mum, dadId: mum.dadIdPending, dadGen: mum.dadGenPending });
+    const kid = makeCreature(w, mum.species, x, y, { mum, dadId: mum.dadIdPending, dadGen: mum.dadGenPending });
     kid.home = mum.home || mum.burrow;
     if (mum.hidden && mum.burrow) { kid.hidden = true; kid.burrow = mum.burrow; kid.sleeping = true; kid.mode = 'sleep'; kid.timer = 60; mum.burrow.count++; }
     if (mum.species === 'crow' || mum.species === 'otter') {   // chicks, in the nest till they fledge (crowTick), cubs in the holt (otterTick)
@@ -2287,10 +2180,6 @@ function giveBirth(w, mum) {
       Object.assign(kid, { x: nest.x, y: nest.y, hidden: true, sleeping: true, mode: 'nest' });
     }
     note(w, kid, '🐣', `Born to ${mum.name}` + (dad ? ` and ${dad.name}` : ''));
-    if (shown && !shown.includes(coatOf(kid.genes))) {
-      surprise.push(kid);
-      note(w, kid, '🎨', `Born ${COATS[coatOf(kid.genes)].name}, unlike either parent`);
-    }
     w.newborn.push(kid);
     w.byId.set(kid.id, kid);
     kids.push(kid);
@@ -2300,7 +2189,7 @@ function giveBirth(w, mum) {
   if (dad) dad.kids += n;
   note(w, mum, '🍼', `Had ${n} ${n === 1 ? 'baby' : 'babies'}`);
   if (dad && dad.alive) note(w, dad, '🍼', `Became a dad to ${n} with ${mum.name}`);
-  emit(w, { type: 'birth', mum, dad, kids, surprise });
+  emit(w, { type: 'birth', mum, dad, kids });
 }
 
 // ---------------------------------------------------------------- burrows
@@ -2424,8 +2313,8 @@ function rabbitTick(w, c) {
     if (fox) {
       // A charging fox is seen quickly but not instantly: that beat is the pounce's window.
       const known = fox.id === c.threatId && c.alert > 0;
-      const chance = fox.mode === 'chase' ? 0.12 + 0.2 * c.genes.eyes
-        : (0.01 + 0.05 * c.genes.eyes) * (c.sleeping ? 0.3 : 1) * (night ? 0.5 : 1) * (c.wary > 0 ? 1.6 : 1)
+      const chance = fox.mode === 'chase' ? 0.22
+        : 0.035 * (c.sleeping ? 0.3 : 1) * (night ? 0.5 : 1) * (c.wary > 0 ? 1.6 : 1)
           * (fox.id === c.nemesisId ? 2 : 1);   // the fox that nearly got it, it looks out for
       if (known || w.rng.next() < chance) {
         if (!known) spotted(w, c, fox);
@@ -2505,7 +2394,7 @@ function rabbitTick(w, c) {
   if (c.mode === 'rest') { if (--c.timer > 0) return; c.mode = 'wander'; c.target = null; }
   if ((t + c.id) % 30 === 0) {
     if (isAdult(w, c) && startDigging(w, c)) return;
-    if (w.rng.next() < c.genes.friendly) {
+    if (w.rng.next() < FRIENDLY) {
       let sx = 0, sy = 0, n = 0;
       forEachNear(w, c.x, c.y, c.sight, o => { if (o !== c) { sx += o.x; sy += o.y; n++; } }, 'rabbit');
       if (n > 0) {
@@ -2672,7 +2561,7 @@ function hunt(w, c) {
   if (prey && prey.species !== 'rabbit') prey = null;
   const sight = c.sight * sky(w).sight;
   // Lost from view: a little further off than the furthest a fox spots one, or it'd flicker.
-  if (prey && (!prey.alive || prey.hidden || dist2(c, prey) > (sight * CAMO[1] * 1.2) ** 2)) {
+  if (prey && (!prey.alive || prey.hidden || dist2(c, prey) > (sight * 1.3) ** 2)) {
     if (prey.alive && c.mode === 'chase') escaped(w, prey, c, prey.hidden ? 'burrow' : 'outran');
     prey = null; c.targetId = 0; c.mode = 'wander';
   }
@@ -2684,8 +2573,7 @@ function hunt(w, c) {
   }
   if (!prey && (w.tick + c.id) % 5 === 0) {
     // Only a rabbit that isn't already watching this fox is worth sneaking up on.
-    prey = nearest(w, c, sight * CAMO[1], 'rabbit', o => !(o.alert > 0 && o.threatId === c.id)
-      && dist2(c, o) < (sight * visibility(w, o)) ** 2 && clearPath(w, c.x, c.y, o.x, o.y));
+    prey = nearest(w, c, sight, 'rabbit', o => !(o.alert > 0 && o.threatId === c.id) && clearPath(w, c.x, c.y, o.x, o.y));
     if (prey) { c.targetId = prey.id; c.mode = 'stalk'; }
   }
   if (!prey) return false;
@@ -3234,7 +3122,7 @@ function layEggs(w, h) {
     if (h.bees + kids.length >= HIVE_ROOM || w.count.bee + w.newborn.length >= SPECIES.bee.cap * w.room) { h.brood = 0; break; }
     h.honey -= BROOD_HONEY;
     const q = h.queen;
-    const kid = makeCreature(w, 'bee', h.x, h.y, childGenes(w, q.genes, q.drone), { mum: { id: 0, gen: q.gen }, dadId: 0, dadGen: q.gen });
+    const kid = makeCreature(w, 'bee', h.x, h.y, { mum: { id: 0, gen: q.gen, fur: 0 }, dadId: 0, dadGen: q.gen });
     kid.home = h; kid.queen = q; kid.hidden = true; kid.mode = 'nurse';
     note(w, kid, '🐣', `Hatched in the hive, a daughter of Queen ${q.name}`);
     w.newborn.push(kid); w.byId.set(kid.id, kid); kids.push(kid);
@@ -3244,20 +3132,16 @@ function layEggs(w, h) {
   emit(w, { type: 'hatch', hive: h, queen: h.queen, kids });
 }
 
-// A new queen for an empty hive. She stays inside, so she's a name and genes on the hive, and
-// she carries the genes of the drone she met on her wedding flight.
+// A new queen for an empty hive. She stays inside, so she's a name on the hive.
 function newQueen(w, h) {
-  h.queen = { name: pickName(w, 'bee'), genes: founderGenes(w, 'bee'), drone: founderGenes(w, 'bee'), gen: 1, since: w.tick, laysFrom: 0, kids: 0 };
+  h.queen = { name: pickName(w, 'bee'), gen: 1, since: w.tick, laysFrom: 0, kids: 0 };
   h.brood = 0;
   emit(w, { type: 'queen', hive: h, queen: h.queen });
 }
 
-// A queen raised in the hive. On her wedding flight she meets a drone from anywhere in the
-// meadow: any bee will do for his genes.
+// A queen raised in the hive.
 function daughterQueen(w, mum) {
-  const bees = w.creatures.filter(c => c.alive && c.species === 'bee');
-  const drone = bees.length ? bees[w.rng.int(0, bees.length - 1)].genes : founderGenes(w, 'bee');
-  return { name: pickName(w, 'bee'), genes: childGenes(w, mum.genes, mum.drone), drone, gen: mum.gen + 1,
+  return { name: pickName(w, 'bee'), gen: mum.gen + 1,
     since: w.tick, laysFrom: w.tick + MATING_FLIGHT * TPD, kids: 0, mum: mum.name };
 }
 
@@ -3804,7 +3688,7 @@ function crowTick(w, c) {
       const a = w.rng.range(0, Math.PI * 2), r = w.rng.range(2, PATCH / 2), x = home.x + Math.cos(a) * r, y = home.y + Math.sin(a) * r;
       if (dry(w, x, y)) { c.mode = 'forage'; c.target = { x, y }; return; }
     }
-    if (w.rng.next() < c.genes.friendly) {   // over to its mate, or with none the nearest crow, if it isn't close by
+    if (w.rng.next() < FRIENDLY) {   // over to its mate, or with none the nearest crow, if it isn't close by
       const o = m ? dist2(c, m) > FRIEND_FAR ** 2 && awake(m) && m : !nearest(w, c, FRIEND_FAR, 'crow', awake) && nearest(w, c, c.sight, 'crow', awake);
       if (o) {
         const a = Math.atan2(c.y - o.y, c.x - o.x) + w.rng.range(-1, 1), r = w.rng.range(FRIEND_GAP[0], FRIEND_GAP[1]);
@@ -4579,8 +4463,7 @@ function lifeTick(w, c) {
   if (c.species === 'bee' && c.hidden) b *= 0.3 * clusterCold(w, c.home);   // huddled in the hive, barely burning
   if (c.pregnantUntil) b *= 1.25;
   const kind = w.weather.kind;
-  if (kind === 'snow' && !c.hidden) b *= 1 + 0.5 * (1 - c.genes.size);   // small bodies feel the cold
-  if (w.snow > 0.3 && !c.hidden) b *= 1 - MOULT_WARM * whiteness(w, c);
+  if (kind === 'snow' && !c.hidden) b *= 1.25;                            // the cold
   b += MOVE_COST * c.moved * c.moved / c.sp.walk * (kind === 'heat' ? 1.5 : 1) * (c.sp.glide || 1);
   c.energy -= b;
   if (!c.sprinting) c.stamina = Math.min(1, c.stamina + (c.sleeping || c.mode === 'tired' ? 1 / 150 : 1 / 400));
@@ -4785,7 +4668,7 @@ function forgetTheLongDead(w) {
 const KEEP_VERSION = 8;                 // 2: shade and rich ground (w.shadedFert, w.rich); 3: voles (w.voles); 4: the sickness (c.sick, c.immune, the resist gene);
                                         // 5: crows and remains (w.carcasses, w.roost, c.caches, d.nuts); 6: owls (d.owl, c.perch);
                                         // 7: frogs (w.frogs, w.spawn, w.frogYear, c.frogs); 8: the cooking cut (no keeper, owls, fire or player powers)
-const TABLES = { SPECIES, FIELD_KINDS, TREE_MIX, TREES, SEASONS, WEATHER, COATS, GROUND };
+const TABLES = { SPECIES, FIELD_KINDS, TREE_MIX, TREES, SEASONS, WEATHER };
 const UNKEPT = ['grid', 'grids', 'events', 'newborn', 'current'];   // on the world
 let tableNames = null;                                     // object -> 'SPECIES.fox', made the first time
 // Of the dead (w.byId keeps them a few years), a kept meadow keeps only those still spoken of: parents
@@ -4839,12 +4722,12 @@ function packWorld(w) {
 // Fields older versions kept that are gone now, left behind: an animal's or a queen's mine (the player named it, theirs
 // then), a tree's bank (the holts' old reckoning, now d.holtFish). Left out, not deleted after: a deleted field leaves
 // an object slow to read.
-const gone = (e, k) => (k === 'mine' && e.genes !== undefined) || (k === 'bank' && e.tree === true);
+const gone = (e, k) => (k === 'mine' && e.sp !== undefined) || (k === 'bank' && e.tree === true);
 function unpackWorld(kept) {
   if (!kept || kept.version !== KEEP_VERSION) return null;
   const list = kept.list;
   const made = list.map(e => (Array.isArray(e) ? new Array(e.length) : ArrayBuffer.isView(e) ? e
-    : e.$map ? new Map() : e.$set ? new Set() : e.sp !== undefined && e.genes !== undefined ? blankCreature()   // (laid out like new ones)
+    : e.$map ? new Map() : e.$set ? new Set() : e.sp !== undefined && e.species !== undefined ? blankCreature()   // (laid out like new ones)
     : e.tree === true ? blankTree() : e.emoji === '🪨' ? rockOf(-0, -0, -0)
     : e.n !== undefined && e.i !== undefined && e.kind !== undefined && e.field !== undefined ? plantOf(-0, -0, 0, -0, null, 0) : {}));   // (a flower or blossom)
   const table = path => path.split('.').reduce((o, k) => {
@@ -5724,12 +5607,12 @@ function mood(w, c) {
 }
 
 const api = {
-  W, H, TPD, SHALLOW, DEEP, SEASON_DAYS, YEAR_DAYS, SEASONS, SPECIES, GENES, COATS, GROUND, WEATHER,
+  W, H, TPD, SHALLOW, DEEP, SEASON_DAYS, YEAR_DAYS, SEASONS, SPECIES, WEATHER,
   createWorld, step, clock, isNight, phaseOf, seasonOf, mood, ageDays, growth, isAdult, patchFresh,
   hedgehogComes, heronComes, dragonflyComes, kingfisherComes, skylarkComes, placeNeeds, VISIT_SEASONS, VISIT_FADE, HERON_FADE, HERON_STAB,
   DRAGON_FROM, KF_FADE, KF_UNDER, KF_BEAT, LARK_FADE, LARK_OPEN, LARK_RISE, EDGE_REACH, OPEN_MOST,
   walkable, packWorld, unpackWorld,
-  coatOf, hiddenCoats, visibility, whiteness, WINTER_COAT, KINDS, FEW,
+  KINDS, FEW,
   TERRAIN, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE,
   TREES, treeStage, treeAge, standing, bearing, hollow, inBloom, SEEDLING, SAPLING, GROWN, KIND_NAMES,

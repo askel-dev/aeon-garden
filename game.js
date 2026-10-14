@@ -3,7 +3,7 @@
 'use strict';
 const S = window.Sim;
 const Fur = window.Fur;                 // the painted foxes and rabbits, and the drawing helpers every painting here uses
-const { tone, rockRGB, fillIn, strokeIn, discAt, ovalAt, blurIn, softIn, furGlow, foxRGB, FOX_POSE, RABBIT_POSE, RABBIT_KINDS } = Fur;
+const { tone, rockRGB, fillIn, strokeIn, discAt, ovalAt, blurIn, softIn, furGlow, foxRGB, FOX_POSE, RABBIT_POSE } = Fur;
 const $ = sel => document.querySelector(sel);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -34,7 +34,7 @@ if (COUNTER && !['localhost', '127.0.0.1'].includes(location.hostname)) {
 let world;
 const ui = {
   speed: 1, sound: false, selectedId: 0, picked: null, hoverId: 0, follow: false,
-  trail: [], effects: [], allTraits: false, allStory: false, sheetUp: false,
+  trail: [], effects: [], allStory: false, sheetUp: false,
   sky: { mix: {}, tick: 0, bolts: [], boom: -1e9, rainbow: -1e9, bowEnd: -1e9 },
 };
 const cam = { x: S.W / 2, y: S.H / 2, zoom: 10, goal: null };
@@ -420,36 +420,19 @@ function drawEmoji(emoji, x, y, px, opts = {}) {
   ctx.restore();
 }
 
-// Rabbit coats (the genes are in the sim). Wild coats are agouti: each hair banded, so speckled. n: its paintings (paintRabbit).
-const COAT = {
-  wild: { key: 'wild', rgb: S.COATS.wild.rgb, speckle: 0.35, swatch: '#96724f', n: 0 },
-  black: { key: 'black', rgb: S.COATS.black.rgb, speckle: 0, swatch: '#3e3838', n: 10 },
-  sand: { key: 'sand', rgb: S.COATS.sand.rgb, speckle: 0.3, swatch: '#d4b280', n: 5 },
-  blue: { key: 'blue', rgb: S.COATS.blue.rgb, speckle: 0, swatch: '#808696', n: 15 },
-};
-const coatLook = c => c.genes.coat ? COAT[S.coatOf(c.genes)] : undefined;
-const furCoats = () => RABBIT_KINDS.map(k => ({ rgb: S.COATS[k].rgb, speckle: COAT[k].speckle }));   // for fur.js
-Fur.setCoats(furCoats(), S.WINTER_COAT);
-// In winter a coat pales toward white, in a few steps (0 to 4) to keep the sprite cache small.
-const whiteStep = c => Math.round(S.whiteness(world, c) * 4);
+// Every rabbit wears the wild coat: agouti, each hair banded, so speckled. fur.js can paint others (RABBIT_KINDS);
+// this is the first of them, and stays its own colour all year.
+const COAT = { rgb: [150, 114, 80], speckle: 0.35, swatch: '#96724f', n: 0 };
+const furCoats = () => [{ rgb: COAT.rgb, speckle: COAT.speckle }];   // for fur.js
+Fur.setCoats(furCoats(), COAT.rgb);
 
-const furCss = c => c.genes.coat ? coatLook(c).swatch
-  : c.species === 'fox' ? `rgb(${foxRGB(c.genes.fur).join(',')})` : LOOKS[c.species].swatch;
-
-// "Wild brown coat, carries black": the colours it hides can still turn up in its kits.
-// Then how well it hides where it sits, as a fox would see it.
-function coatLine(c) {
-  const hid = S.hiddenCoats(c.genes), white = S.whiteness(world, c);
-  const name = S.COATS[S.coatOf(c.genes)].name, v = c.alive && !c.hidden ? S.visibility(world, c) : 1;
-  return `🎨 ${name[0].toUpperCase() + name.slice(1)} coat${white > 0.5 ? ', white for winter' : ''}` +
-    `${hid.length ? `, carries ${hid.join(' and ')}` : ''}` +
-    (v < 1.05 ? ' · 🫥 blends in here' : v > 1.3 ? ' · 👁️ stands out here' : '');
-}
+const furCss = c => c.species === 'rabbit' ? COAT.swatch
+  : c.species === 'fox' ? `rgb(${foxRGB(c.fur).join(',')})` : LOOKS[c.species].swatch;
 
 // The animal for the inspector, painted as in the meadow, drawn once per look.
 const portraits = new Map();
 function portraitHTML(c) {
-  const art = c.alive && (c.species === 'fox' ? foxArtOf(c.genes.fur, 'stand') : c.species === 'rabbit' ? rabbitArtOf(coatLook(c), 'sit', whiteStep(c))
+  const art = c.alive && (c.species === 'fox' ? foxArtOf(c.fur, 'stand') : c.species === 'rabbit' ? rabbitArtOf(COAT, 'sit')
     : { crow: CROW_ARTS[0], otter: OTTER_ARTS[3], bee: 'bee:2' }[c.species]);
   if (!art) return c.alive ? c.sp.emoji : '👻';
   if (!portraits.has(art)) portraits.set(art, dataURL(sprite(art, 38).canvas));
@@ -463,7 +446,12 @@ function portraitHTML(c) {
 // on it a few times a second (paintTerrain), the lie of the land and the water when the water
 // moves (updateWater).
 
-const PALETTE = S.GROUND.seasons;   // [bare ground, lush grass] per season; camouflage uses it too
+const PALETTE = [   // [bare ground, lush grass] per season
+  [[214, 197, 150], [128, 193, 107]],
+  [[226, 206, 142], [113, 175, 87]],
+  [[226, 214, 178], [184, 146, 72]],   // amber, so grazed ground shows paler
+  [[226, 231, 238], [168, 196, 200]],  // frost-blue
+];
 const tileData = new Float32Array(S.W * S.H * 4), bloomData = new Float32Array(S.W * S.H * 4);
 let terrainTick = -1, terrainAt = 0;   // when the grass was last handed over, in ticks and real time
 let groundSeed = [0, 0];               // moves the shader's noise, so each meadow has its own
@@ -2953,8 +2941,8 @@ function paintFox(g, size, U, n) {
 }
 
 // A painting is 3 to 10 ms, more close up, and each new pose or size of a fox or a rabbit wants one: in the meadow
-// they're painted off the main thread, by fur-worker.js. Shrinking one for the sizes between, or mixing a part-white
-// rabbit's brown and white, is quick, and done here once what it's made from has come.
+// they're painted off the main thread, by fur-worker.js. Shrinking one for the sizes between is quick, and done here
+// once what it's made from has come.
 const furKind = art => art.slice(0, art.indexOf(':'));
 const FUR_STARTS = Object.keys(Fur.painters).map(k => k + ':');   // (sprite asks isFur of every picture it draws: no new strings)
 const isFur = art => { for (let i = 0; i < FUR_STARTS.length; i++) if (art.startsWith(FUR_STARTS[i])) return true; return false; };
@@ -2963,7 +2951,7 @@ let furWorker = null;
 if (window.Worker && window.OffscreenCanvas) {
   try {
     furWorker = new Worker('fur-worker.js');
-    furWorker.postMessage({ coats: furCoats(), winter: S.WINTER_COAT });
+    furWorker.postMessage({ coats: furCoats(), winter: COAT.rgb });
     furWorker.onmessage = e => {
       const { key, image } = e.data, job = furSent.get(key);
       furSent.delete(key);
@@ -2982,10 +2970,7 @@ if (window.Worker && window.OffscreenCanvas) {
 // asked for the ones it's made from.
 function furReady(art, px) {
   if (spriteCache.has(px + '|' + art + '||')) return true;
-  const P = furPainted(px), kind = furKind(art), n = +art.slice(kind.length + 1), white = kind === 'rabbit' ? (n >> 4) % 5 : 0;
-  if (white % 4 === 0) return furHas(art, P);
-  const brown = n - (white << 4), a = furHas(RABBIT_ARTS[brown], P), b = furHas(RABBIT_ARTS[brown + (4 << 4)], P);
-  return a && b;
+  return furHas(art, furPainted(px));
 }
 // A painting at P there, or asked for.
 function furHas(art, P) {
@@ -2998,7 +2983,7 @@ function furHas(art, P) {
   }
   return false;
 }
-// Each look of fox and rabbit about the screen (a fox's shade, a rabbit's coat and how white it's gone) is asked of the
+// Each look of fox and rabbit about the screen (a fox's shade, the rabbits' coat) is asked of the
 // worker before the first of it is on screen, so there's kin to stand in while its poses come (furKin); otherwise that
 // first one is painted here. One whose paintings were let go (dropSprites) is asked for again after FUR_AGAIN.
 const furAsked = new Map(), FUR_AGAIN = 5000;    // look: when it was last asked for
@@ -3008,13 +2993,12 @@ function furAhead(now) {
   for (const c of world.creatures) {
     const fox = c.species === 'fox';
     if (!c.alive || !fox && c.species !== 'rabbit') continue;
-    const coat = fox ? null : coatLook(c) || COAT.wild, white = fox ? 0 : whiteStep(c);
-    const look = fox ? Math.round(c.genes.fur * 10) : 100 + coat.n + white;
+    const look = fox ? Math.round(c.fur * 10) : 100;
     if (seen.has(look) || now - (furAsked.get(look) ?? -Infinity) < FUR_AGAIN) continue;
     const [sx, sy] = toScreen(c.x, c.y);
     if (!visible(sx, sy, reach)) continue;
     seen.add(look);
-    const art = fox ? foxArtOf(c.genes.fur, 'stand') : rabbitArtOf(coat, 'sit', white);
+    const art = fox ? foxArtOf(c.fur, 'stand') : rabbitArtOf(COAT, 'sit');
     if (furKin(art)) continue;
     furAsked.set(look, now);
     furReady(art, poseStep(Math.max(4, creaturePx(c))));
@@ -3094,7 +3078,7 @@ function shownPose(c, art, px) {
 // Which painting, for what the fox is doing. On the move its legs go round with the ground it covers (gaitOf), a quarter
 // stride a painting, so they stop when it stops; standing still a while in a mode that moves, it just stands.
 function foxArt(c, px) {
-  const art = pose => foxArtOf(c.genes.fur, pose);
+  const art = pose => foxArtOf(c.fur, pose);
   if (c.sleeping) return art('sleep');
   if (c.mode === 'eat') return art('feed');
   if (c.mode === 'rest' || c.mode === 'tired') return art('sit');
@@ -3108,21 +3092,12 @@ function foxArt(c, px) {
 
 // ------------------------------------------------------------------ the rabbit
 //
-// Painted (fur.js: RABBIT_POSES, paintRabbit), not the 🐇 emoji. 'rabbit:' + (look << 4) + pose; look = coat * 5 + white step.
-const RABBIT_ARTS = Array.from({ length: RABBIT_KINDS.length * 5 << 4 }, (_, n) => 'rabbit:' + n);
-const rabbitArtOf = (look, pose, white = 0) => RABBIT_ARTS[((look.n + white) << 4) + RABBIT_POSE[pose]];
+// Painted (fur.js: RABBIT_POSES, paintRabbit), not the 🐇 emoji. 'rabbit:' + (look << 4) + pose; look is the coat's n (COAT).
+const RABBIT_ARTS = Array.from({ length: 1 << 4 }, (_, n) => 'rabbit:' + n);
+const rabbitArtOf = (look, pose) => RABBIT_ARTS[(look.n << 4) + RABBIT_POSE[pose]];
 
 function paintRabbit(g, size, U, n) {
   if (shrunk(g, size, U, RABBIT_ARTS[n])) return;
-  const step = (n >> 4) % 5;
-  if (step % 4) {                    // part white: only brown and white are painted, the steps between are the two mixed
-    const brown = n - (step << 4), px = U / dpr;
-    g.drawImage(sprite(RABBIT_ARTS[brown], px).canvas, 0, 0, size, size);
-    g.globalAlpha = step / 4;
-    g.drawImage(sprite(RABBIT_ARTS[brown + (4 << 4)], px).canvas, 0, 0, size, size);
-    g.globalAlpha = 1;
-    return;
-  }
   Fur.paintRabbit(g, size, U, n);
 }
 
@@ -3130,7 +3105,7 @@ function paintRabbit(g, size, U, n) {
 // its hind feet, stretched out in the air and down on its forefeet; fleeing, the same flat out with its ears back.
 const RABBIT_GAIT = [['hop1', 'push', 'hop2', 'land'], ['run2', 'rpush', 'run1', 'rland']];
 function rabbitArt(c, now) {
-  const look = coatLook(c) || COAT.wild, white = whiteStep(c), art = pose => rabbitArtOf(look, pose, white);
+  const art = pose => rabbitArtOf(COAT, pose);
   if (c.sleeping) return art('sleep');
   if (c.mode === 'alarm') return art('alarm');
   if (c.mode === 'graze' || c.mode === 'munch') return art('graze');
@@ -5759,27 +5734,7 @@ function handleEvent(e) {
   }
 }
 
-// ------------------------------------------------------------------ traits, the tab, the watch
-
-const TRAITS = [
-  { k: 'speed', e: '⚡', name: 'Speed', words: ['sluggish', 'slow', 'average', 'quick', 'lightning fast'],
-    up: 'faster', down: 'slower', tip: 'Runs faster, but moving costs more energy' },
-  { k: 'size', e: '📏', name: 'Size', words: ['tiny', 'small', 'medium', 'big', 'huge'],
-    up: 'bigger', down: 'smaller', tip: 'Holds more energy, but needs more food and runs a little slower' },
-  { k: 'eyes', e: '👀', name: 'Eyesight', words: ['short-sighted', 'so-so eyes', 'good eyes', 'sharp eyes', 'eagle-eyed'],
-    up: 'sharper-eyed', down: 'blurrier-eyed', tip: 'Sees further and spots danger sooner; costs a little energy' },
-  { k: 'bravery', e: '🦁', name: 'Bravery', words: ['timid', 'cautious', 'steady', 'bold', 'fearless'],
-    up: 'bolder', down: 'shyer', tip: 'Rabbits let foxes get closer before running. Foxes pounce from further away' },
-  { k: 'friendly', e: '🤝', name: 'Friendly', words: ['a loner', 'independent', 'easygoing', 'friendly', 'super social'],
-    up: 'friendlier', down: 'more solitary', tip: 'Likes to stay close to others' },
-  { k: 'moult', e: '❄️', name: 'Winter coat', only: 'rabbit', words: ['keeps its colour', 'keeps its colour', 'pales a little', 'pales in winter', 'snow-white'],
-    up: 'whiter in winter', down: 'less white in winter', tip: 'Turns white for winter: hidden on snow, easy to see on bare ground' },
-  { k: 'resist', e: '🛡️', name: 'Resistance', only: 'rabbit', words: ['catches anything', 'delicate', 'fairly hardy', 'hardy', 'tough as old boots'],
-    up: 'hardier', down: 'more delicate', tip: 'Less likely to catch the sickness or die of it, but burns a little more energy' },
-];
-const traitsOf = species => TRAITS.filter(t => !t.only || t.only === species);
-const band = v => v < 0.3 ? 0 : v < 0.45 ? 1 : v < 0.55 ? 2 : v < 0.7 ? 3 : 4;   // 2, the middle, is "medium", "steady"…
-const word = (t, v) => t.words[band(v)];
+// ------------------------------------------------------------------ the tab, the watch
 
 // Rewriting part of the page with what it already shows still costs the browser a layout and
 // a repaint, and the card and inspector refresh four times a second. So only touch what changed.
@@ -5861,21 +5816,6 @@ function lifeStage(c) {
   return 'adult';
 }
 
-// The three traits that stand out most, as "⚡ sluggish · 🛡️ catches anything". The middle words say nothing,
-// so they're left out. A tap on the line shows them all (traitRows).
-function traitLine(species, genes) {
-  const odd = traitsOf(species).filter(t => band(genes[t.k]) !== 2)
-    .sort((a, b) => Math.abs(genes[b.k] - 0.5) - Math.abs(genes[a.k] - 0.5)).slice(0, 3);
-  return odd.length ? odd.map(t => `${t.e} ${word(t, genes[t.k])}`).join('<span class="sep">·</span>') : 'Middling in everything';
-}
-
-const traitRows = (species, genes) => traitsOf(species).map(t => `<div class="trait" title="${t.tip}"><span>${t.e}</span><span>${t.name}</span>
-  <div class="meter"><span style="width:${Math.round(genes[t.k] * 100)}%"></span></div>
-  <span class="word">${word(t, genes[t.k])}</span></div>`).join('');
-const traitsHTML = (species, genes) => `<button class="traits ${ui.allTraits ? 'open' : ''}" data-act="traits" title="${ui.allTraits ? 'Fewer traits' : 'All the traits'}">
-    <span>${traitLine(species, genes)}</span><span class="more" aria-hidden="true">›</span></button>
-  ${ui.allTraits ? `<div class="trait-table">${traitRows(species, genes)}</div>` : ''}`;
-
 // On a phone the inspector opens folded to one line: who, what they're up to, and the tummy (or a
 // thing's first meter) as a thin line under that. Tap it for the rest.
 const stripHTML = (tint, face, name, line, meter) => `
@@ -5946,9 +5886,7 @@ function renderInspector() {
       ${c.stamina < 1 ? `<div class="meter-row">Breath <div class="meter stamina"><span style="width:${Math.round(c.stamina * 100)}%"></span></div></div>` : ''}
     </div>` : ''}
     ${chips.length ? `<div class="chips">${chips.map(x => `<span class="chip">${x}</span>`).join('')}</div>` : ''}
-    ${traitsHTML(c.species, c.genes)}
     <div class="family">
-      ${c.genes.coat ? `${coatLine(c)}<br>` : ''}
       ${c.queen ? `A daughter of 👑 Queen ${esc(c.queen.name)}${c.queen.died ? ' 🪦' : ''}, who has raised ${c.queen.kids} bees`
         : c.gen === 1 ? 'One of the first arrivals' : parents ? `${parents} <span class="dim">· generation ${c.gen}</span>` : `Generation ${c.gen}`}
       ${c.kids ? `<br>${c.kids} ${c.kids === 1 ? 'child' : 'children'}${kidsAlive ? `, ${kidsAlive} still alive` : ''}` : ''}
@@ -6183,7 +6121,7 @@ const THINGS = {
       if (q && s >= 2) facts.push(['🍯', `${Math.round(h.honey / Math.max(1, h.bees))} honey put by for each bee`]);
       const fields = world.fields.filter(f => Math.hypot(f.x - h.x, f.y - h.y) < S.FORAGE_RANGE);
       const sections = [];
-      if (q) sections.push([`👑 Queen ${esc(q.name)}`, `<div class="family">Generation ${q.gen} · queen for ${ago(q.since)} · has raised ${q.kids} ${q.kids === 1 ? 'bee' : 'bees'}${q.mum ? `<br>A daughter of Queen ${esc(q.mum)}` : ''}</div>${traitsHTML('bee', q.genes)}`]);
+      if (q) sections.push([`👑 Queen ${esc(q.name)}`, `<div class="family">Generation ${q.gen} · queen for ${ago(q.since)} · has raised ${q.kids} ${q.kids === 1 ? 'bee' : 'bees'}${q.mum ? `<br>A daughter of Queen ${esc(q.mum)}` : ''}</div>`]);
       sections.push(['Flowers in reach', fields.length
         ? fields.map(f => `${f.emoji[0]} ${thingLink('field', f.id, esc(f.name))} <span class="dim">· ${f.strip ? 'every season' : seasonName(f.season)} · to the ${compass(f.x - h.x, f.y - h.y)}</span>`).join('<br>')
         : 'No flower fields, only the flowers scattered about']);
@@ -6868,7 +6806,6 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'ask-send') sendIdea();
   else if (t.dataset.act === 'sound') toggleSound();
   else if (t.dataset.act === 'follow') { ui.follow = !ui.follow; renderInspector(); }
-  else if (t.dataset.act === 'traits') { ui.allTraits = !ui.allTraits; renderInspector(); }
   else if (t.dataset.act === 'story') { ui.allStory = !ui.allStory; renderInspector(); }
   else if (t.dataset.thing) goToThing(t.dataset.thing);
   else if (t.dataset.id) {
