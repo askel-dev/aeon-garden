@@ -239,6 +239,19 @@ it or snow lies. They come up only where the player can see them: not behind a t
 their own (`w.shroomRng`), so the meadow plays out the same with them. An autumn has 10 to 20 clumps about on average, 15 to 30 at the
 height of a flush and next to none in a dry spell; a summer a few after a storm. Nothing eats them yet: they're for the cook. game.js paints them (below, and game.md).
 
+Spring greens (`greensTick`, once a day): wild garlic and nettles, so spring has something to pick. They're patches that live for
+years (`w.greens`, one layout, `greenOf`), underground most of the year and coming up in the same spots each spring, a little
+bigger each time (`g.size`, 0 to 2). What a patch shows comes from the season (`greenStage`, `GREEN_SEASONS`): garlic's leaves
+from the start of spring, white flowers from its middle, dying back in the first fifth of summer; nettles' young tops in spring,
+tall and flowering in summer, brown till the middle of autumn. Garlic grows in damp wood (`GARLIC_WOOD`, within `GARLIC_DAMP` tiles
+of the water, `w.damp`, above the spring flood; `garlicAt`): a meadow starts with some (`startGreens`, `GARLIC_START`), a few more
+come up each spring and patches seed one next door now and then (`GARLIC_SPREAD`); it doesn't come up a spring with the wood gone
+over it. Nettles come up on rich ground (`NETTLE_RICH`, `nettleAt`), spring and summer, so they gather round the busy warrens and
+kill sites, and die out a year after the ground stopped being rich (`g.fed`, `NETTLE_FED`). Both only where the player can see
+them (`inSight`, as the mushrooms), at most `GREENS_MOST` of each times `w.room`, with random numbers of their own
+(`w.greenRng`). A meadow has about 5 to 13 garlic carpets, and nettles build up to 10 to 25 patches over three years. Nothing eats
+them: they're for the cook.
+
 Bees live in hives (`w.hives`), each in an old hollow oak from `w.decor` (`h.tree`, `d.hive`, `moveIn`), a giant (`HIVE_TREE`)
 with a hollow low on its trunk (`drawBeeTree`). A meadow starts with `HIVES` of them (times `w.room`), each in the best tree
 left for one (`placeHive`, `hiveTree`, `siteScore`: fields in reach, open ground in front, `HIVE_GAP` from the others,

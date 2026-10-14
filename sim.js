@@ -3884,6 +3884,91 @@ function addShroom(w, r, kind, x, y, tree) {
   w.shrooms.push(shroomOf(kind, x, y, tree, w.tick, until, SHROOMS[kind].n + look, look));
 }
 
+// ---------------------------------------------------------------- spring greens
+//
+// Spring's pickings. Wild garlic carpets the damp woods near the water (wood about, within GARLIC_DAMP tiles of it, above the
+// spring flood): its leaves come up as spring starts, it flowers white from the middle of spring and dies back early in
+// summer. Nettles stand on rich ground (a warren's latrines, a kill site, an otters' spraint): young tops in spring, tall and
+// flowering in summer, brown in autumn. Both are patches that live for years (w.greens): underground the rest of the year,
+// they come up in the same spots each spring, a little bigger (g.size), and garlic spreads to damp wood next door. Nettles
+// die out a year after the ground stopped being rich (g.fed), garlic once a spring comes with the wood gone or the water came. Looked at
+// once a day, with random numbers of their own (w.greenRng), so the meadow plays out the same with them.
+
+const GREENS_EVERY = TPD;               // ticks between looks (a day)
+const GARLIC_WOOD = 0.25;               // garlic wants wood about this thick
+const GARLIC_DAMP = 6;                  // and the water within this many tiles (w.damp)
+const GARLIC_START = 8;                 // patches a meadow starts with, times w.room
+const GARLIC_TRIES = 30;                // tiles tried a spring day for a new patch
+const GARLIC_ODDS = 0.3;                // and the odds each try goes ahead
+const GARLIC_SPREAD = 0.1;              // the odds a spring day a patch seeds one next door
+const NETTLE_RICH = 0.3;                // nettles come up on ground this rich (w.rich)
+const NETTLE_FED = 0.05;                // and keep while it's at least this rich now and then
+const NETTLE_TRIES = 100;               // tiles tried a spring or summer day
+const NETTLE_ODDS = 0.5;
+const GREENS_MOST = 24;                 // patches of each kind, times w.room
+const GREEN_GAP = 2.5;                  // tiles between patches of a kind
+// When each kind shows, by season and how far into it (springPart): from, to; game.js draws its stage by the same.
+const GREEN_SEASONS = {
+  garlic: [[0, 0], [1, 0.2]],           // spring to the first fifth of summer
+  nettle: [[0, 0], [2, 0.5]],           // spring to the middle of autumn
+};
+
+// Every field a patch ever has, in one order (see blankCreature). born, fed: ticks; size: how many springs it's come up (0 to
+// 2: the painting's size); look: which of game.js's paintings.
+const greenOf = (kind, x, y, born, look) => ({ green: true, kind, x, y, born, fed: born, size: 0, look });
+
+// What a patch shows now: null (underground), or 0, 1, 2: garlic's leaves, flowers, dying back; nettles' young tops,
+// tall and flowering, brown.
+function greenStage(w, g) {
+  const s = seasonOf(w.tick), p = springPart(w.tick), [[s0, p0], [s1, p1]] = GREEN_SEASONS[g.kind];
+  if (s < s0 || s > s1 || s === s0 && p < p0 || s === s1 && p >= p1) return null;
+  if (g.kind === 'nettle') return s === 0 ? 0 : s === 1 ? 1 : 2;
+  return s === 1 ? 2 : p < 0.4 ? 0 : 1;
+}
+
+function greensTick(w) {
+  const r = w.greenRng, list = w.greens, s = seasonOf(w.tick), first = dayOf(w.tick) % SEASON_DAYS === 0;
+  let n = 0;
+  for (const g of list) {
+    const i = idx(g.x, g.y);
+    if (g.kind === 'nettle' && w.rich[i] >= NETTLE_FED) g.fed = w.tick;
+    const lost = w.water[i] || (g.kind === 'garlic' ? s === 0 && first && w.wood[i] < GARLIC_WOOD / 2 : w.tick - g.fed > YEAR);   // (garlic: a spring with the wood gone over it, it doesn't come up)
+    if (lost) continue;
+    if (s === 0 && first && w.tick - g.born > YEAR / 2) g.size = Math.min(2, g.size + 1);   // (each spring it comes up a little bigger)
+    list[n++] = g;
+  }
+  list.length = n;
+  if (s === 0) {
+    for (let k = 0; k < GARLIC_TRIES; k++) if (r.next() < GARLIC_ODDS) garlicAt(w, r, r.range(1, W - 1), r.range(1, H - 1));
+    for (const g of list) if (g.kind === 'garlic' && r.next() < GARLIC_SPREAD) { const a = r.range(0, 2 * Math.PI), d = r.range(GREEN_GAP, 4); garlicAt(w, r, g.x + Math.cos(a) * d, g.y + Math.sin(a) * d); }
+  }
+  if (s <= 1) for (let k = 0; k < NETTLE_TRIES; k++) if (r.next() < NETTLE_ODDS) nettleAt(w, r, r.range(1, W - 1), r.range(1, H - 1));
+}
+
+const greensOf = (w, kind) => { let n = 0; for (const g of w.greens) if (g.kind === kind) n++; return n; };
+const roomForGreen = (w, kind, x, y) => !w.greens.some(g => g.kind === kind && (g.x - x) ** 2 + (g.y - y) ** 2 < GREEN_GAP * GREEN_GAP);
+
+// Wild garlic at x, y, if it's damp wood above the spring flood, in sight, with room.
+function garlicAt(w, r, x, y) {
+  if (!inBounds(x, y) || !dry(w, x, y)) return;
+  const i = idx(x, y), T = w.terrain;
+  if (w.wood[i] < GARLIC_WOOD || w.damp[i] > GARLIC_DAMP || w.ground[i] <= T.level + T.springFlood + T.rainRise / 2) return;
+  if (greensOf(w, 'garlic') < Math.round(GREENS_MOST * w.room) && roomForGreen(w, 'garlic', x, y) && inSight(w, x, y, null)) w.greens.push(greenOf('garlic', x, y, w.tick, r.int(0, 1)));
+}
+
+// Nettles at x, y, if the ground is rich, in sight, not in a burrow's mouth, with room.
+function nettleAt(w, r, x, y) {
+  if (w.rich[idx(x, y)] < NETTLE_RICH || !dry(w, x, y) || w.burrows.some(b => (b.x - x) ** 2 + (b.y - y) ** 2 < 2.25)) return;
+  if (greensOf(w, 'nettle') < Math.round(GREENS_MOST * w.room) && roomForGreen(w, 'nettle', x, y) && inSight(w, x, y, null)) w.greens.push(greenOf('nettle', x, y, w.tick, r.int(0, 1)));
+}
+
+// A new meadow's garlic, already there: a few springs old.
+function startGreens(w) {
+  const r = w.greenRng;
+  for (let k = 0; k < 4000 && greensOf(w, 'garlic') < Math.round(GARLIC_START * w.room); k++) garlicAt(w, r, r.range(1, W - 1), r.range(1, H - 1));
+  for (const g of w.greens) { g.born -= YEAR * 2; g.size = r.int(0, 1); }
+}
+
 // ---------------------------------------------------------------- crows
 //
 // A few crows live in the meadow, flying over all of it (flies: true, like the bees). By day they walk
@@ -4873,6 +4958,7 @@ function createWorld(seed, opts = {}) {
     fish: new Float32Array(W * H), fishCount: -0,                         // (see fishTick)
     carcasses: [], roost: null, cached: 0,                                // (see carrionTick and crowTick; cached: this autumn)
     shrooms: [], shroomRng: makeRng(seed ^ 0x5a2004), rainAt: -1e9,      // (see shroomsTick; rainAt: the last hour it rained)
+    greens: [], greenRng: makeRng(seed ^ 0x9a271c),                       // (see greensTick)
     count: perKind(() => 0), expecting: perKind(() => 0),
     stats: { deaths: perKind(() => ({})) },                                 // deaths by cause, of each kind
     goneSince: perKind(() => -1), diedOut: perKind(() => false), hives: [],
@@ -4890,6 +4976,7 @@ function createWorld(seed, opts = {}) {
   groundTick(w);
   startFrogs(w);
   startFish(w);
+  startGreens(w);
   w.roost = pickRoost(w);
   const n = { rabbit: opts.rabbits ?? Math.round(30 * w.room), fox: opts.foxes ?? Math.round(4 * w.room), bee: 0, crow: opts.crows ?? Math.round(8 * w.room),
     otter: opts.otters ?? 0 };   // the otters come up the water (migrate), and each hive has its bees
@@ -5021,6 +5108,7 @@ function step(w) {
   if (t % HIVES_EVERY === 0) hivesTick(w);
   if (t % CARRION_EVERY === 0) carrionTick(w);
   if (t % SHROOM_EVERY === SHROOM_EVERY / 2) shroomsTick(w);
+  if (t % GREENS_EVERY === GREENS_EVERY / 8) greensTick(w);
   if (t % WINDFALL_EVERY === 0) { windfallTick(w); if (w.weather.kind === 'storm') windthrow(w); }
   const list = w.creatures;
   for (let i = 0; i < list.length; i++) {
@@ -5061,7 +5149,7 @@ const KEEP_VERSION = 10;                // 2: shade and rich ground (w.shadedFer
                                         // 5: crows and remains (w.carcasses, w.roost, c.caches, d.nuts); 6: owls (d.owl, c.perch);
                                         // 7: frogs (w.frogs, w.spawn, w.frogYear, c.frogs); 8: the cooking cut (no keeper, owls, fire or player powers);
                                         // 9: the pantry (no voles, sickness, remains or genes; hives that fill; the 12-minute day);
-                                        // 10: some ecology back (remains and rich ground again: w.carcasses, w.rich; winter coats: c.moult; bee colonies: h.queen, h.cluster...; mushrooms: w.shrooms, w.rainAt)
+                                        // 10: some ecology back (remains and rich ground again: w.carcasses, w.rich; winter coats: c.moult; bee colonies: h.queen, h.cluster...; mushrooms: w.shrooms, w.rainAt; spring greens: w.greens)
 const TABLES = { SPECIES, FIELD_KINDS, TREE_MIX, TREES, SEASONS, WEATHER };
 const UNKEPT = ['grid', 'grids', 'events', 'newborn', 'current'];   // on the world
 let tableNames = null;                                     // object -> 'SPECIES.fox', made the first time
@@ -5119,6 +5207,7 @@ function unpackWorld(kept) {
   const made = list.map(e => (Array.isArray(e) ? new Array(e.length) : ArrayBuffer.isView(e) ? e
     : e.$map ? new Map() : e.$set ? new Set() : e.sp !== undefined && e.species !== undefined ? blankCreature()   // (laid out like new ones)
     : e.tree === true ? blankTree() : e.emoji === '🪨' ? rockOf(-0, -0, -0) : e.shroom === true ? shroomOf('', -0, -0, null, 0, 0, 0, 0)
+    : e.green === true ? greenOf('', -0, -0, 0, 0)
     : e.n !== undefined && e.i !== undefined && e.kind !== undefined && e.field !== undefined ? plantOf(-0, -0, 0, -0, null, 0) : {}));   // (a flower or blossom)
   const table = path => path.split('.').reduce((o, k) => {
     if (!o || !(k in o)) throw new Error('unpackWorld: no table ' + path);
@@ -5142,6 +5231,8 @@ function unpackWorld(kept) {
   for (const k of w.carcasses) asFractions(k, ['x', 'y', 'meat', 'full']);
   if (!w.shrooms) { w.shrooms = []; w.shroomRng = makeRng(w.seed ^ 0x5a2004); w.rainAt = -1e9; }   // (kept on the cooking branch before them)
   for (const m of w.shrooms) asFractions(m, ['x', 'y']);
+  if (!w.greens) { w.greens = []; w.greenRng = makeRng(w.seed ^ 0x9a271c); }      // (kept on the cooking branch before them)
+  for (const g of w.greens) asFractions(g, ['x', 'y']);
   w.grid = makeGrid(); w.grids = perKind(makeGrid); w.events = []; w.newborn = [];
   makeCurrent(w);
   if (w.visitors) placesDay(w);
@@ -5986,7 +6077,7 @@ function mood(w, c) {
 
 const api = {
   W, H, TPD, SHALLOW, DEEP, SEASON_DAYS, YEAR_DAYS, SEASONS, SPECIES, WEATHER,
-  createWorld, step, clock, isNight, phaseOf, seasonOf, mood, ageDays, growth, isAdult, patchFresh,
+  createWorld, step, clock, isNight, phaseOf, seasonOf, springPart, mood, ageDays, growth, isAdult, patchFresh,
   hedgehogComes, heronComes, dragonflyComes, kingfisherComes, skylarkComes, placeNeeds, VISIT_SEASONS, VISIT_FADE, HERON_FADE, HERON_STAB,
   DRAGON_FROM, KF_FADE, KF_UNDER, KF_BEAT, LARK_FADE, LARK_OPEN, LARK_RISE, EDGE_REACH, OPEN_MOST,
   walkable, packWorld, unpackWorld,
@@ -5994,7 +6085,7 @@ const api = {
   TERRAIN, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE, hollow,
   TREES, treeStage, treeAge, standing, bearing, inBloom, SEEDLING, SAPLING, GROWN, KIND_NAMES,
-  FROG_K, SPAWN_WORTH, FISH_K, FISH_EAT, CROW_SEATS, SHROOMS, SHROOM_KINDS,
+  FROG_K, SPAWN_WORTH, FISH_K, FISH_EAT, CROW_SEATS, SHROOMS, SHROOM_KINDS, greenStage, GREEN_SEASONS,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 else root.Sim = api;

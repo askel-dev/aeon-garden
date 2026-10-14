@@ -1218,7 +1218,7 @@ function lightFrame(dt) {
 const shownDark = phase => LIGHT_MID + (darkness(phase) - LIGHT_MID) * lightSwing;
 const shownGold = phase => Math.round(goldenHour(phase) * lightSwing * GOLD_STEPS) / GOLD_STEPS;
 
-// The things a frame draws (a tree or a rock d, a swarm h, a creature c, a visitor v, mushrooms s), each a record of the
+// The things a frame draws (a tree or a rock d, a swarm h, a creature c, a visitor v, mushrooms or nettles s), each a record of the
 // one shape, kept from frame to frame: a few hundred new objects a frame, of five shapes, were felt in every loop over them.
 const frameItems = [], itemPool = [];
 function itemOf(items, y, sx, sy, f) {
@@ -1283,6 +1283,7 @@ function render(now) {
   }
   unfade();
   drawRemains(z);
+  drawGarlic(z);
 
   const sel = world.byId.get(ui.selectedId);
   if (sel) drawSelectionUnder(sel, now);
@@ -1304,6 +1305,11 @@ function render(now) {
   for (const m of world.shrooms) {                         // mushrooms: on a log or a snag, just in front of it
     const sx = (m.x - cam.x) * z + vw / 2, sy = (m.y - cam.y) * z + vh / 2;
     if (visible(sx, sy, 2 * z + 20)) itemOf(items, m.tree && !S.standing(m.tree) ? Math.max(m.y, m.tree.y + 0.01) : m.y, sx, sy, 1 - mistAt(m.x, m.y)).s = m;
+  }
+  for (const g of world.greens) {                          // nettles (the garlic lies flat: drawGarlic)
+    if (g.kind !== 'nettle' || S.greenStage(world, g) === null) continue;
+    const sx = (g.x - cam.x) * z + vw / 2, sy = (g.y - cam.y) * z + vh / 2;
+    if (visible(sx, sy, 2 * z + 20)) itemOf(items, g.y, sx, sy, 1 - mistAt(g.x, g.y)).s = g;
   }
   const shown = [];
   for (const c of world.creatures) {
@@ -1338,7 +1344,7 @@ function render(now) {
     fadeTo(it.f);
     if (it.d) it.d.hive ? drawBeeTree(it.d, it.sx, it.sy, now, ck) : drawDecor(it.d, it.sx, it.sy, now, ck, null, it.px);
     else if (it.h) drawSwarm(it.h, it.sx, it.sy);
-    else if (it.s) drawShroom(it.s, z);
+    else if (it.s) it.s.green ? drawNettles(it.s, z) : drawShroom(it.s, z);
     else if (it.v) drawVisitor(it.v, it.sx, it.sy, now, z);
     else drawCreature(it.c, it.sx, it.sy, now);
   }
@@ -3078,6 +3084,118 @@ function paintShelves(g, kind, n, h, rgb) {
   }
 }
 
+// ------------------------------------------------------------------ spring greens
+//
+// Wild garlic and nettles (sim.js w.greens), painted once a look and size ('green:' + ((kind * 3 + stage) * 2 + look),
+// GREEN_ARTS; stage from sim.js greenStage). Garlic is a carpet of broad bright leaves on the woodland floor, white starry
+// heads on stalks when it flowers, yellowing and flopping as it dies back; it's drawn flat under all that stands
+// (drawGarlic). Nettles are a stand of upright stems with pairs of toothed leaves: fresh short tops in spring, tall with
+// hanging flower strings in summer, brown in autumn; drawn with the trees and animals, back to front. Both fade in as they
+// come up and out as they go (greenFade), and a patch is bigger each spring it has come up (g.size).
+const GREEN_KINDS = ['garlic', 'nettle'];
+const GREEN_ARTS = Array.from({ length: 12 }, (_, i) => 'green:' + i);
+const greenArt = (g, stage) => GREEN_ARTS[((GREEN_KINDS.indexOf(g.kind) * 3 + stage) * 2) + g.look];
+const GARLIC_PX = 2.4, NETTLE_PX = 1.7;   // a patch's painting, next to a rabbit
+const GARLIC_RGB = [[92, 160, 58], [86, 150, 54], [178, 168, 84]];   // its leaves: up, in flower, dying back
+const NETTLE_RGB = [[112, 170, 70], [64, 112, 46], [146, 110, 62]];  // young tops, summer, autumn
+function paintGreen(g, size, U, look) {
+  g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
+  g.lineCap = g.lineJoin = 'round';
+  const kind = GREEN_KINDS[Math.floor(look / 6)], stage = Math.floor(look / 2) % 3, h = k => hash2(look, k, 77);
+  if (kind === 'garlic') paintGarlic(g, stage, h); else paintNettles(g, stage, h);
+}
+// A broad leaf on a stalk from (x, y), leaning a, len long.
+function garlicLeaf(g, x, y, a, len, wide, rgb) {
+  g.save(); g.translate(x, y); g.rotate(a);
+  softIn(g, rgb, -len, 0, () => { g.moveTo(0, 0); g.quadraticCurveTo(wide * 1.3, -len * 0.55, 0, -len); g.quadraticCurveTo(-wide * 1.3, -len * 0.55, 0, 0); }, 1.18, 0.78);
+  strokeIn(g, rockRGB(tone(rgb, 1.25, 18), 0.6), 0.012, () => { g.moveTo(0, -len * 0.08); g.lineTo(0, -len * 0.9); });
+  g.restore();
+}
+function paintGarlic(g, stage, h) {
+  softSpot(g, 0, 0.5, 1.15, 0.3, '30, 50, 14', 0.25);
+  const rgb = GARLIC_RGB[stage], clumps = [];
+  for (let i = 0; i < 18; i++) { const a = h(i) * TAU, r = Math.sqrt(h(20 + i)); clumps.push({ x: Math.cos(a) * r * 1.0, y: 0.42 + Math.sin(a) * r * 0.26, k: i }); }
+  clumps.sort((a, b) => a.y - b.y);
+  for (const c of clumps) {
+    const s = 0.75 + 0.25 * (c.y - 0.18) / 0.48, droop = stage === 2 ? 0.7 : 0;   // (further back, smaller)
+    for (let j = 0; j < 4; j++) {
+      const a = (j - 1.5) * (0.45 + droop * 0.5) + (h(40 + c.k * 4 + j) - 0.5) * 0.3;
+      garlicLeaf(g, c.x, c.y, a, (0.3 + 0.12 * h(60 + c.k * 4 + j)) * s * (1 - droop * 0.35), 0.09 * s, j % 2 ? rgb : tone(rgb, 0.9));
+    }
+    if (stage === 1 && c.k % 3 !== 2) {                 // a flower head on its stalk, a loose star of white
+      const top = c.y - 0.45 * s, x = c.x + (h(80 + c.k) - 0.5) * 0.06;
+      strokeIn(g, rockRGB(tone(rgb, 0.85)), 0.018, () => { g.moveTo(c.x, c.y); g.quadraticCurveTo(c.x, top + 0.2, x, top); });
+      for (let f = 0; f < 7; f++) { const fa = f / 7 * TAU + h(90 + c.k), fr = 0.06 * s; fillIn(g, '#f8f6ee', () => discAt(g, x + Math.cos(fa) * fr, top + Math.sin(fa) * fr * 0.7, 0.026 * s)); }
+      fillIn(g, '#fffef8', () => discAt(g, x, top - 0.01, 0.03 * s));
+    }
+  }
+}
+// A nettle leaf: a pointed heart, toothed all round.
+function nettleLeaf(g, x, y, a, len, rgb) {
+  g.save(); g.translate(x, y); g.rotate(a);
+  softIn(g, rgb, -len * 0.4, len * 0.4, () => {
+    for (let i = 0; i <= 16; i++) {
+      const t = i / 16 * TAU, r = i % 2 ? 0.86 : 1, px = Math.sin(t) * len * 0.36 * r * (t < Math.PI ? 1 : 1), py = -Math.cos(t) * len * 0.5 * r + len * 0.5;
+      const tip = (1 - Math.cos(t)) / 2;                // narrows to the tip, away from the stem
+      i ? g.lineTo(px * (1.1 - 0.5 * tip), py) : g.moveTo(px, py);
+    }
+  }, 1.15, 0.75);
+  strokeIn(g, rockRGB(tone(rgb, 1.3, 16), 0.5), 0.01, () => { g.moveTo(0, len * 0.05); g.lineTo(0, len * 0.9); });
+  g.restore();
+}
+function paintNettles(g, stage, h) {
+  softSpot(g, 0, 0.62, 0.7, 0.18, '30, 40, 14', 0.35);
+  const rgb = NETTLE_RGB[stage], stems = [], tall = stage === 0 ? 0.6 : 1.1;
+  for (let i = 0; i < 5; i++) stems.push({ x: (i / 4 - 0.5) * 1.0 + (h(i) - 0.5) * 0.14, y: 0.62 - h(10 + i) * 0.14, k: i });
+  stems.sort((a, b) => a.y - b.y);
+  for (const st of stems) {
+    const top = st.y - tall * (0.65 + 0.5 * h(20 + st.k)) * (1 - (0.62 - st.y)), lean = (h(30 + st.k) - 0.5) * 0.12 + (stage === 2 ? 0.08 : 0);
+    const at = t => [st.x + lean * t * t, st.y + (top - st.y) * t];
+    strokeIn(g, rockRGB(tone(rgb, stage === 2 ? 0.9 : 0.72)), 0.022, () => { g.moveTo(st.x, st.y); for (let t = 0.1; t <= 1.001; t += 0.1) g.lineTo(...at(t)); });
+    const pairs = stage === 0 ? 2 : 4;
+    for (let p = 0; p < pairs; p++) {
+      const t = 0.28 + 0.72 * p / pairs, [x, y] = at(t), len = (0.36 - 0.14 * t) * (stage === 0 ? 1.1 : 1), spread = stage === 0 ? 2.3 + 0.3 * t : stage === 2 ? 0.7 : 1.15 + 0.25 * t;   // (young ones reach up, in summer they droop)
+      if (stage === 2 && h(40 + st.k * 8 + p) < 0.45) continue;   // (autumn: some gone)
+      for (const e of [-1, 1]) nettleLeaf(g, x, y, e * spread, len, e < 0 ? rgb : tone(rgb, 0.9));
+      if (stage === 1 && p > 0) for (const e of [-1, 1]) strokeIn(g, 'rgba(150, 150, 92, 0.85)', 0.014, () => { g.moveTo(x, y); g.quadraticCurveTo(x + e * 0.1, y + 0.02, x + e * 0.13, y + 0.16); });   // the hanging flower strings
+    }
+    if (stage === 0) { const [x, y] = at(1); for (const e of [-1, 1]) nettleLeaf(g, x, y, e * 2.8, 0.16, tone(rgb, 1.15, 20)); }   // the fresh tip, its first leaves still folded up
+  }
+}
+
+// How far a patch has come up or gone over: 0..1 (sim.js GREEN_SEASONS).
+function greenFade(g, stage) {
+  const p = S.springPart(world.tick), s = S.seasonOf(world.tick);
+  if (s === 0 && p < 0.08) return 0.2 + 0.8 * p / 0.08;
+  if (stage === 2) { const end = S.GREEN_SEASONS[g.kind][1][1]; return clamp(1 - 0.75 * p / end, 0.25, 1); }
+  return 1;
+}
+// Its portrait in the inspector: its painting as it is now.
+function greenFace(g, stage) {
+  const art = greenArt(g, stage);
+  if (!portraits.has(art)) portraits.set(art, dataURL(sprite(art, 38).canvas));
+  return `<img src="${portraits.get(art)}" alt="${g.kind === 'garlic' ? 'Wild garlic' : 'Nettles'}" style="width: 125%">`;
+}
+const garlicPx = (g, z) => Math.max(10, (8 + z) * GARLIC_PX * (0.75 + 0.15 * g.size));
+const nettlePx = (g, z) => Math.max(6, (8 + z) * NETTLE_PX * (0.75 + 0.15 * g.size));
+// The garlic, flat on the woodland floor, under all that stands.
+function drawGarlic(z) {
+  for (const g of world.greens) {
+    if (g.kind !== 'garlic') continue;
+    const stage = S.greenStage(world, g);
+    if (stage === null) continue;
+    const px = garlicPx(g, z), sx = (g.x - cam.x) * z + vw / 2, sy = (g.y - cam.y) * z + vh / 2;
+    if (!visible(sx, sy, px) || !fadeAt(g.x, g.y)) continue;
+    const f = greenFade(g, stage);
+    drawEmoji(greenArt(g, stage), sx, sy - px * 0.2, px, { alpha: f < 1 ? f : undefined, flip: g.look === 1 && g.born % 2 === 0 });
+  }
+  unfade();
+}
+function drawNettles(g, z) {
+  const stage = S.greenStage(world, g), px = nettlePx(g, z), f = greenFade(g, stage);
+  drawEmoji(greenArt(g, stage), (g.x - cam.x) * z + vw / 2, (g.y - cam.y) * z + vh / 2 - px * 0.31, px, { alpha: f < 1 ? f : undefined, flip: g.born % 2 === 1 });
+}
+
 // Where a clump is drawn (into shroomAt): its size, and its middle on screen, over a log's side or up a snag's trunk.
 const shroomAt = { px: 0, x: 0, y: 0 };
 function placeShroom(m, z) {
@@ -4453,7 +4571,7 @@ function putPainting(p, f, alpha, snow, ox, oy) {
 // A visitor fur.js paints (Fur.painters: the dragonflies, the kingfisher, the skylark), at the doublings of its size and
 // shrunk between (shrunk), as a fox is; in the meadow the worker paints it (furReady).
 const furPaint = kind => (g, size, U, n) => { if (!shrunk(g, size, U, kind + ':' + n)) Fur.painters[kind](g, size, U, n); };
-const PAINTERS = { fox: paintFox, rabbit: paintRabbit, hog: paintHedgehog, heron: paintHeron, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody, bee: paintBee, fall: paintFall, shroom: paintShroom,
+const PAINTERS = { fox: paintFox, rabbit: paintRabbit, hog: paintHedgehog, heron: paintHeron, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody, bee: paintBee, fall: paintFall, shroom: paintShroom, green: paintGreen,
   dfly: furPaint('dfly'), kfisher: furPaint('kfisher'), lark: furPaint('lark') };
 function drawDecor(d, sx, sy, now, ck, clipLeaves, px = d.tree ? treePx(d) : d.size * cam.zoom) {   // (px: render has it already)
   if (d.emoji === '🪨') { drawRock(d, sx, sy); return; }
@@ -6641,6 +6759,37 @@ const THINGS = {
       if (who) facts.push(['👀', `Near it: ${who}`]);
       const T = world.terrain, big = T.bigRockSize[1];
       return { emoji: '🪨', tint: '#b8ae9c', name: ROCK_NAMES[t.kind], sub: where, status: ROCK_SAYS[t.kind], facts, meters: [['Size', d.size / big, '']] };
+    },
+  },
+
+  green: {                                                 // (after the trees and rocks: the garlic lies under them)
+    at(sx, sy) {
+      const z = cam.zoom;
+      let best = null, bd = Infinity;
+      for (const g of world.greens) {
+        if (S.greenStage(world, g) === null) continue;
+        const x = (g.x - cam.x) * z + vw / 2, y = (g.y - cam.y) * z + vh / 2;
+        let d;
+        if (g.kind === 'garlic') { const px = garlicPx(g, z); d = ((sx - x) / (px * 0.5)) ** 2 + ((sy - y + px * 0.1) / (px * 0.2)) ** 2; if (d > 1) continue; }
+        else { const px = nettlePx(g, z), r = Math.max(fingerTap ? 22 : 12, px * 0.4); d = ((sx - x) ** 2 + (sy - y + px * 0.3) ** 2) / (r * r); if (d > 1) continue; d -= 1; }   // (nettles first: they stand)
+        if (d < bd) { best = g; bd = d; }
+      }
+      return best;
+    },
+    here: g => world.greens.includes(g) && S.greenStage(world, g) !== null,
+    spot: g => ({ x: g.x, y: g.y, r: g.kind === 'garlic' ? garlicPx(g, cam.zoom) / cam.zoom * 0.45 : 0.6 }),
+    show(g) {
+      const garlic = g.kind === 'garlic', name = garlic ? 'Wild garlic' : 'Nettles', stage = S.greenStage(world, g);
+      const water = S.waterAt(world, g.x, g.y), sub = garlic ? `In the damp wood${water ? ` by the ${water.name}` : ''}` : 'On rich ground';   // (it's always near water)
+      const face = greenFace(g, stage ?? 0), tint = garlic ? '#5ca03a' : '#40702e';
+      if (!this.here(g)) return { emoji: face, tint, name, sub, status: '🌱 Gone under the ground till next spring' };
+      const status = garlic ? ['🌿 Leaves up: pick them young, before it flowers', '🌸 In flower: the leaves are still good, and the flowers too', '🍂 Dying back till next spring'][stage]
+        : ['🧤 Young tops: pick them, with gloves', '🌾 Tall and in flower: too tough to eat now', '🍂 Dying back till next spring'][stage];
+      const why = garlic ? ['💧', 'It likes damp shade, and the wood here is close to the water: it spreads a little each spring'] : richWhy(g);
+      const cook = garlic ? ['🍳', 'Smells of garlic from yards off: wilted into butter, a soup or a green sauce'] : ['🍳', 'Nettle soup, or wilted like spinach: cooking takes the sting out'];
+      const years = Math.floor((world.tick - g.born) / S.YEAR_DAYS / S.TPD);
+      const facts = [why, cook, ['📅', years < 1 ? 'Came up here this year' : `Has come up here every spring for ${years === 1 ? 'a year' : `${years} years`}`]];
+      return { emoji: face, tint, name, sub, status, facts };
     },
   },
 

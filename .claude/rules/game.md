@@ -30,6 +30,14 @@ tree's foot is picked first) has the painting for a portrait (`shroomFace`: the 
 why (`richWhy`: remains, a warren, a holt), what the cook would make of it (`SHROOM_COOK`) and how fresh it is; a tree's panel says
 when there are mushrooms under it or on it.
 
+Spring greens (sim.js `w.greens`) are painted once a look and size too (`paintGreen`, `GREEN_ARTS`: kind, stage from sim.js
+`greenStage`, and two looks): wild garlic a carpet of broad leaves (`paintGarlic`), white starry heads in flower, yellowing as it
+dies back, drawn flat under all that stands (`drawGarlic`, after the remains); nettles a stand of stems with toothed leaves
+(`paintNettles`), young tops reaching up, drooping and strung with flowers in summer, brown in autumn, drawn with the trees and
+animals (a frame item's `s`, like the mushrooms). They fade in as they come up and out as they go (`greenFade`), and a patch
+grows with `g.size`. Their panel (`THINGS.green`, after the trees and rocks, since the garlic lies under them) has the painting
+for a portrait (`greenFace`), when to pick them, why they grow there and what the cook would make of them.
+
 Foxes and rabbits are painted (fur.js: `paintFox`, `paintRabbit`): one rig posed for
 what each is doing (`FOX_POSES`, `RABBIT_POSES`, picked by `foxArt`, `rabbitArt`), painted as one animal by `paintFur`
 (one shading over it all, each part's form and the markings soft, a part in front casting a soft shadow, a softened
