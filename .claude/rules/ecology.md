@@ -1,7 +1,6 @@
 ---
 paths:
   - sim.js
-  - balance.js
 ---
 
 # The meadow's ecology

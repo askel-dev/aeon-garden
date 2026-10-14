@@ -1,9 +1,9 @@
 # Nobody's Meadow
 
-A cozy meadow where rabbits, foxes, bees, crows, owls and otters live their own lives and you watch what
-emerges. The owls are switched off for now (sim.js `OWLS = false`): none start, fly in or can be released,
-a kept meadow's fly off when it opens, and the page hides their tool, counters, graph and food-web node. All their
-code stays; `true` brings them back. It used to be called AEON Garden, and the repo and the
+A cozy cooking game in a painted meadow: you gather what the meadow gives (honey, fish, fruit, mushrooms, game),
+build up a kitchen from a campfire, and cook. It grew out of an ecology sim you watched (rabbits, foxes, bees,
+crows, otters...), and that sim is being cut down to what the cooking needs; the old watching and keeper game
+is in git history before the `cooking` branch (main at 1d79f03). It used to be called AEON Garden, and the repo and the
 `aeon-garden-*` localStorage keys keep that name (renaming the keys would lose players' settings).
 It's played at https://meadow.cryptoler.net: GitHub Pages from `main` under a custom domain (`CNAME`;
 the DNS record is in Vercel, see the `askel-dev/cryptoler.net` README). The old github.io link redirects there. **This is a game.** Balancing for fun is allowed and is the job; realism is
@@ -49,15 +49,6 @@ closed); none of that project's rules apply here.
   meadow the worker paints them off the main thread; notes in `.claude/rules/game.md`.
 - `trees.js`, `tree-worker.js`, `tree-lab.html`: the trees, painted in code. How they're painted, cached and
   drawn is in `.claude/rules/trees.md`, which loads when one of those files is opened.
-- `balance.js`: headless check, `node balance.js [years] [seeds]` (add `plant` for a player planting 5 trees a year).
-- `terrain-lab.js`: the terrain lab, `index.html?lab`. Sliders for every number in `TERRAIN` (sim.js),
-  drawn by the game itself, plus hidden layers and a strip of other seeds. Its "Copy as code" gives
-  back the `TERRAIN` block to paste over the one in sim.js. New terrain numbers belong in `TERRAIN`
-  (one per line, with a comment) and get a slider in the lab's `GROUPS`. You can also draw water,
-  rivers and woods there; the drawing is createWorld's `drawn` option (`readDrawn`), carved by the
-  same code as generated water, and travels in the link after the `#` (`drawnToLink`: a server turns a long `?query` away).
-  On a phone the three cards become one sheet with tabs (`place`, `openTab`: Draw, Tune, View, Seeds), folded to the
-  seed and the tabs, and two fingers pinch the map whatever the pen.
 
 Run: `python3 -m http.server 8765`, then open http://localhost:8765 (`?seed=123` replays
 a meadow).
@@ -73,7 +64,7 @@ In a cloud session with no Chrome, Playwright is installed globally (`npm root -
 You don't have to test everything: check what a change could plausibly break, and leave the rest.
 
 The meadow's ecology (terrain and water, grass and soil, voles, frogs, fish, rabbit coats, sickness, remains, crows,
-owls, otters, bees, the trees' lives) is in `.claude/rules/ecology.md`, which loads when sim.js or balance.js is opened.
+owls, otters, bees, the trees' lives) is in `.claude/rules/ecology.md`, which loads when sim.js is opened.
 Species lists come from `KINDS` / `perKind`, so a new species needs no hand-written `{ rabbit, fox, bee }` lists.
 
 Keep it smooth. The game has to run without lag on a phone, zoomed out, at 60x, in rain at night.
@@ -127,5 +118,4 @@ new feature must not slow it down. If it would, make it cheaper or leave it out.
   seconds in a busy meadow, following an animal, zoomed out, at 60x. If it got slower, fix it before
   committing, and put the numbers in the commit message. A caption, a card or a small drawing tweak doesn't need it.
 
-After touching the sim, run `balance.js` over several seeds. The goal is visible
-boom-and-bust cycles that recover, not a flat line and not extinction.
+After touching the sim, run a few years of it over several seeds: nothing that the cooking needs may die out.
