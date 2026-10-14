@@ -662,6 +662,9 @@ function pickOdds(r, odds) {
 // A rock: a pebble, a stone or a boulder, a great rock (big) or a flat stone at a ford (stone). Every rock laid out
 // alike (see blankCreature), with room for the fish about it should otters make their holt under it (holtFish).
 const rockOf = (x, y, size, big = false, stone = false) => ({ x, y, emoji: '🪨', size, big, stone, holtFish: NaN });
+// A flower (w.plants), or a spot of blossom in a tree's crown (w.blossoms: its tree, and up, how high in it). The bees look
+// at both, so both are laid out alike, with room for the bee headed to it and when it was last sipped (pickFlower).
+const plantOf = (x, y, i, kind, field, n, tree = null, up = -0) => ({ x, y, i, kind, field, n, tree, up, bee: null, sipped: 0 });
 
 function makeTerrain(w) {
   const r = w.rng, N = W * H;
@@ -823,7 +826,7 @@ function makeTerrain(w) {
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const i = y * W + x, f = w.fieldAt[i] >= 0 ? w.fields[w.fieldAt[i]] : null;
     if (water[i] || r.next() > (f ? T.fieldFlowers : T.flowers)) continue;
-    w.plants.push({ x: x + r.next(), y: y + r.next(), i, kind: r.next(), field: f, n: w.plants.length });
+    w.plants.push(plantOf(x + r.next(), y + r.next(), i, r.next(), f, w.plants.length));
   }
   // Plants never move, so they go into the spatial grid's cells once, for the bees looking for them.
   w.plantCells = Array.from({ length: GW * GH }, () => []);
@@ -1658,8 +1661,8 @@ function addBlossoms(w, d) {
   d.blooms = true;
   for (let k = 0; k < BLOOMS; k++) {
     const a = (k + 0.5) / BLOOMS * Math.PI;
-    const p = { x: clamp(d.x - Math.cos(a) * 0.7, 0.5, W - 0.5), y: clamp(d.y + 0.05 + Math.sin(a) * 0.15, 0.5, H - 0.5), i: idx(d.x, d.y),
-      kind: 1, field: null, n: 1e6 + w.nextBloom++, tree: d, up: 0.45 + 0.2 * Math.sin(a) };
+    const p = plantOf(clamp(d.x - Math.cos(a) * 0.7, 0.5, W - 0.5), clamp(d.y + 0.05 + Math.sin(a) * 0.15, 0.5, H - 0.5), idx(d.x, d.y),
+      1, null, 1e6 + w.nextBloom++, d, 0.45 + 0.2 * Math.sin(a));
     w.blossoms.push(p); cellOf(w.blossomCells, p).push(p);
   }
 }
@@ -1888,6 +1891,11 @@ function waterBetween(w, x0, y0, x1, y1) {
   return null;
 }
 
+// Whether there's any ash about (w.ash): most of the time there's none and nothing burns, and then growGrass needn't read
+// the ash or the fire at all. Ash is only laid as a fire burns out (fireTick) and goes as growGrass wears it away (under
+// water it waits), so it's known to be there from the one till the other finds it all gone. A world it hasn't seen is looked at.
+const ashLeft = new WeakMap();
+
 function growGrass(w, dt) {
   const s = SEASONS[seasonOf(w.tick)], grow = sky(w).grow;
   const capK = s.cap * (w.weather.kind === 'heat' ? 0.8 : 1);   // a heatwave browns the grass
@@ -1897,6 +1905,23 @@ function growGrass(w, dt) {
   const drown = dt / (DROWN_DAYS * TPD), siltFade = dt / (SILT_DAYS * TPD);
   const g = w.grass, f = w.shadedFert, water = w.water, ash = w.ash, fire = w.fire, silt = w.silt;   // (the soil, less under the trees)
   const rich = w.rich, keep = 1 - dt / (RICH_DAYS * TPD);
+  if (!w.burning.length && ashLeft.get(w) === false) {      // the same as below, with no ash and no fire (it comes out the same)
+    for (let i = 0; i < g.length; i++) {
+      if (water[i]) { if (g[i] > 0) g[i] = Math.max(0, g[i] - drown); silt[i] = 1; continue; }
+      let cap = f[i] * capK, a = 1;
+      const silty = silt[i], k = rich[i];
+      if (silty + k > 0) {
+        a += 3 * silty + RICH_GROW * k;
+        if (silty > 0) silt[i] = Math.max(0, silty - siltFade);
+        if (k > 0) { cap = Math.min(1, cap + RICH_SOIL * k * capK); rich[i] = k < RICH_GONE ? 0 : k * keep; }
+      }
+      let v = g[i];
+      if (v < cap) v += r * a * v * (1 - v / cap) + seed * a * cap;
+      else v -= (v - cap) * die;
+      g[i] = v;
+    }
+    return;
+  }
   for (let i = 0; i < g.length; i++) {
     if (water[i]) { if (g[i] > 0) g[i] = Math.max(0, g[i] - drown); silt[i] = 1; continue; }
     if (fire[i]) continue;
@@ -1912,6 +1937,11 @@ function growGrass(w, dt) {
     if (v < cap) v += r * a * v * (1 - v / cap) + seed * a * cap;
     else v -= (v - cap) * die;
     g[i] = v;
+  }
+  if (!w.burning.length) {                                  // any ash left?
+    let any = false;
+    for (let i = 0; i < ash.length && !any; i++) any = ash[i] > 0;
+    ashLeft.set(w, any);
   }
 }
 
@@ -2098,7 +2128,7 @@ function fireTick(w, dt) {
   for (const i of lit) {
     g[i] *= 0.8;
     w.fire[i] -= dt;
-    if (w.fire[i] <= 0 || w.wet > 0.7) { w.fire[i] = 0; g[i] = 0; w.ash[i] = 1; continue; }
+    if (w.fire[i] <= 0 || w.wet > 0.7) { w.fire[i] = 0; g[i] = 0; w.ash[i] = 1; ashLeft.set(w, true); continue; }
     w.burning.push(i);
     const x = i % W, y = (i / W) | 0;
     for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
@@ -2142,21 +2172,29 @@ function smellSmoke(w, c) {
 // reused and only their counts reset (emptying an array makes it reallocate as it refills).
 const makeGrid = () => ({ cells: Array.from({ length: GW * GH }, () => []), n: new Int32Array(GW * GH) });
 
+// A species' own grid, the busiest lookup there is: by name, one after another (and any other the usual way). Looked
+// up as w.grids[species], it went the slow way every time, the one spot meeting all six names.
+function gridOf(w, s) {
+  const g = w.grids;
+  return s === 'rabbit' ? g.rabbit : s === 'fox' ? g.fox : s === 'bee' ? g.bee : s === 'crow' ? g.crow : s === 'otter' ? g.otter : g[s];
+}
+
 function buildGrid(w) {
-  const all = w.grid;
+  const all = w.grid, list = w.creatures;
   all.n.fill(0);
-  for (const s in w.grids) w.grids[s].n.fill(0);
-  for (const c of w.creatures) {
+  for (const s of KINDS) w.grids[s].n.fill(0);
+  for (let i = 0; i < list.length; i++) {
+    const c = list[i];
     if (!c.alive || c.hidden || c.held) continue;           // (one the player holds up is out of everyone's reach)
     const k = clamp((c.y / CELL) | 0, 0, GH - 1) * GW + clamp((c.x / CELL) | 0, 0, GW - 1);
-    const mine = w.grids[c.species];
+    const mine = gridOf(w, c.species);
     all.cells[k][all.n[k]++] = c;
     mine.cells[k][mine.n[k]++] = c;
   }
 }
 
 function forEachNear(w, x, y, radius, fn, species) {
-  const grid = species ? w.grids[species] : w.grid;
+  const grid = species ? gridOf(w, species) : w.grid;
   const x0 = clamp(((x - radius) / CELL) | 0, 0, GW - 1), x1 = clamp(((x + radius) / CELL) | 0, 0, GW - 1);
   const y0 = clamp(((y - radius) / CELL) | 0, 0, GH - 1), y1 = clamp(((y + radius) / CELL) | 0, 0, GH - 1);
   const r2 = radius * radius;
@@ -2183,7 +2221,7 @@ function forEachPlantNear(w, x, y, radius, fn) {
 }
 
 function nearest(w, c, radius, species, pred) {   // (forEachNear's walk, written out: it's the busiest)
-  const grid = species ? w.grids[species] : w.grid, x = c.x, y = c.y;
+  const grid = species ? gridOf(w, species) : w.grid, x = c.x, y = c.y;
   const x0 = clamp(((x - radius) / CELL) | 0, 0, GW - 1), x1 = clamp(((x + radius) / CELL) | 0, 0, GW - 1);
   const y0 = clamp(((y - radius) / CELL) | 0, 0, GH - 1), y1 = clamp(((y + radius) / CELL) | 0, 0, GH - 1);
   const r2 = radius * radius;
@@ -2319,6 +2357,8 @@ const blankCreature = () => ({
   queen: null,          // a bee's mother, the queen (layEggs)
   calm: 0, cubsIn: 0, slide: null,   // an otter's: paying foxes no mind till then; cubs still in the holt; its slide (otterTick)
   held: false,          // up in the player's hand (lift)
+  hedgeTo: null, covered: 0,   // (?keep) the hedge a rabbit runs for, and the tick it was last in under it (flee, inUnder)
+  killerId: 0,          // who caught it (die)
 });
 
 function makeCreature(w, species, x, y, genes, parents) {
@@ -5690,8 +5730,9 @@ function coatCounts(w) {
 
 // How full the meadow is: 1 when every tile holds all the grass its soil allows.
 function grassFullness(w) {
+  const water = w.water, grass = w.grass, fert = w.fert;
   let g = 0, f = 0;
-  for (let i = 0; i < W * H; i++) if (!w.water[i]) { g += w.grass[i]; f += w.fert[i]; }
+  for (let i = 0; i < W * H; i++) if (!water[i]) { g += grass[i]; f += fert[i]; }
   return f ? g / f : 0;
 }
 
@@ -6037,7 +6078,8 @@ function unpackWorld(kept) {
   const list = kept.list;
   const made = list.map(e => (Array.isArray(e) ? new Array(e.length) : ArrayBuffer.isView(e) ? e
     : e.$map ? new Map() : e.$set ? new Set() : e.sp !== undefined && e.genes !== undefined ? blankCreature()   // (laid out like new ones)
-    : e.tree === true ? blankTree() : e.emoji === '🪨' ? rockOf(-0, -0, -0) : {}));
+    : e.tree === true ? blankTree() : e.emoji === '🪨' ? rockOf(-0, -0, -0)
+    : e.n !== undefined && e.i !== undefined && e.kind !== undefined && e.field !== undefined ? plantOf(-0, -0, 0, -0, null, 0) : {}));   // (a flower or blossom)
   const table = path => path.split('.').reduce((o, k) => {
     if (!o || !(k in o)) throw new Error('unpackWorld: no table ' + path);
     return o[k];
@@ -6595,7 +6637,7 @@ function sowStrip(w, pts) {
     w.grass[i] = STRIP_SPROUTS; w.voles[i] = 0; w.frogs[i] = 0;
     w.rich[i] = Math.max(w.rich[i], TURNED_RICH);
     for (let k = 0, n = 1 + (hash2(t.x, t.y, w.seed + id) < STRIP_PLANTS - 1); k < n; k++) {
-      const p = { x: t.x + 0.15 + 0.7 * hash2(t.x, t.y * 4 + k, 51), y: t.y + 0.15 + 0.7 * hash2(t.y, t.x * 4 + k, 53), i, kind: hash2(t.x * 4 + k, t.y, 55), field: f, n: w.plants.length };
+      const p = plantOf(t.x + 0.15 + 0.7 * hash2(t.x, t.y * 4 + k, 51), t.y + 0.15 + 0.7 * hash2(t.y, t.x * 4 + k, 53), i, hash2(t.x * 4 + k, t.y, 55), f, w.plants.length);
       w.plants.push(p);
       cellOf(w.plantCells, p).push(p);
     }

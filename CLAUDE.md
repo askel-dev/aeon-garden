@@ -19,9 +19,10 @@ closed); none of that project's rules apply here.
 - `ground.js`: the ground (grass, earth, shores, water) as a WebGL shader, painted from a
   few small textures of one texel a tile that game.js keeps up to date (`paintTerrain`, `updateWater`).
   It paints again only when a texture, the zoom or the light has moved (`steady`), and at most at 2x
-  (`GROUND_DPR`). In Safari (`WEBKIT`) it keeps to `GROUND_WEBKIT` pixels, never below 1x: Safari misses a frame
-  on each repaint of a big ground. While the camera pans (following, dragging) it paints a margin round the screen (`PAD`)
-  and slides the picture along (`Ground.view`) until the margin runs out. The picture is a canvas of its own
+  (`GROUND_DPR`). At 15x and 60x the light, the colours and the wet move a little every frame, so what only moves with
+  them waits up to `GROUND_HOLD` ms (it had the ground painting two frames in three). In Safari (`WEBKIT`) it keeps to
+  `GROUND_WEBKIT` pixels, never below 1x: Safari misses a frame on each repaint of a big ground. While the camera pans
+  (following, dragging) it paints a margin round the screen (`PAD`) and slides the picture along (`Ground.view`) until the margin runs out. The picture is a canvas of its own
   under the meadow's (`#ground`), slid into place with a CSS transform, never copied onto a frame (only into
   the P photo, laid under the rest, `groundIn`); so nothing drawn on the meadow can blend with the ground (a `'lighter'` glow lays a
   light over it instead of adding to it). The golden hour lights it in the shader (`light`, game.js `goldLight`, in
@@ -88,17 +89,26 @@ new feature must not slow it down. If it would, make it cheaper or leave it out.
   Moving things go on top. An overlay is one small canvas stretched over the meadow (like
   `drawHillLight`), rebuilt only when its key changes.
 - Sprite keys take few values. Round sizes (`spriteStep`) and colours (`step`) into a few steps, or
-  the cache fills up and repaints all the time.
+  the cache fills up and repaints all the time. And a frame builds no names to look one up: a key joined from strings is
+  hashed afresh on every lookup (`plainKey`, the `*_ARTS` tables of names made once).
+- A painting whose look moves on in small steps is painted again at most every so often at speed, where the steps
+  come a frame or two apart (a burrow's: `BURROW_MS`).
 - Chrome lets a frame draw from only about 30 MB of distinct pictures (width × height × 4, summed over every
   image or canvas `drawImage`d that frame). Past that it flushes mid-frame and every canvas call costs more,
   which a profile blames on whatever call comes next. So keep big pictures off the canvas (the ground is a
   layer of its own), paint sprites near the size they're drawn at, and don't draw many different large ones.
 - Draw only what's on screen (`visible`). A full-screen pass (a `wash`, an overlay, a composite mode)
-  costs the most, so add one only when it's clearly worth it, and skip it while it wouldn't show.
+  costs the most, so add one only when it's clearly worth it, and skip it while it wouldn't show. The washes over the
+  whole meadow (the dark, the clouds' shadows, the weather's dim, the fog) are gathered and laid in one pass (`skyWash`,
+  `skyLayer`, `laySky`): one fill if they're all even, else one small picture of them all (`SKY_RES`). A new one goes in
+  with them, not as a fill of its own.
+- Many small draws cost by the call (each `drawImage` a microsecond or two, whatever its size): zoomed out a frame
+  makes well over a thousand. Draws that are the same for every thing but its size go in one picture drawn once a thing
+  (a small tree's two shadows: `shadowPair`).
 - The sim can run 2000 ticks in one frame. In hot loops, don't make new objects or arrays, and don't
   scan every creature: use the neighbour grid. Recount things only after they change.
-- The sim's objects keep one layout for life: every field a creature, a tree, a rock or the world will ever have is
-  made with it (`blankCreature`, `blankTree`, `rockOf`, the world's `LATER`), a field that ever holds a fraction starts
+- The sim's objects keep one layout for life: every field a creature, a tree, a rock, a flower or the world will ever have is
+  made with it (`blankCreature`, `blankTree`, `rockOf`, `plantOf`, the world's `LATER`), a field that ever holds a fraction starts
   as `-0`, and nothing is `delete`d (set it to its blank value). A field added mid-game, or a whole number turning a
   fraction, gives V8 a new layout: it then reads those objects the slow way for good and keeps rerunning stale compiled
   loops, which once halved the sim's speed. A new field goes into the blank.
