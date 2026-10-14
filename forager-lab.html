@@ -6,7 +6,7 @@
 <script src="fur.js"></script>
 <script>
 const c = document.getElementById('c'), g = c.getContext('2d'), px = 120, dpr = 2;
-const poses = [0, 1, 2, 8, 9, 10, 11, 12, 13, 14, 15], views = 3;
+const poses = [0, 1, 2, 3, 4, 8, 9, 10, 11, 12, 13, 14, 15], views = 3;
 c.width = poses.length * px * 1.3 * dpr; c.height = (views * px * 1.3 + 60) * dpr;
 c.style.width = c.width / dpr + 'px';
 for (let v = 0; v < views; v++) poses.forEach((p, i) => {
