@@ -9,19 +9,11 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const lerp = (a, b, t) => a + (b - a) * t;
 const TAU = Math.PI * 2;
 const TICKS_PER_SECOND = 30;           // at 1x
-const perKind = make => Object.fromEntries(S.KINDS.map(s => [s, make(s)]));   // { rabbit: .., fox: .., bee: .. }
 
 // ------------------------------------------------------------------ state
 
-// ?terrain={...} overrides some of the meadow's settings (Sim.TERRAIN) and #water=.. adds what was
-// drawn on it (Sim.drawnToLink; older links have it as ?drawn={...}), as the terrain lab hands them
-// over. ?lab opens that lab: the meadow without animals, and terrain-lab.js on top.
-const params = new URLSearchParams(location.search), LAB = params.has('lab');
-const fromUrl = key => { try { return JSON.parse(params.get(key) || '{}'); } catch (e) { return {}; } };   // a broken link: the usual meadow
-let terrain = fromUrl('terrain'), drawn = location.hash.length > 1 ? S.drawnFromLink(location.hash) : fromUrl('drawn');
-const terrainQuery = () => (Object.keys(terrain).length ? '&terrain=' + encodeURIComponent(JSON.stringify(terrain)) : '')
-  + (S.drawnToLink(drawn) ? '#' + S.drawnToLink(drawn) : '');
-const meadowLink = seed => '?seed=' + seed + terrainQuery();   // the address of a meadow, and the name it's kept under
+const params = new URLSearchParams(location.search);
+const meadowLink = seed => '?seed=' + seed;   // the address of a meadow, and the name it's kept under
 
 // How many people come, and from where, counted by GoatCounter (goatcounter.com: free, no cookies,
 // nothing to agree to). Off until COUNTER holds the site's code: sign up there, pick a code, put it
@@ -31,29 +23,19 @@ const meadowLink = seed => '?seed=' + seed + terrainQuery();   // the address of
 // the one counter may count cryptoler.net's own pages too.
 const COUNTER = 'cryptoler';               // cryptoler.goatcounter.com
 if (COUNTER && !['localhost', '127.0.0.1'].includes(location.hostname)) {
-  window.goatcounter = { path: LAB ? '/meadow/lab' : '/meadow', referrer: params.get('ref') || params.get('utm_source') || document.referrer };
+  window.goatcounter = { path: '/meadow', referrer: params.get('ref') || params.get('utm_source') || document.referrer };
   const js = document.createElement('script');
   js.async = true; js.src = 'https://gc.zgo.at/count.js';
   js.dataset.goatcounter = `https://${COUNTER}.goatcounter.com/count`;
   document.head.append(js);
 }
 
-// Something worth counting, as a GoatCounter event (no cookies either): 'meadow-back' is a visit the away card
-// greeted. Before count.js has come, it's counted once the page has loaded; with it blocked, not at all.
-function countEvent(path) {
-  if (!COUNTER || ['localhost', '127.0.0.1'].includes(location.hostname)) return;
-  const go = () => window.goatcounter?.count?.({ path, title: path, event: true });
-  if (window.goatcounter?.count || document.readyState === 'complete') go();
-  else addEventListener('load', go, { once: true });
-}
 
 let world;
 const ui = {
-  speed: 1, sound: false, tool: 'look', selectedId: 0, picked: null, hoverId: 0, follow: false,
-  trail: [], effects: [], zaps: [], zapNext: 0, allTraits: false, allStory: false,
-  lastNews: {}, newsLog: [], newsOpen: false,
-  releaseSex: perKind(() => 'F'), group: perKind(() => 1), mini: false, ring: null, sheetUp: false,
-  sky: { mix: {}, tick: 0, bolts: [], boom: -1e9, rainbow: -1e9, bowEnd: -1e9, menu: false },
+  speed: 1, sound: false, selectedId: 0, picked: null, hoverId: 0, follow: false,
+  trail: [], effects: [], allTraits: false, allStory: false, sheetUp: false,
+  sky: { mix: {}, tick: 0, bolts: [], boom: -1e9, rainbow: -1e9, bowEnd: -1e9 },
 };
 const cam = { x: S.W / 2, y: S.H / 2, zoom: 10, goal: null };
 
@@ -139,10 +121,10 @@ function measureSheet() {
 // You may look out past the edges into the mist: the middle of the view goes as far as the mist is thick
 // (MIST_FULL tiles out), at any zoom, so an edge can be looked at up close.
 // A bit further where the inspector covers the screen, so nothing is ever stuck under it. This far past the bottom
-// edge, in screen pixels. In the lab, its own sheet on a phone (lab.cover).
-const lookPast = () => Math.max(sheet ? sheet.bottom : 0, LAB ? lab.cover.bottom : 0);
+// edge, in screen pixels.
+const lookPast = () => (sheet ? sheet.bottom : 0);
 function clampCam() {
-  const left = (sheet ? sheet.left : 0) / cam.zoom, right = Math.max(sheet ? sheet.right : 0, LAB ? lab.cover.right : 0) / cam.zoom;
+  const left = (sheet ? sheet.left : 0) / cam.zoom, right = (sheet ? sheet.right : 0) / cam.zoom;
   cam.x = clamp(cam.x, -MIST_FULL - left, S.W + MIST_FULL + right);
   cam.y = clamp(cam.y, -MIST_FULL, S.H + MIST_FULL + lookPast() / cam.zoom);
 }
@@ -234,8 +216,8 @@ function paintedSprite(emoji, px, tint, leaf, center) {
     near.used = spriteFrame; return { canvas: near.canvas, size: near.size * px / near.px };
   }
   // A fox's or a rabbit's painting comes from the worker (furReady asks for it): meanwhile the same at another size
-  // stands in, or one of its kin. Only the first of a look is painted here (and the P photo's, all of them).
-  if (furWorker && standIns && !groundIn && !tint && !leaf && !center && isFur(emoji) && !furReady(emoji, px)) {
+  // stands in, or one of its kin. Only the first of a look is painted here.
+  if (furWorker && standIns && !tint && !leaf && !center && isFur(emoji) && !furReady(emoji, px)) {
     const kin = latestLook.get(look) || furKin(emoji);
     if (kin) { kin.used = spriteFrame; return { canvas: kin.canvas, size: kin.size * px / kin.px }; }
   }
@@ -555,7 +537,7 @@ function edgeColour(r, g, b) {
 // difference, and the shader has half the pixels to work out.
 // It is a canvas of its own under the meadow's (#ground), slid into place, not copied onto every frame:
 // Chrome lets a frame draw only so many pictures' bytes before it pays extra on every call, and a copy
-// of the ground took most of them. The photo still draws it in, under the rest (groundIn).
+// of the ground took most of them.
 // Safari (and every browser on an iPhone: they're all WebKit) misses a frame each time it repaints a big
 // ground, however cheap the shader: on a MacBook at 2x, five times a second at 1x speed. There the ground
 // is kept to GROUND_WEBKIT pixels, but never below 1x. A phone's small screen stays at 2x.
@@ -566,11 +548,9 @@ const GROUND_HOLD_SPEED = 15, GROUND_HOLD = 100;
 const WEBKIT = /AppleWebKit/.test(navigator.userAgent) && !/Chrome\/|Chromium|Edg\//.test(navigator.userAgent);
 const groundLayer = Ground.ok ? Ground.canvas : null, laid = { w: 0, h: 0, x: 0, y: 0 };
 if (groundLayer) { groundLayer.id = 'ground'; canvas.before(groundLayer); }
-let groundIn = false, snapping = false;   // (snapping: the journal's picture of a visitor, snapReveal)
 function drawGround(z, ox, oy, shx, shy) {
   groundStill = z === lastZoom ? groundStill + 1 : 0; lastZoom = z;
   updateWater();
-  updateParch();
   if (!Ground.ok) {
     if (groundLayer) groundLayer.style.display = 'none';
     ctx.drawImage(flat, ox, oy, S.W * z, S.H * z); return;
@@ -584,9 +564,7 @@ function drawGround(z, ox, oy, shx, shy) {
     light: goldLight(shownGold(ck.phase)),
     snow: world.snow, damp: 1 - 0.12 * world.wet, ice: iceOver(), cold: coldness(), lx: k * sn.lean, ly: k * 0.8,
     hold: ui.speed >= GROUND_HOLD_SPEED ? GROUND_HOLD : 0,   // (at speed the light and the colours may wait a moment: ground.js steady)
-    drought: Math.round(S.dryness(world) * 16) / 16,     // (?keep, the Dry Year: in steps, so the ground repaints only on a step)
   });
-  if (groundIn) { groundIn = [Ground.view.x, Ground.view.y, w, h]; return; }   // the photo lays it under the meadow after (copyMeadow)
   const g = Ground.canvas, cw = g.width / gd, ch = g.height / gd, x = shx - Ground.view.x / gd, y = shy - Ground.view.y / gd;
   if (cw !== laid.w || ch !== laid.h) { g.style.width = cw + 'px'; g.style.height = ch + 'px'; laid.w = cw; laid.h = ch; }
   if (x !== laid.x || y !== laid.y) { g.style.transform = `translate(${x}px, ${y}px)`; laid.x = x; laid.y = y; }
@@ -666,14 +644,13 @@ function fadeAt(x, y) {                           // false: it's lost in the mis
 const unfade = () => fadeTo(1);
 
 function plantEmoji(season, p, g) {
-  const kind = p.kind, f = p.field, wilted = world.parched && world.parched[p.i] > S.WILT;   // (?keep: the Dry Year, as isFlower)
-  if (f && season === f.season) return wilted ? '🌾' : g >= S.FIELD_GRASS ? f.emoji[Math.floor(kind * f.emoji.length)] : '🌱';
-  if (f?.strip && season === 3) return '🌱';             // a strip the keeper sowed waits out the winter as seedlings
+  const kind = p.kind, f = p.field;
+  if (f && season === f.season) return g >= S.FIELD_GRASS ? f.emoji[Math.floor(kind * f.emoji.length)] : '🌱';
   if (f && season < 2) return g > 0.4 ? '🌿' : null;      // a field out of bloom is just grass
   switch (season) {
-    case 0: if (g > 0.55 && kind < 0.35 && !wilted) return kind < 0.12 ? '🌷' : kind < 0.24 ? '🌼' : '🌸';
+    case 0: if (g > 0.55 && kind < 0.35) return kind < 0.12 ? '🌷' : kind < 0.24 ? '🌼' : '🌸';
       return g > 0.4 ? '🌿' : kind < 0.3 ? '🌱' : null;
-    case 1: if (g > 0.55 && kind < 0.22 && !wilted) return kind < 0.06 ? '🌻' : '🌼';
+    case 1: if (g > 0.55 && kind < 0.22) return kind < 0.06 ? '🌻' : '🌼';
       return g > 0.4 ? '🌿' : null;
     case 2: if (kind < 0.25) return '🍂';
       return g > 0.35 ? (kind < 0.5 ? '🌾' : '🌿') : null;
@@ -697,17 +674,15 @@ function plantLook(p, season, z) {
 // flower's painting (flowerSprite's code + 1; 0: it's drawn as its emoji).
 let plantKeys = null, plantArt = null, plantKeysWorld = null, plantKeysTick = -1, plantKeysZoom = 0, plantKeysDpr = 0;
 function updatePlantLooks(z, season) {
-  if (plantKeysWorld !== world || plantKeys.length !== world.plants.length) {   // (a new world, or ?keep: a strip sown)
+  if (plantKeysWorld !== world || plantKeys.length !== world.plants.length) {   // (a new world)
     plantKeys = new Int32Array(world.plants.length); plantArt = new Int32Array(world.plants.length);
     plantKeysWorld = world; plantKeysTick = -2;          // (not -1: that's terrainTick while the ground waits to be painted again)
   }
   if (plantKeysTick === terrainTick && plantKeysZoom === z && plantKeysDpr === dpr) return;
   plantKeysTick = terrainTick; plantKeysZoom = z; plantKeysDpr = dpr;
-  const parched = S.dryness(world) > 0.5;                // (?keep, the Dry Year: the tufts out in the straw go tawny)
   for (let i = 0; i < world.plants.length; i++) {
     const p = world.plants[i], l = plantLook(p, season, z);
-    let art = l ? flowerArt(l.e, season) : -1;
-    if (art === 7 && parched && world.grass[p.i] < 0.3) art = 8;
+    const art = l ? flowerArt(l.e, season) : -1;
     plantKeys[i] = l ? l.px * 16 + PLANT_EMOJI.indexOf(l.e) + 1 : 0;
     plantArt[i] = art < 0 ? 0 : flowerCode(art, Math.imul(p.n + 1, 2654435761) >>> 0, l.px) + 1;
   }
@@ -1286,7 +1261,6 @@ function render(now) {
   // for it on every draw, GPU or not: with it, a wood on screen dropped frames.
   ctx.imageSmoothingQuality = 'low';
   spriteFrame++; paintedMs = 0; standIns = true; turned = 0;
-  lookFrame(now);                                    // (?keep: the journal's look at what's drawn)
   ctx.clearRect(-8, -8, vw + 16, vh + 16);          // past the meadow's edge the page shows through
   const [ox, oy] = toScreen(0, 0);
   const z = cam.zoom, ck = S.clock(world);
@@ -1297,8 +1271,6 @@ function render(now) {
   drawPlants(z, ox, oy, ck.season);                  // over the waves, which can pass a flower by the water
   if (z >= 6) drawDashes(now, z);                    // voles a fox or an owl missed
   drawPond(now, z);
-  if (placing) drawPlacing(z, ox, oy);               // (?keep: a pond being placed)
-  if (ripples.length) drawRipples(now, z);
 
   // Burrows, drawn by hand: some browsers clip the 🕳️ glyph in half. Who lives where only shows close up (the paths, r >= 9).
   const residents = new Map();
@@ -1342,20 +1314,18 @@ function render(now) {
     }
     const [sx, sy] = screenOf(c);
     if (!visible(sx, sy, 60)) continue;
-    const it = itemOf(items, c.y + (c.mode === 'dance' ? DANCE_FRONT : c.species === 'owl' && c.mode !== 'gulp' ? OWL_FRONT : 0), sx, sy, c.held ? 1 : 1 - mistAt(c.x, c.y));
+    const it = itemOf(items, c.y + (c.mode === 'dance' ? DANCE_FRONT : c.species === 'owl' && c.mode !== 'gulp' ? OWL_FRONT : 0), sx, sy, 1 - mistAt(c.x, c.y));
     it.c = c;
     if (c.species === 'crow' && crowSeat(c)) it.y -= (seat.y - seat.tree.y) * SEAT_SORT;   // up a tree: just after it, not after the trees just in front
-    if (!c.held) shown.push(it);                           // (one held up has its shadow here, and is drawn last, in the hand)
+    shown.push(it);
   }
   if (world.visitors) for (const v of world.visitors) {    // (?keep: a hedgehog at a hedge, a heron at a pond, ...)
     const d = drawnAt(v), [sx, sy] = toScreen(d.x, d.y);
     const sort = v.kind === 'kingfisher' && v.tree && v.mode !== 'in' && v.mode !== 'out' ? Math.max(d.y, v.tree.y + 0.02)   // (in front of its tree)
       : v.kind === 'skylark' && v.high > 0.3 ? OWL_FRONT : d.y;                                                       // (singing high over all)
     if (visible(sx, sy, 40 + 2 * visitorPx(v) + visitorUp(v, visitorPx(v)))) itemOf(items, sort, sx, sy, 1 - mistAt(d.x, d.y)).v = v;
-    if (KEEP) watchVisitor(v, d.x, d.y, sx, sy);              // (the journal's moments)
   }
   sortByY(items);
-  if (world.signs?.length && z >= 8) drawSigns(z);          // (?keep: a visitor on its way)
   // Shadows first, all together, so a tree's shadow never lands on a rabbit behind it.
   const sn = sun(ck);
   for (const it of items) {
@@ -1374,8 +1344,6 @@ function render(now) {
     else if (it.h) drawSwarm(it.h, it.sx, it.sy);
     else if (it.rustle) drawRustle(it.rustle, it.to, it.sx, it.sy, z);
     else if (it.v) drawVisitor(it.v, it.sx, it.sy, now, z);
-    else if (it.c.held) continue;
-    else if (falls.size && falls.has(it.c)) drawFalling(it.c, falls.get(it.c), it.sx, it.sy, now);
     else drawCreature(it.c, it.sx, it.sy, now);
   }
   unfade();
@@ -1387,7 +1355,7 @@ function render(now) {
 
   // The golden hour and the night. The ground is lit by the shader; what's drawn on it gets the warm light laid over
   // just what's there (source-atop), before the dark goes over everything.
-  const dark = shownDark(ck.phase) * (snapping ? SNAP_DARK : 1), gold = shownGold(ck.phase);
+  const dark = shownDark(ck.phase), gold = shownGold(ck.phase);
   if (gold > 0) {
     ctx.globalCompositeOperation = 'source-atop';
     wash(`rgba(${GOLD_RGB}, ${GOLD_A * gold})`);
@@ -1417,14 +1385,11 @@ function render(now) {
   }
 
   // Pop-ups above the dark. Not in the intro: its lines tell the story.
-  if (!intro.on) drawPops(shown, now);
+  drawPops(shown, now);
 
   drawEffects(now);
-  drawZaps(now);
-  if (held) drawHeld(now);
   if (sel) drawSelectionOver(sel, now);
   if (ui.picked) drawPickedOver();
-  if (!intro.on && !idle.on) drawSpots(now);
   const hov = world.byId.get(ui.hoverId);
   if (hov && hov.alive && !hov.hidden && hov.id !== ui.selectedId) {
     const [sx, sy] = screenOf(hov);
@@ -1643,7 +1608,7 @@ function keepAt(c) {
   p.x = c.x; p.y = c.y; p.tick = world.tick + 1;
 }
 function drawnAt(c) {
-  const p = ui.speed <= SMOOTH_SPEED && !c.held && lastTick.get(c);
+  const p = ui.speed <= SMOOTH_SPEED && lastTick.get(c);
   if (!p || p.tick !== world.tick || Math.abs(c.x - p.x) + Math.abs(c.y - p.y) > 1) { drawnPos.x = c.x; drawnPos.y = c.y; return drawnPos; }
   const t = Math.min(acc, 1);
   drawnPos.x = p.x + (c.x - p.x) * t; drawnPos.y = p.y + (c.y - p.y) * t;
@@ -1745,37 +1710,20 @@ const VISITORS = {
   kingfisher: { name: 'kingfisher', a: 'a kingfisher', emoji: '', badge: 'kfisher:0', art: 'kfisher:0', tint: '#3d9cc6', for: 'the fish in', home: 'pond', size: 1.1, fade: S.KF_FADE, glyph: true },
   skylark: { name: 'skylark', a: 'a skylark', emoji: '', badge: 'lark:3', art: 'lark:3', tint: '#a8895f', for: 'the open ground of', home: 'strip', size: 1.1, fade: S.LARK_FADE, glyph: true },
 };
-const capital = t => t[0].toUpperCase() + t.slice(1);
 const visitorFace = kind => {      // its painting, for the inspector
   const art = VISITORS[kind].art;
   if (!portraits.has(art)) portraits.set(art, dataURL(sprite(art, 38).canvas));
   return `<img src="${portraits.get(art)}" alt="${VISITORS[kind].name}"${VISITORS[kind].glyph ? ' style="width: 115%"' : ''}>`;   // (a painting has room round it)
 };
-// Its emoji, in a line of text (the news, the away card); or a painted one's portrait, as a CSS background
-// (--glyph-heron), so the news kept with the meadow holds a few bytes, not the picture. sil: its shadow, for a kind not
-// yet seen (as on its empty page in the journal).
-function visitorGlyph(kind, sil) {
-  const k = VISITORS[kind];
-  if (!k.glyph && !sil) return k.emoji;
-  glyphVar(kind);
-  return `<i class="visitor-glyph${sil ? ' sil' : ''}" style="background-image: var(--glyph-${kind})" role="img" aria-label="${sil ? 'something' : k.name}"></i>`;
-}
-function glyphVar(kind) {
-  const k = VISITORS[kind];
-  if (!k.glyphed) { visitorFace(kind); document.documentElement.style.setProperty('--glyph-' + kind, `url(${portraits.get(k.art)})`); k.glyphed = true; }
-}
 // Where it came to: the hedge, the pond or the strip; and a link to it.
 const visitorPlace = v => (v.hedge ? v.hedge.name : v.strip ? v.strip.name : world.waters[v.pond.id].name);
-const placeLink = v => (v.hedge ? hedgeLink(v.hedge, esc(v.hedge.name)) : v.strip ? thingLink('field', v.strip.id, esc(v.strip.name))
+const placeLink = v => (v.hedge ? esc(v.hedge.name) : v.strip ? thingLink('field', v.strip.id, esc(v.strip.name))
   : thingLink('water', v.pond.id, esc(visitorPlace(v))));
 const HOG_STEP = 0.16;             // tiles a step of its walk
 const HERON_STEP = 0.2;            // and of a heron's stalk
 const visitorPx = v => (8 + cam.zoom) * VISITORS[v.kind].size;
 // Its feet are on the ground where a rabbit's would be, however big it's drawn: this far below the point it's drawn round.
 const visitorFeet = () => 0.36 * (8 + cam.zoom);
-// How far above that point the top of its head is drawn (for its marker).
-const TOPS = { heron: 0.8, kingfisher: 0.62, skylark: 0.5, dragonfly: 0.4 };   // the top of its head over its feet, in its size
-const visitorTop = v => { const px = visitorPx(v); return v.kind === 'hedgehog' ? px * 0.6 : visitorUp(v, px) + px * TOPS[v.kind] - visitorFeet(); };
 // How high over the ground it's drawn (its feet, or a dragonfly's middle), in px.
 function visitorUp(v, px) {
   switch (v.kind) {
@@ -1852,7 +1800,6 @@ const wadingAt = v => !world.frozen && world.water[(v.y | 0) * S.W + (v.x | 0)] 
 function drawHeron(v, sx, sy, now, z, px, a) {
   const feet = sy + visitorFeet(), up = heronLift(v, px), art = heronArt(v, up, px, now), flip = v.facing > 0, alpha = a < 1 ? a : undefined;
   const y = feet - px * 0.36 - up;
-  if (gaze.on && art === 'heron:6') lookAt('fish', sx, y, v);
   if (up > 1 || !wadingAt(v)) drawEmoji(art, sx, y, px, { flip, alpha });
   else {
     const line = feet - px * 0.04, legs = sx + (flip ? -1 : 1) * px * 0.1, rip = 1 + 0.12 * Math.sin(now / 300 + v.id);
@@ -1982,261 +1929,6 @@ function drawSkylark(v, sx, sy, now, z, px, a) {
   }
   if (v.mode === 'sleep' && z >= 8) drawEmoji('💤', sx + px * 0.25, y - px * 0.4 + Math.sin(now / 600 + v.id) * 3, Math.max(11, z * 0.7), { alpha: 0.85 });
 }
-// A visitor's sign (sim.js w.signs), flat on the ground: a hedgehog's tracks, a few prints along the way it'll come in to
-// the hedge, or a heron's feather on the bank of its pond.
-function drawSigns(z) {
-  for (const s of world.signs) {
-    if (s.kind === 'heron') {
-      const [sx, sy] = toScreen(s.x, s.y);
-      if (visible(sx, sy, 30)) drawEmoji('🪶', sx, sy, Math.max(10, z * 0.7), { alpha: 0.95 });
-      continue;
-    }
-    for (let k = 1; k <= 3; k++) {
-      const [sx, sy] = toScreen(s.x + Math.cos(s.a) * k * 0.9, s.y + Math.sin(s.a) * k * 0.9);
-      if (visible(sx, sy, 20)) drawEmoji('🐾', sx, sy, Math.max(8, z * 0.45), { alpha: 0.7 });
-    }
-  }
-}
-// The field journal (?keep): a page for each kind that lives here or comes by, filled the first time you see one. It's
-// the player's, not the meadow's (JOURNAL, in the browser), so a new meadow keeps it. A page: { first: when (ms), t: the
-// meadow's tick then (older pages have its season), seen: how many visits seen (a visitor's), most: the most of them
-// alive at once in a meadow of yours (a kind that lives here), glimpsed: a visitor came and went unseen, new: not yet
-// looked at in the journal }. A visitor is seen once a visit (v.seen, kept with the meadow): its marker looked at, or a
-// tap on it. A kind that lives here, once you've looked at one up close (lookAt) or followed one.
-const JOURNAL = 'aeon-garden-journal';
-let journal = {};
-try { journal = JSON.parse(localStorage.getItem(JOURNAL) || '{}') || {}; } catch (e) { /* a private window: this visit only */ }
-const saveJournal = () => { try { localStorage.setItem(JOURNAL, JSON.stringify(journal)); } catch (e) { /* this visit only, then */ } };
-// A visitor's picture from its first sighting (snapReveal), kept apart from the journal as it's a few tens of KB:
-// { kind: { src (a JPEG data URL), where, t } }.
-const PHOTOS = 'aeon-garden-journal-photos';
-let photos = {};
-try { photos = JSON.parse(localStorage.getItem(PHOTOS) || '{}') || {}; } catch (e) { /* a private window: this visit only */ }
-// Its chapters: the seasons of a keeper meadow's arc, from the first spring through the Dry Year to the came-through
-// card at the start of the winter after (arc: which season of it, arcSeason's count). A page sits in the first season its
-// kind can come in. dry: the Dry Year's, its hints there from the start.
-const CHAPTERS = [
-  { k: 'spring', name: 'The first spring', arc: 0 },
-  { k: 'summer', name: 'The first summer', arc: 1 },
-  { k: 'autumn', name: 'The first autumn', arc: 2 },
-  { k: 'winter', name: 'The first winter', arc: 3 },
-  { k: 'dryspring', name: 'The Dry Year’s spring', arc: 4, dry: true },
-  { k: 'drysummer', name: 'The Dry Year’s summer', arc: 5, dry: true },
-  { k: 'rain', name: 'The rain comes back', arc: 6 },
-];
-const CHAPTER = Object.fromEntries(CHAPTERS.map(c => [c.k, c]));
-// Its pages in order, numbered, a chapter at a time. art: its painting (a function where it's worked out), fit: how much
-// bigger it's shown (a tall one painted with room round it); a: its name in a sentence; ch: its chapter; note: what a
-// found page says; riddle: an empty one's hint, and plain (a visitor's) once one's come and gone unseen, saying what it
-// wants; where and when it comes. tool: the one that draws it (KEEP_TOOLS), on its empty page: only the first two
-// visitors have one, the rest are for working out.
-const PAGES = [
-  { k: 'rabbit', name: 'Rabbit', a: 'a rabbit', ch: 'spring', art: () => rabbitArtOf(COAT.wild, 'sit'),
-    note: 'Grazes the open grass at dawn and dusk and digs its burrows there. Stamps and bolts when a fox comes.',
-    riddle: 'Something nibbles the short grass round the burrows.' },
-  { k: 'fox', name: 'Fox', a: 'a fox', ch: 'spring', art: () => foxArtOf(0.2, 'stand'),
-    note: 'Hunts the rabbits, and pounces on voles in the long grass when rabbits are few.',
-    riddle: 'Something red trots the meadow at dusk, after the rabbits.' },
-  { k: 'bee', name: 'Honeybee', a: 'a honeybee', ch: 'spring', art: 'bee:2',
-    note: 'Lives in a hollow oak and sips from the flowers in reach. One back from a rich patch dances the way.',
-    riddle: 'Something hums over the flowers by an old hollow oak.' },
-  { k: 'crow', name: 'Crow', a: 'a crow', ch: 'spring', art: 'crow:0',
-    note: 'Walks the short grass for grubs and clears up what the foxes leave. Buries acorns in autumn, and some grow into oaks.',
-    riddle: 'Something black walks the short grass, pecking.' },
-  ...(S.OWLS ? [{ k: 'owl', name: 'Tawny owl', a: 'a tawny owl', ch: 'spring', art: '🦉',
-    note: 'Sleeps in a hollow oak by day, and drops on the voles in the long grass at night.',
-    riddle: 'Something calls from the hollow oaks at night.' }] : []),
-  { k: 'vole', name: 'Vole', a: 'a vole', ch: 'spring', art: 'vole:0',
-    note: 'Lives hidden in the long grass the rabbits leave, in thousands in a vole year. The foxes listen for them.',
-    riddle: 'Something rustles in the long grass. Watch a fox listening there.' },
-  { k: 'frog', name: 'Common frog', a: 'a frog', ch: 'spring', art: 'frog:0',
-    note: 'Spawns in still shallows early in spring. A flood pool is best, unless it dries before the tadpoles leave.',
-    riddle: 'Something hops at the water’s edge, spring to autumn.' },
-  { k: 'fish', name: 'Trout', a: 'a trout', ch: 'spring', art: '🐟',
-    note: 'Lives in the water that lasts the year round, the deeper the better, and eats the tadpoles. Otters dive for it.',
-    riddle: 'Something silver lives in the deep water. Watch an otter fishing.' },
-  { k: 'otter', name: 'Otter', a: 'an otter', ch: 'spring', art: 'otter:3',
-    note: 'Makes its holt in the roots of a big tree on the bank. Fishes from dusk into the morning, and slides down the bank for fun.',
-    riddle: 'Something slides into the water at dusk, by a big tree on the bank.' },
-  { k: 'heron', name: 'Heron', a: 'a heron', ch: 'spring', art: 'heron:0', fit: 1.45, visits: true, tool: 'pond', where: 'A pond with frogs', when: 'By day, spring to autumn',
-    note: 'Comes to a pond you dug once the frogs have found it. Stands stock still in the shallows, then stabs for a frog or a fish.',
-    riddle: 'Something tall stalks the frogs in a pond you dug.',
-    plain: 'A heron: it wants a pond you dug that the frogs have found. One came and flew off before you saw it, and it will be back.' },
-  { k: 'skylark', name: 'Skylark', a: 'a skylark', ch: 'spring', art: 'lark:3', fit: 1.15, visits: true, where: 'A strip in the open', when: 'By day, spring and summer',
-    note: 'Nests on the ground in open flowers and grass, far from any tree. Rises singing till it’s a speck, hangs there singing, and drops back down.',
-    riddle: 'Something sings from high over flowers out in the open, where no tree or hedge stands near.',
-    plain: `A skylark: it wants a strip of flowers out in the open, nothing standing within ${S.LARK_OPEN} tiles of it, no tree and no hedge. One came and went before you saw it, and it will be back.` },
-  { k: 'hedgehog', name: 'Hedgehog', a: 'a hedgehog', ch: 'summer', art: 'hog:0', visits: true, tool: 'hedge', where: 'A thick hedge', when: 'Dusk, spring to autumn',
-    note: 'Comes to a thick hedge at dusk for the beetles under it, and sleeps curled up at its foot by day. Gone in a few days.',
-    riddle: 'Something snuffles under a thick hedge at dusk.',
-    plain: 'A hedgehog: it wants a hedge thick enough to hide in. One came at dusk and left before you saw it, and it will be back.' },
-  { k: 'dragonfly', name: 'Dragonflies', a: 'dragonflies', ch: 'summer', art: 'dfly:2', fit: 1.1, visits: true, where: 'A pond on its own, with reeds', when: 'Summer, by day',
-    note: 'Lay their eggs in still water with no fish to eat their young. Hawk for midges over a pond on its own and rest on its reeds.',
-    riddle: 'Something blue darts over still water where no fish swim, and rests on the reeds.',
-    plain: 'Dragonflies: they want a pond on its own with its reeds up, in summer; fish eat their young, so not a pond joined to the river. They came and went before you saw them, and they will be back.' },
-  { k: 'kingfisher', name: 'Kingfisher', a: 'a kingfisher', ch: 'summer', art: 'kfisher:0', fit: 1.15, visits: true, where: 'A pond with fish, a tree at its edge', when: 'By day, summer and autumn',
-    note: 'Sits on a low branch over the water, drops in a dive and comes up with a fish, and beats it on the branch. The young roam in summer and autumn, looking for water of their own.',
-    riddle: 'Something blue waits over water where the fish are, on a branch that leans out over it.',
-    plain: 'A kingfisher: it wants a pond with fish in it, dug onto the river or a lake, and a tree at its edge to fish from. One came and went before you saw it, and it will be back.' },
-];
-PAGES.sort((a, b) => CHAPTER[a.ch].arc - CHAPTER[b.ch].arc);   // (a stable sort: in their order within a chapter)
-PAGES.forEach((p, i) => { p.no = String(i + 1).padStart(2, '0'); p.i = i; });
-const PAGE = Object.fromEntries(PAGES.map(p => [p.k, p]));
-// The chapters with pages in them (one with none yet isn't shown), each with its pages.
-const BOOK = CHAPTERS.map(c => ({ ...c, pages: PAGES.filter(p => p.ch === c.k) })).filter(c => c.pages.length);
-// Which season of its arc the meadow is in (CHAPTERS' arc), from its Dry Year: 0 its first spring, the four before the
-// Dry Year's spring, to 6 the autumn after; 7 or more once the arc is over. (Under 0 for a meadow whose Dry Year is
-// further off, as &dry=3 makes.)
-const arcSeason = () => (world.dryYear ? Math.floor(world.tick / S.TPD / S.SEASON_DAYS) - (world.dryYear.year - 2) * 4 : 7);
-// The frontier: a page's hint shows from the season before its chapter's (this season's and the next season's pages),
-// the Dry Year's from the start, and all of them once the arc is over.
-const hinted = p => { const c = CHAPTER[p.ch]; return c.dry || c.arc <= Math.max(0, arcSeason()) + 1; };
-// The moments to catch a visitor in, once its kind is in the journal (watchVisitor): its emoji, its name on the page, a
-// hint till it's seen, the caption's words, and quick: over in a moment, so seen as it happens (else after MOMENT_MS).
-const MOMENTS = {
-  hedgehog: [
-    { k: 'way', e: '🌙', name: 'On its way', hint: 'At dusk, as it comes or goes', say: 'a hedgehog on its way' },
-    { k: 'beetle', e: '🪲', name: 'Found a beetle', hint: 'Watch it snuffle at night', say: 'a hedgehog with a beetle', quick: true },
-    { k: 'asleep', e: '💤', name: 'Curled up asleep', hint: 'By day, at the foot of the hedge', say: 'a hedgehog curled up asleep' },
-  ],
-  heron: [
-    { k: 'wing', e: '🪶', name: 'On the wing', hint: 'As it flies in, or off', say: 'a heron on the wing' },
-    { k: 'frog', e: '🐸', name: 'Caught a frog', hint: 'Stock still, then a stab', say: 'a heron with a frog', quick: true },
-    { k: 'fish', e: '🐟', name: 'Caught a fish', hint: 'Where the fish are thick', say: 'a heron with a fish', quick: true },
-    { k: 'asleep', e: '💤', name: 'Asleep on one leg', hint: 'After dark', say: 'a heron asleep on one leg' },
-  ],
-  skylark: [
-    { k: 'song', e: '🎵', name: 'Singing high', hint: 'Up over its strip', say: 'a skylark singing high' },
-    { k: 'ground', e: '🌼', name: 'Among the flowers', hint: 'Walking its strip', say: 'a skylark among the flowers' },
-    { k: 'asleep', e: '💤', name: 'Asleep in the strip', hint: 'After dark', say: 'a skylark asleep in the flowers' },
-  ],
-  dragonfly: [
-    { k: 'hawk', e: '💨', name: 'Hawking', hint: 'Darting over the water by day', say: 'dragonflies hawking over the water' },
-    { k: 'reed', e: '🌾', name: 'On a reed', hint: 'Settled, its wings flat out', say: 'a dragonfly on a reed' },
-  ],
-  kingfisher: [
-    { k: 'dive', e: '💦', name: 'A dive', hint: 'Watch its branch', say: 'a kingfisher diving', quick: true },
-    { k: 'fish', e: '🐟', name: 'Caught a fish', hint: 'Beaten on the branch', say: 'a kingfisher with a fish', quick: true },
-    { k: 'asleep', e: '💤', name: 'Asleep on its branch', hint: 'After dark', say: 'a kingfisher asleep over the water' },
-  ],
-};
-const artOf = p => (typeof p.art === 'function' ? p.art() : p.art);
-// In the journal (a kind with no page, the owls while they're off, always is).
-const found = k => !PAGE[k] || !!journal[k]?.first;
-// Seen in this meadow (world.sighted, kept with it: its arc's tally, arcTally), and in the journal: nothing more to note.
-const seenHere = k => !PAGE[k] || world.sighted?.[k] != null;
-const noted = k => found(k) && seenHere(k);
-// How many of a kind that lives here are alive now.
-const livingCount = k => Math.round(k === 'vole' ? world.voleCount : k === 'frog' ? world.frogCount : k === 'fish' ? world.fishCount : world.count[k] || 0);
-// A sighting of a kind into the journal (visit: a visitor's, counted), and this meadow's: true the first time ever.
-function noteSighting(kind, visit) {
-  (world.sighted ||= {})[kind] ??= world.tick;
-  const page = journal[kind] ||= {}, first = !page.first;
-  if (!first && !visit) return false;              // (one that lives here, seen in another meadow before)
-  if (first) { Object.assign(page, { first: Date.now(), t: world.tick, new: true }); delete page.glimpsed; }
-  if (visit) page.seen = (page.seen || 0) + 1;
-  else page.most = livingCount(kind);
-  saveJournal();
-  if (first) book.held.add(kind);                  // (counted in the book once its stamp lands, stampFly)
-  journalChanged();
-  return first;
-}
-function sightVisitor(v) {
-  if (v.seen) return false;
-  v.seen = true;
-  if (v.wait) { v.wait = false; v.until = Math.max(v.until, world.tick + 2 * S.TPD); }   // (it waited for you: two days more to watch it)
-  return noteSighting(v.kind, true);
-}
-// A visitor that left unseen: its page half filled, its name and where it comes to.
-function glimpse(kind) {
-  const page = journal[kind] ||= {};
-  if (page.first || page.glimpsed) return;
-  Object.assign(page, { glimpsed: true, new: true });
-  saveJournal();
-  journalChanged();
-}
-// A kind that lives here is found once you've looked at one up close: drawn near the middle of the screen, as a marker
-// is seen (SPOT_ZOOM or closer), for LOOK_MS all told (a vole or a fish shows only for a moment, so a glimpse does).
-// The drawing says what it drew (lookAt, behind gaze.on, worked out once a frame), so it costs nothing at a distance
-// or once a kind is in. One find at a time, FIND_GAP apart, so a meadow's first minute isn't a pile of them.
-const LOOK_MS = { vole: 250, fish: 250 }, FIND_GAP = 2500;
-const gaze = { on: false, frame: 0, now: 0, dt: 0, x0: 0, x1: 0, y0: 0, y1: 0, calm: 0, ms: {}, at: {} };
-function lookFrame(now) {
-  gaze.dt = Math.min(100, now - gaze.now); gaze.now = now; gaze.frame++;
-  gaze.on = KEEP && !ui.hush && !away.on && !groundIn && !journalOpen() && !reveal.on && cam.zoom >= SPOT_ZOOM && world.tick > 0;
-  if (!gaze.on) return;
-  const top = topPad + SPOT_EDGE + 6, bottom = vh - Math.max(barPad, sheet ? sheet.bottom : 0) - SPOT_EDGE;
-  const left = SPOT_EDGE + (sheet ? sheet.left : 0), right = vw - SPOT_EDGE - (sheet ? sheet.right : 0), cx = (left + right) / 2, cy = (top + bottom) / 2;
-  const hw = (right - left) * 0.4, hh = (bottom - top) * 0.4;
-  gaze.x0 = cx - hw; gaze.x1 = cx + hw; gaze.y0 = cy - hh; gaze.y1 = cy + hh;
-}
-// Drawn at (sx, sy) on screen: one (o, a creature or a visitor, for its caption to follow), or something at (x, y).
-function lookAt(kind, sx, sy, o, x, y) {
-  if (noted(kind) || sx < gaze.x0 || sx > gaze.x1 || sy < gaze.y0 || sy > gaze.y1) return;
-  if (gaze.at[kind] !== gaze.frame) { gaze.at[kind] = gaze.frame; gaze.ms[kind] = (gaze.ms[kind] || 0) + gaze.dt; }
-  if (gaze.ms[kind] >= (LOOK_MS[kind] ?? SPOT_LOOK_MS) && gaze.now >= gaze.calm) findKind(kind, o, x, y);
-}
-// A visitor in a moment of MOMENTS is seen in it when it's on screen up close where a find would be (gaze): a quick one
-// as it happens, the others after MOMENT_MS. The first time ever: a caption over it, the seen chime and its emoji's stamp
-// flying into the book, and a chip on its page. Not in the first MOMENT_AFTER of its first sighting, so the reveal has its
-// moment alone; one at a time, FIND_GAP apart, as finds are. A hedgehog's finds pop up over it as a 🪲, close up.
-const MOMENT_MS = 900, MOMENT_AFTER = 15000;
-const watched = new WeakMap(), hogFinds = new WeakMap();
-function momentOf(v) {
-  if (v.kind === 'hedgehog') return v.mode === 'sleep' ? 'asleep' : v.mode === 'in' || v.mode === 'out' ? 'way' : '';
-  if (v.kind === 'skylark') return v.mode === 'sing' ? 'song' : v.mode === 'walk' || v.mode === 'peck' ? 'ground' : v.mode === 'sleep' ? 'asleep' : '';
-  if (v.kind === 'dragonfly') return v.mode === 'dart' || v.mode === 'hover' ? 'hawk' : v.mode === 'perch' || v.mode === 'roost' ? 'reed' : '';
-  if (v.kind === 'kingfisher') return v.mode === 'under' ? 'dive' : v.mode === 'beat' ? 'fish' : v.mode === 'sleep' ? 'asleep' : '';
-  if (v.mode === 'gulp') return v.caught;
-  if (v.mode === 'sleep') return 'asleep';
-  return (v.mode === 'in' || v.mode === 'out' || v.mode === 'hop') && heronLift(v, visitorPx(v)) > visitorPx(v) * 0.3 ? 'wing' : '';
-}
-// Drawn at (x, y), (sx, sy) on screen (or off it): each frame, for each visitor.
-function watchVisitor(v, x, y, sx, sy) {
-  let key = momentOf(v);
-  if (v.kind === 'hedgehog' && hogFinds.get(v) !== v.finds) {
-    const was = hogFinds.get(v);
-    hogFinds.set(v, v.finds);
-    if (was !== undefined && v.finds > was) { key = 'beetle'; if (cam.zoom >= 10) addEffect('🪲', x, y - 0.25, 0.5, 1100); }
-  }
-  if (!key || !gaze.on || gaze.now < gaze.calm || sx < gaze.x0 || sx > gaze.x1 || sy < gaze.y0 || sy > gaze.y1) return;
-  const pg = journal[v.kind], m = MOMENTS[v.kind]?.find(o => o.k === key);
-  if (!m || !pg?.first || Date.now() - pg.first < MOMENT_AFTER || pg.moments?.[key]) return;
-  if (!m.quick) {
-    let w = watched.get(v);
-    if (!w || w.k !== key) watched.set(v, w = { k: key, ms: 0, frame: -1 });
-    if (w.frame !== gaze.frame) { w.frame = gaze.frame; w.ms += gaze.dt; }
-    if (w.ms < MOMENT_MS) return;
-  }
-  const now = performance.now();
-  (pg.moments ||= {})[key] = Date.now();
-  pg.new = true;
-  saveJournal();
-  gaze.calm = now + FIND_GAP;
-  const s = { id: ++spotId, at: now, look: 0, bx: -1e9, by: -1e9, emoji: m.e, say: `New moment: ${m.say}`, o: v, visitor: v.kind };
-  spots.push(s);
-  seeSpot(s, x, y, now);
-  setTimeout(() => stampFly(v.kind, x, y, m.e), 1300);       // (once its caption's been read)
-}
-// First seen: into the journal, with a caption over it (seeSpot), as a visitor's first sighting has.
-function findKind(kind, o, x, y) {
-  if (!noteSighting(kind)) return;
-  const now = performance.now();
-  gaze.calm = now + FIND_GAP;
-  const s = { id: ++spotId, at: now, look: 0, bx: -1e9, by: -1e9, emoji: artOf(PAGE[kind]), first: kind, o, x, y };
-  if (o && !o.species) s.visitor = o.kind;          // (a heron with a fish: the caption over the heron)
-  spots.push(s);
-  const at = spotAt(s);
-  seeSpot(s, at.x, at.y, now);
-}
-// A tap on one sees it there and then: its marker if it's waiting, or a caption of its own the first time this visit.
-function tapVisitor(v) {
-  let s = spots.find(o => o.o === v && !o.seenAt);
-  if (!s && v.seen) return;
-  if (!s) spots.push(s = Object.assign(spotOf({ type: 'visitor', v }), { id: ++spotId, at: performance.now(), look: 0, bx: -1e9, by: -1e9 }));
-  const d = drawnAt(v);
-  seeSpot(s, d.x, d.y, performance.now());
-}
 function drawVisitorShadow(v, sx, sy, sn) {
   const px = visitorPx(v), heron = v.kind === 'heron', up = visitorUp(v, px);
   if (heron && up <= 1 && wadingAt(v) || v.kind === 'kingfisher' && v.mode === 'under') return;   // (wading: the rings round its legs are its shadow)
@@ -2249,7 +1941,6 @@ function drawVisitorShadow(v, sx, sy, sn) {
 
 function drawCreature(c, sx, sy, now) {
   if (c.species === 'otter') return drawOtter(c, sx, sy, now);
-  if (gaze.on) lookAt(c.species, sx, sy, c);
   const px = creaturePx(c);
   if (wading(c)) {
     const line = sy + px * 0.3, rip = 1 + 0.12 * Math.sin(now / 260 + c.id);
@@ -3289,7 +2980,6 @@ function drawOtter(c, sx, sy, now) {
   if (wet && otterGoes(c)) drawWake(ctx, sx, sy, px, flip ? -1 : 1, now);
   const breathe = c.sleeping && ui.speed > 0 ? Math.sin(now / 650 + c.id) * 0.035 : 0;
   drawEmoji(art, sx, sy - px * 0.4 * breathe, px, { flip, squash: 1 + breathe });   // feet stay on the ground
-  if (gaze.on) { lookAt('otter', sx, sy, c); if (c.mode === 'eat') lookAt('fish', sx, sy, c); }
   if (c.mode === 'root' && px > 18 && ui.speed > 0 && ui.speed <= 4) drawDigging(c, sx, sy, px, now, flip ? -1 : 1);
 }
 // Where one slid (or slipped) into the water: drops thrown up and out, and a ring spreading. Seen at 4x or slower.
@@ -3672,7 +3362,7 @@ const walkerArt = (c, px, now) => c.species === 'fox' ? shownPose(c, foxArt(c, p
 const poseShown = new WeakMap();                         // fox or rabbit: the painting it was last drawn in
 function shownPose(c, art, px) {
   const was = poseShown.get(c);
-  if (was !== undefined && was !== art && standIns && !groundIn && (furWorker
+  if (was !== undefined && was !== art && standIns && (furWorker
     ? !furReady(art, poseStep(Math.max(4, px))) && !latestLook.has(art + '||')
     : paintedMs > PAINT_MS && !spriteReady(art, px))) return was;
   poseShown.set(c, art);
@@ -3724,7 +3414,7 @@ function rabbitArt(c, now) {
   if (c.sleeping) return art('sleep');
   if (c.mode === 'alarm') return art('alarm');
   if (c.mode === 'graze' || c.mode === 'munch') return art('graze');
-  if (c.mode === 'rest' || c.hedgeTo && S.inHedge(world, c)) return art('loaf');   // (?keep: tucked in under a hedge, crouched)
+  if (c.mode === 'rest') return art('loaf');
   if (atHole(c)) return art('dig');
   if (!movedLately(c)) return art('sit');
   const f = fastGait(c) ? 1 : 0, A = HOP.air[f], u = gaitOf(c).step % 1, v = u / A, poses = RABBIT_GAIT[f];
@@ -3940,229 +3630,6 @@ function drawBubble(emoji, sx, sy, px, grow = 1) {
   ctx.drawImage(e.canvas, bx - size / 2, by - size / 2, size, size);
 }
 
-// ------------------------------------------------------------------ worth seeing
-//
-// When something worth seeing happens (cubs out of the holt, a swarm, frogs in your pond, your hedge in flower), a
-// marker waits over the spot till you've looked: a parchment badge with what it was, bobbing, and a ring on the ground.
-// Off screen it waits at the screen's edge, pointing the way. A tap on it, or "Go see" on its line in the news, takes
-// the camera there (an animal is followed). It's seen once it's been on screen up close (SPOT_ZOOM) for SPOT_LOOK_MS
-// (SPOT_LOOK_GO when you came on purpose), and goes anyway after SPOT_S; only the newest SPOT_MAX wait. Seen, the badge
-// gives way to its caption (say) for SAY_MS, with a sparkle and a soft chime: that's the reward for coming to look.
-// A few a frame at most: the badge and the caption are painted once.
-const SPOT_MAX = 3, SPOT_S = 90, SPOT_LOOK_MS = 1200, SPOT_LOOK_GO = 400, SPOT_FADE = 500, SPOT_R = 17, SPOT_ZOOM = 12, SPOT_EDGE = 30;
-const SAY_MS = 4200, SAY_IN = 220, SAY_OUT = 700;
-const spots = [];                    // { id, o, x, y, emoji, say, thing, at, look, going, seenAt, bx, by }
-let spotId = 0, glide = null;        // glide: where the camera's going, { x, y } (a tap on a marker)
-// The cards a marker at the edge keeps clear of (it's drawn under them), measured when they change size.
-const spotCovers = new Map();
-for (const id of ['news', 'tasks', 'guide']) {
-  const el = document.getElementById(id);
-  if (el) new ResizeObserver(() => spotCovers.set(id, el.getBoundingClientRect())).observe(el);
-}
-
-// What an event leaves to see: the emoji, what it's at (o: anything with an x and y, followed as it moves), and a
-// caption (say) that comes up over it once you've looked, so you know why you were brought there.
-const kitsOf = (sp, n) => sp === 'owl' ? (n === 1 ? 'owlet' : 'owlets') : n === 1 ? 'cub' : 'cubs';
-const NEWCOMERS = { rabbit: 'New rabbits, from the next valley', fox: 'Foxes, drawn by the rabbits', bee: 'A swarm moved into the empty hive',
-  crow: 'Crows, in over the trees', owl: 'Owls, looking for hollow oaks', otter: 'Otters, come up the water' };
-function spotOf(e) {
-  switch (e.type) {
-    case 'birth': return ['fox', 'otter', 'owl'].includes(e.mum.species) && { emoji: { fox: '🦊', otter: '🦦', owl: '🦉' }[e.mum.species], o: e.mum,
-      say: `${e.mum.name} has had ${e.kids.length} ${kitsOf(e.mum.species, e.kids.length)}` };
-    case 'cubsout': return { emoji: '🦦', o: e.c, say: `${e.c.name}, an otter cub, out of the holt` };
-    case 'holt': return { emoji: '🦦', o: e.c, say: `${e.c.name} has made a holt here` };
-    case 'fledge': return { emoji: '🦉', o: e.c, say: `${e.c.name} the owlet has left the nest` };
-    case 'arrive': return !e.founding && e.who?.length && { emoji: '🧳', o: e.who[0], say: NEWCOMERS[e.species] || 'Newcomers' };
-    case 'swarm': return { emoji: '🐝', o: e.swarm, say: `Queen ${e.queen.name}'s swarm, looking for a home` };
-    case 'settle': return { emoji: '🐝', o: e.hive, thing: ['hive', e.hive], say: `Queen ${e.queen.name}'s swarm has moved in here` };
-    case 'lightning': return e.tree && { emoji: '⚡', x: e.x, y: e.y, say: 'Lightning split this tree' };
-    case 'windthrow': return { emoji: '🪵', x: e.tree.x, y: e.tree.y, say: 'The storm brought this tree down' };
-    case 'fire': return { emoji: '🔥', x: e.x, y: e.y, say: 'Wildfire! It started here' };
-    case 'outbreak': return { emoji: '🤒', x: e.x, y: e.y, say: 'A sickness in this warren' };
-    case 'frogsfound': case 'pondgrew': {
-      const v = world.waters[e.water], at = dugSpot(e.water);
-      return v && { emoji: e.type === 'frogsfound' ? '🐸' : '🌾', ...at, thing: ['water', { body: v, ...at }],
-        say: e.type === 'frogsfound' ? `Frogs have found ${v.name}` : `Reeds have come up round ${v.name}` };
-    }
-    case 'stripbloom': return { emoji: '🌼', o: e.field, thing: ['field', e.field], say: `${e.field.name} is in flower` };
-    case 'beesfound': return { emoji: '🐝', o: e.field, thing: ['field', e.field], say: `Bees have found ${e.field.name}` };
-    case 'hedgeyoung': return { emoji: '🌿', o: e.hedge, say: `${e.hedge.name} can hide a rabbit now` };
-    case 'hedgebloom': return { emoji: '🌸', o: e.hedge, say: `${e.hedge.name} is white with blossom` };
-    case 'hedgehaws': return { emoji: '🔴', o: e.hedge, say: `${e.hedge.name} is red with haws` };
-    case 'visitorsign': {                // (tracks, a feather: what made them comes in a day or two)
-      const heron = e.s.kind === 'heron', known = found(e.s.kind);
-      return { emoji: heron ? '🪶' : '🐾', x: e.s.x, y: e.s.y, say: known ? (heron ? 'A heron’s feather: one may come soon' : 'Hedgehog tracks: one may come soon')
-        : heron ? 'A long feather. Who left it?' : 'Tracks in the dew. Who made them?' };
-    }
-    case 'visitor': {                    // (a kind never seen: a mystery, startReveal)
-      const k = VISITORS[e.v.kind], mystery = !found(e.v.kind);
-      return { emoji: k.badge, o: e.v, thing: !mystery && ['visitor', e.v], visitor: e.v.kind, stay: true, mystery,
-        say: `${capital(k.a)}, come for ${k.for} ${visitorPlace(e.v)}` };
-    }
-  }
-  return null;
-}
-
-// After an event's news (flushEvents): its marker, and "Go see" on the line it made, if it made one.
-function spotNews(e, toast) {
-  if (LAB || intro.on) return;
-  const s = spotOf(e);
-  if (!s) return;
-  Object.assign(s, { id: ++spotId, at: performance.now(), look: 0, seenAt: 0, bx: -1e9, by: -1e9 });
-  spots.push(s);
-  if (spots.length > SPOT_MAX) spots.splice(Math.max(0, spots.findIndex(o => !o.mystery)), 1);   // (a mystery waits)
-  toast?.insertAdjacentHTML('beforeend', ` <a class="go-see" data-act="spot" data-spot="${s.id}">Go see →</a>`);
-}
-
-const isAnimal = o => !!o?.species;
-function spotAt(s) {
-  if (isAnimal(s.o) || s.visitor) return drawnAt(s.o);
-  return s.o ? s.o : s;
-}
-
-function goSpot(s) {
-  s.going = true;
-  if (s.mystery && ui.speed > 1) setSpeed(1);                  // something new: time slows so you can see it
-  if (isAnimal(s.o) && s.o.alive) { select(s.o.id); return; }   // followed: the camera goes with it
-  const { x, y } = spotAt(s), close = narrow() ? 16 : 22;
-  if (s.thing) pick(...s.thing); else select(0);
-  ui.follow = false; flick.vx = flick.vy = 0;
-  glide = { x, y };
-  if (cam.zoom < close - 2) cam.goal = close;
-}
-
-// The marker a tap at (sx, sy) lands on, if any.
-function spotHit(sx, sy) {
-  const r = SPOT_R + (fingerTap ? 10 : 4);
-  return spots.find(s => !s.seenAt && (s.bx - sx) ** 2 + (s.by - sy) ** 2 < r * r);
-}
-
-// A spot's caption, painted once it's seen: the emoji and a line, on a parchment pill with a brass rim.
-function sayArt(s) {
-  const font = '800 13px Nunito, ui-rounded, system-ui, sans-serif', h = 28, pad = 12, e = 18;
-  const g0 = document.createElement('canvas').getContext('2d');
-  g0.font = font;
-  const w = Math.ceil(g0.measureText(s.say).width) + pad * 2 + e + 6, c = g0.canvas;
-  c.width = Math.ceil((w + 4) * dpr); c.height = Math.ceil((h + 6) * dpr);
-  const g = c.getContext('2d');
-  g.scale(dpr, dpr);
-  g.fillStyle = 'rgba(70, 55, 25, 0.22)';
-  g.beginPath(); g.roundRect(2, 3.5, w, h, h / 2); g.fill();
-  g.fillStyle = '#fffaf0';
-  g.beginPath(); g.roundRect(2, 2, w, h, h / 2); g.fill();
-  g.lineWidth = 1.6; g.strokeStyle = '#c99a3e'; g.stroke();
-  const big = paintedBig(s.emoji), em = sprite(s.emoji, e * big, undefined, undefined, true);
-  g.drawImage(em.canvas, 2 + pad - 2 - (big - 1) * e * 0.65, 2 + (h - em.size) / 2, em.size, em.size);   // (a painting's middle where an emoji's would be)
-  g.font = font; g.fillStyle = '#3b372f'; g.textBaseline = 'middle';
-  g.fillText(s.say, 2 + pad + e + 4, 2 + h / 2 + 0.5);
-  return { canvas: c, w: w + 4, h: h + 6 };
-}
-
-function seeSpot(s, x, y, now) {
-  s.seenAt = now;
-  const first = s.first || (s.visitor && sightVisitor(s.o) ? s.visitor : '');   // (a kind seen for the first time ever)
-  if (first && !s.first && startReveal(first, s.o)) return;     // a visitor's: a moment of its own
-  if (first) s.say = `First sighting: ${PAGE[first].a}!`;
-  if (!s.say) return;
-  s.art = sayArt(s);
-  addEffect('✨', x, y, 0.6);
-  if (first) { stampFly(first, x, y); buzz([18, 70, 28]); }
-  chime(first ? 'named' : 'seen');
-}
-
-// A painting (a visitor's: 'heron:1') sits in a box with room round it, where an emoji fills its own: asked this much bigger.
-const paintedBig = emoji => (emoji.includes(':') ? 1.5 : 1);
-const spotBadges = new Map();        // a badge for each emoji, painted once: a parchment disc, a brass rim, the emoji
-// (mystery: a gold disc and the emoji's shadow, for a visitor of a kind never seen)
-const MYSTERY_GOLD = ['#fbeab8', '#e2b75a'];
-function spotBadge(emoji, mystery) {
-  const key = emoji + '|' + dpr + (mystery ? '|?' : '');
-  let b = spotBadges.get(key);
-  if (b) return b;
-  const r = SPOT_R, size = r * 2 + 6, c = document.createElement('canvas');
-  c.width = c.height = Math.ceil(size * dpr);
-  const g = c.getContext('2d');
-  g.scale(dpr, dpr); g.translate(size / 2, size / 2);
-  g.fillStyle = 'rgba(70, 55, 25, 0.22)';
-  g.beginPath(); g.arc(0, 1.5, r + 1, 0, TAU); g.fill();
-  if (mystery) { const gold = g.createRadialGradient(-r * 0.3, -r * 0.4, 1, 0, 0, r); gold.addColorStop(0, MYSTERY_GOLD[0]); gold.addColorStop(1, MYSTERY_GOLD[1]); g.fillStyle = gold; }
-  else g.fillStyle = '#fffaf0';
-  g.beginPath(); g.arc(0, 0, r, 0, TAU); g.fill();
-  g.lineWidth = 2.2; g.strokeStyle = mystery ? '#8a5e22' : '#c99a3e'; g.stroke();
-  let e = sprite(emoji, r * 1.25 * paintedBig(emoji), undefined, undefined, true);
-  if (mystery) {                                       // its shadow, in a scratch canvas of its own
-    const sh = document.createElement('canvas'), h = sh.getContext('2d');
-    sh.width = e.canvas.width; sh.height = e.canvas.height;
-    h.drawImage(e.canvas, 0, 0);
-    h.globalCompositeOperation = 'source-in'; h.fillStyle = '#4a3820'; h.fillRect(0, 0, sh.width, sh.height);
-    e = { canvas: sh, size: e.size };
-    g.globalAlpha = 0.85;
-  }
-  g.drawImage(e.canvas, -e.size / 2, -e.size / 2, e.size, e.size);
-  g.globalAlpha = 1;
-  b = { canvas: c, size };
-  spotBadges.set(key, b);
-  return b;
-}
-
-function drawSpots(now) {
-  if (!spots.length) return;
-  const top = topPad + SPOT_EDGE + 6, bottom = vh - Math.max(barPad, sheet ? sheet.bottom : 0) - SPOT_EDGE;
-  const left = SPOT_EDGE + (sheet ? sheet.left : 0), right = vw - SPOT_EDGE - (sheet ? sheet.right : 0), cx = (left + right) / 2, cy = (top + bottom) / 2;
-  for (let i = spots.length - 1; i >= 0; i--) {
-    const s = spots[i], dt = Math.min(100, now - (s.last || now));
-    s.last = now;
-    if (s.seenAt ? now - s.seenAt > (s.art ? SAY_MS : SPOT_FADE) : (s.stay ? s.o.gone : now - s.at > SPOT_S * 1000) || (isAnimal(s.o) && !s.o.alive)) { spots.splice(i, 1); continue; }
-    if (reveal.on) continue;                                          // (a first sighting has the screen to itself)
-    const { x, y } = spotAt(s), [sx, sy] = toScreen(x, y);
-    const lift = isAnimal(s.o) ? creaturePx(s.o) * 0.75 : s.visitor ? visitorTop(s.o) : 14, bob = Math.sin(now / 420 + s.id) * 3;
-    let bx = sx, by = sy - lift - SPOT_R - 8 + bob;
-    const on = bx > left && bx < right && by > top && by < bottom;
-    if (!s.seenAt && on && cam.zoom >= SPOT_ZOOM && Math.abs(sx - cx) < (right - left) * 0.4 && Math.abs(sy - cy) < (bottom - top) * 0.4) {
-      s.look += dt;
-      if (s.look >= (s.going ? SPOT_LOOK_GO : SPOT_LOOK_MS)) seeSpot(s, x, y, now);
-    }
-    if (s.art) {                                                      // seen: its caption, where the badge was
-      const t = now - s.seenAt, a = s.art;
-      if (on) {
-        const grow = t < SAY_IN ? 0.85 + 0.15 * t / SAY_IN : 1, w = a.w * grow, h = a.h * grow;
-        const qx = clamp(bx, left + w / 2 - SPOT_EDGE + 8, right - w / 2 + SPOT_EDGE - 8), qy = by + 4 - Math.min(1, t / SAY_IN) * 6;
-        ctx.globalAlpha = Math.min(1, t / SAY_IN, (SAY_MS - t) / SAY_OUT);
-        ctx.drawImage(a.canvas, qx - w / 2, qy - h / 2, w, h);
-      }
-      continue;
-    }
-    ctx.globalAlpha = s.seenAt ? Math.max(0, 1 - (now - s.seenAt) / SPOT_FADE) : Math.min(1, (now - s.at) / 250);
-    if (on) {
-      const pulse = (now / 1400 + s.id * 0.3) % 1, r = Math.max(10, lift * 0.9) * (0.7 + pulse * 0.8);
-      ctx.strokeStyle = s.mystery ? `rgba(246, 210, 120, ${0.95 * (1 - pulse)})` : `rgba(255, 246, 220, ${0.85 * (1 - pulse)})`; ctx.lineWidth = 2.5;
-      ctx.beginPath(); ctx.ellipse(sx, sy + lift * 0.3, r, r * 0.42, 0, 0, TAU); ctx.stroke();
-      ctx.fillStyle = s.mystery ? MYSTERY_GOLD[1] : '#fffaf0';    // the badge's tail, down to the spot
-      ctx.beginPath(); ctx.moveTo(bx - 6, by + SPOT_R - 3); ctx.lineTo(bx, by + SPOT_R + 7); ctx.lineTo(bx + 6, by + SPOT_R - 3); ctx.fill();
-    } else {                                                          // at the edge, on the line from the middle to it
-      const dx = bx - cx, dy = by - cy;
-      const t = Math.min(dx > 0 ? (right - cx) / dx : dx < 0 ? (left - cx) / dx : Infinity, dy > 0 ? (bottom - cy) / dy : dy < 0 ? (top - cy) / dy : Infinity);
-      bx = cx + dx * t; by = cy + dy * t;
-      const side = Math.abs(bx - left) < 1 || Math.abs(bx - right) < 1, m = SPOT_R + 6;
-      for (const r of spotCovers.values()) {               // out from under a card, along the edge it's on
-        if (!r.height || bx < r.left - m || bx > r.right + m || by < r.top - m || by > r.bottom + m) continue;
-        if (side) by = r.top - m > top ? r.top - m : Math.min(bottom, r.bottom + m);
-        else bx = r.right + m < right ? r.right + m : Math.max(left, r.left - m);
-      }
-      const a = Math.atan2(dy, dx), ax = bx + Math.cos(a) * (SPOT_R + 7), ay = by + Math.sin(a) * (SPOT_R + 7);
-      ctx.fillStyle = '#c99a3e';
-      ctx.beginPath();
-      ctx.moveTo(ax + Math.cos(a) * 6, ay + Math.sin(a) * 6);
-      ctx.lineTo(ax + Math.cos(a + 2.2) * 7, ay + Math.sin(a + 2.2) * 7);
-      ctx.lineTo(ax + Math.cos(a - 2.2) * 7, ay + Math.sin(a - 2.2) * 7);
-      ctx.fill();
-    }
-    const b = spotBadge(s.emoji, s.mystery);
-    ctx.drawImage(b.canvas, bx - b.size / 2, by - b.size / 2, b.size, b.size);
-    s.bx = bx; s.by = by;
-  }
-  ctx.globalAlpha = 1;
-}
 
 // A label (the name over the one followed, or under the mouse) is painted once a text and copied after, in whole pixels so
 // it stays sharp: setting the font and measuring the text every frame was most of what drawing one cost.
@@ -4202,7 +3669,7 @@ function drawSelectionUnder(c, now) {
     ctx.restore();
   }
   // How far it can see.
-  if (!c.hidden && !c.held) {
+  if (!c.hidden) {
     ctx.save();
     ctx.setLineDash([6, 6]);
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
@@ -4231,7 +3698,6 @@ function drawSelectionOver(c, now) {
     ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ox, oy); ctx.stroke();
     ctx.restore();
   }
-  if (c.held && held) { const [hx, hy] = heldAt(held, now); drawLabel(c.name, hx, hy + creaturePx(c) * 0.55 + 6); return; }
   const label = c.hidden ? `${c.name} is ${c.species === 'crow' ? 'in the nest' : c.species === 'owl' ? 'in the hollow' : c.species === 'otter' ? 'in the holt' : `inside the ${c.species === 'bee' ? 'hive' : 'burrow'}`}` : c.name;
   drawLabel(label, sx, sy + (c.hidden ? cam.zoom : creaturePx(c) * 0.55) + 6);
 }
@@ -4328,7 +3794,7 @@ const FEET_RGB = [40, 50, 20];
 const FEET_SHADES = Array.from({ length: SHADE_STEPS + 1 }, (_, i) => `rgb(${FEET_RGB.map((v, j) => Math.round(lerp(v, SNOW_SHADE[j], i / SHADE_STEPS)))})`);
 function drawCreatureShadow(c, sx, sy, now, sn) {
   if (wading(c)) return;
-  const px = creaturePx(c), lift = c.held ? 0.55 : 1 - Math.min(c.sp.flies ? 0.8 : 0.5, liftOf(c, px, now) / px);
+  const px = creaturePx(c), lift = 1 - Math.min(c.sp.flies ? 0.8 : 0.5, liftOf(c, px, now) / px);
   const n = shadeStep(), a = (0.14 + 0.16 * Math.max(0, sn.a)) * lerp(1, SNOW_SHADE_A, n / SHADE_STEPS), off = Math.max(0, sn.a) * sn.lean * px * 0.2;
   ctx.fillStyle = FEET_SHADES[n];
   ctx.globalAlpha = a * lift;
@@ -5410,19 +4876,6 @@ function updateWater() {
   Ground.set('water', waterData); Ground.set('shape', shapeData);
 }
 
-// (?keep) The Dry Year: how parched each tile is, as the sim has it (world.parched), for the ground to paint the straw and
-// the green by the water and along the hedges. Handed over only when the sim works it out again (once a day, and on a dig
-// or a planting: world.parchStamp), so that very frame.
-const dryData = new Float32Array(S.W * S.H * 4);
-const parchSent = { world: null, stamp: 0 };
-function updateParch() {
-  const p = world.parched;
-  if (!Ground.ok || !p || (parchSent.world === world && parchSent.stamp === world.parchStamp)) return;
-  for (let i = 0; i < p.length; i++) dryData[i * 4] = p[i];
-  Ground.set('parched', dryData);
-  parchSent.world = world; parchSent.stamp = world.parchStamp;
-}
-
 const iceOver = () => world.ice * 0.72;   // frozen over (the sim's w.ice: it holds once it's all the way)
 
 // Little waves on open water: a small ~ that rises, drifts downwind and settles again.
@@ -5475,6 +4928,7 @@ const FLOW_FOAM = 2;               // flecks of white water, at most, to a point
 const FLOW_CHUNK = 16;             // points (8 tiles) of river looked at together
 const FLOW_FLOATS = 0.5;           // things floating in from upstream, at most, to a tile of river (by season: FLOAT_SHARE)
 const FLOAT_SHARE = [0.7, 0.4, 1, 0.3];
+const ease = u => u * u * (3 - 2 * u);
 const smooth = (a, b, x) => ease(clamp((x - a) / (b - a), 0, 1));
 let flow = null;
 function flowOf() {
@@ -5917,15 +5371,6 @@ function wash(color) { ctx.fillStyle = color; ctx.fillRect(-10, -10, vw + 20, vh
 // ------------------------------------------------------------------ weather
 
 const WET = new Set(['rain', 'storm']);
-const WEATHER_HINT = {
-  clear: 'Nothing special. The ground slowly dries out',
-  cloudy: 'Cloud shadows drift over the meadow',
-  rain: 'Grass grows three times as fast and the ground soaks up the water',
-  storm: 'Grass grows fast. Thunder sends rabbits running home, foxes curl up and wait. Lightning can start a fire on dry ground',
-  fog: 'Nobody can see very far: foxes find fewer rabbits, and rabbits spot foxes later',
-  snow: 'Grass barely grows and small animals burn extra energy to keep warm',
-  heat: 'The grass browns, running is tiring and the ground dries out fast. Careful with lightning',
-};
 
 // How much of each weather is showing, so one fades into the next. Follows game time.
 function updateSky() {
@@ -6194,7 +5639,7 @@ function drawLightning(now) {
 
 function thunder(e) {
   const now = performance.now();
-  if (now - ui.sky.boom < 250 && !zapping) return;   // at 60x, one flash at a time is plenty (but your own storm shows every bolt)
+  if (now - ui.sky.boom < 250) return;   // one flash at a time is plenty
   const path = [[0, Math.random() - 0.5]];
   for (let f = 0.12; f < 1; f += 0.08 + Math.random() * 0.08) path.push([f, Math.random() - 0.5]);
   path.push([1, 0]);
@@ -6328,7 +5773,6 @@ function drawDashes(now, z) {
     const sx = (dashes.x[k] + dashes.dx[k] * go - cam.x) * z + vw / 2, sy = (dashes.y[k] + dashes.dy[k] * go - cam.y) * z + vh / 2;
     if (!fadeAt(dashes.x[k], dashes.y[k])) continue;
     const s = sprite(frog ? 'frog:1' : 'vole:0', Math.max(9, (8 + z) * RUSTLE_PREY));
-    if (gaze.on) lookAt(frog ? 'frog' : 'vole', sx, sy, null, dashes.x[k] + dashes.dx[k] * go, dashes.y[k] + dashes.dy[k] * go);
     peepAt(s, sx, sy - (frog ? Math.sin(Math.PI * a) * s.size * 0.4 : 0), a < 0.7 ? 0.75 : 0.75 * (1 - a) / 0.3, dashes.dx[k] > 0);
   }
   unfade();
@@ -6357,7 +5801,6 @@ function drawRustle(c, to, sx, sy, z) {
   if (up <= 0) return;
   const frog = frogThere(to);
   peepAt(sprite(frog ? 'frog:0' : 'vole:0', Math.max(9, px * RUSTLE_PREY)), sx, sy, up, c.x < to.x);
-  if (gaze.on && up > 0.5) lookAt(frog ? 'frog' : 'vole', sx, sy, null, to.x, to.y);
 }
 
 // Caught: the vole (or frog) crosswise in the fox's jaws or the owl's beak while it's gulped down, gone at the last.
@@ -6366,7 +5809,6 @@ function drawRustle(c, to, sx, sy, z) {
 const MOUTH = { fox: [-0.38, 0.08, 0.3, -0.3], owl: [0.06, -0.09, 0.42, 1.35] };
 function drawCatch(c, sx, y, px) {
   const [mx, my, mz, turn] = MOUTH[c.species], s = sprite(c.prey === 'frog' ? 'frog:0' : 'vole:0', px * mz), side = flipOf(c) ? -1 : 1;
-  if (gaze.on) lookAt(c.prey === 'frog' ? 'frog' : 'vole', sx, y, c);
   ctx.save();
   ctx.globalAlpha = clamp((c.timer - acc) / 6, 0, 1);
   ctx.translate(sx + side * px * mx, y + px * my);
@@ -6447,7 +5889,6 @@ function drawPond(now, z) {
     const sx = (x - cam.x) * z + vw / 2, sy = (y - cam.y) * z + vh / 2 - lift * z;   // (toScreen, without an array)
     const size = kind === 0 ? px * 2 : kind === 1 ? px * 1.6 : px;
     if (!visible(sx, sy, size)) continue;
-    if (gaze.on && kind >= 2) lookAt('frog', sx, sy, null, x, y);
     const s = sprite(art, size);
     ctx.globalAlpha = Math.min(1, 6 * a, 6 * (1 - a)) * (kind === 0 ? 0.85 : 1);
     if (kind >= 2 && P.dx[k] > 0) {                     // (painted facing left)
@@ -6627,103 +6068,32 @@ function drawSipping(c, sx, sy, px, now) {
   ctx.globalAlpha = 1;
 }
 
-// ------------------------------------------------------------------ news
+// ------------------------------------------------------------------ links in the inspector
 
-// Every line goes in the log; only some get a toast, and those come one at a time, NEWS_GAP_MS apart (a phone, with room
-// for one, NEWS_GAP_ONE, longer after a big one), so each can be read. Big news (`how` 'big') is gold and stays longer,
-// and newer lines push the plain ones out first. The everyday lines in QUIET_NEWS go to the log only, unless they're
-// about the animal you follow (those come without a category).
-const NEWS_TOASTS = 3, NEWS_TOAST_MS = 9000, NEWS_BIG_MS = 18000, NEWS_GAP_MS = 1800, NEWS_GAP_ONE = [4500, 9000];
-const NEWS_WAITING = 3, NEWS_LOG_MAX = 80;
-const QUIET_NEWS = new Set(['birth', 'starve', 'burn', 'old', 'dug', 'escape', 'spotted', 'hatch', 'treedied', 'windthrow',
-  'fizzle', 'sky-calm', 'sprouts', 'bloom', 'surprise']);
-let newsMade = 0, lastToast = null;  // lines told so far, and the last one's toast if it got one (for "Go see", spotNews)
-const newsWaiting = [];              // toasts made but not shown yet
-let newsShown = 0, newsShownBig = false, newsPump = 0;
-function addNews(html, category, minGapMs = 0, how = '') {
-  const now = performance.now();
-  if (category && minGapMs && ui.lastNews[category] && now - ui.lastNews[category] < minGapMs) return;
-  if (category) ui.lastNews[category] = now;
-  newsMade++; lastToast = null;
-  ui.newsLog.unshift({ html, tick: world.tick });
-  ui.newsLog.length = Math.min(ui.newsLog.length, NEWS_LOG_MAX);
-  if (away.on) { awayNews(html); ui.newsStale = true; return; }   // catching up: the log, and the card if it's big
-  if (ui.newsOpen) { ui.newsStale = true; return; }   // the frame rebuilds it, once however much happened
-  if (QUIET_NEWS.has(category)) return;
-  const el = lastToast = document.createElement('div');
-  el.className = how === 'big' ? 'news-item big' : 'news-item';
+// A word now and then (a link copied, an idea that couldn't go): one small line at the top, gone in a few seconds.
+const TOAST_MS = 4000;
+function toast(html) {
+  const box = $('#news'), el = document.createElement('div');
+  el.className = 'news-item';
   el.innerHTML = html;
-  newsWaiting.push(el);
-  if (newsWaiting.length > NEWS_WAITING) {          // too much at once: the oldest plain one waiting is only in the log
-    const i = newsWaiting.findIndex(t => !t.classList.contains('big'));
-    newsWaiting.splice(Math.max(0, i), 1);
-  }
-  pumpNews();
-}
-const bigNews = html => addNews(html, null, 0, 'big');
-
-function pumpNews() {
-  if (newsPump || !newsWaiting.length) return;
-  const one = narrow(), wait = newsShown + (one ? NEWS_GAP_ONE[+newsShownBig] : NEWS_GAP_MS) - performance.now();
-  if (wait > 0) { newsPump = setTimeout(() => { newsPump = 0; pumpNews(); }, wait); return; }
-  if (ui.newsOpen || away.on) { newsWaiting.length = 0; return; }
-  const el = newsWaiting.shift(), big = el.classList.contains('big'), box = $('#news');
-  box.prepend(el);
-  newsShown = performance.now(); newsShownBig = big;
-  while (box.children.length > (one ? 1 : NEWS_TOASTS)) {   // a phone has room for one
-    const old = [...box.children].slice(1).reverse();
-    (old.find(t => !t.classList.contains('big')) || old[0]).remove();
-  }
-  setTimeout(() => { el.classList.add('gone'); setTimeout(() => el.remove(), 800); }, big ? NEWS_BIG_MS : NEWS_TOAST_MS);
-  pumpNews();
-}
-
-function renderNewsLog() {
-  ui.newsStale = false;
-  const year = S.clock(world).year;
-  $('#news-log ol').innerHTML = ui.newsLog.map(n => `<li>${seasonChip(n.tick, year)}${n.html}</li>`).join('');
-}
-
-function toggleNewsLog() {
-  ui.newsOpen = !ui.newsOpen;
-  $('#news-log').classList.toggle('hidden', !ui.newsOpen);
-  $('.news-toggle').classList.toggle('on', ui.newsOpen);
-  $('#news').innerHTML = ''; newsWaiting.length = 0;   // it's all in the log now
-  if (ui.newsOpen) renderNewsLog();
+  box.replaceChildren(el);
+  setTimeout(() => { el.classList.add('gone'); setTimeout(() => el.remove(), 800); }, TOAST_MS);
 }
 
 const link = c => c ? `<a data-id="${c.id}">${esc(c.name)}</a>` : 'someone';
-
 const esc = s => String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
-
-const SEASON_NEWS = [
-  '🌸 <b>Spring!</b> The grass is growing and love is in the air.',
-  '☀️ <b>Summer.</b> Long days and plenty to eat.',
-  '🍂 <b>Autumn.</b> Grass is slowing down. Time to fatten up.',
-  '❄️ <b>Winter.</b> The grass has stopped growing. Lean times ahead.',
-];
-
-const WEATHER_NEWS = {
-  clear: '☀️ The clouds part. Clear skies.',
-  cloudy: '☁️ Clouds drift in over the meadow.',
-  rain: '🌧️ <b>Rain.</b> The grass drinks it up and grows three times as fast.',
-  storm: '⛈️ <b>A thunderstorm!</b> Rabbits dash for their burrows and foxes curl up to wait it out.',
-  fog: '🌫️ <b>Fog.</b> Nobody can see very far. The foxes will have to stumble onto their dinner.',
-  snow: '🌨️ <b>Snow is falling.</b> The little ones feel the cold most.',
-  heat: '🥵 <b>A heatwave.</b> The grass is drying out. One spark and it could burn.',
-};
 
 // ------------------------------------------------------------------ sound (see sound.js)
 
 // Animal sounds only play when you can see them, or when they are about the animal you follow.
 // They pan with where they happen on screen and get softer as you zoom out.
 function hear(name, x, y, opts = {}, always = false) {
-  if (!ui.sound || away.on) return;
+  if (!ui.sound) return;
   const [sx, sy] = toScreen(x, y), seen = visible(sx, sy, 40);
   if (!seen && !always) return;
   Sound.play(name, { pan: 0.8 * clamp(sx / vw * 2 - 1, -1, 1), near: seen ? clamp(cam.zoom / (3 * minZoom), 0.4, 1) : 0.2, seen, ...opts });
 }
-const chime = (name, opts) => { if (ui.sound && !away.on) Sound.play(name, opts); };
+const chime = (name, opts) => { if (ui.sound) Sound.play(name, opts); };
 
 // Bees out flying where you're looking: the hive hum follows them.
 function beesOnScreen() {
@@ -6754,448 +6124,83 @@ function involvesSelected(e) {
   return !!id && [e.c, e.a, e.b, e.mum, e.dad, e.rabbit, e.fox, e.killer].some(x => x && x.id === id);
 }
 
-// Where something happened, by the nearest thing with a name (but skip): a flower field, an old tree or the water. '' with none near.
-function placeNear(x, y, skip = null) {
-  let name = '', bd = 20 * 20;
-  const near = (px, py, n) => { const d = (px - x) ** 2 + (py - y) ** 2; if (d < bd) { bd = d; name = n; } };
-  for (const f of world.fields) if (f !== skip) near(f.x, f.y, f.name);
-  for (const d of world.decor) if (d.name && S.standing(d)) near(d.x, d.y, d.name);
-  for (let ty = Math.max(0, Math.floor(y - 20)); ty < Math.min(S.H, y + 20); ty++) {
-    for (let tx = Math.max(0, Math.floor(x - 20)); tx < Math.min(S.W, x + 20); tx++) {
-      const water = world.water[ty * S.W + tx] && S.waterAt(world, tx, ty);
-      if (water) near(tx + 0.5, ty + 0.5, water.name);
-    }
-  }
-  return name ? `by the ${esc(name)}` : '';
-}
 
-// The meadow's big water, by name: its river, else its lake, else the first.
-function bigWater() {
-  const big = world.waters.find(b => b.kind === 'river') || world.lake || world.waters[0];
-  return big ? big.name : 'The water';
-}
 
 function handleEvent(e) {
   const mine = involvesSelected(e);
-  if (idle.on) idleNews(e);
-  if (away.on) { away.type = e.type; away.mine = mine; }
   switch (e.type) {
     case 'season':
-      bigNews(SEASON_NEWS[e.season] + (e.season === 0 ? ` Year ${e.year} begins.` : ''));
       chime('season', { season: e.season });
       break;
-    case 'weather': {
+    case 'weather':
       if (WET.has(e.kind) && !WET.has(e.prev)) { chime('rain'); rainbowWet(); }
-      const text = WEATHER_NEWS[e.kind];
-      if (e.player) { addNews(text); tried('sky', SKY_SAID[e.kind]); }
-      else if (e.kind === 'clear' || e.kind === 'cloudy') addNews(text, 'sky-calm', 40000);
-      else addNews(text, 'sky', 12000);
-      if (WET.has(e.prev) && (e.kind === 'clear' || e.kind === 'cloudy') && !S.isNight(world.tick)
-        && rainbowOut()) {
-        chime('rainbow');
-        addNews('🌈 A rainbow over the meadow.', 'rainbow', 60000);
-      }
+      if (WET.has(e.prev) && (e.kind === 'clear' || e.kind === 'cloudy') && !S.isNight(world.tick) && rainbowOut()) chime('rainbow');
       break;
-    }
     case 'lightning':
       thunder(e);
       hear('thunder', e.x, e.y, {}, true);
       addEffect('💥', e.x, e.y, 0.2, 800);
-      if (e.tree && !e.fire) addNews('⚡ Lightning split a tree in two!', 'tree', 30000);
-      if (zapping) tried('zap', e.tree ? 'Crack! Lightning goes for the tallest tree about.' : 'Lightning likes trees. Try it by one.');
       break;
-    case 'hivestruck':
-      bigNews(e.fell ? `🪵 <b>Queen ${esc(e.queen.name)}'s old tree has come down!</b> Her ${e.who.length} bees swarm out and hang in a tree nearby while scouts look for a new home.`
-        : `⚡ <b>Lightning struck Queen ${esc(e.queen.name)}'s tree!</b> Her ${e.who.length} bees swarm out and hang in a tree nearby while scouts look for a new home.`);
-      break;
-    case 'mast':
-      bigNews('🌰 <b>A mast year!</b> The oaks and beeches are heavy with acorns and beechnuts. Rabbits will feast, jays will bury them, and next spring the woods will be full of seedlings.');
-      break;
-    case 'sprouts': {
-      const few = world.count.rabbit < 60 * world.room, burn = e.burnt >= Math.max(5, e.n / 4);
-      addNews(`🌱 ${e.n} tree seedlings have come up this spring${burn ? ', many on the ground the fire burned' : ''}.`
-        + (few ? ' With so few rabbits about, many may make it.' : ' The rabbits will get most of the ones out in the open.'), 'sprouts', 60000);
-      break;
-    }
-    case 'plantlost': {
-      const d = e.tree, k = treeName(d).toLowerCase(), kind = k.replace(/ tree$/, ''), small = d.size < S.SEEDLING ? `${kind} seedling` : d.size < S.SAPLING ? `${kind} sapling` : k;
-      addNews({
-        eaten: `🐇 ${e.c ? link(e.c) : 'A rabbit'} ate the ${small} you planted.`,
-        lost: `🥀 The ${small} you planted withered away: voles, slugs or a dry spell.`,
-        fire: `🔥 The fire took the ${small} you planted.`, flood: `🌊 The ${small} you planted drowned in the flood.`,
-        shade: `🌑 The ${small} you planted died in the shade of the trees about it.`, dug: `🕳️ Rabbits dug a burrow right where your ${small} stood.`,
-      }[e.cause] || `🍂 The ${k} you planted in the ${plantedWhen(d)} has died of old age.`);
-      break;
-    }
-    case 'dugpond': {                   // (?keep) the keeper dug a pond
-      const q = pondWords({ water: e.lasting + e.spring, summer: e.lasting + e.dryOut, dry: e.lasting });
-      const what = `${q.head[0].toLowerCase()}${q.head.slice(1)}, ${q.size}${q.lasts ? `, ${q.lasts}` : ''}${e.deep ? ', deep in the middle' : ''}`;
-      const frogs = e.frogs < 0 ? 'No frogs live near enough to find it yet.' : e.frogs <= 2 ? 'Frogs live right by it.' : `Frogs ${e.frogs} tiles off could find it.`;
-      if (e.bigger) addNews(`⛏️ You made ${thingLink('water', e.water, `<b>${esc(e.name)}</b>`)} bigger, by ${q.size}${q.lasts ? ` (${q.lasts})` : ''}.`);
-      else addNews(`⛏️ You dug ${thingLink('water', e.water, `<b>${esc(e.name)}</b>`)}: ${what}. ${frogs}`);
-      break;
-    }
-    case 'dryahead':                    // (?keep) the Dry Year, from the start
-      bigNews(`☀️ <b>The Dry Year comes in the summer of year ${e.year}.</b> No rain from spring till autumn, and the meadow will brown away from the water. `
-        + 'Ponds, flowers and cover where the animals live will see them through.');
-      break;
-    case 'dryspring':
-      bigNews(`🌧️ <b>The spring rains failed:</b> ${esc(bigWater())} is low, and the Dry Year is coming.`);
-      break;
-    case 'drystart':
-      bigNews('☀️ <b>The Dry Year:</b> no rain till autumn, and the meadow browns away from the water.');
-      break;
-    case 'dryend':
-      bigNews('🌧️ <b>The rain is back:</b> the Dry Year is over.');
-      break;
-    case 'drythrough':                  // (?keep) came through it: the news, and a card saying what it came to
-      bigNews(`🌈 <b>The meadow came through the Dry Year.</b> At its worst, ${Math.round(e.low * 100)}% of it was still green.`);
-      lostCard.pending = true;
-      break;
-    case 'dryloss': {                   // (?keep) the Dry Year was lost: a card, and the meadow runs on
-      const why = e.why === 'barren' ? ' The meadow went barren.' : e.species === 'frogs' ? ' The last frog is gone.' : '';   // (the last of any other kind was just told)
-      bigNews(`${e.why === 'barren' ? '🥀' : '😢'} <b>The Dry Year is lost.</b>${why}`);
-      lostCard.pending = true;
-      break;
-    }
-    case 'frogsfound':
-      addNews(`🐸 Frogs found ${thingLink('water', e.water, esc(world.waters[e.water].name))}${e.from > 2 ? `, from ${e.from} tiles off` : ''}.`);
-      break;
-    case 'pondgrew':
-      pond = null;                        // the shore's reeds and lilies, worked out again
-      addNews(`🌾 Reeds have come up round ${thingLink('water', e.water, esc(world.waters[e.water].name))}.`);
-      break;
-    case 'sowstrip': {                  // (?keep) the keeper sowed a strip of flowers
-      const f = e.field, where = placeNear(f.x, f.y, f);
-      addNews(`🌼 You sowed ${thingLink('field', f.id, `<b>${esc(f.name)}</b>`)}, a strip of ${kindWords(f.kind)}${where ? ' ' + where : ''}: `
-        + `${BLOOM_WHEN[e.bloom].toLowerCase()}. ${hivesNear(e.hives)}.`);
-      break;
-    }
-    case 'stripbloom':
-      addNews(`🌼 Your strip ${thingLink('field', e.field.id, esc(e.field.name))} is in flower: ${kindWords(e.field.kind)}.`);
-      break;
-    case 'beesfound':
-      addNews(`🐝 Bees found your strip ${thingLink('field', e.field.id, esc(e.field.name))}${e.queen ? `, from Queen ${esc(e.queen.name)}’s hive` : ''}.`);
-      break;
-    case 'hedgeplant': {                // (?keep) the keeper planted a hedge, or made one longer
-      const h = e.hedge, where = placeNear(e.x, e.y), n = `${e.whips} ${e.whips === 1 ? 'hawthorn' : 'hawthorns'}`;
-      if (e.bigger) addNews(`🌿 You planted ${n} more along ${hedgeLink(h, `<b>${esc(h.name)}</b>`)}.`);
-      else addNews(`🌿 You planted ${hedgeLink(h, `<b>${esc(h.name)}</b>`)}, a hedge of ${n}${where ? ' ' + where : ''}: `
-        + `thick enough to hide a rabbit ${comingWhen(e.young)}, and blossom ${comingWhen(e.blossom)}.`);
-      break;
-    }
-    case 'hedgeyoung':
-      addNews(`🌿 Your hedge ${hedgeLink(e.hedge, esc(e.hedge.name))} is thick enough now to hide a rabbit from a fox.`);
-      break;
-    case 'hedgebloom':
-      addNews(`🌸 Your hedge ${hedgeLink(e.hedge, esc(e.hedge.name))} is white with may blossom, and the bees come.`);
-      break;
-    case 'hedgehaws':
-      addNews(`🔴 Your hedge ${hedgeLink(e.hedge, esc(e.hedge.name))} is red with haws: the birds will carry them off.`);
-      break;
-    case 'visitor': {                   // (?keep) a hedgehog come to a hedge, a heron to a pond, ...
-      const v = e.v, k = VISITORS[v.kind], at = placeLink(v), who = thingLink('visitor', v.id, k.name), em = visitorGlyph(v.kind);
-      if (!found(v.kind)) {             // a kind never seen: it waits for you (sim.js v.wait), and its news doesn't say what it is
-        v.wait = true;
-        const what = { heron: `tall is flying in to ${at}</b>, the pond you dug.`, hedgehog: `is snuffling under your hedge ${at}.</b>`,
-          dragonfly: `is darting over ${at}</b>, the pond you dug.`, kingfisher: `blue is flashing low over the water to ${at}</b>, the pond you dug.`,
-          skylark: `is singing high over your strip ${at}.</b>` }[v.kind];
-        bigNews(`${visitorGlyph(v.kind, true)} <b>Something ${what} A new page for your journal?`);
-        break;
-      }
-      const again = v.n > 1;
-      (again ? addNews : bigNews)(`${em} ${{
-        heron: again ? `A ${who} is back at ${at}, the pond you dug, after its frogs.` : `<b>A ${who} is flying in to ${at}</b>, the pond you dug, for its frogs.`,
-        hedgehog: again ? `A ${who} is at your hedge ${at} again, snuffling for beetles.` : `<b>A ${who} has come to your hedge ${at}</b>, for ${k.for} it.`,
-        dragonfly: again ? `${thingLink('visitor', v.id, 'Dragonflies')} are back over ${at}, the pond you dug.`
-          : `<b>${thingLink('visitor', v.id, 'Dragonflies')} have come to ${at}</b>, the pond you dug, for its still water with no fish.`,
-        kingfisher: again ? `A ${who} is back on its branch over ${at}.` : `<b>A ${who} has come to ${at}</b>, for the fish in it, and the tree at its edge to fish from.`,
-        skylark: again ? `A ${who} is singing over your strip ${at} again.` : `<b>A ${who} has come down to your strip ${at}</b>, out in the open.`,
-      }[v.kind]}`);
-      break;
-    }
-    case 'visitorsign': {               // (?keep) tracks by a hedge, a feather by a pond: a visitor on its way (sim.js w.signs)
-      const s = e.s, known = found(s.kind);
-      if (s.kind === 'heron') {
-        const at = thingLink('water', s.pond.id, esc(world.waters[s.pond.id].name));
-        addNews(known ? `🪶 A heron's feather on the bank of ${at}: one has been looking it over, and may be back soon.`
-          : `🪶 <b>A long feather</b> on the bank of ${at}, the pond you dug. Something tall has been looking at it.`);
-      } else {
-        const at = hedgeLink(s.hedge, esc(s.hedge.name)), when = s.day === Math.floor(world.tick / S.TPD) ? 'tonight' : 'soon';
-        addNews(known ? `🐾 Hedgehog tracks in the dew along ${at}: one has been looking round, and may come ${when}.`
-          : `🐾 <b>Little tracks in the dew</b> along your hedge ${at}. Something has been snuffling round it in the night.`);
-      }
-      break;
-    }
-    case 'visitorleft': {
-      if (KEEP && !e.v.seen) glimpse(e.v.kind);
-      const v = e.v, k = VISITORS[v.kind], stayed = days((world.tick - v.came) / S.TPD);
-      const fed = v.kind === 'heron' ? heronCaught(v) : v.kind === 'kingfisher' && v.fish ? (v.fish === 1 ? 'a fish' : `${v.fish} fish`) : '';
-      const went = { hedgehog: 'has left', dragonfly: 'have left' }[v.kind] || 'has flown off from';
-      addNews(`${visitorGlyph(v.kind)} The ${k.name} ${went} ${placeLink(v)} after ${stayed}${fed ? `, ${fed} the fatter` : ''}.`);
-      break;
-    }
-    case 'plantgrew':
-      addNews(`🌿 The ${plantedLink(e.tree)} you planted is a sapling now, out of the rabbits' reach.`);
-      break;
-    case 'plantseeds':
-      addNews(`🌰 The ${plantedLink(e.tree)} you planted in the ${plantedWhen(e.tree)} is bearing its first seed.`);
-      break;
-    case 'treedied': {
-      const d = e.tree, t = thingLink('tree', d.id, esc(treeTitle(d).replace(/^Dead /, 'The old ')));
-      addNews(`🍂 ${t} has died, ${Math.floor(e.age)} years old.` + (d.hive ? ' Its bees stay on in the dead trunk, for now.' : ' It will stand a while yet, grey and bare.'), 'treedied', 30000);
-      break;
-    }
-    case 'windthrow': {
-      const d = e.tree, t = thingLink('tree', d.id, esc(e.alive ? (d.name ? `the ${d.name}` : `a big ${treeName(d).toLowerCase()}`) : `a dead ${treeName(d).toLowerCase()}`));
-      addNews(`🌬️ The storm brought down ${t}.`, 'windthrow', 20000);
-      break;
-    }
     case 'fire':
-      if (e.set) break;                 // the player's own: burnAt tells of it
-      bigNews('🔥 <b>Wildfire!</b> Lightning set the dry grass alight. Everyone is running.');
       hear('fire', e.x, e.y, {}, true);
       break;
-    case 'fireout': {
-      const pct = e.burned / world.water.reduce((n, v) => n + (v ? 0 : 1), 0) * 100;
+    case 'fireout':
       if (e.burned >= 25) chime('fireout');
-      const trees = e.trees === 1 ? ' and one tree' : e.trees ? ` and ${e.trees} trees` : '';
-      if (e.burned >= 25) addNews(`🌱 The fire is out after burning ${pct < 1 ? 'a corner' : Math.round(pct) + '%'} of the meadow${trees}. The ash will feed fresh shoots.`);
-      else if (e.trees) addNews(`💨 The fire fizzled out, but it took ${e.trees === 1 ? 'a tree' : e.trees + ' trees'} with it.`);
-      else addNews('💨 The fire fizzled out.', 'fizzle', 30000);
       break;
-    }
     case 'love':
       addEffect('💕', (e.a.x + e.b.x) / 2, (e.a.y + e.b.y) / 2);
       hear('love', e.a.x, e.a.y, { species: e.a.species }, mine);
-      if (mine) addNews(`💕 ${link(e.a)} and ${link(e.b)} fell in love.`);
       break;
-    case 'birth': {
+    case 'birth':
       addEffect('✨', e.mum.x, e.mum.y, 0.8);
-      const n = e.kids.length, fox = e.mum.species === 'fox';
-      hear('birth', e.mum.x, e.mum.y, { species: e.mum.species, kids: n }, mine);
-      const crow = e.mum.species === 'crow', owl = e.mum.species === 'owl', otter = e.mum.species === 'otter';
-      const what = fox || otter ? (n === 1 ? 'cub' : 'cubs') : e.mum.species === 'bee' ? (n === 1 ? 'young bee' : 'young bees') : crow ? (n === 1 ? 'chick' : 'chicks')
-        : owl ? (n === 1 ? 'owlet' : 'owlets') : (n === 1 ? 'baby' : 'babies');
-      const text = `${fox ? '🦊' : crow ? '🪺' : owl ? '🦉' : otter ? '🦦' : '🍼'} ${link(e.mum)} had ${n} ${what}` + (e.dad ? ` with ${link(e.dad)}` : '')
-        + (crow ? ', up in the nest.' : owl ? `, in the hollow of the old oak. ${n === 1 ? 'Few voles about this spring: only the one.' : n === 3 ? 'Voles aplenty to feed them.' : ''}`
-          : otter ? ', down in the holt. They\'ll be out in a few days.' : '.');
-      if (mine || fox || owl || otter) addNews(text);
-      else addNews(text, 'birth', 9000);
-      if (e.surprise.length) {
-        const n = {};
-        for (const k of e.surprise) { const c = S.coatOf(k.genes); n[c] = (n[c] || 0) + 1; }
-        const what = Object.entries(n).map(([c, m]) => `${m === 1 ? 'a' : m} ${S.COATS[c].name} ${m === 1 ? 'baby' : 'babies'}`).join(' and ');
-        const t = `🎨 Surprise! ${link(e.mum)}` + (e.dad ? ` and ${link(e.dad)}` : '') + ` had ${what}.`;
-        if (mine) addNews(t); else addNews(t, 'surprise', 20000);
-      }
+      hear('birth', e.mum.x, e.mum.y, { species: e.mum.species, kids: e.kids.length }, mine);
       break;
-    }
     case 'death': {
       const c = e.c;
       if (e.cause !== 'left') hear(e.cause === 'fox' || e.cause === 'owl' ? 'catch' : e.cause === 'age' ? 'old' : 'starve', c.x, c.y, { species: c.species }, mine);   // (one flying off makes no sound)
       if (e.cause === 'fox' || e.cause === 'owl') addEffect('🦴', c.x, c.y, 0.3, 1800);
       else if (e.cause !== 'left') addEffect('👻', c.x, c.y, 1.6, 2000);
-      if (e.cause === 'fox') {
-        const t = `🦊 ${link(e.killer)} caught ${link(c)}${c.species === 'crow' ? ' the crow, off its guard' : ''}.`;
-        if (mine) addNews(t); else addNews(t, 'catch', 25000);
-      } else if (e.cause === 'owl') {
-        const t = `🦉 ${link(e.killer)} the owl dropped silently out of the dusk and took ${link(c)}, a young rabbit still out.`;
-        if (mine) addNews(t); else addNews(t, 'owlcatch', 20000);
-      } else if (e.cause === 'left') {
-        if (mine) addNews(c.species === 'otter' ? `🦦 ${link(c)} has gone off down the water to find a stretch of its own.`
-          : `🦉 ${link(c)} has flown off over the trees to find a wood of its own.`);   // the rest: the 'owlleaves' and 'otterleaves' news
-      } else if (e.cause === 'hunger') {
-        const t = c.species === 'fox' ? `🥀 ${link(c)} the fox starved. There weren't enough rabbits or voles.`
-          : c.species === 'bee' ? `🥀 ${link(c)} the bee starved. The hive ran out of honey.`
-          : c.species === 'crow' ? `🥀 ${link(c)} the crow starved.`
-          : c.species === 'owl' ? `🥀 ${link(c)} the owl starved. There weren't enough voles in the long grass.`
-          : c.species === 'otter' ? `🥀 ${link(c)} the otter starved${world.frozen ? ', shut out of the water by the ice' : ''}.`
-          : `🥀 ${link(c)} starved.`;
-        if (mine || c.species === 'fox' || c.species === 'owl' || c.species === 'otter') addNews(t); else addNews(t, 'starve', 12000);
-      } else if (e.cause === 'lightning') {
-        addNews(`⚡ ${link(c)} was struck by lightning.`);
-      } else if (e.cause === 'fire') {
-        const t = `🔥 ${link(c)} was caught in the wildfire.`;
-        if (mine) addNews(t); else addNews(t, 'burn', 6000);
-      } else if (e.cause === 'flood') {
-        if (mine) addNews(`🌊 ${link(c)} drowned when the burrow flooded.`);   // the rest are in the 'flooded' news
-      } else if (e.cause === 'ice') {
-        if (mine) addNews(`🧊 ${link(c)} went through the ice and drowned.`);   // the rest are in the 'ice' news
-      } else if (e.cause === 'sickness') {
-        if (mine) addNews(`🤒 ${link(c)} died of the sickness.`);            // the rest are in the 'outbreak' news
-      } else {
-        const age = Math.floor(S.ageDays(world, c));
-        const fam = c.kids ? `, leaving ${c.kids} ${c.kids === 1 ? 'child' : 'children'}` : '';
-        const t = `🌙 Old ${link(c)} died peacefully at ${age} days${fam}.`;
-        if (mine || c.kids >= 10) addNews(t); else addNews(t, 'old', 15000);
-      }
       break;
     }
-    case 'hatch': {
+    case 'hatch':
       hear('birth', e.hive.x, e.hive.y, { species: 'bee', kids: e.kids.length });
-      const t = `🐣 Young bees are hatching in Queen ${esc(e.queen.name)}'s hive.`;
-      addNews(t, 'hatch', 60000);
       break;
-    }
     case 'queen':
       hear('queen', e.hive.x, e.hive.y, {}, true);
-      addNews(`👑 <b>Queen ${esc(e.queen.name)}</b> has settled in the hive.`);
       break;
     case 'queenlost':
       hear('queenlost', e.hive.x, e.hive.y, {}, true);
-      addNews(e.hive.cluster ? `🥀 Queen ${esc(e.queen.name)}'s swarm never found a home.`
-        : `🥀 Queen ${esc(e.queen.name)} died in the empty hive, after raising ${e.queen.kids} ${e.queen.kids === 1 ? 'bee' : 'bees'}.`);
       break;
     case 'swarm':
       addEffect('✨', e.swarm.x, e.swarm.y);
       hear('arrive', e.swarm.x, e.swarm.y, { species: 'bee' }, true);
-      bigNews(`🐝 <b>A swarm!</b> Queen ${esc(e.queen.name)} has left her crowded hive with ${e.who.length} bees. They hang in a tree while scouts look for a new home. Her daughter, Queen ${esc(e.heir.name)}, stays behind.`);
       break;
     case 'settle':
       addEffect('✨', e.hive.x, e.hive.y);
-      addNews(`🏡 Queen ${esc(e.queen.name)}'s swarm has moved into ${e.reused ? 'an empty hive, old comb and all' : 'a hollow tree'}.`);
       break;
-    case 'water': {
-      const name = bigWater();
-      addNews(e.rising ? `🌊 ${esc(name)} has risen over its banks. The low meadows are under water.`
-        : `☀️ ${esc(name)} has dropped low for the summer. There are more places to wade across.`);
+    case 'flooded':
+      addEffect('🌊', e.burrow.x, e.burrow.y, 0.8);
       break;
-    }
-    case 'ice': {
-      const river = world.waters.find(b => b.kind === 'river') || world.lake || world.waters[0];
-      const name = river ? esc(river.name) : 'The water';
-      if (e.frozen) { bigNews(`🧊 <b>${name} has frozen over.</b> The ice will hold anyone now, foxes too.`); break; }
-      const { fell, drowned } = e, who = fell.slice(0, 3).map(link).join(', ') + (fell.length > 3 ? ` and ${fell.length - 3} more` : '');
-      let t = `💧 The ice is breaking up on ${name}.`;
-      if (fell.length) t += ` ${who} went through and scrambled out, soaked.`;
-      if (drowned.length) t += ` ${drowned.length === 1 ? 'A youngster' : drowned.length + ' youngsters'} out on the ice drowned.`;
-      addNews(t);
-      break;
-    }
-    case 'outbreak': {
-      const where = placeNear(e.x, e.y);
-      bigNews(`🤒 <b>A sickness is going round the warren${where ? ' ' + where : ''}.</b> In a crowded meadow it spreads fast.`);
-      break;
-    }
-    case 'outbreakover':
-      addNews(`🌤️ The sickness has died down after ${days(e.days)}.` + (e.dead
-        ? ` It took ${e.dead} ${e.dead === 1 ? 'rabbit' : 'rabbits'}. Those who pulled through won't catch it again for a while.` : ' Nobody died of it.'));
-      break;
-    case 'gathering': {
-      const where = placeNear(e.remains.x, e.remains.y);
-      addNews(`🐦‍⬛ <b>${e.n} crows</b> have gathered at the remains of ${link(e.remains.c)}${where ? ' ' + where : ''}. With the sickness going round, the crows are eating well.`);
-      break;
-    }
-    case 'owlnest': {
-      const d = e.tree;
-      addNews(`🦉 ${link(e.c)} the owl has taken the hollow of ${thingLink('tree', d.id, d.name ? 'the ' + esc(d.name) : 'an old oak')} to nest in. Listen for the hoots at night.`, 'owlnest', 20000);
-      break;
-    }
-    case 'fledge':
-      addNews(`🪶 ${link(e.c)} the owlet has left the hollow${e.mum ? ` and follows ${link(e.mum)} about in the dark` : ''}, a fluffy grey thing on a branch.`, 'fledge', 30000);
-      break;
-    case 'owlleaves':
-      addNews(`🦉 ${link(e.c)}, grown now, found no hollow free and is flying off to find a wood of its own.`, 'owlleaves', 30000);
-      break;
-    case 'holt': {
-      const d = e.tree;
-      addNews(`🦦 ${link(e.c)} the otter has made a holt ${holtPlace(d, 'on the bank')}.`, 'holt', 20000);
-      break;
-    }
-    case 'cubsout':
-      addNews(`🦦 ${link(e.c)} the otter cub has come out of the holt${e.mum ? ` and swims after ${link(e.mum)}` : ''}.`, 'cubsout', 30000);
-      break;
-    case 'otterleaves':
-      addNews(`🦦 ${link(e.c)}, a year old now, ${e.c.sex === 'F' ? 'found no holt free' : 'found no room here'} and is off down the water to find a stretch of its own.`, 'otterleaves', 30000);
-      break;
-    case 'buried':
-      addNews(`🌰 The crows buried ${e.n} ${e.n === 1 ? 'acorn' : 'acorns and beechnuts'} this autumn. The ones they forget will come up as oaks and beeches in the spring.`);
-      break;
-    case 'frogs': {
-      const at = e.water ? `the ${e.water.name}` : 'the shallows';
-      if (e.what === 'spawn') addNews(`🫧 <b>The frogs are spawning</b> in ${at}: a night of croaking, and clumps of frogspawn in the warm shallows.`, 'frogspawn', 30000);
-      else if (e.what === 'stranded') addNews(`🫧 The water is falling back from the pools by ${at}, and the tadpoles in them are stranded in the mud${e.grown < 0.9 ? ', not grown yet' : ''}.`, 'tadpoles', 30000);
-      else if (e.what === 'froglets') addNews(`🐸 <b>Froglets!</b> Tiny frogs are leaving ${at} for the long grass, and the foxes${S.OWLS ? ' and owls' : ''} are finding them.`, 'froglets', 30000);
-      break;
-    }
-    case 'frogyear':
-      if (e.big) bigNews('🐸 <b>A big frog year!</b> The spring was kind and the tadpoles got out in time: the wet grass by the water is hopping with frogs.');
-      else if (e.poor) addNews(`🐸 <b>A poor year for frogs.</b> ${e.stranded > 0.5 ? 'The water fell back before the tadpoles were grown, and hardly a froglet got out.' : 'Hardly a froglet made it out of the water this spring.'}`);
-      break;
-    case 'voles':
-      (e.boom ? bigNews : addNews)(e.boom ? '🐁 <b>A vole year!</b> The long grass is alive with voles, and the foxes are out mousing, leaping high to pounce.'
-        : '🐁 <b>The voles have crashed.</b> The long grass has gone quiet, and the foxes are back to hunting rabbits.');
-      break;
-    case 'windfall':
-      addNews(e.mast ? '🍂 <b>Windfalls!</b> Apples, acorns and beechnuts are dropping. Hungry rabbits are gathering under the trees.'
-        : '🍎 <b>The apples are falling.</b> Hungry rabbits are gathering under the apple trees.');
-      break;
-    case 'bloom':
-      addNews(`${e.field.emoji[0]} ${esc(e.field.name)} is in bloom.${e.field.season === 2 ? ' The last flowers before winter.' : ''}`, 'bloom', 1);
-      break;
-    case 'flooded': {
-      const { burrow: b, drowned, escaped } = e, who = escaped.slice(0, 3).map(link).join(', ') + (escaped.length > 3 ? ` and ${escaped.length - 3} more` : '');
-      addEffect('🌊', b.x, b.y, 0.8);
-      let t = escaped.length ? `🌊 The water reached a burrow. ${who} scrambled out` : '🌊 The water reached a burrow';
-      if (drowned.length) t += `${escaped.length ? ', but' : '.'} ${drowned.length === 1 ? 'a kit' : drowned.length + ' kits'} too small to climb out drowned.`;
-      else t += '.';
-      if (drowned.length || e.escaped.some(c => c.id === ui.selectedId)) addNews(t); else addNews(t, 'flooded', 20000);
-      break;
-    }
-    case 'dug': {
+    case 'dug':
       dugAt.set(e.burrow, world.tick);
       addEffect('🕳️', e.burrow.x, e.burrow.y, 0.8);
-      const t = `🕳️ ${link(e.c)} dug a new burrow.`;
-      if (mine) addNews(t); else addNews(t, 'dug', 30000);
       break;
-    }
-    case 'escape': {
+    case 'escape':
       hear('escape', e.rabbit.x, e.rabbit.y, { how: e.how }, mine);
-      const t = e.how === 'burrow' ? `💨 ${link(e.rabbit)} dived into a burrow just before ${link(e.fox)} could pounce!`
-        : e.how === 'pond' ? `🌊 ${link(e.rabbit)} put ${e.water ? e.water.name : 'the water'} between itself and ${link(e.fox)}, and got away!`
-        : e.how === 'hedge' ? `🌿 ${link(e.rabbit)} dived into your hedge${e.hedge ? `, ${hedgeLink(e.hedge, esc(e.hedge.name))},` : ''} and ${link(e.fox)} lost it.`
-        : `💨 ${link(e.rabbit)} outran ${link(e.fox)}!`;
-      if (mine || e.first) addNews(t); else addNews(t, 'escape', 11000);   // (the first into each hedge always)
       break;
-    }
-    case 'spotted': {
+    case 'spotted':
       hear('thump', e.rabbit.x, e.rabbit.y, {}, mine);
-      const t = `‼️ ${link(e.rabbit)} spotted ${link(e.fox)} sneaking up and thumped the alarm.`;
-      if (mine) addNews(t); else addNews(t, 'spotted', 20000);
       break;
-    }
     case 'extinct':
       chime('extinct');
-      bigNews({
-        rabbit: '😢 <b>The last rabbit is gone.</b>',
-        fox: '😢 <b>The last fox is gone.</b> The rabbits can relax, for now.',
-        bee: '😢 <b>The hive has gone quiet.</b> The last bee is gone.',
-        crow: '😢 <b>The last crow is gone.</b> The remains lie longer now, and the acorns lie where they fall.',
-        owl: '😢 <b>The last owl is gone.</b> The nights are quiet, and the hollow oaks stand empty.',
-        otter: '😢 <b>The last otter is gone.</b> The fish have the water to themselves.',
-      }[e.species]);
       break;
     case 'pollinate':
       puffPollen(e.x, e.y);
       break;
-    case 'arrive': {
-      if (e.family) intro.family = e.who;
-      if (e.family) addNews(`🧳 ${link(e.who[0])} and ${link(e.who[1])} moved into the meadow, with their kits ${link(e.who[2])} and ${link(e.who[3])}.`);
-      if (e.founding && e.species === 'rabbit') break;   // the rest come in quietly, a few at a time all day
-      const names = e.who.map(link).join(', ');
-      addNews({
-        rabbit: `🧳 A family of rabbits hopped in from the next valley: ${names}.`,
-        fox: `🧳 Foxes have wandered in, drawn by all the rabbits: ${names}.`,
-        bee: `🐝 A swarm has found the empty hive and moved in: ${names}.`,
-        crow: `🐦‍⬛ Crows have flown in over the trees: ${names}.`,
-        owl: `🦉 ${e.who.length === 2 ? 'A pair of tawny owls has' : 'Tawny owls have'} flown in over the trees, looking for hollow oaks: ${names}.`,
-        otter: `🦦 ${e.who.length === 2 ? 'A pair of otters has' : 'Otters have'} come up the water, looking for a bank to make a holt in: ${names}.`,
-      }[e.species]);
+    case 'arrive':
       for (const c of e.who) addEffect('✨', c.x, c.y);
       hear('arrive', e.who[0].x, e.who[0].y, { species: e.species }, true);
       break;
-    }
   }
 }
 
@@ -7225,7 +6230,6 @@ const word = (t, v) => t.words[band(v)];
 // a repaint, and the card and inspector refresh four times a second. So only touch what changed.
 const shownHTML = new WeakMap();
 function setHTML(el, html) { if (shownHTML.get(el) !== html) { shownHTML.set(el, html); el.innerHTML = html; } }
-function setText(el, text) { if (el.textContent !== text) el.textContent = text; }
 
 // The tab's icon keeps the meadow's time: the hill takes the season's colour and the sky the
 // part of the day. It's the small mark from assets/favicon.svg, one of 16 made once each. It only
@@ -7277,61 +6281,16 @@ function dialTitle(ck) {
   setHTML($('#watch-day'), `${S.SEASONS[ck.season].name} · day ${ck.dayInSeason}<span> · year ${ck.year}</span>`);
 }
 
-// ?keep: under the watch, the Dry Year's ribbon (#forecast), like Frostpunk's forecast. A pip a season from this one on
-// (8, a phone 6) in the dial's colours, the Dry Year's summer parched, and under them one line: how long till it comes,
-// or till its summer ends. This season's pip fills as the days go, like the dial's year. The pips are built once a
-// season, a meadow or a crossing between phone and desktop size; then only the fill moves, once a day, and the line when
-// its words change. In the autumn after, the line says the rain is back, and then the ribbon goes. While the Dry Year
-// is on, the dial's year ring shows its summer parched too (#dial.dry). A hover says more, a tap says it under the watch.
-const forecast = { el: $('#forecast'), on: false, w: null, key: '', day: -1, line: '', dry: false };
-const DRY_ABOUT = 'The Dry Year: no rain from its spring to the end of its summer. The water drops, and the grass away '
-  + 'from it turns to straw. What helps: a pond, flowers and a hedge near where the animals live.';
-function forecastTick() {
-  if (!KEEP) return;
-  const stage = S.dryStage(world), on = S.dryComing(world) || stage === 3;
-  if (on !== forecast.on) { forecast.on = on; forecast.el.classList.toggle('hidden', !on); document.documentElement.classList.toggle('ribbon', on); }
-  if (!stage !== !forecast.dry) { forecast.dry = !!stage; dial.el.classList.toggle('dry', forecast.dry); }
-  if (!on) return;
-  const season = S.SEASON_DAYS * S.TPD, now = Math.floor(world.tick / season), dry = (world.dryYear.year - 1) * 4 + 1;
-  const n = narrow() ? 6 : 8, key = `${now}:${n}`;
-  if (key !== forecast.key || world !== forecast.w) {
-    forecast.key = key; forecast.w = world; forecast.day = -1;
-    forecast.el.title = stage === 3 ? 'The Dry Year is over and the rain is back. The grass greens again through the autumn.'
-      : stage === 2 ? DRY_ABOUT : `${DRY_ABOUT} It comes in the summer of year ${world.dryYear.year}.`;
-    let pips = '';
-    for (let i = now; i < now + n; i++) pips += `<span class="pip s${i % 4}${i === dry ? ' dry' : ''}${i === now ? ' now' : ''}">${i === dry ? '<i>☀️</i>' : ''}</span>`;
-    forecast.el.querySelector('.pips').innerHTML = pips;
-  }
-  const day = Math.floor(world.tick / S.TPD) % S.SEASON_DAYS;
-  if (day !== forecast.day) { forecast.day = day; forecast.el.querySelector('.pip.now').style.setProperty('--p', `${(day + 1) / S.SEASON_DAYS * 100}%`); }
-  const ahead = dry - now, left = Math.ceil((S.dryTo(world) - world.tick) / S.TPD * 2) / 2;
-  const days = `${Math.floor(left) || ''}${left % 1 ? '½' : ''} ${left > 1 ? 'days' : 'day'}`;
-  const line = stage === 3 ? '🌧️ <b>Rain again</b>'
-    : world.dryYear.lost ? `🥀 <b>Lost</b> · rain in <b>${days}</b>`   // (lost: nothing more at stake, only the wait for the rain)
-    : stage === 2 ? `<span class="cap">Dry Year</span> <b>${days}</b> left`
-    : `<span class="cap">Dry Year</span> ${ahead <= 1 ? '<b>next season</b>' : `in <b>${ahead} seasons</b>`}`;
-  if (line !== forecast.line) { forecast.line = line; forecast.el.querySelector('.pip-line').innerHTML = line; }
-}
 
-const SPECIES_WORD = { rabbit: 'Rabbits', fox: 'Foxes', bee: 'Bees', crow: 'Crows', owl: 'Owls', otter: 'Otters' };
-
-// A few times a second: the watch's words, the weather button, the tab's icon.
+// A few times a second: the watch's words, the tab's icon.
 function updateClock() {
   const ck = S.clock(world);
   dialTitle(ck);
-  setText($('#sky-btn'), S.WEATHER[world.weather.kind].emoji);
   updateFavicon(ck);
-  if (KEEP) { updateGreen(); journalTick(); }   // (once a sim day)
 }
 
 // ------------------------------------------------------------------ the inspector
 
-// "Spring · day 3" in the season's colours, and the year when it isn't this one.
-function seasonChip(t, year) {
-  const s = S.seasonOf(t), day = Math.floor(t / S.TPD), y = Math.floor(day / S.YEAR_DAYS) + 1;
-  return `<span class="chip fr s${s}">${S.SEASONS[s].name} · day ${day % S.SEASON_DAYS + 1}</span>`
-    + (y !== year ? `<span class="yr">year ${y}</span>` : '') + '<br>';
-}
 
 function when(t) {
   t = Math.max(0, t);                    // (the intro's kits were born on the way here, before the meadow's first day)
@@ -7625,36 +6584,6 @@ function larkPanel(v, here) {
   return { emoji: face, tint: k.tint, name: 'Skylark', sub: `A visitor at ${visitorPlace(v)}`, status, facts };
 }
 
-// What a place of yours draws, or lacks, for each visitor that comes to its kind of place (the inspector: a pond's, a
-// strip's, a hedge's), each a line: here now, ready (one may come in its seasons), or what it lacks. Only kinds whose page's
-// riddle has come (hinted), so the inspector doesn't run ahead of the journal.
-const VISIT_WHEN = { hedgehog: [0, 1, 2], heron: [0, 1, 2], ...S.VISIT_SEASONS };
-const NEED_WORDS = {
-  water: 'water in it', reeds: 'its reeds up, a season after you dug it', frogs: 'frogs: they find a pond from nearby water',
-  fish: 'no fish in it (they eat the young): a pond on its own, not joined to the river or a lake',
-  nofish: 'fish in it, which come in only from the river or a lake it joins', perch: 'a tree at its edge, or on an island in it, to fish from',
-  open: `nothing standing within ${S.LARK_OPEN} tiles of it, no tree and no hedge`, flowers: 'its first flowers', young: 'to be thick enough to hide in',
-};
-function seasonsWords(list) {
-  const names = list.map(seasonName);
-  return list.length === 3 ? 'spring to autumn' : names.join(' and ');
-}
-function placeLines(kinds, o) {
-  const lines = [], season = S.seasonOf(world.tick);
-  for (const kind of kinds) {
-    if (pageState(kind) === 'later') continue;
-    const k = VISITORS[kind], here = world.visitors?.find(v => v.kind === kind && (v.pond === o || v.strip === o || v.hedge === o) && v.mode !== 'out');
-    const who = capital(k.a), glyph = visitorGlyph(kind);
-    if (here) { lines.push(`${glyph} ${thingLink('visitor', here.id, who)} ${kind === 'dragonfly' ? 'are' : 'is'} here now`); continue; }
-    const needs = kind === 'heron' ? [!o.wet && 'water', !o.found && 'frogs'].filter(Boolean) : kind === 'hedgehog' ? (o.young ? [] : ['young']) : S.placeNeeds(world, kind, o);
-    const when = VISIT_WHEN[kind], they = kind === 'dragonfly';
-    if (needs.length) lines.push(`${glyph} ${who} would want ${needs.map(n => NEED_WORDS[n]).join(', and ')}`);
-    else lines.push(`${glyph} Everything ${k.a} ${they ? 'want' : 'wants'} is here: ${when.includes(season) ? (they ? 'they may come any day' : 'one may come any day')
-      : `${they ? 'they come' : 'one comes'} ${seasonsWords(when)}`}`);
-  }
-  return lines.length ? [['Visitors', lines.join('<br>')]] : [];
-}
-
 const VISITOR_PANELS = { hedgehog: (v, here) => hogPanel(v, here), heron: (v, here) => heronPanel(v, here), dragonfly: dragonPanel, kingfisher: kingPanel, skylark: larkPanel };
 const THINGS = {
   visitor: {                                               // (?keep) a hedgehog at a hedge, a heron at a pond, ...: before the trees, as a hedgehog is at the foot of one
@@ -7724,7 +6653,7 @@ const THINGS = {
     show(d) {
       const name = treeTitle(d), kind = treeName(d).toLowerCase();
       if (!this.here(d)) return { emoji: '🍂', tint: '#b8a47a', name, sub: 'Gone', status: (d.size < S.SAPLING ? '🍂 It didn\'t make it.' : '🍂 It has rotted away into the ground.')
-        + (d.planted ? ` You planted it in the ${plantedWhen(d)}.` : '') };
+ };
       const stage = S.treeStage(world, d), age = S.treeAge(world, d), k = S.TREES[d.kind], i = tileOf(d.x, d.y), wood = world.wood[i];
       const where = wood >= 0.95 ? 'deep in the wood' : wood >= 0.6 ? 'at the edge of the wood' : 'standing on its own';   // as plantTrees tells them
       const living = S.standing(d), young = YOUNG.has(stage);
@@ -7739,9 +6668,6 @@ const THINGS = {
       else status = treeSeason(d);
       const facts = [], parent = d.parent && world.decor.find(o => o.id === d.parent);
       const from = parent ? thingLink('tree', parent.id, treeTitle(parent).replace(/^The /, 'the ')) : `an old ${kind} long gone`;
-      if (d.planted) facts.push(['🤲', `You planted this in the ${plantedWhen(d)}`]);
-      const hedge = d.hedge && world.hedges?.find(h => h.id === d.hedge);
-      if (hedge) facts.push(...hedgeFacts(hedge));
       if (living || d.stump) facts.push(['🎂', `${age < 1 ? days(age * S.YEAR_DAYS) : `${Math.floor(age)} ${Math.floor(age) === 1 ? 'year' : 'years'}`} old`]);
       if (d.sprouted) facts.push(['🪵', 'Grew again from the stump of a tree lightning took']);
       else if (d.by === 'crow') facts.push(['🐦‍⬛', `Grew from ${k.mast === 'acorns' ? 'an acorn' : 'a beechnut'} a crow carried off from ${from}, buried, and forgot`]);
@@ -7780,8 +6706,7 @@ const THINGS = {
       const STAGES = { seedling: 'Seedling', sapling: 'Sapling', young: 'Young', grown: 'Grown', old: 'Old', dead: 'Dead', log: 'Fallen', stump: 'Stump' };
       return {
         emoji: d.stump || d.fallen ? '🪵' : d.dead ? '🪾' : stage === 'seedling' ? '🌱' : d.emoji, tint: d.dead ? '#b8a47a' : '#7fb24a', name,
-        sub: hedge ? `${STAGES[stage]} · part of ${esc(hedge.name)}` : `${STAGES[stage]} · ${where}`, status, facts,
-        sections: hedge ? placeLines(['hedgehog'], hedge) : [],
+        sub: `${STAGES[stage]} · ${where}`, status, facts,
         meters: living ? [['Grown', d.size / Math.max(d.max, d.size), ''], ['Age', age / d.life, age > d.life * 0.85 ? 'low' : '']] : null,
       };
     },
@@ -7902,13 +6827,12 @@ const THINGS = {
       let status;
       if (world.water[p.i]) status = '🌊 Under the flood';
       else if (open) status = p.sipped && world.tick - p.sipped < S.REFILL ? '🐝 Sipped dry, filling up with nectar again' : '🍯 Open and full of nectar';
-      else if (world.parched && world.parched[p.i] > S.WILT) status = '🥀 Wilted: too far from the water in the Dry Year';
       else if (f && season === f.season) status = '🐇 Nibbled down: it blooms once the grass grows back';
       else if (f) status = `🌿 Just leaves: it blooms in ${seasonName(f.season)}`;
       else status = '🌿 Not in flower';
       const sections = f ? [['Part of', `${f.emoji[0]} ${thingLink('field', f.id, esc(f.name))}`]] : [];
       return {
-        emoji: e, tint: f ? `rgb(${f.tint})` : '#9cc65a', name: inBloom ? (f.strip ? f.kind.names[Math.floor(p.kind * f.kind.names.length)] : f.name.split(' ')[0]) : PLANT_NAMES[e] || 'Plant',
+        emoji: e, tint: f ? `rgb(${f.tint})` : '#9cc65a', name: inBloom ? f.name.split(' ')[0] : PLANT_NAMES[e] || 'Plant',
         sub: f ? `In the ${f.name}` : 'Growing wild', status, sections,
         meters: [['Grass', g, g < 0.3 ? 'low' : '']],
       };
@@ -7922,9 +6846,8 @@ const THINGS = {
       const season = S.seasonOf(world.tick), plants = world.plants.filter(p => p.field === f), open = plants.filter(p => S.isFlower(world, p)).length;
       let tiles = 0, grass = 0, voles = 0;
       for (let i = 0; i < world.fieldAt.length; i++) if (world.fieldAt[i] === f.id && !world.water[i]) { tiles++; grass += world.grass[i]; voles += world.voles[i]; }
-      const wilted = world.parched && plants.some(p => world.parched[p.i] > S.WILT);   // (?keep, the Dry Year)
       const status = season === f.season ? (open ? `${f.emoji[0]} In bloom: ${open} of ${plants.length} flowers open`
-        : wilted ? '🥀 Wilted: too far from the water in the Dry Year' : '🐇 Grazed down: no flowers open')
+        : '🐇 Grazed down: no flowers open')
         : `🌿 Resting: it blooms in ${seasonName(f.season)}`;
       const inField = c => world.fieldAt[tileOf(c.x, c.y)] === f.id;
       const now = world.creatures.filter(c => c.alive && !c.hidden && inField(c));
@@ -7935,9 +6858,6 @@ const THINGS = {
       if (now.length) sections.push(['Here now', linkList(now)]);
       const thick = tiles ? voles / tiles / S.VOLE_K : 0;         // (sim.js volesTick)
       const facts = thick > 0.15 ? [['🐁', thick > 0.5 ? 'Voles run all through the long grass here, and the foxes come mousing' : 'A few voles run in the long grass here']] : [];
-      if (f.strip) return { emoji: f.emoji[0], tint: `rgb(${f.tint})`, name: f.name, sub: `A strip of meadow flowers you sowed · ${tiles} tiles`,
-        status: stripStatus(f, open, tiles ? grass / tiles : 0), sections: [...sections, ...placeLines(['skylark'], f)], facts: [...stripFacts(f, hives.length), ...facts],
-        meters: [['Grass', tiles ? grass / tiles : 0, '']] };
       return {
         emoji: f.emoji[0], tint: `rgb(${f.tint})`, name: f.name, sub: `A field of ${f.kind.names.join(' and ').toLowerCase()} · ${tiles} tiles`,
         status, sections, facts, meters: [['Grass', tiles ? grass / tiles : 0, '']],
@@ -7961,16 +6881,13 @@ const THINGS = {
       if (world.ground[i] > T.level) facts.push(['🌧️', 'Flood water: this is dry land most of the year']);
       facts.push(waterLine());
       if (world.fords.some(f => Math.hypot(f.x - x, f.y - y) < 4)) facts.push(['🪨', 'A ford: stepping stones cross here']);
-      const dug = world.ponds?.find(p => p.id === body.id);   // (?keep: one you dug, dry where you clicked or not)
-      facts.push(...pondFacts(i, dug ? dug.id : world.body[i]));
-      if (dug) facts.push(...dugFacts(dug));
-      const sections = dug ? placeLines(['heron', 'dragonfly', 'kingfisher'], dug) : [];
+      facts.push(...pondFacts(i, world.body[i]));
       const who = whoNear(x, y, 4, c => world.water[tileOf(c.x, c.y)] && !c.sp.flies);
       if (who) facts.push(world.frozen ? ['⛸️', `On the ice: ${who}`] : ['🏊', `In the water: ${who}`]);
       const kind = body.kind[0].toUpperCase() + body.kind.slice(1);
       return {
         emoji: WATER_LOOKS[body.kind] || '💧', tint: '#6aa6d8', name: body.name,
-        sub: body.size ? `${kind} · ${body.size} tiles` : kind, facts, sections,
+        sub: body.size ? `${kind} · ${body.size} tiles` : kind, facts,
         status: world.frozen ? '🧊 Frozen over' : deep ? '🌊 Deep water' : '💧 Shallow water',
       };
     },
@@ -8054,8 +6971,6 @@ function drawPickedOver() {
 // ------------------------------------------------------------------ selection and input
 
 function select(id, zoomIn = true) {
-  const c = KEEP && id && world.byId.get(id);
-  if (c?.alive && !noted(c.species)) findKind(c.species, c);   // (?keep: following one is seeing it, for the journal)
   ui.selectedId = id;
   ui.picked = null;
   ui.trail = [];
@@ -8071,7 +6986,8 @@ function select(id, zoomIn = true) {
 // (pulled up off the line, it's the whole sheet, its top under the finger); let go and it settles open, folded or away by
 // where it is and how fast it was going. A tap on the line opens it and on the handle folds it (the click handler).
 let swipe = null, pressing = false;          // swipe: a finger on the sheet's grip; while one's down, it isn't rebuilt under it
-let sheetQuiet = 0;                          // (no tap on it just after a drag)
+let sheetQuiet = 0;
+const slide = (el, frames, ms = 240, fill = 'none') => el.animate(frames, { duration: matchMedia('(prefers-reduced-motion: reduce)').matches ? 1 : ms, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)', fill });                          // (no tap on it just after a drag)
 const SHEET_FLICK = 0.4;                     // px a ms: let go this fast and it goes the way it was going
 $('#inspector').addEventListener('pointerdown', e => {
   pressing = true;
@@ -8152,78 +7068,13 @@ function creatureAt(sx, sy) {
   return best;
 }
 
-// Tap an animal tool already in your hand and it releases more at a time: ×1, ×2, ×5, ×10.
-const GROUPS = [1, 2, 5, 10];
-function setTool(tool) {
-  if (tool === ui.tool && S.KINDS.includes(tool)) {
-    ui.group[tool] = GROUPS[(GROUPS.indexOf(ui.group[tool]) + 1) % GROUPS.length];
-    try { localStorage.setItem('aeon-garden-group', JSON.stringify(ui.group)); } catch (e) { /* fine */ }
-    showGroup();
-    return;                               // the tools stay open, so a phone can tap again
-  }
-  ui.tool = tool;
-  if (placing?.tool !== tool) dropPlace();
-  document.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === tool));
-  canvas.className = 'tool-' + tool;
-  const hand = $('#toolbar .hand');
-  hand.textContent = $(`[data-tool="${tool}"] .e`).textContent;
-  hand.classList.toggle('on', tool !== 'look');
-  showGroup();
-  toggleTools(false);
-  updateBar();
-}
-
-// The group size shows as a badge on each animal tool, and on the folded tools button while one is in hand.
-function showGroup() {
-  for (const k of S.KINDS) {
-    const b = $(`[data-tool="${k}"]`), n = ui.group[k];
-    if (!b) continue;                                       // (otters come up the water: no tool)
-    if (n > 1) b.dataset.n = '×' + n; else delete b.dataset.n;
-    b.title = `Click the meadow to release ${n > 1 ? n + ' ' + S.SPECIES[k].plural.toLowerCase() : 'a ' + S.SPECIES[k].name.toLowerCase()}`
-      + `${k === 'bee' ? '. They move into the nearest hive' : ''}. Tap again for more at a time`;
-  }
-  const hand = $('#toolbar .hand'), n = ui.group[ui.tool];
-  if (n > 1) hand.dataset.n = '×' + n; else delete hand.dataset.n;
-}
-
-// On a phone the tools fold into one button in the corner; tap it and they rise above it.
-function toggleTools(open = !$('#toolbar').classList.contains('open')) {
-  $('#toolbar').classList.toggle('open', open);
-  $('#toolbar .hand').setAttribute('aria-expanded', open);
-}
-addEventListener('pointerdown', e => { if (!e.target.closest('#toolbar')) toggleTools(false); });
-
-// The toolbar slides away while you just watch and comes back as soon as the mouse enters the spot
-// where it lives, so you stop on the buttons instead of running into the screen edge and back.
-// It stays up while a tool other than Look is in your hand.
-// Touch screens have no hover, so there the CSS keeps it up for good. At ?keep it's the bottom bar, always up.
-let barNear = true, barTimer = 0;
-function updateBar() {
-  clearTimeout(barTimer);
-  if (barNear || ui.tool !== 'look' || KEEP) document.body.classList.remove('bar-away');
-  else barTimer = setTimeout(() => document.body.classList.add('bar-away'), 200);
-}
-addEventListener('pointermove', e => {
-  if (e.pointerType !== 'mouse' || KEEP) return;
-  const bar = $('#toolbar').getBoundingClientRect(), up = !document.body.classList.contains('bar-away');
-  const pad = up ? 12 : 0;                     // once it's up, a little slack so it doesn't flicker at the rim
-  const over = e.clientX > bar.left - pad && e.clientX < bar.right + pad;
-  const near = (over && e.clientY > vh - barPad - pad) || !!e.target.closest('#toolbar');
-  if (near !== barNear) { barNear = near; updateBar(); }
-});
-document.documentElement.addEventListener('mouseleave', () => { barNear = false; updateBar(); });
-
-// A phone has no room for four speed buttons: one steps through them instead, and pause toggles.
-const SPEEDS = [1, 4, 15, 60];
-let lastSpeed = 1;
+// Paused or running: the one button in the corner, and space.
 function setSpeed(s) {
   ui.speed = s;
-  if (s) lastSpeed = s;
-  Sound.update({ speed: s });            // right away, so the first frame at 60x is already quiet
-  document.querySelectorAll('[data-speed]').forEach(b => b.classList.toggle('on', +b.dataset.speed === s));
-  const step = $('[data-act="cycle"]');
-  step.textContent = lastSpeed + '×';
-  step.classList.toggle('on', s > 0);
+  Sound.update({ speed: s });
+  const b = $('[data-act="pause"]');
+  b.textContent = s ? '⏸' : '▶';
+  b.title = s ? 'Pause (space)' : 'Carry on (space)';
 }
 
 // Two fingers pinch: the spot of meadow between them stays under them as they spread and move.
@@ -8288,9 +7139,7 @@ function startPinch() {
   const [a, b] = fingers.values(), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
   const [wx, wy] = toWorld(mx, my);
   pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, zoom: cam.zoom, wx, wy, mx, my, t0: performance.now(), moved: false };
-  dropPlace();                            // (a pond being placed: two fingers pinch instead)
   drag = null; zoomDrag = null; zoomTo = null; cam.goal = null; ui.follow = false;
-  holdHide();
 }
 
 function movePinch() {
@@ -8309,68 +7158,30 @@ function liftFinger(e) {
     if (!pinch.moved && performance.now() - pinch.t0 < DOUBLE_MS) zoomTo = { sx: pinch.mx, sy: pinch.my, z: clamp(cam.zoom / 2, fitZoom, 64) };   // two fingers tapped: out
     pinch = null;
     const [f] = fingers.values();
-    if (f) drag = { x: f.x, y: f.y, cx: cam.x, cy: cam.y, moved: true, paint: false, t: e.timeStamp, lx: f.x, ly: f.y, vx: 0, vy: 0 };
+    if (f) drag = { x: f.x, y: f.y, cx: cam.x, cy: cam.y, moved: true, t: e.timeStamp, lx: f.x, ly: f.y, vx: 0, vy: 0 };
   }
   return true;
 }
 
-// A finger held still on the meadow opens the ring there, as a right-click does (iPhones never send one).
-// While it's held a ring grows under it, so it's plain the hold is going somewhere (a quick tap is over before it shows).
-const HOLD_MS = 450;
-const HOLD_SHOW = 140;                    // the ring under a held finger waits this long before it shows
-let holdTimer = 0, holdAnim = null;
-function holdShow(x, y) {
-  holdHide();
-  if (still()) return;
-  const el = $('#hold');
-  el.style.left = x + 'px'; el.style.top = y + 'px';
-  holdAnim = el.animate([{ opacity: 0, transform: 'scale(0.35)' }, { opacity: 1, transform: 'none' }],
-    { duration: HOLD_MS - HOLD_SHOW, delay: HOLD_SHOW, easing: 'ease-out', fill: 'both' });
-}
-function holdHide() { holdAnim?.cancel(); holdAnim = null; }
-// Android buzzes a little where a hold lands, and for a first sighting. (iPhones give a web page no vibration.)
-const buzz = pattern => { try { navigator.userActivation?.hasBeenActive !== false && navigator.vibrate?.(pattern); } catch (e) { /* fine */ } };
-
 canvas.addEventListener('pointerdown', e => {
   if (!world) return;                     // (a kept meadow still opening)
-  if (intro.on) { endIntro(true); return; }
-  if (ui.ring) { closeRing(); return; }
-  if ($('#toolbar').classList.contains('open')) { toggleTools(false); return; }   // that tap only folds the tools away
-  if (e.button === 2 || (e.ctrlKey && e.pointerType === 'mouse')) return;   // that's the ring menu
-  if (held) return;                       // another finger, while one holds an animal up
+  if (e.button === 2 || (e.ctrlKey && e.pointerType === 'mouse')) return;
   canvas.setPointerCapture(e.pointerId);
   fingerTap = e.pointerType === 'touch';
   flick.vx = flick.vy = 0;
   zoomTo = null;
-  clearTimeout(holdTimer);
   if (fingerTap) fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (fingers.size >= 2) { startPinch(); return; }
   const tap = lastTap;
   lastTap = null;
-  if (fingerTap && ui.tool === 'look' && !LAB && tap && e.timeStamp - tap.t < DOUBLE_MS && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) < DOUBLE_PX) {
+  if (fingerTap && tap && e.timeStamp - tap.t < DOUBLE_MS && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) < DOUBLE_PX) {
     clearTimeout(tapAway); tapAway = 0;   // (the first tap put nothing away after all)
     const sel = ui.follow && world.byId.get(ui.selectedId), [sx, sy] = sel ? toScreen(drawnAt(sel).x, drawnAt(sel).y) : [e.clientX, e.clientY];
     zoomDrag = { id: e.pointerId, y: e.clientY, z: cam.zoom, sx, sy, moved: false };
     drag = null; cam.goal = null;
     return;
   }
-  drag = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y, moved: false, paint: (ui.tool === 'grass' || ui.tool === 'fire') && e.button === 0,
-    place: placeTool(ui.tool) && e.button === 0, t: e.timeStamp, lx: e.clientX, ly: e.clientY, vx: 0, vy: 0, id: e.pointerId,
-    grab: ui.tool === 'look' && e.button === 0 && !LAB && !KEEP ? grabAt(e.clientX, e.clientY) : null };   // dragged, it's picked up (not at ?keep)
-  if (drag.paint) paintAt(e.clientX, e.clientY);
-  else if (drag.place) placeAt(e.clientX, e.clientY, true);
-  else if (fingerTap && !LAB) {
-    const d = drag;
-    holdShow(d.x, d.y);
-    holdTimer = setTimeout(() => {
-      holdHide();
-      if (drag !== d || d.moved || fingers.size !== 1) return;
-      drag = null;                        // lifting the finger now is no tap
-      buzz(12);
-      if (d.grab && d.grab.alive && !d.grab.hidden) pickUp(d.grab, d.x, d.y, d.id);   // held on an animal: up it comes
-      else openRing(d.x, d.y);
-    }, HOLD_MS);
-  }
+  drag = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y, moved: false, t: e.timeStamp, lx: e.clientX, ly: e.clientY, vx: 0, vy: 0, id: e.pointerId };
 });
 canvas.addEventListener('pointermove', e => {
   if (!world) return;
@@ -8381,9 +7192,6 @@ canvas.addEventListener('pointermove', e => {
     if (zoomDrag.moved || Math.abs(dy) > 8) { zoomDrag.moved = true; zoomAt(zoomDrag.sx, zoomDrag.sy, zoomDrag.z * Math.exp(dy * ZOOM_DRAG)); handMoved(e.timeStamp); }
     return;
   }
-  if (intro.on) return;
-  if (held) { if (e.pointerId === held.id) { held.sx = e.clientX; held.sy = e.clientY; } return; }
-  if (!drag && placeTool(ui.tool) && e.pointerType === 'mouse') { placeAt(e.clientX, e.clientY, false); return; }   // where a tap would dig
   if (!drag) {
     const c = creatureAt(e.clientX, e.clientY);
     ui.hoverId = c ? c.id : 0;
@@ -8391,19 +7199,10 @@ canvas.addEventListener('pointermove', e => {
     return;
   }
   let dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-  if (drag.place) {                       // drawing a stroke (a pond, a strip)
-    if (!placing) return;                 // (called off)
-    if (!placing.moved && Math.abs(dx) + Math.abs(dy) > (e.pointerType === 'touch' ? 10 : 4)) placing.moved = drag.moved = true;
-    placeAt(e.clientX, e.clientY, true);
-    return;
-  }
   if (!drag.moved && Math.abs(dx) + Math.abs(dy) > (e.pointerType === 'touch' ? 10 : 4)) {
-    holdHide();
-    if (drag.grab && drag.grab.alive && !drag.grab.hidden) { pickUp(drag.grab, e.clientX, e.clientY, e.pointerId); drag = null; return; }
     drag.moved = true;
-    if (!drag.paint) { drag.x = e.clientX; drag.y = e.clientY; dx = dy = 0; }   // start from here, no jump
+    drag.x = e.clientX; drag.y = e.clientY; dx = dy = 0;   // start from here, no jump
   }
-  if (drag.paint) { paintAt(e.clientX, e.clientY); return; }
   const ms = e.timeStamp - drag.t;
   if (ms > 0) {                           // how fast the finger moves, smoothed over the last few moves
     const a = Math.min(1, ms / 40);
@@ -8420,8 +7219,6 @@ canvas.addEventListener('pointermove', e => {
   }
 });
 canvas.addEventListener('pointerup', e => {
-  holdHide();
-  if (held && e.pointerId === held.id) { fingers.delete(e.pointerId); letGo(); return; }
   if (zoomDrag && e.pointerId === zoomDrag.id) {           // a double tap: in on the spot, unless it was dragged
     fingers.delete(e.pointerId);
     if (!zoomDrag.moved) zoomTo = { sx: zoomDrag.sx, sy: zoomDrag.sy, z: clamp(cam.zoom * 2, fitZoom, 64) };
@@ -8430,35 +7227,29 @@ canvas.addEventListener('pointerup', e => {
   }
   if (liftFinger(e)) return;
   canvas.classList.remove('dragging');
-  if (drag?.place) { drag = null; digPlaced(); return; }
   if (drag && !drag.moved) {
     click(e.clientX, e.clientY);
     if (fingerTap) lastTap = { t: e.timeStamp, x: e.clientX, y: e.clientY };
   }
-  else if (drag && !drag.paint && e.pointerType === 'touch' && e.timeStamp - drag.t < 60 && Math.hypot(drag.vx, drag.vy) > 250) {
+  else if (drag && e.pointerType === 'touch' && e.timeStamp - drag.t < 60 && Math.hypot(drag.vx, drag.vy) > 250) {
     flick.vx = drag.vx; flick.vy = drag.vy;
   }
   drag = null;
 });
 canvas.addEventListener('pointercancel', e => {
-  holdHide();
-  if (held && e.pointerId === held.id) { fingers.delete(e.pointerId); letGo(); return; }
   if (zoomDrag && e.pointerId === zoomDrag.id) { fingers.delete(e.pointerId); zoomDrag = null; return; }
   if (liftFinger(e)) return;
   canvas.classList.remove('dragging');
-  if (drag?.place) dropPlace();
   drag = null;
 });
 // Safari ignores the viewport's no-zoom, and a zoomed page makes the whole meadow blurry.
 document.addEventListener('gesturestart', e => e.preventDefault());
 // Safari on a phone shows a button pressed (:active) only where something listens for touches.
 document.addEventListener('touchstart', () => {}, { passive: true });
-canvas.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') { ui.hoverId = 0; ui.hoverHive = null; if (placing && !placing.press) dropPlace(); } });   // a lifted finger leaves too
-canvas.addEventListener('contextmenu', e => { e.preventDefault(); if (!LAB && !ui.ring) openRing(e.clientX, e.clientY); });   // Android's long-press sends one too
+canvas.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') { ui.hoverId = 0; ui.hoverHive = null; } });   // a lifted finger leaves too
+canvas.addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
-  if (intro.on) { endIntro(true); return; }
-  closeRing();
   const unit = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? innerHeight : 1;   // Firefox's wheel counts lines (3 a notch, Chrome's 100 px)
   const ddx = e.deltaX * unit, ddy = e.deltaY * unit;
   const pixelPan = !e.ctrlKey && e.deltaMode === 0 && (ddx !== 0 || Math.abs(ddy) < 40);
@@ -8466,1350 +7257,28 @@ canvas.addEventListener('wheel', e => {
     const dx = wholePx(scrollRest.x + ddx), dy = wholePx(scrollRest.y + ddy);
     scrollRest = { x: scrollRest.x + ddx - dx, y: scrollRest.y + ddy - dy };   // the rest comes next time
     cam.x += dx / cam.zoom; cam.y += dy / cam.zoom;
-    ui.follow = false; glide = null; clampCam();
+    ui.follow = false; clampCam();
   } else {                            // mouse wheel or pinch: zoom
-    cam.goal = null; glide = null; zoomTo = null;
+    cam.goal = null; zoomTo = null;
     zoomAt(e.clientX, e.clientY, cam.zoom * Math.exp(-ddy * (e.ctrlKey ? 0.012 : 0.0018)));
   }
   handMoved(e.timeStamp);
 }, { passive: false });
 
-// ------------------------------------------------------------------ picking an animal up
-//
-// With Look in hand, press on an animal and drag (or hold a finger on it) and it's picked up by the scruff:
-// it dangles under the hand, swings as the hand moves, kicks now and then, and drops where you let go (sim.js
-// lift, putDown). Its place in the sim is the ground under it, so the camera, its trail and its kits go along.
-const HELD_UP = 1.6;                 // its spot on the ground is this far below the hand, in its size
-const HANG = 0.42;                   // and the middle of it this far, from the scruff
-const FOX_HANG = 0.2;                // (a fox's, painted hanging: FOX_POSES.hang)
-const RABBIT_HANG = 0.25;            // (and a rabbit's: RABBIT_POSES.hang)
-const hangOf = c => c.species === 'fox' ? FOX_HANG : c.species === 'rabbit' ? RABBIT_HANG : HANG;
-const SWING = (TAU / 0.8) ** 2;      // a swing every 0.8 s or so
-const SWING_DAMP = 2.4;              // how fast a swing dies down
-const SWING_MAX = 1.1;               // radians: it never swings up over the hand
-const LIFT_MS = 150, FALL_MS = 280;  // up into the hand, and down again (a flier glides down, twice as slow)
-const BOUNCE = 0.35;                 // a landing hop, as a share of the fall's time
-let held = null;                     // { c, id (the pointer), sx, sy (the hand), lx, ly, vx, vy, a (its swing), va, t0, from, follow }
-const falls = new Map();             // just let go: { t0, dx, h (tiles off its landing spot), a (its swing) }
-
-// The animal under a press: on its body as drawn, not the wider reach of a click, so a pan from near one stays a pan.
-function grabAt(sx, sy) {
-  let best = null, bd = Infinity;
-  const now = performance.now();
-  for (const c of world.creatures) {
-    if (c.hidden || !c.alive) continue;
-    const [x, y] = screenOf(c), px = creaturePx(c), r = Math.max(fingerTap ? 16 : 10, px * 0.5);
-    const d = (x - sx) ** 2 + (y - liftOf(c, px, now) - sy) ** 2;
-    if (d < r * r && d < bd) { best = c; bd = d; }
-  }
-  return best;
-}
-
-function pickUp(c, sx, sy, id) {
-  const now = performance.now(), px = creaturePx(c), [x, y] = screenOf(c);
-  held = { c, id, sx, sy, lx: sx, ly: sy, vx: 0, vy: 0, a: 0, va: 0, t0: now, from: [x, y - liftOf(c, px, now)],
-    follow: ui.follow && ui.selectedId === c.id };
-  ui.follow = false;                         // the camera stays put while you carry it about
-  ui.hoverId = 0; ui.hoverHive = null;
-  falls.delete(c);
-  S.lift(world, c);
-  canvas.classList.add('dragging');
-  clearTimeout(holdTimer);
-  hear('release', c.x, c.y, { species: c.species });
-  tried('carry');
-}
-
-function letGo() {
-  const h = held, c = h.c;
-  held = null;
-  canvas.classList.remove('dragging');
-  if (!c.alive) return;
-  const [x, y] = heldAt(h, performance.now()), wx = c.x, wy = c.y;
-  const at = S.putDown(world, c, wx, wy), [lx, ly] = toScreen(at.x, at.y);
-  falls.set(c, { t0: performance.now(), dx: (x - lx) / cam.zoom, h: (ly - y) / cam.zoom, a: h.a });
-  if (h.follow && ui.selectedId === c.id) ui.follow = true;
-  renderInspector();
-}
-
-// Where the middle of a held animal is on screen, and the scruff it hangs from.
-function heldAt(h, now) {
-  const px = creaturePx(h.c), u = clamp((now - h.t0) / LIFT_MS, 0, 1), e = 1 - (1 - u) ** 3;
-  const hang = px * hangOf(h.c), hx = lerp(h.from[0], h.sx, e), hy = lerp(h.from[1] - hang, h.sy, e);
-  return [hx - Math.sin(h.a) * hang, hy + Math.cos(h.a) * hang, hx, hy];
-}
-
-// Each frame: the hand's speed, and the swing it gives. It hangs like a pendulum from the hand, pushed the other way
-// as the hand speeds up, and its spot in the sim is the ground below it.
-function heldFrame(dt) {
-  const h = held, c = h.c;
-  if (!c.alive) { held = null; canvas.classList.remove('dragging'); return; }
-  if (dt > 0) {
-    const k = Math.min(1, dt * 25), vx = h.vx, vy = h.vy;
-    h.vx += ((h.sx - h.lx) / dt - h.vx) * k; h.vy += ((h.sy - h.ly) / dt - h.vy) * k;
-    h.lx = h.sx; h.ly = h.sy;
-    const ax = (h.vx - vx) / dt, L = Math.max(24, creaturePx(c) * hangOf(c));
-    h.ay = (h.vy - vy) / dt;
-    for (let n = Math.ceil(dt * 240), i = 0; i < n; i++) {
-      const s = dt / n;
-      h.va += (-SWING * Math.sin(h.a) + ax / L * 0.35 * Math.cos(h.a) - SWING_DAMP * h.va) * s;
-      h.a = clamp(h.a + h.va * s, -SWING_MAX, SWING_MAX);
-    }
-  }
-  const [wx, wy] = toWorld(h.sx, h.sy + creaturePx(c) * HELD_UP);
-  c.x = clamp(wx, 0.5, S.W - 0.5); c.y = clamp(wy, 0.5, S.H - 0.5);
-  if (Math.abs(h.vx) > 30) c.facing = h.vx > 0 ? 1 : -1;     // it looks the way it's carried
-}
-
-// Kicking its legs, a few times a second in fits; a bee buzzes, a bird flaps.
-function kickOf(c, now) {
-  if (c.species === 'bee') return Math.sin(now / 18) * 0.06;
-  const fit = Math.max(0, Math.sin(now / 520 + c.id * 1.3)) ** 3;
-  return Math.sin(now / 55 + c.id) * 0.12 * fit;
-}
-
-function drawHeld(now) {
-  const h = held, c = h.c, px = creaturePx(c), [, , hx, hy] = heldAt(h, now);
-  const stretch = 1.06 + clamp(-(h.ay || 0) * 0.00002, -0.1, 0.14);   // hanging, it stretches; jerked up, more
-  const art = c.species === 'crow' ? CROW_ARTS[2 + (((now / CROW_BEAT) | 0) & 1)] : c.species === 'fox' ? foxArtOf(c.genes.fur, 'hang')
-    : c.species === 'rabbit' ? rabbitArtOf(coatLook(c), 'hang', whiteStep(c)) : c.sp.emoji;
-  ctx.save();
-  ctx.translate(hx, hy);
-  ctx.rotate(h.a + kickOf(c, now));
-  drawEmoji(art, 0, px * hangOf(c), px, { flip: flipOf(c), squash: stretch });
-  ctx.restore();
-}
-
-// Let go, it drops to its spot and hops once as it lands, coming upright on the way. A flier glides down.
-function drawFalling(c, f, sx, sy, now) {
-  const ms = c.sp.flies ? FALL_MS * 2 : FALL_MS, u = (now - f.t0) / ms, z = cam.zoom;
-  if (u >= 1 + (c.sp.flies ? 0 : BOUNCE)) { falls.delete(c); drawCreature(c, sx, sy, now); return; }
-  const k = u < 1 ? (c.sp.flies ? 1 - (1 - u) ** 2 : u * u) : 1;
-  const hop = u < 1 ? f.h * z * (1 - k) : Math.sin(Math.PI * (u - 1) / BOUNCE) * Math.min(f.h * z * 0.15, creaturePx(c) * 0.25);
-  ctx.save();
-  ctx.translate(sx + f.dx * z * (1 - k), sy - hop);
-  ctx.rotate(f.a * (1 - k));
-  drawCreature(c, 0, 0, now);
-  ctx.restore();
-  if (u >= 1 && !f.landed) { f.landed = true; chime('click'); }
-}
-
 function click(sx, sy) {
   clearTimeout(tapAway); tapAway = 0;
-  const sp = spotHit(sx, sy);
-  if (sp) { goSpot(sp); return; }
-  const [wx, wy] = toWorld(sx, sy);
-  if (ui.tool === 'look') {
-    const c = creatureAt(sx, sy), t = !c && thingAt(sx, sy);
-    if (t) pick(t.kind, t.it, [wx, wy]);
-    else if (!c && fingerTap && (ui.selectedId || ui.picked)) tapAway = setTimeout(() => { tapAway = 0; select(0); syncBack(); }, DOUBLE_MS);   // (unless it's a double tap)
-    else select(c ? c.id : 0);
-    if (t?.kind === 'visitor') tapVisitor(t.it);
-    ui.hoverHive = null;
-  } else if (S.KINDS.includes(ui.tool)) release(ui.tool, wx, wy);
-  else if (ui.tool === 'zap') zapAt(wx, wy);
-  else if (ui.tool === 'plant') openRing(sx, sy, 'plant');
+  const c = creatureAt(sx, sy), t = !c && thingAt(sx, sy);
+  if (t) pick(t.kind, t.it, toWorld(sx, sy));
+  else if (!c && fingerTap && (ui.selectedId || ui.picked)) tapAway = setTimeout(() => { tapAway = 0; select(0); syncBack(); }, DOUBLE_MS);   // (unless it's a double tap)
+  else select(c ? c.id : 0);
+  ui.hoverHive = null;
 }
 
-// ------------------------------------------------------------------ planting a tree
-//
-// The Plant tool (or 🌳 in the ring) opens a ring of kinds where you clicked: the kind is the plan. It comes up
-// as a seedling (sim.js plantTree) and lives by the wild ones' rules; the news tells how it does (plantlost,
-// plantgrew, plantseeds), and the inspector remembers you planted it.
-const PLANT_KINDS = [['oak', '🌰', S.OWLS ? 'Oak: an owl’s hollow one day' : 'Oak: a hive’s hollow one day'], ['birch', '🌿', 'Birch: quick to grow'], ['alder', '💧', 'Alder: lines the water'], ['hawthorn', '🌹', 'Hawthorn: guards its neighbours'],
-  ['apple', '🍎', 'Apple: windfalls in autumn'], ['cherry', '🍒', 'Cherry: blossom for the bees'], ['beech', '🍂', 'Beech: bears the shade'],
-  ['maple', '🍁', 'Maple: red in autumn'], ['pine', '🌲', 'Pine: green all winter']];
-const PLANT_SAY = {
-  oak: 'Oaks are slow: in twenty years or so it could hold ' + (S.OWLS ? 'an owl, or a hive.' : 'a hive in its hollow.'),
-  birch: 'Birches grow fast and don’t live long.',
-  alder: 'Alders love wet feet: by the water its seed floats off and comes up along the banks downstream.',
-  hawthorn: 'Once it’s grown, its thorns keep the rabbits off the seedlings round it.',
-  apple: 'In a few years it drops apples in autumn, and the rabbits come for them.',
-  cherry: 'Its blossom feeds the bees in early spring.',
-  beech: 'Beeches can wait in the shade of other trees for their turn.',
-  maple: 'Maples turn red in autumn.',
-  pine: 'Pines keep their needles all winter.',
-};
-const NO_PLANT = { water: '💧 Trees don’t grow in the water.', field: '🌼 That’s a flower field: the bees need it open.',
-  burrow: '🕳️ Too close to a burrow or a hive for a tree.', crowded: '🌳 Too close to another tree or a rock.' };
-const an = w => (/^[aeiou]/.test(w) ? 'an ' : 'a ') + w;
-const plantedWhen = d => { const day = Math.floor(d.planted / S.TPD); return `${seasonName(S.seasonOf(d.planted))} of year ${Math.floor(day / S.YEAR_DAYS) + 1}`; };
-function plantAt(kind, wx, wy) {
-  const d = S.plantTree(world, wx, wy, kind);
-  if (typeof d === 'string') { addNews(NO_PLANT[d], 'noplant', 3000); return; }
-  hear('grass', wx, wy);
-  addEffect('🌱', wx, wy, 0.8, 1400);
-  tried('plant');
-  addNews(`🌱 You planted ${thingLink('tree', d.id, an(TREE_NAMES[kind].toLowerCase()))}. ${PLANT_SAY[kind]}`);
-}
-// What the news calls one: a link while it stands.
-const plantedLink = d => { const k = treeName(d).toLowerCase(); return world.decor.includes(d) ? thingLink('tree', d.id, k) : k; };
-
-// ------------------------------------------------------------------ the keeper's hand: drawing a pond, sowing a strip, planting a hedge
-//
-// At ?keep the keeper places things with a drag (PLAN.md, K2). With the spade in hand a press and a drag paint water
-// along the way, like a brush (sim.js pondPlan: every tile within POND_BRUSH of the line, deeper the further inside),
-// and a tap digs a small round pond; a mouse shows where a tap would dig before the press. With the seed in hand a
-// drag sows a strip of flowers along the way, about two tiles wide (sim.js stripPlan, sowStrip), the same way. With the
-// whips in hand a drag plants a hedge, a hawthorn every 1.5 tiles along it (sim.js hedgePlan, plantHedge), its ghost a dot
-// at each whip (hedgeGhost), green or red where something's in the way, and a tap plants one. Meanwhile a ghost shades
-// each tile by what it will be and a line by the hand says what it will bring. Letting go digs it at once, paused or
-// not (digPond); Esc, or a second finger, calls it off. The plan and its ghost are made again only when the stroke
-// reaches a new tile: the ghost is one small canvas over the stroke's box, GHOST_PX a tile, a soft blob a tile.
-const GHOST_PX = 6;
-const GHOST = { dry: 'rgb(166, 124, 82)', spring: 'rgb(150, 204, 236)', lasting: 'rgb(84, 156, 216)', deep: 'rgb(52, 112, 186)',
-  blocked: 'rgb(214, 96, 80)' };
-const GHOST_ORDER = ['dry', 'spring', 'lasting', 'deep', 'sow', 'blocked'];   // (the deep over the shallows, the islands over all)
-const BLOCKED = { tree: 'a tree', hive: 'a hive’s tree', holt: 'the otters’ holt', rock: 'a rock', burrow: 'a burrow',
-  field: 'a flower field', edge: 'the meadow’s edge', water: 'the water', flood: 'the spring flood', hedge: 'your hedge' };
-const NO_POND = { many: 'The meadow has as many ponds as it can take', water: 'That’s water already',
-  high: 'Too high: the water won’t reach', blocked: 'Something’s in the way' };
-let placing = null;                       // { tool, pts (the stroke, in tiles), press (the button is down), moved, tile, plan, full, sx, sy (the hand) }
-const ghost = document.createElement('canvas'), ghostCtx = ghost.getContext('2d');
-const ripples = [];                       // a new pond's water rings out from its middle: { x, y, rx, ry, t0 }
-const RIPPLE_MS = 1800;
-const NO_SOW = { fields: 'The meadow has as many flower fields as it can hold', water: 'Flowers don’t grow in the water',
-  tree: 'A tree’s in the way', hive: 'A hive’s tree is in the way', rock: 'A rock’s in the way', burrow: 'A burrow’s in the way: rabbits live there',
-  field: 'That’s a flower field already', edge: 'Too near the edge of the meadow' };
-const BLOOM_WHEN = { soon: 'Flowers in a day or so', days: 'Flowers in 2 or 3 days', autumn: 'Flowers in 3 days or so, just before winter',
-  spring: 'Flowers in spring' };   // (sim.js stripBloom)
-const flowersOf = n => (n === 'Heather' ? 'heather' : n === 'Daisy' ? 'daisies' : n.toLowerCase() + 's');
-const kindWords = k => k.names.map(flowersOf).join(' and ');   // a field's flowers: 'bluebells and hyacinths'
-const hivesNear = n => (n ? `${n === 1 ? 'A hive' : n + ' hives'} in reach` : 'No hive in reach: no bees will come');
-const placeTool = t => t === 'pond' || t === 'sow' || t === 'hedge';   // the tools that place with a drag
-const NO_HEDGE = { water: 'Hawthorns don’t grow in the water', flood: 'The spring flood comes up here: the whips would drown', field: 'That’s a flower field: the bees need it open', burrow: 'Too close to a burrow: rabbits live there',
-  hive: 'Too close to the hive’s tree', hedge: 'Your hedge is there already', tree: 'Too close to the trees there', rock: 'A rock’s in the way', edge: 'Too near the edge of the meadow' };
-const HEDGE_GHOST_PX = 14;                // the hedge's ghost is dots, so it's painted finer than a pond's
-const HEDGE_GHOST = { whip: 'rgb(74, 150, 62)', ring: 'rgb(36, 92, 34)', earth: 'rgb(150, 112, 74)' };
-// A strip's ghost: its flower's tint, bolder (the soft tints go grey over the grass).
-const sowTint = t => { const m = (t[0] + t[1] + t[2]) / 3; return `rgb(${t.map(v => Math.round(clamp(m + (v - m) * 2.2, 0, 255)))})`; };
-
-// The stroke so far (or, before the press, the dab a tap would make here), and its plan and ghost when it has
-// reached a new tile.
-function placeAt(sx, sy, press) {
-  const [wx, wy] = toWorld(sx, sy), p = placing, tool = ui.tool, tile = Math.floor(wy) * S.W + Math.floor(wx);
-  if (press && p?.press && p.world === world && p.tool === tool) {
-    const last = p.pts[p.pts.length - 1];
-    if (p.moved && !p.full && Math.hypot(wx - last.x, wy - last.y) >= 0.3) p.pts.push({ x: wx, y: wy });
-    if (tile !== p.tile || p.moved !== p.planMoved) { p.tile = tile; planPlace(); }
-  } else if (!p || p.press !== press || p.tile !== tile || p.world !== world || p.tool !== tool) {
-    if (wx < 0 || wy < 0 || wx >= S.W || wy >= S.H) { dropPlace(); return; }   // (off the meadow)
-    placing = { tool, pts: [{ x: Math.floor(wx) + 0.5, y: Math.floor(wy) + 0.5 }], press, moved: false, tile, world, full: false };
-    planPlace();
-  }
-  placing.sx = sx; placing.sy = sy;
-  moveLabel();
-}
-
-function planPlace() {
-  const p = placing;
-  p.planMoved = p.moved;
-  p.plan = p.tool === 'sow' ? S.stripPlan(world, p.pts) : p.tool === 'hedge' ? S.hedgePlan(world, p.pts) : S.pondPlan(world, p.pts, p.moved ? S.POND_BRUSH : S.POND_DAB);
-  if (p.plan.full) p.full = true;
-  if (p.tool === 'hedge') hedgeGhost(p.plan);
-  else paintGhost(p.plan, p.tool === 'sow' ? { ...GHOST, sow: sowTint(p.plan.kind.tint) } : GHOST);
-  placeLabel(p);
-}
-
-function dropPlace() {
-  if (!placing) return;
-  placing = null;
-  $('#place-label').classList.add('hidden');
-  if (drag?.place) drag = null;
-}
-
-// Each tile a soft round blob in the colour of what it will be, one colour at a time, so they make one shape.
-function paintGhost(p, colours) {
-  const w = (p.x1 - p.x0 + 3) * GHOST_PX, h = (p.y1 - p.y0 + 3) * GHOST_PX, r = 0.72 * GHOST_PX;
-  if (ghost.width !== w || ghost.height !== h) { ghost.width = w; ghost.height = h; } else ghostCtx.clearRect(0, 0, w, h);
-  for (const k of GHOST_ORDER) {
-    ghostCtx.beginPath();
-    let any = false;
-    for (const t of p.tiles) {
-      if ((t.k === 'lasting' && t.deep ? 'deep' : t.k) !== k) continue;
-      const x = (t.x - p.x0 + 1.5) * GHOST_PX, y = (t.y - p.y0 + 1.5) * GHOST_PX;
-      ghostCtx.moveTo(x + r, y); ghostCtx.arc(x, y, r, 0, TAU);
-      any = true;
-    }
-    if (any) { ghostCtx.fillStyle = colours[k]; ghostCtx.fill(); }
-  }
-}
-
-// A hedge's ghost: the earth along the row, faint, and a dot at each whip, green, or red where something's in the way.
-function hedgeGhost(p) {
-  const u = HEDGE_GHOST_PX, w = (p.x1 - p.x0 + 3) * u, h = (p.y1 - p.y0 + 3) * u, at = s => [(s.x - p.x0 + 1) * u, (s.y - p.y0 + 1) * u];
-  if (ghost.width !== w || ghost.height !== h) { ghost.width = w; ghost.height = h; } else ghostCtx.clearRect(0, 0, w, h);
-  ghostCtx.lineCap = ghostCtx.lineJoin = 'round';
-  ghostCtx.strokeStyle = HEDGE_GHOST.earth; ghostCtx.lineWidth = u * 1.2; ghostCtx.globalAlpha = 0.45;
-  ghostCtx.beginPath();
-  p.spots.forEach((s, k) => { const [x, y] = at(s); if (k) ghostCtx.lineTo(x, y); else { ghostCtx.moveTo(x, y); ghostCtx.lineTo(x + 0.01, y); } });
-  ghostCtx.stroke();
-  ghostCtx.globalAlpha = 1; ghostCtx.lineWidth = u * 0.1;
-  for (const s of p.spots) {
-    const [x, y] = at(s);
-    ghostCtx.fillStyle = s.blocker ? GHOST.blocked : HEDGE_GHOST.whip; ghostCtx.strokeStyle = s.blocker ? 'rgb(140, 50, 40)' : HEDGE_GHOST.ring;
-    ghostCtx.beginPath(); ghostCtx.arc(x, y - u * 0.15, u * 0.34, 0, TAU); ghostCtx.fill(); ghostCtx.stroke();
-  }
-}
-
-// When a tick to come is, in words: 'this summer', 'by autumn', 'next spring', 'in the spring of year 3'.
-const yearAt = t => Math.floor(t / S.TPD / S.YEAR_DAYS) + 1;
-function comingWhen(t) {
-  if (!t) return 'in a few years';
-  const s = seasonName(S.seasonOf(t)), now = world.tick, years = yearAt(t) - yearAt(now);
-  if (!years) return S.seasonOf(t) === S.seasonOf(now) ? `this ${s}` : `by ${s}`;
-  return years === 1 ? `next ${s}` : `in the ${s} of year ${yearAt(t)}`;
-}
-
-// A pond's water in words (a plan's, a pond's or its news'), q: { water: its tiles that hold water in spring, summer: those
-// that last an ordinary summer, dry: those that last the Dry Year's }. head: what most of it does; size: how much water
-// (never the dug tiles too high to hold any); lasts: how much of it lasts the summer to come, when not all or most of it.
-function pondWords(q) {
-  const coming = S.dryComing(world), most = n => n * 2 >= q.water, last = n => `${n} last${n === 1 ? 's' : ''}`;
-  const head = !q.water ? 'Dry: the water doesn’t reach it' : coming && most(q.dry) ? 'Water all year, even in the Dry Year'
-    : most(q.summer) ? (coming ? 'Water through an ordinary summer' : 'Water all year') : 'A spring pool, dry by summer';
-  const lasts = !q.water ? '' : coming ? (q.dry >= q.water ? '' : q.dry ? `${last(q.dry)} the Dry Year` : 'none of it lasts the Dry Year')
-    : q.summer && q.summer < q.water ? `${last(q.summer)} the summer` : '';
-  return { head, size: `${q.water} ${q.water === 1 ? 'tile' : 'tiles'} of water`, lasts };
-}
-
-// (?keep, while the Dry Year is to come or on) The Dry Year's green as the meadow is now (sim.js dryForecast), worked
-// out again only when a day, a pond or a hedge changes; and what a stroke would add to it, in a line.
-const dryBase = { key: '', f: null, wild: null };
-function dryNow() {
-  const key = `${Math.floor(world.tick / S.TPD)}:${(world.ponds || []).map(p => p.grown || p.dug).join()}:${(world.hedges || []).map(h => h.whips).join()}`;
-  if (dryBase.w !== world) dryBase.wild = S.dryForecast(world, true);   // (the meadow with no keeper: only its ground)
-  if (dryBase.key !== key || dryBase.w !== world) Object.assign(dryBase, { key, w: world, f: S.dryForecast(world) });
-  return dryBase.f;
-}
-const dryKept = () => Math.max(0, dryNow().green - dryBase.wild.green);   // the green tiles your ponds and hedges keep
-function dryLine(plan) {
-  if (!S.dryComing(world)) return '';
-  const n = S.dryGain(world, dryNow(), plan).more;
-  return n > 0 ? `☀️ Keeps ${n} more ${n === 1 ? 'tile' : 'tiles'} green in the Dry Year` : '☀️ No more green in the Dry Year';
-}
-
-// What it will bring, in a line: how much water, how much of it lasts, a deep middle or not, the green it keeps in the
-// Dry Year, and the frogs.
-function placeLabel(pl) {
-  const p = pl.plan;
-  let text;
-  if (pl.tool === 'hedge') text = p.ok ? `<b>A hawthorn hedge · ${p.whips} ${p.whips === 1 ? 'whip' : 'whips'} · thick enough to hide a rabbit ${comingWhen(p.young)} · blossom ${comingWhen(p.blossom)}</b>`
-    + `<small>${[dryLine(p), p.grows ? `Goes on with ${esc(p.grows.name)}` : '', p.blocked ? `${BLOCKED[p.blocker][0].toUpperCase() + BLOCKED[p.blocker].slice(1)}${p.blocked > 1 ? ' and more' : ''} in the way: skipped` : '',
-      pl.full ? 'as long as one row goes' : ''].filter(Boolean).join(' · ')}</small>`
-    : `<b>${NO_HEDGE[p.why]}</b>`;
-  else if (pl.tool === 'sow') text = p.ok ? `<b>A strip of ${kindWords(p.kind)} · ${p.sown} tiles · ${BLOOM_WHEN[p.bloom]}</b><small>${hivesNear(p.hives)}`
-    + `${p.blocked ? ` · ${BLOCKED[p.blocker][0].toUpperCase() + BLOCKED[p.blocker].slice(1)}${p.blocked > 1 ? ' and more' : ''} left out` : ''}${pl.full ? ' · as long as one strip goes' : ''}</small>`
-    : `<b>${NO_SOW[p.why]}</b>`;
-  else if (!p.ok) text = `<b>${NO_POND[p.why]}</b>`;
-  else {
-    const q = pondWords({ water: p.lasting + p.spring, summer: p.lasting + p.dryOut, dry: p.lasting }), grows = p.grows ? `Makes ${esc(world.waters[p.grows.id].name)} bigger · ` : '';
-    const what = `${grows}${q.head} · ${q.size}${q.lasts ? ` · ${q.lasts}` : ''}`;
-    const also = [dryLine(p), q.head.startsWith('A spring') ? 'The frogs’ favourite' : p.deep ? 'Deep middle: a rabbit can escape a fox there' : 'All shallows, as the frogs like it',
-      frogsOff(p.frogs)].filter(Boolean);
-    if (p.blocked) also.push(`${BLOCKED[p.blocker][0].toUpperCase() + BLOCKED[p.blocker].slice(1)}${p.blocked > 1 ? ' and more' : ''} left standing`);
-    if (pl.full) also.push('as big as one stroke goes');
-    text = `<b>${what}</b><small>${also.join(' · ')}</small>`;
-  }
-  const el = $('#place-label');
-  if (el.innerHTML !== text) el.innerHTML = text;
-  el.classList.remove('hidden');
-  hideTip();                              // (?keep: the tool's card gives way to this)
-}
-const frogsOff = n => (n < 0 ? 'No frogs within reach' : n <= 2 ? 'Frogs live right here' : `Frogs ${n} tiles off`);
-
-// By the hand: below and to the right of a mouse, above a finger (or it would hide under it). Kept on screen.
-function moveLabel() {
-  const el = $('#place-label'), p = placing, w = el.offsetWidth, h = el.offsetHeight;
-  const x = fingerTap ? p.sx - w / 2 : p.sx + 18, y = fingerTap ? p.sy - h - 56 : p.sy + 20;
-  el.style.transform = `translate(${Math.round(clamp(x, 8, vw - w - 8))}px, ${Math.round(clamp(y, 8, vh - h - 8))}px)`;
-}
-
-// Let go: dig it, if it can be dug. Either way the news says what came of it.
-function digPlaced() {
-  const p = placing;
-  dropPlace();
-  if (!p?.press) return;
-  if (p.tool === 'hedge') {
-    const h = S.plantHedge(world, p.pts);
-    if (typeof h === 'string') { addNews(`🌿 ${NO_HEDGE[h]}.`, 'nohedge', 1500); return; }
-    terrainTick = -1;                                      // the turned earth under it, this very frame
-    hear('grass', h.x, h.y, {}, true);
-    flushEvents();
-    return;
-  }
-  if (p.tool === 'sow') {
-    const f = S.sowStrip(world, p.pts);
-    if (typeof f === 'string') { addNews(`🌼 ${NO_SOW[f]}.`, 'nosow', 1500); return; }
-    terrainTick = -1;                                      // the bare earth and the sprouts, this very frame
-    hear('grass', f.x, f.y, {}, true);
-    flushEvents();
-    return;
-  }
-  const r = S.digPond(world, p.pts, p.moved ? S.POND_BRUSH : S.POND_DAB);
-  if (typeof r === 'string') { addNews(`⛏️ ${NO_POND[r]}.`, 'nopond', 1500); return; }
-  pond = null; terrainTick = -1;                           // the water and the bare banks, this very frame
-  const q = p.plan;
-  hear('dig', q.x, q.y, {}, true);
-  ripples.push({ x: q.x, y: q.y, rx: (q.x1 - q.x0 + 1) / 2, ry: (q.y1 - q.y0 + 1) / 2, t0: performance.now() });
-  flushEvents();
-}
-
-// The ghost, over the ground.
-function drawPlacing(z, ox, oy) {
-  const p = placing.plan;
-  ctx.save();
-  ctx.globalAlpha = placing.press ? 0.62 : 0.4;
-  ctx.drawImage(ghost, ox + (p.x0 - 1) * z, oy + (p.y0 - 1) * z, (p.x1 - p.x0 + 3) * z, (p.y1 - p.y0 + 3) * z);
-  ctx.restore();
-}
-
-// A new pond: three rings run out over the water from its middle and fade.
-function drawRipples(now, z) {
-  ctx.save();
-  ctx.strokeStyle = '#f4fbff';
-  ctx.lineWidth = Math.max(1, z * 0.08);
-  for (let k = ripples.length - 1; k >= 0; k--) {
-    const r = ripples[k], u = (now - r.t0) / RIPPLE_MS;
-    if (u >= 1) { ripples.splice(k, 1); continue; }
-    const [sx, sy] = toScreen(r.x, r.y);
-    if (!visible(sx, sy, Math.max(r.rx, r.ry) * z)) continue;
-    for (let j = 0; j < 3; j++) {
-      const v = u * 1.5 - j * 0.25;
-      if (v <= 0 || v >= 1) continue;
-      ctx.globalAlpha = 0.75 * (1 - v) * Math.min(1, v * 6);
-      ctx.beginPath();
-      ctx.ellipse(sx, sy, 1 + r.rx * z * 0.85 * v, 1 + r.ry * z * 0.85 * v, 0, 0, TAU);
-      ctx.stroke();
-    }
-  }
-  ctx.restore();
-}
-
-// The keeper's pond in the inspector: when it was dug, whether it lasts the summer, and what comes next.
-const whenIn = t => `${seasonName(S.seasonOf(t))} of year ${Math.floor(t / S.TPD / S.YEAR_DAYS) + 1}`;
-function dugFacts(p) {
-  const q = pondWords({ water: p.lasting + p.spring, summer: p.lasting, dry: p.dryLasting });
-  const out = [['⛏️', `You dug it in the ${whenIn(p.dug)}${p.grown ? `, and made it bigger in the ${whenIn(p.grown)}` : ''}`],
-    [q.head.startsWith('Water all year') ? '💧' : '⏳', `${q.head}: ${q.size}${q.lasts ? `, ${q.lasts}` : ''}${p.deep ? ', deep in the middle' : ''}`]];
-  if (!p.reeds) out.push(['🌾', 'Reeds come up round it after a season']);
-  if (!p.found) {
-    const n = S.frogsNear(world, p.x, p.y);
-    out.push(['🐸', n < 0 ? 'No frogs live near enough to find it yet' : `${frogsOff(n)}: they’ll find it between spring and autumn`]);
-  } else if (!world.spawn.some((v, i) => v > 0 && world.dug[i] === p.id) && S.seasonOf(world.tick) !== 0) out.push(['🫧', 'The frogs will spawn in it in spring']);
-  const heron = world.visitors?.find(v => v.kind === 'heron' && v.pond === p && v.mode !== 'out');
-  if (heron) out.push(['🪶', `A ${thingLink('visitor', heron.id, 'heron')} is ${heron.mode === 'sleep' ? 'asleep here, on one leg' : 'fishing here'}`]);
-  return out;
-}
-
-// A strip the keeper sowed, in the inspector: how it's doing (open: its flowers out, grass: its grass on average),
-// and when it was sown, what flowers now and next, whether the bees have found it.
-function stripStatus(f, open, grass) {
-  const season = S.seasonOf(world.tick);
-  if (season === 3) return f.flowered ? '🌱 Seedlings, waiting out the winter: it flowers again in spring' : '🌱 Sown: it flowers in spring';
-  if (open) return `${f.emoji[0]} In bloom: ${open} flowers open`;
-  return grass < S.FIELD_GRASS ? '🌱 Sprouting: it flowers once the grass is back' : '🐇 Grazed down: no flowers open';
-}
-function stripFacts(f, hives) {
-  const season = S.seasonOf(world.tick), next = (season + 1) % 4;
-  const out = [['🌼', `You sowed it in the ${whenIn(f.sown)}`]];
-  if (season === 3) out.push([f.emoji[0], `In spring: ${kindWords(f.kind)}`]);
-  else {
-    out.push([f.emoji[0], `This ${seasonName(season)}: ${kindWords(f.kind)}`]);
-    out.push(['🗓️', `${next === 3 ? 'After the winter' : `In ${seasonName(next)}`}: ${kindWords(S.stripKind(world, f, world.tick + S.SEASON_DAYS * S.TPD))}`]);
-  }
-  out.push(['🐝', f.found ? `Bees found it in the ${whenIn(f.found)}, and have sipped here ${f.sips} times`
-    : hives ? 'No bees yet: they come once it flowers' : 'No hive in reach, so no bees will come']);
-  return out;
-}
-
-// A hedge the keeper planted: its whips standing, the one in its middle (what a link to it opens), and in
-// the inspector what it is and what comes next.
-const hedgeWhips = h => world.decor.filter(d => d.hedge === h.id && S.standing(d));
-function hedgeMiddle(h) {
-  let best = null, bd = Infinity;
-  for (const d of world.decor) if (d.hedge === h.id && S.standing(d) && (d.x - h.x) ** 2 + (d.y - h.y) ** 2 < bd) { best = d; bd = (d.x - h.x) ** 2 + (d.y - h.y) ** 2; }
-  return best;
-}
-function hedgeLink(h, text) {
-  const d = hedgeMiddle(h);
-  return d ? thingLink('tree', d.id, text) : text;
-}
-function hedgeFacts(h) {
-  const whips = hedgeWhips(h), n = whips.length, lost = h.whips - n, size = n ? whips.reduce((a, d) => a + d.size, 0) / n : 0;
-  const next = S.hedgeForecast(world, size);
-  const out = [['🌿', `Part of ${esc(h.name)}, the hedge you planted in the ${whenIn(h.planted)}`],
-    ['🌳', `${n} of its ${h.whips} whips standing${lost > 0 ? `, ${lost} lost` : ''}`]];
-  out.push(h.young ? ['🐇', 'Thick enough to hide a rabbit from a fox'] : ['🐇', `Thick enough to hide a rabbit ${comingWhen(next.young)}`]);
-  if (h.blossom) out.push(['🌸', `First blossomed in the ${whenIn(h.blossom)}`]);
-  else out.push(['🌸', `Blossom ${comingWhen(next.blossom)}, for the bees`]);
-  if (h.haws) out.push(['🔴', `First bore haws in the ${whenIn(h.haws)}: the birds carry them off`]);
-  else if (h.blossom || next.haws) out.push(['🔴', `Haws ${h.blossom ? 'in autumn' : comingWhen(next.haws)}`]);
-  out.push(['💨', h.escapes ? `${h.escapes} ${h.escapes === 1 ? 'rabbit has' : 'rabbits have'} got away from a fox into it` : 'No rabbit has hidden in it from a fox yet']);
-  return out;
-}
-
-// Where to look at a pond from a link: the middle of its water, or of where it was dug.
-function dugSpot(id) {
-  let sx = 0, sy = 0, n = 0;
-  for (let i = 0; i < world.water.length; i++) if (world.body[i] === id && world.water[i]) { sx += i % S.W + 0.5; sy += Math.floor(i / S.W) + 0.5; n++; }
-  const v = world.waters[id];
-  return n ? { x: sx / n, y: sy / n } : { x: v.x, y: v.y };
-}
-
-// Paused, a bolt waits over its spot (drawZaps), like a released rabbit waits to move. When time runs
-// again they strike one after another, ZAP_GAP apart, a storm of your own.
-const ZAP_GAP = 70;
-function zapAt(wx, wy) {
-  if (ui.speed > 0) { zapping = true; S.zap(world, wx, wy); flushEvents(); zapping = false; return; }
-  if (!S.walkable(world, wx, wy) || ui.zaps.length >= 60) return;
-  ui.zaps.push({ x: wx, y: wy, t0: performance.now() });
-  chime('click');
-}
-
-let zapping = false;
-function strikeZaps(now) {
-  if (!ui.zaps.length || now < ui.zapNext) return;
-  const z = ui.zaps.shift();
-  zapping = true; S.zap(world, z.x, z.y); flushEvents(); zapping = false;
-  ui.zapNext = now + ZAP_GAP * (0.7 + 0.6 * Math.random());
-}
-
-// A waiting bolt hangs over its spot and sways a little.
-function drawZaps(now) {
-  const px = Math.max(16, cam.zoom * 1.5);
-  for (const z of ui.zaps) {
-    const [sx, sy] = toScreen(z.x, z.y);
-    if (!visible(sx, sy, px)) continue;
-    const t = (now - z.t0) / 1000, grow = Math.min(1, t * 5);
-    drawEmoji('⚡', sx, sy - px * (0.9 + 0.12 * Math.sin(t * 3 + z.x)), px * grow, { alpha: 0.9 });
-  }
-}
-
-// A group lands in a loose scatter around the spot, on dry ground, the sexes taking turns so two make a pair.
-function release(species, wx, wy) {
-  const n = ui.group[species], spread = n > 1 ? 0.8 + Math.sqrt(n) * 0.7 : 0, out = [];
-  for (let i = 0; i < n; i++) {
-    for (let tries = 0; tries < 8; tries++) {
-      const a = world.rng.range(0, TAU), r = i && spread * Math.sqrt(world.rng.range(0, 1));
-      const x = wx + Math.cos(a) * r, y = wy + Math.sin(a) * r;
-      const sex = ui.releaseSex[species];
-      const c = S.addCreature(world, species, x, y, { sex, age: world.rng.range(5, 9) });
-      if (!c) continue;
-      ui.releaseSex[species] = sex === 'F' ? 'M' : 'F';
-      addEffect('✨', x, y);
-      out.push(c);
-      break;
-    }
-  }
-  if (!out.length) return;
-  const c = out[0];
-  hear('release', wx, wy, { species });
-  if (species === 'fox' && tried('fox') && guide.on) select(c.id);   // the first one: go along and see
-  addNews(out.length === 1
-    ? `👋 You released ${link(c)}, a ${species === 'bee' ? 'worker' : c.sex === 'F' ? 'female' : 'male'} ${c.sp.name.toLowerCase()}.`
-    : `👋 You released ${out.length} ${c.sp.plural.toLowerCase()}: ${linkList(out)}.`);
-}
-
-// ------------------------------------------------------------------ the ring: right-click the meadow
-
-// The keeper's tools at ?keep: the button, its emoji and what it does. (Their buttons are hidden in the page till
-// ?keep shows them.)
-const KEEP_TOOLS = [['look', '🔍', 'Look around'], ['pond', '⛏️', 'Dig a pond'], ['sow', '🌼', 'Sow flowers'], ['hedge', '🌿', 'Plant a hedge']];
-// At ?keep the ring holds only the keeper's tools (without Look); an empty ring doesn't open.
-const RING_TOOLS = KEEP ? KEEP_TOOLS.filter(([k]) => k !== 'look')
-  : [['rabbit', '🐇', 'Release a rabbit'], ['fox', '🦊', 'Release a fox'], ['bee', '🐝', 'Release a bee'], ['crow', '🐦‍⬛', 'Release a crow'], ['owl', '🦉', 'Release an owl'], ['grass', '🌱', 'Grow grass'],
-    ['plant', '🌳', 'Plant a tree'], ['zap', '⚡', 'Strike lightning'], ['fire', '🔥', 'Wall of fire'], ['sky', '🌦️', 'Weather']].filter(([k]) => k !== 'owl' || S.OWLS);
-// Owls off for now (sim.js OWLS): their tool stays in the page, hidden.
-if (!S.OWLS) $('[data-tool="owl"]').classList.add('hidden');
-// And at ?keep every tool but the keeper's, the weather menu, the notebook of things to try and filming itself.
-// The keeper's tools are named for what they make (the seed is Flowers), show their key, and say the rest in their
-// card (showTip) in place of a title: its name, its key, how, and what it brings (tipRows).
-const TIP_TOOLS = { look: { name: 'Look', key: 'L', how: 'Drag to look around' }, pond: { name: 'Pond', key: 'D', how: 'Drag to dig' },
-  sow: { name: 'Flowers', key: 'G', how: 'Drag to sow' }, hedge: { name: 'Hedge', key: 'H', how: 'Drag to plant' } };
-if (KEEP) {
-  for (const b of document.querySelectorAll('[data-tool]')) b.classList.toggle('hidden', !KEEP_TOOLS.some(([k]) => k === b.dataset.tool));
-  for (const [k, { name, key }] of Object.entries(TIP_TOOLS)) {
-    const b = $(`#toolbar [data-tool="${k}"]`);
-    b.querySelector('.l').textContent = name;
-    b.insertAdjacentHTML('beforeend', `<kbd>${key}</kbd>`);
-    b.removeAttribute('title');
-    b.setAttribute('aria-describedby', 'tool-tip');
-  }
-  for (const b of document.querySelectorAll('#more-menu [data-act="sky"], [data-act="guide"], [data-act="watch"]')) b.classList.add('hidden');
-  $('#hud-right [data-act="sky"]').title = 'The weather';
-}
-
-// A keeper's tool explains itself in a card over its button (#tool-tip): with a mouse 250 ms after the pointer comes
-// onto it, gone when it leaves; tapped (touch or pen), for 4 s, a second tap on it while it shows hiding it; its key,
-// for 2.5 s. A press on the meadow, Esc or a stroke being placed puts it away, so placeLabel takes over by the hand.
-// Written as it opens, never per frame.
-const TIP_HOVER_MS = 250, TIP_TAP_MS = 4000, TIP_KEY_MS = 2500;
-const tip = { tool: '', by: '', timer: 0, hover: 0, gone: -1e9, press: '' };   // by: 'mouse', 'touch' or 'key'
-const BLOOM_SOON = { soon: 'in a day', days: 'in 2 or 3 days', autumn: 'in 3 days', spring: 'next spring' };   // (sim.js stripBloom)
-
-// What a tool brings, with when or where: [icon, what, when, the Dry Year's].
-function tipRows(k, touch) {
-  if (k === 'look') return [['🐇', 'Follow an animal', touch ? 'tap it' : 'click it'], ['🌳', 'Read a tree, a hive, the water', touch ? 'tap it' : 'click it'],
-    ...(touch ? [['🔎', 'Zoom in', 'double-tap']] : []), ['⏸', 'Stop time', touch ? 'the ⏸ button' : 'space']];
-  const crows = ['🐦‍⬛', 'Crows come', 'at once'];
-  if (k === 'pond') return [...(S.dryComing(world) ? [['☀️', 'Green banks in the Dry Year', `${S.DRY_NEAR} tiles`, true]] : []),
-    ['🐸', 'Frogs move in', S.seasonOf(world.tick) === 3 ? 'in spring' : 'in days'], crows, ['💧', 'Lasts all year', 'on low ground']];
-  if (k === 'sow') return [['🌸', 'In bloom', BLOOM_SOON[S.stripBloom(world)]], ['🐝', 'Bees come', 'near a hive'], crows];
-  const f = S.hedgeForecast(world);
-  return [['🐇', 'Hides rabbits from foxes', comingWhen(f.young)], ['🌸', 'Blossom', comingWhen(f.blossom)], crows];
-}
-
-const tipList = rows => `<ul class="stats">${rows.map(([icon, what, when, dry]) => `<li${dry ? ' class="dry"' : ''}><span>${icon}</span><span>${what}</span><em>${when}</em></li>`).join('')}</ul>`;
-
-// k: a tool, 'green' for GREEN's slot in the bar (greenTip), or 'alert:fox' for an alert over it (alertTip).
-function showTip(k, ms, by) {
-  const alert = k.startsWith('alert:') && k.slice(6), el = $('#tool-tip'), t = TIP_TOOLS[k];
-  const b = k === 'green' ? $('#green') : alert ? alerts.btn[alert] : $(`#toolbar [data-tool="${k}"]`);
-  if (!KEEP || !(t || k === 'green' || alert) || !b || b.hidden) return;
-  clearTimeout(tip.timer); clearTimeout(tip.hover);
-  setHTML(el, k === 'green' ? greenTip() : alert ? alertTip(alert) : `<h4 class="fr">${b.querySelector('.e').textContent} ${t.name} <kbd>${t.key}</kbd></h4><p>${t.how}</p>${tipList(tipRows(k, by === 'touch'))}`);
-  if (tip.tool !== k) {                    // over its button, once, kept on screen
-    const side = rail() && !alert && k !== 'green';   // on the rail: beside its button, the arrow pointing left
-    const down = rail() && k === 'green';             // GREEN in the top bar: under it, the arrow pointing up
-    el.classList.toggle('wide', !!alert);
-    el.classList.toggle('side', side);
-    el.classList.toggle('down', down);
-    el.classList.remove('hidden');
-    const r = b.getBoundingClientRect(), w = el.offsetWidth, h = el.offsetHeight;
-    const mid = side ? r.top + r.height / 2 : r.left + r.width / 2, x = side ? r.right + 16 : clamp(mid - w / 2, 8, vw - w - 8);
-    const y = side ? clamp(mid - h / 2, topPad + 8, Math.max(topPad + 8, vh - h - 8)) : down ? r.bottom + 14 : 0;   // (under the top bar)
-    el.style.bottom = alert ? Math.round(vh - r.top + 10) + 'px' : '';   // (an alert's over the alert, above the bar)
-    el.style.top = side || down ? Math.round(y) + 'px' : '';
-    el.style.left = Math.round(x) + 'px';
-    el.style.setProperty('--arrow', Math.round(side ? mid - y : mid - x) + 'px');
-  }
-  tip.tool = k; tip.by = by;
-  if (ms) tip.timer = setTimeout(hideTip, ms);
-}
-
-function hideTip() {
-  clearTimeout(tip.hover);
-  if (!tip.tool) return;
-  clearTimeout(tip.timer);
-  if (tip.by === 'mouse') tip.gone = performance.now();
-  tip.tool = '';
-  $('#tool-tip').classList.add('hidden');
-}
-
-if (KEEP) for (const bar of [$('#toolbar'), $('#alerts')]) {   // (the alerts over the bar have cards too)
-  const toolOf = e => e.target.closest('[data-tool], #green, [data-alert]'), keyOf = b => b.dataset.tool || (b.dataset.alert ? 'alert:' + b.dataset.alert : 'green');
-  bar.addEventListener('pointerover', e => {
-    const b = toolOf(e);
-    if (e.pointerType !== 'mouse' || !b || b.contains(e.relatedTarget)) return;
-    clearTimeout(tip.hover);
-    if ((tip.tool && tip.by === 'mouse') || performance.now() - tip.gone < 300) showTip(keyOf(b), 0, 'mouse');   // gliding along the bar: at once
-    else tip.hover = setTimeout(() => showTip(keyOf(b), 0, 'mouse'), TIP_HOVER_MS);
-  });
-  bar.addEventListener('pointerout', e => {
-    const b = toolOf(e);
-    if (e.pointerType !== 'mouse' || !b || b.contains(e.relatedTarget)) return;
-    clearTimeout(tip.hover);
-    if (tip.by === 'mouse') hideTip();
-  });
-  bar.addEventListener('pointerdown', e => { tip.press = e.pointerType; });
-  bar.addEventListener('click', e => {     // a tap takes the tool, as ever (the click handler below), and shows its card
-    const b = toolOf(e), how = e.pointerType ?? tip.press;   // ('' from a key on a focused button)
-    if (!b || how === 'mouse') return;
-    if (tip.tool === keyOf(b) && tip.by === 'touch' && !b.dataset.alert) hideTip();   // (a tap on an alert again: its next one)
-    else showTip(keyOf(b), how ? TIP_TAP_MS : TIP_KEY_MS, how ? 'touch' : 'key');
-  });
-}
-if (KEEP) {
-  canvas.addEventListener('pointerdown', hideTip);
-  addEventListener('resize', hideTip);
-}
-
-// GREEN (?keep, in the bottom bar; on a phone a slot after the tools and a rim along the bar's top): the share of the
-// land whose grass is still green (sim.js greenShare, a scan of every tile, so once a sim day), by what it was on the
-// first day of this season, or as the meadow opened mid-season ("when you came"), its "was" and mark hidden till the share
-// moves off it (on day 1 there's nothing to compare). Written only when it changes; its card is greenTip.
-// Every winter it falls to about a fifth and comes back in spring, so it turns rust (low) only while the Dry Year bites.
-const green = { world: null, day: -1, season: -1, share: 0, ref: 0, came: false, low: false };
-function updateGreen() {
-  const day = Math.floor(world.tick / S.TPD), season = Math.floor(day / S.SEASON_DAYS);
-  if (green.world === world && green.day === day) return;
-  const share = Math.round(S.greenShare(world) * 100), el = $('#green');
-  if (green.world !== world || green.season !== season) Object.assign(green, { ref: share, season, came: green.world !== world && day % S.SEASON_DAYS > 0 });
-  Object.assign(green, { world, day, share, low: share < 50 && S.dryStage(world) >= 2 });
-  const trend = share < green.ref - 3 ? '<i>▼</i>' : share > green.ref + 3 ? '<i class="up">▲</i>' : '';
-  el.classList.toggle('low', green.low);
-  el.classList.toggle('same', share === green.ref);
-  el.style.setProperty('--v', share + '%');
-  el.style.setProperty('--ref', green.ref + '%');
-  setHTML(el.querySelector('.g-v'), share + '%' + trend);
-  setText(el.querySelector('.g-ref'), `was ${green.ref}%`);
-  el.setAttribute('aria-label', share === green.ref ? `Green ${share}%` : `Green ${share}%, was ${green.ref}%`);
-  if (tip.tool === 'green') setHTML($('#tool-tip'), greenTip());
-}
-function greenTip() {
-  const s = S.SEASONS[green.season % 4].name.toLowerCase();
-  return `<h4 class="fr">🌱 Green <b${green.low ? ' class="low"' : ''}>${green.share}%</b></h4><p>Land whose grass is still green</p>`
-    + tipList([['📅', green.came ? 'When you came' : `When the ${s} began`, green.ref + '%'], ...(s === 'winter' ? [['❄️', 'In winter', 'the grass rests']] : []),
-      ['☀️', 'In the Dry Year', 'by the water only', true],
-      ...(S.dryComing(world) ? [['⛏️', 'Your ponds and hedges keep', `${dryKept()} tiles`, true]] : [])]);
-}
-
-// ?keep's alerts, Frostpunk's way (#alerts, over the bar): a state, not a message. A chip for each kind in danger (fewer
-// than sim.js DANGER, and up till a quarter past it, so 7, 8, 7 doesn't blink; none left is the news's) and for the days
-// running gone barren while the Dry Year counts (before that, GREEN under twice BARREN: "🥀 Green 14%"). Up as long as it lasts, never put away: barren first, then the kinds
-// by how close to none, three at most. On the cards' beat, from counts the sim keeps, written only when they change.
-// A new one pulses, sounds once and flashes its mark in the top bar; those up as a meadow opens, or that came while you
-// were away, are only noted. A hover or a tap shows its card (alertTip), a click goes to the next of them (alertGo).
-const ALERT_KINDS = [...S.KINDS.filter(s => s !== 'owl' || S.OWLS), 'frogs'];
-const ALERT_ICON = { rabbit: '🐇', fox: '🦊', bee: '🐝', crow: '🐦‍⬛', owl: '🦉', otter: '🦦', frogs: '🐸', barren: '🥀' };
-const ALERT_PULSE_MS = 1200;
-const alerts = { el: $('#alerts'), w: null, on: {}, btn: {}, shown: {}, fresh: {}, next: {}, first: true, up: false };
-const alertCount = k => k === 'frogs' ? Math.round(world.frogCount) : world.count[k];
-if (KEEP) {
-  for (const k of [...ALERT_KINDS, 'barren']) {
-    alerts.el.insertAdjacentHTML('beforeend', `<button type="button" class="alert" data-alert="${k}" aria-describedby="tool-tip" hidden><span class="e">${ALERT_ICON[k]}</span>`
-      + (k === 'barren' ? '<span class="l">Barren</span><b></b>' : '<b></b><span class="l">left</span>') + '</button>');
-  }
-  for (const b of alerts.el.children) alerts.btn[b.dataset.alert] = b;
-  alerts.el.addEventListener('click', e => { const b = e.target.closest('[data-alert]'); if (b) alertGo(b.dataset.alert); });
-}
-
-function alertsTick(now) {
-  if (!KEEP) return;
-  if (world !== alerts.w) Object.assign(alerts, { w: world, on: {}, fresh: {}, next: {}, first: true });
-  const dy = world.dryYear, list = [], fresh = [];
-  let kinds = false;
-  for (const k of ALERT_KINDS) {
-    const n = alertCount(k), T = S.DANGER[k], on = n > 0 && n < (alerts.on[k] ? T + Math.max(1, Math.round(T / 4)) : T);
-    if (on !== !!alerts.on[k]) { alerts.on[k] = on; kinds = true; if (on) fresh.push(k); }
-    if (on) list.push([k, n / T, `${n}`]);
-  }
-  list.sort((a, b) => a[1] - b[1]);
-  const counting = dy && !dy.lost && S.dryCounting(world), barren = counting ? dy.barren || 0 : 0;
-  const low = counting && !barren && green.world === world && green.share < S.BARREN * 200 ? green.share : -1;   // (under twice barren: a warning first)
-  const warn = barren > 0 || low >= 0;
-  if (warn !== !!alerts.on.barren) { alerts.on.barren = warn; if (warn) fresh.push('barren'); }
-  if (barren) list.unshift(['barren', 0, `${barren}/${S.BARREN_DAYS}`]);
-  else if (low >= 0) list.unshift(['barren', 0, `${low}%`]);
-  list.length = Math.min(list.length, 3);
-  if (alerts.first || away.on) fresh.length = 0;          // (already up as the meadow opened, or the away card tells it)
-  alerts.first = false;
-  for (const k of fresh) {
-    alerts.fresh[k] = now + ALERT_PULSE_MS;
-  }
-  if (fresh.length) chime('warn');
-  for (const [k, b] of Object.entries(alerts.btn)) {
-    const i = list.findIndex(a => a[0] === k), v = i < 0 ? '' : list[i][2], cls = now < (alerts.fresh[k] || 0) ? 'alert fresh' : 'alert';
-    const was = alerts.shown[k] || [];
-    if (was[0] !== v) {
-      b.hidden = i < 0;
-      if (v) b.querySelector('b').textContent = v;
-      if (v && k === 'barren') b.querySelector('.l').textContent = v.endsWith('%') ? 'Green' : 'Barren';
-    }
-    if (was[1] !== i) b.style.order = i;
-    if (was[2] !== cls) b.className = cls;
-    if (was[0] !== v && tip.tool === 'alert:' + k) { if (v) setHTML($('#tool-tip'), alertTip(k)); else hideTip(); }
-    alerts.shown[k] = [v, i, cls];
-  }
-  const up = list.length > 0 && !away.on && !awayOpen() && !lostOpen();
-  if (up !== alerts.up) {
-    alerts.up = up;
-    alerts.el.classList.toggle('hidden', !up);
-    document.documentElement.classList.toggle('alerts-up', up);   // (the news stands over them)
-    if (!up && tip.tool.startsWith('alert:')) hideTip();
-  }
-}
-
-// An alert's card: the kind and how many left, what it means, and what helps, by the tool's name. The Dry Year's rows
-// (rust) only while it's coming or counting.
-const ALERT_HELP = {
-  rabbit: [['🌿', 'Hedge', 'cover from foxes'], ['⛏️', 'Pond', 'green in the Dry Year', true]],
-  fox: [['🐇', 'They follow the rabbits', 'help them']],
-  bee: [['🌼', 'Flowers', 'near a hive'], ['☀️', 'In the Dry Year', 'by the water', true]],
-  crow: [['🪱', 'They eat grubs, remains', 'nothing to do']],
-  owl: [['🐁', 'They eat the voles', 'nothing to do']],
-  otter: [['⛏️', 'Pond, big and deep', 'fish in it']],
-  frogs: [['⛏️', 'Pond', 'frogs move in']],
-  barren: [['⛏️', 'Pond', 'a green ring'], ['🌿', 'Hedge', 'a green lane']],
-};
-function alertTip(k) {
-  const dy = world.dryYear, stakes = dy && !dy.lost && (S.dryComing(world) || S.dryCounting(world));
-  const help = ALERT_HELP[k].filter(r => stakes || !r[3]);
-  if (k === 'barren' && !dy.barren) return `<h4 class="fr">🥀 Green <b class="danger">${green.share}%</b></h4><p>Hardly any green left</p>`
-    + tipList([['🥀', `Under ${Math.round(S.BARREN * 100)}% for ${S.BARREN_DAYS} days: meadow lost`, 'the Dry Year', true], ...help]);
-  if (k === 'barren') return `<h4 class="fr">🥀 Barren <b class="danger">${dy.barren || 0}/${S.BARREN_DAYS}</b></h4><p>Days running with hardly any green</p>`
-    + tipList([['🥀', `${S.BARREN_DAYS} days: meadow lost`, 'the Dry Year', true], ...help]);
-  return `<h4 class="fr">${ALERT_ICON[k]} ${k === 'frogs' ? 'Frogs' : SPECIES_WORD[k]} <b class="danger">${alertCount(k)}</b></h4><p>In danger: so few left</p>`
-    + tipList([stakes ? ['🥀', 'None left: meadow lost', 'the Dry Year', true] : ['🧭', 'Newcomers may come', 'still a sign'], ...help]);
-}
-
-// A click on an alert goes to them, the next one each click: an animal followed, a hive with bees looked at, the water
-// with the most frogs about. A scan, but only on a click.
-function alertGo(k) {
-  const next = list => list.find(o => o.id > (alerts.next[k] ?? -1)) || list[0];
-  const look = (x, y) => { select(0); ui.follow = false; cam.x = x; cam.y = y; clampCam(); if (cam.zoom < 14) cam.goal = narrow() ? 16 : 22; };
-  if (k === 'bee') {
-    const h = next(world.hives.filter(h => h.bees > 0).sort((a, b) => a.id - b.id));
-    if (h) { alerts.next[k] = h.id; look(h.x, h.y); pick('hive', h); }
-  } else if (k === 'frogs') {
-    const sum = new Float64Array(world.waters.length), near = world.nearBody;
-    for (let i = 0; i < world.frogs.length; i++) if (world.frogs[i] > 0 && near[i] >= 0) sum[near[i]] += world.frogs[i];
-    let b = 0, sx = 0, sy = 0, n = 0, at = -1, d = Infinity;
-    for (let j = 1; j < sum.length; j++) if (sum[j] > sum[b]) b = j;
-    if (!sum[b]) return;
-    for (let i = 0; i < world.frogs.length; i++) if (near[i] === b && world.frogs[i] > 0) { sx += (i % S.W + 0.5) * world.frogs[i]; sy += (Math.floor(i / S.W) + 0.5) * world.frogs[i]; n += world.frogs[i]; }
-    const x = sx / n, y = sy / n;
-    for (let i = 0; i < world.water.length; i++) if (world.water[i] && world.body[i] === b) { const e = (i % S.W + 0.5 - x) ** 2 + (Math.floor(i / S.W) + 0.5 - y) ** 2; if (e < d) { d = e; at = i; } }
-    look(x, y);
-    if (at >= 0) pick('water', { body: world.waters[b], x: at % S.W + 0.5, y: Math.floor(at / S.W) + 0.5 });
-  } else if (k !== 'barren') {
-    const c = next(world.creatures.filter(c => c.alive && c.species === k && !c.held).sort((a, b) => a.id - b.id));
-    if (c) { alerts.next[k] = c.id; select(c.id); }
-  }
-}
-
-// ------------------------------------------------------------------ the field journal (?keep)
-//
-// Its book is in the bottom bar (#jbook, drawBook): the pages found, a pip each (a gap between chapters), and "New" with
-// a glow till it's opened. Open (the book, or J), a parchment card (#journal): the pages a chapter at a time (BOOK), each
-// chapter with its count and "Now" on the season the meadow is in, a tile each (a silhouette till it's found, blank past
-// the frontier), and the page picked beside them, turned with ‹ › or the arrow keys. An empty page has its riddle, plain
-// once one came and went unseen, and the first two visitors' a button that puts the tool that draws them in your hand; one
-// past the frontier says when its riddle comes (hinted). On an upright phone the journal is a
-// sheet from the bottom, ✕ at the bottom in the middle; a page is a layer over the pages with ‹ ✕ › in the same place,
-// turned with a sideways swipe, and a handle dragged down lays a layer down. Each layer is a step in the browser's
-// history, so Back steps out. Written as it opens and as a page turns, never per frame; the paintings are made once (jArt).
-// A first sighting's stamp flies from it into the book (stampFly), which counts it as it lands.
-const book = { el: $('#jbook'), held: new Set() };      // held: found, its stamp still on its way
-const jr = { el: $('#journal'), scrim: $('#jscrim'), depth: 0, pick: '', art: new Map(), going: false, quietTill: 0, drag: null, swipe: null,
-  token: Math.random().toString(36).slice(2) };          // (its steps in the history are this page's, not a reload's)
-const journalOpen = () => jr.depth > 0;
-const upright = () => matchMedia('(max-width: 760px) and (min-height: 501px)').matches;
-const still = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
-const pageState = k => (found(k) ? 'found' : journal[k]?.glimpsed ? 'glimpsed' : hinted(PAGE[k]) ? 'unseen' : 'later');
-const inBook = k => found(k) && !book.held.has(k);
-const fitStyle = p => (p.fit ? ` style="transform: scale(${p.fit})"` : '');
-
-// A page's painting as an <img> source, made once a visit: small for its tile and the stamp, large for its page.
-function jArt(p, large) {
-  const key = p.k + (large ? '+' : '');
-  let url = jr.art.get(key);
-  if (!url) {
-    const was = standIns;
-    standIns = false;                                    // (always painted at the size asked, even mid-frame)
-    url = dataURL(sprite(artOf(p), large ? 132 : 60).canvas);
-    standIns = was;
-    jr.art.set(key, url);
-  }
-  return url;
-}
-
-function drawBook() {
-  if (!KEEP) return;
-  const n = PAGES.filter(p => inBook(p.k)).length, fresh = PAGES.some(p => journal[p.k]?.new && !book.held.has(p.k));
-  const pips = PAGES.map((p, i) => `<i class="${inBook(p.k) ? 'on' : journal[p.k]?.glimpsed ? 'half' : ''}${i && p.ch !== PAGES[i - 1].ch ? ' gap' : ''}"></i>`).join('');
-  setHTML(book.el, `<span class="j-l">📖 <b>Journal</b></span><span class="j-v">${n}<small>/${PAGES.length}</small></span><span class="pips">${pips}</span><span class="newdot">New</span>`);
-  book.el.classList.toggle('new', fresh);
-  book.el.setAttribute('aria-label', `Field journal: ${n} of ${PAGES.length} found${fresh ? ', a new page' : ''}`);
-}
-// Something changed in it: the book, and the journal if it's open.
-function journalChanged() {
-  drawBook();
-  if (jr.depth) fillJournal();
-}
-
-const jsvg = d => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-const J_X = jsvg('M6.5 6.5l11 11M17.5 6.5l-11 11'), J_PREV = jsvg('M14.5 5.5L8 12l6.5 6.5'), J_NEXT = jsvg('M9.5 5.5L16 12l-6.5 6.5');
-if (KEEP) jr.el.innerHTML = `<button class="jb j-x" data-j="close" aria-label="Close the journal" title="Back to the meadow (Esc)">${J_X}</button>
-  <header class="j-top"><div class="grab"></div>
-    <div class="j-head"><h2 class="fr" id="j-title">Field journal</h2><span class="n"></span></div>
-    <div class="j-bar"><i></i></div>
-  </header>
-  <section class="pages">${BOOK.map(c => `
-    <h3 class="sec" data-ch="${c.k}">${c.name}<b class="now">Now</b><span class="got"></span></h3><div class="grid" data-ch="${c.k}"></div>`).join('')}
-  </section>
-  <footer class="j-foot"><button class="jb x" data-j="close" aria-label="Close the journal">${J_X}</button></footer>
-  <section class="page"></section>`;
-
-function tileHTML(p) {
-  const st = pageState(p.k), named = st === 'found' || st === 'glimpsed';
-  return `<button class="tile ${st}${journal[p.k]?.new ? ' new' : ''}" data-k="${p.k}" aria-label="No. ${p.no}, ${named ? p.name : st === 'later' ? 'for later' : 'not found yet'}">`
-    + `<span class="no">${p.no}</span>${st === 'later' ? '<span class="blank"></span>'
-      : `<img src="${jArt(p)}" class="${st === 'found' ? '' : st === 'glimpsed' ? 'half' : 'sil'}"${fitStyle(p)} alt="">`}`
-    + `<span class="nm">${named ? p.name : '?'}</span></button>`;
-}
-// A chapter's name in a sentence: "the first spring".
-const chapterIn = c => c.name[0].toLowerCase() + c.name.slice(1);
-// When it was first seen: the season and the year of the meadow it was in (an older page has only the season).
-function firstSeen(pg) {
-  const s = pg.t != null ? S.seasonOf(pg.t) : pg.season;
-  if (s == null) return '';
-  return `${S.SEASONS[s].emoji} ${S.SEASONS[s].name}${pg.t != null ? `, year ${yearAt(pg.t)}` : ''}`;
-}
-function pageHTML(p) {
-  const st = pageState(p.k), pg = journal[p.k] || {}, named = st === 'found' || st === 'glimpsed', facts = [], ch = CHAPTER[p.ch];
-  if (st === 'found' && firstSeen(pg)) facts.push(['📅', 'First seen', firstSeen(pg)]);
-  if (st === 'found' && !p.visits && pg.most > 0) facts.push(['🏆', 'Most at once', big(pg.most)]);
-  if (st === 'found' && p.visits) facts.push(['👁️', 'Seen', pg.seen > 1 ? `${pg.seen} times` : 'once']);
-  if (p.visits && named) facts.push(['🧭', 'Comes to', p.where], ['🕰️', 'When', p.when]);
-  const tool = (st === 'unseen' || st === 'glimpsed') && p.tool && KEEP_TOOLS.find(([k]) => k === p.tool);
-  const shot = st === 'found' && photos[p.k], mo = st === 'found' && MOMENTS[p.k], got = mo ? mo.filter(m => pg.moments?.[m.k]).length : 0;
-  const hint = st === 'glimpsed' ? p.plain : st === 'later' ? `A page for ${chapterIn(ch)}: its riddle comes in ${chapterIn(CHAPTERS[ch.arc - 1])}.` : p.riddle;
-  return `<div class="pg-grab"><div class="no">No. ${p.no} · ${ch.name}</div></div>
-    <div class="pg-body"><div class="pg-in">
-      ${shot ? `<div class="art snap"><figure><img src="${shot.src}" alt="Your first sighting"><figcaption>${esc(shot.where)}${firstSeen(pg) ? ` · ${firstSeen(pg)}` : ''}</figcaption>`
-        + `<img class="stamp" src="${jArt(p, true)}" alt=""></figure></div>`
-        : st === 'later' ? '<div class="art"></div>'
-        : `<div class="art"><img src="${jArt(p, true)}" class="${st === 'found' ? '' : st === 'glimpsed' ? 'half' : 'sil'}"${fitStyle(p)} alt=""></div>`}
-      <h3 class="fr${named ? '' : ' q'}">${named ? p.name : '? ? ?'}</h3>
-      ${st === 'found' ? `<p>${p.note}</p>` : `<p class="hint">${hint}</p>`}
-      ${facts.length ? `<ul>${facts.map(([i, a, b]) => `<li><i>${i}</i><span>${a}</span><em>${b}</em></li>`).join('')}</ul>` : ''}
-      ${mo ? `<div class="moments"><h4>Moments<span>${got}/${mo.length}</span></h4><div class="m-list">${mo.map(m => (pg.moments?.[m.k]
-        ? `<span class="m on"><i>${m.e}</i>${m.name}</span>` : `<span class="m"><i>?</i>${m.hint}</span>`)).join('')}</div></div>` : ''}
-      ${tool ? `<button class="go" data-j-tool="${tool[0]}"><span class="e">${tool[1]}</span>${tool[2]}</button>` : ''}
-    </div></div>
-    <div class="pg-foot">
-      <button class="jb" data-j="prev" aria-label="Page before" title="Page before (←)"${p.i ? '' : ' disabled'}>${J_PREV}</button>
-      <span class="of">${p.i + 1} / ${PAGES.length}</span>
-      <button class="jb x" data-j="back" aria-label="Back to all pages" title="Back to all pages (Esc)">${J_X}</button>
-      <button class="jb" data-j="next" aria-label="Next page" title="Next page (→)"${p.i < PAGES.length - 1 ? '' : ' disabled'}>${J_NEXT}</button>
-    </div>`;
-}
-const pageEl = () => jr.el.querySelector('.page');
-const drawPage = () => setHTML(pageEl(), pageHTML(PAGE[jr.pick] || PAGES[0]));
-const markTiles = () => jr.el.querySelectorAll('.tile').forEach(t => t.classList.toggle('on', t.dataset.k === jr.pick));
-// Its count, each chapter's (and "Now" on the one the meadow is in) and the page picked, each written only if it changed.
-function fillJournal() {
-  const n = PAGES.filter(p => inBook(p.k)).length, el = jr.el, now = arcSeason();
-  setHTML(el.querySelector('.j-head .n'), `${n}<small>/${PAGES.length}</small>`);
-  el.querySelector('.j-bar i').style.width = (n / PAGES.length * 100).toFixed(1) + '%';
-  for (const c of BOOK) {
-    const head = el.querySelector(`h3.sec[data-ch="${c.k}"]`);
-    head.classList.toggle('here', c.arc === now);
-    setText(head.querySelector('.got'), `${c.pages.filter(p => inBook(p.k)).length}/${c.pages.length}`);
-    setHTML(el.querySelector(`.grid[data-ch="${c.k}"]`), c.pages.map(tileHTML).join(''));
-  }
-  markTiles();
-  drawPage();
-}
-
-// How deep it's open: 0 shut, 1 the pages, 2 a page laid over them (upright phones; elsewhere the page is always beside them).
-const slide = (el, frames, ms = 240, fill = 'none') => el.animate(frames, { duration: still() ? 1 : ms, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)', fill });
-const slideDown = el => [{ transform: el.style.transform || 'none' }, { transform: 'translateY(105%)' }];
-function showJournal(n) {
-  const was = jr.depth, J = jr.el;
-  jr.depth = n;
-  if (n && !was) {
-    fillJournal();
-    J.classList.remove('hidden'); jr.scrim.classList.remove('hidden');
-    J.focus({ preventScroll: true });
-    J.querySelector('.tile.on')?.scrollIntoView({ block: 'nearest' });
-    if (upright()) slide(J, [{ transform: 'translateY(100%)' }, { transform: 'none' }], 320);
-    jr.scrim.animate([{ opacity: 0 }, { opacity: 1 }], { duration: still() ? 1 : 200 });
-  }
-  if (n === 2 && was < 2) {
-    J.classList.add('reading');
-    if (was && upright()) slide(pageEl(), [{ transform: 'translateY(100%)' }, { transform: 'none' }], 300);
-  }
-  if (n === 1 && was === 2) {
-    const el = pageEl();
-    if (!upright()) J.classList.remove('reading');
-    else { const a = slide(el, slideDown(el), 220, 'forwards'); a.finished.then(() => { el.style.transform = ''; a.cancel(); if (jr.depth < 2) J.classList.remove('reading'); }); }
-  }
-  if (!n && was) {
-    const done = () => {
-      if (jr.depth) return;
-      J.classList.add('hidden'); jr.scrim.classList.add('hidden'); J.classList.remove('reading'); J.style.transform = '';
-      let read = false;                                  // what was new has been seen now
-      for (const p of PAGES) if (journal[p.k]?.new && !book.held.has(p.k)) { delete journal[p.k].new; read = true; }
-      if (read) { saveJournal(); drawBook(); }
-    };
-    if (upright()) { const a = slide(J, slideDown(J), 240, 'forwards'); a.finished.then(() => { done(); a.cancel(); }); }
-    else done();
-    jr.scrim.animate([{ opacity: 1 }, { opacity: 0 }], { duration: still() ? 1 : 200, fill: 'forwards' }).finished.then(a => a.cancel());
-    book.el.focus({ preventScroll: true });
-  }
-}
-// To depth n, by the history: deeper pushes a step a layer, shallower goes back over them (popstate then shows it).
-function journalTo(n) {
-  n = Math.max(0, n);
-  if (jr.going || n === jr.depth) return;
-  const st = history.state;
-  if (n > jr.depth) { for (let i = jr.depth + 1; i <= n; i++) history.pushState({ journal: i, j: jr.token }, ''); showJournal(n); }
-  else if (st?.j === jr.token && st.journal === jr.depth) { jr.going = true; history.go(n - jr.depth); setTimeout(() => { jr.going = false; }, 600); }
-  else showJournal(n);
-}
-addEventListener('popstate', e => {
-  jr.going = false;
-  const n = e.state?.j === jr.token ? Math.min(e.state.journal, jr.depth) : 0;
-  if (n !== jr.depth) showJournal(n);
-});
-
-// Turning a page: ‹ ›, the arrow keys or a swipe. The new one slides in from the side it came from.
-function turnPage(dir, from) {
-  const p = PAGES[(PAGE[jr.pick] || PAGES[0]).i + dir];
-  if (!p) return;
-  jr.pick = p.k; drawPage(); markTiles();
-  if (!upright()) jr.el.querySelector('.tile.on')?.scrollIntoView({ block: 'nearest' });
-  slide(jr.el.querySelector('.pg-in'), [{ transform: from || `translateX(${dir * 48}px)`, opacity: from ? 1 : 0 }, { transform: 'none', opacity: 1 }], 220);
-}
-
-function openJournal() {
-  if (!KEEP || jr.depth || jr.going) return;
-  toggleMore(false); toggleSkyMenu(false); closeRing(); hideTip();
-  const fresh = PAGES.filter(p => journal[p.k]?.new && !book.held.has(p.k)).sort((a, b) => (journal[b.k].first || 0) - (journal[a.k].first || 0))[0];
-  jr.pick = fresh?.k || jr.pick || PAGES[0].k;
-  journalTo(fresh && upright() ? 2 : 1);
-}
-
-if (KEEP) {
-  drawBook();
-  book.el.addEventListener('click', e => { e.stopPropagation(); chime('click'); if (jr.depth) journalTo(0); else openJournal(); });
-  jr.scrim.addEventListener('click', () => journalTo(0));
-  jr.el.addEventListener('click', e => {
-    const t = e.target.closest('.tile, [data-j], [data-j-tool]');
-    if (!t) return;
-    e.stopPropagation();
-    if (performance.now() < jr.quietTill) return;          // (no tap right after a swipe)
-    if (t.dataset.k) { jr.pick = t.dataset.k; drawPage(); markTiles(); if (upright()) journalTo(2); return; }
-    const act = t.dataset.j;
-    if (act === 'close') journalTo(0);
-    else if (act === 'back') journalTo(1);
-    else if (act === 'prev' || act === 'next') turnPage(act === 'next' ? 1 : -1);
-    else if (t.dataset.jTool) { const k = t.dataset.jTool; journalTo(0); setTool(k); showTip(k, TIP_TAP_MS, 'touch'); }
-  });
-
-  // Fingers, on an upright phone: a handle dragged down lays its sheet down (the journal's shuts it, a page's goes back
-  // to the pages); a page swiped sideways turns. Anything shorter springs back.
-  jr.el.addEventListener('pointerdown', e => {
-    const grab = upright() && e.button === 0 && e.target.closest('.j-top, .pg-grab');
-    if (grab) { jr.drag = { el: grab.classList.contains('pg-grab') ? pageEl() : jr.el, y: e.clientY, t: e.timeStamp, dy: 0 }; jr.el.setPointerCapture(e.pointerId); return; }
-    if (e.pointerType !== 'mouse' && e.target.closest('.pg-body')) jr.swipe = { x: e.clientX, y: e.clientY, dx: 0, side: false };
-  });
-  jr.el.addEventListener('pointermove', e => {
-    const d = jr.drag, s = jr.swipe;
-    if (d) { d.dy = Math.max(0, e.clientY - d.y); d.el.style.transform = d.dy ? `translateY(${d.dy}px)` : ''; return; }
-    if (!s) return;
-    const dx = e.clientX - s.x, dy = e.clientY - s.y;
-    if (!s.side) {
-      if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx)) { jr.swipe = null; return; }   // (a scroll)
-      if (Math.abs(dx) < 12) return;
-      s.side = true; jr.el.setPointerCapture(e.pointerId);
-    }
-    s.dx = dx;
-    const more = PAGES[(PAGE[jr.pick] || PAGES[0]).i + (dx < 0 ? 1 : -1)];
-    jr.el.querySelector('.pg-in').style.transform = `translateX(${more ? dx : dx * 0.25}px)`;   // (at the last page, it only gives)
-  });
-  const lift = e => {
-    const d = jr.drag, s = jr.swipe;
-    jr.drag = jr.swipe = null;
-    if (d) {
-      if (d.dy > 110 || d.dy > 30 && d.dy / (e.timeStamp - d.t) > 0.5) journalTo(d.el === jr.el ? 0 : 1);
-      else if (d.dy) { const from = d.el.style.transform; d.el.style.transform = ''; slide(d.el, [{ transform: from }, { transform: 'none' }], 200); }
-      return;
-    }
-    if (!s?.side) return;
-    jr.quietTill = performance.now() + 350;
-    const dir = s.dx < 0 ? 1 : -1, el = jr.el.querySelector('.pg-in'), from = el.style.transform;
-    el.style.transform = '';
-    if (Math.abs(s.dx) > 56 && PAGES[(PAGE[jr.pick] || PAGES[0]).i + dir]) turnPage(dir, `translateX(${-dir * 40}px)`);
-    else slide(el, [{ transform: from }, { transform: 'none' }], 200);
-  };
-  jr.el.addEventListener('pointerup', lift);
-  jr.el.addEventListener('pointercancel', lift);
-
-  // Keys: J opens and shuts it, Esc steps back, ← → turn. While it's open no key reaches the meadow (on the window,
-  // first: before the meadow's own keys).
-  addEventListener('keydown', e => {
-    if (e.target.closest?.('input,textarea') || e.metaKey || e.ctrlKey || e.altKey) return;
-    const j = e.key === 'j' || e.key === 'J';
-    if (!jr.depth) {
-      if (j && !ui.hush && !away.on && !awayOpen() && !lostOpen()) { e.stopPropagation(); openJournal(); }
-      return;
-    }
-    if (e.key === 'Tab') return;
-    e.stopPropagation();
-    if (e.key === 'Escape' || j) { e.preventDefault(); journalTo(j ? 0 : jr.depth - 1); }
-    else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); turnPage(e.key === 'ArrowRight' ? 1 : -1); }
-  }, true);
-}
-
-// A first sighting's stamp: it pops up over the one seen, then flies on an arc into the book, which bumps and counts it.
-// One at a time; the rest wait their turn (each already in the journal, held back from the book's count till it lands).
-const stamps = [];
-let stamping = false;
-function stampFly(kind, x, y, emoji) {           // (emoji: a moment's, flown in place of the painting)
-  stamps.push({ kind, x, y, emoji });
-  if (!stamping) { stamping = true; setTimeout(nextStamp, 0); }   // (out of the frame being drawn)
-}
-function nextStamp() {
-  const q = stamps.shift();
-  if (!q) { stamping = false; return; }
-  const land = () => {
-    book.held.delete(q.kind);
-    journalChanged();
-    book.el.classList.remove('bump'); void book.el.offsetWidth; book.el.classList.add('bump');
-    setTimeout(() => book.el.classList.remove('bump'), 500);
-    setTimeout(nextStamp, 300);
-  };
-  const r = book.el.getBoundingClientRect();
-  if (!r.width || still() || document.hidden || away.on) { land(); return; }
-  const [sx, sy] = toScreen(q.x, q.y), x = clamp(sx, 50, vw - 50), y = clamp(sy, topPad + 60, vh - barPad - 40);
-  const bx = r.left + r.width / 2, by = r.top + r.height / 2;
-  const cx = (x + bx) / 2 + (bx > x ? 1 : -1) * 60, cy = Math.min(y, by) - 160;      // the arc's pull
-  const el = document.createElement('div');
-  el.id = 'jstamp';
-  el.innerHTML = q.emoji ? `<img src="${jArt({ k: '~' + q.emoji, art: q.emoji })}" alt="">` : `<img src="${jArt(PAGE[q.kind])}"${fitStyle(PAGE[q.kind])} alt="">`;
-  document.body.append(el);
-  const fly = Array.from({ length: 12 }, (_, i) => {
-    const t = (i + 1) / 12, u = 1 - t, px = u * u * x + 2 * u * t * cx + t * t * bx, py = u * u * (y - 24) + 2 * u * t * cy + t * t * by;
-    return { transform: `translate(${px}px, ${py}px) scale(${1 - 0.55 * t}) rotate(${t * 20}deg)`, offset: 0.4 + 0.6 * t, easing: 'ease-in' };
-  });
-  el.animate([
-    { transform: `translate(${x}px, ${y}px) scale(0)`, offset: 0 },
-    { transform: `translate(${x}px, ${y - 30}px) scale(1.15)`, offset: 0.14 },
-    { transform: `translate(${x}px, ${y - 24}px) scale(1)`, offset: 0.22 },
-    { transform: `translate(${x}px, ${y - 24}px) scale(1)`, offset: 0.4 },
-    ...fly,
-  ], { duration: 2100, fill: 'forwards' }).onfinish = () => { el.remove(); land(); };
-}
-
-// A visitor of a kind you've never seen comes as a mystery: its news says "Something…", its marker is gold with the
-// shadow from its empty page (spotBadge), it waits for you (sim.js v.wait), and "Go see" slows time to 1x. Seen, it
-// gets a moment of its own: time eases down to 1x, the camera leans in, the cards step away and the intro's bars slide
-// in with "First sighting" over the meadow and its name under it, and the meadow hushes for a breath before the bells
-// (sound.js found). Then the bars go, its stamp flies into the book and its panel opens. Only a visitor's first
-// sighting gets this, a few times ever (a kind that lives here gets its caption and stamp); any key, click or touch
-// ends it early, and while the intro or the idle camera has the bars it's the caption and stamp too.
-const REVEAL_MS = 3600, REVEAL_TILES = 15, REVEAL_SNAP = 2400;   // (the snapshot once it has leaned in and the sparkles are gone)   // (it leans in till the screen's short side is REVEAL_TILES tiles, if it's further out)
-const reveal = { on: false, kind: '', v: null, at: 0 };
-function startReveal(kind, v) {
-  if (reveal.on || intro.on || idle.on || away.on || document.hidden) return false;
-  Object.assign(reveal, { on: true, kind, v, at: performance.now(), snapped: false });
-  gaze.calm = reveal.at + REVEAL_MS + FIND_GAP;         // (no other find in the middle of it, or straight after)
-  $('#reveal-top').textContent = `✨ First sighting · No. ${PAGE[kind].no}`;
-  $('#reveal-name').textContent = PAGE[kind].name;
-  $('#reveal-why').textContent = `come for ${VISITORS[kind].for} ${visitorPlace(v)}`;
-  document.body.classList.add('reveal');
-  const d = drawnAt(v);
-  for (let i = 0; i < 6; i++) { const a = i * TAU / 6; addEffect('✨', d.x + Math.cos(a) * 1.5, d.y + Math.sin(a) * 0.8, 0.4 + 0.5 * (i & 1), 1500 + i * 120); }
-  const close = Math.min(56, Math.min(vw, vh) / REVEAL_TILES);
-  if (!still() && cam.zoom < close) cam.goal = close;
-  chime('found');
-  return true;
-}
-function revealFrame(now, dt) {
-  if (!still() && !ui.follow) { const d = drawnAt(reveal.v); glide = { x: d.x, y: d.y }; }   // (the camera goes with it)
-  if (ui.speed > 1) {                                  // eased down to 1x, from 60x in under a second
-    ui.speed = Math.max(1, ui.speed * Math.pow(0.005, dt));
-    if (ui.speed === 1) setSpeed(1);
-  }
-  if (now - reveal.at > REVEAL_MS) endReveal();
-}
-function endReveal() {
-  if (!reveal.on) return;
-  if (!reveal.snapped) snapReveal(performance.now());
-  reveal.on = false;
-  if (ui.speed > 1) setSpeed(1);
-  document.body.classList.remove('reveal');
-  document.body.classList.add('ui-in');
-  setTimeout(() => document.body.classList.remove('ui-in'), 1100);
-  const v = reveal.v, d = drawnAt(v);
-  stampFly(reveal.kind, d.x, d.y);
-  if (!ui.selectedId && !ui.picked && world.visitors?.includes(v) && !v.gone) pick('visitor', v);
-}
-for (const type of ['pointerdown', 'keydown', 'wheel']) {
-  addEventListener(type, () => { if (reveal.on && performance.now() - reveal.at > 300) endReveal(); }, { capture: true, passive: true });
-}
-// Its picture for the journal: SNAP_TILES of the meadow across round it, the ground drawn in under the rest as copyMeadow
-// does, as a small JPEG of SNAP (CSS px, SNAP_K of it in pixels), once.
-const SNAP = [300, 200], SNAP_K = 1.5, SNAP_TILES = 8, SNAP_DARK = 0.35;   // (how much of the night's dark it keeps: enough to tell, not to hide it)
-function snapReveal(now) {
-  reveal.snapped = true;
-  const v = reveal.v, d = drawnAt(v), [sx, sy] = toScreen(d.x, d.y), w = Math.min(vw, Math.max(160, SNAP_TILES * cam.zoom)), h = Math.min(vh, w * SNAP[1] / SNAP[0]);
-  const x = clamp(sx - w / 2, 0, vw - w), y = clamp(sy - visitorPx(v) * 0.2 - h / 2, 0, vh - h);
-  groundIn = snapping = true; render(now);
-  if (groundIn !== true) {
-    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'destination-over';
-    ctx.drawImage(Ground.canvas, ...groundIn, 0, 0, canvas.width, canvas.height);
-    ctx.restore();
-  }
-  groundIn = snapping = false;
-  const c = document.createElement('canvas');
-  c.width = Math.round(SNAP[0] * SNAP_K); c.height = Math.round(SNAP[1] * SNAP_K);
-  const g = c.getContext('2d');
-  g.fillStyle = '#7d9a55'; g.fillRect(0, 0, c.width, c.height);   // (under it, should the ground not be drawn in)
-  g.drawImage(canvas, x * dpr, y * dpr, w * dpr, h * dpr, 0, 0, c.width, c.height);
-  photos[reveal.kind] = { src: c.toDataURL('image/jpeg', 0.8), where: visitorPlace(v), t: world.tick };
-  try { localStorage.setItem(PHOTOS, JSON.stringify(photos)); } catch (e) { /* this visit only, then */ }
-}
-
-// The most of each kind that lives here alive at once, in any meadow of yours: looked at once a sim day.
-let journalDay = -1;
-function journalTick() {
-  const day = Math.floor(world.tick / S.TPD);
-  if (!KEEP || day === journalDay) return;
-  journalDay = day;
-  let more = false;
-  for (const p of PAGES) {
-    const pg = journal[p.k];
-    if (p.visits || !pg?.first) continue;
-    const n = livingCount(p.k);
-    if (n > (pg.most || 0)) { pg.most = n; more = true; }
-  }
-  if (more) { saveJournal(); if (jr.depth) drawPage(); }
-}
-
-// which: '' the tools, 'sky' the weather, 'plant' the kinds of tree.
-function openRing(sx, sy, which = '') {
-  const items = which === 'sky'
-    ? [...Object.entries(S.WEATHER).map(([k, wx]) => ['sky:' + k, wx.emoji, wx.name]), ['lock', world.skyLocked ? '🔒' : '🔓', world.skyLocked ? 'Unlock the weather' : 'Keep this weather']]
-    : which === 'plant' ? PLANT_KINDS.map(([k, e, label]) => ['plant:' + k, e, label]) : RING_TOOLS;
-  if (!items.length) return;
-  if (!ui.ring) { ui.ring = { at: toWorld(sx, sy) }; chime('click'); }
-  ui.ring.t0 = performance.now();
-  const r = Math.max(which ? 80 : 72, items.length * 56 / TAU);   // room for every 50 px button; near an edge the ring moves in, but still acts where you clicked
-  sx = clamp(sx, r + 34, vw - r - 34); sy = clamp(sy, r + 34, vh - r - 34);
-  if (rail()) {                       // on its side, inside the clear meadow: right of the rail, under the top bar and what hangs from it
-    const m = r + 28, bottom = Math.min(vh, innerHeight) - barPad - m;   // (Safari's bar: the meadow reaches under it, the ring mustn't)
-    const x0 = (sheet ? sheet.left : 0) + m, x1 = Math.max(x0, vw - (sheet ? sheet.right : 0) - m);
-    sx = clamp(sx, x0, x1);
-    let top = topPad + m;
-    for (const el of [$('#watch'), $('#forecast'), $('#tasks')]) {
-      const b = el.getBoundingClientRect();
-      if (!b.height || b.left >= sx + m || b.right <= sx - m) continue;
-      if (b.bottom + m <= bottom) { top = Math.max(top, b.bottom + m); continue; }
-      const l = b.left - m, rr = b.right + m;                // no room under it: beside it, the nearer side that fits
-      sx = l >= x0 && (sx - l < rr - sx || rr > x1) ? l : rr <= x1 ? rr : sx;
-    }
-    sy = clamp(sy, Math.min(top, Math.max(topPad + m, bottom)), Math.max(topPad + m, bottom));
-  }
-  const ring = $('#ring');
-  ring.style.left = sx + 'px'; ring.style.top = sy + 'px';
-  ring.innerHTML = `<div class="ring-hub">${which === 'plant' ? 'Which tree?' : ''}</div>` + items.map(([k, e, label], i) => {
-    const a = -Math.PI / 2 + i / items.length * TAU;
-    const on = k === 'sky:' + world.weather.kind || (k === 'lock' && world.skyLocked);
-    return `<button class="ring-item${on ? ' on' : ''}" data-ring="${k}" data-label="${label}" aria-label="${label}"
-      style="--dx:${(Math.cos(a) * r).toFixed(1)}px;--dy:${(Math.sin(a) * r).toFixed(1)}px;animation-delay:${i * 18}ms">${e}</button>`;
-  }).join('');
-  ring.classList.remove('hidden');
-}
-
-function closeRing() {
-  if (!ui.ring) return;
-  ui.ring = null;
-  $('#ring').classList.add('hidden');
-}
-
-function ringPick(k) {
-  const [wx, wy] = ui.ring.at;
-  if (k === 'sky' || k === 'plant') { const [sx, sy] = toScreen(wx, wy); openRing(sx, sy, k); return; }
-  closeRing();
-  if (k === 'pond' || k === 'sow' || k === 'hedge') { setTool(k); return; }   // the spade, the seed or the whips in hand: a drag places it
-  if (S.KINDS.includes(k)) release(k, wx, wy);
-  else if (k === 'zap') zapAt(wx, wy);
-  else if (k === 'fire') { setFire(wx, wy); S.burnLine(world, wx - 3, wy, wx + 3, wy); flushEvents(); }   // a short wall across the spot
-  else if (k === 'grass') {
-    S.paintGrass(world, wx, wy, 5);
-    hear('grass', wx, wy);
-    for (let i = 0; i < 6; i++) addEffect('🌱', wx + (Math.random() - 0.5) * 7, wy + (Math.random() - 0.5) * 7, 0.6, 900);
-    terrainTick = -1;
-  } else if (k === 'lock') toggleSkyLock();
-  else if (k.startsWith('plant:')) plantAt(k.slice(6), wx, wy);
-  else if (k.startsWith('sky:')) { S.setSky(world, k.slice(4)); flushEvents(); showSkyLock(); updateClock(); }
-}
-
-$('#ring').addEventListener('pointerover', e => {
-  if (performance.now() - ui.ring.t0 < 300) return;     // the buttons fly out from under the mouse
-  const b = e.target.closest('[data-ring]');
-  $('.ring-hub').textContent = b ? b.dataset.label : '';
-});
-$('#ring').addEventListener('contextmenu', e => e.preventDefault());
-addEventListener('pointerdown', e => { if (ui.ring && !e.target.closest('#ring,#world')) closeRing(); });
-
-function toggleSkyMenu(open = !ui.sky.menu) {
-  if (KEEP && open) {                     // at ?keep the sky isn't yours to pick: the button only says what it's doing
-    const k = world.weather.kind;
-    addNews(`${S.WEATHER[k].emoji} <b>${S.WEATHER[k].name}.</b> ${WEATHER_HINT[k]}.`, 'weather', 3000);
-    return;
-  }
-  ui.sky.menu = open;
-  $('#sky-menu').classList.toggle('hidden', !open);
-  $('[data-act="sky"]').classList.toggle('on', open);
-  if (open) toggleMore(false);
-  showSkyLock();
-}
 
 // The ••• menu: things you do to the whole meadow, kept away from everyday buttons.
 function toggleMore(open = $('#more-menu').classList.contains('hidden')) {
   $('#more-menu').classList.toggle('hidden', !open);
   $('[data-act="more"]').classList.toggle('on', open);
-  if (open && ui.sky.menu) toggleSkyMenu(false);
-}
-
-// ------------------------------------------------------------------ on the home screen
-// Added to the home screen, the meadow opens full screen with no browser bars (manifest.webmanifest).
-// Chrome and friends have an install dialog we can open; Safari has none, so a card shows the steps.
-const installed = () => navigator.standalone || matchMedia('(display-mode: standalone)').matches;
-const iOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
-let installPrompt = null;
-function showHomeItem() {
-  $('#home-item').classList.toggle('hidden', installed() || !(installPrompt || matchMedia('(pointer: coarse)').matches));
-}
-// Kept for the ••• menu rather than let Chrome drop its own bar over the toolbar.
-addEventListener('beforeinstallprompt', e => { e.preventDefault(); installPrompt = e; showHomeItem(); });
-addEventListener('appinstalled', () => { installPrompt = null; showHomeItem(); addNews('📱 The meadow is on your home screen now.'); });
-
-const wantsHome = () => !installed() && matchMedia('(pointer: coarse)').matches;
-let afterHome = null;                                   // what waits for the card to close
-
-// A tap on the menu item opens Chrome's install dialog straight away. The card showing by itself
-// can't: a page may only open that dialog from a tap, so the card gets an Install button.
-function homeGuide(open = true, byItself = false) {
-  if (open && installPrompt && !byItself) { install(); return; }
-  const card = $('#home-guide');
-  card.dataset.os = installPrompt ? 'prompt' : iOS ? 'ios' : 'other';
-  card.classList.toggle('hidden', !open);
-  if (!open && afterHome) { const then = afterHome; afterHome = null; then(); }
-}
-function install() {
-  installPrompt?.prompt();                              // each one opens once
-  installPrompt = null;
-  showHomeItem();
-  homeGuide(false);
-}
-const homeOpen = () => !$('#home-guide').classList.contains('hidden');
-
-// An iPhone in Safari keeps its address bar over a page that never scrolls: on its side, a seventh of the screen. From the
-// home screen the meadow has none, so ?keep shows the card once by itself, the first time it's held on its side (SIDE_HOME).
-// Android may go full screen instead (••• Full screen, on its side; an iPhone doesn't let a page).
-const SIDE_HOME = 'aeon-garden-side-home';
-const safari = iOS && !/CriOS|FxiOS|EdgiOS/.test(navigator.userAgent);
-function sideHome() {
-  if (!KEEP || !safari || installed() || !rail() || !$('#welcome').classList.contains('hidden') || intro.on || reveal.on || jr.depth
-    || awayOpen() || lostOpen() || homeOpen() || askOpen()) return;
-  try { if (localStorage.getItem(SIDE_HOME) === '1') return; localStorage.setItem(SIDE_HOME, '1'); } catch (e) { return; }
-  homeGuide(true, true);
-}
-matchMedia('(max-height: 500px)').addEventListener('change', e => { if (e.matches) setTimeout(sideHome, 800); });
-const canFull = !iOS && !!document.fullscreenEnabled && matchMedia('(pointer: coarse)').matches;
-function showFullItem() {
-  $('#full-item').classList.toggle('hidden', !canFull);
-  setText($('#full-item .l'), document.fullscreenElement ? 'Leave full screen' : 'Full screen');
-}
-document.addEventListener('fullscreenchange', showFullItem);
-showFullItem();
-$('#home-guide').addEventListener('click', e => { if (e.target.id === 'home-guide') homeGuide(false); });
-
-// Once ever, on a phone or tablet that hasn't added it yet.
-function homeTip(ms) {
-  if (!wantsHome()) return;
-  try { if (localStorage.getItem('aeon-garden-hometip') === '1') return; } catch (e) { return; }
-  setTimeout(() => {
-    if (installed()) return;
-    addNews('📱 <b>Tip:</b> put the meadow on your home screen and it opens full screen, like an app. <a data-act="home">Show me how</a>, or find it in ••• later.');
-    try { localStorage.setItem('aeon-garden-hometip', '1'); } catch (e) { /* fine */ }
-  }, ms);
 }
 
 // Once ever, after two minutes of play: are you enjoying it, and any ideas? The idea goes to Web3Forms,
@@ -9824,9 +7293,9 @@ const canShare = !!navigator.share && matchMedia('(pointer: coarse)').matches;  
 
 // Counted a few times a second. It waits for a quiet moment: nothing else open, not filming itself.
 function askTick(ms) {
-  if (!IDEAS_KEY || LAB || played < 0 || document.hidden || intro.on || !$('#welcome').classList.contains('hidden')) return;
+  if (!IDEAS_KEY || played < 0 || document.hidden) return;
   if ((played += ms) < ASK_MS) return;
-  if (idle.on || ui.hush || ui.ring || (guide.on && guide.step < GUIDE_STEPS) || ui.newsOpen || homeOpen() || awayOpen() || !$('#more-menu').classList.contains('hidden')) return;
+  if (!$('#more-menu').classList.contains('hidden')) return;
   played = -Infinity;
   try { localStorage.setItem('aeon-garden-asked', '1'); } catch (e) { /* fine */ }
   askIdeas(true);
@@ -9853,7 +7322,7 @@ function sendIdea() {
     setTimeout(() => askIdeas(false), 2500);
   }).catch(() => {
     $('#ask-send').disabled = false;
-    addNews("💌 Couldn't send your idea just now. Your words are still in the box, try again in a moment.");
+    toast("💌 Couldn't send your idea just now. Your words are still in the box, try again in a moment.");
   });
 }
 $('#ask').addEventListener('keydown', e => { if (e.key === 'Escape') askIdeas(false); });
@@ -9866,114 +7335,33 @@ function copyLink() {
     return;
   }
   navigator.clipboard?.writeText(location.href).then(
-    () => addNews('🔗 Link copied. Anyone who opens it gets this same meadow from the start.'),
-    () => addNews(`🔗 Couldn't copy. The link is ${esc(location.href)}`));
+    () => toast('🔗 Link copied. Anyone who opens it gets this same meadow from the start.'),
+    () => toast(`🔗 Couldn't copy. The link is ${esc(location.href)}`));
 }
 
-// The terrain lab on this meadow's map. In a tab of its own, so the meadow keeps going; on the home
-// screen a new tab would drop out of the app, so it goes in place, and nothing keeps this meadow.
-function openLab() {
-  const url = './?lab&seed=' + world.seed + terrainQuery();
-  if (!installed()) open(url, '_blank');
-  else if (confirm('Open the terrain lab? This meadow will be gone: coming back starts its map over from the beginning.')) location.href = url;
-}
-
-// Everything that shows the weather lock: the menu's toggle and the badge on the toolbar.
-function showSkyLock() {
-  const locked = world.skyLocked;
-  document.querySelectorAll('[data-sky]').forEach(b => b.classList.toggle('on', b.dataset.sky === world.weather.kind));
-  const btn = $('[data-act="sky-lock"]');
-  btn.classList.toggle('on', locked);
-  btn.innerHTML = `<span class="e">${locked ? '🔒' : '🔓'}</span><span class="l">${locked ? 'Locked' : 'Lock'}</span>`;
-  $('[data-act="sky"]').classList.toggle('locked', locked);
-}
-
-function toggleSkyLock() {
-  S.lockSky(world, !world.skyLocked);
-  addNews(world.skyLocked
-    ? `🔒 <b>Weather locked</b> on ${S.WEATHER[world.weather.kind].emoji} ${S.WEATHER[world.weather.kind].name.toLowerCase()} until you unlock it.`
-    : '🔓 The weather is free to change again.');
-  showSkyLock();
-  updateClock();
-}
-
-$('#sky-menu').innerHTML = Object.entries(S.WEATHER).map(([k, wx]) =>
-  `<button class="tool" data-sky="${k}" title="${WEATHER_HINT[k]}"><span class="e">${wx.emoji}</span><span class="l">${wx.name.split(' ')[0]}</span></button>`).join('') +
-  '<span class="sep"></span><button class="tool" data-act="sky-lock" title="Keep this weather until you unlock it (K)"></button>';
-
-function paintAt(sx, sy) {
-  const [wx, wy] = toWorld(sx, sy);
-  if (ui.tool === 'fire') { burnAt(wx, wy); return; }
-  S.paintGrass(world, wx, wy, 3.5);
-  hear('grass', wx, wy);
-  if (Math.random() < 0.3) addEffect('🌱', wx + (Math.random() - 0.5) * 3, wy + (Math.random() - 0.5) * 3, 0.6, 900);
-  terrainTick = -1;
-}
-
-// Fire is drawn from where the pointer last was, so a quick stroke leaves no gaps.
-function burnAt(wx, wy) {
-  const [fx, fy] = drag.burn || [wx, wy];
-  if (!drag.burn) setFire(wx, wy);
-  S.burnLine(world, fx, fy, wx, wy);
-  drag.burn = [wx, wy];
-  flushEvents();
-}
-
-function setFire(wx, wy) {
-  hear('fire', wx, wy, {}, true);
-  tried('fire', world.wet > 0.7 ? 'Too wet to burn. Try it after a heatwave.' : '');
-  addNews(world.wet > 0.7 ? '🔥 You drew a wall of fire, but the ground is too wet to burn.'
-    : '🔥 <b>You drew a wall of fire.</b> Everyone near it runs. On dry grass it could spread.', 'firewall', 8000);
-}
 
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-tool],[data-speed],[data-action],[data-act],[data-show],[data-range],[data-sky],[data-ring],a[data-id],a[data-thing]');
-  if (ui.sky.menu && !(t && (t.dataset.sky || t.dataset.act === 'sky' || t.dataset.act === 'sky-lock'))) toggleSkyMenu(false);
+  const t = e.target.closest('[data-action],[data-act],a[data-id],a[data-thing]');
   if (!(t && t.dataset.act === 'more')) toggleMore(false);
   if (!t) return;
-  if (t.closest('#toolbar,#hud-right .hud-top,#ring')) chime('click');
-  if (t.dataset.ring) ringPick(t.dataset.ring);
-  else if (t.dataset.tool) setTool(t.dataset.tool);
-  else if (t.dataset.speed !== undefined) setSpeed(+t.dataset.speed || (ui.speed ? 0 : lastSpeed));
-  else if (t.dataset.act === 'cycle') setSpeed(ui.speed ? SPEEDS[(SPEEDS.indexOf(ui.speed) + 1) % SPEEDS.length] : lastSpeed);
-  else if (t.dataset.sky) { S.setSky(world, t.dataset.sky); flushEvents(); toggleSkyMenu(false); updateClock(); }
-  else if (t.dataset.act === 'sky') toggleSkyMenu();
-  else if (t.dataset.act === 'tools') toggleTools();
-  else if (t.dataset.act === 'sky-lock') toggleSkyLock();
-  else if (t.dataset.action === 'new') { if (confirm('Start a brand-new meadow? This one will be gone.')) newWorld(randomSeed()); }
+  if (t.closest('#hud-right .hud-top')) chime('click');
+  if (t.dataset.action === 'new') { if (confirm('Start a brand-new meadow? This one will be gone.')) newWorld(randomSeed()); }
+  else if (t.dataset.act === 'pause') setSpeed(ui.speed ? 0 : 1);
   else if (t.dataset.act === 'close') select(0);
   else if (t.dataset.act === 'sheet-up' || t.dataset.act === 'sheet-down') {
     ui.sheetUp = t.dataset.act === 'sheet-up';
     $('#inspector').scrollTop = 0;
     renderInspector();
   }
-  else if (t.dataset.act === 'news') toggleNewsLog();
   else if (t.dataset.act === 'more') toggleMore();
   else if (t.dataset.act === 'copy-link') copyLink();
   else if (t.dataset.act === 'ideas') { played = -Infinity; askIdeas(true); }   // found it themselves: no need to ask
-  else if (t.dataset.act === 'lab') openLab();
-  else if (t.dataset.act === 'watch') startIdle();
-  else if (t.dataset.act === 'guide') { openGuide(); guideTick(performance.now()); }
-  else if (t.dataset.act === 'guide-shut') { shutGuide(); guideTick(performance.now()); }
-  else if (t.dataset.act === 'lost-again') startAgain();
-  else if (t.dataset.act === 'lost-watch') showLost(false);
-  else if (t.dataset.act === 'tasks-fold') foldTasks();
-  else if (t.dataset.act?.startsWith('task:')) taskTap(t.dataset.act.slice(5));
-  else if (t.dataset.act === 'guide-skip') { Object.assign(guide, { step: GUIDE_STEPS, wait: 0 }); saveGuide(); guideTick(performance.now()); }
-  else if (t.dataset.act === 'guide-fold') { guide.fold = !guide.fold; guide.fresh = ''; saveGuide(); guideTick(performance.now()); }
-  else if (t.dataset.act?.startsWith('try:')) tryThing(t.dataset.act.slice(4));
-  else if (t.dataset.act === 'home') homeGuide();
-  else if (t.dataset.act === 'fullscreen') { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen().catch(() => {}); }
-  else if (t.dataset.act === 'home-done') homeGuide(false);
-  else if (t.dataset.act === 'home-install') install();
   else if (t.dataset.act === 'ask-later') askIdeas(false);
-  else if (t.dataset.act === 'away-ok') closeAway();
   else if (t.dataset.act === 'ask-send') sendIdea();
   else if (t.dataset.act === 'sound') toggleSound();
   else if (t.dataset.act === 'follow') { ui.follow = !ui.follow; renderInspector(); }
   else if (t.dataset.act === 'traits') { ui.allTraits = !ui.allTraits; renderInspector(); }
   else if (t.dataset.act === 'story') { ui.allStory = !ui.allStory; renderInspector(); }
-  else if (t.dataset.act === 'spot') { const s = spots.find(s => s.id === +t.dataset.spot); if (s) goSpot(s); }
   else if (t.dataset.thing) goToThing(t.dataset.thing);
   else if (t.dataset.id) {
     const c = world.byId.get(+t.dataset.id);
@@ -9981,75 +7369,26 @@ document.addEventListener('click', e => {
   }
 });
 
-// A thing a link names ('water:3', 'field:12', 'tree:40', 'hive:2'), shown in the inspector; one the keeper made
-// (a pond, a strip, a hedge's whip) is far off, likely, so the camera goes to look at it too.
+// A thing a link names ('water:3', 'field:12', 'tree:40', 'hive:2'), shown in the inspector.
 function goToThing(thing) {
   const [kind, id] = thing.split(':');
   if (kind === 'water') {
     const v = world.waters[+id];
-    if (v) { const at = dugSpot(v.id); select(0); ui.follow = false; cam.x = at.x; cam.y = at.y; clampCam(); pick('water', { body: v, ...at }); }
+    if (v) pick('water', { body: v, x: cam.x, y: cam.y });
     return;
   }
   const it = (kind === 'hive' ? world.hives : kind === 'tree' ? world.decor.filter(o => o.tree) : kind === 'visitor' ? world.visitors || [] : world.fields).find(o => o.id === +id);
-  if (it?.strip || it?.hedge || kind === 'visitor' && it) { select(0); ui.follow = false; cam.x = it.x; cam.y = it.y; clampCam(); }
+  if (kind === 'visitor' && it) { select(0); ui.follow = false; cam.x = it.x; cam.y = it.y; clampCam(); }
   if (it) pick(kind, it);
-}
-
-// P copies a picture of the whole meadow, SHOT pixels a tile, as the game draws it. The camera
-// looks at all of it for one frame and is put straight back, so the screen never shows it.
-const SHOT = 32;
-function copyMeadow() {
-  const keep = { x: cam.x, y: cam.y, zoom: cam.zoom, vw, vh, dpr }, now = performance.now();
-  vw = S.W * SHOT; vh = S.H * SHOT; dpr = 1;
-  Object.assign(cam, { x: S.W / 2, y: S.H / 2, zoom: SHOT });
-  canvas.width = vw; canvas.height = vh;
-  groundIn = true; render(now);
-  if (groundIn !== true) {   // the ground drawn in under it all, as it's a layer of its own on screen (the dark and the light already on it)
-    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'destination-over';
-    ctx.drawImage(Ground.canvas, ...groundIn, 0, 0, vw, vh);
-    ctx.globalCompositeOperation = 'source-over';
-  }
-  groundIn = false;
-  if (lab?.draw) lab.draw(ctx, dpr, true);
-  const png = new Promise(ok => canvas.toBlob(ok, 'image/png'));   // takes the picture now, encodes it later
-  ({ vw, vh, dpr } = keep);
-  Object.assign(cam, { x: keep.x, y: keep.y, zoom: keep.zoom });
-  canvas.width = Math.round(vw * dpr); canvas.height = Math.round(vh * dpr);
-  render(now);
-  if (lab?.draw) lab.draw(ctx, dpr);
-  return navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]).then(() => [S.W * SHOT, S.H * SHOT]);
 }
 
 document.addEventListener('keydown', e => {
   if (e.target.closest('input,textarea') || !world) return;
-  if (intro.on) {                                      // any key skips the intro
-    if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key !== 'Shift' && e.key !== 'Tab') { e.preventDefault(); endIntro(true); }
-    return;
-  }
-  if (LAB && !'+=-'.includes(e.key)) return;            // the lab has keys of its own
-  if ((e.metaKey || e.ctrlKey || e.altKey) && /^[a-z]$/i.test(e.key)) return;   // ⌘C, Ctrl+Z…: the browser's, never a tool
-  if (KEEP && 'zbtwkv'.includes(e.key)) return;         // the tools ?keep doesn't have
-  if (e.key === ' ') {
-    e.preventDefault();
-    setSpeed(ui.speed ? 0 : lastSpeed);
-  } else if ('1234'.includes(e.key) && e.key.length === 1) setSpeed([1, 4, 15, 60][+e.key - 1]);
-  else if (e.key === 'Escape' && tip.tool) hideTip();   // ?keep: a tool's card, put away
-  else if (e.key === 'Escape' && placing) dropPlace();   // a pond being placed: called off
+  if ((e.metaKey || e.ctrlKey || e.altKey) && /^[a-z]$/i.test(e.key)) return;   // ⌘C, Ctrl+Z…: the browser's
+  if (e.key === ' ') { e.preventDefault(); setSpeed(ui.speed ? 0 : 1); }
   else if (e.key === 'Escape') stepOut();
   else if (e.key === 'f' && ui.selectedId) { ui.follow = !ui.follow; renderInspector(); }
-  else if (e.key === 'l') { setTool('look'); showTip('look', TIP_KEY_MS, 'key'); }   // (the card only at ?keep)
-  else if (e.key === 'z') setTool('zap');
-  else if (e.key === 'b') setTool('fire');
-  else if (e.key === 't') setTool('plant');
-  else if (e.key === 'd' && KEEP) { setTool('pond'); showTip('pond', TIP_KEY_MS, 'key'); }
-  else if (e.key === 'g' && KEEP) { setTool('sow'); showTip('sow', TIP_KEY_MS, 'key'); }
-  else if (e.key === 'h' && KEEP) { setTool('hedge'); showTip('hedge', TIP_KEY_MS, 'key'); }
-  else if (e.key === 'w') toggleSkyMenu();
-  else if (e.key === 'k') toggleSkyLock();
-  else if (e.key === 'n') toggleNewsLog();
   else if (e.key === 'm') toggleSound();
-  else if (e.key === 'v') startIdle();
-  else if (e.key === 'p') copyMeadow().then(([w, h]) => addNews(`📋 Copied the meadow, ${w} × ${h}`), () => addNews('📋 The browser would not let me copy the meadow.'));
   else if (e.key === '+' || e.key === '=') zoomAt(vw / 2, vh / 2, cam.zoom * 1.25);
   else if (e.key === '-') zoomAt(vw / 2, vh / 2, cam.zoom / 1.25);
 });
@@ -10057,41 +7396,29 @@ document.addEventListener('keydown', e => {
 // ------------------------------------------------------------------ Back
 //
 // Back (Android's button, Safari's swipe from the edge) steps out of what's open, as Esc does, instead of leaving the
-// meadow: a card or a menu shuts, the inspector's open sheet folds and then it shuts, a tool goes back to Look (stepOut).
+// meadow: a card or a menu shuts, the inspector's open sheet folds and then it shuts (stepOut).
 // Each thing open holds a step of this page's in the browser's history (back.token). They're counted, not named
 // (opened): after every tap or key, once everything else has had it, the history is brought level with what's open, a
 // step pushed for each one opened and taken back for each one shut (one shut and another opened in the same tap leave
-// it be). Safari skips a step a page adds outside a tap, so they're only ever added in one. The journal keeps steps of
-// its own (journalTo), over these while it's open.
+// it be). Safari skips a step a page adds outside a tap, so they're only ever added in one.
 const back = { token: Math.random().toString(36).slice(2), depth: 0, going: false, timer: 0 };
 const moreOpen = () => !$('#more-menu').classList.contains('hidden');
-const tasksOpen = () => KEEP && tasks.on && !tasks.fold && narrow();   // (a phone's is folded; open, it's a card over the meadow)
 function opened() {
-  if (LAB || intro.on || jr.depth) return back.depth;
   const ins = $('#inspector').classList, sheetUp = ins.contains('open') && narrow() && !ins.contains('strip');
-  return [awayOpen(), lostOpen(), homeOpen(), askOpen(), ui.ring, $('#toolbar').classList.contains('open'), ui.sky.menu,
-    moreOpen(), tasksOpen(), ui.tool !== 'look', ins.contains('open'), sheetUp].filter(Boolean).length;
+  return [askOpen(), moreOpen(), ins.contains('open'), sheetUp].filter(Boolean).length;
 }
 // The one on top shuts (Esc, and Back once for each step it takes).
 function stepOut() {
   const ins = $('#inspector').classList;
-  if (awayOpen()) closeAway();
-  else if (lostOpen()) showLost(false);
-  else if (homeOpen()) homeGuide(false);
-  else if (askOpen()) askIdeas(false);
-  else if (ui.ring) closeRing();
-  else if ($('#toolbar').classList.contains('open')) toggleTools(false);
-  else if (ui.sky.menu) toggleSkyMenu(false);
+  if (askOpen()) askIdeas(false);
   else if (moreOpen()) toggleMore(false);
-  else if (tasksOpen()) foldTasks(true);
-  else if (ui.tool !== 'look') setTool('look');
   else if (ins.contains('open') && narrow() && !ins.contains('strip')) { ui.sheetUp = false; $('#inspector').scrollTop = 0; renderInspector(); }
   else if (ins.contains('open')) select(0);
   else return false;
   return true;
 }
 function syncBack() {
-  if (back.going || jr.depth || jr.going || LAB) return;
+  if (back.going) return;
   const n = opened();
   while (back.depth < n) history.pushState({ meadow: back.token, n: ++back.depth }, '');
   if (n < back.depth && history.state?.meadow === back.token && history.state.n === back.depth) goBack(back.depth - n);
@@ -10103,9 +7430,8 @@ function goBack(k) {
 }
 for (const type of ['click', 'pointerup', 'keydown']) addEventListener(type, syncBack);
 addEventListener('popstate', e => {
-  if (e.state?.j === jr.token) return;                     // a step of the journal's: its own
   const n = e.state?.meadow === back.token ? e.state.n : 0;
-  if (!LAB && location.search !== meadowLink(world.seed)) history.replaceState(history.state, '', meadowLink(world.seed));   // (a step taken before a new meadow)
+  if (location.search !== meadowLink(world.seed)) history.replaceState(history.state, '', meadowLink(world.seed));   // (a step taken before a new meadow)
   if (back.going) { back.going = false; back.depth = n; return; }   // ours, taking back steps for what was shut
   for (let i = 0; i < 16 && opened() > n; i++) if (!stepOut()) break;
   back.depth = n;
@@ -10113,758 +7439,17 @@ addEventListener('popstate', e => {
   if (now < n) goBack(n - now);                             // past steps for what shut by itself, or Forward into old ones
 });
 
-// ------------------------------------------------------------------ the intro
-//
-// A first visit starts on an empty meadow (Sim.createWorld's arrival option) and watches it fill,
-// with bars top and bottom and a line of story at a time. At dawn a family hops in and digs its
-// home; the camera stays till they're tucked in for the night, pulls back over the whole meadow
-// while the night passes, and hands it over as the sun comes up. The intro only moves the camera,
-// sets the clock's pace and writes the lines. The animals do the rest themselves, so each beat
-// waits for them to do their part. Any key, click or scroll skips it.
-
-const intro = { on: false, beat: '', since: 0, start: 0, family: [], home: null, from: null, lines: [], lineAt: 0, lineTimer: 0 };
-const INTRO_REVEAL = 6.5;                       // seconds the camera takes to pull back
-const INTRO_DAWN = Math.round(1.06 * S.TPD);    // it pulls back till the second sunrise
-const INTRO_STUCK = 16;                         // seconds a beat may wait on the animals before it moves on
-const INTRO_MAX = 50;                           // and the whole intro, before it hands over anyway
-const LINE_MS = 3400;                           // a line stays up at least this long
-const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;   // then no intro: no camera flights
-const ease = u => u * u * (3 - 2 * u);
-
-// Close: the view can't go past the meadow's edge, so near enough that their burrow sits about a
-// third of the way in. A narrow phone can't be that close: there it just has to fit, a little way
-// to spare, and a good few tiles show between the bars.
-function introZoom() {
-  const f = world.family, walk = Math.abs(f.spot.x - f.entry.x), band = vh - 2 * clamp(vh * 0.09, 36, 84);
-  return clamp(Math.min(Math.max(vw / (walk * 3), 26), vw / (walk + 4.5), band / 9, 60), minZoom * 1.5, 64);
-}
-
-// The first shot, behind the welcome card: the edge they'll come in at, at first light.
-function introShot() {
-  Object.assign(cam, { zoom: introZoom() * 0.9, x: world.family.entry.x, y: world.family.spot.y, goal: null });
-  clampCam();
-}
-
-function startIntro() {
-  Object.assign(intro, { on: true, start: performance.now(), home: null, lines: [], lineAt: 0 });
-  document.body.classList.add('intro');
-  introBeat('dawn');
-  introLine('Spring, day one. Nobody lives here yet.', 2400);
-  setIntroSpeed(1);
-  if (ui.sound) Sound.playTune('clover');
-}
-
-function introBeat(beat, line) {
-  intro.beat = beat; intro.since = performance.now();
-  if (line) introLine(line);
-}
-
-// One line at a time, each up long enough to read: they wait their turn, and the old one fades
-// out before the new one fades in.
-function introLine(text, ms = LINE_MS) { intro.lines.push({ text, ms }); }
-function introCaptions(now) {
-  if (!intro.lines.length || now < intro.lineAt) return;
-  const el = $('#intro-line'), { text, ms } = intro.lines.shift(), fade = el.classList.contains('on') ? 800 : 0;
-  el.classList.remove('on');
-  intro.lineAt = now + fade + ms;
-  clearTimeout(intro.lineTimer);
-  intro.lineTimer = setTimeout(() => { el.textContent = text; el.classList.add('on'); }, fade);
-}
-
-function setIntroSpeed(v) {
-  if (v === ui.speed) return;
-  ui.speed = v;
-  Sound.update({ speed: v });
-}
-
-function introFrame(now, dt) {
-  const fam = intro.family, t = (now - intro.since) / 1000, all = (now - intro.start) / 1000;
-  const home = intro.home || (intro.home = fam.find(c => c.dig)?.dig || null);
-  const stuck = t > INTRO_STUCK;
-  let speed = 1;
-  switch (intro.beat) {
-    case 'dawn':                          // the empty meadow at first light, then they come
-      if (fam.length && t > 2.2) introBeat('walk', `Here come ${fam[0].name} and ${fam[1].name}, with two little ones in tow.`);
-      break;
-    case 'walk':
-      if (home) introBeat('dig', 'This looks like a good spot.');
-      else if (stuck) introReveal();
-      break;
-    case 'dig':
-      if (home.dug >= 1) introBeat('home', 'A home of their own.');
-      else if (stuck) introReveal();
-      break;
-    case 'home':                          // an evening by the new burrow, a little quicker, then in they go
-      if (t > 2.5) speed = 2;
-      if (fam.every(c => !c.alive || c.hidden)) introBeat('night', 'Their first night in the meadow.');
-      else if (stuck) introReveal();
-      break;
-    case 'night':
-      if (t > 2.4) introReveal();
-      break;
-    case 'reveal': {                      // the night passes as the camera pulls back
-      const left = INTRO_REVEAL - t;
-      speed = world.tick >= INTRO_DAWN ? 1 : clamp((INTRO_DAWN - world.tick) / (Math.max(left, 0.3) * TICKS_PER_SECOND), 0.5, 4);
-      if (left <= 0 && world.tick >= INTRO_DAWN) introBeat('morning', 'From now on the meadow is theirs. You’re only visiting.');
-      break;
-    }
-    case 'morning':                       // once the last line has been read
-      if (!intro.lines.length && now > intro.lineAt) return endIntro();
-      break;
-  }
-  if (all > INTRO_MAX) return endIntro();
-  setIntroSpeed(speed);
-  introCaptions(now);
-
-  if (intro.beat === 'morning') return;
-  if (intro.beat === 'reveal') {
-    const u = ease(clamp(t / INTRO_REVEAL, 0, 1)), f = intro.from;
-    cam.zoom = Math.exp(lerp(Math.log(f.z), Math.log(minZoom), u));
-    cam.x = lerp(f.x, S.W / 2, u); cam.y = lerp(f.y, S.H / 2, u);
-    return;
-  }
-  // Close up: a slow push in all along, and the camera drifts after the family, or their burrow.
-  const dir = world.family.side ? -1 : 1;
-  let x = world.family.entry.x, y = world.family.spot.y;
-  if (home) { x = home.x + dir * 1.5; y = home.y; }
-  else {
-    const out = fam.filter(c => c.alive && !c.hidden);
-    if (out.length) { x = out.reduce((a, c) => a + c.x, 0) / out.length + dir * 2; y = lerp(y, out.reduce((a, c) => a + c.y, 0) / out.length, 0.5); }
-  }
-  const k = 1 - Math.pow(0.3, dt);
-  cam.x += (x - cam.x) * k; cam.y += (y - cam.y) * k;
-  cam.zoom = introZoom() * (0.9 + 0.18 * ease(clamp(all / 22, 0, 1)));
-}
-
-function introReveal() {
-  intro.from = { x: cam.x, y: cam.y, z: cam.zoom };
-  introBeat('reveal');
-}
-
-function endIntro(skipped = false) {
-  if (!intro.on) return;
-  intro.on = false;
-  clearTimeout(intro.lineTimer);
-  $('#intro-line').classList.remove('on');
-  document.body.classList.remove('intro'); hush(false);
-  document.body.classList.add('ui-in');
-  setTimeout(() => document.body.classList.remove('ui-in'), 1100);
-  $('#news').innerHTML = '';              // what happened meanwhile is in the log
-  setSpeed(1);
-  if (skipped) cam.goal = minZoom;
-  welcomeTips();
-}
-$('#intro-skip').addEventListener('click', () => endIntro(true));
-
-// From the welcome card to the end of the intro, the cards and bars are away.
-function hush(on) {
-  ui.hush = on;
-  document.body.classList.toggle('hush', on);
-}
-
-// A few tips in the news, one at a time, once the meadow is theirs to watch. On a phone or tablet the
-// home screen card comes first, and the tips wait for it to close.
-function welcomeTips() {
-  if (wantsHome()) {
-    try { localStorage.setItem('aeon-garden-hometip', '1'); } catch (e) { /* fine */ }
-    afterHome = firstSteps;
-    setTimeout(() => homeGuide(true, true), 1200);      // once the bars are back
-  } else firstSteps();
-}
-function firstSteps() {
-  setTimeout(startGuide, 1200);
-  setTimeout(() => { if (!ui.sound) addNews(narrow() ? '🔊 <b>Tip:</b> the meadow has quiet sounds. Turn them on in ••• at the top.'
-    : '🔊 <b>Tip:</b> the meadow has quiet sounds. Turn them on with 🔇 at the top right (M).'); }, 40000);
-}
-
-// ------------------------------------------------------------------ things to try
-//
-// After the intro, three steps, one at a time: follow an animal, run time faster, open the ring. Then a
-// notebook of things to try, gentle and not, that tick off as they're done, and a tap on one puts its tool
-// in your hand. It only points: the meadow does the rest. What's done is kept (aeon-garden-tried), it comes
-// back on the next visit till it's done or closed, and ••• opens it again.
-
-const TRIES = [                          // what to try, a hint, and what it says once done
-  { k: 'zap', e: '⚡', text: 'Strike lightning on a tree', hint: 'On a dry day it starts a fire.' },
-  { k: 'fire', e: '🔥', text: 'Draw a wall of fire', hint: 'Drag it across the grass and see who runs.', said: 'The ash will feed fresh shoots.' },
-  { k: 'fox', e: '🦊', text: 'Let a fox loose by the rabbits', hint: 'They know what to do.', said: 'Run, rabbits!' },
-  { k: 'sky', e: '🌦️', text: 'Change the weather', hint: 'A heatwave dries the grass out for a fire.' },
-  { k: 'look', e: '🌳', text: 'Click a tree, a hive or a burrow', hint: 'Everything here has a story.', said: 'Rocks, flowers and water have theirs too.' },
-  { k: 'plant', e: '🌳', text: 'Plant a tree', hint: 'Pick the kind: an oak is slow, a birch quick, a hawthorn guards its neighbours.', said: 'Mind the rabbits: a seedling is a mouthful.' },
-  { k: 'carry', e: '🫳', text: 'Pick up an animal and carry it', hint: 'Press on it and drag. On a phone, hold a finger on it.', said: 'Mind where you put it down.' },
-  { k: 'fast', e: '⏩', text: 'Watch a year go by at 60×', hint: 'The rabbits boom and crash.', said: 'The meadow keeps going while you’re away, too.' },
-];
-const SKY_SAID = {
-  clear: 'Lock it (🔒) and it stays.', cloudy: 'Lock it (🔒) and it stays.',
-  rain: 'Rain grows the grass three times as fast.', storm: 'A storm brings lightning of its own.',
-  fog: 'In fog a fox can’t see far.', heat: 'The grass dries out. A fire now would spread.',
-  snow: 'In winter snow freezes the water over, and foxes walk across.',
-};
-const GUIDE_STEPS = 3, GUIDE_BYE = 4000, GUIDE_KEY = 'aeon-garden-tried';   // the last tick shows this long before the goodbye
-const guide = { on: false, step: 0, tried: [], said: {}, fresh: '', shut: false, fold: false, auto: false, wait: 0, fast: 0, tickWas: 0, html: '', doneAt: 0 };
-try { Object.assign(guide, JSON.parse(localStorage.getItem(GUIDE_KEY) || '{}')); } catch (e) { /* fine */ }
-const guideDone = () => TRIES.every(t => guide.tried.includes(t.k));
-
-function saveGuide() {
-  const { step, tried, shut, fold, auto } = guide;
-  try { localStorage.setItem(GUIDE_KEY, JSON.stringify({ step, tried, shut, fold, auto })); } catch (e) { /* fine */ }
-}
-
-// A first visit starts it from the top; a later one only brings back what was left open.
-function startGuide(fresh = true) {
-  if (LAB) return;
-  if (fresh) Object.assign(guide, { step: 0, tried: [], said: {}, fresh: '', shut: false, fold: false, auto: true, wait: 0, fast: 0, doneAt: 0 });
-  else if (!guide.auto || guide.shut || guideDone()) return;
-  guide.on = true; guide.tickWas = world.tick;
-  saveGuide();
-}
-
-// From the ••• menu: the notebook, open.
-function openGuide() {
-  Object.assign(guide, { on: true, step: GUIDE_STEPS, shut: false, fold: false, doneAt: 0, tickWas: world.tick });
-  saveGuide();
-}
-
-function shutGuide() {
-  Object.assign(guide, { on: false, shut: true });
-  saveGuide();
-}
-
-// Something on the list was done. It counts whenever it's done, even with the notebook closed.
-function tried(k, said) {
-  if (guide.tried.includes(k) || intro.on || away.on || idle.on) return false;
-  guide.tried.push(k);
-  guide.said[k] = said || TRIES.find(t => t.k === k).said || '';
-  saveGuide();
-  if (guide.on && guide.step >= GUIDE_STEPS) {
-    guide.fresh = k;
-    chime('tick');
-    if (narrow()) { guide.fold = false; guide.freshAt = 0; }       // a phone opens it to show the tick, and folds it again below
-    if (guideDone()) guide.doneAt = performance.now();
-  }
-  return true;
-}
-
-// A tap on a line puts that thing in your hand.
-function tryThing(k) {
-  if (k === 'zap' || k === 'fire' || k === 'fox' || k === 'plant') { if (ui.tool !== k) setTool(k); }
-  else if (k === 'look' || k === 'carry' || k === 'name') setTool('look');
-  else if (k === 'sky') toggleSkyMenu(true);
-  else if (k === 'fast') setSpeed(60);
-  if (narrow() && k !== 'sky') { guide.fold = true; saveGuide(); }   // out of the way of the meadow
-  guideTick(performance.now());
-}
-
-// (?keep) Losing the Dry Year (sim.js dryLost): one plain card, the meadow going on behind it. Start again: the same seed,
-// a fresh keeper meadow, its Dry Year in the same year, in place of this one (kept at once). Shown once the away card
-// is done with, if it came while you were away. Coming through it gets the same card (#lost.through), saying what it
-// came to, with only Carry on.
-const lostCard = { pending: false };
-const LOST_WHY = {
-  rabbit: 'The grass out in the straw gave them nothing, and the green by the water wasn’t enough for them all.',
-  fox: 'The rabbits and the voles went with the grass, and the foxes had nothing left to hunt.',
-  bee: 'The flowers wilted away from the water, and the hives ran through their honey.',
-  crow: 'There were too few grubs in the baked earth, and too little else.',
-  owl: 'The voles went with the long grass, and the owls had nothing left to hunt.',
-  otter: 'The water fell, and there were too few fish left in it.',
-  frogs: 'The pools dried up, and the damp grass by the water went with them.',
-};
-// Coming through (sim.js dryThrough, at the end of the autumn after): how green it stayed at its worst, who made it (a kind
-// whose hives ran dry once the counting stopped, said plainly), and what the keeper's work came to; or that it got by alone.
-function throughWords(t) {
-  const kinds = Object.entries(t.here), gone = kinds.filter(([, n]) => !n).map(([k]) => (k === 'frogs' ? 'frogs' : SPECIES_WORD[k].toLowerCase()));
-  const who = kinds.filter(([, n]) => n).map(([k, n]) => `${ALERT_ICON[k]} ${n}`).join(' · ');
-  const close = S.BARREN_DAYS - (t.close || 0), days = close === 1 ? 'a day' : `${close} days`;
-  let line = `At its worst, ${Math.round(t.low * 100)}% of the meadow was still green${t.close ? `: ${days} more and it would have gone barren` : ''}.`
-    + `${who ? ` Made it: ${who}.` : ''}`;
-  if (gone.length) line += ` The ${gone.join(' and the ')} got through the summer, but not the autumn after.`;
-  const times = n => `${n} ${n === 1 ? 'time' : 'times'}`, rows = [];
-  if (t.kept > 0) rows.push(['⛏️', 'Your ponds and hedges kept green', `${t.kept} tiles`]);
-  if (t.sips > 0) rows.push(['🌼', 'Bees sipped at your flowers', times(t.sips)]);
-  if (t.hid > 0) rows.push(['🌿', 'Rabbits hid from a fox in your hedges', times(t.hid)]);
-  if (t.ponds > 0) rows.push(['🐸', `Frogs live in your ${t.ponds === 1 ? 'pond' : 'ponds'}`, `${t.ponds}`]);
-  if (!rows.length) rows.push(['🌱', 'You left it to itself', 'it got by']);
-  return ['🌈 The meadow came through the Dry Year.', line, rows];
-}
-function lostWords(e) {
-  if (e.why === 'barren') return ['🥀 The meadow went barren in the Dry Year.', `For ${S.BARREN_DAYS} days running, hardly a patch of it was green.`];
-  const name = e.species === 'frogs' ? 'frog' : S.SPECIES[e.species].name.toLowerCase();
-  return [`😢 The last ${name} is gone: the Dry Year was too much for them.`, LOST_WHY[e.species] || ''];
-}
-// This meadow's arc in the journal, for the card: its pages seen in this meadow (world.sighted), all told and the Dry Year's.
-function arcTally() {
-  const seen = list => list.filter(p => world.sighted?.[p.k] != null).length, dry = PAGES.filter(p => CHAPTER[p.ch].dry);
-  const rows = [['📖', 'Journal pages seen in this meadow', `${seen(PAGES)} of ${PAGES.length}`]];
-  if (dry.length) rows.push(['☀️', 'Of them, the Dry Year’s', `${seen(dry)} of ${dry.length}`]);
-  return rows;
-}
-const lostOpen = () => !$('#lost').classList.contains('hidden');
-function showLost(open = true) {
-  lostCard.pending = false;
-  const dy = world.dryYear, through = !dy?.lost && dy?.through;
-  if (open && !dy?.lost && !through) return;
-  if (open) {
-    const [title, line, rows] = through ? throughWords(through) : [...lostWords(dy.lost), []];
-    rows.push(...arcTally());
-    $('#lost-title').textContent = title; $('#lost-text').textContent = line;
-    setHTML($('#lost-list'), rows.map(([icon, what, n]) => `<li><span>${icon}</span><span>${what}</span><em>${n}</em></li>`).join(''));
-    $('#lost-list').hidden = !rows.length;
-    $('#lost').classList.toggle('through', !!through);
-  }
-  $('#lost').classList.toggle('hidden', !open);
-}
-function startAgain() {
-  showLost(false);
-  newWorld(world.seed, false, world.options.dry || 0);
-  keepMeadow();                                         // (in place of the one lost)
-}
-$('#lost').addEventListener('click', e => { if (e.target.id === 'lost') showLost(false); });
-
-// ?keep has no guide: TASKS, top left (#tasks), three of them, each a verb and → what to wait for, and done, what
-// happened. Worked out from the world on the cards' beat, never kept: a pond the frogs found, a strip the bees found,
-// a hedge a rabbit hid in. The rows are built once a meadow, so a tap never lands on a new button; then only their
-// small line and classes change. What's slow to work out (how far the frogs are, when a strip blooms or a hedge is
-// thick) only when the day does, or the number of ponds, strips or hedges. A task done chimes, flashes and gets the
-// big line under the watch; one already done as the meadow opens (or while you were away) is only noted. A tap on a
-// task puts its tool in your hand, or on a done one goes to look at what did it. On a phone the card folds to a chip
-// of the icons (KEEP_CARD keeps the fold); a task done flashes its icon there, the big line saying what happened. Its
-// heading ties them to the threat: "Before the Dry Year", "Through the Dry Year" in its summer, then plain "Tasks".
-const KEEP_CARD = 'aeon-garden-keep-card';
-const TASKS = [
-  { k: 'pond', e: '⛏️', verb: 'Dig a pond', wait: 'frogs move in', got: '🐸' },
-  { k: 'sow', e: '🌼', verb: 'Sow flowers', wait: 'bees come', got: '🐝' },
-  { k: 'hedge', e: '🌿', verb: 'Plant a hedge', wait: 'a rabbit hides in it', got: '🐇' },
-  { k: 'green', e: '☀️', verb: 'Keep it green', wait: 'tiles in the Dry Year', got: '☀️' },
-];
-const GREEN_GOAL = 500;                   // the green tiles your ponds and hedges keep in the Dry Year, for the last task
-const TASK_LINE_MS = 7000;                // and a task done stays up under the watch this long
-const tasks = { el: $('#tasks'), on: false, w: null, fold: false, key: '', strips: [], more: {}, done: null, fresh: {}, shown: [] };
-
-function startTasks() {
-  tasks.on = true;
-  let kept = null;
-  try { kept = localStorage.getItem(KEEP_CARD); } catch (e) { /* as it starts, then */ }
-  tasks.fold = kept ? kept === '1' : narrow();   // open on a desktop, folded on a phone
-}
-function foldTasks(fold = !tasks.el.classList.contains('fold')) {
-  tasks.fold = fold;
-  try { localStorage.setItem(KEEP_CARD, fold ? '1' : '0'); } catch (e) { /* fine */ }
-  tasksTick(performance.now());
-}
-
-function buildTasks() {
-  Object.assign(tasks, { w: world, key: '', done: null, fresh: {}, shown: [] });
-  tasks.el.innerHTML = `<button class="t-head" data-act="tasks-fold"><span class="cap">Tasks</span><b class="t-count"></b>
-    <span class="t-chip" aria-hidden="true">${TASKS.map(t => `<span class="ce">${t.e}</span>`).join('')}</span><span class="t-fold" aria-hidden="true"></span></button>
-    <ul>${TASKS.map(t => `<li><button data-act="task:${t.k}"><span class="e">${t.e}</span><span><b>${t.verb}</b><small></small></span><span class="tick"></span></button></li>`).join('')}</ul>`;
-  tasks.rows = [...tasks.el.querySelectorAll('li')];
-  tasks.chips = [...tasks.el.querySelectorAll('.ce')];
-}
-
-// What each task is waiting on, once a day: how far the nearest frogs are from a pond they haven't found, when a strip
-// not yet in flower blooms (as the Flowers tool's card says it), and when a hedge will be thick enough. And the green
-// tiles your ponds and hedges would keep if the Dry Year came now (dryKept), while it's to come or on.
-function tasksMore(ponds, hedges) {
-  const more = { kept: S.dryComing(world) ? dryKept() : -1 };
-  let near = Infinity;
-  for (const p of ponds) if (!p.found) { const n = S.frogsNear(world, p.x, p.y); if (n >= 0 && n < near) near = n; }
-  if (ponds.some(p => !p.found)) more.pond = near === Infinity ? 'none in reach' : near <= 2 ? 'right here' : `${near} tiles away`;
-  if (tasks.strips.length && !tasks.strips.some(f => f.flowered)) more.sow = `blooms ${BLOOM_SOON[S.stripBloom(world)]}`;
-  const h = hedges.find(h => !h.young), whips = h ? hedgeWhips(h) : [];
-  if (whips.length) more.hedge = `thick ${comingWhen(S.hedgeForecast(world, whips.reduce((a, d) => a + d.size, 0) / whips.length).young)}`;
-  return more;
-}
-
-function tasksTick(now) {
-  if (lostCard.pending && !away.on && !awayOpen()) showLost();   // (?keep: the Dry Year lost or come through, once the away card is done)
-  const show = tasks.on && !away.on;
-  if (tasks.el.classList.contains('hidden') === show) tasks.el.classList.toggle('hidden', !show);
-  if (!tasks.on) return;
-  if (world !== tasks.w) buildTasks();
-  const ponds = world.ponds || [], hedges = world.hedges || [];
-  const key = `${Math.floor(world.tick / S.TPD)}:${ponds.map(p => p.grown || p.dug).join()}:${world.fields.length}:${hedges.map(h => h.whips).join()}`;
-  if (key !== tasks.key) { tasks.key = key; tasks.strips = world.fields.filter(f => f.strip); tasks.more = tasksMore(ponds, hedges); }
-  const pond = ponds.find(p => p.found), strip = tasks.strips.find(f => f.found), hedge = hedges.find(h => h.escapes > 0);
-  const kept = tasks.more.kept, dy = world.dryYear;
-  const got = { pond: pond && `Frogs moved into ${world.waters[pond.id].name}`, sow: strip && `Bees found ${strip.name}`, hedge: hedge && `A rabbit hid in ${hedge.name}`,
-    green: (kept >= GREEN_GOAL || tasks.done?.green) && `Your work keeps ${Math.max(kept, GREEN_GOAL)} tiles green` };
-  const begun = { pond: ponds.length, sow: tasks.strips.length, hedge: hedges.length, green: kept > 0 }, n = TASKS.filter(t => got[t.k]).length;
-  const gone = { green: !got.green && (kept < 0 || dy?.lost) };   // (the Dry Year over or lost: the last task goes, done or not)
-  const first = !tasks.done;
-  tasks.done ??= {};
-  for (const t of TASKS) {
-    if (!got[t.k] || tasks.done[t.k]) continue;
-    tasks.done[t.k] = true;
-    if (first || away.on) continue;         // already done as the meadow opened, or the away card tells it
-    tasks.fresh[t.k] = now + 1200;
-    chime('tick');
-  }
-  const next = TASKS.find(t => !got[t.k] && !begun[t.k] && !gone[t.k]);
-  tasks.more.green = kept > 0 ? `${kept} so far` : '';
-  TASKS.forEach((t, i) => {
-    if (tasks.rows[i].hidden !== !!gone[t.k]) tasks.rows[i].hidden = tasks.chips[i].hidden = !!gone[t.k];
-    const wait = t.k === 'green' ? `${GREEN_GOAL} ${t.wait}` : t.wait;
-    const small = got[t.k] ? `${t.got} ${got[t.k]}` : `→ ${wait}${begun[t.k] && tasks.more[t.k] ? ` · ${tasks.more[t.k]}` : ''}`;
-    const cls = [got[t.k] ? 'done' : begun[t.k] ? 'wait' : '', t === next ? 'next' : '', now < (tasks.fresh[t.k] || 0) ? 'fresh' : ''].filter(Boolean).join(' ');
-    const was = tasks.shown[i] || [];
-    if (was[0] !== small) tasks.rows[i].querySelector('small').textContent = small;
-    if (was[1] !== cls) { tasks.rows[i].className = cls; tasks.chips[i].className = `ce ${cls}`; }
-    tasks.shown[i] = [small, cls];
-  });
-  const count = `${n}/${TASKS.filter(t => !gone[t.k]).length}`, fold = tasks.fold;
-  if (tasks.shown.count !== count) { tasks.shown.count = count; tasks.el.querySelector('.t-count').textContent = count; }
-  const head = dy?.lost ? 'Tasks' : S.dryStage(world) === 2 ? 'Through the Dry Year' : S.dryComing(world) ? 'Before the Dry Year' : 'Tasks';
-  if (tasks.shown.head !== head) { tasks.shown.head = head; tasks.el.querySelector('.cap').textContent = head; }
-  if (tasks.el.classList.contains('fold') !== fold) {
-    tasks.el.classList.toggle('fold', fold);
-    tasks.el.querySelector('.t-head').setAttribute('aria-expanded', !fold);
-  }
-  const open = !fold && show;                // (an upright phone moves the big line under it)
-  if (document.documentElement.classList.contains('tasks-open') !== open) document.documentElement.classList.toggle('tasks-open', open);
-}
-
-// A tap on a task: its tool in your hand, or a done one, off to look at what did it. A phone folds the card away.
-function taskTap(k) {
-  if (tasks.done?.[k] && k !== 'green') {
-    const pond = world.ponds?.find(p => p.found), strip = tasks.strips.find(f => f.found), d = k === 'hedge' && hedgeMiddle(world.hedges.find(h => h.escapes > 0));
-    const thing = k === 'pond' ? pond && `water:${pond.id}` : k === 'sow' ? strip && `field:${strip.id}` : d && `tree:${d.id}`;
-    if (thing) goToThing(thing);
-  } else if (k === 'green') { if (ui.tool !== 'pond') setTool('pond'); }   // (ponds keep the most green)
-  else if (ui.tool !== k) setTool(k);
-  if (narrow()) foldTasks(true);
-}
-
-// A few times a second (the cards' beat): the steps wait for what they ask, and a few things on the list
-// are easier to see done than to catch.
-function guideTick(now) {
-  if (KEEP) { tasksTick(now); return; }
-  const show = guide.on && !intro.on && !away.on;
-  if ($('#guide').classList.contains('hidden') === show) $('#guide').classList.toggle('hidden', !show);
-  if (!show || idle.on) { guide.tickWas = world.tick; return; }
-  if (ui.picked) tried('look');
-  const ran = world.tick - guide.tickWas;
-  guide.tickWas = world.tick;
-  if (ui.speed === 60 && ran > 0 && (guide.fast += ran) >= S.YEAR_DAYS * S.TPD) tried('fast');
-
-  if (guide.step < GUIDE_STEPS) {
-    const done = [() => world.byId.has(ui.selectedId), () => ui.speed >= 4, () => !!ui.ring || ui.tool !== 'look'][guide.step]();
-    if (done && !guide.wait) guide.wait = now + (guide.step < GUIDE_STEPS - 1 ? 1600 : 400);
-    if (guide.wait && now >= guide.wait) {
-      guide.wait = 0; guide.step++;
-      saveGuide();
-      chime('tick');
-    }
-  }
-  if (guide.doneAt && now - guide.doneAt > GUIDE_BYE + 12000) { shutGuide(); guideTick(now); return; }
-  if (guide.fresh && narrow() && !guide.fold && now - (guide.freshAt ||= now) > 5000) { guide.fold = true; guide.fresh = ''; guide.freshAt = 0; saveGuide(); }
-  renderGuide(now);
-}
-
-function renderGuide(now) {
-  const box = $('#guide'), touch = matchMedia('(pointer: coarse)').matches;
-  let html;
-  if (guide.step < GUIDE_STEPS) {
-    const mum = intro.family[0], click = touch ? 'Tap' : 'Click';
-    const steps = [
-      [mum && mum.alive ? `${click} ${link(mum)} to follow her.` : `${click} any animal to follow their life.`,
-        touch ? 'Pinch to zoom, drag to look around.' : 'Scroll to zoom, drag to look around.'],
-      [touch ? 'Time can run faster. Tap <b>1×</b> at the top.' : 'Time can run faster. Press <kbd>3</kbd>, or pick <b>15×</b> at the top.',
-        touch ? '⏸ stops it.' : 'Space stops it.'],
-      [touch ? 'Now hold a finger on the meadow.' : 'Now right-click anywhere on the meadow.', 'That’s where you change things.'],
-    ];
-    const [line, hint] = steps[guide.step];
-    html = `<div class="g-top"><span class="g-step">${guide.step + 1} of ${GUIDE_STEPS}</span><button class="g-skip" data-act="guide-skip">Skip</button></div>
-      <p class="g-line${guide.wait ? ' done' : ''}" data-step="${guide.step}">${line}</p><p class="g-hint">${hint}</p>`;
-  } else if (guide.doneAt && now - guide.doneAt > GUIDE_BYE) {
-    html = `<div class="g-top"><b class="g-title fr">📓 That’s all of them</b><button class="g-x" data-act="guide-shut" aria-label="Close">✕</button></div>
-      <p class="g-hint">Now sit back. The meadow gets on with it, whether you watch or not.</p>`;
-  } else {
-    const n = guide.tried.length;
-    html = `<div class="g-top"><button class="g-head" data-act="guide-fold" aria-expanded="${!guide.fold}"><b class="g-title fr">📓 Things to try</b>
-        <span class="g-count">${n} of ${TRIES.length}</span><span class="win-btn${guide.fold ? ' grow' : ''}" aria-hidden="true"></span></button>
-        <button class="g-x" data-act="guide-shut" aria-label="Close" title="Close. ••• opens it again">✕</button></div>
-      ${n ? '' : '<p class="g-hint g-sub">Your turn. The meadow can take it.</p>'}
-      <ul class="g-list">${TRIES.map(t => {
-        const done = guide.tried.includes(t.k), said = done && guide.said[t.k];
-        const text = t.k === 'look' && touch ? t.text.replace('Click', 'Tap') : t.text;
-        return `<li><button class="${done ? 'done' : ''}${guide.fresh === t.k ? ' fresh' : ''}" data-act="try:${t.k}"><span class="e">${t.e}</span>
-          <span><b>${text}</b>${done ? (said ? `<small>${said}</small>` : '') : `<small>${t.hint}</small>`}</span><span class="tick">${done ? '✓' : ''}</span></button></li>`;
-      }).join('')}</ul>`;
-  }
-  box.classList.toggle('fold', guide.fold && guide.step >= GUIDE_STEPS && !(guide.doneAt && now - guide.doneAt > GUIDE_BYE));
-  if (html !== guide.html) { box.innerHTML = html; guide.html = html; }
-}
-
-// The news toasts sit above it, however tall it is.
-new ResizeObserver(() => {
-  const h = $('#guide').offsetHeight;
-  document.body.style.setProperty('--guide-h', h ? h + 8 + 'px' : '0px');
-}).observe($('#guide'));
-
-// ------------------------------------------------------------------ the idle camera
-//
-// Leave the meadow be for a minute and it films itself, like a nature film: the intro's bars come
-// in, the cards fade away, and the camera goes from shot to shot. It follows a fox on the hunt, a
-// kit after its mum or a courting pair, or drifts past a hive, a field in bloom, an old tree or the
-// lake, and now and then over the whole meadow. What just happened comes first: a fire, a swarm, a
-// storm felling a tree. A shot keeps one zoom and only pans (a new zoom paints the ground again),
-// and the next comes after a dip to dark, or with a glide when it's near. At 15x and 60x only
-// places: animals would dart about. Not while paused, or while a card is open (you're reading).
-// V or ••• starts it now. Any key, click, scroll or move of the mouse hands the meadow back, the
-// camera staying where it is.
-
-const IDLE_MS = 60000;                  // no touch this long and it starts
-const SHOT_S = [8, 14];                 // seconds a shot lasts
-const DIP_MS = 400;                     // each way, the dip to dark between shots (as #intro .dip in index.html)
-const GLIDE_S = 2.5;                    // seconds a glide to a shot nearby takes
-const DRIFT_PX = 14;                    // screen pixels a second a place drifts past
-const SWEEP_PX = 40;                    // and the most the whole meadow does
-const NEWS_S = 12;                      // seconds something that happened stays worth filming
-const idle = { on: false, since: 0, shot: null, next: null, dipAt: 0, news: null, lastKind: '', lastKey: null, px: 0, py: 0, lineTimer: 0 };
-const between = (a, b) => a + Math.random() * (b - a);
-const anyOf = a => a.length ? a[Math.floor(Math.random() * a.length)] : null;
-
-const idleMayStart = now => !idle.on && !held && now - lastInput > IDLE_MS && ui.speed > 0 && !ui.hush && !LAB && !KEEP && !calm && !document.hidden
-  && !askOpen() && !awayOpen() && !ui.selectedId && !ui.picked && !ui.ring && !ui.newsOpen && !ui.sky.menu
-  && $('#more-menu').classList.contains('hidden') && !homeOpen() && !$('#toolbar').classList.contains('open');
-
-function startIdle(now = performance.now()) {
-  if (idle.on || ui.hush || LAB || KEEP) return;
-  closeRing(); toggleTools(false); toggleSkyMenu(false); toggleMore(false);
-  if (homeOpen()) homeGuide(false);
-  if (ui.newsOpen) toggleNewsLog();
-  if (ui.selectedId || ui.picked) select(0);
-  if (!ui.speed) setSpeed(lastSpeed);
-  Object.assign(idle, { on: true, since: now, next: null, dipAt: 0, news: null, lastKind: '', lastKey: null,
-    shot: { kind: 'hold', until: now + 1200 } });       // the cards fade out and the bars come in first
-  Object.assign(ui, { hush: true, hoverId: 0, hoverHive: null });   // (hush: nothing to keep clear of at the bottom)
-  cam.goal = null; flick.vx = flick.vy = 0;
-  document.body.classList.add('idle');
-}
-
-function wakeIdle() {
-  if (!idle.on) return;
-  idle.on = false; idle.shot = idle.next = null; idle.dipAt = 0;
-  lastInput = performance.now();
-  clearTimeout(idle.lineTimer);
-  $('#intro-line').classList.remove('on');
-  $('#intro .dip').classList.remove('on');
-  ui.hush = false;
-  document.body.classList.remove('idle');
-  document.body.classList.add('ui-in');
-  setTimeout(() => document.body.classList.remove('ui-in'), 1100);
-}
-
-// The press that wakes it does nothing else. It goes to the window first (capture), before the meadow sees it.
-addEventListener('pointerdown', e => {
-  if (!idle.on) return;
-  e.stopPropagation();
-  if (ui.sound) Sound.start();
-  wakeIdle();
-}, true);
-addEventListener('keydown', e => {
-  if (!idle.on) return;
-  if (ui.sound) Sound.start();
-  wakeIdle();
-  if (!e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); e.stopPropagation(); }   // the browser's own keys still work
-}, true);
-addEventListener('wheel', e => {
-  if (!idle.on) return;
-  e.preventDefault(); e.stopPropagation();
-  wakeIdle();
-}, { capture: true, passive: false });
-// A nudged desk isn't a hand on the mouse: it takes a real move. Not the one just after starting it from the menu.
-addEventListener('pointermove', e => {
-  if (!idle.on || performance.now() - idle.since < 800) { idle.px = e.clientX; idle.py = e.clientY; }
-  else if (Math.hypot(e.clientX - idle.px, e.clientY - idle.py) > 24) wakeIdle();
-}, { passive: true });
-addEventListener('resize', () => wakeIdle());
-// Back from another tab or window counts as a touch: it shouldn't greet you with a film.
-for (const [on, type] of [[window, 'focus'], [document, 'visibilitychange']]) on.addEventListener(type, () => { lastInput = performance.now(); });
-
-// What just happened, for the next shot. Big things cut the shot on screen short.
-function idleNews(e) {
-  const at = performance.now();
-  let n = null;
-  switch (e.type) {
-    case 'birth':
-      if (e.mum.species !== 'bee') n = { c: e.mum, w: 3, line: `${e.mum.name} and her new ${e.mum.species === 'fox' || e.mum.species === 'otter' ? 'cubs' : e.mum.species === 'crow' ? 'chicks' : e.mum.species === 'owl' ? 'owlets' : 'babies'}` };
-      break;
-    case 'death': if (e.cause === 'fox' && e.killer) n = { c: e.killer, w: 5 }; break;
-    case 'lightning': if (e.tree) n = { x: e.x, y: e.y, w: 8, line: 'Struck by lightning', big: true }; break;
-    case 'windthrow': n = { x: e.tree.x, y: e.tree.y, w: 8, line: 'Brought down by the storm', big: true }; break;
-    case 'swarm': n = { x: e.swarm.x, y: e.swarm.y, w: 8, line: `Queen ${e.queen.name}'s swarm, looking for a home`, big: true }; break;
-    case 'settle': n = { x: e.hive.x, y: e.hive.y, w: 6, line: `Queen ${e.queen.name}'s swarm moves in` }; break;
-    case 'fire': n = { big: true }; break;          // the fire is filmed anyway, first of all
-    case 'outbreak': n = { x: e.x, y: e.y, w: 6, line: 'A sickness is going round the warren' }; break;
-    case 'gathering': n = { x: e.remains.x, y: e.remains.y, w: 6, line: `Crows at the remains of ${e.remains.c.name}` }; break;
-    case 'fledge': n = { c: e.c, w: 4, line: `${e.c.name}, an owlet out of the hollow` }; break;
-    case 'cubsout': n = { c: e.c, w: 4, line: `${e.c.name}, an otter cub out of the holt` }; break;
-    case 'holt': n = { c: e.c, w: 4, line: `${e.c.name}'s new holt on the bank` }; break;
-    case 'visitor': n = { x: e.v.tx, y: e.v.ty, w: 8, line: found(e.v.kind) ? `${capital(VISITORS[e.v.kind].a)}, come to the ${VISITORS[e.v.kind].home}` : `Something has come to the ${VISITORS[e.v.kind].home}`, big: true }; break;
-  }
-  if (!n) return;
-  if (n.c || n.x !== undefined) idle.news = Object.assign(n, { at });
-  const s = idle.shot;
-  if (n.big && s && s.kind !== 'hold' && at - s.t0 > 3000) s.until = Math.min(s.until, at);
-}
-
-const lowerFirst = s => s[0].toLowerCase() + s.slice(1);
-const animalLine = c => `${c.name} the ${c.sp.name.toLowerCase()}, ${lowerFirst(S.mood(world, c).text)}`;
-const treeLift = d => d ? treePx(d) / cam.zoom * 0.3 : 0;   // up a tree from its foot (in tiles, whatever the zoom)
-
-// What to film next: at most one of each kind of subject there is, then one of them by weight. Never
-// the same subject twice running, and the same kind again only now and then.
-function pickShot(now) {
-  const fast = ui.speed > 4, ck = S.clock(world), season = ck.season, z = narrow() ? 0.75 : 1, opts = [];
-  const add = (w, kind, s) => {
-    if (w > 0 && s.key !== idle.lastKey) opts.push([kind === idle.lastKind ? w / 4 : w, Object.assign(s, { kind })]);
-  };
-  const who = (w, kind, c, other = null, line = '') => {
-    if (c && c.alive && !c.hidden) add(w, kind, { c, other, x: c.x, y: c.y, zoom: between(20, 26) * z, key: c, line: line || animalLine(c) });
-  };
-  const at = (w, kind, key, x, y, zoom, line = '') => add(w, kind, { x, y, zoom: zoom * z, key, line });
-
-  const n = idle.news;
-  if (n && now - n.at < NEWS_S * 1000) {
-    if (n.c) { if (!fast) who(n.w, 'news', n.c, null, n.line); }
-    else at(n.w, 'news', n, n.x, n.y, 16, n.line);
-  }
-  if (world.burning.length) { const i = anyOf(world.burning); at(12, 'fire', 'fire', i % S.W + 0.5, Math.floor(i / S.W) + 0.5, 13, 'Wildfire!'); }
-
-  if (!fast) {
-    const hunt = [], young = [], love = [], busy = [], out = [];
-    for (const c of world.creatures) {
-      if (!c.alive || c.hidden || c.species === 'bee') continue;     // a bee is too small and quick to follow: the hive shots have them
-      const m = c.mode;
-      if (m === 'stalk' || m === 'chase' || (m === 'flee' && c.threatId)) hunt.push(c);
-      else if (m === 'follow') young.push(c);
-      else if (m === 'love') love.push(c);
-      else if (m === 'dig' || m === 'munch' || m === 'apple' || m === 'alarm') busy.push(c);
-      else if (m !== 'sleep' && m !== 'shelter' && m !== 'rest') out.push(c);
-    }
-    const h = anyOf(hunt), y = anyOf(young), l = anyOf(love);
-    who(6, 'hunt', h, h && world.byId.get(h.species === 'fox' ? h.targetId : h.threatId));
-    who(2, 'young', y, y && world.byId.get(y.mumId));
-    who(1.5, 'love', l, l && world.byId.get(l.targetId));
-    who(2, 'busy', anyOf(busy));
-    who(2, 'out', anyOf(out));
-  }
-
-  const swarm = anyOf(world.hives.filter(h => h.cluster)), hive = anyOf(world.hives.filter(h => !h.cluster));
-  if (swarm) at(5, 'swarm', swarm, swarm.x, swarm.y, 18, swarm.queen ? `Queen ${swarm.queen.name}'s swarm, looking for a home` : 'A swarm, looking for a home');
-  if (hive) at(ck.night || season === 3 ? 0.4 : 2, 'hive', hive, hive.x, hive.y - treeLift(hive.tree), 16, hive.queen ? `Queen ${hive.queen.name}'s hive` : 'An empty hive');
-  const field = anyOf(world.fields.filter(f => f.season === season));
-  if (field) at(ck.night ? 0.3 : 2, 'field', field, field.x, field.y, 12, field.name);
-  const old = anyOf(world.decor.filter(d => d.tree && d.name && !d.fallen));
-  if (old) at(1.2, 'tree', old, old.x, old.y - treeLift(old), 17, treeTitle(old));
-  const bloom = season === 0 && anyOf(world.blossoms)?.tree;
-  if (bloom) at(1.5, 'tree', bloom, bloom.x, bloom.y - treeLift(bloom), 18, `${treeTitle(bloom)} in blossom`);
-  const rock = anyOf(world.decor.filter(d => d.big));
-  if (rock) at(0.6, 'rock', rock, rock.x, rock.y, 18);
-  const wet = world.lake ? [world.lake] : [];
-  for (const rv of world.rivers) {
-    const p = anyOf(rv.pts);
-    if (p) wet.push({ name: rv.name, x: clamp(p.x, 4, S.W - 4), y: clamp(p.y, 4, S.H - 4) });
-  }
-  const water = anyOf(wet);
-  if (water) at(ck.night && season === 1 ? 2.5 : world.frozen ? 2 : 1.2, 'water', water.name, water.x, water.y, 11,   // fireflies on a summer night
-    world.frozen ? `${water.name}, frozen over` : water.name);
-  const wide = { x: S.W / 2, y: S.H / 2, zoom: minZoom * 1.25, key: 'wide', line: `${S.SEASONS[season].name}, year ${ck.year}` };
-  add(fast ? 3 : 1.2, 'wide', wide);
-
-  let r = Math.random() * opts.reduce((a, [w]) => a + w, 0);
-  const s = opts.length ? (opts.find(([w]) => (r -= w) <= 0) || opts[opts.length - 1])[1] : Object.assign(wide, { kind: 'wide' });   // nothing else: the meadow again
-  if (s.kind !== 'wide') s.zoom = clamp(s.zoom, minZoom * 1.15, 40);
-  return s;
-}
-
-// Glide there if it's near and about as close up (the zoom stays: see above), else dip to dark and cut.
-function changeShot(now) {
-  const cur = idle.shot, s = pickShot(now);
-  idle.lastKind = s.kind; idle.lastKey = s.key;
-  const near = cur.kind !== 'hold' && cur.kind !== 'wide' && s.kind !== 'wide' && Math.abs(Math.log(cam.zoom / s.zoom)) < 0.35
-    && Math.hypot(s.x - cam.x, s.y - cam.y) * cam.zoom < vw * 0.8;
-  if (near) { s.zoom = cam.zoom; beginShot(s, now, true); return; }
-  idle.shot = null; idle.next = s; idle.dipAt = now;
-  $('#intro .dip').classList.add('on');
-  idleLine('');
-}
-
-function beginShot(s, now, glide) {
-  idle.shot = s;
-  s.t0 = now; s.until = now + between(...SHOT_S) * 1000;
-  s.from = glide ? { x: cam.x, y: cam.y } : null;
-  cam.zoom = s.zoom;
-  if (s.c) {                              // with room ahead of where they face
-    s.lead = s.c.facing * vw / 7 / cam.zoom;
-    s.sx = s.x + s.lead; s.sy = s.y;
-  } else {                                // a place drifts past, its subject in the middle halfway through
-    const dur = (s.until - now) / 1000, dir = () => Math.random() < 0.5 ? -1 : 1;
-    if (s.kind === 'wide') {              // the whole meadow, from one side towards the other
-      s.vx = dir() * Math.min(Math.max(0, S.W - vw / cam.zoom) * 0.8 / dur, SWEEP_PX / cam.zoom);
-      s.vy = dir() * Math.min(Math.max(0, S.H - vh / cam.zoom) * 0.4 / dur, SWEEP_PX / cam.zoom);
-    } else {
-      const a = Math.random() * TAU, v = DRIFT_PX / cam.zoom;
-      s.vx = Math.cos(a) * v; s.vy = Math.sin(a) * v * 0.6;
-    }
-    s.x0 = s.x - s.vx * dur / 2; s.y0 = s.y - s.vy * dur / 2;
-  }
-  idleLine(s.line);
-}
-
-// The shot's line, a moment after it starts, and gone again well before it ends.
-function idleLine(text) {
-  const el = $('#intro-line');
-  clearTimeout(idle.lineTimer);
-  el.classList.remove('on');
-  if (!text) return;
-  idle.lineTimer = setTimeout(() => {
-    el.textContent = text; el.classList.add('on');
-    idle.lineTimer = setTimeout(() => el.classList.remove('on'), 5000);
-  }, 900);
-}
-
-function idleFrame(now, dt) {
-  if (idle.dipAt) {                       // dark: cut to the next shot, then light again
-    if (now - idle.dipAt < DIP_MS) return;
-    idle.dipAt = 0;
-    if (Date.now() - keptWhen > KEEP_IDLE_MS) keepMeadow();   // (a save's hitch, where it can't be seen)
-    beginShot(idle.next, now, false);
-    $('#intro .dip').classList.remove('on');
-  }
-  let s = idle.shot;
-  if (now > s.until) { changeShot(now); if (!(s = idle.shot)) return; }
-  if (s.kind === 'hold') return;
-  const t = (now - s.t0) / 1000;
-  let x, y;
-  if (s.c) {                              // after them, or both of a pair in the picture
-    const c = s.c, o = s.other;
-    if (c.alive && !c.hidden) {
-      const pair = o && o.alive && !o.hidden && Math.abs(o.x - c.x) * cam.zoom < vw * 0.5 && Math.abs(o.y - c.y) * cam.zoom < vh * 0.4;
-      s.lead += ((pair ? 0 : c.facing * vw / 7 / cam.zoom) - s.lead) * (1 - Math.pow(0.4, dt));   // turning round, it swings over slowly
-      const k = 1 - Math.pow(0.05, dt);
-      s.sx += ((pair ? (c.x + o.x) / 2 : c.x) + s.lead - s.sx) * k;
-      s.sy += ((pair ? (c.y + o.y) / 2 : c.y) - s.sy) * k;
-    } else if (!s.gone) { s.gone = true; s.until = Math.min(s.until, now + 2500); }   // into a burrow, or caught: a moment on the spot
-    x = s.sx; y = s.sy;
-  } else { x = s.x0 + s.vx * t; y = s.y0 + s.vy * t; }
-  if (s.from && t < GLIDE_S) { const u = ease(t / GLIDE_S); x = lerp(s.from.x, x, u); y = lerp(s.from.y, y, u); }
-  cam.x = x; cam.y = y;
-}
-
 // ------------------------------------------------------------------ keeping the meadow
 //
 // The meadow is kept in the browser when the page is hidden or closed, and the next visit picks it up
-// where it was (Sim.packWorld), with the news, the camera and whoever you were following. A kept meadow
+// where it was (Sim.packWorld), with the camera and whoever you were following. A kept meadow
 // is a few megabytes, too big for localStorage, so it goes in IndexedDB under its link, and localStorage
 // keeps the list of links, the one watched last first. A few are kept, so a meadow a friend sent doesn't
-// take the place of your own: the bare address opens the last one, a link its own. Not in the lab.
+// take the place of your own: the bare address opens the last one, a link its own.
 // A kept meadow that won't open, or that broke the page the last time it opened (OPENING), is let go.
 const KEEP_MEADOWS = 3;
-const KEEP_IDLE_MS = 10 * 60e3;            // and while it films itself (nobody at the keys to see the hitch, in a dip to dark), this often
-const KEPT = KEEP ? 'aeon-garden-kept-keep' : 'aeon-garden-kept', OPENING = 'aeon-garden-opening';   // in localStorage (?keep keeps its own few)
-let keepOpen = null, keptTick = -1, keptWhen = Date.now();
+const KEPT = 'aeon-garden-kept', OPENING = 'aeon-garden-opening';   // in localStorage
+let keepOpen = null, keptTick = -1;
 let opening = 0;                           // a kept meadow just opened: 1 until a frame starts, then counts frames that got to the end
 
 function keepDb() {
@@ -10882,18 +7467,17 @@ function setKept(list) {
   try { localStorage.setItem(KEPT, JSON.stringify(list)); return true; } catch (e) { return false; }
 }
 
-// Hiding the page or leaving it (below), or now and then while it films itself: a few hundredths of a
-// second, so never while someone is watching.
+// Hiding the page or leaving it (below): a few hundredths of a second, so never while someone is watching.
 function keepMeadow() {
   if (opening === 1) cleared();                       // never shown (a tab in the background): it can't have broken anything
-  if (LAB || !world || world.tick === keptTick || !$('#welcome').classList.contains('hidden')) return;
+  if (!world || world.tick === keptTick) return;
   let kept;
   try { kept = S.packWorld(world); } catch (e) { console.warn('Could not keep the meadow', e); return; }
-  keptTick = world.tick; keptWhen = Date.now();
+  keptTick = world.tick;
   const link = meadowLink(world.seed), at = Date.now();
   const list = [{ link, at }, ...keptList().filter(k => k.link !== link)];
   if (!setKept(list.slice(0, KEEP_MEADOWS))) return;
-  const rec = { link, at, kept, paused: ui.speed === 0, news: ui.newsLog,
+  const rec = { link, at, kept, paused: ui.speed === 0,
     cam: { x: cam.x, y: cam.y, zoom: cam.zoom }, selectedId: ui.selectedId, follow: ui.follow };
   keepDb().then(db => {
     const tx = db.transaction('meadows', 'readwrite'), store = tx.objectStore('meadows');
@@ -10935,7 +7519,6 @@ function resumeWorld(rec) {
     localStorage.setItem(OPENING, rec.link);          // cleared once it has run a few frames (frame)
     const w = S.unpackWorld(rec.kept);
     if (!w) throw new Error('kept by another version');
-    terrain = w.options.terrain || {}; drawn = w.options.drawn || {}; dryAt = w.options.dry || 0;
     showWorld(w);
     S.step(world);                                    // a meadow that can't take a step is no good
     flushEvents();
@@ -10945,8 +7528,6 @@ function resumeWorld(rec) {
     return false;
   }
   opening = 1;
-  ui.newsLog = rec.news || [];
-  renderNewsLog();
   if (rec.cam) { cam.zoom = Math.max(rec.cam.zoom, fitZoom); cam.x = rec.cam.x; cam.y = rec.cam.y; clampCam(); }
   const c = world.byId.get(rec.selectedId);
   if (c) { select(c.id, false); ui.follow = rec.follow; }
@@ -10954,121 +7535,22 @@ function resumeWorld(rec) {
   return true;
 }
 
-let hiddenAt = 0;
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) { hiddenAt = Date.now(); keepMeadow(); }
-  else if (hiddenAt && Date.now() - hiddenAt > AWAY_MIN && world && ui.speed > 0 && (!ui.hush || idle.on) && !LAB && !away.on) startAway();
-});
+document.addEventListener('visibilitychange', () => { if (document.hidden) keepMeadow(); });
 addEventListener('pagehide', keepMeadow);
-
-// ------------------------------------------------------------------ while you were away
-//
-// The meadow keeps its own time. Back after a while (the page closed, or hidden), it runs on by a
-// season while a card says so, then the card says what happened. Nothing is drawn meanwhile: days
-// flashing by would flicker. Paused, it waited for you. And at ?keep it waits at the Dry Year's spring
-// (awayTicks): from then till it's over the Dry Year can be lost, and that's for the keeper to see.
-const AWAY_MIN = 5 * 60e3;                 // gone at least this long, in real time
-const AWAY_TICKS = S.SEASON_DAYS * S.TPD;  // and it moves on a season, however long it was
-const AWAY_MS = 40;                        // of each frame the catching up gets
-const AWAY_BIG = ['dryloss', 'drythrough', 'extinct', 'dryend', 'drystart', 'dryspring', 'swarm', 'settle', 'hivestruck', 'queenlost', 'fire', 'outbreak', 'outbreakover', 'mast', 'voles', 'frogyear', 'treedied', 'windthrow', 'frogsfound', 'pondgrew', 'stripbloom', 'beesfound', 'hedgeyoung', 'hedgebloom', 'hedgehaws', 'visitor'];   // news for the card, the first told first
-const away = { on: false, frames: 0, left: 0, from: 0, day: -1, births: null, deaths: null, news: [], type: '', mine: false, waited: false };
-const awayOpen = () => !$('#away').classList.contains('hidden');
-const deathsOf = s => Object.values(world.stats.deaths[s]).reduce((a, b) => a + b, 0);
-
-// How far catching up runs: a season, but (?keep) never into the Dry Year while it can still be lost. It stops at the
-// start of its spring, as the flood fails; back in its spring, summer or the days after, it doesn't run on at all.
-function awayTicks() {
-  const dy = world.dryYear;
-  if (!dy || dy.lost) return AWAY_TICKS;
-  const spring = S.dryFrom(world) - S.SEASON_DAYS * S.TPD;
-  if (world.tick < spring) return Math.min(AWAY_TICKS, spring - world.tick);
-  return S.dryCounting(world) ? 0 : AWAY_TICKS;
-}
-
-function startAway() {
-  if (idle.on) wakeIdle();
-  if (jr.depth) journalTo(0);
-  const left = awayTicks();
-  if (!left) { addNews('⏸️ <b>The meadow waited for you:</b> it doesn’t run on without you in the Dry Year.'); return; }
-  countEvent('meadow-back');
-  Object.assign(away, { on: true, frames: 0, left, from: world.tick, day: -1, news: [], waited: left < AWAY_TICKS,
-    births: perKind(s => world.stats.births[s]), deaths: perKind(deathsOf) });
-  $('#away').classList.remove('hidden', 'done');
-  awayProgress();
-}
-
-// The first frame only draws the meadow as it was; after that each one runs it on, and draws nothing.
-function awayFrame() {
-  if (!away.frames++) return;
-  const t0 = performance.now();
-  do {
-    for (let i = 0; i < 16 && away.left > 0; i++, away.left--) {
-      S.step(world);
-      if (world.events.length) flushEvents();
-    }
-  } while (away.left > 0 && performance.now() - t0 < AWAY_MS);
-  if (away.left > 0) awayProgress(); else awayDone();
-}
-
-function awayProgress() {
-  const day = Math.floor(world.tick / S.TPD);
-  if (day === away.day) return;
-  away.day = day;
-  $('#away-text').textContent = `The meadow kept its own time. ${S.SEASONS[S.seasonOf(world.tick)].emoji} ${when(world.tick)}…`;
-}
-
-// Called by addNews while catching up: the one you follow, or big news, goes on the card.
-function awayNews(html) {
-  const rank = away.mine ? -1 : AWAY_BIG.indexOf(away.type);
-  if ((away.mine || rank >= 0) && !away.news.some(n => n.html === html)) away.news.push({ html, rank });
-}
-
-function awayDone() {
-  away.on = false;
-  ui.effects.length = ui.zaps.length = ui.trail.length = 0;   // what they showed is long over
-  const from = S.SEASONS[S.seasonOf(away.from)], to = S.SEASONS[S.seasonOf(world.tick)];
-  const and = parts => (parts.length > 1 ? parts.slice(0, -1).join(', ') + ' and ' + parts.at(-1) : parts[0]);
-  const tally = (was, now) => and(S.KINDS.filter(s => now(s) > was[s])
-    .map(s => { const n = now(s) - was[s]; return `${n} ${(n === 1 ? S.SPECIES[s].name : S.SPECIES[s].plural).toLowerCase()}`; }));
-  const born = tally(away.births, s => world.stats.births[s]), died = tally(away.deaths, deathsOf);
-  $('#away-text').textContent = `${from.emoji} ${from.name} turned to ${to.name.toLowerCase()}.`
-    + (to === S.SEASONS[0] ? ` Year ${S.clock(world).year} has begun.` : '')
-    + (away.waited ? ' Then it stopped to wait for you: the Dry Year is coming.' : '');
-  $('#away-life').textContent = [born && `🐣 Born: ${born}.`, died && `🥀 Gone: ${died}.`].filter(Boolean).join('\n') || 'A quiet season.';
-  const own = away.news.filter(n => n.rank < 0).length;   // the one you follow first, and a few more of its
-  const top = away.news.sort((a, b) => a.rank - b.rank).slice(0, clamp(own, 3, 5));
-  $('#away-news').innerHTML = top.map(n => `<li>${n.html}</li>`).join('');
-  away.news = [];
-  $('#away').classList.add('done');
-}
-
-function closeAway() {
-  if (!away.on) $('#away').classList.add('hidden');
-}
-$('#away').addEventListener('click', e => { if (e.target.closest('a[data-id], a[data-thing]')) closeAway(); });   // off to see who it was
 
 // ------------------------------------------------------------------ the loop
 
 function flushEvents() {
-  for (const e of world.events) {
-    const told = newsMade;
-    handleEvent(e);
-    spotNews(e, newsMade > told ? lastToast : null);
-  }
+  for (const e of world.events) handleEvent(e);
   world.events.length = 0;
 }
 
 function randomSeed() { return Math.floor(Math.random() * 1e6); }
 
-function newWorld(seed, arrival = false, dry = DRY_PARAM) {
-  dryAt = KEEP ? dry : 0;
-  showWorld(S.createWorld(seed, LAB ? { terrain, drawn, rabbits: 0, foxes: 0, bees: 0 } : KEEP ? { terrain, drawn, keep: true, dry } : { terrain, drawn, arrival }));
-  const big = [world.waters.find(v => v.kind === 'river'), world.lake].filter(Boolean).map(v => `<b>${v.name}</b>`);
-  const by = big.length ? ' by ' + big.join(' and ') : '';
-  addNews(arrival ? `🌱 A new meadow${by}. Nobody lives here yet.`
-    : `🌱 A new meadow${by}. <b>${world.count.rabbit} rabbits</b> and <b>${world.count.fox} foxes</b> have just moved in.`);
-  if (!LAB) history.replaceState(history.state, '', meadowLink(seed));   // (the state: Back's step, if one's open)
-  if (!LAB && !arrival) homeView();
+function newWorld(seed) {
+  showWorld(S.createWorld(seed));
+  history.replaceState(history.state, '', meadowLink(seed));   // (the state: Back's step, if one's open)
+  homeView();
 }
 
 // A new meadow opens close enough to see who lives there, HOME_TILES across the screen, over where most of them are:
@@ -11100,18 +7582,14 @@ function homeView() {
 function showWorld(w) {
   world = w;
   const seed = w.seed;
-  intro.family = [];
   groundSeed = [(seed % 97) * 3.7, (seed % 89) * 4.3];
-  Object.assign(ui, { selectedId: 0, picked: null, hoverId: 0, follow: false, trail: [], effects: [], zaps: [], lastNews: {}, newsLog: [] });
+  Object.assign(ui, { selectedId: 0, picked: null, hoverId: 0, follow: false, trail: [], effects: [] });
   pollen.until = 0; pollen.t0.fill(-1e9);
   const mix = Object.fromEntries(Object.keys(S.WEATHER).map(k => [k, k === world.weather.kind ? 1 : 0]));
   Object.assign(ui.sky, { mix, tick: world.tick, bolts: [], rainbow: -1e9, bowEnd: -1e9 });
-  showSkyLock();
   $('#news').innerHTML = '';
-  renderNewsLog();
   cam.zoom = minZoom; cam.x = S.W / 2; cam.y = S.H / 2; cam.goal = null;
   clampCam();
-  spots.length = 0; glide = null;
   paintTerrain();
   renderInspector();
   updateClock();
@@ -11160,7 +7638,7 @@ const WAKE_MS = 10 * 60 * 1000;
 const wake = { lock: null, asking: false, retry: 0, touch: matchMedia('(pointer: coarse)') };
 function wakeTick(now) {
   if (!navigator.wakeLock || !wake.touch.matches) return;
-  const want = ui.speed > 0 && !document.hidden && now - lastInput < WAKE_MS && !LAB;
+  const want = ui.speed > 0 && !document.hidden && now - lastInput < WAKE_MS;
   if (want && !wake.lock && !wake.asking && now > wake.retry) {
     wake.asking = true;
     navigator.wakeLock.request('screen').then(l => {
@@ -11174,7 +7652,7 @@ for (const type of ['pointerdown', 'pointermove', 'wheel', 'keydown', 'resize'])
 function resting(now) {
   const still = cam.x === camWas.x && cam.y === camWas.y && cam.zoom === camWas.zoom;
   camWas.x = cam.x; camWas.y = cam.y; camWas.zoom = cam.zoom;
-  return still && ui.speed === 0 && !intro.on && !LAB && !ui.effects.length && !held && !falls.size && !ripples.length
+  return still && ui.speed === 0 && !ui.effects.length
     && now - lastInput > WOKEN_MS && now - ui.sky.boom > WOKEN_MS;
 }
 
@@ -11183,12 +7661,8 @@ function frame(now) {
   now = onBeat(now);
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
-  if (intro.on) introFrame(now, dt);
-  if (reveal.on) revealFrame(now, dt);
 
-  if (away.on) awayFrame();
-  else if (ui.speed > 0) {
-    strikeZaps(now);
+  if (ui.speed > 0) {
     acc += dt * TICKS_PER_SECOND * ui.speed;
     const want = Math.min(Math.floor(acc), 2000), n = Math.min(want, simFit), t0 = performance.now();
     acc -= want;
@@ -11207,7 +7681,6 @@ function frame(now) {
       simFit = Math.max(1, Math.floor(SIM_MS / tickMs));
     }
   }
-  if (ui.newsStale && ui.newsOpen) renderNewsLog();
   updateSky();
   lightFrame(dt);
   updateDial();
@@ -11220,22 +7693,12 @@ function frame(now) {
       if (ui.trail.length > 160) ui.trail.shift();
     }
   }
-  if (held) heldFrame(dt);
   if (sel && ui.follow) {
     const k = 1 - Math.pow(0.001, dt), { x, y } = drawnAt(sel);
     const gx = sheet ? x + (sheet.right - sheet.left) / 2 / cam.zoom : x;
     const gy = sheet ? y + (sheet.bottom - sheet.top) / 2 / cam.zoom : y;
     cam.x += (gx - cam.x) * k; cam.y += (gy - cam.y) * k;
   }
-  if (glide) {                            // off to a marker, unless a hand takes the camera
-    if (ui.follow || drag?.moved || pinch || held || idle.on) glide = null;
-    else {
-      const k = 1 - Math.pow(0.02, dt);
-      cam.x += (glide.x - cam.x) * k; cam.y += (glide.y - cam.y) * k;
-      if (Math.hypot(glide.x - cam.x, glide.y - cam.y) < 0.05) glide = null;
-    }
-  }
-  if (idle.on) idleFrame(now, dt);
   if (flick.vx || flick.vy) {             // a flicked pan glides to a stop
     cam.x -= flick.vx * dt / cam.zoom; cam.y -= flick.vy * dt / cam.zoom;
     const f = Math.pow(0.02, dt);
@@ -11252,19 +7715,17 @@ function frame(now) {
   if (zoomTo) {                           // a double tap's zoom (or two fingers'), eased in or out on its spot
     const goal = clamp(zoomTo.z, fitZoom, 64), z = cam.zoom + (goal - cam.zoom) * (1 - Math.pow(0.0002, dt));
     zoomAt(zoomTo.sx, zoomTo.sy, Math.abs(goal - z) < goal * 0.01 ? goal : z);
-    if (cam.zoom === goal || drag?.moved || pinch || held) zoomTo = null;
+    if (cam.zoom === goal || drag?.moved || pinch) zoomTo = null;
   }
   clampCam();
 
   const rest = resting(now) && now - lastDrawn < RESTING_MS;
-  if (!rest && !(away.on && away.frames > 1) && canvas.width && canvas.height) {   // (a hidden tab can have no size)
+  if (!rest && canvas.width && canvas.height) {   // (a hidden tab can have no size)
     lastDrawn = now;
     // Every 12 ticks, and no more than a few times a second: grass changes too slowly to see the difference.
     if (terrainTick < 0 || (world.tick - terrainTick >= 12 && now - terrainAt >= TERRAIN_MS)) paintTerrain();
     const steadied = handShow(now);        // (a drag, a pinch: drawn where the hand had it a moment ago)
     render(now);
-    if (lab?.draw) lab.draw(ctx, dpr);
-    if (reveal.on && !reveal.snapped && now - reveal.at > REVEAL_SNAP) snapReveal(now);
     if (steadied) handBack();
   }
   hand.was.x = cam.x; hand.was.y = cam.y; hand.was.zoom = cam.zoom;
@@ -11272,14 +7733,9 @@ function frame(now) {
   if (now - lastCard > 250) {
     wakeTick(now);
     askTick(Math.min(now - lastCard, 1000));
-    guideTick(now);
-    alertsTick(now);                                     // (?keep)
-    if (!away.on) furAhead(now);
+    furAhead(now);
     lastCard = now;
-    if (idleMayStart(now)) startIdle(now);
-    if (idle.on && Date.now() - keptWhen > KEEP_IDLE_MS * 1.5) keepMeadow();   // (kept in a dip to dark, idleFrame, unless the shots glide on)
     updateClock();
-    forecastTick();
     if (ui.sound) {
       const ck = S.clock(world);
       const life = world.count.rabbit / (S.CROWDED * world.room);   // a crowded meadow, not the cap (only a safety net now)
@@ -11293,30 +7749,6 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-// ------------------------------------------------------------------ the terrain lab
-//
-// What terrain-lab.js needs from the game: swap in a meadow without the fuss of a new game
-// (same camera, same grain, no news), show it in any season, and draw over it every frame.
-const lab = LAB ? {
-  meadow(seed, t, d) {
-    terrain = t; drawn = d;
-    world = S.createWorld(seed, { terrain, drawn, rabbits: 0, foxes: 0, bees: 0 });
-    paintTerrain();
-  },
-  season(s) {                                          // midday, halfway through it; snow in winter
-    world.tick = Math.round((s * S.SEASON_DAYS + 2 + 0.3) * S.TPD);
-    world.snow = s === 3 ? 0.75 : 0; world.ice = s === 3 ? 1 : 0;
-    S.settleWater(world);                              // and the water where it stands then
-    pond = null;
-    paintTerrain();
-  },
-  toScreen, toWorld, clampCam,
-  get minZoom() { return minZoom; },
-  cover: { bottom: 0, right: 0 },                      // screen pixels the lab's panel hides, so you can look past them
-  shot: copyMeadow,
-  draw: null,                                          // (ctx, dpr, shot): drawn over the meadow; no pen in a shot
-} : null;
-
 // ------------------------------------------------------------------ start
 
 window.addEventListener('resize', resize);
@@ -11325,76 +7757,22 @@ window.addEventListener('resize', resize);
 new ResizeObserver(() => { if (canvas.clientWidth !== vw || canvas.clientHeight !== vh) resize(); }).observe(canvas);
 resize();
 const seedParam = +params.get('seed');
-let seen = false;
-try { seen = localStorage.getItem('aeon-garden-welcomed') === '1'; } catch (e) { /* private window */ }
-const firstVisit = !LAB && !KEEP && (!seen || params.has('intro'));   // ?intro plays it again (?keep has none)
-// ?keep's first visit gets the welcome card too, in its own words (keepWelcome), remembered under its own key: what the
-// meadow is, what you do, and the Dry Year coming. No intro: a keeper meadow starts lived in. ?intro shows it again.
-const KEEP_WELCOMED = 'aeon-garden-keep-welcomed';
-let keepSeen = false;
-try { keepSeen = localStorage.getItem(KEEP_WELCOMED) === '1'; } catch (e) { /* private window */ }
-function keepWelcome() {
-  const dy = world.dryYear, when = !dy ? '' : dy.year <= S.clock(world).year ? 'this summer' : `in the summer of year ${dy.year}`;
-  $('#welcome .body p').outerHTML = '<p>A small meadow where rabbits, foxes and bees live their own lives. You keep it: dig ponds, sow flowers, plant hedges.</p>'
-    + (S.dryComing(world) ? `<p>☀️ <b>A Dry Year is coming ${when}:</b> no rain, and the grass away from the water turns to straw. `
-      + 'Get the meadow ready, and keep it green and every kind alive through it.</p>' : '');
-  $('#go').textContent = 'Start keeping';
-  $('#welcome').classList.remove('hidden');
-  hush(true);
-  setSpeed(0);
-}
-// The kept meadow if there is one (keeping the meadow, above), else a new one. The rest below doesn't wait for it.
+// The kept meadow if there is one (keeping the meadow, above), else a new one.
 function begin(rec) {
-  const back = rec && resumeWorld(rec);
-  if (!back) newWorld(seedParam || randomSeed(), firstVisit);
-  if (rec && !back) addNews("🌱 Your meadow couldn't come along into this version of the game, so here is a new one.");
-  if (ui.newsLog.some(n => n.html.includes('--glyph-'))) for (const kind in VISITORS) glyphVar(kind);   // (its picture, for the news kept)
-
-  if (LAB) {
-    document.body.classList.add('lab');
-    setSpeed(0);
-    const js = document.createElement('script');
-    js.src = 'terrain-lab.js';
-    document.body.append(js);
-  } else if (firstVisit) {
-    $('#welcome').classList.remove('hidden');
-    hush(true);                                         // nothing to count yet: the bars and cards wait
-    setSpeed(0);
-    if (world.family && !calm) introShot();
-  } else if (KEEP && (params.has('intro') || (!keepSeen && !back))) keepWelcome();
-  else if (KEEP) { setTimeout(startTasks, 1500); setTimeout(sideHome, 2500); }
-  else { homeTip(30000); setTimeout(() => startGuide(false), 2500); }
-  if (back && !rec.paused && Date.now() - rec.at > AWAY_MIN && $('#welcome').classList.contains('hidden')) startAway();
+  if (!(rec && resumeWorld(rec))) newWorld(seedParam || randomSeed());
   requestAnimationFrame(frame);
 }
-(firstVisit || LAB ? Promise.resolve(null) : keptMeadow(seedParam)).then(begin);
-if (!LAB) keepDb().catch(() => { /* not kept, then */ });   // opened now, so keeping at the last moment needn't wait for it
-showHomeItem();
+keptMeadow(seedParam).then(begin);
+keepDb().catch(() => { /* not kept, then */ });   // opened now, so keeping at the last moment needn't wait for it
 if (canShare) $('[data-act="copy-link"] .l').innerHTML = 'Share<span class="x"> this meadow</span>';
 if (!IDEAS_KEY) $('[data-act="ideas"]').remove();
-$('#go').addEventListener('click', () => {
-  const card = $('#welcome');
-  card.classList.add('leaving');
-  setTimeout(() => card.classList.add('hidden'), 700);
-  try { localStorage.setItem(KEEP ? KEEP_WELCOMED : 'aeon-garden-welcomed', '1'); } catch (e) { /* fine */ }
-  if (KEEP) { hush(false); setSpeed(1); setTimeout(startTasks, 900); setTimeout(sideHome, 2500); }
-  else if (world.family && !calm) startIntro();
-  else { hush(false); setSpeed(1); welcomeTips(); }
-});
 
 // Sound stays off until you turn it on, and remembers your choice. Browsers only let a page
 // make sound after a click or key press, so a remembered "on" waits for the first one.
 try { if (localStorage.getItem('aeon-garden-sound') === '1') toggleSound(true); } catch (e) { /* fine */ }
 
-// The animal tools remember how many they release at a time.
-try {
-  const g = JSON.parse(localStorage.getItem('aeon-garden-group') || '{}');
-  for (const k of S.KINDS) if (GROUPS.includes(g[k])) ui.group[k] = g[k];
-} catch (e) { /* fine */ }
-showGroup();
-setTimeout(() => { barNear = false; updateBar(); }, 4000);   // show the toolbar for a moment, then let the meadow breathe
 for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => { if (ui.sound) Sound.start(); }, { once: true });
 
-window.garden = { get world() { return world; }, ui, cam, lab, installed,   // handy in the console
+window.garden = { get world() { return world; }, ui, cam,   // handy in the console
   get trees() { return { worker: !!treeWorker, workers: treeWorkers.length, art: treeArt, bytes: treeBytes, asked: treeAsked.size, busy: treeBusy }; } };
 })();
