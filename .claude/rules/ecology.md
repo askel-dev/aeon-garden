@@ -40,8 +40,14 @@ from (`w.nearBody`). Snow lying in winter freezes it over (`iceTick`, `w.ice`, `
 foxes cross where they couldn't, and whoever is out on deep water when it thaws goes through (`breakUp`). The ground shader shades the slopes by the sun, and colours the grass by where it is: lusher by the water
 and the woods, golden up high, wet moss at the water's edge, in watercolour washes with a paper grain. It reads the grass the rabbits leave in three states: long (a deeper wash, the pigment pooled along its edge, lit on the sun's side), short where it's grazed (paler, sunnier) and bare earth only where it's bitten right down. That colouring is only a look; the grass the animals eat is `w.grass`.
 The woods' shade thins that grass (`SHADE_GRASS`, half that while the broadleaves are bare, `leafless`): once a day
-`shadeSoil` works out how much grass each tile's soil holds under the shade on it (`w.shadedFert`, which `growGrass`
-reads, `shadeSoil`), so woods that creep out cost the rabbits grazing.
+`groundTick` works out how much grass each tile's soil holds under the shade on it (`w.shadedFert`, which `growGrass`
+reads, `shadeSoil`), so woods that creep out cost the rabbits grazing. And the ground remembers what lives and dies on it
+(`w.rich`, `enrich`): a body left out in the open (`leaveRemains`), the latrines round a warren in use (`groundTick`: a day's
+droppings for each rabbit home at dawn), an otters' spraint by a holt (`holtsDay`) and a log rotting away (`treesTick`) feed the
+soil. The grass there grows back faster and a little past the soil's cap (`RICH_GROW`, `RICH_SOIL`, never over 1), and it fades
+over about a season (`RICH_DAYS`). Rabbits won't graze ground that rich (`fouled`: fresh droppings, or where a body lay), so a
+busy warren's latrines and an old kill site stand out as lusher patches until they fade and get grazed. Rich ground has more
+grubs for the crows (`grubs`) and rich shallows a little more frogspawn (`spawnFrogs`).
 Reeds and lily pads (`drawShore`) are a look too: a scatter `updateWater` works out along the shore whenever the water changes.
 Shallow water is waded slowly; deep water blocks.
 The rivers run (`makeCurrent`, `w.current`: worked out when a meadow is made or opened, never kept). Each point of a river
@@ -174,12 +180,19 @@ mood (`BUBBLE_ICONS`), one sprite. Trees are painted by trees.js (above). The re
 `FLOWER_ARTS`: green tufts, tawny ones in autumn, sprouts, fallen leaves, nodding seed heads and winter's frosted
 tufts (`paintTuft` … `paintTuftFrost`); the windfalls under a tree are `paintFall`.
 
-Nothing is left lying when an animal dies: no remains, no carrion. Crows (`crowTick`) are
+A body left out in the open lies a few days as remains (`leaveRemains`, `w.carcasses`; not one in a burrow, a bee, or one
+that left the meadow; a fox's catch leaves what it didn't eat, `KILL_LEFT`), rotting away in `ROT_DAYS` by season (`carrionTick`),
+fast in summer. Foxes don't eat remains (tried: it fed them through the rabbits' lows). A dead rabbit lying there is what the
+player's hunting will pick up, one day. Crows eat them (`crowTick`):
 a few birds that fly over everything (`flies: true`), painted in game.js (`paintCrow`: standing, pecking, two wingbeats,
-and those with an acorn, the two steps of a walk, asleep on a branch). By day they walk about pecking for grubs (`peck`, `grubs`: best on short grass,
-fewer in winter, `GRUB_SEASON`, and under snow, `GRUB_SNOW`, but enough to live on with no carrion): a few steps, a stop to
+and those with an acorn, the two steps of a walk, asleep on a branch). By day they walk about pecking for grubs (`peck`, `grubs`: best on short grass
+and rich ground, fewer in winter, `GRUB_SEASON`, and under snow, `GRUB_SNOW`; the remains carry them through the winter): a few steps, a stop to
 peck, now and then a few hops (`t.stop`, `t.hop`; game.js picks the step from where it is, `crowWalks`, `crowHop`), stepping
-away from one too close (`CROW_SPACE`). Only really hungry they take the rabbits' windfalls (`CROW_HUNGRY`). In autumn one that isn't hungry fetches a few acorns or beechnuts from an oak or a
+away from one too close (`CROW_SPACE`), and fly down to remains they see, or now and then see other crows at (`carrion`,
+`remainsNear`, `GATHER_SIGHT`, `GATHER_NOTICE`), a few at a time: a crow claims a place there as it sets off (`k.seats`, `freeSeat`,
+`CARRION_SEATS`), and keeps off remains a fox is at (`FOX_NEAR`). A crow's bite fills it like its other food (`CROW_BITE`, times
+`EAT`) and takes `HUNGER` times less of the remains, so a rabbit feeds the crows about as many days as it did on the old clock.
+Only really hungry they take the rabbits' windfalls (`CROW_HUNGRY`). In autumn one that isn't hungry fetches a few acorns or beechnuts from an oak or a
 beech (`d.nuts`, which `seedFall` leaves for them) and buries them one by one out in the open (`cacheNut`, `seedSpot`),
 each a seed in `w.seeds`. It remembers only its last few (`CACHE_MEMORY`) and digs those up if hungry in winter (`unbury`);
 the rest come up as oaks and beeches, so the woods spread with the crows.
@@ -197,7 +210,11 @@ swaying with the tree; one 💤 a tree, and mates side by side. In flight a crow
 In spring a mum sits on her eggs high in a tall tree, night and day (`nestTree`,
 `c.home`) and the chicks stay hidden in the nest till they fledge (`FLEDGE`). A fox that comes close sends them flapping up,
 the others with them (`flapUp`, `caw`), but one busy on the ground may not see a fox out hunting in time: a small meal
-for it (`CROW_MEAL`) that doesn't change where it hunts. And game.js eases a crow's height in sim time (`birdLift`, `crowHeight`), so it glides down to land and up to its perch.
+for it (`CROW_MEAL`) that doesn't change where it hunts. game.js paints a dead rabbit, or a dead fox (`paintBody`,
+`paintDeadFox`; a fox `FOX_BODY` the size, its white-tipped tail lasting longest), lying on its side with its eyes closed, in four
+stages as the meat goes (`BODY_STAGES`): whole, opened with the ribs showing (where a fox's catch starts), picked over to bones,
+and a flat pelt that fades. A bird's remains are a few feathers, an otter's tufts of fur (`paintRemains`, `drawRemains`), and
+remains have a panel of their own (`THINGS.remains`). And game.js eases a crow's height in sim time (`birdLift`, `crowHeight`), so it glides down to land and up to its perch.
 
 Bees live in hives (`w.hives`), each in an old hollow oak from `w.decor` (`h.tree`, `d.hive`, `moveIn`), a giant (`HIVE_TREE`)
 with a hollow low on its trunk (`drawBeeTree`). A meadow starts with `HIVES` of them (times `w.room`), each in the best tree
