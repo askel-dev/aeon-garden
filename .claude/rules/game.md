@@ -27,7 +27,10 @@ cloak, hood, rim), picked on a small card at the foot of the screen as a new mea
 localStorage (`aeon-garden-outfit`).
 A click or a tap on an animal (on its body as drawn: `animalAt`, a little wider for a finger) opens its panel;
 anywhere else walks the forager there (`walkTo`, sim.js `foragerTo`) and shuts the panel, with a
-soft ring where it was sent (`drawMark`, `MARK_ART` painted once) that fades once it's there. A press held still for
+ring where it was sent (`drawMark`, `MARK_ART` painted once: cream with a dark edge, bigger for a finger) that fades once it's
+there. As it lands a ring spreads out past the fingertip (`MARK_RIPPLE`); a tap on the deep slides the ring from where you tapped
+to where it can get (`MARK_SLIDE`), and a tap it can't walk to at all shakes there (`ui.nope`). Its way there is a line of dots
+along `f.path` (`drawTrail`), counted back from the goal so they stay put on the ground, eaten up at its feet, dimming after a moment. A press held still for
 `HOLD_MS`, or dragged, runs toward the pointer while it's down (sim.js `f.running`, `FORAGER_RUN`; Shift held runs too, `holdShift`), the
 way found again every `STEER_MS` (in `frame`), and on to where it's let go. Running, once up past `FORAGER_JOG` it jogs (`fg.jog`, fur.js poses 16 to 23: both feet off the ground a moment, heels
 kicking up, elbows bent and pumping, leaning in) with a stride `FORAGER_JOG_STRIDE` longer. The camera always goes with it (`leadCam`): eased after it (`CAM_FOLLOW`), a little ahead the way it walks

@@ -33,7 +33,7 @@ if (COUNTER && !['localhost', '127.0.0.1'].includes(location.hostname)) {
 
 let world;
 const ui = {
-  speed: 1, sound: false, selectedId: 0, picked: null, hoverId: 0, mark: null,   // mark: where the forager was sent
+  speed: 1, sound: false, selectedId: 0, picked: null, hoverId: 0, mark: null, nope: null,   // mark: where the forager was sent; nope: a tap it can't walk to
   trail: [], effects: [], allStory: false, sheetUp: false,
   sky: { mix: {}, tick: 0, bolts: [], boom: -1e9, rainbow: -1e9, bowEnd: -1e9 },
 };
@@ -1156,7 +1156,7 @@ function render(now) {
   unfade();
   drawRemains(z);
   drawGarlic(z);
-  if (ui.mark) drawMark(now);
+  if (ui.mark || ui.nope) drawMark(now);
 
   const sel = world.byId.get(ui.selectedId);
   if (sel) drawSelectionUnder(sel, now);
@@ -1951,34 +1951,99 @@ function wearOutfit(o) {
   pickOutfit(false);
 }
 
-// Where it was sent: a soft ring on the ground that comes in with a little bounce, breathes while it walks there and
-// fades once it's arrived. Painted once (MARK_ART), then only drawn.
+// Where it was sent: a ring on the ground, cream with a dark edge so it shows on snow as on grass, that comes in with a
+// little bounce, breathes while it walks there and fades once it's arrived, a little bigger for a finger. As it lands a
+// thinner ring spreads out from where you pressed (MARK_RIPPLE), wider than a fingertip, so a tap under a thumb still
+// shows. A tap on the deep or across it sends it as near as it gets: the ring starts where you tapped and slides there
+// (MARK_SLIDE). A tap it can't walk to at all gets a little shake there instead (ui.nope). Its way there is a line of
+// dots along its path (drawTrail). All painted once (MARK_ART), then only drawn.
 const MARK_MS = [220, 500];                // coming in, fading out
+const MARK_RIPPLE = [600, 26, 46];         // the ring spreading out: ms, px further out it goes (a mouse, a finger)
+const MARK_SLIDE = 350;                    // ms the ring takes from where you tapped to where it can get
+const NOPE_MS = 450;                       // the shake of a tap it can't walk to
+const TRAIL_GAP = 0.75;                    // tiles between the dots of its way
+const TRAIL_DIM = [1600, 0.5];             // the dots dim after this long to this of their first light
+const TRAIL_SWEEP = 30;                    // tiles a second the dots come in at, from its feet out
 let MARK_ART = null;
-function markArt() {
-  const W = 128, H = 64, c = document.createElement('canvas');
-  c.width = W; c.height = H;
+function flatArt(w, stops) {               // a round patch lying on the ground (half as tall as it's wide)
+  const c = document.createElement('canvas');
+  c.width = w; c.height = w / 2;
   const g = c.getContext('2d');
-  g.translate(W / 2, H / 2); g.scale(1, 0.5);
-  const gr = g.createRadialGradient(0, 0, 0, 0, 0, W / 2);
-  gr.addColorStop(0, 'rgba(255, 250, 230, 0.35)'); gr.addColorStop(0.45, 'rgba(255, 250, 230, 0.12)');
-  gr.addColorStop(0.68, 'rgba(255, 252, 240, 0.95)'); gr.addColorStop(0.8, 'rgba(255, 248, 225, 0.5)'); gr.addColorStop(1, 'rgba(255, 248, 225, 0)');
-  g.fillStyle = gr; g.beginPath(); g.arc(0, 0, W / 2, 0, TAU); g.fill();
-  MARK_ART = { img: c };
-  asBitmap(c, b => { MARK_ART.img = b; });
+  g.translate(w / 2, w / 4); g.scale(1, 0.5);
+  const gr = g.createRadialGradient(0, 0, 0, 0, 0, w / 2);
+  for (const [at, col] of stops) gr.addColorStop(at, col);
+  g.fillStyle = gr; g.beginPath(); g.arc(0, 0, w / 2, 0, TAU); g.fill();
+  return c;
+}
+function markArt() {
+  const CREAM = 'rgba(255, 252, 240, ', EDGE = 'rgba(70, 45, 25, ';
+  MARK_ART = {
+    ring: flatArt(128, [[0, CREAM + '0.35)'], [0.4, CREAM + '0.12)'], [0.58, CREAM + '0.95)'], [0.68, CREAM + '0.7)'],
+      [0.75, EDGE + '0.45)'], [0.87, EDGE + '0.15)'], [1, EDGE + '0)']]),
+    ripple: flatArt(128, [[0, CREAM + '0)'], [0.72, CREAM + '0)'], [0.84, CREAM + '0.9)'], [0.9, EDGE + '0.35)'], [1, EDGE + '0)']]),
+    dot: flatArt(32, [[0, CREAM + '0.95)'], [0.45, CREAM + '0.85)'], [0.6, EDGE + '0.4)'], [1, EDGE + '0)']]),
+  };
+  for (const k of ['ring', 'ripple', 'dot']) asBitmap(MARK_ART[k], b => { MARK_ART[k] = b; });
   return MARK_ART;
 }
 function drawMark(now) {
-  const m = ui.mark, f = world.forager;
-  if (!m.end && !f.walking) m.end = now;
-  const t = now - m.t0, fade = m.end ? 1 - (now - m.end) / MARK_MS[1] : 1;
-  if (fade <= 0) { ui.mark = null; return; }
-  const pop = t < MARK_MS[0] ? 1 + 0.35 * Math.sin(Math.PI * t / MARK_MS[0]) * (1 - t / MARK_MS[0]) : 1;
-  const r = Math.max(10, (8 + cam.zoom) * 0.42) * pop * (1 + 0.05 * Math.sin(now / 260)) * (m.end ? 1 + 0.25 * (1 - fade) : 1);
-  const [sx, sy] = onScreen(m.x, m.y), art = MARK_ART || markArt();
-  ctx.globalAlpha = Math.min(1, t / 120) * fade * 0.9;
-  ctx.drawImage(art.img, sx - r, sy - r / 2, r * 2, r);
+  const art = MARK_ART || markArt(), f = world.forager, z = cam.zoom, big = fingerTap ? 1.5 : 1;
+  const n = ui.nope;
+  if (n) {
+    const t = (now - n.t0) / NOPE_MS;
+    if (t >= 1) ui.nope = null;
+    else {
+      const r = Math.max(8, (8 + z) * 0.3) * big, [sx, sy] = onScreen(n.x, n.y);
+      ctx.globalAlpha = 0.8 * (1 - t);
+      ctx.drawImage(art.ring, sx - r + Math.sin(t * 6 * TAU) * r * 0.35 * (1 - t), sy - r / 2, r * 2, r);
+    }
+  }
+  const m = ui.mark;
+  if (m) {
+    if (!m.end && !f.walking) m.end = now;
+    const t = now - m.t0, fade = m.end ? 1 - (now - m.end) / MARK_MS[1] : 1;
+    if (fade <= 0) ui.mark = null;
+    else {
+      if (!m.end) drawTrail(now, m, art);
+      const pop = t < MARK_MS[0] ? 1 + 0.35 * Math.sin(Math.PI * t / MARK_MS[0]) * (1 - t / MARK_MS[0]) : 1;
+      const r0 = Math.max(10, (8 + z) * 0.42) * big;
+      const r = r0 * pop * (1 + 0.05 * Math.sin(now / 260)) * (m.end ? 1 + 0.25 * (1 - fade) : 1);
+      if (t < MARK_RIPPLE[0]) {                            // spreading out from where you pressed
+        const k = t / MARK_RIPPLE[0], rr = r0 + MARK_RIPPLE[fingerTap ? 2 : 1] * (1 - (1 - k) ** 2), [sx, sy] = onScreen(m.fx, m.fy);
+        ctx.globalAlpha = 0.9 * (1 - k) ** 1.5;
+        ctx.drawImage(art.ripple, sx - rr, sy - rr / 2, rr * 2, rr);
+      }
+      const k = Math.min(1, t / MARK_SLIDE), e = 1 - (1 - k) ** 3;   // (from where you tapped to where it can get)
+      const [sx, sy] = onScreen(m.fx + (m.x - m.fx) * e, m.fy + (m.y - m.fy) * e);
+      ctx.globalAlpha = Math.min(1, t / 120) * fade * 0.9;
+      ctx.drawImage(art.ring, sx - r, sy - r / 2, r * 2, r);
+    }
+  }
   ctx.globalAlpha = 1;
+}
+// Its way there: a dot every TRAIL_GAP along what's left of its path, counted back from where it's going so they stay put
+// on the ground as it walks, and fading in at its feet so it eats them up. They come in from its feet out, then dim.
+function drawTrail(now, m, art) {
+  const f = world.forager, P = f.path, n = P.length >> 1, z = cam.zoom;
+  if (f.leg >= n) return;
+  const t = now - m.t0, light = 0.85 * (t < TRAIL_DIM[0] ? 1 : Math.max(TRAIL_DIM[1], 1 - (t - TRAIL_DIM[0]) / 800)), sweep = t / 1000 * TRAIL_SWEEP;
+  const w = Math.max(6, (8 + z) * 0.3) * (fingerTap ? 1.15 : 1), pad = w;
+  const skip = Math.max(10, (8 + z) * 0.42) * (fingerTap ? 1.5 : 1) / z;   // (none under the ring)
+  let acc = 0, d = TRAIL_GAP * Math.max(1, Math.ceil(skip / TRAIL_GAP));
+  for (let k = n - 1; k >= f.leg; k--) {
+    const bx = P[2 * k], by = P[2 * k + 1], ax = k > f.leg ? P[2 * k - 2] : fg.x, ay = k > f.leg ? P[2 * k - 1] : fg.y;
+    const sl = Math.hypot(bx - ax, by - ay);
+    for (; d <= acc + sl; d += TRAIL_GAP) {
+      const u = (d - acc) / sl, x = bx + (ax - bx) * u, y = by + (ay - by) * u;
+      const feet = Math.hypot(x - fg.x, y - fg.y), a = light * clamp((feet - 0.35) / 0.9, 0, 1) * clamp(sweep - feet, 0, 1);
+      if (a <= 0.01) continue;
+      const [sx, sy] = onScreen(x, y);
+      if (!visible(sx, sy, pad)) continue;
+      ctx.globalAlpha = a;
+      ctx.drawImage(art.dot, sx - w / 2, sy - w / 4, w, w / 2);
+    }
+    acc += sl;
+  }
 }
 
 // Zoomed out further than the meadow fills the screen, a grown rabbit is under SMALL_PX and hundreds of animals can be
@@ -7291,9 +7356,16 @@ function walkTo(sx, sy, steering = false) {
   const [wx, wy] = toWorld(sx, sy), g = S.foragerTo(world, wx, wy);
   if (g) world.forager.running = steering || shiftHeld;
   if (ui.selectedId || ui.picked) select(0);
-  if (!g) return;
-  if (steering && ui.mark && !ui.mark.end) { ui.mark.x = g.x; ui.mark.y = g.y; }
-  else ui.mark = { x: g.x, y: g.y, t0: performance.now(), end: 0 };
+  const f = world.forager;
+  if (!g) {                                             // (somewhere it can't get, not just where it stands: a shake)
+    if (!steering && Math.hypot(wx - f.x, wy - f.y) > 1) ui.nope = { x: wx, y: wy, t0: performance.now() };
+    return;
+  }
+  if (steering && ui.mark && !ui.mark.end) { ui.mark.x = ui.mark.fx = g.x; ui.mark.y = ui.mark.fy = g.y; }
+  else {                                                // the ring slides from where you tapped only if that's a way off
+    const off = Math.hypot(wx - g.x, wy - g.y) > 0.6;
+    ui.mark = { x: g.x, y: g.y, fx: off ? wx : g.x, fy: off ? wy : g.y, t0: performance.now(), end: 0 };
+  }
 }
 // The animal drawn under a point: within its painting's body (a fingertip reaches a little further), the nearest.
 // Tighter than creatureAt, so a click on the grass beside a rabbit walks there.
@@ -7631,7 +7703,7 @@ function showWorld(w) {
   world = w;
   const seed = w.seed;
   groundSeed = [(seed % 97) * 3.7, (seed % 89) * 4.3];
-  Object.assign(ui, { selectedId: 0, picked: null, hoverId: 0, mark: null, trail: [], effects: [] });
+  Object.assign(ui, { selectedId: 0, picked: null, hoverId: 0, mark: null, nope: null, trail: [], effects: [] });
   fg.at = -1; fg.rings.length = 0; fg.sized = 0;
   pollen.until = 0; pollen.t0.fill(-1e9);
   const mix = Object.fromEntries(Object.keys(S.WEATHER).map(k => [k, k === world.weather.kind ? 1 : 0]));
