@@ -7917,7 +7917,7 @@ function keepMeadow() {
   const list = [{ link, at }, ...keptList().filter(k => k.link !== link)];
   if (!setKept(list.slice(0, KEEP_MEADOWS))) return;
   const rec = { link, at, kept, paused: ui.speed === 0,
-    cam: { x: cam.x, y: cam.y, zoom: cam.zoom }, selectedId: ui.selectedId, follow: ui.follow, lead: ui.lead };
+    cam: { x: cam.x, y: cam.y, zoom: cam.zoom }, selectedId: ui.selectedId, follow: ui.follow };
   keepDb().then(db => {
     const tx = db.transaction('meadows', 'readwrite'), store = tx.objectStore('meadows');
     store.put(rec, link);
@@ -7970,8 +7970,9 @@ function resumeWorld(rec) {
   if (rec.cam) { cam.zoom = Math.max(rec.cam.zoom, fitZoom); cam.x = rec.cam.x; cam.y = rec.cam.y; clampCam(); }
   const c = world.byId.get(rec.selectedId);
   if (c) { select(c.id, false); ui.follow = rec.follow; }
-  ui.lead = rec.lead ?? true;
-  if (ui.lead && !ui.follow) { cam.x = world.forager.x; cam.y = world.forager.y - CAM_FEET * forPx() / cam.zoom; clampCam(); }
+  // A visit opens on the forager (showWorld set ui.lead), even if the camera had been dragged away; only an animal
+  // being followed keeps it.
+  if (!ui.follow) { cam.x = world.forager.x; cam.y = world.forager.y - CAM_FEET * forPx() / cam.zoom; clampCam(); }
   history.replaceState(history.state, '', meadowLink(world.seed));
   return true;
 }
