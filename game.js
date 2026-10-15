@@ -1995,7 +1995,7 @@ function drawMark(now) {
 // round the deep) to just short of its feet. The dashes are counted from the ring's middle, so they keep still on the
 // ground and it walks over them. It fades in once the ring has popped up. Sprinting, the dashes march on toward the ring
 // (TRAIL_MARCH), the pace eased up and down as it sets off and slows (TRAIL_EASE), and still while time is paused.
-const TRAIL_A = 0.3;
+const TRAIL_A = 0.6;
 const TRAIL_IN = [80, 450];               // ms after the ring it starts fading in, and how long that takes
 const TRAIL_MARCH = 2.2;                  // dashes a second they march on by, sprinting
 const TRAIL_EASE = 250;                   // ms the march takes to get up to pace or settle
@@ -2016,12 +2016,12 @@ function drawTrail(sx, sy, r, a, now) {
   for (let i = 0; i + 3 < n; i += 2) len += Math.hypot(TRAIL[i + 2] - TRAIL[i], TRAIL[i + 3] - TRAIL[i + 1]);
   // From the ring's edge (an oval r wide and half that tall, so how far depends on the way it leaves) to short of its feet.
   const ux = (TRAIL[2] - sx) / (Math.hypot(TRAIL[2] - sx, TRAIL[3] - sy) || 1), uy = (TRAIL[3] - sy) / (Math.hypot(TRAIL[2] - sx, TRAIL[3] - sy) || 1);
-  const from = 0.85 * r / Math.hypot(ux, 2 * uy), to = len - forPx() * 0.3, dash = clamp(cam.zoom * 0.16, 3, 8);
+  const from = 0.85 * r / Math.hypot(ux, 2 * uy), to = len - forPx() * 0.3, dash = clamp(cam.zoom * 0.2, 4, 11);
   if (to - from < dash) return;
   ctx.save();
   TRAIL_DASH[0] = dash; TRAIL_DASH[1] = dash * 1.2;
   ctx.setLineDash(TRAIL_DASH); ctx.lineDashOffset = from + trailMarch * dash * 2.2;   // (a whole dash and gap a step)
-  ctx.lineWidth = clamp(cam.zoom * 0.05, 1.25, 2.25); ctx.lineCap = 'round';
+  ctx.lineWidth = clamp(cam.zoom * 0.065, 2, 3.25); ctx.lineCap = 'round';
   ctx.strokeStyle = '#fffaea'; ctx.globalAlpha = a * TRAIL_A;
   ctx.beginPath();
   let s = 0, on = false;
