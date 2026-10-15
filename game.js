@@ -3975,7 +3975,7 @@ function drawBramble(b, z) {
 // few hours and fade as they go (drawFind).
 const FIND_KINDS = S.FIND_KINDS;
 const FIND_ARTS = Array.from({ length: FIND_KINDS.length * 4 }, (_, i) => 'find:' + i);
-const FIND_PX = { dandelion: 1.9, sorrel: 1.8, strawberry: 2.1, elderflower: 2.8, hazelnut: 1.8, rosehip: 2.5, watercress: 2.0 };   // next to a rabbit
+const FIND_PX = { dandelion: 1.9, sorrel: 1.8, strawberry: 2.1, elderflower: 2.5, hazelnut: 1.8, rosehip: 2.5, watercress: 2.0 };   // next to a rabbit
 const FIND_GROW = 0.2, FIND_OVER = 0.4;   // days it takes to come up, and its last days, fading
 const findStage = f => f.kind === 'rosehip' && S.seasonOf(world.tick) === 3 ? 1 : 0;
 const findArt = f => FIND_ARTS[FIND_KINDS.indexOf(f.kind) * 4 + findStage(f) * 2 + f.look];
@@ -4033,31 +4033,51 @@ function paintDandelion(g, h, look) {
     furGlow(g, [255, 250, 200], 0.5, p.x - 0.05, p.y - 0.05, 0.08, 0.05);
   }
 }
-// An arrow-head leaf: a spear with two lobes back at its foot.
-function sorrelLeaf(g, x, y, a, len, rgb) {
-  g.save(); g.translate(x, y); g.rotate(a);
-  softIn(g, rgb, -len, 0, () => {
-    g.moveTo(0, 0); g.lineTo(-len * 0.16, len * 0.12); g.quadraticCurveTo(-len * 0.22, -len * 0.05, -len * 0.14, -len * 0.3);
-    g.quadraticCurveTo(-len * 0.08, -len * 0.7, 0, -len); g.quadraticCurveTo(len * 0.08, -len * 0.7, len * 0.14, -len * 0.3);
-    g.quadraticCurveTo(len * 0.22, -len * 0.05, len * 0.16, len * 0.12); g.closePath();
-  }, 1.25, 0.75);
-  strokeIn(g, rockRGB(tone(rgb, 1.3, 24), 0.5), 0.012, () => { g.moveTo(0, -len * 0.05); g.lineTo(0, -len * 0.9); });
+// An arrow-head leaf: a broad spear with two lobes pointing back past its stalk, lying out from x, y at angle a. flat:
+// how much it's foreshortened, leaning toward you.
+function sorrelLeaf(g, x, y, a, len, rgb, flat) {
+  const w = len * 0.3;
+  g.save(); g.translate(x, y); g.rotate(a); g.scale(1, flat);
+  softIn(g, rgb, -len, len * 0.1, () => {
+    g.moveTo(0, 0);
+    g.quadraticCurveTo(-w * 0.4, len * 0.02, -w * 0.8, len * 0.14);            // the left lobe, back past the stalk
+    g.quadraticCurveTo(-w * 1.05, -len * 0.12, -w * 0.92, -len * 0.36);
+    g.quadraticCurveTo(-w * 0.62, -len * 0.78, 0, -len);
+    g.quadraticCurveTo(w * 0.62, -len * 0.78, w * 0.92, -len * 0.36);
+    g.quadraticCurveTo(w * 1.05, -len * 0.12, w * 0.8, len * 0.14);
+    g.quadraticCurveTo(w * 0.4, len * 0.02, 0, 0);
+  }, 1.22, 0.78);
+  furGlow(g, [176, 70, 52], 0.45, 0, -len * 0.04, w * 0.45, len * 0.14);      // a blush of red where the stalk comes in
+  strokeIn(g, rockRGB(tone(rgb, 1.25, 30), 0.6), 0.016, () => { g.moveTo(0, -len * 0.02); g.quadraticCurveTo(w * 0.05, -len * 0.5, 0, -len * 0.92); });
   g.restore();
 }
+// Sorrel: a loose rosette of broad lime arrow-leaves on red stalks, the back ones standing, the front ones leaning out to
+// you (so it doesn't read as a tuft of grass); look 1 has gone to seed, with branched spikes of rusty seed.
 function paintSorrel(g, h, look) {
-  softSpot(g, 0, FIND_FOOT, 0.7, 0.18, '30, 50, 14', 0.35);
-  const leaves = [];
-  for (let i = 0; i < 11; i++) leaves.push({ a: (i / 10 - 0.5) * 1.9 + (h(i) - 0.5) * 0.25, l: 0.32 + 0.22 * h(10 + i) * (1 - Math.abs(i / 10 - 0.5)), k: i });
-  if (look === 1) for (const x of [-0.12, 0.16]) {      // a slender spike of rusty seed
-    const top = FIND_FOOT - 0.95 - 0.15 * h(x > 0 ? 40 : 41);
-    strokeIn(g, 'rgb(150, 70, 52)', 0.022, () => { g.moveTo(x * 0.5, FIND_FOOT - 0.05); g.lineTo(x, top); });
-    for (let k = 0; k < 9; k++) { const y = top + 0.04 + k * 0.05; fillIn(g, rockRGB(tone([196, 72, 56], 0.85 + 0.3 * h(50 + k))), () => discAt(g, x + (k % 2 ? 0.025 : -0.025), y, 0.024)); }
+  softSpot(g, 0, FIND_FOOT, 0.75, 0.2, '30, 50, 14', 0.35);
+  const fy = FIND_FOOT - 0.03, leaves = [];
+  for (let i = 0; i < 8; i++) {
+    const side = i % 2 ? 1 : -1, k = i >> 1, back = k < 2;
+    leaves.push({ a: side * (0.2 + 0.36 * k + 0.15 * h(i)), len: (back ? 0.52 : 0.42) + 0.1 * h(10 + i), stalk: 0.14 + 0.1 * h(20 + i),
+      flat: back ? 1 : 0.78, rgb: i % 3 ? [126, 186, 64] : [104, 166, 52] });
   }
+  leaves.sort((p, q) => Math.abs(p.a) - Math.abs(q.a));  // (the upright ones behind)
   for (const L of leaves) {
-    const fx = Math.sin(L.a) * 0.1, fy = FIND_FOOT - 0.04, tip = L.l + 0.12;
-    strokeIn(g, 'rgb(176, 66, 56)', 0.02, () => { g.moveTo(fx * 0.3, fy); g.lineTo(fx + Math.sin(L.a) * tip * 0.45, fy - Math.cos(L.a) * tip * 0.45); });   // the red stalk
-    sorrelLeaf(g, fx + Math.sin(L.a) * tip * 0.42, fy - Math.cos(L.a) * tip * 0.42, L.a, L.l, L.k % 2 ? [124, 196, 62] : [108, 180, 56]);
+    const sx = Math.sin(L.a) * L.stalk, sy = fy - Math.cos(L.a) * L.stalk * L.flat;
+    strokeIn(g, 'rgb(172, 70, 56)', 0.022, () => { g.moveTo(0, fy); g.quadraticCurveTo(sx * 0.4, fy - L.stalk * 0.6, sx, sy); });   // the red stalk
+    sorrelLeaf(g, sx, sy, L.a, L.len, L.rgb, L.flat);
   }
+  if (look === 1) [[-0.05, 1], [0.18, 0.78]].forEach(([x, tall], j) => {   // the spikes of seed, up out of the middle
+    const top = fy - (1.0 + 0.15 * h(40 + j)) * tall, mid = fy - 0.25;
+    strokeIn(g, 'rgb(150, 74, 56)', 0.022, () => {
+      g.moveTo(x * 0.3, mid); g.lineTo(x, top);
+      for (const t of [0.25, 0.45]) { const y = top + (mid - top) * t; g.moveTo(x, y + 0.08); g.lineTo(x + (t < 0.3 ? 0.09 : -0.08), y - 0.04); }
+    });
+    for (let k = 0; k < 18; k++) {
+      const t = (k >> 1) / 9, bx = k % 4 === 3 ? (t < 0.3 ? 0.07 : -0.06) : k % 2 ? 0.022 : -0.022;
+      fillIn(g, rockRGB(tone([190, 70, 52], 0.8 + 0.35 * h(50 + j * 20 + k))), () => discAt(g, x + bx, top + 0.02 + t * (mid - top) * 0.6, 0.024));
+    }
+  });
 }
 // A trefoil: three round toothed leaflets.
 function trefoil(g, x, y, a, r, rgb) {
@@ -4106,23 +4126,40 @@ function pinnate(g, x, y, a, len, rgb, pairs, w = 0.32) {
   }
   g.restore();
 }
+// An elder: one round shrub, a dome of leafy clumps lit from above with the odd leaf of five leaflets standing out at its rim,
+// a few short stems at its foot, and the flat cream plates of flowers on top, lacy with tiny florets.
 function paintElder(g, h, look) {
-  softSpot(g, 0, FIND_FOOT, 1.0, 0.22, '28, 40, 14', 0.4);
-  const leaf = [72, 124, 50], top = x => FIND_FOOT - 1.05 * Math.sqrt(Math.max(0, 1 - (x / 0.9) ** 2));
-  strokeIn(g, 'rgb(128, 112, 88)', 0.05, () => { for (const x of [-0.25, 0.05, 0.3]) { g.moveTo(x * 0.3, FIND_FOOT); g.quadraticCurveTo(x * 0.6, FIND_FOOT - 0.4, x, FIND_FOOT - 0.75); } });
-  const spots = [];
-  softSpot(g, 0, FIND_FOOT - 0.4, 0.72, 0.42, '34, 62, 26', 0.85);              // the shade inside it
-  for (let i = 0; i < 46; i++) { const x = (h(i) * 2 - 1) * 0.85, y = FIND_FOOT - 0.08 - (FIND_FOOT - 0.08 - top(x)) * h(200 + i) ** 0.7; spots.push({ x, y, k: i }); }
-  spots.sort((a, b) => a.y - b.y);
-  for (const p of spots) { const lit = 1 - (p.y - top(p.x)) / Math.max(0.1, FIND_FOOT - top(p.x)); pinnate(g, p.x, p.y + 0.14, (h(30 + p.k) - 0.5) * 2.4, 0.34, tone(leaf, 0.7 + 0.45 * lit), 2); }
-  const plates = look ? [[-0.42, -0.1], [0.05, -0.32], [0.45, -0.05], [-0.1, 0.12]] : [[-0.35, -0.22], [0.2, -0.3], [0.5, 0.05], [-0.55, 0.08], [0.0, 0.05]];
-  for (const [px, py] of plates) {                      // the flat plates of flowers, cream, a little domed
-    const x = px, y = FIND_FOOT - 0.62 + py, r = 0.2;
-    fillIn(g, 'rgba(120, 120, 70, 0.35)', () => ovalAt(g, x, y + 0.05, r * 1.05, r * 0.42));
-    fillIn(g, 'rgb(228, 220, 176)', () => ovalAt(g, x, y, r, r * 0.45));
-    for (let k = 0; k < 22; k++) { const a = h(100 + k) * TAU, rr = Math.sqrt(h(130 + k)) * r * 0.92; fillIn(g, k % 3 ? '#fbf8e6' : '#fffef6', () => discAt(g, x + Math.cos(a) * rr, y + Math.sin(a) * rr * 0.45 - 0.02 * (1 - rr / r), 0.032)); }
-    furGlow(g, [255, 252, 230], 0.45, x - 0.05, y - 0.04, r * 0.6, r * 0.25);
+  softSpot(g, 0, FIND_FOOT, 0.95, 0.22, '28, 40, 14', 0.45);
+  const leaf = [68, 118, 50], R = 0.82, T = 0.98, top = x => FIND_FOOT - 0.06 - T * Math.sqrt(Math.max(0, 1 - (x / R) ** 2));
+  strokeIn(g, 'rgb(112, 98, 78)', 0.045, () => { for (const x of [-0.3, -0.05, 0.22]) { g.moveTo(x * 0.4, FIND_FOOT); g.lineTo(x, FIND_FOOT - 0.3); } });
+  softSpot(g, 0, FIND_FOOT - 0.45, 0.7, 0.4, '30, 56, 24', 0.9);               // the shade inside it
+  for (let i = 0; i < 11; i++) {                        // leaves peeping out round the rim
+    const a = Math.PI * (1.04 + 0.92 * i / 10) + (h(300 + i) - 0.5) * 0.15;
+    pinnate(g, Math.cos(a) * R * 0.8, FIND_FOOT - 0.16 + Math.sin(a) * T * 0.78, a + Math.PI / 2, 0.3, tone(leaf, 0.7 + 0.3 * h(320 + i)), 2, 0.34);
   }
+  const clumps = [];
+  for (let i = 0; i < 20; i++) {                        // the leafy clumps that make the dome
+    const x = (h(i) * 2 - 1) * R * 0.86, y = top(x) + 0.13 + (FIND_FOOT - 0.18 - top(x) - 0.13) * h(40 + i) ** 1.3;
+    clumps.push({ x, y, r: 0.19 + 0.08 * h(80 + i), k: i });
+  }
+  clumps.sort((a, b) => a.y - b.y);
+  for (const c of clumps) {
+    const lit = clamp(1 - (c.y - (FIND_FOOT - 0.06 - T)) / T, 0, 1), rgb = tone(leaf, 0.68 + 0.5 * lit);
+    softIn(g, rgb, c.y - c.r, c.y + c.r, () => {
+      for (let k = 0; k < 5; k++) { const a = k / 5 * TAU + h(120 + c.k), rr = c.r * 0.55; discAt(g, c.x + Math.cos(a) * rr * 0.6, c.y + Math.sin(a) * rr * 0.5, rr); }
+    }, 1.22, 0.72);
+  }
+  const plates = look ? [[-0.42, 0.2], [0.0, 0.08], [0.4, 0.18], [-0.16, 0.42], [0.24, 0.44]] : [[-0.32, 0.12], [0.22, 0.1], [0.52, 0.32], [-0.55, 0.34], [0.0, 0.36], [0.3, 0.55]];
+  plates.forEach(([x, py], j) => {                      // the flat plates of flowers, cream and lacy
+    const y = top(x) + py, r = 0.19;
+    fillIn(g, 'rgba(40, 60, 30, 0.22)', () => ovalAt(g, x, y + 0.03, r * 1.02, r * 0.34));
+    fillIn(g, 'rgb(234, 228, 196)', () => ovalAt(g, x, y, r * 0.94, r * 0.3));
+    for (let k = 0; k < 36; k++) {
+      const a = h(400 + j * 40 + k) * TAU, rr = Math.sqrt(h(700 + j * 40 + k)) * r * 0.95;
+      fillIn(g, k % 4 ? '#fdf9ea' : '#efe4b8', () => discAt(g, x + Math.cos(a) * rr, y + Math.sin(a) * rr * 0.32 - 0.02 * (1 - rr / r), 0.018));
+    }
+    furGlow(g, [255, 252, 232], 0.35, x - 0.04, y - 0.02, r * 0.6, r * 0.18);
+  });
 }
 function paintHazel(g, h, look) {
   softSpot(g, 0, FIND_FOOT, 0.8, 0.2, '40, 34, 14', 0.35);
@@ -4136,13 +4173,13 @@ function paintHazel(g, h, look) {
   nuts.sort((a, b) => a[1] - b[1]);
   for (const [nx, ny, husk] of nuts) {
     const x = nx * 1.2, y = FIND_FOOT - 0.26 + ny * 1.2, r = 0.19;
-    softIn(g, [176, 112, 54], y - r, y + r, () => { g.moveTo(x, y - r * 1.15); g.bezierCurveTo(x + r * 1.1, y - r * 0.9, x + r * 1.05, y + r, x, y + r); g.bezierCurveTo(x - r * 1.05, y + r, x - r * 1.1, y - r * 0.9, x, y - r * 1.15); }, 1.25, 0.65);
+    softIn(g, [176, 112, 54], y - r, y + r, () => { g.moveTo(x, y - r * 1.1); g.bezierCurveTo(x + r * 1.3, y - r * 1.05, x + r * 1.3, y + r * 0.95, x, y + r); g.bezierCurveTo(x - r * 1.3, y + r * 0.95, x - r * 1.3, y - r * 1.05, x, y - r * 1.1); }, 1.25, 0.65);
     strokeIn(g, 'rgba(90, 50, 20, 0.35)', 0.01, () => { for (const e of [-0.4, 0, 0.4]) { g.moveTo(x + e * r, y - r * 0.9); g.quadraticCurveTo(x + e * r * 1.3, y, x + e * r, y + r * 0.8); } });
     fillIn(g, 'rgb(222, 196, 140)', () => ovalAt(g, x, y + r * 0.72, r * 0.62, r * 0.3));   // its pale base
     furGlow(g, [255, 236, 200], 0.65, x - r * 0.35, y - r * 0.45, r * 0.3, r * 0.2, -0.4);
-    if (husk) for (let k = 0; k < 7; k++) {             // the frilly green husk round its foot
-      const a = Math.PI * (0.05 + 0.9 * k / 6), hx = x + Math.cos(a) * r * 0.95, hy = y + r * 0.55 + Math.sin(a) * r * 0.25;
-      softIn(g, tone([160, 176, 74], 0.85 + 0.25 * h(60 + k)), hy - r * 0.5, hy + 0.05, () => { g.moveTo(hx - r * 0.25, hy + 0.03); g.lineTo(hx + Math.cos(a) * r * 0.1, hy - r * 0.55); g.lineTo(hx + r * 0.25, hy + 0.03); g.closePath(); }, 1.2, 0.8);
+    if (husk) for (let k = 0; k < 9; k++) {             // the frilly green husk cupping its foot
+      const a = Math.PI * (0.02 + 0.96 * k / 8), hx = x + Math.cos(a) * r * 1.05, hy = y + r * 0.5 + Math.sin(a) * r * 0.3;
+      softIn(g, tone([150, 172, 70], 0.85 + 0.25 * h(60 + k)), hy - r * 0.8, hy + 0.05, () => { g.moveTo(hx - r * 0.3, hy + 0.04); g.lineTo(hx - Math.cos(a) * r * 0.2, hy - r * 0.8); g.lineTo(hx + r * 0.3, hy + 0.04); g.closePath(); }, 1.2, 0.8);
     }
   }
 }
@@ -4171,19 +4208,44 @@ function paintRose(g, h, look, bare) {
     g.restore();
   }
 }
-function paintCress(g, h, look) {
-  softSpot(g, 0, FIND_FOOT, 0.85, 0.22, '20, 50, 40', 0.4);
-  const leaf = [50, 124, 54], spots = [];
-  for (let i = 0; i < 34; i++) { const a = h(i) * TAU, r = Math.sqrt(h(10 + i)); spots.push({ x: Math.cos(a) * r * 0.78, y: FIND_FOOT - 0.2 + Math.sin(a) * r * 0.24 - 0.14 * (1 - r), k: i }); }
-  spots.sort((a, b) => a.y - b.y);
-  for (const p of spots) {                              // round glossy leaflets, lit on top
-    const lit = clamp(1 - (p.y - (FIND_FOOT - 0.5)) / 0.5, 0, 1), r = 0.075 + 0.03 * h(50 + p.k), rgb = tone(leaf, 0.75 + 0.5 * lit);
-    softIn(g, rgb, p.y - r, p.y + r, () => ovalAt(g, p.x, p.y, r, r * 0.8, h(60 + p.k)), 1.25, 0.7);
-    fillIn(g, 'rgba(255, 255, 255, 0.35)', () => ovalAt(g, p.x - r * 0.3, p.y - r * 0.35, r * 0.35, r * 0.18, -0.3));   // wet and glossy
+// A sprig of watercress: round glossy leaflets in pairs up a short stalk, the one at the tip the biggest.
+function cressSprig(g, x, y, a, len, rgb) {
+  g.save(); g.translate(x, y); g.rotate(a);
+  strokeIn(g, 'rgb(96, 140, 70)', 0.016, () => { g.moveTo(0, 0); g.lineTo(0, -len); });
+  for (let p = 0; p < 3; p++) {
+    const t = p === 2 ? 1 : 0.4 + 0.3 * p, r = len * (p === 2 ? 0.3 : 0.2);
+    for (const e of p === 2 ? [0] : [-1, 1]) {
+      const lx = e * r * 0.95, ly = -len * t - (e ? 0 : r * 0.6);
+      softIn(g, rgb, ly - r, ly + r, () => ovalAt(g, lx, ly, r, r * 0.7, e * 0.3), 1.14, 0.84);
+      strokeIn(g, rockRGB(tone(rgb, 0.72), 0.5), 0.008, () => { g.moveTo(lx - e * r * 0.7, ly + r * 0.1); g.lineTo(lx + e * r * 0.3, ly - r * 0.1); });
+      fillIn(g, 'rgba(255, 255, 255, 0.32)', () => ovalAt(g, lx - r * 0.3, ly - r * 0.35, r * 0.38, r * 0.18, -0.3));   // wet and glossy
+    }
   }
-  if (look === 1) for (let i = 0; i < 4; i++) {         // a few tiny white flowers
-    const x = (h(80 + i) - 0.5) * 1.0, y = FIND_FOOT - 0.45 - 0.12 * h(85 + i);
-    for (let k = 0; k < 4; k++) { const a = k / 4 * TAU + 0.4; fillIn(g, '#fbfbf4', () => discAt(g, x + Math.cos(a) * 0.03, y + Math.sin(a) * 0.03, 0.03)); }
+  g.restore();
+}
+// Watercress: a cushion of sprigs standing in the shallows at the water's edge, the water lapping round its foot (a pale
+// ring, the lowest leaves darker under it); look 1 has a few tiny white flowers.
+function paintCress(g, h, look) {
+  softSpot(g, 0, FIND_FOOT, 0.8, 0.2, '20, 60, 70', 0.3);
+  const sprigs = [];
+  for (let i = 0; i < 11; i++) {
+    const a = (i / 10 - 0.5) * 2.3 + (h(i) - 0.5) * 0.3;
+    sprigs.push({ x: Math.sin(a) * 0.32 + (h(10 + i) - 0.5) * 0.12, a, len: 0.32 + 0.16 * h(20 + i) * (1 - Math.abs(a) * 0.3), k: i });
+  }
+  sprigs.sort((p, q) => Math.abs(q.a) - Math.abs(p.a));
+  for (const s of sprigs) {
+    const lit = 1 - Math.abs(s.a) / 1.4;
+    cressSprig(g, s.x, FIND_FOOT - 0.02, s.a, s.len, tone([58, 138, 58], 0.78 + 0.35 * lit + 0.08 * h(30 + s.k)));
+  }
+  furGlow(g, [40, 90, 100], 0.4, 0, FIND_FOOT - 0.02, 0.62, 0.1);                 // under the water
+  strokeIn(g, 'rgba(240, 250, 255, 0.55)', 0.022, () => {                         // the ring of water round its foot
+    g.ellipse(0, FIND_FOOT, 0.7, 0.13, 0, Math.PI * 0.08, Math.PI * 0.92);
+    g.moveTo(0.7 * Math.cos(Math.PI * 1.12), FIND_FOOT + 0.13 * Math.sin(Math.PI * 1.12)); g.ellipse(0, FIND_FOOT, 0.7, 0.13, 0, Math.PI * 1.12, Math.PI * 1.3);
+  });
+  if (look === 1) for (let i = 0; i < 5; i++) {         // a few tiny white flowers
+    const x = (h(80 + i) - 0.5) * 0.9, y = FIND_FOOT - 0.42 - 0.14 * h(85 + i);
+    for (let k = 0; k < 4; k++) { const a = k / 4 * TAU + 0.4; fillIn(g, '#fbfbf4', () => discAt(g, x + Math.cos(a) * 0.028, y + Math.sin(a) * 0.024, 0.026)); }
+    fillIn(g, '#e8dc8c', () => discAt(g, x, y, 0.012));
   }
 }
 
