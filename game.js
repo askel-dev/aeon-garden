@@ -50,7 +50,7 @@ const canvas = $('#world');
 const ctx = canvas.getContext('2d');
 let vw = 0, vh = 0, dpr = 1, minZoom = 1, fitZoom = 1;
 const FIT = 0.92;                                 // zoomed right out, how much of the window the meadow fills (it fades into mist, mistField)
-let sheet = null;                                 // the edges of the meadow the inspector and the bars hide, while it's open
+let sheet = null;                                 // the edges of the meadow the inspector and the bars hide, while it's open (or the chat and the keyboard)
 // A phone upright or on its side: slim bars, and the tools fold into a button. On its side (a short screen)
 // the inspector is a panel down the right.
 const narrow = () => matchMedia('(max-width: 760px), (max-height: 500px)').matches;
@@ -114,10 +114,14 @@ function resize() {
 }
 
 // On a phone the inspector is a sheet over the bottom of the meadow, or on its side a panel down the
-// right. The one you follow is kept in the middle of what's still showing, instead of under the panel.
+// right. The one you follow is kept in the middle of what's still showing, instead of under the panel; and while you type
+// to friends, between the chat up top and the keyboard (keyboardUp).
 function measureSheet() {
-  const ins = $('#inspector').getBoundingClientRect();
-  if (!ins.height) sheet = null;
+  const ins = $('#inspector').getBoundingClientRect(), chat = $('#chat');
+  if (chat.classList.contains('kb')) {
+    const v = window.visualViewport, top = $('#hud-right .hud-top').getBoundingClientRect().bottom;
+    sheet = { top: Math.max(top, chat.getBoundingClientRect().bottom), bottom: v ? vh - v.offsetTop - v.height : 0, left: 0, right: 0 };
+  } else if (!ins.height) sheet = null;
   else if (narrow() && !short()) {
     const top = $('#hud-right .hud-top').getBoundingClientRect().bottom;
     sheet = { top, bottom: vh - ins.top, left: 0, right: 0 };
@@ -8707,6 +8711,7 @@ function liftFinger(e) {
 canvas.addEventListener('pointerdown', e => {
   if (!world) return;                     // (a kept meadow still opening)
   if (e.button === 2 || (e.ctrlKey && e.pointerType === 'mouse')) return;
+  if (chatOpen() && chatAway(e)) return;
   canvas.setPointerCapture(e.pointerId);
   fingerTap = e.pointerType === 'touch';
   zoomTo = null;
@@ -8891,9 +8896,11 @@ $('#ask').addEventListener('keydown', e => { if (e.key === 'Escape') askIdeas(fa
 // in its own cloak (peerItems, drawPeer), slid between where it last said it was, with its name over it (drawPeerNames).
 // A guest who loses the host keeps the meadow as its own. The name is asked once, on a small card at the foot as the
 // cloak's is (askName), the first time you play together, and kept in localStorage; ••• has it while together.
-// The chat: Enter, T or 💬 on the pill opens a line bottom left (openChat); what's said goes to everyone (t: 'say'), pops
-// up as a bubble over the forager who said it for a while (chatArt, painted once a line, drawn with the names) and as a
-// line in the log there, which fades after CHAT_LOG_MS (all of it back while the line is open).
+// The chat: Enter, T or 💬 on the pill opens a small card bottom left (openChat): a few things to say with one tap
+// (CHAT_QUICK) and a line to type on. On a touch screen it opens up top, out of the keyboard's way, the keyboard waits for a
+// tap on the line, and while it's up the forager is kept in view between them (keyboardUp). What's said goes to everyone (t: 'say'), pops up as a bubble over the forager who said it for a while
+// (chatArt, painted once a line, drawn with the names; laid out together so two side by side don't hide each other,
+// layChats) and as a line in the log over the card, which fades after CHAT_LOG_MS (all of it back while the card is open).
 const POS_MS = 150;                        // ms between a forager's "here I am"
 const PEER_SLIDE = 1.3;                    // a friend glides to where it said over this many POS_MS (so it's still going when the next comes)
 const PEER_STILL_MS = 250;                 // a friend that hasn't moved this long is standing
@@ -8910,6 +8917,11 @@ const CHAT_MS = 3500, CHAT_PER = 70, CHAT_LONGEST = 10000;   // a bubble stays C
 const CHAT_WIDE = 200;                      // px a bubble is at most, before its words wrap
 const CHAT_LOG_MS = 12000;                 // a line in the log fades after this
 const CHAT_KEEP = 40;                      // lines the log keeps
+const CHAT_QUICK = ['👋 Hello!', 'Over here!', 'Come and see!', 'Thank you!', 'Wait for me!', '😊', '❤️'];   // said with one tap
+const CHAT_TAIL = 7;                       // px from a bubble's foot down to the tip of its tail
+const CHAT_TAIL_IN = 16;                   // px from a bubble's side its tail may come, at most (so a bubble slid aside still points down to who said it)
+const CHAT_GAP = 6;                        // px kept between two bubbles
+const CHAT_SLIDE = 120;                    // ms a bubble takes to slide aside for another
 let myName = '', nameAsked = false, nameThen = null, nameOutfit = false, myChat = null;
 try { myName = cleanName(localStorage.getItem(NAME)); } catch (e) { /* none, then */ }
 const net = { tick: -1, base: 0, rate: 0, sentAt: 0, hostId: '', later: [], hostSums: new Map(), mySums: new Map(), off: 0, askedAt: -1e9, shown: '' };
@@ -9200,30 +9212,27 @@ function peerItems(items, now, z) {
   }
 }
 // Each friend's name over it, and over that what it said (and over this forager what it said), on top of everything (as
-// the pop-ups).
+// the pop-ups). The bubbles are laid out together after (layChats).
 function drawPeerNames(now) {
   const px = forPx();
+  chats.n = 0; chats.nn = 0;
   for (const p of peers.values()) {
     if (!p.shown) continue;
     const fall = p.downAt ? p.fall * 0.6 : 0;
     let top = p.sy - px * NAME_UP * (1 - fall) - 3;
     if (p.nameArt) {
-      const a = p.nameArt;
-      ctx.drawImage(a.img, Math.round(p.sx - a.w / 2), Math.round(top - a.h), a.w, a.h);
+      const a = p.nameArt, x = Math.round(p.sx - a.w / 2), y = Math.round(top - a.h), r = chats.names, m = chats.nn;
+      ctx.drawImage(a.img, x, y, a.w, a.h);
+      r[m] = x; r[m + 1] = y; r[m + 2] = a.w; r[m + 3] = a.h; chats.nn = m + 4;
       top -= a.h + 1;
     }
-    if (p.chat) { if (now > p.chat.until) p.chat = null; else drawChat(p.chat, p.sx, top, now); }
+    if (p.chat) { if (now > p.chat.until) p.chat = null; else saidAt(p.chat, p.sx, top); }
   }
   if (myChat) {
     if (now > myChat.until) myChat = null;
-    else if (fgBody.on) drawChat(myChat, fgBody.x, fgBody.y + forPx() * 0.3 - px * NAME_UP - 3, now);
+    else if (fgBody.on) saidAt(myChat, fgBody.x, fgBody.y + forPx() * 0.3 - px * NAME_UP - 3);
   }
-}
-function drawChat(s, x, y, now) {
-  const a = s.art, k = now - s.at, alpha = Math.min(1, k / 150, (s.until - now) / 600);
-  ctx.globalAlpha = alpha;
-  ctx.drawImage(a.img, Math.round(x - a.w / 2), Math.round(y - a.h + 4 * (1 - Math.min(1, k / 150))), a.w, a.h);
-  ctx.globalAlpha = 1;
+  if (chats.n) layChats(now);
 }
 function drawPeer(p, sx, sy) {
   const px = forPx(), top = sy - px * 0.36;
@@ -9246,7 +9255,8 @@ function drawPeer(p, sx, sy) {
   drawEmoji(p.art, sx, top, px, { flip: p.flip });
 }
 
-// The chat. A line said, painted once: a parchment bubble with a tail at the foot, its words wrapped to CHAT_WIDE.
+// The chat. A line said, painted once: a parchment bubble, its words wrapped to CHAT_WIDE. Its tail is painted apart
+// (tailArt), so it can come down from wherever under the bubble its forager is.
 const CHAT_ARTS = new Map();
 function chatArt(text) {
   let a = CHAT_ARTS.get(text);
@@ -9270,28 +9280,102 @@ function chatArt(text) {
   if (line) lines.push(line);
   let wide = 0;
   for (const l of lines) wide = Math.max(wide, g.measureText(l).width);
-  const lh = Math.round(F * 1.3), padX = Math.round(F * 0.75), padY = Math.round(F * 0.4), tail = Math.round(6 * k), sh = Math.round(1.5 * k);
-  const w = Math.ceil(wide) + 2 * padX, h = lines.length * lh + 2 * padY, r = Math.min(Math.round(11 * k), h / 2);
-  c.width = w + 2; c.height = h + tail + sh + 2;
-  const bubble = y => {
-    const x0 = 1, y0 = 1 + y, x1 = x0 + w, y1 = y0 + h, cx = x0 + w / 2;
-    g.beginPath(); g.moveTo(x0 + r, y0);
-    g.arcTo(x1, y0, x1, y1, r); g.arcTo(x1, y1, x0, y1, r);
-    g.lineTo(cx + tail, y1); g.lineTo(cx, y1 + tail); g.lineTo(cx - tail * 0.4, y1);
-    g.arcTo(x0, y1, x0, y0, r); g.arcTo(x0, y0, x1, y0, r); g.closePath();
-  };
+  const lh = Math.round(F * 1.3), padX = Math.round(F * 0.75), padY = Math.round(F * 0.4), sh = Math.round(1.5 * k);
+  const w = Math.max(Math.ceil(wide) + 2 * padX, Math.round((2 * CHAT_TAIL_IN + 4) * k)), h = lines.length * lh + 2 * padY, r = Math.min(Math.round(11 * k), h / 2);
+  c.width = w + 2; c.height = h + sh + 2;
+  const bubble = y => { g.beginPath(); g.roundRect(1, 1 + y, w, h, r); };
   g.fillStyle = 'rgba(60, 40, 10, 0.25)'; bubble(sh); g.fill();
   g.fillStyle = 'rgba(253, 248, 234, 0.97)'; bubble(0); g.fill();
   g.strokeStyle = 'rgba(176, 132, 58, 0.8)'; g.lineWidth = k; g.stroke();
   g.font = font; g.fillStyle = '#4a3920'; g.textAlign = 'center'; g.textBaseline = 'middle';
   lines.forEach((l, i) => g.fillText(l, 1 + w / 2, 1 + padY + lh * (i + 0.5) + k * 0.5));
-  a = { img: c, w: c.width / k, h: c.height / k };
+  a = { img: c, w: c.width / k, h: c.height / k, foot: (1 + h) / k };   // (foot: from its top down to the bubble's lower edge)
   asBitmap(c, b => { a.img = b; });
   CHAT_ARTS.set(text, a);
   return a;
 }
+// A bubble's tail, painted once: a little point down, its top over the bubble's edge so the line there is hidden under it.
+let TAIL_ART = null;
+function tailArt() {
+  const k = Math.max(1, dpr);
+  if (TAIL_ART && TAIL_ART.k === k) return TAIL_ART;
+  const t = Math.round(CHAT_TAIL * k), w = Math.round(1.6 * t), lap = Math.ceil(2 * k), sh = Math.round(1.5 * k), tip = 0.42;
+  const c = document.createElement('canvas'), g = c.getContext('2d');
+  c.width = w + 2; c.height = lap + t + sh + 2;
+  const point = y => { g.beginPath(); g.moveTo(1, 1 + y); g.lineTo(1 + w * tip, 1 + y + lap + t); g.lineTo(1 + w, 1 + y); g.closePath(); };
+  g.fillStyle = 'rgba(60, 40, 10, 0.25)'; point(sh); g.fill();
+  g.fillStyle = 'rgb(253, 248, 234)'; point(0); g.fill();
+  const u = lap / (lap + t);                                // (its sides, from the bubble's edge down)
+  g.beginPath(); g.moveTo(1 + w * tip * u, 1 + lap); g.lineTo(1 + w * tip, 1 + lap + t); g.lineTo(1 + w - w * (1 - tip) * u, 1 + lap);
+  g.strokeStyle = 'rgba(176, 132, 58, 0.8)'; g.lineWidth = k; g.lineJoin = 'round'; g.stroke();
+  TAIL_ART = { img: c, w: c.width / k, h: c.height / k, top: (1 + lap) / k, tip: (1 + w * tip) / k, k };
+  asBitmap(c, b => { TAIL_ART.img = b; });
+  return TAIL_ART;
+}
 const cleanChat = s => String(s || '').replace(/[\u0000-\u001f\u007f-\u009f]/g, '').replace(/\s+/g, ' ').trim().slice(0, CHAT_MOST);
-const chatFor = (text, now) => ({ art: chatArt(text), at: now, until: now + Math.min(CHAT_LONGEST, CHAT_MS + CHAT_PER * text.length) });
+const chatFor = (text, now) => ({ art: chatArt(text), at: now, until: now + Math.min(CHAT_LONGEST, CHAT_MS + CHAT_PER * text.length),
+  x: -0, y: -0, bx: -0, by: -0, ox: -0, oy: -0, laid: false });
+
+// This frame's bubbles (x, y where each one's tail points), and the names over friends (x, y, w, h each), reused.
+const chats = { said: [], n: 0, names: [], nn: 0, at: 0 };
+function saidAt(s, x, y) { s.x = x; s.y = y; chats.said[chats.n++] = s; }
+// Each bubble goes over who said it, on the screen; two in each other's way, or one on a friend's name, are slid apart
+// sideways as far as each one's tail still comes down from it (partChats), and if that isn't far enough the one further back
+// goes up over the other. Each slides to where it's laid over CHAT_SLIDE (as an offset from its forager, so it never
+// trails behind it).
+function layChats(now) {
+  const said = chats.said, n = chats.n;
+  for (let i = 0; i < n; i++) {
+    const s = said[i], hw = s.art.w / 2;
+    s.bx = clamp(s.x, hw + 8, vw - hw - 8); s.by = s.y - CHAT_TAIL;
+  }
+  for (let k = 0; k < 3; k++) for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) partChats(said[i], said[j]);
+    for (let m = 0; m < chats.nn; m += 4) offName(said[i], m);
+  }
+  const e = 1 - Math.exp(-Math.min(500, now - chats.at) / CHAT_SLIDE);
+  chats.at = now;
+  for (let i = 0; i < n; i++) {
+    const s = said[i], ox = s.bx - s.x, oy = s.by - (s.y - CHAT_TAIL);
+    if (s.laid) { s.ox += (ox - s.ox) * e; s.oy += (oy - s.oy) * e; } else { s.ox = ox; s.oy = oy; s.laid = true; }
+    drawChat(s, now);
+  }
+}
+// How far a bubble can go left or right and still have its tail under it (and stay on the screen).
+const roomLeft = s => Math.max(0, Math.min(s.bx - (s.x - s.art.w / 2 + CHAT_TAIL_IN), s.bx - s.art.w / 2 - 8));
+const roomRight = s => Math.max(0, Math.min(s.x + s.art.w / 2 - CHAT_TAIL_IN - s.bx, vw - 8 - s.art.w / 2 - s.bx));
+function partChats(A, B) {
+  const over = (A.art.w + B.art.w) / 2 + CHAT_GAP - Math.abs(A.bx - B.bx);
+  if (over <= 0 || Math.min(A.by, B.by) - Math.max(A.by - A.art.foot, B.by - B.art.foot) + CHAT_GAP <= 0) return;
+  const ab = A.x < B.x || A.x === B.x && A.at < B.at, L = ab ? A : B, R = ab ? B : A, lr = roomLeft(L), rr = roomRight(R);
+  if (lr + rr >= over) {
+    const dl = Math.min(lr, Math.max(over / 2, over - rr));
+    L.bx -= dl; R.bx += over - dl;
+    return;
+  }
+  const up = A.y < B.y || A.y === B.y && A.at > B.at ? A : B, down = up === A ? B : A;   // (further back, or said later)
+  up.by = Math.min(up.by, down.by - down.art.foot - CHAT_TAIL - 3);
+}
+function offName(s, m) {
+  const r = chats.names, x = r[m], y = r[m + 1], w = r[m + 2], h = r[m + 3], hw = s.art.w / 2;
+  if (s.bx + hw <= x || s.bx - hw >= x + w || s.by <= y || s.by - s.art.foot >= y + h) return;
+  const left = s.bx + hw - x + 2, right = x + w + 2 - (s.bx - hw), l = left <= roomLeft(s), r2 = right <= roomRight(s);   // (how far it'd go either way)
+  if (l && (!r2 || left <= right)) s.bx -= left;
+  else if (r2) s.bx += right;
+  else s.by = y - CHAT_TAIL - 2;
+}
+function drawChat(s, now) {
+  const a = s.art, t = tailArt(), k = now - s.at, alpha = Math.min(1, k / 150, (s.until - now) / 600);
+  const left = Math.round(s.x + s.ox - a.w / 2), edge = Math.round(s.y - CHAT_TAIL + s.oy + 4 * (1 - Math.min(1, k / 150)));
+  const tx = Math.round(clamp(s.x, left + CHAT_TAIL_IN, left + a.w - CHAT_TAIL_IN) - t.tip);
+  ctx.globalAlpha = alpha;
+  ctx.drawImage(a.img, left, edge - a.foot, a.w, a.h);
+  ctx.drawImage(t.img, tx, edge - t.top, t.w, t.h);
+  ctx.globalAlpha = 1;
+}
+
+// The card to say something on: a few things to say with a tap, and the line to type on.
+const TOUCH = matchMedia('(pointer: coarse)');
 const chatOpen = () => $('#chat').classList.contains('open');
 function openChat(open) {
   const box = $('#chat');
@@ -9300,12 +9384,39 @@ function openChat(open) {
     keysHeld.clear();                                     // (the forager stops: the keys are for the words now)
     box.classList.add('open');
     $('#chat-log').scrollTop = 1e6;
-    $('#chat-text').focus({ preventScroll: true });
+    $('#chat-quick').scrollLeft = 0;
+    if (!TOUCH.matches) $('#chat-text').focus({ preventScroll: true });   // (with a finger the keyboard waits for a tap on the line)
+    keyboardUp();
     return;
   }
   if (!chatOpen()) return;
   box.classList.remove('open');
   $('#chat-text').blur();
+  keyboardUp();
+}
+// On a touch screen the card opens up top, out of the keyboard's way (index.html): under the pill, or beside it, put here
+// as --pill-foot and --pill-side. And while the keyboard's up (.kb: the foot fixed things stand on, as the pill's column
+// has it, well below the foot of what shows, the visual viewport) the meadow's forager is kept between the two
+// (measureSheet).
+function keyboardUp() {
+  const v = window.visualViewport, box = $('#chat'), open = chatOpen();
+  let kb = 0;
+  if (open) {
+    const pill = $('#hud-right .hud-top').getBoundingClientRect(), col = $('#hud-right');
+    box.style.setProperty('--pill-foot', Math.round(pill.bottom + 8) + 'px');
+    box.style.setProperty('--pill-side', Math.round(vw - pill.left + 8) + 'px');
+    if (v && v.scale < 1.05) kb = col.getBoundingClientRect().bottom + parseFloat(getComputedStyle(col).bottom) - v.offsetTop - v.height;
+  }
+  if (kb > 80 !== box.classList.contains('kb')) { box.classList.toggle('kb', kb > 80); $('#chat-log').scrollTop = 1e6; }
+  measureSheet();
+}
+if (window.visualViewport) for (const type of ['resize', 'scroll']) visualViewport.addEventListener(type, keyboardUp);
+// A tap on the meadow while the card is open: it shuts if nothing's typed, else the keyboard goes down. With a finger,
+// a tap that only put the keyboard away goes no further (true).
+function chatAway(e) {
+  const t = $('#chat-text'), typing = document.activeElement === t;
+  if (t.value.trim()) t.blur(); else openChat(false);
+  return typing && e.pointerType === 'touch';
 }
 function chatLine(who, text, me) {
   const log = $('#chat-log'), el = document.createElement('div'), b = document.createElement('b');
@@ -9317,18 +9428,34 @@ function chatLine(who, text, me) {
   log.scrollTop = 1e6;
   setTimeout(() => el.classList.add('old'), CHAT_LOG_MS);
 }
-$('#chat-form').addEventListener('submit', e => {
-  e.preventDefault();
-  const text = cleanChat($('#chat-text').value);
-  $('#chat-text').value = '';
-  openChat(false);
+function sayLine(text) {
+  text = cleanChat(text);
   if (!text || !(Net && Net.on)) return;
   Net.send({ t: 'say', text, n: myName });
   myChat = chatFor(text, performance.now());
   chatLine(myName || 'You', text, true);
+}
+$('#chat-form').addEventListener('submit', e => {
+  e.preventDefault();
+  const text = $('#chat-text').value;
+  $('#chat-text').value = '';
+  openChat(false);
+  sayLine(text);
 });
-$('#chat-btn').addEventListener('pointerdown', e => e.preventDefault());   // (the line keeps its focus, so 💬 shuts it rather than its blur)
-$('#chat-text').addEventListener('blur', () => { if (!$('#chat-text').value.trim()) openChat(false); });   // (tapped away from with nothing said)
+for (const text of CHAT_QUICK) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.textContent = text;
+  $('#chat-quick').append(b);
+}
+$('#chat-quick').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  openChat(false);
+  sayLine(b.textContent);
+});
+// (the line keeps its focus: so 💬 shuts the card rather than the line's blur, and a quick one isn't lost to it)
+for (const el of [$('#chat-btn'), $('#chat-quick')]) el.addEventListener('pointerdown', e => { if (e.target.closest('button')) e.preventDefault(); });
+$('#chat-text').addEventListener('blur', () => { if (!TOUCH.matches && !$('#chat-text').value.trim()) openChat(false); });   // (clicked away from with nothing said)
 $('#chat-form').addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); openChat(false); } });
 function heardChat(m, now) {
   const text = cleanChat(m.text), p = peers.get(m.from);

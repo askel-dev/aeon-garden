@@ -63,10 +63,10 @@
   * { box-sizing: border-box; touch-action: manipulation; }   /* no double-tap zoom in Safari; the meadow does its own zoom */
   html, body { margin: 0; height: 100%; overflow: hidden; background: #9cc77e; }
   body { font-family: Nunito, ui-rounded, system-ui, sans-serif; color: var(--ink); font-size: 14px; }
-  /* On a touch screen a held finger never marks text or opens Safari's menu; the idea box still takes a paste. */
+  /* On a touch screen a held finger never marks text or opens Safari's menu; the idea box, a name and the chat still take a paste. */
   @media (pointer: coarse) {
     body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
-    textarea { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
+    textarea, input { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
   }
   /* The meadow fills the whole glass: under the clock and behind Safari's floating bar too (lvh). */
   canvas#world { position: fixed; top: 0; left: 0; width: 100%; height: 100vh; height: 100lvh; display: block; touch-action: none;
@@ -185,10 +185,14 @@
   #name-card .go { flex: none; border-radius: 12px; background: #4f7f3a; color: #fff; font-size: 15px; padding: 8px 14px; box-shadow: none; }
   @media (hover: hover) { #name-card .go:hover { background: #44702f; } }
   @media (pointer: coarse) { #name-text, #name-card .go { min-height: 44px; } }
+  /* (a touch screen: up top under the pill, where the keyboard won't cover it) */
+  @media (pointer: coarse) { #name-card { top: calc(var(--top) + 52px); bottom: auto; } }
   /* ---- playing together, the chat (game.js chat): what was said, a few lines bottom left that fade after a while (all of
-     them back while you're saying something), and the line to say it on, shown only then */
-  #chat { position: fixed; z-index: 6; left: var(--left); bottom: var(--bottom); width: min(300px, calc(100% - var(--left) - var(--right)));
-    display: flex; flex-direction: column; align-items: flex-start; gap: 4px; pointer-events: none; }
+     them back while it's open), and under them while it's open a small card: things to say with one tap (CHAT_QUICK), and
+     the line to type on. On a touch screen it opens up top instead, out of the keyboard's way (below). */
+  #chat { position: fixed; z-index: 6; left: var(--left); bottom: var(--bottom); width: min(340px, calc(100% - var(--left) - var(--right)));
+    display: flex; flex-direction: column; align-items: flex-start; gap: 6px; pointer-events: none; }
+  #chat.open { z-index: 10; }
   #chat-log { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; max-height: 40vh; overflow: hidden; }
   .chat-line { max-width: 100%; box-sizing: border-box; padding: 3px 10px; border-radius: 11px; background: var(--paper, none) var(--card);
     box-shadow: var(--edge), var(--shadow); font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; animation: pop-in 0.3s ease-out;
@@ -196,15 +200,30 @@
   .chat-line b { font-weight: 800; color: #7a5a2a; }
   .chat-line.me b { color: #4f7f3a; }
   #chat:not(.open) .chat-line.old { opacity: 0; }
-  #chat:not(.open) #chat-form { display: none; }
-  #chat.open #chat-log { overflow-y: auto; pointer-events: auto; }
-  #chat-form { display: flex; gap: 6px; width: 100%; pointer-events: auto; animation: pop-in 0.2s ease-out; }
+  #chat:not(.open) #chat-bar { display: none; }
+  #chat.open #chat-log { overflow-y: auto; pointer-events: auto; overscroll-behavior: contain; }
+  #chat-bar { width: 100%; display: flex; flex-direction: column; gap: 8px; padding: 8px; border-radius: 16px; background: var(--paper, none) var(--card);
+    box-shadow: var(--edge), var(--shadow); pointer-events: auto; animation: pop-in 0.2s ease-out; }
+  #chat-quick { display: flex; gap: 6px; margin: 0 -8px; padding: 0 8px; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
+  #chat-quick::-webkit-scrollbar { display: none; }
+  @media (pointer: fine) { #chat-quick { flex-wrap: wrap; } }   /* (a mouse can't swipe the row along) */
+  #chat-quick button { flex: none; border: none; border-radius: 99px; padding: 5px 12px; background: rgba(150, 115, 60, 0.12); color: #6a4d22;
+    font-weight: 800; font-size: 13.5px; white-space: nowrap; transition: background 0.15s, transform 0.1s; }
+  @media (hover: hover) { #chat-quick button:hover { background: var(--accent-soft); } }
+  #chat-quick button:active { background: var(--accent-soft); transform: scale(0.96); }
+  #chat-form { display: flex; gap: 6px; }
   #chat-text { flex: 1; min-width: 0; box-sizing: border-box; padding: 7px 12px; border: 1.5px solid #d9ccb0; border-radius: 12px;
-    background: #fffaf0; font: inherit; font-size: 16px; color: var(--ink); box-shadow: var(--shadow); }
+    background: #fffaf0; font: inherit; font-size: 16px; color: var(--ink); }
   #chat-text:focus { outline: none; border-color: #4f7f3a; }
-  #chat-form .go { flex: none; border-radius: 12px; background: #4f7f3a; color: #fff; font-size: 15px; padding: 7px 12px; box-shadow: none; }
+  #chat-form .go { flex: none; border: none; border-radius: 12px; background: #4f7f3a; color: #fff; font-size: 15px; font-weight: 800; padding: 7px 14px; }
   @media (hover: hover) { #chat-form .go:hover { background: #44702f; } }
-  @media (pointer: coarse) { #chat-text, #chat-form .go { min-height: 44px; } #chat-form .go { min-width: 44px; } }
+  #chat-form .go:active { filter: brightness(0.94); }
+  @media (pointer: coarse) {
+    #chat-text, #chat-form .go, #chat-quick button { min-height: 44px; }
+    #chat-form .go { min-width: 56px; }
+    #chat-quick button { padding: 0 14px; font-size: 15px; }
+    .chat-line { font-size: 15px; padding: 4px 11px; }
+  }
   .hidden { display: none !important; }
   /* ---- phones, upright or on their side: one slim row on top */
   @media (max-width: 760px), (max-height: 500px) {
@@ -318,15 +337,32 @@
     #satchel.empty .slot { height: 12px; }
     #satchel.empty .slot::before { inset: 2px 3px; border-radius: 4px; }
   }
-  /* a phone: the chat's lines sit over the satchel and the body's bars, and its line to say something across the foot */
+  /* a phone: the chat's lines sit over the satchel and the body's bars; open, its card goes across the foot */
   @media (max-width: 760px), (max-height: 500px) {
     #chat { bottom: calc(var(--bottom) + 104px); }
     #chat.open { bottom: var(--bottom); right: var(--right); width: auto; }
     #chat.open #chat-log { max-height: 30vh; }
   }
+  /* A touch screen: the keyboard would cover the foot (and Safari won't slide the page up for it), so open, the chat goes
+     up top (game.js keyboardUp puts --pill-foot and --pill-side): top left, under the pill on an upright phone, beside it on
+     its side. The line to type on comes first, the quick ones under it, then what was said, so nothing moves the line;
+     while the keyboard's up (.kb) the quick ones go and only the last lines stay. */
+  @media (pointer: coarse) {
+    #chat.open { top: var(--top); bottom: auto; }
+    #chat.open #chat-bar { order: -1; }
+    #chat-form { order: -1; }
+    #chat.kb #chat-quick { display: none; }
+    #chat.kb #chat-log { max-height: 80px; }
+  }
+  @media (pointer: coarse) and (max-width: 760px) { #chat.open { top: var(--pill-foot, calc(var(--top) + 54px)); } }
+  @media (pointer: coarse) and (max-height: 500px) {
+    #chat.open { top: var(--top); right: var(--pill-side, 240px); }
+    #chat.kb #chat-log { display: none; }
+  }
   /* an upright phone: the inspector's sheet comes up from the bottom, and the satchel steps aside for it */
   @media (max-width: 760px) and (min-height: 501px) {
     body:has(#inspector.open) #satchel { opacity: 0; transform: translate(-50%, 30px); pointer-events: none; }
+    body:has(#inspector.open) #chat:not(.open) { opacity: 0; }
   }
   /* ---- the forager's body (game.js renderVitals): two slim bars over the satchel, warmth and stamina, each shown only
      while it isn't full (a drop by the warmth while it's wet); frost creeping in at the edges while it's freezing; and the
@@ -417,11 +453,15 @@
   <button class="btn go" type="submit">That's me</button></form>
 </div>
 
-<!-- playing together: what friends said, a few lines bottom left that fade, and the line to say something (game.js chat) -->
+<!-- playing together: what friends said, a few lines bottom left that fade, and while it's open a small card to say something
+     (game.js chat): things to say with a tap (CHAT_QUICK, put in by game.js), and the line to type on -->
 <div id="chat" class="hidden">
   <div id="chat-log" aria-live="polite"></div>
-  <form id="chat-form"><input id="chat-text" maxlength="120" autocomplete="off" enterkeyhint="send" placeholder="Say something…" aria-label="Say something to your friends">
-  <button class="btn go" type="submit" aria-label="Say it">↵</button></form>
+  <div id="chat-bar">
+    <div id="chat-quick"></div>
+    <form id="chat-form"><input id="chat-text" maxlength="120" autocomplete="off" enterkeyhint="send" placeholder="Say something…" aria-label="Say something to your friends">
+    <button class="go" type="submit">Say</button></form>
+  </div>
 </div>
 
 <div id="ask" class="hidden" role="dialog" aria-labelledby="ask-title">
