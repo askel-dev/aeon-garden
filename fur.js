@@ -684,7 +684,7 @@ function paintSkylark(g, size, U, n) {
 // from (FORAGER_OUTFITS: the cloak, the hood and its rim). 'forager:' + (outfit << 7) + (view << 5) + pose.
 // Box -1 to 1, feet on the ground at 0.72.
 const FORAGER_REACH = 0.18, FORAGER_LIFT = 0.075, FORAGER_BOB = 0.016;
-const FORAGER_JOG_STRIDE = 1.4, JOG_DOWN = 0.36, JOG_LIFT = 0.15, JOG_BOB = 0.03, JOG_LEAN = 0.05;
+const FORAGER_JOG_STRIDE = 1.75, JOG_DOWN = 0.32, JOG_LIFT = 0.13, JOG_BOB = 0.03, JOG_LEAN = 0.08;
 const JOG_REACH = 2 * FORAGER_REACH * FORAGER_JOG_STRIDE * JOG_DOWN;   // (the planted foot keeps pace with the ground)
 const FORAGER_VIEWS = ['side', 'front', 'back'];
 const FORAGER_OUTFITS = [
@@ -722,10 +722,10 @@ function foragerPose(view, pose) {
   });
   // (Walking it's lowest with the feet apart; jogging, as the planted foot passes under it, and highest in the air.)
   const bob = jog ? JOG_BOB * Math.cos(4 * Math.PI * (u - down / 2)) : walk ? FORAGER_BOB * Math.cos(4 * Math.PI * u) : 0;
-  const swing = (jog ? 0.75 : walk ? 0.42 : 0) * Math.cos(2 * Math.PI * u);   // the near arm back as the near foot is ahead
+  const swing = (jog ? 0.6 : walk ? 0.42 : 0) * Math.cos(2 * Math.PI * u);   // the near arm back as the near foot is ahead
   return {
     view, walk, jog, u, feet, bob, swing, fwd,
-    lean: jog ? JOG_LEAN : 0, bend: jog ? 1.5 : 0,                 // jogging, it leans in and its elbows bend
+    lean: jog ? JOG_LEAN : 0, bend: jog ? 1.1 : 0,                 // jogging, it leans in and its elbows bend
     tip: jog ? 0.09 * Math.cos(4 * Math.PI * u + 1.6) + 0.04 : walk ? 0.05 * Math.cos(4 * Math.PI * u + 1.2) : 0,   // the hood's point flops with the step
     sway: jog ? 0.03 * Math.sin(2 * Math.PI * u) - 0.035 * fwd[0] : walk ? 0.018 * Math.sin(2 * Math.PI * u) : 0,   // and the cloak's hem swings (and trails)
     look: pose === 1 ? -0.07 : 0, tilt: pose === 1 ? 0.12 : 0, hand: pose === 1, blink: pose === 2,
@@ -743,6 +743,7 @@ function foragerParts(P) {
   const leg = (i, far) => {
     const [fx, fy] = P.feet[i], sx = hx + (side ? (i ? 0.03 : -0.02) : (i ? 0.075 : -0.075)), sy = hy;
     const knee = jointAt(sx, sy, fx, fy - 0.03, 0.17, 0.17, side ? -1 : 1);
+    if (!side) { knee[0] += ((sx + fx) / 2 - knee[0]) * 0.5; knee[1] += ((sy + fy - 0.03) / 2 - knee[1]) * 0.2; }   // (a knee bent toward you or away is foreshortened, not out to the side)
     const toe = side ? -1 : P.fwd[0] < 0 ? -0.8 : 0.8;
     add(g => {
       limbAt(g, sx, sy, 0.065, knee[0], knee[1], 0.05);
@@ -752,9 +753,10 @@ function foragerParts(P) {
       [BOOT, 1, 0.02, g => { ovalAt(g, fx + toe * 0.025, fy - 0.025, side ? 0.075 : 0.06, 0.045); g.rect(fx - 0.06, fy - 0.11, 0.12, 0.09); }]] });
   };
   // An arm: a sleeve from the shoulder, swung a forward (+), and a knitted mitten. Bent (jogging), the forearm comes up
-  // forward from the elbow.
+  // forward from the elbow, level at the top of the swing (not up at the chin).
   const arm = (x, a, far, casts) => {
     const sx = x + lx * 0.7, sy = 0.06 + P.bob + ly * 0.7;
+    if (P.bend) a -= 0.15;                                         // (pumping, the arm swings a little more back than up)
     const to = (x, y, t, L) => [x + (side ? -Math.sin(t) : P.fwd[0] * Math.sin(t) * 0.9) * L, y + Math.cos(t) * L + (side ? 0 : P.fwd[1] * Math.sin(t) * 0.12)];
     const [kx, ky] = P.bend ? to(sx, sy, a, 0.12) : [sx, sy];
     const [ex, ey] = P.bend ? to(kx, ky, a + P.bend, 0.11) : to(sx, sy, a, 0.2);
