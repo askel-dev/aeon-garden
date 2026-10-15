@@ -77,13 +77,14 @@ picture (`SKY_FIRE`, `paintFireLights`: so the sky repaints only on a flicker st
 (`fireLight`, source-atop, kept soft so the forager by it isn't washed out). Nights are dark (`DARK` 0.88 of a deep navy
 `NIGHT_RGB`, 2026-10-15) so the fire is the cosy place. Friends see fires laid, fed and lit (`sendFire`). Sounds: sound.js `clack`,
 `stick`, `tinder`, `strike`, `blow`, `kindle` (`catch` is the fox's), `fizzle`, and a crackle near a burning one (`fire` in
-`Sound.update`). Making camp (sim.js `w.camp`, event 'camp': the first fire lit) is a moment (`campMoment`, the comment over
+`Sound.update`). Cost: none measurable (1440x813, zoomed out, a summer night in the rain, walking: about 1.0 ms of script a
+frame with a fire and without, 60 fps).
+Making camp (sim.js `w.camp`, event 'camp': the first fire lit) is a moment (`campMoment`, the comment over
 `CAMP_FLARE`): the flames flare (`fireShown`), the light blooms out (`lightsFrame`) with a warm glow and a burst of sparks
 (`campBurst`, in `drawFireGlows`), a felt-piano flourish (sound.js `camp`), the camera eases in and leans to the fire and back
 (`campCam`, in `leadCam`; a zoom of your own ends it), "Your camp" fades in (announce 'camp', which cuts in ahead of the others)
 and an Android phone buzzes (`CAMP_BUZZ`). Then a soft ring of trodden earth with a few stones lies round the fire (`drawCampRing`,
-`CAMP_ART` painted once, stretched; under all that stands), coming in over `CAMP_RING_MS`. The fire's hover calls it "Your camp". Cost: none measurable (1440x813, zoomed out, a summer night in the rain, walking: about 1.0 ms of script a
-frame with a fire and without, 60 fps).
+`CAMP_ART` painted once, stretched; under all that stands), coming in over `CAMP_RING_MS`. The fire's hover calls it "Your camp".
 A click or a tap on an animal (on its body as drawn: `animalAt`, a little wider for a finger) opens its panel;
 anywhere else walks the forager there (`walkTo`, sim.js `foragerTo`) and shuts the panel, with a
 soft ring where it was sent (`drawMark`, `MARK_ART` painted once) that fades once it's there, and a faint dashed line to it
