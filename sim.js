@@ -1223,6 +1223,7 @@ function treeStage(w, d) {
 const blankTree = () => ({
   id: 0, x: -0, y: -0, emoji: '', tree: true, kind: '', fruit: '', size: -0, max: -0, born: -0, life: -0, tone: 0, parent: 0, by: '',
   stump: 0, dead: 0, fallen: 0, until: -0, windfall: 0, nuts: 0, crop: -0, visits: 0, blooms: false, name: '', named: false,
+  picked: 0, pickYear: -1,   // cherries the forager has picked off it, and the year (gather)
   hedge: 0,         // the hedge it's a whip of (w.hedges: a visitor's place)
   hive: null, holt: 0, door: null, holtFish: NaN,    // a hive in its hollow; an otters' holt in its roots, the way in, the fish about it (NaN: not worked out)
   sprouted: false, gone: false,   // grown again from its stump; rotted away
@@ -3948,7 +3949,8 @@ const GREEN_SEASONS = {
 
 // Every field a patch ever has, in one order (see blankCreature). born, fed: ticks; size: how many springs it's come up (0 to
 // 2: the painting's size); look: which of game.js's paintings.
-const greenOf = (kind, x, y, born, look) => ({ green: true, kind, x, y, born, fed: born, size: 0, look });
+// pick: how much of it the forager has picked (0 to 1), growing back a little a day (gather, GREEN_REGROW).
+const greenOf = (kind, x, y, born, look) => ({ green: true, kind, x, y, born, fed: born, size: 0, look, pick: -0 });
 
 // What a patch shows now: null (underground), or 0, 1, 2: garlic's leaves, flowers, dying back; nettles' young tops,
 // tall and flowering, brown.
@@ -3968,6 +3970,7 @@ function greensTick(w) {
     const lost = w.water[i] || (g.kind === 'garlic' ? s === 0 && first && w.wood[i] < GARLIC_WOOD / 2 : w.tick - g.fed > YEAR);   // (garlic: a spring with the wood gone over it, it doesn't come up)
     if (lost) continue;
     if (s === 0 && first && w.tick - g.born > YEAR / 2) g.size = Math.min(2, g.size + 1);   // (each spring it comes up a little bigger)
+    if (g.pick > 0) g.pick = Math.max(0, g.pick - GREEN_REGROW);   // (picked: it grows back)
     list[n++] = g;
   }
   list.length = n;
@@ -5187,7 +5190,10 @@ const TAUT_CLEAR = 0.3;                 // a straightened leg keeps this far off
 // Every field it ever has, in one order (see blankCreature). path: the way, as x, y pairs; leg: the pair it's heading
 // for; speed, heading: tiles a tick, radians (0 east, pi / 2 down the screen); moved: how far it went last tick;
 // goalX, goalY: where it was sent; running: sprinting there.
-const foragerOf = (x, y) => ({ forager: true, x, y, path: [], leg: 0, speed: -0, heading: Math.PI / 2, moved: -0, walking: false, goalX: x, goalY: y, running: false });
+// bag, bagN: the satchel's slots, what's in each (an ingredient's id, recipes.js) and how many (gather, stow).
+const SLOTS = 8, STACK = 10;            // the satchel's slots, and how many of a kind one holds
+const foragerOf = (x, y) => ({ forager: true, x, y, path: [], leg: 0, speed: -0, heading: Math.PI / 2, moved: -0, walking: false, goalX: x, goalY: y,
+  running: false, bag: new Array(SLOTS).fill(''), bagN: new Array(SLOTS).fill(0) });
 
 // Where it starts: a pleasant dry spot near the water and the woods, above the spring flood, nothing standing on it, not
 // far from the middle.
@@ -5390,6 +5396,124 @@ function foragerTick(w) {
   }
   f.moved = Math.hypot(nx - f.x, ny - f.y);
   f.x = nx; f.y = ny;
+}
+
+// ---------------------------------------------------------------- gathering
+//
+// The forager picks what the meadow grows, for real: a clump of mushrooms picked is gone, a bramble has fewer berries
+// left for the crows and the foxes, a patch of greens gives a little and grows back, a windfall picked up is one the
+// rabbits don't get, and honey taken is out of the hive's store. game.js walks it there and calls gather once it's
+// arrived; whatThere says beforehand what a thing would give (for the hover), or why not. Things: 'shroom' (a clump in
+// w.shrooms), 'green' (w.greens), 'bramble' (w.brambles), 'tree' (a cherry on it in summer, windfall apples, acorns or
+// beechnuts under it in autumn) and 'hive'. What it gives goes in the satchel (w.forager.bag): ingredient ids as
+// recipes.js has them, STACK of a kind to a slot.
+const GREEN_TAKE = 0.34;                // of a patch of greens a pick takes (a third: three picks and it's picked for now)
+const GREEN_GIVES = 3;                  // and the leaves it gives, one more off a big patch (g.size 2)
+const GREEN_REGROW = 0.25;              // and grows back a day
+const BERRY_PICK = 6;                   // blackberries a pick gives,
+const BERRY_COST = 6;                   // each this much of a bramble's berries as the crows count them (BERRY_CROP)
+const CHERRY_CROP = 24;                 // cherries a tree in full crop gives the forager in a summer (two fifths of it with no bees: d.crop)
+const CHERRY_PICK = 6;                  // and a pick
+const CHERRY_TO = 0.7;                  // ripe from the start of summer to this far into it (game.js hangs them so long)
+const FALL_PICK = 2;                    // windfalls under a tree a pick takes up
+const FALL_GIVES = { apple: 2, acorns: 4, beechnuts: 4 };   // and what each is in the satchel (a rabbit's windfall is a big meal)
+const HONEY_TAKE = 8;                   // of a hive's honey (HIVE_FULL) a pick takes,
+const HONEY_GIVES = 2;                  // the honey that is in the satchel,
+const HONEY_KEEP = 40;                  // and it never takes the store below this: enough for a big colony's winter
+
+// What a thing has to give now: { id, n } (n > 0), or { why } saying gently why not. (No change to anything.)
+const there = { id: '', n: 0, why: '', cost: -0 };
+function whatThere(w, kind, it) {
+  there.id = ''; there.n = 0; there.why = ''; there.cost = 0;
+  const s = seasonOf(w.tick), p = springPart(w.tick);
+  if (kind === 'shroom') {
+    if (!w.shrooms.includes(it)) there.why = 'Gone over';
+    else { there.id = it.kind; there.n = it.n; }
+  } else if (kind === 'green') {
+    const stage = greenStage(w, it);
+    there.id = it.kind;
+    if (stage === null) there.why = 'Nothing up yet';
+    else if (stage === 2) there.why = it.kind === 'garlic' ? 'Dying back' : 'Gone brown and tough';
+    else if (it.pick > 1 - GREEN_TAKE + 0.01) there.why = 'Picked for now: it grows back';
+    else { there.n = GREEN_GIVES + (it.size === 2 ? 1 : 0); there.cost = GREEN_TAKE; }
+  } else if (kind === 'bramble') {
+    const stage = brambleStage(w, it);
+    there.id = 'blackberry';
+    if (stage === 4) {
+      const n = Math.min(BERRY_PICK, Math.floor(it.berries / BERRY_COST));
+      if (n > 0) { there.n = n; there.cost = n * BERRY_COST; } else there.why = 'Picked clean';
+    } else there.why = stage === 5 ? 'Gone over' : stage === 3 ? 'Not ripe yet' : it.size === 0 ? 'Too young to fruit' : stage === 2 ? 'In flower: berries late in summer' : 'No berries till late summer';
+  } else if (kind === 'tree') {
+    const d = it, mast = TREES[d.kind] && TREES[d.kind].mast;
+    if (d.kind === 'cherry') {
+      there.id = 'cherry';
+      if (!bearing(w, d)) there.why = standing(d) ? 'Too young to fruit' : '';
+      else if (s !== 1 || p >= CHERRY_TO) there.why = s === 0 ? 'Not ripe yet' : 'No cherries till next summer';
+      else {
+        const left = Math.round(CHERRY_CROP * (0.4 + 0.6 * d.crop)) - (d.pickYear === yearOf(w.tick) ? d.picked : 0);
+        if (left > 0) { there.n = Math.min(CHERRY_PICK, left); there.cost = there.n; } else there.why = 'Picked clean';
+      }
+    } else if (d.kind === 'apple' || mast) {
+      there.id = d.kind === 'apple' ? 'apple' : mast;
+      if (!bearing(w, d)) there.why = standing(d) ? 'Too young to fruit' : '';
+      else if (d.windfall > 0) { there.cost = Math.min(FALL_PICK, d.windfall); there.n = there.cost * FALL_GIVES[there.id]; }
+      else if (s === 2 && p < 0.4 && (d.kind === 'apple' || w.mast)) there.why = 'Nothing fallen yet';
+      else if (s === 2 && (d.kind === 'apple' || w.mast)) there.why = 'Picked clean';
+      else if (s === 2 && mast) there.why = 'Not a mast year: hardly any ' + mast;
+      else there.why = d.kind === 'apple' ? (s === 1 ? 'Not ripe yet' : 'Windfalls come in autumn') : `${mast[0].toUpperCase() + mast.slice(1)} fall in autumn`;
+    }
+  } else if (kind === 'hive') {
+    there.id = 'honey';
+    if (it.cluster) there.why = 'A swarm: leave it be';
+    else if (it.honey - HONEY_TAKE < HONEY_KEEP) there.why = it.queen ? 'The bees need what\'s left' : 'Hardly any honey left';
+    else { there.n = HONEY_GIVES; there.cost = HONEY_TAKE; }
+  }
+  return there;
+}
+
+// How many of id the satchel has room for.
+function roomFor(f, id) {
+  let n = 0;
+  for (let k = 0; k < SLOTS; k++) n += f.bag[k] === id ? STACK - f.bagN[k] : f.bag[k] === '' ? STACK : 0;
+  return n;
+}
+// Puts n of id in the satchel: onto its stacks first, then the first empty slots. Returns the slots it went in (for
+// game.js to fly them to).
+function stow(f, id, n) {
+  const into = [];
+  for (let pass = 0; pass < 2 && n > 0; pass++) for (let k = 0; k < SLOTS && n > 0; k++) {
+    if (pass === 0 ? f.bag[k] !== id || f.bagN[k] >= STACK : f.bag[k] !== '') continue;
+    const m = Math.min(n, STACK - f.bagN[k]);
+    f.bag[k] = id; f.bagN[k] += m; n -= m; into.push(k);
+  }
+  return into;
+}
+// Empties a slot (what's dropped is just gone).
+function dropSlot(f, k) { f.bag[k] = ''; f.bagN[k] = 0; }
+
+// Picks it: takes from the sim and puts it in the satchel. Returns { id, n, into } (n 0 with why 'full' when the satchel
+// has no room: then nothing is taken), or { why } as whatThere.
+function gather(w, kind, it) {
+  const f = w.forager, t = whatThere(w, kind, it);
+  if (!t.n) return { id: t.id, n: 0, why: t.why, into: [] };
+  const room = roomFor(f, t.id);
+  if (!room) return { id: t.id, n: 0, why: 'full', into: [] };
+  // (only part of it fits: it costs that part, and the rest of a clump of mushrooms stays where it is)
+  const n = Math.min(t.n, room), part = n / t.n, id = t.id;
+  if (kind === 'shroom') {
+    const k = w.shrooms.indexOf(it);
+    if (n < t.n) { it.n -= n; } else if (k >= 0) w.shrooms.splice(k, 1);
+  } else if (kind === 'green') it.pick += t.cost * part;
+  else if (kind === 'bramble') it.berries = Math.max(0, it.berries - t.cost * part);
+  else if (kind === 'tree' && it.kind === 'cherry') {
+    if (it.pickYear !== yearOf(w.tick)) { it.pickYear = yearOf(w.tick); it.picked = 0; }
+    it.picked += n;
+  } else if (kind === 'tree') {
+    const falls = Math.ceil(n / FALL_GIVES[id]);
+    it.windfall -= falls; w.windfalls -= falls;
+  } else if (kind === 'hive') it.honey -= t.cost * part;
+  const into = stow(f, id, n);
+  return { id, n, why: '', into };
 }
 
 // ---------------------------------------------------------------- the world
@@ -5704,7 +5828,7 @@ function unpackWorld(kept) {
   if (!w.shrooms) { w.shrooms = []; w.shroomRng = makeRng(w.seed ^ 0x5a2004); w.rainAt = -1e9; }   // (kept on the cooking branch before them)
   for (const m of w.shrooms) asFractions(m, ['x', 'y']);
   if (!w.greens) { w.greens = []; w.greenRng = makeRng(w.seed ^ 0x9a271c); }      // (kept on the cooking branch before them)
-  for (const g of w.greens) asFractions(g, ['x', 'y']);
+  for (const g of w.greens) asFractions(g, ['x', 'y', 'pick']);
   const noBrambles = !w.brambles;                       // (kept on the cooking branch before them: a new meadow's come up, below)
   if (noBrambles) { w.brambles = []; w.pips = []; w.brambleRng = makeRng(w.seed ^ 0xb4a3b1); }
   for (const b of w.brambles) asFractions(b, ['x', 'y', 'crop', 'berries']);
@@ -6562,7 +6686,7 @@ const api = {
   createWorld, step, clock, isNight, phaseOf, seasonOf, springPart, mood, ageDays, growth, isAdult, patchFresh,
   hedgehogComes, heronComes, dragonflyComes, kingfisherComes, skylarkComes, placeNeeds, VISIT_SEASONS, VISIT_FADE, HERON_FADE, HERON_STAB,
   DRAGON_FROM, KF_FADE, KF_UNDER, KF_BEAT, LARK_FADE, LARK_OPEN, LARK_RISE, EDGE_REACH, OPEN_MOST,
-  walkable, packWorld, unpackWorld, foragerTo, FORAGER_WALK, FORAGER_RUN,
+  walkable, packWorld, unpackWorld, foragerTo, FORAGER_WALK, FORAGER_RUN, whatThere, gather, dropSlot, roomFor, forEachDecorNear, SLOTS, STACK,
   KINDS, FEW, whiteness, visibility, WINTER_COAT, WILD_COAT,
   TERRAIN, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE, hollow,

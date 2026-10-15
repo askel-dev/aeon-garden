@@ -34,6 +34,7 @@ if (COUNTER && !['localhost', '127.0.0.1'].includes(location.hostname)) {
 let world;
 const ui = {
   speed: 1, sound: false, selectedId: 0, picked: null, hoverId: 0, follow: false, lead: true, mark: null,   // lead: the camera goes with the forager; mark: where it was sent
+  gather: null, slotTip: null,              // what the forager is off to pick { kind, it } (gatherFrame); the satchel's slot with its name open
   trail: [], effects: [], allStory: false, sheetUp: false,
   sky: { mix: {}, tick: 0, bolts: [], boom: -1e9, rainbow: -1e9, bowEnd: -1e9 },
 };
@@ -1265,6 +1266,7 @@ function render(now) {
   ctx.clearRect(-8, -8, vw + 16, vh + 16);          // past the meadow's edge the page shows through
   const [ox, oy] = toScreen(0, 0);
   const z = cam.zoom, ck = S.clock(world);
+  hoverFrame();
   drawGround(z, ox, oy, shx, shy);
   drawWaves(weatherClock);   // (the wind's, so they still while it's paused)
   drawFlow(now, ck);
@@ -1356,6 +1358,7 @@ function render(now) {
   }
   layShadows();
   drawLeaves(now, true);                                   // the leaves lying round the trees' feet, on the ground under all that stands
+  drawGlow(now, false);                                    // (under what the mouse is on: it shows round it)
   for (const it of items) {
     if (it.f < 0.02) continue;
     fadeTo(it.f);
@@ -1367,6 +1370,7 @@ function render(now) {
     else drawCreature(it.c, it.sx, it.sy, now);
   }
   unfade();
+  drawGlow(now, true);
   if (splashes.length) drawSplashes(now);
   drawFallingLeaves(now);                                  // (an emoji tree's)
   drawLeaves(now, false);                                  // and the painted trees' leaves coming down
@@ -1405,6 +1409,8 @@ function render(now) {
 
   // Pop-ups above the dark. Not in the intro: its lines tell the story.
   drawPops(shown, now);
+  drawHoverLine(now);
+  if (pickFloats.length) drawPickFloats(now);
 
   drawEffects(now);
   if (sel) drawSelectionOver(sel, now);
@@ -1972,14 +1978,14 @@ function drawCreature(c, sx, sy, now) {
 // each step sends out a ring (fg.rings).
 const FORAGER_SIZE = 2.5;                  // its painting's box, next to a rabbit's
 const FORAGER_ARTS = Array.from({ length: 3 << 4 }, (_, n) => 'forager:' + n);   // (made once: a frame builds no names)
-const FORAGER_POSES = [0, 1, 2, 8, 9, 10, 11, 12, 13, 14, 15];
+const FORAGER_POSES = [0, 1, 2, 3, 4, 8, 9, 10, 11, 12, 13, 14, 15];
 const FORAGER_FIDGET = [7000, 14000];      // ms standing between fidgets, about
 const FORAGER_TURN_MS = 1100;              // standing this long, it turns to face you
 const FORAGER_RUN_STRIDE = 1.4;            // running, its stride is this much longer (its legs don't spin)
 const FORAGER_STILL_MS = 70;               // no nearer than this to the last move, it's standing (it's drawn between ticks)
 const forPx = () => (8 + cam.zoom) * FORAGER_SIZE;
 const fg = { at: -1, x: 0, y: 0, step: 0, stillMs: 1e4, view: 1, flip: false, art: FORAGER_ARTS[16], blinkAt: -1e9, blinkIn: 3000,
-  fidgetAt: -1e9, fidgetIn: 9000, lastHalf: 0, rings: [], wet: false, lx: -0, ly: -0, sized: 0 };
+  fidgetAt: -1e9, fidgetIn: 9000, lastHalf: 0, rings: [], wet: false, lx: -0, ly: -0, sized: 0, pick: -1e9 };
 // What's under the forager's feet, for its footsteps (sound.js step): the shallows, ice, snow, the wood's floor, the damp
 // sand along the water, earth bitten bare, or grass.
 const STEP_SNOW = 0.35, STEP_WOODS = 0.45, STEP_SHORE = 1.5, STEP_BARE = 0.12;
@@ -2020,6 +2026,8 @@ function foragerFrame(now, d) {
     if (now - fg.blinkAt > fg.blinkIn) { fg.blinkAt = now; fg.blinkIn = 2200 + Math.random() * 3500; }
     if (fg.view === 1 && fg.stillMs > fg.fidgetIn) { fg.fidgetAt = now; fg.fidgetIn = fg.stillMs + FORAGER_FIDGET[0] + Math.random() * (FORAGER_FIDGET[1] - FORAGER_FIDGET[0]); }
     pose = now - fg.fidgetAt < 1500 ? 1 : now - fg.blinkAt < 150 ? 2 : 0;
+    const p = now - fg.pick;                              // picking (gatherFrame): stooped, reaching down, back up
+    if (p < PICK_MS[2]) { pose = p < PICK_MS[0] || p > PICK_MS[1] ? 3 : 4; fg.stillMs = FORAGER_STILL_MS + 1; fg.fidgetIn = FORAGER_FIDGET[0]; }
   }
   if (fg.rings.length && now - fg.rings[0].t > 900) fg.rings.shift();
   fg.art = shownPose(f, FORAGER_ARTS[(fg.view << 4) + pose], px);
@@ -2089,6 +2097,353 @@ function drawMark(now) {
   ctx.globalAlpha = Math.min(1, t / 120) * fade * 0.9;
   ctx.drawImage(art.img, sx - r, sy - r / 2, r * 2, r);
   ctx.globalAlpha = 1;
+}
+
+// ------------------------------------------------------------------ gathering
+//
+// A click or a tap on something the meadow gives (gatherAt: a clump of mushrooms, a patch of greens, a bramble, a fruit
+// or mast tree, a hive) walks the forager to its near side, a reach away (standPoint), and once it's there (gatherFrame)
+// it stoops and picks (fur.js poses 3 and 4, fg.pick): sim.js gather takes it from the meadow and puts it in the satchel,
+// a "+3 Chanterelles" floats up from the spot (pickFloats), the thing flies into its slot (flyToSlot) and the pick sound plays.
+// Hovered with a mouse, a thing that has something to give glows softly (GLOW_ART, under it, painted once) with its name
+// by it, and the pointer is a hand; one with nothing says why in a small line ("Not ripe yet", "Picked clean", sim.js
+// whatThere), as a click on it does. The hover is looked up only when the pointer or the camera moved (hoverFrame), and
+// only among the things near the pointer (the trees through the sim's grid).
+const PICK_MS = [140, 520, 680];          // the pick's stoop, reach and back up (ms)
+const FLOAT_MS = 1400, SAY_MS = 1900;     // a "+3 Chanterelles" floating up, and a line saying why not
+const FROM_FRONT = { tree: 1, hive: 1, bramble: 1 };   // (comes at these from in front, where it shows, not hidden behind them)
+let GLOW_ART = null;
+const pickFloats = [];                    // { img, w, h, x, y (world), t0, ms }
+const aim = { x: 0, y: 0, in: false, moved: false, cx: 0, cy: 0, cz: 0, at: 0, t: null, id: '', n: 0, why: '' };   // what the mouse is on (hoverFrame)
+const AIM_MS = 150;
+
+// The thing to gather under a point: { kind, it } or null. Hives first (in their tree), then what grows at a tree's foot,
+// the trees with fruit or mast, and the garlic lying flat under all.
+function gatherAt(sx, sy) {
+  const z = cam.zoom, [wx, wy] = toWorld(sx, sy), f = fingerTap ? 1.6 : 1;
+  const h = hiveAt(sx, sy);
+  if (h) return { kind: 'hive', it: h };
+  let best = null, bd = Infinity;
+  for (const m of world.shrooms) {
+    if (Math.abs(m.x - wx) > 3 || Math.abs(m.y - wy) > 4) continue;
+    placeShroom(m, z);
+    const r = Math.max(12 * f, shroomAt.px * 0.55), d = ((shroomAt.x - sx) ** 2 + (shroomAt.y - sy) ** 2) / (r * r);
+    if (d < 1 && d < bd) { best = m; bd = d; }
+  }
+  if (best) return { kind: 'shroom', it: best };
+  for (const b of world.brambles) {
+    if (Math.abs(b.x - wx) > 4 || Math.abs(b.y - wy) > 4) continue;
+    const px = bramblePx(b, z), x = (b.x - cam.x) * z + vw / 2, y = (b.y - cam.y) * z + vh / 2 - px * 0.18;
+    const d = ((sx - x) / Math.max(10 * f, px * 0.5)) ** 2 + ((sy - y) / Math.max(8 * f, px * 0.26)) ** 2;
+    if (d < 1 && d < bd) { best = b; bd = d; }
+  }
+  if (best) return { kind: 'bramble', it: best };
+  for (const g of world.greens) {
+    if (g.kind !== 'nettle' || Math.abs(g.x - wx) > 3 || Math.abs(g.y - wy) > 4 || S.greenStage(world, g) === null) continue;
+    const px = nettlePx(g, z), x = (g.x - cam.x) * z + vw / 2, y = (g.y - cam.y) * z + vh / 2 - px * 0.3, r = Math.max(12 * f, px * 0.4);
+    const d = ((sx - x) ** 2 + (sy - y) ** 2) / (r * r);
+    if (d < 1 && d < bd) { best = g; bd = d; }
+  }
+  if (best) return { kind: 'green', it: best };
+  S.forEachDecorNear(world, wx, wy + 3, 10, d => {        // a tree with fruit or mast: on it as it's drawn, the one in front
+    if (!d.tree || d.stump || !(d.kind === 'apple' || d.kind === 'cherry' || d.kind === 'oak' || d.kind === 'beech')) return;
+    const [dx, dy] = toScreen(d.x, d.y), px = treePx(d), half = Math.max(8, px * 0.36), top = Math.max(12, px * 0.85);
+    if (Math.abs(sx - dx) < half && sy > dy - top && sy < dy + Math.max(6, px * 0.14) && (!best || d.y > best.y)) best = d;
+  });
+  if (best) return { kind: 'tree', it: best };
+  for (const g of world.greens) {
+    if (g.kind !== 'garlic' || Math.abs(g.x - wx) > 4 || Math.abs(g.y - wy) > 3 || S.greenStage(world, g) === null) continue;
+    const px = garlicPx(g, z), x = (g.x - cam.x) * z + vw / 2, y = (g.y - cam.y) * z + vh / 2;
+    const d = ((sx - x) / (px * 0.5)) ** 2 + ((sy - y + px * 0.1) / (px * 0.22)) ** 2;
+    if (d < 1 && d < bd) { best = g; bd = d; }
+  }
+  return best ? { kind: 'green', it: best } : null;
+}
+
+// Where it is (world), how far off the forager stands to pick it, and its glow on screen (x, y, rx, ry).
+const gspot = { x: 0, y: 0, reach: 0, gx: 0, gy: 0, rx: 0, ry: 0 };
+function gatherSpot(kind, it) {
+  const z = cam.zoom, sx = (it.x - cam.x) * z + vw / 2, sy = (it.y - cam.y) * z + vh / 2;
+  gspot.x = it.x; gspot.y = it.y; gspot.gx = sx; gspot.gy = sy;
+  if (kind === 'shroom') {
+    placeShroom(it, z);
+    gspot.reach = 0.45; gspot.gx = shroomAt.x; gspot.gy = shroomAt.y; gspot.rx = gspot.ry = Math.max(10, shroomAt.px * 0.62);
+  } else if (kind === 'green') {
+    const px = it.kind === 'garlic' ? garlicPx(it, z) : nettlePx(it, z);
+    gspot.reach = it.kind === 'garlic' ? 0.7 + 0.15 * it.size : 0.55;
+    if (it.kind === 'garlic') { gspot.gy = sy - px * 0.08; gspot.rx = px * 0.58; gspot.ry = px * 0.26; }
+    else { gspot.gy = sy - px * 0.3; gspot.rx = px * 0.5; gspot.ry = px * 0.5; }
+  } else if (kind === 'bramble') {
+    const px = bramblePx(it, z);
+    gspot.reach = 0.55 + 0.25 * it.size; gspot.gy = sy - px * 0.2; gspot.rx = px * 0.6; gspot.ry = px * 0.36;
+  } else if (kind === 'tree') {
+    const px = treePx(it);
+    gspot.reach = 1;
+    if (it.kind === 'cherry') { gspot.gy = sy - px * 0.55; gspot.rx = px * 0.5; gspot.ry = px * 0.42; }   // (round the crown, where they hang)
+    else { gspot.gy = sy + px * 0.02; gspot.rx = px * 0.42; gspot.ry = px * 0.16; }                      // (round its foot, where they lie)
+  } else {                                                // a hive: its hollow, low on the trunk
+    const P = z * (it.tree ? it.tree.size : S.HIVE_TREE);
+    gspot.reach = 0.75; gspot.gy = sy - P * 0.15; gspot.rx = gspot.ry = Math.max(14, P * 0.14);
+  }
+  return gspot;
+}
+
+// Where the forager stands to pick it: on the side it's coming from, a reach away (in front of a tree or a hive, where it shows).
+function standPoint(kind, it) {
+  const s = gatherSpot(kind, it), F = world.forager;
+  let dx = F.x - s.x, dy = F.y - s.y;
+  if (FROM_FRONT[kind]) dy = Math.max(dy, 0.6 * Math.abs(dx) + 0.3);
+  const d = Math.hypot(dx, dy) || 1;
+  return [s.x + dx / d * s.reach, s.y + dy / d * s.reach];
+}
+
+// A click or a tap on it: off the forager goes. One with nothing to give says why now, and is only walked to.
+function goGather(t) {
+  const [x, y] = standPoint(t.kind, t.it), w = S.whatThere(world, t.kind, t.it);
+  walkTo(...toScreen(x, y));
+  if (w.n) ui.gather = { kind: t.kind, it: t.it };
+  else if (w.why) { const s = gatherSpot(t.kind, t.it); say(w.why, s.x, s.y); }
+}
+
+// Once a frame: there, it picks; stopped short (it couldn't get there), it says so.
+function gatherFrame(now) {
+  const g = ui.gather, F = world.forager;
+  if (!g || F.walking) return;
+  ui.gather = null;
+  const s = gatherSpot(g.kind, g.it);
+  if (Math.hypot(F.x - s.x, F.y - s.y) > s.reach + 0.9) { say('Can\'t reach it', s.x, s.y); return; }
+  const r = S.gather(world, g.kind, g.it);
+  if (!r.n) { if (r.why === 'full') say('Satchel\'s full', F.x, F.y - 1.6); else if (r.why) say(r.why, s.x, s.y); return; }
+  const dx = s.x - F.x, dy = s.y - F.y;                 // it turns to it, and stoops
+  fg.view = Math.abs(dy) > Math.abs(dx) * 0.8 ? (dy > 0 ? 1 : 2) : 0;
+  if (Math.abs(dx) > 0.05) fg.flip = dx > 0;
+  fg.pick = now;
+  $('#satchel').classList.remove('empty');
+  const [gx, gy] = [s.gx, s.gy], at = now + PICK_MS[0] + 90;
+  setTimeout(() => {
+    if (!world) return;
+    pickFloats.push(floatOf(r.id, r.n, s.x, s.y, at));
+    flyToSlot(r.id, gx, gy, r.into[r.into.length - 1]);
+    chime('pick', { n: r.n });
+  }, PICK_MS[0] + 90);
+}
+
+// A line by a thing (world x, y): why not, or the satchel full.
+function say(text, x, y) {
+  pickFloats.push(floatOf('', 0, x, y, performance.now(), text));
+}
+
+// What a thing is called, n of them: recipes.js's name, made plural for more than one (an apple, two apples; honey stays honey).
+const MASS = { honey: 1, garlic: 1, nettle: 1, sulphur: 1, chanterelle: 1, cherry: 1, blackberry: 1, acorns: 1, beechnuts: 1 };
+function itemName(id, n) {
+  const name = Recipes.INGREDIENTS[id]?.name || id;
+  return n > 1 && !MASS[id] && !name.endsWith('s') ? name + 's' : name;
+}
+// "+3 Chanterelles" with its icon on a parchment pill (or a plain line), painted once, then only drawn.
+function floatOf(id, n, x, y, t0, text) {
+  const icon = id ? 20 : 0, label = text || `+${n} ${itemName(id, n)}`;
+  const c = document.createElement('canvas'), g = c.getContext('2d'), k = 2;
+  g.font = LABEL_FONT;
+  const w = Math.ceil(g.measureText(label).width + 18 + (icon ? icon + 2 : 0)), h = 24;
+  c.width = w * k; c.height = h * k;
+  g.scale(k, k);
+  g.fillStyle = text ? 'rgba(255, 250, 240, 0.92)' : 'rgba(255, 248, 228, 0.96)';
+  g.beginPath(); g.roundRect(0.5, 0.5, w - 1, h - 1, 12); g.fill();
+  g.strokeStyle = 'rgba(150, 115, 60, 0.35)'; g.lineWidth = 1; g.stroke();
+  if (icon) { const sh = itemSheet(), i = ITEM_IDS.indexOf(id); if (i >= 0) g.drawImage(sh.canvas, i * ITEM_PX, 0, ITEM_PX, ITEM_PX, 6, 2, icon, icon); }
+  g.font = LABEL_FONT; g.fillStyle = text ? '#6f6657' : '#3b372f'; g.textBaseline = 'middle';
+  g.fillText(label, 9 + (icon ? icon + 2 : 0), h / 2 + 0.5);
+  while (pickFloats.length > 4) pickFloats.shift();
+  return { img: c, w, h, x, y, t0, ms: text ? SAY_MS : FLOAT_MS, rise: text ? 10 : 34 };
+}
+function drawPickFloats(now) {
+  for (let k = pickFloats.length - 1; k >= 0; k--) {
+    const f = pickFloats[k], u = (now - f.t0) / f.ms;
+    if (u >= 1) { pickFloats.splice(k, 1); continue; }
+    if (u < 0) continue;
+    const [sx, sy] = onScreen(f.x, f.y), e = 1 - (1 - u) ** 3;
+    ctx.globalAlpha = Math.min(1, u * 8) * (u > 0.6 ? 1 - (u - 0.6) / 0.4 : 1);
+    ctx.drawImage(f.img, Math.round(sx - f.w / 2), Math.round(sy - 18 - Math.max(16, cam.zoom * 0.9) - f.rise * e), f.w, f.h);
+  }
+  ctx.globalAlpha = 1;
+}
+
+// The glow under what the mouse is on: a soft warm light, painted once, stretched to the thing.
+function glowArt() {
+  const W = 128, c = document.createElement('canvas');
+  c.width = c.height = W;
+  const g = c.getContext('2d'), gr = g.createRadialGradient(W / 2, W / 2, 0, W / 2, W / 2, W / 2);
+  gr.addColorStop(0, 'rgba(255, 246, 214, 0.55)'); gr.addColorStop(0.55, 'rgba(255, 240, 196, 0.38)'); gr.addColorStop(1, 'rgba(255, 236, 190, 0)');
+  g.fillStyle = gr; g.fillRect(0, 0, W, W);
+  GLOW_ART = { img: c };
+  asBitmap(c, b => { GLOW_ART.img = b; });
+  return GLOW_ART;
+}
+
+// What the mouse is on, looked up again only when it or the camera moved; what it has to give, every frame (cheap).
+function hoverFrame() {
+  if (!aim.in || fingerTap || drag) { if (aim.t) { aim.t = null; canvas.classList.remove('on-animal'); } return; }
+  const now = performance.now();                        // (the camera gliding after the forager: a look every AIM_MS will do)
+  if (aim.moved || (aim.cx !== cam.x || aim.cy !== cam.y || aim.cz !== cam.zoom) && now - aim.at > AIM_MS) {
+    aim.moved = false; aim.cx = cam.x; aim.cy = cam.y; aim.cz = cam.zoom; aim.at = now;
+    aim.t = ui.hoverId ? null : gatherAt(aim.x, aim.y);
+  }
+  if (aim.t) {
+    const w = S.whatThere(world, aim.t.kind, aim.t.it);
+    aim.id = w.id; aim.n = w.n; aim.why = w.why;
+    if (!w.n && !w.why) aim.t = null;                     // (a dead tree: nothing to say)
+  }
+  canvas.classList.toggle('on-animal', !!ui.hoverId || !!(aim.t && aim.n));
+}
+function drawGlow(now, over) {
+  if (!aim.t || !aim.n || (aim.t.kind === 'hive') !== over) return;   // (a hive's goes over its hollow: under, the trunk hid it)
+  const s = gatherSpot(aim.t.kind, aim.t.it), art = GLOW_ART || glowArt(), k = 1 + 0.06 * Math.sin(now / 300);
+  ctx.globalAlpha = 0.85 + 0.15 * Math.sin(now / 300);
+  ctx.drawImage(art.img, s.gx - s.rx * 1.25 * k, s.gy - s.ry * 1.25 * k, s.rx * 2.5 * k, s.ry * 2.5 * k);
+  ctx.globalAlpha = 1;
+}
+function drawHoverLine(now) {
+  if (!aim.t || ui.gather || pickFloats.length) return;   // (not over a "+3" floating up, or a line saying why not)
+  const s = gatherSpot(aim.t.kind, aim.t.it);
+  drawLabel(aim.n ? Recipes.INGREDIENTS[aim.id]?.name || aim.id : aim.why, s.gx, s.gy + s.ry * 0.9 + 4);
+}
+
+// ------------------------------------------------------------------ the satchel
+//
+// A row of SLOTS small parchment slots at the bottom in the middle (#satchel), faint and slim while it's empty. Each shows
+// what's in it, painted in the meadow's style (itemSheet: the mushrooms, greens and windfalls as the meadow paints them,
+// and paintItem for the rest, all once into one sheet), and how many. A tap on a slot shows its name over it with Drop
+// (#slot-tip); Back or Esc shuts that (stepOut). It's sim.js's w.forager.bag, so it's kept with the meadow.
+const ITEM_IDS = Object.keys(Recipes.INGREDIENTS), ITEM_PX = 96;   // (two device pixels a CSS pixel at 48)
+const ITEM_ART = { apple: 'fall:0', acorns: 'fall:1', blackberry: 'item:0', cherry: 'item:1', honey: 'item:2', beechnuts: 'item:3', garlic: 'green:0', nettle: 'green:6' };
+S.SHROOM_KINDS.forEach((k, i) => { ITEM_ART[k] = 'shroom:' + i * 3; });   // (SHROOM_ARTS: the fewest caps)
+const ITEM_FILL = { garlic: 1.5, nettle: 1.25, cep: 1.6, chanterelle: 1.5, field: 1.6, oyster: 1.35, sulphur: 1.3, apple: 0.85, acorns: 0.8 };   // how much of the slot each painting fills
+let ITEM_SHEET = null;
+function itemSheet() {
+  if (ITEM_SHEET) return ITEM_SHEET;
+  const c = document.createElement('canvas'), g = c.getContext('2d');
+  c.width = ITEM_PX * ITEM_IDS.length; c.height = ITEM_PX;
+  const was = standIns; standIns = false;
+  ITEM_IDS.forEach((id, i) => {
+    const art = ITEM_ART[id];
+    if (!art) {                                          // (not painted yet: its emoji stands in)
+      g.font = `${ITEM_PX * 0.7}px ${EMOJI_FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText(Recipes.INGREDIENTS[id].icon || '?', (i + 0.5) * ITEM_PX, ITEM_PX * 0.54);
+      return;
+    }
+    const want = ITEM_PX / dpr * (ITEM_FILL[id] || 1), s = sprite(art, want), d = s.size * dpr;
+    g.drawImage(s.canvas, (i + 0.5) * ITEM_PX - d / 2, ITEM_PX / 2 - d / 2, d, d);
+  });
+  standIns = was;
+  ITEM_SHEET = { canvas: c, url: c.toDataURL() };
+  document.documentElement.style.setProperty('--items', `url(${ITEM_SHEET.url})`);
+  document.documentElement.style.setProperty('--item-n', ITEM_IDS.length);
+  return ITEM_SHEET;
+}
+const itemBg = id => { const i = ITEM_IDS.indexOf(id); return `${ITEM_IDS.length > 1 ? i / (ITEM_IDS.length - 1) * 100 : 0}% 0`; };
+
+// The things painted only for the satchel, as the windfalls are: 'item:0' blackberries, 1 cherries, 2 a piece of honeycomb,
+// 3 beechnuts. Box -1 to 1.
+function paintItem(g, size, U, n) {
+  g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
+  g.lineCap = g.lineJoin = 'round';
+  if (n === 0) {
+    fillIn(g, '#5f8a3c', () => ovalAt(g, 0.3, -0.42, 0.3, 0.13, -0.6));
+    g.save(); g.scale(7, 7);
+    for (const [x, y] of [[-0.05, -0.01], [0.055, 0.0], [0.0, 0.07]]) brambleBerry(g, x, y, 3);
+    g.restore();
+  } else if (n === 1) {
+    strokeIn(g, '#5a7a2c', 0.07, () => { g.moveTo(-0.3, 0.05); g.quadraticCurveTo(-0.2, -0.45, 0.08, -0.7); g.moveTo(0.32, 0.12); g.quadraticCurveTo(0.3, -0.35, 0.08, -0.7); });
+    fillIn(g, '#6aa84a', () => ovalAt(g, 0.3, -0.66, 0.24, 0.1, -0.3));
+    for (const [x, y] of [[-0.32, 0.3], [0.32, 0.36]]) {
+      softIn(g, [176, 22, 40], y - 0.36, y + 0.36, () => discAt(g, x, y, 0.33), 1.3, 0.6);
+      furGlow(g, [255, 190, 190], 0.6, x - 0.12, y - 0.13, 0.1, 0.07, -0.5);
+    }
+  } else if (n === 2) {
+    softIn(g, [226, 156, 36], -0.55, 0.6, () => { g.moveTo(-0.7, -0.35); g.quadraticCurveTo(0, -0.62, 0.7, -0.35); g.lineTo(0.62, 0.42); g.quadraticCurveTo(0, 0.62, -0.62, 0.42); g.closePath(); }, 1.25, 0.65);
+    strokeIn(g, 'rgba(150, 86, 14, 0.55)', 0.035, () => {    // the cells
+      for (let row = 0; row < 4; row++) for (let col = 0; col < 4; col++) {
+        const x = -0.45 + col * 0.3 + (row % 2) * 0.15, y = -0.25 + row * 0.22, r = 0.12;
+        if (x > 0.55) continue;
+        for (let k = 0; k <= 6; k++) { const a = Math.PI / 6 + k * Math.PI / 3; k ? g.lineTo(x + r * Math.cos(a), y + r * Math.sin(a)) : g.moveTo(x + r * Math.cos(a), y + r * Math.sin(a)); }
+      }
+    });
+    softIn(g, [236, 170, 40], 0.3, 0.85, () => { g.moveTo(0.12, 0.45); g.quadraticCurveTo(0.2, 0.7, 0.16, 0.78); g.arc(0.12, 0.78, 0.06, 0, Math.PI); g.quadraticCurveTo(0.06, 0.6, 0.08, 0.45); g.closePath(); });   // a drip
+    furGlow(g, [255, 240, 190], 0.55, -0.28, -0.22, 0.3, 0.12, -0.2);
+  } else {
+    for (const [x, y, a] of [[-0.24, 0.12, -0.35], [0.24, 0.16, 0.3]]) {
+      g.save(); g.translate(x, y); g.rotate(a);
+      softIn(g, [150, 92, 50], -0.45, 0.4, () => { g.moveTo(0, -0.45); g.quadraticCurveTo(0.34, 0.1, 0.24, 0.38); g.quadraticCurveTo(0, 0.46, -0.24, 0.38); g.quadraticCurveTo(-0.34, 0.1, 0, -0.45); }, 1.3, 0.6);
+      strokeIn(g, 'rgba(70, 40, 20, 0.5)', 0.03, () => { g.moveTo(0, -0.4); g.lineTo(0, 0.38); });
+      furGlow(g, [255, 220, 180], 0.45, -0.1, -0.05, 0.08, 0.16);
+      g.restore();
+    }
+  }
+}
+
+function renderSatchel() {
+  const box = $('#satchel'), F = world && world.forager;
+  if (!box || !F) return;
+  itemSheet();
+  const slots = box.querySelectorAll('.slot');
+  let any = false;
+  for (let k = 0; k < S.SLOTS; k++) {
+    const id = F.bag[k], n = F.bagN[k], el = slots[k];
+    any = any || !!id;
+    if (el.dataset.id === id && +el.dataset.n === n) continue;
+    el.dataset.id = id; el.dataset.n = n;
+    el.querySelector('i').style.backgroundPosition = id ? itemBg(id) : '';
+    el.querySelector('i').classList.toggle('on', !!id);
+    el.querySelector('b').textContent = n > 1 ? n : '';
+    el.setAttribute('aria-label', id ? `${Recipes.INGREDIENTS[id]?.name || id}: ${n}` : 'Empty');
+  }
+  box.classList.toggle('empty', !any);
+  const tip = ui.slotTip;
+  if (tip !== null && !F.bag[tip]) openSlot(null);
+}
+
+// The thing flies from where it was picked (sx, sy) into its slot, and the slot bumps as it lands. One small element, a
+// few hundred ms, the browser's own animation.
+function flyToSlot(id, sx, sy, k) {
+  const el = $('#satchel').querySelectorAll('.slot')[k ?? 0];
+  if (!el) { renderSatchel(); return; }
+  const r = el.getBoundingClientRect(), tx = r.left + r.width / 2, ty = r.top + r.height / 2;
+  const fly = document.createElement('div');
+  fly.className = 'fly'; fly.style.backgroundPosition = itemBg(id);
+  document.body.appendChild(fly);
+  const mx = (sx + tx) / 2, my = Math.min(sy, ty) - 60;
+  const a = fly.animate([{ transform: `translate(${sx - 16}px, ${sy - 16}px) scale(0.7)`, opacity: 0.4 },
+    { transform: `translate(${mx - 16}px, ${my - 16}px) scale(1.1)`, opacity: 1, offset: 0.4 },
+    { transform: `translate(${tx - 16}px, ${ty - 16}px) scale(0.8)`, opacity: 1 }], { duration: 560, easing: 'ease-in' });
+  a.onfinish = () => { fly.remove(); renderSatchel(); el.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.18)' }, { transform: 'scale(1)' }], { duration: 220, easing: 'ease-out' }); };
+}
+
+// A slot's name over it with Drop (k), or shut (null).
+function openSlot(k) {
+  const F = world.forager, tip = $('#slot-tip');
+  ui.slotTip = k !== null && F.bag[k] ? k : null;
+  $('#satchel').querySelectorAll('.slot').forEach((el, i) => el.classList.toggle('open', i === ui.slotTip));
+  if (ui.slotTip === null) { tip.classList.add('hidden'); return; }
+  const id = F.bag[k], el = $('#satchel').querySelectorAll('.slot')[k];
+  tip.querySelector('.n').textContent = `${itemName(id, F.bagN[k])}${F.bagN[k] > 1 ? ' × ' + F.bagN[k] : ''}`;
+  tip.classList.remove('hidden');
+  const box = $('#satchel').getBoundingClientRect(), r = el.getBoundingClientRect();
+  const half = tip.offsetWidth / 2 + 8;                // (kept on the screen, over the end slots too)
+  tip.style.left = `${clamp(r.left + r.width / 2, half, innerWidth - half) - box.left}px`;
+}
+function setupSatchel() {
+  const box = $('#satchel'), row = box.querySelector('.slots');
+  row.innerHTML = Array.from({ length: S.SLOTS }, (_, k) => `<button class="slot" data-k="${k}" aria-label="Empty"><i></i><b></b></button>`).join('');
+  row.addEventListener('click', e => {
+    const el = e.target.closest('.slot');
+    if (el) openSlot(ui.slotTip === +el.dataset.k ? null : +el.dataset.k);
+  });
+  $('#slot-tip').querySelector('[data-drop]').addEventListener('click', () => {
+    if (ui.slotTip === null) return;
+    S.dropSlot(world.forager, ui.slotTip);
+    openSlot(null); renderSatchel();
+  });
+  addEventListener('pointerdown', e => { if (ui.slotTip !== null && !e.target.closest('#satchel')) openSlot(null); }, true);
 }
 
 // Zoomed out further than the meadow fills the screen, a grown rabbit is under SMALL_PX and hundreds of animals can be
@@ -4868,7 +5223,7 @@ function putPainting(p, f, alpha, snow, ox, oy) {
 // A visitor fur.js paints (Fur.painters: the dragonflies, the kingfisher, the skylark), at the doublings of its size and
 // shrunk between (shrunk), as a fox is; in the meadow the worker paints it (furReady).
 const furPaint = kind => (g, size, U, n) => { if (!shrunk(g, size, U, kind + ':' + n)) Fur.painters[kind](g, size, U, n); };
-const PAINTERS = { fox: paintFox, rabbit: paintRabbit, forager: paintForager, hog: paintHedgehog, heron: paintHeron, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody, bee: paintBee, fall: paintFall, shroom: paintShroom, green: paintGreen, bramble: paintBramble,
+const PAINTERS = { fox: paintFox, rabbit: paintRabbit, forager: paintForager, hog: paintHedgehog, heron: paintHeron, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody, bee: paintBee, fall: paintFall, shroom: paintShroom, green: paintGreen, bramble: paintBramble, item: paintItem,
   dfly: furPaint('dfly'), kfisher: furPaint('kfisher'), lark: furPaint('lark') };
 function drawDecor(d, sx, sy, now, ck, clipLeaves, px = d.tree ? treePx(d) : d.size * cam.zoom) {   // (px: render has it already)
   if (d.emoji === '🪨') { drawRock(d, sx, sy); return; }
@@ -7597,6 +7952,7 @@ canvas.addEventListener('pointermove', e => {
     const c = e.pointerType === 'mouse' ? animalAt(e.clientX, e.clientY) : null;
     ui.hoverId = c ? c.id : 0;
     ui.hoverHive = null;
+    aim.in = e.pointerType === 'mouse'; aim.x = e.clientX; aim.y = e.clientY; aim.moved = true;   // (what's to gather under it: hoverFrame)
     canvas.classList.toggle('on-animal', !!c);
     return;
   }
@@ -7652,7 +8008,7 @@ canvas.addEventListener('pointercancel', e => {
 document.addEventListener('gesturestart', e => e.preventDefault());
 // Safari on a phone shows a button pressed (:active) only where something listens for touches.
 document.addEventListener('touchstart', () => {}, { passive: true });
-canvas.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') { ui.hoverId = 0; ui.hoverHive = null; } });   // a lifted finger leaves too
+canvas.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') { ui.hoverId = 0; ui.hoverHive = null; aim.in = false; } });   // a lifted finger leaves too
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
@@ -7672,12 +8028,13 @@ canvas.addEventListener('wheel', e => {
   handMoved(e.timeStamp);
 }, { passive: false });
 
-// A click or a tap on an animal (on it as it's drawn: animalAt) opens its panel and follows it; anywhere else, the
-// forager walks there, the panel shuts and the camera goes with the forager again (walkTo).
+// A click or a tap on an animal (on it as it's drawn: animalAt) opens its panel and follows it; on something to gather,
+// the forager goes and picks it (goGather); anywhere else, the forager walks there, the panel shuts and the camera goes with the forager again (walkTo).
 function click(sx, sy) {
   clearTimeout(tapAway); tapAway = 0;
-  const c = animalAt(sx, sy);
+  const c = animalAt(sx, sy), t = !c && gatherAt(sx, sy);
   if (c) select(c.id);
+  else if (t) goGather(t);
   else walkTo(sx, sy);
   ui.hoverHive = null;
 }
@@ -7685,6 +8042,7 @@ function click(sx, sy) {
 function walkTo(sx, sy, steering = false) {
   const [wx, wy] = toWorld(sx, sy), g = S.foragerTo(world, wx, wy);
   if (g) world.forager.running = steering || shiftHeld;
+  ui.gather = null;                                     // (a new walk: whatever it was going to pick, it isn't)
   if (ui.selectedId || ui.picked) select(0);
   ui.lead = true; ui.follow = false; flick.vx = flick.vy = 0;
   if (!g) return;
@@ -7844,12 +8202,13 @@ const back = { token: Math.random().toString(36).slice(2), depth: 0, going: fals
 const moreOpen = () => !$('#more-menu').classList.contains('hidden');
 function opened() {
   const ins = $('#inspector').classList, sheetUp = ins.contains('open') && narrow() && !ins.contains('strip');
-  return [askOpen(), moreOpen(), ins.contains('open'), sheetUp].filter(Boolean).length;
+  return [askOpen(), moreOpen(), ins.contains('open'), sheetUp, ui.slotTip !== null].filter(Boolean).length;
 }
 // The one on top shuts (Esc, and Back once for each step it takes).
 function stepOut() {
   const ins = $('#inspector').classList;
   if (askOpen()) askIdeas(false);
+  else if (ui.slotTip !== null) openSlot(null);
   else if (moreOpen()) toggleMore(false);
   else if (ins.contains('open') && narrow() && !ins.contains('strip')) { ui.sheetUp = false; $('#inspector').scrollTop = 0; renderInspector(); }
   else if (ins.contains('open')) select(0);
@@ -8026,8 +8385,8 @@ function showWorld(w) {
   world = w;
   const seed = w.seed;
   groundSeed = [(seed % 97) * 3.7, (seed % 89) * 4.3];
-  Object.assign(ui, { selectedId: 0, picked: null, hoverId: 0, follow: false, lead: true, mark: null, trail: [], effects: [] });
-  fg.at = -1; fg.rings.length = 0; fg.sized = 0;
+  Object.assign(ui, { selectedId: 0, picked: null, hoverId: 0, follow: false, lead: true, mark: null, trail: [], effects: [], gather: null });
+  fg.at = -1; fg.rings.length = 0; fg.sized = 0; fg.pick = -1e9; pickFloats.length = 0; aim.t = null;
   pollen.until = 0; pollen.t0.fill(-1e9);
   const mix = Object.fromEntries(Object.keys(S.WEATHER).map(k => [k, k === world.weather.kind ? 1 : 0]));
   Object.assign(ui.sky, { mix, tick: world.tick, bolts: [], rainbow: -1e9, bowEnd: -1e9 });
@@ -8037,6 +8396,7 @@ function showWorld(w) {
   paintTerrain();
   renderInspector();
   updateClock();
+  openSlot(null); renderSatchel();
 }
 
 let last = performance.now(), acc = 0, lastCard = 0;
@@ -8144,6 +8504,7 @@ function frame(now) {
     cam.x += (gx - cam.x) * k; cam.y += (gy - cam.y) * k;
   } else if (ui.lead) leadCam(dt);
   if (drag?.steer && now - drag.at > STEER_MS) { drag.at = now; walkTo(drag.px, drag.py, true); }
+  gatherFrame(now);
   if (flick.vx || flick.vy) {             // a flicked pan glides to a stop
     cam.x -= flick.vx * dt / cam.zoom; cam.y -= flick.vy * dt / cam.zoom;
     const f = Math.pow(0.02, dt);
@@ -8214,6 +8575,7 @@ window.addEventListener('resize', resize);
 // old size and would be stretched to the new one. Watch the canvas itself for when it really changes.
 new ResizeObserver(() => { if (canvas.clientWidth !== vw || canvas.clientHeight !== vh) resize(); }).observe(canvas);
 resize();
+setupSatchel();
 const seedParam = +params.get('seed');
 // The kept meadow if there is one (keeping the meadow, above), else a new one.
 function begin(rec) {

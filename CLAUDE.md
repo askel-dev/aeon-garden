@@ -18,8 +18,10 @@ closed); none of that project's rules apply here.
   creature, a hive or a tree that the code counts on) bumps `KEEP_VERSION`, and players' kept meadows start over.
 - You play a little hooded forager (sim.js `w.forager`, fur.js `paintForager`, game.js `drawForager`): a click or a tap
   on the ground walks it there round the deep water (sim.js `foragerTo`), one on an animal opens its panel, a press held
-  still sprints toward the pointer (so does Shift), and the camera goes with it (`leadCam`) till you drag it away. For now it only walks:
-  gathering and cooking come next. `forager-lab.html` shows all its paintings. Notes in game.md and ecology.md.
+  still sprints toward the pointer (so does Shift), and the camera goes with it (`leadCam`) till you drag it away. A click
+  or a tap on something the meadow gives (mushrooms, greens, a bramble, a fruit or mast tree, a hive) walks it there and
+  picks it into the satchel, a row of slots at the bottom in the middle (sim.js `gather`, `w.forager.bag`; game.js
+  `goGather`, `renderSatchel`). Cooking comes next. `forager-lab.html` shows all its paintings. Notes in game.md and ecology.md.
 - `game.js`: drawing, UI, the inspector. Its features (and where new notes on them go) are in
   `.claude/rules/game.md`, which loads when game.js or index.html is opened.
 - `ground.js`: the ground (grass, earth, shores, water) as a WebGL shader, painted from a

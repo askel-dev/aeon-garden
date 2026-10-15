@@ -284,6 +284,7 @@ const RULES = {
   leaves:  { gap: 1,    maxSpeed: 60 },
   click:   { gap: 0.04, maxSpeed: 60 },
   step:    { gap: 0.1,  maxSpeed: 4, always: true },   // (a foot down is cheap and rhythmic: it never counts against the budget)
+  pick:    { gap: 0.15, maxSpeed: 60, always: true },
 };
 
 const STEP_SOFT = 0.6;          // the footsteps' level against the meadow's sounds: soft, they come a few times a second
@@ -435,6 +436,8 @@ const SOUNDS = {
     src.connect(hp).connect(lp).connect(g).connect(o); src.start(t, rand(0, 5)); src.stop(t + len + 0.05);
   },
   click(t, o) { partial(o, 1320, t, 0.06, 0.002, 0.05, 'triangle'); partial(o, 660, t, 0.05, 0.002, 0.08); },
+  // The forager picks something: a soft pluck, two notes of the scale stepping up, a little higher the more it got.
+  pick(t, o, { n = 1 }) { const d = Math.min(4, Math.floor(n / 3)); kalimba(o, note(d + 2, 1), t, 0.45); kalimba(o, note(d + 4, 1), t + 0.09, 0.4); },
 };
 
 // opts: { species, pan (-1..1), near (0..1, how close to the camera), ...sound-specific }

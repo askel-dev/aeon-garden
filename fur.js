@@ -676,11 +676,12 @@ function paintSkylark(g, size, U, n) {
 // with a point that flops behind, a round face with rosy cheeks and a fringe of hair, a moss-green cloak, knitted mittens,
 // a leather satchel on a strap, short legs in brown boots. Three views (FORAGER_VIEWS): side on, three-quarters from the
 // front and from the back, each facing left (game.js mirrors it for the right). Poses: 0 standing, 1 a fidget (looking
-// up, a hand on the strap), 2 a blink, 8 to 15 a stride of the walk in eighths: each foot on the ground slides back
+// up, a hand on the strap), 2 a blink, 3 and 4 picking (stooping, then reaching down with both hands: STOOP), 8 to 15 a stride of the walk in eighths: each foot on the ground slides back
 // FORAGER_REACH either side of the hips through half the stride, so game.js turns the stride over with the ground covered
 // (2 * FORAGER_REACH * 2 of its half-size a stride) and the feet don't slide. 'forager:' + (view << 4) + pose.
 // Box -1 to 1, feet on the ground at 0.72.
 const FORAGER_REACH = 0.18, FORAGER_LIFT = 0.075, FORAGER_BOB = 0.016;
+const STOOP = [0, 0, 0, 0.55, 1];       // how far down it's bent, picking (poses 3 and 4)
 const FORAGER_VIEWS = ['side', 'front', 'back'];
 const CLOAK = [100, 124, 68], HOOD = [178, 88, 52], HOOD_RIM = [140, 62, 38], SKIN = [246, 210, 180], CHEEK = [236, 136, 116];
 const HAIR = [118, 74, 44], TROUSER = [116, 94, 76], BOOT = [76, 54, 42], SATCHEL = [150, 100, 58], FLAP = [126, 82, 46], STRAP = [112, 74, 44];
@@ -705,10 +706,11 @@ function foragerPose(view, pose) {
     const [a, up] = foot(u + off);
     return [base[i][0] + fwd[0] * a, base[i][1] + fwd[1] * a - up];
   });
-  const bob = walk ? FORAGER_BOB * Math.cos(4 * Math.PI * u) : 0;   // (lowest with the feet apart)
+  const stoop = walk ? 0 : STOOP[pose] || 0;                      // (knees bent, the head and the hands forward and down)
+  const bob = walk ? FORAGER_BOB * Math.cos(4 * Math.PI * u) : 0.16 * stoop;   // (lowest with the feet apart)
   const swing = walk ? 0.42 * Math.cos(2 * Math.PI * u) : 0;      // the near arm back as the near foot is ahead
   return {
-    view, walk, u, feet, bob, swing, fwd,
+    view, walk, u, feet, bob, swing, fwd, stoop,
     tip: walk ? 0.05 * Math.cos(4 * Math.PI * u + 1.2) : 0,         // the hood's point flops with the step
     sway: walk ? 0.018 * Math.sin(2 * Math.PI * u) : 0,             // and the cloak's hem swings
     look: pose === 1 ? -0.07 : 0, tilt: pose === 1 ? 0.12 : 0, hand: pose === 1, blink: pose === 2,
@@ -719,7 +721,7 @@ function foragerParts(P) {
   const parts = [], add = (path, o = {}) => parts.push({ path, ...o });
   const side = P.view === 0, front = P.view === 1, back = P.view === 2;
   const hx = 0, hy = 0.4 + P.bob;                                  // the hips
-  const cx = side ? 0.0 : front ? -0.01 : 0.01, cy = -0.2 + P.bob + P.look;   // the head (the hood's middle)
+  const cx = (side ? 0.0 : front ? -0.01 : 0.01) + P.fwd[0] * 0.1 * P.stoop, cy = -0.2 + P.bob + P.look + 0.05 * P.stoop;   // the head (the hood's middle)
   const R = 0.26;
   // Legs: from the hips to the feet, the knee bent forward, in a boot. (Mostly under the cloak.)
   const leg = (i, far) => {
@@ -735,7 +737,7 @@ function foragerParts(P) {
   };
   // An arm: a sleeve from the shoulder, swung a forward (+), and a knitted mitten.
   const arm = (x, a, far, casts) => {
-    const sx = x, sy = 0.06 + P.bob, L = 0.2;
+    const sx = x + P.fwd[0] * 0.04 * P.stoop, sy = 0.06 + P.bob, L = 0.2 + 0.07 * P.stoop;
     const ex = sx + (side ? -Math.sin(a) : P.fwd[0] * Math.sin(a) * 0.9) * L, ey = sy + Math.cos(a) * L + (side ? 0 : P.fwd[1] * Math.sin(a) * 0.12);
     add(g => { limbAt(g, sx, sy, 0.06, ex, ey, 0.05); discAt(g, ex, ey + 0.02, 0.048); },
       { far, casts, marks: [[MITTEN, 1, 0.02, g => discAt(g, ex, ey + 0.025, 0.05)], [tone(CLOAK, 0.8), 0.6, 0.03, g => ovalAt(g, ex, ey - 0.02, 0.055, 0.02)]] });
@@ -795,20 +797,21 @@ function foragerParts(P) {
   const shoulder = side ? 0.0 : 0.15;
   if (side) {
     leg(1, true); leg(0, false);
-    arm(0.03, -P.swing, true, false);
+    arm(0.03, P.stoop ? 0.75 * P.stoop : -P.swing, true, false);
     cloak(); satchel(); tip(); head();
-    arm(-0.01, P.hand ? 0.9 : P.swing, false, true);
+    arm(-0.01, P.hand ? 0.9 : P.stoop ? 0.95 * P.stoop : P.swing, false, true);
   } else {
     const [a, b] = P.feet[0][1] > P.feet[1][1] ? [1, 0] : [0, 1];
     leg(a, false); leg(b, false);
     if (front) {
       tip();
       cloak(); satchel();
-      arm(-shoulder, P.swing, false, true); arm(shoulder, P.hand ? 2.4 : -P.swing, false, true);
+      const reach = 1.1 * P.stoop;
+      arm(-shoulder, P.stoop ? reach : P.swing, false, true); arm(shoulder, P.hand ? 2.4 : P.stoop ? reach : -P.swing, false, true);
       head();
     } else {
       cloak(); satchel();
-      arm(-shoulder, P.swing, false, true); arm(shoulder, -P.swing, false, true);
+      arm(-shoulder, P.stoop ? 1.1 * P.stoop : P.swing, false, true); arm(shoulder, P.stoop ? 1.1 * P.stoop : -P.swing, false, true);
       head(); tip();
     }
   }

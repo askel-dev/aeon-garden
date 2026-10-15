@@ -274,6 +274,46 @@
   @media (pointer: coarse) {
     .hud-btn { min-width: 44px; height: 44px; }
   }
+  /* ---- the satchel (game.js renderSatchel): small parchment slots at the bottom in the middle, a faint slim row while
+     it's empty; each slot's painting comes from one sheet (--items, itemSheet) */
+  #satchel { position: fixed; z-index: 4; left: 50%; bottom: var(--bottom); transform: translateX(-50%); padding: 4px; border-radius: 14px;
+    background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); transition: opacity 0.35s, transform 0.35s, padding 0.25s; }
+  #satchel .slots { display: flex; gap: 4px; }
+  #satchel .slot { position: relative; width: 38px; height: 38px; padding: 0; border: none; border-radius: 9px; background: rgba(150, 115, 60, 0.1);
+    box-shadow: inset 0 1px 2px rgba(90, 65, 25, 0.18); transition: width 0.25s, height 0.25s, background 0.15s; }
+  #satchel .slot.open { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
+  @media (hover: hover) { #satchel .slot:hover { background: rgba(150, 115, 60, 0.18); } }
+  #satchel .slot i, .fly { background-image: var(--items); background-repeat: no-repeat; background-size: calc(100% * var(--item-n, 13)) 100%; }
+  #satchel .slot i { position: absolute; inset: 3px; display: none; }
+  #satchel .slot i.on { display: block; }
+  #satchel .slot b { position: absolute; right: 3px; bottom: 1px; font-size: 11.5px; font-weight: 900; line-height: 1; color: var(--ink);
+    text-shadow: 0 0 2px #fdf6e6, 0 0 3px #fdf6e6, 0 0 3px #fdf6e6; }
+  #satchel.empty { opacity: 0.5; padding: 3px 4px; }
+  #satchel.empty .slot { width: 22px; height: 8px; border-radius: 4px; }
+  #slot-tip { position: absolute; bottom: calc(100% + 8px); transform: translateX(-50%); display: flex; align-items: center; gap: 8px; white-space: nowrap;
+    padding: 4px 4px 4px 11px; border-radius: 12px; background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); font-weight: 800; font-size: 13px; }
+  #slot-tip.hidden { display: none; }
+  #slot-tip .drop { border: none; border-radius: 9px; padding: 4px 10px; background: rgba(150, 115, 60, 0.12); font-weight: 800; font-size: 12.5px; color: var(--accent-ink); }
+  @media (hover: hover) { #slot-tip .drop:hover { background: #fbe3d9; } }
+  .fly { position: fixed; z-index: 6; left: 0; top: 0; width: 32px; height: 32px; pointer-events: none; will-change: transform; }
+  /* a phone: a fingertip's slots, the row nearly as wide as the screen */
+  @media (pointer: coarse) {
+    #satchel { padding: 3px; }
+    #satchel .slots { gap: 0; }
+    #satchel .slot { width: min(46px, calc((100vw - 22px) / 8)); height: 46px; background: none; box-shadow: none; }
+    #satchel .slot::before { content: ''; position: absolute; inset: 2px; border-radius: 9px; background: rgba(150, 115, 60, 0.1); box-shadow: inset 0 1px 2px rgba(90, 65, 25, 0.18); }
+    #satchel .slot.open::before { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
+    #satchel .slot i { inset: 5px; }
+    #satchel .slot b { right: 5px; bottom: 4px; }
+    #satchel.empty .slot { height: 12px; }
+    #satchel.empty .slot::before { inset: 2px 3px; border-radius: 4px; }
+    #slot-tip { padding-left: 14px; font-size: 14px; }
+    #slot-tip .drop { min-height: 44px; padding: 0 16px; font-size: 14px; }
+  }
+  /* an upright phone: the inspector's sheet comes up from the bottom, and the satchel steps aside for it */
+  @media (max-width: 760px) and (min-height: 501px) {
+    body:has(#inspector.open) #satchel { opacity: 0; transform: translate(-50%, 30px); pointer-events: none; }
+  }
   @media (prefers-reduced-motion: reduce) { .close { transition: none; } }
 </style>
 </head>
@@ -287,6 +327,11 @@
 
 <!-- a word now and then, gone in a few seconds (game.js toast) -->
 <div id="news"></div>
+
+<!-- bottom middle: the satchel, a row of slots (game.js renderSatchel); a tap on one shows its name and Drop -->
+<div id="satchel" class="empty"><div class="slots"></div>
+  <div id="slot-tip" class="hidden"><span class="n"></span><button class="drop" data-drop>Drop</button></div>
+</div>
 
 <!-- top right: pause, sound and the ••• menu; the inspector hangs underneath -->
 <div id="hud-right">
