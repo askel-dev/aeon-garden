@@ -428,10 +428,29 @@
   #veil p { margin: 0; color: #c9cfdc; font: italic 400 20px/1.4 Fraunces, Georgia, serif; opacity: 0; transition: opacity 1s 0.6s; }
   #veil.dark p { opacity: 0.85; }
   @media (prefers-reduced-motion: reduce) { .close { transition: none; } }
+  /* ---- a new meadow's opening (game.js startIntro): black bars top and bottom as in a film, the name in the lower one, and
+     everything else on the page away till they slide off */
+  #intro { position: fixed; inset: 0; z-index: 9; pointer-events: none; }
+  #intro .lb { position: absolute; left: 0; right: 0; height: max(52px, 11vh); background: #07080b;
+    transition: transform 1.1s cubic-bezier(0.6, 0, 0.3, 1); }
+  #intro .lb.top { top: 0; transform: translateY(-100%); }
+  #intro .lb.bottom { bottom: 0; transform: translateY(100%); display: grid; place-content: center; text-align: center; }
+  #intro.on .lb { transform: none; transition: none; }   /* (in at once: it opens letterboxed) */
+  #intro h1 { margin: 0; color: #ece4d2; font: italic 450 clamp(19px, 3.6vh, 30px)/1.15 Fraunces, Georgia, serif;
+    font-variation-settings: 'SOFT' 100, 'WONK' 1; opacity: 0; transform: translateY(6px); transition: opacity 1.4s, transform 1.8s ease-out; }
+  #intro p { margin: 4px 0 0; color: #9a9384; font-size: 11px; font-weight: 700; letter-spacing: 0.22em; text-transform: uppercase;
+    opacity: 0; transition: opacity 1.4s 0.5s; }
+  #intro.named h1 { opacity: 0.95; transform: none; }
+  #intro.named p { opacity: 0.8; }
+  body.intro #hud-right, body.intro #satchel, body.intro #vitals, body.intro #news, body.intro #chat { opacity: 0; pointer-events: none; }
+  #hud-right, #satchel, #vitals, #news, #chat { transition: opacity 0.9s; }
+  @media (max-height: 500px) { #intro .lb { height: max(40px, 9vh); } #intro p { display: none; } }
 </style>
 </head>
 <body>
 <canvas id="world"></canvas>
+<!-- a new meadow's opening: black bars, the name in the lower one (game.js startIntro) -->
+<div id="intro" aria-hidden="true"><div class="lb top"></div><div class="lb bottom"><h1>Nobody&rsquo;s Meadow</h1><p>Spring &middot; late afternoon</p></div></div>
 <!-- a word now and then, gone in a few seconds (game.js toast) -->
 <div id="news"></div>
 <div id="announce" aria-live="polite"></div>

@@ -7734,7 +7734,7 @@ const canAnnounce = () => !document.hidden && world.forager.down < 0 && !outfitO
 function daybreakTick(now) {
   const a = announcing, day = Math.floor(world.tick / S.TPD), last = a.day, ck = S.clock(world), name = S.SEASONS[ck.season].name;
   a.day = day;
-  if (a.openAt && now >= a.openAt) {
+  if (a.openAt && now >= a.openAt && !intro.on) {        // (not over a new meadow's opening: it comes once the bars are off)
     a.openAt = 0;
     if (canAnnounce()) announce('day', `<b class="fr">${name}, day ${ck.dayInSeason}</b><small>year ${ck.year}</small>`, SEASON_LINES[ck.season]);
   }
@@ -9206,6 +9206,7 @@ function heardWorld(m, now) {
   if (!w) { toast('🧺 Your friend’s meadow is from another version of the game. Reload both pages.'); return; }
   const again = net.tick >= 0 && m.to, mine = again ? world.forager : null, zoom = cam.zoom;
   showWorld(w);
+  endIntro(true);                                        // (a friend's meadow: no opening of our own over it)
   if (mine) w.forager = mine;                            // (the same meadow again: its own forager stays as it was)
   else { arrive(w.forager); pr.n = 0; pr.next = 0; }
   renderSatchel();                                       // (showWorld drew the host's satchel, as it came)
@@ -9214,12 +9215,13 @@ function heardWorld(m, now) {
   net.hostId = m.from; net.later.length = 0; net.hostSums.clear(); net.mySums.clear(); net.off = 0;
   setClock(m.tick, m.s, now, true);
   const host = cleanName(m.n);
-  if (!again) { announce('join', `<small>you’re in</small><b class="fr">${host ? esc(host) + '’s' : 'your friend’s'} meadow</b>`, 'Forage together!'); }
+  if (!again) { announce('join', `<small>you’re in</small><b class="fr">${host ? esc(host) + '’s' : 'your friend’s'} meadow</b>`, 'Forage together!'); openingLine(); }
 }
-// A guest's forager comes in beside the host's (it's the host's, unpacked): fresh, with an empty satchel.
+// A guest's forager comes in beside the host's (it's the host's, unpacked): with an empty satchel, fresh, or cold and wet
+// in the meadow's opening storm (sim.js foragerArrives).
 function arrive(f) {
   f.bag.fill(''); f.bagN.fill(0);
-  f.warmth = 1; f.wet = 0; f.stamina = 1; f.winded = false; f.down = -1; f.stumble = 0;
+  S.foragerArrives(world, f);
   f.walking = false; f.running = false; f.speed = 0; f.path.length = 0;
   for (const [dx, dy] of [[0.9, 0.3], [-0.9, 0.3], [0, 0.9], [0.9, -0.5], [-0.9, -0.5]]) {
     if (S.walkable(world, f.x + dx, f.y + dy)) { f.x += dx; f.y += dy; break; }
@@ -9458,26 +9460,29 @@ function drawPeer(p, sx, sy, now) {
 // The chat. A line said, painted once: a parchment bubble, its words wrapped to CHAT_WIDE. Its tail is painted apart
 // (tailArt), so it can come down from wherever under the bubble its forager is.
 const CHAT_ARTS = new Map();
-function chatArt(text) {
-  let a = CHAT_ARTS.get(text);
+function chatArt(text, thought) {
+  const key = thought ? '~' + text : text;
+  let a = CHAT_ARTS.get(key);
   if (a) return a;
   if (CHAT_ARTS.size > 32) CHAT_ARTS.clear();
   const k = Math.max(1, dpr), F = 13 * k, c = document.createElement('canvas'), g = c.getContext('2d');
-  const font = `700 ${F}px Nunito, ui-rounded, system-ui, sans-serif`, most = CHAT_WIDE * k;
+  const font = `${thought ? 'italic ' : ''}700 ${F}px Nunito, ui-rounded, system-ui, sans-serif`, most = CHAT_WIDE * k;
   g.font = font;
   const lines = [];
-  let line = '';
-  for (let word of text.split(' ')) {
-    while (g.measureText(word).width > most) {              // (a word too long for a line: broken where it runs out)
-      let n = word.length - 1;
-      while (n > 1 && g.measureText(word.slice(0, n)).width > most) n--;
-      if (line) { lines.push(line); line = ''; }
-      lines.push(word.slice(0, n)); word = word.slice(n);
+  for (const said of text.split('\n')) {                   // (a line of its own where the game's own words break)
+    let line = '';
+    for (let word of said.split(' ')) {
+      while (g.measureText(word).width > most) {            // (a word too long for a line: broken where it runs out)
+        let n = word.length - 1;
+        while (n > 1 && g.measureText(word.slice(0, n)).width > most) n--;
+        if (line) { lines.push(line); line = ''; }
+        lines.push(word.slice(0, n)); word = word.slice(n);
+      }
+      const next = line ? line + ' ' + word : word;
+      if (line && g.measureText(next).width > most) { lines.push(line); line = word; } else line = next;
     }
-    const next = line ? line + ' ' + word : word;
-    if (line && g.measureText(next).width > most) { lines.push(line); line = word; } else line = next;
+    if (line) lines.push(line);
   }
-  if (line) lines.push(line);
   let wide = 0;
   for (const l of lines) wide = Math.max(wide, g.measureText(l).width);
   const lh = Math.round(F * 1.3), padX = Math.round(F * 0.75), padY = Math.round(F * 0.4), sh = Math.round(1.5 * k);
@@ -9491,7 +9496,7 @@ function chatArt(text) {
   lines.forEach((l, i) => g.fillText(l, 1 + w / 2, 1 + padY + lh * (i + 0.5) + k * 0.5));
   a = { img: c, w: c.width / k, h: c.height / k, foot: (1 + h) / k };   // (foot: from its top down to the bubble's lower edge)
   asBitmap(c, b => { a.img = b; });
-  CHAT_ARTS.set(text, a);
+  CHAT_ARTS.set(key, a);
   return a;
 }
 // A bubble's tail, painted once: a little point down, its top over the bubble's edge so the line there is hidden under it.
@@ -9513,7 +9518,7 @@ function tailArt() {
   return TAIL_ART;
 }
 const cleanChat = s => String(s || '').replace(/[\u0000-\u001f\u007f-\u009f]/g, '').replace(/\s+/g, ' ').trim().slice(0, CHAT_MOST);
-const chatFor = (text, now) => ({ art: chatArt(text), at: now, until: now + Math.min(CHAT_LONGEST, CHAT_MS + CHAT_PER * text.length),
+const chatFor = (text, now, thought) => ({ art: chatArt(text, thought), at: now, until: now + Math.min(CHAT_LONGEST, CHAT_MS + CHAT_PER * text.length),
   x: -0, y: -0, bx: -0, by: -0, ox: -0, oy: -0, laid: false });
 
 // This frame's bubbles (x, y where each one's tail points), and the names over friends (x, y, w, h each), reused.
@@ -9975,7 +9980,56 @@ function newWorld(seed) {
   pr.n = 0; pr.next = 0;                   // (no footprints from the last meadow)
   history.replaceState(history.state, '', pageLink(seed));   // (the state: Back's step, if one's open)
   homeView();
-  if (!fg.picked) pickOutfit(true);             // (only till one has been picked: after that it's in •••)
+  startIntro();                                 // (the cloak's card, if it's wanted, comes as the intro ends)
+}
+
+// A new meadow's opening, like the start of a film: black bars come in top and bottom, everything else on the page goes,
+// the name fades in in the lower bar, and the camera cranes down out of the storm onto the forager (INTRO_CRANE: from
+// INTRO_WIDE of its zoom and INTRO_RISE tiles up, eased in leadCam). The forager says its line (openingLine), and the
+// bars slide off (INTRO_MS), the page coming back. A click, a tap or a key cuts it short (and does nothing else).
+const INTRO_MS = 7000, INTRO_NAME = [700, 4600], INTRO_CRANE = 5500, INTRO_WIDE = 0.55, INTRO_RISE = 5, INTRO_LINE = 3600;
+const intro = { on: false, t0: 0, z: 0, timers: [] };
+function startIntro() {
+  endIntro(true);
+  const box = $('#intro');
+  intro.on = true; intro.t0 = performance.now(); intro.z = cam.zoom;
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) intro.t0 -= INTRO_CRANE;   // (no crane)
+  document.body.classList.add('intro');
+  box.classList.add('on');
+  const later = (ms, f) => intro.timers.push(setTimeout(f, ms));
+  later(INTRO_NAME[0], () => box.classList.add('named'));
+  later(INTRO_NAME[1], () => box.classList.remove('named'));
+  later(INTRO_MS, () => endIntro());
+  openingLine(INTRO_LINE);
+}
+function endIntro(quiet) {
+  for (const t of intro.timers) clearTimeout(t);
+  intro.timers.length = 0;
+  if (!intro.on) return;
+  intro.on = false;
+  cam.zoom = intro.z; clampCam();
+  $('#intro').classList.remove('on', 'named');
+  document.body.classList.remove('intro');
+  if (!quiet && !fg.picked) pickOutfit(true);   // (only till one has been picked: after that it's in •••)
+  if (announcing.openAt) announcing.openAt = Math.max(announcing.openAt, performance.now() + 1200);   // (where we are, a moment after)
+}
+// The crane, in leadCam: how far up and how much wider the camera still is, 1 at the start to 0.
+const introLeft = now => intro.on ? 1 - smooth(0, INTRO_CRANE, now - intro.t0) : 0;
+for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, e => {
+  if (!intro.on || e.target.closest?.('input,textarea')) return;
+  e.preventDefault(); e.stopPropagation();
+  if (ui.sound) Sound.start();
+  endIntro();
+}, { capture: true });
+
+// A new meadow opens in a storm late in the afternoon (sim.js START_PHASE), the forager cold and wet: a moment after it's on
+// screen, it says to itself what it needs (in a bubble over it, as a line of chat, in italics), and so does a friend's
+// forager coming in during the storm.
+const OPENING_LINE = 'It’s freezing.\nI need a fire before dark.';
+const OPENING_MS = 1600;
+function openingLine(ms = OPENING_MS) {
+  const w = world;
+  setTimeout(() => { if (world === w && S.openingStorm(w) && w.forager.down < 0) myChat = chatFor(OPENING_LINE, performance.now(), true); }, ms);
 }
 
 // A new meadow opens close enough to see who lives there, HOME_TILES across the screen, over where most of them are:
@@ -10197,8 +10251,10 @@ function leadCam(dt) {
   fg.lx += (Math.cos(f.heading) * v * CAM_AHEAD - fg.lx) * a; fg.ly += (Math.sin(f.heading) * v * CAM_AHEAD - fg.ly) * a;
   const k = 1 - Math.exp(-dt * CAM_FOLLOW);
   const sx = sheet ? (sheet.right - sheet.left) / 2 / cam.zoom : 0, sy = sheet ? (sheet.bottom - sheet.top) / 2 / cam.zoom : 0;   // (clear of the inspector)
+  const up = intro.on ? introLeft(performance.now()) : 0;      // (a new meadow's crane down onto it: startIntro)
+  if (intro.on) cam.zoom = Math.max(fitZoom, intro.z * (1 - (1 - INTRO_WIDE) * up));
   cam.x += (p.x + fg.lx + sx - cam.x) * k;
-  cam.y += (p.y - CAM_FEET * forPx() / cam.zoom + fg.ly + sy - cam.y) * k;
+  cam.y += (p.y - CAM_FEET * forPx() / cam.zoom + fg.ly + sy - INTRO_RISE * up - cam.y) * (intro.on ? 1 : k);
 }
 
 // ------------------------------------------------------------------ start
