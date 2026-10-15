@@ -43,9 +43,9 @@ closed); none of that project's rules apply here.
   differently each time); the lab plays each piece on demand. Like C418's Minecraft music, the
   silence between pieces is part of it, and no piece is about the time of day (a day is 12 minutes, a
   piece 90 s): they fit any moment, lean towards a season at 1x, and the piano plays darker at night.
-- `index.html`: layout and styles. The world fills the screen: on it only the watch (top middle), a small pill top right
-  (pause, sound, ••• with a link, an idea and a new meadow; on a phone the sound waits in •••), a toast line under the
-  watch (`toast`) and the inspector. Axel wants to see the meadow, not big cards: new UI stays small, temporary and
+- `index.html`: layout and styles. The world fills the screen: on it only a small pill top right
+  (pause, sound, ••• with a link, an idea and a new meadow; on a phone the sound waits in •••), a toast line top
+  middle (`toast`) and the inspector. Axel wants to see the meadow, not big cards: new UI stays small, temporary and
   close to the action. The cards are opaque parchment with a painted grain (`--paper`), never a `backdrop-filter`.
   Phones get slim bars (`narrow()`: up to 760px wide, or up to 500px tall on their side). Upright, the inspector is a
   bottom sheet; on their side (`short()`) it is a panel down the right. Either way it opens folded to one line (`stripHTML`):
@@ -118,7 +118,7 @@ new feature must not slow it down. If it would, make it cheaper or leave it out.
   as `-0`, and nothing is `delete`d (set it to its blank value). A field added mid-game, or a whole number turning a
   fraction, gives V8 a new layout: it then reads those objects the slow way for good and keeps rerunning stale compiled
   loops, which once halved the sim's speed. A new field goes into the blank.
-- The page (the watch, the inspector) updates a few times a second at most, and only rewrites what changed.
+- The page (the inspector) updates a few times a second at most, and only rewrites what changed.
 - Smooth is also even. Input comes when it likes (Safari hands a drag's moves over unaligned with the frames: two in one,
   none in the next), so whatever moves the camera from input calls `handMoved(e.timeStamp)` after it, and the frame
   draws the camera as the hand had it a moment ago (`handShow`). A frame's time is `onBeat`'s, not the browser's (Safari's

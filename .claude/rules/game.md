@@ -8,10 +8,10 @@ paths:
 
 # game.js
 
-Drawing, the camera, the inspector. The world fills the screen; over it only the watch, a small pill top right
+Drawing, the camera, the inspector. The world fills the screen; over it only a small pill top right
 (pause, sound, •••), a toast line (`toast`, for a copied link or an idea that couldn't go) and the inspector. The old
 watching game's cards, news feed, stats, journal, tools, intro and idle camera were cut on the `cooking` branch
-(main at 1d79f03 has them).
+(main at 1d79f03 has them); the pocket watch that told the day and the year went later (git history before its removal).
 
 The forager (sim.js `w.forager`; how it walks is in ecology.md) is painted in fur.js like a fox (`paintForager`,
 `foragerPose`, `foragerParts`: a rust hood with a flopping point, a round face, a moss cloak, mittens, a satchel, boots), in

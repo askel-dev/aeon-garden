@@ -6278,7 +6278,7 @@ function handleEvent(e) {
   }
 }
 
-// ------------------------------------------------------------------ the tab, the watch
+// ------------------------------------------------------------------ the tab
 
 // Rewriting part of the page with what it already shows still costs the browser a layout and
 // a repaint, and the card and inspector refresh four times a second. So only touch what changed.
@@ -6311,35 +6311,9 @@ function updateFavicon(ck) {
   $('#favicon').href = markIcons.get(key);
 }
 
-// The watch at the top: a hand going round the day (day, dusk, night, dawn; noon at the top), and round it the
-// year's days, the ones still to come pale and a dot on today. The hand and the dot turn every frame, each a
-// transform on a layer of its own, so nothing is repainted; the pale part moves once a day, the plaque's words
-// a few times a second (dialTitle).
-const DIAL_NOON = 0.36;                                // the day's phase at the top of the dial (sun, lean 0)
-const dial = { el: $('#dial'), box: $('#watch'), hand: $('#dial .hand'), mark: $('#dial .mark'), a: NaN, m: NaN, day: -1, title: '' };
-function updateDial() {
-  const t = world.tick + Math.min(acc, 1), p = (t % S.TPD) / S.TPD, day = Math.floor(t / S.TPD) % S.YEAR_DAYS;
-  const a = Math.round(((p - DIAL_NOON + 1) % 1) * 1440) / 4, m = Math.round((day + p) / S.YEAR_DAYS * 1440) / 4;
-  if (a !== dial.a) { dial.a = a; dial.hand.style.transform = `rotate(${a}deg)`; }
-  if (m !== dial.m) { dial.m = m; dial.mark.style.transform = `rotate(${m}deg)`; }
-  if (day !== dial.day) { dial.day = day; dial.el.style.setProperty('--done', `${(day + 1) / S.YEAR_DAYS * 360}deg`); }
-}
-function dialTitle(ck) {
-  const part = ck.night ? 'night' : ck.phase < 0.1 ? 'sunrise' : ck.phase < 0.28 ? 'morning' : ck.phase < 0.44 ? 'midday'
-    : ck.phase < 0.6 ? 'afternoon' : 'evening';
-  const title = `${S.SEASONS[ck.season].name}, day ${ck.dayInSeason} of ${S.SEASON_DAYS} · year ${ck.year} · ${part}`;
-  if (title === dial.title) return;
-  dial.title = dial.box.title = title;
-  dial.box.setAttribute('aria-label', title);
-  setHTML($('#watch-day'), `${S.SEASONS[ck.season].name} · day ${ck.dayInSeason}<span> · year ${ck.year}</span>`);
-}
-
-
-// A few times a second: the watch's words, the tab's icon.
+// A few times a second: the tab's icon.
 function updateClock() {
-  const ck = S.clock(world);
-  dialTitle(ck);
-  updateFavicon(ck);
+  updateFavicon(S.clock(world));
 }
 
 // ------------------------------------------------------------------ the inspector
@@ -7809,7 +7783,6 @@ function frame(now) {
     }
   }
   updateSky();
-  updateDial();
 
   const sel = world.byId.get(ui.selectedId);
   if (sel && sel.alive && !sel.hidden) {
