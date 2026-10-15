@@ -676,7 +676,9 @@ function paintSkylark(g, size, U, n) {
 // with a point that flops behind, a round face with rosy cheeks and a fringe of hair, a moss-green cloak, knitted mittens,
 // a leather satchel on a strap, short legs in brown boots. Three views (FORAGER_VIEWS): side on, three-quarters from the
 // front and from the back, each facing left (game.js mirrors it for the right). Poses: 0 standing, 1 a fidget (looking
-// up, a hand on the strap), 2 a blink, 3 and 4 picking (stooping, then reaching down with both hands: STOOP), 8 to 15 a stride of the walk in eighths: each foot on the ground slides back
+// up, a hand on the strap), 2 a blink, 3 and 4 picking (stooping, then reaching down with both hands: STOOP), 5 cold (hugging
+// itself, its head sunk, the brows up in the middle and a frown, its nose red), 6 its blink, 7 down in the cold (the same, eyes
+// shut), 24 to 31 the walk hugging itself (FORAGER_COLD), 8 to 15 a stride of the walk in eighths: each foot on the ground slides back
 // FORAGER_REACH either side of the hips through half the stride, so game.js turns the stride over with the ground covered
 // (2 * FORAGER_REACH * 2 of its half-size a stride) and the feet don't slide. 16 to 23 a stride of the jog, for the
 // sprint: FORAGER_JOG_STRIDE times as long, each foot down only JOG_DOWN of it, so there's a moment with both off the
@@ -685,6 +687,7 @@ function paintSkylark(g, size, U, n) {
 // Box -1 to 1, feet on the ground at 0.72.
 const FORAGER_REACH = 0.18, FORAGER_LIFT = 0.075, FORAGER_BOB = 0.016;
 const STOOP = [0, 0, 0, 0.55, 1];       // how far down it's bent, picking (poses 3 and 4)
+const FORAGER_COLD = [5, 6, 7, 24, 25, 26, 27, 28, 29, 30, 31];   // (the cold poses; game.js asks for them only once it's chilly)
 const FORAGER_JOG_STRIDE = 1.75, JOG_DOWN = 0.32, JOG_LIFT = 0.13, JOG_BOB = 0.03, JOG_LEAN = 0.08;
 const JOG_REACH = 2 * FORAGER_REACH * FORAGER_JOG_STRIDE * JOG_DOWN;   // (the planted foot keeps pace with the ground)
 const FORAGER_VIEWS = ['side', 'front', 'back'];
@@ -696,7 +699,7 @@ const FORAGER_OUTFITS = [
 let CLOAK, HOOD, HOOD_RIM;                       // the outfit being painted (paintForager: wear)
 const wear = o => { ({ cloak: CLOAK, hood: HOOD, rim: HOOD_RIM } = FORAGER_OUTFITS[o] || FORAGER_OUTFITS[0]); };
 wear(0);
-const SKIN = [246, 210, 180], CHEEK = [236, 136, 116];
+const SKIN = [246, 210, 180], CHEEK = [236, 136, 116], COLD_NOSE = [236, 158, 138];
 const HAIR = [118, 74, 44], TROUSER = [116, 94, 76], BOOT = [76, 54, 42], SATCHEL = [150, 100, 58], FLAP = [126, 82, 46], STRAP = [112, 74, 44];
 const MITTEN = [224, 204, 166];
 const FORAGER_SHADE = [34, 30, 26], FORAGER_LIGHT = [255, 240, 214];
@@ -704,7 +707,7 @@ const smoothstep = t => t * t * (3 - 2 * t);
 
 // Where things are in a pose: the feet (x, y, and which is in front), the hips' bob, the arms' swing, the hood's point.
 function foragerPose(view, pose) {
-  const walk = pose >= 8, jog = pose >= 16, u = walk ? (pose & 7) / 8 : 0;
+  const walk = pose >= 8, jog = pose >= 16 && pose < 24, cold = pose >= 24 || pose >= 5 && pose <= 7, u = walk ? (pose & 7) / 8 : 0;
   const down = jog ? JOG_DOWN : 0.5, reach = jog ? JOG_REACH : FORAGER_REACH;
   // A foot: how far ahead of the hips it is (+: forward) and how high off the ground, at phase v of the stride.
   // (Jogging, it's highest early in the swing: the heel kicks up behind before the knee brings it through.)
@@ -724,13 +727,14 @@ function foragerPose(view, pose) {
   const stoop = walk || jog ? 0 : STOOP[pose] || 0;                // (picking: knees bent, the head and the hands forward and down)
   // (Walking it's lowest with the feet apart; jogging, as the planted foot passes under it, and highest in the air.)
   const bob = jog ? JOG_BOB * Math.cos(4 * Math.PI * (u - down / 2)) : walk ? FORAGER_BOB * Math.cos(4 * Math.PI * u) : 0.16 * stoop;
-  const swing = (jog ? 0.6 : walk ? 0.42 : 0) * Math.cos(2 * Math.PI * u);   // the near arm back as the near foot is ahead
+  const swing = (jog ? 0.6 : walk && !cold ? 0.42 : 0) * Math.cos(2 * Math.PI * u);   // the near arm back as the near foot is ahead
   return {
     view, walk, jog, u, feet, bob, swing, fwd, stoop,
     lean: jog ? JOG_LEAN : 0, bend: jog ? 1.1 : 0,                 // jogging, it leans in and its elbows bend
     tip: jog ? 0.09 * Math.cos(4 * Math.PI * u + 1.6) + 0.04 : walk ? 0.05 * Math.cos(4 * Math.PI * u + 1.2) : 0,   // the hood's point flops with the step
     sway: jog ? 0.03 * Math.sin(2 * Math.PI * u) - 0.035 * fwd[0] : walk ? 0.018 * Math.sin(2 * Math.PI * u) : 0,   // and the cloak's hem swings (and trails)
-    look: pose === 1 ? -0.07 : 0, tilt: pose === 1 ? 0.12 : 0, hand: pose === 1, blink: pose === 2,
+    look: pose === 1 ? -0.07 : cold ? 0.025 : 0, tilt: pose === 1 ? 0.12 : 0, hand: pose === 1, blink: pose === 2 || pose === 6 || pose === 7,
+    hug: cold, sad: cold,                                          // cold: its arms round itself, the head sunk into its shoulders
   };
 }
 
@@ -764,6 +768,16 @@ function foragerParts(P) {
     const [ex, ey] = P.bend ? to(kx, ky, a + P.bend, 0.11) : to(sx, sy, a, 0.2 + 0.07 * P.stoop);
     add(g => { if (P.bend) limbAt(g, kx, ky, 0.055, ex, ey, 0.05); limbAt(g, sx, sy, 0.06, P.bend ? kx : ex, P.bend ? ky : ey, P.bend ? 0.055 : 0.05); discAt(g, ex, ey + 0.02, 0.048); },
       { far, casts, marks: [[MITTEN, 1, 0.02, g => discAt(g, ex, ey + 0.025, 0.05)], [tone(CLOAK, 0.8), 0.6, 0.03, g => ovalAt(g, ex, ey - 0.02, 0.055, 0.02)]] });
+  };
+  // Cold, it hugs itself: the elbows in at its sides, the forearms across its chest, each mitten on the other arm. From
+  // the back only the elbows show past the cloak (drawn before it); side on, the near arm.
+  const hug = (x, k) => {
+    const sx = x + lx * 0.7, sy = 0.06 + P.bob + ly * 0.7;
+    const [kx, ky, ex, ey] = side ? [sx + 0.035, 0.22 + P.bob, -0.135, 0.12 + P.bob]
+      : back ? [x * 1.6, 0.21 + P.bob, x * 0.3, 0.13 + P.bob] : [x * 1.2, 0.22 + P.bob, -x * 0.8, (k ? 0.15 : 0.11) + P.bob];
+    const cuff = g => ovalAt(g, ex + (kx - ex) * 0.3, ey + (ky - ey) * 0.3, 0.04, 0.04);
+    add(g => { limbAt(g, sx, sy, 0.06, kx, ky, 0.055); limbAt(g, kx, ky, 0.055, ex, ey, 0.05); discAt(g, ex, ey, 0.046); },
+      { casts: !back, marks: [[MITTEN, 1, 0.02, g => discAt(g, ex, ey + 0.004, 0.048)], [tone(CLOAK, 0.8), 0.6, 0.03, cuff]] });
   };
   // The cloak: a bell from the shoulders to the hem, the strap across it.
   const hem = 0.47 + P.bob, sw = P.sway;
@@ -822,7 +836,8 @@ function foragerParts(P) {
     leg(1, true); leg(0, false);
     arm(0.03, P.stoop ? 0.75 * P.stoop : -P.swing, true, false);
     cloak(); satchel(); tip(); head();
-    arm(-0.01, P.hand ? 0.9 : P.stoop ? 0.95 * P.stoop : P.swing, false, true);
+    if (P.hug) hug(-0.01, 0);
+    else arm(-0.01, P.hand ? 0.9 : P.stoop ? 0.95 * P.stoop : P.swing, false, true);
   } else {
     const [a, b] = P.feet[0][1] > P.feet[1][1] ? [1, 0] : [0, 1];
     leg(a, false); leg(b, false);
@@ -830,11 +845,13 @@ function foragerParts(P) {
       tip();
       cloak(); satchel();
       const reach = 1.1 * P.stoop;
-      arm(-shoulder, P.stoop ? reach : P.swing, false, true); arm(shoulder, P.hand ? 2.4 : P.stoop ? reach : -P.swing, false, true);
+      if (P.hug) { hug(-shoulder, 0); hug(shoulder, 1); }
+      else { arm(-shoulder, P.stoop ? reach : P.swing, false, true); arm(shoulder, P.hand ? 2.4 : P.stoop ? reach : -P.swing, false, true); }
       head();
     } else {
+      if (P.hug) { hug(-shoulder, 0); hug(shoulder, 1); }
       cloak(); satchel();
-      arm(-shoulder, P.stoop ? 1.1 * P.stoop : P.swing, false, true); arm(shoulder, P.stoop ? 1.1 * P.stoop : -P.swing, false, true);
+      if (!P.hug) { arm(-shoulder, P.stoop ? 1.1 * P.stoop : P.swing, false, true); arm(shoulder, P.stoop ? 1.1 * P.stoop : -P.swing, false, true); }
       head(); tip();
     }
   }
@@ -849,23 +866,31 @@ function paintForager(g, size, U, n) {
     face: g => {
       if (view === 2) return;
       const eyes = view === 0 ? [[fx - 0.075, fy + 0.0]] : [[fx - 0.085, fy + 0.0], [fx + 0.06, fy + 0.005]];
+      const mid = view === 0 ? fx : fx - 0.012;                  // (between the eyes: their inner sides face it)
       for (const [x, y] of eyes) {
         if (P.blink) strokeIn(g, '#3a2a22', 0.016, () => { g.moveTo(x - 0.024, y); g.quadraticCurveTo(x, y + 0.018, x + 0.024, y); });
         else {
-          fillIn(g, '#2a1d17', () => ovalAt(g, x, y + P.look * 0.2, 0.022, 0.03));
-          fillIn(g, 'rgba(255,255,255,0.9)', () => discAt(g, x - 0.008, y - 0.012 + P.look * 0.2, 0.008));
+          const dy = P.look * 0.2;
+          fillIn(g, '#2a1d17', () => ovalAt(g, x, y + dy, 0.022, P.sad ? 0.026 : 0.03));
+          fillIn(g, 'rgba(255,255,255,0.9)', () => discAt(g, x - 0.008, y - 0.01 + dy, 0.008));
+        }
+        if (P.sad) {                                             // worried: the brows up where they meet
+          const s = x < mid ? 1 : -1;
+          strokeIn(g, rockRGB(tone(HAIR, 0.8), 0.9), 0.013, () => { g.moveTo(x - s * 0.028, y - 0.04); g.quadraticCurveTo(x, y - 0.05, x + s * 0.022, y - 0.062); });
         }
       }
       const cheeks = view === 0 ? [[fx - 0.04, fy + 0.07]] : [[fx - 0.105, fy + 0.07], [fx + 0.085, fy + 0.07]];
-      for (const [x, y] of cheeks) furGlow(g, CHEEK, 0.55, x, y, 0.04, 0.026);
+      for (const [x, y] of cheeks) furGlow(g, CHEEK, P.sad ? 0.3 : 0.55, x, y, 0.04, 0.026);   // (cold, paler)
       const mx = view === 0 ? fx - 0.115 : fx - 0.015, my = fy + 0.085;
-      strokeIn(g, 'rgba(120,64,50,0.8)', 0.012, () => { g.moveTo(mx - 0.016, my); g.quadraticCurveTo(mx, my + 0.014, mx + 0.016, my); });
-      if (view === 0) fillIn(g, rockRGB(tone(SKIN, 0.92)), () => ovalAt(g, fx - 0.155, fy + 0.035, 0.022, 0.018));   // the nose, just past the cheek
+      if (P.sad) strokeIn(g, 'rgba(120,64,50,0.8)', 0.012, () => { g.moveTo(mx - 0.015, my + 0.01); g.quadraticCurveTo(mx, my - 0.006, mx + 0.015, my + 0.01); });   // a little frown
+      else strokeIn(g, 'rgba(120,64,50,0.8)', 0.012, () => { g.moveTo(mx - 0.016, my); g.quadraticCurveTo(mx, my + 0.014, mx + 0.016, my); });
+      if (view === 0) fillIn(g, P.sad ? rockRGB(COLD_NOSE) : rockRGB(tone(SKIN, 0.92)), () => ovalAt(g, fx - 0.155, fy + 0.035, 0.022, 0.018));   // the nose, just past the cheek
+      else if (P.sad) furGlow(g, CHEEK, 0.7, fx - 0.012, fy + 0.045, 0.022, 0.016);   // cold, a red nose
     } });
 }
 
 const painters = { fox: paintFox, rabbit: paintRabbit, dfly: paintDragonfly, kfisher: paintKingfisher, lark: paintSkylark, forager: paintForager };
 
 root.Fur = { tone, rockRGB, fillIn, strokeIn, discAt, ovalAt, blurIn, softIn, furGlow, foxRGB, FOX_WHITE, FOX_SOCK,
-  FOX_POSE, RABBIT_POSE, RABBIT_KINDS, setCoats, paintFox, paintRabbit, paintForager, FORAGER_REACH, FORAGER_JOG_STRIDE, FORAGER_OUTFITS, painters };
+  FOX_POSE, RABBIT_POSE, RABBIT_KINDS, setCoats, paintFox, paintRabbit, paintForager, FORAGER_REACH, FORAGER_JOG_STRIDE, FORAGER_OUTFITS, FORAGER_COLD, painters };
 })(typeof window !== 'undefined' ? window : globalThis);

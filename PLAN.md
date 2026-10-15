@@ -44,6 +44,20 @@ clothes are still to come; the fire goes into `bodyTick`'s feel (and dries you).
 - **Balance aim:** a normal night by a fed fire is fine; a night away from one is dangerous; a winter night without one
   kills you. Hunger comes later, after warmth.
 
+### Stage 2 polish (2026-10-15, after Axel played it)
+- **Shiver calmer:** smaller, eased in and out, a sway of the upper body about its planted feet rather than the whole
+  forager jittering side to side. Chilly a short "brr" now and then, cold more often, freezing a faint steady tremble.
+- **Sad when cold:** new paintings (fur.js `FORAGER_COLD`: poses 5, 6, 7 and 24 to 31) from cold down: brows up in the
+  middle, a little frown, paler cheeks, a red nose, the head sunk into its shoulders.
+- **Hugging itself:** in those paintings its arms wrap round it, standing and walking (the sprint still pumps its arms).
+- **No blinking once down:** collapsed it lies with its eyes shut (pose 7), not its standing blink.
+- **Breath from the mouth:** the puffs started half a body too high (over the hood); start them at the mouth, drifting
+  the way it faces (three-quarter views too) and rising a little.
+- **Sounds:** a soft "brr" with each shiver, a shaky cold sigh now and then with the breath when cold, and a gentle
+  waking tune at home after a collapse. All in sound-lab.html.
+- Keep the sprite cache in check: the cold paintings are asked for only once it's chilly, and the sprite cache keeps
+  only the set in use (warm or cold) at the forager's size.
+
 ## Stage 3: the storm opening
 A new meadow opens in a storm, late in the afternoon. The forager arrives cold and wet, the light is going, and a
 short line says something like "It's freezing. I need a fire before dark." Warmth is already dropping, slowly enough to

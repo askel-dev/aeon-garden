@@ -170,6 +170,9 @@
     ['pick', '🧺', 'Picking', 'a soft pluck as the forager picks something'],
     ['heart', '🫀', 'Heartbeat', 'freezing: a slow soft lub-dub, felt more than heard'],
     ['collapse', '🥶', 'Collapse', 'too cold to go on: a soft fall and two low notes'],
+    ['shiver', '🫨', 'Shiver', 'cold: teeth chattering a moment with each shiver'],
+    ['breath', '😮‍💨', 'Cold sigh', 'cold and standing: now and then a shaky breath out'],
+    ['wake', '🌅', 'Waking', 'after a collapse: three soft notes up, at home in the morning'],
   ];
   $('#events').innerHTML = EVENTS.map(([k, e, name, how]) =>
     `<button data-play="${k}"><b>${e} ${name}</b><span>${how}</span></button>`).join('');

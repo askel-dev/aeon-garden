@@ -287,6 +287,9 @@ const RULES = {
   pick:    { gap: 0.15, always: true },
   heart:   { gap: 0.6,  always: true },
   collapse: { gap: 2,   always: true },
+  shiver:  { gap: 1.5,  always: true },
+  breath:  { gap: 5,    always: true },
+  wake:    { gap: 5,    always: true },
 };
 
 const STEP_SOFT = 0.6;          // the footsteps' level against the meadow's sounds: soft, they come a few times a second
@@ -452,6 +455,27 @@ const SOUNDS = {
     noise(o, t, 0.4, { from: 600, to: 140, q: 0.6, peak: 0.45, attack: 0.02, type: 'lowpass' });
     piano(o, note(2, -1), t + 0.15, 0.5, 1.6, 0.6);
     piano(o, note(0, -1), t + 0.55, 0.45, 2.2, 0.5);
+  },
+  // A shiver: teeth chattering a moment, soft and quick, with a breath through them (v: harder the colder).
+  shiver(t, o, { v = 1 }) {
+    const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1800; lp.Q.value = 0.5; lp.connect(o);
+    const n = 5 + (Math.random() * 3 | 0), gap = rand(0.055, 0.07);
+    for (let i = 0; i < n; i++) {
+      const a = Math.sin(Math.PI * (i + 0.5) / n) * (0.5 + 0.5 * v);
+      noise(lp, t + i * gap, 0.025, { from: rand(1500, 2100), to: 1200, q: 2, peak: 0.12 * a, attack: 0.003 });
+      partial(lp, rand(700, 820), t + i * gap, 0.02 * a, 0.002, 0.03);
+    }
+    noise(lp, t, n * gap + 0.1, { from: 320, to: 220, q: 0.8, peak: 0.08 * (0.5 + 0.5 * v), attack: 0.1, type: 'lowpass' });
+  },
+  // Cold, a shaky sigh: a breath out in a few faltering puffs.
+  breath(t, o) {
+    for (let i = 0; i < 4; i++) noise(o, t + i * rand(0.14, 0.18), 0.26, { from: 1000 - i * 90, to: 700 - i * 60, q: 0.9, peak: 0.11 * (1 - i * 0.18), attack: 0.08 });
+  },
+  // Waking at home after a collapse: three soft notes stepping up, a new morning.
+  wake(t, o) {
+    piano(o, note(0, 0), t, 0.32, 1.2, 0.7);
+    piano(o, note(2, 0), t + 0.32, 0.3, 1.2, 0.7);
+    piano(o, note(4, 0), t + 0.64, 0.3, 2.2, 0.7);
   },
   // The forager picks something: a soft pluck, two notes of the scale stepping up, a little higher the more it got.
   pick(t, o, { n = 1 }) { const d = Math.min(4, Math.floor(n / 3)); kalimba(o, note(d + 2, 1), t, 0.45); kalimba(o, note(d + 4, 1), t + 0.09, 0.4); },

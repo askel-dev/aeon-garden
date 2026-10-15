@@ -283,7 +283,9 @@ function paintedSprite(emoji, px, tint, leaf, center) {
 // by), so the ones on screen aren't all painted again at once. The forager's paintings at the size it's drawn stay too
 // (keptForager): they're its walk, a frame or two from being drawn, and let go after a zoom they came back one by one
 // as it walked, and it stuck in a pose till each had. Only if that isn't enough does it start again from empty.
-const keptForager = s => s.look.startsWith('forager:') && (s.px === fg.sized || s.px === furPainted(fg.sized));
+// Only the set in use is kept: warm, or cold (fur.js FORAGER_COLD), so the cold paintings don't double what's held.
+const keptForager = s => s.look.startsWith('forager:') && (s.px === fg.sized || s.px === furPainted(fg.sized))
+  && !(fg.cold ? WARM_ONLY : COLD_ONLY)[parseInt(s.look.slice(8)) & 31];
 function dropSprites(need) {
   for (const [key, s] of spriteCache) {
     if (spriteFrame - s.used < 3 || keptForager(s)) continue;
@@ -1871,6 +1873,11 @@ const FORAGER_SIZE = 2.5;                  // its painting's box, next to a rabb
 const FORAGER_ARTS = Array.from({ length: 3 << 7 }, (_, n) => 'forager:' + n);   // (made once: a frame builds no names)
 const OUTFIT = 'aeon-garden-outfit';       // in localStorage
 const FORAGER_POSES = [0, 1, 2, 3, 4, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23];
+const FORAGER_CHILLY = [...FORAGER_POSES, ...Fur.FORAGER_COLD];   // (chilly, the cold ones are asked for ahead too)
+const WARM_ONLY = new Uint8Array(32), COLD_ONLY = new Uint8Array(32);   // poses the other set never uses (keptForager)
+for (const p of [0, 1, 2, 8, 9, 10, 11, 12, 13, 14, 15]) WARM_ONLY[p] = 1;
+for (const p of Fur.FORAGER_COLD) COLD_ONLY[p] = 1;
+const FORAGER_SAD = 2;                     // from this stage (sim.js warmthStage: cold) it hugs itself, sad (fur.js FORAGER_COLD)
 const FORAGER_FIDGET = [7000, 14000];      // ms standing between fidgets, about
 const FORAGER_TURN_MS = 1100;              // standing this long, it turns to face you
 const FORAGER_JOG = [0.1, 0.11];           // sent running, it jogs once up past this pace (tiles a tick) and walks again under
@@ -1878,7 +1885,7 @@ const FORAGER_STILL_MS = 70;               // no nearer than this to the last mo
 const forPx = () => (8 + cam.zoom) * FORAGER_SIZE;
 const fg = { at: -1, x: 0, y: 0, step: 0, stillMs: 1e4, view: 1, flip: false, art: FORAGER_ARTS[32], blinkAt: -1e9, blinkIn: 3000,
   fidgetAt: -1e9, fidgetIn: 9000, lastHalf: 0, jog: false, rings: [], wet: false, lx: -0, ly: -0, sized: 0, outfit: 0, picked: false, pick: -1e9, pickK: 1, printMs: -0,
-  puffs: [], puffAt: 0, drips: [], dripAt: 0, shiverAt: -1e9, shiverNext: 0, heartAt: 0, downAt: 0, dark: false };   // (the body: drawBody, bodyFrame)
+  puffs: [], puffAt: 0, drips: [], dripAt: 0, shiverAt: -1e9, shiverNext: 0, heartAt: 0, downAt: 0, dark: false, cold: false, sizedSet: 0 };   // (the body: drawBody, bodyFrame)
 try {
   const o = localStorage.getItem(OUTFIT);
   fg.picked = o !== null;
@@ -1907,13 +1914,13 @@ function foragerFrame(now, d) {
     fg.stillMs = 0;
   } else if (ui.speed > 0) fg.stillMs += ms;            // (paused mid-stride, it holds the stride)
   fg.wet = !world.frozen && world.water[(d.y | 0) * S.W + (d.x | 0)] > 0;
-  const walking = fg.stillMs < FORAGER_STILL_MS;
+  const walking = fg.stillMs < FORAGER_STILL_MS, stage = S.warmthStage(f), cold = fg.cold = stage >= FORAGER_SAD;
   let pose = 0;
   if (walking) {
     const sy = Math.sin(f.heading), sx = Math.cos(f.heading), v = fg.view;
     fg.view = sy > (v === 1 ? 0.45 : 0.62) ? 1 : sy < (v === 2 ? -0.45 : -0.62) ? 2 : 0;
     if (sx > 0.18) fg.flip = true; else if (sx < -0.18) fg.flip = false;
-    pose = (fg.jog ? 16 : 8) + Math.floor(fg.step % 1 * 8);
+    pose = (fg.jog ? 16 : cold ? 24 : 8) + Math.floor(fg.step % 1 * 8);   // (cold, it walks hugging itself)
     const half = Math.floor(fg.step * 2);                 // a foot comes down: in the shallows, a ring
     if (half !== fg.lastHalf && fg.wet && ui.speed > 0) fg.rings.push({ x: d.x, y: d.y, t: now });
     if (half !== fg.lastHalf && ui.speed > 0 && !fg.wet) footprint(d.x, d.y, f.heading, half & 1);
@@ -1925,10 +1932,11 @@ function foragerFrame(now, d) {
     if (fg.stillMs > FORAGER_TURN_MS && fg.view !== 1) { fg.view = 1; fg.blinkAt = now; }   // turned to you, with a blink
     if (now - fg.blinkAt > fg.blinkIn) { fg.blinkAt = now; fg.blinkIn = 2200 + Math.random() * 3500; }
     if (fg.view === 1 && fg.stillMs > fg.fidgetIn) { fg.fidgetAt = now; fg.fidgetIn = fg.stillMs + FORAGER_FIDGET[0] + Math.random() * (FORAGER_FIDGET[1] - FORAGER_FIDGET[0]); }
-    pose = now - fg.fidgetAt < 1500 ? 1 : now - fg.blinkAt < 150 ? 2 : 0;
+    pose = cold ? (now - fg.blinkAt < 150 ? 6 : 5) : now - fg.fidgetAt < 1500 ? 1 : now - fg.blinkAt < 150 ? 2 : 0;
     const p = (now - fg.pick) / fg.pickK;                 // picking (gatherFrame): stooped, reaching down, back up
     if (p < PICK_MS[2]) { pose = p < PICK_MS[0] || p > PICK_MS[1] ? 3 : 4; fg.stillMs = FORAGER_STILL_MS + 1; fg.fidgetIn = FORAGER_FIDGET[0]; }
   }
+  if (stage === 4) pose = 7;                            // (down: eyes shut, no blinking)
   if (ui.speed > 0) fg.printMs += ms;                   // (prints fade only while the meadow goes on)
   if (fg.rings.length && now - fg.rings[0].t > 900) fg.rings.shift();
   fg.art = shownPose(f, FORAGER_ARTS[(fg.outfit << 7) + (fg.view << 5) + pose], px);
@@ -2006,12 +2014,14 @@ function drawForager(sx, sy, now) {
   }
   const breathe = fg.stillMs > FORAGER_STILL_MS && ui.speed > 0 ? Math.sin(now / 620) * 0.012 : 0;
   const trip = f.stumble > 0 ? Math.sin(Math.PI * (1 - f.stumble / S.STUMBLE_TICKS)) : 0;   // (a stumble: it pitches forward and catches itself)
-  const squash = (1 + breathe) * HUNCH[stage] * (fg.view === 1 ? 1 - 0.1 * trip : 1), shake = shiverOf(stage, now) * px;
-  if (trip && fg.view !== 1) {
-    ctx.save(); ctx.translate(sx + shake, sy); ctx.rotate((flip ? 1 : -1) * 0.24 * trip);
+  const squash = (1 + breathe) * HUNCH[stage] * (fg.view === 1 ? 1 - 0.1 * trip : 1), shake = shiverOf(stage, now);
+  if (trip && fg.view !== 1 || shake) {                 // (a shiver sways it about its feet: the head most, the feet not at all)
+    ctx.save(); ctx.translate(sx, sy);
+    if (shake) ctx.transform(1, 0, -shake / 0.6, 1, 0, 0);
+    if (trip && fg.view !== 1) ctx.rotate((flip ? 1 : -1) * 0.24 * trip);
     drawEmoji(art, 0, -px * 0.36 * squash, px, { flip, squash });
     ctx.restore();
-  } else drawEmoji(art, sx + shake, top + px * 0.36 * (1 - squash), px, { flip, squash });   // (feet stay on the ground)
+  } else drawEmoji(art, sx, top + px * 0.36 * (1 - squash), px, { flip, squash });   // (feet stay on the ground)
   drawBody(sx, sy, px, now);
 }
 function foragerShadow(sx, sy, sn) {
@@ -2022,10 +2032,10 @@ function foragerShadow(sx, sy, sn) {
 }
 // Each of its paintings at the size it's drawn, asked of the worker ahead, so the walk never waits for one.
 function foragerAhead() {
-  const P = poseStep(Math.max(4, forPx()));
-  if (!furWorker || P === fg.sized) return;
-  fg.sized = P;
-  for (let v = 0; v < 3; v++) for (const p of FORAGER_POSES) furReady(FORAGER_ARTS[(fg.outfit << 7) + (v << 5) + p], P);
+  const P = poseStep(Math.max(4, forPx())), set = S.warmthStage(world.forager) >= 1 ? 2 : 1;   // (chilly: the cold ones too)
+  if (!furWorker || P === fg.sized && set === fg.sizedSet) return;
+  fg.sized = P; fg.sizedSet = set;
+  for (let v = 0; v < 3; v++) for (const p of set === 2 ? FORAGER_CHILLY : FORAGER_POSES) furReady(FORAGER_ARTS[(fg.outfit << 7) + (v << 5) + p], P);
 }
 
 // ------------------------------------------------------------------ warmth, wet and stamina
@@ -2040,8 +2050,11 @@ function foragerAhead() {
 const BREATH_AIR = 8;                      // degrees: air colder than this shows its breath
 const BREATH_MS = [2700, 1500];            // ms between puffs, standing and walking (sprinting, half that)
 const PUFF_MS = 1500;                      // a puff's life
-const SHIVER = [0.008, 0.01, 0.016];       // of its size, side to side: chilly (in bursts), cold, freezing
-const SHIVER_BURST = [5500, 650];          // chilly: a shiver about this often (ms), this long
+const BREATH_AT = [[0.14, -0.4, 0.2], [0.05, -0.38, 0.1], [0.12, -0.47, 0.12]];   // by view: from its mouth (x ahead, y), drifting ahead
+const SHIVER = [0.01, 0.012, 0.012];       // how far its head sways in a shiver (of its size): chilly, cold, freezing
+const SHIVER_EVERY = [7500, 4000, 3000];   // a shiver about this often (ms), by stage
+const SHIVER_MS = 600;                     // a shiver's length, eased in and out
+const SHIVER_STEADY = 0.3;                 // freezing, a faint tremble between them (of a shiver)
 const HUNCH = [1, 1, 0.965, 0.94, 1];      // its height by stage (sim.js warmthStage)
 const DRIP_MS = 260;                       // soaked through, a drip this often (less wet, less often)
 const HEART_MS = 1250;                     // freezing: a heartbeat this often
@@ -2059,13 +2072,16 @@ function puffArt() {
   asBitmap(c, b => { PUFF_ART.img = b; });
   return PUFF_ART;
 }
+// How far its head sways this frame (of its size): a short shiver now and then ("brr", sound.js shiver), more often the
+// colder, eased in and out; freezing, a faint tremble between.
 function shiverOf(stage, now) {
   if (!stage || stage > 3 || ui.speed === 0) return 0;
-  if (stage === 1) {
-    if (now > fg.shiverNext) { fg.shiverAt = now; fg.shiverNext = now + SHIVER_BURST[0] * (0.6 + 0.8 * Math.random()); }
-    if (now - fg.shiverAt > SHIVER_BURST[1]) return 0;
+  if (now > fg.shiverNext) {
+    if (fg.shiverNext) { fg.shiverAt = now; chime('shiver', { v: stage / 3 }); }
+    fg.shiverNext = now + SHIVER_EVERY[stage - 1] * (0.6 + 0.8 * Math.random());
   }
-  return SHIVER[stage - 1] * Math.sin(now / 19) * (0.75 + 0.25 * Math.sin(now / 53));
+  const u = (now - fg.shiverAt) / SHIVER_MS, a = Math.max(u < 1 ? Math.sin(Math.PI * u) : 0, stage === 3 ? SHIVER_STEADY : 0);
+  return a ? a * SHIVER[stage - 1] * Math.sin(now / 21) : 0;
 }
 // Its breath and its drips: each where it was when it came, the breath rising and spreading from its face, a drip falling
 // from its hem to its feet.
@@ -2074,8 +2090,9 @@ function drawBody(sx, sy, px, now) {
   if (ui.speed > 0 && now > fg.puffAt) {
     fg.puffAt = now + BREATH_MS[going ? 1 : 0] * (f.running ? 0.5 : 1) * (0.85 + 0.3 * Math.random());
     if (S.airTemp(world) < BREATH_AIR && fg.puffs.length < 6) {
-      const side = fg.view === 1 ? 0 : fg.flip ? 1 : -1;   // (from the front, it breathes toward you; side on, ahead)
-      fg.puffs.push({ x: d.x, y: d.y, ox: side * 0.24, oy: fg.view === 2 ? -1.1 : -0.98, dx: side, back: fg.view === 2, t: now });   // (from its mouth)
+      const ahead = fg.flip ? 1 : -1, v = fg.view;           // (its mouth, of its size from its feet: side on, three-quarters, from the back)
+      fg.puffs.push({ x: d.x, y: d.y, ox: ahead * BREATH_AT[v][0], oy: BREATH_AT[v][1], dx: ahead * BREATH_AT[v][2], back: v === 2, t: now });
+      if (S.warmthStage(f) >= FORAGER_SAD && !going && Math.random() < 0.3) chime('breath');   // now and then a shaky cold sigh
     }
   }
   const wet = f.wet;
@@ -2090,7 +2107,7 @@ function drawBody(sx, sy, px, now) {
     for (const p of fg.puffs) {
       const u = (now - p.t) / PUFF_MS, [x, y] = onScreen(p.x, p.y), r = px * (0.07 + 0.2 * Math.sqrt(u));
       ctx.globalAlpha = (p.back ? 0.35 : 0.65) * Math.min(1, u * 8) * (1 - u) * (1 - u);
-      ctx.drawImage(art.img, x + (p.ox + p.dx * 0.18 * u) * px - r, y + (p.oy - 0.16 * u) * px - r, r * 2, r * 2);
+      ctx.drawImage(art.img, x + (p.ox + p.dx * u) * px - r, y + (p.oy - 0.1 * u) * px - r, r * 2, r * 2);
     }
     ctx.globalAlpha = 1;
   }
@@ -2127,6 +2144,7 @@ function bodyWoke() {
   const f = world.forager;
   fg.downAt = 0; fg.dark = false; fg.puffs.length = 0; fg.drips.length = 0;
   $('#veil').classList.remove('dark');
+  chime('wake');
   cam.x = f.x; cam.y = f.y - CAM_FEET * forPx() / cam.zoom; fg.lx = fg.ly = 0; fg.at = -1;
   ui.mark = null; ui.gather = null; ui.queue.length = 0;
   renderSatchel();
