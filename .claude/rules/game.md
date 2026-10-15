@@ -16,13 +16,15 @@ watching game's cards, news feed, stats, journal, tools, intro and idle camera w
 The forager (sim.js `w.forager`; how it walks is in ecology.md) is painted in fur.js like a fox (`paintForager`,
 `foragerPose`, `foragerParts`: a rust hood with a flopping point, a round face, a moss cloak, mittens, a satchel, boots), in
 three views (side on, three-quarters from the front and the back, all facing left and mirrored going right) and eight
-paintings a stride, eight more jogging for the sprint, plus standing, a fidget and a blink: 'forager:' + (view << 5) + pose, painted by the worker
+paintings a stride, eight more jogging for the sprint, plus standing, a fidget and a blink: 'forager:' + (outfit << 7) + (view << 5) + pose, painted by the worker
 (`foragerAhead` asks for every one at the size it's drawn, so a walk never waits). Its feet are where it is. game.js
 (`foragerFrame`, once a frame) turns the stride over with the ground it covers (a stride every `2 * FORAGER_REACH * 2` of its
 half-size, so the planted foot doesn't slide; fur.js `FORAGER_REACH`), picks the view from the sim's heading with a margin
 either side so it doesn't flicker, and standing lets it breathe, blink, turn to face you after `FORAGER_TURN_MS` and fidget
 now and then (`FORAGER_FIDGET`). In the shallows it's cut off at its shins with a ring round its legs, and each step sends out
-a ring (`fg.rings`). Its shadow goes in with the animals' (`foragerShadow`). `forager-lab.html` paints them all side by side.
+a ring (`fg.rings`). Its shadow goes in with the animals' (`foragerShadow`). `forager-lab.html` paints them all side by side. Its outfit is one of three (fur.js `FORAGER_OUTFITS`:
+cloak, hood, rim), picked on a small card at the foot of the screen as a new meadow opens or from ••• (`pickOutfit`), kept in
+localStorage (`aeon-garden-outfit`).
 A click or a tap on an animal (on its body as drawn: `animalAt`, a little wider for a finger) opens its panel and follows it;
 anywhere else walks the forager there (`walkTo`, sim.js `foragerTo`), shuts the panel and puts the camera back on it, with a
 soft ring where it was sent (`drawMark`, `MARK_ART` painted once) that fades once it's there. A press held still for

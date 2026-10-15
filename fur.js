@@ -680,13 +680,22 @@ function paintSkylark(g, size, U, n) {
 // FORAGER_REACH either side of the hips through half the stride, so game.js turns the stride over with the ground covered
 // (2 * FORAGER_REACH * 2 of its half-size a stride) and the feet don't slide. 16 to 23 a stride of the jog, for the
 // sprint: FORAGER_JOG_STRIDE times as long, each foot down only JOG_DOWN of it, so there's a moment with both off the
-// ground; the heel kicks up behind, the arms bend and pump, it leans in and bobs more. 'forager:' + (view << 5) + pose.
+// ground; the heel kicks up behind, the arms bend and pump, it leans in and bobs more. Three outfits the player picks
+// from (FORAGER_OUTFITS: the cloak, the hood and its rim). 'forager:' + (outfit << 7) + (view << 5) + pose.
 // Box -1 to 1, feet on the ground at 0.72.
 const FORAGER_REACH = 0.18, FORAGER_LIFT = 0.075, FORAGER_BOB = 0.016;
 const FORAGER_JOG_STRIDE = 1.4, JOG_DOWN = 0.36, JOG_LIFT = 0.15, JOG_BOB = 0.03, JOG_LEAN = 0.05;
 const JOG_REACH = 2 * FORAGER_REACH * FORAGER_JOG_STRIDE * JOG_DOWN;   // (the planted foot keeps pace with the ground)
 const FORAGER_VIEWS = ['side', 'front', 'back'];
-const CLOAK = [100, 124, 68], HOOD = [178, 88, 52], HOOD_RIM = [140, 62, 38], SKIN = [246, 210, 180], CHEEK = [236, 136, 116];
+const FORAGER_OUTFITS = [
+  { name: 'Moss', cloak: [100, 124, 68], hood: [178, 88, 52], rim: [140, 62, 38] },     // moss green, a rust hood
+  { name: 'Plum', cloak: [124, 72, 98], hood: [214, 162, 66], rim: [168, 120, 44] },    // plum, a mustard hood
+  { name: 'Lake', cloak: [70, 104, 140], hood: [190, 66, 70], rim: [144, 46, 52] },     // lake blue, a berry hood
+];
+let CLOAK, HOOD, HOOD_RIM;                       // the outfit being painted (paintForager: wear)
+const wear = o => { ({ cloak: CLOAK, hood: HOOD, rim: HOOD_RIM } = FORAGER_OUTFITS[o] || FORAGER_OUTFITS[0]); };
+wear(0);
+const SKIN = [246, 210, 180], CHEEK = [236, 136, 116];
 const HAIR = [118, 74, 44], TROUSER = [116, 94, 76], BOOT = [76, 54, 42], SATCHEL = [150, 100, 58], FLAP = [126, 82, 46], STRAP = [112, 74, 44];
 const MITTEN = [224, 204, 166];
 const FORAGER_SHADE = [34, 30, 26], FORAGER_LIGHT = [255, 240, 214];
@@ -828,7 +837,8 @@ function foragerParts(P) {
 }
 
 function paintForager(g, size, U, n) {
-  const view = (n >> 5) % 3, P = foragerPose(view, n & 31), { parts, fx, fy } = foragerParts(P);
+  wear(n >> 7);
+  const view = (n >> 5) & 3, P = foragerPose(view, n & 31), { parts, fx, fy } = foragerParts(P);
   paintFur(g, size, U, parts, { coat: CLOAK, top: -0.5, shade: FORAGER_SHADE, light: FORAGER_LIGHT, flat: 0.25,
     grain: [['rgba(40,30,20,0.03)', 1, 3], ['rgba(255,245,225,0.03)', 1, 3]],
     face: g => {
@@ -852,5 +862,5 @@ function paintForager(g, size, U, n) {
 const painters = { fox: paintFox, rabbit: paintRabbit, dfly: paintDragonfly, kfisher: paintKingfisher, lark: paintSkylark, forager: paintForager };
 
 root.Fur = { tone, rockRGB, fillIn, strokeIn, discAt, ovalAt, blurIn, softIn, furGlow, foxRGB, FOX_WHITE, FOX_SOCK,
-  FOX_POSE, RABBIT_POSE, RABBIT_KINDS, setCoats, paintFox, paintRabbit, paintForager, FORAGER_REACH, FORAGER_JOG_STRIDE, painters };
+  FOX_POSE, RABBIT_POSE, RABBIT_KINDS, setCoats, paintFox, paintRabbit, paintForager, FORAGER_REACH, FORAGER_JOG_STRIDE, FORAGER_OUTFITS, painters };
 })(typeof window !== 'undefined' ? window : globalThis);

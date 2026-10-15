@@ -1854,9 +1854,11 @@ function drawCreature(c, sx, sy, now) {
 // from its heading, held a little either side of a change so it doesn't flicker (side on, three-quarters from the front
 // or the back, mirrored going right). Standing it breathes, blinks now and then, after a moment turns to face you, and
 // now and then fidgets (FORAGER_FIDGET). In the shallows it's cut off at the water line with a ring round its legs, and
-// each step sends out a ring (fg.rings).
+// each step sends out a ring (fg.rings). Its outfit (Fur.FORAGER_OUTFITS) is the player's, picked as a new meadow opens
+// (pickOutfit) and kept in localStorage for every meadow after.
 const FORAGER_SIZE = 2.5;                  // its painting's box, next to a rabbit's
-const FORAGER_ARTS = Array.from({ length: 3 << 5 }, (_, n) => 'forager:' + n);   // (made once: a frame builds no names)
+const FORAGER_ARTS = Array.from({ length: 3 << 7 }, (_, n) => 'forager:' + n);   // (made once: a frame builds no names)
+const OUTFIT = 'aeon-garden-outfit';       // in localStorage
 const FORAGER_POSES = [0, 1, 2, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23];
 const FORAGER_FIDGET = [7000, 14000];      // ms standing between fidgets, about
 const FORAGER_TURN_MS = 1100;              // standing this long, it turns to face you
@@ -1864,7 +1866,8 @@ const FORAGER_JOG = [0.1, 0.11];           // sent running, it jogs once up past
 const FORAGER_STILL_MS = 70;               // no nearer than this to the last move, it's standing (it's drawn between ticks)
 const forPx = () => (8 + cam.zoom) * FORAGER_SIZE;
 const fg = { at: -1, x: 0, y: 0, step: 0, stillMs: 1e4, view: 1, flip: false, art: FORAGER_ARTS[32], blinkAt: -1e9, blinkIn: 3000,
-  fidgetAt: -1e9, fidgetIn: 9000, lastHalf: 0, jog: false, rings: [], wet: false, lx: -0, ly: -0, sized: 0 };
+  fidgetAt: -1e9, fidgetIn: 9000, lastHalf: 0, jog: false, rings: [], wet: false, lx: -0, ly: -0, sized: 0, outfit: 0 };
+try { fg.outfit = Math.min(Fur.FORAGER_OUTFITS.length - 1, Math.max(0, +localStorage.getItem(OUTFIT) | 0)); } catch (e) { /* fine */ }
 // What's under the forager's feet, for its footsteps (sound.js step): the shallows, ice, snow, the wood's floor, the damp
 // sand along the water, earth bitten bare, or grass.
 const STEP_SNOW = 0.35, STEP_WOODS = 0.45, STEP_SHORE = 1.5, STEP_BARE = 0.12;
@@ -1908,7 +1911,7 @@ function foragerFrame(now, d) {
     pose = now - fg.fidgetAt < 1500 ? 1 : now - fg.blinkAt < 150 ? 2 : 0;
   }
   if (fg.rings.length && now - fg.rings[0].t > 900) fg.rings.shift();
-  fg.art = shownPose(f, FORAGER_ARTS[(fg.view << 5) + pose], px);
+  fg.art = shownPose(f, FORAGER_ARTS[(fg.outfit << 7) + (fg.view << 5) + pose], px);
 }
 function drawForager(sx, sy, now) {
   const px = forPx(), art = fg.art, flip = fg.flip, top = sy - px * 0.36;   // (its painting's middle: the feet are at 0.72 of its half-size)
@@ -1944,7 +1947,31 @@ function foragerAhead() {
   const P = poseStep(Math.max(4, forPx()));
   if (!furWorker || P === fg.sized) return;
   fg.sized = P;
-  for (let v = 0; v < 3; v++) for (const p of FORAGER_POSES) furReady(FORAGER_ARTS[(v << 5) + p], P);
+  for (let v = 0; v < 3; v++) for (const p of FORAGER_POSES) furReady(FORAGER_ARTS[(fg.outfit << 7) + (v << 5) + p], P);
+}
+
+// Picking an outfit: a small card at the foot of the screen, under the forager, with it painted in each (front on,
+// standing) to tap. It opens as a new meadow does (newWorld) and from the ••• menu; the meadow goes on behind it.
+function pickOutfit(open) {
+  const card = $('#outfit');
+  card.classList.toggle('hidden', !open);
+  if (!open) return;
+  const row = $('#outfit-row');
+  if (!row.children.length) Fur.FORAGER_OUTFITS.forEach((o, i) => {
+    const b = document.createElement('button'), c = document.createElement('canvas'), px = 84, size = Math.ceil(px * 1.3 * dpr);
+    c.width = c.height = size;
+    Fur.paintForager(c.getContext('2d'), size, px * dpr, (i << 7) + (1 << 5));
+    b.className = 'outfit-pick'; b.dataset.act = 'outfit'; b.dataset.o = i; b.title = o.name;
+    b.append(c, Object.assign(document.createElement('span'), { textContent: o.name }));
+    row.append(b);
+  });
+  for (const b of row.children) b.classList.toggle('on', +b.dataset.o === fg.outfit);
+}
+const outfitOpen = () => !$('#outfit').classList.contains('hidden');
+function wearOutfit(o) {
+  fg.outfit = o; fg.sized = 0;               // (foragerAhead asks for its new paintings)
+  try { localStorage.setItem(OUTFIT, String(o)); } catch (e) { /* fine */ }
+  pickOutfit(false);
 }
 
 // Where it was sent: a soft ring on the ground that comes in with a little bounce, breathes while it walks there and
@@ -7412,6 +7439,8 @@ document.addEventListener('click', e => {
   }
   else if (t.dataset.act === 'more') toggleMore();
   else if (t.dataset.act === 'copy-link') copyLink();
+  else if (t.dataset.act === 'outfit') wearOutfit(+t.dataset.o);
+  else if (t.dataset.act === 'pick-outfit') pickOutfit(true);
   else if (t.dataset.act === 'ideas') { played = -Infinity; askIdeas(true); }   // found it themselves: no need to ask
   else if (t.dataset.act === 'ask-later') askIdeas(false);
   else if (t.dataset.act === 'ask-send') sendIdea();
@@ -7468,13 +7497,14 @@ const back = { token: Math.random().toString(36).slice(2), depth: 0, going: fals
 const moreOpen = () => !$('#more-menu').classList.contains('hidden');
 function opened() {
   const ins = $('#inspector').classList, sheetUp = ins.contains('open') && narrow() && !ins.contains('strip');
-  return [askOpen(), moreOpen(), ins.contains('open'), sheetUp].filter(Boolean).length;
+  return [askOpen(), moreOpen(), outfitOpen(), ins.contains('open'), sheetUp].filter(Boolean).length;
 }
 // The one on top shuts (Esc, and Back once for each step it takes).
 function stepOut() {
   const ins = $('#inspector').classList;
   if (askOpen()) askIdeas(false);
   else if (moreOpen()) toggleMore(false);
+  else if (outfitOpen()) pickOutfit(false);
   else if (ins.contains('open') && narrow() && !ins.contains('strip')) { ui.sheetUp = false; $('#inspector').scrollTop = 0; renderInspector(); }
   else if (ins.contains('open')) select(0);
   else return false;
@@ -7615,6 +7645,7 @@ function newWorld(seed) {
   showWorld(S.createWorld(seed));
   history.replaceState(history.state, '', meadowLink(seed));   // (the state: Back's step, if one's open)
   homeView();
+  pickOutfit(true);
 }
 
 // A new meadow opens close enough to see who lives there, HOME_TILES across the screen, over where most of them are:
