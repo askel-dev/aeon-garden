@@ -12,10 +12,11 @@
  *     (see "music" below), in keys that hold the pentatonic so it still fits.
  *     Over it all hangs a wind chime that rings more the more rabbits there are.
  *
- * Use: Sound.start() from a click, then Sound.update({ phase, season, speed, sky, bees, life, frogs }) a
+ * Use: Sound.start() from a click, then Sound.update({ phase, season, speed, sky, bees, life, frogs, trees }) a
  * few times a second (sky: how much of each weather is showing, 0..1; bees: how many are flying
  * on screen; life: how full the meadow is of rabbits, 0..1; frogs: 0..1,
- * the spring's spawn, for a croak now and then at night) and
+ * the spring's spawn, for a croak now and then at night; trees: 0..1, how much of the screen is under
+ * leafy crowns, for the leaves' rustle in the wind) and
  * Sound.play('birth', { species, pan, near, seen }) on events.
  */
 (() => {
@@ -30,11 +31,11 @@ const note = (deg, oct = 0) => {
 const rand = (a, b) => a + Math.random() * (b - a);
 const pick = a => a[Math.floor(Math.random() * a.length)];
 
-let ac = null, master, ducker, loud, fxBus, ambBus, musicBus, hush, reverb, noiseBuf, brownBuf;
+let ac = null, master, ducker, loud, fxBus, ambBus, musicBus, hush, reverb, noiseBuf, brownBuf, leafBuf;
 let enabled = true, volume = 0.6;
 const amb = {};                                    // ambient layers
 const LOUD = 1.4;                                  // thunder's level against the rest
-const state = { phase: 0.3, season: 0, speed: 1, sky: { clear: 1 }, bees: 0, life: 0.3, frogs: 0 };
+const state = { phase: 0.3, season: 0, speed: 1, sky: { clear: 1 }, bees: 0, life: 0.3, frogs: 0, trees: 0.5 };
 const last = {};                                   // per-sound cooldowns
 let recent = 0, recentAt = 0;                      // global voice budget
 
@@ -69,7 +70,7 @@ function start() {
   musicBus = ac.createGain(); musicBus.gain.value = 0.45; musicBus.connect(master);
   const musicVerb = ac.createGain(); musicVerb.gain.value = 0.45; musicBus.connect(musicVerb).connect(reverb);
 
-  noiseBuf = pinkNoise(4); brownBuf = brownNoise(4);
+  noiseBuf = pinkNoise(4); brownBuf = brownNoise(4); leafBuf = leafNoise(6);
   buildAmbience();
   setInterval(tickAmbience, 200);
 }
@@ -104,6 +105,26 @@ function brownNoise(sec) {
   const buf = ac.createBuffer(1, Math.floor(ac.sampleRate * sec), ac.sampleRate), d = buf.getChannelData(0);
   let last = 0;
   for (let i = 0; i < d.length; i++) { last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02; d[i] = last * 3.5; }
+  return buf;
+}
+
+// Leaves: noise cut into thousands of tiny ticks (one leaf brushing another), mostly soft with
+// now and then a crisp one, bunched into flurries that come and go, over a faint hiss. The
+// flurries go round a whole number of times, and a tick past the end comes in at the start, so it loops.
+function leafNoise(sec) {
+  const sr = ac.sampleRate, len = Math.floor(sr * sec), buf = ac.createBuffer(1, len, sr), d = buf.getChannelData(0);
+  const env = new Float32Array(len).fill(0.08), ph = Math.random() * 6;
+  const busy = t => 0.15 + 0.85 * (0.5 + 0.5 * Math.sin(2 * Math.PI * 5 * t / sec + ph) * Math.sin(2 * Math.PI * 2 * t / sec)) ** 2;
+  for (let n = 0, want = Math.floor(sec * 260); n < want;) {
+    const t = Math.random() * sec;
+    if (Math.random() > busy(t)) continue;
+    n++;
+    const at = Math.floor(t * sr), grain = Math.floor(sr * rand(0.003, 0.025)), amp = Math.random() ** 4;
+    for (let i = 0; i < grain * 3; i++) env[(at + i) % len] += amp * Math.min(1, i / (sr * 0.0008)) * Math.exp(-i / grain);
+  }
+  let top = 0;
+  for (let i = 0; i < len; i++) { d[i] = (Math.random() * 2 - 1) * env[i]; top = Math.max(top, Math.abs(d[i])); }
+  for (let i = 0; i < len; i++) d[i] /= top;
   return buf;
 }
 
@@ -260,6 +281,7 @@ const RULES = {
   season:  { gap: 4,    maxSpeed: 60 },
   extinct: { gap: 4,    maxSpeed: 60 },
   rain:    { gap: 3,    maxSpeed: 60 },
+  leaves:  { gap: 1,    maxSpeed: 60 },
   click:   { gap: 0.04, maxSpeed: 60 },
   step:    { gap: 0.1,  maxSpeed: 4, always: true },   // (a foot down is cheap and rhythmic: it never counts against the budget)
 };
@@ -401,6 +423,17 @@ const SOUNDS = {
       noise(o, t + 0.02, 0.22 / k, { from: 1300 * k * r, to: 1900, q: 0.6, peak: 0.2 * h, attack: 0.07 });   // the blades rustling
     }
   },
+  // One gust through the leaves, as the meadow's ambience plays them (the game never calls it: the lab's button).
+  leaves(t, o, { season = 2 }) {
+    const src = ac.createBufferSource(); src.buffer = leafBuf; src.loop = true;
+    const hp = ac.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 1400; hp.Q.value = 0.5;
+    const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 0.5;
+    const hi = [4000, 3200, 5000, 3800][season], g = ac.createGain(), len = 4.5;
+    lp.frequency.setValueAtTime(hi * 0.8, t); lp.frequency.linearRampToValueAtTime(hi * 1.05, t + 1.8); lp.frequency.linearRampToValueAtTime(hi * 0.8, t + len);
+    src.playbackRate.setValueAtTime(0.9, t); src.playbackRate.linearRampToValueAtTime(1.1, t + 1.8); src.playbackRate.linearRampToValueAtTime(0.9, t + len);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(2 * LEAVES, t + 1.8); g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+    src.connect(hp).connect(lp).connect(g).connect(o); src.start(t, rand(0, 5)); src.stop(t + len + 0.05);
+  },
   click(t, o) { partial(o, 1320, t, 0.06, 0.002, 0.05, 'triangle'); partial(o, 660, t, 0.05, 0.002, 0.08); },
 };
 
@@ -457,8 +490,21 @@ function windVoice() {
   return { f, g, wf, wg, p };
 }
 
+// The leaves of the trees on screen: two loops of leafNoise panned apart, a little out of step,
+// that flutter faster and brighter as a gust goes through them.
+function leafSide(pan, rate) {
+  const src = ac.createBufferSource(); src.buffer = leafBuf; src.loop = true; src.playbackRate.value = rate;
+  const hp = ac.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 1400; hp.Q.value = 0.5;
+  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 5000; lp.Q.value = 0.5;
+  const g = ac.createGain(); g.gain.value = 0;
+  const p = ac.createStereoPanner(); p.pan.value = pan;
+  src.connect(hp).connect(lp).connect(g).connect(p).connect(ambBus); src.start(0, rand(0, 5.5));
+  return { src, lp, g, rate };
+}
+
 function buildAmbience() {
   amb.wind = windVoice();
+  amb.leavesL = leafSide(-0.55, 0.97); amb.leavesR = leafSide(0.55, 1.04);
   amb.rainL = rainSide(-0.7, 2300); amb.rainR = rainSide(0.7, 2600);
   amb.rainLow = loopNoise('lowpass', 350, 0.5);
   amb.hum = hiveHum();
@@ -484,6 +530,8 @@ function mix() {
     hush: Math.max(sky('fog'), 0.7 * sky('snow')),
     bees: state.speed >= 15 ? 0 : Math.min(1, state.bees / 12),
     chimes: Math.min(1, state.life) ** 1.5 * (0.5 + 0.5 * dayness),    // a busy meadow, a busy chime
+    leaves: Math.min(1, state.trees) * [0.6, 0.75, 1, 0.12][s] * (1 - 0.8 * sky('snow')),   // fresh, full, dry, bare
+    leafHi: [4000, 3200, 5000, 3800][s],          // summer's full crowns are a soft shh, autumn's dry ones crisp
   };
 }
 
@@ -549,8 +597,16 @@ function windTick(now, m) {
   const hard = Math.max(0, m.wind * amb.gust - 0.4);
   if (b) amb.wind.wf.frequency.setTargetAtTime(note(b.deg) * (0.96 + 0.04 * env), now, 0.4);
   amb.wind.wg.gain.setTargetAtTime(WHISTLE * hard, now, 0.5);
+  // The leaves stir in the drift between gusts and rush as one goes through, louder on its side.
+  const l = LEAVES * m.leaves * Math.min(1.3, m.wind) * (0.1 + 0.2 * amb.calm + 0.8 * amb.gust) * (1 - 0.4 * m.rain);
+  for (const [side, v] of [[amb.leavesL, 1 - 0.6 * pan], [amb.leavesR, 1 + 0.6 * pan]]) {
+    side.g.gain.setTargetAtTime(l * v, now, 0.4);
+    side.src.playbackRate.setTargetAtTime(side.rate * (0.9 + 0.2 * amb.gust), now, 0.5);
+    side.lp.frequency.setTargetAtTime(m.leafHi * (0.8 + 0.25 * amb.gust), now, 0.5);
+  }
 }
 const WHISTLE = 1;                                 // kept well under the gust: a hint of a tone, not a note
+const LEAVES = 0.03;                               // the leaves at full rush: a soft shh well under the wind
 
 // Bees at work on screen: a faint drone in tune (D and A), with wings fluttering and a slow wobble.
 function hiveHum() {
