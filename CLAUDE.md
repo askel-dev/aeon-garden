@@ -54,7 +54,8 @@ morning with the satchel lost (`wakeForager`). The first fire comes next (PLAN.m
   piece 90 s): they fit any moment, lean towards a season at 1x, and the piano plays darker at night.
 - `index.html`: layout and styles. The world fills the screen: on it only a small pill top right
   (pause, sound, ••• with a link, an idea and a new meadow; on a phone the sound waits in •••), a toast line top
-  middle (`toast`) and the inspector. Axel wants to see the meadow, not big cards: new UI stays small, temporary and
+  middle (`toast`), now and then a big headline under it (`announce`: a new day or season, a first find, a friend's
+  meadow) and the inspector. Axel wants to see the meadow, not big cards: new UI stays small, temporary and
   close to the action. The cards are opaque parchment with a painted grain (`--paper`), never a `backdrop-filter`.
   Phones get slim bars (`narrow()`: up to 760px wide, or up to 500px tall on their side). Upright, the inspector is a
   bottom sheet; on their side (`short()`) it is a panel down the right. Either way it opens folded to one line (`stripHTML`):

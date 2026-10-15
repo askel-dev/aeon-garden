@@ -77,6 +77,7 @@ fire you made. (Today a new meadow opens on day 4 of spring: keep the season, ch
   forager and nearby trees lit warm on the fire's side, embers drifting up. One cached light, cut through the night's
   wash (`skyWash`/`laySky`), repainted only on a flicker step.
 - **Warmth:** the fire is stage 2's strongest warmth, and dries you.
+- **The first one** gets a gold headline (game.js `firstTime('fire', 'your first', 'Fire')`), as the first dish will.
 
 ## Stage 5: making camp
 Lighting the first fire makes camp (`w.camp`: where, and the fire), and it's a big moment: the flame flares, warm light

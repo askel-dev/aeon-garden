@@ -92,6 +92,21 @@
     font-size: 13px; line-height: 1.35; animation: pop-in 0.35s ease-out; transition: opacity 0.8s, transform 0.8s;
   }
   .news-item.gone { opacity: 0; transform: translateY(-6px); }
+  /* ---- a headline now and then (game.js announce): a new day or season, a first find, a friend's meadow. No card: big
+     italic words over the meadow, fading in and out, clicks going through. A first is bigger and gold, between two ✦. */
+  #announce { position: fixed; left: 0; right: 0; margin: 0 auto; top: calc(var(--top) + 60px); z-index: 2; pointer-events: none; text-align: center;
+    width: fit-content; max-width: min(calc(100vw - 32px), 460px); padding: 6px 22px 10px; box-sizing: border-box;
+    background: radial-gradient(closest-side, rgba(35, 28, 15, 0.3), transparent); color: #fff7e4;
+    text-shadow: 0 1px 2px rgba(40, 30, 15, 0.6), 0 0 16px rgba(40, 30, 15, 0.4);
+    opacity: 0; transform: translateY(-6px); transition: opacity 0.9s ease, transform 0.9s ease; }
+  #announce.on { opacity: 1; transform: none; }
+  #announce b { display: block; font-size: 22px; font-style: italic; font-weight: 500; line-height: 1.15; text-wrap: balance; }
+  #announce:is(.season, .join) b { font-size: 36px; line-height: 1.1; }
+  #announce small { display: block; font-size: 12px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.85; white-space: nowrap; }
+  #announce p { margin: 5px 0 0; font-size: 15px; font-weight: 650; line-height: 1.35; text-wrap: balance; }
+  #announce.first b { font-size: 40px; line-height: 1.1; color: #ffe39a;
+    text-shadow: 0 1px 2px rgba(60, 35, 5, 0.7), 0 0 22px rgba(255, 190, 80, 0.55), 0 0 40px rgba(40, 30, 15, 0.4); }
+  #announce.first b::before, #announce.first b::after { content: '✦'; font-size: 0.45em; vertical-align: middle; margin: 0 0.5em; font-style: normal; }
   @keyframes pop-in { from { transform: translateY(8px) scale(0.97); opacity: 0; } to { transform: none; opacity: 1; } }
   /* ---- top right: time and sound, then the inspector below */
   #hud-right { position: fixed; top: var(--top); right: var(--right); bottom: var(--bottom); z-index: 5; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; pointer-events: none; }
@@ -232,6 +247,8 @@
     #hud-right { left: var(--left); }
     #time { --hud-h: 44px; gap: 2px; padding: 0 4px; }
     #news { top: calc(var(--top) + 52px); }   /* (under the pill, which may reach the middle) */
+    #announce { top: calc(var(--top) + 100px); }
+    #announce b { font-size: 19px; } #announce:is(.season, .join) b { font-size: 30px; } #announce.first b { font-size: 32px; } #announce p { font-size: 14px; }
     /* ••• as tiles, three to a row; starting over stays a row of its own at the bottom */
     #more-menu:not(.hidden) { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; width: min(300px, calc(100vw - 32px)); min-width: 0; }
     #more-menu .menu-item { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 5px; padding: 10px 4px 9px;
@@ -403,6 +420,7 @@
 <canvas id="world"></canvas>
 <!-- a word now and then, gone in a few seconds (game.js toast) -->
 <div id="news"></div>
+<div id="announce" aria-live="polite"></div>
 
 <!-- the forager's body (game.js renderVitals): frost at the edges while freezing, the dark it collapses into, and over the
      satchel two slim bars, warmth and stamina -->

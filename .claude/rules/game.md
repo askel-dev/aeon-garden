@@ -13,6 +13,14 @@ Drawing, the camera, the inspector. The world fills the screen; over it only a s
 watching game's cards, news feed, stats, journal, tools, intro and idle camera were cut on the `cooking` branch
 (main at 1d79f03 has them); the pocket watch that told the day and the year went later (git history before its removal).
 
+Headlines (`announce`, index.html `#announce`): big Fraunces italic words over the meadow with no card, under the toast,
+fading in and out, clicks going through. The old watching game's daybreak lines brought back (cut in da8079b): each new
+day at sunrise (`daybreakTick`, with `morningWord` when the morning is frosty or wet), a new season bigger with what it
+brings (`SEASON_LINES`, hand-written: keep them true to sim.js's seasons), where we are a moment after a meadow opens, a
+friend's meadow as you join, and the first of anything in gold between ✦s (`firstTime`, kept across meadows in
+`aeon-garden-firsts`; a first find says its recipes.js `text`). One at a time: the rest wait, except a day's line, which
+is dropped. None while a card is open or the forager is down. The first fire and the first dish go through `firstTime`.
+
 The forager (sim.js `w.forager`; how it walks is in ecology.md) is painted in fur.js like a fox (`paintForager`,
 `foragerPose`, `foragerParts`: a rust hood with a flopping point, a round face, a moss cloak, mittens, a satchel, boots), in
 three views (side on, three-quarters from the front and the back, all facing left and mirrored going right) and eight

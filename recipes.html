@@ -105,7 +105,7 @@ $('dishes').innerHTML = RECIPES.map(r => {
 }).join('');
 
 $('ingredients').innerHTML = '<tr><th></th><th>id</th><th>Name</th><th>Tags</th><th>Fills</th><th>Raw</th></tr>' +
-  Object.entries(INGREDIENTS).map(([id, g]) => `<tr><td>${g.icon || ''}</td><td><code>${esc(id)}</code></td><td>${esc(g.name)}</td>
+  Object.entries(INGREDIENTS).map(([id, g]) => `<tr><td>${g.icon || ''}</td><td><code>${esc(id)}</code></td><td>${esc(g.name)}${g.text ? `<div class="text">${esc(g.text)}</div>` : ''}</td>
     <td>${g.tags.map(t => `<span class="chip tag">${esc(t)}</span>`).join('')}</td><td>${g.fill}</td><td>${g.raw === false ? 'no' : 'yes'}</td></tr>`).join('');
 
 // The pot: tap ingredients (and dishes made here) in, see what comes out.

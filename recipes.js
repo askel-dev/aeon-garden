@@ -21,33 +21,33 @@ const STATIONS = {
 
 // What the meadow gives. The ids of the ones the sim grows are the sim's own (SHROOMS, the greens, a tree's fruit or
 // mast). fill: how much it fills the tummy eaten raw. raw: false if it can't be eaten as it is. icon: an emoji to stand
-// in until it has a painted one.
+// in until it has a painted one. text: a line said under its name the first time it goes in the satchel.
 const INGREDIENTS = {
-  apple:       { name: 'Apple',               tags: ['fruit'],          fill: 1,   icon: '🍎' },
-  cherry:      { name: 'Cherries',            tags: ['fruit', 'berry'], fill: 1,   icon: '🍒' },
-  blackberry:  { name: 'Blackberries',        tags: ['fruit', 'berry'], fill: 1,   icon: '🫐' },
-  honey:       { name: 'Honey',               tags: ['sweet'],          fill: 2,   icon: '🍯' },
-  cep:         { name: 'Cep',                 tags: ['mushroom'],       fill: 1.5, icon: '🍄' },
-  chanterelle: { name: 'Chanterelles',        tags: ['mushroom'],       fill: 1,   icon: '🍄' },
-  field:       { name: 'Field mushroom',      tags: ['mushroom'],       fill: 1,   icon: '🍄' },
-  oyster:      { name: 'Oyster mushroom',     tags: ['mushroom'],       fill: 1,   icon: '🍄' },
-  sulphur:     { name: 'Chicken of the woods', tags: ['mushroom'],      fill: 2,   icon: '🍄', raw: false },
-  garlic:      { name: 'Wild garlic',         tags: ['greens'],         fill: 0.5, icon: '🌿' },
-  nettle:      { name: 'Nettles',             tags: ['greens'],         fill: 0.5, icon: '🌿', raw: false },
-  acorns:      { name: 'Acorns',              tags: ['nut'],            fill: 1,   icon: '🌰', raw: false },
-  beechnuts:   { name: 'Beechnuts',           tags: ['nut'],            fill: 1,   icon: '🌰' },
-  hazelnut:    { name: 'Hazelnuts',           tags: ['nut'],            fill: 1,   icon: '🌰' },
-  dandelion:   { name: 'Dandelions',          tags: ['greens', 'flower'], fill: 0.5, icon: '🌼' },
-  sorrel:      { name: 'Sorrel',              tags: ['greens'],         fill: 0.5, icon: '🌿' },
-  watercress:  { name: 'Watercress',          tags: ['greens'],         fill: 0.5, icon: '🥬' },
-  strawberry:  { name: 'Wild strawberries',   tags: ['fruit', 'berry'], fill: 1,   icon: '🍓' },
-  elderflower: { name: 'Elderflower',         tags: ['flower'],         fill: 0.5, icon: '💮' },
-  rosehip:     { name: 'Rosehips',            tags: ['fruit'],          fill: 0.5, icon: '🌹', raw: false },
+  apple:       { name: 'Apple',               tags: ['fruit'],          fill: 1,   icon: '🍎', text: 'Windfalls in the grass under the tree, sweet with a bruise.' },
+  cherry:      { name: 'Cherries',            tags: ['fruit', 'berry'], fill: 1,   icon: '🍒', text: 'Dark and warm from the sun, picked in pairs by the stalk.' },
+  blackberry:  { name: 'Blackberries',        tags: ['fruit', 'berry'], fill: 1,   icon: '🫐', text: 'Off the brambles, mind the thorns. One for the satchel, one for you.' },
+  honey:       { name: 'Honey',               tags: ['sweet'],          fill: 2,   icon: '🍯', text: 'Taken gently, leaving the bees what they need.' },
+  cep:         { name: 'Cep',                 tags: ['mushroom'],       fill: 1.5, icon: '🍄', text: 'A fat brown cap on a white stem: the cook\'s favourite.' },
+  chanterelle: { name: 'Chanterelles',        tags: ['mushroom'],       fill: 1,   icon: '🍄', text: 'Golden, smelling faintly of apricots.' },
+  field:       { name: 'Field mushroom',      tags: ['mushroom'],       fill: 1,   icon: '🍄', text: 'Pink gills under a white cap, up after the rain.' },
+  oyster:      { name: 'Oyster mushroom',     tags: ['mushroom'],       fill: 1,   icon: '🍄', text: 'Soft grey shelves on a fallen log.' },
+  sulphur:     { name: 'Chicken of the woods', tags: ['mushroom'],      fill: 2,   icon: '🍄', raw: false, text: 'Orange shelves on a dead tree. Never raw: it wants cooking.' },
+  garlic:      { name: 'Wild garlic',         tags: ['greens'],         fill: 0.5, icon: '🌿', text: 'You smell it before you see it.' },
+  nettle:      { name: 'Nettles',             tags: ['greens'],         fill: 0.5, icon: '🌿', raw: false, text: 'Pinched by the tops. They sting raw, but not once cooked.' },
+  acorns:      { name: 'Acorns',              tags: ['nut'],            fill: 1,   icon: '🌰', raw: false, text: 'Bitter raw. They need soaking and roasting.' },
+  beechnuts:   { name: 'Beechnuts',           tags: ['nut'],            fill: 1,   icon: '🌰', text: 'Little three-sided nuts from under the beeches.' },
+  hazelnut:    { name: 'Hazelnuts',           tags: ['nut'],            fill: 1,   icon: '🌰', text: 'Cracked between two stones, sweet and milky.' },
+  dandelion:   { name: 'Dandelions',          tags: ['greens', 'flower'], fill: 0.5, icon: '🌼', text: 'Every bit of it is good to eat, flower to root.' },
+  sorrel:      { name: 'Sorrel',              tags: ['greens'],         fill: 0.5, icon: '🌿', text: 'Sharp and lemony. A leaf to wake a dish up.' },
+  watercress:  { name: 'Watercress',          tags: ['greens'],         fill: 0.5, icon: '🥬', text: 'Peppery, from the cold shallows.' },
+  strawberry:  { name: 'Wild strawberries',   tags: ['fruit', 'berry'], fill: 1,   icon: '🍓', text: 'Tiny, and sweeter than any from a garden.' },
+  elderflower: { name: 'Elderflower',         tags: ['flower'],         fill: 0.5, icon: '💮', text: 'Creamy flat heads that smell of summer.' },
+  rosehip:     { name: 'Rosehips',            tags: ['fruit'],          fill: 0.5, icon: '🌹', raw: false, text: 'Red and bright in the cold. Full of hairs: cook them first.' },
   // What lies on the ground for a fire: not food. 'tinder' catches the spark, 'fuel' keeps it going.
-  stick:       { name: 'Sticks',              tags: ['fuel'],           fill: 0,   icon: '🪵', raw: false },
-  pebble:      { name: 'Pebbles',             tags: ['stone'],          fill: 0,   icon: '🪨', raw: false },
-  drygrass:    { name: 'Dry grass',           tags: ['tinder'],         fill: 0,   icon: '🌾', raw: false },
-  birchbark:   { name: 'Birch bark',          tags: ['tinder'],         fill: 0,   icon: '📜', raw: false },
+  stick:       { name: 'Sticks',              tags: ['fuel'],           fill: 0,   icon: '🪵', raw: false, text: 'Something to keep a fire going.' },
+  pebble:      { name: 'Pebbles',             tags: ['stone'],          fill: 0,   icon: '🪨', raw: false, text: 'Smooth stones, to ring a fire.' },
+  drygrass:    { name: 'Dry grass',           tags: ['tinder'],         fill: 0,   icon: '🌾', raw: false, text: 'Dry stems from the long grass, to catch a spark.' },
+  birchbark:   { name: 'Birch bark',          tags: ['tinder'],         fill: 0,   icon: '📜', raw: false, text: 'Papery curls that catch even when damp.' },
 };
 
 // The dishes. Only name and needs are a must. The rest, when left out:

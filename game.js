@@ -2568,6 +2568,7 @@ function gatherFrame(now) {
     pickFloats.push(floatOf(r.id, r.n, s.x, s.y, at));
     flyToSlot(r.id, gx, gy, r.into[r.into.length - 1]);
     chime('pick', { n: r.n });
+    firstFind(r.id);
   }, lands);
 }
 
@@ -7692,6 +7693,73 @@ function toast(html) {
   setTimeout(() => { el.classList.add('gone'); setTimeout(() => el.remove(), 800); }, TOAST_MS);
 }
 
+// A headline now and then: big italic words over the meadow with no card (index.html #announce). Each new day at sunrise
+// ("Spring, day 3", with a word on the morning when it's frosty or wet), a new season bigger with what it brings, the first
+// of anything in the satchel in gold (firstTime), and a friend's meadow as you come in. One at a time: one that comes while
+// another is up waits its turn, but a day's line isn't worth waiting for. None while a card is open or the forager is down.
+const ANNOUNCE_MS = { day: 5500, season: 6500, first: 6000, join: 6000 };
+const ANNOUNCE_FADE = 1000;                             // (index.html: it fades out in 0.9 s)
+const SEASON_LINES = [
+  'Wild garlic and nettles are up, and dandelions in the grass.',
+  'Cherries on the trees, strawberries at the wood\'s edge, elderflower by the water.',
+  'Blackberries on the brambles, apples falling, nuts and mushrooms in the woods.',
+  'Rosehips in the scrub and watercress in the shallows. Keep warm.',
+];
+const announcing = { el: $('#announce'), timer: 0, until: 0, wait: [], day: -1, openAt: 0 };
+function announce(kind, head, line = '') {
+  const a = announcing, now = performance.now();
+  if (now < a.until) { if (kind !== 'day' && a.wait.length < 4) a.wait.push([kind, head, line]); return; }
+  a.el.className = `on ${kind}`;
+  a.el.innerHTML = head + (line ? `<p>${line}</p>` : '');
+  a.until = now + ANNOUNCE_MS[kind] + ANNOUNCE_FADE;
+  clearTimeout(a.timer);
+  a.timer = setTimeout(() => {
+    a.el.classList.remove('on');
+    a.timer = setTimeout(() => { const n = a.wait.shift(); if (n) announce(...n); }, ANNOUNCE_FADE);
+  }, ANNOUNCE_MS[kind]);
+}
+const canAnnounce = () => !document.hidden && world.forager.down < 0 && !outfitOpen() && !nameOpen() && !askOpen();
+
+// A few times a second: a new day's line at sunrise (S.phaseOf: a day starts there), and where we are as a meadow opens.
+function daybreakTick(now) {
+  const a = announcing, day = Math.floor(world.tick / S.TPD), last = a.day, ck = S.clock(world), name = S.SEASONS[ck.season].name;
+  a.day = day;
+  if (a.openAt && now >= a.openAt) {
+    a.openAt = 0;
+    if (canAnnounce()) announce('day', `<b class="fr">${name}, day ${ck.dayInSeason}</b><small>year ${ck.year}</small>`, SEASON_LINES[ck.season]);
+  }
+  if (last < 0 || day !== last + 1 || !canAnnounce()) return;   // (no line for days skipped: a meadow opened, a friend's)
+  if (ck.dayInSeason > 1) { announce('day', `<b class="fr">${name}, day ${ck.dayInSeason}</b>`, morningWord()); return; }
+  announce('season', `<b class="fr">${name}</b><small>year ${ck.year}</small>`, SEASON_LINES[ck.season]);
+  chime('season', { season: ck.season });
+}
+function morningWord() {
+  const k = world.weather.kind;
+  if (k === 'snow') return 'Snow falling.';
+  if (world.snow > 0.3) return 'Snow on the ground.';
+  if (world.frozen) return 'The water is frozen over.';
+  if (k === 'storm') return 'A storm blowing.';
+  if (k === 'rain') return 'Rain this morning.';
+  if (k === 'fog') return 'Fog over the meadow.';
+  if (S.airTemp(world) < 0) return 'Frost on the grass.';
+  if (k === 'heat') return 'It\'ll be a hot one.';
+  return '';
+}
+
+// The first of anything, ever: kept in the browser across meadows (what's in the satchel as a meadow opens counts as found
+// already, so a meadow from before this came doesn't greet you with old friends). The first fire and the first dish come
+// through here too.
+const firsts = new Set();
+try { for (const k of JSON.parse(localStorage.getItem('aeon-garden-firsts') || '[]')) firsts.add(k); } catch (e) { /* fine */ }
+function firstTime(key, small, head, line = '') {
+  if (firsts.has(key)) return;
+  firsts.add(key);
+  try { localStorage.setItem('aeon-garden-firsts', JSON.stringify([...firsts])); } catch (e) { /* fine */ }
+  announce('first', `<small>${small}</small><b class="fr">${head}</b>`, line);
+  chime('rainbow');
+}
+const firstFind = id => { const g = Recipes.INGREDIENTS[id]; if (g) firstTime(id, 'first find', esc(g.name), esc(g.text || '')); };
+
 const link = c => c ? `<a data-id="${c.id}">${esc(c.name)}</a>` : 'someone';
 const esc = s => String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
 
@@ -9138,7 +9206,7 @@ function heardWorld(m, now) {
   net.hostId = m.from; net.later.length = 0; net.hostSums.clear(); net.mySums.clear(); net.off = 0;
   setClock(m.tick, m.s, now, true);
   const host = cleanName(m.n);
-  if (!again) toast(`🧺 You’re in ${host ? esc(host) + '’s' : 'your friend’s'} meadow. Forage together!`);
+  if (!again) { announce('join', `<small>you’re in</small><b class="fr">${host ? esc(host) + '’s' : 'your friend’s'} meadow</b>`, 'Forage together!'); chime('rainbow'); }
 }
 // A guest's forager comes in beside the host's (it's the host's, unpacked): fresh, with an empty satchel.
 function arrive(f) {
@@ -9864,6 +9932,7 @@ function resumeWorld(rec) {
     const w = S.unpackWorld(rec.kept);
     if (!w) throw new Error('kept by another version');
     showWorld(w);
+    for (const id of w.forager.bag) if (id) firsts.add(id);   // (found already: see firstTime)
     S.step(world);                                    // a meadow that can't take a step is no good
     flushEvents();
   } catch (e) {
@@ -9942,6 +10011,7 @@ function showWorld(w) {
   const mix = Object.fromEntries(Object.keys(S.WEATHER).map(k => [k, k === world.weather.kind ? 1 : 0]));
   Object.assign(ui.sky, { mix, tick: world.tick, bolts: [], rainbow: -1e9, bowEnd: -1e9 });
   $('#news').innerHTML = '';
+  announcing.day = -1; announcing.wait.length = 0; announcing.openAt = performance.now() + 1500;
   cam.zoom = minZoom; cam.x = S.W / 2; cam.y = S.H / 2; cam.goal = null;
   clampCam();
   paintTerrain();
@@ -10088,6 +10158,7 @@ function frame(now) {
 
   if (now - lastCard > 250) {
     wakeTick(now);
+    daybreakTick(now);
     askTick(Math.min(now - lastCard, 1000));
     furAhead(now);
     lastCard = now;
