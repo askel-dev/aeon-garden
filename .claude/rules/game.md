@@ -43,8 +43,14 @@ CSS gradients only, shown only then) and a soft heartbeat (sound.js `heart`, `HE
 stamina (amber and pulsing while winded), each shown only while not full. Collapsed it tips over (`FALL_MS`) with its eyes shut (pose 7), the screen goes dark
 (`#veil`, `DARK_AFTER`), and `bodyFrame` runs the sim `SKIP_MS` a frame till it wakes at home (`bodyWoke`: the camera there at
 once, a toast, three soft notes: sound.js `wake`). Out of breath (`f.winded`) a press, Shift or a held run only walks it.
+A new meadow opens like a film (`startIntro`, `#intro`): black bars top and bottom from the first frame, the rest of the page
+away (`body.intro`), "Nobody's Meadow" and "Spring · late afternoon" fading in and out in the lower bar (`INTRO_NAME`), the
+camera craning down onto the forager from `INTRO_WIDE` of its zoom and `INTRO_RISE` tiles up over `INTRO_CRANE` (`introLeft`,
+in `leadCam`), then the bars slide off at `INTRO_MS` and the page fades back, the cloak's card after it if one's still to pick.
+A click, a tap or a key cuts it short and does nothing else (a capturing listener); a kept meadow and a friend's (`heardWorld`)
+open without it. The zoom moves through it, so the ground repaints those few seconds, with nothing else going on.
 A new meadow opens in a storm late in the afternoon (sim.js `START_PHASE`): a moment after it's on screen (`OPENING_MS`) the
-forager says to itself what it needs, "It's freezing. I need a fire before dark." (`openingLine`, `OPENING_LINE`), in a bubble over
+forager says to itself what it needs, "It's freezing. I need a fire before dark." (`openingLine`, `OPENING_LINE`; in the intro at `INTRO_LINE`), in a bubble over
 it as a line of chat is (`myChat`), in italics (`chatArt`'s `thought`; a `\n` in the game's own words breaks the line there). A
 friend joining during the opening storm hears it too (`heardWorld`), and the storm blowing over brings the rainbow as any rain does.
 A click or a tap on an animal (on its body as drawn: `animalAt`, a little wider for a finger) opens its panel;

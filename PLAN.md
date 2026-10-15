@@ -68,6 +68,8 @@ till the next morning; the forager arrives at 0.78 warmth (it slips into chilly 
 in an italic bubble over it. Playing together: a friend joining during the opening storm arrives cold and wet too and hears the
 line; the weather needs nothing sent (guests run the host's sim). Without a fire the first night kills towards dawn unless the
 forager keeps walking and keeps dry, which is the point of stage 4.
+Then (Axel) made more cinematic: it opens letterboxed, the name in the lower bar, the camera craning down out of the storm onto
+the forager, and the bars slide off after 7 s (a click, a tap or a key cuts it short).
 
 ## Stage 4: the campfire
 - **Building:** about 6 pebbles, 5 sticks and a handful of tinder. Choose a spot near the forager; it kneels and lays

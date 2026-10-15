@@ -9024,6 +9024,7 @@ function heardWorld(m, now) {
   if (!w) { toast('🧺 Your friend’s meadow is from another version of the game. Reload both pages.'); return; }
   const again = net.tick >= 0 && m.to, mine = again ? world.forager : null, zoom = cam.zoom;
   showWorld(w);
+  endIntro(true);                                        // (a friend's meadow: no opening of our own over it)
   if (mine) w.forager = mine;                            // (the same meadow again: its own forager stays as it was)
   else { arrive(w.forager); pr.n = 0; pr.next = 0; }
   cam.zoom = zoom; cam.x = world.forager.x; cam.y = world.forager.y - CAM_FEET * forPx() / cam.zoom; clampCam();
@@ -9630,18 +9631,55 @@ function newWorld(seed) {
   pr.n = 0; pr.next = 0;                   // (no footprints from the last meadow)
   history.replaceState(history.state, '', pageLink(seed));   // (the state: Back's step, if one's open)
   homeView();
-  if (!fg.picked) pickOutfit(true);             // (only till one has been picked: after that it's in •••)
-  openingLine();
+  startIntro();                                 // (the cloak's card, if it's wanted, comes as the intro ends)
 }
+
+// A new meadow's opening, like the start of a film: black bars come in top and bottom, everything else on the page goes,
+// the name fades in in the lower bar, and the camera cranes down out of the storm onto the forager (INTRO_CRANE: from
+// INTRO_WIDE of its zoom and INTRO_RISE tiles up, eased in leadCam). The forager says its line (openingLine), and the
+// bars slide off (INTRO_MS), the page coming back. A click, a tap or a key cuts it short (and does nothing else).
+const INTRO_MS = 7000, INTRO_NAME = [700, 4600], INTRO_CRANE = 5500, INTRO_WIDE = 0.55, INTRO_RISE = 5, INTRO_LINE = 3600;
+const intro = { on: false, t0: 0, z: 0, timers: [] };
+function startIntro() {
+  endIntro(true);
+  const box = $('#intro');
+  intro.on = true; intro.t0 = performance.now(); intro.z = cam.zoom;
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) intro.t0 -= INTRO_CRANE;   // (no crane)
+  document.body.classList.add('intro');
+  box.classList.add('on');
+  const later = (ms, f) => intro.timers.push(setTimeout(f, ms));
+  later(INTRO_NAME[0], () => box.classList.add('named'));
+  later(INTRO_NAME[1], () => box.classList.remove('named'));
+  later(INTRO_MS, () => endIntro());
+  openingLine(INTRO_LINE);
+}
+function endIntro(quiet) {
+  for (const t of intro.timers) clearTimeout(t);
+  intro.timers.length = 0;
+  if (!intro.on) return;
+  intro.on = false;
+  cam.zoom = intro.z; clampCam();
+  $('#intro').classList.remove('on', 'named');
+  document.body.classList.remove('intro');
+  if (!quiet && !fg.picked) pickOutfit(true);   // (only till one has been picked: after that it's in •••)
+}
+// The crane, in leadCam: how far up and how much wider the camera still is, 1 at the start to 0.
+const introLeft = now => intro.on ? 1 - smooth(0, INTRO_CRANE, now - intro.t0) : 0;
+for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, e => {
+  if (!intro.on || e.target.closest?.('input,textarea')) return;
+  e.preventDefault(); e.stopPropagation();
+  if (ui.sound) Sound.start();
+  endIntro();
+}, { capture: true });
 
 // A new meadow opens in a storm late in the afternoon (sim.js START_PHASE), the forager cold and wet: a moment after it's on
 // screen, it says to itself what it needs (in a bubble over it, as a line of chat, in italics), and so does a friend's
 // forager coming in during the storm.
 const OPENING_LINE = 'It’s freezing.\nI need a fire before dark.';
 const OPENING_MS = 1600;
-function openingLine() {
+function openingLine(ms = OPENING_MS) {
   const w = world;
-  setTimeout(() => { if (world === w && S.openingStorm(w) && w.forager.down < 0) myChat = chatFor(OPENING_LINE, performance.now(), true); }, OPENING_MS);
+  setTimeout(() => { if (world === w && S.openingStorm(w) && w.forager.down < 0) myChat = chatFor(OPENING_LINE, performance.now(), true); }, ms);
 }
 
 // A new meadow opens close enough to see who lives there, HOME_TILES across the screen, over where most of them are:
@@ -9861,8 +9899,10 @@ function leadCam(dt) {
   fg.lx += (Math.cos(f.heading) * v * CAM_AHEAD - fg.lx) * a; fg.ly += (Math.sin(f.heading) * v * CAM_AHEAD - fg.ly) * a;
   const k = 1 - Math.exp(-dt * CAM_FOLLOW);
   const sx = sheet ? (sheet.right - sheet.left) / 2 / cam.zoom : 0, sy = sheet ? (sheet.bottom - sheet.top) / 2 / cam.zoom : 0;   // (clear of the inspector)
+  const up = intro.on ? introLeft(performance.now()) : 0;      // (a new meadow's crane down onto it: startIntro)
+  if (intro.on) cam.zoom = Math.max(fitZoom, intro.z * (1 - (1 - INTRO_WIDE) * up));
   cam.x += (p.x + fg.lx + sx - cam.x) * k;
-  cam.y += (p.y - CAM_FEET * forPx() / cam.zoom + fg.ly + sy - cam.y) * k;
+  cam.y += (p.y - CAM_FEET * forPx() / cam.zoom + fg.ly + sy - INTRO_RISE * up - cam.y) * (intro.on ? 1 : k);
 }
 
 // ------------------------------------------------------------------ start
