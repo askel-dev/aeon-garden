@@ -37,6 +37,8 @@ const amb = {};                                    // ambient layers
 const LOUD = 1.4;                                  // thunder's level against the rest
 const state = { phase: 0.3, season: 0, sky: { clear: 1 }, bees: 0, life: 0.3, frogs: 0, trees: 0.5 };
 const last = {};                                   // per-sound cooldowns
+const picking = { n: 0, at: -1e9, base: 0 };       // the picks in a row (SOUNDS.pick)
+const PICK_CHAIN = 2.5;                            // s: a pick within this of the last climbs on
 let recent = 0, recentAt = 0;                      // global voice budget
 
 // ------------------------------------------------------------------ setup
@@ -269,6 +271,29 @@ function breathe(dest, t, dur, from, to, peak, swell) {
   noise(dest, t, dur, { from: from * 0.45, to: to * 0.45, q: 0.8, peak: peak * 0.6, attack: dur * swell });   // (its body)
 }
 
+// A warm swell under a moment: soft detuned triangles on the notes fs, through a low-pass that opens as it swells and
+// closes as it goes, in and out over len seconds.
+function pad(dest, fs, t, len, v = 1) {
+  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 0.4;
+  lp.frequency.setValueAtTime(450, t); lp.frequency.linearRampToValueAtTime(1500, t + len * 0.35); lp.frequency.linearRampToValueAtTime(500, t + len);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.045 * v, t + len * 0.3);
+  g.gain.setTargetAtTime(0.0001, t + len * 0.5, len * 0.12);
+  lp.connect(g).connect(dest);
+  for (const f of fs) for (const c of [-5, 5]) {
+    const o = ac.createOscillator(); o.type = 'triangle'; o.frequency.value = f; o.detune.value = c + rand(-2, 2);
+    o.connect(lp); o.start(t); o.stop(t + len + 0.2);
+  }
+}
+// The glitter on a moment: n tiny high notes from the degrees degs, scattered over a while and across the stereo, thinning out.
+function twinkle(t, degs, n, over, v = 1) {
+  for (let i = 0; i < n; i++)
+    celesta(out(rand(-0.8, 0.8), 0.6), note(pick(degs), 2), t + over * Math.pow(i / n, 1.4) + rand(0, 0.06), 0.22 * v * (1 - 0.6 * i / n));
+}
+// A sparkle rushing up into a moment: bright noise that swells and lifts, peaking at t + len.
+const whoosh = (dest, t, len, v = 1) => noise(dest, t, len + 0.15, { from: 1400, to: 7000, q: 0.7, peak: 0.05 * v, attack: len });
+const CHORDS = { D: [0, 2, 3], Bm: [-1, 0, 2], DA: [3, 5, 7], A: [1, 3, 5], Em: [1, 4, 6] };   // (in the pentatonic's degrees)
+
 // ------------------------------------------------------------------ events
 
 // How long each sound waits before it may play again; free: it doesn't count against the creature sounds' budget.
@@ -291,7 +316,11 @@ const RULES = {
   leaves:  { gap: 1,    free: true },
   click:   { gap: 0.04, free: true },
   step:    { gap: 0.1, always: true },   // (a foot down is cheap and rhythmic: it never counts against the budget)
-  pick:    { gap: 0.15, always: true },
+  pick:    { gap: 0.08, always: true },
+  pluck:   { gap: 0.08, always: true },
+  dawn:    { gap: 4,    free: true },
+  found:   { gap: 1.5,  free: true },
+  welcome: { gap: 4,    free: true },
   heart:   { gap: 0.6,  always: true },
   collapse: { gap: 2,   always: true },
   shiver:  { gap: 1.5,  always: true },
@@ -359,10 +388,47 @@ const SOUNDS = {
     const v = voiceOf(species), k = octOf(species);
     [0, 2, 1, 3, 4].forEach((d, i) => v(o, note(d, k), t + i * 0.13, 0.5));
   },
-  // Each season has its own four-bell phrase.
+  // Each season has its own four-bell phrase, over a low piano note and a swell of the season's chord, with glitter
+  // falling as the last bell rings.
   season(t, o, { season = 0 }) {
     const phrases = [[0, 2, 4, 7], [4, 5, 7, 9], [7, 5, 4, 2], [4, 2, 1, 0]];
-    phrases[season].forEach((d, i) => bell(o, note(d, -1), t + i * 0.42, 0.55));
+    const chord = [CHORDS.D, CHORDS.DA, CHORDS.Bm, CHORDS.Em][season];
+    piano(o, note(chord[0], -2), t, 0.45, 4, 0.6);
+    pad(o, chord.map(d => note(d, -1)), t, 6, 1);
+    phrases[season].forEach((d, i) => bell(o, note(d, -1), t + 0.12 + i * 0.42, i === 3 ? 0.7 : 0.55));
+    twinkle(t + 1.4, chord, 8, 2.2, season === 3 ? 0.6 : 0.9);
+  },
+  // A new day's line: a soft "good morning", two piano notes up, a little swell and one glint. Quiet (one comes every
+  // twelve minutes), and never quite the same twice.
+  dawn(t, o) {
+    const chord = pick([CHORDS.D, CHORDS.D, CHORDS.Bm, CHORDS.DA]), a = chord[0], b = pick(chord.slice(1)) + pick([0, 5]);
+    piano(o, note(a, 0), t, 0.3, 1.6, 0.8);
+    piano(o, note(b, 0), t + rand(0.2, 0.28), 0.28, 2.4, 0.8);
+    pad(o, chord.map(d => note(d, -1)), t, 3.2, 0.55);
+    celesta(out(rand(-0.6, 0.6), 0.6), note(b, 2), t + 0.6, 0.14);
+  },
+  // The first of anything: a sparkle rushing up a quick run into a warm chord of bells, a low piano note under it, and
+  // glitter that hangs. Made afresh each time (which chord, which run, how the glitter falls), so a run of firsts never
+  // sounds the same twice.
+  found(t, o) {
+    const chord = pick([CHORDS.D, CHORDS.D, CHORDS.DA, CHORDS.A]), land = 0.36, from = chord[0] - pick([3, 4, 5]);
+    whoosh(o, t, land);
+    const run = [0, 1, 2, 3, 4].map(i => from + i + (i > 1 && Math.random() < 0.3 ? 1 : 0));
+    run.forEach((d, i) => kalimba(o, note(d, 1), t + i * land / run.length, 0.18 + i * 0.04));
+    chord.forEach((d, i) => bell(out([-0.45, 0.45, 0][i], 0.5), note(d, 0), t + land + i * 0.025, 0.5));
+    celesta(o, note(chord[0], 2), t + land, 0.3);
+    piano(o, note(chord[0], -2), t + land, 0.45, 3.5, 0.6);
+    pad(o, chord.map(d => note(d, -1)), t + land - 0.2, 4.5, 1);
+    twinkle(t + land + 0.25, chord, 10, 2.4);
+  },
+  // Coming into a friend's meadow: a warm rolled piano chord, a bell on top, a swell and glitter. Hello!
+  welcome(t, o) {
+    const chord = pick([CHORDS.D, CHORDS.DA]);
+    whoosh(o, t, 0.3, 0.7);
+    [chord[0] - 5, ...chord, chord[0] + 5].forEach((d, i) => piano(o, note(d, -1), t + 0.3 + i * 0.07, 0.32, 3, 0.8));
+    bell(o, note(chord[2], 0), t + 0.75, 0.45);
+    pad(o, chord.map(d => note(d, -1)), t + 0.2, 5, 1);
+    twinkle(t + 0.9, chord, 8, 2);
   },
   extinct(t, o) {
     bell(o, note(2, -1), t, 0.6);
@@ -510,8 +576,68 @@ const SOUNDS = {
     piano(o, note(2, 0), t + 0.32, 0.3, 1.2, 0.7);
     piano(o, note(4, 0), t + 0.64, 0.3, 2.2, 0.7);
   },
-  // The forager picks something: a soft pluck, two notes of the scale stepping up, a little higher the more it got.
-  pick(t, o, { n = 1 }) { const d = Math.min(4, Math.floor(n / 3)); kalimba(o, note(d + 2, 1), t, 0.45); kalimba(o, note(d + 4, 1), t + 0.09, 0.4); },
+  // The forager's hand takes something (what: the ingredient's first tag, recipes.js), each its own sound and none the
+  // same twice: berries and fruit a stalk's snap and a leafy rustle, greens a tear, a mushroom a soft twist and pop, nuts
+  // clicking in the palm, honey a sticky gloop, sticks a crack, pebbles a clack, tinder a dry crackle. They come often,
+  // so they're small and soft.
+  pluck(t, o0, { what = '' }) {
+    const o = ac.createBiquadFilter(); o.type = 'lowpass'; o.frequency.value = 5000; o.Q.value = 0.5; o.connect(o0);
+    const r = rand(0.85, 1.15), snap = (dt, f, v) => noise(o, t + dt, 0.025, { from: f * r, to: f * 0.6 * r, q: 1.4, peak: v, attack: 0.002 });
+    const knock = (dt, f, v, len = 0.05, type = 'triangle') => partial(o, f * r, t + dt, v, 0.002, len, type);
+    const rustle = (dt, len, v) => noise(o, t + dt, len, { from: rand(1500, 2200), to: rand(3000, 4200), q: 0.8, peak: v, attack: len * 0.3 });
+    if (what === 'fruit' || what === 'berry') {
+      rustle(0, rand(0.12, 0.2), 0.06);
+      snap(rand(0.03, 0.06), 3200, 0.14);
+      const f = rand(700, 1000) * r, p = ac.createOscillator(), g = ac.createGain();   // the pop as it comes away
+      p.frequency.setValueAtTime(f, t + 0.06); p.frequency.exponentialRampToValueAtTime(f * 0.55, t + 0.12);
+      g.gain.setValueAtTime(0.0001, t + 0.06); g.gain.exponentialRampToValueAtTime(0.07, t + 0.065); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.13);
+      p.connect(g).connect(o); p.start(t + 0.06); p.stop(t + 0.15);
+    } else if (what === 'greens' || what === 'flower') {
+      rustle(0, rand(0.15, 0.22), 0.07);
+      for (let i = 0, n = 2 + (Math.random() * 2 | 0); i < n; i++) snap(0.04 + i * rand(0.025, 0.04), rand(2200, 3400), rand(0.06, 0.1));   // the stems tearing
+    } else if (what === 'mushroom') {
+      const f = rand(260, 360), p = ac.createOscillator(), g = ac.createGain();         // a twist and a soft pop out of the ground
+      p.frequency.setValueAtTime(f, t); p.frequency.exponentialRampToValueAtTime(f * 0.5, t + 0.08);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.16, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.11);
+      p.connect(g).connect(o); p.start(t); p.stop(t + 0.14);
+      noise(o, t, 0.1, { from: 900, to: 300, q: 0.7, peak: 0.12, attack: 0.01, type: 'lowpass' });
+    } else if (what === 'nut') {
+      for (let i = 0, n = 2 + (Math.random() * 3 | 0); i < n; i++) knock(i * rand(0.04, 0.07), rand(1100, 1800), rand(0.04, 0.07), 0.04);
+    } else if (what === 'sweet') {
+      const f = ac.createBiquadFilter(), src = ac.createBufferSource(), g = ac.createGain();   // honey: a sticky gloop
+      src.buffer = noiseBuf; src.loop = true; f.type = 'bandpass'; f.Q.value = 6;
+      f.frequency.setValueAtTime(rand(250, 320), t); f.frequency.exponentialRampToValueAtTime(rand(800, 1000), t + 0.18);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.5, t + 0.05); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.24);
+      src.connect(f).connect(g).connect(o); src.start(t, rand(0, 3)); src.stop(t + 0.3);
+      partial(o, rand(180, 220), t + 0.02, 0.06, 0.03, 0.15);
+    } else if (what === 'fuel') {
+      snap(0, 2600, 0.22); knock(0, 420, 0.1, 0.06);
+      for (let i = 0, n = 1 + (Math.random() * 2 | 0); i < n; i++) snap(rand(0.02, 0.07), rand(2000, 3200), rand(0.08, 0.14));
+    } else if (what === 'stone') {
+      const f = rand(2300, 3000);
+      knock(0, f, 0.08, 0.06, 'sine'); knock(0, f * 1.47, 0.03, 0.04, 'sine');
+      knock(rand(0.06, 0.09), f * rand(0.85, 1.1), 0.05, 0.05, 'sine');
+      snap(0, 3500, 0.06);
+    } else if (what === 'tinder') {
+      rustle(0, 0.18, 0.05);
+      for (let i = 0, n = 4 + (Math.random() * 3 | 0); i < n; i++) snap(rand(0, 0.16), rand(2800, 4200), rand(0.04, 0.08));
+    } else rustle(0, 0.15, 0.06);
+  },
+  // It lands in the satchel: a soft plop into the cloth and a bright little "ding-ding" from the scale. Picks in a row
+  // climb the scale one step each (like coins), so a run of picking rises; after a pause it starts again somewhere low.
+  // Which instrument, which interval and the timing vary a little every time. own: false for a friend's pick (it
+  // doesn't climb). n: how many came, a third sparkle note for a handful.
+  pick(t, o, { n = 1, own = true }) {
+    const c = picking;
+    if (own) { if (t - c.at < PICK_CHAIN) c.n = Math.min(c.n + 1, 6); else { c.n = 0; c.base = pick([0, 1, 2]); } c.at = t; }
+    const d = own ? c.base + c.n : Math.floor(rand(0, 4)), v = rand(0.9, 1.1), voice = Math.random() < 0.6 ? kalimba : celesta;
+    noise(o, t, 0.08, { from: 500, to: 150, q: 0.6, peak: 0.12, attack: 0.006, type: 'lowpass' });   // the plop
+    partial(o, rand(120, 150), t, 0.08, 0.004, 0.08);
+    voice(o, note(d, 1), t, 0.4 * v);
+    const gap = rand(0.06, 0.09);
+    voice(o, note(d + pick([2, 2, 3]), 1), t + gap, 0.34 * v);
+    if (n >= 3) celesta(o, note(d + 5, 1), t + gap * 2, 0.2 * v);
+  },
 };
 
 // opts: { species, pan (-1..1), near (0..1, how close to the camera), ...sound-specific }

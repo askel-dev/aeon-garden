@@ -2541,6 +2541,9 @@ function goGather(t, run = false) {
   else if (w.why) { const s = gatherSpot(t.kind, t.it); say(w.why, s.x, s.y); }
 }
 
+// What the hand sounds like taking it (sound.js pluck): the ingredient's first tag.
+const pickSound = id => { const g = Recipes.INGREDIENTS[id]; return g && g.tags[0] || ''; };
+
 // Once a frame: there, it picks; stopped short (it couldn't get there), it says so.
 function gatherFrame(now) {
   const g = ui.gather, F = world.forager;
@@ -2566,8 +2569,8 @@ function gatherFrame(now) {
   setTimeout(() => {
     if (!world) return;
     pickFloats.push(floatOf(r.id, r.n, s.x, s.y, at));
-    flyToSlot(r.id, gx, gy, r.into[r.into.length - 1]);
-    chime('pick', { n: r.n });
+    flyToSlot(r.id, gx, gy, r.into[r.into.length - 1], () => chime('pick', { n: r.n }));   // (the plop as it lands)
+    chime('pluck', { what: pickSound(r.id) });
     firstFind(r.id);
   }, lands);
 }
@@ -3020,9 +3023,9 @@ function renderSatchel() {
 
 // The thing flies from where it was picked (sx, sy) into its slot, and the slot bumps as it lands. One small element, a
 // few hundred ms, the browser's own animation.
-function flyToSlot(id, sx, sy, k) {
+function flyToSlot(id, sx, sy, k, landed) {
   const el = $('#satchel').querySelectorAll('.slot')[k ?? 0];
-  if (!el) { renderSatchel(); return; }
+  if (!el) { renderSatchel(); if (landed) landed(); return; }
   const r = el.getBoundingClientRect(), tx = r.left + r.width / 2, ty = r.top + r.height / 2;
   const fly = document.createElement('div');
   fly.className = 'fly'; fly.style.backgroundPosition = itemBg(id);
@@ -3031,7 +3034,7 @@ function flyToSlot(id, sx, sy, k) {
   const a = fly.animate([{ transform: `translate(${sx - 16}px, ${sy - 16}px) scale(0.7)`, opacity: 0.4 },
     { transform: `translate(${mx - 16}px, ${my - 16}px) scale(1.1)`, opacity: 1, offset: 0.4 },
     { transform: `translate(${tx - 16}px, ${ty - 16}px) scale(0.8)`, opacity: 1 }], { duration: 560, easing: 'ease-in' });
-  a.onfinish = () => { fly.remove(); renderSatchel(); el.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.18)' }, { transform: 'scale(1)' }], { duration: 220, easing: 'ease-out' }); };
+  a.onfinish = () => { fly.remove(); renderSatchel(); if (landed) landed(); el.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.18)' }, { transform: 'scale(1)' }], { duration: 220, easing: 'ease-out' }); };
 }
 
 function setupSatchel() {
@@ -7703,6 +7706,7 @@ function toast(html) {
 // of anything in the satchel in gold (firstTime), and a friend's meadow as you come in. One at a time: one that comes while
 // another is up waits its turn, but a day's line isn't worth waiting for. None while a card is open or the forager is down.
 const ANNOUNCE_MS = { day: 5500, season: 6500, first: 6000, join: 6000 };
+const ANNOUNCE_SOUND = { day: 'dawn', season: 'season', first: 'found', join: 'welcome' };   // (sound.js)
 const ANNOUNCE_FADE = 1000;                             // (index.html: it fades out in 0.9 s)
 const SEASON_LINES = [
   'Wild garlic and nettles are up, and dandelions in the grass.',
@@ -7716,6 +7720,7 @@ function announce(kind, head, line = '') {
   if (now < a.until) { if (kind !== 'day' && a.wait.length < 4) a.wait.push([kind, head, line]); return; }
   a.el.className = `on ${kind}`;
   a.el.innerHTML = head + (line ? `<p>${line}</p>` : '');
+  chime(ANNOUNCE_SOUND[kind], { season: world ? S.clock(world).season : 0 });
   a.until = now + ANNOUNCE_MS[kind] + ANNOUNCE_FADE;
   clearTimeout(a.timer);
   a.timer = setTimeout(() => {
@@ -7736,7 +7741,6 @@ function daybreakTick(now) {
   if (last < 0 || day !== last + 1 || !canAnnounce()) return;   // (no line for days skipped: a meadow opened, a friend's)
   if (ck.dayInSeason > 1) { announce('day', `<b class="fr">${name}, day ${ck.dayInSeason}</b>`, morningWord()); return; }
   announce('season', `<b class="fr">${name}</b><small>year ${ck.year}</small>`, SEASON_LINES[ck.season]);
-  chime('season', { season: ck.season });
 }
 function morningWord() {
   const k = world.weather.kind;
@@ -7761,7 +7765,6 @@ function firstTime(key, small, head, line = '') {
   firsts.add(key);
   try { localStorage.setItem('aeon-garden-firsts', JSON.stringify([...firsts])); } catch (e) { /* fine */ }
   announce('first', `<small>${small}</small><b class="fr">${head}</b>`, line);
-  chime('rainbow');
 }
 const firstFind = id => { const g = Recipes.INGREDIENTS[id]; if (g) firstTime(id, 'first find', esc(g.name), esc(g.text || '')); };
 
@@ -9211,7 +9214,7 @@ function heardWorld(m, now) {
   net.hostId = m.from; net.later.length = 0; net.hostSums.clear(); net.mySums.clear(); net.off = 0;
   setClock(m.tick, m.s, now, true);
   const host = cleanName(m.n);
-  if (!again) { announce('join', `<small>you’re in</small><b class="fr">${host ? esc(host) + '’s' : 'your friend’s'} meadow</b>`, 'Forage together!'); chime('rainbow'); }
+  if (!again) { announce('join', `<small>you’re in</small><b class="fr">${host ? esc(host) + '’s' : 'your friend’s'} meadow</b>`, 'Forage together!'); }
 }
 // A guest's forager comes in beside the host's (it's the host's, unpacked): fresh, with an empty satchel.
 function arrive(f) {
@@ -9338,7 +9341,8 @@ function peerPicked(m, now) {
   setTimeout(() => {
     if (!world) return;
     pickFloats.push(floatOf(m.id, m.n, x, y, at));
-    hear('pick', x, y, { n: m.n });
+    hear('pluck', x, y, { what: pickSound(m.id) });
+    hear('pick', x, y, { n: m.n, own: false });
   }, lands);
 }
 function friendGone(id) {
