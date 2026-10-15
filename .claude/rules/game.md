@@ -22,7 +22,11 @@ paintings a stride, eight more jogging for the sprint, plus standing, a fidget a
 half-size, so the planted foot doesn't slide; fur.js `FORAGER_REACH`), picks the view from the sim's heading with a margin
 either side so it doesn't flicker, and standing lets it breathe, blink, turn to face you after `FORAGER_TURN_MS` and fidget
 now and then (`FORAGER_FIDGET`). In the shallows it's cut off at its shins with a ring round its legs, and each step sends out
-a ring (`fg.rings`). Its shadow goes in with the animals' (`foragerShadow`). A tree standing in front of it (drawn after it, its painting's box over its body) fades to `SEE_A`, as in Project Zomboid, eased over `SEE_MS` (`seeThrough`, `fgBody`). `forager-lab.html` paints them all side by side. Its outfit is one of three (fur.js `FORAGER_OUTFITS`:
+a ring (`fg.rings`). Its shadow goes in with the animals' (`foragerShadow`). A tree standing in front of it (drawn after it, its painting's box over its body) fades to `SEE_A`, as in Project Zomboid, eased over `SEE_MS` (`seeThrough`, `fgBody`). What's drawn after all the trees (the fireflies, the leaves
+coming down, pollen, butterflies, splashes, the effects, the burrows' 💤) hides behind a leafy crown standing in front of it
+(`coverAt`): each crown drawn is kept as its kind's outline (`CROWNS`, `addCover`) in a coarse grid of the screen made once a
+frame (`buildCover`), soft at the edge (`COVER_EDGE`), half for first leaves or half fallen, nothing bare, and as little as
+it shows when faded (mist, the forager behind it). Pop-ups, labels and the selection stay on top. `forager-lab.html` paints them all side by side. Its outfit is one of three (fur.js `FORAGER_OUTFITS`:
 cloak, hood, rim), picked on a small card at the foot of the screen as a new meadow opens (till one has been picked) or from ••• (`pickOutfit`), kept in
 localStorage (`aeon-garden-outfit`).
 A click or a tap on an animal (on its body as drawn: `animalAt`, a little wider for a finger) opens its panel;

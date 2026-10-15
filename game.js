@@ -1165,6 +1165,7 @@ function render(now) {
   // Trees, rocks and animals, back to front.
   const items = frameItems;
   items.length = 0;
+  cover.n = 0; cover.built = false;                        // (the crowns drawn: coverAt)
   for (const d of world.decor) {                           // (a hive is in one of the trees)
     if (d.tree && d.size * z < SEEDLING_PX && !d.stump && !d.hedge) continue;   // a seedling too small to see from here (a hedge's whips always show)
     const [sx, sy] = onScreen(d.x, d.y), px = d.tree ? treePx(d) : d.size * z;
@@ -1263,8 +1264,8 @@ function render(now) {
       if (b.count <= 0) continue;
       const [sx, sy] = toScreen(b.x, b.y);
       if (!visible(sx, sy, 40)) continue;
-      const bob = Math.sin(now / 600 + b.id) * 3;
-      drawEmoji('💤', sx + z * 0.8, sy - z * 1.1 + bob, Math.max(11, z * 0.8), { alpha: 0.85 });
+      const bob = Math.sin(now / 600 + b.id) * 3, hid = coverAt(sx + z * 0.8, sy - z * 1.1, b.y);
+      if (hid < 0.98) drawEmoji('💤', sx + z * 0.8, sy - z * 1.1 + bob, Math.max(11, z * 0.8), { alpha: 0.85 * (1 - hid) });
     }
     for (const h of world.hives) {
       if (!h.bees || h.cluster) continue;
@@ -1364,6 +1365,7 @@ const CROWNS = {
   alder: [0.58, 1.26, 0.3, 0.39, 0.29, 0.21, 0.13],
   apple: [0.22, 0.62, 0.3, 0.36, 0.36, 0.32, 0.2], cherry: [0.22, 0.62, 0.3, 0.36, 0.36, 0.32, 0.2],
   pine: [0.3, 1.05, 0.36, 0.31, 0.25, 0.18, 0.12], hawthorn: [0.2, 0.5, 0.3, 0.33, 0.32, 0.28, 0.18],
+  hive: [0.4, 1.48, 0.55, 0.68, 0.7, 0.5, 0.3],    // (the giant: no crow sits in it, sim.js perchable, but it hides what's behind: coverAt)
 };
 const SEAT_OUT = 0.9;              // how far out along the crown's reach a seat on the side is
 const NEST_SEAT = [0.12, 0.85];    // the nest: a little to the side, high in the crown
@@ -3073,6 +3075,9 @@ function drawSplashes(now) {
     if (u >= 1 || u < 0) { splashes.splice(i, 1); continue; }
     const [sx, y0] = toScreen(s.x, s.y), px = s.size * cam.zoom, sy = y0 + px * 0.31;
     if (!visible(sx, sy, px)) continue;
+    const hid = coverAt(sx, sy - px * 0.4, s.y);            // (behind a tree on the bank)
+    if (hid > 0.98) continue;
+    ctx.globalAlpha = 1 - hid;
     ctx.lineWidth = Math.max(1, px * 0.03);
     ctx.strokeStyle = `rgba(240, 250, 255, ${0.7 * (1 - u)})`;
     ctx.beginPath(); ctx.ellipse(sx, sy, px * (0.18 + 0.5 * u), px * (0.06 + 0.15 * u), 0, 0, TAU); ctx.stroke();
@@ -3084,6 +3089,7 @@ function drawSplashes(now) {
     }
     ctx.fill();
   }
+  ctx.globalAlpha = 1;
 }
 
 // Where an otter went under: rings spreading on the water.
@@ -4367,9 +4373,9 @@ function treeLeaves(d, sx, sy, px, ck, f) {
     tier = near;
   }
   const [a, b, m] = treeStage(kind, d, ck);
-  const r = leafTrees[leafN] || (leafTrees[leafN] = { sx: 0, sy: 0, px: 0, n: 0, h: 0, f: 0, tier: 0, pick: null, ga: 0, gb: 0, m: 0 });
+  const r = leafTrees[leafN] || (leafTrees[leafN] = { sx: 0, sy: 0, wy: 0, px: 0, n: 0, h: 0, f: 0, tier: 0, pick: null, ga: 0, gb: 0, m: 0 });
   leafN++;
-  r.sx = sx; r.sy = sy; r.px = px; r.n = n; r.h = info.h; r.f = f; r.tier = tier; r.pick = leafPick[oak ? 'oak' : kind][d.tone ?? 0];
+  r.sx = sx; r.sy = sy; r.wy = d.y; r.px = px; r.n = n; r.h = info.h; r.f = f; r.tier = tier; r.pick = leafPick[oak ? 'oak' : kind][d.tone ?? 0];
   r.ga = oak && a === 'winter' ? 2 : LEAF_GROUP[a]; r.gb = b ? LEAF_GROUP[b] : r.ga; r.m = m;   // (an oak's winter look: its dry leaves)
 }
 
@@ -4399,7 +4405,11 @@ function drawLeaves(now, lying) {
         const lay = q - fallMs, w = smooth(0, LEAF_SETTLE_MS, lay);
         side += ((side < 0 ? -1 : 1) - side) * w; flat = 1 - (1 - LEAF_FLAT) * w;
         alpha = Math.min(1, (LEAF_LIE_MS - lay) / LEAF_FADE_MS);
-      } else alpha = Math.min(1, q / 500);
+      } else {                                              // (in the air: hidden by the crowns in front of its tree)
+        const hid = coverAt(x, y, r.wy);
+        if (hid > 0.98) continue;
+        alpha = Math.min(1, q / 500) * (1 - hid);
+      }
       // Its colour, as its crown is: green or its own autumn colour, a few in its kind's others; lit or a little less.
       let group = hash2(g, c, 12) < r.m ? r.gb : r.ga;
       if (group === 0 && hash2(g, c, 16) > LEAF_GREEN) group = 1;
@@ -4681,20 +4691,21 @@ function drawPaintedTree(d, sx, sy, now, ck, stage = S.treeStage(world, d), px =
     A = treeKin.get(ART_KINDS[kind] * ART_LOOK_N + ART_LOOKS[look]) || treeAny.get(treeKey(kind, shape, tone, form));
     if (!A) { wantKin(kind, look, true); if (!treeWaits.has(d)) treeWaits.set(d, 0); return false; }
   }
-  let fade = 1;
+  let show = 1;
   const t0 = treeWaits.get(d);
   if (t0 !== undefined) {
     if (!t0) treeWaits.set(d, now);
-    fade = t0 ? Math.min(1, (now - t0) / FADE_MS) : 0;
-    if (fade >= 1) treeWaits.delete(d);
+    show = t0 ? Math.min(1, (now - t0) / FADE_MS) : 0;
+    if (show >= 1) treeWaits.delete(d);
   }
-  fade *= 1 - (1 - SEE_A) * seeThrough(d, A || B, f, sx, sy);
+  show *= 1 - (1 - SEE_A) * seeThrough(d, A || B, f, sx, sy);
+  if (!wood && stage !== 'dead') addCover(d, kind, sx, sy, px, form, a, b, m, show * fade);   // (fade: the mist's)
   const r = wood ? 0 : treeSway(d, now) * (stage === 'dead' ? 0.4 : 1), still = Math.abs(r) * px < 0.5;   // a sway too small to see isn't drawn
   // Swaying from the foot. A tree is only ever drawn in render's own transform, so it's set back as it was, with no
   // save and restore (turning it back by the inverse leaves it a hair off, and Chrome then draws what follows another way).
   if (!still) { const c = Math.cos(r) * dpr, s = Math.sin(r) * dpr; ctx.setTransform(c, s, -s, c, sx * dpr + shakeX, sy * dpr + shakeY); }
-  if (A) putPainting(A, f, fade, snow, still ? sx : 0, still ? sy : 0);
-  if (B) putPainting(B, f, (A ? m : 1) * fade, snow, still ? sx : 0, still ? sy : 0);
+  if (A) putPainting(A, f, show, snow, still ? sx : 0, still ? sy : 0);
+  if (B) putPainting(B, f, (A ? m : 1) * show, snow, still ? sx : 0, still ? sy : 0);
   if (!still) ctx.setTransform(dpr, 0, 0, dpr, shakeX, shakeY);
   return true;
 }
@@ -4715,6 +4726,75 @@ function seeThrough(d, p, f, sx, sy) {
   const u = want ? Math.min(1, v + seeDt / SEE_MS) : Math.max(0, v - seeDt / SEE_MS);
   if (u) seeing.set(d, u); else seeing.delete(d);
   return u * u * (3 - 2 * u);
+}
+// What the leafy crowns drawn this frame hide (coverAt, 0..1). Whatever is drawn after all the trees (the fireflies, the
+// leaves coming down, pollen, butterflies, splashes, the effects, the snores) would else show through a crown standing in
+// front of it. Each crown is its kind's outline (CROWNS) where it's drawn (addCover), kept in a coarse grid of the screen
+// (COVER_CELL), made at the first test of a frame, so a test looks only at the few crowns about it. The edge hides less
+// (COVER_EDGE), as a crown thins out there; a crown in first leaves or half fallen hides half (COVER_LOOK), a bare one
+// nothing, and one faded (in the mist, in front of the forager, coming in) as little as it shows.
+const COVER_CELL = 64;                     // px
+const COVER_EDGE = 0.3;                    // of its reach, and of its height top and bottom: where a crown hides only partly
+const COVER_MIN = 24;                      // px: a tree drawn smaller hides nothing
+const COVER_LOOK = { bud: 0.5, thin: 0.5 };
+const cover = { n: 0, max: 0, x: null, y: null, px: null, wy: null, f: null, w: null, k: [], built: false, cols: 0, rows: 0, start: null, list: null };
+function addCover(d, kind, sx, sy, px, young, a, b, m, show) {
+  if (px < COVER_MIN || show < 0.05) return;
+  const dense = (1 - m) * (bareLook(kind, a) ? 0 : COVER_LOOK[a] ?? 1) + (b ? m * (bareLook(kind, b) ? 0 : COVER_LOOK[b] ?? 1) : 0);
+  if (dense * show < 0.05) return;
+  const C = cover;
+  if (C.n === C.max) {                     // (grown now and then, never shrunk)
+    const max = Math.max(256, C.max * 2), grow = (old, T) => { const t = new T(max); if (old) t.set(old); return t; };
+    C.x = grow(C.x, Float32Array); C.y = grow(C.y, Float32Array); C.px = grow(C.px, Float32Array); C.wy = grow(C.wy, Float32Array);
+    C.f = grow(C.f, Float32Array); C.w = grow(C.w, Float32Array); C.max = max;
+  }
+  const i = C.n++;
+  C.x[i] = sx; C.y[i] = sy; C.px[i] = px; C.wy[i] = d.y; C.f[i] = dense * show; C.w[i] = young ? 0.75 : 1; C.k[i] = CROWNS[kind] || CROWNS.oak;
+  C.built = false;
+}
+// The cells each crown's box covers, counted, then filled (a counting sort: no arrays made, but when the screen grows).
+function coverCells(i, fn) {
+  const C = cover, k = C.k[i], px = C.px[i], r = Math.max(k[2], k[3], k[4], k[5], k[6]) * px * C.w[i];
+  const x0 = Math.max(0, ((C.x[i] - r) / COVER_CELL) | 0), x1 = Math.min(C.cols - 1, ((C.x[i] + r) / COVER_CELL) | 0);
+  const y0 = Math.max(0, ((C.y[i] - k[1] * px) / COVER_CELL) | 0), y1 = Math.min(C.rows - 1, ((C.y[i] - k[0] * px) / COVER_CELL) | 0);
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) fn(y * C.cols + x, i);
+}
+let coverFill = 0;
+const coverCount = c => { cover.start[c + 1]++; coverFill++; };
+const coverPut = (c, i) => { cover.list[cover.start[c]++] = i; };
+function buildCover() {
+  const C = cover;
+  C.cols = Math.ceil(vw / COVER_CELL) + 1; C.rows = Math.ceil(vh / COVER_CELL) + 1;
+  const cells = C.cols * C.rows;
+  if (!C.start || C.start.length < cells + 1) C.start = new Int32Array(cells + 1);
+  C.start.fill(0, 0, cells + 1); coverFill = 0;
+  for (let i = 0; i < C.n; i++) coverCells(i, coverCount);
+  for (let c = 0; c < cells; c++) C.start[c + 1] += C.start[c];
+  if (!C.list || C.list.length < coverFill) C.list = new Int32Array(coverFill * 2);
+  for (let i = 0; i < C.n; i++) coverCells(i, coverPut);            // (each start runs on to the next's: shifted back below)
+  for (let c = cells; c > 0; c--) C.start[c] = C.start[c - 1];
+  C.start[0] = 0;
+  C.built = true;
+}
+// How much of what's drawn at (sx, sy) on screen, standing at wy in the meadow, the crowns in front of it hide.
+function coverAt(sx, sy, wy) {
+  const C = cover;
+  if (!C.n || sx < 0 || sy < 0 || sx >= vw || sy >= vh) return 0;
+  if (!C.built) buildCover();
+  const c = ((sy / COVER_CELL) | 0) * C.cols + ((sx / COVER_CELL) | 0);
+  let most = 0;
+  for (let j = C.start[c], e = C.start[c + 1]; j < e; j++) {
+    const i = C.list[j];
+    if (C.wy[i] <= wy || C.f[i] <= most) continue;                 // (behind it, or hides no more than one already found)
+    const k = C.k[i], px = C.px[i], t = ((C.y[i] - sy) / px - k[0]) / (k[1] - k[0]);
+    if (t <= 0 || t >= 1) continue;
+    const s = t * 4, n = Math.min(3, s | 0), reach = (k[2 + n] + (k[3 + n] - k[2 + n]) * (s - n)) * px * C.w[i];
+    const out = Math.abs(sx - C.x[i]) / reach;
+    if (out >= 1) continue;
+    const h = C.f[i] * Math.min(1, (1 - out) / COVER_EDGE, t / COVER_EDGE, (1 - t) / COVER_EDGE);
+    if (h > most) { most = h; if (most > 0.98) return 1; }
+  }
+  return most;
 }
 function putPainting(p, f, alpha, snow, ox, oy) {
   const k = f / p.scale, x = ox - p.bx * k, y = oy - p.by * k, w = p.w * k, h = p.h * k;
@@ -5879,10 +5959,13 @@ function drawEffects(now) {
   const px = Math.max(14, cam.zoom * 1.2);
   for (const e of ui.effects) {
     const a = (now - e.t0) / e.dur;
-    const [sx, sy] = toScreen(e.x, e.y);
+    const [sx, y0] = toScreen(e.x, e.y), sy = y0 - px * 0.8 - e.rise * px * a;
+    if (!visible(sx, sy, px)) continue;
+    const hid = coverAt(sx, sy, e.y);
+    if (hid > 0.98) continue;
     const s = sprite(e.emoji, px * 1.1), size = s.size * (0.8 + 0.3 * Math.sin(a * Math.PI)) / 1.1;
-    ctx.globalAlpha = 1 - a * a;
-    ctx.drawImage(s.canvas, sx - size / 2, sy - px * 0.8 - e.rise * px * a - size / 2, size, size);
+    ctx.globalAlpha = (1 - a * a) * (1 - hid);
+    ctx.drawImage(s.canvas, sx - size / 2, sy - size / 2, size, size);
   }
   ctx.globalAlpha = 1;
 }
@@ -6017,16 +6100,18 @@ function drawPollen(now) {
     const t = Math.max(0, a), out = t * (2 - t);        // quick out, slowing down
     const sx = (pollen.x[i] + pollen.vx[i] * out - cam.x) * z + vw / 2;          // (toScreen, without an array per speck)
     const sy = (pollen.y[i] + pollen.vy[i] * out + 0.25 * t * t - cam.y) * z + vh / 2;
+    const hid = coverAt(sx, sy, pollen.y[i] + 0.15);    // (it burst at the flower, a little up off it)
+    if (hid > 0.98) continue;
     if (pollen.vx[i] === 0 && pollen.vy[i] === 0) {      // the twinkle: a little cross that shrinks
       const r = s * 4 * (1 - t) * Math.min(1, t * 8);    // pops open, then shrinks away
-      ctx.globalAlpha = 0.95 * (1 - t);
+      ctx.globalAlpha = 0.95 * (1 - t) * (1 - hid);
       ctx.fillStyle = '#fff6c8';
       ctx.fillRect(sx - r, sy - s * 0.35, r * 2, s * 0.7);
       ctx.fillRect(sx - s * 0.35, sy - r, s * 0.7, r * 2);
       continue;
     }
     const d = 2 * s * (1 - 0.4 * t);                    // (the dot's soft edge is half of it)
-    ctx.globalAlpha = 1 - t * t;
+    ctx.globalAlpha = (1 - t * t) * (1 - hid);
     ctx.drawImage(POLLEN_DOTS[i & 1], sx - d / 2, sy - d / 2, d, d);
   }
   ctx.globalAlpha = 1;
@@ -6090,7 +6175,9 @@ function drawFireflies(now, dark) {
       const glow = Math.sin(Math.PI * p / 0.4);
       const sx = bx + z * 1.4 * Math.sin(t * (0.25 + 0.2 * h) + h * 40);
       const sy = by - z * (0.5 + 0.35 * Math.sin(t * (0.37 + 0.2 * h) + h * 70));
-      ctx.globalAlpha = a * glow;
+      const hid = coverAt(sx, sy, y0);                       // behind the leaves of a tree in front
+      if (hid > 0.98) continue;
+      ctx.globalAlpha = a * glow * (1 - hid);
       ctx.drawImage(FIREFLY_GLOW, sx - d / 2, sy - d / 2, d, d);
     }
   }
@@ -6115,11 +6202,15 @@ function drawButterflies(now, ck) {
       const x = c.x + r * Math.sin(t * (0.13 + 0.08 * h) + h * 30) + 0.3 * Math.sin(t * 1.7 + h * 9);
       const y = c.y + r * 0.7 * Math.sin(t * (0.19 + 0.06 * h) + h * 50);
       const sx = (x - cam.x) * z + vw / 2, sy = (y - cam.y) * z + vh / 2 - px * (0.9 + 0.3 * Math.abs(Math.sin(t * 2.3 + h * 7)));
-      if (!visible(sx, sy, px) || !fadeAt(x, y)) continue;
+      if (!visible(sx, sy, px)) continue;
+      const hid = coverAt(sx, sy, y);
+      if (hid > 0.98 || !fadeAt(x, y)) continue;
       const s = sprite('🦋', px, tint), flap = 0.4 + 0.6 * Math.abs(Math.sin(t * 13 + h * 20));
+      ctx.globalAlpha = 1 - hid;
       ctx.drawImage(s.canvas, sx - s.size * flap / 2, sy - s.size / 2, s.size * flap, s.size);
     }
   }
+  ctx.globalAlpha = 1;
   unfade();
 }
 
