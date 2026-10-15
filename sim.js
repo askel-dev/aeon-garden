@@ -5193,6 +5193,15 @@ const FORAGER_GIRTH = 0.22;             // how near a rock's side it comes, midd
 // How far out from its middle a rock is in the way, in its sizes (its main stone as game.js paints it); pebbles and a
 // ford's stones it walks over.
 const ROCK_SOLID = { pebbles: 0, ford: 0, stone: 0.34, boulder: 0.6, great: 0.6 };
+// Trees and brambles aren't in its way like a rock: it pushes through them, slower, and is eased round the trunk, as in
+// Project Zomboid. Each is a circle about its foot (BRUSH_R plus BRUSH_GROW of its size, plus FORAGER_GIRTH) that slows
+// it by up to its slow at the middle, less toward the edge, and pushes it out sideways by up to BRUSH_PUSH of its step.
+const BRUSH_TREE = { r: 0.28, grow: 0.08, slow: 0.5 };      // a standing tree (or a snag), by its size
+const BRUSH_THORN = { r: 0.3, grow: 0.1, slow: 0.6 };       // a hawthorn: a thorn bush, wider and thicker
+const BRUSH_BRAMBLE = { r: 0.35, grow: 0.22, slow: 0.6 };   // a bramble patch, by its size (1 or 2)
+const BRUSH_PUSH = 0.55;                // of a step, at a trunk's middle
+const BRUSH_COST = 2;                   // a step through brush that slows it all the way costs this much more
+const BRUSH_NEAR = 2.5;                 // tiles about it it looks for brush in, again once it's gone a tile
 
 // Every field it ever has, in one order (see blankCreature). path: the way, as x, y pairs; leg: the pair it's heading
 // for; speed, heading: tiles a tick, radians (0 east, pi / 2 down the screen); moved: how far it went last tick;
@@ -5253,14 +5262,66 @@ function outOfRocks(x, y, fromX, fromY) {
   rockX = x; rockY = y;
 }
 
+// The brush about: each tree and bramble as x, y, r, slow (brushNear, for foragerTick, from what's within BRUSH_NEAR of
+// where it looked last), and how much each tile's middle slows it (brushTile, for the way: A* and taut). Both gathered
+// again at most once a game hour, as trees grow, fall and come up; the grid only when a way is wanted.
+let brushW = null, brushHour = -1, brushNear = new Float32Array(64), brushN = 0, brushX = -1e9, brushY = -1e9, brushNearHour = -1;
+let brushTile = null;
+const hourOf = w => Math.floor(w.tick / (TPD / 24));
+function brushOf(d) {                    // the brush a tree or bramble is, into brushR, brushS (0: none)
+  brushR = 0; brushS = 0;
+  if (d.bramble) { if (d.size > 0) { brushR = BRUSH_BRAMBLE.r + BRUSH_BRAMBLE.grow * d.size + FORAGER_GIRTH; brushS = BRUSH_BRAMBLE.slow; } return; }
+  if (!d.tree || d.stump || d.fallen || d.gone || d.size < SEEDLING) return;
+  const k = d.kind === 'hawthorn' ? BRUSH_THORN : BRUSH_TREE;
+  brushR = k.r + k.grow * d.size + FORAGER_GIRTH; brushS = k.slow * clamp((d.size - SEEDLING) / 1.2, 0.3, 1);   // (a sapling barely)
+}
+let brushR = 0, brushS = 0;
+const brushAt = (q, slow) => slow * q * (2 - q);  // how much it slows, q of the way in from the edge (firm soon in)
+function brushGrid(w) {
+  const hour = hourOf(w);
+  if (brushW === w && brushHour === hour && brushTile) return;
+  brushW = w; brushHour = hour; brushNearHour = -1;
+  if (!brushTile) brushTile = new Float32Array(W * H);
+  brushTile.fill(0);
+  const stamp = d => {
+    brushOf(d);
+    if (!brushS) return;
+    for (let ty = Math.max(0, Math.floor(d.y - brushR)); ty <= Math.min(H - 1, Math.floor(d.y + brushR)); ty++)
+      for (let tx = Math.max(0, Math.floor(d.x - brushR)); tx <= Math.min(W - 1, Math.floor(d.x + brushR)); tx++) {
+        const dd = Math.hypot(tx + 0.5 - d.x, ty + 0.5 - d.y);
+        if (dd >= brushR) continue;
+        const i = ty * W + tx, h = brushAt(1 - dd / brushR, brushS);
+        brushTile[i] = 1 - (1 - brushTile[i]) * (1 - h);
+      }
+  };
+  for (const d of w.decor) if (!d.gone) stamp(d);
+  for (const b of w.brambles) stamp(b);
+}
+function brushAbout(w, x, y) {
+  const hour = hourOf(w);
+  if (brushW === w && brushNearHour === hour && Math.abs(x - brushX) < 1 && Math.abs(y - brushY) < 1) return;
+  if (brushW !== w) { brushW = w; brushHour = -1; }
+  brushNearHour = hour; brushX = x; brushY = y; brushN = 0;
+  const add = d => {
+    brushOf(d);
+    if (!brushS || Math.abs(d.x - x) > BRUSH_NEAR + brushR || Math.abs(d.y - y) > BRUSH_NEAR + brushR) return;
+    if (brushN * 4 >= brushNear.length) { const m = new Float32Array(brushNear.length * 2); m.set(brushNear); brushNear = m; }
+    const k = brushN++ * 4;
+    brushNear[k] = d.x; brushNear[k + 1] = d.y; brushNear[k + 2] = brushR; brushNear[k + 3] = brushS;
+  };
+  forEachDecorNear(w, x, y, BRUSH_NEAR + 1, add);
+  for (const b of w.brambles) add(b);
+}
+
 // A step's cost onto tile i, or 0 where it can't go.
 const canStand = (w, i) => (w.frozen || w.water[i] !== DEEP) && !solidTile[i];
 function stepCost(w, i) {
   if (solidTile[i]) return 0;
-  if (w.frozen) return 1;
+  const brush = 1 + BRUSH_COST * brushTile[i];
+  if (w.frozen) return brush;
   const v = w.water[i];
   if (v === DEEP) return 0;
-  let c = v === SHALLOW ? SHALLOW_COST : 1;
+  let c = v === SHALLOW ? SHALLOW_COST : brush;
   const x = i % W, y = (i / W) | 0;
   if ((x > 0 && w.water[i - 1] === DEEP) || (x < W - 1 && w.water[i + 1] === DEEP) || (y > 0 && w.water[i - W] === DEEP) || (y < H - 1 && w.water[i + W] === DEEP)) c += BRINK_COST;
   return c;
@@ -5323,12 +5384,14 @@ function tilePath(w, a, b) {
   return out.reverse();
 }
 
-// Whether the straight leg from x0, y0 to x1, y1 keeps clear of the rocks, TAUT_CLEAR off the deep, and (dry: the tiles' way didn't wade)
-// out of the shallows.
-function taut(w, x0, y0, x1, y1, dry) {
+// Whether the straight leg from x0, y0 to x1, y1 keeps clear of the rocks, TAUT_CLEAR off the deep, (dry: the tiles' way didn't wade)
+// out of the shallows, and out of brush thicker than thick (the thickest the tiles' way went through), so it doesn't cut
+// through the wood the way went round.
+function taut(w, x0, y0, x1, y1, dry, thick) {
   if (!pastRocks(x0, y0, x1, y1)) return false;
-  if (w.frozen) return true;
   const dx = x1 - x0, dy = y1 - y0, d = Math.hypot(dx, dy), n = Math.max(1, Math.ceil(d / 0.2));
+  for (let k = 1; k < n; k++) if (brushTile[idx(x0 + dx * k / n, y0 + dy * k / n)] > thick + 0.05) return false;
+  if (w.frozen) return true;
   const px = d ? -dy / d * TAUT_CLEAR : 0, py = d ? dx / d * TAUT_CLEAR : 0;
   for (let k = 0; k <= n; k++) {
     const x = x0 + dx * k / n, y = y0 + dy * k / n;
@@ -5346,7 +5409,7 @@ function taut(w, x0, y0, x1, y1, dry) {
 // on the deep or across it), or null if it's there already.
 function foragerTo(w, x, y) {
   const f = w.forager;
-  rocksFor(w);
+  rocksFor(w); brushGrid(w);
   x = clamp(x, 0.6, W - 0.6); y = clamp(y, 0.6, H - 0.6);
   outOfRocks(x, y, x, y + 1e9);                          // (sent onto a rock: to its edge, the side nearest the click)
   x = clamp(rockX, 0.6, W - 0.6); y = clamp(rockY, 0.6, H - 0.6);
@@ -5371,10 +5434,11 @@ function foragerTo(w, x, y) {
   const pts = [f.x, f.y];
   let ax = f.x, ay = f.y, a = 0;
   while (a < last) {
-    let dry = !wet(tiles[a]), ok = a + 1;
+    let dry = !wet(tiles[a]), thick = brushTile[tiles[a]], ok = a + 1;
     for (let b = a + 1; b <= last; b++) {
       if (wet(tiles[b])) dry = false;
-      if (taut(w, ax, ay, px(b), py(b), dry)) ok = b;
+      thick = Math.max(thick, brushTile[tiles[b]]);
+      if (taut(w, ax, ay, px(b), py(b), dry, thick)) ok = b;
       else if (b - ok > 4) break;                        // (well past where it lost sight)
     }
     a = ok; ax = px(a); ay = py(a);
@@ -5427,12 +5491,25 @@ function foragerTick(w) {
   f.heading += clamp(turn, -most, most);
   f.heading -= Math.round(f.heading / (2 * Math.PI)) * 2 * Math.PI;
   const wade = !w.frozen && w.water[idx(f.x, f.y)] === SHALLOW;
-  const top = (f.running ? FORAGER_RUN : FORAGER_WALK) * (wade ? FORAGER_WADE : 1) * clamp(Math.cos(turn) * 0.8 + 0.4, 0.15, 1);
+  // In brush: slowed, and pushed out from each trunk's middle (pushX, pushY, in its sizes), less as it nears where it's going.
+  brushAbout(w, f.x, f.y);
+  let free = 1, pushX = 0, pushY = 0;
+  for (let k = 0; k < brushN * 4; k += 4) {
+    const dx = f.x - brushNear[k], dy = f.y - brushNear[k + 1], r = brushNear[k + 2];
+    if (dx > r || dx < -r || dy > r || dy < -r) continue;
+    const d = Math.hypot(dx, dy);
+    if (d >= r) continue;
+    const q = 1 - d / r;
+    free *= 1 - brushAt(q, brushNear[k + 3]);
+    if (d > 1e-4) { pushX += dx / d * q; pushY += dy / d * q; }
+  }
+  const top = (f.running ? FORAGER_RUN : FORAGER_WALK) * (wade ? FORAGER_WADE : 1) * free * clamp(Math.cos(turn) * 0.8 + 0.4, 0.15, 1);
   const v = Math.min(top, Math.sqrt(2 * FORAGER_BRAKE * rest)), s = f.speed;
   f.speed = v > s ? Math.min(v, s + FORAGER_ACCEL) : Math.max(v, s - FORAGER_BRAKE * 2);
   if (rest < 0.02 || (rest < 0.1 && f.speed < 0.008)) { f.walking = false; f.running = false; f.speed = 0; f.path.length = 0; return; }
   const step = Math.min(f.speed, rest);
   let nx = f.x + Math.cos(f.heading) * step, ny = f.y + Math.sin(f.heading) * step;
+  if (pushX || pushY) { const p = BRUSH_PUSH * step * clamp(rest / 0.8, 0, 1); nx += pushX * p; ny += pushY * p; }
   rocksFor(w);
   outOfRocks(nx, ny, f.x, f.y); nx = rockX; ny = rockY;   // (a rock in the way: round it)
   if (!walkable(w, nx, ny)) {                            // (the water came up, or a corner clipped the deep: slide along it)
