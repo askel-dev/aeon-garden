@@ -52,6 +52,16 @@ with something to give glows (`GLOW_ART`, painted once, under it; a hive's over 
 its name by it and a hand for the pointer; one with nothing says why (sim.js `whatThere`), as a click on it does (`say`). The hover
 is looked up again only when the mouse moves, or every `AIM_MS` while the camera glides (`hoverFrame`, `aim`). "Satchel's full"
 says so by the forager and leaves the thing be.
+A click a little off one still goes for it (`snapTo`: `SNAP` px past its glow, `SNAP_FINGER` for a finger, more in reach). A press on
+something to pick is a tap however long it's held (held past `HOLD_MS`, it runs there, `drag.rush`) and needs a bigger move to become
+a drag; a held run let go on something picks it. Playtesters had found a slow tap turning into a sprint past the thing.
+The queue: while the forager is off to pick something or stooped over it, a click on more lines it up after (`queueGather`,
+`ui.queue`, at most `QUEUE_MOST`, in click order), each with a small parchment number over it (`drawQueue`, `badgeArt`, painted
+once a number); clicked again it comes off, a click on the ground or holding to run lets the queue go (`walkTo`). Each next one
+waits till it's back up from the last (`ui.nextAt`, `nextGather`), and one gone or picked clean meanwhile is passed over.
+In reach: everything to pick within `NEAR_REACH` of the forager, the sticks, grass and bark for a fire too, has a soft honey ring
+lying round its foot (`drawNear`, `RING_ART` painted once), steady, fading out over `NEAR_FADE` at the edge, brighter on what's
+queued. That's what tells a dandelion from the other yellow flowers and dry grass from the tufts (playtesters couldn't).
 Finding things: what has something to give (sim.js `eachPickable`, listed every `PICKS_MS`: `picksFrame`) glints now and then
 over its `gatherSpot`: a small honey bloom with a warm point of light and four fine rays, painted once (`GLINT_ART`), that comes up
 quickly, fades slowly and turns a little as it goes, each thing on its own clock from a hash of where it is (`glintAt`,
