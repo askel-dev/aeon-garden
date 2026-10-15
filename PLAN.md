@@ -71,9 +71,29 @@ soft fade and rise). The phone vibrates (`navigator.vibrate`: Android only; iPho
 From then on a soft camp ring around the fire, inside which later builds are arranged (a seat log, a spit, a drying
 rack, the pot, a basket, a lantern, a bedroll).
 
-## After that
-Cooking at the fire (a small card by it, reading recipes.js, "New recipe!"), hunger and eating, camp builds, fishing and
-hunting, the visitors as NPCs who trade recipes for food, cooking levels.
+## After that (roughly in this order)
+1. **Cooking at the fire.** Click the fire: a small card opens beside it (not a full-screen panel). Put up to 3 things
+   in from the satchel, cook (a short cook with steam and a sizzle), and the dish lands in the satchel. It reads
+   recipes.js; anything else makes a forager's mess; a dish never made before gets a small warm "New recipe!" moment and
+   is remembered.
+2. **Hunger and eating.** A gentle tummy that empties over a day; dishes fill far more than raw things, and warm dishes
+   warm you. Goes in with the other slim bars.
+3. **Camp builds.** Arranged inside the camp ring: a seat log, a spit, a drying rack (keeping food for winter), a basket
+   for storage, a lantern, a bedroll or lean-to. What each costs is data, recipes.js-style, so Axel can add builds by
+   hand. More ground items come in as builds need them (clay, reeds, flint, logs, pine cones, tinder fungus, feathers).
+4. **Fishing and hunting.** Fish from the water the sim already stocks (`w.fish`), and hunting the rabbits and the game
+   (the gentle respawn keeps them from running out). Visitor NPCs are never hunted.
+5. **The visitors come back as NPCs.** The hedgehog, heron, kingfisher, dragonflies and skylark (their lives and
+   paintings are still in the code, dormant: they only ever came to the keeper's places). They need a new way in, e.g.
+   drawn by food left out at camp. You feed them, and they thank you with recipes in cute little dialogues (the hedgehog
+   trades its nettle soup for a bowl of something; recipes.js `from`).
+6. **The kitchen ladder.** Stations beyond the fire: the clay pot (stews and soups, 4 slots), the drying rack, a stone
+   hearth (two things at once), a skep for your own bees (the sim's swarm hook in `hangOut`), the clay oven (bread, pies,
+   honey cakes), a smokehouse or cellar for winter. recipes.js `STATIONS` already has fire, pot and oven.
+7. **Cooking levels.** Cooking raises your level; a level raises quality (stars, less burning, bigger servings) and
+   opens new stations, rather than handing out recipes one by one (recipes.js `level`). Recipes are still mostly found by
+   trying, and some are taught by visitors.
+8. **Winter as the gentle pressure.** Cold, short days, little to forage: what you dried and kept carries you through.
 
 ## Open notes from the last pass
 - Crows were wiped out once (seed 2, year 3: foxes killed 14 in a day); they come back, but worth a look.
