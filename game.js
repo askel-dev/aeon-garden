@@ -8929,12 +8929,38 @@ function holdShift(on) {
   shiftHeld = on;
   if (world?.forager.walking) world.forager.running = on && !world.forager.winded;
 }
-document.addEventListener('keyup', e => { if (e.key === 'Shift') holdShift(false); });
-addEventListener('blur', () => holdShift(false));
+// WASD or the arrows held: it walks that way (runs with Shift), sent KEY_AHEAD tiles on every frame (keyWalk), and
+// let go it stops a step on. By e.code, so Shift+W is still W wherever the keyboard puts it.
+const KEY_DIRS = { KeyW: [0, -1], KeyA: [-1, 0], KeyS: [0, 1], KeyD: [1, 0], ArrowUp: [0, -1], ArrowLeft: [-1, 0], ArrowDown: [0, 1], ArrowRight: [1, 0] };
+const KEY_AHEAD = 4;                    // (far enough that it never starts braking for it, even at a run)
+const keysHeld = new Set();
+let keyWalking = false;
+function keyWalk() {
+  if (!keysHeld.size && !keyWalking) return;
+  const f = world.forager;
+  let dx = 0, dy = 0;
+  for (const k of keysHeld) { dx += KEY_DIRS[k][0]; dy += KEY_DIRS[k][1]; }
+  const d = Math.hypot(dx, dy);
+  if (!d) {                             // (let go, or two that cancel: it stops a step on)
+    if (keyWalking && f.walking) S.foragerTo(world, f.x + Math.cos(f.heading) * 0.4, f.y + Math.sin(f.heading) * 0.4);
+    keyWalking = false;
+    return;
+  }
+  if (!keyWalking) {                    // (taking over: whatever it was off to or going to pick, it isn't)
+    ui.gather = null; ui.queue.length = 0; ui.mark = null;
+    if (ui.selectedId || ui.picked) select(0);
+  }
+  keyWalking = true;
+  if (S.foragerTo(world, f.x + dx / d * KEY_AHEAD, f.y + dy / d * KEY_AHEAD)) f.running = shiftHeld && !f.winded;
+}
+document.addEventListener('keyup', e => { if (e.key === 'Shift') holdShift(false); keysHeld.delete(e.code); });
+addEventListener('blur', () => { holdShift(false); keysHeld.clear(); });
 document.addEventListener('keydown', e => {
   if (e.key === 'Shift' && !e.repeat) holdShift(true);
+  if (e.key === 'Meta') keysHeld.clear();               // (a Mac doesn't send the keyup of a key let go while ⌘ is down)
   if (e.target.closest('input,textarea') || !world) return;
   if ((e.metaKey || e.ctrlKey || e.altKey) && /^[a-z]$/i.test(e.key)) return;   // ⌘C, Ctrl+Z…: the browser's
+  if (KEY_DIRS[e.code]) { e.preventDefault(); keysHeld.add(e.code); return; }
   if (e.key === ' ') { e.preventDefault(); setSpeed(ui.speed ? 0 : 1); }
   else if (e.key === 'Escape') stepOut();
   else if (e.key === 'm') toggleSound();
@@ -9262,6 +9288,7 @@ function frame(now) {
   }
   leadCam(dt);
   if (drag?.steer && now - drag.at > STEER_MS) { drag.at = now; walkTo(drag.px, drag.py, true); }
+  keyWalk();
   gatherFrame(now);
   if (cam.goal) {
     const k = 1 - Math.pow(0.01, dt);
