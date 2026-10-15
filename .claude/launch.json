@@ -2,6 +2,20 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "cooking",
+      "runtimeExecutable": "/Library/Frameworks/Python.framework/Versions/3.13/bin/python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8790",
+        "--bind",
+        "127.0.0.1",
+        "--directory",
+        "/Users/axel/Desktop/programming/aeon-garden/.claude/worktrees/cooking"
+      ],
+      "port": 8790
+    },
+    {
       "name": "garden",
       "runtimeExecutable": "/Library/Frameworks/Python.framework/Versions/3.13/bin/python3",
       "runtimeArgs": [
@@ -60,6 +74,20 @@
         "127.0.0.1"
       ],
       "port": 8771
+    },
+    {
+      "name": "garden-cooking",
+      "runtimeExecutable": "/Library/Frameworks/Python.framework/Versions/3.13/bin/python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8772",
+        "--bind",
+        "127.0.0.1",
+        "--directory",
+        "/Users/axel/Desktop/programming/aeon-garden/.claude/worktrees/cooking"
+      ],
+      "port": 8772
     }
   ]
 }

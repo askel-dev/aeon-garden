@@ -7,7 +7,7 @@
  * Every animal follows the same small ladder, ported from the old reflex brain:
  *   danger > sleep > love > food > friends > wander
  * Nothing else is scripted. Herds, arms races and boom-bust years come out of that.
- * The weather leans on the ladder: thunder and fire are danger, storms are for sleeping.
+ * The weather leans on the ladder: thunder is danger, storms are for sleeping.
  */
 (function (root) {
 'use strict';
@@ -583,6 +583,14 @@ function pickOdds(r, odds) {
 // A rock: a pebble, a stone or a boulder, a great rock (big) or a flat stone at a ford (stone). Every rock laid out
 // alike (see blankCreature), with room for the fish about it should otters make their holt under it (holtFish).
 const rockOf = (x, y, size, big = false, stone = false) => ({ x, y, emoji: '🪨', size, big, stone, holtFish: NaN });
+// What a rock is, from where it lies and its size alone (game.js paints it so): a ford's flat stone, a great rock, or, the
+// bigger the likelier the later, a few pebbles, a stone or a boulder.
+function rockKind(d) {
+  if (d.stone) return 'ford';
+  if (d.big) return 'great';
+  const h = hash2(Math.floor(d.x * 100), Math.floor(d.y * 100), 60), grown = clamp((d.size - 0.7) / 1.6, 0, 1);
+  return h < 0.45 - 0.3 * grown ? 'pebbles' : h < 0.85 - 0.35 * grown ? 'stone' : 'boulder';
+}
 // A flower (w.plants), or a spot of blossom in a tree's crown (w.blossoms: its tree, and up, how high in it). The bees look
 // at both, so both are laid out alike, with room for the bee headed to it and when it was last sipped (pickFlower).
 const plantOf = (x, y, i, kind, field, n, tree = null, up = -0) => ({ x, y, i, kind, field, n, tree, up, bee: null, sipped: 0 });
@@ -1147,8 +1155,7 @@ function nearestFooting(w, x, y) {
 // country, w.pineLand). A seedling is a mouthful for a rabbit unless a thorn bush guards it, so
 // where the rabbits graze the meadow stays open, and when they're few the woods creep out. Under
 // the trees a young one waits in the shade (beech and maple can wait for years, birch and pine
-// die) until an old one falls. Old trees die standing, fall, and rot away. Fire kills the young
-// and the thin-barked, floods drown seedlings, storms blow over the big ones, and a broadleaf
+// die) until an old one falls. Old trees die standing, fall, and rot away. Floods drown seedlings, storms blow over the big ones, and a broadleaf
 // struck by lightning grows again from its stump. A hive lives in a hollow old oak (placeHive).
 // Apple, cherry and hawthorn blossom for the bees, and bear as much fruit as the bees pollinated.
 // All of it runs once a day (treesTick) or less.
@@ -1157,22 +1164,22 @@ const TREES = {
   // grow: how fast it grows up; life: years it lives, about; seedAge: years before it bears seed;
   // seeds: seedlings it tries for each year; shade: how much shade a young one bears (0 none, 1 deep
   // wood); taste: how much rabbits like it; by: how its seed gets about, far: and how far (tiles);
-  // burn: odds a fire kills it grown; blossom: when in spring it flowers for the bees (share of the season);
+  // blossom: when in spring it flowers for the bees (share of the season);
   // wet: it comes up only this close to the water (tiles, w.damp), and drops its seed in it oftener (float)
-  alder:    { grow: 1.1, life: 14, seedAge: 2, seeds: 4, shade: 0.3, taste: 0.5, by: 'wind', far: 6, burn: 0.3, wet: 4, float: 0.6 },
-  birch:    { grow: 1.1, life: 10, seedAge: 2, seeds: 5, shade: 0.15, taste: 0.7, by: 'wind', far: 18, burn: 0.8 },
-  pine:     { grow: 0.8, life: 18, seedAge: 3, seeds: 3, shade: 0.45, taste: 0.3, by: 'wind', far: 10, burn: 0.25 },
-  maple:    { grow: 0.8, life: 18, seedAge: 3, seeds: 2, shade: 0.7, taste: 0.8, by: 'wind', far: 7, burn: 0.7 },
-  beech:    { grow: 0.6, life: 20, seedAge: 4, seeds: 1, shade: 0.9, taste: 0.6, by: 'crow', far: 10, burn: 0.8, mast: 'beechnuts' },
-  oak:      { grow: 0.6, life: 24, seedAge: 4, seeds: 1, shade: 0.4, taste: 0.9, by: 'crow', far: 25, burn: 0.25, mast: 'acorns' },
-  hawthorn: { grow: 1.0, life: 16, seedAge: 2, seeds: 3, shade: 0.3, taste: 0.2, by: 'bird', far: 15, burn: 0.6, thorns: true, blossom: [0.35, 0.85] },
-  apple:    { grow: 0.8, life: 16, seedAge: 3, seeds: 3, shade: 0.4, taste: 0.8, by: 'drop', far: 8, burn: 0.7, blossom: [0.3, 0.8] },
-  cherry:   { grow: 1.0, life: 12, seedAge: 2, seeds: 3, shade: 0.35, taste: 0.7, by: 'bird', far: 15, burn: 0.7, blossom: [0.05, 0.5] },
+  alder:    { grow: 1.1, life: 14, seedAge: 2, seeds: 4, shade: 0.3, taste: 0.5, by: 'wind', far: 6, wet: 4, float: 0.6 },
+  birch:    { grow: 1.1, life: 10, seedAge: 2, seeds: 5, shade: 0.15, taste: 0.7, by: 'wind', far: 18 },
+  pine:     { grow: 0.8, life: 18, seedAge: 3, seeds: 3, shade: 0.45, taste: 0.3, by: 'wind', far: 10 },
+  maple:    { grow: 0.8, life: 18, seedAge: 3, seeds: 2, shade: 0.7, taste: 0.8, by: 'wind', far: 7 },
+  beech:    { grow: 0.6, life: 20, seedAge: 4, seeds: 1, shade: 0.9, taste: 0.6, by: 'crow', far: 10, mast: 'beechnuts' },
+  oak:      { grow: 0.6, life: 24, seedAge: 4, seeds: 1, shade: 0.4, taste: 0.9, by: 'crow', far: 25, mast: 'acorns' },
+  hawthorn: { grow: 1.0, life: 16, seedAge: 2, seeds: 3, shade: 0.3, taste: 0.2, by: 'bird', far: 15, thorns: true, blossom: [0.35, 0.85] },
+  apple:    { grow: 0.8, life: 16, seedAge: 3, seeds: 3, shade: 0.4, taste: 0.8, by: 'drop', far: 8, blossom: [0.3, 0.8] },
+  cherry:   { grow: 1.0, life: 12, seedAge: 2, seeds: 3, shade: 0.35, taste: 0.7, by: 'bird', far: 15, blossom: [0.05, 0.5] },
 };
 const YEAR = YEAR_DAYS * TPD;   // ticks in a year
 const SPROUT = 0.3;             // a new seedling's size
 const SEEDLING = 0.8;           // below this it's a seedling: a mouthful for a rabbit
-const SAPLING = 1.8;            // below this a rabbit can reach its shoots and nibble it back, and fire and flood kill it
+const SAPLING = 1.8;            // below this a rabbit can reach its shoots and nibble it back, and a flood kills it
 const GROWN = 2.4;              // this big, and old enough (seedAge), it bears seed
 const GROW_DAYS = SEASONS.reduce((n, s) => n + s.growth, 0) * SEASON_DAYS;   // a year's growing, in days of full growth
 const THORNS = 1.8;             // a seedling this close to a grown hawthorn is safe from rabbits
@@ -1855,8 +1862,7 @@ function shadeSoil(w) {
 // ---------------------------------------------------------------- weather
 //
 // The sky picks a weather from the season's odds. The ground remembers it: rain soaks it,
-// sun dries it. Lightning on dry ground starts a fire, and fire spreads through tall dry
-// grass, so a well-grazed meadow burns less than an overgrown one.
+// sun dries it.
 
 const sky = w => WEATHER[w.weather.kind];
 
@@ -2600,7 +2606,7 @@ function thump(w, c, fox) {
   }, 'rabbit');
 }
 
-// Runs from a fox, or from anything with an x and a y (thunder, fire).
+// Runs from a fox, or from anything with an x and a y (thunder).
 function flee(w, c, fox) {
   if (c.mode !== 'flee') {
     c.mode = 'flee'; c.sleeping = false; c.threatId = fox.id; c.target = null;
@@ -4434,7 +4440,7 @@ function crowTick(w, c) {
   c.sleeping = false;
   if (c.pips && t - c.pips > PIP_GUT) dropPips(w, c);   // (wherever it is: on a branch at the roost too)
 
-  // 1. Danger: fire, or a fox close by. Busy on the ground, it may not look up in time.
+  // 1. Danger: a fright, or a fox close by. Busy on the ground, it may not look up in time.
   if (c.fright > 0) { c.fright = 0; c.threatId = 0; flapUp(w, c, c.frightX, c.frightY); }
   if ((t + c.id) % 4 === 0 && (c.mode === 'rest' || PECKING.has(c.mode))) {   // (in the air or up a tree, out of reach)
     const fox = nearest(w, c, CROW_WARY, 'fox');
@@ -4583,7 +4589,7 @@ function gatherSpot(w) {
   return g;
 }
 
-// Up and away from a fox, or a fire, at x, y.
+// Up and away from a fox, or a fright, at x, y.
 function flapUp(w, c, x, y) {
   const a = Math.atan2(c.y - y, c.x - x) + w.rng.range(-0.5, 0.5);
   c.mode = 'flap'; c.sleeping = false;
@@ -4892,7 +4898,7 @@ function otterTick(w, c) {
   }
   c.sleeping = false;
 
-  // 1. Danger: a fox up and about close by on the bank, or a fire: into the water, and it watches the fox from there
+  // 1. Danger: a fox up and about close by on the bank, or a fright: into the water, and it watches the fox from there
   // till it's gone off or lain down (then pays foxes no mind a while). Asleep, in the holt or a bed in the reeds, it doesn't mind one.
   // And one on its way out of the meadow goes on.
   if (c.fright > 0) { c.fright = 0; if (c.mode !== 'leave') slip(w, c, c.frightX, c.frightY, null); }
@@ -5341,6 +5347,19 @@ const FORAGER_LOOK = 0.8;               // tiles ahead along its way it steers f
 const SHALLOW_COST = 2.5;               // a step in the shallows costs this many on dry ground
 const BRINK_COST = 0.8;                 // and one next to deep water this much more
 const TAUT_CLEAR = 0.3;                 // a straightened leg keeps this far off the deep on either side
+const FORAGER_GIRTH = 0.22;             // how near a rock's side it comes, middle to edge
+// How far out from its middle a rock is in the way, in its sizes (its main stone as game.js paints it); pebbles and a
+// ford's stones it walks over.
+const ROCK_SOLID = { pebbles: 0, ford: 0, stone: 0.34, boulder: 0.6, great: 0.6 };
+// Trees and brambles aren't in its way like a rock: it pushes through them, slower, and is eased round the trunk, as in
+// Project Zomboid. Each is a circle about its foot (BRUSH_R plus BRUSH_GROW of its size, plus FORAGER_GIRTH) that slows
+// it by up to its slow at the middle, less toward the edge, and pushes it out sideways by up to BRUSH_PUSH of its step.
+const BRUSH_TREE = { r: 0.28, grow: 0.08, slow: 0.5 };      // a standing tree (or a snag), by its size
+const BRUSH_THORN = { r: 0.3, grow: 0.1, slow: 0.6 };       // a hawthorn: a thorn bush, wider and thicker
+const BRUSH_BRAMBLE = { r: 0.35, grow: 0.22, slow: 0.6 };   // a bramble patch, by its size (1 or 2)
+const BRUSH_PUSH = 0.55;                // of a step, at a trunk's middle
+const BRUSH_COST = 2;                   // a step through brush that slows it all the way costs this much more
+const BRUSH_NEAR = 2.5;                 // tiles about it it looks for brush in, again once it's gone a tile
 
 // Every field it ever has, in one order (see blankCreature). path: the way, as x, y pairs; leg: the pair it's heading
 // for; speed, heading: tiles a tick, radians (0 east, pi / 2 down the screen); moved: how far it went last tick;
@@ -5369,13 +5388,101 @@ function startForager(w) {
   return foragerOf(bx, by);
 }
 
+// The rocks in its way, worked out once a meadow (rocks never come or go): x, y and how near it comes to the middle
+// (solidR, as x, y, r threes), and the tiles whose middle is that near one, which it can't step on (solidTile).
+let solidW = null, solidR = [], solidTile = null;
+function rocksFor(w) {
+  if (solidW === w) return;
+  solidW = w; solidR = [];
+  solidTile = new Uint8Array(W * H);
+  for (const d of w.decor) {
+    if (d.emoji !== '🪨' || !ROCK_SOLID[rockKind(d)]) continue;
+    const r = d.size * ROCK_SOLID[rockKind(d)] + FORAGER_GIRTH;
+    solidR.push(d.x, d.y, r);
+    for (let ty = Math.max(0, Math.floor(d.y - r)); ty <= Math.min(H - 1, Math.floor(d.y + r)); ty++)
+      for (let tx = Math.max(0, Math.floor(d.x - r)); tx <= Math.min(W - 1, Math.floor(d.x + r)); tx++)
+        if (Math.hypot(tx + 0.5 - d.x, ty + 0.5 - d.y) < r) solidTile[ty * W + tx] = 1;
+  }
+}
+// Whether the leg from x0, y0 to x1, y1 keeps clear of every rock.
+function pastRocks(x0, y0, x1, y1) {
+  for (let k = 0; k < solidR.length; k += 3) if (segDist(solidR[k], solidR[k + 1], x0, y0, x1, y1) < solidR[k + 2]) return false;
+  return true;
+}
+// x, y moved out of any rock it's in, to its edge (or no further in than from, for one it's already in: a meadow kept
+// before rocks were in its way). Into rockX, rockY.
+let rockX = 0, rockY = 0;
+function outOfRocks(x, y, fromX, fromY) {
+  for (let k = 0; k < solidR.length; k += 3) {
+    const cx = solidR[k], cy = solidR[k + 1], dx = x - cx, dy = y - cy, d = Math.hypot(dx, dy);
+    const most = Math.min(solidR[k + 2], Math.hypot(fromX - cx, fromY - cy));
+    if (d >= most) continue;
+    const a = d > 1e-6 ? 1 / d : 0;
+    x = cx + (a ? dx * a : 1) * most; y = cy + (a ? dy * a : 0) * most;
+  }
+  rockX = x; rockY = y;
+}
+
+// The brush about: each tree and bramble as x, y, r, slow (brushNear, for foragerTick, from what's within BRUSH_NEAR of
+// where it looked last), and how much each tile's middle slows it (brushTile, for the way: A* and taut). Both gathered
+// again at most once a game hour, as trees grow, fall and come up; the grid only when a way is wanted.
+let brushW = null, brushHour = -1, brushNear = new Float32Array(64), brushN = 0, brushX = -1e9, brushY = -1e9, brushNearHour = -1;
+let brushTile = null;
+const hourOf = w => Math.floor(w.tick / (TPD / 24));
+function brushOf(d) {                    // the brush a tree or bramble is, into brushR, brushS (0: none)
+  brushR = 0; brushS = 0;
+  if (d.bramble) { if (d.size > 0) { brushR = BRUSH_BRAMBLE.r + BRUSH_BRAMBLE.grow * d.size + FORAGER_GIRTH; brushS = BRUSH_BRAMBLE.slow; } return; }
+  if (!d.tree || d.stump || d.fallen || d.gone || d.size < SEEDLING) return;
+  const k = d.kind === 'hawthorn' ? BRUSH_THORN : BRUSH_TREE;
+  brushR = k.r + k.grow * d.size + FORAGER_GIRTH; brushS = k.slow * clamp((d.size - SEEDLING) / 1.2, 0.3, 1);   // (a sapling barely)
+}
+let brushR = 0, brushS = 0;
+const brushAt = (q, slow) => slow * q * (2 - q);  // how much it slows, q of the way in from the edge (firm soon in)
+function brushGrid(w) {
+  const hour = hourOf(w);
+  if (brushW === w && brushHour === hour && brushTile) return;
+  brushW = w; brushHour = hour; brushNearHour = -1;
+  if (!brushTile) brushTile = new Float32Array(W * H);
+  brushTile.fill(0);
+  const stamp = d => {
+    brushOf(d);
+    if (!brushS) return;
+    for (let ty = Math.max(0, Math.floor(d.y - brushR)); ty <= Math.min(H - 1, Math.floor(d.y + brushR)); ty++)
+      for (let tx = Math.max(0, Math.floor(d.x - brushR)); tx <= Math.min(W - 1, Math.floor(d.x + brushR)); tx++) {
+        const dd = Math.hypot(tx + 0.5 - d.x, ty + 0.5 - d.y);
+        if (dd >= brushR) continue;
+        const i = ty * W + tx, h = brushAt(1 - dd / brushR, brushS);
+        brushTile[i] = 1 - (1 - brushTile[i]) * (1 - h);
+      }
+  };
+  for (const d of w.decor) if (!d.gone) stamp(d);
+  for (const b of w.brambles) stamp(b);
+}
+function brushAbout(w, x, y) {
+  const hour = hourOf(w);
+  if (brushW === w && brushNearHour === hour && Math.abs(x - brushX) < 1 && Math.abs(y - brushY) < 1) return;
+  if (brushW !== w) { brushW = w; brushHour = -1; }
+  brushNearHour = hour; brushX = x; brushY = y; brushN = 0;
+  const add = d => {
+    brushOf(d);
+    if (!brushS || Math.abs(d.x - x) > BRUSH_NEAR + brushR || Math.abs(d.y - y) > BRUSH_NEAR + brushR) return;
+    if (brushN * 4 >= brushNear.length) { const m = new Float32Array(brushNear.length * 2); m.set(brushNear); brushNear = m; }
+    const k = brushN++ * 4;
+    brushNear[k] = d.x; brushNear[k + 1] = d.y; brushNear[k + 2] = brushR; brushNear[k + 3] = brushS;
+  };
+  forEachDecorNear(w, x, y, BRUSH_NEAR + 1, add);
+  for (const b of w.brambles) add(b);
+}
+
 // A step's cost onto tile i, or 0 where it can't go.
-const canStand = (w, i) => w.frozen || w.water[i] !== DEEP;
+const canStand = (w, i) => (w.frozen || w.water[i] !== DEEP) && !solidTile[i];
 function stepCost(w, i) {
-  if (w.frozen) return 1;
+  if (solidTile[i]) return 0;
+  const brush = 1 + BRUSH_COST * brushTile[i];
+  if (w.frozen) return brush;
   const v = w.water[i];
   if (v === DEEP) return 0;
-  let c = v === SHALLOW ? SHALLOW_COST : 1;
+  let c = v === SHALLOW ? SHALLOW_COST : brush;
   const x = i % W, y = (i / W) | 0;
   if ((x > 0 && w.water[i - 1] === DEEP) || (x < W - 1 && w.water[i + 1] === DEEP) || (y > 0 && w.water[i - W] === DEEP) || (y < H - 1 && w.water[i + W] === DEEP)) c += BRINK_COST;
   return c;
@@ -5438,11 +5545,14 @@ function tilePath(w, a, b) {
   return out.reverse();
 }
 
-// Whether the straight leg from x0, y0 to x1, y1 keeps TAUT_CLEAR off the deep, and (dry: the tiles' way didn't wade)
-// out of the shallows.
-function taut(w, x0, y0, x1, y1, dry) {
-  if (w.frozen) return true;
+// Whether the straight leg from x0, y0 to x1, y1 keeps clear of the rocks, TAUT_CLEAR off the deep, (dry: the tiles' way didn't wade)
+// out of the shallows, and out of brush thicker than thick (the thickest the tiles' way went through), so it doesn't cut
+// through the wood the way went round.
+function taut(w, x0, y0, x1, y1, dry, thick) {
+  if (!pastRocks(x0, y0, x1, y1)) return false;
   const dx = x1 - x0, dy = y1 - y0, d = Math.hypot(dx, dy), n = Math.max(1, Math.ceil(d / 0.2));
+  for (let k = 1; k < n; k++) if (brushTile[idx(x0 + dx * k / n, y0 + dy * k / n)] > thick + 0.05) return false;
+  if (w.frozen) return true;
   const px = d ? -dy / d * TAUT_CLEAR : 0, py = d ? dx / d * TAUT_CLEAR : 0;
   for (let k = 0; k <= n; k++) {
     const x = x0 + dx * k / n, y = y0 + dy * k / n;
@@ -5460,7 +5570,10 @@ function taut(w, x0, y0, x1, y1, dry) {
 // on the deep or across it), or null if it's there already.
 function foragerTo(w, x, y) {
   const f = w.forager;
+  rocksFor(w); brushGrid(w);
   x = clamp(x, 0.6, W - 0.6); y = clamp(y, 0.6, H - 0.6);
+  outOfRocks(x, y, x, y + 1e9);                          // (sent onto a rock: to its edge, the side nearest the click)
+  x = clamp(rockX, 0.6, W - 0.6); y = clamp(rockY, 0.6, H - 0.6);
   let goal = idx(x, y);
   if (!canStand(w, goal)) {                              // on the deep: the nearest tile it can stand on
     let best = -1, bd = Infinity;
@@ -5482,10 +5595,11 @@ function foragerTo(w, x, y) {
   const pts = [f.x, f.y];
   let ax = f.x, ay = f.y, a = 0;
   while (a < last) {
-    let dry = !wet(tiles[a]), ok = a + 1;
+    let dry = !wet(tiles[a]), thick = brushTile[tiles[a]], ok = a + 1;
     for (let b = a + 1; b <= last; b++) {
       if (wet(tiles[b])) dry = false;
-      if (taut(w, ax, ay, px(b), py(b), dry)) ok = b;
+      thick = Math.max(thick, brushTile[tiles[b]]);
+      if (taut(w, ax, ay, px(b), py(b), dry, thick)) ok = b;
       else if (b - ok > 4) break;                        // (well past where it lost sight)
     }
     a = ok; ax = px(a); ay = py(a);
@@ -5538,12 +5652,27 @@ function foragerTick(w) {
   f.heading += clamp(turn, -most, most);
   f.heading -= Math.round(f.heading / (2 * Math.PI)) * 2 * Math.PI;
   const wade = !w.frozen && w.water[idx(f.x, f.y)] === SHALLOW;
-  const top = (f.running ? FORAGER_RUN : FORAGER_WALK) * (wade ? FORAGER_WADE : 1) * clamp(Math.cos(turn) * 0.8 + 0.4, 0.15, 1);
+  // In brush: slowed, and pushed out from each trunk's middle (pushX, pushY, in its sizes), less as it nears where it's going.
+  brushAbout(w, f.x, f.y);
+  let free = 1, pushX = 0, pushY = 0;
+  for (let k = 0; k < brushN * 4; k += 4) {
+    const dx = f.x - brushNear[k], dy = f.y - brushNear[k + 1], r = brushNear[k + 2];
+    if (dx > r || dx < -r || dy > r || dy < -r) continue;
+    const d = Math.hypot(dx, dy);
+    if (d >= r) continue;
+    const q = 1 - d / r;
+    free *= 1 - brushAt(q, brushNear[k + 3]);
+    if (d > 1e-4) { pushX += dx / d * q; pushY += dy / d * q; }
+  }
+  const top = (f.running ? FORAGER_RUN : FORAGER_WALK) * (wade ? FORAGER_WADE : 1) * free * clamp(Math.cos(turn) * 0.8 + 0.4, 0.15, 1);
   const v = Math.min(top, Math.sqrt(2 * FORAGER_BRAKE * rest)), s = f.speed;
   f.speed = v > s ? Math.min(v, s + FORAGER_ACCEL) : Math.max(v, s - FORAGER_BRAKE * 2);
   if (rest < 0.02 || (rest < 0.1 && f.speed < 0.008)) { f.walking = false; f.running = false; f.speed = 0; f.path.length = 0; return; }
   const step = Math.min(f.speed, rest);
   let nx = f.x + Math.cos(f.heading) * step, ny = f.y + Math.sin(f.heading) * step;
+  if (pushX || pushY) { const p = BRUSH_PUSH * step * clamp(rest / 0.8, 0, 1); nx += pushX * p; ny += pushY * p; }
+  rocksFor(w);
+  outOfRocks(nx, ny, f.x, f.y); nx = rockX; ny = rockY;   // (a rock in the way: round it)
   if (!walkable(w, nx, ny)) {                            // (the water came up, or a corner clipped the deep: slide along it)
     if (walkable(w, nx, f.y)) ny = f.y;
     else if (walkable(w, f.x, ny)) nx = f.x;
@@ -6861,7 +6990,7 @@ const api = {
   createWorld, step, clock, isNight, phaseOf, seasonOf, springPart, mood, ageDays, growth, isAdult, patchFresh,
   hedgehogComes, heronComes, dragonflyComes, kingfisherComes, skylarkComes, placeNeeds, VISIT_SEASONS, VISIT_FADE, HERON_FADE, HERON_STAB,
   DRAGON_FROM, KF_FADE, KF_UNDER, KF_BEAT, LARK_FADE, LARK_OPEN, LARK_RISE, EDGE_REACH, OPEN_MOST,
-  walkable, packWorld, unpackWorld, foragerTo, FORAGER_WALK, FORAGER_RUN, whatThere, gather, dropSlot, roomFor, forEachDecorNear, SLOTS, STACK,
+  walkable, packWorld, unpackWorld, GROUND, foragerTo, FORAGER_WALK, FORAGER_RUN, rockKind, whatThere, gather, dropSlot, roomFor, forEachDecorNear, SLOTS, STACK,
   KINDS, FEW, whiteness, visibility, WINTER_COAT, WILD_COAT,
   TERRAIN, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE, hollow,

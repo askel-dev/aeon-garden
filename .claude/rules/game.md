@@ -8,29 +8,38 @@ paths:
 
 # game.js
 
-Drawing, the camera, the inspector. The world fills the screen; over it only the watch, a small pill top right
+Drawing, the camera, the inspector. The world fills the screen; over it only a small pill top right
 (pause, sound, •••), a toast line (`toast`, for a copied link or an idea that couldn't go) and the inspector. The old
 watching game's cards, news feed, stats, journal, tools, intro and idle camera were cut on the `cooking` branch
-(main at 1d79f03 has them).
+(main at 1d79f03 has them); the pocket watch that told the day and the year went later (git history before its removal).
 
 The forager (sim.js `w.forager`; how it walks is in ecology.md) is painted in fur.js like a fox (`paintForager`,
 `foragerPose`, `foragerParts`: a rust hood with a flopping point, a round face, a moss cloak, mittens, a satchel, boots), in
 three views (side on, three-quarters from the front and the back, all facing left and mirrored going right) and eight
-paintings a stride, plus standing, a fidget and a blink: 'forager:' + (view << 4) + pose, painted by the worker
+paintings a stride, eight more jogging for the sprint, plus standing, a fidget and a blink: 'forager:' + (outfit << 7) + (view << 5) + pose, painted by the worker
 (`foragerAhead` asks for every one at the size it's drawn, so a walk never waits). Its feet are where it is. game.js
 (`foragerFrame`, once a frame) turns the stride over with the ground it covers (a stride every `2 * FORAGER_REACH * 2` of its
 half-size, so the planted foot doesn't slide; fur.js `FORAGER_REACH`), picks the view from the sim's heading with a margin
 either side so it doesn't flicker, and standing lets it breathe, blink, turn to face you after `FORAGER_TURN_MS` and fidget
 now and then (`FORAGER_FIDGET`). In the shallows it's cut off at its shins with a ring round its legs, and each step sends out
-a ring (`fg.rings`). Its shadow goes in with the animals' (`foragerShadow`). `forager-lab.html` paints them all side by side.
-A click or a tap on an animal (on its body as drawn: `animalAt`, a little wider for a finger) opens its panel and follows it;
-anywhere else walks the forager there (`walkTo`, sim.js `foragerTo`), shuts the panel and puts the camera back on it, with a
-soft ring where it was sent (`drawMark`, `MARK_ART` painted once) that fades once it's there. A press held still for
-`HOLD_MS` runs toward the pointer while it's down (sim.js `f.running`, `FORAGER_RUN`; Shift held runs too, `holdShift`), the
-way found again every `STEER_MS` (in `frame`), and on to where it's let go. Running, its stride is `FORAGER_RUN_STRIDE` longer. The camera goes with it (`ui.lead`, `leadCam`): eased after it (`CAM_FOLLOW`), a little ahead the way it walks
-(`CAM_AHEAD`, itself eased so setting off and stopping are soft), its feet a little below the middle (`CAM_FEET`). A drag or
-a pan lets it go, F or the next walk takes it back; the wheel zooms about the forager while the camera's with it. A kept
-meadow keeps where it is and whether the camera was with it (`rec.lead`).
+a ring (`fg.rings`). Its shadow goes in with the animals' (`foragerShadow`). A tree standing in front of it (drawn after it, its painting's box over its body) fades to `SEE_A`, as in Project Zomboid, eased over `SEE_MS` (`seeThrough`, `fgBody`). What's drawn after all the trees (the fireflies, the leaves
+coming down, pollen, butterflies, splashes, the effects, the burrows' 💤) hides behind a leafy crown standing in front of it
+(`coverAt`): each crown drawn is kept as its kind's outline (`CROWNS`, `addCover`) in a coarse grid of the screen made once a
+frame (`buildCover`), soft at the edge (`COVER_EDGE`), half for first leaves or half fallen, nothing bare, and as little as
+it shows when faded (mist, the forager behind it). Pop-ups, labels and the selection stay on top. `forager-lab.html` paints them all side by side. Its outfit is one of three (fur.js `FORAGER_OUTFITS`:
+cloak, hood, rim), picked on a small card at the foot of the screen as a new meadow opens (till one has been picked) or from ••• (`pickOutfit`), kept in
+localStorage (`aeon-garden-outfit`).
+A click or a tap on an animal (on its body as drawn: `animalAt`, a little wider for a finger) opens its panel;
+anywhere else walks the forager there (`walkTo`, sim.js `foragerTo`) and shuts the panel, with a
+soft ring where it was sent (`drawMark`, `MARK_ART` painted once) that fades once it's there, and a faint dashed line to it
+along what's left of its way (`drawTrail`: one stroke a frame, the dashes counted from the ring so they keep still on the ground,
+fading in just after the ring pops up, `TRAIL_IN`, and marching on toward it while it sprints, `TRAIL_MARCH`); held
+and steering, the ring glides after where it was sent (`MARK_GLIDE`) rather than jumping each `STEER_MS`. A press held still for
+`HOLD_MS`, or dragged, runs toward the pointer while it's down (sim.js `f.running`, `FORAGER_RUN`; Shift held runs too, `holdShift`), the
+way found again every `STEER_MS` (in `frame`), and on to where it's let go. Running, once up past `FORAGER_JOG` it jogs (`fg.jog`, fur.js poses 16 to 23: both feet off the ground a moment, heels
+kicking up, elbows bent and pumping, leaning in) with a stride `FORAGER_JOG_STRIDE` longer. The camera always goes with it (`leadCam`): eased after it (`CAM_FOLLOW`), a little ahead the way it walks
+(`CAM_AHEAD`, itself eased so setting off and stopping are soft), its feet a little below the middle (`CAM_FEET`). Nothing pans it:
+the wheel, a pinch, a double tap and + - zoom about the forager (`zoomOn`), and a kept meadow opens on it at its kept zoom (`resumeWorld`: `showWorld` leaves the wide shot, so it's set back there).
 Gathering: a click or a tap on something to gather (`gatherAt`: a hive, a clump of mushrooms, a wild find, a bramble, nettles, a fruit or mast
 tree, the garlic, looked for only near the point, the trees through the sim's grid) walks the forager to its near side a reach
 away, in front of a tree, a hive or a bramble so it isn't hidden (`goGather`, `standPoint`, `gatherSpot`), and once it's there
@@ -70,7 +79,7 @@ inspector's sheet is up.
 
 The inspector shows animals and every other thing you click (hives, trees, rocks, burrows, flowers, fields, water,
 visitors): each kind is an entry in `THINGS`, saying how to find one on screen and what its panel shows. A tap
-on an animal follows it (`select`, `ui.follow`). Animals can't be named by the player. Every animal of a kind is alike
+on an animal opens its panel (`select`); the camera never leaves the forager for it. Animals can't be named by the player. Every animal of a kind is alike
 (sim.js has no genes, only a rabbit's winter coat), so an animal's panel is its mood, tummy, family and life story (a rabbit's
 with its coat and how well it hides where it sits, `coatLine`), and a hive's its honey (`honeyWord`), its queen
 and the fields in reach; a hive goes by the field nearest it, a swarm by its queen (`hiveName`). A hanging swarm is drawn as a
@@ -115,8 +124,7 @@ is costly (each pass through the scratch layer is a flush), so parts can share o
 just shaded (`flat`). It's painted only at doublings of its size (`FUR_PAINTED`) and shrunk for the sizes between,
 which keeps a dozen poses, growing young and zooming cheap. In the meadow the paintings are made off the main thread
 (fur-worker.js, which loads fur.js; game.js `furReady` asks for them, and shrinking is done on the page once what it's
-made from has come). Till a pose comes the animal holds the one it was last drawn in (`shownPose`,
-as a tree's new colours do), or the same at another size or one of its kin stands in (`furKin`), and each look about the
+made from has come). Till a pose comes the animal holds the one it was last drawn in (`shownPose`), or the same at another size or one of its kin stands in (`furKin`), and each look about the
 screen is asked for ahead (`furAhead`), so only the first of a look is painted on the page. Without a worker (no
 OffscreenCanvas) they're painted on the page, a new pose waiting a frame once the frame has done its painting. The
 inspector's portrait is always painted on the page.
@@ -152,7 +160,7 @@ round the foot, where it lies flat a moment and fades. Nothing is kept: a leaf g
 is comes from the time and hash numbers). The trees dropping leaves are listed as the shadows go down (`treeLeaves`), and
 drawn twice by `drawLeaves`: those lying then, under all that stands, those in the air at the end. Each leaf is a
 transform and a draw of its own, so they're thinned on trees drawn small (`LEAF_MIN`, `LEAF_FULL`: zoomed out, a wood had
-nearly 2000). An emoji tree keeps the old tumbling ovals (`drawFallingLeaves`).
+nearly 2000).
 
 The meadow is kept in the browser when the page is hidden or closed (`keepMeadow`: IndexedDB, under its link, the last
 `KEEP_MEADOWS`), never on a timer while someone watches (a save is a few frames). The next visit opens it where it was
@@ -166,7 +174,7 @@ On a phone (and Back anywhere): Back steps out of what's open as Esc does (`step
 open sheet folds and then shuts). Each thing open holds a step in the history, counted, not named (`opened`), and
 `syncBack` levels the history with what's open after every tap or key: pushed only inside a tap, as Safari skips a step a
 page adds outside one. The inspector's sheet follows the finger and settles open, folded or away by where and how fast
-it's let go (`sheetLetGo`). A double tap zooms in on the spot, a double tap held and dragged zooms as it goes, and two
+it's let go (`sheetLetGo`). A double tap zooms in, a double tap held and dragged zooms as it goes, and two
 fingers tapped zoom out (`zoomTo`, `zoomDrag`, as Google's and Apple's maps do); a tap that would only put the inspector
 away waits `DOUBLE_MS` in case it's the first of two (`tapAway`). On a touch screen the screen stays awake while time
 runs, till nobody has touched it for `WAKE_MS` (`wakeTick`, the Screen Wake Lock API).

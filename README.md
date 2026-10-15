@@ -19,12 +19,12 @@ Every meadow is different: a river, a lake or both, ponds, woods, great rocks an
 
 ## Playing
 
-- Click or tap the ground to walk there; hold the button or your finger down to keep walking toward it
-- Click an animal to follow it and see what it's up to; click the ground again to go back to your forager
-- Scroll to zoom and drag to look around; on a phone, pinch and drag
+- Click or tap the ground to walk there; hold or drag the button or your finger to keep running toward it
+- Click an animal to see what it's up to
+- Scroll to zoom; on a phone, pinch
 - Quiet sounds and a little felt piano now and then: press 🔊 or M
 
-Keys: <kbd>Space</kbd> pause, <kbd>F</kbd> follow (or back to the forager), <kbd>M</kbd> sound, <kbd>+</kbd> <kbd>-</kbd> zoom, <kbd>Esc</kbd> close.
+Keys: <kbd>Space</kbd> pause, <kbd>M</kbd> sound, <kbd>+</kbd> <kbd>-</kbd> zoom, <kbd>Esc</kbd> close.
 
 ## Running it yourself
 

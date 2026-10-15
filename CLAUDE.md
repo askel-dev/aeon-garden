@@ -18,19 +18,19 @@ closed); none of that project's rules apply here.
   creature, a hive or a tree that the code counts on) bumps `KEEP_VERSION`, and players' kept meadows start over.
 - You play a little hooded forager (sim.js `w.forager`, fur.js `paintForager`, game.js `drawForager`): a click or a tap
   on the ground walks it there round the deep water (sim.js `foragerTo`), one on an animal opens its panel, a press held
-  still sprints toward the pointer (so does Shift), and the camera goes with it (`leadCam`) till you drag it away. A click
+  still sprints toward the pointer (so does a drag, or Shift), and the camera always stays on it (`leadCam`): there's no looking
+  around, and a zoom (wheel, pinch, double tap) is about the forager, from `HOME_TILES` across out to `FAR_TILES`. A click
   or a tap on something the meadow gives (mushrooms, greens, a bramble, a fruit or mast tree, a hive) walks it there and
   picks it into the satchel, a row of slots at the bottom in the middle (sim.js `gather`, `w.forager.bag`; game.js
   `goGather`, `renderSatchel`). Every season has little wild finds to pick (sim.js `w.finds`), what has something to give
   glints now and then, standing still the forager senses what's about, and with nothing on screen a small marker at the
-  edge shows the nearest and points to it (game.js `drawGlints`, `drawPickArrow`). Cooking comes next. `forager-lab.html` shows all its paintings. Notes in game.md and ecology.md.
+  edge shows the nearest and points to it (game.js `drawGlints`, `drawPickArrow`). Cooking comes next (PLAN.md). `forager-lab.html` shows all its paintings. Notes in game.md and ecology.md.
 - `game.js`: drawing, UI, the inspector. Its features (and where new notes on them go) are in
   `.claude/rules/game.md`, which loads when game.js or index.html is opened.
 - `ground.js`: the ground (grass, earth, shores, water) as a WebGL shader, painted from a
   few small textures of one texel a tile that game.js keeps up to date (`paintTerrain`, `updateWater`).
   It paints again only when a texture, the zoom or the light has moved (`steady`), and at most at 2x
-  (`GROUND_DPR`). At speed (15x and up: none now, only 1x and pause) the light, the colours and
-  the wet move a little every frame, so what only moves with them waits up to `GROUND_HOLD` ms. In Safari (`WEBKIT`) it keeps to
+  (`GROUND_DPR`). In Safari (`WEBKIT`) it keeps to
   `GROUND_WEBKIT` pixels, never below 1x: Safari misses a frame on each repaint of a big ground. While the camera pans
   (following, dragging) it paints a margin round the screen (`PAD`) and slides the picture along (`Ground.view`) until the margin runs out. The picture is a canvas of its own
   under the meadow's (`#ground`), slid into place with a CSS transform, never copied onto a frame; so nothing drawn on the meadow can blend with the ground (a `'lighter'` glow lays a
@@ -47,9 +47,9 @@ closed); none of that project's rules apply here.
   differently each time); the lab plays each piece on demand. Like C418's Minecraft music, the
   silence between pieces is part of it, and no piece is about the time of day (a day is 12 minutes, a
   piece 90 s): they fit any moment, lean towards a season at 1x, and the piano plays darker at night.
-- `index.html`: layout and styles. The world fills the screen: on it only the watch (top middle), a small pill top right
-  (pause, sound, ••• with a link, an idea and a new meadow; on a phone the sound waits in •••), a toast line under the
-  watch (`toast`) and the inspector. Axel wants to see the meadow, not big cards: new UI stays small, temporary and
+- `index.html`: layout and styles. The world fills the screen: on it only a small pill top right
+  (pause, sound, ••• with a link, an idea and a new meadow; on a phone the sound waits in •••), a toast line top
+  middle (`toast`) and the inspector. Axel wants to see the meadow, not big cards: new UI stays small, temporary and
   close to the action. The cards are opaque parchment with a painted grain (`--paper`), never a `backdrop-filter`.
   Phones get slim bars (`narrow()`: up to 760px wide, or up to 500px tall on their side). Upright, the inspector is a
   bottom sheet; on their side (`short()`) it is a panel down the right. Either way it opens folded to one line (`stripHTML`):
@@ -122,7 +122,7 @@ new feature must not slow it down. If it would, make it cheaper or leave it out.
   as `-0`, and nothing is `delete`d (set it to its blank value). A field added mid-game, or a whole number turning a
   fraction, gives V8 a new layout: it then reads those objects the slow way for good and keeps rerunning stale compiled
   loops, which once halved the sim's speed. A new field goes into the blank.
-- The page (the watch, the inspector) updates a few times a second at most, and only rewrites what changed.
+- The page (the inspector) updates a few times a second at most, and only rewrites what changed.
 - Smooth is also even. Input comes when it likes (Safari hands a drag's moves over unaligned with the frames: two in one,
   none in the next), so whatever moves the camera from input calls `handMoved(e.timeStamp)` after it, and the frame
   draws the camera as the hand had it a moment ago (`handShow`). A frame's time is `onBeat`'s, not the browser's (Safari's
@@ -134,7 +134,7 @@ new feature must not slow it down. If it would, make it cheaper or leave it out.
   tried the same and got worse (they then fight the page for the CPU).
 - Measure it, but only when a change will obviously cost something you could notice: a new full-screen
   pass, much more drawn each frame, new work in a hot loop. Then time `render` before and after over a few
-  seconds in a busy meadow, following an animal, zoomed out, at the fastest speed there is. If it got slower, fix it before
+  seconds in a busy meadow, the forager walking, zoomed out, at the fastest speed there is. If it got slower, fix it before
   committing, and put the numbers in the commit message. A caption, a card or a small drawing tweak doesn't need it.
 
 After touching the sim, run a few years of it over several seeds headless (node: `createWorld`, `step`, read `w.count`,

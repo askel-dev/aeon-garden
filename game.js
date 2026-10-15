@@ -33,7 +33,7 @@ if (COUNTER && !['localhost', '127.0.0.1'].includes(location.hostname)) {
 
 let world;
 const ui = {
-  speed: 1, sound: false, selectedId: 0, picked: null, hoverId: 0, follow: false, lead: true, mark: null,   // lead: the camera goes with the forager; mark: where it was sent
+  speed: 1, sound: false, selectedId: 0, picked: null, hoverId: 0, mark: null,   // mark: where the forager was sent
   gather: null, slotTip: null,              // what the forager is off to pick { kind, it } (gatherFrame); the satchel's slot with its name open
   trail: [], effects: [], allStory: false, sheetUp: false,
   sky: { mix: {}, tick: 0, bolts: [], boom: -1e9, rainbow: -1e9, bowEnd: -1e9 },
@@ -102,7 +102,8 @@ function resize() {
   vw = canvas.clientWidth || innerWidth; vh = canvas.clientHeight || innerHeight;
   canvas.width = Math.round(vw * dpr); canvas.height = Math.round(vh * dpr);
   minZoom = Math.max(vw / S.W, vh / S.H);        // the meadow fills the window: the wide shot
-  fitZoom = Math.min(vw / S.W, vh / S.H) * FIT;  // and you may look further out, at all of it
+  // and as far out as you may zoom: FAR_TILES across, or all of it on a small meadow
+  fitZoom = Math.max(Math.min(vw / S.W, vh / S.H) * FIT, vw / FAR_TILES[narrow() ? 1 : 0]);
   cam.zoom = Math.max(cam.zoom, fitZoom);
   clampCam();
   measureSheet();
@@ -137,10 +138,10 @@ const toScreen = (x, y) => [(x - cam.x) * cam.zoom + vw / 2, (y - cam.y) * cam.z
 const SCR = [0, 0];
 const onScreen = (x, y) => { SCR[0] = (x - cam.x) * cam.zoom + vw / 2; SCR[1] = (y - cam.y) * cam.zoom + vh / 2; return SCR; };
 const toWorld = (sx, sy) => [(sx - vw / 2) / cam.zoom + cam.x, (sy - vh / 2) / cam.zoom + cam.y];
-// Drags and scrolls move the view by whole screen pixels, so the ground's tiles can slide along.
-const wholePx = v => Math.round(v * dpr) / dpr;
 
+// The camera stays on the forager, so every zoom is about it, wherever it was asked for.
 function zoomAt(sx, sy, z) {
+  if (world?.forager) [sx, sy] = toScreen(world.forager.x, world.forager.y);
   const [wx, wy] = toWorld(sx, sy);
   cam.zoom = clamp(z, fitZoom, 64);
   const [nx, ny] = toWorld(sx, sy);
@@ -231,10 +232,10 @@ function paintedSprite(emoji, px, tint, leaf, center) {
   spriteBytes += size * size * 4;
   const c = document.createElement('canvas');
   c.width = c.height = size;
-  // Repainting and centring read the pixels back: from a canvas on the GPU that waits for it, 5-30 ms a sprite.
+  // Centring reads the pixels back: from a canvas on the GPU that waits for it, 5-30 ms a sprite.
   // Painted things ('reeds:0', 'lily:2', 'bubble:5': PAINTERS) are painted in their colours, never read back.
   const colon = emoji.indexOf(':'), art = colon > 0 && PAINTERS[emoji.slice(0, colon)];
-  const g = c.getContext('2d', !art && (leaf || center) && { willReadFrequently: true });
+  const g = c.getContext('2d', !art && center && { willReadFrequently: true });
   if (art) {
     const was = standIns;
     standIns = false;                                  // (what it's made from is never a stand-in)
@@ -264,7 +265,6 @@ function paintedSprite(emoji, px, tint, leaf, center) {
       g.fillStyle = tint;
       g.fillRect(0, 0, size, size);
     }
-    if (leaf) restyleTree(g, size, leaf);
   }
   s = { canvas: c, size: size / dpr, px, look, used: spriteFrame };
   spriteCache.set(key, s); latestLook.set(look, s);
@@ -288,16 +288,6 @@ function dropSprites(need) {
   spriteCache.clear(); latestLook.clear(); spriteBytes = 0;
 }
 
-// Trees wear the seasons by repainting their emoji (once per look; the sprite cache keeps it).
-// Leaf pixels are the ones clearly greener than they are red or blue. They take the new colour
-// but keep their shading, so the canopy keeps its light and shadow and the trunk stays brown.
-//   rgb, m   the new leaf colour, and how much of it
-//   where    'dark': only the shaded leaves (a pine's old inner needles), 'light': only the
-//            lit ones (fresh tips), otherwise all of them
-//   fall     how many leaves have dropped, in soft blotches; the trunk fades with them
-//   snow     how much snow lies along the tops
-//   blossom  how much blossom is out, in little clusters over the leaves, of colour bloom
-//   fruit    an emoji to hang in the tree (hangFruit)
 const SNOW_RGB = [244, 248, 252];
 function hash2(x, y, seed) {
   let h = Math.imul(x, 374761393) + Math.imul(y, 668265263) + Math.imul(seed, 982451653) | 0;
@@ -310,106 +300,6 @@ function blotches(x, y, seed) {                          // smooth value noise, 
   return lerp(lerp(hash2(ix, iy, seed), hash2(ix + 1, iy, seed), u),
               lerp(hash2(ix, iy + 1, seed), hash2(ix + 1, iy + 1, seed), u), v);
 }
-function flowerAt(x, y, amount) {                      // round clusters, more of them as more are out
-  const cx = Math.floor(x), cy = Math.floor(y);
-  for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
-    const X = cx + i, Y = cy + j;
-    if (hash2(X, Y, 7) > amount * 0.55) continue;
-    const r = 0.3 + 0.25 * hash2(X, Y, 10);
-    if ((x - X - hash2(X, Y, 8)) ** 2 + (y - Y - hash2(X, Y, 9)) ** 2 < r * r) return true;
-  }
-  return false;
-}
-function restyleTree(g, size, look) {
-  const img = g.getImageData(0, 0, size, size), d = img.data;
-  const alpha = new Uint8Array(size * size);
-  for (let i = 0; i < alpha.length; i++) alpha[i] = d[i * 4 + 3];
-  const cap = Math.max(2, Math.round(size * 0.06)), cell = size / 9;
-  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-    const p = y * size + x, i = p * 4;
-    if (!alpha[p]) continue;
-    const leaf = clamp((d[i + 1] - Math.max(d[i], d[i + 2])) / 40, 0, 1), shade = d[i + 1] / 160;
-    if (look.m && leaf) {
-      const w = look.where === 'dark' ? clamp((0.9 - shade) * 3, 0, 1)
-              : look.where === 'light' ? clamp((shade - 0.75) * 3, 0, 1) : 1;
-      const lit = look.where === 'dark' ? Math.max(shade, 0.62) : shade;
-      const a = leaf * w * look.m;
-      for (let k = 0; k < 3; k++) d[i + k] = lerp(d[i + k], Math.min(255, look.rgb[k] * lit), a);
-    }
-    if (look.blossom && leaf && flowerAt(x / (size / 18), y / (size / 18), look.blossom)) {
-      const lit = clamp(0.8 + shade * 0.25, 0, 1.08);
-      for (let k = 0; k < 3; k++) d[i + k] = lerp(d[i + k], Math.min(255, look.bloom[k] * lit), leaf * 0.95);
-    }
-    if (look.snow) {
-      const top = y < cap || alpha[p - cap * size] < 60;
-      const a = look.snow * (top ? 0.95 : 0.7 * leaf * clamp((shade - 0.45) * 2, 0, 1));
-      for (let k = 0; k < 3; k++) d[i + k] = lerp(d[i + k], SNOW_RGB[k], a);
-    }
-    if (look.fall) {
-      const keep = clamp((blotches(x / cell, y / cell, look.seed) - look.fall) * 5 + 0.5, 0, 1);
-      d[i + 3] *= lerp(1 - look.fall, keep, leaf);
-    }
-  }
-  g.putImageData(img, 0, 0);
-  if (look.fruit) hangFruit(g, size, look);
-}
-
-// Fruit hangs in the gaps between the leaf clumps, lower in the tree and not on its rim, each on
-// a stalk and in the shade of the leaves above, with a few bits of the tree laid back over its top.
-function hangFruit(g, size, look) {
-  const d = g.getImageData(0, 0, size, size).data;
-  const leafAt = (x, y) => {
-    x |= 0; y |= 0;
-    if (x < 0 || y < 0 || x >= size || y >= size) return 0;
-    const i = (y * size + x) * 4;
-    return d[i + 3] > 200 && d[i + 1] - Math.max(d[i], d[i + 2]) > 15 ? d[i + 1] / 160 : 0;
-  };
-  let top = size, bot = 0;
-  for (let y = 0; y < size; y++) for (let x = 0; x < size; x += 3) if (leafAt(x, y)) { top = Math.min(top, y); bot = Math.max(bot, y); }
-  const r = size * 0.05, step = Math.max(1, Math.round(size / 100)), spots = [];
-  for (let y = top; y < bot; y += step) for (let x = 0; x < size; x += step) {
-    const lit = leafAt(x, y);
-    if (!lit || !leafAt(x - r * 1.6, y) || !leafAt(x + r * 1.6, y) || !leafAt(x, y - r * 1.6) || !leafAt(x, y + r * 1.4)) continue;
-    const around = (leafAt(x - r, y - r) + leafAt(x + r, y - r) + leafAt(x, y - r * 1.5)) / 3;   // a gap is darker
-    spots.push({ x, y, lit, score: (around - lit) * 2 + (y - top) / (bot - top) * 0.8 + hash2(x, y, look.seed) * 0.5 });
-  }
-  spots.sort((a, b) => b.score - a.score);
-  const hung = [];
-  for (const q of spots) {
-    if (hung.length >= look.fruit.n) break;
-    if (hung.every(p => Math.hypot(p.x - q.x, p.y - q.y) > r * 3.2)) hung.push(q);
-  }
-  const layer = (c => (c.width = c.height = size, c))(document.createElement('canvas'));
-  const over = (c => (c.width = c.height = size, c))(document.createElement('canvas'));
-  const f = layer.getContext('2d'), o = over.getContext('2d');
-  f.textAlign = 'center'; f.textBaseline = 'middle';
-  f.strokeStyle = '#5a3a1c'; f.lineWidth = Math.max(1, r * 0.14);
-  for (const [k, p] of hung.entries()) {
-    const rr = r * (0.85 + 0.3 * hash2(k, look.seed, 8));
-    f.beginPath(); f.moveTo(p.x, p.y - rr * 0.3); f.lineTo(p.x + rr * 0.15, p.y - rr * 1.5); f.stroke();
-    f.save(); f.translate(p.x, p.y + rr * 0.35); f.rotate((hash2(k, look.seed, 9) - 0.5) * 0.5);
-    f.font = `${rr * 2.3}px ${EMOJI_FONT}`; f.fillText(look.fruit.e, 0, 0);
-    f.restore();
-    for (let j = 0; j < 3; j++) {
-      o.beginPath();
-      o.arc(p.x + (hash2(k, j, 11) - 0.5) * rr * 1.6, p.y - rr * (0.55 + 0.35 * hash2(k, j, 12)), rr * (0.45 + 0.3 * hash2(k, j, 13)), 0, TAU);
-      o.fill();
-    }
-  }
-  f.globalCompositeOperation = 'source-atop';
-  for (const p of hung) {
-    const sh = f.createLinearGradient(0, p.y - r * 1.2, 0, p.y + r * 1.6);
-    sh.addColorStop(0, 'rgba(20,40,10,0.55)');
-    sh.addColorStop(0.45, `rgba(20,40,10,${0.35 * (1 - clamp(p.lit, 0, 1))})`);
-    sh.addColorStop(1, 'rgba(20,40,10,0)');
-    f.fillStyle = sh; f.fillRect(p.x - r * 2, p.y - r * 2, r * 4, r * 4);
-  }
-  o.globalCompositeOperation = 'source-in'; o.drawImage(g.canvas, 0, 0);     // the tree, only where the blobs are
-  g.drawImage(layer, 0, 0);
-  g.drawImage(over, 0, 0);
-  layer.width = over.width = 0;
-}
-
 function drawEmoji(emoji, x, y, px, opts = {}) {
   const s = sprite(emoji, px, opts.tint, opts.leaf, opts.center);
   if (!opts.flip && !opts.squash && opts.alpha === undefined) {
@@ -544,9 +434,6 @@ function edgeColour(r, g, b) {
 // ground, however cheap the shader: on a MacBook at 2x, five times a second at 1x speed. There the ground
 // is kept to GROUND_WEBKIT pixels, but never below 1x. A phone's small screen stays at 2x.
 const GROUND_DPR = 2, GROUND_WEBKIT = 1.5e6;
-// At 15x and 60x the light, the mist's colour, the wet and the season move every frame, too little a frame to see: what
-// only moves with them is painted at most every GROUND_HOLD ms (a full-screen shader, two frames in three at 60x).
-const GROUND_HOLD_SPEED = 15, GROUND_HOLD = 100;
 const WEBKIT = /AppleWebKit/.test(navigator.userAgent) && !/Chrome\/|Chromium|Edg\//.test(navigator.userAgent);
 const groundLayer = Ground.ok ? Ground.canvas : null, laid = { w: 0, h: 0, x: 0, y: 0 };
 if (groundLayer) { groundLayer.id = 'ground'; canvas.before(groundLayer); }
@@ -565,7 +452,6 @@ function drawGround(z, ox, oy, shx, shy) {
     width: w, height: h, zoom: z, ox, oy, dpr: gd, seed: groundSeed, low, high, sand: shoreSand, fog: fogColour(high, ck.phase),
     light: goldLight(shownGold(ck.phase)),
     snow: world.snow, damp: 1 - 0.12 * world.wet, ice: iceOver(), cold: coldness(), lx: k * sn.lean, ly: k * 0.8,
-    hold: ui.speed >= GROUND_HOLD_SPEED ? GROUND_HOLD : 0,   // (at speed the light and the colours may wait a moment: ground.js steady)
   });
   const g = Ground.canvas, cw = g.width / gd, ch = g.height / gd, x = shx - Ground.view.x / gd, y = shy - Ground.view.y / gd;
   if (cw !== laid.w || ch !== laid.h) { g.style.width = cw + 'px'; g.style.height = ch + 'px'; laid.w = cw; laid.h = ch; }
@@ -673,7 +559,7 @@ function plantLook(p, season, z) {
 }
 
 // How each plant looks, as px * 16 + which emoji (0: nothing), and when that was. plantArt is the
-// flower's painting (flowerSprite's code + 1; 0: it's drawn as its emoji).
+// flower's painting (flowerSprite's code + 1; 0: nothing).
 let plantKeys = null, plantArt = null, plantKeysWorld = null, plantKeysTick = -1, plantKeysZoom = 0, plantKeysDpr = 0;
 function updatePlantLooks(z, season) {
   if (plantKeysWorld !== world || plantKeys.length !== world.plants.length) {   // (a new world)
@@ -697,20 +583,14 @@ function drawPlants(z, ox, oy, season) {
   ctx.globalAlpha = 0.9;
   for (let i = 0; i < world.plants.length; i++) {
     const key = plantKeys[i];
-    if (!key) continue;
-    const p = world.plants[i], art = plantArt[i];
+    const art = plantArt[i];
+    if (!art) continue;
+    const p = world.plants[i];
     if (!fadeAt(p.x, p.y)) continue;
-    if (art) {                                       // its foot a little below its spot, so the clump stands on it
-      const px = key >> 4, w = FLOWER_BOX[0] * px, h = FLOWER_BOX[1] * px;
-      const x = ox + p.x * z - w / 2, y = oy + p.y * z + px * 0.35 - h * FLOWER_FOOT;
-      if (x + w < 0 || y + h < 0 || x > vw || y > vh) continue;
-      ctx.drawImage(flowerSprite(art - 1), x, y, w, h);
-      continue;
-    }
-    const s = sprite(PLANT_EMOJI[(key & 15) - 1], key >> 4);
-    const x = ox + p.x * z - s.size / 2, y = oy + p.y * z - s.size / 2;
-    if (x + s.size < 0 || y + s.size < 0 || x > vw || y > vh) continue;
-    ctx.drawImage(s.canvas, x, y, s.size, s.size);
+    const px = key >> 4, w = FLOWER_BOX[0] * px, h = FLOWER_BOX[1] * px;   // its foot a little below its spot, so the clump stands on it
+    const x = ox + p.x * z - w / 2, y = oy + p.y * z + px * 0.35 - h * FLOWER_FOOT;
+    if (x + w < 0 || y + h < 0 || x > vw || y > vh) continue;
+    ctx.drawImage(flowerSprite(art - 1), x, y, w, h);
   }
   unfade();
   ctx.restore();
@@ -1046,8 +926,8 @@ function arch(g, w, h, y0) {
 // sizes, like a sprite: drawn by hand every frame they cost a few gradients and a dozen fills a burrow. How fresh its
 // earth is, how long it's been left and how far it's dug go in BURROW_STEPS. The paths worn round it are drawn as ever.
 const BURROW_STEPS = 16;
-// At speed a burrow's earth fades, the grass takes it back and a dig goes on in steps a frame or two apart, each a painting of
-// its own (at 60x a dozen a second a burrow): a step waits till its painting is BURROW_MS old. At 1x they're seconds apart.
+// A burrow's earth fades, the grass takes it back and a dig goes on in steps, each a painting of its own: a step waits
+// till its painting is BURROW_MS old (they came a frame or two apart when the meadow could run at 60x).
 const BURROW_MS = 250;
 const burrowArt = new WeakMap();                // a burrow's painting: { shape, age, at, canvas, r, w, h } (its middle at w/2, h/2)
 function drawBurrow(b, sx, sy, z, season, residents) {
@@ -1208,19 +1088,8 @@ const GOLD_STEPS = 10;                    // the ground is lit in this many step
 const goldenHour = phase => smooth(0.45, 0.57, phase) * (1 - smooth(0.59, 0.67, phase));
 const goldLight = k => GOLD_LIGHT.map(v => 1 + (v - 1) * k);
 
-// At speed a night comes and goes in a blink (at 60x three a second), so the light keeps near the day's:
-// the night still breathes, but nothing flashes. The dial in the time pill shows the days going by instead.
-// lightSwing is how much of the swing is shown; it eases to the speed's (lightFrame) so a change never jumps.
-const LIGHT_SWING = [[60, 0.12], [15, 0.5], [0, 1]];   // from this speed up: this much of the swing
-const LIGHT_MID = 0.095;                               // the darkness it keeps near, a little dimmer than day
-let lightSwing = 1;
-function lightFrame(dt) {
-  if (!ui.speed) return;
-  const to = LIGHT_SWING.find(([s]) => ui.speed >= s)[1];
-  lightSwing += (to - lightSwing) * (1 - Math.pow(0.02, dt));
-}
-const shownDark = phase => LIGHT_MID + (darkness(phase) - LIGHT_MID) * lightSwing;
-const shownGold = phase => Math.round(goldenHour(phase) * lightSwing * GOLD_STEPS) / GOLD_STEPS;
+const shownDark = darkness;
+const shownGold = phase => Math.round(goldenHour(phase) * GOLD_STEPS) / GOLD_STEPS;
 
 // The things a frame draws (a tree or a rock d, a swarm h, a creature c, a visitor v, mushrooms, nettles or a bramble s), each a record of the
 // one shape, kept from frame to frame: a few hundred new objects a frame, of five shapes, were felt in every loop over them.
@@ -1253,7 +1122,7 @@ function sortByY(items) {
 let shakeX = 0, shakeY = 0;                          // the frame's own transform (render's), in device pixels: see drawPaintedTree
 function render(now) {
   // Thunder rumbles the whole screen a little.
-  const q = now - ui.sky.boom < 350 && ui.speed <= 4 ? 3 * (1 - (now - ui.sky.boom) / 350) : 0;
+  const q = now - ui.sky.boom < 350 ? 3 * (1 - (now - ui.sky.boom) / 350) : 0;
   const shx = q * Math.sin(now / 17), shy = q * Math.cos(now / 23);
   shakeX = shx * dpr; shakeY = shy * dpr;
   ctx.setTransform(dpr, 0, 0, dpr, shakeX, shakeY);
@@ -1262,7 +1131,7 @@ function render(now) {
   // Sprites are painted near the size they're drawn at, so 'high' looks the same, but Chrome pays
   // for it on every draw, GPU or not: with it, a wood on screen dropped frames.
   ctx.imageSmoothingQuality = 'low';
-  spriteFrame++; paintedMs = 0; standIns = true; turned = 0;
+  spriteFrame++; paintedMs = 0; standIns = true;
   ctx.clearRect(-8, -8, vw + 16, vh + 16);          // past the meadow's edge the page shows through
   const [ox, oy] = toScreen(0, 0);
   const z = cam.zoom, ck = S.clock(world);
@@ -1298,6 +1167,7 @@ function render(now) {
   // Trees, rocks and animals, back to front.
   const items = frameItems;
   items.length = 0;
+  cover.n = 0; cover.built = false;                        // (the crowns drawn: coverAt)
   for (const d of world.decor) {                           // (a hive is in one of the trees)
     if (d.tree && d.size * z < SEEDLING_PX && !d.stump && !d.hedge) continue;   // a seedling too small to see from here (a hedge's whips always show)
     const [sx, sy] = onScreen(d.x, d.y), px = d.tree ? treePx(d) : d.size * z;
@@ -1346,7 +1216,10 @@ function render(now) {
   {                                                        // the forager
     const F = world.forager, d = drawnAt(F), sx = (d.x - cam.x) * z + vw / 2, sy = (d.y - cam.y) * z + vh / 2;
     foragerFrame(now, d);
-    if (visible(sx, sy, 2 * forPx())) itemOf(items, d.y, sx, sy, 1).p = F;
+    const px = forPx();
+    fgBody.on = visible(sx, sy, 2 * px); fgBody.x = sx; fgBody.y = sy - px * 0.3; fgBody.w = px * 0.14; fgBody.h = px * 0.28; fgBody.wy = d.y;
+    seeDt = Math.min(100, now - seeLast); seeLast = now;
+    if (fgBody.on) itemOf(items, d.y, sx, sy, 1).p = F;
   }
   sortByY(items);
   // Shadows first, all together, so a tree's shadow never lands on a rabbit behind it.
@@ -1366,7 +1239,7 @@ function render(now) {
   for (const it of items) {
     if (it.f < 0.02) continue;
     fadeTo(it.f);
-    if (it.d) it.d.hive ? drawBeeTree(it.d, it.sx, it.sy, now, ck) : drawDecor(it.d, it.sx, it.sy, now, ck, null, it.px);
+    if (it.d) it.d.hive ? drawBeeTree(it.d, it.sx, it.sy, now, ck) : drawDecor(it.d, it.sx, it.sy, now, ck, it.px);
     else if (it.h) drawSwarm(it.h, it.sx, it.sy);
     else if (it.s) it.s.green ? drawNettles(it.s, z) : it.s.bramble ? drawBramble(it.s, z) : it.s.find ? drawFind(it.s, z) : drawShroom(it.s, z);
     else if (it.v) drawVisitor(it.v, it.sx, it.sy, now, z);
@@ -1376,8 +1249,7 @@ function render(now) {
   unfade();
   drawGlow(now, true);
   if (splashes.length) drawSplashes(now);
-  drawFallingLeaves(now);                                  // (an emoji tree's)
-  drawLeaves(now, false);                                  // and the painted trees' leaves coming down
+  drawLeaves(now, false);                                  // the trees' leaves coming down
   drawPollen(now);
   drawButterflies(now, ck);
 
@@ -1400,8 +1272,8 @@ function render(now) {
       if (b.count <= 0) continue;
       const [sx, sy] = toScreen(b.x, b.y);
       if (!visible(sx, sy, 40)) continue;
-      const bob = Math.sin(now / 600 + b.id) * 3;
-      drawEmoji('💤', sx + z * 0.8, sy - z * 1.1 + bob, Math.max(11, z * 0.8), { alpha: 0.85 });
+      const bob = Math.sin(now / 600 + b.id) * 3, hid = coverAt(sx + z * 0.8, sy - z * 1.1, b.y);
+      if (hid < 0.98) drawEmoji('💤', sx + z * 0.8, sy - z * 1.1 + bob, Math.max(11, z * 0.8), { alpha: 0.85 * (1 - hid) });
     }
     for (const h of world.hives) {
       if (!h.bees || h.cluster) continue;
@@ -1424,11 +1296,6 @@ function render(now) {
   if (hov && hov.alive && !hov.hidden && hov.id !== ui.selectedId) {
     const [sx, sy] = screenOf(hov);
     drawLabel(`${hov.name} · ${S.mood(world, hov).text}`, sx, sy + creaturePx(hov) * 0.55 + 6);
-  } else if (ui.hoverHive && ui.hoverHive !== ui.picked?.it) {
-    const h = ui.hoverHive, [sx, sy] = toScreen(h.x, h.y);
-    const where = h.patch && h.patch.field ? `the ${h.patch.field.name}` : 'flowers';
-    const dance = S.patchFresh(world, h) ? ` · 💃 ${where} to the ${compass(h.patch.x - h.x, h.patch.y - h.y)}` : '';
-    drawLabel(`🐝 ${hiveName(h)} · ${h.bees} ${h.bees === 1 ? 'bee' : 'bees'} · ${honeyWord(h)}${dance}`, sx, sy + z * 0.5 + 6);
   }
   drawPickArrow(now);
   standIns = false;                                    // a portrait for the inspector is kept, so it's always painted
@@ -1503,14 +1370,14 @@ const CROW_FLY = 1.5;              // how high a crow flies, in its size
 const CROW_EASE = 12;              // ticks to get most of the way to a new height
 const CROW_HOP_LEN = 0.35;         // tiles a hop, hopping about on the ground
 // Where the crown is in each kind's painting, in the tree's size (treePx), measured off trees.js: its bottom
-// and top, and how far it reaches to each side at five heights from the bottom up. (emoji: the emoji trees.)
+// and top, and how far it reaches to each side at five heights from the bottom up.
 const CROWNS = {
   oak: [0.33, 0.8, 0.4, 0.44, 0.42, 0.33, 0.2], beech: [0.42, 0.88, 0.33, 0.38, 0.37, 0.3, 0.16],
   maple: [0.5, 0.95, 0.26, 0.33, 0.34, 0.3, 0.18], birch: [0.62, 1.28, 0.3, 0.4, 0.42, 0.4, 0.28],
   alder: [0.58, 1.26, 0.3, 0.39, 0.29, 0.21, 0.13],
   apple: [0.22, 0.62, 0.3, 0.36, 0.36, 0.32, 0.2], cherry: [0.22, 0.62, 0.3, 0.36, 0.36, 0.32, 0.2],
   pine: [0.3, 1.05, 0.36, 0.31, 0.25, 0.18, 0.12], hawthorn: [0.2, 0.5, 0.3, 0.33, 0.32, 0.28, 0.18],
-  emoji: [0.3, 0.75, 0.35, 0.42, 0.42, 0.36, 0.22],
+  hive: [0.4, 1.48, 0.55, 0.68, 0.7, 0.5, 0.3],    // (the giant: no crow sits in it, sim.js perchable, but it hides what's behind: coverAt)
 };
 const SEAT_OUT = 0.9;              // how far out along the crown's reach a seat on the side is
 const NEST_SEAT = [0.12, 0.85];    // the nest: a little to the side, high in the crown
@@ -1523,7 +1390,7 @@ function crowSeat(c) {
   if ((c.mode === 'sleep' || c.mode === 'roost') && c.perch) { d = c.perch.tree; s = S.CROW_SEATS[c.perch.k][0] * (d.id % 2 ? -1 : 1); t = S.CROW_SEATS[c.perch.k][1]; seat.x = c.perch.x; seat.y = c.perch.y; }
   else if (c.mode === 'nest' && c.home) { d = c.home; s = NEST_SEAT[0]; t = NEST_SEAT[1]; seat.x = d.x; seat.y = d.y + 0.1; }
   else return null;
-  const k = treeWorker ? CROWNS[treeKind(d)] || CROWNS.oak : CROWNS.emoji, px = treePx(d), i = t * 4, j = Math.min(3, i | 0);
+  const k = CROWNS[treeKind(d)] || CROWNS.oak, px = treePx(d), i = t * 4, j = Math.min(3, i | 0);
   seat.tree = d; seat.dx = s * SEAT_OUT * lerp(k[2 + j], k[3 + j], i - j) * px; seat.up = lerp(k[0], k[1], t) * px;
   return seat;
 }
@@ -1598,10 +1465,9 @@ function weaveOf(c) {
   return s;
 }
 
-// Where a creature is drawn in the meadow: up to SMOOTH_SPEED, between where it was a tick ago (keepLast) and where it
-// is, as far along as the clock is to the next tick, so it glides rather than stepping 30 times a second. Quicker,
-// held, or just put somewhere, where it is. (One shared answer: read it straight away.)
-const SMOOTH_SPEED = 2;
+// Where a creature is drawn in the meadow: between where it was a tick ago (keepLast) and where it is, as far along as
+// the clock is to the next tick, so it glides rather than stepping 30 times a second. Held, or just put somewhere,
+// where it is. (One shared answer: read it straight away.)
 const lastTick = new WeakMap(), drawnPos = { x: 0, y: 0 };
 function keepLast() {
   for (const c of world.creatures) keepAt(c);
@@ -1614,7 +1480,7 @@ function keepAt(c) {
   p.x = c.x; p.y = c.y; p.tick = world.tick + 1;
 }
 function drawnAt(c) {
-  const p = ui.speed <= SMOOTH_SPEED && lastTick.get(c);
+  const p = lastTick.get(c);
   if (!p || p.tick !== world.tick || Math.abs(c.x - p.x) + Math.abs(c.y - p.y) > 1) { drawnPos.x = c.x; drawnPos.y = c.y; return drawnPos; }
   const t = Math.min(acc, 1);
   drawnPos.x = p.x + (c.x - p.x) * t; drawnPos.y = p.y + (c.y - p.y) * t;
@@ -1761,7 +1627,7 @@ function visitorArt(v) {
   if (v.mode === 'sleep') return 'hog:3';
   if (v.mode === 'snuffle') return 'hog:2';
   const s = stepOf(v, HOG_STEP);
-  return ui.speed > FEW_FRAMES ? 'hog:0' : 'hog:' + s;
+  return 'hog:' + s;
 }
 function drawVisitor(v, sx, sy, now, z) {
   const px = visitorPx(v), a = visitorFade(v);
@@ -1793,11 +1659,11 @@ function heronArt(v, up, px, now) {
   if (v.mode === 'sleep') return 'heron:9';
   if (v.mode === 'in' || v.mode === 'out' || v.mode === 'hop') {
     if (up < px * 0.12) return 'heron:0';                   // (just down, or not yet up)
-    return ui.speed > 0 && ui.speed <= FEW_FRAMES ? 'heron:' + (7 + ((now / HERON_BEAT + v.id) & 1)) : 'heron:7';
+    return ui.speed > 0 ? 'heron:' + (7 + ((now / HERON_BEAT + v.id) & 1)) : 'heron:7';
   }
   if (v.mode === 'stab') return 'heron:4';
   if (v.mode === 'gulp') return v.caught === 'fish' ? 'heron:6' : 'heron:5';
-  if (v.mode === 'stalk') { const s = stepOf(v, HERON_STEP); return 'heron:' + (ui.speed > FEW_FRAMES ? 2 : 2 + s); }
+  if (v.mode === 'stalk') { const s = stepOf(v, HERON_STEP); return 'heron:' + (2 + s); }
   return v.timer % 100 >= 70 ? 'heron:0' : 'heron:1';
 }
 const wadingAt = v => !world.frozen && world.water[(v.y | 0) * S.W + (v.x | 0)] > 0;
@@ -1833,7 +1699,7 @@ const DRAGON_SIT = 0.5;            // and sit up a reed
 const DRAGON_BEAT = 45;            // ms a wingbeat painting shows
 const dragonWay = new WeakMap();   // the way the one the sim moves last went
 function drawDragonflies(v, sx, sy, now, z, px, a) {
-  const t = world.tick + acc, still = ui.speed === 0 || ui.speed > FEW_FRAMES, ground = sy + visitorFeet(), sat = v.mode === 'perch' || v.mode === 'roost';
+  const t = world.tick + acc, still = ui.speed === 0, ground = sy + visitorFeet(), sat = v.mode === 'perch' || v.mode === 'roost';
   let way = dragonWay.get(v) ?? (v.facing > 0 ? 0 : Math.PI);
   if (!sat && (v.tx !== v.x || v.ty !== v.y)) way = Math.atan2(v.ty - v.y, v.tx - v.x);
   dragonWay.set(v, way);
@@ -1884,7 +1750,7 @@ function kfUp(v, px) {
 }
 function kfArt(v, now) {
   switch (v.mode) {
-    case 'in': case 'out': case 'back': return ui.speed > 0 && ui.speed <= FEW_FRAMES ? 'kfisher:' + (3 + ((now / KF_WHIRR + v.id) & 1)) : 'kfisher:3';
+    case 'in': case 'out': case 'back': return ui.speed > 0 ? 'kfisher:' + (3 + ((now / KF_WHIRR + v.id) & 1)) : 'kfisher:3';
     case 'dive': return 'kfisher:2';
     case 'beat': return 'kfisher:5';
     case 'sleep': return 'kfisher:6';
@@ -1919,9 +1785,9 @@ function larkUp(v) {
 }
 function larkArt(v, up, px, now) {
   if (v.mode === 'sleep') return 'lark:6';
-  if (up > px * 0.15 || v.mode === 'rise') return ui.speed > 0 && ui.speed <= FEW_FRAMES ? 'lark:' + (4 + ((now / LARK_FLUTTER + v.id) & 1)) : 'lark:4';
+  if (up > px * 0.15 || v.mode === 'rise') return ui.speed > 0 ? 'lark:' + (4 + ((now / LARK_FLUTTER + v.id) & 1)) : 'lark:4';
   if (v.mode === 'peck') return v.timer % 40 < 22 ? 'lark:2' : 'lark:3';
-  if (v.mode === 'walk') return 'lark:' + (ui.speed > FEW_FRAMES ? 0 : stepOf(v, LARK_STEP));
+  if (v.mode === 'walk') return 'lark:' + stepOf(v, LARK_STEP);
   return 'lark:0';
 }
 function drawSkylark(v, sx, sy, now, z, px, a) {
@@ -1970,28 +1836,36 @@ function drawCreature(c, sx, sy, now) {
   else drawEmoji(art, sx, y, px, { flip: flipOf(c), squash });   // feet stay on the ground
   if (c.load && c.species === 'bee') drawBaskets(c, sx, y, px);
   if (c.mode === 'sip') drawSipping(c, sx, sy, px, now);
-  if (px > 18 && ui.speed > 0 && ui.speed <= 4 && atHole(c)) drawDigging(c, sx, y, px, now);
+  if (px > 18 && ui.speed > 0 && atHole(c)) drawDigging(c, sx, y, px, now);
 }
 
 // ------------------------------------------------------------------ the forager
 //
 // The player (sim.js w.forager), painted in fur.js (paintForager) in three views and a stride of eight paintings, by the
-// worker as a fox is. Its feet are where it is (a fox's middle is). Its legs go round with the ground it covers, a
-// stride for every 2 * FORAGER_REACH * 2 of its half-size it moves, so the foot on the ground stays put; the view comes
+// worker as a fox is, and a stride of eight more jogging for the sprint. Its feet are where it is (a fox's middle is). Its
+// legs go round with the ground it covers, a stride for every 2 * FORAGER_REACH * 2 of its half-size it moves (jogging,
+// FORAGER_JOG_STRIDE times that), so the foot on the ground stays put; the view comes
 // from its heading, held a little either side of a change so it doesn't flicker (side on, three-quarters from the front
 // or the back, mirrored going right). Standing it breathes, blinks now and then, after a moment turns to face you, and
 // now and then fidgets (FORAGER_FIDGET). In the shallows it's cut off at the water line with a ring round its legs, and
-// each step sends out a ring (fg.rings).
+// each step sends out a ring (fg.rings). Its outfit (Fur.FORAGER_OUTFITS) is the player's, picked as the first meadow opens
+// (pickOutfit; later from •••) and kept in localStorage for every meadow after.
 const FORAGER_SIZE = 2.5;                  // its painting's box, next to a rabbit's
-const FORAGER_ARTS = Array.from({ length: 3 << 4 }, (_, n) => 'forager:' + n);   // (made once: a frame builds no names)
-const FORAGER_POSES = [0, 1, 2, 3, 4, 8, 9, 10, 11, 12, 13, 14, 15];
+const FORAGER_ARTS = Array.from({ length: 3 << 7 }, (_, n) => 'forager:' + n);   // (made once: a frame builds no names)
+const OUTFIT = 'aeon-garden-outfit';       // in localStorage
+const FORAGER_POSES = [0, 1, 2, 3, 4, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23];
 const FORAGER_FIDGET = [7000, 14000];      // ms standing between fidgets, about
 const FORAGER_TURN_MS = 1100;              // standing this long, it turns to face you
-const FORAGER_RUN_STRIDE = 1.4;            // running, its stride is this much longer (its legs don't spin)
+const FORAGER_JOG = [0.1, 0.11];           // sent running, it jogs once up past this pace (tiles a tick) and walks again under
 const FORAGER_STILL_MS = 70;               // no nearer than this to the last move, it's standing (it's drawn between ticks)
 const forPx = () => (8 + cam.zoom) * FORAGER_SIZE;
-const fg = { at: -1, x: 0, y: 0, step: 0, stillMs: 1e4, view: 1, flip: false, art: FORAGER_ARTS[16], blinkAt: -1e9, blinkIn: 3000,
-  fidgetAt: -1e9, fidgetIn: 9000, lastHalf: 0, rings: [], wet: false, lx: -0, ly: -0, sized: 0, pick: -1e9 };
+const fg = { at: -1, x: 0, y: 0, step: 0, stillMs: 1e4, view: 1, flip: false, art: FORAGER_ARTS[32], blinkAt: -1e9, blinkIn: 3000,
+  fidgetAt: -1e9, fidgetIn: 9000, lastHalf: 0, jog: false, rings: [], wet: false, lx: -0, ly: -0, sized: 0, outfit: 0, picked: false, pick: -1e9 };
+try {
+  const o = localStorage.getItem(OUTFIT);
+  fg.picked = o !== null;
+  fg.outfit = Math.min(Fur.FORAGER_OUTFITS.length - 1, Math.max(0, +o | 0));
+} catch (e) { /* fine */ }
 // What's under the forager's feet, for its footsteps (sound.js step): the shallows, ice, snow, the wood's floor, the damp
 // sand along the water, earth bitten bare, or grass.
 const STEP_SNOW = 0.35, STEP_WOODS = 0.45, STEP_SHORE = 1.5, STEP_BARE = 0.12;
@@ -2009,8 +1883,9 @@ function foragerFrame(now, d) {
   if (fg.at < 0) { fg.x = d.x; fg.y = d.y; fg.at = now; }
   const dx = d.x - fg.x, dy = d.y - fg.y, moved = Math.hypot(dx, dy), ms = now - fg.at;
   fg.x = d.x; fg.y = d.y; fg.at = now;
+  fg.jog = f.running && f.speed > FORAGER_JOG[fg.jog ? 0 : 1];   // (its legs don't spin: the jog's stride is longer)
   if (moved > 1e-5 && moved < 2) {
-    fg.step += moved / (2 * Fur.FORAGER_REACH * px / cam.zoom * (f.running ? FORAGER_RUN_STRIDE : 1));
+    fg.step += moved / (2 * Fur.FORAGER_REACH * px / cam.zoom * (fg.jog ? Fur.FORAGER_JOG_STRIDE : 1));
     fg.stillMs = 0;
   } else if (ui.speed > 0) fg.stillMs += ms;            // (paused mid-stride, it holds the stride)
   fg.wet = !world.frozen && world.water[(d.y | 0) * S.W + (d.x | 0)] > 0;
@@ -2020,7 +1895,7 @@ function foragerFrame(now, d) {
     const sy = Math.sin(f.heading), sx = Math.cos(f.heading), v = fg.view;
     fg.view = sy > (v === 1 ? 0.45 : 0.62) ? 1 : sy < (v === 2 ? -0.45 : -0.62) ? 2 : 0;
     if (sx > 0.18) fg.flip = true; else if (sx < -0.18) fg.flip = false;
-    pose = 8 + Math.floor(fg.step % 1 * 8);
+    pose = (fg.jog ? 16 : 8) + Math.floor(fg.step % 1 * 8);
     const half = Math.floor(fg.step * 2);                 // a foot comes down: in the shallows, a ring
     if (half !== fg.lastHalf && fg.wet && ui.speed > 0) fg.rings.push({ x: d.x, y: d.y, t: now });
     if (half !== fg.lastHalf && ui.speed > 0) hear('step', d.x, d.y, { pace: f.speed / S.FORAGER_WALK, foot: half & 1, ground: groundUnder(d.x, d.y) }, true);   // (each foot down; the quicker it goes, the quicker and crisper they come)
@@ -2036,7 +1911,7 @@ function foragerFrame(now, d) {
     if (p < PICK_MS[2]) { pose = p < PICK_MS[0] || p > PICK_MS[1] ? 3 : 4; fg.stillMs = FORAGER_STILL_MS + 1; fg.fidgetIn = FORAGER_FIDGET[0]; }
   }
   if (fg.rings.length && now - fg.rings[0].t > 900) fg.rings.shift();
-  fg.art = shownPose(f, FORAGER_ARTS[(fg.view << 4) + pose], px);
+  fg.art = shownPose(f, FORAGER_ARTS[(fg.outfit << 7) + (fg.view << 5) + pose], px);
 }
 function drawForager(sx, sy, now) {
   const px = forPx(), art = fg.art, flip = fg.flip, top = sy - px * 0.36;   // (its painting's middle: the feet are at 0.72 of its half-size)
@@ -2072,12 +1947,39 @@ function foragerAhead() {
   const P = poseStep(Math.max(4, forPx()));
   if (!furWorker || P === fg.sized) return;
   fg.sized = P;
-  for (let v = 0; v < 3; v++) for (const p of FORAGER_POSES) furReady(FORAGER_ARTS[(v << 4) + p], P);
+  for (let v = 0; v < 3; v++) for (const p of FORAGER_POSES) furReady(FORAGER_ARTS[(fg.outfit << 7) + (v << 5) + p], P);
+}
+
+// Picking an outfit: a small card at the foot of the screen, under the forager, with it painted in each (front on,
+// standing) to tap. It opens as a new meadow does till one has been picked (newWorld), and from the ••• menu; the meadow
+// goes on behind it.
+function pickOutfit(open) {
+  const card = $('#outfit');
+  card.classList.toggle('hidden', !open);
+  if (!open) return;
+  const row = $('#outfit-row');
+  if (!row.children.length) Fur.FORAGER_OUTFITS.forEach((o, i) => {
+    const b = document.createElement('button'), c = document.createElement('canvas'), px = 84, size = Math.ceil(px * 1.3 * dpr);
+    c.width = c.height = size;
+    Fur.paintForager(c.getContext('2d'), size, px * dpr, (i << 7) + (1 << 5));
+    b.className = 'outfit-pick'; b.dataset.act = 'outfit'; b.dataset.o = i; b.title = o.name;
+    b.append(c, Object.assign(document.createElement('span'), { textContent: o.name }));
+    row.append(b);
+  });
+  for (const b of row.children) b.classList.toggle('on', +b.dataset.o === fg.outfit);
+}
+const outfitOpen = () => !$('#outfit').classList.contains('hidden');
+function wearOutfit(o) {
+  fg.outfit = o; fg.sized = 0; fg.picked = true;   // (foragerAhead asks for its new paintings)
+  try { localStorage.setItem(OUTFIT, String(o)); } catch (e) { /* fine */ }
+  pickOutfit(false);
 }
 
 // Where it was sent: a soft ring on the ground that comes in with a little bounce, breathes while it walks there and
-// fades once it's arrived. Painted once (MARK_ART), then only drawn.
+// fades once it's arrived. Painted once (MARK_ART), then only drawn. Held and steering, where it was sent moves on every
+// STEER_MS: the ring glides after it (MARK_GLIDE), and the trail with it, rather than jumping.
 const MARK_MS = [220, 500];                // coming in, fading out
+const MARK_GLIDE = 150;                   // ms: how quickly the ring catches up with where it was sent (a time constant)
 let MARK_ART = null;
 function markArt() {
   const W = 128, H = 64, c = document.createElement('canvas');
@@ -2097,12 +1999,61 @@ function drawMark(now) {
   if (!m.end && !f.walking) m.end = now;
   const t = now - m.t0, fade = m.end ? 1 - (now - m.end) / MARK_MS[1] : 1;
   if (fade <= 0) { ui.mark = null; return; }
+  const g = m.at ? 1 - Math.exp(-Math.min(100, now - m.at) / MARK_GLIDE) : 1;
+  m.at = now; m.sx += (m.x - m.sx) * g; m.sy += (m.y - m.sy) * g;
   const pop = t < MARK_MS[0] ? 1 + 0.35 * Math.sin(Math.PI * t / MARK_MS[0]) * (1 - t / MARK_MS[0]) : 1;
   const r = Math.max(10, (8 + cam.zoom) * 0.42) * pop * (1 + 0.05 * Math.sin(now / 260)) * (m.end ? 1 + 0.25 * (1 - fade) : 1);
-  const [sx, sy] = onScreen(m.x, m.y), art = MARK_ART || markArt();
-  ctx.globalAlpha = Math.min(1, t / 120) * fade * 0.9;
+  const [sx, sy] = onScreen(m.sx, m.sy), art = MARK_ART || markArt(), a = Math.min(1, t / 120) * fade;
+  const k = clamp((t - TRAIL_IN[0]) / TRAIL_IN[1], 0, 1);
+  drawTrail(sx, sy, r, k * k * (3 - 2 * k) * fade, now);   // (it comes in eased, just after the ring)
+  ctx.globalAlpha = a * 0.9;
   ctx.drawImage(art.img, sx - r, sy - r / 2, r * 2, r);
   ctx.globalAlpha = 1;
+}
+// And the way there: a faint dashed line from the ring back along what's left of its path (sim.js f.path, pulled tight
+// round the deep) to just short of its feet. The dashes are counted from the ring's middle, so they keep still on the
+// ground and it walks over them. It fades in once the ring has popped up. Sprinting, the dashes march on toward the ring
+// (TRAIL_MARCH), the pace eased up and down as it sets off and slows (TRAIL_EASE), and still while time is paused.
+const TRAIL_A = 0.6;
+const TRAIL_IN = [80, 450];               // ms after the ring it starts fading in, and how long that takes
+const TRAIL_MARCH = 2.2;                  // dashes a second they march on by, sprinting
+const TRAIL_EASE = 250;                   // ms the march takes to get up to pace or settle
+const TRAIL = [], TRAIL_DASH = [0, 0];
+let trailMarch = 0, trailPace = 0, trailAt = 0;   // how far they've marched (in dashes), how fast now, and when that was
+function drawTrail(sx, sy, r, a, now) {
+  const f = world.forager, P = f.path, dt = Math.min(100, now - trailAt);
+  trailAt = now;
+  trailPace += ((f.walking && f.running && ui.speed > 0 ? 1 : 0) - trailPace) * Math.min(1, dt / TRAIL_EASE);
+  trailMarch = (trailMarch + trailPace * TRAIL_MARCH * dt / 1000) % 1;
+  if (!f.walking || P.length < 4 || a < 0.02) return;
+  let n = 0;
+  TRAIL[n++] = sx; TRAIL[n++] = sy;
+  for (let k = P.length - 4; k >= f.leg * 2; k -= 2) { const p = onScreen(P[k], P[k + 1]); TRAIL[n++] = p[0]; TRAIL[n++] = p[1]; }
+  const d = drawnAt(f), p = onScreen(d.x, d.y);
+  TRAIL[n++] = p[0]; TRAIL[n++] = p[1];
+  let len = 0;
+  for (let i = 0; i + 3 < n; i += 2) len += Math.hypot(TRAIL[i + 2] - TRAIL[i], TRAIL[i + 3] - TRAIL[i + 1]);
+  // From the ring's edge (an oval r wide and half that tall, so how far depends on the way it leaves) to short of its feet.
+  const ux = (TRAIL[2] - sx) / (Math.hypot(TRAIL[2] - sx, TRAIL[3] - sy) || 1), uy = (TRAIL[3] - sy) / (Math.hypot(TRAIL[2] - sx, TRAIL[3] - sy) || 1);
+  const from = 0.85 * r / Math.hypot(ux, 2 * uy), to = len - forPx() * 0.3, dash = clamp(cam.zoom * 0.2, 4, 11);
+  if (to - from < dash) return;
+  ctx.save();
+  TRAIL_DASH[0] = dash; TRAIL_DASH[1] = dash * 1.2;
+  ctx.setLineDash(TRAIL_DASH); ctx.lineDashOffset = from + trailMarch * dash * 2.2;   // (a whole dash and gap a step)
+  ctx.lineWidth = clamp(cam.zoom * 0.065, 2, 3.25); ctx.lineCap = 'round';
+  ctx.strokeStyle = '#fffaea'; ctx.globalAlpha = a * TRAIL_A;
+  ctx.beginPath();
+  let s = 0, on = false;
+  for (let i = 0; i + 3 < n; i += 2) {
+    const ax = TRAIL[i], ay = TRAIL[i + 1], bx = TRAIL[i + 2], by = TRAIL[i + 3], l = Math.hypot(bx - ax, by - ay);
+    if (!l) continue;
+    if (!on && s + l > from) { const k = (from - s) / l; ctx.moveTo(ax + (bx - ax) * k, ay + (by - ay) * k); on = true; }
+    if (on && s + l >= to) { const k = (to - s) / l; ctx.lineTo(ax + (bx - ax) * k, ay + (by - ay) * k); break; }
+    if (on) ctx.lineTo(bx, by);
+    s += l;
+  }
+  ctx.stroke();
+  ctx.restore();
 }
 
 // ------------------------------------------------------------------ gathering
@@ -3629,7 +3580,7 @@ function otterArt(c, px, wet) {
 }
 function drawOtter(c, sx, sy, now) {
   const px = creaturePx(c), wet = otterSwims(c), art = otterArt(c, px, wet), flip = c.facing > 0;
-  if (wet && wasWet.get(c) === false && (c.mode === 'slide' || c.mode === 'slip') && ui.speed > 0 && ui.speed <= 4 && splashes.length < 12) {
+  if (wet && wasWet.get(c) === false && (c.mode === 'slide' || c.mode === 'slip') && ui.speed > 0 && splashes.length < 12) {
     splashes.push({ x: c.x, y: c.y, size: px / cam.zoom, t0: now });   // into the water: a splash
   }
   wasWet.set(c, wet);
@@ -3637,7 +3588,7 @@ function drawOtter(c, sx, sy, now) {
   if (wet && otterGoes(c)) drawWake(ctx, sx, sy, px, flip ? -1 : 1, now);
   const breathe = c.sleeping && ui.speed > 0 ? Math.sin(now / 650 + c.id) * 0.035 : 0;
   drawEmoji(art, sx, sy - px * 0.4 * breathe, px, { flip, squash: 1 + breathe });   // feet stay on the ground
-  if (c.mode === 'root' && px > 18 && ui.speed > 0 && ui.speed <= 4) drawDigging(c, sx, sy, px, now, flip ? -1 : 1);
+  if (c.mode === 'root' && px > 18 && ui.speed > 0) drawDigging(c, sx, sy, px, now, flip ? -1 : 1);
 }
 // Where one slid (or slipped) into the water: drops thrown up and out, and a ring spreading. Seen at 4x or slower.
 const SPLASH_MS = 650;
@@ -3650,6 +3601,9 @@ function drawSplashes(now) {
     if (u >= 1 || u < 0) { splashes.splice(i, 1); continue; }
     const [sx, y0] = toScreen(s.x, s.y), px = s.size * cam.zoom, sy = y0 + px * 0.31;
     if (!visible(sx, sy, px)) continue;
+    const hid = coverAt(sx, sy - px * 0.4, s.y);            // (behind a tree on the bank)
+    if (hid > 0.98) continue;
+    ctx.globalAlpha = 1 - hid;
     ctx.lineWidth = Math.max(1, px * 0.03);
     ctx.strokeStyle = `rgba(240, 250, 255, ${0.7 * (1 - u)})`;
     ctx.beginPath(); ctx.ellipse(sx, sy, px * (0.18 + 0.5 * u), px * (0.06 + 0.15 * u), 0, 0, TAU); ctx.stroke();
@@ -3661,6 +3615,7 @@ function drawSplashes(now) {
     }
     ctx.fill();
   }
+  ctx.globalAlpha = 1;
 }
 
 // Where an otter went under: rings spreading on the water.
@@ -4630,22 +4585,20 @@ function gaitOf(c) {
 }
 const movedLately = c => gaitOf(c).frames < 12;
 const onTheMove = c => MOVING.has(c.mode) && movedLately(c);
-// Above this speed it's a blur: the gaits keep to two of their paintings, so a quick meadow doesn't paint the rest.
-const FEW_FRAMES = 4;
 
 // A rabbit hops: in the air for HOP.air of each hop, covering HOP.ahead of the ground, and the rest while it's down,
 // where it all but stops. The sim moves it evenly, so it's drawn a little ahead of or behind where it is, along its
-// way (hopSurge, in tiles), the same on average. Up to SMOOTH_SPEED: quicker, it's just where it is.
+// way (hopSurge, in tiles), the same on average.
 const HOP = { air: [0.55, 0.65], ahead: [0.9, 0.85], high: [0.16, 0.2] };   // a hop, and a bound
 function hopSurge(c) {
-  if (ui.speed > SMOOTH_SPEED || !onTheMove(c)) return 0;
+  if (!onTheMove(c)) return 0;
   const f = fastGait(c) ? 1 : 0, A = HOP.air[f], P = HOP.ahead[f], u = gaitOf(c).step % 1;
   const done = u < A ? P * u / A : P + (1 - P) * (u - A) / (1 - A), mean = A * P / 2 + (1 - A) * (1 + P) / 2;
   return (done - u - (mean - 0.5)) * strideOf(c);
 }
 const walkerArt = (c, px, now) => c.species === 'fox' ? shownPose(c, foxArt(c, px), px) : c.species === 'rabbit' ? shownPose(c, rabbitArt(c, now), px)
   : c.species === 'bee' ? beeArt(c, px, now) : c.sp.emoji;
-// A pose not painted yet waits, as a tree's new colours do (shownLook): the fox or rabbit holds the pose it was last
+// A pose not painted yet waits: the fox or rabbit holds the pose it was last
 // drawn in till the worker has painted it (it's not painted at any size yet), or without a worker, a frame longer
 // once the frame has done its painting (PAINT_MS). A crowd all setting off at once wanted a dozen in one frame.
 const poseShown = new WeakMap();                         // fox or rabbit: the painting it was last drawn in
@@ -4667,7 +4620,6 @@ function foxArt(c, px) {
   if (c.mode === 'rest' || c.mode === 'tired') return art('sit');
   if (onTheMove(c)) {
     let k = Math.floor(gaitOf(c).step % 1 * 4);
-    if (ui.speed > FEW_FRAMES) k &= 2;
     return art((fastGait(c) ? 'run' : 'trot') + (k + 1));
   }
   return art('stand');
@@ -4707,7 +4659,7 @@ function rabbitArt(c, now) {
   if (!movedLately(c)) return art('sit');
   const f = fastGait(c) ? 1 : 0, A = HOP.air[f], u = gaitOf(c).step % 1, v = u / A, poses = RABBIT_GAIT[f];
   if (u >= A) return art(poses[0]);
-  return art(ui.speed > FEW_FRAMES ? poses[2] : poses[v < 0.25 ? 1 : v < 0.75 ? 2 : 3]);
+  return art(poses[v < 0.25 ? 1 : v < 0.75 ? 2 : 3]);
 }
 
 const moundAt = (g, hole) => {
@@ -4855,11 +4807,11 @@ const BUBBLE_ART = new Map(BUBBLE_ICONS.map(([e], i) => [e, 'bubble:' + i]));
 
 // When an animal starts doing something worth seeing (POPS: it spots a fox, runs, gives chase, falls for someone), a
 // little bubble with what it's thinking pops up over its head, stays a moment and fades. Nothing stays up, so nobody
-// is covered; what each is up to is in the label on hover and in the inspector. Only for those on screen, and only up
-// to POP_SPEED: quicker, moods change faster than they'd read. At most POP_LIVE up at once, so a pop still means
+// is covered; what each is up to is in the label on hover and in the inspector. Only for those on screen, and only
+// while time runs. At most POP_LIVE up at once, so a pop still means
 // something when a fox walks through a warren; and love only for the one you follow (in spring it's everyone).
 const POPS = new Set(['alarm', 'flee', 'chase', 'stalk']);
-const POP_MS = 1700, POP_IN = 160, POP_OUT = 450, POP_SPEED = 4, POP_LIVE = 3;
+const POP_MS = 1700, POP_IN = 160, POP_OUT = 450, POP_LIVE = 3;
 const pops = new WeakMap();          // { mode, emoji, at }: the mode it was last seen in, and its pop
 const popsUp = [];                   // when the pops up now began (the one you follow's aren't counted)
 function drawPops(shown, now) {
@@ -4872,7 +4824,7 @@ function drawPops(shown, now) {
     if (p.mode !== c.mode) {
       p.mode = c.mode;
       const followed = c.id === ui.selectedId;
-      if ((POPS.has(c.mode) || followed && c.mode === 'love') && ui.speed > 0 && ui.speed <= POP_SPEED && (followed || popsUp.length < POP_LIVE)) {
+      if ((POPS.has(c.mode) || followed && c.mode === 'love') && ui.speed > 0 && (followed || popsUp.length < POP_LIVE)) {
         p.emoji = S.mood(world, c).emoji; p.at = now;
         if (!followed) popsUp.push(now);
       }
@@ -4986,7 +4938,7 @@ function drawSelectionOver(c, now) {
 function sun(ck) {
   const m = ui.sky.mix;
   const cover = clamp(0.5 * m.cloudy + 0.7 * m.rain + 0.9 * m.storm + 0.8 * m.fog + 0.5 * m.snow, 0, 0.85);
-  return { lean: clamp((ck.phase - 0.36) / 0.34, -1, 1) * lightSwing, a: (1 - 1.6 * shownDark(ck.phase)) * (1 - cover) };
+  return { lean: clamp((ck.phase - 0.36) / 0.34, -1, 1), a: (1 - 1.6 * shownDark(ck.phase)) * (1 - cover) };
 }
 
 // Trees and rocks cast a soft shadow, a cool green-blue, painted once and stretched under each. On snow a shadow
@@ -5106,35 +5058,12 @@ function treeSway(d, now) {
   return wind * (Math.sin(now / 900 - d.x * 0.15) + 0.35 * Math.sin(now / 340 + d.y));
 }
 
-// The trees follow real ones, loosely. Broadleaf 🌳: in autumn the green drains away and each
-// tree shows its kind's colour (the sim says which kind, plantTrees): gold (birch), orange
-// (beech), red (maple), russet (oak, hawthorn), or a dull olive (alder). Then the leaves drop and it stands bare, except the oaks, which hold on to their dry
-// brown leaves all winter. In spring they leaf out lime green. Pines 🌲 stay green, but not
-// quite the same green: old inner needles yellow in autumn, the whole tree bronzes a little in
-// the cold, and new tips come in light at the end of spring. Snow settles on top of them all.
-// Some broadleaf trees are fruit trees, mostly out in the open (sim.js, plantTrees). An apple tree flowers
-// white in spring, hangs apples from high summer and drops windfalls in autumn. A cherry comes
-// into leaf pink, a cloud of blossom that turns green and sheds petals, then cherries in early
-// summer and red leaves in autumn. No two broadleaf trees are quite the same green, and half of
-// all trees are drawn mirrored.
-const AUTUMN = { birch: [238, 192, 56], alder: [112, 116, 50], beech: [240, 130, 40], maple: [200, 50, 42], oak: [176, 100, 52], hawthorn: [176, 100, 52] };
-const DRY = [160, 120, 80], SPRING = [156, 214, 84];
-const OLD_NEEDLES = [214, 180, 64], BRONZE = [128, 118, 62], CANDLES = [176, 226, 100];
-const GREEN = [88, 152, 60], APPLE_WHITE = [255, 240, 244], CHERRY_PINK = [255, 176, 206];
-const FRUIT = {
-  apple: { e: '🍎', autumn: [196, 176, 64] },
-  cherry: { e: '🍒', autumn: [214, 70, 48] },
-};
-// Older systems have no 🪾; there every broadleaf keeps its dry leaves through winter, like an oak.
-const HAS_BARE = (() => {
-  const c = document.createElement('canvas'); c.width = c.height = 32;
-  const g = c.getContext('2d', { willReadFrequently: true });
-  g.font = `28px ${EMOJI_FONT}`; g.textBaseline = 'middle'; g.fillText('🪾', 2, 16);
-  const d = g.getImageData(0, 0, 32, 32).data;
-  let n = 0;
-  for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 128 && d[i] - d[i + 2] > 30) n++;
-  return n > 20;                                         // brown bark, not a blank box
-})();
+// The colour of a broadleaf tree's leaves in summer and autumn, for the leaves it drops in the river (treeFloats).
+// No two are quite the same green. In autumn the green drains away to its kind's colour (the sim says which kind,
+// plantTrees), then to a dry brown, which an oak holds on to.
+const AUTUMN = { birch: [238, 192, 56], alder: [112, 116, 50], beech: [240, 130, 40], maple: [200, 50, 42], oak: [176, 100, 52], hawthorn: [176, 100, 52],
+  apple: [196, 176, 64], cherry: [214, 70, 48] };
+const DRY = [160, 120, 80], GREEN = [88, 152, 60];
 const step = (v, n) => Math.round(clamp(v, 0, 1) * n) / n;   // a few steps keep the sprite cache small
 const mix = (a, b, t) => a.map((v, i) => lerp(v, b[i], t));
 
@@ -5155,58 +5084,18 @@ function treeInfo(d) {
   return t;
 }
 
-function treeLook(d, ck, full = true) {   // full: with the look and the bare look an emoji tree is drawn in (not a painted one)
-  const sp = (ck.dayInSeason - 1 + ck.phase) / S.SEASON_DAYS, s = ck.season;
-  const info = treeInfo(d), h = info.h, lag = (h % 5) * 0.04;
-  let rgb = SPRING, m = 0, where = '', fall = 0, drop = 0, blossom = 0, bloom = APPLE_WHITE, fruit = null, ground = null;
-  if (d.emoji === '🌲') {
-    const a = 0.6 + 0.2 * (h % 3);                       // some pines turn more than others
-    if (s === 2) { rgb = OLD_NEEDLES; m = 0.7 * a * Math.sin(Math.PI * sp); where = 'dark'; }
-    else if (s === 3 || (s === 0 && sp < 0.4)) { rgb = BRONZE; m = 0.45 * a * (s === 3 ? clamp(sp / 0.25, 0, 1) : 1 - sp / 0.4); }
-    else { rgb = CANDLES; m = 0.6 * (s === 0 ? clamp((sp - 0.4) / 0.4, 0, 1) : 1 - clamp(sp / 0.5, 0, 1)); where = 'light'; }
-  } else {
-    // Broadleaf leaves are always repainted, from the tree's own green.
-    const kind = FRUIT[info.fruit], green = info.green, n = Math.round(clamp(d.size * cam.zoom / 11, 2, 9));
-    const hue = kind ? kind.autumn : AUTUMN[info.kind], oak = info.kind === 'oak' || !HAS_BARE;
-    m = 1;
-    if (s === 2) {
-      const turn = clamp((sp - 0.05 - lag) / 0.4, 0, 1);
-      rgb = mix(mix(green, hue, turn), DRY, clamp((sp - 0.65 - lag) / 0.35, 0, 1) * (oak ? 1 : 0.5));
-      fall = oak ? 0 : clamp((sp - 0.6 - lag) / 0.35, 0, 1);
-      drop = leafDrop(sp, lag, oak);
-      if (info.fruit === 'apple') {
-        if (sp < 0.4) fruit = { e: kind.e, n: Math.ceil(n * (1 - sp / 0.4)) };
-        ground = { e: kind.e, n: d.windfall, size: 0.12 };        // the sim's windfalls (windfallTick)
-      } else if (d.windfall) ground = { e: '🌰', n: d.windfall, size: 0.07 };   // acorns or beechnuts, in a mast year
-    } else if (s === 3) { rgb = DRY; fall = oak ? 0 : 1; }
-    else if (s === 0) {
-      rgb = mix(oak ? mix(DRY, SPRING, clamp(sp / 0.3, 0, 1)) : SPRING, green, clamp((sp - 0.35) / 0.45, 0, 1));
-      fall = oak ? 0 : 1 - clamp((sp - lag) / 0.35, 0, 1);
-      if (info.fruit === 'cherry') {                     // all pink, then the pink breaks up over green
-        if (sp < 0.5 + lag) rgb = CHERRY_PINK;
-        else { blossom = 1 - clamp((sp - 0.5 - lag) / 0.3, 0, 1); bloom = CHERRY_PINK; }
-        if (sp > 0.4) ground = { e: '🌸', n: Math.round(6 * Math.sin(Math.PI * clamp((sp - 0.4) / 0.45, 0, 1))), size: 0.08 };
-      }
-      if (info.fruit === 'apple') blossom = Math.sin(Math.PI * clamp((sp - 0.3 - lag) / 0.5, 0, 1));
-    } else {
-      rgb = green;
-      if (info.fruit === 'apple' && sp > 0.3) fruit = { e: kind.e, n: Math.ceil(n * clamp((sp - 0.3) / 0.2, 0, 1)) };
-      if (info.fruit === 'cherry' && sp < 0.7) fruit = { e: kind.e, n: Math.ceil(n * clamp((0.7 - sp) / 0.2, 0, 1)) };
-    }
-    if (d.size * cam.zoom < 18) fruit = null;            // too small to see
+function treeLook(d, ck) {
+  const sp = (ck.dayInSeason - 1 + ck.phase) / S.SEASON_DAYS, info = treeInfo(d), lag = (info.h % 5) * 0.04, oak = info.kind === 'oak';
+  let rgb = info.green, drop = 0;
+  if (ck.season === 2) {
+    const turn = clamp((sp - 0.05 - lag) / 0.4, 0, 1);
+    rgb = mix(mix(rgb, AUTUMN[info.fruit] || AUTUMN[info.kind] || AUTUMN.oak, turn), DRY, clamp((sp - 0.65 - lag) / 0.35, 0, 1) * (oak ? 1 : 0.5));
+    drop = leafDrop(sp, lag, oak);
   }
-  rgb = rgb.map(v => Math.round(v / 8) * 8);
-  m = step(m, 8); fall = step(fall, 10); blossom = step(blossom, 4);
-  if (!full) return { look: undefined, fall, bare: undefined, drop, rgb, h, ground, flip: info.flip };
-  const snow = step(world.snow * 1.6 - 0.1, 4), seed = h % 3;
-  const look = m || fall || snow
-    ? { rgb, m, where, fall, snow, seed, blossom, bloom, fruit,
-        key: [rgb, m, where, fall, snow, seed, blossom && bloom, blossom, fruit ? fruit.e + fruit.n : ''].join('|') } : undefined;
-  const bare = fall && { snow, seed, m: 0, fall: 0, key: `bare|${snow}` };
-  return { look, fall, bare, drop, rgb, h, ground, flip: info.flip };
+  return { rgb: rgb.map(v => Math.round(v / 8) * 8), drop };
 }
 
-// What lies under a painted tree (treeLook's ground, but a painted cherry has its own petals): in autumn the sim's
+// What lies under a tree: in autumn the sim's
 // windfalls, apples under an apple tree, else acorns or beechnuts.
 const FALL_APPLES = { e: '🍎', n: 0, size: 0.12 }, FALL_NUTS = { e: '🌰', n: 0, size: 0.07 };
 function windfallsUnder(d, ck) {
@@ -5250,34 +5139,6 @@ function drawUnderTree(bits, h, sx, sy, px, front) {
     drawEmoji(art, 0, 0, px * bits.size);
     ctx.restore();
   }
-}
-
-// An emoji tree's leaves let go in autumn and tumble down, drifting east with the wind. Trees queue them up
-// as they are drawn, and they are drawn on top of everything once the trees are done. (A painted tree's: drawLeaves.)
-const leafFall = [];
-function drawFallingLeaves(now) {
-  const m = ui.sky.mix, wind = 0.4 + 0.6 * m.cloudy + 1.5 * m.rain + 3 * m.storm;
-  ctx.save();
-  for (const f of leafFall) {
-    fadeTo(f.fade);                                     // as its tree is, in the mist
-    const px = f.px, n = Math.round(12 * f.drop);
-    for (let k = 0; k < n; k++) {
-      const r1 = hash2(f.h, k, 1), life = 4500 + 2500 * r1, t = now / life + hash2(f.h, k, 2);
-      const p = t % 1, r2 = hash2(f.h * 31 + k, Math.floor(t), 3), r3 = hash2(f.h * 31 + k, Math.floor(t), 4);
-      const x = f.sx + (r2 - 0.5) * px * 0.7 + Math.sin(p * 9 + k) * px * 0.06 + wind * p * px * 0.25;
-      const y = f.sy - px * (0.75 - 0.3 * r3) + p * px * (0.8 + 0.2 * r1);
-      const s = Math.max(1.5, px * 0.06), shade = 0.8 + 0.35 * r3;
-      ctx.globalAlpha = Math.min(1, p * 8, (1 - p) * 5);
-      ctx.fillStyle = `rgb(${f.rgb.map(v => Math.min(255, Math.round(v * shade))).join(',')})`;
-      ctx.setTransform(dpr, 0, 0, dpr, x * dpr, y * dpr);
-      ctx.rotate(Math.sin(p * 7 + k) * 1.3);
-      ctx.scale(1, 0.25 + 0.75 * Math.abs(Math.cos(p * 11 + k)));        // tumbling
-      ctx.beginPath(); ctx.ellipse(0, 0, s, s * 0.55, 0, 0, TAU); ctx.fill();
-    }
-  }
-  unfade();
-  ctx.restore();
-  leafFall.length = 0;
 }
 
 // How fast a tree's leaves are coming down, sp into autumn: from when it's a third turned till it's bare, an oak
@@ -5330,9 +5191,9 @@ function treeLeaves(d, sx, sy, px, ck, f) {
     tier = near;
   }
   const [a, b, m] = treeStage(kind, d, ck);
-  const r = leafTrees[leafN] || (leafTrees[leafN] = { sx: 0, sy: 0, px: 0, n: 0, h: 0, f: 0, tier: 0, pick: null, ga: 0, gb: 0, m: 0 });
+  const r = leafTrees[leafN] || (leafTrees[leafN] = { sx: 0, sy: 0, wy: 0, px: 0, n: 0, h: 0, f: 0, tier: 0, pick: null, ga: 0, gb: 0, m: 0 });
   leafN++;
-  r.sx = sx; r.sy = sy; r.px = px; r.n = n; r.h = info.h; r.f = f; r.tier = tier; r.pick = leafPick[oak ? 'oak' : kind][d.tone ?? 0];
+  r.sx = sx; r.sy = sy; r.wy = d.y; r.px = px; r.n = n; r.h = info.h; r.f = f; r.tier = tier; r.pick = leafPick[oak ? 'oak' : kind][d.tone ?? 0];
   r.ga = oak && a === 'winter' ? 2 : LEAF_GROUP[a]; r.gb = b ? LEAF_GROUP[b] : r.ga; r.m = m;   // (an oak's winter look: its dry leaves)
 }
 
@@ -5362,7 +5223,11 @@ function drawLeaves(now, lying) {
         const lay = q - fallMs, w = smooth(0, LEAF_SETTLE_MS, lay);
         side += ((side < 0 ? -1 : 1) - side) * w; flat = 1 - (1 - LEAF_FLAT) * w;
         alpha = Math.min(1, (LEAF_LIE_MS - lay) / LEAF_FADE_MS);
-      } else alpha = Math.min(1, q / 500);
+      } else {                                              // (in the air: hidden by the crowns in front of its tree)
+        const hid = coverAt(x, y, r.wy);
+        if (hid > 0.98) continue;
+        alpha = Math.min(1, q / 500) * (1 - hid);
+      }
       // Its colour, as its crown is: green or its own autumn colour, a few in its kind's others; lit or a little less.
       let group = hash2(g, c, 12) < r.m ? r.gb : r.ga;
       if (group === 0 && hash2(g, c, 16) > LEAF_GREEN) group = 1;
@@ -5376,22 +5241,6 @@ function drawLeaves(now, lying) {
   }
   if (leafN) { ctx.setTransform(dpr, 0, 0, dpr, shakeX, shakeY); ctx.globalAlpha = 1; unfade(); }
   if (!lying) leafN = 0;
-}
-
-// A tree turning colour is painted afresh at every step, and at 15x or 60x the seasons go by so fast
-// that every tree on screen would want a new sprite every few frames. So at most TURNS a frame get their
-// new colours; the rest keep the one they're showing a moment longer, and skip the steps they missed.
-const TURNS = 1;
-const treeShown = new WeakMap();                           // tree: the look it was last drawn with
-let turned = 0;                                            // trees given a new look this frame
-function shownLook(d, look, px) {
-  const was = treeShown.get(d);
-  if (was !== undefined && (was && was.key) !== (look && look.key) && !spriteReady(d.emoji, px, look)) {
-    if (turned >= TURNS) return was;
-    turned++;
-  }
-  treeShown.set(d, look);
-  return look;
 }
 
 const rgbOf = (rgb, k, add) => rockRGB(tone(rgb, k, add));
@@ -5486,20 +5335,20 @@ const TREE_BYTES = 48e6;                 // the paintings kept, in memory
 // paintings differ (an oak's is short and wide, a birch's tall), so these give each kind its own
 // height: oak, beech and pine big, birch and maple a little less, apple smaller, a cherry a big pink
 // cloud in spring, hawthorn a thicket. Kept small enough that you see between trees. The hive oak is
-// an old giant already (HIVE_TREE). Emoji trees keep their size.
+// an old giant already (HIVE_TREE).
 const TREE_SCALE = { oak: 1.41, hive: 1, beech: 1.36, maple: 1.14, birch: 0.92, alder: 1.05, pine: 1.01, apple: 1.28, cherry: 1.72, hawthorn: 1.1, log: 1.2, stump: 1 };
-const treePx = d => Math.max(d.hedge ? HEDGE_PX : 0, d.size * cam.zoom * (d.tree && treeWorker ? TREE_SCALE[d.fallen ? 'log' : d.stump ? 'stump' : treeKind(d)] || 1 : 1));
+const treePx = d => Math.max(d.hedge ? HEDGE_PX : 0, d.size * cam.zoom * (d.tree ? TREE_SCALE[d.fallen ? 'log' : d.stump ? 'stump' : treeKind(d)] || 1 : 1));
 const HEDGE_PX = 12;                                     // ?keep: a hedge's whip is never drawn smaller than this, so a new one reads as a row from afar
 const LOG_BARK = { beech: 'grey', birch: 'birch' };      // whose bark a log or a stump has (trees.js); the rest are brown
 const YOUNG = new Set(['seedling', 'sapling', 'young']);
 const SEEDLING_PX = 6;                                   // a seedling smaller than this on screen isn't drawn
 // A bare tree looks the same whatever its tone, and a young one hardly shows its shape: fewer paintings to make.
-const bareLook = (kind, look) => look === 'dead' || look === 'burnt' || (kind !== 'pine' && kind !== 'log' && (look === 'winter' || look === 'bare'));
+const bareLook = (kind, look) => look === 'dead' || (kind !== 'pine' && kind !== 'log' && (look === 'winter' || look === 'bare'));
 const HIVE_DOOR = [1, -38];              // the hive's sill in the hive oak's painting, from its foot (trees.js hive)
 // Paintings go by number, so a frame builds no names: the tree (kind, shape, tone, form), its look, the size (its
 // place in TREE_TIERS) and the snow, packed together.
 const ART_KINDS = { oak: 0, hive: 1, beech: 2, maple: 3, birch: 4, pine: 5, alder: 6, apple: 7, cherry: 8, hawthorn: 9, log: 10, stump: 11 };
-const ART_LOOKS = { summer: 0, spring: 1, bud: 2, autumn: 3, thin: 4, winter: 5, bare: 6, dead: 7, burnt: 8 }, ART_LOOK_N = 9;
+const ART_LOOKS = { summer: 0, spring: 1, bud: 2, autumn: 3, thin: 4, winter: 5, bare: 6, dead: 7 }, ART_LOOK_N = 8;
 const ART_TONES = { 0: 0, 1: 1, 2: 2, 3: 3, bark: 4, grey: 5, birch: 6 };
 const treeKey = (kind, shape, tone, form) => ((ART_KINDS[kind] * 4 + shape) * 8 + ART_TONES[tone]) * 2 + form;
 // treeAny: a painting of each tree, in any look, till its own comes. treeKin: a small one of each kind in each
@@ -5511,11 +5360,11 @@ const KIN_LOOKS = { oak: OAK, hive: OAK, beech: BROAD, maple: BROAD, birch: BROA
 const KIN_TIER = 0.25;
 const kinWanted = [];                    // stand-ins still to paint, one wanted on screen first
 // Two workers where there are the cores for it (a phone has them to spare), each handed two paintings at a time.
-// treeWorker is the first, and says whether trees are painted at all.
+// treeWorker is the first, and says whether trees are painted at all (without OffscreenCanvas in a worker, none are).
 const TREE_WORKERS = Math.max(1, Math.min(2, (navigator.hardwareConcurrency || 2) - 1));
 const treeWorkers = [];                  // { worker, busy }
 let treeWorker = null, treeBusy = 0, treeBytes = 0, kinBusy = false, kinAsked = false;
-if (!params.has('emoji') && window.Worker && window.OffscreenCanvas) {
+if (window.Worker && window.OffscreenCanvas) {
   try {
     for (let n = 0; n < TREE_WORKERS; n++) {
       const tw = { worker: new Worker('tree-worker.js'), busy: 0 };
@@ -5535,7 +5384,7 @@ if (!params.has('emoji') && window.Worker && window.OffscreenCanvas) {
         }
         askTrees();
       };
-      tw.worker.onerror = () => { treeWorker = null; };   // no OffscreenCanvas in workers here: emoji trees
+      tw.worker.onerror = () => { treeWorker = null; };   // no OffscreenCanvas in workers here: no trees
       treeWorkers.push(tw);
     }
     treeWorker = treeWorkers[0].worker;
@@ -5660,21 +5509,110 @@ function drawPaintedTree(d, sx, sy, now, ck, stage = S.treeStage(world, d), px =
     A = treeKin.get(ART_KINDS[kind] * ART_LOOK_N + ART_LOOKS[look]) || treeAny.get(treeKey(kind, shape, tone, form));
     if (!A) { wantKin(kind, look, true); if (!treeWaits.has(d)) treeWaits.set(d, 0); return false; }
   }
-  let fade = 1;
+  let show = 1;
   const t0 = treeWaits.get(d);
   if (t0 !== undefined) {
     if (!t0) treeWaits.set(d, now);
-    fade = t0 ? Math.min(1, (now - t0) / FADE_MS) : 0;
-    if (fade >= 1) treeWaits.delete(d);
+    show = t0 ? Math.min(1, (now - t0) / FADE_MS) : 0;
+    if (show >= 1) treeWaits.delete(d);
   }
+  show *= 1 - (1 - SEE_A) * seeThrough(d, A || B, f, sx, sy);
+  if (!wood && stage !== 'dead') addCover(d, kind, sx, sy, px, form, a, b, m, show * fade);   // (fade: the mist's)
   const r = wood ? 0 : treeSway(d, now) * (stage === 'dead' ? 0.4 : 1), still = Math.abs(r) * px < 0.5;   // a sway too small to see isn't drawn
   // Swaying from the foot. A tree is only ever drawn in render's own transform, so it's set back as it was, with no
   // save and restore (turning it back by the inverse leaves it a hair off, and Chrome then draws what follows another way).
   if (!still) { const c = Math.cos(r) * dpr, s = Math.sin(r) * dpr; ctx.setTransform(c, s, -s, c, sx * dpr + shakeX, sy * dpr + shakeY); }
-  if (A) putPainting(A, f, fade, snow, still ? sx : 0, still ? sy : 0);
-  if (B) putPainting(B, f, (A ? m : 1) * fade, snow, still ? sx : 0, still ? sy : 0);
+  if (A) putPainting(A, f, show, snow, still ? sx : 0, still ? sy : 0);
+  if (B) putPainting(B, f, (A ? m : 1) * show, snow, still ? sx : 0, still ? sy : 0);
   if (!still) ctx.setTransform(dpr, 0, 0, dpr, shakeX, shakeY);
   return true;
+}
+// A tree standing in front of the forager fades to SEE_A, as in Project Zomboid, so it's never lost in a wood. Only
+// the trees that are or were in front of it are kept (seeing), each eased in and out over SEE_MS.
+const SEE_A = 0.35, SEE_MS = 220;
+const seeing = new Map();                  // tree: how far it's faded, 0..1
+const fgBody = { on: false, x: -0, y: -0, w: -0, h: -0, wy: -0 };   // the forager's body on screen this frame (render), and its y in the meadow
+let seeDt = -0, seeLast = -0;
+function seeThrough(d, p, f, sx, sy) {
+  const v = seeing.get(d) || 0;
+  let want = 0;
+  if (fgBody.on && d.y > fgBody.wy) {                      // drawn after it: over it, if their boxes meet (the painting's margins left out)
+    const k = f / p.scale, l = sx - p.bx * k, t = sy - p.by * k, w = p.w * k, h = p.h * k;
+    if (fgBody.x + fgBody.w > l + w * 0.15 && fgBody.x - fgBody.w < l + w * 0.85 && fgBody.y + fgBody.h > t + h * 0.1 && fgBody.y - fgBody.h < sy) want = 1;
+  }
+  if (v === want) return v;
+  const u = want ? Math.min(1, v + seeDt / SEE_MS) : Math.max(0, v - seeDt / SEE_MS);
+  if (u) seeing.set(d, u); else seeing.delete(d);
+  return u * u * (3 - 2 * u);
+}
+// What the leafy crowns drawn this frame hide (coverAt, 0..1). Whatever is drawn after all the trees (the fireflies, the
+// leaves coming down, pollen, butterflies, splashes, the effects, the snores) would else show through a crown standing in
+// front of it. Each crown is its kind's outline (CROWNS) where it's drawn (addCover), kept in a coarse grid of the screen
+// (COVER_CELL), made at the first test of a frame, so a test looks only at the few crowns about it. The edge hides less
+// (COVER_EDGE), as a crown thins out there; a crown in first leaves or half fallen hides half (COVER_LOOK), a bare one
+// nothing, and one faded (in the mist, in front of the forager, coming in) as little as it shows.
+const COVER_CELL = 64;                     // px
+const COVER_EDGE = 0.3;                    // of its reach, and of its height top and bottom: where a crown hides only partly
+const COVER_MIN = 24;                      // px: a tree drawn smaller hides nothing
+const COVER_LOOK = { bud: 0.5, thin: 0.5 };
+const cover = { n: 0, max: 0, x: null, y: null, px: null, wy: null, f: null, w: null, k: [], built: false, cols: 0, rows: 0, start: null, list: null };
+function addCover(d, kind, sx, sy, px, young, a, b, m, show) {
+  if (px < COVER_MIN || show < 0.05) return;
+  const dense = (1 - m) * (bareLook(kind, a) ? 0 : COVER_LOOK[a] ?? 1) + (b ? m * (bareLook(kind, b) ? 0 : COVER_LOOK[b] ?? 1) : 0);
+  if (dense * show < 0.05) return;
+  const C = cover;
+  if (C.n === C.max) {                     // (grown now and then, never shrunk)
+    const max = Math.max(256, C.max * 2), grow = (old, T) => { const t = new T(max); if (old) t.set(old); return t; };
+    C.x = grow(C.x, Float32Array); C.y = grow(C.y, Float32Array); C.px = grow(C.px, Float32Array); C.wy = grow(C.wy, Float32Array);
+    C.f = grow(C.f, Float32Array); C.w = grow(C.w, Float32Array); C.max = max;
+  }
+  const i = C.n++;
+  C.x[i] = sx; C.y[i] = sy; C.px[i] = px; C.wy[i] = d.y; C.f[i] = dense * show; C.w[i] = young ? 0.75 : 1; C.k[i] = CROWNS[kind] || CROWNS.oak;
+  C.built = false;
+}
+// The cells each crown's box covers, counted, then filled (a counting sort: no arrays made, but when the screen grows).
+function coverCells(i, fn) {
+  const C = cover, k = C.k[i], px = C.px[i], r = Math.max(k[2], k[3], k[4], k[5], k[6]) * px * C.w[i];
+  const x0 = Math.max(0, ((C.x[i] - r) / COVER_CELL) | 0), x1 = Math.min(C.cols - 1, ((C.x[i] + r) / COVER_CELL) | 0);
+  const y0 = Math.max(0, ((C.y[i] - k[1] * px) / COVER_CELL) | 0), y1 = Math.min(C.rows - 1, ((C.y[i] - k[0] * px) / COVER_CELL) | 0);
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) fn(y * C.cols + x, i);
+}
+let coverFill = 0;
+const coverCount = c => { cover.start[c + 1]++; coverFill++; };
+const coverPut = (c, i) => { cover.list[cover.start[c]++] = i; };
+function buildCover() {
+  const C = cover;
+  C.cols = Math.ceil(vw / COVER_CELL) + 1; C.rows = Math.ceil(vh / COVER_CELL) + 1;
+  const cells = C.cols * C.rows;
+  if (!C.start || C.start.length < cells + 1) C.start = new Int32Array(cells + 1);
+  C.start.fill(0, 0, cells + 1); coverFill = 0;
+  for (let i = 0; i < C.n; i++) coverCells(i, coverCount);
+  for (let c = 0; c < cells; c++) C.start[c + 1] += C.start[c];
+  if (!C.list || C.list.length < coverFill) C.list = new Int32Array(coverFill * 2);
+  for (let i = 0; i < C.n; i++) coverCells(i, coverPut);            // (each start runs on to the next's: shifted back below)
+  for (let c = cells; c > 0; c--) C.start[c] = C.start[c - 1];
+  C.start[0] = 0;
+  C.built = true;
+}
+// How much of what's drawn at (sx, sy) on screen, standing at wy in the meadow, the crowns in front of it hide.
+function coverAt(sx, sy, wy) {
+  const C = cover;
+  if (!C.n || sx < 0 || sy < 0 || sx >= vw || sy >= vh) return 0;
+  if (!C.built) buildCover();
+  const c = ((sy / COVER_CELL) | 0) * C.cols + ((sx / COVER_CELL) | 0);
+  let most = 0;
+  for (let j = C.start[c], e = C.start[c + 1]; j < e; j++) {
+    const i = C.list[j];
+    if (C.wy[i] <= wy || C.f[i] <= most) continue;                 // (behind it, or hides no more than one already found)
+    const k = C.k[i], px = C.px[i], t = ((C.y[i] - sy) / px - k[0]) / (k[1] - k[0]);
+    if (t <= 0 || t >= 1) continue;
+    const s = t * 4, n = Math.min(3, s | 0), reach = (k[2 + n] + (k[3 + n] - k[2 + n]) * (s - n)) * px * C.w[i];
+    const out = Math.abs(sx - C.x[i]) / reach;
+    if (out >= 1) continue;
+    const h = C.f[i] * Math.min(1, (1 - out) / COVER_EDGE, t / COVER_EDGE, (1 - t) / COVER_EDGE);
+    if (h > most) { most = h; if (most > 0.98) return 1; }
+  }
+  return most;
 }
 function putPainting(p, f, alpha, snow, ox, oy) {
   const k = f / p.scale, x = ox - p.bx * k, y = oy - p.by * k, w = p.w * k, h = p.h * k;
@@ -5688,41 +5626,13 @@ function putPainting(p, f, alpha, snow, ox, oy) {
 const furPaint = kind => (g, size, U, n) => { if (!shrunk(g, size, U, kind + ':' + n)) Fur.painters[kind](g, size, U, n); };
 const PAINTERS = { fox: paintFox, rabbit: paintRabbit, forager: paintForager, hog: paintHedgehog, heron: paintHeron, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody, bee: paintBee, fall: paintFall, shroom: paintShroom, green: paintGreen, bramble: paintBramble, find: paintFind, item: paintItem,
   dfly: furPaint('dfly'), kfisher: furPaint('kfisher'), lark: furPaint('lark') };
-function drawDecor(d, sx, sy, now, ck, clipLeaves, px = d.tree ? treePx(d) : d.size * cam.zoom) {   // (px: render has it already)
+function drawDecor(d, sx, sy, now, ck, px = d.tree ? treePx(d) : d.size * cam.zoom) {   // (px: render has it already)
   if (d.emoji === '🪨') { drawRock(d, sx, sy); return; }
-  if (!d.stump && !d.tree) { drawEmoji(d.emoji, sx, sy - px * 0.35, px); return; }
-  const stage = d.tree && S.treeStage(world, d);
-  if (stage === 'seedling' && !treeWorker) { if (px >= 3) drawEmoji('🌱', sx, sy - px * 0.3, px * 0.9); return; }   // (painted, it's a little young tree)
-  if (stage === 'dead' || stage === 'log' || stage === 'stump') {   // grey and bare, fallen, or a stump till it sprouts again
-    if (drawPaintedTree(d, sx, sy, now, ck, stage, px) || treeWorker) return;
-    if (stage === 'dead') drawEmoji('🪾', sx, sy - px * 0.42, px * 1.15);
-    else drawEmoji('🪵', sx, sy - px * (stage === 'log' ? 0.1 : 0.12), px * (stage === 'log' ? 0.5 : 0.45));
-    return;
-  }
-  if (px < 20 && !clipLeaves && (drawPaintedTree(d, sx, sy, now, ck, stage, px) || treeWorker)) return;   // too small for anything under it or in it
-  if (treeWorker && !clipLeaves) {                           // painted: of treeLook, only what lies under it
-    const ground = windfallsUnder(d, ck), h = ground && treeInfo(d).h;
-    if (ground) drawUnderTree(ground, h, sx, sy, px, false);
-    if (drawPaintedTree(d, sx, sy, now, ck, stage, px) && ground) drawUnderTree(ground, h, sx, sy, px, true);
-    return;                                                  // (its falling leaves: treeLeaves; none yet: it fades in when its painting comes)
-  }
-  const t = treeLook(d, ck, !treeWorker);
-  const under = t.ground?.n && px >= 20 && !(treeWorker && t.ground.e === '🌸');   // a painted cherry has its own petals
-  if (under) drawUnderTree(t.ground, t.h, sx, sy, px, false);
-  if (!clipLeaves && drawPaintedTree(d, sx, sy, now, ck, stage, px)) {
-    if (under) drawUnderTree(t.ground, t.h, sx, sy, px, true);
-    return;                                                  // (its falling leaves: treeLeaves)
-  }
-  if (treeWorker) return;                                    // nothing to show yet: it fades in when its painting comes
-  t.look = shownLook(d, t.look, px);
-  ctx.save();
-  ctx.translate(sx, sy); ctx.rotate(treeSway(d, now));
-  if (t.bare) drawEmoji('🪾', 0, -px * 0.42, px * 1.15, { alpha: t.fall, leaf: t.bare, flip: t.flip });   // it draws small
-  if (clipLeaves) clipLeaves(px);                      // (the bee tree)
-  if (t.fall < 1) drawEmoji(d.emoji, 0, -px * 0.35, px, { leaf: t.look, flip: t.flip });
-  ctx.restore();
-  if (under) drawUnderTree(t.ground, t.h, sx, sy, px, true);
-  if (t.drop && px >= 22) leafFall.push({ sx, sy, px, drop: t.drop, rgb: t.rgb, h: t.h, fade });
+  const stage = S.treeStage(world, d), bare = stage === 'dead' || stage === 'log' || stage === 'stump';
+  const ground = px >= 20 && !bare && windfallsUnder(d, ck), h = ground && treeInfo(d).h;   // (too small: nothing under it)
+  if (ground) drawUnderTree(ground, h, sx, sy, px, false);
+  if (drawPaintedTree(d, sx, sy, now, ck, stage, px) && ground) drawUnderTree(ground, h, sx, sy, px, true);
+  // (its falling leaves: treeLeaves; none yet: it fades in when its painting comes)
 }
 
 // ------------------------------------------------------------------ rocks
@@ -5754,8 +5664,7 @@ function rockInfo(d) {
   if (t) return t;
   const hx = Math.floor(d.x * 100), hy = Math.floor(d.y * 100), h = k => hash2(hx, hy, 60 + k);
   const wood = world.wood[Math.floor(d.y) * S.W + Math.floor(d.x)];
-  const grown = clamp((d.size - 0.7) / 1.6, 0, 1);         // the bigger the rock, the likelier a boulder
-  const kind = d.stone ? 'ford' : d.big ? 'great' : h(0) < 0.45 - 0.3 * grown ? 'pebbles' : h(0) < 0.85 - 0.35 * grown ? 'stone' : 'boulder';
+  const kind = S.rockKind(d);                              // (the sim knows too: the forager walks round all but pebbles)
   let k = 1;
   const stone = (x, y, s, tall, round) => ({ x, y, s, tall, round, shape: Math.floor(h(k++) * 5), turn: h(k++) * TAU, flip: h(k++) < 0.5 ? -1 : 1 });
   const stones = [];
@@ -5911,10 +5820,8 @@ function drawRock(d, sx, sy) {
 // ------------------------------------------------------------------ hives
 //
 // A wild colony lives in a hollow in an old tree: a giant broadleaf, bigger than any in the wood,
-// with a thick trunk flaring into its roots and a hole low down where the bees go in, its rim dark
-// with their resin. The trunk is painted into a sprite that fades out at the top, laid over the
-// emoji's own, so it grows up into the crown whatever the emoji font. The bees on the sill are
-// drawn each frame, more of them the bigger the colony.
+// with a thick trunk flaring into its roots and a hole low down where the bees go in (trees.js paints
+// it, the hive oak). The bees on the sill are drawn each frame, more of them the bigger the colony.
 
 // A bee on the bark, seen from above: gold with dark bands and a glint of wing. Too small, a dot.
 function barkBee(x, y, s, a) {
@@ -5933,10 +5840,6 @@ function barkBee(x, y, s, a) {
 const compass = (dx, dy) => ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'][
   (Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) + 8) % 8];
 
-const OLD_HOLE = { x: 0.015, y: -0.075, rx: 0.042, ry: 0.066 };   // in tree sizes, from its foot
-const OLD_FADE = [-0.15, -0.27];                           // the trunk fades into the crown between these
-const trunkSprites = new Map();
-
 function softSpot(g, x, y, rx, ry, rgb, a) {
   g.save(); g.translate(x, y); g.scale(1, ry / rx);
   const r = g.createRadialGradient(0, 0, 0, 0, 0, rx);
@@ -5945,110 +5848,13 @@ function softSpot(g, x, y, rx, ry, rgb, a) {
   g.restore();
 }
 
-function trunkPath(g) {                                    // in tree sizes, from its foot
-  g.beginPath();
-  g.moveTo(-0.095, -0.34);
-  g.bezierCurveTo(-0.105, -0.2, -0.115, -0.1, -0.13, -0.035);
-  g.quadraticCurveTo(-0.155, 0.008, -0.26, 0.028);                     // a root, left
-  g.quadraticCurveTo(-0.15, 0.048, -0.075, 0.032);
-  g.quadraticCurveTo(0.01, 0.052, 0.08, 0.034);
-  g.quadraticCurveTo(0.14, 0.052, 0.235, 0.022);                       // and right
-  g.quadraticCurveTo(0.15, 0.004, 0.14, -0.05);
-  g.bezierCurveTo(0.13, -0.12, 0.12, -0.22, 0.115, -0.34);
-  g.closePath();
-}
-
-// Old bark, lit from the top left, with deep ridges fanning out into the roots, fading out at the top.
-function paintTrunk(g, P, px) {
-  trunkPath(g);
-  const bark = g.createLinearGradient(-0.13, 0, 0.15, 0);
-  bark.addColorStop(0, '#9c7b5f'); bark.addColorStop(0.45, '#6f4f3b'); bark.addColorStop(1, '#3d2a1d');
-  g.fillStyle = bark; g.fill();
-  g.save(); g.clip();
-  if (P > 60) {
-    for (let k = 0; k < 10; k++) {
-      const f = (k + 0.5) / 10 - 0.5;
-      g.beginPath();
-      for (let n = 0, y = -0.34; y <= 0.05; n++, y += 0.02) {
-        const spread = y > -0.05 ? 1 + (y + 0.05) * 14 : 1;
-        g[n ? 'lineTo' : 'moveTo'](0.01 + f * 0.24 * spread + (hash2(k, n, 5) - 0.5) * 0.008, y);
-      }
-      g.lineWidth = Math.max(px, 0.007); g.strokeStyle = 'rgba(35, 20, 10, 0.3)'; g.stroke();
-      g.translate(-0.004, 0); g.lineWidth = Math.max(px, 0.003); g.strokeStyle = 'rgba(255, 225, 185, 0.1)'; g.stroke(); g.translate(0.004, 0);
-    }
-  }
-  softSpot(g, 0.09, 0.012, 0.09, 0.03, '96, 120, 40', 0.55);          // moss at the foot, on the shaded side
-  softSpot(g, 0.1, -0.12, 0.03, 0.07, '96, 120, 40', 0.35);
-  g.restore();
-  // The top fades out, so the tree's own trunk and crown take over (a hollow, painted later, doesn't).
-  g.globalCompositeOperation = 'destination-out';
-  const fade = g.createLinearGradient(0, OLD_FADE[0], 0, OLD_FADE[1]);
-  fade.addColorStop(0, 'rgba(0, 0, 0, 0)'); fade.addColorStop(1, 'rgba(0, 0, 0, 1)');
-  g.fillStyle = fade; g.fillRect(-0.5, -0.5, 1, 0.5 + OLD_FADE[0]);
-  g.globalCompositeOperation = 'source-over';
-}
-
-function trunkSprite(P, hole) {                          // the painted trunk, or (hole) the hollow in it
-  P = Math.round(P);
-  let s = trunkSprites.get(P + (hole ? 'h' : 't'));
-  if (s) return s;
-  if (trunkSprites.size > 40) trunkSprites.clear();
-  const W = P * 0.56, H = P * 0.42, ox = P * 0.28, oy = P * 0.36;
-  const c = document.createElement('canvas');
-  c.width = Math.ceil(W * dpr); c.height = Math.ceil(H * dpr);
-  const g = c.getContext('2d'), px = 1 / P;
-  g.setTransform(dpr * P, 0, 0, dpr * P, ox * dpr, oy * dpr);
-  s = { canvas: c, W, H, ox, oy };
-  trunkSprites.set(P + (hole ? 'h' : 't'), s);
-  if (!hole) { paintTrunk(g, P, px); return s; }
-  // The hollow: a resin-dark rim, a lip of bark, black inside, comb glinting at the bottom.
-  const { x, y, rx, ry } = OLD_HOLE;
-  softSpot(g, x, y + ry * 0.2, rx * 1.9, ry * 1.6, '40, 22, 8', 0.6);
-  const lip = g.createLinearGradient(x - rx, y - ry, x + rx, y + ry);
-  lip.addColorStop(0, '#b88a5c'); lip.addColorStop(0.5, '#6a4526'); lip.addColorStop(1, '#2e1b0c');
-  g.fillStyle = lip; g.beginPath(); g.ellipse(x, y, rx * 1.22, ry * 1.15, 0, 0, TAU); g.fill();
-  g.save();
-  g.beginPath(); g.ellipse(x, y, rx, ry, 0, 0, TAU); g.clip();
-  g.fillStyle = '#0a0503'; g.fillRect(x - rx, y - ry, 2 * rx, 2 * ry);
-  const comb = g.createRadialGradient(x - rx * 0.2, y + ry * 0.55, 0, x, y + ry * 0.7, rx * 1.2);
-  comb.addColorStop(0, '#e9c070'); comb.addColorStop(0.5, '#b87a26'); comb.addColorStop(1, 'rgba(60, 32, 6, 0)');
-  g.fillStyle = comb; g.beginPath(); g.ellipse(x, y + ry * 0.75, rx * 1.1, ry * 0.5, 0, 0, TAU); g.fill();
-  const lid = g.createLinearGradient(0, y - ry, 0, y + ry * 0.2);
-  lid.addColorStop(0, 'rgba(4, 2, 1, 0.95)'); lid.addColorStop(1, 'rgba(4, 2, 1, 0)');
-  g.fillStyle = lid; g.fillRect(x - rx, y - ry, 2 * rx, ry * 1.2);
-  g.restore();
-  return s;
-}
-
-// The 🌳 is drawn all but the foot of its own trunk, which the painted trunk stands in for.
-function clipFoot(px) {
-  ctx.beginPath();
-  ctx.rect(-px, -px * 2, px * 2, px * 1.94);
-  ctx.rect(-px, -px * 0.1, px * 0.84, px * 0.6);
-  ctx.rect(px * 0.16, -px * 0.1, px * 0.84, px * 0.6);
-  ctx.clip();
-}
-
-// The hive's tree. In leaf, a painted old trunk stands in for the 🌳's own. As the leaves drop the
-// 🪾 comes through, an old trunk already, and the painted one fades with the leaves; the hollow
-// stays put through it all.
+// The hive's tree: the hive oak, the hive in its trunk.
 function drawBeeTree(d, sx, sy, now, ck) {
   const h = d.hive, px = d.size * cam.zoom;
-  let hx, sill, rx;
-  if (drawPaintedTree(d, sx, sy, now, ck)) {                 // the hive oak, the hive in its trunk
-    const f = px / TREE_UNIT, a = treeSway(d, now);         // (the door sways with the tree)
-    hx = sx + HIVE_DOOR[0] * f - HIVE_DOOR[1] * f * Math.sin(a); sill = sy + HIVE_DOOR[1] * f; rx = 0.02;
-  } else {
-    if (treeWorker) return;                                  // nothing to show yet: it fades in when its painting comes
-    const fall = treeLook(d, ck, false).fall;
-    drawDecor(d, sx, sy, now, ck, clipFoot);
-    const put = s => ctx.drawImage(s.canvas, sx - s.ox, sy - s.oy, s.W, s.H);
-    if (fall < 1) { ctx.globalAlpha = 1 - fall; put(trunkSprite(px)); ctx.globalAlpha = 1; }
-    put(trunkSprite(px, true));
-    hx = sx + OLD_HOLE.x * px; sill = sy + (OLD_HOLE.y + OLD_HOLE.ry * 1.1) * px; rx = OLD_HOLE.rx;
-  }
+  if (!drawPaintedTree(d, sx, sy, now, ck)) return;          // nothing to show yet: it fades in when its painting comes
+  const f = px / TREE_UNIT, a = treeSway(d, now);           // (the door sways with the tree)
+  const hx = sx + HIVE_DOOR[0] * f - HIVE_DOOR[1] * f * Math.sin(a), sill = sy + HIVE_DOOR[1] * f, rx = 0.02, ry = 0.066;
   // Bees on the sill, a few wandering on the bark; they shuffle while time runs.
-  const ry = OLD_HOLE.ry;
   // A full hive has honey oozing over the sill.
   if (h.honey > 0.5 * S.HIVE_FULL) {
     const x = hx - rx * px * 0.85, y = sill - ry * px * 0.45, r = px * 0.011;
@@ -6372,7 +6178,7 @@ let flowClock = 0, flowLast = 0;
 function flowTick(now) {
   const dt = clamp((now - flowLast) / 1000, 0, 0.1), water = S.riverPace(world);
   flowLast = now;
-  flowClock += dt * water * (ui.speed > 1 ? ui.speed ** 0.17 : ui.speed > 0 ? 1 : 0);
+  flowClock += dt * water * (ui.speed > 0 ? 1 : 0);
   return water;
 }
 
@@ -6833,11 +6639,11 @@ function paintFogBanks(g, now, amount) {
 }
 
 // A rainbow keeps to game time like the rest of the sky, lasting most of a day (14 s at 1x) and holding while it's
-// paused. At BOW_FAST and up it would only flash, so none comes out; rain coming back washes one out (rainbowWet).
+// paused. Rain coming back washes one out (rainbowWet).
 // It stands over the part of the meadow in view when it came out, sized to the window then, and stays there:
 // panning and zooming move it like the ground. Painted once (bow), then copied; while it comes out it's copied
 // in slices, from one foot.
-const BOW_LIFE = 14 * TICKS_PER_SECOND, BOW_IN = 4 * TICKS_PER_SECOND, BOW_OUT = 5 * TICKS_PER_SECOND, BOW_FAST = 15;   // in ticks
+const BOW_LIFE = 14 * TICKS_PER_SECOND, BOW_IN = 4 * TICKS_PER_SECOND, BOW_OUT = 5 * TICKS_PER_SECOND;   // in ticks
 const BOW_RES = 0.5, BOW_OUTER = 1.3, BOW_SLICES = 32;
 const BOW_HUES = [[160, 105, 225], [95, 105, 240], [60, 160, 250], [80, 205, 125], [250, 228, 85], [255, 160, 60], [240, 75, 70]];
 const bow = { t: 0, x: 0, y: 0, r: 0, R: 0, c: null };   // x, y, r: its centre and radius in the meadow
@@ -6880,7 +6686,7 @@ function paintBow(R) {
 
 const bowNow = () => world.tick + Math.min(acc, 1);   // in ticks, gliding between them
 function rainbowOut() {
-  if (ui.speed >= BOW_FAST || bowNow() < ui.sky.bowEnd) return;   // one still out stays
+  if (bowNow() < ui.sky.bowEnd) return;   // one still out stays
   ui.sky.rainbow = world.tick; ui.sky.bowEnd = world.tick + BOW_LIFE;
   return true;
 }
@@ -6971,10 +6777,13 @@ function drawEffects(now) {
   const px = Math.max(14, cam.zoom * 1.2);
   for (const e of ui.effects) {
     const a = (now - e.t0) / e.dur;
-    const [sx, sy] = toScreen(e.x, e.y);
+    const [sx, y0] = toScreen(e.x, e.y), sy = y0 - px * 0.8 - e.rise * px * a;
+    if (!visible(sx, sy, px)) continue;
+    const hid = coverAt(sx, sy, e.y);
+    if (hid > 0.98) continue;
     const s = sprite(e.emoji, px * 1.1), size = s.size * (0.8 + 0.3 * Math.sin(a * Math.PI)) / 1.1;
-    ctx.globalAlpha = 1 - a * a;
-    ctx.drawImage(s.canvas, sx - size / 2, sy - px * 0.8 - e.rise * px * a - size / 2, size, size);
+    ctx.globalAlpha = (1 - a * a) * (1 - hid);
+    ctx.drawImage(s.canvas, sx - size / 2, sy - size / 2, size, size);
   }
   ctx.globalAlpha = 1;
 }
@@ -7083,7 +6892,7 @@ const pollen = {
   vx: new Float32Array(POLLEN_MAX), vy: new Float32Array(POLLEN_MAX),     // how far it flies, in tiles
   t0: new Float64Array(POLLEN_MAX).fill(-1e9), next: 0, until: 0,
 };
-const pollenShows = () => ui.speed > 0 && ui.speed <= 4 && cam.zoom * 0.95 >= 7;   // as drawPlants
+const pollenShows = () => ui.speed > 0 && cam.zoom * 0.95 >= 7;   // as drawPlants
 
 function puffPollen(x, y) {
   if (!pollenShows()) return;
@@ -7109,16 +6918,18 @@ function drawPollen(now) {
     const t = Math.max(0, a), out = t * (2 - t);        // quick out, slowing down
     const sx = (pollen.x[i] + pollen.vx[i] * out - cam.x) * z + vw / 2;          // (toScreen, without an array per speck)
     const sy = (pollen.y[i] + pollen.vy[i] * out + 0.25 * t * t - cam.y) * z + vh / 2;
+    const hid = coverAt(sx, sy, pollen.y[i] + 0.15);    // (it burst at the flower, a little up off it)
+    if (hid > 0.98) continue;
     if (pollen.vx[i] === 0 && pollen.vy[i] === 0) {      // the twinkle: a little cross that shrinks
       const r = s * 4 * (1 - t) * Math.min(1, t * 8);    // pops open, then shrinks away
-      ctx.globalAlpha = 0.95 * (1 - t);
+      ctx.globalAlpha = 0.95 * (1 - t) * (1 - hid);
       ctx.fillStyle = '#fff6c8';
       ctx.fillRect(sx - r, sy - s * 0.35, r * 2, s * 0.7);
       ctx.fillRect(sx - s * 0.35, sy - r, s * 0.7, r * 2);
       continue;
     }
     const d = 2 * s * (1 - 0.4 * t);                    // (the dot's soft edge is half of it)
-    ctx.globalAlpha = 1 - t * t;
+    ctx.globalAlpha = (1 - t * t) * (1 - hid);
     ctx.drawImage(POLLEN_DOTS[i & 1], sx - d / 2, sy - d / 2, d, d);
   }
   ctx.globalAlpha = 1;
@@ -7182,7 +6993,9 @@ function drawFireflies(now, dark) {
       const glow = Math.sin(Math.PI * p / 0.4);
       const sx = bx + z * 1.4 * Math.sin(t * (0.25 + 0.2 * h) + h * 40);
       const sy = by - z * (0.5 + 0.35 * Math.sin(t * (0.37 + 0.2 * h) + h * 70));
-      ctx.globalAlpha = a * glow;
+      const hid = coverAt(sx, sy, y0);                       // behind the leaves of a tree in front
+      if (hid > 0.98) continue;
+      ctx.globalAlpha = a * glow * (1 - hid);
       ctx.drawImage(FIREFLY_GLOW, sx - d / 2, sy - d / 2, d, d);
     }
   }
@@ -7207,11 +7020,15 @@ function drawButterflies(now, ck) {
       const x = c.x + r * Math.sin(t * (0.13 + 0.08 * h) + h * 30) + 0.3 * Math.sin(t * 1.7 + h * 9);
       const y = c.y + r * 0.7 * Math.sin(t * (0.19 + 0.06 * h) + h * 50);
       const sx = (x - cam.x) * z + vw / 2, sy = (y - cam.y) * z + vh / 2 - px * (0.9 + 0.3 * Math.abs(Math.sin(t * 2.3 + h * 7)));
-      if (!visible(sx, sy, px) || !fadeAt(x, y)) continue;
+      if (!visible(sx, sy, px)) continue;
+      const hid = coverAt(sx, sy, y);
+      if (hid > 0.98 || !fadeAt(x, y)) continue;
       const s = sprite('🦋', px, tint), flap = 0.4 + 0.6 * Math.abs(Math.sin(t * 13 + h * 20));
+      ctx.globalAlpha = 1 - hid;
       ctx.drawImage(s.canvas, sx - s.size * flap / 2, sy - s.size / 2, s.size * flap, s.size);
     }
   }
+  ctx.globalAlpha = 1;
   unfade();
 }
 
@@ -7370,7 +7187,7 @@ function handleEvent(e) {
   }
 }
 
-// ------------------------------------------------------------------ the tab, the watch
+// ------------------------------------------------------------------ the tab
 
 // Rewriting part of the page with what it already shows still costs the browser a layout and
 // a repaint, and the card and inspector refresh four times a second. So only touch what changed.
@@ -7379,8 +7196,7 @@ function setHTML(el, html) { if (shownHTML.get(el) !== html) { shownHTML.set(el,
 
 // The tab's icon keeps the meadow's time: the hill takes the season's colour and the sky the
 // part of the day. It's the small mark from assets/favicon.svg, one of 16 made once each. It only
-// changes when the season or the part of day does, at most once a second, and from 15x on the
-// days fly by too fast to follow, so it stays noon and only the seasons turn.
+// changes when the season or the part of day does, at most once a second.
 const MARK_SKY = ['#F5E6CC', '#F1DDB0', '#F0CFA0', '#34405F'];   // morning, noon, evening, night
 const MARK_HILL = [                                                // by season: day, night
   ['#6DAA50', '#3F6A3A'], ['#5F9346', '#3A5A38'], ['#A5823F', '#6B5A36'], ['#7C8CA6', '#6F7E99'],
@@ -7396,7 +7212,7 @@ function markIcon(season, part) {
   return 'data:image/svg+xml,' + encodeURIComponent(svg);
 }
 function updateFavicon(ck) {
-  const part = ui.speed >= 15 ? 1 : ck.night ? 3 : ck.phase > 0.6 ? 2 : ck.phase < 0.1 ? 0 : 1;
+  const part = ck.night ? 3 : ck.phase > 0.6 ? 2 : ck.phase < 0.1 ? 0 : 1;
   const key = ck.season * 4 + part, now = performance.now();
   if (key === markKey || now - markAt < 1000) return;
   markKey = key; markAt = now;
@@ -7404,35 +7220,9 @@ function updateFavicon(ck) {
   $('#favicon').href = markIcons.get(key);
 }
 
-// The watch at the top: a hand going round the day (day, dusk, night, dawn; noon at the top), and round it the
-// year's days, the ones still to come pale and a dot on today. The hand and the dot turn every frame, each a
-// transform on a layer of its own, so nothing is repainted; the pale part moves once a day, the plaque's words
-// a few times a second (dialTitle).
-const DIAL_NOON = 0.36;                                // the day's phase at the top of the dial (sun, lean 0)
-const dial = { el: $('#dial'), box: $('#watch'), hand: $('#dial .hand'), mark: $('#dial .mark'), a: NaN, m: NaN, day: -1, title: '' };
-function updateDial() {
-  const t = world.tick + Math.min(acc, 1), p = (t % S.TPD) / S.TPD, day = Math.floor(t / S.TPD) % S.YEAR_DAYS;
-  const a = Math.round(((p - DIAL_NOON + 1) % 1) * 1440) / 4, m = Math.round((day + p) / S.YEAR_DAYS * 1440) / 4;
-  if (a !== dial.a) { dial.a = a; dial.hand.style.transform = `rotate(${a}deg)`; }
-  if (m !== dial.m) { dial.m = m; dial.mark.style.transform = `rotate(${m}deg)`; }
-  if (day !== dial.day) { dial.day = day; dial.el.style.setProperty('--done', `${(day + 1) / S.YEAR_DAYS * 360}deg`); }
-}
-function dialTitle(ck) {
-  const part = ck.night ? 'night' : ck.phase < 0.1 ? 'sunrise' : ck.phase < 0.28 ? 'morning' : ck.phase < 0.44 ? 'midday'
-    : ck.phase < 0.6 ? 'afternoon' : 'evening';
-  const title = `${S.SEASONS[ck.season].name}, day ${ck.dayInSeason} of ${S.SEASON_DAYS} · year ${ck.year} · ${part}`;
-  if (title === dial.title) return;
-  dial.title = dial.box.title = title;
-  dial.box.setAttribute('aria-label', title);
-  setHTML($('#watch-day'), `${S.SEASONS[ck.season].name} · day ${ck.dayInSeason}<span> · year ${ck.year}</span>`);
-}
-
-
-// A few times a second: the watch's words, the tab's icon.
+// A few times a second: the tab's icon.
 function updateClock() {
-  const ck = S.clock(world);
-  dialTitle(ck);
-  updateFavicon(ck);
+  updateFavicon(S.clock(world));
 }
 
 // ------------------------------------------------------------------ the inspector
@@ -7532,8 +7322,7 @@ function renderInspector() {
     <ul class="story">${story}</ul>
     ${c.story.length > STORY_SHORT ? `<button class="story-more" data-act="story">${ui.allStory ? 'Show less' : `Show all ${c.story.length}`}</button>` : ''}
     <div class="ins-actions">
-      ${c.alive ? `<button class="btn ${ui.follow ? 'on' : ''}" data-act="follow">${ui.follow ? '📍 Following' : '📍 Follow'}</button>`
-        : living ? `<button class="btn" data-act="child" data-id="${living.id}">🐣 Follow ${esc(living.name)}</button>` : ''}
+      ${!c.alive && living ? `<button class="btn" data-act="child" data-id="${living.id}">🐣 See ${esc(living.name)}</button>` : ''}
     </div>`);
 }
 
@@ -7603,7 +7392,7 @@ function treeTitle(d) {
 const thornGuard = d => d.kind !== 'hawthorn' && world.decor.some(o => o !== d && o.kind === 'hawthorn' && S.standing(o) && o.size >= S.SAPLING && Math.hypot(o.x - d.x, o.y - d.y) < 1.8);
 
 function treeSeason(d) {
-  const s = S.seasonOf(world.tick), info = treeInfo(d), k = info.kind, oak = k === 'oak' || !HAS_BARE;
+  const s = S.seasonOf(world.tick), info = treeInfo(d), k = info.kind, oak = k === 'oak';
   if (k === 'pine') return s === 3 ? '🌲 Evergreen, dark against the snow' : '🌲 Evergreen';
   if (s === 0) return info.fruit ? `🌸 In ${info.fruit} blossom` : k === 'hawthorn' ? '🤍 White with may blossom' : '🌱 Coming into leaf';
   if (s === 1) return info.fruit === 'apple' ? '🍏 Apples ripening' : info.fruit === 'cherry' ? '🍒 Hung with cherries' : '🌳 In full leaf';
@@ -8190,15 +7979,11 @@ function drawPickedOver() {
 
 // ------------------------------------------------------------------ selection and input
 
-function select(id, zoomIn = true) {
+function select(id) {
   ui.selectedId = id;
   ui.picked = null;
   ui.trail = [];
-  ui.follow = !!id;
   ui.sheetUp = false;
-  flick.vx = flick.vy = 0;
-  const close = narrow() ? 16 : 22;           // a phone keeps a little more of the meadow around it
-  if (id && zoomIn && cam.zoom < close - 2) cam.goal = close;
   renderInspector();
 }
 
@@ -8285,11 +8070,10 @@ function setSpeed(s) {
   b.title = s ? 'Pause (space)' : 'Carry on (space)';
 }
 
-// Two fingers pinch: the spot of meadow between them stays under them as they spread and move.
-let drag = null, pinch = null, scrollRest = { x: 0, y: 0 };
+// The camera stays with the forager (leadCam): nothing pans it. Two fingers pinch, the wheel, a double tap and + - zoom it
+// about the forager (zoomOn).
+let drag = null, pinch = null;
 let fingerTap = false;                    // the last press was a finger: taps may wobble a little and hit a little wider
-// Let go of a pan while still moving and the meadow glides on a little (screen pixels a second).
-const flick = { vx: 0, vy: 0 };
 const fingers = new Map();
 
 // A mouse, a trackpad or a finger sends its moves when it likes, not once a frame: Safari hands them over as they come,
@@ -8340,36 +8124,33 @@ function handBack() { cam.x = hand.kept.x; cam.y = hand.kept.y; cam.zoom = hand.
 const DOUBLE_MS = 300, DOUBLE_PX = 40;    // the second tap: this soon after the first, this near it
 const ZOOM_DRAG = 0.009;                  // a double tap dragged: the zoom doubles every 77 px or so
 let lastTap = null, zoomDrag = null;      // the last tap of a finger { t, x, y }; a double tap held { id, y, z, sx, sy, moved }
-let zoomTo = null;                        // a zoom easing in or out on a spot { sx, sy, z } (frame)
+let zoomTo = null;                        // a zoom easing in or out about the forager { z } (frame)
 let tapAway = 0;
 const HOLD_MS = 280, STEER_MS = 120;      // a press held this still this long runs toward the pointer, the way found again this often
 let holdTimer = 0;
 
+function zoomOn(z) { const [sx, sy] = toScreen(fg.x, fg.y); zoomAt(sx, sy, z); }
+
 function startPinch() {
   const [a, b] = fingers.values(), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-  const [wx, wy] = toWorld(mx, my);
-  pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, zoom: cam.zoom, wx, wy, mx, my, t0: performance.now(), moved: false };
-  drag = null; zoomDrag = null; zoomTo = null; cam.goal = null; ui.follow = false;
+  pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, zoom: cam.zoom, mx, my, t0: performance.now(), moved: false };
+  drag = null; zoomDrag = null; zoomTo = null; cam.goal = null;
   clearTimeout(holdTimer);
 }
 
 function movePinch() {
   const [a, b] = fingers.values(), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, d = Math.hypot(a.x - b.x, a.y - b.y);
   if (Math.abs(d - pinch.d) > 12 || Math.hypot(mx - pinch.mx, my - pinch.my) > 12) pinch.moved = true;
-  cam.zoom = clamp(pinch.zoom * d / pinch.d, fitZoom, 64);
-  cam.x = pinch.wx - (mx - vw / 2) / cam.zoom; cam.y = pinch.wy - (my - vh / 2) / cam.zoom;
-  clampCam();
+  zoomOn(pinch.zoom * d / pinch.d);
 }
 
 function liftFinger(e) {
   fingers.delete(e.pointerId);
   if (!pinch) return false;
   if (fingers.size >= 2) startPinch();
-  else {                                  // one finger left: carry on as a plain drag, never a tap
-    if (!pinch.moved && performance.now() - pinch.t0 < DOUBLE_MS) zoomTo = { sx: pinch.mx, sy: pinch.my, z: clamp(cam.zoom / 2, fitZoom, 64) };   // two fingers tapped: out
+  else {                                  // one finger left: it does nothing till it's lifted, never a tap
+    if (!pinch.moved && performance.now() - pinch.t0 < DOUBLE_MS) zoomTo = { z: clamp(cam.zoom / 2, fitZoom, 64) };   // two fingers tapped: out
     pinch = null;
-    const [f] = fingers.values();
-    if (f) drag = { x: f.x, y: f.y, cx: cam.x, cy: cam.y, moved: true, t: e.timeStamp, lx: f.x, ly: f.y, vx: 0, vy: 0 };
   }
   return true;
 }
@@ -8379,7 +8160,6 @@ canvas.addEventListener('pointerdown', e => {
   if (e.button === 2 || (e.ctrlKey && e.pointerType === 'mouse')) return;
   canvas.setPointerCapture(e.pointerId);
   fingerTap = e.pointerType === 'touch';
-  flick.vx = flick.vy = 0;
   zoomTo = null;
   if (fingerTap) fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (fingers.size >= 2) { startPinch(); return; }
@@ -8387,13 +8167,11 @@ canvas.addEventListener('pointerdown', e => {
   lastTap = null;
   if (fingerTap && tap && e.timeStamp - tap.t < DOUBLE_MS && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) < DOUBLE_PX) {
     clearTimeout(tapAway); tapAway = 0;   // (the first tap put nothing away after all)
-    const sel = ui.follow && world.byId.get(ui.selectedId), [sx, sy] = sel ? toScreen(drawnAt(sel).x, drawnAt(sel).y) : [e.clientX, e.clientY];
-    zoomDrag = { id: e.pointerId, y: e.clientY, z: cam.zoom, sx, sy, moved: false };
+    zoomDrag = { id: e.pointerId, y: e.clientY, z: cam.zoom, moved: false };
     drag = null; cam.goal = null;
     return;
   }
-  drag = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y, moved: false, t: e.timeStamp, lx: e.clientX, ly: e.clientY, vx: 0, vy: 0, id: e.pointerId,
-    steer: false, px: e.clientX, py: e.clientY, at: 0 };
+  drag = { x: e.clientX, y: e.clientY, moved: false, id: e.pointerId, steer: false, px: e.clientX, py: e.clientY, at: 0 };
   clearTimeout(holdTimer);
   holdTimer = setTimeout(() => {                        // held still on the ground: it runs toward the pointer while it's down
     if (!drag || drag.moved || pinch || zoomDrag || fingers.size > 1 || animalAt(drag.x, drag.y)) return;
@@ -8407,56 +8185,37 @@ canvas.addEventListener('pointermove', e => {
   if (pinch) { movePinch(); handMoved(e.timeStamp); return; }
   if (zoomDrag && e.pointerId === zoomDrag.id) {
     const dy = e.clientY - zoomDrag.y;
-    if (zoomDrag.moved || Math.abs(dy) > 8) { zoomDrag.moved = true; zoomAt(zoomDrag.sx, zoomDrag.sy, zoomDrag.z * Math.exp(dy * ZOOM_DRAG)); handMoved(e.timeStamp); }
+    if (zoomDrag.moved || Math.abs(dy) > 8) { zoomDrag.moved = true; zoomOn(zoomDrag.z * Math.exp(dy * ZOOM_DRAG)); handMoved(e.timeStamp); }
     return;
   }
   if (drag?.steer) { drag.px = e.clientX; drag.py = e.clientY; return; }   // (holding: it runs toward the pointer, frame)
   if (!drag) {
     const c = e.pointerType === 'mouse' ? animalAt(e.clientX, e.clientY) : null;
     ui.hoverId = c ? c.id : 0;
-    ui.hoverHive = null;
     aim.in = e.pointerType === 'mouse'; aim.x = e.clientX; aim.y = e.clientY; aim.moved = true;   // (what's to gather under it: hoverFrame)
     canvas.classList.toggle('on-animal', !!c);
     return;
   }
-  let dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-  if (!drag.moved && Math.abs(dx) + Math.abs(dy) > (e.pointerType === 'touch' ? 10 : 4)) {
-    drag.moved = true;
-    drag.x = e.clientX; drag.y = e.clientY; dx = dy = 0;   // start from here, no jump
-  }
-  const ms = e.timeStamp - drag.t;
-  if (ms > 0) {                           // how fast the finger moves, smoothed over the last few moves
-    const a = Math.min(1, ms / 40);
-    drag.vx += ((e.clientX - drag.lx) * 1000 / ms - drag.vx) * a;
-    drag.vy += ((e.clientY - drag.ly) * 1000 / ms - drag.vy) * a;
-    drag.t = e.timeStamp; drag.lx = e.clientX; drag.ly = e.clientY;
-  }
-  if (drag.moved) {
+  // Moved off where it was pressed: a drag steers the forager as a press held still does, running toward the pointer.
+  if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) > (e.pointerType === 'touch' ? 10 : 4)) {
     clearTimeout(holdTimer);
-    canvas.classList.add('dragging');
-    ui.follow = false; ui.lead = false;
-    cam.x = drag.cx - wholePx(dx) / cam.zoom; cam.y = drag.cy - wholePx(dy) / cam.zoom;
-    clampCam();
-    handMoved(e.timeStamp);
+    drag.moved = drag.steer = true; drag.at = performance.now(); drag.px = e.clientX; drag.py = e.clientY;
+    walkTo(drag.px, drag.py, true);
   }
 });
 canvas.addEventListener('pointerup', e => {
   if (zoomDrag && e.pointerId === zoomDrag.id) {           // a double tap: in on the spot, unless it was dragged
     fingers.delete(e.pointerId);
-    if (!zoomDrag.moved) zoomTo = { sx: zoomDrag.sx, sy: zoomDrag.sy, z: clamp(cam.zoom * 2, fitZoom, 64) };
+    if (!zoomDrag.moved) zoomTo = { z: clamp(cam.zoom * 2, fitZoom, 64) };
     zoomDrag = null;
     return;
   }
   clearTimeout(holdTimer);
   if (liftFinger(e)) return;
-  canvas.classList.remove('dragging');
   if (drag?.steer) walkTo(e.clientX, e.clientY, true);  // (held: it runs on to where it was let go)
   else if (drag && !drag.moved) {
     click(e.clientX, e.clientY);
     if (fingerTap) lastTap = { t: e.timeStamp, x: e.clientX, y: e.clientY };
-  }
-  else if (drag && e.pointerType === 'touch' && e.timeStamp - drag.t < 60 && Math.hypot(drag.vx, drag.vy) > 250) {
-    flick.vx = drag.vx; flick.vy = drag.vy;
   }
   drag = null;
 });
@@ -8464,42 +8223,30 @@ canvas.addEventListener('pointercancel', e => {
   clearTimeout(holdTimer);
   if (zoomDrag && e.pointerId === zoomDrag.id) { fingers.delete(e.pointerId); zoomDrag = null; return; }
   if (liftFinger(e)) return;
-  canvas.classList.remove('dragging');
   drag = null;
 });
 // Safari ignores the viewport's no-zoom, and a zoomed page makes the whole meadow blurry.
 document.addEventListener('gesturestart', e => e.preventDefault());
 // Safari on a phone shows a button pressed (:active) only where something listens for touches.
 document.addEventListener('touchstart', () => {}, { passive: true });
-canvas.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') { ui.hoverId = 0; ui.hoverHive = null; aim.in = false; } });   // a lifted finger leaves too
+canvas.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') { ui.hoverId = 0; aim.in = false; } });   // a lifted finger leaves too
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
   const unit = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? innerHeight : 1;   // Firefox's wheel counts lines (3 a notch, Chrome's 100 px)
-  const ddx = e.deltaX * unit, ddy = e.deltaY * unit;
-  const pixelPan = !e.ctrlKey && e.deltaMode === 0 && (ddx !== 0 || Math.abs(ddy) < 40);
-  if (pixelPan) {                     // trackpad two-finger scroll: look around
-    const dx = wholePx(scrollRest.x + ddx), dy = wholePx(scrollRest.y + ddy);
-    scrollRest = { x: scrollRest.x + ddx - dx, y: scrollRest.y + ddy - dy };   // the rest comes next time
-    cam.x += dx / cam.zoom; cam.y += dy / cam.zoom;
-    ui.follow = false; ui.lead = false; clampCam();
-  } else {                            // mouse wheel or pinch: zoom
-    cam.goal = null; zoomTo = null;
-    const [zx, zy] = ui.lead && !ui.follow ? toScreen(fg.x, fg.y) : [e.clientX, e.clientY];   // (with the forager: about it)
-    zoomAt(zx, zy, cam.zoom * Math.exp(-ddy * (e.ctrlKey ? 0.012 : 0.0018)));
-  }
+  cam.goal = null; zoomTo = null;   // a mouse wheel, a trackpad's pinch or its two-finger scroll up and down: zoom
+  zoomOn(cam.zoom * Math.exp(-e.deltaY * unit * (e.ctrlKey ? 0.012 : 0.0018)));
   handMoved(e.timeStamp);
 }, { passive: false });
 
-// A click or a tap on an animal (on it as it's drawn: animalAt) opens its panel and follows it; on something to gather,
-// the forager goes and picks it (goGather); anywhere else, the forager walks there, the panel shuts and the camera goes with the forager again (walkTo).
+// A click or a tap on an animal (on it as it's drawn: animalAt) opens its panel; on something to gather, the forager
+// goes and picks it (goGather); anywhere else, the forager walks there and the panel shuts (walkTo).
 function click(sx, sy) {
   clearTimeout(tapAway); tapAway = 0;
   const c = animalAt(sx, sy), t = !c && gatherAt(sx, sy);
   if (c) select(c.id);
   else if (t) goGather(t);
   else walkTo(sx, sy);
-  ui.hoverHive = null;
 }
 // A tap walks it there; held (steering) or with Shift down, it runs.
 function walkTo(sx, sy, steering = false) {
@@ -8507,10 +8254,9 @@ function walkTo(sx, sy, steering = false) {
   if (g) world.forager.running = steering || shiftHeld;
   ui.gather = null;                                     // (a new walk: whatever it was going to pick, it isn't)
   if (ui.selectedId || ui.picked) select(0);
-  ui.lead = true; ui.follow = false; flick.vx = flick.vy = 0;
   if (!g) return;
   if (steering && ui.mark && !ui.mark.end) { ui.mark.x = g.x; ui.mark.y = g.y; }
-  else ui.mark = { x: g.x, y: g.y, t0: performance.now(), end: 0 };
+  else ui.mark = { x: g.x, y: g.y, t0: performance.now(), end: 0, sx: g.x, sy: g.y, at: 0 };   // (sx, sy: where it's shown, drawMark)
 }
 // The animal drawn under a point: within its painting's body (a fingertip reaches a little further), the nearest.
 // Tighter than creatureAt, so a click on the grass beside a rabbit walks there.
@@ -8606,11 +8352,12 @@ document.addEventListener('click', e => {
   }
   else if (t.dataset.act === 'more') toggleMore();
   else if (t.dataset.act === 'copy-link') copyLink();
+  else if (t.dataset.act === 'outfit') wearOutfit(+t.dataset.o);
+  else if (t.dataset.act === 'pick-outfit') pickOutfit(true);
   else if (t.dataset.act === 'ideas') { played = -Infinity; askIdeas(true); }   // found it themselves: no need to ask
   else if (t.dataset.act === 'ask-later') askIdeas(false);
   else if (t.dataset.act === 'ask-send') sendIdea();
   else if (t.dataset.act === 'sound') toggleSound();
-  else if (t.dataset.act === 'follow') { ui.follow = !ui.follow; renderInspector(); }
   else if (t.dataset.act === 'story') { ui.allStory = !ui.allStory; renderInspector(); }
   else if (t.dataset.thing) goToThing(t.dataset.thing);
   else if (t.dataset.id) {
@@ -8628,7 +8375,7 @@ function goToThing(thing) {
     return;
   }
   const it = (kind === 'hive' ? world.hives : kind === 'tree' ? world.decor.filter(o => o.tree) : kind === 'visitor' ? world.visitors || [] : world.fields).find(o => o.id === +id);
-  if (kind === 'visitor' && it) { select(0); ui.follow = false; cam.x = it.x; cam.y = it.y; clampCam(); }
+  if (kind === 'visitor' && it) select(0);
   if (it) pick(kind, it);
 }
 
@@ -8646,11 +8393,9 @@ document.addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey || e.altKey) && /^[a-z]$/i.test(e.key)) return;   // ⌘C, Ctrl+Z…: the browser's
   if (e.key === ' ') { e.preventDefault(); setSpeed(ui.speed ? 0 : 1); }
   else if (e.key === 'Escape') stepOut();
-  else if (e.key === 'f' && ui.selectedId) { ui.follow = !ui.follow; renderInspector(); }
-  else if (e.key === 'f') ui.lead = true;                // back to the forager
   else if (e.key === 'm') toggleSound();
-  else if (e.key === '+' || e.key === '=') zoomAt(vw / 2, vh / 2, cam.zoom * 1.25);
-  else if (e.key === '-') zoomAt(vw / 2, vh / 2, cam.zoom / 1.25);
+  else if (e.key === '+' || e.key === '=') zoomOn(cam.zoom * 1.25);
+  else if (e.key === '-') zoomOn(cam.zoom / 1.25);
 });
 
 // ------------------------------------------------------------------ Back
@@ -8665,7 +8410,7 @@ const back = { token: Math.random().toString(36).slice(2), depth: 0, going: fals
 const moreOpen = () => !$('#more-menu').classList.contains('hidden');
 function opened() {
   const ins = $('#inspector').classList, sheetUp = ins.contains('open') && narrow() && !ins.contains('strip');
-  return [askOpen(), moreOpen(), ins.contains('open'), sheetUp, ui.slotTip !== null].filter(Boolean).length;
+  return [askOpen(), moreOpen(), outfitOpen(), ins.contains('open'), sheetUp, ui.slotTip !== null].filter(Boolean).length;
 }
 // The one on top shuts (Esc, and Back once for each step it takes).
 function stepOut() {
@@ -8673,6 +8418,7 @@ function stepOut() {
   if (askOpen()) askIdeas(false);
   else if (ui.slotTip !== null) openSlot(null);
   else if (moreOpen()) toggleMore(false);
+  else if (outfitOpen()) pickOutfit(false);
   else if (ins.contains('open') && narrow() && !ins.contains('strip')) { ui.sheetUp = false; $('#inspector').scrollTop = 0; renderInspector(); }
   else if (ins.contains('open')) select(0);
   else return false;
@@ -8739,7 +8485,7 @@ function keepMeadow() {
   const list = [{ link, at }, ...keptList().filter(k => k.link !== link)];
   if (!setKept(list.slice(0, KEEP_MEADOWS))) return;
   const rec = { link, at, kept, paused: ui.speed === 0,
-    cam: { x: cam.x, y: cam.y, zoom: cam.zoom }, selectedId: ui.selectedId, follow: ui.follow, lead: ui.lead };
+    cam: { x: cam.x, y: cam.y, zoom: cam.zoom }, selectedId: ui.selectedId };
   keepDb().then(db => {
     const tx = db.transaction('meadows', 'readwrite'), store = tx.objectStore('meadows');
     store.put(rec, link);
@@ -8789,11 +8535,10 @@ function resumeWorld(rec) {
     return false;
   }
   opening = 1;
-  if (rec.cam) { cam.zoom = Math.max(rec.cam.zoom, fitZoom); cam.x = rec.cam.x; cam.y = rec.cam.y; clampCam(); }
   const c = world.byId.get(rec.selectedId);
-  if (c) { select(c.id, false); ui.follow = rec.follow; }
-  ui.lead = rec.lead ?? true;
-  if (ui.lead && !ui.follow) { cam.x = world.forager.x; cam.y = world.forager.y - CAM_FEET * forPx() / cam.zoom; clampCam(); }
+  if (c) select(c.id);
+  cam.zoom = clamp(rec.cam?.zoom || homeZoom(), fitZoom, 64);
+  cam.x = world.forager.x; cam.y = world.forager.y - CAM_FEET * forPx() / cam.zoom; clampCam();   // (on the forager, at the kept zoom)
   history.replaceState(history.state, '', meadowLink(world.seed));
   return true;
 }
@@ -8814,15 +8559,18 @@ function newWorld(seed) {
   showWorld(S.createWorld(seed));
   history.replaceState(history.state, '', meadowLink(seed));   // (the state: Back's step, if one's open)
   homeView();
+  if (!fg.picked) pickOutfit(true);             // (only till one has been picked: after that it's in •••)
 }
 
 // A new meadow opens close enough to see who lives there, HOME_TILES across the screen, over where most of them are:
 // the square a screen across with the most animals in the open (under the trees they'd be hidden), counted on a coarse
 // grid, once. All of it is a pinch away.
-const HOME_TILES = [45, 24];              // tiles across: a computer, a phone
+const HOME_TILES = [30, 14];              // tiles across: a computer, a phone
+const FAR_TILES = [75, 36];               // zoomed right out, at most this many
+const homeZoom = () => Math.max(minZoom, fitZoom, vw / HOME_TILES[narrow() ? 1 : 0]);
 const HOME_CELL = 8;                      // tiles a cell of the count
 function homeView() {
-  const zoom = Math.max(minZoom, vw / HOME_TILES[narrow() ? 1 : 0]);
+  const zoom = homeZoom();
   const gw = Math.ceil(S.W / HOME_CELL), gh = Math.ceil(S.H / HOME_CELL), n = new Uint16Array(gw * gh);
   for (const c of world.creatures) {
     if (c.alive && c.species !== 'bee' && world.wood[Math.floor(c.y) * S.W + Math.floor(c.x)] < 0.4) n[Math.min(gh - 1, Math.floor(c.y / HOME_CELL)) * gw + Math.min(gw - 1, Math.floor(c.x / HOME_CELL))]++;
@@ -8848,7 +8596,7 @@ function showWorld(w) {
   world = w;
   const seed = w.seed;
   groundSeed = [(seed % 97) * 3.7, (seed % 89) * 4.3];
-  Object.assign(ui, { selectedId: 0, picked: null, hoverId: 0, follow: false, lead: true, mark: null, trail: [], effects: [], gather: null });
+  Object.assign(ui, { selectedId: 0, picked: null, hoverId: 0, mark: null, trail: [], effects: [], gather: null });
   fg.at = -1; fg.rings.length = 0; fg.sized = 0; fg.pick = -1e9; pickFloats.length = 0; aim.t = null;
   pollen.until = 0; pollen.t0.fill(-1e9);
   const mix = Object.fromEntries(Object.keys(S.WEATHER).map(k => [k, k === world.weather.kind ? 1 : 0]));
@@ -8935,7 +8683,7 @@ function frame(now) {
     acc -= want;
     let ran = 0, days = 0, dayMs = 0;
     while (ran < n) {
-      if (ui.speed <= SMOOTH_SPEED) keepLast();
+      keepLast();
       const day = (world.tick + 1) % S.TPD === 0, t1 = day ? performance.now() : 0;   // (a new day's tick is the heaviest by far)
       S.step(world);
       if (world.events.length) flushEvents();
@@ -8949,8 +8697,6 @@ function frame(now) {
     }
   }
   updateSky();
-  lightFrame(dt);
-  updateDial();
 
   const sel = world.byId.get(ui.selectedId);
   if (sel && sel.alive && !sel.hidden) {
@@ -8960,21 +8706,9 @@ function frame(now) {
       if (ui.trail.length > 160) ui.trail.shift();
     }
   }
-  if (sel && ui.follow) {
-    const k = 1 - Math.pow(0.001, dt), { x, y } = drawnAt(sel);
-    const gx = sheet ? x + (sheet.right - sheet.left) / 2 / cam.zoom : x;
-    const gy = sheet ? y + (sheet.bottom - sheet.top) / 2 / cam.zoom : y;
-    cam.x += (gx - cam.x) * k; cam.y += (gy - cam.y) * k;
-  } else if (ui.lead) leadCam(dt);
+  leadCam(dt);
   if (drag?.steer && now - drag.at > STEER_MS) { drag.at = now; walkTo(drag.px, drag.py, true); }
   gatherFrame(now);
-  if (flick.vx || flick.vy) {             // a flicked pan glides to a stop
-    cam.x -= flick.vx * dt / cam.zoom; cam.y -= flick.vy * dt / cam.zoom;
-    const f = Math.pow(0.02, dt);
-    flick.vx *= f; flick.vy *= f;
-    if (Math.abs(flick.vx) + Math.abs(flick.vy) < 20) flick.vx = flick.vy = 0;
-    if (hand.n) { clampCam(); handMoved(now); }   // (carrying on from the hand, still drawn a moment behind)
-  }
   if (cam.goal) {
     const k = 1 - Math.pow(0.01, dt);
     cam.zoom += (cam.goal - cam.zoom) * k;
@@ -8983,7 +8717,7 @@ function frame(now) {
   }
   if (zoomTo) {                           // a double tap's zoom (or two fingers'), eased in or out on its spot
     const goal = clamp(zoomTo.z, fitZoom, 64), z = cam.zoom + (goal - cam.zoom) * (1 - Math.pow(0.0002, dt));
-    zoomAt(zoomTo.sx, zoomTo.sy, Math.abs(goal - z) < goal * 0.01 ? goal : z);
+    zoomOn(Math.abs(goal - z) < goal * 0.01 ? goal : z);
     if (cam.zoom === goal || drag?.moved || pinch) zoomTo = null;
   }
   clampCam();
@@ -9027,8 +8761,9 @@ function leadCam(dt) {
   const a = 1 - Math.exp(-dt / CAM_LEAD_S);
   fg.lx += (Math.cos(f.heading) * v * CAM_AHEAD - fg.lx) * a; fg.ly += (Math.sin(f.heading) * v * CAM_AHEAD - fg.ly) * a;
   const k = 1 - Math.exp(-dt * CAM_FOLLOW);
-  cam.x += (p.x + fg.lx - cam.x) * k;
-  cam.y += (p.y - CAM_FEET * forPx() / cam.zoom + fg.ly - cam.y) * k;
+  const sx = sheet ? (sheet.right - sheet.left) / 2 / cam.zoom : 0, sy = sheet ? (sheet.bottom - sheet.top) / 2 / cam.zoom : 0;   // (clear of the inspector)
+  cam.x += (p.x + fg.lx + sx - cam.x) * k;
+  cam.y += (p.y - CAM_FEET * forPx() / cam.zoom + fg.ly + sy - cam.y) * k;
 }
 
 // ------------------------------------------------------------------ start

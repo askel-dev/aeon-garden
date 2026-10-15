@@ -7,12 +7,12 @@
  *     a buzz that hums in tune, the meadow itself (seasons, old age) a soft glass bell.
  *     Rising = life, falling = loss. Lightning is the one loud thing, on purpose.
  *  3. The meadow is the music. Wind, birds, crickets and rain follow the clock and the
- *     sky, and events are rare, quiet and rate-limited so fast-forward never turns into noise.
+ *     sky, and events are rare, quiet and rate-limited so a busy meadow never turns into noise.
  *     Every few minutes a short felt-piano piece drifts over it, like the music in Minecraft
  *     (see "music" below), in keys that hold the pentatonic so it still fits.
  *     Over it all hangs a wind chime that rings more the more rabbits there are.
  *
- * Use: Sound.start() from a click, then Sound.update({ phase, season, speed, sky, bees, life, frogs, trees }) a
+ * Use: Sound.start() from a click, then Sound.update({ phase, season, sky, bees, life, frogs, trees }) a
  * few times a second (sky: how much of each weather is showing, 0..1; bees: how many are flying
  * on screen; life: how full the meadow is of rabbits, 0..1; frogs: 0..1,
  * the spring's spawn, for a croak now and then at night; trees: 0..1, how much of the screen is under
@@ -35,7 +35,7 @@ let ac = null, master, ducker, loud, fxBus, ambBus, musicBus, hush, reverb, nois
 let enabled = true, volume = 0.6;
 const amb = {};                                    // ambient layers
 const LOUD = 1.4;                                  // thunder's level against the rest
-const state = { phase: 0.3, season: 0, speed: 1, sky: { clear: 1 }, bees: 0, life: 0.3, frogs: 0, trees: 0.5 };
+const state = { phase: 0.3, season: 0, sky: { clear: 1 }, bees: 0, life: 0.3, frogs: 0, trees: 0.5 };
 const last = {};                                   // per-sound cooldowns
 let recent = 0, recentAt = 0;                      // global voice budget
 
@@ -264,27 +264,27 @@ function noise(dest, t, dur, { from = 800, to = 2400, q = 1.2, peak = 0.3, type 
 
 // ------------------------------------------------------------------ events
 
-// How long each sound waits before it may play again, and whether it survives fast-forward.
+// How long each sound waits before it may play again; free: it doesn't count against the creature sounds' budget.
 const RULES = {
-  love:    { gap: 0.35, maxSpeed: 4 },
-  birth:   { gap: 0.25, maxSpeed: 4 },
-  catch:   { gap: 0.8,  maxSpeed: 4 },
-  starve:  { gap: 1.2,  maxSpeed: 4 },
-  old:     { gap: 1.5,  maxSpeed: 4 },
-  escape:  { gap: 0.6,  maxSpeed: 4 },
-  thump:   { gap: 0.5,  maxSpeed: 4 },
-  queen:   { gap: 4,    maxSpeed: 15 },
-  queenlost: { gap: 4,  maxSpeed: 15 },
-  arrive:  { gap: 2,    maxSpeed: 60 },
-  thunder: { gap: 0.3,  maxSpeed: 15, always: true },   // a strike you see is always heard
-  rainbow: { gap: 20,   maxSpeed: 4 },
-  season:  { gap: 4,    maxSpeed: 60 },
-  extinct: { gap: 4,    maxSpeed: 60 },
-  rain:    { gap: 3,    maxSpeed: 60 },
-  leaves:  { gap: 1,    maxSpeed: 60 },
-  click:   { gap: 0.04, maxSpeed: 60 },
-  step:    { gap: 0.1,  maxSpeed: 4, always: true },   // (a foot down is cheap and rhythmic: it never counts against the budget)
-  pick:    { gap: 0.15, maxSpeed: 60, always: true },
+  love:    { gap: 0.35 },
+  birth:   { gap: 0.25 },
+  catch:   { gap: 0.8 },
+  starve:  { gap: 1.2 },
+  old:     { gap: 1.5 },
+  escape:  { gap: 0.6 },
+  thump:   { gap: 0.5 },
+  queen:   { gap: 4 },
+  queenlost: { gap: 4 },
+  arrive:  { gap: 2,    free: true },
+  thunder: { gap: 0.3, always: true },   // a strike you see is always heard
+  rainbow: { gap: 20 },
+  season:  { gap: 4,    free: true },
+  extinct: { gap: 4,    free: true },
+  rain:    { gap: 3,    free: true },
+  leaves:  { gap: 1,    free: true },
+  click:   { gap: 0.04, free: true },
+  step:    { gap: 0.1, always: true },   // (a foot down is cheap and rhythmic: it never counts against the budget)
+  pick:    { gap: 0.15, always: true },
 };
 
 const STEP_SOFT = 0.6;          // the footsteps' level against the meadow's sounds: soft, they come a few times a second
@@ -374,7 +374,7 @@ const SOUNDS = {
       noise(gust, t + 0.6, 2.4, { from: 3000, to: 5500, q: 0.9, peak: 0.035, attack: 0.5 });
       roll(out(pan, 0.7, 1, loud), t + rand(2.5, 3.5), rand(7, 9), { cut: 230, lumps: 6, peak: 0.28, mid: 0.2, heat: 1.1 });
     } else {
-      if (t - farAt < 4 * Math.max(1, state.speed / 2)) return;
+      if (t - farAt < 4) return;
       farAt = t;
       const d = rand(0.6, 1.4);
       roll(out(pan, 0.6, 0.7, loud), t + d, rand(4.5, 6), { cut: 300, lumps: 6, peak: 0.45, mid: 0.2 });
@@ -444,10 +444,9 @@ const SOUNDS = {
 function play(name, opts = {}) {
   if (!ac || !enabled || !SOUNDS[name]) return false;
   const r = RULES[name], now = ac.currentTime;
-  if (state.speed > r.maxSpeed) return false;
-  if (now - (last[name] ?? -1e9) < r.gap * Math.max(1, state.speed / 2)) return false;
+  if (now - (last[name] ?? -1e9) < r.gap) return false;
   if (now - recentAt > 1) { recent = 0; recentAt = now; }
-  if (!r.always && ++recent > 6 && r.maxSpeed < 60) return false;    // at most ~6 creature sounds a second
+  if (!r.always && !r.free && ++recent > 6) return false;    // at most ~6 creature sounds a second
   last[name] = now;
   const ok = v => Number.isFinite(v) ? v : undefined;      // a NaN would throw inside Web Audio
   const near = ok(opts.near) ?? 1;
@@ -514,16 +513,16 @@ function buildAmbience() {
   amb.calm = 0.5; amb.blow = null; amb.gust = 0; amb.swell = 0.5; amb.tube = 2;
 }
 
-// What the meadow should sound like right now, smoothed so fast-forward blurs into an average.
+// What the meadow should sound like right now.
 function mix() {
-  const fast = state.speed >= 15, p = state.phase, s = state.season;
+  const p = state.phase, s = state.season;
   const sky = k => state.sky[k] || 0;
-  const dayness = fast ? 0.65 : p < 0.05 ? p / 0.05 : p > 0.72 ? 0 : p > 0.64 ? (0.72 - p) / 0.08 : 1;
+  const dayness = p < 0.05 ? p / 0.05 : p > 0.72 ? 0 : p > 0.64 ? (0.72 - p) / 0.08 : 1;
   const wet = Math.min(1, sky('rain') + sky('storm'));
   const grey = Math.max(0, 1 - 0.8 * wet - 0.6 * sky('fog') - 0.3 * sky('cloudy') - 0.5 * sky('snow'));
   return {
     day: dayness,
-    birds: dayness * [1, 0.7, 0.4, 0.15][s] * (p < 0.2 && !fast ? 1.6 : 1) * grey,   // dawn chorus
+    birds: dayness * [1, 0.7, 0.4, 0.15][s] * (p < 0.2 ? 1.6 : 1) * grey,   // dawn chorus
     crickets: (1 - dayness) * [0.5, 1, 0.6, 0][s] * (1 - wet) * (1 - sky('snow')),
     wind: [0.5, 0.35, 0.7, 0.85][s] * (1 + 0.3 * sky('cloudy') + 0.8 * sky('storm') - 0.5 * sky('fog') - 0.4 * sky('heat')),
     windHi: [700, 600, 900, 1300][s],
@@ -531,7 +530,7 @@ function mix() {
     cicadas: dayness * sky('heat'),
     snow: Math.max(sky('snow'), s === 3 ? 0.3 * dayness : 0),
     hush: Math.max(sky('fog'), 0.7 * sky('snow')),
-    bees: state.speed >= 15 ? 0 : Math.min(1, state.bees / 12),
+    bees: Math.min(1, state.bees / 12),
     chimes: Math.min(1, state.life) ** 1.5 * (0.5 + 0.5 * dayness),    // a busy meadow, a busy chime
     leaves: Math.min(1, state.trees) * [0.6, 0.75, 1, 0.12][s] * (1 - 0.8 * sky('snow')),   // fresh, full, dry, bare
     leafHi: [4000, 3200, 5000, 3800][s],          // summer's full crowns are a soft shh, autumn's dry ones crisp
@@ -540,7 +539,7 @@ function mix() {
 
 function tickAmbience() {
   if (!ac || ac.state !== 'running') return;
-  const now = ac.currentTime, m = mix(), fastFactor = state.speed >= 15 ? 0.4 : 1;
+  const now = ac.currentTime, m = mix();
 
   windTick(now, m);
 
@@ -554,8 +553,8 @@ function tickAmbience() {
   hush.frequency.setTargetAtTime(12000 - 9500 * m.hush, now, 2);
 
   // Scattered one-shots, each rolled a few times a second.
-  const dt = 0.2 * fastFactor;
-  birdTick(now, m.birds * fastFactor);
+  const dt = 0.2;
+  birdTick(now, m.birds);
   if (Math.random() < m.crickets * 2.2 * dt) cricket(now + rand(0, 0.2));
   if (Math.random() < (1 - m.day) * state.frogs * 0.5 * dt) croak(now + rand(0, 0.2));   // spring nights, while there's spawn about
   if (Math.random() < m.rain * 3 * dt) {
@@ -1080,7 +1079,7 @@ function musicTick(now, m) {
   if (now < music.next) return;
   if ((state.sky.storm || 0) > 0.3) { music.next = now + 30; return; }
   const names = Object.keys(TUNES);
-  const w = names.map(k => TUNES[k].trial ? 0 : (state.speed > 1 ? 1 : TUNES[k].fit(state)) * (k === music.last ? 0.2 : 1));
+  const w = names.map(k => TUNES[k].trial ? 0 : TUNES[k].fit(state) * (k === music.last ? 0.2 : 1));
   let r = Math.random() * w.reduce((a, b) => a + b, 0), i = 0;
   while (r > w[i] && i < names.length - 1) r -= w[i++];
   playTune(names[i]);

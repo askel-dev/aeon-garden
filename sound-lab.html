@@ -85,13 +85,6 @@
       <input id="bees" type="range" min="0" max="20" step="1" value="0">
       <span id="bees-n">none flying</span>
     </div>
-    <div class="row" id="speeds">
-      <span class="lbl">Speed</span>
-      <button data-speed="1" class="on">1× Calm</button>
-      <button data-speed="4">4× Fast</button>
-      <button data-speed="15">15× Seasons</button>
-      <button data-speed="60">60× Years</button>
-    </div>
     <div class="row">
       <span class="lbl">Rabbits</span>
       <input id="life" type="range" min="0" max="1" step="0.01" value="0.3">
@@ -144,7 +137,7 @@
 (() => {
   const $ = s => document.querySelector(s);
   const S = window.Sound;
-  const st = { phase: 0.3, season: 0, sky: 'clear', speed: 1, species: 'rabbit', auto: false, life: 0.3, trees: 0.5 };
+  const st = { phase: 0.3, season: 0, sky: 'clear', species: 'rabbit', auto: false, life: 0.3, trees: 0.5 };
 
   const EVENTS = [
     ['love', '💕', 'Fell in love', 'two notes, a third apart'],
@@ -193,7 +186,7 @@
     if (t) $('#tune-now').textContent = `Playing ${S.tunes[t.name]}, ${clock(Math.min(t.at, t.length))} of ${clock(t.length)}.`;
   }, 250);
 
-  const push = () => S.update({ phase: st.phase, season: st.season, sky: { [st.sky]: 1 }, speed: st.speed, bees: st.bees || 0, life: st.life, trees: st.trees, frogs: st.season === 0 ? 1 : 0 });
+  const push = () => S.update({ phase: st.phase, season: st.season, sky: { [st.sky]: 1 }, bees: st.bees || 0, life: st.life, trees: st.trees, frogs: st.season === 0 ? 1 : 0 });
   const setSky = k => { const wet = ['rain', 'storm']; if (wet.includes(k) && !wet.includes(st.sky)) play('rain'); st.sky = k; onIn('[data-sky]', 'sky', k); push(); };
   const clockText = p => p >= 0.72 || p < 0.02 ? '🌙 night' : p < 0.12 ? '🌅 dawn' : p > 0.6 ? '🌇 dusk' : '☀️ day';
   const setPhase = p => { st.phase = p; $('#phase').value = p; $('#clock').textContent = clockText(p); push(); };
@@ -205,7 +198,7 @@
     const ok = S.play(name, { species, season: st.season, kids: 1 + Math.floor(Math.random() * 5), pan: Math.random() * 1.4 - 0.7, near: extra.near ?? 1, ...extra });
     const who = ['love', 'birth', 'starve', 'arrive'].includes(name) ? ` (${species})` : '';
     if (extra.label) name = extra.label;
-    $('#log').textContent = ok ? `Played ${name}${who}.` : `Skipped ${name}: it's resting, or too small to hear at ${st.speed}×.`;
+    $('#log').textContent = ok ? `Played ${name}${who}.` : `Skipped ${name}: it's resting, or too small to hear.`;
   }
 
   $('#start').onclick = () => {
@@ -233,7 +226,7 @@
   }
 
   document.addEventListener('click', e => {
-    const b = e.target.closest('[data-play],[data-season],[data-speed],[data-species],[data-sky]');
+    const b = e.target.closest('[data-play],[data-season],[data-species],[data-sky]');
     if (!b) return;
     if (b.dataset.play in WALKS) walk(b.dataset.play);
     else if (b.dataset.play) play(...({
@@ -242,7 +235,6 @@
     }[b.dataset.play] || [b.dataset.play]));
     else if (b.dataset.sky) { if (!$('#start').classList.contains('on')) $('#start').click(); setSky(b.dataset.sky); }
     else if (b.dataset.season) { st.season = +b.dataset.season; onIn('[data-season]', 'season', st.season); push(); play('season'); }
-    else if (b.dataset.speed) { st.speed = +b.dataset.speed; onIn('[data-speed]', 'speed', st.speed); push(); }
     else if (b.dataset.species) { st.species = b.dataset.species; onIn('[data-species]', 'species', st.species); }
   });
 
@@ -252,7 +244,7 @@
   function auto(now) {
     const dt = (now - lastT) / 1000; lastT = now;
     if (st.auto) {
-      const days = dt * st.speed / 20;
+      const days = dt / 20;
       let p = st.phase + days;
       if (p >= 1) {
         p %= 1;
@@ -261,8 +253,8 @@
         setSky(Math.random() < 0.5 ? 'clear' : ['cloudy', 'rain', 'storm', 'fog', st.season === 3 ? 'snow' : 'heat'][Math.floor(Math.random() * 5)]);
       }
       setPhase(p);
-      if (st.sky === 'storm' && Math.random() < 0.25 * dt * st.speed) play('thunder', { seen: Math.random() < 0.4 });
-      for (const [k, r] of RATES) if (Math.random() < r * dt * st.speed)
+      if (st.sky === 'storm' && Math.random() < 0.25 * dt) play('thunder', { seen: Math.random() < 0.4 });
+      for (const [k, r] of RATES) if (Math.random() < r * dt)
         play(k, { species: Math.random() < 0.8 ? 'rabbit' : 'fox', near: Math.random() });
     }
     requestAnimationFrame(auto);
