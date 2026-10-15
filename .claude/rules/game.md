@@ -26,8 +26,8 @@ a ring (`fg.rings`). Its shadow goes in with the animals' (`foragerShadow`). `fo
 A click or a tap on an animal (on its body as drawn: `animalAt`, a little wider for a finger) opens its panel and follows it;
 anywhere else walks the forager there (`walkTo`, sim.js `foragerTo`), shuts the panel and puts the camera back on it, with a
 soft ring where it was sent (`drawMark`, `MARK_ART` painted once) that fades once it's there. A press held still for
-`HOLD_MS` walks toward the pointer while it's down, the way found again every `STEER_MS` (in `frame`), and on to where it's let
-go. The camera goes with it (`ui.lead`, `leadCam`): eased after it (`CAM_FOLLOW`), a little ahead the way it walks
+`HOLD_MS` runs toward the pointer while it's down (sim.js `f.running`, `FORAGER_RUN`; Shift held runs too, `holdShift`), the
+way found again every `STEER_MS` (in `frame`), and on to where it's let go. Running, its stride is `FORAGER_RUN_STRIDE` longer. The camera goes with it (`ui.lead`, `leadCam`): eased after it (`CAM_FOLLOW`), a little ahead the way it walks
 (`CAM_AHEAD`, itself eased so setting off and stopping are soft), its feet a little below the middle (`CAM_FEET`). A drag or
 a pan lets it go, F or the next walk takes it back; the wheel zooms about the forager while the camera's with it. A kept
 meadow keeps where it is and whether the camera was with it (`rec.lead`).

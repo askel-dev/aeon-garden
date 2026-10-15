@@ -5170,9 +5170,11 @@ function lifeTick(w, c) {
 // be without coming within TAUT_CLEAR of the deep, or wading where the tiles' way didn't). It walks them by steering, not
 // tile by tile: it heads for a point FORAGER_LOOK tiles further along the way, turning at most FORAGER_TURN a tick, so
 // corners come round in curves; it speeds up gently (FORAGER_ACCEL), slows to stop just where it was sent (FORAGER_BRAKE),
-// slows into a sharp turn, and wades at FORAGER_WADE of its pace. It moves on the sim's ticks, so pausing pauses it, and
-// game.js draws it between them.
+// slows into a sharp turn, and wades at FORAGER_WADE of its pace. Sent running (f.running: game.js, Shift held or the
+// spot tapped again) it sprints at FORAGER_RUN instead, as long as it likes: nothing tires it. It moves on the sim's
+// ticks, so pausing pauses it, and game.js draws it between them.
 const FORAGER_WALK = 0.085;             // tiles a tick at a walk (a rabbit ambles 0.06)
+const FORAGER_RUN = 0.16;               // and at a sprint
 const FORAGER_WADE = 0.5;               // of that, in the shallows
 const FORAGER_ACCEL = 0.0058;           // tiles a tick it gains a tick, setting off (about half a second to a walk)
 const FORAGER_BRAKE = 0.0035;           // and loses, stopping (it starts slowing about 0.7 tiles out)
@@ -5184,8 +5186,8 @@ const TAUT_CLEAR = 0.3;                 // a straightened leg keeps this far off
 
 // Every field it ever has, in one order (see blankCreature). path: the way, as x, y pairs; leg: the pair it's heading
 // for; speed, heading: tiles a tick, radians (0 east, pi / 2 down the screen); moved: how far it went last tick;
-// goalX, goalY: where it was sent.
-const foragerOf = (x, y) => ({ forager: true, x, y, path: [], leg: 0, speed: -0, heading: Math.PI / 2, moved: -0, walking: false, goalX: x, goalY: y });
+// goalX, goalY: where it was sent; running: sprinting there.
+const foragerOf = (x, y) => ({ forager: true, x, y, path: [], leg: 0, speed: -0, heading: Math.PI / 2, moved: -0, walking: false, goalX: x, goalY: y, running: false });
 
 // Where it starts: a pleasant dry spot near the water and the woods, above the spring flood, nothing standing on it, not
 // far from the middle.
@@ -5375,10 +5377,10 @@ function foragerTick(w) {
   f.heading += clamp(turn, -most, most);
   f.heading -= Math.round(f.heading / (2 * Math.PI)) * 2 * Math.PI;
   const wade = !w.frozen && w.water[idx(f.x, f.y)] === SHALLOW;
-  const top = FORAGER_WALK * (wade ? FORAGER_WADE : 1) * clamp(Math.cos(turn) * 0.8 + 0.4, 0.15, 1);
+  const top = (f.running ? FORAGER_RUN : FORAGER_WALK) * (wade ? FORAGER_WADE : 1) * clamp(Math.cos(turn) * 0.8 + 0.4, 0.15, 1);
   const v = Math.min(top, Math.sqrt(2 * FORAGER_BRAKE * rest)), s = f.speed;
   f.speed = v > s ? Math.min(v, s + FORAGER_ACCEL) : Math.max(v, s - FORAGER_BRAKE * 2);
-  if (rest < 0.02 || (rest < 0.1 && f.speed < 0.008)) { f.walking = false; f.speed = 0; f.path.length = 0; return; }
+  if (rest < 0.02 || (rest < 0.1 && f.speed < 0.008)) { f.walking = false; f.running = false; f.speed = 0; f.path.length = 0; return; }
   const step = Math.min(f.speed, rest);
   let nx = f.x + Math.cos(f.heading) * step, ny = f.y + Math.sin(f.heading) * step;
   if (!walkable(w, nx, ny)) {                            // (the water came up, or a corner clipped the deep: slide along it)
@@ -6560,7 +6562,7 @@ const api = {
   createWorld, step, clock, isNight, phaseOf, seasonOf, springPart, mood, ageDays, growth, isAdult, patchFresh,
   hedgehogComes, heronComes, dragonflyComes, kingfisherComes, skylarkComes, placeNeeds, VISIT_SEASONS, VISIT_FADE, HERON_FADE, HERON_STAB,
   DRAGON_FROM, KF_FADE, KF_UNDER, KF_BEAT, LARK_FADE, LARK_OPEN, LARK_RISE, EDGE_REACH, OPEN_MOST,
-  walkable, packWorld, unpackWorld, foragerTo, FORAGER_WALK,
+  walkable, packWorld, unpackWorld, foragerTo, FORAGER_WALK, FORAGER_RUN,
   KINDS, FEW, whiteness, visibility, WINTER_COAT, WILD_COAT,
   TERRAIN, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE, hollow,

@@ -1975,6 +1975,7 @@ const FORAGER_ARTS = Array.from({ length: 3 << 4 }, (_, n) => 'forager:' + n);  
 const FORAGER_POSES = [0, 1, 2, 8, 9, 10, 11, 12, 13, 14, 15];
 const FORAGER_FIDGET = [7000, 14000];      // ms standing between fidgets, about
 const FORAGER_TURN_MS = 1100;              // standing this long, it turns to face you
+const FORAGER_RUN_STRIDE = 1.4;            // running, its stride is this much longer (its legs don't spin)
 const FORAGER_STILL_MS = 70;               // no nearer than this to the last move, it's standing (it's drawn between ticks)
 const forPx = () => (8 + cam.zoom) * FORAGER_SIZE;
 const fg = { at: -1, x: 0, y: 0, step: 0, stillMs: 1e4, view: 1, flip: false, art: FORAGER_ARTS[16], blinkAt: -1e9, blinkIn: 3000,
@@ -1997,7 +1998,7 @@ function foragerFrame(now, d) {
   const dx = d.x - fg.x, dy = d.y - fg.y, moved = Math.hypot(dx, dy), ms = now - fg.at;
   fg.x = d.x; fg.y = d.y; fg.at = now;
   if (moved > 1e-5 && moved < 2) {
-    fg.step += moved / (2 * Fur.FORAGER_REACH * px / cam.zoom);
+    fg.step += moved / (2 * Fur.FORAGER_REACH * px / cam.zoom * (f.running ? FORAGER_RUN_STRIDE : 1));
     fg.stillMs = 0;
   } else if (ui.speed > 0) fg.stillMs += ms;            // (paused mid-stride, it holds the stride)
   fg.wet = !world.frozen && world.water[(d.y | 0) * S.W + (d.x | 0)] > 0;
@@ -7511,7 +7512,7 @@ const ZOOM_DRAG = 0.009;                  // a double tap dragged: the zoom doub
 let lastTap = null, zoomDrag = null;      // the last tap of a finger { t, x, y }; a double tap held { id, y, z, sx, sy, moved }
 let zoomTo = null;                        // a zoom easing in or out on a spot { sx, sy, z } (frame)
 let tapAway = 0;
-const HOLD_MS = 280, STEER_MS = 120;      // a press held this still this long walks toward the pointer, the way found again this often
+const HOLD_MS = 280, STEER_MS = 120;      // a press held this still this long runs toward the pointer, the way found again this often
 let holdTimer = 0;
 
 function startPinch() {
@@ -7564,7 +7565,7 @@ canvas.addEventListener('pointerdown', e => {
   drag = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y, moved: false, t: e.timeStamp, lx: e.clientX, ly: e.clientY, vx: 0, vy: 0, id: e.pointerId,
     steer: false, px: e.clientX, py: e.clientY, at: 0 };
   clearTimeout(holdTimer);
-  holdTimer = setTimeout(() => {                        // held still on the ground: it walks toward the pointer while it's down
+  holdTimer = setTimeout(() => {                        // held still on the ground: it runs toward the pointer while it's down
     if (!drag || drag.moved || pinch || zoomDrag || fingers.size > 1 || animalAt(drag.x, drag.y)) return;
     drag.steer = true; drag.at = performance.now();
     walkTo(drag.px, drag.py, true);
@@ -7579,7 +7580,7 @@ canvas.addEventListener('pointermove', e => {
     if (zoomDrag.moved || Math.abs(dy) > 8) { zoomDrag.moved = true; zoomAt(zoomDrag.sx, zoomDrag.sy, zoomDrag.z * Math.exp(dy * ZOOM_DRAG)); handMoved(e.timeStamp); }
     return;
   }
-  if (drag?.steer) { drag.px = e.clientX; drag.py = e.clientY; return; }   // (holding: it walks toward the pointer, frame)
+  if (drag?.steer) { drag.px = e.clientX; drag.py = e.clientY; return; }   // (holding: it runs toward the pointer, frame)
   if (!drag) {
     const c = e.pointerType === 'mouse' ? animalAt(e.clientX, e.clientY) : null;
     ui.hoverId = c ? c.id : 0;
@@ -7618,7 +7619,7 @@ canvas.addEventListener('pointerup', e => {
   clearTimeout(holdTimer);
   if (liftFinger(e)) return;
   canvas.classList.remove('dragging');
-  if (drag?.steer) walkTo(e.clientX, e.clientY, true);  // (held: it walks on to where it was let go)
+  if (drag?.steer) walkTo(e.clientX, e.clientY, true);  // (held: it runs on to where it was let go)
   else if (drag && !drag.moved) {
     click(e.clientX, e.clientY);
     if (fingerTap) lastTap = { t: e.timeStamp, x: e.clientX, y: e.clientY };
@@ -7668,8 +7669,10 @@ function click(sx, sy) {
   else walkTo(sx, sy);
   ui.hoverHive = null;
 }
+// A tap walks it there; held (steering) or with Shift down, it runs.
 function walkTo(sx, sy, steering = false) {
   const [wx, wy] = toWorld(sx, sy), g = S.foragerTo(world, wx, wy);
+  if (g) world.forager.running = steering || shiftHeld;
   if (ui.selectedId || ui.picked) select(0);
   ui.lead = true; ui.follow = false; flick.vx = flick.vy = 0;
   if (!g) return;
@@ -7796,7 +7799,16 @@ function goToThing(thing) {
   if (it) pick(kind, it);
 }
 
+// Shift held: the forager runs, and lets go to walk again (sent while it's held, it runs there: walkTo).
+let shiftHeld = false;
+function holdShift(on) {
+  shiftHeld = on;
+  if (world?.forager.walking) world.forager.running = on;
+}
+document.addEventListener('keyup', e => { if (e.key === 'Shift') holdShift(false); });
+addEventListener('blur', () => holdShift(false));
 document.addEventListener('keydown', e => {
+  if (e.key === 'Shift' && !e.repeat) holdShift(true);
   if (e.target.closest('input,textarea') || !world) return;
   if ((e.metaKey || e.ctrlKey || e.altKey) && /^[a-z]$/i.test(e.key)) return;   // ⌘C, Ctrl+Z…: the browser's
   if (e.key === ' ') { e.preventDefault(); setSpeed(ui.speed ? 0 : 1); }
