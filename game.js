@@ -1270,7 +1270,7 @@ function render(now) {
     else if (it.s) it.s.green ? drawNettles(it.s, z) : it.s.bramble ? drawBramble(it.s, z) : it.s.find ? drawFind(it.s, z) : it.s.dropped ? drawDropped(it.s, z, now) : drawShroom(it.s, z);
     else if (it.v) drawVisitor(it.v, it.sx, it.sy, now, z);
     else if (it.p) drawForager(it.sx, it.sy, now);
-    else if (it.q) drawPeer(it.q, it.sx, it.sy);
+    else if (it.q) drawPeer(it.q, it.sx, it.sy, now);
     else drawCreature(it.c, it.sx, it.sy, now);
   }
   unfade();
@@ -2003,17 +2003,20 @@ function drawPrints() {
   if (drawn) { ctx.setTransform(dpr, 0, 0, dpr, shakeX, shakeY); ctx.globalAlpha = 1; }
 }
 function drawForager(sx, sy, now) {
-  const px = forPx(), art = fg.art, flip = fg.flip, top = sy - px * 0.36;   // (its painting's middle: the feet are at 0.72 of its half-size)
-  for (const r of fg.rings) {
-    const [rx, ry] = onScreen(r.x, r.y), u = (now - r.t) / 900;
-    ctx.strokeStyle = `rgba(240, 250, 255, ${0.6 * (1 - u)})`;
-    ctx.lineWidth = Math.max(1, px * 0.025);
-    ctx.beginPath(); ctx.ellipse(rx, ry, px * (0.12 + 0.3 * u), px * (0.04 + 0.1 * u), 0, 0, TAU); ctx.stroke();
-  }
-  if (zoomedOut()) { drawSmall(art, sx, top, px, flip); return; }
-  const f = world.forager, stage = S.warmthStage(f);
-  if (stage === 4) { drawFallen(art, sx, sy, px, flip, now); return; }
-  if (fg.wet) {
+  const px = forPx(), art = fg.art, f = world.forager, stage = S.warmthStage(f);
+  drawRings(fg.rings, now, px);
+  if (zoomedOut()) { drawSmall(art, sx, sy - px * 0.36, px, fg.flip); return; }
+  if (stage === 4) { drawFallen(art, sx, sy, px, fg.flip, clamp((now - fg.downAt) / FALL_MS, 0, 1)); return; }
+  const trip = f.stumble > 0 ? Math.sin(Math.PI * (1 - f.stumble / S.STUMBLE_TICKS)) : 0;   // (a stumble: it pitches forward and catches itself)
+  drawFigure(fg, art, sx, sy, px, now, stage, trip, fg.stillMs > FORAGER_STILL_MS, true);
+  const d = drawnAt(f);
+  drawBody(fg, d.x, d.y, f.wet, fg.stillMs < FORAGER_STILL_MS, f.running, stage, px, now, true);
+}
+// A forager on its feet, this one or a friend's (b: fg, or one of peers): in the shallows cut off at the water line with a
+// ring round its legs; else breathing while it stands, hunched with the cold (HUNCH), shivering (shiverOf), stumbling.
+function drawFigure(b, art, sx, sy, px, now, stage, trip, still, me) {
+  const flip = b.flip, top = sy - px * 0.36;            // (its painting's middle: the feet are at 0.72 of its half-size)
+  if (b.wet) {
     const line = sy - px * 0.02, rip = 1 + 0.08 * Math.sin(now / 280);   // (in to its shins)
     ctx.save();
     ctx.beginPath(); ctx.rect(sx - px, line - px * 2, px * 2, px * 2); ctx.clip();
@@ -2022,20 +2025,26 @@ function drawForager(sx, sy, now) {
     ctx.strokeStyle = 'rgba(240, 250, 255, 0.7)';
     ctx.lineWidth = Math.max(1, px * 0.025);
     ctx.beginPath(); ctx.ellipse(sx, line, px * 0.17 * rip, px * 0.045 * rip, 0, 0, TAU); ctx.stroke();
-    drawBody(sx, sy, px, now);
     return;
   }
-  const breathe = fg.stillMs > FORAGER_STILL_MS && ui.speed > 0 ? Math.sin(now / 620) * 0.012 : 0;
-  const trip = f.stumble > 0 ? Math.sin(Math.PI * (1 - f.stumble / S.STUMBLE_TICKS)) : 0;   // (a stumble: it pitches forward and catches itself)
-  const squash = (1 + breathe) * HUNCH[stage] * (fg.view === 1 ? 1 - 0.1 * trip : 1), shake = shiverOf(stage, now);
-  if (trip && fg.view !== 1 || shake) {                 // (a shiver sways it about its feet: the head most, the feet not at all)
+  const breathe = still && ui.speed > 0 ? Math.sin(now / 620) * 0.012 : 0;
+  const squash = (1 + breathe) * HUNCH[stage] * (b.view === 1 ? 1 - 0.1 * trip : 1), shake = shiverOf(b, stage, now, me);
+  if (trip && b.view !== 1 || shake) {                  // (a shiver sways it about its feet: the head most, the feet not at all)
     ctx.save(); ctx.translate(sx, sy);
     if (shake) ctx.transform(1, 0, -shake / 0.6, 1, 0, 0);
-    if (trip && fg.view !== 1) ctx.rotate((flip ? 1 : -1) * 0.24 * trip);
+    if (trip && b.view !== 1) ctx.rotate((flip ? 1 : -1) * 0.24 * trip);
     drawEmoji(art, 0, -px * 0.36 * squash, px, { flip, squash });
     ctx.restore();
   } else drawEmoji(art, sx, top + px * 0.36 * (1 - squash), px, { flip, squash });   // (feet stay on the ground)
-  drawBody(sx, sy, px, now);
+}
+// The rings its steps send out in the shallows.
+function drawRings(rings, now, px) {
+  for (const r of rings) {
+    const [rx, ry] = onScreen(r.x, r.y), u = (now - r.t) / 900;
+    ctx.strokeStyle = `rgba(240, 250, 255, ${0.6 * (1 - u)})`;
+    ctx.lineWidth = Math.max(1, px * 0.025);
+    ctx.beginPath(); ctx.ellipse(rx, ry, px * (0.12 + 0.3 * u), px * (0.04 + 0.1 * u), 0, 0, TAU); ctx.stroke();
+  }
 }
 function foragerShadow(sx, sy, sn, wet) {
   if (zoomedOut() || wet) return;
@@ -2112,54 +2121,52 @@ function puffArt() {
 }
 // How far its head sways this frame (of its size): a short shiver now and then ("brr", sound.js shiver), more often the
 // colder, eased in and out; freezing, a faint tremble between.
-function shiverOf(stage, now) {
+function shiverOf(b, stage, now, me) {
   if (!stage || stage > 3 || ui.speed === 0) return 0;
-  if (now > fg.shiverNext) {
-    if (fg.shiverNext) { fg.shiverAt = now; chime('shiver', { v: stage / 3 }); }
-    fg.shiverNext = now + SHIVER_EVERY[stage - 1] * (0.6 + 0.8 * Math.random());
+  if (now > b.shiverNext) {
+    if (b.shiverNext) { b.shiverAt = now; if (me) chime('shiver', { v: stage / 3 }); }
+    b.shiverNext = now + SHIVER_EVERY[stage - 1] * (0.6 + 0.8 * Math.random());
   }
-  const u = (now - fg.shiverAt) / SHIVER_MS, a = Math.max(u < 1 ? Math.sin(Math.PI * u) : 0, stage === 3 ? SHIVER_STEADY : 0);
+  const u = (now - b.shiverAt) / SHIVER_MS, a = Math.max(u < 1 ? Math.sin(Math.PI * u) : 0, stage === 3 ? SHIVER_STEADY : 0);
   return a ? a * SHIVER[stage - 1] * Math.sin(now / 21) : 0;
 }
-// Its breath and its drips: each where it was when it came, the breath rising and spreading from its face, a drip falling
-// from its hem to its feet.
-function drawBody(sx, sy, px, now) {
-  const f = world.forager, d = drawnAt(f), going = fg.stillMs < FORAGER_STILL_MS;
-  if (ui.speed > 0 && now > fg.puffAt) {
-    fg.puffAt = now + BREATH_MS[going ? 1 : 0] * (f.running ? 0.5 : 1) * (0.85 + 0.3 * Math.random());
-    if (S.airTemp(world) < BREATH_AIR && fg.puffs.length < 6) {
-      const ahead = fg.flip ? 1 : -1, v = fg.view;           // (its mouth, of its size from its feet: side on, three-quarters, from the back)
-      fg.puffs.push({ x: d.x, y: d.y, ox: ahead * BREATH_AT[v][0], oy: BREATH_AT[v][1], dx: ahead * BREATH_AT[v][2], back: v === 2, t: now });
-      if (S.warmthStage(f) >= FORAGER_SAD && !going && Math.random() < 0.3) chime('breath');   // now and then a shaky cold sigh
+// Its breath and its drips (this forager's or a friend's, b, at x, y; soak: how wet it is, sim.js f.wet): each where it was
+// when it came, the breath rising and spreading from its face, a drip falling from its hem to its feet.
+function drawBody(b, x, y, soak, going, running, stage, px, now, me) {
+  if (ui.speed > 0 && now > b.puffAt) {
+    b.puffAt = now + BREATH_MS[going ? 1 : 0] * (running ? 0.5 : 1) * (0.85 + 0.3 * Math.random());
+    if (S.airTemp(world) < BREATH_AIR && b.puffs.length < 6) {
+      const ahead = b.flip ? 1 : -1, v = b.view;             // (its mouth, of its size from its feet: side on, three-quarters, from the back)
+      b.puffs.push({ x, y, ox: ahead * BREATH_AT[v][0], oy: BREATH_AT[v][1], dx: ahead * BREATH_AT[v][2], back: v === 2, t: now });
+      if (me && stage >= FORAGER_SAD && !going && Math.random() < 0.3) chime('breath');   // now and then a shaky cold sigh
     }
   }
-  const wet = f.wet;
-  if (ui.speed > 0 && now > fg.dripAt) {
-    fg.dripAt = now + DRIP_MS / Math.max(0.05, wet) * (0.6 + 0.8 * Math.random());
-    if (wet > 0.25 && !fg.wet && fg.drips.length < 8) fg.drips.push({ x: d.x, y: d.y, ox: (Math.random() - 0.5) * 0.42, oy: -0.3 - Math.random() * 0.12, t: now });   // (off its hem)
+  if (ui.speed > 0 && now > b.dripAt) {
+    b.dripAt = now + DRIP_MS / Math.max(0.05, soak) * (0.6 + 0.8 * Math.random());
+    if (soak > 0.25 && !b.wet && b.drips.length < 8) b.drips.push({ x, y, ox: (Math.random() - 0.5) * 0.42, oy: -0.3 - Math.random() * 0.12, t: now });   // (off its hem)
   }
-  while (fg.puffs.length && now - fg.puffs[0].t > PUFF_MS) fg.puffs.shift();
-  while (fg.drips.length && now - fg.drips[0].t > 320) fg.drips.shift();
-  if (fg.puffs.length) {
+  while (b.puffs.length && now - b.puffs[0].t > PUFF_MS) b.puffs.shift();
+  while (b.drips.length && now - b.drips[0].t > 320) b.drips.shift();
+  if (b.puffs.length) {
     const art = PUFF_ART || puffArt();
-    for (const p of fg.puffs) {
+    for (const p of b.puffs) {
       const u = (now - p.t) / PUFF_MS, [x, y] = onScreen(p.x, p.y), r = px * (0.07 + 0.2 * Math.sqrt(u));
       ctx.globalAlpha = (p.back ? 0.35 : 0.65) * Math.min(1, u * 8) * (1 - u) * (1 - u);
       ctx.drawImage(art.img, x + (p.ox + p.dx * u) * px - r, y + (p.oy - 0.1 * u) * px - r, r * 2, r * 2);
     }
     ctx.globalAlpha = 1;
   }
-  if (fg.drips.length) {
+  if (b.drips.length) {
     ctx.fillStyle = 'rgba(214, 232, 248, 0.85)';
-    for (const p of fg.drips) {
+    for (const p of b.drips) {
       const u = (now - p.t) / 320, [x, y] = onScreen(p.x, p.y), r = Math.max(1, px * 0.012);
       ctx.beginPath(); ctx.ellipse(x + p.ox * px, y + p.oy * px * (1 - u * u), r, r * 1.5, 0, 0, TAU); ctx.fill();
     }
   }
 }
 // Collapsed: it tips over sideways (toward where it was facing) and lies there.
-function drawFallen(art, sx, sy, px, flip, now) {
-  const u = clamp((now - fg.downAt) / FALL_MS, 0, 1), e = u * u * (3 - 2 * u), side = flip ? 1 : -1;
+function drawFallen(art, sx, sy, px, flip, u) {
+  const e = u * u * (3 - 2 * u), side = flip ? 1 : -1;
   ctx.save();
   ctx.translate(sx + side * px * 0.05 * e, sy - px * 0.04 * e); ctx.rotate(side * 1.42 * e);
   drawEmoji(art, 0, -px * 0.36, px, { flip });
@@ -2481,11 +2488,12 @@ function gatherFrame(now) {
   picks.at = -1e9;                                      // (what's left to pick, listed again at once)
   if (!r.n) { if (r.why === 'full') say('Satchel\'s full', F.x, F.y - 1.6); else if (r.why) say(r.why, s.x, s.y); return; }
   aim.moved = true;                                     // (what the mouse is on may be gone now: look again)
-  if (Net && Net.on) Net.send({ t: 'pick', kind: g.kind, id: r.id, x: g.it.x, y: g.it.y, n: r.n, tick: world.tick });   // (gone for everyone)
   const dx = s.x - F.x, dy = s.y - F.y;                 // it turns to it, and stoops
   fg.view = Math.abs(dy) > Math.abs(dx) * 0.8 ? (dy > 0 ? 1 : 2) : 0;
   if (Math.abs(dx) > 0.05) fg.flip = dx > 0;
   fg.pick = now; fg.pickK = ui.queue.length ? PICK_QUICK : 1;
+  if (Net && Net.on) Net.send({ t: 'pick', kind: g.kind, id: r.id, x: g.it.x, y: g.it.y, n: r.n, tick: world.tick,   // (gone for everyone,
+    fx: F.x, fy: F.y, k: fg.pickK, v: fg.view, fl: fg.flip });                                                     // and they see it picked)
   ui.nextAt = now + (ui.queue.length ? PICK_MS[1] : PICK_MS[2]) * fg.pickK;   // (the next in the queue once it's back up)
   $('#satchel').classList.remove('empty');
   const lands = PICK_MS[0] * fg.pickK + 90, [gx, gy] = [s.gx, s.gy], at = now + lands;
@@ -2513,6 +2521,22 @@ function queueGather(t) {
   ui.queue.push({ kind: t.kind, it: t.it });
   chime('click');
   return true;
+}
+// E: the nearest thing to pick in reach (lit by drawNear) or lying where it was dropped, as a click on it would. Pressed again
+// while it's off picking, the next nearest lines up after.
+function pickNear() {
+  const F = world.forager, busy = ui.gather || ui.queue.length || performance.now() < ui.nextAt;
+  let best = null, bd = NEAR_REACH * NEAR_REACH;
+  const look = (kind, it) => {
+    const d = (it.x - F.x) ** 2 + (it.y - F.y) ** 2;
+    if (d >= bd || (busy && ((ui.gather && ui.gather.it === it) || ui.queue.some(q => q.it === it)))) return;
+    if (!S.whatThere(world, kind, it).n) return;
+    best = { kind, it }; bd = d;
+  };
+  for (let i = 0; i < picks.it.length; i++) look(picks.kind[i], picks.it[i]);
+  for (const d of world.dropped) look('dropped', d);
+  if (!best) { if (!busy) say('Nothing in reach', F.x, F.y - 1.6); return; }
+  if (!queueGather(best)) goGather(best);
 }
 function nextGather() {
   while (ui.queue.length) {
@@ -8894,6 +8918,9 @@ $('#ask').addEventListener('keydown', e => { if (e.key === 'Escape') askIdeas(fa
 // A guest's own pick lands on the host a little late, so now and then (CHECK_TICKS) both sum the meadow up (meadowSum),
 // and a guest off from the host twice running asks for the meadow again (netCheck). A friend is drawn as the forager is,
 // in its own cloak (peerItems, drawPeer), slid between where it last said it was, with its name over it (drawPeerNames).
+// Its body goes along with where it is (how cold, wet and snowy), so it hunches, shivers, drips, breathes in the cold and
+// leaves footprints and rings as the forager does (drawFigure, drawBody), and each pick it sends shows on it: it turns
+// and stoops, and its "+3 Chanterelles" floats up there (peerPicked).
 // A guest who loses the host keeps the meadow as its own. The name is asked once, on a small card at the foot as the
 // cloak's is (askName), the first time you play together, and kept in localStorage; ••• has it while together.
 // The chat: Enter, T or 💬 on the pill opens a small card bottom left (openChat): a few things to say with one tap
@@ -9020,6 +9047,7 @@ function heardNet(m) {
   else if (m.t === 'world') { if (Net.guest) heardWorld(m, now); }
   else if (m.t === 'pick' || m.t === 'drop') {
     if (Net.guest && net.tick < 0) return;              // (the meadow's on its way, with this in it)
+    if (m.t === 'pick') peerPicked(m, now);
     if (m.tick > world.tick) { net.later.push(m); net.later.sort((a, b) => a.tick - b.tick); }
     else applyNet(m);
   }
@@ -9038,6 +9066,7 @@ function heardWorld(m, now) {
   showWorld(w);
   if (mine) w.forager = mine;                            // (the same meadow again: its own forager stays as it was)
   else { arrive(w.forager); pr.n = 0; pr.next = 0; }
+  renderSatchel();                                       // (showWorld drew the host's satchel, as it came)
   cam.zoom = zoom; cam.x = world.forager.x; cam.y = world.forager.y - CAM_FEET * forPx() / cam.zoom; clampCam();
   history.replaceState(history.state, '', pageLink(w.seed));
   net.hostId = m.from; net.later.length = 0; net.hostSums.clear(); net.mySums.clear(); net.off = 0;
@@ -9128,7 +9157,7 @@ function netFrame(now) {
 function sendPos(now) {
   net.sentAt = now;
   const f = world.forager;
-  Net.send({ t: 'pos', x: f.x, y: f.y, h: f.heading, j: fg.jog, st: S.warmthStage(f), p: now - fg.pick < PICK_MS[2] * fg.pickK, o: fg.outfit,
+  Net.send({ t: 'pos', x: f.x, y: f.y, h: f.heading, j: fg.jog, st: S.warmthStage(f), wt: Math.round(f.wet * 20) / 20, sn: fg.snowArt, o: fg.outfit,
     tick: Net.host ? world.tick : -1, s: ui.speed, n: myName });
 }
 function heardPos(m, now) {
@@ -9136,8 +9165,9 @@ function heardPos(m, now) {
   let p = peers.get(m.from);
   if (!p) {
     p = { id: m.from, x: m.x, y: m.y, fx: m.x, fy: m.y, tx: m.x, ty: m.y, at: now, last: now, seen: now, heading: m.h, jog: false, stage: 0,
-      pickAt: -1e9, picking: false, outfit: 0, wet: false, step: -0, view: 1, flip: false, stillMs: 1e4, blinkAt: -1e9, downAt: 0, fall: -0,
-      art: FORAGER_ARTS[0], sized: 0, sizedSet: 0, name: '', nameArt: null, sx: -0, sy: -0, shown: false, chat: null };
+      pickAt: -1e9, pickK: -0, outfit: 0, wet: false, soak: -0, snowArt: 0, step: -0, lastHalf: 0, view: 1, flip: false, stillMs: 1e4, blinkAt: -1e9, downAt: 0, fall: -0,
+      rings: [], puffs: [], puffAt: 0, drips: [], dripAt: 0, shiverAt: -1e9, shiverNext: 0,   // (its body, as fg's: drawBody, drawRings, shiverOf)
+      art: FORAGER_ARTS[0], sized: 0, sizedSet: 0, sizedSnow: 0, name: '', nameArt: null, sx: -0, sy: -0, shown: false, chat: null };
     peers.set(m.from, p);
     p.name = cleanName(m.n);
     if (Net.host || m.tick < 0) toast(`🧺 ${friendName(p) || 'A friend'} has come into the meadow`);   // (a guest knows the host is there)
@@ -9151,11 +9181,25 @@ function heardPos(m, now) {
   else if (!p.name) p.nameArt = null;
   const far = Math.hypot(m.x - p.x, m.y - p.y) > 3;        // (woken at home, or a new meadow: there at once)
   p.fx = far ? m.x : p.x; p.fy = far ? m.y : p.y; p.tx = m.x; p.ty = m.y; p.at = now; p.seen = now;
-  p.heading = m.h; p.jog = m.j; p.stage = m.st;
+  p.heading = m.h; p.jog = m.j; p.stage = m.st; p.soak = +m.wt || 0; p.snowArt = m.sn | 0;
   if (m.o !== p.outfit) { p.outfit = m.o; p.sized = 0; }
-  if (m.p && !p.picking) p.pickAt = now;
-  p.picking = m.p;
   if (m.st === 4 && !p.downAt) p.downAt = now; else if (m.st !== 4) p.downAt = 0;
+}
+// A friend picked something: it stoops where it stood, turned to it, and its "+3 Chanterelles" floats up from it (as
+// gatherFrame), with the pick's sound if it's on the screen.
+function peerPicked(m, now) {
+  const p = peers.get(m.from);
+  if (!p || m.fx === undefined) return;
+  const it = thingAt(m.kind, m.id, m.x, m.y), s = it && gatherSpot(m.kind, it), x = s ? s.x : m.x, y = s ? s.y : m.y, seen = s && visible(s.gx, s.gy, 60);
+  p.fx = p.x; p.fy = p.y; p.tx = m.fx; p.ty = m.fy; p.at = now;
+  p.pickAt = now; p.pickK = m.k || 1; p.view = m.v; p.flip = m.fl;
+  if (!seen) return;
+  const lands = PICK_MS[0] * p.pickK + 90, at = now + lands;
+  setTimeout(() => {
+    if (!world) return;
+    pickFloats.push(floatOf(m.id, m.n, x, y, at));
+    hear('pick', x, y, { n: m.n });
+  }, lands);
 }
 function friendGone(id) {
   const p = peers.get(id);
@@ -9168,6 +9212,20 @@ function hostGone() {
   peers.clear(); net.tick = -1; net.later.length = 0;
   setSpeed(ui.speed || 1, true);
   toast(`🧺 ${who} has gone home. This meadow is yours to keep now.`);
+}
+
+// ••• › Leave: a guest goes home to its own meadow (the last one kept, as on a fresh visit); a host closes the meadow to
+// friends and plays on in it alone, and its guests keep it as their own (hostGone).
+function leaveTogether() {
+  if (!(Net && Net.on)) return;
+  const guest = Net.guest;
+  if (guest && !confirm('Leave your friend’s meadow and go home to your own?')) return;
+  Net.leave();
+  ROOM = '';
+  if (guest) { location.replace(location.pathname); return; }
+  peers.clear(); openChat(false);
+  history.replaceState(history.state, '', pageLink(world.seed));
+  toast('🧺 Your meadow is your own again.');
 }
 
 // Each friend's forager in this frame's items: where it is, slid between what it said, and its pose (as foragerFrame).
@@ -9183,29 +9241,35 @@ function peerItems(items, now, z) {
       p.stillMs = 0;
     } else p.stillMs += ms;
     p.wet = !world.frozen && world.water[(y | 0) * S.W + (x | 0)] > 0;
-    const cold = p.stage >= FORAGER_SAD;
+    const cold = p.stage >= FORAGER_SAD, k = (now - p.pickAt) / (p.pickK || 1), half = Math.floor(p.step * 2);
     let pose;
-    if (p.stillMs < PEER_STILL_MS) {
+    if (k < PICK_MS[2]) {                                 // picking (peerPicked), even while it glides the last bit to where it stood
+      pose = k < PICK_MS[0] || k > PICK_MS[1] ? 3 : 4;
+      p.stillMs = Math.max(p.stillMs, PEER_STILL_MS);
+    } else if (p.stillMs < PEER_STILL_MS) {
       const sy = Math.sin(p.heading), sx = Math.cos(p.heading), v = p.view;
       p.view = sy > (v === 1 ? 0.45 : 0.62) ? 1 : sy < (v === 2 ? -0.45 : -0.62) ? 2 : 0;
       if (sx > 0.18) p.flip = true; else if (sx < -0.18) p.flip = false;
       pose = (p.jog ? 16 : cold ? 24 : 8) + Math.floor(p.step % 1 * 8);
+      if (half !== p.lastHalf && ui.speed > 0) {            // a foot down: a ring in the shallows, else a footprint (as foragerFrame)
+        if (p.wet) p.rings.push({ x, y, t: now }); else footprint(x, y, p.heading, half & 1);
+      }
     } else {
       p.step = Math.round(p.step * 2) / 2;
       if (p.stillMs > FORAGER_TURN_MS && p.view !== 1) { p.view = 1; p.blinkAt = now; }
       if (now - p.blinkAt > 4000) p.blinkAt = now - Math.random() * 1500;
       pose = cold ? (now - p.blinkAt < 150 ? 6 : 5) : now - p.blinkAt < 150 ? 2 : 0;
-      const k = now - p.pickAt;
-      if (k < PICK_MS[2]) pose = k < PICK_MS[0] || k > PICK_MS[1] ? 3 : 4;
     }
+    p.lastHalf = half;
+    if (p.rings.length && now - p.rings[0].t > 900) p.rings.shift();
     if (p.stage === 4) pose = 7;
     p.fall = p.downAt ? clamp((now - p.downAt) / FALL_MS, 0, 1) : 0;
-    const set = p.stage >= 1 ? 2 : 1;                     // (its paintings asked for ahead, as foragerAhead does the player's)
-    if (furWorker && (p.sized !== P || p.sizedSet !== set)) {
-      p.sized = P; p.sizedSet = set;
-      for (let v = 0; v < 3; v++) for (const q of set === 2 ? FORAGER_CHILLY : FORAGER_POSES) furReady(FORAGER_ARTS[(p.outfit << 7) + (v << 5) + q], P);
+    const set = p.stage >= 1 ? 2 : 1, at = p.snowArt * Fur.FORAGER_SNOW_ARTS + (p.outfit << 7);   // (its paintings asked for ahead, as foragerAhead does the player's)
+    if (furWorker && (p.sized !== P || p.sizedSet !== set || p.sizedSnow !== p.snowArt)) {
+      p.sized = P; p.sizedSet = set; p.sizedSnow = p.snowArt;
+      for (let v = 0; v < 3; v++) for (const q of set === 2 ? FORAGER_CHILLY : FORAGER_POSES) furReady(FORAGER_ARTS[at + (v << 5) + q], P);
     }
-    p.art = shownPose(p, FORAGER_ARTS[(p.outfit << 7) + (p.view << 5) + pose], px);
+    p.art = shownPose(p, FORAGER_ARTS[at + (p.view << 5) + pose], px);
     const sx = (x - cam.x) * z + vw / 2, sy = (y - cam.y) * z + vh / 2;
     p.shown = visible(sx, sy, 2 * px); p.sx = sx; p.sy = sy;
     if (p.shown) itemOf(items, y, sx, sy, 1).q = p;
@@ -9234,25 +9298,13 @@ function drawPeerNames(now) {
   }
   if (chats.n) layChats(now);
 }
-function drawPeer(p, sx, sy) {
-  const px = forPx(), top = sy - px * 0.36;
-  if (zoomedOut()) { drawSmall(p.art, sx, top, px, p.flip); return; }
-  if (p.stage === 4) {                                   // (down, as drawFallen)
-    const e = p.fall * p.fall * (3 - 2 * p.fall), side = p.flip ? 1 : -1;
-    ctx.save();
-    ctx.translate(sx + side * px * 0.05 * e, sy - px * 0.04 * e); ctx.rotate(side * 1.42 * e);
-    drawEmoji(p.art, 0, -px * 0.36, px, { flip: p.flip });
-    ctx.restore();
-    return;
-  }
-  if (p.wet) {                                           // (in to its shins)
-    ctx.save();
-    ctx.beginPath(); ctx.rect(sx - px, sy - px * 0.02 - px * 2, px * 2, px * 2); ctx.clip();
-    drawEmoji(p.art, sx, top + px * 0.1, px, { flip: p.flip });
-    ctx.restore();
-    return;
-  }
-  drawEmoji(p.art, sx, top, px, { flip: p.flip });
+function drawPeer(p, sx, sy, now) {
+  const px = forPx();
+  drawRings(p.rings, now, px);
+  if (zoomedOut()) { drawSmall(p.art, sx, sy - px * 0.36, px, p.flip); return; }
+  if (p.stage === 4) { drawFallen(p.art, sx, sy, px, p.flip, p.fall); return; }
+  drawFigure(p, p.art, sx, sy, px, now, p.stage, 0, p.stillMs >= PEER_STILL_MS, false);
+  drawBody(p, p.x, p.y, p.soak, p.stillMs < PEER_STILL_MS, p.jog, p.stage, px, now, false);
 }
 
 // The chat. A line said, painted once: a parchment bubble, its words wrapped to CHAT_WIDE. Its tail is painted apart
@@ -9479,6 +9531,7 @@ function netCard(now) {
   $('#chat').classList.toggle('hidden', !on);
   if (!on) { openChat(false); myChat = null; }
   $('#name-item').classList.toggle('hidden', !on);
+  $('#leave-item').classList.toggle('hidden', !on);
   b.textContent = '🧺 ' + n;
   b.title = n > 1 ? `Foraging together with ${names}` : 'Open to friends: waiting for someone to come';
 }
@@ -9518,6 +9571,7 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'outfit') wearOutfit(+t.dataset.o);
   else if (t.dataset.act === 'pick-outfit') pickOutfit(true);
   else if (t.dataset.act === 'pick-name') askName(true);
+  else if (t.dataset.act === 'leave') leaveTogether();
   else if (t.dataset.act === 'chat') openChat(!chatOpen());
   else if (t.dataset.act === 'ideas') { played = -Infinity; askIdeas(true); }   // found it themselves: no need to ask
   else if (t.dataset.act === 'ask-later') askIdeas(false);
@@ -9585,6 +9639,7 @@ document.addEventListener('keydown', e => {
   if (e.key === ' ') { e.preventDefault(); setSpeed(ui.speed ? 0 : 1); }
   else if (e.key === 'Escape') stepOut();
   else if ((e.key === 'Enter' || e.key === 't') && Net && Net.on) { e.preventDefault(); openChat(true); }
+  else if (e.code === 'KeyE' && !e.repeat) pickNear();
   else if (e.key === 'm') toggleSound();
   else if (e.key === '+' || e.key === '=') zoomOn(cam.zoom * 1.25);
   else if (e.key === '-') zoomOn(cam.zoom / 1.25);
@@ -9652,13 +9707,25 @@ const KEPT = 'aeon-garden-kept', OPENING = 'aeon-garden-opening';   // in localS
 let keepOpen = null, keptTick = -1;
 let opening = 0;                           // a kept meadow just opened: 1 until a frame starts, then counts frames that got to the end
 
+// iOS drops the page's connection to IndexedDB while it's in the background ("Connection to Indexed Database server
+// lost"), and every keep through it after fails: so the connection is opened afresh each time the page comes back
+// (freshDb, below), and a keep that fails tries once more on a new one.
 function keepDb() {
-  return keepOpen ??= new Promise((ok, fail) => {
+  if (keepOpen) return keepOpen;
+  const p = keepOpen = new Promise((ok, fail) => {
     const r = indexedDB.open('aeon-garden', 1);
     r.onupgradeneeded = () => r.result.createObjectStore('meadows');
-    r.onsuccess = () => ok(r.result);
+    r.onsuccess = () => { r.result.onclose = () => { if (keepOpen === p) keepOpen = null; }; ok(r.result); };
     r.onerror = () => fail(r.error);
   });
+  p.catch(() => { if (keepOpen === p) keepOpen = null; });
+  return p;
+}
+function freshDb() {
+  const old = keepOpen;
+  keepOpen = null;
+  old?.then(db => db.close(), () => {});               // (a keep still on its way through it finishes first)
+  return keepDb();
 }
 function keptList() {
   try { return JSON.parse(localStorage.getItem(KEPT) || '[]'); } catch (e) { return []; }
@@ -9673,18 +9740,24 @@ function keepMeadow() {
   if (!world || world.tick === keptTick || Net && Net.guest) return;   // (a guest's meadow is the host's)
   let kept;
   try { kept = S.packWorld(world); } catch (e) { console.warn('Could not keep the meadow', e); return; }
-  keptTick = world.tick;
+  const tick = keptTick = world.tick;
   const link = meadowLink(world.seed), at = Date.now();
   const list = [{ link, at }, ...keptList().filter(k => k.link !== link)];
   if (!setKept(list.slice(0, KEEP_MEADOWS))) return;
   const rec = { link, at, kept, paused: ui.speed === 0,
     cam: { x: cam.x, y: cam.y, zoom: cam.zoom }, selectedId: ui.selectedId };
-  keepDb().then(db => {
+  const put = db => new Promise((ok, fail) => {
     const tx = db.transaction('meadows', 'readwrite'), store = tx.objectStore('meadows');
     store.put(rec, link);
     for (const k of list.slice(KEEP_MEADOWS)) store.delete(k.link);
+    tx.oncomplete = ok;
+    tx.onerror = tx.onabort = () => fail(tx.error);
     tx.commit?.();                                     // now, not when the page gets round to it
-  }).catch(e => console.warn('Could not keep the meadow', e));
+  });
+  keepDb().then(put).catch(() => freshDb().then(put)).catch(e => {
+    if (keptTick === tick) keptTick = -1;     // (so the next time it's hidden tries again)
+    console.warn('Could not keep the meadow', e);
+  });
 }
 
 // The kept meadow to open: this seed's, or with none, the one watched last. Null if there's none, or
@@ -9736,7 +9809,7 @@ function resumeWorld(rec) {
   return true;
 }
 
-document.addEventListener('visibilitychange', () => { if (document.hidden) keepMeadow(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) keepMeadow(); else freshDb().catch(() => {}); });
 addEventListener('pagehide', keepMeadow);
 
 // ------------------------------------------------------------------ the loop
@@ -10003,6 +10076,6 @@ try { if (localStorage.getItem('aeon-garden-sound') === '1') toggleSound(true); 
 
 for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => { if (ui.sound) Sound.start(); }, { once: true });
 
-window.garden = { get world() { return world; }, ui, cam, forager: fg, prints: pr,   // handy in the console
+window.garden = { get world() { return world; }, ui, cam, forager: fg, prints: pr, peers,   // handy in the console
   get trees() { return { worker: !!treeWorker, workers: treeWorkers.length, art: treeArt, bytes: treeBytes, asked: treeAsked.size, busy: treeBusy }; } };
 })();

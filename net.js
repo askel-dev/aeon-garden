@@ -6,7 +6,7 @@
    each forager is (a few times a second), what each picks and drops (so it's gone for everyone), and the host's tick.
    ?room=..&local plays across tabs of one browser instead (BroadcastChannel), with no network, for trying it out.
 
-   game.js uses it as Net: Net.start(room, handlers), Net.send(msg), Net.host, Net.guest, Net.me. Guests talk only to the
+   game.js uses it as Net: Net.start(room, handlers), Net.send(msg), Net.leave(), Net.host, Net.guest, Net.me. Guests talk only to the
    host; the host passes on what each says to the others. */
 (() => {
 'use strict';
@@ -76,7 +76,7 @@ function startLocal() {
   };
   bc.postMessage({ t: 'who', from: Net.me });
   setTimeout(() => { if (!decided) { decided = true; becomeHost(); } }, LOCAL_WAIT);
-  addEventListener('pagehide', () => bc.postMessage({ t: 'bye', from: Net.me }));
+  addEventListener('pagehide', () => bc && bc.postMessage({ t: 'bye', from: Net.me }));
 }
 
 // Over the internet: claim the room's name on the broker; taken, join whoever has it.
@@ -107,6 +107,17 @@ function startPeer() {
   });
   addEventListener('pagehide', () => peer && peer.destroy());
 }
+
+// Leaving: a bye to the others (a guest's host, or a host's guests, who then keep the meadow as their own), and the line
+// closed, quietly (no lost() or bye heard back). Net.start can open another after.
+Net.leave = () => {
+  if (Net.on) Net.send({ t: 'bye' });
+  if (bc) { bc.onmessage = null; bc.close(); bc = null; }
+  for (const c of [toHost, ...conns.values()]) if (c) c.removeAllListeners();
+  if (peer) { peer.removeAllListeners(); setTimeout(peer.destroy.bind(peer), 200); }   // (a moment for the bye to go)
+  peer = toHost = null; conns.clear();
+  Net.on = Net.host = Net.guest = false; Net.peers = 0;
+};
 
 // handlers: ready(role), joined(id) (host: a guest came), message(msg), lost() (guest: the host went), failed(why).
 Net.start = (room, local, h) => {
