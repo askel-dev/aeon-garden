@@ -107,6 +107,21 @@ soft fade and rise). The phone vibrates (`navigator.vibrate`: Android only; iPho
 From then on a soft camp ring around the fire, inside which later builds are arranged (a seat log, a spit, a drying
 rack, the pot, a basket, a lantern, a bedroll).
 
+### As built (2026-10-16, branch `camp`)
+- sim.js `w.camp` (in `LATER`: `{ x, y, fire, made }`), made by the meadow's first fire lit (`lightFire` → `campAt`, event
+  'camp'). The forager's home moves there: it wakes after a collapse where it knelt to light it (or at the fire's side for a
+  friend's fire). Playing together, a friend's first fire makes the camp everyone's. A meadow kept with a fire lit before this
+  makes camp at it as it opens. No `KEEP_VERSION` bump.
+- The ring: `CAMP_R` 3.2 tiles about the fire, `CAMP_FLAT` 0.8 as deep as wide (`inCamp`, for the builds to come), drawn as a soft
+  band of trodden earth with a few small stones along it (game.js `drawCampRing`, painted once), coming in a moment after.
+- The moment (game.js `campMoment`): the flames flare (`CAMP_FLARE`), the light blooms out (`CAMP_BLOOM`) with a warm glow and
+  a burst of sparks and embers (`campBurst`), a felt-piano flourish (sound.js `camp`, in sound-lab), the camera eases in a little
+  and leans to the fire, then back (`campCam`), "Your camp" in big warm italics with "the first fire" over it and "You'll wake
+  here, by the fire." under it (announce 'camp', cutting in ahead of any other headline), and a buzz on Android (`CAMP_BUZZ`).
+  The fire's hover says "Your camp". It replaces the first fire's gold headline stage 4 planned (never wired).
+- Played in headless Chrome at dusk (the moment frame by frame); no cost to measure outside the moment's few seconds (the ring
+  is one draw a frame).
+
 ## After that (roughly in this order)
 1. **Cooking at the fire.** Click the fire: a small card opens beside it (not a full-screen panel). Put up to 3 things
    in from the satchel, cook (a short cook with steam and a sizzle), and the dish lands in the satchel. It reads

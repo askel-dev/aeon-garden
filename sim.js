@@ -5411,7 +5411,7 @@ const BRUSH_NEAR = 2.5;                 // tiles about it it looks for brush in,
 // bag, bagN: the satchel's slots, what's in each (an ingredient's id, recipes.js) and how many (gather, stow).
 // warmth (1 cosy, 0 collapsed), wet (0 dry, 1 soaked), stamina (1 fresh, 0 spent), feel: how warm it feels about it
 // now (in degrees, like airTemp), winded: spent, no sprint till it's got its breath back, down: the tick it collapsed
-// (-1: on its feet), stumble: ticks left of a stumble, homeX, homeY: where it wakes (where it started; later the camp).
+// (-1: on its feet), stumble: ticks left of a stumble, homeX, homeY: where it wakes (where it started, then by the camp's fire).
 const SLOTS = 8, STACK = 10;            // the satchel's slots, and how many of a kind one holds
 function foragerOf(x, y) {
   const f = { forager: true, x, y, path: [], leg: 0, speed: -0, heading: Math.PI / 2, moved: -0, walking: false, goalX: x, goalY: y,
@@ -5822,7 +5822,7 @@ function bodyTick(w) {
   }
 }
 
-// It wakes at home: warm enough to get going, dry, rested, and the satchel empty.
+// It wakes at home (at camp, once there's one: campAt): warm enough to get going, dry, rested, and the satchel empty.
 function wakeForager(w) {
   const f = w.forager;
   f.x = f.homeX; f.y = f.homeY; f.goalX = f.x; f.goalY = f.y; f.heading = Math.PI / 2;
@@ -5897,11 +5897,12 @@ function feedFire(w, F, sticks, tinder) {
 }
 // Whether a spark and a blow would light it: sticks on it, and tinder or embers to catch.
 const lightable = F => !F.lit && F.fuel > 0 && (F.tinder || F.embers > 0);
-// The forager blew on the spark, or the embers, till it caught (game.js): it burns.
+// The forager blew on the spark, or the embers, till it caught (game.js): it burns. The meadow's first makes camp.
 function lightFire(w, F) {
   if (!lightable(F)) return false;
   F.lit = true; F.tinder = false; F.embers = 0; F.litAt = w.tick;
   emit(w, { type: 'firelit', fire: F });
+  if (!w.camp) { campAt(w, F); emit(w, { type: 'camp', fire: F }); }
   return true;
 }
 // Every tick: the lit ones burn their sticks down (faster in the wet), the embers of a burnt out one go grey, and water over
@@ -5942,6 +5943,33 @@ function fireWarmth(w, x, y) {
   }
   return warm;
 }
+
+// ---------------------------------------------------------------- camp
+//
+// Lighting the meadow's first fire makes camp (w.camp: where, the fire, and the tick it was made). From then on the forager
+// wakes there after a collapse, beside the fire (homeX, homeY: where it knelt to light it, or at its side), and what's built
+// later is arranged inside the camp's ring (CAMP_R tiles about the fire, CAMP_FLAT as deep as it's wide: inCamp), which
+// game.js draws. Playing together, a friend's first fire makes the camp everyone's. A meadow kept with a fire lit before
+// camps came makes camp at it as it opens (unpackWorld). No random numbers, no KEEP_VERSION bump (w.camp is in LATER).
+const CAMP_R = 3.2, CAMP_FLAT = 0.8;
+const CAMP_KNEEL = 1.5;                 // the forager within this of the fire is kneeling by it: it wakes there
+function campAt(w, F) {
+  w.camp = { x: F.x, y: F.y, fire: F, made: w.tick };
+  const f = w.forager;
+  if (!f) return;
+  rocksFor(w);
+  let hx = f.x, hy = f.y;
+  if (Math.hypot(f.x - F.x, f.y - F.y) > CAMP_KNEEL) {    // (a friend's fire, or a kept one: at its side, whichever is clear)
+    hx = F.x; hy = F.y + 0.7;
+    for (const s of [f.x < F.x ? -1 : 1, f.x < F.x ? 1 : -1]) {
+      const x = F.x + s * 0.8, y = F.y + 0.06;
+      if (walkable(w, x, y) && !solidTile[idx(x, y)]) { hx = x; hy = y; break; }
+    }
+  }
+  f.homeX = hx; f.homeY = hy;
+}
+// Whether x, y is inside the camp's ring.
+const inCamp = (w, x, y) => !!w.camp && ((x - w.camp.x) / CAMP_R) ** 2 + ((y - w.camp.y) / (CAMP_R * CAMP_FLAT)) ** 2 < 1;
 
 // ---------------------------------------------------------------- gathering
 //
@@ -6172,6 +6200,7 @@ const LATER = {
   appleYear: 0, namePools: null, recount: false,
   dug: null, ponds: null, hedges: null, visitors: null, visited: null, visitGone: false, visitId: 0,   // the places visitors come to, and who's come
   forager: null,                                                                                    // the player (startForager)
+  camp: null,                                                                                       // made by the first fire lit (campAt)
 };
 // A kept meadow's fractions come back as whole numbers where they were (0, 1): made fractions again, so they can't
 // change the layout later (an object's field that holds a fraction once holds any number after).
@@ -6520,6 +6549,8 @@ function unpackWorld(kept) {
   if (!w.forager) w.forager = startForager(w);            // (kept before the forager: it starts afresh)
   const F = w.forager;
   if (!F.homeX && !F.homeY) { F.homeX = F.x; F.homeY = F.y; }   // (kept before it had a home: where it is)
+  if (w.camp) asFractions(w.camp, ['x', 'y']);
+  else for (const fire of w.fires) if (fire.litAt >= 0) { campAt(w, fire); break; }   // (kept with a fire lit before camps came)
   asFractions(F, ['x', 'y', 'speed', 'heading', 'moved', 'goalX', 'goalY', 'warmth', 'wet', 'stamina', 'feel', 'homeX', 'homeY']);
   if (noFinds) startFinds(w);
   return w;
@@ -7374,7 +7405,7 @@ const api = {
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE, hollow,
   TREES, treeStage, treeAge, standing, bearing, inBloom, SEEDLING, SAPLING, GROWN, KIND_NAMES,
   FROG_K, SPAWN_WORTH, FISH_K, FISH_EAT, CROW_SEATS, SHROOMS, SHROOM_KINDS, FINDS, FIND_KINDS, findSeason, eachPickable, greenStage, greenPicked, GREEN_SEASONS, brambleStage, RIPE_FROM, RIPE_TO,
-  bagCount, spend, stow, fireSpot, layFire, feedFire, fireRoom, lightable, lightFire, fireHeat, fireWarmth,
+  bagCount, spend, stow, fireSpot, layFire, feedFire, fireRoom, lightable, lightFire, fireHeat, fireWarmth, CAMP_R, CAMP_FLAT, inCamp,
   FIRE_STICK, FIRE_MOST, FIRE_LOW, FIRE_EMBERS, FIRE_NEAR, FIRE_REACH, FIRE_GAP, FIRE_WET,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;

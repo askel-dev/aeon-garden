@@ -237,6 +237,10 @@ none past `FIRE_REACH` (`fireWarmth`, by `fireHeat`), and dries it close up (`FI
 meadow kept before fires gets none (no `KEEP_VERSION` bump). Standing by one from dusk with warmth full (4 seeds): a new fire's 5
 sticks burn about 8.5 game hours dry (7 in rain); spring nights end at 0.6 to 1 warmth, winter ones at 0.1 to 0.75 (snow worst),
 and a fire kept fed keeps it at 1 all night; with none, the rainy spring nights and every winter night kill.
+The meadow's first fire lit makes camp (`w.camp`, in `LATER`: where, the fire, the tick; `campAt` from `lightFire`, event 'camp'):
+the forager's home (`homeX`, `homeY`) moves to where it knelt to light it (within `CAMP_KNEEL`; else the fire's clear side), so it
+wakes there after a collapse. Its ring, `CAMP_R` tiles round the fire and `CAMP_FLAT` as deep as wide (`inCamp`), is where later
+builds go. A meadow kept with a fire lit before camps makes camp at it as it opens. No random numbers, no `KEEP_VERSION` bump.
 
 Rocks are painted (`rockInfo`, `rockSprite` in game.js): pebbles, stones and boulders by
 size (`TERRAIN.rockSize`), flat stones at the fords, and two or three great rocks per meadow

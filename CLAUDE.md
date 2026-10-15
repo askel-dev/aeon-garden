@@ -33,7 +33,9 @@ morning with the satchel lost (`wakeForager`). A new meadow opens in a storm lat
 saying it needs a fire before dark (stage 3: sim.js `START_PHASE`, `foragerArrives`; game.js `openingLine`). A campfire (stage 4) is its warmth: built from the satchel by the round fire button
 by it or F (recipes.js `BUILDS`, game.js `renderBuild`), laid where you pick, struck, and blown on by holding till it catches;
 it burns its sticks down to embers, then cold (sim.js `w.fires`, `fireTick`, `fireWarmth`), and at night lights a warm pool
-cut out of a dark navy (game.js `lightsFrame`, `paintFireLights`). Making camp comes next (PLAN.md). `forager-lab.html` shows all its paintings. Notes in game.md and ecology.md.
+cut out of a dark navy (game.js `lightsFrame`, `paintFireLights`). The first fire lit makes camp (stage 5: sim.js `w.camp`,
+`campAt`; game.js `campMoment`): a big warm moment ("Your camp"), the forager wakes there from then on, and a soft ring of
+trodden earth round it (`CAMP_R`, `inCamp`, game.js `drawCampRing`) is where later builds go. Cooking at the fire is next (PLAN.md). `forager-lab.html` shows all its paintings. Notes in game.md and ecology.md.
 - `game.js`: drawing, UI, the inspector. Its features (and where new notes on them go) are in
   `.claude/rules/game.md`, which loads when game.js or index.html is opened.
 - `ground.js`: the ground (grass, earth, shores, water) as a WebGL shader, painted from a

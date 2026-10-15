@@ -1178,6 +1178,7 @@ function render(now) {
   unfade();
   drawRemains(z);
   drawGarlic(z);
+  drawCampRing(z, now);
   if (ui.mark) drawMark(now);
 
   const sel = world.byId.get(ui.selectedId);
@@ -2966,6 +2967,7 @@ function fireShown(F, now) {
       if (u >= 1.6) fireFlare.delete(F);
       else heat *= u < 1 ? 0.25 + 0.75 * u * u * (3 - 2 * u) + 0.25 * Math.sin(Math.PI * u) : 1 + 0.15 * Math.sin(Math.PI * (u - 1) / 0.6);
     }
+    if (F === campShow.F) heat *= 1 + CAMP_FLARE * campCurve(now, CAMP_FLARE_MS);   // (making camp: it flares up)
     smoke = 0.25 + 0.6 * (1 - clamp(F.fuel / S.FIRE_LOW, 0, 1));
   } else {
     heat = 0;
@@ -3007,6 +3009,7 @@ function drawFireGlows(now, dark) {
     const s = fireShown(F, now), hid = coverAt(sx, sy - px * 0.2, F.y);
     if (hid > 0.98) continue;
     const seen = 1 - hid;
+    if (F === campShow.F && now - campShow.t0 < CAMP_BLOOM_MS) campBurst(sx, sy, px, z, now, night, seen);
     if (s.heat > 0.02) {                                   // the bloom over the flames
       const r = px * (0.45 + 0.55 * s.heat) * (1 + 0.04 * Math.sin(t * 9 + F.born)), a = (0.32 + 0.4 * night) * Math.min(1, s.heat * 1.4) * seen;
       ctx.globalAlpha = a;
@@ -3060,7 +3063,8 @@ function lightsFrame(now) {
   for (const F of world.fires) {
     const s = fireShown(F, now), glow = Math.max(s.heat, F.lit ? 0 : F.embers > 0 ? 0.22 * F.embers / S.FIRE_EMBERS : 0, s.spark * 0.25);
     if (glow < 0.02 || lights.n >= 4) continue;
-    const r = LIGHT_TILES * z * Math.sqrt(glow) * (0.6 + 0.4 * glow), sx = (F.x - cam.x) * z + vw / 2, sy = (F.y - cam.y) * z + vh / 2;
+    const r = LIGHT_TILES * z * Math.sqrt(Math.min(1.15, glow)) * (0.6 + 0.4 * Math.min(1.15, glow)) * (F === campShow.F ? 1 + CAMP_BLOOM * campCurve(now, CAMP_BLOOM_MS) : 1);
+    const sx = (F.x - cam.x) * z + vw / 2, sy = (F.y - cam.y) * z + vh / 2;
     if (!visible(sx, sy, r)) continue;
     const fl = 0.5 + 0.3 * Math.sin(step * 1.7 + F.born) + 0.2 * Math.sin(step * 0.53 + 2 * F.born), i = lights.n++;
     lights.x[i] = sx; lights.y[i] = sy - firePx(z) * 0.12; lights.r[i] = r * (0.95 + 0.05 * fl); lights.a[i] = Math.min(1, glow) * (0.9 + 0.1 * fl);
@@ -3096,6 +3100,113 @@ function paintFireLights(g) {
     g.drawImage(warm, x - r * 0.8, y - r * 0.8 * LIGHT_FLAT, r * 1.6, r * 1.6 * LIGHT_FLAT);
   }
   g.globalAlpha = 1;
+}
+
+// ---- making camp (PLAN.md stage 5)
+//
+// Lighting the meadow's first fire makes camp (sim.js campAt, event 'camp'), and it's a big moment (campMoment): the flame
+// flares (fireShown), its light blooms out over the clearing (lightsFrame, and a warm bloom laid over it by day as by night,
+// campBurst) with a burst of sparks and embers flying up (campBurst), a warm flourish on the felt piano (sound.js camp), the
+// camera eases in a little and leans to the fire (campCam, in leadCam), "Your camp" fades in and out over the meadow (announce
+// 'camp'), and a phone that can buzzes (navigator.vibrate: Android; an iPhone's web page can't). From then on a soft ring of
+// trodden earth lies round the fire, sim.js CAMP_R out (drawCampRing, CAMP_ART painted once), where later builds will go.
+const CAMP_FLARE = 0.55, CAMP_FLARE_MS = 2800;      // the flames flare this much bigger, and back over this long
+const CAMP_BLOOM = 0.45, CAMP_BLOOM_MS = 4500;      // its light reaches this much further, and back over this long
+const CAMP_SPARKS = 34;                            // sparks and embers in the burst
+const CAMP_ZOOM = 0.16, CAMP_LEAN = 0.6;           // the camera eases this much closer, and this far over to the fire
+const CAMP_IN = 1500, CAMP_HOLD = 3800, CAMP_OUT = 2600;   // ms: easing in, holding, easing back
+const CAMP_NEAR = 10;                              // tiles: a friend's first fire further off than this only gets the words
+const CAMP_WORDS_MS = 650;                         // "Your camp" this long after the flare
+const CAMP_RING_IN = 1600, CAMP_RING_MS = 3200;    // the ring comes in this long after, over this long
+const CAMP_BUZZ = [35, 70, 35, 70, 110];           // ms buzzing and not
+const campShow = { F: null, t0: -1e9, z0: 0, z: 0 };
+// Up quickly to 1, then easing back to 0 over ms.
+function campCurve(now, ms) {
+  const u = (now - campShow.t0) / ms;
+  return u <= 0 || u >= 1 ? 0 : u < 0.12 ? ease(u / 0.12) : (1 - (u - 0.12) / 0.88) ** 2;
+}
+function campMoment(F) {
+  const now = performance.now(), f = world.forager, mine = !!(ui.fire && ui.fire.F === F), near = mine || Math.hypot(F.x - f.x, F.y - f.y) < CAMP_NEAR;
+  campShow.F = F; campShow.t0 = now;
+  campShow.z0 = near && f.down < 0 ? cam.zoom : 0; campShow.z = cam.zoom;
+  if (!mine && near) fireFlare.set(F, now);
+  chime('camp');
+  if (mine) try { navigator.vibrate?.(CAMP_BUZZ); } catch (e) { /* fine */ }
+  setTimeout(() => {
+    if (!(world.camp && world.camp.fire === F) || world.forager.down >= 0) return;
+    announce('camp', `<small>${mine ? 'the first fire' : 'a friend lit the first fire'}</small><b class="fr">Your camp</b>`, 'You’ll wake here, by the fire.');
+  }, CAMP_WORDS_MS);
+}
+// How far the camera has eased in (0 to 1), setting the zoom: in, held, back to where it was. A zoom of your own meanwhile
+// ends it there.
+function campCam(now) {
+  const c = campShow;
+  if (!c.z0) return 0;
+  const u = now - c.t0;
+  if (cam.zoom !== c.z || u >= CAMP_IN + CAMP_HOLD + CAMP_OUT) { if (cam.zoom === c.z) cam.zoom = c.z0; c.z0 = 0; return 0; }
+  const k = u < CAMP_IN ? smooth(0, CAMP_IN, u) : 1 - smooth(CAMP_IN + CAMP_HOLD, CAMP_IN + CAMP_HOLD + CAMP_OUT, u);
+  cam.zoom = c.z = Math.min(64, c.z0 * (1 + CAMP_ZOOM * k));
+  return k;
+}
+// The burst as camp is made: a warm bloom over the clearing, and sparks and embers flung up out of the flames, slowing,
+// drifting on the wind and going out, each on its own course (hashed). Over the dark, added on ('lighter': drawFireGlows).
+function campBurst(sx, sy, px, z, now, night, seen) {
+  const u = (now - campShow.t0) / CAMP_BLOOM_MS, R = LIGHT_TILES * z * (0.5 + 0.7 * ease(Math.min(1, u * 2.2)));
+  ctx.globalAlpha = seen * (0.1 + 0.12 * night) * Math.min(1, u * 10) * (1 - u) ** 1.6;
+  ctx.drawImage(lightArt().img, sx - R, sy - R * LIGHT_FLAT, R * 2, R * 2 * LIGHT_FLAT);
+  const e = emberArt().img, ms = now - campShow.t0, wind = fireWind(), seed = campShow.t0 | 0;
+  for (let k = 0; k < CAMP_SPARKS; k++) {
+    const life = 900 + 1700 * hash2(k, seed, 61), q = (ms - 120 * hash2(k, seed, 62)) / life;
+    if (q <= 0 || q >= 1) continue;
+    const a = -Math.PI / 2 + (hash2(k, seed, 63) - 0.5) * 2.4, v = 0.9 + 1.6 * hash2(k, seed, 64), out = 1 - (1 - q) ** 3;
+    const x = sx + px * (Math.cos(a) * v * out * 0.8 + wind * 0.5 * q * q + 0.08 * Math.sin(q * 9 + k));
+    const y = sy - px * 0.3 + px * (Math.sin(a) * v * out - 0.35 * q);
+    const d = Math.max(1.5, px * (k % 3 ? 0.035 : 0.06)) * (1 - 0.6 * q);
+    ctx.globalAlpha = seen * (1 - q) ** 1.3 * (0.7 + 0.3 * Math.sin(now / 45 + k * 1.7));
+    ctx.drawImage(e, x - d, y - d, d * 2, d * 2);
+  }
+}
+// The camp's ring: a soft band of trodden earth round the fire, worn unevenly, a few small stones along it. Painted once,
+// big (it's soft, so it stretches), drawn flat on the ground under all that stands; it comes in a moment after camp is made.
+let CAMP_ART = null;
+const CAMP_PX = 512, CAMP_MID = 0.84;    // the painting's width, and the ring's middle in it (of its half-width)
+function campArt() {
+  const c = document.createElement('canvas'), W = CAMP_PX, H = Math.round(CAMP_PX * S.CAMP_FLAT), g = c.getContext('2d');
+  c.width = W; c.height = H;
+  const R = W / 2 * CAMP_MID, k = R / S.CAMP_R;           // (k: px a tile)
+  const dot = document.createElement('canvas');            // one soft dab of earth
+  dot.width = dot.height = 32;
+  const dg = dot.getContext('2d'), gr = dg.createRadialGradient(16, 16, 0, 16, 16, 16);
+  gr.addColorStop(0, 'rgba(92, 70, 46, 1)'); gr.addColorStop(0.5, 'rgba(92, 70, 46, 0.5)'); gr.addColorStop(1, 'rgba(92, 70, 46, 0)');
+  dg.fillStyle = gr; dg.fillRect(0, 0, 32, 32);
+  for (let i = 0; i < 420; i++) {                          // the worn band, heavier in some stretches than others
+    const a = i / 420 * Math.PI * 2 + (hash2(i, 3, 711) - 0.5) * 0.03, wear = 0.55 + 0.45 * Math.sin(a * 3 + 1.1) * Math.sin(a * 5 + 0.4);
+    const r = R + (hash2(i, 4, 711) - 0.5) * k * 0.3, d = k * (0.16 + 0.14 * hash2(i, 5, 711));
+    g.globalAlpha = (0.05 + 0.07 * wear) * (0.6 + 0.4 * hash2(i, 6, 711));
+    g.drawImage(dot, W / 2 + Math.cos(a) * r - d, H / 2 + Math.sin(a) * r * S.CAMP_FLAT - d * S.CAMP_FLAT, d * 2, d * 2 * S.CAMP_FLAT);
+  }
+  g.globalAlpha = 1;
+  for (let i = 0; i < 16; i++) {                           // small stones along it, here and there
+    const a = (i + hash2(i, 7, 711) * 0.7) / 16 * Math.PI * 2, r = R + (hash2(i, 8, 711) - 0.5) * k * 0.28;
+    const x = W / 2 + Math.cos(a) * r, y = H / 2 + Math.sin(a) * r * S.CAMP_FLAT, sz = k * (0.045 + 0.04 * hash2(i, 9, 711));
+    const rgb = tone(STONE_GREYS[i % STONE_GREYS.length], 0.9 + 0.2 * hash2(i, 10, 711));
+    g.fillStyle = 'rgba(40, 30, 20, 0.3)'; g.beginPath(); g.ellipse(x + sz * 0.15, y + sz * 0.35, sz * 1.1, sz * 0.6, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = `rgb(${rgb})`; g.beginPath(); g.ellipse(x, y, sz, sz * 0.68, hash2(i, 11, 711) - 0.5, 0, Math.PI * 2); g.fill();
+    g.fillStyle = 'rgba(255, 252, 240, 0.35)'; g.beginPath(); g.ellipse(x - sz * 0.3, y - sz * 0.25, sz * 0.4, sz * 0.22, -0.3, 0, Math.PI * 2); g.fill();
+  }
+  CAMP_ART = { img: c, w: W, h: H };
+  asBitmap(c, b => { CAMP_ART.img = b; });
+  return CAMP_ART;
+}
+function drawCampRing(z, now) {
+  const C = world.camp;
+  if (!C) return;
+  const a = C.fire === campShow.F ? smooth(campShow.t0 + CAMP_RING_IN, campShow.t0 + CAMP_RING_IN + CAMP_RING_MS, now) : 1;
+  const art = CAMP_ART || campArt(), w = S.CAMP_R * z / CAMP_MID * 2, h = w * art.h / art.w, sx = (C.x - cam.x) * z + vw / 2, sy = (C.y - cam.y) * z + vh / 2;
+  if (a <= 0 || !visible(sx, sy, w / 2)) return;
+  ctx.globalAlpha = a;
+  ctx.drawImage(art.img, sx - w / 2, sy - h / 2, w, h);
+  ctx.globalAlpha = 1;
 }
 
 // ---- building and tending it
@@ -3241,10 +3352,11 @@ function fireAt(sx, sy) {
 }
 // How a fire is and what it wants, in a few words: its hover line (drawHoverLine).
 function fireWord(F) {
-  if (F.lit) return F.fuel < S.FIRE_LOW ? 'Campfire · burning low: it wants sticks' : S.fireRoom(F) ? 'Campfire · burning well' : 'Campfire · burning well, full';
-  if (F.embers > 0) return F.fuel > 0 ? 'Campfire · embers: blow on them' : 'Campfire · embers: a stick on, and a blow';
-  if (S.lightable(F)) return 'Campfire · laid, ready to light';
-  return F.fuel > 0 ? 'Campfire · cold: it wants tinder' : 'Campfire · cold: it wants tinder and sticks';
+  const n = world.camp && world.camp.fire === F ? 'Your camp' : 'Campfire';
+  if (F.lit) return F.fuel < S.FIRE_LOW ? `${n} · burning low: it wants sticks` : S.fireRoom(F) ? `${n} · burning well` : `${n} · burning well, full`;
+  if (F.embers > 0) return F.fuel > 0 ? `${n} · embers: blow on them` : `${n} · embers: a stick on, and a blow`;
+  if (S.lightable(F)) return `${n} · laid, ready to light`;
+  return F.fuel > 0 ? `${n} · cold: it wants tinder` : `${n} · cold: it wants tinder and sticks`;
 }
 // A fire burnt down, gone cold or put out (sim.js events): a line by it, if it's in sight.
 const FIRE_TELLS = { fireout: 'Burnt down to embers', firecold: 'The embers have gone cold', firedoused: 'The water put it out' };
@@ -8439,8 +8551,8 @@ function toast(html) {
 // ("Spring, day 3", with a word on the morning when it's frosty or wet), a new season bigger with what it brings, the first
 // of anything in the satchel in gold (firstTime), and a friend's meadow as you come in. One at a time: one that comes while
 // another is up waits its turn, but a day's line isn't worth waiting for. None while a card is open or the forager is down.
-const ANNOUNCE_MS = { day: 5500, season: 6500, first: 6000, join: 6000 };
-const ANNOUNCE_SOUND = { day: 'dawn', season: 'season', first: 'found', join: 'welcome' };   // (sound.js)
+const ANNOUNCE_MS = { day: 5500, season: 6500, first: 6000, join: 6000, camp: 6000 };
+const ANNOUNCE_SOUND = { day: 'dawn', season: 'season', first: 'found', join: 'welcome' };   // (sound.js; making camp has its own, campMoment)
 const ANNOUNCE_FADE = 1000;                             // (index.html: it fades out in 0.9 s)
 const SEASON_LINES = [
   'Wild garlic and nettles are up, and dandelions in the grass.',
@@ -8451,10 +8563,10 @@ const SEASON_LINES = [
 const announcing = { el: $('#announce'), timer: 0, until: 0, wait: [], day: -1, openAt: 0 };
 function announce(kind, head, line = '') {
   const a = announcing, now = performance.now();
-  if (now < a.until) { if (kind !== 'day' && a.wait.length < 4) a.wait.push([kind, head, line]); return; }
+  if (now < a.until && kind !== 'camp') { if (kind !== 'day' && a.wait.length < 4) a.wait.push([kind, head, line]); return; }   // (camp cuts in)
   a.el.className = `on ${kind}`;
   a.el.innerHTML = head + (line ? `<p>${line}</p>` : '');
-  chime(ANNOUNCE_SOUND[kind], { season: world ? S.clock(world).season : 0 });
+  if (ANNOUNCE_SOUND[kind]) chime(ANNOUNCE_SOUND[kind], { season: world ? S.clock(world).season : 0 });
   a.until = now + ANNOUNCE_MS[kind] + ANNOUNCE_FADE;
   clearTimeout(a.timer);
   a.timer = setTimeout(() => {
@@ -8578,6 +8690,9 @@ function handleEvent(e) {
       break;
     case 'firelit':                                         // (a friend's: the forager's own flares in takeFlame)
       if (!(ui.fire && ui.fire.F === e.fire)) { fireFlare.set(e.fire, performance.now()); hear('kindle', e.fire.x, e.fire.y, { v: 0.7 }); }
+      break;
+    case 'camp':
+      campMoment(e.fire);
       break;
     case 'firefed':
       if (e.fire.lit && e.n && !(ui.fire && ui.fire.F === e.fire)) { fireFlare.set(e.fire, performance.now() - TAKE_MS); hear('stick', e.fire.x, e.fire.y); }
@@ -11065,8 +11180,9 @@ function leadCam(dt) {
   const sx = sheet ? (sheet.right - sheet.left) / 2 / cam.zoom : 0, sy = sheet ? (sheet.bottom - sheet.top) / 2 / cam.zoom : 0;   // (clear of the inspector)
   const up = intro.on ? introLeft(performance.now()) : 0;      // (a new meadow's crane down onto it: startIntro)
   if (intro.on) cam.zoom = Math.max(fitZoom, intro.z * (1 - (1 - INTRO_WIDE) * up));
-  cam.x += (p.x + fg.lx + sx - cam.x) * k;
-  cam.y += (p.y - CAM_FEET * forPx() / cam.zoom + fg.ly + sy - INTRO_RISE * up - cam.y) * (intro.on ? 1 : k);
+  const c = campCam(performance.now()), C = campShow.F, cx = c ? (C.x - p.x) * CAMP_LEAN * c : 0, cy = c ? (C.y - p.y) * CAMP_LEAN * c : 0;   // (making camp)
+  cam.x += (p.x + fg.lx + sx + cx - cam.x) * k;
+  cam.y += (p.y - CAM_FEET * forPx() / cam.zoom + fg.ly + sy + cy - INTRO_RISE * up - cam.y) * (intro.on ? 1 : k);
 }
 
 // ------------------------------------------------------------------ start
