@@ -347,6 +347,7 @@
 <div id="hud-right">
   <div class="hud-top">
   <div id="time" class="card">
+    <button class="hud-btn hidden" id="friends-btn" data-act="together" title="Playing together">🧺</button>
     <button class="hud-btn" data-act="pause" title="Pause (space)">⏸</button>
     <button class="hud-btn wide-only" id="sound-btn" data-act="sound" title="Sound on or off (M)">🔇</button>
     <button class="hud-btn more" data-act="more" title="More">•••</button>
@@ -354,6 +355,7 @@
   <div id="more-menu" class="card drop hidden">
     <button class="menu-item phone-only" data-act="sound" id="sound-item"><span class="e">🔇</span> <span class="l">Sound is off</span></button>
     <button class="menu-item" data-act="copy-link"><span class="e">🔗</span> <span class="l">Copy a link<span class="x"> to this meadow</span></span></button>
+    <button class="menu-item" data-act="together"><span class="e">🧺</span> <span class="l">Play together<span class="x"> with a friend</span></span></button>
     <button class="menu-item" data-act="pick-outfit"><span class="e">🧥</span> <span class="l">Change your cloak</span></button>
     <button class="menu-item" data-act="ideas" title="Tell me what you'd love to see in the meadow"><span class="e">💌</span> <span class="l">Send an idea</span></button>
     <button class="menu-item danger" data-action="new">🔄 Start a new meadow…</button>
@@ -384,6 +386,7 @@
 <script src="sound.js"></script>
 <script src="ground.js"></script>
 <script src="recipes.js"></script>
+<script src="net.js"></script>
 <script src="game.js"></script>
 </body>
 </html>

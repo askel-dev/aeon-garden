@@ -5970,6 +5970,13 @@ function dropSlot(w, k) {
   w.dropped.push(d);
   return d;
 }
+// What another forager dropped (game.js, playing together): on a pile of its kind there, or a new one, as dropSlot left it.
+function dropAt(w, kind, x, y, n, born, until) {
+  for (const d of w.dropped) if (d.kind === kind && (d.x - x) ** 2 + (d.y - y) ** 2 < 1e-4) { d.n += n; d.until = until; return d; }
+  const d = dropOf(kind, x, y, born, until, n);
+  w.dropped.push(d);
+  return d;
+}
 // Every DROP_EVERY: those past their time, or under deep water, go.
 function droppedTick(w) {
   const list = w.dropped;
@@ -5997,8 +6004,16 @@ function gather(w, kind, it) {
   if (!t.n) return { id: t.id, n: 0, why: t.why, into: [] };
   const room = roomFor(f, t.id);
   if (!room) return { id: t.id, n: 0, why: 'full', into: [] };
-  // (only part of it fits: it costs that part, and the rest of a clump of mushrooms stays where it is)
-  const n = Math.min(t.n, room), part = n / t.n, id = t.id;
+  const id = t.id, n = takeFrom(w, kind, it, room);
+  const into = stow(f, id, n);
+  return { id, n, why: '', into };
+}
+// Takes up to most of what's there out of the sim, and says how many (gather; and another forager's pick, game.js).
+// Only part of it taken costs that part, and the rest of a clump of mushrooms stays where it is.
+function takeFrom(w, kind, it, most) {
+  const t = whatThere(w, kind, it);
+  if (!t.n) return 0;
+  const n = Math.min(t.n, most), part = n / t.n, id = t.id;
   if (kind === 'shroom' || kind === 'find' || kind === 'dropped') {
     const list = kind === 'shroom' ? w.shrooms : kind === 'find' ? w.finds : w.dropped, k = list.indexOf(it);
     if (n < t.n) { it.n -= n; } else if (k >= 0) list.splice(k, 1);
@@ -6011,8 +6026,7 @@ function gather(w, kind, it) {
     const falls = Math.ceil(n / FALL_GIVES[id]);
     it.windfall -= falls; w.windfalls -= falls;
   } else if (kind === 'hive') it.honey -= t.cost * part;
-  const into = stow(f, id, n);
-  return { id, n, why: '', into };
+  return n;
 }
 
 // ---------------------------------------------------------------- the world
@@ -7199,7 +7213,7 @@ const api = {
   createWorld, step, clock, isNight, phaseOf, seasonOf, springPart, mood, ageDays, growth, isAdult, patchFresh,
   hedgehogComes, heronComes, dragonflyComes, kingfisherComes, skylarkComes, placeNeeds, VISIT_SEASONS, VISIT_FADE, HERON_FADE, HERON_STAB,
   DRAGON_FROM, KF_FADE, KF_UNDER, KF_BEAT, LARK_FADE, LARK_OPEN, LARK_RISE, EDGE_REACH, OPEN_MOST,
-  walkable, packWorld, unpackWorld, GROUND, foragerTo, FORAGER_WALK, FORAGER_RUN, airTemp, warmthStage, WARMTH_STAGES, STUMBLE_TICKS, wakeForager, rockKind, whatThere, cherryShow, honeySpare, gather, dropSlot, DROP_DAYS, moveSlot, roomFor, forEachDecorNear, SLOTS, STACK,
+  walkable, packWorld, unpackWorld, GROUND, foragerTo, FORAGER_WALK, FORAGER_RUN, airTemp, warmthStage, WARMTH_STAGES, STUMBLE_TICKS, wakeForager, rockKind, whatThere, cherryShow, honeySpare, gather, takeFrom, dropSlot, dropAt, DROP_DAYS, moveSlot, roomFor, forEachDecorNear, SLOTS, STACK,
   KINDS, FEW, whiteness, visibility, WINTER_COAT, WILD_COAT,
   TERRAIN, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE, hollow,

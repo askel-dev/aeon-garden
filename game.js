@@ -14,6 +14,9 @@ const TICKS_PER_SECOND = 30;           // at 1x
 
 const params = new URLSearchParams(location.search);
 const meadowLink = seed => '?seed=' + seed;   // the address of a meadow, and the name it's kept under
+let ROOM = params.get('room') || '';          // playing together (net.js): the room in the address
+const Net = window.Net || null;               // (net.js)
+const pageLink = seed => meadowLink(seed) + (ROOM ? '&room=' + encodeURIComponent(ROOM) + (params.has('local') ? '&local' : '') : '');   // the page's address
 
 // How many people come, and from where, counted by GoatCounter (goatcounter.com: free, no cookies,
 // nothing to agree to). Off until COUNTER holds the site's code: sign up there, pick a code, put it
@@ -1107,8 +1110,8 @@ const shownGold = phase => Math.round(goldenHour(phase) * GOLD_STEPS) / GOLD_STE
 const frameItems = [], itemPool = [];
 function itemOf(items, y, sx, sy, f) {
   let it = itemPool[items.length];
-  if (!it) itemPool.push(it = { y: -0, sx: -0, sy: -0, f: -0, px: -0, d: null, h: null, c: null, v: null, s: null, p: null });
-  it.y = y; it.sx = sx; it.sy = sy; it.f = f; it.px = 0; it.d = it.h = it.c = it.v = it.s = it.p = null;
+  if (!it) itemPool.push(it = { y: -0, sx: -0, sy: -0, f: -0, px: -0, d: null, h: null, c: null, v: null, s: null, p: null, q: null });
+  it.y = y; it.sx = sx; it.sy = sy; it.f = f; it.px = 0; it.d = it.h = it.c = it.v = it.s = it.p = it.q = null;
   items.push(it);
   return it;
 }
@@ -1236,6 +1239,7 @@ function render(now) {
     seeDt = Math.min(100, now - seeLast); seeLast = now;
     if (fgBody.on) itemOf(items, d.y, sx, sy, 1).p = F;
   }
+  if (peers.size) peerItems(items, now, z);               // friends playing along (net.js)
   sortByY(items);
   drawPrints();                                            // the forager's footprints, on the ground under all
   // Shadows first, all together, so a tree's shadow never lands on a rabbit behind it.
@@ -1247,7 +1251,8 @@ function render(now) {
     else if (it.c) {
       drawCreatureShadow(it.c, it.sx, it.sy, now, sn, it.f);
     } else if (it.v) drawVisitorShadow(it.v, it.sx, it.sy, sn);
-    else if (it.p) foragerShadow(it.sx, it.sy, sn);
+    else if (it.p) foragerShadow(it.sx, it.sy, sn, fg.wet);
+    else if (it.q) foragerShadow(it.sx, it.sy, sn, it.q.wet);
   }
   layShadows();
   drawLeaves(now, true);                                   // the leaves lying round the trees' feet, on the ground under all that stands
@@ -1261,6 +1266,7 @@ function render(now) {
     else if (it.s) it.s.green ? drawNettles(it.s, z) : it.s.bramble ? drawBramble(it.s, z) : it.s.find ? drawFind(it.s, z) : it.s.dropped ? drawDropped(it.s, z, now) : drawShroom(it.s, z);
     else if (it.v) drawVisitor(it.v, it.sx, it.sy, now, z);
     else if (it.p) drawForager(it.sx, it.sy, now);
+    else if (it.q) drawPeer(it.q, it.sx, it.sy);
     else drawCreature(it.c, it.sx, it.sy, now);
   }
   unfade();
@@ -2026,8 +2032,8 @@ function drawForager(sx, sy, now) {
   } else drawEmoji(art, sx, top + px * 0.36 * (1 - squash), px, { flip, squash });   // (feet stay on the ground)
   drawBody(sx, sy, px, now);
 }
-function foragerShadow(sx, sy, sn) {
-  if (zoomedOut() || fg.wet) return;
+function foragerShadow(sx, sy, sn, wet) {
+  if (zoomedOut() || wet) return;
   const px = forPx(), n = shadeStep(), a = (0.16 + 0.18 * Math.max(0, sn.a)) * lerp(1, SNOW_SHADE_A, n / SHADE_STEPS), off = Math.max(0, sn.a) * sn.lean * px * 0.12;
   const k = Math.round(clamp(a / SHADOW_MOST, 0, 1) * SHADOW_STEPS), at = shadowAt[k], i = shadowN[k]++ * 4;
   at[i] = sx + off; at[i + 1] = sy - px * 0.01; at[i + 2] = px * 0.13 + Math.abs(off) * 0.5; at[i + 3] = px * 0.042;
@@ -2470,6 +2476,7 @@ function gatherFrame(now) {
   picks.at = -1e9;                                      // (what's left to pick, listed again at once)
   if (!r.n) { if (r.why === 'full') say('Satchel\'s full', F.x, F.y - 1.6); else if (r.why) say(r.why, s.x, s.y); return; }
   aim.moved = true;                                     // (what the mouse is on may be gone now: look again)
+  if (Net && Net.on) Net.send({ t: 'pick', kind: g.kind, id: r.id, x: g.it.x, y: g.it.y, n: r.n, tick: world.tick });   // (gone for everyone)
   const dx = s.x - F.x, dy = s.y - F.y;                 // it turns to it, and stoops
   fg.view = Math.abs(dy) > Math.abs(dx) * 0.8 ? (dy > 0 ? 1 : 2) : 0;
   if (Math.abs(dx) > 0.05) fg.flip = dx > 0;
@@ -2973,7 +2980,8 @@ function setupSatchel() {
     box.classList.remove('dragging');
     if (e.type === 'pointerup' && h.over && +h.over.dataset.k !== h.k && F.bag[h.k] === h.id) S.moveSlot(F, h.k, +h.over.dataset.k);
     else if (out && F.bag[h.k] === h.id) {                // (it flies down to the forager's feet, and lands there)
-      const d = S.dropSlot(world, h.k), [tx, ty] = toScreen(d.x, d.y), px = dropPx(d, cam.zoom), from = h.fly.style.transform;
+      const n = F.bagN[h.k], d = S.dropSlot(world, h.k), [tx, ty] = toScreen(d.x, d.y), px = dropPx(d, cam.zoom), from = h.fly.style.transform;
+      if (Net && Net.on) Net.send({ t: 'drop', kind: d.kind, x: d.x, y: d.y, n, born: d.born, until: d.until, tick: world.tick });
       const to = `translate(${tx - 20}px, ${ty - px * 0.3 - 20}px)`, k = clamp(px / 40, 0.3, 1.2);
       dropLand.set(d, performance.now() + DROP_FLY);
       h.fly.animate([{ transform: `${from} scale(1)`, opacity: 1 }, { transform: `${to} scale(${k})`, opacity: 0.9 }], { duration: DROP_FLY, easing: 'ease-in' })
@@ -8600,8 +8608,10 @@ addEventListener('pointermove', e => {
 for (const type of ['pointerup', 'pointercancel']) addEventListener(type, () => { sideSwipe = null; });
 
 // Paused or running: the one button in the corner, and space.
-function setSpeed(s) {
+function setSpeed(s, heard) {
+  if (Net && Net.guest && !heard) { Net.send({ t: 'speed', s }); return; }   // (the host keeps everyone's clock: a guest asks it)
   ui.speed = s;
+  if (Net && Net.host) sendPos(performance.now());       // (the guests keep to it at once)
   Sound.update({ speed: s });
   const b = $('[data-act="pause"]');
   b.textContent = s ? '⏸' : '▶';
@@ -8868,6 +8878,275 @@ function sendIdea() {
 }
 $('#ask').addEventListener('keydown', e => { if (e.key === 'Escape') askIdeas(false); });
 
+// ------------------------------------------------------------------ playing together
+//
+// net.js finds the others (?room=..: the first one in is the host); here is what goes over and what's done with it. The
+// host's meadow is everyone's: a guest is sent it as it is (worldMsg) and from then on runs the same sim to the host's
+// clock (guestBehind), with its own forager in it, which the sim doesn't count on (nothing it does draws the meadow's
+// random numbers). So only the foragers go over (where each is, every POS_MS) and what they pick and drop, with the tick
+// it happened on: one from ahead waits for its tick (net.later), so the host's picks land on a guest at the same tick.
+// A guest's own pick lands on the host a little late, so now and then (CHECK_TICKS) both sum the meadow up (meadowSum),
+// and a guest off from the host twice running asks for the meadow again (netCheck). A friend is drawn as the forager is,
+// in its own cloak (peerItems, drawPeer), slid between where it last said it was. A guest who loses the host keeps the
+// meadow as its own.
+const POS_MS = 150;                        // ms between a forager's "here I am"
+const PEER_SLIDE = 1.3;                    // a friend glides to where it said over this many POS_MS (so it's still going when the next comes)
+const PEER_STILL_MS = 250;                 // a friend that hasn't moved this long is standing
+const PEER_GONE = 8000;                    // ms with no word from a friend before it's taken for gone
+const CHECK_TICKS = 300;                   // ticks between sums of the meadow
+const ASK_AGAIN_MS = 20000;                // a guest asks for the meadow again at most this often
+const AHEAD_MS = 500;                      // a guest runs on at most this far past the last tick it heard (the host's tab may have stopped)
+const ROOM_WORDS = ['acorn', 'bramble', 'hazel', 'sorrel', 'fern', 'thistle', 'willow', 'clover', 'moss', 'heather', 'rowan', 'elder'];
+const net = { tick: -1, base: 0, rate: 0, sentAt: 0, hostId: '', later: [], hostSums: new Map(), mySums: new Map(), off: 0, askedAt: -1e9, shown: '' };
+const peers = new Map();                   // friends' foragers, by id
+
+function startTogether() {
+  if (!Net) return;
+  Net.start(ROOM, params.has('local'), {
+    ready(role) {
+      if (role === 'host') toast(`🧺 Your meadow is open to friends. Send them the link (••• › Play together).`);
+      else toast('🧺 Walking over to your friend’s meadow…');
+    },
+    joined(id) { Net.send(worldMsg(id)); },
+    message: heardNet,
+    lost() { hostGone(); },
+    failed(why) { toast(`🧺 Couldn't open the meadow to friends (${esc(why)}).`); },
+  });
+}
+
+// ••• › Play together: opens this meadow to friends (a room of its own in the address), and shares the link.
+function together() {
+  if (!Net) return;
+  if (!ROOM) {
+    ROOM = ROOM_WORDS[Math.floor(Math.random() * ROOM_WORDS.length)] + '-' + (100 + Math.floor(Math.random() * 900));
+    history.replaceState(history.state, '', pageLink(world.seed));
+    startTogether();
+  }
+  const url = location.href;
+  if (canShare) { navigator.share({ title: "Nobody's Meadow", text: 'Come and forage with me.', url }).catch(() => {}); return; }
+  navigator.clipboard?.writeText(url).then(
+    () => toast('🧺 Link copied. Whoever opens it comes into this meadow with you.'),
+    () => toast(`🧺 Send a friend this link: ${esc(url)}`));
+}
+
+const worldMsg = to => ({ t: 'world', to, kept: S.packWorld(world), tick: world.tick, s: ui.speed });
+
+function heardNet(m) {
+  const now = performance.now();
+  if (m.t === 'pos') heardPos(m, now);
+  else if (m.t === 'world') { if (Net.guest) heardWorld(m, now); }
+  else if (m.t === 'pick' || m.t === 'drop') {
+    if (Net.guest && net.tick < 0) return;              // (the meadow's on its way, with this in it)
+    if (m.tick > world.tick) { net.later.push(m); net.later.sort((a, b) => a.tick - b.tick); }
+    else applyNet(m);
+  }
+  else if (m.t === 'speed') { if (Net.host) setSpeed(m.s, true); }
+  else if (m.t === 'sum') { if (Net.guest) { net.hostSums.set(m.tick, m.sum); compareSum(m.tick); } }
+  else if (m.t === 'again') { if (Net.host) Net.send(worldMsg(m.from)); }
+  else if (m.t === 'bye') { if (Net.guest && m.from === net.hostId) hostGone(); else friendGone(m.from); }
+}
+
+// The host's meadow, as a guest comes (to it alone), as the host starts a new one (to all), or again after drifting off.
+function heardWorld(m, now) {
+  const w = S.unpackWorld(m.kept);
+  if (!w) { toast('🧺 Your friend’s meadow is from another version of the game. Reload both pages.'); return; }
+  const again = net.tick >= 0 && m.to, mine = again ? world.forager : null, zoom = cam.zoom;
+  showWorld(w);
+  if (mine) w.forager = mine;                            // (the same meadow again: its own forager stays as it was)
+  else { arrive(w.forager); pr.n = 0; pr.next = 0; }
+  cam.zoom = zoom; cam.x = world.forager.x; cam.y = world.forager.y - CAM_FEET * forPx() / cam.zoom; clampCam();
+  history.replaceState(history.state, '', pageLink(w.seed));
+  net.hostId = m.from; net.later.length = 0; net.hostSums.clear(); net.mySums.clear(); net.off = 0;
+  setClock(m.tick, m.s, now, true);
+  if (!again) toast('🧺 You’re in your friend’s meadow. Forage together!');
+}
+// A guest's forager comes in beside the host's (it's the host's, unpacked): fresh, with an empty satchel.
+function arrive(f) {
+  f.bag.fill(''); f.bagN.fill(0);
+  f.warmth = 1; f.wet = 0; f.stamina = 1; f.winded = false; f.down = -1; f.stumble = 0;
+  f.walking = false; f.running = false; f.speed = 0; f.path.length = 0;
+  for (const [dx, dy] of [[0.9, 0.3], [-0.9, 0.3], [0, 0.9], [0.9, -0.5], [-0.9, -0.5]]) {
+    if (S.walkable(world, f.x + dx, f.y + dy)) { f.x += dx; f.y += dy; break; }
+  }
+  f.goalX = f.x; f.goalY = f.y; f.heading = Math.PI / 2;
+}
+
+// The host's clock, as the guest has it: the tick it's at now is base + now * rate. Of the times heard, the one that makes
+// it furthest on is the truest (it waited least on the way), so a later one only pulls it back slowly.
+function setClock(tick, speed, now, fresh) {
+  const rate = TICKS_PER_SECOND * speed / 1000, base = tick - now * rate;
+  if (fresh || rate !== net.rate || base > net.base) net.base = base;
+  else net.base += (base - net.base) * 0.05;
+  net.rate = rate; net.tick = tick;
+  if (speed !== ui.speed) setSpeed(speed, true);
+}
+// How many ticks the guest is behind the host's clock.
+function guestBehind(now) { return Math.max(0, Math.min(net.base + now * net.rate, net.tick + AHEAD_MS * net.rate) - world.tick); }
+
+// Every tick while together: what was waiting for this tick, and now and then a sum of the meadow.
+function netTick() {
+  while (net.later.length && net.later[0].tick <= world.tick) applyNet(net.later.shift());
+  if (world.tick % CHECK_TICKS === 0 && (Net.host || net.tick >= 0)) netCheck();
+}
+function applyNet(m) {
+  if (m.t === 'pick') {
+    const it = thingAt(m.kind, m.id, m.x, m.y);
+    if (it) S.takeFrom(world, m.kind, it, m.n);
+  } else S.dropAt(world, m.kind, m.x, m.y, m.n, m.born, m.until);
+  picks.at = -1e9; aim.moved = true;                    // (what's left to pick, listed again)
+}
+function thingAt(kind, id, x, y) {
+  const w = world, list = kind === 'shroom' ? w.shrooms : kind === 'find' ? w.finds : kind === 'dropped' ? w.dropped : kind === 'green' ? w.greens
+    : kind === 'bramble' ? w.brambles : kind === 'tree' ? w.decor : kind === 'hive' ? w.hives : null;
+  if (list) for (const it of list) {
+    if (Math.abs(it.x - x) < 1e-3 && Math.abs(it.y - y) < 1e-3 && (kind === 'tree' || kind === 'hive' || kind === 'bramble' || it.kind === id)) return it;
+  }
+  return null;
+}
+// A sum of what the foragers can change and what follows from it: what's to pick, the hives, where every animal is.
+function meadowSum(w) {
+  let h = w.creatures.length * 7 + w.finds.length * 13 + w.shrooms.length * 17 + w.dropped.length * 19 + w.windfalls * 23;
+  for (const c of w.creatures) h = (h * 31 + Math.round(c.x * 64) * 3 + Math.round(c.y * 64)) | 0;
+  for (const f of w.finds) h = (h * 31 + f.n) | 0;
+  for (const d of w.dropped) h = (h * 31 + d.n) | 0;
+  for (const v of w.hives) h = (h * 31 + Math.round(v.honey * 64)) | 0;
+  return h;
+}
+function netCheck() {
+  const sum = meadowSum(world);
+  if (Net.host) { Net.send({ t: 'sum', tick: world.tick, sum }); return; }
+  net.mySums.set(world.tick, sum);
+  compareSum(world.tick);
+}
+function compareSum(tick) {
+  const a = net.hostSums.get(tick), b = net.mySums.get(tick);
+  if (a === undefined || b === undefined) {
+    for (const k of net.hostSums.keys()) if (k < tick - 10 * CHECK_TICKS) net.hostSums.delete(k);
+    for (const k of net.mySums.keys()) if (k < tick - 10 * CHECK_TICKS) net.mySums.delete(k);
+    return;
+  }
+  net.hostSums.delete(tick); net.mySums.delete(tick);
+  net.off = a === b ? 0 : net.off + 1;
+  const now = performance.now();
+  if (net.off >= 2 && now - net.askedAt > ASK_AGAIN_MS) {
+    net.askedAt = now; net.off = 0;
+    console.info('Together: drifted from the host’s meadow at tick', tick, ', asking for it again');
+    Net.send({ t: 'again', to: net.hostId });
+  }
+}
+
+// Once a frame: say where this forager is, every POS_MS (the host with its clock).
+function netFrame(now) {
+  if (!Net || !Net.on || now - net.sentAt < POS_MS || Net.guest && net.tick < 0) return;
+  sendPos(now);
+}
+function sendPos(now) {
+  net.sentAt = now;
+  const f = world.forager;
+  Net.send({ t: 'pos', x: f.x, y: f.y, h: f.heading, j: fg.jog, st: S.warmthStage(f), p: now - fg.pick < PICK_MS[2] * fg.pickK, o: fg.outfit,
+    tick: Net.host ? world.tick : -1, s: ui.speed });
+}
+function heardPos(m, now) {
+  if (m.tick >= 0 && Net.guest && net.tick >= 0) setClock(m.tick, m.s, now, false);
+  let p = peers.get(m.from);
+  if (!p) {
+    p = { id: m.from, x: m.x, y: m.y, fx: m.x, fy: m.y, tx: m.x, ty: m.y, at: now, last: now, seen: now, heading: m.h, jog: false, stage: 0,
+      pickAt: -1e9, picking: false, outfit: 0, wet: false, step: -0, view: 1, flip: false, stillMs: 1e4, blinkAt: -1e9, downAt: 0, fall: -0,
+      art: FORAGER_ARTS[0], sized: 0, sizedSet: 0 };
+    peers.set(m.from, p);
+    if (Net.host || m.tick < 0) toast('🧺 A friend has come into the meadow');   // (a guest knows the host is there)
+  }
+  const far = Math.hypot(m.x - p.x, m.y - p.y) > 3;        // (woken at home, or a new meadow: there at once)
+  p.fx = far ? m.x : p.x; p.fy = far ? m.y : p.y; p.tx = m.x; p.ty = m.y; p.at = now; p.seen = now;
+  p.heading = m.h; p.jog = m.j; p.stage = m.st;
+  if (m.o !== p.outfit) { p.outfit = m.o; p.sized = 0; }
+  if (m.p && !p.picking) p.pickAt = now;
+  p.picking = m.p;
+  if (m.st === 4 && !p.downAt) p.downAt = now; else if (m.st !== 4) p.downAt = 0;
+}
+function friendGone(id) {
+  if (peers.delete(id)) toast('🧺 Your friend has gone home');
+}
+// A guest whose host has gone: the meadow is its own now, kept and running on its own clock.
+function hostGone() {
+  Net.on = false; Net.guest = false; Net.peers = 0;
+  peers.clear(); net.tick = -1; net.later.length = 0;
+  setSpeed(ui.speed || 1, true);
+  toast('🧺 Your friend has gone home. This meadow is yours to keep now.');
+}
+
+// Each friend's forager in this frame's items: where it is, slid between what it said, and its pose (as foragerFrame).
+function peerItems(items, now, z) {
+  const px = forPx(), P = poseStep(Math.max(4, px));
+  for (const p of peers.values()) {
+    if (now - p.seen > PEER_GONE) { friendGone(p.id); continue; }
+    const u = clamp((now - p.at) / (POS_MS * PEER_SLIDE), 0, 1), x = p.fx + (p.tx - p.fx) * u, y = p.fy + (p.ty - p.fy) * u;
+    const moved = Math.hypot(x - p.x, y - p.y), ms = now - p.last;
+    p.x = x; p.y = y; p.last = now;
+    if (moved > 1e-5 && moved < 2) {
+      p.step += moved / (2 * Fur.FORAGER_REACH * px / z * (p.jog ? Fur.FORAGER_JOG_STRIDE : 1));
+      p.stillMs = 0;
+    } else p.stillMs += ms;
+    p.wet = !world.frozen && world.water[(y | 0) * S.W + (x | 0)] > 0;
+    const cold = p.stage >= FORAGER_SAD;
+    let pose;
+    if (p.stillMs < PEER_STILL_MS) {
+      const sy = Math.sin(p.heading), sx = Math.cos(p.heading), v = p.view;
+      p.view = sy > (v === 1 ? 0.45 : 0.62) ? 1 : sy < (v === 2 ? -0.45 : -0.62) ? 2 : 0;
+      if (sx > 0.18) p.flip = true; else if (sx < -0.18) p.flip = false;
+      pose = (p.jog ? 16 : cold ? 24 : 8) + Math.floor(p.step % 1 * 8);
+    } else {
+      p.step = Math.round(p.step * 2) / 2;
+      if (p.stillMs > FORAGER_TURN_MS && p.view !== 1) { p.view = 1; p.blinkAt = now; }
+      if (now - p.blinkAt > 4000) p.blinkAt = now - Math.random() * 1500;
+      pose = cold ? (now - p.blinkAt < 150 ? 6 : 5) : now - p.blinkAt < 150 ? 2 : 0;
+      const k = now - p.pickAt;
+      if (k < PICK_MS[2]) pose = k < PICK_MS[0] || k > PICK_MS[1] ? 3 : 4;
+    }
+    if (p.stage === 4) pose = 7;
+    p.fall = p.downAt ? clamp((now - p.downAt) / FALL_MS, 0, 1) : 0;
+    const set = p.stage >= 1 ? 2 : 1;                     // (its paintings asked for ahead, as foragerAhead does the player's)
+    if (furWorker && (p.sized !== P || p.sizedSet !== set)) {
+      p.sized = P; p.sizedSet = set;
+      for (let v = 0; v < 3; v++) for (const q of set === 2 ? FORAGER_CHILLY : FORAGER_POSES) furReady(FORAGER_ARTS[(p.outfit << 7) + (v << 5) + q], P);
+    }
+    p.art = shownPose(p, FORAGER_ARTS[(p.outfit << 7) + (p.view << 5) + pose], px);
+    const sx = (x - cam.x) * z + vw / 2, sy = (y - cam.y) * z + vh / 2;
+    if (visible(sx, sy, 2 * px)) itemOf(items, y, sx, sy, 1).q = p;
+  }
+}
+function drawPeer(p, sx, sy) {
+  const px = forPx(), top = sy - px * 0.36;
+  if (zoomedOut()) { drawSmall(p.art, sx, top, px, p.flip); return; }
+  if (p.stage === 4) {                                   // (down, as drawFallen)
+    const e = p.fall * p.fall * (3 - 2 * p.fall), side = p.flip ? 1 : -1;
+    ctx.save();
+    ctx.translate(sx + side * px * 0.05 * e, sy - px * 0.04 * e); ctx.rotate(side * 1.42 * e);
+    drawEmoji(p.art, 0, -px * 0.36, px, { flip: p.flip });
+    ctx.restore();
+    return;
+  }
+  if (p.wet) {                                           // (in to its shins)
+    ctx.save();
+    ctx.beginPath(); ctx.rect(sx - px, sy - px * 0.02 - px * 2, px * 2, px * 2); ctx.clip();
+    drawEmoji(p.art, sx, top + px * 0.1, px, { flip: p.flip });
+    ctx.restore();
+    return;
+  }
+  drawEmoji(p.art, sx, top, px, { flip: p.flip });
+}
+
+// A few times a second: how many are here, on the pill (shown only while together).
+function netCard(now) {
+  const on = !!(Net && Net.on), n = on ? peers.size + 1 : 0, key = on ? String(n) : '';
+  if (key === net.shown) return;
+  net.shown = key;
+  const b = $('#friends-btn');
+  b.classList.toggle('hidden', !on);
+  b.textContent = '🧺 ' + n;
+  b.title = n > 1 ? `${n} of you foraging together` : 'Open to friends: waiting for someone to come';
+}
+
 // On a phone the share sheet (messages, chats), elsewhere the clipboard.
 function copyLink() {
   if (canShare) {
@@ -8886,7 +9165,10 @@ document.addEventListener('click', e => {
   if (!(t && t.dataset.act === 'more')) toggleMore(false);
   if (!t) return;
   if (t.closest('#hud-right .hud-top')) chime('click');
-  if (t.dataset.action === 'new') { if (confirm('Start a brand-new meadow? This one will be gone.')) newWorld(randomSeed()); }
+  if (t.dataset.action === 'new') {
+    if (Net && Net.guest) toast('🧺 Only the one who asked you over can start a new meadow');
+    else if (confirm('Start a brand-new meadow? This one will be gone.')) { newWorld(randomSeed()); if (Net && Net.host) Net.send(worldMsg('')); }
+  }
   else if (t.dataset.act === 'pause') setSpeed(ui.speed ? 0 : 1);
   else if (t.dataset.act === 'close') select(0);
   else if (t.dataset.act === 'sheet-up' || t.dataset.act === 'sheet-down') {
@@ -8896,6 +9178,7 @@ document.addEventListener('click', e => {
   }
   else if (t.dataset.act === 'more') toggleMore();
   else if (t.dataset.act === 'copy-link') copyLink();
+  else if (t.dataset.act === 'together') together();
   else if (t.dataset.act === 'outfit') wearOutfit(+t.dataset.o);
   else if (t.dataset.act === 'pick-outfit') pickOutfit(true);
   else if (t.dataset.act === 'ideas') { played = -Infinity; askIdeas(true); }   // found it themselves: no need to ask
@@ -9007,7 +9290,7 @@ function goBack(k) {
 for (const type of ['click', 'pointerup', 'keydown']) addEventListener(type, syncBack);
 addEventListener('popstate', e => {
   const n = e.state?.meadow === back.token ? e.state.n : 0;
-  if (location.search !== meadowLink(world.seed)) history.replaceState(history.state, '', meadowLink(world.seed));   // (a step taken before a new meadow)
+  if (location.search !== pageLink(world.seed)) history.replaceState(history.state, '', pageLink(world.seed));   // (a step taken before a new meadow)
   if (back.going) { back.going = false; back.depth = n; return; }   // ours, taking back steps for what was shut
   for (let i = 0; i < 16 && opened() > n; i++) if (!stepOut()) break;
   back.depth = n;
@@ -9046,7 +9329,7 @@ function setKept(list) {
 // Hiding the page or leaving it (below): a few hundredths of a second, so never while someone is watching.
 function keepMeadow() {
   if (opening === 1) cleared();                       // never shown (a tab in the background): it can't have broken anything
-  if (!world || world.tick === keptTick) return;
+  if (!world || world.tick === keptTick || Net && Net.guest) return;   // (a guest's meadow is the host's)
   let kept;
   try { kept = S.packWorld(world); } catch (e) { console.warn('Could not keep the meadow', e); return; }
   keptTick = world.tick;
@@ -9108,7 +9391,7 @@ function resumeWorld(rec) {
   if (c) select(c.id);
   cam.zoom = clamp(rec.cam?.zoom || homeZoom(), fitZoom, 64);
   cam.x = world.forager.x; cam.y = world.forager.y - CAM_FEET * forPx() / cam.zoom; clampCam();   // (on the forager, at the kept zoom)
-  history.replaceState(history.state, '', meadowLink(world.seed));
+  history.replaceState(history.state, '', pageLink(world.seed));
   return true;
 }
 
@@ -9127,7 +9410,7 @@ function randomSeed() { return Math.floor(Math.random() * 1e6); }
 function newWorld(seed) {
   showWorld(S.createWorld(seed));
   pr.n = 0; pr.next = 0;                   // (no footprints from the last meadow)
-  history.replaceState(history.state, '', meadowLink(seed));   // (the state: Back's step, if one's open)
+  history.replaceState(history.state, '', pageLink(seed));   // (the state: Back's step, if one's open)
   homeView();
   if (!fg.picked) pickOutfit(true);             // (only till one has been picked: after that it's in •••)
 }
@@ -9251,14 +9534,16 @@ function frame(now) {
 
   if (bodyFrame(now)) {                    // (collapsed, in the dark: the night runs by till it wakes)
     const t0 = performance.now();
-    while (world.forager.down >= 0 && performance.now() - t0 < SKIP_MS) {
+    while (world.forager.down >= 0 && performance.now() - t0 < SKIP_MS && !(Net && Net.guest && guestBehind(now) < 1)) {
       keepLast();
       S.step(world);
       if (world.events.length) flushEvents();
+      if (Net && Net.on) netTick();
     }
     acc = 0;
-  } else if (ui.speed > 0) {
-    acc += dt * TICKS_PER_SECOND * ui.speed;
+  } else if (Net && Net.guest ? net.tick >= 0 : ui.speed > 0) {
+    if (Net && Net.guest) acc = guestBehind(now);       // (a guest keeps to the host's clock)
+    else acc += dt * TICKS_PER_SECOND * ui.speed;
     const want = Math.min(Math.floor(acc), 2000), n = Math.min(want, simFit), t0 = performance.now();
     acc -= want;
     let ran = 0, days = 0, dayMs = 0;
@@ -9267,6 +9552,7 @@ function frame(now) {
       const day = (world.tick + 1) % S.TPD === 0, t1 = day ? performance.now() : 0;   // (a new day's tick is the heaviest by far)
       S.step(world);
       if (world.events.length) flushEvents();
+      if (Net && Net.on) netTick();
       if (day) { days++; dayMs += performance.now() - t1; }
       ran++;
       if (performance.now() - t0 > SIM_STOP) break;
@@ -9290,6 +9576,7 @@ function frame(now) {
   if (drag?.steer && now - drag.at > STEER_MS) { drag.at = now; walkTo(drag.px, drag.py, true); }
   keyWalk();
   gatherFrame(now);
+  netFrame(now);
   if (cam.goal) {
     const k = 1 - Math.pow(0.01, dt);
     cam.zoom += (cam.goal - cam.zoom) * k;
@@ -9321,6 +9608,7 @@ function frame(now) {
     lastCard = now;
     updateClock();
     renderVitals();
+    netCard(now);
     if (ui.sound) {
       const ck = S.clock(world);
       const life = world.count.rabbit / (S.SPECIES.rabbit.cap * world.room);   // a meadow full of rabbits
@@ -9361,6 +9649,7 @@ const seedParam = +params.get('seed');
 function begin(rec) {
   if (!(rec && resumeWorld(rec))) newWorld(seedParam || randomSeed());
   requestAnimationFrame(frame);
+  if (ROOM) startTogether();
 }
 keptMeadow(seedParam).then(begin);
 keepDb().catch(() => { /* not kept, then */ });   // opened now, so keeping at the last moment needn't wait for it
