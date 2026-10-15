@@ -5545,8 +5545,8 @@ const FALL_PICK = 2;                    // windfalls under a tree a pick takes u
 const FALL_GIVES = { apple: 2, acorns: 4, beechnuts: 4 };   // and what each is in the satchel (a rabbit's windfall is a big meal)
 const HONEY_TAKE = 8;                   // of a hive's honey (HIVE_FULL) a pick takes,
 const HONEY_GIVES = 2;                  // the honey that is in the satchel,
-const HONEY_KEEP = [24, 24, 34, 34];    // and it never takes the store below this, by season: in spring and summer the bees bring
-                                        // nectar in and eat little of the store; from autumn, more than a big colony eats in a winter
+const HONEY_KEEP = [24, 34, 40, 40];    // and it never takes the store below this, by season: in spring the bees bring nectar in and
+                                        // eat little of the store; in summer they put by for winter; from autumn, more than a big colony eats in a winter
 
 // What a thing has to give now: { id, n } (n > 0), or { why } saying gently why not. (No change to anything.)
 const there = { id: '', n: 0, why: '', cost: -0 };
