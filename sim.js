@@ -583,6 +583,14 @@ function pickOdds(r, odds) {
 // A rock: a pebble, a stone or a boulder, a great rock (big) or a flat stone at a ford (stone). Every rock laid out
 // alike (see blankCreature), with room for the fish about it should otters make their holt under it (holtFish).
 const rockOf = (x, y, size, big = false, stone = false) => ({ x, y, emoji: '🪨', size, big, stone, holtFish: NaN });
+// What a rock is, from where it lies and its size alone (game.js paints it so): a ford's flat stone, a great rock, or, the
+// bigger the likelier the later, a few pebbles, a stone or a boulder.
+function rockKind(d) {
+  if (d.stone) return 'ford';
+  if (d.big) return 'great';
+  const h = hash2(Math.floor(d.x * 100), Math.floor(d.y * 100), 60), grown = clamp((d.size - 0.7) / 1.6, 0, 1);
+  return h < 0.45 - 0.3 * grown ? 'pebbles' : h < 0.85 - 0.35 * grown ? 'stone' : 'boulder';
+}
 // A flower (w.plants), or a spot of blossom in a tree's crown (w.blossoms: its tree, and up, how high in it). The bees look
 // at both, so both are laid out alike, with room for the bee headed to it and when it was last sipped (pickFlower).
 const plantOf = (x, y, i, kind, field, n, tree = null, up = -0) => ({ x, y, i, kind, field, n, tree, up, bee: null, sipped: 0 });
@@ -5181,6 +5189,10 @@ const FORAGER_LOOK = 0.8;               // tiles ahead along its way it steers f
 const SHALLOW_COST = 2.5;               // a step in the shallows costs this many on dry ground
 const BRINK_COST = 0.8;                 // and one next to deep water this much more
 const TAUT_CLEAR = 0.3;                 // a straightened leg keeps this far off the deep on either side
+const FORAGER_GIRTH = 0.22;             // how near a rock's side it comes, middle to edge
+// How far out from its middle a rock is in the way, in its sizes (its main stone as game.js paints it); pebbles and a
+// ford's stones it walks over.
+const ROCK_SOLID = { pebbles: 0, ford: 0, stone: 0.34, boulder: 0.6, great: 0.6 };
 
 // Every field it ever has, in one order (see blankCreature). path: the way, as x, y pairs; leg: the pair it's heading
 // for; speed, heading: tiles a tick, radians (0 east, pi / 2 down the screen); moved: how far it went last tick;
@@ -5206,9 +5218,45 @@ function startForager(w) {
   return foragerOf(bx, by);
 }
 
+// The rocks in its way, worked out once a meadow (rocks never come or go): x, y and how near it comes to the middle
+// (solidR, as x, y, r threes), and the tiles whose middle is that near one, which it can't step on (solidTile).
+let solidW = null, solidR = [], solidTile = null;
+function rocksFor(w) {
+  if (solidW === w) return;
+  solidW = w; solidR = [];
+  solidTile = new Uint8Array(W * H);
+  for (const d of w.decor) {
+    if (d.emoji !== '🪨' || !ROCK_SOLID[rockKind(d)]) continue;
+    const r = d.size * ROCK_SOLID[rockKind(d)] + FORAGER_GIRTH;
+    solidR.push(d.x, d.y, r);
+    for (let ty = Math.max(0, Math.floor(d.y - r)); ty <= Math.min(H - 1, Math.floor(d.y + r)); ty++)
+      for (let tx = Math.max(0, Math.floor(d.x - r)); tx <= Math.min(W - 1, Math.floor(d.x + r)); tx++)
+        if (Math.hypot(tx + 0.5 - d.x, ty + 0.5 - d.y) < r) solidTile[ty * W + tx] = 1;
+  }
+}
+// Whether the leg from x0, y0 to x1, y1 keeps clear of every rock.
+function pastRocks(x0, y0, x1, y1) {
+  for (let k = 0; k < solidR.length; k += 3) if (segDist(solidR[k], solidR[k + 1], x0, y0, x1, y1) < solidR[k + 2]) return false;
+  return true;
+}
+// x, y moved out of any rock it's in, to its edge (or no further in than from, for one it's already in: a meadow kept
+// before rocks were in its way). Into rockX, rockY.
+let rockX = 0, rockY = 0;
+function outOfRocks(x, y, fromX, fromY) {
+  for (let k = 0; k < solidR.length; k += 3) {
+    const cx = solidR[k], cy = solidR[k + 1], dx = x - cx, dy = y - cy, d = Math.hypot(dx, dy);
+    const most = Math.min(solidR[k + 2], Math.hypot(fromX - cx, fromY - cy));
+    if (d >= most) continue;
+    const a = d > 1e-6 ? 1 / d : 0;
+    x = cx + (a ? dx * a : 1) * most; y = cy + (a ? dy * a : 0) * most;
+  }
+  rockX = x; rockY = y;
+}
+
 // A step's cost onto tile i, or 0 where it can't go.
-const canStand = (w, i) => w.frozen || w.water[i] !== DEEP;
+const canStand = (w, i) => (w.frozen || w.water[i] !== DEEP) && !solidTile[i];
 function stepCost(w, i) {
+  if (solidTile[i]) return 0;
   if (w.frozen) return 1;
   const v = w.water[i];
   if (v === DEEP) return 0;
@@ -5275,9 +5323,10 @@ function tilePath(w, a, b) {
   return out.reverse();
 }
 
-// Whether the straight leg from x0, y0 to x1, y1 keeps TAUT_CLEAR off the deep, and (dry: the tiles' way didn't wade)
+// Whether the straight leg from x0, y0 to x1, y1 keeps clear of the rocks, TAUT_CLEAR off the deep, and (dry: the tiles' way didn't wade)
 // out of the shallows.
 function taut(w, x0, y0, x1, y1, dry) {
+  if (!pastRocks(x0, y0, x1, y1)) return false;
   if (w.frozen) return true;
   const dx = x1 - x0, dy = y1 - y0, d = Math.hypot(dx, dy), n = Math.max(1, Math.ceil(d / 0.2));
   const px = d ? -dy / d * TAUT_CLEAR : 0, py = d ? dx / d * TAUT_CLEAR : 0;
@@ -5297,7 +5346,10 @@ function taut(w, x0, y0, x1, y1, dry) {
 // on the deep or across it), or null if it's there already.
 function foragerTo(w, x, y) {
   const f = w.forager;
+  rocksFor(w);
   x = clamp(x, 0.6, W - 0.6); y = clamp(y, 0.6, H - 0.6);
+  outOfRocks(x, y, x, y + 1e9);                          // (sent onto a rock: to its edge, the side nearest the click)
+  x = clamp(rockX, 0.6, W - 0.6); y = clamp(rockY, 0.6, H - 0.6);
   let goal = idx(x, y);
   if (!canStand(w, goal)) {                              // on the deep: the nearest tile it can stand on
     let best = -1, bd = Infinity;
@@ -5381,6 +5433,8 @@ function foragerTick(w) {
   if (rest < 0.02 || (rest < 0.1 && f.speed < 0.008)) { f.walking = false; f.running = false; f.speed = 0; f.path.length = 0; return; }
   const step = Math.min(f.speed, rest);
   let nx = f.x + Math.cos(f.heading) * step, ny = f.y + Math.sin(f.heading) * step;
+  rocksFor(w);
+  outOfRocks(nx, ny, f.x, f.y); nx = rockX; ny = rockY;   // (a rock in the way: round it)
   if (!walkable(w, nx, ny)) {                            // (the water came up, or a corner clipped the deep: slide along it)
     if (walkable(w, nx, f.y)) ny = f.y;
     else if (walkable(w, f.x, ny)) nx = f.x;
@@ -6560,7 +6614,7 @@ const api = {
   createWorld, step, clock, isNight, phaseOf, seasonOf, springPart, mood, ageDays, growth, isAdult, patchFresh,
   hedgehogComes, heronComes, dragonflyComes, kingfisherComes, skylarkComes, placeNeeds, VISIT_SEASONS, VISIT_FADE, HERON_FADE, HERON_STAB,
   DRAGON_FROM, KF_FADE, KF_UNDER, KF_BEAT, LARK_FADE, LARK_OPEN, LARK_RISE, EDGE_REACH, OPEN_MOST,
-  walkable, packWorld, unpackWorld, GROUND, foragerTo, FORAGER_WALK, FORAGER_RUN,
+  walkable, packWorld, unpackWorld, GROUND, foragerTo, FORAGER_WALK, FORAGER_RUN, rockKind,
   KINDS, FEW, whiteness, visibility, WINTER_COAT, WILD_COAT,
   TERRAIN, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE, hollow,

@@ -183,7 +183,11 @@ numbers. It starts at a pleasant dry spot near the water and the woods, above th
 the middle (`startForager`). `foragerTo` finds its way: A* over the tiles (`tilePath`, its arrays made once; deep water
 blocks unless frozen, the shallows cost `SHALLOW_COST`, ground by the deep `BRINK_COST` more, no squeezing past the deep's
 corners), to the tile it can stand on nearest a click on the deep, or the nearest it can reach; then pulled tight into a few
-straight legs (`taut`: `TAUT_CLEAR` off the deep, and no wading where the tiles' way didn't). `foragerTick` walks them by
+straight legs (`taut`: `TAUT_CLEAR` off the deep, and no wading where the tiles' way didn't). Rocks are in its way, all but
+pebbles and a ford's stones (`rockKind`, which game.js paints by too; `ROCK_SOLID` of its size, plus `FORAGER_GIRTH`): worked
+out once a meadow (`rocksFor`: their circles, and the tiles whose middle is in one, which A* won't step on), a leg keeps out
+of them (`pastRocks`), a click on one goes to its edge, and a step into one is put back at its edge, so it slides round
+(`outOfRocks`; one it's already in, it can only leave). `foragerTick` walks them by
 steering: it heads for a point `FORAGER_LOOK` along the way, turning at most `FORAGER_TURN` a tick (three times that from
 standing), speeds up by `FORAGER_ACCEL`, slows to stop where it was sent (`FORAGER_BRAKE`) and into a sharp turn, wades at
 `FORAGER_WADE` of `FORAGER_WALK`, and slides along the deep if a corner clips it.

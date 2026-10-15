@@ -4766,8 +4766,7 @@ function rockInfo(d) {
   if (t) return t;
   const hx = Math.floor(d.x * 100), hy = Math.floor(d.y * 100), h = k => hash2(hx, hy, 60 + k);
   const wood = world.wood[Math.floor(d.y) * S.W + Math.floor(d.x)];
-  const grown = clamp((d.size - 0.7) / 1.6, 0, 1);         // the bigger the rock, the likelier a boulder
-  const kind = d.stone ? 'ford' : d.big ? 'great' : h(0) < 0.45 - 0.3 * grown ? 'pebbles' : h(0) < 0.85 - 0.35 * grown ? 'stone' : 'boulder';
+  const kind = S.rockKind(d);                              // (the sim knows too: the forager walks round all but pebbles)
   let k = 1;
   const stone = (x, y, s, tall, round) => ({ x, y, s, tall, round, shape: Math.floor(h(k++) * 5), turn: h(k++) * TAU, flip: h(k++) < 0.5 ? -1 : 1 });
   const stones = [];
