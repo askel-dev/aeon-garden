@@ -23,7 +23,7 @@ half-size, so the planted foot doesn't slide; fur.js `FORAGER_REACH`), picks the
 either side so it doesn't flicker, and standing lets it breathe, blink, turn to face you after `FORAGER_TURN_MS` and fidget
 now and then (`FORAGER_FIDGET`). In the shallows it's cut off at its shins with a ring round its legs, and each step sends out
 a ring (`fg.rings`). Its shadow goes in with the animals' (`foragerShadow`). `forager-lab.html` paints them all side by side. Its outfit is one of three (fur.js `FORAGER_OUTFITS`:
-cloak, hood, rim), picked on a small card at the foot of the screen as a new meadow opens or from ••• (`pickOutfit`), kept in
+cloak, hood, rim), picked on a small card at the foot of the screen as a new meadow opens (till one has been picked) or from ••• (`pickOutfit`), kept in
 localStorage (`aeon-garden-outfit`).
 A click or a tap on an animal (on its body as drawn: `animalAt`, a little wider for a finger) opens its panel;
 anywhere else walks the forager there (`walkTo`, sim.js `foragerTo`) and shuts the panel, with a
@@ -32,7 +32,7 @@ soft ring where it was sent (`drawMark`, `MARK_ART` painted once) that fades onc
 way found again every `STEER_MS` (in `frame`), and on to where it's let go. Running, once up past `FORAGER_JOG` it jogs (`fg.jog`, fur.js poses 16 to 23: both feet off the ground a moment, heels
 kicking up, elbows bent and pumping, leaning in) with a stride `FORAGER_JOG_STRIDE` longer. The camera always goes with it (`leadCam`): eased after it (`CAM_FOLLOW`), a little ahead the way it walks
 (`CAM_AHEAD`, itself eased so setting off and stopping are soft), its feet a little below the middle (`CAM_FEET`). Nothing pans it:
-the wheel, a pinch, a double tap and + - zoom about the forager (`zoomOn`), and a kept meadow opens on it at its kept zoom.
+the wheel, a pinch, a double tap and + - zoom about the forager (`zoomOn`), and a kept meadow opens on it at its kept zoom (`resumeWorld`: `showWorld` leaves the wide shot, so it's set back there).
 
 The inspector shows animals and every other thing you click (hives, trees, rocks, burrows, flowers, fields, water,
 visitors): each kind is an entry in `THINGS`, saying how to find one on screen and what its panel shows. A tap

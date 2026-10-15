@@ -1831,8 +1831,8 @@ function drawCreature(c, sx, sy, now) {
 // from its heading, held a little either side of a change so it doesn't flicker (side on, three-quarters from the front
 // or the back, mirrored going right). Standing it breathes, blinks now and then, after a moment turns to face you, and
 // now and then fidgets (FORAGER_FIDGET). In the shallows it's cut off at the water line with a ring round its legs, and
-// each step sends out a ring (fg.rings). Its outfit (Fur.FORAGER_OUTFITS) is the player's, picked as a new meadow opens
-// (pickOutfit) and kept in localStorage for every meadow after.
+// each step sends out a ring (fg.rings). Its outfit (Fur.FORAGER_OUTFITS) is the player's, picked as the first meadow opens
+// (pickOutfit; later from •••) and kept in localStorage for every meadow after.
 const FORAGER_SIZE = 2.5;                  // its painting's box, next to a rabbit's
 const FORAGER_ARTS = Array.from({ length: 3 << 7 }, (_, n) => 'forager:' + n);   // (made once: a frame builds no names)
 const OUTFIT = 'aeon-garden-outfit';       // in localStorage
@@ -1843,8 +1843,12 @@ const FORAGER_JOG = [0.1, 0.11];           // sent running, it jogs once up past
 const FORAGER_STILL_MS = 70;               // no nearer than this to the last move, it's standing (it's drawn between ticks)
 const forPx = () => (8 + cam.zoom) * FORAGER_SIZE;
 const fg = { at: -1, x: 0, y: 0, step: 0, stillMs: 1e4, view: 1, flip: false, art: FORAGER_ARTS[32], blinkAt: -1e9, blinkIn: 3000,
-  fidgetAt: -1e9, fidgetIn: 9000, lastHalf: 0, jog: false, rings: [], wet: false, lx: -0, ly: -0, sized: 0, outfit: 0 };
-try { fg.outfit = Math.min(Fur.FORAGER_OUTFITS.length - 1, Math.max(0, +localStorage.getItem(OUTFIT) | 0)); } catch (e) { /* fine */ }
+  fidgetAt: -1e9, fidgetIn: 9000, lastHalf: 0, jog: false, rings: [], wet: false, lx: -0, ly: -0, sized: 0, outfit: 0, picked: false };
+try {
+  const o = localStorage.getItem(OUTFIT);
+  fg.picked = o !== null;
+  fg.outfit = Math.min(Fur.FORAGER_OUTFITS.length - 1, Math.max(0, +o | 0));
+} catch (e) { /* fine */ }
 // What's under the forager's feet, for its footsteps (sound.js step): the shallows, ice, snow, the wood's floor, the damp
 // sand along the water, earth bitten bare, or grass.
 const STEP_SNOW = 0.35, STEP_WOODS = 0.45, STEP_SHORE = 1.5, STEP_BARE = 0.12;
@@ -1928,7 +1932,8 @@ function foragerAhead() {
 }
 
 // Picking an outfit: a small card at the foot of the screen, under the forager, with it painted in each (front on,
-// standing) to tap. It opens as a new meadow does (newWorld) and from the ••• menu; the meadow goes on behind it.
+// standing) to tap. It opens as a new meadow does till one has been picked (newWorld), and from the ••• menu; the meadow
+// goes on behind it.
 function pickOutfit(open) {
   const card = $('#outfit');
   card.classList.toggle('hidden', !open);
@@ -1946,7 +1951,7 @@ function pickOutfit(open) {
 }
 const outfitOpen = () => !$('#outfit').classList.contains('hidden');
 function wearOutfit(o) {
-  fg.outfit = o; fg.sized = 0;               // (foragerAhead asks for its new paintings)
+  fg.outfit = o; fg.sized = 0; fg.picked = true;   // (foragerAhead asks for its new paintings)
   try { localStorage.setItem(OUTFIT, String(o)); } catch (e) { /* fine */ }
   pickOutfit(false);
 }
@@ -7573,6 +7578,7 @@ function resumeWorld(rec) {
   opening = 1;
   const c = world.byId.get(rec.selectedId);
   if (c) select(c.id);
+  cam.zoom = clamp(rec.cam?.zoom || homeZoom(), fitZoom, 64);
   cam.x = world.forager.x; cam.y = world.forager.y - CAM_FEET * forPx() / cam.zoom; clampCam();   // (on the forager, at the kept zoom)
   history.replaceState(history.state, '', meadowLink(world.seed));
   return true;
@@ -7594,7 +7600,7 @@ function newWorld(seed) {
   showWorld(S.createWorld(seed));
   history.replaceState(history.state, '', meadowLink(seed));   // (the state: Back's step, if one's open)
   homeView();
-  pickOutfit(true);
+  if (!fg.picked) pickOutfit(true);             // (only till one has been picked: after that it's in •••)
 }
 
 // A new meadow opens close enough to see who lives there, HOME_TILES across the screen, over where most of them are:
