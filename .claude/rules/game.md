@@ -68,11 +68,15 @@ on red stalks, the front ones leaning out so it doesn't read as grass; rusty see
 berries), elderflower (one round shrub: a dome of leafy clumps, a few leaves at its rim, flat lacy plates of flowers on top),
 hazelnuts (round nuts in frilly husks on yellow leaves), rosehips (an arching rose with scarlet hips, bare in winter: stage 1) and
 watercress (sprigs of flat round glossy leaflets standing in the shallows, a pale ring of water round its foot, a rim of snowy ice while the water is frozen, stage 1: `cressSprig`, `findStage`). A
-bit bigger and brighter than the meadow's own flowers and tufts (`FIND_PX`). Drawn with the trees and animals (a frame item's `s`,
+bit bigger and brighter than the meadow's own flowers and tufts (`FIND_PX`). What lies about for a fire is painted plainer
+(Axel wants the sticks thin): a few thin crossed sticks (`paintSticks`, `twig`), rounded pebbles (`paintPebbles`), a pale gold
+tuft of dry grass arching over (`paintDryGrass`) and thin rolled curls of white birch bark with dark dashes (`paintBark`). They
+don't glint (sim.js `eachPickable` leaves them out), but a hover names them and a click picks them as any find. Drawn with the trees and animals (a frame item's `s`,
 `drawFind`), they come up over `FIND_GROW` and fade over their last `FIND_OVER`. The satchel shows the same paintings.
 The satchel (`#satchel`, `renderSatchel`, rewritten only after a pick or a drop): `S.SLOTS` small parchment slots at the bottom in
 the middle, a slim faint row while it's empty. Their paintings are one sheet painted once (`itemSheet`, `--items`): the meadow's own
-mushrooms, greens and windfalls (`ITEM_ART`) and `paintItem` for the blackberries, cherries, honeycomb and beechnuts; an
+mushrooms, greens and windfalls (`ITEM_ART`) and `paintItem` for the blackberries, cherries, honeycomb, beechnuts, and the sticks,
+pebbles and birch bark (lying flat they'd be thin in a slot, so a satchel painting of their own, bigger and in the middle); an
 ingredient with no painting gets its recipes.js emoji. A tap on a slot shows its name with Drop over it (`openSlot`, `#slot-tip`),
 and Esc or Back shuts it (`stepOut`). On a touch screen each slot is 44 px or more, and upright the satchel steps aside while the
 inspector's sheet is up.

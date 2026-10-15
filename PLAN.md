@@ -14,7 +14,7 @@ A balance of cozy and survival, like Raft: you can die fairly easily, but it's s
 for a fire; the fire is the safest, warmest place in the world. The UI stays small: Axel wants to see the meadow, not
 big cards.
 
-## Stage 1: things on the ground
+## Stage 1: things on the ground (built 2026-10-15)
 Sticks, pebbles, dry grass and birch bark lie about to pick up, like the finds (same walk-over-and-pick, into the
 satchel), but they don't glint like food. Sticks are the commonest, and more fall in wind and storms (sim has both).
 Pebbles on shores and fords and by the painted rocks; dry grass on long ungrazed grass in summer and autumn (some all

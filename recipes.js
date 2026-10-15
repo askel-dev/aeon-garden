@@ -43,6 +43,11 @@ const INGREDIENTS = {
   strawberry:  { name: 'Wild strawberries',   tags: ['fruit', 'berry'], fill: 1,   icon: '🍓' },
   elderflower: { name: 'Elderflower',         tags: ['flower'],         fill: 0.5, icon: '💮' },
   rosehip:     { name: 'Rosehips',            tags: ['fruit'],          fill: 0.5, icon: '🌹', raw: false },
+  // What lies on the ground for a fire: not food. 'tinder' catches the spark, 'fuel' keeps it going.
+  stick:       { name: 'Sticks',              tags: ['fuel'],           fill: 0,   icon: '🪵', raw: false },
+  pebble:      { name: 'Pebbles',             tags: ['stone'],          fill: 0,   icon: '🪨', raw: false },
+  drygrass:    { name: 'Dry grass',           tags: ['tinder'],         fill: 0,   icon: '🌾', raw: false },
+  birchbark:   { name: 'Birch bark',          tags: ['tinder'],         fill: 0,   icon: '📜', raw: false },
 };
 
 // The dishes. Only name and needs are a must. The rest, when left out:

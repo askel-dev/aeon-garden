@@ -24,7 +24,9 @@ closed); none of that project's rules apply here.
   picks it into the satchel, a row of slots at the bottom in the middle (sim.js `gather`, `w.forager.bag`; game.js
   `goGather`, `renderSatchel`). Every season has little wild finds to pick (sim.js `w.finds`), what has something to give
   glints now and then, standing still the forager senses what's about, and with nothing on screen a small marker at the
-  edge shows the nearest and points to it (game.js `drawGlints`, `drawPickArrow`). Cooking comes next (PLAN.md). `forager-lab.html` shows all its paintings. Notes in game.md and ecology.md.
+  edge shows the nearest and points to it (game.js `drawGlints`, `drawPickArrow`). Sticks, pebbles, dry grass and birch bark lie
+about for a fire, picked the same way but with no glint (sim.js `FINDS` marked `ground`; recipes.js tags `fuel`, `stone`, `tinder`).
+The first fire comes next (PLAN.md). `forager-lab.html` shows all its paintings. Notes in game.md and ecology.md.
 - `game.js`: drawing, UI, the inspector. Its features (and where new notes on them go) are in
   `.claude/rules/game.md`, which loads when game.js or index.html is opened.
 - `ground.js`: the ground (grass, earth, shores, water) as a WebGL shader, painted from a

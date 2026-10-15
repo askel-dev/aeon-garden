@@ -2200,7 +2200,7 @@ function say(text, x, y) {
 }
 
 // What a thing is called, n of them: recipes.js's name, made plural for more than one (an apple, two apples; honey stays honey).
-const MASS = { honey: 1, garlic: 1, nettle: 1, sorrel: 1, watercress: 1, elderflower: 1, sulphur: 1, chanterelle: 1, cherry: 1, blackberry: 1, acorns: 1, beechnuts: 1 };
+const MASS = { honey: 1, drygrass: 1, birchbark: 1, garlic: 1, nettle: 1, sorrel: 1, watercress: 1, elderflower: 1, sulphur: 1, chanterelle: 1, cherry: 1, blackberry: 1, acorns: 1, beechnuts: 1 };
 function itemName(id, n) {
   const name = Recipes.INGREDIENTS[id]?.name || id;
   return n > 1 && !MASS[id] && !name.endsWith('s') ? name + 's' : name;
@@ -2438,7 +2438,8 @@ const ITEM_IDS = Object.keys(Recipes.INGREDIENTS), ITEM_PX = 96;   // (two devic
 const ITEM_ART = { apple: 'fall:0', acorns: 'fall:1', blackberry: 'item:0', cherry: 'item:1', honey: 'item:2', beechnuts: 'item:3', garlic: 'green:0', nettle: 'green:6' };
 S.SHROOM_KINDS.forEach((k, i) => { ITEM_ART[k] = 'shroom:' + i * 3; });   // (SHROOM_ARTS: the fewest caps)
 S.FIND_KINDS.forEach((k, i) => { ITEM_ART[k] = 'find:' + i * 4; });     // (FIND_ARTS: the first look)
-const ITEM_FILL = { dandelion: 1.15, sorrel: 1.2, strawberry: 1.2, elderflower: 1.0, hazelnut: 1.35, rosehip: 1.05, watercress: 1.2, garlic: 1.5, nettle: 1.25, cep: 1.6, chanterelle: 1.5, field: 1.6, oyster: 1.35, sulphur: 1.3, apple: 0.85, acorns: 0.8 };   // how much of the slot each painting fills
+Object.assign(ITEM_ART, { stick: 'item:4', pebble: 'item:5', birchbark: 'item:6' });   // (lying flat they'd be thin in a slot)
+const ITEM_FILL = { stick: 0.95, pebble: 1.0, drygrass: 1.25, birchbark: 0.95, dandelion: 1.15, sorrel: 1.2, strawberry: 1.2, elderflower: 1.0, hazelnut: 1.35, rosehip: 1.05, watercress: 1.2, garlic: 1.5, nettle: 1.25, cep: 1.6, chanterelle: 1.5, field: 1.6, oyster: 1.35, sulphur: 1.3, apple: 0.85, acorns: 0.8 };   // how much of the slot each painting fills
 let ITEM_SHEET = null;
 function itemSheet() {
   if (ITEM_SHEET) return ITEM_SHEET;
@@ -2465,10 +2466,27 @@ function itemSheet() {
 const itemBg = id => { const i = ITEM_IDS.indexOf(id); return `${ITEM_IDS.length > 1 ? i / (ITEM_IDS.length - 1) * 100 : 0}% 0`; };
 
 // The things painted only for the satchel, as the windfalls are: 'item:0' blackberries, 1 cherries, 2 a piece of honeycomb,
-// 3 beechnuts. Box -1 to 1.
+// 3 beechnuts, 4 a few sticks, 5 pebbles, 6 a curl of birch bark (what lies flat on the ground, held up to look at). Box -1 to 1.
 function paintItem(g, size, U, n) {
   g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
   g.lineCap = g.lineJoin = 'round';
+  const h = k => hash2(n, k, 63);
+  if (n === 4) {
+    twig(g, -0.72, 0.5, 0.7, -0.5, 0.06, 0.1, [124, 88, 56]);
+    twig(g, -0.66, -0.2, 0.74, 0.36, -0.05, 0.085, [104, 74, 48]);
+    twig(g, -0.5, 0.62, 0.6, 0.1, 0.04, 0.075, [138, 100, 64]);
+    return;
+  }
+  if (n === 5) { g.translate(0, -0.5); g.scale(1.25, 1.25); paintPebbles(g, h, 0); return; }
+  if (n === 6) {
+    g.rotate(-0.5);
+    softIn(g, [236, 230, 216], -0.24, 0.24, () => { g.moveTo(-0.62, -0.24); g.lineTo(0.62, -0.24); g.ellipse(0.62, 0, 0.11, 0.24, 0, -Math.PI / 2, Math.PI / 2); g.lineTo(-0.62, 0.24); g.closePath(); }, 1.1, 0.72);
+    strokeIn(g, 'rgba(40, 34, 30, 0.75)', 0.035, () => { for (let k = 0; k < 5; k++) { const x = -0.45 + k * 0.24, y = (h(k) - 0.5) * 0.3; g.moveTo(x - 0.07, y); g.lineTo(x + 0.06, y); } });
+    fillIn(g, 'rgb(246, 242, 232)', () => ovalAt(g, -0.62, 0, 0.11, 0.24));
+    fillIn(g, 'rgb(196, 132, 88)', () => ovalAt(g, -0.62, 0, 0.075, 0.17));
+    furGlow(g, [255, 255, 250], 0.5, -0.1, -0.12, 0.4, 0.06);
+    return;
+  }
   if (n === 0) {
     fillIn(g, '#5f8a3c', () => ovalAt(g, 0.3, -0.42, 0.3, 0.13, -0.6));
     g.save(); g.scale(7, 7);
@@ -3748,18 +3766,29 @@ function paintShelves(g, kind, n, h, rgb) {
 // heads on stalks when it flowers, yellowing and flopping as it dies back; it's drawn flat under all that stands
 // (drawGarlic). Nettles are a stand of upright stems with pairs of toothed leaves: fresh short tops in spring, tall with
 // hanging flower strings in summer, brown in autumn; drawn with the trees and animals, back to front. Both fade in as they
-// come up and out as they go (greenFade), and a patch is bigger each spring it has come up (g.size).
+// come up and out as they go (greenFade), and a patch is bigger each spring it has come up (g.size). What the forager has
+// picked shows (greenCut, 12 paintings a step): garlic clumps cut down to stubs, nettles with their tops pinched off, more
+// with each pick, till a patch picked for now (sim.js greenPicked) is mostly stubs; they grow back as it does.
 const GREEN_KINDS = ['garlic', 'nettle'];
-const GREEN_ARTS = Array.from({ length: 12 }, (_, i) => 'green:' + i);
-const greenArt = (g, stage) => GREEN_ARTS[((GREEN_KINDS.indexOf(g.kind) * 3 + stage) * 2) + g.look];
+const GREEN_ARTS = Array.from({ length: 48 }, (_, i) => 'green:' + i);
+const GREEN_CUT = [0, 0.35, 0.65, 0.9];   // of its clumps or stems picked, at each step
+const greenCut = g => S.greenPicked(g) ? 3 : g.pick > 0.5 ? 2 : g.pick > 0.12 ? 1 : 0;
+const greenArt = (g, stage) => GREEN_ARTS[greenCut(g) * 12 + ((GREEN_KINDS.indexOf(g.kind) * 3 + stage) * 2) + g.look];
 const GARLIC_PX = 2.4, NETTLE_PX = 1.7;   // a patch's painting, next to a rabbit
 const GARLIC_RGB = [[92, 160, 58], [86, 150, 54], [178, 168, 84]];   // its leaves: up, in flower, dying back
 const NETTLE_RGB = [[112, 170, 70], [64, 112, 46], [146, 110, 62]];  // young tops, summer, autumn
-function paintGreen(g, size, U, look) {
+function paintGreen(g, size, U, n) {
   g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
   g.lineCap = g.lineJoin = 'round';
-  const kind = GREEN_KINDS[Math.floor(look / 6)], stage = Math.floor(look / 2) % 3, h = k => hash2(look, k, 77);
-  if (kind === 'garlic') paintGarlic(g, stage, h); else paintNettles(g, stage, h);
+  const look = n % 12, cut = GREEN_CUT[Math.floor(n / 12)], kind = GREEN_KINDS[Math.floor(look / 6)], stage = Math.floor(look / 2) % 3;
+  const h = k => hash2(look, k, 77);                    // (picked or not, the same patch)
+  if (kind === 'garlic') paintGarlic(g, stage, h, cut); else paintNettles(g, stage, h, cut);
+}
+// A cut stalk: a short stub from x, y leaning a, its pale cut end showing.
+function greenStub(g, x, y, a, len, wide, rgb) {
+  const tx = x + Math.sin(a) * len, ty = y - Math.cos(a) * len;
+  strokeIn(g, rockRGB(tone(rgb, 0.85)), wide, () => { g.moveTo(x, y); g.lineTo(tx, ty); });
+  fillIn(g, rockRGB(tone(rgb, 1.5, 50)), () => ovalAt(g, tx, ty, wide * 0.6, wide * 0.35, a));
 }
 // A broad leaf on a stalk from (x, y), leaning a, len long.
 function garlicLeaf(g, x, y, a, len, wide, rgb) {
@@ -3768,13 +3797,17 @@ function garlicLeaf(g, x, y, a, len, wide, rgb) {
   strokeIn(g, rockRGB(tone(rgb, 1.25, 18), 0.6), 0.012, () => { g.moveTo(0, -len * 0.08); g.lineTo(0, -len * 0.9); });
   g.restore();
 }
-function paintGarlic(g, stage, h) {
+function paintGarlic(g, stage, h, cut) {
   softSpot(g, 0, 0.5, 1.15, 0.3, '30, 50, 14', 0.25);
   const rgb = GARLIC_RGB[stage], clumps = [];
   for (let i = 0; i < 18; i++) { const a = h(i) * TAU, r = Math.sqrt(h(20 + i)); clumps.push({ x: Math.cos(a) * r * 1.0, y: 0.42 + Math.sin(a) * r * 0.26, k: i }); }
   clumps.sort((a, b) => a.y - b.y);
   for (const c of clumps) {
     const s = 0.75 + 0.25 * (c.y - 0.18) / 0.48, droop = stage === 2 ? 0.7 : 0;   // (further back, smaller)
+    if (h(120 + c.k) < cut) {                           // picked: its leaves cut down to stubs
+      for (let j = 0; j < 3; j++) greenStub(g, c.x + (j - 1) * 0.03 * s, c.y, (j - 1) * 0.35 + (h(40 + c.k * 4 + j) - 0.5) * 0.3, (0.05 + 0.03 * h(60 + c.k * 4 + j)) * s, 0.024 * s, rgb);
+      continue;
+    }
     for (let j = 0; j < 4; j++) {
       const a = (j - 1.5) * (0.45 + droop * 0.5) + (h(40 + c.k * 4 + j) - 0.5) * 0.3;
       garlicLeaf(g, c.x, c.y, a, (0.3 + 0.12 * h(60 + c.k * 4 + j)) * s * (1 - droop * 0.35), 0.09 * s, j % 2 ? rgb : tone(rgb, 0.9));
@@ -3800,23 +3833,25 @@ function nettleLeaf(g, x, y, a, len, rgb) {
   strokeIn(g, rockRGB(tone(rgb, 1.3, 16), 0.5), 0.01, () => { g.moveTo(0, len * 0.05); g.lineTo(0, len * 0.9); });
   g.restore();
 }
-function paintNettles(g, stage, h) {
+function paintNettles(g, stage, h, cut) {
   softSpot(g, 0, 0.62, 0.7, 0.18, '30, 40, 14', 0.35);
   const rgb = NETTLE_RGB[stage], stems = [], tall = stage === 0 ? 0.6 : 1.1;
   for (let i = 0; i < 5; i++) stems.push({ x: (i / 4 - 0.5) * 1.0 + (h(i) - 0.5) * 0.14, y: 0.62 - h(10 + i) * 0.14, k: i });
   stems.sort((a, b) => a.y - b.y);
   for (const st of stems) {
-    const top = st.y - tall * (0.65 + 0.5 * h(20 + st.k)) * (1 - (0.62 - st.y)), lean = (h(30 + st.k) - 0.5) * 0.12 + (stage === 2 ? 0.08 : 0);
+    const picked = h(120 + st.k) < cut, short = picked ? 0.45 : 1;   // (picked: its top pinched off, a bare stalk left)
+    const top = st.y - tall * short * (0.65 + 0.5 * h(20 + st.k)) * (1 - (0.62 - st.y)), lean = (h(30 + st.k) - 0.5) * 0.12 + (stage === 2 ? 0.08 : 0);
     const at = t => [st.x + lean * t * t, st.y + (top - st.y) * t];
     strokeIn(g, rockRGB(tone(rgb, stage === 2 ? 0.9 : 0.72)), 0.022, () => { g.moveTo(st.x, st.y); for (let t = 0.1; t <= 1.001; t += 0.1) g.lineTo(...at(t)); });
-    const pairs = stage === 0 ? 2 : 4;
+    if (picked) { const [x, y] = at(1); fillIn(g, rockRGB(tone(rgb, 1.5, 50)), () => ovalAt(g, x, y, 0.016, 0.01)); }
+    const pairs = picked ? 1 : stage === 0 ? 2 : 4;
     for (let p = 0; p < pairs; p++) {
       const t = 0.28 + 0.72 * p / pairs, [x, y] = at(t), len = (0.36 - 0.14 * t) * (stage === 0 ? 1.1 : 1), spread = stage === 0 ? 2.3 + 0.3 * t : stage === 2 ? 0.7 : 1.15 + 0.25 * t;   // (young ones reach up, in summer they droop)
       if (stage === 2 && h(40 + st.k * 8 + p) < 0.45) continue;   // (autumn: some gone)
       for (const e of [-1, 1]) nettleLeaf(g, x, y, e * spread, len, e < 0 ? rgb : tone(rgb, 0.9));
       if (stage === 1 && p > 0) for (const e of [-1, 1]) strokeIn(g, 'rgba(150, 150, 92, 0.85)', 0.014, () => { g.moveTo(x, y); g.quadraticCurveTo(x + e * 0.1, y + 0.02, x + e * 0.13, y + 0.16); });   // the hanging flower strings
     }
-    if (stage === 0) { const [x, y] = at(1); for (const e of [-1, 1]) nettleLeaf(g, x, y, e * 2.8, 0.16, tone(rgb, 1.15, 20)); }   // the fresh tip, its first leaves still folded up
+    if (stage === 0 && !picked) { const [x, y] = at(1); for (const e of [-1, 1]) nettleLeaf(g, x, y, e * 2.8, 0.16, tone(rgb, 1.15, 20)); }   // the fresh tip, its first leaves still folded up
   }
 }
 
@@ -3964,7 +3999,8 @@ function drawBramble(b, z) {
 // few hours and fade as they go (drawFind).
 const FIND_KINDS = S.FIND_KINDS;
 const FIND_ARTS = Array.from({ length: FIND_KINDS.length * 4 }, (_, i) => 'find:' + i);
-const FIND_PX = { dandelion: 1.9, sorrel: 1.8, strawberry: 2.1, elderflower: 2.5, hazelnut: 1.8, rosehip: 2.5, watercress: 2.0 };   // next to a rabbit
+const FIND_PX = { dandelion: 1.9, sorrel: 1.8, strawberry: 2.1, elderflower: 2.5, hazelnut: 1.8, rosehip: 2.5, watercress: 2.0,   // next to a rabbit
+  stick: 1.9, pebble: 1.35, drygrass: 1.8, birchbark: 1.5 };
 const FIND_GROW = 0.2, FIND_OVER = 0.4;   // days it takes to come up, and its last days, fading
 const findStage = f => (f.kind === 'rosehip' ? S.seasonOf(world.tick) === 3 : f.kind === 'watercress' && world.frozen) ? 1 : 0;   // (bare; in the ice)
 const findArt = f => FIND_ARTS[FIND_KINDS.indexOf(f.kind) * 4 + findStage(f) * 2 + f.look];
@@ -3980,7 +4016,7 @@ function paintFind(g, size, U, n) {
   g.lineCap = g.lineJoin = 'round';
   const kind = FIND_KINDS[n >> 2], stage = (n >> 1) & 1, look = n & 1, h = k => hash2(look, k, 61 + (n >> 2));   // (a stage is the same plant)
   ({ dandelion: paintDandelion, sorrel: paintSorrel, strawberry: paintStrawberry, elderflower: paintElder, hazelnut: paintHazel,
-    rosehip: paintRose, watercress: paintCress })[kind](g, h, look, stage);
+    rosehip: paintRose, watercress: paintCress, stick: paintSticks, pebble: paintPebbles, drygrass: paintDryGrass, birchbark: paintBark })[kind](g, h, look, stage);
 }
 const FIND_FOOT = 0.62;                        // where the ground is in a painting's box
 // A long leaf with jagged teeth, lying out from x, y at angle a.
@@ -4171,6 +4207,72 @@ function paintHazel(g, h, look) {
       softIn(g, tone([150, 172, 70], 0.85 + 0.25 * h(60 + k)), hy - r * 0.8, hy + 0.05, () => { g.moveTo(hx - r * 0.3, hy + 0.04); g.lineTo(hx - Math.cos(a) * r * 0.2, hy - r * 0.8); g.lineTo(hx + r * 0.3, hy + 0.04); g.closePath(); }, 1.2, 0.8);
     }
   }
+}
+// What lies about for a fire (sim.js FINDS ground), in the same soft paint but plainer than the finds, and no glint.
+// A stick lying from x0, y0 to x1, y1, bowed by bend, wide at its thick end and thinner at the tip, lit along its top.
+function twig(g, x0, y0, x1, y1, bend, wide, rgb) {
+  const dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy), nx = -dy / len, ny = dx / len;
+  const cx = (x0 + x1) / 2 + nx * bend, cy = (y0 + y1) / 2 + ny * bend;
+  const at = t => [(1 - t) ** 2 * x0 + 2 * (1 - t) * t * cx + t * t * x1, (1 - t) ** 2 * y0 + 2 * (1 - t) * t * cy + t * t * y1];
+  const side = s => { for (let k = 0; k <= 8; k++) { const t = s > 0 ? k / 8 : 1 - k / 8, [x, y] = at(t), r = wide * (1 - 0.55 * t); g.lineTo(x + nx * r * s, y + ny * r * s); } };
+  const top = Math.min(y0, y1) - wide, foot = Math.max(y0, y1) + wide;
+  softIn(g, rgb, top, foot, () => { g.moveTo(...at(0)); side(1); side(-1); g.closePath(); }, 1.25, 0.6);
+  strokeIn(g, rockRGB(tone(rgb, 1.35, 24), 0.7), wide * 0.35, () => { for (let k = 0; k <= 8; k++) { const t = k / 8, [x, y] = at(t), r = wide * (1 - 0.55 * t) * 0.45, sgn = ny < 0 ? 1 : -1; k ? g.lineTo(x + nx * r * sgn, y + ny * r * sgn) : g.moveTo(x + nx * r * sgn, y + ny * r * sgn); } });
+  fillIn(g, rockRGB(tone(rgb, 1.6, 40)), () => ovalAt(g, x0, y0, wide * 0.55, wide * 0.95, Math.atan2(dy, dx)));   // the pale snapped end
+  return at;
+}
+function paintSticks(g, h, look) {
+  softSpot(g, 0, FIND_FOOT, 0.9, 0.18, '34, 26, 14', 0.35);
+  const sticks = look ? [[-0.75, 0.05, 0.7, -0.12, 0.06], [-0.5, -0.2, 0.55, 0.12, -0.05], [-0.2, 0.16, 0.6, 0.02, 0.04]]
+                      : [[-0.8, -0.1, 0.75, 0.06, -0.06], [-0.6, 0.14, 0.5, -0.16, 0.05], [0.0, -0.18, 0.7, 0.16, 0.03]];
+  sticks.forEach(([x0, y0, x1, y1, bend], i) => {
+    const rgb = tone([118, 84, 54], 0.8 + 0.35 * h(i)), at = twig(g, x0, FIND_FOOT - 0.12 + y0 * 0.6, x1, FIND_FOOT - 0.12 + y1 * 0.6, bend, 0.042 - i * 0.006, rgb);
+    if (i < 2) {                                        // a side twig off it
+      const [x, y] = at(0.45 + 0.2 * h(10 + i)), up = i ? -1 : 1;
+      strokeIn(g, rockRGB(tone(rgb, 1.05)), 0.016, () => { g.moveTo(x, y); g.quadraticCurveTo(x + 0.12, y - 0.1 * up, x + 0.24, y - 0.12 * up); });
+    }
+  });
+}
+function paintPebbles(g, h, look) {
+  softSpot(g, 0, FIND_FOOT, 0.8, 0.18, '30, 30, 26', 0.3);
+  const stones = look ? [[-0.42, 0.0, 0.24], [0.02, -0.08, 0.2], [0.38, 0.04, 0.26], [-0.12, 0.14, 0.16], [0.2, 0.18, 0.13]]
+                      : [[-0.38, -0.04, 0.27], [0.08, 0.02, 0.22], [0.42, -0.06, 0.17], [-0.06, 0.18, 0.15], [-0.62, 0.16, 0.12]];
+  const greys = [[168, 162, 150], [140, 136, 128], [182, 168, 146], [122, 124, 122], [196, 186, 168]];
+  stones.sort((a, b) => a[1] - b[1]);
+  stones.forEach(([sx, sy, r], i) => {
+    const x = sx, y = FIND_FOOT - 0.1 + sy, rx = r * (1.05 + 0.25 * h(i)), ry = r * (0.62 + 0.12 * h(10 + i)), rgb = tone(greys[(i + look * 2) % greys.length], 0.9 + 0.2 * h(20 + i));
+    fillIn(g, 'rgba(30, 28, 24, 0.35)', () => ovalAt(g, x + rx * 0.08, y + ry * 0.55, rx * 0.95, ry * 0.5));   // where it sits
+    softIn(g, rgb, y - ry, y + ry, () => ovalAt(g, x, y, rx, ry, (h(30 + i) - 0.5) * 0.5), 1.3, 0.62);
+    furGlow(g, [255, 252, 240], 0.5, x - rx * 0.3, y - ry * 0.4, rx * 0.4, ry * 0.25, -0.3);
+  });
+}
+function paintDryGrass(g, h, look) {
+  softSpot(g, 0, FIND_FOOT, 0.7, 0.16, '40, 34, 14', 0.3);
+  const straw = [214, 186, 112];
+  for (let i = 0; i < 26; i++) {                        // a tuft of dry blades, arching over, pale gold against the green
+    const t = i / 25, x0 = (t - 0.5) * 0.36 + (h(i) - 0.5) * 0.08, lean = (t - 0.5) * 2 + (h(10 + i) - 0.5) * 0.8 + (look ? 0.3 : -0.3);
+    const tall = 0.75 + 0.5 * h(20 + i), x1 = x0 + lean * 0.5, y1 = FIND_FOOT - tall * (1 - 0.35 * Math.abs(lean));
+    const rgb = tone(i % 3 ? straw : [190, 150, 90], 0.78 + 0.35 * h(30 + i));
+    strokeIn(g, rockRGB(rgb), 0.022 + 0.012 * h(40 + i), () => { g.moveTo(x0, FIND_FOOT); g.quadraticCurveTo(x0 + lean * 0.12, (FIND_FOOT + y1) / 2 - 0.1, x1, y1); });
+    if (i % 5 === 2) fillIn(g, rockRGB(tone(rgb, 0.85)), () => ovalAt(g, x1, y1, 0.02, 0.06, Math.atan2(y1 - FIND_FOOT, x1 - x0) + Math.PI / 2));   // a seed head
+  }
+  furGlow(g, [255, 240, 190], 0.25, 0, FIND_FOOT - 0.45, 0.35, 0.3);
+}
+function paintBark(g, h, look) {
+  softSpot(g, 0, FIND_FOOT, 0.8, 0.18, '30, 28, 20', 0.32);
+  const curls = look ? [[-0.3, -0.05, 0.42, 0.08, -0.15], [0.3, 0.1, 0.34, 0.065, 0.2]] : [[-0.25, 0.08, 0.48, 0.085, 0.1], [0.32, -0.08, 0.3, 0.06, -0.25]];
+  curls.forEach(([cx, cy, len, r, a], i) => {           // a rolled curl of papery white bark, its brown inside showing at the end
+    g.save(); g.translate(cx, FIND_FOOT - 0.12 + cy); g.rotate(a);
+    fillIn(g, 'rgba(30, 26, 20, 0.3)', () => ovalAt(g, 0.02, r * 0.85, len * 0.95, r * 0.4));
+    softIn(g, [236, 230, 216], -r, r, () => { g.moveTo(-len, -r); g.lineTo(len, -r); g.ellipse(len, 0, r * 0.45, r, 0, -Math.PI / 2, Math.PI / 2); g.lineTo(-len, r); g.closePath(); }, 1.1, 0.72);
+    strokeIn(g, 'rgba(40, 34, 30, 0.75)', 0.016, () => {   // the dark dashes across it
+      for (let k = 0; k < 6; k++) { const x = -len * 0.8 + k * len * 0.3 + (h(10 * i + k) - 0.5) * 0.08, y = (h(20 * i + k) - 0.5) * r * 1.2; g.moveTo(x - 0.05, y); g.lineTo(x + 0.04 + 0.04 * h(30 + k), y); }
+    });
+    fillIn(g, 'rgb(246, 242, 232)', () => ovalAt(g, -len, 0, r * 0.45, r));
+    fillIn(g, 'rgb(196, 132, 88)', () => ovalAt(g, -len, 0, r * 0.3, r * 0.72));
+    strokeIn(g, 'rgba(246, 240, 228, 0.9)', 0.016, () => { g.moveTo(-len, -r * 0.4); g.ellipse(-len, 0, r * 0.16, r * 0.4, 0, -Math.PI / 2, Math.PI); });   // its roll
+    g.restore();
+  });
 }
 function paintRose(g, h, look, bare) {
   softSpot(g, 0, FIND_FOOT, 0.95, 0.22, '30, 34, 14', 0.4);
@@ -7738,7 +7840,7 @@ const THINGS = {
       const water = S.waterAt(world, g.x, g.y), sub = garlic ? `In the damp wood${water ? ` by the ${water.name}` : ''}` : 'On rich ground';   // (it's always near water)
       const face = greenFace(g, stage ?? 0), tint = garlic ? '#5ca03a' : '#40702e';
       if (!this.here(g)) return { emoji: face, tint, name, sub, status: '🌱 Gone under the ground till next spring' };
-      const status = garlic ? ['🌿 Leaves up: pick them young, before it flowers', '🌸 In flower: the leaves are still good, and the flowers too', '🍂 Dying back till next spring'][stage]
+      const status = stage < 2 && S.greenPicked(g) ? '✂️ Picked for now: it grows back in a few days' : garlic ? ['🌿 Leaves up: pick them young, before it flowers', '🌸 In flower: the leaves are still good, and the flowers too', '🍂 Dying back till next spring'][stage]
         : ['🧤 Young tops: pick them, with gloves', '🌾 Tall and in flower: too tough to eat now', '🍂 Dying back till next spring'][stage];
       const why = garlic ? ['💧', 'It likes damp shade, and the wood here is close to the water: it spreads a little each spring'] : richWhy(g);
       const cook = garlic ? ['🍳', 'Smells of garlic from yards off: wilted into butter, a soup or a green sauce'] : ['🍳', 'Nettle soup, or wilted like spinach: cooking takes the sting out'];
