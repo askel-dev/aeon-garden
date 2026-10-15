@@ -25,19 +25,18 @@ now and then (`FORAGER_FIDGET`). In the shallows it's cut off at its shins with 
 a ring (`fg.rings`). Its shadow goes in with the animals' (`foragerShadow`). `forager-lab.html` paints them all side by side. Its outfit is one of three (fur.js `FORAGER_OUTFITS`:
 cloak, hood, rim), picked on a small card at the foot of the screen as a new meadow opens or from ••• (`pickOutfit`), kept in
 localStorage (`aeon-garden-outfit`).
-A click or a tap on an animal (on its body as drawn: `animalAt`, a little wider for a finger) opens its panel and follows it;
-anywhere else walks the forager there (`walkTo`, sim.js `foragerTo`), shuts the panel and puts the camera back on it, with a
+A click or a tap on an animal (on its body as drawn: `animalAt`, a little wider for a finger) opens its panel;
+anywhere else walks the forager there (`walkTo`, sim.js `foragerTo`) and shuts the panel, with a
 soft ring where it was sent (`drawMark`, `MARK_ART` painted once) that fades once it's there. A press held still for
-`HOLD_MS` runs toward the pointer while it's down (sim.js `f.running`, `FORAGER_RUN`; Shift held runs too, `holdShift`), the
+`HOLD_MS`, or dragged, runs toward the pointer while it's down (sim.js `f.running`, `FORAGER_RUN`; Shift held runs too, `holdShift`), the
 way found again every `STEER_MS` (in `frame`), and on to where it's let go. Running, once up past `FORAGER_JOG` it jogs (`fg.jog`, fur.js poses 16 to 23: both feet off the ground a moment, heels
-kicking up, elbows bent and pumping, leaning in) with a stride `FORAGER_JOG_STRIDE` longer. The camera goes with it (`ui.lead`, `leadCam`): eased after it (`CAM_FOLLOW`), a little ahead the way it walks
-(`CAM_AHEAD`, itself eased so setting off and stopping are soft), its feet a little below the middle (`CAM_FEET`). A drag or
-a pan lets it go, F or the next walk takes it back; the wheel zooms about the forager while the camera's with it. A kept
-meadow keeps where it is and whether the camera was with it (`rec.lead`).
+kicking up, elbows bent and pumping, leaning in) with a stride `FORAGER_JOG_STRIDE` longer. The camera always goes with it (`leadCam`): eased after it (`CAM_FOLLOW`), a little ahead the way it walks
+(`CAM_AHEAD`, itself eased so setting off and stopping are soft), its feet a little below the middle (`CAM_FEET`). Nothing pans it:
+the wheel, a pinch, a double tap and + - zoom about the forager (`zoomOn`), and a kept meadow opens on it at its kept zoom.
 
 The inspector shows animals and every other thing you click (hives, trees, rocks, burrows, flowers, fields, water,
 visitors): each kind is an entry in `THINGS`, saying how to find one on screen and what its panel shows. A tap
-on an animal follows it (`select`, `ui.follow`). Animals can't be named by the player. Every animal of a kind is alike
+on an animal opens its panel (`select`); the camera never leaves the forager for it. Animals can't be named by the player. Every animal of a kind is alike
 (sim.js has no genes, only a rabbit's winter coat), so an animal's panel is its mood, tummy, family and life story (a rabbit's
 with its coat and how well it hides where it sits, `coatLine`), and a hive's its honey (`honeyWord`), its queen
 and the fields in reach; a hive goes by the field nearest it, a swarm by its queen (`hiveName`). A hanging swarm is drawn as a
@@ -132,7 +131,7 @@ On a phone (and Back anywhere): Back steps out of what's open as Esc does (`step
 open sheet folds and then shuts). Each thing open holds a step in the history, counted, not named (`opened`), and
 `syncBack` levels the history with what's open after every tap or key: pushed only inside a tap, as Safari skips a step a
 page adds outside one. The inspector's sheet follows the finger and settles open, folded or away by where and how fast
-it's let go (`sheetLetGo`). A double tap zooms in on the spot, a double tap held and dragged zooms as it goes, and two
+it's let go (`sheetLetGo`). A double tap zooms in, a double tap held and dragged zooms as it goes, and two
 fingers tapped zoom out (`zoomTo`, `zoomDrag`, as Google's and Apple's maps do); a tap that would only put the inspector
 away waits `DOUBLE_MS` in case it's the first of two (`tapAway`). On a touch screen the screen stays awake while time
 runs, till nobody has touched it for `WAKE_MS` (`wakeTick`, the Screen Wake Lock API).

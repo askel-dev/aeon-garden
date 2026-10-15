@@ -130,7 +130,7 @@ new feature must not slow it down. If it would, make it cheaper or leave it out.
   tried the same and got worse (they then fight the page for the CPU).
 - Measure it, but only when a change will obviously cost something you could notice: a new full-screen
   pass, much more drawn each frame, new work in a hot loop. Then time `render` before and after over a few
-  seconds in a busy meadow, following an animal, zoomed out, at the fastest speed there is. If it got slower, fix it before
+  seconds in a busy meadow, the forager walking, zoomed out, at the fastest speed there is. If it got slower, fix it before
   committing, and put the numbers in the commit message. A caption, a card or a small drawing tweak doesn't need it.
 
 After touching the sim, run a few years of it over several seeds headless (node: `createWorld`, `step`, read `w.count`,
