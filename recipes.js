@@ -89,7 +89,7 @@ const RECIPES = [
   {
     name: 'Toasted hazelnuts',
     needs: ['hazelnut', 'hazelnut'],
-    text: 'Shaken in a pan till the skins crackle and rub off.',
+    text: 'Rolled in the embers till the skins crackle and rub off.',
   },
   {
     name: 'Mushrooms with hazelnuts',
@@ -128,6 +128,12 @@ const RECIPES = [
     text: 'Steeped a night, sweet and floral. Tastes of early summer.',
   },
   {
+    name: 'Rosehip tea',
+    needs: ['rosehip', 'rosehip'],
+    warm: true,
+    text: 'Steeped on the embers, tart and red. You hold the cup for the warmth.',
+  },
+  {
     name: 'Rosehip syrup',
     needs: ['rosehip', 'rosehip', 'honey'],
     at: 'pot',
@@ -136,7 +142,7 @@ const RECIPES = [
   },
   {
     name: 'Watercress soup',
-    needs: ['watercress', 'watercress', 'greens', 'mushroom'],
+    needs: ['watercress', 'watercress', 'greens'],
     at: 'pot',
     warm: true,
     text: 'Peppery and green, the colour of the stream it came out of.',
