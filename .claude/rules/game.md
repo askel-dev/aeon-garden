@@ -41,21 +41,26 @@ with something to give glows (`GLOW_ART`, painted once, under it; a hive's over 
 its name by it and a hand for the pointer; one with nothing says why (sim.js `whatThere`), as a click on it does (`say`). The hover
 is looked up again only when the mouse moves, or every `AIM_MS` while the camera glides (`hoverFrame`, `aim`). "Satchel's full"
 says so by the forager and leaves the thing be.
-Finding things: what has something to give (sim.js `eachPickable`, listed every `PICKS_MS`: `picksFrame`) glints now and then, a
-small warm sparkle painted once (`GLINT_ART`) over its `gatherSpot`, each on its own clock from a hash of where it is (`glintAt`,
-`GLINT_EVERY`, `GLINT_MS`), so one or two on screen at a time; a picked clean tree or an unripe bramble isn't listed, so it doesn't.
-Standing still `SENSE_STILL` (not walking or off to pick), the forager senses what's about: everything within `SENSE_REACH` glints
-once, a little bigger, as a wave reaches it outward from the forager over `SENSE_SPREAD`, with a faint ring going out (`MARK_ART`)
-(`senseFrame`, in `drawGlints`). With nothing to pick on screen for `ARROW_WAIT`, a small parchment disc with a brass chevron
-(`ARROW_ART`) sits at the screen's edge where the way from the forager to the nearest leaves it, below the watch and above the
-satchel, and fades as one comes into view (`drawPickArrow`). All drawn over the dark, a little dimmer at night. Cost: nothing you
-can measure (render at the widest zoom, walking, in summer and winter, on and off in turn: 1.40-1.62 ms against 1.42-1.68).
+Finding things: what has something to give (sim.js `eachPickable`, listed every `PICKS_MS`: `picksFrame`) glints now and then
+over its `gatherSpot`: a small honey bloom with a warm point of light and four fine rays, painted once (`GLINT_ART`), that comes up
+quickly, fades slowly and turns a little as it goes, each thing on its own clock from a hash of where it is (`glintAt`,
+`GLINT_EVERY`, `GLINT_MS`), so one or two on screen at a time; a picked clean tree or an unripe bramble isn't listed, so it
+doesn't. Warm, not white, so it shows on snow and isn't taken for a snowflake. Standing still `SENSE_STILL` (not walking or off
+to pick), the forager senses what's about: everything within `SENSE_REACH` glints once, `SENSE_BIG` bigger, as a wave reaches it
+outward from the forager over `SENSE_SPREAD`, with a faint ring going out (`MARK_ART`) (`senseFrame`, in `drawGlints`). With
+nothing to pick on screen for `ARROW_WAIT`, a small parchment disc sits at the screen's edge where the way from the forager to
+the nearest leaves it, a brass point on it turned that way and the thing's satchel painting in it (`ARROW_ART`, `itemSheet`'s
+bitmap, `drawPickArrow`), and fades as one comes into view. It keeps clear of the watch, the pill and the satchel by their places,
+looked at once a second (`KEEP_CLEAR`). All drawn over the dark, a little dimmer at night. Cost: nothing you can measure (render
+at the widest zoom, walking, summer and winter, against the meadow before them).
 Wild finds (sim.js `w.finds`) are painted once a look and size (`paintFind`, `FIND_ARTS`: 'find:' + kind * 4 + stage * 2 + look):
-dandelions (`paintDandelion`: a toothed rosette, bright heads, now and then a clock), sorrel (lime arrow leaves on red stalks, rusty
-seed spikes), wild strawberries (trefoils, scarlet berries), elderflower (a bush with cream plates), hazelnuts (nuts in frilly husks
-on yellow leaves), rosehips (an arching rose with scarlet hips, bare in winter: stage 1) and watercress (a cushion of glossy
-leaflets). A bit bigger and brighter than the meadow's own flowers and tufts (`FIND_PX`). Drawn with the trees and animals (a frame
-item's `s`, `drawFind`), they come up over `FIND_GROW` and fade over their last `FIND_OVER`. The satchel shows the same paintings.
+dandelions (`paintDandelion`: a toothed rosette, bright heads, now and then a clock), sorrel (a rosette of broad lime arrow-leaves
+on red stalks, the front ones leaning out so it doesn't read as grass; rusty seed spikes), wild strawberries (trefoils, scarlet
+berries), elderflower (one round shrub: a dome of leafy clumps, a few leaves at its rim, flat lacy plates of flowers on top),
+hazelnuts (round nuts in frilly husks on yellow leaves), rosehips (an arching rose with scarlet hips, bare in winter: stage 1) and
+watercress (sprigs of flat round glossy leaflets standing in the shallows, a pale ring of water round its foot, a rim of snowy ice while the water is frozen, stage 1: `cressSprig`, `findStage`). A
+bit bigger and brighter than the meadow's own flowers and tufts (`FIND_PX`). Drawn with the trees and animals (a frame item's `s`,
+`drawFind`), they come up over `FIND_GROW` and fade over their last `FIND_OVER`. The satchel shows the same paintings.
 The satchel (`#satchel`, `renderSatchel`, rewritten only after a pick or a drop): `S.SLOTS` small parchment slots at the bottom in
 the middle, a slim faint row while it's empty. Their paintings are one sheet painted once (`itemSheet`, `--items`): the meadow's own
 mushrooms, greens and windfalls (`ITEM_ART`) and `paintItem` for the blackberries, cherries, honeycomb and beechnuts; an

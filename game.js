@@ -4000,17 +4000,18 @@ function drawBramble(b, z) {
 // ------------------------------------------------------------------ wild finds
 //
 // The little things to pick about the meadow (sim.js w.finds), painted once a look and size ('find:' + (kind * 4 + stage *
-// 2 + look), FIND_ARTS): dandelions (a rosette of toothed leaves, bright yellow heads), sorrel (lime arrow leaves on red
-// stalks), wild strawberries (trefoil leaves, small scarlet berries), elderflower (a bush with cream plates of flowers),
-// hazelnuts (nuts in frilly husks on fallen leaves), rosehips (an arching rose, scarlet hips; bare in winter, stage 1) and
-// watercress (a cushion of round glossy leaflets). A bit bigger and brighter than the meadow's own flowers and tufts, so
+// 2 + look), FIND_ARTS): dandelions (a rosette of toothed leaves, bright yellow heads), sorrel (broad lime arrow-leaves on
+// red stalks), wild strawberries (trefoil leaves, small scarlet berries), elderflower (a round shrub with cream plates of
+// flowers), hazelnuts (nuts in frilly husks on fallen leaves), rosehips (an arching rose, scarlet hips; bare in winter,
+// stage 1) and watercress (sprigs of round glossy leaflets in the shallows; in the ice, stage 1: findStage). A stage is the
+// same plant, painted again (its hash numbers don't change). A bit bigger and brighter than the meadow's own flowers and tufts, so
 // they read as something to pick. Drawn with the trees and animals, back to front (a frame item's s), they come up over a
 // few hours and fade as they go (drawFind).
 const FIND_KINDS = S.FIND_KINDS;
 const FIND_ARTS = Array.from({ length: FIND_KINDS.length * 4 }, (_, i) => 'find:' + i);
 const FIND_PX = { dandelion: 1.9, sorrel: 1.8, strawberry: 2.1, elderflower: 2.5, hazelnut: 1.8, rosehip: 2.5, watercress: 2.0 };   // next to a rabbit
 const FIND_GROW = 0.2, FIND_OVER = 0.4;   // days it takes to come up, and its last days, fading
-const findStage = f => f.kind === 'rosehip' && S.seasonOf(world.tick) === 3 ? 1 : 0;
+const findStage = f => (f.kind === 'rosehip' ? S.seasonOf(world.tick) === 3 : f.kind === 'watercress' && world.frozen) ? 1 : 0;   // (bare; in the ice)
 const findArt = f => FIND_ARTS[FIND_KINDS.indexOf(f.kind) * 4 + findStage(f) * 2 + f.look];
 const findPx = (f, z) => Math.max(7, (8 + z) * FIND_PX[f.kind] * (0.55 + 0.45 * clamp((world.tick - f.born) / (FIND_GROW * S.TPD), 0, 1)));
 function drawFind(f, z) {
@@ -4022,7 +4023,7 @@ function drawFind(f, z) {
 function paintFind(g, size, U, n) {
   g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
   g.lineCap = g.lineJoin = 'round';
-  const kind = FIND_KINDS[n >> 2], stage = (n >> 1) & 1, look = n & 1, h = k => hash2(look + 2 * stage, k, 61 + (n >> 2));
+  const kind = FIND_KINDS[n >> 2], stage = (n >> 1) & 1, look = n & 1, h = k => hash2(look, k, 61 + (n >> 2));   // (a stage is the same plant)
   ({ dandelion: paintDandelion, sorrel: paintSorrel, strawberry: paintStrawberry, elderflower: paintElder, hazelnut: paintHazel,
     rosehip: paintRose, watercress: paintCress })[kind](g, h, look, stage);
 }
@@ -4257,8 +4258,9 @@ function cressSprig(g, x, y, a, len, rgb) {
   g.restore();
 }
 // Watercress: a cushion of sprigs standing in the shallows at the water's edge, the water lapping round its foot (a pale
-// ring, the lowest leaves darker under it); look 1 has a few tiny white flowers.
-function paintCress(g, h, look) {
+// ring, the lowest leaves darker under it); look 1 has a few tiny white flowers. Stage 1 is with the water frozen: a rim
+// of snowy ice round its foot instead.
+function paintCress(g, h, look, iced) {
   softSpot(g, 0, FIND_FOOT, 0.8, 0.2, '20, 60, 70', 0.3);
   const sprigs = [];
   for (let i = 0; i < 11; i++) {
@@ -4268,13 +4270,18 @@ function paintCress(g, h, look) {
   sprigs.sort((p, q) => Math.abs(q.a) - Math.abs(p.a));
   for (const s of sprigs) {
     const lit = 1 - Math.abs(s.a) / 1.4;
-    cressSprig(g, s.x, FIND_FOOT - 0.02, s.a, s.len, tone([58, 138, 58], 0.78 + 0.35 * lit + 0.08 * h(30 + s.k)));
+    cressSprig(g, s.x, FIND_FOOT - 0.02, s.a, s.len, tone([58, 138, 58], (iced ? 0.7 : 0.78) + 0.35 * lit + 0.08 * h(30 + s.k)));
   }
-  furGlow(g, [40, 90, 100], 0.4, 0, FIND_FOOT - 0.02, 0.62, 0.1);                 // under the water
-  strokeIn(g, 'rgba(240, 250, 255, 0.55)', 0.022, () => {                         // the ring of water round its foot
-    g.ellipse(0, FIND_FOOT, 0.7, 0.13, 0, Math.PI * 0.08, Math.PI * 0.92);
-    g.moveTo(0.7 * Math.cos(Math.PI * 1.12), FIND_FOOT + 0.13 * Math.sin(Math.PI * 1.12)); g.ellipse(0, FIND_FOOT, 0.7, 0.13, 0, Math.PI * 1.12, Math.PI * 1.3);
-  });
+  if (iced) {
+    softSpot(g, 0, FIND_FOOT + 0.01, 0.72, 0.12, '250, 252, 255', 0.9);       // the ice and snow it stands up out of
+    fillIn(g, 'rgba(255, 255, 255, 0.7)', () => ovalAt(g, -0.1, FIND_FOOT - 0.01, 0.42, 0.05));
+  } else {
+    furGlow(g, [40, 90, 100], 0.4, 0, FIND_FOOT - 0.02, 0.62, 0.1);               // under the water
+    strokeIn(g, 'rgba(240, 250, 255, 0.55)', 0.022, () => {                       // the ring of water round its foot
+      g.ellipse(0, FIND_FOOT, 0.7, 0.13, 0, Math.PI * 0.08, Math.PI * 0.92);
+      g.moveTo(0.7 * Math.cos(Math.PI * 1.12), FIND_FOOT + 0.13 * Math.sin(Math.PI * 1.12)); g.ellipse(0, FIND_FOOT, 0.7, 0.13, 0, Math.PI * 1.12, Math.PI * 1.3);
+    });
+  }
   if (look === 1) for (let i = 0; i < 5; i++) {         // a few tiny white flowers
     const x = (h(80 + i) - 0.5) * 0.9, y = FIND_FOOT - 0.42 - 0.14 * h(85 + i);
     for (let k = 0; k < 4; k++) { const a = k / 4 * TAU + 0.4; fillIn(g, '#fbfbf4', () => discAt(g, x + Math.cos(a) * 0.028, y + Math.sin(a) * 0.024, 0.026)); }

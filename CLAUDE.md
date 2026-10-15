@@ -22,8 +22,8 @@ closed); none of that project's rules apply here.
   or a tap on something the meadow gives (mushrooms, greens, a bramble, a fruit or mast tree, a hive) walks it there and
   picks it into the satchel, a row of slots at the bottom in the middle (sim.js `gather`, `w.forager.bag`; game.js
   `goGather`, `renderSatchel`). Every season has little wild finds to pick (sim.js `w.finds`), what has something to give
-  glints now and then, standing still the forager senses what's about, and with nothing on screen a small arrow at the
-  edge points to the nearest (game.js `drawGlints`, `drawPickArrow`). Cooking comes next. `forager-lab.html` shows all its paintings. Notes in game.md and ecology.md.
+  glints now and then, standing still the forager senses what's about, and with nothing on screen a small marker at the
+  edge shows the nearest and points to it (game.js `drawGlints`, `drawPickArrow`). Cooking comes next. `forager-lab.html` shows all its paintings. Notes in game.md and ecology.md.
 - `game.js`: drawing, UI, the inspector. Its features (and where new notes on them go) are in
   `.claude/rules/game.md`, which loads when game.js or index.html is opened.
 - `ground.js`: the ground (grass, earth, shores, water) as a WebGL shader, painted from a

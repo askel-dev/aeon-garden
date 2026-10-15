@@ -281,19 +281,22 @@ them (`inSight`, as the mushrooms), at most `GREENS_MOST` of each times `w.room`
 (`w.greenRng`). A meadow has about 5 to 13 garlic carpets, and nettles build up to 10 to 25 patches over three years. Nothing eats
 them: they're for the cook.
 
-Wild finds (`findsTick`, every two hours): little things to pick in every season, so a home view has a few most of the time.
+Wild finds (`findsTick`, every two hours): little things to pick in every season, so a view has a few most of the time.
 Dandelions out in the open and sorrel in the damp grass in spring, wild strawberries at the woods' edges and elderflower by the
 water or a wood's edge in summer, hazelnuts at the edges in autumn, rosehips in the scrub (by the thorns or a wood's edge) from
-late autumn through the winter, and watercress right at the water from the end of autumn into spring (`FINDS`: when, `from`/`to`
-in seasons into the year; where, `findPlace`; how many at most, `most` times `w.room`; what a pick gives, `n`). Each is a
-short-lived thing of one layout (`w.finds`, `findOf`), coming up where it suits, in sight (`inSight`), often a few tiles from
-another of its kind (`FIND_PATCHY`, `FIND_PATCH`), so they're in loose patches; it lasts `FIND_DAYS`, never past its season,
-and the low ones go under snow (`FIND_SNOW`). A look brings up a fifth of what's missing (`FIND_FILL`), so a season fills in
-a day or so and a picked one is soon made up somewhere. A new meadow starts with most of what's in season, of all ages, a few
-round the forager's camp within `CAMP_REACH` (`CAMP_FINDS`) and a garlic carpet there if there's damp wood thin enough for one
-(`startFinds`, `garlicAt`'s camp). Random numbers of their own (`w.findRng`). Over a year (5 seeds) a meadow has about 54
-things to pick in spring, 62 in summer, 48 in autumn and 43 in winter (it was 14, 32, 22 and 5), 4 to 8 of them in a home view.
-A meadow kept before them gets them when it opens (`unpackWorld`), no `KEEP_VERSION` bump. Nothing eats them: they're for the cook.
+late autumn through the winter, and watercress in the shallows by the bank from the end of autumn into spring (`FINDS`: when,
+`from`/`to` in seasons into the year; where, `findPlace`; how many at most, `most` times `w.room`; what a pick gives, `n`; `wet`:
+watercress goes only when the water there turns deep). Each is a short-lived thing of one layout (`w.finds`, `findOf`), coming up
+where it suits, in sight (`inSight`), mostly near another of its kind (`FIND_PATCHY` of the time, `FIND_PATCH` off one picked at
+random, `oneFind`) till that patch has `FIND_CLUMP` (`clumpAt`), so they come in small patches with open meadow between, not an
+even sprinkle or a long row; it lasts `FIND_DAYS`, never past its season, and the low ones go under snow (`FIND_SNOW`). A look
+brings up a fifth of what's missing (`FIND_FILL`), so a season fills in a day or so and a picked one is soon made up somewhere. A
+new meadow starts with most of what's in season, of all ages, `CAMP_FINDS` round the forager's camp within `CAMP_REACH` (the kinds
+in season in turn, two of a kind, so one that won't grow there leaves room for the others) and a garlic carpet there if there's
+damp wood thin enough for one (`startFinds`, `garlicAt`'s camp). Random numbers of their own (`w.findRng`). In a 45 by 28 tile
+view anywhere in the meadow (8 seeds, a year) there are about 5 things to pick in spring, 5.5 in summer, 4.5 in autumn and in
+winter, none in about one view in ten; round the camp a few more. A meadow kept before them gets them when it opens
+(`unpackWorld`), no `KEEP_VERSION` bump. Nothing eats them: they're for the cook.
 
 Brambles (`bramblesTick`, once an hour for the berries and once a day for the rest): thorny mounds that live for years and
 show all year (`w.brambles`, one layout, `brambleOf`). What a patch shows comes from the season (`brambleStage`): bare canes in
