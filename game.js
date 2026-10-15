@@ -1982,19 +1982,26 @@ function drawMark(now) {
   const r = Math.max(10, (8 + cam.zoom) * 0.42) * pop * (1 + 0.05 * Math.sin(now / 260)) * (m.end ? 1 + 0.25 * (1 - fade) : 1);
   const [sx, sy] = onScreen(m.x, m.y), art = MARK_ART || markArt(), a = Math.min(1, t / 120) * fade;
   const k = clamp((t - TRAIL_IN[0]) / TRAIL_IN[1], 0, 1);
-  drawTrail(sx, sy, r, k * k * (3 - 2 * k) * fade);   // (it comes in eased, just after the ring)
+  drawTrail(sx, sy, r, k * k * (3 - 2 * k) * fade, now);   // (it comes in eased, just after the ring)
   ctx.globalAlpha = a * 0.9;
   ctx.drawImage(art.img, sx - r, sy - r / 2, r * 2, r);
   ctx.globalAlpha = 1;
 }
 // And the way there: a faint dashed line from the ring back along what's left of its path (sim.js f.path, pulled tight
 // round the deep) to just short of its feet. The dashes are counted from the ring's middle, so they keep still on the
-// ground and it walks over them. It fades in once the ring has popped up.
+// ground and it walks over them. It fades in once the ring has popped up. Sprinting, the dashes march on toward the ring
+// (TRAIL_MARCH), the pace eased up and down as it sets off and slows (TRAIL_EASE), and still while time is paused.
 const TRAIL_A = 0.3;
 const TRAIL_IN = [80, 450];               // ms after the ring it starts fading in, and how long that takes
+const TRAIL_MARCH = 2.2;                  // dashes a second they march on by, sprinting
+const TRAIL_EASE = 250;                   // ms the march takes to get up to pace or settle
 const TRAIL = [], TRAIL_DASH = [0, 0];
-function drawTrail(sx, sy, r, a) {
-  const f = world.forager, P = f.path;
+let trailMarch = 0, trailPace = 0, trailAt = 0;   // how far they've marched (in dashes), how fast now, and when that was
+function drawTrail(sx, sy, r, a, now) {
+  const f = world.forager, P = f.path, dt = Math.min(100, now - trailAt);
+  trailAt = now;
+  trailPace += ((f.walking && f.running && ui.speed > 0 ? 1 : 0) - trailPace) * Math.min(1, dt / TRAIL_EASE);
+  trailMarch = (trailMarch + trailPace * TRAIL_MARCH * dt / 1000) % 1;
   if (!f.walking || P.length < 4 || a < 0.02) return;
   let n = 0;
   TRAIL[n++] = sx; TRAIL[n++] = sy;
@@ -2009,7 +2016,7 @@ function drawTrail(sx, sy, r, a) {
   if (to - from < dash) return;
   ctx.save();
   TRAIL_DASH[0] = dash; TRAIL_DASH[1] = dash * 1.2;
-  ctx.setLineDash(TRAIL_DASH); ctx.lineDashOffset = from;
+  ctx.setLineDash(TRAIL_DASH); ctx.lineDashOffset = from + trailMarch * dash * 2.2;   // (a whole dash and gap a step)
   ctx.lineWidth = clamp(cam.zoom * 0.05, 1.25, 2.25); ctx.lineCap = 'round';
   ctx.strokeStyle = '#fffaea'; ctx.globalAlpha = a * TRAIL_A;
   ctx.beginPath();

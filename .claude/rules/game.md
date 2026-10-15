@@ -29,7 +29,7 @@ A click or a tap on an animal (on its body as drawn: `animalAt`, a little wider 
 anywhere else walks the forager there (`walkTo`, sim.js `foragerTo`) and shuts the panel, with a
 soft ring where it was sent (`drawMark`, `MARK_ART` painted once) that fades once it's there, and a faint dashed line to it
 along what's left of its way (`drawTrail`: one stroke a frame, the dashes counted from the ring so they keep still on the ground,
-fading in just after the ring pops up, `TRAIL_IN`). A press held still for
+fading in just after the ring pops up, `TRAIL_IN`, and marching on toward it while it sprints, `TRAIL_MARCH`). A press held still for
 `HOLD_MS`, or dragged, runs toward the pointer while it's down (sim.js `f.running`, `FORAGER_RUN`; Shift held runs too, `holdShift`), the
 way found again every `STEER_MS` (in `frame`), and on to where it's let go. Running, once up past `FORAGER_JOG` it jogs (`fg.jog`, fur.js poses 16 to 23: both feet off the ground a moment, heels
 kicking up, elbows bent and pumping, leaning in) with a stride `FORAGER_JOG_STRIDE` longer. The camera always goes with it (`leadCam`): eased after it (`CAM_FOLLOW`), a little ahead the way it walks
