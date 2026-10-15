@@ -740,7 +740,25 @@ function foragerPose(view, pose) {
     sway: jog ? 0.03 * Math.sin(2 * Math.PI * u) - 0.035 * fwd[0] : walk ? 0.018 * Math.sin(2 * Math.PI * u) : 0,   // and the cloak's hem swings (and trails)
     look: pose === 1 ? -0.07 : cold ? 0.025 : 0, tilt: pose === 1 ? 0.12 : 0, hand: pose === 1, blink: pose === 2 || pose === 6 || pose === 7,
     hug: cold, sad: cold,                                          // cold: its arms round itself, the head sunk into its shoulders
+    turn: 0, hands: null, happy: false, yawn: false, flap: 0,     // (standing a while: idlePose)
   };
+}
+// Standing a while, now and then it does something (game.js IDLES), painted from the front only: 'view' 3 of the key.
+// It glances to either side, stretches (arms out, then up with a yawn, its body up off its heels), hums with its eyes
+// shut happy, peeks into its satchel with the flap up, taps a foot, waves at you. hands: where each mitten goes, from
+// its shoulder (null: hanging); turn: the face round in the hood, -1 to your left, 1 to your right.
+const FORAGER_IDLE = { lookL: 0, lookR: 1, reach: 2, stretch: 3, hum: 4, peek: 5, tap: 6, waveA: 7, waveB: 8 };
+const FORAGER_IDLES = Object.values(FORAGER_IDLE);
+function idlePose(i) {
+  const P = foragerPose(1, 0), I = FORAGER_IDLE;
+  if (i === I.lookL || i === I.lookR) { P.turn = i === I.lookL ? -1 : 1; P.tip = 0.03 * P.turn; }
+  else if (i === I.reach) { P.hands = [[-0.17, -0.07], [0.17, -0.07]]; P.bob = -0.01; P.blink = true; }
+  else if (i === I.stretch) { P.hands = [[-0.16, -0.25], [0.16, -0.25]]; P.bob = -0.03; P.look = -0.03; P.blink = true; P.yawn = true; P.tip = 0.05; }
+  else if (i === I.hum) { P.happy = true; P.tip = 0.02; }
+  else if (i === I.peek) { P.turn = 0.7; P.look = 0.045; P.hands = [null, [0.04, 0.17]]; P.flap = 0.045; }
+  else if (i === I.tap) { P.feet[1][1] -= 0.065; P.feet[1][0] -= 0.015; P.bob = -0.01; }
+  else if (i === I.waveA || i === I.waveB) { P.happy = true; P.hands = [null, i === I.waveA ? [0.25, -0.15] : [0.19, -0.26]]; }
+  return P;
 }
 
 // Snow lying on a part: a soft white mark, none when there's no snow (thicker and brighter the more, SNOWED).
@@ -767,12 +785,12 @@ function foragerParts(P) {
   };
   // An arm: a sleeve from the shoulder, swung a forward (+), and a knitted mitten. Bent (jogging), the forearm comes up
   // forward from the elbow, level at the top of the swing (not up at the chin).
-  const arm = (x, a, far, casts) => {
+  const arm = (x, a, far, casts, hand) => {
     const sx = x + lx * 0.7 + P.fwd[0] * 0.04 * P.stoop, sy = 0.06 + P.bob + ly * 0.7;
     if (P.bend) a -= 0.15;                                         // (pumping, the arm swings a little more back than up)
     const to = (x, y, t, L) => [x + (side ? -Math.sin(t) : P.fwd[0] * Math.sin(t) * 0.9) * L, y + Math.cos(t) * L + (side ? 0 : P.fwd[1] * Math.sin(t) * 0.12)];
     const [kx, ky] = P.bend ? to(sx, sy, a, 0.12) : [sx, sy];
-    const [ex, ey] = P.bend ? to(kx, ky, a + P.bend, 0.11) : to(sx, sy, a, 0.2 + 0.07 * P.stoop);
+    const [ex, ey] = hand ? [sx + hand[0], sy + hand[1]] : P.bend ? to(kx, ky, a + P.bend, 0.11) : to(sx, sy, a, 0.2 + 0.07 * P.stoop);
     add(g => { if (P.bend) limbAt(g, kx, ky, 0.055, ex, ey, 0.05); limbAt(g, sx, sy, 0.06, P.bend ? kx : ex, P.bend ? ky : ey, P.bend ? 0.055 : 0.05); discAt(g, ex, ey + 0.02, 0.048); },
       { far, casts, marks: [[MITTEN, 1, 0.02, g => discAt(g, ex, ey + 0.025, 0.05)], [tone(CLOAK, 0.8), 0.6, 0.03, g => ovalAt(g, ex, ey - 0.02, 0.055, 0.02)]] });
   };
@@ -802,12 +820,13 @@ function foragerParts(P) {
       : [[STRAP, 1, 0.012, g => { const s = front ? 1 : -1; g.moveTo(-0.12 * s, -0.02 + P.bob); g.lineTo(-0.06 * s, -0.04 + P.bob); g.lineTo(0.2 * s, 0.25 + P.bob); g.lineTo(0.15 * s, 0.28 + P.bob); g.closePath(); }]],
   ] });
   const satchel = () => {
-    const x = side ? 0.12 : front ? 0.19 : -0.19, y = 0.3 + P.bob + (P.walk ? (P.jog ? 0.025 : 0.012) * Math.sin(4 * Math.PI * P.u + 0.6) : 0), w = side ? 0.085 : 0.075;
+    const x = side ? 0.12 : front ? 0.19 : -0.19, y = 0.3 + P.bob + (P.walk ? (P.jog ? 0.025 : 0.012) * Math.sin(4 * Math.PI * P.u + 0.6) : 0), w = side ? 0.085 : 0.075, yf = y - P.flap;
     add(g => { g.moveTo(x - w, y - 0.06); g.lineTo(x + w, y - 0.06); g.quadraticCurveTo(x + w + 0.01, y + 0.08, x, y + 0.09); g.quadraticCurveTo(x - w - 0.01, y + 0.08, x - w, y - 0.06); g.closePath(); },
       { casts: true, marks: [[SATCHEL, 1, 0.015, g => g.rect(x - 0.2, y - 0.2, 0.4, 0.4)],
-        [FLAP, 1, 0.012, g => { g.moveTo(x - w - 0.01, y - 0.065); g.lineTo(x + w + 0.01, y - 0.065); g.quadraticCurveTo(x + w, y + 0.03, x, y + 0.035); g.quadraticCurveTo(x - w, y + 0.03, x - w - 0.01, y - 0.065); g.closePath(); }],
-        ...snowOn(g => ovalAt(g, x, y - 0.075, w + 0.02, 0.012 + 0.01 * SNOWED), 0.012),   // on the flap
-        [[214, 178, 96], 1, 0.008, g => discAt(g, x, y + 0.02, 0.013)]] });   // its brass button
+        ...P.flap ? [[tone(SATCHEL, 0.45), 1, 0.012, g => ovalAt(g, x, y - 0.05, w * 0.9, 0.025)]] : [],   // (the flap up: the dark inside)
+        [FLAP, 1, 0.012, g => { const y = yf; g.moveTo(x - w - 0.01, y - 0.065); g.lineTo(x + w + 0.01, y - 0.065); g.quadraticCurveTo(x + w, y + 0.03, x, y + 0.035); g.quadraticCurveTo(x - w, y + 0.03, x - w - 0.01, y - 0.065); g.closePath(); }],
+        ...snowOn(g => ovalAt(g, x, yf - 0.075, w + 0.02, 0.012 + 0.01 * SNOWED), 0.012),   // on the flap
+        [[214, 178, 96], 1, 0.008, g => discAt(g, x, yf + 0.02, 0.013)]] });   // its brass button
   };
   // The hood's point: out behind the head, flopping.
   const tip = () => {
@@ -826,7 +845,7 @@ function foragerParts(P) {
       { casts: true, marks: [[HOOD, 1, 0.01, g => g.rect(cx - 1, cy - 1, 2, 2)]] });
   };
   // The head: the hood round it, the face in its opening (none from the back), a fringe of hair under the hood.
-  const fx = cx + (side ? -0.085 : -0.05), fy = cy + 0.035, frx = side ? 0.155 : 0.165, fry = 0.165;
+  const fx = cx + (side ? -0.085 : -0.05 + 0.055 * P.turn), fy = cy + 0.035, frx = side ? 0.155 : 0.165, fry = 0.165;
   const cap = snowOn(g => ovalAt(g, cx + 0.01, cy - R * 0.98, R * 0.95, 0.05 + 0.045 * SNOWED), 0.025);   // a cap of snow on the hood
   const head = () => add(g => { ovalAt(g, cx, cy, R, R * 0.97); ovalAt(g, cx + 0.02, cy + 0.17, 0.17, 0.09); },   // and a little cowl at the neck
     { casts: true, marks: back ? [[HOOD, 1, 0.01, g => g.rect(cx - 1, cy - 1, 2, 2)], [HOOD_RIM, 0.55, 0.04, g => ovalAt(g, cx, cy + 0.17, 0.17, 0.06)], ...cap,
@@ -857,7 +876,10 @@ function foragerParts(P) {
       cloak(); satchel();
       const reach = 1.1 * P.stoop;
       if (P.hug) { hug(-shoulder, 0); hug(shoulder, 1); }
-      else { arm(-shoulder, P.stoop ? reach : P.swing, false, true); arm(shoulder, P.hand ? 2.4 : P.stoop ? reach : -P.swing, false, true); }
+      else {
+        const [hl, hr] = P.hands || [];
+        arm(-shoulder, P.stoop ? reach : P.swing, false, true, hl); arm(shoulder, P.hand ? 2.4 : P.stoop ? reach : -P.swing, false, true, hr);
+      }
       head();
     } else {
       // (An arm swung forward is ahead of it, behind the cloak from here: only the one swung back shows over it.)
@@ -875,7 +897,7 @@ function foragerParts(P) {
 function paintForager(g, size, U, n) {
   SNOWED = Math.floor(n / FORAGER_SNOW_ARTS); n %= FORAGER_SNOW_ARTS;
   wear(n >> 7);
-  const view = (n >> 5) & 3, P = foragerPose(view, n & 31), { parts, fx, fy } = foragerParts(P);
+  const P = ((n >> 5) & 3) === 3 ? idlePose(n & 31) : foragerPose((n >> 5) & 3, n & 31), view = P.view, { parts, fx, fy } = foragerParts(P);
   paintFur(g, size, U, parts, { coat: CLOAK, top: -0.5, shade: FORAGER_SHADE, light: FORAGER_LIGHT, flat: 0.25,
     grain: [['rgba(40,30,20,0.03)', 1, 3], ['rgba(255,245,225,0.03)', 1, 3]],
     face: g => {
@@ -884,10 +906,11 @@ function paintForager(g, size, U, n) {
       const mid = view === 0 ? fx : fx - 0.012;                  // (between the eyes: their inner sides face it)
       for (const [x, y] of eyes) {
         if (P.blink) strokeIn(g, '#3a2a22', 0.016, () => { g.moveTo(x - 0.024, y); g.quadraticCurveTo(x, y + 0.018, x + 0.024, y); });
+        else if (P.happy) strokeIn(g, '#3a2a22', 0.016, () => { g.moveTo(x - 0.024, y + 0.008); g.quadraticCurveTo(x, y - 0.018, x + 0.024, y + 0.008); });   // shut, smiling
         else {
-          const dy = P.look * 0.2;
-          fillIn(g, '#2a1d17', () => ovalAt(g, x, y + dy, 0.022, P.sad ? 0.026 : 0.03));
-          fillIn(g, 'rgba(255,255,255,0.9)', () => discAt(g, x - 0.008, y - 0.01 + dy, 0.008));
+          const dx = P.turn * 0.012, dy = P.look * 0.2;
+          fillIn(g, '#2a1d17', () => ovalAt(g, x + dx, y + dy, 0.022, P.sad ? 0.026 : 0.03));
+          fillIn(g, 'rgba(255,255,255,0.9)', () => discAt(g, x - 0.008 + dx, y - 0.01 + dy, 0.008));
         }
         if (P.sad) {                                             // worried: the brows up where they meet
           const s = x < mid ? 1 : -1;
@@ -897,7 +920,9 @@ function paintForager(g, size, U, n) {
       const cheeks = view === 0 ? [[fx - 0.04, fy + 0.07]] : [[fx - 0.105, fy + 0.07], [fx + 0.085, fy + 0.07]];
       for (const [x, y] of cheeks) furGlow(g, CHEEK, P.sad ? 0.3 : 0.55, x, y, 0.04, 0.026);   // (cold, paler)
       const mx = view === 0 ? fx - 0.115 : fx - 0.015, my = fy + 0.085;
-      if (P.sad) strokeIn(g, 'rgba(120,64,50,0.8)', 0.012, () => { g.moveTo(mx - 0.015, my + 0.01); g.quadraticCurveTo(mx, my - 0.006, mx + 0.015, my + 0.01); });   // a little frown
+      if (P.yawn) fillIn(g, 'rgba(110,52,44,0.9)', () => ovalAt(g, mx, my + 0.012, 0.02, 0.028));   // a yawn
+      else if (P.happy) fillIn(g, 'rgba(120,64,50,0.85)', () => { g.moveTo(mx - 0.022, my - 0.002); g.quadraticCurveTo(mx, my + 0.034, mx + 0.022, my - 0.002); g.closePath(); });   // a wide smile
+      else if (P.sad) strokeIn(g, 'rgba(120,64,50,0.8)', 0.012, () => { g.moveTo(mx - 0.015, my + 0.01); g.quadraticCurveTo(mx, my - 0.006, mx + 0.015, my + 0.01); });   // a little frown
       else strokeIn(g, 'rgba(120,64,50,0.8)', 0.012, () => { g.moveTo(mx - 0.016, my); g.quadraticCurveTo(mx, my + 0.014, mx + 0.016, my); });
       if (view === 0) fillIn(g, P.sad ? rockRGB(COLD_NOSE) : rockRGB(tone(SKIN, 0.92)), () => ovalAt(g, fx - 0.155, fy + 0.035, 0.022, 0.018));   // the nose, just past the cheek
       else if (P.sad) furGlow(g, CHEEK, 0.7, fx - 0.012, fy + 0.045, 0.022, 0.016);   // cold, a red nose
@@ -907,5 +932,5 @@ function paintForager(g, size, U, n) {
 const painters = { fox: paintFox, rabbit: paintRabbit, dfly: paintDragonfly, kfisher: paintKingfisher, lark: paintSkylark, forager: paintForager };
 
 root.Fur = { tone, rockRGB, fillIn, strokeIn, discAt, ovalAt, blurIn, softIn, furGlow, foxRGB, FOX_WHITE, FOX_SOCK,
-  FOX_POSE, RABBIT_POSE, RABBIT_KINDS, setCoats, paintFox, paintRabbit, paintForager, FORAGER_REACH, FORAGER_JOG_STRIDE, FORAGER_OUTFITS, FORAGER_COLD, FORAGER_SNOWS, FORAGER_SNOW_ARTS, painters };
+  FOX_POSE, RABBIT_POSE, RABBIT_KINDS, setCoats, paintFox, paintRabbit, paintForager, FORAGER_REACH, FORAGER_JOG_STRIDE, FORAGER_OUTFITS, FORAGER_COLD, FORAGER_IDLE, FORAGER_IDLES, FORAGER_SNOWS, FORAGER_SNOW_ARTS, painters };
 })(typeof window !== 'undefined' ? window : globalThis);

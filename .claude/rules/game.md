@@ -20,8 +20,10 @@ paintings a stride, eight more jogging for the sprint, plus standing, a fidget a
 (`foragerAhead` asks for every one at the size it's drawn, so a walk never waits). Its feet are where it is. game.js
 (`foragerFrame`, once a frame) turns the stride over with the ground it covers (a stride every `2 * FORAGER_REACH * 2` of its
 half-size, so the planted foot doesn't slide; fur.js `FORAGER_REACH`), picks the view from the sim's heading with a margin
-either side so it doesn't flicker, and standing lets it breathe, blink, turn to face you after `FORAGER_TURN_MS` and fidget
-now and then (`FORAGER_FIDGET`). In the shallows it's cut off at its shins with a ring round its legs, and each step sends out
+either side so it doesn't flicker, and standing lets it breathe, blink, turn to face you after `FORAGER_TURN_MS` and now
+and then do something (`IDLES`, `idleOf`; the player's and each friend's): look up, glance to either side, peek in its satchel,
+tap a foot, hum swaying with its eyes shut (`HUM_SWAY`, in `drawFigure`), and after `IDLE_LONG` stretch with a yawn or wave
+at you. Those are fur.js `FORAGER_IDLE`, painted from the front only and kept as 'view' 3 of the key (`poseKey`). In the shallows it's cut off at its shins with a ring round its legs, and each step sends out
 a ring (`fg.rings`). Out of the water each foot down leaves a footprint (`footprint`, `drawPrints`: a ring of `PRINTS` in typed
 arrays, one soft sole painting turned along its way and laid flat, under everything that stands) that fades by the ground under it
 (`PRINT_GROUND`: soon in grass, slowest in snow, blue there; none on ice), on a clock that stops while paused. Its shadow goes in with the animals' (`foragerShadow`). A tree standing in front of it (drawn after it, its painting's box over its body) fades to `SEE_A`, as in Project Zomboid, eased over `SEE_MS` (`seeThrough`, `fgBody`). What's drawn after all the trees (the fireflies, the leaves

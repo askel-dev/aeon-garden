@@ -292,7 +292,7 @@ function paintedSprite(emoji, px, tint, leaf, center) {
 // as it walked, and it stuck in a pose till each had. Only if that isn't enough does it start again from empty.
 // Only the set in use is kept: warm, or cold (fur.js FORAGER_COLD), so the cold paintings don't double what's held.
 const keptForager = s => s.look.startsWith('forager:') && (s.px === fg.sized || s.px === furPainted(fg.sized))
-  && !(fg.cold ? WARM_ONLY : COLD_ONLY)[parseInt(s.look.slice(8)) & 31] && Math.floor(parseInt(s.look.slice(8)) / Fur.FORAGER_SNOW_ARTS) === fg.snowArt;
+  && !(fg.cold ? WARM_ONLY : COLD_ONLY)[parseInt(s.look.slice(8)) & 127] && Math.floor(parseInt(s.look.slice(8)) / Fur.FORAGER_SNOW_ARTS) === fg.snowArt;
 function dropSprites(need) {
   for (const [key, s] of spriteCache) {
     if (spriteFrame - s.used < 3 || keptForager(s)) continue;
@@ -1877,7 +1877,7 @@ function drawCreature(c, sx, sy, now) {
 // FORAGER_JOG_STRIDE times that), so the foot on the ground stays put; the view comes
 // from its heading, held a little either side of a change so it doesn't flicker (side on, three-quarters from the front
 // or the back, mirrored going right). Standing it breathes, blinks now and then, after a moment turns to face you, and
-// now and then fidgets (FORAGER_FIDGET). In the shallows it's cut off at the water line with a ring round its legs, and
+// now and then does something (IDLES). In the shallows it's cut off at the water line with a ring round its legs, and
 // each step sends out a ring (fg.rings). Its outfit (Fur.FORAGER_OUTFITS) is the player's, picked as the first meadow opens
 // (pickOutfit; later from •••) and kept in localStorage for every meadow after.
 const FORAGER_SIZE = 2.5;                  // its painting's box, next to a rabbit's
@@ -1885,17 +1885,19 @@ const FORAGER_ARTS = Array.from({ length: Fur.FORAGER_SNOWS * Fur.FORAGER_SNOW_A
 const OUTFIT = 'aeon-garden-outfit';       // in localStorage
 const FORAGER_POSES = [0, 1, 2, 3, 4, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23];
 const FORAGER_CHILLY = [...FORAGER_POSES, ...Fur.FORAGER_COLD];   // (chilly, the cold ones are asked for ahead too)
-const WARM_ONLY = new Uint8Array(32), COLD_ONLY = new Uint8Array(32);   // poses the other set never uses (keptForager)
-for (const p of [0, 1, 2, 8, 9, 10, 11, 12, 13, 14, 15]) WARM_ONLY[p] = 1;
-for (const p of Fur.FORAGER_COLD) COLD_ONLY[p] = 1;
+const WARM_ONLY = new Uint8Array(128), COLD_ONLY = new Uint8Array(128);   // paintings the other set never uses (keptForager), by (view << 5) + pose
+for (let v = 0; v < 3; v++) {
+  for (const p of [0, 1, 2, 8, 9, 10, 11, 12, 13, 14, 15]) WARM_ONLY[(v << 5) + p] = 1;
+  for (const p of Fur.FORAGER_COLD) COLD_ONLY[(v << 5) + p] = 1;
+}
+for (const p of Fur.FORAGER_IDLES) WARM_ONLY[96 + p] = 1;
 const FORAGER_SAD = 2;                     // from this stage (sim.js warmthStage: cold) it hugs itself, sad (fur.js FORAGER_COLD)
-const FORAGER_FIDGET = [7000, 14000];      // ms standing between fidgets, about
 const FORAGER_TURN_MS = 1100;              // standing this long, it turns to face you
 const FORAGER_JOG = [0.1, 0.11];           // sent running, it jogs once up past this pace (tiles a tick) and walks again under
 const FORAGER_STILL_MS = 70;               // no nearer than this to the last move, it's standing (it's drawn between ticks)
 const forPx = () => (8 + cam.zoom) * FORAGER_SIZE;
 const fg = { at: -1, x: 0, y: 0, step: 0, stillMs: 1e4, view: 1, flip: false, art: FORAGER_ARTS[32], blinkAt: -1e9, blinkIn: 3000,
-  fidgetAt: -1e9, fidgetIn: 1e4 + 9000, lastHalf: 0, jog: false, rings: [], wet: false, lx: -0, ly: -0, sized: 0, outfit: 0, picked: false, pick: -1e9, pickK: 1, printMs: -0,
+  idle: -1, idleLast: -1, idleAt: -0, idleIn: 1e4 + 5000, hum: -0, lastHalf: 0, jog: false, rings: [], wet: false, lx: -0, ly: -0, sized: 0, outfit: 0, picked: false, pick: -1e9, pickK: 1, printMs: -0,
   puffs: [], puffAt: 0, drips: [], dripAt: 0, shiverAt: -1e9, shiverNext: 0, heartAt: 0, pantAt: 0, panting: false, downAt: 0, dark: false, cold: false, sizedSet: 0,   // (the body: drawBody, bodyFrame)
   snow: -1, snowTick: -0, snowArt: 0, sizedSnow: 0 };   // (the snow on it: snowOnForager)
 try {
@@ -1915,6 +1917,47 @@ function groundUnder(x, y) {
   return w.grass[i] < STEP_BARE ? 'earth' : 'grass';
 }
 
+// Standing a while, now and then it does something: looks up with a hand on its strap, glances to either side, peeks in
+// its satchel, taps a foot, hums swaying with its eyes shut happy; once it has stood a good while (IDLE_LONG) it may also
+// stretch with a yawn or wave at you. Each is a few paintings in a row (pose, ms, pose, ms...), an idle pose 32 + fur.js
+// FORAGER_IDLE, painted from the front ('view' 3 of the key: poseKey). Never the same twice running, none in the cold
+// (it hugs itself). The player's and each friend's, each its own (b: fg or one of peers; idle, idleAt, idleIn, hum).
+const IDLE = Fur.FORAGER_IDLE, ID = i => 32 + i;
+const IDLES = [
+  { seq: [1, 1500] },
+  { seq: [ID(IDLE.lookL), 900, 2, 120, ID(IDLE.lookR), 900] },
+  { seq: [ID(IDLE.peek), 1500] },
+  { seq: [ID(IDLE.tap), 170, 0, 170, ID(IDLE.tap), 170, 0, 170, ID(IDLE.tap), 170] },
+  { seq: [ID(IDLE.hum), 2800], hum: true },
+  { seq: [ID(IDLE.reach), 280, ID(IDLE.stretch), 1500, ID(IDLE.reach), 280], long: true },
+  { seq: [ID(IDLE.waveA), 220, ID(IDLE.waveB), 220, ID(IDLE.waveA), 220, ID(IDLE.waveB), 220, ID(IDLE.waveA), 220], long: true },
+];
+const IDLE_FIRST = [4000, 7000], IDLE_EVERY = [6000, 12000];   // ms standing till the first, then between them, about
+const IDLE_LONG = 20000;                   // ms standing before it stretches or waves
+const HUM_SWAY = 0.05, HUM_MS = 1400;      // humming, it sways about its feet (drawFigure): how far, and a sway's ms
+const poseKey = (view, pose) => pose < 32 ? (view << 5) + pose : 64 + pose;
+function idleStop(b, every) {
+  b.idle = -1; b.hum = 0;
+  const [a, z] = every ? IDLE_EVERY : IDLE_FIRST;
+  b.idleIn = b.stillMs + a + Math.random() * (z - a);
+}
+// What one standing still shows: one of IDLES once it's due, else the pose it would.
+function idleOf(b, now, pose) {
+  if (b.idle < 0) {
+    if (b.view !== 1 || b.stillMs < b.idleIn) return pose;
+    let k;
+    do k = Math.random() * IDLES.length | 0; while (k === b.idleLast || IDLES[k].long && b.stillMs < IDLE_LONG);
+    b.idle = b.idleLast = k; b.idleAt = now;
+  }
+  const it = IDLES[b.idle], seq = it.seq, t0 = now - b.idleAt;
+  for (let i = 0, t = t0; i < seq.length; i += 2, t -= seq[i - 1]) {
+    if (t >= seq[i + 1]) continue;
+    if (it.hum) b.hum = HUM_SWAY * Math.sin(Math.PI * t0 / seq[1]) * Math.sin(TAU * t0 / HUM_MS);
+    return seq[i];
+  }
+  idleStop(b, true);
+  return pose;
+}
 function foragerFrame(now, d) {
   const f = world.forager, px = forPx();
   if (fg.at < 0) { fg.x = d.x; fg.y = d.y; fg.at = now; }
@@ -1938,21 +1981,21 @@ function foragerFrame(now, d) {
     if (half !== fg.lastHalf && ui.speed > 0 && !fg.wet) footprint(d.x, d.y, f.heading, half & 1);
     if (half !== fg.lastHalf && ui.speed > 0) hear('step', d.x, d.y, { pace: f.speed / S.FORAGER_WALK, foot: half & 1, ground: groundUnder(d.x, d.y) }, true);   // (each foot down; the quicker it goes, the quicker and crisper they come)
     fg.lastHalf = half;
-    fg.fidgetIn = fg.stillMs + FORAGER_FIDGET[0] * (0.6 + 0.4 * Math.random());
+    idleStop(fg);
   } else {
     fg.step = Math.round(fg.step * 2) / 2;                // (it sets off again on the next foot)
     if (fg.stillMs > FORAGER_TURN_MS && fg.view !== 1) { fg.view = 1; fg.blinkAt = now; }   // turned to you, with a blink
     if (now - fg.blinkAt > fg.blinkIn) { fg.blinkAt = now; fg.blinkIn = 2200 + Math.random() * 3500; }
-    if (fg.view === 1 && fg.stillMs > fg.fidgetIn) { fg.fidgetAt = now; fg.fidgetIn = fg.stillMs + FORAGER_FIDGET[0] + Math.random() * (FORAGER_FIDGET[1] - FORAGER_FIDGET[0]); }
-    pose = cold ? (now - fg.blinkAt < 150 ? 6 : 5) : now - fg.fidgetAt < 1500 ? 1 : now - fg.blinkAt < 150 ? 2 : 0;
+    pose = cold ? (now - fg.blinkAt < 150 ? 6 : 5) : idleOf(fg, now, now - fg.blinkAt < 150 ? 2 : 0);
     const p = (now - fg.pick) / fg.pickK;                 // picking (gatherFrame): stooped, reaching down, back up
-    if (p < PICK_MS[2]) { pose = p < PICK_MS[0] || p > PICK_MS[1] ? 3 : 4; fg.stillMs = FORAGER_STILL_MS + 1; fg.fidgetIn = FORAGER_FIDGET[0]; }
+    if (p < PICK_MS[2]) { pose = p < PICK_MS[0] || p > PICK_MS[1] ? 3 : 4; fg.stillMs = FORAGER_STILL_MS + 1; idleStop(fg); }
+    else if (cold) idleStop(fg);
   }
-  if (stage === 4) pose = 7;                            // (down: eyes shut, no blinking)
+  if (stage === 4) { pose = 7; idleStop(fg); }          // (down: eyes shut, no blinking)
   if (ui.speed > 0) fg.printMs += ms;                   // (prints fade only while the meadow goes on)
   if (fg.rings.length && now - fg.rings[0].t > 900) fg.rings.shift();
   snowOnForager();
-  fg.art = shownPose(f, FORAGER_ARTS[fg.snowArt * Fur.FORAGER_SNOW_ARTS + (fg.outfit << 7) + (fg.view << 5) + pose], px);
+  fg.art = shownPose(f, FORAGER_ARTS[fg.snowArt * Fur.FORAGER_SNOW_ARTS + (fg.outfit << 7) + poseKey(fg.view, pose)], px);
 }
 // Its footprints: one at each foot down, a little to that foot's side, fading as the ground takes them back: soon in
 // grass, slower in earth and the damp sand, slowest in snow. A ring of PRINTS kept in typed arrays (nothing made a step),
@@ -2028,7 +2071,7 @@ function drawFigure(b, art, sx, sy, px, now, stage, trip, still, me) {
     return;
   }
   const breathe = still && ui.speed > 0 ? Math.sin(now / 620) * 0.012 : 0;
-  const squash = (1 + breathe) * HUNCH[stage] * (b.view === 1 ? 1 - 0.1 * trip : 1), shake = shiverOf(b, stage, now, me);
+  const squash = (1 + breathe) * HUNCH[stage] * (b.view === 1 ? 1 - 0.1 * trip : 1), shake = shiverOf(b, stage, now, me) + b.hum;   // (humming, a sway)
   if (trip && b.view !== 1 || shake) {                  // (a shiver sways it about its feet: the head most, the feet not at all)
     ctx.save(); ctx.translate(sx, sy);
     if (shake) ctx.transform(1, 0, -shake / 0.6, 1, 0, 0);
@@ -2059,6 +2102,7 @@ function foragerAhead() {
   fg.sized = P; fg.sizedSet = set; fg.sizedSnow = fg.snowArt;
   const at = fg.snowArt * Fur.FORAGER_SNOW_ARTS + (fg.outfit << 7);
   for (let v = 0; v < 3; v++) for (const p of set === 2 ? FORAGER_CHILLY : FORAGER_POSES) furReady(FORAGER_ARTS[at + (v << 5) + p], P);
+  for (const p of Fur.FORAGER_IDLES) furReady(FORAGER_ARTS[at + 96 + p], P);
 }
 // Out while it snows, snow gathers on it (on the hood, the shoulders: fur.js FORAGER_SNOWS), less under the trees; once
 // it stops it melts off, soon above freezing, slowly under, quicker on the move. Kept by sim time, so it goes with the
@@ -9188,6 +9232,7 @@ function heardPos(m, now) {
   if (!p) {
     p = { id: m.from, x: m.x, y: m.y, fx: m.x, fy: m.y, tx: m.x, ty: m.y, at: now, last: now, seen: now, heading: m.h, jog: false, stage: 0,
       pickAt: -1e9, pickK: -0, outfit: 0, wet: false, soak: -0, snowArt: 0, step: -0, lastHalf: 0, view: 1, flip: false, stillMs: 1e4, blinkAt: -1e9, downAt: 0, fall: -0,
+      idle: -1, idleLast: -1, idleAt: -0, idleIn: 1e4 + 5000, hum: -0,   // (standing a while: idleOf)
       rings: [], puffs: [], puffAt: 0, drips: [], dripAt: 0, shiverAt: -1e9, shiverNext: 0,   // (its body, as fg's: drawBody, drawRings, shiverOf)
       art: FORAGER_ARTS[0], sized: 0, sizedSet: 0, sizedSnow: 0, name: '', nameArt: null, sx: -0, sy: -0, shown: false, chat: null };
     peers.set(m.from, p);
@@ -9268,11 +9313,13 @@ function peerItems(items, now, z) {
     if (k < PICK_MS[2]) {                                 // picking (peerPicked), even while it glides the last bit to where it stood
       pose = k < PICK_MS[0] || k > PICK_MS[1] ? 3 : 4;
       p.stillMs = Math.max(p.stillMs, PEER_STILL_MS);
+      idleStop(p);
     } else if (p.stillMs < PEER_STILL_MS) {
       const sy = Math.sin(p.heading), sx = Math.cos(p.heading), v = p.view;
       p.view = sy > (v === 1 ? 0.45 : 0.62) ? 1 : sy < (v === 2 ? -0.45 : -0.62) ? 2 : 0;
       if (sx > 0.18) p.flip = true; else if (sx < -0.18) p.flip = false;
       pose = (p.jog ? 16 : cold ? 24 : 8) + Math.floor(p.step % 1 * 8);
+      idleStop(p);
       if (half !== p.lastHalf && ui.speed > 0) {            // a foot down: a ring in the shallows, else a footprint (as foragerFrame)
         if (p.wet) p.rings.push({ x, y, t: now }); else footprint(x, y, p.heading, half & 1);
       }
@@ -9280,18 +9327,20 @@ function peerItems(items, now, z) {
       p.step = Math.round(p.step * 2) / 2;
       if (p.stillMs > FORAGER_TURN_MS && p.view !== 1) { p.view = 1; p.blinkAt = now; }
       if (now - p.blinkAt > 4000) p.blinkAt = now - Math.random() * 1500;
-      pose = cold ? (now - p.blinkAt < 150 ? 6 : 5) : now - p.blinkAt < 150 ? 2 : 0;
+      pose = cold ? (now - p.blinkAt < 150 ? 6 : 5) : idleOf(p, now, now - p.blinkAt < 150 ? 2 : 0);
+      if (cold) idleStop(p);
     }
     p.lastHalf = half;
     if (p.rings.length && now - p.rings[0].t > 900) p.rings.shift();
-    if (p.stage === 4) pose = 7;
+    if (p.stage === 4) { pose = 7; idleStop(p); }
     p.fall = p.downAt ? clamp((now - p.downAt) / FALL_MS, 0, 1) : 0;
     const set = p.stage >= 1 ? 2 : 1, at = p.snowArt * Fur.FORAGER_SNOW_ARTS + (p.outfit << 7);   // (its paintings asked for ahead, as foragerAhead does the player's)
     if (furWorker && (p.sized !== P || p.sizedSet !== set || p.sizedSnow !== p.snowArt)) {
       p.sized = P; p.sizedSet = set; p.sizedSnow = p.snowArt;
       for (let v = 0; v < 3; v++) for (const q of set === 2 ? FORAGER_CHILLY : FORAGER_POSES) furReady(FORAGER_ARTS[at + (v << 5) + q], P);
+      for (const q of Fur.FORAGER_IDLES) furReady(FORAGER_ARTS[at + 96 + q], P);
     }
-    p.art = shownPose(p, FORAGER_ARTS[at + (p.view << 5) + pose], px);
+    p.art = shownPose(p, FORAGER_ARTS[at + poseKey(p.view, pose)], px);
     const sx = (x - cam.x) * z + vw / 2, sy = (y - cam.y) * z + vh / 2;
     p.shown = visible(sx, sy, 2 * px); p.sx = sx; p.sy = sy;
     if (p.shown) itemOf(items, y, sx, sy, 1).q = p;
