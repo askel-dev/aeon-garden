@@ -285,6 +285,8 @@ const RULES = {
   click:   { gap: 0.04, free: true },
   step:    { gap: 0.1, always: true },   // (a foot down is cheap and rhythmic: it never counts against the budget)
   pick:    { gap: 0.15, always: true },
+  heart:   { gap: 0.6,  always: true },
+  collapse: { gap: 2,   always: true },
 };
 
 const STEP_SOFT = 0.6;          // the footsteps' level against the meadow's sounds: soft, they come a few times a second
@@ -436,6 +438,21 @@ const SOUNDS = {
     src.connect(hp).connect(lp).connect(g).connect(o); src.start(t, rand(0, 5)); src.stop(t + len + 0.05);
   },
   click(t, o) { partial(o, 1320, t, 0.06, 0.002, 0.05, 'triangle'); partial(o, 660, t, 0.05, 0.002, 0.08); },
+  // Freezing, the forager's heart: a slow soft lub-dub, felt more than heard (v: louder the colder).
+  heart(t, o, { v = 1 }) {
+    const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 280; lp.Q.value = 0.5; lp.connect(o);
+    for (const [dt, a] of [[0, 1], [0.26, 0.65]]) {
+      partial(lp, 56, t + dt, 0.55 * v * a, 0.014, 0.18);
+      partial(lp, 112, t + dt, 0.2 * v * a, 0.01, 0.1);            // (what a phone's speaker can play of it)
+      noise(lp, t + dt, 0.09, { from: 220, to: 90, q: 0.7, peak: 0.25 * v * a, attack: 0.01, type: 'lowpass' });
+    }
+  },
+  // It collapses in the cold: a soft fall into the grass, and two low notes stepping down.
+  collapse(t, o) {
+    noise(o, t, 0.4, { from: 600, to: 140, q: 0.6, peak: 0.45, attack: 0.02, type: 'lowpass' });
+    piano(o, note(2, -1), t + 0.15, 0.5, 1.6, 0.6);
+    piano(o, note(0, -1), t + 0.55, 0.45, 2.2, 0.5);
+  },
   // The forager picks something: a soft pluck, two notes of the scale stepping up, a little higher the more it got.
   pick(t, o, { n = 1 }) { const d = Math.min(4, Math.floor(n / 3)); kalimba(o, note(d + 2, 1), t, 0.45); kalimba(o, note(d + 4, 1), t + 0.09, 0.4); },
 };

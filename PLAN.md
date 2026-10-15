@@ -23,7 +23,9 @@ year, so the first fire is always possible); birch bark under birches and on fal
 meadow's soft style, with a small satchel icon. Later, not now: clay, reeds, flint, logs and firewood, feathers, pine
 cones, tinder fungus.
 
-## Stage 2: warmth (world and body), wet, and stamina
+## Stage 2: warmth (world and body), wet, and stamina (built 2026-10-15, branch `warmth`)
+No fire yet, so until stage 4 every winter night kills and a wet spring night often does. Warm dishes, shelter and
+clothes are still to come; the fire goes into `bodyTick`'s feel (and dries you).
 - **World temperature** from the season, the time of day (nights cold, coldest just before dawn), the weather (rain and
   wind chill you) and snow lying. Mostly reading what the sim already has.
 - **Body warmth** (`w.forager.warmth`), cosy to freezing. Cools: night, winter, wind, rain, being wet, standing still in

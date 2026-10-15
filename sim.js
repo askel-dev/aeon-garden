@@ -5378,8 +5378,8 @@ function lifeTick(w, c) {
 // tile by tile: it heads for a point FORAGER_LOOK tiles further along the way, turning at most FORAGER_TURN a tick, so
 // corners come round in curves; it speeds up gently (FORAGER_ACCEL), slows to stop just where it was sent (FORAGER_BRAKE),
 // slows into a sharp turn, and wades at FORAGER_WADE of its pace. Sent running (f.running: game.js, Shift held or the
-// spot tapped again) it sprints at FORAGER_RUN instead, as long as it likes: nothing tires it. It moves on the sim's
-// ticks, so pausing pauses it, and game.js draws it between them.
+// spot tapped again) it sprints at FORAGER_RUN instead, while its stamina lasts (bodyTick); cold, it walks slower
+// (bodyPace). It moves on the sim's ticks, so pausing pauses it, and game.js draws it between them.
 const FORAGER_WALK = 0.085;             // tiles a tick at a walk (a rabbit ambles 0.06)
 const FORAGER_RUN = 0.16;               // and at a sprint
 const FORAGER_WADE = 0.5;               // of that, in the shallows
@@ -5408,9 +5408,17 @@ const BRUSH_NEAR = 2.5;                 // tiles about it it looks for brush in,
 // for; speed, heading: tiles a tick, radians (0 east, pi / 2 down the screen); moved: how far it went last tick;
 // goalX, goalY: where it was sent; running: sprinting there.
 // bag, bagN: the satchel's slots, what's in each (an ingredient's id, recipes.js) and how many (gather, stow).
+// warmth (1 cosy, 0 collapsed), wet (0 dry, 1 soaked), stamina (1 fresh, 0 spent), feel: how warm it feels about it
+// now (in degrees, like airTemp), winded: spent, no sprint till it's got its breath back, down: the tick it collapsed
+// (-1: on its feet), stumble: ticks left of a stumble, homeX, homeY: where it wakes (where it started; later the camp).
 const SLOTS = 8, STACK = 10;            // the satchel's slots, and how many of a kind one holds
-const foragerOf = (x, y) => ({ forager: true, x, y, path: [], leg: 0, speed: -0, heading: Math.PI / 2, moved: -0, walking: false, goalX: x, goalY: y,
-  running: false, bag: new Array(SLOTS).fill(''), bagN: new Array(SLOTS).fill(0) });
+function foragerOf(x, y) {
+  const f = { forager: true, x, y, path: [], leg: 0, speed: -0, heading: Math.PI / 2, moved: -0, walking: false, goalX: x, goalY: y,
+    running: false, bag: new Array(SLOTS).fill(''), bagN: new Array(SLOTS).fill(0),
+    warmth: -0, wet: -0, stamina: -0, feel: -0, winded: false, down: -1, stumble: 0, homeX: x, homeY: y };
+  f.warmth = 1; f.stamina = 1;          // (after: they start as fractions, so the layout never changes)
+  return f;
+}
 
 // Where it starts: a pleasant dry spot near the water and the woods, above the spring flood, nothing standing on it, not
 // far from the middle.
@@ -5613,6 +5621,7 @@ function taut(w, x0, y0, x1, y1, dry, thick) {
 // on the deep or across it), or null if it's there already.
 function foragerTo(w, x, y) {
   const f = w.forager;
+  if (f.down >= 0) return null;                          // (collapsed: it goes nowhere till it wakes)
   rocksFor(w); brushGrid(w);
   x = clamp(x, 0.6, W - 0.6); y = clamp(y, 0.6, H - 0.6);
   outOfRocks(x, y, x, y + 1e9);                          // (sent onto a rock: to its edge, the side nearest the click)
@@ -5707,7 +5716,7 @@ function foragerTick(w) {
     free *= 1 - brushAt(q, brushNear[k + 3]);
     if (d > 1e-4) { pushX += dx / d * q; pushY += dy / d * q; }
   }
-  const top = (f.running ? FORAGER_RUN : FORAGER_WALK) * (wade ? FORAGER_WADE : 1) * free * clamp(Math.cos(turn) * 0.8 + 0.4, 0.15, 1);
+  const top = (f.running ? FORAGER_RUN : FORAGER_WALK) * (wade ? FORAGER_WADE : 1) * free * bodyPace(f) * clamp(Math.cos(turn) * 0.8 + 0.4, 0.15, 1);
   const v = Math.min(top, Math.sqrt(2 * FORAGER_BRAKE * rest)), s = f.speed;
   f.speed = v > s ? Math.min(v, s + FORAGER_ACCEL) : Math.max(v, s - FORAGER_BRAKE * 2);
   if (rest < 0.02 || (rest < 0.1 && f.speed < 0.008)) { f.walking = false; f.running = false; f.speed = 0; f.path.length = 0; return; }
@@ -5723,6 +5732,101 @@ function foragerTick(w) {
   }
   f.moved = Math.hypot(nx - f.x, ny - f.y);
   f.x = nx; f.y = ny;
+}
+
+// ---------------------------------------------------------------- warmth, wet and stamina
+//
+// The air has a temperature (airTemp, in degrees): the year's (warmest at midsummer, AIR_YEAR), the day's (coldest at
+// sunrise, just before the dawn, warmest in the middle of the afternoon, AIR_DAY, more on a clear day and less under
+// cloud) and the weather's (AIR_WEATHER), less where snow lies (AIR_SNOW). What the forager feels (f.feel) is the air,
+// plus the sun on it out of the shade (SUN), less the wind (WIND, half that in the woods) and being wet (WET_CHILL), plus
+// moving (ACTIVE: walking warms, sprinting more, standing still in the cold chills). Over COMFY its warmth comes back
+// (WARM_K a degree a day), under it the warmth goes (COOL_K a degree a day, WET_COLD times as fast again soaked). So a
+// summer night is chilly, a spring or autumn night out is dangerous (most of the warmth gone by dawn, and wet it kills),
+// and a winter night out kills. A fire will be the strongest warmth (stage 4); warm dishes, shelter and clothes later.
+// Rain and wading wet it (WET_RAIN, WET_WADE; the trees keep off some rain), and it dries out of the rain, faster warm
+// and in the sun (DRY). Sprinting spends its stamina (SPRINT_TICKS of it from fresh), and walking and standing bring it
+// back (REST_TICKS), slower cold; spent, it can't sprint again till it has WINDED_BACK of it. Its stage (warmthStage):
+// cosy, chilly, cold (it walks slower, COLD_PACE), freezing (slower still, and it stumbles now and then, STUMBLE_*), and at
+// nothing it collapses (f.down). It wakes the next morning at home (WAKE_PHASE, wakeForager), with what was in the
+// satchel lost; game.js runs the night by quickly behind a dark screen. Nothing here draws the meadow's random numbers.
+const AIR_YEAR = [9, 10];               // degrees: the year's middle, and how far midsummer is over it (and midwinter under)
+const AIR_DAY = 5;                      // how far the afternoon is over the day's middle, and the sunrise under it
+const AIR_WARMEST = 0.45;               // of the day after sunrise (phaseOf): the warmest of it
+// By the weather: degrees on or off, and the day's swing (times AIR_DAY).
+const AIR_WEATHER = { clear: [0, 1.4], cloudy: [-0.5, 0.6], rain: [-2, 0.5], storm: [-4, 0.4], fog: [-1.5, 0.5], snow: [-2, 0.5], heat: [6, 1.2] };
+const AIR_SNOW = 3;                     // degrees colder with snow lying deep
+const SUN = { clear: 5, heat: 6, cloudy: 1.5, fog: 0.5 };   // degrees the sun warms it out of the shade at midday
+const WIND = { clear: 1.5, cloudy: 2, rain: 2.5, storm: 4, fog: 0.5, snow: 2.5, heat: 0.5 };   // degrees the wind takes off in the open
+const WET_CHILL = 3;                    // degrees colder soaked
+const ACTIVE = { still: -1.5, walk: 2, run: 5 };   // degrees: moving keeps it warm
+const COMFY = 10;                       // feeling this warm, it neither warms nor cools
+const COOL_K = 0.16, WARM_K = 0.35;     // of its warmth a day, a degree under (over) COMFY
+const WET_COLD = 1;                     // soaked, it loses warmth this much faster again
+const WET_RAIN = { rain: 8, storm: 16, snow: 3 };    // a day: how fast it soaks (8: soaked in an eighth of a day, a minute and a half at 1x)
+const WET_WADE = 100;                   // and wading
+const DRY = 3;                          // a day: how fast it dries out of the rain at 14 degrees (faster warm, in the sun, moving)
+const SHELTER_WOOD = 0.5;               // woods this thick keep off most rain and wind (and the sun)
+const SPRINT_TICKS = 420;               // ticks of sprinting from fresh to spent (14 s at 1x)
+const REST_TICKS = [240, 480];          // and back from spent to fresh, standing and walking (8 s, 16 s), warm
+const WINDED_BACK = 0.35;               // spent, it sprints again once it has this much back
+const WARMTH_STAGES = [0.7, 0.45, 0.22];   // over the first it's cosy, then chilly, cold, and freezing under the last
+const COLD_PACE = [0.88, 0.72];         // its pace cold, and freezing
+const STUMBLE_ODDS = 1 / 240, STUMBLE_TICKS = 28, STUMBLE_PACE = 0.15;   // freezing, walking: a stumble about every 8 s
+const WAKE_PHASE = 0.04, DOWN_TICKS = TPD / 5, WAKE_WARMTH = 0.62;   // it wakes the next morning (at least DOWN_TICKS after: down at dawn, the one after), chilly
+
+// 0 cosy, 1 chilly, 2 cold, 3 freezing, 4 collapsed.
+const warmthStage = f => (f.down >= 0 ? 4 : f.warmth > WARMTH_STAGES[0] ? 0 : f.warmth > WARMTH_STAGES[1] ? 1 : f.warmth > WARMTH_STAGES[2] ? 2 : 3);
+function airTemp(w) {
+  const t = w.tick, p = phaseOf(t), k = AIR_WEATHER[w.weather.kind] || AIR_WEATHER.clear;
+  const u = p < AIR_WARMEST ? p / AIR_WARMEST : 1 - (p - AIR_WARMEST) / (1 - AIR_WARMEST);   // 0 at sunrise, 1 the warmest
+  return AIR_YEAR[0] + AIR_YEAR[1] * Math.cos(2 * Math.PI * (t / TPD / YEAR_DAYS - 0.375)) - AIR_DAY * k[1] * Math.cos(Math.PI * u) + k[0] - AIR_SNOW * w.snow;
+}
+// How high the sun is, 0 to 1 (0 at night).
+const sunUp = t => { const p = phaseOf(t); return p < 0.02 || p > 0.72 ? 0 : Math.sin(Math.PI * (p - 0.02) / 0.7); };
+// Its pace against a warm one's: slower cold, slowest in a stumble.
+const bodyPace = f => (f.stumble > 0 ? STUMBLE_PACE : 1) * (f.warmth > WARMTH_STAGES[1] ? 1 : f.warmth > WARMTH_STAGES[2] ? COLD_PACE[0] : COLD_PACE[1]);
+
+// One tick of its body: warmth, wet, stamina, and a collapse.
+function bodyTick(w) {
+  const f = w.forager;
+  if (f.down >= 0) {                                    // down: it wakes the next morning, at home
+    if (w.tick - f.down >= DOWN_TICKS && w.tick % TPD === Math.round(WAKE_PHASE * TPD)) wakeForager(w);
+    return;
+  }
+  const kind = w.weather.kind, i = idx(f.x, f.y), air = airTemp(w);
+  const shelter = clamp(w.wood[i] / SHELTER_WOOD, 0, 1);
+  const moving = f.walking && f.moved > 0, sprint = moving && f.running && !f.winded;
+  const wade = !w.frozen && w.water[i] === SHALLOW;
+  const feel = air + (SUN[kind] || 0) * sunUp(w.tick) * (1 - shelter) - (WIND[kind] || 0) * (1 - 0.6 * shelter) - WET_CHILL * f.wet
+    + (sprint ? ACTIVE.run : moving ? ACTIVE.walk : ACTIVE.still);
+  f.feel = feel;
+  const d = feel - COMFY;
+  f.warmth = clamp(f.warmth + (d > 0 ? WARM_K * d : COOL_K * d * (1 + WET_COLD * f.wet)) / TPD, 0, 1);
+  const soak = wade ? WET_WADE : (WET_RAIN[kind] || 0) * (1 - 0.7 * shelter);
+  if (soak > 0) f.wet = Math.min(1, f.wet + soak / TPD);
+  else if (f.wet > 0) f.wet = Math.max(0, f.wet - DRY * clamp(0.3 + air / 20, 0.15, 1.6) * (1 + sunUp(w.tick) * (SUN[kind] || 0) / 5) * (moving ? 1.2 : 1) / TPD);
+  if (sprint) f.stamina = Math.max(0, f.stamina - 1 / SPRINT_TICKS);
+  else f.stamina = Math.min(1, f.stamina + clamp(0.35 + 0.65 * f.warmth / WARMTH_STAGES[0], 0.35, 1) / REST_TICKS[moving ? 1 : 0]);
+  if (f.stamina <= 0) f.winded = true;
+  else if (f.winded && f.stamina >= WINDED_BACK) f.winded = false;
+  if (f.winded) f.running = false;
+  if (f.stumble > 0) f.stumble--;
+  else if (moving && f.warmth <= WARMTH_STAGES[2] && hash2(w.tick, 0x5707, w.seed) < STUMBLE_ODDS) f.stumble = STUMBLE_TICKS;
+  if (f.warmth <= 0) {                                  // collapsed
+    f.down = w.tick; f.walking = false; f.running = false; f.speed = 0; f.path.length = 0; f.stumble = 0;
+    emit(w, { type: 'collapse' });
+  }
+}
+
+// It wakes at home: warm enough to get going, dry, rested, and the satchel empty.
+function wakeForager(w) {
+  const f = w.forager;
+  f.x = f.homeX; f.y = f.homeY; f.goalX = f.x; f.goalY = f.y; f.heading = Math.PI / 2;
+  f.walking = false; f.running = false; f.speed = 0; f.path.length = 0;
+  f.warmth = WAKE_WARMTH; f.wet = 0; f.stamina = 1; f.winded = false; f.stumble = 0; f.down = -1;
+  f.bag.fill(''); f.bagN.fill(0);
+  emit(w, { type: 'woke' });
 }
 
 // ---------------------------------------------------------------- gathering
@@ -6093,6 +6197,7 @@ function step(w) {
   if (t % TPD === 0) newDay(w);
   buildGrid(w);
   weatherTick(w);
+  bodyTick(w);
   foragerTick(w);
   if (t % GRASS_EVERY === 0) { growGrass(w, GRASS_EVERY); iceTick(w, GRASS_EVERY); }
   if (t % WATER_EVERY === 0) waterTick(w);
@@ -6244,7 +6349,9 @@ function unpackWorld(kept) {
   buildGrid(w);
   if (noBrambles) startBrambles(w);
   if (!w.forager) w.forager = startForager(w);            // (kept before the forager: it starts afresh)
-  asFractions(w.forager, ['x', 'y', 'speed', 'heading', 'moved', 'goalX', 'goalY']);
+  const F = w.forager;
+  if (!F.homeX && !F.homeY) { F.homeX = F.x; F.homeY = F.y; }   // (kept before it had a home: where it is)
+  asFractions(F, ['x', 'y', 'speed', 'heading', 'moved', 'goalX', 'goalY', 'warmth', 'wet', 'stamina', 'feel', 'homeX', 'homeY']);
   if (noFinds) startFinds(w);
   return w;
 }
@@ -7092,7 +7199,7 @@ const api = {
   createWorld, step, clock, isNight, phaseOf, seasonOf, springPart, mood, ageDays, growth, isAdult, patchFresh,
   hedgehogComes, heronComes, dragonflyComes, kingfisherComes, skylarkComes, placeNeeds, VISIT_SEASONS, VISIT_FADE, HERON_FADE, HERON_STAB,
   DRAGON_FROM, KF_FADE, KF_UNDER, KF_BEAT, LARK_FADE, LARK_OPEN, LARK_RISE, EDGE_REACH, OPEN_MOST,
-  walkable, packWorld, unpackWorld, GROUND, foragerTo, FORAGER_WALK, FORAGER_RUN, rockKind, whatThere, cherryShow, honeySpare, gather, dropSlot, DROP_DAYS, moveSlot, roomFor, forEachDecorNear, SLOTS, STACK,
+  walkable, packWorld, unpackWorld, GROUND, foragerTo, FORAGER_WALK, FORAGER_RUN, airTemp, warmthStage, WARMTH_STAGES, STUMBLE_TICKS, wakeForager, rockKind, whatThere, cherryShow, honeySpare, gather, dropSlot, DROP_DAYS, moveSlot, roomFor, forEachDecorNear, SLOTS, STACK,
   KINDS, FEW, whiteness, visibility, WINTER_COAT, WILD_COAT,
   TERRAIN, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE, hollow,

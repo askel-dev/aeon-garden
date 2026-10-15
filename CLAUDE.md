@@ -26,7 +26,10 @@ closed); none of that project's rules apply here.
   glints now and then, standing still the forager senses what's about, and with nothing on screen a small marker at the
   edge shows the nearest and points to it (game.js `drawGlints`, `drawPickArrow`). Sticks, pebbles, dry grass and birch bark lie
 about for a fire, picked the same way but with no glint (sim.js `FINDS` marked `ground`; recipes.js tags `fuel`, `stone`, `tinder`).
-The first fire comes next (PLAN.md). `forager-lab.html` shows all its paintings. Notes in game.md and ecology.md.
+The forager feels the cold (stage 2 of PLAN.md): the air has a temperature (sim.js `airTemp`), and its warmth, wet and stamina
+(`bodyTick`) show on it first (shivers, hunched, breath, drips, stumbles, frost at the edges, a heartbeat; game.js `drawBody`,
+`bodyFrame`) and in two slim bars over the satchel (`renderVitals`); at nothing it collapses and wakes at home the next
+morning with the satchel lost (`wakeForager`). The first fire comes next (PLAN.md). `forager-lab.html` shows all its paintings. Notes in game.md and ecology.md.
 - `game.js`: drawing, UI, the inspector. Its features (and where new notes on them go) are in
   `.claude/rules/game.md`, which loads when game.js or index.html is opened.
 - `ground.js`: the ground (grass, earth, shores, water) as a WebGL shader, painted from a

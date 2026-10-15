@@ -1877,7 +1877,8 @@ const FORAGER_JOG = [0.1, 0.11];           // sent running, it jogs once up past
 const FORAGER_STILL_MS = 70;               // no nearer than this to the last move, it's standing (it's drawn between ticks)
 const forPx = () => (8 + cam.zoom) * FORAGER_SIZE;
 const fg = { at: -1, x: 0, y: 0, step: 0, stillMs: 1e4, view: 1, flip: false, art: FORAGER_ARTS[32], blinkAt: -1e9, blinkIn: 3000,
-  fidgetAt: -1e9, fidgetIn: 9000, lastHalf: 0, jog: false, rings: [], wet: false, lx: -0, ly: -0, sized: 0, outfit: 0, picked: false, pick: -1e9, pickK: 1, printMs: -0 };
+  fidgetAt: -1e9, fidgetIn: 9000, lastHalf: 0, jog: false, rings: [], wet: false, lx: -0, ly: -0, sized: 0, outfit: 0, picked: false, pick: -1e9, pickK: 1, printMs: -0,
+  puffs: [], puffAt: 0, drips: [], dripAt: 0, shiverAt: -1e9, shiverNext: 0, heartAt: 0, downAt: 0, dark: false };   // (the body: drawBody, bodyFrame)
 try {
   const o = localStorage.getItem(OUTFIT);
   fg.picked = o !== null;
@@ -1989,6 +1990,8 @@ function drawForager(sx, sy, now) {
     ctx.beginPath(); ctx.ellipse(rx, ry, px * (0.12 + 0.3 * u), px * (0.04 + 0.1 * u), 0, 0, TAU); ctx.stroke();
   }
   if (zoomedOut()) { drawSmall(art, sx, top, px, flip); return; }
+  const f = world.forager, stage = S.warmthStage(f);
+  if (stage === 4) { drawFallen(art, sx, sy, px, flip, now); return; }
   if (fg.wet) {
     const line = sy - px * 0.02, rip = 1 + 0.08 * Math.sin(now / 280);   // (in to its shins)
     ctx.save();
@@ -1998,10 +2001,18 @@ function drawForager(sx, sy, now) {
     ctx.strokeStyle = 'rgba(240, 250, 255, 0.7)';
     ctx.lineWidth = Math.max(1, px * 0.025);
     ctx.beginPath(); ctx.ellipse(sx, line, px * 0.17 * rip, px * 0.045 * rip, 0, 0, TAU); ctx.stroke();
+    drawBody(sx, sy, px, now);
     return;
   }
-  const breathe = fg.stillMs > FORAGER_STILL_MS && ui.speed > 0 ? Math.sin(now / 620) * 0.012 : 0, squash = 1 + breathe;
-  drawEmoji(art, sx, top + px * 0.36 * (1 - squash), px, { flip, squash });   // (feet stay on the ground)
+  const breathe = fg.stillMs > FORAGER_STILL_MS && ui.speed > 0 ? Math.sin(now / 620) * 0.012 : 0;
+  const trip = f.stumble > 0 ? Math.sin(Math.PI * (1 - f.stumble / S.STUMBLE_TICKS)) : 0;   // (a stumble: it pitches forward and catches itself)
+  const squash = (1 + breathe) * HUNCH[stage] * (fg.view === 1 ? 1 - 0.1 * trip : 1), shake = shiverOf(stage, now) * px;
+  if (trip && fg.view !== 1) {
+    ctx.save(); ctx.translate(sx + shake, sy); ctx.rotate((flip ? 1 : -1) * 0.24 * trip);
+    drawEmoji(art, 0, -px * 0.36 * squash, px, { flip, squash });
+    ctx.restore();
+  } else drawEmoji(art, sx + shake, top + px * 0.36 * (1 - squash), px, { flip, squash });   // (feet stay on the ground)
+  drawBody(sx, sy, px, now);
 }
 function foragerShadow(sx, sy, sn) {
   if (zoomedOut() || fg.wet) return;
@@ -2015,6 +2026,142 @@ function foragerAhead() {
   if (!furWorker || P === fg.sized) return;
   fg.sized = P;
   for (let v = 0; v < 3; v++) for (const p of FORAGER_POSES) furReady(FORAGER_ARTS[(fg.outfit << 7) + (v << 5) + p], P);
+}
+
+// ------------------------------------------------------------------ warmth, wet and stamina
+//
+// What the forager's body is up to (sim.js bodyTick) shows on it first. Chilly it shivers now and then, cold all the time
+// and hunched (HUNCH), freezing harder, stumbling (sim.js f.stumble), with frost creeping in at the screen's edges (#frost)
+// and a slow soft heartbeat (sound.js heart). At nothing it collapses: it tips over (drawFallen), the screen goes dark
+// (#veil), the night runs by behind it (bodyFrame: the sim run quickly, SKIP_MS a frame) and it wakes at home in the
+// morning, the satchel empty (sim.js wakeForager). In cold air its breath shows (BREATH_AIR, a puff painted once,
+// PUFF_ART), and soaked it drips. Two slim bars above the satchel (#vitals: warmth, stamina) show only when not full,
+// a drop by the warmth while it's wet (renderVitals, with the frost, a few times a second).
+const BREATH_AIR = 8;                      // degrees: air colder than this shows its breath
+const BREATH_MS = [2700, 1500];            // ms between puffs, standing and walking (sprinting, half that)
+const PUFF_MS = 1500;                      // a puff's life
+const SHIVER = [0.008, 0.01, 0.016];       // of its size, side to side: chilly (in bursts), cold, freezing
+const SHIVER_BURST = [5500, 650];          // chilly: a shiver about this often (ms), this long
+const HUNCH = [1, 1, 0.965, 0.94, 1];      // its height by stage (sim.js warmthStage)
+const DRIP_MS = 260;                       // soaked through, a drip this often (less wet, less often)
+const HEART_MS = 1250;                     // freezing: a heartbeat this often
+const FALL_MS = 650;                       // collapsing: how long it takes to go over
+const DARK_AFTER = 2200, DARK_MS = 1300;   // down this long, the screen goes dark over this long; then the night runs by
+const SKIP_MS = 30;                        // ms of sim a frame while it does
+let PUFF_ART = null;
+function puffArt() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(250, 252, 255, 0.9)'); gr.addColorStop(0.5, 'rgba(240, 246, 252, 0.45)'); gr.addColorStop(1, 'rgba(240, 246, 252, 0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+  PUFF_ART = { img: c };
+  asBitmap(c, b => { PUFF_ART.img = b; });
+  return PUFF_ART;
+}
+function shiverOf(stage, now) {
+  if (!stage || stage > 3 || ui.speed === 0) return 0;
+  if (stage === 1) {
+    if (now > fg.shiverNext) { fg.shiverAt = now; fg.shiverNext = now + SHIVER_BURST[0] * (0.6 + 0.8 * Math.random()); }
+    if (now - fg.shiverAt > SHIVER_BURST[1]) return 0;
+  }
+  return SHIVER[stage - 1] * Math.sin(now / 19) * (0.75 + 0.25 * Math.sin(now / 53));
+}
+// Its breath and its drips: each where it was when it came, the breath rising and spreading from its face, a drip falling
+// from its hem to its feet.
+function drawBody(sx, sy, px, now) {
+  const f = world.forager, d = drawnAt(f), going = fg.stillMs < FORAGER_STILL_MS;
+  if (ui.speed > 0 && now > fg.puffAt) {
+    fg.puffAt = now + BREATH_MS[going ? 1 : 0] * (f.running ? 0.5 : 1) * (0.85 + 0.3 * Math.random());
+    if (S.airTemp(world) < BREATH_AIR && fg.puffs.length < 6) {
+      const side = fg.view === 1 ? 0 : fg.flip ? 1 : -1;   // (from the front, it breathes toward you; side on, ahead)
+      fg.puffs.push({ x: d.x, y: d.y, ox: side * 0.24, oy: fg.view === 2 ? -1.1 : -0.98, dx: side, back: fg.view === 2, t: now });   // (from its mouth)
+    }
+  }
+  const wet = f.wet;
+  if (ui.speed > 0 && now > fg.dripAt) {
+    fg.dripAt = now + DRIP_MS / Math.max(0.05, wet) * (0.6 + 0.8 * Math.random());
+    if (wet > 0.25 && !fg.wet && fg.drips.length < 8) fg.drips.push({ x: d.x, y: d.y, ox: (Math.random() - 0.5) * 0.42, oy: -0.3 - Math.random() * 0.12, t: now });   // (off its hem)
+  }
+  while (fg.puffs.length && now - fg.puffs[0].t > PUFF_MS) fg.puffs.shift();
+  while (fg.drips.length && now - fg.drips[0].t > 320) fg.drips.shift();
+  if (fg.puffs.length) {
+    const art = PUFF_ART || puffArt();
+    for (const p of fg.puffs) {
+      const u = (now - p.t) / PUFF_MS, [x, y] = onScreen(p.x, p.y), r = px * (0.07 + 0.2 * Math.sqrt(u));
+      ctx.globalAlpha = (p.back ? 0.35 : 0.65) * Math.min(1, u * 8) * (1 - u) * (1 - u);
+      ctx.drawImage(art.img, x + (p.ox + p.dx * 0.18 * u) * px - r, y + (p.oy - 0.16 * u) * px - r, r * 2, r * 2);
+    }
+    ctx.globalAlpha = 1;
+  }
+  if (fg.drips.length) {
+    ctx.fillStyle = 'rgba(214, 232, 248, 0.85)';
+    for (const p of fg.drips) {
+      const u = (now - p.t) / 320, [x, y] = onScreen(p.x, p.y), r = Math.max(1, px * 0.012);
+      ctx.beginPath(); ctx.ellipse(x + p.ox * px, y + p.oy * px * (1 - u * u), r, r * 1.5, 0, 0, TAU); ctx.fill();
+    }
+  }
+}
+// Collapsed: it tips over sideways (toward where it was facing) and lies there.
+function drawFallen(art, sx, sy, px, flip, now) {
+  const u = clamp((now - fg.downAt) / FALL_MS, 0, 1), e = u * u * (3 - 2 * u), side = flip ? 1 : -1;
+  ctx.save();
+  ctx.translate(sx + side * px * 0.05 * e, sy - px * 0.04 * e); ctx.rotate(side * 1.42 * e);
+  drawEmoji(art, 0, -px * 0.36, px, { flip });
+  ctx.restore();
+}
+// Once a frame: the heartbeat, the dark and the night running by. Whether the sim should run the night by now.
+function bodyFrame(now) {
+  const f = world.forager, stage = S.warmthStage(f);
+  if (stage === 3 && ui.speed > 0 && now - fg.heartAt > HEART_MS * (0.85 + 0.6 * f.warmth / S.WARMTH_STAGES[2])) {
+    fg.heartAt = now;
+    chime('heart', { v: 1 - 0.5 * f.warmth / S.WARMTH_STAGES[2] });
+  }
+  if (f.down < 0) return false;
+  if (!fg.downAt) fg.downAt = now - DARK_AFTER;          // (a meadow kept while it was down: dark at once)
+  if (!fg.dark && now - fg.downAt > DARK_AFTER) { fg.dark = true; $('#veil').classList.add('dark'); }
+  return now - fg.downAt > DARK_AFTER + DARK_MS;
+}
+// Woken (sim.js wakeForager): the dark lifts with it at home, the camera already there.
+function bodyWoke() {
+  const f = world.forager;
+  fg.downAt = 0; fg.dark = false; fg.puffs.length = 0; fg.drips.length = 0;
+  $('#veil').classList.remove('dark');
+  cam.x = f.x; cam.y = f.y - CAM_FEET * forPx() / cam.zoom; fg.lx = fg.ly = 0; fg.at = -1;
+  ui.mark = null; ui.gather = null; ui.queue.length = 0;
+  renderSatchel();
+  setTimeout(() => toast('You wake at home, stiff with cold. The satchel is empty.'), 900);
+}
+const VITAL_FULL = 0.985;
+const vit = { warm: -1, wet: -1, stam: -1, winded: null, frost: -1 };
+function renderVitals() {
+  const f = world.forager, box = $('#vitals');
+  if (!box) return;
+  const warm = Math.round(f.warmth * 100), wet = Math.round(f.wet * 10), stam = Math.round(f.stamina * 100);
+  if (warm !== vit.warm || wet !== vit.wet) {
+    const el = $('#v-warm'), k = clamp(f.warmth, 0, 1);
+    el.classList.toggle('show', f.warmth < VITAL_FULL || f.wet > 0.05);
+    el.style.setProperty('--c', `rgb(${Math.round(lerp(120, 222, k))}, ${Math.round(lerp(168, 128, k))}, ${Math.round(lerp(222, 58, k))})`);
+    el.querySelector('i').style.width = warm + '%';
+    el.querySelector('.drop').style.opacity = f.wet > 0.05 ? (0.35 + 0.65 * f.wet).toFixed(2) : '0';
+    el.title = ['Cosy', 'Chilly', 'Cold', 'Freezing', 'Too cold'][S.warmthStage(f)] + (f.wet > 0.6 ? ', soaked' : f.wet > 0.05 ? ', damp' : '');
+    vit.warm = warm; vit.wet = wet;
+  }
+  if (stam !== vit.stam || f.winded !== vit.winded) {
+    const el = $('#v-stam');
+    el.classList.toggle('show', f.stamina < VITAL_FULL);
+    el.classList.toggle('winded', f.winded);
+    el.querySelector('i').style.width = stam + '%';
+    el.title = f.winded ? 'Out of breath' : 'Stamina';
+    vit.stam = stam; vit.winded = f.winded;
+  }
+  const frost = S.warmthStage(f) === 3 ? Math.round((0.45 + 0.55 * (1 - f.warmth / S.WARMTH_STAGES[2])) * 20) / 20 : 0;
+  if (frost !== vit.frost) {
+    const el = $('#frost');
+    el.classList.toggle('on', frost > 0);
+    el.style.opacity = frost;
+    vit.frost = frost;
+  }
 }
 
 // Picking an outfit: a small card at the foot of the screen, under the forager, with it painted in each (front on,
@@ -2257,9 +2404,10 @@ function standPoint(kind, it) {
 
 // A click or a tap on it: off the forager goes. One with nothing to give says why now, and is only walked to.
 function goGather(t, run = false) {
+  if (world.forager.down >= 0) return;
   const [x, y] = standPoint(t.kind, t.it), w = S.whatThere(world, t.kind, t.it);
   walkTo(...toScreen(x, y), false, true);
-  if (run && world.forager.walking) world.forager.running = true;
+  if (run && world.forager.walking && !world.forager.winded) world.forager.running = true;
   if (w.n) ui.gather = { kind: t.kind, it: t.it };
   else if (w.why) { const s = gatherSpot(t.kind, t.it); say(w.why, s.x, s.y); }
 }
@@ -2267,6 +2415,7 @@ function goGather(t, run = false) {
 // Once a frame: there, it picks; stopped short (it couldn't get there), it says so.
 function gatherFrame(now) {
   const g = ui.gather, F = world.forager;
+  if (F.down >= 0) return;                              // (collapsed)
   if (!g && ui.queue.length && !F.walking && now >= ui.nextAt) nextGather();
   if (!g || F.walking) return;
   ui.gather = null;
@@ -7458,6 +7607,13 @@ function handleEvent(e) {
     case 'season':
       chime('season', { season: e.season });
       break;
+    case 'collapse':
+      fg.downAt = performance.now();
+      chime('collapse');
+      break;
+    case 'woke':
+      bodyWoke();
+      break;
     case 'weather':
       if (WET.has(e.kind) && !WET.has(e.prev)) { chime('rain'); rainbowWet(); }
       if (WET.has(e.prev) && (e.kind === 'clear' || e.kind === 'cloudy') && !S.isNight(world.tick) && rainbowOut()) chime('rainbow');
@@ -8593,7 +8749,7 @@ function click(sx, sy, run = false) {
 // A tap walks it there; held (steering) or with Shift down, it runs.
 function walkTo(sx, sy, steering = false, keepQueue = false) {
   const [wx, wy] = toWorld(sx, sy), g = S.foragerTo(world, wx, wy);
-  if (g) world.forager.running = steering || shiftHeld;
+  if (g) world.forager.running = (steering || shiftHeld) && !world.forager.winded;   // (out of breath, it walks)
   ui.gather = null;                                     // (a new walk: whatever it was going to pick, it isn't)
   if (!keepQueue) ui.queue.length = 0;
   if (ui.selectedId || ui.picked) select(0);
@@ -8726,7 +8882,7 @@ function goToThing(thing) {
 let shiftHeld = false;
 function holdShift(on) {
   shiftHeld = on;
-  if (world?.forager.walking) world.forager.running = on;
+  if (world?.forager.walking) world.forager.running = on && !world.forager.winded;
 }
 document.addEventListener('keyup', e => { if (e.key === 'Shift') holdShift(false); });
 addEventListener('blur', () => holdShift(false));
@@ -8941,6 +9097,8 @@ function showWorld(w) {
   groundSeed = [(seed % 97) * 3.7, (seed % 89) * 4.3];
   Object.assign(ui, { selectedId: 0, picked: null, hoverId: 0, mark: null, trail: [], effects: [], gather: null, queue: [] });
   fg.at = -1; fg.rings.length = 0; fg.sized = 0; fg.pick = -1e9; pickFloats.length = 0; aim.t = null;
+  fg.puffs.length = 0; fg.drips.length = 0; fg.downAt = 0; fg.dark = false; $('#veil').classList.remove('dark');
+  vit.warm = vit.stam = vit.frost = -1;
   pollen.until = 0; pollen.t0.fill(-1e9);
   const mix = Object.fromEntries(Object.keys(S.WEATHER).map(k => [k, k === world.weather.kind ? 1 : 0]));
   Object.assign(ui.sky, { mix, tick: world.tick, bolts: [], rainbow: -1e9, bowEnd: -1e9 });
@@ -9020,7 +9178,15 @@ function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
 
-  if (ui.speed > 0) {
+  if (bodyFrame(now)) {                    // (collapsed, in the dark: the night runs by till it wakes)
+    const t0 = performance.now();
+    while (world.forager.down >= 0 && performance.now() - t0 < SKIP_MS) {
+      keepLast();
+      S.step(world);
+      if (world.events.length) flushEvents();
+    }
+    acc = 0;
+  } else if (ui.speed > 0) {
     acc += dt * TICKS_PER_SECOND * ui.speed;
     const want = Math.min(Math.floor(acc), 2000), n = Math.min(want, simFit), t0 = performance.now();
     acc -= want;
@@ -9082,6 +9248,7 @@ function frame(now) {
     furAhead(now);
     lastCard = now;
     updateClock();
+    renderVitals();
     if (ui.sound) {
       const ck = S.clock(world);
       const life = world.count.rabbit / (S.SPECIES.rabbit.cap * world.room);   // a meadow full of rabbits

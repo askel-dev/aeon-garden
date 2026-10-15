@@ -31,6 +31,14 @@ frame (`buildCover`), soft at the edge (`COVER_EDGE`), half for first leaves or 
 it shows when faded (mist, the forager behind it). Pop-ups, labels and the selection stay on top. `forager-lab.html` paints them all side by side. Its outfit is one of three (fur.js `FORAGER_OUTFITS`:
 cloak, hood, rim), picked on a small card at the foot of the screen as a new meadow opens (till one has been picked) or from ••• (`pickOutfit`), kept in
 localStorage (`aeon-garden-outfit`).
+Its body (sim.js `bodyTick`) shows on it first (`drawBody`, `shiverOf`, `drawFallen`): chilly it shivers now and then
+(`SHIVER_BURST`), cold all the time and hunched (`HUNCH`), freezing harder, with frost at the screen's corners and edges (`#frost`,
+CSS gradients only, shown only then) and a soft heartbeat (sound.js `heart`, `HEART_MS`); a stumble pitches it forward. In air under
+`BREATH_AIR` its breath puffs from its mouth (`PUFF_ART`, painted once), soaked it drips off its hem. Two slim bars over the satchel
+(`#vitals`, `renderVitals`, in the 250 ms block, rewritten only on a change): warmth (amber to ice blue, a drop by it while wet) and
+stamina (amber and pulsing while winded), each shown only while not full. Collapsed it tips over (`FALL_MS`), the screen goes dark
+(`#veil`, `DARK_AFTER`), and `bodyFrame` runs the sim `SKIP_MS` a frame till it wakes at home (`bodyWoke`: the camera there at
+once, a toast). Out of breath (`f.winded`) a press, Shift or a held run only walks it.
 A click or a tap on an animal (on its body as drawn: `animalAt`, a little wider for a finger) opens its panel;
 anywhere else walks the forager there (`walkTo`, sim.js `foragerTo`) and shuts the panel, with a
 soft ring where it was sent (`drawMark`, `MARK_ART` painted once) that fades once it's there, and a faint dashed line to it

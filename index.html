@@ -290,6 +290,38 @@
   @media (max-width: 760px) and (min-height: 501px) {
     body:has(#inspector.open) #satchel { opacity: 0; transform: translate(-50%, 30px); pointer-events: none; }
   }
+  /* ---- the forager's body (game.js renderVitals): two slim bars over the satchel, warmth and stamina, each shown only
+     while it isn't full (a drop by the warmth while it's wet); frost creeping in at the edges while it's freezing; and the
+     dark it collapses into, while the night runs by */
+  #vitals { position: fixed; z-index: 4; left: 50%; bottom: calc(var(--bottom) + 54px); transform: translateX(-50%); display: flex; gap: 8px;
+    pointer-events: none; transition: opacity 0.35s, transform 0.35s; }
+  .vital { display: flex; align-items: center; gap: 5px; padding: 3px 8px 3px 6px; border-radius: 10px; opacity: 0; transform: translateY(4px);
+    background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); transition: opacity 0.6s, transform 0.6s; }
+  .vital.show { opacity: 1; transform: none; }
+  .vital svg { width: 12px; height: 12px; fill: currentColor; flex: none; }
+  .vital .bar { position: relative; width: 54px; height: 5px; border-radius: 3px; background: rgba(120, 90, 50, 0.18); overflow: hidden; }
+  .vital .bar i { position: absolute; inset: 0 auto 0 0; width: 100%; border-radius: 3px; background: currentColor; transition: width 0.3s linear; }
+  #v-warm { color: var(--c, rgb(222, 128, 58)); transition: opacity 0.6s, transform 0.6s, color 0.6s; }
+  #v-warm .drop { color: #6f9cc9; opacity: 0; transition: opacity 0.6s; margin-left: -1px; }
+  #v-stam { color: #8a9a52; }
+  #v-stam.winded .bar i { animation: winded 0.7s ease-in-out infinite alternate; background: #b4834a; }
+  @keyframes winded { to { opacity: 0.45; } }
+  @media (pointer: coarse) { #vitals { bottom: calc(var(--bottom) + 60px); } }
+  @media (max-width: 760px) and (min-height: 501px) {
+    body:has(#inspector.open) #vitals { opacity: 0; transform: translate(-50%, 30px); }
+  }
+  #frost { position: fixed; inset: 0; z-index: 3; display: none; pointer-events: none; opacity: 0; transition: opacity 1.2s;
+    background: radial-gradient(circle at 0 0, rgba(240, 247, 255, 0.85), rgba(232, 242, 252, 0) 32%),
+      radial-gradient(circle at 100% 0, rgba(240, 247, 255, 0.8), rgba(232, 242, 252, 0) 28%),
+      radial-gradient(circle at 0 100%, rgba(240, 247, 255, 0.8), rgba(232, 242, 252, 0) 30%),
+      radial-gradient(circle at 100% 100%, rgba(240, 247, 255, 0.85), rgba(232, 242, 252, 0) 34%),
+      radial-gradient(ellipse 80% 75% at 50% 50%, rgba(232, 242, 252, 0) 66%, rgba(226, 238, 250, 0.3) 85%, rgba(236, 245, 255, 0.75) 100%); }
+  #frost.on { display: block; }
+  #veil { position: fixed; inset: 0; z-index: 8; display: grid; place-items: center; pointer-events: none; opacity: 0; background: #0d111c;
+    transition: opacity 1.3s ease-in; }
+  #veil.dark { opacity: 1; pointer-events: auto; transition: opacity 1.3s ease-out; }
+  #veil p { margin: 0; color: #c9cfdc; font: italic 400 20px/1.4 Fraunces, Georgia, serif; opacity: 0; transition: opacity 1s 0.6s; }
+  #veil.dark p { opacity: 0.85; }
   @media (prefers-reduced-motion: reduce) { .close { transition: none; } }
 </style>
 </head>
@@ -297,6 +329,15 @@
 <canvas id="world"></canvas>
 <!-- a word now and then, gone in a few seconds (game.js toast) -->
 <div id="news"></div>
+
+<!-- the forager's body (game.js renderVitals): frost at the edges while freezing, the dark it collapses into, and over the
+     satchel two slim bars, warmth and stamina -->
+<div id="frost"></div>
+<div id="veil"><p>Too cold to go on&hellip;</p></div>
+<div id="vitals">
+  <div class="vital" id="v-warm" title="Warmth"><svg viewBox="0 0 12 12"><path d="M6.2 .8c.4 2.1 3.3 3.4 3.3 6.3a3.5 3.5 0 0 1-7 0c0-1.6.9-2.6 1.7-3.4.1 1.1.6 1.8 1.3 2 -.3-1.7-.1-3.4.7-4.9z"/></svg><span class="bar"><i></i></span><svg class="drop" viewBox="0 0 12 12"><path d="M6 1.2C7.6 3.8 9.2 5.5 9.2 7.6a3.2 3.2 0 0 1-6.4 0C2.8 5.5 4.4 3.8 6 1.2z"/></svg></div>
+  <div class="vital" id="v-stam" title="Stamina"><svg viewBox="0 0 12 12"><path d="M3.2 1h3.3v4.6l3 1.3c.9.4 1.5 1.1 1.5 2v.9H1.6v-1.2c.6-.2 1-.7 1.1-1.3z"/></svg><span class="bar"><i></i></span></div>
+</div>
 
 <!-- bottom middle: the satchel, a row of slots (game.js renderSatchel) -->
 <div id="satchel" class="empty"><div class="slots"></div>

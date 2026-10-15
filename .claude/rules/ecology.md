@@ -210,6 +210,19 @@ autumn more than a big colony eats in a winter): a greedy forager taking all it 
 than none. `eachPickable` lists everything with something to give now (game.js's glints and arrow, and counting). `whatThere` also says gently why not ("Not ripe yet", "Picked clean"...). What's picked goes
 in the satchel (`w.forager.bag`, `bagN`: `SLOTS` slots, `STACK` of a kind to one; `stow`, `roomFor`, `dropSlot`), kept with the meadow. What's dropped lies on the ground (`w.dropped`, `dropOf`; dropped on a pile of its kind it goes on it) for `DROP_DAYS` (half a day, six minutes at 1x), or till deep water comes over it (`droppedTick`).
 No `KEEP_VERSION` bump: the new fields are in the blanks (`foragerOf`, `greenOf`, `blankTree`).
+Its body (`bodyTick`, every tick, before it walks): the air's temperature (`airTemp`, degrees: the year's, `AIR_YEAR`, about
+19 at midsummer and -1 at midwinter; the day's, `AIR_DAY`, coldest at sunrise, warmest at `AIR_WARMEST`; the weather's,
+`AIR_WEATHER`; snow lying, `AIR_SNOW`). What it feels (`f.feel`) is that plus the sun out of the shade (`SUN`, `sunUp`), less
+the wind (`WIND`) and being wet (`WET_CHILL`), plus moving (`ACTIVE`); the woods (`SHELTER_WOOD`) keep off wind, rain and sun.
+Over `COMFY` its warmth (`f.warmth`, 1 cosy to 0) comes back at `WARM_K` a degree a day, under it goes at `COOL_K` (`WET_COLD`
+times faster again soaked). Rain soaks it (`WET_RAIN`, less under trees), wading at once (`WET_WADE`), and it dries out of the
+rain (`DRY`, faster warm, in sun, moving). Sprinting spends stamina (`SPRINT_TICKS`), walking and standing bring it back
+(`REST_TICKS`, slower cold); spent it's `winded` till `WINDED_BACK`. Stages (`warmthStage`, `WARMTH_STAGES`): cosy, chilly, cold
+(slower, `COLD_PACE`, `bodyPace`), freezing (slower, stumbles, `STUMBLE_*`, hashed from the tick, no random numbers), and at 0
+it collapses (`f.down`, event 'collapse'), waking at `f.homeX`, `f.homeY` (where it started; the camp later) the next morning
+(`WAKE_PHASE`, at least `DOWN_TICKS` on: `wakeForager`, event 'woke') chilly, dry, rested, the satchel empty. Standing still
+from full warmth at dusk (4 seeds): a summer night ends cosy or chilly, a spring or autumn one anywhere from chilly to
+collapsed (rain makes it worse), a winter one kills. No fire yet: it's the strongest warmth to come (PLAN.md stage 4).
 
 Rocks are painted (`rockInfo`, `rockSprite` in game.js): pebbles, stones and boulders by
 size (`TERRAIN.rockSize`), flat stones at the fords, and two or three great rocks per meadow
