@@ -6836,6 +6836,18 @@ function beesOnScreen() {
   return n;
 }
 
+// How much of the screen is under leafy crowns, 0..1, for the leaves' rustle (pines' needles hardly).
+function leavesOnScreen() {
+  let a = 0;
+  const z = cam.zoom;
+  for (const d of world.plants) {
+    if (!d.tree || d.stump || d.dead || d.fallen || d.gone || d.hedge) continue;
+    const [sx, sy] = toScreen(d.x, d.y), px = d.size * z;
+    if (visible(sx, sy, px)) a += px * px * (d.kind === 'pine' ? 0.3 : 1);
+  }
+  return Math.min(1, 3 * a / (vw * vh));
+}
+
 function toggleSound(on = !ui.sound) {
   ui.sound = on;
   if (on && navigator.userActivation?.hasBeenActive !== false) Sound.start();   // else the first click will
@@ -12396,7 +12408,7 @@ function frame(now) {
     if (ui.sound) {
       const ck = S.clock(world);
       const life = world.count.rabbit / (S.CROWDED * world.room);   // a crowded meadow, not the cap (only a safety net now)
-      Sound.update({ phase: ck.phase, season: ck.season, speed: ui.speed, sky: ui.sky.mix, fire: world.burning.length, bees: beesOnScreen(), life, owls: world.count.owl || 0,
+      Sound.update({ phase: ck.phase, season: ck.season, speed: ui.speed, sky: ui.sky.mix, fire: world.burning.length, bees: beesOnScreen(), trees: leavesOnScreen(), life, owls: world.count.owl || 0,
         frogs: world.spawnCount > 0 && ck.season === 0 ? Math.min(1, world.spawnCount / 300) : 0 });
     }
     // Not under the mouse or a finger: a rebuilt button would swallow the click. (A finger leaves :hover stuck.)
