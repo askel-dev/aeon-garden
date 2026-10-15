@@ -18,7 +18,8 @@ closed); none of that project's rules apply here.
   creature, a hive or a tree that the code counts on) bumps `KEEP_VERSION`, and players' kept meadows start over.
 - You play a little hooded forager (sim.js `w.forager`, fur.js `paintForager`, game.js `drawForager`): a click or a tap
   on the ground walks it there round the deep water (sim.js `foragerTo`), one on an animal opens its panel, a press held
-  still sprints toward the pointer (so does Shift), and the camera goes with it (`leadCam`) till you drag it away. For now it only walks:
+  still sprints toward the pointer (so does a drag, or Shift), and the camera always stays on it (`leadCam`): there's no looking
+  around, and a zoom (wheel, pinch, double tap) is about the forager, from `HOME_TILES` across out to `FAR_TILES`. For now it only walks:
   gathering and cooking come next. `forager-lab.html` shows all its paintings. Notes in game.md and ecology.md.
 - `game.js`: drawing, UI, the inspector. Its features (and where new notes on them go) are in
   `.claude/rules/game.md`, which loads when game.js or index.html is opened.

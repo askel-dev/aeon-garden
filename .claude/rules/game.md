@@ -16,7 +16,7 @@ watching game's cards, news feed, stats, journal, tools, intro and idle camera w
 The forager (sim.js `w.forager`; how it walks is in ecology.md) is painted in fur.js like a fox (`paintForager`,
 `foragerPose`, `foragerParts`: a rust hood with a flopping point, a round face, a moss cloak, mittens, a satchel, boots), in
 three views (side on, three-quarters from the front and the back, all facing left and mirrored going right) and eight
-paintings a stride, plus standing, a fidget and a blink: 'forager:' + (view << 4) + pose, painted by the worker
+paintings a stride, eight more jogging for the sprint, plus standing, a fidget and a blink: 'forager:' + (view << 5) + pose, painted by the worker
 (`foragerAhead` asks for every one at the size it's drawn, so a walk never waits). Its feet are where it is. game.js
 (`foragerFrame`, once a frame) turns the stride over with the ground it covers (a stride every `2 * FORAGER_REACH * 2` of its
 half-size, so the planted foot doesn't slide; fur.js `FORAGER_REACH`), picks the view from the sim's heading with a margin
@@ -27,7 +27,8 @@ A click or a tap on an animal (on its body as drawn: `animalAt`, a little wider 
 anywhere else walks the forager there (`walkTo`, sim.js `foragerTo`), shuts the panel and puts the camera back on it, with a
 soft ring where it was sent (`drawMark`, `MARK_ART` painted once) that fades once it's there. A press held still for
 `HOLD_MS` runs toward the pointer while it's down (sim.js `f.running`, `FORAGER_RUN`; Shift held runs too, `holdShift`), the
-way found again every `STEER_MS` (in `frame`), and on to where it's let go. Running, its stride is `FORAGER_RUN_STRIDE` longer. The camera goes with it (`ui.lead`, `leadCam`): eased after it (`CAM_FOLLOW`), a little ahead the way it walks
+way found again every `STEER_MS` (in `frame`), and on to where it's let go. Running, once up past `FORAGER_JOG` it jogs (`fg.jog`, fur.js poses 16 to 23: both feet off the ground a moment, heels
+kicking up, elbows bent and pumping, leaning in) with a stride `FORAGER_JOG_STRIDE` longer. The camera goes with it (`ui.lead`, `leadCam`): eased after it (`CAM_FOLLOW`), a little ahead the way it walks
 (`CAM_AHEAD`, itself eased so setting off and stopping are soft), its feet a little below the middle (`CAM_FEET`). A drag or
 a pan lets it go, F or the next walk takes it back; the wheel zooms about the forager while the camera's with it. A kept
 meadow keeps where it is and whether the camera was with it (`rec.lead`).
@@ -79,8 +80,7 @@ is costly (each pass through the scratch layer is a flush), so parts can share o
 just shaded (`flat`). It's painted only at doublings of its size (`FUR_PAINTED`) and shrunk for the sizes between,
 which keeps a dozen poses, growing young and zooming cheap. In the meadow the paintings are made off the main thread
 (fur-worker.js, which loads fur.js; game.js `furReady` asks for them, and shrinking is done on the page once what it's
-made from has come). Till a pose comes the animal holds the one it was last drawn in (`shownPose`,
-as a tree's new colours do), or the same at another size or one of its kin stands in (`furKin`), and each look about the
+made from has come). Till a pose comes the animal holds the one it was last drawn in (`shownPose`), or the same at another size or one of its kin stands in (`furKin`), and each look about the
 screen is asked for ahead (`furAhead`), so only the first of a look is painted on the page. Without a worker (no
 OffscreenCanvas) they're painted on the page, a new pose waiting a frame once the frame has done its painting. The
 inspector's portrait is always painted on the page.
@@ -116,7 +116,7 @@ round the foot, where it lies flat a moment and fades. Nothing is kept: a leaf g
 is comes from the time and hash numbers). The trees dropping leaves are listed as the shadows go down (`treeLeaves`), and
 drawn twice by `drawLeaves`: those lying then, under all that stands, those in the air at the end. Each leaf is a
 transform and a draw of its own, so they're thinned on trees drawn small (`LEAF_MIN`, `LEAF_FULL`: zoomed out, a wood had
-nearly 2000). An emoji tree keeps the old tumbling ovals (`drawFallingLeaves`).
+nearly 2000).
 
 The meadow is kept in the browser when the page is hidden or closed (`keepMeadow`: IndexedDB, under its link, the last
 `KEEP_MEADOWS`), never on a timer while someone watches (a save is a few frames). The next visit opens it where it was
