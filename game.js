@@ -1979,6 +1979,18 @@ const FORAGER_STILL_MS = 70;               // no nearer than this to the last mo
 const forPx = () => (8 + cam.zoom) * FORAGER_SIZE;
 const fg = { at: -1, x: 0, y: 0, step: 0, stillMs: 1e4, view: 1, flip: false, art: FORAGER_ARTS[16], blinkAt: -1e9, blinkIn: 3000,
   fidgetAt: -1e9, fidgetIn: 9000, lastHalf: 0, rings: [], wet: false, lx: -0, ly: -0, sized: 0 };
+// What's under the forager's feet, for its footsteps (sound.js step): the shallows, ice, snow, the wood's floor, the damp
+// sand along the water, earth bitten bare, or grass.
+const STEP_SNOW = 0.35, STEP_WOODS = 0.45, STEP_SHORE = 1.5, STEP_BARE = 0.12;
+function groundUnder(x, y) {
+  const w = world, i = (y | 0) * S.W + (x | 0);
+  if (w.water[i]) return w.frozen ? 'ice' : 'water';
+  if (w.snow > STEP_SNOW) return 'snow';
+  if (w.wood[i] > STEP_WOODS) return 'woods';
+  if (w.damp[i] <= STEP_SHORE) return 'shore';
+  return w.grass[i] < STEP_BARE ? 'earth' : 'grass';
+}
+
 function foragerFrame(now, d) {
   const f = world.forager, px = forPx();
   if (fg.at < 0) { fg.x = d.x; fg.y = d.y; fg.at = now; }
@@ -1998,6 +2010,7 @@ function foragerFrame(now, d) {
     pose = 8 + Math.floor(fg.step % 1 * 8);
     const half = Math.floor(fg.step * 2);                 // a foot comes down: in the shallows, a ring
     if (half !== fg.lastHalf && fg.wet && ui.speed > 0) fg.rings.push({ x: d.x, y: d.y, t: now });
+    if (half !== fg.lastHalf && ui.speed > 0) hear('step', d.x, d.y, { pace: f.speed / S.FORAGER_WALK, foot: half & 1, ground: groundUnder(d.x, d.y) }, true);   // (each foot down; the quicker it goes, the quicker and crisper they come)
     fg.lastHalf = half;
     fg.fidgetIn = fg.stillMs + FORAGER_FIDGET[0] * (0.6 + 0.4 * Math.random());
   } else {

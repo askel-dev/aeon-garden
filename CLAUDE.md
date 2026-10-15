@@ -35,7 +35,10 @@ closed); none of that project's rules apply here.
   the night is a navy `wash` over everything. The loop gives the sim at most `SIM_MS` a frame (a slow phone runs fast time a bit slower
   instead of dropping frames), and a paused meadow nobody is touching draws at 30 fps (`resting`).
 - `sound.js`: all the sounds, made with Web Audio (no files). Off until the 🔊 button or M.
-  `sound-lab.html` plays each one on its own. Keep it minimal: one scale, few sounds. Every 5 to 10
+  `sound-lab.html` plays each one on its own. The forager's footsteps (`step`) come from game.js `foragerFrame`, one for each
+  foot down in the stride, with `pace` = its speed against `FORAGER_WALK`, so a sprint (just a faster `f.speed`) is quicker
+  and a little firmer with no change here, and `ground` from `groundUnder` (grass, earth, shore, woods, snow, ice, water),
+  each its own sound. They're kept soft and cozy (`STEP_SOFT`, all through a felt low-pass, `STEP_TOP`), the grass softest. Keep it minimal: one scale, few sounds. Every 5 to 10
   minutes a short felt-piano piece plays (`TUNES`, written out note by note and played a little
   differently each time); the lab plays each piece on demand. Like C418's Minecraft music, the
   silence between pieces is part of it, and no piece is about the time of day (a day is 12 minutes, a

@@ -159,6 +159,14 @@
     ['queen', '👑', 'A swarm moves in', 'a bell and the hive buzzing up'],
     ['queenlost', '🐝', 'A colony lost', 'two falling buzzes'],
     ['rainbow', '🌈', 'Rainbow', 'a quiet run up the scale'],
+    ['step', '👣', 'Footsteps on grass', 'a brush of blades on a soft pad, at a walk'],
+    ['stepfast', '💨', 'Footsteps, sprinting', 'the same grass at 2.2 times the pace'],
+    ['stepearth', '🟫', 'Footsteps on bare earth', 'a dull dry tap'],
+    ['stepshore', '🏖️', 'Footsteps on the shore', 'damp sand: a squelch'],
+    ['stepwoods', '🍂', 'Footsteps in the wood', 'leaf litter and twigs crackling'],
+    ['stepsnow', '❄️', 'Footsteps in snow', 'a squeak and a crunch'],
+    ['stepice', '🧊', 'Footsteps on ice', 'a hard glassy knock'],
+    ['stepwater', '🌊', 'Footsteps wading', 'a slosh and a drip'],
     ['click', '🔘', 'Button click', 'a wooden tick (UI)'],
   ];
   $('#events').innerHTML = EVENTS.map(([k, e, name, how]) =>
@@ -207,10 +215,20 @@
   };
   $('#life').oninput = e => { st.life = +e.target.value; push(); };
 
+  // A walk: eight steps, the feet taking turns, at a gait of a walk's 0.34 s a step shortened by the pace.
+  const WALKS = { step: [1, 'grass'], stepfast: [2.2, 'grass'], stepearth: [1, 'earth'], stepshore: [1, 'shore'], stepwoods: [1, 'woods'], stepsnow: [1, 'snow'], stepice: [1, 'ice'], stepwater: [0.5, 'water'] };
+  function walk(key) {
+    const [pace, ground] = WALKS[key];
+    if (!$('#start').classList.contains('on')) $('#start').click();
+    for (let i = 0; i < 8; i++) setTimeout(() => S.play('step', { pace, ground, foot: i & 1, near: 1, pan: 0 }), i * 340 / pace);
+    $('#log').textContent = `Walked eight steps (${ground}, pace ${pace}).`;
+  }
+
   document.addEventListener('click', e => {
     const b = e.target.closest('[data-play],[data-season],[data-speed],[data-species],[data-sky]');
     if (!b) return;
-    if (b.dataset.play) play(...({
+    if (b.dataset.play in WALKS) walk(b.dataset.play);
+    else if (b.dataset.play) play(...({
       splash: ['escape', { how: 'pond', label: 'splash' }],
       farthunder: ['thunder', { seen: false, near: 0.2, label: 'distant thunder' }],
     }[b.dataset.play] || [b.dataset.play]));

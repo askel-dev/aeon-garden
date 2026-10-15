@@ -261,7 +261,11 @@ const RULES = {
   extinct: { gap: 4,    maxSpeed: 60 },
   rain:    { gap: 3,    maxSpeed: 60 },
   click:   { gap: 0.04, maxSpeed: 60 },
+  step:    { gap: 0.1,  maxSpeed: 4, always: true },   // (a foot down is cheap and rhythmic: it never counts against the budget)
 };
+
+const STEP_SOFT = 0.6;          // the footsteps' level against the meadow's sounds: soft, they come a few times a second
+const STEP_TOP = 2200;          // Hz: the felt every footstep goes through (a sprint opens it a little)
 
 const SOUNDS = {
   // Two notes a third apart, one from each of the pair.
@@ -355,6 +359,48 @@ const SOUNDS = {
     }
   },
   rainbow(t, o) { for (let i = 0; i < 8; i++) kalimba(o, note(i, 1), t + i * 0.09, 0.28 - i * 0.02); },
+  // A foot comes down. pace is how fast the walker goes against a walk (1 = a walk, 2 = a sprint): the quicker, the
+  // shorter, brighter, harder and higher it sounds, so it needs no change of its own to run. ground is what's underfoot
+  // (game.js groundUnder), each its own sound: 'grass' (a brush of blades on a soft pad), 'earth' (a dull dry tap),
+  // 'shore' (damp sand: a squelch), 'woods' (leaf litter and twigs: a crackle), 'snow' (a squeak and crunch), 'ice' (a
+  // hard glassy knock) or 'water' (a wade: a slosh and a drip). Their body sits in the middle, 300 Hz to 3 kHz, where a
+  // phone's speaker and a car still carry it. foot (0 or 1) alternates the pitch a little, so a walk is never one sound
+  // repeated.
+  step(t, o0, { pace = 1, ground = 'grass', foot = 0 }) {
+    const p = Math.max(0.3, Math.min(3, Number.isFinite(pace) ? pace : 1)), k = Math.sqrt(p), r = rand(0.92, 1.08) * (foot ? 0.93 : 1);
+    const h = STEP_SOFT * Math.min(1.3, 0.75 + 0.25 * p);              // how hard it lands (a sprint a little harder, never harsh)
+    const o = ac.createBiquadFilter(); o.type = 'lowpass'; o.frequency.value = STEP_TOP * Math.min(1.25, k); o.Q.value = 0.5;
+    o.connect(o0);                                                     // (all of it through a felt: soft, never a click)
+    const pad = (f, v, len = 0.07) => partial(o, f * k * r, t, v * h, 0.012, len / k);   // the foot's own knock
+    if (ground === 'water') {
+      noise(o, t, 0.26 / k, { from: 1800 * k * r, to: 500, q: 0.7, peak: 0.55 * h, attack: 0.015 });
+      noise(o, t + 0.05 / k, 0.14 / k, { from: 700, to: 1600 * r, q: 1.2, peak: 0.22 * h, attack: 0.03 });   // the water falling back
+      partial(o, rand(700, 1000) * k, t + 0.09 / k, 0.04 * h, 0.01, 0.08);                                    // a drip
+    } else if (ground === 'ice') {
+      pad(420, 0.16, 0.05);
+      partial(o, 1750 * k * r, t, 0.035 * h, 0.006, 0.1);                // the glassy ring
+      noise(o, t, 0.05, { from: 2600, to: 1800, q: 1, peak: 0.12 * h, attack: 0.012 });   // the scuff
+    } else if (ground === 'snow') {
+      noise(o, t, 0.12 / k, { from: 1900 * k * r, to: 900, q: 0.8, peak: 0.36 * h, attack: 0.012 });
+      noise(o, t + 0.03 / k, 0.08 / k, { from: 2400 * r, to: 1800, q: 1.4, peak: 0.12 * h, attack: 0.012 });   // the squeak
+      pad(300, 0.1);
+    } else if (ground === 'woods') {
+      pad(260, 0.16);
+      noise(o, t, 0.09 / k, { from: 1400 * k * r, to: 600, q: 0.8, peak: 0.2 * h, attack: 0.01 });
+      for (let i = 0, n = 3 + (Math.random() * 3 | 0); i < n; i++)      // the litter crackling: a few tiny snaps
+        noise(o, t + rand(0, 0.08) / k, 0.03, { from: rand(1800, 3200), to: 1400, q: 1.5, peak: rand(0.14, 0.24) * h, attack: 0.004 });
+    } else if (ground === 'shore') {
+      noise(o, t, 0.16 / k, { from: 350, to: 1300 * k * r, q: 1.6, peak: 0.34 * h, attack: 0.01, type: 'lowpass' });   // the suck of the damp
+      pad(240, 0.12, 0.06);
+    } else if (ground === 'earth') {
+      pad(320, 0.22, 0.06);
+      noise(o, t, 0.07 / k, { from: 1000 * k * r, to: 450, q: 0.8, peak: 0.3 * h, attack: 0.01 });
+    } else {                                                           // grass: soft, a cushion and a rustle
+      pad(190, 0.07, 0.09);                                            // hardly a knock: the turf takes it
+      noise(o, t, 0.14 / k, { from: 650 * k * r, to: 280, q: 0.5, peak: 0.34 * h, attack: 0.025, type: 'lowpass' });   // the soft press
+      noise(o, t + 0.02, 0.22 / k, { from: 1300 * k * r, to: 1900, q: 0.6, peak: 0.2 * h, attack: 0.07 });   // the blades rustling
+    }
+  },
   click(t, o) { partial(o, 1320, t, 0.06, 0.002, 0.05, 'triangle'); partial(o, 660, t, 0.05, 0.002, 0.08); },
 };
 
