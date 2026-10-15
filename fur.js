@@ -860,9 +860,12 @@ function foragerParts(P) {
       else { arm(-shoulder, P.stoop ? reach : P.swing, false, true); arm(shoulder, P.hand ? 2.4 : P.stoop ? reach : -P.swing, false, true); }
       head();
     } else {
+      // (An arm swung forward is ahead of it, behind the cloak from here: only the one swung back shows over it.)
+      const al = P.stoop ? 1.1 * P.stoop : P.swing, ar = P.stoop ? 1.1 * P.stoop : -P.swing;
       if (P.hug) { hug(-shoulder, 0); hug(shoulder, 1); }
+      else { if (al > 0) arm(-shoulder, al, true, false); if (ar > 0) arm(shoulder, ar, true, false); }
       cloak(); satchel();
-      if (!P.hug) { arm(-shoulder, P.stoop ? 1.1 * P.stoop : P.swing, false, true); arm(shoulder, P.stoop ? 1.1 * P.stoop : -P.swing, false, true); }
+      if (!P.hug) { if (al <= 0) arm(-shoulder, al, false, true); if (ar <= 0) arm(shoulder, ar, false, true); }
       head(); tip();
     }
   }
