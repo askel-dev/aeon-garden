@@ -4182,7 +4182,7 @@ function addFind(w, r, kind, x, y, age = 0) {
 // A meadow kept before the finds gets the same round wherever the forager is when it opens.
 const CAMP_REACH = [2.5, 9];
 const CAMP_FINDS = 6;
-const CAMP_GROUND = { stick: 3, pebble: 2, drygrass: 2, birchbark: 1 };
+const CAMP_GROUND = { stick: 3, pebble: 3, drygrass: 2, birchbark: 1 };   // (a campfire: recipes.js BUILDS)
 function startFinds(w) {
   const r = w.findRng, F = w.forager;
   for (const kind in CAMP_GROUND) for (let k = 0, n = 0; k < 300 && n < CAMP_GROUND[kind]; k++) {
@@ -5798,14 +5798,16 @@ function bodyTick(w) {
   const shelter = clamp(w.wood[i] / SHELTER_WOOD, 0, 1);
   const moving = f.walking && f.moved > 0, sprint = moving && f.running && !f.winded;
   const wade = !w.frozen && w.water[i] === SHALLOW;
+  const fire = w.fires.length ? fireWarmth(w, f.x, f.y) : 0, near = fire ? fireNear : 0;   // (a fire close by: the strongest warmth)
   const feel = air + (SUN[kind] || 0) * sunUp(w.tick) * (1 - shelter) - (WIND[kind] || 0) * (1 - 0.6 * shelter) - WET_CHILL * f.wet
-    + (sprint ? ACTIVE.run : moving ? ACTIVE.walk : ACTIVE.still);
+    + (sprint ? ACTIVE.run : moving ? ACTIVE.walk : ACTIVE.still) + fire;
   f.feel = feel;
   const d = feel - COMFY;
   f.warmth = clamp(f.warmth + (d > 0 ? WARM_K * d : COOL_K * d * (1 + WET_COLD * f.wet)) / TPD, 0, 1);
   const soak = wade ? WET_WADE : (WET_RAIN[kind] || 0) * (1 - 0.7 * shelter);
   if (soak > 0) f.wet = Math.min(1, f.wet + soak / TPD);
   else if (f.wet > 0) f.wet = Math.max(0, f.wet - DRY * clamp(0.3 + air / 20, 0.15, 1.6) * (1 + sunUp(w.tick) * (SUN[kind] || 0) / 5) * (moving ? 1.2 : 1) / TPD);
+  if (near > 0 && f.wet > 0 && !wade) f.wet = Math.max(0, f.wet - FIRE_DRY * near / TPD);   // (it dries by the fire, rain or not)
   if (sprint) f.stamina = Math.max(0, f.stamina - 1 / SPRINT_TICKS);
   else f.stamina = Math.min(1, f.stamina + clamp(0.35 + 0.65 * f.warmth / WARMTH_STAGES[0], 0.35, 1) / REST_TICKS[moving ? 1 : 0]);
   if (f.stamina <= 0) f.winded = true;
@@ -5827,6 +5829,117 @@ function wakeForager(w) {
   f.warmth = WAKE_WARMTH; f.wet = 0; f.stamina = 1; f.winded = false; f.stumble = 0; f.down = -1;
   f.bag.fill(''); f.bagN.fill(0);
   emit(w, { type: 'woke' });
+}
+
+// ---------------------------------------------------------------- fires
+//
+// A campfire (w.fires, one layout, fireOf): a ring of stones with sticks and tinder in it, laid where the forager kneels
+// (layFire; what one takes is recipes.js's BUILDS, which game.js spends out of the satchel), and lit (lightFire: game.js
+// has the forager strike its flint and steel and blow on the spark). Lit, it burns its sticks down (f.fuel, in ticks:
+// FIRE_STICK a stick, faster in the wet, FIRE_WET), never more than FIRE_MOST of them on at once (feedFire puts more on).
+// Burnt out, its embers glow on for FIRE_EMBERS (f.embers), and a stick on and a quick blow light it again (lightFire takes
+// embers as it takes tinder); after that it's cold, and wants tinder and a strike. Water coming over it (the spring flood)
+// puts it out. How well it burns (fireHeat, 0 to 1: low under FIRE_LOW, a glow as embers) is how warm it is by it
+// (fireWarmth: FIRE_WARM degrees within FIRE_NEAR, falling off to none at FIRE_REACH), which bodyTick feels, and close up
+// it dries the forager (FIRE_DRY), rain or not. It's the meadow's strongest warmth: a winter night by a fed fire is cosy,
+// a night away from one still dangerous. Nothing here draws the meadow's random numbers. A meadow kept before fires has
+// none (unpackWorld), no KEEP_VERSION bump.
+const FIRE_STICK = TPD / 14;            // ticks a stick burns (51 s at 1x): a new fire's five, dusk to about dawn
+const FIRE_MOST = 6 * FIRE_STICK;       // it takes no more on than this (a night, dry: rain and storms burn it faster)
+const FIRE_LOW = 1.5 * FIRE_STICK;      // with less than this left it burns low: smaller and less warm
+const FIRE_EMBERS = TPD / 10;           // ticks its embers glow once it's burnt out (a minute and a bit at 1x)
+const FIRE_WET = { rain: 1.4, storm: 2, snow: 1.25 };   // it burns this much faster in the wet
+const FIRE_WARM = 24;                   // degrees it warms the forager within FIRE_NEAR tiles, burning well
+const FIRE_NEAR = 1, FIRE_REACH = 5;    // tiles: all of it within the first, falling off (squared) to none at the second
+const FIRE_DRY = 8;                     // a day: how fast it dries the forager close up (soaked to dry in an eighth of a day)
+const FIRE_GAP = 1.2;                   // tiles a fire keeps from another fire, a trunk, a rock or a burrow
+const FIRE_LOOK = 30;                   // ticks between looks for water over a fire
+
+// Every field a fire ever has (see blankCreature). fuel: ticks of burning in the sticks on it; lit: burning; embers: ticks
+// its embers glow on, once burnt out; tinder: tinder in it, to catch a spark; litAt: the tick it was last lit; ash: how
+// much it has burnt (0 new to 1), for its look.
+const fireOf = (x, y, born) => ({ fire: true, x, y, born, fuel: -0, lit: false, embers: -0, tinder: false, litAt: -1, ash: -0 });
+
+// Whether a fire can be laid at x, y: '' if it can, else why not, in a few words (game.js says it).
+function fireSpot(w, x, y) {
+  if (!inBounds(x, y) || x < 2 || y < 2 || x > W - 2 || y > H - 2) return 'Too near the edge';
+  const i = idx(x, y);
+  if (w.water[i] && !w.frozen) return 'Not in the water';
+  if (w.water[i]) return 'Not on the ice';
+  for (const F of w.fires) if (Math.hypot(F.x - x, F.y - y) < FIRE_GAP * 1.5) return 'There\'s a fire here';
+  rocksFor(w);
+  for (let k = 0; k < solidR.length; k += 3) if (Math.hypot(solidR[k] - x, solidR[k + 1] - y) < solidR[k + 2] + FIRE_GAP * 0.4) return 'A rock\'s in the way';
+  let trunk = false;
+  forEachDecorNear(w, x, y, 2, d => { if (standing(d) && d.size >= SEEDLING && Math.hypot(d.x - x, d.y - y) < FIRE_GAP * (0.5 + 0.15 * Math.min(d.size, 3))) trunk = true; });
+  if (trunk) return 'Too close to the tree';
+  for (const b of w.brambles) if (b.size > 0 && Math.hypot(b.x - x, b.y - y) < FIRE_GAP + 0.3 * b.size) return 'Too close to the brambles';
+  for (const b of w.burrows) if (Math.hypot(b.x - x, b.y - y) < FIRE_GAP) return 'On a burrow';
+  return '';
+}
+// Lays one at x, y with sticks and tinder in it (game.js has taken them out of the satchel), unlit. Returns it.
+function layFire(w, x, y, sticks, tinder) {
+  const F = fireOf(x, y, w.tick);
+  F.fuel = Math.min(FIRE_MOST, sticks * FIRE_STICK); F.tinder = tinder > 0;
+  w.fires.push(F);
+  emit(w, { type: 'firelaid', fire: F });
+  return F;
+}
+// How many more sticks it takes.
+const fireRoom = F => Math.max(0, Math.ceil((FIRE_MOST - F.fuel) / FIRE_STICK - 0.25));
+// Puts sticks on it (and tinder, which a cold one needs to light). Returns how many it took.
+function feedFire(w, F, sticks, tinder) {
+  const n = Math.min(sticks, fireRoom(F));
+  F.fuel = Math.min(FIRE_MOST, F.fuel + n * FIRE_STICK);
+  if (tinder) F.tinder = true;
+  if (n || tinder) emit(w, { type: 'firefed', fire: F, n });
+  return n;
+}
+// Whether a spark and a blow would light it: sticks on it, and tinder or embers to catch.
+const lightable = F => !F.lit && F.fuel > 0 && (F.tinder || F.embers > 0);
+// The forager blew on the spark, or the embers, till it caught (game.js): it burns.
+function lightFire(w, F) {
+  if (!lightable(F)) return false;
+  F.lit = true; F.tinder = false; F.embers = 0; F.litAt = w.tick;
+  emit(w, { type: 'firelit', fire: F });
+  return true;
+}
+// Every tick: the lit ones burn their sticks down (faster in the wet), the embers of a burnt out one go grey, and water over
+// one puts it out.
+function fireTick(w) {
+  const wet = FIRE_WET[w.weather.kind] || 1, look = w.tick % FIRE_LOOK === 0;
+  for (const F of w.fires) {
+    if (F.lit) {
+      F.fuel -= wet;
+      F.ash = Math.min(1, F.ash + wet / (6 * FIRE_STICK));
+      if (F.fuel <= 0) { F.fuel = 0; F.lit = false; F.embers = FIRE_EMBERS; emit(w, { type: 'fireout', fire: F }); }
+    } else if (F.embers > 0) {
+      F.embers = Math.max(0, F.embers - wet);
+      if (!F.embers) emit(w, { type: 'firecold', fire: F });
+    }
+    if (look && w.water[idx(F.x, F.y)] && !w.frozen && (F.lit || F.embers || F.tinder)) {   // (the flood over it)
+      F.lit = false; F.embers = 0; F.tinder = false;
+      emit(w, { type: 'firedoused', fire: F });
+    }
+  }
+}
+// How well it burns, 0 (cold) to 1: a fed fire 1, smaller as its last sticks go, embers a dull glow going grey.
+const fireHeat = F => (F.lit ? 0.45 + 0.55 * clamp(F.fuel / FIRE_LOW, 0, 1) : F.embers > 0 ? 0.3 * F.embers / FIRE_EMBERS : 0);
+// How many degrees the fires warm x, y (the nearest, warmest one), and how close to one it is (fireNear, 0 to 1).
+let fireNear = 0;
+function fireWarmth(w, x, y) {
+  let warm = 0;
+  fireNear = 0;
+  for (const F of w.fires) {
+    const h = fireHeat(F);
+    if (!h) continue;
+    const dx = F.x - x, dy = F.y - y;
+    if (dx > FIRE_REACH || dx < -FIRE_REACH || dy > FIRE_REACH || dy < -FIRE_REACH) continue;
+    const d = Math.hypot(dx, dy);
+    if (d >= FIRE_REACH) continue;
+    const k = d <= FIRE_NEAR ? 1 : 1 - (d - FIRE_NEAR) / (FIRE_REACH - FIRE_NEAR), v = FIRE_WARM * h * k * k;
+    if (v > warm) { warm = v; fireNear = k * k * h; }
+  }
+  return warm;
 }
 
 // ---------------------------------------------------------------- gathering
@@ -5932,6 +6045,26 @@ function stow(f, id, n) {
     f.bag[k] = id; f.bagN[k] += m; n -= m; into.push(k);
   }
   return into;
+}
+// How many of id the satchel holds.
+function bagCount(f, id) {
+  let n = 0;
+  for (let k = 0; k < SLOTS; k++) if (f.bag[k] === id) n += f.bagN[k];
+  return n;
+}
+// Takes n of id out of the satchel (for a fire: game.js, by recipes.js's BUILDS), from its smallest stacks first, so the
+// fewest slots are left part full. Returns how many it took.
+function spend(f, id, n) {
+  let took = 0;
+  while (took < n) {
+    let k = -1;
+    for (let j = 0; j < SLOTS; j++) if (f.bag[j] === id && (k < 0 || f.bagN[j] < f.bagN[k])) k = j;
+    if (k < 0) break;
+    const m = Math.min(n - took, f.bagN[k]);
+    f.bagN[k] -= m; took += m;
+    if (!f.bagN[k]) f.bag[k] = '';
+  }
+  return took;
 }
 // Calls fn(kind, it) for everything that has something to give now (whatThere's n > 0): for game.js's glints and the
 // edge arrow, a few times a second, and for counting. What lies on the ground for a fire (FINDS ground) isn't food and
@@ -6065,6 +6198,7 @@ function createWorld(seed, opts = {}) {
     greens: [], greenRng: makeRng(seed ^ 0x9a271c),                       // (see greensTick)
     finds: [], findRng: makeRng(seed ^ 0xf1d5ea),                         // (see findsTick)
     dropped: [],                                                          // (see dropSlot)
+    fires: [],                                                            // (see fireTick)
     brambles: [], pips: [], brambleRng: makeRng(seed ^ 0xb4a3b1),          // (see bramblesTick)
     count: perKind(() => 0), expecting: perKind(() => 0),
     stats: { deaths: perKind(() => ({})) },                                 // deaths by cause, of each kind
@@ -6211,6 +6345,7 @@ function step(w) {
   if (t % TPD === 0) newDay(w);
   buildGrid(w);
   weatherTick(w);
+  if (w.fires.length) fireTick(w);
   bodyTick(w);
   foragerTick(w);
   if (t % GRASS_EVERY === 0) { growGrass(w, GRASS_EVERY); iceTick(w, GRASS_EVERY); }
@@ -6323,6 +6458,7 @@ function unpackWorld(kept) {
     : e.$map ? new Map() : e.$set ? new Set() : e.sp !== undefined && e.species !== undefined ? blankCreature()   // (laid out like new ones)
     : e.tree === true ? blankTree() : e.emoji === '🪨' ? rockOf(-0, -0, -0) : e.shroom === true ? shroomOf('', -0, -0, null, 0, 0, 0, 0)
     : e.forager === true ? foragerOf(-0, -0) : e.find === true ? findOf('', -0, -0, 0, 0, 0, 0) : e.dropped === true ? dropOf('', -0, -0, 0, 0, 0) : e.green === true ? greenOf('', -0, -0, 0, 0) : e.bramble === true ? brambleOf(-0, -0, 0, '', 0)
+    : e.fire === true ? fireOf(-0, -0, 0)
     : e.n !== undefined && e.i !== undefined && e.kind !== undefined && e.field !== undefined ? plantOf(-0, -0, 0, -0, null, 0) : {}));   // (a flower or blossom)
   const table = path => path.split('.').reduce((o, k) => {
     if (!o || !(k in o)) throw new Error('unpackWorld: no table ' + path);
@@ -6353,6 +6489,8 @@ function unpackWorld(kept) {
   for (const f of w.finds) asFractions(f, ['x', 'y']);
   if (!w.dropped) w.dropped = [];                       // (kept before things could be dropped)
   for (const d of w.dropped) asFractions(d, ['x', 'y']);
+  if (!w.fires) w.fires = [];                           // (kept before fires)
+  for (const F of w.fires) asFractions(F, ['x', 'y', 'fuel', 'embers', 'ash']);
   const noBrambles = !w.brambles;                       // (kept on the cooking branch before them: a new meadow's come up, below)
   if (noBrambles) { w.brambles = []; w.pips = []; w.brambleRng = makeRng(w.seed ^ 0xb4a3b1); }
   for (const b of w.brambles) asFractions(b, ['x', 'y', 'crop', 'berries']);
@@ -7219,6 +7357,8 @@ const api = {
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE, hollow,
   TREES, treeStage, treeAge, standing, bearing, inBloom, SEEDLING, SAPLING, GROWN, KIND_NAMES,
   FROG_K, SPAWN_WORTH, FISH_K, FISH_EAT, CROW_SEATS, SHROOMS, SHROOM_KINDS, FINDS, FIND_KINDS, findSeason, eachPickable, greenStage, greenPicked, GREEN_SEASONS, brambleStage, RIPE_FROM, RIPE_TO,
+  bagCount, spend, stow, fireSpot, layFire, feedFire, fireRoom, lightable, lightFire, fireHeat, fireWarmth,
+  FIRE_STICK, FIRE_MOST, FIRE_LOW, FIRE_EMBERS, FIRE_NEAR, FIRE_REACH, FIRE_GAP, FIRE_WET,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 else root.Sim = api;
