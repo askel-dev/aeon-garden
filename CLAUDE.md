@@ -26,8 +26,7 @@ closed); none of that project's rules apply here.
 - `ground.js`: the ground (grass, earth, shores, water) as a WebGL shader, painted from a
   few small textures of one texel a tile that game.js keeps up to date (`paintTerrain`, `updateWater`).
   It paints again only when a texture, the zoom or the light has moved (`steady`), and at most at 2x
-  (`GROUND_DPR`). At speed (15x and up: none now, only 1x and pause) the light, the colours and
-  the wet move a little every frame, so what only moves with them waits up to `GROUND_HOLD` ms. In Safari (`WEBKIT`) it keeps to
+  (`GROUND_DPR`). In Safari (`WEBKIT`) it keeps to
   `GROUND_WEBKIT` pixels, never below 1x: Safari misses a frame on each repaint of a big ground. While the camera pans
   (following, dragging) it paints a margin round the screen (`PAD`) and slides the picture along (`Ground.view`) until the margin runs out. The picture is a canvas of its own
   under the meadow's (`#ground`), slid into place with a CSS transform, never copied onto a frame; so nothing drawn on the meadow can blend with the ground (a `'lighter'` glow lays a

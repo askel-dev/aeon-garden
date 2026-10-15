@@ -435,9 +435,6 @@ function edgeColour(r, g, b) {
 // ground, however cheap the shader: on a MacBook at 2x, five times a second at 1x speed. There the ground
 // is kept to GROUND_WEBKIT pixels, but never below 1x. A phone's small screen stays at 2x.
 const GROUND_DPR = 2, GROUND_WEBKIT = 1.5e6;
-// At 15x and 60x the light, the mist's colour, the wet and the season move every frame, too little a frame to see: what
-// only moves with them is painted at most every GROUND_HOLD ms (a full-screen shader, two frames in three at 60x).
-const GROUND_HOLD_SPEED = 15, GROUND_HOLD = 100;
 const WEBKIT = /AppleWebKit/.test(navigator.userAgent) && !/Chrome\/|Chromium|Edg\//.test(navigator.userAgent);
 const groundLayer = Ground.ok ? Ground.canvas : null, laid = { w: 0, h: 0, x: 0, y: 0 };
 if (groundLayer) { groundLayer.id = 'ground'; canvas.before(groundLayer); }
@@ -456,7 +453,6 @@ function drawGround(z, ox, oy, shx, shy) {
     width: w, height: h, zoom: z, ox, oy, dpr: gd, seed: groundSeed, low, high, sand: shoreSand, fog: fogColour(high, ck.phase),
     light: goldLight(shownGold(ck.phase)),
     snow: world.snow, damp: 1 - 0.12 * world.wet, ice: iceOver(), cold: coldness(), lx: k * sn.lean, ly: k * 0.8,
-    hold: ui.speed >= GROUND_HOLD_SPEED ? GROUND_HOLD : 0,   // (at speed the light and the colours may wait a moment: ground.js steady)
   });
   const g = Ground.canvas, cw = g.width / gd, ch = g.height / gd, x = shx - Ground.view.x / gd, y = shy - Ground.view.y / gd;
   if (cw !== laid.w || ch !== laid.h) { g.style.width = cw + 'px'; g.style.height = ch + 'px'; laid.w = cw; laid.h = ch; }
@@ -931,8 +927,8 @@ function arch(g, w, h, y0) {
 // sizes, like a sprite: drawn by hand every frame they cost a few gradients and a dozen fills a burrow. How fresh its
 // earth is, how long it's been left and how far it's dug go in BURROW_STEPS. The paths worn round it are drawn as ever.
 const BURROW_STEPS = 16;
-// At speed a burrow's earth fades, the grass takes it back and a dig goes on in steps a frame or two apart, each a painting of
-// its own (at 60x a dozen a second a burrow): a step waits till its painting is BURROW_MS old. At 1x they're seconds apart.
+// A burrow's earth fades, the grass takes it back and a dig goes on in steps, each a painting of its own: a step waits
+// till its painting is BURROW_MS old (they came a frame or two apart when the meadow could run at 60x).
 const BURROW_MS = 250;
 const burrowArt = new WeakMap();                // a burrow's painting: { shape, age, at, canvas, r, w, h } (its middle at w/2, h/2)
 function drawBurrow(b, sx, sy, z, season, residents) {
@@ -1093,19 +1089,8 @@ const GOLD_STEPS = 10;                    // the ground is lit in this many step
 const goldenHour = phase => smooth(0.45, 0.57, phase) * (1 - smooth(0.59, 0.67, phase));
 const goldLight = k => GOLD_LIGHT.map(v => 1 + (v - 1) * k);
 
-// At speed a night comes and goes in a blink (at 60x three a second), so the light keeps near the day's:
-// the night still breathes, but nothing flashes. The dial in the time pill shows the days going by instead.
-// lightSwing is how much of the swing is shown; it eases to the speed's (lightFrame) so a change never jumps.
-const LIGHT_SWING = [[60, 0.12], [15, 0.5], [0, 1]];   // from this speed up: this much of the swing
-const LIGHT_MID = 0.095;                               // the darkness it keeps near, a little dimmer than day
-let lightSwing = 1;
-function lightFrame(dt) {
-  if (!ui.speed) return;
-  const to = LIGHT_SWING.find(([s]) => ui.speed >= s)[1];
-  lightSwing += (to - lightSwing) * (1 - Math.pow(0.02, dt));
-}
-const shownDark = phase => LIGHT_MID + (darkness(phase) - LIGHT_MID) * lightSwing;
-const shownGold = phase => Math.round(goldenHour(phase) * lightSwing * GOLD_STEPS) / GOLD_STEPS;
+const shownDark = darkness;
+const shownGold = phase => Math.round(goldenHour(phase) * GOLD_STEPS) / GOLD_STEPS;
 
 // The things a frame draws (a tree or a rock d, a swarm h, a creature c, a visitor v, mushrooms, nettles or a bramble s), each a record of the
 // one shape, kept from frame to frame: a few hundred new objects a frame, of five shapes, were felt in every loop over them.
@@ -1138,7 +1123,7 @@ function sortByY(items) {
 let shakeX = 0, shakeY = 0;                          // the frame's own transform (render's), in device pixels: see drawPaintedTree
 function render(now) {
   // Thunder rumbles the whole screen a little.
-  const q = now - ui.sky.boom < 350 && ui.speed <= 4 ? 3 * (1 - (now - ui.sky.boom) / 350) : 0;
+  const q = now - ui.sky.boom < 350 ? 3 * (1 - (now - ui.sky.boom) / 350) : 0;
   const shx = q * Math.sin(now / 17), shy = q * Math.cos(now / 23);
   shakeX = shx * dpr; shakeY = shy * dpr;
   ctx.setTransform(dpr, 0, 0, dpr, shakeX, shakeY);
@@ -1298,11 +1283,6 @@ function render(now) {
   if (hov && hov.alive && !hov.hidden && hov.id !== ui.selectedId) {
     const [sx, sy] = screenOf(hov);
     drawLabel(`${hov.name} · ${S.mood(world, hov).text}`, sx, sy + creaturePx(hov) * 0.55 + 6);
-  } else if (ui.hoverHive && ui.hoverHive !== ui.picked?.it) {
-    const h = ui.hoverHive, [sx, sy] = toScreen(h.x, h.y);
-    const where = h.patch && h.patch.field ? `the ${h.patch.field.name}` : 'flowers';
-    const dance = S.patchFresh(world, h) ? ` · 💃 ${where} to the ${compass(h.patch.x - h.x, h.patch.y - h.y)}` : '';
-    drawLabel(`🐝 ${hiveName(h)} · ${h.bees} ${h.bees === 1 ? 'bee' : 'bees'} · ${honeyWord(h)}${dance}`, sx, sy + z * 0.5 + 6);
   }
   standIns = false;                                    // a portrait for the inspector is kept, so it's always painted
 }
@@ -1470,10 +1450,9 @@ function weaveOf(c) {
   return s;
 }
 
-// Where a creature is drawn in the meadow: up to SMOOTH_SPEED, between where it was a tick ago (keepLast) and where it
-// is, as far along as the clock is to the next tick, so it glides rather than stepping 30 times a second. Quicker,
-// held, or just put somewhere, where it is. (One shared answer: read it straight away.)
-const SMOOTH_SPEED = 2;
+// Where a creature is drawn in the meadow: between where it was a tick ago (keepLast) and where it is, as far along as
+// the clock is to the next tick, so it glides rather than stepping 30 times a second. Held, or just put somewhere,
+// where it is. (One shared answer: read it straight away.)
 const lastTick = new WeakMap(), drawnPos = { x: 0, y: 0 };
 function keepLast() {
   for (const c of world.creatures) keepAt(c);
@@ -1486,7 +1465,7 @@ function keepAt(c) {
   p.x = c.x; p.y = c.y; p.tick = world.tick + 1;
 }
 function drawnAt(c) {
-  const p = ui.speed <= SMOOTH_SPEED && lastTick.get(c);
+  const p = lastTick.get(c);
   if (!p || p.tick !== world.tick || Math.abs(c.x - p.x) + Math.abs(c.y - p.y) > 1) { drawnPos.x = c.x; drawnPos.y = c.y; return drawnPos; }
   const t = Math.min(acc, 1);
   drawnPos.x = p.x + (c.x - p.x) * t; drawnPos.y = p.y + (c.y - p.y) * t;
@@ -1633,7 +1612,7 @@ function visitorArt(v) {
   if (v.mode === 'sleep') return 'hog:3';
   if (v.mode === 'snuffle') return 'hog:2';
   const s = stepOf(v, HOG_STEP);
-  return ui.speed > FEW_FRAMES ? 'hog:0' : 'hog:' + s;
+  return 'hog:' + s;
 }
 function drawVisitor(v, sx, sy, now, z) {
   const px = visitorPx(v), a = visitorFade(v);
@@ -1665,11 +1644,11 @@ function heronArt(v, up, px, now) {
   if (v.mode === 'sleep') return 'heron:9';
   if (v.mode === 'in' || v.mode === 'out' || v.mode === 'hop') {
     if (up < px * 0.12) return 'heron:0';                   // (just down, or not yet up)
-    return ui.speed > 0 && ui.speed <= FEW_FRAMES ? 'heron:' + (7 + ((now / HERON_BEAT + v.id) & 1)) : 'heron:7';
+    return ui.speed > 0 ? 'heron:' + (7 + ((now / HERON_BEAT + v.id) & 1)) : 'heron:7';
   }
   if (v.mode === 'stab') return 'heron:4';
   if (v.mode === 'gulp') return v.caught === 'fish' ? 'heron:6' : 'heron:5';
-  if (v.mode === 'stalk') { const s = stepOf(v, HERON_STEP); return 'heron:' + (ui.speed > FEW_FRAMES ? 2 : 2 + s); }
+  if (v.mode === 'stalk') { const s = stepOf(v, HERON_STEP); return 'heron:' + (2 + s); }
   return v.timer % 100 >= 70 ? 'heron:0' : 'heron:1';
 }
 const wadingAt = v => !world.frozen && world.water[(v.y | 0) * S.W + (v.x | 0)] > 0;
@@ -1705,7 +1684,7 @@ const DRAGON_SIT = 0.5;            // and sit up a reed
 const DRAGON_BEAT = 45;            // ms a wingbeat painting shows
 const dragonWay = new WeakMap();   // the way the one the sim moves last went
 function drawDragonflies(v, sx, sy, now, z, px, a) {
-  const t = world.tick + acc, still = ui.speed === 0 || ui.speed > FEW_FRAMES, ground = sy + visitorFeet(), sat = v.mode === 'perch' || v.mode === 'roost';
+  const t = world.tick + acc, still = ui.speed === 0, ground = sy + visitorFeet(), sat = v.mode === 'perch' || v.mode === 'roost';
   let way = dragonWay.get(v) ?? (v.facing > 0 ? 0 : Math.PI);
   if (!sat && (v.tx !== v.x || v.ty !== v.y)) way = Math.atan2(v.ty - v.y, v.tx - v.x);
   dragonWay.set(v, way);
@@ -1756,7 +1735,7 @@ function kfUp(v, px) {
 }
 function kfArt(v, now) {
   switch (v.mode) {
-    case 'in': case 'out': case 'back': return ui.speed > 0 && ui.speed <= FEW_FRAMES ? 'kfisher:' + (3 + ((now / KF_WHIRR + v.id) & 1)) : 'kfisher:3';
+    case 'in': case 'out': case 'back': return ui.speed > 0 ? 'kfisher:' + (3 + ((now / KF_WHIRR + v.id) & 1)) : 'kfisher:3';
     case 'dive': return 'kfisher:2';
     case 'beat': return 'kfisher:5';
     case 'sleep': return 'kfisher:6';
@@ -1791,9 +1770,9 @@ function larkUp(v) {
 }
 function larkArt(v, up, px, now) {
   if (v.mode === 'sleep') return 'lark:6';
-  if (up > px * 0.15 || v.mode === 'rise') return ui.speed > 0 && ui.speed <= FEW_FRAMES ? 'lark:' + (4 + ((now / LARK_FLUTTER + v.id) & 1)) : 'lark:4';
+  if (up > px * 0.15 || v.mode === 'rise') return ui.speed > 0 ? 'lark:' + (4 + ((now / LARK_FLUTTER + v.id) & 1)) : 'lark:4';
   if (v.mode === 'peck') return v.timer % 40 < 22 ? 'lark:2' : 'lark:3';
-  if (v.mode === 'walk') return 'lark:' + (ui.speed > FEW_FRAMES ? 0 : stepOf(v, LARK_STEP));
+  if (v.mode === 'walk') return 'lark:' + stepOf(v, LARK_STEP);
   return 'lark:0';
 }
 function drawSkylark(v, sx, sy, now, z, px, a) {
@@ -1842,7 +1821,7 @@ function drawCreature(c, sx, sy, now) {
   else drawEmoji(art, sx, y, px, { flip: flipOf(c), squash });   // feet stay on the ground
   if (c.load && c.species === 'bee') drawBaskets(c, sx, y, px);
   if (c.mode === 'sip') drawSipping(c, sx, sy, px, now);
-  if (px > 18 && ui.speed > 0 && ui.speed <= 4 && atHole(c)) drawDigging(c, sx, y, px, now);
+  if (px > 18 && ui.speed > 0 && atHole(c)) drawDigging(c, sx, y, px, now);
 }
 
 // ------------------------------------------------------------------ the forager
@@ -3016,7 +2995,7 @@ function otterArt(c, px, wet) {
 }
 function drawOtter(c, sx, sy, now) {
   const px = creaturePx(c), wet = otterSwims(c), art = otterArt(c, px, wet), flip = c.facing > 0;
-  if (wet && wasWet.get(c) === false && (c.mode === 'slide' || c.mode === 'slip') && ui.speed > 0 && ui.speed <= 4 && splashes.length < 12) {
+  if (wet && wasWet.get(c) === false && (c.mode === 'slide' || c.mode === 'slip') && ui.speed > 0 && splashes.length < 12) {
     splashes.push({ x: c.x, y: c.y, size: px / cam.zoom, t0: now });   // into the water: a splash
   }
   wasWet.set(c, wet);
@@ -3024,7 +3003,7 @@ function drawOtter(c, sx, sy, now) {
   if (wet && otterGoes(c)) drawWake(ctx, sx, sy, px, flip ? -1 : 1, now);
   const breathe = c.sleeping && ui.speed > 0 ? Math.sin(now / 650 + c.id) * 0.035 : 0;
   drawEmoji(art, sx, sy - px * 0.4 * breathe, px, { flip, squash: 1 + breathe });   // feet stay on the ground
-  if (c.mode === 'root' && px > 18 && ui.speed > 0 && ui.speed <= 4) drawDigging(c, sx, sy, px, now, flip ? -1 : 1);
+  if (c.mode === 'root' && px > 18 && ui.speed > 0) drawDigging(c, sx, sy, px, now, flip ? -1 : 1);
 }
 // Where one slid (or slipped) into the water: drops thrown up and out, and a ring spreading. Seen at 4x or slower.
 const SPLASH_MS = 650;
@@ -3725,15 +3704,13 @@ function gaitOf(c) {
 }
 const movedLately = c => gaitOf(c).frames < 12;
 const onTheMove = c => MOVING.has(c.mode) && movedLately(c);
-// Above this speed it's a blur: the gaits keep to two of their paintings, so a quick meadow doesn't paint the rest.
-const FEW_FRAMES = 4;
 
 // A rabbit hops: in the air for HOP.air of each hop, covering HOP.ahead of the ground, and the rest while it's down,
 // where it all but stops. The sim moves it evenly, so it's drawn a little ahead of or behind where it is, along its
-// way (hopSurge, in tiles), the same on average. Up to SMOOTH_SPEED: quicker, it's just where it is.
+// way (hopSurge, in tiles), the same on average.
 const HOP = { air: [0.55, 0.65], ahead: [0.9, 0.85], high: [0.16, 0.2] };   // a hop, and a bound
 function hopSurge(c) {
-  if (ui.speed > SMOOTH_SPEED || !onTheMove(c)) return 0;
+  if (!onTheMove(c)) return 0;
   const f = fastGait(c) ? 1 : 0, A = HOP.air[f], P = HOP.ahead[f], u = gaitOf(c).step % 1;
   const done = u < A ? P * u / A : P + (1 - P) * (u - A) / (1 - A), mean = A * P / 2 + (1 - A) * (1 + P) / 2;
   return (done - u - (mean - 0.5)) * strideOf(c);
@@ -3762,7 +3739,6 @@ function foxArt(c, px) {
   if (c.mode === 'rest' || c.mode === 'tired') return art('sit');
   if (onTheMove(c)) {
     let k = Math.floor(gaitOf(c).step % 1 * 4);
-    if (ui.speed > FEW_FRAMES) k &= 2;
     return art((fastGait(c) ? 'run' : 'trot') + (k + 1));
   }
   return art('stand');
@@ -3802,7 +3778,7 @@ function rabbitArt(c, now) {
   if (!movedLately(c)) return art('sit');
   const f = fastGait(c) ? 1 : 0, A = HOP.air[f], u = gaitOf(c).step % 1, v = u / A, poses = RABBIT_GAIT[f];
   if (u >= A) return art(poses[0]);
-  return art(ui.speed > FEW_FRAMES ? poses[2] : poses[v < 0.25 ? 1 : v < 0.75 ? 2 : 3]);
+  return art(poses[v < 0.25 ? 1 : v < 0.75 ? 2 : 3]);
 }
 
 const moundAt = (g, hole) => {
@@ -3950,11 +3926,11 @@ const BUBBLE_ART = new Map(BUBBLE_ICONS.map(([e], i) => [e, 'bubble:' + i]));
 
 // When an animal starts doing something worth seeing (POPS: it spots a fox, runs, gives chase, falls for someone), a
 // little bubble with what it's thinking pops up over its head, stays a moment and fades. Nothing stays up, so nobody
-// is covered; what each is up to is in the label on hover and in the inspector. Only for those on screen, and only up
-// to POP_SPEED: quicker, moods change faster than they'd read. At most POP_LIVE up at once, so a pop still means
+// is covered; what each is up to is in the label on hover and in the inspector. Only for those on screen, and only
+// while time runs. At most POP_LIVE up at once, so a pop still means
 // something when a fox walks through a warren; and love only for the one you follow (in spring it's everyone).
 const POPS = new Set(['alarm', 'flee', 'chase', 'stalk']);
-const POP_MS = 1700, POP_IN = 160, POP_OUT = 450, POP_SPEED = 4, POP_LIVE = 3;
+const POP_MS = 1700, POP_IN = 160, POP_OUT = 450, POP_LIVE = 3;
 const pops = new WeakMap();          // { mode, emoji, at }: the mode it was last seen in, and its pop
 const popsUp = [];                   // when the pops up now began (the one you follow's aren't counted)
 function drawPops(shown, now) {
@@ -3967,7 +3943,7 @@ function drawPops(shown, now) {
     if (p.mode !== c.mode) {
       p.mode = c.mode;
       const followed = c.id === ui.selectedId;
-      if ((POPS.has(c.mode) || followed && c.mode === 'love') && ui.speed > 0 && ui.speed <= POP_SPEED && (followed || popsUp.length < POP_LIVE)) {
+      if ((POPS.has(c.mode) || followed && c.mode === 'love') && ui.speed > 0 && (followed || popsUp.length < POP_LIVE)) {
         p.emoji = S.mood(world, c).emoji; p.at = now;
         if (!followed) popsUp.push(now);
       }
@@ -4081,7 +4057,7 @@ function drawSelectionOver(c, now) {
 function sun(ck) {
   const m = ui.sky.mix;
   const cover = clamp(0.5 * m.cloudy + 0.7 * m.rain + 0.9 * m.storm + 0.8 * m.fog + 0.5 * m.snow, 0, 0.85);
-  return { lean: clamp((ck.phase - 0.36) / 0.34, -1, 1) * lightSwing, a: (1 - 1.6 * shownDark(ck.phase)) * (1 - cover) };
+  return { lean: clamp((ck.phase - 0.36) / 0.34, -1, 1), a: (1 - 1.6 * shownDark(ck.phase)) * (1 - cover) };
 }
 
 // Trees and rocks cast a soft shadow, a cool green-blue, painted once and stretched under each. On snow a shadow
@@ -4482,12 +4458,12 @@ const LOG_BARK = { beech: 'grey', birch: 'birch' };      // whose bark a log or 
 const YOUNG = new Set(['seedling', 'sapling', 'young']);
 const SEEDLING_PX = 6;                                   // a seedling smaller than this on screen isn't drawn
 // A bare tree looks the same whatever its tone, and a young one hardly shows its shape: fewer paintings to make.
-const bareLook = (kind, look) => look === 'dead' || look === 'burnt' || (kind !== 'pine' && kind !== 'log' && (look === 'winter' || look === 'bare'));
+const bareLook = (kind, look) => look === 'dead' || (kind !== 'pine' && kind !== 'log' && (look === 'winter' || look === 'bare'));
 const HIVE_DOOR = [1, -38];              // the hive's sill in the hive oak's painting, from its foot (trees.js hive)
 // Paintings go by number, so a frame builds no names: the tree (kind, shape, tone, form), its look, the size (its
 // place in TREE_TIERS) and the snow, packed together.
 const ART_KINDS = { oak: 0, hive: 1, beech: 2, maple: 3, birch: 4, pine: 5, alder: 6, apple: 7, cherry: 8, hawthorn: 9, log: 10, stump: 11 };
-const ART_LOOKS = { summer: 0, spring: 1, bud: 2, autumn: 3, thin: 4, winter: 5, bare: 6, dead: 7, burnt: 8 }, ART_LOOK_N = 9;
+const ART_LOOKS = { summer: 0, spring: 1, bud: 2, autumn: 3, thin: 4, winter: 5, bare: 6, dead: 7 }, ART_LOOK_N = 8;
 const ART_TONES = { 0: 0, 1: 1, 2: 2, 3: 3, bark: 4, grey: 5, birch: 6 };
 const treeKey = (kind, shape, tone, form) => ((ART_KINDS[kind] * 4 + shape) * 8 + ART_TONES[tone]) * 2 + form;
 // treeAny: a painting of each tree, in any look, till its own comes. treeKin: a small one of each kind in each
@@ -5229,7 +5205,7 @@ let flowClock = 0, flowLast = 0;
 function flowTick(now) {
   const dt = clamp((now - flowLast) / 1000, 0, 0.1), water = S.riverPace(world);
   flowLast = now;
-  flowClock += dt * water * (ui.speed > 1 ? ui.speed ** 0.17 : ui.speed > 0 ? 1 : 0);
+  flowClock += dt * water * (ui.speed > 0 ? 1 : 0);
   return water;
 }
 
@@ -5690,11 +5666,11 @@ function paintFogBanks(g, now, amount) {
 }
 
 // A rainbow keeps to game time like the rest of the sky, lasting most of a day (14 s at 1x) and holding while it's
-// paused. At BOW_FAST and up it would only flash, so none comes out; rain coming back washes one out (rainbowWet).
+// paused. Rain coming back washes one out (rainbowWet).
 // It stands over the part of the meadow in view when it came out, sized to the window then, and stays there:
 // panning and zooming move it like the ground. Painted once (bow), then copied; while it comes out it's copied
 // in slices, from one foot.
-const BOW_LIFE = 14 * TICKS_PER_SECOND, BOW_IN = 4 * TICKS_PER_SECOND, BOW_OUT = 5 * TICKS_PER_SECOND, BOW_FAST = 15;   // in ticks
+const BOW_LIFE = 14 * TICKS_PER_SECOND, BOW_IN = 4 * TICKS_PER_SECOND, BOW_OUT = 5 * TICKS_PER_SECOND;   // in ticks
 const BOW_RES = 0.5, BOW_OUTER = 1.3, BOW_SLICES = 32;
 const BOW_HUES = [[160, 105, 225], [95, 105, 240], [60, 160, 250], [80, 205, 125], [250, 228, 85], [255, 160, 60], [240, 75, 70]];
 const bow = { t: 0, x: 0, y: 0, r: 0, R: 0, c: null };   // x, y, r: its centre and radius in the meadow
@@ -5737,7 +5713,7 @@ function paintBow(R) {
 
 const bowNow = () => world.tick + Math.min(acc, 1);   // in ticks, gliding between them
 function rainbowOut() {
-  if (ui.speed >= BOW_FAST || bowNow() < ui.sky.bowEnd) return;   // one still out stays
+  if (bowNow() < ui.sky.bowEnd) return;   // one still out stays
   ui.sky.rainbow = world.tick; ui.sky.bowEnd = world.tick + BOW_LIFE;
   return true;
 }
@@ -5940,7 +5916,7 @@ const pollen = {
   vx: new Float32Array(POLLEN_MAX), vy: new Float32Array(POLLEN_MAX),     // how far it flies, in tiles
   t0: new Float64Array(POLLEN_MAX).fill(-1e9), next: 0, until: 0,
 };
-const pollenShows = () => ui.speed > 0 && ui.speed <= 4 && cam.zoom * 0.95 >= 7;   // as drawPlants
+const pollenShows = () => ui.speed > 0 && cam.zoom * 0.95 >= 7;   // as drawPlants
 
 function puffPollen(x, y) {
   if (!pollenShows()) return;
@@ -6236,8 +6212,7 @@ function setHTML(el, html) { if (shownHTML.get(el) !== html) { shownHTML.set(el,
 
 // The tab's icon keeps the meadow's time: the hill takes the season's colour and the sky the
 // part of the day. It's the small mark from assets/favicon.svg, one of 16 made once each. It only
-// changes when the season or the part of day does, at most once a second, and from 15x on the
-// days fly by too fast to follow, so it stays noon and only the seasons turn.
+// changes when the season or the part of day does, at most once a second.
 const MARK_SKY = ['#F5E6CC', '#F1DDB0', '#F0CFA0', '#34405F'];   // morning, noon, evening, night
 const MARK_HILL = [                                                // by season: day, night
   ['#6DAA50', '#3F6A3A'], ['#5F9346', '#3A5A38'], ['#A5823F', '#6B5A36'], ['#7C8CA6', '#6F7E99'],
@@ -6253,7 +6228,7 @@ function markIcon(season, part) {
   return 'data:image/svg+xml,' + encodeURIComponent(svg);
 }
 function updateFavicon(ck) {
-  const part = ui.speed >= 15 ? 1 : ck.night ? 3 : ck.phase > 0.6 ? 2 : ck.phase < 0.1 ? 0 : 1;
+  const part = ck.night ? 3 : ck.phase > 0.6 ? 2 : ck.phase < 0.1 ? 0 : 1;
   const key = ck.season * 4 + part, now = performance.now();
   if (key === markKey || now - markAt < 1000) return;
   markKey = key; markAt = now;
@@ -7262,7 +7237,6 @@ canvas.addEventListener('pointermove', e => {
   if (!drag) {
     const c = e.pointerType === 'mouse' ? animalAt(e.clientX, e.clientY) : null;
     ui.hoverId = c ? c.id : 0;
-    ui.hoverHive = null;
     canvas.classList.toggle('on-animal', !!c);
     return;
   }
@@ -7313,7 +7287,7 @@ canvas.addEventListener('pointercancel', e => {
 document.addEventListener('gesturestart', e => e.preventDefault());
 // Safari on a phone shows a button pressed (:active) only where something listens for touches.
 document.addEventListener('touchstart', () => {}, { passive: true });
-canvas.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') { ui.hoverId = 0; ui.hoverHive = null; } });   // a lifted finger leaves too
+canvas.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') ui.hoverId = 0; });   // a lifted finger leaves too
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
@@ -7333,7 +7307,6 @@ function click(sx, sy) {
   const c = animalAt(sx, sy);
   if (c) select(c.id);
   else walkTo(sx, sy);
-  ui.hoverHive = null;
 }
 // A tap walks it there; held (steering) or with Shift down, it runs.
 function walkTo(sx, sy, steering = false) {
@@ -7768,7 +7741,7 @@ function frame(now) {
     acc -= want;
     let ran = 0, days = 0, dayMs = 0;
     while (ran < n) {
-      if (ui.speed <= SMOOTH_SPEED) keepLast();
+      keepLast();
       const day = (world.tick + 1) % S.TPD === 0, t1 = day ? performance.now() : 0;   // (a new day's tick is the heaviest by far)
       S.step(world);
       if (world.events.length) flushEvents();
@@ -7782,7 +7755,6 @@ function frame(now) {
     }
   }
   updateSky();
-  lightFrame(dt);
   updateDial();
 
   const sel = world.byId.get(ui.selectedId);

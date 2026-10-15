@@ -7,7 +7,7 @@
  * Every animal follows the same small ladder, ported from the old reflex brain:
  *   danger > sleep > love > food > friends > wander
  * Nothing else is scripted. Herds, arms races and boom-bust years come out of that.
- * The weather leans on the ladder: thunder and fire are danger, storms are for sleeping.
+ * The weather leans on the ladder: thunder is danger, storms are for sleeping.
  */
 (function (root) {
 'use strict';
@@ -1147,8 +1147,7 @@ function nearestFooting(w, x, y) {
 // country, w.pineLand). A seedling is a mouthful for a rabbit unless a thorn bush guards it, so
 // where the rabbits graze the meadow stays open, and when they're few the woods creep out. Under
 // the trees a young one waits in the shade (beech and maple can wait for years, birch and pine
-// die) until an old one falls. Old trees die standing, fall, and rot away. Fire kills the young
-// and the thin-barked, floods drown seedlings, storms blow over the big ones, and a broadleaf
+// die) until an old one falls. Old trees die standing, fall, and rot away. Floods drown seedlings, storms blow over the big ones, and a broadleaf
 // struck by lightning grows again from its stump. A hive lives in a hollow old oak (placeHive).
 // Apple, cherry and hawthorn blossom for the bees, and bear as much fruit as the bees pollinated.
 // All of it runs once a day (treesTick) or less.
@@ -1157,22 +1156,22 @@ const TREES = {
   // grow: how fast it grows up; life: years it lives, about; seedAge: years before it bears seed;
   // seeds: seedlings it tries for each year; shade: how much shade a young one bears (0 none, 1 deep
   // wood); taste: how much rabbits like it; by: how its seed gets about, far: and how far (tiles);
-  // burn: odds a fire kills it grown; blossom: when in spring it flowers for the bees (share of the season);
+  // blossom: when in spring it flowers for the bees (share of the season);
   // wet: it comes up only this close to the water (tiles, w.damp), and drops its seed in it oftener (float)
-  alder:    { grow: 1.1, life: 14, seedAge: 2, seeds: 4, shade: 0.3, taste: 0.5, by: 'wind', far: 6, burn: 0.3, wet: 4, float: 0.6 },
-  birch:    { grow: 1.1, life: 10, seedAge: 2, seeds: 5, shade: 0.15, taste: 0.7, by: 'wind', far: 18, burn: 0.8 },
-  pine:     { grow: 0.8, life: 18, seedAge: 3, seeds: 3, shade: 0.45, taste: 0.3, by: 'wind', far: 10, burn: 0.25 },
-  maple:    { grow: 0.8, life: 18, seedAge: 3, seeds: 2, shade: 0.7, taste: 0.8, by: 'wind', far: 7, burn: 0.7 },
-  beech:    { grow: 0.6, life: 20, seedAge: 4, seeds: 1, shade: 0.9, taste: 0.6, by: 'crow', far: 10, burn: 0.8, mast: 'beechnuts' },
-  oak:      { grow: 0.6, life: 24, seedAge: 4, seeds: 1, shade: 0.4, taste: 0.9, by: 'crow', far: 25, burn: 0.25, mast: 'acorns' },
-  hawthorn: { grow: 1.0, life: 16, seedAge: 2, seeds: 3, shade: 0.3, taste: 0.2, by: 'bird', far: 15, burn: 0.6, thorns: true, blossom: [0.35, 0.85] },
-  apple:    { grow: 0.8, life: 16, seedAge: 3, seeds: 3, shade: 0.4, taste: 0.8, by: 'drop', far: 8, burn: 0.7, blossom: [0.3, 0.8] },
-  cherry:   { grow: 1.0, life: 12, seedAge: 2, seeds: 3, shade: 0.35, taste: 0.7, by: 'bird', far: 15, burn: 0.7, blossom: [0.05, 0.5] },
+  alder:    { grow: 1.1, life: 14, seedAge: 2, seeds: 4, shade: 0.3, taste: 0.5, by: 'wind', far: 6, wet: 4, float: 0.6 },
+  birch:    { grow: 1.1, life: 10, seedAge: 2, seeds: 5, shade: 0.15, taste: 0.7, by: 'wind', far: 18 },
+  pine:     { grow: 0.8, life: 18, seedAge: 3, seeds: 3, shade: 0.45, taste: 0.3, by: 'wind', far: 10 },
+  maple:    { grow: 0.8, life: 18, seedAge: 3, seeds: 2, shade: 0.7, taste: 0.8, by: 'wind', far: 7 },
+  beech:    { grow: 0.6, life: 20, seedAge: 4, seeds: 1, shade: 0.9, taste: 0.6, by: 'crow', far: 10, mast: 'beechnuts' },
+  oak:      { grow: 0.6, life: 24, seedAge: 4, seeds: 1, shade: 0.4, taste: 0.9, by: 'crow', far: 25, mast: 'acorns' },
+  hawthorn: { grow: 1.0, life: 16, seedAge: 2, seeds: 3, shade: 0.3, taste: 0.2, by: 'bird', far: 15, thorns: true, blossom: [0.35, 0.85] },
+  apple:    { grow: 0.8, life: 16, seedAge: 3, seeds: 3, shade: 0.4, taste: 0.8, by: 'drop', far: 8, blossom: [0.3, 0.8] },
+  cherry:   { grow: 1.0, life: 12, seedAge: 2, seeds: 3, shade: 0.35, taste: 0.7, by: 'bird', far: 15, blossom: [0.05, 0.5] },
 };
 const YEAR = YEAR_DAYS * TPD;   // ticks in a year
 const SPROUT = 0.3;             // a new seedling's size
 const SEEDLING = 0.8;           // below this it's a seedling: a mouthful for a rabbit
-const SAPLING = 1.8;            // below this a rabbit can reach its shoots and nibble it back, and fire and flood kill it
+const SAPLING = 1.8;            // below this a rabbit can reach its shoots and nibble it back, and a flood kills it
 const GROWN = 2.4;              // this big, and old enough (seedAge), it bears seed
 const GROW_DAYS = SEASONS.reduce((n, s) => n + s.growth, 0) * SEASON_DAYS;   // a year's growing, in days of full growth
 const THORNS = 1.8;             // a seedling this close to a grown hawthorn is safe from rabbits
@@ -1854,8 +1853,7 @@ function shadeSoil(w) {
 // ---------------------------------------------------------------- weather
 //
 // The sky picks a weather from the season's odds. The ground remembers it: rain soaks it,
-// sun dries it. Lightning on dry ground starts a fire, and fire spreads through tall dry
-// grass, so a well-grazed meadow burns less than an overgrown one.
+// sun dries it.
 
 const sky = w => WEATHER[w.weather.kind];
 
@@ -2599,7 +2597,7 @@ function thump(w, c, fox) {
   }, 'rabbit');
 }
 
-// Runs from a fox, or from anything with an x and a y (thunder, fire).
+// Runs from a fox, or from anything with an x and a y (thunder).
 function flee(w, c, fox) {
   if (c.mode !== 'flee') {
     c.mode = 'flee'; c.sleeping = false; c.threatId = fox.id; c.target = null;
@@ -4276,7 +4274,7 @@ function crowTick(w, c) {
   c.sleeping = false;
   if (c.pips && t - c.pips > PIP_GUT) dropPips(w, c);   // (wherever it is: on a branch at the roost too)
 
-  // 1. Danger: fire, or a fox close by. Busy on the ground, it may not look up in time.
+  // 1. Danger: a fright, or a fox close by. Busy on the ground, it may not look up in time.
   if (c.fright > 0) { c.fright = 0; c.threatId = 0; flapUp(w, c, c.frightX, c.frightY); }
   if ((t + c.id) % 4 === 0 && (c.mode === 'rest' || PECKING.has(c.mode))) {   // (in the air or up a tree, out of reach)
     const fox = nearest(w, c, CROW_WARY, 'fox');
@@ -4425,7 +4423,7 @@ function gatherSpot(w) {
   return g;
 }
 
-// Up and away from a fox, or a fire, at x, y.
+// Up and away from a fox, or a fright, at x, y.
 function flapUp(w, c, x, y) {
   const a = Math.atan2(c.y - y, c.x - x) + w.rng.range(-0.5, 0.5);
   c.mode = 'flap'; c.sleeping = false;
@@ -4734,7 +4732,7 @@ function otterTick(w, c) {
   }
   c.sleeping = false;
 
-  // 1. Danger: a fox up and about close by on the bank, or a fire: into the water, and it watches the fox from there
+  // 1. Danger: a fox up and about close by on the bank, or a fright: into the water, and it watches the fox from there
   // till it's gone off or lain down (then pays foxes no mind a while). Asleep, in the holt or a bed in the reeds, it doesn't mind one.
   // And one on its way out of the meadow goes on.
   if (c.fright > 0) { c.fright = 0; if (c.mode !== 'leave') slip(w, c, c.frightX, c.frightY, null); }
@@ -6562,7 +6560,7 @@ const api = {
   createWorld, step, clock, isNight, phaseOf, seasonOf, springPart, mood, ageDays, growth, isAdult, patchFresh,
   hedgehogComes, heronComes, dragonflyComes, kingfisherComes, skylarkComes, placeNeeds, VISIT_SEASONS, VISIT_FADE, HERON_FADE, HERON_STAB,
   DRAGON_FROM, KF_FADE, KF_UNDER, KF_BEAT, LARK_FADE, LARK_OPEN, LARK_RISE, EDGE_REACH, OPEN_MOST,
-  walkable, packWorld, unpackWorld, foragerTo, FORAGER_WALK, FORAGER_RUN,
+  walkable, packWorld, unpackWorld, GROUND, foragerTo, FORAGER_WALK, FORAGER_RUN,
   KINDS, FEW, whiteness, visibility, WINTER_COAT, WILD_COAT,
   TERRAIN, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE, hollow,
