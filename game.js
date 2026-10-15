@@ -1209,7 +1209,10 @@ function render(now) {
   {                                                        // the forager
     const F = world.forager, d = drawnAt(F), sx = (d.x - cam.x) * z + vw / 2, sy = (d.y - cam.y) * z + vh / 2;
     foragerFrame(now, d);
-    if (visible(sx, sy, 2 * forPx())) itemOf(items, d.y, sx, sy, 1).p = F;
+    const px = forPx();
+    fgBody.on = visible(sx, sy, 2 * px); fgBody.x = sx; fgBody.y = sy - px * 0.3; fgBody.w = px * 0.14; fgBody.h = px * 0.28; fgBody.wy = d.y;
+    seeDt = Math.min(100, now - seeLast); seeLast = now;
+    if (fgBody.on) itemOf(items, d.y, sx, sy, 1).p = F;
   }
   sortByY(items);
   // Shadows first, all together, so a tree's shadow never lands on a rabbit behind it.
@@ -4685,6 +4688,7 @@ function drawPaintedTree(d, sx, sy, now, ck, stage = S.treeStage(world, d), px =
     fade = t0 ? Math.min(1, (now - t0) / FADE_MS) : 0;
     if (fade >= 1) treeWaits.delete(d);
   }
+  fade *= 1 - (1 - SEE_A) * seeThrough(d, A || B, f, sx, sy);
   const r = wood ? 0 : treeSway(d, now) * (stage === 'dead' ? 0.4 : 1), still = Math.abs(r) * px < 0.5;   // a sway too small to see isn't drawn
   // Swaying from the foot. A tree is only ever drawn in render's own transform, so it's set back as it was, with no
   // save and restore (turning it back by the inverse leaves it a hair off, and Chrome then draws what follows another way).
@@ -4693,6 +4697,24 @@ function drawPaintedTree(d, sx, sy, now, ck, stage = S.treeStage(world, d), px =
   if (B) putPainting(B, f, (A ? m : 1) * fade, snow, still ? sx : 0, still ? sy : 0);
   if (!still) ctx.setTransform(dpr, 0, 0, dpr, shakeX, shakeY);
   return true;
+}
+// A tree standing in front of the forager fades to SEE_A, as in Project Zomboid, so it's never lost in a wood. Only
+// the trees that are or were in front of it are kept (seeing), each eased in and out over SEE_MS.
+const SEE_A = 0.35, SEE_MS = 220;
+const seeing = new Map();                  // tree: how far it's faded, 0..1
+const fgBody = { on: false, x: -0, y: -0, w: -0, h: -0, wy: -0 };   // the forager's body on screen this frame (render), and its y in the meadow
+let seeDt = -0, seeLast = -0;
+function seeThrough(d, p, f, sx, sy) {
+  const v = seeing.get(d) || 0;
+  let want = 0;
+  if (fgBody.on && d.y > fgBody.wy) {                      // drawn after it: over it, if their boxes meet (the painting's margins left out)
+    const k = f / p.scale, l = sx - p.bx * k, t = sy - p.by * k, w = p.w * k, h = p.h * k;
+    if (fgBody.x + fgBody.w > l + w * 0.15 && fgBody.x - fgBody.w < l + w * 0.85 && fgBody.y + fgBody.h > t + h * 0.1 && fgBody.y - fgBody.h < sy) want = 1;
+  }
+  if (v === want) return v;
+  const u = want ? Math.min(1, v + seeDt / SEE_MS) : Math.max(0, v - seeDt / SEE_MS);
+  if (u) seeing.set(d, u); else seeing.delete(d);
+  return u * u * (3 - 2 * u);
 }
 function putPainting(p, f, alpha, snow, ox, oy) {
   const k = f / p.scale, x = ox - p.bx * k, y = oy - p.by * k, w = p.w * k, h = p.h * k;
