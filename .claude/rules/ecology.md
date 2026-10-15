@@ -192,9 +192,11 @@ Gathering (`whatThere`, `gather`) takes from the sim for real, with no random nu
 `GREEN_TAKE` of itself, growing back `GREEN_REGROW` a day (`g.pick`, in `greensTick`), a ripe bramble `BERRY_PICK` blackberries at
 `BERRY_COST` each off `b.berries` (so fewer for the crows and foxes, who leave little by early autumn), a cherry tree `CHERRY_PICK`
 from the start of summer to `CHERRY_TO` into it, `CHERRY_CROP` a summer (two fifths of that with no bees: `d.picked`, `d.pickYear`),
-an apple, oak or beech up to `FALL_PICK` of its windfalls (`d.windfall`, the rabbits' too; `FALL_GIVES` each), and a hive `HONEY_GIVES`
-honey for `HONEY_TAKE` of its store, never taking it below `HONEY_KEEP`, which is more than a big colony eats in a winter: a
-greedy forager can't starve the bees. `whatThere` also says gently why not ("Not ripe yet", "Picked clean"...). What's picked goes
+an apple, oak or beech up to `FALL_PICK` of its windfalls (`d.windfall`, the rabbits' too; `FALL_GIVES` each), a wild find all of it
+(as a clump of mushrooms), and a hive `HONEY_GIVES` honey for `HONEY_TAKE` of its store, never taking it below `HONEY_KEEP` (by
+season: low in spring, when the bees live on nectar, so a meadow's first hives, starting with `HIVE_HONEY` 40, give a little; from
+autumn more than a big colony eats in a winter): a greedy forager taking all it could for three years starved no more colonies
+than none. `eachPickable` lists everything with something to give now (game.js's glints and arrow, and counting). `whatThere` also says gently why not ("Not ripe yet", "Picked clean"...). What's picked goes
 in the satchel (`w.forager.bag`, `bagN`: `SLOTS` slots, `STACK` of a kind to one; `stow`, `roomFor`, `dropSlot`), kept with the meadow.
 No `KEEP_VERSION` bump: the new fields are in the blanks (`foragerOf`, `greenOf`, `blankTree`).
 
@@ -278,6 +280,20 @@ kill sites, and die out a year after the ground stopped being rich (`g.fed`, `NE
 them (`inSight`, as the mushrooms), at most `GREENS_MOST` of each times `w.room`, with random numbers of their own
 (`w.greenRng`). A meadow has about 5 to 13 garlic carpets, and nettles build up to 10 to 25 patches over three years. Nothing eats
 them: they're for the cook.
+
+Wild finds (`findsTick`, every two hours): little things to pick in every season, so a home view has a few most of the time.
+Dandelions out in the open and sorrel in the damp grass in spring, wild strawberries at the woods' edges and elderflower by the
+water or a wood's edge in summer, hazelnuts at the edges in autumn, rosehips in the scrub (by the thorns or a wood's edge) from
+late autumn through the winter, and watercress right at the water from the end of autumn into spring (`FINDS`: when, `from`/`to`
+in seasons into the year; where, `findPlace`; how many at most, `most` times `w.room`; what a pick gives, `n`). Each is a
+short-lived thing of one layout (`w.finds`, `findOf`), coming up where it suits, in sight (`inSight`), often a few tiles from
+another of its kind (`FIND_PATCHY`, `FIND_PATCH`), so they're in loose patches; it lasts `FIND_DAYS`, never past its season,
+and the low ones go under snow (`FIND_SNOW`). A look brings up a fifth of what's missing (`FIND_FILL`), so a season fills in
+a day or so and a picked one is soon made up somewhere. A new meadow starts with most of what's in season, of all ages, a few
+round the forager's camp within `CAMP_REACH` (`CAMP_FINDS`) and a garlic carpet there if there's damp wood thin enough for one
+(`startFinds`, `garlicAt`'s camp). Random numbers of their own (`w.findRng`). Over a year (5 seeds) a meadow has about 54
+things to pick in spring, 62 in summer, 48 in autumn and 43 in winter (it was 14, 32, 22 and 5), 4 to 8 of them in a home view.
+A meadow kept before them gets them when it opens (`unpackWorld`), no `KEEP_VERSION` bump. Nothing eats them: they're for the cook.
 
 Brambles (`bramblesTick`, once an hour for the berries and once a day for the rest): thorny mounds that live for years and
 show all year (`w.brambles`, one layout, `brambleOf`). What a patch shows comes from the season (`brambleStage`): bare canes in

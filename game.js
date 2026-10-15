@@ -1321,6 +1321,10 @@ function render(now) {
     const sx = (b.x - cam.x) * z + vw / 2, sy = (b.y - cam.y) * z + vh / 2;
     if (visible(sx, sy, 3 * z + 20)) itemOf(items, b.y, sx, sy, 1 - mistAt(b.x, b.y)).s = b;
   }
+  for (const f of world.finds) {                           // the little wild finds
+    const sx = (f.x - cam.x) * z + vw / 2, sy = (f.y - cam.y) * z + vh / 2;
+    if (visible(sx, sy, 2 * z + 20)) itemOf(items, f.y, sx, sy, 1 - mistAt(f.x, f.y)).s = f;
+  }
   const shown = [];
   const far = 60 + OFF_SIZES * (8 + z);                    // (a crow up a tree is drawn out on its seat: always worked out)
   for (const c of world.creatures) {
@@ -1364,7 +1368,7 @@ function render(now) {
     fadeTo(it.f);
     if (it.d) it.d.hive ? drawBeeTree(it.d, it.sx, it.sy, now, ck) : drawDecor(it.d, it.sx, it.sy, now, ck, null, it.px);
     else if (it.h) drawSwarm(it.h, it.sx, it.sy);
-    else if (it.s) it.s.green ? drawNettles(it.s, z) : it.s.bramble ? drawBramble(it.s, z) : drawShroom(it.s, z);
+    else if (it.s) it.s.green ? drawNettles(it.s, z) : it.s.bramble ? drawBramble(it.s, z) : it.s.find ? drawFind(it.s, z) : drawShroom(it.s, z);
     else if (it.v) drawVisitor(it.v, it.sx, it.sy, now, z);
     else if (it.p) drawForager(it.sx, it.sy, now);
     else drawCreature(it.c, it.sx, it.sy, now);
@@ -1409,6 +1413,7 @@ function render(now) {
 
   // Pop-ups above the dark. Not in the intro: its lines tell the story.
   drawPops(shown, now);
+  drawGlints(now, dark);
   drawHoverLine(now);
   if (pickFloats.length) drawPickFloats(now);
 
@@ -1425,6 +1430,7 @@ function render(now) {
     const dance = S.patchFresh(world, h) ? ` · 💃 ${where} to the ${compass(h.patch.x - h.x, h.patch.y - h.y)}` : '';
     drawLabel(`🐝 ${hiveName(h)} · ${h.bees} ${h.bees === 1 ? 'bee' : 'bees'} · ${honeyWord(h)}${dance}`, sx, sy + z * 0.5 + 6);
   }
+  drawPickArrow(now);
   standIns = false;                                    // a portrait for the inspector is kept, so it's always painted
 }
 
@@ -2101,7 +2107,7 @@ function drawMark(now) {
 
 // ------------------------------------------------------------------ gathering
 //
-// A click or a tap on something the meadow gives (gatherAt: a clump of mushrooms, a patch of greens, a bramble, a fruit
+// A click or a tap on something the meadow gives (gatherAt: a clump of mushrooms, a wild find, a patch of greens, a bramble, a fruit
 // or mast tree, a hive) walks the forager to its near side, a reach away (standPoint), and once it's there (gatherFrame)
 // it stoops and picks (fur.js poses 3 and 4, fg.pick): sim.js gather takes it from the meadow and puts it in the satchel,
 // a "+3 Chanterelles" floats up from the spot (pickFloats), the thing flies into its slot (flyToSlot) and the pick sound plays.
@@ -2130,7 +2136,13 @@ function gatherAt(sx, sy) {
     const r = Math.max(12 * f, shroomAt.px * 0.55), d = ((shroomAt.x - sx) ** 2 + (shroomAt.y - sy) ** 2) / (r * r);
     if (d < 1 && d < bd) { best = m; bd = d; }
   }
-  if (best) return { kind: 'shroom', it: best };
+  for (const m of world.finds) {                       // (as near as a mushroom: whichever the point is nearer)
+    if (Math.abs(m.x - wx) > 4 || Math.abs(m.y - wy) > 4) continue;
+    const px = findPx(m, z), x = (m.x - cam.x) * z + vw / 2, y = (m.y - cam.y) * z + vh / 2 - px * 0.31;
+    const r = Math.max(14 * f, px * 0.5), d = ((x - sx) ** 2 + (y - sy) ** 2) / (r * r);
+    if (d < 1 && d < bd) { best = m; bd = d; }
+  }
+  if (best) return { kind: best.find ? 'find' : 'shroom', it: best };
   for (const b of world.brambles) {
     if (Math.abs(b.x - wx) > 4 || Math.abs(b.y - wy) > 4) continue;
     const px = bramblePx(b, z), x = (b.x - cam.x) * z + vw / 2, y = (b.y - cam.y) * z + vh / 2 - px * 0.18;
@@ -2168,6 +2180,9 @@ function gatherSpot(kind, it) {
   if (kind === 'shroom') {
     placeShroom(it, z);
     gspot.reach = 0.45; gspot.gx = shroomAt.x; gspot.gy = shroomAt.y; gspot.rx = gspot.ry = Math.max(10, shroomAt.px * 0.62);
+  } else if (kind === 'find') {
+    const px = findPx(it, z);
+    gspot.reach = 0.35 + FIND_PX[it.kind] * 0.2; gspot.gy = sy - px * 0.31; gspot.rx = Math.max(10, px * 0.5); gspot.ry = Math.max(10, px * 0.42);
   } else if (kind === 'green') {
     const px = it.kind === 'garlic' ? garlicPx(it, z) : nettlePx(it, z);
     gspot.reach = it.kind === 'garlic' ? 0.7 + 0.15 * it.size : 0.55;
@@ -2234,7 +2249,7 @@ function say(text, x, y) {
 }
 
 // What a thing is called, n of them: recipes.js's name, made plural for more than one (an apple, two apples; honey stays honey).
-const MASS = { honey: 1, garlic: 1, nettle: 1, sulphur: 1, chanterelle: 1, cherry: 1, blackberry: 1, acorns: 1, beechnuts: 1 };
+const MASS = { honey: 1, garlic: 1, nettle: 1, sorrel: 1, watercress: 1, elderflower: 1, sulphur: 1, chanterelle: 1, cherry: 1, blackberry: 1, acorns: 1, beechnuts: 1 };
 function itemName(id, n) {
   const name = Recipes.INGREDIENTS[id]?.name || id;
   return n > 1 && !MASS[id] && !name.endsWith('s') ? name + 's' : name;
@@ -2308,6 +2323,128 @@ function drawHoverLine(now) {
   drawLabel(aim.n ? Recipes.INGREDIENTS[aim.id]?.name || aim.id : aim.why, s.gx, s.gy + s.ry * 0.9 + 4);
 }
 
+// ------------------------------------------------------------------ glints and the forager's sense
+//
+// What has something to give glints now and then, so it reads as "pick me" without a hover: a small soft sparkle (GLINT_ART,
+// painted once) over it, each thing on its own clock (glintAt: GLINT_EVERY, a hash of where it is), so only one or two on
+// screen glint at once. What there is to pick is listed a few times a second (picksFrame, sim.js eachPickable), so a picked
+// clean tree or an unripe bramble never glints. When the forager has stood still SENSE_STILL, everything within SENSE_REACH
+// glints once together, in a wave outward from it (sense), with a faint ring going out. And when nothing to pick is on
+// screen, a small brass arrow at the screen's edge points to the nearest (drawPickArrow), fading out as one comes into view.
+const GLINT_EVERY = 6500, GLINT_MS = 900;   // ms between a thing's glints, and one glint
+const PICKS_MS = 400;                       // how often what there is to pick is listed again
+const SENSE_STILL = 1000, SENSE_REACH = 15, SENSE_SPREAD = 1100;   // ms standing still; tiles; ms the wave takes to get there
+const ARROW_WAIT = 1500;                    // ms with nothing on screen before the arrow shows
+const picks = { kind: [], it: [], at: -1e9, near: null, nearKind: '', seen: 0, none: 0, arrow: 0, arrowAt: 0, top: 0, topAt: -1e9 };
+const sense = { still: 0, done: true, t0: -1e9, x: 0, y: 0 };
+let GLINT_ART = null, ARROW_ART = null;
+const addPick = (kind, it) => { picks.kind.push(kind); picks.it.push(it); };
+function picksFrame(now) {
+  if (now - picks.at < PICKS_MS) return;
+  picks.at = now; picks.kind.length = picks.it.length = 0;
+  S.eachPickable(world, addPick);
+}
+// A warm four-pointed sparkle in a soft glow, painted once.
+function glintArt() {
+  const P = 96, c = document.createElement('canvas'), g = c.getContext('2d'), m = P / 2;
+  c.width = c.height = P;
+  const gr = g.createRadialGradient(m, m, 0, m, m, m);
+  gr.addColorStop(0, 'rgba(255, 252, 228, 0.7)'); gr.addColorStop(0.25, 'rgba(255, 240, 190, 0.28)'); gr.addColorStop(1, 'rgba(255, 236, 180, 0)');
+  g.fillStyle = gr; g.fillRect(0, 0, P, P);
+  g.fillStyle = 'rgba(255, 255, 246, 0.95)';
+  for (const [l, w] of [[0.48, 0.07], [0.26, 0.05]]) {   // the long cross, and a short one turned between it
+    g.save(); g.translate(m, m); if (w < 0.06) g.rotate(Math.PI / 4);
+    g.beginPath();
+    g.moveTo(0, -l * P); g.quadraticCurveTo(w * P * 0.4, -w * P * 0.4, l * P, 0); g.quadraticCurveTo(w * P * 0.4, w * P * 0.4, 0, l * P);
+    g.quadraticCurveTo(-w * P * 0.4, w * P * 0.4, -l * P, 0); g.quadraticCurveTo(-w * P * 0.4, -w * P * 0.4, 0, -l * P);
+    g.fill(); g.restore();
+  }
+  GLINT_ART = { img: c };
+  asBitmap(c, b => { GLINT_ART.img = b; });
+  return GLINT_ART;
+}
+// A small parchment disc with a brass chevron pointing right, painted once.
+function arrowArt() {
+  const P = 64, c = document.createElement('canvas'), g = c.getContext('2d'), m = P / 2;
+  c.width = c.height = P;
+  g.fillStyle = 'rgba(60, 40, 10, 0.18)'; g.beginPath(); g.arc(m, m + 2, m * 0.8, 0, TAU); g.fill();
+  g.fillStyle = 'rgba(251, 244, 224, 0.92)'; g.beginPath(); g.arc(m, m, m * 0.78, 0, TAU); g.fill();
+  g.strokeStyle = 'rgba(166, 124, 52, 0.85)'; g.lineWidth = P * 0.05; g.stroke();
+  g.strokeStyle = 'rgb(150, 106, 38)'; g.lineWidth = P * 0.085; g.lineCap = g.lineJoin = 'round';
+  g.beginPath(); g.moveTo(m - P * 0.1, m - P * 0.2); g.lineTo(m + P * 0.13, m); g.lineTo(m - P * 0.1, m + P * 0.2); g.stroke();
+  ARROW_ART = { img: c };
+  asBitmap(c, b => { ARROW_ART.img = b; });
+  return ARROW_ART;
+}
+// Where in its clock a thing's glint is: 0..1 while it glints, else -1.
+function glintAt(it, now) {
+  const h = Math.abs(Math.sin(it.x * 12.9898 + it.y * 78.233) * 43758.5453) % 1, t = (now + h * GLINT_EVERY) % GLINT_EVERY;
+  return t < GLINT_MS ? t / GLINT_MS : -1;
+}
+// The forager's sense: standing still a moment, it notices what's about.
+function senseFrame(now) {
+  const F = world.forager;
+  if (F.walking || ui.gather) { sense.still = now; sense.done = false; return; }
+  if (!sense.done && now - sense.still > SENSE_STILL) { sense.done = true; sense.t0 = now; sense.x = F.x; sense.y = F.y; }
+}
+function drawGlints(now, dark) {
+  picksFrame(now);
+  senseFrame(now);
+  const z = cam.zoom, art = GLINT_ART || glintArt(), base = Math.max(11, (8 + z) * 0.45), F = world.forager;
+  const sensing = now - sense.t0 < SENSE_SPREAD + GLINT_MS * 1.3;
+  let seen = 0, near = null, nearKind = '', nd = Infinity;
+  if (sensing) {                                          // the wave: a faint ring going out
+    const u = (now - sense.t0) / (SENSE_SPREAD + GLINT_MS), r = SENSE_REACH * z * Math.min(1, u), [sx, sy] = onScreen(sense.x, sense.y);
+    if (u < 1) { ctx.globalAlpha = 0.22 * (1 - u) * Math.min(1, u * 6); ctx.drawImage((MARK_ART || markArt()).img, sx - r, sy - r * 0.5, r * 2, r); }
+  }
+  for (let i = 0; i < picks.it.length; i++) {
+    const it = picks.it[i], kind = picks.kind[i], sx = (it.x - cam.x) * z + vw / 2, sy = (it.y - cam.y) * z + vh / 2;
+    const dx = it.x - F.x, dy = it.y - F.y, d2 = dx * dx + dy * dy;
+    if (d2 < nd) { nd = d2; near = it; nearKind = kind; }
+    if (!visible(sx, sy, 0)) continue;
+    seen++;
+    let u = glintAt(it, now), k = 1;
+    if (sensing && d2 < SENSE_REACH * SENSE_REACH) {      // (the sense's glint: a little bigger, as the wave reaches it)
+      const t = (now - sense.t0 - Math.sqrt(d2) / SENSE_REACH * SENSE_SPREAD) / (GLINT_MS * 1.3);
+      if (t >= 0 && t < 1) { u = t; k = 1.15; }
+    }
+    if (u < 0) continue;
+    const s = gatherSpot(kind, it), e = Math.sin(Math.PI * u), r = base * k * (0.5 + 0.5 * e);
+    ctx.globalAlpha = e * (1 - 0.35 * dark);
+    ctx.drawImage(art.img, s.gx + s.rx * 0.3 - r, s.gy - s.ry * 0.5 - r, r * 2, r * 2);
+  }
+  ctx.globalAlpha = 1;
+  picks.seen = seen; picks.near = near; picks.nearKind = nearKind;
+}
+// The arrow at the screen's edge, toward the nearest thing to pick while none is on screen. Small, faint, out of the way of
+// the watch at the top and the satchel at the foot.
+function drawPickArrow(now) {
+  const dt = Math.min(100, now - picks.arrowAt);
+  picks.arrowAt = now;
+  if (picks.seen || !picks.near) picks.none = now;
+  const want = now - picks.none > ARROW_WAIT ? 1 : 0;
+  picks.arrow += (want - picks.arrow) * Math.min(1, dt / (want ? 500 : 250));
+  if (picks.arrow < 0.02 || !picks.near) return;
+  if (now - picks.topAt > 1000) {                       // (where the satchel's top is, looked at once a second)
+    picks.topAt = now;
+    const el = $('#satchel'), r = el && el.getBoundingClientRect();
+    picks.top = r && r.height ? r.top : vh;
+  }
+  const F = world.forager, [fx, fy] = toScreen(F.x, F.y), it = picks.near, [tx, ty] = toScreen(it.x, it.y);
+  const a = Math.atan2(ty - fy, tx - fx), cx = Math.cos(a), cy = Math.sin(a), m = narrow() ? 22 : 30;
+  const x0 = m, x1 = vw - m, y0 = (narrow() ? 64 : 70), y1 = Math.min(vh - m, picks.top - 18);
+  let t = Infinity;                                     // where the way from the forager leaves the box
+  if (cx > 0) t = Math.min(t, (x1 - fx) / cx); else if (cx < 0) t = Math.min(t, (x0 - fx) / cx);
+  if (cy > 0) t = Math.min(t, (y1 - fy) / cy); else if (cy < 0) t = Math.min(t, (y0 - fy) / cy);
+  if (!(t > 0) || t === Infinity) return;
+  const x = fx + cx * t, y = fy + cy * t, art = ARROW_ART || arrowArt(), r = narrow() ? 11 : 12, bob = 2 * Math.sin(now / 400);
+  ctx.save();
+  ctx.globalAlpha = 0.78 * picks.arrow;
+  ctx.translate(x + cx * bob, y + cy * bob); ctx.rotate(a);
+  ctx.drawImage(art.img, -r, -r, r * 2, r * 2);
+  ctx.restore();
+}
+
 // ------------------------------------------------------------------ the satchel
 //
 // A row of SLOTS small parchment slots at the bottom in the middle (#satchel), faint and slim while it's empty. Each shows
@@ -2317,7 +2454,8 @@ function drawHoverLine(now) {
 const ITEM_IDS = Object.keys(Recipes.INGREDIENTS), ITEM_PX = 96;   // (two device pixels a CSS pixel at 48)
 const ITEM_ART = { apple: 'fall:0', acorns: 'fall:1', blackberry: 'item:0', cherry: 'item:1', honey: 'item:2', beechnuts: 'item:3', garlic: 'green:0', nettle: 'green:6' };
 S.SHROOM_KINDS.forEach((k, i) => { ITEM_ART[k] = 'shroom:' + i * 3; });   // (SHROOM_ARTS: the fewest caps)
-const ITEM_FILL = { garlic: 1.5, nettle: 1.25, cep: 1.6, chanterelle: 1.5, field: 1.6, oyster: 1.35, sulphur: 1.3, apple: 0.85, acorns: 0.8 };   // how much of the slot each painting fills
+S.FIND_KINDS.forEach((k, i) => { ITEM_ART[k] = 'find:' + i * 4; });     // (FIND_ARTS: the first look)
+const ITEM_FILL = { dandelion: 1.15, sorrel: 1.2, strawberry: 1.2, elderflower: 1.0, hazelnut: 1.35, rosehip: 1.05, watercress: 1.2, garlic: 1.5, nettle: 1.25, cep: 1.6, chanterelle: 1.5, field: 1.6, oyster: 1.35, sulphur: 1.3, apple: 0.85, acorns: 0.8 };   // how much of the slot each painting fills
 let ITEM_SHEET = null;
 function itemSheet() {
   if (ITEM_SHEET) return ITEM_SHEET;
@@ -3826,6 +3964,229 @@ function drawBramble(b, z) {
   drawEmoji(BRAMBLE_ARTS[brambleArt(b) * 2 + b.look], (b.x - cam.x) * z + vw / 2, (b.y - cam.y) * z + vh / 2 - px * 0.31, px, { flip: b.born % 2 === 1 });
 }
 
+// ------------------------------------------------------------------ wild finds
+//
+// The little things to pick about the meadow (sim.js w.finds), painted once a look and size ('find:' + (kind * 4 + stage *
+// 2 + look), FIND_ARTS): dandelions (a rosette of toothed leaves, bright yellow heads), sorrel (lime arrow leaves on red
+// stalks), wild strawberries (trefoil leaves, small scarlet berries), elderflower (a bush with cream plates of flowers),
+// hazelnuts (nuts in frilly husks on fallen leaves), rosehips (an arching rose, scarlet hips; bare in winter, stage 1) and
+// watercress (a cushion of round glossy leaflets). A bit bigger and brighter than the meadow's own flowers and tufts, so
+// they read as something to pick. Drawn with the trees and animals, back to front (a frame item's s), they come up over a
+// few hours and fade as they go (drawFind).
+const FIND_KINDS = S.FIND_KINDS;
+const FIND_ARTS = Array.from({ length: FIND_KINDS.length * 4 }, (_, i) => 'find:' + i);
+const FIND_PX = { dandelion: 1.9, sorrel: 1.8, strawberry: 2.1, elderflower: 2.8, hazelnut: 1.8, rosehip: 2.5, watercress: 2.0 };   // next to a rabbit
+const FIND_GROW = 0.2, FIND_OVER = 0.4;   // days it takes to come up, and its last days, fading
+const findStage = f => f.kind === 'rosehip' && S.seasonOf(world.tick) === 3 ? 1 : 0;
+const findArt = f => FIND_ARTS[FIND_KINDS.indexOf(f.kind) * 4 + findStage(f) * 2 + f.look];
+const findPx = (f, z) => Math.max(7, (8 + z) * FIND_PX[f.kind] * (0.55 + 0.45 * clamp((world.tick - f.born) / (FIND_GROW * S.TPD), 0, 1)));
+function drawFind(f, z) {
+  const px = findPx(f, z), left = (f.until - world.tick) / S.TPD;
+  drawEmoji(findArt(f), (f.x - cam.x) * z + vw / 2, (f.y - cam.y) * z + vh / 2 - px * 0.31, px,
+    { alpha: left < FIND_OVER ? 0.3 + 0.7 * left / FIND_OVER : undefined, flip: f.born % 2 === 1 });
+}
+
+function paintFind(g, size, U, n) {
+  g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
+  g.lineCap = g.lineJoin = 'round';
+  const kind = FIND_KINDS[n >> 2], stage = (n >> 1) & 1, look = n & 1, h = k => hash2(look + 2 * stage, k, 61 + (n >> 2));
+  ({ dandelion: paintDandelion, sorrel: paintSorrel, strawberry: paintStrawberry, elderflower: paintElder, hazelnut: paintHazel,
+    rosehip: paintRose, watercress: paintCress })[kind](g, h, look, stage);
+}
+const FIND_FOOT = 0.62;                        // where the ground is in a painting's box
+// A long leaf with jagged teeth, lying out from x, y at angle a.
+function toothedLeaf(g, x, y, a, len, wide, rgb, teeth = 4) {
+  g.save(); g.translate(x, y); g.rotate(a);
+  softIn(g, rgb, -wide, wide, () => {
+    g.moveTo(0, 0);
+    for (let k = 1; k <= teeth * 2; k++) { const t = k / (teeth * 2), wv = wide * Math.sin(t * Math.PI) ** 0.7 * (k % 2 ? 1 : 0.45); g.lineTo(t * len - (k % 2 ? len * 0.04 : 0), -wv); }
+    for (let k = teeth * 2 - 1; k >= 0; k--) { const t = k / (teeth * 2), wv = wide * Math.sin(t * Math.PI) ** 0.7 * (k % 2 ? 1 : 0.45); g.lineTo(t * len - (k % 2 ? len * 0.04 : 0), wv); }
+  }, 1.2, 0.72);
+  strokeIn(g, rockRGB(tone(rgb, 1.3, 20), 0.55), 0.014, () => { g.moveTo(0, 0); g.lineTo(len * 0.9, 0); });
+  g.restore();
+}
+function paintDandelion(g, h, look) {
+  softSpot(g, 0, FIND_FOOT, 0.85, 0.2, '30, 50, 14', 0.35);
+  const leaf = [70, 142, 46];
+  for (let i = 0; i < 9; i++) {                         // the rosette, flat on the ground
+    const a = (i / 9) * TAU + h(i) * 0.4, len = 0.5 + 0.2 * h(10 + i);
+    g.save(); g.translate(0, FIND_FOOT - 0.04); g.scale(1, 0.42);
+    toothedLeaf(g, 0, 0, a, len, 0.11, i % 2 ? leaf : tone(leaf, 0.86));
+    g.restore();
+  }
+  const heads = [];
+  for (let i = 0; i < 3; i++) heads.push({ x: (i - 1) * 0.36 + (h(20 + i) - 0.5) * 0.14, y: FIND_FOOT - 0.42 - 0.22 * h(30 + i) + (i === 1 ? -0.12 : 0), k: i });
+  for (const p of heads) {
+    strokeIn(g, 'rgb(118, 160, 70)', 0.035, () => { g.moveTo(p.x * 0.4, FIND_FOOT - 0.05); g.quadraticCurveTo(p.x * 0.8, (FIND_FOOT + p.y) / 2, p.x, p.y + 0.06); });
+    if (look === 1 && p.k === 2) {                      // a clock gone to seed
+      fillIn(g, 'rgba(255, 255, 255, 0.35)', () => discAt(g, p.x, p.y, 0.17));
+      strokeIn(g, 'rgba(255, 255, 255, 0.85)', 0.012, () => { for (let k = 0; k < 16; k++) { const a = k / 16 * TAU; g.moveTo(p.x, p.y); g.lineTo(p.x + Math.cos(a) * 0.16, p.y + Math.sin(a) * 0.16); } });
+      fillIn(g, '#f4f0e0', () => discAt(g, p.x, p.y, 0.035));
+      continue;
+    }
+    fillIn(g, 'rgb(96, 128, 52)', () => ovalAt(g, p.x, p.y + 0.06, 0.08, 0.05));   // the green cup under the head
+    for (let ring = 0; ring < 3; ring++) {              // rays, in rings from the rim in
+      const r = 0.19 - ring * 0.055, n = 16 - ring * 4, rgb = ring === 0 ? [250, 200, 24] : ring === 1 ? [255, 214, 40] : [255, 226, 70];
+      strokeIn(g, rockRGB(rgb), 0.05 - ring * 0.008, () => { for (let k = 0; k < n; k++) { const a = (k + ring * 0.5) / n * TAU; g.moveTo(p.x + Math.cos(a) * r * 0.25, p.y + Math.sin(a) * r * 0.2); g.lineTo(p.x + Math.cos(a) * r, p.y + Math.sin(a) * r * 0.82); } });
+    }
+    fillIn(g, 'rgb(236, 160, 20)', () => ovalAt(g, p.x, p.y, 0.045, 0.036));
+    furGlow(g, [255, 250, 200], 0.5, p.x - 0.05, p.y - 0.05, 0.08, 0.05);
+  }
+}
+// An arrow-head leaf: a spear with two lobes back at its foot.
+function sorrelLeaf(g, x, y, a, len, rgb) {
+  g.save(); g.translate(x, y); g.rotate(a);
+  softIn(g, rgb, -len, 0, () => {
+    g.moveTo(0, 0); g.lineTo(-len * 0.16, len * 0.12); g.quadraticCurveTo(-len * 0.22, -len * 0.05, -len * 0.14, -len * 0.3);
+    g.quadraticCurveTo(-len * 0.08, -len * 0.7, 0, -len); g.quadraticCurveTo(len * 0.08, -len * 0.7, len * 0.14, -len * 0.3);
+    g.quadraticCurveTo(len * 0.22, -len * 0.05, len * 0.16, len * 0.12); g.closePath();
+  }, 1.25, 0.75);
+  strokeIn(g, rockRGB(tone(rgb, 1.3, 24), 0.5), 0.012, () => { g.moveTo(0, -len * 0.05); g.lineTo(0, -len * 0.9); });
+  g.restore();
+}
+function paintSorrel(g, h, look) {
+  softSpot(g, 0, FIND_FOOT, 0.7, 0.18, '30, 50, 14', 0.35);
+  const leaves = [];
+  for (let i = 0; i < 11; i++) leaves.push({ a: (i / 10 - 0.5) * 1.9 + (h(i) - 0.5) * 0.25, l: 0.32 + 0.22 * h(10 + i) * (1 - Math.abs(i / 10 - 0.5)), k: i });
+  if (look === 1) for (const x of [-0.12, 0.16]) {      // a slender spike of rusty seed
+    const top = FIND_FOOT - 0.95 - 0.15 * h(x > 0 ? 40 : 41);
+    strokeIn(g, 'rgb(150, 70, 52)', 0.022, () => { g.moveTo(x * 0.5, FIND_FOOT - 0.05); g.lineTo(x, top); });
+    for (let k = 0; k < 9; k++) { const y = top + 0.04 + k * 0.05; fillIn(g, rockRGB(tone([196, 72, 56], 0.85 + 0.3 * h(50 + k))), () => discAt(g, x + (k % 2 ? 0.025 : -0.025), y, 0.024)); }
+  }
+  for (const L of leaves) {
+    const fx = Math.sin(L.a) * 0.1, fy = FIND_FOOT - 0.04, tip = L.l + 0.12;
+    strokeIn(g, 'rgb(176, 66, 56)', 0.02, () => { g.moveTo(fx * 0.3, fy); g.lineTo(fx + Math.sin(L.a) * tip * 0.45, fy - Math.cos(L.a) * tip * 0.45); });   // the red stalk
+    sorrelLeaf(g, fx + Math.sin(L.a) * tip * 0.42, fy - Math.cos(L.a) * tip * 0.42, L.a, L.l, L.k % 2 ? [124, 196, 62] : [108, 180, 56]);
+  }
+}
+// A trefoil: three round toothed leaflets.
+function trefoil(g, x, y, a, r, rgb) {
+  g.save(); g.translate(x, y); g.rotate(a);
+  for (const t of [-0.75, 0, 0.75]) {
+    g.save(); g.rotate(t);
+    softIn(g, rgb, -r * 2, 0, () => { g.moveTo(0, 0); for (let k = 0; k <= 12; k++) { const v = k / 12 * TAU, rr = r * (k % 2 ? 0.92 : 1); g.lineTo(Math.sin(v) * rr * 0.8, -r - Math.cos(v) * rr); } g.closePath(); }, 1.2, 0.72);
+    strokeIn(g, rockRGB(tone(rgb, 1.3, 20), 0.45), 0.01, () => { g.moveTo(0, 0); g.lineTo(0, -r * 1.8); });
+    g.restore();
+  }
+  g.restore();
+}
+function paintStrawberry(g, h, look) {
+  softSpot(g, 0, FIND_FOOT, 0.8, 0.2, '30, 50, 14', 0.35);
+  const leaf = [62, 128, 46];
+  for (let i = 0; i < 6; i++) {
+    const x = (i / 5 - 0.5) * 1.1 + (h(i) - 0.5) * 0.1, y = FIND_FOOT - 0.12 - 0.22 * h(10 + i);
+    strokeIn(g, 'rgb(110, 120, 60)', 0.018, () => { g.moveTo(x * 0.4, FIND_FOOT - 0.02); g.lineTo(x, y); });
+    trefoil(g, x, y, (h(20 + i) - 0.5) * 0.8, 0.13, i % 2 ? leaf : tone(leaf, 0.85));
+  }
+  if (look === 0) {                                     // a last flower, white with a yellow eye
+    const x = 0.28, y = FIND_FOOT - 0.5;
+    for (let k = 0; k < 5; k++) { const a = k / 5 * TAU; fillIn(g, '#fbfaf4', () => discAt(g, x + Math.cos(a) * 0.055, y + Math.sin(a) * 0.05, 0.05)); }
+    fillIn(g, '#efc838', () => discAt(g, x, y, 0.035));
+  }
+  for (let i = 0; i < 6; i++) {                         // the berries, hanging on thin stalks in front
+    const x = (i / 5 - 0.5) * 0.95 + (h(30 + i) - 0.5) * 0.12, y = FIND_FOOT - 0.12 - 0.1 * h(40 + i), r = 0.075 + 0.025 * h(50 + i), ripe = i !== 2 || look === 1;
+    strokeIn(g, 'rgb(100, 128, 56)', 0.014, () => { g.moveTo(x * 0.6, y - 0.22); g.quadraticCurveTo(x, y - 0.2, x, y - r); });
+    const rgb = ripe ? [226, 34, 44] : [236, 200, 150];
+    softIn(g, rgb, y - r, y + r * 1.3, () => { g.moveTo(x - r, y - r * 0.4); g.quadraticCurveTo(x - r, y + r * 0.9, x, y + r * 1.35); g.quadraticCurveTo(x + r, y + r * 0.9, x + r, y - r * 0.4); g.quadraticCurveTo(x, y - r * 1.1, x - r, y - r * 0.4); }, 1.15, 0.7);
+    for (let k = 0; k < 6; k++) fillIn(g, 'rgba(255, 226, 120, 0.9)', () => discAt(g, x + (h(60 + i * 6 + k) - 0.5) * r * 1.3, y + (h(70 + i * 6 + k) - 0.3) * r * 1.4, 0.008));
+    fillIn(g, 'rgb(84, 140, 52)', () => { for (let k = 0; k < 5; k++) { const a = Math.PI + k / 4 * Math.PI; g.moveTo(x, y - r * 0.5); g.lineTo(x + Math.cos(a) * r * 0.9, y - r * 0.5 + Math.sin(a) * r * 0.5); } g.lineTo(x, y - r * 0.5); });
+    if (ripe) furGlow(g, [255, 210, 210], 0.6, x - r * 0.35, y - r * 0.1, r * 0.3, r * 0.22);
+  }
+}
+// A leaf of an elder or a rose: leaflets in pairs along a stalk, one at the tip.
+function pinnate(g, x, y, a, len, rgb, pairs, w = 0.32) {
+  g.save(); g.translate(x, y); g.rotate(a);
+  for (let p = 0; p <= pairs; p++) {
+    const t = p === pairs ? 1 : 0.25 + 0.6 * p / pairs, l = len * (p === pairs ? 0.42 : 0.36);
+    for (const e of p === pairs ? [0] : [-1, 1]) {
+      g.save(); g.translate(0, -len * t); g.rotate(e * 1.0);
+      softIn(g, rgb, -l, 0, () => { g.moveTo(0, 0); g.quadraticCurveTo(l * w, -l * 0.5, 0, -l); g.quadraticCurveTo(-l * w, -l * 0.5, 0, 0); }, 1.18, 0.75);
+      g.restore();
+    }
+  }
+  g.restore();
+}
+function paintElder(g, h, look) {
+  softSpot(g, 0, FIND_FOOT, 1.0, 0.22, '28, 40, 14', 0.4);
+  const leaf = [72, 124, 50], top = x => FIND_FOOT - 1.05 * Math.sqrt(Math.max(0, 1 - (x / 0.9) ** 2));
+  strokeIn(g, 'rgb(128, 112, 88)', 0.05, () => { for (const x of [-0.25, 0.05, 0.3]) { g.moveTo(x * 0.3, FIND_FOOT); g.quadraticCurveTo(x * 0.6, FIND_FOOT - 0.4, x, FIND_FOOT - 0.75); } });
+  const spots = [];
+  softSpot(g, 0, FIND_FOOT - 0.4, 0.72, 0.42, '34, 62, 26', 0.85);              // the shade inside it
+  for (let i = 0; i < 46; i++) { const x = (h(i) * 2 - 1) * 0.85, y = FIND_FOOT - 0.08 - (FIND_FOOT - 0.08 - top(x)) * h(200 + i) ** 0.7; spots.push({ x, y, k: i }); }
+  spots.sort((a, b) => a.y - b.y);
+  for (const p of spots) { const lit = 1 - (p.y - top(p.x)) / Math.max(0.1, FIND_FOOT - top(p.x)); pinnate(g, p.x, p.y + 0.14, (h(30 + p.k) - 0.5) * 2.4, 0.34, tone(leaf, 0.7 + 0.45 * lit), 2); }
+  const plates = look ? [[-0.42, -0.1], [0.05, -0.32], [0.45, -0.05], [-0.1, 0.12]] : [[-0.35, -0.22], [0.2, -0.3], [0.5, 0.05], [-0.55, 0.08], [0.0, 0.05]];
+  for (const [px, py] of plates) {                      // the flat plates of flowers, cream, a little domed
+    const x = px, y = FIND_FOOT - 0.62 + py, r = 0.2;
+    fillIn(g, 'rgba(120, 120, 70, 0.35)', () => ovalAt(g, x, y + 0.05, r * 1.05, r * 0.42));
+    fillIn(g, 'rgb(228, 220, 176)', () => ovalAt(g, x, y, r, r * 0.45));
+    for (let k = 0; k < 22; k++) { const a = h(100 + k) * TAU, rr = Math.sqrt(h(130 + k)) * r * 0.92; fillIn(g, k % 3 ? '#fbf8e6' : '#fffef6', () => discAt(g, x + Math.cos(a) * rr, y + Math.sin(a) * rr * 0.45 - 0.02 * (1 - rr / r), 0.032)); }
+    furGlow(g, [255, 252, 230], 0.45, x - 0.05, y - 0.04, r * 0.6, r * 0.25);
+  }
+}
+function paintHazel(g, h, look) {
+  softSpot(g, 0, FIND_FOOT, 0.8, 0.2, '40, 34, 14', 0.35);
+  for (let i = 0; i < 5; i++) {                         // a few fallen hazel leaves, round and toothed, gone yellow
+    const x = (h(i) - 0.5) * 1.3, y = FIND_FOOT - 0.05 - 0.12 * h(10 + i), a = h(20 + i) * TAU, rgb = tone([210, 170, 70], 0.8 + 0.3 * h(30 + i));
+    g.save(); g.translate(x, y); g.scale(1, 0.5); g.rotate(a);
+    softIn(g, rgb, -0.2, 0.2, () => { for (let k = 0; k <= 16; k++) { const v = k / 16 * TAU, r = 0.2 * (k % 2 ? 0.92 : 1); k ? g.lineTo(Math.sin(v) * r * 0.85, -Math.cos(v) * r) : g.moveTo(0, -r); } g.closePath(); }, 1.15, 0.8);
+    g.restore();
+  }
+  const nuts = look ? [[-0.3, 0.02, 1], [0.05, -0.1, 0], [0.32, 0.04, 1], [0.0, 0.12, 0]] : [[-0.34, 0.06, 0], [-0.04, -0.06, 1], [0.28, -0.02, 1], [0.12, 0.14, 0]];
+  nuts.sort((a, b) => a[1] - b[1]);
+  for (const [nx, ny, husk] of nuts) {
+    const x = nx * 1.2, y = FIND_FOOT - 0.26 + ny * 1.2, r = 0.19;
+    softIn(g, [176, 112, 54], y - r, y + r, () => { g.moveTo(x, y - r * 1.15); g.bezierCurveTo(x + r * 1.1, y - r * 0.9, x + r * 1.05, y + r, x, y + r); g.bezierCurveTo(x - r * 1.05, y + r, x - r * 1.1, y - r * 0.9, x, y - r * 1.15); }, 1.25, 0.65);
+    strokeIn(g, 'rgba(90, 50, 20, 0.35)', 0.01, () => { for (const e of [-0.4, 0, 0.4]) { g.moveTo(x + e * r, y - r * 0.9); g.quadraticCurveTo(x + e * r * 1.3, y, x + e * r, y + r * 0.8); } });
+    fillIn(g, 'rgb(222, 196, 140)', () => ovalAt(g, x, y + r * 0.72, r * 0.62, r * 0.3));   // its pale base
+    furGlow(g, [255, 236, 200], 0.65, x - r * 0.35, y - r * 0.45, r * 0.3, r * 0.2, -0.4);
+    if (husk) for (let k = 0; k < 7; k++) {             // the frilly green husk round its foot
+      const a = Math.PI * (0.05 + 0.9 * k / 6), hx = x + Math.cos(a) * r * 0.95, hy = y + r * 0.55 + Math.sin(a) * r * 0.25;
+      softIn(g, tone([160, 176, 74], 0.85 + 0.25 * h(60 + k)), hy - r * 0.5, hy + 0.05, () => { g.moveTo(hx - r * 0.25, hy + 0.03); g.lineTo(hx + Math.cos(a) * r * 0.1, hy - r * 0.55); g.lineTo(hx + r * 0.25, hy + 0.03); g.closePath(); }, 1.2, 0.8);
+    }
+  }
+}
+function paintRose(g, h, look, bare) {
+  softSpot(g, 0, FIND_FOOT, 0.95, 0.22, '30, 34, 14', 0.4);
+  const canes = [];
+  for (let i = 0; i < 6; i++) {
+    const side = i % 2 ? 1 : -1, x0 = side * 0.1 * h(i), reach = 0.45 + 0.45 * h(10 + i), up = 0.7 + 0.5 * h(20 + i);
+    canes.push({ x0, cx: x0 + side * reach * 0.5, cy: FIND_FOOT - up * 1.2, x1: x0 + side * reach, y1: FIND_FOOT - up * 0.45, k: i });
+  }
+  const along = (c, t) => [(1 - t) ** 2 * c.x0 + 2 * (1 - t) * t * c.cx + t * t * c.x1, (1 - t) ** 2 * FIND_FOOT + 2 * (1 - t) * t * c.cy + t * t * c.y1];
+  for (const c of canes) {
+    strokeIn(g, rockRGB(tone([132, 64, 50], 0.8 + 0.3 * h(30 + c.k))), 0.028, () => { g.moveTo(c.x0, FIND_FOOT); g.quadraticCurveTo(c.cx, c.cy, c.x1, c.y1); });
+    strokeIn(g, 'rgba(110, 50, 40, 0.9)', 0.012, () => { for (let t = 0.15; t < 0.95; t += 0.14) { const [x, y] = along(c, t); g.moveTo(x, y); g.lineTo(x + 0.03, y - 0.035); } });   // thorns
+  }
+  if (!bare) for (let i = 0; i < 18; i++) {             // a few autumn leaves left on it
+    const c = canes[i % canes.length], [x, y] = along(c, 0.3 + 0.6 * h(40 + i)), rgb = [[196, 150, 60], [176, 110, 50], [120, 130, 56]][i % 3];
+    pinnate(g, x, y, (h(50 + i) - 0.5) * 2.4, 0.2, tone(rgb, 0.8 + 0.3 * h(60 + i)), 2, 0.45);
+  }
+  for (let i = 0; i < 9; i++) {                         // the hips, glossy scarlet, along the canes and at their tips
+    const c = canes[(i + look) % canes.length], [x, y] = along(c, i < canes.length ? 1 : 0.45 + 0.4 * h(70 + i)), r = 0.07 + 0.02 * h(80 + i), a = (h(90 + i) - 0.5) * 0.8;
+    g.save(); g.translate(x, y + r * 0.6); g.rotate(a);
+    softIn(g, bare ? [196, 36, 30] : [222, 50, 30], -r * 1.2, r * 1.2, () => ovalAt(g, 0, 0, r * 0.8, r * 1.15), 1.2, 0.62);
+    strokeIn(g, 'rgb(60, 40, 30)', 0.014, () => { for (const e of [-1, 0, 1]) { g.moveTo(0, r * 1.1); g.lineTo(e * r * 0.4, r * 1.45); } });   // the dry sepals at its tip
+    furGlow(g, [255, 220, 200], 0.65, -r * 0.3, -r * 0.4, r * 0.25, r * 0.35);
+    g.restore();
+  }
+}
+function paintCress(g, h, look) {
+  softSpot(g, 0, FIND_FOOT, 0.85, 0.22, '20, 50, 40', 0.4);
+  const leaf = [50, 124, 54], spots = [];
+  for (let i = 0; i < 34; i++) { const a = h(i) * TAU, r = Math.sqrt(h(10 + i)); spots.push({ x: Math.cos(a) * r * 0.78, y: FIND_FOOT - 0.2 + Math.sin(a) * r * 0.24 - 0.14 * (1 - r), k: i }); }
+  spots.sort((a, b) => a.y - b.y);
+  for (const p of spots) {                              // round glossy leaflets, lit on top
+    const lit = clamp(1 - (p.y - (FIND_FOOT - 0.5)) / 0.5, 0, 1), r = 0.075 + 0.03 * h(50 + p.k), rgb = tone(leaf, 0.75 + 0.5 * lit);
+    softIn(g, rgb, p.y - r, p.y + r, () => ovalAt(g, p.x, p.y, r, r * 0.8, h(60 + p.k)), 1.25, 0.7);
+    fillIn(g, 'rgba(255, 255, 255, 0.35)', () => ovalAt(g, p.x - r * 0.3, p.y - r * 0.35, r * 0.35, r * 0.18, -0.3));   // wet and glossy
+  }
+  if (look === 1) for (let i = 0; i < 4; i++) {         // a few tiny white flowers
+    const x = (h(80 + i) - 0.5) * 1.0, y = FIND_FOOT - 0.45 - 0.12 * h(85 + i);
+    for (let k = 0; k < 4; k++) { const a = k / 4 * TAU + 0.4; fillIn(g, '#fbfbf4', () => discAt(g, x + Math.cos(a) * 0.03, y + Math.sin(a) * 0.03, 0.03)); }
+  }
+}
+
 // Where a clump is drawn (into shroomAt): its size, and its middle on screen, over a log's side or up a snag's trunk.
 const shroomAt = { px: 0, x: 0, y: 0 };
 function placeShroom(m, z) {
@@ -5223,7 +5584,7 @@ function putPainting(p, f, alpha, snow, ox, oy) {
 // A visitor fur.js paints (Fur.painters: the dragonflies, the kingfisher, the skylark), at the doublings of its size and
 // shrunk between (shrunk), as a fox is; in the meadow the worker paints it (furReady).
 const furPaint = kind => (g, size, U, n) => { if (!shrunk(g, size, U, kind + ':' + n)) Fur.painters[kind](g, size, U, n); };
-const PAINTERS = { fox: paintFox, rabbit: paintRabbit, forager: paintForager, hog: paintHedgehog, heron: paintHeron, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody, bee: paintBee, fall: paintFall, shroom: paintShroom, green: paintGreen, bramble: paintBramble, item: paintItem,
+const PAINTERS = { fox: paintFox, rabbit: paintRabbit, forager: paintForager, hog: paintHedgehog, heron: paintHeron, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody, bee: paintBee, fall: paintFall, shroom: paintShroom, green: paintGreen, bramble: paintBramble, find: paintFind, item: paintItem,
   dfly: furPaint('dfly'), kfisher: furPaint('kfisher'), lark: furPaint('lark') };
 function drawDecor(d, sx, sy, now, ck, clipLeaves, px = d.tree ? treePx(d) : d.size * cam.zoom) {   // (px: render has it already)
   if (d.emoji === '🪨') { drawRock(d, sx, sy); return; }

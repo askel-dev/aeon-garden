@@ -31,7 +31,7 @@ way found again every `STEER_MS` (in `frame`), and on to where it's let go. Runn
 (`CAM_AHEAD`, itself eased so setting off and stopping are soft), its feet a little below the middle (`CAM_FEET`). A drag or
 a pan lets it go, F or the next walk takes it back; the wheel zooms about the forager while the camera's with it. A kept
 meadow keeps where it is and whether the camera was with it (`rec.lead`).
-Gathering: a click or a tap on something to gather (`gatherAt`: a hive, a clump of mushrooms, a bramble, nettles, a fruit or mast
+Gathering: a click or a tap on something to gather (`gatherAt`: a hive, a clump of mushrooms, a wild find, a bramble, nettles, a fruit or mast
 tree, the garlic, looked for only near the point, the trees through the sim's grid) walks the forager to its near side a reach
 away, in front of a tree, a hive or a bramble so it isn't hidden (`goGather`, `standPoint`, `gatherSpot`), and once it's there
 (`gatherFrame`) it turns to it, stoops and reaches down (fur.js poses 3 and 4, `fg.pick`, `PICK_MS`), sim.js `gather` takes it, a
@@ -41,6 +41,21 @@ with something to give glows (`GLOW_ART`, painted once, under it; a hive's over 
 its name by it and a hand for the pointer; one with nothing says why (sim.js `whatThere`), as a click on it does (`say`). The hover
 is looked up again only when the mouse moves, or every `AIM_MS` while the camera glides (`hoverFrame`, `aim`). "Satchel's full"
 says so by the forager and leaves the thing be.
+Finding things: what has something to give (sim.js `eachPickable`, listed every `PICKS_MS`: `picksFrame`) glints now and then, a
+small warm sparkle painted once (`GLINT_ART`) over its `gatherSpot`, each on its own clock from a hash of where it is (`glintAt`,
+`GLINT_EVERY`, `GLINT_MS`), so one or two on screen at a time; a picked clean tree or an unripe bramble isn't listed, so it doesn't.
+Standing still `SENSE_STILL` (not walking or off to pick), the forager senses what's about: everything within `SENSE_REACH` glints
+once, a little bigger, as a wave reaches it outward from the forager over `SENSE_SPREAD`, with a faint ring going out (`MARK_ART`)
+(`senseFrame`, in `drawGlints`). With nothing to pick on screen for `ARROW_WAIT`, a small parchment disc with a brass chevron
+(`ARROW_ART`) sits at the screen's edge where the way from the forager to the nearest leaves it, below the watch and above the
+satchel, and fades as one comes into view (`drawPickArrow`). All drawn over the dark, a little dimmer at night. Cost: nothing you
+can measure (render at the widest zoom, walking, in summer and winter, on and off in turn: 1.40-1.62 ms against 1.42-1.68).
+Wild finds (sim.js `w.finds`) are painted once a look and size (`paintFind`, `FIND_ARTS`: 'find:' + kind * 4 + stage * 2 + look):
+dandelions (`paintDandelion`: a toothed rosette, bright heads, now and then a clock), sorrel (lime arrow leaves on red stalks, rusty
+seed spikes), wild strawberries (trefoils, scarlet berries), elderflower (a bush with cream plates), hazelnuts (nuts in frilly husks
+on yellow leaves), rosehips (an arching rose with scarlet hips, bare in winter: stage 1) and watercress (a cushion of glossy
+leaflets). A bit bigger and brighter than the meadow's own flowers and tufts (`FIND_PX`). Drawn with the trees and animals (a frame
+item's `s`, `drawFind`), they come up over `FIND_GROW` and fade over their last `FIND_OVER`. The satchel shows the same paintings.
 The satchel (`#satchel`, `renderSatchel`, rewritten only after a pick or a drop): `S.SLOTS` small parchment slots at the bottom in
 the middle, a slim faint row while it's empty. Their paintings are one sheet painted once (`itemSheet`, `--items`): the meadow's own
 mushrooms, greens and windfalls (`ITEM_ART`) and `paintItem` for the blackberries, cherries, honeycomb and beechnuts; an
