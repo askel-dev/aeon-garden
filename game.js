@@ -1877,7 +1877,7 @@ const FORAGER_JOG = [0.1, 0.11];           // sent running, it jogs once up past
 const FORAGER_STILL_MS = 70;               // no nearer than this to the last move, it's standing (it's drawn between ticks)
 const forPx = () => (8 + cam.zoom) * FORAGER_SIZE;
 const fg = { at: -1, x: 0, y: 0, step: 0, stillMs: 1e4, view: 1, flip: false, art: FORAGER_ARTS[32], blinkAt: -1e9, blinkIn: 3000,
-  fidgetAt: -1e9, fidgetIn: 9000, lastHalf: 0, jog: false, rings: [], wet: false, lx: -0, ly: -0, sized: 0, outfit: 0, picked: false, pick: -1e9, printMs: -0 };
+  fidgetAt: -1e9, fidgetIn: 9000, lastHalf: 0, jog: false, rings: [], wet: false, lx: -0, ly: -0, sized: 0, outfit: 0, picked: false, pick: -1e9, pickK: 1, printMs: -0 };
 try {
   const o = localStorage.getItem(OUTFIT);
   fg.picked = o !== null;
@@ -1925,7 +1925,7 @@ function foragerFrame(now, d) {
     if (now - fg.blinkAt > fg.blinkIn) { fg.blinkAt = now; fg.blinkIn = 2200 + Math.random() * 3500; }
     if (fg.view === 1 && fg.stillMs > fg.fidgetIn) { fg.fidgetAt = now; fg.fidgetIn = fg.stillMs + FORAGER_FIDGET[0] + Math.random() * (FORAGER_FIDGET[1] - FORAGER_FIDGET[0]); }
     pose = now - fg.fidgetAt < 1500 ? 1 : now - fg.blinkAt < 150 ? 2 : 0;
-    const p = now - fg.pick;                              // picking (gatherFrame): stooped, reaching down, back up
+    const p = (now - fg.pick) / fg.pickK;                 // picking (gatherFrame): stooped, reaching down, back up
     if (p < PICK_MS[2]) { pose = p < PICK_MS[0] || p > PICK_MS[1] ? 3 : 4; fg.stillMs = FORAGER_STILL_MS + 1; fg.fidgetIn = FORAGER_FIDGET[0]; }
   }
   if (ui.speed > 0) fg.printMs += ms;                   // (prints fade only while the meadow goes on)
@@ -2134,6 +2134,7 @@ function drawTrail(sx, sy, r, a, now) {
 // whatThere), as a click on it does. The hover is looked up only when the pointer or the camera moved (hoverFrame), and
 // only among the things near the pointer (the trees through the sim's grid).
 const PICK_MS = [140, 520, 680];          // the pick's stoop, reach and back up (ms)
+const PICK_QUICK = 0.6;                   // with more lined up, it picks this much quicker, and sets off as it comes back up
 const FLOAT_MS = 1400, SAY_MS = 1900;     // a "+3 Chanterelles" floating up, and a line saying why not
 const FROM_FRONT = { tree: 1, hive: 1, bramble: 1 };   // (comes at these from in front, where it shows, not hidden behind them)
 let GLOW_ART = null;
@@ -2278,16 +2279,16 @@ function gatherFrame(now) {
   const dx = s.x - F.x, dy = s.y - F.y;                 // it turns to it, and stoops
   fg.view = Math.abs(dy) > Math.abs(dx) * 0.8 ? (dy > 0 ? 1 : 2) : 0;
   if (Math.abs(dx) > 0.05) fg.flip = dx > 0;
-  fg.pick = now;
-  ui.nextAt = now + PICK_MS[2];                         // (the next in the queue once it's back up)
+  fg.pick = now; fg.pickK = ui.queue.length ? PICK_QUICK : 1;
+  ui.nextAt = now + (ui.queue.length ? PICK_MS[1] : PICK_MS[2]) * fg.pickK;   // (the next in the queue once it's back up)
   $('#satchel').classList.remove('empty');
-  const [gx, gy] = [s.gx, s.gy], at = now + PICK_MS[0] + 90;
+  const lands = PICK_MS[0] * fg.pickK + 90, [gx, gy] = [s.gx, s.gy], at = now + lands;
   setTimeout(() => {
     if (!world) return;
     pickFloats.push(floatOf(r.id, r.n, s.x, s.y, at));
     flyToSlot(r.id, gx, gy, r.into[r.into.length - 1]);
     chime('pick', { n: r.n });
-  }, PICK_MS[0] + 90);
+  }, lands);
 }
 
 // The queue: while the forager is off to pick something (or stooped picking it), a click or a tap on more to pick lines it up
