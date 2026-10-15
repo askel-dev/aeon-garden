@@ -368,9 +368,30 @@
     #satchel.empty .slot { height: 12px; }
     #satchel.empty .slot::before { inset: 2px 3px; border-radius: 4px; }
   }
+  /* ---- the fire button (game.js renderBuild, buildIcon): by the satchel, a laid campfire in a ring that fills in as the
+     satchel holds more of what one takes (--k); all there (.ready) it glows, and while a spot is picked (.on) it's pressed in */
+  #build { position: absolute; right: calc(100% + 8px); bottom: 0; width: 46px; height: 46px; padding: 0; border: none; border-radius: 50%;
+    background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); transition: transform 0.15s, background-color 0.2s; }
+  #build::before { content: ''; position: absolute; inset: 2px; border-radius: 50%;
+    background: conic-gradient(var(--accent) calc(var(--k, 0) * 360deg), rgba(150, 115, 60, 0.18) 0);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3.5px), #000 calc(100% - 3px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 3.5px), #000 calc(100% - 3px)); }
+  #build::after { content: ''; position: absolute; z-index: -1; inset: -10px; border-radius: 50%; opacity: 0; pointer-events: none;
+    background: radial-gradient(closest-side, rgba(255, 168, 70, 0.6), rgba(255, 150, 60, 0)); }
+  #build.ready::after { animation: build-ready 2.6s ease-in-out infinite; }
+  @keyframes build-ready { 50% { opacity: 1; } }
+  #build i { position: absolute; inset: 5px; background: center / contain no-repeat; opacity: 0.5; filter: saturate(0.4); transition: opacity 0.3s, filter 0.3s; }
+  #build.ready i { opacity: 1; filter: none; }
+  #build.on { background-color: var(--accent-soft); transform: translateY(1px); }
+  #build.on::after { animation: none; }
+  @media (hover: hover) { #build:hover { transform: translateY(-1px); } }
+  #build:active { transform: translateY(1px); }
+  /* a phone: over the satchel's left end, a fingertip's size */
+  @media (pointer: coarse) { #build { right: auto; left: 0; bottom: calc(100% + 8px); width: 50px; height: 50px; } }
   /* a phone: the chat's lines sit over the satchel and the body's bars; open, its card goes across the foot */
   @media (max-width: 760px), (max-height: 500px) {
     #chat { bottom: calc(var(--bottom) + 104px); }
+    body:has(#build:not(.hidden)) #chat:not(.open) { bottom: calc(var(--bottom) + 122px); }   /* (over the fire button) */
     #chat.open { bottom: var(--bottom); right: var(--right); width: auto; }
     #chat.open #chat-log { max-height: 30vh; }
   }
@@ -464,8 +485,9 @@
   <div class="vital" id="v-stam" title="Stamina"><svg viewBox="0 0 12 12"><path d="M3.2 1h3.3v4.6l3 1.3c.9.4 1.5 1.1 1.5 2v.9H1.6v-1.2c.6-.2 1-.7 1.1-1.3z"/></svg><span class="bar"><i></i></span></div>
 </div>
 
-<!-- bottom middle: the satchel, a row of slots (game.js renderSatchel) -->
+<!-- bottom middle: the satchel, a row of slots (game.js renderSatchel), and by it the fire button (renderBuild) -->
 <div id="satchel" class="empty"><div class="slots"></div>
+  <button id="build" class="hidden" data-act="build" title="Make a campfire (F)" aria-label="Make a campfire"><i></i></button>
 </div>
 
 <!-- top right: pause, sound and the ••• menu; the inspector hangs underneath -->

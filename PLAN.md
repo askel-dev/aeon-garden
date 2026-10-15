@@ -71,7 +71,7 @@ forager keeps walking and keeps dry, which is the point of stage 4.
 Then (Axel) made more cinematic: it opens letterboxed, the name in the lower bar, the camera craning down out of the storm onto
 the forager, and the bars slide off after 7 s (a click, a tap or a key cuts it short).
 
-## Stage 4: the campfire
+## Stage 4: the campfire (built 2026-10-15, branch `campfire`)
 - **Building:** about 6 pebbles, 5 sticks and a handful of tinder. Choose a spot near the forager; it kneels and lays
   the ring and the sticks. (What builds cost goes in data, recipes.js-style, so Axel can add builds by hand later.)
 - **Lighting:** the forager always has a flint and steel (never shown as an item). It strikes: a soft "chk chk" and
@@ -85,6 +85,18 @@ the forager, and the bars slide off after 7 s (a click, a tap or a key cuts it s
   wash (`skyWash`/`laySky`), repainted only on a flicker step.
 - **Warmth:** the fire is stage 2's strongest warmth, and dries you.
 - **The first one** gets a gold headline (game.js `firstTime('fire', 'your first', 'Fire')`), as the first dish will.
+
+### As built
+- 6 pebbles, 5 sticks, 2 tinder (recipes.js `BUILDS.campfire`); camp lays 3 pebbles now (so 3 more to find).
+- A round fire button by the satchel (F too), its ring filling as you gather; pick a spot, the forager kneels, lays it,
+  strikes, and you hold to blow. Clicking a fire feeds it a stick or relights it; by a lit one it kneels to warm its hands.
+- 5 sticks burn about 8.5 game hours dry (7 in rain), then embers about 2.4 hours, then cold. By a fed fire every night
+  ends cosy; by 5 sticks alone a winter night ends at 0.1 to 0.75 warmth; with none, winter and rainy spring nights kill.
+- Nights made much darker (game.js `DARK` 0.55 to 0.88, a deeper navy) after Axel looked, so the fire's pool is the cosy
+  place; its light reaches further (`LIGHT_TILES` 6 to 8, a gentler falloff), and its warm light on the forager is softer
+  (it washed it out).
+- Played in a browser and timed (no measurable cost). Left for a refinement pass: the look of the pool and flames, the
+  balance of how long a stick burns, the sounds.
 
 ## Stage 5: making camp
 Lighting the first fire makes camp (`w.camp`: where, and the fire), and it's a big moment: the flame flares, warm light

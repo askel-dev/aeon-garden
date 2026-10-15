@@ -12,11 +12,11 @@
  *     (see "music" below), in keys that hold the pentatonic so it still fits.
  *     Over it all hangs a wind chime that rings more the more rabbits there are.
  *
- * Use: Sound.start() from a click, then Sound.update({ phase, season, sky, bees, life, frogs, trees }) a
+ * Use: Sound.start() from a click, then Sound.update({ phase, season, sky, bees, life, frogs, trees, fire }) a
  * few times a second (sky: how much of each weather is showing, 0..1; bees: how many are flying
  * on screen; life: how full the meadow is of rabbits, 0..1; frogs: 0..1,
  * the spring's spawn, for a croak now and then at night; trees: 0..1, how much of the screen is under
- * leafy crowns, for the leaves' rustle in the wind) and
+ * leafy crowns, for the leaves' rustle in the wind; fire: 0..1, how near and well a campfire burns, for its crackle) and
  * Sound.play('birth', { species, pan, near, seen }) on events.
  */
 (() => {
@@ -35,7 +35,7 @@ let ac = null, master, ducker, loud, fxBus, ambBus, musicBus, hush, reverb, nois
 let enabled = true, volume = 0.6;
 const amb = {};                                    // ambient layers
 const LOUD = 1.4;                                  // thunder's level against the rest
-const state = { phase: 0.3, season: 0, sky: { clear: 1 }, bees: 0, life: 0.3, frogs: 0, trees: 0.5 };
+const state = { phase: 0.3, season: 0, sky: { clear: 1 }, bees: 0, life: 0.3, frogs: 0, trees: 0.5, fire: 0 };
 const last = {};                                   // per-sound cooldowns
 const picking = { n: 0, at: -1e9, base: 0 };       // the picks in a row (SOUNDS.pick)
 const PICK_CHAIN = 2.5;                            // s: a pick within this of the last climbs on
@@ -329,6 +329,13 @@ const RULES = {
   pant:    { gap: 0.25, always: true },
   phew:    { gap: 4,    always: true },
   hemdrip: { gap: 0.25, always: true },
+  strike:  { gap: 0.15, always: true },   // the campfire: the flint and steel,
+  blow:    { gap: 0.3,  always: true },   // a breath blown on the spark,
+  kindle:  { gap: 0.5,  always: true },   // the tinder catching and the flame taking,
+  stick:   { gap: 0.08, always: true },   // a stick laid on,
+  clack:   { gap: 0.06, always: true },   // a stone set in the ring,
+  tinder:  { gap: 0.1,  always: true },   // the tinder tucked in,
+  fizzle:  { gap: 0.8,  always: true },   // and only smoke, or a fire gone out
 };
 
 const STEP_SOFT = 0.6;          // the footsteps' level against the meadow's sounds: soft, they come a few times a second
@@ -638,6 +645,42 @@ const SOUNDS = {
     voice(o, note(d + pick([2, 2, 3]), 1), t + gap, 0.34 * v);
     if (n >= 3) celesta(o, note(d + 5, 1), t + gap * 2, 0.2 * v);
   },
+  // The campfire. Kept soft and close, like the footsteps: no note of it is loud, and the scale only comes in when it takes.
+  // The flint struck on the steel: a short bright "chk", a tiny ring of the steel, and a softer scrape after it (n: which
+  // strike, so two in a row aren't the same).
+  strike(t, o, { n = 0 }) {
+    const r = 1 + 0.06 * (n % 3 - 1) + rand(-0.03, 0.03);
+    noise(o, t, 0.035, { from: 4200 * r, to: 2600, q: 1.4, peak: 0.22, attack: 0.002 });
+    partial(o, 3150 * r, t, 0.025, 0.002, 0.07, 'triangle');
+    noise(o, t + 0.03, 0.07, { from: 2400 * r, to: 1500, q: 1, peak: 0.07, attack: 0.01 });
+  },
+  // A breath blown on the spark: air through pursed lips, soft and low, a little stronger as it glows (v: 0.5 to 1).
+  blow(t, o, { v = 1 }) {
+    noise(o, t, 0.62, { from: 900, to: 520, q: 0.7, peak: 0.07 + 0.06 * v, attack: 0.16, type: 'lowpass' });
+    noise(o, t + 0.04, 0.5, { from: 1900, to: 1300, q: 1.1, peak: 0.025 * v, attack: 0.14 });
+  },
+  // It catches (v small: the tinder flaring as it's blown on) or the flame takes (v 1): a soft whoomph of air drawn into it,
+  // a few crackles, and taken, two warm notes stepping up.
+  kindle(t, o, { v = 1 }) {
+    noise(o, t, 0.5 + 0.4 * v, { from: 180, to: 900, q: 0.6, peak: 0.12 + 0.2 * v, attack: 0.08, type: 'lowpass' });
+    for (let i = 0, n = 2 + Math.round(3 * v); i < n; i++) noise(o, t + 0.1 + rand(0, 0.5), 0.02, { from: rand(1800, 3400), to: 1500, q: 1.5, peak: rand(0.06, 0.12) * (0.5 + 0.5 * v), attack: 0.002 });
+    if (v > 0.6) { piano(o, note(0, 0), t + 0.25, 0.28 * v, 1.2, 0.6); piano(o, note(2, 0), t + 0.5, 0.26 * v, 1.8, 0.6); }
+  },
+  // A stick laid on: a soft knock of dry wood, and a little crackle.
+  stick(t, o) {
+    partial(o, rand(220, 260), t, 0.11, 0.004, 0.08, 'triangle');
+    partial(o, rand(620, 700), t, 0.03, 0.002, 0.04);
+    noise(o, t + 0.02, 0.05, { from: 2600, to: 1600, q: 1.2, peak: 0.06, attack: 0.004 });
+  },
+  // A stone set down in the ring: a dull click of stone on stone.
+  clack(t, o) {
+    partial(o, rand(820, 960), t, 0.07, 0.002, 0.05, 'triangle');
+    noise(o, t, 0.04, { from: 1500, to: 900, q: 1.2, peak: 0.1, attack: 0.002 });
+  },
+  // The tinder tucked in: a dry rustle.
+  tinder(t, o) { noise(o, t, 0.18, { from: 2400, to: 3600, q: 0.9, peak: 0.08, attack: 0.05 }); },
+  // Only smoke, or a fire gone out: a soft hiss, falling away.
+  fizzle(t, o) { noise(o, t, 0.6, { from: 3000, to: 1100, q: 0.8, peak: 0.06, attack: 0.05 }); },
 };
 
 // opts: { species, pan (-1..1), near (0..1, how close to the camera), ...sound-specific }
@@ -709,6 +752,7 @@ function buildAmbience() {
   amb.leavesL = leafSide(-0.55, 0.97); amb.leavesR = leafSide(0.55, 1.04);
   amb.rainL = rainSide(-0.7, 2300); amb.rainR = rainSide(0.7, 2600);
   amb.rainLow = loopNoise('lowpass', 350, 0.5);
+  amb.fire = loopNoise('lowpass', 420, 0.6);              // a campfire's soft roar (state.fire), crackling over it (crackle)
   amb.hum = hiveHum();
   amb.calm = 0.5; amb.blow = null; amb.gust = 0; amb.swell = 0.5; amb.tube = 2;
 }
@@ -750,6 +794,7 @@ function tickAmbience() {
   amb.rainR.g.gain.setTargetAtTime((0.055 * m.rain + 0.025 * m.storm) * rainLvl * (1 - 0.1 * gust), now, 1.5);
   amb.rainLow.g.gain.setTargetAtTime((0.10 * m.rain + 0.06 * m.storm) * rainLvl, now, 2);
   amb.hum.gain.setTargetAtTime(0.03 * m.bees, now, 1.5);
+  amb.fire.g.gain.setTargetAtTime(0.06 * state.fire, now, 0.6);
   hush.frequency.setTargetAtTime(12000 - 9500 * m.hush, now, 2);
 
   // Scattered one-shots, each rolled a few times a second.
@@ -762,6 +807,7 @@ function tickAmbience() {
     if (Math.random() < 0.2) drip(now + rand(0.25, 0.4), 0.5, deg + pick([-1, 1]));   // then a smaller one off the leaf
   }
   if (Math.random() < m.snow * 0.15 * dt) snowChime(now);
+  if (Math.random() < state.fire * 5 * dt) crackle(now + rand(0, 0.2), state.fire);   // a campfire crackling
   if (Math.random() < m.cicadas * 0.12 * dt) cicada(now);
   if (Math.random() < (0.08 + 1.4 * m.chimes) * (0.5 + amb.gust) * dt) chime(now + rand(0, 0.2));
   musicTick(now, m);
@@ -1002,6 +1048,16 @@ function chime(t) {
 }
 
 const snowChime = t => kalimba(out(rand(-1, 1), 0.7, 0.3), note(Math.floor(rand(5, 10)), 1), t, 0.4);
+
+// A campfire crackling: a pop or a few, tiny dry snaps of wood in the heat, in the middle (v: how near and well it burns).
+function crackle(t, v = 1) {
+  const o = out(rand(-0.25, 0.25), 0.2, 0.5 + 0.5 * v);
+  for (let i = 0, n = 1 + Math.floor(rand(0, 3.5)); i < n; i++) {
+    const at = t + i * rand(0.03, 0.11);
+    noise(o, at, 0.018, { from: rand(1600, 3600), to: 1200, q: 1.6, peak: rand(0.05, 0.13), attack: 0.002 });
+    if (Math.random() < 0.3) partial(o, rand(900, 1400), at, 0.012, 0.002, 0.03);
+  }
+}
 
 // ------------------------------------------------------------------ music
 

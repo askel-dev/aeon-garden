@@ -162,6 +162,20 @@ const RECIPES = [
   },
 ];
 
+// What the forager builds, and what each takes out of the satchel. In `needs`, each word is an ingredient or a tag (any
+// ingredient that has it: 'tinder' takes dry grass or birch bark), with how many. To add a build, copy a block; the game
+// only knows how to build the ones it draws (the campfire, for now).
+//   name            what it's called
+//   needs           what it takes, { word: how many }
+//   text            a line for when you look at it
+const BUILDS = {
+  campfire: {
+    name: 'Campfire',
+    needs: { pebble: 6, stick: 5, tinder: 2 },
+    text: 'A ring of stones, a little tepee of sticks, and tinder in the middle for the spark.',
+  },
+};
+
 // The rest is the machinery: you shouldn't need to touch it to add a dish.
 
 const TEACHERS = ['hedgehog', 'heron', 'kingfisher', 'skylark', 'dragonfly'];
@@ -247,6 +261,15 @@ function checkRecipes() {
     if (r.fill != null && typeof r.fill !== 'number') problems.push(`${who} has a fill that isn't a number.`);
     if (r.level != null && typeof r.level !== 'number') problems.push(`${who} has a level that isn't a number.`);
   });
+  for (const [id, b] of Object.entries(BUILDS)) {
+    const who = `The build '${id}'`;
+    if (!b.name) problems.push(`${who} has no name.`);
+    if (!b.needs || typeof b.needs !== 'object' || Array.isArray(b.needs)) { problems.push(`${who} needs what it takes: needs: { pebble: 6, stick: 5 }.`); continue; }
+    for (const [word, n] of Object.entries(b.needs)) {
+      if (!INGREDIENTS[word] && !isTag(word)) problems.push(`${who} needs '${word}', which is no ingredient or tag.`);
+      if (!(n >= 1) || n !== Math.floor(n)) problems.push(`${who} needs ${n} of '${word}': it wants a whole number, 1 or more.`);
+    }
+  }
   // Two dishes at one station that the same things could make: the first in the list would always win.
   for (let i = 0; i < RECIPES.length; i++) for (let j = i + 1; j < RECIPES.length; j++) {
     const a = RECIPES[i], b = RECIPES[j];
@@ -257,7 +280,10 @@ function checkRecipes() {
   return problems;
 }
 
-const Recipes = { STATIONS, INGREDIENTS, RECIPES, MESS, cook, fits, fillOf, recipeOf, checkRecipes };
+// The ingredients a word in a build's needs takes: itself, or every ingredient with that tag.
+const takes = word => (INGREDIENTS[word] ? [word] : Object.keys(INGREDIENTS).filter(id => INGREDIENTS[id].tags.includes(word)));
+
+const Recipes = { STATIONS, INGREDIENTS, RECIPES, BUILDS, MESS, cook, fits, fillOf, recipeOf, takes, checkRecipes };
 if (typeof module !== 'undefined') module.exports = Recipes;
 else {
   window.Recipes = Recipes;
