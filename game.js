@@ -9031,12 +9031,13 @@ function heardWorld(m, now) {
   net.hostId = m.from; net.later.length = 0; net.hostSums.clear(); net.mySums.clear(); net.off = 0;
   setClock(m.tick, m.s, now, true);
   const host = cleanName(m.n);
-  if (!again) toast(`🧺 You’re in ${host ? esc(host) + '’s' : 'your friend’s'} meadow. Forage together!`);
+  if (!again) { toast(`🧺 You’re in ${host ? esc(host) + '’s' : 'your friend’s'} meadow. Forage together!`); openingLine(); }
 }
-// A guest's forager comes in beside the host's (it's the host's, unpacked): fresh, with an empty satchel.
+// A guest's forager comes in beside the host's (it's the host's, unpacked): with an empty satchel, fresh, or cold and wet
+// in the meadow's opening storm (sim.js foragerArrives).
 function arrive(f) {
   f.bag.fill(''); f.bagN.fill(0);
-  f.warmth = 1; f.wet = 0; f.stamina = 1; f.winded = false; f.down = -1; f.stumble = 0;
+  S.foragerArrives(world, f);
   f.walking = false; f.running = false; f.speed = 0; f.path.length = 0;
   for (const [dx, dy] of [[0.9, 0.3], [-0.9, 0.3], [0, 0.9], [0.9, -0.5], [-0.9, -0.5]]) {
     if (S.walkable(world, f.x + dx, f.y + dy)) { f.x += dx; f.y += dy; break; }
@@ -9248,26 +9249,29 @@ function drawPeer(p, sx, sy) {
 
 // The chat. A line said, painted once: a parchment bubble with a tail at the foot, its words wrapped to CHAT_WIDE.
 const CHAT_ARTS = new Map();
-function chatArt(text) {
-  let a = CHAT_ARTS.get(text);
+function chatArt(text, thought) {
+  const key = thought ? '~' + text : text;
+  let a = CHAT_ARTS.get(key);
   if (a) return a;
   if (CHAT_ARTS.size > 32) CHAT_ARTS.clear();
   const k = Math.max(1, dpr), F = 13 * k, c = document.createElement('canvas'), g = c.getContext('2d');
-  const font = `700 ${F}px Nunito, ui-rounded, system-ui, sans-serif`, most = CHAT_WIDE * k;
+  const font = `${thought ? 'italic ' : ''}700 ${F}px Nunito, ui-rounded, system-ui, sans-serif`, most = CHAT_WIDE * k;
   g.font = font;
   const lines = [];
-  let line = '';
-  for (let word of text.split(' ')) {
-    while (g.measureText(word).width > most) {              // (a word too long for a line: broken where it runs out)
-      let n = word.length - 1;
-      while (n > 1 && g.measureText(word.slice(0, n)).width > most) n--;
-      if (line) { lines.push(line); line = ''; }
-      lines.push(word.slice(0, n)); word = word.slice(n);
+  for (const said of text.split('\n')) {                   // (a line of its own where the game's own words break)
+    let line = '';
+    for (let word of said.split(' ')) {
+      while (g.measureText(word).width > most) {            // (a word too long for a line: broken where it runs out)
+        let n = word.length - 1;
+        while (n > 1 && g.measureText(word.slice(0, n)).width > most) n--;
+        if (line) { lines.push(line); line = ''; }
+        lines.push(word.slice(0, n)); word = word.slice(n);
+      }
+      const next = line ? line + ' ' + word : word;
+      if (line && g.measureText(next).width > most) { lines.push(line); line = word; } else line = next;
     }
-    const next = line ? line + ' ' + word : word;
-    if (line && g.measureText(next).width > most) { lines.push(line); line = word; } else line = next;
+    if (line) lines.push(line);
   }
-  if (line) lines.push(line);
   let wide = 0;
   for (const l of lines) wide = Math.max(wide, g.measureText(l).width);
   const lh = Math.round(F * 1.3), padX = Math.round(F * 0.75), padY = Math.round(F * 0.4), tail = Math.round(6 * k), sh = Math.round(1.5 * k);
@@ -9287,11 +9291,11 @@ function chatArt(text) {
   lines.forEach((l, i) => g.fillText(l, 1 + w / 2, 1 + padY + lh * (i + 0.5) + k * 0.5));
   a = { img: c, w: c.width / k, h: c.height / k };
   asBitmap(c, b => { a.img = b; });
-  CHAT_ARTS.set(text, a);
+  CHAT_ARTS.set(key, a);
   return a;
 }
 const cleanChat = s => String(s || '').replace(/[\u0000-\u001f\u007f-\u009f]/g, '').replace(/\s+/g, ' ').trim().slice(0, CHAT_MOST);
-const chatFor = (text, now) => ({ art: chatArt(text), at: now, until: now + Math.min(CHAT_LONGEST, CHAT_MS + CHAT_PER * text.length) });
+const chatFor = (text, now, thought) => ({ art: chatArt(text, thought), at: now, until: now + Math.min(CHAT_LONGEST, CHAT_MS + CHAT_PER * text.length) });
 const chatOpen = () => $('#chat').classList.contains('open');
 function openChat(open) {
   const box = $('#chat');
@@ -9627,6 +9631,17 @@ function newWorld(seed) {
   history.replaceState(history.state, '', pageLink(seed));   // (the state: Back's step, if one's open)
   homeView();
   if (!fg.picked) pickOutfit(true);             // (only till one has been picked: after that it's in •••)
+  openingLine();
+}
+
+// A new meadow opens in a storm late in the afternoon (sim.js START_PHASE), the forager cold and wet: a moment after it's on
+// screen, it says to itself what it needs (in a bubble over it, as a line of chat, in italics), and so does a friend's
+// forager coming in during the storm.
+const OPENING_LINE = 'It’s freezing.\nI need a fire before dark.';
+const OPENING_MS = 1600;
+function openingLine() {
+  const w = world;
+  setTimeout(() => { if (world === w && S.openingStorm(w) && w.forager.down < 0) myChat = chatFor(OPENING_LINE, performance.now(), true); }, OPENING_MS);
 }
 
 // A new meadow opens close enough to see who lives there, HOME_TILES across the screen, over where most of them are:

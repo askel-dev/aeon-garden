@@ -1931,7 +1931,8 @@ function pickWeather(w) {
 
 function weatherTick(w) {
   if (w.tick >= w.weather.until) {
-    pickWeather(w);
+    if (w.weather.kind === 'storm' && w.tick < CLEAR_END) setWeather(w, 'clear', CLEAR_END - w.tick);   // (the opening storm blows over)
+    else pickWeather(w);
   }
   const kind = w.weather.kind;
   w.wet = clamp(w.wet + sky(w).soak / TPD, 0, 1);
@@ -6043,13 +6044,28 @@ const LATER = {
 // change the layout later (an object's field that holds a fraction once holds any number after).
 function asFractions(o, keys) { for (const k of keys) { const v = o[k]; o[k] = 0.5; o[k] = v; } }
 
-// A new meadow opens this many days into spring, in the morning: the trees in leaf and blossom, the garlic up, cherries a
-// few days off. (Its first dawn was bare trees and nothing to pick.)
+// A new meadow opens this many days into spring: the trees in leaf and blossom, the garlic up, cherries a few days off (its
+// first dawn was bare trees and nothing to pick). It opens late in the afternoon (START_PHASE, of the day from sunrise), in a
+// storm that blows over as the light goes (STORM_TO), into a clear cold night and the morning after (CLEAR_TO). The forager
+// arrives cold and wet (ARRIVE_WARMTH, ARRIVE_WET, foragerArrives), with time to gather for a fire before dark and none to
+// sightsee: walking about it's chilly by dusk and cold through the night, and collapses towards dawn if it's wet; standing
+// still it's cold by dusk and collapses at dawn (4 seeds).
 const START_DAY = 3;
+const START_PHASE = 0.44, STORM_TO = 0.555, CLEAR_TO = 1.3;
+const ARRIVE_WARMTH = 0.78, ARRIVE_WET = 0.75;
+const STORM_END = Math.floor(TPD * (START_DAY + STORM_TO)), CLEAR_END = Math.floor(TPD * (START_DAY + CLEAR_TO));
+// Whether the meadow is still in its opening storm.
+const openingStorm = w => w.tick < STORM_END && w.weather.kind === 'storm';
+// A forager coming into the meadow (a new one's, or a friend's joining it): cold and wet in the opening storm, else fresh.
+function foragerArrives(w, f) {
+  const storm = openingStorm(w);
+  f.warmth = storm ? ARRIVE_WARMTH : 1; f.wet = storm ? ARRIVE_WET : 0;
+  f.stamina = 1; f.winded = false; f.down = -1; f.stumble = 0;
+}
 
 function createWorld(seed, opts = {}) {
   const w = {
-    seed, rng: makeRng(seed), tick: Math.floor(TPD * (START_DAY + 0.04)),
+    seed, rng: makeRng(seed), tick: Math.floor(TPD * (START_DAY + START_PHASE)),
     nextId: 1, creatures: [], newborn: [], byId: new Map(), events: [],
     grid: makeGrid(), grids: perKind(makeGrid),
     nameCounts: new Map(), anyDied: false,
@@ -6111,7 +6127,8 @@ function createWorld(seed, opts = {}) {
   flushNewborn(w);
   for (const f of w.fields) if (f.season === seasonOf(w.tick)) f.bloomed = yearOf(w.tick);   // no news of what's out already
   hivesTick(w);
-  w.weather.until = w.tick + w.rng.range(0.3, 0.8) * TPD;
+  w.weather = { kind: 'storm', until: STORM_END };            // (the opening storm)
+  foragerArrives(w, w.forager);
   return w;
 }
 
@@ -7213,7 +7230,7 @@ const api = {
   createWorld, step, clock, isNight, phaseOf, seasonOf, springPart, mood, ageDays, growth, isAdult, patchFresh,
   hedgehogComes, heronComes, dragonflyComes, kingfisherComes, skylarkComes, placeNeeds, VISIT_SEASONS, VISIT_FADE, HERON_FADE, HERON_STAB,
   DRAGON_FROM, KF_FADE, KF_UNDER, KF_BEAT, LARK_FADE, LARK_OPEN, LARK_RISE, EDGE_REACH, OPEN_MOST,
-  walkable, packWorld, unpackWorld, GROUND, foragerTo, FORAGER_WALK, FORAGER_RUN, airTemp, warmthStage, WARMTH_STAGES, STUMBLE_TICKS, wakeForager, rockKind, whatThere, cherryShow, honeySpare, gather, takeFrom, dropSlot, dropAt, DROP_DAYS, moveSlot, roomFor, forEachDecorNear, SLOTS, STACK,
+  walkable, packWorld, unpackWorld, GROUND, foragerTo, foragerArrives, openingStorm, FORAGER_WALK, FORAGER_RUN, airTemp, warmthStage, WARMTH_STAGES, STUMBLE_TICKS, wakeForager, rockKind, whatThere, cherryShow, honeySpare, gather, takeFrom, dropSlot, dropAt, DROP_DAYS, moveSlot, roomFor, forEachDecorNear, SLOTS, STACK,
   KINDS, FEW, whiteness, visibility, WINTER_COAT, WILD_COAT,
   TERRAIN, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE, hollow,

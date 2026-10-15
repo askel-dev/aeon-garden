@@ -223,6 +223,12 @@ it collapses (`f.down`, event 'collapse'), waking at `f.homeX`, `f.homeY` (where
 (`WAKE_PHASE`, at least `DOWN_TICKS` on: `wakeForager`, event 'woke') chilly, dry, rested, the satchel empty. Standing still
 from full warmth at dusk (4 seeds): a summer night ends cosy or chilly, a spring or autumn one anywhere from chilly to
 collapsed (rain makes it worse), a winter one kills. No fire yet: it's the strongest warmth to come (PLAN.md stage 4).
+The opening (PLAN.md stage 3): a new meadow opens on day 4 of spring (`START_DAY`) late in the afternoon (`START_PHASE`, just
+before the golden hour), in a storm that blows over as the light goes (`STORM_TO`), into a clear night and the morning after
+(`CLEAR_TO`; `weatherTick` sets the clear when the storm ends before `CLEAR_END`, then the season's odds again). The forager
+arrives cold and wet (`foragerArrives`: `ARRIVE_WARMTH`, `ARRIVE_WET`), and so does a friend's forager coming in while the opening
+storm lasts (`openingStorm`). Walking about it's chilly by dusk and gets through the night if it keeps dry, wading wet it collapses
+towards dawn; standing still it's cold by dusk and collapses at dawn (6 seeds). No new fields, no `KEEP_VERSION` bump.
 
 Rocks are painted (`rockInfo`, `rockSprite` in game.js): pebbles, stones and boulders by
 size (`TERRAIN.rockSize`), flat stones at the fords, and two or three great rocks per meadow

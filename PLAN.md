@@ -58,11 +58,16 @@ clothes are still to come; the fire goes into `bodyTick`'s feel (and dries you).
 - Keep the sprite cache in check: the cold paintings are asked for only once it's chilly, and the sprite cache keeps
   only the set in use (warm or cold) at the forager's size.
 
-## Stage 3: the storm opening
+## Stage 3: the storm opening (built 2026-10-15, branch `storm`)
 A new meadow opens in a storm, late in the afternoon. The forager arrives cold and wet, the light is going, and a
 short line says something like "It's freezing. I need a fire before dark." Warmth is already dropping, slowly enough to
 gather, not to sightsee. The storm blows over in the first evening; the first night is clear and cold, spent by the
 fire you made. (Today a new meadow opens on day 4 of spring: keep the season, change the hour and the weather.)
+Built as: day 4 of spring at 0.44 of the day (just before the golden hour), a storm till 0.555 (about 80 s at 1x), then clear
+till the next morning; the forager arrives at 0.78 warmth (it slips into chilly within seconds) and 0.75 wet, and says the line
+in an italic bubble over it. Playing together: a friend joining during the opening storm arrives cold and wet too and hears the
+line; the weather needs nothing sent (guests run the host's sim). Without a fire the first night kills towards dawn unless the
+forager keeps walking and keeps dry, which is the point of stage 4.
 
 ## Stage 4: the campfire
 - **Building:** about 6 pebbles, 5 sticks and a handful of tinder. Choose a spot near the forager; it kneels and lays
