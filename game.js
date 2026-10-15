@@ -1980,10 +1980,48 @@ function drawMark(now) {
   if (fade <= 0) { ui.mark = null; return; }
   const pop = t < MARK_MS[0] ? 1 + 0.35 * Math.sin(Math.PI * t / MARK_MS[0]) * (1 - t / MARK_MS[0]) : 1;
   const r = Math.max(10, (8 + cam.zoom) * 0.42) * pop * (1 + 0.05 * Math.sin(now / 260)) * (m.end ? 1 + 0.25 * (1 - fade) : 1);
-  const [sx, sy] = onScreen(m.x, m.y), art = MARK_ART || markArt();
-  ctx.globalAlpha = Math.min(1, t / 120) * fade * 0.9;
+  const [sx, sy] = onScreen(m.x, m.y), art = MARK_ART || markArt(), a = Math.min(1, t / 120) * fade;
+  drawTrail(sx, sy, r, a);
+  ctx.globalAlpha = a * 0.9;
   ctx.drawImage(art.img, sx - r, sy - r / 2, r * 2, r);
   ctx.globalAlpha = 1;
+}
+// And the way there: a faint dashed line from the ring back along what's left of its path (sim.js f.path, pulled tight
+// round the deep) to just short of its feet. The dashes are counted from the ring's middle, so they keep still on the
+// ground and it walks over them.
+const TRAIL_A = 0.3;
+const TRAIL = [], TRAIL_DASH = [0, 0];
+function drawTrail(sx, sy, r, a) {
+  const f = world.forager, P = f.path;
+  if (!f.walking || P.length < 4 || a < 0.02) return;
+  let n = 0;
+  TRAIL[n++] = sx; TRAIL[n++] = sy;
+  for (let k = P.length - 4; k >= f.leg * 2; k -= 2) { const p = onScreen(P[k], P[k + 1]); TRAIL[n++] = p[0]; TRAIL[n++] = p[1]; }
+  const d = drawnAt(f), p = onScreen(d.x, d.y);
+  TRAIL[n++] = p[0]; TRAIL[n++] = p[1];
+  let len = 0;
+  for (let i = 0; i + 3 < n; i += 2) len += Math.hypot(TRAIL[i + 2] - TRAIL[i], TRAIL[i + 3] - TRAIL[i + 1]);
+  // From the ring's edge (an oval r wide and half that tall, so how far depends on the way it leaves) to short of its feet.
+  const ux = (TRAIL[2] - sx) / (Math.hypot(TRAIL[2] - sx, TRAIL[3] - sy) || 1), uy = (TRAIL[3] - sy) / (Math.hypot(TRAIL[2] - sx, TRAIL[3] - sy) || 1);
+  const from = 0.85 * r / Math.hypot(ux, 2 * uy), to = len - forPx() * 0.3, dash = clamp(cam.zoom * 0.16, 3, 8);
+  if (to - from < dash) return;
+  ctx.save();
+  TRAIL_DASH[0] = dash; TRAIL_DASH[1] = dash * 1.2;
+  ctx.setLineDash(TRAIL_DASH); ctx.lineDashOffset = from;
+  ctx.lineWidth = clamp(cam.zoom * 0.05, 1.25, 2.25); ctx.lineCap = 'round';
+  ctx.strokeStyle = '#fffaea'; ctx.globalAlpha = a * TRAIL_A;
+  ctx.beginPath();
+  let s = 0, on = false;
+  for (let i = 0; i + 3 < n; i += 2) {
+    const ax = TRAIL[i], ay = TRAIL[i + 1], bx = TRAIL[i + 2], by = TRAIL[i + 3], l = Math.hypot(bx - ax, by - ay);
+    if (!l) continue;
+    if (!on && s + l > from) { const k = (from - s) / l; ctx.moveTo(ax + (bx - ax) * k, ay + (by - ay) * k); on = true; }
+    if (on && s + l >= to) { const k = (to - s) / l; ctx.lineTo(ax + (bx - ax) * k, ay + (by - ay) * k); break; }
+    if (on) ctx.lineTo(bx, by);
+    s += l;
+  }
+  ctx.stroke();
+  ctx.restore();
 }
 
 // Zoomed out further than the meadow fills the screen, a grown rabbit is under SMALL_PX and hundreds of animals can be
