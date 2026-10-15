@@ -285,7 +285,7 @@ function paintedSprite(emoji, px, tint, leaf, center) {
 // as it walked, and it stuck in a pose till each had. Only if that isn't enough does it start again from empty.
 // Only the set in use is kept: warm, or cold (fur.js FORAGER_COLD), so the cold paintings don't double what's held.
 const keptForager = s => s.look.startsWith('forager:') && (s.px === fg.sized || s.px === furPainted(fg.sized))
-  && !(fg.cold ? WARM_ONLY : COLD_ONLY)[parseInt(s.look.slice(8)) & 31];
+  && !(fg.cold ? WARM_ONLY : COLD_ONLY)[parseInt(s.look.slice(8)) & 31] && Math.floor(parseInt(s.look.slice(8)) / Fur.FORAGER_SNOW_ARTS) === fg.snowArt;
 function dropSprites(need) {
   for (const [key, s] of spriteCache) {
     if (spriteFrame - s.used < 3 || keptForager(s)) continue;
@@ -1870,7 +1870,7 @@ function drawCreature(c, sx, sy, now) {
 // each step sends out a ring (fg.rings). Its outfit (Fur.FORAGER_OUTFITS) is the player's, picked as the first meadow opens
 // (pickOutfit; later from •••) and kept in localStorage for every meadow after.
 const FORAGER_SIZE = 2.5;                  // its painting's box, next to a rabbit's
-const FORAGER_ARTS = Array.from({ length: 3 << 7 }, (_, n) => 'forager:' + n);   // (made once: a frame builds no names)
+const FORAGER_ARTS = Array.from({ length: Fur.FORAGER_SNOWS * Fur.FORAGER_SNOW_ARTS }, (_, n) => 'forager:' + n);   // (made once: a frame builds no names)
 const OUTFIT = 'aeon-garden-outfit';       // in localStorage
 const FORAGER_POSES = [0, 1, 2, 3, 4, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23];
 const FORAGER_CHILLY = [...FORAGER_POSES, ...Fur.FORAGER_COLD];   // (chilly, the cold ones are asked for ahead too)
@@ -1885,7 +1885,8 @@ const FORAGER_STILL_MS = 70;               // no nearer than this to the last mo
 const forPx = () => (8 + cam.zoom) * FORAGER_SIZE;
 const fg = { at: -1, x: 0, y: 0, step: 0, stillMs: 1e4, view: 1, flip: false, art: FORAGER_ARTS[32], blinkAt: -1e9, blinkIn: 3000,
   fidgetAt: -1e9, fidgetIn: 1e4 + 9000, lastHalf: 0, jog: false, rings: [], wet: false, lx: -0, ly: -0, sized: 0, outfit: 0, picked: false, pick: -1e9, pickK: 1, printMs: -0,
-  puffs: [], puffAt: 0, drips: [], dripAt: 0, shiverAt: -1e9, shiverNext: 0, heartAt: 0, downAt: 0, dark: false, cold: false, sizedSet: 0 };   // (the body: drawBody, bodyFrame)
+  puffs: [], puffAt: 0, drips: [], dripAt: 0, shiverAt: -1e9, shiverNext: 0, heartAt: 0, downAt: 0, dark: false, cold: false, sizedSet: 0,   // (the body: drawBody, bodyFrame)
+  snow: -1, snowTick: -0, snowArt: 0, sizedSnow: 0 };   // (the snow on it: snowOnForager)
 try {
   const o = localStorage.getItem(OUTFIT);
   fg.picked = o !== null;
@@ -1939,7 +1940,8 @@ function foragerFrame(now, d) {
   if (stage === 4) pose = 7;                            // (down: eyes shut, no blinking)
   if (ui.speed > 0) fg.printMs += ms;                   // (prints fade only while the meadow goes on)
   if (fg.rings.length && now - fg.rings[0].t > 900) fg.rings.shift();
-  fg.art = shownPose(f, FORAGER_ARTS[(fg.outfit << 7) + (fg.view << 5) + pose], px);
+  snowOnForager();
+  fg.art = shownPose(f, FORAGER_ARTS[fg.snowArt * Fur.FORAGER_SNOW_ARTS + (fg.outfit << 7) + (fg.view << 5) + pose], px);
 }
 // Its footprints: one at each foot down, a little to that foot's side, fading as the ground takes them back: soon in
 // grass, slower in earth and the damp sand, slowest in snow. A ring of PRINTS kept in typed arrays (nothing made a step),
@@ -2033,9 +2035,34 @@ function foragerShadow(sx, sy, sn) {
 // Each of its paintings at the size it's drawn, asked of the worker ahead, so the walk never waits for one.
 function foragerAhead() {
   const P = poseStep(Math.max(4, forPx())), set = S.warmthStage(world.forager) >= 1 ? 2 : 1;   // (chilly: the cold ones too)
-  if (!furWorker || P === fg.sized && set === fg.sizedSet) return;
-  fg.sized = P; fg.sizedSet = set;
-  for (let v = 0; v < 3; v++) for (const p of set === 2 ? FORAGER_CHILLY : FORAGER_POSES) furReady(FORAGER_ARTS[(fg.outfit << 7) + (v << 5) + p], P);
+  if (!furWorker || P === fg.sized && set === fg.sizedSet && fg.snowArt === fg.sizedSnow) return;
+  fg.sized = P; fg.sizedSet = set; fg.sizedSnow = fg.snowArt;
+  const at = fg.snowArt * Fur.FORAGER_SNOW_ARTS + (fg.outfit << 7);
+  for (let v = 0; v < 3; v++) for (const p of set === 2 ? FORAGER_CHILLY : FORAGER_POSES) furReady(FORAGER_ARTS[at + (v << 5) + p], P);
+}
+// Out while it snows, snow gathers on it (on the hood, the shoulders: fur.js FORAGER_SNOWS), less under the trees; once
+// it stops it melts off, soon above freezing, slowly under, quicker on the move. Kept by sim time, so it goes with the
+// meadow's speed; only how it looks, so it isn't kept between visits (a meadow opened in the snow starts it snowy).
+const SNOW_GATHER = 6;                     // a day: covered in a sixth of a day in the open (two minutes at 1x)
+const SNOW_MELT = [0.8, 5];                // a day: how fast it goes under freezing, and at 5 degrees (faster warmer)
+const SNOW_STEPS = [0.22, 0.6];            // a dusting from here, covered from here (a little less on the way down)
+function snowOnForager() {
+  const w = world, f = w.forager, snowing = w.weather.kind === 'snow';
+  if (fg.snow < 0) { fg.snow = snowing ? Math.min(1, w.snow * 1.5) : 0; fg.snowTick = w.tick; }
+  const days = clamp((w.tick - fg.snowTick) / S.TPD, 0, 1);
+  fg.snowTick = w.tick;
+  if (days > 0 && (snowing || fg.snow > 0)) {
+    if (snowing) {
+      const shelter = clamp(w.wood[(f.y | 0) * S.W + (f.x | 0)] / 0.5, 0, 1);
+      fg.snow = Math.min(1, fg.snow + SNOW_GATHER * (1 - 0.8 * shelter) * days);
+    } else {
+      const air = S.airTemp(w), melt = air < 0 ? SNOW_MELT[0] : SNOW_MELT[0] + (SNOW_MELT[1] - SNOW_MELT[0]) * air / 5;
+      fg.snow = Math.max(0, fg.snow - melt * (f.walking ? f.running ? 2 : 1.3 : 1) * days);
+    }
+  }
+  const a = fg.snowArt, up = fg.snow > SNOW_STEPS[1] ? 2 : fg.snow > SNOW_STEPS[0] ? 1 : 0;
+  const down = fg.snow > SNOW_STEPS[1] - 0.08 ? 2 : fg.snow > SNOW_STEPS[0] - 0.08 ? 1 : 0;
+  fg.snowArt = up > a ? up : down < a ? down : a;
 }
 
 // ------------------------------------------------------------------ warmth, wet and stamina
@@ -2142,7 +2169,7 @@ function bodyFrame(now) {
 // Woken (sim.js wakeForager): the dark lifts with it at home, the camera already there.
 function bodyWoke() {
   const f = world.forager;
-  fg.downAt = 0; fg.dark = false; fg.puffs.length = 0; fg.drips.length = 0;
+  fg.downAt = 0; fg.dark = false; fg.puffs.length = 0; fg.drips.length = 0; fg.snow = 0;
   $('#veil').classList.remove('dark');
   chime('wake');
   cam.x = f.x; cam.y = f.y - CAM_FEET * forPx() / cam.zoom; fg.lx = fg.ly = 0; fg.at = -1;

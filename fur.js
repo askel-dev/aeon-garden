@@ -683,7 +683,9 @@ function paintSkylark(g, size, U, n) {
 // (2 * FORAGER_REACH * 2 of its half-size a stride) and the feet don't slide. 16 to 23 a stride of the jog, for the
 // sprint: FORAGER_JOG_STRIDE times as long, each foot down only JOG_DOWN of it, so there's a moment with both off the
 // ground; the heel kicks up behind, the arms bend and pump, it leans in and bobs more. Three outfits the player picks
-// from (FORAGER_OUTFITS: the cloak, the hood and its rim). 'forager:' + (outfit << 7) + (view << 5) + pose.
+// from (FORAGER_OUTFITS: the cloak, the hood and its rim). Out in the snow it gathers some (FORAGER_SNOWS: none, a
+// dusting, covered) on the hood, the shoulders, the hood's point and the satchel's flap.
+// 'forager:' + snow * FORAGER_SNOW_ARTS + (outfit << 7) + (view << 5) + pose.
 // Box -1 to 1, feet on the ground at 0.72.
 const FORAGER_REACH = 0.18, FORAGER_LIFT = 0.075, FORAGER_BOB = 0.016;
 const STOOP = [0, 0, 0, 0.55, 1];       // how far down it's bent, picking (poses 3 and 4)
@@ -691,6 +693,9 @@ const FORAGER_COLD = [5, 6, 7, 24, 25, 26, 27, 28, 29, 30, 31];   // (the cold p
 const FORAGER_JOG_STRIDE = 1.75, JOG_DOWN = 0.32, JOG_LIFT = 0.13, JOG_BOB = 0.03, JOG_LEAN = 0.08;
 const JOG_REACH = 2 * FORAGER_REACH * FORAGER_JOG_STRIDE * JOG_DOWN;   // (the planted foot keeps pace with the ground)
 const FORAGER_VIEWS = ['side', 'front', 'back'];
+const FORAGER_SNOWS = 3, FORAGER_SNOW_ARTS = 3 << 7;   // (how much snow, and the paintings to each: 3 outfits of 128)
+const SNOW_ON = [246, 248, 252];
+let SNOWED = 0;                                  // the snow being painted (paintForager), 0 to 2
 const FORAGER_OUTFITS = [
   { name: 'Moss', cloak: [100, 124, 68], hood: [178, 88, 52], rim: [140, 62, 38] },     // moss green, a rust hood
   { name: 'Plum', cloak: [124, 72, 98], hood: [214, 162, 66], rim: [168, 120, 44] },    // plum, a mustard hood
@@ -738,6 +743,8 @@ function foragerPose(view, pose) {
   };
 }
 
+// Snow lying on a part: a soft white mark, none when there's no snow (thicker and brighter the more, SNOWED).
+const snowOn = (path, blur) => (SNOWED ? [[SNOW_ON, SNOWED === 1 ? 0.75 : 0.95, blur, path]] : []);
 function foragerParts(P) {
   const parts = [], add = (path, o = {}) => parts.push({ path, ...o });
   const side = P.view === 0, front = P.view === 1, back = P.view === 2;
@@ -788,6 +795,8 @@ function foragerParts(P) {
     g.quadraticCurveTo(0.2 + lx * 0.5, 0.18 + P.bob, 0.11 + lx, -0.02 + P.bob + ly);
     g.closePath();
   }, { casts: true, marks: [
+    ...snowOn(g => { const d = 0.03 * SNOWED; g.moveTo(-0.3 + lx, -0.1 + P.bob + ly); g.lineTo(0.3 + lx, -0.1 + P.bob + ly); g.lineTo(0.3 + lx, 0.05 + d + P.bob + ly);
+      g.quadraticCurveTo(0.15 + lx, 0.02 + d + P.bob + ly, 0, 0.04 + d + P.bob + ly); g.quadraticCurveTo(-0.15 + lx, 0.02 + d + P.bob + ly, -0.3 + lx, 0.05 + d + P.bob + ly); g.closePath(); }, 0.03),   // on the shoulders
     [tone(CLOAK, 0.82), 0.7, 0.04, g => { g.moveTo(-0.3 + sw, hem - 0.04); g.quadraticCurveTo(0, hem + 0.02, 0.3 + sw, hem - 0.04); g.lineTo(0.3, hem + 0.1); g.lineTo(-0.3, hem + 0.1); g.closePath(); }],   // a darker hem
     ...side ? [[STRAP, 1, 0.012, g => { g.moveTo(-0.04, -0.04 + P.bob); g.lineTo(0.03, -0.04 + P.bob); g.lineTo(0.13, 0.27 + P.bob); g.lineTo(0.08, 0.28 + P.bob); g.closePath(); }]]
       : [[STRAP, 1, 0.012, g => { const s = front ? 1 : -1; g.moveTo(-0.12 * s, -0.02 + P.bob); g.lineTo(-0.06 * s, -0.04 + P.bob); g.lineTo(0.2 * s, 0.25 + P.bob); g.lineTo(0.15 * s, 0.28 + P.bob); g.closePath(); }]],
@@ -797,15 +806,16 @@ function foragerParts(P) {
     add(g => { g.moveTo(x - w, y - 0.06); g.lineTo(x + w, y - 0.06); g.quadraticCurveTo(x + w + 0.01, y + 0.08, x, y + 0.09); g.quadraticCurveTo(x - w - 0.01, y + 0.08, x - w, y - 0.06); g.closePath(); },
       { casts: true, marks: [[SATCHEL, 1, 0.015, g => g.rect(x - 0.2, y - 0.2, 0.4, 0.4)],
         [FLAP, 1, 0.012, g => { g.moveTo(x - w - 0.01, y - 0.065); g.lineTo(x + w + 0.01, y - 0.065); g.quadraticCurveTo(x + w, y + 0.03, x, y + 0.035); g.quadraticCurveTo(x - w, y + 0.03, x - w - 0.01, y - 0.065); g.closePath(); }],
+        ...snowOn(g => ovalAt(g, x, y - 0.075, w + 0.02, 0.012 + 0.01 * SNOWED), 0.012),   // on the flap
         [[214, 178, 96], 1, 0.008, g => discAt(g, x, y + 0.02, 0.013)]] });   // its brass button
   };
   // The hood's point: out behind the head, flopping.
   const tip = () => {
     const t = P.tip;
     if (side) add(g => { g.moveTo(cx + 0.12, cy - 0.22); g.quadraticCurveTo(cx + 0.36, cy - 0.24 + t, cx + 0.42, cy - 0.06 + t * 1.6); g.quadraticCurveTo(cx + 0.3, cy - 0.05 + t, cx + 0.2, cy + 0.02); g.closePath(); },
-      { marks: [[HOOD, 1, 0.01, g => g.rect(cx - 1, cy - 1, 2, 2)]] });
+      { marks: [[HOOD, 1, 0.01, g => g.rect(cx - 1, cy - 1, 2, 2)], ...snowOn(g => ovalAt(g, cx + 0.3, cy - 0.24 + t, 0.16, 0.025 + 0.025 * SNOWED), 0.02)] });
     else if (front) add(g => { g.moveTo(cx + 0.06, cy - 0.24); g.quadraticCurveTo(cx + 0.24, cy - 0.34 + t, cx + 0.33, cy - 0.22 + t * 1.6); g.quadraticCurveTo(cx + 0.22, cy - 0.16, cx + 0.17, cy - 0.12); g.closePath(); },
-      { marks: [[HOOD, 1, 0.01, g => g.rect(cx - 1, cy - 1, 2, 2)]] });
+      { marks: [[HOOD, 1, 0.01, g => g.rect(cx - 1, cy - 1, 2, 2)], ...snowOn(g => ovalAt(g, cx + 0.2, cy - 0.31 + t, 0.14, 0.025 + 0.025 * SNOWED), 0.02)] });
     else add(g => {                                             // from the back: hanging down between the shoulders
       g.moveTo(cx - 0.15, cy - 0.04);
       g.bezierCurveTo(cx - 0.12, cy + 0.16, cx - 0.02 + t, cy + 0.26, cx + 0.03 + t * 1.5, cy + 0.42);
@@ -817,11 +827,12 @@ function foragerParts(P) {
   };
   // The head: the hood round it, the face in its opening (none from the back), a fringe of hair under the hood.
   const fx = cx + (side ? -0.085 : -0.05), fy = cy + 0.035, frx = side ? 0.155 : 0.165, fry = 0.165;
+  const cap = snowOn(g => ovalAt(g, cx + 0.01, cy - R * 0.98, R * 0.95, 0.05 + 0.045 * SNOWED), 0.025);   // a cap of snow on the hood
   const head = () => add(g => { ovalAt(g, cx, cy, R, R * 0.97); ovalAt(g, cx + 0.02, cy + 0.17, 0.17, 0.09); },   // and a little cowl at the neck
-    { casts: true, marks: back ? [[HOOD, 1, 0.01, g => g.rect(cx - 1, cy - 1, 2, 2)], [HOOD_RIM, 0.55, 0.04, g => ovalAt(g, cx, cy + 0.17, 0.17, 0.06)],
+    { casts: true, marks: back ? [[HOOD, 1, 0.01, g => g.rect(cx - 1, cy - 1, 2, 2)], [HOOD_RIM, 0.55, 0.04, g => ovalAt(g, cx, cy + 0.17, 0.17, 0.06)], ...cap,
       [SKIN, 1, 0.02, g => ovalAt(g, cx - 0.28, cy + 0.06, 0.06, 0.12)]]   // (a glimpse of a cheek)
       : [[HOOD, 1, 0.01, g => g.rect(cx - 1, cy - 1, 2, 2)],
-        [HOOD_RIM, 1, 0.03, g => ovalAt(g, fx, fy, frx + 0.04, fry + 0.04)],
+        [HOOD_RIM, 1, 0.03, g => ovalAt(g, fx, fy, frx + 0.04, fry + 0.04)], ...cap,
         [SKIN, 1, 0.015, g => ovalAt(g, fx, fy, frx, fry)],
         [HAIR, 1, 0.02, g => {                                   // the fringe: the top of the face, a wavy edge across the brow
           g.moveTo(fx - frx, fy - 0.01);
@@ -859,6 +870,7 @@ function foragerParts(P) {
 }
 
 function paintForager(g, size, U, n) {
+  SNOWED = Math.floor(n / FORAGER_SNOW_ARTS); n %= FORAGER_SNOW_ARTS;
   wear(n >> 7);
   const view = (n >> 5) & 3, P = foragerPose(view, n & 31), { parts, fx, fy } = foragerParts(P);
   paintFur(g, size, U, parts, { coat: CLOAK, top: -0.5, shade: FORAGER_SHADE, light: FORAGER_LIGHT, flat: 0.25,
@@ -892,5 +904,5 @@ function paintForager(g, size, U, n) {
 const painters = { fox: paintFox, rabbit: paintRabbit, dfly: paintDragonfly, kfisher: paintKingfisher, lark: paintSkylark, forager: paintForager };
 
 root.Fur = { tone, rockRGB, fillIn, strokeIn, discAt, ovalAt, blurIn, softIn, furGlow, foxRGB, FOX_WHITE, FOX_SOCK,
-  FOX_POSE, RABBIT_POSE, RABBIT_KINDS, setCoats, paintFox, paintRabbit, paintForager, FORAGER_REACH, FORAGER_JOG_STRIDE, FORAGER_OUTFITS, FORAGER_COLD, painters };
+  FOX_POSE, RABBIT_POSE, RABBIT_KINDS, setCoats, paintFox, paintRabbit, paintForager, FORAGER_REACH, FORAGER_JOG_STRIDE, FORAGER_OUTFITS, FORAGER_COLD, FORAGER_SNOWS, FORAGER_SNOW_ARTS, painters };
 })(typeof window !== 'undefined' ? window : globalThis);
