@@ -4012,30 +4012,32 @@ function startGreens(w) {
 //
 // The little things a forager finds about, every season, so there's always something to pick: dandelions out in the
 // open and sorrel in the damp grass in spring, wild strawberries along the woods' edges and elderflower by the water in
-// summer, hazelnuts at the edges in autumn, rosehips in the scrub from late autumn through the winter, and watercress at
-// the water's edge through the cold into spring. Each is a short-lived thing (w.finds, one layout, findOf): it comes up
-// in a place that suits it (findPlace), in sight, often a few tiles from another of its kind, so they come in loose
-// patches; it lasts a few days (FIND_DAYS, never past its season) and is picked or wilts. Looked at every two hours,
-// with random numbers of their own (w.findRng), so the rest of the meadow plays out the same with them. Nothing eats them:
-// they're for the cook. Tuned so a home view has a few to pick most of the time (FINDS most, times w.room).
+// summer, hazelnuts at the edges in autumn, rosehips in the scrub from late autumn through the winter, and watercress in
+// the shallows at the water's edge through the cold into spring. Each is a short-lived thing (w.finds, one layout,
+// findOf): it comes up in a place that suits it (findPlace), in sight, mostly a few tiles from another of its kind, so
+// they come in patches with open meadow between; it lasts a few days (FIND_DAYS, never past its season) and is picked or
+// wilts. Looked at every two hours, with random numbers of their own (w.findRng), so the rest of the meadow plays out the
+// same with them. Nothing eats them: they're for the cook. Tuned so a home view has a few to pick most of the time
+// (FINDS most, times w.room).
 
 const FIND_EVERY = TPD / 12;            // ticks between looks (two hours)
 const FIND_DAYS = [2, 5];               // one lasts this long, and never past its season
 const FIND_GAP = 1.3;                   // tiles between finds
-const FIND_PATCH = [2, 7];              // a new one comes up this far from another of its kind,
-const FIND_PATCHY = 0.55;               // this often (else anywhere that suits)
+const FIND_PATCH = [1.4, 4.5];          // a new one comes up this far from another of its kind,
+const FIND_PATCHY = 0.6;                // this often (else anywhere that suits),
+const FIND_CLUMP = 5;                   // till there are this many in the patch
 const FIND_FILL = 5;                    // a look brings up one in this many of those missing (so a season fills in a day or so)
 const FIND_SNOW = 0.3;                  // snow this deep covers the low ones
 // The kinds: when (from, to: seasons into the year, 0 spring to 4, wrapping into the next spring), where (findPlace),
-// how many at most (times w.room), and how many a pick gives (n). low: snow covers it.
+// how many at most (times w.room), and how many a pick gives (n). low: snow covers it. wet: it stands in the shallows.
 const FINDS = {
-  dandelion:   { name: 'Dandelions',        from: 0,    to: 0.95, place: 'open',  most: 13, n: 3, low: true },
-  sorrel:      { name: 'Sorrel',            from: 0.15, to: 1.35, place: 'damp',  most: 9, n: 3, low: true },
-  strawberry:  { name: 'Wild strawberries', from: 1.1,  to: 1.95, place: 'edge',  most: 14, n: 4, low: true },
-  elderflower: { name: 'Elderflower',       from: 0.8,  to: 1.5,  place: 'elder', most: 8,  n: 2, low: false },
-  hazelnut:    { name: 'Hazelnuts',         from: 2,    to: 2.9,  place: 'edge',  most: 12, n: 4, low: true },
-  rosehip:     { name: 'Rosehips',          from: 2.4,  to: 4,    place: 'scrub', most: 14, n: 4, low: false },
-  watercress:  { name: 'Watercress',        from: 2.9,  to: 4.6,  place: 'bank',  most: 12, n: 3, low: false },
+  dandelion:   { name: 'Dandelions',        from: 0,    to: 0.95, place: 'open',     most: 8,  n: 3, low: true },
+  sorrel:      { name: 'Sorrel',            from: 0.15, to: 1.35, place: 'damp',     most: 6,  n: 3, low: true },
+  strawberry:  { name: 'Wild strawberries', from: 1.1,  to: 1.95, place: 'edge',     most: 8,  n: 4, low: true },
+  elderflower: { name: 'Elderflower',       from: 0.8,  to: 1.5,  place: 'elder',    most: 6,  n: 2, low: false },
+  hazelnut:    { name: 'Hazelnuts',         from: 2,    to: 2.9,  place: 'edge',     most: 8,  n: 4, low: true },
+  rosehip:     { name: 'Rosehips',          from: 2.4,  to: 4,    place: 'scrub',    most: 12, n: 4, low: false },
+  watercress:  { name: 'Watercress',        from: 2.9,  to: 4.6,  place: 'shallows', most: 13, n: 3, low: false, wet: true },
 };
 const FIND_KINDS = Object.keys(FINDS);
 
@@ -4052,23 +4054,32 @@ function findSeason(kind, t) {
 
 // Whether a kind suits the ground at x, y: dandelions out in the open grass, sorrel in the damp grass near the water,
 // strawberries and hazelnuts along the woods' edges, elder by the water or at a wood's edge, roses in the scrub by the thorn
-// bushes or the wood's edge, watercress right at the water.
+// bushes or the wood's edge, watercress in the shallows right by the bank.
 function findPlace(w, kind, x, y) {
-  if (!dry(w, x, y)) return false;
-  const i = idx(x, y), wood = w.wood[i], damp = w.damp[i], place = FINDS[kind].place;
+  if (!inBounds(x, y)) return false;
+  const i = idx(x, y), place = FINDS[kind].place;
+  if (place === 'shallows') {
+    if (w.water[i] !== SHALLOW) return false;
+    const X = i % W, Y = (i / W) | 0;
+    return (X > 0 && !w.water[i - 1]) || (X < W - 1 && !w.water[i + 1]) || (Y > 0 && !w.water[i - W]) || (Y < H - 1 && !w.water[i + W]);
+  }
+  if (w.water[i]) return false;
+  const wood = w.wood[i], damp = w.damp[i];
   if (place === 'open') return wood < 0.08 && damp > 1.5;
   if (place === 'damp') return wood < 0.2 && damp >= 1 && damp <= 5;
   if (place === 'edge') return wood >= 0.08 && wood <= 0.4;
   if (place === 'elder') return damp <= 6 && wood >= 0.05 && wood <= 0.45;
-  if (place === 'scrub') return wood < 0.3 && damp > 1 && (wood >= 0.06 || thornNear(w, x, y, 3));
-  return damp <= 1.5 && wood < 0.5;                     // 'bank'
+  return wood < 0.3 && damp > 1 && (wood >= 0.06 || thornNear(w, x, y, 3));   // 'scrub'
 }
 
+// Every two hours: those past their days, under snow (the low ones) or under water (deep water, for watercress) go, and a
+// share of what's missing of each kind in season comes up.
 function findsTick(w) {
   const list = w.finds;
   let n = 0;
   for (const f of list) {
-    if (w.tick < f.until && !w.water[idx(f.x, f.y)] && !(FINDS[f.kind].low && w.snow > FIND_SNOW)) list[n++] = f;
+    const k = FINDS[f.kind], v = w.water[idx(f.x, f.y)];
+    if (w.tick < f.until && (k.wet ? v !== DEEP : !v) && !(k.low && w.snow > FIND_SNOW)) list[n++] = f;
   }
   list.length = n;
   const r = w.findRng;
@@ -4081,23 +4092,39 @@ function findsTick(w) {
 
 const findsOf = (w, kind) => { let n = 0; for (const f of w.finds) if (f.kind === kind) n++; return n; };
 const roomForFind = (w, x, y) => { for (const f of w.finds) if ((f.x - x) ** 2 + (f.y - y) ** 2 < FIND_GAP * FIND_GAP) return false; return true; };
+// One of a kind picked at random, or null with none about.
+function oneFind(w, r, kind) {
+  const n = findsOf(w, kind);
+  if (!n) return null;
+  let k = r.int(0, n - 1);
+  for (const f of w.finds) if (f.kind === kind && k-- === 0) return f;
+  return null;
+}
 
-// One of a kind somewhere that suits it: near another of its kind (a loose patch) or anywhere. A few tiles are tried.
-function findSpot(w, r, kind) {
+// One of a kind somewhere that suits it: mostly near another of its kind (a patch), else anywhere. A few tiles are tried.
+function findSpot(w, r, kind, age = 0) {
   for (let tries = 0; tries < 30; tries++) {
+    let near = r.next() < FIND_PATCHY ? oneFind(w, r, kind) : null;
+    if (near && clumpAt(w, near) >= FIND_CLUMP) near = null;   // (a patch big enough: one somewhere else)
     let x, y;
-    const near = r.next() < FIND_PATCHY && w.finds[r.int(0, Math.max(0, w.finds.length - 1))];
-    if (near && near.kind === kind) { const a = r.range(0, 2 * Math.PI), d = r.range(...FIND_PATCH); x = near.x + Math.cos(a) * d; y = near.y + Math.sin(a) * d * 0.8; }
+    if (near) { const a = r.range(0, 2 * Math.PI), d = r.range(...FIND_PATCH); x = near.x + Math.cos(a) * d; y = near.y + Math.sin(a) * d * 0.8; }
     else { x = r.range(1, W - 1); y = r.range(1, H - 1); }
-    if (addFind(w, r, kind, x, y)) return true;
+    if (addFind(w, r, kind, x, y, age)) return true;
   }
   return false;
 }
+// How many of its kind are in a find's patch (itself too).
+function clumpAt(w, f) {
+  let n = 0;
+  for (const g of w.finds) if (g.kind === f.kind && (g.x - f.x) ** 2 + (g.y - f.y) ** 2 < (FIND_PATCH[1] * 1.5) ** 2) n++;
+  return n;
+}
 
 // A find at x, y, if it suits it, with room, in sight, not in a burrow's mouth. Lasts FIND_DAYS, never past its season.
+// age: ticks it's been up already (a new meadow's).
 function addFind(w, r, kind, x, y, age = 0) {
-  if (!inBounds(x, y) || !findPlace(w, kind, x, y) || !roomForFind(w, x, y)) return false;
-  if (w.burrows.some(b => (b.x - x) ** 2 + (b.y - y) ** 2 < 2.25) || !inSight(w, x, y, null)) return false;
+  if (!findPlace(w, kind, x, y) || !roomForFind(w, x, y) || !inSight(w, x, y, null)) return false;
+  for (const b of w.burrows) if ((b.x - x) ** 2 + (b.y - y) ** 2 < 2.25) return false;
   const k = FINDS[kind], left = (1 - findSeason(kind, w.tick)) * (k.to - k.from) * SEASON_DAYS * TPD;
   const until = w.tick + Math.min(left, Math.round(r.range(...FIND_DAYS) * TPD) - age);
   if (until <= w.tick + TPD / 4) return false;
@@ -4105,23 +4132,25 @@ function addFind(w, r, kind, x, y, age = 0) {
   return true;
 }
 
-// A new meadow's finds, already about (of all ages), and a few round the forager's camp: some of what's in season within
-// CAMP_REACH, and a carpet of wild garlic if there's damp wood near enough for one.
-const CAMP_REACH = [3, 12];
+// A new meadow's finds, already about (of all ages), and a few round the forager's camp: CAMP_FINDS of what's in season
+// within CAMP_REACH (a few of a kind together, the kinds in turn, so one that won't grow there leaves room for the others),
+// and a carpet of wild garlic if there's damp wood near enough for one. A meadow kept before the finds gets the same round
+// wherever the forager is when it opens.
+const CAMP_REACH = [2.5, 9];
 const CAMP_FINDS = 6;
 function startFinds(w) {
   const r = w.findRng, F = w.forager;
   for (const kind of FIND_KINDS) {
     if (findSeason(kind, w.tick) < 0) continue;
     const most = Math.round(FINDS[kind].most * w.room * 0.8);
-    for (let k = 0; k < 4000 && findsOf(w, kind) < most; k++) addFind(w, r, kind, r.range(1, W - 1), r.range(1, H - 1), Math.round(r.range(0, 1.5) * TPD));
+    for (let k = 0; k < 150 && findsOf(w, kind) < most; k++) findSpot(w, r, kind, Math.round(r.range(0, 1.5) * TPD));
   }
   const kinds = FIND_KINDS.filter(k => findSeason(k, w.tick) >= 0);
-  for (const kind of kinds) {
-    for (let k = 0, camp = 0; k < 400 && camp < Math.ceil(CAMP_FINDS / kinds.length); k++) {
-      const a = r.range(0, 2 * Math.PI), d = r.range(...CAMP_REACH);
-      if (addFind(w, r, kind, F.x + Math.cos(a) * d, F.y + Math.sin(a) * d * 0.8, Math.round(r.range(0.3, 1) * TPD))) camp++;
-    }
+  let camp = 0;
+  for (let k = 0; k < 2000 && camp < CAMP_FINDS && kinds.length; k++) {
+    const kind = kinds[(camp >> 1) % kinds.length], a = r.range(0, 2 * Math.PI), d = r.range(...CAMP_REACH);
+    if (addFind(w, r, kind, F.x + Math.cos(a) * d, F.y + Math.sin(a) * d * 0.8, Math.round(r.range(0.3, 1) * TPD))) camp++;
+    else if (k % 200 === 199) kinds.push(kinds.shift());   // (a kind that won't come up here: on to the next)
   }
   if (!w.greens.some(g => g.kind === 'garlic' && (g.x - F.x) ** 2 + (g.y - F.y) ** 2 < CAMP_REACH[1] ** 2)) {
     for (let k = 0; k < 600; k++) {
@@ -5555,7 +5584,7 @@ function whatThere(w, kind, it) {
   const s = seasonOf(w.tick), p = springPart(w.tick);
   if (kind === 'shroom' || kind === 'find') {
     there.id = it.kind;
-    if (!(kind === 'shroom' ? w.shrooms : w.finds).includes(it)) there.why = kind === 'shroom' ? 'Gone over' : 'Gone';
+    if (!(kind === 'shroom' ? w.shrooms : w.finds).includes(it)) there.why = 'Gone over';
     else there.n = it.n;
   } else if (kind === 'green') {
     const stage = greenStage(w, it);
