@@ -336,6 +336,7 @@ const RULES = {
   clack:   { gap: 0.06, always: true },   // a stone set in the ring,
   tinder:  { gap: 0.1,  always: true },   // the tinder tucked in,
   fizzle:  { gap: 0.8,  always: true },   // and only smoke, or a fire gone out
+  camp:    { gap: 4,    always: true },   // the first fire making camp
 };
 
 const STEP_SOFT = 0.6;          // the footsteps' level against the meadow's sounds: soft, they come a few times a second
@@ -681,6 +682,19 @@ const SOUNDS = {
   tinder(t, o) { noise(o, t, 0.18, { from: 2400, to: 3600, q: 0.9, peak: 0.08, attack: 0.05 }); },
   // Only smoke, or a fire gone out: a soft hiss, falling away.
   fizzle(t, o) { noise(o, t, 0.6, { from: 3000, to: 1100, q: 0.8, peak: 0.06, attack: 0.05 }); },
+  // Making camp (the meadow's first fire lit): a warm flourish on the felt piano after the flame's whoomph, a run rising up
+  // the scale, easing as it goes, into a soft rolled chord over a low note, a bell on top and a swell under it all.
+  camp(t, o) {
+    const chord = pick([CHORDS.D, CHORDS.D, CHORDS.DA]), t0 = t + 0.35;
+    let at = t0;
+    const run = [0, 1, 2, 3, 4, 5, 7].map(d => chord[0] - 5 + d + (d > 2 && d < 7 && Math.random() < 0.25 ? 1 : 0));
+    run.forEach((d, i) => { piano(o, note(d, 0), at, 0.17 + i * 0.022, 1.6, 0.75); at += 0.08 + i * 0.012; });
+    piano(o, note(chord[0], -2), at, 0.4, 4.5, 0.55);
+    chord.forEach((d, i) => piano(out([-0.3, 0.3, 0][i], 0.5), note(d, -1), at + 0.05 + i * 0.06, 0.24, 4, 0.7));
+    bell(o, note(chord[2], 1), at + 0.2, 0.3);
+    pad(o, chord.map(d => note(d, -1)), t0, 5.5, 0.9);
+    twinkle(at + 0.3, chord, 6, 2, 0.7);
+  },
 };
 
 // opts: { species, pan (-1..1), near (0..1, how close to the camera), ...sound-specific }
