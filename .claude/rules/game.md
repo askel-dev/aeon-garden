@@ -38,7 +38,7 @@ standing and walking, sad (worried brows, a frown, a red nose: fur.js `FORAGER_C
 ahead once it's chilly; the sprite cache keeps only the set in use, `keptForager`), and hunched (`HUNCH`); standing it sighs
 now and then (sound.js `breath`). Freezing, frost at the screen's corners and edges (`#frost`,
 CSS gradients only, shown only then) and a soft heartbeat (sound.js `heart`, `HEART_MS`); a stumble pitches it forward. In air under
-`BREATH_AIR` its breath puffs from its mouth (`BREATH_AT`, by view, drifting the way it faces; `PUFF_ART`, painted once), soaked it drips off its hem. Two slim bars over the satchel
+`BREATH_AIR` its breath puffs from its mouth (`BREATH_AT`, by view, drifting the way it faces; `PUFF_ART`, painted once), soaked it drips off its hem, now and then a drop you hear (sound.js `hemdrip`). Out of breath it pants (`pantFrame`, sound.js `pant`, one a breath every `PANT_MS`: quick and hard when spent, slower and softer as it comes back, from `PANT_LOW` already while sprinting) till it has `PANT_DONE` back, then a phew (sound.js `phew`). Two slim bars over the satchel
 (`#vitals`, `renderVitals`, in the 250 ms block, rewritten only on a change): warmth (amber to ice blue, a drop by it while wet) and
 stamina (amber and pulsing while winded), each shown only while not full. Collapsed it tips over (`FALL_MS`) with its eyes shut (pose 7), the screen goes dark
 (`#veil`, `DARK_AFTER`), and `bodyFrame` runs the sim `SKIP_MS` a frame till it wakes at home (`bodyWoke`: the camera there at

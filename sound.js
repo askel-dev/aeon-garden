@@ -262,6 +262,13 @@ function noise(dest, t, dur, { from = 800, to = 2400, q = 1.2, peak = 0.3, type 
   src.start(t, rand(0, 3)); src.stop(t + dur + 0.05);
 }
 
+// A breath through the mouth: noise through a band that slides from one place to another (the mouth's shape), swelling
+// in over swell of it and dying away.
+function breathe(dest, t, dur, from, to, peak, swell) {
+  noise(dest, t, dur, { from, to, q: 1.1, peak, attack: dur * swell });
+  noise(dest, t, dur, { from: from * 0.45, to: to * 0.45, q: 0.8, peak: peak * 0.6, attack: dur * swell });   // (its body)
+}
+
 // ------------------------------------------------------------------ events
 
 // How long each sound waits before it may play again; free: it doesn't count against the creature sounds' budget.
@@ -290,6 +297,9 @@ const RULES = {
   shiver:  { gap: 1.5,  always: true },
   breath:  { gap: 5,    always: true },
   wake:    { gap: 5,    always: true },
+  pant:    { gap: 0.25, always: true },
+  phew:    { gap: 4,    always: true },
+  hemdrip: { gap: 0.25, always: true },
 };
 
 const STEP_SOFT = 0.6;          // the footsteps' level against the meadow's sounds: soft, they come a few times a second
@@ -470,6 +480,29 @@ const SOUNDS = {
   // Cold, a shaky sigh: a breath out in a few faltering puffs.
   breath(t, o) {
     for (let i = 0; i < 4; i++) noise(o, t + i * rand(0.14, 0.18), 0.26, { from: 1000 - i * 90, to: 700 - i * 60, q: 0.9, peak: 0.11 * (1 - i * 0.18), attack: 0.08 });
+  },
+  // Out of breath: one pant, a quick breath in and a longer one out, through the mouth (v: how hard, 0..1). The game plays
+  // one a breath, quicker the more spent (game.js PANT_MS), so the rhythm is its own.
+  pant(t, o, { v = 1 }) {
+    const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1800 + 900 * v; lp.Q.value = 0.5; lp.connect(o);
+    const a = 0.35 + 0.65 * v, r = rand(0.92, 1.08), inn = rand(0.1, 0.13) * (1.3 - 0.3 * v);
+    breathe(lp, t, inn, 1900 * r, 2600 * r, 0.035 * a, 0.5);                        // in: short and thin
+    breathe(lp, t + inn + 0.02, rand(0.17, 0.22) * (1.4 - 0.4 * v), 1150 * r, 820 * r, 0.075 * a, 0.25);   // out: a soft "hah"
+  },
+  // Its breath back: a deep breath in and a long "phew" out.
+  phew(t, o) {
+    const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2200; lp.Q.value = 0.5; lp.connect(o);
+    breathe(lp, t, 0.38, 1500, 2200, 0.03, 0.6);
+    breathe(lp, t + 0.45, 0.85, 1300, 650, 0.08, 0.18);
+  },
+  // Soaked, a drop off its hem onto the ground: a tiny soft pat, lower and duller than the rain's off a leaf.
+  hemdrip(t, o, { v = 1 }) {
+    const f = note(Math.floor(rand(3, 8)), 1), osc = ac.createOscillator(), g = ac.createGain();
+    osc.frequency.setValueAtTime(f * 1.25, t); osc.frequency.exponentialRampToValueAtTime(f * 0.7, t + 0.05);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.03 * v, t + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
+    osc.connect(g).connect(o); osc.start(t); osc.stop(t + 0.1);
+    noise(o, t, 0.03, { from: 1400, to: 700, q: 1, peak: 0.03 * v, attack: 0.003 });
   },
   // Waking at home after a collapse: three soft notes stepping up, a new morning.
   wake(t, o) {

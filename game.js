@@ -1896,7 +1896,7 @@ const FORAGER_STILL_MS = 70;               // no nearer than this to the last mo
 const forPx = () => (8 + cam.zoom) * FORAGER_SIZE;
 const fg = { at: -1, x: 0, y: 0, step: 0, stillMs: 1e4, view: 1, flip: false, art: FORAGER_ARTS[32], blinkAt: -1e9, blinkIn: 3000,
   fidgetAt: -1e9, fidgetIn: 1e4 + 9000, lastHalf: 0, jog: false, rings: [], wet: false, lx: -0, ly: -0, sized: 0, outfit: 0, picked: false, pick: -1e9, pickK: 1, printMs: -0,
-  puffs: [], puffAt: 0, drips: [], dripAt: 0, shiverAt: -1e9, shiverNext: 0, heartAt: 0, downAt: 0, dark: false, cold: false, sizedSet: 0,   // (the body: drawBody, bodyFrame)
+  puffs: [], puffAt: 0, drips: [], dripAt: 0, shiverAt: -1e9, shiverNext: 0, heartAt: 0, pantAt: 0, panting: false, downAt: 0, dark: false, cold: false, sizedSet: 0,   // (the body: drawBody, bodyFrame)
   snow: -1, snowTick: -0, snowArt: 0, sizedSnow: 0 };   // (the snow on it: snowOnForager)
 try {
   const o = localStorage.getItem(OUTFIT);
@@ -2143,7 +2143,10 @@ function drawBody(b, x, y, soak, going, running, stage, px, now, me) {
   }
   if (ui.speed > 0 && now > b.dripAt) {
     b.dripAt = now + DRIP_MS / Math.max(0.05, soak) * (0.6 + 0.8 * Math.random());
-    if (soak > 0.25 && !b.wet && b.drips.length < 8) b.drips.push({ x, y, ox: (Math.random() - 0.5) * 0.42, oy: -0.3 - Math.random() * 0.12, t: now });   // (off its hem)
+    if (soak > 0.25 && !b.wet && b.drips.length < 8) {
+      b.drips.push({ x, y, ox: (Math.random() - 0.5) * 0.42, oy: -0.3 - Math.random() * 0.12, t: now });   // (off its hem)
+      if (me && Math.random() < 0.25) chime('hemdrip', { v: soak });   // (now and then one you hear)
+    }
   }
   while (b.puffs.length && now - b.puffs[0].t > PUFF_MS) b.puffs.shift();
   while (b.drips.length && now - b.drips[0].t > 320) b.drips.shift();
@@ -2179,10 +2182,29 @@ function bodyFrame(now) {
     fg.heartAt = now;
     chime('heart', { v: 1 - 0.5 * f.warmth / S.WARMTH_STAGES[2] });
   }
-  if (f.down < 0) return false;
+  if (f.down < 0) { if (ui.speed > 0) pantFrame(f, now); return false; }
   if (!fg.downAt) fg.downAt = now - DARK_AFTER;          // (a meadow kept while it was down: dark at once)
   if (!fg.dark && now - fg.downAt > DARK_AFTER) { fg.dark = true; $('#veil').classList.add('dark'); }
   return now - fg.downAt > DARK_AFTER + DARK_MS;
+}
+// Out of breath it pants (sound.js pant), a breath every PANT_MS: spent, quick and hard; as its breath comes back, slower
+// and softer, till it has PANT_DONE of it and lets out a phew. Sprinting low on breath, it starts panting softly before it's spent.
+const PANT_MS = [420, 1100];               // a breath this often, spent and nearly got back
+const PANT_LOW = 0.3;                      // sprinting with less stamina than this, it's breathing hard
+const PANT_DONE = 0.5;                     // got this much back after it was spent, the panting stops
+function pantFrame(f, now) {
+  if (f.winded) fg.panting = true;
+  let v = 0;
+  if (fg.panting) {
+    if (f.stamina >= PANT_DONE) {                       // (after the last breath, and not after a night or a new meadow)
+      if (now < fg.pantAt) return;
+      fg.panting = false; if (now - fg.pantAt < 3000) chime('phew'); return;
+    }
+    v = 1 - 0.85 * f.stamina / PANT_DONE;
+  } else if (f.running && f.walking && f.stamina < PANT_LOW) v = 0.45 * (1 - f.stamina / PANT_LOW);
+  if (v < 0.05 || now < fg.pantAt) return;
+  chime('pant', { v });
+  fg.pantAt = now + (PANT_MS[1] - (PANT_MS[1] - PANT_MS[0]) * v) * (0.9 + 0.2 * Math.random());
 }
 // Woken (sim.js wakeForager): the dark lifts with it at home, the camera already there.
 function bodyWoke() {

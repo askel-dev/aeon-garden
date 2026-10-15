@@ -172,6 +172,9 @@
     ['collapse', '🥶', 'Collapse', 'too cold to go on: a soft fall and two low notes'],
     ['shiver', '🫨', 'Shiver', 'cold: teeth chattering a moment with each shiver'],
     ['breath', '😮‍💨', 'Cold sigh', 'cold and standing: now and then a shaky breath out'],
+    ['pant', '🫁', 'Panting', 'out of breath after a sprint: one breath in and out (the game plays them in a row)'],
+    ['panting', '🏃', 'Winded, then breath back', 'a run of pants slowing and softening, and a phew'],
+    ['hemdrip', '💧', 'Dripping', 'soaked: a drop off the hem now and then'],
     ['wake', '🌅', 'Waking', 'after a collapse: three soft notes up, at home in the morning'],
   ];
   $('#events').innerHTML = EVENTS.map(([k, e, name, how]) =>
@@ -230,10 +233,24 @@
     $('#log').textContent = `Walked eight steps (${ground}, pace ${pace}).`;
   }
 
+  // Winded: pants as game.js plays them, quick and hard, slowing and softening as the breath comes back, then a phew.
+  function pantRun() {
+    if (!$('#start').classList.contains('on')) $('#start').click();
+    let at = 0;
+    for (let i = 0; i < 16; i++) {
+      const u = i / 15;
+      setTimeout(() => S.play('pant', { v: 1 - 0.8 * u, near: 1, pan: 0 }), at);
+      at += 420 + 600 * u;
+    }
+    setTimeout(() => S.play('phew', { near: 1, pan: 0 }), at + 200);
+    $('#log').textContent = 'Out of breath, then breath back.';
+  }
+
   document.addEventListener('click', e => {
     const b = e.target.closest('[data-play],[data-season],[data-species],[data-sky]');
     if (!b) return;
     if (b.dataset.play in WALKS) walk(b.dataset.play);
+    else if (b.dataset.play === 'panting') pantRun();
     else if (b.dataset.play) play(...({
       splash: ['escape', { how: 'pond', label: 'splash' }],
       farthunder: ['thunder', { seen: false, near: 0.2, label: 'distant thunder' }],
