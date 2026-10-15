@@ -5404,9 +5404,13 @@ const LATER = {
 // change the layout later (an object's field that holds a fraction once holds any number after).
 function asFractions(o, keys) { for (const k of keys) { const v = o[k]; o[k] = 0.5; o[k] = v; } }
 
+// A new meadow opens this many days into spring, in the morning: the trees in leaf and blossom, the garlic up, cherries a
+// few days off. (Its first dawn was bare trees and nothing to pick.)
+const START_DAY = 3;
+
 function createWorld(seed, opts = {}) {
   const w = {
-    seed, rng: makeRng(seed), tick: Math.floor(TPD * 0.04),
+    seed, rng: makeRng(seed), tick: Math.floor(TPD * (START_DAY + 0.04)),
     nextId: 1, creatures: [], newborn: [], byId: new Map(), events: [],
     grid: makeGrid(), grids: perKind(makeGrid),
     nameCounts: new Map(), anyDied: false,
