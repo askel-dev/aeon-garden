@@ -35,6 +35,7 @@ let world;
 const ui = {
   speed: 1, sound: false, selectedId: 0, picked: null, hoverId: 0, mark: null,   // mark: where the forager was sent
   gather: null, slotTip: null,              // what the forager is off to pick { kind, it } (gatherFrame); the satchel's slot with its name open
+  queue: [], nextAt: 0,                     // what it picks after that, in turn (queueGather), and not before nextAt (the stoop done)
   trail: [], effects: [], allStory: false, sheetUp: false,
   sky: { mix: {}, tick: 0, bolts: [], boom: -1e9, rainbow: -1e9, bowEnd: -1e9 },
 };
@@ -1235,6 +1236,7 @@ function render(now) {
   }
   layShadows();
   drawLeaves(now, true);                                   // the leaves lying round the trees' feet, on the ground under all that stands
+  drawNear(now, false);                                    // (under what's in reach: it shows round it)
   drawGlow(now, false);                                    // (under what the mouse is on: it shows round it)
   for (const it of items) {
     if (it.f < 0.02) continue;
@@ -1247,6 +1249,7 @@ function render(now) {
     else drawCreature(it.c, it.sx, it.sy, now);
   }
   unfade();
+  drawNear(now, true);
   drawGlow(now, true);
   if (splashes.length) drawSplashes(now);
   drawLeaves(now, false);                                  // the trees' leaves coming down
@@ -1287,6 +1290,7 @@ function render(now) {
   drawPops(shown, now);
   drawGlints(now, dark);
   drawHoverLine(now);
+  drawQueue();
   if (pickFloats.length) drawPickFloats(now);
 
   drawEffects(now);
@@ -2120,7 +2124,21 @@ function gatherAt(sx, sy) {
     const d = ((sx - x) / (px * 0.5)) ** 2 + ((sy - y + px * 0.1) / (px * 0.22)) ** 2;
     if (d < 1 && d < bd) { best = g; bd = d; }
   }
-  return best ? { kind: 'green', it: best } : null;
+  return best ? { kind: 'green', it: best } : snapTo(sx, sy);
+}
+// Near enough is on it: a click or a tap a little off something with something to give (SNAP px past its glow, more for a
+// finger, and it's in reach of the forager more still) goes for it, so a moving meadow doesn't make you miss.
+const SNAP = 14, SNAP_FINGER = 26, SNAP_NEAR = 1.5;
+function snapTo(sx, sy) {
+  const F = world.forager, pad = fingerTap ? SNAP_FINGER : SNAP;
+  let best = -1, bd = 1;
+  for (let i = 0; i < picks.it.length; i++) {
+    const it = picks.it[i], s = gatherSpot(picks.kind[i], it);
+    const r = Math.max(s.rx, s.ry) * 0.7 + pad * (Math.hypot(it.x - F.x, it.y - F.y) < NEAR_REACH ? SNAP_NEAR : 1);
+    const d = Math.hypot(sx - s.gx, sy - s.gy) / r;
+    if (d < bd) { bd = d; best = i; }
+  }
+  return best < 0 ? null : { kind: picks.kind[best], it: picks.it[best] };
 }
 
 // Where it is (world), how far off the forager stands to pick it, and its glow on screen (x, y, rx, ry).
@@ -2164,9 +2182,10 @@ function standPoint(kind, it) {
 }
 
 // A click or a tap on it: off the forager goes. One with nothing to give says why now, and is only walked to.
-function goGather(t) {
+function goGather(t, run = false) {
   const [x, y] = standPoint(t.kind, t.it), w = S.whatThere(world, t.kind, t.it);
-  walkTo(...toScreen(x, y));
+  walkTo(...toScreen(x, y), false, true);
+  if (run && world.forager.walking) world.forager.running = true;
   if (w.n) ui.gather = { kind: t.kind, it: t.it };
   else if (w.why) { const s = gatherSpot(t.kind, t.it); say(w.why, s.x, s.y); }
 }
@@ -2174,16 +2193,19 @@ function goGather(t) {
 // Once a frame: there, it picks; stopped short (it couldn't get there), it says so.
 function gatherFrame(now) {
   const g = ui.gather, F = world.forager;
+  if (!g && ui.queue.length && !F.walking && now >= ui.nextAt) nextGather();
   if (!g || F.walking) return;
   ui.gather = null;
   const s = gatherSpot(g.kind, g.it);
   if (Math.hypot(F.x - s.x, F.y - s.y) > s.reach + 0.9) { say('Can\'t reach it', s.x, s.y); return; }
   const r = S.gather(world, g.kind, g.it);
+  picks.at = -1e9;                                      // (what's left to pick, listed again at once)
   if (!r.n) { if (r.why === 'full') say('Satchel\'s full', F.x, F.y - 1.6); else if (r.why) say(r.why, s.x, s.y); return; }
   const dx = s.x - F.x, dy = s.y - F.y;                 // it turns to it, and stoops
   fg.view = Math.abs(dy) > Math.abs(dx) * 0.8 ? (dy > 0 ? 1 : 2) : 0;
   if (Math.abs(dx) > 0.05) fg.flip = dx > 0;
   fg.pick = now;
+  ui.nextAt = now + PICK_MS[2];                         // (the next in the queue once it's back up)
   $('#satchel').classList.remove('empty');
   const [gx, gy] = [s.gx, s.gy], at = now + PICK_MS[0] + 90;
   setTimeout(() => {
@@ -2192,6 +2214,56 @@ function gatherFrame(now) {
     flyToSlot(r.id, gx, gy, r.into[r.into.length - 1]);
     chime('pick', { n: r.n });
   }, PICK_MS[0] + 90);
+}
+
+// The queue: while the forager is off to pick something (or stooped picking it), a click or a tap on more to pick lines it up
+// after, in the order clicked, with a small numbered badge on each (drawQueue); clicked again, it comes off. A click on
+// the ground, or holding to run, lets the whole queue go (walkTo). Something gone or picked clean meanwhile is passed over.
+const QUEUE_MOST = 9;
+function queueGather(t) {
+  const busy = ui.gather || ui.queue.length || performance.now() < ui.nextAt;
+  if (!busy) return false;
+  if (ui.gather && ui.gather.it === t.it) return true;   // (already off to it)
+  const k = ui.queue.findIndex(q => q.it === t.it);
+  if (k >= 0) { ui.queue.splice(k, 1); chime('click'); return true; }
+  const w = S.whatThere(world, t.kind, t.it);
+  if (!w.n) { if (w.why) { const s = gatherSpot(t.kind, t.it); say(w.why, s.x, s.y); } return true; }
+  if (ui.queue.length >= QUEUE_MOST) return true;
+  ui.queue.push({ kind: t.kind, it: t.it });
+  chime('click');
+  return true;
+}
+function nextGather() {
+  while (ui.queue.length) {
+    const t = ui.queue.shift();
+    if (S.whatThere(world, t.kind, t.it).n) { goGather(t); return; }
+  }
+}
+// A number on each in the queue (the one it's off to is 1), painted once a number, over everything by its light.
+const BADGES = [];
+function badgeArt(n) {
+  if (BADGES[n]) return BADGES[n];
+  const P = 44, c = document.createElement('canvas'), g = c.getContext('2d'), m = P / 2;
+  c.width = c.height = P;
+  g.fillStyle = 'rgba(60, 40, 10, 0.25)'; g.beginPath(); g.arc(m, m + 1.5, m - 3, 0, TAU); g.fill();
+  g.fillStyle = 'rgb(251, 244, 224)'; g.beginPath(); g.arc(m, m, m - 4, 0, TAU); g.fill();
+  g.strokeStyle = 'rgb(176, 132, 58)'; g.lineWidth = 3; g.stroke();
+  g.fillStyle = '#5a4526'; g.font = `800 ${Math.round(P * 0.5)}px Nunito, ui-rounded, system-ui, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(String(n), m, m + 1.5);
+  BADGES[n] = { img: c };
+  asBitmap(c, b => { BADGES[n].img = b; });
+  return BADGES[n];
+}
+function drawQueue() {
+  if (!ui.queue.length) return;
+  const r = narrow() ? 11 : 10;
+  for (let k = -1; k < ui.queue.length; k++) {
+    const t = k < 0 ? ui.gather : ui.queue[k];
+    if (!t) continue;
+    const s = gatherSpot(t.kind, t.it), x = s.gx, y = s.gy - s.ry - r * 0.6;   // (just over it)
+    if (!visible(x, y, r)) continue;
+    ctx.drawImage(badgeArt(k + (ui.gather ? 2 : 1)).img, x - r, y - r, r * 2, r * 2);
+  }
 }
 
 // A line by a thing (world x, y): why not, or the satchel full.
@@ -2287,7 +2359,7 @@ const PICKS_MS = 400;                       // how often what there is to pick i
 const SENSE_STILL = 1000, SENSE_REACH = 15, SENSE_SPREAD = 1100;   // ms standing still; tiles; ms the wave takes to get there
 const SENSE_BIG = 1.3;                      // how much bigger a glint the sense brings out is
 const ARROW_WAIT = 1500;                    // ms with nothing on screen before the arrow shows
-const picks = { kind: [], it: [], at: -1e9, near: null, nearKind: '', seen: 0, none: 0, arrow: 0, arrowAt: 0, topAt: -1e9, itemOf: null, item: -1 };
+const picks = { kind: [], it: [], food: 0, at: -1e9, near: null, nearKind: '', seen: 0, none: 0, arrow: 0, arrowAt: 0, topAt: -1e9, itemOf: null, item: -1 };
 const sense = { still: 0, done: true, t0: -1e9, x: 0, y: 0 };
 let GLINT_ART = null, ARROW_ART = null;
 const addPick = (kind, it) => { picks.kind.push(kind); picks.it.push(it); };
@@ -2295,6 +2367,40 @@ function picksFrame(now) {
   if (now - picks.at < PICKS_MS) return;
   picks.at = now; picks.kind.length = picks.it.length = 0;
   S.eachPickable(world, addPick);
+  picks.food = picks.it.length;                         // (after them, what lies about for a fire: it doesn't glint, but it's in reach)
+  for (const f of world.finds) if (S.FINDS[f.kind].ground) addPick('find', f);
+}
+// In reach: everything to pick within NEAR_REACH of the forager has a soft warm light under it, steady, fading out toward the
+// edge of that, so what can be picked stands apart from what's only the meadow (a dandelion from the other yellow flowers,
+// dry grass from the tufts). The hovered one has its brighter glow (drawGlow), the one it's off to pick a little more.
+const NEAR_REACH = 6.5, NEAR_FADE = 2, NEAR_A = 0.75;  // tiles; tiles it fades over at the edge; how strong
+let RING_ART = null;
+// The light under it, painted once: a soft honey ring lying on the ground with a faint warmth inside, stretched to the thing.
+function ringArt() {
+  const W = 128, c = document.createElement('canvas');
+  c.width = c.height = W;
+  const g = c.getContext('2d'), gr = g.createRadialGradient(W / 2, W / 2, 0, W / 2, W / 2, W / 2);
+  gr.addColorStop(0, 'rgba(255, 236, 178, 0.16)'); gr.addColorStop(0.6, 'rgba(255, 232, 170, 0.24)');
+  gr.addColorStop(0.78, 'rgba(255, 220, 128, 0.85)'); gr.addColorStop(0.9, 'rgba(255, 214, 120, 0.35)'); gr.addColorStop(1, 'rgba(255, 214, 120, 0)');
+  g.fillStyle = gr; g.fillRect(0, 0, W, W);
+  RING_ART = { img: c };
+  asBitmap(c, b => { RING_ART.img = b; });
+  return RING_ART;
+}
+function drawNear(now, over) {
+  const F = world.forager, art = RING_ART || ringArt(), k = 0.9 + 0.1 * Math.sin(now / 900), g = ui.gather;
+  for (let i = 0; i < picks.it.length; i++) {
+    const it = picks.it[i], kind = picks.kind[i];
+    if ((kind === 'hive') !== over || (aim.t && aim.t.it === it && aim.n)) continue;
+    const d = Math.hypot(it.x - F.x, it.y - F.y), lined = (g && g.it === it) || ui.queue.some(q => q.it === it);
+    if (d > NEAR_REACH && !lined) continue;
+    const s = gatherSpot(kind, it);
+    if (!visible(s.gx, s.gy, s.rx * 2)) continue;
+    ctx.globalAlpha = Math.min(1, NEAR_A * k * (lined ? 1.35 : Math.min(1, (NEAR_REACH - d) / NEAR_FADE)));
+    const rx = s.rx * 1.1, ry = Math.min(s.ry, s.rx * 0.55) * 1.1, y = s.gy + s.ry - ry * 0.9;   // (lying flat round its foot)
+    ctx.drawImage(art.img, s.gx - rx, y - ry, rx * 2, ry * 2);
+  }
+  ctx.globalAlpha = 1;
 }
 // A glint, painted once: a soft honey bloom, a little warm light in it and four fine rays, the upright pair longer, like
 // sun catching on something wet. Drawn small, so the bloom does most of the work.
@@ -2358,7 +2464,7 @@ function drawGlints(now, dark) {
     const u = (now - sense.t0) / (SENSE_SPREAD + GLINT_MS * 0.5), r = SENSE_REACH * z * Math.min(1, u), [sx, sy] = onScreen(sense.x, sense.y);
     if (u < 1) { ctx.globalAlpha = 0.3 * (1 - u) * Math.min(1, u * 6); ctx.drawImage((MARK_ART || markArt()).img, sx - r, sy - r * 0.5, r * 2, r); }
   }
-  for (let i = 0; i < picks.it.length; i++) {
+  for (let i = 0; i < picks.food; i++) {
     const it = picks.it[i], kind = picks.kind[i], sx = (it.x - cam.x) * z + vw / 2, sy = (it.y - cam.y) * z + vh / 2;
     const dx = it.x - F.x, dy = it.y - F.y, d2 = dx * dx + dy * dy;
     if (d2 < nd) { nd = d2; near = it; nearKind = kind; }
@@ -8273,10 +8379,13 @@ canvas.addEventListener('pointerdown', e => {
     drag = null; cam.goal = null;
     return;
   }
-  drag = { x: e.clientX, y: e.clientY, moved: false, id: e.pointerId, steer: false, px: e.clientX, py: e.clientY, at: 0 };
+  // (pressed on something to pick, it's a tap however long it's held, and a wobble more doesn't make it a drag: held, it runs there)
+  const on = !animalAt(e.clientX, e.clientY) && !!gatherAt(e.clientX, e.clientY);
+  drag = { x: e.clientX, y: e.clientY, moved: false, id: e.pointerId, steer: false, px: e.clientX, py: e.clientY, at: 0, on, rush: false };
   clearTimeout(holdTimer);
   holdTimer = setTimeout(() => {                        // held still on the ground: it runs toward the pointer while it's down
     if (!drag || drag.moved || pinch || zoomDrag || fingers.size > 1 || animalAt(drag.x, drag.y)) return;
+    if (drag.on) { drag.rush = true; return; }
     drag.steer = true; drag.at = performance.now();
     walkTo(drag.px, drag.py, true);
   }, HOLD_MS);
@@ -8299,7 +8408,7 @@ canvas.addEventListener('pointermove', e => {
     return;
   }
   // Moved off where it was pressed: a drag steers the forager as a press held still does, running toward the pointer.
-  if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) > (e.pointerType === 'touch' ? 10 : 4)) {
+  if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) > (e.pointerType === 'touch' ? 10 : 4) * (drag.on ? 2.5 : 1)) {
     clearTimeout(holdTimer);
     drag.moved = drag.steer = true; drag.at = performance.now(); drag.px = e.clientX; drag.py = e.clientY;
     walkTo(drag.px, drag.py, true);
@@ -8314,9 +8423,11 @@ canvas.addEventListener('pointerup', e => {
   }
   clearTimeout(holdTimer);
   if (liftFinger(e)) return;
-  if (drag?.steer) walkTo(e.clientX, e.clientY, true);  // (held: it runs on to where it was let go)
-  else if (drag && !drag.moved) {
-    click(e.clientX, e.clientY);
+  if (drag?.steer) {                                    // (held: it runs on to where it was let go, and picks what it was let go on)
+    const t = !animalAt(e.clientX, e.clientY) && gatherAt(e.clientX, e.clientY);
+    if (t) goGather(t, true); else walkTo(e.clientX, e.clientY, true);
+  } else if (drag && !drag.moved) {
+    click(e.clientX, e.clientY, drag.rush);
     if (fingerTap) lastTap = { t: e.timeStamp, x: e.clientX, y: e.clientY };
   }
   drag = null;
@@ -8343,18 +8454,19 @@ canvas.addEventListener('wheel', e => {
 
 // A click or a tap on an animal (on it as it's drawn: animalAt) opens its panel; on something to gather, the forager
 // goes and picks it (goGather); anywhere else, the forager walks there and the panel shuts (walkTo).
-function click(sx, sy) {
+function click(sx, sy, run = false) {
   clearTimeout(tapAway); tapAway = 0;
   const c = animalAt(sx, sy), t = !c && gatherAt(sx, sy);
   if (c) select(c.id);
-  else if (t) goGather(t);
+  else if (t) { if (!queueGather(t)) goGather(t, run); }
   else walkTo(sx, sy);
 }
 // A tap walks it there; held (steering) or with Shift down, it runs.
-function walkTo(sx, sy, steering = false) {
+function walkTo(sx, sy, steering = false, keepQueue = false) {
   const [wx, wy] = toWorld(sx, sy), g = S.foragerTo(world, wx, wy);
   if (g) world.forager.running = steering || shiftHeld;
   ui.gather = null;                                     // (a new walk: whatever it was going to pick, it isn't)
+  if (!keepQueue) ui.queue.length = 0;
   if (ui.selectedId || ui.picked) select(0);
   if (!g) return;
   if (steering && ui.mark && !ui.mark.end) { ui.mark.x = g.x; ui.mark.y = g.y; }
@@ -8698,7 +8810,7 @@ function showWorld(w) {
   world = w;
   const seed = w.seed;
   groundSeed = [(seed % 97) * 3.7, (seed % 89) * 4.3];
-  Object.assign(ui, { selectedId: 0, picked: null, hoverId: 0, mark: null, trail: [], effects: [], gather: null });
+  Object.assign(ui, { selectedId: 0, picked: null, hoverId: 0, mark: null, trail: [], effects: [], gather: null, queue: [] });
   fg.at = -1; fg.rings.length = 0; fg.sized = 0; fg.pick = -1e9; pickFloats.length = 0; aim.t = null;
   pollen.until = 0; pollen.t0.fill(-1e9);
   const mix = Object.fromEntries(Object.keys(S.WEATHER).map(k => [k, k === world.weather.kind ? 1 : 0]));
