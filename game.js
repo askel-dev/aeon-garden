@@ -1957,8 +1957,10 @@ function wearOutfit(o) {
 }
 
 // Where it was sent: a soft ring on the ground that comes in with a little bounce, breathes while it walks there and
-// fades once it's arrived. Painted once (MARK_ART), then only drawn.
+// fades once it's arrived. Painted once (MARK_ART), then only drawn. Held and steering, where it was sent moves on every
+// STEER_MS: the ring glides after it (MARK_GLIDE), and the trail with it, rather than jumping.
 const MARK_MS = [220, 500];                // coming in, fading out
+const MARK_GLIDE = 150;                   // ms: how quickly the ring catches up with where it was sent (a time constant)
 let MARK_ART = null;
 function markArt() {
   const W = 128, H = 64, c = document.createElement('canvas');
@@ -1978,9 +1980,11 @@ function drawMark(now) {
   if (!m.end && !f.walking) m.end = now;
   const t = now - m.t0, fade = m.end ? 1 - (now - m.end) / MARK_MS[1] : 1;
   if (fade <= 0) { ui.mark = null; return; }
+  const g = m.at ? 1 - Math.exp(-Math.min(100, now - m.at) / MARK_GLIDE) : 1;
+  m.at = now; m.sx += (m.x - m.sx) * g; m.sy += (m.y - m.sy) * g;
   const pop = t < MARK_MS[0] ? 1 + 0.35 * Math.sin(Math.PI * t / MARK_MS[0]) * (1 - t / MARK_MS[0]) : 1;
   const r = Math.max(10, (8 + cam.zoom) * 0.42) * pop * (1 + 0.05 * Math.sin(now / 260)) * (m.end ? 1 + 0.25 * (1 - fade) : 1);
-  const [sx, sy] = onScreen(m.x, m.y), art = MARK_ART || markArt(), a = Math.min(1, t / 120) * fade;
+  const [sx, sy] = onScreen(m.sx, m.sy), art = MARK_ART || markArt(), a = Math.min(1, t / 120) * fade;
   const k = clamp((t - TRAIL_IN[0]) / TRAIL_IN[1], 0, 1);
   drawTrail(sx, sy, r, k * k * (3 - 2 * k) * fade, now);   // (it comes in eased, just after the ring)
   ctx.globalAlpha = a * 0.9;
@@ -7345,7 +7349,7 @@ function walkTo(sx, sy, steering = false) {
   if (ui.selectedId || ui.picked) select(0);
   if (!g) return;
   if (steering && ui.mark && !ui.mark.end) { ui.mark.x = g.x; ui.mark.y = g.y; }
-  else ui.mark = { x: g.x, y: g.y, t0: performance.now(), end: 0 };
+  else ui.mark = { x: g.x, y: g.y, t0: performance.now(), end: 0, sx: g.x, sy: g.y, at: 0 };   // (sx, sy: where it's shown, drawMark)
 }
 // The animal drawn under a point: within its painting's body (a fingertip reaches a little further), the nearest.
 // Tighter than creatureAt, so a click on the grass beside a rabbit walks there.
