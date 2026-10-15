@@ -43,6 +43,22 @@ CSS gradients only, shown only then) and a soft heartbeat (sound.js `heart`, `HE
 stamina (amber and pulsing while winded), each shown only while not full. Collapsed it tips over (`FALL_MS`) with its eyes shut (pose 7), the screen goes dark
 (`#veil`, `DARK_AFTER`), and `bodyFrame` runs the sim `SKIP_MS` a frame till it wakes at home (`bodyWoke`: the camera there at
 once, a toast, three soft notes: sound.js `wake`). Out of breath (`f.winded`) a press, Shift or a held run only walks it.
+The campfire (sim.js `w.fires`; its rules in ecology.md; the long comment over game.js's `FIRE_SIZE` has it all): a round fire
+button by the satchel (`#build`, `renderBuild`; 50 px above the satchel on a touch screen) with a ring filling in as the satchel
+holds what recipes.js `BUILDS.campfire` takes (6 pebbles, 5 sticks, 2 tinder); a tap or F picks a spot (`ui.place`, a faint fire
+following the mouse, within `PLACE_REACH`; sim.js `fireSpot` says why not). The forager kneels side on (fur.js `FORAGER_KNEEL`,
+`KNEEL_VIEW`), lays it a piece at a time (`LAY_STEPS`), strikes (`STRIKES`), and you hold (mouse, finger or F: `blowHeld`) to
+blow till it catches (`blowFrame`, `BLOW_S`, longer in the wet); let go too soon and it only smokes. A click on a fire sees to it
+(`clickFire`: a stick on, a stick and a blow on embers, tinder and a strike when cold), standing still by a lit one it kneels and
+warms its mittens (`SIT_MS`), and a hover says how it is (`fireWord`). Drawn with the trees and animals (`drawFire`: `paintFire`
+once a look and size, `FIRE_ARTS`; flames as `TONGUES` of one painting; smoke), its glow, embers and sparks over the dark
+(`drawFireGlows`). Its light (`lightsFrame`, at most 4 fires, flickering in `FLICKER_MS` steps) is cut out of the night on the sky's
+picture (`SKY_FIRE`, `paintFireLights`: so the sky repaints only on a flicker step) and laid warm over what stands near it
+(`fireLight`, source-atop, kept soft so the forager by it isn't washed out). Nights are dark (`DARK` 0.8 of a deep navy
+`NIGHT_RGB`, 2026-10-15) so the fire is the cosy place. Friends see fires laid, fed and lit (`sendFire`). Sounds: sound.js `clack`,
+`stick`, `tinder`, `strike`, `blow`, `kindle` (`catch` is the fox's), `fizzle`, and a crackle near a burning one (`fire` in
+`Sound.update`). Cost: none measurable (1440x813, zoomed out, a summer night in the rain, walking: about 1.0 ms of script a
+frame with a fire and without, 60 fps).
 A click or a tap on an animal (on its body as drawn: `animalAt`, a little wider for a finger) opens its panel;
 anywhere else walks the forager there (`walkTo`, sim.js `foragerTo`) and shuts the panel, with a
 soft ring where it was sent (`drawMark`, `MARK_ART` painted once) that fades once it's there, and a faint dashed line to it

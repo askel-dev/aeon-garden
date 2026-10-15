@@ -222,7 +222,15 @@ rain (`DRY`, faster warm, in sun, moving). Sprinting spends stamina (`SPRINT_TIC
 it collapses (`f.down`, event 'collapse'), waking at `f.homeX`, `f.homeY` (where it started; the camp later) the next morning
 (`WAKE_PHASE`, at least `DOWN_TICKS` on: `wakeForager`, event 'woke') chilly, dry, rested, the satchel empty. Standing still
 from full warmth at dusk (4 seeds): a summer night ends cosy or chilly, a spring or autumn one anywhere from chilly to
-collapsed (rain makes it worse), a winter one kills. No fire yet: it's the strongest warmth to come (PLAN.md stage 4).
+collapsed (rain makes it worse), a winter one kills.
+Fires (`w.fires`, one layout, `fireOf`; the long comment over `FIRE_STICK`): laid with sticks and tinder (`layFire`; what one takes
+is recipes.js `BUILDS`, spent out of the satchel by game.js with `spend`), lit (`lightFire`), burning a stick in `FIRE_STICK` (faster
+in the wet, `FIRE_WET`), never more than `FIRE_MOST` on (`feedFire`, `fireRoom`), then embers for `FIRE_EMBERS` (a stick and a blow
+relight them), then cold. The spring flood over one puts it out. It warms the forager up to `FIRE_WARM` degrees within `FIRE_NEAR`,
+none past `FIRE_REACH` (`fireWarmth`, by `fireHeat`), and dries it close up (`FIRE_DRY`), rain or not. No random numbers, and a
+meadow kept before fires gets none (no `KEEP_VERSION` bump). Standing by one from dusk with warmth full (4 seeds): a new fire's 5
+sticks burn about 8.5 game hours dry (7 in rain); spring nights end at 0.6 to 1 warmth, winter ones at 0.1 to 0.75 (snow worst),
+and a fire kept fed keeps it at 1 all night; with none, the rainy spring nights and every winter night kill.
 
 Rocks are painted (`rockInfo`, `rockSprite` in game.js): pebbles, stones and boulders by
 size (`TERRAIN.rockSize`), flat stones at the fords, and two or three great rocks per meadow
