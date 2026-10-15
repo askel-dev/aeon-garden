@@ -84,8 +84,9 @@ fire you made. (Today a new meadow opens on day 4 of spring: keep the season, ch
   strikes, and you hold to blow. Clicking a fire feeds it a stick or relights it; by a lit one it kneels to warm its hands.
 - 5 sticks burn about 8.5 game hours dry (7 in rain), then embers about 2.4 hours, then cold. By a fed fire every night
   ends cosy; by 5 sticks alone a winter night ends at 0.1 to 0.75 warmth; with none, winter and rainy spring nights kill.
-- Nights made much darker (game.js `DARK` 0.55 to 0.8, a deeper navy) after Axel looked, so the fire's pool is the cosy
-  place, and its warm light on the forager softened (it washed it out).
+- Nights made much darker (game.js `DARK` 0.55 to 0.88, a deeper navy) after Axel looked, so the fire's pool is the cosy
+  place; its light reaches further (`LIGHT_TILES` 6 to 8, a gentler falloff), and its warm light on the forager is softer
+  (it washed it out).
 - Played in a browser and timed (no measurable cost). Left for a refinement pass: the look of the pool and flames, the
   balance of how long a stick burns, the sounds.
 

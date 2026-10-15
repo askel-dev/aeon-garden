@@ -489,7 +489,7 @@ const MIST_DUSK = [240, 176, 160], MIST_NIGHT = [124, 118, 176];
 const MIST_IN = 6, MIST_FULL = 4, MIST_OUT = 10, MIST_PX = 3, MIST_ROUND = 14;
 const MIST_WAVER = 8;                             // tiles the edge wavers in and out, all told
 const MIST_DEEP = MIST_IN + MIST_WAVER / 2 + 2;   // further in than this there's none, wherever a bank of it rolls in
-const NIGHT_RGB = [8, 13, 62];    // the dark, washed over everything
+const NIGHT_RGB = [6, 10, 50];    // the dark, washed over everything
 const MIST_W = (S.W + 2 * MIST_OUT) * MIST_PX, MIST_H = (S.H + 2 * MIST_OUT) * MIST_PX;
 const mist = { field: null };
 function mistField() {
@@ -1091,7 +1091,7 @@ const FOX_BODY = 1.4;                     // and a dead fox, next to that
 
 function visible(sx, sy, pad) { return sx > -pad && sy > -pad && sx < vw + pad && sy < vh + pad; }
 
-const DARK = 0.8;                         // how much of NIGHT_RGB the night lays over everything (dark, so a fire's the cosy place)
+const DARK = 0.88;                        // how much of NIGHT_RGB the night lays over everything (dark, so a fire's the cosy place)
 function darkness(phase) {
   if (phase >= 0.72 || phase < 0.02) return DARK;
   if (phase >= 0.6) return DARK * (phase - 0.6) / 0.12;
@@ -2723,7 +2723,7 @@ const LIT_MS = 1100;                     // ms it stays kneeling, watching it ta
 const FEED_MS = 520, FEED_AT = 0.5;      // ms putting a stick on takes, and how far into that it goes on
 const SIT_MS = 1600, SIT_NEAR = 1.7;     // standing still this long this near a lit fire, it kneels to warm its hands
 const FLAME_H = 0.62;                    // a fed fire's flames, in its size
-const LIGHT_TILES = 5;                   // how far a fed fire's light reaches at night
+const LIGHT_TILES = 8;                   // how far a fed fire's light reaches at night
 const LIGHT_FLAT = 0.72;                 // the light lies on the ground: an oval this much as tall as wide
 const FLICKER_MS = 90;                   // the light in the dark flickers in steps this long
 const SMOKES = 7, EMBERS_UP = 9;         // smoke puffs and embers drifting up off a fire at once, at most
@@ -3013,7 +3013,7 @@ function fireLight(dark) {
 // Cut out of the dark on the sky's picture (laySky): the dark goes, and a warm glow comes in its place, by the fire. Both
 // are pictures painted once (CUT_ART, lightArt), laid flat on the ground (LIGHT_FLAT).
 let CUT_ART = null;
-const cutArt = () => CUT_ART || (CUT_ART = glowArt2(128, [[0, 'rgba(0, 0, 0, 1)'], [0.3, 'rgba(0, 0, 0, 0.84)'], [0.65, 'rgba(0, 0, 0, 0.37)'], [1, 'rgba(0, 0, 0, 0)']]));
+const cutArt = () => CUT_ART || (CUT_ART = glowArt2(128, [[0, 'rgba(0, 0, 0, 1)'], [0.35, 'rgba(0, 0, 0, 0.82)'], [0.7, 'rgba(0, 0, 0, 0.42)'], [0.88, 'rgba(0, 0, 0, 0.14)'], [1, 'rgba(0, 0, 0, 0)']]));
 function paintFireLights(g) {
   const cut = cutArt().img, warm = lightArt().img;
   for (let i = 0; i < lights.n; i++) {

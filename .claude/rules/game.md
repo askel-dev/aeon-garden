@@ -52,9 +52,9 @@ blow till it catches (`blowFrame`, `BLOW_S`, longer in the wet); let go too soon
 (`clickFire`: a stick on, a stick and a blow on embers, tinder and a strike when cold), standing still by a lit one it kneels and
 warms its mittens (`SIT_MS`), and a hover says how it is (`fireWord`). Drawn with the trees and animals (`drawFire`: `paintFire`
 once a look and size, `FIRE_ARTS`; flames as `TONGUES` of one painting; smoke), its glow, embers and sparks over the dark
-(`drawFireGlows`). Its light (`lightsFrame`, at most 4 fires, flickering in `FLICKER_MS` steps) is cut out of the night on the sky's
+(`drawFireGlows`). Its light (`lightsFrame`, at most 4 fires, out to `LIGHT_TILES`, flickering in `FLICKER_MS` steps) is cut out of the night on the sky's
 picture (`SKY_FIRE`, `paintFireLights`: so the sky repaints only on a flicker step) and laid warm over what stands near it
-(`fireLight`, source-atop, kept soft so the forager by it isn't washed out). Nights are dark (`DARK` 0.8 of a deep navy
+(`fireLight`, source-atop, kept soft so the forager by it isn't washed out). Nights are dark (`DARK` 0.88 of a deep navy
 `NIGHT_RGB`, 2026-10-15) so the fire is the cosy place. Friends see fires laid, fed and lit (`sendFire`). Sounds: sound.js `clack`,
 `stick`, `tinder`, `strike`, `blow`, `kindle` (`catch` is the fox's), `fizzle`, and a crackle near a burning one (`fire` in
 `Sound.update`). Cost: none measurable (1440x813, zoomed out, a summer night in the rain, walking: about 1.0 ms of script a
