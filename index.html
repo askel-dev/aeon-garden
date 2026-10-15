@@ -173,6 +173,18 @@
   .outfit-pick { overflow: hidden; }
   .outfit-pick.on { background: rgba(120, 90, 30, 0.12); box-shadow: inset 0 0 0 1.5px #d2b06a; }
   @media (hover: hover) { .outfit-pick:hover { background: rgba(120, 90, 30, 0.08); } }
+  /* ---- the name friends know you by, playing together (game.js askName): small, at the foot, as the cloak's card */
+  #name-card { position: fixed; left: 50%; bottom: max(18px, env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 9; width: min(320px, calc(100% - 32px));
+    box-sizing: border-box; padding: 10px 14px 12px; background: var(--paper, none) var(--card); border-radius: 18px; box-shadow: var(--edge), var(--shadow); text-align: center; }
+  #name-card:not(.hidden) > * { animation: pop-in 0.3s ease-out; }
+  #name-card h2 { margin: 0 0 8px; font-size: 16px; font-weight: 650; }
+  #name-card form { display: flex; gap: 8px; }
+  #name-text { flex: 1; min-width: 0; box-sizing: border-box; padding: 8px 12px; border: 1.5px solid #d9ccb0; border-radius: 12px; background: #fffaf0;
+    font: inherit; font-size: 16px; color: var(--ink); }
+  #name-text:focus { outline: none; border-color: #4f7f3a; }
+  #name-card .go { flex: none; border-radius: 12px; background: #4f7f3a; color: #fff; font-size: 15px; padding: 8px 14px; box-shadow: none; }
+  @media (hover: hover) { #name-card .go:hover { background: #44702f; } }
+  @media (pointer: coarse) { #name-text, #name-card .go { min-height: 44px; } }
   .hidden { display: none !important; }
   /* ---- phones, upright or on their side: one slim row on top */
   @media (max-width: 760px), (max-height: 500px) {
@@ -356,6 +368,7 @@
     <button class="menu-item phone-only" data-act="sound" id="sound-item"><span class="e">🔇</span> <span class="l">Sound is off</span></button>
     <button class="menu-item" data-act="copy-link"><span class="e">🔗</span> <span class="l">Copy a link<span class="x"> to this meadow</span></span></button>
     <button class="menu-item" data-act="together"><span class="e">🧺</span> <span class="l">Play together<span class="x"> with a friend</span></span></button>
+    <button class="menu-item hidden" data-act="pick-name" id="name-item"><span class="e">✏️</span> <span class="l">Your name<span class="x"> for friends</span></span></button>
     <button class="menu-item" data-act="pick-outfit"><span class="e">🧥</span> <span class="l">Change your cloak</span></button>
     <button class="menu-item" data-act="ideas" title="Tell me what you'd love to see in the meadow"><span class="e">💌</span> <span class="l">Send an idea</span></button>
     <button class="menu-item danger" data-action="new">🔄 Start a new meadow…</button>
@@ -368,6 +381,13 @@
 <div id="outfit" class="hidden" role="dialog" aria-labelledby="outfit-title">
   <h2 class="fr" id="outfit-title">Pick your cloak</h2>
   <div id="outfit-row"></div>
+</div>
+
+<!-- the name friends know you by, asked as you play together (game.js askName) -->
+<div id="name-card" class="hidden" role="dialog" aria-labelledby="name-title">
+  <h2 class="fr" id="name-title">What shall your friends call you?</h2>
+  <form id="name-form"><input id="name-text" maxlength="16" autocomplete="nickname" enterkeyhint="done" placeholder="Your name" aria-label="Your name">
+  <button class="btn go" type="submit">That's me</button></form>
 </div>
 
 <div id="ask" class="hidden" role="dialog" aria-labelledby="ask-title">

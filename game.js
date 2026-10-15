@@ -1309,6 +1309,7 @@ function render(now) {
 
   // Pop-ups above the dark. Not in the intro: its lines tell the story.
   drawPops(shown, now);
+  if (peers.size) drawPeerNames();
   drawGlints(now, dark);
   drawHoverLine(now);
   drawQueue();
@@ -8887,8 +8888,9 @@ $('#ask').addEventListener('keydown', e => { if (e.key === 'Escape') askIdeas(fa
 // it happened on: one from ahead waits for its tick (net.later), so the host's picks land on a guest at the same tick.
 // A guest's own pick lands on the host a little late, so now and then (CHECK_TICKS) both sum the meadow up (meadowSum),
 // and a guest off from the host twice running asks for the meadow again (netCheck). A friend is drawn as the forager is,
-// in its own cloak (peerItems, drawPeer), slid between where it last said it was. A guest who loses the host keeps the
-// meadow as its own.
+// in its own cloak (peerItems, drawPeer), slid between where it last said it was, with its name over it (drawPeerNames).
+// A guest who loses the host keeps the meadow as its own. The name is asked once, on a small card at the foot as the
+// cloak's is (askName), the first time you play together, and kept in localStorage; ••• has it while together.
 const POS_MS = 150;                        // ms between a forager's "here I am"
 const PEER_SLIDE = 1.3;                    // a friend glides to where it said over this many POS_MS (so it's still going when the next comes)
 const PEER_STILL_MS = 250;                 // a friend that hasn't moved this long is standing
@@ -8897,6 +8899,11 @@ const CHECK_TICKS = 300;                   // ticks between sums of the meadow
 const ASK_AGAIN_MS = 20000;                // a guest asks for the meadow again at most this often
 const AHEAD_MS = 500;                      // a guest runs on at most this far past the last tick it heard (the host's tab may have stopped)
 const ROOM_WORDS = ['acorn', 'bramble', 'hazel', 'sorrel', 'fern', 'thistle', 'willow', 'clover', 'moss', 'heather', 'rowan', 'elder'];
+const NAME = 'aeon-garden-name';           // in localStorage: the name friends know you by
+const NAME_MOST = 16;                      // letters in a name, at most
+const NAME_UP = 0.64;                      // a friend's name sits this many of its forager's sizes over its feet (just over its hood)
+let myName = '', nameAsked = false, nameThen = null, nameOutfit = false;
+try { myName = cleanName(localStorage.getItem(NAME)); } catch (e) { /* none, then */ }
 const net = { tick: -1, base: 0, rate: 0, sentAt: 0, hostId: '', later: [], hostSums: new Map(), mySums: new Map(), off: 0, askedAt: -1e9, shown: '' };
 const peers = new Map();                   // friends' foragers, by id
 
@@ -8904,6 +8911,7 @@ function startTogether() {
   if (!Net) return;
   Net.start(ROOM, params.has('local'), {
     ready(role) {
+      if (!myName && !nameAsked) askName(true);
       if (role === 'host') toast(`🧺 Your meadow is open to friends. Send them the link (••• › Play together).`);
       else toast('🧺 Walking over to your friend’s meadow…');
     },
@@ -8917,6 +8925,7 @@ function startTogether() {
 // ••• › Play together: opens this meadow to friends (a room of its own in the address), and shares the link.
 function together() {
   if (!Net) return;
+  if (!myName && !nameAsked) { askName(true, together); return; }   // (shared once it's said, or put away)
   if (!ROOM) {
     ROOM = ROOM_WORDS[Math.floor(Math.random() * ROOM_WORDS.length)] + '-' + (100 + Math.floor(Math.random() * 900));
     history.replaceState(history.state, '', pageLink(world.seed));
@@ -8929,7 +8938,61 @@ function together() {
     () => toast(`🧺 Send a friend this link: ${esc(url)}`));
 }
 
-const worldMsg = to => ({ t: 'world', to, kept: S.packWorld(world), tick: world.tick, s: ui.speed });
+const worldMsg = to => ({ t: 'world', to, kept: S.packWorld(world), tick: world.tick, s: ui.speed, n: myName });
+
+// The name friends know you by: a small card at the foot, the meadow going on behind it. Put away unsaid, you're "a friend".
+function cleanName(s) { return String(s || '').replace(/[\u0000-\u001f\u007f-\u009f]/g, '').replace(/\s+/g, ' ').trim().slice(0, NAME_MOST); }
+function askName(open, then) {
+  const card = $('#name-card');
+  if (open) {
+    nameAsked = true; nameThen = then || null;
+    if (outfitOpen()) { pickOutfit(false); nameOutfit = true; }   // (one card at the foot at a time: the cloak's comes back after)
+    $('#name-text').value = myName;
+    card.classList.remove('hidden');
+    if (!narrow()) $('#name-text').focus({ preventScroll: true });   // (on a phone the keyboard would jump up)
+    return;
+  }
+  if (card.classList.contains('hidden')) return;
+  card.classList.add('hidden');
+  $('#name-text').blur();
+  const go = nameThen;
+  nameThen = null;
+  if (nameOutfit) { nameOutfit = false; if (!fg.picked) pickOutfit(true); }
+  if (go) go();
+}
+const nameOpen = () => !$('#name-card').classList.contains('hidden');
+$('#name-form').addEventListener('submit', e => {
+  e.preventDefault();
+  myName = cleanName($('#name-text').value);
+  try { if (myName) localStorage.setItem(NAME, myName); else localStorage.removeItem(NAME); } catch (err) { /* fine */ }
+  askName(false);
+  if (Net && Net.on) sendPos(performance.now());          // (they see it at once)
+});
+$('#name-card').addEventListener('keydown', e => { if (e.key === 'Escape') askName(false); });
+
+// A friend's name, painted once (a parchment pill), drawn over it at one size whatever the zoom.
+const NAME_ARTS = new Map();
+function nameArt(name) {
+  let a = NAME_ARTS.get(name);
+  if (a) return a;
+  if (NAME_ARTS.size > 32) NAME_ARTS.clear();
+  const k = Math.max(1, dpr), F = 13 * k, c = document.createElement('canvas'), g = c.getContext('2d');
+  const font = `800 ${F}px Nunito, ui-rounded, system-ui, sans-serif`;
+  g.font = font;
+  const h = Math.round(F * 1.6), w = Math.ceil(g.measureText(name).width) + Math.round(F * 1.1), r = h / 2, sh = Math.round(1.5 * k);
+  c.width = w + 2; c.height = h + sh + 2;
+  const pill = (y) => { g.beginPath(); g.arc(1 + r, 1 + y + r, r, Math.PI / 2, Math.PI * 1.5); g.arc(1 + w - r, 1 + y + r, r, -Math.PI / 2, Math.PI / 2); g.closePath(); };
+  g.fillStyle = 'rgba(60, 40, 10, 0.25)'; pill(sh); g.fill();
+  g.fillStyle = 'rgba(251, 244, 224, 0.94)'; pill(0); g.fill();
+  g.strokeStyle = 'rgba(176, 132, 58, 0.8)'; g.lineWidth = k; g.stroke();
+  g.font = font; g.fillStyle = '#5a4526'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(name, 1 + w / 2, 1 + r + k * 0.5);
+  a = { img: c, w: c.width / k, h: c.height / k };
+  asBitmap(c, b => { a.img = b; });
+  NAME_ARTS.set(name, a);
+  return a;
+}
+const friendName = p => p && p.name ? esc(p.name) : '';
 
 function heardNet(m) {
   const now = performance.now();
@@ -8958,7 +9021,8 @@ function heardWorld(m, now) {
   history.replaceState(history.state, '', pageLink(w.seed));
   net.hostId = m.from; net.later.length = 0; net.hostSums.clear(); net.mySums.clear(); net.off = 0;
   setClock(m.tick, m.s, now, true);
-  if (!again) toast('🧺 You’re in your friend’s meadow. Forage together!');
+  const host = cleanName(m.n);
+  if (!again) toast(`🧺 You’re in ${host ? esc(host) + '’s' : 'your friend’s'} meadow. Forage together!`);
 }
 // A guest's forager comes in beside the host's (it's the host's, unpacked): fresh, with an empty satchel.
 function arrive(f) {
@@ -9044,7 +9108,7 @@ function sendPos(now) {
   net.sentAt = now;
   const f = world.forager;
   Net.send({ t: 'pos', x: f.x, y: f.y, h: f.heading, j: fg.jog, st: S.warmthStage(f), p: now - fg.pick < PICK_MS[2] * fg.pickK, o: fg.outfit,
-    tick: Net.host ? world.tick : -1, s: ui.speed });
+    tick: Net.host ? world.tick : -1, s: ui.speed, n: myName });
 }
 function heardPos(m, now) {
   if (m.tick >= 0 && Net.guest && net.tick >= 0) setClock(m.tick, m.s, now, false);
@@ -9052,10 +9116,18 @@ function heardPos(m, now) {
   if (!p) {
     p = { id: m.from, x: m.x, y: m.y, fx: m.x, fy: m.y, tx: m.x, ty: m.y, at: now, last: now, seen: now, heading: m.h, jog: false, stage: 0,
       pickAt: -1e9, picking: false, outfit: 0, wet: false, step: -0, view: 1, flip: false, stillMs: 1e4, blinkAt: -1e9, downAt: 0, fall: -0,
-      art: FORAGER_ARTS[0], sized: 0, sizedSet: 0 };
+      art: FORAGER_ARTS[0], sized: 0, sizedSet: 0, name: '', nameArt: null, sx: -0, sy: -0, shown: false };
     peers.set(m.from, p);
-    if (Net.host || m.tick < 0) toast('🧺 A friend has come into the meadow');   // (a guest knows the host is there)
+    p.name = cleanName(m.n);
+    if (Net.host || m.tick < 0) toast(`🧺 ${friendName(p) || 'A friend'} has come into the meadow`);   // (a guest knows the host is there)
   }
+  const name = cleanName(m.n);
+  if (name !== p.name) {                                   // (said after coming, or changed)
+    p.name = name;
+    if (name) toast(`🧺 Your friend is ${esc(name)}`);
+  }
+  if (p.name && (!p.nameArt || p.nameArt !== NAME_ARTS.get(p.name))) p.nameArt = nameArt(p.name);
+  else if (!p.name) p.nameArt = null;
   const far = Math.hypot(m.x - p.x, m.y - p.y) > 3;        // (woken at home, or a new meadow: there at once)
   p.fx = far ? m.x : p.x; p.fy = far ? m.y : p.y; p.tx = m.x; p.ty = m.y; p.at = now; p.seen = now;
   p.heading = m.h; p.jog = m.j; p.stage = m.st;
@@ -9065,14 +9137,16 @@ function heardPos(m, now) {
   if (m.st === 4 && !p.downAt) p.downAt = now; else if (m.st !== 4) p.downAt = 0;
 }
 function friendGone(id) {
-  if (peers.delete(id)) toast('🧺 Your friend has gone home');
+  const p = peers.get(id);
+  if (peers.delete(id)) toast(`🧺 ${friendName(p) || 'Your friend'} has gone home`);
 }
 // A guest whose host has gone: the meadow is its own now, kept and running on its own clock.
 function hostGone() {
+  const who = friendName(peers.get(net.hostId)) || 'Your friend';
   Net.on = false; Net.guest = false; Net.peers = 0;
   peers.clear(); net.tick = -1; net.later.length = 0;
   setSpeed(ui.speed || 1, true);
-  toast('🧺 Your friend has gone home. This meadow is yours to keep now.');
+  toast(`🧺 ${who} has gone home. This meadow is yours to keep now.`);
 }
 
 // Each friend's forager in this frame's items: where it is, slid between what it said, and its pose (as foragerFrame).
@@ -9112,7 +9186,17 @@ function peerItems(items, now, z) {
     }
     p.art = shownPose(p, FORAGER_ARTS[(p.outfit << 7) + (p.view << 5) + pose], px);
     const sx = (x - cam.x) * z + vw / 2, sy = (y - cam.y) * z + vh / 2;
-    if (visible(sx, sy, 2 * px)) itemOf(items, y, sx, sy, 1).q = p;
+    p.shown = visible(sx, sy, 2 * px); p.sx = sx; p.sy = sy;
+    if (p.shown) itemOf(items, y, sx, sy, 1).q = p;
+  }
+}
+// Each friend's name over it, on top of everything (as the pop-ups).
+function drawPeerNames() {
+  const px = forPx();
+  for (const p of peers.values()) {
+    if (!p.shown || !p.nameArt) continue;
+    const a = p.nameArt, fall = p.downAt ? p.fall * 0.6 : 0;
+    ctx.drawImage(a.img, Math.round(p.sx - a.w / 2), Math.round(p.sy - px * NAME_UP * (1 - fall) - 3 - a.h), a.w, a.h);
   }
 }
 function drawPeer(p, sx, sy) {
@@ -9138,13 +9222,17 @@ function drawPeer(p, sx, sy) {
 
 // A few times a second: how many are here, on the pill (shown only while together).
 function netCard(now) {
-  const on = !!(Net && Net.on), n = on ? peers.size + 1 : 0, key = on ? String(n) : '';
+  const on = !!(Net && Net.on), n = on ? peers.size + 1 : 0;
+  let names = '';
+  if (on) for (const p of peers.values()) names += (names ? ', ' : '') + (p.name || 'a friend');
+  const key = on ? n + ':' + names : '';
   if (key === net.shown) return;
   net.shown = key;
   const b = $('#friends-btn');
   b.classList.toggle('hidden', !on);
+  $('#name-item').classList.toggle('hidden', !on);
   b.textContent = '🧺 ' + n;
-  b.title = n > 1 ? `${n} of you foraging together` : 'Open to friends: waiting for someone to come';
+  b.title = n > 1 ? `Foraging together with ${names}` : 'Open to friends: waiting for someone to come';
 }
 
 // On a phone the share sheet (messages, chats), elsewhere the clipboard.
@@ -9181,6 +9269,7 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'together') together();
   else if (t.dataset.act === 'outfit') wearOutfit(+t.dataset.o);
   else if (t.dataset.act === 'pick-outfit') pickOutfit(true);
+  else if (t.dataset.act === 'pick-name') askName(true);
   else if (t.dataset.act === 'ideas') { played = -Infinity; askIdeas(true); }   // found it themselves: no need to ask
   else if (t.dataset.act === 'ask-later') askIdeas(false);
   else if (t.dataset.act === 'ask-send') sendIdea();
@@ -9263,13 +9352,14 @@ const back = { token: Math.random().toString(36).slice(2), depth: 0, going: fals
 const moreOpen = () => !$('#more-menu').classList.contains('hidden');
 function opened() {
   const ins = $('#inspector').classList, sheetUp = ins.contains('open') && narrow() && !ins.contains('strip');
-  return [askOpen(), moreOpen(), outfitOpen(), ins.contains('open'), sheetUp].filter(Boolean).length;
+  return [askOpen(), moreOpen(), outfitOpen(), nameOpen(), ins.contains('open'), sheetUp].filter(Boolean).length;
 }
 // The one on top shuts (Esc, and Back once for each step it takes).
 function stepOut() {
   const ins = $('#inspector').classList;
   if (askOpen()) askIdeas(false);
   else if (moreOpen()) toggleMore(false);
+  else if (nameOpen()) askName(false);
   else if (outfitOpen()) pickOutfit(false);
   else if (ins.contains('open') && narrow() && !ins.contains('strip')) { ui.sheetUp = false; $('#inspector').scrollTop = 0; renderInspector(); }
   else if (ins.contains('open')) select(0);
