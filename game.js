@@ -10752,7 +10752,28 @@ function resumeWorld(rec) {
 }
 
 document.addEventListener('visibilitychange', () => { if (document.hidden) keepMeadow(); else freshDb().catch(() => {}); });
+addEventListener('beforeunload', keepMeadow);         // (while the page still has a moment: by pagehide it's often too late)
 addEventListener('pagehide', keepMeadow);
+
+// A keep as the page goes doesn't land on a reload in Chrome: the page is gone before IndexedDB has written it (a put,
+// then neither complete nor abort), and the reload opened a new meadow. So while it's played the meadow is also kept
+// every KEEP_EVERY, in a quiet moment between frames (requestIdleCallback with KEEP_IDLE ms to spare, or after
+// KEEP_WAIT anyway): a keep is about 8 ms on a laptop (packWorld and IndexedDB's copy of it), none during the intro.
+const KEEP_EVERY = 30000, KEEP_IDLE = 12, KEEP_WAIT = 5000;
+const keepSoon = { due: 0, asked: false };
+const whenIdle = window.requestIdleCallback || ((f, o) => setTimeout(() => f({ didTimeout: true, timeRemaining: () => 0 }), 0));
+function keepTick(now) {
+  if (!keepSoon.due) keepSoon.due = now + KEEP_EVERY;
+  if (keepSoon.asked || now < keepSoon.due || intro.on) return;
+  keepSoon.asked = true;
+  const until = now + KEEP_WAIT;
+  const quiet = d => {
+    if (!d.didTimeout && d.timeRemaining() < KEEP_IDLE && performance.now() < until) { whenIdle(quiet, { timeout: KEEP_WAIT }); return; }
+    keepSoon.asked = false; keepSoon.due = performance.now() + KEEP_EVERY;
+    keepMeadow();
+  };
+  whenIdle(quiet, { timeout: KEEP_WAIT });
+}
 
 // ------------------------------------------------------------------ the loop
 
@@ -11028,6 +11049,7 @@ function frame(now) {
     if ((ui.selectedId || ui.picked) && !pressing && !(canHover.matches && $('#inspector').matches(':hover'))) renderInspector();
   }
   if (opening > 1 && ++opening > 4) cleared();       // a kept meadow that opened fine
+  keepTick(now);
   requestAnimationFrame(frame);
 }
 

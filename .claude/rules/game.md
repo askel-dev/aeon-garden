@@ -230,7 +230,9 @@ transform and a draw of its own, so they're thinned on trees drawn small (`LEAF_
 nearly 2000).
 
 The meadow is kept in the browser when the page is hidden or closed (`keepMeadow`: IndexedDB, under its link, the last
-`KEEP_MEADOWS`), never on a timer while someone watches (a save is a few frames). The next visit opens it where it was
+`KEEP_MEADOWS`), and every `KEEP_EVERY` while it's played, in a quiet moment between frames (`keepTick`: a keep is about
+8 ms on a laptop). A keep at `pagehide` alone never landed on a reload in Chrome (the page went before IndexedDB wrote it,
+and the reload opened a new meadow, intro and all), so it's also kept at `beforeunload`. The next visit opens it where it was
 (`resumeWorld`): the bare address the one watched last, a `?seed=` link its own. A kept meadow that won't open, or broke
 the page the last time it opened (`OPENING`), is let go. The ••• menu shares the link (a phone's share sheet) and takes
 ideas (the `#ask` card, also once by itself after two minutes of play: `askTick`). Visits are counted by GoatCounter
