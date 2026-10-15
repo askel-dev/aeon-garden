@@ -339,6 +339,18 @@
   #satchel.dragging, #satchel.dragging .slot { cursor: grabbing; }
   #satchel .slot.lifted i, #satchel .slot.lifted b { opacity: 0.3; }
   #satchel .slot.over { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
+  /* what's in a slot, a small label over it: on a mouse's hover, or a moment after a tap (game.js setupSatchel: .named);
+     the end slots keep theirs on screen */
+  #satchel .slot::after { content: attr(data-name); position: absolute; bottom: calc(100% + 7px); left: 50%; transform: translate(-50%, 3px);
+    padding: 2px 8px; border-radius: 9px; background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow);
+    font-size: 12px; font-weight: 800; line-height: 1.35; color: var(--ink); white-space: nowrap; pointer-events: none;
+    opacity: 0; transition: opacity 0.15s, transform 0.15s; }
+  #satchel .slot:nth-child(-n+2)::after { left: 0; transform: translateY(3px); }
+  #satchel .slot:nth-last-child(-n+2)::after { left: auto; right: 0; transform: translateY(3px); }
+  @media (hover: hover) { #satchel:not(.dragging) .slot:not([data-name=""]):hover::after { opacity: 1; transform: translate(-50%, 0); } }
+  #satchel .slot.named:not([data-name=""])::after { opacity: 1; transform: translate(-50%, 0); }
+  @media (hover: hover) { #satchel:not(.dragging) .slot:is(:nth-child(-n+2), :nth-last-child(-n+2)):not([data-name=""]):hover::after { transform: none; } }
+  #satchel .slot.named:is(:nth-child(-n+2), :nth-last-child(-n+2)):not([data-name=""])::after { transform: none; }
   .fly.held { width: 40px; height: 40px; z-index: 7; transition: opacity 0.15s; }
   .fly.held.out { opacity: 0.7; }
   /* a phone: a fingertip's slots, the row nearly as wide as the screen */

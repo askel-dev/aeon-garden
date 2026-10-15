@@ -3013,6 +3013,7 @@ function renderSatchel() {
     el.querySelector('i').classList.toggle('on', !!id);
     el.querySelector('b').textContent = n > 1 ? n : '';
     el.setAttribute('aria-label', id ? `${Recipes.INGREDIENTS[id]?.name || id}: ${n}` : 'Empty');
+    el.dataset.name = id ? Recipes.INGREDIENTS[id]?.name || id : '';
   }
   box.classList.toggle('empty', !any);
 }
@@ -3035,7 +3036,8 @@ function flyToSlot(id, sx, sy, k) {
 
 function setupSatchel() {
   const box = $('#satchel'), row = box.querySelector('.slots');
-  row.innerHTML = Array.from({ length: S.SLOTS }, (_, k) => `<div class="slot" data-k="${k}" aria-label="Empty"><i></i><b></b></div>`).join('');
+  row.innerHTML = Array.from({ length: S.SLOTS }, (_, k) => `<div class="slot" data-k="${k}" data-name="" aria-label="Empty"><i></i><b></b></div>`).join('');
+  // Hovered (or tapped) a full slot says what's in it, a small label over it (CSS, data-name).
   // A full slot can be dragged: once the press has moved HOLD_FROM px its painting follows the pointer (above a finger, so
   // it shows), and let go over another slot it goes there (S.moveSlot: onto a stack of its kind, or the two swap), off the
   // satchel it's dropped (S.dropSlot): it flies down to the forager's feet and lies there to be picked up again, for a while; anywhere else it goes back.
@@ -3070,7 +3072,10 @@ function setupSatchel() {
     const h = held;
     if (!h || e.pointerId !== h.pid) return;
     held = null;
-    if (!h.fly) return;
+    if (!h.fly) {                                         // (a tap: its name for a moment, as a mouse's hover shows it)
+      if (e.type === 'pointerup' && h.touch) { const el = row.children[h.k]; el.classList.add('named'); clearTimeout(el.unname); el.unname = setTimeout(() => el.classList.remove('named'), 1400); }
+      return;
+    }
     const F = world.forager, lifted = row.children[h.k], out = e.type === 'pointerup' && h.fly.classList.contains('out');
     h.over?.classList.remove('over');
     box.classList.remove('dragging');
