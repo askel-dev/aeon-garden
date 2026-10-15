@@ -34,7 +34,7 @@ if (COUNTER && !['localhost', '127.0.0.1'].includes(location.hostname)) {
 let world;
 const ui = {
   speed: 1, sound: false, selectedId: 0, picked: null, hoverId: 0, mark: null,   // mark: where the forager was sent
-  gather: null, slotTip: null,              // what the forager is off to pick { kind, it } (gatherFrame); the satchel's slot with its name open
+  gather: null,                             // what the forager is off to pick { kind, it } (gatherFrame)
   trail: [], effects: [], allStory: false, sheetUp: false,
   sky: { mix: {}, tick: 0, bolts: [], boom: -1e9, rainbow: -1e9, bowEnd: -1e9 },
 };
@@ -181,7 +181,13 @@ const spriteStep = px => px < 16 ? Math.round(px) : Math.round(2 ** (Math.round(
 // A fox or a rabbit changes pose as it goes, so each size it's drawn at takes a dozen paintings, and the young grow
 // through sizes all the time: their sprites come in steps of about 19%, the size above, drawn a little smaller. Below
 // the size they're painted at (shrunk) they're tiny and many, so one size an octave does, drawn up to half as big.
-const poseStep = px => px < FUR_PAINTED / dpr ? 2 ** Math.ceil(Math.log2(px)) : Math.ceil(2 ** (Math.ceil(Math.log2(px) * 4) / 4));
+// Close up, they're painted at one size, FUR_MOST screen pixels at most, and stretched a little past it: the forager's
+// 57 paintings at the doubling above (256 px on a sharp screen, 1.8 MB each) were more than the whole cache (SPRITE_BYTES),
+// so its walk was let go and painted again over and over, and it stuck in a pose.
+const FUR_MOST = 320;
+const furTop = () => Math.floor(FUR_MOST / dpr);
+const poseStep = px => px > furTop() / ZOOM_STRETCH ? furTop()
+  : px < FUR_PAINTED / dpr ? 2 ** Math.ceil(Math.log2(px)) : Math.ceil(2 ** (Math.ceil(Math.log2(px) * 4) / 4));
 const posed = art => isFur(art) || art.startsWith('hog:') || art.startsWith('heron:');
 function sprite(emoji, want, tint, leaf, center) {
   want = Math.max(4, want);
@@ -273,11 +279,13 @@ function paintedSprite(emoji, px, tint, leaf, center) {
   return s;
 }
 // A full cache lets go of the sprites not drawn in the last few frames (other zooms, looks gone
-// by), so the ones on screen aren't all painted again at once. Only if that isn't enough does it
-// start again from empty.
+// by), so the ones on screen aren't all painted again at once. The forager's paintings at the size it's drawn stay too
+// (keptForager): they're its walk, a frame or two from being drawn, and let go after a zoom they came back one by one
+// as it walked, and it stuck in a pose till each had. Only if that isn't enough does it start again from empty.
+const keptForager = s => s.look.startsWith('forager:') && (s.px === fg.sized || s.px === furPainted(fg.sized));
 function dropSprites(need) {
   for (const [key, s] of spriteCache) {
-    if (spriteFrame - s.used < 3) continue;
+    if (spriteFrame - s.used < 3 || keptForager(s)) continue;
     spriteBytes -= s.canvas.width * s.canvas.height * 4;
     freeImage(s.canvas);
     spriteCache.delete(key);
@@ -1195,6 +1203,10 @@ function render(now) {
     const sx = (f.x - cam.x) * z + vw / 2, sy = (f.y - cam.y) * z + vh / 2;
     if (visible(sx, sy, 2 * z + 20)) itemOf(items, f.y, sx, sy, 1 - mistAt(f.x, f.y)).s = f;
   }
+  for (const d of world.dropped) {                         // what the forager let fall
+    const sx = (d.x - cam.x) * z + vw / 2, sy = (d.y - cam.y) * z + vh / 2;
+    if (visible(sx, sy, 2 * z + 20)) itemOf(items, d.y, sx, sy, 1 - mistAt(d.x, d.y)).s = d;
+  }
   const shown = [];
   const far = 60 + OFF_SIZES * (8 + z);                    // (a crow up a tree is drawn out on its seat: always worked out)
   for (const c of world.creatures) {
@@ -1222,6 +1234,7 @@ function render(now) {
     if (fgBody.on) itemOf(items, d.y, sx, sy, 1).p = F;
   }
   sortByY(items);
+  drawPrints();                                            // the forager's footprints, on the ground under all
   // Shadows first, all together, so a tree's shadow never lands on a rabbit behind it.
   const sn = sun(ck);
   for (const it of items) {
@@ -1241,7 +1254,7 @@ function render(now) {
     fadeTo(it.f);
     if (it.d) it.d.hive ? drawBeeTree(it.d, it.sx, it.sy, now, ck) : drawDecor(it.d, it.sx, it.sy, now, ck, it.px);
     else if (it.h) drawSwarm(it.h, it.sx, it.sy);
-    else if (it.s) it.s.green ? drawNettles(it.s, z) : it.s.bramble ? drawBramble(it.s, z) : it.s.find ? drawFind(it.s, z) : drawShroom(it.s, z);
+    else if (it.s) it.s.green ? drawNettles(it.s, z) : it.s.bramble ? drawBramble(it.s, z) : it.s.find ? drawFind(it.s, z) : it.s.dropped ? drawDropped(it.s, z, now) : drawShroom(it.s, z);
     else if (it.v) drawVisitor(it.v, it.sx, it.sy, now, z);
     else if (it.p) drawForager(it.sx, it.sy, now);
     else drawCreature(it.c, it.sx, it.sy, now);
@@ -1860,7 +1873,7 @@ const FORAGER_JOG = [0.1, 0.11];           // sent running, it jogs once up past
 const FORAGER_STILL_MS = 70;               // no nearer than this to the last move, it's standing (it's drawn between ticks)
 const forPx = () => (8 + cam.zoom) * FORAGER_SIZE;
 const fg = { at: -1, x: 0, y: 0, step: 0, stillMs: 1e4, view: 1, flip: false, art: FORAGER_ARTS[32], blinkAt: -1e9, blinkIn: 3000,
-  fidgetAt: -1e9, fidgetIn: 9000, lastHalf: 0, jog: false, rings: [], wet: false, lx: -0, ly: -0, sized: 0, outfit: 0, picked: false, pick: -1e9 };
+  fidgetAt: -1e9, fidgetIn: 9000, lastHalf: 0, jog: false, rings: [], wet: false, lx: -0, ly: -0, sized: 0, outfit: 0, picked: false, pick: -1e9, printMs: -0 };
 try {
   const o = localStorage.getItem(OUTFIT);
   fg.picked = o !== null;
@@ -1898,6 +1911,7 @@ function foragerFrame(now, d) {
     pose = (fg.jog ? 16 : 8) + Math.floor(fg.step % 1 * 8);
     const half = Math.floor(fg.step * 2);                 // a foot comes down: in the shallows, a ring
     if (half !== fg.lastHalf && fg.wet && ui.speed > 0) fg.rings.push({ x: d.x, y: d.y, t: now });
+    if (half !== fg.lastHalf && ui.speed > 0 && !fg.wet) footprint(d.x, d.y, f.heading, half & 1);
     if (half !== fg.lastHalf && ui.speed > 0) hear('step', d.x, d.y, { pace: f.speed / S.FORAGER_WALK, foot: half & 1, ground: groundUnder(d.x, d.y) }, true);   // (each foot down; the quicker it goes, the quicker and crisper they come)
     fg.lastHalf = half;
     fg.fidgetIn = fg.stillMs + FORAGER_FIDGET[0] * (0.6 + 0.4 * Math.random());
@@ -1910,8 +1924,57 @@ function foragerFrame(now, d) {
     const p = now - fg.pick;                              // picking (gatherFrame): stooped, reaching down, back up
     if (p < PICK_MS[2]) { pose = p < PICK_MS[0] || p > PICK_MS[1] ? 3 : 4; fg.stillMs = FORAGER_STILL_MS + 1; fg.fidgetIn = FORAGER_FIDGET[0]; }
   }
+  if (ui.speed > 0) fg.printMs += ms;                   // (prints fade only while the meadow goes on)
   if (fg.rings.length && now - fg.rings[0].t > 900) fg.rings.shift();
   fg.art = shownPose(f, FORAGER_ARTS[(fg.outfit << 7) + (fg.view << 5) + pose], px);
+}
+// Its footprints: one at each foot down, a little to that foot's side, fading as the ground takes them back: soon in
+// grass, slower in earth and the damp sand, slowest in snow. A ring of PRINTS kept in typed arrays (nothing made a step),
+// each drawn as one small painting (PRINT_ART), turned along the way it went and laid flat on the ground.
+const PRINTS = 160, PRINT_FADE = 0.5;      // (the last half of its life it fades)
+const PRINT_GROUND = { grass: [12000, 0.26, 0], woods: [16000, 0.3, 0], earth: [22000, 0.36, 0], shore: [28000, 0.4, 0], snow: [45000, 0.55, 1] };
+const pr = { x: new Float32Array(PRINTS), y: new Float32Array(PRINTS), h: new Float32Array(PRINTS), t: new Float64Array(PRINTS),
+  life: new Float32Array(PRINTS), a: new Float32Array(PRINTS), art: new Uint8Array(PRINTS), next: 0, n: 0 };
+let PRINT_ART = null;
+function printArt() {                      // a sole, toe up: soft, earth-brown and snow-blue
+  const W = 24, H = 48;
+  PRINT_ART = ['rgb(62, 44, 28)', 'rgb(96, 116, 150)'].map(col => {
+    const c = document.createElement('canvas');
+    c.width = W; c.height = H;
+    const g = c.getContext('2d');
+    g.filter = 'blur(1.5px)'; g.fillStyle = col;
+    g.beginPath(); g.ellipse(W / 2, H * 0.34, W * 0.3, H * 0.22, 0, 0, TAU); g.fill();
+    g.beginPath(); g.ellipse(W / 2, H * 0.74, W * 0.24, H * 0.14, 0, 0, TAU); g.fill();
+    const art = { img: c };
+    asBitmap(c, b => { art.img = b; });
+    return art;
+  });
+  return PRINT_ART;
+}
+function footprint(x, y, heading, foot) {
+  const kind = groundUnder(x, y), g = PRINT_GROUND[kind];
+  if (!g) return;                          // (none on ice or in the water)
+  const side = (foot ? 1 : -1) * 0.055 * forPx() / cam.zoom, i = pr.next;
+  pr.x[i] = x - Math.sin(heading) * side; pr.y[i] = y + Math.cos(heading) * side; pr.h[i] = heading;
+  pr.t[i] = fg.printMs; pr.life[i] = g[0]; pr.a[i] = g[1]; pr.art[i] = g[2];
+  pr.next = (i + 1) % PRINTS; if (pr.n < PRINTS) pr.n++;
+}
+function drawPrints() {
+  if (!pr.n || zoomedOut()) return;
+  const arts = PRINT_ART || printArt(), z = cam.zoom, len = forPx() * 0.15, k = len / 48 * dpr, flat = 0.6;
+  let drawn = false;
+  for (let j = 0; j < pr.n; j++) {
+    const age = fg.printMs - pr.t[j], life = pr.life[j];
+    if (age >= life) continue;
+    const sx = (pr.x[j] - cam.x) * z + vw / 2, sy = (pr.y[j] - cam.y) * z + vh / 2;
+    if (!visible(sx, sy, len)) continue;
+    const cs = Math.cos(pr.h[j]) * k, sn = Math.sin(pr.h[j]) * k;
+    ctx.globalAlpha = pr.a[j] * Math.min(1, (life - age) / (life * PRINT_FADE)) * Math.min(1, age / 150);
+    ctx.setTransform(-sn, cs * flat, -cs, -sn * flat, sx * dpr + shakeX, sy * dpr + shakeY);
+    ctx.drawImage(arts[pr.art[j]].img, -12, -24);
+    drawn = true;
+  }
+  if (drawn) { ctx.setTransform(dpr, 0, 0, dpr, shakeX, shakeY); ctx.globalAlpha = 1; }
 }
 function drawForager(sx, sy, now) {
   const px = forPx(), art = fg.art, flip = fg.flip, top = sy - px * 0.36;   // (its painting's middle: the feet are at 0.72 of its half-size)
@@ -2081,6 +2144,13 @@ function gatherAt(sx, sy) {
   const h = hiveAt(sx, sy);
   if (h) return { kind: 'hive', it: h };
   let best = null, bd = Infinity;
+  for (const d of world.dropped) {                     // (lying on top of all: first)
+    if (Math.abs(d.x - wx) > 3 || Math.abs(d.y - wy) > 3) continue;
+    const px = dropPx(d, z), x = (d.x - cam.x) * z + vw / 2, y = (d.y - cam.y) * z + vh / 2 - px * 0.3;
+    const r = Math.max(14 * f, px * 0.55), e = ((x - sx) ** 2 + (y - sy) ** 2) / (r * r);
+    if (e < 1 && e < bd) { best = d; bd = e; }
+  }
+  if (best) return { kind: 'dropped', it: best };
   for (const m of world.shrooms) {
     if (Math.abs(m.x - wx) > 3 || Math.abs(m.y - wy) > 4) continue;
     placeShroom(m, z);
@@ -2131,6 +2201,9 @@ function gatherSpot(kind, it) {
   if (kind === 'shroom') {
     placeShroom(it, z);
     gspot.reach = 0.45; gspot.gx = shroomAt.x; gspot.gy = shroomAt.y; gspot.rx = gspot.ry = Math.max(10, shroomAt.px * 0.62);
+  } else if (kind === 'dropped') {
+    const px = dropPx(it, z);
+    gspot.reach = 0.35; gspot.gy = sy - px * 0.3; gspot.rx = Math.max(10, px * 0.5); gspot.ry = Math.max(10, px * 0.45);
   } else if (kind === 'find') {
     const px = findPx(it, z);
     gspot.reach = 0.35 + FIND_PX[it.kind] * 0.2; gspot.gy = sy - px * 0.31; gspot.rx = Math.max(10, px * 0.5); gspot.ry = Math.max(10, px * 0.42);
@@ -2180,6 +2253,7 @@ function gatherFrame(now) {
   if (Math.hypot(F.x - s.x, F.y - s.y) > s.reach + 0.9) { say('Can\'t reach it', s.x, s.y); return; }
   const r = S.gather(world, g.kind, g.it);
   if (!r.n) { if (r.why === 'full') say('Satchel\'s full', F.x, F.y - 1.6); else if (r.why) say(r.why, s.x, s.y); return; }
+  aim.moved = true;                                     // (what the mouse is on may be gone now: look again)
   const dx = s.x - F.x, dy = s.y - F.y;                 // it turns to it, and stoops
   fg.view = Math.abs(dy) > Math.abs(dx) * 0.8 ? (dy > 0 ? 1 : 2) : 0;
   if (Math.abs(dx) > 0.05) fg.flip = dx > 0;
@@ -2432,8 +2506,7 @@ function drawPickArrow(now) {
 //
 // A row of SLOTS small parchment slots at the bottom in the middle (#satchel), faint and slim while it's empty. Each shows
 // what's in it, painted in the meadow's style (itemSheet: the mushrooms, greens and windfalls as the meadow paints them,
-// and paintItem for the rest, all once into one sheet), and how many. A tap on a slot shows its name over it with Drop
-// (#slot-tip); Back or Esc shuts that (stepOut). It's sim.js's w.forager.bag, so it's kept with the meadow.
+// and paintItem for the rest, all once into one sheet), and how many. It's sim.js's w.forager.bag, so it's kept with the meadow.
 const ITEM_IDS = Object.keys(Recipes.INGREDIENTS), ITEM_PX = 96;   // (two device pixels a CSS pixel at 48)
 const ITEM_ART = { apple: 'fall:0', acorns: 'fall:1', blackberry: 'item:0', cherry: 'item:1', honey: 'item:2', beechnuts: 'item:3', garlic: 'green:0', nettle: 'green:6' };
 S.SHROOM_KINDS.forEach((k, i) => { ITEM_ART[k] = 'shroom:' + i * 3; });   // (SHROOM_ARTS: the fewest caps)
@@ -2538,8 +2611,6 @@ function renderSatchel() {
     el.setAttribute('aria-label', id ? `${Recipes.INGREDIENTS[id]?.name || id}: ${n}` : 'Empty');
   }
   box.classList.toggle('empty', !any);
-  const tip = ui.slotTip;
-  if (tip !== null && !F.bag[tip]) openSlot(null);
 }
 
 // The thing flies from where it was picked (sx, sy) into its slot, and the slot bumps as it lands. One small element, a
@@ -2558,32 +2629,61 @@ function flyToSlot(id, sx, sy, k) {
   a.onfinish = () => { fly.remove(); renderSatchel(); el.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.18)' }, { transform: 'scale(1)' }], { duration: 220, easing: 'ease-out' }); };
 }
 
-// A slot's name over it with Drop (k), or shut (null).
-function openSlot(k) {
-  const F = world.forager, tip = $('#slot-tip');
-  ui.slotTip = k !== null && F.bag[k] ? k : null;
-  $('#satchel').querySelectorAll('.slot').forEach((el, i) => el.classList.toggle('open', i === ui.slotTip));
-  if (ui.slotTip === null) { tip.classList.add('hidden'); return; }
-  const id = F.bag[k], el = $('#satchel').querySelectorAll('.slot')[k];
-  tip.querySelector('.n').textContent = `${itemName(id, F.bagN[k])}${F.bagN[k] > 1 ? ' × ' + F.bagN[k] : ''}`;
-  tip.classList.remove('hidden');
-  const box = $('#satchel').getBoundingClientRect(), r = el.getBoundingClientRect();
-  const half = tip.offsetWidth / 2 + 8;                // (kept on the screen, over the end slots too)
-  tip.style.left = `${clamp(r.left + r.width / 2, half, innerWidth - half) - box.left}px`;
-}
 function setupSatchel() {
   const box = $('#satchel'), row = box.querySelector('.slots');
-  row.innerHTML = Array.from({ length: S.SLOTS }, (_, k) => `<button class="slot" data-k="${k}" aria-label="Empty"><i></i><b></b></button>`).join('');
-  row.addEventListener('click', e => {
-    const el = e.target.closest('.slot');
-    if (el) openSlot(ui.slotTip === +el.dataset.k ? null : +el.dataset.k);
+  row.innerHTML = Array.from({ length: S.SLOTS }, (_, k) => `<div class="slot" data-k="${k}" aria-label="Empty"><i></i><b></b></div>`).join('');
+  // A full slot can be dragged: once the press has moved HOLD_FROM px its painting follows the pointer (above a finger, so
+  // it shows), and let go over another slot it goes there (S.moveSlot: onto a stack of its kind, or the two swap), off the
+  // satchel it's dropped (S.dropSlot): it flies down to the forager's feet and lies there to be picked up again, for a while; anywhere else it goes back.
+  const HOLD_FROM = 6, slotAt = (x, y) => document.elementFromPoint(x, y)?.closest('#satchel .slot');
+  let held = null;                          // { k, id, pid, x, y, fly, over, touch }
+  const place = (h, x, y) => { h.fly.style.transform = `translate(${x - 20}px, ${y - (h.touch ? 58 : 20)}px)`; };
+  row.addEventListener('pointerdown', e => {
+    const el = e.target.closest('.slot'), F = world && world.forager;
+    if (held || !el || !F || e.button > 0 || !F.bag[+el.dataset.k]) return;
+    held = { k: +el.dataset.k, id: F.bag[+el.dataset.k], pid: e.pointerId, x: e.clientX, y: e.clientY, fly: null, over: null, touch: e.pointerType !== 'mouse' };
+    el.setPointerCapture(e.pointerId);
+    e.preventDefault();
   });
-  $('#slot-tip').querySelector('[data-drop]').addEventListener('click', () => {
-    if (ui.slotTip === null) return;
-    S.dropSlot(world.forager, ui.slotTip);
-    openSlot(null); renderSatchel();
+  row.addEventListener('pointermove', e => {
+    const h = held;
+    if (!h || e.pointerId !== h.pid) return;
+    if (!h.fly) {
+      if (Math.hypot(e.clientX - h.x, e.clientY - h.y) < HOLD_FROM) return;
+      h.fly = document.createElement('div');
+      h.fly.className = 'fly held'; h.fly.style.backgroundPosition = itemBg(h.id);
+      document.body.appendChild(h.fly);
+      row.children[h.k].classList.add('lifted');
+      box.classList.add('dragging');
+    }
+    place(h, e.clientX, e.clientY);
+    const over = slotAt(e.clientX, h.touch ? e.clientY - 38 : e.clientY) || null;
+    if (over !== h.over) { h.over?.classList.remove('over'); h.over = over; over?.classList.add('over'); }
+    const out = !over && !document.elementFromPoint(e.clientX, e.clientY)?.closest('#satchel');
+    h.fly.classList.toggle('out', out);
   });
-  addEventListener('pointerdown', e => { if (ui.slotTip !== null && !e.target.closest('#satchel')) openSlot(null); }, true);
+  const letGo = e => {
+    const h = held;
+    if (!h || e.pointerId !== h.pid) return;
+    held = null;
+    if (!h.fly) return;
+    const F = world.forager, lifted = row.children[h.k], out = e.type === 'pointerup' && h.fly.classList.contains('out');
+    h.over?.classList.remove('over');
+    box.classList.remove('dragging');
+    if (e.type === 'pointerup' && h.over && +h.over.dataset.k !== h.k && F.bag[h.k] === h.id) S.moveSlot(F, h.k, +h.over.dataset.k);
+    else if (out && F.bag[h.k] === h.id) {                // (it flies down to the forager's feet, and lands there)
+      const d = S.dropSlot(world, h.k), [tx, ty] = toScreen(d.x, d.y), px = dropPx(d, cam.zoom), from = h.fly.style.transform;
+      const to = `translate(${tx - 20}px, ${ty - px * 0.3 - 20}px)`, k = clamp(px / 40, 0.3, 1.2);
+      dropLand.set(d, performance.now() + DROP_FLY);
+      h.fly.animate([{ transform: `${from} scale(1)`, opacity: 1 }, { transform: `${to} scale(${k})`, opacity: 0.9 }], { duration: DROP_FLY, easing: 'ease-in' })
+        .onfinish = () => h.fly.remove();
+      lifted.classList.remove('lifted'); renderSatchel();
+      return;
+    }
+    h.fly.remove(); lifted.classList.remove('lifted'); renderSatchel();
+  };
+  row.addEventListener('pointerup', letGo);
+  row.addEventListener('pointercancel', letGo);
 }
 
 // Zoomed out further than the meadow fills the screen, a grown rabbit is under SMALL_PX and hundreds of animals can be
@@ -4011,6 +4111,27 @@ function drawFind(f, z) {
     { alpha: left < FIND_OVER ? 0.3 + 0.7 * left / FIND_OVER : undefined, flip: f.born % 2 === 1 });
 }
 
+// What the forager dropped (sim.js w.dropped): its satchel painting, lying on the ground at about a find's size, a pile
+// a little bigger. It lands as the one flying down from the satchel gets there (dropLand), with a little bounce, and
+// fades over its last DROP_FADE of DROP_DAYS (then it's gone).
+const DROP_FLY = 340, DROP_BOUNCE = 220, DROP_FADE = 0.25;   // ms the fall takes, ms of the bounce, the share of its time it fades over
+const dropLand = new Map();                                 // a drop still flying down: when it lands (ms)
+const dropPx = (d, z) => Math.max(8, (8 + z) * 0.6 * (ITEM_FILL[d.kind] || 1) * (d.n > 4 ? 1.15 : 1));   // (about a quarter of the forager)
+function drawDropped(d, z, now) {
+  let px = dropPx(d, z), lift = 0;
+  const lands = dropLand.get(d);
+  if (lands !== undefined) {
+    if (now < lands) return;
+    const t = (now - lands) / DROP_BOUNCE;
+    if (t >= 1) dropLand.delete(d);
+    else { lift = Math.sin(t * Math.PI) * px * 0.25 * (1 - t); px *= 1 + 0.12 * Math.sin(t * Math.PI); }
+  }
+  const left = (d.until - world.tick) / (S.DROP_DAYS * S.TPD);
+  if (left <= 0) return;                                    // (gone: sim.js takes it off the list within a second)
+  drawEmoji(ITEM_ART[d.kind] || Recipes.INGREDIENTS[d.kind]?.icon || '❔', (d.x - cam.x) * z + vw / 2, (d.y - cam.y) * z + vh / 2 - px * 0.3 - lift, px,
+    { alpha: left < DROP_FADE ? 0.25 + 0.75 * left / DROP_FADE : undefined });
+}
+
 function paintFind(g, size, U, n) {
   g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
   g.lineCap = g.lineJoin = 'round';
@@ -4560,7 +4681,7 @@ const foxArtOf = (fur, pose) => FOX_ARTS[(Math.round(fur * 10) << 4) + FOX_POSE[
 // next size up, shrunk. True if it was.
 const FUR_PAINTED = 64;
 // The size a fox's or a rabbit's sprite px across is painted at: px itself at a doubling, else the doubling above.
-const furPainted = px => 2 ** Math.ceil(Math.max(Math.log2(FUR_PAINTED / dpr), Math.log2(px) - 1e-6));   // (a power of two, as poseStep keeps it)
+const furPainted = px => Math.min(furTop(), 2 ** Math.ceil(Math.max(Math.log2(FUR_PAINTED / dpr), Math.log2(px) - 1e-6)));   // (a power of two, as poseStep keeps it, or its biggest)
 function shrunk(g, size, U, art) {
   const px = U / dpr, painted = furPainted(px);
   if (px >= painted - 0.5) return false;
@@ -5450,7 +5571,11 @@ const HIVE_DOOR = [1, -38];              // the hive's sill in the hive oak's pa
 // Paintings go by number, so a frame builds no names: the tree (kind, shape, tone, form), its look, the size (its
 // place in TREE_TIERS) and the snow, packed together.
 const ART_KINDS = { oak: 0, hive: 1, beech: 2, maple: 3, birch: 4, pine: 5, alder: 6, apple: 7, cherry: 8, hawthorn: 9, log: 10, stump: 11 };
-const ART_LOOKS = { summer: 0, spring: 1, bud: 2, autumn: 3, thin: 4, winter: 5, bare: 6, dead: 7 }, ART_LOOK_N = 8;
+const ART_LOOKS = { summer: 0, spring: 1, bud: 2, autumn: 3, thin: 4, winter: 5, bare: 6, dead: 7, crop3: 8, crop2: 9, crop1: 10, crop0: 11 }, ART_LOOK_N = 12;
+// A cherry's summer look as it's picked (S.cherryShow: quarters of its cherries left; trees.js LOOKS), so a pick
+// paints it afresh once, never a frame. Its stand-in (treeKin) is its full summer look.
+const CROP_LOOKS = ['crop0', 'crop1', 'crop2', 'crop3', 'summer'];
+const kinLook = look => look.startsWith('crop') ? 'summer' : look;
 const ART_TONES = { 0: 0, 1: 1, 2: 2, 3: 3, bark: 4, grey: 5, birch: 6 };
 const treeKey = (kind, shape, tone, form) => ((ART_KINDS[kind] * 4 + shape) * 8 + ART_TONES[tone]) * 2 + form;
 // treeAny: a painting of each tree, in any look, till its own comes. treeKin: a small one of each kind in each
@@ -5603,12 +5728,13 @@ function drawPaintedTree(d, sx, sy, now, ck, stage = S.treeStage(world, d), px =
   const form = YOUNG.has(stage) ? 1 : 0, shape = Math.floor(hash2(hx, hy, 46) * TREE_SHAPES) % (form ? 2 : TREE_SHAPES);
   const f = px / TREE_UNIT, want = f * dpr, tier = TREE_TIERS.find(t => t >= want * 0.9) || TREE_TIERS[TREE_TIERS.length - 1];
   const snow = step(world.snow * 1.6 - 0.1, 4), tone = wood ? LOG_BARK[d.kind] || 'bark' : d.tone ?? 0;
-  const [a, b, m] = wood ? ['summer', null, 0] : stage === 'dead' ? ['dead', null, 0] : treeStage(kind, d, ck);
+  let [a, b, m] = wood ? ['summer', null, 0] : stage === 'dead' ? ['dead', null, 0] : treeStage(kind, d, ck);
+  if (kind === 'cherry' && (a === 'summer' || b === 'summer')) { const crop = CROP_LOOKS[S.cherryShow(world, d)]; if (a === 'summer') a = crop; else b = crop; }
   let A = m < 1 ? treePainting(kind, shape, bareLook(kind, a) ? 0 : tone, form, a, tier, snow > 0) : null;
   let B = b && m > 0 ? treePainting(kind, shape, bareLook(kind, b) ? 0 : tone, form, b, tier, snow > 0) : null;
   if (!A && !B) {                                            // till this one comes: its kind in this look, or another look of it
-    const look = m > 0.5 ? b : a;
-    A = treeKin.get(ART_KINDS[kind] * ART_LOOK_N + ART_LOOKS[look]) || treeAny.get(treeKey(kind, shape, tone, form));
+    const want = m > 0.5 ? b : a, look = kinLook(want), own = treeAny.get(treeKey(kind, shape, tone, form)), kin = treeKin.get(ART_KINDS[kind] * ART_LOOK_N + ART_LOOKS[look]);
+    A = kind === 'cherry' && CROP_LOOKS.includes(want) ? own || kin : kin || own;   // (a cherry picked, or ripe, keeps its own painting till the new one comes)
     if (!A) { wantKin(kind, look, true); if (!treeWaits.has(d)) treeWaits.set(d, 0); return false; }
   }
   let show = 1;
@@ -5951,24 +6077,26 @@ function softSpot(g, x, y, rx, ry, rgb, a) {
 }
 
 // The hive's tree: the hive oak, the hive in its trunk.
+const HONEY_DRIPS = [[-0.4, 1, 2.6], [0.45, 4, 1.6]];   // the honey over the sill: where (of the door's half-width), from how many picks spare, how long
 function drawBeeTree(d, sx, sy, now, ck) {
   const h = d.hive, px = d.size * cam.zoom;
   if (!drawPaintedTree(d, sx, sy, now, ck)) return;          // nothing to show yet: it fades in when its painting comes
   const f = px / TREE_UNIT, a = treeSway(d, now);           // (the door sways with the tree)
-  const hx = sx + HIVE_DOOR[0] * f - HIVE_DOOR[1] * f * Math.sin(a), sill = sy + HIVE_DOOR[1] * f, rx = 0.02, ry = 0.066;
+  const hx = sx + HIVE_DOOR[0] * f - HIVE_DOOR[1] * f * Math.sin(a), sill = sy + HIVE_DOOR[1] * f, rx = 0.02;
   // Bees on the sill, a few wandering on the bark; they shuffle while time runs.
-  // A full hive has honey oozing over the sill.
-  if (h.honey > 0.5 * S.HIVE_FULL) {
-    const x = hx - rx * px * 0.85, y = sill - ry * px * 0.45, r = px * 0.011;
-    const len = r * (1 + 1.5 * Math.min(1, 2 * h.honey / S.HIVE_FULL - 1));
-    const g = ctx.createLinearGradient(x - r, y, x + r, y + len);
-    g.addColorStop(0, 'rgba(255, 205, 90, 0.95)'); g.addColorStop(1, 'rgba(205, 125, 15, 0.95)');
-    ctx.fillStyle = g;
-    ctx.beginPath(); ctx.moveTo(x - r * 0.5, y);
-    ctx.quadraticCurveTo(x - r * 0.5, y + len - r, x - r, y + len); ctx.arc(x, y + len, r, Math.PI, 0, true);
-    ctx.quadraticCurveTo(x + r * 0.5, y + len - r, x + r * 0.5, y); ctx.fill();
-    ctx.fillStyle = 'rgba(255, 250, 225, 0.85)';
-    ctx.beginPath(); ctx.arc(x - r * 0.35, y + len - r * 0.2, r * 0.3, 0, TAU); ctx.fill();
+  // A hive with honey to spare has it dripping off the sill (S.honeySpare: picks of it), a deep amber that shows on the
+  // straw: a drip longer the more there is, and a second while there's plenty (HONEY_DRIPS). One taken down to what the
+  // bees keep has none.
+  const spare = S.honeySpare(world, h);
+  for (let j = 0; j < HONEY_DRIPS.length && spare >= HONEY_DRIPS[j][1]; j++) {
+    const [at, from, long] = HONEY_DRIPS[j], x = hx + at * rx * px, r = px * 0.011, y = sill - r * 0.6;
+    const len = r * (1 + long * Math.min(1, (spare - from) / 4));
+    ctx.fillStyle = 'rgb(206, 118, 16)';
+    ctx.beginPath(); ctx.moveTo(x - r * 0.55, y);
+    ctx.quadraticCurveTo(x - r * 0.55, y + len - r, x - r, y + len); ctx.arc(x, y + len, r, Math.PI, 0, true);
+    ctx.quadraticCurveTo(x + r * 0.55, y + len - r, x + r * 0.55, y); ctx.fill();
+    ctx.fillStyle = 'rgba(255, 236, 190, 0.9)';
+    ctx.beginPath(); ctx.arc(x - r * 0.35, y + len - r * 0.2, r * 0.32, 0, TAU); ctx.fill();
   }
   const n = Math.min(16, 3 + h.bees), b = cam.zoom * 0.045, t = ui.speed > 0 ? performance.now() / 700 : 0;
   for (let i = 0; i < n; i++) {
@@ -8512,13 +8640,12 @@ const back = { token: Math.random().toString(36).slice(2), depth: 0, going: fals
 const moreOpen = () => !$('#more-menu').classList.contains('hidden');
 function opened() {
   const ins = $('#inspector').classList, sheetUp = ins.contains('open') && narrow() && !ins.contains('strip');
-  return [askOpen(), moreOpen(), outfitOpen(), ins.contains('open'), sheetUp, ui.slotTip !== null].filter(Boolean).length;
+  return [askOpen(), moreOpen(), outfitOpen(), ins.contains('open'), sheetUp].filter(Boolean).length;
 }
 // The one on top shuts (Esc, and Back once for each step it takes).
 function stepOut() {
   const ins = $('#inspector').classList;
   if (askOpen()) askIdeas(false);
-  else if (ui.slotTip !== null) openSlot(null);
   else if (moreOpen()) toggleMore(false);
   else if (outfitOpen()) pickOutfit(false);
   else if (ins.contains('open') && narrow() && !ins.contains('strip')) { ui.sheetUp = false; $('#inspector').scrollTop = 0; renderInspector(); }
@@ -8659,6 +8786,7 @@ function randomSeed() { return Math.floor(Math.random() * 1e6); }
 
 function newWorld(seed) {
   showWorld(S.createWorld(seed));
+  pr.n = 0; pr.next = 0;                   // (no footprints from the last meadow)
   history.replaceState(history.state, '', meadowLink(seed));   // (the state: Back's step, if one's open)
   homeView();
   if (!fg.picked) pickOutfit(true);             // (only till one has been picked: after that it's in •••)
@@ -8709,7 +8837,7 @@ function showWorld(w) {
   paintTerrain();
   renderInspector();
   updateClock();
-  openSlot(null); renderSatchel();
+  renderSatchel();
 }
 
 let last = performance.now(), acc = 0, lastCard = 0;
@@ -8893,6 +9021,6 @@ try { if (localStorage.getItem('aeon-garden-sound') === '1') toggleSound(true); 
 
 for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => { if (ui.sound) Sound.start(); }, { once: true });
 
-window.garden = { get world() { return world; }, ui, cam, forager: fg,   // handy in the console
+window.garden = { get world() { return world; }, ui, cam, forager: fg, prints: pr,   // handy in the console
   get trees() { return { worker: !!treeWorker, workers: treeWorkers.length, art: treeArt, bytes: treeBytes, asked: treeAsked.size, busy: treeBusy }; } };
 })();

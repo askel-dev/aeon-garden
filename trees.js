@@ -52,6 +52,7 @@ const L = norm([-0.55, -0.75, 0.55]);          // the light: top left, a little 
 const HV = norm([L[0], L[1], L[2] + 1]);       // half-vector, for the shine on fruit
 let SS = 3, OUT = 1;                           // px sculpted, and px painted, per px of the tree at scale 1 (SS may be under 1 for a small painting)
 let LEAVES = { keep: 1, size: 1 };             // the share of leaf clumps kept and how big (fewer or smaller: LOOKS)
+let FRUIT = 1;                                 // the share of the fruit hung (a cherry tree picked: LOOKS crop0 to crop3)
 let SEASON = 'summer', OWN = null;             // the season painted, and the tree's own random numbers (its colour)
 let TONE = null, YOUNG = 0, DEAD = false;      // its tone (null: from OWN), 1 for the young form, and dead
 let HIDE = 0, BREAK = null;                    // a dead tree's broken limbs: while HIDE, nothing is added (grow)
@@ -137,6 +138,7 @@ class Scene {
     this.w = w; this.h = h; this.W = Math.ceil(w * SS); this.H = Math.ceil(h * SS); this.base = [bx, by];
     this.z = new Float32Array(this.W * this.H).fill(-1e9);
     this.id = new Int32Array(this.W * this.H).fill(-1);
+    this.fz = this.fid = null;                     // the fruit's (raster), if it has any
     this.s = [];
   }
   // p in px at scale 1 (z toward the viewer), r its radius, look { mat, ramp }; clump: the clump's
@@ -149,9 +151,14 @@ class Scene {
     if (wood && DEAD && look.ramp === 'bark') look = DEADWOOD;
     this.s.push({ x: p[0] * SS, y: p[1] * SS, z: p[2] * SS, r: r * SS, look, clump, crown, tone, dir });
   }
+  // The fruit and flowers on top (MAT onTop) go in a layer of their own (fz, fid), hidden only by what's in front of
+  // them, so the leaves under them are the same with or without them (a cherry tree picked: LOOKS crop0 to crop3).
   raster() {
     const { W, H, z, id } = this, floor = Math.min(H, Math.ceil((this.base[1] + 1.5) * SS));   // cut off flat at the ground, no round foot
-    this.s.forEach((s, i) => {
+    let fz = null, fid = null;
+    for (const onTop of [false, true]) this.s.forEach((s, i) => {
+      if (!MAT[s.look.mat].onTop !== !onTop) return;
+      if (onTop && !fz) { fz = this.fz = new Float32Array(W * H).fill(-1e9); fid = this.fid = new Int32Array(W * H).fill(-1); }
       const r2 = s.r * s.r, lobe = MAT[s.look.mat].lobe || 0, ph = i * 2.39, nl = 3 + (i * 7 % 4);
       for (let py = Math.max(0, Math.floor(s.y - s.r)); py < Math.min(floor, Math.ceil(s.y + s.r)); py++) {
         const dy = py + 0.5 - s.y;
@@ -165,7 +172,8 @@ class Scene {
             const f = 1 - lobe * (0.5 + 0.5 * Math.cos(nl * Math.atan2(dy, dx) + ph)); d2 /= f * f; if (d2 > r2) continue;
           }
           const zz = s.z + Math.sqrt(r2 - d2);
-          if (zz > z[k]) { z[k] = zz; id[k] = i; }
+          if (zz <= z[k]) continue;
+          if (!onTop) { z[k] = zz; id[k] = i; } else if (zz > fz[k]) { fz[k] = zz; fid[k] = i; }
         }
       }
     });
@@ -174,17 +182,17 @@ class Scene {
   // the crown, snow 0..1 (or layer: the snow apart, see Use), birchFoot where a birch's trunk turns dark.
   paint(o = {}) {
     this.raster();
-    const { W, H, z, id, s: S } = this, img = new ImageData(W, H), d = img.data, top = new ImageData(W, H), snowy = o.layer && new ImageData(W, H);
+    const { W, H, z, id, fz, fid, s: S } = this, img = new ImageData(W, H), d = img.data, top = new ImageData(W, H), snowy = o.layer && new ImageData(W, H);
     const snow = o.layer ? 1 : o.snow;
     // The loop runs over every pixel (a few hundred thousand), so it makes no arrays: Safari is slow at that.
     const aoR = (o.aoR || 6) * SS * LOOK.crevice, TX = new Int32Array(12), TY = new Int32Array(12);
     for (let k = 0; k < 12; k++) { const a = k / 12 * Math.PI * 2, rr = aoR * (k % 2 ? 0.5 : 1); TX[k] = Math.round(Math.cos(a) * rr); TY[k] = Math.round(Math.sin(a) * rr); }
     const T = new Float32Array(W * H), RP = new Array(W * H), SA = new Float32Array(W * H), leaves = [], strokes = [];
     const mats = S.map(s => MAT[s.look.mat]), ramps = S.map(s => RAMPS[s.look.ramp]), c = [0, 0, 0], sc = [0, 0, 0];
-    for (let py = 0; py < H; py++) for (let px = 0; px < W; px++) {
-      const k = py * W + px, i = id[k];
+    for (let py = 0; py < H; py++) for (let px = 0; px < W; px++) for (let onTop = 0; onTop < 2; onTop++) {   // (the leaves and bark, then the fruit)
+      const k = py * W + px, i = onTop ? (fid ? fid[k] : -1) : id[k];
       if (i < 0) continue;
-      const s = S[i], m = mats[i], pz = z[k], w = m.w;
+      const s = S[i], m = mats[i], pz = onTop ? fz[k] : z[k], w = m.w;
       let nx = (px + 0.5 - s.x) / s.r * w[0], ny = (py + 0.5 - s.y) / s.r * w[0], nz = (pz - s.z) / s.r * w[0], l;
       if (s.clump && w[1]) {
         const ax = px - s.clump[0] * SS, ay = py - s.clump[1] * SS, az = pz - s.clump[2] * SS;
@@ -219,9 +227,8 @@ class Scene {
           else { for (let j = 0; j < 3; j++) c[j] += (sc[j] - c[j]) * a; SA[k] = a; }
         }
       }
-      const out = m.onTop ? top.data : d;
+      const out = onTop ? top.data : d;
       out[k * 4] = c[0]; out[k * 4 + 1] = c[1]; out[k * 4 + 2] = c[2]; out[k * 4 + 3] = 255;
-      if (m.onTop) { d[k * 4 + 3] = 255; d[k * 4] = c[0]; d[k * 4 + 1] = c[1]; d[k * 4 + 2] = c[2]; }
       if (m.lobe || m.strokes) { T[k] = t; RP[k] = rp; (m.lobe ? leaves : strokes).push(k); }
     }
     const big = canvas(W, H), bg = big.getContext('2d');
@@ -230,7 +237,7 @@ class Scene {
     const fc = canvas(W, H); fc.getContext('2d').putImageData(top, 0, 0); bg.drawImage(fc, 0, 0);   // fruit and flowers over the leaves
     // Trim to what was painted, and scale down to the size asked for.
     let x0 = W, y0 = H, x1 = 0, y1 = 0;
-    for (let k = 0; k < W * H; k++) if (id[k] >= 0) { const x = k % W, y = (k / W) | 0; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    for (let k = 0; k < W * H; k++) if (id[k] >= 0 || (fid && fid[k] >= 0)) { const x = k % W, y = (k / W) | 0; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
     x0 = Math.max(0, x0); y0 = Math.max(0, y0); x1 = Math.min(W - 1, x1); y1 = Math.min(H - 1, y1);
     const pad = 6 * SS; x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad); x1 = Math.min(W, x1 + pad); y1 = Math.min(H, y1 + pad);
     x0 -= x0 % SS; y0 -= y0 % SS;
@@ -381,9 +388,11 @@ function leafy(sc, R, tips, o, look) {
   return { crown, cs };
 }
 // Things dotted over a crown's clumps: fruit, blossom, berries (painted on top of the leaves).
-function dot(sc, R, cs, n, r, ramps, spread = [1.4, -0.2]) {
+// keep: how many of them are hung (the rest still take their random numbers, so the ones kept stay where they were).
+function dot(sc, R, cs, n, r, ramps, spread = [1.4, -0.2], keep = n) {
   for (let i = 0; i < n; i++) {
     const c = cs[Math.floor(R() * cs.length)], d = norm([R() * 2 - 1, R() * spread[0] + spread[1], 0.4 + R()]);
+    if (i >= keep) { R(); R(); continue; }
     sc.add(add(c.p, mul(d, c.r * 1.03)), r * (0.85 + 0.3 * R()), { mat: 'fruit', ramp: ramps[Math.floor(R() * ramps.length)] });
   }
 }
@@ -504,7 +513,7 @@ function fruitTree(R, season, kind) {
   const { crown, cs } = leafy(sc, R, tips, { lo: 1, hi: 2, clumpR: 21, leafR: 5, ramps, bare: season === 'winter' }, { mat: pinkCloud ? 'bloom' : 'leaf', ramp: 'olive' });
   if (season === 'spring' && !cherry) dot(sc, R, cs, 260, 2.6, ['white', 'white', 'pink'], [1.6, -0.9]);
   if (!cherry && (season === 'summer' || season === 'autumn')) dot(sc, R, cs, season === 'summer' ? 22 : 10, 4.6, ['apple']);
-  if (cherry && season === 'summer') dot(sc, R, cs, 30, 2.4, ['cherry']);
+  if (cherry && season === 'summer') dot(sc, R, cs, 30, 2.4, ['cherry'], undefined, Math.round(30 * FRUIT));
   const after = cv => pinkCloud ? litter(cv, R, ['#f7b8cf', '#fbd3e1', '#ef9fbd'], 55) : season === 'autumn' && litter(cv, R, cherry ? ['#c9381c', '#e07a22'] : ['#c8b040', '#d89a3a'], 50, 20);
   return [sc, { aoR: 7, shade: season === 'winter' ? null : [crown.y + crown.ry * 0.6, 30] }, after];
 }
@@ -771,7 +780,9 @@ const SEASONS = ['spring', 'summer', 'autumn', 'winter'];
 // its dry leaves (bare, a few days in early spring), a tuft of first leaves at every twig end (bud),
 // half of them fallen (thin).
 // A dead tree (dead) is bare, grey, and missing limbs, whatever the season.
-const LOOKS = { bare: ['winter', 'bare'], bud: ['spring', { keep: 1, size: 0.45 }], thin: ['autumn', { keep: 0.45, size: 0.7 }], dead: ['winter', 'dead'] };
+// A cherry in summer with some of its cherries picked (crop3: three quarters left, ..., crop0: none; sim.js cherryShow).
+const LOOKS = { bare: ['winter', 'bare'], bud: ['spring', { keep: 1, size: 0.45 }], thin: ['autumn', { keep: 0.45, size: 0.7 }], dead: ['winter', 'dead'],
+  crop3: ['summer', 0.75], crop2: ['summer', 0.5], crop1: ['summer', 0.25], crop0: ['summer', 0] };
 
 function paint(kind, o = {}) {
   SS = o.ss || 3; OUT = o.scale || 1;
@@ -779,6 +790,7 @@ function paint(kind, o = {}) {
   SEASON = season; OWN = rng((o.seed ?? 1) * 104729 + 7);
   TONE = o.tone ?? null; YOUNG = o.young ? 1 : 0; DEAD = how === 'dead'; PRUNE = season === 'winter' || how === 'bare' || typeof how === 'object'; BREAK = rng((o.seed ?? 1) * 31 + 5); HIDE = 0;
   LEAVES = typeof how === 'object' ? how : { keep: 1, size: 1 };
+  FRUIT = typeof how === 'number' ? how : 1;
   const [sc, po, after] = KINDS[kind].paint(R, season, { ...o, bare: how === 'bare' || DEAD });
   const cv = sc.paint({ ...po, snow: o.snow ?? 0, layer: !!o.snowLayer });
   if (after) after(cv);

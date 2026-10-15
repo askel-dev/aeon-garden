@@ -34,6 +34,11 @@ paths:
   for good, outside `TREE_BYTES`), or another look of itself (`treeAny`). With none of those yet (the first moment
   after the page loads) a tree isn't drawn, and fades in when its painting comes (`treeWaits`).
   Small paintings are sculpted coarser (`ss`), which is most of the saving.
+  A cherry in summer shows what the forager has left on it: its summer look, or `crop3` to `crop0` (`LOOKS`: three
+  quarters of its cherries to none), from sim.js `cherryShow` (none out of season or once 'Picked clean'), so a pick
+  repaints it once in a worker and its old painting stands in till then. The fruit and flowers (`MAT` `onTop`) are
+  sculpted as a layer of their own over the leaves (`raster`: `fz`, `fid`), so the leaves' brushwork, seeded from how many
+  leaf pixels there are, is the same however many cherries hang.
   `tree-lab.html` shows every kind in every season, close and far, in any tone, young or grown, dead, as a log and
   as a stump, with sliders for `LOOK` and a "Copy as code".
 - Each kind's leaf colours by season are one table, `CROWNS` (a tree takes one of each list by its tone; a copper beech

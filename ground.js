@@ -395,15 +395,19 @@ function set(name, data) {
 // nearly, so the sun going over paints a few times a second instead of every frame. (A step of 0.08
 // in lx or ly moves the slopes' light by well under one colour level.)
 //
-// Following an animal moves the camera every frame. Then the ground is painted with a margin of PAD
-// CSS pixels all round, and while the screen stays inside it, it is only copied from further along,
-// in whole pixels. Not while something else makes it paint often anyway (a zoom): the margin would only make
-// every paint bigger.
-const PAD = 64;
+// Following the forager moves the camera every frame. Then the ground is painted with a margin of PAD
+// CSS pixels all round, and while the screen stays inside it, it is only slid along. Not while something else makes
+// it paint often anyway (a zoom): the margin would only make every paint bigger.
+// While the camera moves it's slid by exactly as much, fractions of a pixel too, as everything drawn on it is: slid in
+// whole pixels, a run went 2, 3, 2, 2, 3 pixels a frame under a forager going evenly, and the ground jittered. Once
+// the camera comes to rest (under SLIDE_MIN device pixels a frame) off the pixels, it's painted again sharp, and then
+// slid in whole pixels while it creeps.
+const PAD = 64, SLIDE_MIN = 0.1;
 let last = null, stale = true, busy = 0, panned = -1e9;   // busy: how often lately more than the camera moved
 const NEAR = { snow: 0.004, damp: 0.002, ice: 0.004, cold: 0.004, lx: 0.08, ly: 0.08 };
 const EXACT = ['width', 'height', 'zoom', 'dpr'];
 const was = { ox: 0, oy: 0 }, view = { x: 0, y: 0 };
+let between = false;                                    // view is off the pixels (slid by a fraction)
 function steady(u) {                                    // all but where the camera is
   if (stale || !last || u.seed[0] !== last.seed[0] || u.seed[1] !== last.seed[1]) return false;
   for (const k of EXACT) if (u[k] !== last[k]) return false;
@@ -419,14 +423,15 @@ const within = (d, pad, dpr) => d === 0 || Math.abs(d) <= pad - 1 / dpr;
 //   zoom, ox, oy    CSS pixels a tile, and where the meadow's corner lands
 //   the rest        see the uniforms in the shader
 function draw(u) {
-  const now = performance.now();
+  const now = performance.now(), step = Math.max(Math.abs(u.ox - was.ox), Math.abs(u.oy - was.oy)) * u.dpr;
   if (u.ox !== was.ox || u.oy !== was.oy) panned = now;
   was.ox = u.ox; was.oy = u.oy;
   const still = steady(u);
   busy = busy * 0.95 + (last && !still ? 0.05 : 0);
   if (still && within(last.ox - u.ox, last.pad, u.dpr) && within(last.oy - u.oy, last.pad, u.dpr)) {
-    view.x = Math.round((last.pad + last.ox - u.ox) * u.dpr); view.y = Math.round((last.pad + last.oy - u.oy) * u.dpr);
-    return false;
+    const x = (last.pad + last.ox - u.ox) * u.dpr, y = (last.pad + last.oy - u.oy) * u.dpr;
+    if (step >= SLIDE_MIN) { view.x = x; view.y = y; between = true; return false; }
+    if (!between) { view.x = Math.round(x); view.y = Math.round(y); return false; }
   }
   const most = Math.round(PAD * u.dpr), cw = u.width + 2 * most, ch = u.height + 2 * most;
   const m = now - panned < 1000 && busy < 0.5 ? most : 0, pad = m / u.dpr;
@@ -438,7 +443,7 @@ function draw(u) {
   for (const k of ['low', 'high', 'sand', 'fog']) gl.uniform3fv(U[k], u[k].map(v => v / 255));
   gl.uniform3fv(U.light, u.light);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
-  last = { ...u, pad, misty: misty(u, pad) }; stale = false; view.x = view.y = m;
+  last = { ...u, pad, misty: misty(u, pad) }; stale = false; view.x = view.y = m; between = false;
   return true;
 }
 

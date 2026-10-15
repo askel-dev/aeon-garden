@@ -73,7 +73,7 @@
     -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }   /* a held finger never opens Safari's menu */
   canvas#world.on-animal { cursor: pointer; }
   /* The ground under it, a little bigger than the screen; game.js sizes it and slides it into place. */
-  canvas#ground { position: fixed; top: 0; left: 0; display: block; pointer-events: none; transform-origin: 0 0; }
+  canvas#ground { position: fixed; top: 0; left: 0; display: block; pointer-events: none; transform-origin: 0 0; will-change: transform; }
   .phone-only { display: none; }
   .card {
     position: fixed; background: var(--paper, none) var(--card); border-radius: var(--radius);
@@ -256,8 +256,6 @@
   #satchel .slots { display: flex; gap: 4px; }
   #satchel .slot { position: relative; width: 38px; height: 38px; padding: 0; border: none; border-radius: 9px; background: rgba(150, 115, 60, 0.1);
     box-shadow: inset 0 1px 2px rgba(90, 65, 25, 0.18); transition: width 0.25s, height 0.25s, background 0.15s; }
-  #satchel .slot.open { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
-  @media (hover: hover) { #satchel .slot:hover { background: rgba(150, 115, 60, 0.18); } }
   #satchel .slot i, .fly { background-image: var(--items); background-repeat: no-repeat; background-size: calc(100% * var(--item-n, 13)) 100%; }
   #satchel .slot i { position: absolute; inset: 3px; display: none; }
   #satchel .slot i.on { display: block; }
@@ -265,25 +263,28 @@
     text-shadow: 0 0 2px #fdf6e6, 0 0 3px #fdf6e6, 0 0 3px #fdf6e6; }
   #satchel.empty { opacity: 0.5; padding: 3px 4px; }
   #satchel.empty .slot { width: 22px; height: 8px; border-radius: 4px; }
-  #slot-tip { position: absolute; bottom: calc(100% + 8px); transform: translateX(-50%); display: flex; align-items: center; gap: 8px; white-space: nowrap;
-    padding: 4px 4px 4px 11px; border-radius: 12px; background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); font-weight: 800; font-size: 13px; }
-  #slot-tip.hidden { display: none; }
-  #slot-tip .drop { border: none; border-radius: 9px; padding: 4px 10px; background: rgba(150, 115, 60, 0.12); font-weight: 800; font-size: 12.5px; color: var(--accent-ink); }
-  @media (hover: hover) { #slot-tip .drop:hover { background: #fbe3d9; } }
   .fly { position: fixed; z-index: 6; left: 0; top: 0; width: 32px; height: 32px; pointer-events: none; will-change: transform; }
+  /* dragging a slot (game.js setupSatchel): its painting follows the pointer, the slot it'd go to lights up, and off the
+     satchel it fades a little to say it'll be dropped */
+  #satchel .slot { touch-action: none; }
+  #satchel .slot:has(i.on) { cursor: grab; }
+  #satchel.dragging, #satchel.dragging .slot { cursor: grabbing; }
+  #satchel .slot.lifted i, #satchel .slot.lifted b { opacity: 0.3; }
+  #satchel .slot.over { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
+  .fly.held { width: 40px; height: 40px; z-index: 7; transition: opacity 0.15s; }
+  .fly.held.out { opacity: 0.7; }
   /* a phone: a fingertip's slots, the row nearly as wide as the screen */
   @media (pointer: coarse) {
     #satchel { padding: 3px; }
     #satchel .slots { gap: 0; }
     #satchel .slot { width: min(46px, calc((100vw - 22px) / 8)); height: 46px; background: none; box-shadow: none; }
     #satchel .slot::before { content: ''; position: absolute; inset: 2px; border-radius: 9px; background: rgba(150, 115, 60, 0.1); box-shadow: inset 0 1px 2px rgba(90, 65, 25, 0.18); }
-    #satchel .slot.open::before { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
+    #satchel .slot.over { background: none; box-shadow: none; }
+    #satchel .slot.over::before { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
     #satchel .slot i { inset: 5px; }
     #satchel .slot b { right: 5px; bottom: 4px; }
     #satchel.empty .slot { height: 12px; }
     #satchel.empty .slot::before { inset: 2px 3px; border-radius: 4px; }
-    #slot-tip { padding-left: 14px; font-size: 14px; }
-    #slot-tip .drop { min-height: 44px; padding: 0 16px; font-size: 14px; }
   }
   /* an upright phone: the inspector's sheet comes up from the bottom, and the satchel steps aside for it */
   @media (max-width: 760px) and (min-height: 501px) {
@@ -297,9 +298,8 @@
 <!-- a word now and then, gone in a few seconds (game.js toast) -->
 <div id="news"></div>
 
-<!-- bottom middle: the satchel, a row of slots (game.js renderSatchel); a tap on one shows its name and Drop -->
+<!-- bottom middle: the satchel, a row of slots (game.js renderSatchel) -->
 <div id="satchel" class="empty"><div class="slots"></div>
-  <div id="slot-tip" class="hidden"><span class="n"></span><button class="drop" data-drop>Drop</button></div>
 </div>
 
 <!-- top right: pause, sound and the ••• menu; the inspector hangs underneath -->

@@ -22,7 +22,9 @@ paintings a stride, eight more jogging for the sprint, plus standing, a fidget a
 half-size, so the planted foot doesn't slide; fur.js `FORAGER_REACH`), picks the view from the sim's heading with a margin
 either side so it doesn't flicker, and standing lets it breathe, blink, turn to face you after `FORAGER_TURN_MS` and fidget
 now and then (`FORAGER_FIDGET`). In the shallows it's cut off at its shins with a ring round its legs, and each step sends out
-a ring (`fg.rings`). Its shadow goes in with the animals' (`foragerShadow`). A tree standing in front of it (drawn after it, its painting's box over its body) fades to `SEE_A`, as in Project Zomboid, eased over `SEE_MS` (`seeThrough`, `fgBody`). What's drawn after all the trees (the fireflies, the leaves
+a ring (`fg.rings`). Out of the water each foot down leaves a footprint (`footprint`, `drawPrints`: a ring of `PRINTS` in typed
+arrays, one soft sole painting turned along its way and laid flat, under everything that stands) that fades by the ground under it
+(`PRINT_GROUND`: soon in grass, slowest in snow, blue there; none on ice), on a clock that stops while paused. Its shadow goes in with the animals' (`foragerShadow`). A tree standing in front of it (drawn after it, its painting's box over its body) fades to `SEE_A`, as in Project Zomboid, eased over `SEE_MS` (`seeThrough`, `fgBody`). What's drawn after all the trees (the fireflies, the leaves
 coming down, pollen, butterflies, splashes, the effects, the burrows' 💤) hides behind a leafy crown standing in front of it
 (`coverAt`): each crown drawn is kept as its kind's outline (`CROWNS`, `addCover`) in a coarse grid of the screen made once a
 frame (`buildCover`), soft at the edge (`COVER_EDGE`), half for first leaves or half fallen, nothing bare, and as little as
@@ -77,8 +79,7 @@ The satchel (`#satchel`, `renderSatchel`, rewritten only after a pick or a drop)
 the middle, a slim faint row while it's empty. Their paintings are one sheet painted once (`itemSheet`, `--items`): the meadow's own
 mushrooms, greens and windfalls (`ITEM_ART`) and `paintItem` for the blackberries, cherries, honeycomb, beechnuts, and the sticks,
 pebbles and birch bark (lying flat they'd be thin in a slot, so a satchel painting of their own, bigger and in the middle); an
-ingredient with no painting gets its recipes.js emoji. A tap on a slot shows its name with Drop over it (`openSlot`, `#slot-tip`),
-and Esc or Back shuts it (`stepOut`). On a touch screen each slot is 44 px or more, and upright the satchel steps aside while the
+ingredient with no painting gets its recipes.js emoji. A tap on a slot opens nothing, but a full one can be dragged (`setupSatchel`): its painting follows the pointer (above a finger), let go on another slot it goes there (sim.js `moveSlot`: onto a stack of its kind, or the two swap), let go off the satchel it is dropped (sim.js `dropSlot`): it flies down to just in front of the forager and lands with a little bounce (`dropLand`), and lies there in its satchel painting (`drawDropped`, `dropPx`) to be picked up again like a find (`'dropped'` in `gatherAt`, `gatherSpot`), fading over its last `DROP_FADE` till it's gone. On a touch screen each slot is 44 px or more, and upright the satchel steps aside while the
 inspector's sheet is up.
 
 The inspector shows animals and every other thing you click (hives, trees, rocks, burrows, flowers, fields, water,
@@ -126,7 +127,9 @@ steps (`whiteStep`): only the brown and the white are painted, the steps between
 A fox wears its own shade (`c.fur`). A dead rabbit white for winter lies white (`remainsLook`, `BODY_COATS`). A painting
 is costly (each pass through the scratch layer is a flush), so parts can share one (`joined`) and the parts behind are
 just shaded (`flat`). It's painted only at doublings of its size (`FUR_PAINTED`) and shrunk for the sizes between,
-which keeps a dozen poses, growing young and zooming cheap. In the meadow the paintings are made off the main thread
+which keeps a dozen poses, growing young and zooming cheap. Close up it's painted at one size, `FUR_MOST` screen pixels,
+and stretched past it (`furTop`): the forager's 57 paintings at the doubling above were more than the whole sprite cache,
+and a full cache never lets go of the forager's set at the size it's drawn (`keptForager`), or its walk sticks after a zoom. In the meadow the paintings are made off the main thread
 (fur-worker.js, which loads fur.js; game.js `furReady` asks for them, and shrinking is done on the page once what it's
 made from has come). Till a pose comes the animal holds the one it was last drawn in (`shownPose`), or the same at another size or one of its kin stands in (`furKin`), and each look about the
 screen is asked for ahead (`furAhead`), so only the first of a look is painted on the page. Without a worker (no

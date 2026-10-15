@@ -5731,7 +5731,7 @@ function foragerTick(w) {
 // left for the crows and the foxes, a patch of greens gives a little and grows back, a windfall picked up is one the
 // rabbits don't get, and honey taken is out of the hive's store. game.js walks it there and calls gather once it's
 // arrived; whatThere says beforehand what a thing would give (for the hover), or why not. Things: 'shroom' (a clump in
-// w.shrooms), 'find' (w.finds), 'green' (w.greens), 'bramble' (w.brambles), 'tree' (a cherry on it in summer, windfall apples, acorns or
+// w.shrooms), 'find' (w.finds), 'dropped' (w.dropped: what it let fall), 'green' (w.greens), 'bramble' (w.brambles), 'tree' (a cherry on it in summer, windfall apples, acorns or
 // beechnuts under it in autumn) and 'hive'. What it gives goes in the satchel (w.forager.bag): ingredient ids as
 // recipes.js has them, STACK of a kind to a slot.
 const GREEN_TAKE = 0.34;                // of a patch of greens a pick takes (a third: three picks and it's picked for now)
@@ -5744,21 +5744,31 @@ const BERRY_COST = 6;                   // each this much of a bramble's berries
 const CHERRY_CROP = 24;                 // cherries a tree in full crop gives the forager in a summer (two fifths of it with no bees: d.crop)
 const CHERRY_PICK = 6;                  // and a pick
 const CHERRY_TO = 0.7;                  // ripe from the start of summer to this far into it (game.js hangs them so long)
+const cherryCrop = d => Math.round(CHERRY_CROP * (0.4 + 0.6 * d.crop));
+const cherryLeft = (w, d) => cherryCrop(d) - (d.pickYear === yearOf(w.tick) ? d.picked : 0);
+// How many quarters of a full hang of cherries a tree shows (game.js paints them so): 4 untouched, fewer as the forager
+// picks, 0 picked clean, and none while they aren't there to pick (out of season, past CHERRY_TO, too young to fruit).
+function cherryShow(w, d) {
+  if (seasonOf(w.tick) !== 1 || springPart(w.tick) >= CHERRY_TO || !bearing(w, d)) return 0;
+  return Math.max(0, Math.ceil(4 * cherryLeft(w, d) / cherryCrop(d)));
+}
 const FALL_PICK = 2;                    // windfalls under a tree a pick takes up
 const FALL_GIVES = { apple: 2, acorns: 4, beechnuts: 4 };   // and what each is in the satchel (a rabbit's windfall is a big meal)
 const HONEY_TAKE = 8;                   // of a hive's honey (HIVE_FULL) a pick takes,
 const HONEY_GIVES = 2;                  // the honey that is in the satchel,
 const HONEY_KEEP = [24, 34, 40, 40];    // and it never takes the store below this, by season: in spring the bees bring nectar in and
                                         // eat little of the store; in summer they put by for winter; from autumn, more than a big colony eats in a winter
+// The honey a hive could spare: what's over the store the bees keep (HONEY_KEEP), in picks (game.js oozes it over the sill).
+const honeySpare = (w, h) => h.cluster ? 0 : Math.max(0, Math.floor((h.honey - HONEY_KEEP[seasonOf(w.tick)]) / HONEY_TAKE));
 
 // What a thing has to give now: { id, n } (n > 0), or { why } saying gently why not. (No change to anything.)
 const there = { id: '', n: 0, why: '', cost: -0 };
 function whatThere(w, kind, it) {
   there.id = ''; there.n = 0; there.why = ''; there.cost = 0;
   const s = seasonOf(w.tick), p = springPart(w.tick);
-  if (kind === 'shroom' || kind === 'find') {
+  if (kind === 'shroom' || kind === 'find' || kind === 'dropped') {
     there.id = it.kind;
-    if (!(kind === 'shroom' ? w.shrooms : w.finds).includes(it)) there.why = 'Gone over';
+    if (!(kind === 'shroom' ? w.shrooms : kind === 'find' ? w.finds : w.dropped).includes(it)) there.why = 'Gone over';
     else there.n = it.n;
   } else if (kind === 'green') {
     const stage = greenStage(w, it);
@@ -5781,7 +5791,7 @@ function whatThere(w, kind, it) {
       if (!bearing(w, d)) there.why = standing(d) ? 'Too young to fruit' : '';
       else if (s !== 1 || p >= CHERRY_TO) there.why = s === 0 ? 'Not ripe yet' : 'No cherries till next summer';
       else {
-        const left = Math.round(CHERRY_CROP * (0.4 + 0.6 * d.crop)) - (d.pickYear === yearOf(w.tick) ? d.picked : 0);
+        const left = cherryLeft(w, d);
         if (left > 0) { there.n = Math.min(CHERRY_PICK, left); there.cost = there.n; } else there.why = 'Picked clean';
       }
     } else if (d.kind === 'apple' || mast) {
@@ -5796,7 +5806,7 @@ function whatThere(w, kind, it) {
   } else if (kind === 'hive') {
     there.id = 'honey';
     if (it.cluster) there.why = 'A swarm: leave it be';
-    else if (it.honey - HONEY_TAKE < HONEY_KEEP[s]) there.why = it.queen ? 'The bees need what\'s left' : 'Hardly any honey left';
+    else if (!honeySpare(w, it)) there.why = it.queen ? 'The bees need what\'s left' : 'Hardly any honey left';
     else { there.n = HONEY_GIVES; there.cost = HONEY_TAKE; }
   }
   return there;
@@ -5831,8 +5841,50 @@ function eachPickable(w, fn) {
   for (const h of w.hives) if (whatThere(w, 'hive', h).n) fn('hive', h);
 }
 
-// Empties a slot (what's dropped is just gone).
-function dropSlot(f, k) { f.bag[k] = ''; f.bagN[k] = 0; }
+// What the forager drops out of the satchel lies on the ground where it stood (w.dropped, one layout, dropOf), to be
+// picked up again ('dropped' to whatThere and gather), and is gone after DROP_DAYS (sooner if the water comes over it).
+// Dropped on a pile of its own kind it goes on the pile. kind: an ingredient id; born, until: ticks; n: how many.
+const DROP_DAYS = 0.5;                  // a day is 12 minutes at 1x: six minutes
+const DROP_EVERY = TPD / 720;           // ticks between looks for ones gone (two minutes; a second at 1x)
+const DROP_PILE = 0.6;                  // tiles from a pile of its kind that one dropped goes on it
+const dropOf = (kind, x, y, born, until, n) => ({ dropped: true, kind, x, y, born, until, n });
+// Empties slot k onto the ground just in front of the forager, each one a little along from the last so they don't land on each other.
+// Returns what's on the ground now (the pile it went on, or a new one), or null with nothing in the slot.
+function dropSlot(w, k) {
+  const f = w.forager, kind = f.bag[k], n = f.bagN[k];
+  f.bag[k] = ''; f.bagN[k] = 0;
+  if (!kind) return null;
+  const until = w.tick + Math.round(DROP_DAYS * TPD);
+  for (const d of w.dropped) if (d.kind === kind && (d.x - f.x) ** 2 + (d.y - f.y) ** 2 < DROP_PILE * DROP_PILE) {
+    d.n += n; d.until = until;
+    return d;
+  }
+  const a = Math.PI * (0.2 + 0.6 * ((w.dropped.length * 0.38) % 1));   // (in front of it, where it shows, the next one along from the last)
+  let x = f.x + Math.cos(a) * 0.6, y = f.y + 0.15 + Math.sin(a) * 0.35;
+  if (!walkable(w, x, y)) { x = f.x; y = f.y; }
+  const d = dropOf(kind, x, y, w.tick, until, n);
+  w.dropped.push(d);
+  return d;
+}
+// Every DROP_EVERY: those past their time, or under deep water, go.
+function droppedTick(w) {
+  const list = w.dropped;
+  let n = 0;
+  for (const d of list) if (w.tick < d.until && w.water[idx(d.x, d.y)] !== DEEP) list[n++] = d;
+  list.length = n;
+}
+// Moves slot a's things to slot b: onto b's stack if it's the same kind (what doesn't fit stays in a), else the two swap.
+function moveSlot(f, a, b) {
+  if (a === b || !f.bag[a]) return;
+  if (f.bag[b] === f.bag[a]) {
+    const m = Math.min(f.bagN[a], STACK - f.bagN[b]);
+    f.bagN[b] += m; f.bagN[a] -= m;
+    if (!f.bagN[a]) f.bag[a] = '';
+  } else {
+    const id = f.bag[b], n = f.bagN[b];
+    f.bag[b] = f.bag[a]; f.bagN[b] = f.bagN[a]; f.bag[a] = id; f.bagN[a] = n;
+  }
+}
 
 // Picks it: takes from the sim and puts it in the satchel. Returns { id, n, into } (n 0 with why 'full' when the satchel
 // has no room: then nothing is taken), or { why } as whatThere.
@@ -5843,8 +5895,8 @@ function gather(w, kind, it) {
   if (!room) return { id: t.id, n: 0, why: 'full', into: [] };
   // (only part of it fits: it costs that part, and the rest of a clump of mushrooms stays where it is)
   const n = Math.min(t.n, room), part = n / t.n, id = t.id;
-  if (kind === 'shroom' || kind === 'find') {
-    const list = kind === 'shroom' ? w.shrooms : w.finds, k = list.indexOf(it);
+  if (kind === 'shroom' || kind === 'find' || kind === 'dropped') {
+    const list = kind === 'shroom' ? w.shrooms : kind === 'find' ? w.finds : w.dropped, k = list.indexOf(it);
     if (n < t.n) { it.n -= n; } else if (k >= 0) list.splice(k, 1);
   } else if (kind === 'green') it.pick += t.cost * part;
   else if (kind === 'bramble') it.berries = Math.max(0, it.berries - t.cost * part);
@@ -5894,6 +5946,7 @@ function createWorld(seed, opts = {}) {
     shrooms: [], shroomRng: makeRng(seed ^ 0x5a2004), rainAt: -1e9,      // (see shroomsTick; rainAt: the last hour it rained)
     greens: [], greenRng: makeRng(seed ^ 0x9a271c),                       // (see greensTick)
     finds: [], findRng: makeRng(seed ^ 0xf1d5ea),                         // (see findsTick)
+    dropped: [],                                                          // (see dropSlot)
     brambles: [], pips: [], brambleRng: makeRng(seed ^ 0xb4a3b1),          // (see bramblesTick)
     count: perKind(() => 0), expecting: perKind(() => 0),
     stats: { deaths: perKind(() => ({})) },                                 // deaths by cause, of each kind
@@ -6050,6 +6103,7 @@ function step(w) {
   if (t % SHROOM_EVERY === SHROOM_EVERY / 2) shroomsTick(w);
   if (t % GREENS_EVERY === GREENS_EVERY / 8) greensTick(w);
   if (t % FIND_EVERY === FIND_EVERY / 3) findsTick(w);
+  if (t % DROP_EVERY === 0 && w.dropped.length) droppedTick(w);
   if (t % BRAMBLE_EVERY === BRAMBLE_EVERY / 4) bramblesTick(w);
   if (t % WINDFALL_EVERY === 0) { windfallTick(w); if (w.weather.kind === 'storm') windthrow(w); }
   const list = w.creatures;
@@ -6149,7 +6203,7 @@ function unpackWorld(kept) {
   const made = list.map(e => (Array.isArray(e) ? new Array(e.length) : ArrayBuffer.isView(e) ? e
     : e.$map ? new Map() : e.$set ? new Set() : e.sp !== undefined && e.species !== undefined ? blankCreature()   // (laid out like new ones)
     : e.tree === true ? blankTree() : e.emoji === '🪨' ? rockOf(-0, -0, -0) : e.shroom === true ? shroomOf('', -0, -0, null, 0, 0, 0, 0)
-    : e.forager === true ? foragerOf(-0, -0) : e.find === true ? findOf('', -0, -0, 0, 0, 0, 0) : e.green === true ? greenOf('', -0, -0, 0, 0) : e.bramble === true ? brambleOf(-0, -0, 0, '', 0)
+    : e.forager === true ? foragerOf(-0, -0) : e.find === true ? findOf('', -0, -0, 0, 0, 0, 0) : e.dropped === true ? dropOf('', -0, -0, 0, 0, 0) : e.green === true ? greenOf('', -0, -0, 0, 0) : e.bramble === true ? brambleOf(-0, -0, 0, '', 0)
     : e.n !== undefined && e.i !== undefined && e.kind !== undefined && e.field !== undefined ? plantOf(-0, -0, 0, -0, null, 0) : {}));   // (a flower or blossom)
   const table = path => path.split('.').reduce((o, k) => {
     if (!o || !(k in o)) throw new Error('unpackWorld: no table ' + path);
@@ -6178,6 +6232,8 @@ function unpackWorld(kept) {
   const noFinds = !w.finds;                             // (kept before them: a new meadow's come up, below)
   if (noFinds) { w.finds = []; w.findRng = makeRng(w.seed ^ 0xf1d5ea); }
   for (const f of w.finds) asFractions(f, ['x', 'y']);
+  if (!w.dropped) w.dropped = [];                       // (kept before things could be dropped)
+  for (const d of w.dropped) asFractions(d, ['x', 'y']);
   const noBrambles = !w.brambles;                       // (kept on the cooking branch before them: a new meadow's come up, below)
   if (noBrambles) { w.brambles = []; w.pips = []; w.brambleRng = makeRng(w.seed ^ 0xb4a3b1); }
   for (const b of w.brambles) asFractions(b, ['x', 'y', 'crop', 'berries']);
@@ -7036,7 +7092,7 @@ const api = {
   createWorld, step, clock, isNight, phaseOf, seasonOf, springPart, mood, ageDays, growth, isAdult, patchFresh,
   hedgehogComes, heronComes, dragonflyComes, kingfisherComes, skylarkComes, placeNeeds, VISIT_SEASONS, VISIT_FADE, HERON_FADE, HERON_STAB,
   DRAGON_FROM, KF_FADE, KF_UNDER, KF_BEAT, LARK_FADE, LARK_OPEN, LARK_RISE, EDGE_REACH, OPEN_MOST,
-  walkable, packWorld, unpackWorld, GROUND, foragerTo, FORAGER_WALK, FORAGER_RUN, rockKind, whatThere, gather, dropSlot, roomFor, forEachDecorNear, SLOTS, STACK,
+  walkable, packWorld, unpackWorld, GROUND, foragerTo, FORAGER_WALK, FORAGER_RUN, rockKind, whatThere, cherryShow, honeySpare, gather, dropSlot, DROP_DAYS, moveSlot, roomFor, forEachDecorNear, SLOTS, STACK,
   KINDS, FEW, whiteness, visibility, WINTER_COAT, WILD_COAT,
   TERRAIN, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE, hollow,
