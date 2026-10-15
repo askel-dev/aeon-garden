@@ -1981,15 +1981,17 @@ function drawMark(now) {
   const pop = t < MARK_MS[0] ? 1 + 0.35 * Math.sin(Math.PI * t / MARK_MS[0]) * (1 - t / MARK_MS[0]) : 1;
   const r = Math.max(10, (8 + cam.zoom) * 0.42) * pop * (1 + 0.05 * Math.sin(now / 260)) * (m.end ? 1 + 0.25 * (1 - fade) : 1);
   const [sx, sy] = onScreen(m.x, m.y), art = MARK_ART || markArt(), a = Math.min(1, t / 120) * fade;
-  drawTrail(sx, sy, r, a);
+  const k = clamp((t - TRAIL_IN[0]) / TRAIL_IN[1], 0, 1);
+  drawTrail(sx, sy, r, k * k * (3 - 2 * k) * fade);   // (it comes in eased, just after the ring)
   ctx.globalAlpha = a * 0.9;
   ctx.drawImage(art.img, sx - r, sy - r / 2, r * 2, r);
   ctx.globalAlpha = 1;
 }
 // And the way there: a faint dashed line from the ring back along what's left of its path (sim.js f.path, pulled tight
 // round the deep) to just short of its feet. The dashes are counted from the ring's middle, so they keep still on the
-// ground and it walks over them.
+// ground and it walks over them. It fades in once the ring has popped up.
 const TRAIL_A = 0.3;
+const TRAIL_IN = [80, 450];               // ms after the ring it starts fading in, and how long that takes
 const TRAIL = [], TRAIL_DASH = [0, 0];
 function drawTrail(sx, sy, r, a) {
   const f = world.forager, P = f.path;
