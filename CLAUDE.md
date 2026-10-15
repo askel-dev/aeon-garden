@@ -18,7 +18,7 @@ closed); none of that project's rules apply here.
   creature, a hive or a tree that the code counts on) bumps `KEEP_VERSION`, and players' kept meadows start over.
 - You play a little hooded forager (sim.js `w.forager`, fur.js `paintForager`, game.js `drawForager`): a click or a tap
   on the ground walks it there round the deep water (sim.js `foragerTo`), one on an animal opens its panel, a press held
-  still sprints toward the pointer (so does Shift), and the camera goes with it (`leadCam`) till you drag it away. For now it only walks:
+  still or dragged sprints toward the pointer (so does Shift), and the camera always goes with it (`leadCam`): nothing pans it, zooms are about it (`zoomOn`). For now it only walks:
   gathering and cooking come next. `forager-lab.html` shows all its paintings. Notes in game.md and ecology.md.
 - `game.js`: drawing, UI, the inspector. Its features (and where new notes on them go) are in
   `.claude/rules/game.md`, which loads when game.js or index.html is opened.
@@ -130,7 +130,7 @@ new feature must not slow it down. If it would, make it cheaper or leave it out.
   tried the same and got worse (they then fight the page for the CPU).
 - Measure it, but only when a change will obviously cost something you could notice: a new full-screen
   pass, much more drawn each frame, new work in a hot loop. Then time `render` before and after over a few
-  seconds in a busy meadow, following an animal, zoomed out, at the fastest speed there is. If it got slower, fix it before
+  seconds in a busy meadow, the forager walking, zoomed out, at the fastest speed there is. If it got slower, fix it before
   committing, and put the numbers in the commit message. A caption, a card or a small drawing tweak doesn't need it.
 
 After touching the sim, run a few years of it over several seeds headless (node: `createWorld`, `step`, read `w.count`,

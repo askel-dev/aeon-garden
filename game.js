@@ -33,7 +33,7 @@ if (COUNTER && !['localhost', '127.0.0.1'].includes(location.hostname)) {
 
 let world;
 const ui = {
-  speed: 1, sound: false, selectedId: 0, picked: null, hoverId: 0, follow: false, lead: true, mark: null,   // lead: the camera goes with the forager; mark: where it was sent
+  speed: 1, sound: false, selectedId: 0, picked: null, hoverId: 0, mark: null,   // mark: where the forager was sent
   trail: [], effects: [], allStory: false, sheetUp: false,
   sky: { mix: {}, tick: 0, bolts: [], boom: -1e9, rainbow: -1e9, bowEnd: -1e9 },
 };
@@ -136,8 +136,6 @@ const toScreen = (x, y) => [(x - cam.x) * cam.zoom + vw / 2, (y - cam.y) * cam.z
 const SCR = [0, 0];
 const onScreen = (x, y) => { SCR[0] = (x - cam.x) * cam.zoom + vw / 2; SCR[1] = (y - cam.y) * cam.zoom + vh / 2; return SCR; };
 const toWorld = (sx, sy) => [(sx - vw / 2) / cam.zoom + cam.x, (sy - vh / 2) / cam.zoom + cam.y];
-// Drags and scrolls move the view by whole screen pixels, so the ground's tiles can slide along.
-const wholePx = v => Math.round(v * dpr) / dpr;
 
 function zoomAt(sx, sy, z) {
   const [wx, wy] = toWorld(sx, sy);
@@ -6714,8 +6712,7 @@ function renderInspector() {
     <ul class="story">${story}</ul>
     ${c.story.length > STORY_SHORT ? `<button class="story-more" data-act="story">${ui.allStory ? 'Show less' : `Show all ${c.story.length}`}</button>` : ''}
     <div class="ins-actions">
-      ${c.alive ? `<button class="btn ${ui.follow ? 'on' : ''}" data-act="follow">${ui.follow ? '📍 Following' : '📍 Follow'}</button>`
-        : living ? `<button class="btn" data-act="child" data-id="${living.id}">🐣 Follow ${esc(living.name)}</button>` : ''}
+      ${!c.alive && living ? `<button class="btn" data-act="child" data-id="${living.id}">🐣 See ${esc(living.name)}</button>` : ''}
     </div>`);
 }
 
@@ -7372,15 +7369,11 @@ function drawPickedOver() {
 
 // ------------------------------------------------------------------ selection and input
 
-function select(id, zoomIn = true) {
+function select(id) {
   ui.selectedId = id;
   ui.picked = null;
   ui.trail = [];
-  ui.follow = !!id;
   ui.sheetUp = false;
-  flick.vx = flick.vy = 0;
-  const close = narrow() ? 16 : 22;           // a phone keeps a little more of the meadow around it
-  if (id && zoomIn && cam.zoom < close - 2) cam.goal = close;
   renderInspector();
 }
 
@@ -7467,11 +7460,10 @@ function setSpeed(s) {
   b.title = s ? 'Pause (space)' : 'Carry on (space)';
 }
 
-// Two fingers pinch: the spot of meadow between them stays under them as they spread and move.
-let drag = null, pinch = null, scrollRest = { x: 0, y: 0 };
+// The camera stays with the forager (leadCam): nothing pans it. Two fingers pinch, the wheel, a double tap and + - zoom it
+// about the forager (zoomOn).
+let drag = null, pinch = null;
 let fingerTap = false;                    // the last press was a finger: taps may wobble a little and hit a little wider
-// Let go of a pan while still moving and the meadow glides on a little (screen pixels a second).
-const flick = { vx: 0, vy: 0 };
 const fingers = new Map();
 
 // A mouse, a trackpad or a finger sends its moves when it likes, not once a frame: Safari hands them over as they come,
@@ -7522,36 +7514,33 @@ function handBack() { cam.x = hand.kept.x; cam.y = hand.kept.y; cam.zoom = hand.
 const DOUBLE_MS = 300, DOUBLE_PX = 40;    // the second tap: this soon after the first, this near it
 const ZOOM_DRAG = 0.009;                  // a double tap dragged: the zoom doubles every 77 px or so
 let lastTap = null, zoomDrag = null;      // the last tap of a finger { t, x, y }; a double tap held { id, y, z, sx, sy, moved }
-let zoomTo = null;                        // a zoom easing in or out on a spot { sx, sy, z } (frame)
+let zoomTo = null;                        // a zoom easing in or out about the forager { z } (frame)
 let tapAway = 0;
 const HOLD_MS = 280, STEER_MS = 120;      // a press held this still this long runs toward the pointer, the way found again this often
 let holdTimer = 0;
 
+function zoomOn(z) { const [sx, sy] = toScreen(fg.x, fg.y); zoomAt(sx, sy, z); }
+
 function startPinch() {
   const [a, b] = fingers.values(), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-  const [wx, wy] = toWorld(mx, my);
-  pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, zoom: cam.zoom, wx, wy, mx, my, t0: performance.now(), moved: false };
-  drag = null; zoomDrag = null; zoomTo = null; cam.goal = null; ui.follow = false;
+  pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, zoom: cam.zoom, mx, my, t0: performance.now(), moved: false };
+  drag = null; zoomDrag = null; zoomTo = null; cam.goal = null;
   clearTimeout(holdTimer);
 }
 
 function movePinch() {
   const [a, b] = fingers.values(), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, d = Math.hypot(a.x - b.x, a.y - b.y);
   if (Math.abs(d - pinch.d) > 12 || Math.hypot(mx - pinch.mx, my - pinch.my) > 12) pinch.moved = true;
-  cam.zoom = clamp(pinch.zoom * d / pinch.d, fitZoom, 64);
-  cam.x = pinch.wx - (mx - vw / 2) / cam.zoom; cam.y = pinch.wy - (my - vh / 2) / cam.zoom;
-  clampCam();
+  zoomOn(pinch.zoom * d / pinch.d);
 }
 
 function liftFinger(e) {
   fingers.delete(e.pointerId);
   if (!pinch) return false;
   if (fingers.size >= 2) startPinch();
-  else {                                  // one finger left: carry on as a plain drag, never a tap
-    if (!pinch.moved && performance.now() - pinch.t0 < DOUBLE_MS) zoomTo = { sx: pinch.mx, sy: pinch.my, z: clamp(cam.zoom / 2, fitZoom, 64) };   // two fingers tapped: out
+  else {                                  // one finger left: it does nothing till it's lifted, never a tap
+    if (!pinch.moved && performance.now() - pinch.t0 < DOUBLE_MS) zoomTo = { z: clamp(cam.zoom / 2, fitZoom, 64) };   // two fingers tapped: out
     pinch = null;
-    const [f] = fingers.values();
-    if (f) drag = { x: f.x, y: f.y, cx: cam.x, cy: cam.y, moved: true, t: e.timeStamp, lx: f.x, ly: f.y, vx: 0, vy: 0 };
   }
   return true;
 }
@@ -7561,7 +7550,6 @@ canvas.addEventListener('pointerdown', e => {
   if (e.button === 2 || (e.ctrlKey && e.pointerType === 'mouse')) return;
   canvas.setPointerCapture(e.pointerId);
   fingerTap = e.pointerType === 'touch';
-  flick.vx = flick.vy = 0;
   zoomTo = null;
   if (fingerTap) fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (fingers.size >= 2) { startPinch(); return; }
@@ -7569,13 +7557,11 @@ canvas.addEventListener('pointerdown', e => {
   lastTap = null;
   if (fingerTap && tap && e.timeStamp - tap.t < DOUBLE_MS && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) < DOUBLE_PX) {
     clearTimeout(tapAway); tapAway = 0;   // (the first tap put nothing away after all)
-    const sel = ui.follow && world.byId.get(ui.selectedId), [sx, sy] = sel ? toScreen(drawnAt(sel).x, drawnAt(sel).y) : [e.clientX, e.clientY];
-    zoomDrag = { id: e.pointerId, y: e.clientY, z: cam.zoom, sx, sy, moved: false };
+    zoomDrag = { id: e.pointerId, y: e.clientY, z: cam.zoom, moved: false };
     drag = null; cam.goal = null;
     return;
   }
-  drag = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y, moved: false, t: e.timeStamp, lx: e.clientX, ly: e.clientY, vx: 0, vy: 0, id: e.pointerId,
-    steer: false, px: e.clientX, py: e.clientY, at: 0 };
+  drag = { x: e.clientX, y: e.clientY, moved: false, id: e.pointerId, steer: false, px: e.clientX, py: e.clientY, at: 0 };
   clearTimeout(holdTimer);
   holdTimer = setTimeout(() => {                        // held still on the ground: it runs toward the pointer while it's down
     if (!drag || drag.moved || pinch || zoomDrag || fingers.size > 1 || animalAt(drag.x, drag.y)) return;
@@ -7589,7 +7575,7 @@ canvas.addEventListener('pointermove', e => {
   if (pinch) { movePinch(); handMoved(e.timeStamp); return; }
   if (zoomDrag && e.pointerId === zoomDrag.id) {
     const dy = e.clientY - zoomDrag.y;
-    if (zoomDrag.moved || Math.abs(dy) > 8) { zoomDrag.moved = true; zoomAt(zoomDrag.sx, zoomDrag.sy, zoomDrag.z * Math.exp(dy * ZOOM_DRAG)); handMoved(e.timeStamp); }
+    if (zoomDrag.moved || Math.abs(dy) > 8) { zoomDrag.moved = true; zoomOn(zoomDrag.z * Math.exp(dy * ZOOM_DRAG)); handMoved(e.timeStamp); }
     return;
   }
   if (drag?.steer) { drag.px = e.clientX; drag.py = e.clientY; return; }   // (holding: it runs toward the pointer, frame)
@@ -7600,44 +7586,26 @@ canvas.addEventListener('pointermove', e => {
     canvas.classList.toggle('on-animal', !!c);
     return;
   }
-  let dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-  if (!drag.moved && Math.abs(dx) + Math.abs(dy) > (e.pointerType === 'touch' ? 10 : 4)) {
-    drag.moved = true;
-    drag.x = e.clientX; drag.y = e.clientY; dx = dy = 0;   // start from here, no jump
-  }
-  const ms = e.timeStamp - drag.t;
-  if (ms > 0) {                           // how fast the finger moves, smoothed over the last few moves
-    const a = Math.min(1, ms / 40);
-    drag.vx += ((e.clientX - drag.lx) * 1000 / ms - drag.vx) * a;
-    drag.vy += ((e.clientY - drag.ly) * 1000 / ms - drag.vy) * a;
-    drag.t = e.timeStamp; drag.lx = e.clientX; drag.ly = e.clientY;
-  }
-  if (drag.moved) {
+  // Moved off where it was pressed: a drag steers the forager as a press held still does, running toward the pointer.
+  if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) > (e.pointerType === 'touch' ? 10 : 4)) {
     clearTimeout(holdTimer);
-    canvas.classList.add('dragging');
-    ui.follow = false; ui.lead = false;
-    cam.x = drag.cx - wholePx(dx) / cam.zoom; cam.y = drag.cy - wholePx(dy) / cam.zoom;
-    clampCam();
-    handMoved(e.timeStamp);
+    drag.moved = drag.steer = true; drag.at = performance.now(); drag.px = e.clientX; drag.py = e.clientY;
+    walkTo(drag.px, drag.py, true);
   }
 });
 canvas.addEventListener('pointerup', e => {
   if (zoomDrag && e.pointerId === zoomDrag.id) {           // a double tap: in on the spot, unless it was dragged
     fingers.delete(e.pointerId);
-    if (!zoomDrag.moved) zoomTo = { sx: zoomDrag.sx, sy: zoomDrag.sy, z: clamp(cam.zoom * 2, fitZoom, 64) };
+    if (!zoomDrag.moved) zoomTo = { z: clamp(cam.zoom * 2, fitZoom, 64) };
     zoomDrag = null;
     return;
   }
   clearTimeout(holdTimer);
   if (liftFinger(e)) return;
-  canvas.classList.remove('dragging');
   if (drag?.steer) walkTo(e.clientX, e.clientY, true);  // (held: it runs on to where it was let go)
   else if (drag && !drag.moved) {
     click(e.clientX, e.clientY);
     if (fingerTap) lastTap = { t: e.timeStamp, x: e.clientX, y: e.clientY };
-  }
-  else if (drag && e.pointerType === 'touch' && e.timeStamp - drag.t < 60 && Math.hypot(drag.vx, drag.vy) > 250) {
-    flick.vx = drag.vx; flick.vy = drag.vy;
   }
   drag = null;
 });
@@ -7645,7 +7613,6 @@ canvas.addEventListener('pointercancel', e => {
   clearTimeout(holdTimer);
   if (zoomDrag && e.pointerId === zoomDrag.id) { fingers.delete(e.pointerId); zoomDrag = null; return; }
   if (liftFinger(e)) return;
-  canvas.classList.remove('dragging');
   drag = null;
 });
 // Safari ignores the viewport's no-zoom, and a zoomed page makes the whole meadow blurry.
@@ -7657,23 +7624,13 @@ canvas.addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
   const unit = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? innerHeight : 1;   // Firefox's wheel counts lines (3 a notch, Chrome's 100 px)
-  const ddx = e.deltaX * unit, ddy = e.deltaY * unit;
-  const pixelPan = !e.ctrlKey && e.deltaMode === 0 && (ddx !== 0 || Math.abs(ddy) < 40);
-  if (pixelPan) {                     // trackpad two-finger scroll: look around
-    const dx = wholePx(scrollRest.x + ddx), dy = wholePx(scrollRest.y + ddy);
-    scrollRest = { x: scrollRest.x + ddx - dx, y: scrollRest.y + ddy - dy };   // the rest comes next time
-    cam.x += dx / cam.zoom; cam.y += dy / cam.zoom;
-    ui.follow = false; ui.lead = false; clampCam();
-  } else {                            // mouse wheel or pinch: zoom
-    cam.goal = null; zoomTo = null;
-    const [zx, zy] = ui.lead && !ui.follow ? toScreen(fg.x, fg.y) : [e.clientX, e.clientY];   // (with the forager: about it)
-    zoomAt(zx, zy, cam.zoom * Math.exp(-ddy * (e.ctrlKey ? 0.012 : 0.0018)));
-  }
+  cam.goal = null; zoomTo = null;   // a mouse wheel, a trackpad's pinch or its two-finger scroll up and down: zoom
+  zoomOn(cam.zoom * Math.exp(-e.deltaY * unit * (e.ctrlKey ? 0.012 : 0.0018)));
   handMoved(e.timeStamp);
 }, { passive: false });
 
-// A click or a tap on an animal (on it as it's drawn: animalAt) opens its panel and follows it; anywhere else, the
-// forager walks there, the panel shuts and the camera goes with the forager again (walkTo).
+// A click or a tap on an animal (on it as it's drawn: animalAt) opens its panel; anywhere else, the forager walks there
+// and the panel shuts (walkTo).
 function click(sx, sy) {
   clearTimeout(tapAway); tapAway = 0;
   const c = animalAt(sx, sy);
@@ -7686,7 +7643,6 @@ function walkTo(sx, sy, steering = false) {
   const [wx, wy] = toWorld(sx, sy), g = S.foragerTo(world, wx, wy);
   if (g) world.forager.running = steering || shiftHeld;
   if (ui.selectedId || ui.picked) select(0);
-  ui.lead = true; ui.follow = false; flick.vx = flick.vy = 0;
   if (!g) return;
   if (steering && ui.mark && !ui.mark.end) { ui.mark.x = g.x; ui.mark.y = g.y; }
   else ui.mark = { x: g.x, y: g.y, t0: performance.now(), end: 0 };
@@ -7789,7 +7745,6 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'ask-later') askIdeas(false);
   else if (t.dataset.act === 'ask-send') sendIdea();
   else if (t.dataset.act === 'sound') toggleSound();
-  else if (t.dataset.act === 'follow') { ui.follow = !ui.follow; renderInspector(); }
   else if (t.dataset.act === 'story') { ui.allStory = !ui.allStory; renderInspector(); }
   else if (t.dataset.thing) goToThing(t.dataset.thing);
   else if (t.dataset.id) {
@@ -7807,7 +7762,7 @@ function goToThing(thing) {
     return;
   }
   const it = (kind === 'hive' ? world.hives : kind === 'tree' ? world.decor.filter(o => o.tree) : kind === 'visitor' ? world.visitors || [] : world.fields).find(o => o.id === +id);
-  if (kind === 'visitor' && it) { select(0); ui.follow = false; cam.x = it.x; cam.y = it.y; clampCam(); }
+  if (kind === 'visitor' && it) select(0);
   if (it) pick(kind, it);
 }
 
@@ -7825,11 +7780,9 @@ document.addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey || e.altKey) && /^[a-z]$/i.test(e.key)) return;   // ⌘C, Ctrl+Z…: the browser's
   if (e.key === ' ') { e.preventDefault(); setSpeed(ui.speed ? 0 : 1); }
   else if (e.key === 'Escape') stepOut();
-  else if (e.key === 'f' && ui.selectedId) { ui.follow = !ui.follow; renderInspector(); }
-  else if (e.key === 'f') ui.lead = true;                // back to the forager
   else if (e.key === 'm') toggleSound();
-  else if (e.key === '+' || e.key === '=') zoomAt(vw / 2, vh / 2, cam.zoom * 1.25);
-  else if (e.key === '-') zoomAt(vw / 2, vh / 2, cam.zoom / 1.25);
+  else if (e.key === '+' || e.key === '=') zoomOn(cam.zoom * 1.25);
+  else if (e.key === '-') zoomOn(cam.zoom / 1.25);
 });
 
 // ------------------------------------------------------------------ Back
@@ -7917,7 +7870,7 @@ function keepMeadow() {
   const list = [{ link, at }, ...keptList().filter(k => k.link !== link)];
   if (!setKept(list.slice(0, KEEP_MEADOWS))) return;
   const rec = { link, at, kept, paused: ui.speed === 0,
-    cam: { x: cam.x, y: cam.y, zoom: cam.zoom }, selectedId: ui.selectedId, follow: ui.follow };
+    cam: { x: cam.x, y: cam.y, zoom: cam.zoom }, selectedId: ui.selectedId };
   keepDb().then(db => {
     const tx = db.transaction('meadows', 'readwrite'), store = tx.objectStore('meadows');
     store.put(rec, link);
@@ -7969,10 +7922,8 @@ function resumeWorld(rec) {
   opening = 1;
   if (rec.cam) { cam.zoom = Math.max(rec.cam.zoom, fitZoom); cam.x = rec.cam.x; cam.y = rec.cam.y; clampCam(); }
   const c = world.byId.get(rec.selectedId);
-  if (c) { select(c.id, false); ui.follow = rec.follow; }
-  // A visit opens on the forager (showWorld set ui.lead), even if the camera had been dragged away; only an animal
-  // being followed keeps it.
-  if (!ui.follow) { cam.x = world.forager.x; cam.y = world.forager.y - CAM_FEET * forPx() / cam.zoom; clampCam(); }
+  if (c) select(c.id);
+  cam.x = world.forager.x; cam.y = world.forager.y - CAM_FEET * forPx() / cam.zoom; clampCam();   // (on the forager, at the kept zoom)
   history.replaceState(history.state, '', meadowLink(world.seed));
   return true;
 }
@@ -8027,7 +7978,7 @@ function showWorld(w) {
   world = w;
   const seed = w.seed;
   groundSeed = [(seed % 97) * 3.7, (seed % 89) * 4.3];
-  Object.assign(ui, { selectedId: 0, picked: null, hoverId: 0, follow: false, lead: true, mark: null, trail: [], effects: [] });
+  Object.assign(ui, { selectedId: 0, picked: null, hoverId: 0, mark: null, trail: [], effects: [] });
   fg.at = -1; fg.rings.length = 0; fg.sized = 0;
   pollen.until = 0; pollen.t0.fill(-1e9);
   const mix = Object.fromEntries(Object.keys(S.WEATHER).map(k => [k, k === world.weather.kind ? 1 : 0]));
@@ -8138,20 +8089,8 @@ function frame(now) {
       if (ui.trail.length > 160) ui.trail.shift();
     }
   }
-  if (sel && ui.follow) {
-    const k = 1 - Math.pow(0.001, dt), { x, y } = drawnAt(sel);
-    const gx = sheet ? x + (sheet.right - sheet.left) / 2 / cam.zoom : x;
-    const gy = sheet ? y + (sheet.bottom - sheet.top) / 2 / cam.zoom : y;
-    cam.x += (gx - cam.x) * k; cam.y += (gy - cam.y) * k;
-  } else if (ui.lead) leadCam(dt);
+  leadCam(dt);
   if (drag?.steer && now - drag.at > STEER_MS) { drag.at = now; walkTo(drag.px, drag.py, true); }
-  if (flick.vx || flick.vy) {             // a flicked pan glides to a stop
-    cam.x -= flick.vx * dt / cam.zoom; cam.y -= flick.vy * dt / cam.zoom;
-    const f = Math.pow(0.02, dt);
-    flick.vx *= f; flick.vy *= f;
-    if (Math.abs(flick.vx) + Math.abs(flick.vy) < 20) flick.vx = flick.vy = 0;
-    if (hand.n) { clampCam(); handMoved(now); }   // (carrying on from the hand, still drawn a moment behind)
-  }
   if (cam.goal) {
     const k = 1 - Math.pow(0.01, dt);
     cam.zoom += (cam.goal - cam.zoom) * k;
@@ -8160,7 +8099,7 @@ function frame(now) {
   }
   if (zoomTo) {                           // a double tap's zoom (or two fingers'), eased in or out on its spot
     const goal = clamp(zoomTo.z, fitZoom, 64), z = cam.zoom + (goal - cam.zoom) * (1 - Math.pow(0.0002, dt));
-    zoomAt(zoomTo.sx, zoomTo.sy, Math.abs(goal - z) < goal * 0.01 ? goal : z);
+    zoomOn(Math.abs(goal - z) < goal * 0.01 ? goal : z);
     if (cam.zoom === goal || drag?.moved || pinch) zoomTo = null;
   }
   clampCam();
