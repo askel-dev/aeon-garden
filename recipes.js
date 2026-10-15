@@ -36,6 +36,13 @@ const INGREDIENTS = {
   nettle:      { name: 'Nettles',             tags: ['greens'],         fill: 0.5, icon: '🌿', raw: false },
   acorns:      { name: 'Acorns',              tags: ['nut'],            fill: 1,   icon: '🌰', raw: false },
   beechnuts:   { name: 'Beechnuts',           tags: ['nut'],            fill: 1,   icon: '🌰' },
+  hazelnut:    { name: 'Hazelnuts',           tags: ['nut'],            fill: 1,   icon: '🌰' },
+  dandelion:   { name: 'Dandelions',          tags: ['greens', 'flower'], fill: 0.5, icon: '🌼' },
+  sorrel:      { name: 'Sorrel',              tags: ['greens'],         fill: 0.5, icon: '🌿' },
+  watercress:  { name: 'Watercress',          tags: ['greens'],         fill: 0.5, icon: '🥬' },
+  strawberry:  { name: 'Wild strawberries',   tags: ['fruit', 'berry'], fill: 1,   icon: '🍓' },
+  elderflower: { name: 'Elderflower',         tags: ['flower'],         fill: 0.5, icon: '💮' },
+  rosehip:     { name: 'Rosehips',            tags: ['fruit'],          fill: 0.5, icon: '🌹', raw: false },
 };
 
 // The dishes. Only name and needs are a must. The rest, when left out:
@@ -78,6 +85,61 @@ const RECIPES = [
   {
     name: 'Toasted beechnuts',
     needs: ['beechnuts', 'beechnuts'],
+  },
+  {
+    name: 'Toasted hazelnuts',
+    needs: ['hazelnut', 'hazelnut'],
+    text: 'Shaken in a pan till the skins crackle and rub off.',
+  },
+  {
+    name: 'Mushrooms with hazelnuts',
+    needs: ['mushroom', 'mushroom', 'hazelnut'],
+    text: 'The nuts crushed over the top at the last moment.',
+  },
+  {
+    name: 'Dandelion fritters',
+    needs: ['dandelion', 'dandelion', 'honey'],
+    text: 'Dipped by the stalk and fried, a drizzle of honey over.',
+  },
+  {
+    name: 'Spring salad',
+    needs: ['dandelion', 'sorrel', 'garlic'],
+    text: 'Bitter, sour and sharp: the meadow waking up.',
+  },
+  {
+    name: 'Sorrel and mushrooms',
+    needs: ['sorrel', 'mushroom'],
+    text: 'The sorrel melts into a sour little sauce.',
+  },
+  {
+    name: 'Strawberries and honey',
+    needs: ['strawberry', 'strawberry', 'honey'],
+    text: 'Tiny, warm from the sun, and gone in a moment.',
+  },
+  {
+    name: 'Elderflower fritters',
+    needs: ['elderflower', 'honey'],
+    text: 'Whole plates of flowers in batter, crisp as lace.',
+  },
+  {
+    name: 'Elderflower cordial',
+    needs: ['elderflower', 'elderflower', 'honey', 'fruit'],
+    at: 'pot',
+    text: 'Steeped a night, sweet and floral. Tastes of early summer.',
+  },
+  {
+    name: 'Rosehip syrup',
+    needs: ['rosehip', 'rosehip', 'honey'],
+    at: 'pot',
+    warm: true,
+    text: 'Simmered and strained through a cloth for the hairs. A spoonful keeps the winter off.',
+  },
+  {
+    name: 'Watercress soup',
+    needs: ['watercress', 'watercress', 'greens', 'mushroom'],
+    at: 'pot',
+    warm: true,
+    text: 'Peppery and green, the colour of the stream it came out of.',
   },
   {
     name: 'Nettle soup',

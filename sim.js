@@ -3221,7 +3221,7 @@ const LEAVE = 0.05;             // chance each tick that a bee ready to go comes
 const FILL_UP = 0.9;            // how full a bee eats herself in the hive before flying out
 const HONEY_BITE = 0.2 * EAT;   // energy a tick a bee eats in the hive, while there's honey (the hive pays BEE_EAT for it)
 const POLLEN = 0.002;           // how much a visited flower thickens the grass around it
-const HIVE_HONEY = 20;          // what a new hive starts with
+const HIVE_HONEY = 40;          // what a new hive starts with (a meadow's first: enough for the bees' spring and a little for the cook)
 const HIVE_FULL = 100;          // all the honey a hive can hold
 const BEE_EAT = 0.2;            // honey each bee eats a winter day
 const HOME_EAT = 0.25;          // and the rest of the year this share of that: out among the flowers they live on nectar
@@ -3984,12 +3984,15 @@ function greensTick(w) {
 const greensOf = (w, kind) => { let n = 0; for (const g of w.greens) if (g.kind === kind) n++; return n; };
 const roomForGreen = (w, kind, x, y) => !w.greens.some(g => g.kind === kind && (g.x - x) ** 2 + (g.y - y) ** 2 < GREEN_GAP * GREEN_GAP);
 
-// Wild garlic at x, y, if it's damp wood above the spring flood, in sight, with room.
-function garlicAt(w, r, x, y) {
-  if (!inBounds(x, y) || !dry(w, x, y)) return;
+// Wild garlic at x, y, if it's damp wood above the spring flood, in sight, with room. camp: the forager's camp's, which
+// takes a thinner wood (just thick enough to keep it, greensTick) and the water a little further. Whether it came up.
+function garlicAt(w, r, x, y, camp) {
+  if (!inBounds(x, y) || !dry(w, x, y)) return false;
   const i = idx(x, y), T = w.terrain;
-  if (w.wood[i] < GARLIC_WOOD || w.damp[i] > GARLIC_DAMP || w.ground[i] <= T.level + T.springFlood + T.rainRise / 2) return;
-  if (greensOf(w, 'garlic') < Math.round(GREENS_MOST * w.room) && roomForGreen(w, 'garlic', x, y) && inSight(w, x, y, null)) w.greens.push(greenOf('garlic', x, y, w.tick, r.int(0, 1)));
+  if (w.wood[i] < (camp ? GARLIC_WOOD / 2 + 0.01 : GARLIC_WOOD) || w.damp[i] > (camp ? GARLIC_DAMP + 1 : GARLIC_DAMP) || w.ground[i] <= T.level + T.springFlood + T.rainRise / 2) return false;
+  if (greensOf(w, 'garlic') >= Math.round(GREENS_MOST * w.room) || !roomForGreen(w, 'garlic', x, y) || !inSight(w, x, y, null)) return false;
+  w.greens.push(greenOf('garlic', x, y, w.tick, r.int(0, 1)));
+  return true;
 }
 
 // Nettles at x, y, if the ground is rich, in sight, not in a burrow's mouth, with room.
@@ -4003,6 +4006,129 @@ function startGreens(w) {
   const r = w.greenRng;
   for (let k = 0; k < 4000 && greensOf(w, 'garlic') < Math.round(GARLIC_START * w.room); k++) garlicAt(w, r, r.range(1, W - 1), r.range(1, H - 1));
   for (const g of w.greens) { g.born -= YEAR * 2; g.size = r.int(0, 1); }
+}
+
+// ---------------------------------------------------------------- wild finds
+//
+// The little things a forager finds about, every season, so there's always something to pick: dandelions out in the
+// open and sorrel in the damp grass in spring, wild strawberries along the woods' edges and elderflower by the water in
+// summer, hazelnuts at the edges in autumn, rosehips in the scrub from late autumn through the winter, and watercress at
+// the water's edge through the cold into spring. Each is a short-lived thing (w.finds, one layout, findOf): it comes up
+// in a place that suits it (findPlace), in sight, often a few tiles from another of its kind, so they come in loose
+// patches; it lasts a few days (FIND_DAYS, never past its season) and is picked or wilts. Looked at every two hours,
+// with random numbers of their own (w.findRng), so the rest of the meadow plays out the same with them. Nothing eats them:
+// they're for the cook. Tuned so a home view has a few to pick most of the time (FINDS most, times w.room).
+
+const FIND_EVERY = TPD / 12;            // ticks between looks (two hours)
+const FIND_DAYS = [2, 5];               // one lasts this long, and never past its season
+const FIND_GAP = 1.3;                   // tiles between finds
+const FIND_PATCH = [2, 7];              // a new one comes up this far from another of its kind,
+const FIND_PATCHY = 0.55;               // this often (else anywhere that suits)
+const FIND_FILL = 5;                    // a look brings up one in this many of those missing (so a season fills in a day or so)
+const FIND_SNOW = 0.3;                  // snow this deep covers the low ones
+// The kinds: when (from, to: seasons into the year, 0 spring to 4, wrapping into the next spring), where (findPlace),
+// how many at most (times w.room), and how many a pick gives (n). low: snow covers it.
+const FINDS = {
+  dandelion:   { name: 'Dandelions',        from: 0,    to: 0.95, place: 'open',  most: 13, n: 3, low: true },
+  sorrel:      { name: 'Sorrel',            from: 0.15, to: 1.35, place: 'damp',  most: 9, n: 3, low: true },
+  strawberry:  { name: 'Wild strawberries', from: 1.1,  to: 1.95, place: 'edge',  most: 14, n: 4, low: true },
+  elderflower: { name: 'Elderflower',       from: 0.8,  to: 1.5,  place: 'elder', most: 8,  n: 2, low: false },
+  hazelnut:    { name: 'Hazelnuts',         from: 2,    to: 2.9,  place: 'edge',  most: 12, n: 4, low: true },
+  rosehip:     { name: 'Rosehips',          from: 2.4,  to: 4,    place: 'scrub', most: 14, n: 4, low: false },
+  watercress:  { name: 'Watercress',        from: 2.9,  to: 4.6,  place: 'bank',  most: 12, n: 3, low: false },
+};
+const FIND_KINDS = Object.keys(FINDS);
+
+// Every field a find ever has, in one order (see blankCreature). kind: a key of FINDS; born, until: ticks; n: what a pick
+// gives; look: which of game.js's paintings.
+const findOf = (kind, x, y, born, until, n, look) => ({ find: true, kind, x, y, born, until, n, look });
+
+// How far into its season a kind is now: 0..1, or -1 out of it. (yearPart: seasons into the year, 0..4)
+const yearPart = t => seasonOf(t) + springPart(t);
+function findSeason(kind, t) {
+  const k = FINDS[kind], at = yearPart(t), u = at >= k.from && at < k.to ? at : at + 4 >= k.from && at + 4 < k.to ? at + 4 : -1;
+  return u < 0 ? -1 : (u - k.from) / (k.to - k.from);
+}
+
+// Whether a kind suits the ground at x, y: dandelions out in the open grass, sorrel in the damp grass near the water,
+// strawberries and hazelnuts along the woods' edges, elder by the water or at a wood's edge, roses in the scrub by the thorn
+// bushes or the wood's edge, watercress right at the water.
+function findPlace(w, kind, x, y) {
+  if (!dry(w, x, y)) return false;
+  const i = idx(x, y), wood = w.wood[i], damp = w.damp[i], place = FINDS[kind].place;
+  if (place === 'open') return wood < 0.08 && damp > 1.5;
+  if (place === 'damp') return wood < 0.2 && damp >= 1 && damp <= 5;
+  if (place === 'edge') return wood >= 0.08 && wood <= 0.4;
+  if (place === 'elder') return damp <= 6 && wood >= 0.05 && wood <= 0.45;
+  if (place === 'scrub') return wood < 0.3 && damp > 1 && (wood >= 0.06 || thornNear(w, x, y, 3));
+  return damp <= 1.5 && wood < 0.5;                     // 'bank'
+}
+
+function findsTick(w) {
+  const list = w.finds;
+  let n = 0;
+  for (const f of list) {
+    if (w.tick < f.until && !w.water[idx(f.x, f.y)] && !(FINDS[f.kind].low && w.snow > FIND_SNOW)) list[n++] = f;
+  }
+  list.length = n;
+  const r = w.findRng;
+  for (const kind of FIND_KINDS) {
+    if (findSeason(kind, w.tick) < 0 || FINDS[kind].low && w.snow > FIND_SNOW) continue;
+    const missing = Math.round(FINDS[kind].most * w.room) - findsOf(w, kind);
+    for (let k = Math.ceil(missing / FIND_FILL); k > 0; k--) findSpot(w, r, kind);
+  }
+}
+
+const findsOf = (w, kind) => { let n = 0; for (const f of w.finds) if (f.kind === kind) n++; return n; };
+const roomForFind = (w, x, y) => { for (const f of w.finds) if ((f.x - x) ** 2 + (f.y - y) ** 2 < FIND_GAP * FIND_GAP) return false; return true; };
+
+// One of a kind somewhere that suits it: near another of its kind (a loose patch) or anywhere. A few tiles are tried.
+function findSpot(w, r, kind) {
+  for (let tries = 0; tries < 30; tries++) {
+    let x, y;
+    const near = r.next() < FIND_PATCHY && w.finds[r.int(0, Math.max(0, w.finds.length - 1))];
+    if (near && near.kind === kind) { const a = r.range(0, 2 * Math.PI), d = r.range(...FIND_PATCH); x = near.x + Math.cos(a) * d; y = near.y + Math.sin(a) * d * 0.8; }
+    else { x = r.range(1, W - 1); y = r.range(1, H - 1); }
+    if (addFind(w, r, kind, x, y)) return true;
+  }
+  return false;
+}
+
+// A find at x, y, if it suits it, with room, in sight, not in a burrow's mouth. Lasts FIND_DAYS, never past its season.
+function addFind(w, r, kind, x, y, age = 0) {
+  if (!inBounds(x, y) || !findPlace(w, kind, x, y) || !roomForFind(w, x, y)) return false;
+  if (w.burrows.some(b => (b.x - x) ** 2 + (b.y - y) ** 2 < 2.25) || !inSight(w, x, y, null)) return false;
+  const k = FINDS[kind], left = (1 - findSeason(kind, w.tick)) * (k.to - k.from) * SEASON_DAYS * TPD;
+  const until = w.tick + Math.min(left, Math.round(r.range(...FIND_DAYS) * TPD) - age);
+  if (until <= w.tick + TPD / 4) return false;
+  w.finds.push(findOf(kind, x, y, w.tick - age, Math.round(until), k.n, r.int(0, 1)));
+  return true;
+}
+
+// A new meadow's finds, already about (of all ages), and a few round the forager's camp: some of what's in season within
+// CAMP_REACH, and a carpet of wild garlic if there's damp wood near enough for one.
+const CAMP_REACH = [3, 12];
+const CAMP_FINDS = 6;
+function startFinds(w) {
+  const r = w.findRng, F = w.forager;
+  for (const kind of FIND_KINDS) {
+    if (findSeason(kind, w.tick) < 0) continue;
+    const most = Math.round(FINDS[kind].most * w.room * 0.8);
+    for (let k = 0; k < 4000 && findsOf(w, kind) < most; k++) addFind(w, r, kind, r.range(1, W - 1), r.range(1, H - 1), Math.round(r.range(0, 1.5) * TPD));
+  }
+  const kinds = FIND_KINDS.filter(k => findSeason(k, w.tick) >= 0);
+  for (const kind of kinds) {
+    for (let k = 0, camp = 0; k < 400 && camp < Math.ceil(CAMP_FINDS / kinds.length); k++) {
+      const a = r.range(0, 2 * Math.PI), d = r.range(...CAMP_REACH);
+      if (addFind(w, r, kind, F.x + Math.cos(a) * d, F.y + Math.sin(a) * d * 0.8, Math.round(r.range(0.3, 1) * TPD))) camp++;
+    }
+  }
+  if (!w.greens.some(g => g.kind === 'garlic' && (g.x - F.x) ** 2 + (g.y - F.y) ** 2 < CAMP_REACH[1] ** 2)) {
+    for (let k = 0; k < 600; k++) {
+      const a = r.range(0, 2 * Math.PI), d = r.range(...CAMP_REACH), x = F.x + Math.cos(a) * d, y = F.y + Math.sin(a) * d * 0.8;
+      if (garlicAt(w, r, x, y, true)) { const g = w.greens[w.greens.length - 1]; g.born -= YEAR * 2; break; }
+    }
+  }
 }
 
 // ---------------------------------------------------------------- brambles
@@ -5404,7 +5530,7 @@ function foragerTick(w) {
 // left for the crows and the foxes, a patch of greens gives a little and grows back, a windfall picked up is one the
 // rabbits don't get, and honey taken is out of the hive's store. game.js walks it there and calls gather once it's
 // arrived; whatThere says beforehand what a thing would give (for the hover), or why not. Things: 'shroom' (a clump in
-// w.shrooms), 'green' (w.greens), 'bramble' (w.brambles), 'tree' (a cherry on it in summer, windfall apples, acorns or
+// w.shrooms), 'find' (w.finds), 'green' (w.greens), 'bramble' (w.brambles), 'tree' (a cherry on it in summer, windfall apples, acorns or
 // beechnuts under it in autumn) and 'hive'. What it gives goes in the satchel (w.forager.bag): ingredient ids as
 // recipes.js has them, STACK of a kind to a slot.
 const GREEN_TAKE = 0.34;                // of a patch of greens a pick takes (a third: three picks and it's picked for now)
@@ -5419,16 +5545,18 @@ const FALL_PICK = 2;                    // windfalls under a tree a pick takes u
 const FALL_GIVES = { apple: 2, acorns: 4, beechnuts: 4 };   // and what each is in the satchel (a rabbit's windfall is a big meal)
 const HONEY_TAKE = 8;                   // of a hive's honey (HIVE_FULL) a pick takes,
 const HONEY_GIVES = 2;                  // the honey that is in the satchel,
-const HONEY_KEEP = 40;                  // and it never takes the store below this: enough for a big colony's winter
+const HONEY_KEEP = [24, 24, 34, 34];    // and it never takes the store below this, by season: in spring and summer the bees bring
+                                        // nectar in and eat little of the store; from autumn, more than a big colony eats in a winter
 
 // What a thing has to give now: { id, n } (n > 0), or { why } saying gently why not. (No change to anything.)
 const there = { id: '', n: 0, why: '', cost: -0 };
 function whatThere(w, kind, it) {
   there.id = ''; there.n = 0; there.why = ''; there.cost = 0;
   const s = seasonOf(w.tick), p = springPart(w.tick);
-  if (kind === 'shroom') {
-    if (!w.shrooms.includes(it)) there.why = 'Gone over';
-    else { there.id = it.kind; there.n = it.n; }
+  if (kind === 'shroom' || kind === 'find') {
+    there.id = it.kind;
+    if (!(kind === 'shroom' ? w.shrooms : w.finds).includes(it)) there.why = kind === 'shroom' ? 'Gone over' : 'Gone';
+    else there.n = it.n;
   } else if (kind === 'green') {
     const stage = greenStage(w, it);
     there.id = it.kind;
@@ -5465,7 +5593,7 @@ function whatThere(w, kind, it) {
   } else if (kind === 'hive') {
     there.id = 'honey';
     if (it.cluster) there.why = 'A swarm: leave it be';
-    else if (it.honey - HONEY_TAKE < HONEY_KEEP) there.why = it.queen ? 'The bees need what\'s left' : 'Hardly any honey left';
+    else if (it.honey - HONEY_TAKE < HONEY_KEEP[s]) there.why = it.queen ? 'The bees need what\'s left' : 'Hardly any honey left';
     else { there.n = HONEY_GIVES; there.cost = HONEY_TAKE; }
   }
   return there;
@@ -5488,6 +5616,17 @@ function stow(f, id, n) {
   }
   return into;
 }
+// Calls fn(kind, it) for everything that has something to give now (whatThere's n > 0): for game.js's glints and the
+// edge arrow, a few times a second, and for counting.
+function eachPickable(w, fn) {
+  for (const m of w.shrooms) fn('shroom', m);
+  for (const f of w.finds) fn('find', f);
+  for (const g of w.greens) if (whatThere(w, 'green', g).n) fn('green', g);
+  for (const b of w.brambles) if (b.berries >= BERRY_COST && whatThere(w, 'bramble', b).n) fn('bramble', b);
+  for (const d of w.decor) if (d.tree && (d.kind === 'cherry' || d.kind === 'apple' || TREES[d.kind]?.mast) && whatThere(w, 'tree', d).n) fn('tree', d);
+  for (const h of w.hives) if (whatThere(w, 'hive', h).n) fn('hive', h);
+}
+
 // Empties a slot (what's dropped is just gone).
 function dropSlot(f, k) { f.bag[k] = ''; f.bagN[k] = 0; }
 
@@ -5500,9 +5639,9 @@ function gather(w, kind, it) {
   if (!room) return { id: t.id, n: 0, why: 'full', into: [] };
   // (only part of it fits: it costs that part, and the rest of a clump of mushrooms stays where it is)
   const n = Math.min(t.n, room), part = n / t.n, id = t.id;
-  if (kind === 'shroom') {
-    const k = w.shrooms.indexOf(it);
-    if (n < t.n) { it.n -= n; } else if (k >= 0) w.shrooms.splice(k, 1);
+  if (kind === 'shroom' || kind === 'find') {
+    const list = kind === 'shroom' ? w.shrooms : w.finds, k = list.indexOf(it);
+    if (n < t.n) { it.n -= n; } else if (k >= 0) list.splice(k, 1);
   } else if (kind === 'green') it.pick += t.cost * part;
   else if (kind === 'bramble') it.berries = Math.max(0, it.berries - t.cost * part);
   else if (kind === 'tree' && it.kind === 'cherry') {
@@ -5550,6 +5689,7 @@ function createWorld(seed, opts = {}) {
     carcasses: [], roost: null, cached: 0,                                // (see carrionTick and crowTick; cached: this autumn)
     shrooms: [], shroomRng: makeRng(seed ^ 0x5a2004), rainAt: -1e9,      // (see shroomsTick; rainAt: the last hour it rained)
     greens: [], greenRng: makeRng(seed ^ 0x9a271c),                       // (see greensTick)
+    finds: [], findRng: makeRng(seed ^ 0xf1d5ea),                         // (see findsTick)
     brambles: [], pips: [], brambleRng: makeRng(seed ^ 0xb4a3b1),          // (see bramblesTick)
     count: perKind(() => 0), expecting: perKind(() => 0),
     stats: { deaths: perKind(() => ({})) },                                 // deaths by cause, of each kind
@@ -5571,6 +5711,7 @@ function createWorld(seed, opts = {}) {
   startGreens(w);
   startBrambles(w);
   w.forager = startForager(w);
+  startFinds(w);
   w.roost = pickRoost(w);
   const n = { rabbit: opts.rabbits ?? Math.round(30 * w.room), fox: opts.foxes ?? Math.round(4 * w.room), bee: 0, crow: opts.crows ?? Math.round(8 * w.room),
     otter: opts.otters ?? 0 };   // the otters come up the water (migrate), and each hive has its bees
@@ -5704,6 +5845,7 @@ function step(w) {
   if (t % CARRION_EVERY === 0) carrionTick(w);
   if (t % SHROOM_EVERY === SHROOM_EVERY / 2) shroomsTick(w);
   if (t % GREENS_EVERY === GREENS_EVERY / 8) greensTick(w);
+  if (t % FIND_EVERY === FIND_EVERY / 3) findsTick(w);
   if (t % BRAMBLE_EVERY === BRAMBLE_EVERY / 4) bramblesTick(w);
   if (t % WINDFALL_EVERY === 0) { windfallTick(w); if (w.weather.kind === 'storm') windthrow(w); }
   const list = w.creatures;
@@ -5803,7 +5945,7 @@ function unpackWorld(kept) {
   const made = list.map(e => (Array.isArray(e) ? new Array(e.length) : ArrayBuffer.isView(e) ? e
     : e.$map ? new Map() : e.$set ? new Set() : e.sp !== undefined && e.species !== undefined ? blankCreature()   // (laid out like new ones)
     : e.tree === true ? blankTree() : e.emoji === '🪨' ? rockOf(-0, -0, -0) : e.shroom === true ? shroomOf('', -0, -0, null, 0, 0, 0, 0)
-    : e.forager === true ? foragerOf(-0, -0) : e.green === true ? greenOf('', -0, -0, 0, 0) : e.bramble === true ? brambleOf(-0, -0, 0, '', 0)
+    : e.forager === true ? foragerOf(-0, -0) : e.find === true ? findOf('', -0, -0, 0, 0, 0, 0) : e.green === true ? greenOf('', -0, -0, 0, 0) : e.bramble === true ? brambleOf(-0, -0, 0, '', 0)
     : e.n !== undefined && e.i !== undefined && e.kind !== undefined && e.field !== undefined ? plantOf(-0, -0, 0, -0, null, 0) : {}));   // (a flower or blossom)
   const table = path => path.split('.').reduce((o, k) => {
     if (!o || !(k in o)) throw new Error('unpackWorld: no table ' + path);
@@ -5829,6 +5971,9 @@ function unpackWorld(kept) {
   for (const m of w.shrooms) asFractions(m, ['x', 'y']);
   if (!w.greens) { w.greens = []; w.greenRng = makeRng(w.seed ^ 0x9a271c); }      // (kept on the cooking branch before them)
   for (const g of w.greens) asFractions(g, ['x', 'y', 'pick']);
+  const noFinds = !w.finds;                             // (kept before them: a new meadow's come up, below)
+  if (noFinds) { w.finds = []; w.findRng = makeRng(w.seed ^ 0xf1d5ea); }
+  for (const f of w.finds) asFractions(f, ['x', 'y']);
   const noBrambles = !w.brambles;                       // (kept on the cooking branch before them: a new meadow's come up, below)
   if (noBrambles) { w.brambles = []; w.pips = []; w.brambleRng = makeRng(w.seed ^ 0xb4a3b1); }
   for (const b of w.brambles) asFractions(b, ['x', 'y', 'crop', 'berries']);
@@ -5840,6 +5985,7 @@ function unpackWorld(kept) {
   if (noBrambles) startBrambles(w);
   if (!w.forager) w.forager = startForager(w);            // (kept before the forager: it starts afresh)
   asFractions(w.forager, ['x', 'y', 'speed', 'heading', 'moved', 'goalX', 'goalY']);
+  if (noFinds) startFinds(w);
   return w;
 }
 
@@ -6691,7 +6837,7 @@ const api = {
   TERRAIN, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE, hollow,
   TREES, treeStage, treeAge, standing, bearing, inBloom, SEEDLING, SAPLING, GROWN, KIND_NAMES,
-  FROG_K, SPAWN_WORTH, FISH_K, FISH_EAT, CROW_SEATS, SHROOMS, SHROOM_KINDS, greenStage, GREEN_SEASONS, brambleStage, RIPE_FROM, RIPE_TO,
+  FROG_K, SPAWN_WORTH, FISH_K, FISH_EAT, CROW_SEATS, SHROOMS, SHROOM_KINDS, FINDS, FIND_KINDS, findSeason, eachPickable, greenStage, GREEN_SEASONS, brambleStage, RIPE_FROM, RIPE_TO,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 else root.Sim = api;
