@@ -2331,11 +2331,12 @@ function drawHoverLine(now) {
 // clean tree or an unripe bramble never glints. When the forager has stood still SENSE_STILL, everything within SENSE_REACH
 // glints once together, in a wave outward from it (sense), with a faint ring going out. And when nothing to pick is on
 // screen, a small brass arrow at the screen's edge points to the nearest (drawPickArrow), fading out as one comes into view.
-const GLINT_EVERY = 6500, GLINT_MS = 900;   // ms between a thing's glints, and one glint
+const GLINT_EVERY = 9000, GLINT_MS = 1300;  // ms between a thing's glints, and one glint (in quick, out slow)
 const PICKS_MS = 400;                       // how often what there is to pick is listed again
 const SENSE_STILL = 1000, SENSE_REACH = 15, SENSE_SPREAD = 1100;   // ms standing still; tiles; ms the wave takes to get there
+const SENSE_BIG = 1.3;                      // how much bigger a glint the sense brings out is
 const ARROW_WAIT = 1500;                    // ms with nothing on screen before the arrow shows
-const picks = { kind: [], it: [], at: -1e9, near: null, nearKind: '', seen: 0, none: 0, arrow: 0, arrowAt: 0, top: 0, topAt: -1e9 };
+const picks = { kind: [], it: [], at: -1e9, near: null, nearKind: '', seen: 0, none: 0, arrow: 0, arrowAt: 0, topAt: -1e9, itemOf: null, item: -1 };
 const sense = { still: 0, done: true, t0: -1e9, x: 0, y: 0 };
 let GLINT_ART = null, ARROW_ART = null;
 const addPick = (kind, it) => { picks.kind.push(kind); picks.it.push(it); };
@@ -2344,34 +2345,43 @@ function picksFrame(now) {
   picks.at = now; picks.kind.length = picks.it.length = 0;
   S.eachPickable(world, addPick);
 }
-// A warm four-pointed sparkle in a soft glow, painted once.
+// A glint, painted once: a soft honey bloom, a little warm light in it and four fine rays, the upright pair longer, like
+// sun catching on something wet. Drawn small, so the bloom does most of the work.
 function glintArt() {
-  const P = 96, c = document.createElement('canvas'), g = c.getContext('2d'), m = P / 2;
+  const P = 64, c = document.createElement('canvas'), g = c.getContext('2d'), m = P / 2;
   c.width = c.height = P;
-  const gr = g.createRadialGradient(m, m, 0, m, m, m);
-  gr.addColorStop(0, 'rgba(255, 252, 228, 0.7)'); gr.addColorStop(0.25, 'rgba(255, 240, 190, 0.28)'); gr.addColorStop(1, 'rgba(255, 236, 180, 0)');
+  const gr = g.createRadialGradient(m, m, 0, m, m, m * 0.8);
+  gr.addColorStop(0, 'rgba(255, 228, 160, 0.9)'); gr.addColorStop(0.3, 'rgba(250, 200, 100, 0.42)'); gr.addColorStop(1, 'rgba(240, 180, 80, 0)');
   g.fillStyle = gr; g.fillRect(0, 0, P, P);
-  g.fillStyle = 'rgba(255, 255, 246, 0.95)';
-  for (const [l, w] of [[0.48, 0.07], [0.26, 0.05]]) {   // the long cross, and a short one turned between it
-    g.save(); g.translate(m, m); if (w < 0.06) g.rotate(Math.PI / 4);
-    g.beginPath();
-    g.moveTo(0, -l * P); g.quadraticCurveTo(w * P * 0.4, -w * P * 0.4, l * P, 0); g.quadraticCurveTo(w * P * 0.4, w * P * 0.4, 0, l * P);
-    g.quadraticCurveTo(-w * P * 0.4, w * P * 0.4, -l * P, 0); g.quadraticCurveTo(-w * P * 0.4, -w * P * 0.4, 0, -l * P);
-    g.fill(); g.restore();
+  g.translate(m, m);
+  for (const [l, w, a] of [[0.48, 0.05, 1], [0.34, 0.045, 0.85]]) {   // the rays: long up and down, shorter across
+    const ray = g.createLinearGradient(0, -l * P, 0, l * P);
+    ray.addColorStop(0, 'rgba(255, 224, 150, 0)'); ray.addColorStop(0.5, `rgba(255, 242, 200, ${a})`); ray.addColorStop(1, 'rgba(255, 224, 150, 0)');
+    g.fillStyle = ray;
+    g.beginPath(); g.moveTo(0, -l * P); g.quadraticCurveTo(w * P, 0, 0, l * P); g.quadraticCurveTo(-w * P, 0, 0, -l * P); g.fill();
+    g.rotate(Math.PI / 2);
   }
+  const core = g.createRadialGradient(0, 0, 0, 0, 0, P * 0.1);
+  core.addColorStop(0, 'rgba(255, 252, 238, 1)'); core.addColorStop(1, 'rgba(255, 236, 180, 0)');
+  g.fillStyle = core; g.fillRect(-P * 0.1, -P * 0.1, P * 0.2, P * 0.2);
   GLINT_ART = { img: c };
   asBitmap(c, b => { GLINT_ART.img = b; });
   return GLINT_ART;
 }
-// A small parchment disc with a brass chevron pointing right, painted once.
+// The edge marker, painted once: a small parchment disc with a brass rim and a brass point on its right (drawn turned to
+// where it points; the disc is round, so only the point turns). What's that way is drawn into the disc (drawPickArrow).
+const ARROW_DISC = 0.3;                     // the disc's radius in the painting's size
 function arrowArt() {
-  const P = 64, c = document.createElement('canvas'), g = c.getContext('2d'), m = P / 2;
+  const P = 96, c = document.createElement('canvas'), g = c.getContext('2d'), m = P / 2, R = ARROW_DISC * P;
   c.width = c.height = P;
-  g.fillStyle = 'rgba(60, 40, 10, 0.18)'; g.beginPath(); g.arc(m, m + 2, m * 0.8, 0, TAU); g.fill();
-  g.fillStyle = 'rgba(251, 244, 224, 0.92)'; g.beginPath(); g.arc(m, m, m * 0.78, 0, TAU); g.fill();
-  g.strokeStyle = 'rgba(166, 124, 52, 0.85)'; g.lineWidth = P * 0.05; g.stroke();
-  g.strokeStyle = 'rgb(150, 106, 38)'; g.lineWidth = P * 0.085; g.lineCap = g.lineJoin = 'round';
-  g.beginPath(); g.moveTo(m - P * 0.1, m - P * 0.2); g.lineTo(m + P * 0.13, m); g.lineTo(m - P * 0.1, m + P * 0.2); g.stroke();
+  const sh = g.createRadialGradient(m, m + 2, R * 0.8, m, m + 2, R * 1.35);
+  sh.addColorStop(0, 'rgba(60, 40, 10, 0.28)'); sh.addColorStop(1, 'rgba(60, 40, 10, 0)');
+  g.fillStyle = sh; g.fillRect(0, 0, P, P);
+  g.fillStyle = 'rgb(160, 116, 44)'; g.strokeStyle = 'rgb(126, 88, 30)'; g.lineWidth = P * 0.012; g.lineJoin = 'round';
+  g.beginPath(); g.moveTo(m + R * 0.7, m - R * 0.55); g.quadraticCurveTo(m + R * 1.3, m - R * 0.12, m + R * 1.52, m);
+  g.quadraticCurveTo(m + R * 1.3, m + R * 0.12, m + R * 0.7, m + R * 0.55); g.closePath(); g.fill(); g.stroke();
+  g.fillStyle = 'rgb(251, 244, 224)'; g.beginPath(); g.arc(m, m, R, 0, TAU); g.fill();
+  g.strokeStyle = 'rgb(176, 132, 58)'; g.lineWidth = P * 0.03; g.stroke();
   ARROW_ART = { img: c };
   asBitmap(c, b => { ARROW_ART.img = b; });
   return ARROW_ART;
@@ -2390,12 +2400,12 @@ function senseFrame(now) {
 function drawGlints(now, dark) {
   picksFrame(now);
   senseFrame(now);
-  const z = cam.zoom, art = GLINT_ART || glintArt(), base = Math.max(11, (8 + z) * 0.45), F = world.forager;
-  const sensing = now - sense.t0 < SENSE_SPREAD + GLINT_MS * 1.3;
+  const z = cam.zoom, art = GLINT_ART || glintArt(), base = Math.max(9, (8 + z) * 0.34), F = world.forager;
+  const sensing = now - sense.t0 < SENSE_SPREAD + GLINT_MS;
   let seen = 0, near = null, nearKind = '', nd = Infinity;
   if (sensing) {                                          // the wave: a faint ring going out
-    const u = (now - sense.t0) / (SENSE_SPREAD + GLINT_MS), r = SENSE_REACH * z * Math.min(1, u), [sx, sy] = onScreen(sense.x, sense.y);
-    if (u < 1) { ctx.globalAlpha = 0.22 * (1 - u) * Math.min(1, u * 6); ctx.drawImage((MARK_ART || markArt()).img, sx - r, sy - r * 0.5, r * 2, r); }
+    const u = (now - sense.t0) / (SENSE_SPREAD + GLINT_MS * 0.5), r = SENSE_REACH * z * Math.min(1, u), [sx, sy] = onScreen(sense.x, sense.y);
+    if (u < 1) { ctx.globalAlpha = 0.3 * (1 - u) * Math.min(1, u * 6); ctx.drawImage((MARK_ART || markArt()).img, sx - r, sy - r * 0.5, r * 2, r); }
   }
   for (let i = 0; i < picks.it.length; i++) {
     const it = picks.it[i], kind = picks.kind[i], sx = (it.x - cam.x) * z + vw / 2, sy = (it.y - cam.y) * z + vh / 2;
@@ -2404,20 +2414,27 @@ function drawGlints(now, dark) {
     if (!visible(sx, sy, 0)) continue;
     seen++;
     let u = glintAt(it, now), k = 1;
-    if (sensing && d2 < SENSE_REACH * SENSE_REACH) {      // (the sense's glint: a little bigger, as the wave reaches it)
-      const t = (now - sense.t0 - Math.sqrt(d2) / SENSE_REACH * SENSE_SPREAD) / (GLINT_MS * 1.3);
-      if (t >= 0 && t < 1) { u = t; k = 1.15; }
+    if (sensing && d2 < SENSE_REACH * SENSE_REACH) {      // (the sense's glint: bigger, as the wave reaches it)
+      const t = (now - sense.t0 - Math.sqrt(d2) / SENSE_REACH * SENSE_SPREAD) / GLINT_MS;
+      if (t >= 0 && t < 1) { u = t; k = SENSE_BIG; }
     }
     if (u < 0) continue;
-    const s = gatherSpot(kind, it), e = Math.sin(Math.PI * u), r = base * k * (0.5 + 0.5 * e);
-    ctx.globalAlpha = e * (1 - 0.35 * dark);
-    ctx.drawImage(art.img, s.gx + s.rx * 0.3 - r, s.gy - s.ry * 0.5 - r, r * 2, r * 2);
+    // a twinkle: up quickly, then fading slowly, turning a little as it goes
+    const e = u < 0.25 ? Math.sin(u / 0.25 * Math.PI / 2) : (1 - (u - 0.25) / 0.75) ** 1.6, r = base * k * (0.55 + 0.45 * e);
+    const s = gatherSpot(kind, it), x = s.gx + s.rx * 0.3, y = s.gy - s.ry * 0.5, a = 0.5 * u - 0.15, c = Math.cos(a) * dpr, sn = Math.sin(a) * dpr;
+    ctx.globalAlpha = e * (1 - 0.3 * dark);
+    ctx.setTransform(c, sn, -sn, c, x * dpr + shakeX, y * dpr + shakeY);
+    ctx.drawImage(art.img, -r, -r, r * 2, r * 2);
   }
+  ctx.setTransform(dpr, 0, 0, dpr, shakeX, shakeY);
   ctx.globalAlpha = 1;
   picks.seen = seen; picks.near = near; picks.nearKind = nearKind;
 }
-// The arrow at the screen's edge, toward the nearest thing to pick while none is on screen. Small, faint, out of the way of
-// the watch at the top and the satchel at the foot.
+// The marker at the screen's edge, toward the nearest thing to pick while none is on screen, with that thing's painting in
+// it (the satchel's: itemSheet). Out of the way of the watch and the pill at the top and the satchel at the foot (their
+// places looked at once a second, KEEP_CLEAR).
+const KEEP_CLEAR = ['#watch', '#hud-right .hud-top', '#satchel'];
+const clearOf = KEEP_CLEAR.map(() => ({ l: 0, t: 0, r: 0, b: 0 }));
 function drawPickArrow(now) {
   const dt = Math.min(100, now - picks.arrowAt);
   picks.arrowAt = now;
@@ -2425,24 +2442,39 @@ function drawPickArrow(now) {
   const want = now - picks.none > ARROW_WAIT ? 1 : 0;
   picks.arrow += (want - picks.arrow) * Math.min(1, dt / (want ? 500 : 250));
   if (picks.arrow < 0.02 || !picks.near) return;
-  if (now - picks.topAt > 1000) {                       // (where the satchel's top is, looked at once a second)
+  if (now - picks.topAt > 1000) {
     picks.topAt = now;
-    const el = $('#satchel'), r = el && el.getBoundingClientRect();
-    picks.top = r && r.height ? r.top : vh;
+    KEEP_CLEAR.forEach((q, k) => {
+      const el = $(q), r = el && el.getBoundingClientRect(), o = clearOf[k];
+      if (r && r.height && getComputedStyle(el).opacity !== '0') { o.l = r.left; o.t = r.top; o.r = r.right; o.b = r.bottom; } else o.l = o.t = o.r = o.b = 0;
+    });
   }
-  const F = world.forager, [fx, fy] = toScreen(F.x, F.y), it = picks.near, [tx, ty] = toScreen(it.x, it.y);
-  const a = Math.atan2(ty - fy, tx - fx), cx = Math.cos(a), cy = Math.sin(a), m = narrow() ? 22 : 30;
-  const x0 = m, x1 = vw - m, y0 = (narrow() ? 64 : 70), y1 = Math.min(vh - m, picks.top - 18);
+  if (picks.near !== picks.itemOf) { picks.itemOf = picks.near; picks.item = ITEM_IDS.indexOf(S.whatThere(world, picks.nearKind, picks.near).id); }
+  const F = world.forager, z = cam.zoom, fx = (F.x - cam.x) * z + vw / 2, fy = (F.y - cam.y) * z + vh / 2;
+  const it = picks.near, a = Math.atan2((it.y - F.y) * z, (it.x - F.x) * z), cx = Math.cos(a), cy = Math.sin(a);
+  const r = narrow() ? 14 : 15, m = r + 10, sat = clearOf[2];
+  const x0 = m, x1 = vw - m, y0 = m, y1 = Math.min(vh - m, sat.b ? sat.t - r - 6 : vh - m);
   let t = Infinity;                                     // where the way from the forager leaves the box
   if (cx > 0) t = Math.min(t, (x1 - fx) / cx); else if (cx < 0) t = Math.min(t, (x0 - fx) / cx);
   if (cy > 0) t = Math.min(t, (y1 - fy) / cy); else if (cy < 0) t = Math.min(t, (y0 - fy) / cy);
   if (!(t > 0) || t === Infinity) return;
-  const x = fx + cx * t, y = fy + cy * t, art = ARROW_ART || arrowArt(), r = narrow() ? 11 : 12, bob = 2 * Math.sin(now / 400);
-  ctx.save();
-  ctx.globalAlpha = 0.78 * picks.arrow;
-  ctx.translate(x + cx * bob, y + cy * bob); ctx.rotate(a);
-  ctx.drawImage(art.img, -r, -r, r * 2, r * 2);
-  ctx.restore();
+  let x = fx + cx * t, y = fy + cy * t;
+  for (let k = 0; k < 2; k++) {                         // (pushed down out from under the watch or the pill)
+    const o = clearOf[k];
+    if (o.b && x > o.l - r - 4 && x < o.r + r + 4 && y < o.b + r + 4) y = o.b + r + 6;
+  }
+  const bob = 1.5 * Math.sin(now / 420), art = ARROW_ART || arrowArt(), size = r / ARROW_DISC, i = picks.item;
+  x += cx * bob; y += cy * bob;
+  ctx.globalAlpha = 0.92 * picks.arrow;
+  ctx.setTransform(cx * dpr, cy * dpr, -cy * dpr, cx * dpr, x * dpr + shakeX, y * dpr + shakeY);
+  ctx.drawImage(art.img, -size / 2, -size / 2, size, size);
+  ctx.setTransform(dpr, 0, 0, dpr, shakeX, shakeY);
+  if (i >= 0) {                                         // (kept inside the disc: some paintings fill more than their slot)
+    ctx.save(); ctx.beginPath(); ctx.arc(x, y, r * 0.9, 0, TAU); ctx.clip();
+    ctx.drawImage(itemSheet().img, i * ITEM_PX, 0, ITEM_PX, ITEM_PX, x - r * 0.85, y - r * 0.85, r * 1.7, r * 1.7);
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
 }
 
 // ------------------------------------------------------------------ the satchel
@@ -2473,7 +2505,8 @@ function itemSheet() {
     g.drawImage(s.canvas, (i + 0.5) * ITEM_PX - d / 2, ITEM_PX / 2 - d / 2, d, d);
   });
   standIns = was;
-  ITEM_SHEET = { canvas: c, url: c.toDataURL() };
+  ITEM_SHEET = { canvas: c, img: c, url: c.toDataURL() };
+  asBitmap(c, b => { ITEM_SHEET.img = b; });   // (the edge marker draws from it)
   document.documentElement.style.setProperty('--items', `url(${ITEM_SHEET.url})`);
   document.documentElement.style.setProperty('--item-n', ITEM_IDS.length);
   return ITEM_SHEET;
