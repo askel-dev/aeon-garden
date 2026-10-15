@@ -1309,7 +1309,7 @@ function render(now) {
 
   // Pop-ups above the dark. Not in the intro: its lines tell the story.
   drawPops(shown, now);
-  if (peers.size) drawPeerNames();
+  if (peers.size || myChat) drawPeerNames(now);
   drawGlints(now, dark);
   drawHoverLine(now);
   drawQueue();
@@ -8891,6 +8891,9 @@ $('#ask').addEventListener('keydown', e => { if (e.key === 'Escape') askIdeas(fa
 // in its own cloak (peerItems, drawPeer), slid between where it last said it was, with its name over it (drawPeerNames).
 // A guest who loses the host keeps the meadow as its own. The name is asked once, on a small card at the foot as the
 // cloak's is (askName), the first time you play together, and kept in localStorage; ••• has it while together.
+// The chat: Enter, T or 💬 on the pill opens a line bottom left (openChat); what's said goes to everyone (t: 'say'), pops
+// up as a bubble over the forager who said it for a while (chatArt, painted once a line, drawn with the names) and as a
+// line in the log there, which fades after CHAT_LOG_MS (all of it back while the line is open).
 const POS_MS = 150;                        // ms between a forager's "here I am"
 const PEER_SLIDE = 1.3;                    // a friend glides to where it said over this many POS_MS (so it's still going when the next comes)
 const PEER_STILL_MS = 250;                 // a friend that hasn't moved this long is standing
@@ -8902,7 +8905,12 @@ const ROOM_WORDS = ['acorn', 'bramble', 'hazel', 'sorrel', 'fern', 'thistle', 'w
 const NAME = 'aeon-garden-name';           // in localStorage: the name friends know you by
 const NAME_MOST = 16;                      // letters in a name, at most
 const NAME_UP = 0.64;                      // a friend's name sits this many of its forager's sizes over its feet (just over its hood)
-let myName = '', nameAsked = false, nameThen = null, nameOutfit = false;
+const CHAT_MOST = 120;                      // letters in a line of chat, at most
+const CHAT_MS = 3500, CHAT_PER = 70, CHAT_LONGEST = 10000;   // a bubble stays CHAT_MS, and CHAT_PER more a letter, up to CHAT_LONGEST
+const CHAT_WIDE = 200;                      // px a bubble is at most, before its words wrap
+const CHAT_LOG_MS = 12000;                 // a line in the log fades after this
+const CHAT_KEEP = 40;                      // lines the log keeps
+let myName = '', nameAsked = false, nameThen = null, nameOutfit = false, myChat = null;
 try { myName = cleanName(localStorage.getItem(NAME)); } catch (e) { /* none, then */ }
 const net = { tick: -1, base: 0, rate: 0, sentAt: 0, hostId: '', later: [], hostSums: new Map(), mySums: new Map(), off: 0, askedAt: -1e9, shown: '' };
 const peers = new Map();                   // friends' foragers, by id
@@ -9007,6 +9015,7 @@ function heardNet(m) {
   else if (m.t === 'sum') { if (Net.guest) { net.hostSums.set(m.tick, m.sum); compareSum(m.tick); } }
   else if (m.t === 'again') { if (Net.host) Net.send(worldMsg(m.from)); }
   else if (m.t === 'bye') { if (Net.guest && m.from === net.hostId) hostGone(); else friendGone(m.from); }
+  else if (m.t === 'say') heardChat(m, now);
 }
 
 // The host's meadow, as a guest comes (to it alone), as the host starts a new one (to all), or again after drifting off.
@@ -9116,7 +9125,7 @@ function heardPos(m, now) {
   if (!p) {
     p = { id: m.from, x: m.x, y: m.y, fx: m.x, fy: m.y, tx: m.x, ty: m.y, at: now, last: now, seen: now, heading: m.h, jog: false, stage: 0,
       pickAt: -1e9, picking: false, outfit: 0, wet: false, step: -0, view: 1, flip: false, stillMs: 1e4, blinkAt: -1e9, downAt: 0, fall: -0,
-      art: FORAGER_ARTS[0], sized: 0, sizedSet: 0, name: '', nameArt: null, sx: -0, sy: -0, shown: false };
+      art: FORAGER_ARTS[0], sized: 0, sizedSet: 0, name: '', nameArt: null, sx: -0, sy: -0, shown: false, chat: null };
     peers.set(m.from, p);
     p.name = cleanName(m.n);
     if (Net.host || m.tick < 0) toast(`🧺 ${friendName(p) || 'A friend'} has come into the meadow`);   // (a guest knows the host is there)
@@ -9190,14 +9199,31 @@ function peerItems(items, now, z) {
     if (p.shown) itemOf(items, y, sx, sy, 1).q = p;
   }
 }
-// Each friend's name over it, on top of everything (as the pop-ups).
-function drawPeerNames() {
+// Each friend's name over it, and over that what it said (and over this forager what it said), on top of everything (as
+// the pop-ups).
+function drawPeerNames(now) {
   const px = forPx();
   for (const p of peers.values()) {
-    if (!p.shown || !p.nameArt) continue;
-    const a = p.nameArt, fall = p.downAt ? p.fall * 0.6 : 0;
-    ctx.drawImage(a.img, Math.round(p.sx - a.w / 2), Math.round(p.sy - px * NAME_UP * (1 - fall) - 3 - a.h), a.w, a.h);
+    if (!p.shown) continue;
+    const fall = p.downAt ? p.fall * 0.6 : 0;
+    let top = p.sy - px * NAME_UP * (1 - fall) - 3;
+    if (p.nameArt) {
+      const a = p.nameArt;
+      ctx.drawImage(a.img, Math.round(p.sx - a.w / 2), Math.round(top - a.h), a.w, a.h);
+      top -= a.h + 1;
+    }
+    if (p.chat) { if (now > p.chat.until) p.chat = null; else drawChat(p.chat, p.sx, top, now); }
   }
+  if (myChat) {
+    if (now > myChat.until) myChat = null;
+    else if (fgBody.on) drawChat(myChat, fgBody.x, fgBody.y + forPx() * 0.3 - px * NAME_UP - 3, now);
+  }
+}
+function drawChat(s, x, y, now) {
+  const a = s.art, k = now - s.at, alpha = Math.min(1, k / 150, (s.until - now) / 600);
+  ctx.globalAlpha = alpha;
+  ctx.drawImage(a.img, Math.round(x - a.w / 2), Math.round(y - a.h + 4 * (1 - Math.min(1, k / 150))), a.w, a.h);
+  ctx.globalAlpha = 1;
 }
 function drawPeer(p, sx, sy) {
   const px = forPx(), top = sy - px * 0.36;
@@ -9220,6 +9246,98 @@ function drawPeer(p, sx, sy) {
   drawEmoji(p.art, sx, top, px, { flip: p.flip });
 }
 
+// The chat. A line said, painted once: a parchment bubble with a tail at the foot, its words wrapped to CHAT_WIDE.
+const CHAT_ARTS = new Map();
+function chatArt(text) {
+  let a = CHAT_ARTS.get(text);
+  if (a) return a;
+  if (CHAT_ARTS.size > 32) CHAT_ARTS.clear();
+  const k = Math.max(1, dpr), F = 13 * k, c = document.createElement('canvas'), g = c.getContext('2d');
+  const font = `700 ${F}px Nunito, ui-rounded, system-ui, sans-serif`, most = CHAT_WIDE * k;
+  g.font = font;
+  const lines = [];
+  let line = '';
+  for (let word of text.split(' ')) {
+    while (g.measureText(word).width > most) {              // (a word too long for a line: broken where it runs out)
+      let n = word.length - 1;
+      while (n > 1 && g.measureText(word.slice(0, n)).width > most) n--;
+      if (line) { lines.push(line); line = ''; }
+      lines.push(word.slice(0, n)); word = word.slice(n);
+    }
+    const next = line ? line + ' ' + word : word;
+    if (line && g.measureText(next).width > most) { lines.push(line); line = word; } else line = next;
+  }
+  if (line) lines.push(line);
+  let wide = 0;
+  for (const l of lines) wide = Math.max(wide, g.measureText(l).width);
+  const lh = Math.round(F * 1.3), padX = Math.round(F * 0.75), padY = Math.round(F * 0.4), tail = Math.round(6 * k), sh = Math.round(1.5 * k);
+  const w = Math.ceil(wide) + 2 * padX, h = lines.length * lh + 2 * padY, r = Math.min(Math.round(11 * k), h / 2);
+  c.width = w + 2; c.height = h + tail + sh + 2;
+  const bubble = y => {
+    const x0 = 1, y0 = 1 + y, x1 = x0 + w, y1 = y0 + h, cx = x0 + w / 2;
+    g.beginPath(); g.moveTo(x0 + r, y0);
+    g.arcTo(x1, y0, x1, y1, r); g.arcTo(x1, y1, x0, y1, r);
+    g.lineTo(cx + tail, y1); g.lineTo(cx, y1 + tail); g.lineTo(cx - tail * 0.4, y1);
+    g.arcTo(x0, y1, x0, y0, r); g.arcTo(x0, y0, x1, y0, r); g.closePath();
+  };
+  g.fillStyle = 'rgba(60, 40, 10, 0.25)'; bubble(sh); g.fill();
+  g.fillStyle = 'rgba(253, 248, 234, 0.97)'; bubble(0); g.fill();
+  g.strokeStyle = 'rgba(176, 132, 58, 0.8)'; g.lineWidth = k; g.stroke();
+  g.font = font; g.fillStyle = '#4a3920'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  lines.forEach((l, i) => g.fillText(l, 1 + w / 2, 1 + padY + lh * (i + 0.5) + k * 0.5));
+  a = { img: c, w: c.width / k, h: c.height / k };
+  asBitmap(c, b => { a.img = b; });
+  CHAT_ARTS.set(text, a);
+  return a;
+}
+const cleanChat = s => String(s || '').replace(/[\u0000-\u001f\u007f-\u009f]/g, '').replace(/\s+/g, ' ').trim().slice(0, CHAT_MOST);
+const chatFor = (text, now) => ({ art: chatArt(text), at: now, until: now + Math.min(CHAT_LONGEST, CHAT_MS + CHAT_PER * text.length) });
+const chatOpen = () => $('#chat').classList.contains('open');
+function openChat(open) {
+  const box = $('#chat');
+  if (open) {
+    if (!(Net && Net.on)) return;
+    keysHeld.clear();                                     // (the forager stops: the keys are for the words now)
+    box.classList.add('open');
+    $('#chat-log').scrollTop = 1e6;
+    $('#chat-text').focus({ preventScroll: true });
+    return;
+  }
+  if (!chatOpen()) return;
+  box.classList.remove('open');
+  $('#chat-text').blur();
+}
+function chatLine(who, text, me) {
+  const log = $('#chat-log'), el = document.createElement('div'), b = document.createElement('b');
+  el.className = me ? 'chat-line me' : 'chat-line';
+  b.textContent = who + ' ';
+  el.append(b, text);
+  log.append(el);
+  while (log.childElementCount > CHAT_KEEP) log.firstElementChild.remove();
+  log.scrollTop = 1e6;
+  setTimeout(() => el.classList.add('old'), CHAT_LOG_MS);
+}
+$('#chat-form').addEventListener('submit', e => {
+  e.preventDefault();
+  const text = cleanChat($('#chat-text').value);
+  $('#chat-text').value = '';
+  openChat(false);
+  if (!text || !(Net && Net.on)) return;
+  Net.send({ t: 'say', text, n: myName });
+  myChat = chatFor(text, performance.now());
+  chatLine(myName || 'You', text, true);
+});
+$('#chat-btn').addEventListener('pointerdown', e => e.preventDefault());   // (the line keeps its focus, so 💬 shuts it rather than its blur)
+$('#chat-text').addEventListener('blur', () => { if (!$('#chat-text').value.trim()) openChat(false); });   // (tapped away from with nothing said)
+$('#chat-form').addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); openChat(false); } });
+function heardChat(m, now) {
+  const text = cleanChat(m.text), p = peers.get(m.from);
+  if (!text) return;
+  if (p) p.chat = chatFor(text, now);
+  chatLine((p && p.name) || cleanName(m.n) || 'A friend', text, false);
+  chime('click');
+}
+
 // A few times a second: how many are here, on the pill (shown only while together).
 function netCard(now) {
   const on = !!(Net && Net.on), n = on ? peers.size + 1 : 0;
@@ -9230,6 +9348,9 @@ function netCard(now) {
   net.shown = key;
   const b = $('#friends-btn');
   b.classList.toggle('hidden', !on);
+  $('#chat-btn').classList.toggle('hidden', !on);
+  $('#chat').classList.toggle('hidden', !on);
+  if (!on) { openChat(false); myChat = null; }
   $('#name-item').classList.toggle('hidden', !on);
   b.textContent = '🧺 ' + n;
   b.title = n > 1 ? `Foraging together with ${names}` : 'Open to friends: waiting for someone to come';
@@ -9270,6 +9391,7 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'outfit') wearOutfit(+t.dataset.o);
   else if (t.dataset.act === 'pick-outfit') pickOutfit(true);
   else if (t.dataset.act === 'pick-name') askName(true);
+  else if (t.dataset.act === 'chat') openChat(!chatOpen());
   else if (t.dataset.act === 'ideas') { played = -Infinity; askIdeas(true); }   // found it themselves: no need to ask
   else if (t.dataset.act === 'ask-later') askIdeas(false);
   else if (t.dataset.act === 'ask-send') sendIdea();
@@ -9335,6 +9457,7 @@ document.addEventListener('keydown', e => {
   if (KEY_DIRS[e.code]) { e.preventDefault(); keysHeld.add(e.code); return; }
   if (e.key === ' ') { e.preventDefault(); setSpeed(ui.speed ? 0 : 1); }
   else if (e.key === 'Escape') stepOut();
+  else if ((e.key === 'Enter' || e.key === 't') && Net && Net.on) { e.preventDefault(); openChat(true); }
   else if (e.key === 'm') toggleSound();
   else if (e.key === '+' || e.key === '=') zoomOn(cam.zoom * 1.25);
   else if (e.key === '-') zoomOn(cam.zoom / 1.25);
@@ -9352,7 +9475,7 @@ const back = { token: Math.random().toString(36).slice(2), depth: 0, going: fals
 const moreOpen = () => !$('#more-menu').classList.contains('hidden');
 function opened() {
   const ins = $('#inspector').classList, sheetUp = ins.contains('open') && narrow() && !ins.contains('strip');
-  return [askOpen(), moreOpen(), outfitOpen(), nameOpen(), ins.contains('open'), sheetUp].filter(Boolean).length;
+  return [askOpen(), moreOpen(), outfitOpen(), nameOpen(), chatOpen(), ins.contains('open'), sheetUp].filter(Boolean).length;
 }
 // The one on top shuts (Esc, and Back once for each step it takes).
 function stepOut() {
@@ -9360,6 +9483,7 @@ function stepOut() {
   if (askOpen()) askIdeas(false);
   else if (moreOpen()) toggleMore(false);
   else if (nameOpen()) askName(false);
+  else if (chatOpen()) openChat(false);
   else if (outfitOpen()) pickOutfit(false);
   else if (ins.contains('open') && narrow() && !ins.contains('strip')) { ui.sheetUp = false; $('#inspector').scrollTop = 0; renderInspector(); }
   else if (ins.contains('open')) select(0);

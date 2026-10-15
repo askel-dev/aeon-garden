@@ -185,6 +185,26 @@
   #name-card .go { flex: none; border-radius: 12px; background: #4f7f3a; color: #fff; font-size: 15px; padding: 8px 14px; box-shadow: none; }
   @media (hover: hover) { #name-card .go:hover { background: #44702f; } }
   @media (pointer: coarse) { #name-text, #name-card .go { min-height: 44px; } }
+  /* ---- playing together, the chat (game.js chat): what was said, a few lines bottom left that fade after a while (all of
+     them back while you're saying something), and the line to say it on, shown only then */
+  #chat { position: fixed; z-index: 6; left: var(--left); bottom: var(--bottom); width: min(300px, calc(100% - var(--left) - var(--right)));
+    display: flex; flex-direction: column; align-items: flex-start; gap: 4px; pointer-events: none; }
+  #chat-log { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; max-height: 40vh; overflow: hidden; }
+  .chat-line { max-width: 100%; box-sizing: border-box; padding: 3px 10px; border-radius: 11px; background: var(--paper, none) var(--card);
+    box-shadow: var(--edge), var(--shadow); font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; animation: pop-in 0.3s ease-out;
+    transition: opacity 0.8s; }
+  .chat-line b { font-weight: 800; color: #7a5a2a; }
+  .chat-line.me b { color: #4f7f3a; }
+  #chat:not(.open) .chat-line.old { opacity: 0; }
+  #chat:not(.open) #chat-form { display: none; }
+  #chat.open #chat-log { overflow-y: auto; pointer-events: auto; }
+  #chat-form { display: flex; gap: 6px; width: 100%; pointer-events: auto; animation: pop-in 0.2s ease-out; }
+  #chat-text { flex: 1; min-width: 0; box-sizing: border-box; padding: 7px 12px; border: 1.5px solid #d9ccb0; border-radius: 12px;
+    background: #fffaf0; font: inherit; font-size: 16px; color: var(--ink); box-shadow: var(--shadow); }
+  #chat-text:focus { outline: none; border-color: #4f7f3a; }
+  #chat-form .go { flex: none; border-radius: 12px; background: #4f7f3a; color: #fff; font-size: 15px; padding: 7px 12px; box-shadow: none; }
+  @media (hover: hover) { #chat-form .go:hover { background: #44702f; } }
+  @media (pointer: coarse) { #chat-text, #chat-form .go { min-height: 44px; } #chat-form .go { min-width: 44px; } }
   .hidden { display: none !important; }
   /* ---- phones, upright or on their side: one slim row on top */
   @media (max-width: 760px), (max-height: 500px) {
@@ -298,6 +318,12 @@
     #satchel.empty .slot { height: 12px; }
     #satchel.empty .slot::before { inset: 2px 3px; border-radius: 4px; }
   }
+  /* a phone: the chat's lines sit over the satchel and the body's bars, and its line to say something across the foot */
+  @media (max-width: 760px), (max-height: 500px) {
+    #chat { bottom: calc(var(--bottom) + 104px); }
+    #chat.open { bottom: var(--bottom); right: var(--right); width: auto; }
+    #chat.open #chat-log { max-height: 30vh; }
+  }
   /* an upright phone: the inspector's sheet comes up from the bottom, and the satchel steps aside for it */
   @media (max-width: 760px) and (min-height: 501px) {
     body:has(#inspector.open) #satchel { opacity: 0; transform: translate(-50%, 30px); pointer-events: none; }
@@ -360,6 +386,7 @@
   <div class="hud-top">
   <div id="time" class="card">
     <button class="hud-btn hidden" id="friends-btn" data-act="together" title="Playing together">🧺</button>
+    <button class="hud-btn hidden" id="chat-btn" data-act="chat" title="Say something to your friends (Enter)">💬</button>
     <button class="hud-btn" data-act="pause" title="Pause (space)">⏸</button>
     <button class="hud-btn wide-only" id="sound-btn" data-act="sound" title="Sound on or off (M)">🔇</button>
     <button class="hud-btn more" data-act="more" title="More">•••</button>
@@ -388,6 +415,13 @@
   <h2 class="fr" id="name-title">What shall your friends call you?</h2>
   <form id="name-form"><input id="name-text" maxlength="16" autocomplete="nickname" enterkeyhint="done" placeholder="Your name" aria-label="Your name">
   <button class="btn go" type="submit">That's me</button></form>
+</div>
+
+<!-- playing together: what friends said, a few lines bottom left that fade, and the line to say something (game.js chat) -->
+<div id="chat" class="hidden">
+  <div id="chat-log" aria-live="polite"></div>
+  <form id="chat-form"><input id="chat-text" maxlength="120" autocomplete="off" enterkeyhint="send" placeholder="Say something…" aria-label="Say something to your friends">
+  <button class="btn go" type="submit" aria-label="Say it">↵</button></form>
 </div>
 
 <div id="ask" class="hidden" role="dialog" aria-labelledby="ask-title">
