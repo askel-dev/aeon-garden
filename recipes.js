@@ -56,6 +56,7 @@ const INGREDIENTS = {
 //   level: 0        the cooking level it needs before it can be found
 //   from            a visitor who teaches it, for a dish ('hedgehog', 'heron', 'kingfisher', 'skylark', 'dragonfly')
 //   warm: false     it warms you on a cold day
+//   known: false    true: a new player knows it from the start (it's in their recipe book), not only once they've made it
 //   icon: '🥣'      an emoji to stand in until it has a painted one
 //   text            a line for its card
 const RECIPES = [
@@ -63,6 +64,7 @@ const RECIPES = [
     name: 'Roast mushrooms',
     icon: '🍢',
     needs: ['mushroom', 'mushroom'],
+    known: true,
     text: 'Charred at the edges on a green stick, and the juice runs down your wrist.',
   },
   {
@@ -92,6 +94,7 @@ const RECIPES = [
     name: 'Wilted greens',
     icon: '🍲',
     needs: ['nettle', 'garlic'],
+    known: true,
     text: 'The sting goes out of the nettles in the heat.',
   },
   {
@@ -121,6 +124,7 @@ const RECIPES = [
     name: 'Spring salad',
     icon: '🥗',
     needs: ['dandelion', 'sorrel', 'garlic'],
+    known: true,
     text: 'Bitter, sour and sharp: the meadow waking up.',
   },
   {
@@ -201,7 +205,7 @@ const BUILDS = {
 const TEACHERS = ['hedgehog', 'heron', 'kingfisher', 'skylark', 'dragonfly'];
 const MESS = { name: "A forager's mess", fill: 1, icon: '🫠', text: "It's... food. Mostly." };
 const DISH_ICON = '🥣';
-const RECIPE_KEYS = ['name', 'needs', 'at', 'fill', 'level', 'from', 'warm', 'icon', 'text'];
+const RECIPE_KEYS = ['name', 'needs', 'at', 'fill', 'level', 'from', 'warm', 'known', 'icon', 'text'];
 
 const recipeOf = name => RECIPES.find(r => r.name.toLowerCase() === String(name).toLowerCase());
 const isTag = word => Object.values(INGREDIENTS).some(g => g.tags.includes(word));
@@ -281,6 +285,8 @@ function checkRecipes() {
     if (r.from && !TEACHERS.includes(r.from)) problems.push(`${who} is taught by '${r.from}', who isn't a visitor (${TEACHERS.join(', ')}).`);
     if (r.fill != null && typeof r.fill !== 'number') problems.push(`${who} has a fill that isn't a number.`);
     if (r.level != null && typeof r.level !== 'number') problems.push(`${who} has a level that isn't a number.`);
+    if (r.known != null && typeof r.known !== 'boolean') problems.push(`${who} has known: ${JSON.stringify(r.known)}, but it wants true or false.`);
+    if (r.known && r.from) problems.push(`${who} is known from the start, so the ${r.from} has nothing to teach: leave one of them out.`);
   });
   for (const [id, b] of Object.entries(BUILDS)) {
     const who = `The build '${id}'`;

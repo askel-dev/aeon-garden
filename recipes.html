@@ -98,7 +98,7 @@ if (problems.length) $('check').id = 'problems';
 
 $('dishes').innerHTML = RECIPES.map(r => {
   const st = STATIONS[r.at || 'fire'];
-  const meta = [st ? st.name : r.at, `fills ${fillOf(r)}`, r.level ? `level ${r.level}` : '', r.from ? `taught by the ${r.from}` : '', r.warm ? 'warming' : '']
+  const meta = [st ? st.name : r.at, `fills ${fillOf(r)}`, r.level ? `level ${r.level}` : '', r.from ? `taught by the ${r.from}` : '', r.warm ? 'warming' : '', r.known ? 'known from the start' : '']
     .filter(Boolean).join(' · ');
   return `<div class="dish"><b>${esc(r.name)}</b><div class="needs">${r.needs.map(chip).join('')}</div>
     <div class="meta">${esc(meta)}</div>${r.text ? `<div class="text">${esc(r.text)}</div>` : ''}</div>`;

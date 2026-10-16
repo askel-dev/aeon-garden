@@ -3557,7 +3557,7 @@ function goFire(t) {
   const [x, y] = at;
   walkTo(...toScreen(x, y));
   ui.fire = { kind: t.kind, F: t.F, x: t.x, y: t.y, sx: x, sy: y, stage: 'go', t0: performance.now(), step: -1, heat: 0, blowing: false, caught: 0,
-    puff: 0, breath: 0, blownAt: 0, held: 0, pot: [], fedAt: 0 };
+    puff: 0, breath: 0, blownAt: 0, held: 0, pot: [], fedAt: 0, want: '' };   // (want: a dish from the book, for the pot once there)
 }
 // The fire under a point on screen (its ring as drawn, a little wider for a finger), or null.
 function fireAt(sx, sy) {
@@ -3639,6 +3639,7 @@ function fireFrame(now, dt) {
       if (!j.F.lit) { say('The fire\'s burnt down', j.x, j.y - 0.5); ui.fire = null; return; }
       fireStage(j, 'cook', now);
       renderCook(); renderSatchel();
+      if (j.want) { fillPot(j.want, false); j.want = ''; }   // (sent from the recipe book: its things go in)
     } else fireStage(j, 'blow', now);
     return;
   }
@@ -3816,7 +3817,10 @@ const COOK_STIR = 900;                    // ms a stir takes, cooking
 const MADE_MS = 4000;                     // ms the dish just cooked stays in the output slot
 $('#cook').style.setProperty('--cook-ms', COOK_MS + 'ms');   // (the arrow's fill in the CSS runs as long as a cook)
 const POT = Recipes.STATIONS.fire.slots;
-const knownDish = name => firsts.has('dish:' + name);
+// A dish is known once it's been made (firstTime 'dish:' + its name: per player, for good), or from the start if recipes.js
+// says so (known: true), so a new cook has a few in the book to begin with.
+const KNOWN_FROM_START = new Set(Recipes.RECIPES.filter(r => r.known).map(r => r.name));
+const knownDish = name => KNOWN_FROM_START.has(name) || firsts.has('dish:' + name);
 const cooking = () => !!ui.fire && (ui.fire.stage === 'cook' || ui.fire.stage === 'cooking');
 const cookUi = { open: false, x: NaN, y: NaN, w: 0, h: 0, moved: false, drag: null };
 let lastDish = '';                        // the last dish cooked here: the card's one-tap "again"
@@ -3866,16 +3870,22 @@ function potTake(i) {
   chime('click');
   renderSatchel(); renderCook();
 }
-// A known dish tapped on the card: the pot holds what makes it, out of the satchel.
-function cookKnown(name) {
+// A known dish tapped on the card or in the book: the pot holds what makes it, out of the satchel.
+function cookKnown(name) { fillPot(name, false); }
+// The pot filled with what makes a dish, out of the satchel (the card's dishes, its "again" and the recipe book all come
+// here), and with go, set away cooking at once. False if it can't be (no pot open, the fire out, not the things for it).
+function fillPot(name, go) {
   const j = ui.fire, r = Recipes.recipeOf(name);
-  if (!j || j.stage !== 'cook' || !r) return;
+  if (!j || j.stage !== 'cook' || !r) return false;
+  if (!j.F.lit) { say('The fire\'s out', j.x, j.y - 0.5); return false; }
   const things = Recipes.thingsFor(r.needs, bagHave());
-  if (!things) return;
+  if (!things) { say('Not the things for it just now', j.x, j.y - 0.5); chime('click'); return false; }
   j.pot = things;
   chime('click');
   renderSatchel(); renderCook();
-  for (const el of $('#cook').querySelectorAll('.cook-slot.on')) el.animate([{ transform: 'scale(0.8)' }, { transform: 'scale(1.1)' }, { transform: 'scale(1)' }], { duration: 240, easing: 'ease-out' });
+  if (go) cookStart();
+  else for (const el of $('#cook').querySelectorAll('.cook-slot.on')) el.animate([{ transform: 'scale(0.8)' }, { transform: 'scale(1.1)' }, { transform: 'scale(1)' }], { duration: 240, easing: 'ease-out' });
+  return true;
 }
 // The needs of a dish left over once each thing in the pot answers one of them (a subset match: what could still go in;
 // recipes.js fits wants the whole pot at once). Null if some thing in the pot answers none of them.
@@ -3936,17 +3946,7 @@ function cookFuel(j) {
   stick.classList.toggle('low', j.F.lit && j.F.fuel < S.FIRE_LOW);
 }
 // The last dish again, one tap: its things back into the pot out of the satchel, and away it cooks.
-function cookAgain() {
-  const j = ui.fire, r = lastDish && Recipes.recipeOf(lastDish);
-  if (!j || j.stage !== 'cook' || !r) return;
-  if (!j.F.lit) { say('The fire\'s out', j.x, j.y - 0.5); return; }
-  const things = Recipes.thingsFor(r.needs, bagHave());
-  if (!things) { say('Not the things for it just now', j.x, j.y - 0.5); chime('click'); return; }
-  j.pot = things;
-  chime('click');
-  renderSatchel(); renderCook();
-  cookStart();
-}
+function cookAgain() { if (lastDish) fillPot(lastDish, true); }
 // A stick on the fire, from the card.
 function feedStick() {
   const j = ui.fire;
@@ -4166,6 +4166,133 @@ function eatSlot() {
   renderSatchel(); renderVitals(); if (cooking()) renderCook();
   eatAsk(f.bag[k] ? k : -1);
 }
+
+// ------------------------------------------------------------------ the recipe book
+//
+// A small book by the satchel (#book-btn, B) opens a parchment card of the fire's dishes (#book, renderBook; on an upright
+// phone a sheet from the bottom, its brass ✕ at the foot): the ones you know first, each with its painting and what goes in,
+// what the satchel holds of that lit and the rest let down; then the ones a hint has half filled in ("Something with
+// honey…", what's known of it and a ? for each thing still missing: hinted, from the forager's thoughts below); then the
+// rest, as one line of blank plates, a dot on each for each thing it takes. A known dish tapped by a lit fire fills the pot from the satchel (fillPot); at
+// a lit fire close by, the forager goes to it first and fills the pot once it's there (j.want); else it says where to cook.
+// What's in it is per player, as the dishes are (knownDish): the hints in localStorage (HINTS_KEY), never in a kept meadow.
+const HINTS_KEY = 'aeon-garden-hints';
+const BOOK_REACH = 8;                     // tiles: a known dish tapped in the book walks to a lit fire this near
+const hinted = new Map();                 // dish name -> the words of its needs a hint has told
+try { for (const [k, v] of Object.entries(JSON.parse(localStorage.getItem(HINTS_KEY) || '{}'))) if (Array.isArray(v)) hinted.set(k, v); } catch (e) { /* fine */ }
+// A hint's words for a dish written into the book; true if it told something new.
+function hint(name, words) {
+  const had = hinted.get(name) || [], all = [...had];
+  for (const w of words) { const n = words.filter(x => x === w).length; while (all.filter(x => x === w).length < n) all.push(w); }
+  if (all.length === had.length) return false;
+  hinted.set(name, all);
+  try { localStorage.setItem(HINTS_KEY, JSON.stringify(Object.fromEntries(hinted))); } catch (e) { /* fine */ }
+  bookUi.key = ''; renderBook();
+  return true;
+}
+const bookUi = { open: false, key: '' };
+const bookOpen = () => bookUi.open;
+const FIRE_DISHES = Recipes.RECIPES.filter(r => (r.at || 'fire') === 'fire');
+// What stands for a word of a dish's needs in a little picture: the thing itself, or for a tag ('mushroom') the one the
+// satchel has, else the first that has it.
+function needId(word, have) {
+  const r = Recipes.recipeOf(word);
+  if (Recipes.INGREDIENTS[word] || r) return r ? r.name : word;
+  const ids = Recipes.takes(word);
+  return ids.find(id => have[id] > 0) || ids[0] || word;
+}
+// The needs of a dish, each with whether the satchel answers it (each thing answering one word: exact words first).
+function needsHad(needs, have) {
+  const left = { ...have }, out = needs.map(w => ({ word: w, id: '', got: false }));
+  const order = needs.map((w, i) => i).sort((a, b) => (Recipes.INGREDIENTS[needs[b]] ? 1 : 0) - (Recipes.INGREDIENTS[needs[a]] ? 1 : 0));
+  for (const i of order) {
+    const w = needs[i], id = Object.keys(left).find(k => left[k] > 0 && Recipes.answers(k, w));
+    if (id) { left[id]--; out[i].got = true; out[i].id = id; } else out[i].id = needId(w, have);
+  }
+  return out;
+}
+const needName = w => Recipes.INGREDIENTS[w] ? Recipes.INGREDIENTS[w].name.toLowerCase() : Recipes.recipeOf(w) ? w : 'any ' + w;
+function openBook(on = !bookUi.open) {
+  if (on && (!world || intro.on)) return;
+  if (on === bookUi.open) return;
+  bookUi.open = on;
+  const el = $('#book');
+  el.classList.toggle('hidden', !on);
+  $('#book-btn').classList.toggle('on', on);
+  if (on) { bookUi.key = ''; renderBook(); el.scrollTop = 0; el.focus({ preventScroll: true }); }
+  chime('click');
+}
+// The book's pages, rewritten only when what they show has changed (what's known, hinted, in the satchel, a pot to fill).
+function renderBook() {
+  if (!bookUi.open) return;
+  itemSheet();
+  const have = bagHave(), atPot = cooking() && ui.fire.stage === 'cook';
+  const key = FIRE_DISHES.map(r => knownDish(r.name) ? 1 : (hinted.get(r.name) || []).length + 2).join('') + '|' + JSON.stringify(have) + '|' + atPot;
+  if (key === bookUi.key) return;
+  bookUi.key = key;
+  const icon = (id, cls, title) => `<i class="${cls}" style="background-position:${itemBg(id)}" title="${esc(title)}"></i>`;
+  const known = [], half = [], blank = [];
+  for (const r of FIRE_DISHES) (knownDish(r.name) ? known : hinted.has(r.name) ? half : blank).push(r);
+  const row = r => {
+    if (knownDish(r.name)) {
+      const ns = needsHad(r.needs, have), ready = ns.every(n => n.got);
+      return `<button class="book-dish known${ready ? ' ready' : ''}" data-act="book-dish" data-name="${esc(r.name)}" title="${ready ? (atPot ? 'Put its things in the pot' : 'Cook it at a lit fire') : 'Not the things for it just now'}">`
+        + `${icon(r.name, 'dish', r.name)}<span class="bk-name">${esc(r.name)}${r.warm ? ' <span class="warm" title="Warms you">✦</span>' : ''}</span>`
+        + `<span class="bk-needs">${ns.map(n => icon(n.id, n.got ? 'got' : 'want', needName(n.word))).join('')}</span></button>`;
+    }
+    const told = hinted.get(r.name) || [], left = [...r.needs], shown = [];
+    for (const w of told) { const i = left.indexOf(w); if (i >= 0) { left.splice(i, 1); shown.push(w); } }
+    const words = [...new Set(shown)].map(needName);
+    const line = shown.length ? `Something with ${words.length > 1 ? words.slice(0, -1).join(', ') + ' and ' + words[words.length - 1] : words[0]}…` : 'Not found yet';
+    return `<div class="book-dish ${shown.length ? 'half' : 'blank'}"><i class="dish unknown"></i><span class="bk-name">${esc(line)}</span>`
+      + `<span class="bk-needs">${shown.map(w => { const id = needId(w, have); return icon(id, have[id] > 0 ? 'got' : 'want', needName(w)); }).join('')}${'<b class="q">?</b>'.repeat(left.length)}</span></div>`;
+  };
+  const rest = blank.length ? `<div class="book-rest">${blank.map(r => `<b title="${r.needs.length} things">${'·'.repeat(r.needs.length)}</b>`).join('')}<span>${blank.length} more not found yet: try things together at the fire</span></div>` : '';
+  $('#book-list').innerHTML = known.map(row).join('') + half.map(row).join('') + rest;
+  $('#book-sub').textContent = `${known.length} of ${FIRE_DISHES.length} known` + (atPot ? ' · tap one to fill the pot' : '');
+}
+// A known dish tapped in the book.
+function bookDish(name) {
+  const f = world.forager, r = Recipes.recipeOf(name);
+  if (!r || !knownDish(name)) return;
+  if (cooking() && ui.fire.stage === 'cook') { if (fillPot(name, false)) openBook(false); return; }
+  if (cooking()) return;                                   // (busy cooking)
+  if (!Recipes.thingsFor(r.needs, bagHave())) { say('Not the things for it just now', f.x, f.y - 1.6); chime('click'); return; }
+  let F = null, best = BOOK_REACH;
+  for (const o of world.fires) { const d = Math.hypot(o.x - f.x, o.y - f.y); if (o.lit && d < best) { F = o; best = d; } }
+  if (!F || f.down >= 0) { say('Cook it at a lit fire', f.x, f.y - 1.6); chime('click'); return; }
+  goFire({ kind: 'cook', F, x: F.x, y: F.y });
+  if (ui.fire) ui.fire.want = name;
+  openBook(false);
+}
+// The book's button, painted once: a little leather-bound book with a gold leaf on it and a ribbon.
+function bookIcon() {
+  const el = $('#book-btn i');
+  if (!el || el.dataset.done) return;
+  const n = Math.ceil(40 * dpr), c = document.createElement('canvas'), g = c.getContext('2d');
+  c.width = c.height = n;
+  g.setTransform(n / 2, 0, 0, n / 2, n / 2, n / 2);
+  g.lineCap = g.lineJoin = 'round';
+  fillIn(g, 'rgba(60, 40, 20, 0.25)', () => ovalAt(g, 0.02, 0.66, 0.62, 0.12));                    // its shadow
+  softIn(g, [246, 236, 210], -0.58, 0.62, () => g.roundRect(-0.5, -0.56, 1.04, 1.16, 0.08), 1.05, 0.85);   // the pages' edge
+  for (let i = 0; i < 4; i++) strokeIn(g, 'rgba(160, 130, 90, 0.45)', 0.02, () => { g.moveTo(-0.42, 0.48 + i * 0.03); g.lineTo(0.5, 0.48 + i * 0.03); });
+  softIn(g, [150, 70, 40], -0.66, 0.48, () => g.roundRect(-0.58, -0.68, 1.08, 1.14, 0.12), 1.22, 0.7);   // the cover
+  softIn(g, [112, 50, 30], -0.66, 0.48, () => g.roundRect(-0.58, -0.68, 0.2, 1.14, [0.12, 0, 0, 0.12]), 1.15, 0.75);   // the spine
+  strokeIn(g, 'rgba(232, 190, 110, 0.9)', 0.04, () => g.roundRect(-0.28, -0.52, 0.66, 0.82, 0.06));   // a gold rule round the front
+  fillIn(g, 'rgb(236, 196, 116)', () => {                                                           // and a leaf in gold on it
+    g.moveTo(0.05, -0.34); g.quadraticCurveTo(0.32, -0.12, 0.05, 0.14); g.quadraticCurveTo(-0.22, -0.12, 0.05, -0.34);
+  });
+  strokeIn(g, 'rgba(150, 70, 40, 0.8)', 0.03, () => { g.moveTo(0.05, -0.28); g.lineTo(0.05, 0.1); });
+  fillIn(g, 'rgb(196, 64, 52)', () => { g.moveTo(0.22, 0.42); g.lineTo(0.22, 0.82); g.lineTo(0.29, 0.74); g.lineTo(0.36, 0.82); g.lineTo(0.36, 0.42); });   // the ribbon
+  furGlow(g, [255, 240, 210], 0.35, -0.1, -0.46, 0.42, 0.12);
+  el.style.backgroundImage = `url(${c.toDataURL()})`;
+  el.dataset.done = '1';
+}
+// B opens and shuts it (a listener of its own, beside the game's keys).
+document.addEventListener('keydown', e => {
+  if (e.code !== 'KeyB' || e.repeat || e.metaKey || e.ctrlKey || e.altKey || e.target.closest('input,textarea') || !world) return;
+  openBook();
+});
 
 // How loud the fire's crackle is (sound.js): the nearest lit one to the middle of the screen, by how well it burns.
 function fireSound() {
@@ -4584,6 +4711,7 @@ function renderSatchel() {
   box.classList.toggle('empty', !any);
   box.classList.toggle('cooking', inCook);
   renderBuild();                                          // (the fire button by it: what a fire takes, how much of it's here)
+  renderBook();                                           // (the book, if it's open: what the satchel has for each dish)
 }
 
 // The thing flies from where it was picked (sx, sy) into its slot, and the slot bumps as it lands. One small element, a
@@ -4606,6 +4734,7 @@ function setupSatchel() {
   const box = $('#satchel'), row = box.querySelector('.slots');
   row.innerHTML = Array.from({ length: S.SLOTS }, (_, k) => `<div class="slot" data-k="${k}" data-name="" aria-label="Empty"><i></i><b></b></div>`).join('');
   buildIcon();                                            // (the fire button's campfire)
+  bookIcon();                                             // (and the recipe book's)
   // Hovered (or tapped) a full slot says what's in it, a small label over it (CSS, data-name).
   // A full slot can be dragged: once the press has moved HOLD_FROM px its painting follows the pointer (above a finger, so
   // it shows), and let go over another slot it goes there (S.moveSlot: onto a stack of its kind, or the two swap), off the
@@ -11387,6 +11516,9 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'cook-dish') cookKnown(t.dataset.name);
   else if (t.dataset.act === 'cook-again') cookAgain();
   else if (t.dataset.act === 'cook-close') closeCook();
+  else if (t.dataset.act === 'book') openBook();           // (the recipe book)
+  else if (t.dataset.act === 'book-close') openBook(false);
+  else if (t.dataset.act === 'book-dish') bookDish(t.dataset.name);
   else if (t.dataset.act === 'eat') eatSlot();
   else if (t.dataset.act === 'close') select(0);
   else if (t.dataset.act === 'sheet-up' || t.dataset.act === 'sheet-down') {
@@ -11495,7 +11627,7 @@ const back = { token: Math.random().toString(36).slice(2), depth: 0, going: fals
 const moreOpen = () => !$('#more-menu').classList.contains('hidden');
 function opened() {
   const ins = $('#inspector').classList, sheetUp = ins.contains('open') && narrow() && !ins.contains('strip');
-  return [askOpen(), moreOpen(), !!ui.place, cooking(), wardrobeOpen(), chatOpen(), ins.contains('open'), sheetUp].filter(Boolean).length;
+  return [askOpen(), moreOpen(), !!ui.place, bookOpen(), cooking(), wardrobeOpen(), chatOpen(), ins.contains('open'), sheetUp].filter(Boolean).length;
 }
 // The one on top shuts (Esc, and Back once for each step it takes).
 function stepOut() {
@@ -11503,6 +11635,7 @@ function stepOut() {
   if (askOpen()) askIdeas(false);
   else if (moreOpen()) toggleMore(false);
   else if (ui.place) placeFire(false);                     // (picking a spot for a fire: not now)
+  else if (bookOpen()) openBook(false);                    // (the recipe book)
   else if (cooking()) closeCook();                         // (the cooking card)
   else if (chatOpen()) openChat(false);
   else if (wardrobeOpen() && wd.mode !== 'join') closeWardrobe(false);
