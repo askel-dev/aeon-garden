@@ -167,7 +167,7 @@ once a number); clicked again it comes off, a click on the ground or holding to 
 waits till it's back up from the last (`ui.nextAt`, `nextGather`), and one gone or picked clean meanwhile is passed over.
 E picks the nearest thing in reach (within `NEAR_REACH`, or lying where it was dropped) as a click on it would, and pressed
 again while it's busy lines up the next nearest (`pickNear`); with nothing in reach it says so.
-At a lit fire (`cookFire`: where it kneels to warm its hands) E opens its cooking card as a click on the fire does, and shuts it again; the picking is for everywhere else.
+Near a lit fire (`cookFire`: the nearest within `PROMPT_NEAR`, as far as the pot shows over it; or anywhere inside the camp's ring, `campFire`) E walks there and opens its cooking card as a click on the fire does, and shuts it again; the picking is for everywhere else. By a fire that's burnt down or gone cold that the satchel can see to (`relightFire`, `fireKind`), E relights it as a click does (a stick, tinder, a strike, then hold F to blow), and a little painted flame with an E bobs over it (`drawCookPrompt`, `PROMPT_RELIGHT`; a click on it is one on the fire).
 In reach: everything to pick within `NEAR_REACH` of the forager, the sticks, grass and bark for a fire too, has a soft honey ring
 lying round its foot (`drawNear`, `RING_ART` painted once), steady, fading out over `NEAR_FADE` at the edge, brighter on what's
 queued. That's what tells a dandelion from the other yellow flowers and dry grass from the tufts (playtesters couldn't).
@@ -300,7 +300,7 @@ The meadow is kept in the browser when the page is hidden or closed (`keepMeadow
 and the reload opened a new meadow, intro and all), so it's also kept at `beforeunload`. The next visit opens it where it was
 (`resumeWorld`): the bare address the one watched last, a `?seed=` link its own. A kept meadow that won't open, or broke
 the page the last time it opened (`OPENING`), is let go. The ••• menu shares the link (a phone's share sheet) and takes
-ideas (the `#ask` card, also once by itself after two minutes of play: `askTick`). Visits are counted by GoatCounter
+ideas (the `#ask` card, also once by itself two minutes of play after the first dish is cooked: `askTick`). Visits are counted by GoatCounter
 (`COUNTER`: cryptoler.goatcounter.com, no cookies), all as the page `/meadow` whatever the seed, and a link posted with
 `?ref=reddit` says where they came from.
 

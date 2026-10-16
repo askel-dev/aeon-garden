@@ -3592,13 +3592,18 @@ function fireTell(e) {
 }
 // A click or a tap on a fire: a lit one, off to cook at it (its card has a stick for it too); else off to see to it, if
 // there's something to do with what the satchel holds; else why not.
+// What the satchel lets it do at a fire: 'cook', 'blow', 'feed', 'light', 'relay', or '' (nothing).
+function fireKind(F) {
+  const sticks = hasTag('fuel'), tinder = hasTag('tinder');
+  if (F.lit) return cooking() && ui.fire.F === F ? '' : 'cook';
+  if (F.embers > 0) return F.fuel > 0 ? 'blow' : sticks ? 'feed' : '';
+  if (S.lightable(F)) return 'light';
+  if (tinder && (F.fuel > 0 || sticks)) return 'relay';
+  return '';
+}
 function clickFire(F) {
   const sticks = hasTag('fuel'), tinder = hasTag('tinder');
-  let kind = '';
-  if (F.lit) kind = cooking() && ui.fire.F === F ? '' : 'cook';
-  else if (F.embers > 0) kind = F.fuel > 0 ? 'blow' : sticks ? 'feed' : '';
-  else if (S.lightable(F)) kind = 'light';
-  else if (tinder && (F.fuel > 0 || sticks)) kind = 'relay';
+  const kind = fireKind(F);
   if (!kind && F.lit) return;                             // (cooking at it already)
   if (!kind) {
     const why = F.embers > 0 ? 'Embers: it needs a stick' : F.fuel > 0 ? 'It needs tinder to light' : !tinder && !sticks ? 'It needs tinder and sticks' : !tinder ? 'It needs tinder to light' : 'It needs sticks';
@@ -3731,11 +3736,19 @@ try { fireTold.lit = localStorage.getItem(FIRE_TOLD) === '1'; } catch (e) { /* f
 // first. Both the step and the kneel are the sim's own forager (the walk) and fg.kneel, which sendPos hands to friends, so
 // playing together a friend sees it step out and kneel just as it does here.
 const fireSit = { F: null };
-// The lit fire the forager is at (where it kneels to warm its hands, SIT_NEAR), or null: E opens its cooking card.
+// The nearest lit fire within PROMPT_NEAR (as far off as the pot shows over it), or null: E walks there and opens its cooking card.
 function cookFire() {
   const f = world.forager;
   if (f.down >= 0) return null;
-  for (const F of world.fires) if (F.lit && Math.abs(F.x - f.x) < SIT_NEAR && Math.abs(F.y - f.y) < SIT_NEAR * 0.7) return F;
+  let F = null, best = PROMPT_NEAR;
+  for (const o of world.fires) { const d = Math.hypot(o.x - f.x, o.y - f.y); if (o.lit && d < best) { F = o; best = d; } }
+  return F;
+}
+// Standing anywhere in the camp's ring, the camp's lit fire: E goes to it before it picks anything (the fire first, in camp).
+function campFire() {
+  const f = world.forager;
+  if (f.down >= 0 || intro.on || !S.inCamp(world, f.x, f.y)) return null;
+  for (const F of world.fires) if (F.lit && S.inCamp(world, F.x, F.y)) return F;
   return null;
 }
 function sitFrame(now) {
@@ -4007,7 +4020,7 @@ function cookDone(j, now) {
     renderSatchel();
   }
   chime('pick', { n: 2 });
-  if (dish !== Recipes.MESS) { lastDish = dish.name; if (!knownDish(dish.name)) firstTime('dish:' + dish.name, 'new recipe', esc(dish.name), esc(dish.text || '')); }
+  if (dish !== Recipes.MESS) { if (played === -1) played = 0; lastDish = dish.name; if (!knownDish(dish.name)) firstTime('dish:' + dish.name, 'new recipe', esc(dish.name), esc(dish.text || '')); }
   j.made = { name: dish.name, mess: dish === Recipes.MESS, at: now, until: now + MADE_MS };
   renderCook();
 }
@@ -4359,6 +4372,19 @@ document.addEventListener('keydown', e => {
   openBook();
 });
 
+// On localhost only: K drops a lit campfire (full of sticks) beside the forager, wherever it is, to try cooking and camp.
+if (['localhost', '127.0.0.1'].includes(location.hostname)) document.addEventListener('keydown', e => {
+  if (e.code !== 'KeyK' || e.repeat || e.metaKey || e.ctrlKey || e.altKey || e.target.closest('input,textarea') || !world) return;
+  const f = world.forager;
+  for (let i = 0; i < 24; i++) {                       // (the first spot near it that a fire can go)
+    const a = i * 2.4, r = 1.2 + 0.35 * i, x = f.x + Math.cos(a) * r, y = f.y + Math.sin(a) * r;
+    if (S.fireSpot(world, x, y)) continue;
+    const F = S.layFire(world, x, y, 99, 1);
+    S.lightFire(world, F);
+    return;
+  }
+});
+
 // ------------------------------------------------------------------ the cook's nudges
 //
 // It wasn't plain that a fire can be cooked at, so: standing near a lit one (PROMPT_NEAR) with something for the pot in the
@@ -4368,32 +4394,44 @@ document.addEventListener('keydown', e => {
 // HINT_GAP real time, never in the intro or the opening storm, never over another line) it thinks of a dish it doesn't know
 // yet from what's in the satchel ("Cherries and honey… that could cook into something"), which half fills in that dish in the
 // book (hint).
-const PROMPT_NEAR = 3.2;                  // tiles from a lit fire the pot shows over it
+const PROMPT_NEAR = 4.5;                  // tiles from a fire the pot (or the flame) shows over it, and E reaches it from
 const PROMPT_IN = 400;                    // ms it fades in over
 const CAMP_COOK_MS = 6500;                // ms after camp is made the forager thinks of cooking
 const CAMP_COOK_LINE = 'I could cook something on this fire.';
 const HINT_EVERY = 0.3, HINT_SPREAD = 0.25;   // a day: the least between hints, and up to this much more
 const HINT_GAP = 90000;                   // ms between hints at the least, whatever the speed
 const HINT_FIRST = 0.06;                  // a day after camp is made before the first
-let PROMPT_ART = null;
+let PROMPT_ART = null, PROMPT_RELIGHT = null;
 const promptUi = { F: null, t0: 0, x: NaN, y: NaN, r: 0 };
 let bagFood = false;                      // whether the satchel has anything for the pot (renderSatchel)
 const keyboardy = matchMedia('(hover: hover) and (pointer: fine)');
 // The prompt, painted once: a parchment disc with a brass rim and the pot in it, and (where there's a keyboard) an E key.
-function promptArt() {
+function promptArt(relight) {
   const key = keyboardy.matches && !fingerTap;
-  if (PROMPT_ART && PROMPT_ART.key === key) return PROMPT_ART;
+  const cur = relight ? PROMPT_RELIGHT : PROMPT_ART;
+  if (cur && cur.key === key) return cur;
   const k = Math.max(2, dpr), R = 17, W = key ? R * 2 + 26 : R * 2, H = R * 2 + 4, c = document.createElement('canvas'), g = c.getContext('2d');
   c.width = Math.ceil((W + 4) * k); c.height = Math.ceil((H + 4) * k);
   g.scale(k, k); g.translate(2, 2);
   g.fillStyle = 'rgba(60, 40, 15, 0.28)'; g.beginPath(); g.arc(R, R + 2, R, 0, TAU); g.fill();
   g.fillStyle = '#fbf3e1'; g.beginPath(); g.arc(R, R, R - 1, 0, TAU); g.fill();
   g.strokeStyle = '#c99a4c'; g.lineWidth = 1.6; g.stroke();
-  const pot = sprite('pot:1', R * 1.5), back = sprite('pot:0', R * 1.5);
-  g.drawImage(back.canvas, R - back.size / 2, R - back.size / 2 + 2, back.size, back.size);
-  g.drawImage(pot.canvas, R - pot.size / 2, R - pot.size / 2 + 2, pot.size, pot.size);
-  g.fillStyle = 'rgba(205, 205, 200, 0.75)';                       // a curl of steam off it
-  g.beginPath(); g.arc(R - 3, R - 9, 2.6, 0, TAU); g.arc(R + 2, R - 12, 2.2, 0, TAU); g.fill();
+  if (relight) {                                                   // a little flame, to light the fire again
+    g.fillStyle = '#e8741f'; g.beginPath();
+    g.moveTo(R, R - 12); g.bezierCurveTo(R + 3, R - 6, R + 10, R - 2, R + 8, R + 5);
+    g.bezierCurveTo(R + 6, R + 12, R - 6, R + 12, R - 8, R + 5);
+    g.bezierCurveTo(R - 10, R - 1, R - 3, R - 5, R, R - 12); g.fill();
+    g.fillStyle = '#ffc94a'; g.beginPath();
+    g.moveTo(R, R - 2); g.bezierCurveTo(R + 2, R + 2, R + 5, R + 4, R + 3, R + 8);
+    g.bezierCurveTo(R + 1, R + 11, R - 3, R + 10, R - 3, R + 7);
+    g.bezierCurveTo(R - 4, R + 3, R - 1, R + 1, R, R - 2); g.fill();
+  } else {
+    const pot = sprite('pot:1', R * 1.5), back = sprite('pot:0', R * 1.5);
+    g.drawImage(back.canvas, R - back.size / 2, R - back.size / 2 + 2, back.size, back.size);
+    g.drawImage(pot.canvas, R - pot.size / 2, R - pot.size / 2 + 2, pot.size, pot.size);
+    g.fillStyle = 'rgba(205, 205, 200, 0.75)';                     // a curl of steam off it
+    g.beginPath(); g.arc(R - 3, R - 9, 2.6, 0, TAU); g.arc(R + 2, R - 12, 2.2, 0, TAU); g.fill();
+  }
   if (key) {
     const x = R * 2 + 4, y = R - 10, s = 20;
     g.fillStyle = 'rgba(60, 40, 15, 0.3)'; g.beginPath(); g.roundRect(x, y + 2, s, s, 5); g.fill();
@@ -4402,21 +4440,31 @@ function promptArt() {
     g.fillStyle = '#4a3920'; g.font = `800 12px Nunito, ui-rounded, system-ui, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
     g.fillText('E', x + s / 2, y + s / 2 + 1);
   }
-  PROMPT_ART = { img: c, w: W + 4, h: H + 4, r: R, key };
-  asBitmap(c, b => { if (PROMPT_ART && PROMPT_ART.img === c) PROMPT_ART.img = b; });
-  return PROMPT_ART;
+  const art = { img: c, w: W + 4, h: H + 4, r: R, key };
+  if (relight) PROMPT_RELIGHT = art; else PROMPT_ART = art;
+  asBitmap(c, b => { art.img = b; });
+  return art;
+}
+// The unlit fire close by that the satchel lets it light again (a cold one wanting tinder, embers wanting a blow), or null.
+function relightFire() {
+  const f = world.forager;
+  if (f.down >= 0 || intro.on) return null;
+  let F = null, best = PROMPT_NEAR;
+  for (const o of world.fires) { const d = Math.hypot(o.x - f.x, o.y - f.y); if (!o.lit && d < best && fireKind(o)) { F = o; best = d; } }
+  return F;
 }
 // Each frame: the pot over the nearest lit fire, standing near it with something to cook and nothing else on at a fire.
 function drawCookPrompt(now) {
   const f = world.forager;
   let F = null;
-  if (bagFood && f.down < 0 && !ui.fire && !ui.place && !intro.on) {
+  if (f.down < 0 && !ui.fire && !ui.place && !intro.on) {
     let best = PROMPT_NEAR;
-    for (const o of world.fires) { const d = Math.hypot(o.x - f.x, o.y - f.y); if (o.lit && d < best) { F = o; best = d; } }
+    if (bagFood) for (const o of world.fires) { const d = Math.hypot(o.x - f.x, o.y - f.y); if (o.lit && d < best) { F = o; best = d; } }
+    if (!F) F = relightFire();
   }
   if (F !== promptUi.F) { promptUi.F = F; promptUi.t0 = now; }
   if (!F) { promptUi.r = 0; return; }
-  const a = promptArt(), px = firePx(cam.zoom), [sx, sy] = onScreen(F.x, F.y);
+  const a = promptArt(!F.lit), px = firePx(cam.zoom), [sx, sy] = onScreen(F.x, F.y);
   const x = sx, y = sy - px * (FLAME_H + 0.35) - a.r + 3 * Math.sin(now / 500), t = clamp((now - promptUi.t0) / PROMPT_IN, 0, 1);
   promptUi.x = x; promptUi.y = y; promptUi.r = a.r;
   ctx.globalAlpha = t * (0.88 + 0.12 * Math.sin(now / 700));
@@ -10953,12 +11001,12 @@ function toggleMore(open = $('#more-menu').classList.contains('hidden')) {
   $('[data-act="more"]').classList.toggle('on', open);
 }
 
-// Once ever, after two minutes of play: are you enjoying it, and any ideas? The idea goes to Web3Forms,
+// Once ever, a while (two minutes of play) after the first dish is cooked: are you enjoying it, and any ideas? The idea goes to Web3Forms,
 // which emails it on. The key is theirs to give out (it can only send to that one inbox). With no key
 // the card never shows.
 const IDEAS_KEY = '74821b79-dd35-4f02-a7a4-24ebb7c7ebff';   // the access key from web3forms.com
-const ASK_MS = 120000;                  // play this long first (the tab showing, past the welcome and intro)
-let played = 0;
+const ASK_MS = 120000;                  // play this long after the first dish (the tab showing)
+let played = -1;                        // (-1: no dish cooked yet, so not counting; -Infinity: asked already)
 try { if (localStorage.getItem('aeon-garden-asked') === '1') played = -Infinity; } catch (e) { played = -Infinity; }
 const askOpen = () => !$('#ask').classList.contains('hidden');
 const canShare = !!navigator.share && matchMedia('(pointer: coarse)').matches;   // a phone or tablet: its share sheet
@@ -11826,7 +11874,7 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'Escape') stepOut();
   else if (e.key === 'Enter' && ui.place) { e.preventDefault(); placeHere(); }   // (picking a spot for a fire: where the faint one is)
   else if ((e.key === 'Enter' || e.key === 't') && Net && Net.on) { e.preventDefault(); openChat(true); }
-  else if (e.code === 'KeyE' && !e.repeat) { const F = cooking() ? null : !ui.fire && cookFire(); if (cooking()) closeCook(); else if (F) clickFire(F); else pickNear(); }   // (at a lit fire: its cooking card, and again shuts it; else pick)
+  else if (e.code === 'KeyE' && !e.repeat) { const F = cooking() ? null : !ui.fire && (cookFire() || relightFire() || campFire()); if (cooking()) closeCook(); else if (F) clickFire(F); else pickNear(); }   // (at a lit fire: its cooking card, and again shuts it; else pick)
   else if (e.code === 'KeyF' && !e.repeat) { if (atFire()) { fireKey = true; blowOn(true); } else buildPressed(); }   // (at a fire, held: blowing; else the fire button)
   else if (e.key === 'm') toggleSound();
   else if (e.key === '+' || e.key === '=') zoomOn(cam.zoom * 1.25);
