@@ -12,11 +12,12 @@
  *     (see "music" below), in keys that hold the pentatonic so it still fits.
  *     Over it all hangs a wind chime that rings more the more rabbits there are.
  *
- * Use: Sound.start() from a click, then Sound.update({ phase, season, sky, bees, life, frogs, trees, fire }) a
+ * Use: Sound.start() from a click, then Sound.update({ phase, season, sky, bees, life, frogs, trees, fire, pot }) a
  * few times a second (sky: how much of each weather is showing, 0..1; bees: how many are flying
  * on screen; life: how full the meadow is of rabbits, 0..1; frogs: 0..1,
  * the spring's spawn, for a croak now and then at night; trees: 0..1, how much of the screen is under
- * leafy crowns, for the leaves' rustle in the wind; fire: 0..1, how near and well a campfire burns, for its crackle) and
+ * leafy crowns, for the leaves' rustle in the wind; fire: 0..1, how near and well a campfire burns, for its crackle; pot:
+ * 0..1, the cooking pot on the fire, simmering at 0.3 and bubbling hard at 1) and
  * Sound.play('birth', { species, pan, near, seen }) on events.
  */
 (() => {
@@ -35,7 +36,7 @@ let ac = null, master, ducker, loud, fxBus, ambBus, musicBus, hush, reverb, nois
 let enabled = true, volume = 0.6;
 const amb = {};                                    // ambient layers
 const LOUD = 0.7;                                  // thunder's level against the rest
-const state = { phase: 0.3, season: 0, sky: { clear: 1 }, bees: 0, life: 0.3, frogs: 0, trees: 0.5, fire: 0 };
+const state = { phase: 0.3, season: 0, sky: { clear: 1 }, bees: 0, life: 0.3, frogs: 0, trees: 0.5, fire: 0, pot: 0 };
 const last = {};                                   // per-sound cooldowns
 const picking = { n: 0, at: -1e9, base: 0 };       // the picks in a row (SOUNDS.pick)
 const PICK_CHAIN = 2.5;                            // s: a pick within this of the last climbs on
@@ -338,6 +339,11 @@ const RULES = {
   tinder:  { gap: 0.1,  always: true, lift: 2 },   // the tinder tucked in,
   fizzle:  { gap: 0.8,  always: true, lift: 2 },   // and only smoke, or a fire gone out
   camp:    { gap: 4,    always: true, lift: 2 },   // the first fire making camp
+  plop:    { gap: 0.05, always: true, lift: 2 },   // cooking: a thing into the pot's water (or lifted out),
+  stir:    { gap: 0.4,  always: true, lift: 1.6 }, // the spoon going round,
+  simmer:  { gap: 1,    always: true, lift: 2 },   // a stretch of the pot bubbling (the lab's: the game's comes with the ambience, state.pot),
+  dish:    { gap: 1,    always: true, lift: 2 },   // a dish done,
+  mess:    { gap: 1,    always: true, lift: 2 },   // and a forager's mess
 };
 
 const STEP_SOFT = 0.6;          // the footsteps' level against the meadow's sounds: soft, they come a few times a second
@@ -696,9 +702,94 @@ const SOUNDS = {
     pad(o, chord.map(d => note(d, -1)), t0, 5.5, 0.9);
     twinkle(at + 0.3, chord, 6, 2, 0.7);
   },
+  // Cooking at the fire. Water, wood and a warm little tune, kept soft: everything goes through a felt (a low-pass) and the
+  // water's pitched sounds come from the scale (bubble, drop), so the pot sings along with the meadow.
+  // A thing into the pot's water: the "bloop" of the hole it makes closing over it (a sine sweeping up), the splash's hiss,
+  // and a few droplets falling back, each a note of the scale. what: its first tag (recipes.js), w: how heavy (game.js
+  // PLOP_W): a fish or game a deep heavy gloop, a mushroom or an apple a round plop, a leaf or a berry a light plip,
+  // honey a slow sticky gloop. what 'out': one lifted back out, dripping.
+  plop(t, o0, { what = '', w = 1 }) {
+    const o = ac.createBiquadFilter(); o.type = 'lowpass'; o.frequency.value = 3800; o.Q.value = 0.5; o.connect(o0);
+    const k = Math.max(0.4, Math.min(1.8, w)), r = rand(0.9, 1.1);
+    if (what === 'out') {
+      noise(o, t, 0.16, { from: 700, to: 1500, q: 0.8, peak: 0.05, attack: 0.05 });   // the water letting go of it
+      const d0 = Math.floor(rand(4, 8));
+      for (let i = 0; i < 3; i++) waterDrop(o, t + 0.12 + i * rand(0.09, 0.15), d0 - i * pick([1, 2]), 0.05 - i * 0.012);
+      return;
+    }
+    if (what === 'sweet') {                                // honey: a slow gloop, sticky, then a soft bloop
+      const f = ac.createBiquadFilter(), src = ac.createBufferSource(), g = ac.createGain();
+      src.buffer = noiseBuf; src.loop = true; f.type = 'bandpass'; f.Q.value = 7;
+      f.frequency.setValueAtTime(rand(220, 260), t); f.frequency.exponentialRampToValueAtTime(rand(700, 820), t + 0.26);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.45, t + 0.07); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.34);
+      src.connect(f).connect(g).connect(o); src.start(t, rand(0, 3)); src.stop(t + 0.4);
+    }
+    bloop(o, t, 230 / k * r, 0.075 * k, 0.14 * Math.min(1.3, k));
+    if (k > 1.3) partial(o, rand(70, 85), t, 0.14, 0.006, 0.18);   // (something heavy: a thump under it)
+    noise(o, t, 0.1 + 0.12 * k, { from: 2600 * r, to: 600, q: 0.6, peak: 0.05 + 0.05 * k, attack: 0.004, type: 'lowpass' });   // the splash
+    noise(o, t + 0.01, 0.08 + 0.06 * k, { from: 3200, to: 1800, q: 1, peak: 0.025 * k, attack: 0.006 });   // its spray
+    const d0 = Math.floor(rand(3, 9)), n = 2 + Math.round(k * 1.5);
+    for (let i = 0; i < n; i++) waterDrop(o, t + 0.12 + i * rand(0.05, 0.11) * (0.8 + 0.2 * k), d0 + pick([-2, -1, 1, 2, 3]), (0.045 - i * 0.006) * (0.7 + 0.3 * k));
+  },
+  // The spoon going round the pot: the water swished round (a band of noise swelling and moving), now and then the wood
+  // knocking softly on the iron.
+  stir(t, o0) {
+    const o = ac.createBiquadFilter(); o.type = 'lowpass'; o.frequency.value = 2400; o.Q.value = 0.5; o.connect(o0);
+    const len = rand(0.75, 0.95), src = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+    src.buffer = noiseBuf; src.loop = true; f.type = 'bandpass'; f.Q.value = 1.6;
+    f.frequency.setValueAtTime(380, t); f.frequency.linearRampToValueAtTime(rand(820, 980), t + len * 0.5); f.frequency.linearRampToValueAtTime(420, t + len);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.11, t + len * 0.45); g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+    src.connect(f).connect(g).connect(o); src.start(t, rand(0, 3)); src.stop(t + len + 0.05);
+    if (Math.random() < 0.6) { const at = t + rand(0.2, 0.6); partial(o, rand(560, 640), at, 0.05, 0.003, 0.06, 'triangle'); partial(o, rand(1500, 1700), at, 0.012, 0.002, 0.03); }
+  },
+  // A stretch of the pot simmering (sec seconds; v 0.3 a simmer, 1 a boil): what the ambience plays from state.pot, for the lab.
+  simmer(t, o, { sec = 3, v = 1 }) {
+    noise(o, t, sec, { from: 240, to: 300, q: 0.7, peak: 0.05 * v, attack: sec * 0.3, type: 'lowpass' });
+    for (let at = t + rand(0, 0.1); at < t + sec; at += rand(0.05, 0.3) / v) bubble(o, at, v);
+  },
+  // A dish done: the steam whooshing up off it as it comes out of the pot, and a warm little run on the kalimba up into a
+  // chord over a low felt-piano note, a bell on top and a few sparkles.
+  dish(t, o) {
+    const chord = pick([CHORDS.D, CHORDS.DA, CHORDS.D]);
+    noise(o, t, 0.6, { from: 300, to: 1400, q: 0.6, peak: 0.07, attack: 0.25, type: 'lowpass' });
+    bloop(o, t, 200, 0.09, 0.1);
+    piano(o, note(chord[0], -1), t + 0.18, 0.32, 2.4, 0.6);
+    [chord[0], chord[1], chord[2], chord[0] + 5].forEach((d, i) => kalimba(o, note(d, 1), t + 0.2 + i * 0.1, 0.34 - i * 0.03));
+    bell(o, note(chord[2], 1), t + 0.62, 0.22);
+    twinkle(t + 0.7, chord, 4, 0.9, 0.5);
+  },
+  // A forager's mess: a soft puff of dark smoke, a pot-lid rattle, and two low notes stepping down: a shrug, not a fail.
+  mess(t, o) {
+    noise(o, t, 0.55, { from: 900, to: 180, q: 0.6, peak: 0.12, attack: 0.03, type: 'lowpass' });
+    for (let i = 0; i < 3; i++) partial(o, rand(700, 900), t + 0.08 + i * 0.06, 0.03, 0.003, 0.05, 'triangle');
+    marimba(o, note(2, -1), t + 0.3, 0.4);
+    marimba(o, note(0, -1), t + 0.55, 0.35);
+  },
 };
 
+// A bubble of air coming up through the water and the hole closing behind it: a sine sweeping up fast and dying (f its
+// pitch at the start, len how long it rings, v how loud). The heart of every water sound in the pot.
+function bloop(o, t, f, len, v) {
+  const osc = ac.createOscillator(), g = ac.createGain();
+  osc.frequency.setValueAtTime(f, t); osc.frequency.exponentialRampToValueAtTime(f * 3.2, t + len);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + 0.006); g.gain.exponentialRampToValueAtTime(0.0001, t + len * 1.4);
+  osc.connect(g).connect(o); osc.start(t); osc.stop(t + len * 1.4 + 0.05);
+}
+// A droplet falling back into the water: a tiny bloop on a note of the scale (deg, high up).
+function waterDrop(o, t, deg, v) {
+  const f = note(deg, 1), osc = ac.createOscillator(), g = ac.createGain();
+  osc.frequency.setValueAtTime(f * 0.7, t); osc.frequency.exponentialRampToValueAtTime(f, t + 0.025);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(Math.max(0.002, v), t + 0.003); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+  osc.connect(g).connect(o); osc.start(t); osc.stop(t + 0.12);
+}
+// One bubble breaking on the pot's surface (v: how hard it boils): small and low, on a note of the scale.
+function bubble(o, t, v = 1) {
+  const f = note(Math.floor(rand(-2, 5)), 0) * rand(0.98, 1.02), len = rand(0.03, 0.07);
+  bloop(o, t, f * 0.55, len, rand(0.025, 0.05) * (0.5 + 0.5 * v));
+}
+
 // opts: { species, pan (-1..1), near (0..1, how close to the camera), ...sound-specific }
+// (Cooking's sounds are in SOUNDS too, after the campfire's: plop, stir, simmer, dish, mess.)
 function play(name, opts = {}) {
   if (!ac || !enabled || !SOUNDS[name]) return false;
   const r = RULES[name], now = ac.currentTime;
@@ -768,6 +859,7 @@ function buildAmbience() {
   amb.rainL = rainSide(-0.7, 2300); amb.rainR = rainSide(0.7, 2600);
   amb.rainLow = loopNoise('lowpass', 350, 0.5);
   amb.fire = loopNoise('lowpass', 420, 0.6);              // a campfire's soft roar (state.fire), crackling over it (crackle)
+  amb.pot = loopNoise('lowpass', 260, 0.7);               // the pot on it, simmering (state.pot), bubbles breaking over it (bubble)
   amb.hum = hiveHum();
   amb.calm = 0.5; amb.blow = null; amb.gust = 0; amb.swell = 0.5; amb.tube = 2;
 }
@@ -810,6 +902,7 @@ function tickAmbience() {
   amb.rainLow.g.gain.setTargetAtTime((0.10 * m.rain + 0.06 * m.storm) * rainLvl, now, 2);
   amb.hum.gain.setTargetAtTime(0.03 * m.bees, now, 1.5);
   amb.fire.g.gain.setTargetAtTime(0.06 * state.fire, now, 0.6);
+  amb.pot.g.gain.setTargetAtTime(0.05 * state.pot, now, 0.5);
   hush.frequency.setTargetAtTime(12000 - 9500 * m.hush, now, 2);
 
   // Scattered one-shots, each rolled a few times a second.
@@ -823,6 +916,8 @@ function tickAmbience() {
   }
   if (Math.random() < m.snow * 0.15 * dt) snowChime(now);
   if (Math.random() < state.fire * 5 * dt) crackle(now + rand(0, 0.2), state.fire);   // a campfire crackling
+  if (state.pot > 0) for (let i = 0, n = Math.round(state.pot * state.pot * 7 * Math.random() + (Math.random() < state.pot * 2.5 * dt ? 1 : 0)); i < n; i++)
+    bubble(out(rand(-0.15, 0.15), 0.2, 0.9), now + rand(0, 0.2), state.pot);                // the pot bubbling: now and then a bubble, a boil a stream of them
   if (Math.random() < m.cicadas * 0.12 * dt) cicada(now);
   if (Math.random() < (0.08 + 1.4 * m.chimes) * (0.5 + amb.gust) * dt) chime(now + rand(0, 0.2));
   musicTick(now, m);
