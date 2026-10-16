@@ -198,11 +198,15 @@ it's gone a tile), so a tick looks at a handful. Through a wood it weaves and ta
 steering: it heads for a point `FORAGER_LOOK` along the way, turning at most `FORAGER_TURN` a tick (three times that from
 standing), speeds up by `FORAGER_ACCEL`, slows to stop where it was sent (`FORAGER_BRAKE`) and into a sharp turn, wades at
 `FORAGER_WADE` of `FORAGER_WALK`, and slides along the deep if a corner clips it. Sneaking (`f.sneaking`, game.js's sneak emote, in the blank: no `KEEP_VERSION` bump) it creeps at `FORAGER_SNEAK`; a sprint wins.
+The river carries it too: standing in the shallows it drifts down the current each tick (`carryForager`, as a swimmer's drift, at most `CARRY` of a wade, along the shallows only, sliding round rocks and the deep). Walking, the current adds to or takes from its pace along its way (`currentAt`, never under `1 - CARRY` of it), so it goes down a river quickly and up one slowly (it's not pushed, so a walk into the current still ends at its goal).
 Playing together, friends' foragers are in each other's way (`friendsAt`: game.js `friendsFrame` hands over where each is
-drawn, every frame; one collapsed isn't): a circle of `ELBOW_ROOM` about each it can't step into (`outOfFriends`), sliding round
-it, met about head on (`FRIEND_HEAD_ON`) stepping to its right (`FRIEND_SIDESTEP`) so two pass, and a way that ends in one ends at
-its edge. A friend is shown a moment late, so it can walk into this one: one too near gets `ELBOW_SHUFFLE` more room a tick,
-walking or standing (`makeRoom`), so they settle apart on both screens; two on one spot (woken by the camp's fire) step off the
+drawn and whether it's standing still (`PEER_STILL_MS`), every frame; one collapsed isn't): a circle of `ELBOW_ROOM` about each it can't step into (`outOfFriends`), sliding round
+it, met about head on (`FRIEND_HEAD_ON`) stepping to its right (`FRIEND_SIDESTEP`) so two walkers pass, and a way that ends in one ends at
+its edge. Walking into one that's standing it doesn't step aside: it presses on, and the one standing is pushed (`makeRoom`) up to
+`PUSH_STEP` a tick while the walker is within `PUSH_ROOM` (0.05 a tick against a walk's 0.085), so a friend can be pressed along out of
+the way. A friend is shown a moment late, so the walker's stopped at `ELBOW_ROOM` and the standing one's screen sees it come near;
+a walker already inside a circle is moved out of it by `ELBOW_SHUFFLE` a tick (`outOfFriends`). Two standing side by side settle
+`PUSH_ROOM` apart on both screens; two on one spot (woken by the camp's fire) step off the
 ways `friendSide` says, hashed from who each is. Not the sim's: nothing the meadow counts follows from it.
 Gathering (`whatThere`, `gather`) takes from the sim for real, with no random numbers: a clump of mushrooms picked is gone
 (all its caps; only part if the satchel is nearly full), a patch of greens gives `GREEN_GIVES` (one more off a big patch) and

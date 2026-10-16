@@ -34,7 +34,7 @@ const pick = a => a[Math.floor(Math.random() * a.length)];
 let ac = null, master, ducker, loud, fxBus, ambBus, musicBus, hush, reverb, noiseBuf, brownBuf, leafBuf;
 let enabled = true, volume = 0.6;
 const amb = {};                                    // ambient layers
-const LOUD = 1.4;                                  // thunder's level against the rest
+const LOUD = 0.7;                                  // thunder's level against the rest
 const state = { phase: 0.3, season: 0, sky: { clear: 1 }, bees: 0, life: 0.3, frogs: 0, trees: 0.5, fire: 0 };
 const last = {};                                   // per-sound cooldowns
 const picking = { n: 0, at: -1e9, base: 0 };       // the picks in a row (SOUNDS.pick)
@@ -297,6 +297,7 @@ const CHORDS = { D: [0, 2, 3], Bm: [-1, 0, 2], DA: [3, 5, 7], A: [1, 3, 5], Em: 
 // ------------------------------------------------------------------ events
 
 // How long each sound waits before it may play again; free: it doesn't count against the creature sounds' budget.
+// lift: how much louder than the rest of the meadow it plays (1 the default): the campfire's small sounds get a boost.
 const RULES = {
   love:    { gap: 0.35 },
   birth:   { gap: 0.25 },
@@ -329,14 +330,14 @@ const RULES = {
   pant:    { gap: 0.25, always: true },
   phew:    { gap: 4,    always: true },
   hemdrip: { gap: 0.25, always: true },
-  strike:  { gap: 0.15, always: true },   // the campfire: the flint and steel,
-  blow:    { gap: 0.3,  always: true },   // a breath blown on the spark,
-  kindle:  { gap: 0.5,  always: true },   // the tinder catching and the flame taking,
-  stick:   { gap: 0.08, always: true },   // a stick laid on,
-  clack:   { gap: 0.06, always: true },   // a stone set in the ring,
-  tinder:  { gap: 0.1,  always: true },   // the tinder tucked in,
-  fizzle:  { gap: 0.8,  always: true },   // and only smoke, or a fire gone out
-  camp:    { gap: 4,    always: true },   // the first fire making camp
+  strike:  { gap: 0.15, always: true, lift: 2 },   // the campfire: the flint and steel,
+  blow:    { gap: 0.3,  always: true, lift: 2 },   // a breath blown on the spark,
+  kindle:  { gap: 0.5,  always: true, lift: 2 },   // the tinder catching and the flame taking,
+  stick:   { gap: 0.08, always: true, lift: 2 },   // a stick laid on,
+  clack:   { gap: 0.06, always: true, lift: 2 },   // a stone set in the ring,
+  tinder:  { gap: 0.1,  always: true, lift: 2 },   // the tinder tucked in,
+  fizzle:  { gap: 0.8,  always: true, lift: 2 },   // and only smoke, or a fire gone out
+  camp:    { gap: 4,    always: true, lift: 2 },   // the first fire making camp
 };
 
 const STEP_SOFT = 0.6;          // the footsteps' level against the meadow's sounds: soft, they come a few times a second
@@ -450,7 +451,7 @@ const SOUNDS = {
   thunder(t, o, { seen = true, pan = 0 }) {
     if (seen) {
       const hit = out(pan, 0.4, 1, loud);
-      duck(t, 0.3, 6);
+      duck(t, 0.5, 6);
       boom(hit, t);
       roll(hit, t + 0.1, rand(5, 7), { cut: 500, lumps: 7, peak: 0.5 });
       let at = 0, side = Math.random() < 0.5 ? -1 : 1;
@@ -646,7 +647,7 @@ const SOUNDS = {
     voice(o, note(d + pick([2, 2, 3]), 1), t + gap, 0.34 * v);
     if (n >= 3) celesta(o, note(d + 5, 1), t + gap * 2, 0.2 * v);
   },
-  // The campfire. Kept soft and close, like the footsteps: no note of it is loud, and the scale only comes in when it takes.
+  // The campfire. Kept close and gentle, lifted over the meadow (RULES' lift): no note of it is loud, and the scale only comes in when it takes.
   // The flint struck on the steel: a short bright "chk", a tiny ring of the steel, and a softer scrape after it (n: which
   // strike, so two in a row aren't the same).
   strike(t, o, { n = 0 }) {
@@ -708,7 +709,7 @@ function play(name, opts = {}) {
   const ok = v => Number.isFinite(v) ? v : undefined;      // a NaN would throw inside Web Audio
   const near = ok(opts.near) ?? 1;
   const pan = ok(opts.pan) ?? 0;
-  SOUNDS[name](now + 0.02, out(pan, 0.25 + 0.35 * (1 - near), 0.35 + 0.65 * near), { ...opts, near, pan });
+  SOUNDS[name](now + 0.02, out(pan, 0.25 + 0.35 * (1 - near), (r.lift ?? 1) * (0.35 + 0.65 * near)), { ...opts, near, pan });
   return true;
 }
 

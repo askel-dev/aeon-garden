@@ -266,6 +266,10 @@ Each its own branch, played and looked at by Axel before the next:
   7 (recipes.js `fillOf`), so two or three dishes a day.
 - Only rosehip tea is warm at the fire (the other warm ones are pot dishes): the recipes pass (question 10) is still to do.
 - A stick tapped in the satchel while the card is up goes on the fire. With the satchel full, a dish lands on the ground.
+- A clarity pass on the card (2026-10-16): the stick button wears the fire's fuel as a ring (amber and pulsing when low); the
+  satchel rings what will go in the pot or on the fire and dims the rest while the card is up; the pot is named for a known
+  dish it's a thing or two short of, and told when nothing but a mess could come of it, before the five seconds are spent; the
+  last dish cooked comes back as a one-tap "cook again"; and the first card ever opened nudges what to do.
 - Not yet: the hungry look and growl (step 3/4); for now the forager says "I'm getting hungry" and "I'm starving".
 
 ## After that (roughly in this order)

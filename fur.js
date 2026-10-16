@@ -738,6 +738,9 @@ const FORAGER_HATS = [
   { name: 'Toadstool', id: 'toadstool' },        // a red cap, white-spotted
   { name: 'Wanderer', id: 'wanderer' },          // a wide felt hat with a feather in its band
   { name: 'Flowers', id: 'flowers' },            // a crown of little blossoms
+  { name: 'Melted cheese', id: 'cheese' },       // a golden cap slumped over the hood, its drips running down the sides
+  { name: 'Party hat', id: 'party' },            // a polka-dot birthday cone on the bare head (no hood), a frill round its foot, a pompom on its tip
+  { name: 'Sleepy cat', id: 'cat' },             // a ginger cat asleep on the crown: its belly draped over it, its head up front with the eyes shut, a paw dangling, its tail hanging down behind
 ];
 const FORAGER_OUTFITS = FORAGER_HATS.flatMap(h => FORAGER_CLOAKS.map(c => ({ ...c, hat: h.id, name: c.name + ', ' + h.name })));
 const outfitOf = (cloak, hat) => hat * FORAGER_CLOAKS.length + cloak;
@@ -961,15 +964,20 @@ function foragerParts(P) {
     },
       { casts: true, marks: [[HOOD, 1, 0.01, g => g.rect(cx - 1, cy - 1, 2, 2)]] });
   };
-  // The head: the hood round it, the face in its opening (none from the back), a fringe of hair under the hood.
-  const fx = cx + (side ? -0.085 : -0.05 + 0.055 * P.turn), fy = cy + 0.035, frx = side ? 0.155 : 0.165, fry = 0.165;
+  // The head: the hood round it, the face in its opening (none from the back), a fringe of hair under the hood. A party hat
+  // sits on the bare head instead (`bare`): hair over the crown, and the face down to the chin (`jaw`).
+  const bare = HAT === 'party', jaw = bare ? 0.012 : 0;         // (bare, a smaller face, kept inside the smaller head)
+  const fx = cx + (side ? (bare ? -0.075 : -0.085) : (bare ? -0.035 : -0.05) + 0.055 * P.turn), fy = cy + (bare ? 0.05 : 0.035);
+  const frx = bare ? (side ? 0.13 : 0.145) : side ? 0.155 : 0.165, fry = bare ? 0.145 : 0.165;
   const cap = snowOn(g => ovalAt(g, cx + 0.01, cy - R * 0.98, R * 0.95, 0.05 + 0.045 * SNOWED), 0.025);   // a cap of snow on the hood
-  const head = () => add(g => { ovalAt(g, cx, cy, R, R * 0.97); ovalAt(g, cx + 0.02, cy + 0.17, 0.17, 0.09); },   // and a little cowl at the neck
-    { casts: true, marks: back ? [[HOOD, 1, 0.01, g => g.rect(cx - 1, cy - 1, 2, 2)], [HOOD_RIM, 0.55, 0.04, g => ovalAt(g, cx, cy + 0.17, 0.17, 0.06)], ...cap,
+  const hr = bare ? 0.215 : R, bhx = bare ? cx + (side ? -0.03 : 0) : cx, bhy = bare ? cy + 0.025 : cy;   // (bare, the head is just hair round the face: smaller than the hood)
+  const head = () => add(g => { ovalAt(g, bhx, bhy, hr, hr * 0.97); ovalAt(g, cx + 0.02, cy + 0.17, 0.17, 0.09); },   // and a little cowl at the neck
+    { casts: true, marks: back ? [bare ? [HAIR, 1, 0.01, g => ovalAt(g, bhx, bhy, hr, hr * 0.97)] : [HOOD, 1, 0.01, g => g.rect(cx - 1, cy - 1, 2, 2)],
+      ...(bare ? [] : [[HOOD_RIM, 0.55, 0.04, g => ovalAt(g, cx, cy + 0.17, 0.17, 0.06)]]), ...cap,
       [SKIN, 1, 0.02, g => ovalAt(g, cx - 0.28, cy + 0.06, 0.06, 0.12)]]   // (a glimpse of a cheek)
-      : [[HOOD, 1, 0.01, g => g.rect(cx - 1, cy - 1, 2, 2)],
-        [HOOD_RIM, 1, 0.03, g => ovalAt(g, fx, fy, frx + 0.04, fry + 0.04)], ...cap,
-        [SKIN, 1, 0.015, g => ovalAt(g, fx, fy, frx, fry)],
+      : [bare ? [HAIR, 1, 0.01, g => ovalAt(g, bhx, bhy, hr, hr * 0.97)] : [HOOD, 1, 0.01, g => g.rect(cx - 1, cy - 1, 2, 2)],
+        ...(bare ? [] : [[HOOD_RIM, 1, 0.03, g => ovalAt(g, fx, fy, frx + 0.04, fry + 0.04)]]), ...cap,
+        [SKIN, 1, 0.015, g => ovalAt(g, fx, fy + jaw, frx, fry + jaw)],
         [HAIR, 1, 0.02, g => {                                   // the fringe: the top of the face, a wavy edge across the brow
           g.moveTo(fx - frx, fy - 0.01);
           g.ellipse(fx, fy, frx, fry, 0, Math.PI, 2 * Math.PI);
@@ -1025,6 +1033,73 @@ function foragerParts(P) {
       add(g => { for (const [x, y] of pts) for (let p = 0; p < 5; p++) { const a = p * TAU / 5 - 0.3; discAt(g, x + Math.cos(a) * 0.034, y + Math.sin(a) * 0.03, 0.032); } },
         { casts: true, marks: [...pts.map(([x, y], k) => [PETALS[k], 1, 0.008, g => discAt(g, x, y, 0.075)]),
           ...pts.map(([x, y]) => [[232, 170, 60], 1, 0.006, g => discAt(g, x, y, 0.02)])] });
+    } else if (HAT === 'cheese') {                                  // melted cheese: a golden cap sliding down over the hood, drips hanging off its edge
+      const CHEESE = [246, 188, 62], x0 = bx, yc = cy - 0.19, W = side ? 0.24 : 0.28;
+      add(g => {
+        ovalAt(g, x0, yc, W, 0.135);                                // the cap, domed over the crown
+        ovalAt(g, x0 - W * 0.8, yc + 0.1, 0.11, 0.1);               // its edges slumped down over the hood
+        ovalAt(g, x0 + W * 0.8, yc + 0.09, 0.11, 0.11);
+        for (const [dx, len, w] of [[W * 0.7, 0.26, 0.042], [W * 0.3, 0.14, 0.036], [-W * 0.62, 0.2, 0.04]]) {
+          const y0 = yc + 0.04, y1 = y0 + len;
+          limbAt(g, x0 + dx, y0, w, x0 + dx, y1, w * 0.7); discAt(g, x0 + dx, y1, w * 0.85);
+        }
+      }, { casts: true, marks: [full(CHEESE),
+        [[255, 240, 168], 0.9, 0.03, g => ovalAt(g, x0 - W * 0.4, yc - 0.075, 0.12, 0.034, -0.2)],   // a glossy sheen on the top
+        [[204, 124, 40], 0.75, 0.02, g => { discAt(g, x0 + W * 0.45, yc + 0.03, 0.022); discAt(g, x0 - W * 0.2, yc + 0.07, 0.018); discAt(g, x0 + W * 0.9, yc + 0.02, 0.016); }],   // browned bubbles
+        ...snowOn(g => ovalAt(g, x0, yc - 0.11, W * 0.8, 0.02 + 0.02 * SNOWED), 0.02)] });
+    } else if (HAT === 'party') {                                   // a birthday party hat: a big polka-dot cone sat jauntily on the bare head, a frilled trim round its foot, a fluffy pompom on its tip
+      const CONE = [76, 170, 206], DOTS = [[250, 214, 92], [244, 124, 156]], FRILL = [252, 246, 232], POM = [244, 124, 156], W = 0.17, H = 0.4;
+      const y0 = bhy - hr * 0.82, ax = bx + (side ? 0.07 : front ? 0.05 : 0.02) + t * 0.4, ay = y0 - H, pm = ay - 0.02;   // (its foot sits on the crown, where the bare head is that wide)
+      const at = (u, v) => [bx + u * W * (1 - v) + (ax - bx) * v, y0 + (ay - y0) * v];   // (a point on the cone: u across, -1 to 1; v up it, 0 to 1)
+      const dots = [[-0.55, 0.14], [0.25, 0.2], [0.85, 0.08], [-0.25, 0.46], [0.5, 0.52], [0.05, 0.76]].map(([u, v], k) =>
+        [DOTS[k % 2], 1, 0.01, g => { const [x, y] = at(u, v); discAt(g, x, y, 0.034 * (1 - v * 0.55)); }]);
+      add(g => { g.moveTo(ax, ay); g.lineTo(bx + W, y0); g.quadraticCurveTo(bx, y0 + 0.05, bx - W, y0); g.closePath(); },
+        { casts: true, marks: [full(CONE), [tone(CONE, 0.82), 0.7, 0.05, g => { g.moveTo(ax, ay); g.lineTo(bx + W, y0); g.lineTo(bx + W * 0.35, y0 + 0.03); g.closePath(); }], ...dots] });
+      add(g => { for (let k = 0; k <= 8; k++) { const u = -1 + k / 4; discAt(g, bx + u * (W + 0.01), y0 + 0.025 * (1 - u * u) + 0.005, 0.034); } },   // the frill, a row of puffs along its foot
+        { casts: true, marks: [full(FRILL), [[222, 210, 190], 0.8, 0.02, g => ovalAt(g, bx, y0 + 0.04, W + 0.03, 0.018)]] });
+      add(g => { for (let k = 0; k < 7; k++) { const a = k * TAU / 7; discAt(g, ax + Math.cos(a) * 0.04, pm + Math.sin(a) * 0.036, 0.042); } },
+        { casts: true, marks: [full(POM), [tone(POM, 0.85), 0.8, 0.03, g => ovalAt(g, ax + 0.014, pm + 0.03, 0.05, 0.025)],
+          ...snowOn(g => ovalAt(g, ax, pm - 0.05, 0.035, 0.015 + 0.015 * SNOWED), 0.02)] });
+    } else if (HAT === 'cat') {                                     // a ginger cat asleep on the crown: its belly draped over it, its head up front (eyes shut), a paw down the side, its tail hanging behind
+      const CAT = [226, 150, 84], STRIPE_C = tone(CAT, 0.7), CREAM_C = [246, 234, 212], PINK = [236, 146, 150], NOSE = [206, 104, 116], INK = [58, 40, 34];
+      const bx0 = bx + t * 0.18, cy0 = cy + Math.abs(t) * 0.1;      // (riding the hood: it sways a little with the point's flop)
+      const H = [bx0 - 0.17, cy0 - 0.3];                            // its head
+      const D = a => a * Math.PI / 180, dome = a => [bx0 + 0.315 * Math.cos(D(a)), cy0 + 0.315 * Math.sin(D(a))];   // (its body follows the dome, a in degrees)
+      const stripe = a => [STRIPE_C, 0.9, 0.02, g => { const [x, y] = dome(a); ovalAt(g, x, y, 0.02, 0.07, D(a) - Math.PI / 2); }];
+      const shut = (x, y) => g => { g.moveTo(x - 0.023, y); g.quadraticCurveTo(x, y + 0.046, x + 0.023, y); g.quadraticCurveTo(x, y + 0.005, x - 0.023, y); g.closePath(); };
+      const nose = (x, y) => g => { g.moveTo(x - 0.014, y - 0.004); g.quadraticCurveTo(x, y - 0.009, x + 0.014, y - 0.004); g.quadraticCurveTo(x, y + 0.012, x - 0.014, y - 0.004); g.closePath(); };
+      const smiling = (x, y) => g => {                              // (asleep: a soft little w under the nose)
+        g.moveTo(x - 0.022, y); g.quadraticCurveTo(x - 0.012, y + 0.016, x, y + 0.006);
+        g.quadraticCurveTo(x + 0.012, y + 0.016, x + 0.022, y);
+        g.quadraticCurveTo(x + 0.012, y + 0.0105, x, y + 0.0005);
+        g.quadraticCurveTo(x - 0.012, y + 0.0105, x - 0.022, y); g.closePath();
+      };
+      const eyes = front ? [-0.048, 0.048] : side ? [-0.03] : [];
+      const pts = [-140, -114, -88, -62, -38, -20, -6].map(dome), r = [0.07, 0.086, 0.095, 0.095, 0.09, 0.083, 0.066];
+      // Its tail: out of the body's far end, hanging down the back, the tip curled forward and pale, as its paws are.
+      const tail = [[0.282, -0.06, 0.055], [0.35, 0.05, 0.047], [0.376, 0.16, 0.04], [0.348, 0.262, 0.034], [0.308, 0.3, 0.029]];
+      const ring = k => { const [x0, y0, w0] = tail[k], [x1, y1, w1] = tail[k + 1];   // (a ring across the tail, turned along it)
+        return [STRIPE_C, 0.9, 0.02, g => ovalAt(g, bx0 + (x0 + x1) / 2, cy0 + (y0 + y1) / 2, 0.015, (w0 + w1) / 2 * 1.15, Math.atan2(y1 - y0, x1 - x0))]; };
+      add(g => { for (let k = 0; k < tail.length - 1; k++) limbAt(g, bx0 + tail[k][0], cy0 + tail[k][1], tail[k][2], bx0 + tail[k + 1][0], cy0 + tail[k + 1][1], tail[k + 1][2]); },
+        { casts: true, marks: [full(CAT), ring(1), ring(2), ring(3)] });
+      add(g => { for (let k = 0; k < pts.length - 1; k++) limbAt(g, pts[k][0], pts[k][1], r[k], pts[k + 1][0], pts[k + 1][1], r[k + 1]); },
+        { casts: true, marks: [full(CAT), stripe(-98), stripe(-72), stripe(-48), ...snowOn(g => ovalAt(g, bx0 - 0.02, cy0 - 0.4, 0.17, 0.03 + 0.02 * SNOWED), 0.02)] });
+      add(g => { limbAt(g, H[0], H[1] + 0.07, 0.044, H[0] - 0.085, H[1] + 0.16, 0.036); ovalAt(g, H[0] - 0.107, H[1] + 0.19, 0.034, 0.042, 0.79); },   // its paw, hanging (drawn first: its root goes under the head)
+        { casts: true, marks: [full(CAT), [CREAM_C, 1, 0.012, g => ovalAt(g, H[0] - 0.112, H[1] + 0.198, 0.026, 0.033, 0.79)]] });
+      const ear = (x, lean) => {                                    // (x: the middle of its base on the head, leaning out)
+        const y = H[1] - 0.07, h = 0.14, w = 0.11, s = Math.sin(lean), c = Math.cos(lean);
+        const tx = x + s * h, ty = y - c * h, ax = x - c * w / 2, ay = y - s * w / 2, ex = x + c * w / 2, ey = y + s * w / 2;
+        add(g => { g.moveTo(ax, ay); g.quadraticCurveTo(ax + s * h * 0.7 - c * 0.02, ay - c * h * 0.75, tx, ty); g.quadraticCurveTo(ex + s * h * 0.6 + c * 0.01, ey - c * h * 0.6, ex, ey); g.closePath(); },
+          { casts: true, marks: [full(CAT), ...back ? [] : [[PINK, 0.95, 0.03, g => { g.moveTo(x - c * 0.035, y - s * 0.035); g.lineTo(x + s * h * 0.6, y - c * h * 0.6); g.lineTo(x + c * 0.035, y + s * 0.035); g.closePath(); }]]] });
+      };
+      ear(H[0] - 0.07, -0.4); ear(H[0] + 0.07, 0.4);
+      add(g => ovalAt(g, H[0], H[1], 0.125, 0.112), { casts: true, marks: [full(CAT),
+        ...front ? [[CREAM_C, 1, 0.02, g => ovalAt(g, H[0], H[1] + 0.05, 0.066, 0.036)], [PINK, 0.5, 0.03, g => { discAt(g, H[0] - 0.082, H[1] + 0.042, 0.019); discAt(g, H[0] + 0.082, H[1] + 0.042, 0.019); }],
+          [STRIPE_C, 0.9, 0.02, g => { ovalAt(g, H[0] - 0.035, H[1] - 0.098, 0.0075, 0.023, 0.5); ovalAt(g, H[0] + 0.035, H[1] - 0.098, 0.0075, 0.023, -0.5); }],   // (the tabby M's two outer strokes)
+          [INK, 1, 0.008, smiling(H[0], H[1] + 0.056)]] : [],
+        [STRIPE_C, 0.9, 0.02, g => ovalAt(g, H[0], H[1] - 0.085, 0.012, 0.03)],
+        ...eyes.map(dx => [INK, 1, 0.008, shut(H[0] + dx, H[1] - 0.01)]),
+        ...back ? [] : [[NOSE, 1, 0.008, nose(side ? H[0] - 0.095 : H[0], H[1] + 0.03)]]] });
     }
   };
   const shoulder = side ? 0.0 : 0.15;
@@ -1113,7 +1188,7 @@ function paintForager(g, size, U, n) {
       else if (P.sad) strokeIn(g, 'rgba(120,64,50,0.8)', 0.012, () => { g.moveTo(mx - 0.015, my + 0.01); g.quadraticCurveTo(mx, my - 0.006, mx + 0.015, my + 0.01); });   // a little frown
       else if (P.warm) strokeIn(g, 'rgba(120,64,50,0.8)', 0.013, () => { g.moveTo(mx - 0.02, my - 0.003); g.quadraticCurveTo(mx, my + 0.02, mx + 0.02, my - 0.003); });   // a bigger smile
       else strokeIn(g, 'rgba(120,64,50,0.8)', 0.012, () => { g.moveTo(mx - 0.016, my); g.quadraticCurveTo(mx, my + 0.014, mx + 0.016, my); });
-      if (view === 0) fillIn(g, P.sad ? rockRGB(COLD_NOSE) : rockRGB(tone(SKIN, 0.92)), () => ovalAt(g, fx - 0.155, fy + 0.035, 0.022, 0.018));   // the nose, just past the cheek
+      if (view === 0) fillIn(g, P.sad ? rockRGB(COLD_NOSE) : rockRGB(tone(SKIN, 0.92)), () => ovalAt(g, fx - (HAT === 'party' ? 0.13 : 0.155), fy + 0.035, 0.022, 0.018));   // the nose, just past the cheek (the bare head's face is narrower)
       else if (P.sad) furGlow(g, CHEEK, 0.7, fx - 0.012, fy + 0.045, 0.022, 0.016);   // cold, a red nose
     } });
 }

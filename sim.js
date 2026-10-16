@@ -5409,7 +5409,9 @@ function lifeTick(w, c) {
 // corners come round in curves; it speeds up gently (FORAGER_ACCEL), slows to stop just where it was sent (FORAGER_BRAKE),
 // slows into a sharp turn, and wades at FORAGER_WADE of its pace. Sent running (f.running: game.js, Shift held or the
 // spot tapped again) it sprints at FORAGER_RUN instead, while its stamina lasts (bodyTick); cold, it walks slower
-// (bodyPace). It moves on the sim's ticks, so pausing pauses it, and game.js draws it between them.
+// (bodyPace). The river carries it too: standing in the water it drifts down the current (carryForager), and walking it is
+// helped along or held back by the current in its pace (currentAt). It moves on the sim's ticks, so pausing pauses it, and
+// game.js draws it between them.
 const FORAGER_WALK = 0.085;             // tiles a tick at a walk (a rabbit ambles 0.06)
 const FORAGER_RUN = 0.16;               // and at a sprint
 const FORAGER_SNEAK = 0.042;            // and sneaking (f.sneaking: game.js, the devious walk), a creep on its toes
@@ -5508,17 +5510,20 @@ function outOfRocks(x, y, fromX, fromY) {
 
 // Friends' foragers (playing together: game.js hands over where each is drawn now, friendsAt) are in its way too, so two
 // don't walk through each other: a circle of ELBOW_ROOM about each that it can't step into (one it's already in, it can only
-// leave, as a rock's). Walking into one it slides round it, and met about head on it steps to its right, as people do, so
-// two coming at each other pass (each does the same on its own screen). A way that ends in one ends at its edge. Standing,
-// one that comes too near (it's shown a moment late, so it can walk into this one) gets room: this one shuffles aside, up
-// to ELBOW_SHUFFLE a tick (makeRoom), so the two settle apart on both screens. They're where each said it was, not the
-// sim's, and nothing the meadow counts follows from it.
-const ELBOW_ROOM = 0.55;                // tiles between two foragers' middles, at the nearest
+// leave, as a rock's). Walking into one that's walking too it slides round it, and met about head on it steps to its right,
+// as people do, so two coming at each other pass (each does the same on its own screen). Walking into one that's standing
+// it doesn't step aside: it presses on and pushes it. The walker is stopped at ELBOW_ROOM, and the one standing sees it come
+// within PUSH_ROOM (it's shown a moment late, so the walker can walk into this one) and shuffles aside, up to PUSH_STEP a
+// tick (makeRoom), so the walker presses it along and the two settle apart on both screens. A way that ends in one ends at
+// its edge. They're where each said it was, not the sim's, and nothing the meadow counts follows from it.
+const ELBOW_ROOM = 0.55;                // tiles between two foragers' middles, at the nearest a walker gets
+const PUSH_ROOM = 0.7;                  // a standing one with a friend nearer than this is pushed aside (makeRoom)
+const PUSH_STEP = 0.05;                 // tiles a tick it's pushed aside, at most
 const FRIEND_HEAD_ON = 0.3;             // walking into one this near straight at its middle (the sine of the angle off), it steps right
 const FRIEND_SIDESTEP = 0.6;            // by this much of its step
-const ELBOW_SHUFFLE = 0.03;             // tiles a tick it shuffles aside, standing, for one too near
-let friendXY = new Float32Array(0), friendN = 0, friendSide = 0;
-function friendsAt(xy, n, side) { friendXY = xy; friendN = n; friendSide = side || 0; }
+const ELBOW_SHUFFLE = 0.03;             // tiles a tick a walker already inside one's circle is moved out of it (outOfFriends)
+let friendXY = new Float32Array(0), friendN = 0, friendSide = 0, friendStill = new Uint8Array(0);
+function friendsAt(xy, n, side, still) { friendXY = xy; friendN = n; friendSide = side || 0; friendStill = still; }
 // x, y (a step from f.x, f.y) kept out of every friend (one already too near, it gets ELBOW_SHUFFLE more room a tick), into
 // rockX, rockY. Says which friend was in the way (-1: none).
 function outOfFriends(f, x, y) {
@@ -5531,7 +5536,7 @@ function outOfFriends(f, x, y) {
     if (d >= most || od < 1e-6) continue;
     hit = k;
     const sx = x - f.x, sy = y - f.y, sl = Math.hypot(sx, sy);
-    if (sl > 1e-6 && Math.abs(sx * oy - sy * ox) / (sl * od) < FRIEND_HEAD_ON) {   // (head on: to its right, a step aside)
+    if (!friendStill[k] && sl > 1e-6 && Math.abs(sx * oy - sy * ox) / (sl * od) < FRIEND_HEAD_ON) {   // (head on, and it's walking: to its right, a step aside)
       x -= sy * FRIEND_SIDESTEP; y += sx * FRIEND_SIDESTEP;
       dx = x - cx; dy = y - cy; d = Math.hypot(dx, dy);
     }
@@ -5541,19 +5546,19 @@ function outOfFriends(f, x, y) {
   return hit;
 }
 
-// Standing with a friend too near: a little aside, away from it (from right on top of it, as both woke by the camp's fire,
-// the way friendSide says: game.js makes it from who this is, so the two go different ways).
+// Standing with a friend nearer than PUSH_ROOM: pushed a little aside, away from it (from right on top of it, as both woke by
+// the camp's fire, the way friendSide says: game.js makes it from who this is, so the two go different ways).
 function makeRoom(w, f) {
   let px = 0, py = 0;
   for (let k = 0; k < friendN; k++) {
     const dx = f.x - friendXY[k * 2], dy = f.y - friendXY[k * 2 + 1], d = Math.hypot(dx, dy);
-    if (d >= ELBOW_ROOM * 0.97) continue;
-    const by = ELBOW_ROOM - d;
+    if (d >= PUSH_ROOM * 0.97) continue;
+    const by = PUSH_ROOM - d;
     if (d > 1e-4) { px += dx / d * by; py += dy / d * by; } else { px += Math.cos(friendSide) * by; py += Math.sin(friendSide) * by; }
   }
   const pl = Math.hypot(px, py);
   if (pl < 1e-4) return;
-  const m = Math.min(pl, ELBOW_SHUFFLE) / pl, nx = f.x + px * m, ny = f.y + py * m;
+  const m = Math.min(pl, PUSH_STEP) / pl, nx = f.x + px * m, ny = f.y + py * m;
   rocksFor(w);
   outOfRocks(nx, ny, f.x, f.y);
   if (!walkable(w, rockX, rockY)) return;
@@ -5756,11 +5761,40 @@ function segDist(x, y, ax, ay, bx, by) {
   return Math.hypot(ax + dx * t - x, ay + dy * t - y);
 }
 
+// The current where it stands, into flowX, flowY (tiles a tick, as drift carries a swimmer): quicker down the middle, at
+// most CARRY of a wade, and none off the water or under ice. foragerTick reads it.
+let flowX = 0, flowY = 0;
+function currentAt(w, x, y) {
+  const i = idx(x, y), vx = w.current.x[i], vy = w.current.y[i], s = hypot(vx, vy);
+  flowX = 0; flowY = 0;
+  if (!s || w.frozen || !w.water[i]) return;
+  const k = Math.min(s * riverPace(w), CARRY * FORAGER_WALK * FORAGER_WADE) / s;
+  flowX = vx * k; flowY = vy * k;
+}
+// Standing in the water it's carried down the current, as a swimmer is: only along the shallows (not up the bank, where the
+// current stops), never into the deep, off the meadow or through a rock (it slides along one, as walking does).
+const shallowAt = (w, x, y) => walkable(w, x, y) && w.water[idx(x, y)] === SHALLOW;
+function carryForager(w) {
+  const f = w.forager;
+  if ((!flowX && !flowY) || f.down >= 0) return;
+  let nx = f.x + flowX, ny = f.y + flowY;
+  rocksFor(w);
+  outOfRocks(nx, ny, f.x, f.y); nx = rockX; ny = rockY;
+  if (!shallowAt(w, nx, ny)) {
+    if (shallowAt(w, nx, f.y)) ny = f.y;
+    else if (shallowAt(w, f.x, ny)) nx = f.x;
+    else return;
+  }
+  f.moved += Math.hypot(nx - f.x, ny - f.y);
+  f.x = nx; f.y = ny;
+}
+
 // One tick of walking its way.
 function foragerTick(w) {
   const f = w.forager, P = f.path;
   f.moved = 0;
-  if (!f.walking) { f.speed = 0; if (friendN && f.down < 0) makeRoom(w, f); return; }
+  currentAt(w, f.x, f.y);
+  if (!f.walking) { f.speed = 0; if (friendN && f.down < 0) makeRoom(w, f); carryForager(w); return; }
   const n = P.length / 2;
   while (f.leg < n - 1) {                                // onto the next leg once near this one's end, past it, or nearer the next
     const k = f.leg * 2, bx = P[k], by = P[k + 1];
@@ -5802,7 +5836,9 @@ function foragerTick(w) {
     free *= 1 - brushAt(q, brushNear[k + 3]);
     if (d > 1e-4) { pushX += dx / d * q; pushY += dy / d * q; }
   }
-  const top = (f.running ? FORAGER_RUN : f.sneaking ? FORAGER_SNEAK : FORAGER_WALK) * (wade ? FORAGER_WADE : 1) * free * bodyPace(f) * clamp(Math.cos(turn) * 0.8 + 0.4, 0.15, 1);
+  const base = (f.running ? FORAGER_RUN : f.sneaking ? FORAGER_SNEAK : FORAGER_WALK) * (wade ? FORAGER_WADE : 1) * free * bodyPace(f) * clamp(Math.cos(turn) * 0.8 + 0.4, 0.15, 1);
+  const carried = flowX * Math.cos(f.heading) + flowY * Math.sin(f.heading);   // (the current along its way: quicker with it, slower against, but never under 1 - CARRY of its pace)
+  const top = Math.max(base + carried, base * (1 - CARRY));
   const v = Math.min(top, Math.sqrt(2 * FORAGER_BRAKE * rest)), s = f.speed;
   f.speed = v > s ? Math.min(v, s + FORAGER_ACCEL) : Math.max(v, s - FORAGER_BRAKE * 2);
   if (rest < 0.02 || (rest < 0.1 && f.speed < 0.008)) { f.walking = false; f.running = false; f.speed = 0; f.path.length = 0; return; }

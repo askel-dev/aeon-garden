@@ -40,7 +40,7 @@ coming down, pollen, butterflies, splashes, the effects, the burrows' 💤) hide
 frame (`buildCover`), soft at the edge (`COVER_EDGE`), half for first leaves or half fallen, nothing bare, and as little as
 it shows when faded (mist, the forager behind it). Pop-ups, labels and the selection stay on top. `forager-lab.html` paints them all side by side (`?o=` an outfit). Its outfit is a cloak and a hat
 (fur.js `FORAGER_CLOAKS`: cloak, hood, rim; `FORAGER_HATS`: the hood's own point, a bobble, fox ears, a toadstool cap, a wanderer's
-felt hat with a feather, a crown of flowers, painted over the hood in `foragerParts`' `hat`), painted as one outfit
+felt hat with a feather, a crown of flowers, melted cheese sliding down over the hood, a striped party hat on the bare head (no hood: `bare` in `foragerParts`) with a rolled band, a pompom and a pink elastic under the chin, a ginger cat asleep on the crown with its tail hanging down, painted in `foragerParts`' `hat`), painted as one outfit
 (`FORAGER_OUTFITS`, `outfitOf`: hat * cloaks + cloak, so the key and what goes over the net are one number). Picked on the
 wardrobe card (`wardrobe`, `#wardrobe`: the forager painted as it'll look, a row of painted heads in each hat, cloak swatches, a
 die, and the name while playing together), tried on there and worn only on its button: before going into a friend's meadow
@@ -48,10 +48,10 @@ die, and the name while playing together), tried on there and worn only on its b
 Set off), as you first open yours to friends ('host', from `together`), as a new meadow opens till one's been picked, and from
 ••• ('dress'). Up top on a touch screen, out of the keyboard's way. Kept in localStorage apart (`aeon-garden-outfit` the cloak,
 `aeon-garden-hat`, `aeon-garden-name`), so a new cloak or hat goes at the end of its list.
-Emotes (`emote`, the comment over `EMOTE`): 1 dances, 2 sneaks, or the round button on the satchel's other side from the fire's
-(`#emote`, `emoteMenu`: its two fan out over it, each a painting of the forager at it in its own cloak, `emoteIcons`; the one going
-is ringed, `emoteShown`). Painted in fur.js (`FORAGER_EMOTE`, `emotePose`, kept after all its other paintings: `emoteArt`), asked
-of the worker only while one is on or the fan is open, and kept in the cache only while one is on (`keptForager`). The dance is
+Emotes (`emote`, the comment over `EMOTE`): the dance and the sneak. (They used to be asked for by 1 and 2 or the round button on
+the satchel's other side from the fire's: `#emote`, `emoteMenu`, `emoteIcons`, `emoteShown`; button, keys and fan are gone, and
+`emote` is left as the workings behind them.) Painted in fur.js (`FORAGER_EMOTE`, `emotePose`, kept after all its other paintings:
+`emoteArt`), asked of the worker only while one is on, and kept in the cache only while one is on (`keptForager`). The dance is
 NLE Choppa's as the Roblox emote does it (Axel's reference was a screen recording of it; two tries at his real-life dances,
 front-on kicks and then a noodle bounce, didn't read): it turns on the spot a sixth of a turn a step (`DANCE_TURN`, through the
 views and mirrored, so `b.view` and `b.flip` move while it dances), each beat a head-bang down into a deep hunch, eyes squeezed
@@ -92,8 +92,9 @@ following the mouse, within `PLACE_REACH`; sim.js `fireSpot` says why not). The 
 `KNEEL_VIEW`), lays it a piece at a time (`LAY_STEPS`), strikes (`STRIKES`), and you hold (mouse, finger or F: `blowHeld`) to
 blow till it catches (`blowFrame`, `BLOW_S`, longer in the wet); let go too soon and it only smokes. A click on a fire sees to it
 (`clickFire`: a stick on, a stick and a blow on embers, tinder and a strike when cold), standing still by a lit one it kneels and
-warms its mittens (`SIT_MS`), and a hover says how it is (`fireWord`). Drawn with the trees and animals (`drawFire`: `paintFire`
-once a look and size, `FIRE_ARTS`; flames as `TONGUES` of one painting; smoke), its glow, embers and sparks over the dark
+warms its mittens (`SIT_MS`; from the fire's side, `STAND_OFF`, stepping out to it first if it's standing nearer), and a hover
+says how it is (`fireWord`). Drawn with the trees and animals (`drawFire`: `paintFire` once a look and size, `FIRE_ARTS`; flames
+as `TONGUES` of one painting; smoke), its glow, embers and sparks over the dark
 (`drawFireGlows`). Its light (`lightsFrame`, at most 4 fires, out to `LIGHT_TILES`, flickering in `FLICKER_MS` steps) is cut out of the night on the sky's
 picture (`SKY_FIRE`, `paintFireLights`: so the sky repaints only on a flicker step) and laid warm over what stands near it
 (`fireLight`, source-atop, kept soft so the forager by it isn't washed out). Nights are dark (`DARK` 0.88 of a deep navy
@@ -109,12 +110,21 @@ and an Android phone buzzes (`CAMP_BUZZ`). Then a soft ring of trodden earth wit
 `CAMP_ART` painted once, stretched; under all that stands), coming in over `CAMP_RING_MS`. The fire's hover calls it "Your camp".
 Cooking at the fire (PLAN.md stage 6; the long comment over `COOK_MS` has it all): a click on a lit fire walks the forager there
 (`clickFire` 'cook', `goFire`) and it kneels with a small card beside the fire (`#cook`, `renderCook`, kept there by `placeCook`;
-on an upright phone a sheet over the satchel, its brass ✕ at the foot): the pot's three slots, what it'll make once that's a dish
-made before, the known dishes the satchel has the things for (`cookKnown`, recipes.js `thingsFor`), a stick button that feeds the
-fire (`feedStick`: the click on a lit fire used to) and Cook. A tap on a satchel slot puts one in the pot (`potAdd`, a stick goes
-on the fire), held back in the satchel and shown one fewer (`potHeld`, `potPrune`), not taken till it's cooked. Cook: `COOK_MS`
+on an upright phone a sheet over the satchel, its brass ✕ at the foot), laid out like a furnace: the pot's three slots, under them the stick
+(`feedStick`: the click on a lit fire used to feed it) and Cook, between them and the output an arrow that only shows progress (it
+lights with something in the pot and fills as it cooks), and an output slot that shows the dish once it's one made before ("?"
+till then; `renderCook` toggles `.on`/`.unknown`, and a wisp of smoke and a dimmed `.mess` when nothing at all could come of the
+pot but a mess, `potPossible`). The stick button wears the fire's fuel as a ring (`cookFuel`: `--fuel`, amber and pulsing `.low`
+down to its last sticks). Out of sticks, or the fire full, it's dimmed (`.off`), not disabled, so a tap says why (`feedStick`). Under them, the known
+dishes the satchel has the things for (`cookKnown`, recipes.js `thingsFor`), and, before them, the last dish cooked as a one-tap
+"cook again" that fills the pot and sets it away (`lastDish`, `cookAgain`); the pot meanwhile is named for a known dish it's a
+thing or two short of, and what it still wants, on the line under the furnace (`potToward`, a subset match over the recipes'
+`answers`), and an unknown mix names what's in it ("Something new: Apple, Honey"; touch has no hover to show the names). A tap on a satchel slot puts one in the pot (`potAdd`, a stick goes
+on the fire), held back in the satchel and shown one fewer (`potHeld`, `potPrune`), not taken till it's cooked. While the card
+is up the satchel rings what will go in the pot or on the fire and dims the rest (`renderSatchel`: `.cooking`, `.cookable`,
+`.cook-dim`), and the first card ever opened says once, ever, what to do (`firstOnce('cook:open')`, a `toast`). Cook: `COOK_MS`
 of stirring (stage 'cooking', `kneelNow`), then `cookDone`: the things out, the dish in (recipes.js `cook`; flies from the fire,
-or lies on the ground with the satchel full), and a dish never made before gets its gold headline (`firstTime('dish:' + name)`,
+or lies on the ground with the satchel full; it stays in the output slot for `MADE_MS` as "Made X", `j.made`, a mess says so), and a dish never made before gets its gold headline (`firstTime('dish:' + name)`,
 which is also what `knownDish` reads: per player, for good). Walking off, ✕, Esc or Back shut it (`closeCook`, `stepOut`);
 nothing is lost mid-cook. Plain looks for now (the dishes' emoji in `itemSheet`, PLAN.md step 1); the paintings, the scene and
 the sounds come next. Eating: a tap on food in the satchel (`eatAsk`, `#eat`) shows its name with an Eat button, or why not
