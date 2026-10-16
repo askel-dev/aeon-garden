@@ -52,11 +52,11 @@ Emotes (`emote`, the comment over `EMOTE`): 1 dances, 2 sneaks, or the round but
 (`#emote`, `emoteMenu`: its two fan out over it, each a painting of the forager at it in its own cloak, `emoteIcons`; the one going
 is ringed, `emoteShown`). Painted in fur.js (`FORAGER_EMOTE`, `emotePose`, kept after all its other paintings: `emoteArt`), asked
 of the worker only while one is on or the fan is open, and kept in the cache only while one is on (`keptForager`). The dance is
-NLE Choppa's goofy one from the front (`DANCE`, `DANCE_SEQ`; the first version, crisp side kicks, didn't read as him): loose as a
-noodle, it bounces knock-kneed with its arms limp and bandy with chicken elbows, in and out, pops up on its toes chin up, and
-flails like a tube man, one arm flung up, leaning right over, then the other way; its head lolls, its tongue's out, it goes
-cross-eyed (fur.js `loll`, `goof`, `derp`). The pop hops (`b.lift`, `DANCE_HOP`, in `drawFigure`) and the lean swings to each
-step's and a little past it (`danceLean`, through the hum's sway), a step sound at each knock-kneed landing; it dances till it's sent somewhere. The
+NLE Choppa's as the Roblox emote does it (Axel's reference was a screen recording of it; two tries at his real-life dances,
+front-on kicks and then a noodle bounce, didn't read): it turns on the spot a sixth of a turn a step (`DANCE_TURN`, through the
+views and mirrored, so `b.view` and `b.flip` move while it dances), each beat a head-bang down into a deep hunch, eyes squeezed
+shut, and a spring up onto one foot with the other heel kicked up behind, tongue out, the feet taking turns (`DANCE_SEQ`; fur.js
+`dancePose`, painted from all three views). The spring hops (`b.lift`, `DANCE_HOP`, in `drawFigure`), a stomp sound at each hunch; it dances till it's sent somewhere. The
 sneak is a devious walk side on (`sneakPose`): crouched, the cloak hitched up, tiptoeing with the near knee lifted over the cloak,
 mittens out like little claws, a sly lid and brow and a smirk; slower (sim.js `f.sneaking`, `FORAGER_SNEAK`, stride
 `SNEAK_STRIDE`); asked for standing it creeps `SNEAK_GO` tiles the way it faces, every walk after is a sneak till it sprints,

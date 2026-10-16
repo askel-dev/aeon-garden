@@ -806,41 +806,33 @@ function idlePose(i) {
 }
 
 // Emotes (game.js EMOTES), kept after all the rest of its paintings: 'forager:' + emoteArt(snow, outfit, pose).
-// The dance (NLE Choppa's goofy one, from the front): loose as a noodle. It bounces down knock-kneed with its arms hanging
-// limp, its knees flop out bandy with the elbows out like a chicken's, in and out again, then it pops up onto its toes,
-// chin up, and flails like a shop's inflatable tube man, one arm flung up, leaning right over (the lean, the pop's hop and
-// the wobble are game.js's), and the same the other way. Its head lolls (loll), its tongue's out (goof), and it goes
-// cross-eyed (derp). hands: [mitten, elbow], each from its shoulder.
+// The dance (NLE Choppa's, as the Roblox emote does it): it turns on the spot through every way it can face (game.js
+// DANCE_SEQ), and on each beat head-bangs down into a deep hunch, knees bent, eyes squeezed shut and the mittens dangling,
+// then springs up on one foot with the other heel kicked up behind, chin up and its tongue out (the hop is game.js's),
+// the feet taking turns. Painted from every view: FORAGER_EMOTE.dance + view * 3 + (0 the hunch, 1 and 2 a heel kicked).
 // The sneak, side on: a devious tiptoe, crouched and hunched, its head poked forward, the knees lifted high and each
 // foot set down toe first, the mittens up before its chest like little claws, rubbing, a sly look and a smirk; eight
 // paintings a stride (as the walk), and two lurking on the spot.
-const FORAGER_EMOTE = { knock: 0, bandy: 1, knockB: 2, pop: 3, flailL: 4, flailR: 5, sneak: 8, lurkA: 16, lurkB: 17 };
-const FORAGER_EMOTES = [0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
+const FORAGER_EMOTE = { sneak: 8, lurkA: 16, lurkB: 17, dance: 18 };
+const FORAGER_EMOTES = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26];
 const EMOTE_AT = FORAGER_SNOWS * FORAGER_SNOW_ARTS, FORAGER_EMOTE_ARTS = FORAGER_SNOWS * FORAGER_OUTFITS.length << 5;
 const emoteArt = (snow, outfit, pose) => EMOTE_AT + ((snow * FORAGER_OUTFITS.length + outfit) << 5) + pose;
 const SNEAK_STRIDE = 1.15, SNEAK_DOWN = 0.6, SNEAK_LIFT = 0.2, SNEAK_BOB = 0.05;
 const SNEAK_REACH = 2 * FORAGER_REACH * SNEAK_STRIDE * SNEAK_DOWN;   // (the planted foot keeps pace with the ground, as the jog's)
-const DANCE = [   // feet, knees (front view: leg 0 on your left), mittens and elbows, the hips' bob, the hood's point, the head's loll and lift
-  { feet: [[-0.17, 0.72], [0.15, 0.73]], knees: [[-0.035, 0.6], [0.025, 0.61]], hands: [[-0.08, 0.27, -0.04, 0.13], [0.09, 0.26, 0.05, 0.13]],   // knock-kneed, limp
-    bob: 0.075, tip: 0.07, loll: -0.04, look: 0.03, goof: true, derp: true, hemUp: 0.06 },
-  { feet: [[-0.11, 0.72], [0.1, 0.73]], knees: [[-0.25, 0.57], [0.24, 0.58]], hands: [[0.03, 0.15, -0.13, 0.05], [-0.03, 0.15, 0.13, 0.05]],     // bandy, chicken wings
-    bob: 0.06, tip: -0.02, loll: 0.01, look: 0, goof: true, sway: 0.03 },
-  { feet: [[-0.16, 0.73], [0.16, 0.72]], knees: [[-0.02, 0.61], [0.04, 0.6]], hands: [[0.03, 0.27, 0.0, 0.13], [0.15, 0.23, 0.07, 0.12]],       // knock-kneed, the arms swung over
-    bob: 0.075, tip: 0.02, loll: 0.045, look: 0.025, goof: true, derp: true, sway: -0.02, hemUp: 0.06 },
-  { feet: [[-0.055, 0.7], [0.055, 0.71]], knees: [[-0.065, 0.54], [0.065, 0.55]], hands: [[-0.1, 0.2, -0.05, 0.1], [0.1, 0.2, 0.05, 0.1]],      // up on its toes, chin up, stiff
-    bob: -0.04, tip: 0.1, loll: 0, look: -0.05, goof: true, toes: true },
-  { feet: [[-0.17, 0.72], [0.1, 0.72]], knees: [[-0.22, 0.56], [0.08, 0.56]], hands: [[-0.2, -0.44, -0.19, -0.17], [0.26, 0.1, 0.14, 0.03]],    // flailing, the left arm flung up
-    bob: 0.03, tip: 0.12, loll: 0.04, look: 0.01, goof: true, happy: true, sway: -0.04 },
-  { feet: [[-0.1, 0.72], [0.17, 0.73]], knees: [[-0.08, 0.56], [0.22, 0.57]], hands: [[-0.26, 0.1, -0.14, 0.03], [0.2, -0.44, 0.19, -0.17]],    // and the right
-    bob: 0.03, tip: -0.05, loll: -0.04, look: 0.01, goof: true, happy: true, sway: 0.04 },
-];
 function emotePose(i) {
-  if (i >= FORAGER_EMOTE.sneak) return sneakPose(i);
-  const P = foragerPose(1, 0), D = DANCE[i] || DANCE[0];
-  P.feet = D.feet.map(f => f.slice()); P.knees = D.knees.map(k => k.slice());
-  P.hands = D.hands; P.bob = D.bob; P.sway = D.sway || 0; P.tip = D.tip; P.loll = D.loll; P.look = D.look;
-  P.happy = !!D.happy; P.goof = !!D.goof; P.derp = !!D.derp; P.hemUp = D.hemUp || 0; if (D.toes) P.toes = [1, 1];
-  P.legLine = 0.32;                                             // (a knee flopped out shows up to the hip)
+  return i >= FORAGER_EMOTE.dance ? dancePose(i - FORAGER_EMOTE.dance) : sneakPose(i);
+}
+function dancePose(d) {
+  const view = Math.floor(d / 3), k = d % 3, P = foragerPose(view, 0), [ax, ay] = P.fwd;
+  const at = (i, a, up) => [P.feet[i][0] + ax * a, P.feet[i][1] + ay * a - up];   // (a foot a forward of where it stands, up off the ground)
+  if (!k) {                                                       // the hunch: bent right over, the head down, knees bent
+    P.feet = view ? [at(0, 0.03, 0), at(1, -0.03, 0)].map(([x, y], i) => [x + (i ? 0.03 : -0.03), y]) : [at(0, 0.07, 0), at(1, -0.07, 0)];
+    P.stoop = 1.2; P.lean = view ? 0.12 : 0.22; P.bob = 0.09; P.look = view ? 0.11 : 0.06; P.tip = 0.13; P.happy = true;   // (from the front or the back, the head sunk between the shoulders)
+  } else {                                                        // up on one foot, the other heel kicked up behind
+    const j = k - 1;
+    P.feet[j] = at(j, -0.15, 0.2); P.feet[1 - j] = at(1 - j, 0.03, 0);
+    P.bob = -0.025; P.look = -0.03; P.tip = -0.04; P.swing = j ? 0.45 : -0.45; P.goof = true;
+  }
   return P;
 }
 function sneakPose(i) {
@@ -873,7 +865,7 @@ function foragerParts(P) {
   const side = P.view === 0, front = P.view === 1, back = P.view === 2;
   const hx = 0, hy = 0.4 + P.bob;                                  // the hips
   const lx = P.fwd[0] * P.lean, ly = P.fwd[1] * P.lean * 0.5;     // leaning in: the head and the shoulders forward
-  const cx = (side ? 0.0 : front ? -0.01 : 0.01) + lx + P.fwd[0] * 0.1 * P.stoop + (P.loll || 0), cy = -0.2 + P.bob + P.look + ly + P.lean * 0.3 + 0.05 * P.stoop;   // the head (the hood's middle)
+  const cx = (side ? 0.0 : front ? -0.01 : 0.01) + lx + P.fwd[0] * 0.1 * P.stoop, cy = -0.2 + P.bob + P.look + ly + P.lean * 0.3 + 0.05 * P.stoop;   // the head (the hood's middle)
   const R = 0.26;
   // Legs: from the hips to the feet, the knee bent forward, in a boot. (Mostly under the cloak.)
   const leg = (i, far) => {
@@ -1098,7 +1090,7 @@ function paintForager(g, size, U, n) {
           strokeIn(g, '#3a2a22', 0.013, () => { g.moveTo(x - s * 0.03, y - 0.004 - 0.008); g.lineTo(x + s * 0.026, y + 0.006); });   // the lid
           strokeIn(g, rockRGB(tone(HAIR, 0.8), 0.95), 0.016, () => { g.moveTo(x - s * 0.032, y - 0.058); g.quadraticCurveTo(x, y - 0.05, x + s * 0.03, y - 0.03); });   // the brow
         } else {
-          const dx = P.turn * 0.012 + (P.derp ? (x < mid ? 0.009 : -0.009) : 0), dy = P.look * 0.2;   // (derp: cross-eyed)
+          const dx = P.turn * 0.012, dy = P.look * 0.2;
           fillIn(g, '#2a1d17', () => ovalAt(g, x + dx, y + dy, 0.022, P.sad ? 0.026 : 0.03));
           fillIn(g, 'rgba(255,255,255,0.9)', () => discAt(g, x - 0.008 + dx, y - 0.01 + dy, 0.008));
         }
