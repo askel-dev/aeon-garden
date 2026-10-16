@@ -224,11 +224,14 @@ it collapses (`f.down`, event 'collapse'), waking at `f.homeX`, `f.homeY` (where
 from full warmth at dusk (4 seeds): a summer night ends cosy or chilly, a spring or autumn one anywhere from chilly to
 collapsed (rain makes it worse), a winter one kills.
 The opening (PLAN.md stage 3): a new meadow opens on day 4 of spring (`START_DAY`) late in the afternoon (`START_PHASE`, just
-before the golden hour), in a storm that blows over as the light goes (`STORM_TO`), into a clear night and the morning after
-(`CLEAR_TO`; `weatherTick` sets the clear when the storm ends before `CLEAR_END`, then the season's odds again). The forager
-arrives cold and wet (`foragerArrives`: `ARRIVE_WARMTH`, `ARRIVE_WET`), and so does a friend's forager coming in while the opening
-storm lasts (`openingStorm`). Walking about it's chilly by dusk and gets through the night if it keeps dry, wading wet it collapses
-towards dawn; standing still it's cold by dusk and collapses at dawn (6 seeds). No new fields, no `KEEP_VERSION` bump.
+before the golden hour), in a storm that holds till the first fire is lit (its `until` is `OPENING_HOLD`, which `openingStorm`
+looks for; a collapse doesn't end it, the forager wakes into it), then blows over (`lightFire`: `STORM_EASE`) into a clear spell
+(`CLEAR_AFTER`, and at least till `CLEAR_END`, the morning after; `weatherTick`), then the season's odds again. It's a gale,
+harsher than other storms (`GALE_*`: colder in `airTemp`, windier and wetter in `bodyTick`, twice the lightning, and a strike in the open round the forager about every 5 s at 1x, `GALE_NEAR`; game.js shows
+it as more than a storm, `GALE_LOOK`). The forager arrives cold and wet (`foragerArrives`: `ARRIVE_WARMTH`, `ARRIVE_WET`), and so
+does a friend's forager coming in while it lasts. In the open, walking about it collapses about dusk (0.71 of the day, about
+3 min at 1x after it opens), standing still at 0.62 (4 seeds); under trees it lasts longer. A meadow kept from before the
+storm held keeps its old end. No new fields, no `KEEP_VERSION` bump.
 Fires (`w.fires`, one layout, `fireOf`; the long comment over `FIRE_STICK`): laid with sticks and tinder (`layFire`; what one takes
 is recipes.js `BUILDS`, spent out of the satchel by game.js with `spend`), lit (`lightFire`), burning a stick in `FIRE_STICK` (faster
 in the wet, `FIRE_WET`), never more than `FIRE_MOST` on (`feedFire`, `fireRoom`), then embers for `FIRE_EMBERS` (a stick and a blow

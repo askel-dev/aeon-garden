@@ -30,7 +30,8 @@ The forager feels the cold (stage 2 of PLAN.md): the air has a temperature (sim.
 (`bodyTick`) show on it first (shivers, hunched, breath, drips, stumbles, frost at the edges, a heartbeat; game.js `drawBody`,
 `bodyFrame`) and in two slim bars over the satchel (`renderVitals`); at nothing it collapses and wakes at home the next
 morning with the satchel lost (`wakeForager`). A new meadow opens in a storm late in the afternoon, the forager cold and wet and
-saying it needs a fire before dark (stage 3: sim.js `START_PHASE`, `foragerArrives`; game.js `openingLine`). A campfire (stage 4) is its warmth: built from the satchel by the round fire button
+saying it needs a fire before dark (stage 3: sim.js `START_PHASE`, `foragerArrives`; game.js `openingLine`); the storm, a gale
+harsher than others, holds till the first fire is lit (`OPENING_HOLD`, `GALE_*`). A campfire (stage 4) is its warmth: built from the satchel by the round fire button
 by it or F (recipes.js `BUILDS`, game.js `renderBuild`), laid where you pick, struck, and blown on by holding till it catches;
 it burns its sticks down to embers, then cold (sim.js `w.fires`, `fireTick`, `fireWarmth`), and at night lights a warm pool
 cut out of a dark navy (game.js `lightsFrame`, `paintFireLights`). The first fire lit makes camp (stage 5: sim.js `w.camp`,

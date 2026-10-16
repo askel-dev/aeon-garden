@@ -1931,7 +1931,8 @@ function pickWeather(w) {
 
 function weatherTick(w) {
   if (w.tick >= w.weather.until) {
-    if (w.weather.kind === 'storm' && w.tick < CLEAR_END) setWeather(w, 'clear', CLEAR_END - w.tick);   // (the opening storm blows over)
+    if (w.weather.kind === 'storm' && (w.tick < CLEAR_END || w.camp && w.tick - w.camp.made <= STORM_EASE + 1))   // (the opening storm blows over)
+      setWeather(w, 'clear', Math.max(CLEAR_END - w.tick, CLEAR_AFTER * TPD));
     else pickWeather(w);
   }
   const kind = w.weather.kind;
@@ -1942,22 +1943,30 @@ function weatherTick(w) {
     w.snow -= melt; w.wet = Math.min(1, w.wet + melt);
   }
   // Storms bring lightning. Now and then a heatwave brings a dry strike, with no rain after it.
-  if (w.rng.next() < (kind === 'storm' ? 1 / 80 : kind === 'heat' ? 1 / 900 : 0) / SLOW) {
+  if (w.rng.next() < (kind === 'storm' ? (openingStorm(w) ? GALE_LIGHTNING : 1) / 80 : kind === 'heat' ? 1 / 900 : 0) / SLOW) {
     let x, y;
     do { x = w.rng.range(1, W - 1); y = w.rng.range(1, H - 1); } while (isWater(w, x, y));
     strike(w, x, y);
   }
+  // In the opening gale it strikes round the forager too, where it's seen: about every GALE_NEAR_TICKS, GALE_NEAR tiles
+  // off. These keep to the open (no tree drawn to them, nobody killed), or the woods it gathers in would be all snags.
+  const f = w.forager;
+  if (f && openingStorm(w) && w.rng.next() < 1 / GALE_NEAR_TICKS) {
+    const a = w.rng.range(0, 2 * Math.PI), r = w.rng.range(...GALE_NEAR);
+    const x = clamp(f.x + r * Math.cos(a), 1, W - 1), y = clamp(f.y + 0.7 * r * Math.sin(a), 1, H - 1);
+    if (!isWater(w, x, y)) strike(w, x, y, true);
+  }
 }
 
-function strike(w, x, y) {
+function strike(w, x, y, open = false) {
   // Lightning likes trees, the tallest about.
   let tree = null;
-  forEachDecorNear(w, x, y, 4, d => {
+  if (!open) forEachDecorNear(w, x, y, 4, d => {
     if (standing(d) && d.size >= SAPLING && (d.x - x) ** 2 + (d.y - y) ** 2 < 16 && (!tree || d.size > tree.size)) tree = d;
   });
   if (tree) { x = tree.x; y = tree.y; if (tree.hive) hiveMoves(w, tree.hive, 'lightning'); struck(w, tree); }
   let victim = null;
-  forEachNear(w, x, y, 1.2, o => { victim = o; });
+  if (!open) forEachNear(w, x, y, 1.2, o => { victim = o; });
   if (victim) die(w, victim, 'lightning');
   // Thunder: every rabbit out in the open bolts for a burrow.
   forEachNear(w, x, y, 22, o => frighten(o, x, y, 'thunder'), 'rabbit');
@@ -5781,7 +5790,8 @@ const warmthStage = f => (f.down >= 0 ? 4 : f.warmth > WARMTH_STAGES[0] ? 0 : f.
 function airTemp(w) {
   const t = w.tick, p = phaseOf(t), k = AIR_WEATHER[w.weather.kind] || AIR_WEATHER.clear;
   const u = p < AIR_WARMEST ? p / AIR_WARMEST : 1 - (p - AIR_WARMEST) / (1 - AIR_WARMEST);   // 0 at sunrise, 1 the warmest
-  return AIR_YEAR[0] + AIR_YEAR[1] * Math.cos(2 * Math.PI * (t / TPD / YEAR_DAYS - 0.375)) - AIR_DAY * k[1] * Math.cos(Math.PI * u) + k[0] - AIR_SNOW * w.snow;
+  return AIR_YEAR[0] + AIR_YEAR[1] * Math.cos(2 * Math.PI * (t / TPD / YEAR_DAYS - 0.375)) - AIR_DAY * k[1] * Math.cos(Math.PI * u) + k[0] - AIR_SNOW * w.snow
+    - (openingStorm(w) ? GALE_COLD : 0);
 }
 // How high the sun is, 0 to 1 (0 at night).
 const sunUp = t => { const p = phaseOf(t); return p < 0.02 || p > 0.72 ? 0 : Math.sin(Math.PI * (p - 0.02) / 0.7); };
@@ -5795,17 +5805,17 @@ function bodyTick(w) {
     if (w.tick - f.down >= DOWN_TICKS && w.tick % TPD === Math.round(WAKE_PHASE * TPD)) wakeForager(w);
     return;
   }
-  const kind = w.weather.kind, i = idx(f.x, f.y), air = airTemp(w);
+  const kind = w.weather.kind, i = idx(f.x, f.y), air = airTemp(w), gale = openingStorm(w);
   const shelter = clamp(w.wood[i] / SHELTER_WOOD, 0, 1);
   const moving = f.walking && f.moved > 0, sprint = moving && f.running && !f.winded;
   const wade = !w.frozen && w.water[i] === SHALLOW;
   const fire = w.fires.length ? fireWarmth(w, f.x, f.y) : 0, near = fire ? fireNear : 0;   // (a fire close by: the strongest warmth)
-  const feel = air + (SUN[kind] || 0) * sunUp(w.tick) * (1 - shelter) - (WIND[kind] || 0) * (1 - 0.6 * shelter) - WET_CHILL * f.wet
+  const feel = air + (SUN[kind] || 0) * sunUp(w.tick) * (1 - shelter) - ((WIND[kind] || 0) + (gale ? GALE_WIND : 0)) * (1 - 0.6 * shelter) - WET_CHILL * f.wet
     + (sprint ? ACTIVE.run : moving ? ACTIVE.walk : ACTIVE.still) + fire;
   f.feel = feel;
   const d = feel - COMFY;
   f.warmth = clamp(f.warmth + (d > 0 ? WARM_K * d : COOL_K * d * (1 + WET_COLD * f.wet)) / TPD, 0, 1);
-  const soak = wade ? WET_WADE : (WET_RAIN[kind] || 0) * (1 - 0.7 * shelter);
+  const soak = wade ? WET_WADE : (WET_RAIN[kind] || 0) * (gale ? GALE_SOAK : 1) * (1 - 0.7 * shelter);
   if (soak > 0) f.wet = Math.min(1, f.wet + soak / TPD);
   else if (f.wet > 0) f.wet = Math.max(0, f.wet - DRY * clamp(0.3 + air / 20, 0.15, 1.6) * (1 + sunUp(w.tick) * (SUN[kind] || 0) / 5) * (moving ? 1.2 : 1) / TPD);
   if (near > 0 && f.wet > 0 && !wade) f.wet = Math.max(0, f.wet - FIRE_DRY * near / TPD);   // (it dries by the fire, rain or not)
@@ -5902,7 +5912,10 @@ function lightFire(w, F) {
   if (!lightable(F)) return false;
   F.lit = true; F.tinder = false; F.embers = 0; F.litAt = w.tick;
   emit(w, { type: 'firelit', fire: F });
-  if (!w.camp) { campAt(w, F); emit(w, { type: 'camp', fire: F }); }
+  if (!w.camp) {
+    campAt(w, F); emit(w, { type: 'camp', fire: F });
+    if (openingStorm(w)) w.weather.until = w.tick + STORM_EASE;   // (and the opening storm blows over)
+  }
   return true;
 }
 // Every tick: the lit ones burn their sticks down (faster in the wet), the embers of a burnt out one go grey, and water over
@@ -6208,16 +6221,21 @@ function asFractions(o, keys) { for (const k of keys) { const v = o[k]; o[k] = 0
 
 // A new meadow opens this many days into spring: the trees in leaf and blossom, the garlic up, cherries a few days off (its
 // first dawn was bare trees and nothing to pick). It opens late in the afternoon (START_PHASE, of the day from sunrise), in a
-// storm that blows over as the light goes (STORM_TO), into a clear cold night and the morning after (CLEAR_TO). The forager
-// arrives cold and wet (ARRIVE_WARMTH, ARRIVE_WET, foragerArrives), with time to gather for a fire before dark and none to
-// sightsee: walking about it's chilly by dusk and cold through the night, and collapses towards dawn if it's wet; standing
-// still it's cold by dusk and collapses at dawn (4 seeds).
+// storm that holds till the first fire is lit (OPENING_HOLD: it has no end of its own), and then blows over (STORM_EASE)
+// into a clear spell (CLEAR_AFTER, and at least till the morning after, CLEAR_TO). It's harsher than any other storm, a gale
+// (GALE_*): colder, windier, wetter, with more lightning. The forager arrives cold and wet (ARRIVE_WARMTH, ARRIVE_WET,
+// foragerArrives), with time to gather for a fire before dark and none to sightsee: walking about in the open it collapses
+// about dusk, standing still well before (4 seeds; under trees it lasts longer). (A meadow kept from before the storm
+// held has its old end on it, and its storm blows over then.)
 const START_DAY = 3;
-const START_PHASE = 0.44, STORM_TO = 0.555, CLEAR_TO = 1.3;
+const START_PHASE = 0.44, CLEAR_TO = 1.3;
 const ARRIVE_WARMTH = 0.78, ARRIVE_WET = 0.75;
-const STORM_END = Math.floor(TPD * (START_DAY + STORM_TO)), CLEAR_END = Math.floor(TPD * (START_DAY + CLEAR_TO));
-// Whether the meadow is still in its opening storm.
-const openingStorm = w => w.tick < STORM_END && w.weather.kind === 'storm';
+const OPENING_HOLD = 2 ** 30, STORM_EASE = Math.round(TPD * 0.03), CLEAR_AFTER = 0.5;   // (0.03 of a day: 20 s at 1x)
+const GALE_COLD = 1, GALE_WIND = 1, GALE_SOAK = 1.25, GALE_LIGHTNING = 2;   // degrees colder, more wind, times as wet, times the strikes
+const GALE_NEAR_TICKS = 150, GALE_NEAR = [4, 12];   // and one round the forager about every 5 s at 1x, this many tiles off (weatherTick)
+const CLEAR_END = Math.floor(TPD * (START_DAY + CLEAR_TO));
+// Whether the meadow is still in its opening storm (the gale before the first fire).
+const openingStorm = w => w.weather.kind === 'storm' && w.weather.until >= OPENING_HOLD;
 // A forager coming into the meadow (a new one's, or a friend's joining it): cold and wet in the opening storm, else fresh.
 function foragerArrives(w, f) {
   const storm = openingStorm(w);
@@ -6290,7 +6308,7 @@ function createWorld(seed, opts = {}) {
   flushNewborn(w);
   for (const f of w.fields) if (f.season === seasonOf(w.tick)) f.bloomed = yearOf(w.tick);   // no news of what's out already
   hivesTick(w);
-  w.weather = { kind: 'storm', until: STORM_END };            // (the opening storm)
+  w.weather = { kind: 'storm', until: OPENING_HOLD };         // (the opening storm, till the first fire)
   foragerArrives(w, w.forager);
   return w;
 }

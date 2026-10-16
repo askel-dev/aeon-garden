@@ -7979,15 +7979,18 @@ function wash(color) { ctx.fillStyle = color; ctx.fillRect(-10, -10, vw + 20, vh
 
 const WET = new Set(['rain', 'storm']);
 
-// How much of each weather is showing, so one fades into the next. Follows game time.
+// How much of each weather is showing, so one fades into the next. Follows game time. The opening storm (sim.js
+// openingStorm) shows as more than a storm (GALE_LOOK): darker, heavier rain slanting harder, the trees and the fire
+// leaning further, the rain and the gusts louder.
+const GALE_LOOK = 1.35;
 function updateSky() {
   const d = world.tick - ui.sky.tick;
   ui.sky.tick = world.tick;
   if (d === 0) return;
-  const k = d < 0 ? 1 : 1 - Math.exp(-d / 50);
+  const k = d < 0 ? 1 : 1 - Math.exp(-d / 50), now = world.weather.kind, full = S.openingStorm(world) ? GALE_LOOK : 1;
   for (const kind in S.WEATHER) {
     const m = ui.sky.mix[kind] || 0;
-    ui.sky.mix[kind] = m + ((kind === world.weather.kind ? 1 : 0) - m) * k;
+    ui.sky.mix[kind] = m + ((kind === now ? full : 0) - m) * k;
   }
 }
 
