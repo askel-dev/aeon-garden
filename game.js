@@ -5074,7 +5074,9 @@ function hint(name, words) {
   return true;
 }
 // depth: 0 shut, 1 open, 2 a page laid over the tiles (upright phones only; elsewhere the page is always beside them).
-const bookUi = { open: false, depth: 0, pick: '', key: '', stamp: '', stampAt: 0, quietTill: 0, drag: null, swipe: null, glow: null };
+// pick: the page shown, by its key (a dish's name, 'find:' + an ingredient); picked: the last page shown in each part, to come
+// back to; shown: the parts shown since it opened (shutting it has seen what's new in those).
+const bookUi = { open: false, depth: 0, pick: '', picked: { dishes: '', finds: '' }, shown: new Set(), key: '', stamp: '', stampAt: 0, quietTill: 0, drag: null, swipe: null, glow: null };
 const bookOpen = () => bookUi.open;
 const bookReading = () => bookUi.depth === 2;
 const bookUpright = () => narrow() && !short();
@@ -5084,22 +5086,46 @@ const FIRE_DISHES = Recipes.RECIPES.filter(r => (r.at || 'fire') === 'fire');
 const sweetDish = r => r.needs.some(w => ['sweet', 'fruit'].some(t => w === t || Recipes.INGREDIENTS[w]?.tags.includes(t)));
 const BOOK_SECTIONS = [{ k: 'savoury', name: 'Savoury', word: 'savoury', test: r => !sweetDish(r) }, { k: 'sweet', name: 'Sweet', word: 'sweet', test: sweetDish }];
 const BOOK_PAGES = [];
-for (const sec of BOOK_SECTIONS) for (const r of FIRE_DISHES) if (sec.test(r)) BOOK_PAGES.push({ r, sec, no: BOOK_PAGES.length + 1, i: BOOK_PAGES.length });
-const BOOK_PAGE = new Map(BOOK_PAGES.map(p => [p.r.name, p]));
+for (const sec of BOOK_SECTIONS) for (const r of FIRE_DISHES) if (sec.test(r)) BOOK_PAGES.push({ r, g: '', key: r.name, part: 'dishes', sec, no: BOOK_PAGES.length + 1, i: BOOK_PAGES.length });
+// Its other part, the finds: a page for every ingredient in recipes.js, found (picked into the satchel once, ever: the firsts,
+// as the first find's headline) or not. Sections by what it is, each ingredient in the first that takes it; a page not found
+// yet has its painting as a shadow and its recipes.js `where` for a hint.
+const FIND_SECTIONS = [
+  { k: 'mushroom', name: 'Mushrooms', test: g => g.tags.includes('mushroom') },
+  { k: 'greens', name: 'Greens & flowers', test: g => g.tags.includes('greens') || g.tags.includes('flower') },
+  { k: 'fruit', name: 'Fruit, nuts & honey', test: g => g.fill > 0 },
+  { k: 'fire', name: 'For a fire', test: () => true },
+];
+const FIND_PAGES = [], findSec = new Map();
+for (const [id, g] of Object.entries(Recipes.INGREDIENTS)) findSec.set(id, FIND_SECTIONS.find(s => s.test(g)));
+for (const sec of FIND_SECTIONS) for (const id of findSec.keys()) if (findSec.get(id) === sec) FIND_PAGES.push({ r: null, g: id, key: 'find:' + id, part: 'finds', sec, no: FIND_PAGES.length + 1, i: FIND_PAGES.length });
+const BOOK_PARTS = { dishes: { name: 'Recipes', pages: BOOK_PAGES, sections: BOOK_SECTIONS }, finds: { name: 'Finds', pages: FIND_PAGES, sections: FIND_SECTIONS } };
+const ALL_PAGES = [...BOOK_PAGES, ...FIND_PAGES];
+const BOOK_PAGE = new Map(ALL_PAGES.map(p => [p.key, p]));
+const bookAt = () => BOOK_PAGE.get(bookUi.pick) || BOOK_PAGES[0];
+const bookPart = () => bookAt().part;
+const pageBy = (p, dir) => BOOK_PARTS[p.part].pages[p.i + dir];   // (the page before or after, in its part)
 const BOOK_FILL = Math.max(1, ...FIRE_DISHES.map(r => Recipes.fillOf(r))), BOOK_PIPS = 5;   // (how much a dish fills: pips against the most filling)
-// What's been seen of each page: { name: how far it had got when last looked at } (pageLevel). Read the first time it's
-// wanted (knownDish reads the firsts, made further down); with nothing kept, what's known now counts as seen.
+const RAW_FILL = Math.max(1, ...Object.values(Recipes.INGREDIENTS).map(g => g.fill));
+const foundIt = id => firsts.has(id);
+// What's been seen of each page: { key: how far it had got when last looked at } (pageLevel, findLevel). Read the first time
+// it's wanted (knownDish reads the firsts, made further down); with nothing kept, what's known now counts as seen, and so
+// do the finds in a book kept from before it had them.
 let bookSeen = null;
 const pageLevel = r => knownDish(r.name) ? 9 : (hinted.get(r.name) || []).length;
+const levelOf = p => p.r ? pageLevel(p.r) : foundIt(p.g) ? 9 : 0;
 function seenBook() {
   if (bookSeen) return bookSeen;
   try { bookSeen = JSON.parse(localStorage.getItem(BOOK_KEY) || 'null'); } catch (e) { /* fine */ }
-  if (!bookSeen || typeof bookSeen !== 'object') { bookSeen = {}; for (const r of FIRE_DISHES) bookSeen[r.name] = pageLevel(r); saveSeen(); }
+  if (!bookSeen || typeof bookSeen !== 'object') { bookSeen = {}; for (const r of FIRE_DISHES) bookSeen[r.name] = pageLevel(r); }
+  if (!Object.keys(bookSeen).some(k => k.startsWith('find:'))) for (const p of FIND_PAGES) bookSeen[p.key] = levelOf(p);
+  saveSeen();
   return bookSeen;
 }
 const saveSeen = () => { try { localStorage.setItem(BOOK_KEY, JSON.stringify(bookSeen)); } catch (e) { /* fine */ } };
-const bookFresh = r => pageLevel(r) > (seenBook()[r.name] || 0);
-function seePage(r) { if (!bookFresh(r)) return false; bookSeen[r.name] = pageLevel(r); saveSeen(); return true; }
+const pageFresh = p => levelOf(p) > (seenBook()[p.key] || 0);
+const bookFresh = r => pageFresh(BOOK_PAGE.get(r.name));
+function seePage(p) { if (!pageFresh(p)) return false; bookSeen[p.key] = levelOf(p); saveSeen(); return true; }
 const pageState = r => knownDish(r.name) ? 'known' : hinted.has(r.name) ? 'half' : 'blank';
 // What stands for a word of a dish's needs in a little picture: the thing itself, or for a tag ('mushroom') the one the
 // satchel has, else the first that has it.
@@ -5154,11 +5180,12 @@ const bsvg = d => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}" fi
 const B_X = bsvg('M6.5 6.5l11 11M17.5 6.5l-11 11'), B_PREV = bsvg('M14.5 5.5L8 12l6.5 6.5'), B_NEXT = bsvg('M9.5 5.5L16 12l-6.5 6.5');
 $('#book').innerHTML = `<button class="bb b-x" data-act="book-close" aria-label="Close the book" title="Back to the meadow (Esc)">${B_X}</button>
   <header class="b-top"><div class="grab"></div>
-    <div class="b-head"><h2 class="fr" id="book-title">Recipes</h2><span class="n"></span></div>
+    <div class="b-head" role="tablist">${Object.entries(BOOK_PARTS).map(([k, b]) =>
+      `<button class="tab fr" role="tab" data-act="book-part" data-part="${k}">${b.name}</button>`).join('')}<span class="n"></span></div>
     <div class="b-bar"><i></i></div><p id="book-sub"></p>
   </header>
-  <section class="b-pages">${BOOK_SECTIONS.filter(s => BOOK_PAGES.some(p => p.sec === s)).map(s => `
-    <h3 class="sec">${s.name}<span data-sec="${s.k}"></span></h3><div class="grid" data-sec="${s.k}"></div>`).join('')}
+  <section class="b-pages">${Object.entries(BOOK_PARTS).map(([k, b]) => `<div class="part" data-part="${k}">${b.sections.filter(s => b.pages.some(p => p.sec === s)).map(s => `
+    <h3 class="sec">${s.name}<span data-sec="${s.k}"></span></h3><div class="grid" data-sec="${s.k}"></div>`).join('')}</div>`).join('')}
   </section>
   <footer class="b-foot"><button class="bb x" data-act="book-close" aria-label="Close the book">${B_X}</button></footer>
   <section class="b-page"></section>`;
@@ -5210,6 +5237,58 @@ function bookPageHTML(p, have, atPot) {
       <button class="bb" data-act="book-next" aria-label="Next page" title="Next page (→)"${p.i < BOOK_PAGES.length - 1 ? '' : ' disabled'}>${B_NEXT}</button>
     </div>`;
 }
+// A find's tile and page. Its picture is its satchel painting (itemSheet); not found, the painting's shadow.
+function findTileHTML(p, have) {
+  const g = Recipes.INGREDIENTS[p.g], got = foundIt(p.g);
+  return `<button class="tile find ${got ? 'known' : 'blank'}${pageFresh(p) ? ' new' : ''}${have[p.g] > 0 ? ' ready' : ''}${p.key === bookUi.pick ? ' on' : ''}" data-act="book-page" data-name="${esc(p.key)}"`
+    + ` aria-label="No. ${p.no}, ${got ? esc(g.name) : 'not found yet'}">`
+    + `<span class="no">${p.no}</span><i class="pic sheet${got ? '' : ' shade'}" style="background-position:${itemBg(p.g)}"></i>`
+    + `<span class="nm">${got ? esc(g.name) : '?'}</span></button>`;
+}
+// What a find goes into: the book's dishes that take it (by its id or a tag of it), known ones by name and a tap to their page,
+// the rest a ?; and what a build takes of it (the campfire's sticks).
+function findUses(id) {
+  const g = Recipes.INGREDIENTS[id], takes = w => w === id || g.tags.includes(w), out = [];
+  for (const p of BOOK_PAGES) if (p.r.needs.some(takes)) out.push(knownDish(p.r.name)
+    ? `<li class="use"><button data-act="book-page" data-name="${esc(p.r.name)}">${itemIcon(p.r.name)}<span>${esc(p.r.name)}</span><em>No. ${p.no} ›</em></button></li>`
+    : `<li class="q"><b>?</b><span>A recipe still to find</span></li>`);
+  for (const b of Object.values(Recipes.BUILDS)) {
+    const n = Object.entries(b.needs).filter(([w]) => takes(w)).reduce((a, [, k]) => a + k, 0);
+    if (n) out.push(`<li class="build">${itemIcon(id)}<span>${esc(b.name)}</span><em>takes ${n}</em></li>`);
+  }
+  return out.join('');
+}
+function findPageHTML(p, have) {
+  const g = Recipes.INGREDIENTS[p.g], got = foundIt(p.g), stamp = bookUi.stamp === p.key, n = have[p.g] || 0;
+  let head, body;
+  if (got) {
+    const food = g.fill > 0, fill = Math.max(1, Math.round(g.fill / RAW_FILL * BOOK_PIPS));
+    head = `<h3 class="fr">${esc(g.name)}</h3>`;
+    body = (g.text ? `<p class="say">${esc(g.text)}</p>` : '')
+      + `<div class="facts">${n ? `<span class="chip warm">${n} in the satchel</span>` : ''}`
+      + (!food ? '<span class="chip">Not for eating</span>' : g.raw === false ? '<span class="chip">Cook it first</span>' : '<span class="chip">Good raw</span>')
+      + (food ? `<span class="chip fills" title="How much it fills you raw">Fills <b>${'<i class="on"></i>'.repeat(fill)}${'<i></i>'.repeat(BOOK_PIPS - fill)}</b></span>` : '') + '</div>'
+      + (g.where ? `<h4>Where to find it</h4><p class="hint">${esc(g.where)}</p>` : '');
+    const uses = findUses(p.g);
+    if (uses) body += `<h4>What it goes into</h4><ul class="needs">${uses}</ul>`;
+  } else {
+    head = '<h3 class="fr q">? ? ?</h3>';
+    body = '<p class="hint">Not found yet.</p>' + (g.where ? `<h4>Where to look</h4><p class="hint">${esc(g.where)}</p>` : '');
+  }
+  const stampHTML = stamp ? `<span class="stamp${performance.now() - bookUi.stampAt > STAMP_MS ? ' still' : ''}">Found!</span>` : '';
+  const pages = FIND_PAGES.length;
+  return `<div class="pg-grab"><div class="no">No. ${p.no} · ${p.sec.name}</div></div>
+    <div class="pg-body"><div class="pg-in">
+      <div class="art"><i class="pic sheet${got ? '' : ' shade'}" style="background-position:${itemBg(p.g)}"></i>${stampHTML}</div>
+      ${head}${body}
+    </div></div>
+    <div class="pg-foot">
+      <button class="bb" data-act="book-prev" aria-label="Page before" title="Page before (←)"${p.i ? '' : ' disabled'}>${B_PREV}</button>
+      <span class="of">${p.no} / ${pages}</span>
+      <button class="bb x" data-act="book-back" aria-label="Back to all the finds" title="Back to all the finds (Esc)">${B_X}</button>
+      <button class="bb" data-act="book-next" aria-label="Next page" title="Next page (→)"${p.i < pages - 1 ? '' : ' disabled'}>${B_NEXT}</button>
+    </div>`;
+}
 // The book button's "New": a glow while a page has news and the book's shut.
 function bookNews() {
   const glow = !bookUi.open && FIRE_DISHES.some(bookFresh);
@@ -5227,8 +5306,9 @@ function openBook(on = !bookUi.open) {
   el.classList.toggle('hidden', !on); scrim.classList.toggle('hidden', !on);
   $('#book-btn').classList.toggle('on', on);
   if (on) {
-    const fresh = BOOK_PAGES.find(p => bookFresh(p.r) && knownDish(p.r.name)) || BOOK_PAGES.find(p => bookFresh(p.r));
-    bookUi.pick = fresh?.r.name || bookUi.pick || (BOOK_PAGES.find(p => knownDish(p.r.name)) || BOOK_PAGES[0]).r.name;
+    const fresh = BOOK_PAGES.find(p => bookFresh(p.r) && knownDish(p.r.name)) || BOOK_PAGES.find(p => bookFresh(p.r)) || FIND_PAGES.find(pageFresh);
+    bookUi.pick = fresh?.key || bookUi.pick || (BOOK_PAGES.find(p => knownDish(p.r.name)) || BOOK_PAGES[0]).key;
+    bookUi.shown.clear();
     bookUi.depth = fresh && bookUpright() ? 2 : 1;
     el.classList.toggle('reading', bookUi.depth === 2);
     bookUi.key = ''; renderBook();
@@ -5240,7 +5320,7 @@ function openBook(on = !bookUi.open) {
     bookUi.depth = 0; bookUi.stamp = '';
     el.classList.remove('reading'); el.style.transform = '';
     let read = false;                                       // (what was new has been seen now)
-    for (const r of FIRE_DISHES) if (bookFresh(r)) { bookSeen[r.name] = pageLevel(r); read = true; }
+    for (const p of ALL_PAGES) if (bookUi.shown.has(p.part) && pageFresh(p)) { bookSeen[p.key] = levelOf(p); read = true; }
     if (read) saveSeen();
     bookNews();
   }
@@ -5275,30 +5355,40 @@ function renderBook() {
   bookNews();
   if (!bookUi.open) return;
   itemSheet();
-  const have = bagHave(), atPot = cooking() && ui.fire.stage === 'cook', p = BOOK_PAGE.get(bookUi.pick) || BOOK_PAGES[0];
-  if ((!bookUpright() || bookUi.depth === 2) && seePage(p.r)) { bookUi.stamp = p.r.name; bookUi.stampAt = performance.now(); }   // (shown: seen, stamped)
-  const key = FIRE_DISHES.map(r => pageLevel(r) + (bookFresh(r) ? 'n' : '')).join(',') + '|' + JSON.stringify(have) + '|' + atPot + cooking() + '|' + p.r.name + '|' + bookUi.stamp;
+  const have = bagHave(), atPot = cooking() && ui.fire.stage === 'cook', p = bookAt(), part = p.part, B = BOOK_PARTS[part];
+  bookUi.picked[part] = p.key; bookUi.shown.add(part);
+  if ((!bookUpright() || bookUi.depth === 2) && seePage(p)) { bookUi.stamp = p.key; bookUi.stampAt = performance.now(); }   // (shown: seen, stamped)
+  const key = ALL_PAGES.map(q => levelOf(q) + (pageFresh(q) ? 'n' : '')).join(',') + '|' + JSON.stringify(have) + '|' + atPot + cooking() + '|' + p.key + '|' + bookUi.stamp;
   if (key === bookUi.key) return;
   bookUi.key = key;
-  const el = $('#book'), known = FIRE_DISHES.filter(r => knownDish(r.name)).length;
-  setHTML(el.querySelector('.b-head .n'), `${known}<small>/${FIRE_DISHES.length}</small>`);
-  el.querySelector('.b-bar i').style.width = (known / FIRE_DISHES.length * 100).toFixed(1) + '%';
-  bookText(el.querySelector('#book-sub'), atPot ? 'At the pot: a known recipe puts its things in' : known < FIRE_DISHES.length ? 'Try things together at the fire to find the rest' : 'Every recipe found');
-  for (const s of BOOK_SECTIONS) {
-    const grid = el.querySelector(`.grid[data-sec="${s.k}"]`);
-    if (!grid) continue;
-    const pages = BOOK_PAGES.filter(q => q.sec === s);
-    bookText(el.querySelector(`h3.sec span[data-sec="${s.k}"]`), `${pages.filter(q => knownDish(q.r.name)).length}/${pages.length}`);
-    setHTML(grid, pages.map(q => bookTileHTML(q, have)).join(''));
+  const el = $('#book'), got = q => levelOf(q) === 9, known = B.pages.filter(got).length, all = B.pages.length;
+  for (const t of el.querySelectorAll('.b-head .tab')) {
+    const on = t.dataset.part === part;
+    t.classList.toggle('on', on); t.setAttribute('aria-selected', on);
+    t.classList.toggle('new', !on && BOOK_PARTS[t.dataset.part].pages.some(pageFresh));
   }
-  setHTML(el.querySelector('.b-page'), bookPageHTML(p, have, atPot));
+  for (const d of el.querySelectorAll('.b-pages .part')) d.hidden = d.dataset.part !== part;
+  setHTML(el.querySelector('.b-head .n'), `${known}<small>/${all}</small>`);
+  el.querySelector('.b-bar i').style.width = (known / all * 100).toFixed(1) + '%';
+  bookText(el.querySelector('#book-sub'), part === 'finds' ? (known < all ? 'What the meadow gives: each season brings its own' : 'Everything the meadow gives, found')
+    : atPot ? 'At the pot: a known recipe puts its things in' : known < all ? 'Try things together at the fire to find the rest' : 'Every recipe found');
+  for (const s of B.sections) {
+    const grid = el.querySelector(`.part[data-part="${part}"] .grid[data-sec="${s.k}"]`);
+    if (!grid) continue;
+    const pages = B.pages.filter(q => q.sec === s);
+    bookText(el.querySelector(`.part[data-part="${part}"] h3.sec span[data-sec="${s.k}"]`), `${pages.filter(got).length}/${pages.length}`);
+    setHTML(grid, pages.map(q => q.r ? bookTileHTML(q, have) : findTileHTML(q, have)).join(''));
+  }
+  setHTML(el.querySelector('.b-page'), p.r ? bookPageHTML(p, have, atPot) : findPageHTML(p, have));
 }
 // A page picked: from a tile (on an upright phone laid over the tiles), or turned (‹ ›, the arrow keys, a swipe), the new one
 // sliding in from the side it came from.
 function bookPage(name) {
   if (!BOOK_PAGE.has(name)) return;
+  const from = bookPart();
   bookUi.pick = name;
   if (bookUi.stamp !== name) bookUi.stamp = '';
+  if (bookPart() !== from) $('#book .b-pages').scrollTop = 0;
   if (bookUpright() && bookUi.depth < 2) {
     bookUi.depth = 2; $('#book').classList.add('reading');
     renderBook();
@@ -5307,14 +5397,25 @@ function bookPage(name) {
   chime('click');
 }
 function turnBook(dir, from) {
-  const p = BOOK_PAGES[(BOOK_PAGE.get(bookUi.pick) || BOOK_PAGES[0]).i + dir];
+  const p = pageBy(bookAt(), dir);
   if (!p || bookUpright() && bookUi.depth < 2) return;
-  bookUi.pick = p.r.name;
-  if (bookUi.stamp !== p.r.name) bookUi.stamp = '';
+  bookUi.pick = p.key;
+  if (bookUi.stamp !== p.key) bookUi.stamp = '';
   renderBook();
   if (!bookUpright()) $('#book .tile.on')?.scrollIntoView({ block: 'nearest' });
   const pin = $('#book .pg-in');
   if (pin) slide(pin, [{ transform: from || `translateX(${dir * 48}px)`, opacity: from ? 1 : 0 }, { transform: 'none', opacity: 1 }], 220);
+  chime('click');
+}
+// A tab at the top: the other part, back on the page last shown in it (on an upright phone, its tiles).
+function bookTab(part) {
+  if (part === bookPart() || !BOOK_PARTS[part]) return;
+  bookUi.pick = bookUi.picked[part] || (BOOK_PARTS[part].pages.find(pageFresh) || BOOK_PARTS[part].pages[0]).key;
+  bookUi.stamp = '';
+  if (bookUi.depth === 2) { bookUi.depth = 1; $('#book').classList.remove('reading'); }
+  renderBook();
+  $('#book .b-pages').scrollTop = 0;
+  if (!bookUpright()) $('#book .tile.on')?.scrollIntoView({ block: 'nearest' });
   chime('click');
 }
 // One step out (Esc, Back, the page's ✕): a page laid over the tiles goes, else the book shuts.
@@ -5339,17 +5440,18 @@ function bookDish(name) {
 // Its own taps (the shared click handler has book, book-close and book-dish): a tile, ‹ ›, the page's ✕.
 $('#book').addEventListener('click', e => {
   const t = e.target.closest('[data-act]');
-  if (!t || !/^book-(page|prev|next|back)$/.test(t.dataset.act)) return;
+  if (!t || !/^book-(page|prev|next|back|part)$/.test(t.dataset.act)) return;
   if (performance.now() < bookUi.quietTill) return;       // (no tap right after a swipe)
   const act = t.dataset.act;
   if (act === 'book-page') bookPage(t.dataset.name);
+  else if (act === 'book-part') bookTab(t.dataset.part);
   else if (act === 'book-back') bookBack();
   else turnBook(act === 'book-next' ? 1 : -1);
 });
 // Fingers, on an upright phone: a handle dragged down lays its sheet down (the book's shuts it, a page's goes back to the
 // tiles); a page swiped sideways turns. Anything shorter springs back.
 $('#book').addEventListener('pointerdown', e => {
-  const el = $('#book'), grab = bookUpright() && e.button === 0 && e.target.closest('.b-top, .pg-grab');
+  const el = $('#book'), grab = bookUpright() && e.button === 0 && !e.target.closest('button') && e.target.closest('.b-top, .pg-grab');   // (not the tabs on it)
   if (grab) { bookUi.drag = { el: grab.classList.contains('pg-grab') ? el.querySelector('.b-page') : el, y: e.clientY, t: e.timeStamp, dy: 0 }; el.setPointerCapture(e.pointerId); return; }
   if (e.pointerType !== 'mouse' && e.target.closest('.pg-body')) bookUi.swipe = { x: e.clientX, y: e.clientY, dx: 0, side: false };
 });
@@ -5364,7 +5466,7 @@ $('#book').addEventListener('pointermove', e => {
     s.side = true; $('#book').setPointerCapture(e.pointerId);
   }
   s.dx = dx;
-  const more = BOOK_PAGES[(BOOK_PAGE.get(bookUi.pick) || BOOK_PAGES[0]).i + (dx < 0 ? 1 : -1)], pin = $('#book .pg-in');
+  const more = pageBy(bookAt(), dx < 0 ? 1 : -1), pin = $('#book .pg-in');
   if (pin) pin.style.transform = `translateX(${more ? dx : dx * 0.25}px)`;   // (at the last page, it only gives)
 });
 function bookLift(e) {
@@ -5380,7 +5482,7 @@ function bookLift(e) {
   bookUi.quietTill = performance.now() + 350;
   const dir = s.dx < 0 ? 1 : -1, pin = $('#book .pg-in'), from = pin ? pin.style.transform : '';
   if (pin) pin.style.transform = '';
-  if (Math.abs(s.dx) > 56 && BOOK_PAGES[(BOOK_PAGE.get(bookUi.pick) || BOOK_PAGES[0]).i + dir]) turnBook(dir, `translateX(${-dir * 40}px)`);
+  if (Math.abs(s.dx) > 56 && pageBy(bookAt(), dir)) turnBook(dir, `translateX(${-dir * 40}px)`);
   else if (pin) slide(pin, [{ transform: from }, { transform: 'none' }], 200);
 }
 $('#book').addEventListener('pointerup', bookLift);
@@ -10724,7 +10826,7 @@ function firstOnce(key) {
   try { localStorage.setItem('aeon-garden-firsts', JSON.stringify([...firsts])); } catch (e) { /* fine */ }
   return true;
 }
-const firstFind = id => { const g = Recipes.INGREDIENTS[id]; if (g) firstTime(id, 'first find', esc(g.name), esc(g.text || '')); };
+const firstFind = id => { const g = Recipes.INGREDIENTS[id]; if (g && !firsts.has(id)) { firstTime(id, 'first find', esc(g.name), esc(g.text || '')); bookUi.key = ''; renderBook(); } };   // (a new page in the book's finds)
 
 const link = c => c ? `<a data-id="${c.id}">${esc(c.name)}</a>` : 'someone';
 const esc = s => String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
