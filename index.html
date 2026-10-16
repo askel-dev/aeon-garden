@@ -194,6 +194,57 @@
   @media (hover: hover) { #ask .go:hover { background: #44702f; } }
   #ask .go:disabled { opacity: 0.5; }
   #ask.sent :is(textarea, .btns, .ask-q), #ask:not(.sent) .ask-thanks { display: none; }
+  /* ---- friends (game.js friends): a card in the middle (up top on a touch screen, out of the keyboard's way): your code,
+     a line to add one, the list (a dot for who's about, where they are, and what you can do), Done at the foot. A friend's
+     ask is a small card up top, just under the news. */
+  #friends { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 10; width: min(400px, calc(100% - 32px));
+    box-sizing: border-box; max-height: calc(100% - 32px); overflow-y: auto; overscroll-behavior: contain; padding: 16px 18px 14px;
+    background: var(--paper, none) var(--card); border-radius: 20px; box-shadow: var(--edge), var(--shadow); }
+  #friends:not(.hidden) > * { animation: pop-in 0.18s ease-out; }
+  #friends h2 { margin: 0 0 8px; font-size: 22px; font-weight: 650; }
+  .fr-mine { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  #fr-code { font-size: 22px; letter-spacing: 0.12em; color: #5a4526; font-variant-numeric: tabular-nums; user-select: all; }
+  #friends .btn, #friend-ask .btn { flex: none; }
+  #friends:not(.known) #fr-share { visibility: hidden; }
+  .fr-mine .btn { margin-left: auto; border-radius: 12px; background: #fbf5e8; padding: 7px 14px; box-shadow: none; }
+  #fr-add { display: flex; gap: 8px; }
+  #fr-text { flex: 1; min-width: 0; box-sizing: border-box; padding: 9px 12px; border: 1.5px solid #e2d6bb; border-radius: 12px; background: #fffaf0;
+    font: inherit; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink); }
+  #fr-text::placeholder { letter-spacing: 0; text-transform: none; font-weight: 600; }
+  #fr-text:focus { outline: none; border-color: #4f7f3a; }
+  #fr-add .go, #friend-ask .go, .fr-row .go { border-radius: 12px; background: #4f7f3a; color: #fff; box-shadow: none; padding: 8px 14px; }
+  @media (hover: hover) { #fr-add .go:hover, #friend-ask .go:hover, .fr-row .go:hover { background: #44702f; } }
+  #fr-said { margin: 6px 2px 0; min-height: 1.3em; font-size: 13px; color: var(--muted); }
+  #fr-list { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  #fr-list .none { color: var(--muted); font-size: 14px; padding: 6px 2px; line-height: 1.45; }
+  .fr-row { display: flex; align-items: center; gap: 10px; padding: 7px 2px; border-top: 1px solid rgba(150, 115, 60, 0.15); }
+  .fr-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: #cbbd9d; }
+  .fr-dot.on { background: #5c9a3c; box-shadow: 0 0 0 3px rgba(92, 154, 60, 0.2); }
+  .fr-who { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
+  .fr-who b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fr-who span { font-size: 12.5px; color: var(--muted); }
+  .fr-row .btn { flex: none; font-size: 14px; }
+  .fr-row .later { border-radius: 12px; background: #fbf5e8; padding: 8px 12px; box-shadow: none; }
+  .fr-row .x { flex: none; border: none; background: transparent; color: var(--muted); font-size: 15px; border-radius: 8px; padding: 6px 8px; }
+  @media (hover: hover) { .fr-row .x:hover { background: rgba(0,0,0,0.06); } }
+  .fr-foot { display: flex; justify-content: center; margin-top: 10px; }
+  .fr-foot .later { border-radius: 14px; background: #fbf5e8; padding: 10px 28px; box-shadow: none; }
+  #friend-ask { position: fixed; z-index: 11; left: 50%; top: calc(var(--top) + 52px); transform: translateX(-50%); width: min(360px, calc(100% - 32px));
+    box-sizing: border-box; padding: 12px 14px; background: var(--paper, none) var(--card); border-radius: 18px; box-shadow: var(--edge), var(--shadow); }
+  #friend-ask:not(.hidden) { animation: pop-in 0.2s ease-out; }
+  #friend-ask p { margin: 0 0 10px; font-weight: 700; line-height: 1.35; }
+  #friend-ask .btns { display: flex; gap: 8px; justify-content: flex-end; }
+  #friend-ask .later { border-radius: 12px; background: #fbf5e8; padding: 8px 14px; box-shadow: none; }
+  .hud-btn.more { position: relative; }
+  .hud-btn.more.friends-on::after { content: ''; position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%;
+    background: #5c9a3c; box-shadow: 0 0 0 1.5px var(--card); }
+  @media (pointer: coarse) {
+    #friends { top: calc(var(--top) + 52px); transform: translateX(-50%); max-height: calc(100% - var(--top) - 70px); }
+    #friend-ask { top: calc(var(--top) + 100px); }   /* (under the news, under the pill) */
+    #fr-text, #friends .btn, #friend-ask .btn, .fr-row .x { min-height: 44px; }
+    .fr-row .x { min-width: 44px; }
+  }
+
   /* ---- the wardrobe (game.js wardrobe): the forager painted as it'll look, its name (playing together), a row of hats and a
      row of cloaks. At the foot as a new meadow opens; joining a friend's meadow it's in the middle over a dimmed meadow. On a
      touch screen it sits up top, out of the keyboard's way. */
@@ -928,6 +979,7 @@
     <button class="menu-item phone-only" data-act="sound" id="sound-item"><span class="e">🔇</span> <span class="l">Sound is off</span></button>
     <button class="menu-item" data-act="copy-link"><span class="e">🔗</span> <span class="l">Copy a link<span class="x"> to this meadow</span></span></button>
     <button class="menu-item" data-act="together"><span class="e">🧺</span> <span class="l">Play together<span class="x"> with a friend</span></span></button>
+    <button class="menu-item" data-act="friends" id="friends-item"><span class="e">👥</span> <span class="l">Friends<span class="x" id="friends-on"></span></span></button>
     <button class="menu-item hidden" data-act="leave" id="leave-item"><span class="e">🚪</span> <span class="l">Leave<span class="x"> playing together</span></span></button>
     <button class="menu-item" data-act="pick-outfit"><span class="e">🎩</span> <span class="l">Change your outfit<span class="x">: hat and cloak</span></span></button>
     <button class="menu-item" data-act="pick-name"><span class="e">✏️</span> <span class="l">Change your name</span></button>
@@ -965,6 +1017,23 @@
   </div>
 </div>
 
+<!-- friends (friends.js, game.js friends): your code to give out, a friend's to add, and your friends, with who's about and
+     where, to join or ask over. And a small card up top when a friend asks you over or asks to come (game.js friendAsk). -->
+<div id="friends" class="hidden" role="dialog" aria-labelledby="friends-title">
+  <h2 class="fr" id="friends-title">Friends</h2>
+  <div class="fr-mine"><span class="wd-label">Your code</span><b id="fr-code">······</b>
+    <button type="button" class="btn" data-act="fr-share" id="fr-share">Copy</button></div>
+  <form id="fr-add" autocomplete="off"><input id="fr-text" maxlength="12" autocapitalize="characters" spellcheck="false" enterkeyhint="go"
+    placeholder="A friend’s code" aria-label="A friend’s code"><button type="submit" class="btn go">Add</button></form>
+  <p id="fr-said"></p>
+  <ul id="fr-list"></ul>
+  <div class="fr-foot"><button type="button" class="btn later" data-act="friends-close">Done</button></div>
+</div>
+<div id="friend-ask" class="hidden" role="alertdialog" aria-live="polite">
+  <p id="fa-text"></p>
+  <div class="btns"><button class="btn later" data-act="fa-no">Not now</button><button class="btn go" data-act="fa-yes" id="fa-yes"></button></div>
+</div>
+
 <div id="ask" class="hidden" role="dialog" aria-labelledby="ask-title">
   <h2 class="fr" id="ask-title">Enjoying the meadow? 🙂</h2>
   <p class="ask-q">Is there anything fun you'd love to see in it next? I read every idea.</p>
@@ -984,6 +1053,7 @@
 <script src="ground.js"></script>
 <script src="recipes.js"></script>
 <script src="net.js"></script>
+<script src="friends.js"></script>
 <script src="game.js"></script>
 </body>
 </html>

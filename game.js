@@ -2506,6 +2506,7 @@ function closeWardrobe(go) {
   const then = wd.then;
   wd.then = null; wd.mode = '';
   if (go && Net && Net.on) sendPos(performance.now());     // (friends see it at once)
+  if (go) friendsBeat();                                   // (and friends far off, the name)
   if (go && then) then();
 }
 const wardrobeOpen = () => !$('#wardrobe').classList.contains('hidden');
@@ -10620,7 +10621,7 @@ function announce(kind, head, line = '') {
     a.timer = setTimeout(() => { const n = a.wait.shift(); if (n) announce(...n); }, ANNOUNCE_FADE);
   }, ANNOUNCE_MS[kind]);
 }
-const canAnnounce = () => !document.hidden && world.forager.down < 0 && !wardrobeOpen() && !askOpen() && !bookOpen();
+const canAnnounce = () => !document.hidden && world.forager.down < 0 && !wardrobeOpen() && !askOpen() && !bookOpen() && !friendsOpen();
 
 // A few times a second: a new day's line at sunrise (S.phaseOf: a day starts there), and where we are as a meadow opens.
 function daybreakTick(now) {
@@ -12067,6 +12068,7 @@ function startTogether() {
   if (!Net) return;
   Net.start(ROOM, params.has('local'), {
     ready(role) {
+      friendsBeat();                                       // (friends see the room at once)
       if (role === 'host') toast(`🧺 Your meadow is open to friends. Send them the link (••• › Play together).`);
       else toast('🧺 Walking over to your friend’s meadow…');
     },
@@ -12081,16 +12083,20 @@ function startTogether() {
 function together(dressed) {
   if (!Net) return;
   if (!ROOM && !dressed) { wardrobe('host', () => together(true)); return; }   // (who you are and what you wear, first)
-  if (!ROOM) {
-    ROOM = ROOM_WORDS[Math.floor(Math.random() * ROOM_WORDS.length)] + '-' + (100 + Math.floor(Math.random() * 900));
-    history.replaceState(history.state, '', pageLink(world.seed));
-    startTogether();
-  }
+  openRoom();
   const url = location.href;
   if (canShare) { navigator.share({ title: "Nobody's Meadow", text: 'Come and forage with me.', url }).catch(() => {}); return; }
   navigator.clipboard?.writeText(url).then(
     () => toast('🧺 Link copied. Whoever opens it comes into this meadow with you.'),
     () => toast(`🧺 Send a friend this link: ${esc(url)}`));
+}
+
+// This meadow open to friends, in a room of its own (a word in the address), if it isn't already.
+function openRoom() {
+  if (ROOM) return;
+  ROOM = ROOM_WORDS[Math.floor(Math.random() * ROOM_WORDS.length)] + '-' + (100 + Math.floor(Math.random() * 900));
+  history.replaceState(history.state, '', pageLink(world.seed));
+  startTogether();
 }
 
 const worldMsg = to => ({ t: 'world', to, kept: S.packWorld(world), tick: world.tick, s: ui.speed, n: myName });
@@ -12321,8 +12327,185 @@ function leaveTogether() {
   if (guest) { location.replace(location.pathname); return; }
   peers.clear(); openChat(false);
   history.replaceState(history.state, '', pageLink(world.seed));
+  friendsBeat();
   toast('🧺 Your meadow is your own again.');
 }
+
+// ---- friends (friends.js): your code, your friends, who's about and where, and asking each other over. Nothing of it
+// starts till Friends is first opened (••• › Friends: an anonymous player is made then); from then on it starts with
+// the page. A friend about and playing together has a Join (their room in the address, as a link would); about on their
+// own, a Visit (a knock: let in, they open their meadow and the invite back brings you straight over) and an Invite
+// (your meadow opened, if it isn't, and an ask that shows up top in theirs). A friend coming about is a toast, and
+// while any is, a green dot on •••.
+const FRIENDS = 'aeon-garden-friends';     // in localStorage: '1' once Friends has been opened
+const FR_ASK_MS = 45000;                   // a friend's ask waits up top this long
+const KNOCK_MS = 120000;                   // an invite from a friend you knocked on within this long takes you straight there
+const Fr = window.Friends || null;         // (friends.js)
+const fr = { shown: '', first: true, states: new Map(), ask: null, askTimer: 0, knocked: new Map(), failed: '' };
+const friendsOpen = () => !$('#friends').classList.contains('hidden');
+const askedOver = () => !$('#friend-ask').classList.contains('hidden');
+const friendsBeat = () => { if (Fr && Fr.on) Fr.beat(); };
+const frSaid = t => { $('#fr-said').textContent = t; };
+const frName = id => esc(Fr?.list.find(f => f.id === id)?.name || 'A friend');
+
+function startFriends() {
+  if (!Fr) return Promise.resolve();
+  try { localStorage.setItem(FRIENDS, '1'); } catch (e) { /* then it asks again next visit */ }
+  return Fr.start({
+    name: () => myName,
+    room: () => Net && Net.on ? Net.room : '',
+    changed: friendsChanged,
+    invited: friendInvited,
+    failed(why) { fr.failed = why; renderFriends(); },
+  }, params.get('as') || '');
+}
+
+function openFriends(open) {
+  $('#friends').classList.toggle('hidden', !open);
+  if (Fr) Fr.often(open);
+  if (!open) { $('#fr-text').blur(); return; }
+  fr.failed = ''; frSaid('');
+  if (Fr && !Fr.on) startFriends().then(() => renderFriends(true));
+  renderFriends(true);
+  if (!narrow()) $('#fr-text').focus({ preventScroll: true });   // (on a phone the keyboard would jump up)
+}
+
+// The list, rewritten only when something in it changed.
+function renderFriends(force) {
+  if (!friendsOpen()) return;
+  const on = !!(Fr && Fr.on), list = on ? Fr.list : [], here = Net && Net.on ? Net.room : '';
+  $('#fr-code').textContent = on && Fr.me ? Fr.me.code : '······';
+  $('#friends').classList.toggle('known', on && !!Fr.me);
+  const key = JSON.stringify(list) + on + fr.failed + myName + here;
+  if (key === fr.shown && !force) return;
+  fr.shown = key;
+  let html;
+  if (fr.failed) html = `<li class="none">Friends can’t be reached just now (${esc(fr.failed)}).</li>`;
+  else if (!on) html = '<li class="none">Finding your friends…</li>';
+  else if (!list.length) html = '<li class="none">No friends here yet. Give a friend your code, or add theirs above.</li>';
+  else html = list.map(f => friendRow(f, here)).join('');
+  if (on && !myName) html += '<li class="none">Your friends see you as “a friend”. <button class="btn later" data-act="fr-name">Give yourself a name</button></li>';
+  $('#fr-list').innerHTML = html;
+}
+function friendRow(f, here) {
+  const id = esc(f.id), name = esc(f.name || 'A friend');
+  let where, btns = '', x = 'Remove from your friends';
+  if (f.state === 'asking') {
+    where = 'Would like to be friends'; x = 'Not now';
+    btns = `<button class="btn go" data-act="fr-accept" data-id="${id}">Accept</button>`;
+  } else if (f.state === 'asked') { where = 'Asked: waiting for a yes'; x = 'Take it back'; }
+  else if (!f.online) where = 'Away';
+  else if (f.room && f.room === here) where = 'Here with you';
+  else if (f.room) { where = 'Playing together'; btns = `<button class="btn go" data-act="fr-join" data-room="${esc(f.room)}">Join</button>`; }
+  else {
+    where = 'In their meadow';
+    btns = `<button class="btn later" data-act="fr-invite" data-id="${id}">Invite</button><button class="btn go" data-act="fr-knock" data-id="${id}">Visit</button>`;
+  }
+  return `<li class="fr-row"><i class="fr-dot${f.state === 'friend' && f.online ? ' on' : ''}"></i><span class="fr-who"><b>${name}</b><span>${where}</span></span>`
+    + `${btns}<button class="x" data-act="fr-drop" data-id="${id}" title="${x}" aria-label="${x}">✕</button></li>`;
+}
+
+// The list came back: who came about, who asks, who said yes; the dot on •••.
+function friendsChanged(list) {
+  let about = 0;
+  for (const f of list) {
+    const was = fr.states.get(f.id), now = f.state === 'friend' ? (f.online ? 'about' : 'away') : f.state, name = esc(f.name || 'A friend');
+    if (now === 'about') about++;
+    if (!fr.first && was !== now) {
+      if (now === 'about' && was === 'asked') toast(`👥 ${name} said yes: you’re friends now`);
+      else if (now === 'about') toast(`👥 ${name} is in the meadow`);
+      else if (now === 'asking' && !friendsOpen()) toast(`👥 ${name} would like to be friends (••• › Friends)`);
+    }
+    fr.states.set(f.id, now);
+  }
+  fr.first = false;
+  $('[data-act="more"]').classList.toggle('friends-on', about > 0);
+  $('#friends-on').textContent = about ? ` · ${about} about` : '';
+  renderFriends();
+}
+
+// An ask from a friend: come to my meadow, or can I come to yours? Up top, a while.
+function friendInvited({ from, kind, room }) {
+  const name = frName(from);
+  if (kind === 'invite') {
+    if (!room || Net && Net.on && Net.room === room) return;
+    const k = fr.knocked.get(from);
+    if (k && performance.now() - k < KNOCK_MS) {
+      fr.knocked.delete(from);
+      toast(`🧺 ${name} let you in. Walking over…`);
+      setTimeout(() => goRoom(room, true), 1200);
+      return;
+    }
+    askOver(`🧺 ${name} asks you over to their meadow.`, 'Go', () => goRoom(room));
+  } else askOver(`🧺 ${name} would like to come over to your meadow.`, 'Let them in', () => letIn(from));
+}
+function askOver(text, yes, go) {
+  fr.ask = go;
+  $('#fa-text').innerHTML = text;
+  $('#fa-yes').textContent = yes;
+  $('#friend-ask').classList.remove('hidden');
+  clearTimeout(fr.askTimer); fr.askTimer = setTimeout(() => friendAsk(false), FR_ASK_MS);
+}
+function friendAsk(yes) {
+  const go = fr.ask;
+  fr.ask = null; clearTimeout(fr.askTimer);
+  $('#friend-ask').classList.add('hidden');
+  if (yes && go) go();
+}
+
+// Over to a friend's room, as their link would take you (a guest's meadow is the host's; your own is kept).
+function goRoom(room, knocked) {
+  if (!room || Net && Net.on && Net.room === room) return;
+  if (Net && Net.on && !confirm(Net.host ? 'Close your meadow to the friends in it and go over?' : 'Leave this meadow and go over?')) return;
+  if (!knocked) toast('🧺 Walking over…');
+  location.href = location.pathname + '?room=' + encodeURIComponent(room) + (params.has('local') ? '&local' : '')
+    + (params.get('as') ? '&as=' + encodeURIComponent(params.get('as')) : '');
+}
+// Your meadow open to friends (asking your name first, as Play together does), then on.
+function withRoom(then) {
+  if (!ROOM && !myName) { openFriends(false); wardrobe('host', then); return false; }
+  openRoom();
+  return true;
+}
+function inviteFriend(id) {
+  if (!withRoom(() => { inviteFriend(id); openFriends(true); })) return;
+  Fr.invite(id, ROOM).then(() => frSaid(`Asked ${frName(id)} over. It shows up in their meadow.`), () => frSaid('That didn’t go through. Try again in a moment.'));
+}
+function knockFriend(id) {
+  Fr.knock(id).then(() => { fr.knocked.set(id, performance.now()); frSaid(`Knocked on ${frName(id)}’s door. If they let you in, you’ll walk straight over.`); },
+    () => frSaid('That didn’t go through. Try again in a moment.'));
+}
+function letIn(id) {
+  if (!withRoom(() => letIn(id))) return;
+  Fr.invite(id, ROOM).catch(() => toast('🧺 That didn’t go through. Try again in a moment.'));
+}
+function dropFriend(id) {
+  const f = Fr.list.find(x => x.id === id);
+  if (f && f.state === 'friend' && !confirm(`Remove ${f.name || 'this friend'} from your friends?`)) return;
+  Fr.drop(id).catch(() => frSaid('That didn’t go through. Try again in a moment.'));
+}
+// Your code, as a link that adds you (?friend=..).
+function shareCode() {
+  const code = Fr?.me?.code;
+  if (!code) return;
+  const url = location.origin + location.pathname + '?friend=' + code, text = `Add me in Nobody’s Meadow: my code is ${code}.`;
+  if (canShare) { navigator.share({ title: "Nobody's Meadow", text, url }).catch(() => {}); return; }
+  navigator.clipboard?.writeText(url).then(() => frSaid('Copied a link with your code. Whoever opens it can add you.'), () => frSaid(`Send a friend this link: ${url}`));
+}
+async function addFriend(raw) {
+  const code = String(raw || '').replace(/[^a-z0-9]/gi, '').toUpperCase();
+  if (!code) return;
+  if (!Fr || !Fr.on) { frSaid('Still finding your friends. Try again in a moment.'); return; }
+  try {
+    const r = await Fr.add(code);
+    frSaid({ asked: 'Asked! Once they say yes, you’re friends.', friends: 'You’re friends now. 🌿', self: 'That’s your own code.',
+      unknown: `Nobody has the code ${code}. Check it and try again.` }[r] || '');
+    if (r === 'asked' || r === 'friends') $('#fr-text').value = '';
+  } catch (err) { frSaid('That didn’t go through. Try again in a moment.'); }
+}
+$('#fr-add').addEventListener('submit', e => { e.preventDefault(); addFriend($('#fr-text').value); });
+$('#friends').addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); openFriends(false); } });
+try { if (Fr && localStorage.getItem(FRIENDS) === '1') startFriends(); } catch (e) { /* not this visit */ }
 
 // Each friend's forager in this frame's items: where it is, slid between what it said, and its pose (as foragerFrame).
 function peerItems(items, now, z) {
@@ -12747,6 +12930,17 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'pick-outfit') pickOutfit(true);
   else if (t.dataset.act === 'pick-name') askName(true);
   else if (t.dataset.act === 'leave') leaveTogether();
+  else if (t.dataset.act === 'friends') { toggleMore(false); openFriends(true); }
+  else if (t.dataset.act === 'friends-close') openFriends(false);
+  else if (t.dataset.act === 'fr-share') shareCode();
+  else if (t.dataset.act === 'fr-join') goRoom(t.dataset.room);
+  else if (t.dataset.act === 'fr-invite') inviteFriend(t.dataset.id);
+  else if (t.dataset.act === 'fr-knock') knockFriend(t.dataset.id);
+  else if (t.dataset.act === 'fr-accept') Friends.accept(t.dataset.id).catch(() => frSaid('That didn’t go through. Try again in a moment.'));
+  else if (t.dataset.act === 'fr-drop') dropFriend(t.dataset.id);
+  else if (t.dataset.act === 'fa-yes') friendAsk(true);
+  else if (t.dataset.act === 'fa-no') friendAsk(false);
+  else if (t.dataset.act === 'fr-name') { openFriends(false); askName(true, () => openFriends(true)); }
   else if (t.dataset.act === 'chat') openChat(!chatOpen());
   else if (t.dataset.act === 'ideas') { played = -Infinity; askIdeas(true); }   // found it themselves: no need to ask
   else if (t.dataset.act === 'ask-later') askIdeas(false);
@@ -12864,13 +13058,15 @@ const back = { token: Math.random().toString(36).slice(2), depth: 0, going: fals
 const moreOpen = () => !$('#more-menu').classList.contains('hidden');
 function opened() {
   const ins = $('#inspector').classList, sheetUp = ins.contains('open') && narrow() && !ins.contains('strip');
-  return [askOpen(), moreOpen(), !!ui.place, bookOpen(), bookReading(), cooking(), wardrobeOpen(), chatOpen(), ins.contains('open'), sheetUp].filter(Boolean).length;
+  return [askOpen(), moreOpen(), friendsOpen(), askedOver(), !!ui.place, bookOpen(), bookReading(), cooking(), wardrobeOpen(), chatOpen(), ins.contains('open'), sheetUp].filter(Boolean).length;
 }
 // The one on top shuts (Esc, and Back once for each step it takes).
 function stepOut() {
   const ins = $('#inspector').classList;
   if (askOpen()) askIdeas(false);
   else if (moreOpen()) toggleMore(false);
+  else if (askedOver()) friendAsk(false);
+  else if (friendsOpen()) openFriends(false);
   else if (ui.place) placeFire(false);                     // (picking a spot for a fire: not now)
   else if (bookOpen()) bookBack();                         // (the recipe book: a page laid over it, then the book)
   else if (cooking()) closeCook();                         // (the cooking card)
@@ -13387,6 +13583,11 @@ function begin(rec) {
   if (!ROOM) bringSkills(world.forager, false);         // (home from a friend's meadow: what it learnt there)
   requestAnimationFrame(frame);
   if (ROOM) { endIntro(true); wardrobe('join', startTogether); }   // (who's coming and in what, before the room hears of you)
+  else if (params.get('friend') && Fr) {                  // (a friend's code link: Friends open, adding them)
+    const code = params.get('friend');
+    openFriends(true); $('#fr-text').value = code;
+    startFriends().then(() => addFriend(code));
+  }
 }
 keptMeadow(seedParam).then(begin);
 keepDb().catch(() => { /* not kept, then */ });   // opened now, so keeping at the last moment needn't wait for it

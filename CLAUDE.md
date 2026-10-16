@@ -87,6 +87,12 @@ picture and what goes in, `renderBook`; a few dishes `known` from the start, the
 - `items.js`: what the meadow gives, painted picked and held up for the satchel (`Items.paint`, `NAMES`, ingredient ids; a new
   one goes at the end), on nothing but a faint touch of shade, so no ground shadow blown up in a slot. game.js puts them in
   the satchel's sheet as `'ingr:' + n`, every ingredient so far; a new one not painted here yet keeps the meadow's painting or its emoji.
+- `friends.js`, `supabase/friends.sql`: friends (••• › Friends; game.js `openFriends`, `friendsChanged`, `friendInvited`). An anonymous
+  Supabase player made the first time Friends opens (`aeon-garden-friends` says to start it from then on), a code to add each other by
+  (or a `?friend=CODE` link), a beat every 30 s while in view (`here()`: name and the room played together in) that brings the list back,
+  and invites and knocks over Realtime. The tables' rules are the security: friends only see each other's room once accepted, and only
+  the anon key is in the page (never the service_role one). A change to the SQL is pasted into the Supabase SQL editor by Axel.
+  `?as=x` is a second player in the same browser, for trying it out. Playing together itself is still net.js.
 - `trees.js`, `tree-worker.js`, `tree-lab.html`: the trees, painted in code. How they're painted, cached and
   drawn is in `.claude/rules/trees.md`, which loads when one of those files is opened.
 
