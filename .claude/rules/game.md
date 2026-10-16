@@ -108,22 +108,39 @@ twinkling stars, a wave of light out to the ring and motes rising off it (`campB
 (`campCam`, in `leadCam`; a zoom of your own ends it), "Your camp" pops in, glowing between two twinkling ✦ (announce 'camp', which cuts in ahead of the others; index.html `camp-pop`)
 and an Android phone buzzes (`CAMP_BUZZ`). Then a soft ring of trodden earth with a few stones lies round the fire (`drawCampRing`,
 `CAMP_ART` painted once, stretched; under all that stands), coming in over `CAMP_RING_MS`. The fire's hover calls it "Your camp".
-Cooking at the fire (PLAN.md stage 6 and its redesign; the long comment over `COOK_MS` has it all): a click on a lit fire (or E,
-or the pot prompt) walks the forager there (`clickFire` 'cook', `goFire`), it kneels, the camera eases in and leans to the fire
-(`cookCam`, in `leadCam`: `COOK_ZOOM`, `COOK_LEAN`), and a painted iron pot sits over the flames (`drawPot`, `paintPot`: 'pot:0'
-the back and inside, 'pot:1' the belly, what's in it drawn between; drawn after all that stands, so nothing hides it). A tap on
-a satchel slot or a slot dragged onto the pot (`overPot`) puts one in (`potAdd`; a stick goes on the fire): it flies there
-(`flyToPot`) and drops in with a bounce and a puff (`j.land`, `LAND_MS`), held back in the satchel (`potHeld`, `potPrune`) till
-cooked; a tap on it in the pot takes it out (`potThingAt`, `potTake`). Under the fire a small bar (`#cook`, `renderCook`, kept by
-`placeCook`: under the fire, else over it, else beside it on a phone on its side): what the pot will make (`potWord`: a known
-dish's name, "Something new!" for an exact dish never made, "Not a dish yet… as it is, a forager's mess" with what a known dish
-it's near still wants, `potToward`, or "Only a forager's mess", `potPossible`), the stick wearing the fire's fuel as a ring
-(`cookFuel`; F feeds it too, `buildPressed`), the recipe book, Cook, and a round brass ✕ 44 px on every screen. With the pot
-empty the last dish comes back as a one-tap "again" (`lastDish`, `cookAgain`, `fillPot`). While it's up the satchel rings what
-will go in and dims the rest (`.cooking`, `.cookable`, `.cook-dim`). Cook: `COOK_MS` of stirring with the things bobbing and
-steam off the pot, then `cookDone`: the things out, the dish in (flying from the fire, or on the ground with the satchel full),
-a mess a puff of dark smoke, a dish never made before its gold headline (`firstTime('dish:' + name)`, which `knownDish` reads
-with recipes.js `known`). Walking off, ✕, Esc or Back leave the fire (`closeCook`, `stepOut`); nothing is lost mid-cook.
+Cooking at the fire (PLAN.md stage 6, its redesign, and the cooking window of 2026-10-16; the long comments over `COOK_MS` and
+`DROPS` have it all): a click on a lit fire (or E, or the pot prompt) walks the forager there (`clickFire` 'cook', `goFire`), it
+kneels, and the camera eases in close on the fire (`cookCam`, in `leadCam`: to `kw.zoom`, about `COOK_TILES` across what the
+window leaves, past the 64 you can zoom yourself up to `COOK_MOST`), the fire and the forager in the middle of the meadow left
+beside the window (`kw.fx`, `kw.fy`, `COOK_AIM`, `COOK_UP`), and eases back out as you leave. A big parchment window opens
+(`#cook`, `renderCook`, `measureCook`; brass-ringed, opaque): on a computer to the right with the fire on the left, on an upright
+phone a sheet from the foot with the fire over it and its ✕ at the foot in the middle, on a phone on its side the pot and the
+satchel side by side down the right, under the pill. The satchel at the foot and its bars step away while it's up. In it:
+the pot close up on a small canvas of its own (`#cook-canvas`, `drawCookView`, drawn only while it's open): on the fire's own coals
+and stones (`paintCookBed`: `paintFire` as the fire is now) in a warm dark vignette with grass at its edges, the fire's flames
+licking up round its belly (`drawFlames` drawn into that canvas) and their glow flickering on the ground and the iron; water in
+it, shimmering. The satchel's things are big tiles (`#cook-bag`, 80 px, 64 on its side: `renderCookBag`, `setupCookBag`), ringed if
+they go in the pot or on the fire, the rest let down: one dragged (pointer events: mouse and finger, its painting lifted over the
+finger) and let go over the pot falls in from there (the rim glows while it's over it, `kw.hover`); one tapped (or Enter on it)
+flies in an arc to over the pot's mouth (`flyToPot`, `flyBig`) and falls in. Meeting the water it splashes (`splash`: droplets up
+and back down, rings going out, `potRing`; a pool each of typed arrays), dips under, bobs back up and floats, its lower part dim
+through the water with a ring round it (`drawPotThing`), and plops (sound.js `plop`, by `plopOf`: heavier for a mushroom, an apple
+or one day a fish, lighter for a leaf or a berry, honey a gloop). What's in the pot is held back in the satchel (`potHeld`,
+`potPrune`) till cooked; a tap on one floating lifts it out with a drip and it flies back to its tile (`potTake`). The meadow keeps
+its own little pot over the fire too (`drawPot`, `paintPot`), which the forager stirs. Under the pot what it will make (`potWord`: a
+known dish's name, "Something new!" for an exact dish never made, "Not a dish yet… as it is, a forager's mess" with what a known
+dish it's near still wants, `potToward`, or "Only a forager's mess", `potPossible`); by the tiles the stick wearing the fire's
+fuel as a ring (`cookFuel`; F feeds it too, `buildPressed`), the recipe book (`openBook`, over the window), Cook, and a round brass
+✕. With the pot empty the last dish comes back as a one-tap "again" (`lastDish`, `cookAgain`, `fillPot`). Cook: `COOK_MS` of
+stirring (Cook filling as it goes, a CSS animation), the water turning to broth (`brothOf`: green for greens, purple for berries,
+murky for a mess), bubbling, steaming, a wooden spoon going round in it (a swish each time round, sound.js `stir`), the pot boiling
+(`Sound.update`'s `pot`: a simmer while the window's open, a boil as it cooks); then `cookDone`: the things out, the dish rising out
+of the pot glowing with sparks round it, or a mess in a puff of dark smoke (sound.js `dish`, `mess`), and after `REVEAL_MS` flying
+to its tile (`kw.reveal`, `kw.incoming`; on the ground by the fire with the satchel full); a dish never made before gets its gold
+headline (`firstTime('dish:' + name)`, which `knownDish` reads with recipes.js `known`). Walking off, ✕, E, Esc or Back leave the
+fire (`closeCook`, `stepOut`); nothing is lost mid-cook. Cost: the window's canvas only while it's open (painted once a size:
+`paintCookPot`; a frame is twenty-odd draws), and the meadow zoomed in that close draws less than walking about (1400x900, Chrome:
+1.0 ms of script a frame cooking against 1.7 walking, 60 fps).
 The recipe book (`#book`, `renderBook`, `#book-btn` by the satchel's right end, B, and on the cooking bar): the fire's dishes,
 known ones with their painting and what goes in (what the satchel has ringed, `needsHad`), half-known ones a hint told
 ("Something with honey…", `hinted`, kept in `aeon-garden-hints`), the rest a row of blank plates; a known one tapped fills the pot

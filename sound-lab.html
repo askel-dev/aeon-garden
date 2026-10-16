@@ -100,6 +100,11 @@
       <input id="fire" type="range" min="0" max="1" step="0.01" value="0">
       <span>🔥 its soft roar and crackle</span>
     </div>
+    <div class="row">
+      <span class="lbl">Pot</span>
+      <input id="pot" type="range" min="0" max="1" step="0.01" value="0">
+      <span>♨️ on the fire: 0.3 a simmer (the cooking window open), 1 a boil (cooking)</span>
+    </div>
     <p class="note">Birds sing by day with a dawn chorus. Crickets come out at night, and on spring nights, while there's frogspawn in the shallows, a frog purrs now and then. The wind comes in gusts that swell,
       cross from one side to the other and rustle the grass and the leaves of the trees on screen (crisp and dry in autumn, nearly bare in winter); in winter and storms a hard gust whistles
       faintly, in tune. Winter has a few snowy chimes, and a wind chime rings over it all, more often the more rabbits there are (and in gusts). Rain and storms hiss and drip, fog and snow muffle everything, a heatwave brings
@@ -190,6 +195,15 @@
     ['kindle', '🔥', 'The flame takes', 'a soft whoomph, crackles and two warm notes up'],
     ['fizzle', '💨', 'Only smoke', 'let go too soon, or a fire gone out: a soft hiss'],
     ['camp', '🏕️', 'Your camp', 'the first fire lit: a warm piano flourish up into a soft chord'],
+    ['plop', '🍄', 'Into the pot', 'a mushroom or an apple dropped in: a round plop, droplets falling back'],
+    ['plopberry', '🫐', 'Into the pot, light', 'a berry or a leaf: a little plip'],
+    ['plopfish', '🐟', 'Into the pot, heavy', 'a fish or game: a deep gloop and a thump'],
+    ['plophoney', '🍯', 'Honey into the pot', 'a slow sticky gloop'],
+    ['plopout', '💧', 'Out of the pot', 'one lifted back out, dripping'],
+    ['simmer', '♨️', 'The pot boiling', 'a few seconds of it bubbling hard (the Pot slider plays it as the game does)'],
+    ['stir', '🥄', 'Stirring', 'the spoon going round: a swish of water, a soft knock on the iron'],
+    ['dish', '🍲', 'A dish done', 'steam off it and a warm little run up into a chord'],
+    ['mess', '💨', 'A forager\'s mess', 'a puff of smoke, a rattle and two low notes: a shrug'],
   ];
   $('#events').innerHTML = EVENTS.map(([k, e, name, how]) =>
     `<button data-play="${k}"><b>${e} ${name}</b><span>${how}</span></button>`).join('');
@@ -208,7 +222,7 @@
     if (t) $('#tune-now').textContent = `Playing ${S.tunes[t.name]}, ${clock(Math.min(t.at, t.length))} of ${clock(t.length)}.`;
   }, 250);
 
-  const push = () => S.update({ phase: st.phase, season: st.season, sky: { [st.sky]: 1 }, bees: st.bees || 0, life: st.life, trees: st.trees, frogs: st.season === 0 ? 1 : 0, fire: st.fire || 0 });
+  const push = () => S.update({ phase: st.phase, season: st.season, sky: { [st.sky]: 1 }, bees: st.bees || 0, life: st.life, trees: st.trees, frogs: st.season === 0 ? 1 : 0, fire: st.fire || 0, pot: st.pot || 0 });
   const setSky = k => { const wet = ['rain', 'storm']; if (wet.includes(k) && !wet.includes(st.sky)) play('rain'); st.sky = k; onIn('[data-sky]', 'sky', k); push(); };
   const clockText = p => p >= 0.72 || p < 0.02 ? '🌙 night' : p < 0.12 ? '🌅 dawn' : p > 0.6 ? '🌇 dusk' : '☀️ day';
   const setPhase = p => { st.phase = p; $('#phase').value = p; $('#clock').textContent = clockText(p); push(); };
@@ -238,6 +252,7 @@
   $('#life').oninput = e => { st.life = +e.target.value; push(); };
   $('#trees').oninput = e => { st.trees = +e.target.value; push(); };
   $('#fire').oninput = e => { if (!$('#start').classList.contains('on')) $('#start').click(); st.fire = +e.target.value; push(); };
+  $('#pot').oninput = e => { if (!$('#start').classList.contains('on')) $('#start').click(); st.pot = +e.target.value; push(); };
 
   // A walk: eight steps, the feet taking turns, at a gait of a walk's 0.34 s a step shortened by the pace.
   const WALKS = { step: [1, 'grass'], stepfast: [2.2, 'grass'], stepearth: [1, 'earth'], stepshore: [1, 'shore'], stepwoods: [1, 'woods'], stepsnow: [1, 'snow'], stepice: [1, 'ice'], stepwater: [0.5, 'water'] };
@@ -272,6 +287,12 @@
       kindlecatch: ['kindle', { v: 0.4, label: 'it catching' }],
       blow: ['blow', { v: 0.5 + 0.5 * Math.random() }],
       strike: ['strike', { n: Math.floor(Math.random() * 3) }],
+      plop: ['plop', { what: 'mushroom', w: 1 }],
+      plopberry: ['plop', { what: 'berry', w: 0.6, label: 'a light plop' }],
+      plopfish: ['plop', { what: 'fish', w: 1.7, label: 'a heavy plop' }],
+      plophoney: ['plop', { what: 'sweet', w: 1.1, label: 'honey into the pot' }],
+      plopout: ['plop', { what: 'out', label: 'one out of the pot' }],
+      simmer: ['simmer', { sec: 3, v: 1 }],
     }[b.dataset.play] || [b.dataset.play]));
     else if (b.dataset.sky) { if (!$('#start').classList.contains('on')) $('#start').click(); setSky(b.dataset.sky); }
     else if (b.dataset.season) { st.season = +b.dataset.season; onIn('[data-season]', 'season', st.season); push(); play('season'); }
