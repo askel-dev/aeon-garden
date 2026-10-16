@@ -3725,6 +3725,13 @@ try { fireTold.lit = localStorage.getItem(FIRE_TOLD) === '1'; } catch (e) { /* f
 // first. Both the step and the kneel are the sim's own forager (the walk) and fg.kneel, which sendPos hands to friends, so
 // playing together a friend sees it step out and kneel just as it does here.
 const fireSit = { F: null };
+// The lit fire the forager is at (where it kneels to warm its hands, SIT_NEAR), or null: E opens its cooking card.
+function cookFire() {
+  const f = world.forager;
+  if (f.down >= 0) return null;
+  for (const F of world.fires) if (F.lit && Math.abs(F.x - f.x) < SIT_NEAR && Math.abs(F.y - f.y) < SIT_NEAR * 0.7) return F;
+  return null;
+}
 function sitFrame(now) {
   const f = world.forager;
   fireSit.F = null;
@@ -11464,7 +11471,7 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'Escape') stepOut();
   else if (e.key === 'Enter' && ui.place) { e.preventDefault(); placeHere(); }   // (picking a spot for a fire: where the faint one is)
   else if ((e.key === 'Enter' || e.key === 't') && Net && Net.on) { e.preventDefault(); openChat(true); }
-  else if (e.code === 'KeyE' && !e.repeat) pickNear();
+  else if (e.code === 'KeyE' && !e.repeat) { const F = cooking() ? null : !ui.fire && cookFire(); if (cooking()) closeCook(); else if (F) clickFire(F); else pickNear(); }   // (at a lit fire: its cooking card, and again shuts it; else pick)
   else if (e.code === 'KeyF' && !e.repeat) { if (atFire()) { fireKey = true; blowOn(true); } else buildPressed(); }   // (at a fire, held: blowing; else the fire button)
   else if (e.key === 'm') toggleSound();
   else if (e.key === '+' || e.key === '=') zoomOn(cam.zoom * 1.25);
