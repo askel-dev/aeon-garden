@@ -88,6 +88,20 @@
         "/Users/axel/Desktop/programming/aeon-garden/.claude/worktrees/cooking"
       ],
       "port": 8772
+    },
+    {
+      "name": "cook",
+      "runtimeExecutable": "/Library/Frameworks/Python.framework/Versions/3.13/bin/python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8792",
+        "--bind",
+        "127.0.0.1",
+        "--directory",
+        "/Users/axel/Desktop/programming/aeon-garden/.claude/worktrees/cook"
+      ],
+      "port": 8792
     }
   ]
 }
