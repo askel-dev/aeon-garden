@@ -43,7 +43,11 @@ function unwrap(msg) {
 
 function heard(msg, conn) {
   if (!msg || msg.from === Net.me) return;
-  if (msg.to && msg.to !== Net.me) return;
+  if (msg.to && msg.to !== Net.me) {                     // (one guest's word to another goes through the host)
+    const c = Net.host && conn && conns.get(msg.to);
+    if (c && c.open) c.send(msg);
+    return;
+  }
   if (Net.host && conn && !msg.to) for (const [id, c] of conns) if (c !== conn && c.open) c.send(msg);   // passed on to the other guests
   handlers.message(unwrap(msg));
 }

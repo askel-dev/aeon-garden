@@ -180,6 +180,10 @@ they're painted. Eating: a tap on food in the satchel (`eatAsk`, `#eat`) shows i
 ("It wants cooking", "I'm full"); `eatSlot` feeds it (sim.js `feedForager`). The tummy is a third slim bar (`#v-food`), shown
 once hungry and for `FED_SHOW` after eating; "I'm getting hungry" and "I'm starving" are said over it (events 'hungry',
 'starving'). The ideas card waits while it's at a fire (`askTick`).
+Gifts, playing together: with a friend's forager within `GIVE_REACH` (`giftFriend`), a tap on anything in the satchel offers
+it (a green 🎁 button with their name, by Eat in `eatAsk`); `giveSlot` takes one out and flies it over to them, and `heardGive`
+puts it in their satchel with a toast, or at their feet as a drop when it's full. Sent `to` that friend alone (net.js passes a
+guest's word to another guest through the host).
 A click or a tap on an animal (on its body as drawn: `animalAt`, a little wider for a finger) opens its panel;
 anywhere else walks the forager there (`walkTo`, sim.js `foragerTo`) and shuts the panel, with a
 soft ring where it was sent (`drawMark`, `MARK_ART` painted once) that fades once it's there, and a faint dashed line to it

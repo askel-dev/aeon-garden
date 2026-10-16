@@ -475,6 +475,8 @@
   #eat .why { color: var(--muted); font-weight: 700; padding: 3px 8px 3px 0; }
   #eat button { border: none; border-radius: 9px; padding: 5px 14px; background: var(--accent); color: #fff; font-weight: 900; box-shadow: 0 2px 0 #b8622a; }
   #eat button:active { transform: translateY(1px); box-shadow: 0 1px 0 #b8622a; }
+  #eat button.give { background: #6f8a3e; box-shadow: 0 2px 0 #4d6327; white-space: nowrap; }   /* (a gift to a friend by: game.js giveSlot) */
+  #eat button.give:active { box-shadow: 0 1px 0 #4d6327; }
   @media (pointer: coarse) { #eat { padding: 4px 4px 4px 13px; } #eat button { min-height: 40px; padding: 0 18px; } }
   @keyframes fade-in { from { opacity: 0; } }
   /* ---- cooking at the fire (game.js renderCook, drawCookView): the camera eases in close on the fire and a big parchment

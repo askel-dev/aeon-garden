@@ -4952,11 +4952,12 @@ function eatAsk(k) {
   clearTimeout(eatUi.timer);
   eatUi.k = k;
   if (k < 0) { box.classList.add('hidden'); return; }
-  const f = world.forager, id = f.bag[k], food = id && Recipes.foodOf(id);
-  if (!food) { eatAsk(-1); return; }
-  const why = !food.raw ? 'It wants cooking' : f.tummy > 0.97 ? 'I\'m full' : '';
-  box.innerHTML = `<span class="eat-name">${esc(food.name)}${food.warm ? ' <span class="warm" title="Warms you">✦</span>' : ''}</span>`
-    + (why ? `<span class="why">${why}</span>` : `<button data-act="eat">Eat</button>`);
+  const f = world.forager, id = f.bag[k], food = id && Recipes.foodOf(id), to = id && giftFriend();
+  if (!food && !to) { eatAsk(-1); return; }
+  const why = !food || !(food.fill > 0) ? '' : !food.raw ? 'It wants cooking' : f.tummy > 0.97 ? 'I\'m full' : '';
+  box.innerHTML = `<span class="eat-name">${esc(food ? food.name : itemName(id, 1))}${food && food.warm ? ' <span class="warm" title="Warms you">✦</span>' : ''}</span>`
+    + (why ? `<span class="why">${why}</span>` : food && food.fill > 0 ? `<button data-act="eat">Eat</button>` : '')
+    + (to ? `<button data-act="give" class="give">🎁 ${friendName(to) || 'Give'}</button>` : '');
   box.classList.remove('hidden');
   const el = slots[k], r = el.getBoundingClientRect(), w = box.offsetWidth;
   el.classList.add('asking');
@@ -4976,6 +4977,63 @@ function eatSlot() {
   potPrune();
   renderSatchel(); renderVitals(); if (cooking()) renderCook();
   eatAsk(f.bag[k] ? k : -1);
+}
+
+// Gifts, playing together: with a friend standing within GIVE_REACH (giftFriend: the nearest, not collapsed), a tap on
+// anything in the satchel offers it, a 🎁 button with their name by the Eat one (eatAsk). Given (giveSlot), one of it leaves
+// the satchel and flies over the meadow from it to the friend's forager ('give', to that friend alone: net.js passes a
+// guest's on through the host); there it flies into their satchel with a toast saying who it's from (heardGive), or with
+// no room lands at their feet as a drop would. Each satchel is its owner's, so nothing about the meadow changes but a drop.
+const GIVE_REACH = 3;
+function giftFriend() {
+  if (!(Net && Net.on) || !peers.size || world.forager.down >= 0) return null;
+  const f = world.forager;
+  let best = null, bd = GIVE_REACH * GIVE_REACH;
+  for (const p of peers.values()) {
+    const d = (p.x - f.x) ** 2 + (p.y - f.y) ** 2;
+    if (d < bd && !p.downAt) { bd = d; best = p; }
+  }
+  return best;
+}
+function giveSlot() {
+  const k = eatUi.k, f = world.forager, id = k >= 0 && f.bag[k], p = giftFriend();
+  if (!id || !p) { eatAsk(-1); return; }
+  if (cooking() && (potHeld()[id] || 0) >= S.bagCount(f, id)) { say('It\'s in the pot', f.x, f.y - 1.6); return; }
+  if (!--f.bagN[k]) f.bag[k] = '';
+  Net.send({ t: 'give', to: p.id, id, n: 1, x: f.x, y: f.y, nm: myName });
+  const el = $('#satchel').querySelectorAll('.slot')[k], r = el.getBoundingClientRect(), [tx, ty] = toScreen(p.x, p.y - 1);
+  const fly = document.createElement('div');
+  fly.className = 'fly'; fly.style.backgroundPosition = itemBg(id);
+  document.body.appendChild(fly);
+  const sx = r.left + r.width / 2, sy = r.top + r.height / 2, mx = (sx + tx) / 2, my = Math.min(sy, ty) - 80;
+  fly.animate([{ transform: `translate(${sx - 16}px, ${sy - 16}px) scale(1)`, opacity: 1 },
+    { transform: `translate(${mx - 16}px, ${my - 16}px) scale(1.2)`, opacity: 1, offset: 0.45 },
+    { transform: `translate(${tx - 16}px, ${ty - 16}px) scale(0.6)`, opacity: 0.2 }], { duration: 700, easing: 'ease-in-out' })
+    .onfinish = () => fly.remove();
+  say(`For ${p.name || 'you'}!`, f.x, f.y - 1.6);
+  chime('pick', { n: 1 });
+  potPrune();
+  renderSatchel(); if (cooking()) renderCook();
+  eatAsk(f.bag[k] ? k : -1);
+}
+function heardGive(m, now) {
+  const f = world.forager, id = String(m.id || ''), n = Math.max(1, Math.min(S.STACK || 9, m.n | 0));
+  if (!Recipes.INGREDIENTS[id] && !Recipes.foodOf(id)) return;
+  const p = peers.get(m.from), who = esc((p && p.name) || cleanName(m.nm) || 'A friend');
+  if (p) p.chat = chatFor('🎁', now);
+  const [sx, sy] = p ? toScreen(p.x, p.y - 1) : [vw / 2, vh / 2];
+  const what = esc(n > 1 ? `${n} ${itemName(id, n)}` : itemName(id, 1));
+  if (f.down < 0 && S.roomFor(f, id) >= n) {
+    const into = S.stow(f, id, n);
+    flyToSlot(id, sx, sy, into[0], () => chime('pick', { n }));
+    toast(`🎁 ${who} gave you ${what}`);
+    return;
+  }
+  const until = world.tick + Math.round(S.DROP_DAYS * S.TPD), d = S.dropAt(world, id, f.x, f.y + 0.4, n, world.tick, until);
+  Net.send({ t: 'drop', kind: d.kind, x: d.x, y: d.y, n, born: world.tick, until, tick: world.tick });
+  dropLand.set(d, now);
+  picks.at = -1e9; aim.moved = true;
+  toast(`🎁 ${who} gave you ${what}. Your satchel's full: it's at your feet`);
 }
 
 // ------------------------------------------------------------------ the recipe book
@@ -5953,7 +6011,7 @@ function setupSatchel() {
     if (!h.fly) {                                         // (a tap: into the pot, cooking; something to eat, its Eat; else its name for a moment, as a mouse's hover shows it)
       if (e.type !== 'pointerup') return;
       if (cooking()) { potAdd(h.k); return; }
-      if (Recipes.foodOf(h.id)?.fill > 0) { eatAsk(eatUi.k === h.k ? -1 : h.k); return; }
+      if (Recipes.foodOf(h.id)?.fill > 0 || giftFriend()) { eatAsk(eatUi.k === h.k ? -1 : h.k); return; }   // (or, a friend by, to give it)
       if (h.touch) { const el = row.children[h.k]; el.classList.add('named'); clearTimeout(el.unname); el.unname = setTimeout(() => el.classList.remove('named'), 1400); }
       return;
     }
@@ -12144,6 +12202,8 @@ function heardNet(m) {
   else if (m.t === 'again') { if (Net.host) Net.send(worldMsg(m.from)); }
   else if (m.t === 'bye') { if (Net.guest && m.from === net.hostId) hostGone(); else friendGone(m.from); }
   else if (m.t === 'say') heardChat(m, now);
+  else if (m.t === 'call') heardCall(m, now);
+  else if (m.t === 'give') heardGive(m, now);
 }
 
 // The host's meadow, as a guest comes (to it alone), as the host starts a new one (to all), or again after drifting off.
@@ -12914,6 +12974,7 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'book-close') openBook(false);
   else if (t.dataset.act === 'book-dish') bookDish(t.dataset.name);
   else if (t.dataset.act === 'eat') eatSlot();
+  else if (t.dataset.act === 'give') giveSlot();
   else if (t.dataset.act === 'close') select(0);
   else if (t.dataset.act === 'sheet-up' || t.dataset.act === 'sheet-down') {
     ui.sheetUp = t.dataset.act === 'sheet-up';
