@@ -4194,7 +4194,7 @@ function clumpAt(w, f) {
   return n;
 }
 
-// A find at x, y, if it suits it, with room, in sight, not in a burrow's mouth. Lasts FIND_DAYS, never past its season.
+// A find at x, y, if it suits it, with room, in sight, not on a rock nor in a burrow's mouth. Lasts FIND_DAYS, never past its season.
 // age: ticks it's been up already (a new meadow's).
 function addFind(w, r, kind, x, y, age = 0) {
   if (!findPlace(w, kind, x, y) || !roomForFind(w, x, y) || !inSight(w, x, y, null) || onRock(w, x, y)) return false;
