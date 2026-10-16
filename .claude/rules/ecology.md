@@ -198,6 +198,12 @@ it's gone a tile), so a tick looks at a handful. Through a wood it weaves and ta
 steering: it heads for a point `FORAGER_LOOK` along the way, turning at most `FORAGER_TURN` a tick (three times that from
 standing), speeds up by `FORAGER_ACCEL`, slows to stop where it was sent (`FORAGER_BRAKE`) and into a sharp turn, wades at
 `FORAGER_WADE` of `FORAGER_WALK`, and slides along the deep if a corner clips it.
+Playing together, friends' foragers are in each other's way (`friendsAt`: game.js `friendsFrame` hands over where each is
+drawn, every frame; one collapsed isn't): a circle of `ELBOW_ROOM` about each it can't step into (`outOfFriends`), sliding round
+it, met about head on (`FRIEND_HEAD_ON`) stepping to its right (`FRIEND_SIDESTEP`) so two pass, and a way that ends in one ends at
+its edge. A friend is shown a moment late, so it can walk into this one: one too near gets `ELBOW_SHUFFLE` more room a tick,
+walking or standing (`makeRoom`), so they settle apart on both screens; two on one spot (woken by the camp's fire) step off the
+ways `friendSide` says, hashed from who each is. Not the sim's: nothing the meadow counts follows from it.
 Gathering (`whatThere`, `gather`) takes from the sim for real, with no random numbers: a clump of mushrooms picked is gone
 (all its caps; only part if the satchel is nearly full), a patch of greens gives `GREEN_GIVES` (one more off a big patch) and
 `GREEN_TAKE` of itself, growing back `GREEN_REGROW` a day (`g.pick`, in `greensTick`), a ripe bramble `BERRY_PICK` blackberries at

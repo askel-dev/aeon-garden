@@ -10102,6 +10102,7 @@ $('#ask').addEventListener('keydown', e => { if (e.key === 'Escape') askIdeas(fa
 // Its body goes along with where it is (how cold, wet and snowy), so it hunches, shivers, drips, breathes in the cold and
 // leaves footprints and rings as the forager does (drawFigure, drawBody), and each pick it sends shows on it: it turns
 // and stoops, and its "+3 Chanterelles" floats up there (peerPicked).
+// The foragers bump: each keeps its own out of the others as they're drawn (friendsFrame, sim.js friendsAt).
 // A guest who loses the host keeps the meadow as its own. The name is asked once, on a small card at the foot as the
 // cloak's is (askName), the first time you play together, and kept in localStorage; ••• has it while together.
 // The chat: Enter, T or 💬 on the pill opens a small card bottom left (openChat): a few things to say with one tap
@@ -10472,6 +10473,20 @@ function peerItems(items, now, z) {
     p.shown = visible(sx, sy, 2 * px); p.sx = sx; p.sy = sy;
     if (p.shown) itemOf(items, y, sx, sy, 1).q = p;
   }
+}
+// Where each friend stands as it's drawn, for the sim (sim.js friendsAt: two foragers don't walk through each other), and
+// which way this one steps off one right on top of it, from who this is (so two on one spot go different ways). One lying
+// collapsed isn't in the way.
+const FRIENDS_MOST = 16, friendXY = new Float32Array(FRIENDS_MOST * 2);
+function friendsFrame() {
+  let n = 0;
+  for (const p of peers.values()) {
+    if (p.stage === 4 || n >= FRIENDS_MOST) continue;
+    friendXY[n * 2] = p.x; friendXY[n * 2 + 1] = p.y; n++;
+  }
+  let side = 0;
+  if (n) for (let i = 0; i < Net.me.length; i++) side = (side * 31 + Net.me.charCodeAt(i)) % 3600;
+  S.friendsAt(friendXY, n, side / 3600 * 2 * Math.PI);
 }
 // Each friend's name over it, and over that what it said (and over this forager what it said), on top of everything (as
 // the pop-ups). The bubbles are laid out together after (layChats).
@@ -11261,6 +11276,7 @@ function frame(now) {
   now = onBeat(now);
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
+  friendsFrame();                          // (where friends stand: in the way of this forager's next steps)
 
   if (bodyFrame(now)) {                    // (collapsed, in the dark: the night runs by till it wakes)
     const t0 = performance.now();

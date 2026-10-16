@@ -5504,6 +5504,60 @@ function outOfRocks(x, y, fromX, fromY) {
   rockX = x; rockY = y;
 }
 
+// Friends' foragers (playing together: game.js hands over where each is drawn now, friendsAt) are in its way too, so two
+// don't walk through each other: a circle of ELBOW_ROOM about each that it can't step into (one it's already in, it can only
+// leave, as a rock's). Walking into one it slides round it, and met about head on it steps to its right, as people do, so
+// two coming at each other pass (each does the same on its own screen). A way that ends in one ends at its edge. Standing,
+// one that comes too near (it's shown a moment late, so it can walk into this one) gets room: this one shuffles aside, up
+// to ELBOW_SHUFFLE a tick (makeRoom), so the two settle apart on both screens. They're where each said it was, not the
+// sim's, and nothing the meadow counts follows from it.
+const ELBOW_ROOM = 0.55;                // tiles between two foragers' middles, at the nearest
+const FRIEND_HEAD_ON = 0.3;             // walking into one this near straight at its middle (the sine of the angle off), it steps right
+const FRIEND_SIDESTEP = 0.6;            // by this much of its step
+const ELBOW_SHUFFLE = 0.03;             // tiles a tick it shuffles aside, standing, for one too near
+let friendXY = new Float32Array(0), friendN = 0, friendSide = 0;
+function friendsAt(xy, n, side) { friendXY = xy; friendN = n; friendSide = side || 0; }
+// x, y (a step from f.x, f.y) kept out of every friend (one already too near, it gets ELBOW_SHUFFLE more room a tick), into
+// rockX, rockY. Says which friend was in the way (-1: none).
+function outOfFriends(f, x, y) {
+  let hit = -1;
+  for (let k = 0; k < friendN; k++) {
+    const cx = friendXY[k * 2], cy = friendXY[k * 2 + 1];
+    if (Math.abs(x - cx) > ELBOW_ROOM || Math.abs(y - cy) > ELBOW_ROOM) continue;
+    const ox = f.x - cx, oy = f.y - cy, od = Math.hypot(ox, oy), most = Math.min(ELBOW_ROOM, od + ELBOW_SHUFFLE);
+    let dx = x - cx, dy = y - cy, d = Math.hypot(dx, dy);
+    if (d >= most || od < 1e-6) continue;
+    hit = k;
+    const sx = x - f.x, sy = y - f.y, sl = Math.hypot(sx, sy);
+    if (sl > 1e-6 && Math.abs(sx * oy - sy * ox) / (sl * od) < FRIEND_HEAD_ON) {   // (head on: to its right, a step aside)
+      x -= sy * FRIEND_SIDESTEP; y += sx * FRIEND_SIDESTEP;
+      dx = x - cx; dy = y - cy; d = Math.hypot(dx, dy);
+    }
+    if (d < most) { const a = d > 1e-6 ? most / d : 0; x = a ? cx + dx * a : f.x; y = a ? cy + dy * a : f.y; }
+  }
+  rockX = x; rockY = y;
+  return hit;
+}
+
+// Standing with a friend too near: a little aside, away from it (from right on top of it, as both woke by the camp's fire,
+// the way friendSide says: game.js makes it from who this is, so the two go different ways).
+function makeRoom(w, f) {
+  let px = 0, py = 0;
+  for (let k = 0; k < friendN; k++) {
+    const dx = f.x - friendXY[k * 2], dy = f.y - friendXY[k * 2 + 1], d = Math.hypot(dx, dy);
+    if (d >= ELBOW_ROOM * 0.97) continue;
+    const by = ELBOW_ROOM - d;
+    if (d > 1e-4) { px += dx / d * by; py += dy / d * by; } else { px += Math.cos(friendSide) * by; py += Math.sin(friendSide) * by; }
+  }
+  const pl = Math.hypot(px, py);
+  if (pl < 1e-4) return;
+  const m = Math.min(pl, ELBOW_SHUFFLE) / pl, nx = f.x + px * m, ny = f.y + py * m;
+  rocksFor(w);
+  outOfRocks(nx, ny, f.x, f.y);
+  if (!walkable(w, rockX, rockY)) return;
+  f.moved = Math.hypot(rockX - f.x, rockY - f.y); f.x = rockX; f.y = rockY;
+}
+
 // The brush about: each tree and bramble as x, y, r, slow (brushNear, for foragerTick, from what's within BRUSH_NEAR of
 // where it looked last), and how much each tile's middle slows it (brushTile, for the way: A* and taut). Both gathered
 // again at most once a game hour, as trees grow, fall and come up; the grid only when a way is wanted.
@@ -5704,7 +5758,7 @@ function segDist(x, y, ax, ay, bx, by) {
 function foragerTick(w) {
   const f = w.forager, P = f.path;
   f.moved = 0;
-  if (!f.walking) { f.speed = 0; return; }
+  if (!f.walking) { f.speed = 0; if (friendN && f.down < 0) makeRoom(w, f); return; }
   const n = P.length / 2;
   while (f.leg < n - 1) {                                // onto the next leg once near this one's end, past it, or nearer the next
     const k = f.leg * 2, bx = P[k], by = P[k + 1];
@@ -5753,6 +5807,14 @@ function foragerTick(w) {
   const step = Math.min(f.speed, rest);
   let nx = f.x + Math.cos(f.heading) * step, ny = f.y + Math.sin(f.heading) * step;
   if (pushX || pushY) { const p = BRUSH_PUSH * step * clamp(rest / 0.8, 0, 1); nx += pushX * p; ny += pushY * p; }
+  if (friendN) {                                         // (a friend in the way: round it, or stopped by it, sent to where it stands)
+    const k = outOfFriends(f, nx, ny);
+    nx = rockX; ny = rockY;
+    if (k >= 0 && Math.hypot(f.goalX - friendXY[k * 2], f.goalY - friendXY[k * 2 + 1]) < ELBOW_ROOM + 0.2) {
+      f.walking = false; f.running = false; f.speed = 0; f.path.length = 0;
+      return;
+    }
+  }
   rocksFor(w);
   outOfRocks(nx, ny, f.x, f.y); nx = rockX; ny = rockY;   // (a rock in the way: round it)
   if (!walkable(w, nx, ny)) {                            // (the water came up, or a corner clipped the deep: slide along it)
@@ -7437,7 +7499,7 @@ const api = {
   createWorld, step, clock, isNight, phaseOf, seasonOf, springPart, mood, ageDays, growth, isAdult, patchFresh,
   hedgehogComes, heronComes, dragonflyComes, kingfisherComes, skylarkComes, placeNeeds, VISIT_SEASONS, VISIT_FADE, HERON_FADE, HERON_STAB,
   DRAGON_FROM, KF_FADE, KF_UNDER, KF_BEAT, LARK_FADE, LARK_OPEN, LARK_RISE, EDGE_REACH, OPEN_MOST,
-  walkable, packWorld, unpackWorld, GROUND, foragerTo, foragerArrives, openingStorm, FORAGER_WALK, FORAGER_RUN, airTemp, warmthStage, WARMTH_STAGES, STUMBLE_TICKS, wakeForager, rockKind, whatThere, cherryShow, honeySpare, gather, takeFrom, dropSlot, dropAt, DROP_DAYS, moveSlot, roomFor, forEachDecorNear, SLOTS, STACK,
+  walkable, friendsAt, packWorld, unpackWorld, GROUND, foragerTo, foragerArrives, openingStorm, FORAGER_WALK, FORAGER_RUN, airTemp, warmthStage, WARMTH_STAGES, STUMBLE_TICKS, wakeForager, rockKind, whatThere, cherryShow, honeySpare, gather, takeFrom, dropSlot, dropAt, DROP_DAYS, moveSlot, roomFor, forEachDecorNear, SLOTS, STACK,
   KINDS, FEW, whiteness, visibility, WINTER_COAT, WILD_COAT,
   TERRAIN, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE, hollow,
