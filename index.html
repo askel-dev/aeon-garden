@@ -113,6 +113,15 @@
   #announce.camp b { font-size: 50px; line-height: 1.05; color: #ffd9a0; letter-spacing: 0.01em;
     text-shadow: 0 1px 2px rgba(60, 25, 5, 0.7), 0 0 26px rgba(255, 150, 60, 0.6), 0 0 48px rgba(40, 20, 10, 0.45); }
   #announce.camp p { font-style: italic; font-weight: 500; }
+  #announce.camp.on b { animation: camp-pop 1.1s cubic-bezier(0.2, 1.6, 0.4, 1) both, camp-glow 2.4s ease-in-out 1.1s 2; }
+  #announce.camp b::before, #announce.camp b::after { content: '✦'; display: inline-block; font-size: 0.4em; vertical-align: middle; margin: 0 0.45em;
+    font-style: normal; color: #ffe7b0; }
+  #announce.camp.on b::before, #announce.camp.on b::after { animation: camp-twinkle 1.6s ease-in-out 0.4s 3; }
+  #announce.camp.on b::after { animation-delay: 1.2s; }
+  @keyframes camp-pop { from { transform: scale(0.7); } to { transform: none; } }
+  @keyframes camp-glow { 50% { text-shadow: 0 1px 2px rgba(60, 25, 5, 0.7), 0 0 34px rgba(255, 170, 70, 0.95), 0 0 60px rgba(255, 120, 40, 0.5); } }
+  @keyframes camp-twinkle { 50% { transform: scale(1.6) rotate(45deg); opacity: 0.5; } }
+  @media (prefers-reduced-motion: reduce) { #announce.camp.on b, #announce.camp.on b::before, #announce.camp.on b::after { animation: none; } }
   /* (no translate: a line starting 8px low made the log scroll that much, and it stayed cut off at the top) */
   @keyframes chat-in { from { transform: scale(0.97); opacity: 0; } to { transform: none; opacity: 1; } }
   @keyframes pop-in { from { transform: translateY(8px) scale(0.97); opacity: 0; } to { transform: none; opacity: 1; } }

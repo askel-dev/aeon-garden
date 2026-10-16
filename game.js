@@ -3009,7 +3009,7 @@ function drawFireGlows(now, dark) {
     const s = fireShown(F, now), hid = coverAt(sx, sy - px * 0.2, F.y);
     if (hid > 0.98) continue;
     const seen = 1 - hid;
-    if (F === campShow.F && now - campShow.t0 < CAMP_BLOOM_MS) campBurst(sx, sy, px, z, now, night, seen);
+    if (F === campShow.F && now - campShow.t0 < CAMP_PARTY_MS) campBurst(sx, sy, px, z, now, night, seen);
     if (s.heat > 0.02) {                                   // the bloom over the flames
       const r = px * (0.45 + 0.55 * s.heat) * (1 + 0.04 * Math.sin(t * 9 + F.born)), a = (0.32 + 0.4 * night) * Math.min(1, s.heat * 1.4) * seen;
       ctx.globalAlpha = a;
@@ -3106,13 +3106,13 @@ function paintFireLights(g) {
 //
 // Lighting the meadow's first fire makes camp (sim.js campAt, event 'camp'), and it's a big moment (campMoment): the flame
 // flares (fireShown), its light blooms out over the clearing (lightsFrame, and a warm bloom laid over it by day as by night,
-// campBurst) with a burst of sparks and embers flying up (campBurst), a warm flourish on the felt piano (sound.js camp), the
+// campBurst) with a burst of sparks, twinkles, a wave of light and rising motes (campBurst), a warm flourish on the felt piano (sound.js camp), the
 // camera eases in a little and leans to the fire (campCam, in leadCam), "Your camp" fades in and out over the meadow (announce
 // 'camp'), and a phone that can buzzes (navigator.vibrate: Android; an iPhone's web page can't). From then on a soft ring of
 // trodden earth lies round the fire, sim.js CAMP_R out (drawCampRing, CAMP_ART painted once), where later builds will go.
 const CAMP_FLARE = 0.55, CAMP_FLARE_MS = 2800;      // the flames flare this much bigger, and back over this long
 const CAMP_BLOOM = 0.45, CAMP_BLOOM_MS = 4500;      // its light reaches this much further, and back over this long
-const CAMP_SPARKS = 34;                            // sparks and embers in the burst
+const CAMP_SPARKS = 48;                            // sparks and embers in the first whoosh of the burst
 const CAMP_ZOOM = 0.16, CAMP_LEAN = 0.6;           // the camera eases this much closer, and this far over to the fire
 const CAMP_IN = 1500, CAMP_HOLD = 3800, CAMP_OUT = 2600;   // ms: easing in, holding, easing back
 const CAMP_NEAR = 10;                              // tiles: a friend's first fire further off than this only gets the words
@@ -3148,21 +3148,73 @@ function campCam(now) {
   cam.zoom = c.z = Math.min(64, c.z0 * (1 + CAMP_ZOOM * k));
   return k;
 }
-// The burst as camp is made: a warm bloom over the clearing, and sparks and embers flung up out of the flames, slowing,
-// drifting on the wind and going out, each on its own course (hashed). Over the dark, added on ('lighter': drawFireGlows).
+// The burst as camp is made, all over the dark and added on ('lighter': drawFireGlows), each piece on its own course (hashed,
+// nothing kept): a warm bloom over the clearing; a whoosh of sparks and embers flung up out of the flames, then a second
+// fountain of them higher still, slowing, drifting on the wind and going out; little four-pointed stars twinkling in the air
+// over the fire; a wave of light running out over the ground to where the ring will lie; and as the ring comes in, golden
+// motes rising off all round it like fireflies. About a hundred and sixty small draws a frame, for a few seconds, once.
+const CAMP_PARTY_MS = 7600;                        // it's all done by this long after
+const CAMP_POP = 36, CAMP_POP_AT = 650;            // the second fountain's sparks, and when it goes up (ms)
+const CAMP_STARS = 26, CAMP_MOTES = 56;            // twinkles over the fire; motes rising off the ring
+const CAMP_WAVE_AT = 250, CAMP_WAVE_MS = 1700;     // the wave of light along the ground: when, and how long it takes to run out
+let STAR_ART = null, WAVE_ART = null;
+function starArt() {                               // a soft four-pointed twinkle, painted once
+  if (STAR_ART) return STAR_ART;
+  const n = 64, c = document.createElement('canvas'), g = c.getContext('2d'), dot = glowArt2(32, [[0, 'rgba(255, 250, 225, 1)'], [0.35, 'rgba(255, 214, 130, 0.7)'], [1, 'rgba(255, 170, 70, 0)']]).img;
+  c.width = c.height = n;
+  g.drawImage(dot, n / 2 - 3, 0, 6, n); g.drawImage(dot, 0, n / 2 - 3, n, 6);
+  g.drawImage(dot, n / 2 - 12, n / 2 - 12, 24, 24);
+  STAR_ART = { img: c };
+  asBitmap(c, b => { STAR_ART.img = b; });
+  return STAR_ART;
+}
+function waveArt() {                               // a soft band of light round in a circle (drawn flattened), painted once
+  if (WAVE_ART) return WAVE_ART;
+  WAVE_ART = glowArt2(256, [[0, 'rgba(255, 170, 80, 0)'], [0.62, 'rgba(255, 170, 80, 0)'], [0.84, 'rgba(255, 200, 120, 0.85)'], [0.93, 'rgba(255, 160, 70, 0.3)'], [1, 'rgba(255, 140, 60, 0)']]);
+  return WAVE_ART;
+}
 function campBurst(sx, sy, px, z, now, night, seen) {
-  const u = (now - campShow.t0) / CAMP_BLOOM_MS, R = LIGHT_TILES * z * (0.5 + 0.7 * ease(Math.min(1, u * 2.2)));
-  ctx.globalAlpha = seen * (0.1 + 0.12 * night) * Math.min(1, u * 10) * (1 - u) ** 1.6;
-  ctx.drawImage(lightArt().img, sx - R, sy - R * LIGHT_FLAT, R * 2, R * 2 * LIGHT_FLAT);
-  const e = emberArt().img, ms = now - campShow.t0, wind = fireWind(), seed = campShow.t0 | 0;
-  for (let k = 0; k < CAMP_SPARKS; k++) {
-    const life = 900 + 1700 * hash2(k, seed, 61), q = (ms - 120 * hash2(k, seed, 62)) / life;
+  const ms = now - campShow.t0, u = ms / CAMP_BLOOM_MS, R = LIGHT_TILES * z * (0.5 + 0.7 * ease(Math.min(1, u * 2.2)));
+  if (u < 1) {
+    ctx.globalAlpha = seen * (0.1 + 0.12 * night) * Math.min(1, u * 10) * (1 - u) ** 1.6;
+    ctx.drawImage(lightArt().img, sx - R, sy - R * LIGHT_FLAT, R * 2, R * 2 * LIGHT_FLAT);
+  }
+  const wq = (ms - CAMP_WAVE_AT) / CAMP_WAVE_MS;   // the wave running out over the ground
+  if (wq > 0 && wq < 1) {
+    const r = S.CAMP_R * z * 1.08 * (1 - (1 - wq) ** 2.2);
+    ctx.globalAlpha = seen * (0.7 + 0.3 * night) * Math.min(1, wq * 6) * (1 - wq) ** 1.1;
+    ctx.drawImage(waveArt().img, sx - r, sy - r * S.CAMP_FLAT, r * 2, r * 2 * S.CAMP_FLAT);
+  }
+  const e = emberArt().img, wind = fireWind(), seed = campShow.t0 | 0, bright = 0.75 + 0.25 * night;
+  for (let k = 0; k < CAMP_SPARKS + CAMP_POP; k++) {   // the sparks: the whoosh, then the second fountain higher
+    const pop = k >= CAMP_SPARKS, life = (pop ? 1500 : 900) + 1700 * hash2(k, seed, 61), q = (ms - (pop ? CAMP_POP_AT : 0) - 120 * hash2(k, seed, 62)) / life;
     if (q <= 0 || q >= 1) continue;
-    const a = -Math.PI / 2 + (hash2(k, seed, 63) - 0.5) * 2.4, v = 0.9 + 1.6 * hash2(k, seed, 64), out = 1 - (1 - q) ** 3;
+    const a = -Math.PI / 2 + (hash2(k, seed, 63) - 0.5) * (pop ? 1.5 : 2.6), v = (pop ? 1.8 : 0.9) + (pop ? 1.4 : 1.8) * hash2(k, seed, 64), out = 1 - (1 - q) ** 3;
     const x = sx + px * (Math.cos(a) * v * out * 0.8 + wind * 0.5 * q * q + 0.08 * Math.sin(q * 9 + k));
-    const y = sy - px * 0.3 + px * (Math.sin(a) * v * out - 0.35 * q);
-    const d = Math.max(1.5, px * (k % 3 ? 0.035 : 0.06)) * (1 - 0.6 * q);
-    ctx.globalAlpha = seen * (1 - q) ** 1.3 * (0.7 + 0.3 * Math.sin(now / 45 + k * 1.7));
+    const y = sy - px * 0.3 + px * (Math.sin(a) * v * out + (pop ? 0.9 : 0.35) * q * q - (pop ? 0 : 0.35 * q));
+    const d = Math.max(2, px * (k % 3 ? 0.06 : 0.1)) * (1 - 0.5 * q);
+    ctx.globalAlpha = seen * bright * (1 - q) ** 1.3 * (0.7 + 0.3 * Math.sin(now / 45 + k * 1.7));
+    ctx.drawImage(e, x - d, y - d, d * 2, d * 2);
+  }
+  const st = starArt().img;                        // the twinkles over the fire, each coming and going once or twice
+  for (let k = 0; k < CAMP_STARS; k++) {
+    const t0 = 300 + 2600 * hash2(k, seed, 71), life = 700 + 700 * hash2(k, seed, 72), q = (ms - t0) / life;
+    if (q <= 0 || q >= 1) continue;
+    const a = hash2(k, seed, 73) * Math.PI * 2, r = 0.4 + 1.6 * Math.sqrt(hash2(k, seed, 74));
+    const x = sx + px * Math.cos(a) * r * 1.2, y = sy - px * (1.1 + 0.9 * hash2(k, seed, 75)) + px * Math.sin(a) * r * 0.6 - px * 0.25 * q;
+    const d = px * (0.22 + 0.2 * hash2(k, seed, 76)) * Math.sin(q * Math.PI) * (0.8 + 0.2 * Math.sin(now / 70 + k));
+    ctx.globalAlpha = seen * Math.sin(q * Math.PI);
+    ctx.drawImage(st, x - d, y - d, d * 2, d * 2);
+  }
+  const rx = S.CAMP_R * z, ry = rx * S.CAMP_FLAT;   // the motes rising off the ring as it comes in, swaying, twinkling
+  for (let k = 0; k < CAMP_MOTES; k++) {
+    const t0 = CAMP_RING_IN + 2400 * hash2(k, seed, 81), life = 2200 + 1800 * hash2(k, seed, 82), q = (ms - t0) / life;
+    if (q <= 0 || q >= 1) continue;
+    const a = (k + hash2(k, seed, 83)) / CAMP_MOTES * Math.PI * 2, rise = z * (1 + 1.4 * hash2(k, seed, 84)) * (1 - (1 - q) ** 1.6);
+    const x = sx + Math.cos(a) * rx + z * 0.25 * Math.sin(q * 5 + k * 2.3) + wind * z * 0.4 * q;
+    const y = sy + Math.sin(a) * ry - rise;
+    const d = Math.max(2.5, z * 0.15) * (0.8 + 0.4 * hash2(k, seed, 85));
+    ctx.globalAlpha = seen * Math.min(1, q * 5) * (1 - q * q) * (0.6 + 0.4 * Math.sin(now / 160 + k * 2.1));
     ctx.drawImage(e, x - d, y - d, d * 2, d * 2);
   }
 }

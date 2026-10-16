@@ -81,9 +81,9 @@ picture (`SKY_FIRE`, `paintFireLights`: so the sky repaints only on a flicker st
 `Sound.update`). Cost: none measurable (1440x813, zoomed out, a summer night in the rain, walking: about 1.0 ms of script a
 frame with a fire and without, 60 fps).
 Making camp (sim.js `w.camp`, event 'camp': the first fire lit) is a moment (`campMoment`, the comment over
-`CAMP_FLARE`): the flames flare (`fireShown`), the light blooms out (`lightsFrame`) with a warm glow and a burst of sparks
-(`campBurst`, in `drawFireGlows`), a felt-piano flourish (sound.js `camp`), the camera eases in and leans to the fire and back
-(`campCam`, in `leadCam`; a zoom of your own ends it), "Your camp" fades in (announce 'camp', which cuts in ahead of the others)
+`CAMP_FLARE`): the flames flare (`fireShown`), the light blooms out (`lightsFrame`) with a warm glow, two fountains of sparks,
+twinkling stars, a wave of light out to the ring and motes rising off it (`campBurst`, in `drawFireGlows`; `CAMP_PARTY_MS`), a felt-piano flourish (sound.js `camp`), the camera eases in and leans to the fire and back
+(`campCam`, in `leadCam`; a zoom of your own ends it), "Your camp" pops in, glowing between two twinkling ✦ (announce 'camp', which cuts in ahead of the others; index.html `camp-pop`)
 and an Android phone buzzes (`CAMP_BUZZ`). Then a soft ring of trodden earth with a few stones lies round the fire (`drawCampRing`,
 `CAMP_ART` painted once, stretched; under all that stands), coming in over `CAMP_RING_MS`. The fire's hover calls it "Your camp".
 A click or a tap on an animal (on its body as drawn: `animalAt`, a little wider for a finger) opens its panel;
