@@ -40,7 +40,7 @@ coming down, pollen, butterflies, splashes, the effects, the burrows' 💤) hide
 frame (`buildCover`), soft at the edge (`COVER_EDGE`), half for first leaves or half fallen, nothing bare, and as little as
 it shows when faded (mist, the forager behind it). Pop-ups, labels and the selection stay on top. `forager-lab.html` paints them all side by side (`?o=` an outfit). Its outfit is a cloak and a hat
 (fur.js `FORAGER_CLOAKS`: cloak, hood, rim; `FORAGER_HATS`: the hood's own point, a bobble, fox ears, a toadstool cap, a wanderer's
-felt hat with a feather, a crown of flowers, melted cheese sliding down over the hood, a striped party hat on the bare head (no hood: `bare` in `foragerParts`) with a rolled band, a pompom and a pink elastic under the chin, a ginger cat asleep on the crown with its tail hanging down, painted in `foragerParts`' `hat`), painted as one outfit
+felt hat with a feather, a crown of flowers, melted cheese sliding down over the hood, painted in `foragerParts`' `hat`), painted as one outfit
 (`FORAGER_OUTFITS`, `outfitOf`: hat * cloaks + cloak, so the key and what goes over the net are one number). Picked on the
 wardrobe card (`wardrobe`, `#wardrobe`: the forager painted as it'll look, a row of painted heads in each hat, cloak swatches, a
 die, and the name while playing together), tried on there and worn only on its button: before going into a friend's meadow

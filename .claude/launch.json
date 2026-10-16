@@ -102,6 +102,20 @@
         "/Users/axel/Desktop/programming/aeon-garden/.claude/worktrees/cook"
       ],
       "port": 8792
+    },
+    {
+      "name": "cook-merge",
+      "runtimeExecutable": "/Library/Frameworks/Python.framework/Versions/3.13/bin/python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8793",
+        "--bind",
+        "127.0.0.1",
+        "--directory",
+        "/Users/axel/Desktop/programming/aeon-garden/.claude/worktrees/agent-ae5526bd877e7cf2b"
+      ],
+      "port": 8793
     }
   ]
 }

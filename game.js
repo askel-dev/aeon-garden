@@ -1259,6 +1259,7 @@ function render(now) {
   if (peers.size) peerItems(items, now, z);               // friends playing along (net.js)
   sortByY(items);
   drawPrints();                                            // the forager's footprints, on the ground under all
+  if (world.forager) drawKeyArrow(now);                    // (the key arrow lies under it too)
   // Shadows first, all together, so a tree's shadow never lands on a rabbit behind it.
   const sn = sun(ck);
   for (const it of items) {
@@ -11447,7 +11448,32 @@ function keyWalk() {
     if (ui.selectedId || ui.picked) select(0);
   }
   keyWalking = true;
+  keyArrow.ux = dx / d; keyArrow.uy = dy / d;
   if (S.foragerTo(world, f.x + dx / d * KEY_AHEAD, f.y + dy / d * KEY_AHEAD)) f.running = shiftHeld && !f.winded;
+}
+// The way it's walking with the keys, a faint arrow just ahead of the forager (drawKeyArrow). It fades in and out, and
+// keeps pointing the last way while it fades out.
+const keyArrow = { on: 0, ux: 0, uy: 0, at: 0 };   // how far it's shown (eased), the way (a unit vector), and when that was
+const KEY_ARROW_INK = '#fff6dc';
+function drawKeyArrow(now) {
+  const dt = Math.min(100, now - keyArrow.at);
+  keyArrow.at = now;
+  keyArrow.on += ((keyWalking ? 1 : 0) - keyArrow.on) * Math.min(1, dt / (keyWalking ? 120 : 220));
+  if (keyArrow.on < 0.02) return;
+  const d = drawnAt(world.forager), [fx, fy] = onScreen(d.x, d.y);   // (destructured straight away: onScreen reuses its pair)
+  const u = forPx(), L = u * 0.09, off = u * 0.36, ux = keyArrow.ux, uy = keyArrow.uy;
+  const x = fx + ux * off, y = fy + uy * off * 0.8;      // (a little flatter than the screen: it lies on the ground)
+  const bx = x - ux * L, by = y - uy * L * 0.8, wx = -uy * L * 1.1, wy = ux * L * 1.1 * 0.8;
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.lineWidth = Math.max(1.25, u * 0.032);
+  ctx.strokeStyle = KEY_ARROW_INK;
+  ctx.globalAlpha = 0.2 * keyArrow.on;
+  ctx.beginPath();
+  ctx.moveTo(bx + wx, by + wy);
+  ctx.lineTo(x + ux * L * 0.4, y + uy * L * 0.32);
+  ctx.lineTo(bx - wx, by - wy);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
 }
 document.addEventListener('keyup', e => {
   if (e.key === 'Shift') holdShift(false);
