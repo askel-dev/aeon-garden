@@ -1345,6 +1345,7 @@ function render(now) {
     drawLabel(`${hov.name} · ${S.mood(world, hov).text}`, sx, sy + creaturePx(hov) * 0.55 + 6);
   }
   drawCampMark(now);
+  if (peers.size) drawFriendMarks(now);
   drawPickArrow(now);
   standIns = false;                                    // a portrait for the inspector is kept, so it's always painted
 }
@@ -3758,9 +3759,9 @@ function drawGlints(now, dark) {
   picks.seen = seen; picks.near = near; picks.nearKind = nearKind;
 }
 // The marker at the screen's edge, toward the nearest thing to pick while none is on screen, with that thing's painting in
-// it (the satchel's: itemSheet). Out of the way of the watch and the pill at the top and the satchel at the foot (their
-// places looked at once a second, KEEP_CLEAR).
-const KEEP_CLEAR = ['#watch', '#hud-right .hud-top', '#satchel'];
+// it (the satchel's: itemSheet). Out of the way of the watch and the pill at the top and the satchel and the bars over it at
+// the foot (their places looked at once a second, KEEP_CLEAR).
+const KEEP_CLEAR = ['#watch', '#hud-right .hud-top', '#satchel', '#vitals .vital.show'];
 const clearOf = KEEP_CLEAR.map(() => ({ l: 0, t: 0, r: 0, b: 0 }));
 // Where the way from the forager to a spot in the meadow leaves the screen, kept r + 10 in from its edges, over the satchel and
 // out from under the watch and the pill (edge: x, y and the way, cx, cy); false if it doesn't.
@@ -3768,8 +3769,8 @@ const edge = { x: 0, y: 0, cx: 0, cy: 0 };
 function edgeAt(tx, ty, r) {
   const F = world.forager, z = cam.zoom, fx = (F.x - cam.x) * z + vw / 2, fy = (F.y - cam.y) * z + vh / 2;
   const a = Math.atan2((ty - F.y) * z, (tx - F.x) * z), cx = Math.cos(a), cy = Math.sin(a);
-  const m = r + 10, sat = clearOf[2];
-  const x0 = m, x1 = vw - m, y0 = m, y1 = Math.min(vh - m, sat.b ? sat.t - r - 6 : vh - m);
+  const m = r + 10, sat = clearOf[2], bars = clearOf[3];
+  const x0 = m, x1 = vw - m, y0 = m, y1 = Math.min(vh - m, sat.b ? sat.t - r - 6 : vh - m, bars.b ? bars.t - r - 4 : vh - m);
   let t = Infinity;                                     // where the way from the forager leaves the box
   if (cx > 0) t = Math.min(t, (x1 - fx) / cx); else if (cx < 0) t = Math.min(t, (x0 - fx) / cx);
   if (cy > 0) t = Math.min(t, (y1 - fy) / cy); else if (cy < 0) t = Math.min(t, (y0 - fy) / cy);
@@ -3781,6 +3782,28 @@ function edgeAt(tx, ty, r) {
   }
   edge.x = x; edge.y = y; edge.cx = cx; edge.cy = cy;
   return true;
+}
+// The markers already at the edge this frame, laid in order (home, then friends, then the pick marker): each next one
+// slides along the edge out from under them (edgeApart). Four numbers a marker: where it is, half its width, and how far
+// it reaches below its middle (a friend's name hangs under its disc).
+const edgeMarks = { at: [], n: 0, frame: -1 };
+function edgeApart(r, half, below) {
+  if (edgeMarks.frame !== spriteFrame) { edgeMarks.frame = spriteFrame; edgeMarks.n = 0; }
+  const at = edgeMarks.at, along = Math.abs(edge.cx * vw) > Math.abs(edge.cy * vh) ? 0 : 1;   // (1: on the top or the foot, so it slides sideways)
+  for (let pass = 0; pass < 3; pass++) {
+    let moved = false;
+    for (let i = 0; i < edgeMarks.n; i += 4) {
+      const dx = edge.x - at[i], dy = edge.y - at[i + 1];
+      const needX = half + at[i + 2] + 4, needY = (dy > 0 ? r + at[i + 3] : below + r) + 4;
+      if (Math.abs(dx) >= needX || Math.abs(dy) >= needY) continue;
+      if (along) edge.x = at[i] + (dx < 0 ? -needX : needX);
+      else edge.y = at[i + 1] + (dy < 0 ? -needY : needY);
+      moved = true;
+    }
+    if (!moved) break;
+  }
+  const n = edgeMarks.n;
+  at[n] = edge.x; at[n + 1] = edge.y; at[n + 2] = half; at[n + 3] = below; edgeMarks.n = n + 4;
 }
 function keepClear(now) {                               // (the watch's, the pill's and the satchel's places, once a second)
   if (now - picks.topAt < 1000) return;
@@ -3803,16 +3826,9 @@ function drawPickArrow(now) {
   if (picks.near !== picks.itemOf) { picks.itemOf = picks.near; picks.item = ITEM_IDS.indexOf(S.whatThere(world, picks.nearKind, picks.near).id); }
   const it = picks.near, r = narrow() ? 18 : 19;
   if (!edgeAt(it.x, it.y, r)) return;
+  edgeApart(r, r * 1.15, r);                            // (slid along the edge out from under home's and friends' markers)
   const cx = edge.cx, cy = edge.cy;
   let x = edge.x, y = edge.y;
-  if (campMark.a > 0.02) {                              // (slid along the edge out from under the camp's marker)
-    const dx = x - campMark.x, dy = y - campMark.y, d = Math.hypot(dx, dy), need = r * 2.3;
-    if (d < need) {
-      const ex = Math.abs(cx * vw) > Math.abs(cy * vh) ? 0 : 1, ey = 1 - ex;   // (along the edge it's on)
-      const s = (ex ? dx : dy) || 1, k = Math.sign(s) * (need - d + 2);
-      x += ex * k; y += ey * k;
-    }
-  }
   const nudge = Math.sin(now / 300), bob = 3.5 * nudge * Math.abs(nudge), art = ARROW_ART || arrowArt(), i = picks.item;
   x += cx * bob; y += cy * bob;
   const ping = ((now - picks.shownAt) % ARROW_PING) / ARROW_PING, ringR = r * (1.1 + 1.4 * ping);   // a ring going out
@@ -3833,9 +3849,9 @@ function drawPickArrow(now) {
 
 // The way home: once there's a camp, whenever its fire is off screen the same parchment disc sits at the screen's edge where
 // the way from the forager to it leaves, its point turned that way and a little campfire in it (CAMPMARK_ART, painted once).
-// Always there, so it's calm: no pop or rings, only a slow warm breath. Drawn before the pick marker, which slides along the
-// edge out from under it (drawPickArrow). Fades in and out as the camp goes off and comes on screen.
-const campMark = { a: 0, at: 0, x: 0, y: 0 };
+// Always there, so it's calm: no pop or rings, only a slow warm breath. Drawn first: friends' markers and the pick marker
+// slide along the edge out from under it (edgeApart). Fades in and out as the camp goes off and comes on screen.
+const campMark = { a: 0, at: 0 };
 let CAMPMARK_ART = null;
 function campMarkArt() {                                 // two crossed logs and a flame, in the middle of a P box
   const P = 96, c = document.createElement('canvas'), g = c.getContext('2d'), m = P / 2;
@@ -3868,8 +3884,8 @@ function drawCampMark(now) {
   keepClear(now);
   const r = narrow() ? 18 : 19;
   if (!edgeAt(C.x, C.y, r)) { campMark.a = 0; return; }
+  edgeApart(r, r * 1.15, r);
   const { x, y, cx, cy } = edge, size = r / ARROW_DISC, breath = 0.5 + 0.5 * Math.sin(now / 900);
-  campMark.x = x; campMark.y = y;
   const gr = r * (1.25 + 0.15 * breath);                // a soft warm glow round it
   ctx.globalAlpha = (0.35 + 0.2 * breath) * campMark.a;
   ctx.drawImage((RING_ART || ringArt()).img, x - gr, y - gr, gr * 2, gr * 2);
@@ -10337,7 +10353,8 @@ function heardPos(m, now) {
       pickAt: -1e9, pickK: -0, outfit: 0, wet: false, soak: -0, snowArt: 0, step: -0, lastHalf: 0, view: 1, flip: false, stillMs: 1e4, blinkAt: -1e9, downAt: 0, fall: -0,
       idle: -1, idleLast: -1, idleAt: -0, idleIn: 1e4 + 5000, hum: -0,   // (standing a while: idleOf)
       rings: [], puffs: [], puffAt: 0, drips: [], dripAt: 0, shiverAt: -1e9, shiverNext: 0,   // (its body, as fg's: drawBody, drawRings, shiverOf)
-      art: FORAGER_ARTS[0], sized: 0, sizedSet: 0, sizedSnow: 0, name: '', nameArt: null, sx: -0, sy: -0, shown: false, chat: null, kneel: -1 };
+      art: FORAGER_ARTS[0], sized: 0, sizedSet: 0, sizedSnow: 0, name: '', nameArt: null, sx: -0, sy: -0, shown: false, chat: null, kneel: -1,
+      mark: -0 };                                          // (how far its marker at the screen's edge has faded in: drawFriendMarks)
     peers.set(m.from, p);
     p.name = cleanName(m.n);
     if (Net.host || m.tick < 0) toast(`🧺 ${friendName(p) || 'A friend'} has come into the meadow`);   // (a guest knows the host is there)
@@ -10478,6 +10495,40 @@ function drawPeerNames(now) {
     else if (fgBody.on) saidAt(myChat, fgBody.x, fgBody.y + forPx() * 0.3 - px * NAME_UP - 3);
   }
   if (chats.n) layChats(now);
+}
+// Where each friend is: one off screen has the same parchment disc as home's at the screen's edge where the way from this
+// forager to it leaves, its point turned that way, its forager's face in it (its cloak, sad when it's cold, its eyes shut
+// when it's down: its standing painting from the front at one size, FRIEND_FACE, so only one or two a friend are painted)
+// and its name under it (over it on the foot, by the satchel). Calm like home's; it fades in as the friend goes off screen.
+const FRIEND_FACE = 4.4;                   // the painting's size in the disc's radius (so its hood and face fill the disc)
+const FRIEND_FACE_UP = 0.46;               // what's in the middle of the disc: this many of the painting's size over its feet
+const friendMarks = { at: 0 };
+function drawFriendMarks(now) {
+  const dt = Math.min(100, now - friendMarks.at), down = world.forager.down >= 0, m = 2 * forPx(), r = narrow() ? 18 : 19;
+  friendMarks.at = now;
+  keepClear(now);
+  for (const p of peers.values()) {
+    const want = !down && !(p.sx > -m && p.sx < vw + m && p.sy > -m && p.sy < vh + m) ? 1 : 0;
+    p.mark += (want - p.mark) * Math.min(1, dt / (want ? 500 : 250));
+    if (p.mark < 0.02 || !edgeAt(p.x, p.y, r)) continue;
+    const name = p.nameArt, foot = edge.cy > 0 && Math.abs(edge.cx * vw) <= Math.abs(edge.cy * vh);   // (on the foot: its name goes over it)
+    edgeApart(r, Math.max(r * 1.15, name ? name.w / 2 : 0), name && !foot ? r + name.h + 2 : r);
+    const { x, y, cx, cy } = edge, size = r / ARROW_DISC;
+    ctx.globalAlpha = 0.96 * p.mark;
+    ctx.setTransform(cx * dpr, cy * dpr, -cy * dpr, cx * dpr, x * dpr + shakeX, y * dpr + shakeY);
+    ctx.drawImage((ARROW_ART || arrowArt()).img, -size / 2, -size / 2, size, size);
+    ctx.setTransform(dpr, 0, 0, dpr, shakeX, shakeY);
+    const pose = p.stage === 4 ? 7 : p.stage >= FORAGER_SAD ? 5 : 0, px = r * FRIEND_FACE;
+    const s = sprite(FORAGER_ARTS[p.snowArt * Fur.FORAGER_SNOW_ARTS + (p.outfit << 7) + poseKey(1, pose)], px);
+    ctx.save(); ctx.beginPath(); ctx.arc(x, y, r * 0.9, 0, TAU); ctx.clip();
+    ctx.drawImage(s.canvas, x - s.size / 2, y + px * (FRIEND_FACE_UP - 0.36) - s.size / 2, s.size, s.size);
+    ctx.restore();
+    if (name) {
+      const nx = clamp(Math.round(x - name.w / 2), 4, vw - name.w - 4), ny = Math.round(foot ? y - r - 2 - name.h : y + r + 2);
+      ctx.drawImage(name.img, nx, ny, name.w, name.h);
+    }
+  }
+  ctx.globalAlpha = 1;
 }
 function drawPeer(p, sx, sy, now) {
   const px = forPx();
