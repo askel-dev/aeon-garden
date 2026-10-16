@@ -10348,7 +10348,7 @@ function announce(kind, head, line = '') {
     a.timer = setTimeout(() => { const n = a.wait.shift(); if (n) announce(...n); }, ANNOUNCE_FADE);
   }, ANNOUNCE_MS[kind]);
 }
-const canAnnounce = () => !document.hidden && world.forager.down < 0 && !wardrobeOpen() && !askOpen();
+const canAnnounce = () => !document.hidden && world.forager.down < 0 && !wardrobeOpen() && !askOpen() && !bookOpen();
 
 // A few times a second: a new day's line at sunrise (S.phaseOf: a day starts there), and where we are as a meadow opens.
 function daybreakTick(now) {

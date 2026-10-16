@@ -100,6 +100,7 @@
     text-shadow: 0 1px 2px rgba(40, 30, 15, 0.6), 0 0 16px rgba(40, 30, 15, 0.4);
     opacity: 0; transform: translateY(-6px); transition: opacity 0.9s ease, transform 0.9s ease; }
   #announce.on { opacity: 1; transform: none; }
+  body:has(#book:not(.hidden)) #announce { opacity: 0; }   /* (a headline already up steps away while the book is open) */
   #announce b { display: block; font-size: 22px; font-style: italic; font-weight: 500; line-height: 1.15; text-wrap: balance; }
   #announce:is(.season, .join) b { font-size: 36px; line-height: 1.1; }
   #announce small { display: block; font-size: 12px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.85; white-space: nowrap; }
