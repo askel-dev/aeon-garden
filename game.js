@@ -3568,13 +3568,15 @@ function fireSound() {
 // screen glint at once. What there is to pick is listed a few times a second (picksFrame, sim.js eachPickable), so a picked
 // clean tree or an unripe bramble never glints. When the forager has stood still SENSE_STILL, everything within SENSE_REACH
 // glints once together, in a wave outward from it (sense), with a faint ring going out. And when nothing to pick is on
-// screen, a small brass arrow at the screen's edge points to the nearest (drawPickArrow), fading out as one comes into view.
-const GLINT_EVERY = 9000, GLINT_MS = 1300;  // ms between a thing's glints, and one glint (in quick, out slow)
+// screen, a brass marker at the screen's edge points to the nearest (drawPickArrow), fading out as one comes into view: it
+// pops in, nudges that way and sends out a soft honey ring now and then, so it's seen from the corner of an eye.
+const GLINT_EVERY = 6000, GLINT_MS = 1300;  // ms between a thing's glints, and one glint (in quick, out slow)
 const PICKS_MS = 400;                       // how often what there is to pick is listed again
 const SENSE_STILL = 1000, SENSE_REACH = 15, SENSE_SPREAD = 1100;   // ms standing still; tiles; ms the wave takes to get there
 const SENSE_BIG = 1.3;                      // how much bigger a glint the sense brings out is
 const ARROW_WAIT = 1500;                    // ms with nothing on screen before the arrow shows
-const picks = { kind: [], it: [], food: 0, at: -1e9, near: null, nearKind: '', seen: 0, none: 0, arrow: 0, arrowAt: 0, topAt: -1e9, itemOf: null, item: -1 };
+const ARROW_PING = 2200, ARROW_POP = 450;   // ms between the marker's rings; ms its pop as it shows
+const picks = { kind: [], it: [], food: 0, at: -1e9, near: null, nearKind: '', seen: 0, none: 0, arrow: 0, arrowAt: 0, shownAt: -1e9, wanted: 0, topAt: -1e9, itemOf: null, item: -1 };
 const sense = { still: 0, done: true, t0: -1e9, x: 0, y: 0 };
 let GLINT_ART = null, ARROW_ART = null;
 const addPick = (kind, it) => { picks.kind.push(kind); picks.it.push(it); };
@@ -3672,7 +3674,7 @@ function senseFrame(now) {
 function drawGlints(now, dark) {
   picksFrame(now);
   senseFrame(now);
-  const z = cam.zoom, art = GLINT_ART || glintArt(), base = Math.max(9, (8 + z) * 0.34), F = world.forager;
+  const z = cam.zoom, art = GLINT_ART || glintArt(), base = Math.max(11, (8 + z) * 0.42), F = world.forager;
   const sensing = now - sense.t0 < SENSE_SPREAD + GLINT_MS;
   let seen = 0, near = null, nearKind = '', nd = Infinity;
   if (sensing) {                                          // the wave: a faint ring going out
@@ -3712,6 +3714,8 @@ function drawPickArrow(now) {
   picks.arrowAt = now;
   if (picks.seen || !picks.near) picks.none = now;
   const want = now - picks.none > ARROW_WAIT ? 1 : 0;
+  if (want && !picks.wanted && picks.arrow < 0.3) picks.shownAt = now;
+  picks.wanted = want;
   picks.arrow += (want - picks.arrow) * Math.min(1, dt / (want ? 500 : 250));
   if (picks.arrow < 0.02 || !picks.near) return;
   if (now - picks.topAt > 1000) {
@@ -3724,7 +3728,7 @@ function drawPickArrow(now) {
   if (picks.near !== picks.itemOf) { picks.itemOf = picks.near; picks.item = ITEM_IDS.indexOf(S.whatThere(world, picks.nearKind, picks.near).id); }
   const F = world.forager, z = cam.zoom, fx = (F.x - cam.x) * z + vw / 2, fy = (F.y - cam.y) * z + vh / 2;
   const it = picks.near, a = Math.atan2((it.y - F.y) * z, (it.x - F.x) * z), cx = Math.cos(a), cy = Math.sin(a);
-  const r = narrow() ? 14 : 15, m = r + 10, sat = clearOf[2];
+  const r = narrow() ? 18 : 19, m = r + 10, sat = clearOf[2];
   const x0 = m, x1 = vw - m, y0 = m, y1 = Math.min(vh - m, sat.b ? sat.t - r - 6 : vh - m);
   let t = Infinity;                                     // where the way from the forager leaves the box
   if (cx > 0) t = Math.min(t, (x1 - fx) / cx); else if (cx < 0) t = Math.min(t, (x0 - fx) / cx);
@@ -3735,15 +3739,19 @@ function drawPickArrow(now) {
     const o = clearOf[k];
     if (o.b && x > o.l - r - 4 && x < o.r + r + 4 && y < o.b + r + 4) y = o.b + r + 6;
   }
-  const bob = 1.5 * Math.sin(now / 420), art = ARROW_ART || arrowArt(), size = r / ARROW_DISC, i = picks.item;
+  const nudge = Math.sin(now / 300), bob = 3.5 * nudge * Math.abs(nudge), art = ARROW_ART || arrowArt(), i = picks.item;
   x += cx * bob; y += cy * bob;
-  ctx.globalAlpha = 0.92 * picks.arrow;
+  const ping = ((now - picks.shownAt) % ARROW_PING) / ARROW_PING, ringR = r * (1.1 + 1.4 * ping);   // a ring going out
+  ctx.globalAlpha = 0.8 * (1 - ping) * Math.min(1, ping * 8) * picks.arrow;
+  ctx.drawImage((RING_ART || ringArt()).img, x - ringR, y - ringR, ringR * 2, ringR * 2);
+  const p = (now - picks.shownAt) / ARROW_POP, rr = p < 1 ? r * (1 + 0.35 * Math.sin(p * Math.PI)) : r, size = rr / ARROW_DISC;
+  ctx.globalAlpha = 0.96 * picks.arrow;
   ctx.setTransform(cx * dpr, cy * dpr, -cy * dpr, cx * dpr, x * dpr + shakeX, y * dpr + shakeY);
   ctx.drawImage(art.img, -size / 2, -size / 2, size, size);
   ctx.setTransform(dpr, 0, 0, dpr, shakeX, shakeY);
   if (i >= 0) {                                         // (kept inside the disc: some paintings fill more than their slot)
-    ctx.save(); ctx.beginPath(); ctx.arc(x, y, r * 0.9, 0, TAU); ctx.clip();
-    ctx.drawImage(itemSheet().img, i * ITEM_PX, 0, ITEM_PX, ITEM_PX, x - r * 0.85, y - r * 0.85, r * 1.7, r * 1.7);
+    ctx.save(); ctx.beginPath(); ctx.arc(x, y, rr * 0.9, 0, TAU); ctx.clip();
+    ctx.drawImage(itemSheet().img, i * ITEM_PX, 0, ITEM_PX, ITEM_PX, x - rr * 0.85, y - rr * 0.85, rr * 1.7, rr * 1.7);
     ctx.restore();
   }
   ctx.globalAlpha = 1;
