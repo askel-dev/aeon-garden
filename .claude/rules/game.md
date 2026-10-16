@@ -157,7 +157,16 @@ book button a glow and a "New" tag (`bookNews`, from `renderBook`, which every s
 shown the first time, a stamp thumps onto the page ("Learned!", "A hint"); the book opens on the newest; shutting it has seen them
 all. On an upright phone a sheet from the bottom, ✕ at the foot in the middle, handle to drag it down; a page is a layer over the
 tiles with ‹ ✕ › (`bookUi.depth` 2, `bookBack`), and Back steps out of the page, then the book (`opened` counts `bookReading`,
-`stepOut`). On its side the two panes fill the screen. Rewritten only when what it shows changes (`bookUi.key`, `setHTML`).
+`stepOut`).
+The book has a second part, Finds (2026-10-16), behind two titles at the top that are its tabs (`BOOK_PARTS`, `bookTab`; the one open
+big, a red dot on the other when it has news): a page for every ingredient in recipes.js (`FIND_PAGES`, in `FIND_SECTIONS`:
+mushrooms, greens & flowers, fruit nuts & honey, for a fire), found once it's been picked into the satchel ever (`foundIt`: the
+firsts, as the first find's headline). Found, its satchel painting, its `text`, good raw or cook it first, how much it fills, where
+to find it (recipes.js `where`), and what it goes into (`findUses`: the book's dishes that take it, a known one a tap to its page,
+the rest a ?; the campfire for the sticks). Not found, the painting's shadow and "Where to look". A page is keyed `bookUi.pick`
+(a dish's name, 'find:' + the id), and paging stays within its part (`pageBy`). A new find tags its tile "New" and stamps
+"Found!" but doesn't make the book button glow (there are too many finds early on); shutting the book has seen the news of the
+parts shown (`bookUi.shown`), and a book kept from before the finds counts what's been found as seen. On its side the two panes fill the screen. Rewritten only when what it shows changes (`bookUi.key`, `setHTML`).
 Finding it: near a lit fire with something to cook (`bagFood`) a small painted pot bobs
 over it, with an E key where there's a keyboard (`drawCookPrompt`, `PROMPT_ART` painted once; a click on it is one on the fire,
 `promptAt`); making camp the forager thinks "I could cook something on this fire" (`think`, `CAMP_COOK_LINE`), and now and then it
