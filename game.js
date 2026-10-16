@@ -1984,17 +1984,22 @@ function idleOf(b, now, pose) {
   return pose;
 }
 // Emotes: it dances or sneaks when asked (keys 1 and 2, or the button by the satchel: #emote, emoteMenu), painted in fur.js
-// (FORAGER_EMOTE, kept after all its other paintings: emoteArt). The dance is NLE Choppa's, from the front: a crouch, a hop
-// with a knee up, that leg kicked straight out to the side and back, then the other, the fists swinging across (DANCE_SEQ,
-// a kick every half of DANCE_CYCLE); the hop lifts the painting (DANCE_HOP, drawFigure) and it sways over the planted foot
-// (DANCE_SWAY, as the hum's sway), with a step at each landing. It dances till it's sent somewhere. The sneak is a devious
+// (FORAGER_EMOTE, kept after all its other paintings: emoteArt). The dance is NLE Choppa's goofy one, from the front: a
+// rubbery bounce, knock-kneed and limp, then bandy with chicken elbows, in and out, then up on its toes and a flail like a
+// tube man, one arm up, leaning right over, then the same the other way (DANCE_SEQ: a painting, how long, and the lean it
+// goes to). The pop hops (DANCE_HOP, lifting the painting in drawFigure), and the lean swings over to each step's and a
+// little past it, wobbling back (danceLean, through the hum's sway), with a step at each knock-kneed landing. It dances
+// till it's sent somewhere. The sneak is a devious
 // walk, side on: crouched, tiptoeing, knees high, its mittens out like little claws, slower (sim.js f.sneaking,
 // FORAGER_SNEAK). Asked for standing, it creeps SNEAK_GO tiles the way it faces; every walk after is a sneak till it
 // sprints, stands still SNEAK_REST, or you ask again; standing it lurks, rubbing its mittens. A friend sees both (sendPos).
 // Both run on the clock of the page, not the meadow's (no faster at speed), and stop while paused.
 const EMOTE = { dance: 0, sneak: 1 }, EM = Fur.FORAGER_EMOTE;
-const DANCE_SEQ = [EM.down, 130, EM.hopR, 90, EM.kickR, 170, EM.backR, 90, EM.down, 130, EM.hopL, 90, EM.kickL, 170, EM.backL, 90];
-const DANCE_CYCLE = 960, DANCE_LAND = 130 / 480, DANCE_HOP = 0.07, DANCE_SWAY = 0.035, DANCE_KICK = 0.068;   // (kick: where the first kick is, of the cycle)
+const DANCE_SEQ = [EM.knock, 120, -0.03, EM.bandy, 120, 0.02, EM.knockB, 120, 0.035, EM.bandy, 120, -0.01, EM.pop, 210, 0, EM.flailL, 330, -0.16,
+  EM.knock, 120, -0.035, EM.bandy, 120, 0.01, EM.knockB, 120, 0.03, EM.bandy, 120, -0.02, EM.pop, 210, 0, EM.flailR, 330, 0.16];
+const DANCE_CYCLE = DANCE_SEQ.reduce((t, v, i) => i % 3 === 1 ? t + v : t, 0), DANCE_HOP = 0.09, DANCE_SWING = 150;   // (swing: ms to lean over to a step's)
+// From one lean to the next, past it a little and back: a noodle's wobble.
+const danceLean = (from, to, ms) => { const u = Math.min(1, ms / DANCE_SWING) - 1; return from + (to - from) * (1 + 2.7 * u * u * u + 1.7 * u * u); };
 const SNEAK_GO = 3.5, SNEAK_REST = 6000, LURK_MS = 220;
 function emote(k) {
   const f = world && world.forager;
@@ -2031,13 +2036,12 @@ function emoteTick(f, stage, ms) {
 function emoteStill(b, d, me) {
   if (b.emote !== EMOTE.dance) { b.view = 0; b.lift = 0; return (b.emoteMs / LURK_MS | 0) & 1 ? EM.lurkB : EM.lurkA; }
   b.view = 1;
-  const t = b.emoteMs % DANCE_CYCLE, h = (2 * t % DANCE_CYCLE) / DANCE_CYCLE;
-  b.lift = h > DANCE_LAND ? DANCE_HOP * Math.sin(Math.PI * (h - DANCE_LAND) / (1 - DANCE_LAND)) : 0;
-  b.hum = (b.flip ? 1 : -1) * DANCE_SWAY * Math.sin(TAU * (t / DANCE_CYCLE - DANCE_KICK));   // (over the planted foot: mirrored, the other way)
-  let k = 0;
-  for (let u = t; k < DANCE_SEQ.length - 2 && u >= DANCE_SEQ[k + 1]; k += 2) u -= DANCE_SEQ[k + 1];
-  const fr = DANCE_SEQ[k];
-  if (me && fr !== b.emoteFrame && fr === EM.down && ui.speed > 0) hear('step', d.x, d.y, { pace: 1.4, foot: k >> 3, ground: groundUnder(d.x, d.y) }, true);   // (landing)
+  let u = b.emoteMs % DANCE_CYCLE, k = 0;
+  while (k < DANCE_SEQ.length - 3 && u >= DANCE_SEQ[k + 1]) { u -= DANCE_SEQ[k + 1]; k += 3; }
+  const fr = DANCE_SEQ[k], last = DANCE_SEQ[(k || DANCE_SEQ.length) - 1];
+  b.lift = fr === EM.pop ? DANCE_HOP * Math.sin(Math.PI * u / DANCE_SEQ[k + 1]) : 0;
+  b.hum = (b.flip ? -1 : 1) * danceLean(last, DANCE_SEQ[k + 2], u);   // (in the painting's left and right: mirrored, the other way)
+  if (me && fr !== b.emoteFrame && (fr === EM.knock || fr === EM.knockB) && ui.speed > 0) hear('step', d.x, d.y, { pace: 1.4, foot: fr === EM.knock ? 0 : 1, ground: groundUnder(d.x, d.y) }, true);   // (landing)
   b.emoteFrame = fr;
   return fr;
 }
@@ -2072,8 +2076,8 @@ function emoteIcons() {
     out.getContext('2d').drawImage(c, (size - w) / 2, cy - w / 2, w, w, 0, 0, w, w);
     el.style.backgroundImage = `url(${out.toDataURL()})`;
   };
-  icon($('#emote i'), EM.kickR);
-  icon($('#emotes [data-act="dance"] i'), EM.kickL);
+  icon($('#emote i'), EM.flailR);
+  icon($('#emotes [data-act="dance"] i'), EM.flailL);
   icon($('#emotes [data-act="sneak"] i'), EM.sneak + 2);
 }
 function foragerFrame(now, d) {

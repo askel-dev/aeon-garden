@@ -52,9 +52,11 @@ Emotes (`emote`, the comment over `EMOTE`): 1 dances, 2 sneaks, or the round but
 (`#emote`, `emoteMenu`: its two fan out over it, each a painting of the forager at it in its own cloak, `emoteIcons`; the one going
 is ringed, `emoteShown`). Painted in fur.js (`FORAGER_EMOTE`, `emotePose`, kept after all its other paintings: `emoteArt`), asked
 of the worker only while one is on or the fan is open, and kept in the cache only while one is on (`keptForager`). The dance is
-NLE Choppa's from the front (`DANCE`, `DANCE_SEQ`): a crouch, a hop with a knee up, that leg kicked straight out to the side and
-back, then the other, fists swinging across; the hop lifts the painting (`b.lift`, `DANCE_HOP`, in `drawFigure`) and it sways over
-the planted foot (`DANCE_SWAY`, through the hum's sway), a step sound at each landing; it dances till it's sent somewhere. The
+NLE Choppa's goofy one from the front (`DANCE`, `DANCE_SEQ`; the first version, crisp side kicks, didn't read as him): loose as a
+noodle, it bounces knock-kneed with its arms limp and bandy with chicken elbows, in and out, pops up on its toes chin up, and
+flails like a tube man, one arm flung up, leaning right over, then the other way; its head lolls, its tongue's out, it goes
+cross-eyed (fur.js `loll`, `goof`, `derp`). The pop hops (`b.lift`, `DANCE_HOP`, in `drawFigure`) and the lean swings to each
+step's and a little past it (`danceLean`, through the hum's sway), a step sound at each knock-kneed landing; it dances till it's sent somewhere. The
 sneak is a devious walk side on (`sneakPose`): crouched, the cloak hitched up, tiptoeing with the near knee lifted over the cloak,
 mittens out like little claws, a sly lid and brow and a smirk; slower (sim.js `f.sneaking`, `FORAGER_SNEAK`, stride
 `SNEAK_STRIDE`); asked for standing it creeps `SNEAK_GO` tiles the way it faces, every walk after is a sneak till it sprints,
