@@ -130,7 +130,9 @@ nothing to pick on screen for `ARROW_WAIT`, a small parchment disc sits at the s
 the nearest leaves it, a brass point on it turned that way and the thing's satchel painting in it (`ARROW_ART`, `itemSheet`'s
 bitmap, `drawPickArrow`), and fades as one comes into view. It was too easy to miss when small and still, so it pops in a
 little bigger (`ARROW_POP`), nudges toward the thing, and sends a soft honey ring out every `ARROW_PING` (`RING_ART`). It keeps clear of the watch, the pill and the satchel by their places,
-looked at once a second (`KEEP_CLEAR`). All drawn over the dark, a little dimmer at night. Cost: nothing you can measure (render
+looked at once a second (`KEEP_CLEAR`). Once there's a camp, the same disc with a little campfire in it (`CAMPMARK_ART`) always
+points home while the camp is off screen (`drawCampMark`, `campMark`), calm (a slow warm glow, no pop or rings), and the pick
+marker slides along the edge out from under it; both find their spot with `edgeAt`. All drawn over the dark, a little dimmer at night. Cost: nothing you can measure (render
 at the widest zoom, walking, summer and winter, against the meadow before them).
 Wild finds (sim.js `w.finds`) are painted once a look and size (`paintFind`, `FIND_ARTS`: 'find:' + kind * 4 + stage * 2 + look):
 dandelions (`paintDandelion`: a toothed rosette, bright heads, now and then a clock), sorrel (a rosette of broad lime arrow-leaves

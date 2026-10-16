@@ -1344,6 +1344,7 @@ function render(now) {
     const [sx, sy] = screenOf(hov);
     drawLabel(`${hov.name} · ${S.mood(world, hov).text}`, sx, sy + creaturePx(hov) * 0.55 + 6);
   }
+  drawCampMark(now);
   drawPickArrow(now);
   standIns = false;                                    // a portrait for the inspector is kept, so it's always painted
 }
@@ -3761,6 +3762,34 @@ function drawGlints(now, dark) {
 // places looked at once a second, KEEP_CLEAR).
 const KEEP_CLEAR = ['#watch', '#hud-right .hud-top', '#satchel'];
 const clearOf = KEEP_CLEAR.map(() => ({ l: 0, t: 0, r: 0, b: 0 }));
+// Where the way from the forager to a spot in the meadow leaves the screen, kept r + 10 in from its edges, over the satchel and
+// out from under the watch and the pill (edge: x, y and the way, cx, cy); false if it doesn't.
+const edge = { x: 0, y: 0, cx: 0, cy: 0 };
+function edgeAt(tx, ty, r) {
+  const F = world.forager, z = cam.zoom, fx = (F.x - cam.x) * z + vw / 2, fy = (F.y - cam.y) * z + vh / 2;
+  const a = Math.atan2((ty - F.y) * z, (tx - F.x) * z), cx = Math.cos(a), cy = Math.sin(a);
+  const m = r + 10, sat = clearOf[2];
+  const x0 = m, x1 = vw - m, y0 = m, y1 = Math.min(vh - m, sat.b ? sat.t - r - 6 : vh - m);
+  let t = Infinity;                                     // where the way from the forager leaves the box
+  if (cx > 0) t = Math.min(t, (x1 - fx) / cx); else if (cx < 0) t = Math.min(t, (x0 - fx) / cx);
+  if (cy > 0) t = Math.min(t, (y1 - fy) / cy); else if (cy < 0) t = Math.min(t, (y0 - fy) / cy);
+  if (!(t > 0) || t === Infinity) return false;
+  let x = fx + cx * t, y = fy + cy * t;
+  for (let k = 0; k < 2; k++) {                         // (pushed down out from under the watch or the pill)
+    const o = clearOf[k];
+    if (o.b && x > o.l - r - 4 && x < o.r + r + 4 && y < o.b + r + 4) y = o.b + r + 6;
+  }
+  edge.x = x; edge.y = y; edge.cx = cx; edge.cy = cy;
+  return true;
+}
+function keepClear(now) {                               // (the watch's, the pill's and the satchel's places, once a second)
+  if (now - picks.topAt < 1000) return;
+  picks.topAt = now;
+  KEEP_CLEAR.forEach((q, k) => {
+    const el = $(q), r = el && el.getBoundingClientRect(), o = clearOf[k];
+    if (r && r.height && getComputedStyle(el).opacity !== '0') { o.l = r.left; o.t = r.top; o.r = r.right; o.b = r.bottom; } else o.l = o.t = o.r = o.b = 0;
+  });
+}
 function drawPickArrow(now) {
   const dt = Math.min(100, now - picks.arrowAt);
   picks.arrowAt = now;
@@ -3770,26 +3799,19 @@ function drawPickArrow(now) {
   picks.wanted = want;
   picks.arrow += (want - picks.arrow) * Math.min(1, dt / (want ? 500 : 250));
   if (picks.arrow < 0.02 || !picks.near) return;
-  if (now - picks.topAt > 1000) {
-    picks.topAt = now;
-    KEEP_CLEAR.forEach((q, k) => {
-      const el = $(q), r = el && el.getBoundingClientRect(), o = clearOf[k];
-      if (r && r.height && getComputedStyle(el).opacity !== '0') { o.l = r.left; o.t = r.top; o.r = r.right; o.b = r.bottom; } else o.l = o.t = o.r = o.b = 0;
-    });
-  }
+  keepClear(now);
   if (picks.near !== picks.itemOf) { picks.itemOf = picks.near; picks.item = ITEM_IDS.indexOf(S.whatThere(world, picks.nearKind, picks.near).id); }
-  const F = world.forager, z = cam.zoom, fx = (F.x - cam.x) * z + vw / 2, fy = (F.y - cam.y) * z + vh / 2;
-  const it = picks.near, a = Math.atan2((it.y - F.y) * z, (it.x - F.x) * z), cx = Math.cos(a), cy = Math.sin(a);
-  const r = narrow() ? 18 : 19, m = r + 10, sat = clearOf[2];
-  const x0 = m, x1 = vw - m, y0 = m, y1 = Math.min(vh - m, sat.b ? sat.t - r - 6 : vh - m);
-  let t = Infinity;                                     // where the way from the forager leaves the box
-  if (cx > 0) t = Math.min(t, (x1 - fx) / cx); else if (cx < 0) t = Math.min(t, (x0 - fx) / cx);
-  if (cy > 0) t = Math.min(t, (y1 - fy) / cy); else if (cy < 0) t = Math.min(t, (y0 - fy) / cy);
-  if (!(t > 0) || t === Infinity) return;
-  let x = fx + cx * t, y = fy + cy * t;
-  for (let k = 0; k < 2; k++) {                         // (pushed down out from under the watch or the pill)
-    const o = clearOf[k];
-    if (o.b && x > o.l - r - 4 && x < o.r + r + 4 && y < o.b + r + 4) y = o.b + r + 6;
+  const it = picks.near, r = narrow() ? 18 : 19;
+  if (!edgeAt(it.x, it.y, r)) return;
+  const cx = edge.cx, cy = edge.cy;
+  let x = edge.x, y = edge.y;
+  if (campMark.a > 0.02) {                              // (slid along the edge out from under the camp's marker)
+    const dx = x - campMark.x, dy = y - campMark.y, d = Math.hypot(dx, dy), need = r * 2.3;
+    if (d < need) {
+      const ex = Math.abs(cx * vw) > Math.abs(cy * vh) ? 0 : 1, ey = 1 - ex;   // (along the edge it's on)
+      const s = (ex ? dx : dy) || 1, k = Math.sign(s) * (need - d + 2);
+      x += ex * k; y += ey * k;
+    }
   }
   const nudge = Math.sin(now / 300), bob = 3.5 * nudge * Math.abs(nudge), art = ARROW_ART || arrowArt(), i = picks.item;
   x += cx * bob; y += cy * bob;
@@ -3806,6 +3828,57 @@ function drawPickArrow(now) {
     ctx.drawImage(itemSheet().img, i * ITEM_PX, 0, ITEM_PX, ITEM_PX, x - rr * 0.85, y - rr * 0.85, rr * 1.7, rr * 1.7);
     ctx.restore();
   }
+  ctx.globalAlpha = 1;
+}
+
+// The way home: once there's a camp, whenever its fire is off screen the same parchment disc sits at the screen's edge where
+// the way from the forager to it leaves, its point turned that way and a little campfire in it (CAMPMARK_ART, painted once).
+// Always there, so it's calm: no pop or rings, only a slow warm breath. Drawn before the pick marker, which slides along the
+// edge out from under it (drawPickArrow). Fades in and out as the camp goes off and comes on screen.
+const campMark = { a: 0, at: 0, x: 0, y: 0 };
+let CAMPMARK_ART = null;
+function campMarkArt() {                                 // two crossed logs and a flame, in the middle of a P box
+  const P = 96, c = document.createElement('canvas'), g = c.getContext('2d'), m = P / 2;
+  c.width = c.height = P;
+  g.lineCap = 'round';
+  for (const [s, col] of [[1, 'rgb(112, 74, 44)'], [-1, 'rgb(134, 92, 56)']]) {
+    g.strokeStyle = col; g.lineWidth = P * 0.1;
+    g.beginPath(); g.moveTo(m - s * P * 0.3, m + P * 0.3); g.lineTo(m + s * P * 0.3, m + P * 0.14); g.stroke();
+  }
+  const flame = (h, w, col) => {
+    g.fillStyle = col; g.beginPath(); g.moveTo(m, m + P * 0.2 - h);
+    g.bezierCurveTo(m + w * 0.9, m - h * 0.25, m + w, m + P * 0.2, m, m + P * 0.22);
+    g.bezierCurveTo(m - w, m + P * 0.2, m - w * 0.9, m - h * 0.25, m, m + P * 0.2 - h); g.fill();
+  };
+  flame(P * 0.62, P * 0.24, 'rgb(214, 84, 40)'); flame(P * 0.44, P * 0.16, 'rgb(244, 150, 52)'); flame(P * 0.26, P * 0.09, 'rgb(255, 222, 130)');
+  CAMPMARK_ART = { img: c };
+  asBitmap(c, b => { CAMPMARK_ART.img = b; });
+  return CAMPMARK_ART;
+}
+function drawCampMark(now) {
+  const C = world.camp, dt = Math.min(100, now - campMark.at);
+  campMark.at = now;
+  let want = 0;
+  if (C && world.forager.down < 0) {
+    const z = cam.zoom, sx = (C.x - cam.x) * z + vw / 2, sy = (C.y - cam.y) * z + vh / 2;
+    want = sx > -z && sx < vw + z && sy > -z && sy < vh + z ? 0 : 1;   // (on screen, or nearly: the camp shows for itself)
+  }
+  campMark.a += (want - campMark.a) * Math.min(1, dt / (want ? 500 : 250));
+  if (campMark.a < 0.02 || !C) { campMark.a = Math.max(0, campMark.a); return; }
+  keepClear(now);
+  const r = narrow() ? 18 : 19;
+  if (!edgeAt(C.x, C.y, r)) { campMark.a = 0; return; }
+  const { x, y, cx, cy } = edge, size = r / ARROW_DISC, breath = 0.5 + 0.5 * Math.sin(now / 900);
+  campMark.x = x; campMark.y = y;
+  const gr = r * (1.25 + 0.15 * breath);                // a soft warm glow round it
+  ctx.globalAlpha = (0.35 + 0.2 * breath) * campMark.a;
+  ctx.drawImage((RING_ART || ringArt()).img, x - gr, y - gr, gr * 2, gr * 2);
+  ctx.globalAlpha = 0.96 * campMark.a;
+  ctx.setTransform(cx * dpr, cy * dpr, -cy * dpr, cx * dpr, x * dpr + shakeX, y * dpr + shakeY);
+  ctx.drawImage((ARROW_ART || arrowArt()).img, -size / 2, -size / 2, size, size);
+  ctx.setTransform(dpr, 0, 0, dpr, shakeX, shakeY);
+  const ir = r * 0.8;
+  ctx.drawImage((CAMPMARK_ART || campMarkArt()).img, x - ir, y - ir, ir * 2, ir * 2);
   ctx.globalAlpha = 1;
 }
 
