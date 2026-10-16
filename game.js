@@ -2048,12 +2048,11 @@ function foragerFrame(now, d) {
   const dx = d.x - fg.x, dy = d.y - fg.y, moved = Math.hypot(dx, dy), ms = now - fg.at;
   fg.x = d.x; fg.y = d.y; fg.at = now;
   fg.jog = f.running && f.speed > FORAGER_JOG[fg.jog ? 0 : 1];   // (its legs don't spin: the jog's stride is longer)
-  fg.wet = !world.frozen && world.water[(d.y | 0) * S.W + (d.x | 0)] > 0;
-  const drift = !f.walking && fg.wet;                     // (carried down the current standing in it, sim.js carryForager: it stands, no stride)
-  if (moved > 1e-5 && moved < 2 && !drift) {
+  if (moved > 1e-5 && moved < 2) {
     fg.step += moved / (2 * Fur.FORAGER_REACH * px / cam.zoom * (fg.jog ? Fur.FORAGER_JOG_STRIDE : f.sneaking ? Fur.SNEAK_STRIDE : 1));
     fg.stillMs = 0;
   } else if (ui.speed > 0) fg.stillMs += ms;            // (paused mid-stride, it holds the stride)
+  fg.wet = !world.frozen && world.water[(d.y | 0) * S.W + (d.x | 0)] > 0;
   const walking = fg.stillMs < FORAGER_STILL_MS, stage = S.warmthStage(f), cold = fg.cold = stage >= FORAGER_SAD;
   emoteTick(f, stage, ms);
   const kneel = fg.kneel = stage < 4 && fg.emote < 0 ? kneelNow(now) : -1;   // (at a fire: kneeling, side on to it)
@@ -3731,6 +3730,13 @@ try { fireTold.lit = localStorage.getItem(FIRE_TOLD) === '1'; } catch (e) { /* f
 // first. Both the step and the kneel are the sim's own forager (the walk) and fg.kneel, which sendPos hands to friends, so
 // playing together a friend sees it step out and kneel just as it does here.
 const fireSit = { F: null };
+// The lit fire the forager is at (where it kneels to warm its hands, SIT_NEAR), or null: E opens its cooking card.
+function cookFire() {
+  const f = world.forager;
+  if (f.down >= 0) return null;
+  for (const F of world.fires) if (F.lit && Math.abs(F.x - f.x) < SIT_NEAR && Math.abs(F.y - f.y) < SIT_NEAR * 0.7) return F;
+  return null;
+}
 function sitFrame(now) {
   const f = world.forager;
   fireSit.F = null;
@@ -11772,6 +11778,7 @@ function keyWalk() {
   }
   if (!keyWalking) {                    // (taking over: whatever it was off to or going to pick, or doing at a fire, it isn't)
     ui.gather = null; ui.queue.length = 0; ui.mark = null; ui.fire = null;
+    if (drag && !drag.blow) { clearTimeout(holdTimer); drag = null; }   // (a press still held steers no more, and letting go walks nowhere)
     if (ui.selectedId || ui.picked) select(0);
   }
   keyWalking = true;
@@ -11793,7 +11800,7 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'Escape') stepOut();
   else if (e.key === 'Enter' && ui.place) { e.preventDefault(); placeHere(); }   // (picking a spot for a fire: where the faint one is)
   else if ((e.key === 'Enter' || e.key === 't') && Net && Net.on) { e.preventDefault(); openChat(true); }
-  else if (e.code === 'KeyE' && !e.repeat) pickNear();
+  else if (e.code === 'KeyE' && !e.repeat) { const F = cooking() ? null : !ui.fire && cookFire(); if (cooking()) closeCook(); else if (F) clickFire(F); else pickNear(); }   // (at a lit fire: its cooking card, and again shuts it; else pick)
   else if (e.code === 'KeyF' && !e.repeat) { if (atFire()) { fireKey = true; blowOn(true); } else buildPressed(); }   // (at a fire, held: blowing; else the fire button)
   else if (e.key === 'm') toggleSound();
   else if (e.key === '+' || e.key === '=') zoomOn(cam.zoom * 1.25);
@@ -12011,7 +12018,7 @@ function newWorld(seed) {
 // A new meadow's opening, like the start of a film: black bars come in top and bottom, everything else on the page goes,
 // the name fades in in the lower bar, and the camera cranes down out of the storm onto the forager (INTRO_CRANE: from
 // INTRO_WIDE of its zoom and INTRO_RISE tiles up, eased in leadCam). The forager says its line (openingLine), and the
-// bars slide off (INTRO_MS), the page coming back. A click, a tap or a key cuts it short (and does nothing else).
+// bars slide off (INTRO_MS), the page coming back. A key cuts it short (and does nothing else); a click or a tap does nothing, and it ends on its own clock.
 const INTRO_MS = 7000, INTRO_NAME = [700, 4600], INTRO_CRANE = 5500, INTRO_WIDE = 0.55, INTRO_RISE = 5, INTRO_LINE = 3600;
 const intro = { on: false, t0: 0, z: 0, timers: [] };
 function startIntro() {
@@ -12044,7 +12051,7 @@ for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, e => {
   if (!intro.on || e.target.closest?.('input,textarea')) return;
   e.preventDefault(); e.stopPropagation();
   if (ui.sound) Sound.start();
-  endIntro();
+  if (e.type === 'keydown') endIntro();                 // (a click or a tap does nothing: it ends on its own clock)
 }, { capture: true });
 
 // A new meadow opens in a storm late in the afternoon (sim.js START_PHASE), the forager cold and wet: a moment after it's on

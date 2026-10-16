@@ -198,7 +198,6 @@ it's gone a tile), so a tick looks at a handful. Through a wood it weaves and ta
 steering: it heads for a point `FORAGER_LOOK` along the way, turning at most `FORAGER_TURN` a tick (three times that from
 standing), speeds up by `FORAGER_ACCEL`, slows to stop where it was sent (`FORAGER_BRAKE`) and into a sharp turn, wades at
 `FORAGER_WADE` of `FORAGER_WALK`, and slides along the deep if a corner clips it. Sneaking (`f.sneaking`, game.js's sneak emote, in the blank: no `KEEP_VERSION` bump) it creeps at `FORAGER_SNEAK`; a sprint wins.
-The river carries it too: standing in the shallows it drifts down the current each tick (`carryForager`, as a swimmer's drift, at most `CARRY` of a wade, along the shallows only, sliding round rocks and the deep). Walking, the current adds to or takes from its pace along its way (`currentAt`, never under `1 - CARRY` of it), so it goes down a river quickly and up one slowly (it's not pushed, so a walk into the current still ends at its goal).
 Playing together, friends' foragers are in each other's way (`friendsAt`: game.js `friendsFrame` hands over where each is
 drawn and whether it's standing still (`PEER_STILL_MS`), every frame; one collapsed isn't): a circle of `ELBOW_ROOM` about each it can't step into (`outOfFriends`), sliding round
 it, met about head on (`FRIEND_HEAD_ON`) stepping to its right (`FRIEND_SIDESTEP`) so two walkers pass, and a way that ends in one ends at
