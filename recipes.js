@@ -56,12 +56,14 @@ const INGREDIENTS = {
 //   level: 0        the cooking level it needs before it can be found
 //   from            a visitor who teaches it, for a dish ('hedgehog', 'heron', 'kingfisher', 'skylark', 'dragonfly')
 //   warm: false     it warms you on a cold day
+//   time: 30        how long it cooks, in seconds at 1x (the pot keeps cooking while you're off, only while the fire's lit)
 //   known: false    true: a new player knows it from the start (it's in their recipe book), not only once they've made it
 //   icon: '🥣'      an emoji to stand in until it has a painted one
 //   text            a line for its card
 const RECIPES = [
   {
     name: 'Roast mushrooms',
+    time: 30,
     icon: '🍢',
     needs: ['mushroom', 'mushroom'],
     known: true,
@@ -69,29 +71,34 @@ const RECIPES = [
   },
   {
     name: 'Garlic mushrooms',
+    time: 40,
     icon: '🍳',
     needs: ['mushroom', 'mushroom', 'garlic'],
     text: 'The garlic wilts into the mushrooms and the whole camp smells of it.',
   },
   {
     name: 'Baked apple with honey',
+    time: 75,
     icon: '🥧',
     needs: ['apple', 'honey'],
     text: 'Soft and sticky, the honey gone to caramel in the cracks.',
   },
   {
     name: 'Honeyed cherries',
+    time: 45,
     icon: '🍧',
     needs: ['cherry', 'cherry', 'honey'],
   },
   {
     name: 'Warm bramble compote',
+    time: 60,
     icon: '🥣',
     needs: ['blackberry', 'blackberry', 'honey'],
     text: 'Purple fingers, purple chin.',
   },
   {
     name: 'Wilted greens',
+    time: 20,
     icon: '🍲',
     needs: ['nettle', 'garlic'],
     known: true,
@@ -99,29 +106,34 @@ const RECIPES = [
   },
   {
     name: 'Toasted beechnuts',
+    time: 25,
     icon: '🥜',
     needs: ['beechnuts', 'beechnuts'],
   },
   {
     name: 'Toasted hazelnuts',
+    time: 25,
     icon: '🥜',
     needs: ['hazelnut', 'hazelnut'],
     text: 'Rolled in the embers till the skins crackle and rub off.',
   },
   {
     name: 'Mushrooms with hazelnuts',
+    time: 50,
     icon: '🥘',
     needs: ['mushroom', 'mushroom', 'hazelnut'],
     text: 'The nuts crushed over the top at the last moment.',
   },
   {
     name: 'Dandelion fritters',
+    time: 35,
     icon: '🥞',
     needs: ['dandelion', 'dandelion', 'honey'],
     text: 'Dipped by the stalk and fried, a drizzle of honey over.',
   },
   {
     name: 'Spring salad',
+    time: 15,
     icon: '🥗',
     needs: ['dandelion', 'sorrel', 'garlic'],
     known: true,
@@ -129,24 +141,28 @@ const RECIPES = [
   },
   {
     name: 'Sorrel and mushrooms',
+    time: 40,
     icon: '🍛',
     needs: ['sorrel', 'mushroom'],
     text: 'The sorrel melts into a sour little sauce.',
   },
   {
     name: 'Strawberries and honey',
+    time: 15,
     icon: '🍨',
     needs: ['strawberry', 'strawberry', 'honey'],
     text: 'Tiny, warm from the sun, and gone in a moment.',
   },
   {
     name: 'Elderflower fritters',
+    time: 40,
     icon: '🥞',
     needs: ['elderflower', 'honey'],
     text: 'Whole plates of flowers in batter, crisp as lace.',
   },
   {
     name: 'Elderflower cordial',
+    time: 90,
     icon: '🧃',
     needs: ['elderflower', 'elderflower', 'honey', 'fruit'],
     at: 'pot',
@@ -154,6 +170,7 @@ const RECIPES = [
   },
   {
     name: 'Rosehip tea',
+    time: 60,
     icon: '🍵',
     needs: ['rosehip', 'rosehip'],
     warm: true,
@@ -161,6 +178,7 @@ const RECIPES = [
   },
   {
     name: 'Rosehip syrup',
+    time: 90,
     icon: '🫙',
     needs: ['rosehip', 'rosehip', 'honey'],
     at: 'pot',
@@ -169,6 +187,7 @@ const RECIPES = [
   },
   {
     name: 'Watercress soup',
+    time: 70,
     icon: '🥣',
     needs: ['watercress', 'watercress', 'greens'],
     at: 'pot',
@@ -177,6 +196,7 @@ const RECIPES = [
   },
   {
     name: 'Nettle soup',
+    time: 80,
     icon: '🍲',
     needs: ['nettle', 'nettle', 'greens', 'mushroom'],
     at: 'pot',
@@ -203,9 +223,10 @@ const BUILDS = {
 // The rest is the machinery: you shouldn't need to touch it to add a dish.
 
 const TEACHERS = ['hedgehog', 'heron', 'kingfisher', 'skylark', 'dragonfly'];
-const MESS = { name: "A forager's mess", fill: 1, icon: '🫠', text: "It's... food. Mostly." };
+const MESS = { name: "A forager's mess", fill: 1, time: 15, icon: '🫠', text: "It's... food. Mostly." };
+const COOK_TIME = 30;                   // seconds a dish takes if it doesn't say
 const DISH_ICON = '🥣';
-const RECIPE_KEYS = ['name', 'needs', 'at', 'fill', 'level', 'from', 'warm', 'known', 'icon', 'text'];
+const RECIPE_KEYS = ['name', 'needs', 'at', 'fill', 'level', 'from', 'warm', 'known', 'time', 'icon', 'text'];
 
 const recipeOf = name => RECIPES.find(r => r.name.toLowerCase() === String(name).toLowerCase());
 const isTag = word => Object.values(INGREDIENTS).some(g => g.tags.includes(word));
@@ -240,6 +261,9 @@ function fits(things, needs) {
 function cook(things, at = 'fire') {
   return RECIPES.find(r => (r.at || 'fire') === at && fits(things, r.needs)) || MESS;
 }
+
+// How long a dish cooks, in seconds at 1x.
+const timeOf = r => (r && r.time > 0 ? r.time : COOK_TIME);
 
 // How much a dish fills the tummy, if it doesn't say: a bit more than its ingredients raw.
 function fillOf(r) {
@@ -337,7 +361,7 @@ function thingsFor(needs, have) {
 // The ingredients a word in a build's needs takes: itself, or every ingredient with that tag.
 const takes = word => (INGREDIENTS[word] ? [word] : Object.keys(INGREDIENTS).filter(id => INGREDIENTS[id].tags.includes(word)));
 
-const Recipes = { STATIONS, INGREDIENTS, RECIPES, BUILDS, MESS, cook, fits, fillOf, recipeOf, takes, foodOf, thingsFor, answers, checkRecipes };
+const Recipes = { STATIONS, INGREDIENTS, RECIPES, BUILDS, MESS, cook, fits, fillOf, timeOf, recipeOf, takes, foodOf, thingsFor, answers, checkRecipes };
 if (typeof module !== 'undefined') module.exports = Recipes;
 else {
   window.Recipes = Recipes;

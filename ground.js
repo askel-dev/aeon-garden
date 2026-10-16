@@ -40,7 +40,8 @@ const FRAGMENT = `#version 300 es
 precision highp float;
 uniform sampler2D tile, bloom, shape, water, mist;
 uniform vec2 size, off, seed;
-uniform float top, zoom, dpr, snow, damp, lx, ly, ice, cold, mistOut;
+uniform float top, zoom, dpr, snow, damp, lx, ly, ice, cold, mistOut, campA;
+uniform vec4 camp;                       // the camp's ground: where (tiles), how far out, how flat (an ellipse); campA how much of it is laid
 uniform vec3 low, high, sand, fog;
 uniform vec3 light;                      // what it's all lit by: white by day, warm in the golden hour (game.js goldLight)
 out vec4 o;
@@ -267,6 +268,14 @@ void main() {
   col *= 0.96 + 0.08 * height;
 
   col = col * (1. - B.a) + B.rgb;                                // a flower field in bloom
+  // The camp: trodden brown earth, ragged at its rim, a little uneven and mottled, the grass gone from under it.
+  float campD = length((p - camp.xy) / (camp.z * vec2(1., camp.w))) + 0.07 * (noise(q * 1.3 + 920.) - 0.5) + 0.04 * (noise(q * 3.1 + 925.) - 0.5);
+  float onCamp = campA > 0. ? (1. - smoothstep(0.7, 1.06, campD)) * campA : 0.;
+  if (onCamp > 0.) {
+    float tread = noise(q * 0.9 + 930.) * 0.6 + noise(q * 2.6 + 935.) * 0.4;
+    vec3 dirt = mix(vec3(0.42, 0.31, 0.2), vec3(0.54, 0.41, 0.28), tread) * (1. - 0.12 * smoothstep(0.5, 0.8, noise(q * 6. + 940.)));
+    col = mix(col, dirt, 0.88 * onCamp);
+  }
   // Snow settles in patches first, on the long grass's sunny tops before its hollows; blue in the shade.
   float s0 = snow > 0. ? clamp(snow * 1.4 - 0.2 - 0.25 * (2. * n1 - 1.) - 0.1 * (2. * n2 - 1.), 0., 0.92) : 0.;
   col = mix(col, mix(vec3(0.8, 0.86, 0.96), vec3(246., 248., 252.) / 255., 0.6 + 0.4 * (1. - castOn)), s0);
@@ -404,13 +413,14 @@ function set(name, data) {
 // slid in whole pixels while it creeps.
 const PAD = 64, SLIDE_MIN = 0.1;
 let last = null, stale = true, busy = 0, panned = -1e9;   // busy: how often lately more than the camera moved
-const NEAR = { snow: 0.004, damp: 0.002, ice: 0.004, cold: 0.004, lx: 0.08, ly: 0.08 };
+const NEAR = { campA: 0.004, snow: 0.004, damp: 0.002, ice: 0.004, cold: 0.004, lx: 0.08, ly: 0.08 };
 const EXACT = ['width', 'height', 'zoom', 'dpr'];
 const was = { ox: 0, oy: 0 }, view = { x: 0, y: 0 };
 let between = false;                                    // view is off the pixels (slid by a fraction)
 function steady(u) {                                    // all but where the camera is
   if (stale || !last || u.seed[0] !== last.seed[0] || u.seed[1] !== last.seed[1]) return false;
   for (const k of EXACT) if (u[k] !== last[k]) return false;
+  for (let i = 0; i < 4; i++) if (u.camp[i] !== last.camp[i]) return false;
   for (const k in NEAR) if (Math.abs(u[k] - last[k]) > NEAR[k]) return false;
   for (const k of ['low', 'high', 'sand']) for (let i = 0; i < 3; i++) if (Math.abs(u[k][i] - last[k][i]) > 0.5) return false;
   if (last.misty) for (let i = 0; i < 3; i++) if (Math.abs(u.fog[i] - last.fog[i]) > 0.5) return false;   // (none in it: the fog can't show)
@@ -439,11 +449,11 @@ function draw(u) {
   gl.viewport(0, ch - u.height - 2 * m, u.width + 2 * m, u.height + 2 * m);   // the canvas's top left
   gl.uniform1f(U.top, ch);
   gl.uniform2f(U.off, u.ox + pad, u.oy + pad); gl.uniform2fv(U.seed, u.seed);
-  for (const k of ['zoom', 'dpr', 'snow', 'damp', 'lx', 'ly', 'ice', 'cold']) gl.uniform1f(U[k], u[k]);
+  for (const k of ['zoom', 'dpr', 'snow', 'damp', 'lx', 'ly', 'ice', 'cold', 'campA']) gl.uniform1f(U[k], u[k]);
   for (const k of ['low', 'high', 'sand', 'fog']) gl.uniform3fv(U[k], u[k].map(v => v / 255));
-  gl.uniform3fv(U.light, u.light);
+  gl.uniform3fv(U.light, u.light); gl.uniform4fv(U.camp, u.camp);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
-  last = { ...u, pad, misty: misty(u, pad) }; stale = false; view.x = view.y = m; between = false;
+  last = { ...u, camp: u.camp.slice(), pad, misty: misty(u, pad) }; stale = false; view.x = view.y = m; between = false;
   return true;
 }
 

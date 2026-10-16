@@ -48,6 +48,13 @@
   td, th { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); }
   th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
   .scroll { overflow-x: auto; }
+  /* each dish's painting (dishes.js), big and at the satchel's size on its parchment, or its emoji till it has one */
+  .dish .look { display: flex; align-items: flex-end; gap: 10px; float: right; margin: 0 0 6px 10px; }
+  .dish .look canvas { display: block; }
+  .dish .look .slotted { background: #f3e6c8; border-radius: 9px; box-shadow: inset 0 0 0 1.5px #d9c193; }
+  .dish .look .emo { font-size: 40px; line-height: 1; text-align: center; }
+  .dish .look .emo small { display: block; font-size: 11px; color: var(--muted); font-weight: 700; margin-top: 4px; }
+  .dish::after { content: ''; display: block; clear: both; }
 </style>
 </head>
 <body>
@@ -76,6 +83,8 @@
     <div class="scroll"><table id="ingredients"></table></div>
   </div>
 </main>
+<script src="fur.js"></script>
+<script src="dishes.js"></script>
 <script src="recipes.js"></script>
 <script>
 'use strict';
@@ -83,6 +92,13 @@ const { STATIONS, INGREDIENTS, RECIPES, cook, fillOf, recipeOf, checkRecipes } =
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const label = id => INGREDIENTS[id] ? `${INGREDIENTS[id].icon || ''} ${INGREDIENTS[id].name}` : id;
+
+// A dish's painting from dishes.js, big and at the satchel's slot size; or its emoji while it has none.
+function lookHTML(r) {
+  const n = Dishes.NAMES.indexOf(r.name);
+  if (n < 0) return `<div class="look"><div class="emo">${r.icon || '🥣'}<small>not painted yet</small></div></div>`;
+  return `<div class="look"><canvas data-n="${n}" data-css="120"></canvas><canvas class="slotted" data-n="${n}" data-css="48"></canvas></div>`;
+}
 
 function chip(word) {
   if (INGREDIENTS[word]) return `<span class="chip">${esc(label(word))}</span>`;
@@ -98,11 +114,18 @@ if (problems.length) $('check').id = 'problems';
 
 $('dishes').innerHTML = RECIPES.map(r => {
   const st = STATIONS[r.at || 'fire'];
-  const meta = [st ? st.name : r.at, `fills ${fillOf(r)}`, r.level ? `level ${r.level}` : '', r.from ? `taught by the ${r.from}` : '', r.warm ? 'warming' : '', r.known ? 'known from the start' : '']
+  const meta = [st ? st.name : r.at, `fills ${fillOf(r)}`, `cooks ${Recipes.timeOf(r)} s`, r.level ? `level ${r.level}` : '', r.from ? `taught by the ${r.from}` : '', r.warm ? 'warming' : '', r.known ? 'known from the start' : '']
     .filter(Boolean).join(' · ');
-  return `<div class="dish"><b>${esc(r.name)}</b><div class="needs">${r.needs.map(chip).join('')}</div>
+  return `<div class="dish">${lookHTML(r)}<b>${esc(r.name)}</b><div class="needs">${r.needs.map(chip).join('')}</div>
     <div class="meta">${esc(meta)}</div>${r.text ? `<div class="text">${esc(r.text)}</div>` : ''}</div>`;
 }).join('');
+
+// The paintings: painted into each card's canvases once it's on the page, as the game paints them (a box with a margin).
+document.querySelectorAll('.dish canvas').forEach(c => {
+  const dpr = window.devicePixelRatio || 1, css = +c.dataset.css, size = Math.round(css * dpr);
+  c.width = c.height = size; c.style.width = c.style.height = css + 'px';
+  Dishes.paint(c.getContext('2d'), size, size / 1.3, +c.dataset.n);
+});
 
 $('ingredients').innerHTML = '<tr><th></th><th>id</th><th>Name</th><th>Tags</th><th>Fills</th><th>Raw</th></tr>' +
   Object.entries(INGREDIENTS).map(([id, g]) => `<tr><td>${g.icon || ''}</td><td><code>${esc(id)}</code></td><td>${esc(g.name)}${g.text ? `<div class="text">${esc(g.text)}</div>` : ''}</td>

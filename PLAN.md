@@ -296,6 +296,13 @@ what goes together was hard, and "Something new: cherries, cherries" promised a 
 - Left for Axel: the pot is the one vessel for now (the pan and the billy can of step 3 can replace it); E at a lit fire comes
   from the keydown branch merged alongside; only the fire's dishes are in the book (the pot's and the oven's wait for them).
 
+### Step 2, the dish paintings: begun (2026-10-16)
+- dishes.js paints them (only fur.js's helpers, so recipes.html shows each by its recipe, big and at the satchel's size). Two so
+  far: roast mushrooms (three roasted caps threaded on a green stick, bark where it's held, the tip charred, a drop of juice) and
+  baked apple with honey (a baked red apple on a flat hearth stone, split down one side, cored and full of caramel, honey glazed
+  down its shoulders and pooled round its foot, its stalk and a soft leaf). In the satchel, the cooking tiles and the book.
+- Still to do: the other 16 and the mess, `look` and the made-up ones, the steam on warm ones, the big "New recipe!" painting.
+
 ## After that (roughly in this order)
 1. **Cooking at the fire** and 2. **hunger and eating**: stage 6 above.
 3. **Camp builds.** Arranged inside the camp ring: a seat log, a spit, a drying rack (keeping food for winter), a basket

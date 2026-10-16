@@ -249,6 +249,10 @@ none past `FIRE_REACH` (`fireWarmth`, by `fireHeat`), and dries it close up (`FI
 meadow kept before fires gets none (no `KEEP_VERSION` bump). Standing by one from dusk with warmth full (4 seeds): a new fire's 5
 sticks burn about 8.5 game hours dry (7 in rain); spring nights end at 0.6 to 1 warmth, winter ones at 0.1 to 0.75 (snow worst),
 and a fire kept fed keeps it at 1 all night; with none, the rainy spring nights and every winter night kill.
+A fire has one pot (`cookDish`, `cookItems`, `cookLeft`, `cookTotal`; `cookOn`, `cookTake`, `cookReady`, `cookProgress`): game.js takes
+the things out of the satchel and sets a dish going for its recipes.js `time` (seconds at 1x, `cookTicks`), and `fireTick` counts it
+down one a tick, only while the fire is lit (a fire that goes out waits, the pot still on it), emitting 'cooked' at nought. A done dish
+stays in the pot till `cookTake`. A kept fire from before pots gets the fields in `unpackWorld` (no `KEEP_VERSION` bump). Not sent to friends.
 The meadow's first fire lit makes camp (`w.camp`, in `LATER`: where, the fire, the tick; `campAt` from `lightFire`, event 'camp'):
 the forager's home (`homeX`, `homeY`) moves to where it knelt to light it (within `CAMP_KNEEL`; else the fire's clear side), so it
 wakes there after a collapse. Its ring, `CAMP_R` tiles round the fire and `CAMP_FLAT` as deep as wide (`inCamp`), is where later

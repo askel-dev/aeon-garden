@@ -40,7 +40,7 @@ trodden earth round it (`CAMP_R`, `inCamp`, game.js `drawCampRing`) is where lat
 on the fire and a big window opens beside it, the pot close up with water in it that what you drag (or tap) from the satchel's big
 tiles splashes into, the fire under it, steam, a spoon stirring, and its sounds (game.js `renderCook`, `drawCookView`, `setupCookBag`;
 sound.js `plop`, `stir`, `dish`, `mess`, the pot's simmer; recipes.js `cook`); a recipe book by the satchel (B: a book open on the meadow like the old field journal, numbered pages with each dish's
-picture and what goes in, `renderBook`; a few dishes `known` from the start, the rest found by trying or half told by the forager's hints, `hintTick`), and food is eaten from the satchel into a tummy (sim.js `f.tummy`, `feedForager`; game.js `eatAsk`). `forager-lab.html` shows all its paintings. Notes in game.md and ecology.md.
+picture and what goes in, `renderBook`; a few dishes `known` from the start, the rest found by trying or half told by the forager's hints, `hintTick`), and food is eaten from the satchel into a tummy (sim.js `f.tummy`, `feedForager`; game.js `eatAsk`). It gets better by doing, as in The Forest (the start of a levelling system, to build on): skills in sim.js `SKILLS`, each with practice `f.xp` and a level `f.lv` (0 to `SKILL_TOP`) whose perks are read where the thing is done (`perk`, `gainSkill`). Stamina is practised by sprinting (longer sprints, breath back sooner), Cooking by each dish out of the pot (quicker cooking); a level up is a toast (game.js `levelup`). A new skill is a block in `SKILLS` and a `gainSkill` where it's practised; there's no UI showing levels yet. `forager-lab.html` shows all its paintings. Notes in game.md and ecology.md.
 - `game.js`: drawing, UI, the inspector. Its features (and where new notes on them go) are in
   `.claude/rules/game.md`, which loads when game.js or index.html is opened.
 - `ground.js`: the ground (grass, earth, shores, water) as a WebGL shader, painted from a
@@ -81,6 +81,12 @@ picture and what goes in, `renderBook`; a few dishes `known` from the start, the
   A word in a dish's `needs` is an ingredient, a tag or another dish; the pot must match exactly (`cook`). Keep the data at
   the top easy to read and its fields optional; `checkRecipes` (console on load, and the top of `recipes.html`) says what's
   wrong in plain words. The file is one block so its names don't clash with the game's; the game reads it as `Recipes`.
+- `dishes.js`: the dishes, painted by hand in code, each in the vessel it's made in (`Dishes.paint`, `NAMES`; a new one goes
+  at the end). Only fur.js's helpers, so `recipes.html` shows each by its recipe, big and at slot size; game.js puts them in the
+  satchel's sheet and the book. A dish with no painting yet keeps its recipes.js emoji.
+- `items.js`: what the meadow gives, painted picked and held up for the satchel (`Items.paint`, `NAMES`, ingredient ids; a new
+  one goes at the end), on nothing but a faint touch of shade, so no ground shadow blown up in a slot. game.js puts them in
+  the satchel's sheet as `'ingr:' + n`, every ingredient so far; a new one not painted here yet keeps the meadow's painting or its emoji.
 - `trees.js`, `tree-worker.js`, `tree-lab.html`: the trees, painted in code. How they're painted, cached and
   drawn is in `.claude/rules/trees.md`, which loads when one of those files is opened.
 
@@ -140,6 +146,9 @@ new feature must not slow it down. If it would, make it cheaper or leave it out.
   fraction, gives V8 a new layout: it then reads those objects the slow way for good and keeps rerunning stale compiled
   loops, which once halved the sim's speed. A new field goes into the blank.
 - The page (the inspector) updates a few times a second at most, and only rewrites what changed.
+- A picture the page's CSS uses goes in as a blob's address, never a data URL in a custom property: every element using the
+  variable reads the whole string again in each style pass (the satchel's 750 KB `--items` made opening the cooking window
+  cost 30 ms of style).
 - Smooth is also even. Input comes when it likes (Safari hands a drag's moves over unaligned with the frames: two in one,
   none in the next), so whatever moves the camera from input calls `handMoved(e.timeStamp)` after it, and the frame
   draws the camera as the hand had it a moment ago (`handShow`). A frame's time is `onBeat`'s, not the browser's (Safari's

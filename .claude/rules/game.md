@@ -71,7 +71,8 @@ now and then (sound.js `breath`). Freezing, frost at the screen's corners and ed
 CSS gradients only, shown only then) and a soft heartbeat (sound.js `heart`, `HEART_MS`); a stumble pitches it forward. In air under
 `BREATH_AIR` its breath puffs from its mouth (`BREATH_AT`, by view, drifting the way it faces; `PUFF_ART`, painted once), soaked it drips off its hem, now and then a drop you hear (sound.js `hemdrip`). Out of breath it pants (`pantFrame`, sound.js `pant`, one a breath every `PANT_MS`: quick and hard when spent, slower and softer as it comes back, from `PANT_LOW` already while sprinting) till it has `PANT_DONE` back, then a phew (sound.js `phew`). Two slim bars over the satchel
 (`#vitals`, `renderVitals`, in the 250 ms block, rewritten only on a change): warmth (amber to ice blue, a drop by it while wet) and
-stamina (amber and pulsing while winded), each shown only while not full. Collapsed it tips over (`FALL_MS`) with its eyes shut (pose 7), the screen goes dark
+stamina (amber and pulsing while winded), each shown only while not full (on a touch screen they sit above the satchel's round
+fire and book buttons, which take that row to themselves). Collapsed it tips over (`FALL_MS`) with its eyes shut (pose 7), the screen goes dark
 (`#veil`, `DARK_AFTER`), and `bodyFrame` runs the sim `SKIP_MS` a frame till it wakes at home (`bodyWoke`: the camera there at
 once, a toast, three soft notes: sound.js `wake`). Out of breath (`f.winded`) a press, Shift or a held run only walks it.
 A new meadow opens like a film (`startIntro`, `#intro`): black bars top and bottom from the first frame, the rest of the page
@@ -107,8 +108,9 @@ Making camp (sim.js `w.camp`, event 'camp': the first fire lit) is a moment (`ca
 twinkling stars, a wave of light out to the ring and motes rising off it (`campBurst`, in `drawFireGlows`; `CAMP_PARTY_MS`), a felt-piano flourish (sound.js `camp`), the camera eases in and leans to the fire and back
 (`campCam`, in `leadCam`; a zoom of your own ends it), "Your camp" pops in, glowing between two twinkling ✦ (announce 'camp', which cuts in ahead of the others; index.html `camp-pop`)
 and an Android phone buzzes (`CAMP_BUZZ`). Then a soft ring of trodden earth with a few stones lies round the fire (`drawCampRing`,
-`CAMP_ART` painted once, stretched; under all that stands), coming in over `CAMP_RING_MS`. The fire's hover calls it "Your camp".
-Cooking at the fire (PLAN.md stage 6, its redesign, and the cooking window of 2026-10-16; the long comments over `COOK_MS` and
+`CAMP_ART` painted once, stretched; under all that stands), coming in over `CAMP_RING_MS` (`campFade`). The brown earth inside it is in the ground shader
+(ground.js `camp`, `campA`: an ellipse of ragged, mottled dirt over the grass, repainting the ground only while it fades in). The fire's hover calls it "Your camp".
+Cooking at the fire (PLAN.md stage 6, its redesign, and the cooking window of 2026-10-16; the long comments over `COOK_TPS` and
 `DROPS` have it all): a click on a lit fire (or E, or the pot prompt) walks the forager there (`clickFire` 'cook', `goFire`), it
 kneels, and the camera eases in close on the fire (`cookCam`, in `leadCam`: to `kw.zoom`, about `COOK_TILES` across what the
 window leaves, past the 64 you can zoom yourself up to `COOK_MOST`), the fire and the forager in the middle of the meadow left
@@ -120,25 +122,32 @@ the pot close up on a small canvas of its own (`#cook-canvas`, `drawCookView`, d
 and stones (`paintCookBed`: `paintFire` as the fire is now) in a warm dark vignette with grass at its edges, the fire's flames
 licking up round its belly (`drawFlames` drawn into that canvas) and their glow flickering on the ground and the iron; water in
 it, shimmering. The satchel's things are big tiles (`#cook-bag`, 80 px, 64 on its side: `renderCookBag`, `setupCookBag`), ringed if
-they go in the pot or on the fire, the rest let down: one dragged (pointer events: mouse and finger, its painting lifted over the
-finger) and let go over the pot falls in from there (the rim glows while it's over it, `kw.hover`); one tapped (or Enter on it)
+they go in the pot or on the fire, the rest let down: one dragged (pointer events: mouse and finger, its painting hanging from the
+pointer by its top edge as a pendulum the hand's speeding up swings, as the animals did when they were picked up) and let go over the pot falls in from there (the rim glows while it's over it, `kw.hover`); one tapped (or Enter on it)
 flies in an arc to over the pot's mouth (`flyToPot`, `flyBig`) and falls in. Meeting the water it splashes (`splash`: droplets up
 and back down, rings going out, `potRing`; a pool each of typed arrays), dips under, bobs back up and floats, its lower part dim
 through the water with a ring round it (`drawPotThing`), and plops (sound.js `plop`, by `plopOf`: heavier for a mushroom, an apple
 or one day a fish, lighter for a leaf or a berry, honey a gloop). What's in the pot is held back in the satchel (`potHeld`,
-`potPrune`) till cooked; a tap on one floating lifts it out with a drip and it flies back to its tile (`potTake`). The meadow keeps
+`potPrune`) till cooked; a tap on one floating lifts it out with a drip and it flies back to its tile (`potTake`), and a small red cross at the pot's corner (`#cook-empty`, only with something in it) lifts them all out (`emptyPot`). The meadow keeps
 its own little pot over the fire too (`drawPot`, `paintPot`), which the forager stirs. Under the pot what it will make (`potWord`: a
 known dish's name, "Something new!" for an exact dish never made, "Not a dish yet… as it is, a forager's mess" with what a known
 dish it's near still wants, `potToward`, or "Only a forager's mess", `potPossible`); by the tiles the stick wearing the fire's
-fuel as a ring (`cookFuel`; F feeds it too, `buildPressed`), the recipe book (`openBook`, over the window), Cook, and a round brass
-✕. With the pot empty the last dish comes back as a one-tap "again" (`lastDish`, `cookAgain`, `fillPot`). Cook: `COOK_MS` of
-stirring (Cook filling as it goes, a CSS animation), the water turning to broth (`brothOf`: green for greens, purple for berries,
+fuel as a ring (`cookFuel`; F feeds it too, `buildPressed`), the recipe book (`openBook`, beside the window: `pairBook`), Cook, and a round brass
+✕. With the pot empty the last dish comes back as a one-tap "again" (`lastDish`, `cookAgain`, `fillPot`). Cook: the dish's own time
+(recipes.js `time`, seconds at 1x: 15 to 90) of stirring, the things spent at once (Cook filling as it goes, `--cook-p`), the water turning to broth (`brothOf`: green for greens, purple for berries,
 murky for a mess), bubbling, steaming, a wooden spoon going round in it (a swish each time round, sound.js `stir`), the pot boiling
-(`Sound.update`'s `pot`: a simmer while the window's open, a boil as it cooks); then `cookDone`: the things out, the dish rising out
+(`Sound.update`'s `pot`: a simmer while the window's open, a boil as it cooks); then `cookDone`: the dish out, rising out
 of the pot glowing with sparks round it, or a mess in a puff of dark smoke (sound.js `dish`, `mess`), and after `REVEAL_MS` flying
 to its tile (`kw.reveal`, `kw.incoming`; on the ground by the fire with the satchel full); a dish never made before gets its gold
 headline (`firstTime('dish:' + name)`, which `knownDish` reads with recipes.js `known`). Walking off, ✕, E, Esc or Back leave the
-fire (`closeCook`, `stepOut`); nothing is lost mid-cook. Cost: the window's canvas only while it's open (painted once a size:
+fire (`closeCook`, `stepOut`) and the pot keeps cooking on the fire (sim.js `cookOn`, on the fire's clock, only while it's lit): the pot
+stays on it, steaming (`drawAwayPots`), with a slim bar over it filling as it cooks (`drawCookBars`: ember orange, grey while the fire's
+out, gold and pulsing once done), a hover saying the time left (`fireWord`) and a "Ready" by it (event 'cooked'). A done dish waits in the
+pot, for a click on the fire or E (the pot prompt shows over it); the window opened on a pot going finds it as it was and on a done one
+takes the dish out as before (`cookSync`). Playing together the pot is the fire's, so friends see it cook: a pot set going and a dish taken
+out go over (`fire` messages 'cook', with the cook's own time after its Cooking skill, and 'take': `fireNet`), and a friend's done dish waits
+`FRIEND_POT_MS` for its cook before anyone else at the pot takes it (`friendPot`). Skills are the player's, not the meadow's: kept in
+localStorage as the page is left (`keepSkills`), brought into a friend's meadow (`arrive`) and home again (`bringSkills`). The recipe book says how long each takes (⏲). Cost: the window's canvas only while it's open (painted once a size:
 `paintCookPot`; a frame is twenty-odd draws), and the meadow zoomed in that close draws less than walking about (1400x900, Chrome:
 1.0 ms of script a frame cooking against 1.7 walking, 60 fps).
 The recipe book (`#book`, `renderBook`, `#book-btn` by the satchel's right end, B, and on the cooking bar), modelled on the old
@@ -146,7 +155,7 @@ field journal (main at 1d79f03): a book laid open on the meadow over a soft scri
 page in sections (`BOOK_SECTIONS`: savoury, sweet by whether a need is sweet or fruit; `BOOK_PAGES`, No. 1 to N), the page picked
 on the right (`bookPageHTML`), turned with ‹ n/N ›, ← → (a capturing listener that also keeps the walking keys off the forager
 while it's open) or a sideways swipe (`turnBook`), a 44 px brass ✕ top right. A page: the dish's picture big on a plate (`dishArt`:
-its recipes.js emoji for now; an `ITEM_ART` entry for the dish's name puts its painting there instead), its name, its `text`,
+its painting from dishes.js, painted at the page's size, `dishBig`; its recipes.js emoji while it has none), its name, its `text`,
 "✦ Warms you" (`warm`), how much it fills (`BOOK_PIPS` against the most filling), what goes in marked against the satchel
 (`needsHad`), and a button: "Put its things in the pot" at the pot (`bookDish`, `fillPot`), else "Cook it at the fire" (walks to a
 lit fire within `BOOK_REACH` and fills it there, `j.want`). Half-known (a hint told some: "Something with honey…", `hinted`, kept
@@ -157,13 +166,17 @@ book button a glow and a "New" tag (`bookNews`, from `renderBook`, which every s
 shown the first time, a stamp thumps onto the page ("Learned!", "A hint"); the book opens on the newest; shutting it has seen them
 all. On an upright phone a sheet from the bottom, ✕ at the foot in the middle, handle to drag it down; a page is a layer over the
 tiles with ‹ ✕ › (`bookUi.depth` 2, `bookBack`), and Back steps out of the page, then the book (`opened` counts `bookReading`,
-`stepOut`). On its side the two panes fill the screen. Rewritten only when what it shows changes (`bookUi.key`, `setHTML`).
+`stepOut`). On its side the two panes fill the screen. Open with the cooking window (either first), the two share the screen
+(`pairBook`, `.paired`): the book centred in the meadow left beside the window, no scrim, its tiles over its page where that's
+narrow (`.slim`, under 600 px); on an upright phone over the window's sheet, whose pot shrinks to make room; a known dish tapped
+there fills the pot and the book stays open. Rewritten only when what it shows changes (`bookUi.key`, `setHTML`).
 Finding it: near a lit fire with something to cook (`bagFood`) a small painted pot bobs
 over it, with an E key where there's a keyboard (`drawCookPrompt`, `PROMPT_ART` painted once; a click on it is one on the fire,
 `promptAt`); making camp the forager thinks "I could cook something on this fire" (`think`, `CAMP_COOK_LINE`), and now and then it
 muses on a dish it doesn't know from what's in the satchel (`hintTick`: `HINT_EVERY`, `HINT_GAP`, never in the intro or the
-opening storm or over another line), telling the book up to `hintMost` of it. Plain dish looks for now (the dishes' emoji in
-`itemSheet`); the dish paintings come next. Eating: a tap on food in the satchel (`eatAsk`, `#eat`) shows its name with an Eat button, or why not
+opening storm or over another line), telling the book up to `hintMost` of it. The dishes are painted in dishes.js (`Dishes.paint`,
+'dish:' + n in `ITEM_ART`, so into `itemSheet`; big on a book page once a size, `dishBig`), two so far; the rest are their emoji till
+they're painted. Eating: a tap on food in the satchel (`eatAsk`, `#eat`) shows its name with an Eat button, or why not
 ("It wants cooking", "I'm full"); `eatSlot` feeds it (sim.js `feedForager`). The tummy is a third slim bar (`#v-food`), shown
 once hungry and for `FED_SHOW` after eating; "I'm getting hungry" and "I'm starving" are said over it (events 'hungry',
 'starving'). The ideas card waits while it's at a fire (`askTick`).
@@ -231,10 +244,10 @@ tuft of dry grass arching over (`paintDryGrass`) and thin rolled curls of white 
 don't glint (sim.js `eachPickable` leaves them out), but a hover names them and a click picks them as any find. Drawn with the trees and animals (a frame item's `s`,
 `drawFind`), they come up over `FIND_GROW` and fade over their last `FIND_OVER`. The satchel shows the same paintings.
 The satchel (`#satchel`, `renderSatchel`, rewritten only after a pick or a drop): `S.SLOTS` small parchment slots at the bottom in
-the middle, a slim faint row while it's empty. Their paintings are one sheet painted once (`itemSheet`, `--items`): the meadow's own
-mushrooms, greens and windfalls (`ITEM_ART`) and `paintItem` for the blackberries, cherries, honeycomb, beechnuts, and the sticks,
-pebbles and birch bark (lying flat they'd be thin in a slot, so a satchel painting of their own, bigger and in the middle); an
-ingredient with no painting gets its recipes.js emoji. A tap on a slot opens nothing, but a full one can be dragged (`setupSatchel`): its painting follows the pointer (above a finger), let go on another slot it goes there (sim.js `moveSlot`: onto a stack of its kind, or the two swap), let go off the satchel it is dropped (sim.js `dropSlot`): it flies down to just in front of the forager and lands with a little bounce (`dropLand`), and lies there in its satchel painting (`drawDropped`, `dropPx`) to be picked up again like a find (`'dropped'` in `gatherAt`, `gatherSpot`), fading over its last `DROP_FADE` till it's gone. On a touch screen each slot is 44 px or more, and upright the satchel steps aside while the
+the middle, a slim faint row while it's empty. Their paintings are one sheet painted once (`itemSheet`, `--items`): items.js's paintings of things
+picked (`'ingr:'`: every ingredient so far, the fruit, honeycomb, nuts, flowers and what lies about for a fire too), over the
+meadow's own painting of it (`ITEM_ART`), which a new ingredient keeps till items.js paints it; one with neither gets its
+recipes.js emoji. Each is clipped to its own square in the sheet (`ITEM_FILL` scales one up). A tap on a slot opens nothing, but a full one can be dragged (`setupSatchel`): its painting follows the pointer (above a finger), let go on another slot it goes there (sim.js `moveSlot`: onto a stack of its kind, or the two swap), let go off the satchel it is dropped (sim.js `dropSlot`): it flies down to just in front of the forager and lands with a little bounce (`dropLand`), and lies there in its satchel painting (`drawDropped`, `dropPx`) to be picked up again like a find (`'dropped'` in `gatherAt`, `gatherSpot`), fading over its last `DROP_FADE` till it's gone. On a touch screen each slot is 44 px or more, and upright the satchel steps aside while the
 inspector's sheet is up.
 
 The inspector shows animals and every other thing you click (hives, trees, rocks, burrows, flowers, fields, water,

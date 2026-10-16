@@ -343,11 +343,14 @@ const RULES = {
   stir:    { gap: 0.4,  always: true, lift: 1.6 }, // the spoon going round,
   simmer:  { gap: 1,    always: true, lift: 2 },   // a stretch of the pot bubbling (the lab's: the game's comes with the ambience, state.pot),
   dish:    { gap: 1,    always: true, lift: 2 },   // a dish done,
-  mess:    { gap: 1,    always: true, lift: 2 },   // and a forager's mess
+  mess:    { gap: 1,    always: true, lift: 2 },   // and a forager's mess,
+  pages:   { gap: 0.3,  always: true, lift: 2 },   // the recipe book opening,
+  hearth:  { gap: 0.5,  always: true, lift: 2 },   // and the cooking window (the pot settling on the fire)
 };
 
 const STEP_SOFT = 0.6;          // the footsteps' level against the meadow's sounds: soft, they come a few times a second
 const STEP_TOP = 2200;          // Hz: the felt every footstep goes through (a sprint opens it a little)
+let stepWas = 1;                // the last footstep's pitch (SOUNDS.step keeps the next one away from it)
 
 const SOUNDS = {
   // Two notes a third apart, one from each of the pair.
@@ -483,41 +486,58 @@ const SOUNDS = {
   // (game.js groundUnder), each its own sound: 'grass' (a brush of blades on a soft pad), 'earth' (a dull dry tap),
   // 'shore' (damp sand: a squelch), 'woods' (leaf litter and twigs: a crackle), 'snow' (a squeak and crunch), 'ice' (a
   // hard glassy knock) or 'water' (a wade: a slosh and a drip). Their body sits in the middle, 300 Hz to 3 kHz, where a
-  // phone's speaker and a car still carry it. foot (0 or 1) alternates the pitch a little, so a walk is never one sound
-  // repeated.
+  // phone's speaker and a car still carry it. No two steps are alike: foot (0 or 1) alternates the pitch a little, and
+  // each step comes down a touch early or late, harder or softer, longer or shorter, its pitch never the last one's
+  // (`stepWas`), every layer of it a little off the others, and now and then the ground gives something of its own (a
+  // seed head, a pebble, a twig, a drip, a creak).
   step(t, o0, { pace = 1, ground = 'grass', foot = 0 }) {
-    const p = Math.max(0.3, Math.min(3, Number.isFinite(pace) ? pace : 1)), k = Math.sqrt(p), r = rand(0.92, 1.08) * (foot ? 0.93 : 1);
-    const h = STEP_SOFT * Math.min(1.3, 0.75 + 0.25 * p);              // how hard it lands (a sprint a little harder, never harsh)
-    const o = ac.createBiquadFilter(); o.type = 'lowpass'; o.frequency.value = STEP_TOP * Math.min(1.25, k); o.Q.value = 0.5;
+    const p = Math.max(0.3, Math.min(3, Number.isFinite(pace) ? pace : 1)), k = Math.sqrt(p);
+    let r = rand(0.9, 1.1);
+    if (Math.abs(r - stepWas) < 0.035) r += r < 1 ? -0.035 : 0.035;  // never the same pitch twice running
+    stepWas = r; r *= foot ? 0.93 : 1;
+    const j = () => rand(0.88, 1.12);                                  // each layer a little off the others
+    const s = rand(0.85, 1.2) / k;                                     // this step's length
+    t += rand(0, 0.014);                                               // a touch early or late against the stride
+    const h = STEP_SOFT * Math.min(1.3, 0.75 + 0.25 * p) * (Math.random() < 0.12 ? rand(1.15, 1.3) : rand(0.78, 1.05));   // how hard it lands (now and then a firmer one)
+    const o = ac.createBiquadFilter(); o.type = 'lowpass'; o.frequency.value = STEP_TOP * Math.min(1.25, k) * rand(0.82, 1.1); o.Q.value = 0.5;
     o.connect(o0);                                                     // (all of it through a felt: soft, never a click)
-    const pad = (f, v, len = 0.07) => partial(o, f * k * r, t, v * h, 0.012, len / k);   // the foot's own knock
+    const pad = (f, v, len = 0.07) => partial(o, f * k * r * j(), t, v * h * j(), 0.012, len * s);   // the foot's own knock
+    const odd = Math.random();                                         // now and then something of the ground's own
     if (ground === 'water') {
-      noise(o, t, 0.26 / k, { from: 1800 * k * r, to: 500, q: 0.7, peak: 0.55 * h, attack: 0.015 });
-      noise(o, t + 0.05 / k, 0.14 / k, { from: 700, to: 1600 * r, q: 1.2, peak: 0.22 * h, attack: 0.03 });   // the water falling back
-      partial(o, rand(700, 1000) * k, t + 0.09 / k, 0.04 * h, 0.01, 0.08);                                    // a drip
+      noise(o, t, 0.26 * s, { from: 1800 * k * r * j(), to: 500 * j(), q: 0.7, peak: 0.55 * h * j(), attack: 0.015 });
+      noise(o, t + 0.05 * s * j(), 0.14 * s, { from: 700 * j(), to: 1600 * r, q: 1.2, peak: 0.22 * h * j(), attack: 0.03 });   // the water falling back
+      for (let i = 0, n = odd < 0.3 ? 2 : 1; i < n; i++)                                                         // a drip or two
+        partial(o, rand(650, 1100) * k, t + (0.09 + i * rand(0.05, 0.1)) * s, rand(0.025, 0.05) * h, 0.01, 0.08);
     } else if (ground === 'ice') {
       pad(420, 0.16, 0.05);
-      partial(o, 1750 * k * r, t, 0.035 * h, 0.006, 0.1);                // the glassy ring
-      noise(o, t, 0.05, { from: 2600, to: 1800, q: 1, peak: 0.12 * h, attack: 0.012 });   // the scuff
+      partial(o, 1750 * k * r * j(), t, 0.035 * h * j(), 0.006, 0.1 * j());   // the glassy ring
+      noise(o, t, 0.05 * j(), { from: 2600 * j(), to: 1800, q: 1, peak: 0.12 * h * j(), attack: 0.012 });   // the scuff
+      if (odd < 0.15) partial(o, rand(210, 280), t + rand(0.03, 0.08), 0.05 * h, 0.02, 0.3, 'triangle');   // the ice creaking under it
     } else if (ground === 'snow') {
-      noise(o, t, 0.12 / k, { from: 1900 * k * r, to: 900, q: 0.8, peak: 0.36 * h, attack: 0.012 });
-      noise(o, t + 0.03 / k, 0.08 / k, { from: 2400 * r, to: 1800, q: 1.4, peak: 0.12 * h, attack: 0.012 });   // the squeak
+      noise(o, t, 0.12 * s, { from: 1900 * k * r * j(), to: 900 * j(), q: 0.8, peak: 0.36 * h * j(), attack: 0.012 });
+      noise(o, t + 0.03 * s * j(), 0.08 * s, { from: 2400 * r * j(), to: 1800, q: 1.4, peak: 0.12 * h * j(), attack: 0.012 });   // the squeak
+      for (let i = 0, n = Math.random() * 3 | 0; i < n; i++)          // the crust breaking in grains
+        noise(o, t + rand(0.01, 0.07) * s, 0.025, { from: rand(1400, 2400), to: 1200, q: 1.3, peak: rand(0.06, 0.12) * h, attack: 0.005 });
       pad(300, 0.1);
     } else if (ground === 'woods') {
       pad(260, 0.16);
-      noise(o, t, 0.09 / k, { from: 1400 * k * r, to: 600, q: 0.8, peak: 0.2 * h, attack: 0.01 });
-      for (let i = 0, n = 3 + (Math.random() * 3 | 0); i < n; i++)      // the litter crackling: a few tiny snaps
-        noise(o, t + rand(0, 0.08) / k, 0.03, { from: rand(1800, 3200), to: 1400, q: 1.5, peak: rand(0.14, 0.24) * h, attack: 0.004 });
+      noise(o, t, 0.09 * s, { from: 1400 * k * r * j(), to: 600 * j(), q: 0.8, peak: 0.2 * h * j(), attack: 0.01 });
+      for (let i = 0, n = 2 + (Math.random() * 4 | 0); i < n; i++)      // the litter crackling: a few tiny snaps
+        noise(o, t + rand(0, 0.09) * s, 0.03, { from: rand(1700, 3300), to: 1400, q: 1.5, peak: rand(0.12, 0.24) * h, attack: 0.004 });
+      if (odd < 0.12) partial(o, rand(900, 1300), t + rand(0.01, 0.04), 0.06 * h, 0.002, 0.04, 'triangle');   // a twig snapping
     } else if (ground === 'shore') {
-      noise(o, t, 0.16 / k, { from: 350, to: 1300 * k * r, q: 1.6, peak: 0.34 * h, attack: 0.01, type: 'lowpass' });   // the suck of the damp
+      noise(o, t, 0.16 * s, { from: 350 * j(), to: 1300 * k * r * j(), q: 1.6 * j(), peak: 0.34 * h * j(), attack: 0.01, type: 'lowpass' });   // the suck of the damp
       pad(240, 0.12, 0.06);
+      if (odd < 0.2) partial(o, rand(800, 1100), t + rand(0.1, 0.16) * s, 0.025 * h, 0.01, 0.07);   // the wet sand giving a drip
     } else if (ground === 'earth') {
       pad(320, 0.22, 0.06);
-      noise(o, t, 0.07 / k, { from: 1000 * k * r, to: 450, q: 0.8, peak: 0.3 * h, attack: 0.01 });
+      noise(o, t, 0.07 * s, { from: 1000 * k * r * j(), to: 450 * j(), q: 0.8, peak: 0.3 * h * j(), attack: 0.01 });
+      if (odd < 0.25) noise(o, t + rand(0.01, 0.05) * s, 0.03, { from: rand(1500, 2400), to: 1300, q: 1.4, peak: 0.12 * h, attack: 0.004 });   // a pebble under the foot
     } else {                                                           // grass: soft, a cushion and a rustle
       pad(190, 0.07, 0.09);                                            // hardly a knock: the turf takes it
-      noise(o, t, 0.14 / k, { from: 650 * k * r, to: 280, q: 0.5, peak: 0.34 * h, attack: 0.025, type: 'lowpass' });   // the soft press
-      noise(o, t + 0.02, 0.22 / k, { from: 1300 * k * r, to: 1900, q: 0.6, peak: 0.2 * h, attack: 0.07 });   // the blades rustling
+      noise(o, t, 0.14 * s, { from: 650 * k * r * j(), to: 280 * j(), q: 0.5, peak: 0.34 * h * j(), attack: 0.025 * j(), type: 'lowpass' });   // the soft press
+      noise(o, t + 0.02 * j(), 0.22 * s, { from: 1300 * k * r * j(), to: 1900 * j(), q: 0.6, peak: 0.2 * h * j(), attack: 0.07 * j() });   // the blades rustling
+      if (odd < 0.15) noise(o, t + rand(0.04, 0.1) * s, 0.06, { from: rand(2200, 2900), to: 1800, q: 1.2, peak: 0.06 * h, attack: 0.01 });   // a seed head brushed
     }
   },
   // One gust through the leaves, as the meadow's ambience plays them (the game never calls it: the lab's button).
@@ -758,6 +778,30 @@ const SOUNDS = {
     bell(o, note(chord[2], 1), t + 0.62, 0.22);
     twinkle(t + 0.7, chord, 4, 0.9, 0.5);
   },
+  // The recipe book opening: the cover lifting (a low soft thump and a creak of paper), then a few pages riffling over, each
+  // a quick swish of band-passed noise a little higher and lighter than the last, and a faint note of the scale as it settles.
+  pages(t, o0) {
+    const o = ac.createBiquadFilter(); o.type = 'lowpass'; o.frequency.value = 3200; o.Q.value = 0.5; o.connect(o0);
+    partial(o, rand(95, 110), t, 0.12, 0.006, 0.16);
+    noise(o, t, 0.14, { from: 500, to: 900, q: 0.8, peak: 0.07, attack: 0.04, type: 'lowpass' });
+    const n = 4 + Math.floor(rand(0, 2));
+    for (let i = 0; i < n; i++) {
+      const at = t + 0.14 + i * rand(0.07, 0.11);
+      noise(o, at, 0.09, { from: 1500 + i * 220, to: 3200, q: 1.1, peak: 0.07 - i * 0.008, attack: 0.02 });
+    }
+    piano(o, note(pick([2, 4]), 0), t + 0.12 + n * 0.09, 0.2, 2, 0.6);
+  },
+  // The cooking window opening: the iron pot set down on the stones (a dull clonk and a short ring), the fire's soft whoomf
+  // catching under it, and two low warm notes.
+  hearth(t, o0) {
+    const o = ac.createBiquadFilter(); o.type = 'lowpass'; o.frequency.value = 2800; o.Q.value = 0.5; o.connect(o0);
+    partial(o, rand(150, 170), t, 0.16, 0.003, 0.14, 'triangle');
+    partial(o, rand(430, 470), t, 0.05, 0.002, 0.28);
+    partial(o, rand(1180, 1260), t, 0.02, 0.002, 0.18);
+    noise(o, t + 0.05, 0.5, { from: 200, to: 700, q: 0.6, peak: 0.09, attack: 0.18, type: 'lowpass' });
+    marimba(o, note(0, -1), t + 0.16, 0.3);
+    marimba(o, note(4, -1), t + 0.3, 0.26);
+  },
   // A forager's mess: a soft puff of dark smoke, a pot-lid rattle, and two low notes stepping down: a shrug, not a fail.
   mess(t, o) {
     noise(o, t, 0.55, { from: 900, to: 180, q: 0.6, peak: 0.12, attack: 0.03, type: 'lowpass' });
@@ -789,7 +833,7 @@ function bubble(o, t, v = 1) {
 }
 
 // opts: { species, pan (-1..1), near (0..1, how close to the camera), ...sound-specific }
-// (Cooking's sounds are in SOUNDS too, after the campfire's: plop, stir, simmer, dish, mess.)
+// (Cooking's sounds are in SOUNDS too, after the campfire's: plop, stir, simmer, dish, mess; then pages, hearth for opening the book and the window.)
 function play(name, opts = {}) {
   if (!ac || !enabled || !SOUNDS[name]) return false;
   const r = RULES[name], now = ac.currentTime;

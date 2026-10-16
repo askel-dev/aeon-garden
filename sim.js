@@ -1017,7 +1017,7 @@ function floodBurrows(w) {
 // quickest down the middle and slower by the banks (w.current.x, .y: tiles a tick). It's worked out when a meadow is
 // made or opened (it isn't kept), and runs faster in the spring flood and slower at the summer low (riverPace). It
 // carries a swimmer along (drift), an otter leaves the meadow with it (riverEnd), and game.js draws it.
-const CURRENT = 0.035;          // tiles a tick down the middle of a river about two tiles wide, at its usual level
+const CURRENT = 0.018;          // tiles a tick down the middle of a river about two tiles wide, at its usual level
 const BANK_SLOW = 0.5;          // how much slower it runs by the banks than down the middle
 const PACE_HIGH = 0.7;          // how much faster it runs in the spring flood
 const PACE_LOW = 0.45;          // and how much slower at the summer low
@@ -5442,12 +5442,13 @@ const BRUSH_NEAR = 2.5;                 // tiles about it it looks for brush in,
 // warmth (1 cosy, 0 collapsed), wet (0 dry, 1 soaked), stamina (1 fresh, 0 spent), feel: how warm it feels about it
 // now (in degrees, like airTemp), winded: spent, no sprint till it's got its breath back, down: the tick it collapsed
 // (-1: on its feet), stumble: ticks left of a stumble, homeX, homeY: where it wakes (where it started, then by the camp's fire),
-// tummy (1 full, 0 empty: eat), warmIn: ticks left of a warm dish's warmth inside it.
+// tummy (1 full, 0 empty: eat), warmIn: ticks left of a warm dish's warmth inside it. xp, lv: its skills, by name (SKILLS).
 const SLOTS = 8, STACK = 10;            // the satchel's slots, and how many of a kind one holds
 function foragerOf(x, y) {
   const f = { forager: true, x, y, path: [], leg: 0, speed: -0, heading: Math.PI / 2, moved: -0, walking: false, goalX: x, goalY: y,
     running: false, sneaking: false, bag: new Array(SLOTS).fill(''), bagN: new Array(SLOTS).fill(0),
-    warmth: -0, wet: -0, stamina: -0, feel: -0, winded: false, down: -1, stumble: 0, homeX: x, homeY: y, tummy: -0, warmIn: 0 };
+    warmth: -0, wet: -0, stamina: -0, feel: -0, winded: false, down: -1, stumble: 0, homeX: x, homeY: y, tummy: -0, warmIn: 0,
+    xp: bySkill(-0), lv: bySkill(0) };
   f.warmth = 1; f.stamina = 1; f.tummy = 1;   // (after: they start as fractions, so the layout never changes; a kept one from before the tummy starts full)
   return f;
 }
@@ -5927,8 +5928,8 @@ function bodyTick(w) {
   if (soak > 0) f.wet = Math.min(1, f.wet + soak / TPD);
   else if (f.wet > 0) f.wet = Math.max(0, f.wet - DRY * clamp(0.3 + air / 20, 0.15, 1.6) * (1 + sunUp(w.tick) * (SUN[kind] || 0) / 5) * (moving ? 1.2 : 1) / TPD);
   if (near > 0 && f.wet > 0 && !wade) f.wet = Math.max(0, f.wet - FIRE_DRY * near / TPD);   // (it dries by the fire, rain or not)
-  if (sprint) f.stamina = Math.max(0, f.stamina - 1 / SPRINT_TICKS);
-  else f.stamina = Math.min(1, f.stamina + clamp(0.35 + 0.65 * f.warmth / WARMTH_STAGES[0], 0.35, 1) * (1 - HUNGRY_REST * hunger) / REST_TICKS[moving ? 1 : 0]);
+  if (sprint) { f.stamina = Math.max(0, f.stamina - 1 / (SPRINT_TICKS * perk(f, 'stamina', 'sprint'))); gainSkill(w, f, 'stamina', SECS_A_TICK); }
+  else f.stamina = Math.min(1, f.stamina + clamp(0.35 + 0.65 * f.warmth / WARMTH_STAGES[0], 0.35, 1) * (1 - HUNGRY_REST * hunger) * perk(f, 'stamina', 'rest') / REST_TICKS[moving ? 1 : 0]);
   if (f.stamina <= 0) f.winded = true;
   else if (f.winded && f.stamina >= WINDED_BACK) f.winded = false;
   if (f.winded) f.running = false;
@@ -5949,6 +5950,43 @@ function wakeForager(w) {
   f.tummy = Math.max(f.tummy, WAKE_TUMMY); f.warmIn = 0;
   f.bag.fill(''); f.bagN.fill(0);
   emit(w, { type: 'woke' });
+}
+
+// ---------------------------------------------------------------- skills
+//
+// The forager gets better at what it does by doing it, as in The Forest: doing a thing is practice in its skill (f.xp, by
+// the skill's name), and enough practice takes the skill up a level (f.lv, 0 to SKILL_TOP), which makes it better at that
+// thing (the skill's perks, each a factor of 1 at level 0 and 1 + perk × level above it: perk, read where the thing is done).
+// Level n takes n times the first's practice (per), so the top takes 55 times it. Each skill is a block in SKILLS: what
+// it's called, what its practice counts (its `per` is in that), its perks, and a line game.js says as it goes up. A new
+// one is a block here and a gainSkill where it's practised: f.xp and f.lv are made from this table (foragerOf, bySkill),
+// and a kept forager from before it starts it at nothing (unpackWorld). Nothing here draws the meadow's random numbers.
+// Event 'levelup' { skill, lv } as one goes up. They're the forager's own: a collapse or a friend's meadow keeps them.
+const SKILL_TOP = 10;
+const SKILLS = {
+  // Sprinting, in seconds of it at 1x (bodyTick). Each level it sprints 6% longer from fresh and gets its breath back 5% sooner.
+  stamina: { name: 'Stamina', per: 45, perks: { sprint: 0.06, rest: 0.05 }, line: 'Longer sprints, and your breath back sooner' },
+  // Dishes taken out of the pot (game.js cookDone; a mess counts a little). Each level a dish cooks 3.5% faster (cookOn).
+  cooking: { name: 'Cooking', per: 3, perks: { speed: 0.035 }, line: 'Dishes cook a little quicker' },
+};
+const SKILL_NAMES = Object.keys(SKILLS);
+const SECS_A_TICK = 720 / TPD;          // seconds at 1x a tick (a day is 12 minutes)
+// An object with v for every skill (f.xp, f.lv: always the same layout, in SKILLS's order).
+function bySkill(v) { const o = {}; for (const s of SKILL_NAMES) o[s] = v; return o; }
+// The practice it takes to reach level lv of skill s.
+const skillNeed = (s, lv) => SKILLS[s].per * lv * (lv + 1) / 2;
+// A perk's factor for forager f: 1 at level 0, more above it.
+const perk = (f, s, p) => 1 + SKILLS[s].perks[p] * f.lv[s];
+// How far it is from its level to the next, 0 to 1 (1 at the top).
+const skillProgress = (f, s) => { const lv = f.lv[s]; if (lv >= SKILL_TOP) return 1; const a = skillNeed(s, lv); return clamp((f.xp[s] - a) / (skillNeed(s, lv + 1) - a), 0, 1); };
+// The level that much practice makes (unpackWorld: the table may have changed since).
+function skillLevel(s, xp) { let lv = 0; while (lv < SKILL_TOP && xp >= skillNeed(s, lv + 1)) lv++; return lv; }
+// n more practice in skill s, and a level up if that's enough.
+function gainSkill(w, f, s, n) {
+  f.xp[s] += n;
+  if (f.lv[s] >= SKILL_TOP || f.xp[s] < skillNeed(s, f.lv[s] + 1)) return;
+  f.lv[s] = skillLevel(s, f.xp[s]);
+  emit(w, { type: 'levelup', skill: s, lv: f.lv[s] });
 }
 
 // ---------------------------------------------------------------- fires
@@ -5977,8 +6015,11 @@ const FIRE_LOOK = 30;                   // ticks between looks for water over a 
 
 // Every field a fire ever has (see blankCreature). fuel: ticks of burning in the sticks on it; lit: burning; embers: ticks
 // its embers glow on, once burnt out; tinder: tinder in it, to catch a spark; litAt: the tick it was last lit; ash: how
-// much it has burnt (0 new to 1), for its look.
-const fireOf = (x, y, born) => ({ fire: true, x, y, born, fuel: -0, lit: false, embers: -0, tinder: false, litAt: -1, ash: -0 });
+// much it has burnt (0 new to 1), for its look. The pot over it: cookDish, the name of what's cooking in it ('' for nothing
+// in it), cookItems what went in (ids, for drawing it), cookLeft the ticks still to cook (0 once it's done: the dish waits in
+// the pot to be taken) and cookTotal how many it took, whole numbers (see cookOn).
+const fireOf = (x, y, born) => ({ fire: true, x, y, born, fuel: -0, lit: false, embers: -0, tinder: false, litAt: -1, ash: -0,
+  cookDish: '', cookItems: [], cookLeft: 0, cookTotal: 0 });
 
 // Whether a fire can be laid at x, y: '' if it can, else why not, in a few words (game.js says it).
 function fireSpot(w, x, y) {
@@ -6027,12 +6068,35 @@ function lightFire(w, F) {
   }
   return true;
 }
+// The pot over a fire (game.js has taken what goes in out of the satchel). A dish is `secs` long at 1x, and cooks down only
+// while the fire is lit (quicker the better a cook it is: SKILLS), so a fire that goes out waits, the dish still in the pot, till it's lit again. It stays in the pot
+// once done (cookReady) till cookTake. One pot to a fire. Returns whether it was set going. by: the forager cooking, whose
+// skill quickens it (null: ticks is already how long it takes, a friend's pot as its cook had it).
+const cookTicks = secs => Math.max(1, Math.round(secs * TPD / 720));
+const cookReady = F => F.cookDish !== '' && F.cookLeft <= 0;
+function cookOn(w, F, dish, items, ticks, by = w.forager) {
+  if (F.cookDish !== '' || !F.lit) return false;
+  F.cookDish = dish; F.cookItems = items.slice(); F.cookLeft = F.cookTotal = Math.max(1, Math.round(ticks / (by ? perk(by, 'cooking', 'speed') : 1)));
+  emit(w, { type: 'cookon', fire: F });
+  return true;
+}
+// The dish out of a done pot (its name), the pot empty; '' if it isn't done.
+function cookTake(w, F) {
+  if (!cookReady(F)) return '';
+  const dish = F.cookDish;
+  F.cookDish = ''; F.cookItems = []; F.cookLeft = F.cookTotal = 0;
+  return dish;
+}
+// How far along it is, 0 to 1 (1 done, 0 with nothing in the pot).
+const cookProgress = F => (F.cookDish === '' ? 0 : F.cookTotal > 0 ? 1 - F.cookLeft / F.cookTotal : 1);
+
 // Every tick: the lit ones burn their sticks down (faster in the wet), the embers of a burnt out one go grey, and water over
 // one puts it out.
 function fireTick(w) {
   const wet = FIRE_WET[w.weather.kind] || 1, look = w.tick % FIRE_LOOK === 0;
   for (const F of w.fires) {
     if (F.lit) {
+      if (F.cookLeft > 0 && --F.cookLeft === 0) emit(w, { type: 'cooked', fire: F });
       F.fuel -= wet;
       F.ash = Math.min(1, F.ash + wet / (6 * FIRE_STICK));
       if (F.fuel <= 0) { F.fuel = 0; F.lit = false; F.embers = FIRE_EMBERS; emit(w, { type: 'fireout', fire: F }); }
@@ -6678,7 +6742,10 @@ function unpackWorld(kept) {
   if (!w.dropped) w.dropped = [];                       // (kept before things could be dropped)
   for (const d of w.dropped) asFractions(d, ['x', 'y']);
   if (!w.fires) w.fires = [];                           // (kept before fires)
-  for (const F of w.fires) asFractions(F, ['x', 'y', 'fuel', 'embers', 'ash']);
+  for (const F of w.fires) {
+    asFractions(F, ['x', 'y', 'fuel', 'embers', 'ash']);
+    if (F.cookDish === undefined) { F.cookDish = ''; F.cookItems = []; F.cookLeft = 0; F.cookTotal = 0; }   // (kept before pots)
+  }
   const noBrambles = !w.brambles;                       // (kept on the cooking branch before them: a new meadow's come up, below)
   if (noBrambles) { w.brambles = []; w.pips = []; w.brambleRng = makeRng(w.seed ^ 0xb4a3b1); }
   for (const b of w.brambles) asFractions(b, ['x', 'y', 'crop', 'berries']);
@@ -6694,6 +6761,9 @@ function unpackWorld(kept) {
   if (w.camp) asFractions(w.camp, ['x', 'y']);
   else for (const fire of w.fires) if (fire.litAt >= 0) { campAt(w, fire); break; }   // (kept with a fire lit before camps came)
   asFractions(F, ['x', 'y', 'speed', 'heading', 'moved', 'goalX', 'goalY', 'warmth', 'wet', 'stamina', 'feel', 'homeX', 'homeY', 'tummy']);
+  for (const s of SKILL_NAMES) if (!(s in F.xp)) { F.xp[s] = -0; F.lv[s] = 0; }   // (kept before that skill: it starts at nothing)
+  for (const s of SKILL_NAMES) F.lv[s] = skillLevel(s, F.xp[s]);
+  asFractions(F.xp, SKILL_NAMES);
   if (noFinds) startFinds(w);
   return w;
 }
@@ -7548,7 +7618,7 @@ const api = {
   TREES, treeStage, treeAge, standing, bearing, inBloom, SEEDLING, SAPLING, GROWN, KIND_NAMES,
   FROG_K, SPAWN_WORTH, FISH_K, FISH_EAT, CROW_SEATS, SHROOMS, SHROOM_KINDS, FINDS, FIND_KINDS, findSeason, eachPickable, greenStage, greenPicked, GREEN_SEASONS, brambleStage, RIPE_FROM, RIPE_TO,
   bagCount, spend, stow, feedForager, hungerOf, HUNGRY, TUMMY, fireSpot, layFire, feedFire, fireRoom, lightable, lightFire, fireHeat, fireWarmth, CAMP_R, CAMP_FLAT, inCamp,
-  FIRE_STICK, FIRE_MOST, FIRE_LOW, FIRE_EMBERS, FIRE_NEAR, FIRE_REACH, FIRE_GAP, FIRE_WET,
+  cookTicks, cookReady, cookOn, cookTake, cookProgress, SKILLS, SKILL_NAMES, SKILL_TOP, skillNeed, skillLevel, skillProgress, perk, gainSkill, FIRE_STICK, FIRE_MOST, FIRE_LOW, FIRE_EMBERS, FIRE_NEAR, FIRE_REACH, FIRE_GAP, FIRE_WET,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 else root.Sim = api;

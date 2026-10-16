@@ -437,7 +437,15 @@
     transform: translateY(-50%); animation: cook-in 0.36s cubic-bezier(0.2, 0.9, 0.3, 1.12); }
   @keyframes cook-in { from { opacity: 0; transform: translateY(-50%) translateX(26px) scale(0.96); } }
   #cook:focus { outline: none; }
-  .cook-pot { display: flex; flex-direction: column; align-items: center; width: var(--pot-w, 400px); }
+  .cook-pot { position: relative; display: flex; flex-direction: column; align-items: center; width: var(--pot-w, 400px); }
+  /* a small red cross at the pot's corner: everything in it goes back to the satchel (game.js emptyPot) */
+  #cook-empty { position: absolute; top: 8px; right: 8px; z-index: 2; width: 44px; height: 44px; margin: 0; padding: 0; border: none; border-radius: 50%; font-size: 0; color: #fff;
+    background: linear-gradient(180deg, #d9573a, #b8381f); box-shadow: inset 0 0 0 1.5px #f0a48f, 0 2px 0 #7e2412, 0 4px 10px rgba(70, 25, 15, 0.3); cursor: pointer; transition: transform 0.08s, box-shadow 0.08s; }
+  #cook-empty::before { content: ''; position: absolute; inset: 0; margin: auto; width: 18px; height: 18px; background: currentColor;
+    -webkit-mask: var(--x-lines) center / contain no-repeat; mask: var(--x-lines) center / contain no-repeat; }
+  #cook-empty.hidden { display: none; }
+  #cook-empty:active { transform: translateY(2px); box-shadow: inset 0 0 0 1.5px #f0a48f, 0 0 0 #7e2412; }
+  @media (hover: hover) { #cook-empty:hover { filter: brightness(1.06); } }
   #cook-canvas { display: block; width: 100%; height: min(370px, calc(100vh - 250px)); border-radius: 18px; touch-action: none;
     background: #2a1f1c; box-shadow: inset 0 0 0 1px rgba(90, 60, 25, 0.35), 0 1px 0 rgba(255, 255, 255, 0.6); }
   #cook-canvas.over { cursor: pointer; }
@@ -488,15 +496,14 @@
   #cook-stick.low::before { background: conic-gradient(#c2471f calc(var(--fuel, 0) * 360deg), rgba(150, 115, 60, 0.16) 0); animation: cook-low 1.3s ease-in-out infinite alternate; }
   @keyframes cook-low { 50% { opacity: 0.45; } }
   #cook-stick.off { opacity: 0.45; }
-  /* Cook: fills from the left over COOK_MS (--cook-ms) while it cooks, a CSS animation: nothing to do each frame */
+  /* Cook: fills from the left as the pot cooks (--cook-p, 0 to 1, set by cookFrame as it moves: the dish takes as long as its recipe says) */
   #cook-go { position: relative; overflow: hidden; flex: 1; min-width: 96px; height: 48px; border: none; border-radius: 14px; background: var(--accent); color: #fff;
     font: inherit; font-size: 16px; font-weight: 900; box-shadow: 0 3px 0 #b8622a; cursor: pointer; }
   #cook-go span { position: relative; }
   #cook-go.mess { background: #c9925a; box-shadow: 0 3px 0 #94653a; }
   #cook-go:disabled { opacity: 0.45; cursor: default; }
   #cook.busy #cook-go { opacity: 1; background: #d9a066; box-shadow: 0 3px 0 #a8742a; }
-  #cook.busy #cook-go::before { content: ''; position: absolute; inset: 0; background: #e98a4b; transform-origin: 0 50%; animation: cook-fill var(--cook-ms, 5.5s) linear both; }
-  @keyframes cook-fill { from { transform: scaleX(0); } }
+  #cook.busy #cook-go::before { content: ''; position: absolute; inset: 0; background: #e98a4b; transform-origin: 0 50%; transform: scaleX(var(--cook-p, 0)); }
   #cook-go:not(:disabled):active, #cook-stick:active, #cook-book:active { transform: translateY(2px); }
   #cook-go:not(:disabled):active { box-shadow: 0 1px 0 #b8622a; }
   #cook .close { position: absolute; top: -14px; right: -14px; flex: none; width: 46px; height: 46px; margin: 0; padding: 0; border: none; border-radius: 50%; font-size: 0;
@@ -509,7 +516,7 @@
   /* a thing lifted out of the cooking window's satchel (game.js setupCookBag), and anything flying in or out of the pot */
   .fly.big { width: 72px; height: 72px; z-index: 7; }
   .fly.big.to-pot { filter: drop-shadow(0 0 10px rgba(255, 170, 70, 0.95)); }
-  .fly.held.to-pot { transform-origin: center; filter: drop-shadow(0 0 6px rgba(255, 170, 70, 0.9)); }
+  .fly.held.to-pot { filter: drop-shadow(0 0 6px rgba(255, 170, 70, 0.9)); }
   /* while it's up, the satchel at the foot and the bars over it step away: the window has the satchel */
   body:has(#cook:not(.hidden)) :is(#vitals, #satchel) { opacity: 0; pointer-events: none; }
   /* a phone upright: a sheet from the bottom, the pot over the satchel's tiles, four to a row, and its ✕ at the foot in the middle */
@@ -528,6 +535,8 @@
     .cook-tools { justify-self: start; }
     #cook .close { position: relative; top: auto; right: auto; box-shadow: inset 0 0 0 1.5px #d2b06a, 0 2px 0 #a8742a; }
     #cook-go { justify-self: stretch; min-width: 0; }
+    body:has(#book.paired) #cook-canvas { height: min(140px, 17vh); }   /* (the book over it: a smaller pot) */
+    body:has(#book.paired) #cook-what { min-height: 44px; }
   }
   /* a phone on its side: the pot and the satchel side by side, the height of the screen, down the right */
   @media (max-height: 500px) {
@@ -581,6 +590,15 @@
   #book .bb:active:not(:disabled) { transform: translateY(2px); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 0 0 #a8742a; }
   #book .bb:disabled { opacity: 0.32; cursor: default; }
   #book .b-x { position: absolute; top: 14px; right: 14px; z-index: 3; }
+  /* open with the cooking window (game.js pairBook): set beside it (left, right) or over its sheet (bottom), no scrim; narrow
+     there (.slim), the tiles over the page */
+  #book.paired { width: auto; transform: none; }
+  #book.paired .grid { grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); }
+  #book.slim { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 0.8fr) minmax(0, 1.3fr); grid-template-areas: 'top' 'pages' 'page'; }
+  #book.slim .b-top { padding-right: 70px; }
+  #book.slim .b-top, #book.slim .b-pages { background: none; }
+  #book.slim .b-page { background: none; border-top: 1px dashed var(--line); }
+  #book.slim .pg-grab { padding-top: 14px; }
   /* the left page: the title, how many are known, and the tiles; a shade toward the spine */
   #book .b-top, #book .b-pages { background: linear-gradient(90deg, transparent 88%, rgba(120, 85, 30, 0.10)); }
   #book .b-top { grid-area: top; padding: 22px 20px 2px 24px; }
@@ -807,7 +825,13 @@
   #v-food svg path { stroke: currentColor; stroke-width: 1.1; stroke-linecap: round; }
   #v-stam.winded .bar i { animation: winded 0.7s ease-in-out infinite alternate; background: #b4834a; }
   @keyframes winded { to { opacity: 0.45; } }
-  @media (pointer: coarse) { #vitals { bottom: calc(var(--bottom) + 60px); } }
+  /* A touch screen: the round fire and book buttons sit over the satchel's ends (#build, #book-btn), so the bars can't share
+     their row: they go just above them (the buttons reach 8 + 50 px over the satchel's top), and the chat's lines above those. */
+  @media (pointer: coarse) {
+    #vitals { bottom: calc(var(--bottom) + 118px); }
+    #chat:not(.open) { bottom: calc(var(--bottom) + 144px); }
+    body:has(#build:not(.hidden)) #chat:not(.open) { bottom: calc(var(--bottom) + 144px); }
+  }
   @media (max-width: 760px) and (min-height: 501px) {
     body:has(#inspector.open) #vitals { opacity: 0; transform: translate(-50%, 30px); }
   }
@@ -865,6 +889,7 @@
 <div id="cook" class="hidden" role="dialog" aria-label="Cooking at the fire" tabindex="-1">
   <div class="cook-pot">
     <canvas id="cook-canvas" aria-label="The pot over the fire: drop things in, tap one to take it out"></canvas>
+    <button id="cook-empty" data-act="cook-empty" class="hidden" title="Empty the pot" aria-label="Empty the pot"></button>
     <p id="cook-what" aria-live="polite"></p>
   </div>
   <div class="cook-side">
@@ -953,6 +978,8 @@
 
 <script src="sim.js"></script>
 <script src="fur.js"></script>
+<script src="dishes.js"></script>
+<script src="items.js"></script>
 <script src="sound.js"></script>
 <script src="ground.js"></script>
 <script src="recipes.js"></script>
