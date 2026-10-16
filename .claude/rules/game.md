@@ -86,6 +86,20 @@ twinkling stars, a wave of light out to the ring and motes rising off it (`campB
 (`campCam`, in `leadCam`; a zoom of your own ends it), "Your camp" pops in, glowing between two twinkling ✦ (announce 'camp', which cuts in ahead of the others; index.html `camp-pop`)
 and an Android phone buzzes (`CAMP_BUZZ`). Then a soft ring of trodden earth with a few stones lies round the fire (`drawCampRing`,
 `CAMP_ART` painted once, stretched; under all that stands), coming in over `CAMP_RING_MS`. The fire's hover calls it "Your camp".
+Cooking at the fire (PLAN.md stage 6; the long comment over `COOK_MS` has it all): a click on a lit fire walks the forager there
+(`clickFire` 'cook', `goFire`) and it kneels with a small card beside the fire (`#cook`, `renderCook`, kept there by `placeCook`;
+on an upright phone a sheet over the satchel, its brass ✕ at the foot): the pot's three slots, what it'll make once that's a dish
+made before, the known dishes the satchel has the things for (`cookKnown`, recipes.js `thingsFor`), a stick button that feeds the
+fire (`feedStick`: the click on a lit fire used to) and Cook. A tap on a satchel slot puts one in the pot (`potAdd`, a stick goes
+on the fire), held back in the satchel and shown one fewer (`potHeld`, `potPrune`), not taken till it's cooked. Cook: `COOK_MS`
+of stirring (stage 'cooking', `kneelNow`), then `cookDone`: the things out, the dish in (recipes.js `cook`; flies from the fire,
+or lies on the ground with the satchel full), and a dish never made before gets its gold headline (`firstTime('dish:' + name)`,
+which is also what `knownDish` reads: per player, for good). Walking off, ✕, Esc or Back shut it (`closeCook`, `stepOut`);
+nothing is lost mid-cook. Plain looks for now (the dishes' emoji in `itemSheet`, PLAN.md step 1); the paintings, the scene and
+the sounds come next. Eating: a tap on food in the satchel (`eatAsk`, `#eat`) shows its name with an Eat button, or why not
+("It wants cooking", "I'm full"); `eatSlot` feeds it (sim.js `feedForager`). The tummy is a third slim bar (`#v-food`), shown
+once hungry and for `FED_SHOW` after eating; "I'm getting hungry" and "I'm starving" are said over it (events 'hungry',
+'starving'). The ideas card waits while it's at a fire (`askTick`).
 A click or a tap on an animal (on its body as drawn: `animalAt`, a little wider for a finger) opens its panel;
 anywhere else walks the forager there (`walkTo`, sim.js `foragerTo`) and shuts the panel, with a
 soft ring where it was sent (`drawMark`, `MARK_ART` painted once) that fades once it's there, and a faint dashed line to it

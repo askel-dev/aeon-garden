@@ -5420,13 +5420,14 @@ const BRUSH_NEAR = 2.5;                 // tiles about it it looks for brush in,
 // bag, bagN: the satchel's slots, what's in each (an ingredient's id, recipes.js) and how many (gather, stow).
 // warmth (1 cosy, 0 collapsed), wet (0 dry, 1 soaked), stamina (1 fresh, 0 spent), feel: how warm it feels about it
 // now (in degrees, like airTemp), winded: spent, no sprint till it's got its breath back, down: the tick it collapsed
-// (-1: on its feet), stumble: ticks left of a stumble, homeX, homeY: where it wakes (where it started, then by the camp's fire).
+// (-1: on its feet), stumble: ticks left of a stumble, homeX, homeY: where it wakes (where it started, then by the camp's fire),
+// tummy (1 full, 0 empty: eat), warmIn: ticks left of a warm dish's warmth inside it.
 const SLOTS = 8, STACK = 10;            // the satchel's slots, and how many of a kind one holds
 function foragerOf(x, y) {
   const f = { forager: true, x, y, path: [], leg: 0, speed: -0, heading: Math.PI / 2, moved: -0, walking: false, goalX: x, goalY: y,
     running: false, bag: new Array(SLOTS).fill(''), bagN: new Array(SLOTS).fill(0),
-    warmth: -0, wet: -0, stamina: -0, feel: -0, winded: false, down: -1, stumble: 0, homeX: x, homeY: y };
-  f.warmth = 1; f.stamina = 1;          // (after: they start as fractions, so the layout never changes)
+    warmth: -0, wet: -0, stamina: -0, feel: -0, winded: false, down: -1, stumble: 0, homeX: x, homeY: y, tummy: -0, warmIn: 0 };
+  f.warmth = 1; f.stamina = 1; f.tummy = 1;   // (after: they start as fractions, so the layout never changes; a kept one from before the tummy starts full)
   return f;
 }
 
@@ -5784,6 +5785,21 @@ const WARMTH_STAGES = [0.7, 0.45, 0.22];   // over the first it's cosy, then chi
 const COLD_PACE = [0.88, 0.72];         // its pace cold, and freezing
 const STUMBLE_ODDS = 1 / 240, STUMBLE_TICKS = 28, STUMBLE_PACE = 0.15;   // freezing, walking: a stumble about every 8 s
 const WAKE_PHASE = 0.04, DOWN_TICKS = TPD / 5, WAKE_WARMTH = 0.62;   // it wakes the next morning (at least DOWN_TICKS after: down at dawn, the one after), chilly
+// The tummy (PLAN.md stage 6): f.tummy, 1 full to 0 empty, TUMMY of recipes.js's fill. It empties in about a day walking
+// about (TUMMY_BURN), slower standing (TUMMY_STILL), faster sprinting (TUMMY_RUN) and in the cold (TUMMY_COLD more at
+// freezing, by how cold it feels). Hungry, under HUNGRY, stamina comes back slower (HUNGRY_REST) and the cold bites harder
+// (HUNGRY_COLD), most of all empty; hunger alone never collapses it, the cold does. A warm dish (recipes.js warm) puts
+// WARM_DISH back in its warmth and keeps it warm inside for WARM_IN (it cools WARM_IN_COOL as fast). game.js feeds it
+// (feedForager), with the fill it reads from recipes.js. Events 'hungry' and 'starving' as it gets there.
+const TUMMY = 10;                       // fill a full tummy holds: three cooked dishes a day, or a dozen raw things
+const TUMMY_BURN = 1 / TPD;             // of it a tick, walking
+const TUMMY_STILL = 0.6, TUMMY_RUN = 1.5, TUMMY_COLD = 0.5;
+const HUNGRY = 0.3;
+const HUNGRY_REST = 0.65, HUNGRY_COLD = 0.6;   // empty: stamina back this much slower, cooling this much faster (less, hungry)
+const WARM_DISH = 0.12, WARM_IN = TPD / 12, WARM_IN_COOL = 0.4;   // warmth back; ticks (two game hours, a minute at 1x); how fast it cools meanwhile
+const START_TUMMY = 0.85, WAKE_TUMMY = 0.5;    // a new forager's tummy (it lasts the first night by the fire), and at least this woken
+// How hungry, 0 (not) to 1 (empty).
+const hungerOf = f => (f.tummy >= HUNGRY ? 0 : 1 - f.tummy / HUNGRY);
 
 // 0 cosy, 1 chilly, 2 cold, 3 freezing, 4 collapsed.
 const warmthStage = f => (f.down >= 0 ? 4 : f.warmth > WARMTH_STAGES[0] ? 0 : f.warmth > WARMTH_STAGES[1] ? 1 : f.warmth > WARMTH_STAGES[2] ? 2 : 3);
@@ -5813,14 +5829,20 @@ function bodyTick(w) {
   const feel = air + (SUN[kind] || 0) * sunUp(w.tick) * (1 - shelter) - ((WIND[kind] || 0) + (gale ? GALE_WIND : 0)) * (1 - 0.6 * shelter) - WET_CHILL * f.wet
     + (sprint ? ACTIVE.run : moving ? ACTIVE.walk : ACTIVE.still) + fire;
   f.feel = feel;
-  const d = feel - COMFY;
-  f.warmth = clamp(f.warmth + (d > 0 ? WARM_K * d : COOL_K * d * (1 + WET_COLD * f.wet)) / TPD, 0, 1);
+  const d = feel - COMFY, hunger = hungerOf(f);
+  const cool = (1 + WET_COLD * f.wet) * (1 + HUNGRY_COLD * hunger) * (f.warmIn > 0 ? WARM_IN_COOL : 1);
+  f.warmth = clamp(f.warmth + (d > 0 ? WARM_K * d : COOL_K * d * cool) / TPD, 0, 1);
+  if (f.warmIn > 0) f.warmIn--;
+  const was = f.tummy, chill = clamp((COMFY - feel) / 20, 0, 1);
+  f.tummy = Math.max(0, f.tummy - TUMMY_BURN * (sprint ? TUMMY_RUN : moving ? 1 : TUMMY_STILL) * (1 + TUMMY_COLD * chill));
+  if (was >= HUNGRY && f.tummy < HUNGRY) emit(w, { type: 'hungry' });
+  else if (was > 0 && f.tummy <= 0) emit(w, { type: 'starving' });
   const soak = wade ? WET_WADE : (WET_RAIN[kind] || 0) * (gale ? GALE_SOAK : 1) * (1 - 0.7 * shelter);
   if (soak > 0) f.wet = Math.min(1, f.wet + soak / TPD);
   else if (f.wet > 0) f.wet = Math.max(0, f.wet - DRY * clamp(0.3 + air / 20, 0.15, 1.6) * (1 + sunUp(w.tick) * (SUN[kind] || 0) / 5) * (moving ? 1.2 : 1) / TPD);
   if (near > 0 && f.wet > 0 && !wade) f.wet = Math.max(0, f.wet - FIRE_DRY * near / TPD);   // (it dries by the fire, rain or not)
   if (sprint) f.stamina = Math.max(0, f.stamina - 1 / SPRINT_TICKS);
-  else f.stamina = Math.min(1, f.stamina + clamp(0.35 + 0.65 * f.warmth / WARMTH_STAGES[0], 0.35, 1) / REST_TICKS[moving ? 1 : 0]);
+  else f.stamina = Math.min(1, f.stamina + clamp(0.35 + 0.65 * f.warmth / WARMTH_STAGES[0], 0.35, 1) * (1 - HUNGRY_REST * hunger) / REST_TICKS[moving ? 1 : 0]);
   if (f.stamina <= 0) f.winded = true;
   else if (f.winded && f.stamina >= WINDED_BACK) f.winded = false;
   if (f.winded) f.running = false;
@@ -5838,6 +5860,7 @@ function wakeForager(w) {
   f.x = f.homeX; f.y = f.homeY; f.goalX = f.x; f.goalY = f.y; f.heading = Math.PI / 2;
   f.walking = false; f.running = false; f.speed = 0; f.path.length = 0;
   f.warmth = WAKE_WARMTH; f.wet = 0; f.stamina = 1; f.winded = false; f.stumble = 0; f.down = -1;
+  f.tummy = Math.max(f.tummy, WAKE_TUMMY); f.warmIn = 0;
   f.bag.fill(''); f.bagN.fill(0);
   emit(w, { type: 'woke' });
 }
@@ -6094,6 +6117,20 @@ function bagCount(f, id) {
   for (let k = 0; k < SLOTS; k++) if (f.bag[k] === id) n += f.bagN[k];
   return n;
 }
+// Eats one of what's in slot k: fill (recipes.js: how much it fills, game.js reads it) into the tummy, and a warm dish's
+// warmth. Returns '' if it ate, else why not in a few words (game.js says it).
+function feedForager(w, k, fill, warm) {
+  const f = w.forager;
+  if (!f.bag[k] || f.down >= 0) return 'Nothing there';
+  if (!(fill > 0)) return 'Not something to eat';
+  if (f.tummy > 0.97) return 'I\'m full';
+  f.tummy = Math.min(1, f.tummy + fill / TUMMY);
+  if (warm) { f.warmth = Math.min(1, f.warmth + WARM_DISH); f.warmIn = WARM_IN; }
+  const id = f.bag[k];
+  if (!--f.bagN[k]) f.bag[k] = '';
+  emit(w, { type: 'ate', id, warm: !!warm });
+  return '';
+}
 // Takes n of id out of the satchel (for a fire: game.js, by recipes.js's BUILDS), from its smallest stacks first, so the
 // fewest slots are left part full. Returns how many it took.
 function spend(f, id, n) {
@@ -6241,6 +6278,7 @@ function foragerArrives(w, f) {
   const storm = openingStorm(w);
   f.warmth = storm ? ARRIVE_WARMTH : 1; f.wet = storm ? ARRIVE_WET : 0;
   f.stamina = 1; f.winded = false; f.down = -1; f.stumble = 0;
+  f.tummy = START_TUMMY; f.warmIn = 0;
 }
 
 function createWorld(seed, opts = {}) {
@@ -6569,7 +6607,7 @@ function unpackWorld(kept) {
   if (!F.homeX && !F.homeY) { F.homeX = F.x; F.homeY = F.y; }   // (kept before it had a home: where it is)
   if (w.camp) asFractions(w.camp, ['x', 'y']);
   else for (const fire of w.fires) if (fire.litAt >= 0) { campAt(w, fire); break; }   // (kept with a fire lit before camps came)
-  asFractions(F, ['x', 'y', 'speed', 'heading', 'moved', 'goalX', 'goalY', 'warmth', 'wet', 'stamina', 'feel', 'homeX', 'homeY']);
+  asFractions(F, ['x', 'y', 'speed', 'heading', 'moved', 'goalX', 'goalY', 'warmth', 'wet', 'stamina', 'feel', 'homeX', 'homeY', 'tummy']);
   if (noFinds) startFinds(w);
   return w;
 }
@@ -7423,7 +7461,7 @@ const api = {
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE, hollow,
   TREES, treeStage, treeAge, standing, bearing, inBloom, SEEDLING, SAPLING, GROWN, KIND_NAMES,
   FROG_K, SPAWN_WORTH, FISH_K, FISH_EAT, CROW_SEATS, SHROOMS, SHROOM_KINDS, FINDS, FIND_KINDS, findSeason, eachPickable, greenStage, greenPicked, GREEN_SEASONS, brambleStage, RIPE_FROM, RIPE_TO,
-  bagCount, spend, stow, fireSpot, layFire, feedFire, fireRoom, lightable, lightFire, fireHeat, fireWarmth, CAMP_R, CAMP_FLAT, inCamp,
+  bagCount, spend, stow, feedForager, hungerOf, HUNGRY, TUMMY, fireSpot, layFire, feedFire, fireRoom, lightable, lightFire, fireHeat, fireWarmth, CAMP_R, CAMP_FLAT, inCamp,
   FIRE_STICK, FIRE_MOST, FIRE_LOW, FIRE_EMBERS, FIRE_NEAR, FIRE_REACH, FIRE_GAP, FIRE_WET,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;

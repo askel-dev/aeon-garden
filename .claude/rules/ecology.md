@@ -244,6 +244,14 @@ The meadow's first fire lit makes camp (`w.camp`, in `LATER`: where, the fire, t
 the forager's home (`homeX`, `homeY`) moves to where it knelt to light it (within `CAMP_KNEEL`; else the fire's clear side), so it
 wakes there after a collapse. Its ring, `CAMP_R` tiles round the fire and `CAMP_FLAT` as deep as wide (`inCamp`), is where later
 builds go. A meadow kept with a fire lit before camps makes camp at it as it opens. No random numbers, no `KEEP_VERSION` bump.
+Its tummy (`f.tummy`, 1 full to 0; the comment over `TUMMY`): `TUMMY` of recipes.js's fill, emptying in about a day walking
+(`TUMMY_BURN`), `TUMMY_STILL` of that standing, `TUMMY_RUN` sprinting, up to `TUMMY_COLD` more in the cold. Under `HUNGRY`
+(`hungerOf`) stamina comes back slower (`HUNGRY_REST`) and the cold bites harder (`HUNGRY_COLD`), most of all empty; it never
+collapses it on its own. `feedForager` (game.js, with the fill it reads from recipes.js: an apple 1, a dish 3 to 7) fills it, and a
+warm dish puts `WARM_DISH` back and keeps it warm inside for `WARM_IN` (`f.warmIn`: cooling `WARM_IN_COOL` as fast). A new
+forager starts at `START_TUMMY` (0.85: by the first fire it's still fed at dawn, hungry by mid-morning), wakes at least
+`WAKE_TUMMY`. Events 'hungry', 'starving', 'ate'. A kept forager from before starts full; no `KEEP_VERSION` bump. (The rabbits
+have an `eat` of their own: a second `function eat` in sim.js would take its place.)
 
 Rocks are painted (`rockInfo`, `rockSprite` in game.js): pebbles, stones and boulders by
 size (`TERRAIN.rockSize`), flat stones at the fords, and two or three great rocks per meadow
