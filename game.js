@@ -1899,11 +1899,11 @@ function drawCreature(c, sx, sy, now) {
 // from its heading, held a little either side of a change so it doesn't flicker (side on, three-quarters from the front
 // or the back, mirrored going right). Standing it breathes, blinks now and then, after a moment turns to face you, and
 // now and then does something (IDLES). In the shallows it's cut off at the water line with a ring round its legs, and
-// each step sends out a ring (fg.rings). Its outfit (Fur.FORAGER_OUTFITS) is the player's, picked as the first meadow opens
-// (pickOutfit; later from •••) and kept in localStorage for every meadow after.
+// each step sends out a ring (fg.rings). Its outfit (Fur.FORAGER_OUTFITS: a cloak and a hat) is the player's, picked as the
+// first meadow opens and before playing together (the wardrobe; later from •••) and kept in localStorage for every meadow after.
 const FORAGER_SIZE = 2.5;                  // its painting's box, next to a rabbit's
 const FORAGER_ARTS = Array.from({ length: Fur.EMOTE_AT + Fur.FORAGER_EMOTE_ARTS }, (_, n) => 'forager:' + n);   // (made once: a frame builds no names; the emotes last)
-const OUTFIT = 'aeon-garden-outfit';       // in localStorage
+const OUTFIT = 'aeon-garden-outfit', HAT = 'aeon-garden-hat';   // in localStorage: the cloak and the hat, by their place in fur.js's lists
 const FORAGER_POSES = [0, 1, 2, 3, 4, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23];
 const FORAGER_CHILLY = [...FORAGER_POSES, ...Fur.FORAGER_COLD];   // (chilly, the cold ones are asked for ahead too)
 const WARM_ONLY = new Uint8Array(128), COLD_ONLY = new Uint8Array(128);   // paintings the other set never uses (keptForager), by (view << 5) + pose
@@ -1923,10 +1923,12 @@ const fg = { at: -1, x: 0, y: 0, step: 0, stillMs: 1e4, view: 1, flip: false, ar
   snow: -1, snowTick: -0, snowArt: 0, sizedSnow: 0,   // (the snow on it: snowOnForager)
   kneel: -1, knelt: -1e9, sizedKneel: false,           // (at a fire: its kneeling pose, fur.js FORAGER_KNEEL, or -1; when it last knelt)
   emote: -1, emoteMs: -0, emoteFrame: -1, lift: -0, sneakStill: -0, sizedEmote: false };   // (an emote: EMOTE, or -1; emoteTick)
+const CLOAKS = Fur.FORAGER_CLOAKS.length, HATS = Fur.FORAGER_HATS.length;
+const outfitKept = (cloak, hat) => Fur.outfitOf(Math.min(CLOAKS - 1, Math.max(0, +cloak | 0)), Math.min(HATS - 1, Math.max(0, +hat | 0)));
 try {
   const o = localStorage.getItem(OUTFIT);
   fg.picked = o !== null;
-  fg.outfit = Math.min(Fur.FORAGER_OUTFITS.length - 1, Math.max(0, +o | 0));
+  fg.outfit = outfitKept(o, localStorage.getItem(HAT));
 } catch (e) { /* fine */ }
 // What's under the forager's feet, for its footsteps (sound.js step): the shallows, ice, snow, the wood's floor, the damp
 // sand along the water, earth bitten bare, or grass.
@@ -2434,30 +2436,116 @@ function renderVitals() {
   }
 }
 
-// Picking an outfit: a small card at the foot of the screen, under the forager, with it painted in each (front on,
-// standing) to tap. It opens as a new meadow does till one has been picked (newWorld), and from the ••• menu; the meadow
-// goes on behind it.
-function pickOutfit(open) {
-  const card = $('#outfit');
-  card.classList.toggle('hidden', !open);
-  if (!open) return;
-  const row = $('#outfit-row');
-  if (!row.children.length) Fur.FORAGER_OUTFITS.forEach((o, i) => {
-    const b = document.createElement('button'), c = document.createElement('canvas'), px = 84, size = Math.ceil(px * 1.3 * dpr);
-    c.width = c.height = size;
-    Fur.paintForager(c.getContext('2d'), size, px * dpr, (i << 7) + (1 << 5));
-    b.className = 'outfit-pick'; b.dataset.act = 'outfit'; b.dataset.o = i; b.title = o.name;
-    b.append(c, Object.assign(document.createElement('span'), { textContent: o.name }));
-    row.append(b);
-  });
-  for (const b of row.children) b.classList.toggle('on', +b.dataset.o === fg.outfit);
+// The wardrobe (#wardrobe): who you are and what you wear, on one card. The forager painted as it'll look, a row of hats
+// and a row of cloaks (fur.js FORAGER_HATS, FORAGER_CLOAKS, each kept apart in localStorage), a die for a surprise, and
+// playing together the name friends know you by. It opens before you go into a friend's meadow ('join': nothing is said to
+// the room till you set off, and it takes a name), as you first open your meadow to friends ('host'), as a new meadow
+// opens till an outfit has been picked, and from ••• ('dress'). What's picked is tried on the card, and worn only on its
+// button; put away (✕, Esc, Back) it's left as it was, except in 'join', which only goes on. On a touch screen it sits up
+// top, out of the keyboard's way.
+const wd = { mode: '', then: null, cloak: 0, hat: 0, painted: -1, hatsFor: -1 };
+const WD_GO = { join: 'Set off', host: 'Open my meadow', dress: 'That’s me' };
+const WD_TITLE = { join: 'Off to a friend’s meadow', host: 'Ready for company?', dress: 'Your forager' };
+const WD_SUB = { join: 'Who’s coming, and in what?', host: 'Pick a name for your friends to know you by.', dress: 'Pick a hat and a cloak.' };
+let WD_PAINT = null;                                       // (the scratch canvas the paintings are made on)
+// A part of the forager's painting (n, fur.js paintForager), the box x0..x1, y0..y1 of it, onto a canvas cssW wide.
+function paintCrop(c, n, x0, y0, x1, y1, cssW) {
+  const U = 2 * cssW * dpr / (x1 - x0), size = Math.ceil(U * 1.3), w = Math.round(cssW * dpr), h = Math.round(w * (y1 - y0) / (x1 - x0));
+  if (!WD_PAINT) WD_PAINT = document.createElement('canvas');
+  WD_PAINT.width = WD_PAINT.height = size;
+  Fur.paintForager(WD_PAINT.getContext('2d'), size, U, n);
+  c.width = w; c.height = h;
+  c.getContext('2d').drawImage(WD_PAINT, size / 2 + x0 * U / 2, size / 2 + y0 * U / 2, (x1 - x0) * U / 2, (y1 - y0) * U / 2, 0, 0, w, h);
 }
-const outfitOpen = () => !$('#outfit').classList.contains('hidden');
+function wardrobe(mode, then, withName) {
+  const card = $('#wardrobe');
+  if (!card.classList.contains('hidden') && wd.mode === 'join') return;   // (joining: that's what it's for till you set off)
+  wd.mode = mode; wd.then = then || null;
+  wd.cloak = fg.outfit % CLOAKS; wd.hat = Math.floor(fg.outfit / CLOAKS);
+  const named = mode !== 'dress' || !!withName || !!(Net && Net.on) || !!ROOM;
+  card.classList.toggle('named', named);
+  card.classList.toggle('join', mode === 'join');
+  $('#wardrobe-title').textContent = WD_TITLE[mode];
+  $('#wardrobe-sub').textContent = named && mode === 'dress' ? 'Your name, a hat and a cloak.' : WD_SUB[mode];
+  $('#wd-go').textContent = WD_GO[mode];
+  $('#name-text').value = myName;
+  if (!$('#wd-hats').children.length) {
+    Fur.FORAGER_HATS.forEach((h, i) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'wd-hat'; b.title = h.name; b.ariaLabel = h.name; b.dataset.act = 'wd-hat'; b.dataset.i = i;
+      b.append(document.createElement('canvas'));
+      $('#wd-hats').append(b);
+    });
+    Fur.FORAGER_CLOAKS.forEach((o, i) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'wd-cloak'; b.title = o.name; b.ariaLabel = o.name + ' cloak'; b.dataset.act = 'wd-cloak'; b.dataset.i = i;
+      b.style.setProperty('--hood', `rgb(${o.hood})`); b.style.setProperty('--cloak', `rgb(${o.cloak})`);
+      $('#wd-cloaks').append(b);
+    });
+  }
+  card.classList.remove('hidden');
+  wardrobeShow();
+  wardrobeReady();
+  if (named && !narrow() && (!myName || withName)) $('#name-text').focus({ preventScroll: true });   // (on a phone the keyboard would jump up)
+}
+// The card as picked: the painting, the hats in the cloak picked, the one of each that's on.
+function wardrobeShow() {
+  const o = Fur.outfitOf(wd.cloak, wd.hat);
+  if (wd.painted !== o) {
+    wd.painted = o;
+    paintCrop($('#wd-look'), (o << 7) + (1 << 5), -0.42, -0.62, 0.42, 0.78, 104);   // (standing, from the front)
+    const fig = $('#wd-figure');
+    fig.classList.remove('pop'); void fig.offsetWidth; fig.classList.add('pop');
+  }
+  if (wd.hatsFor !== wd.cloak) {
+    wd.hatsFor = wd.cloak;
+    [...$('#wd-hats').children].forEach((b, i) => paintCrop(b.firstChild, (Fur.outfitOf(wd.cloak, i) << 7) + (1 << 5), -0.46, -0.72, 0.44, 0.18, 40));   // (the head)
+  }
+  for (const b of $('#wd-hats').children) b.classList.toggle('on', +b.dataset.i === wd.hat);
+  for (const b of $('#wd-cloaks').children) b.classList.toggle('on', +b.dataset.i === wd.cloak);
+  $('#wd-name-hat').textContent = Fur.FORAGER_HATS[wd.hat].name + ' · ' + Fur.FORAGER_CLOAKS[wd.cloak].name + ' cloak';
+}
+// Joining or opening your meadow takes a name.
+function wardrobeReady() { $('#wd-go').disabled = wd.mode !== 'dress' && !cleanName($('#name-text').value); }
+function wardrobePick(kind, i) {
+  if (kind === 'hat') wd.hat = i;
+  else if (kind === 'cloak') wd.cloak = i;
+  else {                                                   // the die: something else
+    const was = Fur.outfitOf(wd.cloak, wd.hat);
+    do { wd.hat = Math.floor(Math.random() * HATS); wd.cloak = Math.floor(Math.random() * CLOAKS); } while (Fur.outfitOf(wd.cloak, wd.hat) === was);
+  }
+  wardrobeShow();
+}
+// Put away (go: on its button, wearing what's picked, and on to what it opened for).
+function closeWardrobe(go) {
+  const card = $('#wardrobe');
+  if (card.classList.contains('hidden') || !go && wd.mode === 'join') return;
+  if (go) {
+    if (card.classList.contains('named')) {
+      const was = myName;
+      myName = cleanName($('#name-text').value);
+      if (myName !== was && wd.mode === 'dress') toast(myName ? `✏️ Friends will know you as ${esc(myName)}.` : '✏️ Friends will know you as a friend.');
+      try { if (myName) localStorage.setItem(NAME, myName); else localStorage.removeItem(NAME); } catch (err) { /* fine */ }
+    }
+    wearOutfit(Fur.outfitOf(wd.cloak, wd.hat));
+  }
+  card.classList.add('hidden');
+  $('#name-text').blur();
+  const then = wd.then;
+  wd.then = null; wd.mode = '';
+  if (go && Net && Net.on) sendPos(performance.now());     // (friends see it at once)
+  if (go && then) then();
+}
+const wardrobeOpen = () => !$('#wardrobe').classList.contains('hidden');
+$('#wardrobe-form').addEventListener('submit', e => { e.preventDefault(); if (!$('#wd-go').disabled) closeWardrobe(true); });
+$('#name-text').addEventListener('input', wardrobeReady);
+$('#wardrobe').addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); closeWardrobe(false); } });
+// (The old names for it, as the rest of the page calls it.)
+const pickOutfit = open => open ? wardrobe('dress') : closeWardrobe(false);
 function wearOutfit(o) {
   fg.outfit = o; fg.sized = 0; fg.picked = true;   // (foragerAhead asks for its new paintings)
   if (emoteUi.o >= 0) emoteIcons();
-  try { localStorage.setItem(OUTFIT, String(o)); } catch (e) { /* fine */ }
-  pickOutfit(false);
+  try { localStorage.setItem(OUTFIT, String(o % CLOAKS)); localStorage.setItem(HAT, String(Math.floor(o / CLOAKS))); } catch (e) { /* fine */ }
 }
 
 // Where it was sent: a soft ring on the ground that comes in with a little bounce, breathes while it walks there and
@@ -9103,7 +9191,7 @@ function announce(kind, head, line = '') {
     a.timer = setTimeout(() => { const n = a.wait.shift(); if (n) announce(...n); }, ANNOUNCE_FADE);
   }, ANNOUNCE_MS[kind]);
 }
-const canAnnounce = () => !document.hidden && world.forager.down < 0 && !outfitOpen() && !nameOpen() && !askOpen();
+const canAnnounce = () => !document.hidden && world.forager.down < 0 && !wardrobeOpen() && !askOpen();
 
 // A few times a second: a new day's line at sunrise (S.phaseOf: a day starts there), and where we are as a meadow opens.
 function daybreakTick(now) {
@@ -10483,8 +10571,8 @@ $('#ask').addEventListener('keydown', e => { if (e.key === 'Escape') askIdeas(fa
 // leaves footprints and rings as the forager does (drawFigure, drawBody), and each pick it sends shows on it: it turns
 // and stoops, and its "+3 Chanterelles" floats up there (peerPicked).
 // The foragers bump: each keeps its own out of the others as they're drawn (friendsFrame, sim.js friendsAt).
-// A guest who loses the host keeps the meadow as its own. The name is asked once, on a small card at the foot as the
-// cloak's is (askName), the first time you play together, and kept in localStorage; ••• has it while together.
+// A guest who loses the host keeps the meadow as its own. The name is asked with the outfit on the wardrobe's card, before
+// you join a friend's meadow (begin) or first open yours (together), and kept in localStorage; ••• › Change your name changes it any time.
 // The chat: Enter, T or 💬 on the pill opens a small card bottom left (openChat): a few things to say with one tap
 // (CHAT_QUICK) and a line to type on. On a touch screen it opens up top, out of the keyboard's way, the keyboard waits for a
 // tap on the line, and while it's up the forager is kept in view between them (keyboardUp). What's said goes to everyone (t: 'say'), pops up as a bubble over the forager who said it for a while
@@ -10511,7 +10599,7 @@ const CHAT_TAIL = 7;                       // px from a bubble's foot down to th
 const CHAT_TAIL_IN = 16;                   // px from a bubble's side its tail may come, at most (so a bubble slid aside still points down to who said it)
 const CHAT_GAP = 6;                        // px kept between two bubbles
 const CHAT_SLIDE = 120;                    // ms a bubble takes to slide aside for another
-let myName = '', nameAsked = false, nameThen = null, nameOutfit = false, myChat = null;
+let myName = '', myChat = null;
 try { myName = cleanName(localStorage.getItem(NAME)); } catch (e) { /* none, then */ }
 const net = { tick: -1, base: 0, rate: 0, sentAt: 0, hostId: '', later: [], hostSums: new Map(), mySums: new Map(), off: 0, askedAt: -1e9, shown: '' };
 const peers = new Map();                   // friends' foragers, by id
@@ -10520,7 +10608,6 @@ function startTogether() {
   if (!Net) return;
   Net.start(ROOM, params.has('local'), {
     ready(role) {
-      if (!myName && !nameAsked) askName(true);
       if (role === 'host') toast(`🧺 Your meadow is open to friends. Send them the link (••• › Play together).`);
       else toast('🧺 Walking over to your friend’s meadow…');
     },
@@ -10532,9 +10619,9 @@ function startTogether() {
 }
 
 // ••• › Play together: opens this meadow to friends (a room of its own in the address), and shares the link.
-function together() {
+function together(dressed) {
   if (!Net) return;
-  if (!myName && !nameAsked) { askName(true, together); return; }   // (shared once it's said, or put away)
+  if (!ROOM && !dressed) { wardrobe('host', () => together(true)); return; }   // (who you are and what you wear, first)
   if (!ROOM) {
     ROOM = ROOM_WORDS[Math.floor(Math.random() * ROOM_WORDS.length)] + '-' + (100 + Math.floor(Math.random() * 900));
     history.replaceState(history.state, '', pageLink(world.seed));
@@ -10549,35 +10636,9 @@ function together() {
 
 const worldMsg = to => ({ t: 'world', to, kept: S.packWorld(world), tick: world.tick, s: ui.speed, n: myName });
 
-// The name friends know you by: a small card at the foot, the meadow going on behind it. Put away unsaid, you're "a friend".
+// The name friends know you by, asked on the wardrobe's card. Unsaid, you're "a friend".
 function cleanName(s) { return String(s || '').replace(/[\u0000-\u001f\u007f-\u009f]/g, '').replace(/\s+/g, ' ').trim().slice(0, NAME_MOST); }
-function askName(open, then) {
-  const card = $('#name-card');
-  if (open) {
-    nameAsked = true; nameThen = then || null;
-    if (outfitOpen()) { pickOutfit(false); nameOutfit = true; }   // (one card at the foot at a time: the cloak's comes back after)
-    $('#name-text').value = myName;
-    card.classList.remove('hidden');
-    if (!narrow()) $('#name-text').focus({ preventScroll: true });   // (on a phone the keyboard would jump up)
-    return;
-  }
-  if (card.classList.contains('hidden')) return;
-  card.classList.add('hidden');
-  $('#name-text').blur();
-  const go = nameThen;
-  nameThen = null;
-  if (nameOutfit) { nameOutfit = false; if (!fg.picked) pickOutfit(true); }
-  if (go) go();
-}
-const nameOpen = () => !$('#name-card').classList.contains('hidden');
-$('#name-form').addEventListener('submit', e => {
-  e.preventDefault();
-  myName = cleanName($('#name-text').value);
-  try { if (myName) localStorage.setItem(NAME, myName); else localStorage.removeItem(NAME); } catch (err) { /* fine */ }
-  askName(false);
-  if (Net && Net.on) sendPos(performance.now());          // (they see it at once)
-});
-$('#name-card').addEventListener('keydown', e => { if (e.key === 'Escape') askName(false); });
+const askName = (open, then) => open ? wardrobe('dress', then, true) : closeWardrobe(false);   // (the wardrobe asks it)
 
 // A friend's name, painted once (a parchment pill), drawn over it at one size whatever the zoom.
 const NAME_ARTS = new Map();
@@ -10753,7 +10814,8 @@ function heardPos(m, now) {
   p.heading = m.h; p.jog = m.j; p.stage = m.st; p.soak = +m.wt || 0; p.snowArt = m.sn | 0;
   p.kneel = m.kn >= 0 ? m.kn | 0 : -1;                    // (kneeling at a fire, turned to it)
   if (p.kneel >= 0) { p.flip = !!m.fl; p.view = 0; }
-  if (m.o !== p.outfit) { p.outfit = m.o; p.sized = 0; }
+  const o = Math.min(Fur.FORAGER_OUTFITS.length - 1, Math.max(0, m.o | 0));   // (one from a later version of the game: its hood, at least)
+  if (o !== p.outfit) { p.outfit = o; p.sized = 0; }
   if (m.st === 4 && !p.downAt) p.downAt = now; else if (m.st !== 4) p.downAt = 0;
   const em = m.em >= 0 ? m.em | 0 : -1;                    // (an emote: from where it was in it, then on our clock)
   if (em !== p.emote) { p.emote = em; p.emoteMs = +m.et || 0; p.emoteFrame = -1; if (em < 0) { p.lift = 0; p.hum = 0; } }
@@ -11168,7 +11230,6 @@ function netCard(now) {
   $('#chat-btn').classList.toggle('hidden', !on);
   $('#chat').classList.toggle('hidden', !on);
   if (!on) { openChat(false); myChat = null; }
-  $('#name-item').classList.toggle('hidden', !on);
   $('#leave-item').classList.toggle('hidden', !on);
   b.textContent = '🧺 ' + n;
   b.title = n > 1 ? `Foraging together with ${names}` : 'Open to friends: waiting for someone to come';
@@ -11218,7 +11279,10 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'more') toggleMore();
   else if (t.dataset.act === 'copy-link') copyLink();
   else if (t.dataset.act === 'together') together();
-  else if (t.dataset.act === 'outfit') wearOutfit(+t.dataset.o);
+  else if (t.dataset.act === 'wd-hat') wardrobePick('hat', +t.dataset.i);
+  else if (t.dataset.act === 'wd-cloak') wardrobePick('cloak', +t.dataset.i);
+  else if (t.dataset.act === 'wd-dice') wardrobePick('dice');
+  else if (t.dataset.act === 'wd-close') closeWardrobe(false);
   else if (t.dataset.act === 'pick-outfit') pickOutfit(true);
   else if (t.dataset.act === 'pick-name') askName(true);
   else if (t.dataset.act === 'leave') leaveTogether();
@@ -11314,7 +11378,7 @@ const back = { token: Math.random().toString(36).slice(2), depth: 0, going: fals
 const moreOpen = () => !$('#more-menu').classList.contains('hidden');
 function opened() {
   const ins = $('#inspector').classList, sheetUp = ins.contains('open') && narrow() && !ins.contains('strip');
-  return [askOpen(), moreOpen(), !!ui.place, cooking(), outfitOpen(), nameOpen(), chatOpen(), ins.contains('open'), sheetUp, emoteUi.open].filter(Boolean).length;
+  return [askOpen(), moreOpen(), !!ui.place, cooking(), wardrobeOpen(), chatOpen(), ins.contains('open'), sheetUp, emoteUi.open].filter(Boolean).length;
 }
 // The one on top shuts (Esc, and Back once for each step it takes).
 function stepOut() {
@@ -11324,9 +11388,8 @@ function stepOut() {
   else if (emoteUi.open) emoteMenu(false);
   else if (ui.place) placeFire(false);                     // (picking a spot for a fire: not now)
   else if (cooking()) closeCook();                         // (the cooking card)
-  else if (nameOpen()) askName(false);
   else if (chatOpen()) openChat(false);
-  else if (outfitOpen()) pickOutfit(false);
+  else if (wardrobeOpen() && wd.mode !== 'join') closeWardrobe(false);
   else if (ins.contains('open') && narrow() && !ins.contains('strip')) { ui.sheetUp = false; $('#inspector').scrollTop = 0; renderInspector(); }
   else if (ins.contains('open')) select(0);
   else return false;
@@ -11803,7 +11866,7 @@ const seedParam = +params.get('seed');
 function begin(rec) {
   if (!(rec && resumeWorld(rec))) newWorld(seedParam || randomSeed());
   requestAnimationFrame(frame);
-  if (ROOM) startTogether();
+  if (ROOM) { endIntro(true); wardrobe('join', startTogether); }   // (who's coming and in what, before the room hears of you)
 }
 keptMeadow(seedParam).then(begin);
 keepDb().catch(() => { /* not kept, then */ });   // opened now, so keeping at the last moment needn't wait for it

@@ -193,32 +193,58 @@
   @media (hover: hover) { #ask .go:hover { background: #44702f; } }
   #ask .go:disabled { opacity: 0.5; }
   #ask.sent :is(textarea, .btns, .ask-q), #ask:not(.sent) .ask-thanks { display: none; }
-  /* ---- picking the forager's outfit, as a new meadow opens (game.js pickOutfit): small, at the foot, under the forager */
-  #outfit { position: fixed; left: 50%; bottom: max(18px, env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 9; padding: 10px 14px 12px;
-    background: var(--paper, none) var(--card); border-radius: 18px; box-shadow: var(--edge), var(--shadow); text-align: center; }
-  #outfit:not(.hidden) > * { animation: pop-in 0.3s ease-out; }
-  #outfit h2 { margin: 0 0 6px; font-size: 16px; font-weight: 650; }
-  #outfit-row { display: flex; gap: 6px; justify-content: center; }
-  .outfit-pick { display: flex; flex-direction: column; align-items: center; gap: 0; min-width: 64px; padding: 2px 6px 6px; border: 0; border-radius: 12px;
-    background: transparent; font: inherit; font-size: 13px; font-weight: 600; color: var(--ink); cursor: pointer; }
-  .outfit-pick canvas { width: 110px; height: 110px; margin: -28px -30px -18px; pointer-events: none; }   /* (cropped to the forager) */
-  .outfit-pick { overflow: hidden; }
-  .outfit-pick.on { background: rgba(120, 90, 30, 0.12); box-shadow: inset 0 0 0 1.5px #d2b06a; }
-  @media (hover: hover) { .outfit-pick:hover { background: rgba(120, 90, 30, 0.08); } }
-  /* ---- the name friends know you by, playing together (game.js askName): small, at the foot, as the cloak's card */
-  #name-card { position: fixed; left: 50%; bottom: max(18px, env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 9; width: min(320px, calc(100% - 32px));
-    box-sizing: border-box; padding: 10px 14px 12px; background: var(--paper, none) var(--card); border-radius: 18px; box-shadow: var(--edge), var(--shadow); text-align: center; }
-  #name-card:not(.hidden) > * { animation: pop-in 0.3s ease-out; }
-  #name-card h2 { margin: 0 0 8px; font-size: 16px; font-weight: 650; }
-  #name-card form { display: flex; gap: 8px; }
-  #name-text { flex: 1; min-width: 0; box-sizing: border-box; padding: 8px 12px; border: 1.5px solid #d9ccb0; border-radius: 12px; background: #fffaf0;
-    font: inherit; font-size: 16px; color: var(--ink); }
+  /* ---- the wardrobe (game.js wardrobe): the forager painted as it'll look, its name (playing together), a row of hats and a
+     row of cloaks. At the foot as a new meadow opens; joining a friend's meadow it's in the middle over a dimmed meadow. On a
+     touch screen it sits up top, out of the keyboard's way. */
+  #wardrobe { position: fixed; left: 50%; bottom: max(18px, env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 9;
+    width: min(460px, calc(100% - 32px)); box-sizing: border-box; padding: 12px 16px 14px; background: var(--paper, none) var(--card);
+    border-radius: 20px; box-shadow: var(--edge), var(--shadow); }
+  #wardrobe.join { top: 50%; bottom: auto; transform: translate(-50%, -50%); box-shadow: var(--edge), var(--shadow), 0 0 0 100vmax rgba(34, 28, 16, 0.38); }
+  #wardrobe:not(.hidden) > * { animation: pop-in 0.3s ease-out; }
+  #wardrobe-form { display: grid; grid-template-columns: 104px minmax(0, 1fr); column-gap: 12px; row-gap: 4px;
+    grid-template-areas: 'head head' 'fig name' 'fig hats' 'fig cloaks' 'fig said' 'btns btns'; }
+  .wd-head { grid-area: head; margin-bottom: 4px; } #wd-figure { grid-area: fig; } .wd-name { grid-area: name; } .wd-hats { grid-area: hats; }
+  .wd-cloaks { grid-area: cloaks; } #wd-name-hat { grid-area: said; } .wd-btns { grid-area: btns; }
+  #wardrobe h2 { margin: 0; font-size: 19px; font-weight: 650; line-height: 1.2; }
+  #wardrobe-sub { margin: 2px 0 0; font-size: 13px; color: var(--muted); }
+  /* (a phone upright: the figure up by the title, the hats and the cloaks the card's width under it) */
+  @media (max-width: 480px) {
+    #wardrobe-form { grid-template-columns: minmax(0, 1fr) 84px; grid-template-areas: 'head fig' 'name fig' 'hats hats' 'cloaks cloaks' 'said said' 'btns btns'; }
+    #wardrobe #wd-figure { width: 84px; } #wardrobe #wd-look { width: 84px; height: 140px; }
+  }
+  #wd-figure { position: relative; flex: none; width: 104px; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; padding-bottom: 8px;
+    border-radius: 14px; background: radial-gradient(ellipse 34px 7px at 50% calc(100% - 14px), rgba(70, 55, 25, 0.2), transparent), rgba(160, 190, 110, 0.22); }
+  #wd-look { width: 104px; height: 173px; }
+  #wd-figure.pop #wd-look { animation: wd-hop 0.32s ease-out; }
+  @keyframes wd-hop { 40% { transform: translateY(-7px) scaleY(1.03); } }
+  .wd-dice { position: absolute; right: 3px; bottom: 3px; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; font-size: 17px;
+    background: rgba(255, 250, 240, 0.85); box-shadow: inset 0 0 0 1px #d9ccb0; cursor: pointer; }
+  .wd-label { font-size: 12px; font-weight: 800; color: var(--muted); letter-spacing: 0.02em; }
+  #wardrobe:not(.named) .wd-named { display: none; }
+  #name-text { display: block; width: 100%; box-sizing: border-box; margin: 2px 0 4px; padding: 7px 11px; border: 1.5px solid #d9ccb0; border-radius: 12px;
+    background: #fffaf0; font: inherit; font-size: 16px; color: var(--ink); }
   #name-text:focus { outline: none; border-color: #4f7f3a; }
-  #name-card .go { flex: none; border-radius: 12px; background: #4f7f3a; color: #fff; font-size: 15px; padding: 8px 14px; box-shadow: none; }
-  @media (hover: hover) { #name-card .go:hover { background: #44702f; } }
-  @media (pointer: coarse) { #name-text, #name-card .go { min-height: 44px; } }
-  /* (a touch screen: up top under the pill, where the keyboard won't cover it) */
-  @media (pointer: coarse) { #name-card { top: calc(var(--top) + 52px); bottom: auto; } }
+  .wd-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 4px; }
+  .wd-hat, .wd-cloak { flex: none; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 12px; cursor: pointer; transition: transform 0.12s; }
+  .wd-hat { background: rgba(255, 250, 240, 0.7); box-shadow: inset 0 0 0 1px #e2d6bb; overflow: hidden; }
+  .wd-hat canvas { display: block; width: 40px; height: 40px; pointer-events: none; }
+  .wd-cloak { border-radius: 50%; background: linear-gradient(180deg, var(--hood) 0 42%, var(--cloak) 42%); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12); }
+  .wd-hat.on, .wd-cloak.on { box-shadow: inset 0 0 0 1px #e2d6bb, 0 0 0 2.5px var(--accent); }
+  @media (hover: hover) { .wd-hat:hover, .wd-cloak:hover { transform: translateY(-1px); } }
+  .wd-hat:active, .wd-cloak:active { transform: translateY(1px); }
+  #wd-name-hat { font-size: 12px; color: var(--muted); min-height: 1.2em; }
+  .wd-btns { display: flex; gap: 8px; margin-top: 8px; }
+  .wd-btns .later { flex: none; border-radius: 14px; background: #fbf5e8; padding: 10px 16px; box-shadow: none; }
+  #wardrobe.join .later { display: none; }
+  #wd-go { flex: 1; border-radius: 14px; background: #4f7f3a; color: #fff; font-size: 16px; padding: 10px; box-shadow: none; }
+  @media (hover: hover) { #wd-go:hover:not(:disabled) { background: #44702f; } }
+  #wd-go:disabled { opacity: 0.5; }
+  @media (pointer: coarse) {
+    #wardrobe, #wardrobe.join { top: calc(var(--top) + 52px); bottom: auto; transform: translateX(-50%); }
+    .wd-hat, .wd-cloak, .wd-hat canvas { width: 44px; height: 44px; }
+    .wd-dice { width: 44px; height: 44px; right: -6px; bottom: -6px; }
+    #name-text, .wd-btns .btn { min-height: 44px; }
+  }
   /* ---- playing together, the chat (game.js chat): what was said, a few lines bottom left that fade after a while (all of
      them back while it's open), and under them while it's open a small card: things to say with one tap (CHAT_QUICK), and
      the line to type on. On a touch screen it opens up top instead, out of the keyboard's way (below). */
@@ -616,9 +642,9 @@
     <button class="menu-item phone-only" data-act="sound" id="sound-item"><span class="e">🔇</span> <span class="l">Sound is off</span></button>
     <button class="menu-item" data-act="copy-link"><span class="e">🔗</span> <span class="l">Copy a link<span class="x"> to this meadow</span></span></button>
     <button class="menu-item" data-act="together"><span class="e">🧺</span> <span class="l">Play together<span class="x"> with a friend</span></span></button>
-    <button class="menu-item hidden" data-act="pick-name" id="name-item"><span class="e">✏️</span> <span class="l">Your name<span class="x"> for friends</span></span></button>
     <button class="menu-item hidden" data-act="leave" id="leave-item"><span class="e">🚪</span> <span class="l">Leave<span class="x"> playing together</span></span></button>
-    <button class="menu-item" data-act="pick-outfit"><span class="e">🧥</span> <span class="l">Change your cloak</span></button>
+    <button class="menu-item" data-act="pick-outfit"><span class="e">🎩</span> <span class="l">Change your outfit<span class="x">: hat and cloak</span></span></button>
+    <button class="menu-item" data-act="pick-name"><span class="e">✏️</span> <span class="l">Change your name</span></button>
     <button class="menu-item" data-act="ideas" title="Tell me what you'd love to see in the meadow"><span class="e">💌</span> <span class="l">Send an idea</span></button>
     <button class="menu-item danger" data-action="new">🔄 Start a new meadow…</button>
   </div>
@@ -626,17 +652,20 @@
   <aside id="inspector" class="card"></aside>
 </div>
 
-<!-- the forager's outfit, picked as a new meadow opens (game.js pickOutfit) -->
-<div id="outfit" class="hidden" role="dialog" aria-labelledby="outfit-title">
-  <h2 class="fr" id="outfit-title">Pick your cloak</h2>
-  <div id="outfit-row"></div>
-</div>
-
-<!-- the name friends know you by, asked as you play together (game.js askName) -->
-<div id="name-card" class="hidden" role="dialog" aria-labelledby="name-title">
-  <h2 class="fr" id="name-title">What shall your friends call you?</h2>
-  <form id="name-form"><input id="name-text" maxlength="16" autocomplete="nickname" enterkeyhint="done" placeholder="Your name" aria-label="Your name">
-  <button class="btn go" type="submit">That's me</button></form>
+<!-- the wardrobe: the forager's name, hat and cloak, picked before joining a friend's meadow, as a new meadow opens, and from
+     ••• (game.js wardrobe; its buttons put in by it) -->
+<div id="wardrobe" class="hidden" role="dialog" aria-labelledby="wardrobe-title">
+  <form id="wardrobe-form" autocomplete="off">
+    <div class="wd-head"><h2 class="fr" id="wardrobe-title">Your forager</h2><p id="wardrobe-sub"></p></div>
+    <div id="wd-figure"><canvas id="wd-look" aria-hidden="true"></canvas>
+      <button type="button" class="wd-dice" data-act="wd-dice" title="Surprise me" aria-label="Surprise me">🎲</button></div>
+    <div class="wd-name wd-named"><label class="wd-label" for="name-text">Your name</label>
+      <input id="name-text" maxlength="16" autocomplete="nickname" enterkeyhint="go" placeholder="What friends call you"></div>
+    <div class="wd-hats"><div class="wd-label">Hat</div><div id="wd-hats" class="wd-row"></div></div>
+    <div class="wd-cloaks"><div class="wd-label">Cloak</div><div id="wd-cloaks" class="wd-row"></div></div>
+    <div id="wd-name-hat"></div>
+    <div class="wd-btns"><button type="button" class="btn later" data-act="wd-close">Not now</button><button type="submit" class="btn go" id="wd-go">That’s me</button></div>
+  </form>
 </div>
 
 <!-- playing together: what friends said, a few lines bottom left that fade, and while it's open a small card to say something

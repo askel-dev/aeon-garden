@@ -721,16 +721,31 @@ function kneelPose(pose) {
     turn: 0, hands: null, happy: false, yawn: false, flap: 0,
   };
 }
-const FORAGER_SNOWS = 3, FORAGER_SNOW_ARTS = 3 << 7;   // (how much snow, and the paintings to each: 3 outfits of 128)
-const SNOW_ON = [246, 248, 252];
-let SNOWED = 0;                                  // the snow being painted (paintForager), 0 to 2
-const FORAGER_OUTFITS = [
+// An outfit is a cloak (with its hood's colours) and a hat (foragerParts: hat), picked apart (game.js wardrobe) and painted
+// as one: outfit = hat * FORAGER_CLOAKS.length + cloak (outfitOf), so the first few are the pointed hood in each cloak. A
+// new cloak or hat goes at the end of its list (the player's are kept apart in localStorage, by their place in it).
+const FORAGER_CLOAKS = [
   { name: 'Moss', cloak: [100, 124, 68], hood: [178, 88, 52], rim: [140, 62, 38] },     // moss green, a rust hood
   { name: 'Plum', cloak: [124, 72, 98], hood: [214, 162, 66], rim: [168, 120, 44] },    // plum, a mustard hood
   { name: 'Lake', cloak: [70, 104, 140], hood: [190, 66, 70], rim: [144, 46, 52] },     // lake blue, a berry hood
+  { name: 'Honey', cloak: [178, 128, 58], hood: [96, 118, 70], rim: [70, 90, 50] },     // honey, a moss hood
+  { name: 'Ash', cloak: [112, 108, 104], hood: [226, 214, 190], rim: [176, 160, 132] }, // ash grey, an oatmeal hood
 ];
-let CLOAK, HOOD, HOOD_RIM;                       // the outfit being painted (paintForager: wear)
-const wear = o => { ({ cloak: CLOAK, hood: HOOD, rim: HOOD_RIM } = FORAGER_OUTFITS[o] || FORAGER_OUTFITS[0]); };
+const FORAGER_HATS = [
+  { name: 'Hood', id: 'hood' },                  // the hood's own point, flopping behind
+  { name: 'Bobble', id: 'bobble' },              // a woolly pompom on top
+  { name: 'Fox ears', id: 'ears' },              // two pointed ears on the hood, dark at the tips
+  { name: 'Toadstool', id: 'toadstool' },        // a red cap, white-spotted
+  { name: 'Wanderer', id: 'wanderer' },          // a wide felt hat with a feather in its band
+  { name: 'Flowers', id: 'flowers' },            // a crown of little blossoms
+];
+const FORAGER_OUTFITS = FORAGER_HATS.flatMap(h => FORAGER_CLOAKS.map(c => ({ ...c, hat: h.id, name: c.name + ', ' + h.name })));
+const outfitOf = (cloak, hat) => hat * FORAGER_CLOAKS.length + cloak;
+const FORAGER_SNOWS = 3, FORAGER_SNOW_ARTS = FORAGER_OUTFITS.length << 7;   // (how much snow, and the paintings to each: every outfit's 128)
+const SNOW_ON = [246, 248, 252];
+let SNOWED = 0;                                  // the snow being painted (paintForager), 0 to 2
+let CLOAK, HOOD, HOOD_RIM, HAT;                  // the outfit being painted (paintForager: wear)
+const wear = o => { ({ cloak: CLOAK, hood: HOOD, rim: HOOD_RIM, hat: HAT } = FORAGER_OUTFITS[o] || FORAGER_OUTFITS[0]); };
 wear(0);
 const SKIN = [246, 210, 180], CHEEK = [236, 136, 116], COLD_NOSE = [236, 158, 138];
 const HAIR = [118, 74, 44], TROUSER = [116, 94, 76], BOOT = [76, 54, 42], SATCHEL = [150, 100, 58], FLAP = [126, 82, 46], STRAP = [112, 74, 44];
@@ -932,6 +947,7 @@ function foragerParts(P) {
   // The hood's point: out behind the head, flopping.
   const tip = () => {
     const t = P.tip;
+    if (HAT !== 'hood') return;                                   // (a hat instead: hat)
     if (side) add(g => { g.moveTo(cx + 0.12, cy - 0.22); g.quadraticCurveTo(cx + 0.36, cy - 0.24 + t, cx + 0.42, cy - 0.06 + t * 1.6); g.quadraticCurveTo(cx + 0.3, cy - 0.05 + t, cx + 0.2, cy + 0.02); g.closePath(); },
       { marks: [[HOOD, 1, 0.01, g => g.rect(cx - 1, cy - 1, 2, 2)], ...snowOn(g => ovalAt(g, cx + 0.3, cy - 0.24 + t, 0.16, 0.025 + 0.025 * SNOWED), 0.02)] });
     else if (front) add(g => { g.moveTo(cx + 0.06, cy - 0.24); g.quadraticCurveTo(cx + 0.24, cy - 0.34 + t, cx + 0.33, cy - 0.22 + t * 1.6); g.quadraticCurveTo(cx + 0.22, cy - 0.16, cx + 0.17, cy - 0.12); g.closePath(); },
@@ -962,12 +978,61 @@ function foragerParts(P) {
           g.quadraticCurveTo(fx - frx * 0.55, fy - 0.07, fx - frx, fy - 0.01);
           g.closePath();
         }]] });
+  // The hat over the hood (FORAGER_HATS; the pointed hood is tip's), sat back a little from the face. Each fills itself
+  // with its own colour (the parts are filled with the cloak's first) and catches snow on top.
+  const full = rgb => [rgb, 1, 0.01, g => g.rect(cx - 1, cy - 1, 2, 2)];
+  const hat = () => {
+    const t = P.tip, top = cy - R * 0.97, bx = cx + (side ? 0.035 : front ? 0.02 : 0);
+    if (HAT === 'bobble') {                                         // a woolly pompom, nodding with the hood
+      const px = bx + t * 0.25, py = top - 0.045 + Math.abs(t) * 0.2;
+      add(g => { for (let k = 0; k < 7; k++) { const a = k * TAU / 7; discAt(g, px + Math.cos(a) * 0.055, py + Math.sin(a) * 0.05, 0.056); } },
+        { casts: true, marks: [full([238, 228, 208]), [[214, 200, 176], 0.8, 0.03, g => ovalAt(g, px + 0.02, py + 0.045, 0.07, 0.04)],
+          ...snowOn(g => ovalAt(g, px, py - 0.06, 0.07, 0.02 + 0.02 * SNOWED), 0.02)] });
+    } else if (HAT === 'ears') {                                    // a fox's ears, leaning out, cream inside, dark at the tips
+      const ear = (x, y, lean, far) => {
+        const h = 0.17, w = 0.13, s = Math.sin(lean), c = Math.cos(lean);
+        const tx = x + s * h, ty = y - c * h, ax = x - c * w / 2, ay = y - s * w / 2, bx2 = x + c * w / 2, by2 = y + s * w / 2;
+        const path = g => { g.moveTo(ax, ay); g.quadraticCurveTo(ax + s * h * 0.7 - c * 0.02, ay - c * h * 0.75, tx, ty); g.quadraticCurveTo(bx2 + s * h * 0.6 + c * 0.01, by2 - c * h * 0.6, bx2, by2); g.closePath(); };
+        add(path, { far, casts: !far, marks: [full(HOOD), [tone(HOOD, 0.45), 1, 0.03, g => discAt(g, tx, ty + 0.01, 0.045)],
+          ...back || far ? [] : [[[240, 226, 204], 0.95, 0.04, g => { g.moveTo(x - c * 0.035, y - s * 0.035); g.lineTo(x + s * h * 0.62, y - c * h * 0.62); g.lineTo(x + c * 0.035, y + s * 0.035); g.closePath(); }]]] });
+      };
+      if (side) { ear(cx + 0.15, cy - 0.18, 0.5, true); ear(cx + 0.03, cy - 0.22, 0.12, false); }
+      else { const d = front ? -0.02 : 0; ear(cx - 0.13 + d, cy - 0.18, -0.42, false); ear(cx + 0.13 + d, cy - 0.18, 0.42, false); }
+    } else if (HAT === 'toadstool') {                               // a red cap, a cream rim under it, white spots
+      const y0 = cy - 0.15, W = 0.34, H = 0.25, x0 = bx;
+      add(g => { g.moveTo(x0 - W, y0); g.bezierCurveTo(x0 - W * 1.02, y0 - H * 1.3, x0 + W * 1.02, y0 - H * 1.3, x0 + W, y0); g.quadraticCurveTo(x0, y0 + 0.08, x0 - W, y0); g.closePath(); },
+        { casts: true, marks: [full([196, 58, 46]), [[238, 224, 198], 1, 0.02, g => ovalAt(g, x0, y0 + 0.03, W * 0.92, 0.035)],
+          ...[[-0.2, -0.07, 0.048], [-0.04, -0.17, 0.056], [0.17, -0.1, 0.05], [0.06, -0.05, 0.032], [-0.13, -0.15, 0.03], [0.24, -0.03, 0.03]].map(([dx, dy, r]) =>
+            [[246, 238, 222], 1, 0.012, g => ovalAt(g, x0 + dx, y0 + dy, r, r * 0.8)]),
+          ...snowOn(g => ovalAt(g, x0, y0 - H * 0.96, W * 0.75, 0.04 + 0.04 * SNOWED), 0.025)] });
+    } else if (HAT === 'wanderer') {                                // a wide felt hat, a band in the hood's colour, a feather in it
+      const FELT = [112, 84, 62], yb = cy - 0.19, x0 = bx, tilt = side ? -0.06 : 0;
+      add(g => ovalAt(g, x0, yb, 0.42, side ? 0.06 : 0.085, tilt), { casts: true, marks: [full(FELT), [tone(FELT, 0.7), 0.7, 0.04, g => ovalAt(g, x0, yb - 0.02, 0.2, 0.05)],
+        ...snowOn(g => ovalAt(g, x0 - 0.02, yb - 0.035, 0.38, 0.02 + 0.015 * SNOWED), 0.02)] });
+      const ct = yb - 0.25, cw = 0.19;
+      add(g => { g.moveTo(x0 - cw, yb); g.bezierCurveTo(x0 - cw * 0.95, ct - 0.02, x0 - 0.05, ct + 0.03, x0, ct + 0.025); g.bezierCurveTo(x0 + 0.05, ct + 0.03, x0 + cw * 0.95, ct - 0.02, x0 + cw, yb); g.quadraticCurveTo(x0, yb + 0.05, x0 - cw, yb); g.closePath(); },
+        { casts: true, marks: [full(FELT), [HOOD, 1, 0.012, g => { g.moveTo(x0 - cw * 1.05, yb - 0.07); g.quadraticCurveTo(x0, yb - 0.035, x0 + cw * 1.05, yb - 0.07); g.lineTo(x0 + cw * 1.05, yb + 0.06); g.lineTo(x0 - cw * 1.05, yb + 0.06); g.closePath(); }],
+          ...snowOn(g => ovalAt(g, x0, ct + 0.03, 0.12, 0.02 + 0.02 * SNOWED), 0.02)] });
+      const fx0 = x0 + (side ? 0.15 : 0.13), fy0 = yb - 0.04, fs = t * 0.4;   // the feather, out of the band and back, swaying a little
+      add(g => { g.moveTo(fx0, fy0); g.bezierCurveTo(fx0 + 0.02, fy0 - 0.12, fx0 + 0.1 + fs, fy0 - 0.2, fx0 + 0.16 + fs, fy0 - 0.27); g.bezierCurveTo(fx0 + 0.13 + fs, fy0 - 0.15, fx0 + 0.07, fy0 - 0.06, fx0 + 0.025, fy0 + 0.01); g.closePath(); },
+        { marks: [full([236, 228, 212]), [[70, 64, 60], 0.9, 0.02, g => ovalAt(g, fx0 + 0.15 + fs, fy0 - 0.25, 0.035, 0.035)]] });
+    } else if (HAT === 'flowers') {                                 // a ring of blossoms round the hood's crown, leaves between
+      const y0 = cy - 0.175, rx = 0.25, ry = side ? 0.05 : 0.075, pts = [];
+      for (let k = 0; k < 6; k++) { const a = Math.PI * (0.05 + 0.9 * k / 5); pts.push([bx - 0.01 + Math.cos(a) * rx, y0 + Math.sin(a) * ry]); }
+      add(g => { for (let k = 0; k < 5; k++) { const [x1, y1] = pts[k], [x2, y2] = pts[k + 1], mx = (x1 + x2) / 2, my = (y1 + y2) / 2; ovalAt(g, mx, my + 0.008, 0.05, 0.024, Math.atan2(y2 - y1, x2 - x1) + 0.4); } },
+        { plain: true, marks: [full([108, 140, 72])] });
+      const PETALS = [[248, 244, 236], [238, 168, 182], [246, 210, 96], [190, 160, 220], [248, 244, 236], [238, 168, 182]];
+      add(g => { for (const [x, y] of pts) for (let p = 0; p < 5; p++) { const a = p * TAU / 5 - 0.3; discAt(g, x + Math.cos(a) * 0.034, y + Math.sin(a) * 0.03, 0.032); } },
+        { casts: true, marks: [...pts.map(([x, y], k) => [PETALS[k], 1, 0.008, g => discAt(g, x, y, 0.075)]),
+          ...pts.map(([x, y]) => [[232, 170, 60], 1, 0.006, g => discAt(g, x, y, 0.02)])] });
+    }
+  };
   const shoulder = side ? 0.0 : 0.15;
   if (side) {
     leg(1, true); if (!P.kneeOver) leg(0, false);
     arm(0.03, P.arms ? P.arms[0] : P.stoop ? 0.75 * P.stoop : -P.swing, true, false);
     cloak(); satchel(); if (P.kneeOver) leg(0, false);             // (sneaking, the near knee lifted high over the cloak's front)
-    tip(); head();
+    tip(); head(); hat();
     if (P.hug) hug(-0.01, 0);
     else arm(-0.01, P.arms ? P.arms[1] : P.hand ? 0.9 : P.stoop ? 0.95 * P.stoop : P.swing, false, true);
   } else {
@@ -982,7 +1047,7 @@ function foragerParts(P) {
         const [hl, hr] = P.hands || [];
         arm(-shoulder, P.stoop ? reach : P.swing, false, true, hl); arm(shoulder, P.hand ? 2.4 : P.stoop ? reach : -P.swing, false, true, hr);
       }
-      head();
+      head(); hat();
     } else {
       // (An arm swung forward is ahead of it, behind the cloak from here: only the one swung back shows over it.)
       const al = P.stoop ? 1.1 * P.stoop : P.swing, ar = P.stoop ? 1.1 * P.stoop : -P.swing;
@@ -990,7 +1055,7 @@ function foragerParts(P) {
       else { if (al > 0) arm(-shoulder, al, true, false); if (ar > 0) arm(shoulder, ar, true, false); }
       cloak(); satchel();
       if (!P.hug) { if (al <= 0) arm(-shoulder, al, false, true); if (ar <= 0) arm(shoulder, ar, false, true); }
-      head(); tip();
+      head(); tip(); hat();
     }
   }
   return { parts, fx, fy, frx, fry };
@@ -1052,6 +1117,6 @@ function paintForager(g, size, U, n) {
 const painters = { fox: paintFox, rabbit: paintRabbit, dfly: paintDragonfly, kfisher: paintKingfisher, lark: paintSkylark, forager: paintForager };
 
 root.Fur = { tone, rockRGB, fillIn, strokeIn, discAt, ovalAt, blurIn, softIn, furGlow, foxRGB, FOX_WHITE, FOX_SOCK,
-  FOX_POSE, RABBIT_POSE, RABBIT_KINDS, setCoats, paintFox, paintRabbit, paintForager, FORAGER_REACH, FORAGER_JOG_STRIDE, FORAGER_OUTFITS, FORAGER_COLD, FORAGER_IDLE, FORAGER_IDLES, FORAGER_SNOWS, FORAGER_SNOW_ARTS, KNEEL_VIEW, FORAGER_KNEEL,
+  FOX_POSE, RABBIT_POSE, RABBIT_KINDS, setCoats, paintFox, paintRabbit, paintForager, FORAGER_REACH, FORAGER_JOG_STRIDE, FORAGER_OUTFITS, FORAGER_CLOAKS, FORAGER_HATS, outfitOf, FORAGER_COLD, FORAGER_IDLE, FORAGER_IDLES, FORAGER_SNOWS, FORAGER_SNOW_ARTS, KNEEL_VIEW, FORAGER_KNEEL,
   FORAGER_EMOTE, FORAGER_EMOTES, FORAGER_EMOTE_ARTS, EMOTE_AT, emoteArt, SNEAK_STRIDE, painters };
 })(typeof window !== 'undefined' ? window : globalThis);

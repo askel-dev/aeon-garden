@@ -38,9 +38,16 @@ arrays, one soft sole painting turned along its way and laid flat, under everyth
 coming down, pollen, butterflies, splashes, the effects, the burrows' 💤) hides behind a leafy crown standing in front of it
 (`coverAt`): each crown drawn is kept as its kind's outline (`CROWNS`, `addCover`) in a coarse grid of the screen made once a
 frame (`buildCover`), soft at the edge (`COVER_EDGE`), half for first leaves or half fallen, nothing bare, and as little as
-it shows when faded (mist, the forager behind it). Pop-ups, labels and the selection stay on top. `forager-lab.html` paints them all side by side. Its outfit is one of three (fur.js `FORAGER_OUTFITS`:
-cloak, hood, rim), picked on a small card at the foot of the screen as a new meadow opens (till one has been picked) or from ••• (`pickOutfit`), kept in
-localStorage (`aeon-garden-outfit`).
+it shows when faded (mist, the forager behind it). Pop-ups, labels and the selection stay on top. `forager-lab.html` paints them all side by side (`?o=` an outfit). Its outfit is a cloak and a hat
+(fur.js `FORAGER_CLOAKS`: cloak, hood, rim; `FORAGER_HATS`: the hood's own point, a bobble, fox ears, a toadstool cap, a wanderer's
+felt hat with a feather, a crown of flowers, painted over the hood in `foragerParts`' `hat`), painted as one outfit
+(`FORAGER_OUTFITS`, `outfitOf`: hat * cloaks + cloak, so the key and what goes over the net are one number). Picked on the
+wardrobe card (`wardrobe`, `#wardrobe`: the forager painted as it'll look, a row of painted heads in each hat, cloak swatches, a
+die, and the name while playing together), tried on there and worn only on its button: before going into a friend's meadow
+(`begin`: 'join', in the middle over a dimmed meadow, it takes a name and can't be put away; nothing's said to the room till
+Set off), as you first open yours to friends ('host', from `together`), as a new meadow opens till one's been picked, and from
+••• ('dress'). Up top on a touch screen, out of the keyboard's way. Kept in localStorage apart (`aeon-garden-outfit` the cloak,
+`aeon-garden-hat`, `aeon-garden-name`), so a new cloak or hat goes at the end of its list.
 Emotes (`emote`, the comment over `EMOTE`): 1 dances, 2 sneaks, or the round button on the satchel's other side from the fire's
 (`#emote`, `emoteMenu`: its two fan out over it, each a painting of the forager at it in its own cloak, `emoteIcons`; the one going
 is ringed, `emoteShown`). Painted in fur.js (`FORAGER_EMOTE`, `emotePose`, kept after all its other paintings: `emoteArt`), asked
