@@ -54,7 +54,7 @@ trodden earth round it (`CAMP_R`, `inCamp`, game.js `drawCampRing`) is where lat
   foot down in the stride, with `pace` = its speed against `FORAGER_WALK`, so a sprint (just a faster `f.speed`) is quicker
   and a little firmer with no change here, and `ground` from `groundUnder` (grass, earth, shore, woods, snow, ice, water),
   each its own sound. They're kept soft and cozy (`STEP_SOFT`, all through a felt low-pass, `STEP_TOP`), the grass softest. Keep it minimal: one scale, few sounds. Every 5 to 10
-  minutes a short felt-piano piece plays (`TUNES`, written out note by note and played a little
+  minutes a short felt-piano piece plays (off for now: `MUSIC`) (`TUNES`, written out note by note and played a little
   differently each time); the lab plays each piece on demand. Like C418's Minecraft music, the
   silence between pieces is part of it, and no piece is about the time of day (a day is 12 minutes, a
   piece 90 s): they fit any moment, lean towards a season at 1x, and the piano plays darker at night.

@@ -1310,6 +1310,7 @@ function score(tune) {
 
 const music = { next: 0, piece: null, last: null };
 const GAP = [300, 600];                              // seconds of just the meadow between pieces
+const MUSIC = false;                                 // off for now: the meadow plays no pieces (the lab still does)
 
 function playTune(name) {
   if (!ac || !enabled || !TUNES[name]) return false;
@@ -1345,6 +1346,7 @@ function musicTick(now, m) {
     if (now > p.end) { music.piece = null; music.next = now + rand(...GAP); }
     return;
   }
+  if (!MUSIC) return;
   if (!music.next) music.next = now + rand(60, 120);
   if (now < music.next) return;
   if ((state.sky.storm || 0) > 0.3) { music.next = now + 30; return; }
