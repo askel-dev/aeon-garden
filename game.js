@@ -4233,15 +4233,29 @@ function eatSlot() {
 
 // ------------------------------------------------------------------ the recipe book
 //
-// A small book by the satchel (#book-btn, B) opens a parchment card of the fire's dishes (#book, renderBook; on an upright
-// phone a sheet from the bottom, its brass ✕ at the foot): the ones you know first, each with its painting and what goes in,
-// what the satchel holds of that lit and the rest let down; then the ones a hint has half filled in ("Something with
-// honey…", what's known of it and a ? for each thing still missing: hinted, from the forager's thoughts below); then the
-// rest, as one line of blank plates, a dot on each for each thing it takes. A known dish tapped by a lit fire fills the pot from the satchel (fillPot); at
-// a lit fire close by, the forager goes to it first and fills the pot once it's there (j.want); else it says where to cook.
-// What's in it is per player, as the dishes are (knownDish): the hints in localStorage (HINTS_KEY), never in a kept meadow.
-const HINTS_KEY = 'aeon-garden-hints';
+// A small leather book by the satchel (#book-btn, B, and on the cooking bar) opens the recipe book on the meadow (#book,
+// over a soft scrim), modelled on the old field journal: on the left its pages in sections (BOOK_SECTIONS: savoury, sweet),
+// a numbered tile each, and on the right the page picked, turned with ‹ n/N ›, the arrow keys or (a finger) a sideways
+// swipe, with a 44 px round brass ✕ top right. A page (bookPageHTML) has the dish's picture big (dishArt: its emoji for now,
+// its painting once ITEM_ART has one), its name, its line from recipes.js (text), whether it warms you (warm) and how much
+// it fills, and what it needs, each marked against the satchel (needsHad). A dish a hint has half told (hinted, from the
+// forager's thoughts below) shows "Something with honey…", what was told and a ? for each thing still missing, its picture
+// a half silhouette; one not found a faint silhouette and a gentle hint (sweet or savoury, how many things). A known one
+// has a button: by a lit fire's pot it puts its things in (bookDish, fillPot); at a lit fire close by, the forager goes to
+// it first and fills the pot once it's there (j.want); else it says where to cook. On an upright phone the book is a sheet
+// from the bottom with its ✕ at the foot in the middle and a page a layer over the tiles with ‹ ✕ › there (bookUi.depth 2),
+// a handle to drag either down; Back steps out of the page, then the book (opened, stepOut). On its side the two panes fill
+// the screen.
+// A page whose dish has been learned (cooked the first time, or a hint told more) since it was last looked at is new
+// (bookFresh, against what's been seen: BOOK_KEY): the book button glows with "New" (bookNews, from renderBook, which every
+// satchel change and every hint calls), its tile has a "New" tag, and the first time the page is shown a stamp thumps onto it
+// ("Learned!", "A hint"); shutting the book has seen them all. The book opens on the newest.
+// Written as it opens, as a page turns, and when what it shows changes (bookUi.key), never per frame.
+// What's in it is per player, as the dishes are (knownDish): the hints in localStorage (HINTS_KEY), what's been seen too
+// (BOOK_KEY), never in a kept meadow.
+const HINTS_KEY = 'aeon-garden-hints', BOOK_KEY = 'aeon-garden-book';
 const BOOK_REACH = 8;                     // tiles: a known dish tapped in the book walks to a lit fire this near
+const STAMP_MS = 900;                     // ms the stamp takes to land; drawn again after, it's just there
 const hinted = new Map();                 // dish name -> the words of its needs a hint has told
 try { for (const [k, v] of Object.entries(JSON.parse(localStorage.getItem(HINTS_KEY) || '{}'))) if (Array.isArray(v)) hinted.set(k, v); } catch (e) { /* fine */ }
 // A hint's words for a dish written into the book; true if it told something new.
@@ -4254,9 +4268,34 @@ function hint(name, words) {
   bookUi.key = ''; renderBook();
   return true;
 }
-const bookUi = { open: false, key: '' };
+// depth: 0 shut, 1 open, 2 a page laid over the tiles (upright phones only; elsewhere the page is always beside them).
+const bookUi = { open: false, depth: 0, pick: '', key: '', stamp: '', stampAt: 0, quietTill: 0, drag: null, swipe: null, glow: null };
 const bookOpen = () => bookUi.open;
+const bookReading = () => bookUi.depth === 2;
+const bookUpright = () => narrow() && !short();
 const FIRE_DISHES = Recipes.RECIPES.filter(r => (r.at || 'fire') === 'fire');
+// Its sections, in order: a dish with something sweet or fruity in it is sweet, the rest savoury. Each dish's page number
+// runs on through them (No. 1 to N), in recipes.js's order within each.
+const sweetDish = r => r.needs.some(w => ['sweet', 'fruit'].some(t => w === t || Recipes.INGREDIENTS[w]?.tags.includes(t)));
+const BOOK_SECTIONS = [{ k: 'savoury', name: 'Savoury', word: 'savoury', test: r => !sweetDish(r) }, { k: 'sweet', name: 'Sweet', word: 'sweet', test: sweetDish }];
+const BOOK_PAGES = [];
+for (const sec of BOOK_SECTIONS) for (const r of FIRE_DISHES) if (sec.test(r)) BOOK_PAGES.push({ r, sec, no: BOOK_PAGES.length + 1, i: BOOK_PAGES.length });
+const BOOK_PAGE = new Map(BOOK_PAGES.map(p => [p.r.name, p]));
+const BOOK_FILL = Math.max(1, ...FIRE_DISHES.map(r => Recipes.fillOf(r))), BOOK_PIPS = 5;   // (how much a dish fills: pips against the most filling)
+// What's been seen of each page: { name: how far it had got when last looked at } (pageLevel). Read the first time it's
+// wanted (knownDish reads the firsts, made further down); with nothing kept, what's known now counts as seen.
+let bookSeen = null;
+const pageLevel = r => knownDish(r.name) ? 9 : (hinted.get(r.name) || []).length;
+function seenBook() {
+  if (bookSeen) return bookSeen;
+  try { bookSeen = JSON.parse(localStorage.getItem(BOOK_KEY) || 'null'); } catch (e) { /* fine */ }
+  if (!bookSeen || typeof bookSeen !== 'object') { bookSeen = {}; for (const r of FIRE_DISHES) bookSeen[r.name] = pageLevel(r); saveSeen(); }
+  return bookSeen;
+}
+const saveSeen = () => { try { localStorage.setItem(BOOK_KEY, JSON.stringify(bookSeen)); } catch (e) { /* fine */ } };
+const bookFresh = r => pageLevel(r) > (seenBook()[r.name] || 0);
+function seePage(r) { if (!bookFresh(r)) return false; bookSeen[r.name] = pageLevel(r); saveSeen(); return true; }
+const pageState = r => knownDish(r.name) ? 'known' : hinted.has(r.name) ? 'half' : 'blank';
 // What stands for a word of a dish's needs in a little picture: the thing itself, or for a tag ('mushroom') the one the
 // satchel has, else the first that has it.
 function needId(word, have) {
@@ -4276,44 +4315,171 @@ function needsHad(needs, have) {
   return out;
 }
 const needName = w => Recipes.INGREDIENTS[w] ? Recipes.INGREDIENTS[w].name.toLowerCase() : Recipes.recipeOf(w) ? w : 'any ' + w;
+const upFirst = s => s[0].toUpperCase() + s.slice(1);
+const NUM_WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six'];
+// A dish's picture in the book: for now its emoji from recipes.js, big (that's all the item sheet has for a dish too). When
+// the dishes are painted (an ITEM_ART entry for the dish's name), the painting goes here, off the item sheet.
+function dishArt(r, cls) {
+  if (ITEM_ART[r.name]) return `<i class="pic sheet ${cls}" style="background-position:${itemBg(r.name)}"></i>`;
+  return `<span class="pic emo ${cls}">${r.icon || Recipes.foodOf(r.name)?.icon || '🥣'}</span>`;
+}
+const bookText = (el, s) => { if (el.textContent !== s) el.textContent = s; };
+const itemIcon = (id, cls = '') => `<i class="it ${cls}" style="background-position:${itemBg(id)}"></i>`;
+// What a half-told dish is called on its page: "Something with honey…".
+function halfName(r) {
+  const told = hinted.get(r.name) || [], left = [...r.needs], shown = [];
+  for (const w of told) { const i = left.indexOf(w); if (i >= 0) { left.splice(i, 1); shown.push(w); } }
+  const words = [...new Set(shown)].map(sayWord);
+  return { shown, left, line: words.length ? `Something with ${words.length > 1 ? words.slice(0, -1).join(', ') + ' and ' + words[words.length - 1] : words[0]}…` : 'Not found yet' };
+}
+
+const bsvg = d => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const B_X = bsvg('M6.5 6.5l11 11M17.5 6.5l-11 11'), B_PREV = bsvg('M14.5 5.5L8 12l6.5 6.5'), B_NEXT = bsvg('M9.5 5.5L16 12l-6.5 6.5');
+$('#book').innerHTML = `<button class="bb b-x" data-act="book-close" aria-label="Close the book" title="Back to the meadow (Esc)">${B_X}</button>
+  <header class="b-top"><div class="grab"></div>
+    <div class="b-head"><h2 class="fr" id="book-title">Recipes</h2><span class="n"></span></div>
+    <div class="b-bar"><i></i></div><p id="book-sub"></p>
+  </header>
+  <section class="b-pages">${BOOK_SECTIONS.filter(s => BOOK_PAGES.some(p => p.sec === s)).map(s => `
+    <h3 class="sec">${s.name}<span data-sec="${s.k}"></span></h3><div class="grid" data-sec="${s.k}"></div>`).join('')}
+  </section>
+  <footer class="b-foot"><button class="bb x" data-act="book-close" aria-label="Close the book">${B_X}</button></footer>
+  <section class="b-page"></section>`;
+
+function bookTileHTML(p, have) {
+  const r = p.r, st = pageState(r), ready = st === 'known' && !!Recipes.thingsFor(r.needs, have);
+  return `<button class="tile ${st}${bookFresh(r) ? ' new' : ''}${ready ? ' ready' : ''}${p.r.name === bookUi.pick ? ' on' : ''}" data-act="book-page" data-name="${esc(r.name)}"`
+    + ` aria-label="No. ${p.no}, ${st === 'known' ? esc(r.name) : st === 'half' ? 'half known' : 'not found yet'}">`
+    + `<span class="no">${p.no}</span>${dishArt(r, st === 'known' ? '' : st === 'half' ? 'half' : 'sil')}`
+    + `<span class="nm">${st === 'known' ? esc(r.name) : '?'}</span></button>`;
+}
+function bookPageHTML(p, have, atPot) {
+  const r = p.r, st = pageState(r), stamp = bookUi.stamp === r.name;
+  let head, body = '', needs = '', go = '';
+  if (st === 'known') {
+    const ns = needsHad(r.needs, have), ready = ns.every(n => n.got), fill = Math.max(1, Math.round(Recipes.fillOf(r) / BOOK_FILL * BOOK_PIPS));
+    head = `<h3 class="fr">${esc(r.name)}</h3>`;
+    body = (r.text ? `<p class="say">${esc(r.text)}</p>` : '')
+      + `<div class="facts">${r.warm ? '<span class="chip warm">✦ Warms you</span>' : ''}`
+      + `<span class="chip fills" title="How much it fills you">Fills <b>${'<i class="on"></i>'.repeat(fill)}${'<i></i>'.repeat(BOOK_PIPS - fill)}</b></span></div>`;
+    needs = ns.map(n => `<li class="${n.got ? 'got' : 'want'}">${itemIcon(n.id)}<span>${esc(upFirst(needName(n.word)))}</span><em>${n.got ? '✓ in the satchel' : 'not in the satchel'}</em></li>`).join('');
+    const busy = cooking() && !atPot;
+    go = `<button class="go${ready && !busy ? ' ready' : ''}" data-act="book-dish" data-name="${esc(r.name)}"${ready && !busy ? '' : ' disabled'}>`
+      + (busy ? 'Cooking…' : !ready ? 'Not the things for it just now' : atPot ? 'Put its things in the pot' : 'Cook it at the fire') + '</button>';
+  } else if (st === 'half') {
+    const h = halfName(r);
+    head = `<h3 class="fr q-half">${esc(h.line)}</h3>`;
+    body = `<p class="hint">Half remembered. Find what's missing and try it at the fire.</p>`;
+    needs = h.shown.map(w => { const id = needId(w, have); return `<li class="${have[id] > 0 ? 'got' : 'want'}">${itemIcon(id)}<span>${esc(upFirst(needName(w)))}</span><em>${have[id] > 0 ? '✓ in the satchel' : 'not in the satchel'}</em></li>`; }).join('')
+      + '<li class="q"><b>?</b><span>Something still to find</span></li>'.repeat(h.left.length);
+  } else {
+    head = '<h3 class="fr q">? ? ?</h3>';
+    body = `<p class="hint">Not found yet. Something ${p.sec.word}, of ${NUM_WORDS[r.needs.length] || r.needs.length} things: try a few together at the fire, or keep foraging and you may think of it.</p>`;
+    needs = '<li class="q"><b>?</b><span>&nbsp;</span></li>'.repeat(r.needs.length);
+  }
+  const stampHTML = stamp ? `<span class="stamp${performance.now() - bookUi.stampAt > STAMP_MS ? ' still' : ''}">${st === 'known' ? 'Learned!' : 'A hint'}</span>` : '';
+  return `<div class="pg-grab"><div class="no">No. ${p.no} · ${p.sec.name}</div></div>
+    <div class="pg-body"><div class="pg-in">
+      <div class="art">${dishArt(r, st === 'known' ? '' : st === 'half' ? 'half' : 'sil')}${stampHTML}</div>
+      ${head}${body}
+      <h4>${st === 'blank' ? 'It takes' : 'What goes in'}</h4><ul class="needs">${needs}</ul>
+      ${go}
+    </div></div>
+    <div class="pg-foot">
+      <button class="bb" data-act="book-prev" aria-label="Page before" title="Page before (←)"${p.i ? '' : ' disabled'}>${B_PREV}</button>
+      <span class="of">${p.no} / ${BOOK_PAGES.length}</span>
+      <button class="bb x" data-act="book-back" aria-label="Back to all the recipes" title="Back to all the recipes (Esc)">${B_X}</button>
+      <button class="bb" data-act="book-next" aria-label="Next page" title="Next page (→)"${p.i < BOOK_PAGES.length - 1 ? '' : ' disabled'}>${B_NEXT}</button>
+    </div>`;
+}
+// The book button's "New": a glow while a page has news and the book's shut.
+function bookNews() {
+  const glow = !bookUi.open && FIRE_DISHES.some(bookFresh);
+  if (glow === bookUi.glow) return;
+  bookUi.glow = glow;
+  const el = $('#book-btn');
+  el.classList.toggle('new', glow);
+  el.setAttribute('aria-label', glow ? 'Recipe book: something new' : 'Recipe book');
+}
 function openBook(on = !bookUi.open) {
   if (on && (!world || intro.on)) return;
   if (on === bookUi.open) return;
   bookUi.open = on;
-  const el = $('#book');
-  el.classList.toggle('hidden', !on);
+  const el = $('#book'), scrim = $('#book-scrim');
+  el.classList.toggle('hidden', !on); scrim.classList.toggle('hidden', !on);
   $('#book-btn').classList.toggle('on', on);
-  if (on) { bookUi.key = ''; renderBook(); el.scrollTop = 0; el.focus({ preventScroll: true }); }
+  if (on) {
+    const fresh = BOOK_PAGES.find(p => bookFresh(p.r) && knownDish(p.r.name)) || BOOK_PAGES.find(p => bookFresh(p.r));
+    bookUi.pick = fresh?.r.name || bookUi.pick || (BOOK_PAGES.find(p => knownDish(p.r.name)) || BOOK_PAGES[0]).r.name;
+    bookUi.depth = fresh && bookUpright() ? 2 : 1;
+    el.classList.toggle('reading', bookUi.depth === 2);
+    bookUi.key = ''; renderBook();
+    el.querySelector('.b-pages').scrollTop = 0;
+    el.querySelector('.tile.on')?.scrollIntoView({ block: 'nearest' });
+    el.focus({ preventScroll: true });
+    if (bookUpright()) slide(el, [{ transform: 'translateY(100%)' }, { transform: 'none' }], 320);
+  } else {
+    bookUi.depth = 0; bookUi.stamp = '';
+    el.classList.remove('reading'); el.style.transform = '';
+    let read = false;                                       // (what was new has been seen now)
+    for (const r of FIRE_DISHES) if (bookFresh(r)) { bookSeen[r.name] = pageLevel(r); read = true; }
+    if (read) saveSeen();
+    bookNews();
+  }
   chime('click');
 }
-// The book's pages, rewritten only when what they show has changed (what's known, hinted, in the satchel, a pot to fill).
+// The book's pages, rewritten only when what they show has changed (what's known, hinted, seen, in the satchel, a pot to
+// fill, the page picked).
 function renderBook() {
+  bookNews();
   if (!bookUi.open) return;
   itemSheet();
-  const have = bagHave(), atPot = cooking() && ui.fire.stage === 'cook';
-  const key = FIRE_DISHES.map(r => knownDish(r.name) ? 1 : (hinted.get(r.name) || []).length + 2).join('') + '|' + JSON.stringify(have) + '|' + atPot;
+  const have = bagHave(), atPot = cooking() && ui.fire.stage === 'cook', p = BOOK_PAGE.get(bookUi.pick) || BOOK_PAGES[0];
+  if ((!bookUpright() || bookUi.depth === 2) && seePage(p.r)) { bookUi.stamp = p.r.name; bookUi.stampAt = performance.now(); }   // (shown: seen, stamped)
+  const key = FIRE_DISHES.map(r => pageLevel(r) + (bookFresh(r) ? 'n' : '')).join(',') + '|' + JSON.stringify(have) + '|' + atPot + cooking() + '|' + p.r.name + '|' + bookUi.stamp;
   if (key === bookUi.key) return;
   bookUi.key = key;
-  const icon = (id, cls, title) => `<i class="${cls}" style="background-position:${itemBg(id)}" title="${esc(title)}"></i>`;
-  const known = [], half = [], blank = [];
-  for (const r of FIRE_DISHES) (knownDish(r.name) ? known : hinted.has(r.name) ? half : blank).push(r);
-  const row = r => {
-    if (knownDish(r.name)) {
-      const ns = needsHad(r.needs, have), ready = ns.every(n => n.got);
-      return `<button class="book-dish known${ready ? ' ready' : ''}" data-act="book-dish" data-name="${esc(r.name)}" title="${ready ? (atPot ? 'Put its things in the pot' : 'Cook it at a lit fire') : 'Not the things for it just now'}">`
-        + `${icon(r.name, 'dish', r.name)}<span class="bk-name">${esc(r.name)}${r.warm ? ' <span class="warm" title="Warms you">✦</span>' : ''}</span>`
-        + `<span class="bk-needs">${ns.map(n => icon(n.id, n.got ? 'got' : 'want', needName(n.word))).join('')}</span></button>`;
-    }
-    const told = hinted.get(r.name) || [], left = [...r.needs], shown = [];
-    for (const w of told) { const i = left.indexOf(w); if (i >= 0) { left.splice(i, 1); shown.push(w); } }
-    const words = [...new Set(shown)].map(sayWord);
-    const line = shown.length ? `Something with ${words.length > 1 ? words.slice(0, -1).join(', ') + ' and ' + words[words.length - 1] : words[0]}…` : 'Not found yet';
-    return `<div class="book-dish ${shown.length ? 'half' : 'blank'}"><i class="dish unknown"></i><span class="bk-name">${esc(line)}</span>`
-      + `<span class="bk-needs">${shown.map(w => { const id = needId(w, have); return icon(id, have[id] > 0 ? 'got' : 'want', needName(w)); }).join('')}${'<b class="q">?</b>'.repeat(left.length)}</span></div>`;
-  };
-  const rest = blank.length ? `<div class="book-rest">${blank.map(r => `<b title="${r.needs.length} things">${'·'.repeat(r.needs.length)}</b>`).join('')}<span>${blank.length} more not found yet: try things together at the fire</span></div>` : '';
-  $('#book-list').innerHTML = known.map(row).join('') + half.map(row).join('') + rest;
-  $('#book-sub').textContent = `${known.length} of ${FIRE_DISHES.length} known` + (atPot ? ' · tap one to fill the pot' : '');
+  const el = $('#book'), known = FIRE_DISHES.filter(r => knownDish(r.name)).length;
+  setHTML(el.querySelector('.b-head .n'), `${known}<small>/${FIRE_DISHES.length}</small>`);
+  el.querySelector('.b-bar i').style.width = (known / FIRE_DISHES.length * 100).toFixed(1) + '%';
+  bookText(el.querySelector('#book-sub'), atPot ? 'At the pot: a known recipe puts its things in' : known < FIRE_DISHES.length ? 'Try things together at the fire to find the rest' : 'Every recipe found');
+  for (const s of BOOK_SECTIONS) {
+    const grid = el.querySelector(`.grid[data-sec="${s.k}"]`);
+    if (!grid) continue;
+    const pages = BOOK_PAGES.filter(q => q.sec === s);
+    bookText(el.querySelector(`h3.sec span[data-sec="${s.k}"]`), `${pages.filter(q => knownDish(q.r.name)).length}/${pages.length}`);
+    setHTML(grid, pages.map(q => bookTileHTML(q, have)).join(''));
+  }
+  setHTML(el.querySelector('.b-page'), bookPageHTML(p, have, atPot));
+}
+// A page picked: from a tile (on an upright phone laid over the tiles), or turned (‹ ›, the arrow keys, a swipe), the new one
+// sliding in from the side it came from.
+function bookPage(name) {
+  if (!BOOK_PAGE.has(name)) return;
+  bookUi.pick = name;
+  if (bookUi.stamp !== name) bookUi.stamp = '';
+  if (bookUpright() && bookUi.depth < 2) {
+    bookUi.depth = 2; $('#book').classList.add('reading');
+    renderBook();
+    slide($('#book .b-page'), [{ transform: 'translateY(100%)' }, { transform: 'none' }], 300);
+  } else renderBook();
+  chime('click');
+}
+function turnBook(dir, from) {
+  const p = BOOK_PAGES[(BOOK_PAGE.get(bookUi.pick) || BOOK_PAGES[0]).i + dir];
+  if (!p || bookUpright() && bookUi.depth < 2) return;
+  bookUi.pick = p.r.name;
+  if (bookUi.stamp !== p.r.name) bookUi.stamp = '';
+  renderBook();
+  if (!bookUpright()) $('#book .tile.on')?.scrollIntoView({ block: 'nearest' });
+  const pin = $('#book .pg-in');
+  if (pin) slide(pin, [{ transform: from || `translateX(${dir * 48}px)`, opacity: from ? 1 : 0 }, { transform: 'none', opacity: 1 }], 220);
+  chime('click');
+}
+// One step out (Esc, Back, the page's ✕): a page laid over the tiles goes, else the book shuts.
+function bookBack() {
+  if (bookUi.depth === 2) { bookUi.depth = 1; bookUi.stamp = ''; $('#book').classList.remove('reading'); bookUi.key = ''; renderBook(); return; }
+  openBook(false);
 }
 // A known dish tapped in the book.
 function bookDish(name) {
@@ -4324,11 +4490,67 @@ function bookDish(name) {
   if (!Recipes.thingsFor(r.needs, bagHave())) { say('Not the things for it just now', f.x, f.y - 1.6); chime('click'); return; }
   let F = null, best = BOOK_REACH;
   for (const o of world.fires) { const d = Math.hypot(o.x - f.x, o.y - f.y); if (o.lit && d < best) { F = o; best = d; } }
-  if (!F || f.down >= 0) { say('Cook it at a lit fire', f.x, f.y - 1.6); chime('click'); return; }
+  if (!F || f.down >= 0) { say('Cook it at a lit fire', f.x, f.y - 1.6); chime('click'); openBook(false); return; }
   goFire({ kind: 'cook', F, x: F.x, y: F.y });
   if (ui.fire) ui.fire.want = name;
   openBook(false);
 }
+// Its own taps (the shared click handler has book, book-close and book-dish): a tile, ‹ ›, the page's ✕.
+$('#book').addEventListener('click', e => {
+  const t = e.target.closest('[data-act]');
+  if (!t || !/^book-(page|prev|next|back)$/.test(t.dataset.act)) return;
+  if (performance.now() < bookUi.quietTill) return;       // (no tap right after a swipe)
+  const act = t.dataset.act;
+  if (act === 'book-page') bookPage(t.dataset.name);
+  else if (act === 'book-back') bookBack();
+  else turnBook(act === 'book-next' ? 1 : -1);
+});
+// Fingers, on an upright phone: a handle dragged down lays its sheet down (the book's shuts it, a page's goes back to the
+// tiles); a page swiped sideways turns. Anything shorter springs back.
+$('#book').addEventListener('pointerdown', e => {
+  const el = $('#book'), grab = bookUpright() && e.button === 0 && e.target.closest('.b-top, .pg-grab');
+  if (grab) { bookUi.drag = { el: grab.classList.contains('pg-grab') ? el.querySelector('.b-page') : el, y: e.clientY, t: e.timeStamp, dy: 0 }; el.setPointerCapture(e.pointerId); return; }
+  if (e.pointerType !== 'mouse' && e.target.closest('.pg-body')) bookUi.swipe = { x: e.clientX, y: e.clientY, dx: 0, side: false };
+});
+$('#book').addEventListener('pointermove', e => {
+  const d = bookUi.drag, s = bookUi.swipe;
+  if (d) { d.dy = Math.max(0, e.clientY - d.y); d.el.style.transform = d.dy ? `translateY(${d.dy}px)` : ''; return; }
+  if (!s) return;
+  const dx = e.clientX - s.x, dy = e.clientY - s.y;
+  if (!s.side) {
+    if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx)) { bookUi.swipe = null; return; }   // (a scroll)
+    if (Math.abs(dx) < 12) return;
+    s.side = true; $('#book').setPointerCapture(e.pointerId);
+  }
+  s.dx = dx;
+  const more = BOOK_PAGES[(BOOK_PAGE.get(bookUi.pick) || BOOK_PAGES[0]).i + (dx < 0 ? 1 : -1)], pin = $('#book .pg-in');
+  if (pin) pin.style.transform = `translateX(${more ? dx : dx * 0.25}px)`;   // (at the last page, it only gives)
+});
+function bookLift(e) {
+  const d = bookUi.drag, s = bookUi.swipe;
+  bookUi.drag = bookUi.swipe = null;
+  if (d) {
+    if (d.dy > 110 || d.dy > 30 && d.dy / (e.timeStamp - d.t) > 0.5) { const book = d.el.id === 'book'; d.el.style.transform = ''; if (book) openBook(false); else bookBack(); }
+    else if (d.dy) { const from = d.el.style.transform; d.el.style.transform = ''; slide(d.el, [{ transform: from }, { transform: 'none' }], 200); }
+    if (d.dy) bookUi.quietTill = performance.now() + 350;
+    return;
+  }
+  if (!s?.side) return;
+  bookUi.quietTill = performance.now() + 350;
+  const dir = s.dx < 0 ? 1 : -1, pin = $('#book .pg-in'), from = pin ? pin.style.transform : '';
+  if (pin) pin.style.transform = '';
+  if (Math.abs(s.dx) > 56 && BOOK_PAGES[(BOOK_PAGE.get(bookUi.pick) || BOOK_PAGES[0]).i + dir]) turnBook(dir, `translateX(${-dir * 40}px)`);
+  else if (pin) slide(pin, [{ transform: from }, { transform: 'none' }], 200);
+}
+$('#book').addEventListener('pointerup', bookLift);
+$('#book').addEventListener('pointercancel', bookLift);
+// Keys while it's open: ← → turn the page, and the other walking keys don't walk the forager (on the window, first: before
+// the meadow's own keys). Esc reaches stepOut as ever, and B shuts it.
+addEventListener('keydown', e => {
+  if (!bookUi.open || e.target.closest?.('input,textarea') || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); e.stopPropagation(); turnBook(e.key === 'ArrowRight' ? 1 : -1); }
+  else if (KEY_DIRS[e.code]) e.stopPropagation();
+}, true);
 // The book's button, painted once: a little leather-bound book with a gold leaf on it and a ribbon.
 function bookIcon() {
   const el = $('#book-btn i');
@@ -11845,7 +12067,7 @@ const back = { token: Math.random().toString(36).slice(2), depth: 0, going: fals
 const moreOpen = () => !$('#more-menu').classList.contains('hidden');
 function opened() {
   const ins = $('#inspector').classList, sheetUp = ins.contains('open') && narrow() && !ins.contains('strip');
-  return [askOpen(), moreOpen(), !!ui.place, bookOpen(), cooking(), wardrobeOpen(), chatOpen(), ins.contains('open'), sheetUp].filter(Boolean).length;
+  return [askOpen(), moreOpen(), !!ui.place, bookOpen(), bookReading(), cooking(), wardrobeOpen(), chatOpen(), ins.contains('open'), sheetUp].filter(Boolean).length;
 }
 // The one on top shuts (Esc, and Back once for each step it takes).
 function stepOut() {
@@ -11853,7 +12075,7 @@ function stepOut() {
   if (askOpen()) askIdeas(false);
   else if (moreOpen()) toggleMore(false);
   else if (ui.place) placeFire(false);                     // (picking a spot for a fire: not now)
-  else if (bookOpen()) openBook(false);                    // (the recipe book)
+  else if (bookOpen()) bookBack();                         // (the recipe book: a page laid over it, then the book)
   else if (cooking()) closeCook();                         // (the cooking card)
   else if (chatOpen()) openChat(false);
   else if (wardrobeOpen() && wd.mode !== 'join') closeWardrobe(false);

@@ -124,11 +124,24 @@ will go in and dims the rest (`.cooking`, `.cookable`, `.cook-dim`). Cook: `COOK
 steam off the pot, then `cookDone`: the things out, the dish in (flying from the fire, or on the ground with the satchel full),
 a mess a puff of dark smoke, a dish never made before its gold headline (`firstTime('dish:' + name)`, which `knownDish` reads
 with recipes.js `known`). Walking off, ✕, Esc or Back leave the fire (`closeCook`, `stepOut`); nothing is lost mid-cook.
-The recipe book (`#book`, `renderBook`, `#book-btn` by the satchel's right end, B, and on the cooking bar): the fire's dishes,
-known ones with their painting and what goes in (what the satchel has ringed, `needsHad`), half-known ones a hint told
-("Something with honey…", `hinted`, kept in `aeon-garden-hints`), the rest a row of blank plates; a known one tapped fills the pot
-(`bookDish`, `fillPot`), or walks to a lit fire within `BOOK_REACH` and fills it there (`j.want`). On an upright phone a sheet from
-the bottom with its brass ✕ at the foot. Finding it: near a lit fire with something to cook (`bagFood`) a small painted pot bobs
+The recipe book (`#book`, `renderBook`, `#book-btn` by the satchel's right end, B, and on the cooking bar), modelled on the old
+field journal (main at 1d79f03): a book laid open on the meadow over a soft scrim (`#book-scrim`), the numbered tiles on the left
+page in sections (`BOOK_SECTIONS`: savoury, sweet by whether a need is sweet or fruit; `BOOK_PAGES`, No. 1 to N), the page picked
+on the right (`bookPageHTML`), turned with ‹ n/N ›, ← → (a capturing listener that also keeps the walking keys off the forager
+while it's open) or a sideways swipe (`turnBook`), a 44 px brass ✕ top right. A page: the dish's picture big on a plate (`dishArt`:
+its recipes.js emoji for now; an `ITEM_ART` entry for the dish's name puts its painting there instead), its name, its `text`,
+"✦ Warms you" (`warm`), how much it fills (`BOOK_PIPS` against the most filling), what goes in marked against the satchel
+(`needsHad`), and a button: "Put its things in the pot" at the pot (`bookDish`, `fillPot`), else "Cook it at the fire" (walks to a
+lit fire within `BOOK_REACH` and fills it there, `j.want`). Half-known (a hint told some: "Something with honey…", `hinted`, kept
+in `aeon-garden-hints`) a half silhouette, what's been told and a ? row for each thing missing; not found a faint silhouette with
+a gentle hint (sweet or savoury, how many things). News: a page whose dish was learned (cooked, or a hint told more) since it was
+last looked at (`pageLevel` against `aeon-garden-book`, `bookFresh`; with nothing kept, what's known counts as seen) gives the
+book button a glow and a "New" tag (`bookNews`, from `renderBook`, which every satchel change and hint calls) and its tile a "New";
+shown the first time, a stamp thumps onto the page ("Learned!", "A hint"); the book opens on the newest; shutting it has seen them
+all. On an upright phone a sheet from the bottom, ✕ at the foot in the middle, handle to drag it down; a page is a layer over the
+tiles with ‹ ✕ › (`bookUi.depth` 2, `bookBack`), and Back steps out of the page, then the book (`opened` counts `bookReading`,
+`stepOut`). On its side the two panes fill the screen. Rewritten only when what it shows changes (`bookUi.key`, `setHTML`).
+Finding it: near a lit fire with something to cook (`bagFood`) a small painted pot bobs
 over it, with an E key where there's a keyboard (`drawCookPrompt`, `PROMPT_ART` painted once; a click on it is one on the fire,
 `promptAt`); making camp the forager thinks "I could cook something on this fire" (`think`, `CAMP_COOK_LINE`), and now and then it
 muses on a dish it doesn't know from what's in the satchel (`hintTick`: `HINT_EVERY`, `HINT_GAP`, never in the intro or the

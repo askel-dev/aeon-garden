@@ -38,8 +38,8 @@ cut out of a dark navy (game.js `lightsFrame`, `paintFireLights`). The first fir
 `campAt`; game.js `campMoment`): a big warm moment ("Your camp"), the forager wakes there from then on, and a soft ring of
 trodden earth round it (`CAMP_R`, `inCamp`, game.js `drawCampRing`) is where later builds go. It has emotes (a dance and a sneak: game.js `emote`, fur.js `FORAGER_EMOTE`; the button by the satchel and the 1 and 2 keys are gone). Cooking at the fire (stage 6, built in steps: PLAN.md) has its workings: a click on a lit fire (or the little painted pot bobbing over one you stand by) cooks there, in the
 meadow itself: a pot over the flames that things from the satchel drop into, and a small bar under the fire (game.js `drawPot`,
-`renderCook`, recipes.js `cook`); a recipe book by the satchel (B: `renderBook`, a few dishes `known` from the start, the rest
-found by trying or half told by the forager's hints, `hintTick`), and food is eaten from the satchel into a tummy (sim.js `f.tummy`, `feedForager`; game.js `eatAsk`). `forager-lab.html` shows all its paintings. Notes in game.md and ecology.md.
+`renderCook`, recipes.js `cook`); a recipe book by the satchel (B: a book open on the meadow like the old field journal, numbered pages with each dish's
+picture and what goes in, `renderBook`; a few dishes `known` from the start, the rest found by trying or half told by the forager's hints, `hintTick`), and food is eaten from the satchel into a tummy (sim.js `f.tummy`, `feedForager`; game.js `eatAsk`). `forager-lab.html` shows all its paintings. Notes in game.md and ecology.md.
 - `game.js`: drawing, UI, the inspector. Its features (and where new notes on them go) are in
   `.claude/rules/game.md`, which loads when game.js or index.html is opened.
 - `ground.js`: the ground (grass, earth, shores, water) as a WebGL shader, painted from a

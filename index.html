@@ -466,8 +466,10 @@
   @media (hover: hover) { #cook .close:hover, #cook-stick:hover, #cook-book:hover { filter: brightness(1.04); } }
   .fly.held.to-pot { transform-origin: center; filter: drop-shadow(0 0 6px rgba(255, 170, 70, 0.9)); }
   body:has(#cook:not(.hidden)) #vitals { opacity: 0; }
-  /* ---- the recipe book (game.js renderBook): a small leather book by the satchel's right end (B), opening a parchment card
-     of the fire's dishes over the satchel; on an upright phone a sheet from the bottom, its brass ✕ at the foot */
+  /* ---- the recipe book (game.js, the recipe book): a small leather book by the satchel's right end (B), glowing with "New"
+     while a page has news; open, a book laid open on the meadow over a soft scrim, the numbered recipe tiles on the left
+     page in their sections and the one picked on the right, its ✕ a round brass button top right. Every target is 44 px
+     or more (52-60 on an upright phone). Opaque parchment, never a backdrop-filter. */
   #book-btn { position: absolute; left: calc(100% + 8px); bottom: 0; width: 46px; height: 46px; padding: 0; border: none; border-radius: 50%;
     background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); transition: transform 0.15s, background-color 0.2s; }
   #book-btn i { position: absolute; inset: 5px; background: center / contain no-repeat; }
@@ -475,45 +477,191 @@
   @media (hover: hover) { #book-btn:hover { transform: translateY(-1px); } }
   #book-btn:active { transform: translateY(1px); }
   @media (pointer: coarse) { #book-btn { left: auto; right: 0; bottom: calc(100% + 8px); width: 50px; height: 50px; } }
-  #book { position: fixed; z-index: 6; left: 50%; bottom: calc(var(--bottom) + 64px); transform: translateX(-50%); width: min(360px, calc(100vw - 32px));
-    max-height: min(62vh, 520px); overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; padding: 10px 12px 12px; border-radius: 16px;
-    background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); animation: fade-in 0.2s ease-out; }
-  #book:focus { outline: none; }
-  .book-head { display: flex; align-items: center; gap: 8px; margin: 0 2px 8px; }
-  .book-head h2 { margin: 0; font-size: 16px; font-weight: 650; }
-  #book-sub { flex: 1; font-size: 12px; color: var(--muted); }
-  #book-list { display: flex; flex-direction: column; gap: 4px; }
-  .book-dish { display: grid; grid-template-columns: 40px 1fr; grid-template-rows: auto auto; column-gap: 8px; align-items: center; width: 100%;
-    min-height: 48px; padding: 4px 8px 4px 4px; border: none; border-radius: 12px; background: rgba(150, 115, 60, 0.07); text-align: left;
-    font: inherit; color: var(--ink); }
-  .book-dish i { display: block; background-image: var(--items); background-repeat: no-repeat; background-size: calc(100% * var(--item-n, 13)) 100%; }
-  .book-dish i.dish { grid-row: 1 / 3; width: 40px; height: 40px; }
-  .book-dish i.unknown { background: rgba(150, 115, 60, 0.12); border-radius: 50%; box-shadow: inset 0 1px 3px rgba(90, 65, 25, 0.22); }
-  .bk-name { font-size: 13.5px; font-weight: 800; line-height: 1.2; }
-  .bk-name .warm { color: var(--accent-ink); }
-  .bk-needs { display: flex; gap: 3px; align-items: center; margin-top: 2px; }
-  .bk-needs i { width: 22px; height: 22px; border-radius: 6px; }
-  .bk-needs i.got { background-color: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
-  .bk-needs i.want { opacity: 0.4; filter: saturate(0.3); }
-  .bk-needs b.q { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; font-size: 12px; font-weight: 900; color: var(--muted);
-    background: rgba(150, 115, 60, 0.1); }
-  .book-dish.known { cursor: pointer; }
-  .book-dish.known.ready { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
-  @media (hover: hover) { .book-dish.known:hover { filter: brightness(1.03); transform: translateY(-1px); } }
-  .book-dish.known:active { transform: translateY(1px); }
-  .book-dish.half .bk-name { font-style: italic; font-weight: 700; color: #6b5636; }
-  .book-rest { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 6px 4px 2px; }
-  .book-rest b { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: rgba(150, 115, 60, 0.12);
-    box-shadow: inset 0 1px 2px rgba(90, 65, 25, 0.2); font-size: 13px; line-height: 0.5; letter-spacing: -1px; color: rgba(110, 85, 50, 0.55); }
-  .book-rest span { flex-basis: 100%; margin-top: 4px; font-size: 12px; color: var(--muted); }
-  .book-dish.blank { opacity: 0.55; }
-  .book-dish.blank .bk-name { font-weight: 700; color: var(--muted); }
+  #book-btn::before { content: 'New'; position: absolute; top: -9px; right: -10px; z-index: 1; padding: 1px 6px; border-radius: 99px; background: #c4562a; color: #fff;
+    font-size: 10.5px; font-weight: 900; line-height: 1.35; opacity: 0; transform: scale(0.6); transition: opacity 0.2s, transform 0.2s; pointer-events: none; }
+  #book-btn::after { content: ''; position: absolute; inset: -5px; border-radius: 50%; pointer-events: none; opacity: 0;
+    box-shadow: 0 0 0 2px rgba(233, 138, 75, 0.85), 0 0 16px 4px rgba(255, 190, 90, 0.8); }
+  #book-btn.new::before { opacity: 1; transform: none; }
+  #book-btn.new::after { animation: book-glow 1.8s ease-in-out infinite; }
+  @keyframes book-glow { 50% { opacity: 1; } }
+
+  #book-scrim { position: fixed; inset: 0; z-index: 8; background: rgba(40, 32, 18, 0.32); animation: fade-in 0.2s ease-out; }
+  #book { position: fixed; z-index: 9; left: 50%; transform: translateX(-50%); top: calc(var(--top) + 8px); bottom: calc(var(--bottom) + 8px);
+    width: min(880px, calc(100% - 32px)); max-height: 620px; margin: auto 0; outline: none; color: var(--ink);
+    display: grid; grid-template-columns: 1.05fr 1fr; grid-template-rows: auto minmax(0, 1fr); grid-template-areas: 'top page' 'pages page';
+    border-radius: 18px; overflow: hidden; background: var(--paper, none) var(--card);
+    box-shadow: 0 20px 60px rgba(50, 40, 15, 0.35), inset 0 0 0 1px rgba(150, 115, 60, 0.22), inset 0 0 0 5px rgba(201, 154, 76, 0.18); }
+  #book::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 5px; z-index: 3;
+    background: linear-gradient(180deg, #f1d48a, #c99a4c 60%, #a8742a); box-shadow: 0 1px 0 rgba(120, 80, 20, 0.35); }
+  #book:not(.hidden) > * { animation: pop-in 0.18s ease-out; }
+  #book button { font-family: inherit; color: var(--ink); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  #book :focus-visible { outline: 3px solid #d9a441; outline-offset: 2px; }
+  /* a round brass button: ✕, ‹ and › */
+  #book .bb { display: grid; place-items: center; flex: none; width: 44px; height: 44px; padding: 0; border: none; border-radius: 50%;
+    background: linear-gradient(180deg, #fffaf0, #f1e5c9); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 2px 0 #a8742a; transition: transform 0.08s, box-shadow 0.08s; }
+  #book .bb svg { display: block; width: 20px; height: 20px; }
+  #book .bb:active:not(:disabled) { transform: translateY(2px); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 0 0 #a8742a; }
+  #book .bb:disabled { opacity: 0.32; cursor: default; }
+  #book .b-x { position: absolute; top: 14px; right: 14px; z-index: 3; }
+  /* the left page: the title, how many are known, and the tiles; a shade toward the spine */
+  #book .b-top, #book .b-pages { background: linear-gradient(90deg, transparent 88%, rgba(120, 85, 30, 0.10)); }
+  #book .b-top { grid-area: top; padding: 22px 20px 2px 24px; }
+  #book .grab, #book .b-foot { display: none; }
+  #book .b-foot { grid-area: foot; }
+  #book .b-head { display: flex; align-items: baseline; gap: 10px; }
+  #book .b-head h2 { margin: 0; font-size: 26px; font-weight: 650; }
+  #book .b-head .n { margin-left: auto; font-weight: 900; font-size: 22px; font-variant-numeric: tabular-nums; }
+  #book .b-head .n small { font-size: 14px; color: var(--muted); font-weight: 800; }
+  #book .b-bar { position: relative; height: 8px; margin: 6px 0 4px; border-radius: 99px; background: #e6d7b8; box-shadow: inset 0 1px 1px rgba(80, 60, 30, 0.25); }
+  #book .b-bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: inherit; background: linear-gradient(90deg, #b07a2a, #e2b75c); transition: width 0.6s; }
+  #book-sub { margin: 4px 0 0; font-size: 12.5px; font-weight: 700; color: var(--muted); }
+  #book .b-pages { grid-area: pages; padding: 0 20px 18px 24px; overflow: hidden auto; overscroll-behavior: contain; scrollbar-width: thin; }
+  #book h3.sec { display: flex; align-items: baseline; margin: 14px 0 8px; text-transform: uppercase; letter-spacing: 0.11em; font-size: 12px; font-weight: 900; color: #8a5e22; }
+  #book h3.sec span { margin-left: auto; letter-spacing: 0; font-size: 13px; color: var(--muted); }
+  #book .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  #book .tile { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 3px; min-height: 96px; padding: 16px 4px 8px;
+    border: none; border-radius: 12px; background: rgba(255, 250, 238, 0.55); box-shadow: inset 0 0 0 1px rgba(150, 115, 60, 0.2); transition: background 0.12s, transform 0.08s; }
+  #book .tile:active { transform: scale(0.96); }
+  #book .tile.on { background: #fff6e4; box-shadow: inset 0 0 0 2px #d9a441, 0 2px 0 #a8742a; }
+  #book .tile.ready:not(.on) { box-shadow: inset 0 0 0 1.5px var(--accent); }
+  #book .tile .no { position: absolute; top: 4px; left: 7px; font-size: 11px; font-weight: 900; color: #a8916a; font-variant-numeric: tabular-nums; }
+  #book .tile .nm { font-size: 12px; font-weight: 800; line-height: 1.15; text-align: center; min-height: 2.3em; display: flex; align-items: center; }
+  #book .tile:not(.known) { background: rgba(120, 95, 50, 0.07); box-shadow: inset 0 0 0 1px rgba(150, 115, 60, 0.12); }
+  #book .tile:not(.known).on { box-shadow: inset 0 0 0 2px #d9a441; }
+  #book .tile:not(.known) .nm { color: #9c8a66; letter-spacing: 0.15em; }
+  #book .tile.blank { background: none; box-shadow: none; border: 1.5px dashed rgba(150, 115, 60, 0.3); }
+  #book .tile.blank.on { border-color: #d9a441; }
+  #book .tile.new::after { content: 'New'; position: absolute; top: 4px; right: 5px; padding: 0 6px; border-radius: 99px; background: #c4562a; color: #fff;
+    font-size: 11px; font-weight: 900; letter-spacing: 0; }
+  @media (hover: hover) {
+    #book .bb:not(:disabled):hover, #book .go:not(:disabled):hover { background: linear-gradient(180deg, #fff1df, #fbd9b9); }
+    #book .tile:hover { background: rgba(255, 250, 238, 0.95); }
+  }
+  /* a dish's picture: its emoji for now (.emo), a painting off the item sheet once it has one (.sheet); a silhouette till
+     it's found, half one while a hint has half told it */
+  #book .pic { display: block; flex: none; pointer-events: none; user-select: none; }
+  #book .pic.emo { font-size: 38px; line-height: 1; height: 44px; display: grid; place-items: center; }
+  #book .pic.sheet { width: 48px; height: 48px; background-image: var(--items); background-repeat: no-repeat; background-size: calc(100% * var(--item-n, 13)) 100%; }
+  #book .pic.sil { filter: brightness(0); opacity: 0.16; }
+  #book .pic.half { filter: brightness(0); opacity: 0.45; }
+  /* the right page: its number on top (clear of the ✕), the picture on a plate, what it says, what goes in, and
+     ‹ n / N › at its foot */
+  #book .b-page { grid-area: page; position: relative; display: flex; flex-direction: column; min-height: 0;
+    background: linear-gradient(90deg, rgba(120, 85, 30, 0.16), transparent 9%); }
+  #book .pg-grab { padding: 26px 72px 0 26px; }
+  #book .b-page .no { text-transform: uppercase; letter-spacing: 0.11em; font-size: 12px; font-weight: 900; color: #8a5e22; }
+  #book .pg-body { flex: 1; min-height: 0; padding: 0 26px 8px; overflow: hidden auto; overscroll-behavior: contain; scrollbar-width: thin; touch-action: pan-y; }
+  #book .art { position: relative; display: grid; place-items: center; height: 158px; margin: 6px 0 4px; }
+  #book .art::before { content: ''; position: absolute; left: 50%; top: 50%; width: 170px; height: 112px; margin: -40px 0 0 -85px; border-radius: 50%;
+    background: radial-gradient(ellipse at 50% 45%, #fffdf6 0 52%, #efe2c4 53% 62%, #fbf4e3 63% 70%, rgba(150, 115, 60, 0.0) 71%);
+    box-shadow: 0 6px 10px -4px rgba(80, 55, 20, 0.28); }
+  #book .art .pic { position: relative; }
+  #book .art .pic.emo { font-size: 96px; height: 120px; filter: drop-shadow(0 4px 3px rgba(70, 45, 15, 0.25)); }
+  #book .art .pic.emo.sil { filter: brightness(0); }
+  #book .art .pic.emo.half { filter: brightness(0); }
+  #book .art .pic.sheet { width: 136px; height: 136px; }
+  /* a page first seen since its dish was learned: a stamp thumps onto it */
+  #book .stamp { position: absolute; top: 10px; right: 6%; padding: 3px 10px 2px; border: 2.5px solid #b8432a; border-radius: 8px; color: #b8432a;
+    font: italic 600 19px/1.2 Fraunces, Georgia, serif; letter-spacing: 0.02em; transform: rotate(-12deg); opacity: 0.88; mix-blend-mode: multiply;
+    box-shadow: inset 0 0 0 1.5px rgba(184, 67, 42, 0.25); animation: book-stamp 0.45s cubic-bezier(0.3, 1.4, 0.5, 1) 0.15s backwards; }
+  #book .stamp.still { animation: none; }
+  @keyframes book-stamp { from { transform: rotate(-20deg) scale(2.4); opacity: 0; } 60% { opacity: 0.95; } }
+  #book .b-page h3 { margin: 0; font-size: 28px; font-weight: 650; line-height: 1.15; }
+  #book .b-page h3.q { color: #9c8a66; letter-spacing: 0.2em; }
+  #book .b-page h3.q-half { font-style: italic; font-weight: 450; color: #6b5636; font-size: 25px; }
+  #book .b-page p { margin: 6px 0 10px; font-size: 15px; line-height: 1.45; font-weight: 700; color: var(--muted); }
+  #book .b-page p.say { font-family: Fraunces, Georgia, serif; font-style: italic; font-weight: 450; font-size: 17px; color: var(--ink); }
+  #book .b-page p.hint { font-family: Fraunces, Georgia, serif; font-style: italic; font-weight: 450; font-size: 16px; color: #6b5636; }
+  #book .facts { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 6px; }
+  #book .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 99px; font-size: 12.5px; font-weight: 800; background: rgba(150, 115, 60, 0.1); color: var(--muted); }
+  #book .chip.warm { background: var(--accent-soft); color: var(--accent-ink); }
+  #book .chip.fills b { display: inline-flex; gap: 3px; }
+  #book .chip.fills i { width: 8px; height: 8px; border-radius: 50%; background: #e6d7b8; box-shadow: inset 0 1px 1px rgba(80, 60, 30, 0.25); }
+  #book .chip.fills i.on { background: radial-gradient(circle at 35% 30%, #f6d98c, #b07a2a 70%); box-shadow: 0 0 0 1px #8a5e22; }
+  #book .b-page h4 { margin: 12px 0 6px; padding-top: 10px; border-top: 1px dashed var(--line); text-transform: uppercase; letter-spacing: 0.11em; font-size: 12px; font-weight: 900; color: #8a5e22; }
+  #book .needs { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+  #book .needs li { display: grid; grid-template-columns: 36px 1fr auto; gap: 8px; align-items: center; min-height: 40px; padding: 2px 10px 2px 4px; border-radius: 10px;
+    font-size: 14.5px; font-weight: 800; background: rgba(120, 95, 50, 0.05); }
+  #book .needs li em { font-style: normal; font-size: 12.5px; font-weight: 800; color: var(--muted); text-align: right; }
+  #book .needs li.got { background: var(--accent-soft); box-shadow: inset 0 0 0 1px rgba(233, 138, 75, 0.5); }
+  #book .needs li.got em { color: var(--accent-ink); }
+  #book .needs li.want .it { opacity: 0.45; filter: saturate(0.3); }
+  #book .needs .it { display: block; width: 36px; height: 36px; background-image: var(--items); background-repeat: no-repeat; background-size: calc(100% * var(--item-n, 13)) 100%; }
+  #book .needs li.q { background: none; box-shadow: none; border: 1.5px dashed rgba(150, 115, 60, 0.28); color: #9c8a66; font-style: italic; font-weight: 700; }
+  #book .needs li.q b { display: grid; place-items: center; width: 30px; height: 30px; margin-left: 3px; border-radius: 50%; background: rgba(150, 115, 60, 0.12);
+    font-style: normal; font-weight: 900; color: #a8916a; }
+  #book .go { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 14px 0 4px; width: 100%; min-height: 50px; padding: 10px 14px;
+    border: none; border-radius: 14px; font-size: 16px; font-weight: 800;
+    background: linear-gradient(180deg, #fffaf0, #f1e5c9); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 3px 0 #a8742a; transition: transform 0.08s; }
+  #book .go.ready { background: linear-gradient(180deg, #ffe9cf, #f9c99c); box-shadow: inset 0 0 0 1.5px #e98a4b, 0 3px 0 #b8662c; }
+  #book .go:active:not(:disabled) { transform: translateY(2px); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 1px 0 #a8742a; }
+  #book .go:disabled { cursor: default; color: var(--muted); opacity: 0.75; box-shadow: inset 0 0 0 1.5px rgba(150, 115, 60, 0.3); }
+  #book .pg-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 22px 16px; border-top: 1px dashed var(--line); }
+  #book .pg-foot .of { font-weight: 900; font-size: 15px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  #book .pg-foot .x { display: none; }
+
+  /* Upright phones: a sheet from the bottom, nearly the whole height. Nothing to reach for at the top: its handle drags it
+     down, and ✕ sits at the bottom in the middle. A page is a card laid over the tiles, with ‹ ✕ › in the same place (✕
+     lays it back down); a swipe sideways turns to the next. Back closes either. */
   @media (max-width: 760px) and (min-height: 501px) {
-    #book { left: 0; right: 0; bottom: 0; width: auto; transform: none; max-height: 70vh; border-radius: 18px 18px 0 0; padding: 12px 14px calc(70px + env(safe-area-inset-bottom)); }
-    #book .book-head .close { position: fixed; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom)); margin: 0 0 0 -22px; z-index: 1; }
+    #book { left: 0; right: 0; width: auto; transform: none; top: calc(env(safe-area-inset-top, 0px) + 44px); bottom: 0; max-height: none; margin: 0;
+      grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; grid-template-areas: 'top' 'pages' 'foot';
+      border-radius: 22px 22px 0 0; box-shadow: 0 -8px 40px rgba(50, 40, 15, 0.35), inset 0 0 0 1px rgba(150, 115, 60, 0.22); }
+    #book::before { display: none; }
+    #book:not(.hidden) > * { animation: none; }
+    #book .b-x { display: none; }
+    #book .b-top, #book .b-pages { background: none; }
+    #book .b-top { padding: 0 18px 6px; touch-action: none; }
+    #book .grab { display: block; height: 26px; position: relative; }
+    #book .grab::before, #book .pg-grab::before { content: ''; position: absolute; left: 50%; top: 11px; width: 44px; height: 5px; margin-left: -22px;
+      border-radius: 99px; background: #d4c4a6; }
+    #book .b-head h2 { font-size: 24px; }
+    #book .b-pages { padding: 0 14px 14px; }
+    #book .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    #book .tile { min-height: 100px; }
+    #book .b-foot, #book .pg-foot { display: flex; justify-content: center; align-items: center; gap: 28px;
+      padding: 10px 16px calc(14px + var(--home-bar, env(safe-area-inset-bottom, 0px))); border-top: 1px dashed var(--line); }
+    #book .bb { width: 52px; height: 52px; }
+    #book .bb.x { width: 60px; height: 60px; }
+    #book .bb.x svg { width: 24px; height: 24px; }
+    #book .b-page { display: none; grid-area: auto; grid-row: 2 / 4; grid-column: 1; z-index: 2; margin: 0 6px; border-radius: 18px 18px 0 0;
+      background: var(--paper, none) var(--card); box-shadow: 0 -6px 18px rgba(50, 40, 15, 0.2), inset 0 0 0 1px rgba(150, 115, 60, 0.22); }
+    #book.reading .b-page { display: flex; }
+    #book .pg-grab { position: relative; padding: 26px 20px 2px; touch-action: none; }
+    #book .pg-body { padding: 0 20px 10px; }
+    #book .pg-foot { margin: 0 -6px; }
+    #book .pg-foot .of { display: none; }
+    #book .pg-foot .x { display: grid; }
+    #book .art { height: 140px; }
+    #book .art .pic.emo { font-size: 84px; height: 104px; }
+    #book .needs li { min-height: 46px; }
     body:has(#book:not(.hidden)) #satchel { opacity: 0; pointer-events: none; }
   }
-  @media (max-height: 500px) { #book { max-height: calc(100vh - var(--bottom) - 80px); } }
+  /* Phones on their side: the open book over the whole screen, its ✕ and ‹ › big enough for a thumb from either side. */
+  @media (max-height: 500px) {
+    #book { left: calc(env(safe-area-inset-left, 0px) + 10px); right: calc(env(safe-area-inset-right, 0px) + 10px); width: auto; transform: none;
+      top: 8px; bottom: 8px; max-height: none; margin: 0; border-radius: 16px; }
+    #book .bb { width: 48px; height: 48px; }
+    #book .b-x { top: 10px; right: 10px; }
+    #book .b-top { padding: 14px 16px 0 18px; }
+    #book .b-head h2 { font-size: 21px; }
+    #book .b-head .n { font-size: 19px; }
+    #book-sub { display: none; }
+    #book .b-pages { padding: 0 16px 12px 18px; }
+    #book h3.sec { margin: 10px 0 6px; }
+    #book .grid { gap: 6px; }
+    #book .tile { min-height: 80px; padding-top: 14px; }
+    #book .tile .pic.emo { font-size: 30px; height: 34px; }
+    #book .pg-grab { padding: 18px 70px 0 22px; }
+    #book .pg-body { padding: 0 22px 6px; }
+    #book .art { height: 92px; margin-top: 2px; }
+    #book .art::before { width: 120px; height: 76px; margin: -28px 0 0 -60px; }
+    #book .art .pic.emo { font-size: 60px; height: 72px; }
+    #book .b-page h3 { font-size: 23px; }
+    #book .b-page p { margin-bottom: 6px; }
+    #book .pg-foot { padding: 6px 16px 10px; }
+  }
+  @media (prefers-reduced-motion: reduce) { #book:not(.hidden) > * { animation: none; } #book .stamp { animation: none; } #book-btn.new::after { animation: none; opacity: 0.8; } }
   /* ---- the fire button (game.js renderBuild, buildIcon): by the satchel, a laid campfire in a ring that fills in as the
      satchel holds more of what one takes (--k); all there (.ready) it glows, and while a spot is picked (.on) it's pressed in */
   #build { position: absolute; right: calc(100% + 8px); bottom: 0; width: 46px; height: 46px; padding: 0; border: none; border-radius: 50%;
@@ -645,10 +793,9 @@
     <button class="close" data-act="cook-close" title="Leave the fire (Esc)" aria-label="Leave the fire">✕</button>
   </div>
 </div>
-<div id="book" class="hidden" role="dialog" aria-labelledby="book-title" tabindex="-1">
-  <div class="book-head"><h2 class="fr" id="book-title">Recipes</h2><span id="book-sub"></span><button class="close" data-act="book-close" title="Close (Esc)" aria-label="Close">✕</button></div>
-  <div id="book-list"></div>
-</div>
+<!-- the recipe book, open on the meadow (game.js, the recipe book: its pages are written there) -->
+<div id="book-scrim" class="hidden" data-act="book-close"></div>
+<div id="book" class="hidden" role="dialog" aria-labelledby="book-title" tabindex="-1"></div>
 <div id="eat" class="hidden"></div>
 <div id="satchel" class="empty"><div class="slots"></div>
   <button id="book-btn" data-act="book" title="Recipes (B)" aria-label="Recipe book"><i></i></button>
