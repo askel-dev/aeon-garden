@@ -383,6 +383,59 @@
     #satchel.empty .slot { height: 12px; }
     #satchel.empty .slot::before { inset: 2px 3px; border-radius: 4px; }
   }
+  #satchel .slot.held i { opacity: 0.3; }   /* all of it in the pot (game.js potHeld) */
+  #satchel .slot.asking::after { opacity: 0 !important; }   /* (its Eat is up instead) */
+  /* ---- eating (game.js eatAsk): its name over the slot with a small Eat, or why not */
+  #eat { position: fixed; z-index: 6; display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 11px; border-radius: 12px; transform: translateX(-50%);
+    background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); font-size: 13px; font-weight: 800; white-space: nowrap; animation: fade-in 0.15s ease-out; }
+  #eat .warm { color: var(--accent-ink); }
+  #eat .why { color: var(--muted); font-weight: 700; padding: 3px 8px 3px 0; }
+  #eat button { border: none; border-radius: 9px; padding: 5px 14px; background: var(--accent); color: #fff; font-weight: 900; box-shadow: 0 2px 0 #b8622a; }
+  #eat button:active { transform: translateY(1px); box-shadow: 0 1px 0 #b8622a; }
+  @media (pointer: coarse) { #eat { padding: 4px 4px 4px 13px; } #eat button { min-height: 40px; padding: 0 18px; } }
+  @keyframes fade-in { from { opacity: 0; } }
+  /* ---- cooking at the fire (game.js renderCook): a small card beside the fire, put there by placeCook. The pot's slots, what
+     it'll make once that's known, the known dishes the satchel has the things for, a stick for the fire and Cook (filling
+     while it cooks). On an upright phone, a sheet over the satchel with its ✕ at the foot. */
+  #cook { position: fixed; z-index: 5; left: 0; top: 0; width: 220px; padding: 8px 12px 12px; border-radius: 16px;
+    background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); animation: fade-in 0.2s ease-out; }
+  .cook-head { display: flex; align-items: center; margin-bottom: 6px; }
+  .cook-head h2 { margin: 0; font-size: 15px; font-weight: 650; }
+  .cook-pot { display: flex; gap: 8px; justify-content: center; }
+  .cook-slot { position: relative; width: 50px; height: 50px; padding: 0; border: none; border-radius: 50%; background: rgba(150, 115, 60, 0.12);
+    box-shadow: inset 0 1px 3px rgba(90, 65, 25, 0.25); }
+  .cook-slot:disabled { cursor: default; }
+  .cook-slot i, #cook-stick i, .cook-dish i { background-image: var(--items); background-repeat: no-repeat; background-size: calc(100% * var(--item-n, 13)) 100%; }
+  .cook-slot i { position: absolute; inset: 7px; display: none; }
+  .cook-slot.on i { display: block; }
+  .cook-slot.coming i { opacity: 0; }
+  #cook.busy .cook-slot.on i { animation: simmer 0.45s ease-in-out infinite alternate; }
+  @keyframes simmer { to { transform: translateY(-2px) rotate(4deg); } }
+  #cook-what { margin: 8px 0 8px; min-height: 18px; text-align: center; font-size: 13px; line-height: 1.35; color: var(--muted); }
+  #cook-what b { color: var(--ink); }
+  #cook-known { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; margin-bottom: 8px; }
+  #cook-known:empty { display: none; }
+  .cook-dish { display: flex; align-items: center; gap: 3px; border: none; border-radius: 10px; padding: 3px 8px 3px 4px; font-size: 12px; font-weight: 800;
+    background: rgba(150, 115, 60, 0.12); }
+  .cook-dish i { width: 18px; height: 18px; flex: none; }
+  .cook-row { display: flex; gap: 8px; }
+  #cook-stick { position: relative; flex: none; width: 46px; height: 40px; border: none; border-radius: 12px; background: rgba(150, 115, 60, 0.12); }
+  #cook-stick i { position: absolute; inset: 5px 9px 7px; }
+  #cook-stick b { position: absolute; right: 4px; bottom: 2px; font-size: 11px; font-weight: 900; }
+  #cook-go { position: relative; overflow: hidden; flex: 1; height: 40px; border: none; border-radius: 12px; background: var(--accent); color: #fff;
+    font-size: 15px; font-weight: 900; box-shadow: 0 2px 0 #b8622a; }
+  #cook-go:disabled, #cook-stick:disabled { opacity: 0.45; cursor: default; }
+  #cook-go:not(:disabled):active, #cook-stick:not(:disabled):active { transform: translateY(1px); }
+  #cook.busy #cook-go { opacity: 1; background: #d9a066; }
+  #cook.busy #cook-go::before { content: ''; position: absolute; inset: 0; background: var(--accent); transform-origin: left; animation: cook-fill 5.5s linear forwards; }   /* (game.js COOK_MS) */
+  #cook-go span { position: relative; }
+  @keyframes cook-fill { from { transform: scaleX(0); } }
+  @media (max-width: 760px) and (min-height: 501px) {
+    #cook { left: 50%; top: auto; bottom: calc(var(--bottom) + 126px); transform: translateX(-50%); width: min(320px, calc(100vw - 32px)); padding-bottom: 32px; }
+    #cook .cook-head { justify-content: center; }
+    #cook .close { position: absolute; left: 50%; bottom: -22px; margin: 0 0 0 -22px; }
+    body:has(#cook:not(.hidden)) #vitals { opacity: 0; }
+  }
   /* ---- the fire button (game.js renderBuild, buildIcon): by the satchel, a laid campfire in a ring that fills in as the
      satchel holds more of what one takes (--k); all there (.ready) it glows, and while a spot is picked (.on) it's pressed in */
   #build { position: absolute; right: calc(100% + 8px); bottom: 0; width: 46px; height: 46px; padding: 0; border: none; border-radius: 50%;
@@ -470,6 +523,9 @@
   #v-warm { color: var(--c, rgb(222, 128, 58)); transition: opacity 0.6s, transform 0.6s, color 0.6s; }
   #v-warm .drop { color: #6f9cc9; opacity: 0; transition: opacity 0.6s; margin-left: -1px; }
   #v-stam { color: #8a9a52; }
+  #v-food { color: #c98f2e; }
+  #v-food.starving .bar { animation: winded 0.7s ease-in-out infinite alternate; }
+  #v-food svg path { stroke: currentColor; stroke-width: 1.1; stroke-linecap: round; }
   #v-stam.winded .bar i { animation: winded 0.7s ease-in-out infinite alternate; background: #b4834a; }
   @keyframes winded { to { opacity: 0.45; } }
   @media (pointer: coarse) { #vitals { bottom: calc(var(--bottom) + 60px); } }
@@ -522,10 +578,21 @@
 <div id="veil"><p>Too cold to go on&hellip;</p></div>
 <div id="vitals">
   <div class="vital" id="v-warm" title="Warmth"><svg viewBox="0 0 12 12"><path d="M6.2 .8c.4 2.1 3.3 3.4 3.3 6.3a3.5 3.5 0 0 1-7 0c0-1.6.9-2.6 1.7-3.4.1 1.1.6 1.8 1.3 2 -.3-1.7-.1-3.4.7-4.9z"/></svg><span class="bar"><i></i></span><svg class="drop" viewBox="0 0 12 12"><path d="M6 1.2C7.6 3.8 9.2 5.5 9.2 7.6a3.2 3.2 0 0 1-6.4 0C2.8 5.5 4.4 3.8 6 1.2z"/></svg></div>
+  <div class="vital" id="v-food" title="Fed"><svg viewBox="0 0 12 12"><path d="M1 5.6h10c0 2.6-2 4.6-4.6 4.6H5.6C3 10.2 1 8.2 1 5.6zM4.2 1.2c.8.7.8 1.5 0 2.2M6.6 1.2c.8.7.8 1.5 0 2.2"/></svg><span class="bar"><i></i></span></div>
   <div class="vital" id="v-stam" title="Stamina"><svg viewBox="0 0 12 12"><path d="M3.2 1h3.3v4.6l3 1.3c.9.4 1.5 1.1 1.5 2v.9H1.6v-1.2c.6-.2 1-.7 1.1-1.3z"/></svg><span class="bar"><i></i></span></div>
 </div>
 
 <!-- bottom middle: the satchel, a row of slots (game.js renderSatchel), and by it the fire button (renderBuild) -->
+<div id="cook" class="hidden" role="dialog" aria-label="Cooking at the fire">
+  <div class="cook-head"><h2 class="fr">At the fire</h2><button class="close" data-act="cook-close" title="Close (Esc)" aria-label="Close">✕</button></div>
+  <div class="cook-pot">
+    <button class="cook-slot" data-act="cook-take" data-i="0"><i></i></button><button class="cook-slot" data-act="cook-take" data-i="1"><i></i></button><button class="cook-slot" data-act="cook-take" data-i="2"><i></i></button>
+  </div>
+  <p id="cook-what"></p>
+  <div id="cook-known"></div>
+  <div class="cook-row"><button id="cook-stick" data-act="cook-stick" title="A stick on the fire" aria-label="A stick on the fire"><i></i><b></b></button><button id="cook-go" data-act="cook-go">Cook</button></div>
+</div>
+<div id="eat" class="hidden"></div>
 <div id="satchel" class="empty"><div class="slots"></div>
   <button id="build" class="hidden" data-act="build" title="Make a campfire (F)" aria-label="Make a campfire"><i></i></button>
   <button id="emote" data-act="emote" title="Emotes" aria-label="Emotes" aria-expanded="false"><i></i></button>

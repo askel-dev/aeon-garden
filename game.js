@@ -2392,7 +2392,9 @@ function bodyWoke() {
   setTimeout(() => toast('You wake at home, stiff with cold. The satchel is empty.'), 900);
 }
 const VITAL_FULL = 0.985;
-const vit = { warm: -1, wet: -1, stam: -1, winded: null, frost: -1 };
+const FED_SHOW = 4000;                    // ms the tummy's bar shows after eating (else only once hungry)
+const vit = { warm: -1, wet: -1, stam: -1, winded: null, frost: -1, food: -1, foodShow: null, fedAt: -1e9 };
+const TUMMY_WORDS = [[0.85, 'Full'], [0.55, 'Fed'], [S.HUNGRY, 'Peckish'], [0.001, 'Hungry'], [-1, 'Starving']];
 function renderVitals() {
   const f = world.forager, box = $('#vitals');
   if (!box) return;
@@ -2413,6 +2415,15 @@ function renderVitals() {
     el.querySelector('i').style.width = stam + '%';
     el.title = f.winded ? 'Out of breath' : 'Stamina';
     vit.stam = stam; vit.winded = f.winded;
+  }
+  const food = Math.round(f.tummy * 100), foodShow = f.tummy < S.HUNGRY || performance.now() - vit.fedAt < FED_SHOW;
+  if (food !== vit.food || foodShow !== vit.foodShow) {
+    const el = $('#v-food');
+    el.classList.toggle('show', foodShow);
+    el.classList.toggle('starving', f.tummy <= 0);
+    el.querySelector('i').style.width = food + '%';
+    el.title = TUMMY_WORDS.find(([k]) => f.tummy > k)[1];
+    vit.food = food; vit.foodShow = foodShow;
   }
   const frost = S.warmthStage(f) === 3 ? Math.round((0.45 + 0.55 * (1 - f.warmth / S.WARMTH_STAGES[2])) * 20) / 20 : 0;
   if (frost !== vit.frost) {
@@ -2781,7 +2792,7 @@ function say(text, x, y) {
 const MASS = { honey: 1, drygrass: 1, birchbark: 1, garlic: 1, nettle: 1, sorrel: 1, watercress: 1, elderflower: 1, sulphur: 1, chanterelle: 1, cherry: 1, blackberry: 1, acorns: 1, beechnuts: 1 };
 function itemName(id, n) {
   const name = Recipes.INGREDIENTS[id]?.name || id;
-  return n > 1 && !MASS[id] && !name.endsWith('s') ? name + 's' : name;
+  return n > 1 && Recipes.INGREDIENTS[id] && !MASS[id] && !name.endsWith('s') ? name + 's' : name;   // (a dish keeps its name)
 }
 // "+3 Chanterelles" with its icon on a parchment pill (or a plain line), painted once, then only drawn.
 function floatOf(id, n, x, y, t0, text) {
@@ -3494,7 +3505,7 @@ function goFire(t) {
   const [x, y] = at;
   walkTo(...toScreen(x, y));
   ui.fire = { kind: t.kind, F: t.F, x: t.x, y: t.y, sx: x, sy: y, stage: 'go', t0: performance.now(), step: -1, heat: 0, blowing: false, caught: 0,
-    puff: 0, breath: 0, blownAt: 0, held: 0 };
+    puff: 0, breath: 0, blownAt: 0, held: 0, pot: [], fedAt: 0 };
 }
 // The fire under a point on screen (its ring as drawn, a little wider for a finger), or null.
 function fireAt(sx, sy) {
@@ -3523,17 +3534,18 @@ function fireTell(e) {
   say(FIRE_TELLS[e.type], F.x, F.y - 0.4);
   if (e.type !== 'firecold') hear('fizzle', F.x, F.y);
 }
-// A click or a tap on a fire: off to see to it, if there's something to do with what the satchel holds; else why not.
+// A click or a tap on a fire: a lit one, off to cook at it (its card has a stick for it too); else off to see to it, if
+// there's something to do with what the satchel holds; else why not.
 function clickFire(F) {
   const sticks = hasTag('fuel'), tinder = hasTag('tinder');
   let kind = '';
-  if (F.lit) kind = sticks && S.fireRoom(F) ? 'feed' : '';
+  if (F.lit) kind = cooking() && ui.fire.F === F ? '' : 'cook';
   else if (F.embers > 0) kind = F.fuel > 0 ? 'blow' : sticks ? 'feed' : '';
   else if (S.lightable(F)) kind = 'light';
   else if (tinder && (F.fuel > 0 || sticks)) kind = 'relay';
+  if (!kind && F.lit) return;                             // (cooking at it already)
   if (!kind) {
-    const why = F.lit ? (S.fireRoom(F) ? 'No sticks in the satchel' : 'Burning well: it\'s full')
-      : F.embers > 0 ? 'Embers: it needs a stick' : F.fuel > 0 ? 'It needs tinder to light' : !tinder && !sticks ? 'It needs tinder and sticks' : !tinder ? 'It needs tinder to light' : 'It needs sticks';
+    const why = F.embers > 0 ? 'Embers: it needs a stick' : F.fuel > 0 ? 'It needs tinder to light' : !tinder && !sticks ? 'It needs tinder and sticks' : !tinder ? 'It needs tinder to light' : 'It needs sticks';
     const [sx, sy] = toScreen(F.x, F.y), near = Math.hypot(F.x - world.forager.x, F.y - world.forager.y) < 2.5;
     say(why, F.x, F.y - 0.4);
     if (!near) walkTo(sx + (world.forager.x < F.x ? -1 : 1) * STAND_OFF * cam.zoom, sy);
@@ -3546,6 +3558,7 @@ function clickFire(F) {
 // stick on), 'strike' (the flint and steel), 'blow' (held: bent down blowing on the spark), 'lit' (watching it take).
 function fireFrame(now, dt) {
   const j = ui.fire, f = world.forager;
+  if (cooking() !== cookUi.open) renderCook();           // (the cooking card: opened, or shut by a walk, a collapse)
   if (!j) { sitFrame(now); return; }
   if (f.down >= 0) { ui.fire = null; return; }
   if (j.stage === 'go') {
@@ -3570,7 +3583,11 @@ function fireFrame(now, dt) {
       fireStage(j, 'feed', now);
     } else if (j.kind === 'feed') fireStage(j, 'feed', now);
     else if (j.kind === 'light') fireStage(j, 'strike', now);
-    else fireStage(j, 'blow', now);
+    else if (j.kind === 'cook') {
+      if (!j.F.lit) { say('The fire\'s burnt down', j.x, j.y - 0.5); ui.fire = null; return; }
+      fireStage(j, 'cook', now);
+      renderCook(); renderSatchel();
+    } else fireStage(j, 'blow', now);
     return;
   }
   const u = now - j.t0;
@@ -3599,6 +3616,7 @@ function fireFrame(now, dt) {
       hear('strike', j.x, j.y, { n: k }, true);
     }
   } else if (j.stage === 'blow') blowFrame(j, now, dt);
+  else if (j.stage === 'cook' || j.stage === 'cooking') cookFrame(j, now);
   else if (j.stage === 'lit') { if (u > LIT_MS) ui.fire = null; }
 }
 function fireStage(j, stage, now) {
@@ -3672,6 +3690,8 @@ function kneelNow(now) {
     case 'strike': return (u % STRIKE_MS) / STRIKE_MS < STRIKE_UP ? KNEEL.strikeUp : KNEEL.strikeDown;
     case 'blow': return j.blowing ? (((now - j.breath) % BLOW_BREATH) / BLOW_BREATH < BLOW_OUT ? KNEEL.blow : KNEEL.breathe) : KNEEL.rest;
     case 'lit': return u < LIT_MS * 0.5 ? KNEEL.rest : KNEEL.warm;
+    case 'cook': return now - j.fedAt < FEED_MS * 0.8 ? KNEEL.lay : KNEEL.warm;
+    case 'cooking': return u % COOK_STIR < COOK_STIR * 0.5 ? KNEEL.lay : KNEEL.rest;   // (stirring)
   }
   return -1;
 }
@@ -3704,6 +3724,251 @@ function fireNet(m) {
   else if (!F) return;
   else if (m.a === 'feed') S.feedFire(world, F, m.n, m.tn);
   else if (m.a === 'light') S.lightFire(world, F);   // (handleEvent's firelit flares it)
+}
+
+// ------------------------------------------------------------------ cooking at the fire
+//
+// PLAN.md stage 6. A click or a tap on a lit fire walks the forager there (clickFire: 'cook'); it kneels, and a small card
+// opens beside the fire (#cook, renderCook; on an upright phone a sheet over the satchel): the pot's slots (recipes.js
+// STATIONS.fire), Cook, and a stick button that feeds the fire. A tap on a satchel slot puts one of it in the pot (potAdd; a
+// stick goes on the fire instead): it stays in the satchel, held back and shown one fewer (potHeld), till it's cooked; a tap
+// on a pot slot takes it back out. Nothing says what something new will make, but a dish made before is named as its things
+// go in, and the card offers the ones the satchel has the things for (a tap fills the pot: cookKnown). Cook: COOK_MS of the
+// forager stirring over the flames (stage 'cooking'), then the things come out of the satchel and the dish (recipes.js cook,
+// or a forager's mess) flies into it from the fire; a dish never made before gets its gold headline (firstTime 'dish:' + its
+// name, which is also how the card knows it: per player, for good). Walking off, ✕, Esc or Back shut it, and walking off
+// mid-cook loses nothing. Cooking costs the fire nothing, but it has to be burning. Nothing goes to friends: it's all the
+// satchel's (a stick on the fire goes, as any feeding does).
+const COOK_MS = 5500;                     // ms a dish takes over the flames (real time: the same at any speed)
+const COOK_KNOWN = 4;                     // known dishes the card offers at most
+const COOK_STIR = 900;                    // ms a stir takes, cooking
+const POT = Recipes.STATIONS.fire.slots;
+const knownDish = name => firsts.has('dish:' + name);
+const cooking = () => !!ui.fire && (ui.fire.stage === 'cook' || ui.fire.stage === 'cooking');
+const cookUi = { open: false, x: NaN, y: NaN, w: 0, h: 0 };
+const uprightPhone = matchMedia('(max-width: 760px) and (min-height: 501px)');
+
+// What the satchel holds, { id: how many }.
+function bagHave() {
+  const f = world.forager, have = {};
+  for (let k = 0; k < S.SLOTS; k++) if (f.bag[k]) have[f.bag[k]] = (have[f.bag[k]] || 0) + f.bagN[k];
+  return have;
+}
+// What the pot holds back from the satchel, { id: how many } (nothing while the card's shut).
+function potHeld() {
+  const held = {};
+  if (cooking()) for (const id of ui.fire.pot) held[id] = (held[id] || 0) + 1;
+  return held;
+}
+// The pot never holds back more than the satchel has (one dragged out, or eaten).
+function potPrune() {
+  if (!cooking()) return;
+  const have = bagHave(), pot = ui.fire.pot;
+  for (let i = pot.length - 1; i >= 0; i--) if (!(have[pot[i]] > 0) || pot.filter(id => id === pot[i]).length > have[pot[i]]) pot.splice(i, 1);
+}
+
+// One of what's in satchel slot k into the pot.
+function potAdd(k) {
+  const j = ui.fire, f = world.forager, id = f.bag[k];
+  if (!j || j.stage !== 'cook' || !id) return;
+  if (Recipes.INGREDIENTS[id]?.tags.includes('fuel')) { feedStick(); return; }   // (a stick: on the fire)
+  const food = Recipes.foodOf(id);
+  if (!food || !(food.fill > 0)) { say('Not for the pot', j.x, j.y - 0.5); chime('click'); return; }
+  if (j.pot.length >= POT) { say('The pot\'s full', j.x, j.y - 0.5); chime('click'); return; }
+  if (potHeld()[id] >= S.bagCount(f, id)) return;
+  j.pot.push(id);
+  const from = $('#satchel').querySelectorAll('.slot')[k], to = $('#cook').querySelectorAll('.cook-slot')[j.pot.length - 1];
+  renderSatchel();
+  renderCook(false);
+  to.classList.add('coming');
+  flyBetween(id, from, to, () => to.classList.remove('coming'));
+  chime('click');
+}
+// The pot's slot i back out (into the satchel: it never left).
+function potTake(i) {
+  const j = ui.fire;
+  if (!j || j.stage !== 'cook' || !j.pot[i]) return;
+  j.pot.splice(i, 1);
+  chime('click');
+  renderSatchel(); renderCook();
+}
+// A known dish tapped on the card: the pot holds what makes it, out of the satchel.
+function cookKnown(name) {
+  const j = ui.fire, r = Recipes.recipeOf(name);
+  if (!j || j.stage !== 'cook' || !r) return;
+  const things = Recipes.thingsFor(r.needs, bagHave());
+  if (!things) return;
+  j.pot = things;
+  chime('click');
+  renderSatchel(); renderCook();
+  for (const el of $('#cook').querySelectorAll('.cook-slot.on')) el.animate([{ transform: 'scale(0.8)' }, { transform: 'scale(1.1)' }, { transform: 'scale(1)' }], { duration: 240, easing: 'ease-out' });
+}
+// A stick on the fire, from the card.
+function feedStick() {
+  const j = ui.fire;
+  if (!j || !cooking()) return;
+  if (!S.fireRoom(j.F)) { say('Burning well: it\'s full', j.x, j.y - 0.5); chime('click'); return; }
+  if (!spendTag('fuel')) { say('No sticks in the satchel', j.x, j.y - 0.5); chime('click'); return; }
+  const n = S.feedFire(world, j.F, 1, 0), now = performance.now();
+  sendFire('feed', j.F, n, 0);
+  fireFlare.set(j.F, now - TAKE_MS);
+  j.fedAt = now;
+  chime('stick');
+  renderCook();
+}
+function cookStart() {
+  const j = ui.fire, now = performance.now();
+  if (!j || j.stage !== 'cook' || !j.pot.length) return;
+  if (!j.F.lit) { say('The fire\'s out', j.x, j.y - 0.5); return; }
+  j.stage = 'cooking'; j.t0 = now; j.step = -1;
+  fireFlare.set(j.F, now - TAKE_MS);
+  chime('kindle', { v: 0.45 });
+  renderCook();
+}
+// Cooked: the things out of the satchel, the dish in (or on the ground by it, with no room), a new one's headline.
+function cookDone(j, now) {
+  const f = world.forager, have = bagHave(), dish = Recipes.cook(j.pot, 'fire');
+  for (const id of j.pot) if (!(have[id]-- > 0)) { say('Something\'s missing', j.x, j.y - 0.5); j.pot.length = 0; fireStage(j, 'cook', now); renderCook(); return; }
+  for (const id of j.pot) S.spend(f, id, 1);
+  j.pot.length = 0;
+  fireStage(j, 'cook', now);
+  const into = S.stow(f, dish.name, 1), [fx, fy] = toScreen(j.x, j.y), up = firePx(cam.zoom) * 0.5;
+  if (into.length) flyToSlot(dish.name, fx, fy - up, into[0]);
+  else {
+    const until = world.tick + Math.round(S.DROP_DAYS * S.TPD), x = f.x + (j.x - f.x) * 0.4, y = f.y + 0.3, d = S.dropAt(world, dish.name, x, y, 1, world.tick, until);
+    if (Net && Net.on) Net.send({ t: 'drop', kind: d.kind, x: d.x, y: d.y, n: 1, born: d.born, until: d.until, tick: world.tick });
+    dropLand.set(d, now);
+    say('The satchel\'s full: it\'s on the ground', f.x, f.y - 1.6);
+    renderSatchel();
+  }
+  chime('pick', { n: 2 });
+  if (dish === Recipes.MESS) say('A forager\'s mess. Still food, mostly', j.x, j.y - 0.6);
+  else if (!knownDish(dish.name)) firstTime('dish:' + dish.name, 'new recipe', esc(dish.name), esc(dish.text || ''));
+  renderCook();
+}
+// Every frame the card is up: it keeps beside the fire, and a cook comes out once it's done. The fire burnt out, it shuts
+// (a cook under way finishes: it was hot enough).
+function cookFrame(j, now) {
+  if (j.stage === 'cooking' && now - j.t0 >= COOK_MS) cookDone(j, now);
+  if (j.stage === 'cook' && !j.F.lit) { say('The fire\'s burnt down', j.x, j.y - 0.5); ui.fire = null; return; }
+  placeCook(j);
+}
+function placeCook(j) {
+  const card = $('#cook');
+  if (uprightPhone.matches) { if (card.style.transform) { card.style.transform = ''; cookUi.x = NaN; } return; }
+  const [fx, fy] = onScreen(j.x, j.y), side = j.sx < j.x ? 1 : -1, off = firePx(cam.zoom) * 0.55 + 14;
+  let x = side > 0 ? fx + off : fx - off - cookUi.w, y = fy - cookUi.h * 0.7;
+  x = clamp(x, 12, vw - cookUi.w - 12); y = clamp(y, 64, vh - cookUi.h - 120);
+  x = Math.round(x); y = Math.round(y);
+  if (x === cookUi.x && y === cookUi.y) return;
+  cookUi.x = x; cookUi.y = y;
+  card.style.transform = `translate(${x}px, ${y}px)`;
+}
+function closeCook() { if (cooking()) ui.fire = null; }
+
+// The card, rewritten when something on it changes (never every frame).
+function renderCook(measure = true) {
+  const card = $('#cook'), open = cooking();
+  if (open !== cookUi.open) {
+    cookUi.open = open;
+    card.classList.toggle('hidden', !open);
+    if (!open) { renderSatchel(); return; }
+    cookUi.x = NaN;
+  }
+  if (!open) return;
+  const j = ui.fire, f = world.forager, busy = j.stage === 'cooking';
+  itemSheet();
+  card.classList.toggle('busy', busy);
+  const slots = card.querySelectorAll('.cook-slot');
+  slots.forEach((el, i) => {
+    const id = j.pot[i] || '';
+    el.classList.toggle('on', !!id);
+    el.querySelector('i').style.backgroundPosition = id ? itemBg(id) : '';
+    el.title = id ? `${Recipes.foodOf(id)?.name || id}: tap to take it out` : 'Tap something in the satchel';
+    el.disabled = busy || !id;
+  });
+  const dish = j.pot.length ? Recipes.cook(j.pot, 'fire') : null, known = dish && dish !== Recipes.MESS && knownDish(dish.name);
+  const anyFood = Object.keys(bagHave()).some(id => Recipes.foodOf(id)?.fill > 0);
+  $('#cook-what').innerHTML = busy ? (known ? `Cooking <b>${esc(dish.name)}</b>…` : 'Cooking…')
+    : known ? `<b>${esc(dish.name)}</b>` : j.pot.length ? 'Something new?'
+    : anyFood ? `Put up to ${POT} things in from the satchel` : 'Nothing in the satchel to cook';
+  const sticks = Recipes.takes('fuel').reduce((n, ing) => n + S.bagCount(f, ing), 0), stick = $('#cook-stick');
+  stick.querySelector('i').style.backgroundPosition = itemBg('stick');
+  stick.disabled = !sticks || !S.fireRoom(j.F);
+  stick.querySelector('b').textContent = sticks || '';
+  stick.title = !sticks ? 'No sticks in the satchel' : !S.fireRoom(j.F) ? 'Burning well: it\'s full' : 'A stick on the fire';
+  const go = $('#cook-go');
+  go.disabled = busy || !j.pot.length;
+  go.innerHTML = busy ? '<span>Cooking</span>' : '<span>Cook</span>';
+  // The dishes made before that the satchel has the things for (not what's in the pot already).
+  const have = bagHave(), offer = [];
+  if (!busy) for (const r of Recipes.RECIPES) {
+    if ((r.at || 'fire') !== 'fire' || !knownDish(r.name) || (known && dish === r) || !Recipes.thingsFor(r.needs, have)) continue;
+    offer.push(r);
+    if (offer.length >= COOK_KNOWN) break;
+  }
+  const list = $('#cook-known'), key = offer.map(r => r.name).join('|');
+  if (list.dataset.key !== key) {
+    list.dataset.key = key;
+    list.innerHTML = offer.map(r => `<button class="cook-dish" data-act="cook-dish" data-name="${esc(r.name)}"><i style="background-position:${itemBg(r.name)}"></i>${esc(r.name)}</button>`).join('');
+  }
+  if (measure) { cookUi.w = card.offsetWidth; cookUi.h = card.offsetHeight; }
+  placeCook(j);
+}
+
+// One thing flies from one element to another (the satchel to the pot), and the one it lands in bumps.
+function flyBetween(id, from, to, landed) {
+  if (!from || !to) { if (landed) landed(); return; }
+  const a = from.getBoundingClientRect(), b = to.getBoundingClientRect();
+  const sx = a.left + a.width / 2, sy = a.top + a.height / 2, tx = b.left + b.width / 2, ty = b.top + b.height / 2;
+  const fly = document.createElement('div');
+  fly.className = 'fly'; fly.style.backgroundPosition = itemBg(id);
+  document.body.appendChild(fly);
+  const mx = (sx + tx) / 2, my = Math.min(sy, ty) - 40;
+  const an = fly.animate([{ transform: `translate(${sx - 16}px, ${sy - 16}px) scale(0.9)` },
+    { transform: `translate(${mx - 16}px, ${my - 16}px) scale(1.1)`, offset: 0.45 },
+    { transform: `translate(${tx - 16}px, ${ty - 16}px) scale(0.9)` }], { duration: 380, easing: 'ease-in-out' });
+  an.onfinish = () => { fly.remove(); if (landed) landed(); to.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.15)' }, { transform: 'scale(1)' }], { duration: 200, easing: 'ease-out' }); };
+}
+
+// ------------------------------------------------------------------ eating
+//
+// A tap on something to eat in the satchel (a click with a mouse) shows its name over it with a small Eat button (#eat,
+// eatAsk), or why not: a thing that wants cooking, a full tummy. Eaten (sim.js feedForager), it fills the tummy by recipes.js's fill,
+// a warm dish warms, and the tummy's bar shows a moment (renderVitals). It shuts after EAT_MS, on a tap elsewhere, or once
+// the slot's empty.
+const EAT_MS = 5000;
+const eatUi = { k: -1, timer: 0 };
+function eatAsk(k) {
+  const box = $('#eat'), slots = $('#satchel').querySelectorAll('.slot');
+  slots.forEach(el => el.classList.remove('asking'));
+  clearTimeout(eatUi.timer);
+  eatUi.k = k;
+  if (k < 0) { box.classList.add('hidden'); return; }
+  const f = world.forager, id = f.bag[k], food = id && Recipes.foodOf(id);
+  if (!food) { eatAsk(-1); return; }
+  const why = !food.raw ? 'It wants cooking' : f.tummy > 0.97 ? 'I\'m full' : '';
+  box.innerHTML = `<span class="eat-name">${esc(food.name)}${food.warm ? ' <span class="warm" title="Warms you">✦</span>' : ''}</span>`
+    + (why ? `<span class="why">${why}</span>` : `<button data-act="eat">Eat</button>`);
+  box.classList.remove('hidden');
+  const el = slots[k], r = el.getBoundingClientRect(), w = box.offsetWidth;
+  el.classList.add('asking');
+  box.style.left = Math.round(clamp(r.left + r.width / 2, w / 2 + 8, vw - w / 2 - 8)) + 'px';
+  box.style.top = Math.round(r.top - box.offsetHeight - 8) + 'px';
+  eatUi.timer = setTimeout(() => eatAsk(-1), EAT_MS);
+}
+function eatSlot() {
+  const k = eatUi.k, f = world.forager, id = k >= 0 && f.bag[k], food = id && Recipes.foodOf(id);
+  if (!food) { eatAsk(-1); return; }
+  if (cooking() && (potHeld()[id] || 0) >= S.bagCount(f, id)) { say('It\'s in the pot', f.x, f.y - 1.6); return; }
+  const why = food.raw ? S.feedForager(world, k, food.fill, food.warm) : 'It wants cooking';
+  if (why) { say(why, f.x, f.y - 1.6); chime('click'); eatAsk(f.bag[k] ? k : -1); return; }
+  say(food.warm ? 'Mm. Warm right through' : food.dish ? 'Mm, that\'s good' : 'Mm', f.x, f.y - 1.6);
+  chime('pick', { n: 1 });
+  vit.fedAt = performance.now();
+  potPrune();
+  renderSatchel(); renderVitals(); if (cooking()) renderCook();
+  eatAsk(f.bag[k] ? k : -1);
 }
 
 // How loud the fire's crackle is (sound.js): the nearest lit one to the middle of the screen, by how well it burns.
@@ -4006,7 +4271,8 @@ function drawCampMark(now) {
 // A row of SLOTS small parchment slots at the bottom in the middle (#satchel), faint and slim while it's empty. Each shows
 // what's in it, painted in the meadow's style (itemSheet: the mushrooms, greens and windfalls as the meadow paints them,
 // and paintItem for the rest, all once into one sheet), and how many. It's sim.js's w.forager.bag, so it's kept with the meadow.
-const ITEM_IDS = Object.keys(Recipes.INGREDIENTS), ITEM_PX = 96;   // (two device pixels a CSS pixel at 48)
+// The dishes are in it too, by name (their emoji, till they're painted).
+const ITEM_IDS = [...Object.keys(Recipes.INGREDIENTS), ...Recipes.RECIPES.map(r => r.name), Recipes.MESS.name], ITEM_PX = 96;   // (two device pixels a CSS pixel at 48)
 const ITEM_ART = { apple: 'fall:0', acorns: 'fall:1', blackberry: 'item:0', cherry: 'item:1', honey: 'item:2', beechnuts: 'item:3', garlic: 'green:0', nettle: 'green:6' };
 S.SHROOM_KINDS.forEach((k, i) => { ITEM_ART[k] = 'shroom:' + i * 3; });   // (SHROOM_ARTS: the fewest caps)
 S.FIND_KINDS.forEach((k, i) => { ITEM_ART[k] = 'find:' + i * 4; });     // (FIND_ARTS: the first look)
@@ -4022,7 +4288,7 @@ function itemSheet() {
     const art = ITEM_ART[id];
     if (!art) {                                          // (not painted yet: its emoji stands in)
       g.font = `${ITEM_PX * 0.7}px ${EMOJI_FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle';
-      g.fillText(Recipes.INGREDIENTS[id].icon || '?', (i + 0.5) * ITEM_PX, ITEM_PX * 0.54);
+      g.fillText(Recipes.foodOf(id)?.icon || '?', (i + 0.5) * ITEM_PX, ITEM_PX * 0.54);
       return;
     }
     const want = ITEM_PX / dpr * (ITEM_FILL[id] || 1), s = sprite(art, want), d = s.size * dpr;
@@ -4097,18 +4363,21 @@ function renderSatchel() {
   const box = $('#satchel'), F = world && world.forager;
   if (!box || !F) return;
   itemSheet();
-  const slots = box.querySelectorAll('.slot');
+  potPrune();
+  const slots = box.querySelectorAll('.slot'), held = potHeld();   // (what's in the pot is held back: shown one fewer, cooking)
   let any = false;
   for (let k = 0; k < S.SLOTS; k++) {
-    const id = F.bag[k], n = F.bagN[k], el = slots[k];
+    const id = F.bag[k], el = slots[k], hold = Math.min(held[id] || 0, F.bagN[k]), n = F.bagN[k] - hold;
+    if (hold) held[id] -= hold;
     any = any || !!id;
     if (el.dataset.id === id && +el.dataset.n === n) continue;
     el.dataset.id = id; el.dataset.n = n;
     el.querySelector('i').style.backgroundPosition = id ? itemBg(id) : '';
     el.querySelector('i').classList.toggle('on', !!id);
+    el.classList.toggle('held', !!id && !n);
     el.querySelector('b').textContent = n > 1 ? n : '';
-    el.setAttribute('aria-label', id ? `${Recipes.INGREDIENTS[id]?.name || id}: ${n}` : 'Empty');
-    el.dataset.name = id ? Recipes.INGREDIENTS[id]?.name || id : '';
+    el.setAttribute('aria-label', id ? `${Recipes.foodOf(id)?.name || id}: ${n}` : 'Empty');
+    el.dataset.name = id ? Recipes.foodOf(id)?.name || id : '';
   }
   box.classList.toggle('empty', !any);
   renderBuild();                                          // (the fire button by it: what a fire takes, how much of it's here)
@@ -4170,10 +4439,14 @@ function setupSatchel() {
     const h = held;
     if (!h || e.pointerId !== h.pid) return;
     held = null;
-    if (!h.fly) {                                         // (a tap: its name for a moment, as a mouse's hover shows it)
-      if (e.type === 'pointerup' && h.touch) { const el = row.children[h.k]; el.classList.add('named'); clearTimeout(el.unname); el.unname = setTimeout(() => el.classList.remove('named'), 1400); }
+    if (!h.fly) {                                         // (a tap: into the pot, cooking; something to eat, its Eat; else its name for a moment, as a mouse's hover shows it)
+      if (e.type !== 'pointerup') return;
+      if (cooking()) { potAdd(h.k); return; }
+      if (Recipes.foodOf(h.id)?.fill > 0) { eatAsk(eatUi.k === h.k ? -1 : h.k); return; }
+      if (h.touch) { const el = row.children[h.k]; el.classList.add('named'); clearTimeout(el.unname); el.unname = setTimeout(() => el.classList.remove('named'), 1400); }
       return;
     }
+    eatAsk(-1);
     const F = world.forager, lifted = row.children[h.k], out = e.type === 'pointerup' && h.fly.classList.contains('out');
     h.over?.classList.remove('over');
     box.classList.remove('dragging');
@@ -5636,7 +5909,7 @@ function drawDropped(d, z, now) {
   }
   const left = (d.until - world.tick) / (S.DROP_DAYS * S.TPD);
   if (left <= 0) return;                                    // (gone: sim.js takes it off the list within a second)
-  drawEmoji(ITEM_ART[d.kind] || Recipes.INGREDIENTS[d.kind]?.icon || '❔', (d.x - cam.x) * z + vw / 2, (d.y - cam.y) * z + vh / 2 - px * 0.3 - lift, px,
+  drawEmoji(ITEM_ART[d.kind] || Recipes.foodOf(d.kind)?.icon || '❔', (d.x - cam.x) * z + vw / 2, (d.y - cam.y) * z + vh / 2 - px * 0.3 - lift, px,
     { alpha: left < DROP_FADE ? 0.25 + 0.75 * left / DROP_FADE : undefined });
 }
 
@@ -8941,6 +9214,9 @@ function handleEvent(e) {
     case 'woke':
       bodyWoke();
       break;
+    case 'hungry': case 'starving':
+      if (world.forager.down < 0) say(e.type === 'hungry' ? 'I\'m getting hungry' : 'I\'m starving', world.forager.x, world.forager.y - 1.6);
+      break;
     case 'firelaid':                                        // (a friend's, laid a piece at a time as the forager's is)
       if (!fireLay.has(e.fire) && !(ui.fire && ui.fire.F === e.fire)) fireLay.set(e.fire, performance.now());
       break;
@@ -10161,7 +10437,7 @@ const canShare = !!navigator.share && matchMedia('(pointer: coarse)').matches;  
 function askTick(ms) {
   if (!IDEAS_KEY || played < 0 || document.hidden) return;
   if ((played += ms) < ASK_MS) return;
-  if (!$('#more-menu').classList.contains('hidden')) return;
+  if (!$('#more-menu').classList.contains('hidden') || ui.fire) return;   // (not over the menu, or at a fire: cooking, lighting)
   played = -Infinity;
   try { localStorage.setItem('aeon-garden-asked', '1'); } catch (e) { /* fine */ }
   askIdeas(true);
@@ -10915,6 +11191,7 @@ document.addEventListener('click', e => {
   const t = e.target.closest('[data-action],[data-act],a[data-id],a[data-thing]');
   if (!(t && t.dataset.act === 'more')) toggleMore(false);
   if (emoteUi.open && !(t && t.closest('#emote, #emotes'))) emoteMenu(false);   // (a click anywhere else puts the two away)
+  if (eatUi.k >= 0 && !e.target.closest('#eat, #satchel')) eatAsk(-1);
   if (!t) return;
   if (t.closest('#hud-right .hud-top')) chime('click');
   if (t.dataset.action === 'new') {
@@ -10926,6 +11203,12 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'emote') emoteMenu();         // (the emote button: its two over it)
   else if (t.dataset.act === 'dance') emote(EMOTE.dance);
   else if (t.dataset.act === 'sneak') emote(EMOTE.sneak);
+  else if (t.dataset.act === 'cook-go') cookStart();       // (the cooking card)
+  else if (t.dataset.act === 'cook-stick') feedStick();
+  else if (t.dataset.act === 'cook-take') potTake(+t.dataset.i);
+  else if (t.dataset.act === 'cook-dish') cookKnown(t.dataset.name);
+  else if (t.dataset.act === 'cook-close') closeCook();
+  else if (t.dataset.act === 'eat') eatSlot();
   else if (t.dataset.act === 'close') select(0);
   else if (t.dataset.act === 'sheet-up' || t.dataset.act === 'sheet-down') {
     ui.sheetUp = t.dataset.act === 'sheet-up';
@@ -11031,7 +11314,7 @@ const back = { token: Math.random().toString(36).slice(2), depth: 0, going: fals
 const moreOpen = () => !$('#more-menu').classList.contains('hidden');
 function opened() {
   const ins = $('#inspector').classList, sheetUp = ins.contains('open') && narrow() && !ins.contains('strip');
-  return [askOpen(), moreOpen(), !!ui.place, outfitOpen(), nameOpen(), chatOpen(), ins.contains('open'), sheetUp, emoteUi.open].filter(Boolean).length;
+  return [askOpen(), moreOpen(), !!ui.place, cooking(), outfitOpen(), nameOpen(), chatOpen(), ins.contains('open'), sheetUp, emoteUi.open].filter(Boolean).length;
 }
 // The one on top shuts (Esc, and Back once for each step it takes).
 function stepOut() {
@@ -11040,6 +11323,7 @@ function stepOut() {
   else if (moreOpen()) toggleMore(false);
   else if (emoteUi.open) emoteMenu(false);
   else if (ui.place) placeFire(false);                     // (picking a spot for a fire: not now)
+  else if (cooking()) closeCook();                         // (the cooking card)
   else if (nameOpen()) askName(false);
   else if (chatOpen()) openChat(false);
   else if (outfitOpen()) pickOutfit(false);

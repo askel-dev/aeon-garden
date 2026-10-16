@@ -259,6 +259,15 @@ Each its own branch, played and looked at by Axel before the next:
 4. **The sounds:** all of the above in sound-lab, then in the game.
 5. **A polish pass** after Axel plays it: timing, easing, how often the little touches come, so it never wears thin.
 
+### As built: step 1, the workings (2026-10-16, branch `cook`)
+- All as above, with plain looks: the dishes are their recipes.js emoji (a new optional `icon`), the cook is the forager
+  stirring (its kneeling poses) and the Cook button filling over `COOK_MS` (5.5 s), with the pot's things jiggling.
+- A new forager starts at 0.85, not two thirds: at two thirds it was starving by the first dawn. Tummy 10, a dish fills 3 to
+  7 (recipes.js `fillOf`), so two or three dishes a day.
+- Only rosehip tea is warm at the fire (the other warm ones are pot dishes): the recipes pass (question 10) is still to do.
+- A stick tapped in the satchel while the card is up goes on the fire. With the satchel full, a dish lands on the ground.
+- Not yet: the hungry look and growl (step 3/4); for now the forager says "I'm getting hungry" and "I'm starving".
+
 ## After that (roughly in this order)
 1. **Cooking at the fire** and 2. **hunger and eating**: stage 6 above.
 3. **Camp builds.** Arranged inside the camp ring: a seat log, a spit, a drying rack (keeping food for winter), a basket
