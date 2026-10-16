@@ -3909,6 +3909,23 @@ function potPossible(pot) {
   for (const r of Recipes.RECIPES) if ((r.at || 'fire') === 'fire' && potLeft(pot, r.needs)) return true;
   return false;
 }
+// What the pot would make, said plainly, in one of four ways: a dish you know by its name; a dish you've never made as
+// "Something new!" (finding it is the reward, so it isn't named); not a dish yet but on its way to one, saying so and that
+// cooked as it is it's a forager's mess (and what a known dish it's near still wants: potToward); and nothing that could
+// come of it but a mess. { state: 'known' | 'new' | 'toward' | 'maybe' | 'mess', dish, html }. (It used to say "Something
+// new" whenever some recipe could still grow from the pot, so two cherries promised something and cooked into a mess.)
+const MESS_WORD = 'cooked like this it\'s a forager\'s mess';
+function potWord(pot) {
+  const dish = pot.length ? Recipes.cook(pot, 'fire') : null;
+  if (dish && dish !== Recipes.MESS) return knownDish(dish.name) ? { state: 'known', dish, html: `<b>${esc(dish.name)}</b>` } : { state: 'new', dish, html: '<b class="new">Something new!</b>' };
+  if (!pot.length) return { state: 'empty', dish: null, html: '' };
+  if (!potPossible(pot)) return { state: 'mess', dish, html: 'Only a forager\'s mess can come of this' };
+  const toward = potToward(pot);
+  if (toward) return { state: 'toward', dish, html: `Add ${esc(wantWords(toward.left))} for <b>${esc(toward.r.name)}</b>; ${MESS_WORD}` };
+  return { state: 'maybe', dish, html: `Not a dish yet: it wants more, and ${MESS_WORD}` };
+}
+// A dish's words still wanting, as a cook says them: "garlic", "a mushroom and honey".
+const wantWords = words => words.map(w => (Recipes.INGREDIENTS[w]?.name || (Recipes.recipeOf(w) ? w : 'a ' + w)).toLowerCase()).join(' and ');
 // The fire's fuel, worn as a ring round the stick button: filled as it still has burning (--fuel), amber when it's down to
 // its last sticks (.low). Written whenever the card is (renderCook) and each frame it burns (cookFrame).
 function cookFuel(j) {
@@ -4046,19 +4063,13 @@ function renderCook(measure = true) {
     el.setAttribute('aria-label', name ? `${name}: tap to take it out` : 'Tap something in the satchel');
     el.disabled = busy || !id;
   });
-  const pot = j.pot, dish = pot.length ? Recipes.cook(pot, 'fire') : null, known = !!dish && dish !== Recipes.MESS && knownDish(dish.name);
-  // What the pot is heading for: certainly a mess (no dish at all could come of it), a known dish a thing or two short, or new.
-  const mess = pot.length > 0 && !known && !potPossible(pot);
-  const toward = pot.length > 0 && !known && !mess ? potToward(pot) : null;
+  const pot = j.pot, word = potWord(pot), dish = word.dish, known = word.state === 'known', mess = word.state === 'mess';
   const made = !busy && !pot.length && j.made ? j.made : null;   // (the dish just cooked, in the output slot a few seconds)
   const anyFood = Object.keys(bagHave()).some(id => Recipes.foodOf(id)?.fill > 0);
   const what = $('#cook-what');
   what.innerHTML = busy ? (known ? `Cooking <b>${esc(dish.name)}</b>…` : 'Cooking…')
     : made ? (made.mess ? 'That was a forager\'s mess' : `Made <b>${esc(made.name)}</b>`)
-    : known ? `<b>${esc(dish.name)}</b>`
-    : mess ? 'Only a forager\'s mess can come of this'
-    : toward ? `Add ${esc(toward.left.map(w => (Recipes.INGREDIENTS[w]?.name || w).toLowerCase()).join(' and '))} for <b>${esc(toward.r.name)}</b>`
-    : pot.length ? `Something new: <b>${esc(pot.map(id => Recipes.foodOf(id)?.name || id).join(', '))}</b>`
+    : pot.length ? word.html
     : anyFood ? `Put up to ${POT} things in from the satchel` : 'Nothing in the satchel to cook';
   what.classList.toggle('mess', !!(mess || made?.mess));
   cookFuel(j);
@@ -4074,7 +4085,7 @@ function renderCook(measure = true) {
   out.classList.toggle('unknown', !outName && (pot.length > 0 || !!made));
   out.classList.toggle('mess', outMess);
   out.querySelector('i').style.backgroundPosition = outName ? itemBg(outName) : '';
-  out.querySelector('span').textContent = outMess ? '💨' : '?';
+  out.querySelector('span').textContent = outMess ? '💨' : !made && word.state === 'new' ? '!' : '?';
   out.dataset.name = outName;
   out.setAttribute('aria-label', made ? `Just made: ${made.name}` : known ? `${dish.name}: what the pot will make` : mess ? 'A forager\'s mess: what the pot will make' : 'What the pot will make');
   $('#cook-arrow').classList.toggle('ready', pot.length > 0);
@@ -11984,6 +11995,6 @@ try { if (localStorage.getItem('aeon-garden-sound') === '1') toggleSound(true); 
 
 for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => { if (ui.sound) Sound.start(); }, { once: true });
 
-window.garden = { get world() { return world; }, ui, cam, forager: fg, prints: pr, peers,   // handy in the console
+window.garden = { get world() { return world; }, ui, cam, forager: fg, prints: pr, peers, satchel: () => renderSatchel(),   // handy in the console
   get trees() { return { worker: !!treeWorker, workers: treeWorkers.length, art: treeArt, bytes: treeBytes, asked: treeAsked.size, busy: treeBusy }; } };
 })();
