@@ -4116,14 +4116,34 @@ function inCrown(w, x, y, kind) {
   });
   return under;
 }
-// Whether x, y is stony: by the water's edge, near a ford, or round a rock.
+// Whether x, y is stony: by the water's edge, near a ford, or round a rock (in a ring FIND_ROCK_RING wide round a big one).
 function stonyAt(w, x, y) {
   const X = x | 0, Y = y | 0;
   for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (inBounds(X + dx, Y + dy) && w.water[(Y + dy) * W + X + dx]) return true;
   for (const f of w.fords) if ((f.x - x) ** 2 + (f.y - y) ** 2 < 16) return true;
   let rock = false;
-  forEachDecorNear(w, x, y, 6, d => { if (!rock && !d.tree && (d.x - x) ** 2 + (d.y - y) ** 2 < (0.8 + d.size * 0.6) ** 2) rock = true; });
+  forEachDecorNear(w, x, y, 6, d => {
+    if (rock || d.tree) return;
+    const r = Math.max(0.8 + d.size * 0.6, d.emoji === '🪨' ? d.size * ROCK_SPREAD[rockKind(d)] + FIND_ROCK_GAP + FIND_ROCK_RING : 0);
+    if ((d.x - x) ** 2 + (d.y - y) ** 2 < r * r) rock = true;
+  });
   return rock;
+}
+// How far out from its middle a rock's stones reach as game.js paints them (rockInfo), in its sizes. Nothing comes up on a
+// stone, a boulder or a great rock, nor within FIND_ROCK_GAP of it (a little further behind it, where it stands up over
+// the ground); a few pebbles and a ford's flat stone are underfoot.
+const ROCK_SPREAD = { pebbles: 0, ford: 0, stone: 0.45, boulder: 0.75, great: 0.72 };
+const FIND_ROCK_GAP = 0.35, FIND_ROCK_RING = 1.4, FIND_ROCK_BEHIND = 1.4;
+function onRock(w, x, y) {
+  let on = false;
+  forEachDecorNear(w, x, y, 6, d => {
+    if (on || d.emoji !== '🪨') return;
+    const spread = ROCK_SPREAD[rockKind(d)];
+    if (!spread) return;
+    const r = d.size * spread + FIND_ROCK_GAP, dy = (d.y - y) * (y < d.y ? 1 / FIND_ROCK_BEHIND : 1);
+    if ((d.x - x) ** 2 + dy * dy < r * r) on = true;
+  });
+  return on;
 }
 
 // Every two hours: those past their days, under snow (the low ones) or under water (deep water, for watercress) go, and a
@@ -4177,7 +4197,7 @@ function clumpAt(w, f) {
 // A find at x, y, if it suits it, with room, in sight, not in a burrow's mouth. Lasts FIND_DAYS, never past its season.
 // age: ticks it's been up already (a new meadow's).
 function addFind(w, r, kind, x, y, age = 0) {
-  if (!findPlace(w, kind, x, y) || !roomForFind(w, x, y) || !inSight(w, x, y, null)) return false;
+  if (!findPlace(w, kind, x, y) || !roomForFind(w, x, y) || !inSight(w, x, y, null) || onRock(w, x, y)) return false;
   for (const b of w.burrows) if ((b.x - x) ** 2 + (b.y - y) ** 2 < 2.25) return false;
   const k = FINDS[kind], left = k.to - k.from >= 4 ? Infinity : (1 - findSeason(kind, w.tick)) * (k.to - k.from) * SEASON_DAYS * TPD;
   const until = w.tick + Math.min(left, Math.round(r.range(...(k.days || FIND_DAYS)) * TPD) - age);
