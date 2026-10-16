@@ -78,7 +78,7 @@ A new meadow opens like a film (`startIntro`, `#intro`): black bars top and bott
 away (`body.intro`), "Nobody's Meadow" and "Spring · late afternoon" fading in and out in the lower bar (`INTRO_NAME`), the
 camera craning down onto the forager from `INTRO_WIDE` of its zoom and `INTRO_RISE` tiles up over `INTRO_CRANE` (`introLeft`,
 in `leadCam`), then the bars slide off at `INTRO_MS` and the page fades back, the cloak's card after it if one's still to pick.
-A click, a tap or a key cuts it short and does nothing else (a capturing listener); a kept meadow and a friend's (`heardWorld`)
+A key cuts it short and does nothing else (a capturing listener); a click or a tap does nothing at all, the bars go on their own clock; a kept meadow and a friend's (`heardWorld`)
 open without it. The zoom moves through it, so the ground repaints those few seconds, with nothing else going on.
 A new meadow opens in a storm late in the afternoon (sim.js `START_PHASE`) that holds till the first fire is lit, drawn
 heavier than other storms (`GALE_LOOK`: the storm's share of the sky's mix goes over 1): a moment after it's on screen (`OPENING_MS`) the

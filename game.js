@@ -11688,7 +11688,7 @@ function newWorld(seed) {
 // A new meadow's opening, like the start of a film: black bars come in top and bottom, everything else on the page goes,
 // the name fades in in the lower bar, and the camera cranes down out of the storm onto the forager (INTRO_CRANE: from
 // INTRO_WIDE of its zoom and INTRO_RISE tiles up, eased in leadCam). The forager says its line (openingLine), and the
-// bars slide off (INTRO_MS), the page coming back. A click, a tap or a key cuts it short (and does nothing else).
+// bars slide off (INTRO_MS), the page coming back. A key cuts it short (and does nothing else); a click or a tap does nothing, and it ends on its own clock.
 const INTRO_MS = 7000, INTRO_NAME = [700, 4600], INTRO_CRANE = 5500, INTRO_WIDE = 0.55, INTRO_RISE = 5, INTRO_LINE = 3600;
 const intro = { on: false, t0: 0, z: 0, timers: [] };
 function startIntro() {
@@ -11721,7 +11721,7 @@ for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, e => {
   if (!intro.on || e.target.closest?.('input,textarea')) return;
   e.preventDefault(); e.stopPropagation();
   if (ui.sound) Sound.start();
-  endIntro();
+  if (e.type === 'keydown') endIntro();                 // (a click or a tap does nothing: it ends on its own clock)
 }, { capture: true });
 
 // A new meadow opens in a storm late in the afternoon (sim.js START_PHASE), the forager cold and wet: a moment after it's on
