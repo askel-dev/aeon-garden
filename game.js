@@ -12224,6 +12224,7 @@ let myName = '', myChat = null;
 try { myName = cleanName(localStorage.getItem(NAME)); } catch (e) { /* none, then */ }
 const net = { tick: -1, base: 0, rate: 0, sentAt: 0, hostId: '', later: [], hostSums: new Map(), mySums: new Map(), off: 0, askedAt: -1e9, shown: '' };
 const peers = new Map();                   // friends' foragers, by id
+let leftGuest = false;                     // left a friend's meadow for home: the keep as the page goes mustn't take it over your own
 
 function startTogether() {
   if (!Net) return;
@@ -12317,7 +12318,7 @@ function heardWorld(m, now) {
   showWorld(w);
   endIntro(true);                                        // (a friend's meadow: no opening of our own over it)
   if (mine) w.forager = mine;                            // (the same meadow again: its own forager stays as it was)
-  else { arrive(w.forager); pr.n = 0; pr.next = 0; }
+  else { arrive(w.forager); pr.n = 0; pr.next = 0; awayBack(w.forager, w); }
   renderSatchel();                                       // (showWorld drew the host's satchel, as it came)
   cam.zoom = zoom; cam.x = world.forager.x; cam.y = world.forager.y - CAM_FEET * forPx() / cam.zoom; clampCam();
   history.replaceState(history.state, '', pageLink(w.seed));
@@ -12327,7 +12328,7 @@ function heardWorld(m, now) {
   if (!again) { announce('join', `<small>you’re in</small><b class="fr">${host ? esc(host) + '’s' : 'your friend’s'} meadow</b>`, 'Forage together!'); openingLine(); }
 }
 // A guest's forager comes in beside the host's (it's the host's, unpacked): with an empty satchel, fresh, or cold and wet
-// in the meadow's opening storm (sim.js foragerArrives).
+// in the meadow's opening storm (sim.js foragerArrives) — but for a reload mid-visit the satchel it had comes back (awayBack).
 function arrive(f) {
   f.bag.fill(''); f.bagN.fill(0);
   bringSkills(f, true);                                  // (its own skills, not the host's)
@@ -12337,6 +12338,27 @@ function arrive(f) {
     if (S.walkable(world, f.x + dx, f.y + dy)) { f.x += dx; f.y += dy; break; }
   }
   f.goalX = f.x; f.goalY = f.y; f.heading = Math.PI / 2;
+}
+
+// A guest's satchel isn't kept with the meadow (the meadow is the host's), so it goes in localStorage as the page goes
+// (keepMeadow): a reload mid-visit finds it back (awayBack), in the same room and meadow only. The visit over — Leave,
+// the host gone (the meadow is kept then), or your own meadow opened — drops it.
+const AWAY_BAG = 'aeon-garden-away-bag';     // in localStorage: { room, seed, bag, bagN }
+function keepAwayBag() {
+  if (!(Net && Net.on && Net.guest && net.tick >= 0) || !world) return;   // (net.tick: the host's meadow has landed)
+  const f = world.forager;
+  try { localStorage.setItem(AWAY_BAG, JSON.stringify({ room: Net.room, seed: world.seed, bag: f.bag, bagN: f.bagN })); } catch (e) { /* fine */ }
+}
+function dropAwayBag() { try { localStorage.removeItem(AWAY_BAG); } catch (e) { /* fine */ } }
+// Back in a friend's meadow after a reload: the satchel as it was when the page went (arrive emptied it first).
+function awayBack(f, w) {
+  let k = null;
+  try { k = JSON.parse(localStorage.getItem(AWAY_BAG)); } catch (e) { /* fine */ }
+  if (!k || k.room !== Net.room || k.seed !== w.seed || !Array.isArray(k.bag) || !Array.isArray(k.bagN)) return;
+  for (let i = 0; i < S.SLOTS; i++) {
+    const id = String(k.bag[i] || ''), n = Math.max(0, Math.min(S.STACK, k.bagN[i] | 0));
+    if (id && n > 0 && (Recipes.INGREDIENTS[id] || Recipes.foodOf(id))) { f.bag[i] = id; f.bagN[i] = n; }
+  }
 }
 
 // The host's clock, as the guest has it: the tick it's at now is base + now * rate. Of the times heard, the one that makes
@@ -12470,11 +12492,15 @@ function friendGone(id) {
   const p = peers.get(id);
   if (peers.delete(id)) toast(`🧺 ${friendName(p) || 'Your friend'} has gone home`);
 }
-// A guest whose host has gone: the meadow is its own now, kept and running on its own clock.
+// A guest whose host has gone: the meadow is its own now, kept and running on its own clock. The room goes out of the
+// address too: opening it afresh finds the kept meadow, not whoever has the room now (joining would empty the satchel).
 function hostGone() {
   const who = friendName(peers.get(net.hostId)) || 'Your friend';
   Net.on = false; Net.guest = false; Net.peers = 0;
   peers.clear(); net.tick = -1; net.later.length = 0;
+  ROOM = '';
+  dropAwayBag();                                       // (the satchel is kept with the meadow from now on instead)
+  history.replaceState(history.state, '', pageLink(world.seed));
   setSpeed(ui.speed || 1, true);
   toast(`🧺 ${who} has gone home. This meadow is yours to keep now.`);
 }
@@ -12485,9 +12511,10 @@ function leaveTogether() {
   if (!(Net && Net.on)) return;
   const guest = Net.guest;
   if (guest && !confirm('Leave your friend’s meadow and go home to your own?')) return;
+  leftGuest = guest;                                   // (before Net.leave clears it: the unload's keep would keep the friend's meadow)
   Net.leave();
   ROOM = '';
-  if (guest) { location.replace(location.pathname); return; }
+  if (guest) { dropAwayBag(); location.replace(location.pathname); return; }   // (the visit's over: the satchel there isn't waiting any more)
   peers.clear(); openChat(false);
   history.replaceState(history.state, '', pageLink(world.seed));
   friendsBeat();
@@ -13325,8 +13352,9 @@ function setKept(list) {
 // Hiding the page or leaving it (below): a few hundredths of a second, so never while someone is watching.
 function keepMeadow() {
   keepSkills();
+  keepAwayBag();                                       // (a guest's satchel: the meadow it isn't kept with is the host's)
   if (opening === 1) cleared();                       // never shown (a tab in the background): it can't have broken anything
-  if (!world || world.tick === keptTick || Net && Net.guest) return;   // (a guest's meadow is the host's)
+  if (!world || world.tick === keptTick || Net && Net.guest || leftGuest) return;   // (a guest's meadow is the host's, on the way out too)
   let kept;
   try { kept = S.packWorld(world); } catch (e) { console.warn('Could not keep the meadow', e); return; }
   const tick = keptTick = world.tick;
@@ -13763,7 +13791,7 @@ const seedParam = +params.get('seed');
 // The kept meadow if there is one (keeping the meadow, above), else a new one.
 function begin(rec) {
   if (!(rec && resumeWorld(rec))) newWorld(seedParam || randomSeed());
-  if (!ROOM) bringSkills(world.forager, false);         // (home from a friend's meadow: what it learnt there)
+  if (!ROOM) { bringSkills(world.forager, false); dropAwayBag(); }   // (home: what it learnt there comes with it; a satchel left away doesn't wait)
   requestAnimationFrame(frame);
   if (ROOM) { endIntro(true); wardrobe('join', startTogether); }   // (who's coming and in what, before the room hears of you)
   else if (params.get('friend') && Fr) {                  // (a friend's code link: Friends open, adding them)
