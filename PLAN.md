@@ -122,13 +122,145 @@ rack, the pot, a basket, a lantern, a bedroll).
 - Played in headless Chrome at dusk (the moment frame by frame); no cost to measure outside the moment's few seconds (the ring
   is one draw a frame).
 
+## Stage 6: cooking at the fire, and a tummy (planned and settled 2026-10-16, not built)
+Built together: with nothing to eat for, a dish is only something to collect, and with nothing to cook a tummy is only
+a timer. The cold is already there, so a warm dish by the fire on a cold night is the point. The data is ready
+(recipes.js: 18 dishes, `cook`, `fillOf`, `warm`, `MESS`); the game reads none of it yet but the ingredients.
+
+### Cooking
+- **Opening it:** a click or a tap on a *lit* fire walks the forager there; it kneels, and a small parchment card opens
+  beside the fire (not a panel, not over the forager): 3 slots (`STATIONS.fire.slots`), a Cook button, and a small
+  stick button that feeds the fire (what a click on a lit fire did before). Embers and
+  cold fires keep today's click (blow, feed, relight: game.js `clickFire`). Walking away shuts it, so does ✕ or Back.
+- **Filling it:** tap a satchel slot and one of it goes into the next empty slot on the card; tap a card slot to take
+  it back out. Nothing says what a new dish will be (those are found by trying); a known dish is named on the card as its
+  things go in, and the card lists the known dishes you have the things for, a tap filling the slots.
+- **Cooking:** a few seconds at the fire (the whole look and sound of it is the next section), then the dish goes into
+  the satchel (`stow`, stacking like anything else). What matches no recipe is a forager's mess (`MESS`): still food,
+  just not much.
+- **A new dish:** the first time a dish is made, a small warm moment: its name in gold over the fire with "New recipe!"
+  and its `text` under it (the `firstTime` style, much smaller than "Your camp"), a little chime. Known dishes are
+  remembered for good, per player (localStorage), whatever meadow they're in.
+- **Playing together:** a guest cooks at any fire; it goes through the host's sim like feeding a fire (`sendFire`).
+- **In the satchel:** a dish is kept by its name, and shows its painting (below).
+
+### The look and sound of cooking (the heart of the game: take the time to make it lovely)
+Cooking is what the game is about, so this part gets the most care of anything so far: it should feel like the best
+moment in a cosy cooking game every time, the hundredth time too. Built in steps Axel looks at and plays (see "Building
+it"), with a polish pass after each.
+
+**The dishes, painted.** Every dish gets its own painting in the meadow's storybook style (soft-rendered, not flat
+vector; readable at a glance in a 48 px slot, not too detailed), painted in code like the satchel's items (game.js
+`paintItem`, `itemSheet`) and added to the same sheet.
+- Each dish sits in a vessel that says how it was made: a carved wooden bowl (soups, salads, compote), a birch-bark cup
+  (teas, cordial, syrup), a flat leaf or a hot stone (fritters, roasts, baked apple), a stick skewer (roast mushrooms),
+  with the food in it built from its ingredients' own colours and shapes, cooked: browned edges, a glaze on the honeyed
+  ones, a sheen on the soups, herbs scattered on top.
+- The 18 dishes in recipes.js are each painted by hand. A dish Axel adds later with no painting yet still gets a good
+  one, put together from its vessel and its ingredients (a new optional `look` in recipes.js: 'bowl', 'cup', 'leaf',
+  'skewer', with a sensible guess when it's left out), so the data stays copy-a-block easy.
+- The mess has a painting too, comic and loveable: a lumpy, slightly charred heap with a wisp of smoke.
+- Warm dishes show it: a curl or two of steam rising off them in the slot (a small CSS animation over the painting,
+  only on warm ones, nothing per frame on the canvas).
+- Each is painted twice: for the slot (96 px) and big for its "New recipe!" moment (about 240 px).
+- `recipes.html` shows every dish's painting by its recipe, small and big, so Axel can look at them all at once and
+  see a new dish's painting the moment he adds it. Before they go into the game, a sheet of all of them goes to Axel
+  to look at (and old against new when one is redone).
+
+**The cook, animated.** A little scene at the fire, about 5 to 6 seconds, every beat with its own small motion:
+1. *Into the card:* tapping a satchel slot sends the thing in an arc into a card slot, where it lands with a bounce.
+2. *Into the pan:* on Cook the card folds away, and the things hop one after another from the card into a little pan
+   (fry, roast) or a small hanging billy can (soups, teas) that the forager sets over the flames. Each lands with a
+   squash and a puff.
+3. *Cooking:* the food changes as it cooks, raw to warm to golden (a few painted steps, not a fade every frame); steam
+   wisps rise, fat spits a spark or two, the flames lick up round the pan, a soup bubbles. The forager stirs with a
+   stick, gives the pan a toss halfway (the food flips in the air and lands back), and leans in to sniff it, with a
+   happy wiggle.
+4. *Done:* the dish rises out of the pan in a puff of steam, the forager holds it up to look (a warm glow behind it),
+   then it arcs down into its satchel slot, which bounces as the count ticks up.
+5. *A new dish:* at "done", the big painting rises over the fire with its name in gold, "New recipe!", its `text`
+   under it and a ring of sparkles; it fades after a few seconds or a tap.
+6. *A mess:* a dark puff of smoke instead, the forager coughs, fans it with a hand and looks at you sheepishly. Funny,
+   never a punishment.
+7. *Eating:* the forager sits, eats with little bites (a spoon for soups, sips from a cup), cheeks round, a happy
+   sway; a warm dish sends a soft warm glow up through it and a contented sigh. Raw things are a quick munch.
+- New forager paintings in fur.js for it (kneel and stir, the toss, sniff, hold up, cough, sit and eat, sip), each in
+  `forager-lab.html`; the pan, the billy can, the steam and the sparks as cached paintings (the sprite cache), so the
+  scene costs next to nothing (one cook at a time, the camera close).
+
+**The sounds.** Made in sound.js like the rest (Web Audio, soft, through the felt), every one in sound-lab, plus a
+button there that plays a whole cook from start to end.
+- Things going in: each sounds of what it is (as `pluck` does: mushrooms a soft thump, berries little plops, honey a
+  sticky gloop, greens a rustle, nuts a rattle), climbing the scale as they land one after another.
+- The cooking itself, by how it's made: a frying sizzle that swells as the pan heats and softens as it's done (noise
+  shaped like real fat, with little pops); a simmer of low bubbles for soups and teas; a dry hiss and popping for
+  roasting nuts. The fire's crackle (`crackle`, `amb.fire`) comes up a little under it.
+- The stir (a wooden scrape), the toss (a whoosh and a soft landing), the forager humming a few notes while it cooks.
+- Done: a warm little flourish in the felt-piano's scale; a new dish a longer one with a twinkle; a mess a deflating
+  comic "pfft" and a low note.
+- Eating: crunchy bites, a slurp for soup, a sip for tea, a contented "mm", and a warm swell for a warm dish.
+- A dish's sounds and its vessel come from its `look`, so a dish Axel adds sounds right with no code.
+
+### The tummy
+- `w.forager.tummy`, 1 full to 0 empty, made in `foragerOf` (as a fraction, `-0` then set: the layout rule). It
+  empties over about a day (12 min at 1x), a bit faster when cold (the body burns to keep warm), sprinting a bit more.
+- **Eating:** anywhere, from the satchel: a tap on a slot shows its name with a small "eat" under it. An ingredient fills its `fill`, a dish `fillOf`; `raw: false` things
+  can't be eaten as they are ("It wants cooking"). Eating with a full tummy isn't possible ("I'm full").
+- **What a full tummy means:** `fill` counts against a tummy of about 10: a day's food is three cooked dishes, or a dozen
+  raw things (which also means a lot of picking). Raw is a stopgap; cooked is how you live.
+- **Hungry** (below a third): the forager rubs its tummy now and then, a soft growl; stamina comes back slower and
+  warmth drops faster (nothing to burn). **Starving** (empty): stamina comes back very slowly and the cold hits much
+  harder. Hunger alone never collapses it: the cold does that, and hunger helps it along.
+- **Warm dishes** (`warm: true`): a lift in warmth when eaten, and "warm inside" for a game hour or two (cools much more
+  slowly), shown as a faint glow on the forager.
+- **UI:** a third slim bar with warmth and stamina over the satchel, in a honey colour, shown only once hungry.
+- **After a collapse** it wakes at camp half full (it was a long night, but no double punishment).
+- **The opening:** a new meadow starts at about two thirds full, so the first night by the first fire is fine, and the
+  first morning's hunger is what sends you out to forage and cook.
+
+### Settled (2026-10-16: Axel took every suggestion)
+1. **A click on a lit fire:** today it feeds a stick. Should it open the cooking card instead, with feeding as a small
+   stick button on the card? **Settled:** Yes: card first, a stick button on it, and F / the fire button still for building.
+2. **Does cooking cost the fire anything?** Burn some of its fuel, or only need it lit? **Settled:** Only lit: fuel is already
+   the fire's pressure.
+3. **Showing what it'll make:** once a dish is known, should the card name it as you fill the slots ("Baked apple with
+   honey"), and maybe list known dishes you have the things for, tap to fill? **Settled:** Yes for known dishes only: trying stays
+   the way to find new ones, the known ones don't become a chore.
+4. **Remembered where?** Known dishes per meadow (kept with it, lost with a new meadow) or per player (localStorage,
+   for good)? **Settled:** Per player: a recipe you found is yours, and a new meadow then plays faster.
+5. **How to eat:** today a tap on a satchel slot shows its name. A second tap eats? Or the name with a small "eat"
+   under it? Or eating only by the fire? **Settled:** The name with a small "eat" button under it, anywhere.
+6. **How fast hunger comes:** empty in about one day (12 min), or slower, about two days? **Settled:** One day: a meal in the
+   morning and one at dusk feels right with a 12-minute day. Easy to change.
+7. **How hard hunger bites:** as above (slower stamina, colder), or also walking slower, or able to collapse on its
+   own? **Settled:** As above: gentle, the cold stays the killer.
+8. **Dishes go off?** **Settled:** Not now: keeping food is the drying rack's and the cellar's job, later.
+9. **A kept meadow** from before has a forager with no tummy: start it full, or bump `KEEP_VERSION` and start over?
+   **Settled:** Start it full, no bump.
+10. **What's next to it:** should this stage also add a few more warm or filling dishes, so a day's food is easy to
+    reach in every season? **Settled:** Yes, a small pass over recipes.js once the tummy's pace is set, checking each season has
+    two or three dishes from what grows then.
+11. **Do you do anything while it cooks**, or only watch? E.g. a gentle tap when it smells ready for a "just right"
+    sparkle (never a fail), which later feeds the cooking levels' quality. **Settled:** Watch for now, but leave the toss as the
+    place a tap could go later: the quality comes with the levels.
+12. **How long a cook takes:** real seconds (about 5 to 6, the same at any speed), or game time? **Settled:** Real seconds: it's a
+    moment you watch, and the meadow keeps going around it.
+13. **Vessels at the fire:** a pan and a billy can as above, or one pan for everything until the pot station? **Settled:** Pan and
+    billy can: soups and teas are fire dishes already, and the bubbling is half their charm.
+
+### Building it
+Each its own branch, played and looked at by Axel before the next:
+1. **The workings:** the card, `cook`, the dish in the satchel, the tummy and eating, the hungry and warm effects,
+   remembering dishes. Plain looks (the dishes' emoji), so the feel and the pace can be tried first.
+2. **The dish paintings:** all 18 and the mess, the made-up ones for dishes without a painting, `look` in recipes.js,
+   in `recipes.html`. A sheet goes to Axel first.
+3. **The cook, animated:** the forager's new paintings, the pan and billy can, the beats above, the "New recipe!" moment,
+   eating.
+4. **The sounds:** all of the above in sound-lab, then in the game.
+5. **A polish pass** after Axel plays it: timing, easing, how often the little touches come, so it never wears thin.
+
 ## After that (roughly in this order)
-1. **Cooking at the fire.** Click the fire: a small card opens beside it (not a full-screen panel). Put up to 3 things
-   in from the satchel, cook (a short cook with steam and a sizzle), and the dish lands in the satchel. It reads
-   recipes.js; anything else makes a forager's mess; a dish never made before gets a small warm "New recipe!" moment and
-   is remembered.
-2. **Hunger and eating.** A gentle tummy that empties over a day; dishes fill far more than raw things, and warm dishes
-   warm you. Goes in with the other slim bars.
+1. **Cooking at the fire** and 2. **hunger and eating**: stage 6 above.
 3. **Camp builds.** Arranged inside the camp ring: a seat log, a spit, a drying rack (keeping food for winter), a basket
    for storage, a lantern, a bedroll or lean-to. What each costs is data, recipes.js-style, so Axel can add builds by
    hand. More ground items come in as builds need them (clay, reeds, flint, logs, pine cones, tinder fungus, feathers).
