@@ -292,8 +292,10 @@ function paintedSprite(emoji, px, tint, leaf, center) {
 // (keptForager): they're its walk, a frame or two from being drawn, and let go after a zoom they came back one by one
 // as it walked, and it stuck in a pose till each had. Only if that isn't enough does it start again from empty.
 // Only the set in use is kept: warm, or cold (fur.js FORAGER_COLD), so the cold paintings don't double what's held.
-const keptForager = s => s.look.startsWith('forager:') && (s.px === fg.sized || s.px === furPainted(fg.sized))
-  && !(fg.cold ? WARM_ONLY : COLD_ONLY)[parseInt(s.look.slice(8)) & 127] && Math.floor(parseInt(s.look.slice(8)) / Fur.FORAGER_SNOW_ARTS) === fg.snowArt;
+// The emotes' only while one is on.
+const keptForager = s => s.look.startsWith('forager:') && (s.px === fg.sized || s.px === furPainted(fg.sized)) && (parseInt(s.look.slice(8)) >= Fur.EMOTE_AT
+  ? fg.emote >= 0 && (parseInt(s.look.slice(8)) - Fur.EMOTE_AT >> 5) === fg.snowArt * Fur.FORAGER_OUTFITS.length + fg.outfit
+  : !(fg.cold ? WARM_ONLY : COLD_ONLY)[parseInt(s.look.slice(8)) & 127] && Math.floor(parseInt(s.look.slice(8)) / Fur.FORAGER_SNOW_ARTS) === fg.snowArt);
 function dropSprites(need) {
   for (const [key, s] of spriteCache) {
     if (spriteFrame - s.used < 3 || keptForager(s)) continue;
@@ -1900,7 +1902,7 @@ function drawCreature(c, sx, sy, now) {
 // each step sends out a ring (fg.rings). Its outfit (Fur.FORAGER_OUTFITS) is the player's, picked as the first meadow opens
 // (pickOutfit; later from •••) and kept in localStorage for every meadow after.
 const FORAGER_SIZE = 2.5;                  // its painting's box, next to a rabbit's
-const FORAGER_ARTS = Array.from({ length: Fur.FORAGER_SNOWS * Fur.FORAGER_SNOW_ARTS }, (_, n) => 'forager:' + n);   // (made once: a frame builds no names)
+const FORAGER_ARTS = Array.from({ length: Fur.EMOTE_AT + Fur.FORAGER_EMOTE_ARTS }, (_, n) => 'forager:' + n);   // (made once: a frame builds no names; the emotes last)
 const OUTFIT = 'aeon-garden-outfit';       // in localStorage
 const FORAGER_POSES = [0, 1, 2, 3, 4, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23];
 const FORAGER_CHILLY = [...FORAGER_POSES, ...Fur.FORAGER_COLD];   // (chilly, the cold ones are asked for ahead too)
@@ -1919,7 +1921,8 @@ const fg = { at: -1, x: 0, y: 0, step: 0, stillMs: 1e4, view: 1, flip: false, ar
   idle: -1, idleLast: -1, idleAt: -0, idleIn: 1e4 + 5000, hum: -0, lastHalf: 0, jog: false, rings: [], wet: false, lx: -0, ly: -0, sized: 0, outfit: 0, picked: false, pick: -1e9, pickK: 1, printMs: -0,
   puffs: [], puffAt: 0, drips: [], dripAt: 0, shiverAt: -1e9, shiverNext: 0, heartAt: 0, pantAt: 0, panting: false, downAt: 0, dark: false, cold: false, sizedSet: 0,   // (the body: drawBody, bodyFrame)
   snow: -1, snowTick: -0, snowArt: 0, sizedSnow: 0,   // (the snow on it: snowOnForager)
-  kneel: -1, knelt: -1e9, sizedKneel: false };          // (at a fire: its kneeling pose, fur.js FORAGER_KNEEL, or -1; when it last knelt)
+  kneel: -1, knelt: -1e9, sizedKneel: false,           // (at a fire: its kneeling pose, fur.js FORAGER_KNEEL, or -1; when it last knelt)
+  emote: -1, emoteMs: -0, emoteFrame: -1, lift: -0, sneakStill: -0, sizedEmote: false };   // (an emote: EMOTE, or -1; emoteTick)
 try {
   const o = localStorage.getItem(OUTFIT);
   fg.picked = o !== null;
@@ -1978,6 +1981,99 @@ function idleOf(b, now, pose) {
   idleStop(b, true);
   return pose;
 }
+// Emotes: it dances or sneaks when asked (keys 1 and 2, or the button by the satchel: #emote, emoteMenu), painted in fur.js
+// (FORAGER_EMOTE, kept after all its other paintings: emoteArt). The dance is NLE Choppa's, from the front: a crouch, a hop
+// with a knee up, that leg kicked straight out to the side and back, then the other, the fists swinging across (DANCE_SEQ,
+// a kick every half of DANCE_CYCLE); the hop lifts the painting (DANCE_HOP, drawFigure) and it sways over the planted foot
+// (DANCE_SWAY, as the hum's sway), with a step at each landing. It dances till it's sent somewhere. The sneak is a devious
+// walk, side on: crouched, tiptoeing, knees high, its mittens out like little claws, slower (sim.js f.sneaking,
+// FORAGER_SNEAK). Asked for standing, it creeps SNEAK_GO tiles the way it faces; every walk after is a sneak till it
+// sprints, stands still SNEAK_REST, or you ask again; standing it lurks, rubbing its mittens. A friend sees both (sendPos).
+// Both run on the clock of the page, not the meadow's (no faster at speed), and stop while paused.
+const EMOTE = { dance: 0, sneak: 1 }, EM = Fur.FORAGER_EMOTE;
+const DANCE_SEQ = [EM.down, 130, EM.hopR, 90, EM.kickR, 170, EM.backR, 90, EM.down, 130, EM.hopL, 90, EM.kickL, 170, EM.backL, 90];
+const DANCE_CYCLE = 960, DANCE_LAND = 130 / 480, DANCE_HOP = 0.07, DANCE_SWAY = 0.035, DANCE_KICK = 0.068;   // (kick: where the first kick is, of the cycle)
+const SNEAK_GO = 3.5, SNEAK_REST = 6000, LURK_MS = 220;
+function emote(k) {
+  const f = world && world.forager;
+  if (!f || f.down >= 0) return;
+  emoteMenu(false);
+  if (fg.emote === k) { emoteOff(); sendEmote(); return; }
+  if (ui.fire) return;                                  // (busy at a fire)
+  emoteOff();
+  fg.emote = k; fg.emoteMs = 0; fg.emoteFrame = -1; fg.sneakStill = 0;
+  ui.gather = null; ui.queue.length = 0;
+  if (k === EMOTE.dance) { f.walking = false; f.running = false; f.speed = 0; f.path.length = 0; }
+  else {
+    f.sneaking = true; f.running = false;
+    if (!f.walking) for (const dir of fg.flip ? [1, -1] : [-1, 1]) if (S.foragerTo(world, f.x + dir * SNEAK_GO, f.y)) break;   // (off it creeps)
+  }
+  foragerAhead(); emoteShown();
+  sendEmote();
+}
+function emoteOff() {
+  if (world) world.forager.sneaking = false;
+  fg.emote = -1; fg.lift = 0; fg.hum = 0; fg.emoteFrame = -1;
+  emoteShown();
+}
+const sendEmote = () => { if (Net && Net.on) sendPos(performance.now()); };   // (a friend sees it at once)
+// Once a frame, before its pose: what ends one, and its clock.
+function emoteTick(f, stage, ms) {
+  if (fg.emote < 0) return;
+  if (stage === 4 || ui.fire || (fg.emote === EMOTE.dance ? f.walking : f.running || !f.sneaking)) { emoteOff(); sendEmote(); return; }
+  if (ui.speed <= 0) return;
+  fg.emoteMs += ms;
+  if (fg.emote === EMOTE.sneak && !f.walking && (fg.sneakStill += ms) > SNEAK_REST) { emoteOff(); sendEmote(); }
+}
+// Standing in one (b: fg, or a friend's), its painting this frame; dancing, its hop and sway too.
+function emoteStill(b, d, me) {
+  if (b.emote !== EMOTE.dance) { b.view = 0; b.lift = 0; return (b.emoteMs / LURK_MS | 0) & 1 ? EM.lurkB : EM.lurkA; }
+  b.view = 1;
+  const t = b.emoteMs % DANCE_CYCLE, h = (2 * t % DANCE_CYCLE) / DANCE_CYCLE;
+  b.lift = h > DANCE_LAND ? DANCE_HOP * Math.sin(Math.PI * (h - DANCE_LAND) / (1 - DANCE_LAND)) : 0;
+  b.hum = (b.flip ? 1 : -1) * DANCE_SWAY * Math.sin(TAU * (t / DANCE_CYCLE - DANCE_KICK));   // (over the planted foot: mirrored, the other way)
+  let k = 0;
+  for (let u = t; k < DANCE_SEQ.length - 2 && u >= DANCE_SEQ[k + 1]; k += 2) u -= DANCE_SEQ[k + 1];
+  const fr = DANCE_SEQ[k];
+  if (me && fr !== b.emoteFrame && fr === EM.down && ui.speed > 0) hear('step', d.x, d.y, { pace: 1.4, foot: k >> 3, ground: groundUnder(d.x, d.y) }, true);   // (landing)
+  b.emoteFrame = fr;
+  return fr;
+}
+// The emote button by the satchel (#emote) and its two over it (#emotes), each a painting of the forager at it in its cloak
+// (emoteIcons, painted once a cloak); the one going is ringed (emoteShown, on a change only).
+const emoteUi = { open: false, o: -1, shown: -9 };
+function emoteMenu(open = !emoteUi.open) {
+  if (open === emoteUi.open) return;
+  emoteUi.open = open;
+  $('#emotes').classList.toggle('hidden', !open);
+  $('#emote').setAttribute('aria-expanded', String(open));
+  if (open) { emoteIcons(); if (world) foragerAhead(); }
+  emoteShown();
+}
+function emoteShown() {
+  const k = fg.emote, key = k * 2 + (emoteUi.open ? 1 : 0);
+  if (key === emoteUi.shown) return;
+  emoteUi.shown = key;
+  $('#emote').classList.toggle('on', k >= 0 || emoteUi.open);
+  $('#emotes [data-act="dance"]').classList.toggle('on', k === EMOTE.dance);
+  $('#emotes [data-act="sneak"]').classList.toggle('on', k === EMOTE.sneak);
+}
+function emoteIcons() {
+  if (emoteUi.o === fg.outfit) return;
+  emoteUi.o = fg.outfit;
+  const icon = (el, pose) => {
+    const px = 170, size = Math.ceil(px * 1.3 * dpr), c = document.createElement('canvas'), out = document.createElement('canvas');
+    c.width = c.height = size;
+    Fur.paintForager(c.getContext('2d'), size, px * dpr, Fur.emoteArt(0, fg.outfit, pose));
+    const w = Math.round(0.42 * px * dpr), cy = size / 2 + 0.035 * px * dpr;   // (the figure, cropped round)
+    out.width = out.height = w;
+    out.getContext('2d').drawImage(c, (size - w) / 2, cy - w / 2, w, w, 0, 0, w, w);
+    el.style.backgroundImage = `url(${out.toDataURL()})`;
+  };
+  icon($('#emote i'), EM.kickR);
+  icon($('#emotes [data-act="dance"] i'), EM.kickL);
+  icon($('#emotes [data-act="sneak"] i'), EM.sneak + 2);
+}
 function foragerFrame(now, d) {
   const f = world.forager, px = forPx();
   if (fg.at < 0) { fg.x = d.x; fg.y = d.y; fg.at = now; }
@@ -1985,19 +2081,21 @@ function foragerFrame(now, d) {
   fg.x = d.x; fg.y = d.y; fg.at = now;
   fg.jog = f.running && f.speed > FORAGER_JOG[fg.jog ? 0 : 1];   // (its legs don't spin: the jog's stride is longer)
   if (moved > 1e-5 && moved < 2) {
-    fg.step += moved / (2 * Fur.FORAGER_REACH * px / cam.zoom * (fg.jog ? Fur.FORAGER_JOG_STRIDE : 1));
+    fg.step += moved / (2 * Fur.FORAGER_REACH * px / cam.zoom * (fg.jog ? Fur.FORAGER_JOG_STRIDE : f.sneaking ? Fur.SNEAK_STRIDE : 1));
     fg.stillMs = 0;
   } else if (ui.speed > 0) fg.stillMs += ms;            // (paused mid-stride, it holds the stride)
   fg.wet = !world.frozen && world.water[(d.y | 0) * S.W + (d.x | 0)] > 0;
   const walking = fg.stillMs < FORAGER_STILL_MS, stage = S.warmthStage(f), cold = fg.cold = stage >= FORAGER_SAD;
-  const kneel = fg.kneel = stage < 4 ? kneelNow(now) : -1;   // (at a fire: kneeling, side on to it)
+  emoteTick(f, stage, ms);
+  const kneel = fg.kneel = stage < 4 && fg.emote < 0 ? kneelNow(now) : -1;   // (at a fire: kneeling, side on to it)
   if (kneel >= 0) { fg.view = 0; fg.knelt = now; }
-  let pose = 0;
+  let pose = 0, emo = -1;                                // (emo: an emote's painting, fur.js FORAGER_EMOTE)
   if (walking) {
     const sy = Math.sin(f.heading), sx = Math.cos(f.heading), v = fg.view;
-    fg.view = sy > (v === 1 ? 0.45 : 0.62) ? 1 : sy < (v === 2 ? -0.45 : -0.62) ? 2 : 0;
+    fg.view = f.sneaking ? 0 : sy > (v === 1 ? 0.45 : 0.62) ? 1 : sy < (v === 2 ? -0.45 : -0.62) ? 2 : 0;   // (sneaking, always side on)
     if (sx > 0.18) fg.flip = true; else if (sx < -0.18) fg.flip = false;
     pose = (fg.jog ? 16 : cold ? 24 : 8) + Math.floor(fg.step % 1 * 8);   // (cold, it walks hugging itself)
+    if (f.sneaking) { emo = Fur.FORAGER_EMOTE.sneak + Math.floor(fg.step % 1 * 8); fg.sneakStill = 0; }
     const half = Math.floor(fg.step * 2);                 // a foot comes down: in the shallows, a ring
     if (half !== fg.lastHalf && fg.wet && ui.speed > 0) fg.rings.push({ x: d.x, y: d.y, t: now });
     if (half !== fg.lastHalf && ui.speed > 0 && !fg.wet) footprint(d.x, d.y, f.heading, half & 1);
@@ -2006,12 +2104,13 @@ function foragerFrame(now, d) {
     idleStop(fg);
   } else {
     fg.step = Math.round(fg.step * 2) / 2;                // (it sets off again on the next foot)
-    if (kneel >= 0) idleStop(fg);                       // (kneeling it neither does things nor turns, and up again it turns a moment after)
+    if (kneel >= 0 || fg.emote >= 0) idleStop(fg);      // (kneeling it neither does things nor turns, and up again it turns a moment after)
     else if (fg.stillMs > FORAGER_TURN_MS && now - fg.knelt > FORAGER_TURN_MS && fg.view !== 1) { fg.view = 1; fg.blinkAt = now; }   // turned to you, with a blink
     if (now - fg.blinkAt > fg.blinkIn) { fg.blinkAt = now; fg.blinkIn = 2200 + Math.random() * 3500; }
     pose = cold ? (now - fg.blinkAt < 150 ? 6 : 5) : idleOf(fg, now, now - fg.blinkAt < 150 ? 2 : 0);
     const p = (now - fg.pick) / fg.pickK;                 // picking (gatherFrame): stooped, reaching down, back up
     if (p < PICK_MS[2]) { pose = p < PICK_MS[0] || p > PICK_MS[1] ? 3 : 4; fg.stillMs = FORAGER_STILL_MS + 1; idleStop(fg); }
+    else if (fg.emote >= 0) emo = emoteStill(fg, d, true);
     else if (cold) idleStop(fg);
   }
   if (stage === 4) { pose = 7; idleStop(fg); }          // (down: eyes shut, no blinking)
@@ -2019,7 +2118,8 @@ function foragerFrame(now, d) {
   if (fg.rings.length && now - fg.rings[0].t > 900) fg.rings.shift();
   snowOnForager();
   const at = fg.snowArt * Fur.FORAGER_SNOW_ARTS + (fg.outfit << 7);
-  fg.art = shownPose(f, FORAGER_ARTS[at + (kneel >= 0 ? KNEEL_AT + kneel : poseKey(fg.view, pose))], px);
+  if (emo < 0 || stage === 4) fg.lift = 0;
+  fg.art = shownPose(f, FORAGER_ARTS[emo >= 0 && stage < 4 ? Fur.emoteArt(fg.snowArt, fg.outfit, emo) : at + (kneel >= 0 ? KNEEL_AT + kneel : poseKey(fg.view, pose))], px);
 }
 // Its footprints: one at each foot down, a little to that foot's side, fading as the ground takes them back: soon in
 // grass, slower in earth and the damp sand, slowest in snow. A ring of PRINTS kept in typed arrays (nothing made a step),
@@ -2082,6 +2182,7 @@ function drawForager(sx, sy, now) {
 // A forager on its feet, this one or a friend's (b: fg, or one of peers): in the shallows cut off at the water line with a
 // ring round its legs; else breathing while it stands, hunched with the cold (HUNCH), shivering (shiverOf), stumbling.
 function drawFigure(b, art, sx, sy, px, now, stage, trip, still, me) {
+  sy -= b.lift * px;                                    // (dancing, a hop)
   const flip = b.flip, top = sy - px * 0.36;            // (its painting's middle: the feet are at 0.72 of its half-size)
   if (b.wet) {
     const line = sy - px * 0.02, rip = 1 + 0.08 * Math.sin(now / 280);   // (in to its shins)
@@ -2123,13 +2224,14 @@ function foragerShadow(sx, sy, sn, wet) {
 // ones too once there's a fire about, or what one takes is in the satchel.
 function foragerAhead() {
   const P = poseStep(Math.max(4, forPx())), set = S.warmthStage(world.forager) >= 1 ? 2 : 1;   // (chilly: the cold ones too)
-  const kneel = world.fires.length > 0 || !!ui.fire || !!ui.place || buildUi.ready;
-  if (!furWorker || P === fg.sized && set === fg.sizedSet && fg.snowArt === fg.sizedSnow && kneel === fg.sizedKneel) return;
-  fg.sized = P; fg.sizedSet = set; fg.sizedSnow = fg.snowArt; fg.sizedKneel = kneel;
+  const kneel = world.fires.length > 0 || !!ui.fire || !!ui.place || buildUi.ready, emo = fg.emote >= 0 || emoteUi.open;
+  if (!furWorker || P === fg.sized && set === fg.sizedSet && fg.snowArt === fg.sizedSnow && kneel === fg.sizedKneel && emo === fg.sizedEmote) return;
+  fg.sized = P; fg.sizedSet = set; fg.sizedSnow = fg.snowArt; fg.sizedKneel = kneel; fg.sizedEmote = emo;
   const at = fg.snowArt * Fur.FORAGER_SNOW_ARTS + (fg.outfit << 7);
   for (let v = 0; v < 3; v++) for (const p of set === 2 ? FORAGER_CHILLY : FORAGER_POSES) furReady(FORAGER_ARTS[at + (v << 5) + p], P);
   for (const p of Fur.FORAGER_IDLES) furReady(FORAGER_ARTS[at + 96 + p], P);
   if (kneel) for (const p of KNEEL_POSES) furReady(FORAGER_ARTS[at + KNEEL_AT + p], P);
+  if (emo) for (const p of Fur.FORAGER_EMOTES) furReady(FORAGER_ARTS[Fur.emoteArt(fg.snowArt, fg.outfit, p)], P);   // (an emote on, or about to be)
 }
 // Out while it snows, snow gathers on it (on the hood, the shoulders: fur.js FORAGER_SNOWS), less under the trees; once
 // it stops it melts off, soon above freezing, slowly under, quicker on the move. Kept by sim time, so it goes with the
@@ -2342,6 +2444,7 @@ function pickOutfit(open) {
 const outfitOpen = () => !$('#outfit').classList.contains('hidden');
 function wearOutfit(o) {
   fg.outfit = o; fg.sized = 0; fg.picked = true;   // (foragerAhead asks for its new paintings)
+  if (emoteUi.o >= 0) emoteIcons();
   try { localStorage.setItem(OUTFIT, String(o)); } catch (e) { /* fine */ }
   pickOutfit(false);
 }
@@ -3553,7 +3656,7 @@ const fireSit = { F: null };
 function sitFrame(now) {
   const f = world.forager;
   fireSit.F = null;
-  if (f.walking || f.down >= 0 || fg.stillMs < SIT_MS || ui.gather || ui.place) return;
+  if (f.walking || f.down >= 0 || fg.stillMs < SIT_MS || ui.gather || ui.place || fg.emote >= 0) return;
   for (const F of world.fires) if (F.lit && Math.abs(F.x - f.x) < SIT_NEAR && Math.abs(F.y - f.y) < SIT_NEAR * 0.7 && Math.abs(F.x - f.x) > 0.3) { fireSit.F = F; break; }
   if (fireSit.F) fg.flip = fireSit.F.x > f.x;
 }
@@ -4031,6 +4134,7 @@ function setupSatchel() {
   const box = $('#satchel'), row = box.querySelector('.slots');
   row.innerHTML = Array.from({ length: S.SLOTS }, (_, k) => `<div class="slot" data-k="${k}" data-name="" aria-label="Empty"><i></i><b></b></div>`).join('');
   buildIcon();                                            // (the fire button's campfire)
+  emoteIcons();                                           // (the emote button's forager)
   // Hovered (or tapped) a full slot says what's in it, a small label over it (CSS, data-name).
   // A full slot can be dragged: once the press has moved HOLD_FROM px its painting follows the pointer (above a finger, so
   // it shows), and let go over another slot it goes there (S.moveSlot: onto a stack of its kind, or the two swap), off the
@@ -10344,7 +10448,7 @@ function sendPos(now) {
   net.sentAt = now;
   const f = world.forager;
   Net.send({ t: 'pos', x: f.x, y: f.y, h: f.heading, j: fg.jog, st: S.warmthStage(f), wt: Math.round(f.wet * 20) / 20, sn: fg.snowArt, o: fg.outfit,
-    kn: fg.kneel, fl: fg.flip, tick: Net.host ? world.tick : -1, s: ui.speed, n: myName });   // (kn: kneeling at a fire, and which way)
+    kn: fg.kneel, fl: fg.flip, em: fg.emote, et: Math.round(fg.emoteMs), tick: Net.host ? world.tick : -1, s: ui.speed, n: myName });   // (kn: kneeling at a fire, and which way; em: an emote)
 }
 function heardPos(m, now) {
   if (m.tick >= 0 && Net.guest && net.tick >= 0) setClock(m.tick, m.s, now, false);
@@ -10355,7 +10459,8 @@ function heardPos(m, now) {
       idle: -1, idleLast: -1, idleAt: -0, idleIn: 1e4 + 5000, hum: -0,   // (standing a while: idleOf)
       rings: [], puffs: [], puffAt: 0, drips: [], dripAt: 0, shiverAt: -1e9, shiverNext: 0,   // (its body, as fg's: drawBody, drawRings, shiverOf)
       art: FORAGER_ARTS[0], sized: 0, sizedSet: 0, sizedSnow: 0, name: '', nameArt: null, sx: -0, sy: -0, shown: false, chat: null, kneel: -1,
-      mark: -0 };                                          // (how far its marker at the screen's edge has faded in: drawFriendMarks)
+      mark: -0,                                            // (how far its marker at the screen's edge has faded in: drawFriendMarks)
+      emote: -1, emoteMs: -0, emoteFrame: -1, lift: -0, sizedEmote: -1 };   // (an emote, as it said: EMOTE, emoteStill)
     peers.set(m.from, p);
     p.name = cleanName(m.n);
     if (Net.host || m.tick < 0) toast(`🧺 ${friendName(p) || 'A friend'} has come into the meadow`);   // (a guest knows the host is there)
@@ -10374,6 +10479,8 @@ function heardPos(m, now) {
   if (p.kneel >= 0) { p.flip = !!m.fl; p.view = 0; }
   if (m.o !== p.outfit) { p.outfit = m.o; p.sized = 0; }
   if (m.st === 4 && !p.downAt) p.downAt = now; else if (m.st !== 4) p.downAt = 0;
+  const em = m.em >= 0 ? m.em | 0 : -1;                    // (an emote: from where it was in it, then on our clock)
+  if (em !== p.emote) { p.emote = em; p.emoteMs = +m.et || 0; p.emoteFrame = -1; if (em < 0) { p.lift = 0; p.hum = 0; } }
 }
 // A friend picked something: it stoops where it stood, turned to it, and its "+3 Chanterelles" floats up from it (as
 // gatherFrame), with the pick's sound if it's on the screen.
@@ -10428,12 +10535,13 @@ function peerItems(items, now, z) {
     const moved = Math.hypot(x - p.x, y - p.y), ms = now - p.last;
     p.x = x; p.y = y; p.last = now;
     if (moved > 1e-5 && moved < 2) {
-      p.step += moved / (2 * Fur.FORAGER_REACH * px / z * (p.jog ? Fur.FORAGER_JOG_STRIDE : 1));
+      p.step += moved / (2 * Fur.FORAGER_REACH * px / z * (p.jog ? Fur.FORAGER_JOG_STRIDE : p.emote === EMOTE.sneak ? Fur.SNEAK_STRIDE : 1));
       p.stillMs = 0;
     } else p.stillMs += ms;
     p.wet = !world.frozen && world.water[(y | 0) * S.W + (x | 0)] > 0;
     const cold = p.stage >= FORAGER_SAD, k = (now - p.pickAt) / (p.pickK || 1), half = Math.floor(p.step * 2);
-    let pose;
+    if (p.emote >= 0 && ui.speed > 0) p.emoteMs += ms;
+    let pose, emo = -1;
     if (k < PICK_MS[2]) {                                 // picking (peerPicked), even while it glides the last bit to where it stood
       pose = k < PICK_MS[0] || k > PICK_MS[1] ? 3 : 4;
       p.stillMs = Math.max(p.stillMs, PEER_STILL_MS);
@@ -10447,6 +10555,7 @@ function peerItems(items, now, z) {
       p.view = sy > (v === 1 ? 0.45 : 0.62) ? 1 : sy < (v === 2 ? -0.45 : -0.62) ? 2 : 0;
       if (sx > 0.18) p.flip = true; else if (sx < -0.18) p.flip = false;
       pose = (p.jog ? 16 : cold ? 24 : 8) + Math.floor(p.step % 1 * 8);
+      if (p.emote === EMOTE.sneak) { p.view = 0; emo = EM.sneak + Math.floor(p.step % 1 * 8); }
       idleStop(p);
       if (half !== p.lastHalf && ui.speed > 0) {            // a foot down: a ring in the shallows, else a footprint (as foragerFrame)
         if (p.wet) p.rings.push({ x, y, t: now }); else footprint(x, y, p.heading, half & 1);
@@ -10456,8 +10565,10 @@ function peerItems(items, now, z) {
       if (p.stillMs > FORAGER_TURN_MS && p.view !== 1) { p.view = 1; p.blinkAt = now; }
       if (now - p.blinkAt > 4000) p.blinkAt = now - Math.random() * 1500;
       pose = cold ? (now - p.blinkAt < 150 ? 6 : 5) : idleOf(p, now, now - p.blinkAt < 150 ? 2 : 0);
-      if (cold) idleStop(p);
+      if (p.emote >= 0) { idleStop(p); emo = emoteStill(p, p, false); }
+      else if (cold) idleStop(p);
     }
+    if (emo < 0) p.lift = 0;
     p.lastHalf = half;
     if (p.rings.length && now - p.rings[0].t > 900) p.rings.shift();
     if (p.stage === 4) { pose = 7; idleStop(p); }
@@ -10468,7 +10579,8 @@ function peerItems(items, now, z) {
       for (let v = 0; v < 3; v++) for (const q of set === 2 ? FORAGER_CHILLY : FORAGER_POSES) furReady(FORAGER_ARTS[at + (v << 5) + q], P);
       for (const q of Fur.FORAGER_IDLES) furReady(FORAGER_ARTS[at + 96 + q], P);
     }
-    p.art = shownPose(p, FORAGER_ARTS[at + (p.kneel >= 0 && p.stage < 4 ? KNEEL_AT + pose : poseKey(p.view, pose))], px);
+    if (furWorker && p.emote >= 0 && p.sizedEmote !== P) { p.sizedEmote = P; for (const q of Fur.FORAGER_EMOTES) furReady(FORAGER_ARTS[Fur.emoteArt(p.snowArt, p.outfit, q)], P); }
+    p.art = shownPose(p, FORAGER_ARTS[emo >= 0 && p.stage < 4 ? Fur.emoteArt(p.snowArt, p.outfit, emo) : at + (p.kneel >= 0 && p.stage < 4 ? KNEEL_AT + pose : poseKey(p.view, pose))], px);
     const sx = (x - cam.x) * z + vw / 2, sy = (y - cam.y) * z + vh / 2;
     p.shown = visible(sx, sy, 2 * px); p.sx = sx; p.sy = sy;
     if (p.shown) itemOf(items, y, sx, sy, 1).q = p;
@@ -10802,6 +10914,7 @@ function copyLink() {
 document.addEventListener('click', e => {
   const t = e.target.closest('[data-action],[data-act],a[data-id],a[data-thing]');
   if (!(t && t.dataset.act === 'more')) toggleMore(false);
+  if (emoteUi.open && !(t && t.closest('#emote, #emotes'))) emoteMenu(false);   // (a click anywhere else puts the two away)
   if (!t) return;
   if (t.closest('#hud-right .hud-top')) chime('click');
   if (t.dataset.action === 'new') {
@@ -10810,6 +10923,9 @@ document.addEventListener('click', e => {
   }
   else if (t.dataset.act === 'pause') setSpeed(ui.speed ? 0 : 1);
   else if (t.dataset.act === 'build') buildPressed();       // (the fire button by the satchel)
+  else if (t.dataset.act === 'emote') emoteMenu();         // (the emote button: its two over it)
+  else if (t.dataset.act === 'dance') emote(EMOTE.dance);
+  else if (t.dataset.act === 'sneak') emote(EMOTE.sneak);
   else if (t.dataset.act === 'close') select(0);
   else if (t.dataset.act === 'sheet-up' || t.dataset.act === 'sheet-down') {
     ui.sheetUp = t.dataset.act === 'sheet-up';
@@ -10896,6 +11012,7 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'Enter' && ui.place) { e.preventDefault(); placeHere(); }   // (picking a spot for a fire: where the faint one is)
   else if ((e.key === 'Enter' || e.key === 't') && Net && Net.on) { e.preventDefault(); openChat(true); }
   else if (e.code === 'KeyE' && !e.repeat) pickNear();
+  else if ((e.code === 'Digit1' || e.code === 'Digit2') && !e.repeat) emote(e.code === 'Digit1' ? EMOTE.dance : EMOTE.sneak);
   else if (e.code === 'KeyF' && !e.repeat) { if (atFire()) { fireKey = true; blowOn(true); } else buildPressed(); }   // (at a fire, held: blowing; else the fire button)
   else if (e.key === 'm') toggleSound();
   else if (e.key === '+' || e.key === '=') zoomOn(cam.zoom * 1.25);
@@ -10914,13 +11031,14 @@ const back = { token: Math.random().toString(36).slice(2), depth: 0, going: fals
 const moreOpen = () => !$('#more-menu').classList.contains('hidden');
 function opened() {
   const ins = $('#inspector').classList, sheetUp = ins.contains('open') && narrow() && !ins.contains('strip');
-  return [askOpen(), moreOpen(), !!ui.place, outfitOpen(), nameOpen(), chatOpen(), ins.contains('open'), sheetUp].filter(Boolean).length;
+  return [askOpen(), moreOpen(), !!ui.place, outfitOpen(), nameOpen(), chatOpen(), ins.contains('open'), sheetUp, emoteUi.open].filter(Boolean).length;
 }
 // The one on top shuts (Esc, and Back once for each step it takes).
 function stepOut() {
   const ins = $('#inspector').classList;
   if (askOpen()) askIdeas(false);
   else if (moreOpen()) toggleMore(false);
+  else if (emoteUi.open) emoteMenu(false);
   else if (ui.place) placeFire(false);                     // (picking a spot for a fire: not now)
   else if (nameOpen()) askName(false);
   else if (chatOpen()) openChat(false);

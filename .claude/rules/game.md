@@ -41,6 +41,18 @@ frame (`buildCover`), soft at the edge (`COVER_EDGE`), half for first leaves or 
 it shows when faded (mist, the forager behind it). Pop-ups, labels and the selection stay on top. `forager-lab.html` paints them all side by side. Its outfit is one of three (fur.js `FORAGER_OUTFITS`:
 cloak, hood, rim), picked on a small card at the foot of the screen as a new meadow opens (till one has been picked) or from ••• (`pickOutfit`), kept in
 localStorage (`aeon-garden-outfit`).
+Emotes (`emote`, the comment over `EMOTE`): 1 dances, 2 sneaks, or the round button on the satchel's other side from the fire's
+(`#emote`, `emoteMenu`: its two fan out over it, each a painting of the forager at it in its own cloak, `emoteIcons`; the one going
+is ringed, `emoteShown`). Painted in fur.js (`FORAGER_EMOTE`, `emotePose`, kept after all its other paintings: `emoteArt`), asked
+of the worker only while one is on or the fan is open, and kept in the cache only while one is on (`keptForager`). The dance is
+NLE Choppa's from the front (`DANCE`, `DANCE_SEQ`): a crouch, a hop with a knee up, that leg kicked straight out to the side and
+back, then the other, fists swinging across; the hop lifts the painting (`b.lift`, `DANCE_HOP`, in `drawFigure`) and it sways over
+the planted foot (`DANCE_SWAY`, through the hum's sway), a step sound at each landing; it dances till it's sent somewhere. The
+sneak is a devious walk side on (`sneakPose`): crouched, the cloak hitched up, tiptoeing with the near knee lifted over the cloak,
+mittens out like little claws, a sly lid and brow and a smirk; slower (sim.js `f.sneaking`, `FORAGER_SNEAK`, stride
+`SNEAK_STRIDE`); asked for standing it creeps `SNEAK_GO` tiles the way it faces, every walk after is a sneak till it sprints,
+stands still `SNEAK_REST` or you ask again, and standing it lurks rubbing its mittens. Both on the page's clock (not faster at
+speed), stopped while paused; a friend sees them (`sendPos`'s `em`, `et`).
 Its body (sim.js `bodyTick`) shows on it first (`drawBody`, `shiverOf`, `drawFallen`): a shiver is a short sway of
 its body about its planted feet, eased in and out, with a soft chatter (sound.js `shiver`): now and then chilly, more often
 the colder (`SHIVER_EVERY`), freezing a faint tremble between (`SHIVER_STEADY`). From cold (`FORAGER_SAD`) it hugs itself,

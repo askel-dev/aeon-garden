@@ -197,7 +197,7 @@ so it can be sent into one). The way keeps out of them: A* pays `BRUSH_COST` mor
 it's gone a tile), so a tick looks at a handful. Through a wood it weaves and takes about a tenth longer. `foragerTick` walks them by
 steering: it heads for a point `FORAGER_LOOK` along the way, turning at most `FORAGER_TURN` a tick (three times that from
 standing), speeds up by `FORAGER_ACCEL`, slows to stop where it was sent (`FORAGER_BRAKE`) and into a sharp turn, wades at
-`FORAGER_WADE` of `FORAGER_WALK`, and slides along the deep if a corner clips it.
+`FORAGER_WADE` of `FORAGER_WALK`, and slides along the deep if a corner clips it. Sneaking (`f.sneaking`, game.js's sneak emote, in the blank: no `KEEP_VERSION` bump) it creeps at `FORAGER_SNEAK`; a sprint wins.
 Playing together, friends' foragers are in each other's way (`friendsAt`: game.js `friendsFrame` hands over where each is
 drawn, every frame; one collapsed isn't): a circle of `ELBOW_ROOM` about each it can't step into (`outOfFriends`), sliding round
 it, met about head on (`FRIEND_HEAD_ON`) stepping to its right (`FRIEND_SIDESTEP`) so two pass, and a way that ends in one ends at

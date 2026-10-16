@@ -5412,6 +5412,7 @@ function lifeTick(w, c) {
 // (bodyPace). It moves on the sim's ticks, so pausing pauses it, and game.js draws it between them.
 const FORAGER_WALK = 0.085;             // tiles a tick at a walk (a rabbit ambles 0.06)
 const FORAGER_RUN = 0.16;               // and at a sprint
+const FORAGER_SNEAK = 0.042;            // and sneaking (f.sneaking: game.js, the devious walk), a creep on its toes
 const FORAGER_WADE = 0.5;               // of that, in the shallows
 const FORAGER_ACCEL = 0.0058;           // tiles a tick it gains a tick, setting off (about half a second to a walk)
 const FORAGER_BRAKE = 0.0035;           // and loses, stopping (it starts slowing about 0.7 tiles out)
@@ -5436,7 +5437,7 @@ const BRUSH_NEAR = 2.5;                 // tiles about it it looks for brush in,
 
 // Every field it ever has, in one order (see blankCreature). path: the way, as x, y pairs; leg: the pair it's heading
 // for; speed, heading: tiles a tick, radians (0 east, pi / 2 down the screen); moved: how far it went last tick;
-// goalX, goalY: where it was sent; running: sprinting there.
+// goalX, goalY: where it was sent; running: sprinting there; sneaking: creeping (game.js's sneak emote; a sprint wins).
 // bag, bagN: the satchel's slots, what's in each (an ingredient's id, recipes.js) and how many (gather, stow).
 // warmth (1 cosy, 0 collapsed), wet (0 dry, 1 soaked), stamina (1 fresh, 0 spent), feel: how warm it feels about it
 // now (in degrees, like airTemp), winded: spent, no sprint till it's got its breath back, down: the tick it collapsed
@@ -5444,7 +5445,7 @@ const BRUSH_NEAR = 2.5;                 // tiles about it it looks for brush in,
 const SLOTS = 8, STACK = 10;            // the satchel's slots, and how many of a kind one holds
 function foragerOf(x, y) {
   const f = { forager: true, x, y, path: [], leg: 0, speed: -0, heading: Math.PI / 2, moved: -0, walking: false, goalX: x, goalY: y,
-    running: false, bag: new Array(SLOTS).fill(''), bagN: new Array(SLOTS).fill(0),
+    running: false, sneaking: false, bag: new Array(SLOTS).fill(''), bagN: new Array(SLOTS).fill(0),
     warmth: -0, wet: -0, stamina: -0, feel: -0, winded: false, down: -1, stumble: 0, homeX: x, homeY: y };
   f.warmth = 1; f.stamina = 1;          // (after: they start as fractions, so the layout never changes)
   return f;
@@ -5800,7 +5801,7 @@ function foragerTick(w) {
     free *= 1 - brushAt(q, brushNear[k + 3]);
     if (d > 1e-4) { pushX += dx / d * q; pushY += dy / d * q; }
   }
-  const top = (f.running ? FORAGER_RUN : FORAGER_WALK) * (wade ? FORAGER_WADE : 1) * free * bodyPace(f) * clamp(Math.cos(turn) * 0.8 + 0.4, 0.15, 1);
+  const top = (f.running ? FORAGER_RUN : f.sneaking ? FORAGER_SNEAK : FORAGER_WALK) * (wade ? FORAGER_WADE : 1) * free * bodyPace(f) * clamp(Math.cos(turn) * 0.8 + 0.4, 0.15, 1);
   const v = Math.min(top, Math.sqrt(2 * FORAGER_BRAKE * rest)), s = f.speed;
   f.speed = v > s ? Math.min(v, s + FORAGER_ACCEL) : Math.max(v, s - FORAGER_BRAKE * 2);
   if (rest < 0.02 || (rest < 0.1 && f.speed < 0.008)) { f.walking = false; f.running = false; f.speed = 0; f.path.length = 0; return; }
@@ -5909,7 +5910,7 @@ function bodyTick(w) {
   if (f.stumble > 0) f.stumble--;
   else if (moving && f.warmth <= WARMTH_STAGES[2] && hash2(w.tick, 0x5707, w.seed) < STUMBLE_ODDS) f.stumble = STUMBLE_TICKS;
   if (f.warmth <= 0) {                                  // collapsed
-    f.down = w.tick; f.walking = false; f.running = false; f.speed = 0; f.path.length = 0; f.stumble = 0;
+    f.down = w.tick; f.walking = false; f.running = false; f.sneaking = false; f.speed = 0; f.path.length = 0; f.stumble = 0;
     emit(w, { type: 'collapse' });
   }
 }
@@ -5918,7 +5919,7 @@ function bodyTick(w) {
 function wakeForager(w) {
   const f = w.forager;
   f.x = f.homeX; f.y = f.homeY; f.goalX = f.x; f.goalY = f.y; f.heading = Math.PI / 2;
-  f.walking = false; f.running = false; f.speed = 0; f.path.length = 0;
+  f.walking = false; f.running = false; f.sneaking = false; f.speed = 0; f.path.length = 0;
   f.warmth = WAKE_WARMTH; f.wet = 0; f.stamina = 1; f.winded = false; f.stumble = 0; f.down = -1;
   f.bag.fill(''); f.bagN.fill(0);
   emit(w, { type: 'woke' });
@@ -7499,7 +7500,7 @@ const api = {
   createWorld, step, clock, isNight, phaseOf, seasonOf, springPart, mood, ageDays, growth, isAdult, patchFresh,
   hedgehogComes, heronComes, dragonflyComes, kingfisherComes, skylarkComes, placeNeeds, VISIT_SEASONS, VISIT_FADE, HERON_FADE, HERON_STAB,
   DRAGON_FROM, KF_FADE, KF_UNDER, KF_BEAT, LARK_FADE, LARK_OPEN, LARK_RISE, EDGE_REACH, OPEN_MOST,
-  walkable, friendsAt, packWorld, unpackWorld, GROUND, foragerTo, foragerArrives, openingStorm, FORAGER_WALK, FORAGER_RUN, airTemp, warmthStage, WARMTH_STAGES, STUMBLE_TICKS, wakeForager, rockKind, whatThere, cherryShow, honeySpare, gather, takeFrom, dropSlot, dropAt, DROP_DAYS, moveSlot, roomFor, forEachDecorNear, SLOTS, STACK,
+  walkable, friendsAt, packWorld, unpackWorld, GROUND, foragerTo, foragerArrives, openingStorm, FORAGER_WALK, FORAGER_RUN, FORAGER_SNEAK, airTemp, warmthStage, WARMTH_STAGES, STUMBLE_TICKS, wakeForager, rockKind, whatThere, cherryShow, honeySpare, gather, takeFrom, dropSlot, dropAt, DROP_DAYS, moveSlot, roomFor, forEachDecorNear, SLOTS, STACK,
   KINDS, FEW, whiteness, visibility, WINTER_COAT, WILD_COAT,
   TERRAIN, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE, hollow,

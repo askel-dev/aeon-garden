@@ -403,6 +403,31 @@
   #build:active { transform: translateY(1px); }
   /* a phone: over the satchel's left end, a fingertip's size */
   @media (pointer: coarse) { #build { right: auto; left: 0; bottom: calc(100% + 8px); width: 50px; height: 50px; } }
+  /* ---- the emote button (game.js emoteMenu): on the satchel's other side, the forager mid-kick in it; pressed, its two
+     emotes fan out over it (#emotes: the dance, the sneak), each painted, a ring round the one going */
+  #emote, #emotes button { position: absolute; width: 46px; height: 46px; padding: 0; border: none; border-radius: 50%;
+    background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); transition: transform 0.15s, background-color 0.2s; }
+  #emote { left: calc(100% + 8px); bottom: 0; }
+  #emote i, #emotes i { position: absolute; inset: 3px; background: center / contain no-repeat; }
+  #emote.on, #emotes button.on { background-color: var(--accent-soft); box-shadow: var(--edge), var(--shadow), inset 0 0 0 2px var(--accent); }
+  @media (hover: hover) { #emote:hover, #emotes button:hover { transform: translateY(-1px); } }
+  #emote:active, #emotes button:active { transform: translateY(1px); }
+  #emotes { position: absolute; left: calc(100% + 8px); bottom: 54px; width: 46px; height: 100px; }
+  #emotes button { left: 0; animation: emote-in 0.18s ease-out backwards; }
+  #emotes button:nth-child(1) { bottom: 0; }
+  #emotes button:nth-child(2) { bottom: 54px; animation-delay: 0.04s; }
+  #emotes button::after { content: attr(data-name); position: absolute; right: calc(100% + 7px); top: 50%; transform: translateY(-50%);
+    padding: 2px 8px; border-radius: 9px; background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow);
+    font-size: 12px; font-weight: 800; line-height: 1.35; color: var(--ink); white-space: nowrap; pointer-events: none; }
+  @keyframes emote-in { from { opacity: 0; transform: translateY(10px) scale(0.8); } }
+  /* a phone: over the satchel's right end (the fire button's over its left), a fingertip's size; the fan above it */
+  @media (pointer: coarse) {
+    #emote { left: auto; right: 0; bottom: calc(100% + 8px); width: 50px; height: 50px; }
+    #emotes { left: auto; right: 0; bottom: calc(100% + 66px); width: 50px; height: 112px; }
+    #emotes button { width: 50px; height: 50px; }
+    #emotes button:nth-child(2) { bottom: 60px; }
+  }
+  @media (max-width: 760px), (max-height: 500px) { #chat:not(.open) { bottom: calc(var(--bottom) + 122px); } }   /* (over the emote button) */
   /* a phone: the chat's lines sit over the satchel and the body's bars; open, its card goes across the foot */
   @media (max-width: 760px), (max-height: 500px) {
     #chat { bottom: calc(var(--bottom) + 104px); }
@@ -503,6 +528,11 @@
 <!-- bottom middle: the satchel, a row of slots (game.js renderSatchel), and by it the fire button (renderBuild) -->
 <div id="satchel" class="empty"><div class="slots"></div>
   <button id="build" class="hidden" data-act="build" title="Make a campfire (F)" aria-label="Make a campfire"><i></i></button>
+  <button id="emote" data-act="emote" title="Emotes" aria-label="Emotes" aria-expanded="false"><i></i></button>
+  <div id="emotes" class="hidden">
+    <button data-act="dance" data-name="Dance · 1" aria-label="Dance"><i></i></button>
+    <button data-act="sneak" data-name="Sneak · 2" aria-label="Sneak"><i></i></button>
+  </div>
 </div>
 
 <!-- top right: pause, sound and the ••• menu; the inspector hangs underneath -->
