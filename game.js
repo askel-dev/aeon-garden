@@ -12112,7 +12112,8 @@ const CHAT_MS = 3500, CHAT_PER = 70, CHAT_LONGEST = 10000;   // a bubble stays C
 const CHAT_WIDE = 200;                      // px a bubble is at most, before its words wrap
 const CHAT_LOG_MS = 12000;                 // a line in the log fades after this
 const CHAT_KEEP = 40;                      // lines the log keeps
-const CHAT_QUICK = ['👋 Hello!', 'Over here!', 'Come and see!', 'Thank you!', 'Wait for me!', '😊', '❤️'];   // said with one tap
+const CALL_TEXT = '🦉 Hoo-hoo!';             // not said but called (callOut): friends hear it from where you stand
+const CHAT_QUICK = [CALL_TEXT, '👋 Hello!', 'Over here!', 'Come and see!', 'Thank you!', 'Wait for me!', '😊', '❤️'];   // said with one tap
 const CHAT_TAIL = 7;                       // px from a bubble's foot down to the tip of its tail
 const CHAT_TAIL_IN = 16;                   // px from a bubble's side its tail may come, at most (so a bubble slid aside still points down to who said it)
 const CHAT_GAP = 6;                        // px kept between two bubbles
@@ -12906,8 +12907,26 @@ $('#chat-quick').addEventListener('click', e => {
   const b = e.target.closest('button');
   if (!b) return;
   openChat(false);
-  sayLine(b.textContent);
+  if (b.textContent === CALL_TEXT) callOut(); else sayLine(b.textContent);
 });
+// A call (H, or the chat's first quick one): two hoots friends hear from where you stand, and a line saying which way.
+function callOut() {
+  if (!(Net && Net.on)) return;
+  const f = world.forager;
+  Net.send({ t: 'call', x: f.x, y: f.y, n: myName });
+  chime('hoot');
+  myChat = chatFor(CALL_TEXT, performance.now());
+}
+const WAYS = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
+function heardCall(m, now) {
+  if (!Number.isFinite(m.x) || !Number.isFinite(m.y)) return;
+  const p = peers.get(m.from), name = esc((p && p.name) || cleanName(m.n) || 'A friend'), f = world.forager;
+  if (p) p.chat = chatFor(CALL_TEXT, now);
+  hear('hoot', m.x, m.y, {}, true);
+  const [sx, sy] = toScreen(m.x, m.y), dx = m.x - f.x, dy = m.y - f.y;
+  const way = WAYS[Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) & 7], far = Math.hypot(dx, dy) > 60 ? 'far off ' : '';
+  toast(visible(sx, sy, 0) ? `🦉 ${name} calls: hoo-hoo!` : `🦉 ${name} calls from ${far}to the ${way}`);
+}
 // (the line keeps its focus: so 💬 shuts the card rather than the line's blur, and a quick one isn't lost to it)
 for (const el of [$('#chat-btn'), $('#chat-quick')]) el.addEventListener('pointerdown', e => { if (e.target.closest('button')) e.preventDefault(); });
 $('#chat-text').addEventListener('blur', () => { if (!TOUCH.matches && !$('#chat-text').value.trim()) openChat(false); });   // (clicked away from with nothing said)
@@ -13102,6 +13121,7 @@ document.addEventListener('keydown', e => {
   else if ((e.key === 'Enter' || e.key === 't') && Net && Net.on) { e.preventDefault(); openChat(true); }
   else if (e.code === 'KeyE' && !e.repeat) { const F = cooking() ? null : !ui.fire && (cookFire() || relightFire() || campFire()); if (cooking()) closeCook(); else if (F) clickFire(F); else pickNear(); }   // (at a lit fire: its cooking card, and again shuts it; else pick)
   else if (e.code === 'KeyF' && !e.repeat) { if (atFire()) { fireKey = true; blowOn(true); } else buildPressed(); }   // (at a fire, held: blowing; else the fire button)
+  else if (e.key === 'h' && !e.repeat && Net && Net.on) callOut();   // (a hoot to your friends)
   else if (e.key === 'm') toggleSound();
   else if (e.key === '+' || e.key === '=') zoomOn(cam.zoom * 1.25);
   else if (e.key === '-') zoomOn(cam.zoom / 1.25);

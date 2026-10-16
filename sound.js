@@ -317,6 +317,7 @@ const RULES = {
   rain:    { gap: 3,    free: true },
   leaves:  { gap: 1,    free: true },
   click:   { gap: 0.04, free: true },
+  hoot:    { gap: 0.6, always: true },
   step:    { gap: 0.1, always: true },   // (a foot down is cheap and rhythmic: it never counts against the budget)
   pick:    { gap: 0.08, always: true },
   pluck:   { gap: 0.08, always: true },
@@ -550,6 +551,14 @@ const SOUNDS = {
     src.playbackRate.setValueAtTime(0.9, t); src.playbackRate.linearRampToValueAtTime(1.1, t + 1.8); src.playbackRate.linearRampToValueAtTime(0.9, t + len);
     g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(2 * LEAVES, t + 1.8); g.gain.exponentialRampToValueAtTime(0.0001, t + len);
     src.connect(hp).connect(lp).connect(g).connect(o); src.start(t, rand(0, 5)); src.stop(t + len + 0.05);
+  },
+  // A friend calls (H): two soft hoots, cupped hands blown like an owl, the second lower and longer.
+  hoot(t, o) {
+    for (const [dt, f, len] of [[0, 392, 0.28], [0.36, 330, 0.5]]) {
+      partial(o, f, t + dt, 0.22, 0.05, len);
+      partial(o, f * 2, t + dt, 0.025, 0.05, len * 0.6);
+      noise(o, t + dt, len * 0.8, { from: f * 2, to: f * 1.5, q: 2, peak: 0.05, attack: 0.05 });   // (the breath in it)
+    }
   },
   click(t, o) { partial(o, 1320, t, 0.06, 0.002, 0.05, 'triangle'); partial(o, 660, t, 0.05, 0.002, 0.08); },
   // Freezing, the forager's heart: a slow soft lub-dub, felt more than heard (v: louder the colder).
