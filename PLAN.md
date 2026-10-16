@@ -122,7 +122,7 @@ rack, the pot, a basket, a lantern, a bedroll).
 - Played in headless Chrome at dusk (the moment frame by frame); no cost to measure outside the moment's few seconds (the ring
   is one draw a frame).
 
-## Stage 6: cooking at the fire, and a tummy (planned and settled 2026-10-16, not built)
+## Stage 6: cooking at the fire, and a tummy (planned and settled 2026-10-16; step 1 and a redesign built, below)
 Built together: with nothing to eat for, a dish is only something to collect, and with nothing to cook a tummy is only
 a timer. The cold is already there, so a warm dish by the fire on a cold night is the point. The data is ready
 (recipes.js: 18 dishes, `cook`, `fillOf`, `warm`, `MESS`); the game reads none of it yet but the ingredients.
@@ -271,6 +271,30 @@ Each its own branch, played and looked at by Axel before the next:
   dish it's a thing or two short of, and told when nothing but a mess could come of it, before the five seconds are spent; the
   last dish cooked comes back as a one-tap "cook again"; and the first card ever opened nudges what to do.
 - Not yet: the hungry look and growl (step 3/4); for now the forager says "I'm getting hungry" and "I'm starving".
+
+### The cooking redesign (2026-10-16, after Axel's first play)
+What he found: it wasn't plain a fire could be cooked at; the card was detached from the fire with a tiny ✕; working out
+what goes together was hard, and "Something new: cherries, cherries" promised a dish that cooked into a mess.
+- **Honest pot line** (game.js `potWord`): a known dish's name; "Something new!" only for an exact dish never made; a pot on
+  its way to one says it's not a dish yet and that as it is it's a forager's mess (and what a known dish it's near still
+  wants, `potToward`); nothing possible, "Only a forager's mess can come of this".
+- **Known from the start** (recipes.js `known: true`, which `checkRecipes` checks): roast mushrooms, wilted greens and
+  spring salad, all from a first spring camp. Players' known dishes stay in `aeon-garden-firsts`; no `KEEP_VERSION` bump.
+- **The recipe book** (`#book`, `renderBook`, B or the little book by the satchel; the cooking bar has it too): known dishes
+  with their painting and what goes in, what the satchel has lit; half-known ones from hints ("Something with honey…", a ? for
+  each thing still missing); the rest a row of blank plates. A known one tapped fills the pot from the satchel (`fillPot`), or
+  walks to a lit fire within `BOOK_REACH` and fills it there.
+- **Cooking in the meadow**: the card is gone. The camera eases in and leans to the fire (`cookCam`), a painted iron pot sits
+  over the flames (`drawPot`, drawn over all that stands), things fly from the satchel (tap, or drag onto the pot) and drop in
+  with a bounce and a puff, bob and steam while it cooks, a mess goes up in dark smoke; a tap on one in the pot takes it out.
+  Under the fire a small bar: the line, the stick (F too), the book, Cook, and a 44 px brass ✕. Esc, Back or walking off leave.
+- **Finding it**: by a lit fire with something to cook, a small painted pot (and an E key on a keyboard) bobs over it
+  (`drawCookPrompt`); making camp, the forager thinks "I could cook something on this fire."
+- **Hints** (`hintTick`): at most every `HINT_EVERY` of a day and `HINT_GAP` real time, never in the intro or the opening storm
+  or over another thought, the forager muses on an unknown dish from what's in the satchel ("Cherries and honey… that could cook
+  into something") and the book is told that much of it (never all: `hintMost`), per player (`aeon-garden-hints`).
+- Left for Axel: the pot is the one vessel for now (the pan and the billy can of step 3 can replace it); E at a lit fire comes
+  from the keydown branch merged alongside; only the fire's dishes are in the book (the pot's and the oven's wait for them).
 
 ## After that (roughly in this order)
 1. **Cooking at the fire** and 2. **hunger and eating**: stage 6 above.

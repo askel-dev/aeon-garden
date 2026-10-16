@@ -78,7 +78,7 @@ A new meadow opens like a film (`startIntro`, `#intro`): black bars top and bott
 away (`body.intro`), "Nobody's Meadow" and "Spring · late afternoon" fading in and out in the lower bar (`INTRO_NAME`), the
 camera craning down onto the forager from `INTRO_WIDE` of its zoom and `INTRO_RISE` tiles up over `INTRO_CRANE` (`introLeft`,
 in `leadCam`), then the bars slide off at `INTRO_MS` and the page fades back, the cloak's card after it if one's still to pick.
-A click, a tap or a key cuts it short and does nothing else (a capturing listener); a kept meadow and a friend's (`heardWorld`)
+A key cuts it short and does nothing else (a capturing listener); a click or a tap does nothing at all, the bars go on their own clock; a kept meadow and a friend's (`heardWorld`)
 open without it. The zoom moves through it, so the ground repaints those few seconds, with nothing else going on.
 A new meadow opens in a storm late in the afternoon (sim.js `START_PHASE`) that holds till the first fire is lit, drawn
 heavier than other storms (`GALE_LOOK`: the storm's share of the sky's mix goes over 1): a moment after it's on screen (`OPENING_MS`) the
@@ -108,26 +108,32 @@ twinkling stars, a wave of light out to the ring and motes rising off it (`campB
 (`campCam`, in `leadCam`; a zoom of your own ends it), "Your camp" pops in, glowing between two twinkling ✦ (announce 'camp', which cuts in ahead of the others; index.html `camp-pop`)
 and an Android phone buzzes (`CAMP_BUZZ`). Then a soft ring of trodden earth with a few stones lies round the fire (`drawCampRing`,
 `CAMP_ART` painted once, stretched; under all that stands), coming in over `CAMP_RING_MS`. The fire's hover calls it "Your camp".
-Cooking at the fire (PLAN.md stage 6; the long comment over `COOK_MS` has it all): a click on a lit fire walks the forager there
-(`clickFire` 'cook', `goFire`) and it kneels with a small card beside the fire (`#cook`, `renderCook`, kept there by `placeCook`;
-on an upright phone a sheet over the satchel, its brass ✕ at the foot), laid out like a furnace: the pot's three slots, under them the stick
-(`feedStick`: the click on a lit fire used to feed it) and Cook, between them and the output an arrow that only shows progress (it
-lights with something in the pot and fills as it cooks), and an output slot that shows the dish once it's one made before ("?"
-till then; `renderCook` toggles `.on`/`.unknown`, and a wisp of smoke and a dimmed `.mess` when nothing at all could come of the
-pot but a mess, `potPossible`). The stick button wears the fire's fuel as a ring (`cookFuel`: `--fuel`, amber and pulsing `.low`
-down to its last sticks). Out of sticks, or the fire full, it's dimmed (`.off`), not disabled, so a tap says why (`feedStick`). Under them, the known
-dishes the satchel has the things for (`cookKnown`, recipes.js `thingsFor`), and, before them, the last dish cooked as a one-tap
-"cook again" that fills the pot and sets it away (`lastDish`, `cookAgain`); the pot meanwhile is named for a known dish it's a
-thing or two short of, and what it still wants, on the line under the furnace (`potToward`, a subset match over the recipes'
-`answers`), and an unknown mix names what's in it ("Something new: Apple, Honey"; touch has no hover to show the names). A tap on a satchel slot puts one in the pot (`potAdd`, a stick goes
-on the fire), held back in the satchel and shown one fewer (`potHeld`, `potPrune`), not taken till it's cooked. While the card
-is up the satchel rings what will go in the pot or on the fire and dims the rest (`renderSatchel`: `.cooking`, `.cookable`,
-`.cook-dim`), and the first card ever opened says once, ever, what to do (`firstOnce('cook:open')`, a `toast`). Cook: `COOK_MS`
-of stirring (stage 'cooking', `kneelNow`), then `cookDone`: the things out, the dish in (recipes.js `cook`; flies from the fire,
-or lies on the ground with the satchel full; it stays in the output slot for `MADE_MS` as "Made X", `j.made`, a mess says so), and a dish never made before gets its gold headline (`firstTime('dish:' + name)`,
-which is also what `knownDish` reads: per player, for good). Walking off, ✕, Esc or Back shut it (`closeCook`, `stepOut`);
-nothing is lost mid-cook. Plain looks for now (the dishes' emoji in `itemSheet`, PLAN.md step 1); the paintings, the scene and
-the sounds come next. Eating: a tap on food in the satchel (`eatAsk`, `#eat`) shows its name with an Eat button, or why not
+Cooking at the fire (PLAN.md stage 6 and its redesign; the long comment over `COOK_MS` has it all): a click on a lit fire (or E,
+or the pot prompt) walks the forager there (`clickFire` 'cook', `goFire`), it kneels, the camera eases in and leans to the fire
+(`cookCam`, in `leadCam`: `COOK_ZOOM`, `COOK_LEAN`), and a painted iron pot sits over the flames (`drawPot`, `paintPot`: 'pot:0'
+the back and inside, 'pot:1' the belly, what's in it drawn between; drawn after all that stands, so nothing hides it). A tap on
+a satchel slot or a slot dragged onto the pot (`overPot`) puts one in (`potAdd`; a stick goes on the fire): it flies there
+(`flyToPot`) and drops in with a bounce and a puff (`j.land`, `LAND_MS`), held back in the satchel (`potHeld`, `potPrune`) till
+cooked; a tap on it in the pot takes it out (`potThingAt`, `potTake`). Under the fire a small bar (`#cook`, `renderCook`, kept by
+`placeCook`: under the fire, else over it, else beside it on a phone on its side): what the pot will make (`potWord`: a known
+dish's name, "Something new!" for an exact dish never made, "Not a dish yet… as it is, a forager's mess" with what a known dish
+it's near still wants, `potToward`, or "Only a forager's mess", `potPossible`), the stick wearing the fire's fuel as a ring
+(`cookFuel`; F feeds it too, `buildPressed`), the recipe book, Cook, and a round brass ✕ 44 px on every screen. With the pot
+empty the last dish comes back as a one-tap "again" (`lastDish`, `cookAgain`, `fillPot`). While it's up the satchel rings what
+will go in and dims the rest (`.cooking`, `.cookable`, `.cook-dim`). Cook: `COOK_MS` of stirring with the things bobbing and
+steam off the pot, then `cookDone`: the things out, the dish in (flying from the fire, or on the ground with the satchel full),
+a mess a puff of dark smoke, a dish never made before its gold headline (`firstTime('dish:' + name)`, which `knownDish` reads
+with recipes.js `known`). Walking off, ✕, Esc or Back leave the fire (`closeCook`, `stepOut`); nothing is lost mid-cook.
+The recipe book (`#book`, `renderBook`, `#book-btn` by the satchel's right end, B, and on the cooking bar): the fire's dishes,
+known ones with their painting and what goes in (what the satchel has ringed, `needsHad`), half-known ones a hint told
+("Something with honey…", `hinted`, kept in `aeon-garden-hints`), the rest a row of blank plates; a known one tapped fills the pot
+(`bookDish`, `fillPot`), or walks to a lit fire within `BOOK_REACH` and fills it there (`j.want`). On an upright phone a sheet from
+the bottom with its brass ✕ at the foot. Finding it: near a lit fire with something to cook (`bagFood`) a small painted pot bobs
+over it, with an E key where there's a keyboard (`drawCookPrompt`, `PROMPT_ART` painted once; a click on it is one on the fire,
+`promptAt`); making camp the forager thinks "I could cook something on this fire" (`think`, `CAMP_COOK_LINE`), and now and then it
+muses on a dish it doesn't know from what's in the satchel (`hintTick`: `HINT_EVERY`, `HINT_GAP`, never in the intro or the
+opening storm or over another line), telling the book up to `hintMost` of it. Plain dish looks for now (the dishes' emoji in
+`itemSheet`); the paintings, the scene and the sounds come next. Eating: a tap on food in the satchel (`eatAsk`, `#eat`) shows its name with an Eat button, or why not
 ("It wants cooking", "I'm full"); `eatSlot` feeds it (sim.js `feedForager`). The tummy is a third slim bar (`#v-food`), shown
 once hungry and for `FED_SHOW` after eating; "I'm getting hungry" and "I'm starving" are said over it (events 'hungry',
 'starving'). The ideas card waits while it's at a fire (`askTick`).
@@ -138,7 +144,7 @@ along what's left of its way (`drawTrail`: one stroke a frame, the dashes counte
 fading in just after the ring pops up, `TRAIL_IN`, and marching on toward it while it sprints, `TRAIL_MARCH`); held
 and steering, the ring glides after where it was sent (`MARK_GLIDE`) rather than jumping each `STEER_MS`. A press held still for
 `HOLD_MS`, or dragged, runs toward the pointer while it's down (sim.js `f.running`, `FORAGER_RUN`; Shift held runs too, `holdShift`), the
-way found again every `STEER_MS` (in `frame`), and on to where it's let go. Running, once up past `FORAGER_JOG` it jogs (`fg.jog`, fur.js poses 16 to 23: both feet off the ground a moment, heels
+way found again every `STEER_MS` (in `frame`), and on to where it's let go. WASD or the arrows (`keyWalk`) take over from a walk or a held press: the ring, the trail and the press itself are dropped, so letting go walks nowhere. Running, once up past `FORAGER_JOG` it jogs (`fg.jog`, fur.js poses 16 to 23: both feet off the ground a moment, heels
 kicking up, elbows bent and pumping, leaning in) with a stride `FORAGER_JOG_STRIDE` longer. The camera always goes with it (`leadCam`): eased after it (`CAM_FOLLOW`), a little ahead the way it walks
 (`CAM_AHEAD`, itself eased so setting off and stopping are soft), its feet a little below the middle (`CAM_FEET`). Nothing pans it:
 the wheel, a pinch, a double tap and + - zoom about the forager (`zoomOn`), and a kept meadow opens on it at its kept zoom (`resumeWorld`: `showWorld` leaves the wide shot, so it's set back there).
@@ -161,6 +167,7 @@ once a number); clicked again it comes off, a click on the ground or holding to 
 waits till it's back up from the last (`ui.nextAt`, `nextGather`), and one gone or picked clean meanwhile is passed over.
 E picks the nearest thing in reach (within `NEAR_REACH`, or lying where it was dropped) as a click on it would, and pressed
 again while it's busy lines up the next nearest (`pickNear`); with nothing in reach it says so.
+At a lit fire (`cookFire`: where it kneels to warm its hands) E opens its cooking card as a click on the fire does, and shuts it again; the picking is for everywhere else.
 In reach: everything to pick within `NEAR_REACH` of the forager, the sticks, grass and bark for a fire too, has a soft honey ring
 lying round its foot (`drawNear`, `RING_ART` painted once), steady, fading out over `NEAR_FADE` at the edge, brighter on what's
 queued. That's what tells a dandelion from the other yellow flowers and dry grass from the tufts (playtesters couldn't).

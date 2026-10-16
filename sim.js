@@ -5409,9 +5409,7 @@ function lifeTick(w, c) {
 // corners come round in curves; it speeds up gently (FORAGER_ACCEL), slows to stop just where it was sent (FORAGER_BRAKE),
 // slows into a sharp turn, and wades at FORAGER_WADE of its pace. Sent running (f.running: game.js, Shift held or the
 // spot tapped again) it sprints at FORAGER_RUN instead, while its stamina lasts (bodyTick); cold, it walks slower
-// (bodyPace). The river carries it too: standing in the water it drifts down the current (carryForager), and walking it is
-// helped along or held back by the current in its pace (currentAt). It moves on the sim's ticks, so pausing pauses it, and
-// game.js draws it between them.
+// (bodyPace). It moves on the sim's ticks, so pausing pauses it, and game.js draws it between them.
 const FORAGER_WALK = 0.085;             // tiles a tick at a walk (a rabbit ambles 0.06)
 const FORAGER_RUN = 0.16;               // and at a sprint
 const FORAGER_SNEAK = 0.042;            // and sneaking (f.sneaking: game.js, the devious walk), a creep on its toes
@@ -5761,40 +5759,11 @@ function segDist(x, y, ax, ay, bx, by) {
   return Math.hypot(ax + dx * t - x, ay + dy * t - y);
 }
 
-// The current where it stands, into flowX, flowY (tiles a tick, as drift carries a swimmer): quicker down the middle, at
-// most CARRY of a wade, and none off the water or under ice. foragerTick reads it.
-let flowX = 0, flowY = 0;
-function currentAt(w, x, y) {
-  const i = idx(x, y), vx = w.current.x[i], vy = w.current.y[i], s = hypot(vx, vy);
-  flowX = 0; flowY = 0;
-  if (!s || w.frozen || !w.water[i]) return;
-  const k = Math.min(s * riverPace(w), CARRY * FORAGER_WALK * FORAGER_WADE) / s;
-  flowX = vx * k; flowY = vy * k;
-}
-// Standing in the water it's carried down the current, as a swimmer is: only along the shallows (not up the bank, where the
-// current stops), never into the deep, off the meadow or through a rock (it slides along one, as walking does).
-const shallowAt = (w, x, y) => walkable(w, x, y) && w.water[idx(x, y)] === SHALLOW;
-function carryForager(w) {
-  const f = w.forager;
-  if ((!flowX && !flowY) || f.down >= 0) return;
-  let nx = f.x + flowX, ny = f.y + flowY;
-  rocksFor(w);
-  outOfRocks(nx, ny, f.x, f.y); nx = rockX; ny = rockY;
-  if (!shallowAt(w, nx, ny)) {
-    if (shallowAt(w, nx, f.y)) ny = f.y;
-    else if (shallowAt(w, f.x, ny)) nx = f.x;
-    else return;
-  }
-  f.moved += Math.hypot(nx - f.x, ny - f.y);
-  f.x = nx; f.y = ny;
-}
-
 // One tick of walking its way.
 function foragerTick(w) {
   const f = w.forager, P = f.path;
   f.moved = 0;
-  currentAt(w, f.x, f.y);
-  if (!f.walking) { f.speed = 0; if (friendN && f.down < 0) makeRoom(w, f); carryForager(w); return; }
+  if (!f.walking) { f.speed = 0; if (friendN && f.down < 0) makeRoom(w, f); return; }
   const n = P.length / 2;
   while (f.leg < n - 1) {                                // onto the next leg once near this one's end, past it, or nearer the next
     const k = f.leg * 2, bx = P[k], by = P[k + 1];
@@ -5836,9 +5805,7 @@ function foragerTick(w) {
     free *= 1 - brushAt(q, brushNear[k + 3]);
     if (d > 1e-4) { pushX += dx / d * q; pushY += dy / d * q; }
   }
-  const base = (f.running ? FORAGER_RUN : f.sneaking ? FORAGER_SNEAK : FORAGER_WALK) * (wade ? FORAGER_WADE : 1) * free * bodyPace(f) * clamp(Math.cos(turn) * 0.8 + 0.4, 0.15, 1);
-  const carried = flowX * Math.cos(f.heading) + flowY * Math.sin(f.heading);   // (the current along its way: quicker with it, slower against, but never under 1 - CARRY of its pace)
-  const top = Math.max(base + carried, base * (1 - CARRY));
+  const top = (f.running ? FORAGER_RUN : f.sneaking ? FORAGER_SNEAK : FORAGER_WALK) * (wade ? FORAGER_WADE : 1) * free * bodyPace(f) * clamp(Math.cos(turn) * 0.8 + 0.4, 0.15, 1);
   const v = Math.min(top, Math.sqrt(2 * FORAGER_BRAKE * rest)), s = f.speed;
   f.speed = v > s ? Math.min(v, s + FORAGER_ACCEL) : Math.max(v, s - FORAGER_BRAKE * 2);
   if (rest < 0.02 || (rest < 0.1 && f.speed < 0.008)) { f.walking = false; f.running = false; f.speed = 0; f.path.length = 0; return; }
