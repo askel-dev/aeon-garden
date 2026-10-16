@@ -11450,6 +11450,7 @@ function keyWalk() {
   }
   if (!keyWalking) {                    // (taking over: whatever it was off to or going to pick, or doing at a fire, it isn't)
     ui.gather = null; ui.queue.length = 0; ui.mark = null; ui.fire = null;
+    if (drag && !drag.blow) { clearTimeout(holdTimer); drag = null; }   // (a press still held steers no more, and letting go walks nowhere)
     if (ui.selectedId || ui.picked) select(0);
   }
   keyWalking = true;
