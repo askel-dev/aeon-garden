@@ -972,6 +972,91 @@ function paintDandelionFritters(g) {
   fillIn(g, 'rgba(255, 244, 200, 0.9)', () => ovalAt(g, 0.1, cy + 0.27, 0.018, 0.009));
 }
 
+// ------------------------------------------------------------------ a forager's mess
+//
+// What comes of a pot that wasn't a dish: the clay bowl again, but chipped at the rim and sooted up its side, heaped over with
+// a murky olive-brown sludge, lumpy, slopping over the front and running down the bowl in a thick drip. A wooden spoon stands
+// up in it on its own (it's that thick). Bits poke out: a charred black lump, a cherry half sunk, a pale bit of mushroom, a
+// limp stalk; a bubble sits on top about to pop, and a glisten or two says it's at least wet.
+const SLUDGE = [124, 110, 64], SPOON = [196, 150, 96];
+function paintForagersMess(g) {
+  const cy = 0.16, RX = 0.74, RY = 0.22, IX = 0.62, IY = 0.16;
+  sitShadow(g, 0, 0.7, 0.76, 0.13, 0.34);
+  // The bowl, a little lopsided, sooty up the shade side.
+  const body = () => {
+    g.moveTo(-RX, cy);
+    g.bezierCurveTo(-0.94, cy + 0.28, -0.7, 0.7, -0.26, 0.7);
+    g.lineTo(0.3, 0.69);
+    g.bezierCurveTo(0.76, 0.66, 0.94, cy + 0.24, RX, cy);
+    g.ellipse(0, cy, RX, RY, 0, 0, Math.PI, true);
+    g.closePath();
+  };
+  softIn(g, CLAY, cy - RY, 0.7, body, 1.1, 0.58);
+  g.save(); g.beginPath(); body(); g.clip();
+  furGlow(g, [80, 34, 20], 0.55, 0.56, 0.44, 0.5, 0.36);
+  furGlow(g, [255, 214, 176], 0.28, -0.54, 0.32, 0.2, 0.16, -0.3);
+  furGlow(g, [40, 28, 24], 0.62, 0.36, 0.62, 0.62, 0.22);                                      // soot, well up its side
+  furGlow(g, [40, 28, 24], 0.4, 0.62, 0.34, 0.2, 0.3);
+  g.restore();
+  // The rim, with a chip out of it at the back left, and the hollow.
+  fillIn(g, rgba(CLAY_RIM), () => ovalAt(g, 0, cy, RX, RY));
+  fillIn(g, rgba(tone(CLAY, 0.8)), () => { g.moveTo(-0.5, cy - 0.15); g.lineTo(-0.42, cy - 0.11); g.lineTo(-0.34, cy - 0.19); g.closePath(); });
+  softIn(g, CLAY_IN, cy - IY, cy + IY, () => ovalAt(g, 0, cy + 0.01, IX, IY), 1.55, 0.6);
+  // The sludge, heaped up lumpy over the rim (it shows above the front of the rim, and slops over it after).
+  const heap = () => {
+    g.moveTo(-IX, cy + 0.01);
+    g.bezierCurveTo(-0.66, -0.12, -0.5, -0.2, -0.36, -0.16);
+    g.bezierCurveTo(-0.26, -0.3, -0.06, -0.3, 0.02, -0.22);
+    g.bezierCurveTo(0.14, -0.34, 0.38, -0.28, 0.42, -0.14);
+    g.bezierCurveTo(0.58, -0.14, 0.68, -0.04, IX, cy + 0.01);
+    g.ellipse(0, cy + 0.01, IX, IY, 0, 0, Math.PI);
+    g.closePath();
+  };
+  softIn(g, SLUDGE, -0.32, cy + IY, heap, 1.15, 0.55);
+  g.save(); g.beginPath(); heap(); g.clip();
+  furGlow(g, [60, 52, 30], 0.6, 0.34, cy + 0.04, 0.4, 0.2);                                    // round: the shade side
+  furGlow(g, [92, 112, 52], 0.5, -0.3, -0.04, 0.22, 0.12);                                     // greenish swirls in it
+  furGlow(g, [150, 90, 60], 0.4, 0.2, -0.12, 0.18, 0.1, 0.4);                                  // and a ruddy one
+  strokeIn(g, rgba(tone(SLUDGE, 0.68), 0.6), 0.016, () => { g.moveTo(-0.5, -0.04); g.quadraticCurveTo(-0.3, -0.14, -0.12, -0.06); g.moveTo(0.1, -0.12); g.quadraticCurveTo(0.26, -0.2, 0.44, -0.08); g.moveTo(-0.2, 0.1); g.quadraticCurveTo(0, 0.02, 0.24, 0.12); });   // its folds
+  furGlow(g, [255, 240, 200], 0.3, -0.3, -0.18, 0.12, 0.05, -0.2);                             // lumps catching the light
+  furGlow(g, [255, 240, 200], 0.24, 0.24, -0.24, 0.1, 0.04, 0.3);
+  furGlow(g, [255, 240, 200], 0.2, -0.04, 0.02, 0.12, 0.04);
+  g.restore();
+  // Bits poking out of it: a limp stalk, a pale bit of mushroom, a cherry half sunk, a charred lump.
+  strokeIn(g, 'rgb(84, 104, 46)', 0.034, () => { g.moveTo(-0.46, -0.08); g.quadraticCurveTo(-0.56, -0.3, -0.42, -0.4); });
+  fillIn(g, 'rgb(102, 128, 54)', () => ovalAt(g, -0.4, -0.42, 0.07, 0.035, -0.6));
+  softIn(g, [226, 206, 166], -0.2, -0.06, () => ovalAt(g, 0.42, -0.13, 0.09, 0.05, 0.3), 1.15, 0.7);
+  fillIn(g, rgba(CHERRY), () => ovalAt(g, -0.16, 0.04, 0.08, 0.06));
+  fillIn(g, 'rgba(255, 220, 220, 0.8)', () => ovalAt(g, -0.18, 0.02, 0.022, 0.014));
+  softIn(g, [52, 40, 34], -0.32, -0.12, () => { g.moveTo(-0.2, -0.16); g.lineTo(-0.16, -0.28); g.lineTo(-0.04, -0.31); g.lineTo(0.02, -0.22); g.lineTo(-0.04, -0.14); g.closePath(); }, 1.4, 0.6);   // charred
+  // The spoon, stood up in it on its own, leaning a little: its handle, and the sludge gathered round its foot.
+  const handle = () => { g.moveTo(0.12, -0.16); g.lineTo(0.36, -0.9); };
+  strokeIn(g, rgba(tone(SPOON, 0.62)), 0.1, handle);
+  strokeIn(g, rgba(SPOON), 0.075, handle);
+  strokeIn(g, rgba(tone(SPOON, 1.2, 30), 0.8), 0.022, () => { g.moveTo(0.11, -0.22); g.lineTo(0.33, -0.88); });
+  fillIn(g, rgba(tone(SPOON, 0.62)), () => ovalAt(g, 0.36, -0.9, 0.05, 0.04, -1.25));
+  softIn(g, SLUDGE, -0.26, -0.1, () => ovalAt(g, 0.13, -0.16, 0.12, 0.06, -0.2), 1.2, 0.7);
+  strokeIn(g, rgba(tone(SLUDGE, 0.7), 0.6), 0.014, () => { g.moveTo(0.04, -0.16); g.quadraticCurveTo(0.13, -0.2, 0.22, -0.16); });
+  // A bubble sitting on top, about to pop, and a glisten or two.
+  softIn(g, tone(SLUDGE, 1.25, 30), -0.0, 0.12, () => ovalAt(g, -0.38, 0.06, 0.07, 0.055), 1.3, 0.8);
+  strokeIn(g, rgba(tone(SLUDGE, 0.6), 0.7), 0.012, () => ovalAt(g, -0.38, 0.06, 0.07, 0.055));
+  fillIn(g, 'rgba(255, 252, 230, 0.9)', () => { ovalAt(g, -0.4, 0.035, 0.018, 0.011, -0.4); ovalAt(g, -0.3, -0.18, 0.02, 0.012); ovalAt(g, 0.26, -0.22, 0.014, 0.01); ovalAt(g, 0.04, 0.08, 0.012, 0.008); });
+  // The front of the rim, with the sludge slopping over it at the left and running down the bowl in a thick drip.
+  strokeIn(g, rgba(tone(CLAY_RIM, 1.12, 14), 0.9), 0.024, () => g.ellipse(0, cy + 0.01, IX, IY, 0, 0.12, Math.PI - 0.12));
+  strokeIn(g, rgba(tone(CLAY, 0.6), 0.6), 0.016, () => g.ellipse(0, cy, RX, RY, 0, 0.05, Math.PI - 0.05));
+  const slop = () => {
+    g.moveTo(-0.6, cy + 0.06);
+    g.bezierCurveTo(-0.6, cy + 0.2, -0.4, cy + 0.22, -0.36, cy + 0.3);
+    g.bezierCurveTo(-0.33, cy + 0.38, -0.34, cy + 0.44, -0.3, cy + 0.46);
+    g.arc(-0.27, cy + 0.46, 0.045, Math.PI, 0, true);
+    g.bezierCurveTo(-0.22, cy + 0.38, -0.24, cy + 0.3, -0.16, cy + 0.26);
+    g.bezierCurveTo(-0.06, cy + 0.22, 0.0, cy + 0.2, 0.02, cy + 0.15);
+    g.closePath();
+  };
+  softIn(g, SLUDGE, cy + 0.08, cy + 0.52, slop, 1.18, 0.6);
+  fillIn(g, 'rgba(255, 250, 226, 0.75)', () => { ovalAt(g, -0.33, cy + 0.2, 0.03, 0.012, 0.4); ovalAt(g, -0.29, cy + 0.44, 0.012, 0.016); });
+}
+
 // The painted dishes by name, in the order of their numbers ('dish:' + n): a new one goes at the end.
 const PAINTED = [
   ['Roast mushrooms', paintRoastMushrooms],
@@ -986,6 +1071,7 @@ const PAINTED = [
   ['Toasted hazelnuts', paintToastedHazelnuts],
   ['Mushrooms with hazelnuts', paintMushroomsHazelnuts],
   ['Dandelion fritters', paintDandelionFritters],
+  ["A forager's mess", paintForagersMess],
 ];
 const NAMES = PAINTED.map(p => p[0]);
 function paint(g, size, U, n) {
