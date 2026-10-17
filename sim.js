@@ -5815,7 +5815,7 @@ function foragerTick(w) {
     free *= 1 - brushAt(q, brushNear[k + 3]);
     if (d > 1e-4) { pushX += dx / d * q; pushY += dy / d * q; }
   }
-  const top = (f.running ? FORAGER_RUN : f.sneaking ? FORAGER_SNEAK : FORAGER_WALK) * (wade ? FORAGER_WADE : 1) * free * bodyPace(f) * clamp(Math.cos(turn) * 0.8 + 0.4, 0.15, 1);
+  const top = (f.running ? FORAGER_RUN * perk(f, 'stamina', 'pace') : f.sneaking ? FORAGER_SNEAK : FORAGER_WALK) * (wade ? FORAGER_WADE : 1) * free * bodyPace(f) * clamp(Math.cos(turn) * 0.8 + 0.4, 0.15, 1);
   const v = Math.min(top, Math.sqrt(2 * FORAGER_BRAKE * rest)), s = f.speed;
   f.speed = v > s ? Math.min(v, s + FORAGER_ACCEL) : Math.max(v, s - FORAGER_BRAKE * 2);
   if (rest < 0.02 || (rest < 0.1 && f.speed < 0.008)) { f.walking = false; f.running = false; f.speed = 0; f.path.length = 0; return; }
@@ -5875,7 +5875,7 @@ const WET_WADE = 100;                   // and wading
 const DRY = 3;                          // a day: how fast it dries out of the rain at 14 degrees (faster warm, in the sun, moving)
 const SHELTER_WOOD = 0.5;               // woods this thick keep off most rain and wind (and the sun)
 const SPRINT_TICKS = 420;               // ticks of sprinting from fresh to spent (14 s at 1x)
-const REST_TICKS = [240, 480];          // and back from spent to fresh, standing and walking (8 s, 16 s), warm
+const REST_TICKS = [150, 300];          // and back from spent to fresh, standing and walking (5 s, 10 s), warm
 const WINDED_BACK = 0.35;               // spent, it sprints again once it has this much back
 const WARMTH_STAGES = [0.7, 0.45, 0.22];   // over the first it's cosy, then chilly, cold, and freezing under the last
 const COLD_PACE = [0.88, 0.72];         // its pace cold, and freezing
@@ -5993,7 +5993,7 @@ function wakeForager(w) {
 const SKILL_TOP = 10;
 const SKILLS = {
   // Sprinting, in seconds of it at 1x (bodyTick). Each level it sprints 6% longer from fresh and gets its breath back 5% sooner.
-  stamina: { name: 'Stamina', per: 45, perks: { sprint: 0.06, rest: 0.05 }, line: 'Longer sprints, and your breath back sooner' },
+  stamina: { name: 'Stamina', per: 45, perks: { sprint: 0.06, rest: 0.05, pace: 0.02 }, line: 'Longer, faster sprints, and your breath back sooner' },
   // Dishes taken out of the pot (game.js cookDone; a mess counts a little). Each level a dish cooks 3.5% faster (cookOn).
   cooking: { name: 'Cooking', per: 3, perks: { speed: 0.035 }, line: 'Dishes cook a little quicker' },
   // Things picked into the satchel (gather; what lies about for a fire counts a quarter, GROUND_PRACTICE). Each level it stoops
@@ -6051,7 +6051,7 @@ const FIRE_LOOK = 30;                   // ticks between looks for water over a 
 // in it), cookItems what went in (ids, for drawing it), cookLeft the ticks still to cook (0 once it's done: the dish waits in
 // the pot to be taken) and cookTotal how many it took, whole numbers (see cookOn).
 const fireOf = (x, y, born) => ({ fire: true, x, y, born, fuel: -0, lit: false, embers: -0, tinder: false, litAt: -1, ash: -0,
-  cookDish: '', cookItems: [], cookLeft: 0, cookTotal: 0 });
+  cookDish: '', cookItems: [], cookLeft: 0, cookTotal: 0, own: [] });
 
 // Whether a fire can be laid at x, y: '' if it can, else why not, in a few words (game.js says it).
 function fireSpot(w, x, y) {
@@ -6166,33 +6166,32 @@ function fireWarmth(w, x, y) {
 //
 // ---------------------------------------------------------------- the kit
 //
-// What the forager has made by hand (f.kit): the vessels it owns for good (own: recipes.js CRAFTS ids: 'stick', 'stone' and
+// What the forager has made by hand: the vessels each fire has (F.own, made at that fire only: recipes.js CRAFTS ids: 'stick', 'stone' and
 // 'bowl' made at once, makeVessel; 'pot' and 'pan' of clay), and
 // the one it shaped out of clay that's firing (firing: its id, '' for none) at the fire at x, y, left ticks still to go of
 // total. It hardens only while that fire is lit; done, it's owned ('fired'). game.js takes the clay out of the satchel
 // (shapeVessel). A meadow kept before the kit gets an empty one (the blank forager's), no KEEP_VERSION bump.
-const kitOf = () => ({ own: [], firing: '', left: 0, total: 0, x: -0, y: -0 });
+const kitOf = () => ({ firing: '', left: 0, total: 0, x: -0, y: -0 });
 function shapeVessel(w, id, F, ticks) {
   const k = w.forager.kit;
-  if (k.firing || k.own.includes(id)) return false;
+  if (k.firing || F.own.includes(id)) return false;
   k.firing = id; k.left = k.total = Math.max(1, Math.round(ticks)); k.x = F.x; k.y = F.y;
   return true;
 }
 // One made at once, needing no firing (recipes.js CRAFTS with no `fire`: a roasting stick, a hearth stone, a bark bowl): owned now.
-function makeVessel(w, id) {
-  const k = w.forager.kit;
-  if (k.own.includes(id)) return false;
-  k.own.push(id);
+function makeVessel(w, id, F) {
+  if (F.own.includes(id)) return false;
+  F.own.push(id);
   return true;
 }
 function kitTick(w) {
   const k = w.forager && w.forager.kit;
   if (!k || !k.firing) return;
-  let lit = false;
-  for (const F of w.fires) if (F.lit && Math.abs(F.x - k.x) < 1e-3 && Math.abs(F.y - k.y) < 1e-3) { lit = true; break; }
+  let lit = null;
+  for (const F of w.fires) if (F.lit && Math.abs(F.x - k.x) < 1e-3 && Math.abs(F.y - k.y) < 1e-3) { lit = F; break; }
   if (!lit || --k.left > 0) return;
   const id = k.firing;
-  k.own.push(id); k.firing = ''; k.left = 0; k.total = 0;
+  lit.own.push(id); k.firing = ''; k.left = 0; k.total = 0;
   emit(w, { type: 'fired', what: id });
 }
 
@@ -6810,6 +6809,7 @@ function unpackWorld(kept) {
   for (const F of w.fires) {
     asFractions(F, ['x', 'y', 'fuel', 'embers', 'ash']);
     if (F.cookDish === undefined) { F.cookDish = ''; F.cookItems = []; F.cookLeft = 0; F.cookTotal = 0; }   // (kept before pots)
+    if (!F.own) F.own = [];                             // (kept before vessels were each fire's)
   }
   const noBrambles = !w.brambles;                       // (kept on the cooking branch before them: a new meadow's come up, below)
   if (noBrambles) { w.brambles = []; w.pips = []; w.brambleRng = makeRng(w.seed ^ 0xb4a3b1); }
@@ -6830,6 +6830,11 @@ function unpackWorld(kept) {
   for (const s of SKILL_NAMES) if (!(s in F.xp)) { F.xp[s] = -0; F.lv[s] = 0; }   // (kept before that skill: it starts at nothing)
   for (const s of SKILL_NAMES) F.lv[s] = skillLevel(s, F.xp[s]);
   asFractions(F.xp, SKILL_NAMES);
+  if (F.kit.own) {                                      // (kept when vessels were the forager's: they go to the camp's fire)
+    const at = w.camp ? w.camp.fire : w.fires[0];
+    if (at) for (const v of F.kit.own) if (!at.own.includes(v)) at.own.push(v);
+    F.kit = { firing: F.kit.firing, left: F.kit.left, total: F.kit.total, x: F.kit.x, y: F.kit.y };
+  }
   asFractions(F.kit, ['x', 'y']);
   if (noFinds) startFinds(w);
   return w;

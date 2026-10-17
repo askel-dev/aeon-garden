@@ -258,6 +258,10 @@ const BUILDS = {
 //   name            what it's called
 //   needs           what it takes, { word: how many } (as BUILDS)
 //   fire            seconds at 1x it hardens in a lit fire (0: ready at once)
+//   level: 0        the cooking level it needs before it can be made (sim.js SKILLS: level n takes 3·n(n+1)/2 practice, a
+//                   dish 1, a fire laid or a vessel made 1, a mess a quarter: level 1 is the first dish or so, 2 about six,
+//                   3 a dozen or more, about the first spring; the pot is last, as it makes every warm dish for winter).
+//                   One already made, at any fire, can be made again at any level.
 //   text            a line for when you look at it
 const CRAFTS = {
   stick: {
@@ -270,24 +274,28 @@ const CRAFTS = {
     name: 'Hearth stone',
     needs: { pebble: 1 },
     fire: 0,
+    level: 1,
     text: 'A flat stone set in the coals till it\'s hot right through. Things baked on it.',
   },
   bowl: {
     name: 'Bark bowl',
     needs: { birchbark: 2 },
     fire: 0,
+    level: 1,
     text: 'Birch bark folded at the corners and laced up, off the heat. Things mixed in it.',
   },
   pan: {
     name: 'Clay griddle',
     needs: { clay: 2 },
     fire: 60,
+    level: 2,
     text: 'A flat clay griddle that sits on the stones. Things fried and toasted.',
   },
   pot: {
     name: 'Clay pot',
     needs: { clay: 3 },
     fire: 90,
+    level: 3,
     text: 'A round-bellied pot, pinched up out of bank clay and hardened in the fire. Soups and stews.',
   },
 };
@@ -329,6 +337,8 @@ function fits(things, needs) {
   return place(0);
 }
 
+// The cooking level it takes to make vessel id (CRAFTS: 0 for one that needs none, or isn't made).
+const craftLevel = id => (CRAFTS[id] && CRAFTS[id].level) || 0;
 // The vessel a dish is cooked in (left out: the pot).
 const vesselOf = r => r.vessel || 'pot';
 
@@ -409,6 +419,7 @@ function checkRecipes() {
     if (!VESSELS[id]) problems.push(`${who} isn't a vessel (${Object.keys(VESSELS).join(', ')}).`);
     if (!c.name) problems.push(`${who} has no name.`);
     if (!(c.fire >= 0)) problems.push(`${who} wants a firing time in seconds: fire: 60 (or 0, ready at once).`);
+    if (c.level != null && !(c.level >= 0 && c.level === Math.floor(c.level))) problems.push(`${who} has a level that isn't a whole number, 0 or more: level: 2.`);
     if (!c.needs || typeof c.needs !== 'object' || Array.isArray(c.needs)) { problems.push(`${who} needs what it takes: needs: { clay: 3 }.`); continue; }
     for (const [word, n] of Object.entries(c.needs)) {
       if (!INGREDIENTS[word] && !isTag(word)) problems.push(`${who} needs '${word}', which is no ingredient or tag.`);
@@ -455,7 +466,7 @@ function thingsFor(needs, have) {
 // The ingredients a word in a build's needs takes: itself, or every ingredient with that tag.
 const takes = word => (INGREDIENTS[word] ? [word] : Object.keys(INGREDIENTS).filter(id => INGREDIENTS[id].tags.includes(word)));
 
-const Recipes = { STATIONS, VESSELS, vesselOf, INGREDIENTS, RECIPES, BUILDS, CRAFTS, MESS, cook, fits, fillOf, timeOf, recipeOf, takes, foodOf, thingsFor, answers, checkRecipes };
+const Recipes = { STATIONS, VESSELS, vesselOf, craftLevel, INGREDIENTS, RECIPES, BUILDS, CRAFTS, MESS, cook, fits, fillOf, timeOf, recipeOf, takes, foodOf, thingsFor, answers, checkRecipes };
 if (typeof module !== 'undefined') module.exports = Recipes;
 else {
   window.Recipes = Recipes;

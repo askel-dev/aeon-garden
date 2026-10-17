@@ -20,6 +20,9 @@ brings (`SEASON_LINES`, hand-written: keep them true to sim.js's seasons), where
 friend's meadow as you join, and the first of anything in gold between ✦s (`firstTime`, kept across meadows in
 `aeon-garden-firsts`; a first find says its recipes.js `text`). One at a time: the rest wait, except a day's line, which
 is dropped. None while a card is open or the forager is down. The first fire and the first dish go through `firstTime`.
+A skill up a level is one too (`levelUp`, announce 'level', `LEVEL_WAIT` after what did it): it rises from below, a brass coin
+with the level flipping in on a ring of light and rays, the skill's name in its `SKILL_INK` tracking in, its `SKILL_SAYS`
+under it, and sound.js `level` (the one sound with a real cadence: up an A7, home on D). With a card open it's a toast.
 
 The forager (sim.js `w.forager`; how it walks is in ecology.md) is painted in fur.js like a fox (`paintForager`,
 `foragerPose`, `foragerParts`: a rust hood with a flopping point, a round face, a moss cloak, mittens, a satchel, boots), in
@@ -73,13 +76,14 @@ CSS gradients only, shown only then) and a soft heartbeat (sound.js `heart`, `HE
 (`#me`, `renderVitals`, in the 250 ms block, rewritten only on a change; 2026-10-17): its head painted from the front in its outfit and snow,
 in a mood (`faceMood`, held `MOOD_HOLD` before it changes; fur.js `FACE_MOODS`, `paintForagerFace`: well, cosy by a fire, happy after eating or
 a level up, cold, hungry, hurt or down, winded), each painted once and kept (`faces`); frost round it while freezing. Health is a ring round
-it, warmth (amber to ice blue, a drop while wet) and the tummy two small dials under it, dimmed while full. Stamina is a small ring by the
-forager's head while it isn't full, honey, ember-red pulsing while winded (`drawStamina`, drawn over the dark with the edge markers). A tap on
+it, warmth (amber to ice blue, a drop while wet) and the tummy two small dials under it, dimmed while full. Stamina is a slim bar centered over the
+satchel (`#vitals`, `#v-stam`, in `renderVitals`) shown while it isn't full, ember-red pulsing while winded. A tap on
 the face or I opens the skills (`#me-card`, `openMe`, `renderMe`: level, a bar to the next, what it gives, what practises it; a sheet with its ✕
 at the foot on an upright phone); its brass badge is the levels added up and glints after a level up till they're looked at.
 Practice earned floats up over its head as in Project Zomboid (`xpFrame`, `drawXpFloats`, 2026-10-17): "+4 Gathering" in the
-skill's ink (`SKILL_INK`) on a pill painted once (`xpFloatOf`), gathered till it stops gaining for `XP_QUIET_MS` (a pick, a dish, the end of
-a sprint; a long sprint every `XP_MOST`), shown as practice times `XP_SHOWN`, a newer one pushing the older up. A new skill shows at 1x.
+skill's ink (`SKILL_INK`, lightened) as plain words with a faint dark edge, no pill, painted once (`xpFloatOf`), gathered till it stops
+gaining for `XP_QUIET_MS` (a pick, a dish) or `XP_MOST`; stamina only now and then, every `XP_EVERY` seconds of sprinting gathered over
+sprints. Shown as practice times `XP_SHOWN`, a newer one pushing the older up. A new skill shows at 1x.
 Collapsed it tips over (`FALL_MS`) with its eyes shut (pose 7), the screen goes dark
 (`#veil`, `DARK_AFTER`), and `bodyFrame` runs the sim `SKIP_MS` a frame till it wakes at home (`bodyWoke`: the camera there at
 once, a toast, three soft notes: sound.js `wake`). Out of breath (`f.winded`) a press, Shift or a held run only walks it.
@@ -160,15 +164,15 @@ localStorage as the page is left (`keepSkills`), brought into a friend's meadow 
 1.0 ms of script a frame cooking against 1.7 walking, 60 fps).
 Making vessels (2026-10-17; the comment over game.js `cookVessel`): every vessel is made first (recipes.js `CRAFTS`: a roasting
 stick from a stick, a hearth stone from a pebble, a bark bowl from 2 birch bark, all at once; the clay griddle and pot from clay,
-then fired). The cooking window's vessel row has them all, the ones not made dashed with "Make"; picked, the window makes it
+then fired). The cooking window's vessel row has them all, each its meadow painting fitted to a small picture (`vesselIcon`), the ones not made dashed with "Make"; picked, the window makes it
 (`cookMode` 'make'): its outline breathes over the fire with what it takes bobbing over it, the satchel tiles it takes glow
 (`.want`), each piece dragged or tapped onto the fire falls in with a puff and builds the vessel up from the bottom (`drawMakeView`,
 `makeArt`, pips under it), and once the last lands (`makeDone`) it's yours (sim.js `makeVessel`) or, clay, shaped and hardening in
 that fire (`cookMode` 'fire': raw clay darkening as it goes, its % in the row), with a bloom and sparkles (`drawMadeBurst`). One clay
 thing in the fire at a time (`makeBlocked`). The line under the canvas guides it all (`makeLine`: what to drag, how far, what's
-missing and where to find it). With nothing made the window opens making the first it has things for. The clay button by the
-satchel (`#make`, after camp) lists what to make and walks to a lit fire to make it there (`makeOne`, `makeNext`); a book page whose
-vessel isn't made has "First make a …" (`book-make`). The bowl is painted as folded, laced birch bark now.
+missing and where to find it). With nothing made the window opens making the first it has things for. There's no clay button
+(taken out 10-17: the window's vessel row does it); a book page whose vessel isn't made has "First make a …" (`book-make`), which
+walks to a lit fire to make it there (`makeOne`, `makeNext`), and something newly within reach is told once (`renderMake`). The bowl is painted as folded, laced birch bark now.
 The recipe book (`#book`, `renderBook`, `#book-btn` by the satchel's right end, B, and on the cooking bar), modelled on the old
 field journal (main at 1d79f03): a book laid open on the meadow over a soft scrim (`#book-scrim`), the numbered tiles on the left
 page in sections (`BOOK_SECTIONS`: savoury, sweet by whether a need is sweet or fruit; `BOOK_PAGES`, No. 1 to N), the page picked

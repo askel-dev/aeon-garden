@@ -12,6 +12,9 @@ create table if not exists public.profiles (
   last_seen timestamptz not null default now(),                 -- here() ticks it every 30 s while the game's in view
   room text not null default '' check (char_length(room) <= 40) -- the meadow being played together ('' alone)
 );
+-- A small picture of your meadow (a JPEG as a data URL), sent with a beat every few minutes, and when.
+alter table public.profiles add column if not exists snap text not null default '' check (char_length(snap) <= 60000);
+alter table public.profiles add column if not exists snap_at timestamptz;
 
 create table if not exists public.friendships (
   a uuid not null references public.profiles on delete cascade, -- who asked
@@ -119,34 +122,48 @@ language sql security definer set search_path = public as $$
   update friendships set accepted = true where a = other and b = auth.uid()
 $$;
 
--- Everyone you're tied to: friends with whether they're about (seen in the last 75 s, by the server's clock) and the
--- room they're in, and asks both ways (name only).
+-- Everyone you're tied to: friends with whether they're about (seen in the last 75 s, by the server's clock), the
+-- room they're in and when their meadow's picture was taken, and asks both ways (name only).
+drop function if exists public.here(text, text);
+drop function if exists public.here(text, text, text);
 drop function if exists public.friends();
-create or replace function public.friends() returns table (id uuid, name text, state text, online boolean, room text)
+create or replace function public.friends()
+returns table (id uuid, name text, state text, online boolean, room text, snap_at timestamptz)
 language sql stable security definer set search_path = public as $$
   select p.id, p.name,
     case when f.accepted then 'friend' when f.a = auth.uid() then 'asked' else 'asking' end,
     f.accepted and p.last_seen > now() - interval '75 seconds',
-    case when f.accepted then p.room else '' end
+    case when f.accepted then p.room else '' end,
+    case when f.accepted and p.snap <> '' then p.snap_at end
   from friendships f join profiles p on p.id = case when f.a = auth.uid() then f.b else f.a end
   where auth.uid() in (f.a, f.b)
   order by f.accepted desc, p.last_seen desc
 $$;
 
--- The game's beat while it's in view: I'm here, by this name, in this room ('' alone). Returns friends().
-create or replace function public.here(new_name text default '', new_room text default '')
-returns table (id uuid, name text, state text, online boolean, room text)
+-- The game's beat while it's in view: I'm here, by this name, in this room ('' alone), and now and then a new picture
+-- of my meadow (null: the one before stays). Returns friends().
+create or replace function public.here(new_name text default '', new_room text default '', new_snap text default null)
+returns table (id uuid, name text, state text, online boolean, room text, snap_at timestamptz)
 language plpgsql security definer set search_path = public as $$
 begin
   update profiles set last_seen = now(), name = left(coalesce(new_name, ''), 24), room = left(coalesce(new_room, ''), 40)
     where profiles.id = auth.uid();
+  if new_snap is not null and char_length(new_snap) <= 60000 and new_snap ~ '^data:image/jpeg;base64,[A-Za-z0-9+/]+=*$' then
+    update profiles set snap = new_snap, snap_at = now() where profiles.id = auth.uid();
+  end if;
   return query select * from public.friends();
 end $$;
 
+-- Friends' meadow pictures, fetched only when one is new (friends() says when each was taken). Friends only.
+create or replace function public.friend_snaps(ids uuid[]) returns table (id uuid, snap text)
+language sql stable security definer set search_path = public as $$
+  select p.id, p.snap from profiles p where p.id = any(ids) and public.are_friends(auth.uid(), p.id)
+$$;
+
 revoke execute on function public.me(text), public.add_friend(text), public.accept_friend(uuid), public.friends(),
-  public.here(text, text) from public, anon;
+  public.here(text, text, text), public.friend_snaps(uuid[]) from public, anon;
 grant execute on function public.me(text), public.add_friend(text), public.accept_friend(uuid), public.friends(),
-  public.here(text, text) to authenticated;
+  public.here(text, text, text), public.friend_snaps(uuid[]) to authenticated;
 revoke execute on function public.new_code() from public, anon, authenticated;
 revoke execute on function public.are_friends(uuid, uuid) from public, anon;   -- (the invite policy runs it as you)
 

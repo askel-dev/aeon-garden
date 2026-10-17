@@ -1354,7 +1354,6 @@ function render(now) {
     const [sx, sy] = screenOf(hov);
     drawLabel(`${hov.name} · ${S.mood(world, hov).text}`, sx, sy + creaturePx(hov) * 0.55 + 6);
   }
-  drawStamina(now);
   drawCampMark(now);
   if (peers.size) drawFriendMarks(now);
   drawPickArrow(now);
@@ -1932,7 +1931,7 @@ const fg = { wasWalking: false, at: -1, x: 0, y: 0, step: 0, stillMs: 1e4, view:
   snow: -1, snowTick: -0, snowArt: 0, sizedSnow: 0,   // (the snow on it: snowOnForager)
   kneel: -1, knelt: -1e9, sizedKneel: false,           // (at a fire: its kneeling pose, fur.js FORAGER_KNEEL, or -1; when it last knelt)
   emote: -1, emoteMs: -0, emoteFrame: -1, lift: -0, sneakStill: -0, sizedEmote: false,   // (an emote: EMOTE, or -1; emoteTick)
-  sx: -0, sy: -0, px: -0, drawnAt: -0, stamA: -0, stamAt: -0 };   // (where it was drawn this frame, and its stamina ring: drawStamina)
+  sx: -0, sy: -0, px: -0, drawnAt: -0 };   // (where it was drawn this frame)
 const CLOAKS = Fur.FORAGER_CLOAKS.length, HATS = Fur.FORAGER_HATS.length;
 const outfitKept = (cloak, hat) => Fur.outfitOf(Math.min(CLOAKS - 1, Math.max(0, +cloak | 0)), Math.min(HATS - 1, Math.max(0, +hat | 0)));
 try {
@@ -2246,7 +2245,7 @@ function snowOnForager() {
 // morning, the satchel empty (sim.js wakeForager). In cold air its breath shows (BREATH_AIR, a puff painted once,
 // PUFF_ART), and soaked it drips. Its face is top left (#me, renderVitals, with the frost, a few times a second): painted
 // in a mood (faceMood), health a ring round it, warmth and the tummy two dials under it (a drop by the warmth while it's
-// wet), and a tap on it shows the skills (openMe). Stamina is a ring by the forager itself (drawStamina).
+// wet), and a tap on it shows the skills (openMe). Stamina is a bar over the satchel (#vitals).
 const BREATH_AIR = 8;                      // degrees: air colder than this shows its breath
 const BREATH_MS = [2700, 1500];            // ms between puffs, standing and walking (sprinting, half that)
 const PUFF_MS = 1500;                      // a puff's life
@@ -2321,30 +2320,6 @@ function drawBody(b, x, y, soak, going, running, stage, px, now, me) {
     }
   }
 }
-// Stamina (off the corner since the face came, 2026-10-17): a small ring by the forager's head while it isn't full, going
-// round as its breath comes back, honey, and ember-red pulsing while it's winded. It comes in over STAM_IN and fades over
-// STAM_OUT once full. Drawn over the dark with the edge markers, two arcs a frame.
-const STAM_IN = 200, STAM_OUT = 900;       // ms
-function drawStamina(now) {
-  const f = world.forager, dt = Math.min(100, now - fg.stamAt);
-  fg.stamAt = now;
-  const want = f.stamina < VITAL_FULL && f.down < 0 && fg.drawnAt === now;
-  fg.stamA = want ? Math.min(1, fg.stamA + dt / STAM_IN) : Math.max(0, fg.stamA - dt / STAM_OUT);
-  if (!fg.stamA || fg.drawnAt !== now) return;
-  const r = Math.max(5, fg.px * 0.055), x = fg.sx + Math.max(r * 2.2, fg.px * 0.27), y = fg.sy - fg.px * 0.62;
-  ctx.globalAlpha = fg.stamA;
-  ctx.lineWidth = r * 0.62;
-  ctx.strokeStyle = 'rgba(46, 34, 18, 0.42)';
-  ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.stroke();
-  if (f.stamina > 0.005) {
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = f.winded ? '#e0683e' : '#f4cb5c';
-    if (f.winded) ctx.globalAlpha = fg.stamA * (0.7 + 0.3 * Math.sin(now / 110));
-    ctx.beginPath(); ctx.arc(x, y, r, -Math.PI / 2, -Math.PI / 2 + TAU * f.stamina); ctx.stroke();
-    ctx.lineCap = 'butt';
-  }
-  ctx.globalAlpha = 1;
-}
 // Collapsed: it tips over sideways (toward where it was facing) and lies there.
 function drawFallen(art, sx, sy, px, flip, u) {
   const e = u * u * (3 - 2 * u), side = flip ? 1 : -1;
@@ -2399,8 +2374,8 @@ const VITAL_FULL = 0.985;
 const FED_SHOW = 4000;                    // ms the face smiles after eating or a level up
 const FOOD_FULL = 0.85;                   // the tummy's dial dims over this
 const MOOD_HOLD = 1200;                   // ms a new mood has to last before the face changes to it
-const FACE_PX = 50;                       // the face's size on the page (index.html #me canvas)
-const vit = { health: -1, warm: -1, wet: -1, frost: -1, food: -1, starving: null, fedAt: -1e9, lvAt: -1e9, lv: -1,
+const FACE_PX = 50 * 1.5;                 // the face's size painted: #me canvas is 50 css px but #me-box scales up to 1.4x, so paint for that
+const vit = { health: -1, stam: -1, winded: null, warm: -1, wet: -1, frost: -1, food: -1, starving: null, fedAt: -1e9, lvAt: -1e9, lv: -1,
   mood: '', want: '', wantAt: 0, face: '', skills: '' };
 const TUMMY_WORDS = [[0.85, 'Full'], [0.55, 'Fed'], [S.HUNGRY, 'Peckish'], [0.001, 'Hungry'], [-1, 'Starving']];
 const faces = new Map();                  // a face painted once an outfit, snow and mood (fur.js paintForagerFace)
@@ -2435,6 +2410,7 @@ function renderVitals() {
     c.width = art.width; c.height = art.height;
     c.getContext('2d').drawImage(art, 0, 0);
   }
+  sendHead();                              // (a new hat or cloak: friends see it)
   const me = $('#me');
   const hp = Math.round(f.health * 100);
   if (hp !== vit.health) {
@@ -2451,6 +2427,15 @@ function renderVitals() {
     el.querySelector('.drop').style.opacity = f.wet > 0.05 ? (0.35 + 0.65 * f.wet).toFixed(2) : '0';
     vit.warm = warm; vit.wet = wet;
   }
+  const stam = Math.round(f.stamina * 100);
+  if (stam !== vit.stam || f.winded !== vit.winded) {
+    const el = $('#v-stam');
+    el.classList.toggle('show', f.stamina < VITAL_FULL);
+    el.classList.toggle('winded', f.winded);
+    el.querySelector('i').style.width = stam + '%';
+    el.title = f.winded ? 'Out of breath' : 'Stamina';
+    vit.stam = stam; vit.winded = f.winded;
+  }
   const food = Math.round(clamp(f.tummy, 0, 1) * 100), starving = f.tummy <= 0;
   if (food !== vit.food || starving !== vit.starving) {
     const el = $('#v-food');
@@ -2459,9 +2444,15 @@ function renderVitals() {
     el.querySelector('.fill').style.strokeDasharray = `${food} 100`;
     vit.food = food; vit.starving = starving;
   }
-  const said = `${f.health > 0.75 ? 'Well' : f.health > 0.4 ? 'Hurt' : 'Badly hurt'} · ${['Cosy', 'Chilly', 'Cold', 'Freezing', 'Too cold'][S.warmthStage(f)]}`
-    + `${f.wet > 0.6 ? ', soaked' : f.wet > 0.05 ? ', damp' : ''} · ${TUMMY_WORDS.find(([k]) => f.tummy > k)[1]} · Your skills (I)`;
+  // What each bar says when hovered (the dials are spans: role img, so they get the title and the label too).
+  const damp = f.wet > 0.6 ? ', soaked' : f.wet > 0.05 ? ', damp' : '';
+  const said = `Health: ${f.health > 0.75 ? 'Well' : f.health > 0.4 ? 'Hurt' : 'Badly hurt'} (${hp}%) · Your skills (I)`;
+  const warmSaid = `Warmth: ${['Cosy', 'Chilly', 'Cold', 'Freezing', 'Too cold'][S.warmthStage(f)]}${damp} (${warm}%)`;
+  const foodSaid = `Tummy: ${TUMMY_WORDS.find(([k]) => f.tummy > k)[1]} (${food}%)`;
   if (me.title !== said) me.title = said;
+  const dw = $('#v-warm'), df = $('#v-food');
+  if (dw.title !== warmSaid) dw.title = dw.ariaLabel = warmSaid;
+  if (df.title !== foodSaid) df.title = df.ariaLabel = foodSaid;
   let lv = 0;
   for (const s of S.SKILL_NAMES) lv += f.lv[s];
   if (lv !== vit.lv) { $('#me-lv').textContent = lv || ''; vit.lv = lv; }
@@ -2479,9 +2470,13 @@ function renderVitals() {
 // now and what practises it. A new skill shows with its line till it has a SKILL_SAYS.
 const pct = v => Math.round(v * 100) + '%';
 const SKILL_SAYS = {
-  stamina: (k, lv) => `Sprints ${pct(k.perks.sprint * lv)} longer, breath back ${pct(k.perks.rest * lv)} sooner`,
+  stamina: (k, lv) => `Sprints ${pct(k.perks.sprint * lv)} longer, ${pct(k.perks.pace * lv)} faster, breath back ${pct(k.perks.rest * lv)} sooner`,
   cooking: (k, lv) => `Dishes cook ${pct(k.perks.speed * lv)} quicker`,
   gathering: (k, lv) => `Picks ${pct(k.perks.quick * lv)} quicker`,
+};
+// And what the next level up brings that isn't a perk (cooking: a vessel to make, recipes.js CRAFTS level).
+const SKILL_NEXT = {
+  cooking: lv => { for (let n = lv + 1; n <= S.SKILL_TOP; n++) { const o = opensAt(n); if (o) return `${upFirst(o)} at level ${n}`; } return ''; },
 };
 const SKILL_HOW = { stamina: 'sprinting', cooking: 'cooking dishes', gathering: 'picking things' };
 const SKILL_INK = { stamina: '#6f9cc9', cooking: '#d9803a', gathering: '#7a9a46' };
@@ -2502,10 +2497,10 @@ function renderMe() {
   $('#me-title').textContent = myName || 'Your forager';
   $('#me-skills').innerHTML = S.SKILL_NAMES.map(s => {
     const k = S.SKILLS[s], lv = f.lv[s], top = lv >= S.SKILL_TOP;
-    const says = lv && SKILL_SAYS[s] ? SKILL_SAYS[s](k, lv) : k.line, how = SKILL_HOW[s];
+    const says = lv && SKILL_SAYS[s] ? SKILL_SAYS[s](k, lv) : k.line, how = SKILL_HOW[s], next = SKILL_NEXT[s] ? SKILL_NEXT[s](lv) : '';
     return `<div class="sk"><div class="sk-top"><b>${esc(k.name)}</b><span>Level ${lv}${top ? ' · the best it gets' : ''}</span></div>`
       + `<div class="sk-bar" style="--ink: ${SKILL_INK[s] || '#b98a45'}"><i style="width: ${Math.round(S.skillProgress(f, s) * 100)}%"></i></div>`
-      + `<p>${esc(says)}${how && !top ? ` · better with ${how}` : ''}</p></div>`;
+      + `<p>${esc(says)}${how && !top ? ` · better with ${how}` : ''}${next ? `<br><small>Next: ${esc(next)}</small>` : ''}</p></div>`;
   }).join('');
 }
 
@@ -2991,12 +2986,13 @@ function drawPickFloats(now) {
 
 // Practice floating up over the forager's head as it's earned, as in Project Zomboid: "+4 Gathering" in the skill's ink
 // (SKILL_INK). The forager's f.xp is watched (xpFrame, a look at each skill a frame), and what it gained is gathered up
-// till it stops gaining for a moment (XP_QUIET_MS: a pick, a dish, the end of a sprint) or there's a lot of it (a long
-// sprint shows now and then), then floats up from its head and follows it. The numbers are practice times XP_SHOWN, so a
+// till it stops gaining for a moment (XP_QUIET_MS: a pick, a dish) or there's a lot of it, then floats up from its head and
+// follows it. Stamina only shows now and then while sprinting: gathered over sprints, a float every XP_EVERY.stamina. The numbers are practice times XP_SHOWN, so a
 // pick says something rounder than a quarter. A jump of more than a level's practice is a forager brought in (bringSkills),
 // not earned, and passed by.
 const XP_SHOWN = { stamina: 1, cooking: 10, gathering: 4 };
 const XP_QUIET_MS = 450, XP_MOST = 12, XP_MS = 1500, XP_RISE = 30;
+const XP_EVERY = { stamina: 40 };       // (seconds of sprinting at 1x a float; it waits through the stops)
 const xpSeen = { world: null, xp: {}, got: {}, at: {} };
 const xpFloats = [];                       // { img, w, h, t0, lift: px it's pushed up by newer ones }
 function xpFrame(now) {
@@ -3006,25 +3002,27 @@ function xpFrame(now) {
     const d = f.xp[s] - xpSeen.xp[s];
     xpSeen.xp[s] = f.xp[s];
     if (d > 0 && d <= S.SKILLS[s].per) { xpSeen.got[s] += d * (XP_SHOWN[s] || 1); xpSeen.at[s] = now; }
-    const got = xpSeen.got[s];
-    if (got > 0 && (now - xpSeen.at[s] > XP_QUIET_MS || got >= XP_MOST)) {
+    const got = xpSeen.got[s], every = XP_EVERY[s];
+    if (every ? got >= every : got > 0 && (now - xpSeen.at[s] > XP_QUIET_MS || got >= XP_MOST)) {
       xpSeen.got[s] = 0;
       if (got >= 0.5 && f.down < 0) xpFloats.push(xpFloatOf(s, Math.round(got), now));
     }
   }
 }
-// "+4 Gathering" on a parchment pill, painted once, then only drawn.
+// "+4 Gathering", just the words in a light tint of the skill's ink with a faint dark edge to read on the grass, painted once, then only drawn.
+const XP_FONT = '800 11px Nunito, ui-rounded, system-ui, sans-serif';
 function xpFloatOf(s, n, t0) {
   const label = `+${n} ${S.SKILLS[s].name}`, c = document.createElement('canvas'), g = c.getContext('2d'), k = 2;
-  g.font = LABEL_FONT;
-  const w = Math.ceil(g.measureText(label).width + 16), h = 22;
+  g.font = XP_FONT;
+  const w = Math.ceil(g.measureText(label).width + 6), h = 16;
   c.width = w * k; c.height = h * k;
   g.scale(k, k);
-  g.fillStyle = 'rgba(255, 248, 228, 0.94)';
-  g.beginPath(); g.roundRect(0.5, 0.5, w - 1, h - 1, 11); g.fill();
-  g.strokeStyle = SKILL_INK[s] || '#b98a45'; g.globalAlpha = 0.55; g.lineWidth = 1.2; g.stroke(); g.globalAlpha = 1;
-  g.font = LABEL_FONT; g.fillStyle = SKILL_INK[s] || '#b98a45'; g.textBaseline = 'middle';
-  g.fillText(label, 8, h / 2 + 0.5);
+  g.font = XP_FONT; g.textBaseline = 'middle'; g.lineJoin = 'round';
+  g.strokeStyle = 'rgba(34, 24, 12, 0.55)'; g.lineWidth = 2;
+  g.strokeText(label, 3, h / 2 + 0.5);
+  const n0 = parseInt((SKILL_INK[s] || '#b98a45').slice(1), 16), up = c8 => Math.round(c8 + (255 - c8) * 0.45);
+  g.fillStyle = `rgb(${up(n0 >> 16)}, ${up(n0 >> 8 & 255)}, ${up(n0 & 255)})`;   // (the ink lightened, to read on dark grass)
+  g.fillText(label, 3, h / 2 + 0.5);
   while (xpFloats.length > 3) xpFloats.shift();
   return { img: c, w, h, t0, lift: 0 };
 }
@@ -3037,7 +3035,7 @@ function drawXpFloats(now) {
     if (u >= 1) { xpFloats.splice(k, 1); continue; }
     const e = 1 - (1 - u) ** 3;
     f.lift += (Math.max(0, up - XP_RISE * e) - f.lift) * 0.25;   // (a newer one pushes the older up out of its way, eased)
-    ctx.globalAlpha = Math.min(1, u * 8) * (u > 0.6 ? 1 - (u - 0.6) / 0.4 : 1);
+    ctx.globalAlpha = 0.9 * Math.min(1, u * 8) * (u > 0.6 ? 1 - (u - 0.6) / 0.4 : 1);
     ctx.drawImage(f.img, Math.round(fg.sx - f.w / 2), Math.round(top - f.h - XP_RISE * e - f.lift), f.w, f.h);
     up = f.lift + XP_RISE * e + f.h + 3;    // (the next older one keeps above this one)
   }
@@ -3330,7 +3328,7 @@ const netFiring = [];                     // a friend's vessel in a fire: { x, y
 const kitArt = id => VSL_FIRING[VSL_STEPS - 1][id === 'pan' ? 1 : 0];
 const fireAtXY = (F, x, y) => Math.abs(F.x - x) < 1e-3 && Math.abs(F.y - y) < 1e-3;
 function drawKitAt(F, sx, sy, px) {
-  const own = world.forager.kit.own, using = cooking() && ui.fire.F === F ? cookVessel : F.cookDish !== '' ? DISH_VESSEL.get(F.cookDish) || 'pot' : idleVessel.get(F) || '';
+  const own = F.own, using = cooking() && ui.fire.F === F ? cookVessel : F.cookDish !== '' ? DISH_VESSEL.get(F.cookDish) || 'pot' : idleVessel.get(F) || '';
   const P = px * 0.4;
   for (let i = 0, m = 0; i < own.length; i++) {
     if (!(Recipes.CRAFTS[own[i]]?.fire > 0)) continue;     // (the clay ones: a stick, a stone and a bowl aren't set out)
@@ -3386,8 +3384,7 @@ function drawFire(F, z, now) {
     ctx.globalAlpha = 1;
     return;
   }
-  const C = world.camp;
-  if (C && F === C.fire && world.forager.kit.own.length) drawKitAt(F, sx, sy, px);
+  if (F.own.length) drawKitAt(F, sx, sy, px);
   drawEmoji(fireArt(F, now), sx, sy - FIRE_FOOT * px / 2, px);
   const s = fireShown(F, now);
   if (s.heat > 0.02) drawFlames(sx, sy, px, s.heat, now, F.born % 97);
@@ -3745,16 +3742,6 @@ function buildIcon() {
   el.style.backgroundImage = `url(${c.toDataURL()})`;
   el.dataset.done = '1';
 }
-// The clay button's painting: the fired clay pot, painted once.
-function makeIcon() {
-  const el = $('#make i');
-  if (!el || el.dataset.done) return;
-  const c = document.createElement('canvas'), size = Math.ceil(40 * dpr);
-  c.width = c.height = size;
-  paintVessel(c.getContext('2d'), size, size, VSL_PARTS.indexOf('potW3'));
-  el.style.backgroundImage = `url(${c.toDataURL()})`;
-  el.dataset.done = '1';
-}
 // Pressed: ready, it picks a spot for one (pressed again, it lets it be); not yet, it says what's still wanting.
 function buildPressed() {
   if (!world || world.forager.down >= 0) return;
@@ -3768,16 +3755,15 @@ function buildPressed() {
 // ---- making (PLAN.md vessels, piece 5)
 //
 // A vessel made at a lit fire, in the cooking window (recipes.js CRAFTS; the comment over cookVessel; sim.js makeVessel,
-// shapeVessel, kitTick, f.kit). The clay button by the fire button (#make) shows once there's camp and the satchel holds
-// what something still to make takes, or something's hardening; pressed (or C), a little menu over it (#make-menu, makeMenu)
-// lists what can be made and what each takes, and what's hardening and how far along. One picked walks the forager to the
-// lit fire it's near (MAKE_NEAR), else the camp's, and opens the window making it (makeOne, makeNext). A clay one hardens
+// shapeVessel, kitTick, f.kit), from its vessel row; something newly within reach is told once (renderMake). One picked
+// from the book walks the forager to the lit fire it's near (MAKE_NEAR), else the camp's, and opens the window making it
+// (makeOne, makeNext). A clay one hardens
 // in that fire while it burns; done, sim.js's 'fired' toasts it. Owned for good, kept at camp, never in the satchel. A guest
 // makes its own: its forager's kit starts empty in a friend's meadow (arrive) and goes with the satchel through a reload
 // (keepAwayBag); the fire it hardens in is the meadow's, the same on every side, and friends see it there ('shape': fireNet,
 // netFiring).
 const MAKE_NEAR = 3;                      // tiles from a lit fire the forager makes things at it
-const makeUi = { shown: false, open: false, html: '', can: new Set(), nudge: false };
+const makeUi = { can: new Set() };
 function kitFire() {
   const f = world.forager;
   let best = null, bd = MAKE_NEAR;
@@ -3787,55 +3773,26 @@ function kitFire() {
 }
 const craftName = id => (Recipes.CRAFTS[id] ? Recipes.CRAFTS[id].name : Recipes.VESSELS[id].name).toLowerCase();
 function renderMake() {
-  const el = $('#make');
-  if (!el || !world || !world.forager) return;
-  const f = world.forager, k = f.kit, todo = Object.keys(Recipes.CRAFTS).filter(id => !k.own.includes(id) && k.firing !== id);
-  const show = !!k.firing || !!world.camp && todo.some(id => buildHave(id, Recipes.CRAFTS).any);
-  if (show !== makeUi.shown) { el.classList.toggle('hidden', !show); makeUi.shown = show; }
-  // what can be made just now: a clay one newly within reach is announced (once ever) and the button pops
-  let fresh = false;
+  if (!world || !world.forager) return;
+  const k = world.forager.kit;
+  // a clay one newly within reach is announced (once ever)
   for (const id of Object.keys(Recipes.CRAFTS)) {
-    const can = !!world.camp && todo.includes(id) && buildHave(id, Recipes.CRAFTS).ready;
+    const here = ui.fire ? ui.fire.F : kitFire(), can = !!world.camp && !!here && !here.own.includes(id) && k.firing !== id && !makeLocked(id) && buildHave(id, Recipes.CRAFTS).ready;
     if (can && !makeUi.can.has(id)) {
       makeUi.can.add(id);
       const c = Recipes.CRAFTS[id];
-      if (c.fire > 0) { fresh = true; firstTime('craft:' + id, 'you can make', esc(c.name), 'Tap the clay button, and at a lit fire drag the clay onto it.'); }
+      if (c.fire > 0) firstTime('craft:' + id, 'you can make', esc(c.name), 'At a lit fire, pick it in the cooking window and drag the clay onto it.');
     } else if (!can) makeUi.can.delete(id);
   }
-  if (fresh) { makeUi.nudge = true; el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop'); }
-  if (![...makeUi.can].some(id => Recipes.CRAFTS[id].fire > 0)) makeUi.nudge = false;
-  el.classList.toggle('nudge', makeUi.nudge);          // (a soft glow stays till the button is pressed)
-  if (!show && makeUi.open) makeMenu(false);
-  else if (makeUi.open) makeMenu(true);
 }
-function makeMenu(open) {
-  const m = $('#make-menu');
-  makeUi.open = open;
-  if (open) { makeUi.nudge = false; $('#make').classList.remove('nudge', 'pop'); }
-  $('#make').classList.toggle('on', open);
-  if (!open) { m.classList.add('hidden'); return; }
-  const k = world.forager.kit;
-  let html = '';
-  if (k.firing) {
-    const lit = world.fires.some(F => F.lit && fireAtXY(F, k.x, k.y));
-    html += `<p>Your ${craftName(k.firing)} is hardening · ${Math.floor((1 - k.left / k.total) * 100)}%${lit ? '' : '<br><small>its fire is out: light it again</small>'}</p>`;
-  }
-  for (const [id, c] of Object.entries(Recipes.CRAFTS)) {
-    if (k.own.includes(id) || k.firing === id) continue;
-    html += `<button data-act="make-one" data-id="${id}"${buildHave(id, Recipes.CRAFTS).ready && !makeBlocked(id) ? '' : ' class="off"'}>${Recipes.VESSELS[id].icon} ${esc(c.name)} <small>${esc(needWords(c.needs))}</small></button>`;
-  }
-  if (!html) html = '<p>Nothing more to make</p>';
-  if (html !== makeUi.html) { makeUi.html = html; m.innerHTML = html; }
-  m.classList.remove('hidden');
-}
-// One picked (the menu, the book): at a fire already, the window makes it; else off to a lit fire to make it there.
+// One picked (the book): at a fire already, the window makes it; else off to a lit fire to make it there.
 function makeOne(id) {
   const f = world.forager, c = Recipes.CRAFTS[id];
   if (!c || f.down >= 0) return;
-  makeMenu(false);
   if (cooking()) { if (!pickVessel(id)) say('Not while it cooks', ui.fire.x, ui.fire.y - 0.5); return; }
   const no = text => { say(text, f.x, f.y - 1.6); chime('click'); };
   if (ownsVessel(id)) return no(`You have a ${c.name.toLowerCase()}`);
+  if (makeLocked(id)) return no(`A ${c.name.toLowerCase()} wants Cooking ${Recipes.craftLevel(id)}`);
   const F = kitFire();
   if (!F) return no('Make it at a lit fire');
   makeNext = id;
@@ -3960,6 +3917,7 @@ function fireFrame(now, dt) {
       const why = S.fireSpot(world, j.x, j.y), got = !why && spendBuild(BUILD);
       if (!got) { say(why || 'Something\'s missing', j.x, j.y); ui.fire = null; renderBuild(); return; }
       j.F = S.layFire(world, j.x, j.y, got.fuel, got.tinder);
+      S.gainSkill(world, f, 'cooking', FIRE_PRACTICE);
       fireLay.set(j.F, now);
       sendFire('lay', j.F, got.fuel, got.tinder);
       renderBuild();
@@ -4216,7 +4174,11 @@ let cookVessel = 'stick';
 let vesselChosen = false;                 // whether one has been picked yet: till then the pot (once made) is the one to open with
 let makeNext = '';                        // a vessel to open the window making (makeOne, the book's "Make it")
 const VESSEL_IN = { pot: 'in the pot', pan: 'on the griddle', stick: 'on a stick', stone: 'on the stone', bowl: 'in the bowl' };
-const ownsVessel = v => !Recipes.CRAFTS[v] || world.forager.kit.own.includes(v);
+const ownsVessel = v => {
+  if (!Recipes.CRAFTS[v]) return true;
+  const F = ui.fire ? ui.fire.F : kitFire();           // (a vessel is the fire's it was made at, not the forager's)
+  return !!F && F.own.includes(v);
+};
 // What the window does with vessel v: 'cook' in it, 'fire' (a clay one hardening in the coals) or 'make' it.
 const vesselMode = v => ownsVessel(v) ? 'cook' : world.forager.kit.firing === v ? 'fire' : 'make';
 const cookMode = () => ui.fire && ui.fire.stage === 'cooking' ? 'cook' : vesselMode(cookVessel);
@@ -4224,6 +4186,11 @@ const cookMode = () => ui.fire && ui.fire.stage === 'cooking' ? 'cook' : vesselM
 const makeNeeds = v => Object.entries(Recipes.CRAFTS[v].needs).flatMap(([word, n]) => new Array(n).fill(word));
 // Whether a clay one can't be shaped just now: another is hardening (one in the fire at a time).
 const makeBlocked = v => Recipes.CRAFTS[v].fire > 0 && !!world.forager.kit.firing && world.forager.kit.firing !== v;
+// Whether vessel v wants a better cook than the forager is to make (recipes.js CRAFTS level, sim.js SKILLS cooking). One made
+// before, at any fire (a meadow kept from before the levels), can be made again.
+const makeLocked = v => world.forager.lv.cooking < Recipes.craftLevel(v) && !world.fires.some(F => F.own.includes(v));
+// The vessels a cooking level lets the forager make ("a bark bowl and a hearth stone"), '' for none.
+const opensAt = lv => Object.keys(Recipes.CRAFTS).filter(v => Recipes.craftLevel(v) === lv).map(v => 'a ' + craftName(v)).join(' and ');
 // The vessel the cooking window would open with: the one picked last (kept when you walk away), the pot only till one's been
 // picked; with none made, the first that the satchel holds what it takes for (a stick, mostly), to make.
 function openVessel() {
@@ -4231,7 +4198,7 @@ function openVessel() {
   const made = ['pot', 'pan', 'stick', 'stone', 'bowl'].find(ownsVessel);
   if (made) return made;
   if (vesselChosen && Recipes.VESSELS[cookVessel]) return cookVessel;
-  return Object.keys(Recipes.CRAFTS).find(v => !makeBlocked(v) && buildHave(v, Recipes.CRAFTS).ready) || 'stick';
+  return Object.keys(Recipes.CRAFTS).find(v => !makeBlocked(v) && !makeLocked(v) && buildHave(v, Recipes.CRAFTS).ready) || 'stick';
 }
 const potSlots = () => Recipes.VESSELS[cookVessel].slots;
 const POT = Recipes.STATIONS.fire.slots;
@@ -4247,7 +4214,7 @@ function pickVessel(v, quiet) {
   kw.sx.fill(NaN); kw.mkF = 0;
   renderSatchel();                                        // (the tiles: what this one takes)
   if (!quiet) chime('click');
-  if (now === 'make' && firstOnce('make:open')) toast(`Drag what it takes from your satchel onto the fire (or ${fingerTap || matchMedia('(pointer: coarse)').matches ? 'tap' : 'click'} it) to make it.`);
+  if (now === 'make' && !makeLocked(v) && firstOnce('make:open')) toast(`Drag what it takes from your satchel onto the fire (or ${fingerTap || matchMedia('(pointer: coarse)').matches ? 'tap' : 'click'} it) to make it.`);
   renderCook();
   return true;
 }
@@ -4315,6 +4282,7 @@ function potAdd(k, x, y, dropped) {
 function makeTakes(id, said) {
   const j = ui.fire, v = cookVessel, c = Recipes.CRAFTS[v], no = text => { if (said) { say(text, j.x, j.y - 0.5); chime('click'); } return false; };
   if (!c || cookMode() === 'fire') return no(`The ${craftName(v)} is hardening in the fire`);
+  if (makeLocked(v)) return no(`A ${craftName(v)} wants a better cook: Cooking ${Recipes.craftLevel(v)}`);
   if (makeBlocked(v)) return no(`One thing in the fire at a time: the ${craftName(world.forager.kit.firing)} is still hardening`);
   if (!potLeft([...j.pot, id], makeNeeds(v))) return no(`A ${craftName(v)} takes ${needWords(c.needs)}`);
   return true;
@@ -4334,6 +4302,7 @@ function makeDone(j, now) {
   for (const id of j.pot) S.spend(f, id, 1);
   j.pot.length = j.land.length = j.drop.length = 0;
   kw.made = { v, at: now, fire: c.fire > 0 };
+  S.gainSkill(world, f, 'cooking', CRAFT_PRACTICE);
   if (c.fire > 0) {
     S.shapeVessel(world, v, j.F, c.fire * COOK_TPS);
     if (Net && Net.on) Net.send({ t: 'fire', a: 'shape', x: j.F.x, y: j.F.y, id: v, n: f.kit.total, tick: world.tick });   // (friends see it in the fire: fireNet)
@@ -4341,7 +4310,7 @@ function makeDone(j, now) {
     fireFlare.set(j.F, now - TAKE_MS);
     chime('kindle', { v: 0.45 });
   } else {
-    S.makeVessel(world, v);
+    S.makeVessel(world, v, j.F);
     toast(`<b>Your ${esc(craftName(v))}</b> · ${esc(Recipes.VESSELS[v].word)}, at any fire`);
     chime('found');
   }
@@ -4514,6 +4483,8 @@ function cookSync(j, now) {
   kw.brothRGB = brothOf(j.pot);
   renderCook();
 }
+const FIRE_PRACTICE = 1;                  // laying a campfire is this much practice at cooking
+const CRAFT_PRACTICE = 1;                 // so is each vessel made (shaped, for the clay ones)
 const MESS_PRACTICE = 0.25;               // a mess is this much of a dish's practice at cooking (you learn a little)
 // Cooked: the dish out of the pot, into the satchel (or on the ground by it, with no room), a new one's headline. In the
 // window it rises out of the pot, glowing (or a mess in a puff of smoke), and flies to its tile (kw.reveal, drawCookView).
@@ -4613,13 +4584,13 @@ function renderCook(measure = true) {
   what.classList.toggle('mess', !making && (word.state === 'mess' && !busy && !made || !!made?.mess));
   // the row: every vessel, those made to cook in, the rest to make (dashed, "Make"), one hardening with how far it's got
   const VS = [...new Set([...Object.keys(Recipes.CRAFTS), ...Object.keys(Recipes.VESSELS)])], fp = Math.max(0, cookUi.fp) * 5;
-  const row = VS.map(v => `${v === cookVessel ? '+' : ''}${v}${vesselMode(v)}`).join(' ') + (busy ? '!' : '') + fp;
+  const row = VS.map(v => `${v === cookVessel ? '+' : ''}${v}${vesselMode(v)}${Recipes.CRAFTS[v] && makeLocked(v) ? '#' : ''}`).join(' ') + (busy ? '!' : '') + fp;
   if (row !== cookUi.row) {
     cookUi.row = row;
     $('#cook-vessels').innerHTML = VS.map(v => {
-      const V = Recipes.VESSELS[v], m = vesselMode(v), c = Recipes.CRAFTS[v];
-      const tip = m === 'cook' ? `${V.name}: ${V.word}, ${V.slots} things` : m === 'fire' ? `${c.name}: hardening in the fire, ${fp}%` : `Make a ${c.name.toLowerCase()}: ${needWords(c.needs)}`;
-      return `<button data-act="vessel" data-v="${v}" class="${v === cookVessel ? 'on' : ''}${m === 'cook' ? '' : ' ' + m}"${busy && v !== cookVessel ? ' disabled' : ''} title="${esc(tip)}"${m === 'fire' ? ` style="--p:${fp / 100}"` : ''}>${V.icon}<small>${m === 'cook' ? esc(V.name) : m === 'fire' ? fp + '%' : 'Make'}</small></button>`; }).join('');
+      const V = Recipes.VESSELS[v], m = vesselMode(v), c = Recipes.CRAFTS[v], lock = m === 'make' && makeLocked(v);
+      const tip = m === 'cook' ? `${V.name}: ${V.word}, ${V.slots} things` : m === 'fire' ? `${c.name}: hardening in the fire, ${fp}%` : lock ? `${c.name}: made at Cooking ${Recipes.craftLevel(v)}` : `Make a ${c.name.toLowerCase()}: ${needWords(c.needs)}`;
+      return `<button data-act="vessel" data-v="${v}" class="${v === cookVessel ? 'on' : ''}${m === 'cook' ? '' : ' ' + m}${lock ? ' locked' : ''}"${busy && v !== cookVessel ? ' disabled' : ''} title="${esc(tip)}"${m === 'fire' ? ` style="--p:${fp / 100}"` : ''}><img src="${vesselIcon(v)}" alt=""><small>${m === 'cook' ? esc(V.name) : m === 'fire' ? fp + '%' : lock ? 'Lv ' + Recipes.craftLevel(v) : 'Make'}</small></button>`; }).join('');
   }
   cookFuel(j);
   const sticks = Recipes.takes('fuel').reduce((n, ing) => n + S.bagCount(f, ing), 0), stick = $('#cook-stick');
@@ -4632,7 +4603,7 @@ function renderCook(measure = true) {
   const go = $('#cook-go');
   $('#cook-empty').classList.toggle('hidden', busy || !pot.length);
   go.disabled = busy || !pot.length || making;
-  go.firstChild.textContent = making ? (mode === 'fire' ? 'Hardening…' : '●'.repeat(pot.length) + '○'.repeat(Math.max(0, makeNeeds(cookVessel).length - pot.length)))
+  go.firstChild.textContent = making ? (mode === 'fire' ? 'Hardening…' : makeLocked(cookVessel) ? 'Cooking ' + Recipes.craftLevel(cookVessel) : '●'.repeat(pot.length) + '○'.repeat(Math.max(0, makeNeeds(cookVessel).length - pot.length)))
     : busy ? 'Cooking · ' + cookLeftText(j.F) : 'Cook';
   go.classList.toggle('mess', !making && !busy && pot.length > 0 && word.state !== 'known' && word.state !== 'new');   // (it'll be a mess: said, not stopped)
   if (measure) { cookUi.vw = vw; cookUi.vh = vh; measureCook(); }
@@ -4647,6 +4618,7 @@ function makeLine(j, mode) {
     return here ? `Your <b>${name}</b> is hardening in the fire · ${p}%<br><small>${j.F.fuel < S.FIRE_LOW ? 'The fire\'s burning low: a stick on keeps it going' : 'Keep the fire burning, and it\'s yours'}</small>`
       : `Your <b>${name}</b> is hardening in another fire · ${p}%`;
   }
+  if (makeLocked(v)) return `A <b>${name}</b> wants <b>Cooking ${Recipes.craftLevel(v)}</b><br><small>You're at ${world.forager.lv.cooking}: every dish you cook is practice</small>`;
   if (makeBlocked(v)) return `One thing in the fire at a time<br><small>the ${esc(craftName(k.firing))} is still hardening</small>`;
   const need = makeNeeds(v), n = j.pot.length;
   if (n) return `Making a <b>${name}</b> · ${n} of ${need.length}<br><small>${n < need.length ? `${need.length - n} more to go` : 'there…'}</small>`;
@@ -5671,7 +5643,7 @@ function setupCookBag() {
 // The tiles, as the satchel is (renderSatchel), rewritten only where something changed.
 function renderCookBag(F) {
   if (!kw.slots.length) return;
-  const held = potHeld(), inCook = cooking(), mode = inCook ? cookMode() : 'cook', making = mode === 'make' && !makeBlocked(cookVessel);
+  const held = potHeld(), inCook = cooking(), mode = inCook ? cookMode() : 'cook', making = mode === 'make' && !makeBlocked(cookVessel) && !makeLocked(cookVessel);
   for (let k = 0; k < S.SLOTS; k++) {
     const id = F.bag[k] || '', el = kw.slots[k], hold = Math.min(held[id] || 0, F.bagN[k]), n = F.bagN[k] - hold;
     if (hold) held[id] -= hold;
@@ -5922,6 +5894,37 @@ const VSL_LOOK = {
   stick: { back: vslArt('stickB'), front: vslArt('stickF'), foot: 0.22, up: -0.1 },
   bowl: { back: vslArt('bowl0'), front: vslArt('bowl1'), foot: 0.12, up: 0.04 },
 };
+// Each vessel's meadow painting (VSL_LOOK) as a small picture for the cooking window's row (#cook-vessels): painted once,
+// fitted by what's painted to the middle of its square, and kept as a blob's address (as itemSheet's).
+const VESSEL_ICONS = {};
+function vesselIcon(v) {
+  if (VESSEL_ICONS[v]) return VESSEL_ICONS[v];
+  const S = 34, k = Math.max(2, dpr), P = Math.ceil(S * k), W = P * 2, L = vesselLook(v);
+  const t = document.createElement('canvas'), tg = t.getContext('2d', { willReadFrequently: true });
+  t.width = t.height = W;
+  const was = standIns; standIns = false;
+  for (const a of [L.back, L.front]) {
+    if (!a) continue;
+    const sp = sprite(a, W / 2 / dpr), d = sp.size * dpr;
+    tg.drawImage(sp.canvas, W / 2 - d / 2, W / 2 - d / 2 + L.up * d, d, d);
+  }
+  standIns = was;
+  const px = tg.getImageData(0, 0, W, W).data;
+  let x0 = W, y0 = W, x1 = 0, y1 = 0;
+  for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) {
+    if (px[(y * W + x) * 4 + 3] < 40) continue;
+    if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+  }
+  const c = document.createElement('canvas'), g = c.getContext('2d');
+  c.width = c.height = P;
+  if (x1 > x0) {
+    const bw = x1 - x0 + 1, bh = y1 - y0 + 1, f = P * 0.92 / Math.max(bw, bh);
+    g.drawImage(t, x0, y0, bw, bh, (P - bw * f) / 2, (P - bh * f) / 2, bw * f, bh * f);
+  }
+  const bytes = atob(c.toDataURL().split(',')[1]), b = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) b[i] = bytes.charCodeAt(i);
+  return VESSEL_ICONS[v] = URL.createObjectURL(new Blob([b], { type: 'image/png' }));
+}
 const DISH_VESSEL = new Map(Recipes.RECIPES.map(r => [r.name, Recipes.vesselOf(r)]));
 const vesselLook = v => VSL_LOOK[v] || VSL_LOOK.pot;
 function paintVessel(g, size, U, n) {
@@ -6303,7 +6306,8 @@ function bookPageHTML(p, have, atPot) {
       + `<span class="chip" title="How long it cooks on the fire">⏲ ${timeWord(Recipes.timeOf(r))}</span></div>`;
     needs = ns.map(n => `<li class="${n.got ? 'got' : 'want'}">${itemIcon(n.id)}<span>${esc(upFirst(needName(n.word)))}</span><em>${n.got ? '✓ in the satchel' : 'not in the satchel'}</em></li>`).join('');
     const busy = cooking() && !atPot, vs = Recipes.vesselOf(r), owned = !world || ownsVessel(vs), can = ready && !busy && owned;
-    go = !owned && !busy ? `<button class="go make" data-act="book-make" data-v="${vs}">${Recipes.VESSELS[vs].icon} ${world.forager.kit.firing === vs ? `The ${esc(craftName(vs))} is hardening` : `First make a ${esc(craftName(vs))}`}</button>`   // (to the fire, making it)
+    go = !owned && !busy && makeLocked(vs) ? `<button class="go make" disabled>${Recipes.VESSELS[vs].icon} A ${esc(craftName(vs))} wants Cooking ${Recipes.craftLevel(vs)}</button>`
+      : !owned && !busy ? `<button class="go make" data-act="book-make" data-v="${vs}">${Recipes.VESSELS[vs].icon} ${world.forager.kit.firing === vs ? `The ${esc(craftName(vs))} is hardening` : `First make a ${esc(craftName(vs))}`}</button>`   // (to the fire, making it)
       : `<button class="go${can ? ' ready' : ''}" data-act="book-dish" data-name="${esc(r.name)}"${can ? '' : ' disabled'}>`
       + (busy ? 'Cooking…' : !ready ? 'Not the things for it just now' : atPot ? `Put its things ${VESSEL_IN[vs]}` : 'Cook it at the fire') + '</button>';
   } else if (st === 'half') {
@@ -6453,7 +6457,7 @@ function renderBook() {
   const have = bagHave(), atPot = cooking() && ui.fire.stage === 'cook', p = bookAt(), part = p.part, B = BOOK_PARTS[part];
   bookUi.picked[part] = p.key; bookUi.shown.add(part);
   if ((!bookUpright() || bookUi.depth === 2) && seePage(p)) { bookUi.stamp = p.key; bookUi.stampAt = performance.now(); }   // (shown: seen, stamped)
-  const key = ALL_PAGES.map(q => levelOf(q) + (pageFresh(q) ? 'n' : '')).join(',') + '|' + JSON.stringify(have) + '|' + atPot + cooking() + '|' + p.key + '|' + bookUi.stamp + '|' + (world ? world.forager.kit.own.join() + world.forager.kit.firing : '');
+  const key = ALL_PAGES.map(q => levelOf(q) + (pageFresh(q) ? 'n' : '')).join(',') + '|' + JSON.stringify(have) + '|' + atPot + cooking() + '|' + p.key + '|' + bookUi.stamp + '|' + (world ? world.fires.map(F => F.own.join()).join('|') + world.forager.kit.firing + (ui.fire ? ui.fire.F.x : '') : '');
   if (key === bookUi.key) return;
   bookUi.key = key;
   const el = $('#book'), got = q => levelOf(q) === 9, known = B.pages.filter(got).length, all = B.pages.length;
@@ -7170,7 +7174,7 @@ function renderSatchel() {
   for (let k = 0; k < S.SLOTS; k++) if (F.bag[k] && Recipes.foodOf(F.bag[k])?.fill > 0) { bagFood = true; break; }
   renderCookBag(F);                                       // (the cooking window's tiles)
   renderBuild();                                          // (the fire button by it: what a fire takes, how much of it's here)
-  renderMake();                                           // (and the clay button)
+  renderMake();                                           // (and what can be made now)
   renderBook();                                           // (the book, if it's open: what the satchel has for each dish)
 }
 
@@ -7193,7 +7197,7 @@ function flyToSlot(id, sx, sy, k, landed) {
 function setupSatchel() {
   const box = $('#satchel'), row = box.querySelector('.slots');
   row.innerHTML = Array.from({ length: S.SLOTS }, (_, k) => `<div class="slot" data-k="${k}" data-name="" aria-label="Empty"><i></i><b></b></div>`).join('');
-  buildIcon(); makeIcon();                                // (the fire button's campfire, the clay button's pot)
+  buildIcon();                                            // (the fire button's campfire)
   setupCookBag();                                         // (the cooking window's tiles)
   bookIcon();                                             // (and the recipe book's)
   // Hovered (or tapped) a full slot says what's in it, a small label over it (CSS, data-name).
@@ -11895,8 +11899,9 @@ function toast(html) {
 // ("Spring, day 3", with a word on the morning when it's frosty or wet), a new season bigger with what it brings, the first
 // of anything in the satchel in gold (firstTime), and a friend's meadow as you come in. One at a time: one that comes while
 // another is up waits its turn, but a day's line isn't worth waiting for. None while a card is open or the forager is down.
-const ANNOUNCE_MS = { day: 5500, season: 6500, first: 6000, join: 6000, camp: 6000 };
-const ANNOUNCE_SOUND = { day: 'dawn', season: 'season', first: 'found', join: 'welcome' };   // (sound.js; making camp has its own, campMoment)
+// A skill up a level (levelUp) comes up from below round a brass coin with its number. opts go to its sound.
+const ANNOUNCE_MS = { day: 5500, season: 6500, first: 6000, join: 6000, camp: 6000, level: 5000 };
+const ANNOUNCE_SOUND = { day: 'dawn', season: 'season', first: 'found', join: 'welcome', level: 'level' };   // (sound.js; making camp has its own, campMoment)
 const ANNOUNCE_FADE = 1000;                             // (index.html: it fades out in 0.9 s)
 const SEASON_LINES = [
   'Wild garlic and nettles are up, and dandelions in the grass.',
@@ -11905,18 +11910,30 @@ const SEASON_LINES = [
   'Rosehips in the scrub and watercress in the shallows. Keep warm.',
 ];
 const announcing = { el: $('#announce'), timer: 0, until: 0, wait: [], day: -1, openAt: 0 };
-function announce(kind, head, line = '') {
+function announce(kind, head, line = '', opts = {}) {
   const a = announcing, now = performance.now();
-  if (now < a.until && kind !== 'camp') { if (kind !== 'day' && a.wait.length < 4) a.wait.push([kind, head, line]); return; }   // (camp cuts in)
+  if (now < a.until && kind !== 'camp') { if (kind !== 'day' && a.wait.length < 4) a.wait.push([kind, head, line, opts]); return; }   // (camp cuts in)
   a.el.className = `on ${kind}`;
   a.el.innerHTML = head + (line ? `<p>${line}</p>` : '');
-  if (ANNOUNCE_SOUND[kind]) chime(ANNOUNCE_SOUND[kind], { season: world ? S.clock(world).season : 0 });
+  if (ANNOUNCE_SOUND[kind]) chime(ANNOUNCE_SOUND[kind], { season: world ? S.clock(world).season : 0, ...opts });
   a.until = now + ANNOUNCE_MS[kind] + ANNOUNCE_FADE;
   clearTimeout(a.timer);
   a.timer = setTimeout(() => {
     a.el.classList.remove('on');
     a.timer = setTimeout(() => { const n = a.wait.shift(); if (n) announce(...n); }, ANNOUNCE_FADE);
   }, ANNOUNCE_MS[kind]);
+}
+// A skill up a level: its name in its colour over a brass coin with the new level, and what that level gives. A moment
+// after whatever did it (a dish's own sound, a pick's), so the two don't play over each other. With a card open, a toast.
+const LEVEL_WAIT = 600;
+function levelUp(s, lv) {
+  const k = S.SKILLS[s], top = lv >= S.SKILL_TOP, opens = s === 'cooking' ? opensAt(lv) : '';
+  const says = (SKILL_SAYS[s] ? SKILL_SAYS[s](k, lv) : k.line) + (opens ? `. Now you can make ${opens}` : '');
+  setTimeout(() => {
+    if (!canAnnounce()) { toast(`<b>${k.name} ${lv}</b>${top ? ' (the best it gets)' : ''} · ${says}`); chime('level', { lv }); return; }
+    announce('level', `<small>${top ? 'the best it gets' : 'level up'}</small><i class="coin" style="--ink:${SKILL_INK[s] || '#c9a54a'}">${lv}</i>`
+      + `<b class="fr" style="--ink:${SKILL_INK[s] || '#c9a54a'}">${k.name}</b>`, says, { lv });
+  }, LEVEL_WAIT);
 }
 const canAnnounce = () => !document.hidden && world.forager.down < 0 && !wardrobeOpen() && !askOpen() && !bookOpen() && !friendsOpen();
 
@@ -12042,10 +12059,8 @@ function handleEvent(e) {
       chime('found');
       renderMake(); if (cooking()) renderCook();
       break;
-    case 'levelup': {                                       // a skill up a level (sim.js SKILLS): a word at the top
-      const k = S.SKILLS[e.skill];
-      toast(`<b>${k.name} ${e.lv}</b>${e.lv >= S.SKILL_TOP ? ' (the best it gets)' : ''} · ${k.line}`);
-      chime('found');
+    case 'levelup': {                                       // a skill up a level (sim.js SKILLS): a headline of its own
+      levelUp(e.skill, e.lv);
       vit.lvAt = performance.now();                       // (the face smiles, and its level glints till the skills are looked at)
       if (!meOpen()) $('#me').classList.add('news');
       break;
@@ -13477,7 +13492,8 @@ function heardWorld(m, now) {
 function arrive(f) {
   f.bag.fill(''); f.bagN.fill(0);
   const k = f.kit;                                       // (its own kit, made here: not the host's pots)
-  k.own.length = 0; k.firing = ''; k.left = k.total = 0;
+  for (const F of world.fires) F.own.length = 0;
+  k.firing = ''; k.left = k.total = 0;
   bringSkills(f, true);                                  // (its own skills, not the host's)
   S.foragerArrives(world, f);
   f.walking = false; f.running = false; f.speed = 0; f.path.length = 0;
@@ -13494,7 +13510,7 @@ const AWAY_BAG = 'aeon-garden-away-bag';     // in localStorage: { room, seed, b
 function keepAwayBag() {
   if (!(Net && Net.on && Net.guest && net.tick >= 0) || !world) return;   // (net.tick: the host's meadow has landed)
   const f = world.forager;
-  try { localStorage.setItem(AWAY_BAG, JSON.stringify({ room: Net.room, seed: world.seed, bag: f.bag, bagN: f.bagN, kit: f.kit })); } catch (e) { /* fine */ }
+  try { localStorage.setItem(AWAY_BAG, JSON.stringify({ room: Net.room, seed: world.seed, bag: f.bag, bagN: f.bagN, kit: f.kit, own: world.fires.map(F => ({ x: F.x, y: F.y, own: F.own })) })); } catch (e) { /* fine */ }
 }
 function dropAwayBag() { try { localStorage.removeItem(AWAY_BAG); } catch (e) { /* fine */ } }
 // Back in a friend's meadow after a reload: the satchel as it was when the page went (arrive emptied it first).
@@ -13507,8 +13523,8 @@ function awayBack(f, w) {
     if (id && n > 0 && (Recipes.INGREDIENTS[id] || Recipes.foodOf(id))) { f.bag[i] = id; f.bagN[i] = n; }
   }
   const kit = k.kit, mine = f.kit;                       // (and the kit made on the visit, a vessel still firing too)
-  if (kit && Array.isArray(kit.own)) {
-    for (const v of kit.own) if (Recipes.CRAFTS[v] && !mine.own.includes(v)) mine.own.push(v);
+  if (kit) {
+    if (Array.isArray(k.own)) for (const o of k.own) { const F = w.fires.find(q => fireAtXY(q, +o.x, +o.y)); if (F && Array.isArray(o.own)) for (const v of o.own) if (Recipes.CRAFTS[v] && !F.own.includes(v)) F.own.push(v); }
     if (Recipes.CRAFTS[kit.firing] && kit.left > 0) { mine.firing = kit.firing; mine.left = kit.left | 0 || 1; mine.total = Math.max(mine.left, kit.total | 0); mine.x = +kit.x || -0; mine.y = +kit.y || -0; }
   }
 }
@@ -13712,6 +13728,22 @@ function openFriends(open) {
   if (!narrow()) $('#fr-text').focus({ preventScroll: true });   // (on a phone the keyboard would jump up)
 }
 
+// Your headshot for friends' lists: the face from the corner (fur.js paintForagerFace) in what you wear, smiling, on
+// its parchment, as a small JPEG. Sent with a beat whenever Friends comes on or the hat or cloak changed (renderVitals asks).
+const HEAD_PX = 128;
+let headSent = -1;
+function sendHead() {
+  if (!Fr || !Fr.on || headSent === fg.outfit) return;
+  headSent = fg.outfit;
+  const art = document.createElement('canvas'), o = fg.outfit, c = document.createElement('canvas');
+  paintCrop(art, (g, size, U) => Fur.paintForagerFace(g, size, U, o, 0, 'happy'), -0.46, -0.56, 0.24, 0.14, HEAD_PX / dpr);
+  c.width = c.height = HEAD_PX;
+  const g = c.getContext('2d');
+  g.fillStyle = '#efe3c8'; g.fillRect(0, 0, HEAD_PX, HEAD_PX);
+  g.drawImage(art, 0, 0, HEAD_PX, HEAD_PX);
+  try { Fr.snap(c.toDataURL('image/jpeg', 0.85)); friendsBeat(); } catch (e) { headSent = -1; }
+}
+
 // The list, rewritten only when something in it changed.
 function renderFriends(force) {
   if (!friendsOpen()) return;
@@ -13743,7 +13775,8 @@ function friendRow(f, here) {
     where = 'In their meadow';
     btns = `<button class="btn later" data-act="fr-invite" data-id="${id}">Invite</button><button class="btn go" data-act="fr-knock" data-id="${id}">Visit</button>`;
   }
-  return `<li class="fr-row"><i class="fr-dot${f.state === 'friend' && f.online ? ' on' : ''}"></i><span class="fr-who"><b>${name}</b><span>${where}</span></span>`
+  const pic = f.state === 'friend' ? Fr.pic(f.id) : '';   // (their headshot: a blob's address)
+  return `<li class="fr-row"><span class="fr-pic"${pic ? ` style="background-image:url(${pic})"` : ''}><i class="fr-dot${f.state === 'friend' && f.online ? ' on' : ''}"></i></span><span class="fr-who"><b>${name}</b><span>${where}</span></span>`
     + `${btns}<button class="x" data-act="fr-drop" data-id="${id}" title="${x}" aria-label="${x}">✕</button></li>`;
 }
 
@@ -14264,7 +14297,6 @@ document.addEventListener('click', e => {
   }
   else if (t.dataset.act === 'pause') setSpeed(ui.speed ? 0 : 1);
   else if (t.dataset.act === 'build') buildPressed();       // (the fire button by the satchel)
-  else if (t.dataset.act === 'make') makeMenu(!makeUi.open);   // (the clay button)
   else if (t.dataset.act === 'make-one') makeOne(t.dataset.id);
   else if (t.dataset.act === 'vessel') pickVessel(t.dataset.v);   // (the cooking window's vessels)
   else if (t.dataset.act === 'cook-go') cookStart();       // (the cooking card)
@@ -14410,7 +14442,6 @@ document.addEventListener('keydown', e => {
   else if (e.code === 'KeyE' && !e.repeat) { const F = cooking() ? null : !ui.fire && (cookFire() || relightFire() || campFire()); if (cooking()) closeCook(); else if (F) clickFire(F); else pickNear(); }   // (at a lit fire: its cooking card, and again shuts it; else pick)
   else if (e.code === 'KeyF' && !e.repeat) { if (atFire()) { fireKey = true; blowOn(true); } else buildPressed(); }   // (at a fire, held: blowing; else the fire button)
   else if (e.key === 'h' && !e.repeat && Net && Net.on) callOut();   // (a hoot to your friends)
-  else if (e.key === 'c' && makeUi.shown) makeMenu(!makeUi.open);   // (the clay button)
   else if (e.key === 'm') toggleSound();
   else if (e.key === 'i') openMe();
   else if (e.key === '+' || e.key === '=') zoomOn(cam.zoom * 1.25);
@@ -14740,7 +14771,7 @@ function showWorld(w) {
   fg.at = -1; fg.rings.length = 0; fg.sized = 0; fg.pick = -1e9; pickFloats.length = 0; aim.t = null; aim.fire = null;
   fireLay.clear(); fireFlare.clear(); sparks.length = 0; fireSit.F = null; fg.kneel = -1;   // (the last meadow's fires)
   fg.puffs.length = 0; fg.drips.length = 0; fg.downAt = 0; fg.dark = false; $('#veil').classList.remove('dark');
-  vit.warm = vit.health = vit.food = vit.frost = vit.lv = -1; vit.starving = null; vit.mood = vit.skills = '';
+  vit.warm = vit.health = vit.stam = vit.food = vit.frost = vit.lv = -1; vit.starving = null; vit.mood = vit.skills = '';
   pollen.until = 0; pollen.t0.fill(-1e9);
   const mix = Object.fromEntries(Object.keys(S.WEATHER).map(k => [k, k === world.weather.kind ? 1 : 0]));
   Object.assign(ui.sky, { mix, tick: world.tick, bolts: [], rainbow: -1e9, bowEnd: -1e9 });
@@ -14902,7 +14933,6 @@ function frame(now) {
     lastCard = now;
     updateClock();
     renderVitals();
-    if (makeUi.open) makeMenu(true);
     netCard(now);
     if (ui.sound) {
       const ck = S.clock(world);

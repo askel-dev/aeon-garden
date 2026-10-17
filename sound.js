@@ -340,6 +340,7 @@ const RULES = {
   tinder:  { gap: 0.1,  always: true, lift: 2 },   // the tinder tucked in,
   fizzle:  { gap: 0.8,  always: true, lift: 2 },   // and only smoke, or a fire gone out
   camp:    { gap: 4,    always: true, lift: 2 },   // the first fire making camp
+  level:   { gap: 3,    always: true, lift: 1.6 }, // a skill up a level
   plop:    { gap: 0.05, always: true, lift: 2 },   // cooking: a thing into the pot's water (or lifted out),
   stir:    { gap: 0.4,  always: true, lift: 1.6 }, // the spoon going round,
   simmer:  { gap: 1,    always: true, lift: 2 },   // a stretch of the pot bubbling (the lab's: the game's comes with the ambience, state.pot),
@@ -730,6 +731,39 @@ const SOUNDS = {
     bell(o, note(chord[2], 1), at + 0.2, 0.3);
     pad(o, chord.map(d => note(d, -1)), t0, 5.5, 0.9);
     twinkle(at + 0.3, chord, 6, 2, 0.7);
+  },
+  // A skill up a level: the one sound that steps outside the pentatonic for a real cadence. A wind-up rushing in, a quick
+  // climb up an A7 (the dominant, C# and G pulling home) on kalimba and celesta across the stereo, a hush of the meadow, then
+  // it lands on D: a soft deep thump for weight, a rolled piano chord over a low octave, bells, a swell, and two bright tings
+  // a beat apart, like a coin into a jar. lv: the new level; each one lands a step higher up the chord.
+  level(t, o, { lv = 1 }) {
+    const hz = m => 440 * Math.pow(2, (m - 69) / 12), lift = [0, 4, 7][(lv - 1) % 3];   // (D, F# or A on top)
+    whoosh(o, t, 0.5, 1.2);
+    noise(o, t, 0.55, { from: 180, to: 520, q: 0.6, peak: 0.05, attack: 0.5, type: 'lowpass' });   // (its low rumble)
+    let at = t;
+    [57, 61, 64, 67, 69, 73, 76, 79].forEach((m, i, a) => {
+      const side = out(-0.6 + 1.2 * i / (a.length - 1), 0.45);
+      kalimba(side, hz(m), at, 0.16 + i * 0.022);
+      if (i > 3) celesta(side, hz(m + 12), at, 0.1);
+      at += 0.07 - i * 0.004;
+    });
+    const land = at + 0.06;
+    duck(land - 0.02, 0.55, 2.5);
+    const thump = ac.createOscillator(), tg = ac.createGain();                           // the weight under it
+    thump.frequency.setValueAtTime(110, land); thump.frequency.exponentialRampToValueAtTime(42, land + 0.35);
+    tg.gain.setValueAtTime(0.0001, land); tg.gain.exponentialRampToValueAtTime(0.32, land + 0.008);
+    tg.gain.exponentialRampToValueAtTime(0.0001, land + 0.5);
+    thump.connect(tg).connect(o); thump.start(land); thump.stop(land + 0.55);
+    piano(o, hz(38), land, 0.5, 5, 0.55);
+    piano(o, hz(50), land, 0.42, 5, 0.6);
+    [62, 66, 69, 74].forEach((m, i) => piano(out([-0.35, -0.12, 0.12, 0.35][i], 0.5), hz(m), land + 0.012 + i * 0.03, 0.3, 4.5, 0.8));
+    [74, 78, 81].forEach((m, i) => bell(out([-0.4, 0.4, 0][i], 0.55), hz(m), land + 0.02, 0.42));
+    glass(o, hz(86 + lift), land + 0.05, 0.5, 3.5);
+    pad(o, [hz(50), hz(57), hz(62), hz(66)], land - 0.15, 6, 1.2);
+    celesta(out(0.3, 0.6), hz(93), land + 0.42, 0.42);                                    // ting
+    celesta(out(-0.3, 0.6), hz(98 + lift), land + 0.68, 0.5);                             // ting!
+    bell(o, hz(86 + lift), land + 0.68, 0.18);
+    twinkle(land + 0.85, CHORDS.D, 12, 2.6, 0.9);
   },
   // Cooking at the fire. Water, wood and a warm little tune, kept soft: everything goes through a felt (a low-pass) and the
   // water's pitched sounds come from the scale (bubble, drop), so the pot sings along with the meadow.
