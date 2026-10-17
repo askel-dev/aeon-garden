@@ -4062,6 +4062,7 @@ const FINDS = {
   pebble:      { name: 'Pebbles',           from: 0,    to: 4,    place: 'stony',    most: 9,  n: 2, low: false, ground: true, days: [12, 24] },
   drygrass:    { name: 'Dry grass',         from: 0,    to: 4,    place: 'long',     most: 9,  n: 2, low: false, ground: true, days: [3, 6], more: [0.5, 1, 1, 0.5] },
   birchbark:   { name: 'Birch bark',        from: 0,    to: 4,    place: 'birch',    most: 5,  n: 1, low: false, ground: true, days: [5, 10] },
+  clay:        { name: 'Clay',              from: 0,    to: 4,    place: 'muddy',    most: 5,  n: 2, low: false, ground: true, days: [12, 24] },
 };
 const STICK_WIND = { rain: 1.4, storm: 2.2 };   // sticks lie about this many times more in rain and storms, and come down faster
 const DRY_GRASS = 0.5;                  // grass this long (w.grass) is long enough to have dry stems in it
@@ -4089,6 +4090,7 @@ function findPlace(w, kind, x, y) {
   if (!inBounds(x, y)) return false;
   const i = idx(x, y), place = FINDS[kind].place;
   if (place === 'stony') return !w.water[i] && stonyAt(w, x, y);
+  if (place === 'muddy') return !w.water[i] && waterNear(w, x, y);
   if (place === 'shallows') {
     if (w.water[i] !== SHALLOW) return false;
     const X = i % W, Y = (i / W) | 0;
@@ -4115,6 +4117,12 @@ function inCrown(w, x, y, kind) {
     if ((d.x - x) ** 2 + ((d.y - y) * 1.3) ** 2 < reach * reach) under = true;
   });
   return under;
+}
+// Whether there's water in the 3x3 tiles round x, y (a muddy bank: clay).
+function waterNear(w, x, y) {
+  const X = x | 0, Y = y | 0;
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (inBounds(X + dx, Y + dy) && w.water[(Y + dy) * W + X + dx]) return true;
+  return false;
 }
 // Whether x, y is stony: by the water's edge, near a ford, or round a rock (in a ring FIND_ROCK_RING wide round a big one).
 function stonyAt(w, x, y) {

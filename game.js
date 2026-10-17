@@ -3886,6 +3886,9 @@ const POT_UP = 0.24;                      // its middle this far over the fire's
 const POT_IN_MS = 260;                    // ms it takes to settle on the stones as the cooking opens
 const LAND_MS = 420;                      // ms a thing takes to drop into the pot and settle
 const COOK_EASE = 0.5;                   // the camera eases in over about this long (s), to kw.zoom (measureCook)
+// The vessel the cooking window cooks in. null: any, so each dish makes in its own. Piece 6 (vessels, PLAN.md) replaces it
+// with the one the forager picked (and its slots, Recipes.VESSELS[v].slots, for the pot's size).
+const COOK_VESSEL = null;
 const POT = Recipes.STATIONS.fire.slots;
 // A dish is known once it's been made (firstTime 'dish:' + its name: per player, for good), or from the start if recipes.js
 // says so (known: true), so a new cook has a few in the book to begin with.
@@ -4029,7 +4032,7 @@ function potPossible(pot) {
 // new" whenever some recipe could still grow from the pot, so two cherries promised something and cooked into a mess.)
 const MESS_WORD = 'as it is, a forager\'s mess';
 function potWord(pot) {
-  const dish = pot.length ? Recipes.cook(pot, 'fire') : null;
+  const dish = pot.length ? Recipes.cook(pot, 'fire', COOK_VESSEL) : null;
   if (dish && dish !== Recipes.MESS) return knownDish(dish.name) ? { state: 'known', dish, html: `<b>${esc(dish.name)}</b>` } : { state: 'new', dish, html: '<b class="new">Something new!</b>' };
   if (!pot.length) return { state: 'empty', dish: null, html: '' };
   if (!potPossible(pot)) return { state: 'mess', dish, html: 'Only a forager\'s mess can come of this' };
@@ -4068,7 +4071,7 @@ function cookStart() {
   const j = ui.fire, now = performance.now();
   if (!j || j.stage !== 'cook' || !j.pot.length || j.F.cookDish) return;
   if (!j.F.lit) { say('The fire\'s out', j.x, j.y - 0.5); return; }
-  const f = world.forager, have = bagHave(), dish = Recipes.cook(j.pot, 'fire');
+  const f = world.forager, have = bagHave(), dish = Recipes.cook(j.pot, 'fire', COOK_VESSEL);
   for (const id of j.pot) if (!(have[id]-- > 0)) { say('Something\'s missing', j.x, j.y - 0.5); return; }
   for (const id of j.pot) S.spend(f, id, 1);              // (out of the satchel for good: the pot cooks on the fire without you)
   S.cookOn(world, j.F, dish.name, j.pot, S.cookTicks(Recipes.timeOf(dish)));
@@ -4260,10 +4263,10 @@ const kw = {
   last: 0, broth: 0, brothRGB: 'rgb(170, 108, 50)', hover: false, reveal: null, incoming: -1, ringAt: 0,
 };
 // Where thing i of n floats (x, y in the canvas) and how big it's drawn.
-const POT_PLACES = [[], [0], [-0.37, 0.37], [-0.47, 0.03, 0.47]], POT_PLACES_Y = [[], [0.05], [0.08, -0.06], [0.16, -0.32, 0.08]];
+const POT_PLACES = [[], [0], [-0.37, 0.37], [-0.47, 0.03, 0.47], [-0.5, -0.17, 0.17, 0.5]], POT_PLACES_Y = [[], [0.05], [0.08, -0.06], [0.16, -0.32, 0.08], [0.14, -0.2, -0.2, 0.14]];
 const potX = (i, n) => kw.cx + (POT_PLACES[Math.min(n, POT)][i] || 0) * kw.wrx;
 const potY = (i, n) => kw.wy + (POT_PLACES_Y[Math.min(n, POT)][i] || 0) * kw.wry;
-const potSize = n => kw.rx * [0.62, 0.62, 0.56, 0.5][Math.min(n, POT)];
+const potSize = n => kw.rx * [0.62, 0.62, 0.56, 0.5, 0.46][Math.min(n, POT)];
 // How a thing meets the water: what it is (its sound) and how heavily (the splash).
 const PLOP_W = { fish: 1.7, meat: 1.7, game: 1.7, mushroom: 1, fruit: 1, sweet: 1.1, nut: 0.85, dish: 1.2, berry: 0.6, greens: 0.55, flower: 0.5 };
 function plopOf(id) {
@@ -4273,7 +4276,7 @@ function plopOf(id) {
 // The broth the water turns to as it cooks, by what's in most of it (a mess goes murky).
 const BROTHS = { greens: 'rgb(98, 132, 58)', berry: 'rgb(118, 40, 70)', fruit: 'rgb(178, 110, 52)', sweet: 'rgb(196, 134, 42)', mushroom: 'rgb(128, 88, 56)', nut: 'rgb(150, 112, 72)', flower: 'rgb(196, 178, 112)' };
 function brothOf(pot) {
-  if (Recipes.cook(pot, 'fire') === Recipes.MESS) return 'rgb(92, 90, 66)';
+  if (Recipes.cook(pot, 'fire', COOK_VESSEL) === Recipes.MESS) return 'rgb(92, 90, 66)';
   const n = {};
   let best = 'fruit';
   for (const id of pot) for (const t of Recipes.INGREDIENTS[id]?.tags || []) if (BROTHS[t] && (n[t] = (n[t] || 0) + 1) > (n[best] || 0)) best = t;
@@ -5205,6 +5208,7 @@ function bookPageHTML(p, have, atPot) {
     head = `<h3 class="fr">${esc(r.name)}</h3>`;
     body = (r.text ? `<p class="say">${esc(r.text)}</p>` : '')
       + `<div class="facts">${r.warm ? '<span class="chip warm">✦ Warms you</span>' : ''}`
+      + `<span class="chip" title="${esc(Recipes.VESSELS[Recipes.vesselOf(r)]?.word || '')}">${Recipes.VESSELS[Recipes.vesselOf(r)]?.icon || ''} ${esc(Recipes.VESSELS[Recipes.vesselOf(r)]?.name || '')}</span>`
       + `<span class="chip fills" title="How much it fills you">Fills <b>${'<i class="on"></i>'.repeat(fill)}${'<i></i>'.repeat(BOOK_PIPS - fill)}</b></span>`
       + `<span class="chip" title="How long it cooks on the fire">⏲ ${timeWord(Recipes.timeOf(r))}</span></div>`;
     needs = ns.map(n => `<li class="${n.got ? 'got' : 'want'}">${itemIcon(n.id)}<span>${esc(upFirst(needName(n.word)))}</span><em>${n.got ? '✓ in the satchel' : 'not in the satchel'}</em></li>`).join('');
@@ -7559,7 +7563,7 @@ function drawBramble(b, z) {
 const FIND_KINDS = S.FIND_KINDS;
 const FIND_ARTS = Array.from({ length: FIND_KINDS.length * 4 }, (_, i) => 'find:' + i);
 const FIND_PX = { dandelion: 1.9, sorrel: 1.8, strawberry: 2.1, elderflower: 2.5, hazelnut: 1.8, rosehip: 2.5, watercress: 2.0,   // next to a rabbit
-  stick: 1.9, pebble: 1.35, drygrass: 1.8, birchbark: 1.5 };
+  stick: 1.9, pebble: 1.35, drygrass: 1.8, birchbark: 1.5, clay: 1.4 };
 const FIND_GROW = 0.2, FIND_OVER = 0.4;   // days it takes to come up, and its last days, fading
 const findStage = f => (f.kind === 'rosehip' ? S.seasonOf(world.tick) === 3 : f.kind === 'watercress' && world.frozen) ? 1 : 0;   // (bare; in the ice)
 const findArt = f => FIND_ARTS[FIND_KINDS.indexOf(f.kind) * 4 + findStage(f) * 2 + f.look];
@@ -7596,7 +7600,7 @@ function paintFind(g, size, U, n) {
   g.lineCap = g.lineJoin = 'round';
   const kind = FIND_KINDS[n >> 2], stage = (n >> 1) & 1, look = n & 1, h = k => hash2(look, k, 61 + (n >> 2));   // (a stage is the same plant)
   ({ dandelion: paintDandelion, sorrel: paintSorrel, strawberry: paintStrawberry, elderflower: paintElder, hazelnut: paintHazel,
-    rosehip: paintRose, watercress: paintCress, stick: paintSticks, pebble: paintPebbles, drygrass: paintDryGrass, birchbark: paintBark })[kind](g, h, look, stage);
+    rosehip: paintRose, watercress: paintCress, stick: paintSticks, pebble: paintPebbles, drygrass: paintDryGrass, birchbark: paintBark, clay: paintClay })[kind](g, h, look, stage);
 }
 const FIND_FOOT = 0.62;                        // where the ground is in a painting's box
 // A long leaf with jagged teeth, lying out from x, y at angle a.
@@ -7824,6 +7828,16 @@ function paintPebbles(g, h, look) {
     fillIn(g, 'rgba(30, 28, 24, 0.35)', () => ovalAt(g, x + rx * 0.08, y + ry * 0.55, rx * 0.95, ry * 0.5));   // where it sits
     softIn(g, rgb, y - ry, y + ry, () => ovalAt(g, x, y, rx, ry, (h(30 + i) - 0.5) * 0.5), 1.3, 0.62);
     furGlow(g, [255, 252, 240], 0.5, x - rx * 0.3, y - ry * 0.4, rx * 0.4, ry * 0.25, -0.3);
+  });
+}
+function paintClay(g, h, look) {                        // damp red-grey lumps, a thumb pressed in each
+  softSpot(g, 0, FIND_FOOT, 0.7, 0.17, '40, 28, 20', 0.32);
+  const lumps = look ? [[-0.25, 0.04, 0.3], [0.2, -0.04, 0.24], [0.1, 0.16, 0.16]] : [[-0.2, -0.02, 0.28], [0.22, 0.06, 0.22], [-0.05, 0.18, 0.15]];
+  lumps.forEach(([sx, sy, r], i) => {
+    const y = FIND_FOOT - 0.1 + sy, rx = r * 1.1, ry = r * 0.66, rgb = tone([176, 108, 80], 0.9 + 0.2 * h(i));
+    softIn(g, rgb, y - ry, y + ry, () => ovalAt(g, sx, y, rx, ry, (h(30 + i) - 0.5) * 0.4), 1.3, 0.62);
+    fillIn(g, 'rgba(90, 50, 36, 0.35)', () => ovalAt(g, sx + rx * 0.1, y, rx * 0.3, ry * 0.3));
+    furGlow(g, [255, 220, 200], 0.45, sx - rx * 0.3, y - ry * 0.4, rx * 0.4, ry * 0.25, -0.3);
   });
 }
 function paintDryGrass(g, h, look) {

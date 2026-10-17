@@ -303,6 +303,22 @@ what goes together was hard, and "Something new: cherries, cherries" promised a 
   down its shoulders and pooled round its foot, its stalk and a soft leaf). In the satchel, the cooking tiles and the book.
 - Still to do: the other 16 and the mess, `look` and the made-up ones, the steam on warm ones, the big "New recipe!" painting.
 
+## Vessels, clay and crafting (stage 6): pieces 3 and 4 built (2026-10-17, branch `claude/vessels-clay-f8287b`)
+
+- **Piece 3, what each dish is cooked in.** recipes.js has `VESSELS` (pot 4 slots, pan 3, stick 2, stone 2, bowl 3) and an optional
+  `vessel` on each dish (left out: 'pot'; `vesselOf`). The old `at: 'pot'` dishes are now plain fire dishes in the pot (the `pot`
+  station is gone; the fire holds 4, so the cooking window's pot is 4 wide). `cook(things, at, vessel)`: with a vessel only
+  dishes made in it match; null means any, which is what the window uses now (game.js `COOK_VESSEL`, the one place piece 6
+  replaces with the forager's pick and `VESSELS[v].slots`). `checkRecipes` checks an unknown vessel, too many things for it, and two dishes
+  of the same things in the same vessel. The book shows a vessel chip on each dish page.
+- **Piece 4, clay.** Ingredient `clay` (tag 'earth', since a tag can't be its own id), a `ground` find in sim.js `FINDS` ('muddy':
+  bare ground within a tile of water), a plain painting `paintClay` in game.js. No `KEEP_VERSION` bump: finds are plain data.
+  Three seeds, two years: clay about 8 about at all times, nothing died out, pack/unpack round-trips.
+- **Left for piece 5:** shaping clay and firing it in a lit fire; `f.kit` on the forager (pot, pan; never the satchel; a field in `blankForager`
+  or the world's LATER, and a keep bump if needed); an items.js painting for clay if wanted.
+- **Left for piece 6:** the vessel switch in the cooking window (stick and stone free from the start, pot and pan from the kit),
+  per-vessel slots in the window, and the pot/pan/stick/stone paintings in the cooking view.
+
 ## After that (roughly in this order)
 1. **Cooking at the fire** and 2. **hunger and eating**: stage 6 above.
 3. **Camp builds.** Arranged inside the camp ring: a seat log, a spit, a drying rack (keeping food for winter), a basket

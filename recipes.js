@@ -14,9 +14,18 @@
 
 // Where you cook, and how many things go in at once.
 const STATIONS = {
-  fire: { name: 'Campfire', slots: 3 },
-  pot:  { name: 'Clay pot', slots: 4 },
+  fire: { name: 'Campfire', slots: 4 },
   oven: { name: 'Clay oven', slots: 4 },
+};
+
+// What a dish is cooked in at the fire, and how many things it holds. A stick and a hot stone are free; the clay pot and the
+// clay griddle (the pan) are made later (PLAN.md, vessels). The oven is a station of its own, not a vessel.
+const VESSELS = {
+  pot:   { name: 'Pot',    slots: 4, icon: '🍲', word: 'boiled in the pot' },
+  pan:   { name: 'Pan',    slots: 3, icon: '🍳', word: 'fried on the griddle' },
+  stick: { name: 'Stick',  slots: 2, icon: '🍢', word: 'roasted on a stick' },
+  stone: { name: 'Stone',  slots: 2, icon: '🪨', word: 'baked on a hot stone' },
+  bowl:  { name: 'Bowl',   slots: 3, icon: '🥗', word: 'mixed in a bowl, no heat' },
 };
 
 // What the meadow gives. The ids of the ones the sim grows are the sim's own (SHROOMS, the greens, a tree's fruit or
@@ -48,11 +57,15 @@ const INGREDIENTS = {
   stick:       { name: 'Sticks',              tags: ['fuel'],           fill: 0,   icon: '🪵', raw: false, text: 'Something to keep a fire going.', where: 'Under the trees, all year. More come down in a storm.' },
   pebble:      { name: 'Pebbles',             tags: ['stone'],          fill: 0,   icon: '🪨', raw: false, text: 'Smooth stones, to ring a fire.', where: 'On the shore, at the fords and round the rocks.' },
   drygrass:    { name: 'Dry grass',           tags: ['tinder'],         fill: 0,   icon: '🌾', raw: false, text: 'Dry stems from the long grass, to catch a spark.', where: 'In the long grass out in the open, most in summer and autumn.' },
+  clay:        { name: 'Clay',                tags: ['earth'],          fill: 0,   icon: '🟤', raw: false, text: 'Cool, heavy and red-grey. It holds the shape of your thumb.', where: 'On the muddy banks, right by the water.' },
   birchbark:   { name: 'Birch bark',          tags: ['tinder'],         fill: 0,   icon: '📜', raw: false, text: 'Papery curls that catch even when damp.', where: 'Under the birches, and by a fallen one.' },
 };
 
 // The dishes. Only name and needs are a must. The rest, when left out:
 //   at: 'fire'      the station it's cooked at
+//   vessel: 'pot'   what it's cooked in at the fire (VESSELS): 'pot' boiled or simmered, 'pan' fried or toasted on the clay
+//                   griddle, 'stick', 'stone' (a hot hearth stone), 'bowl' (no heat). The same things in another vessel
+//                   don't make it. Left out: 'pot'.
 //   fill            how much it fills the tummy (a guess from what goes in)
 //   level: 0        the cooking level it needs before it can be found
 //   from            a visitor who teaches it, for a dish ('hedgehog', 'heron', 'kingfisher', 'skylark', 'dragonfly')
@@ -64,6 +77,7 @@ const INGREDIENTS = {
 const RECIPES = [
   {
     name: 'Roast mushrooms',
+    vessel: 'stick',
     time: 30,
     icon: '🍢',
     needs: ['mushroom', 'mushroom'],
@@ -72,6 +86,7 @@ const RECIPES = [
   },
   {
     name: 'Garlic mushrooms',
+    vessel: 'pan',
     time: 40,
     icon: '🍳',
     needs: ['mushroom', 'mushroom', 'garlic'],
@@ -79,6 +94,7 @@ const RECIPES = [
   },
   {
     name: 'Baked apple with honey',
+    vessel: 'stone',
     time: 75,
     icon: '🥧',
     needs: ['apple', 'honey'],
@@ -86,12 +102,14 @@ const RECIPES = [
   },
   {
     name: 'Honeyed cherries',
+    vessel: 'pot',
     time: 45,
     icon: '🍧',
     needs: ['cherry', 'cherry', 'honey'],
   },
   {
     name: 'Warm bramble compote',
+    vessel: 'pot',
     time: 60,
     icon: '🥣',
     needs: ['blackberry', 'blackberry', 'honey'],
@@ -99,6 +117,7 @@ const RECIPES = [
   },
   {
     name: 'Wilted greens',
+    vessel: 'pot',
     time: 20,
     icon: '🍲',
     needs: ['nettle', 'garlic'],
@@ -107,12 +126,14 @@ const RECIPES = [
   },
   {
     name: 'Toasted beechnuts',
+    vessel: 'pan',
     time: 25,
     icon: '🥜',
     needs: ['beechnuts', 'beechnuts'],
   },
   {
     name: 'Toasted hazelnuts',
+    vessel: 'pan',
     time: 25,
     icon: '🥜',
     needs: ['hazelnut', 'hazelnut'],
@@ -120,6 +141,7 @@ const RECIPES = [
   },
   {
     name: 'Mushrooms with hazelnuts',
+    vessel: 'pan',
     time: 50,
     icon: '🥘',
     needs: ['mushroom', 'mushroom', 'hazelnut'],
@@ -127,6 +149,7 @@ const RECIPES = [
   },
   {
     name: 'Dandelion fritters',
+    vessel: 'pan',
     time: 35,
     icon: '🥞',
     needs: ['dandelion', 'dandelion', 'honey'],
@@ -134,6 +157,7 @@ const RECIPES = [
   },
   {
     name: 'Spring salad',
+    vessel: 'bowl',
     time: 15,
     icon: '🥗',
     needs: ['dandelion', 'sorrel', 'garlic'],
@@ -142,6 +166,7 @@ const RECIPES = [
   },
   {
     name: 'Sorrel and mushrooms',
+    vessel: 'pan',
     time: 40,
     icon: '🍛',
     needs: ['sorrel', 'mushroom'],
@@ -149,6 +174,7 @@ const RECIPES = [
   },
   {
     name: 'Strawberries and honey',
+    vessel: 'bowl',
     time: 15,
     icon: '🍨',
     needs: ['strawberry', 'strawberry', 'honey'],
@@ -156,6 +182,7 @@ const RECIPES = [
   },
   {
     name: 'Elderflower fritters',
+    vessel: 'pan',
     time: 40,
     icon: '🥞',
     needs: ['elderflower', 'honey'],
@@ -163,14 +190,15 @@ const RECIPES = [
   },
   {
     name: 'Elderflower cordial',
+    vessel: 'pot',
     time: 90,
     icon: '🧃',
     needs: ['elderflower', 'elderflower', 'honey', 'fruit'],
-    at: 'pot',
     text: 'Steeped a night, sweet and floral. Tastes of early summer.',
   },
   {
     name: 'Rosehip tea',
+    vessel: 'pot',
     time: 60,
     icon: '🍵',
     needs: ['rosehip', 'rosehip'],
@@ -179,28 +207,28 @@ const RECIPES = [
   },
   {
     name: 'Rosehip syrup',
+    vessel: 'pot',
     time: 90,
     icon: '🫙',
     needs: ['rosehip', 'rosehip', 'honey'],
-    at: 'pot',
     warm: true,
     text: 'Simmered and strained through a cloth for the hairs. A spoonful keeps the winter off.',
   },
   {
     name: 'Watercress soup',
+    vessel: 'pot',
     time: 70,
     icon: '🥣',
     needs: ['watercress', 'watercress', 'greens'],
-    at: 'pot',
     warm: true,
     text: 'Peppery and green, the colour of the stream it came out of.',
   },
   {
     name: 'Nettle soup',
+    vessel: 'pot',
     time: 80,
     icon: '🍲',
     needs: ['nettle', 'nettle', 'greens', 'mushroom'],
-    at: 'pot',
     warm: true,
     from: 'hedgehog',
     text: "The hedgehog's own: \"Pick the tops, never the stalks.\"",
@@ -216,6 +244,7 @@ const RECIPES = [
 const BUILDS = {
   campfire: {
     name: 'Campfire',
+    vessel: 'pot',
     needs: { pebble: 6, stick: 5, tinder: 2 },
     text: 'A ring of stones, a little tepee of sticks, and tinder in the middle for the spark.',
   },
@@ -227,7 +256,7 @@ const TEACHERS = ['hedgehog', 'heron', 'kingfisher', 'skylark', 'dragonfly'];
 const MESS = { name: "A forager's mess", fill: 1, time: 15, icon: '🫠', text: "It's... food. Mostly." };
 const COOK_TIME = 30;                   // seconds a dish takes if it doesn't say
 const DISH_ICON = '🥣';
-const RECIPE_KEYS = ['name', 'needs', 'at', 'fill', 'level', 'from', 'warm', 'known', 'time', 'icon', 'text'];
+const RECIPE_KEYS = ['name', 'needs', 'at', 'vessel', 'fill', 'level', 'from', 'warm', 'known', 'time', 'icon', 'text'];
 
 const recipeOf = name => RECIPES.find(r => r.name.toLowerCase() === String(name).toLowerCase());
 const isTag = word => Object.values(INGREDIENTS).some(g => g.tags.includes(word));
@@ -258,9 +287,13 @@ function fits(things, needs) {
   return place(0);
 }
 
-// What comes out of a station with these things in it: a recipe, or the mess.
-function cook(things, at = 'fire') {
-  return RECIPES.find(r => (r.at || 'fire') === at && fits(things, r.needs)) || MESS;
+// The vessel a dish is cooked in (left out: the pot).
+const vesselOf = r => r.vessel || 'pot';
+
+// What comes out of a station with these things in it, cooked in a vessel: a recipe, or the mess. With no vessel (null) any
+// vessel does (for the cooking window until it can switch: game.js COOK_VESSEL).
+function cook(things, at = 'fire', vessel = null) {
+  return RECIPES.find(r => (r.at || 'fire') === at && (!vessel || vesselOf(r) === vessel) && fits(things, r.needs)) || MESS;
 }
 
 // How long a dish cooks, in seconds at 1x.
@@ -303,6 +336,13 @@ function checkRecipes() {
       const d = recipeOf(word);
       if (!d) problems.push(`${who} needs '${word}', which is no ingredient, tag or dish.`);
       else if (d === r) problems.push(`${who} needs itself.`);
+    }
+    const vs = vesselOf(r);
+    if (!VESSELS[vs]) problems.push(`${who} is cooked in '${vs}', which is no vessel (${Object.keys(VESSELS).join(', ')}).`);
+    else if (r.needs.length > VESSELS[vs].slots) problems.push(`${who} needs ${r.needs.length} things, but the ${VESSELS[vs].name.toLowerCase()} holds ${VESSELS[vs].slots}.`);
+    for (let j = 0; j < i; j++) {
+      const o = RECIPES[j];
+      if (o.name && (o.at || 'fire') === (r.at || 'fire') && vesselOf(o) === vs && Array.isArray(o.needs) && fits(r.needs, o.needs)) problems.push(`${who} and '${o.name}' are made of the same things in the same ${vs}.`);
     }
     const at = r.at || 'fire', st = STATIONS[at];
     if (!st) problems.push(`${who} is cooked at '${at}', which is no station (${Object.keys(STATIONS).join(', ')}).`);
@@ -362,7 +402,7 @@ function thingsFor(needs, have) {
 // The ingredients a word in a build's needs takes: itself, or every ingredient with that tag.
 const takes = word => (INGREDIENTS[word] ? [word] : Object.keys(INGREDIENTS).filter(id => INGREDIENTS[id].tags.includes(word)));
 
-const Recipes = { STATIONS, INGREDIENTS, RECIPES, BUILDS, MESS, cook, fits, fillOf, timeOf, recipeOf, takes, foodOf, thingsFor, answers, checkRecipes };
+const Recipes = { STATIONS, VESSELS, vesselOf, INGREDIENTS, RECIPES, BUILDS, MESS, cook, fits, fillOf, timeOf, recipeOf, takes, foodOf, thingsFor, answers, checkRecipes };
 if (typeof module !== 'undefined') module.exports = Recipes;
 else {
   window.Recipes = Recipes;
