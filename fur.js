@@ -807,33 +807,34 @@ function idlePose(i) {
 }
 
 // Emotes (game.js EMOTES), kept after all the rest of its paintings: 'forager:' + emoteArt(snow, outfit, pose).
-// The dance (NLE Choppa's, as the Roblox emote does it): it turns on the spot through every way it can face (game.js
-// DANCE_SEQ), and on each beat head-bangs down into a deep hunch, knees bent, eyes squeezed shut and the mittens dangling,
-// then springs up on one foot with the other heel kicked up behind, chin up and its tongue out (the hop is game.js's),
-// the feet taking turns. Painted from every view: FORAGER_EMOTE.dance + view * 3 + (0 the hunch, 1 and 2 a heel kicked).
+// The dance (NLE Choppa's, the first one: the easter egg's, game.js partyTap), from the front: a crouch, then a hop on one
+// foot with the other knee up, that leg kicked straight out to the side, back in, and the same the other way, the fists up
+// and swinging across against the kick (the hop itself is game.js's, lifting the painting). hands: [mitten, elbow], each
+// from its shoulder.
 // The sneak, side on: a devious tiptoe, crouched and hunched, its head poked forward, the knees lifted high and each
 // foot set down toe first, the mittens up before its chest like little claws, rubbing, a sly look and a smirk; eight
 // paintings a stride (as the walk), and two lurking on the spot.
-const FORAGER_EMOTE = { sneak: 8, lurkA: 16, lurkB: 17, dance: 18 };
-const FORAGER_EMOTES = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26];
+const FORAGER_EMOTE = { down: 0, hopR: 1, kickR: 2, backR: 3, hopL: 4, kickL: 5, backL: 6, sneak: 8, lurkA: 16, lurkB: 17 };
+const FORAGER_EMOTES = [0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
 const EMOTE_AT = FORAGER_SNOWS * FORAGER_SNOW_ARTS, FORAGER_EMOTE_ARTS = FORAGER_SNOWS * FORAGER_OUTFITS.length << 5;
 const emoteArt = (snow, outfit, pose) => EMOTE_AT + ((snow * FORAGER_OUTFITS.length + outfit) << 5) + pose;
 const SNEAK_STRIDE = 1.15, SNEAK_DOWN = 0.6, SNEAK_LIFT = 0.2, SNEAK_BOB = 0.05;
 const SNEAK_REACH = 2 * FORAGER_REACH * SNEAK_STRIDE * SNEAK_DOWN;   // (the planted foot keeps pace with the ground, as the jog's)
+const DANCE = [   // feet, knees (front view: leg 0 on your left), mittens and elbows, the hips' bob, the hem's swing, the hood's point
+  { feet: [[-0.13, 0.72], [0.11, 0.73]], knees: [[-0.16, 0.57], [0.15, 0.58]], hands: [[0.07, 0.07, -0.09, 0.11], [-0.06, 0.06, 0.09, 0.11]], bob: 0.045, sway: 0, tip: 0.03, grin: true },
+  { feet: [[-0.08, 0.72], [0.21, 0.6]], knees: [[-0.09, 0.56], [0.22, 0.46]], hands: [[-0.1, 0.05, -0.06, 0.12], [-0.16, 0.07, 0.01, 0.13]], bob: 0, sway: -0.02, tip: 0.05, grin: true },
+  { feet: [[-0.06, 0.72], [0.41, 0.53]], knees: [[-0.08, 0.56], [0.25, 0.46]], hands: [[-0.17, -0.01, -0.09, 0.1], [-0.21, 0.04, -0.01, 0.12]], bob: 0.01, sway: -0.04, tip: 0.08, happy: true },
+  { feet: [[-0.08, 0.72], [0.16, 0.68]], knees: [[-0.09, 0.56], [0.18, 0.53]], hands: [[-0.06, 0.06, -0.09, 0.12], [-0.11, 0.06, 0.05, 0.12]], bob: 0.02, sway: -0.02, tip: 0.04, grin: true },
+  { feet: [[-0.23, 0.6], [0.07, 0.73]], knees: [[-0.23, 0.46], [0.09, 0.57]], hands: [[0.17, 0.07, -0.01, 0.13], [0.1, 0.04, 0.06, 0.12]], bob: 0, sway: 0.02, tip: 0, grin: true },
+  { feet: [[-0.43, 0.53], [0.05, 0.73]], knees: [[-0.26, 0.46], [0.08, 0.57]], hands: [[0.22, 0.04, 0.02, 0.12], [0.17, -0.01, 0.09, 0.1]], bob: 0.01, sway: 0.04, tip: -0.03, happy: true },
+  { feet: [[-0.18, 0.68], [0.07, 0.73]], knees: [[-0.19, 0.53], [0.09, 0.57]], hands: [[0.11, 0.06, -0.05, 0.12], [0.06, 0.06, 0.09, 0.12]], bob: 0.02, sway: 0.02, tip: 0.01, grin: true },
+];
 function emotePose(i) {
-  return i >= FORAGER_EMOTE.dance ? dancePose(i - FORAGER_EMOTE.dance) : sneakPose(i);
-}
-function dancePose(d) {
-  const view = Math.floor(d / 3), k = d % 3, P = foragerPose(view, 0), [ax, ay] = P.fwd;
-  const at = (i, a, up) => [P.feet[i][0] + ax * a, P.feet[i][1] + ay * a - up];   // (a foot a forward of where it stands, up off the ground)
-  if (!k) {                                                       // the hunch: bent right over, the head down, knees bent
-    P.feet = view ? [at(0, 0.03, 0), at(1, -0.03, 0)].map(([x, y], i) => [x + (i ? 0.03 : -0.03), y]) : [at(0, 0.07, 0), at(1, -0.07, 0)];
-    P.stoop = 1.2; P.lean = view ? 0.12 : 0.22; P.bob = 0.09; P.look = view ? 0.11 : 0.06; P.tip = 0.13; P.happy = true;   // (from the front or the back, the head sunk between the shoulders)
-  } else {                                                        // up on one foot, the other heel kicked up behind
-    const j = k - 1;
-    P.feet[j] = at(j, -0.15, 0.2); P.feet[1 - j] = at(1 - j, 0.03, 0);
-    P.bob = -0.025; P.look = -0.03; P.tip = -0.04; P.swing = j ? 0.45 : -0.45; P.goof = true;
-  }
+  if (i >= FORAGER_EMOTE.sneak) return sneakPose(i);
+  const P = foragerPose(1, 0), D = DANCE[i] || DANCE[0];
+  P.feet = D.feet.map(f => f.slice()); P.knees = D.knees.map(k => k.slice());
+  P.hands = D.hands; P.bob = D.bob; P.sway = D.sway; P.tip = D.tip; P.happy = !!D.happy; P.grin = !!D.grin;
+  P.legLine = 0.32;                                             // (a leg kicked out shows up to the hip)
   return P;
 }
 function sneakPose(i) {
@@ -1136,7 +1137,7 @@ function paintPose(g, size, U, P) {
         fillIn(g, 'rgba(110,50,42,0.92)', () => { g.moveTo(mx - 0.04, my - 0.01); g.quadraticCurveTo(mx, my + 0.075, mx + 0.04, my - 0.01); g.quadraticCurveTo(mx, my + 0.002, mx - 0.04, my - 0.01); g.closePath(); });
         fillIn(g, 'rgba(250,244,236,0.95)', () => ovalAt(g, mx, my + 0.001, 0.028, 0.008));
         fillIn(g, 'rgb(230,118,128)', () => ovalAt(g, mx + 0.012, my + 0.05, 0.02, 0.025));
-      } else if (P.happy) fillIn(g, 'rgba(120,64,50,0.85)', () => { g.moveTo(mx - 0.022, my - 0.002); g.quadraticCurveTo(mx, my + 0.034, mx + 0.022, my - 0.002); g.closePath(); });   // a wide smile
+      } else if (P.happy || P.grin) fillIn(g, 'rgba(120,64,50,0.85)', () => { g.moveTo(mx - 0.022, my - 0.002); g.quadraticCurveTo(mx, my + 0.034, mx + 0.022, my - 0.002); g.closePath(); });   // a wide smile
       else if (P.sly) fillIn(g, 'rgba(120,64,50,0.85)', () => { const s = view === 0 ? 1 : -1; g.moveTo(mx - s * 0.026, my - 0.014); g.quadraticCurveTo(mx - s * 0.004, my + 0.026, mx + s * 0.02, my + 0.004); g.quadraticCurveTo(mx, my + 0.008, mx - s * 0.026, my - 0.014); g.closePath(); });   // a smirk, up at one corner
       else if (P.sad) strokeIn(g, 'rgba(120,64,50,0.8)', 0.012, () => { g.moveTo(mx - 0.015, my + 0.01); g.quadraticCurveTo(mx, my - 0.006, mx + 0.015, my + 0.01); });   // a little frown
       else if (P.warm) strokeIn(g, 'rgba(120,64,50,0.8)', 0.013, () => { g.moveTo(mx - 0.02, my - 0.003); g.quadraticCurveTo(mx, my + 0.02, mx + 0.02, my - 0.003); });   // a bigger smile

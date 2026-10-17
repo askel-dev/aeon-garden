@@ -1,0 +1,8 @@
+# What the forager sings while it dances to blood-pop.mp3 (game.js partyLines, partySing).
+# One line each: when in the song, a space, then the words, in a bubble over it till the next line (at most 6 s).
+#   0:12.5 the words here
+#   [00:12.50] the words here      (an .lrc file's lines work as they are)
+#   0:20                           (a time with no words clears the bubble)
+# Lines starting with # are skipped. To time them: on localhost, press L while it dances and the console
+# prints where the song is.
+

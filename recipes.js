@@ -238,7 +238,7 @@ const RECIPES = [
 
 // What the forager builds, and what each takes out of the satchel. In `needs`, each word is an ingredient or a tag (any
 // ingredient that has it: 'tinder' takes dry grass or birch bark), with how many. To add a build, copy a block; the game
-// only knows how to build the ones it draws (the campfire, for now).
+// only knows how to build the ones it draws (the campfire, and the basket at camp).
 //   name            what it's called
 //   needs           what it takes, { word: how many }
 //   text            a line for when you look at it
@@ -248,6 +248,11 @@ const BUILDS = {
     vessel: 'pot',
     needs: { pebble: 6, stick: 5, tinder: 2 },
     text: 'A ring of stones, a little tepee of sticks, and tinder in the middle for the spark.',
+  },
+  basket: {
+    name: 'Basket',
+    needs: { stick: 8, drygrass: 4 },
+    text: 'A big lidded basket of sticks woven through with grass, set down at camp, for what the satchel can\'t carry.',
   },
 };
 

@@ -444,15 +444,15 @@
   #satchel { position: fixed; z-index: 4; left: 50%; bottom: var(--bottom); transform: translateX(-50%); padding: 4px; border-radius: 14px;
     background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); transition: opacity 0.35s, transform 0.35s, padding 0.25s; }
   #satchel .slots { display: flex; gap: 4px; }
-  #satchel .slot { position: relative; width: 38px; height: 38px; padding: 0; border: none; border-radius: 9px; background: rgba(150, 115, 60, 0.1);
+  #satchel .slot { position: relative; width: 46px; height: 46px; padding: 0; border: none; border-radius: 9px; background: rgba(150, 115, 60, 0.1);
     box-shadow: inset 0 1px 2px rgba(90, 65, 25, 0.18); transition: width 0.25s, height 0.25s, background 0.15s; }
   #satchel .slot i, .fly { background-image: var(--items); background-repeat: no-repeat; background-size: calc(100% * var(--item-n, 13)) 100%; }
-  #satchel .slot i { position: absolute; inset: 3px; display: none; }
+  #satchel .slot i { position: absolute; inset: 4px; display: none; }
   #satchel .slot i.on { display: block; }
-  #satchel .slot b { position: absolute; right: 3px; bottom: 1px; font-size: 11.5px; font-weight: 900; line-height: 1; color: var(--ink);
+  #satchel .slot b { position: absolute; right: 4px; bottom: 2px; font-size: 13px; font-weight: 900; line-height: 1; color: var(--ink);
     text-shadow: 0 0 2px #fdf6e6, 0 0 3px #fdf6e6, 0 0 3px #fdf6e6; }
   #satchel.empty { opacity: 0.5; padding: 3px 4px; }
-  #satchel.empty .slot { width: 22px; height: 8px; border-radius: 4px; }
+  #satchel.empty .slot { width: 27px; height: 9px; border-radius: 4px; }
   .fly { position: fixed; z-index: 6; left: 0; top: 0; width: 32px; height: 32px; pointer-events: none; will-change: transform; }
   /* dragging a slot (game.js setupSatchel): its painting follows the pointer, the slot it'd go to lights up, and off the
      satchel it fades a little to say it'll be dropped */
@@ -477,13 +477,13 @@
   #satchel .slot.named:not([data-name=""])::after { opacity: 1; transform: translate(-50%, 0); }
   @media (hover: hover) { #satchel:not(.dragging) .slot:is(:nth-child(-n+2), :nth-last-child(-n+2)):not([data-name=""]):hover::after { transform: none; } }
   #satchel .slot.named:is(:nth-child(-n+2), :nth-last-child(-n+2)):not([data-name=""])::after { transform: none; }
-  .fly.held { width: 40px; height: 40px; z-index: 7; transition: opacity 0.15s; }
+  .fly.held { width: 48px; height: 48px; z-index: 7; transition: opacity 0.15s; }
   .fly.held.out { opacity: 0.7; }
   /* a phone: a fingertip's slots, the row nearly as wide as the screen */
   @media (pointer: coarse) {
     #satchel { padding: 3px; }
     #satchel .slots { gap: 0; }
-    #satchel .slot { width: min(46px, calc((100vw - 22px) / 8)); height: 46px; background: none; box-shadow: none; }
+    #satchel .slot { width: min(52px, calc((100vw - 22px) / 8)); height: 52px; background: none; box-shadow: none; }
     #satchel .slot::before { content: ''; position: absolute; inset: 2px; border-radius: 9px; background: rgba(150, 115, 60, 0.1); box-shadow: inset 0 1px 2px rgba(90, 65, 25, 0.18); }
     #satchel .slot.over { background: none; box-shadow: none; }
     #satchel .slot.over::before { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
@@ -657,13 +657,13 @@
      while a page has news; open, a book laid open on the meadow over a soft scrim, the numbered recipe tiles on the left
      page in their sections and the one picked on the right, its ✕ a round brass button top right. Every target is 44 px
      or more (52-60 on an upright phone). Opaque parchment, never a backdrop-filter. */
-  #book-btn { position: absolute; left: calc(100% + 8px); bottom: 0; width: 46px; height: 46px; padding: 0; border: none; border-radius: 50%;
+  #book-btn { position: absolute; left: calc(100% + 8px); bottom: 0; width: 54px; height: 54px; padding: 0; border: none; border-radius: 50%;
     background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); transition: transform 0.15s, background-color 0.2s; }
-  #book-btn i { position: absolute; inset: 5px; background: center / contain no-repeat; }
+  #book-btn i { position: absolute; inset: 6px; background: center / contain no-repeat; }
   #book-btn.on { background-color: var(--accent-soft); transform: translateY(1px); }
   @media (hover: hover) { #book-btn:hover { transform: translateY(-1px); } }
   #book-btn:active { transform: translateY(1px); }
-  @media (pointer: coarse) { #book-btn { left: auto; right: 0; bottom: calc(100% + 8px); width: 50px; height: 50px; } }
+  @media (pointer: coarse) { #book-btn { left: auto; right: 0; bottom: calc(100% + 8px); width: 54px; height: 54px; } }
   #book-btn::before { content: 'New'; position: absolute; top: -9px; right: -10px; z-index: 1; padding: 1px 6px; border-radius: 99px; background: #c4562a; color: #fff;
     font-size: 10.5px; font-weight: 900; line-height: 1.35; opacity: 0; transform: scale(0.6); transition: opacity 0.2s, transform 0.2s; pointer-events: none; }
   #book-btn::after { content: ''; position: absolute; inset: -5px; border-radius: 50%; pointer-events: none; opacity: 0;
@@ -878,7 +878,7 @@
   @media (prefers-reduced-motion: reduce) { #book:not(.hidden) > * { animation: none; } #book .stamp { animation: none; } #book-btn.new::after { animation: none; opacity: 0.8; } }
   /* ---- the fire button (game.js renderBuild, buildIcon): by the satchel, a laid campfire in a ring that fills in as the
      satchel holds more of what one takes (--k); all there (.ready) it glows, and while a spot is picked (.on) it's pressed in */
-  #build { position: absolute; right: calc(100% + 8px); bottom: 0; width: 46px; height: 46px; padding: 0; border: none; border-radius: 50%;
+  #build { position: absolute; right: calc(100% + 8px); bottom: 0; width: 54px; height: 54px; padding: 0; border: none; border-radius: 50%;
     background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); transition: transform 0.15s, background-color 0.2s; }
   #build::before { content: ''; position: absolute; inset: 2px; border-radius: 50%;
     background: conic-gradient(var(--accent) calc(var(--k, 0) * 360deg), rgba(150, 115, 60, 0.18) 0);
@@ -888,18 +888,68 @@
     background: radial-gradient(closest-side, rgba(255, 168, 70, 0.6), rgba(255, 150, 60, 0)); }
   #build.ready::after { animation: build-ready 2.6s ease-in-out infinite; }
   @keyframes build-ready { 50% { opacity: 1; } }
-  #build i { position: absolute; inset: 5px; background: center / contain no-repeat; opacity: 0.5; filter: saturate(0.4); transition: opacity 0.3s, filter 0.3s; }
+  #build i { position: absolute; inset: 6px; background: center / contain no-repeat; opacity: 0.5; filter: saturate(0.4); transition: opacity 0.3s, filter 0.3s; }
   #build.ready i { opacity: 1; filter: none; }
   #build.on { background-color: var(--accent-soft); transform: translateY(1px); }
   #build.on::after { animation: none; }
   @media (hover: hover) { #build:hover { transform: translateY(-1px); } }
   #build:active { transform: translateY(1px); }
   /* a phone: over the satchel's left end, a fingertip's size */
-  @media (pointer: coarse) { #build { right: auto; left: 0; bottom: calc(100% + 8px); width: 50px; height: 50px; } }
+  @media (pointer: coarse) { #build { right: auto; left: 0; bottom: calc(100% + 8px); width: 54px; height: 54px; } }
+  /* ---- the basket's button (game.js renderBasketBtn): left of the fire's, the same round parchment; before the basket's made
+     its ring fills as the fire's does, after it opens the basket while the forager is in camp */
+  #basket-btn { position: absolute; right: calc(100% + 62px); bottom: 0; width: 46px; height: 46px; padding: 0; border: none; border-radius: 50%;
+    background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); transition: transform 0.15s, background-color 0.2s; }
+  #basket-btn.making::before { content: ''; position: absolute; inset: 2px; border-radius: 50%;
+    background: conic-gradient(var(--accent) calc(var(--k, 0) * 360deg), rgba(150, 115, 60, 0.18) 0);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3.5px), #000 calc(100% - 3px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 3.5px), #000 calc(100% - 3px)); }
+  #basket-btn i { position: absolute; inset: 5px; background: center / contain no-repeat; }
+  #basket-btn.making i { opacity: 0.5; filter: saturate(0.4); }
+  #basket-btn.making.ready i { opacity: 1; filter: none; }
+  #basket-btn.on { background-color: var(--accent-soft); transform: translateY(1px); }
+  @media (hover: hover) { #basket-btn:hover { transform: translateY(-1px); } }
+  #basket-btn:active { transform: translateY(1px); }
+  @media (pointer: coarse) { #basket-btn { right: auto; left: 62px; bottom: calc(100% + 8px); width: 54px; height: 54px; } }
+  /* ---- the basket, open (game.js openLarder, renderLarder): a parchment card just over the satchel (its bottom set from
+     the satchel's top), its slots as the satchel's; a tap moves a slot across, a drag puts it where it's let go */
+  #larder { position: fixed; z-index: 5; left: 50%; bottom: calc(var(--bottom) + 80px); transform: translateX(-50%); padding: 8px 10px 10px; border-radius: 16px;
+    background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); animation: larder-in 0.2s ease-out; touch-action: none; }
+  @keyframes larder-in { from { opacity: 0; transform: translate(-50%, 10px); } }
+  #larder .l-head { display: flex; align-items: center; gap: 10px; margin: 0 40px 6px 2px; }
+  #larder h2 { margin: 0; font-size: 19px; font-style: italic; }
+  #larder h2 small { margin-left: 8px; font-size: 12px; font-weight: 700; font-style: normal; color: var(--muted); }
+  #larder .l-all { margin-left: auto; border: none; border-radius: 9px; padding: 5px 12px; background: var(--accent); color: #fff; font-weight: 900; font-size: 13px; box-shadow: 0 2px 0 #b8622a; }
+  #larder .l-all:active { transform: translateY(1px); box-shadow: 0 1px 0 #b8622a; }
+  #larder .lslots { display: grid; grid-template-columns: repeat(8, 48px); gap: 4px; }
+  #larder .lslot { position: relative; width: 48px; height: 48px; border-radius: 9px; background: rgba(150, 115, 60, 0.1); box-shadow: inset 0 1px 2px rgba(90, 65, 25, 0.18); }
+  #larder .lslot i { position: absolute; inset: 4px; display: none; background-image: var(--items); background-repeat: no-repeat; background-size: calc(100% * var(--item-n, 13)) 100%; }
+  #larder .lslot i.on { display: block; }
+  #larder .lslot b { position: absolute; right: 4px; bottom: 2px; font-size: 13px; font-weight: 900; line-height: 1; color: var(--ink);
+    text-shadow: 0 0 2px #fdf6e6, 0 0 3px #fdf6e6, 0 0 3px #fdf6e6; }
+  #larder .lslot.over, #satchel .slot.over-l { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
+  #larder .lslot.lifted i { opacity: 0.3; }
+  #larder .close { position: absolute; top: -14px; right: -14px; flex: none; width: 44px; height: 44px; margin: 0; padding: 0; border: none; border-radius: 50%; font-size: 0;
+    color: var(--ink); background: linear-gradient(180deg, #fffaf0, #f1e5c9); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 2px 0 #a8742a, 0 4px 12px rgba(70, 55, 25, 0.25); cursor: pointer; }
+  #larder .close::before { content: ''; position: absolute; inset: 0; margin: auto; width: 20px; height: 20px; background: currentColor;
+    -webkit-mask: var(--x-lines) center / contain no-repeat; mask: var(--x-lines) center / contain no-repeat; }
+  #larder .close:active { transform: translateY(2px); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 0 0 #a8742a; }
+  body.larder #build, body.larder #basket-btn { visibility: hidden; }
+  /* a phone: the slots a fingertip's, as wide as the screen allows; the ✕ in the middle of its top edge */
+  @media (pointer: coarse) {
+    #larder { padding: 8px 6px 8px; }
+    #larder .lslots { grid-template-columns: repeat(8, min(48px, calc((100vw - 30px) / 8))); gap: 0; }
+    #larder .lslot { width: min(48px, calc((100vw - 30px) / 8)); background: none; box-shadow: none; }
+    #larder .lslot::before { content: ''; position: absolute; inset: 2px; border-radius: 9px; background: rgba(150, 115, 60, 0.1); box-shadow: inset 0 1px 2px rgba(90, 65, 25, 0.18); }
+    #larder .l-all { min-height: 40px; padding: 0 16px; }
+    #larder .close { top: -22px; right: 50%; margin-right: -22px; }
+    #larder .l-head { margin: 16px 2px 6px; }
+    body.larder #book-btn { visibility: hidden; }
+  }
   /* a phone: the chat's lines sit over the satchel and the body's bars; open, its card goes across the foot */
   @media (max-width: 760px), (max-height: 500px) {
-    #chat { bottom: calc(var(--bottom) + 104px); }
-    body:has(#build:not(.hidden)) #chat:not(.open) { bottom: calc(var(--bottom) + 122px); }   /* (over the fire button) */
+    #chat { bottom: calc(var(--bottom) + 112px); }
+    body:has(#build:not(.hidden)) #chat:not(.open) { bottom: calc(var(--bottom) + 130px); }   /* (over the fire button) */
     #chat.open { bottom: var(--bottom); right: var(--right); width: auto; }
     #chat.open #chat-log { max-height: 30vh; }
   }
@@ -976,20 +1026,20 @@
   .sk p { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.35; }
   .sk p small { font-size: 11.5px; opacity: 0.85; }
   /* The stamina bar, centered over the satchel (renderVitals): shown only while it isn't full; ember-red and pulsing while winded. */
-  #vitals { position: fixed; z-index: 4; left: 50%; bottom: calc(var(--bottom) + 54px); transform: translateX(-50%); pointer-events: none; transition: opacity 0.35s, transform 0.35s; }
-  .vital { display: flex; align-items: center; gap: 5px; padding: 3px 8px 3px 6px; border-radius: 10px; opacity: 0; transform: translateY(4px);
+  #vitals { position: fixed; z-index: 4; left: 50%; bottom: calc(var(--bottom) + 62px); transform: translateX(-50%); pointer-events: none; transition: opacity 0.35s, transform 0.35s; }
+  .vital { display: flex; align-items: center; gap: 7px; padding: 5px 11px 5px 8px; border-radius: 12px; opacity: 0; transform: translateY(4px);
     background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); transition: opacity 0.6s, transform 0.6s; }
   .vital.show { opacity: 1; transform: none; }
-  .vital svg { width: 12px; height: 12px; fill: currentColor; flex: none; }
-  .vital .bar { position: relative; width: 54px; height: 5px; border-radius: 3px; background: rgba(120, 90, 50, 0.18); overflow: hidden; }
-  .vital .bar i { position: absolute; inset: 0 auto 0 0; width: 100%; border-radius: 3px; background: currentColor; transition: width 0.3s linear; }
+  .vital svg { width: 15px; height: 15px; fill: currentColor; flex: none; }
+  .vital .bar { position: relative; width: min(230px, 55vw); height: 8px; border-radius: 4px; background: rgba(120, 90, 50, 0.18); overflow: hidden; }
+  .vital .bar i { position: absolute; inset: 0 auto 0 0; width: 100%; border-radius: 4px; background: currentColor; transition: width 0.3s linear; }
   #v-stam { color: #8a9a52; }
   #v-stam.winded .bar i { animation: winded 0.7s ease-in-out infinite alternate; background: #b4834a; }
   /* A touch screen: the round fire and book buttons sit over the satchel's ends (#build, #book-btn); the bar goes just above them, the chat's lines above that. */
   @media (pointer: coarse) {
-    #vitals { bottom: calc(var(--bottom) + 118px); }
-    #chat:not(.open) { bottom: calc(var(--bottom) + 144px); }
-    body:has(#build:not(.hidden)) #chat:not(.open) { bottom: calc(var(--bottom) + 144px); }
+    #vitals { bottom: calc(var(--bottom) + 128px); }
+    #chat:not(.open) { bottom: calc(var(--bottom) + 154px); }
+    body:has(#build:not(.hidden)) #chat:not(.open) { bottom: calc(var(--bottom) + 154px); }
   }
   @media (max-width: 760px), (max-height: 500px) {
     #me-box { transform: scale(1.1); }
@@ -1093,6 +1143,13 @@
 <div id="satchel" class="empty"><div class="slots"></div>
   <button id="book-btn" data-act="book" title="Recipes (B)" aria-label="Recipe book"><i></i></button>
   <button id="build" class="hidden" data-act="build" title="Make a campfire (F)" aria-label="Make a campfire"><i></i></button>
+  <button id="basket-btn" class="hidden" data-act="basket" title="The basket" aria-label="The basket"><i></i></button>
+</div>
+<!-- the basket at camp, open over the satchel (game.js, the basket at camp) -->
+<div id="larder" class="hidden" role="dialog" aria-label="The basket at camp">
+  <div class="l-head"><h2 class="fr">Basket<small></small></h2><button class="l-all" data-act="larder-all">Put all in</button></div>
+  <div class="lslots"></div>
+  <button class="close" data-act="larder-close" title="Shut the basket (Esc)" aria-label="Shut the basket">✕</button>
 </div>
 
 <!-- top right: pause, sound and the ••• menu; the inspector hangs underneath -->

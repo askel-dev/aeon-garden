@@ -1227,6 +1227,11 @@ function render(now) {
     const sx = (F.x - cam.x) * z + vw / 2, sy = (F.y - cam.y) * z + vh / 2;
     if (visible(sx, sy, 2 * z + 20)) itemOf(items, F.y, sx, sy, 1 - mistAt(F.x, F.y)).s = F;
   }
+  const Bk = myBasket();                                   // the camp's basket
+  if (Bk) {
+    const sx = (Bk.x - cam.x) * z + vw / 2, sy = (Bk.y - cam.y) * z + vh / 2;
+    if (visible(sx, sy, 2 * z + 20)) itemOf(items, Bk.y, sx, sy, 1 - mistAt(Bk.x, Bk.y)).s = Bk;
+  }
   if (ui.place) {
     const P = ui.place, sx = (P.x - cam.x) * z + vw / 2, sy = (P.y - cam.y) * z + vh / 2;
     if (visible(sx, sy, 2 * z + 20)) itemOf(items, P.y, sx, sy, 1).s = P;
@@ -1282,7 +1287,7 @@ function render(now) {
     fadeTo(it.f);
     if (it.d) it.d.hive ? drawBeeTree(it.d, it.sx, it.sy, now, ck) : drawDecor(it.d, it.sx, it.sy, now, ck, it.px);
     else if (it.h) drawSwarm(it.h, it.sx, it.sy);
-    else if (it.s) it.s.fire ? drawFire(it.s, z, now) : it.s.green ? drawNettles(it.s, z) : it.s.bramble ? drawBramble(it.s, z) : it.s.find ? drawFind(it.s, z) : it.s.dropped ? drawDropped(it.s, z, now) : drawShroom(it.s, z);
+    else if (it.s) it.s.fire ? drawFire(it.s, z, now) : it.s.basket ? drawBasket(it.s, z, now) : it.s.green ? drawNettles(it.s, z) : it.s.bramble ? drawBramble(it.s, z) : it.s.find ? drawFind(it.s, z) : it.s.dropped ? drawDropped(it.s, z, now) : drawShroom(it.s, z);
     else if (it.v) drawVisitor(it.v, it.sx, it.sy, now, z);
     else if (it.p) drawForager(it.sx, it.sy, now);
     else if (it.q) drawPeer(it.q, it.sx, it.sy, now);
@@ -1993,20 +1998,20 @@ function idleOf(b, now, pose) {
   return pose;
 }
 // Emotes: it dances or sneaks when asked (emote; the button by the satchel and the 1 and 2 keys are gone), painted in fur.js
-// (FORAGER_EMOTE, kept after all its other paintings: emoteArt). The dance is NLE Choppa's, as the Roblox emote does it: it
-// turns on the spot, a sixth of a turn a step (DANCE_TURN: a view and which way it's mirrored), each beat a head-bang down
-// into a hunch and a spring up onto one foot with the other heel kicked up behind, the feet taking turns (DANCE_SEQ: a
-// painting, how long; two turns, so the feet come round even). The spring hops (DANCE_HOP, lifting the painting in
-// drawFigure), with a stomp at each hunch. It dances till it's sent somewhere. The sneak is a devious
+// (FORAGER_EMOTE, kept after all its other paintings: emoteArt). The dance is the easter egg's (partyTap: five quick taps on
+// the forager), NLE Choppa's from the front: a crouch, a hop with a knee up, that leg kicked straight out to the side and
+// back, then the other, the fists swinging across (DANCE_SEQ, a kick every half of DANCE_CYCLE); the hop lifts the painting
+// (DANCE_HOP, drawFigure) and it sways over the planted foot (DANCE_SWAY, as the hum's sway), with a step at each landing.
+// It dances to PARTY_SONG till the song ends or it's sent somewhere. The sneak is a devious
 // walk, side on: crouched, tiptoeing, knees high, its mittens out like little claws, slower (sim.js f.sneaking,
 // FORAGER_SNEAK). Asked for standing, it creeps SNEAK_GO tiles the way it faces; every walk after is a sneak till it
 // sprints, stands still SNEAK_REST, or you ask again; standing it lurks, rubbing its mittens. A friend sees both (sendPos).
 // Both run on the clock of the page, not the meadow's (no faster at speed), and stop while paused.
 const EMOTE = { dance: 0, sneak: 1 }, EM = Fur.FORAGER_EMOTE;
-const DANCE_TURN = [[1, false], [0, false], [2, false], [2, true], [0, true], [1, true]];   // (from the front, round to its left)
-const DANCE_BOW = 230, DANCE_UP = 270, DANCE_HOP = 0.1, DANCE_SEQ = [];
-for (let n = 0; n < 2 * DANCE_TURN.length; n++) DANCE_SEQ.push(n & 1 ? 1 + ((n >> 1) & 1) : 0, n & 1 ? DANCE_UP : DANCE_BOW);   // (0 the hunch; 1, 2 a heel kicked)
-const DANCE_CYCLE = DANCE_SEQ.reduce((t, v, i) => i & 1 ? t + v : t, 0);
+const DANCE_BEAT = 60000 / 132;   // (the song's beat: blood-pop.mp3 is a steady 132 bpm; each half of the cycle, crouch to back in, is one)
+const DANCE_SEQ = [EM.down, 130, EM.hopR, 90, EM.kickR, 170, EM.backR, 90, EM.down, 130, EM.hopL, 90, EM.kickL, 170, EM.backL, 90]
+  .map((v, i) => i & 1 ? v * DANCE_BEAT / 480 : v);
+const DANCE_CYCLE = 2 * DANCE_BEAT, DANCE_LAND = 130 / 480, DANCE_HOP = 0.07, DANCE_SWAY = 0.035, DANCE_KICK = 0.068;   // (kick: where the first kick is, of the cycle)
 const SNEAK_GO = 3.5, SNEAK_REST = 6000, LURK_MS = 220;
 function emote(k) {
   const f = world && world.forager;
@@ -2022,30 +2027,97 @@ function emote(k) {
     if (!f.walking) for (const dir of fg.flip ? [1, -1] : [-1, 1]) if (S.foragerTo(world, f.x + dir * SNEAK_GO, f.y)) break;   // (off it creeps)
   }
   foragerAhead();
+  if (k === EMOTE.dance) partySong(true);
   sendEmote();
 }
 function emoteOff() {
   if (world) world.forager.sneaking = false;
+  if (fg.emote === EMOTE.dance) partySong(false);
   fg.emote = -1; fg.lift = 0; fg.hum = 0; fg.emoteFrame = -1;
+}
+// The easter egg: five quick taps on the forager itself (PARTY_TAPS, each within PARTY_MS of the last) and it dances to a
+// song, sound on or off; again, or sent somewhere, and it stops. The song is fetched only then. It sings along in a bubble
+// over it (partyLines): PARTY_LYRICS, a line each, "m:ss words" or as an .lrc has it, "[mm:ss.xx] words"; a line stays up
+// till the next (at most PARTY_LINE_MS). On localhost, L while it dances logs where the song is, for timing them.
+// The dance keeps to the song's beat: its clock follows the song's (PARTY_BEAT0: the first beat, s; DANCE_BEAT), eased
+// toward it a little a frame (PARTY_EASE) since a song's currentTime moves in coarse steps, and snapped if far off.
+const PARTY_TAPS = 5, PARTY_MS = 600, PARTY_SONG = 'easteregg/blood-pop.mp3', PARTY_LYRICS = 'easteregg/lyrics.txt', PARTY_LINE_MS = 6000;
+const PARTY_BEAT0 = 0.057, PARTY_EASE = 0.1, PARTY_SNAP = 150;
+const party = { taps: 0, at: -1e9, song: null, lines: null, line: -1 };
+function partyLines() {
+  if (party.lines) return;
+  party.lines = [];
+  fetch(PARTY_LYRICS).then(r => r.ok ? r.text() : '').then(text => {
+    for (const raw of text.split('\n')) {
+      const m = /^\s*\[?(\d+):(\d+(?:\.\d+)?)\]?(.*)$/.exec(raw);
+      if (m) party.lines.push({ t: +m[1] * 60 + +m[2], text: m[3].trim() });
+    }
+    party.lines.sort((a, b) => a.t - b.t);
+  }).catch(() => {});
+}
+// Once a frame while it dances: the line the song is at, said over it when it changes.
+function partySing() {
+  const L = party.lines, t = party.song && party.song.currentTime;
+  if (!L || !L.length || !t) return;
+  let i = party.line;
+  while (i + 1 < L.length && L[i + 1].t <= t) i++;
+  if (i === party.line) return;
+  party.line = i;
+  const now = performance.now(), next = i + 1 < L.length ? (L[i + 1].t - t) * 1000 : PARTY_LINE_MS;
+  myChat = L[i].text ? Object.assign(chatFor(L[i].text, now), { until: now + Math.min(next, PARTY_LINE_MS) }) : null;
+}
+if (['localhost', '127.0.0.1'].includes(location.hostname)) document.addEventListener('keydown', e => {
+  if (e.code !== 'KeyL' || e.repeat || !party.song || party.song.paused) return;
+  const t = party.song.currentTime;
+  console.log(`${t / 60 | 0}:${(t % 60).toFixed(1).padStart(4, '0')}`);   // (paste it before the line in PARTY_LYRICS)
+});
+const foragerHit = (sx, sy) => world && fg.drawnAt > 0 && world.forager.down < 0
+  && Math.abs(sx - fg.sx) < Math.max(18, fg.px * 0.3) && sy < fg.sy + 8 && sy > fg.sy - Math.max(40, fg.px * 0.75);
+function partyTap() {
+  const now = performance.now();
+  party.taps = now - party.at < PARTY_MS ? party.taps + 1 : 1; party.at = now;
+  if (party.taps < PARTY_TAPS) return;
+  party.taps = 0;
+  emote(EMOTE.dance);
+}
+function partySong(on) {
+  if (!on) { if (party.song) { party.song.pause(); party.song.currentTime = 0; if (party.line >= 0) myChat = null; party.line = -1; } return; }
+  if (!party.song) {
+    party.song = new Audio(PARTY_SONG);
+    party.song.addEventListener('ended', () => { if (fg.emote === EMOTE.dance) { emoteOff(); sendEmote(); } });
+  }
+  partyLines();
+  party.song.currentTime = 0; party.line = -1;
+  party.song.play().catch(() => {});
 }
 const sendEmote = () => { if (Net && Net.on) sendPos(performance.now()); };   // (a friend sees it at once)
 // Once a frame, before its pose: what ends one, and its clock.
 function emoteTick(f, stage, ms) {
   if (fg.emote < 0) return;
   if (stage === 4 || ui.fire || (fg.emote === EMOTE.dance ? f.walking : f.running || !f.sneaking)) { emoteOff(); sendEmote(); return; }
+  if (party.song && fg.emote === EMOTE.dance && party.song.paused !== ui.speed <= 0) {   // (paused, the song waits too)
+    if (ui.speed <= 0) party.song.pause(); else party.song.play().catch(() => {});
+  }
   if (ui.speed <= 0) return;
   fg.emoteMs += ms;
+  if (fg.emote === EMOTE.dance && party.song && !party.song.paused && party.song.currentTime > 0) {   // (on the song's beat: a landing on each)
+    const off = (party.song.currentTime - PARTY_BEAT0) * 1000 + DANCE_CYCLE - fg.emoteMs;
+    fg.emoteMs += Math.abs(off) > PARTY_SNAP ? off : off * PARTY_EASE;
+  }
+  if (fg.emote === EMOTE.dance) partySing();
   if (fg.emote === EMOTE.sneak && !f.walking && (fg.sneakStill += ms) > SNEAK_REST) { emoteOff(); sendEmote(); }
 }
-// Standing in one (b: fg, or a friend's), its painting this frame; dancing, its turn and hop too.
+// Standing in one (b: fg, or a friend's), its painting this frame; dancing, its hop and sway too.
 function emoteStill(b, d, me) {
   if (b.emote !== EMOTE.dance) { b.view = 0; b.lift = 0; return (b.emoteMs / LURK_MS | 0) & 1 ? EM.lurkB : EM.lurkA; }
-  let u = b.emoteMs % DANCE_CYCLE, k = 0;
-  while (k < DANCE_SEQ.length - 2 && u >= DANCE_SEQ[k + 1]) { u -= DANCE_SEQ[k + 1]; k += 2; }
-  const [view, flip] = DANCE_TURN[(k >> 1) % DANCE_TURN.length], fr = EM.dance + view * 3 + DANCE_SEQ[k];
-  b.view = view; b.flip = flip; b.hum = 0;
-  b.lift = DANCE_SEQ[k] ? DANCE_HOP * Math.sin(Math.PI * u / DANCE_SEQ[k + 1]) : 0;
-  if (me && fr !== b.emoteFrame && !DANCE_SEQ[k] && ui.speed > 0) hear('step', d.x, d.y, { pace: 1.6, foot: (k >> 2) & 1, ground: groundUnder(d.x, d.y) }, true);   // (a stomp)
+  b.view = 1;
+  const t = b.emoteMs % DANCE_CYCLE, h = (2 * t % DANCE_CYCLE) / DANCE_CYCLE;
+  b.lift = h > DANCE_LAND ? DANCE_HOP * Math.sin(Math.PI * (h - DANCE_LAND) / (1 - DANCE_LAND)) : 0;
+  b.hum = (b.flip ? 1 : -1) * DANCE_SWAY * Math.sin(TAU * (t / DANCE_CYCLE - DANCE_KICK));   // (over the planted foot: mirrored, the other way)
+  let k = 0;
+  for (let u = t; k < DANCE_SEQ.length - 2 && u >= DANCE_SEQ[k + 1]; k += 2) u -= DANCE_SEQ[k + 1];
+  const fr = DANCE_SEQ[k];
+  if (me && fr !== b.emoteFrame && fr === EM.down && ui.speed > 0) hear('step', d.x, d.y, { pace: 1.4, foot: k >> 3, ground: groundUnder(d.x, d.y) }, true);   // (landing)
   b.emoteFrame = fr;
   return fr;
 }
@@ -2713,7 +2785,7 @@ const FLOAT_MS = 1400, SAY_MS = 1900;     // a "+3 Chanterelles" floating up, an
 const FROM_FRONT = { tree: 1, hive: 1, bramble: 1 };   // (comes at these from in front, where it shows, not hidden behind them)
 let GLOW_ART = null;
 const pickFloats = [];                    // { img, w, h, x, y (world), t0, ms }
-const aim = { x: 0, y: 0, in: false, moved: false, cx: 0, cy: 0, cz: 0, at: 0, t: null, id: '', n: 0, why: '', fire: null };   // what the mouse is on (hoverFrame): a thing to gather, or a fire
+const aim = { x: 0, y: 0, in: false, moved: false, cx: 0, cy: 0, cz: 0, at: 0, t: null, id: '', n: 0, why: '', fire: null, basket: null };   // what the mouse is on (hoverFrame): a thing to gather, or a fire
 const AIM_MS = 150;
 
 // The thing to gather under a point: { kind, it } or null. Hives first (in their tree), then what grows at a tree's foot,
@@ -3056,19 +3128,20 @@ function glowArt() {
 
 // What the mouse is on, looked up again only when it or the camera moved; what it has to give, every frame (cheap).
 function hoverFrame() {
-  if (!aim.in || fingerTap || drag || ui.place) { if (aim.t || aim.fire) { aim.t = null; aim.fire = null; canvas.classList.remove('on-animal'); } return; }
+  if (!aim.in || fingerTap || drag || ui.place) { if (aim.t || aim.fire || aim.basket) { aim.t = null; aim.fire = null; aim.basket = null; canvas.classList.remove('on-animal'); } return; }
   const now = performance.now();                        // (the camera gliding after the forager: a look every AIM_MS will do)
   if (aim.moved || (aim.cx !== cam.x || aim.cy !== cam.y || aim.cz !== cam.zoom) && now - aim.at > AIM_MS) {
     aim.moved = false; aim.cx = cam.x; aim.cy = cam.y; aim.cz = cam.zoom; aim.at = now;
     aim.fire = ui.hoverId ? null : fireAt(aim.x, aim.y);   // (a fire first, as a click: over what lies by it)
-    aim.t = ui.hoverId || aim.fire ? null : gatherAt(aim.x, aim.y);
+    aim.basket = ui.hoverId || aim.fire ? null : basketAt(aim.x, aim.y);
+    aim.t = ui.hoverId || aim.fire || aim.basket ? null : gatherAt(aim.x, aim.y);
   }
   if (aim.t) {
     const w = S.whatThere(world, aim.t.kind, aim.t.it);
     aim.id = w.id; aim.n = w.n; aim.why = w.why;
     if (!w.n && !w.why) aim.t = null;                     // (a dead tree: nothing to say)
   }
-  canvas.classList.toggle('on-animal', !!ui.hoverId || !!(aim.t && aim.n) || !!aim.fire);
+  canvas.classList.toggle('on-animal', !!ui.hoverId || !!(aim.t && aim.n) || !!aim.fire || !!aim.basket);
 }
 function drawGlow(now, over) {
   if (!aim.t || !aim.n || (aim.t.kind === 'hive') !== over) return;   // (a hive's goes over its hollow: under, the trunk hid it)
@@ -3081,6 +3154,11 @@ function drawHoverLine(now) {
   if (aim.fire && !ui.fire && !pickFloats.length) {      // a fire: how it is, and what it wants (fireWord)
     const F = aim.fire, z = cam.zoom;
     drawLabel(fireWord(F), (F.x - cam.x) * z + vw / 2, (F.y - cam.y) * z + vh / 2 + firePx(z) * 0.15 + 4);
+    return;
+  }
+  if (aim.basket && !ui.fire && !pickFloats.length) {    // the basket: what's in it
+    const B = aim.basket, z = cam.zoom;
+    drawLabel(basketWord(B), (B.x - cam.x) * z + vw / 2, (B.y - cam.y) * z + vh / 2 + 6);
     return;
   }
   if (!aim.t || ui.gather || pickFloats.length) return;   // (not over a "+3" floating up, or a line saying why not)
@@ -3631,15 +3709,15 @@ function campArt() {
   const dg = dot.getContext('2d'), gr = dg.createRadialGradient(16, 16, 0, 16, 16, 16);
   gr.addColorStop(0, 'rgba(92, 70, 46, 1)'); gr.addColorStop(0.5, 'rgba(92, 70, 46, 0.5)'); gr.addColorStop(1, 'rgba(92, 70, 46, 0)');
   dg.fillStyle = gr; dg.fillRect(0, 0, 32, 32);
-  for (let i = 0; i < 420; i++) {                          // the worn band, heavier in some stretches than others
-    const a = i / 420 * Math.PI * 2 + (hash2(i, 3, 711) - 0.5) * 0.03, wear = 0.55 + 0.45 * Math.sin(a * 3 + 1.1) * Math.sin(a * 5 + 0.4);
+  for (let i = 0; i < 640; i++) {                          // the worn band, heavier in some stretches than others
+    const a = i / 640 * Math.PI * 2 + (hash2(i, 3, 711) - 0.5) * 0.03, wear = 0.55 + 0.45 * Math.sin(a * 3 + 1.1) * Math.sin(a * 5 + 0.4);
     const r = R + (hash2(i, 4, 711) - 0.5) * k * 0.3, d = k * (0.16 + 0.14 * hash2(i, 5, 711));
     g.globalAlpha = (0.05 + 0.07 * wear) * (0.6 + 0.4 * hash2(i, 6, 711));
     g.drawImage(dot, W / 2 + Math.cos(a) * r - d, H / 2 + Math.sin(a) * r * S.CAMP_FLAT - d * S.CAMP_FLAT, d * 2, d * 2 * S.CAMP_FLAT);
   }
   g.globalAlpha = 1;
-  for (let i = 0; i < 16; i++) {                           // small stones along it, here and there
-    const a = (i + hash2(i, 7, 711) * 0.7) / 16 * Math.PI * 2, r = R + (hash2(i, 8, 711) - 0.5) * k * 0.28;
+  for (let i = 0; i < 24; i++) {                           // small stones along it, here and there
+    const a = (i + hash2(i, 7, 711) * 0.7) / 24 * Math.PI * 2, r = R + (hash2(i, 8, 711) - 0.5) * k * 0.28;
     const x = W / 2 + Math.cos(a) * r, y = H / 2 + Math.sin(a) * r * S.CAMP_FLAT, sz = k * (0.045 + 0.04 * hash2(i, 9, 711));
     const rgb = tone(STONE_GREYS[i % STONE_GREYS.length], 0.9 + 0.2 * hash2(i, 10, 711));
     g.fillStyle = 'rgba(40, 30, 20, 0.3)'; g.beginPath(); g.ellipse(x + sz * 0.15, y + sz * 0.35, sz * 1.1, sz * 0.6, 0, 0, Math.PI * 2); g.fill();
@@ -3720,10 +3798,11 @@ const buildUi = { shown: false, ready: false, got: -1 };
 function renderBuild() {
   const el = $('#build');
   if (!el || !world) return;
-  const have = buildHave(BUILD), show = have.any || !!ui.place, k = have.all ? have.got / have.all : 0;
+  const have = buildHave(BUILD), show = have.any || !!(ui.place && ui.place.fire), k = have.all ? have.got / have.all : 0;
   if (show !== buildUi.shown) { el.classList.toggle('hidden', !show); buildUi.shown = show; }
   if (have.ready !== buildUi.ready) { el.classList.toggle('ready', have.ready); buildUi.ready = have.ready; }
-  el.classList.toggle('on', !!ui.place);
+  el.classList.toggle('on', !!(ui.place && ui.place.fire));
+  renderBasketBtn();                                      // (and the basket's, by it)
   if (have.got !== buildUi.got) {
     buildUi.got = have.got;
     el.style.setProperty('--k', k.toFixed(3));
@@ -3799,6 +3878,277 @@ function makeOne(id) {
   goFire({ kind: 'cook', F, x: F.x, y: F.y });
 }
 
+// ---- the basket at camp
+//
+// A big lidded basket set down inside the camp's ring (sim.js w.camp.basket, makeBasket; recipes.js BUILDS.basket), where
+// what the satchel can't carry is kept, and what a collapse can't take. Its round button left of the fire's (#basket-btn,
+// renderBasketBtn) shows once there's a camp: before the basket, as the fire's does, a ring filling as the satchel holds
+// what it takes, and a tap with it all, in camp, picks a spot inside the ring (ui.place, basket: true); the forager kneels
+// and weaves it (fireFrame's 'weave', WEAVE_MS), the basket growing up out of the ground. After, in the camp, the button
+// (or a click on the basket) walks it over and opens the basket's card (#larder, renderLarder) just over the satchel: a tap
+// on a slot moves it across (sim.js moveInto), a drag puts it in the slot it's let go on (moveBetween), "Put all in"
+// empties the satchel into it (putAway). Walking off (LARDER_NEAR), ✕, Esc or Back shut it (larderFrame, stepOut).
+// Drawn with the trees and animals (a frame item's s, drawBasket: shut while it's empty, open with things heaped in it
+// once it has any). Playing together it's the host's: a friend sees it set down (sendFire 'basket') but can't open it.
+const WEAVE_MS = 2600, WEAVE_STEPS = 7;  // ms the forager weaves it, and the rustles in that
+const LARDER_NEAR = 2.4;                 // tiles from the basket it stays open
+const BASKET_BUILD = 'basket';           // recipes.js BUILDS: what the basket button builds
+const BASKET_FOOT = 0.6;                 // where its foot is in its painting (of its half-size, down from the middle)
+const BASKET_ARTS = ['basket:0', 'basket:1'];   // (made once) shut, and open with things heaped in it
+const basketPx = z => firePx(z) * 0.95;
+const myBasket = () => (world && world.camp && world.camp.basket) || null;
+const basketAny = B => { for (let k = 0; k < B.bag.length; k++) if (B.bag[k]) return true; return false; };
+const larderUi = { open: false };
+const larderOpen = () => larderUi.open;
+
+const WICKER = [184, 134, 76];
+function paintBasket(g, size, U, n) {
+  g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
+  g.lineCap = g.lineJoin = 'round';
+  const top = -0.16, rx = 0.6, ry = 0.18, bot = BASKET_FOOT - 0.06, bx = 0.46;
+  const body = () => {                                    // its sides and the front of its rim, round-bellied
+    g.moveTo(-rx, top);
+    g.bezierCurveTo(-rx - 0.07, 0.16, -bx - 0.02, bot - 0.06, -bx + 0.06, bot);
+    g.ellipse(0, bot, bx - 0.06, 0.08, 0, Math.PI, 0, true);
+    g.bezierCurveTo(bx + 0.02, bot - 0.06, rx + 0.07, 0.16, rx, top);
+    g.ellipse(0, top, rx, ry, 0, 0, Math.PI);
+  };
+  furGlow(g, [45, 32, 18], 0.4, 0.02, bot + 0.02, 0.72, 0.15);                                     // its shadow on the ground
+  if (n === 1) {                                          // open: the dark inside, the back of the rim, things heaped in it
+    fillIn(g, rockRGB(tone(WICKER, 0.36)), () => ovalAt(g, 0, top, rx - 0.03, ry - 0.02));
+    strokeIn(g, rockRGB(tone(WICKER, 0.95, 6)), 0.07, () => g.ellipse(0, top, rx - 0.02, ry - 0.01, 0, Math.PI, Math.PI * 2));
+    fillIn(g, 'rgba(96, 140, 58, 1)', () => { ovalAt(g, -0.36, top - 0.03, 0.15, 0.06, -0.5); ovalAt(g, 0.18, top - 0.08, 0.13, 0.05, 0.6); });   // leaves
+    const apple = (x, y, r) => { softIn(g, [196, 52, 38], y - r, y + r, () => discAt(g, x, y, r), 1.25, 0.6); furGlow(g, [255, 240, 220], 0.55, x - r * 0.35, y - r * 0.4, r * 0.3, r * 0.22); };
+    apple(-0.14, top - 0.07, 0.13); apple(0.34, top - 0.04, 0.11);
+    softIn(g, [150, 98, 54], top - 0.2, top, () => { g.moveTo(0.02, top - 0.04); g.ellipse(0.1, top - 0.04, 0.15, 0.13, 0, Math.PI, 0); }, 1.2, 0.7);   // a cep's cap
+    fillIn(g, 'rgba(232, 208, 120, 1)', () => { ovalAt(g, -0.4, top - 0.1, 0.035, 0.035); ovalAt(g, -0.3, top - 0.14, 0.03, 0.03); });   // and a few hazelnuts
+  }
+  softIn(g, WICKER, top, bot, body, 1.15, 0.6);
+  g.save(); g.beginPath(); body(); g.clip();
+  strokeIn(g, rockRGB(tone(WICKER, 0.5), 0.55), 0.026, () => {      // the stakes, down its belly
+    for (let i = -5; i <= 5; i++) { const x = i * 0.105; g.moveTo(x, top + ry * Math.sqrt(Math.max(0, 1 - (x / rx) ** 2))); g.quadraticCurveTo(x * 1.06, 0.2, x * 0.8, bot + 0.1); }
+  });
+  for (let r = 0; r < 6; r++) {                           // the rows woven round them, over one and under the next
+    const y0 = top + 0.07 + r * 0.115, w = rx + 0.06 - Math.max(0, r - 2) * 0.03;
+    for (let i = -6; i <= 6; i++) {
+      const x = (i + (r % 2) * 0.5) * 0.105, y = y0 + ry * 0.85 * Math.sqrt(Math.max(0, 1 - (x / w) ** 2));
+      if (Math.abs(x) > w) continue;
+      fillIn(g, rockRGB(tone(WICKER, 1.22, 14), 0.75), () => ovalAt(g, x, y, 0.05, 0.034, (x / w) * 0.3));
+      fillIn(g, rockRGB(tone(WICKER, 0.45), 0.35), () => ovalAt(g, x + 0.01, y + 0.035, 0.045, 0.012, (x / w) * 0.3));
+    }
+  }
+  furGlow(g, tone(WICKER, 0.4), 0.55, 0.52, 0.2, 0.3, 0.6);                                       // round: its shade side
+  furGlow(g, [255, 240, 205], 0.25, -0.36, 0.0, 0.16, 0.3);                                        // and the light on the other
+  g.restore();
+  strokeIn(g, rockRGB(tone(WICKER, 1.1, 10)), 0.08, () => g.ellipse(0, top, rx, ry, 0, 0.05, Math.PI - 0.05));   // the rim, plaited
+  strokeIn(g, rockRGB(tone(WICKER, 0.55), 0.6), 0.016, () => { for (let i = 1; i < 12; i++) { const a = i / 12 * Math.PI, x = Math.cos(a) * rx, y = top + Math.sin(a) * ry; g.moveTo(x - 0.03, y - 0.035); g.lineTo(x + 0.03, y + 0.035); } });
+  for (const s of [-1, 1]) strokeIn(g, rockRGB(tone(WICKER, 0.8)), 0.04, () => g.ellipse(s * (rx + 0.04), top + 0.1, 0.06, 0.08, 0, s < 0 ? Math.PI * 0.5 : -Math.PI * 0.5, s < 0 ? Math.PI * 1.5 : Math.PI * 0.5));   // the handles
+  if (n === 0) {                                          // shut: its lid, a low dome, and the loop to lift it by
+    const ly = top - 0.03, lid = () => { g.moveTo(-rx - 0.03, ly); g.ellipse(0, ly, rx + 0.03, ry + 0.03, 0, Math.PI, 0, true); g.ellipse(0, ly, rx + 0.03, ry + 0.12, 0, 0, Math.PI, true); };
+    softIn(g, tone(WICKER, 1.05), ly - ry - 0.12, ly + ry + 0.03, lid, 1.2, 0.72);
+    strokeIn(g, rockRGB(tone(WICKER, 0.55), 0.45), 0.018, () => { for (const k of [0.35, 0.65]) g.ellipse(0, ly - 0.02, (rx + 0.03) * k, (ry + 0.06) * k, 0, 0, Math.PI * 2); });
+    strokeIn(g, rockRGB(tone(WICKER, 1.15, 10)), 0.06, () => g.ellipse(0, ly, rx + 0.03, ry + 0.03, 0, 0.05, Math.PI - 0.05));
+    strokeIn(g, rockRGB(tone(WICKER, 0.75)), 0.04, () => g.ellipse(0, ly - ry - 0.1, 0.07, 0.06, 0, Math.PI, 0));
+  }
+}
+function drawBasket(B, z, now) {
+  const px = basketPx(z), sx = (B.x - cam.x) * z + vw / 2, sy = (B.y - cam.y) * z + vh / 2;
+  if (B.ghost) {                                           // where one would go (ui.place)
+    ctx.globalAlpha = B.ok ? 0.6 : 0.3;
+    drawEmoji(BASKET_ARTS[0], sx, sy - BASKET_FOOT * px / 2, px);
+    ctx.globalAlpha = 1;
+    return;
+  }
+  const j = ui.fire, k = j && j.kind === 'basket' && j.stage === 'weave' ? ease(clamp((now - j.t0) / WEAVE_MS, 0, 1)) : 1;
+  const p = px * (0.35 + 0.65 * k);
+  if (k < 1) ctx.globalAlpha = 0.3 + 0.7 * k;
+  drawEmoji(BASKET_ARTS[basketAny(B) ? 1 : 0], sx, sy - BASKET_FOOT * p / 2, p);
+  ctx.globalAlpha = 1;
+}
+// The basket under a point on screen (a little wider for a finger), or null.
+function basketAt(sx, sy) {
+  const B = myBasket();
+  if (!B) return null;
+  const z = cam.zoom, px = basketPx(z), f = fingerTap ? 1.5 : 1;
+  const x = (B.x - cam.x) * z + vw / 2, y = (B.y - cam.y) * z + vh / 2 - px * 0.18;
+  return ((sx - x) / Math.max(14 * f, px * 0.5)) ** 2 + ((sy - y) / Math.max(12 * f, px * 0.42)) ** 2 < 1 ? B : null;
+}
+function basketWord(B) {
+  let n = 0;
+  for (let k = 0; k < B.bag.length; k++) n += B.bagN[k];
+  return Net && Net.guest ? 'Your friend\'s basket' : n ? `Basket · ${n} ${n === 1 ? 'thing' : 'things'} in it` : 'Basket · empty';
+}
+
+// The button: what it does now ('make' the basket, 'open' it, or nothing), its ring and its words, rewritten only on a change.
+const basketUi = { mode: '', got: -1, ready: false, on: false };
+function renderBasketBtn() {
+  const el = $('#basket-btn');
+  if (!el || !world || !world.forager) return;
+  const B = myBasket(), f = world.forager, on = !!(ui.place && ui.place.basket);
+  let mode = '', have = null;
+  if (world.camp && !(Net && Net.guest) && f.down < 0) {
+    if (B) mode = S.inCamp(world, f.x, f.y) || larderOpen() ? 'open' : '';
+    else { have = buildHave(BASKET_BUILD); if (have.any || on) mode = 'make'; }
+  }
+  if (mode !== basketUi.mode) {
+    basketUi.mode = mode; basketUi.got = -1;
+    el.classList.toggle('hidden', !mode); el.classList.toggle('making', mode === 'make');
+    if (mode) basketIcon();
+    if (mode === 'open') { el.title = 'The basket: what\'s kept at camp'; el.setAttribute('aria-label', el.title); }
+  }
+  if (on !== basketUi.on) { basketUi.on = on; el.classList.toggle('on', on); }
+  if (mode !== 'make' || have.got === basketUi.got) return;
+  basketUi.got = have.got;
+  el.classList.toggle('ready', have.ready);
+  el.style.setProperty('--k', (have.all ? have.got / have.all : 0).toFixed(3));
+  const needs = Object.entries(Recipes.BUILDS[BASKET_BUILD].needs).map(([w, n]) => `${n} ${Recipes.INGREDIENTS[w] ? itemName(w, n).toLowerCase() : w}`).join(', ');
+  el.title = have.ready ? 'Make a basket for the camp' : `A basket takes ${needs}: still ${missingWords(have.missing)}`;
+  el.setAttribute('aria-label', el.title);
+}
+// The button's painting: the basket shut, painted once.
+function basketIcon() {
+  const el = $('#basket-btn i');
+  if (!el || el.dataset.done) return;
+  const c = document.createElement('canvas'), px = 40, size = Math.ceil(px * 1.3 * dpr);
+  c.width = c.height = size;
+  paintBasket(c.getContext('2d'), size, px * dpr, 0);
+  el.style.backgroundImage = `url(${c.toDataURL()})`;
+  el.dataset.done = '1';
+}
+// Pressed: with a basket, it opens (or shuts) it; without, it picks a spot for one in camp, or says what's still wanting.
+function basketPressed() {
+  if (!world || world.forager.down >= 0) return;
+  const f = world.forager;
+  if (myBasket()) { if (larderOpen()) openLarder(false); else goBasket(); return; }
+  if (ui.place) { const was = ui.place.basket; placeFire(false); if (was) return; }
+  if (!world.camp) return;
+  const have = buildHave(BASKET_BUILD);
+  const no = text => { say(text, f.x, f.y - 1.6); chime('click'); };
+  if (!have.ready) return no(`A basket needs ${missingWords(have.missing)}`);
+  if (!S.inCamp(world, f.x, f.y)) return no('It goes at camp, by the fire');
+  const a = f.heading;
+  ui.place = { x: f.x, y: f.y, ok: false, why: '', ghost: true, basket: true };
+  placeAt(f.x + Math.cos(a) * 1.4, f.y + Math.sin(a) * 1.4 * 0.9 + 0.2);
+  chime('click');
+  renderBuild();
+}
+// Off to the basket, and it opens once the forager's by it (fireFrame's 'larder').
+function goBasket() {
+  const B = myBasket(), f = world.forager;
+  if (!B || f.down >= 0) return;
+  if (Net && Net.guest) { say('Your friend\'s basket', B.x, B.y - 0.6); chime('click'); return; }
+  if (!f.walking && Math.hypot(B.x - f.x, B.y - f.y) < LARDER_NEAR * 0.75) { ui.fire = null; openLarder(true); return; }
+  goFire({ kind: 'larder', F: null, x: B.x, y: B.y });
+}
+function openLarder(on) {
+  const el = $('#larder');
+  if (!el || on === larderUi.open) return;
+  larderUi.open = on;
+  el.classList.toggle('hidden', !on);
+  document.body.classList.toggle('larder', on);
+  if (on) { eatAsk(-1); chime('click'); }
+  renderSatchel();
+  syncBack();
+}
+// Once a frame: walked off, collapsed, or off to a fire, it shuts.
+function larderFrame() {
+  if (!larderUi.open) return;
+  const B = myBasket(), f = world.forager;
+  if (!B || f.down >= 0 || ui.fire || Math.hypot(B.x - f.x, B.y - f.y) > LARDER_NEAR) openLarder(false);
+}
+// The card's slots, as the satchel's (renderSatchel calls it), rewritten only where something changed; and it sits just
+// over the satchel, wherever that is.
+function renderLarder() {
+  const el = $('#larder'), B = myBasket();
+  if (!el || !larderUi.open || !B) return;
+  itemSheet();
+  const row = el.querySelector('.lslots');
+  if (row.children.length !== B.bag.length) row.innerHTML = B.bag.map((_, k) => `<div class="lslot" data-b="${k}" aria-label="Empty"><i></i><b></b></div>`).join('');
+  let n = 0;
+  for (let k = 0; k < B.bag.length; k++) {
+    const id = B.bag[k], s = row.children[k], m = B.bagN[k];
+    if (id) n++;
+    if (s.dataset.id === id && +s.dataset.n === m) continue;
+    s.dataset.id = id; s.dataset.n = m;
+    const i = s.querySelector('i');
+    i.style.backgroundPosition = id ? itemBg(id) : ''; i.classList.toggle('on', !!id);
+    s.querySelector('b').textContent = m > 1 ? m : '';
+    s.title = id ? Recipes.foodOf(id)?.name || id : '';
+    s.setAttribute('aria-label', id ? `${s.title}: ${m}` : 'Empty');
+  }
+  el.querySelector('h2 small').textContent = `${n} of ${B.bag.length}`;
+  const top = $('#satchel').getBoundingClientRect().top;
+  if (top > 0) el.style.bottom = `${Math.round(innerHeight - top + 12)}px`;
+}
+// A satchel slot into the basket (a tap on it while the basket's open), or a basket slot out into the satchel.
+function putSlot(k) {
+  const B = myBasket(), f = world.forager;
+  if (!B || !f.bag[k]) return;
+  if (S.moveInto(f, k, B)) chime('pick', { n: 1 }); else say('The basket\'s full', B.x, B.y - 0.6);
+  renderSatchel();
+}
+function takeSlot(k) {
+  const B = myBasket(), f = world.forager;
+  if (!B || !B.bag[k]) return;
+  if (S.moveInto(B, k, f)) chime('pick', { n: 1 }); else say('Satchel\'s full', f.x, f.y - 1.6);
+  renderSatchel();
+}
+function larderAll() {
+  const B = myBasket(), f = world.forager;
+  if (!B) return;
+  const any = f.bag.some(Boolean), n = S.putAway(world);
+  if (n) chime('pick', { n: Math.min(n, 4) });
+  else say(any ? 'The basket\'s full' : 'Nothing in the satchel', B.x, B.y - 0.6);
+  renderSatchel();
+}
+// The card's slots: a tap takes one out into the satchel; dragged, its painting follows the pointer, and let go on a basket
+// slot it goes there (moveBetween), on a satchel slot there, on the satchel anywhere else wherever it fits; else it goes back.
+function setupLarder() {
+  const row = $('#larder .lslots'), HOLD_FROM = 6;
+  let held = null;                          // { k, id, pid, x, y, fly, over, touch }
+  const overAt = (x, y) => document.elementFromPoint(x, y)?.closest('#larder .lslot, #satchel .slot') || null;
+  row.addEventListener('pointerdown', e => {
+    const el = e.target.closest('.lslot'), B = myBasket();
+    if (held || !el || !B || e.button > 0 || !B.bag[+el.dataset.b]) return;
+    held = { k: +el.dataset.b, id: B.bag[+el.dataset.b], pid: e.pointerId, x: e.clientX, y: e.clientY, fly: null, over: null, touch: e.pointerType !== 'mouse' };
+    el.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  row.addEventListener('pointermove', e => {
+    const h = held;
+    if (!h || e.pointerId !== h.pid) return;
+    if (!h.fly) {
+      if (Math.hypot(e.clientX - h.x, e.clientY - h.y) < HOLD_FROM) return;
+      h.fly = document.createElement('div');
+      h.fly.className = 'fly held'; h.fly.style.backgroundPosition = itemBg(h.id);
+      document.body.appendChild(h.fly);
+      row.children[h.k].classList.add('lifted');
+    }
+    const y = h.touch ? e.clientY - 38 : e.clientY;
+    h.fly.style.transform = `translate(${e.clientX - 20}px, ${e.clientY - (h.touch ? 58 : 20)}px)`;
+    const over = overAt(e.clientX, y);
+    if (over !== h.over) { h.over?.classList.remove('over', 'over-l'); h.over = over; over?.classList.add(over.classList.contains('lslot') ? 'over' : 'over-l'); }
+    h.bag = !over && !!document.elementFromPoint(e.clientX, y)?.closest('#satchel');
+  });
+  const letGo = e => {
+    const h = held;
+    if (!h || e.pointerId !== h.pid) return;
+    held = null;
+    const B = myBasket(), f = world.forager;
+    if (!h.fly) { if (e.type === 'pointerup') takeSlot(h.k); return; }
+    h.fly.remove(); row.children[h.k]?.classList.remove('lifted'); h.over?.classList.remove('over', 'over-l');
+    if (e.type === 'pointerup' && B && B.bag[h.k] === h.id) {
+      if (h.over && h.over.classList.contains('lslot')) S.moveBetween(B, h.k, B, +h.over.dataset.b);
+      else if (h.over) S.moveBetween(B, h.k, f, +h.over.dataset.k);
+      else if (h.bag && !S.moveInto(B, h.k, f)) say('Satchel\'s full', f.x, f.y - 1.6);
+    }
+    renderSatchel();
+  };
+  row.addEventListener('pointerup', letGo);
+  row.addEventListener('pointercancel', letGo);
+  $('#satchel').addEventListener('transitionend', () => renderLarder());   // (the satchel grown or shrunk: the card sits over it again)
+}
+
 // Picking where: a faint fire in front of the forager (a mouse moves it about; a finger taps or drags it where it's
 // wanted) within PLACE_REACH, and a click or a tap lays it there. One where it can't go is fainter, and a click there
 // says why.
@@ -3813,7 +4163,7 @@ function placeFire(open) {
 function placeAt(x, y) {
   const P = ui.place, F = world.forager, d = Math.hypot(x - F.x, y - F.y);
   if (d > PLACE_REACH) { x = F.x + (x - F.x) * PLACE_REACH / d; y = F.y + (y - F.y) * PLACE_REACH / d; }
-  P.x = x; P.y = y; P.why = S.fireSpot(world, x, y);
+  P.x = x; P.y = y; P.why = P.basket ? S.basketSpot(world, x, y) : S.fireSpot(world, x, y);
   if (!P.why && !standAt(x, y, F.x)) P.why = 'No room to kneel by it';
   P.ok = !P.why;
 }
@@ -3822,7 +4172,7 @@ function placeHere(sx, sy) {
   if (sx !== undefined) placeAt(...toWorld(sx, sy));
   if (!P.ok) { say(P.why, P.x, P.y); chime('click'); return; }
   ui.place = null;
-  goFire({ kind: 'build', F: null, x: P.x, y: P.y });
+  goFire({ kind: P.basket ? 'basket' : 'build', F: null, x: P.x, y: P.y });
   renderBuild();
 }
 // Where the forager kneels to see to a fire at x, y: at its side, the one toward from (its x), or the other if that's
@@ -3904,6 +4254,7 @@ function clickFire(F) {
 // Once a frame: the job at the fire, ui.fire. 'go': walking there; then 'lay' (a new one, a piece at a time), 'feed' (a
 // stick on), 'strike' (the flint and steel), 'blow' (held: bent down blowing on the spark), 'lit' (watching it take).
 function fireFrame(now, dt) {
+  larderFrame();                                          // (the basket's card: shut once it's walked off)
   const j = ui.fire, f = world.forager;
   if (cooking() !== cookUi.open) renderCook();           // (the cooking card: opened, or shut by a walk, a collapse)
   if (!j) { sitFrame(now); return; }
@@ -3922,7 +4273,13 @@ function fireFrame(now, dt) {
       sendFire('lay', j.F, got.fuel, got.tinder);
       renderBuild();
       fireStage(j, 'lay', now);
-    } else if (j.kind === 'relay') {                      // a cold one: tinder in, and sticks if it has none
+    } else if (j.kind === 'basket') {                     // (the basket: woven where it was put)
+      const why = S.basketSpot(world, j.x, j.y), got = !why && spendBuild(BASKET_BUILD);
+      if (!got) { say(why || 'Something\'s missing', j.x, j.y); ui.fire = null; renderBuild(); return; }
+      sendFire('basket', S.makeBasket(world, j.x, j.y), 0, 0);
+      fireStage(j, 'weave', now);
+    } else if (j.kind === 'larder') { ui.fire = null; openLarder(true); }   // (by the basket: it opens)
+    else if (j.kind === 'relay') {                      // a cold one: tinder in, and sticks if it has none
       const sticks = j.F.fuel > 0 ? 0 : Math.min(2, Recipes.takes('fuel').reduce((n, ing) => n + S.bagCount(f, ing), 0));
       if (!spendTag('tinder')) { ui.fire = null; return; }
       for (let k = 0; k < sticks; k++) spendTag('fuel');
@@ -3968,6 +4325,14 @@ function fireFrame(now, dt) {
   } else if (j.stage === 'blow') blowFrame(j, now, dt);
   else if (j.stage === 'cook' || j.stage === 'cooking') cookFrame(j, now);
   else if (j.stage === 'lit') { if (u > LIT_MS) ui.fire = null; }
+  else if (j.stage === 'weave') {
+    const step = Math.floor(u / WEAVE_MS * WEAVE_STEPS);
+    if (step !== j.step && step < WEAVE_STEPS) { j.step = step; chime(step % 2 ? 'tinder' : 'stick'); }
+    if (u > WEAVE_MS) {
+      ui.fire = null; renderBuild();
+      firstTime('build:basket', 'you made', 'A basket', 'Keep what the satchel can’t carry in it. It stays at camp.');
+    }
+  }
 }
 function fireStage(j, stage, now) {
   j.stage = stage; j.t0 = now; j.step = -1;
@@ -4061,6 +4426,7 @@ function kneelNow(now) {
   switch (j.stage) {
     case 'go': return -1;
     case 'lay': return (u % LAY_MS) / LAY_MS < 0.62 ? KNEEL.lay : KNEEL.rest;
+    case 'weave': return (u % (WEAVE_MS / WEAVE_STEPS)) / (WEAVE_MS / WEAVE_STEPS) < 0.62 ? KNEEL.lay : KNEEL.rest;
     case 'feed': return u < FEED_MS * 0.8 ? KNEEL.lay : KNEEL.rest;
     case 'strike': return (u % STRIKE_MS) / STRIKE_MS < STRIKE_UP ? KNEEL.strikeUp : KNEEL.strikeDown;
     case 'blow': return j.blowing ? (((now - j.breath) % BLOW_BREATH) / BLOW_BREATH < BLOW_OUT ? KNEEL.blow : KNEEL.breathe) : KNEEL.rest;
@@ -4098,6 +4464,7 @@ function sendFire(a, F, n, tinder) {
   if (Net && Net.on) Net.send({ t: 'fire', a, x: F.x, y: F.y, n, tn: tinder, tick: world.tick });
 }
 function fireNet(m) {
+  if (m.a === 'basket') { S.makeBasket(world, m.x, m.y); return; }   // (the camp's basket: set down here too)
   let F = null;
   for (const o of world.fires) if (Math.abs(o.x - m.x) < 1e-3 && Math.abs(o.y - m.y) < 1e-3) F = o;
   if (m.a === 'lay') { if (!F) S.layFire(world, m.x, m.y, m.n, m.tn); }
@@ -7168,11 +7535,12 @@ function renderSatchel() {
     el.setAttribute('aria-label', id ? `${Recipes.foodOf(id)?.name || id}: ${n}` : 'Empty');
     el.dataset.name = id ? Recipes.foodOf(id)?.name || id : '';
   }
-  box.classList.toggle('empty', !any);
+  box.classList.toggle('empty', !any && !larderOpen());   // (the basket open: the satchel stays where it is, under it)
   box.classList.toggle('cooking', inCook);
   bagFood = false;
   for (let k = 0; k < S.SLOTS; k++) if (F.bag[k] && Recipes.foodOf(F.bag[k])?.fill > 0) { bagFood = true; break; }
   renderCookBag(F);                                       // (the cooking window's tiles)
+  renderLarder();                                         // (the basket's card, if it's open)
   renderBuild();                                          // (the fire button by it: what a fire takes, how much of it's here)
   renderMake();                                           // (and what can be made now)
   renderBook();                                           // (the book, if it's open: what the satchel has for each dish)
@@ -7199,12 +7567,13 @@ function setupSatchel() {
   row.innerHTML = Array.from({ length: S.SLOTS }, (_, k) => `<div class="slot" data-k="${k}" data-name="" aria-label="Empty"><i></i><b></b></div>`).join('');
   buildIcon();                                            // (the fire button's campfire)
   setupCookBag();                                         // (the cooking window's tiles)
+  setupLarder();                                          // (the basket's card)
   bookIcon();                                             // (and the recipe book's)
   // Hovered (or tapped) a full slot says what's in it, a small label over it (CSS, data-name).
   // A full slot can be dragged: once the press has moved HOLD_FROM px its painting follows the pointer (above a finger, so
   // it shows), and let go over another slot it goes there (S.moveSlot: onto a stack of its kind, or the two swap), off the
   // satchel it's dropped (S.dropSlot): it flies down to the forager's feet and lies there to be picked up again, for a while; anywhere else it goes back.
-  const HOLD_FROM = 6, slotAt = (x, y) => document.elementFromPoint(x, y)?.closest('#satchel .slot');
+  const HOLD_FROM = 6, slotAt = (x, y) => document.elementFromPoint(x, y)?.closest('#satchel .slot, #larder .lslot');
   let held = null;                          // { k, id, pid, x, y, fly, over, touch }
   const place = (h, x, y) => { h.fly.style.transform = `translate(${x - 20}px, ${y - (h.touch ? 58 : 20)}px)`; };
   row.addEventListener('pointerdown', e => {
@@ -7228,7 +7597,7 @@ function setupSatchel() {
     place(h, e.clientX, e.clientY);
     const over = slotAt(e.clientX, h.touch ? e.clientY - 38 : e.clientY) || null;
     if (over !== h.over) { h.over?.classList.remove('over'); h.over = over; over?.classList.add('over'); }
-    const out = !over && !document.elementFromPoint(e.clientX, e.clientY)?.closest('#satchel'), pot = out && overPot(e.clientX, h.touch ? e.clientY - 38 : e.clientY);
+    const out = !over && !document.elementFromPoint(e.clientX, e.clientY)?.closest('#satchel, #larder'), pot = out && overPot(e.clientX, h.touch ? e.clientY - 38 : e.clientY);
     h.fly.classList.toggle('out', out && !pot);
     h.fly.classList.toggle('to-pot', pot);
   });
@@ -7239,6 +7608,7 @@ function setupSatchel() {
     if (!h.fly) {                                         // (a tap: into the pot, cooking; something to eat, its Eat; else its name for a moment, as a mouse's hover shows it)
       if (e.type !== 'pointerup') return;
       if (cooking()) { potAdd(h.k); return; }
+      if (larderOpen()) { putSlot(h.k); return; }        // (the basket open: into it)
       if (Recipes.foodOf(h.id)?.fill > 0 || giftFriend()) { eatAsk(eatUi.k === h.k ? -1 : h.k); return; }   // (or, a friend by, to give it)
       if (h.touch) { const el = row.children[h.k]; el.classList.add('named'); clearTimeout(el.unname); el.unname = setTimeout(() => el.classList.remove('named'), 1400); }
       return;
@@ -7247,7 +7617,12 @@ function setupSatchel() {
     const F = world.forager, lifted = row.children[h.k], out = e.type === 'pointerup' && h.fly.classList.contains('out');
     h.over?.classList.remove('over');
     box.classList.remove('dragging');
-    if (e.type === 'pointerup' && h.over && +h.over.dataset.k !== h.k && F.bag[h.k] === h.id) S.moveSlot(F, h.k, +h.over.dataset.k);
+    const B = larderOpen() && myBasket(), inL = !!B && !!document.elementFromPoint(e.clientX, h.touch ? e.clientY - 38 : e.clientY)?.closest('#larder');
+    if (e.type === 'pointerup' && B && (h.over?.classList.contains('lslot') || inL) && F.bag[h.k] === h.id) {   // (onto the basket: that slot, or wherever it fits)
+      if (h.over?.classList.contains('lslot')) S.moveBetween(F, h.k, B, +h.over.dataset.b);
+      else if (!S.moveInto(F, h.k, B)) say('The basket\'s full', B.x, B.y - 0.6);
+    }
+    else if (e.type === 'pointerup' && h.over && !h.over.classList.contains('lslot') && +h.over.dataset.k !== h.k && F.bag[h.k] === h.id) S.moveSlot(F, h.k, +h.over.dataset.k);
     else if (e.type === 'pointerup' && h.fly.classList.contains('to-pot') && F.bag[h.k] === h.id) {   // (let go over the pot: into it)
       const y = h.touch ? e.clientY - 38 : e.clientY;
       h.fly.remove(); lifted.classList.remove('lifted');
@@ -10447,7 +10822,7 @@ function putPainting(p, f, alpha, snow, ox, oy) {
 // A visitor fur.js paints (Fur.painters: the dragonflies, the kingfisher, the skylark), at the doublings of its size and
 // shrunk between (shrunk), as a fox is; in the meadow the worker paints it (furReady).
 const furPaint = kind => (g, size, U, n) => { if (!shrunk(g, size, U, kind + ':' + n)) Fur.painters[kind](g, size, U, n); };
-const PAINTERS = { fox: paintFox, rabbit: paintRabbit, forager: paintForager, hog: paintHedgehog, heron: paintHeron, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody, bee: paintBee, fall: paintFall, shroom: paintShroom, green: paintGreen, bramble: paintBramble, find: paintFind, ingr: Items.paint, dish: Dishes.paint, fire: paintFire, pot: paintPot, vsl: paintVessel,
+const PAINTERS = { fox: paintFox, rabbit: paintRabbit, forager: paintForager, hog: paintHedgehog, heron: paintHeron, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody, bee: paintBee, fall: paintFall, shroom: paintShroom, green: paintGreen, bramble: paintBramble, find: paintFind, ingr: Items.paint, dish: Dishes.paint, fire: paintFire, basket: paintBasket, pot: paintPot, vsl: paintVessel,
   dfly: furPaint('dfly'), kfisher: furPaint('kfisher'), lark: furPaint('lark') };
 function drawDecor(d, sx, sy, now, ck, px = d.tree ? treePx(d) : d.size * cam.zoom) {   // (px: render has it already)
   if (d.emoji === '🪨') { drawRock(d, sx, sy); return; }
@@ -13147,7 +13522,7 @@ canvas.addEventListener('pointerdown', e => {
   }
   const tap = lastTap;
   lastTap = null;
-  if (fingerTap && tap && e.timeStamp - tap.t < DOUBLE_MS && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) < DOUBLE_PX) {
+  if (fingerTap && tap && e.timeStamp - tap.t < DOUBLE_MS && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) < DOUBLE_PX && !foragerHit(e.clientX, e.clientY)) {   // (on the forager: taps, not a zoom)
     clearTimeout(tapAway); tapAway = 0;   // (the first tap put nothing away after all)
     zoomDrag = { id: e.pointerId, y: e.clientY, z: cam.zoom, moved: false };
     drag = null; cam.goal = null;
@@ -13155,7 +13530,7 @@ canvas.addEventListener('pointerdown', e => {
   }
   if (ui.place && fingerTap) placeAt(...toWorld(e.clientX, e.clientY));   // (picking a spot for a fire: the faint one under the finger)
   // (pressed on something to pick, or a fire, it's a tap however long it's held, and a wobble more doesn't make it a drag: held, it runs there)
-  const on = !animalAt(e.clientX, e.clientY) && (!!fireAt(e.clientX, e.clientY) || !!promptAt(e.clientX, e.clientY) || !!gatherAt(e.clientX, e.clientY));
+  const on = !animalAt(e.clientX, e.clientY) && (!!fireAt(e.clientX, e.clientY) || !!basketAt(e.clientX, e.clientY) || !!promptAt(e.clientX, e.clientY) || !!gatherAt(e.clientX, e.clientY));
   drag = { x: e.clientX, y: e.clientY, moved: false, id: e.pointerId, steer: false, px: e.clientX, py: e.clientY, at: 0, on, rush: false, blow: false, t0: e.timeStamp };
   clearTimeout(holdTimer);
   holdTimer = setTimeout(() => {                        // held still on the ground: it runs toward the pointer while it's down
@@ -13215,8 +13590,8 @@ canvas.addEventListener('pointerup', e => {
   }
   if (ui.place && drag) { placeHere(e.clientX, e.clientY); drag = null; return; }   // (picking a spot for a fire: there)
   if (drag?.steer) {                                    // (held: it runs on to where it was let go, and picks what it was let go on)
-    const c = animalAt(e.clientX, e.clientY), F = !c && fireAt(e.clientX, e.clientY), t = !c && !F && gatherAt(e.clientX, e.clientY);
-    if (F) clickFire(F); else if (t) goGather(t, true); else walkTo(e.clientX, e.clientY, true);
+    const c = animalAt(e.clientX, e.clientY), F = !c && fireAt(e.clientX, e.clientY), Bk = !c && !F && basketAt(e.clientX, e.clientY), t = !c && !F && !Bk && gatherAt(e.clientX, e.clientY);
+    if (F) clickFire(F); else if (Bk) goBasket(); else if (t) goGather(t, true); else walkTo(e.clientX, e.clientY, true);
   } else if (drag && !drag.moved) {
     click(e.clientX, e.clientY, drag.rush);
     if (fingerTap) lastTap = { t: e.timeStamp, x: e.clientX, y: e.clientY };
@@ -13252,11 +13627,13 @@ function click(sx, sy, run = false) {
   if (ui.place) { placeHere(sx, sy); return; }            // (picking a spot for a fire: there)
   const pi = cooking() ? potThingAt(sx, sy) : -1;
   if (pi >= 0) { potTake(pi); return; }                    // (a thing in the pot: back out)
+  if (!cooking() && foragerHit(sx, sy)) { partyTap(); return; }   // (on the forager itself: the easter egg's taps)
   const PF = !cooking() && promptAt(sx, sy);
   if (PF) { clickFire(PF); return; }                       // (the pot over a fire: off to cook at it)
-  const c = animalAt(sx, sy), F = !c && fireAt(sx, sy), t = !c && !F && gatherAt(sx, sy);
+  const c = animalAt(sx, sy), F = !c && fireAt(sx, sy), Bk = !c && !F && basketAt(sx, sy), t = !c && !F && !Bk && gatherAt(sx, sy);
   if (c) select(c.id);
   else if (F) clickFire(F);                               // (a fire: off to see to it)
+  else if (Bk) goBasket();                                // (the basket: off to open it)
   else if (t) { if (!queueGather(t)) goGather(t, run); }
   else walkTo(sx, sy);
 }
@@ -14297,6 +14674,9 @@ document.addEventListener('click', e => {
   }
   else if (t.dataset.act === 'pause') setSpeed(ui.speed ? 0 : 1);
   else if (t.dataset.act === 'build') buildPressed();       // (the fire button by the satchel)
+  else if (t.dataset.act === 'basket') basketPressed();     // (the basket's, by it)
+  else if (t.dataset.act === 'larder-close') openLarder(false);
+  else if (t.dataset.act === 'larder-all') larderAll();
   else if (t.dataset.act === 'make-one') makeOne(t.dataset.id);
   else if (t.dataset.act === 'vessel') pickVessel(t.dataset.v);   // (the cooking window's vessels)
   else if (t.dataset.act === 'cook-go') cookStart();       // (the cooking card)
@@ -14460,7 +14840,7 @@ const back = { token: Math.random().toString(36).slice(2), depth: 0, going: fals
 const moreOpen = () => !$('#more-menu').classList.contains('hidden');
 function opened() {
   const ins = $('#inspector').classList, sheetUp = ins.contains('open') && narrow() && !ins.contains('strip');
-  return [askOpen(), moreOpen(), meOpen(), friendsOpen(), askedOver(), !!ui.place, bookOpen(), bookReading(), cooking(), wardrobeOpen(), chatOpen(), ins.contains('open'), sheetUp].filter(Boolean).length;
+  return [askOpen(), moreOpen(), meOpen(), friendsOpen(), askedOver(), !!ui.place, larderOpen(), bookOpen(), bookReading(), cooking(), wardrobeOpen(), chatOpen(), ins.contains('open'), sheetUp].filter(Boolean).length;
 }
 // The one on top shuts (Esc, and Back once for each step it takes).
 function stepOut() {
@@ -14471,6 +14851,7 @@ function stepOut() {
   else if (askedOver()) friendAsk(false);
   else if (friendsOpen()) openFriends(false);
   else if (ui.place) placeFire(false);                     // (picking a spot for a fire: not now)
+  else if (larderOpen()) openLarder(false);                // (the basket's card)
   else if (bookOpen()) bookBack();                         // (the recipe book: a page laid over it, then the book)
   else if (cooking()) closeCook();                         // (the cooking card)
   else if (chatOpen()) openChat(false);
@@ -14933,6 +15314,7 @@ function frame(now) {
     lastCard = now;
     updateClock();
     renderVitals();
+    renderBasketBtn();                                    // (in the camp or out of it: the basket's button)
     netCard(now);
     if (ui.sound) {
       const ck = S.clock(world);

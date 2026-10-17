@@ -112,7 +112,7 @@ rack, the pot, a basket, a lantern, a bedroll).
   'camp'). The forager's home moves there: it wakes after a collapse where it knelt to light it (or at the fire's side for a
   friend's fire). Playing together, a friend's first fire makes the camp everyone's. A meadow kept with a fire lit before this
   makes camp at it as it opens. No `KEEP_VERSION` bump.
-- The ring: `CAMP_R` 3.2 tiles about the fire, `CAMP_FLAT` 0.8 as deep as wide (`inCamp`, for the builds to come), drawn as a soft
+- The ring: `CAMP_R` 5 tiles about the fire (3.2 till 2026-10-17), `CAMP_FLAT` 0.8 as deep as wide (`inCamp`, for the builds to come), drawn as a soft
   band of trodden earth with a few small stones along it (game.js `drawCampRing`, painted once), coming in a moment after.
 - The moment (game.js `campMoment`): the flames flare (`CAMP_FLARE`), the light blooms out (`CAMP_BLOOM`) with a warm glow and
   a burst of sparks and embers (`campBurst`), a felt-piano flourish (sound.js `camp`, in sound-lab), the camera eases in a little
@@ -386,7 +386,7 @@ switch between what you have at the fire.
 ## After that (roughly in this order)
 1. **Cooking at the fire** and 2. **hunger and eating**: stage 6 above.
 3. **Camp builds.** Arranged inside the camp ring: a seat log, a spit, a drying rack (keeping food for winter), a basket
-   for storage, a lantern, a bedroll or lean-to. What each costs is data, recipes.js-style, so Axel can add builds by
+   for storage (built 2026-10-17: `w.camp.basket`, 24 slots, and the ring went from 3.2 to 5 tiles), a lantern, a bedroll or lean-to. What each costs is data, recipes.js-style, so Axel can add builds by
    hand. More ground items come in as builds need them (clay, reeds, flint, logs, pine cones, tinder fungus, feathers).
 4. **Fishing and hunting.** Fish from the water the sim already stocks (`w.fish`), and hunting the rabbits and the game
    (the gentle respawn keeps them from running out). Visitor NPCs are never hunted.

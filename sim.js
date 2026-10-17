@@ -720,7 +720,8 @@ function makeTerrain(w) {
   placeFields(w, near);
   for (let k = 0; k < T.rocks; k++) {
     const x = r.range(3, W - 3), y = r.range(3, H - 3);
-    if (dry(w, x, y)) w.decor.push(rockOf(x, y, r.range(...T.rockSize)));
+    const size = r.range(...T.rockSize);
+    if (dry(w, x, y) && !w.decor.some(d => d.tree && hypot(d.x - x, d.y - y) < size * 0.5 + 0.5)) w.decor.push(rockOf(x, y, size));
   }
   for (let n = r.int(...T.bigRocks), tries = 0; n > 0 && tries < 500; tries++) {   // away from the water, woods and burrows
     const x = r.range(8, W - 8), y = r.range(8, H - 8), size = r.range(...T.bigRockSize), i = idx(x, y);
@@ -1366,8 +1367,8 @@ function sprout(w, s) {
   if (w.water[i] || w.fieldAt[i] >= 0 || w.wood[i] > k.shade) return null;
   if (w.burrows.some(b => (b.x - s.x) ** 2 + (b.y - s.y) ** 2 < 4) || w.hives.some(h => (h.x - s.x) ** 2 + (h.y - s.y) ** 2 < 4)) return null;
   let crowded = false;
-  forEachDecorNear(w, s.x, s.y, 3, o => {
-    if (!crowded && hypot(o.x - s.x, o.y - s.y) < (o.tree ? SPACE : o.size * 0.5 + 0.3)) crowded = true;
+  forEachDecorNear(w, s.x, s.y, 5.2, o => {
+    if (!crowded && hypot(o.x - s.x, o.y - s.y) < (o.tree ? SPACE : o.big ? o.size * 0.95 + 0.4 : o.size * 0.5 + 0.3)) crowded = true;   // a great rock is painted far wider than a stone
   });
   if (crowded) return null;
   const bare = w.silt[i] > 0 ? SILT_SPROUT : 1;
@@ -6060,6 +6061,7 @@ function fireSpot(w, x, y) {
   if (w.water[i] && !w.frozen) return 'Not in the water';
   if (w.water[i]) return 'Not on the ice';
   for (const F of w.fires) if (Math.hypot(F.x - x, F.y - y) < FIRE_GAP * 1.5) return 'There\'s a fire here';
+  if (w.camp && w.camp.basket && Math.hypot(w.camp.basket.x - x, w.camp.basket.y - y) < BASKET_GAP * 1.4) return 'The basket\'s here';
   rocksFor(w);
   for (let k = 0; k < solidR.length; k += 3) if (Math.hypot(solidR[k] - x, solidR[k + 1] - y) < solidR[k + 2] + FIRE_GAP * 0.4) return 'A rock\'s in the way';
   let trunk = false;
@@ -6200,10 +6202,10 @@ function kitTick(w) {
 // later is arranged inside the camp's ring (CAMP_R tiles about the fire, CAMP_FLAT as deep as it's wide: inCamp), which
 // game.js draws. Playing together, a friend's first fire makes the camp everyone's. A meadow kept with a fire lit before
 // camps came makes camp at it as it opens (unpackWorld). No random numbers, no KEEP_VERSION bump (w.camp is in LATER).
-const CAMP_R = 3.2, CAMP_FLAT = 0.8;
+const CAMP_R = 5, CAMP_FLAT = 0.8;
 const CAMP_KNEEL = 1.5;                 // the forager within this of the fire is kneeling by it: it wakes there
 function campAt(w, F) {
-  w.camp = { x: F.x, y: F.y, fire: F, made: w.tick };
+  w.camp = { x: F.x, y: F.y, fire: F, made: w.tick, basket: null };
   const f = w.forager;
   if (!f) return;
   rocksFor(w);
@@ -6219,6 +6221,74 @@ function campAt(w, F) {
 }
 // Whether x, y is inside the camp's ring.
 const inCamp = (w, x, y) => !!w.camp && ((x - w.camp.x) / CAMP_R) ** 2 + ((y - w.camp.y) / (CAMP_R * CAMP_FLAT)) ** 2 < 1;
+
+// The camp's basket (w.camp.basket, null till it's made): a big lidded basket woven of sticks and dry grass (recipes.js
+// BUILDS.basket, which game.js spends), set down inside the camp's ring, where what the satchel can't carry is kept:
+// BASKET_SLOTS slots of STACK, as the satchel's (bag, bagN). It stays when the forager collapses and the satchel is lost.
+// Things go back and forth a slot at a time (moveBetween), or the whole satchel in (putAway). Playing together it's the
+// meadow's host's: a friend sees it but keeps its own things in its own satchel (game.js). No random numbers, no KEEP_VERSION
+// bump (w.camp is in LATER; a camp kept before baskets gets basket: null in unpackWorld).
+const BASKET_SLOTS = 24;
+const BASKET_GAP = 1.1;                 // tiles it keeps from a fire, a trunk or a rock
+const basketOf = (x, y, made) => ({ basket: true, x, y, made, bag: new Array(BASKET_SLOTS).fill(''), bagN: new Array(BASKET_SLOTS).fill(0) });
+// Whether the basket can go at x, y: '' if it can, else why not, in a few words (game.js says it).
+function basketSpot(w, x, y) {
+  if (!w.camp) return 'Make camp first';
+  if (w.camp.basket) return 'There\'s a basket at camp';
+  if (!inCamp(w, x, y)) return 'Inside the camp';
+  const i = idx(x, y);
+  if (w.water[i]) return 'Not in the water';
+  for (const F of w.fires) if (Math.hypot(F.x - x, F.y - y) < BASKET_GAP * 1.4) return 'Too near the fire';
+  rocksFor(w);
+  for (let k = 0; k < solidR.length; k += 3) if (Math.hypot(solidR[k] - x, solidR[k + 1] - y) < solidR[k + 2] + BASKET_GAP * 0.4) return 'A rock\'s in the way';
+  let trunk = false;
+  forEachDecorNear(w, x, y, 2, d => { if (standing(d) && d.size >= SEEDLING && Math.hypot(d.x - x, d.y - y) < BASKET_GAP * (0.5 + 0.15 * Math.min(d.size, 3))) trunk = true; });
+  if (trunk) return 'Too close to the tree';
+  return '';
+}
+// Sets it down at x, y (game.js has taken what it takes out of the satchel; a friend's is only set down). Returns it.
+function makeBasket(w, x, y) {
+  if (!w.camp || w.camp.basket) return null;
+  w.camp.basket = basketOf(x, y, w.tick);
+  emit(w, { type: 'basket', basket: w.camp.basket });
+  return w.camp.basket;
+}
+// Moves what's in slot a of A (the satchel, w.forager, or the basket: anything with bag and bagN) to slot b of B: onto
+// B's stack if it's the same kind (what doesn't fit stays), into it if it's empty, else the two swap. Returns how many went.
+function moveBetween(A, a, B, b) {
+  const id = A.bag[a];
+  if (!id || (A === B && a === b)) return 0;
+  if (B.bag[b] === id) {
+    const m = Math.min(A.bagN[a], STACK - B.bagN[b]);
+    B.bagN[b] += m; A.bagN[a] -= m;
+    if (!A.bagN[a]) A.bag[a] = '';
+    return m;
+  }
+  const bid = B.bag[b], bn = B.bagN[b], n = A.bagN[a];
+  B.bag[b] = id; B.bagN[b] = n; A.bag[a] = bid; A.bagN[a] = bn;
+  return n;
+}
+// Moves slot a of A into B wherever it goes: onto B's stacks of its kind first, then its first empty slots. Returns how many
+// went (what doesn't fit stays in a).
+function moveInto(A, a, B) {
+  const id = A.bag[a];
+  let moved = 0;
+  for (let pass = 0; pass < 2 && A.bagN[a] > 0; pass++) for (let k = 0; k < B.bag.length && A.bagN[a] > 0; k++) {
+    if (pass === 0 ? B.bag[k] !== id || B.bagN[k] >= STACK : B.bag[k] !== '') continue;
+    const m = Math.min(A.bagN[a], STACK - B.bagN[k]);
+    B.bag[k] = id; B.bagN[k] += m; A.bagN[a] -= m; moved += m;
+  }
+  if (!A.bagN[a]) A.bag[a] = '';
+  return moved;
+}
+// Everything in the satchel into the basket, as far as it goes. Returns how many went.
+function putAway(w) {
+  const B = w.camp && w.camp.basket, f = w.forager;
+  if (!B) return 0;
+  let n = 0;
+  for (let k = 0; k < SLOTS; k++) if (f.bag[k]) n += moveInto(f, k, B);
+  return n;
+}
 
 // ---------------------------------------------------------------- gathering
 //
@@ -6824,6 +6894,8 @@ function unpackWorld(kept) {
   const F = w.forager;
   if (!F.homeX && !F.homeY) { F.homeX = F.x; F.homeY = F.y; }   // (kept before it had a home: where it is)
   if (w.camp) asFractions(w.camp, ['x', 'y']);
+  if (w.camp && !w.camp.basket) w.camp.basket = null;      // (kept before baskets: none yet)
+  else if (w.camp) asFractions(w.camp.basket, ['x', 'y']);
   else for (const fire of w.fires) if (fire.litAt >= 0) { campAt(w, fire); break; }   // (kept with a fire lit before camps came)
   if (F.health === undefined) F.health = 1;            // (kept before health: well)
   asFractions(F, ['x', 'y', 'speed', 'heading', 'moved', 'goalX', 'goalY', 'warmth', 'wet', 'stamina', 'feel', 'homeX', 'homeY', 'tummy', 'health']);
@@ -7689,7 +7761,7 @@ const api = {
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE, hollow,
   TREES, treeStage, treeAge, standing, bearing, inBloom, SEEDLING, SAPLING, GROWN, KIND_NAMES,
   FROG_K, SPAWN_WORTH, FISH_K, FISH_EAT, CROW_SEATS, SHROOMS, SHROOM_KINDS, FINDS, FIND_KINDS, findSeason, eachPickable, greenStage, greenPicked, GREEN_SEASONS, brambleStage, RIPE_FROM, RIPE_TO,
-  bagCount, spend, stow, feedForager, hungerOf, HUNGRY, TUMMY, fireSpot, layFire, feedFire, fireRoom, lightable, lightFire, fireHeat, fireWarmth, CAMP_R, CAMP_FLAT, inCamp,
+  bagCount, spend, stow, feedForager, hungerOf, HUNGRY, TUMMY, fireSpot, layFire, feedFire, fireRoom, lightable, lightFire, fireHeat, fireWarmth, CAMP_R, CAMP_FLAT, inCamp, BASKET_SLOTS, basketSpot, makeBasket, moveBetween, moveInto, putAway,
   cookTicks, cookReady, cookOn, cookTake, shapeVessel, makeVessel, kitOf, cookProgress, SKILLS, SKILL_NAMES, SKILL_TOP, skillNeed, skillLevel, skillProgress, perk, gainSkill, FIRE_STICK, FIRE_MOST, FIRE_LOW, FIRE_EMBERS, FIRE_NEAR, FIRE_REACH, FIRE_GAP, FIRE_WET,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;

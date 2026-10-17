@@ -59,7 +59,7 @@ NLE Choppa's as the Roblox emote does it (Axel's reference was a screen recordin
 front-on kicks and then a noodle bounce, didn't read): it turns on the spot a sixth of a turn a step (`DANCE_TURN`, through the
 views and mirrored, so `b.view` and `b.flip` move while it dances), each beat a head-bang down into a deep hunch, eyes squeezed
 shut, and a spring up onto one foot with the other heel kicked up behind, tongue out, the feet taking turns (`DANCE_SEQ`; fur.js
-`dancePose`, painted from all three views). The spring hops (`b.lift`, `DANCE_HOP`, in `drawFigure`), a stomp sound at each hunch; it dances till it's sent somewhere. The
+`dancePose`, painted from all three views). The spring hops (`b.lift`, `DANCE_HOP`, in `drawFigure`), a stomp sound at each hunch; it dances till it's sent somewhere. It keeps to the song's beat (132 bpm, one move a beat, `DANCE_BEAT`): while the song plays its clock is eased toward the song's (`PARTY_BEAT0`, the first beat; a new song needs its bpm and first beat measured, e.g. folding the low band's onsets over the beat with ffmpeg and numpy). The
 sneak is a devious walk side on (`sneakPose`): crouched, the cloak hitched up, tiptoeing with the near knee lifted over the cloak,
 mittens out like little claws, a sly lid and brow and a smirk; slower (sim.js `f.sneaking`, `FORAGER_SNEAK`, stride
 `SNEAK_STRIDE`); asked for standing it creeps `SNEAK_GO` tiles the way it faces, every walk after is a sneak till it sprints,
@@ -122,6 +122,16 @@ twinkling stars, a wave of light out to the ring and motes rising off it (`campB
 and an Android phone buzzes (`CAMP_BUZZ`). Then a soft ring of trodden earth with a few stones lies round the fire (`drawCampRing`,
 `CAMP_ART` painted once, stretched; under all that stands), coming in over `CAMP_RING_MS` (`campFade`). The brown earth inside it is in the ground shader
 (ground.js `camp`, `campA`: an ellipse of ragged, mottled dirt over the grass, repainting the ground only while it fades in). The fire's hover calls it "Your camp".
+The camp's basket (2026-10-17; the comment over `WEAVE_MS`): a round button left of the fire's (`#basket-btn`, `renderBasketBtn`,
+also looked at in the 250 ms block) shows once there's a camp. Before the basket it fills a ring as the fire's does (recipes.js
+`BUILDS.basket`: 8 sticks, 4 dry grass), and a tap in camp picks a spot inside the ring (`ui.place` with `basket: true`, sim.js
+`basketSpot`); the forager kneels and weaves it (`fireFrame`'s 'weave', `WEAVE_MS`), the basket growing up out of the ground.
+Painted once (`paintBasket`, 'basket:' 0 shut, 1 open with apples, a cep and leaves heaped in it once it holds anything), drawn
+with the trees and animals (`drawBasket`), a hover saying how much is in it (`basketWord`). In camp the button, or a click on
+the basket, walks over and opens its card just over the satchel (`#larder`, `openLarder`, `renderLarder`, `setupLarder`): 24
+slots as the satchel's; a tap moves a slot across either way, a drag puts it in the slot it's let go on (sim.js `moveBetween`,
+`moveInto`), "Put all in" empties the satchel into it (`putAway`). Walking off `LARDER_NEAR`, going to a fire, ✕, Esc or Back shut
+it (`larderFrame`, `stepOut`). Playing together a friend sees it set down (`sendFire` 'basket') but can't open it.
 Cooking at the fire (PLAN.md stage 6, its redesign, and the cooking window of 2026-10-16; the long comments over `COOK_TPS` and
 `DROPS` have it all): a click on a lit fire (or E, or the pot prompt) walks the forager there (`clickFire` 'cook', `goFire`), it
 kneels, and the camera eases in close on the fire (`cookCam`, in `leadCam`: to `kw.zoom`, about `COOK_TILES` across what the

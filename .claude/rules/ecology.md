@@ -257,6 +257,10 @@ The meadow's first fire lit makes camp (`w.camp`, in `LATER`: where, the fire, t
 the forager's home (`homeX`, `homeY`) moves to where it knelt to light it (within `CAMP_KNEEL`; else the fire's clear side), so it
 wakes there after a collapse. Its ring, `CAMP_R` tiles round the fire and `CAMP_FLAT` as deep as wide (`inCamp`), is where later
 builds go. A meadow kept with a fire lit before camps makes camp at it as it opens. No random numbers, no `KEEP_VERSION` bump.
+The camp's basket (`w.camp.basket`, `basketOf`, null till it's made: `makeBasket`, where `basketSpot` allows, inside the ring
+and clear of the fire, rocks and trunks) keeps `BASKET_SLOTS` slots of `STACK`, laid out as the satchel's (`bag`, `bagN`), and
+a collapse doesn't touch it. `moveBetween` and `moveInto` move a slot between any two of them, `putAway` the whole satchel in.
+A camp kept before baskets gets none (`unpackWorld`), no `KEEP_VERSION` bump.
 Its tummy (`f.tummy`, 1 full to 0; the comment over `TUMMY`): `TUMMY` of recipes.js's fill, emptying in about a day walking
 (`TUMMY_BURN`), `TUMMY_STILL` of that standing, `TUMMY_RUN` sprinting, up to `TUMMY_COLD` more in the cold. Under `HUNGRY`
 (`hungerOf`) stamina comes back slower (`HUNGRY_REST`) and the cold bites harder (`HUNGRY_COLD`), most of all empty; it never
