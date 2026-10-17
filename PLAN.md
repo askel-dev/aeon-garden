@@ -318,6 +318,22 @@ what goes together was hard, and "Something new: cherries, cherries" promised a 
   or the world's LATER, and a keep bump if needed); an items.js painting for clay if wanted.
 - **Left for piece 6:** the vessel switch in the cooking window (stick and stone free from the start, pot and pan from the kit),
   per-vessel slots in the window, and the pot/pan/stick/stone paintings in the cooking view.
+- **Pieces 5 and 6 built, barebones (2026-10-17, branch `claude/vessels-crafting`).** recipes.js `CRAFTS` (pot: 3 clay, 90 s;
+  pan, the clay griddle: 2 clay, 60 s; checked by `checkRecipes`). sim.js `f.kit` (`kitOf`: `own`, `firing`, `left`, `total`,
+  `x`, `y`) in the blank forager, so a kept meadow gets an empty one: no `KEEP_VERSION` bump. `shapeVessel` puts the raw vessel in
+  a fire, `kitTick` hardens it only while that fire is lit and emits `'fired'` (a toast, "Your clay pot is ready"). game.js: a
+  clay button 🏺 left of the fire button (`#make`, shown with clay in the satchel or something firing; C) opens a tiny menu
+  (`makeMenu`: what each takes, what's firing and how far); shaping takes the clay and needs a lit fire within `MAKE_NEAR`, else
+  the camp's lit fire. The cooking window has a row of vessels (`#cook-vessels`, `pickVessel`, `cookVessel`; stick, stone, bowl
+  always, pot and pan once owned; extras beyond the slots go back), the book's dish button switches to its vessel or says "Make a
+  clay pot first", `potWord` says "Boiled in the pot, this is …" for a known dish in another vessel, and `potToward`/`potPossible`
+  keep to the vessel. Looks: the pot keeps its close-up; the others are plain shapes over the fire (`vesselFlat`: a clay disc,
+  a grey stone, a wooden bowl, a stick across), no water, splash or spoon. Played through in the browser: shaped and fired a pot,
+  cooked Wilted greens in it, Roast mushrooms on the stick. Two seeds, two years headless: nothing died out, pack/unpack round-trips.
+- **Left:** guests can't shape clay (they're told to in their own meadow; a guest crafting through the host like `sendFire`
+  isn't built, and a guest's kit is whatever the world's forager has); the raw vessel isn't drawn at the fire; proper
+  paintings of the pan, stone, stick and bowl in the cooking view, and of the clay button; the meadow's little pot over a fire
+  (`drawPot`) is still a pot whatever is cooking.
 
 ## After that (roughly in this order)
 1. **Cooking at the fire** and 2. **hunger and eating**: stage 6 above.

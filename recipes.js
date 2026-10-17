@@ -250,6 +250,28 @@ const BUILDS = {
   },
 };
 
+// What the forager makes by hand: a vessel shaped out of clay from the satchel, then fired in a lit fire for `fire`
+// seconds (at 1x) while it stays lit. Made, it's yours for good, kept at camp (never in the satchel) and used at any fire.
+// To add one, copy a block; its id is a vessel's (VESSELS).
+//   name            what it's called
+//   needs           what it takes, { word: how many } (as BUILDS)
+//   fire            seconds at 1x it hardens in a lit fire
+//   text            a line for when you look at it
+const CRAFTS = {
+  pot: {
+    name: 'Clay pot',
+    needs: { clay: 3 },
+    fire: 90,
+    text: 'A round-bellied pot, pinched up out of bank clay and hardened in the fire. Soups and stews.',
+  },
+  pan: {
+    name: 'Clay griddle',
+    needs: { clay: 2 },
+    fire: 60,
+    text: 'A flat clay griddle that sits on the stones. Things fried and toasted.',
+  },
+};
+
 // The rest is the machinery: you shouldn't need to touch it to add a dish.
 
 const TEACHERS = ['hedgehog', 'heron', 'kingfisher', 'skylark', 'dragonfly'];
@@ -291,7 +313,7 @@ function fits(things, needs) {
 const vesselOf = r => r.vessel || 'pot';
 
 // What comes out of a station with these things in it, cooked in a vessel: a recipe, or the mess. With no vessel (null) any
-// vessel does (for the cooking window until it can switch: game.js COOK_VESSEL).
+// vessel does (game.js potWord asks it whether the things make a dish in another vessel).
 function cook(things, at = 'fire', vessel = null) {
   return RECIPES.find(r => (r.at || 'fire') === at && (!vessel || vesselOf(r) === vessel) && fits(things, r.needs)) || MESS;
 }
@@ -362,6 +384,17 @@ function checkRecipes() {
       if (!(n >= 1) || n !== Math.floor(n)) problems.push(`${who} needs ${n} of '${word}': it wants a whole number, 1 or more.`);
     }
   }
+  for (const [id, c] of Object.entries(CRAFTS)) {
+    const who = `The craft '${id}'`;
+    if (!VESSELS[id]) problems.push(`${who} isn't a vessel (${Object.keys(VESSELS).join(', ')}).`);
+    if (!c.name) problems.push(`${who} has no name.`);
+    if (!(c.fire > 0)) problems.push(`${who} wants a firing time in seconds: fire: 60.`);
+    if (!c.needs || typeof c.needs !== 'object' || Array.isArray(c.needs)) { problems.push(`${who} needs what it takes: needs: { clay: 3 }.`); continue; }
+    for (const [word, n] of Object.entries(c.needs)) {
+      if (!INGREDIENTS[word] && !isTag(word)) problems.push(`${who} needs '${word}', which is no ingredient or tag.`);
+      if (!(n >= 1) || n !== Math.floor(n)) problems.push(`${who} needs ${n} of '${word}': it wants a whole number, 1 or more.`);
+    }
+  }
   // Two dishes at one station that the same things could make: the first in the list would always win.
   for (let i = 0; i < RECIPES.length; i++) for (let j = i + 1; j < RECIPES.length; j++) {
     const a = RECIPES[i], b = RECIPES[j];
@@ -402,7 +435,7 @@ function thingsFor(needs, have) {
 // The ingredients a word in a build's needs takes: itself, or every ingredient with that tag.
 const takes = word => (INGREDIENTS[word] ? [word] : Object.keys(INGREDIENTS).filter(id => INGREDIENTS[id].tags.includes(word)));
 
-const Recipes = { STATIONS, VESSELS, vesselOf, INGREDIENTS, RECIPES, BUILDS, MESS, cook, fits, fillOf, timeOf, recipeOf, takes, foodOf, thingsFor, answers, checkRecipes };
+const Recipes = { STATIONS, VESSELS, vesselOf, INGREDIENTS, RECIPES, BUILDS, CRAFTS, MESS, cook, fits, fillOf, timeOf, recipeOf, takes, foodOf, thingsFor, answers, checkRecipes };
 if (typeof module !== 'undefined') module.exports = Recipes;
 else {
   window.Recipes = Recipes;

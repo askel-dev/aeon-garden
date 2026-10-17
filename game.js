@@ -2849,7 +2849,7 @@ function say(text, x, y) {
 }
 
 // What a thing is called, n of them: recipes.js's name, made plural for more than one (an apple, two apples; honey stays honey).
-const MASS = { honey: 1, drygrass: 1, birchbark: 1, garlic: 1, nettle: 1, sorrel: 1, watercress: 1, elderflower: 1, sulphur: 1, chanterelle: 1, cherry: 1, blackberry: 1, acorns: 1, beechnuts: 1 };
+const MASS = { clay: 1, honey: 1, drygrass: 1, birchbark: 1, garlic: 1, nettle: 1, sorrel: 1, watercress: 1, elderflower: 1, sulphur: 1, chanterelle: 1, cherry: 1, blackberry: 1, acorns: 1, beechnuts: 1 };
 function itemName(id, n) {
   const name = Recipes.INGREDIENTS[id]?.name || id;
   return n > 1 && Recipes.INGREDIENTS[id] && !MASS[id] && !name.endsWith('s') ? name + 's' : name;   // (a dish keeps its name)
@@ -3454,8 +3454,8 @@ function drawCampRing(z, now) {
 
 // How much of a build's needs the satchel holds: each need (word, n) and how many of it there are (have), and the share of
 // it all, 0 to 1 (renderBuild's ring).
-function buildHave(id) {
-  const b = Recipes.BUILDS[id], F = world.forager, out = { all: 0, got: 0, ready: true, any: false, missing: [] };
+function buildHave(id, table = Recipes.BUILDS) {
+  const b = table[id], F = world.forager, out = { all: 0, got: 0, ready: true, any: false, missing: [] };
   for (const [word, n] of Object.entries(b.needs)) {
     let have = 0;
     for (const ing of Recipes.takes(word)) have += S.bagCount(F, ing);
@@ -3471,9 +3471,9 @@ function missingWords(missing) {
   return words.length > 1 ? words.slice(0, -1).join(', ') + ' and ' + words[words.length - 1] : words[0];
 }
 // Takes what a build needs out of the satchel: { fuel, tinder } (how many sticks and how much tinder went in), or null.
-function spendBuild(id) {
-  const b = Recipes.BUILDS[id], F = world.forager;
-  if (!buildHave(id).ready) return null;
+function spendBuild(id, table = Recipes.BUILDS) {
+  const b = table[id], F = world.forager;
+  if (!buildHave(id, table).ready) return null;
   const got = { fuel: 0, tinder: 0 };
   for (const [word, n] of Object.entries(b.needs)) {
     let left = n;
@@ -3531,6 +3531,69 @@ function buildPressed() {
   const have = buildHave(BUILD), F = world.forager;
   if (!have.ready) { say(`A campfire needs ${missingWords(have.missing)}`, F.x, F.y - 1.6); chime('click'); return; }
   placeFire(true);
+}
+
+// ---- making (PLAN.md vessels, piece 5)
+//
+// A vessel shaped out of clay (recipes.js CRAFTS), then fired (sim.js shapeVessel, kitTick, f.kit). The clay button by the
+// fire button (#make) shows once the satchel holds clay or something's firing; pressed (or C), a little menu over it
+// (#make-menu, makeMenu) lists what can be made and what each takes, and what's firing and how far along. Shaped, the clay
+// goes into the lit fire the forager's near (MAKE_NEAR), else the camp's if it's lit, and hardens while that fire burns;
+// done, sim.js's 'fired' toasts it. Owned for good, kept at camp, never in the satchel. A guest can't make one (yet).
+const MAKE_NEAR = 3;                      // tiles from a lit fire the forager shapes clay by it
+const makeUi = { shown: false, open: false, html: '' };
+function kitFire() {
+  const f = world.forager;
+  let best = null, bd = MAKE_NEAR;
+  for (const F of world.fires) if (F.lit) { const d = Math.hypot(F.x - f.x, F.y - f.y); if (d < bd) { bd = d; best = F; } }
+  if (!best && world.camp && world.camp.fire.lit) best = world.camp.fire;
+  return best;
+}
+const craftName = id => (Recipes.CRAFTS[id] ? Recipes.CRAFTS[id].name : Recipes.VESSELS[id].name).toLowerCase();
+function renderMake() {
+  const el = $('#make');
+  if (!el || !world || !world.forager) return;
+  const f = world.forager, k = f.kit;
+  const show = !!k.firing || S.bagCount(f, 'clay') > 0 && Object.keys(Recipes.CRAFTS).some(id => !k.own.includes(id));
+  if (show !== makeUi.shown) { el.classList.toggle('hidden', !show); makeUi.shown = show; }
+  if (!show && makeUi.open) makeMenu(false);
+  else if (makeUi.open) makeMenu(true);
+}
+function makeMenu(open) {
+  const m = $('#make-menu');
+  makeUi.open = open;
+  $('#make').classList.toggle('on', open);
+  if (!open) { m.classList.add('hidden'); return; }
+  const k = world.forager.kit;
+  let html = '';
+  if (k.firing) {
+    const lit = world.fires.some(F => F.lit && Math.abs(F.x - k.x) < 1e-3 && Math.abs(F.y - k.y) < 1e-3);
+    html += `<p>Your ${craftName(k.firing)} is firing · ${Math.floor((1 - k.left / k.total) * 100)}%${lit ? '' : '<br><small>its fire is out: light it again</small>'}</p>`;
+  }
+  for (const [id, c] of Object.entries(Recipes.CRAFTS)) {
+    if (k.own.includes(id) || k.firing === id) continue;
+    const needs = Object.entries(c.needs).map(([w, n]) => `${n} ${Recipes.INGREDIENTS[w] ? itemName(w, n).toLowerCase() : w}`).join(', ');
+    html += `<button data-act="make-one" data-id="${id}"${buildHave(id, Recipes.CRAFTS).ready && !k.firing ? '' : ' class="off"'}>${esc(c.name)} <small>${esc(needs)}</small></button>`;
+  }
+  if (!html) html = '<p>Nothing more to make</p>';
+  if (html !== makeUi.html) { makeUi.html = html; m.innerHTML = html; }
+  m.classList.remove('hidden');
+}
+function makeOne(id) {
+  const f = world.forager, c = Recipes.CRAFTS[id], k = f.kit;
+  if (!c || f.down >= 0) return;
+  const no = text => { say(text, f.x, f.y - 1.6); chime('click'); };
+  if (Net && Net.guest) return no('Shape clay in your own meadow');
+  if (k.firing) return no(`The ${craftName(k.firing)} is still firing`);
+  const have = buildHave(id, Recipes.CRAFTS);
+  if (!have.ready) return no(`A ${c.name.toLowerCase()} needs ${missingWords(have.missing)}`);
+  const F = kitFire();
+  if (!F) return no('It wants a lit fire to harden in');
+  spendBuild(id, Recipes.CRAFTS);
+  S.shapeVessel(world, id, F, c.fire * COOK_TPS);
+  say(`A ${c.name.toLowerCase()}, shaped: into the fire with it`, F.x, F.y - 0.8);
+  chime('stick');
+  makeMenu(false); renderMake();
 }
 
 // Picking where: a faint fire in front of the forager (a mouse moves it about; a finger taps or drags it where it's
@@ -3886,16 +3949,33 @@ const POT_UP = 0.24;                      // its middle this far over the fire's
 const POT_IN_MS = 260;                    // ms it takes to settle on the stones as the cooking opens
 const LAND_MS = 420;                      // ms a thing takes to drop into the pot and settle
 const COOK_EASE = 0.5;                   // the camera eases in over about this long (s), to kw.zoom (measureCook)
-// The vessel the cooking window cooks in. null: any, so each dish makes in its own. Piece 6 (vessels, PLAN.md) replaces it
-// with the one the forager picked (and its slots, Recipes.VESSELS[v].slots, for the pot's size).
-const COOK_VESSEL = null;
+// The vessel the cooking window cooks in (PLAN.md vessels, piece 6): picked in the window's row of them (#cook-vessels,
+// pickVessel): a stick, a hot stone and a bowl always, the clay pot and griddle once made (f.kit.own). Only dishes made in it
+// come out of it, and it holds its VESSELS slots. A dish picked in the book switches to its vessel. Opening the window, the
+// pot if there is one, else the stick. POT is the most any holds (the window's arrays).
+let cookVessel = 'stick';
+const VESSEL_IN = { pot: 'in the pot', pan: 'on the griddle', stick: 'on a stick', stone: 'on the stone', bowl: 'in the bowl' };
+const ownsVessel = v => !Recipes.CRAFTS[v] || world.forager.kit.own.includes(v);
+const potSlots = () => Recipes.VESSELS[cookVessel].slots;
 const POT = Recipes.STATIONS.fire.slots;
+function pickVessel(v, quiet) {
+  const j = ui.fire;
+  if (!j || !Recipes.VESSELS[v] || v === cookVessel) return true;
+  if (j.stage === 'cooking') return false;
+  if (!ownsVessel(v)) { say(`You need to make a ${craftName(v)} first`, j.x, j.y - 0.5); chime('click'); return false; }
+  cookVessel = v;
+  const n = potSlots();
+  if (j.pot.length > n) { j.pot.length = n; j.land.length = n; j.drop.length = n; kw.sx.fill(NaN); renderSatchel(); }
+  if (!quiet) chime('click');
+  renderCook();
+  return true;
+}
 // A dish is known once it's been made (firstTime 'dish:' + its name: per player, for good), or from the start if recipes.js
 // says so (known: true), so a new cook has a few in the book to begin with.
 const KNOWN_FROM_START = new Set(Recipes.RECIPES.filter(r => r.known).map(r => r.name));
 const knownDish = name => KNOWN_FROM_START.has(name) || firsts.has('dish:' + name);
 const cooking = () => !!ui.fire && (ui.fire.stage === 'cook' || ui.fire.stage === 'cooking');
-const cookUi = { open: false, vw: 0, vh: 0, potIn: 0, potX: NaN, potY: NaN, potR: 0, line: '', p: -1 };   // (p: how far the Cook button is filled)
+const cookUi = { row: '', open: false, vw: 0, vh: 0, potIn: 0, potX: NaN, potY: NaN, potR: 0, line: '', p: -1 };   // (p: how far the Cook button is filled)
 const potHit = { n: 0, x: new Float64Array(4), y: new Float64Array(4), r: new Float64Array(4) };   // the things in the pot as drawn this frame
 let lastDish = '';                        // the last dish cooked here: the bar's one-tap "again"
 
@@ -3927,7 +4007,7 @@ function potAdd(k, x, y, dropped) {
   if (Recipes.INGREDIENTS[id]?.tags.includes('fuel')) return feedStick();   // (a stick: on the fire)
   const food = Recipes.foodOf(id);
   if (!food || !(food.fill > 0)) { say('Not for the pot', j.x, j.y - 0.5); chime('click'); return false; }
-  if (j.pot.length >= POT) { say('The pot\'s full', j.x, j.y - 0.5); chime('click'); return false; }
+  if (j.pot.length >= potSlots()) { say(`The ${Recipes.VESSELS[cookVessel].name.toLowerCase()}'s full`, j.x, j.y - 0.5); chime('click'); return false; }
   if (potHeld()[id] >= S.bagCount(f, id)) return false;
   j.pot.push(id);
   const i = j.pot.length - 1;
@@ -3983,6 +4063,7 @@ function fillPot(name, go) {
   const j = ui.fire, r = Recipes.recipeOf(name);
   if (!j || j.stage !== 'cook' || !r) return false;
   if (!j.F.lit) { say('The fire\'s out', j.x, j.y - 0.5); return false; }
+  if (!pickVessel(Recipes.vesselOf(r), true)) return false;
   const things = Recipes.thingsFor(r.needs, bagHave());
   if (!things) { say('Not the things for it just now', j.x, j.y - 0.5); chime('click'); return false; }
   const now = performance.now();
@@ -4013,7 +4094,7 @@ function potLeft(pot, needs) {
 function potToward(pot) {
   let best = null;
   for (const r of Recipes.RECIPES) {
-    if ((r.at || 'fire') !== 'fire' || !knownDish(r.name)) continue;
+    if ((r.at || 'fire') !== 'fire' || Recipes.vesselOf(r) !== cookVessel || !knownDish(r.name)) continue;
     const left = potLeft(pot, r.needs);
     if (left && left.length && (!best || left.length < best.left.length)) best = { r, left };
   }
@@ -4022,7 +4103,7 @@ function potToward(pot) {
 // Whether any fire dish at all could come of the pot with more added: with none, cooking it now is certainly a forager's
 // mess, whatever still goes in.
 function potPossible(pot) {
-  for (const r of Recipes.RECIPES) if ((r.at || 'fire') === 'fire' && potLeft(pot, r.needs)) return true;
+  for (const r of Recipes.RECIPES) if ((r.at || 'fire') === 'fire' && Recipes.vesselOf(r) === cookVessel && potLeft(pot, r.needs)) return true;
   return false;
 }
 // What the pot would make, said plainly, in one of four ways: a dish you know by its name; a dish you've never made as
@@ -4032,9 +4113,11 @@ function potPossible(pot) {
 // new" whenever some recipe could still grow from the pot, so two cherries promised something and cooked into a mess.)
 const MESS_WORD = 'as it is, a forager\'s mess';
 function potWord(pot) {
-  const dish = pot.length ? Recipes.cook(pot, 'fire', COOK_VESSEL) : null;
+  const dish = pot.length ? Recipes.cook(pot, 'fire', cookVessel) : null;
   if (dish && dish !== Recipes.MESS) return knownDish(dish.name) ? { state: 'known', dish, html: `<b>${esc(dish.name)}</b>` } : { state: 'new', dish, html: '<b class="new">Something new!</b>' };
   if (!pot.length) return { state: 'empty', dish: null, html: '' };
+  const other = Recipes.cook(pot, 'fire', null), ov = Recipes.vesselOf(other);   // (a known dish in another vessel)
+  if (other !== Recipes.MESS && knownDish(other.name)) return { state: 'other', dish, html: `${esc(Recipes.VESSELS[ov].word[0].toUpperCase() + Recipes.VESSELS[ov].word.slice(1))}, this is <b>${esc(other.name)}</b>${ownsVessel(ov) ? '' : `<br><small>make a ${esc(craftName(ov))} first</small>`}<br><small>${MESS_WORD}</small>` };
   if (!potPossible(pot)) return { state: 'mess', dish, html: 'Only a forager\'s mess can come of this' };
   const toward = potToward(pot);
   if (toward) return { state: 'toward', dish, html: `Add ${esc(wantWords(toward.left))} for <b>${esc(toward.r.name)}</b><br><small>${MESS_WORD}</small>` };
@@ -4071,7 +4154,7 @@ function cookStart() {
   const j = ui.fire, now = performance.now();
   if (!j || j.stage !== 'cook' || !j.pot.length || j.F.cookDish) return;
   if (!j.F.lit) { say('The fire\'s out', j.x, j.y - 0.5); return; }
-  const f = world.forager, have = bagHave(), dish = Recipes.cook(j.pot, 'fire', COOK_VESSEL);
+  const f = world.forager, have = bagHave(), dish = Recipes.cook(j.pot, 'fire', cookVessel);
   for (const id of j.pot) if (!(have[id]-- > 0)) { say('Something\'s missing', j.x, j.y - 0.5); return; }
   for (const id of j.pot) S.spend(f, id, 1);              // (out of the satchel for good: the pot cooks on the fire without you)
   S.cookOn(world, j.F, dish.name, j.pot, S.cookTicks(Recipes.timeOf(dish)));
@@ -4100,6 +4183,8 @@ function cookSync(j, now) {
     } else { cookDone(j, now); return; }
   }
   if (j.stage === 'cooking') return;
+  const was = Recipes.recipeOf(F.cookDish);
+  if (was) cookVessel = Recipes.vesselOf(was);
   j.pot = F.cookItems.slice(); j.land = j.pot.map(() => now - LAND_MS * 2); j.drop = j.pot.map(() => null);
   kw.sx.fill(NaN);
   fireStage(j, 'cooking', now);
@@ -4171,6 +4256,7 @@ function renderCook(measure = true) {
     if (!open) pairBook();                                // (an open book back in the middle)
     if (!open) { kw.reveal = null; kw.incoming = -1; kw.hover = false; kw.n = 0; renderSatchel(); cookUi.potR = 0; potHit.n = 0; return; }
     cookUi.potIn = performance.now();
+    if (!ownsVessel(cookVessel) || cookVessel === 'stick' && ownsVessel('pot')) cookVessel = ownsVessel('pot') ? 'pot' : 'stick';
     chime('hearth');
     kw.last = cookUi.potIn; kw.broth = 0; kw.dn = 0; kw.rn = 0; kw.sx.fill(NaN);
     cookUi.p = -1;
@@ -4189,10 +4275,16 @@ function renderCook(measure = true) {
     : made ? (made.mess ? 'A forager\'s mess. Still food, mostly' : `Made <b>${esc(made.name)}</b>`)
     : pot.length ? word.html
     : again && Recipes.thingsFor(again.needs, have) ? `<button class="cook-again" data-act="cook-again" title="Cook it again"><i style="background-position:${itemBg(again.name)}"></i>${esc(again.name)} again</button>`
-    : anyFood ? 'The water\'s warming. Drop something in' : 'Nothing in the satchel to cook';
+    : anyFood ? (cookVessel === 'pot' ? 'The water\'s warming. Drop something in' : `Put something ${VESSEL_IN[cookVessel]}`) : 'Nothing in the satchel to cook';
   const what = $('#cook-what');
   if (line !== cookUi.line) { cookUi.line = line; what.innerHTML = `<span>${line}</span>`; }   // (one block, so the grid centres it as one)
   what.classList.toggle('mess', word.state === 'mess' && !busy && !made || !!made?.mess);
+  const row = Object.keys(Recipes.VESSELS).filter(ownsVessel).map(v => `${v === cookVessel ? '+' : ''}${v}`).join(' ') + (busy ? '!' : '');
+  if (row !== cookUi.row) {
+    cookUi.row = row;
+    $('#cook-vessels').innerHTML = Object.keys(Recipes.VESSELS).filter(ownsVessel).map(v => { const V = Recipes.VESSELS[v];
+      return `<button data-act="vessel" data-v="${v}" class="${v === cookVessel ? 'on' : ''}"${busy && v !== cookVessel ? ' disabled' : ''} title="${esc(V.name)}: ${esc(V.word)}, ${V.slots} things">${V.icon}<small>${esc(V.name)}</small></button>`; }).join('');
+  }
   cookFuel(j);
   const sticks = Recipes.takes('fuel').reduce((n, ing) => n + S.bagCount(f, ing), 0), stick = $('#cook-stick');
   stick.querySelector('i').style.backgroundPosition = itemBg('stick');
@@ -4276,7 +4368,7 @@ function plopOf(id) {
 // The broth the water turns to as it cooks, by what's in most of it (a mess goes murky).
 const BROTHS = { greens: 'rgb(98, 132, 58)', berry: 'rgb(118, 40, 70)', fruit: 'rgb(178, 110, 52)', sweet: 'rgb(196, 134, 42)', mushroom: 'rgb(128, 88, 56)', nut: 'rgb(150, 112, 72)', flower: 'rgb(196, 178, 112)' };
 function brothOf(pot) {
-  if (Recipes.cook(pot, 'fire', COOK_VESSEL) === Recipes.MESS) return 'rgb(92, 90, 66)';
+  if (Recipes.cook(pot, 'fire', cookVessel) === Recipes.MESS) return 'rgb(92, 90, 66)';
   const n = {};
   let best = 'fruit';
   for (const id of pot) for (const t of Recipes.INGREDIENTS[id]?.tags || []) if (BROTHS[t] && (n[t] = (n[t] || 0) + 1) > (n[best] || 0)) best = t;
@@ -4453,6 +4545,20 @@ function drawPotThing(g, sheet, k, x, yc, S, rot, wl) {
   g.restore();
 }
 // The window's pot, once a frame while it's open (frame): see the comment over DROPS.
+// A vessel other than the pot in the cooking window, plainly (a later pass paints them): the griddle a clay disc, the stone
+// a flat grey one, the bowl a wooden one, the stick a line across. A path or two a frame.
+const FLAT = { pan: ['#8a5a3a', '#5e3b24', 1.1, 1], stone: ['#8f8b80', '#615e57', 0.95, 0.8], bowl: ['#a9773f', '#6e4a26', 1, 1.25] };
+function vesselFlat(g, v, cx, wy, wrx, wry, rx) {
+  g.globalAlpha = 1; g.lineCap = 'round';
+  if (v === 'stick') {
+    g.strokeStyle = '#6e4a2a'; g.lineWidth = Math.max(2, rx * 0.06);
+    g.beginPath(); g.moveTo(cx - wrx * 1.2, wy + wry * 0.5); g.lineTo(cx + wrx * 1.2, wy - wry * 0.3); g.stroke();
+    return;
+  }
+  const [fill, edge, k, deep] = FLAT[v];
+  g.fillStyle = edge; g.beginPath(); g.ellipse(cx, wy + wry * 0.18 * deep, wrx * k, wry * k * deep, 0, 0, Math.PI * 2); g.fill();
+  g.fillStyle = fill; g.beginPath(); g.ellipse(cx, wy, wrx * k * 0.94, wry * k * 0.9, 0, 0, Math.PI * 2); g.fill();
+}
 function drawCookView(now) {
   const j = ui.fire;
   if (!j || !kw.w || !kw.back) return;
@@ -4475,8 +4581,11 @@ function drawCookView(now) {
     drawFlames(cx + rx * 0.68, fireY, rx * 1.4, heat, now, 31, g, d, 0, 0);
     drawFlames(cx, fireY, rx * 1.7, heat, now, 53, g, d, 0, 0);
   }
-  g.drawImage(kw.back.img, 0, 0, w, h);
+  const inPot = cookVessel === 'pot';                     // (the others are plain shapes for now: vesselFlat)
+  if (inPot) g.drawImage(kw.back.img, 0, 0, w, h);
+  else vesselFlat(g, cookVessel, cx, wy, wrx, wry, rx);
   // the water: turning to broth as it cooks, shimmering, bubbling, rings going out
+  if (inPot) {
   g.save(); g.beginPath(); g.ellipse(cx, wy, wrx, wry, 0, 0, TAU); g.clip();
   const cooked = busy ? cookFrac(j.F) : 0;
   kw.broth += ((busy ? 0.85 * cooked : 0) - kw.broth) * (1 - Math.exp(-fdt / (busy ? 300 : 1200)));
@@ -4503,6 +4612,7 @@ function drawCookView(now) {
     g.beginPath(); g.ellipse(kw.rX[k], kw.rY[k], s, s * 0.32, 0, 0, TAU); g.stroke();
   }
   g.restore();
+  }
   // the things in it: falling in, a splash, under and back up, floating
   const n = j.pot.length, sheet = itemSheet().img, S = potSize(n), FG = rx * FALL_G;
   for (let i = 0; i < n; i++) {
@@ -4513,10 +4623,10 @@ function drawCookView(now) {
     kw.sx[i] += (tx - kw.sx[i]) * (1 - Math.exp(-fdt / 240));
     const from = j.drop[i], x0 = from ? from[0] : kw.sx[i], y0 = from ? from[1] : wy - rx * 0.95;
     const T = Math.sqrt(2 * Math.max(4, ty - S * 0.2 - y0) / FG), u = now - land;
-    let x = kw.sx[i], yc, rot, wl = ty;
+    let x = kw.sx[i], yc, rot, wl = inPot ? ty : Infinity;
     if (u < T) { const k = u / T; x = x0 + (x - x0) * k; yc = y0 + 0.5 * FG * u * u; rot = (1 - k) * 0.35 * (i & 1 ? 1 : -1); wl = Infinity; }
     else {
-      if (was - land < T) { const p = plopOf(j.pot[i]); splash(x, ty, p.w, now); chime('plop', p); }
+      if (was - land < T) { const p = plopOf(j.pot[i]); if (inPot) splash(x, ty, p.w, now); chime('plop', p); }
       const v = u - T, dip = S * 0.42 * Math.exp(-v / 380) * Math.sin(v / 110);
       yc = ty - S * 0.2 + dip + (busy ? S * 0.06 * Math.sin(now / 170 + i * 2.1) : S * 0.025 * Math.sin(now / 640 + i * 2.3));
       rot = 0.24 * Math.exp(-v / 520) * Math.sin(v / 150) + (busy ? 0.12 * Math.sin(now / 260 + i) : 0.05 * Math.sin(now / 900 + i * 1.7));
@@ -4525,7 +4635,7 @@ function drawCookView(now) {
     kw.hx[i] = x; kw.hy[i] = yc; kw.hr[i] = S * 0.5;
   }
   kw.n = n;
-  if (busy) {                                             // the spoon going round in it, swirling the water
+  if (busy && inPot) {                                    // the spoon going round in it, swirling the water
     const a = (now - j.t0) / (COOK_STIR * 2) * TAU, bx = cx + Math.cos(a) * wrx * 0.45, by = wy + Math.sin(a) * wry * 0.45;
     const ex = cx + rx * 0.66 + Math.cos(a) * rx * 0.12, ey = rimY - rx * 0.7 + Math.sin(a) * rx * 0.05, an = Math.atan2(ey - by, ex - bx), sp = kw.spoon;
     g.globalAlpha = 1;
@@ -4535,7 +4645,7 @@ function drawCookView(now) {
     if (now - kw.ringAt > 260) { kw.ringAt = now; potRing(bx, by, rx * 0.1, 800, 0.4, now); }
   }
   g.globalAlpha = 1;
-  g.drawImage(kw.front.img, 0, 0, w, h);
+  if (inPot) g.drawImage(kw.front.img, 0, 0, w, h);
   g.globalCompositeOperation = 'lighter';                 // the flames' light flickering on its belly
   g.globalAlpha = heat * (0.2 + 0.06 * Math.sin(t * 9.1) + 0.04 * Math.sin(t * 15.7));
   g.drawImage(bloom, cx - rx * 0.95, rimY + rx * 0.4, rx * 1.9, rx * 0.8);
@@ -5212,9 +5322,9 @@ function bookPageHTML(p, have, atPot) {
       + `<span class="chip fills" title="How much it fills you">Fills <b>${'<i class="on"></i>'.repeat(fill)}${'<i></i>'.repeat(BOOK_PIPS - fill)}</b></span>`
       + `<span class="chip" title="How long it cooks on the fire">⏲ ${timeWord(Recipes.timeOf(r))}</span></div>`;
     needs = ns.map(n => `<li class="${n.got ? 'got' : 'want'}">${itemIcon(n.id)}<span>${esc(upFirst(needName(n.word)))}</span><em>${n.got ? '✓ in the satchel' : 'not in the satchel'}</em></li>`).join('');
-    const busy = cooking() && !atPot;
-    go = `<button class="go${ready && !busy ? ' ready' : ''}" data-act="book-dish" data-name="${esc(r.name)}"${ready && !busy ? '' : ' disabled'}>`
-      + (busy ? 'Cooking…' : !ready ? 'Not the things for it just now' : atPot ? 'Put its things in the pot' : 'Cook it at the fire') + '</button>';
+    const busy = cooking() && !atPot, vs = Recipes.vesselOf(r), owned = !world || ownsVessel(vs), can = ready && !busy && owned;
+    go = `<button class="go${can ? ' ready' : ''}" data-act="book-dish" data-name="${esc(r.name)}"${can ? '' : ' disabled'}>`
+      + (busy ? 'Cooking…' : !owned ? `Make a ${esc(craftName(vs))} first` : !ready ? 'Not the things for it just now' : atPot ? `Put its things ${VESSEL_IN[vs]}` : 'Cook it at the fire') + '</button>';
   } else if (st === 'half') {
     const h = halfName(r);
     head = `<h3 class="fr q-half">${esc(h.line)}</h3>`;
@@ -6053,6 +6163,7 @@ function renderSatchel() {
   for (let k = 0; k < S.SLOTS; k++) if (F.bag[k] && Recipes.foodOf(F.bag[k])?.fill > 0) { bagFood = true; break; }
   renderCookBag(F);                                       // (the cooking window's tiles)
   renderBuild();                                          // (the fire button by it: what a fire takes, how much of it's here)
+  renderMake();                                           // (and the clay button)
   renderBook();                                           // (the book, if it's open: what the satchel has for each dish)
 }
 
@@ -10913,6 +11024,11 @@ function handleEvent(e) {
     case 'woke':
       bodyWoke();
       break;
+    case 'fired':                                           // a vessel out of the fire (sim.js kitTick)
+      toast(`<b>Your ${craftName(e.what)} is ready</b> · cook in it at any fire`);
+      chime('found');
+      renderMake(); if (cooking()) renderCook();
+      break;
     case 'levelup': {                                       // a skill up a level (sim.js SKILLS): a word at the top
       const k = S.SKILLS[e.skill];
       toast(`<b>${k.name} ${e.lv}</b>${e.lv >= S.SKILL_TOP ? ' (the best it gets)' : ''} · ${k.line}`);
@@ -13125,6 +13241,9 @@ document.addEventListener('click', e => {
   }
   else if (t.dataset.act === 'pause') setSpeed(ui.speed ? 0 : 1);
   else if (t.dataset.act === 'build') buildPressed();       // (the fire button by the satchel)
+  else if (t.dataset.act === 'make') makeMenu(!makeUi.open);   // (the clay button)
+  else if (t.dataset.act === 'make-one') makeOne(t.dataset.id);
+  else if (t.dataset.act === 'vessel') pickVessel(t.dataset.v);   // (the cooking window's vessels)
   else if (t.dataset.act === 'cook-go') cookStart();       // (the cooking card)
   else if (t.dataset.act === 'cook-stick') feedStick();
   else if (t.dataset.act === 'cook-take') potTake(+t.dataset.i);
@@ -13265,6 +13384,7 @@ document.addEventListener('keydown', e => {
   else if (e.code === 'KeyE' && !e.repeat) { const F = cooking() ? null : !ui.fire && (cookFire() || relightFire() || campFire()); if (cooking()) closeCook(); else if (F) clickFire(F); else pickNear(); }   // (at a lit fire: its cooking card, and again shuts it; else pick)
   else if (e.code === 'KeyF' && !e.repeat) { if (atFire()) { fireKey = true; blowOn(true); } else buildPressed(); }   // (at a fire, held: blowing; else the fire button)
   else if (e.key === 'h' && !e.repeat && Net && Net.on) callOut();   // (a hoot to your friends)
+  else if (e.key === 'c' && makeUi.shown) makeMenu(!makeUi.open);   // (the clay button)
   else if (e.key === 'm') toggleSound();
   else if (e.key === '+' || e.key === '=') zoomOn(cam.zoom * 1.25);
   else if (e.key === '-') zoomOn(cam.zoom / 1.25);
@@ -13754,6 +13874,7 @@ function frame(now) {
     lastCard = now;
     updateClock();
     renderVitals();
+    if (makeUi.open) makeMenu(true);
     netCard(now);
     if (ui.sound) {
       const ck = S.clock(world);
