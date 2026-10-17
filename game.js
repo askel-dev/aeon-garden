@@ -2450,6 +2450,54 @@ const FACE_PX = 50 * 1.5;                 // the face's size painted: #me canvas
 const vit = { health: -1, stam: -1, winded: null, warm: -1, wet: -1, frost: -1, food: -1, starving: null, fedAt: -1e9, lvAt: -1e9, lv: -1,
   mood: '', want: '', wantAt: 0, face: '', skills: '' };
 const TUMMY_WORDS = [[0.85, 'Full'], [0.55, 'Fed'], [S.HUNGRY, 'Peckish'], [0.001, 'Hungry'], [-1, 'Starving']];
+// The tag beside the face and dials (#me-tip): what it is, how it is, and what helps. A mouse shows it while over one; a tap
+// shows it for TIP_TAP_MS (the face's tap opens the skills as well).
+const TIP_KEYS = ['me', 'warm', 'food'], TIP_EL = { me: '#me', warm: '#v-warm', food: '#v-food' };
+const TIP_Y = { me: 36, warm: 77, food: 77 };   // px in #me-box: the middle of what each is about
+const TIP_TAP_MS = 2600;
+const tip = { on: '', timer: 0 };
+vit.tips = { me: '', warm: '', food: '' };
+function tipSaid(k, f) {
+  if (k === 'me') {
+    const hp = Math.round(f.health * 100);
+    return f.health > 0.75 ? ['Health', `Well · ${hp}%`, hp < 100 ? 'Mends while warm and fed' : 'Tap for your skills']
+      : f.health > 0.4 ? ['Health', `Hurt · ${hp}%`, 'Mends while warm and fed']
+      : ['Health', `Badly hurt · ${hp}%`, 'Get warm and eat, or you\'ll fall'];
+  }
+  if (k === 'warm') {
+    const st = S.warmthStage(f), lit = world.fires.some(F => F.lit);
+    const wet = f.wet > 0.6 ? ', soaked' : f.wet > 0.05 ? ', damp' : '';
+    const fire = !lit && !world.camp ? 'Make a fire (F) and stand by it' : 'Stand by a fire to warm up';
+    return ['Warmth', ['Cosy', 'Chilly', 'Cold', 'Freezing', 'Too cold'][st] + wet + ' · ' + Math.round(f.warmth * 100) + '%',
+      st >= 3 ? 'Get to a fire, fast!' : st >= 1 ? fire : wet ? 'A fire dries you off' : 'Rain, night and water chill you'];
+  }
+  const word = TUMMY_WORDS.find(([v]) => f.tummy > v)[1];
+  return ['Tummy', `${word} · ${Math.round(clamp(f.tummy, 0, 1) * 100)}%`,
+    f.tummy <= 0 ? 'Eat something, it\'s hurting you!' : f.tummy < S.HUNGRY ? 'Tap food in the satchel to eat' : f.tummy > FOOD_FULL ? 'Nicely full' : 'A cooked dish fills you most'];
+}
+const TIP_INK = { me: '#c4584a', warm: '', food: '#b98126' };
+function layTip(k) {
+  const el = $('#me-tip'), [name, how, help] = tipSaid(k, world.forager);
+  el.querySelector('b').textContent = name;
+  el.querySelector('span').textContent = how;
+  el.querySelector('.tip-do').textContent = help;
+  el.style.setProperty('--y', TIP_Y[k] + 'px');
+  el.style.setProperty('--k', TIP_INK[k] || getComputedStyle($('#v-warm')).color);
+  el.classList.toggle('dial-tip', k !== 'me');
+}
+function showTip(k, ms = 0) {
+  clearTimeout(tip.timer);
+  if (!k) { tip.on = ''; $('#me-tip').classList.remove('on'); return; }
+  tip.on = k; layTip(k);
+  $('#me-tip').classList.add('on');
+  if (ms) tip.timer = setTimeout(showTip, ms, '');
+}
+for (const k of TIP_KEYS) {
+  const el = $(TIP_EL[k]);
+  el.addEventListener('pointerenter', e => { if (e.pointerType === 'mouse') showTip(k); });
+  el.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse' && tip.on === k) showTip(''); });
+  el.addEventListener('pointerdown', e => { if (e.pointerType !== 'mouse') showTip(k, TIP_TAP_MS); });
+}
 const faces = new Map();                  // a face painted once an outfit, snow and mood (fur.js paintForagerFace)
 // How it looks (fur.js FACE_MOODS): hurt or down, cold, out of breath, hungry, happy a moment after eating or a level up,
 // cosy by a fire, else well.
@@ -2505,7 +2553,6 @@ function renderVitals() {
     el.classList.toggle('show', f.stamina < VITAL_FULL);
     el.classList.toggle('winded', f.winded);
     el.querySelector('i').style.width = stam + '%';
-    el.title = f.winded ? 'Out of breath' : 'Stamina';
     vit.stam = stam; vit.winded = f.winded;
   }
   const food = Math.round(clamp(f.tummy, 0, 1) * 100), starving = f.tummy <= 0;
@@ -2516,15 +2563,15 @@ function renderVitals() {
     el.querySelector('.fill').style.strokeDasharray = `${food} 100`;
     vit.food = food; vit.starving = starving;
   }
-  // What each bar says when hovered (the dials are spans: role img, so they get the title and the label too).
-  const damp = f.wet > 0.6 ? ', soaked' : f.wet > 0.05 ? ', damp' : '';
-  const said = `Health: ${f.health > 0.75 ? 'Well' : f.health > 0.4 ? 'Hurt' : 'Badly hurt'} (${hp}%) · Your skills (I)`;
-  const warmSaid = `Warmth: ${['Cosy', 'Chilly', 'Cold', 'Freezing', 'Too cold'][S.warmthStage(f)]}${damp} (${warm}%)`;
-  const foodSaid = `Tummy: ${TUMMY_WORDS.find(([k]) => f.tummy > k)[1]} (${food}%)`;
-  if (me.title !== said) me.title = said;
-  const dw = $('#v-warm'), df = $('#v-food');
-  if (dw.title !== warmSaid) dw.title = dw.ariaLabel = warmSaid;
-  if (df.title !== foodSaid) df.title = df.ariaLabel = foodSaid;
+  // What the face and each dial say (tipSaid), beside them while hovered or a moment after a tap (showTip), and to a screen reader.
+  for (const k of TIP_KEYS) {
+    const t = tipSaid(k, f), line = t.join('|');
+    if (line === vit.tips[k]) continue;
+    vit.tips[k] = line;
+    const el = $(TIP_EL[k]);
+    el.ariaLabel = `${t[0]}: ${t[1]}${k === 'me' ? ' · your skills' : ''}`;
+    if (tip.on === k) layTip(k);
+  }
   let lv = 0;
   for (const s of S.SKILL_NAMES) lv += f.lv[s];
   if (lv !== vit.lv) { $('#me-lv').textContent = lv || ''; vit.lv = lv; }
@@ -4040,6 +4087,16 @@ function goBasket() {
   if (!f.walking && Math.hypot(B.x - f.x, B.y - f.y) < LARDER_NEAR * 0.75) { ui.fire = null; openLarder(true); return; }
   goFire({ kind: 'larder', F: null, x: B.x, y: B.y });
 }
+// Whether E goes to the basket rather than a fire: standing by it (LARDER_NEAR), and nearer it than to the fire E would
+// cook at or light (the fire anywhere in camp, campFire, never wins over a basket at hand).
+function basketByE() {
+  const B = myBasket(), f = world.forager;
+  if (!B || f.down >= 0 || ui.fire || ui.place) return false;
+  const dB = Math.hypot(B.x - f.x, B.y - f.y);
+  if (dB > LARDER_NEAR) return false;
+  const F = cookFire() || relightFire();
+  return !F || dB < Math.hypot(F.x - f.x, F.y - f.y);
+}
 function openLarder(on) {
   const el = $('#larder');
   if (!el || on === larderUi.open) return;
@@ -4084,19 +4141,57 @@ function renderLarder() {
 function putSlot(k) {
   const B = myBasket(), f = world.forager;
   if (!B || !f.bag[k]) return;
-  if (S.moveInto(f, k, B)) chime('pick', { n: 1 }); else say('The basket\'s full', B.x, B.y - 0.6);
+  if (flyMoves('bag', 'larder', () => S.moveInto(f, k, B))) chime('pick', { n: 1 }); else say('The basket\'s full', B.x, B.y - 0.6);
   renderSatchel();
 }
 function takeSlot(k) {
   const B = myBasket(), f = world.forager;
   if (!B || !B.bag[k]) return;
-  if (S.moveInto(B, k, f)) chime('pick', { n: 1 }); else say('Satchel\'s full', f.x, f.y - 1.6);
+  if (flyMoves('larder', 'bag', () => S.moveInto(B, k, f))) chime('pick', { n: 1 }); else say('Satchel\'s full', f.x, f.y - 1.6);
   renderSatchel();
+}
+// Runs a move between the satchel ('bag') and the basket's card ('larder') and flies a small painting from each slot that gave
+// something up to the slot that took it (paired by what it is, at most FLY_MOST, a beat apart): the destination's own
+// painting is hidden till it lands. Returns what `run` did.
+const FLY_MOST = 8, FLY_GAP = 55;
+function flyMoves(from, to, run) {
+  const sides = { bag: () => $('#satchel').querySelectorAll('.slot'), larder: () => $('#larder .lslots').children };
+  const bagOf = s => s === 'bag' ? world.forager : myBasket();
+  const A = bagOf(from), B = bagOf(to), sa = A.bag.slice(), na = A.bagN.slice(), sb = B.bag.slice(), nb = B.bagN.slice();
+  const fromEls = sides[from](), rects = [];
+  for (let k = 0; k < sa.length; k++) rects[k] = sa[k] ? fromEls[k]?.getBoundingClientRect() : null;
+  const res = run();
+  renderSatchel();
+  const toEls = sides[to](), srcs = [], dsts = [];
+  for (let k = 0; k < sa.length; k++) if (sa[k] && (A.bag[k] !== sa[k] || A.bagN[k] < na[k])) srcs.push(k);
+  for (let j = 0; j < sb.length; j++) if (B.bag[j] && (B.bag[j] !== sb[j] || B.bagN[j] > nb[j])) dsts.push(j);
+  let n = 0;
+  for (const k of srcs) {
+    const d = dsts.findIndex(j => B.bag[j] === sa[k]);
+    if (d < 0 || !rects[k] || n >= FLY_MOST) continue;
+    const j = dsts.splice(d, 1)[0], el = toEls[j];
+    if (!el) continue;
+    const r = rects[k], t = el.getBoundingClientRect(), sx = r.left + r.width / 2, sy = r.top + r.height / 2, tx = t.left + t.width / 2, ty = t.top + t.height / 2;
+    const fly = document.createElement('div');
+    fly.className = 'fly'; fly.style.backgroundPosition = itemBg(sa[k]);
+    document.body.appendChild(fly);
+    el.classList.add('incoming');
+    const my = Math.min(sy, ty) - 34;
+    fly.animate([{ transform: `translate(${sx - 16}px, ${sy - 16}px) scale(1)` },
+      { transform: `translate(${(sx + tx) / 2 - 16}px, ${my - 16}px) scale(1.2)`, offset: 0.5 },
+      { transform: `translate(${tx - 16}px, ${ty - 16}px) scale(0.9)` }], { duration: 340, delay: n * FLY_GAP, easing: 'ease-in-out', fill: 'both' })
+      .onfinish = () => {
+        fly.remove(); el.classList.remove('incoming');
+        el.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.15)' }, { transform: 'scale(1)' }], { duration: 180, easing: 'ease-out' });
+      };
+    n++;
+  }
+  return res;
 }
 function larderAll() {
   const B = myBasket(), f = world.forager;
   if (!B) return;
-  const any = f.bag.some(Boolean), n = S.putAway(world);
+  const any = f.bag.some(Boolean), n = flyMoves('bag', 'larder', () => S.putAway(world));
   if (n) chime('pick', { n: Math.min(n, 4) });
   else say(any ? 'The basket\'s full' : 'Nothing in the satchel', B.x, B.y - 0.6);
   renderSatchel();
@@ -4139,8 +4234,8 @@ function setupLarder() {
     h.fly.remove(); row.children[h.k]?.classList.remove('lifted'); h.over?.classList.remove('over', 'over-l');
     if (e.type === 'pointerup' && B && B.bag[h.k] === h.id) {
       if (h.over && h.over.classList.contains('lslot')) S.moveBetween(B, h.k, B, +h.over.dataset.b);
-      else if (h.over) S.moveBetween(B, h.k, f, +h.over.dataset.k);
-      else if (h.bag && !S.moveInto(B, h.k, f)) say('Satchel\'s full', f.x, f.y - 1.6);
+      else if (h.over) flyMoves('larder', 'bag', () => S.moveBetween(B, h.k, f, +h.over.dataset.k));
+      else if (h.bag && !flyMoves('larder', 'bag', () => S.moveInto(B, h.k, f))) say('Satchel\'s full', f.x, f.y - 1.6);
     }
     renderSatchel();
   };
@@ -7619,8 +7714,8 @@ function setupSatchel() {
     box.classList.remove('dragging');
     const B = larderOpen() && myBasket(), inL = !!B && !!document.elementFromPoint(e.clientX, h.touch ? e.clientY - 38 : e.clientY)?.closest('#larder');
     if (e.type === 'pointerup' && B && (h.over?.classList.contains('lslot') || inL) && F.bag[h.k] === h.id) {   // (onto the basket: that slot, or wherever it fits)
-      if (h.over?.classList.contains('lslot')) S.moveBetween(F, h.k, B, +h.over.dataset.b);
-      else if (!S.moveInto(F, h.k, B)) say('The basket\'s full', B.x, B.y - 0.6);
+      if (h.over?.classList.contains('lslot')) flyMoves('bag', 'larder', () => S.moveBetween(F, h.k, B, +h.over.dataset.b));
+      else if (!flyMoves('bag', 'larder', () => S.moveInto(F, h.k, B))) say('The basket\'s full', B.x, B.y - 0.6);
     }
     else if (e.type === 'pointerup' && h.over && !h.over.classList.contains('lslot') && +h.over.dataset.k !== h.k && F.bag[h.k] === h.id) S.moveSlot(F, h.k, +h.over.dataset.k);
     else if (e.type === 'pointerup' && h.fly.classList.contains('to-pot') && F.bag[h.k] === h.id) {   // (let go over the pot: into it)
@@ -13627,7 +13722,7 @@ function click(sx, sy, run = false) {
   if (ui.place) { placeHere(sx, sy); return; }            // (picking a spot for a fire: there)
   const pi = cooking() ? potThingAt(sx, sy) : -1;
   if (pi >= 0) { potTake(pi); return; }                    // (a thing in the pot: back out)
-  if (!cooking() && foragerHit(sx, sy)) { partyTap(); return; }   // (on the forager itself: the easter egg's taps)
+  if (!cooking() && foragerHit(sx, sy) && !basketAt(sx, sy)) { partyTap(); return; }   // (on the forager itself: the easter egg's taps; standing by the basket, the click is the basket's)
   const PF = !cooking() && promptAt(sx, sy);
   if (PF) { clickFire(PF); return; }                       // (the pot over a fire: off to cook at it)
   const c = animalAt(sx, sy), F = !c && fireAt(sx, sy), Bk = !c && !F && basketAt(sx, sy), t = !c && !F && !Bk && gatherAt(sx, sy);
@@ -14819,7 +14914,12 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'Escape') stepOut();
   else if (e.key === 'Enter' && ui.place) { e.preventDefault(); placeHere(); }   // (picking a spot for a fire: where the faint one is)
   else if ((e.key === 'Enter' || e.key === 't') && Net && Net.on) { e.preventDefault(); openChat(true); }
-  else if (e.code === 'KeyE' && !e.repeat) { const F = cooking() ? null : !ui.fire && (cookFire() || relightFire() || campFire()); if (cooking()) closeCook(); else if (F) clickFire(F); else pickNear(); }   // (at a lit fire: its cooking card, and again shuts it; else pick)
+  else if (e.code === 'KeyE' && !e.repeat) {               // (at a lit fire: its cooking card, and again shuts it; by the basket: its card; else pick)
+    if (cooking()) closeCook();
+    else if (larderOpen()) openLarder(false);
+    else if (basketByE()) goBasket();
+    else { const F = !ui.fire && (cookFire() || relightFire() || campFire()); if (F) clickFire(F); else pickNear(); }
+  }
   else if (e.code === 'KeyF' && !e.repeat) { if (atFire()) { fireKey = true; blowOn(true); } else buildPressed(); }   // (at a fire, held: blowing; else the fire button)
   else if (e.key === 'h' && !e.repeat && Net && Net.on) callOut();   // (a hoot to your friends)
   else if (e.key === 'm') toggleSound();

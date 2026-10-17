@@ -76,7 +76,9 @@ CSS gradients only, shown only then) and a soft heartbeat (sound.js `heart`, `HE
 (`#me`, `renderVitals`, in the 250 ms block, rewritten only on a change; 2026-10-17): its head painted from the front in its outfit and snow,
 in a mood (`faceMood`, held `MOOD_HOLD` before it changes; fur.js `FACE_MOODS`, `paintForagerFace`: well, cosy by a fire, happy after eating or
 a level up, cold, hungry, hurt or down, winded), each painted once and kept (`faces`); frost round it while freezing. Health is a ring round
-it, warmth (amber to ice blue, a drop while wet) and the tummy two small dials under it, dimmed while full. Stamina is a slim bar centered over the
+it, warmth (amber to ice blue, a drop while wet) and the tummy two small dials under it, dimmed while full. No browser tooltips on them:
+a parchment tag slides out beside the one hovered, or for a moment after a tap (`#me-tip`, `showTip`, `tipSaid`: what it is, how it is,
+and what helps). Stamina is a slim bar centered over the
 satchel (`#vitals`, `#v-stam`, in `renderVitals`) shown while it isn't full, ember-red pulsing while winded. A tap on
 the face or I opens the skills (`#me-card`, `openMe`, `renderMe`: level, a bar to the next, what it gives, what practises it; a sheet with its ✕
 at the foot on an upright phone); its brass badge is the levels added up and glints after a level up till they're looked at.
@@ -128,9 +130,9 @@ also looked at in the 250 ms block) shows once there's a camp. Before the basket
 `basketSpot`); the forager kneels and weaves it (`fireFrame`'s 'weave', `WEAVE_MS`), the basket growing up out of the ground.
 Painted once (`paintBasket`, 'basket:' 0 shut, 1 open with apples, a cep and leaves heaped in it once it holds anything), drawn
 with the trees and animals (`drawBasket`), a hover saying how much is in it (`basketWord`). In camp the button, or a click on
-the basket, walks over and opens its card just over the satchel (`#larder`, `openLarder`, `renderLarder`, `setupLarder`): 24
+the basket, or E standing by it (`basketByE`: nearer it than to a fire E would cook at or light), walks over and opens its card just over the satchel (`#larder`, `openLarder`, `renderLarder`, `setupLarder`): 24
 slots as the satchel's; a tap moves a slot across either way, a drag puts it in the slot it's let go on (sim.js `moveBetween`,
-`moveInto`), "Put all in" empties the satchel into it (`putAway`). Walking off `LARDER_NEAR`, going to a fire, ✕, Esc or Back shut
+`moveInto`), "Put all in" empties the satchel into it (`putAway`). Whatever moves either way flies as a small painting from its slot to the one that took it (`flyMoves`: paired by what it is, at most `FLY_MOST`, `FLY_GAP` ms apart; the landing slot's own painting waits hidden, `.incoming`, and bumps as it lands). Walking off `LARDER_NEAR`, going to a fire, ✕, E, Esc or Back shut
 it (`larderFrame`, `stepOut`). Playing together a friend sees it set down (`sendFire` 'basket') but can't open it.
 Cooking at the fire (PLAN.md stage 6, its redesign, and the cooking window of 2026-10-16; the long comments over `COOK_TPS` and
 `DROPS` have it all): a click on a lit fire (or E, or the pot prompt) walks the forager there (`clickFire` 'cook', `goFire`), it
