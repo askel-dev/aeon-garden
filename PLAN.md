@@ -334,6 +334,17 @@ what goes together was hard, and "Something new: cherries, cherries" promised a 
   isn't built, and a guest's kit is whatever the world's forager has); the raw vessel isn't drawn at the fire; proper
   paintings of the pan, stone, stick and bowl in the cooking view, and of the clay button; the meadow's little pot over a fire
   (`drawPot`) is still a pot whatever is cooking.
+- **Cooking close-up polish (2026-10-17, branch `claude/cook-polish-390dff`).** Only the cooking window's canvas (game.js
+  `drawCookView`). The pot is handmade earthenware now (`paintCookPot`: terracotta, a wobbly rim `wobble`, coil lines, two thumb
+  marks, soot up the belly, two lugs, no iron legs, sat on the stones). The spoon's bowl is drawn dim under the water and broth
+  (`spoonPart`), its handle out of it with a ripple where it goes in; while cooking the things go round with it (`kw.sa`, `kw.sr`,
+  `kw.mix`: pushed on as it comes by, spreading evenly) and are drawn back to front with the handle among them (`kw.ord`); a tap
+  still takes one out (`kw.hx`/`kw.hy` are where it's drawn). Each vessel has a place (`kw.at`: where its things sit, `potX`/`potY`
+  follow it, its hover ring, glow and steam) and a painting made once a size when first wanted (`vesselArt`, `VESSEL_PAINT`): the
+  clay griddle (things hop as they sizzle, spits of fat: `spit`, `kw.dK`), the hearth stone (heat wisps), the stick on two forked
+  sticks (things threaded on it, turning: squashed, knots going round), the carved bowl set down in front of the fire (no steam).
+  Things brown as they cook on all but the bowl (drawn again over themselves, 'multiply'). `vesselFlat` is gone. A frame is a few
+  more strokes and one more draw a thing than before; not timed (the window's own small canvas).
 
 ## After that (roughly in this order)
 1. **Cooking at the fire** and 2. **hunger and eating**: stage 6 above.

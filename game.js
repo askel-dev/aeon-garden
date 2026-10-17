@@ -4306,7 +4306,7 @@ function renderCook(measure = true) {
 function flyToPot(id, sx, sy, landed) {
   if (!kw.w) { landed(); return; }
   const r = kw.cv.getBoundingClientRect(), i = ui.fire.pot.length - 1;
-  flyBig(id, sx, sy, r.left + potX(i, ui.fire.pot.length), r.top + kw.wy - kw.rx * 0.95, 360, 1, potSize(ui.fire.pot.length) / 72, landed);
+  flyBig(id, sx, sy, r.left + potX(i, ui.fire.pot.length), r.top + kw.at[cookVessel].y - kw.rx * 0.95, 360, 1, potSize(ui.fire.pot.length) / 72, landed);
 }
 // A satchel painting flying from sx, sy to tx, ty on screen (CSS px) in a little arc, a big tile's size (72 px) times k0 to
 // k1: one element, the browser's own animation.
@@ -4327,38 +4327,53 @@ function flyBig(id, sx, sy, tx, ty, ms, k0, k1, done) {
 //
 // The pot close up in the window (#cook-canvas: drawCookView, every frame but only while the window is open). It sits on the
 // fire's own coals and stones (paintFire, as the fire is just now: kw.bed) in a warm dark vignette, the fire's flames licking
-// up round its belly (drawFlames, drawn into this canvas) and their glow flickering on the ground and the iron; in it water,
+// up round its belly (drawFlames, drawn into this canvas) and their glow flickering on the ground and the clay; in it water,
 // shimmering, that a thing dropped in falls into with a splash (droplets flying up and falling back, rings going out, a plop:
 // sound.js 'plop', heavier for a mushroom or an apple than a leaf or a berry), dips under, bobs back up and floats, its lower
 // part seen dimly through the water. While it cooks the water turns to broth (brothOf: by what's in it), bubbles, steams,
-// and a wooden spoon goes round in it (a swish each time round: sound.js 'stir'); done, the dish rises out of it glowing
-// (a mess, in a puff of dark smoke) and flies to its tile (kw.reveal). A tap on a thing floating takes it back out.
+// and a wooden spoon goes round in it (a swish each time round: sound.js 'stir'), its bowl dim under the broth and its handle
+// out of it, the things going round with it, pulled along in its wake and drawn in front of it or behind by how near they
+// are; done, the dish rises out of it glowing (a mess, in a puff of dark smoke) and flies to its tile (kw.reveal). A tap on a
+// thing floating takes it back out. The other vessels (cookVessel) have their own place (kw.at) and painting (vesselArt): the
+// clay griddle (things sizzling, a hop now and then, a spit of fat), the hearth stone (a shimmer of heat), the stick across
+// the fire on two forked sticks (the things threaded on it turning) and the wooden bowl (off the heat, things resting in it);
+// on all but the bowl the things brown as they cook (each drawn again over itself, 'multiply').
 // What looks the same each frame is painted once a size (paintCookPot: kw.back the pot's inside and the water, kw.front its
-// belly, rim and legs, the droplet, the bubble and the spoon; paintCookBed: kw.bg the vignette and the fire's bed), so a frame
-// is twenty-odd draws and a few strokes, on a canvas the size of the window's pot. Nothing is made in a frame: the droplets and
-// rings are pools of typed arrays, the bubbles and steam come from the clock.
+// clay belly and rim, the droplet, the bubble and the spoon; vesselArt the others, as first wanted; paintCookBed: kw.bg the
+// vignette and the fire's bed), so a frame is twenty-odd draws and a few strokes, on a canvas the size of the window's pot.
+// Nothing is made in a frame: the droplets and rings are pools of typed arrays, the bubbles and steam come from the clock.
 const DROPS = 48, RINGS = 14;
 const REVEAL_MS = 1500;                   // ms the dish takes to rise out of the pot, before it flies to the satchel
 const COOK_TILES = 6.5, COOK_MOST = 110;   // the camera close enough for this many tiles across what the window leaves, at most this close
 const COOK_AIM = 0.3, COOK_UP = 0.85;     // the camera aims this far from the fire to the forager, and this many tiles over its foot
 const kw = {
   cv: null, g: null, w: 0, h: 0, d: 1, slots: [], press: -1,
-  bg: null, back: null, front: null, dropArt: null, bubArt: null, spoon: null, bed: '',
+  bg: null, back: null, front: null, dropArt: null, fatArt: null, bubArt: null, spoon: null, bed: '', at: null, vart: {},
   cx: 0, rx: 0, ry: 0, rimY: 0, wy: 0, wrx: 0, wry: 0, fireY: 0,   // the pot's shape, in the canvas's CSS px
   fx: NaN, fy: NaN, zoom: 64,             // where on the screen the camera puts the fire (beside the window, or over the sheet), and how close
   sx: new Float64Array(POT + 1),          // each thing's x as it floats, eased to its place as others come and go
+  sa: new Float64Array(POT + 1), sr: new Float64Array(POT + 1), mix: 0,   // stirred: each thing's way round the pot and how far out, and how far it's taken to it
   hx: new Float64Array(POT + 1), hy: new Float64Array(POT + 1), hr: new Float64Array(POT + 1), n: 0,   // the things as drawn
+  ty: new Float64Array(POT + 1), ro: new Float64Array(POT + 1), sy: new Float64Array(POT + 1), fall: new Uint8Array(POT + 1), ord: new Int8Array(POT + 1),   // (and where each sits, turned, squashed, falling: drawn back to front)
   dX: new Float32Array(DROPS), dY: new Float32Array(DROPS), dVX: new Float32Array(DROPS), dVY: new Float32Array(DROPS),
-  dT: new Float64Array(DROPS).fill(-1e9), dR: new Float32Array(DROPS), dn: 0,
+  dT: new Float64Array(DROPS).fill(-1e9), dR: new Float32Array(DROPS), dK: new Uint8Array(DROPS), dn: 0,   // (dK 1: a spit of fat, not water)
   rX: new Float32Array(RINGS), rY: new Float32Array(RINGS), rS: new Float32Array(RINGS), rL: new Float32Array(RINGS),
   rA: new Float32Array(RINGS), rT: new Float64Array(RINGS).fill(-1e9), rn: 0,
-  last: 0, broth: 0, brothRGB: 'rgb(170, 108, 50)', hover: false, reveal: null, incoming: -1, ringAt: 0,
+  last: 0, broth: 0, brothRGB: 'rgb(170, 108, 50)', hover: false, reveal: null, incoming: -1, ringAt: 0, spitAt: 0,
 };
-// Where thing i of n floats (x, y in the canvas) and how big it's drawn.
+// Where thing i of n sits (x, y in the canvas) and how big it's drawn, in the vessel cooking with (kw.at: its middle, how far
+// its things spread, how far down in it they sit). On the stick they go along it.
 const POT_PLACES = [[], [0], [-0.37, 0.37], [-0.47, 0.03, 0.47], [-0.5, -0.17, 0.17, 0.5]], POT_PLACES_Y = [[], [0.05], [0.08, -0.06], [0.16, -0.32, 0.08], [0.14, -0.2, -0.2, 0.14]];
-const potX = (i, n) => kw.cx + (POT_PLACES[Math.min(n, POT)][i] || 0) * kw.wrx;
-const potY = (i, n) => kw.wy + (POT_PLACES_Y[Math.min(n, POT)][i] || 0) * kw.wry;
-const potSize = n => kw.rx * [0.62, 0.62, 0.56, 0.5, 0.46][Math.min(n, POT)];
+const STICK_PLACES = [[], [0], [-0.34, 0.34], [-0.58, 0, 0.58], [-0.72, -0.24, 0.24, 0.72]];
+function potX(i, n) {
+  const A = kw.at[cookVessel], m = Math.min(n, POT);
+  return A.x + (cookVessel === 'stick' ? STICK_PLACES[m][i] || 0 : (POT_PLACES[m][i] || 0) * A.spread) * A.rx;
+}
+function potY(i, n) {
+  const A = kw.at[cookVessel];
+  return cookVessel === 'stick' ? A.y + (potX(i, n) - A.x) * A.tilt : A.y + (A.down + (POT_PLACES_Y[Math.min(n, POT)][i] || 0) * A.spread) * A.ry;
+}
+const potSize = n => kw.rx * [0.62, 0.62, 0.56, 0.5, 0.46][Math.min(n, POT)] * kw.at[cookVessel].size;
 // How a thing meets the water: what it is (its sound) and how heavily (the splash).
 const PLOP_W = { fish: 1.7, meat: 1.7, game: 1.7, mushroom: 1, fruit: 1, sweet: 1.1, nut: 0.85, dish: 1.2, berry: 0.6, greens: 0.55, flower: 0.5 };
 function plopOf(id) {
@@ -4398,78 +4413,131 @@ function cookLayer(w = kw.w, h = kw.h) {
   return [art, g, c];
 }
 const bitmapOf = (art, c) => asBitmap(c, b => { if (art.img === c) art.img = b; });
-// The pot, painted once a size: its shape from the canvas's, then its inside and the water (kw.back), its belly, rim, ears
-// and legs (kw.front), a droplet, a bubble and the wooden spoon.
+// An ellipse's edge from a0 to a1 (added to the path: move, or a line on from where it was), wobbling a little as a thing
+// made by hand does (amt: how much, seed: where its bumps fall).
+function wobble(g, x, y, rx, ry, a0, a1, amt, move = true, seed = 0) {
+  for (let k = 0; k <= 48; k++) {
+    const a = a0 + (a1 - a0) * k / 48, r = 1 + amt * (0.6 * Math.sin(a * 3 + 1.3 + seed) + 0.4 * Math.sin(a * 5 + 0.4 + seed * 1.7));
+    if (k || !move) g.lineTo(x + Math.cos(a) * rx * r, y + Math.sin(a) * ry * r); else g.moveTo(x + Math.cos(a) * rx * r, y + Math.sin(a) * ry * r);
+  }
+}
+// A painting's grain: n specks over the box x, y, w, h, light and dark (painted once, in whatever clip is set).
+function grain(g, x, y, w, h, n, seed, size, a) {
+  for (let k = 0; k < n; k++) {
+    const r = size * (0.5 + hash2(k, seed, 63));
+    g.fillStyle = k & 1 ? `rgba(255, 236, 210, ${a})` : `rgba(50, 24, 12, ${a})`;
+    g.beginPath(); g.ellipse(x + hash2(k, seed, 61) * w, y + hash2(k, seed, 62) * h, r, r * 0.7, 0, 0, Math.PI * 2); g.fill();
+  }
+}
+const blurOf = px => `blur(${Math.max(1, px)}px)`;
+// The pot, painted once a size: its shape from the canvas's, then its inside and the water (kw.back), its clay belly, rim and
+// lugs (kw.front), a droplet, a bead of fat, a bubble and the wooden spoon; and where each vessel sits (kw.at).
 function paintCookPot() {
   const w = kw.w, h = kw.h, rx = Math.min(w * 0.34, h * 0.38), ry = rx * 0.36, cx = w / 2, fireY = h * 0.8, rimY = fireY - rx * 1.02;
-  Object.assign(kw, { cx, rx, ry, rimY, fireY, wy: rimY + ry * 0.3, wrx: rx * 0.88, wry: ry * 0.8, bed: '' });
-  const { wy, wrx, wry } = kw, TAU = Math.PI * 2;
+  Object.assign(kw, { cx, rx, ry, rimY, fireY, wy: rimY + ry * 0.3, wrx: rx * 0.88, wry: ry * 0.8, bed: '', vart: {} });
+  const { wy, wrx, wry } = kw, TAU = Math.PI * 2, PI = Math.PI, W = 0.012;
+  // x, y its middle, rx, ry its size; spread, down: where its things sit (potX), size: how big, sit: how far up a thing's
+  // middle is from where it sits (of its size), ring: the glow round it with something held over, glow: the flames' light
+  // on it (x, y, w, h, how strong), steam: puffs cooking and not
+  const pan = { x: cx, y: fireY - rx * 0.5, rx: rx * 0.98, ry: rx * 0.33 }, stone = { x: cx, y: fireY - rx * 0.4, rx: rx * 0.9, ry: rx * 0.32 };
+  const stick = { x: cx, y: fireY - rx * 0.9, rx }, bowl = { x: cx, y: fireY - rx * 0.12, rx: rx * 0.86, ry: rx * 0.31 };
+  kw.at = {
+    pot: { x: cx, y: wy, rx: wrx, ry: wry, spread: 1, down: 0, size: 1, sit: 0.2, tilt: 0, ring: [cx, rimY, rx * 1.04, ry * 1.08], glow: [cx - rx * 0.95, rimY + rx * 0.4, rx * 1.9, rx * 0.8, 1], steam: [7, 4] },
+    pan: { ...pan, spread: 0.8, down: 0.05, size: 1, sit: 0.36, tilt: 0, ring: [pan.x, pan.y, pan.rx * 1.12, pan.ry * 1.2], glow: [cx - rx, pan.y + rx * 0.04, rx * 2, rx * 0.35, 0.8], steam: [4, 0] },
+    stone: { ...stone, spread: 0.75, down: 0, size: 1, sit: 0.36, tilt: 0, ring: [stone.x, stone.y, stone.rx * 1.1, stone.ry * 1.2], glow: [cx - rx * 0.9, stone.y + rx * 0.06, rx * 1.8, rx * 0.35, 0.7], steam: [3, 0] },
+    stick: { ...stick, ry: rx * 0.2, spread: 1, down: 0, size: 0.92, sit: 0, tilt: -0.06, ring: [cx, stick.y, rx * 1.3, rx * 0.22], glow: [cx - rx * 0.7, stick.y - rx * 0.25, rx * 1.4, rx * 0.45, 0.6], steam: [3, 0] },
+    bowl: { ...bowl, spread: 0.72, down: 0.6, size: 0.92, sit: 0.12, tilt: 0, ring: [bowl.x, bowl.y, bowl.rx * 1.08, bowl.ry * 1.15], glow: [cx - rx * 0.8, bowl.y + rx * 0.05, rx * 1.6, rx * 0.5, 0.35], steam: [0, 0] },
+  };
   let [art, g, c] = cookLayer();
-  // the inside: its far wall, dark iron catching a little light along the top
+  // the inside: its far wall, dark fired clay catching a little light along the top
   let gr = g.createLinearGradient(0, rimY - ry, 0, rimY + ry);
-  gr.addColorStop(0, '#4d433d'); gr.addColorStop(0.45, '#2b2321'); gr.addColorStop(1, '#1c1716');
+  gr.addColorStop(0, '#7f4529'); gr.addColorStop(0.45, '#4f2717'); gr.addColorStop(1, '#331a10');
   g.fillStyle = gr; g.beginPath(); g.ellipse(cx, rimY, rx * 0.97, ry * 0.95, 0, 0, TAU); g.fill();
   g.save(); g.beginPath(); g.ellipse(cx, rimY, rx * 0.97, ry * 0.95, 0, 0, TAU); g.clip();
   gr = g.createRadialGradient(cx - wrx * 0.15, wy - wry * 0.1, 0, cx, wy, wrx);   // the water: clear, cool, deeper at its edge
   gr.addColorStop(0, '#86aca4'); gr.addColorStop(0.55, '#55807f'); gr.addColorStop(1, '#2c4a51');
   g.fillStyle = gr; g.beginPath(); g.ellipse(cx, wy, wrx, wry, 0, 0, TAU); g.fill();
-  g.filter = `blur(${Math.max(1, rx * 0.035)}px)`;
-  g.fillStyle = 'rgba(14, 18, 24, 0.5)'; g.beginPath(); g.ellipse(cx, wy - wry * 0.8, wrx * 0.98, wry * 0.42, 0, 0, TAU); g.fill();   // the far wall's shadow on it
+  g.filter = blurOf(rx * 0.035);
+  g.fillStyle = 'rgba(30, 14, 8, 0.5)'; g.beginPath(); g.ellipse(cx, wy - wry * 0.8, wrx * 0.98, wry * 0.42, 0, 0, TAU); g.fill();   // the far wall's shadow on it
   g.fillStyle = 'rgba(236, 244, 232, 0.24)'; g.beginPath(); g.ellipse(cx + wrx * 0.3, wy + wry * 0.12, wrx * 0.3, wry * 0.15, -0.08, 0, TAU); g.fill();   // the sky in it
   g.fillStyle = 'rgba(255, 150, 70, 0.14)'; g.beginPath(); g.ellipse(cx, wy + wry * 0.75, wrx * 0.8, wry * 0.32, 0, 0, TAU); g.fill();   // the firelight
   g.filter = 'none';
   g.restore();
-  g.lineCap = 'round';
-  g.lineWidth = rx * 0.075; g.strokeStyle = '#5b514c';   // the rim at the back, lit along its top
-  g.beginPath(); g.ellipse(cx, rimY, rx, ry, 0, Math.PI, TAU); g.stroke();
-  g.lineWidth = Math.max(1, rx * 0.016); g.strokeStyle = 'rgba(255, 236, 210, 0.32)';
-  g.beginPath(); g.ellipse(cx, rimY - rx * 0.024, rx, ry, 0, Math.PI * 1.1, Math.PI * 1.9); g.stroke();
+  g.lineCap = 'round'; g.lineJoin = 'round';
+  g.lineWidth = rx * 0.085; g.strokeStyle = '#a65f39';    // the rim at the back, a little uneven, lit along its top
+  g.beginPath(); wobble(g, cx, rimY, rx, ry, PI, TAU, W); g.stroke();
+  g.lineWidth = Math.max(1, rx * 0.016); g.strokeStyle = 'rgba(255, 226, 190, 0.32)';
+  g.beginPath(); wobble(g, cx, rimY - rx * 0.024, rx, ry, PI * 1.1, PI * 1.9, W); g.stroke();
   kw.back = art; bitmapOf(art, c);
 
   [art, g, c] = cookLayer();
   const bot = rimY + rx * 0.95;
-  for (const lx of [-0.56, 0.58, 0.03]) {                 // three stubby legs, down on the coals
-    const x = cx + lx * rx, top = rimY + rx * 0.9 * (1 - lx * lx * 0.5), foot = fireY + (lx === 0.03 ? rx * 0.06 : -rx * 0.02), hw = rx * 0.075;
-    g.fillStyle = lx === 0.03 ? '#2a2120' : '#1d1716';
-    g.beginPath(); g.moveTo(x - hw, top); g.lineTo(x + hw, top); g.lineTo(x + hw * 0.7, foot); g.quadraticCurveTo(x, foot + hw * 0.5, x - hw * 0.7, foot); g.closePath(); g.fill();
-  }
   const belly = () => {
     g.beginPath(); g.moveTo(cx - rx * 1.02, rimY);
-    g.bezierCurveTo(cx - rx * 1.2, rimY + rx * 0.6, cx - rx * 0.66, bot, cx, bot);
-    g.bezierCurveTo(cx + rx * 0.66, bot, cx + rx * 1.2, rimY + rx * 0.6, cx + rx * 1.02, rimY);
-    g.ellipse(cx, rimY, rx * 1.02, ry * 1.02, 0, 0, Math.PI); g.closePath();
+    g.bezierCurveTo(cx - rx * 1.22, rimY + rx * 0.62, cx - rx * 0.62, bot, cx, bot);
+    g.bezierCurveTo(cx + rx * 0.62, bot, cx + rx * 1.22, rimY + rx * 0.62, cx + rx * 1.02, rimY);
+    wobble(g, cx, rimY, rx * 1.02, ry * 1.02, 0, PI, W, false); g.closePath();
   };
-  gr = g.createRadialGradient(cx - rx * 0.42, rimY + rx * 0.22, 0, cx - rx * 0.1, rimY + rx * 0.4, rx * 1.35);
-  gr.addColorStop(0, '#746a64'); gr.addColorStop(0.4, '#423936'); gr.addColorStop(1, '#171312');
+  g.filter = blurOf(rx * 0.06);                           // sat down among the stones
+  g.fillStyle = 'rgba(20, 10, 6, 0.35)'; g.beginPath(); g.ellipse(cx, bot - rx * 0.02, rx * 0.72, rx * 0.12, 0, 0, TAU); g.fill();
+  g.filter = 'none';
+  gr = g.createRadialGradient(cx - rx * 0.45, rimY + rx * 0.25, 0, cx - rx * 0.1, rimY + rx * 0.45, rx * 1.4);   // earthenware, warm
+  gr.addColorStop(0, '#d99566'); gr.addColorStop(0.35, '#b4683f'); gr.addColorStop(0.75, '#7a3d22'); gr.addColorStop(1, '#3f1c10');
   g.fillStyle = gr; belly(); g.fill();
   g.save(); belly(); g.clip();
+  grain(g, cx - rx * 1.1, rimY, rx * 2.2, rx, 420, 3, rx * 0.006, 0.09);
+  g.lineWidth = Math.max(1, rx * 0.012);
+  for (let k = 1; k <= 5; k++) {                          // the coils it was built up from, smoothed over but not quite
+    const y = rimY + rx * (0.1 + k * 0.155);
+    g.strokeStyle = 'rgba(70, 30, 14, 0.2)'; g.beginPath(); wobble(g, cx, y, rx * 1.15, ry * 1.05, PI * 0.05, PI * 0.95, 0.02, true, k * 1.9); g.stroke();
+    g.strokeStyle = 'rgba(255, 214, 176, 0.12)'; g.beginPath(); wobble(g, cx, y + rx * 0.013, rx * 1.15, ry * 1.05, PI * 0.08, PI * 0.92, 0.02, true, k * 1.9); g.stroke();
+  }
+  g.filter = blurOf(rx * 0.09);                           // soot up the belly from the fire
+  g.fillStyle = 'rgba(26, 14, 10, 0.75)'; g.beginPath(); g.ellipse(cx, bot + rx * 0.08, rx * 0.95, rx * 0.4, 0, 0, TAU); g.fill();
+  g.fillStyle = 'rgba(26, 14, 10, 0.4)';
+  g.beginPath(); g.ellipse(cx - rx * 0.55, bot - rx * 0.28, rx * 0.22, rx * 0.32, 0.4, 0, TAU); g.fill();
+  g.beginPath(); g.ellipse(cx + rx * 0.5, bot - rx * 0.32, rx * 0.2, rx * 0.36, -0.35, 0, TAU); g.fill();
+  g.beginPath(); g.ellipse(cx + rx * 0.05, bot - rx * 0.35, rx * 0.18, rx * 0.3, 0, 0, TAU); g.fill();
+  g.filter = 'none';
   gr = g.createRadialGradient(cx, rimY + rx * 1.2, 0, cx, rimY + rx * 1.2, rx * 1.05);   // warm from the flames under it
-  gr.addColorStop(0, 'rgba(255, 150, 64, 0.8)'); gr.addColorStop(0.45, 'rgba(232, 92, 40, 0.3)'); gr.addColorStop(1, 'rgba(200, 70, 30, 0)');
+  gr.addColorStop(0, 'rgba(255, 150, 64, 0.65)'); gr.addColorStop(0.45, 'rgba(232, 92, 40, 0.25)'); gr.addColorStop(1, 'rgba(200, 70, 30, 0)');
   g.fillStyle = gr; g.fillRect(cx - rx * 1.3, rimY, rx * 2.6, rx * 1.3);
-  g.filter = `blur(${Math.max(1, rx * 0.05)}px)`;
-  g.fillStyle = 'rgba(255, 248, 232, 0.3)'; g.beginPath(); g.ellipse(cx - rx * 0.6, rimY + rx * 0.32, rx * 0.13, rx * 0.3, 0.45, 0, TAU); g.fill();   // a gleam on its shoulder
-  g.fillStyle = 'rgba(255, 248, 232, 0.12)'; g.beginPath(); g.ellipse(cx + rx * 0.62, rimY + rx * 0.36, rx * 0.08, rx * 0.2, -0.4, 0, TAU); g.fill();
+  g.filter = blurOf(rx * 0.012);                          // a thumb mark or two, left from the shaping
+  for (const [x, y, a] of [[cx + rx * 0.42, rimY + rx * 0.3, -0.5], [cx - rx * 0.24, rimY + rx * 0.55, 0.3]]) {
+    g.fillStyle = 'rgba(70, 30, 14, 0.24)'; g.beginPath(); g.ellipse(x, y, rx * 0.065, rx * 0.045, a, 0, TAU); g.fill();
+    g.strokeStyle = 'rgba(255, 218, 186, 0.3)'; g.lineWidth = rx * 0.01; g.beginPath(); g.ellipse(x, y + rx * 0.006, rx * 0.06, rx * 0.04, a, PI * 0.15, PI * 0.85); g.stroke();
+  }
+  g.filter = blurOf(rx * 0.05);                           // a soft sheen on its shoulders (clay, not iron: no gleam)
+  g.fillStyle = 'rgba(255, 236, 214, 0.2)'; g.beginPath(); g.ellipse(cx - rx * 0.6, rimY + rx * 0.32, rx * 0.13, rx * 0.28, 0.45, 0, TAU); g.fill();
+  g.fillStyle = 'rgba(255, 236, 214, 0.08)'; g.beginPath(); g.ellipse(cx + rx * 0.62, rimY + rx * 0.36, rx * 0.08, rx * 0.2, -0.4, 0, TAU); g.fill();
+  g.filter = blurOf(rx * 0.025);                          // the shadow under its lip
+  g.strokeStyle = 'rgba(60, 24, 10, 0.35)'; g.lineWidth = rx * 0.05; g.beginPath(); wobble(g, cx, rimY + rx * 0.07, rx * 1.0, ry, PI * 0.05, PI * 0.95, W); g.stroke();
   g.filter = 'none';
   g.restore();
-  g.lineCap = 'round';
-  g.lineWidth = rx * 0.09; g.strokeStyle = '#675c56';   // the rim in front
-  g.beginPath(); g.ellipse(cx, rimY, rx, ry, 0, 0, Math.PI); g.stroke();
-  g.lineWidth = Math.max(1, rx * 0.018); g.strokeStyle = 'rgba(255, 240, 220, 0.5)';
-  g.beginPath(); g.ellipse(cx, rimY - rx * 0.03, rx * 0.99, ry, 0, Math.PI * 0.1, Math.PI * 0.9); g.stroke();
-  for (const s of [-1, 1]) {                             // its ears
-    g.lineWidth = rx * 0.065; g.strokeStyle = '#3b3330';
-    g.beginPath(); g.moveTo(cx + s * rx * 0.99, rimY + rx * 0.08); g.quadraticCurveTo(cx + s * rx * 1.24, rimY + rx * 0.1, cx + s * rx * 1.06, rimY + rx * 0.33); g.stroke();
-    g.lineWidth = Math.max(1, rx * 0.014); g.strokeStyle = 'rgba(255, 200, 150, 0.3)';
-    g.beginPath(); g.moveTo(cx + s * rx * 1.0, rimY + rx * 0.06); g.quadraticCurveTo(cx + s * rx * 1.2, rimY + rx * 0.08, cx + s * rx * 1.12, rimY + rx * 0.2); g.stroke();
+  g.lineCap = 'round'; g.lineJoin = 'round';
+  g.lineWidth = rx * 0.1; g.strokeStyle = '#bd7146';      // the rim in front
+  g.beginPath(); wobble(g, cx, rimY, rx, ry, 0, PI, W); g.stroke();
+  g.lineWidth = Math.max(1, rx * 0.02); g.strokeStyle = 'rgba(255, 226, 190, 0.55)';
+  g.beginPath(); wobble(g, cx, rimY - rx * 0.03, rx * 0.99, ry, PI * 0.1, PI * 0.9, W); g.stroke();
+  g.lineWidth = Math.max(1, rx * 0.012); g.strokeStyle = 'rgba(70, 30, 14, 0.4)';
+  g.beginPath(); wobble(g, cx, rimY + rx * 0.045, rx, ry * 1.02, PI * 0.05, PI * 0.95, W); g.stroke();
+  for (const s of [-1, 1]) {                             // two lugs, pinched out of the clay
+    g.fillStyle = '#9c5531'; g.beginPath(); g.ellipse(cx + s * rx * 1.07, rimY + rx * 0.2, rx * 0.09, rx * 0.055, s * 0.3, 0, TAU); g.fill();
+    g.fillStyle = 'rgba(255, 220, 186, 0.3)'; g.beginPath(); g.ellipse(cx + s * rx * 1.07, rimY + rx * 0.18, rx * 0.06, rx * 0.025, s * 0.3, 0, TAU); g.fill();
   }
   kw.front = art; bitmapOf(art, c);
 
   const D = 24;                                           // a droplet: a bead of water with a bright point
-  [art, g, c] = cookLayer(D, D);
-  gr = g.createRadialGradient(D * 0.42, D * 0.38, 0, D / 2, D / 2, D / 2);
-  gr.addColorStop(0, 'rgba(255, 255, 255, 0.95)'); gr.addColorStop(0.3, 'rgba(206, 232, 232, 0.85)'); gr.addColorStop(0.75, 'rgba(120, 170, 175, 0.55)'); gr.addColorStop(1, 'rgba(120, 170, 175, 0)');
-  g.fillStyle = gr; g.fillRect(0, 0, D, D);
-  kw.dropArt = art; bitmapOf(art, c);
+  const bead = stops => {
+    [art, g, c] = cookLayer(D, D);
+    gr = g.createRadialGradient(D * 0.42, D * 0.38, 0, D / 2, D / 2, D / 2);
+    stops.forEach((s, k) => gr.addColorStop([0, 0.3, 0.75, 1][k], s));
+    g.fillStyle = gr; g.fillRect(0, 0, D, D);
+    bitmapOf(art, c);
+    return art;
+  };
+  kw.dropArt = bead(['rgba(255, 255, 255, 0.95)', 'rgba(206, 232, 232, 0.85)', 'rgba(120, 170, 175, 0.55)', 'rgba(120, 170, 175, 0)']);
+  kw.fatArt = bead(['rgba(255, 252, 226, 0.95)', 'rgba(250, 214, 120, 0.85)', 'rgba(220, 160, 60, 0.5)', 'rgba(220, 160, 60, 0)']);   // a spit of fat off the griddle
   [art, g, c] = cookLayer(D, D);                          // a bubble: a thin bright ring with a glint
   g.strokeStyle = 'rgba(232, 246, 240, 0.85)'; g.lineWidth = 1.6; g.beginPath(); g.arc(D / 2, D / 2, D / 2 - 2, 0, TAU); g.stroke();
   g.fillStyle = 'rgba(200, 230, 225, 0.18)'; g.fill();
@@ -4483,8 +4551,178 @@ function paintCookPot() {
   g.strokeStyle = 'rgba(255, 230, 190, 0.5)'; g.lineWidth = H * 0.06; g.beginPath(); g.moveTo(br * 2, H * 0.43); g.lineTo(L - H * 0.3, H * 0.4); g.stroke();
   g.fillStyle = '#8f5f36'; g.beginPath(); g.ellipse(br + 1, H / 2, br, br * 0.82, 0, 0, TAU); g.fill();
   g.fillStyle = '#6a4325'; g.beginPath(); g.ellipse(br + 1.5, H / 2 + 1, br * 0.66, br * 0.52, 0, 0, TAU); g.fill();
-  kw.spoon = Object.assign(art, { len: L, h: H, bx: br + 1 }); bitmapOf(art, c);
+  kw.spoon = Object.assign(art, { len: L, h: H, bx: br + 1, enter: br * 2.6 });   // (enter: how far up from its bowl it comes out of the water)
+  bitmapOf(art, c);
 }
+// The other vessels, each painted once a size the first time it's wanted ({ back, front }: under its things, over them).
+const vesselArt = v => kw.vart[v] || (kw.vart[v] = VESSEL_PAINT[v](kw.at[v], kw.rx));
+const VESSEL_PAINT = {
+  // The clay griddle: a shallow earthenware dish on the stones, its side sooty, its lip a little uneven.
+  pan(A, rx) {
+    const x = A.x, y = A.y, R = A.rx * 1.06, Ry = A.ry * 1.12, dep = rx * 0.13, TAU = Math.PI * 2, PI = Math.PI;
+    let [back, g, c] = cookLayer();
+    g.filter = blurOf(rx * 0.05);
+    g.fillStyle = 'rgba(20, 10, 6, 0.4)'; g.beginPath(); g.ellipse(x, y + dep + Ry * 0.5, R * 0.95, Ry * 0.8, 0, 0, TAU); g.fill();
+    g.filter = 'none';
+    const side = () => { g.beginPath(); g.moveTo(x - R, y); g.lineTo(x - R * 0.9, y + dep); g.ellipse(x, y + dep, R * 0.9, Ry * 0.9, 0, PI, 0, true); g.lineTo(x + R, y); wobble(g, x, y, R, Ry, 0, PI, 0.01, false, 2); g.closePath(); };
+    let gr = g.createLinearGradient(0, y, 0, y + dep + Ry);
+    gr.addColorStop(0, '#a2592f'); gr.addColorStop(1, '#3b1a0e');
+    g.fillStyle = gr; side(); g.fill();
+    g.save(); side(); g.clip();
+    g.filter = blurOf(rx * 0.05);
+    g.fillStyle = 'rgba(26, 14, 10, 0.6)'; g.beginPath(); g.ellipse(x, y + dep + Ry * 0.9, R, Ry * 0.8, 0, 0, TAU); g.fill();
+    g.fillStyle = 'rgba(255, 140, 60, 0.25)'; g.beginPath(); g.ellipse(x, y + dep + Ry, R * 0.6, Ry * 0.6, 0, 0, TAU); g.fill();
+    g.filter = 'none'; g.restore();
+    gr = g.createRadialGradient(x - R * 0.3, y - Ry * 0.3, 0, x, y, R);
+    gr.addColorStop(0, '#c27b50'); gr.addColorStop(0.6, '#a35f39'); gr.addColorStop(1, '#7d4126');
+    g.fillStyle = gr; g.beginPath(); wobble(g, x, y, R, Ry, 0, TAU, 0.01, true, 2); g.fill();
+    g.save(); g.beginPath(); wobble(g, x, y, R, Ry, 0, TAU, 0.01, true, 2); g.clip();
+    grain(g, x - R, y - Ry, R * 2, Ry * 2, 160, 5, rx * 0.005, 0.08);
+    g.filter = blurOf(rx * 0.03);                         // the well things cook in, dark and oiled
+    g.fillStyle = 'rgba(70, 30, 14, 0.38)'; g.beginPath(); g.ellipse(x, y + Ry * 0.08, R * 0.82, Ry * 0.74, 0, 0, TAU); g.fill();
+    g.fillStyle = 'rgba(255, 220, 160, 0.14)'; g.beginPath(); g.ellipse(x - R * 0.28, y - Ry * 0.12, R * 0.3, Ry * 0.25, 0, 0, TAU); g.fill();
+    g.filter = 'none'; g.restore();
+    g.lineCap = 'round'; g.lineJoin = 'round';
+    g.lineWidth = rx * 0.06; g.strokeStyle = '#b46c43';  // its lip at the back
+    g.beginPath(); wobble(g, x, y, R * 0.97, Ry * 0.94, PI, TAU, 0.01, true, 2); g.stroke();
+    g.lineWidth = Math.max(1, rx * 0.015); g.strokeStyle = 'rgba(255, 226, 190, 0.35)';
+    g.beginPath(); wobble(g, x, y - rx * 0.02, R * 0.97, Ry * 0.94, PI * 1.1, PI * 1.9, 0.01, true, 2); g.stroke();
+    bitmapOf(back, c);
+    let front; [front, g, c] = cookLayer();
+    g.lineCap = 'round'; g.lineJoin = 'round';
+    g.lineWidth = rx * 0.06; g.strokeStyle = '#c17a4d';  // and in front
+    g.beginPath(); wobble(g, x, y, R * 0.97, Ry * 0.94, 0, PI, 0.01, true, 2); g.stroke();
+    g.lineWidth = Math.max(1, rx * 0.014); g.strokeStyle = 'rgba(255, 230, 196, 0.4)';
+    g.beginPath(); wobble(g, x, y - rx * 0.022, R * 0.96, Ry * 0.93, PI * 0.15, PI * 0.85, 0.01, true, 2); g.stroke();
+    for (const s of [-1, 1]) {
+      g.fillStyle = '#9c5531'; g.beginPath(); g.ellipse(x + s * R * 1.02, y + dep * 0.4, rx * 0.08, rx * 0.045, s * 0.2, 0, TAU); g.fill();
+      g.fillStyle = 'rgba(255, 220, 186, 0.3)'; g.beginPath(); g.ellipse(x + s * R * 1.02, y + dep * 0.3, rx * 0.05, rx * 0.02, s * 0.2, 0, TAU); g.fill();
+    }
+    bitmapOf(front, c);
+    return { back, front };
+  },
+  // The hearth stone: a flat grey slab over the coals, darker where things are put on it, warm along its underside.
+  stone(A, rx) {
+    const x = A.x, y = A.y, R = A.rx, Ry = A.ry, th = rx * 0.14, TAU = Math.PI * 2, PI = Math.PI;
+    const [back, g, c] = cookLayer();
+    const slab = dy => { g.beginPath(); wobble(g, x, y + dy, R, Ry, 0, TAU, 0.05, true, 4); };
+    g.filter = blurOf(rx * 0.05);
+    g.fillStyle = 'rgba(20, 10, 6, 0.45)'; g.beginPath(); g.ellipse(x, y + th + Ry * 0.3, R * 1.02, Ry * 0.9, 0, 0, TAU); g.fill();
+    g.filter = 'none';
+    const side = () => { g.beginPath(); wobble(g, x, y, R, Ry, 0, PI, 0.05, true, 4); wobble(g, x, y + th, R, Ry, PI, 0, 0.05, false, 4); g.closePath(); };
+    let gr = g.createLinearGradient(0, y, 0, y + th + Ry);
+    gr.addColorStop(0, '#5e5a53'); gr.addColorStop(1, '#2f2c29');
+    g.fillStyle = gr; side(); g.fill();
+    g.save(); side(); g.clip();
+    g.filter = blurOf(rx * 0.05);
+    g.fillStyle = 'rgba(255, 130, 60, 0.28)'; g.beginPath(); g.ellipse(x, y + th + Ry * 0.8, R * 0.6, Ry * 0.4, 0, 0, TAU); g.fill();
+    g.filter = 'none'; g.restore();
+    gr = g.createRadialGradient(x - R * 0.3, y - Ry * 0.4, 0, x, y, R * 1.05);
+    gr.addColorStop(0, '#aaa69b'); gr.addColorStop(0.6, '#8a867c'); gr.addColorStop(1, '#6a675f');
+    g.fillStyle = gr; slab(0); g.fill();
+    g.save(); slab(0); g.clip();
+    grain(g, x - R, y - Ry * 1.1, R * 2, Ry * 2.2, 220, 9, rx * 0.007, 0.1);
+    g.filter = blurOf(rx * 0.05);
+    g.fillStyle = 'rgba(40, 32, 26, 0.3)'; g.beginPath(); g.ellipse(x, y + Ry * 0.05, R * 0.6, Ry * 0.55, 0, 0, TAU); g.fill();   // scorched where things cook
+    g.fillStyle = 'rgba(255, 250, 236, 0.16)'; g.beginPath(); g.ellipse(x - R * 0.4, y - Ry * 0.45, R * 0.35, Ry * 0.25, -0.1, 0, TAU); g.fill();
+    g.filter = 'none';
+    g.lineWidth = Math.max(1, rx * 0.016); g.strokeStyle = 'rgba(255, 250, 236, 0.3)';
+    g.beginPath(); wobble(g, x, y + rx * 0.008, R * 0.99, Ry * 0.97, PI * 1.08, PI * 1.92, 0.05, true, 4); g.stroke();
+    g.restore();
+    bitmapOf(back, c);
+    return { back, front: null };
+  },
+  // The stick across the fire, on two forked sticks pushed into the ground at its sides; the fork's near arms go in front.
+  stick(A, rx) {
+    const k = A.tilt, th = rx * 0.055, L = rx * 1.4, x0 = A.x - L, x1 = A.x + L * 0.98, at = x => A.y + (x - A.x) * k, fireY = kw.fireY;
+    let [back, g, c] = cookLayer();
+    g.lineCap = 'round'; g.lineJoin = 'round';
+    for (const s of [-1, 1]) {
+      const ux = A.x + s * rx * 1.22, uy = at(ux);
+      g.strokeStyle = '#4a3019'; g.lineWidth = th * 1.1;
+      g.beginPath(); g.moveTo(ux + s * rx * 0.03, fireY + rx * 0.14); g.quadraticCurveTo(ux + s * rx * 0.03, uy + rx * 0.3, ux, uy + th * 0.3); g.stroke();
+      g.strokeStyle = '#7a5530'; g.lineWidth = th * 0.3;
+      g.beginPath(); g.moveTo(ux + s * rx * 0.03 - th * 0.25, fireY + rx * 0.12); g.quadraticCurveTo(ux + s * rx * 0.03 - th * 0.25, uy + rx * 0.3, ux - th * 0.25, uy + th * 0.5); g.stroke();
+      g.strokeStyle = '#43291a'; g.lineWidth = th * 0.75;
+      g.beginPath(); g.moveTo(ux, uy + th * 0.6); g.lineTo(ux - s * rx * 0.08, uy - rx * 0.14); g.stroke();
+    }
+    g.strokeStyle = '#4b301a'; g.lineWidth = th;          // the stick, a little charred over the middle, whittled to a point
+    g.beginPath(); g.moveTo(x0, at(x0)); g.lineTo(x1, at(x1)); g.stroke();
+    g.strokeStyle = '#7d5634'; g.lineWidth = th * 0.75;
+    g.beginPath(); g.moveTo(x0, at(x0) - th * 0.05); g.lineTo(x1, at(x1) - th * 0.05); g.stroke();
+    g.strokeStyle = '#b08456'; g.lineWidth = th * 0.22;
+    g.beginPath(); g.moveTo(x0 + th, at(x0) - th * 0.25); g.lineTo(x1 - th, at(x1) - th * 0.25); g.stroke();
+    g.fillStyle = '#d2b184'; g.beginPath(); g.moveTo(x1 - rx * 0.1, at(x1) - th * 0.42); g.lineTo(x1 + rx * 0.08, at(x1) + th * 0.05); g.lineTo(x1 - rx * 0.1, at(x1) + th * 0.42); g.closePath(); g.fill();
+    g.filter = blurOf(rx * 0.015);
+    for (let i = 0; i < 6; i++) {
+      const x = A.x + (hash2(i, 3, 71) - 0.5) * rx * 1.1;
+      g.fillStyle = `rgba(28, 18, 10, ${0.35 + 0.25 * hash2(i, 3, 72)})`; g.beginPath(); g.ellipse(x, at(x) + th * 0.15, rx * (0.03 + 0.04 * hash2(i, 3, 73)), th * 0.3, 0, 0, Math.PI * 2); g.fill();
+    }
+    g.filter = 'none';
+    bitmapOf(back, c);
+    let front; [front, g, c] = cookLayer();
+    g.lineCap = 'round'; g.strokeStyle = '#5a3b20'; g.lineWidth = th * 0.75;
+    for (const s of [-1, 1]) {
+      const ux = A.x + s * rx * 1.22, uy = at(ux);
+      g.beginPath(); g.moveTo(ux, uy + th * 0.6); g.lineTo(ux + s * rx * 0.07, uy - rx * 0.15); g.stroke();
+    }
+    bitmapOf(front, c);
+    return { back, front };
+  },
+  // The wooden bowl, carved: set down in front of the fire (no heat in it), its inside behind the things, its belly in front.
+  bowl(A, rx) {
+    const x = A.x, y = A.y, R = A.rx, Ry = A.ry, dep = rx * 0.5, TAU = Math.PI * 2, PI = Math.PI, W = 0.006;
+    let [back, g, c] = cookLayer();
+    g.filter = blurOf(rx * 0.06);
+    g.fillStyle = 'rgba(20, 10, 6, 0.5)'; g.beginPath(); g.ellipse(x, y + dep * 0.95, R * 0.9, Ry * 0.6, 0, 0, TAU); g.fill();
+    g.filter = 'none';
+    let gr = g.createLinearGradient(0, y - Ry, 0, y + Ry);
+    gr.addColorStop(0, '#a36e3e'); gr.addColorStop(0.6, '#7c4f2a'); gr.addColorStop(1, '#5c391d');
+    g.fillStyle = gr; g.beginPath(); wobble(g, x, y, R * 0.95, Ry * 0.92, 0, TAU, W); g.fill();
+    g.save(); g.beginPath(); wobble(g, x, y, R * 0.95, Ry * 0.92, 0, TAU, W); g.clip();
+    g.lineWidth = Math.max(1, rx * 0.01); g.strokeStyle = 'rgba(60, 34, 14, 0.18)';   // the knife's marks
+    for (let k = 0; k < 7; k++) {
+      const a = PI * (0.1 + 0.8 * hash2(k, 5, 81)), s = 0.3 + 0.1 * k;
+      g.beginPath(); g.ellipse(x, y + Ry * 0.3, R * s, Ry * s, 0, a, a + 0.9); g.stroke();
+    }
+    g.filter = blurOf(rx * 0.04);
+    g.fillStyle = 'rgba(255, 220, 170, 0.16)'; g.beginPath(); g.ellipse(x, y - Ry * 0.4, R * 0.6, Ry * 0.35, 0, 0, TAU); g.fill();
+    g.filter = 'none'; g.restore();
+    g.lineCap = 'round'; g.lineJoin = 'round';
+    g.lineWidth = rx * 0.05; g.strokeStyle = '#b98552';
+    g.beginPath(); wobble(g, x, y, R, Ry, PI, TAU, W); g.stroke();
+    g.lineWidth = Math.max(1, rx * 0.013); g.strokeStyle = 'rgba(255, 236, 206, 0.35)';
+    g.beginPath(); wobble(g, x, y - rx * 0.018, R, Ry, PI * 1.1, PI * 1.9, W); g.stroke();
+    bitmapOf(back, c);
+    let front; [front, g, c] = cookLayer();
+    g.fillStyle = '#5e3a1c'; g.beginPath(); g.ellipse(x, y + dep + rx * 0.02, R * 0.38, Ry * 0.3, 0, 0, TAU); g.fill();   // its foot
+    const belly = () => {
+      g.beginPath(); g.moveTo(x - R, y);
+      g.bezierCurveTo(x - R * 1.02, y + dep * 0.7, x - R * 0.55, y + dep, x, y + dep);
+      g.bezierCurveTo(x + R * 0.55, y + dep, x + R * 1.02, y + dep * 0.7, x + R, y);
+      wobble(g, x, y, R, Ry, 0, PI, W, false); g.closePath();
+    };
+    gr = g.createRadialGradient(x - R * 0.4, y + dep * 0.3, 0, x, y + dep * 0.4, R * 1.2);
+    gr.addColorStop(0, '#c99560'); gr.addColorStop(0.5, '#9b6a3a'); gr.addColorStop(1, '#5a3618');
+    g.fillStyle = gr; belly(); g.fill();
+    g.save(); belly(); g.clip();
+    g.lineWidth = Math.max(1, rx * 0.008); g.strokeStyle = 'rgba(70, 40, 18, 0.2)';   // the wood's grain
+    for (let k = 0; k < 8; k++) { g.beginPath(); wobble(g, x, y + dep * (0.12 + k * 0.1), R * (1.02 - k * 0.05), Ry * (0.9 - k * 0.06), PI * 0.05, PI * 0.95, 0.03, true, k * 1.7); g.stroke(); }
+    g.strokeStyle = 'rgba(60, 34, 14, 0.35)'; g.lineWidth = Math.max(1, rx * 0.012);   // a knot
+    g.beginPath(); g.ellipse(x + R * 0.36, y + dep * 0.55, R * 0.06, R * 0.035, 0.2, 0, TAU); g.stroke();
+    g.filter = blurOf(rx * 0.05);
+    g.fillStyle = 'rgba(255, 240, 220, 0.2)'; g.beginPath(); g.ellipse(x - R * 0.55, y + dep * 0.4, R * 0.14, dep * 0.3, 0.5, 0, TAU); g.fill();
+    g.fillStyle = 'rgba(255, 150, 70, 0.18)'; g.beginPath(); g.ellipse(x + R * 0.8, y + dep * 0.3, R * 0.15, dep * 0.35, -0.4, 0, TAU); g.fill();   // the firelight round its side
+    g.filter = 'none'; g.restore();
+    g.lineCap = 'round'; g.lineJoin = 'round';
+    g.lineWidth = rx * 0.055; g.strokeStyle = '#c89462';
+    g.beginPath(); wobble(g, x, y, R, Ry, 0, PI, W); g.stroke();
+    g.lineWidth = Math.max(1, rx * 0.014); g.strokeStyle = 'rgba(255, 238, 210, 0.5)';
+    g.beginPath(); wobble(g, x, y - rx * 0.02, R * 0.99, Ry, PI * 0.12, PI * 0.88, W); g.stroke();
+    bitmapOf(front, c);
+    return { back, front };
+  },
+};
 // The vignette and the fire's bed under the pot (its coals, ash, sticks and stones as the meadow paints it: fireArt), painted
 // again only when the fire's painting changes (a stick on, burning down).
 function paintCookBed(bed) {
@@ -4518,23 +4756,40 @@ function potRing(x, y, size, ms, a, at) {
   kw.rX[i] = x; kw.rY[i] = y; kw.rS[i] = size; kw.rL[i] = ms; kw.rA[i] = a; kw.rT[i] = at;
 }
 // Something meets the water at x, y (w how heavy: 1 a mushroom, more for a fish, less for a leaf): droplets fly up and
-// fall back, and rings go out.
+// fall back, and rings go out. Only in the pot: nothing else has water.
 function splash(x, y, w, now) {
+  if (cookVessel !== 'pot') return;
   const n = Math.round(4 + 9 * w), rx = kw.rx;
   for (let k = 0; k < n; k++) {
     const i = kw.dn = (kw.dn + 1) % DROPS, a = -Math.PI / 2 + (Math.random() - 0.5) * 2.4, v = rx * (0.0011 + 0.0016 * Math.random()) * (0.65 + 0.35 * Math.min(w, 1.6));
     kw.dX[i] = x + (Math.random() - 0.5) * rx * 0.16 * w; kw.dY[i] = y - rx * 0.02;
-    kw.dVX[i] = Math.cos(a) * v * 1.25; kw.dVY[i] = Math.sin(a) * v; kw.dT[i] = now; kw.dR[i] = rx * (0.022 + 0.03 * Math.random()) * (0.7 + 0.3 * Math.min(w, 1.5));
+    kw.dVX[i] = Math.cos(a) * v * 1.25; kw.dVY[i] = Math.sin(a) * v; kw.dT[i] = now; kw.dR[i] = rx * (0.022 + 0.03 * Math.random()) * (0.7 + 0.3 * Math.min(w, 1.5)); kw.dK[i] = 0;
   }
   potRing(x, y, rx * 0.2 * (0.6 + 0.4 * w), 950, 0.65, now);
   potRing(x, y, rx * 0.12 * (0.6 + 0.4 * w), 1150, 0.45, now + 150);
 }
+// A spit of fat off the griddle at x, y: n little beads jumping up and falling back.
+function spit(x, y, n, now) {
+  const rx = kw.rx;
+  for (let k = 0; k < n; k++) {
+    const i = kw.dn = (kw.dn + 1) % DROPS, a = -Math.PI / 2 + (Math.random() - 0.5) * 2, v = rx * (0.0008 + 0.0012 * Math.random());
+    kw.dX[i] = x + (Math.random() - 0.5) * rx * 0.2; kw.dY[i] = y;
+    kw.dVX[i] = Math.cos(a) * v; kw.dVY[i] = Math.sin(a) * v; kw.dT[i] = now; kw.dR[i] = rx * (0.012 + 0.014 * Math.random()); kw.dK[i] = 1;
+  }
+}
 const DROP_G = 6.5e-6, FALL_G = 1.3e-5;   // the droplets' gravity and a thing falling in, in the pot's size a ms²
-// A thing in the pot drawn floating at x, yc (its middle), S its size, turned rot, the water at wl: what's under it seen
-// dimly through the water, a ring round it where it sits in it. wl Infinity: in the air, all of it.
-function drawPotThing(g, sheet, k, x, yc, S, rot, wl) {
+// A thing drawn at x, yc (its middle), S its size, turned rot, squashed to sy of its height (turning on the stick).
+function drawThing(g, sheet, k, x, yc, S, rot, sy) {
   const d = kw.d, cs = Math.cos(rot) * d, sn = Math.sin(rot) * d;
-  if (wl > yc + S * 0.5) { g.setTransform(cs, sn, -sn, cs, x * d, yc * d); g.drawImage(sheet, k * ITEM_PX, 0, ITEM_PX, ITEM_PX, -S / 2, -S / 2, S, S); g.setTransform(d, 0, 0, d, 0, 0); return; }
+  g.setTransform(cs, sn, -sn * sy, cs * sy, x * d, yc * d);
+  g.drawImage(sheet, k * ITEM_PX, 0, ITEM_PX, ITEM_PX, -S / 2, -S / 2, S, S);
+  g.setTransform(d, 0, 0, d, 0, 0);
+}
+// A thing in the pot drawn floating at x, yc, the water at wl: what's under it seen dimly through the water, a ring round
+// it where it sits in it. wl Infinity: in the air, all of it.
+function drawPotThing(g, sheet, k, x, yc, S, rot, wl) {
+  if (wl > yc + S * 0.5) { drawThing(g, sheet, k, x, yc, S, rot, 1); return; }
+  const d = kw.d, cs = Math.cos(rot) * d, sn = Math.sin(rot) * d;
   g.save(); g.beginPath(); g.rect(x - S, wl, S * 2, S * 1.5); g.clip();
   g.globalAlpha = 0.36; g.setTransform(cs, sn, -sn, cs, x * d, yc * d); g.drawImage(sheet, k * ITEM_PX, 0, ITEM_PX, ITEM_PX, -S / 2, -S / 2, S, S);
   g.restore();
@@ -4544,21 +4799,16 @@ function drawPotThing(g, sheet, k, x, yc, S, rot, wl) {
   g.globalAlpha = 1; g.setTransform(cs, sn, -sn, cs, x * d, yc * d); g.drawImage(sheet, k * ITEM_PX, 0, ITEM_PX, ITEM_PX, -S / 2, -S / 2, S, S);
   g.restore();
 }
-// The window's pot, once a frame while it's open (frame): see the comment over DROPS.
-// A vessel other than the pot in the cooking window, plainly (a later pass paints them): the griddle a clay disc, the stone
-// a flat grey one, the bowl a wooden one, the stick a line across. A path or two a frame.
-const FLAT = { pan: ['#8a5a3a', '#5e3b24', 1.1, 1], stone: ['#8f8b80', '#615e57', 0.95, 0.8], bowl: ['#a9773f', '#6e4a26', 1, 1.25] };
-function vesselFlat(g, v, cx, wy, wrx, wry, rx) {
-  g.globalAlpha = 1; g.lineCap = 'round';
-  if (v === 'stick') {
-    g.strokeStyle = '#6e4a2a'; g.lineWidth = Math.max(2, rx * 0.06);
-    g.beginPath(); g.moveTo(cx - wrx * 1.2, wy + wry * 0.5); g.lineTo(cx + wrx * 1.2, wy - wry * 0.3); g.stroke();
-    return;
-  }
-  const [fill, edge, k, deep] = FLAT[v];
-  g.fillStyle = edge; g.beginPath(); g.ellipse(cx, wy + wry * 0.18 * deep, wrx * k, wry * k * deep, 0, 0, Math.PI * 2); g.fill();
-  g.fillStyle = fill; g.beginPath(); g.ellipse(cx, wy, wrx * k * 0.94, wry * k * 0.9, 0, 0, Math.PI * 2); g.fill();
+// The part of the spoon from x0 to x0 + len along it (0 its bowl's middle), its bowl at x, y and turned an.
+function spoonPart(g, sp, x, y, an, x0, len) {
+  const d = kw.d, c = Math.cos(an) * d, s = Math.sin(an) * d;
+  g.save(); g.setTransform(c, s, -s, c, x * d, y * d);
+  g.beginPath(); g.rect(x0, -sp.h, len, sp.h * 2); g.clip();
+  g.drawImage(sp.img, -sp.bx, -sp.h / 2, sp.len, sp.h);
+  g.restore();
 }
+let SHADE_ART = null;   // a thing's soft shadow where it sits on the griddle, the stone or in the bowl
+// The window's pot, once a frame while it's open (frame): see the comment over DROPS.
 function drawCookView(now) {
   const j = ui.fire;
   if (!j || !kw.w || !kw.back) return;
@@ -4566,8 +4816,8 @@ function drawCookView(now) {
   kw.last = now;
   const bed = fireArt(j.F, now);
   if (bed !== kw.bed) paintCookBed(bed);
-  const cx = kw.cx, rx = kw.rx, ry = kw.ry, rimY = kw.rimY, wy = kw.wy, wrx = kw.wrx, wry = kw.wry, fireY = kw.fireY;
-  const busy = j.stage === 'cooking', heat = Math.min(1.2, fireShown(j.F, now).heat);
+  const cx = kw.cx, rx = kw.rx, wy = kw.wy, wrx = kw.wrx, wry = kw.wry, fireY = kw.fireY, v = cookVessel, A = kw.at[v], inPot = v === 'pot';
+  const busy = j.stage === 'cooking', heat = Math.min(1.2, fireShown(j.F, now).heat), cooked = busy ? cookFrac(j.F) : 0;
   g.setTransform(d, 0, 0, d, 0, 0); g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1;
   g.clearRect(0, 0, w, h);
   g.drawImage(kw.bg.img, 0, 0, w, h);
@@ -4581,13 +4831,20 @@ function drawCookView(now) {
     drawFlames(cx + rx * 0.68, fireY, rx * 1.4, heat, now, 31, g, d, 0, 0);
     drawFlames(cx, fireY, rx * 1.7, heat, now, 53, g, d, 0, 0);
   }
-  const inPot = cookVessel === 'pot';                     // (the others are plain shapes for now: vesselFlat)
-  if (inPot) g.drawImage(kw.back.img, 0, 0, w, h);
-  else vesselFlat(g, cookVessel, cx, wy, wrx, wry, rx);
+  const art = inPot ? kw : vesselArt(v);
+  g.drawImage(art.back.img, 0, 0, w, h);
+  // the spoon going round in the pot while it cooks: its bowl under the water, its handle out of it from en
+  const stir = busy && inPot, sp = kw.spoon;
+  let sa = 0, bx = 0, by = 0, an = 0, enX = 0, enY = 0;
+  if (stir) {
+    sa = (now - j.t0) / (COOK_STIR * 2) * TAU; bx = cx + Math.cos(sa) * wrx * 0.45; by = wy + Math.sin(sa) * wry * 0.45;
+    const ex = cx + rx * 0.66 + Math.cos(sa) * rx * 0.12, ey = kw.rimY - rx * 0.7 + Math.sin(sa) * rx * 0.05;
+    an = Math.atan2(ey - by, ex - bx); enX = bx + Math.cos(an) * sp.enter; enY = by + Math.sin(an) * sp.enter;
+  }
   // the water: turning to broth as it cooks, shimmering, bubbling, rings going out
   if (inPot) {
   g.save(); g.beginPath(); g.ellipse(cx, wy, wrx, wry, 0, 0, TAU); g.clip();
-  const cooked = busy ? cookFrac(j.F) : 0;
+  if (stir) { g.globalAlpha = 0.6; spoonPart(g, sp, bx, by, an, -sp.bx - 2, sp.enter + sp.bx + 2); }
   kw.broth += ((busy ? 0.85 * cooked : 0) - kw.broth) * (1 - Math.exp(-fdt / (busy ? 300 : 1200)));
   if (kw.broth > 0.01) { g.globalAlpha = kw.broth * 0.72; g.fillStyle = kw.brothRGB; g.fillRect(cx - wrx, wy - wry, wrx * 2, wry * 2); }
   g.strokeStyle = '#eef6f0'; g.lineCap = 'round'; g.lineWidth = Math.max(1, rx * 0.013);
@@ -4604,6 +4861,7 @@ function drawCookView(now) {
     if (p < 0.86) { g.globalAlpha = (busy ? 0.85 : 0.5) * Math.min(1, p * 5); g.drawImage(bub, x - r, y - r, r * 2, r * 2); }
     else { g.globalAlpha = (1 - p) / 0.14 * 0.55; g.beginPath(); g.ellipse(x, y + r * 0.4, r * (1.2 + (p - 0.86) * 12), r * 0.45 * (1.2 + (p - 0.86) * 12), 0, 0, TAU); g.stroke(); }
   }
+  if (stir && now - kw.ringAt > 260) { kw.ringAt = now; potRing(enX, enY, rx * 0.08, 800, 0.4, now); }   // (the spoon swirling it)
   for (let k = 0; k < RINGS; k++) {                       // the rings
     const u = (now - kw.rT[k]) / kw.rL[k];
     if (!(u >= 0 && u < 1)) continue;
@@ -4613,66 +4871,154 @@ function drawCookView(now) {
   }
   g.restore();
   }
-  // the things in it: falling in, a splash, under and back up, floating
-  const n = j.pot.length, sheet = itemSheet().img, S = potSize(n), FG = rx * FALL_G;
+  if (v === 'stick' && busy) {                            // the stick turning: knots on its bark going round
+    const th = rx * 0.055, q = now / 1300;
+    g.strokeStyle = '#3a2614'; g.lineCap = 'round'; g.lineWidth = th * 0.35;
+    for (let k = 0; k < 4; k++) {
+      const ph = q * 1.3 + k * 2.3, c = Math.cos(ph);
+      if (c < 0.1) continue;
+      const kx = cx + (-0.95 + k * 0.62) * rx, ky = A.y + (kx - cx) * A.tilt + Math.sin(ph) * th * 0.32;
+      g.globalAlpha = 0.55 * c; g.beginPath(); g.moveTo(kx - rx * 0.03, ky); g.lineTo(kx + rx * 0.03, ky); g.stroke();
+    }
+    g.globalAlpha = 1;
+  }
+  // the things in it: where each is (falling in, a splash, under and back up, floating, stirred round; or set down on it),
+  // then drawn back to front, the spoon's handle among them
+  const n = j.pot.length, sheet = itemSheet().img, S = potSize(n), FG = rx * FALL_G, mouth = A.y - rx * 0.95, om = TAU / (COOK_STIR * 2);
+  kw.mix += ((stir ? 1 : 0) - kw.mix) * (1 - Math.exp(-fdt / (stir ? 700 : 400)));
   for (let i = 0; i < n; i++) {
     const land = j.land[i];
-    if (!(now >= land)) { kw.hx[i] = -1e9; continue; }    // (still flying in)
-    const tx = potX(i, n), ty = potY(i, n);
+    kw.ord[i] = i;
+    if (!(now >= land)) { kw.hx[i] = -1e9; kw.fall[i] = 2; kw.ty[i] = -1e9; continue; }   // (still flying in)
+    let tx = potX(i, n), ty = potY(i, n);
     if (Number.isNaN(kw.sx[i])) kw.sx[i] = tx;
     kw.sx[i] += (tx - kw.sx[i]) * (1 - Math.exp(-fdt / 240));
-    const from = j.drop[i], x0 = from ? from[0] : kw.sx[i], y0 = from ? from[1] : wy - rx * 0.95;
-    const T = Math.sqrt(2 * Math.max(4, ty - S * 0.2 - y0) / FG), u = now - land;
-    let x = kw.sx[i], yc, rot, wl = inPot ? ty : Infinity;
-    if (u < T) { const k = u / T; x = x0 + (x - x0) * k; yc = y0 + 0.5 * FG * u * u; rot = (1 - k) * 0.35 * (i & 1 ? 1 : -1); wl = Infinity; }
-    else {
-      if (was - land < T) { const p = plopOf(j.pot[i]); if (inPot) splash(x, ty, p.w, now); chime('plop', p); }
-      const v = u - T, dip = S * 0.42 * Math.exp(-v / 380) * Math.sin(v / 110);
-      yc = ty - S * 0.2 + dip + (busy ? S * 0.06 * Math.sin(now / 170 + i * 2.1) : S * 0.025 * Math.sin(now / 640 + i * 2.3));
-      rot = 0.24 * Math.exp(-v / 520) * Math.sin(v / 150) + (busy ? 0.12 * Math.sin(now / 260 + i) : 0.05 * Math.sin(now / 900 + i * 1.7));
+    tx = kw.sx[i];
+    if (inPot) {                                          // stirred: round the pot with the spoon, pushed on as it comes by
+      const ux = (tx - cx) / wrx, uy = (ty - wy) / wry;
+      if (kw.mix < 0.002) { kw.sa[i] = Math.atan2(uy, ux); kw.sr[i] = clamp(Math.hypot(ux, uy), 0.3, 0.62); }
+      else {
+        let ahead = TAU, behind = TAU, q = (sa - kw.sa[i] + 0.6) % TAU, push = 0, bump = 0;
+        if (stir) {
+          for (let k = 0; k < n; k++) if (k !== i && now >= j.land[k]) {   // (and spreading out evenly round it)
+            const e = ((kw.sa[k] - kw.sa[i]) % TAU + TAU) % TAU;
+            if (e < ahead) ahead = e;
+            if (TAU - e < behind) behind = TAU - e;
+          }
+          kw.sa[i] += fdt * (om * 0.5 + (ahead < TAU ? 0.0012 * (ahead - behind) : 0));
+          if (q < 0) q += TAU;
+          push = q < 0.9 ? (1 - Math.cos(Math.PI * q / 0.9)) / 2 : 1 - (q - 0.9) / (TAU - 0.9);
+          bump = 0.12 * Math.exp(-(((q - 0.6) / 0.45) ** 2)) * (kw.sr[i] < 0.42 ? -1 : 1);   // (out of the spoon's way)
+        }
+        const r = kw.sr[i] + bump, an = kw.sa[i] + 0.6 * push, m = kw.mix;
+        tx += (cx + Math.cos(an) * wrx * r - tx) * m; ty += (wy + Math.sin(an) * wry * r - ty) * m;
+      }
     }
-    drawPotThing(g, sheet, ITEM_IDS.indexOf(j.pot[i]), x, yc, S, rot, wl);
-    kw.hx[i] = x; kw.hy[i] = yc; kw.hr[i] = S * 0.5;
+    const from = j.drop[i], x0 = from ? from[0] : tx, y0 = from ? from[1] : mouth;
+    const T = Math.sqrt(2 * Math.max(4, ty - S * A.sit - y0) / FG), u = now - land;
+    let x = tx, yc, rot, sy = 1;
+    if (u < T) { const k = u / T; x = x0 + (tx - x0) * k; yc = y0 + 0.5 * FG * u * u; rot = (1 - k) * 0.35 * (i & 1 ? 1 : -1); kw.fall[i] = 1; kw.ty[i] = 1e9; }
+    else {
+      const vv = u - T;
+      if (was - land < T) { const p = plopOf(j.pot[i]); splash(x, ty, p.w, now); if (v === 'pan') spit(x, ty - S * 0.1, 3, now); chime('plop', p); }
+      if (inPot) {
+        const dip = S * 0.42 * Math.exp(-vv / 380) * Math.sin(vv / 110);
+        yc = ty - S * 0.2 + dip + (busy ? S * 0.06 * Math.sin(now / 170 + i * 2.1) : S * 0.025 * Math.sin(now / 640 + i * 2.3));
+        rot = 0.24 * Math.exp(-vv / 520) * Math.sin(vv / 150) + (busy ? 0.12 * Math.sin(now / 260 + i) : 0.05 * Math.sin(now / 900 + i * 1.7));
+      } else if (v === 'stick') {                         // threaded on it, turning slowly over the flames
+        const q = now / 1300 + i * 1.9;
+        yc = ty + S * 0.05 * Math.exp(-vv / 300) * Math.sin(vv / 60);
+        rot = busy ? 0.08 * Math.sin(q) : 0; sy = busy ? 0.82 + 0.18 * Math.cos(q * 1.3) : 1;
+      } else {                                            // set down on it: a little settle, and on the griddle a hop now and then as it sizzles
+        yc = ty - S * A.sit - S * 0.12 * Math.exp(-vv / 160) * Math.abs(Math.sin(vv / 55));
+        rot = 0.12 * Math.exp(-vv / 300) * Math.sin(vv / 80);
+        if (busy && v === 'pan') {
+          const q = now / (430 + 60 * i) + i * 0.37, m = Math.floor(q), hop = hash2(i, m, 21) < 0.45 ? Math.sin(Math.PI * (q - m)) : 0;
+          yc -= S * 0.09 * hop; rot += 0.14 * hop * (hash2(i, m, 22) - 0.5);
+        }
+      }
+      kw.fall[i] = 0; kw.ty[i] = ty;
+    }
+    kw.hx[i] = x; kw.hy[i] = yc; kw.hr[i] = S * 0.5; kw.ro[i] = rot; kw.sy[i] = sy;
   }
   kw.n = n;
-  if (busy && inPot) {                                    // the spoon going round in it, swirling the water
-    const a = (now - j.t0) / (COOK_STIR * 2) * TAU, bx = cx + Math.cos(a) * wrx * 0.45, by = wy + Math.sin(a) * wry * 0.45;
-    const ex = cx + rx * 0.66 + Math.cos(a) * rx * 0.12, ey = rimY - rx * 0.7 + Math.sin(a) * rx * 0.05, an = Math.atan2(ey - by, ex - bx), sp = kw.spoon;
+  for (let i = 1; i < n; i++) { const o = kw.ord[i], key = kw.ty[o]; let k = i; while (k > 0 && kw.ty[kw.ord[k - 1]] > key) { kw.ord[k] = kw.ord[k - 1]; k--; } kw.ord[k] = o; }
+  const shade = (SHADE_ART || (SHADE_ART = glowArt2(64, [[0, 'rgba(24, 12, 6, 0.6)'], [0.6, 'rgba(24, 12, 6, 0.25)'], [1, 'rgba(24, 12, 6, 0)']]))).img;
+  let handle = stir;
+  g.lineCap = 'round';
+  if (stir) { g.globalAlpha = 0.5; g.strokeStyle = '#eef6f0'; g.lineWidth = Math.max(1, rx * 0.012); g.beginPath(); g.ellipse(enX, enY, sp.h * 0.6, sp.h * 0.2, 0, Math.PI, TAU); g.stroke(); }   // (where it goes in, behind)
+  for (let o = 0; o < n; o++) {
+    const i = kw.ord[o];
+    if (kw.fall[i] === 2) continue;
+    if (handle && kw.ty[i] > enY) { handle = false; g.globalAlpha = 1; spoonPart(g, sp, bx, by, an, sp.enter, sp.len); }
+    const k = ITEM_IDS.indexOf(j.pot[i]), x = kw.hx[i], yc = kw.hy[i], ty = kw.ty[i];
     g.globalAlpha = 1;
-    g.setTransform(Math.cos(an) * d, Math.sin(an) * d, -Math.sin(an) * d, Math.cos(an) * d, bx * d, by * d);
-    g.drawImage(sp.img, -sp.bx, -sp.h / 2, sp.len, sp.h);
-    g.setTransform(d, 0, 0, d, 0, 0);
-    if (now - kw.ringAt > 260) { kw.ringAt = now; potRing(bx, by, rx * 0.1, 800, 0.4, now); }
+    if (kw.fall[i] === 1) { drawThing(g, sheet, k, x, yc, S, kw.ro[i], 1); continue; }
+    if (inPot) { drawPotThing(g, sheet, k, x, yc, S, kw.ro[i], ty); continue; }
+    if (v !== 'stick') {
+      if (busy && v === 'pan') {                          // sizzling round its foot
+        g.globalAlpha = 0.22 + 0.14 * Math.sin(now / 70 + i * 2); g.strokeStyle = '#ffe2a0'; g.lineWidth = Math.max(1, rx * 0.01);
+        g.beginPath(); g.ellipse(x, ty + S * 0.02, S * 0.44, S * 0.12, 0, 0, TAU); g.stroke();
+      }
+      g.globalAlpha = 0.55; g.drawImage(shade, x - S * 0.46, ty - S * 0.1, S * 0.92, S * 0.26); g.globalAlpha = 1;
+    }
+    drawThing(g, sheet, k, x, yc, S, kw.ro[i], kw.sy[i]);
+    if (cooked > 0.02 && v !== 'bowl') {                  // browning as it cooks
+      g.globalCompositeOperation = 'multiply'; g.globalAlpha = cooked * 0.5;
+      drawThing(g, sheet, k, x, yc, S, kw.ro[i], kw.sy[i]);
+      g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1;
+    }
   }
+  if (handle) { g.globalAlpha = 1; spoonPart(g, sp, bx, by, an, sp.enter, sp.len); }
+  if (stir) { g.globalAlpha = 0.6; g.strokeStyle = '#eef6f0'; g.lineWidth = Math.max(1, rx * 0.012); g.beginPath(); g.ellipse(enX, enY, sp.h * 0.6, sp.h * 0.2, 0, 0, Math.PI); g.stroke(); }   // (and in front)
   g.globalAlpha = 1;
-  if (inPot) g.drawImage(kw.front.img, 0, 0, w, h);
-  g.globalCompositeOperation = 'lighter';                 // the flames' light flickering on its belly
-  g.globalAlpha = heat * (0.2 + 0.06 * Math.sin(t * 9.1) + 0.04 * Math.sin(t * 15.7));
-  g.drawImage(bloom, cx - rx * 0.95, rimY + rx * 0.4, rx * 1.9, rx * 0.8);
+  if (art.front) g.drawImage(art.front.img, 0, 0, w, h);
+  const gl = A.glow;
+  g.globalCompositeOperation = 'lighter';                 // the flames' light flickering on it
+  g.globalAlpha = gl[4] * heat * (0.2 + 0.06 * Math.sin(t * 9.1) + 0.04 * Math.sin(t * 15.7));
+  g.drawImage(bloom, gl[0], gl[1], gl[2], gl[3]);
   g.globalCompositeOperation = 'source-over';
-  if (kw.hover) {                                         // something held over it: the rim glows to take it
+  if (kw.hover) {                                         // something held over it: its rim glows to take it
+    const r = A.ring;
     g.globalAlpha = 0.65 + 0.25 * Math.sin(t * 7); g.strokeStyle = '#ffc677'; g.lineWidth = Math.max(2, rx * 0.03);
-    g.beginPath(); g.ellipse(cx, rimY, rx * 1.04, ry * 1.08, 0, 0, TAU); g.stroke();
+    g.beginPath(); g.ellipse(r[0], r[1], r[2], r[3], 0, 0, TAU); g.stroke();
   }
-  const drop = kw.dropArt.img, DG = rx * DROP_G;          // the droplets, flying up and falling back
+  if (v === 'stone' && heat > 0.05) {                     // the heat off the stone, shimmering up in wisps
+    g.strokeStyle = '#fff4e4'; g.lineWidth = Math.max(1, rx * 0.014);
+    for (let k = 0; k < 5; k++) {
+      const p = (t * 0.55 + hash2(k, 1, 92)) % 1, x = cx + (hash2(k, 1, 91) - 0.5) * A.rx * 1.2, y = A.y - rx * (0.08 + 0.55 * p), wv = rx * 0.03 * Math.sin(t * 4 + k * 2);
+      g.globalAlpha = (busy ? 0.2 : 0.1) * Math.min(1, heat) * Math.sin(Math.PI * p);
+      g.beginPath(); g.moveTo(x, y); g.bezierCurveTo(x + wv, y - rx * 0.08, x - wv, y - rx * 0.14, x, y - rx * 0.22); g.stroke();
+    }
+  }
+  if (busy && v === 'pan' && n && now > kw.spitAt) {      // a spit of fat now and then
+    const i = Math.random() * n | 0;
+    if (kw.fall[i] === 0) spit(kw.hx[i], kw.ty[i] - S * 0.1, 2 + (Math.random() * 3 | 0), now);
+    kw.spitAt = now + 300 + Math.random() * 900;
+  }
+  const DG = rx * DROP_G;                                 // the droplets, flying up and falling back
   for (let i = 0; i < DROPS; i++) {
     const u = now - kw.dT[i];
     if (!(u >= 0 && u < 1400)) continue;
     const x = kw.dX[i] + kw.dVX[i] * u, y = kw.dY[i] + kw.dVY[i] * u + 0.5 * DG * u * u;
     if (y > kw.dY[i] + rx * 0.04 && kw.dVY[i] + DG * u > 0) {   // (back down: a tiny ring where it falls in)
       kw.dT[i] = -1e9;
-      if (((x - cx) / wrx) ** 2 + ((y - wy) / wry) ** 2 < 0.9) potRing(x, y, rx * 0.045, 500, 0.4, now);
+      if (!kw.dK[i] && inPot && ((x - cx) / wrx) ** 2 + ((y - wy) / wry) ** 2 < 0.9) potRing(x, y, rx * 0.045, 500, 0.4, now);
       continue;
     }
     const r = kw.dR[i];
     g.globalAlpha = Math.min(1, (1400 - u) / 300);
-    g.drawImage(drop, x - r, y - r, r * 2, r * 2);
+    g.drawImage(kw.dK[i] ? kw.fatArt.img : kw.dropArt.img, x - r, y - r, r * 2, r * 2);
   }
-  const smoke = smokeArt().img, ns = busy ? 7 : 4, sa = busy ? 0.5 * clamp((now - j.t0) / 1200, 0.35, 1) : 0.16 + 0.04 * heat;   // the steam
-  for (let k = 0; k < ns; k++) {
-    const p = (t / (busy ? 1.7 : 2.8) + k / ns) % 1, r = rx * (0.13 + 0.32 * p);
-    g.globalAlpha = sa * Math.sin(Math.PI * p);
-    g.drawImage(smoke, cx + rx * (0.3 * Math.sin(p * 4 + k * 1.9) + (k - ns / 2) * 0.1) - r, wy - p * rx * 1.3 - r, r * 2, r * 2);
+  const ns = A.steam[busy ? 0 : 1];                       // the steam (on the griddle, the stone and the stick a little smoke as it cooks)
+  if (ns) {
+    const smoke = smokeArt().img, sy = inPot ? wy : A.y - rx * 0.1, rs = inPot ? 1 : 0.75;
+    const sa2 = inPot ? (busy ? 0.5 * clamp((now - j.t0) / 1200, 0.35, 1) : 0.16 + 0.04 * heat) : 0.3 * clamp((now - j.t0) / 1200, 0.35, 1);
+    for (let k = 0; k < ns; k++) {
+      const p = (t / (busy ? 1.7 : 2.8) + k / ns) % 1, r = rx * (0.13 + 0.32 * p) * rs;
+      g.globalAlpha = sa2 * Math.sin(Math.PI * p);
+      g.drawImage(smoke, cx + rx * (0.3 * Math.sin(p * 4 + k * 1.9) + (k - ns / 2) * 0.1) - r, sy - p * rx * 1.3 - r, r * 2, r * 2);
+    }
   }
   g.globalAlpha = 1;
   if (kw.reveal) drawReveal(g, now, sheet);
@@ -4681,9 +5027,9 @@ function drawCookView(now) {
 // REVEAL_MS flies to its tile (or, with the satchel full, fades: it's on the ground by the fire).
 let MESS_ART = null;
 function drawReveal(g, now, sheet) {
-  const R = kw.reveal, u = (now - R.t0) / REVEAL_MS, rx = kw.rx, cx = kw.cx;
-  if (!R.splashed) { R.splashed = true; splash(cx, kw.wy, 1.1, now); }
-  const e = 1 - (1 - Math.min(1, u / 0.55)) ** 3, S = rx * (0.6 + 0.55 * e), y = kw.wy - rx * 0.2 - e * rx * 0.55 + Math.sin(now / 230) * rx * 0.025 * e;
+  const R = kw.reveal, u = (now - R.t0) / REVEAL_MS, rx = kw.rx, cx = kw.cx, wy = kw.at[cookVessel].y;
+  if (!R.splashed) { R.splashed = true; splash(cx, wy, 1.1, now); }
+  const e = 1 - (1 - Math.min(1, u / 0.55)) ** 3, S = rx * (0.6 + 0.55 * e), y = wy - rx * 0.2 - e * rx * 0.55 + Math.sin(now / 230) * rx * 0.025 * e;
   if (u >= 1 && !R.flown) {
     R.flown = true;
     const el = kw.slots[R.k];
@@ -4715,7 +5061,7 @@ function drawReveal(g, now, sheet) {
     for (let k = 0; k < 5; k++) {
       const v = clamp(u * 1.4 - k * 0.08, 0, 1), r = rx * (0.25 + 0.6 * v);
       g.globalAlpha = 0.8 * (1 - v) * (1 - out);
-      g.drawImage(art.img, cx + (k - 2) * rx * 0.2 * (0.4 + v) - r, kw.wy - rx * (0.2 + 1 * v) - k * rx * 0.08 - r, r * 2, r * 2);
+      g.drawImage(art.img, cx + (k - 2) * rx * 0.2 * (0.4 + v) - r, wy - rx * (0.2 + 1 * v) - k * rx * 0.08 - r, r * 2, r * 2);
     }
   }
   g.globalAlpha = 1 - out;
