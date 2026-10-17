@@ -92,6 +92,28 @@
     font-size: 13px; line-height: 1.35; animation: pop-in 0.35s ease-out; transition: opacity 0.8s, transform 0.8s;
   }
   .news-item.gone { opacity: 0; transform: translateY(-6px); }
+  /* ---- the easter egg's song (game.js partySong): a small parchment pill over the satchel while it plays, a 🎵 bobbing on
+     the beat (132 bpm: --beat), the song's name, and little bars bouncing; paused with the meadow */
+  #playing { position: fixed; z-index: 4; left: 50%; bottom: calc(var(--bottom) + 66px); transform: translate(-50%, 10px); opacity: 0; pointer-events: none;
+    display: flex; align-items: center; gap: 8px; padding: 5px 12px 5px 5px; border-radius: 999px; --beat: 0.4545s;
+    background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); transition: opacity 0.4s, transform 0.4s; white-space: nowrap; }
+  #playing.on { opacity: 1; transform: translate(-50%, 0); }
+  #playing .note { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; color: #fff3d6;
+    background: radial-gradient(circle at 35% 30%, #e9b75c, #b07a2c 70%); box-shadow: inset 0 -2px 3px rgba(90, 55, 15, 0.35), 0 1px 2px rgba(90, 65, 25, 0.3); }
+  #playing .note svg { width: 18px; height: 18px; animation: note-bob var(--beat) ease-in-out infinite alternate; }
+  #playing .say { display: flex; flex-direction: column; line-height: 1.1; }
+  #playing .say b { font-size: 13px; font-weight: 850; color: var(--ink); }
+  #playing .say small { font-size: 11px; font-weight: 700; color: color-mix(in srgb, var(--ink) 60%, transparent); }
+  #playing .bars { display: flex; align-items: flex-end; gap: 2.5px; height: 18px; }
+  #playing .bars i { width: 3.5px; height: 100%; border-radius: 2px; background: #c58a35; transform-origin: bottom; animation: bar-hop var(--beat) ease-in-out infinite alternate; }
+  #playing .bars i:nth-child(2) { animation-duration: calc(var(--beat) * 0.5); animation-delay: -0.1s; }
+  #playing .bars i:nth-child(3) { animation-duration: calc(var(--beat) * 0.75); animation-delay: -0.25s; }
+  #playing .bars i:nth-child(4) { animation-duration: calc(var(--beat) * 1.5); animation-delay: -0.05s; }
+  #playing.paused :is(.note svg, .bars i) { animation-play-state: paused; }
+  @keyframes note-bob { from { transform: translateY(1.5px) rotate(-10deg); } to { transform: translateY(-1.5px) rotate(10deg); } }
+  @keyframes bar-hop { from { transform: scaleY(0.25); } to { transform: scaleY(1); } }
+  @media (pointer: coarse) { #playing { bottom: calc(var(--bottom) + 68px); } }
+  @media (prefers-reduced-motion: reduce) { #playing :is(.note svg, .bars i) { animation: none; } }
   /* ---- a headline now and then (game.js announce): a new day or season, a first find, a friend's meadow. No card: big
      italic words over the meadow, fading in and out, clicks going through. A first is bigger and gold, between two ✦. */
   #announce { position: fixed; left: 0; right: 0; margin: 0 auto; top: calc(var(--top) + 60px); z-index: 2; pointer-events: none; text-align: center;
@@ -936,6 +958,23 @@
     -webkit-mask: var(--x-lines) center / contain no-repeat; mask: var(--x-lines) center / contain no-repeat; }
   #larder .close:active { transform: translateY(2px); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 0 0 #a8742a; }
   body.larder #build, body.larder #basket-btn { visibility: hidden; }
+  /* ---- the old stone (game.js openStone): a slim parchment line to talk on, just over the satchel; the stone answers
+     in a bubble over itself in the meadow */
+  #stone-talk { position: fixed; z-index: 5; left: 50%; bottom: calc(var(--bottom) + 80px); transform: translateX(-50%); width: min(420px, calc(100vw - 24px));
+    padding: 8px 10px 10px; border-radius: 16px; background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); animation: larder-in 0.2s ease-out; box-sizing: border-box; }
+  #stone-talk h2 { margin: 0 40px 6px 2px; font-size: 19px; font-style: italic; }
+  #stone-talk h2 small { display: block; margin-top: 1px; font-size: 12px; font-weight: 700; font-style: normal; color: var(--muted); }
+  #stone-form { display: flex; gap: 6px; }
+  #stone-text { flex: 1; min-width: 0; height: 40px; padding: 0 12px; border: none; border-radius: 10px; font: 600 15px Nunito, ui-rounded, system-ui, sans-serif; color: var(--ink);
+    background: rgba(255, 252, 242, 0.9); box-shadow: inset 0 0 0 1.5px #d8c08a; outline: none; }
+  #stone-text:focus { box-shadow: inset 0 0 0 2px var(--accent); }
+  #stone-form button { border: none; border-radius: 10px; padding: 0 16px; min-height: 40px; background: var(--accent); color: #fff; font-weight: 900; font-size: 14px; box-shadow: 0 2px 0 #b8622a; cursor: pointer; }
+  #stone-form button:active { transform: translateY(1px); box-shadow: 0 1px 0 #b8622a; }
+  #stone-talk .close { position: absolute; top: -14px; right: -14px; width: 44px; height: 44px; margin: 0; padding: 0; border: none; border-radius: 50%; font-size: 0;
+    color: var(--ink); background: linear-gradient(180deg, #fffaf0, #f1e5c9); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 2px 0 #a8742a, 0 4px 12px rgba(70, 55, 25, 0.25); cursor: pointer; }
+  #stone-talk .close::before { content: ''; position: absolute; inset: 0; margin: auto; width: 20px; height: 20px; background: currentColor;
+    -webkit-mask: var(--x-lines) center / contain no-repeat; mask: var(--x-lines) center / contain no-repeat; }
+  body.stone-talk #build, body.stone-talk #basket-btn { visibility: hidden; }
   /* a phone: the slots a fingertip's, as wide as the screen allows; the ✕ in the middle of its top edge */
   @media (pointer: coarse) {
     #larder { padding: 8px 6px 8px; }
@@ -944,6 +983,8 @@
     #larder .lslot::before { content: ''; position: absolute; inset: 2px; border-radius: 9px; background: rgba(150, 115, 60, 0.1); box-shadow: inset 0 1px 2px rgba(90, 65, 25, 0.18); }
     #larder .l-all { min-height: 40px; padding: 0 16px; }
     #larder .close { top: -22px; right: 50%; margin-right: -22px; }
+    #stone-talk { top: calc(env(safe-area-inset-top, 0px) + 64px); bottom: auto; padding-bottom: 28px; }
+    #stone-talk .close { top: auto; bottom: -22px; right: 50%; margin-right: -22px; }
     #larder .l-head { margin: 16px 2px 6px; }
     body.larder #book-btn { visibility: hidden; }
   }
@@ -1027,6 +1068,37 @@
   .tip-top span { color: var(--k, var(--muted)); font-weight: 800; }
   .tip-do { margin-top: 1px !important; color: var(--muted); font-size: 9.5px; line-height: 1.3; }
   .tip-do:empty { display: none; }
+  /* First things (game.js renderTasks): a small note under the face of what to do first, a chapter at a time, each line
+     ticking itself off; a tap on its head folds it to the line being worked on. */
+  #tasks { position: fixed; z-index: 4; left: var(--left); top: calc(var(--top) + 140px); width: 218px; box-sizing: border-box;
+    padding: 0 12px 8px; background: var(--paper, none) var(--card); border-radius: 14px; box-shadow: var(--edge), var(--shadow);
+    transition: opacity 0.5s, transform 0.5s; }
+  #tasks.away { opacity: 0; transform: translateX(-14px); pointer-events: none; }
+  #tasks:empty { display: none; }
+  #tasks.turn > * { animation: pop-in 0.35s ease-out; }
+  #tasks .t-head { display: flex; align-items: center; gap: 7px; width: 100%; margin: 0; padding: 8px 0 3px; border: none; background: none;
+    color: inherit; font: inherit; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  #tasks .t-head b { flex: 1; font-size: 14.5px; font-weight: 650; line-height: 1.2; }
+  #tasks .t-head span { color: var(--muted); font-size: 11px; font-weight: 800; }
+  #tasks .t-head i { width: 6px; height: 6px; margin: 0 3px 3px 0; border: solid var(--muted); border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); transition: transform 0.25s; }
+  #tasks.folded .t-head i { margin-bottom: -2px; transform: rotate(-135deg); }
+  #tasks ul { margin: 0; padding: 0; list-style: none; }
+  #tasks li { display: grid; grid-template-columns: 12px 1fr auto; column-gap: 7px; align-items: center; padding: 3px 0; font-size: 12.5px; line-height: 1.3; }
+  #tasks li .box { position: relative; width: 12px; height: 12px; box-sizing: border-box; border-radius: 50%; border: 1.5px solid rgba(120, 90, 50, 0.42); }
+  #tasks li.now .box { border-color: #b98a45; }
+  #tasks li.done .box { border: none; background: #7a9a46; }
+  #tasks li.done .box::after { content: ''; position: absolute; left: 4px; top: 2px; width: 3px; height: 6px; border: solid #fff8e6; border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); }
+  #tasks li.just .box { animation: task-tick 0.5s ease-out; }
+  @keyframes task-tick { 0% { transform: scale(0.3); } 60% { transform: scale(1.4); } 100% { transform: scale(1); } }
+  #tasks li.done span { color: var(--muted); text-decoration: line-through; text-decoration-color: rgba(120, 90, 50, 0.45); }
+  #tasks li.now span { font-weight: 800; }
+  #tasks li.later span { color: var(--muted); }
+  #tasks li em { color: var(--muted); font-size: 11px; font-style: normal; font-weight: 700; }
+  #tasks li.now em { color: #b07f3a; }
+  #tasks li p { grid-column: 2 / 4; margin: 2px 0 1px; color: var(--muted); font-size: 11.5px; font-style: italic; line-height: 1.3; }
+  #tasks.folded li:not(.now) { display: none; }
+  #tasks.folded li p { display: none; }
+  @media (pointer: coarse) { #tasks .t-head { min-height: 44px; padding: 4px 0 0; } }
   /* the skills (game.js openMe, renderMe): a small card under the face; on an upright phone a sheet from the bottom, its ✕ at the foot */
   #me-card { position: fixed; z-index: 7; left: var(--left); top: calc(var(--top) + 136px); width: min(270px, calc(100% - 32px)); box-sizing: border-box;
     padding: 12px 16px 14px; background: var(--paper, none) var(--card); border-radius: 18px; box-shadow: var(--edge), var(--shadow); }
@@ -1060,6 +1132,7 @@
   @media (max-width: 760px), (max-height: 500px) {
     #me-box { transform: scale(1.1); }
     #me-card { top: calc(var(--top) + 106px); }
+    #tasks { top: calc(var(--top) + 108px); width: 200px; }
   }
   @media (max-width: 760px) and (min-height: 501px) {
     body:has(#inspector.open) #vitals { opacity: 0; transform: translate(-50%, 30px); }
@@ -1096,7 +1169,7 @@
     opacity: 0; transition: opacity 1.4s 0.5s; }
   #intro.named h1 { opacity: 0.95; transform: none; }
   #intro.named p { opacity: 0.8; }
-  body.intro #hud-right, body.intro #satchel, body.intro #vitals, body.intro #me-box, body.intro #news, body.intro #chat { opacity: 0; pointer-events: none; }
+  body.intro #hud-right, body.intro #satchel, body.intro #vitals, body.intro #me-box, body.intro #news, body.intro #chat, body.intro #tasks { opacity: 0; pointer-events: none; }
   #hud-right, #satchel, #vitals, #me-box, #news, #chat { transition: opacity 0.9s; }
   @media (max-height: 500px) { #intro .lb { height: max(40px, 9vh); } #intro p { display: none; } }
 </style>
@@ -1107,6 +1180,7 @@
 <div id="intro" aria-hidden="true"><div class="lb top"></div><div class="lb bottom"><h1>Nobody&rsquo;s Meadow</h1><p>Spring &middot; late afternoon</p></div></div>
 <!-- a word now and then, gone in a few seconds (game.js toast) -->
 <div id="news"></div>
+<div id="playing" aria-live="polite"><span class="note"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M9 4.5 20 2v13.2a3 3 0 1 1-2-2.83V6.6L11 8.2v9a3 3 0 1 1-2-2.83z"/></svg></span><span class="say"><b></b><small></small></span><span class="bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span></div>
 <div id="announce" aria-live="polite"></div>
 
 <!-- the forager's body (game.js renderVitals): frost at the edges while freezing, the dark it collapses into, and top left
@@ -1126,6 +1200,8 @@
   <span class="dial" id="v-food" data-tip="food" role="img"><svg viewBox="0 0 28 28"><circle class="rim" cx="14" cy="14" r="13"/><circle class="track" cx="14" cy="14" r="9.5"/><circle class="fill" cx="14" cy="14" r="9.5" pathLength="100" stroke-dasharray="100 100"/><path class="icon" transform="translate(8 8)" d="M1 5.6h10c0 2.6-2 4.6-4.6 4.6H5.6C3 10.2 1 8.2 1 5.6zM4.2 1.2c.8.7.8 1.5 0 2.2M6.6 1.2c.8.7.8 1.5 0 2.2"/></svg></span>
   <div id="me-tip" aria-hidden="true"><p class="tip-top"><b></b><span></span></p><p class="tip-do"></p></div>
 </div>
+<!-- first things: what to do first, a chapter at a time, under the face (game.js renderTasks) -->
+<div id="tasks" class="away" aria-live="polite"></div>
 <div id="me-card" class="hidden" role="dialog" aria-labelledby="me-title">
   <h2 class="fr" id="me-title">Your forager</h2>
   <div id="me-skills"></div>
@@ -1167,6 +1243,13 @@
   <div class="l-head"><h2 class="fr">Basket<small></small></h2><button class="l-all" data-act="larder-all">Put all in</button></div>
   <div class="lslots"></div>
   <button class="close" data-act="larder-close" title="Shut the basket (Esc)" aria-label="Shut the basket">✕</button>
+</div>
+
+<!-- the old stone: a line to talk to it on, over the satchel (game.js, the old stone) -->
+<div id="stone-talk" class="hidden" role="dialog" aria-label="Talk to the old stone">
+  <h2 class="fr">Old Mossbottom<small>Tap something in your satchel to offer it</small></h2>
+  <form id="stone-form" autocomplete="off"><input id="stone-text" maxlength="200" enterkeyhint="send" placeholder="Say something to the stone…" aria-label="Say something to the stone"><button type="submit">Say</button></form>
+  <button class="close" data-act="stone-close" title="Leave the stone (Esc)" aria-label="Leave the stone">✕</button>
 </div>
 
 <!-- top right: pause, sound and the ••• menu; the inspector hangs underneath -->
@@ -1258,6 +1341,7 @@
 <script src="recipes.js"></script>
 <script src="net.js"></script>
 <script src="friends.js"></script>
+<script src="stone.js"></script>
 <script src="game.js"></script>
 </body>
 </html>

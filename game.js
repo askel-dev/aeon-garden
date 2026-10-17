@@ -1232,6 +1232,11 @@ function render(now) {
     const sx = (Bk.x - cam.x) * z + vw / 2, sy = (Bk.y - cam.y) * z + vh / 2;
     if (visible(sx, sy, 2 * z + 20)) itemOf(items, Bk.y, sx, sy, 1 - mistAt(Bk.x, Bk.y)).s = Bk;
   }
+  const St = world.stone;                                  // the old stone
+  if (St) {
+    const sx = (St.x - cam.x) * z + vw / 2, sy = (St.y - cam.y) * z + vh / 2;
+    if (visible(sx, sy, stonePx() * 1.3)) itemOf(items, St.y, sx, sy, 1 - mistAt(St.x, St.y)).s = St;
+  }
   if (ui.place) {
     const P = ui.place, sx = (P.x - cam.x) * z + vw / 2, sy = (P.y - cam.y) * z + vh / 2;
     if (visible(sx, sy, 2 * z + 20)) itemOf(items, P.y, sx, sy, 1).s = P;
@@ -1287,7 +1292,7 @@ function render(now) {
     fadeTo(it.f);
     if (it.d) it.d.hive ? drawBeeTree(it.d, it.sx, it.sy, now, ck) : drawDecor(it.d, it.sx, it.sy, now, ck, it.px);
     else if (it.h) drawSwarm(it.h, it.sx, it.sy);
-    else if (it.s) it.s.fire ? drawFire(it.s, z, now) : it.s.basket ? drawBasket(it.s, z, now) : it.s.green ? drawNettles(it.s, z) : it.s.bramble ? drawBramble(it.s, z) : it.s.find ? drawFind(it.s, z) : it.s.dropped ? drawDropped(it.s, z, now) : drawShroom(it.s, z);
+    else if (it.s) it.s.fire ? drawFire(it.s, z, now) : it.s.basket ? drawBasket(it.s, z, now) : it.s.stone ? drawStone(it.s, z, now) : it.s.green ? drawNettles(it.s, z) : it.s.bramble ? drawBramble(it.s, z) : it.s.find ? drawFind(it.s, z) : it.s.dropped ? drawDropped(it.s, z, now) : drawShroom(it.s, z);
     else if (it.v) drawVisitor(it.v, it.sx, it.sy, now, z);
     else if (it.p) drawForager(it.sx, it.sy, now);
     else if (it.q) drawPeer(it.q, it.sx, it.sy, now);
@@ -1342,7 +1347,7 @@ function render(now) {
   drawPops(shown, now);
   drawCookPrompt(now);                                     // (near a lit fire with something to cook: the pot over it)
   if (world.fires.length) drawCookBars(now);                         // (a pot cooking: the bar over its fire)
-  if (peers.size || myChat) drawPeerNames(now);
+  if (peers.size || myChat || stoneUi.chat) drawPeerNames(now);
   drawGlints(now, dark);
   drawHoverLine(now);
   drawFireHint(now);
@@ -1623,8 +1628,14 @@ function drawDigging(c, sx, y, px, now, back = c.x > c.dig.x ? 1 : -1) {
   ctx.globalAlpha = 1;
 }
 
+// Whether x, y is in the water as the ground shows it (wetness): the shore is drawn smooth, not along the tiles, so an edge
+// tile can look like grass, and an animal on it was cut off at the shins on dry land. A little past the edge (0.47), so
+// the feet are well in first. Not on ice.
+const WADE_IN = 0.52;
+const inWaterAt = (x, y) => !world.frozen && (pond && pond.world === world ? wetness(x, y) > WADE_IN : world.water[(y | 0) * S.W + (x | 0)] > 0);
+
 // In shallow water an animal sits lower, its legs hidden below a little ring of ripples. Fliers fly over.
-const wading = c => !c.hidden && !c.sp.flies && !world.frozen && world.water[(c.y | 0) * S.W + (c.x | 0)] > 0;
+const wading = c => !c.hidden && !c.sp.flies && inWaterAt(c.x, c.y);
 
 // ------------------------------------------------------------------ visitors
 //
@@ -1730,7 +1741,7 @@ function heronArt(v, up, px, now) {
   if (v.mode === 'stalk') { const s = stepOf(v, HERON_STEP); return 'heron:' + (2 + s); }
   return v.timer % 100 >= 70 ? 'heron:0' : 'heron:1';
 }
-const wadingAt = v => !world.frozen && world.water[(v.y | 0) * S.W + (v.x | 0)] > 0;
+const wadingAt = v => inWaterAt(v.x, v.y);
 function drawHeron(v, sx, sy, now, z, px, a) {
   const feet = sy + visitorFeet(), up = heronLift(v, px), art = heronArt(v, up, px, now), flip = v.facing > 0, alpha = a < 1 ? a : undefined;
   const y = feet - px * 0.36 - up;
@@ -2043,6 +2054,7 @@ function emoteOff() {
 // toward it a little a frame (PARTY_EASE) since a song's currentTime moves in coarse steps, and snapped if far off.
 const PARTY_TAPS = 5, PARTY_MS = 600, PARTY_SONG = 'easteregg/blood-pop.mp3', PARTY_LYRICS = 'easteregg/lyrics.txt', PARTY_LINE_MS = 6000;
 const PARTY_BEAT0 = 0.057, PARTY_EASE = 0.1, PARTY_SNAP = 150;
+const PARTY_TITLE = '#BrooklynBloodPop!', PARTY_BY = 'SyKo';   // (shown while it plays: index.html #playing, partyShow)
 const party = { taps: 0, at: -1e9, song: null, lines: null, line: -1 };
 function partyLines() {
   if (party.lines) return;
@@ -2080,7 +2092,14 @@ function partyTap() {
   party.taps = 0;
   emote(EMOTE.dance);
 }
+// The song's name in a small pill over the satchel while it plays, a 🎵 bobbing and bars bouncing on its beat (still while paused).
+function partyShow(on, paused) {
+  const el = $('#playing');
+  if (on && !el.querySelector('b').textContent) { el.querySelector('b').textContent = PARTY_TITLE; el.querySelector('small').textContent = PARTY_BY; }
+  el.classList.toggle('on', on); el.classList.toggle('paused', paused);
+}
 function partySong(on) {
+  partyShow(on, false);
   if (!on) { if (party.song) { party.song.pause(); party.song.currentTime = 0; if (party.line >= 0) myChat = null; party.line = -1; } return; }
   if (!party.song) {
     party.song = new Audio(PARTY_SONG);
@@ -2097,6 +2116,7 @@ function emoteTick(f, stage, ms) {
   if (stage === 4 || ui.fire || (fg.emote === EMOTE.dance ? f.walking : f.running || !f.sneaking)) { emoteOff(); sendEmote(); return; }
   if (party.song && fg.emote === EMOTE.dance && party.song.paused !== ui.speed <= 0) {   // (paused, the song waits too)
     if (ui.speed <= 0) party.song.pause(); else party.song.play().catch(() => {});
+    partyShow(true, ui.speed <= 0);
   }
   if (ui.speed <= 0) return;
   fg.emoteMs += ms;
@@ -2131,7 +2151,7 @@ function foragerFrame(now, d) {
     fg.step += moved / (2 * Fur.FORAGER_REACH * px / cam.zoom * (fg.jog ? Fur.FORAGER_JOG_STRIDE : f.sneaking ? Fur.SNEAK_STRIDE : 1));
     fg.stillMs = 0;
   } else if (ui.speed > 0) fg.stillMs += ms;            // (paused mid-stride, it holds the stride)
-  fg.wet = !world.frozen && world.water[(d.y | 0) * S.W + (d.x | 0)] > 0;
+  fg.wet = inWaterAt(d.x, d.y);
   const walking = fg.stillMs < FORAGER_STILL_MS, stage = S.warmthStage(f), cold = fg.cold = stage >= FORAGER_SAD;
   if (walking && !fg.wasWalking && bookOpen() && !cooking()) openBook(false);   // (setting off shuts the recipe book)
   fg.wasWalking = walking;
@@ -2621,6 +2641,114 @@ function renderMe() {
       + `<div class="sk-bar" style="--ink: ${SKILL_INK[s] || '#b98a45'}"><i style="width: ${Math.round(S.skillProgress(f, s) * 100)}%"></i></div>`
       + `<p>${esc(says)}${how && !top ? ` · better with ${how}` : ''}${next ? `<br><small>Next: ${esc(next)}</small>` : ''}</p></div>`;
   }).join('');
+}
+
+// ---- first things: a new player's guide (2026-10-17)
+//
+// A small parchment note under the face (#tasks, renderTasks, in the 250 ms block) saying what to do first, a chapter at a
+// time (TASKS): a fire before dark, the first night, something to eat, a home at camp. Each line ticks itself off from how
+// the meadow and the satchel are (its `got` reaching `n`, or its `done`), never by being told, and once ticked stays ticked,
+// per player (TASKS_KEY), so the note is for the first meadow or so. A line ticked has its circle pop in; a chapter done is a
+// toast and a chime, stays ticked `TASK_TURN_MS`, then the next slides in; the last is a gold headline and the note is gone
+// for good. The line being worked on says how (`how`). A tap on the note's head folds it to that one line (TASKS_FOLD; folded
+// to start with on a phone). Out of the way while the skills, the book or the wardrobe are open, the forager is down, or on a
+// phone while cooking, at the basket or under a headline. A new task is a line in TASKS: an id, what to do, and how it's seen to be done.
+const TASKS_KEY = 'aeon-garden-tasks', TASKS_FOLD = 'aeon-garden-tasks-fold';   // in localStorage: the ids ticked, and folded
+const TASK_TURN_MS = 1800, TASK_JUST_MS = 1200;
+const taskHave = word => Recipes.takes(word).reduce((n, ing) => n + S.bagCount(world.forager, ing), 0);
+const fireNeed = word => Recipes.BUILDS.campfire.needs[word] || 0;
+const fireLaid = () => world.fires.length > 0 || !!world.camp;
+const touchy = () => !canHover.matches;
+const TASKS = [
+  { name: 'A fire before dark', tasks: [
+    { id: 'sticks', say: 'Pick up sticks', got: () => taskHave('stick'), n: fireNeed('stick'), done: fireLaid,
+      how: () => `They lie under the trees. ${touchy() ? 'Tap' : 'Click'} one to pick it up.` },
+    { id: 'pebbles', say: 'Find pebbles', got: () => taskHave('pebble'), n: fireNeed('pebble'), done: fireLaid,
+      how: () => 'On the shore, at the fords and round the rocks.' },
+    { id: 'tinder', say: 'Dry grass or birch bark', got: () => taskHave('tinder'), n: fireNeed('tinder'), done: fireLaid,
+      how: () => 'Dry grass in the long grass, birch bark under the birches.' },
+    { id: 'build', say: 'Build a campfire', done: fireLaid,
+      how: () => `The fire button by the satchel${touchy() ? '' : ' (or F)'}, then pick a spot.` },
+    { id: 'light', say: 'Light it', done: () => !!world.camp,
+      how: () => 'Strike, then hold down to blow on it till it catches.' },
+  ] },
+  { name: 'The first night', tasks: [
+    { id: 'feed', say: 'Put a stick on the fire', done: () => taskUi.fed,
+      how: () => `${touchy() ? 'Tap' : 'Click'} the fire, then the stick button${touchy() ? '' : ' (or F)'}.` },
+    { id: 'morning', say: 'See the sun come up', how: () => 'Stay in its warmth, and keep it fed.',
+      done: () => !!world.camp && Math.floor(world.tick / S.TPD) > Math.floor(world.camp.made / S.TPD) && !S.isNight(world.tick) && world.forager.down < 0 },
+  ] },
+  { name: 'Something to eat', tasks: [
+    { id: 'food', say: 'Pick something to eat', done: () => world.forager.bag.some(id => id && Recipes.INGREDIENTS[id] && Recipes.INGREDIENTS[id].fill > 0),
+      how: () => 'Mushrooms, greens, berries: what glints. Stand still to sense what\'s about.' },
+    { id: 'book', say: 'Look in the recipe book', done: () => bookUi.open,
+      how: () => `The book by the satchel${touchy() ? '' : ' (or B)'}.` },
+    { id: 'spit', say: 'Make a roasting stick', done: () => world.fires.some(F => F.own.includes('stick')),
+      how: () => `${touchy() ? 'Tap' : 'Click'} the lit fire, and drag a stick from the satchel onto the flames.` },
+    { id: 'cook', say: 'Cook something', done: () => taskUi.ate || world.forager.bag.some(id => id && !Recipes.INGREDIENTS[id]),
+      how: () => 'Two mushrooms on the roasting stick make roast mushrooms.' },
+    { id: 'eat', say: 'Eat what you cooked', done: () => taskUi.ate,
+      how: () => `${touchy() ? 'Tap' : 'Click'} it in the satchel, then Eat.` },
+  ] },
+  { name: 'A home at camp', tasks: [
+    { id: 'basket', say: 'Weave a basket', done: () => !!(world.camp && world.camp.basket),
+      how: () => { const b = Recipes.BUILDS.basket.needs; return `${b.stick} sticks and ${b.drygrass} dry grass, then the basket button, in camp.`; } },
+  ] },
+];
+const taskUi = { done: new Set(), fold: false, key: '', shown: -2, turnAt: 0, just: new Map(), fed: false, ate: false, quiet: true };
+try { for (const id of JSON.parse(localStorage.getItem(TASKS_KEY) || '[]')) taskUi.done.add(id); } catch (e) { /* fine */ }
+try { const v = localStorage.getItem(TASKS_FOLD); taskUi.fold = v === null ? narrow() : v === '1'; } catch (e) { /* fine */ }
+const taskTicked = t => (t.got ? t.got() >= t.n : false) || (t.done ? t.done() : false);
+function foldTasks() {
+  taskUi.fold = !taskUi.fold;
+  try { localStorage.setItem(TASKS_FOLD, taskUi.fold ? '1' : '0'); } catch (e) { /* fine */ }
+  chime('click');
+  renderTasks();
+}
+function renderTasks() {
+  const el = $('#tasks');
+  if (!el || !world || !world.forager) return;
+  const now = performance.now(), f = world.forager;
+  let fresh = false;
+  for (const c of TASKS) for (const t of c.tasks) if (!taskUi.done.has(t.id) && taskTicked(t)) {
+    taskUi.done.add(t.id); fresh = true;
+    if (!taskUi.quiet) { taskUi.just.set(t.id, now); chime('click'); }
+  }
+  if (fresh) try { localStorage.setItem(TASKS_KEY, JSON.stringify([...taskUi.done])); } catch (e) { /* fine */ }
+  const ch = TASKS.findIndex(c => c.tasks.some(t => !taskUi.done.has(t.id)));
+  // a chapter done: told, kept up ticked a moment, then the next (or, the last, the headline and the note gone)
+  if (ch !== taskUi.shown) {
+    if (taskUi.quiet || taskUi.shown < 0) taskUi.shown = ch;
+    else if (!taskUi.turnAt) {
+      taskUi.turnAt = now + TASK_TURN_MS;
+      const was = TASKS[taskUi.shown].name;
+      if (ch >= 0) { toast(`<b>✓ ${esc(was)}</b> · next: ${esc(TASKS[ch].name.toLowerCase())}`); chime('found'); }
+    } else if (now >= taskUi.turnAt) {
+      taskUi.turnAt = 0; taskUi.shown = ch;
+      if (ch < 0) firstTime('tasks', 'all done', 'Settled in', 'The meadow is yours now: gather, cook, keep warm.');
+      else { el.classList.remove('turn'); void el.offsetWidth; el.classList.add('turn'); }
+    }
+  }
+  taskUi.quiet = false;
+  const away = taskUi.shown < 0 || meOpen() || bookOpen() || wardrobeOpen() || f.down >= 0 || (narrow() && (cooking() || larderOpen() || now < announcing.until));
+  el.classList.toggle('away', away);
+  if (taskUi.shown < 0) return;
+  const c = TASKS[taskUi.shown], next = c.tasks.find(t => !taskUi.done.has(t.id));
+  for (const [id, at] of taskUi.just) if (now - at > TASK_JUST_MS) taskUi.just.delete(id);
+  const parts = c.tasks.map(t => taskUi.done.has(t.id) ? (taskUi.just.has(t.id) ? 'j' : 'd') : t.got ? Math.min(t.got(), t.n) : 'o');
+  const how = next ? next.how() : '';
+  const key = `${taskUi.shown}|${taskUi.fold}|${parts.join(',')}|${next ? next.id : ''}|${how}`;
+  if (key === taskUi.key) return;
+  taskUi.key = key;
+  el.classList.toggle('folded', taskUi.fold);
+  const ticked = c.tasks.filter(t => taskUi.done.has(t.id)).length;
+  el.innerHTML = `<button class="t-head" data-act="tasks" aria-expanded="${!taskUi.fold}" title="${taskUi.fold ? 'Show all' : 'Fold it away'}">`
+    + `<b class="fr">${esc(c.name)}</b><span>${ticked}/${c.tasks.length}</span><i></i></button><ul>`
+    + c.tasks.map((t, k) => {
+      const p = parts[k], is = p === 'd' || p === 'j' ? 'done' + (p === 'j' ? ' just' : '') : t === next ? 'now' : 'later';
+      return `<li class="${is}"><i class="box"></i><span>${esc(t.say)}</span>${t.got && !taskUi.done.has(t.id) ? `<em>${p}/${t.n}</em>` : ''}`
+        + `${t === next && how ? `<p>${esc(how)}</p>` : ''}</li>`;
+    }).join('') + '</ul>';
 }
 
 // The wardrobe (#wardrobe): who you are and what you wear, on one card. The forager painted as it'll look, a row of hats
@@ -3180,7 +3308,7 @@ function hoverFrame() {
   if (aim.moved || (aim.cx !== cam.x || aim.cy !== cam.y || aim.cz !== cam.zoom) && now - aim.at > AIM_MS) {
     aim.moved = false; aim.cx = cam.x; aim.cy = cam.y; aim.cz = cam.zoom; aim.at = now;
     aim.fire = ui.hoverId ? null : fireAt(aim.x, aim.y);   // (a fire first, as a click: over what lies by it)
-    aim.basket = ui.hoverId || aim.fire ? null : basketAt(aim.x, aim.y);
+    aim.basket = ui.hoverId || aim.fire ? null : basketAt(aim.x, aim.y) || stoneAt(aim.x, aim.y);   // (or the old stone)
     aim.t = ui.hoverId || aim.fire || aim.basket ? null : gatherAt(aim.x, aim.y);
   }
   if (aim.t) {
@@ -3205,7 +3333,7 @@ function drawHoverLine(now) {
   }
   if (aim.basket && !ui.fire && !pickFloats.length) {    // the basket: what's in it
     const B = aim.basket, z = cam.zoom;
-    drawLabel(basketWord(B), (B.x - cam.x) * z + vw / 2, (B.y - cam.y) * z + vh / 2 + 6);
+    drawLabel(B.stone ? Stone.NAME : basketWord(B), (B.x - cam.x) * z + vw / 2, (B.y - cam.y) * z + vh / 2 + 6);
     return;
   }
   if (!aim.t || ui.gather || pickFloats.length) return;   // (not over a "+3" floating up, or a line saying why not)
@@ -4026,6 +4154,217 @@ function basketWord(B) {
   return Net && Net.guest ? 'Your friend\'s basket' : n ? `Basket · ${n} ${n === 1 ? 'thing' : 'things'} in it` : 'Basket · empty';
 }
 
+// ------------------------------------------------------------------ the old stone
+//
+// A standing stone with a face (sim.js w.stone, stoneOf), a short walk from where the forager starts: the meadow's god, it
+// insists, and above all its food critic. Painted once a face (paintOldStone, STONE_ARTS: mood * 2 + mouth open), moss for
+// hair and brows, asleep till someone comes. A click on it (or its hover, "Old Mossbottom") walks the forager over
+// (goFire 'stone') and opens a slim line to talk on just over the satchel (#stone-talk, openStone); what's typed is said
+// by the forager (myChat) and the stone answers in a bubble over itself (stoneUi.chat), its mouth going as it talks. A tap
+// on anything in the satchel there offers it (eatAsk's 🙏, offerSlot): it flies into the stone, which eats it and rates it
+// out of 10 (a float over it, and a sound by the score). The words come from stone.js (a free LLM behind a Supabase Edge
+// Function, or hand-written lines when that can't be reached). Walking off STONE_NEAR, ✕, Esc or Back shut the line.
+const STONE_MOODS = ['asleep', 'awake', 'pleased', 'grumpy', 'disgusted', 'delighted', 'shocked'];
+const STONE_ARTS = STONE_MOODS.flatMap((_, m) => ['oldstone:' + m * 2, 'oldstone:' + (m * 2 + 1)]);   // (made once)
+const STONE_FOOT = 0.92;                 // where its foot is in its painting (of its half-size, down from the middle)
+const STONE_TOP = 1.2;                   // and its top, up from the middle
+const STONE_STAND = 0.55;                // tiles further out than STAND_OFF the forager stands to talk
+const STONE_NEAR = 3;                    // tiles from it the line to talk on stays open
+const STONE_DOZE_MS = 45000;             // left alone this long it nods off again
+const STONE_MOUTH_MS = 130;              // its mouth opens and shuts this often while it talks
+const stonePx = () => forPx() * 1.4;
+const stoneUi = { open: false, chat: null, mood: 1, talkTo: 0, waiting: false, at: -1e9 };
+const stoneOpen = () => stoneUi.open;
+const STONE_RGB = [152, 147, 136], MOSS = [104, 138, 62];
+function paintOldStone(g, size, U, n) {
+  const mood = STONE_MOODS[n >> 1], talk = n & 1;
+  g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
+  g.lineCap = g.lineJoin = 'round';
+  const foot = STONE_FOOT, top = -1.12;
+  const body = () => {
+    g.moveTo(-0.52, foot);
+    g.bezierCurveTo(-0.64, 0.3, -0.58, -0.62, -0.36, -0.98);
+    g.quadraticCurveTo(-0.06, top - 0.1, 0.3, -1.02);
+    g.bezierCurveTo(0.56, -0.66, 0.64, 0.2, 0.54, foot);
+    g.quadraticCurveTo(0.01, foot + 0.07, -0.52, foot);
+  };
+  furGlow(g, [40, 34, 26], 0.5, 0.06, foot + 0.02, 0.8, 0.16);                                      // its shadow on the ground
+  softIn(g, STONE_RGB, top, foot, body, 1.22, 0.62);
+  g.save(); g.beginPath(); body(); g.clip();
+  furGlow(g, tone(STONE_RGB, 0.45), 0.6, 0.55, 0.1, 0.35, 1.3);                                     // round: its shade side
+  furGlow(g, [255, 246, 222], 0.28, -0.32, -0.5, 0.2, 0.6);                                         // and the light on the other
+  for (const [x, y, r, c] of [[-0.34, 0.5, 0.07, [214, 176, 70]], [-0.26, 0.6, 0.045, [214, 176, 70]], [0.3, 0.38, 0.06, [168, 186, 120]],
+    [0.36, -0.62, 0.05, [214, 176, 70]], [-0.4, -0.2, 0.04, [168, 186, 120]], [0.1, 0.72, 0.08, [168, 186, 120]]])   // lichen
+    fillIn(g, rockRGB(c, 0.7), () => { ovalAt(g, x, y, r, r * 0.8); ovalAt(g, x + r * 0.9, y + r * 0.4, r * 0.6, r * 0.5); });
+  strokeIn(g, rockRGB(tone(STONE_RGB, 0.42), 0.6), 0.02, () => {                                    // cracks
+    g.moveTo(0.22, 0.95); g.lineTo(0.18, 0.7); g.lineTo(0.26, 0.55);
+    g.moveTo(-0.5, -0.5); g.lineTo(-0.38, -0.56);
+  });
+  fillIn(g, rockRGB(tone(MOSS, 0.7), 0.85), () => { ovalAt(g, -0.3, foot - 0.02, 0.26, 0.1); ovalAt(g, 0.32, foot, 0.2, 0.08); });   // moss round its foot
+  g.restore();
+  // its moss: a comb-over on top, a strand flopping down one side
+  const tuft = () => { ovalAt(g, -0.2, -1.0, 0.24, 0.13, -0.3); ovalAt(g, 0.06, -1.08, 0.26, 0.13); ovalAt(g, 0.3, -0.98, 0.18, 0.11, 0.4); ovalAt(g, 0.42, -0.84, 0.1, 0.16, 0.3); };
+  softIn(g, MOSS, -1.2, -0.75, tuft, 1.3, 0.7);
+  strokeIn(g, rockRGB(tone(MOSS, 0.85)), 0.07, () => { g.moveTo(0.4, -0.86); g.quadraticCurveTo(0.6, -0.7, 0.55, -0.48); });
+  fillIn(g, rockRGB(tone(MOSS, 1.35, 16), 0.7), () => { ovalAt(g, -0.12, -1.07, 0.08, 0.035, -0.3); ovalAt(g, 0.12, -1.13, 0.07, 0.03); });
+  // the face
+  const ey = -0.36, ex = 0.2, dark = 'rgba(40, 32, 26, 1)';
+  if (mood === 'pleased' || mood === 'delighted') for (const s of [-1, 1]) furGlow(g, [230, 120, 110], 0.4, s * 0.32, 0.0, 0.12, 0.07);   // blushing
+  softIn(g, tone(STONE_RGB, 1.08), -0.3, 0.05, () => ovalAt(g, 0.0, -0.1, 0.13, 0.17), 1.25, 0.75);   // its nose, a big potato of a knob
+  furGlow(g, tone(STONE_RGB, 0.4), 0.5, 0.02, 0.07, 0.14, 0.04);
+  for (const s of [-1, 1]) {
+    const x = s * ex;
+    if (mood === 'asleep') { strokeIn(g, dark, 0.035, () => g.ellipse(x, ey - 0.02, 0.08, 0.05, 0, 0.15, Math.PI - 0.15)); continue; }
+    if (mood === 'delighted') { strokeIn(g, dark, 0.04, () => g.ellipse(x, ey + 0.03, 0.08, 0.07, 0, Math.PI + 0.2, -0.2)); continue; }
+    const big = mood === 'shocked' ? 1.3 : 1, look = mood === 'disgusted' ? -0.025 : 0;
+    fillIn(g, 'rgba(250, 246, 234, 1)', () => ovalAt(g, x, ey, 0.085 * big, 0.075 * big));
+    fillIn(g, dark, () => discAt(g, x + look, ey + 0.008, mood === 'shocked' ? 0.03 : 0.042));
+    fillIn(g, 'rgba(255,255,255,0.9)', () => discAt(g, x + look - 0.014, ey - 0.012, 0.012));
+    if (mood === 'grumpy' || mood === 'disgusted') {          // heavy lids
+      const lid = mood === 'grumpy' ? 0.03 : s < 0 ? 0.035 : -0.01;
+      fillIn(g, rockRGB(tone(STONE_RGB, 0.95)), () => { g.moveTo(x - 0.1, ey - 0.09); g.lineTo(x + 0.1, ey - 0.09); g.lineTo(x + 0.1, ey + lid); g.quadraticCurveTo(x, ey + lid + 0.02, x - 0.1, ey + lid); });
+      strokeIn(g, dark, 0.02, () => { g.moveTo(x - 0.09, ey + lid); g.quadraticCurveTo(x, ey + lid + 0.02, x + 0.09, ey + lid); });
+    }
+  }
+  // the brows, bushy moss, set by the mood (inner end's height, outer end's)
+  const BROWS = { asleep: [0.0, 0.0], awake: [-0.02, 0.0], pleased: [-0.06, -0.02], grumpy: [0.06, -0.06], disgusted: [0.02, -0.08], delighted: [-0.08, -0.03], shocked: [-0.12, -0.12] };
+  const [bin, bout] = BROWS[mood];
+  for (const s of [-1, 1]) {
+    const yIn = ey - 0.15 + (mood === 'disgusted' && s > 0 ? -0.08 : bin), yOut = ey - 0.16 + bout;
+    strokeIn(g, rockRGB(tone(MOSS, 0.75)), 0.075, () => { g.moveTo(s * 0.07, yIn); g.quadraticCurveTo(s * 0.18, Math.min(yIn, yOut) - 0.04, s * 0.31, yOut); });
+    strokeIn(g, rockRGB(tone(MOSS, 1.3, 14), 0.7), 0.025, () => { g.moveTo(s * 0.1, yIn - 0.02); g.quadraticCurveTo(s * 0.18, Math.min(yIn, yOut) - 0.05, s * 0.28, yOut - 0.02); });
+  }
+  // the mouth
+  const my = 0.2;
+  if (talk || mood === 'shocked') {
+    const h = mood === 'shocked' ? 0.1 : mood === 'delighted' ? 0.09 : 0.065, w = mood === 'shocked' ? 0.07 : 0.11;
+    fillIn(g, 'rgba(58, 30, 26, 1)', () => ovalAt(g, 0, my, w, h));
+    fillIn(g, 'rgba(196, 96, 92, 1)', () => ovalAt(g, 0, my + h * 0.5, w * 0.6, h * 0.35));
+    strokeIn(g, rockRGB(tone(STONE_RGB, 0.5)), 0.018, () => ovalAt(g, 0, my, w, h));
+  } else if (mood === 'asleep') {
+    strokeIn(g, dark, 0.03, () => { g.moveTo(-0.07, my); g.quadraticCurveTo(0, my + 0.03, 0.07, my); });
+    fillIn(g, 'rgba(160, 200, 230, 0.8)', () => ovalAt(g, 0.06, my + 0.05, 0.018, 0.03));       // a little drool
+  } else {
+    const curve = { awake: 0.02, pleased: 0.08, delighted: 0.12, grumpy: -0.07, disgusted: -0.04 }[mood];
+    strokeIn(g, dark, 0.035, () => {
+      if (mood === 'disgusted') { g.moveTo(-0.13, my + 0.02); g.quadraticCurveTo(-0.05, my - 0.04, 0, my + 0.01); g.quadraticCurveTo(0.06, my + 0.05, 0.13, my - 0.03); return; }
+      g.moveTo(-0.14, my); g.quadraticCurveTo(0, my + curve * 1.6, 0.14, my);
+    });
+    if (mood === 'delighted') fillIn(g, 'rgba(58, 30, 26, 1)', () => { g.moveTo(-0.12, my + 0.01); g.quadraticCurveTo(0, my + 0.2, 0.12, my + 0.01); g.closePath(); });
+  }
+}
+// The stone's look now: asleep left alone, else its mood, its mouth going while it talks.
+function stoneArt(now) {
+  const awake = stoneUi.open || stoneUi.waiting || now - stoneUi.at < STONE_DOZE_MS;
+  const m = awake ? stoneUi.mood : 0, talk = awake && now < stoneUi.talkTo && Math.floor(now / STONE_MOUTH_MS) % 2;
+  return STONE_ARTS[m * 2 + (talk ? 1 : 0)];
+}
+function drawStone(St, z, now) {
+  const px = stonePx(), sx = (St.x - cam.x) * z + vw / 2, sy = (St.y - cam.y) * z + vh / 2;
+  drawEmoji(stoneArt(now), sx, sy - STONE_FOOT * px / 2, px);
+}
+// The stone under a point on screen (a little wider for a finger), or null.
+function stoneAt(sx, sy) {
+  const St = world && world.stone;
+  if (!St) return null;
+  const z = cam.zoom, px = stonePx(), f = fingerTap ? 1.4 : 1;
+  const x = (St.x - cam.x) * z + vw / 2, y = (St.y - cam.y) * z + vh / 2 - px * 0.5;
+  return ((sx - x) / Math.max(14 * f, px * 0.32)) ** 2 + ((sy - y) / Math.max(20 * f, px * 0.55)) ** 2 < 1 ? St : null;
+}
+// Off to the stone, and the line to talk on opens once the forager's by it (fireFrame's 'stone').
+function goStone() {
+  const St = world.stone, f = world.forager;
+  if (!St || f.down >= 0) return;
+  if (!f.walking && Math.hypot(St.x - f.x, St.y - f.y) < STONE_NEAR * 0.8) { ui.fire = null; openStone(true); return; }
+  const side = f.x <= St.x ? -1 : 1;                      // (to its side, clear of its painting: STAND_OFF further out than a fire's)
+  goFire({ kind: 'stone', F: null, x: St.x + side * STONE_STAND, y: St.y });
+}
+function openStone(on) {
+  const el = $('#stone-talk');
+  if (!el || on === stoneUi.open) return;
+  stoneUi.open = on;
+  el.classList.toggle('hidden', !on);
+  document.body.classList.toggle('stone-talk', on);
+  if (on) {
+    fg.flip = world.stone.x > world.forager.x;
+    keysHeld.clear();
+    if (!TOUCH.matches) $('#stone-text').focus({ preventScroll: true });
+    if (performance.now() - stoneUi.at > STONE_DOZE_MS && !stoneUi.waiting) stoneAsk({});   // (woken: it says hello)
+    chime('click');
+  } else { $('#stone-text').blur(); eatAsk(-1); }
+  syncBack();
+}
+// Once a frame: walked off, collapsed, or off to a fire, the line shuts.
+function stoneFrame() {
+  if (!stoneUi.open) return;
+  const St = world.stone, f = world.forager;
+  if (!St || f.down >= 0 || ui.fire || Math.hypot(St.x - f.x, St.y - f.y) > STONE_NEAR) openStone(false);
+}
+// The meadow now, in words, for the stone.
+function stoneCtx() {
+  const w = world, f = w.forager, p = S.phaseOf(w.tick);
+  const time = S.isNight(w.tick) ? 'night' : p < 0.15 ? 'early morning' : p < 0.4 ? 'midday' : p < 0.6 ? 'afternoon' : 'evening';
+  const feel = [f.warmth < 0.35 ? 'freezing' : f.warmth < 0.6 ? 'cold' : '', f.wet > 0.5 ? 'soaking wet' : '',
+    f.tummy < 0.25 ? 'starving' : f.tummy < 0.5 ? 'hungry' : '', f.health < 0.5 ? 'hurt' : ''].filter(Boolean);
+  return { season: S.SEASONS[S.seasonOf(w.tick)].name, time, weather: w.weather.kind, day: Math.floor(w.tick / S.TPD) + 1,
+    forager: (feel.length ? feel.join(', ') : 'well') + (w.camp ? ', has a camp with a fire' : ', has no fire yet') };
+}
+// Says something to the stone (or offers it something), and its answer comes as a bubble over it. said: words; offer: what's given.
+function stoneAsk({ said = '', offer = null }) {
+  if (stoneUi.waiting || !world.stone) return;
+  const now = performance.now();
+  stoneUi.waiting = true; stoneUi.at = now;
+  stoneUi.chat = Object.assign(chatFor('…', now), { until: now + 20000 });
+  Stone.ask({ said, offer, ctx: stoneCtx() }).then(r => {
+    const t = performance.now(), text = cleanStone(r.say);
+    stoneUi.waiting = false; stoneUi.at = t;
+    stoneUi.mood = Math.max(1, STONE_MOODS.indexOf(r.mood));
+    stoneUi.chat = Object.assign(chatFor(text, t), { until: t + Math.min(18000, 4000 + 55 * text.length) });
+    stoneUi.talkTo = t + Math.min(6000, 600 + 38 * text.length);
+    if (offer && r.score !== null) {
+      const St = world.stone;
+      setTimeout(() => {
+        say(`${'★'.repeat(Math.round(r.score / 2)) || '☆'}  ${r.score} / 10`, St.x, St.y - 2.4);
+        chime(r.score >= 7 ? 'dish' : r.score <= 2 ? 'mess' : 'click');
+      }, 500);
+    }
+  });
+}
+const cleanStone = s => String(s || '').replace(/[\u0000-\u001f\u007f-\u009f]/g, '').replace(/\s+/g, ' ').trim().slice(0, 280) || '…';
+// The thing in the eat card's slot, offered: it flies from the satchel into the stone, which eats it and says what it thinks.
+function offerSlot() {
+  const k = eatUi.k, f = world.forager, id = k >= 0 && f.bag[k], St = world.stone;
+  if (stoneUi.waiting && id) { say('It\'s still thinking…', St.x, St.y - 2.4); return; }
+  if (!id || !St || !stoneUi.open) { eatAsk(-1); return; }
+  const food = Recipes.foodOf(id), name = food ? food.name : itemName(id, 1), ing = Recipes.INGREDIENTS[id];
+  const offer = { id, name, dish: !!(food && food.dish && id !== Recipes.MESS.name), mess: id === Recipes.MESS.name,
+    junk: !!ing && !(ing.fill > 0), what: ing ? ing.tags.join(', ') : '', first: !Stone.fed.some(o => o.name === name) };
+  if (!--f.bagN[k]) f.bag[k] = '';
+  const el = $('#satchel').querySelectorAll('.slot')[k], r = el.getBoundingClientRect(), [tx, ty] = toScreen(St.x, St.y - 0.9);
+  const fly = document.createElement('div');
+  fly.className = 'fly'; fly.style.backgroundPosition = itemBg(id);
+  document.body.appendChild(fly);
+  const sx = r.left + r.width / 2, sy = r.top + r.height / 2, mx = (sx + tx) / 2, my = Math.min(sy, ty) - 80;
+  fly.animate([{ transform: `translate(${sx - 16}px, ${sy - 16}px) scale(1)`, opacity: 1 },
+    { transform: `translate(${mx - 16}px, ${my - 16}px) scale(1.2)`, opacity: 1, offset: 0.45 },
+    { transform: `translate(${tx - 16}px, ${ty - 16}px) scale(0.4)`, opacity: 0.3 }], { duration: 700, easing: 'ease-in-out' })
+    .onfinish = () => fly.remove();
+  chime('pick', { n: 1 });
+  myChat = chatFor(`For you, ${Stone.NAME}!`, performance.now());
+  stoneAsk({ offer });
+  renderSatchel();
+  eatAsk(-1);
+}
+$('#stone-form').addEventListener('submit', e => {
+  e.preventDefault();
+  const t = $('#stone-text'), text = cleanChat(t.value);
+  if (!text || stoneUi.waiting) return;
+  t.value = '';
+  myChat = chatFor(text, performance.now());
+  stoneAsk({ said: text });
+});
+$('#stone-form').addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); openStone(false); } });
+
 // The button: what it does now ('make' the basket, 'open' it, or nothing), its ring and its words, rewritten only on a change.
 const basketUi = { mode: '', got: -1, ready: false, on: false };
 function renderBasketBtn() {
@@ -4350,6 +4689,7 @@ function clickFire(F) {
 // stick on), 'strike' (the flint and steel), 'blow' (held: bent down blowing on the spark), 'lit' (watching it take).
 function fireFrame(now, dt) {
   larderFrame();                                          // (the basket's card: shut once it's walked off)
+  stoneFrame();                                           // (the line to talk to the stone on, too)
   const j = ui.fire, f = world.forager;
   if (cooking() !== cookUi.open) renderCook();           // (the cooking card: opened, or shut by a walk, a collapse)
   if (!j) { sitFrame(now); return; }
@@ -4374,6 +4714,7 @@ function fireFrame(now, dt) {
       sendFire('basket', S.makeBasket(world, j.x, j.y), 0, 0);
       fireStage(j, 'weave', now);
     } else if (j.kind === 'larder') { ui.fire = null; openLarder(true); }   // (by the basket: it opens)
+    else if (j.kind === 'stone') { ui.fire = null; openStone(true); }      // (by the old stone: the line to talk on)
     else if (j.kind === 'relay') {                      // a cold one: tinder in, and sticks if it has none
       const sticks = j.F.fuel > 0 ? 0 : Math.min(2, Recipes.takes('fuel').reduce((n, ing) => n + S.bagCount(f, ing), 0));
       if (!spendTag('tinder')) { ui.fire = null; return; }
@@ -6511,11 +6852,12 @@ function eatAsk(k) {
   eatUi.k = k;
   if (k < 0) { box.classList.add('hidden'); return; }
   const f = world.forager, id = f.bag[k], food = id && Recipes.foodOf(id), to = id && giftFriend();
-  if (!food && !to) { eatAsk(-1); return; }
+  if (!food && !to && !stoneUi.open) { eatAsk(-1); return; }
   const why = !food || !(food.fill > 0) ? '' : !food.raw ? 'It wants cooking' : f.tummy > 0.97 ? 'I\'m full' : '';
   box.innerHTML = `<span class="eat-name">${esc(food ? food.name : itemName(id, 1))}${food && food.warm ? ' <span class="warm" title="Warms you">✦</span>' : ''}</span>`
     + (why ? `<span class="why">${why}</span>` : food && food.fill > 0 ? `<button data-act="eat">Eat</button>` : '')
-    + (to ? `<button data-act="give" class="give">🎁 ${friendName(to) || 'Give'}</button>` : '');
+    + (to ? `<button data-act="give" class="give">🎁 ${friendName(to) || 'Give'}</button>` : '')
+    + (stoneUi.open ? `<button data-act="offer" class="give">🙏 Offer</button>` : '');
   box.classList.remove('hidden');
   const el = slots[k], r = el.getBoundingClientRect(), w = box.offsetWidth;
   el.classList.add('asking');
@@ -7704,7 +8046,7 @@ function setupSatchel() {
       if (e.type !== 'pointerup') return;
       if (cooking()) { potAdd(h.k); return; }
       if (larderOpen()) { putSlot(h.k); return; }        // (the basket open: into it)
-      if (Recipes.foodOf(h.id)?.fill > 0 || giftFriend()) { eatAsk(eatUi.k === h.k ? -1 : h.k); return; }   // (or, a friend by, to give it)
+      if (Recipes.foodOf(h.id)?.fill > 0 || giftFriend() || stoneOpen()) { eatAsk(eatUi.k === h.k ? -1 : h.k); return; }   // (or, a friend by, to give it; by the old stone, to offer it)
       if (h.touch) { const el = row.children[h.k]; el.classList.add('named'); clearTimeout(el.unname); el.unname = setTimeout(() => el.classList.remove('named'), 1400); }
       return;
     }
@@ -10917,7 +11259,7 @@ function putPainting(p, f, alpha, snow, ox, oy) {
 // A visitor fur.js paints (Fur.painters: the dragonflies, the kingfisher, the skylark), at the doublings of its size and
 // shrunk between (shrunk), as a fox is; in the meadow the worker paints it (furReady).
 const furPaint = kind => (g, size, U, n) => { if (!shrunk(g, size, U, kind + ':' + n)) Fur.painters[kind](g, size, U, n); };
-const PAINTERS = { fox: paintFox, rabbit: paintRabbit, forager: paintForager, hog: paintHedgehog, heron: paintHeron, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody, bee: paintBee, fall: paintFall, shroom: paintShroom, green: paintGreen, bramble: paintBramble, find: paintFind, ingr: Items.paint, dish: Dishes.paint, fire: paintFire, basket: paintBasket, pot: paintPot, vsl: paintVessel,
+const PAINTERS = { fox: paintFox, rabbit: paintRabbit, forager: paintForager, hog: paintHedgehog, heron: paintHeron, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody, bee: paintBee, fall: paintFall, shroom: paintShroom, green: paintGreen, bramble: paintBramble, find: paintFind, ingr: Items.paint, dish: Dishes.paint, fire: paintFire, basket: paintBasket, oldstone: paintOldStone, pot: paintPot, vsl: paintVessel,
   dfly: furPaint('dfly'), kfisher: furPaint('kfisher'), lark: furPaint('lark') };
 function drawDecor(d, sx, sy, now, ck, px = d.tree ? treePx(d) : d.size * cam.zoom) {   // (px: render has it already)
   if (d.emoji === '🪨') { drawRock(d, sx, sy); return; }
@@ -12547,7 +12889,11 @@ function handleEvent(e) {
     case 'camp':
       campMoment(e.fire);
       break;
+    case 'ate':                                             // (first things: a dish eaten)
+      if (!Recipes.INGREDIENTS[e.id]) taskUi.ate = true;
+      break;
     case 'firefed':
+      if (e.n && taskUi.done.has('light')) taskUi.fed = true;   // (first things: a stick on a fire, once there's a camp)
       if (e.fire.lit && e.n && !(ui.fire && ui.fire.F === e.fire)) { fireFlare.set(e.fire, performance.now() - TAKE_MS); hear('stick', e.fire.x, e.fire.y); }
       break;
     case 'fireout': case 'firecold': case 'firedoused':
@@ -13685,8 +14031,8 @@ canvas.addEventListener('pointerup', e => {
   }
   if (ui.place && drag) { placeHere(e.clientX, e.clientY); drag = null; return; }   // (picking a spot for a fire: there)
   if (drag?.steer) {                                    // (held: it runs on to where it was let go, and picks what it was let go on)
-    const c = animalAt(e.clientX, e.clientY), F = !c && fireAt(e.clientX, e.clientY), Bk = !c && !F && basketAt(e.clientX, e.clientY), t = !c && !F && !Bk && gatherAt(e.clientX, e.clientY);
-    if (F) clickFire(F); else if (Bk) goBasket(); else if (t) goGather(t, true); else walkTo(e.clientX, e.clientY, true);
+    const c = animalAt(e.clientX, e.clientY), F = !c && fireAt(e.clientX, e.clientY), Bk = !c && !F && (basketAt(e.clientX, e.clientY) || stoneAt(e.clientX, e.clientY)), t = !c && !F && !Bk && gatherAt(e.clientX, e.clientY);
+    if (F) clickFire(F); else if (Bk) Bk.stone ? goStone() : goBasket(); else if (t) goGather(t, true); else walkTo(e.clientX, e.clientY, true);
   } else if (drag && !drag.moved) {
     click(e.clientX, e.clientY, drag.rush);
     if (fingerTap) lastTap = { t: e.timeStamp, x: e.clientX, y: e.clientY };
@@ -13722,13 +14068,13 @@ function click(sx, sy, run = false) {
   if (ui.place) { placeHere(sx, sy); return; }            // (picking a spot for a fire: there)
   const pi = cooking() ? potThingAt(sx, sy) : -1;
   if (pi >= 0) { potTake(pi); return; }                    // (a thing in the pot: back out)
-  if (!cooking() && foragerHit(sx, sy) && !basketAt(sx, sy)) { partyTap(); return; }   // (on the forager itself: the easter egg's taps; standing by the basket, the click is the basket's)
+  if (!cooking() && foragerHit(sx, sy) && !basketAt(sx, sy) && !stoneAt(sx, sy)) { partyTap(); return; }   // (on the forager itself: the easter egg's taps; standing by the basket, the click is the basket's)
   const PF = !cooking() && promptAt(sx, sy);
   if (PF) { clickFire(PF); return; }                       // (the pot over a fire: off to cook at it)
-  const c = animalAt(sx, sy), F = !c && fireAt(sx, sy), Bk = !c && !F && basketAt(sx, sy), t = !c && !F && !Bk && gatherAt(sx, sy);
+  const c = animalAt(sx, sy), F = !c && fireAt(sx, sy), Bk = !c && !F && (basketAt(sx, sy) || stoneAt(sx, sy)), t = !c && !F && !Bk && gatherAt(sx, sy);
   if (c) select(c.id);
   else if (F) clickFire(F);                               // (a fire: off to see to it)
-  else if (Bk) goBasket();                                // (the basket: off to open it)
+  else if (Bk) Bk.stone ? goStone() : goBasket();         // (the basket: off to open it; the old stone: off to talk to it)
   else if (t) { if (!queueGather(t)) goGather(t, run); }
   else walkTo(sx, sy);
 }
@@ -14366,7 +14712,7 @@ function peerItems(items, now, z) {
       p.step += moved / (2 * Fur.FORAGER_REACH * px / z * (p.jog ? Fur.FORAGER_JOG_STRIDE : p.emote === EMOTE.sneak ? Fur.SNEAK_STRIDE : 1));
       p.stillMs = 0;
     } else p.stillMs += ms;
-    p.wet = !world.frozen && world.water[(y | 0) * S.W + (x | 0)] > 0;
+    p.wet = inWaterAt(x, y);
     const cold = p.stage >= FORAGER_SAD, k = (now - p.pickAt) / (p.pickK || 1), half = Math.floor(p.step * 2);
     if (p.emote >= 0 && ui.speed > 0) p.emoteMs += ms;
     let pose, emo = -1;
@@ -14448,6 +14794,11 @@ function drawPeerNames(now) {
   if (myChat) {
     if (now > myChat.until) myChat = null;
     else if (fgBody.on) saidAt(myChat, fgBody.x, fgBody.y + forPx() * 0.3 - px * NAME_UP - 3);
+  }
+  if (stoneUi.chat) {                                      // (the old stone's, over its head)
+    const St = world.stone, z = cam.zoom, sx = (St.x - cam.x) * z + vw / 2, sy = (St.y - cam.y) * z + vh / 2;
+    if (now > stoneUi.chat.until) stoneUi.chat = null;
+    else if (visible(sx, sy, stonePx() * 2)) saidAt(stoneUi.chat, sx, sy - (STONE_FOOT + STONE_TOP) * stonePx() / 2 - 4);
   }
   if (chats.n) layChats(now);
 }
@@ -14783,12 +15134,15 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'cook-close') closeCook();
   else if (t.dataset.act === 'me') openMe();               // (the face top left: the skills)
   else if (t.dataset.act === 'me-close') openMe(false);
+  else if (t.dataset.act === 'tasks') foldTasks();         // (first things: folded to one line, or not)
   else if (t.dataset.act === 'book') openBook();           // (the recipe book)
   else if (t.dataset.act === 'book-close') openBook(false);
   else if (t.dataset.act === 'book-dish') bookDish(t.dataset.name);
   else if (t.dataset.act === 'book-make') { makeOne(t.dataset.v); if (!$('#book').classList.contains('paired')) openBook(false); }   // (a dish's vessel not made yet)
   else if (t.dataset.act === 'eat') eatSlot();
   else if (t.dataset.act === 'give') giveSlot();
+  else if (t.dataset.act === 'offer') offerSlot();
+  else if (t.dataset.act === 'stone-close') openStone(false);
   else if (t.dataset.act === 'close') select(0);
   else if (t.dataset.act === 'sheet-up' || t.dataset.act === 'sheet-down') {
     ui.sheetUp = t.dataset.act === 'sheet-up';
@@ -14940,7 +15294,7 @@ const back = { token: Math.random().toString(36).slice(2), depth: 0, going: fals
 const moreOpen = () => !$('#more-menu').classList.contains('hidden');
 function opened() {
   const ins = $('#inspector').classList, sheetUp = ins.contains('open') && narrow() && !ins.contains('strip');
-  return [askOpen(), moreOpen(), meOpen(), friendsOpen(), askedOver(), !!ui.place, larderOpen(), bookOpen(), bookReading(), cooking(), wardrobeOpen(), chatOpen(), ins.contains('open'), sheetUp].filter(Boolean).length;
+  return [askOpen(), moreOpen(), meOpen(), friendsOpen(), askedOver(), !!ui.place, larderOpen(), stoneOpen(), bookOpen(), bookReading(), cooking(), wardrobeOpen(), chatOpen(), ins.contains('open'), sheetUp].filter(Boolean).length;
 }
 // The one on top shuts (Esc, and Back once for each step it takes).
 function stepOut() {
@@ -14952,6 +15306,7 @@ function stepOut() {
   else if (friendsOpen()) openFriends(false);
   else if (ui.place) placeFire(false);                     // (picking a spot for a fire: not now)
   else if (larderOpen()) openLarder(false);                // (the basket's card)
+  else if (stoneOpen()) openStone(false);                  // (the line to talk to the stone on)
   else if (bookOpen()) bookBack();                         // (the recipe book: a page laid over it, then the book)
   else if (cooking()) closeCook();                         // (the cooking card)
   else if (chatOpen()) openChat(false);
@@ -15415,6 +15770,7 @@ function frame(now) {
     updateClock();
     renderVitals();
     renderBasketBtn();                                    // (in the camp or out of it: the basket's button)
+    renderTasks();                                        // (first things)
     netCard(now);
     if (ui.sound) {
       const ck = S.clock(world);
@@ -15486,6 +15842,6 @@ try { if (localStorage.getItem('aeon-garden-sound') === '1') toggleSound(true); 
 
 for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => { if (ui.sound) Sound.start(); }, { once: true });
 
-window.garden = { get world() { return world; }, ui, cam, forager: fg, prints: pr, peers, satchel: () => renderSatchel(), kit: { netFiring, firedUi, paint: paintVessel }, screen: (x, y) => [...toScreen(x, y)], click: (x, y) => click(x, y),   // handy in the console
+window.garden = { get world() { return world; }, ui, cam, forager: fg, prints: pr, peers, satchel: () => renderSatchel(), kit: { netFiring, firedUi, paint: paintVessel }, stone: { paint: paintOldStone, ui: stoneUi }, screen: (x, y) => [...toScreen(x, y)], click: (x, y) => click(x, y),   // handy in the console
   get trees() { return { worker: !!treeWorker, workers: treeWorkers.length, art: treeArt, bytes: treeBytes, asked: treeAsked.size, busy: treeBusy }; } };
 })();

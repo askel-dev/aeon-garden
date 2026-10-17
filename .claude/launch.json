@@ -142,6 +142,19 @@
       ],
       "port": 8796,
       "autoPort": false
+    },
+    {
+      "name": "garden-stone",
+      "runtimeExecutable": "/Library/Frameworks/Python.framework/Versions/3.13/bin/python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8797",
+        "--bind",
+        "127.0.0.1"
+      ],
+      "port": 8797,
+      "autoPort": false
     }
   ]
 }

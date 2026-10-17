@@ -5482,6 +5482,32 @@ function startForager(w) {
   return foragerOf(bx, by);
 }
 
+// The old stone (w.stone): a standing stone with a face, a short walk from where the forager starts, out in the open so
+// it's seen, on dry ground above the spring flood with nothing standing on it. You talk to it and offer it what you've
+// cooked (game.js, stone.js). Placed once a meadow from its own random numbers (so nothing else in the meadow moves), and
+// a meadow kept before it gets one as it opens (unpackWorld): no KEEP_VERSION bump. It's in the forager's way like a rock
+// (rocksFor, STONE_SOLID).
+const STONE_FROM = 14, STONE_TO = 24;   // tiles from where the forager starts, at least and at most
+const STONE_SOLID = 0.32;               // how near its middle the forager comes, less its girth
+function stoneOf(w) {
+  const T = w.terrain, high = T.level + T.springFlood + T.rainRise / 2, rng = makeRng(w.seed ^ 0x570e5).next, f = w.forager;
+  const ox = f ? f.homeX : W / 2, oy = f ? f.homeY : H / 2, M = 6;
+  let best = -Infinity, bx = clamp(ox + STONE_FROM, M, W - M), by = oy;
+  for (let k = 0; k < 600; k++) {
+    const a = rng() * Math.PI * 2, r = STONE_FROM + rng() * (STONE_TO - STONE_FROM);
+    const x = Math.floor(ox + Math.cos(a) * r) + 0.5, y = Math.floor(oy + Math.sin(a) * r * 0.8) + 0.5;
+    if (x < M || y < M || x > W - M || y > H - M) continue;
+    const i = idx(x, y);
+    if (w.water[i] || w.ground[i] <= high || w.wood[i] > 0.2) continue;
+    const score = -w.wood[i] * 4 - Math.abs(w.damp[i] - 6) * 0.1 + rng() * 0.5;
+    if (score <= best) continue;
+    let clear = true;
+    forEachDecorNear(w, x, y, 3, d => { if (Math.hypot(d.x - x, d.y - y) < (d.tree ? 2 : d.size * 0.6 + 0.8)) clear = false; });
+    if (clear && !w.burrows.some(b => Math.hypot(b.x - x, b.y - y) < 3) && !w.hives.some(h => Math.hypot(h.x - x, h.y - y) < 3)) { best = score; bx = x; by = y; }
+  }
+  return { stone: true, x: bx, y: by };
+}
+
 // The rocks in its way, worked out once a meadow (rocks never come or go): x, y and how near it comes to the middle
 // (solidR, as x, y, r threes), and the tiles whose middle is that near one, which it can't step on (solidTile).
 let solidW = null, solidR = [], solidTile = null;
@@ -5489,6 +5515,13 @@ function rocksFor(w) {
   if (solidW === w) return;
   solidW = w; solidR = [];
   solidTile = new Uint8Array(W * H);
+  if (w.stone) {                                            // (the old stone)
+    const r = STONE_SOLID + FORAGER_GIRTH;
+    solidR.push(w.stone.x, w.stone.y, r);
+    for (let ty = Math.floor(w.stone.y - r); ty <= Math.floor(w.stone.y + r); ty++)
+      for (let tx = Math.floor(w.stone.x - r); tx <= Math.floor(w.stone.x + r); tx++)
+        if (tx >= 0 && ty >= 0 && tx < W && ty < H && Math.hypot(tx + 0.5 - w.stone.x, ty + 0.5 - w.stone.y) < r) solidTile[ty * W + tx] = 1;
+  }
   for (const d of w.decor) {
     if (d.emoji !== '🪨' || !ROCK_SOLID[rockKind(d)]) continue;
     const r = d.size * ROCK_SOLID[rockKind(d)] + FORAGER_GIRTH;
@@ -6535,6 +6568,7 @@ const LATER = {
   dug: null, ponds: null, hedges: null, visitors: null, visited: null, visitGone: false, visitId: 0,   // the places visitors come to, and who's come
   forager: null,                                                                                    // the player (startForager)
   camp: null,                                                                                       // made by the first fire lit (campAt)
+  stone: null,                                                                                      // the old stone (stoneOf)
 };
 // A kept meadow's fractions come back as whole numbers where they were (0, 1): made fractions again, so they can't
 // change the layout later (an object's field that holds a fraction once holds any number after).
@@ -6605,6 +6639,7 @@ function createWorld(seed, opts = {}) {
   startGreens(w);
   startBrambles(w);
   w.forager = startForager(w);
+  w.stone = stoneOf(w);
   startFinds(w);
   w.roost = pickRoost(w);
   const n = { rabbit: opts.rabbits ?? Math.round(30 * w.room), fox: opts.foxes ?? Math.round(4 * w.room), bee: 0, crow: opts.crows ?? Math.round(8 * w.room),
@@ -6897,6 +6932,8 @@ function unpackWorld(kept) {
   if (w.camp && !w.camp.basket) w.camp.basket = null;      // (kept before baskets: none yet)
   else if (w.camp) asFractions(w.camp.basket, ['x', 'y']);
   else for (const fire of w.fires) if (fire.litAt >= 0) { campAt(w, fire); break; }   // (kept with a fire lit before camps came)
+  if (!w.stone) w.stone = stoneOf(w);                   // (kept before the old stone: it's put up as it opens)
+  else asFractions(w.stone, ['x', 'y']);
   if (F.health === undefined) F.health = 1;            // (kept before health: well)
   asFractions(F, ['x', 'y', 'speed', 'heading', 'moved', 'goalX', 'goalY', 'warmth', 'wet', 'stamina', 'feel', 'homeX', 'homeY', 'tummy', 'health']);
   for (const s of SKILL_NAMES) if (!(s in F.xp)) { F.xp[s] = -0; F.lv[s] = 0; }   // (kept before that skill: it starts at nothing)

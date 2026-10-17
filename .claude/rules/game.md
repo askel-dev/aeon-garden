@@ -223,6 +223,25 @@ opening storm or over another line), telling the book up to `hintMost` of it. Th
 they're painted. Eating: a tap on food in the satchel (`eatAsk`, `#eat`) shows its name with an Eat button, or why not
 ("It wants cooking", "I'm full"); `eatSlot` feeds it (sim.js `feedForager`). The tummy is the face's second dial (`#v-food`); "I'm getting hungry" and "I'm starving" are said over it (events 'hungry',
 'starving'). The ideas card waits while it's at a fire (`askTick`).
+First things (2026-10-17; the comment over game.js `TASKS`): a new player's guide, a small parchment note under the face
+(`#tasks`, `renderTasks`, in the 250 ms block, rewritten only on a change) of what to do first, a chapter at a time: a fire before
+dark (sticks, pebbles, tinder with counts from recipes.js `BUILDS.campfire`, build, light), the first night (a stick on, see the sun
+come up), something to eat (pick food, the book, a roasting stick, cook, eat it), a home at camp (the basket). Each line ticks itself
+off from the meadow and the satchel (`got`/`n`, `done`; a stick fed and a dish eaten are heard as events, `taskUi.fed`, `taskUi.ate`),
+and stays ticked per player (`aeon-garden-tasks`), so it's for the first meadow or so; on load what's already true ticks quietly. A
+line ticked pops its circle with a click; the line worked on says how (`how`); a chapter done is a toast and `found`, stays ticked
+`TASK_TURN_MS`, then the next pops in; the last is a gold headline ("Settled in") and the note is gone for good. A tap on its head
+folds it to the one line (`aeon-garden-tasks-fold`, folded to start with on a phone). Away while the skills, the book or the wardrobe
+are open or the forager is down, and on a phone while cooking, at the basket or under a headline.
+The old stone (2026-10-17; the comment over `STONE_MOODS`): sim.js `w.stone`, painted once a face (`paintOldStone`, `STONE_ARTS`:
+seven moods, each with its mouth shut and open; moss hair and brows, asleep and drooling left alone `STONE_DOZE_MS`), drawn with the
+trees and animals (`drawStone`), solid in the forager's way like a rock. A click on it walks over (`goStone`, `goFire` 'stone', standing
+`STONE_STAND` further out than at a fire) and opens a slim line to talk on over the satchel (`#stone-talk`, `openStone`; up top on a
+touch screen, out of the keyboard's way). Woken, it says hello. What's typed is the forager's bubble (`myChat`), its answer a bubble
+over the stone (`stoneUi.chat`, in `drawPeerNames`) with its mouth going (`STONE_MOUTH_MS`). A tap on anything in the satchel there has
+🙏 Offer by Eat (`eatAsk`, `offerSlot`): it flies into the stone, which rates it (a "★★★ 7 / 10" float and a sound by the score).
+Words from stone.js (`stoneAsk`, `stoneCtx` tells it the season, time, weather and how the forager is). Walking off `STONE_NEAR`, ✕,
+Esc or Back shut it (`stoneFrame`, `stepOut`).
 Gifts, playing together: with a friend's forager within `GIVE_REACH` (`giftFriend`), a tap on anything in the satchel offers
 it (a green 🎁 button with their name, by Eat in `eatAsk`); `giveSlot` takes one out and flies it over to them, and `heardGive`
 puts it in their satchel with a toast, or at their feet as a drop when it's full. Sent `to` that friend alone (net.js passes a

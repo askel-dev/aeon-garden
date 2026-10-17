@@ -94,6 +94,12 @@ picture and what goes in, `renderBook`; a few dishes `known` from the start, the
   when Friends comes on or the outfit changes (game.js `sendHead`), and the list shows each friend's (fetched only when new, `friend_snaps`). The tables' rules are the security: friends only see each other's room once accepted, and only
   the anon key is in the page (never the service_role one). A change to the SQL is pasted into the Supabase SQL editor by Axel.
   `?as=x` is a second player in the same browser, for trying it out. Playing together itself is still net.js.
+- `stone.js`, `supabase/functions/stone`, `supabase/stone.sql`: the old stone (sim.js `w.stone`, `stoneOf`; game.js `paintOldStone`,
+  `openStone`, `offerSlot`), a standing stone with a face a short walk from the start: you talk to it (typed) and offer it what's in
+  the satchel, and it rates it out of 10. Comical, pompous, a food critic. Its words come from a free LLM through the Edge Function
+  (its key a Supabase secret, `LLM_KEY`; any OpenAI-style endpoint, `LLM_URL`, `LLM_MODEL`; daily limits in stone.sql), or from
+  stone.js's hand-written lines when that can't be reached (`?stone-offline` forces them). Its name (`Old Mossbottom`) is a
+  placeholder, in stone.js, the function's `NAME` and index.html.
 - `trees.js`, `tree-worker.js`, `tree-lab.html`: the trees, painted in code. How they're painted, cached and
   drawn is in `.claude/rules/trees.md`, which loads when one of those files is opened.
 
