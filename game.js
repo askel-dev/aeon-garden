@@ -4322,7 +4322,7 @@ function stoneAsk({ said = '', offer = null }) {
     stoneUi.chat = Object.assign(chatFor(text, t), { until: t + Math.min(18000, 4000 + 55 * text.length) });
     stoneUi.talkTo = t + Math.min(6000, 600 + 38 * text.length);
     if (stoneUi.open || Math.hypot(world.stone.x - world.forager.x, world.stone.y - world.forager.y) < STONE_NEAR * 2)
-      chime('stone', { mood: r.mood });
+      chime('stone', { mood: r.mood, text });
     if (offer && r.score !== null) {
       const St = world.stone;
       setTimeout(() => {

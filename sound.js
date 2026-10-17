@@ -32,7 +32,7 @@ const note = (deg, oct = 0) => {
 const rand = (a, b) => a + Math.random() * (b - a);
 const pick = a => a[Math.floor(Math.random() * a.length)];
 
-let ac = null, master, ducker, loud, fxBus, ambBus, musicBus, hush, reverb, noiseBuf, brownBuf, leafBuf;
+let ac = null, master, ducker, loud, fxBus, ambBus, musicBus, hush, reverb, noiseBuf, brownBuf, leafBuf, gravelBuf;
 let enabled = true, volume = 0.6;
 const amb = {};                                    // ambient layers
 const LOUD = 0.7;                                  // thunder's level against the rest
@@ -73,7 +73,7 @@ function start() {
   musicBus = ac.createGain(); musicBus.gain.value = 0.45; musicBus.connect(master);
   const musicVerb = ac.createGain(); musicVerb.gain.value = 0.45; musicBus.connect(musicVerb).connect(reverb);
 
-  noiseBuf = pinkNoise(4); brownBuf = brownNoise(4); leafBuf = leafNoise(6);
+  noiseBuf = pinkNoise(4); brownBuf = brownNoise(4); leafBuf = leafNoise(6); gravelBuf = gravelNoise(2);
   buildAmbience();
   setInterval(tickAmbience, 200);
 }
@@ -128,6 +128,19 @@ function leafNoise(sec) {
   let top = 0;
   for (let i = 0; i < len; i++) { d[i] = (Math.random() * 2 - 1) * env[i]; top = Math.max(top, Math.abs(d[i])); }
   for (let i = 0; i < len; i++) d[i] /= top;
+  return buf;
+}
+
+// Gravel: sparse little clicks of uneven size, each dying in a few ms (grains of grit rubbing), for the old stone's voice.
+function gravelNoise(sec) {
+  const sr = ac.sampleRate, buf = ac.createBuffer(1, Math.floor(sr * sec), sr), d = buf.getChannelData(0);
+  for (let n = Math.floor(sec * 900); n-- > 0;) {
+    const at = Math.floor(Math.random() * d.length), len = Math.floor(sr * rand(0.0005, 0.004)), amp = 0.2 + Math.random() ** 2;
+    for (let i = 0; i < len * 3 && at + i < d.length; i++) d[at + i] += amp * (Math.random() * 2 - 1) * Math.exp(-i / len);
+  }
+  let top = 0;
+  for (let i = 0; i < d.length; i++) top = Math.max(top, Math.abs(d[i]));
+  for (let i = 0; i < d.length; i++) d[i] /= top;
   return buf;
 }
 
@@ -853,16 +866,81 @@ const SOUNDS = {
     marimba(o, note(2, -1), t + 0.3, 0.4);
     marimba(o, note(0, -1), t + 0.55, 0.35);
   },
-  // The old stone answering (game.js stoneAsk): a soft knock of rock and a pompous "hm-hm-HMM" on low wood, its tune by
-  // its mood (STONE_HUMS: up and pleased, down and grumpy). No words: they're in its bubble.
-  stone(t, o, { mood = 'awake' }) {
+  // The old stone answering (game.js stoneAsk): a soft knock of rock, then it babbles what it says the way Animal
+  // Crossing's villagers do, one quick blip a letter (babble), low and gravelly; the mood sets its tune (STONE_TUNES).
+  // With no words (the lab's), a pompous "hm-hm-HMM" on low wood instead.
+  stone(t, o, { mood = 'awake', text = '' }) {
     noise(o, t, 0.14, { from: 420, to: 110, q: 0.7, peak: 0.09, attack: 0.004, type: 'lowpass' });
+    if (text) return babble(o, t + 0.08, text, STONE_TUNES[mood] || STONE_TUNES.awake);
     const hum = STONE_HUMS[mood] || STONE_HUMS.awake;
     hum.forEach((d, i) => marimba(o, note(d, -1) * rand(0.995, 1.005), t + 0.07 + i * 0.15, i === hum.length - 1 ? 0.75 : 0.5));
   },
 };
 const STONE_HUMS = { awake: [2, 4, 3], pleased: [2, 3, 5], delighted: [3, 5, 7, 9], grumpy: [3, 2, 1],
   disgusted: [3, 1, -1], shocked: [5, 8] };
+// The stone's babble by mood: f its voice (Hz), slide how far it drifts over a sentence (semitones), wobble how much each
+// blip strays, pace s a letter.
+const STONE_TUNES = {
+  awake:     { f: 150, slide: -2, wobble: 2.5, pace: 0.058 },
+  pleased:   { f: 165, slide: 1,  wobble: 3,   pace: 0.055 },
+  delighted: { f: 185, slide: 4,  wobble: 4,   pace: 0.05 },
+  grumpy:    { f: 125, slide: -3, wobble: 1.5, pace: 0.064 },
+  disgusted: { f: 115, slide: -5, wobble: 2,   pace: 0.068 },
+  shocked:   { f: 210, slide: 3,  wobble: 5,   pace: 0.046 },
+};
+const BABBLE_MAX = 3.6;                            // s: a long answer babbles its start and stops (the words are in its bubble)
+// Each vowel's mouth (two formants, Hz, a stone's: a bit lower than a person's); a consonant is a shorter blip, half shut.
+const VOWELS = { a: [700, 1150], e: [430, 1700], i: [300, 2000], o: [480, 800], u: [340, 680], y: [320, 1900] };
+
+// Animalese: every letter a short blip. A sawtooth on the voice's pitch through the letter's two formants, shaken
+// on and off by a slow flutter (vocal fry: the gravel in it), and a crunch of grit on each consonant. A space is a
+// breath, a comma a pause, an end of sentence a longer one; a question goes up at the end.
+function babble(o, t, text, { f, slide, wobble, pace }) {
+  const chars = text.toLowerCase().replace(/[^a-z ,.!?;:…-]/g, '');
+  const until = t + BABBLE_MAX, ask = /\?\s*$/.test(text);
+  let at = t, n = 0;
+  for (let i = 0; i < chars.length && at < until; i++) {
+    const c = chars[i];
+    if (c === ' ') { at += pace * 0.6; continue; }
+    if (',;:-'.includes(c)) { at += pace * 2.5; continue; }
+    if ('.!?…'.includes(c)) { at += pace * 4; continue; }
+    const k = (at - t) / BABBLE_MAX, vowel = VOWELS[c], len = pace * (vowel ? 1.15 : 0.8);
+    let semi = slide * k + rand(-wobble, wobble) + (c.charCodeAt(0) % 5 - 2) * 0.6;
+    if (ask && chars.length - i < 6) semi += 4;
+    const hz = f * Math.pow(2, semi / 12), [f1, f2] = vowel || [520, 1350];
+    blip(o, at, len, hz, f1, f2, vowel ? 0.5 : 0.32, n++ % 2);
+    if (!vowel) grains(o, at, 0.035, 0.11);
+    at += pace;
+  }
+}
+
+// One blip of the stone's voice (blip: sawtooth, two formants, a fry flutter; grains: the gravel).
+function blip(o, t, len, hz, f1, f2, v, alt) {
+  const src = ac.createOscillator(), fry = ac.createOscillator(), depth = ac.createGain(), am = ac.createGain(), g = ac.createGain();
+  src.type = 'sawtooth';
+  src.frequency.setValueAtTime(hz * 1.04, t); src.frequency.exponentialRampToValueAtTime(hz, t + len * 0.5);
+  fry.type = 'square'; fry.frequency.value = rand(26, 38) * (alt ? 1.1 : 1);
+  depth.gain.value = 0.4; am.gain.value = 0.6;
+  fry.connect(depth).connect(am.gain);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(v, t + 0.006);
+  g.gain.setValueAtTime(v, t + len * 0.45);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+  for (const [ff, q, lv] of [[f1, 6, 1], [f2, 8, 0.45]]) {
+    const bp = ac.createBiquadFilter(), lg = ac.createGain();
+    bp.type = 'bandpass'; bp.frequency.value = ff; bp.Q.value = q; lg.gain.value = lv;
+    src.connect(bp).connect(lg).connect(am);
+  }
+  am.connect(g).connect(o);
+  src.start(t); fry.start(t); src.stop(t + len + 0.02); fry.stop(t + len + 0.02);
+}
+function grains(o, t, dur, peak) {
+  const src = ac.createBufferSource(), bp = ac.createBiquadFilter(), g = ac.createGain();
+  src.buffer = gravelBuf; bp.type = 'bandpass'; bp.frequency.value = rand(1400, 2600); bp.Q.value = 0.9;
+  g.gain.setValueAtTime(peak, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(bp).connect(g).connect(o);
+  src.start(t, rand(0, 1.8)); src.stop(t + dur + 0.02);
+}
 
 // A bubble of air coming up through the water and the hole closing behind it: a sine sweeping up fast and dying (f its
 // pitch at the start, len how long it rings, v how loud). The heart of every water sound in the pot.

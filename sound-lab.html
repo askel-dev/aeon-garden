@@ -209,6 +209,7 @@
     ['hearth', '🍲', 'Cooking window opens', 'the pot set down on the stones, the fire catching under it'],
     ['mess', '💨', 'A forager\'s mess', 'a puff of smoke, a rattle and two low notes: a shrug'],
     ['stone', '🗿', 'The old stone answers', 'a knock of rock and a pompous hm-hm-hmm'],
+    ['stonetalk', '🗿', 'The old stone babbles', 'a sentence in gravelly animalese, a blip a letter'],
     ['stonejoy', '🗿', 'The old stone, delighted', 'climbing up, swooning'],
     ['stonegrump', '🗿', 'The old stone, disgusted', 'falling down, huffy'],
   ];
@@ -300,8 +301,9 @@
       plophoney: ['plop', { what: 'sweet', w: 1.1, label: 'honey into the pot' }],
       plopout: ['plop', { what: 'out', label: 'one out of the pot' }],
       simmer: ['simmer', { sec: 3, v: 1 }],
-      stonejoy: ['stone', { mood: 'delighted', label: 'the stone, delighted' }],
-      stonegrump: ['stone', { mood: 'disgusted', label: 'the stone, disgusted' }],
+      stonetalk: ['stone', { mood: 'pleased', text: 'Hm. A forager. You may approach, little one. Have you brought me something to taste?', label: 'the stone, babbling' }],
+      stonejoy: ['stone', { mood: 'delighted', text: 'Oh! Oh my. Now THAT is a mushroom worthy of the moss!', label: 'the stone, delighted' }],
+      stonegrump: ['stone', { mood: 'disgusted', text: 'Raw pebbles. Again. I have stood here a thousand years for this.', label: 'the stone, disgusted' }],
     }[b.dataset.play] || [b.dataset.play]));
     else if (b.dataset.sky) { if (!$('#start').classList.contains('on')) $('#start').click(); setSky(b.dataset.sky); }
     else if (b.dataset.season) { st.season = +b.dataset.season; onIn('[data-season]', 'season', st.season); push(); play('season'); }
