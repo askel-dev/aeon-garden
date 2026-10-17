@@ -3839,7 +3839,7 @@ function freeSeat(k) {
 const SHROOM_EVERY = TPD / 24;          // ticks between looks (an hour)
 const SHROOM_MOST = 40;                 // clumps at once, times w.room
 const SHROOM_AFTER = [1, 2.5];          // days after the rain they come up, then fewer, then none
-const SHROOM_SEASON = [0.02, 0.05, 0.4, 0]; // the odds they come up, by season (and less as the rain is longer ago)
+const SHROOM_SEASON = [0.2, 0.15, 0.4, 0];  // the odds they come up, by season (and less as the rain is longer ago): spring as well, so a new cook finds some
 const SHROOM_WOOD = 0.25;               // the chance an hour a log or a snag puts up a clump, times those odds
 const SHROOM_TREES = 12;                // tries an hour at a partner tree, picked at random
 const SHROOM_GROUND = 12;               // and at a tile, for rich ground
