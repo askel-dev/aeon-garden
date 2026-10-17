@@ -348,6 +348,7 @@ const RULES = {
   mess:    { gap: 1,    always: true, lift: 2 },   // and a forager's mess,
   pages:   { gap: 0.3,  always: true, lift: 2 },   // the recipe book opening,
   hearth:  { gap: 0.5,  always: true, lift: 2 },   // and the cooking window (the pot settling on the fire)
+  stone:   { gap: 0.3,  always: true, lift: 1.6 }, // the old stone answering
 };
 
 const STEP_SOFT = 0.6;          // the footsteps' level against the meadow's sounds: soft, they come a few times a second
@@ -852,7 +853,16 @@ const SOUNDS = {
     marimba(o, note(2, -1), t + 0.3, 0.4);
     marimba(o, note(0, -1), t + 0.55, 0.35);
   },
+  // The old stone answering (game.js stoneAsk): a soft knock of rock and a pompous "hm-hm-HMM" on low wood, its tune by
+  // its mood (STONE_HUMS: up and pleased, down and grumpy). No words: they're in its bubble.
+  stone(t, o, { mood = 'awake' }) {
+    noise(o, t, 0.14, { from: 420, to: 110, q: 0.7, peak: 0.09, attack: 0.004, type: 'lowpass' });
+    const hum = STONE_HUMS[mood] || STONE_HUMS.awake;
+    hum.forEach((d, i) => marimba(o, note(d, -1) * rand(0.995, 1.005), t + 0.07 + i * 0.15, i === hum.length - 1 ? 0.75 : 0.5));
+  },
 };
+const STONE_HUMS = { awake: [2, 4, 3], pleased: [2, 3, 5], delighted: [3, 5, 7, 9], grumpy: [3, 2, 1],
+  disgusted: [3, 1, -1], shocked: [5, 8] };
 
 // A bubble of air coming up through the water and the hole closing behind it: a sine sweeping up fast and dying (f its
 // pitch at the start, len how long it rings, v how loud). The heart of every water sound in the pot.

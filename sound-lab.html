@@ -208,6 +208,9 @@
     ['pages', '📖', 'Recipe book opens', 'the cover lifting and a few pages riffling over'],
     ['hearth', '🍲', 'Cooking window opens', 'the pot set down on the stones, the fire catching under it'],
     ['mess', '💨', 'A forager\'s mess', 'a puff of smoke, a rattle and two low notes: a shrug'],
+    ['stone', '🗿', 'The old stone answers', 'a knock of rock and a pompous hm-hm-hmm'],
+    ['stonejoy', '🗿', 'The old stone, delighted', 'climbing up, swooning'],
+    ['stonegrump', '🗿', 'The old stone, disgusted', 'falling down, huffy'],
   ];
   $('#events').innerHTML = EVENTS.map(([k, e, name, how]) =>
     `<button data-play="${k}"><b>${e} ${name}</b><span>${how}</span></button>`).join('');
@@ -297,6 +300,8 @@
       plophoney: ['plop', { what: 'sweet', w: 1.1, label: 'honey into the pot' }],
       plopout: ['plop', { what: 'out', label: 'one out of the pot' }],
       simmer: ['simmer', { sec: 3, v: 1 }],
+      stonejoy: ['stone', { mood: 'delighted', label: 'the stone, delighted' }],
+      stonegrump: ['stone', { mood: 'disgusted', label: 'the stone, disgusted' }],
     }[b.dataset.play] || [b.dataset.play]));
     else if (b.dataset.sky) { if (!$('#start').classList.contains('on')) $('#start').click(); setSky(b.dataset.sky); }
     else if (b.dataset.season) { st.season = +b.dataset.season; onIn('[data-season]', 'season', st.season); push(); play('season'); }
