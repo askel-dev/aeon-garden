@@ -511,6 +511,16 @@
   #cook-vessels button small { display: block; font-size: 10.5px; color: #8a6a48; }
   #cook-vessels button.on { background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent); }
   #cook-vessels button:disabled { opacity: 0.4; cursor: default; }
+  /* not made yet: a dashed outline to make it; one hardening in the fire: a ring filling as it goes (--p) */
+  #cook-vessels button.make { background: none; outline: 1.5px dashed rgba(150, 115, 60, 0.5); outline-offset: -1.5px; box-shadow: none; filter: grayscale(0.7); opacity: 0.75; }
+  #cook-vessels button.make small { color: var(--accent-ink); font-weight: 800; }
+  #cook-vessels button.make.on { outline-color: var(--accent); background: var(--accent-soft); filter: none; opacity: 1; }
+  #cook-vessels button.fire { position: relative; background: radial-gradient(circle at 50% 40%, rgba(255, 170, 90, 0.25), rgba(150, 115, 60, 0.1) 70%); }
+  #cook-vessels button.fire::after { content: ''; position: absolute; inset: 0; border-radius: 10px; pointer-events: none;
+    background: conic-gradient(#e98a4b calc(var(--p, 0) * 360deg), transparent 0); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; padding: 2px; }
+  #cook-vessels button.fire small { color: #b8662c; font-weight: 800; }
+  .cook-slot.want { animation: want-glow 1.6s ease-in-out infinite; }
+  @keyframes want-glow { 0%, 100% { box-shadow: inset 0 0 0 2px var(--accent), 0 0 0 0 rgba(240, 170, 80, 0); } 50% { box-shadow: inset 0 0 0 2px var(--accent), 0 0 0 5px rgba(240, 170, 80, 0.35); } }
   #cook-what b { color: var(--ink); font-family: Fraunces, Georgia, serif; font-variation-settings: 'SOFT' 100, 'WONK' 1; font-weight: 650; font-size: 19px; }
   #cook-what b.new { color: var(--accent-ink); }
   #cook-what small { font-size: 12.5px; color: #9a7a58; }
@@ -577,7 +587,7 @@
   .fly.big.to-pot { filter: drop-shadow(0 0 10px rgba(255, 170, 70, 0.95)); }
   .fly.held.to-pot { filter: drop-shadow(0 0 6px rgba(255, 170, 70, 0.9)); }
   /* while it's up, the satchel at the foot and the bars over it step away: the window has the satchel */
-  body:has(#cook:not(.hidden)) :is(#vitals, #satchel) { opacity: 0; pointer-events: none; }
+  body:has(#cook:not(.hidden)) #satchel { opacity: 0; pointer-events: none; }
   /* a phone upright: a sheet from the bottom, the pot over the satchel's tiles, four to a row, and its ✕ at the foot in the middle */
   @media (max-width: 760px) and (min-height: 501px) {
     #cook { top: auto; right: 0; left: 0; bottom: 0; grid-template-columns: 1fr; padding: 12px 14px calc(10px + env(safe-area-inset-bottom, 0px));
@@ -627,6 +637,9 @@
     font-size: 10.5px; font-weight: 900; line-height: 1.35; opacity: 0; transform: scale(0.6); transition: opacity 0.2s, transform 0.2s; pointer-events: none; }
   #book-btn::after { content: ''; position: absolute; inset: -5px; border-radius: 50%; pointer-events: none; opacity: 0;
     box-shadow: 0 0 0 2px rgba(233, 138, 75, 0.85), 0 0 16px 4px rgba(255, 190, 90, 0.8); }
+  #book-btn kbd { position: absolute; left: calc(100% + 3px); bottom: 2px; min-width: 15px; padding: 0 4px; border-radius: 4px; background: var(--card); box-shadow: var(--edge);
+    color: var(--ink, #5a4630); font-family: inherit; font-size: 10.5px; font-weight: 800; line-height: 15px; text-align: center; opacity: 0.75; pointer-events: none; }
+  @media (pointer: coarse) { #book-btn kbd { display: none; } }
   #book-btn.new::before { opacity: 1; transform: none; }
   #book-btn.new::after { animation: book-glow 1.8s ease-in-out infinite; }
   @keyframes book-glow { 50% { opacity: 1; } }
@@ -762,6 +775,7 @@
   #book .go { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 14px 0 4px; width: 100%; min-height: 50px; padding: 10px 14px;
     border: none; border-radius: 14px; font-size: 16px; font-weight: 800;
     background: linear-gradient(180deg, #fffaf0, #f1e5c9); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 3px 0 #a8742a; transition: transform 0.08s; }
+  #book .go.make { background: none; box-shadow: inset 0 0 0 1.5px var(--accent); outline: 1.5px dashed rgba(150, 115, 60, 0.4); outline-offset: 3px; color: var(--accent-ink); cursor: pointer; }
   #book .go.ready { background: linear-gradient(180deg, #ffe9cf, #f9c99c); box-shadow: inset 0 0 0 1.5px #e98a4b, 0 3px 0 #b8662c; }
   #book .go:active:not(:disabled) { transform: translateY(2px); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 1px 0 #a8742a; }
   #book .go:disabled { cursor: default; color: var(--muted); opacity: 0.75; box-shadow: inset 0 0 0 1.5px rgba(150, 115, 60, 0.3); }
@@ -855,6 +869,11 @@
   #make { position: absolute; right: calc(100% + 62px); bottom: 0; width: 46px; height: 46px; padding: 0; border: none; border-radius: 50%;
     background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); font-size: 22px; line-height: 46px; }
   #make.on { background-color: var(--accent-soft); }
+  #make.pop { animation: make-pop 0.9s ease-out 2; }
+  #make.nudge { animation: make-breathe 2.8s ease-in-out infinite; }
+  #make.pop.nudge { animation: make-pop 0.9s ease-out 2, make-breathe 2.8s ease-in-out 1.8s infinite; }
+  @keyframes make-breathe { 0%, 100% { box-shadow: 0 0 0 0 rgba(240,190,90,0), var(--edge), var(--shadow); } 50% { box-shadow: 0 0 0 5px rgba(240,190,90,0.35), var(--edge), var(--shadow); } }
+  @keyframes make-pop { 0% { transform: scale(1); } 30% { transform: scale(1.3); box-shadow: 0 0 0 6px rgba(240,190,90,0.45), var(--shadow); } 60% { transform: scale(0.95); } 100% { transform: scale(1); } }
   #make i { position: absolute; inset: 5px; background: center / contain no-repeat; }
   #make-menu { position: absolute; right: calc(100% + 8px); bottom: calc(100% + 10px); min-width: 180px; padding: 8px; border-radius: 12px;
     background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); display: grid; gap: 6px; font-size: 14px; }
@@ -892,34 +911,71 @@
     body:has(#inspector.open) #satchel { opacity: 0; transform: translate(-50%, 30px); pointer-events: none; }
     body:has(#inspector.open) #chat:not(.open) { opacity: 0; }
   }
-  /* ---- the forager's body (game.js renderVitals): two slim bars over the satchel, warmth and stamina, each shown only
-     while it isn't full (a drop by the warmth while it's wet); frost creeping in at the edges while it's freezing; and the
-     dark it collapses into, while the night runs by */
-  #vitals { position: fixed; z-index: 4; left: 50%; bottom: calc(var(--bottom) + 54px); transform: translateX(-50%); display: flex; gap: 8px;
-    pointer-events: none; transition: opacity 0.35s, transform 0.35s; }
-  .vital { display: flex; align-items: center; gap: 5px; padding: 3px 8px 3px 6px; border-radius: 10px; opacity: 0; transform: translateY(4px);
-    background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); transition: opacity 0.6s, transform 0.6s; }
-  .vital.show { opacity: 1; transform: none; }
-  .vital svg { width: 12px; height: 12px; fill: currentColor; flex: none; }
-  .vital .bar { position: relative; width: 54px; height: 5px; border-radius: 3px; background: rgba(120, 90, 50, 0.18); overflow: hidden; }
-  .vital .bar i { position: absolute; inset: 0 auto 0 0; width: 100%; border-radius: 3px; background: currentColor; transition: width 0.3s linear; }
-  #v-warm { color: var(--c, rgb(222, 128, 58)); transition: opacity 0.6s, transform 0.6s, color 0.6s; }
-  #v-warm .drop { color: #6f9cc9; opacity: 0; transition: opacity 0.6s; margin-left: -1px; }
-  #v-stam { color: #8a9a52; }
-  #v-food { color: #c98f2e; }
-  #v-food.starving .bar { animation: winded 0.7s ease-in-out infinite alternate; }
-  #v-food svg path { stroke: currentColor; stroke-width: 1.1; stroke-linecap: round; }
-  #v-stam.winded .bar i { animation: winded 0.7s ease-in-out infinite alternate; background: #b4834a; }
+  /* ---- the forager's body (game.js renderVitals): its face top left (#me, painted in a mood: faceMood), health a ring round it,
+     warmth and the tummy two small dials under it, dimmed while full (stamina is a ring by the forager itself: drawStamina); a
+     tap on the face opens its skills (#me-card, openMe); frost creeping in at the edges while it's freezing; and the dark it
+     collapses into, while the night runs by */
+  #me-box { position: fixed; z-index: 4; left: var(--left); top: var(--top); width: 76px; height: 92px; pointer-events: none; transform-origin: 0 0; }
+  #me { position: absolute; left: 0; top: 0; width: 72px; height: 72px; padding: 0; border: none; border-radius: 50%; background: none;
+    cursor: pointer; pointer-events: auto; transition: transform 0.12s; -webkit-tap-highlight-color: transparent; }
+  @media (hover: hover) { #me:hover { transform: scale(1.04); } }
+  #me:active { transform: scale(0.96); }
+  #me svg { position: absolute; inset: 0; width: 72px; height: 72px; transform: rotate(-90deg); filter: drop-shadow(0 2px 3px rgba(60, 45, 20, 0.28)); }
+  #me .rim { fill: var(--card); stroke: #b98a45; stroke-width: 2; }
+  #me .track, .dial .track { fill: none; stroke: rgba(120, 90, 50, 0.16); }
+  #me .track, #me .hp { stroke-width: 5; }
+  #me .hp { fill: none; stroke: #c4584a; stroke-linecap: round; transition: stroke-dasharray 0.4s linear; }
+  #me.low .hp { animation: winded 0.7s ease-in-out infinite alternate; }
+  #me canvas { position: absolute; left: 11px; top: 11px; width: 50px; height: 50px; border-radius: 50%; background: #efe3c8;
+    box-shadow: inset 0 0 0 1.5px rgba(185, 138, 69, 0.55); transition: box-shadow 1.2s; }
+  #me.frosty canvas { box-shadow: inset 0 0 0 1.5px rgba(185, 138, 69, 0.55), inset 0 0 9px 4px rgba(236, 245, 255, 0.95); }
+  #me-lv { position: absolute; right: -3px; top: -2px; min-width: 22px; height: 22px; padding: 0 5px; box-sizing: border-box; border-radius: 11px;
+    background: linear-gradient(180deg, #d7ad62, #b07f3a); box-shadow: inset 0 0 0 1px rgba(255, 240, 200, 0.45), 0 1px 2px rgba(60, 40, 10, 0.35);
+    color: #fff8e6; font: 600 13px/22px Fraunces, Georgia, serif; text-align: center; }
+  #me-lv:empty { display: none; }
+  #me.news #me-lv { animation: lv-glint 1.1s ease-in-out infinite alternate; }
+  @keyframes lv-glint { to { box-shadow: inset 0 0 0 1px rgba(255, 240, 200, 0.6), 0 0 0 3px rgba(255, 214, 120, 0.55), 0 0 12px 4px rgba(255, 200, 90, 0.6); } }
+  .dial { position: absolute; top: 63px; width: 28px; height: 28px; transition: opacity 0.8s; }
+  #v-warm { left: 7px; color: var(--c, rgb(222, 128, 58)); }
+  #v-food { left: 37px; color: #c98f2e; }
+  .dial.full { opacity: 0.55; }
+  .dial svg { position: absolute; inset: 0; width: 28px; height: 28px; filter: drop-shadow(0 1px 2px rgba(60, 45, 20, 0.25)); }
+  .dial .rim { fill: var(--card); stroke: #b98a45; stroke-width: 1.5; }
+  .dial .track, .dial .fill { stroke-width: 3; }
+  .dial .fill { fill: none; stroke: currentColor; stroke-linecap: round; transform: rotate(-90deg); transform-origin: 14px 14px; transition: stroke-dasharray 0.4s linear, stroke 0.6s; }
+  .dial .icon { fill: currentColor; transition: fill 0.6s; }
+  #v-food .icon { stroke: currentColor; stroke-width: 1.1; stroke-linecap: round; }
+  #v-food.starving .fill, #v-food.starving .icon { animation: winded 0.7s ease-in-out infinite alternate; }
+  #v-warm .drop { position: absolute; right: -3px; bottom: -2px; width: 12px; height: 12px; fill: #6f9cc9; opacity: 0; transition: opacity 0.6s; filter: none; }
   @keyframes winded { to { opacity: 0.45; } }
-  /* A touch screen: the round fire and book buttons sit over the satchel's ends (#build, #book-btn), so the bars can't share
-     their row: they go just above them (the buttons reach 8 + 50 px over the satchel's top), and the chat's lines above those. */
+  /* the skills (game.js openMe, renderMe): a small card under the face; on an upright phone a sheet from the bottom, its ✕ at the foot */
+  #me-card { position: fixed; z-index: 7; left: var(--left); top: calc(var(--top) + 100px); width: min(270px, calc(100% - 32px)); box-sizing: border-box;
+    padding: 12px 16px 14px; background: var(--paper, none) var(--card); border-radius: 18px; box-shadow: var(--edge), var(--shadow); }
+  #me-card:not(.hidden) > * { animation: pop-in 0.2s ease-out; }
+  #me-card h2 { margin: 0 0 2px; padding-right: 30px; font-size: 20px; font-weight: 650; line-height: 1.2; }
+  #me-card > .close { position: absolute; top: 10px; right: 10px; margin: 0; }
+  .sk { margin-top: 11px; }
+  .sk-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 14.5px; }
+  .sk-top b { font-weight: 800; }
+  .sk-top span { color: var(--muted); font-weight: 700; font-size: 12.5px; white-space: nowrap; }
+  .sk-bar { position: relative; height: 6px; margin: 5px 0 4px; border-radius: 3px; background: rgba(120, 90, 50, 0.16); overflow: hidden; }
+  .sk-bar i { position: absolute; inset: 0 auto 0 0; border-radius: 3px; background: var(--ink, #b98a45); }
+  .sk p { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.35; }
+  /* A touch screen: the round fire and book buttons sit over the satchel's ends (#build, #book-btn); the chat's lines above them. */
   @media (pointer: coarse) {
-    #vitals { bottom: calc(var(--bottom) + 118px); }
     #chat:not(.open) { bottom: calc(var(--bottom) + 144px); }
     body:has(#build:not(.hidden)) #chat:not(.open) { bottom: calc(var(--bottom) + 144px); }
   }
+  @media (max-width: 760px), (max-height: 500px) {
+    #me-box { transform: scale(0.84); }
+    #me-card { top: calc(var(--top) + 84px); }
+  }
   @media (max-width: 760px) and (min-height: 501px) {
-    body:has(#inspector.open) #vitals { opacity: 0; transform: translate(-50%, 30px); }
+    #news { left: calc(50% + 36px); width: min(360px, calc(100% - var(--left) - var(--right) - 72px)); }   /* (beside the face) */
+    #me-card { left: 0; right: 0; top: auto; bottom: 0; width: auto; display: flex; flex-direction: column; border-radius: 20px 20px 0 0;
+      padding: 16px 20px calc(12px + env(safe-area-inset-bottom, 0px)); }
+    #me-card h2 { padding-right: 0; }
+    #me-card > .close { position: relative; top: auto; right: auto; order: 9; margin: 14px auto 0; }
   }
   #frost { position: fixed; inset: 0; z-index: 3; display: none; pointer-events: none; opacity: 0; transition: opacity 1.2s;
     background: radial-gradient(circle at 0 0, rgba(240, 247, 255, 0.85), rgba(232, 242, 252, 0) 32%),
@@ -948,8 +1004,8 @@
     opacity: 0; transition: opacity 1.4s 0.5s; }
   #intro.named h1 { opacity: 0.95; transform: none; }
   #intro.named p { opacity: 0.8; }
-  body.intro #hud-right, body.intro #satchel, body.intro #vitals, body.intro #news, body.intro #chat { opacity: 0; pointer-events: none; }
-  #hud-right, #satchel, #vitals, #news, #chat { transition: opacity 0.9s; }
+  body.intro #hud-right, body.intro #satchel, body.intro #me-box, body.intro #news, body.intro #chat { opacity: 0; pointer-events: none; }
+  #hud-right, #satchel, #me-box, #news, #chat { transition: opacity 0.9s; }
   @media (max-height: 500px) { #intro .lb { height: max(40px, 9vh); } #intro p { display: none; } }
 </style>
 </head>
@@ -961,14 +1017,23 @@
 <div id="news"></div>
 <div id="announce" aria-live="polite"></div>
 
-<!-- the forager's body (game.js renderVitals): frost at the edges while freezing, the dark it collapses into, and over the
-     satchel two slim bars, warmth and stamina -->
+<!-- the forager's body (game.js renderVitals): frost at the edges while freezing, the dark it collapses into, and top left
+     its face, health round it, warmth and the tummy under it; the face opens the skills -->
 <div id="frost"></div>
 <div id="veil"><p>Too cold to go on&hellip;</p></div>
-<div id="vitals">
-  <div class="vital" id="v-warm" title="Warmth"><svg viewBox="0 0 12 12"><path d="M6.2 .8c.4 2.1 3.3 3.4 3.3 6.3a3.5 3.5 0 0 1-7 0c0-1.6.9-2.6 1.7-3.4.1 1.1.6 1.8 1.3 2 -.3-1.7-.1-3.4.7-4.9z"/></svg><span class="bar"><i></i></span><svg class="drop" viewBox="0 0 12 12"><path d="M6 1.2C7.6 3.8 9.2 5.5 9.2 7.6a3.2 3.2 0 0 1-6.4 0C2.8 5.5 4.4 3.8 6 1.2z"/></svg></div>
-  <div class="vital" id="v-food" title="Fed"><svg viewBox="0 0 12 12"><path d="M1 5.6h10c0 2.6-2 4.6-4.6 4.6H5.6C3 10.2 1 8.2 1 5.6zM4.2 1.2c.8.7.8 1.5 0 2.2M6.6 1.2c.8.7.8 1.5 0 2.2"/></svg><span class="bar"><i></i></span></div>
-  <div class="vital" id="v-stam" title="Stamina"><svg viewBox="0 0 12 12"><path d="M3.2 1h3.3v4.6l3 1.3c.9.4 1.5 1.1 1.5 2v.9H1.6v-1.2c.6-.2 1-.7 1.1-1.3z"/></svg><span class="bar"><i></i></span></div>
+<div id="me-box">
+  <button id="me" data-act="me" title="You (I)" aria-label="Your forager: skills">
+    <svg viewBox="0 0 72 72" aria-hidden="true"><circle class="rim" cx="36" cy="36" r="34.5"/><circle class="track" cx="36" cy="36" r="30"/><circle class="hp" cx="36" cy="36" r="30" pathLength="100" stroke-dasharray="100 100"/></svg>
+    <canvas id="me-face"></canvas>
+    <span id="me-lv"></span>
+  </button>
+  <span class="dial" id="v-warm"><svg viewBox="0 0 28 28"><circle class="rim" cx="14" cy="14" r="13"/><circle class="track" cx="14" cy="14" r="9.5"/><circle class="fill" cx="14" cy="14" r="9.5" pathLength="100" stroke-dasharray="100 100"/><path class="icon" transform="translate(8 8)" d="M6.2 .8c.4 2.1 3.3 3.4 3.3 6.3a3.5 3.5 0 0 1-7 0c0-1.6.9-2.6 1.7-3.4.1 1.1.6 1.8 1.3 2 -.3-1.7-.1-3.4.7-4.9z"/></svg><svg class="drop" viewBox="0 0 12 12"><path d="M6 1.2C7.6 3.8 9.2 5.5 9.2 7.6a3.2 3.2 0 0 1-6.4 0C2.8 5.5 4.4 3.8 6 1.2z"/></svg></span>
+  <span class="dial" id="v-food"><svg viewBox="0 0 28 28"><circle class="rim" cx="14" cy="14" r="13"/><circle class="track" cx="14" cy="14" r="9.5"/><circle class="fill" cx="14" cy="14" r="9.5" pathLength="100" stroke-dasharray="100 100"/><path class="icon" transform="translate(8 8)" d="M1 5.6h10c0 2.6-2 4.6-4.6 4.6H5.6C3 10.2 1 8.2 1 5.6zM4.2 1.2c.8.7.8 1.5 0 2.2M6.6 1.2c.8.7.8 1.5 0 2.2"/></svg></span>
+</div>
+<div id="me-card" class="hidden" role="dialog" aria-labelledby="me-title">
+  <h2 class="fr" id="me-title">Your forager</h2>
+  <div id="me-skills"></div>
+  <button class="close" data-act="me-close" title="Close (Esc)" aria-label="Close">✕</button>
 </div>
 
 <!-- bottom middle: the satchel, a row of slots (game.js renderSatchel), and by it the fire button (renderBuild) -->
@@ -985,7 +1050,7 @@
     <div class="cook-row">
       <span class="cook-tools">
         <button id="cook-stick" data-act="cook-stick" title="A stick on the fire (F)" aria-label="A stick on the fire"><i></i><b></b></button>
-        <button id="cook-book" data-act="book" title="Recipes (B)" aria-label="Recipe book"><i></i></button>
+        <button id="cook-book" data-act="book" title="Recipes (B)" aria-label="Recipe book"><i></i><kbd>B</kbd></button>
       </span>
       <button class="close" data-act="cook-close" title="Leave the fire (Esc)" aria-label="Leave the fire">✕</button>
       <button id="cook-go" data-act="cook-go"><span>Cook</span></button>

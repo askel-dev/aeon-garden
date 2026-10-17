@@ -18,8 +18,9 @@ const STATIONS = {
   oven: { name: 'Clay oven', slots: 4 },
 };
 
-// What a dish is cooked in at the fire, and how many things it holds. A stick and a hot stone are free; the clay pot and the
-// clay griddle (the pan) are made later (PLAN.md, vessels). The oven is a station of its own, not a vessel.
+// What a dish is cooked in at the fire, and how many things it holds. Each is made by the forager first (CRAFTS): a stick, a
+// stone and a bark bowl at once, the clay pot and the clay griddle (the pan) shaped and fired. The oven is a station of its
+// own, not a vessel.
 const VESSELS = {
   pot:   { name: 'Pot',    slots: 4, icon: '🍲', word: 'boiled in the pot' },
   pan:   { name: 'Pan',    slots: 3, icon: '🍳', word: 'fried on the griddle' },
@@ -250,25 +251,44 @@ const BUILDS = {
   },
 };
 
-// What the forager makes by hand: a vessel shaped out of clay from the satchel, then fired in a lit fire for `fire`
-// seconds (at 1x) while it stays lit. Made, it's yours for good, kept at camp (never in the satchel) and used at any fire.
-// To add one, copy a block; its id is a vessel's (VESSELS).
+// What the forager makes by hand, at a lit fire: each vessel (VESSELS), made by dragging what it takes out of the satchel
+// onto the fire in the cooking window, a piece at a time. One with a `fire` time is clay: shaped, it then hardens in that
+// fire for `fire` seconds (at 1x) while it stays lit. Made, it's yours for good, kept at camp (never in the satchel) and
+// used at any fire. To add one, copy a block; its id is a vessel's (VESSELS).
 //   name            what it's called
 //   needs           what it takes, { word: how many } (as BUILDS)
-//   fire            seconds at 1x it hardens in a lit fire
+//   fire            seconds at 1x it hardens in a lit fire (0: ready at once)
 //   text            a line for when you look at it
 const CRAFTS = {
-  pot: {
-    name: 'Clay pot',
-    needs: { clay: 3 },
-    fire: 90,
-    text: 'A round-bellied pot, pinched up out of bank clay and hardened in the fire. Soups and stews.',
+  stick: {
+    name: 'Roasting stick',
+    needs: { stick: 1 },
+    fire: 0,
+    text: 'A green stick across the flames on two forked ones. Things roasted on it.',
+  },
+  stone: {
+    name: 'Hearth stone',
+    needs: { pebble: 1 },
+    fire: 0,
+    text: 'A flat stone set in the coals till it\'s hot right through. Things baked on it.',
+  },
+  bowl: {
+    name: 'Bark bowl',
+    needs: { birchbark: 2 },
+    fire: 0,
+    text: 'Birch bark folded at the corners and laced up, off the heat. Things mixed in it.',
   },
   pan: {
     name: 'Clay griddle',
     needs: { clay: 2 },
     fire: 60,
     text: 'A flat clay griddle that sits on the stones. Things fried and toasted.',
+  },
+  pot: {
+    name: 'Clay pot',
+    needs: { clay: 3 },
+    fire: 90,
+    text: 'A round-bellied pot, pinched up out of bank clay and hardened in the fire. Soups and stews.',
   },
 };
 
@@ -388,7 +408,7 @@ function checkRecipes() {
     const who = `The craft '${id}'`;
     if (!VESSELS[id]) problems.push(`${who} isn't a vessel (${Object.keys(VESSELS).join(', ')}).`);
     if (!c.name) problems.push(`${who} has no name.`);
-    if (!(c.fire > 0)) problems.push(`${who} wants a firing time in seconds: fire: 60.`);
+    if (!(c.fire >= 0)) problems.push(`${who} wants a firing time in seconds: fire: 60 (or 0, ready at once).`);
     if (!c.needs || typeof c.needs !== 'object' || Array.isArray(c.needs)) { problems.push(`${who} needs what it takes: needs: { clay: 3 }.`); continue; }
     for (const [word, n] of Object.entries(c.needs)) {
       if (!INGREDIENTS[word] && !isTag(word)) problems.push(`${who} needs '${word}', which is no ingredient or tag.`);

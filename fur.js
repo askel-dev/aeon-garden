@@ -1088,6 +1088,18 @@ function paintForager(g, size, U, n) {
     wear(n >> 7);
     P = ((n >> 5) & 3) === 3 && (n & 31) < 16 ? idlePose(n & 31) : foragerPose((n >> 5) & 3, n & 31);   // ('view' 3: standing a while, poses 0 to 15; kneeling side on, 16 up)
   }
+  paintPose(g, size, U, P);
+}
+// The face in the corner (game.js renderVitals): standing from the front in outfit o, with snow s on it, looking mood.
+const FACE_MOODS = {
+  well: {}, cosy: { warm: true }, happy: { happy: true }, cold: { sad: true, look: 0.025 },
+  hungry: { sad: true, yawn: true }, hurt: { sad: true, blink: true }, winded: { blow: true, blink: true },
+};
+function paintForagerFace(g, size, U, o, s, mood) {
+  SNOWED = s; wear(o);
+  paintPose(g, size, U, Object.assign(foragerPose(1, 0), FACE_MOODS[mood]));
+}
+function paintPose(g, size, U, P) {
   const view = P.view, { parts, fx, fy } = foragerParts(P);
   paintFur(g, size, U, parts, { coat: CLOAK, top: -0.5, shade: FORAGER_SHADE, light: FORAGER_LIGHT, flat: 0.25,
     grain: [['rgba(40,30,20,0.03)', 1, 3], ['rgba(255,245,225,0.03)', 1, 3]],
@@ -1137,6 +1149,6 @@ function paintForager(g, size, U, n) {
 const painters = { fox: paintFox, rabbit: paintRabbit, dfly: paintDragonfly, kfisher: paintKingfisher, lark: paintSkylark, forager: paintForager };
 
 root.Fur = { tone, rockRGB, fillIn, strokeIn, discAt, ovalAt, blurIn, softIn, furGlow, foxRGB, FOX_WHITE, FOX_SOCK,
-  FOX_POSE, RABBIT_POSE, RABBIT_KINDS, setCoats, paintFox, paintRabbit, paintForager, FORAGER_REACH, FORAGER_JOG_STRIDE, FORAGER_OUTFITS, FORAGER_CLOAKS, FORAGER_HATS, outfitOf, FORAGER_COLD, FORAGER_IDLE, FORAGER_IDLES, FORAGER_SNOWS, FORAGER_SNOW_ARTS, KNEEL_VIEW, FORAGER_KNEEL,
+  FOX_POSE, RABBIT_POSE, RABBIT_KINDS, setCoats, paintFox, paintRabbit, paintForager, paintForagerFace, FACE_MOODS, FORAGER_REACH, FORAGER_JOG_STRIDE, FORAGER_OUTFITS, FORAGER_CLOAKS, FORAGER_HATS, outfitOf, FORAGER_COLD, FORAGER_IDLE, FORAGER_IDLES, FORAGER_SNOWS, FORAGER_SNOW_ARTS, KNEEL_VIEW, FORAGER_KNEEL,
   FORAGER_EMOTE, FORAGER_EMOTES, FORAGER_EMOTE_ARTS, EMOTE_AT, emoteArt, SNEAK_STRIDE, painters };
 })(typeof window !== 'undefined' ? window : globalThis);

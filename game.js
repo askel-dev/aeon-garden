@@ -1343,6 +1343,8 @@ function render(now) {
   drawFireHint(now);
   drawQueue();
   if (pickFloats.length) drawPickFloats(now);
+  xpFrame(now);                                          // (practice earned, over its head)
+  if (xpFloats.length) drawXpFloats(now);
 
   drawEffects(now);
   if (sel) drawSelectionOver(sel, now);
@@ -1352,6 +1354,7 @@ function render(now) {
     const [sx, sy] = screenOf(hov);
     drawLabel(`${hov.name} · ${S.mood(world, hov).text}`, sx, sy + creaturePx(hov) * 0.55 + 6);
   }
+  drawStamina(now);
   drawCampMark(now);
   if (peers.size) drawFriendMarks(now);
   drawPickArrow(now);
@@ -1928,7 +1931,8 @@ const fg = { wasWalking: false, at: -1, x: 0, y: 0, step: 0, stillMs: 1e4, view:
   puffs: [], puffAt: 0, drips: [], dripAt: 0, shiverAt: -1e9, shiverNext: 0, heartAt: 0, pantAt: 0, panting: false, downAt: 0, dark: false, cold: false, sizedSet: 0,   // (the body: drawBody, bodyFrame)
   snow: -1, snowTick: -0, snowArt: 0, sizedSnow: 0,   // (the snow on it: snowOnForager)
   kneel: -1, knelt: -1e9, sizedKneel: false,           // (at a fire: its kneeling pose, fur.js FORAGER_KNEEL, or -1; when it last knelt)
-  emote: -1, emoteMs: -0, emoteFrame: -1, lift: -0, sneakStill: -0, sizedEmote: false };   // (an emote: EMOTE, or -1; emoteTick)
+  emote: -1, emoteMs: -0, emoteFrame: -1, lift: -0, sneakStill: -0, sizedEmote: false,   // (an emote: EMOTE, or -1; emoteTick)
+  sx: -0, sy: -0, px: -0, drawnAt: -0, stamA: -0, stamAt: -0 };   // (where it was drawn this frame, and its stamina ring: drawStamina)
 const CLOAKS = Fur.FORAGER_CLOAKS.length, HATS = Fur.FORAGER_HATS.length;
 const outfitKept = (cloak, hat) => Fur.outfitOf(Math.min(CLOAKS - 1, Math.max(0, +cloak | 0)), Math.min(HATS - 1, Math.max(0, +hat | 0)));
 try {
@@ -2145,6 +2149,7 @@ function drawPrints() {
 }
 function drawForager(sx, sy, now) {
   const px = forPx(), art = fg.art, f = world.forager, stage = S.warmthStage(f);
+  fg.sx = sx; fg.sy = sy - fg.lift * px; fg.px = px; fg.drawnAt = now;
   drawRings(fg.rings, now, px);
   if (zoomedOut()) { drawSmall(art, sx, sy - px * 0.36, px, fg.flip); return; }
   if (stage === 4) { drawFallen(art, sx, sy, px, fg.flip, clamp((now - fg.downAt) / FALL_MS, 0, 1)); return; }
@@ -2239,8 +2244,9 @@ function snowOnForager() {
 // and a slow soft heartbeat (sound.js heart). At nothing it collapses: it tips over (drawFallen), the screen goes dark
 // (#veil), the night runs by behind it (bodyFrame: the sim run quickly, SKIP_MS a frame) and it wakes at home in the
 // morning, the satchel empty (sim.js wakeForager). In cold air its breath shows (BREATH_AIR, a puff painted once,
-// PUFF_ART), and soaked it drips. Two slim bars above the satchel (#vitals: warmth, stamina) show only when not full,
-// a drop by the warmth while it's wet (renderVitals, with the frost, a few times a second).
+// PUFF_ART), and soaked it drips. Its face is top left (#me, renderVitals, with the frost, a few times a second): painted
+// in a mood (faceMood), health a ring round it, warmth and the tummy two dials under it (a drop by the warmth while it's
+// wet), and a tap on it shows the skills (openMe). Stamina is a ring by the forager itself (drawStamina).
 const BREATH_AIR = 8;                      // degrees: air colder than this shows its breath
 const BREATH_MS = [2700, 1500];            // ms between puffs, standing and walking (sprinting, half that)
 const PUFF_MS = 1500;                      // a puff's life
@@ -2315,6 +2321,30 @@ function drawBody(b, x, y, soak, going, running, stage, px, now, me) {
     }
   }
 }
+// Stamina (off the corner since the face came, 2026-10-17): a small ring by the forager's head while it isn't full, going
+// round as its breath comes back, honey, and ember-red pulsing while it's winded. It comes in over STAM_IN and fades over
+// STAM_OUT once full. Drawn over the dark with the edge markers, two arcs a frame.
+const STAM_IN = 200, STAM_OUT = 900;       // ms
+function drawStamina(now) {
+  const f = world.forager, dt = Math.min(100, now - fg.stamAt);
+  fg.stamAt = now;
+  const want = f.stamina < VITAL_FULL && f.down < 0 && fg.drawnAt === now;
+  fg.stamA = want ? Math.min(1, fg.stamA + dt / STAM_IN) : Math.max(0, fg.stamA - dt / STAM_OUT);
+  if (!fg.stamA || fg.drawnAt !== now) return;
+  const r = Math.max(5, fg.px * 0.055), x = fg.sx + Math.max(r * 2.2, fg.px * 0.27), y = fg.sy - fg.px * 0.62;
+  ctx.globalAlpha = fg.stamA;
+  ctx.lineWidth = r * 0.62;
+  ctx.strokeStyle = 'rgba(46, 34, 18, 0.42)';
+  ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.stroke();
+  if (f.stamina > 0.005) {
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = f.winded ? '#e0683e' : '#f4cb5c';
+    if (f.winded) ctx.globalAlpha = fg.stamA * (0.7 + 0.3 * Math.sin(now / 110));
+    ctx.beginPath(); ctx.arc(x, y, r, -Math.PI / 2, -Math.PI / 2 + TAU * f.stamina); ctx.stroke();
+    ctx.lineCap = 'butt';
+  }
+  ctx.globalAlpha = 1;
+}
 // Collapsed: it tips over sideways (toward where it was facing) and lies there.
 function drawFallen(art, sx, sy, px, flip, u) {
   const e = u * u * (3 - 2 * u), side = flip ? 1 : -1;
@@ -2366,46 +2396,117 @@ function bodyWoke() {
   setTimeout(() => toast('You wake at home, stiff with cold. The satchel is empty.'), 900);
 }
 const VITAL_FULL = 0.985;
-const FED_SHOW = 4000;                    // ms the tummy's bar shows after eating (else only once hungry)
-const vit = { warm: -1, wet: -1, stam: -1, winded: null, frost: -1, food: -1, foodShow: null, fedAt: -1e9 };
+const FED_SHOW = 4000;                    // ms the face smiles after eating or a level up
+const FOOD_FULL = 0.85;                   // the tummy's dial dims over this
+const MOOD_HOLD = 1200;                   // ms a new mood has to last before the face changes to it
+const FACE_PX = 50;                       // the face's size on the page (index.html #me canvas)
+const vit = { health: -1, warm: -1, wet: -1, frost: -1, food: -1, starving: null, fedAt: -1e9, lvAt: -1e9, lv: -1,
+  mood: '', want: '', wantAt: 0, face: '', skills: '' };
 const TUMMY_WORDS = [[0.85, 'Full'], [0.55, 'Fed'], [S.HUNGRY, 'Peckish'], [0.001, 'Hungry'], [-1, 'Starving']];
+const faces = new Map();                  // a face painted once an outfit, snow and mood (fur.js paintForagerFace)
+// How it looks (fur.js FACE_MOODS): hurt or down, cold, out of breath, hungry, happy a moment after eating or a level up,
+// cosy by a fire, else well.
+function faceMood(f, now) {
+  if (f.down >= 0 || f.health < 0.4) return 'hurt';
+  const stage = S.warmthStage(f);
+  if (stage >= FORAGER_SAD) return 'cold';
+  if (f.winded) return 'winded';
+  if (f.tummy < S.HUNGRY) return 'hungry';
+  if (now - vit.fedAt < FED_SHOW || now - vit.lvAt < FED_SHOW) return 'happy';
+  if (stage === 0 && S.fireWarmth(world, f.x, f.y) > 0) return 'cosy';
+  return 'well';
+}
 function renderVitals() {
-  const f = world.forager, box = $('#vitals');
-  if (!box) return;
-  const warm = Math.round(f.warmth * 100), wet = Math.round(f.wet * 10), stam = Math.round(f.stamina * 100);
+  const f = world.forager, now = performance.now();
+  const m = faceMood(f, now);
+  if (m !== vit.want) { vit.want = m; vit.wantAt = now; }
+  if (m !== vit.mood && (!vit.mood || now - vit.wantAt > MOOD_HOLD)) vit.mood = m;
+  const key = fg.outfit + ':' + fg.snowArt + ':' + vit.mood + ':' + dpr;
+  if (key !== vit.face) {
+    vit.face = key;
+    let art = faces.get(key);
+    if (!art) {
+      art = document.createElement('canvas');
+      const o = fg.outfit, snow = fg.snowArt, mood = vit.mood;
+      paintCrop(art, (g, size, U) => Fur.paintForagerFace(g, size, U, o, snow, mood), -0.46, -0.56, 0.24, 0.14, FACE_PX);   // (the head)
+      faces.set(key, art);
+    }
+    const c = $('#me-face');
+    c.width = art.width; c.height = art.height;
+    c.getContext('2d').drawImage(art, 0, 0);
+  }
+  const me = $('#me');
+  const hp = Math.round(f.health * 100);
+  if (hp !== vit.health) {
+    me.querySelector('.hp').style.strokeDasharray = `${hp} 100`;
+    me.classList.toggle('low', f.health < 0.25);
+    vit.health = hp;
+  }
+  const warm = Math.round(f.warmth * 100), wet = Math.round(f.wet * 10);
   if (warm !== vit.warm || wet !== vit.wet) {
     const el = $('#v-warm'), k = clamp(f.warmth, 0, 1);
-    el.classList.toggle('show', f.warmth < VITAL_FULL || f.wet > 0.05);
+    el.classList.toggle('full', f.warmth >= VITAL_FULL && f.wet <= 0.05);
     el.style.setProperty('--c', `rgb(${Math.round(lerp(120, 222, k))}, ${Math.round(lerp(168, 128, k))}, ${Math.round(lerp(222, 58, k))})`);
-    el.querySelector('i').style.width = warm + '%';
+    el.querySelector('.fill').style.strokeDasharray = `${warm} 100`;
     el.querySelector('.drop').style.opacity = f.wet > 0.05 ? (0.35 + 0.65 * f.wet).toFixed(2) : '0';
-    el.title = ['Cosy', 'Chilly', 'Cold', 'Freezing', 'Too cold'][S.warmthStage(f)] + (f.wet > 0.6 ? ', soaked' : f.wet > 0.05 ? ', damp' : '');
     vit.warm = warm; vit.wet = wet;
   }
-  if (stam !== vit.stam || f.winded !== vit.winded) {
-    const el = $('#v-stam');
-    el.classList.toggle('show', f.stamina < VITAL_FULL);
-    el.classList.toggle('winded', f.winded);
-    el.querySelector('i').style.width = stam + '%';
-    el.title = f.winded ? 'Out of breath' : 'Stamina';
-    vit.stam = stam; vit.winded = f.winded;
-  }
-  const food = Math.round(f.tummy * 100), foodShow = f.tummy < S.HUNGRY || performance.now() - vit.fedAt < FED_SHOW;
-  if (food !== vit.food || foodShow !== vit.foodShow) {
+  const food = Math.round(clamp(f.tummy, 0, 1) * 100), starving = f.tummy <= 0;
+  if (food !== vit.food || starving !== vit.starving) {
     const el = $('#v-food');
-    el.classList.toggle('show', foodShow);
-    el.classList.toggle('starving', f.tummy <= 0);
-    el.querySelector('i').style.width = food + '%';
-    el.title = TUMMY_WORDS.find(([k]) => f.tummy > k)[1];
-    vit.food = food; vit.foodShow = foodShow;
+    el.classList.toggle('full', f.tummy > FOOD_FULL);
+    el.classList.toggle('starving', starving);
+    el.querySelector('.fill').style.strokeDasharray = `${food} 100`;
+    vit.food = food; vit.starving = starving;
   }
+  const said = `${f.health > 0.75 ? 'Well' : f.health > 0.4 ? 'Hurt' : 'Badly hurt'} · ${['Cosy', 'Chilly', 'Cold', 'Freezing', 'Too cold'][S.warmthStage(f)]}`
+    + `${f.wet > 0.6 ? ', soaked' : f.wet > 0.05 ? ', damp' : ''} · ${TUMMY_WORDS.find(([k]) => f.tummy > k)[1]} · Your skills (I)`;
+  if (me.title !== said) me.title = said;
+  let lv = 0;
+  for (const s of S.SKILL_NAMES) lv += f.lv[s];
+  if (lv !== vit.lv) { $('#me-lv').textContent = lv || ''; vit.lv = lv; }
+  if (meOpen()) renderMe();
   const frost = S.warmthStage(f) === 3 ? Math.round((0.45 + 0.55 * (1 - f.warmth / S.WARMTH_STAGES[2])) * 20) / 20 : 0;
   if (frost !== vit.frost) {
     const el = $('#frost');
     el.classList.toggle('on', frost > 0);
     el.style.opacity = frost;
+    me.classList.toggle('frosty', frost > 0);
     vit.frost = frost;
   }
+}
+// The skills (#me-card: a tap on the face or I): each of sim.js SKILLS with its level, how far to the next, what it gives
+// now and what practises it. A new skill shows with its line till it has a SKILL_SAYS.
+const pct = v => Math.round(v * 100) + '%';
+const SKILL_SAYS = {
+  stamina: (k, lv) => `Sprints ${pct(k.perks.sprint * lv)} longer, breath back ${pct(k.perks.rest * lv)} sooner`,
+  cooking: (k, lv) => `Dishes cook ${pct(k.perks.speed * lv)} quicker`,
+  gathering: (k, lv) => `Picks ${pct(k.perks.quick * lv)} quicker`,
+};
+const SKILL_HOW = { stamina: 'sprinting', cooking: 'cooking dishes', gathering: 'picking things' };
+const SKILL_INK = { stamina: '#6f9cc9', cooking: '#d9803a', gathering: '#7a9a46' };
+const meOpen = () => !$('#me-card').classList.contains('hidden');
+function openMe(open = !meOpen()) {
+  $('#me-card').classList.toggle('hidden', !open);
+  if (!open) return;
+  $('#me').classList.remove('news');
+  vit.skills = '';
+  renderMe();
+}
+function renderMe() {
+  const f = world.forager;
+  let key = myName;
+  for (const s of S.SKILL_NAMES) key += ':' + f.lv[s] + ':' + Math.round(S.skillProgress(f, s) * 100);
+  if (key === vit.skills) return;
+  vit.skills = key;
+  $('#me-title').textContent = myName || 'Your forager';
+  $('#me-skills').innerHTML = S.SKILL_NAMES.map(s => {
+    const k = S.SKILLS[s], lv = f.lv[s], top = lv >= S.SKILL_TOP;
+    const says = lv && SKILL_SAYS[s] ? SKILL_SAYS[s](k, lv) : k.line, how = SKILL_HOW[s];
+    return `<div class="sk"><div class="sk-top"><b>${esc(k.name)}</b><span>Level ${lv}${top ? ' · the best it gets' : ''}</span></div>`
+      + `<div class="sk-bar" style="--ink: ${SKILL_INK[s] || '#b98a45'}"><i style="width: ${Math.round(S.skillProgress(f, s) * 100)}%"></i></div>`
+      + `<p>${esc(says)}${how && !top ? ` · better with ${how}` : ''}</p></div>`;
+  }).join('');
 }
 
 // The wardrobe (#wardrobe): who you are and what you wear, on one card. The forager painted as it'll look, a row of hats
@@ -2420,12 +2521,12 @@ const WD_GO = { join: 'Set off', host: 'Open my meadow', dress: 'That’s me' };
 const WD_TITLE = { join: 'Off to a friend’s meadow', host: 'Ready for company?', dress: 'Your forager' };
 const WD_SUB = { join: 'Who’s coming, and in what?', host: 'Pick a name for your friends to know you by.', dress: 'Pick a hat and a cloak.' };
 let WD_PAINT = null;                                       // (the scratch canvas the paintings are made on)
-// A part of the forager's painting (n, fur.js paintForager), the box x0..x1, y0..y1 of it, onto a canvas cssW wide.
+// A part of the forager's painting (n, fur.js paintForager, or a painter of its own), the box x0..x1, y0..y1 of it, onto a canvas cssW wide.
 function paintCrop(c, n, x0, y0, x1, y1, cssW) {
   const U = 2 * cssW * dpr / (x1 - x0), size = Math.ceil(U * 1.3), w = Math.round(cssW * dpr), h = Math.round(w * (y1 - y0) / (x1 - x0));
   if (!WD_PAINT) WD_PAINT = document.createElement('canvas');
   WD_PAINT.width = WD_PAINT.height = size;
-  Fur.paintForager(WD_PAINT.getContext('2d'), size, U, n);
+  if (typeof n === 'function') n(WD_PAINT.getContext('2d'), size, U); else Fur.paintForager(WD_PAINT.getContext('2d'), size, U, n);
   c.width = w; c.height = h;
   c.getContext('2d').drawImage(WD_PAINT, size / 2 + x0 * U / 2, size / 2 + y0 * U / 2, (x1 - x0) * U / 2, (y1 - y0) * U / 2, 0, 0, w, h);
 }
@@ -2762,7 +2863,7 @@ function gatherFrame(now) {
   const dx = s.x - F.x, dy = s.y - F.y;                 // it turns to it, and stoops
   fg.view = Math.abs(dy) > Math.abs(dx) * 0.8 ? (dy > 0 ? 1 : 2) : 0;
   if (Math.abs(dx) > 0.05) fg.flip = dx > 0;
-  fg.pick = now; fg.pickK = ui.queue.length ? PICK_QUICK : 1;
+  fg.pick = now; fg.pickK = (ui.queue.length ? PICK_QUICK : 1) / S.perk(F, 'gathering', 'quick');   // (the skill: sim.js SKILLS)
   if (Net && Net.on) Net.send({ t: 'pick', kind: g.kind, id: r.id, x: g.it.x, y: g.it.y, n: r.n, tick: world.tick,   // (gone for everyone,
     fx: F.x, fy: F.y, k: fg.pickK, v: fg.view, fl: fg.flip });                                                     // and they see it picked)
   ui.nextAt = now + (ui.queue.length ? PICK_MS[1] : PICK_MS[2]) * fg.pickK;   // (the next in the queue once it's back up)
@@ -2797,6 +2898,12 @@ function queueGather(t) {
 // E: the nearest thing to pick in reach (lit by drawNear) or lying where it was dropped, as a click on it would. Pressed again
 // while it's off picking, the next nearest lines up after.
 function pickNear() {
+  const best = nearPick(), F = world.forager;
+  if (!best) { if (!gatherBusy()) say('Nothing in reach', F.x, F.y - 1.6); return; }
+  if (!queueGather(best)) goGather(best);
+}
+// What E would pick now: { kind, it } or null (drawNear rings it in RING_E_ART).
+function nearPick() {
   const F = world.forager, busy = gatherBusy();
   let best = null, bd = NEAR_REACH * NEAR_REACH;
   const look = (kind, it) => {
@@ -2807,8 +2914,7 @@ function pickNear() {
   };
   for (let i = 0; i < picks.it.length; i++) look(picks.kind[i], picks.it[i]);
   for (const d of world.dropped) look('dropped', d);
-  if (!best) { if (!busy) say('Nothing in reach', F.x, F.y - 1.6); return; }
-  if (!queueGather(best)) goGather(best);
+  return best;
 }
 function nextGather() {
   while (ui.queue.length) {
@@ -2879,6 +2985,61 @@ function drawPickFloats(now) {
     const [sx, sy] = onScreen(f.x, f.y), e = 1 - (1 - u) ** 3;
     ctx.globalAlpha = Math.min(1, u * 8) * (u > 0.6 ? 1 - (u - 0.6) / 0.4 : 1);
     ctx.drawImage(f.img, Math.round(sx - f.w / 2), Math.round(sy - 18 - Math.max(16, cam.zoom * 0.9) - f.rise * e), f.w, f.h);
+  }
+  ctx.globalAlpha = 1;
+}
+
+// Practice floating up over the forager's head as it's earned, as in Project Zomboid: "+4 Gathering" in the skill's ink
+// (SKILL_INK). The forager's f.xp is watched (xpFrame, a look at each skill a frame), and what it gained is gathered up
+// till it stops gaining for a moment (XP_QUIET_MS: a pick, a dish, the end of a sprint) or there's a lot of it (a long
+// sprint shows now and then), then floats up from its head and follows it. The numbers are practice times XP_SHOWN, so a
+// pick says something rounder than a quarter. A jump of more than a level's practice is a forager brought in (bringSkills),
+// not earned, and passed by.
+const XP_SHOWN = { stamina: 1, cooking: 10, gathering: 4 };
+const XP_QUIET_MS = 450, XP_MOST = 12, XP_MS = 1500, XP_RISE = 30;
+const xpSeen = { world: null, xp: {}, got: {}, at: {} };
+const xpFloats = [];                       // { img, w, h, t0, lift: px it's pushed up by newer ones }
+function xpFrame(now) {
+  const f = world.forager;
+  if (xpSeen.world !== world) { xpSeen.world = world; for (const s of S.SKILL_NAMES) { xpSeen.xp[s] = f.xp[s]; xpSeen.got[s] = 0; } }
+  for (const s of S.SKILL_NAMES) {
+    const d = f.xp[s] - xpSeen.xp[s];
+    xpSeen.xp[s] = f.xp[s];
+    if (d > 0 && d <= S.SKILLS[s].per) { xpSeen.got[s] += d * (XP_SHOWN[s] || 1); xpSeen.at[s] = now; }
+    const got = xpSeen.got[s];
+    if (got > 0 && (now - xpSeen.at[s] > XP_QUIET_MS || got >= XP_MOST)) {
+      xpSeen.got[s] = 0;
+      if (got >= 0.5 && f.down < 0) xpFloats.push(xpFloatOf(s, Math.round(got), now));
+    }
+  }
+}
+// "+4 Gathering" on a parchment pill, painted once, then only drawn.
+function xpFloatOf(s, n, t0) {
+  const label = `+${n} ${S.SKILLS[s].name}`, c = document.createElement('canvas'), g = c.getContext('2d'), k = 2;
+  g.font = LABEL_FONT;
+  const w = Math.ceil(g.measureText(label).width + 16), h = 22;
+  c.width = w * k; c.height = h * k;
+  g.scale(k, k);
+  g.fillStyle = 'rgba(255, 248, 228, 0.94)';
+  g.beginPath(); g.roundRect(0.5, 0.5, w - 1, h - 1, 11); g.fill();
+  g.strokeStyle = SKILL_INK[s] || '#b98a45'; g.globalAlpha = 0.55; g.lineWidth = 1.2; g.stroke(); g.globalAlpha = 1;
+  g.font = LABEL_FONT; g.fillStyle = SKILL_INK[s] || '#b98a45'; g.textBaseline = 'middle';
+  g.fillText(label, 8, h / 2 + 0.5);
+  while (xpFloats.length > 3) xpFloats.shift();
+  return { img: c, w, h, t0, lift: 0 };
+}
+// Over its head, where it was drawn this frame (fg.sx, fg.sy), each a little above the one after it.
+function drawXpFloats(now) {
+  if (fg.drawnAt !== now) return;
+  const top = fg.sy - fg.px * (zoomedOut() ? 0.6 : 0.85);
+  for (let k = xpFloats.length - 1, up = 0; k >= 0; k--) {
+    const f = xpFloats[k], u = (now - f.t0) / XP_MS;
+    if (u >= 1) { xpFloats.splice(k, 1); continue; }
+    const e = 1 - (1 - u) ** 3;
+    f.lift += (Math.max(0, up - XP_RISE * e) - f.lift) * 0.25;   // (a newer one pushes the older up out of its way, eased)
+    ctx.globalAlpha = Math.min(1, u * 8) * (u > 0.6 ? 1 - (u - 0.6) / 0.4 : 1);
+    ctx.drawImage(f.img, Math.round(fg.sx - f.w / 2), Math.round(top - f.h - XP_RISE * e - f.lift), f.w, f.h);
+    up = f.lift + XP_RISE * e + f.h + 3;    // (the next older one keeps above this one)
   }
   ctx.globalAlpha = 1;
 }
@@ -3169,11 +3330,12 @@ const netFiring = [];                     // a friend's vessel in a fire: { x, y
 const kitArt = id => VSL_FIRING[VSL_STEPS - 1][id === 'pan' ? 1 : 0];
 const fireAtXY = (F, x, y) => Math.abs(F.x - x) < 1e-3 && Math.abs(F.y - y) < 1e-3;
 function drawKitAt(F, sx, sy, px) {
-  const own = world.forager.kit.own, using = cooking() && ui.fire.F === F ? cookVessel : F.cookDish !== '' ? DISH_VESSEL.get(F.cookDish) || 'pot' : '';
+  const own = world.forager.kit.own, using = cooking() && ui.fire.F === F ? cookVessel : F.cookDish !== '' ? DISH_VESSEL.get(F.cookDish) || 'pot' : idleVessel.get(F) || '';
   const P = px * 0.4;
-  for (let i = 0; i < own.length; i++) {
-    if (own[i] === using) continue;
-    const side = i % 2 ? -1 : 1;                          // (the pot to the right of the fire, the griddle to the left)
+  for (let i = 0, m = 0; i < own.length; i++) {
+    if (!(Recipes.CRAFTS[own[i]]?.fire > 0)) continue;     // (the clay ones: a stick, a stone and a bowl aren't set out)
+    if (own[i] === using) { m++; continue; }
+    const side = m++ % 2 ? -1 : 1;                        // (the first to the right of the fire, the next to the left)
     drawEmoji(kitArt(own[i]), sx + side * px * 0.66, sy - P * 0.24 - px * 0.06, P);
   }
 }
@@ -3605,15 +3767,17 @@ function buildPressed() {
 
 // ---- making (PLAN.md vessels, piece 5)
 //
-// A vessel shaped out of clay (recipes.js CRAFTS), then fired (sim.js shapeVessel, kitTick, f.kit). The clay button by the
-// fire button (#make) shows once the satchel holds clay or something's firing; pressed (or C), a little menu over it
-// (#make-menu, makeMenu) lists what can be made and what each takes, and what's firing and how far along. Shaped, the clay
-// goes into the lit fire the forager's near (MAKE_NEAR), else the camp's if it's lit, and hardens while that fire burns;
-// done, sim.js's 'fired' toasts it. Owned for good, kept at camp, never in the satchel. A guest makes its own: its forager's
-// kit starts empty in a friend's meadow (arrive) and goes with the satchel through a reload (keepAwayBag); the fire it hardens
-// in is the meadow's, the same on every side, and friends see it there ('shape': fireNet, netFiring).
-const MAKE_NEAR = 3;                      // tiles from a lit fire the forager shapes clay by it
-const makeUi = { shown: false, open: false, html: '' };
+// A vessel made at a lit fire, in the cooking window (recipes.js CRAFTS; the comment over cookVessel; sim.js makeVessel,
+// shapeVessel, kitTick, f.kit). The clay button by the fire button (#make) shows once there's camp and the satchel holds
+// what something still to make takes, or something's hardening; pressed (or C), a little menu over it (#make-menu, makeMenu)
+// lists what can be made and what each takes, and what's hardening and how far along. One picked walks the forager to the
+// lit fire it's near (MAKE_NEAR), else the camp's, and opens the window making it (makeOne, makeNext). A clay one hardens
+// in that fire while it burns; done, sim.js's 'fired' toasts it. Owned for good, kept at camp, never in the satchel. A guest
+// makes its own: its forager's kit starts empty in a friend's meadow (arrive) and goes with the satchel through a reload
+// (keepAwayBag); the fire it hardens in is the meadow's, the same on every side, and friends see it there ('shape': fireNet,
+// netFiring).
+const MAKE_NEAR = 3;                      // tiles from a lit fire the forager makes things at it
+const makeUi = { shown: false, open: false, html: '', can: new Set(), nudge: false };
 function kitFire() {
   const f = world.forager;
   let best = null, bd = MAKE_NEAR;
@@ -3625,47 +3789,57 @@ const craftName = id => (Recipes.CRAFTS[id] ? Recipes.CRAFTS[id].name : Recipes.
 function renderMake() {
   const el = $('#make');
   if (!el || !world || !world.forager) return;
-  const f = world.forager, k = f.kit;
-  const show = !!k.firing || S.bagCount(f, 'clay') > 0 && Object.keys(Recipes.CRAFTS).some(id => !k.own.includes(id));
+  const f = world.forager, k = f.kit, todo = Object.keys(Recipes.CRAFTS).filter(id => !k.own.includes(id) && k.firing !== id);
+  const show = !!k.firing || !!world.camp && todo.some(id => buildHave(id, Recipes.CRAFTS).any);
   if (show !== makeUi.shown) { el.classList.toggle('hidden', !show); makeUi.shown = show; }
+  // what can be made just now: a clay one newly within reach is announced (once ever) and the button pops
+  let fresh = false;
+  for (const id of Object.keys(Recipes.CRAFTS)) {
+    const can = !!world.camp && todo.includes(id) && buildHave(id, Recipes.CRAFTS).ready;
+    if (can && !makeUi.can.has(id)) {
+      makeUi.can.add(id);
+      const c = Recipes.CRAFTS[id];
+      if (c.fire > 0) { fresh = true; firstTime('craft:' + id, 'you can make', esc(c.name), 'Tap the clay button, and at a lit fire drag the clay onto it.'); }
+    } else if (!can) makeUi.can.delete(id);
+  }
+  if (fresh) { makeUi.nudge = true; el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop'); }
+  if (![...makeUi.can].some(id => Recipes.CRAFTS[id].fire > 0)) makeUi.nudge = false;
+  el.classList.toggle('nudge', makeUi.nudge);          // (a soft glow stays till the button is pressed)
   if (!show && makeUi.open) makeMenu(false);
   else if (makeUi.open) makeMenu(true);
 }
 function makeMenu(open) {
   const m = $('#make-menu');
   makeUi.open = open;
+  if (open) { makeUi.nudge = false; $('#make').classList.remove('nudge', 'pop'); }
   $('#make').classList.toggle('on', open);
   if (!open) { m.classList.add('hidden'); return; }
   const k = world.forager.kit;
   let html = '';
   if (k.firing) {
-    const lit = world.fires.some(F => F.lit && Math.abs(F.x - k.x) < 1e-3 && Math.abs(F.y - k.y) < 1e-3);
-    html += `<p>Your ${craftName(k.firing)} is firing · ${Math.floor((1 - k.left / k.total) * 100)}%${lit ? '' : '<br><small>its fire is out: light it again</small>'}</p>`;
+    const lit = world.fires.some(F => F.lit && fireAtXY(F, k.x, k.y));
+    html += `<p>Your ${craftName(k.firing)} is hardening · ${Math.floor((1 - k.left / k.total) * 100)}%${lit ? '' : '<br><small>its fire is out: light it again</small>'}</p>`;
   }
   for (const [id, c] of Object.entries(Recipes.CRAFTS)) {
     if (k.own.includes(id) || k.firing === id) continue;
-    const needs = Object.entries(c.needs).map(([w, n]) => `${n} ${Recipes.INGREDIENTS[w] ? itemName(w, n).toLowerCase() : w}`).join(', ');
-    html += `<button data-act="make-one" data-id="${id}"${buildHave(id, Recipes.CRAFTS).ready && !k.firing ? '' : ' class="off"'}>${esc(c.name)} <small>${esc(needs)}</small></button>`;
+    html += `<button data-act="make-one" data-id="${id}"${buildHave(id, Recipes.CRAFTS).ready && !makeBlocked(id) ? '' : ' class="off"'}>${Recipes.VESSELS[id].icon} ${esc(c.name)} <small>${esc(needWords(c.needs))}</small></button>`;
   }
   if (!html) html = '<p>Nothing more to make</p>';
   if (html !== makeUi.html) { makeUi.html = html; m.innerHTML = html; }
   m.classList.remove('hidden');
 }
+// One picked (the menu, the book): at a fire already, the window makes it; else off to a lit fire to make it there.
 function makeOne(id) {
-  const f = world.forager, c = Recipes.CRAFTS[id], k = f.kit;
+  const f = world.forager, c = Recipes.CRAFTS[id];
   if (!c || f.down >= 0) return;
+  makeMenu(false);
+  if (cooking()) { if (!pickVessel(id)) say('Not while it cooks', ui.fire.x, ui.fire.y - 0.5); return; }
   const no = text => { say(text, f.x, f.y - 1.6); chime('click'); };
-  if (k.firing) return no(`The ${craftName(k.firing)} is still firing`);
-  const have = buildHave(id, Recipes.CRAFTS);
-  if (!have.ready) return no(`A ${c.name.toLowerCase()} needs ${missingWords(have.missing)}`);
+  if (ownsVessel(id)) return no(`You have a ${c.name.toLowerCase()}`);
   const F = kitFire();
-  if (!F) return no('It wants a lit fire to harden in');
-  spendBuild(id, Recipes.CRAFTS);
-  S.shapeVessel(world, id, F, c.fire * COOK_TPS);
-  if (Net && Net.on) Net.send({ t: 'fire', a: 'shape', x: F.x, y: F.y, id, n: k.total, tick: world.tick });   // (friends see it in the fire: fireNet)
-  say(`A ${c.name.toLowerCase()}, shaped: into the fire with it`, F.x, F.y - 0.8);
-  chime('stick');
-  makeMenu(false); renderMake();
+  if (!F) return no('Make it at a lit fire');
+  makeNext = id;
+  goFire({ kind: 'cook', F, x: F.x, y: F.y });
 }
 
 // Picking where: a faint fire in front of the forager (a mouse moves it about; a finger taps or drags it where it's
@@ -3945,7 +4119,12 @@ function drawFireHint(now) {
   const P = ui.place;
   if (P && !P.ok && P.why) { const [sx, sy] = onScreen(P.x, P.y); drawLabel(P.why, sx, sy + 8); }
   const j = ui.fire;
-  if (!j || j.stage !== 'blow' || j.blowing || j.caught) return;
+  if (!j || j.stage !== 'blow' || j.caught) return;
+  const pa = promptArt('blow'), [bx, by] = onScreen(j.x, j.y), bt = clamp((now - j.t0) / PROMPT_IN, 0, 1);   // (the breath disc, with an F key)
+  ctx.globalAlpha = bt * (j.blowing ? 0.5 : 0.88 + 0.12 * Math.sin(now / 700));
+  ctx.drawImage(pa.img, Math.round(bx - pa.r - 2), Math.round(by - firePx(cam.zoom) * 0.95 - pa.r * 2 - 30 + 3 * Math.sin(now / 500)), pa.w, pa.h);
+  ctx.globalAlpha = 1;
+  if (j.blowing) return;
   const wait = now - j.t0;
   if (fireTold.lit && wait < 1800) return;
   if (!HOLD_ART) HOLD_ART = floatOf('', 0, 0, 0, 0, fingerTap || matchMedia('(pointer: coarse)').matches ? 'Hold to blow' : 'Hold to blow (or F)');
@@ -4025,25 +4204,50 @@ const POT_IN_MS = 260;                    // ms it takes to settle on the stones
 const LAND_MS = 420;                      // ms a thing takes to drop into the pot and settle
 const COOK_EASE = 0.5;                   // the camera eases in over about this long (s), to kw.zoom (measureCook)
 // The vessel the cooking window cooks in (PLAN.md vessels, piece 6): picked in the window's row of them (#cook-vessels,
-// pickVessel): a stick, a hot stone and a bowl always, the clay pot and griddle once made (f.kit.own). Only dishes made in it
-// come out of it, and it holds its VESSELS slots. A dish picked in the book switches to its vessel. Opening the window, the
-// pot if there is one, else the stick. POT is the most any holds (the window's arrays).
+// pickVessel), every vessel there is, made or not. Only dishes made in it come out of it, and it holds its VESSELS slots. A
+// dish picked in the book switches to its vessel. Opening the window, the one picked last (the pot, if there is one, before
+// any is). POT is the most any holds (the window's arrays).
+// One not made yet turns the window into making it (cookMode 'make'): what it takes (recipes.js CRAFTS) is dragged or tapped
+// out of the satchel onto the fire a piece at a time, held back in the window's pot like things to cook (j.pot), and once
+// the last has landed (makeDone) it's made: a stick, a stone or a bark bowl yours at once, a clay one shaped and left in the
+// fire to harden (cookMode 'fire', till sim.js kitTick says it's 'fired'). The canvas shows its outline breathing over the
+// fire and the vessel built up from the bottom as each piece lands (drawMakeView).
 let cookVessel = 'stick';
+let vesselChosen = false;                 // whether one has been picked yet: till then the pot (once made) is the one to open with
+let makeNext = '';                        // a vessel to open the window making (makeOne, the book's "Make it")
 const VESSEL_IN = { pot: 'in the pot', pan: 'on the griddle', stick: 'on a stick', stone: 'on the stone', bowl: 'in the bowl' };
 const ownsVessel = v => !Recipes.CRAFTS[v] || world.forager.kit.own.includes(v);
-// The vessel the cooking window would open with: the one picked last, but the pot over a bare stick once there's one.
-const openVessel = () => !ownsVessel(cookVessel) || cookVessel === 'stick' && ownsVessel('pot') ? (ownsVessel('pot') ? 'pot' : 'stick') : cookVessel;
+// What the window does with vessel v: 'cook' in it, 'fire' (a clay one hardening in the coals) or 'make' it.
+const vesselMode = v => ownsVessel(v) ? 'cook' : world.forager.kit.firing === v ? 'fire' : 'make';
+const cookMode = () => ui.fire && ui.fire.stage === 'cooking' ? 'cook' : vesselMode(cookVessel);
+// What a vessel takes, one word a piece: ['clay', 'clay', 'clay'].
+const makeNeeds = v => Object.entries(Recipes.CRAFTS[v].needs).flatMap(([word, n]) => new Array(n).fill(word));
+// Whether a clay one can't be shaped just now: another is hardening (one in the fire at a time).
+const makeBlocked = v => Recipes.CRAFTS[v].fire > 0 && !!world.forager.kit.firing && world.forager.kit.firing !== v;
+// The vessel the cooking window would open with: the one picked last (kept when you walk away), the pot only till one's been
+// picked; with none made, the first that the satchel holds what it takes for (a stick, mostly), to make.
+function openVessel() {
+  if (ownsVessel(cookVessel) && (vesselChosen || cookVessel !== 'stick' || !ownsVessel('pot'))) return cookVessel;
+  const made = ['pot', 'pan', 'stick', 'stone', 'bowl'].find(ownsVessel);
+  if (made) return made;
+  if (vesselChosen && Recipes.VESSELS[cookVessel]) return cookVessel;
+  return Object.keys(Recipes.CRAFTS).find(v => !makeBlocked(v) && buildHave(v, Recipes.CRAFTS).ready) || 'stick';
+}
 const potSlots = () => Recipes.VESSELS[cookVessel].slots;
 const POT = Recipes.STATIONS.fire.slots;
 function pickVessel(v, quiet) {
   const j = ui.fire;
   if (!j || !Recipes.VESSELS[v] || v === cookVessel) return true;
   if (j.stage === 'cooking') return false;
-  if (!ownsVessel(v)) { say(`You need to make a ${craftName(v)} first`, j.x, j.y - 0.5); chime('click'); return false; }
-  cookVessel = v;
+  const was = vesselMode(cookVessel), now = vesselMode(v);
+  cookVessel = v; vesselChosen = true;
+  if (was === 'make' || now !== 'cook') j.pot.length = j.land.length = j.drop.length = 0;   // (food and clay don't mix)
   const n = potSlots();
-  if (j.pot.length > n) { j.pot.length = n; j.land.length = n; j.drop.length = n; kw.sx.fill(NaN); renderSatchel(); }
+  if (j.pot.length > n) { j.pot.length = n; j.land.length = n; j.drop.length = n; }
+  kw.sx.fill(NaN); kw.mkF = 0;
+  renderSatchel();                                        // (the tiles: what this one takes)
   if (!quiet) chime('click');
+  if (now === 'make' && firstOnce('make:open')) toast(`Drag what it takes from your satchel onto the fire (or ${fingerTap || matchMedia('(pointer: coarse)').matches ? 'tap' : 'click'} it) to make it.`);
   renderCook();
   return true;
 }
@@ -4052,7 +4256,7 @@ function pickVessel(v, quiet) {
 const KNOWN_FROM_START = new Set(Recipes.RECIPES.filter(r => r.known).map(r => r.name));
 const knownDish = name => KNOWN_FROM_START.has(name) || firsts.has('dish:' + name);
 const cooking = () => !!ui.fire && (ui.fire.stage === 'cook' || ui.fire.stage === 'cooking');
-const cookUi = { row: '', open: false, vw: 0, vh: 0, potIn: 0, potX: NaN, potY: NaN, potR: 0, line: '', p: -1 };   // (p: how far the Cook button is filled)
+const cookUi = { row: '', fp: -1, open: false, vw: 0, vh: 0, potIn: 0, potX: NaN, potY: NaN, potR: 0, line: '', p: -1 };   // (p: how far the Cook button is filled)
 const potHit = { n: 0, x: new Float64Array(4), y: new Float64Array(4), r: new Float64Array(4) };   // the things in the pot as drawn this frame
 let lastDish = '';                        // the last dish cooked here: the bar's one-tap "again"
 
@@ -4081,10 +4285,14 @@ function potPrune() {
 function potAdd(k, x, y, dropped) {
   const j = ui.fire, f = world.forager, id = f.bag[k];
   if (!j || j.stage !== 'cook' || !id) return false;
-  if (Recipes.INGREDIENTS[id]?.tags.includes('fuel')) return feedStick();   // (a stick: on the fire)
-  const food = Recipes.foodOf(id);
-  if (!food || !(food.fill > 0)) { say('Not for the pot', j.x, j.y - 0.5); chime('click'); return false; }
-  if (j.pot.length >= potSlots()) { say(`The ${Recipes.VESSELS[cookVessel].name.toLowerCase()}'s full`, j.x, j.y - 0.5); chime('click'); return false; }
+  const mode = cookMode();
+  if (mode !== 'cook') { if (!makeTakes(id, true)) return false; }   // (making a vessel: a piece of it onto the fire)
+  else {
+    if (Recipes.INGREDIENTS[id]?.tags.includes('fuel')) return feedStick();   // (a stick: on the fire)
+    const food = Recipes.foodOf(id);
+    if (!food || !(food.fill > 0)) { say('Not for the pot', j.x, j.y - 0.5); chime('click'); return false; }
+    if (j.pot.length >= potSlots()) { say(`The ${Recipes.VESSELS[cookVessel].name.toLowerCase()}'s full`, j.x, j.y - 0.5); chime('click'); return false; }
+  }
   if (potHeld()[id] >= S.bagCount(f, id)) return false;
   j.pot.push(id);
   const i = j.pot.length - 1;
@@ -4102,6 +4310,42 @@ function potAdd(k, x, y, dropped) {
   renderCook(false);
   if (!dropped) flyToPot(id, x, y, () => { if (j.pot[i] === id && j.land[i] === Infinity) j.land[i] = performance.now(); });
   return true;
+}
+// Whether id is a piece of the vessel being made that's still wanted (said is: say why not, as a tap or a drop does).
+function makeTakes(id, said) {
+  const j = ui.fire, v = cookVessel, c = Recipes.CRAFTS[v], no = text => { if (said) { say(text, j.x, j.y - 0.5); chime('click'); } return false; };
+  if (!c || cookMode() === 'fire') return no(`The ${craftName(v)} is hardening in the fire`);
+  if (makeBlocked(v)) return no(`One thing in the fire at a time: the ${craftName(world.forager.kit.firing)} is still hardening`);
+  if (!potLeft([...j.pot, id], makeNeeds(v))) return no(`A ${craftName(v)} takes ${needWords(c.needs)}`);
+  return true;
+}
+// "3 lumps of clay", "a stick", "2 pieces of birch bark": what a craft takes, in words.
+const PIECES = { clay: ['a lump of clay', 'lumps of clay'], birchbark: ['a piece of birch bark', 'pieces of birch bark'], stick: ['a stick', 'sticks'], pebble: ['a pebble', 'pebbles'] };
+const needWords = needs => Object.entries(needs).map(([w, n]) => {
+  const P = PIECES[w] || ['a ' + (Recipes.INGREDIENTS[w]?.name || w).toLowerCase(), (Recipes.INGREDIENTS[w] ? itemName(w, 2) : w).toLowerCase()];
+  return n > 1 ? `${n} ${P[1]}` : P[0];
+}).join(' and ');
+const MAKE_FALL = 420;                    // ms a piece takes to drop onto the fire in the window, before the vessel takes it in
+const MAKE_SET = 700;                     // ms after the last lands that it's made
+// Made: its pieces out of the satchel for good, and the vessel the forager's (sim.js makeVessel), or a clay one shaped and
+// into the fire to harden (sim.js shapeVessel: friends see it there, 'shape'). A glow and sparkles in the window (kw.made).
+function makeDone(j, now) {
+  const f = world.forager, v = cookVessel, c = Recipes.CRAFTS[v];
+  for (const id of j.pot) S.spend(f, id, 1);
+  j.pot.length = j.land.length = j.drop.length = 0;
+  kw.made = { v, at: now, fire: c.fire > 0 };
+  if (c.fire > 0) {
+    S.shapeVessel(world, v, j.F, c.fire * COOK_TPS);
+    if (Net && Net.on) Net.send({ t: 'fire', a: 'shape', x: j.F.x, y: j.F.y, id: v, n: f.kit.total, tick: world.tick });   // (friends see it in the fire: fireNet)
+    toast(`<b>A ${esc(craftName(v))}, shaped</b> · it hardens in the fire while it burns`);
+    fireFlare.set(j.F, now - TAKE_MS);
+    chime('kindle', { v: 0.45 });
+  } else {
+    S.makeVessel(world, v);
+    toast(`<b>Your ${esc(craftName(v))}</b> · ${esc(Recipes.VESSELS[v].word)}, at any fire`);
+    chime('found');
+  }
+  renderSatchel(); renderMake(); renderCook(); renderBook();
 }
 // The pot's thing i back out (into the satchel: it never left): lifted out of the water with a drip, it flies back to its tile.
 function potTake(i) {
@@ -4141,6 +4385,7 @@ function fillPot(name, go) {
   if (!j || j.stage !== 'cook' || !r) return false;
   if (!j.F.lit) { say('The fire\'s out', j.x, j.y - 0.5); return false; }
   if (!pickVessel(Recipes.vesselOf(r), true)) return false;
+  if (cookMode() !== 'cook') { say(`First a ${craftName(cookVessel)} to cook it in`, j.x, j.y - 0.5); chime('click'); return false; }   // (and the window shows how to make it)
   const things = Recipes.thingsFor(r.needs, bagHave());
   if (!things) { say('Not the things for it just now', j.x, j.y - 0.5); chime('click'); return false; }
   const now = performance.now();
@@ -4261,7 +4506,7 @@ function cookSync(j, now) {
   }
   if (j.stage === 'cooking') return;
   const was = Recipes.recipeOf(F.cookDish);
-  if (was) cookVessel = Recipes.vesselOf(was);
+  if (was) { cookVessel = Recipes.vesselOf(was); vesselChosen = true; }
   j.pot = F.cookItems.slice(); j.land = j.pot.map(() => now - LAND_MS * 2); j.drop = j.pot.map(() => null);
   kw.sx.fill(NaN);
   fireStage(j, 'cooking', now);
@@ -4311,6 +4556,9 @@ function cookFrame(j, now) {
   if (j.made && now > j.made.until) { j.made = null; renderCook(false); }
   if (!j.F.lit && !j.made) { say(j.F.cookDish ? 'The fire\'s burnt down: the pot waits' : 'The fire\'s burnt down', j.x, j.y - 0.5); ui.fire = null; return; }
   cookFuel(j);
+  if (j.stage === 'cook' && j.pot.length && cookMode() === 'make' && j.pot.length >= makeNeeds(cookVessel).length && j.pot.every((_, i) => now - j.land[i] > MAKE_FALL + MAKE_SET)) makeDone(j, now);
+  const k = world.forager.kit, fp = k.firing ? Math.floor((1 - k.left / k.total) * 20) : -1;   // (a vessel hardening: its % in the row, every 5)
+  if (fp !== cookUi.fp) { cookUi.fp = fp; renderCook(false); }
   if (j.stage === 'cooking') {                            // the stirring: a swish of the spoon each time round (drawCookView's spoon)
     const n = Math.floor((now - j.t0) / (COOK_STIR * 2));
     if (n !== j.step) { j.step = n; chime('stir'); }
@@ -4332,13 +4580,17 @@ function renderCook(measure = true) {
     renderBook();                                         // (the book says whether a tap fills the pot)
     if (!open) pairBook();                                // (an open book back in the middle)
     if (!open) { kw.reveal = null; kw.incoming = -1; kw.hover = false; kw.n = 0; renderSatchel(); cookUi.potR = 0; potHit.n = 0; return; }
-    cookUi.potIn = performance.now();
-    if (!ownsVessel(cookVessel) || cookVessel === 'stick' && ownsVessel('pot')) cookVessel = ownsVessel('pot') ? 'pot' : 'stick';
+    const now0 = performance.now();
+    cookUi.potIn = idleVessel.has(ui.fire.F) || ui.fire.F.cookDish !== '' ? -1e9 : now0;   // (a vessel already on the fire doesn't pop in)
+    cookVessel = makeNext && Recipes.VESSELS[makeNext] && ui.fire.F.cookDish === '' ? makeNext : openVessel();
+    if (makeNext) vesselChosen = true;
+    makeNext = ''; kw.mkF = 0; kw.made = null;
     chime('hearth');
-    kw.last = cookUi.potIn; kw.broth = 0; kw.dn = 0; kw.rn = 0; kw.sx.fill(NaN);
+    kw.last = now0; kw.broth = 0; kw.dn = 0; kw.rn = 0; kw.sx.fill(NaN);
     cookUi.p = -1;
     if (ui.selectedId || ui.picked) select(0);            // (the inspector would sit under it)
-    if (world.forager && firstOnce('cook:open')) toast(fingerTap || matchMedia('(pointer: coarse)').matches ? 'Drag things from your satchel into the pot (or tap them), then <b>Cook</b>.' : 'Drag things from your satchel into the pot (or click them), then <b>Cook</b>.');
+    if (world.forager && cookMode() === 'make' && firstOnce('make:open')) toast(`Something to cook with first: drag what it takes from your satchel onto the fire.`);
+    else if (world.forager && cookMode() === 'cook' && firstOnce('cook:open')) toast(fingerTap || matchMedia('(pointer: coarse)').matches ? 'Drag things from your satchel into the pot (or tap them), then <b>Cook</b>.' : 'Drag things from your satchel into the pot (or click them), then <b>Cook</b>.');
   }
   if (!open) return;
   const j = ui.fire, f = world.forager, busy = j.stage === 'cooking';
@@ -4348,19 +4600,26 @@ function renderCook(measure = true) {
   const made = !busy && !pot.length && j.made ? j.made : null;   // (the dish just cooked, named a few seconds)
   const have = bagHave(), anyFood = Object.keys(have).some(id => Recipes.foodOf(id)?.fill > 0);
   const again = !busy && !pot.length && !made && lastDish && knownDish(lastDish) ? Recipes.recipeOf(lastDish) : null;
-  const line = busy ? (known ? `Cooking <b>${esc(dish.name)}</b>… ${cookLeftText(j.F)}` : `Cooking… ${cookLeftText(j.F)}`)
+  const mode = cookMode(), making = mode !== 'cook';
+  if (making !== card.classList.contains('making')) { card.classList.toggle('making', making); $('#cook .cook-head small').textContent = making ? 'drag onto the fire' : 'drag into the pot'; }
+  const line = making ? makeLine(j, mode)
+    : busy ? (known ? `Cooking <b>${esc(dish.name)}</b>… ${cookLeftText(j.F)}` : `Cooking… ${cookLeftText(j.F)}`)
     : made ? (made.mess ? 'A forager\'s mess. Still food, mostly' : `Made <b>${esc(made.name)}</b>`)
     : pot.length ? word.html
     : again && Recipes.thingsFor(again.needs, have) ? `<button class="cook-again" data-act="cook-again" title="Cook it again"><i style="background-position:${itemBg(again.name)}"></i>${esc(again.name)} again</button>`
     : anyFood ? (cookVessel === 'pot' ? 'The water\'s warming. Drop something in' : `Put something ${VESSEL_IN[cookVessel]}`) : 'Nothing in the satchel to cook';
   const what = $('#cook-what');
   if (line !== cookUi.line) { cookUi.line = line; what.innerHTML = `<span>${line}</span>`; }   // (one block, so the grid centres it as one)
-  what.classList.toggle('mess', word.state === 'mess' && !busy && !made || !!made?.mess);
-  const row = Object.keys(Recipes.VESSELS).filter(ownsVessel).map(v => `${v === cookVessel ? '+' : ''}${v}`).join(' ') + (busy ? '!' : '');
+  what.classList.toggle('mess', !making && (word.state === 'mess' && !busy && !made || !!made?.mess));
+  // the row: every vessel, those made to cook in, the rest to make (dashed, "Make"), one hardening with how far it's got
+  const VS = [...new Set([...Object.keys(Recipes.CRAFTS), ...Object.keys(Recipes.VESSELS)])], fp = Math.max(0, cookUi.fp) * 5;
+  const row = VS.map(v => `${v === cookVessel ? '+' : ''}${v}${vesselMode(v)}`).join(' ') + (busy ? '!' : '') + fp;
   if (row !== cookUi.row) {
     cookUi.row = row;
-    $('#cook-vessels').innerHTML = Object.keys(Recipes.VESSELS).filter(ownsVessel).map(v => { const V = Recipes.VESSELS[v];
-      return `<button data-act="vessel" data-v="${v}" class="${v === cookVessel ? 'on' : ''}"${busy && v !== cookVessel ? ' disabled' : ''} title="${esc(V.name)}: ${esc(V.word)}, ${V.slots} things">${V.icon}<small>${esc(V.name)}</small></button>`; }).join('');
+    $('#cook-vessels').innerHTML = VS.map(v => {
+      const V = Recipes.VESSELS[v], m = vesselMode(v), c = Recipes.CRAFTS[v];
+      const tip = m === 'cook' ? `${V.name}: ${V.word}, ${V.slots} things` : m === 'fire' ? `${c.name}: hardening in the fire, ${fp}%` : `Make a ${c.name.toLowerCase()}: ${needWords(c.needs)}`;
+      return `<button data-act="vessel" data-v="${v}" class="${v === cookVessel ? 'on' : ''}${m === 'cook' ? '' : ' ' + m}"${busy && v !== cookVessel ? ' disabled' : ''} title="${esc(tip)}"${m === 'fire' ? ` style="--p:${fp / 100}"` : ''}>${V.icon}<small>${m === 'cook' ? esc(V.name) : m === 'fire' ? fp + '%' : 'Make'}</small></button>`; }).join('');
   }
   cookFuel(j);
   const sticks = Recipes.takes('fuel').reduce((n, ing) => n + S.bagCount(f, ing), 0), stick = $('#cook-stick');
@@ -4372,12 +4631,30 @@ function renderCook(measure = true) {
   stick.setAttribute('aria-label', `A stick on the fire: ${sticks} in the satchel, ${burning}`);
   const go = $('#cook-go');
   $('#cook-empty').classList.toggle('hidden', busy || !pot.length);
-  go.disabled = busy || !pot.length;
-  go.firstChild.textContent = busy ? 'Cooking · ' + cookLeftText(j.F) : 'Cook';
-  go.classList.toggle('mess', !busy && pot.length > 0 && word.state !== 'known' && word.state !== 'new');   // (it'll be a mess: said, not stopped)
+  go.disabled = busy || !pot.length || making;
+  go.firstChild.textContent = making ? (mode === 'fire' ? 'Hardening…' : '●'.repeat(pot.length) + '○'.repeat(Math.max(0, makeNeeds(cookVessel).length - pot.length)))
+    : busy ? 'Cooking · ' + cookLeftText(j.F) : 'Cook';
+  go.classList.toggle('mess', !making && !busy && pot.length > 0 && word.state !== 'known' && word.state !== 'new');   // (it'll be a mess: said, not stopped)
   if (measure) { cookUi.vw = vw; cookUi.vh = vh; measureCook(); }
 }
 
+// What the window says while it makes a vessel (mode 'make') or one hardens (mode 'fire'): what to do, how far it's got, and
+// what's wanting and where to find it.
+function makeLine(j, mode) {
+  const v = cookVessel, c = Recipes.CRAFTS[v], k = world.forager.kit, name = esc(c.name.toLowerCase());
+  if (mode === 'fire') {
+    const here = fireAtXY(j.F, k.x, k.y), p = Math.floor((1 - k.left / k.total) * 100);
+    return here ? `Your <b>${name}</b> is hardening in the fire · ${p}%<br><small>${j.F.fuel < S.FIRE_LOW ? 'The fire\'s burning low: a stick on keeps it going' : 'Keep the fire burning, and it\'s yours'}</small>`
+      : `Your <b>${name}</b> is hardening in another fire · ${p}%`;
+  }
+  if (makeBlocked(v)) return `One thing in the fire at a time<br><small>the ${esc(craftName(k.firing))} is still hardening</small>`;
+  const need = makeNeeds(v), n = j.pot.length;
+  if (n) return `Making a <b>${name}</b> · ${n} of ${need.length}<br><small>${n < need.length ? `${need.length - n} more to go` : 'there…'}</small>`;
+  const have = buildHave(v, Recipes.CRAFTS);
+  if (have.ready) return `Make a <b>${name}</b>: drag ${esc(needWords(c.needs))} onto the fire<br><small>${esc(c.text)}</small>`;
+  const want = have.missing[0][0], where = Recipes.INGREDIENTS[want]?.where;
+  return `A <b>${name}</b> takes ${esc(needWords(c.needs))}${have.got ? ` · ${esc(missingWords(have.missing))}` : ''}<br><small>${esc(where || c.text)}</small>`;
+}
 // One thing flies from its tile (sx, sy on screen) in an arc to just over the pot's mouth, and falls in from there
 // (drawCookView).
 function flyToPot(id, sx, sy, landed) {
@@ -4436,7 +4713,7 @@ const kw = {
   dT: new Float64Array(DROPS).fill(-1e9), dR: new Float32Array(DROPS), dK: new Uint8Array(DROPS), dn: 0,   // (dK 1: a spit of fat, not water)
   rX: new Float32Array(RINGS), rY: new Float32Array(RINGS), rS: new Float32Array(RINGS), rL: new Float32Array(RINGS),
   rA: new Float32Array(RINGS), rT: new Float64Array(RINGS).fill(-1e9), rn: 0,
-  last: 0, broth: 0, brothRGB: 'rgb(170, 108, 50)', hover: false, reveal: null, incoming: -1, ringAt: 0, spitAt: 0,
+  last: 0, broth: 0, brothRGB: 'rgb(170, 108, 50)', hover: false, reveal: null, mkF: 0, made: null, incoming: -1, ringAt: 0, spitAt: 0,
 };
 // Where thing i of n sits (x, y in the canvas) and how big it's drawn, in the vessel cooking with (kw.at: its middle, how far
 // its things spread, how far down in it they sit). On the stick they go along it.
@@ -4746,56 +5023,64 @@ const VESSEL_PAINT = {
     bitmapOf(front, c);
     return { back, front };
   },
-  // The wooden bowl, carved: set down in front of the fire (no heat in it), its inside behind the things, its belly in front.
+  // The bark bowl: birch bark folded up at its ends and laced, set down in front of the fire (no heat in it). Its inside the
+  // bark's warm ochre underside, behind the things; its belly the white bark with dark dashes, in front.
   bowl(A, rx) {
-    const x = A.x, y = A.y, R = A.rx, Ry = A.ry, dep = rx * 0.5, TAU = Math.PI * 2, PI = Math.PI, W = 0.006;
+    const x = A.x, y = A.y, R = A.rx, Ry = A.ry, dep = rx * 0.46, TAU = Math.PI * 2, PI = Math.PI, W = 0.01;
     let [back, g, c] = cookLayer();
     g.filter = blurOf(rx * 0.06);
     g.fillStyle = 'rgba(20, 10, 6, 0.5)'; g.beginPath(); g.ellipse(x, y + dep * 0.95, R * 0.9, Ry * 0.6, 0, 0, TAU); g.fill();
     g.filter = 'none';
     let gr = g.createLinearGradient(0, y - Ry, 0, y + Ry);
-    gr.addColorStop(0, '#a36e3e'); gr.addColorStop(0.6, '#7c4f2a'); gr.addColorStop(1, '#5c391d');
+    gr.addColorStop(0, '#d29a5e'); gr.addColorStop(0.6, '#a8693a'); gr.addColorStop(1, '#7c4a26');
     g.fillStyle = gr; g.beginPath(); wobble(g, x, y, R * 0.95, Ry * 0.92, 0, TAU, W); g.fill();
     g.save(); g.beginPath(); wobble(g, x, y, R * 0.95, Ry * 0.92, 0, TAU, W); g.clip();
-    g.lineWidth = Math.max(1, rx * 0.01); g.strokeStyle = 'rgba(60, 34, 14, 0.18)';   // the knife's marks
-    for (let k = 0; k < 7; k++) {
-      const a = PI * (0.1 + 0.8 * hash2(k, 5, 81)), s = 0.3 + 0.1 * k;
-      g.beginPath(); g.ellipse(x, y + Ry * 0.3, R * s, Ry * s, 0, a, a + 0.9); g.stroke();
-    }
+    g.lineWidth = Math.max(1, rx * 0.009); g.strokeStyle = 'rgba(90, 46, 18, 0.22)';   // the bark's grain, along it
+    for (let k = 0; k < 7; k++) { const yy = y - Ry * 0.7 + k * Ry * 0.24; g.beginPath(); g.moveTo(x - R, yy); g.quadraticCurveTo(x, yy + Ry * 0.12 * (hash2(k, 5, 81) - 0.5), x + R, yy); g.stroke(); }
     g.filter = blurOf(rx * 0.04);
-    g.fillStyle = 'rgba(255, 220, 170, 0.16)'; g.beginPath(); g.ellipse(x, y - Ry * 0.4, R * 0.6, Ry * 0.35, 0, 0, TAU); g.fill();
+    g.fillStyle = 'rgba(255, 226, 180, 0.2)'; g.beginPath(); g.ellipse(x, y - Ry * 0.4, R * 0.6, Ry * 0.35, 0, 0, TAU); g.fill();
     g.filter = 'none'; g.restore();
     g.lineCap = 'round'; g.lineJoin = 'round';
-    g.lineWidth = rx * 0.05; g.strokeStyle = '#b98552';
+    g.lineWidth = rx * 0.045; g.strokeStyle = '#e9dfcb';
     g.beginPath(); wobble(g, x, y, R, Ry, PI, TAU, W); g.stroke();
-    g.lineWidth = Math.max(1, rx * 0.013); g.strokeStyle = 'rgba(255, 236, 206, 0.35)';
-    g.beginPath(); wobble(g, x, y - rx * 0.018, R, Ry, PI * 1.1, PI * 1.9, W); g.stroke();
     bitmapOf(back, c);
     let front; [front, g, c] = cookLayer();
-    g.fillStyle = '#5e3a1c'; g.beginPath(); g.ellipse(x, y + dep + rx * 0.02, R * 0.38, Ry * 0.3, 0, 0, TAU); g.fill();   // its foot
     const belly = () => {
       g.beginPath(); g.moveTo(x - R, y);
-      g.bezierCurveTo(x - R * 1.02, y + dep * 0.7, x - R * 0.55, y + dep, x, y + dep);
-      g.bezierCurveTo(x + R * 0.55, y + dep, x + R * 1.02, y + dep * 0.7, x + R, y);
+      g.bezierCurveTo(x - R * 0.98, y + dep * 0.75, x - R * 0.62, y + dep, x, y + dep);
+      g.bezierCurveTo(x + R * 0.62, y + dep, x + R * 0.98, y + dep * 0.75, x + R, y);
       wobble(g, x, y, R, Ry, 0, PI, W, false); g.closePath();
     };
-    gr = g.createRadialGradient(x - R * 0.4, y + dep * 0.3, 0, x, y + dep * 0.4, R * 1.2);
-    gr.addColorStop(0, '#c99560'); gr.addColorStop(0.5, '#9b6a3a'); gr.addColorStop(1, '#5a3618');
+    gr = g.createRadialGradient(x - R * 0.35, y + dep * 0.25, 0, x, y + dep * 0.4, R * 1.2);
+    gr.addColorStop(0, '#f7f1e4'); gr.addColorStop(0.55, '#ddd2bc'); gr.addColorStop(1, '#9c8f78');
     g.fillStyle = gr; belly(); g.fill();
     g.save(); belly(); g.clip();
-    g.lineWidth = Math.max(1, rx * 0.008); g.strokeStyle = 'rgba(70, 40, 18, 0.2)';   // the wood's grain
-    for (let k = 0; k < 8; k++) { g.beginPath(); wobble(g, x, y + dep * (0.12 + k * 0.1), R * (1.02 - k * 0.05), Ry * (0.9 - k * 0.06), PI * 0.05, PI * 0.95, 0.03, true, k * 1.7); g.stroke(); }
-    g.strokeStyle = 'rgba(60, 34, 14, 0.35)'; g.lineWidth = Math.max(1, rx * 0.012);   // a knot
-    g.beginPath(); g.ellipse(x + R * 0.36, y + dep * 0.55, R * 0.06, R * 0.035, 0.2, 0, TAU); g.stroke();
+    g.fillStyle = 'rgba(48, 38, 30, 0.7)';                // its dark dashes (lenticels), across it
+    for (let k = 0; k < 26; k++) {
+      const u = hash2(k, 7, 82) * 2 - 1, v = hash2(k, 7, 83), lx = x + u * R * 0.95, ly = y + dep * (0.12 + 0.8 * v) * (1 - 0.25 * u * u);
+      const lw = R * (0.04 + 0.08 * hash2(k, 7, 84));
+      g.beginPath(); g.ellipse(lx, ly, lw, Math.max(0.6, rx * 0.007), 0, 0, TAU); g.fill();
+    }
+    g.lineWidth = Math.max(1, rx * 0.012);
+    for (const sd of [-1, 1]) {                           // the folds up at each end, and the lacing that holds them
+      const fx = x + sd * R * 0.7;
+      g.strokeStyle = 'rgba(110, 96, 74, 0.55)';
+      g.beginPath(); g.moveTo(fx, y + Ry * 0.25); g.quadraticCurveTo(fx + sd * R * 0.12, y + dep * 0.5, fx - sd * R * 0.02, y + dep * 0.88); g.stroke();
+      g.strokeStyle = 'rgba(255, 255, 250, 0.45)';
+      g.beginPath(); g.moveTo(fx + sd * rx * 0.012, y + Ry * 0.3); g.quadraticCurveTo(fx + sd * R * 0.13, y + dep * 0.5, fx, y + dep * 0.85); g.stroke();
+      g.strokeStyle = '#6b4a2c'; g.lineWidth = Math.max(1, rx * 0.016);
+      for (let q = 0; q < 3; q++) { const sy = y + Ry * 0.35 + q * dep * 0.17; g.beginPath(); g.moveTo(fx + sd * R * 0.03, sy); g.lineTo(fx + sd * R * 0.13, sy + dep * 0.06); g.stroke(); }
+      g.lineWidth = Math.max(1, rx * 0.012);
+    }
     g.filter = blurOf(rx * 0.05);
-    g.fillStyle = 'rgba(255, 240, 220, 0.2)'; g.beginPath(); g.ellipse(x - R * 0.55, y + dep * 0.4, R * 0.14, dep * 0.3, 0.5, 0, TAU); g.fill();
-    g.fillStyle = 'rgba(255, 150, 70, 0.18)'; g.beginPath(); g.ellipse(x + R * 0.8, y + dep * 0.3, R * 0.15, dep * 0.35, -0.4, 0, TAU); g.fill();   // the firelight round its side
+    g.fillStyle = 'rgba(255, 150, 70, 0.16)'; g.beginPath(); g.ellipse(x + R * 0.8, y + dep * 0.3, R * 0.15, dep * 0.35, -0.4, 0, TAU); g.fill();   // the firelight round its side
+    g.fillStyle = 'rgba(60, 40, 24, 0.25)'; g.beginPath(); g.ellipse(x, y + dep * 0.95, R * 0.7, dep * 0.18, 0, 0, TAU); g.fill();   // its foot in shadow
     g.filter = 'none'; g.restore();
     g.lineCap = 'round'; g.lineJoin = 'round';
-    g.lineWidth = rx * 0.055; g.strokeStyle = '#c89462';
+    g.lineWidth = rx * 0.05; g.strokeStyle = '#f3ecdd';    // the rim, rolled over
     g.beginPath(); wobble(g, x, y, R, Ry, 0, PI, W); g.stroke();
-    g.lineWidth = Math.max(1, rx * 0.014); g.strokeStyle = 'rgba(255, 238, 210, 0.5)';
-    g.beginPath(); wobble(g, x, y - rx * 0.02, R * 0.99, Ry, PI * 0.12, PI * 0.88, W); g.stroke();
+    g.lineWidth = Math.max(1, rx * 0.012); g.strokeStyle = 'rgba(120, 100, 76, 0.5)';
+    g.beginPath(); wobble(g, x, y + rx * 0.022, R * 0.99, Ry, PI * 0.1, PI * 0.9, W); g.stroke();
     bitmapOf(front, c);
     return { back, front };
   },
@@ -4908,6 +5193,7 @@ function drawCookView(now) {
     drawFlames(cx + rx * 0.68, fireY, rx * 1.4, heat, now, 31, g, d, 0, 0);
     drawFlames(cx, fireY, rx * 1.7, heat, now, 53, g, d, 0, 0);
   }
+  if (cookMode() !== 'cook') { drawMakeView(g, now, fdt, heat); drawMadeBurst(g, now); return; }
   const art = inPot ? kw : vesselArt(v);
   g.drawImage(art.back.img, 0, 0, w, h);
   // the spoon going round in the pot while it cooks: its bowl under the water, its handle out of it from en
@@ -5099,6 +5385,134 @@ function drawCookView(now) {
   }
   g.globalAlpha = 1;
   if (kw.reveal) drawReveal(g, now, sheet);
+  drawMadeBurst(g, now);
+}
+// A vessel as one painting for making it (makeArt): its back and front together, the pot empty (the inside wall over the
+// water), and raw (a clay one as it's shaped: its colour taken to pale unfired clay, VSL_RAW, its shading kept). Painted once a size.
+function makeArt(v, raw) {
+  const key = (raw ? 'raw:' : 'make:') + v;
+  if (kw.vart[key]) return kw.vart[key];
+  const src = v === 'pot' ? kw : vesselArt(v), [art, g, c] = cookLayer(), TAU = Math.PI * 2;
+  g.drawImage(src.back.img, 0, 0, kw.w, kw.h);
+  if (v === 'pot') {
+    g.save(); g.beginPath(); g.ellipse(kw.cx, kw.rimY, kw.rx * 0.97, kw.ry * 0.95, 0, 0, TAU); g.clip();
+    const gr = g.createLinearGradient(0, kw.wy - kw.wry, 0, kw.wy + kw.wry);
+    gr.addColorStop(0, '#4c2516'); gr.addColorStop(1, '#2e170d');
+    g.fillStyle = gr; g.beginPath(); g.ellipse(kw.cx, kw.wy, kw.wrx * 1.04, kw.wry * 1.08, 0, 0, TAU); g.fill();
+    g.restore();
+  }
+  if (src.front) g.drawImage(src.front.img, 0, 0, kw.w, kw.h);
+  if (raw) {                                              // (the clay's colour over its own light and shade: 'color' through its silhouette)
+    const [, m, mc] = cookLayer();
+    m.fillStyle = 'rgb(186, 150, 112)'; m.fillRect(0, 0, kw.w, kw.h);   // (warmer than VSL_RAW: the 'color' takes only its hue and how strong)
+    m.globalCompositeOperation = 'destination-in'; m.drawImage(c, 0, 0, kw.w, kw.h);
+    g.save(); g.setTransform(1, 0, 0, 1, 0, 0);
+    g.globalCompositeOperation = 'color'; g.drawImage(mc, 0, 0);
+    g.globalCompositeOperation = 'source-atop'; g.fillStyle = 'rgba(214, 186, 150, 0.3)'; g.fillRect(0, 0, c.width, c.height);
+    g.restore();
+  }
+  bitmapOf(art, c);
+  return (kw.vart[key] = art);
+}
+// Where a vessel's painting runs top to bottom in the window (its pieces build it up from the bottom): [top, bottom].
+function makeBox(v) {
+  const A = kw.at[v], rx = kw.rx;
+  return v === 'pot' ? [kw.rimY - kw.ry * 1.25, kw.rimY + rx * 0.98] : v === 'bowl' ? [A.y - A.ry * 1.25, A.y + rx * 0.56]
+    : v === 'stick' ? [A.y - rx * 0.35, kw.fireY + rx * 0.05] : [A.y - A.ry * 1.4, A.y + rx * 0.32];
+}
+// The window making a vessel (cookMode 'make') or one hardening in the fire ('fire'): see the comment over cookVessel. Making:
+// its outline breathing over the fire in dashes, what it takes bobbing over it till the first piece is in, each piece
+// dropped falling onto it with a puff of dust, the vessel built up from the bottom as they land (kw.mkF), and a pip for each
+// piece under it. Hardening: the vessel in the flames, raw clay darkening to fired as it goes, the coals glowing under it.
+function drawMakeView(g, now, fdt, heat) {
+  const j = ui.fire, v = cookVessel, A = kw.at[v], rx = kw.rx, t = now / 1000, TAU = Math.PI * 2, c = Recipes.CRAFTS[v];
+  const k = world.forager.kit, clay = c.fire > 0, [top, bot] = makeBox(v), bloom = bloomArt().img, w = kw.w, h = kw.h;
+  if (cookMode() === 'fire') {
+    if (!fireAtXY(j.F, k.x, k.y)) { g.globalAlpha = 0.18; g.drawImage(makeArt(v, true).img, 0, 0, w, h); g.globalAlpha = 1; return; }
+    const p = 1 - k.left / k.total;
+    g.globalCompositeOperation = 'lighter';               // the coals glowing up under it
+    g.globalAlpha = (j.F.lit ? 0.5 : 0.15) * (0.8 + 0.2 * Math.sin(t * 3.1));
+    g.drawImage(bloom, kw.cx - rx * 1.2, bot - rx * 0.5, rx * 2.4, rx * 0.9);
+    g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1;
+    g.drawImage(makeArt(v, false).img, 0, 0, w, h);
+    g.globalAlpha = 1 - p; g.drawImage(makeArt(v, true).img, 0, 0, w, h);
+    g.globalAlpha = 1;
+    return;
+  }
+  const need = makeNeeds(v), n = j.pot.length, sheet = itemSheet().img, blocked = makeBlocked(v);
+  let set = 0;
+  for (let i = 0; i < n; i++) if (now - j.land[i] >= MAKE_FALL) set++;
+  kw.mkF += (set / need.length - kw.mkF) * (1 - Math.exp(-fdt / 260));
+  const art = makeArt(v, clay).img, f = kw.mkF;
+  g.globalAlpha = blocked ? 0.15 : 0.32 + 0.1 * Math.sin(t * 2.4);   // its outline, breathing
+  g.drawImage(art, 0, 0, w, h);
+  const r = A.ring;
+  g.setLineDash([rx * 0.07, rx * 0.06]); g.lineDashOffset = -t * rx * 0.08;
+  g.globalAlpha = kw.hover ? 0.9 : blocked ? 0.2 : 0.45 + 0.15 * Math.sin(t * 2.4); g.strokeStyle = kw.hover ? '#ffc677' : '#f4dcae'; g.lineWidth = Math.max(1.5, rx * (kw.hover ? 0.03 : 0.018));
+  g.beginPath(); g.ellipse(r[0], r[1], r[2], r[3], 0, 0, TAU); g.stroke();
+  g.setLineDash([]);
+  if (f > 0.003) {                                        // built up from the bottom as far as its pieces are in
+    const y = bot - (bot - top) * Math.min(1, f);
+    g.save(); g.beginPath(); g.rect(0, y, w, h - y); g.clip();
+    g.globalAlpha = 1; g.drawImage(art, 0, 0, w, h);
+    g.restore();
+    if (f < 0.995) { g.globalAlpha = 0.35 * (1 - f); g.strokeStyle = '#fff1d6'; g.lineWidth = Math.max(1, rx * 0.012); g.beginPath(); g.moveTo(kw.cx - rx * 1.05, y); g.lineTo(kw.cx + rx * 1.05, y); g.stroke(); }
+  }
+  const S = rx * 0.5, sm = smokeArt().img, mid = (top + bot) / 2;
+  for (let i = 0; i < n; i++) {                           // each piece: falling onto it, then a puff of dust where it landed
+    const u = (now - j.land[i]) / MAKE_FALL, id = j.pot[i], x0 = j.drop[i] ? j.drop[i][0] : kw.cx, y0 = j.drop[i] ? j.drop[i][1] : top - rx * 0.6;
+    const tx = kw.cx + (i - (n - 1) / 2) * rx * 0.25;
+    if (!(u >= 0)) continue;
+    if (u < 1) { g.globalAlpha = 1 - 0.5 * u * u; drawThing(g, sheet, ITEM_IDS.indexOf(id), x0 + (tx - x0) * u, y0 + (mid - y0) * u * u, S * (1 - 0.35 * u), (1 - u) * 0.4 * (i & 1 ? 1 : -1), 1); continue; }
+    if ((kw.last - fdt - j.land[i]) / MAKE_FALL < 1) chime(id === 'clay' ? 'plop' : id === 'pebble' ? 'clack' : 'stick', id === 'clay' ? { what: 'mushroom' } : undefined);   // (landed this frame)
+    const q = (u - 1) * MAKE_FALL / 600;
+    if (q < 1) for (let s = 0; s < 3; s++) {
+      const rr = rx * (0.1 + 0.22 * q) * (1 - s * 0.2);
+      g.globalAlpha = 0.45 * (1 - q); g.drawImage(sm, tx + (s - 1) * rx * 0.18 * (0.5 + q) - rr, mid - rx * 0.1 * q - s * rx * 0.04 - rr, rr * 2, rr * 2);
+    }
+  }
+  if (!n && !blocked) {                                   // what it takes, bobbing over it: drop it here
+    const id = makeWant(need[0]), b = Math.sin(t * 3), y = top - rx * 0.42 + b * rx * 0.05;
+    g.globalAlpha = 0.6; drawThing(g, sheet, ITEM_IDS.indexOf(id), kw.cx, y, S * 0.9, 0, 1);
+    g.globalAlpha = 0.5 + 0.2 * b; g.strokeStyle = '#f4dcae'; g.lineWidth = Math.max(1.5, rx * 0.02); g.lineCap = 'round';
+    const ay = y + S * 0.62;
+    g.beginPath(); g.moveTo(kw.cx - rx * 0.06, ay); g.lineTo(kw.cx, ay + rx * 0.06); g.lineTo(kw.cx + rx * 0.06, ay); g.stroke();
+  }
+  const m = need.length, pr = Math.max(3, rx * 0.035), py = Math.min(h - pr * 2.5, bot + rx * 0.16);   // a pip a piece
+  for (let i = 0; i < m; i++) {
+    const px = kw.cx + (i - (m - 1) / 2) * pr * 3.2;
+    g.globalAlpha = 0.85; g.beginPath(); g.arc(px, py, pr, 0, TAU);
+    if (i < set) { g.fillStyle = '#ffc677'; g.fill(); } else { g.strokeStyle = '#f4dcae'; g.lineWidth = Math.max(1, pr * 0.35); g.stroke(); }
+  }
+  g.globalCompositeOperation = 'lighter';                 // the flames' light on it
+  g.globalAlpha = A.glow[4] * heat * f * (0.2 + 0.06 * Math.sin(t * 9.1));
+  g.drawImage(bloom, A.glow[0], A.glow[1], A.glow[2], A.glow[3]);
+  g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1;
+}
+// The satchel's id for a word a craft takes (a tag: the first thing in the satchel that is one), to show what to drag.
+function makeWant(word) {
+  if (Recipes.INGREDIENTS[word]) return word;
+  const f = world.forager;
+  for (const id of Recipes.takes(word)) if (S.bagCount(f, id) > 0) return id;
+  return Recipes.takes(word)[0];
+}
+// Made (kw.made, makeDone): a warm bloom over the vessel, swelling and fading, and a ring of sparkles going out.
+const BURST_MS = 1400;
+function drawMadeBurst(g, now) {
+  const M = kw.made;
+  if (!M) return;
+  const u = (now - M.at) / BURST_MS;
+  if (u >= 1 || M.v !== cookVessel) { kw.made = null; return; }
+  const A = kw.at[M.v], [top, bot] = makeBox(M.v), x = A.x, y = (top + bot) / 2, rx = kw.rx, e = starArt().img, b = rx * (0.7 + 0.9 * u);
+  g.globalCompositeOperation = 'lighter';
+  g.globalAlpha = 0.75 * (1 - u); g.drawImage(bloomArt().img, x - b, y - b * 0.8, b * 2, b * 1.6);
+  g.globalCompositeOperation = 'source-over';
+  for (let i = 0; i < 10; i++) {
+    const a = i / 10 * Math.PI * 2 + 0.3, d = rx * (0.35 + 0.95 * u), r = rx * 0.09 * (1 - u) * (1 + 0.5 * Math.sin(now / 90 + i));
+    g.globalAlpha = 1 - u;
+    g.drawImage(e, x + Math.cos(a) * d - r, y + Math.sin(a) * d * 0.6 - r, r * 2, r * 2);
+  }
+  g.globalAlpha = 1;
 }
 // Cooked: the dish rises out of the pot, glowing with a few sparks round it (a mess, wobbling up in dark smoke), and after
 // REVEAL_MS flies to its tile (or, with the satchel full, fades: it's on the ground by the fire).
@@ -5257,12 +5671,14 @@ function setupCookBag() {
 // The tiles, as the satchel is (renderSatchel), rewritten only where something changed.
 function renderCookBag(F) {
   if (!kw.slots.length) return;
-  const held = potHeld(), inCook = cooking();
+  const held = potHeld(), inCook = cooking(), mode = inCook ? cookMode() : 'cook', making = mode === 'make' && !makeBlocked(cookVessel);
   for (let k = 0; k < S.SLOTS; k++) {
     const id = F.bag[k] || '', el = kw.slots[k], hold = Math.min(held[id] || 0, F.bagN[k]), n = F.bagN[k] - hold;
     if (hold) held[id] -= hold;
-    const food = id ? Recipes.foodOf(id) : null, fuel = !!id && !!Recipes.INGREDIENTS[id]?.tags.includes('fuel'), takes = !!id && (fuel || !!(food && food.fill > 0));
+    const food = id ? Recipes.foodOf(id) : null, fuel = !!id && mode === 'cook' && !!Recipes.INGREDIENTS[id]?.tags.includes('fuel');
+    const want = making && !!id && n > 0 && makeTakes(id, false), takes = mode !== 'cook' ? want : !!id && (fuel || !!(food && food.fill > 0));
     el.classList.toggle('cookable', inCook && takes);
+    el.classList.toggle('want', want);                   // (making: what it takes, glowing to be dragged)
     el.classList.toggle('fuel', fuel);
     el.classList.toggle('cook-dim', !!id && !takes);
     el.classList.toggle('incoming', k === kw.incoming);
@@ -5300,7 +5716,10 @@ function cookCam(dt) {
 // The pot over the fire being cooked at, and what's in it: dropped in with a bounce and a puff, bobbing and steaming while
 // it cooks, a puff of smoke off a mess. Its back, the things, then its front: a handful of draws, for one fire. Drawn after
 // all that stands (frame), so it's never behind a bush or a tree: it's what you're looking at.
+const idleVessel = new WeakMap();        // the vessel last cooked in at each fire, left over it when the window shuts
 function drawPot(now) {
+  if (cookMode() !== 'cook') { cookUi.potR = 0; potHit.n = 0; return; }   // (a vessel being made: in the window only)
+  idleVessel.set(ui.fire.F, cookVessel);
   const j = ui.fire, F = j.F, z = cam.zoom, px = firePx(z), sx = (F.x - cam.x) * z + vw / 2, sy = (F.y - cam.y) * z + vh / 2;
   const t = clamp((now - cookUi.potIn) / POT_IN_MS, 0, 1), P = px * POT_SIZE * (0.7 + 0.3 * ease(t)), cy = sy - px * POT_UP - (1 - t) * px * 0.15;
   const L = vesselLook(cookVessel), mx = sx, my = cy - P * 0.15, busy = j.stage === 'cooking';
@@ -5356,9 +5775,17 @@ const POT_BAR_UP = 0.86;                  // the bar's foot over the fire's foot
 function drawAwayPots(now) {
   const z = cam.zoom, px = firePx(z), mine = cooking() ? ui.fire.F : null, art = smokeArt().img, tt = now / 1000;
   for (const F of world.fires) {
-    if (F.cookDish === '' || F === mine) continue;
+    if (F === mine) continue;
+    const idle = F.cookDish === '' ? idleVessel.get(F) : null;
+    if (F.cookDish === '' && !idle) continue;
     const sx = (F.x - cam.x) * z + vw / 2, sy = (F.y - cam.y) * z + vh / 2;
     if (!visible(sx, sy, px)) continue;
+    if (idle) {                                             // (nothing cooking: the vessel last cooked in stays over the fire)
+      const P = px * POT_SIZE, cy = sy - px * POT_UP, L = vesselLook(idle);
+      drawEmoji(L.back, sx, cy + L.up * P, P);
+      if (L.front) drawEmoji(L.front, sx, cy + L.up * P, P);
+      continue;
+    }
     const busy = F.cookLeft > 0 && F.lit, P = px * POT_SIZE, cy = sy - px * POT_UP, my = cy - P * 0.15, n = F.cookItems.length, w = P * 0.46;
     const L = vesselLook(DISH_VESSEL.get(F.cookDish));      // (a mess: the pot)
     drawEmoji(L.back, sx, cy + L.up * P, P);
@@ -5586,20 +6013,22 @@ function paintVessel(g, size, U, n) {
     furGlow(g, [30, 20, 14], 0.6, 0, ry0, 0.22, 0.03);                                               // charred over the flames
     return;
   }
-  // The wooden bowl.
-  const wood = [150, 104, 64], by = -0.04, brx = 0.66, bry = 0.2;
+  // The bark bowl: birch bark folded and laced, its ochre inside, its white belly with dark dashes.
+  const bark = [222, 212, 192], inner = [196, 136, 82], by = -0.04, brx = 0.66, bry = 0.2;
   if (part === 'bowl0') {
-    softIn(g, tone(wood, 1.1), by - bry - 0.04, by + 0.02, () => ovalAt(g, 0, by, brx + 0.03, bry + 0.03), 1.2, 0.8);
-    softIn(g, tone(wood, 0.7), by - bry, by + bry, () => ovalAt(g, 0, by, brx - 0.04, bry - 0.035), 0.75, 1.15);
+    softIn(g, tone(bark, 1.05), by - bry - 0.04, by + 0.02, () => ovalAt(g, 0, by, brx + 0.03, bry + 0.03), 1.2, 0.8);
+    softIn(g, tone(inner, 0.85), by - bry, by + bry, () => ovalAt(g, 0, by, brx - 0.04, bry - 0.035), 0.75, 1.15);
     return;
   }
-  const body = () => { g.moveTo(-brx - 0.03, by); g.bezierCurveTo(-brx, by + 0.42, -0.36, 0.6, 0, 0.6); g.bezierCurveTo(0.36, 0.6, brx, by + 0.42, brx + 0.03, by); g.ellipse(0, by, brx + 0.03, bry + 0.03, 0, 0, Math.PI); };
-  furGlow(g, [60, 40, 24], 0.35, 0, 0.62, 0.5, 0.08);
-  softIn(g, wood, by, 0.6, body, 1.3, 0.6);
+  const body = () => { g.moveTo(-brx - 0.03, by); g.bezierCurveTo(-brx, by + 0.4, -0.4, 0.56, 0, 0.56); g.bezierCurveTo(0.4, 0.56, brx, by + 0.4, brx + 0.03, by); g.ellipse(0, by, brx + 0.03, bry + 0.03, 0, 0, Math.PI); };
+  furGlow(g, [60, 40, 24], 0.35, 0, 0.58, 0.5, 0.08);
+  softIn(g, bark, by, 0.56, body, 1.25, 0.55);
   g.save(); g.beginPath(); body(); g.clip();
-  strokeIn(g, rockRGB(tone(wood, 0.72), 0.5), 0.014, () => { for (const k of [-0.3, -0.05, 0.22]) { g.moveTo(k - 0.2, by + 0.1); g.quadraticCurveTo(k, by + 0.36, k + 0.2, 0.6); } });   // its grain
+  g.fillStyle = 'rgba(48, 38, 30, 0.75)';
+  for (const [lx, ly, lw] of [[-0.42, 0.12, 0.1], [-0.1, 0.2, 0.14], [0.24, 0.1, 0.09], [0.4, 0.3, 0.1], [-0.3, 0.38, 0.12], [0.06, 0.44, 0.1]]) { g.beginPath(); g.ellipse(lx, ly, lw, 0.018, 0, 0, Math.PI * 2); g.fill(); }
+  strokeIn(g, 'rgba(120, 100, 76, 0.6)', 0.016, () => { for (const sd of [-1, 1]) { g.moveTo(sd * 0.46, by + 0.06); g.quadraticCurveTo(sd * 0.56, 0.3, sd * 0.44, 0.52); } });   // the folds
   g.restore();
-  strokeIn(g, rockRGB(tone(wood, 1.3, 16)), 0.05, () => g.ellipse(0, by, brx + 0.03, bry + 0.03, 0, 0.1, Math.PI - 0.1));
+  strokeIn(g, rockRGB(tone(bark, 1.08, 10)), 0.05, () => g.ellipse(0, by, brx + 0.03, bry + 0.03, 0, 0.1, Math.PI - 0.1));
 }
 
 // ------------------------------------------------------------------ eating
@@ -5874,8 +6303,9 @@ function bookPageHTML(p, have, atPot) {
       + `<span class="chip" title="How long it cooks on the fire">⏲ ${timeWord(Recipes.timeOf(r))}</span></div>`;
     needs = ns.map(n => `<li class="${n.got ? 'got' : 'want'}">${itemIcon(n.id)}<span>${esc(upFirst(needName(n.word)))}</span><em>${n.got ? '✓ in the satchel' : 'not in the satchel'}</em></li>`).join('');
     const busy = cooking() && !atPot, vs = Recipes.vesselOf(r), owned = !world || ownsVessel(vs), can = ready && !busy && owned;
-    go = `<button class="go${can ? ' ready' : ''}" data-act="book-dish" data-name="${esc(r.name)}"${can ? '' : ' disabled'}>`
-      + (busy ? 'Cooking…' : !owned ? `Make a ${esc(craftName(vs))} first` : !ready ? 'Not the things for it just now' : atPot ? `Put its things ${VESSEL_IN[vs]}` : 'Cook it at the fire') + '</button>';
+    go = !owned && !busy ? `<button class="go make" data-act="book-make" data-v="${vs}">${Recipes.VESSELS[vs].icon} ${world.forager.kit.firing === vs ? `The ${esc(craftName(vs))} is hardening` : `First make a ${esc(craftName(vs))}`}</button>`   // (to the fire, making it)
+      : `<button class="go${can ? ' ready' : ''}" data-act="book-dish" data-name="${esc(r.name)}"${can ? '' : ' disabled'}>`
+      + (busy ? 'Cooking…' : !ready ? 'Not the things for it just now' : atPot ? `Put its things ${VESSEL_IN[vs]}` : 'Cook it at the fire') + '</button>';
   } else if (st === 'half') {
     const h = halfName(r);
     head = `<h3 class="fr q-half">${esc(h.line)}</h3>`;
@@ -6023,7 +6453,7 @@ function renderBook() {
   const have = bagHave(), atPot = cooking() && ui.fire.stage === 'cook', p = bookAt(), part = p.part, B = BOOK_PARTS[part];
   bookUi.picked[part] = p.key; bookUi.shown.add(part);
   if ((!bookUpright() || bookUi.depth === 2) && seePage(p)) { bookUi.stamp = p.key; bookUi.stampAt = performance.now(); }   // (shown: seen, stamped)
-  const key = ALL_PAGES.map(q => levelOf(q) + (pageFresh(q) ? 'n' : '')).join(',') + '|' + JSON.stringify(have) + '|' + atPot + cooking() + '|' + p.key + '|' + bookUi.stamp;
+  const key = ALL_PAGES.map(q => levelOf(q) + (pageFresh(q) ? 'n' : '')).join(',') + '|' + JSON.stringify(have) + '|' + atPot + cooking() + '|' + p.key + '|' + bookUi.stamp + '|' + (world ? world.forager.kit.own.join() + world.forager.kit.firing : '');
   if (key === bookUi.key) return;
   bookUi.key = key;
   const el = $('#book'), got = q => levelOf(q) === 9, known = B.pages.filter(got).length, all = B.pages.length;
@@ -6219,7 +6649,7 @@ const CAMP_COOK_LINE = 'I could cook something on this fire.';
 const HINT_EVERY = 0.3, HINT_SPREAD = 0.25;   // a day: the least between hints, and up to this much more
 const HINT_GAP = 90000;                   // ms between hints at the least, whatever the speed
 const HINT_FIRST = 0.06;                  // a day after camp is made before the first
-let PROMPT_ART = null, PROMPT_RELIGHT = null;
+let PROMPT_ART = null, PROMPT_RELIGHT = null, PROMPT_BLOW = null;
 const promptUi = { F: null, t0: 0, x: NaN, y: NaN, r: 0 };
 let bagFood = false;                      // whether the satchel has anything for the pot (renderSatchel)
 const keyboardy = matchMedia('(hover: hover) and (pointer: fine)');
@@ -6227,7 +6657,7 @@ const keyboardy = matchMedia('(hover: hover) and (pointer: fine)');
 // dish's) in it, and (where there's a keyboard) an E key.
 function promptArt(relight, v = 'pot') {
   const key = keyboardy.matches && !fingerTap;
-  const cur = relight ? PROMPT_RELIGHT : PROMPT_ART;
+  const blow = relight === 'blow', cur = blow ? PROMPT_BLOW : relight ? PROMPT_RELIGHT : PROMPT_ART;
   if (cur && cur.key === key && (relight || cur.v === v)) return cur;
   const k = Math.max(2, dpr), R = 17, W = key ? R * 2 + 26 : R * 2, H = R * 2 + 4, c = document.createElement('canvas'), g = c.getContext('2d');
   c.width = Math.ceil((W + 4) * k); c.height = Math.ceil((H + 4) * k);
@@ -6235,7 +6665,13 @@ function promptArt(relight, v = 'pot') {
   g.fillStyle = 'rgba(60, 40, 15, 0.28)'; g.beginPath(); g.arc(R, R + 2, R, 0, TAU); g.fill();
   g.fillStyle = '#fbf3e1'; g.beginPath(); g.arc(R, R, R - 1, 0, TAU); g.fill();
   g.strokeStyle = '#c99a4c'; g.lineWidth = 1.6; g.stroke();
-  if (relight) {                                                   // a little flame, to light the fire again
+  if (blow) {                                                      // three curls of breath, to blow on the spark
+    g.strokeStyle = '#7d8a92'; g.lineWidth = 2.2; g.lineCap = 'round';
+    for (const [dy, len] of [[-7, 13], [0, 17], [7, 12]]) {
+      g.beginPath(); g.moveTo(R - 11, R + dy); g.lineTo(R - 11 + len, R + dy);
+      g.bezierCurveTo(R + 9 + len * 0.4, R + dy, R + 9 + len * 0.4, R + dy - 5, R + 4 + len * 0.4, R + dy - 4); g.stroke();
+    }
+  } else if (relight) {                                            // a little flame, to light the fire again
     g.fillStyle = '#e8741f'; g.beginPath();
     g.moveTo(R, R - 12); g.bezierCurveTo(R + 3, R - 6, R + 10, R - 2, R + 8, R + 5);
     g.bezierCurveTo(R + 6, R + 12, R - 6, R + 12, R - 8, R + 5);
@@ -6260,10 +6696,10 @@ function promptArt(relight, v = 'pot') {
     g.fillStyle = '#fbf3e1'; g.beginPath(); g.roundRect(x, y, s, s, 5); g.fill();
     g.strokeStyle = '#c99a4c'; g.lineWidth = 1.2; g.stroke();
     g.fillStyle = '#4a3920'; g.font = `800 12px Nunito, ui-rounded, system-ui, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillText('E', x + s / 2, y + s / 2 + 1);
+    g.fillText(blow ? 'F' : 'E', x + s / 2, y + s / 2 + 1);
   }
   const art = { img: c, w: W + 4, h: H + 4, r: R, key, v };
-  if (relight) PROMPT_RELIGHT = art; else PROMPT_ART = art;
+  if (blow) PROMPT_BLOW = art; else if (relight) PROMPT_RELIGHT = art; else PROMPT_ART = art;
   asBitmap(c, b => { art.img = b; });
   return art;
 }
@@ -6279,10 +6715,19 @@ function relightFire() {
 function drawCookPrompt(now) {
   const f = world.forager;
   let F = null;
-  if (f.down < 0 && !ui.fire && !ui.place && !intro.on) {
+  if (f.down < 0 && (!ui.fire || ui.fire.stage === 'lit') && !ui.place && !intro.on) {
     let best = PROMPT_NEAR;
-    for (const o of world.fires) { const d = Math.hypot(o.x - f.x, o.y - f.y); if (d < best && (o.lit && bagFood || S.cookReady(o))) { F = o; best = d; } }   // (something to cook, or a dish to take)
+    for (const o of world.fires) { const d = Math.hypot(o.x - f.x, o.y - f.y); if (d < best && (o.lit || S.cookReady(o))) { F = o; best = d; } }   // (a lit fire to cook at, or a dish to take)
     if (!F) F = relightFire();
+    if (!F) {                                                      // a dead fire the satchel can't light: say what it wants
+      let d0 = PROMPT_NEAR, D = null;
+      for (const o of world.fires) { const d = Math.hypot(o.x - f.x, o.y - f.y); if (d < d0 && !o.lit && !S.cookReady(o) && !fireKind(o)) { D = o; d0 = d; } }
+      if (D) {
+        const sticks = D.fuel <= 0, line = D.embers > 0 ? 'Needs a stick' : sticks ? 'Needs tinder and sticks' : 'Needs tinder';
+        const [dx, dy] = onScreen(D.x, D.y);
+        drawLabel(line, dx, dy - firePx(cam.zoom) * 0.95);
+      }
+    }
   }
   if (F !== promptUi.F) { promptUi.F = F; promptUi.t0 = now; }
   if (!F) { promptUi.r = 0; return; }
@@ -6388,21 +6833,28 @@ function picksFrame(now) {
 // edge of that, so what can be picked stands apart from what's only the meadow (a dandelion from the other yellow flowers,
 // dry grass from the tufts). The hovered one has its brighter glow (drawGlow), the one it's off to pick a little more.
 const NEAR_REACH = 6.5, NEAR_FADE = 2, NEAR_A = 0.75;  // tiles; tiles it fades over at the edge; how strong
-let RING_ART = null;
+let RING_ART = null, RING_E_ART = null, RING_Q_ART = null;
+const NEAR_E_MS = 150;                    // how often what E would pick is looked for again
+const nearE = { it: null, at: -1e9 };
 // The light under it, painted once: a soft honey ring lying on the ground with a faint warmth inside, stretched to the thing.
-function ringArt() {
+// The one E would pick has its ring a paler, creamier gold (RING_E_ART), so you can tell which it'll be; one lined up to
+// pick (ui.gather, ui.queue) a warmer apricot (RING_Q_ART), with its number over it.
+function ringArt(e) {
   const W = 128, c = document.createElement('canvas');
   c.width = c.height = W;
   const g = c.getContext('2d'), gr = g.createRadialGradient(W / 2, W / 2, 0, W / 2, W / 2, W / 2);
-  gr.addColorStop(0, 'rgba(255, 236, 178, 0.16)'); gr.addColorStop(0.6, 'rgba(255, 232, 170, 0.24)');
-  gr.addColorStop(0.78, 'rgba(255, 220, 128, 0.85)'); gr.addColorStop(0.9, 'rgba(255, 214, 120, 0.35)'); gr.addColorStop(1, 'rgba(255, 214, 120, 0)');
+  const [a, b, d] = e === 'q' ? ['255, 226, 196', '255, 210, 170', '250, 172, 108']
+    : e ? ['255, 246, 222', '255, 244, 210', '255, 240, 196'] : ['255, 236, 178', '255, 232, 170', '255, 220, 128'];
+  gr.addColorStop(0, `rgba(${a}, 0.16)`); gr.addColorStop(0.6, `rgba(${b}, 0.24)`);
+  gr.addColorStop(0.78, `rgba(${d}, 0.9)`); gr.addColorStop(0.9, `rgba(${d}, 0.38)`); gr.addColorStop(1, `rgba(${d}, 0)`);
   g.fillStyle = gr; g.fillRect(0, 0, W, W);
-  RING_ART = { img: c };
-  asBitmap(c, b => { RING_ART.img = b; });
-  return RING_ART;
+  const art = { img: c };
+  asBitmap(c, bm => { art.img = bm; });
+  return e === 'q' ? (RING_Q_ART = art) : e ? (RING_E_ART = art) : (RING_ART = art);
 }
 function drawNear(now, over) {
-  const F = world.forager, art = RING_ART || ringArt(), k = 0.9 + 0.1 * Math.sin(now / 900), g = ui.gather;
+  const F = world.forager, art = RING_ART || ringArt(false), artE = RING_E_ART || ringArt(true), artQ = RING_Q_ART || ringArt('q'), k = 0.9 + 0.1 * Math.sin(now / 900), g = ui.gather;
+  if (now - nearE.at > NEAR_E_MS) { nearE.at = now; const t = nearPick(); nearE.it = t && t.it; }
   for (let i = 0; i < picks.it.length; i++) {
     const it = picks.it[i], kind = picks.kind[i];
     if ((kind === 'hive') !== over || (aim.t && aim.t.it === it && aim.n)) continue;
@@ -6412,7 +6864,7 @@ function drawNear(now, over) {
     if (!visible(s.gx, s.gy, s.rx * 2)) continue;
     ctx.globalAlpha = Math.min(1, NEAR_A * k * (lined ? 1.35 : Math.min(1, (NEAR_REACH - d) / NEAR_FADE)));
     const rx = s.rx * 1.1, ry = Math.min(s.ry, s.rx * 0.55) * 1.1, y = s.gy + s.ry - ry * 0.9;   // (lying flat round its foot)
-    ctx.drawImage(art.img, s.gx - rx, y - ry, rx * 2, ry * 2);
+    ctx.drawImage((lined ? artQ : it === nearE.it ? artE : art).img, s.gx - rx, y - ry, rx * 2, ry * 2);
   }
   ctx.globalAlpha = 1;
 }
@@ -6504,7 +6956,7 @@ function drawGlints(now, dark) {
 // The marker at the screen's edge, toward the nearest thing to pick while none is on screen, with that thing's painting in
 // it (the satchel's: itemSheet). Out of the way of the watch and the pill at the top and the satchel and the bars over it at
 // the foot (their places looked at once a second, KEEP_CLEAR).
-const KEEP_CLEAR = ['#watch', '#hud-right .hud-top', '#satchel', '#vitals .vital.show'];
+const KEEP_CLEAR = ['#watch', '#hud-right .hud-top', '#satchel', '#me-box'];
 const clearOf = KEEP_CLEAR.map(() => ({ l: 0, t: 0, r: 0, b: 0 }));
 // Where the way from the forager to a spot in the meadow leaves the screen, kept r + 10 in from its edges, over the satchel and
 // out from under the watch and the pill (edge: x, y and the way, cx, cy); false if it doesn't.
@@ -6576,7 +7028,7 @@ function drawPickArrow(now) {
   x += cx * bob; y += cy * bob;
   const ping = ((now - picks.shownAt) % ARROW_PING) / ARROW_PING, ringR = r * (1.1 + 1.4 * ping);   // a ring going out
   ctx.globalAlpha = 0.8 * (1 - ping) * Math.min(1, ping * 8) * picks.arrow;
-  ctx.drawImage((RING_ART || ringArt()).img, x - ringR, y - ringR, ringR * 2, ringR * 2);
+  ctx.drawImage((RING_ART || ringArt(false)).img, x - ringR, y - ringR, ringR * 2, ringR * 2);
   const p = (now - picks.shownAt) / ARROW_POP, rr = p < 1 ? r * (1 + 0.35 * Math.sin(p * Math.PI)) : r, size = rr / ARROW_DISC;
   ctx.globalAlpha = 0.96 * picks.arrow;
   ctx.setTransform(cx * dpr, cy * dpr, -cy * dpr, cx * dpr, x * dpr + shakeX, y * dpr + shakeY);
@@ -6631,7 +7083,7 @@ function drawCampMark(now) {
   const { x, y, cx, cy } = edge, size = r / ARROW_DISC, breath = 0.5 + 0.5 * Math.sin(now / 900);
   const gr = r * (1.25 + 0.15 * breath);                // a soft warm glow round it
   ctx.globalAlpha = (0.35 + 0.2 * breath) * campMark.a;
-  ctx.drawImage((RING_ART || ringArt()).img, x - gr, y - gr, gr * 2, gr * 2);
+  ctx.drawImage((RING_ART || ringArt(false)).img, x - gr, y - gr, gr * 2, gr * 2);
   ctx.globalAlpha = 0.96 * campMark.a;
   ctx.setTransform(cx * dpr, cy * dpr, -cy * dpr, cx * dpr, x * dpr + shakeX, y * dpr + shakeY);
   ctx.drawImage((ARROW_ART || arrowArt()).img, -size / 2, -size / 2, size, size);
@@ -10974,15 +11426,20 @@ function paintCloudShadows(g, now, a) {
   }
 }
 
+// How far down the rain has fallen, summed a frame at a time: the fall's speed follows the storm, and `now / period` would
+// jump backwards whenever the period grew (a storm easing out), sending every drop up.
+let rainFall = 0, rainAt = 0;
 function drawRain(now, amount, storm) {
   const n = Math.min(drops.length, Math.round(150 * amount)), slant = 3 + 6 * storm;
+  rainFall += clamp(now - rainAt, 0, 100) / (1400 - 500 * storm);
+  rainAt = now;
   ctx.save();
   ctx.strokeStyle = `rgba(210, 230, 255, ${0.45 + 0.15 * storm})`;
   ctx.lineWidth = 1.2;
   ctx.beginPath();
   for (let i = 0; i < n; i++) {
     const d = drops[i];
-    const y = ((d.y + now / (1400 - 500 * storm) * d.s) % 1) * vh, x = ((d.x - now / 9000) % 1 + 1) % 1 * vw;
+    const y = ((d.y + rainFall * d.s) % 1) * vh, x = ((d.x - now / 9000) % 1 + 1) % 1 * vw;
     ctx.moveTo(x, y); ctx.lineTo(x - slant, y + 12 * d.s);
   }
   ctx.stroke();
@@ -11589,6 +12046,8 @@ function handleEvent(e) {
       const k = S.SKILLS[e.skill];
       toast(`<b>${k.name} ${e.lv}</b>${e.lv >= S.SKILL_TOP ? ' (the best it gets)' : ''} · ${k.line}`);
       chime('found');
+      vit.lvAt = performance.now();                       // (the face smiles, and its level glints till the skills are looked at)
+      if (!meOpen()) $('#me').classList.add('news');
       break;
     }
     case 'hungry': case 'starving':
@@ -13795,6 +14254,7 @@ function copyLink() {
 document.addEventListener('click', e => {
   const t = e.target.closest('[data-action],[data-act],a[data-id],a[data-thing]');
   if (!(t && t.dataset.act === 'more')) toggleMore(false);
+  if (meOpen() && !e.target.closest('#me, #me-card')) openMe(false);
   if (eatUi.k >= 0 && !e.target.closest('#eat, #satchel')) eatAsk(-1);
   if (!t) return;
   if (t.closest('#hud-right .hud-top')) chime('click');
@@ -13814,9 +14274,12 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'cook-dish') cookKnown(t.dataset.name);
   else if (t.dataset.act === 'cook-again') cookAgain();
   else if (t.dataset.act === 'cook-close') closeCook();
+  else if (t.dataset.act === 'me') openMe();               // (the face top left: the skills)
+  else if (t.dataset.act === 'me-close') openMe(false);
   else if (t.dataset.act === 'book') openBook();           // (the recipe book)
   else if (t.dataset.act === 'book-close') openBook(false);
   else if (t.dataset.act === 'book-dish') bookDish(t.dataset.name);
+  else if (t.dataset.act === 'book-make') { makeOne(t.dataset.v); if (!$('#book').classList.contains('paired')) openBook(false); }   // (a dish's vessel not made yet)
   else if (t.dataset.act === 'eat') eatSlot();
   else if (t.dataset.act === 'give') giveSlot();
   else if (t.dataset.act === 'close') select(0);
@@ -13949,6 +14412,7 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'h' && !e.repeat && Net && Net.on) callOut();   // (a hoot to your friends)
   else if (e.key === 'c' && makeUi.shown) makeMenu(!makeUi.open);   // (the clay button)
   else if (e.key === 'm') toggleSound();
+  else if (e.key === 'i') openMe();
   else if (e.key === '+' || e.key === '=') zoomOn(cam.zoom * 1.25);
   else if (e.key === '-') zoomOn(cam.zoom / 1.25);
 });
@@ -13965,13 +14429,14 @@ const back = { token: Math.random().toString(36).slice(2), depth: 0, going: fals
 const moreOpen = () => !$('#more-menu').classList.contains('hidden');
 function opened() {
   const ins = $('#inspector').classList, sheetUp = ins.contains('open') && narrow() && !ins.contains('strip');
-  return [askOpen(), moreOpen(), friendsOpen(), askedOver(), !!ui.place, bookOpen(), bookReading(), cooking(), wardrobeOpen(), chatOpen(), ins.contains('open'), sheetUp].filter(Boolean).length;
+  return [askOpen(), moreOpen(), meOpen(), friendsOpen(), askedOver(), !!ui.place, bookOpen(), bookReading(), cooking(), wardrobeOpen(), chatOpen(), ins.contains('open'), sheetUp].filter(Boolean).length;
 }
 // The one on top shuts (Esc, and Back once for each step it takes).
 function stepOut() {
   const ins = $('#inspector').classList;
   if (askOpen()) askIdeas(false);
   else if (moreOpen()) toggleMore(false);
+  else if (meOpen()) openMe(false);
   else if (askedOver()) friendAsk(false);
   else if (friendsOpen()) openFriends(false);
   else if (ui.place) placeFire(false);                     // (picking a spot for a fire: not now)
@@ -14275,7 +14740,7 @@ function showWorld(w) {
   fg.at = -1; fg.rings.length = 0; fg.sized = 0; fg.pick = -1e9; pickFloats.length = 0; aim.t = null; aim.fire = null;
   fireLay.clear(); fireFlare.clear(); sparks.length = 0; fireSit.F = null; fg.kneel = -1;   // (the last meadow's fires)
   fg.puffs.length = 0; fg.drips.length = 0; fg.downAt = 0; fg.dark = false; $('#veil').classList.remove('dark');
-  vit.warm = vit.stam = vit.frost = -1;
+  vit.warm = vit.health = vit.food = vit.frost = vit.lv = -1; vit.starving = null; vit.mood = vit.skills = '';
   pollen.until = 0; pollen.t0.fill(-1e9);
   const mix = Object.fromEntries(Object.keys(S.WEATHER).map(k => [k, k === world.weather.kind ? 1 : 0]));
   Object.assign(ui.sky, { mix, tick: world.tick, bolts: [], rainbow: -1e9, bowEnd: -1e9 });

@@ -116,6 +116,19 @@
         "/Users/axel/Desktop/programming/aeon-garden/.claude/worktrees/agent-ae5526bd877e7cf2b"
       ],
       "port": 8793
+    },
+    {
+      "name": "garden-face",
+      "runtimeExecutable": "/Library/Frameworks/Python.framework/Versions/3.13/bin/python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8781",
+        "--bind",
+        "127.0.0.1"
+      ],
+      "port": 8781,
+      "autoPort": false
     }
   ]
 }

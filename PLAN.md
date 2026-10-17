@@ -303,7 +303,34 @@ what goes together was hard, and "Something new: cherries, cherries" promised a 
   down its shoulders and pooled round its foot, its stalk and a soft leaf). In the satchel, the cooking tiles and the book.
 - Still to do: the other 16 and the mess, `look` and the made-up ones, the steam on warm ones, the big "New recipe!" painting.
 
-## Vessels, clay and crafting (stage 6): pieces 3 and 4 built (2026-10-17, branch `claude/vessels-clay-f8287b`)
+### Vessels, clay and crafting (planned 2026-10-17, Axel's ideas; his answers settled below)
+Not every dish boils: today all the fire's dishes cook in the one iron pot (a fritter "boils"), and the `at: 'pot'` dishes
+can't be cooked at all. So each dish says what it's cooked in, the pot and a pan are made of clay by the forager, and you
+switch between what you have at the fire.
+- **Settled:** a stick and a hot stone are free from the start (the first fire still gets its first cook: roast mushrooms,
+  baked apple); the clay pot and a clay griddle (the pan) are what you work toward. Made vessels live at camp, painted
+  sitting by the fire, yours for good, usable at any fire; never in the satchel. A clay vessel is shaped from clay (a raw
+  one), then left in a lit fire a while to harden, with a small moment when it's done.
+- Pieces, each its own branch (1 and 2 can go side by side; 3 before 6, 4 before 5):
+  1. **The spoon in the water, the things swirling** (game.js `drawCookView` only): the spoon's bowl drawn inside the water's
+     clip under the broth's tint, the handle over it with a ripple where it goes in; while cooking the things circle with
+     the spoon, in front or behind it by depth, dragged along in its wake. (Opus)
+  2. **The pot made of clay:** `kw.back`/`kw.front` repainted handmade earthenware (a wobbly rim, coil lines, thumb marks,
+     soot up the belly, no iron legs, sat on the stones). Old against new to Axel first. (Opus)
+  3. **What each dish is cooked in:** a vessel per recipe in recipes.js (pot: soups, teas, compote, syrup, wilted greens;
+     pan: fritters, toasted nuts, garlic mushrooms; stick or stone: roast mushrooms, baked apple; maybe a bowl, no heat, for
+     the salad), checked by `checkRecipes`, a small vessel mark in the book. Fits with `STATIONS` (the oven stays a station
+     of its own). (Sonnet)
+  4. **Clay:** a `ground` find on muddy banks and shores like pebbles (sim.js `FINDS`, a tag `clay`), an items.js painting,
+     its Finds page; a few years headless and a `packWorld` round-trip. (Sonnet)
+  5. **Crafting:** `CRAFTS` beside `BUILDS`, a "Make" side to the build button (`renderBuild`), the raw vessel fired in a
+     lit fire, what's made kept on the forager (`f.kit`, in its blank layout; `KEEP_VERSION` if a kept meadow can't take it),
+     a guest crafting through the host like `sendFire`. (Opus)
+  6. **Switching vessels:** a small row of what you have in the cooking window; a dish picked in the book takes the right
+     one; the pot line says when a dish wants another vessel; the pan its own close-up (shallow, sizzling, a toss) and the
+     stick its own (turning over the flames). Maybe two branches: the pan, then the stick and stone. (Opus)
+
+### Vessels, clay and crafting: pieces 3 and 4 built (2026-10-17, branch `claude/vessels-clay-f8287b`)
 
 - **Piece 3, what each dish is cooked in.** recipes.js has `VESSELS` (pot 4 slots, pan 3, stick 2, stone 2, bowl 3) and an optional
   `vessel` on each dish (left out: 'pot'; `vesselOf`). The old `at: 'pot'` dishes are now plain fire dishes in the pot (the `pot`

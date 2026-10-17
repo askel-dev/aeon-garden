@@ -69,10 +69,18 @@ standing and walking, sad (worried brows, a frown, a red nose: fur.js `FORAGER_C
 ahead once it's chilly; the sprite cache keeps only the set in use, `keptForager`), and hunched (`HUNCH`); standing it sighs
 now and then (sound.js `breath`). Freezing, frost at the screen's corners and edges (`#frost`,
 CSS gradients only, shown only then) and a soft heartbeat (sound.js `heart`, `HEART_MS`); a stumble pitches it forward. In air under
-`BREATH_AIR` its breath puffs from its mouth (`BREATH_AT`, by view, drifting the way it faces; `PUFF_ART`, painted once), soaked it drips off its hem, now and then a drop you hear (sound.js `hemdrip`). Out of breath it pants (`pantFrame`, sound.js `pant`, one a breath every `PANT_MS`: quick and hard when spent, slower and softer as it comes back, from `PANT_LOW` already while sprinting) till it has `PANT_DONE` back, then a phew (sound.js `phew`). Two slim bars over the satchel
-(`#vitals`, `renderVitals`, in the 250 ms block, rewritten only on a change): warmth (amber to ice blue, a drop by it while wet) and
-stamina (amber and pulsing while winded), each shown only while not full (on a touch screen they sit above the satchel's round
-fire and book buttons, which take that row to themselves). Collapsed it tips over (`FALL_MS`) with its eyes shut (pose 7), the screen goes dark
+`BREATH_AIR` its breath puffs from its mouth (`BREATH_AT`, by view, drifting the way it faces; `PUFF_ART`, painted once), soaked it drips off its hem, now and then a drop you hear (sound.js `hemdrip`). Out of breath it pants (`pantFrame`, sound.js `pant`, one a breath every `PANT_MS`: quick and hard when spent, slower and softer as it comes back, from `PANT_LOW` already while sprinting) till it has `PANT_DONE` back, then a phew (sound.js `phew`). Its face is top left
+(`#me`, `renderVitals`, in the 250 ms block, rewritten only on a change; 2026-10-17): its head painted from the front in its outfit and snow,
+in a mood (`faceMood`, held `MOOD_HOLD` before it changes; fur.js `FACE_MOODS`, `paintForagerFace`: well, cosy by a fire, happy after eating or
+a level up, cold, hungry, hurt or down, winded), each painted once and kept (`faces`); frost round it while freezing. Health is a ring round
+it, warmth (amber to ice blue, a drop while wet) and the tummy two small dials under it, dimmed while full. Stamina is a small ring by the
+forager's head while it isn't full, honey, ember-red pulsing while winded (`drawStamina`, drawn over the dark with the edge markers). A tap on
+the face or I opens the skills (`#me-card`, `openMe`, `renderMe`: level, a bar to the next, what it gives, what practises it; a sheet with its ✕
+at the foot on an upright phone); its brass badge is the levels added up and glints after a level up till they're looked at.
+Practice earned floats up over its head as in Project Zomboid (`xpFrame`, `drawXpFloats`, 2026-10-17): "+4 Gathering" in the
+skill's ink (`SKILL_INK`) on a pill painted once (`xpFloatOf`), gathered till it stops gaining for `XP_QUIET_MS` (a pick, a dish, the end of
+a sprint; a long sprint every `XP_MOST`), shown as practice times `XP_SHOWN`, a newer one pushing the older up. A new skill shows at 1x.
+Collapsed it tips over (`FALL_MS`) with its eyes shut (pose 7), the screen goes dark
 (`#veil`, `DARK_AFTER`), and `bodyFrame` runs the sim `SKIP_MS` a frame till it wakes at home (`bodyWoke`: the camera there at
 once, a toast, three soft notes: sound.js `wake`). Out of breath (`f.winded`) a press, Shift or a held run only walks it.
 A new meadow opens like a film (`startIntro`, `#intro`): black bars top and bottom from the first frame, the rest of the page
@@ -150,6 +158,17 @@ out go over (`fire` messages 'cook', with the cook's own time after its Cooking 
 localStorage as the page is left (`keepSkills`), brought into a friend's meadow (`arrive`) and home again (`bringSkills`). The recipe book says how long each takes (⏲). Cost: the window's canvas only while it's open (painted once a size:
 `paintCookPot`; a frame is twenty-odd draws), and the meadow zoomed in that close draws less than walking about (1400x900, Chrome:
 1.0 ms of script a frame cooking against 1.7 walking, 60 fps).
+Making vessels (2026-10-17; the comment over game.js `cookVessel`): every vessel is made first (recipes.js `CRAFTS`: a roasting
+stick from a stick, a hearth stone from a pebble, a bark bowl from 2 birch bark, all at once; the clay griddle and pot from clay,
+then fired). The cooking window's vessel row has them all, the ones not made dashed with "Make"; picked, the window makes it
+(`cookMode` 'make'): its outline breathes over the fire with what it takes bobbing over it, the satchel tiles it takes glow
+(`.want`), each piece dragged or tapped onto the fire falls in with a puff and builds the vessel up from the bottom (`drawMakeView`,
+`makeArt`, pips under it), and once the last lands (`makeDone`) it's yours (sim.js `makeVessel`) or, clay, shaped and hardening in
+that fire (`cookMode` 'fire': raw clay darkening as it goes, its % in the row), with a bloom and sparkles (`drawMadeBurst`). One clay
+thing in the fire at a time (`makeBlocked`). The line under the canvas guides it all (`makeLine`: what to drag, how far, what's
+missing and where to find it). With nothing made the window opens making the first it has things for. The clay button by the
+satchel (`#make`, after camp) lists what to make and walks to a lit fire to make it there (`makeOne`, `makeNext`); a book page whose
+vessel isn't made has "First make a …" (`book-make`). The bowl is painted as folded, laced birch bark now.
 The recipe book (`#book`, `renderBook`, `#book-btn` by the satchel's right end, B, and on the cooking bar), modelled on the old
 field journal (main at 1d79f03): a book laid open on the meadow over a soft scrim (`#book-scrim`), the numbered tiles on the left
 page in sections (`BOOK_SECTIONS`: savoury, sweet by whether a need is sweet or fruit; `BOOK_PAGES`, No. 1 to N), the page picked
@@ -186,8 +205,7 @@ muses on a dish it doesn't know from what's in the satchel (`hintTick`: `HINT_EV
 opening storm or over another line), telling the book up to `hintMost` of it. The dishes are painted in dishes.js (`Dishes.paint`,
 'dish:' + n in `ITEM_ART`, so into `itemSheet`; big on a book page once a size, `dishBig`), two so far; the rest are their emoji till
 they're painted. Eating: a tap on food in the satchel (`eatAsk`, `#eat`) shows its name with an Eat button, or why not
-("It wants cooking", "I'm full"); `eatSlot` feeds it (sim.js `feedForager`). The tummy is a third slim bar (`#v-food`), shown
-once hungry and for `FED_SHOW` after eating; "I'm getting hungry" and "I'm starving" are said over it (events 'hungry',
+("It wants cooking", "I'm full"); `eatSlot` feeds it (sim.js `feedForager`). The tummy is the face's second dial (`#v-food`); "I'm getting hungry" and "I'm starving" are said over it (events 'hungry',
 'starving'). The ideas card waits while it's at a fire (`askTick`).
 Gifts, playing together: with a friend's forager within `GIVE_REACH` (`giftFriend`), a tap on anything in the satchel offers
 it (a green 🎁 button with their name, by Eat in `eatAsk`); `giveSlot` takes one out and flies it over to them, and `heardGive`
