@@ -855,6 +855,7 @@
   #make { position: absolute; right: calc(100% + 62px); bottom: 0; width: 46px; height: 46px; padding: 0; border: none; border-radius: 50%;
     background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); font-size: 22px; line-height: 46px; }
   #make.on { background-color: var(--accent-soft); }
+  #make i { position: absolute; inset: 5px; background: center / contain no-repeat; }
   #make-menu { position: absolute; right: calc(100% + 8px); bottom: calc(100% + 10px); min-width: 180px; padding: 8px; border-radius: 12px;
     background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); display: grid; gap: 6px; font-size: 14px; }
   #make-menu p { margin: 2px 4px; text-align: center; }
@@ -998,7 +999,7 @@
 <div id="satchel" class="empty"><div class="slots"></div>
   <button id="book-btn" data-act="book" title="Recipes (B)" aria-label="Recipe book"><i></i></button>
   <button id="build" class="hidden" data-act="build" title="Make a campfire (F)" aria-label="Make a campfire"><i></i></button>
-  <button id="make" class="hidden" data-act="make" title="Shape clay (C)" aria-label="Shape clay">🏺</button>
+  <button id="make" class="hidden" data-act="make" title="Shape clay (C)" aria-label="Shape clay"><i></i></button>
   <div id="make-menu" class="hidden"></div>
 </div>
 

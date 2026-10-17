@@ -3159,6 +3159,63 @@ function fireShown(F, now) {
   return fireNow;
 }
 const fireNow = { heat: 0, smoke: 0, spark: 0 };
+// The kit at a fire (PLAN.md vessels): the vessels made sitting by the camp's fire (drawKitAt; not the one cooking on it), and
+// a raw one hardening in the coals (drawFiring: the forager's, f.kit.firing, and a friend's, netFiring), pale clay darkening
+// to terracotta in VSL_STEPS paintings with an ember glow under it, then a puff and a sparkle as it comes out (firedUi).
+// All sprites; a few draws for one fire, nothing at a fire without them.
+const FIRED_MS = 1800;
+const firedUi = { at: -1e9, x: 0, y: 0, id: '' };
+const netFiring = [];                     // a friend's vessel in a fire: { x, y, id, tick, total } (fireNet's 'shape')
+const kitArt = id => VSL_FIRING[VSL_STEPS - 1][id === 'pan' ? 1 : 0];
+const fireAtXY = (F, x, y) => Math.abs(F.x - x) < 1e-3 && Math.abs(F.y - y) < 1e-3;
+function drawKitAt(F, sx, sy, px) {
+  const own = world.forager.kit.own, using = cooking() && ui.fire.F === F ? cookVessel : F.cookDish !== '' ? DISH_VESSEL.get(F.cookDish) || 'pot' : '';
+  const P = px * 0.4;
+  for (let i = 0; i < own.length; i++) {
+    if (own[i] === using) continue;
+    const side = i % 2 ? -1 : 1;                          // (the pot to the right of the fire, the griddle to the left)
+    drawEmoji(kitArt(own[i]), sx + side * px * 0.66, sy - P * 0.24 - px * 0.06, P);
+  }
+}
+function drawFiring(F, sx, sy, px, now) {
+  const k = world.forager.kit;
+  let id = '', p = 0;
+  if (k.firing && fireAtXY(F, k.x, k.y)) { id = k.firing; p = 1 - k.left / k.total; }
+  else for (let i = 0; i < netFiring.length; i++) {
+    const o = netFiring[i];
+    if (!fireAtXY(F, o.x, o.y)) continue;
+    p = (world.tick - o.tick) / o.total;
+    if (p >= 1) { firedUi.at = now; firedUi.x = o.x; firedUi.y = o.y; firedUi.id = o.id; netFiring.splice(i, 1); }   // (a friend's, done: its moment here too)
+    else { id = o.id; p = Math.max(0, p); }
+    break;
+  }
+  const P = px * 0.34, x = sx + px * 0.24, y = sy - P * 0.12;
+  if (id) {
+    const step = Math.min(VSL_STEPS - 1, Math.floor(p * VSL_STEPS)), glow = F.lit ? 0.45 + 0.15 * Math.sin(now / 260) : 0.15;
+    ctx.globalAlpha = glow;
+    ctx.drawImage(emberArt().img, x - P * 0.7, y - P * 0.1, P * 1.4, P * 0.7);
+    ctx.globalAlpha = 1;
+    drawEmoji(VSL_FIRING[step][id === 'pan' ? 1 : 0], x, y, P);
+  }
+  const u = (now - firedUi.at) / FIRED_MS;
+  if (u >= 0 && u < 1 && fireAtXY(F, firedUi.x, firedUi.y)) {   // out of the fire: a warm bloom, a puff, a ring of sparkles
+    const e = starArt().img, sm = smokeArt().img, b = P * (0.8 + 1.2 * u);
+    ctx.globalAlpha = 0.7 * (1 - u);
+    ctx.drawImage(bloomArt().img, x - b, y - b, b * 2, b * 2);
+    drawEmoji(kitArt(firedUi.id), x, y - P * 0.5 * Math.sin(Math.min(1, u * 2) * Math.PI / 2), P);
+    for (let i = 0; i < 3; i++) {
+      const r = P * (0.25 + 0.5 * u) * (1 - i * 0.15);
+      ctx.globalAlpha = 0.5 * (1 - u);
+      ctx.drawImage(sm, x + (i - 1) * P * 0.35 * (0.5 + u) - r, y - P * (0.3 + 0.9 * u) - i * P * 0.1 - r, r * 2, r * 2);
+    }
+    for (let i = 0; i < 8; i++) {
+      const a = i / 8 * TAU + 0.3, d = P * (0.3 + 0.9 * u), r = P * 0.12 * (1 - u) * (1 + 0.5 * Math.sin(now / 90 + i));
+      ctx.globalAlpha = 1 - u;
+      ctx.drawImage(e, x + Math.cos(a) * d - r, y - P * 0.4 + Math.sin(a) * d * 0.7 - r, r * 2, r * 2);
+    }
+    ctx.globalAlpha = 1;
+  }
+}
 function drawFire(F, z, now) {
   const px = firePx(z), sx = (F.x - cam.x) * z + vw / 2, sy = (F.y - cam.y) * z + vh / 2;
   if (F.ghost) {                                           // where one would go (ui.place)
@@ -3167,9 +3224,12 @@ function drawFire(F, z, now) {
     ctx.globalAlpha = 1;
     return;
   }
+  const C = world.camp;
+  if (C && F === C.fire && world.forager.kit.own.length) drawKitAt(F, sx, sy, px);
   drawEmoji(fireArt(F, now), sx, sy - FIRE_FOOT * px / 2, px);
   const s = fireShown(F, now);
   if (s.heat > 0.02) drawFlames(sx, sy, px, s.heat, now, F.born % 97);
+  if (world.forager.kit.firing || netFiring.length || now - firedUi.at < FIRED_MS) drawFiring(F, sx, sy, px, now);   // (in the front coals)
   if (s.smoke > 0.02) drawSmoke(sx, sy - (s.heat > 0.1 ? px * FLAME_H * 0.5 * s.heat : 0), px, s.smoke, now, F.born % 89);
 }
 
@@ -3523,6 +3583,16 @@ function buildIcon() {
   el.style.backgroundImage = `url(${c.toDataURL()})`;
   el.dataset.done = '1';
 }
+// The clay button's painting: the fired clay pot, painted once.
+function makeIcon() {
+  const el = $('#make i');
+  if (!el || el.dataset.done) return;
+  const c = document.createElement('canvas'), size = Math.ceil(40 * dpr);
+  c.width = c.height = size;
+  paintVessel(c.getContext('2d'), size, size, VSL_PARTS.indexOf('potW3'));
+  el.style.backgroundImage = `url(${c.toDataURL()})`;
+  el.dataset.done = '1';
+}
 // Pressed: ready, it picks a spot for one (pressed again, it lets it be); not yet, it says what's still wanting.
 function buildPressed() {
   if (!world || world.forager.down >= 0) return;
@@ -3539,7 +3609,9 @@ function buildPressed() {
 // fire button (#make) shows once the satchel holds clay or something's firing; pressed (or C), a little menu over it
 // (#make-menu, makeMenu) lists what can be made and what each takes, and what's firing and how far along. Shaped, the clay
 // goes into the lit fire the forager's near (MAKE_NEAR), else the camp's if it's lit, and hardens while that fire burns;
-// done, sim.js's 'fired' toasts it. Owned for good, kept at camp, never in the satchel. A guest can't make one (yet).
+// done, sim.js's 'fired' toasts it. Owned for good, kept at camp, never in the satchel. A guest makes its own: its forager's
+// kit starts empty in a friend's meadow (arrive) and goes with the satchel through a reload (keepAwayBag); the fire it hardens
+// in is the meadow's, the same on every side, and friends see it there ('shape': fireNet, netFiring).
 const MAKE_NEAR = 3;                      // tiles from a lit fire the forager shapes clay by it
 const makeUi = { shown: false, open: false, html: '' };
 function kitFire() {
@@ -3583,7 +3655,6 @@ function makeOne(id) {
   const f = world.forager, c = Recipes.CRAFTS[id], k = f.kit;
   if (!c || f.down >= 0) return;
   const no = text => { say(text, f.x, f.y - 1.6); chime('click'); };
-  if (Net && Net.guest) return no('Shape clay in your own meadow');
   if (k.firing) return no(`The ${craftName(k.firing)} is still firing`);
   const have = buildHave(id, Recipes.CRAFTS);
   if (!have.ready) return no(`A ${c.name.toLowerCase()} needs ${missingWords(have.missing)}`);
@@ -3591,6 +3662,7 @@ function makeOne(id) {
   if (!F) return no('It wants a lit fire to harden in');
   spendBuild(id, Recipes.CRAFTS);
   S.shapeVessel(world, id, F, c.fire * COOK_TPS);
+  if (Net && Net.on) Net.send({ t: 'fire', a: 'shape', x: F.x, y: F.y, id, n: k.total, tick: world.tick });   // (friends see it in the fire: fireNet)
   say(`A ${c.name.toLowerCase()}, shaped: into the fire with it`, F.x, F.y - 0.8);
   chime('stick');
   makeMenu(false); renderMake();
@@ -3895,6 +3967,9 @@ function fireNet(m) {
   else if (!F) return;
   else if (m.a === 'feed') S.feedFire(world, F, m.n, m.tn);
   else if (m.a === 'light') S.lightFire(world, F);   // (handleEvent's firelit flares it)
+  else if (m.a === 'shape') {                         // (a friend's vessel in the fire: only drawn here, its kit is its own)
+    if (netFiring.length < 8) netFiring.push({ x: F.x, y: F.y, id: Recipes.CRAFTS[m.id] ? m.id : 'pot', tick: m.tick | 0, total: Math.max(1, m.n | 0) });
+  }
   else if (m.a === 'cook') {                          // (a friend's pot: as long as it was for its cook, less what's gone by since)
     if (S.cookOn(world, F, String(m.dish), Array.isArray(m.items) ? m.items.map(String) : [], m.n | 0, null)) {
       F.cookLeft = Math.max(1, F.cookTotal - Math.max(0, world.tick - m.tick));
@@ -3956,6 +4031,8 @@ const COOK_EASE = 0.5;                   // the camera eases in over about this 
 let cookVessel = 'stick';
 const VESSEL_IN = { pot: 'in the pot', pan: 'on the griddle', stick: 'on a stick', stone: 'on the stone', bowl: 'in the bowl' };
 const ownsVessel = v => !Recipes.CRAFTS[v] || world.forager.kit.own.includes(v);
+// The vessel the cooking window would open with: the one picked last, but the pot over a bare stick once there's one.
+const openVessel = () => !ownsVessel(cookVessel) || cookVessel === 'stick' && ownsVessel('pot') ? (ownsVessel('pot') ? 'pot' : 'stick') : cookVessel;
 const potSlots = () => Recipes.VESSELS[cookVessel].slots;
 const POT = Recipes.STATIONS.fire.slots;
 function pickVessel(v, quiet) {
@@ -5223,14 +5300,13 @@ function cookCam(dt) {
 // The pot over the fire being cooked at, and what's in it: dropped in with a bounce and a puff, bobbing and steaming while
 // it cooks, a puff of smoke off a mess. Its back, the things, then its front: a handful of draws, for one fire. Drawn after
 // all that stands (frame), so it's never behind a bush or a tree: it's what you're looking at.
-const POT_ARTS = ['pot:0', 'pot:1'];
 function drawPot(now) {
   const j = ui.fire, F = j.F, z = cam.zoom, px = firePx(z), sx = (F.x - cam.x) * z + vw / 2, sy = (F.y - cam.y) * z + vh / 2;
   const t = clamp((now - cookUi.potIn) / POT_IN_MS, 0, 1), P = px * POT_SIZE * (0.7 + 0.3 * ease(t)), cy = sy - px * POT_UP - (1 - t) * px * 0.15;
-  const mx = sx, my = cy - P * 0.15, busy = j.stage === 'cooking';
+  const L = vesselLook(cookVessel), mx = sx, my = cy - P * 0.15, busy = j.stage === 'cooking';
   cookUi.potX = mx; cookUi.potY = my; cookUi.potR = P * 0.32;
   ctx.globalAlpha = t;
-  drawEmoji(POT_ARTS[0], sx, cy, P);
+  drawEmoji(L.back, sx, cy + L.up * P, P);
   const sheet = itemSheet().img, n = j.pot.length, w = P * 0.46;
   potHit.n = 0;
   for (let i = 0; i < n; i++) {
@@ -5241,7 +5317,7 @@ function drawPot(now) {
     if (u < 0.55) lift = (1 - (u / 0.55) ** 2) * P * 0.7;  // (falling in)
     else if (u < 1) { const b = (u - 0.55) / 0.45; lift = Math.sin(b * Math.PI) * P * 0.08; sq = 1 - 0.18 * Math.sin(b * Math.PI * 2) * (1 - b); }
     if (busy) lift += P * 0.035 * Math.sin(now / 170 + i * 2.1);   // (bobbing in the simmer)
-    const x = mx + ox, by = my + w * 0.36 - lift - (i === 1 && n === 3 ? P * 0.05 : 0), hw = w * (2 - sq) / 2, hh = w * sq / 2;   // (its foot down in the pot, under the rim)
+    const x = mx + ox, by = cy + L.foot * P / 2 - lift - (i === 1 && n === 3 ? P * 0.05 : 0), hw = w * (2 - sq) / 2, hh = w * sq / 2;   // (its foot down in the pot, under the rim)
     ctx.drawImage(sheet, k * ITEM_PX, 0, ITEM_PX, ITEM_PX, x - hw, by - hh * 2, hw * 2, hh * 2);
     potHit.x[potHit.n] = x; potHit.y[potHit.n] = by - hh; potHit.r[potHit.n] = Math.max(16, w * 0.6); potHit.n++;
     if (u > 0.5 && u < 1.6) {                             // (a puff as it lands)
@@ -5251,7 +5327,7 @@ function drawPot(now) {
       ctx.globalAlpha = t;
     }
   }
-  drawEmoji(POT_ARTS[1], sx, cy, P);
+  if (L.front) drawEmoji(L.front, sx, cy + L.up * P, P);
   const art = smokeArt().img, tt = now / 1000;
   if (busy) {                                             // steam curling up off it
     const heat = clamp((now - j.t0) / 1200, 0, 1);
@@ -5284,14 +5360,15 @@ function drawAwayPots(now) {
     const sx = (F.x - cam.x) * z + vw / 2, sy = (F.y - cam.y) * z + vh / 2;
     if (!visible(sx, sy, px)) continue;
     const busy = F.cookLeft > 0 && F.lit, P = px * POT_SIZE, cy = sy - px * POT_UP, my = cy - P * 0.15, n = F.cookItems.length, w = P * 0.46;
-    drawEmoji(POT_ARTS[0], sx, cy, P);
+    const L = vesselLook(DISH_VESSEL.get(F.cookDish));      // (a mess: the pot)
+    drawEmoji(L.back, sx, cy + L.up * P, P);
     const sheet = itemSheet().img;
     for (let i = 0; i < n; i++) {
       const k = ITEM_IDS.indexOf(F.cookItems[i]), ox = (n === 1 ? 0 : (i / (n - 1) - 0.5) * 0.46 * (n === 2 ? 0.8 : 1)) * P;
-      const bob = busy ? P * 0.035 * Math.sin(now / 170 + i * 2.1) : 0, by = my + w * 0.36 - bob - (i === 1 && n === 3 ? P * 0.05 : 0);
+      const bob = busy ? P * 0.035 * Math.sin(now / 170 + i * 2.1) : 0, by = cy + L.foot * P / 2 - bob - (i === 1 && n === 3 ? P * 0.05 : 0);
       ctx.drawImage(sheet, k * ITEM_PX, 0, ITEM_PX, ITEM_PX, sx + ox - w / 2, by - w, w, w);
     }
-    drawEmoji(POT_ARTS[1], sx, cy, P);
+    if (L.front) drawEmoji(L.front, sx, cy + L.up * P, P);
     if (busy) for (let k = 0; k < 4; k++) {
       const p = (tt / 1.8 + k / 4) % 1, r = P * (0.1 + 0.22 * p);
       ctx.globalAlpha = 0.5 * Math.sin(Math.PI * p);
@@ -5395,6 +5472,134 @@ function paintPot(g, size, U, n) {
   for (const s of [-1, 1]) {                                                                             // its ears
     strokeIn(g, rockRGB(tone(iron, 0.9)), 0.07, () => { g.moveTo(s * (rx + 0.02), my + 0.06); g.quadraticCurveTo(s * (rx + 0.2), my + 0.06, s * (rx + 0.08), my + 0.22); });
   }
+}
+
+// The vessels in the meadow (PLAN.md vessels), painted once a size into the sprite cache as 'vsl:' + n (VSL_ARTS, so no
+// name is built in a frame): the clay pot's back and front (what's in it drawn between), a hot stone, a roasting stick's
+// two forked uprights and its spit (things threaded between), a wooden bowl's back and front, and the clay pot and the
+// clay griddle whole in VSL_STEPS steps from raw to fired (VSL_RAW to VSL_FIRED: firing in a fire, kitFiring; the last one
+// is the fired one, over a fire and sitting at camp). Handmade clay: a little lopsided, finger grooves, soot at the foot.
+// Box -1 to 1, its foot near 0.66 like the pot's.
+const VSL_PARTS = ['pot0', 'pot1', 'stone', 'stickB', 'stickF', 'bowl0', 'bowl1', 'potW0', 'potW1', 'potW2', 'potW3', 'panW0', 'panW1', 'panW2', 'panW3'];
+const VSL_ARTS = VSL_PARTS.map((_, i) => 'vsl:' + i);
+const VSL_STEPS = 4;
+const VSL_RAW = [178, 166, 148], VSL_FIRED = [184, 98, 60];
+const vslArt = name => VSL_ARTS[VSL_PARTS.indexOf(name)];
+const VSL_FIRING = [0, 1, 2, 3].map(s => [vslArt('potW' + s), vslArt('panW' + s)]);   // (by step: the pot's, the griddle's)
+// How each vessel sits over a fire in the meadow (drawPot, drawAwayPots): its back and front art (null for none), and where
+// what's in it stands (foot: box y of their feet; for the stick, their middles on the spit).
+const VSL_LOOK = {
+  pot: { back: vslArt('pot0'), front: vslArt('pot1'), foot: 0.03, up: 0 },
+  pan: { back: vslArt('panW3'), front: null, foot: 0.12, up: 0.08 },
+  stone: { back: vslArt('stone'), front: null, foot: 0.1, up: 0.1 },
+  stick: { back: vslArt('stickB'), front: vslArt('stickF'), foot: 0.22, up: -0.1 },
+  bowl: { back: vslArt('bowl0'), front: vslArt('bowl1'), foot: 0.12, up: 0.04 },
+};
+const DISH_VESSEL = new Map(Recipes.RECIPES.map(r => [r.name, Recipes.vesselOf(r)]));
+const vesselLook = v => VSL_LOOK[v] || VSL_LOOK.pot;
+function paintVessel(g, size, U, n) {
+  g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
+  g.lineCap = g.lineJoin = 'round';
+  const part = VSL_PARTS[n] || 'pot1', step = +part.slice(-1), t = /W\d$/.test(part) ? step / (VSL_STEPS - 1) : 1;
+  const clay = VSL_RAW.map((c, i) => Math.round(c + (VSL_FIRED[i] - c) * t)), fired = t >= 1;
+  const my = -0.22, rx = 0.5, ry = 0.15;                  // the clay pot's mouth
+  const potBody = () => {
+    g.moveTo(-rx - 0.02, my);
+    g.bezierCurveTo(-rx - 0.06, my + 0.12, -0.78, 0.12, -0.7, 0.36);   // a lip, a round belly a touch fuller on the left
+    g.bezierCurveTo(-0.6, 0.62, -0.3, 0.68, 0.02, 0.68);
+    g.bezierCurveTo(0.34, 0.68, 0.62, 0.6, 0.68, 0.36);
+    g.bezierCurveTo(0.74, 0.12, rx + 0.05, my + 0.12, rx + 0.02, my);
+    g.ellipse(0, my, rx + 0.02, ry + 0.03, 0, 0, Math.PI);
+  };
+  const potFront = (warm) => {
+    if (warm) fillIn(g, 'rgba(255, 140, 50, 0.3)', () => ovalAt(g, 0, 0.68, 0.5, 0.1));          // the flames' light under it
+    softIn(g, clay, my, 0.68, potBody, 1.3, 0.62);
+    g.save(); g.beginPath(); potBody(); g.clip();
+    furGlow(g, tone(clay, 0.55), 0.5, 0.42, 0.36, 0.36, 0.4);                                        // round: its shade side
+    strokeIn(g, rockRGB(tone(clay, 0.78), 0.45), 0.018, () => {                                       // finger grooves round it
+      for (const y of [0.0, 0.1, 0.22]) { g.moveTo(-0.72, y + 0.04); g.quadraticCurveTo(0, y + 0.14, 0.72, y + 0.02); }
+    });
+    fillIn(g, rockRGB(tone(clay, 1.25, 20), 0.5), () => { for (let i = 0; i < 9; i++) ovalAt(g, -0.5 + hash2(i, n, 5) * 0.9, 0.05 + hash2(i, n, 6) * 0.5, 0.012, 0.008); });
+    if (fired) furGlow(g, [40, 28, 24], 0.75, 0.05, 0.7, 0.66, 0.24);                                // soot at its foot
+    if (warm) furGlow(g, [255, 130, 50], 0.4, 0, 0.66, 0.5, 0.14);
+    g.restore();
+    furGlow(g, [255, 248, 230], fired ? 0.3 : 0.18, -0.4, 0.06, 0.1, 0.18, -0.3);                    // a dull gleam (raw clay is matte)
+    strokeIn(g, rockRGB(tone(clay, 1.18, 14)), 0.06, () => g.ellipse(0, my, rx + 0.02, ry + 0.03, 0, 0.1, Math.PI - 0.1));   // the lip in front
+    strokeIn(g, rockRGB(tone(clay, 0.7), 0.6), 0.016, () => g.ellipse(0, my + 0.035, rx + 0.02, ry + 0.03, 0, 0.3, Math.PI - 0.3));
+  };
+  const potBack = (broth) => {
+    softIn(g, tone(clay, 0.9), my - ry - 0.06, my + 0.02, () => ovalAt(g, 0, my, rx + 0.05, ry + 0.05), 1.25, 0.8);
+    softIn(g, [52, 34, 26], my - ry, my + ry, () => ovalAt(g, 0, my, rx - 0.03, ry - 0.03), 0.7, 1.15);
+    if (broth) furGlow(g, [130, 86, 44], 0.5, 0, my + 0.03, rx * 0.7, ry * 0.5);
+  };
+  if (part === 'pot0') { potBack(true); return; }
+  if (part === 'pot1') { potFront(true); return; }
+  if (part.startsWith('potW')) {                                                                     // whole: no broth, sitting
+    furGlow(g, [60, 40, 24], 0.35, 0, 0.7, 0.62, 0.1);
+    potBack(false); potFront(false);
+    return;
+  }
+  if (part.startsWith('panW')) {                                                                     // the griddle: a thick round slab
+    const cy = 0.18, prx = 0.82, pry = 0.3, th = 0.16;
+    furGlow(g, [60, 40, 24], 0.35, 0, cy + th + 0.06, prx * 0.95, 0.1);
+    const edge = () => { g.moveTo(-prx, cy); g.lineTo(-prx + 0.02, cy + th); g.ellipse(0, cy + th, prx - 0.02, pry, 0, Math.PI, 0, true); g.lineTo(prx, cy); g.ellipse(0, cy, prx, pry, 0, 0, Math.PI); };
+    softIn(g, tone(clay, 0.85), cy, cy + th + pry, edge, 1.1, 0.6);
+    if (fired) { g.save(); g.beginPath(); edge(); g.clip(); furGlow(g, [40, 28, 24], 0.7, 0, cy + th + pry, prx, 0.16); g.restore(); }
+    softIn(g, clay, cy - pry, cy + pry, () => ovalAt(g, 0, cy, prx, pry), 1.25, 0.8);              // its top, a raised lip round it
+    softIn(g, tone(clay, fired ? 0.62 : 0.9), cy - pry, cy + pry, () => ovalAt(g, 0, cy + 0.01, prx - 0.1, pry - 0.06), 0.9, 1.1);
+    if (fired) furGlow(g, [46, 30, 22], 0.45, 0.04, cy + 0.03, prx * 0.55, pry * 0.5);             // seasoned dark in the middle
+    strokeIn(g, rockRGB(tone(clay, 1.25, 16), 0.7), 0.03, () => g.ellipse(0, cy, prx - 0.02, pry - 0.01, 0, Math.PI * 1.1, Math.PI * 1.7));
+    fillIn(g, rockRGB(tone(clay, 0.7), 0.5), () => { for (let i = 0; i < 5; i++) ovalAt(g, -0.55 + i * 0.27, cy + th * 0.6 + pry * 0.75, 0.025, 0.015); });   // thumb dents round the edge
+    return;
+  }
+  if (part === 'stone') {                                                                            // a flat hearth stone
+    const cy = 0.22;
+    furGlow(g, [60, 40, 24], 0.4, 0, cy + 0.3, 0.8, 0.12);
+    const side = () => { g.moveTo(-0.76, cy); g.quadraticCurveTo(-0.8, cy + 0.2, -0.5, cy + 0.32); g.quadraticCurveTo(0, cy + 0.42, 0.55, cy + 0.3); g.quadraticCurveTo(0.82, cy + 0.18, 0.74, cy); g.closePath(); };
+    softIn(g, [100, 94, 88], cy, cy + 0.4, side, 1.0, 0.6);
+    const top = () => { g.moveTo(-0.76, cy); g.bezierCurveTo(-0.78, cy - 0.22, -0.3, cy - 0.32, 0.1, cy - 0.3); g.bezierCurveTo(0.56, cy - 0.28, 0.82, cy - 0.16, 0.74, cy); g.bezierCurveTo(0.4, cy + 0.14, -0.4, cy + 0.14, -0.76, cy); g.closePath(); };
+    softIn(g, [146, 138, 126], cy - 0.3, cy + 0.12, top, 1.15, 0.8);
+    g.save(); g.beginPath(); top(); g.clip();
+    furGlow(g, [70, 52, 40], 0.4, 0.1, cy - 0.02, 0.4, 0.12);                                       // dark where it's been cooked on
+    fillIn(g, 'rgba(90, 84, 78, 0.5)', () => { for (let i = 0; i < 14; i++) ovalAt(g, -0.6 + hash2(i, 3, 7) * 1.2, cy - 0.22 + hash2(i, 3, 8) * 0.3, 0.012, 0.008); });
+    g.restore();
+    furGlow(g, [255, 120, 40], 0.45, 0, cy + 0.36, 0.6, 0.1);                                       // the embers' glow at its foot
+    return;
+  }
+  if (part === 'stickB' || part === 'stickF') {                                                      // a spit on two forked sticks
+    const wood = [124, 94, 64], ry0 = -0.2;
+    if (part === 'stickB') {
+      for (const s of [-1, 1]) {
+        const x = s * 0.78;
+        const p = () => { g.moveTo(x, 0.66); g.lineTo(x - s * 0.02, ry0 + 0.04); };
+        const fork = () => { g.moveTo(x - s * 0.02, ry0 + 0.06); g.lineTo(x - s * 0.1, ry0 - 0.1); g.moveTo(x - s * 0.02, ry0 + 0.06); g.lineTo(x + s * 0.08, ry0 - 0.08); };
+        furGlow(g, [60, 40, 24], 0.3, x, 0.68, 0.1, 0.04);
+        strokeIn(g, rockRGB(tone(wood, 0.6)), 0.075, p); strokeIn(g, rockRGB(wood), 0.05, p);
+        strokeIn(g, rockRGB(tone(wood, 0.6)), 0.05, fork); strokeIn(g, rockRGB(wood), 0.032, fork);
+      }
+      return;
+    }
+    const spit = () => { g.moveTo(-0.92, ry0 + 0.02); g.quadraticCurveTo(0, ry0 - 0.01, 0.92, ry0 - 0.02); };
+    strokeIn(g, rockRGB([96, 82, 58]), 0.06, spit);
+    strokeIn(g, rockRGB([150, 132, 88]), 0.038, spit);                                              // green wood, peeled pale
+    g.save(); g.translate(0, -0.012); strokeIn(g, 'rgba(230, 220, 180, 0.6)', 0.012, spit); g.restore();
+    furGlow(g, [30, 20, 14], 0.6, 0, ry0, 0.22, 0.03);                                               // charred over the flames
+    return;
+  }
+  // The wooden bowl.
+  const wood = [150, 104, 64], by = -0.04, brx = 0.66, bry = 0.2;
+  if (part === 'bowl0') {
+    softIn(g, tone(wood, 1.1), by - bry - 0.04, by + 0.02, () => ovalAt(g, 0, by, brx + 0.03, bry + 0.03), 1.2, 0.8);
+    softIn(g, tone(wood, 0.7), by - bry, by + bry, () => ovalAt(g, 0, by, brx - 0.04, bry - 0.035), 0.75, 1.15);
+    return;
+  }
+  const body = () => { g.moveTo(-brx - 0.03, by); g.bezierCurveTo(-brx, by + 0.42, -0.36, 0.6, 0, 0.6); g.bezierCurveTo(0.36, 0.6, brx, by + 0.42, brx + 0.03, by); g.ellipse(0, by, brx + 0.03, bry + 0.03, 0, 0, Math.PI); };
+  furGlow(g, [60, 40, 24], 0.35, 0, 0.62, 0.5, 0.08);
+  softIn(g, wood, by, 0.6, body, 1.3, 0.6);
+  g.save(); g.beginPath(); body(); g.clip();
+  strokeIn(g, rockRGB(tone(wood, 0.72), 0.5), 0.014, () => { for (const k of [-0.3, -0.05, 0.22]) { g.moveTo(k - 0.2, by + 0.1); g.quadraticCurveTo(k, by + 0.36, k + 0.2, 0.6); } });   // its grain
+  g.restore();
+  strokeIn(g, rockRGB(tone(wood, 1.3, 16)), 0.05, () => g.ellipse(0, by, brx + 0.03, bry + 0.03, 0, 0.1, Math.PI - 0.1));
 }
 
 // ------------------------------------------------------------------ eating
@@ -6018,11 +6223,12 @@ let PROMPT_ART = null, PROMPT_RELIGHT = null;
 const promptUi = { F: null, t0: 0, x: NaN, y: NaN, r: 0 };
 let bagFood = false;                      // whether the satchel has anything for the pot (renderSatchel)
 const keyboardy = matchMedia('(hover: hover) and (pointer: fine)');
-// The prompt, painted once: a parchment disc with a brass rim and the pot in it, and (where there's a keyboard) an E key.
-function promptArt(relight) {
+// The prompt, painted once a vessel: a parchment disc with a brass rim and the vessel the window would open with (or a done
+// dish's) in it, and (where there's a keyboard) an E key.
+function promptArt(relight, v = 'pot') {
   const key = keyboardy.matches && !fingerTap;
   const cur = relight ? PROMPT_RELIGHT : PROMPT_ART;
-  if (cur && cur.key === key) return cur;
+  if (cur && cur.key === key && (relight || cur.v === v)) return cur;
   const k = Math.max(2, dpr), R = 17, W = key ? R * 2 + 26 : R * 2, H = R * 2 + 4, c = document.createElement('canvas'), g = c.getContext('2d');
   c.width = Math.ceil((W + 4) * k); c.height = Math.ceil((H + 4) * k);
   g.scale(k, k); g.translate(2, 2);
@@ -6039,9 +6245,12 @@ function promptArt(relight) {
     g.bezierCurveTo(R + 1, R + 11, R - 3, R + 10, R - 3, R + 7);
     g.bezierCurveTo(R - 4, R + 3, R - 1, R + 1, R, R - 2); g.fill();
   } else {
-    const pot = sprite('pot:1', R * 1.5), back = sprite('pot:0', R * 1.5);
-    g.drawImage(back.canvas, R - back.size / 2, R - back.size / 2 + 2, back.size, back.size);
-    g.drawImage(pot.canvas, R - pot.size / 2, R - pot.size / 2 + 2, pot.size, pot.size);
+    const L = vesselLook(v), S2 = R * 1.5;
+    for (const a of [L.back, L.front]) {
+      if (!a) continue;
+      const sp = sprite(a, S2);
+      g.drawImage(sp.canvas, R - sp.size / 2, R - sp.size / 2 + 2 + L.up * S2, sp.size, sp.size);
+    }
     g.fillStyle = 'rgba(205, 205, 200, 0.75)';                     // a curl of steam off it
     g.beginPath(); g.arc(R - 3, R - 9, 2.6, 0, TAU); g.arc(R + 2, R - 12, 2.2, 0, TAU); g.fill();
   }
@@ -6053,7 +6262,7 @@ function promptArt(relight) {
     g.fillStyle = '#4a3920'; g.font = `800 12px Nunito, ui-rounded, system-ui, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
     g.fillText('E', x + s / 2, y + s / 2 + 1);
   }
-  const art = { img: c, w: W + 4, h: H + 4, r: R, key };
+  const art = { img: c, w: W + 4, h: H + 4, r: R, key, v };
   if (relight) PROMPT_RELIGHT = art; else PROMPT_ART = art;
   asBitmap(c, b => { art.img = b; });
   return art;
@@ -6077,7 +6286,7 @@ function drawCookPrompt(now) {
   }
   if (F !== promptUi.F) { promptUi.F = F; promptUi.t0 = now; }
   if (!F) { promptUi.r = 0; return; }
-  const a = promptArt(!F.lit && !S.cookReady(F)), px = firePx(cam.zoom), [sx, sy] = onScreen(F.x, F.y);
+  const a = promptArt(!F.lit && !S.cookReady(F), S.cookReady(F) ? DISH_VESSEL.get(F.cookDish) || 'pot' : openVessel()), px = firePx(cam.zoom), [sx, sy] = onScreen(F.x, F.y);
   const x = sx, y = sy - px * (FLAME_H + 0.35) - a.r + 3 * Math.sin(now / 500), t = clamp((now - promptUi.t0) / PROMPT_IN, 0, 1);
   promptUi.x = x; promptUi.y = y; promptUi.r = a.r;
   ctx.globalAlpha = t * (0.88 + 0.12 * Math.sin(now / 700));
@@ -6532,7 +6741,7 @@ function flyToSlot(id, sx, sy, k, landed) {
 function setupSatchel() {
   const box = $('#satchel'), row = box.querySelector('.slots');
   row.innerHTML = Array.from({ length: S.SLOTS }, (_, k) => `<div class="slot" data-k="${k}" data-name="" aria-label="Empty"><i></i><b></b></div>`).join('');
-  buildIcon();                                            // (the fire button's campfire)
+  buildIcon(); makeIcon();                                // (the fire button's campfire, the clay button's pot)
   setupCookBag();                                         // (the cooking window's tiles)
   bookIcon();                                             // (and the recipe book's)
   // Hovered (or tapped) a full slot says what's in it, a small label over it (CSS, data-name).
@@ -9782,7 +9991,7 @@ function putPainting(p, f, alpha, snow, ox, oy) {
 // A visitor fur.js paints (Fur.painters: the dragonflies, the kingfisher, the skylark), at the doublings of its size and
 // shrunk between (shrunk), as a fox is; in the meadow the worker paints it (furReady).
 const furPaint = kind => (g, size, U, n) => { if (!shrunk(g, size, U, kind + ':' + n)) Fur.painters[kind](g, size, U, n); };
-const PAINTERS = { fox: paintFox, rabbit: paintRabbit, forager: paintForager, hog: paintHedgehog, heron: paintHeron, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody, bee: paintBee, fall: paintFall, shroom: paintShroom, green: paintGreen, bramble: paintBramble, find: paintFind, ingr: Items.paint, dish: Dishes.paint, fire: paintFire, pot: paintPot,
+const PAINTERS = { fox: paintFox, rabbit: paintRabbit, forager: paintForager, hog: paintHedgehog, heron: paintHeron, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody, bee: paintBee, fall: paintFall, shroom: paintShroom, green: paintGreen, bramble: paintBramble, find: paintFind, ingr: Items.paint, dish: Dishes.paint, fire: paintFire, pot: paintPot, vsl: paintVessel,
   dfly: furPaint('dfly'), kfisher: furPaint('kfisher'), lark: furPaint('lark') };
 function drawDecor(d, sx, sy, now, ck, px = d.tree ? treePx(d) : d.size * cam.zoom) {   // (px: render has it already)
   if (d.emoji === '🪨') { drawRock(d, sx, sy); return; }
@@ -11371,6 +11580,7 @@ function handleEvent(e) {
       bodyWoke();
       break;
     case 'fired':                                           // a vessel out of the fire (sim.js kitTick)
+      firedUi.at = performance.now(); firedUi.x = world.forager.kit.x; firedUi.y = world.forager.kit.y; firedUi.id = e.what;
       toast(`<b>Your ${craftName(e.what)} is ready</b> · cook in it at any fire`);
       chime('found');
       renderMake(); if (cooking()) renderCook();
@@ -12807,6 +13017,8 @@ function heardWorld(m, now) {
 // in the meadow's opening storm (sim.js foragerArrives) — but for a reload mid-visit the satchel it had comes back (awayBack).
 function arrive(f) {
   f.bag.fill(''); f.bagN.fill(0);
+  const k = f.kit;                                       // (its own kit, made here: not the host's pots)
+  k.own.length = 0; k.firing = ''; k.left = k.total = 0;
   bringSkills(f, true);                                  // (its own skills, not the host's)
   S.foragerArrives(world, f);
   f.walking = false; f.running = false; f.speed = 0; f.path.length = 0;
@@ -12823,7 +13035,7 @@ const AWAY_BAG = 'aeon-garden-away-bag';     // in localStorage: { room, seed, b
 function keepAwayBag() {
   if (!(Net && Net.on && Net.guest && net.tick >= 0) || !world) return;   // (net.tick: the host's meadow has landed)
   const f = world.forager;
-  try { localStorage.setItem(AWAY_BAG, JSON.stringify({ room: Net.room, seed: world.seed, bag: f.bag, bagN: f.bagN })); } catch (e) { /* fine */ }
+  try { localStorage.setItem(AWAY_BAG, JSON.stringify({ room: Net.room, seed: world.seed, bag: f.bag, bagN: f.bagN, kit: f.kit })); } catch (e) { /* fine */ }
 }
 function dropAwayBag() { try { localStorage.removeItem(AWAY_BAG); } catch (e) { /* fine */ } }
 // Back in a friend's meadow after a reload: the satchel as it was when the page went (arrive emptied it first).
@@ -12834,6 +13046,11 @@ function awayBack(f, w) {
   for (let i = 0; i < S.SLOTS; i++) {
     const id = String(k.bag[i] || ''), n = Math.max(0, Math.min(S.STACK, k.bagN[i] | 0));
     if (id && n > 0 && (Recipes.INGREDIENTS[id] || Recipes.foodOf(id))) { f.bag[i] = id; f.bagN[i] = n; }
+  }
+  const kit = k.kit, mine = f.kit;                       // (and the kit made on the visit, a vessel still firing too)
+  if (kit && Array.isArray(kit.own)) {
+    for (const v of kit.own) if (Recipes.CRAFTS[v] && !mine.own.includes(v)) mine.own.push(v);
+    if (Recipes.CRAFTS[kit.firing] && kit.left > 0) { mine.firing = kit.firing; mine.left = kit.left | 0 || 1; mine.total = Math.max(mine.left, kit.total | 0); mine.x = +kit.x || -0; mine.y = +kit.y || -0; }
   }
 }
 
@@ -14292,6 +14509,6 @@ try { if (localStorage.getItem('aeon-garden-sound') === '1') toggleSound(true); 
 
 for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => { if (ui.sound) Sound.start(); }, { once: true });
 
-window.garden = { get world() { return world; }, ui, cam, forager: fg, prints: pr, peers, satchel: () => renderSatchel(), screen: (x, y) => [...toScreen(x, y)], click: (x, y) => click(x, y),   // handy in the console
+window.garden = { get world() { return world; }, ui, cam, forager: fg, prints: pr, peers, satchel: () => renderSatchel(), kit: { netFiring, firedUi, paint: paintVessel }, screen: (x, y) => [...toScreen(x, y)], click: (x, y) => click(x, y),   // handy in the console
   get trees() { return { worker: !!treeWorker, workers: treeWorkers.length, art: treeArt, bytes: treeBytes, asked: treeAsked.size, busy: treeBusy }; } };
 })();

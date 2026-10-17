@@ -330,10 +330,7 @@ what goes together was hard, and "Something new: cherries, cherries" promised a 
   keep to the vessel. Looks: the pot keeps its close-up; the others are plain shapes over the fire (`vesselFlat`: a clay disc,
   a grey stone, a wooden bowl, a stick across), no water, splash or spoon. Played through in the browser: shaped and fired a pot,
   cooked Wilted greens in it, Roast mushrooms on the stick. Two seeds, two years headless: nothing died out, pack/unpack round-trips.
-- **Left:** guests can't shape clay (they're told to in their own meadow; a guest crafting through the host like `sendFire`
-  isn't built, and a guest's kit is whatever the world's forager has); the raw vessel isn't drawn at the fire; proper
-  paintings of the pan, stone, stick and bowl in the cooking view, and of the clay button; the meadow's little pot over a fire
-  (`drawPot`) is still a pot whatever is cooking.
+- **Left:** the barebones list is done by the two polish passes below.
 - **Cooking close-up polish (2026-10-17, branch `claude/cook-polish-390dff`).** Only the cooking window's canvas (game.js
   `drawCookView`). The pot is handmade earthenware now (`paintCookPot`: terracotta, a wobbly rim `wobble`, coil lines, two thumb
   marks, soot up the belly, two lugs, no iron legs, sat on the stones). The spoon's bowl is drawn dim under the water and broth
@@ -345,7 +342,20 @@ what goes together was hard, and "Something new: cherries, cherries" promised a 
   sticks (things threaded on it, turning: squashed, knots going round), the carved bowl set down in front of the fire (no steam).
   Things brown as they cook on all but the bowl (drawn again over themselves, 'multiply'). `vesselFlat` is gone. A frame is a few
   more strokes and one more draw a thing than before; not timed (the window's own small canvas).
-
+- **Meadow polish and guest crafting (2026-10-17, branch `claude/meadow-vessel-polish-7729eb`).** The vessels are painted in game.js
+  `paintVessel` ('vsl:' + n, `VSL_PARTS`/`VSL_ARTS`, sprite cache): a handmade terracotta clay pot (back and front, finger
+  grooves, soot), the clay griddle, a hot stone, a spit on two forked sticks, a wooden bowl, and the pot and griddle whole in
+  `VSL_STEPS` (4) steps from pale raw clay to fired. Over a fire (`drawPot`, `drawAwayPots`) the vessel in use shows (`VSL_LOOK`:
+  back, front, where things stand; a pot left cooking goes by its dish, `DISH_VESSEL`; a mess is the pot), and the bobbing
+  prompt shows the vessel the window would open with (`openVessel`) or a done dish's. A vessel firing sits in the front coals
+  of its fire with an ember glow, a painting a step (`drawFiring`), and comes out with a bloom, a puff and sparkles
+  (`firedUi`, `FIRED_MS`). Made vessels sit by the camp's fire, the pot right, the griddle left, not the one cooking
+  (`drawKitAt`). Clay is an items.js painting (a wet lump with a thumb dent); the clay button is the fired pot (`makeIcon`).
+  `paintPot` (the iron pot) is now used by nothing in the meadow. Guests shape clay: a guest's kit is its own, emptied as it
+  arrives (`arrive`) and kept with its satchel through a reload (`keepAwayBag`, `awayBack`); the fire is the meadow's, run the
+  same on every side, so it hardens exactly as the host's fire burns. A `fire` message 'shape' lets friends see it in the fire
+  (`netFiring`; drawn by ticks gone by, not counting a spell with the fire out). A guest's vessels go when the visit ends.
+  Not tried live with two players (only checked by reading); the paintings checked in Chrome. sim.js untouched.
 ## After that (roughly in this order)
 1. **Cooking at the fire** and 2. **hunger and eating**: stage 6 above.
 3. **Camp builds.** Arranged inside the camp ring: a seat log, a spit, a drying rack (keeping food for winter), a basket

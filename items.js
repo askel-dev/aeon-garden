@@ -893,6 +893,43 @@ function paintBark(g) {
   scroll(g, -0.06, -0.06, -0.42, 0.5, 0.25, 1);
 }
 
+// Clay: a lump of it dug wet from the bank, grey-brown and soft, slumped where it was set down, a thumb pressed into its
+// top, a smear of wet sheen on it, the marks of fingers down its side, and a little pinched-off piece beside it.
+const CLAY = [150, 128, 108];
+function clayLump(g, x, y, s, k) {
+  g.save(); g.translate(x, y); g.scale(s, s);
+  const lump = () => {                                                                        // slumped and uneven: a lobed round, flat on its foot
+    for (let i = 0; i <= 48; i++) {
+      const a = i / 48 * TAU, r = 1 + 0.09 * Math.sin(3 * a + k) + 0.06 * Math.sin(5 * a + 2 * k) + 0.04 * Math.sin(8 * a + k * 3);
+      const px = Math.cos(a) * 0.68 * r, py = Math.min(0.42, Math.sin(a) * 0.5 * r - 0.04 + (Math.sin(a) > 0 ? 0 : 0.1 * Math.cos(a) * Math.cos(a)));
+      i ? g.lineTo(px, py) : g.moveTo(px, py);
+    }
+    g.closePath();
+  };
+  softIn(g, CLAY, -0.56, 0.42, lump, 1.24, 0.6);
+  g.save(); g.beginPath(); lump(); g.clip();
+  furGlow(g, tone(CLAY, 0.6), 0.55, 0.42, 0.24, 0.42, 0.34);                                  // its shade side
+  furGlow(g, [72, 56, 44], 0.45, 0, 0.42, 0.7, 0.1);                                          // darker and wetter at its foot
+  furGlow(g, tone(CLAY, 1.2, 14), 0.5, -0.3, -0.26, 0.26, 0.16, -0.3);                        // a lobe catching the light
+  const smear = (x0, y0, x1, y1, cx, cy) => () => { g.moveTo(x0, y0); g.quadraticCurveTo(cx, cy, x1, y1); };
+  for (const [x0, y0, x1, y1, cx, cy] of [[-0.5, -0.06, 0.1, 0.3, -0.3, 0.24], [0.12, -0.34, 0.58, 0.06, 0.44, -0.24]]) {   // where fingers dragged it
+    strokeIn(g, rgba(tone(CLAY, 0.72), 0.5), 0.07, smear(x0, y0, x1, y1, cx, cy));
+    g.save(); g.translate(-0.02, -0.03); strokeIn(g, rgba(tone(CLAY, 1.3, 20), 0.45), 0.02, smear(x0, y0, x1, y1, cx, cy)); g.restore();
+  }
+  fillIn(g, rgba(tone(CLAY, 0.66), 0.45), () => { for (let i = 0; i < 16; i++) ovalAt(g, -0.6 + jit(k, i) * 1.2, -0.36 + jit(k, i + 30) * 0.7, 0.012, 0.009); });   // grit
+  g.restore();
+  softIn(g, tone(CLAY, 0.7), -0.4, -0.2, () => ovalAt(g, -0.08, -0.3, 0.15, 0.075, 0.25), 0.7, 1.2);   // a thumb pressed in its top
+  strokeIn(g, rgba(tone(CLAY, 1.3, 20), 0.6), 0.02, () => g.ellipse(-0.08, -0.3, 0.15, 0.075, 0.25, 0.2, Math.PI - 0.4));
+  furGlow(g, [255, 252, 240], 0.55, -0.36, -0.14, 0.14, 0.05, -0.6);                         // wet sheen
+  furGlow(g, [255, 252, 240], 0.35, 0.26, -0.36, 0.09, 0.035, 0.3);
+  g.restore();
+}
+function paintClay(g) {
+  touch(g, 0, 0.52, 0.72, 0.18);
+  clayLump(g, -0.08, 0.06, 1, 1);
+  clayLump(g, 0.58, 0.48, 0.3, 2);
+}
+
 // The painted things by their ids, in the order of their numbers ('ingr:' + n): a new one goes at the end.
 const PAINTED = [
   ['cep', paintCep],
@@ -919,6 +956,7 @@ const PAINTED = [
   ['pebble', paintPebbles],
   ['drygrass', paintDryGrass],
   ['birchbark', paintBark],
+  ['clay', paintClay],
 ];
 const NAMES = PAINTED.map(p => p[0]);
 function paint(g, size, U, n) {
