@@ -2,6 +2,7 @@
 (() => {
 'use strict';
 const S = window.Sim;
+S.setStacks(Recipes.stackOf);          // stack sizes per kind come from recipes.js
 const Fur = window.Fur;                 // the painted foxes and rabbits, and the drawing helpers every painting here uses
 const { tone, rockRGB, fillIn, strokeIn, discAt, ovalAt, blurIn, softIn, furGlow, foxRGB, FOX_WHITE, FOX_SOCK, FOX_POSE, RABBIT_POSE } = Fur;
 const $ = sel => document.querySelector(sel);
@@ -7388,7 +7389,7 @@ function giveSlot() {
   eatAsk(f.bag[k] ? k : -1);
 }
 function heardGive(m, now) {
-  const f = world.forager, id = String(m.id || ''), n = Math.max(1, Math.min(S.STACK || 9, m.n | 0));
+  const f = world.forager, id = String(m.id || ''), n = Math.max(1, Math.min(S.stackOf(id), m.n | 0));
   if (!Recipes.INGREDIENTS[id] && !Recipes.foodOf(id)) return;
   const p = peers.get(m.from), who = esc((p && p.name) || cleanName(m.nm) || 'A friend');
   if (p) p.chat = chatFor('🎁', now);
@@ -14922,7 +14923,7 @@ function awayBack(f, w) {
   try { k = JSON.parse(localStorage.getItem(AWAY_BAG)); } catch (e) { /* fine */ }
   if (!k || k.room !== Net.room || k.seed !== w.seed || !Array.isArray(k.bag) || !Array.isArray(k.bagN)) return;
   for (let i = 0; i < S.SLOTS; i++) {
-    const id = String(k.bag[i] || ''), n = Math.max(0, Math.min(S.STACK, k.bagN[i] | 0));
+    const id = String(k.bag[i] || ''), n = Math.max(0, Math.min(S.stackOf(id), k.bagN[i] | 0));
     if (id && n > 0 && (Recipes.INGREDIENTS[id] || Recipes.foodOf(id))) { f.bag[i] = id; f.bagN[i] = n; }
   }
   const kit = k.kit, mine = f.kit;                       // (and the kit made on the visit, a vessel still firing too)

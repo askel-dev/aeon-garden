@@ -24,7 +24,7 @@ const STATIONS = {
 const VESSELS = {
   pot:   { name: 'Pot',    slots: 4, icon: '🍲', word: 'boiled in the pot' },
   pan:   { name: 'Pan',    slots: 3, icon: '🍳', word: 'fried on the griddle' },
-  stick: { name: 'Stick',  slots: 2, icon: '🍢', word: 'roasted on a stick' },
+  stick: { name: 'Stick',  stack: 20, slots: 2, icon: '🍢', word: 'roasted on a stick' },
   stone: { name: 'Stone',  slots: 2, icon: '🪨', word: 'baked on a hot stone' },
   bowl:  { name: 'Bowl',   slots: 3, icon: '🥗', word: 'mixed in a bowl, no heat' },
 };
@@ -32,12 +32,13 @@ const VESSELS = {
 // What the meadow gives. The ids of the ones the sim grows are the sim's own (SHROOMS, the greens, a tree's fruit or
 // mast). fill: how much it fills the tummy eaten raw. raw: false if it can't be eaten as it is. icon: an emoji to stand
 // in until it has a painted one. text: a line said under its name the first time it goes in the satchel.
+// stack: how many one satchel slot holds (default 10, sim.js STACK).
 // where: when and where to look for it, for its page in the book (shown before it's found, as the hint).
 const INGREDIENTS = {
   apple:       { name: 'Apple',               tags: ['fruit'],          fill: 1,   icon: '🍎', text: 'Windfalls in the grass under the tree, sweet with a bruise.', where: 'Autumn: windfalls in the grass under the apple trees.' },
-  cherry:      { name: 'Cherries',            tags: ['fruit', 'berry'], fill: 1,   icon: '🍒', text: 'Dark and warm from the sun, picked in pairs by the stalk.', where: 'Early summer, on the cherry trees out in the open.' },
-  blackberry:  { name: 'Blackberries',        tags: ['fruit', 'berry'], fill: 1,   icon: '🫐', text: 'Off the brambles, mind the thorns. One for the satchel, one for you.', where: 'Late summer into autumn, on the brambles at the edges of the woods.' },
-  honey:       { name: 'Honey',               tags: ['sweet'],          fill: 2,   icon: '🍯', text: 'Taken gently, leaving the bees what they need.', where: 'From the bees in the hollow old oaks, when they have some to spare.' },
+  cherry:      { name: 'Cherries',            stack: 20, tags: ['fruit', 'berry'], fill: 1,   icon: '🍒', text: 'Dark and warm from the sun, picked in pairs by the stalk.', where: 'Early summer, on the cherry trees out in the open.' },
+  blackberry:  { name: 'Blackberries',        stack: 20, tags: ['fruit', 'berry'], fill: 1,   icon: '🫐', text: 'Off the brambles, mind the thorns. One for the satchel, one for you.', where: 'Late summer into autumn, on the brambles at the edges of the woods.' },
+  honey:       { name: 'Honey',               stack: 5, tags: ['sweet'],          fill: 2,   icon: '🍯', text: 'Taken gently, leaving the bees what they need.', where: 'From the bees in the hollow old oaks, when they have some to spare.' },
   cep:         { name: 'Cep',                 tags: ['mushroom'],       fill: 1.5, icon: '🍄', text: 'A fat brown cap on a white stem: the cook\'s favourite.', where: 'Under oaks and pines a day or two after rain, mostly in autumn.' },
   chanterelle: { name: 'Chanterelles',        tags: ['mushroom'],       fill: 1,   icon: '🍄', text: 'Golden, smelling faintly of apricots.', where: 'Under birches and beeches after rain, mostly in autumn.' },
   field:       { name: 'Field mushroom',      tags: ['mushroom'],       fill: 1,   icon: '🍄', text: 'Pink gills under a white cap, up after the rain.', where: 'Out in the grass where the ground is rich, after rain.' },
@@ -51,12 +52,12 @@ const INGREDIENTS = {
   dandelion:   { name: 'Dandelions',          tags: ['greens', 'flower'], fill: 0.5, icon: '🌼', text: 'Every bit of it is good to eat, flower to root.', where: 'All through spring, out in the open grass.' },
   sorrel:      { name: 'Sorrel',              tags: ['greens'],         fill: 0.5, icon: '🌿', text: 'Sharp and lemony. A leaf to wake a dish up.', where: 'Spring and summer, in the damp grass near the water.' },
   watercress:  { name: 'Watercress',          tags: ['greens'],         fill: 0.5, icon: '🥬', text: 'Peppery, from the cold shallows.', where: 'Late autumn through winter, in the shallows by the bank.' },
-  strawberry:  { name: 'Wild strawberries',   tags: ['fruit', 'berry'], fill: 1,   icon: '🍓', text: 'Tiny, and sweeter than any from a garden.', where: 'Summer, along the edges of the woods.' },
+  strawberry:  { name: 'Wild strawberries',   stack: 20, tags: ['fruit', 'berry'], fill: 1,   icon: '🍓', text: 'Tiny, and sweeter than any from a garden.', where: 'Summer, along the edges of the woods.' },
   elderflower: { name: 'Elderflower',         tags: ['flower'],         fill: 0.5, icon: '💮', text: 'Creamy flat heads that smell of summer.', where: 'Late spring into summer, on the elders by the water and at the woods\' edge.' },
   rosehip:     { name: 'Rosehips',            tags: ['fruit'],          fill: 0.5, icon: '🌹', raw: false, text: 'Red and bright in the cold. Full of hairs: cook them first.', where: 'Late autumn and winter, on the wild roses in the scrub.' },
   // What lies on the ground for a fire: not food. 'tinder' catches the spark, 'fuel' keeps it going.
-  stick:       { name: 'Sticks',              tags: ['fuel'],           fill: 0,   icon: '🪵', raw: false, text: 'Something to keep a fire going.', where: 'Under the trees, all year. More come down in a storm.' },
-  pebble:      { name: 'Pebbles',             tags: ['stone'],          fill: 0,   icon: '🪨', raw: false, text: 'Smooth stones, to ring a fire.', where: 'On the shore, at the fords and round the rocks.' },
+  stick:       { name: 'Sticks',              stack: 20, tags: ['fuel'],           fill: 0,   icon: '🪵', raw: false, text: 'Something to keep a fire going.', where: 'Under the trees, all year. More come down in a storm.' },
+  pebble:      { name: 'Pebbles',             stack: 20, tags: ['stone'],          fill: 0,   icon: '🪨', raw: false, text: 'Smooth stones, to ring a fire.', where: 'On the shore, at the fords and round the rocks.' },
   drygrass:    { name: 'Dry grass',           tags: ['tinder'],         fill: 0,   icon: '🌾', raw: false, text: 'Dry stems from the long grass, to catch a spark.', where: 'In the long grass out in the open, most in summer and autumn.' },
   clay:        { name: 'Clay',                tags: ['earth'],          fill: 0,   icon: '🟤', raw: false, text: 'Cool, heavy and red-grey. It holds the shape of your thumb.', where: 'On the muddy banks, right by the water.' },
   birchbark:   { name: 'Birch bark',          tags: ['tinder'],         fill: 0,   icon: '📜', raw: false, text: 'Papery curls that catch even when damp.', where: 'Under the birches, and by a fallen one.' },
@@ -497,7 +498,8 @@ function thingsFor(needs, have) {
 // The ingredients a word in a build's needs takes: itself, or every ingredient with that tag.
 const takes = word => (INGREDIENTS[word] ? [word] : Object.keys(INGREDIENTS).filter(id => INGREDIENTS[id].tags.includes(word)));
 
-const Recipes = { STATIONS, VESSELS, vesselOf, craftLevel, INGREDIENTS, RECIPES, BUILDS, CRAFTS, MESS, cook, fits, fillOf, timeOf, recipeOf, takes, foodOf, thingsFor, answers, checkRecipes };
+function stackOf(id) { const i = INGREDIENTS[id]; return (i && i.stack) || 0; }
+const Recipes = { stackOf, STATIONS, VESSELS, vesselOf, craftLevel, INGREDIENTS, RECIPES, BUILDS, CRAFTS, MESS, cook, fits, fillOf, timeOf, recipeOf, takes, foodOf, thingsFor, answers, checkRecipes };
 if (typeof module !== 'undefined') module.exports = Recipes;
 else {
   window.Recipes = Recipes;
