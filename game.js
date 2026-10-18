@@ -16073,26 +16073,29 @@ function keepMeadow() {
   });
 }
 
-// The forager's skills (sim.js SKILLS) are its own, not a meadow's: kept in localStorage too as the page is left, so a guest
-// brings its own into a friend's meadow (arrive), and what it learnt there comes home with it (away: merged in, bringSkills).
+// The forager's skills (sim.js SKILLS) are the player's, not a meadow's: kept in localStorage, the most each has ever reached
+// (practice only grows, so a keep never takes one back), as the page is left and before any meadow is swapped for another
+// (showWorld). A new meadow or a kept one of our own takes them up (bringSkills), a guest brings its own into a friend's
+// meadow (arrive), and what it learnt there is kept the same way, so it comes home with it.
 const SKILLS_KEPT = 'aeon-garden-skills';
 function keepSkills() {
   if (!world || ROOM && !(Net && Net.on) && !net.hostId) return;   // (a room's page before it's in: the forager isn't ours yet)
-  try { localStorage.setItem(SKILLS_KEPT, JSON.stringify({ xp: world.forager.xp, away: !!net.hostId })); } catch (e) { /* fine */ }
+  const xp = keptSkills()?.xp || {};
+  for (const s of S.SKILL_NAMES) xp[s] = Math.max(+xp[s] || 0, world.forager.xp[s]);
+  try { localStorage.setItem(SKILLS_KEPT, JSON.stringify({ xp })); } catch (e) { /* fine */ }
 }
 function keptSkills() {
   try { return JSON.parse(localStorage.getItem(SKILLS_KEPT)) || null; } catch (e) { return null; }
 }
-// Forager f's skills as kept: all of them (into a friend's meadow), or only those learnt further while away (home again).
+// Forager f's skills as kept: all of them as they are (into a friend's meadow: its own, not the host's), or, in a meadow of
+// our own, each up to what's kept if that's further.
 function bringSkills(f, all) {
-  const k = keptSkills() || (all ? { xp: {} } : null);   // (none kept: a new forager's, at nothing)
-  if (!k || !k.xp || !all && !k.away) return;
+  const xp = keptSkills()?.xp || {};                     // (none kept: a new forager's, at nothing)
   for (const s of S.SKILL_NAMES) {
-    const xp = +k.xp[s] || 0;
-    if (all || xp > f.xp[s]) f.xp[s] = all ? xp || -0 : xp;
+    const k = +xp[s] || 0;
+    if (all) f.xp[s] = k || -0; else if (k > f.xp[s]) f.xp[s] = k;
     f.lv[s] = S.skillLevel(s, f.xp[s]);
   }
-  if (!all) keepSkills();                                // (home: not away any more)
 }
 
 // The kept meadow to open: this seed's, or with none, the one watched last. Null if there's none, or
@@ -16128,6 +16131,7 @@ function resumeWorld(rec) {
     const w = S.unpackWorld(rec.kept);
     if (!w) throw new Error('kept by another version');
     showWorld(w);
+    bringSkills(w.forager, false);                    // (what it learnt since in other meadows comes along)
     for (const id of w.forager.bag) if (id) firsts.add(id);   // (found already: see firstTime)
     S.step(world);                                    // a meadow that can't take a step is no good
     flushEvents();
@@ -16185,6 +16189,7 @@ function randomSeed() { return Math.floor(Math.random() * 1e6); }
 
 function newWorld(seed) {
   showWorld(S.createWorld(seed));
+  bringSkills(world.forager, false);       // (a new meadow, the same forager: its skills come along)
   pr.n = 0; pr.next = 0;                   // (no footprints from the last meadow)
   history.replaceState(history.state, '', pageLink(seed));   // (the state: Back's step, if one's open)
   homeView();
@@ -16271,6 +16276,7 @@ function homeView() {
 
 // Everything a meadow needs to be the one on screen, a new one or a kept one (resumeWorld).
 function showWorld(w) {
+  keepSkills();                                          // (the last meadow's forager's, before it goes)
   world = w;
   const seed = w.seed;
   groundSeed = [(seed % 97) * 3.7, (seed % 89) * 4.3];
@@ -16722,7 +16728,7 @@ const seedParam = +params.get('seed');
 // The kept meadow if there is one (keeping the meadow, above), else a new one.
 function begin(rec) {
   if (BENCH || !(rec && resumeWorld(rec))) newWorld(seedParam || randomSeed());
-  if (!ROOM) { bringSkills(world.forager, false); dropAwayBag(); }   // (home: what it learnt there comes with it; a satchel left away doesn't wait)
+  if (!ROOM) dropAwayBag();                              // (home: a satchel left away doesn't wait)
   requestAnimationFrame(frame);
   if (BENCH) benchStart();
   if (ROOM) { endIntro(true); wardrobe('join', startTogether); }   // (who's coming and in what, before the room hears of you)
