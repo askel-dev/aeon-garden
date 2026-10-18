@@ -231,13 +231,14 @@ off from the meadow and the satchel (`got`/`n`, `done`; a stick fed and a dish e
 and stays ticked per player (`aeon-garden-tasks`), so it's for the first meadow or so; on load what's already true ticks quietly. A
 line ticked pops its circle with a click; the line worked on says how (`how`); a chapter done is a toast and `found`, stays ticked
 `TASK_TURN_MS`, then the next pops in; the last is a gold headline ("Settled in") and the note is gone for good. A tap on its head
-folds it to the one line (`aeon-garden-tasks-fold`, folded to start with on a phone). Away while the skills, the book or the wardrobe
-are open or the forager is down, and on a phone while cooking, at the basket or under a headline.
+folds it to the one line (`aeon-garden-tasks-fold`, folded to start with on a phone). Away while the skills, the book, the wardrobe
+or the old stone are open or the forager is down, and on a phone while cooking, at the basket or under a headline.
 The old stone (2026-10-17; the comment over `STONE_MOODS`): sim.js `w.stone`, painted once a face (`paintOldStone`, `STONE_ARTS`:
 seven moods, each with its mouth shut and open; moss hair and brows, asleep and drooling left alone `STONE_DOZE_MS`), drawn with the
 trees and animals (`drawStone`), solid in the forager's way like a rock. A click on it walks over (`goStone`, `goFire` 'stone', standing
 `STONE_STAND` further out than at a fire) and opens a slim line to talk on over the satchel (`#stone-talk`, `openStone`; up top on a
-touch screen, out of the keyboard's way). Woken, it says hello. What's typed is the forager's bubble (`myChat`), its answer a bubble
+touch screen, out of the keyboard's way, the face hidden under it and the camera keeping the stone and its bubble below it and above the
+satchel or the keyboard: `measureSheet`, `STONE_ROOM`). Woken, it says hello. What's typed is the forager's bubble (`myChat`), its answer a bubble
 over the stone (`stoneUi.chat`, in `drawPeerNames`) with its mouth going (`STONE_MOUTH_MS`). A tap on anything in the satchel there has
 🙏 Offer by Eat (`eatAsk`, `offerSlot`): it flies into the stone, which rates it (a "★★★ 7 / 10" float and a sound by the score).
 Words from stone.js (`stoneAsk`, `stoneCtx` tells it the season, time, weather and how the forager is). Walking off `STONE_NEAR`, ✕,

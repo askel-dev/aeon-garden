@@ -118,8 +118,11 @@ function resize() {
 // right. The one you follow is kept in the middle of what's still showing, instead of under the panel; and while you type
 // to friends, between the chat up top and the keyboard (keyboardUp).
 function measureSheet() {
-  const ins = $('#inspector').getBoundingClientRect(), chat = $('#chat');
-  if (chat.classList.contains('kb')) {
+  const ins = $('#inspector').getBoundingClientRect(), chat = $('#chat'), stone = $('#stone-talk');
+  if (stoneUi.open && stone.offsetTop < vh * 0.4) {      // (talking to the old stone on a touch screen, its card up top: the stone and its bubble under it, STONE_ROOM)
+    const v = window.visualViewport, foot = $('#satchel').getBoundingClientRect().top;
+    sheet = { top: stone.offsetTop + stone.offsetHeight + STONE_ROOM, bottom: Math.max(vh - foot, v ? vh - v.offsetTop - v.height : 0), left: 0, right: 0 };
+  } else if (chat.classList.contains('kb')) {
     const v = window.visualViewport, top = $('#hud-right .hud-top').getBoundingClientRect().bottom;
     sheet = { top: Math.max(top, chat.getBoundingClientRect().bottom), bottom: v ? vh - v.offsetTop - v.height : 0, left: 0, right: 0 };
   } else if (!ins.height) sheet = null;
@@ -2651,7 +2654,7 @@ function renderMe() {
 // per player (TASKS_KEY), so the note is for the first meadow or so. A line ticked has its circle pop in; a chapter done is a
 // toast and a chime, stays ticked `TASK_TURN_MS`, then the next slides in; the last is a gold headline and the note is gone
 // for good. The line being worked on says how (`how`). A tap on the note's head folds it to that one line (TASKS_FOLD; folded
-// to start with on a phone). Out of the way while the skills, the book or the wardrobe are open, the forager is down, or on a
+// to start with on a phone). Out of the way while the skills, the book, the wardrobe or the old stone are open, the forager is down, or on a
 // phone while cooking, at the basket or under a headline. A new task is a line in TASKS: an id, what to do, and how it's seen to be done.
 const TASKS_KEY = 'aeon-garden-tasks', TASKS_FOLD = 'aeon-garden-tasks-fold';   // in localStorage: the ids ticked, and folded
 const TASK_TURN_MS = 1800, TASK_JUST_MS = 1200;
@@ -2730,7 +2733,7 @@ function renderTasks() {
     }
   }
   taskUi.quiet = false;
-  const away = taskUi.shown < 0 || meOpen() || bookOpen() || wardrobeOpen() || f.down >= 0 || (narrow() && (cooking() || larderOpen() || now < announcing.until));
+  const away = taskUi.shown < 0 || meOpen() || bookOpen() || wardrobeOpen() || stoneOpen() || f.down >= 0 || (narrow() && (cooking() || larderOpen() || now < announcing.until));
   el.classList.toggle('away', away);
   if (taskUi.shown < 0) return;
   const c = TASKS[taskUi.shown], next = c.tasks.find(t => !taskUi.done.has(t.id));
@@ -4172,6 +4175,7 @@ const STONE_STAND = 0.55;                // tiles further out than STAND_OFF the
 const STONE_NEAR = 3;                    // tiles from it the line to talk on stays open
 const STONE_DOZE_MS = 45000;             // left alone this long it nods off again
 const STONE_MOUTH_MS = 130;              // its mouth opens and shuts this often while it talks
+const STONE_ROOM = 110;                  // px kept clear under its card on a touch screen for its bubble (measureSheet)
 const stonePx = () => forPx() * 1.4;
 const stoneUi = { open: false, chat: null, mood: 1, talkTo: 0, waiting: false, at: -1e9 };
 const stoneOpen = () => stoneUi.open;
@@ -4292,6 +4296,7 @@ function openStone(on) {
     if (performance.now() - stoneUi.at > STONE_DOZE_MS && !stoneUi.waiting) stoneAsk({});   // (woken: it says hello)
     chime('click');
   } else { $('#stone-text').blur(); eatAsk(-1); }
+  measureSheet();
   syncBack();
 }
 // Once a frame: walked off, collapsed, or off to a fire, the line shuts.
