@@ -114,9 +114,10 @@ says how it is (`fireWord`). Drawn with the trees and animals (`drawFire`: `pain
 as `TONGUES` of one painting; smoke), its glow, embers and sparks over the dark
 (`drawFireGlows`). Its light (`lightsFrame`, at most 4 fires, out to `LIGHT_TILES`, flickering in `FLICKER_MS` steps) is cut out of the night on the sky's
 picture (`SKY_FIRE`, `paintFireLights`: so the sky repaints only on a flicker step) and laid warm over what stands near it
-(`fireLight`, source-atop, kept soft so the forager by it isn't washed out). Readable at night without a fire (2026-10-18):
-the forager's top edge takes a faint warm rim once its pose is painted (`drawForagerRim`, `foragerRim` a rim sprite cut out
-of the pose's own picture, drawn after the washes so the navy doesn't eat it), and the camp's basket and cold fire pit get a
+(`fireLight`, source-atop, kept soft so the forager by it isn't washed out). Readable by firelight at night (2026-10-18):
+the forager's top edge takes a faint warm rim where a fire's pool falls and no further (`drawForagerRim`, `foragerRim` a rim
+sprite cut out of the pose's own picture, drawn after the washes so the navy doesn't eat it, gated by `fireReach` — the
+pool's own falloff, `lightFall`), and the camp's basket and cold fire pit get a
 little of the dark taken back over their footprint (`liftsFrame`, `paintCampLift`, `SKY_LIFT` — same sky pass as the fires,
 painted once, so the lit fire's pool stays the only strong light). Nights are dark (`DARK` 0.88 of a deep navy
 `NIGHT_RGB`, 2026-10-15) so the fire is the cosy place. Friends see fires laid, fed and lit (`sendFire`). Sounds: sound.js `clack`,

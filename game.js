@@ -1233,6 +1233,7 @@ function render(now) {
   drawRemains(z);
   drawGarlic(z);
   drawCampRing(z, now);
+  drawCampRingGhost(z);
   if (ui.mark) drawMark(now);
 
   const sel = world.byId.get(ui.selectedId);
@@ -2376,10 +2377,11 @@ function foragerShadow(sx, sy, sn, wet) {
 }
 
 // The forager's rim in the dark (PLAN.md stage 5, "the camp catches the light"): a thin amber edge along the top of its
-// painting, the side away from the camera, so it stays readable at night without being lit. It's cut out of the painting
-// it's drawn from, once a pose (foragerRim: all but the top edge cut away, that edge amber), and laid over the navy after
-// the dark goes down (drawForagerRim, called from render and lightForager) so it isn't swallowed. Faint, and no brighter
-// than the embers: the lit fire's pool (paintFireLights) stays the only strong light, and nothing here is lit.
+// painting, the side away from the camera, where a fire's light catches it — by a fire, and no further (drawForagerRim
+// takes how much pool is over it, fireReach, so out in the dark it's nothing). It's cut out of the painting it's drawn
+// from, once a pose (foragerRim: all but the top edge cut away, that edge amber), and laid over the navy after the dark
+// goes down (drawForagerRim, called from render and lightForager) so it isn't swallowed. Faint, and no brighter than the
+// embers: the lit fire's pool (paintFireLights) stays the only strong light, and nothing here is lit.
 const RIM_RGB = '255, 176, 96', RIM_A = 0.55;           // the fire's own warm, and how strong the edge is in the deepest dark
 const RIM_DY = 0.02;                                    // its thickness: a share of the painting it's cut from
 const RIM_BOX = 112, RIM_MOST = 256, RIM_POSES = 48;    // its canvas: painted at this CSS box, at most this many pixels, this many poses kept
@@ -2407,13 +2409,15 @@ function foragerRim(art, px) {
   asBitmap(c, b => { if (rims.get(art) === r) r.canvas = b; });
   return r;
 }
-// Laid over the dark after it's down, where its painting went, turned as it was (fg: drawFigure). A tree in front of it
-// (coverAt, occl) hides its rim with it; the split's forager canvas is over everything, so nothing hides it there.
-function drawForagerRim(dark, occl = true) {
+// Laid over the dark after it's down, where its painting went, turned as it was (fg: drawFigure). Only where a fire's
+// light falls (fireReach): that far and no further, faint, and a tree in front of it (coverAt, occl) hides its rim with
+// it; the split's forager canvas is over everything, so nothing hides it there (its lights were laid at the meadow's
+// camera, so they're shifted by dx, dy to where the camera is now).
+function drawForagerRim(dark, occl = true, dx = 0, dy = 0) {
   if (dark < 0.02 || !fg.rimOn) return;
   const px = fg.px, r = foragerRim(fg.art, px), s = r && sprite(fg.art, px);
   if (!s) return;
-  const seen = occl ? 1 - coverAt(fg.fx, fg.fy - px * 0.3, world.forager.y) : 1;
+  const seen = (occl ? 1 - coverAt(fg.fx, fg.fy - px * 0.3, world.forager.y) : 1) * fireReach(fg.fx, fg.fy, dx, dy);
   if (seen < 0.02) return;
   ctx.globalAlpha = RIM_A * clamp(dark / DARK, 0, 1) * seen;
   ctx.save();
@@ -3954,6 +3958,19 @@ function lightsFrame(now) {
     lights.x[i] = sx; lights.y[i] = sy - firePx(z) * 0.12; lights.r[i] = r * (0.95 + 0.05 * fl); lights.a[i] = Math.min(1, glow) * (0.9 + 0.1 * fl);
   }
 }
+// How bright a fire's pool lies over a point, u of the way through it (the falloff the pool's cut and the warm over what
+// stands near are both laid by), and how much pool is over a spot on screen: 0 past every fire's edge, 1 at the heart of
+// a strong one (a share of a full fire's, the 0.85 the pool's cut lays over what's nearest it). The forager's rim rides
+// on this (drawForagerRim), so what shows on it is a fire's light where a fire's light falls — never a light of its own.
+const lightFall = u => u < 0.35 ? 1 - 0.51 * u : u < 0.7 ? 0.82 - 1.14 * (u - 0.35) : u < 0.88 ? 0.42 - 1.55 * (u - 0.7) : 0.14 * (1 - u) / 0.12;
+function fireReach(fx, fy, dx = 0, dy = 0) {
+  let pool = 0;
+  for (let i = 0; i < lights.n; i++) {
+    const u = Math.hypot(fx - lights.x[i] - dx, (fy - lights.y[i] - dy) / LIGHT_FLAT) / lights.r[i];
+    if (u < 1) pool += lights.a[i] * lightFall(u);
+  }
+  return Math.min(1, pool / 0.85);
+}
 // The warm light laid over what's drawn about each fire (source-atop: only over what's there, so the trees, the animals and
 // the forager are lit warm, more on the side toward it), stronger in the dark.
 function fireLight(dark) {
@@ -4214,6 +4231,17 @@ function drawCampRing(z, now) {
   const art = CAMP_ART || campArt(), w = S.CAMP_R * z / CAMP_MID * 2, h = w * art.h / art.w, sx = (C.x - cam.x) * z + vw / 2, sy = (C.y - cam.y) * z + vh / 2;
   if (a <= 0 || !visible(sx, sy, w / 2)) return;
   ctx.globalAlpha = a;
+  ctx.drawImage(art.img, sx - w / 2, sy - h / 2, w, h);
+  ctx.globalAlpha = 1;
+}
+// The camp that would spring up round a first campfire while its place is being tried for: the same ring, faint, under
+// the fire being aimed (and fainter still where it can't go). Once there's a camp, drawCampRing draws the true one.
+function drawCampRingGhost(z) {
+  const P = ui.place;
+  if (!P || !P.fire || world.camp) return;
+  const art = CAMP_ART || campArt(), w = S.CAMP_R * z / CAMP_MID * 2, h = w * art.h / art.w, sx = (P.x - cam.x) * z + vw / 2, sy = (P.y - cam.y) * z + vh / 2;
+  if (!visible(sx, sy, w / 2)) return;
+  ctx.globalAlpha = P.ok ? 0.5 : 0.22;
   ctx.drawImage(art.img, sx - w / 2, sy - h / 2, w, h);
   ctx.globalAlpha = 1;
 }
@@ -16511,7 +16539,7 @@ function lightForager(now, ck, dx, dy) {
     const art = lightArt(), night = clamp(dark / DARK, 0, 1), fx = fg.sx, fy = fg.sy;
     for (let i = 0; i < lights.n; i++) {                  // (lights were worked out at the meadow's camera: dx, dy is how it has moved since)
       const r = lights.r[i], x = lights.x[i] + dx, y = lights.y[i] + dy, u = Math.hypot(fx - x, (fy - y) / LIGHT_FLAT) / r;
-      if (u < 1) pool += lights.a[i] * 0.85 * (u < 0.35 ? 1 - 0.51 * u : u < 0.7 ? 0.82 - 1.14 * (u - 0.35) : u < 0.88 ? 0.42 - 1.55 * (u - 0.7) : 0.14 * (1 - u) / 0.12);
+      if (u < 1) pool += lights.a[i] * 0.85 * lightFall(u);
       const rr = r * 0.85;
       ctx.globalAlpha = lights.a[i] * (0.06 + 0.24 * night);
       ctx.drawImage(art.img, x - rr, y - rr * LIGHT_FLAT, rr * 2, rr * 2 * LIGHT_FLAT);
@@ -16532,7 +16560,7 @@ function lightForager(now, ck, dx, dy) {
   lay(NIGHT_RGB, dk); lay(DIM_RGB, dim); lay(HEAT_RGB, heat); lay(FOG_RGB, fog);
   if (through < 1) wash(`rgba(${r / (1 - through)}, ${g / (1 - through)}, ${b / (1 - through)}, ${1 - through})`);
   ctx.globalCompositeOperation = 'source-over';
-  drawForagerRim(dark, false);                            // (and its rim, over the dark on its own canvas, where render draws it on the meadow's)
+  drawForagerRim(dark, false, dx, dy);                     // (and its rim, over the dark on its own canvas, where render draws it on the meadow's)
 }
 
 function frame(now) {
