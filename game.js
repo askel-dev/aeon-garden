@@ -6911,7 +6911,7 @@ function renderCookBasket() {
   if (!el || !row || !f) return;
   const B = basketAtHand() ? myBasket() : null, here = B ? B.bag.map((id, k) => id ? { k, id, n: B.bagN[k] } : null).filter(Boolean) : [];
   const key = here.map(t => `${t.k} ${t.id} ${t.n}`).join('|');
-  el.classList.toggle('hidden', !key);
+  if (el.classList.contains('hidden') === !!key) { el.classList.toggle('hidden', !key); if (cooking()) measureCook(); }   // (the window's height moved: aim the camera again)
   if (row.dataset.key !== key) {
     row.dataset.key = key;
     row.innerHTML = here.map(t => `<button class="bslot" data-b="${t.k}"><i class="on"></i><b></b></button>`).join('');
