@@ -51,7 +51,22 @@ const cam = { x: S.W / 2, y: S.H / 2, zoom: 10, goal: null };
 // ------------------------------------------------------------------ canvas and camera
 
 const canvas = $('#world');
-const ctx = canvas.getContext('2d');
+// ?split (a prototype, off by default): the meadow is drawn every other beat (30 fps) on a canvas EDGE css px bigger all round
+// (wview), and on the beats between it and the ground are slid by how far the camera has moved (splitFrame), so the camera
+// still moves at the screen's rate; the forager is drawn every beat on a small canvas of its own over them (fview, drawForagerLayer).
+// #world stays as it was, full screen and empty, over them all: it takes the pointer.
+const SPLIT = params.has('split');
+const EDGE = SPLIT ? 20 : 0;
+const wview = SPLIT ? document.createElement('canvas') : canvas, fview = SPLIT ? document.createElement('canvas') : null;
+if (SPLIT) {
+  wview.style.cssText = `position:fixed;top:${-EDGE}px;left:${-EDGE}px;display:block;pointer-events:none;transform-origin:0 0;will-change:transform`;
+  fview.style.cssText = 'position:fixed;top:0;left:0;display:block;pointer-events:none;transform-origin:0 0;will-change:transform';
+  canvas.before(wview, fview);
+}
+const wctx = wview.getContext('2d'), fctx = SPLIT ? fview.getContext('2d') : null;
+let ctx = wctx;
+const split = { z: -1, ox: 0, oy: 0, ok: false, at: 0 };   // the meadow as it was last drawn: its zoom, where its corner was
+
 let vw = 0, vh = 0, dpr = 1, minZoom = 1, fitZoom = 1;
 const FIT = 0.92;                                 // zoomed right out, how much of the window the meadow fills (it fades into mist, mistField)
 let sheet = null;                                 // the edges of the meadow the inspector and the bars hide, while it's open (or the chat and the keyboard)
@@ -110,7 +125,12 @@ function resize() {
   dpr = Math.min(pixelRatio(), saverOn ? SAVER_DPR : 3);   // (a phone's own 3x: capped at 2 it's a little soft, so only when battery saver asks)
   // The CSS sizes the canvas: in Safari on a phone it reaches under the clock and the address bar, past innerHeight.
   vw = canvas.clientWidth || innerWidth; vh = canvas.clientHeight || innerHeight;
-  canvas.width = Math.round(vw * dpr); canvas.height = Math.round(vh * dpr);
+  if (SPLIT) {
+    canvas.width = canvas.height = 1;
+    wview.width = Math.round((vw + 2 * EDGE) * dpr); wview.height = Math.round((vh + 2 * EDGE) * dpr);
+    wview.style.width = vw + 2 * EDGE + 'px'; wview.style.height = vh + 2 * EDGE + 'px';
+    split.z = -1;                                  // (drawn afresh)
+  } else { canvas.width = Math.round(vw * dpr); canvas.height = Math.round(vh * dpr); }
   minZoom = Math.max(vw / S.W, vh / S.H);        // the meadow fills the window: the wide shot
   // and as far out as you may zoom: FAR_TILES across, or all of it on a small meadow
   fitZoom = Math.max(Math.min(vw / S.W, vh / S.H) * FIT, vw / FAR_TILES[narrow() ? 1 : 0]);
@@ -470,7 +490,7 @@ function edgeColour(r, g, b) {
 const GROUND_DPR = 2, GROUND_WEBKIT = 1.5e6;
 const WEBKIT = /AppleWebKit/.test(navigator.userAgent) && !/Chrome\/|Chromium|Edg\//.test(navigator.userAgent);
 const groundLayer = Ground.ok ? Ground.canvas : null, laid = { w: 0, h: 0, x: 0, y: 0 };
-if (groundLayer) { groundLayer.id = 'ground'; canvas.before(groundLayer); }
+if (groundLayer) { groundLayer.id = 'ground'; (SPLIT ? wview : canvas).before(groundLayer); }
 function drawGround(z, ox, oy, shx, shy, now) {
   groundStill = z === lastZoom ? groundStill + 1 : 0; lastZoom = z;
   updateWater();
@@ -488,7 +508,12 @@ function drawGround(z, ox, oy, shx, shy, now) {
     camp: campGround, campA: campFade(now),
     snow: world.snow, damp: 1 - 0.12 * world.wet, ice: iceOver(), cold: coldness(), lx: k * sn.lean, ly: k * 0.8,
   });
-  const g = Ground.canvas, cw = g.width / gd, ch = g.height / gd, x = shx - Ground.view.x / gd, y = shy - Ground.view.y / gd;
+  groundGd = gd;
+  placeGround(shx, shy);
+}
+let groundGd = 1;
+function placeGround(shx, shy) {
+  const gd = groundGd, g = Ground.canvas, cw = g.width / gd, ch = g.height / gd, x = shx - Ground.view.x / gd, y = shy - Ground.view.y / gd;
   if (cw !== laid.w || ch !== laid.h) { g.style.width = cw + 'px'; g.style.height = ch + 'px'; laid.w = cw; laid.h = ch; }
   if (x !== laid.x || y !== laid.y) { g.style.transform = `translate(${x}px, ${y}px)`; laid.x = x; laid.y = y; }
 }
@@ -547,12 +572,14 @@ function fogColour(high, phase) {
 let fade = 1;
 const ALPHA = Object.getOwnPropertyDescriptor(CanvasRenderingContext2D.prototype, 'globalAlpha');
 let alphaNow = ALPHA.get.call(ctx);
-Object.defineProperty(ctx, 'globalAlpha', {
-  get() { return alphaNow / fade; },
-  set(v) { const a = v * fade; if (a !== alphaNow && a >= 0 && a <= 1) { alphaNow = a; ALPHA.set.call(ctx, a); } },
-});
 const RESTORE = ctx.restore;
-ctx.restore = () => { RESTORE.call(ctx); alphaNow = ALPHA.get.call(ctx); };
+for (const g of SPLIT ? [wctx, fctx] : [ctx]) {          // (both of a split's: whichever is the current ctx answers)
+  Object.defineProperty(g, 'globalAlpha', {
+    get() { return alphaNow / fade; },
+    set(v) { const a = v * fade; if (a !== alphaNow && a >= 0 && a <= 1) { alphaNow = a; ALPHA.set.call(ctx, a); } },
+  });
+  g.restore = () => { RESTORE.call(ctx); alphaNow = ALPHA.get.call(ctx); };
+}
 function fadeTo(f) {
   if (f === fade) return;
   const a = ctx.globalAlpha;
@@ -1105,7 +1132,7 @@ const HOLT_SIZE = 0.8;                    // the way into an otters' holt
 const BODY_SIZE = 1;                      // a dead rabbit, lying on its side
 const FOX_BODY = 1.4;                     // and a dead fox, next to that
 
-function visible(sx, sy, pad) { return sx > -pad && sy > -pad && sx < vw + pad && sy < vh + pad; }
+function visible(sx, sy, pad) { return sx > -pad - EDGE && sy > -pad - EDGE && sx < vw + pad + EDGE && sy < vh + pad + EDGE; }
 
 const DARK = 0.88;                        // how much of NIGHT_RGB the night lays over everything (dark, so a fire's the cosy place)
 function darkness(phase) {
@@ -1157,9 +1184,9 @@ function sortByY(items) {
 let shakeX = 0, shakeY = 0;                          // the frame's own transform (render's), in device pixels: see drawPaintedTree
 function render(now) {
   // Thunder rumbles the whole screen a little.
-  const q = now - ui.sky.boom < 350 ? 3 * (1 - (now - ui.sky.boom) / 350) : 0;
+  const q = !SPLIT && now - ui.sky.boom < 350 ? 3 * (1 - (now - ui.sky.boom) / 350) : 0;   // (no shake when split: the ground and the meadow slide as one)
   const shx = q * Math.sin(now / 17), shy = q * Math.cos(now / 23);
-  shakeX = shx * dpr; shakeY = shy * dpr;
+  shakeX = (shx + EDGE) * dpr; shakeY = (shy + EDGE) * dpr;
   ctx.setTransform(dpr, 0, 0, dpr, shakeX, shakeY);
   alphaNow = ALPHA.get.call(ctx);                    // (the canvas may have been made afresh: see fade)
   ctx.imageSmoothingEnabled = true;
@@ -1167,7 +1194,7 @@ function render(now) {
   // for it on every draw, GPU or not: with it, a wood on screen dropped frames.
   ctx.imageSmoothingQuality = 'low';
   spriteFrame++; paintedMs = 0; standIns = true;
-  ctx.clearRect(-8, -8, vw + 16, vh + 16);          // past the meadow's edge the page shows through
+  ctx.clearRect(-8 - EDGE, -8 - EDGE, vw + 16 + 2 * EDGE, vh + 16 + 2 * EDGE);          // past the meadow's edge the page shows through
   const [ox, oy] = toScreen(0, 0);
   const z = cam.zoom, ck = S.clock(world);
   hoverFrame();
@@ -1274,11 +1301,11 @@ function render(now) {
   }
   {                                                        // the forager
     const F = world.forager, d = drawnAt(F), sx = (d.x - cam.x) * z + vw / 2, sy = (d.y - cam.y) * z + vh / 2;
-    foragerFrame(now, d);
+    if (!SPLIT) foragerFrame(now, d);                      // (split: drawForagerLayer, every beat)
     const px = forPx();
     fgBody.on = visible(sx, sy, 2 * px); fgBody.x = sx; fgBody.y = sy - px * 0.3; fgBody.w = px * 0.14; fgBody.h = px * 0.28; fgBody.wy = d.y;
     seeDt = Math.min(100, now - seeLast); seeLast = now;
-    if (fgBody.on) itemOf(items, d.y, sx, sy, 1).p = F;
+    if (fgBody.on && !SPLIT) itemOf(items, d.y, sx, sy, 1).p = F;
   }
   if (peers.size) peerItems(items, now, z);               // friends playing along (net.js)
   sortByY(items);
@@ -12162,7 +12189,7 @@ function floatPaint(g, kind, rgb, px) {
 }
 
 // Paints over the whole view, with a margin for the thunder shake.
-function wash(color) { ctx.fillStyle = color; ctx.fillRect(-10, -10, vw + 20, vh + 20); }
+function wash(color) { ctx.fillStyle = color; ctx.fillRect(-10 - EDGE, -10 - EDGE, vw + 20 + 2 * EDGE, vh + 20 + 2 * EDGE); }
 
 // ------------------------------------------------------------------ weather
 
@@ -12244,7 +12271,7 @@ function laySky(t) {
     wash(`rgba(${r / a}, ${g / a}, ${b / a}, ${a})`);
     return;
   }
-  const k = SKY_RES, w = Math.ceil((vw + 20) * k), h = Math.ceil((vh + 20) * k);   // (as wash: 10 past the screen all round, for the thunder's shake)
+  const k = SKY_RES, w = Math.ceil((vw + 20 + 2 * EDGE) * k), h = Math.ceil((vh + 20 + 2 * EDGE) * k);   // (as wash: 10 past the screen all round, for the thunder's shake)
   if (!sky.canvas) { sky.canvas = document.createElement('canvas'); sky.g = sky.canvas.getContext('2d'); }
   const c = sky.canvas, sg = sky.g;
   // Painted again only if what it shows has moved (paused, with the camera still, it hasn't: the weather's clock stands too).
@@ -12255,25 +12282,25 @@ function laySky(t) {
   if (fire) { f[m++] = lights.n; for (let i = 0; i < lights.n; i++) { f[m++] = lights.x[i]; f[m++] = lights.y[i]; f[m++] = lights.r[i]; f[m++] = lights.a[i]; } }   // (it flickers in steps: lightsFrame)
   let same = c.width === w && c.height === h;
   for (let i = 0; same && i < m; i++) if (f[i] !== sky.was[i] && !(i === 9 && f[9] - sky.was[9] < SKY_MS)) same = false;
-  if (same) { ctx.drawImage(c, -10, -10, w / k, h / k); return; }
+  if (same) { ctx.drawImage(c, -10 - EDGE, -10 - EDGE, w / k, h / k); return; }
   sky.was.set(f);
   if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
   sg.setTransform(1, 0, 0, 1, 0, 0);
   sg.clearRect(0, 0, w, h);
   for (let i = 0; i < n; i++) {
     const { kind, rgb, a } = L[i];
-    sg.setTransform(k, 0, 0, k, 10 * k, 10 * k);          // in CSS pixels, as the meadow's
+    sg.setTransform(k, 0, 0, k, (10 + EDGE) * k, (10 + EDGE) * k);          // in CSS pixels, as the meadow's
     if (kind === SKY_CLOUDS) paintCloudShadows(sg, t, a);
     else if (kind === SKY_FOG) paintFogBanks(sg, t, a);
     else if (kind === SKY_FIRE) paintFireLights(sg);
-    else { sg.fillStyle = `rgba(${rgb}, ${a})`; sg.fillRect(-10, -10, vw + 20, vh + 20); }
+    else { sg.fillStyle = `rgba(${rgb}, ${a})`; sg.fillRect(-10 - EDGE, -10 - EDGE, vw + 20 + 2 * EDGE, vh + 20 + 2 * EDGE); }
   }
-  ctx.drawImage(c, -10, -10, w / k, h / k);
+  ctx.drawImage(c, -10 - EDGE, -10 - EDGE, w / k, h / k);
 }
 
 // Soft shadows that pan and zoom with the meadow, drifting east. (On the sky's picture; they keep still in the thunder's shake.)
 function paintCloudShadows(g, now, a) {
-  const z = cam.zoom, span = S.W + 60, k = SKY_RES, ox = 10 - shakeX / dpr, oy = 10 - shakeY / dpr;
+  const z = cam.zoom, span = S.W + 60, k = SKY_RES, ox = 10 + 2 * EDGE - shakeX / dpr, oy = 10 + 2 * EDGE - shakeY / dpr;
   for (const c of clouds) {
     const wx = ((c.x * span + now / 1000 * 0.5 * c.s) % span) - 30, wy = c.y * S.H;
     const [sx, sy] = toScreen(wx, wy), r = c.r * z;
@@ -15857,6 +15884,100 @@ function pixelCam() {
   cam.y = (hy - Math.round(hy - cam.y * k)) / k;
 }
 
+// ?split. A beat that draws (the screen's rate, or the touch screen's 60 at most) either draws the meadow, or, when it did
+// so less than WORLD_GAP ago, only slides it and the ground by what the camera has moved since (both CSS transforms, in whole
+// device pixels: pixelCam), and either way draws the forager afresh, since the camera follows it. Drawn whole again when the
+// zoom moves, when the camera has jumped past the margin (EDGE) or the ground's, and when the ground wants painting.
+const WORLD_GAP = 1000 / 30 - 2.2;
+let slidX = NaN, slidY = NaN;
+function splitFrame(now, gap) {
+  split.at = now;
+  const steadied = handShow(now);
+  const cx = cam.x, cy = cam.y;
+  pixelCam();
+  const z = cam.zoom, ox = vw / 2 - cam.x * z, oy = vh / 2 - cam.y * z;
+  let full = !Ground.ok || split.z !== z || now - lastDrawn >= Math.max(gap, WORLD_GAP) || !(Math.abs(ox - split.ox) < EDGE - 2 && Math.abs(oy - split.oy) < EDGE - 2);
+  if (!full) full = !Ground.slide(ox, oy, z);
+  if (!full) {
+    placeGround(0, 0);
+    const x = ox - split.ox, y = oy - split.oy;
+    if (x !== slidX || y !== slidY) { wview.style.transform = `translate(${x}px, ${y}px)`; slidX = x; slidY = y; }
+  } else {
+    lastDrawn = now;
+    if (terrainTick < 0 || (world.tick - terrainTick >= 12 && now - terrainAt >= TERRAIN_MS)) paintTerrain();
+    const r0 = performance.now();
+    render(now);
+    perf.ren += (performance.now() - r0 - perf.ren) * 0.1; perf.n++;
+    split.z = z; split.ox = ox; split.oy = oy;
+    if (slidX !== 0 || slidY !== 0) { wview.style.transform = ''; slidX = slidY = 0; }
+  }
+  drawForagerLayer(now, ox, oy);
+  cam.x = cx; cam.y = cy;
+  if (steadied) handBack();
+  if (cookUi.open) drawCookView(now);
+}
+
+// The forager on a canvas of its own (fview) a little bigger than it, every beat, where the camera is now: it is drawn as it
+// was in render, in screen coordinates, only the canvas's transform is the canvas's own corner (shakeX, shakeY). The light that
+// render lays over everything (the golden hour, the night with a fire's pool cut out of it, the dim, heat and fog washes)
+// is laid over just it here (source-atop), worked out for the one spot, not painted as the sky's picture.
+const FG_BOX = 3.6;                                   // its canvas, in its half-sizes
+const fgLayer = { s: 0, x: NaN, y: NaN, on: true };
+function drawForagerLayer(now, ox, oy) {
+  const f = world.forager, d = drawnAt(f), z = cam.zoom, px = forPx();
+  foragerFrame(now, d);
+  const sx = (d.x - cam.x) * z + vw / 2, sy = (d.y - cam.y) * z + vh / 2;
+  const on = visible(sx, sy, 2 * px) && S.warmthStage(f) <= 4;
+  if (on !== fgLayer.on) { fview.style.display = on ? 'block' : 'none'; fgLayer.on = on; }
+  fgBody.on = on;
+  if (!on) return;
+  const size = 16 * Math.ceil(px * FG_BOX / 16);
+  if (size !== fgLayer.s) {
+    fview.width = fview.height = Math.round(size * dpr); fview.style.width = fview.style.height = size + 'px';
+    fgLayer.s = size; fgLayer.x = NaN;
+  }
+  const bx = Math.floor((sx - size / 2) * dpr) / dpr, by = Math.floor((sy - px * 0.4 - size / 2) * dpr) / dpr;   // (on the canvas's pixels)
+  if (bx !== fgLayer.x || by !== fgLayer.y) { fview.style.transform = `translate(${bx}px, ${by}px)`; fgLayer.x = bx; fgLayer.y = by; }
+  ctx = fctx; alphaNow = ALPHA.get.call(ctx); fade = 1;
+  shakeX = -bx * dpr; shakeY = -by * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, shakeX, shakeY);
+  ctx.clearRect(bx, by, size, size);
+  standIns = true;
+  const ck = S.clock(world);
+  foragerShadow(sx, sy, sun(ck), fg.wet);
+  layShadows();
+  drawForager(sx, sy, now);
+  unfade();
+  standIns = false;
+  lightForager(now, ck, ox - split.ox, oy - split.oy);
+  ctx = wctx; alphaNow = ALPHA.get.call(ctx);
+  shakeX = EDGE * dpr; shakeY = EDGE * dpr;
+}
+function lightForager(now, ck, dx, dy) {
+  const m = ui.sky.mix, dark = shownDark(ck.phase), gold = shownGold(ck.phase);
+  ctx.globalCompositeOperation = 'source-atop';
+  if (gold > 0) wash(`rgba(${GOLD_RGB}, ${GOLD_A * gold})`);
+  let pool = 0;                                           // how much of the dark a fire's light cuts away where it stands
+  if (lights.n && dark > 0.02) {
+    const art = lightArt(), night = clamp(dark / DARK, 0, 1), fx = fg.sx, fy = fg.sy;
+    for (let i = 0; i < lights.n; i++) {                  // (lights were worked out at the meadow's camera: dx, dy is how it has moved since)
+      const r = lights.r[i], x = lights.x[i] + dx, y = lights.y[i] + dy, u = Math.hypot(fx - x, (fy - y) / LIGHT_FLAT) / r;
+      if (u < 1) pool += lights.a[i] * 0.85 * (u < 0.35 ? 1 - 0.51 * u : u < 0.7 ? 0.82 - 1.14 * (u - 0.35) : u < 0.88 ? 0.42 - 1.55 * (u - 0.7) : 0.14 * (1 - u) / 0.12);
+      const rr = r * 0.85;
+      ctx.globalAlpha = lights.a[i] * (0.06 + 0.24 * night);
+      ctx.drawImage(art.img, x - rr, y - rr * LIGHT_FLAT, rr * 2, rr * 2 * LIGHT_FLAT);
+    }
+    ctx.globalAlpha = 1;
+  }
+  const dk = dark * (1 - Math.min(1, pool));
+  const dim = 0.05 * m.cloudy + 0.09 * m.rain + 0.30 * m.storm + 0.04 * m.snow, heat = 0.11 * m.heat, fog = 0.30 * m.fog;
+  let r = 0, g = 0, b = 0, through = 1;                   // (the washes laid one over another, as laySky has it)
+  const lay = (rgb, a) => { if (a > 0.004) { r = rgb[0] * a + r * (1 - a); g = rgb[1] * a + g * (1 - a); b = rgb[2] * a + b * (1 - a); through *= 1 - a; } };
+  lay(NIGHT_RGB, dk); lay(DIM_RGB, dim); lay(HEAT_RGB, heat); lay(FOG_RGB, fog);
+  if (through < 1) wash(`rgba(${r / (1 - through)}, ${g / (1 - through)}, ${b / (1 - through)}, ${1 - through})`);
+  ctx.globalCompositeOperation = 'source-over';
+}
+
 function frame(now) {
   if (opening === 1) opening = 2;
   const raw = now, dt0 = raw - (perf.at || raw); perf.at = raw;
@@ -15926,8 +16047,9 @@ function frame(now) {
   }
   clampCam();
 
-  const rest = resting(now), easy = calm(now);
-  if (canvas.width && canvas.height && now - lastDrawn >= (rest ? RESTING_MS : easy ? CALM_GAP : renderGap)) {   // (a hidden tab can have no size)
+  const rest = resting(now), easy = calm(now), gap = rest ? RESTING_MS : easy ? CALM_GAP : renderGap;
+  if (SPLIT) { if (wview.width && wview.height && now - split.at >= gap) splitFrame(now, gap); }
+  else if (canvas.width && canvas.height && now - lastDrawn >= gap) {   // (a hidden tab can have no size)
     lastDrawn = now;
     // Every 12 ticks, and no more than a few times a second: grass changes too slowly to see the difference.
     if (terrainTick < 0 || (world.tick - terrainTick >= 12 && now - terrainAt >= TERRAIN_MS)) paintTerrain();

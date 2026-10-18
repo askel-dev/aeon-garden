@@ -457,8 +457,20 @@ function draw(u) {
   return true;
 }
 
+// ?split (game.js): the world is drawn every other beat and the camera still moves every beat, so on the beats between,
+// the ground is only slid. True if it could be (the picture is there, at this zoom, and the screen is still inside its margin).
+function slide(ox, oy, zoom) {
+  if (stale || !last || last.zoom !== zoom) return false;
+  const dx = last.ox - ox, dy = last.oy - oy;
+  if (!within(dx, last.pad, last.dpr) || !within(dy, last.pad, last.dpr)) return false;
+  const x = (last.pad + dx) * last.dpr, y = (last.pad + dy) * last.dpr;
+  panned = performance.now(); was.ox = ox; was.oy = oy;
+  view.x = x; view.y = y; between = x !== Math.round(x) || y !== Math.round(y);
+  return true;
+}
+
 // A lost context (the GPU reset) takes the shader with it: from then on game.js draws plain colours.
 canvas.addEventListener('webglcontextlost', () => { ok = false; });
 
-window.Ground = { get ok() { return ok; }, canvas, set, mist, draw, view };
+window.Ground = { get ok() { return ok; }, canvas, set, mist, draw, slide, view };
 })();
