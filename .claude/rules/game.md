@@ -125,7 +125,9 @@ and an Android phone buzzes (`CAMP_BUZZ`). Then a soft ring of trodden earth wit
 `CAMP_ART` painted once, stretched; under all that stands), coming in over `CAMP_RING_MS` (`campFade`). The brown earth inside it is in the ground shader
 (ground.js `camp`, `campA`: an ellipse of ragged, mottled dirt over the grass, repainting the ground only while it fades in). The fire's hover calls it "Your camp".
 The camp's basket (2026-10-17; the comment over `WEAVE_MS`): a round button left of the fire's (`#basket-btn`, `renderBasketBtn`,
-also looked at in the 250 ms block) shows once there's a camp. Before the basket it fills a ring as the fire's does (recipes.js
+also looked at in the 250 ms block) shows once there's a camp; with nothing the fire's takes in the satchel (or one already laid) the
+fire's button hides, and the basket's steps into its place by the satchel (`index.html`'s `#satchel:has(#build.hidden) #basket-btn`)
+rather than hanging out where the fire's would have been. Before the basket it fills a ring as the fire's does (recipes.js
 `BUILDS.basket`: 8 sticks, 4 dry grass), and a tap in camp picks a spot inside the ring (`ui.place` with `basket: true`, sim.js
 `basketSpot`); the forager kneels and weaves it (`fireFrame`'s 'weave', `WEAVE_MS`), the basket growing up out of the ground.
 Painted once (`paintBasket`, 'basket:' 0 shut, 1 open with apples, a cep and leaves heaped in it once it holds anything), drawn

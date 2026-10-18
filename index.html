@@ -939,7 +939,13 @@
   #basket-btn.on { background-color: var(--accent-soft); transform: translateY(1px); }
   @media (hover: hover) { #basket-btn:hover { transform: translateY(-1px); } }
   #basket-btn:active { transform: translateY(1px); }
-  @media (pointer: coarse) { #basket-btn { right: auto; left: 62px; bottom: calc(100% + 8px); width: 54px; height: 54px; } }
+  /* No fire button just now (the satchel carries none of what a fire takes, or one's already laid and lit): the basket's
+     button steps into the fire's place by the satchel, rather than hanging out where the fire's would have been. */
+  #satchel:has(#build.hidden) #basket-btn { right: calc(100% + 8px); }
+  @media (pointer: coarse) {
+    #basket-btn { right: auto; left: 62px; bottom: calc(100% + 8px); width: 54px; height: 54px; }
+    #satchel:has(#build.hidden) #basket-btn { left: 0; right: auto; }   /* (over the satchel's left end, where the fire's button sits) */
+  }
   /* ---- the basket, open (game.js openLarder, renderLarder): a parchment card just over the satchel (its bottom set from
      the satchel's top), its slots as the satchel's; a tap moves a slot across, a drag puts it where it's let go */
   #larder { position: fixed; z-index: 5; left: 50%; bottom: calc(var(--bottom) + 80px); transform: translateX(-50%); padding: 8px 10px 10px; border-radius: 16px;
@@ -1144,6 +1150,7 @@
     #satchel .slot { width: 48px; height: 48px; }
     #build { left: auto; right: calc(100% + 8px); bottom: 0; }
     #basket-btn { left: auto; right: calc(100% + 70px); bottom: 0; }
+    #satchel:has(#build.hidden) #basket-btn { left: auto; right: calc(100% + 8px); }   /* (the fire's place, with nothing for one) */
     #book-btn { right: auto; left: calc(100% + 8px); bottom: 0; }
     #vitals { bottom: calc(var(--bottom) + 62px); }
     #chat:not(.open), body:has(#build:not(.hidden)) #chat:not(.open) { bottom: calc(var(--bottom) + 88px); }

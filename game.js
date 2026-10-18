@@ -4072,7 +4072,8 @@ function makeOne(id) {
 //
 // A big lidded basket set down inside the camp's ring (sim.js w.camp.basket, makeBasket; recipes.js BUILDS.basket), where
 // what the satchel can't carry is kept, and what a collapse can't take. Its round button left of the fire's (#basket-btn,
-// renderBasketBtn) shows once there's a camp: before the basket, as the fire's does, a ring filling as the satchel holds
+// renderBasketBtn) shows once there's a camp (index.html moves it into the fire's place while the fire's button is hidden,
+// nothing for one in the satchel): before the basket, as the fire's does, a ring filling as the satchel holds
 // what it takes, and a tap with it all, in camp, picks a spot inside the ring (ui.place, basket: true); the forager kneels
 // and weaves it (fireFrame's 'weave', WEAVE_MS), the basket growing up out of the ground. After, in the camp, the button
 // (or a click on the basket) walks it over and opens the basket's card (#larder, renderLarder) just over the satchel: a tap
