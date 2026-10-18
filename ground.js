@@ -409,9 +409,9 @@ function set(name, data) {
 // it paint often anyway (a zoom): the margin would only make every paint bigger.
 // While the camera moves it's slid by exactly as much, fractions of a pixel too, as everything drawn on it is: slid in
 // whole pixels, a run went 2, 3, 2, 2, 3 pixels a frame under a forager going evenly, and the ground jittered. Once
-// the camera comes to rest (under SLIDE_MIN device pixels a frame) off the pixels, it's painted again sharp, and then
-// slid in whole pixels while it creeps.
-const PAD = 64, SLIDE_MIN = 0.1;
+// the camera has rested SETTLE_MS off the pixels, it's painted again sharp. (game.js keeps the camera on the meadow
+// canvas's pixels, so a slow creep has frames that don't move between ones that do: resting is a while, not a frame.)
+const PAD = 64, SETTLE_MS = 150;
 let last = null, stale = true, busy = 0, panned = -1e9;   // busy: how often lately more than the camera moved
 const NEAR = { campA: 0.004, snow: 0.004, damp: 0.002, ice: 0.004, cold: 0.004, lx: 0.08, ly: 0.08 };
 const EXACT = ['width', 'height', 'zoom', 'dpr'];
@@ -433,14 +433,14 @@ const within = (d, pad, dpr) => d === 0 || Math.abs(d) <= pad - 1 / dpr;
 //   zoom, ox, oy    CSS pixels a tile, and where the meadow's corner lands
 //   the rest        see the uniforms in the shader
 function draw(u) {
-  const now = performance.now(), step = Math.max(Math.abs(u.ox - was.ox), Math.abs(u.oy - was.oy)) * u.dpr;
+  const now = performance.now();
   if (u.ox !== was.ox || u.oy !== was.oy) panned = now;
   was.ox = u.ox; was.oy = u.oy;
   const still = steady(u);
   busy = busy * 0.95 + (last && !still ? 0.05 : 0);
   if (still && within(last.ox - u.ox, last.pad, u.dpr) && within(last.oy - u.oy, last.pad, u.dpr)) {
     const x = (last.pad + last.ox - u.ox) * u.dpr, y = (last.pad + last.oy - u.oy) * u.dpr;
-    if (step >= SLIDE_MIN) { view.x = x; view.y = y; between = true; return false; }
+    if (now - panned < SETTLE_MS) { view.x = x; view.y = y; between = x !== Math.round(x) || y !== Math.round(y); return false; }
     if (!between) { view.x = Math.round(x); view.y = Math.round(y); return false; }
   }
   const most = Math.round(PAD * u.dpr), cw = u.width + 2 * most, ch = u.height + 2 * most;

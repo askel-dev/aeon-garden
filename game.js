@@ -61,7 +61,7 @@ const narrow = () => matchMedia('(max-width: 760px), (max-height: 500px)').match
 const short = () => matchMedia('(max-height: 500px)').matches;
 const canHover = matchMedia('(hover: hover)');
 const coarsePtr = matchMedia('(pointer: coarse)');
-let dprCap = coarsePtr.matches ? 2 : 3, groundCap = 2, lowFx = false;   // (the quality governor's, below: set early as resize() reads them)
+let lowFx = false;   // (the quality governor's, below)
 
 // Safari's fingerprinting protection (iOS 26, private tabs) can report a ratio of 1 on a
 // retina phone, which leaves the meadow blurry. Ask the media queries too, and failing that,
@@ -107,7 +107,7 @@ function shortOfScreen() {
 function resize() {
   if (shortOfScreen()) document.documentElement.style.setProperty('--home-bar', '0px');
   else document.documentElement.style.removeProperty('--home-bar');
-  dpr = Math.min(pixelRatio(), dprCap);   // a phone's 3x paints 2.25x the pixels of 2x for no visible gain
+  dpr = Math.min(pixelRatio(), saverOn ? SAVER_DPR : 3);   // (a phone's own 3x: capped at 2 it's a little soft, so only when battery saver asks)
   // The CSS sizes the canvas: in Safari on a phone it reaches under the clock and the address bar, past innerHeight.
   vw = canvas.clientWidth || innerWidth; vh = canvas.clientHeight || innerHeight;
   canvas.width = Math.round(vw * dpr); canvas.height = Math.round(vh * dpr);
@@ -480,7 +480,7 @@ function drawGround(z, ox, oy, shx, shy, now) {
   }
   const [low, high] = groundColours(), ck = S.clock(world), sn = sun(ck), k = 2.5 * Math.max(0, sn.a) * (0.6 + 0.4 * Math.abs(sn.lean));
   if (!mist.field) { mistField(); Ground.mist(mist.field, MIST_W, MIST_H, MIST_OUT); }
-  const gd = Math.min(dpr, groundCap, WEBKIT ? Math.max(1, Math.sqrt(GROUND_WEBKIT / (vw * vh))) : Infinity);
+  const gd = Math.min(dpr, GROUND_DPR, WEBKIT ? Math.max(1, Math.sqrt(GROUND_WEBKIT / (vw * vh))) : Infinity);
   const w = Math.round(vw * gd), h = Math.round(vh * gd);
   Ground.draw({
     width: w, height: h, zoom: z, ox, oy, dpr: gd, seed: groundSeed, low, high, sand: shoreSand, fog: fogColour(high, ck.phase),
@@ -15733,23 +15733,26 @@ let renderGap = coarsePtr.matches ? FRAME_GAP : 0;
 
 // The quality governor. A hot phone throttles and frame times climb, which keeps it hot: so a
 // frame that stays costly steps the meadow down a rung until it cools, and long comfort steps
-// back up. Silent; the meadow looks the same in the common case.
+// back up. Silent; the meadow looks the same in the common case. Rung 1 thins the effects (lowFx), rung 2 paints 30
+// frames a second. It never lowers the resolution: at 1.5x on a 3x phone the meadow went soft, and as Safari snaps each
+// sprite to the canvas's pixels while the ground slides by fractions, everything standing on it jittered.
 const GOV_MS = 4000, GOV_UP = 8;                // a decision this often; this many comfortable ones to climb back
 const REN_OVER = 12, REN_OK = 7;                // render ms, EMA: over budget / comfortable
-const gov = { rung: 0, floor: 0, top: 3, at: 0, ok: 0, hold: false, battFloor: 0 };
+const gov = { rung: 0, floor: 0, top: 2, at: 0, ok: 0, battFloor: 0 };
 function govApply() {
   const r = gov.rung;
-  const d = r >= 1 ? 1.5 : coarsePtr.matches ? 2 : 3, g = r >= 2 ? 1.5 : GROUND_DPR, fx = r >= 2, gap = r >= 3 ? 1000 / 30 - 2.2 : coarsePtr.matches ? FRAME_GAP : 0;
-  if (d !== dprCap) { dprCap = d; if (!drag && !pinch) resize(); else gov.hold = true; }   // (not mid-gesture)
-  groundCap = g;
-  if (fx !== lowFx) lowFx = fx;
-  renderGap = gap;
+  lowFx = r >= 1;
+  renderGap = r >= 2 ? 1000 / 30 - 2.2 : coarsePtr.matches ? FRAME_GAP : 0;
 }
-// Battery saver (••• menu): pins the governor at least a rung down, remembered like the sound choice.
+// Battery saver (••• menu): pins the governor at least a rung down, remembered like the sound choice, and draws a 3x
+// phone at SAVER_DPR (2.25 times fewer pixels a frame, a little softer: the player's choice, never the governor's).
+const SAVER_DPR = 2;
 const saverFloor = () => saverOn ? 1 : 0;
 let saverOn = false;
 function toggleSaver(on = !saverOn) {
+  const was = saverOn;
   saverOn = on;
+  if (on !== was) resize();
   try { localStorage.setItem('aeon-garden-saver', on ? '1' : '0'); } catch (e) { /* fine */ }
   gov.floor = Math.max(gov.battFloor || 0, saverFloor());
   if (gov.rung < gov.floor) { gov.rung = gov.floor; govApply(); }
@@ -15767,7 +15770,6 @@ if (navigator.getBattery) navigator.getBattery().then(b => {
   mind();
 }).catch(() => {});
 function govTick(now) {
-  if (gov.hold && !drag && !pinch) { gov.hold = false; resize(); }
   if (now - gov.at < GOV_MS) return;
   gov.at = now;
   if (perf.ren > REN_OVER && gov.rung < gov.top) { gov.rung++; gov.ok = 0; govApply(); console.info(`meadow: hot, quality rung ${gov.rung}`); }
@@ -15845,6 +15847,16 @@ function resting(now) {
 const calm = now => ui.speed === 1 && camStill && !drag && !pinch && !zoomTo && !cam.goal
   && !ui.effects.length && !cookUi.open && (ui.sky.mix.storm || 0) < 0.2 && now - lastInput > CALM_MS;
 
+// While a frame draws, the camera is put on the meadow canvas's pixels (the meadow's corner, ox and oy, on a whole one),
+// so what stands still keeps its place among them from frame to frame. Safari draws a sprite snapped to the nearest
+// pixel: with the camera in between, a stone went 2, 4, 2 pixels a frame over a ground sliding evenly by fractions
+// (ground.js slides it by exactly what the camera moved), and everything on the ground jittered against it.
+function pixelCam() {
+  const k = cam.zoom * dpr, hx = vw / 2 * dpr, hy = vh / 2 * dpr;
+  cam.x = (hx - Math.round(hx - cam.x * k)) / k;
+  cam.y = (hy - Math.round(hy - cam.y * k)) / k;
+}
+
 function frame(now) {
   if (opening === 1) opening = 2;
   const raw = now, dt0 = raw - (perf.at || raw); perf.at = raw;
@@ -15920,9 +15932,12 @@ function frame(now) {
     // Every 12 ticks, and no more than a few times a second: grass changes too slowly to see the difference.
     if (terrainTick < 0 || (world.tick - terrainTick >= 12 && now - terrainAt >= TERRAIN_MS)) paintTerrain();
     const steadied = handShow(now);        // (a drag, a pinch: drawn where the hand had it a moment ago)
+    const cx = cam.x, cy = cam.y;
+    pixelCam();
     const r0 = performance.now();
     render(now);
     perf.ren += (performance.now() - r0 - perf.ren) * 0.1; perf.n++;
+    cam.x = cx; cam.y = cy;
     if (steadied) handBack();
     if (cookUi.open) drawCookView(now);  // (the cooking window's pot)
   }

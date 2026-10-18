@@ -79,3 +79,12 @@ After step 3 (calm mode), 2026-10-18, headless Chrome over CDP, emulated 390×84
 After step 4 (quality governor), 2026-10-18, headless Chrome over CDP, emulated 390×844 touch DPR 3, seed 123: hands-off at rung 0 for 13 s, rung stayed 0 (render EMA 0.9 to 1.8 ms, canvas 780×1688). `garden.gov.rung = 3`: canvas 585×1266 (dpr 1.5), and at 60x with input each frame draws fell from 181 of 181 frames (rung 0) to 90 of 179 (rung 3, 30 fps); `rung = 0` back to 780 wide. Rung set during a held touch: canvas stayed 780 for the touch, went to 585 after the lift (`gov.hold`). Natural run: CPU throttled 20x at 60x speed, render EMA rose to 10 ms and the rung went 0 to 1 within 10 s (it never passed REN_OVER 12 for a second decision); unthrottled it climbed back to 0 after about 20 to 25 s of comfort. Real phone not measured.
 
 After steps 5 to 7 (battery, saver toggle, wake lock), 2026-10-18, headless Chrome over CDP, seed 123, desktop and emulated 390×844 touch DPR 3: desktop boot `gov.floor` 0, no errors; ••• › Battery saver: label "on", `floor` 1, `rung` 1 (phone canvas 780 to 585 wide), reload keeps it (rung 1 at boot), off again gives `floor` 0 and the rung stays till the governor climbs; with saver on `rung = 3` still allowed. Battery stubbed (`getBattery` charging false, level 0.1, via a new-document script): fresh load starts at rung 1, floor 1, canvas 585. Wake lock (step 7) checked by reading only. Real Android and Safari not tested.
+
+**2026-10-18, taken back out: the DPR cap and the governor's resolution rungs.** On Axel's iPhone (3x) the meadow
+went soft at 2x, and the governor's 1.5x made it worse; worse still, Safari draws each sprite snapped to the canvas's
+pixels while the ground slides by fractions, so at 1.5x (a canvas pixel two screen pixels) everything standing on the
+ground jittered against it (measured off a screen recording: the stone stepping 2 and 4 px over grass sliding evenly).
+The canvas is at the screen's own ratio again (up to 3), the ground at `GROUND_DPR`, the governor's rungs are only
+`lowFx` (1) and 30 fps (2), and the camera is put on the canvas's pixels while a frame draws (game.js `pixelCam`).
+Don't lower the resolution to save heat, except where the player asks: Battery saver draws a 3x phone at 2x
+(game.js `SAVER_DPR`).
