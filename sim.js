@@ -6030,12 +6030,13 @@ const SKILLS = {
   stamina: { name: 'Stamina', per: 45, perks: { sprint: 0.06, rest: 0.05, pace: 0.02 }, line: 'Longer, faster sprints, and your breath back sooner' },
   // Dishes taken out of the pot (game.js cookDone; a mess counts a little). Each level a dish cooks 3.5% faster (cookOn).
   cooking: { name: 'Cooking', per: 3, perks: { speed: 0.035 }, line: 'Dishes cook a little quicker' },
-  // Things picked into the satchel (gather; what lies about for a fire counts a quarter, GROUND_PRACTICE, and what it
-  // dropped itself counts nothing). Each level it stoops
-  // and reaches 4% quicker (game.js gatherFrame).
-  gathering: { name: 'Gathering', per: 10, perks: { quick: 0.04 }, line: 'Your hands are quicker at picking' },
+  // Things picked into the satchel: practice is GATHER_PRACTICE for each one that goes in (gather; what lies about for a fire
+  // counts a quarter, GROUND_PRACTICE, and what it dropped itself counts nothing). Each level it stoops and reaches 4%
+  // quicker (game.js gatherFrame) and a pick of greens, berries, fruit, nuts or honey gives 8% more on the average (yieldOf).
+  gathering: { name: 'Gathering', per: 6, perks: { quick: 0.04, yield: 0.08 }, line: 'Your hands are quicker, and pick more' },
 };
 const GROUND_PRACTICE = 0.25;
+const GATHER_PRACTICE = 0.4;            // practice for each thing that goes in the satchel (a pick of three is 1.2)
 const SKILL_NAMES = Object.keys(SKILLS);
 const SECS_A_TICK = 720 / TPD;          // seconds at 1x a tick (a day is 12 minutes)
 // An object with v for every skill (f.xp, f.lv: always the same layout, in SKILLS's order).
@@ -6533,20 +6534,33 @@ function gather(w, kind, it) {
   if (!t.n) return { id: t.id, n: 0, why: t.why, into: [] };
   const room = roomFor(f, t.id);
   if (!room) return { id: t.id, n: 0, why: 'full', into: [] };
-  const id = t.id, n = takeFrom(w, kind, it, room);
+  const id = t.id, n = takeFrom(w, kind, it, room, yieldOf(w, kind, it, t.n));
   const into = stow(f, id, n);
   // Its own dropped things are no practice at all: that was practised when they were first taken out of the meadow, and
   // were it otherwise, setting a thing down and taking it up again would be a level for nothing. (GROUND_PRACTICE is for
-  // what merely lies about unasked; this is only its satchel emptied onto the grass and put back.)
-  if (kind !== 'dropped') gainSkill(w, f, 'gathering', kind === 'find' && FINDS[it.kind].ground ?GROUND_PRACTICE : 1);
+  // what merely lies about unasked; this is only its satchel emptied onto the grass and put back.) The more a pick gives,
+  // the more practice: GATHER_PRACTICE for each thing in.
+  if (kind !== 'dropped') gainSkill(w, f, 'gathering', n * GATHER_PRACTICE * (kind === 'find' && FINDS[it.kind].ground ? GROUND_PRACTICE : 1));
   return { id, n, why: '', into };
 }
+// How many a pick gives, of what grows in picks (greens, berries, fruit, nuts, honey): whatThere's n is the average at level 0,
+// and a pick gives half to one and a half times that, more by the Gathering level (perk 'yield'), a whole number with the
+// fraction left over made up by chance. Hashed from the place, the tick and the practice so far, never the meadow's random
+// numbers. A clump of mushrooms or a find is all taken, so no roll for those (undefined).
+function yieldOf(w, kind, it, base) {
+  if (kind !== 'green' && kind !== 'bramble' && kind !== 'tree' && kind !== 'hive') return undefined;
+  const f = w.forager, x = Math.round(it.x * 64), y = Math.round(it.y * 64), at = w.tick + Math.floor(f.xp.gathering * 64);
+  const m = base * perk(f, 'gathering', 'yield') * (0.5 + hash2(x, y, at)), k = Math.floor(m);
+  return Math.max(1, k + (hash2(x, y, at + 7919) < m - k ? 1 : 0));
+}
 // Takes up to most of what's there out of the sim, and says how many (gather; and another forager's pick, game.js).
+// give is how many the pick gave when that isn't all of what's there (yieldOf): a pick that gave less costs the meadow less,
+// one that gave more costs what a full pick does, and the friend's meadow sees the same from the n it is told.
 // Only part of it taken costs that part, and the rest of a clump of mushrooms stays where it is.
-function takeFrom(w, kind, it, most) {
+function takeFrom(w, kind, it, most, give) {
   const t = whatThere(w, kind, it);
   if (!t.n) return 0;
-  const n = Math.min(t.n, most), part = n / t.n, id = t.id;
+  const n = Math.min(t.n, most, give > 0 ? give : t.n), part = n / t.n, id = t.id;
   if (kind === 'shroom' || kind === 'find' || kind === 'dropped') {
     const list = kind === 'shroom' ? w.shrooms : kind === 'find' ? w.finds : w.dropped, k = list.indexOf(it);
     if (n < t.n) { it.n -= n; } else if (k >= 0) list.splice(k, 1);
@@ -6559,7 +6573,7 @@ function takeFrom(w, kind, it, most) {
     const falls = Math.ceil(n / FALL_GIVES[id]);
     it.windfall -= falls; w.windfalls -= falls;
   } else if (kind === 'hive') it.honey -= t.cost * part;
-  return n;
+  return give > 0 ? Math.min(give, most) : n;
 }
 
 // ---------------------------------------------------------------- the world

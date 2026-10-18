@@ -2751,7 +2751,7 @@ const pct = v => Math.round(v * 100) + '%';
 const SKILL_SAYS = {
   stamina: (k, lv) => `Sprints ${pct(k.perks.sprint * lv)} longer, ${pct(k.perks.pace * lv)} faster, breath back ${pct(k.perks.rest * lv)} sooner`,
   cooking: (k, lv) => `Dishes cook ${pct(k.perks.speed * lv)} quicker`,
-  gathering: (k, lv) => `Picks ${pct(k.perks.quick * lv)} quicker`,
+  gathering: (k, lv) => `Picks ${pct(k.perks.quick * lv)} quicker, and ${pct(k.perks.yield * lv)} more from each`,
 };
 // And what the next level up brings that isn't a perk (cooking: a vessel to make, recipes.js CRAFTS level).
 const SKILL_NEXT = {
