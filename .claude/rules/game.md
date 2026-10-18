@@ -105,14 +105,20 @@ button by the satchel (`#build`, `renderBuild`; above the satchel on an upright 
 holds what recipes.js `BUILDS.campfire` takes (6 pebbles, 5 sticks, 2 tinder); a tap or F picks a spot (`ui.place`, a faint fire
 following the mouse, within `PLACE_REACH`; sim.js `fireSpot` says why not). The forager kneels side on (fur.js `FORAGER_KNEEL`,
 `KNEEL_VIEW`), lays it a piece at a time (`LAY_STEPS`), strikes (`STRIKES`), and you hold (mouse, finger or F: `blowHeld`) to
-blow till it catches (`blowFrame`, `BLOW_S`, longer in the wet); let go too soon and it only smokes. A click on a fire sees to it
+blow till it catches (`blowFrame`, `BLOW_S`, longer in the wet); let go too soon and it only smokes. A quick tap while it blows
+is one breath more (`puff`, `BLOW_PUFF`, as one held breath; it never walks the forager away), and a tap well off the fire
+still walks away (that's how you leave it). A click on a fire sees to it
 (`clickFire`: a stick on, a stick and a blow on embers, tinder and a strike when cold), standing still by a lit one it kneels and
 warms its mittens (`SIT_MS`; from the fire's side, `STAND_OFF`, stepping out to it first if it's standing nearer), and a hover
 says how it is (`fireWord`). Drawn with the trees and animals (`drawFire`: `paintFire` once a look and size, `FIRE_ARTS`; flames
 as `TONGUES` of one painting; smoke), its glow, embers and sparks over the dark
 (`drawFireGlows`). Its light (`lightsFrame`, at most 4 fires, out to `LIGHT_TILES`, flickering in `FLICKER_MS` steps) is cut out of the night on the sky's
 picture (`SKY_FIRE`, `paintFireLights`: so the sky repaints only on a flicker step) and laid warm over what stands near it
-(`fireLight`, source-atop, kept soft so the forager by it isn't washed out). Nights are dark (`DARK` 0.88 of a deep navy
+(`fireLight`, source-atop, kept soft so the forager by it isn't washed out). Readable at night without a fire (2026-10-18):
+the forager's top edge takes a faint warm rim once its pose is painted (`drawForagerRim`, `foragerRim` a rim sprite cut out
+of the pose's own picture, drawn after the washes so the navy doesn't eat it), and the camp's basket and cold fire pit get a
+little of the dark taken back over their footprint (`liftsFrame`, `paintCampLift`, `SKY_LIFT` — same sky pass as the fires,
+painted once, so the lit fire's pool stays the only strong light). Nights are dark (`DARK` 0.88 of a deep navy
 `NIGHT_RGB`, 2026-10-15) so the fire is the cosy place. Friends see fires laid, fed and lit (`sendFire`). Sounds: sound.js `clack`,
 `stick`, `tinder`, `strike`, `blow`, `kindle` (`catch` is the fox's), `fizzle`, and a crackle near a burning one (`fire` in
 `Sound.update`). Cost: none measurable (1440x813, zoomed out, a summer night in the rain, walking: about 1.0 ms of script a
@@ -135,7 +141,7 @@ with the trees and animals (`drawBasket`), a hover saying how much is in it (`ba
 the basket, or E standing by it (`basketByE`: nearer it than to a fire E would cook at or light), walks over and opens its card just over the satchel (`#larder`, `openLarder`, `renderLarder`, `setupLarder`): 24
 slots as the satchel's; a tap moves a slot across either way, a drag puts it in the slot it's let go on (sim.js `moveBetween`,
 `moveInto`), "Put all in" empties the satchel into it (`putAway`). Whatever moves either way flies as a small painting from its slot to the one that took it (`flyMoves`: paired by what it is, at most `FLY_MOST`, `FLY_GAP` ms apart; the landing slot's own painting waits hidden, `.incoming`, and bumps as it lands). Walking off `LARDER_NEAR`, going to a fire, ✕, E, Esc or Back shut
-it (`larderFrame`, `stepOut`). Playing together it's shared: the host makes it (a friend sees it set down: `sendFire` 'basket') and anyone in camp can open it; each move sends the slots it changed (`sendBasket`, `'bk'`, applied at its tick in `basketNet`), so two moving different things at once both land, and the basket is in `meadowSum`, so a guest who drifts off gets it again.
+it (`larderFrame`, `stepOut`). Playing together it's shared: the host makes it (a friend sees it set down: `sendFire` 'basket') and anyone in camp can open it; each move sends the slots it changed (`sendBasket`, `'bk'`, applied at its tick in `basketNet`), so two moving different things at once both land, and the basket is in `meadowSum`, so a guest who drifts off gets it again. It's also to hand while cooking at a fire in camp: its things are then a row of small tiles in the cooking window, a tap taking one out (below, `#cook-basket`).
 Cooking at the fire (PLAN.md stage 6, its redesign, and the cooking window of 2026-10-16; the long comments over `COOK_TPS` and
 `DROPS` have it all): a click on a lit fire (or E, or the pot prompt) walks the forager there (`clickFire` 'cook', `goFire`), it
 kneels, and the camera eases in close on the fire (`cookCam`, in `leadCam`: to `kw.zoom`, about `COOK_TILES` across what the
@@ -154,7 +160,7 @@ flies in an arc to over the pot's mouth (`flyToPot`, `flyBig`) and falls in. Mee
 and back down, rings going out, `potRing`; a pool each of typed arrays), dips under, bobs back up and floats, its lower part dim
 through the water with a ring round it (`drawPotThing`), and plops (sound.js `plop`, by `plopOf`: heavier for a mushroom, an apple
 or one day a fish, lighter for a leaf or a berry, honey a gloop). What's in the pot is held back in the satchel (`potHeld`,
-`potPrune`) till cooked; a tap on one floating lifts it out with a drip and it flies back to its tile (`potTake`), and a small red cross at the pot's corner (`#cook-empty`, only with something in it) lifts them all out (`emptyPot`). The meadow keeps
+`potPrune`) till cooked; a tap on one floating lifts it out with a drip and it flies back to its tile (`potTake`), and a small red cross at the pot's corner (`#cook-empty`, only with something in it) lifts them all out (`emptyPot`). The camp's basket is to hand at any fire standing in camp (`basketAtHand`: `S.inCamp` under the fire, so wherever in the ring the basket was set down it counts), and its things are a row of small tiles under the satchel's (`#cook-basket`, 40 px, 46 on a touch screen, 38 in a short window: `renderCookBasket`, `kw.bslots`, rewritten only when what's in it changes, hidden when it's empty or out of camp), each ringed as a satchel's is when it would go in the pot (or on the fire) and the rest let down. A tap takes one out: it comes into the satchel first (sim.js `stow`, then `spend` out of the basket) and from there does what a tile there would (`potAddBasket` → `potAdd`, both asking `potTakes` first), so the pot never needs to know where a thing was kept; a full satchel says so and takes nothing. Each change is sent (`sendBasket`), so a friend sees it leave. A fire lit outside the ring cooks without it: the row's gone. The meadow keeps
 its own little pot over the fire too (`drawPot`, `paintPot`), which the forager stirs. Under the pot what it will make (`potWord`: a
 known dish's name, "Something new!" for an exact dish never made, "Not a dish yet… as it is, a forager's mess" with what a known
 dish it's near still wants, `potToward`, or "Only a forager's mess", `potPossible`); by the tiles the stick wearing the fire's
@@ -205,8 +211,9 @@ all. On an upright phone a sheet from the bottom, ✕ at the foot in the middle,
 tiles with ‹ ✕ › (`bookUi.depth` 2, `bookBack`), and Back steps out of the page, then the book (`opened` counts `bookReading`,
 `stepOut`). On its side the two panes fill the screen. Open with the cooking window (either first), the two share the screen
 (`pairBook`, `.paired`): the book centred in the meadow left beside the window, no scrim, its tiles over its page where that's
-narrow (`.slim`, under 600 px); on an upright phone over the window's sheet, whose pot shrinks to make room; a known dish tapped
-there fills the pot and the book stays open. Rewritten only when what it shows changes (`bookUi.key`, `setHTML`).
+narrow (`.slim`, under 600 px); a known dish tapped there fills the pot and the book stays open. Not on a phone (`narrow()`): there
+the book opens over the window as it does anywhere (squeezed beside it, it was a strip upright and 200 px on its side, 10-18), and
+a dish put in the pot shuts it. Rewritten only when what it shows changes (`bookUi.key`, `setHTML`).
 The book has a second part, Finds (2026-10-16), behind two titles at the top that are its tabs (`BOOK_PARTS`, `bookTab`; the one open
 big, a red dot on the other when it has news): a page for every ingredient in recipes.js (`FIND_PAGES`, in `FIND_SECTIONS`:
 mushrooms, greens & flowers, fruit nuts & honey, for a fire), found once it's been picked into the satchel ever (`foundIt`: the
@@ -218,7 +225,7 @@ the rest a ?; the campfire for the sticks). Not found, the painting's shadow and
 parts shown (`bookUi.shown`), and a book kept from before the finds counts what's been found as seen.
 Finding it: near a lit fire with something to cook (`bagFood`) a small painted pot bobs
 over it, with an E key where there's a keyboard (`drawCookPrompt`, `PROMPT_ART` painted once; a click on it is one on the fire,
-`promptAt`); making camp the forager thinks "I could cook something on this fire" (`think`, `CAMP_COOK_LINE`), and now and then it
+`hintAt`); making camp the forager thinks "I could cook something on this fire" (`think`, `CAMP_COOK_LINE`), and now and then it
 muses on a dish it doesn't know from what's in the satchel (`hintTick`: `HINT_EVERY`, `HINT_GAP`, never in the intro or the
 opening storm or over another line), telling the book up to `hintMost` of it. The dishes are painted in dishes.js (`Dishes.paint`,
 'dish:' + n in `ITEM_ART`, so into `itemSheet`; big on a book page once a size, `dishBig`), two so far; the rest are their emoji till
@@ -281,6 +288,7 @@ A tap on the forager with something to pick there picks it (only one on nothing 
 or onto something to pick, is a tap, never the double tap's zoom (`lastTap.on`): picking a cluster on a phone kept zooming. A press on
 something to pick is a tap however long it's held (held past `HOLD_MS`, it runs there, `drag.rush`) and needs a bigger move to become
 a drag; a held run let go on something picks it. Playtesters had found a slow tap turning into a sprint past the thing.
+Everything drawn over a fire is the fire (2026-10-18: the hint discs and lines were traps — a tap on the breath disc walked the forager away from the fire it was blowing on). Each frame the drawing over a fire records the box it was drawn in (`hintBox`: `promptUi` the disc and its key, `hintLine` a "Needs a stick" line, `blowHint` the breath disc and its "Hold to blow" line, all with the fire they're over), and `hintAt` reads them back as that fire, a fingertip past the edge (`fingerTap`); a tap on one is `hintFire`: a breath if it's being blown on (`puff`), else whatever that disc means (`clickFire`: off to cook, to light, or to hear what the fire wants). Only a tap well off the fire (>3 tiles, in the pointerup that stops a blow) walks away from it.
 The queue: while the forager is off to pick something or stooped over it, a click on more lines it up after (`queueGather`,
 `ui.queue`, at most `QUEUE_MOST`, in click order), each with a small parchment number over it (`drawQueue`, `badgeArt`, painted
 once a number); clicked again it comes off, a click on the ground or holding to run lets the queue go (`walkTo`). Each next one
@@ -291,6 +299,13 @@ Near a lit fire (`cookFire`: the nearest within `PROMPT_NEAR`, as far as the pot
 In reach: everything to pick within `NEAR_REACH` of the forager, the sticks, grass and bark for a fire too, has a soft honey ring
 lying round its foot (`drawNear`, `RING_ART` painted once), steady, fading out over `NEAR_FADE` at the edge, brighter on what's
 queued. That's what tells a dandelion from the other yellow flowers and dry grass from the tufts (playtesters couldn't).
+One tell for what you can use, standing still (2026-10-18; the comment over `USE_RGB`): under the camp's basket, every fire, the
+old stone and each hive oak lies the same faint cream ring of trodden earth (`drawUseRing`, `useRingArt`: `USE_FIRE`,
+`USE_BASKET`, `USE_STONE`, `USE_HIVE` are its half widths, sized to just outside what's painted at that thing's foot), drawn in the same pass as the soft shadows and over them, so it reads as ground anywhere, and never in the ground layer
+(`drawGround`), so snow can't bury it — through snow it warms and brightens instead (`USE_SNOW_RGB`). Painted once a size and
+snow step (`useArt`, stretched to the size asked for), static and the same everywhere, no pulse and no glow: it has to be
+world, not UI. It goes on from `itemOf`'s `it.ring`, which is 0 by default, so a ghost of a fire or a basket being placed
+gets none, and the gatherables keep their glints alone — a ring always means "you can use this".
 Finding things: what has something to give (sim.js `eachPickable`, listed every `PICKS_MS`: `picksFrame`) glints now and then
 over its `gatherSpot`: a small honey bloom with a warm point of light and four fine rays, painted once (`GLINT_ART`), that comes up
 quickly, fades slowly and turns a little as it goes, each thing on its own clock from a hash of where it is (`glintAt`,

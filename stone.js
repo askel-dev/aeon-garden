@@ -6,8 +6,8 @@
    It remembers (localStorage MEMORY, across meadows): the last few lines said each way (talk) and every offering with its
    score (fed), and sends them along so the stone can hold a grudge about that mess you brought it last week.
 
-   game.js uses it as Stone: Stone.ask({ said, offer, ctx }) → Promise of { say, mood, score, live }, and reads Stone.fed,
-   Stone.NAME. offer: { id, name, dish, mess, what, first }; ctx: the meadow now, in words. */
+   game.js uses it as Stone: Stone.ask({ said, offer, ctx }) → Promise of { say, mood, score, live }, Stone.heard(said,
+   offered, say, score, who) for a friend's talk with it heard over the network, and reads Stone.fed, Stone.NAME. offer: { id, name, dish, mess, what, first }; ctx: the meadow now, in words. */
 (() => {
 'use strict';
 const NAME = 'Old Mossbottom';             // (the function's PROMPT has its own copy)
@@ -65,14 +65,21 @@ async function ask(b) {
   }
   if (!out) out = written(b, tired);
   if (b.offer && out.score === null) out.score = written(b).score;
-  if (b.said) mem.talk.push({ who: 'me', text: String(b.said).slice(0, 240) });
-  else if (b.offer) mem.talk.push({ who: 'me', text: `(offers you ${b.offer.name})` });
-  mem.talk.push({ who: 'stone', text: out.say });
-  mem.talk = mem.talk.slice(-TALK_KEEP);
-  if (b.offer) { mem.fed.push({ name: b.offer.name, score: out.score }); mem.fed = mem.fed.slice(-FED_KEEP); }
-  keep();
+  remember(b.said, b.offer && b.offer.name, out.say, out.score, '');
   return out;
 }
+// What was said each way (and what was offered, with its score) kept for next time. who: a friend's name, when it was
+// a friend in the same meadow who talked to it (heard, so the stone remembers them too: game.js heardStone).
+function remember(said, offered, say, score, who) {
+  const by = who ? `(${who}) ` : '';
+  if (said) mem.talk.push({ who: 'me', text: by + String(said).slice(0, 240) });
+  else if (offered) mem.talk.push({ who: 'me', text: `${by}(offers you ${offered})` });
+  mem.talk.push({ who: 'stone', text: String(say) });
+  mem.talk = mem.talk.slice(-TALK_KEEP);
+  if (offered) { mem.fed.push({ name: String(offered), score }); mem.fed = mem.fed.slice(-FED_KEEP); }
+  keep();
+}
+const heard = (said, offered, say, score, who) => remember(said, offered, say, score, who || 'a friend');
 
-window.Stone = { NAME, ask, get fed() { return mem.fed; } };
+window.Stone = { NAME, ask, heard, get fed() { return mem.fed; } };
 })();
