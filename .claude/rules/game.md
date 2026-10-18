@@ -231,8 +231,8 @@ off from the meadow and the satchel (`got`/`n`, `done`; a stick fed and a dish e
 and stays ticked per player (`aeon-garden-tasks`), so it's for the first meadow or so; on load what's already true ticks quietly. A
 line ticked pops its circle with a click; the line worked on says how (`how`); a chapter done is a toast and `found`, stays ticked
 `TASK_TURN_MS`, then the next pops in; the last is a gold headline ("Settled in") and the note is gone for good. A tap on its head
-folds it to the one line (`aeon-garden-tasks-fold`, folded to start with on a phone). Away while the skills, the book, the wardrobe
-or the old stone are open or the forager is down, and on a phone while cooking, at the basket or under a headline.
+folds it to the one line (`aeon-garden-tasks-fold`). Away while the skills, the book, the wardrobe
+or the old stone are open or the forager is down. Not shown on a phone at all (index.html's `narrow()` media query hides `#tasks`).
 The old stone (2026-10-17; the comment over `STONE_MOODS`): sim.js `w.stone`, painted once a face (`paintOldStone`, `STONE_ARTS`:
 seven moods, each with its mouth shut and open; moss hair and brows, asleep and drooling left alone `STONE_DOZE_MS`), drawn with the
 trees and animals (`drawStone`), solid in the forager's way like a rock. A click on it walks over (`goStone`, `goFire` 'stone', standing

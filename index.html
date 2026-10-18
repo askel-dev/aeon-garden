@@ -1133,7 +1133,7 @@
   @media (max-width: 760px), (max-height: 500px) {
     #me-box { transform: scale(1.1); }
     #me-card { top: calc(var(--top) + 106px); }
-    #tasks { top: calc(var(--top) + 108px); width: 200px; }
+    #tasks { display: none; }   /* (no room for the first-things note on a phone) */
   }
   @media (max-width: 760px) and (min-height: 501px) {
     body:has(#inspector.open) #vitals { opacity: 0; transform: translate(-50%, 30px); }
