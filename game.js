@@ -6869,8 +6869,9 @@ function setupCookBag() {
   // takes one thing out into the satchel and does what a tile there would (potAddBasket): into the pot, a stick on the fire.
   const bRow = $('#cook-basket .bslots');
   const bTap = el => { const r = el.getBoundingClientRect(); potAddBasket(+el.dataset.b, r.left + r.width / 2, r.top + r.height / 2); };
-  bRow.addEventListener('pointerup', e => { const el = e.target.closest('.bslot'); if (el && e.button === 0) bTap(el); });
-  bRow.addEventListener('keydown', e => { const el = e.target.closest('.bslot'); if (el && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); bTap(el); } });
+  // (A click, not a pointerup: the row scrolls, so a finger's drift cancels the pointer and the tap was lost; a click also
+  // comes from Enter and Space on the button.)
+  bRow.addEventListener('click', e => { const el = e.target.closest('.bslot'); if (el) bTap(el); });
 }
 // The tiles, as the satchel is (renderSatchel), rewritten only where something changed.
 function renderCookBag(F) {
