@@ -5453,7 +5453,10 @@ const BRUSH_NEAR = 2.5;                 // tiles about it it looks for brush in,
 // (-1: on its feet), stumble: ticks left of a stumble, homeX, homeY: where it wakes (where it started, then by the camp's fire),
 // tummy (1 full, 0 empty: eat), warmIn: ticks left of a warm dish's warmth inside it, health (1 well, 0 collapsed: bodyTick). xp, lv: its skills, by name (SKILLS).
 // kit: what it has made (kitOf, shapeVessel), kept at camp, never in the satchel.
-const SLOTS = 8, STACK = 10;            // the satchel's slots, and how many of a kind one holds
+const SLOTS = 8, STACK = 10;            // the satchel's slots, and how many of a kind one holds (by default)
+let stackFn = null;                     // recipes.js stackOf, handed over by setStacks (the sim has no recipes of its own)
+function setStacks(fn) { stackFn = fn; }
+function stackOf(id) { return (stackFn && stackFn(id)) || STACK; }   // how many of one kind a slot holds
 function foragerOf(x, y) {
   const f = { forager: true, x, y, path: [], leg: 0, speed: -0, heading: Math.PI / 2, moved: -0, walking: false, goalX: x, goalY: y,
     running: false, sneaking: false, bag: new Array(SLOTS).fill(''), bagN: new Array(SLOTS).fill(0),
@@ -6294,7 +6297,7 @@ function moveBetween(A, a, B, b) {
   const id = A.bag[a];
   if (!id || (A === B && a === b)) return 0;
   if (B.bag[b] === id) {
-    const m = Math.min(A.bagN[a], STACK - B.bagN[b]);
+    const m = Math.min(A.bagN[a], stackOf(id) - B.bagN[b]);
     B.bagN[b] += m; A.bagN[a] -= m;
     if (!A.bagN[a]) A.bag[a] = '';
     return m;
@@ -6309,8 +6312,8 @@ function moveInto(A, a, B) {
   const id = A.bag[a];
   let moved = 0;
   for (let pass = 0; pass < 2 && A.bagN[a] > 0; pass++) for (let k = 0; k < B.bag.length && A.bagN[a] > 0; k++) {
-    if (pass === 0 ? B.bag[k] !== id || B.bagN[k] >= STACK : B.bag[k] !== '') continue;
-    const m = Math.min(A.bagN[a], STACK - B.bagN[k]);
+    if (pass === 0 ? B.bag[k] !== id || B.bagN[k] >= stackOf(id) : B.bag[k] !== '') continue;
+    const m = Math.min(A.bagN[a], stackOf(id) - B.bagN[k]);
     B.bag[k] = id; B.bagN[k] += m; A.bagN[a] -= m; moved += m;
   }
   if (!A.bagN[a]) A.bag[a] = '';
@@ -6415,7 +6418,7 @@ function whatThere(w, kind, it) {
 // How many of id the satchel has room for.
 function roomFor(f, id) {
   let n = 0;
-  for (let k = 0; k < SLOTS; k++) n += f.bag[k] === id ? STACK - f.bagN[k] : f.bag[k] === '' ? STACK : 0;
+  for (let k = 0; k < SLOTS; k++) n += f.bag[k] === id ? stackOf(id) - f.bagN[k] : f.bag[k] === '' ? stackOf(id) : 0;
   return n;
 }
 // Puts n of id in the satchel: onto its stacks first, then the first empty slots. Returns the slots it went in (for
@@ -6423,8 +6426,8 @@ function roomFor(f, id) {
 function stow(f, id, n) {
   const into = [];
   for (let pass = 0; pass < 2 && n > 0; pass++) for (let k = 0; k < SLOTS && n > 0; k++) {
-    if (pass === 0 ? f.bag[k] !== id || f.bagN[k] >= STACK : f.bag[k] !== '') continue;
-    const m = Math.min(n, STACK - f.bagN[k]);
+    if (pass === 0 ? f.bag[k] !== id || f.bagN[k] >= stackOf(id) : f.bag[k] !== '') continue;
+    const m = Math.min(n, stackOf(id) - f.bagN[k]);
     f.bag[k] = id; f.bagN[k] += m; n -= m; into.push(k);
   }
   return into;
@@ -6518,7 +6521,7 @@ function droppedTick(w) {
 function moveSlot(f, a, b) {
   if (a === b || !f.bag[a]) return;
   if (f.bag[b] === f.bag[a]) {
-    const m = Math.min(f.bagN[a], STACK - f.bagN[b]);
+    const m = Math.min(f.bagN[a], stackOf(f.bag[a]) - f.bagN[b]);
     f.bagN[b] += m; f.bagN[a] -= m;
     if (!f.bagN[a]) f.bag[a] = '';
   } else {
@@ -7810,7 +7813,7 @@ const api = {
   createWorld, step, clock, isNight, phaseOf, seasonOf, springPart, mood, ageDays, growth, isAdult, patchFresh,
   hedgehogComes, heronComes, dragonflyComes, kingfisherComes, skylarkComes, placeNeeds, VISIT_SEASONS, VISIT_FADE, HERON_FADE, HERON_STAB,
   DRAGON_FROM, KF_FADE, KF_UNDER, KF_BEAT, LARK_FADE, LARK_OPEN, LARK_RISE, EDGE_REACH, OPEN_MOST,
-  walkable, friendsAt, packWorld, unpackWorld, GROUND, foragerTo, foragerArrives, openingStorm, FORAGER_WALK, FORAGER_RUN, FORAGER_SNEAK, airTemp, warmthStage, WARMTH_STAGES, hurt, STUMBLE_TICKS, wakeForager, rockKind, whatThere, cherryShow, honeySpare, gather, takeFrom, dropSlot, dropAt, DROP_DAYS, moveSlot, roomFor, forEachDecorNear, SLOTS, STACK,
+  walkable, friendsAt, packWorld, unpackWorld, GROUND, foragerTo, foragerArrives, openingStorm, FORAGER_WALK, FORAGER_RUN, FORAGER_SNEAK, airTemp, warmthStage, WARMTH_STAGES, hurt, STUMBLE_TICKS, wakeForager, rockKind, whatThere, cherryShow, honeySpare, gather, takeFrom, dropSlot, dropAt, DROP_DAYS, moveSlot, roomFor, forEachDecorNear, SLOTS, STACK, stackOf, setStacks,
   KINDS, FEW, whiteness, visibility, WINTER_COAT, WILD_COAT,
   TERRAIN, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE, hollow,
