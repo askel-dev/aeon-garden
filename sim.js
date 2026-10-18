@@ -6030,7 +6030,8 @@ const SKILLS = {
   stamina: { name: 'Stamina', per: 45, perks: { sprint: 0.06, rest: 0.05, pace: 0.02 }, line: 'Longer, faster sprints, and your breath back sooner' },
   // Dishes taken out of the pot (game.js cookDone; a mess counts a little). Each level a dish cooks 3.5% faster (cookOn).
   cooking: { name: 'Cooking', per: 3, perks: { speed: 0.035 }, line: 'Dishes cook a little quicker' },
-  // Things picked into the satchel (gather; what lies about for a fire counts a quarter, GROUND_PRACTICE). Each level it stoops
+  // Things picked into the satchel (gather; what lies about for a fire counts a quarter, GROUND_PRACTICE, and what it
+  // dropped itself counts nothing). Each level it stoops
   // and reaches 4% quicker (game.js gatherFrame).
   gathering: { name: 'Gathering', per: 10, perks: { quick: 0.04 }, line: 'Your hands are quicker at picking' },
 };
@@ -6534,7 +6535,10 @@ function gather(w, kind, it) {
   if (!room) return { id: t.id, n: 0, why: 'full', into: [] };
   const id = t.id, n = takeFrom(w, kind, it, room);
   const into = stow(f, id, n);
-  gainSkill(w, f, 'gathering', kind === 'find' && FINDS[it.kind].ground ?GROUND_PRACTICE : 1);
+  // Its own dropped things are no practice at all: that was practised when they were first taken out of the meadow, and
+  // were it otherwise, setting a thing down and taking it up again would be a level for nothing. (GROUND_PRACTICE is for
+  // what merely lies about unasked; this is only its satchel emptied onto the grass and put back.)
+  if (kind !== 'dropped') gainSkill(w, f, 'gathering', kind === 'find' && FINDS[it.kind].ground ?GROUND_PRACTICE : 1);
   return { id, n, why: '', into };
 }
 // Takes up to most of what's there out of the sim, and says how many (gather; and another forager's pick, game.js).

@@ -3,7 +3,7 @@
    (net.js); this only finds the others and says which room they're in.
 
    You're an anonymous Supabase user, made the first time Friends is opened and kept in localStorage (KEY), so there's no
-   signing up: a friend adds you by your code. While the game is in view it says it's here every BEAT_MS (here(), with the
+   signing up: a friend adds you by your code. While the game is in view it says it's here every BEAT_MS, 1 min, inside the 75 s online window (every OFTEN_MS, 30 s, while the friends card is open; here(), with the
    name and the room you're playing together in), and that same call brings the friends list back. A friend seen in the
    last 75 s (by the server's clock) is online. Invites and knocks come at once over Realtime and are cleared once heard.
    game.js hands over your headshot when it changes (.snap(url)): the next beat takes it along, and the list
@@ -20,8 +20,8 @@ const BASE = 'https://cecvgnhqavygiqkbpkuz.supabase.co';
 const ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNlY3ZnbmhxYXZ5Z2lxa2Jwa3V6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNzY4NDQsImV4cCI6MjEwNzc1Mjg0NH0.55flj4Nr9KumknbpSKj3Lt63QMTonIcwkwQ_M5fQrPQ';
 const LIB = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js';
 const KEY = 'aeon-garden-friend';         // in localStorage: who you are (supabase-js keeps its session here)
-const BEAT_MS = 30000;                    // ms between "I'm here"s while the game is in view
-const OFTEN_MS = 8000;                    // ...and while the friends card is open (so a yes shows soon)
+const BEAT_MS = 60000;                    // ms between "I'm here"s while the game is in view (invites and knocks come over Realtime)
+const OFTEN_MS = 30000;                   // ...and while the friends card is open (so a yes shows soon)
 const INVITE_FRESH = 10 * 60000;          // an invite older than this when it's read is stale: cleared unheard
 
 const Friends = { on: false, me: null, list: [] };

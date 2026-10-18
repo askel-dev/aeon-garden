@@ -60,7 +60,7 @@ function start() {
   loud = ac.createGain(); loud.gain.value = enabled ? volume * LOUD : 0;
   loud.connect(lim).connect(ac.destination);
 
-  reverb = ac.createConvolver(); reverb.buffer = impulse(3.2);
+  reverb = ac.createConvolver(); reverb.buffer = impulse(1.6, 2.4);   // (half the old 3.2 s tail: the convolver costs by its length)
   const wet = ac.createGain(); wet.gain.value = 0.55;
   reverb.connect(wet).connect(master);
 
@@ -79,14 +79,14 @@ function start() {
 }
 
 // A soft, dark room: decaying noise, low-passed a little more each second.
-function impulse(sec) {
+function impulse(sec, decay = 2.4) {
   const len = Math.floor(ac.sampleRate * sec), buf = ac.createBuffer(2, len, ac.sampleRate);
   for (let ch = 0; ch < 2; ch++) {
     const d = buf.getChannelData(ch); let lp = 0;
     for (let i = 0; i < len; i++) {
       const t = i / len, k = 0.35 - 0.3 * t;
       lp += k * ((Math.random() * 2 - 1) - lp);
-      d[i] = lp * Math.pow(1 - t, 2.4);
+      d[i] = lp * Math.pow(1 - t, decay);
     }
   }
   return buf;
@@ -331,6 +331,7 @@ const RULES = {
   leaves:  { gap: 1,    free: true },
   click:   { gap: 0.04, free: true },
   hoot:    { gap: 0.6, always: true },
+  swat:    { gap: 0.15, always: true },
   step:    { gap: 0.1, always: true },   // (a foot down is cheap and rhythmic: it never counts against the budget)
   pick:    { gap: 0.08, always: true },
   pluck:   { gap: 0.08, always: true },
@@ -410,6 +411,17 @@ const SOUNDS = {
       osc.connect(g).connect(o); osc.start(t + d); osc.stop(t + d + 0.2);
       noise(o, t + d, 0.05, { from: 700, to: 300, q: 0.8, peak: 0.2, type: 'lowpass', attack: 0.002 });
     }
+  },
+  // A forager swings at a friend (game.js swing): a quick whoosh, and a soft bonk if it lands.
+  swat(t, o, { hit = false }) {
+    whoosh(o, t, 0.08, 1.4);
+    if (!hit) return;
+    const osc = ac.createOscillator(), g = ac.createGain(), at = t + 0.09;
+    osc.frequency.setValueAtTime(320, at); osc.frequency.exponentialRampToValueAtTime(90, at + 0.12);
+    g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(0.3, at + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + 0.18);
+    osc.connect(g).connect(o); osc.start(at); osc.stop(at + 0.22);
+    noise(o, at, 0.06, { from: 900, to: 400, q: 0.8, peak: 0.18, type: 'lowpass', attack: 0.002 });
   },
   // A swarm moved into its new home: a bell, and the hive buzzing up to meet the queen.
   queen(t, o) {
@@ -981,6 +993,18 @@ function play(name, opts = {}) {
 
 // ------------------------------------------------------------------ ambience
 
+// A bed that's been silent a while is cut out of the graph (its sources then aren't rendered at all: a rain on a clear
+// day, a fire nobody's lit, bees at night were each a few filters running for nothing) and plugged back in when it
+// should sound again: its gain is still ~0 then, and ramps up on its own. gateOf(from, to) is the one wire to pull.
+const GATE_QUIET = 0.0008, GATE_AFTER = 10;       // a target under this for this many seconds
+function gateOf(from, to) { return { from, to, on: true, quiet: 0 }; }
+function gateTick(gt, target, dt) {
+  if (target > GATE_QUIET) {
+    gt.quiet = 0;
+    if (!gt.on) { gt.from.connect(gt.to); gt.on = true; }
+  } else if (gt.on && (gt.quiet += dt) > GATE_AFTER) { gt.from.disconnect(gt.to); gt.on = false; }
+}
+
 // Rain comes as two bands, panned apart and from different places in the noise, so it sounds
 // wide instead of one flat hiss in the middle.
 function rainSide(pan, freq) {
@@ -990,7 +1014,7 @@ function rainSide(pan, freq) {
   const g = ac.createGain(); g.gain.value = 0;
   const p = ac.createStereoPanner(); p.pan.value = pan;
   src.connect(f).connect(soft).connect(g).connect(p).connect(ambBus); src.start(0, rand(0, 3.5));
-  return { f, g };
+  return { f, g, gate: gateOf(g, p) };
 }
 
 function loopNoise(filterType, freq, q) {
@@ -998,7 +1022,7 @@ function loopNoise(filterType, freq, q) {
   const f = ac.createBiquadFilter(); f.type = filterType; f.frequency.value = freq; f.Q.value = q;
   const g = ac.createGain(); g.gain.value = 0;
   src.connect(f).connect(g).connect(ambBus); src.start();
-  return { f, g };
+  return { f, g, gate: gateOf(g, ambBus) };
 }
 
 // The wind: a band of noise that slides up as it blows harder, panned where the gust is, plus a
@@ -1025,7 +1049,7 @@ function leafSide(pan, rate) {
   const g = ac.createGain(); g.gain.value = 0;
   const p = ac.createStereoPanner(); p.pan.value = pan;
   src.connect(hp).connect(lp).connect(g).connect(p).connect(ambBus); src.start(0, rand(0, 5.5));
-  return { src, lp, g, rate };
+  return { src, lp, g, rate, gate: gateOf(p, ambBus) };
 }
 
 function buildAmbience() {
@@ -1076,6 +1100,9 @@ function tickAmbience() {
   amb.rainR.g.gain.setTargetAtTime((0.055 * m.rain + 0.025 * m.storm) * rainLvl * (1 - 0.1 * gust), now, 1.5);
   amb.rainLow.g.gain.setTargetAtTime((0.10 * m.rain + 0.06 * m.storm) * rainLvl, now, 2);
   amb.hum.gain.setTargetAtTime(0.03 * m.bees, now, 1.5);
+  const rl = (0.055 * m.rain + 0.025 * m.storm) * rainLvl, rlow = (0.10 * m.rain + 0.06 * m.storm) * rainLvl;
+  gateTick(amb.rainL.gate, rl, 0.2); gateTick(amb.rainR.gate, rl, 0.2); gateTick(amb.rainLow.gate, rlow, 0.2);
+  gateTick(amb.hum.gate, 0.03 * m.bees, 0.2); gateTick(amb.fire.gate, 0.06 * state.fire, 0.2); gateTick(amb.pot.gate, 0.05 * state.pot, 0.2);
   amb.fire.g.gain.setTargetAtTime(0.06 * state.fire, now, 0.6);
   amb.pot.g.gain.setTargetAtTime(0.05 * state.pot, now, 0.5);
   hush.frequency.setTargetAtTime(12000 - 9500 * m.hush, now, 2);
@@ -1134,6 +1161,7 @@ function windTick(now, m) {
   const l = LEAVES * m.leaves * Math.min(1.3, m.wind) * (0.1 + 0.2 * amb.calm + 0.8 * amb.gust) * (1 - 0.4 * m.rain);
   for (const [side, v] of [[amb.leavesL, 1 - 0.6 * pan], [amb.leavesR, 1 + 0.6 * pan]]) {
     side.g.gain.setTargetAtTime(l * v, now, 0.4);
+    gateTick(side.gate, l * v, 0.2);
     side.src.playbackRate.setTargetAtTime(side.rate * (0.9 + 0.2 * amb.gust), now, 0.5);
     side.lp.frequency.setTargetAtTime(m.leafHi * (0.8 + 0.25 * amb.gust), now, 0.5);
   }
@@ -1156,6 +1184,7 @@ function hiveHum() {
     cents.connect(o.detune); o.connect(og).connect(lp); o.start();
   }
   lp.connect(am).connect(g).connect(ambBus);
+  g.gate = gateOf(g, ambBus);
   return g;
 }
 

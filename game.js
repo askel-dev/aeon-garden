@@ -469,11 +469,19 @@ function paintTerrain() {
 // Where the browser won't let the meadow reach (the clock, Safari's bars) it shows the page behind,
 // so that takes the meadow's average colour and the seam disappears.
 const themeMeta = $('meta[name="theme-color"]');
-function edgeColour(r, g, b) {
-  const css = `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
+let edgeBase = [156, 199, 126], edgeDark = 0;      // the grass's average by day, and how far the night has laid its navy over it
+function edgeShow() {
+  const d = edgeDark, k = i => Math.round(edgeBase[i] * (1 - d) + NIGHT_RGB[i] * d);
+  const css = `rgb(${k(0)}, ${k(1)}, ${k(2)})`;
   if (themeMeta.content === css) return;
   themeMeta.content = css;
   document.documentElement.style.background = document.body.style.background = css;
+}
+function edgeColour(r, g, b) { edgeBase = [r, g, b]; edgeShow(); }
+function edgeNight(dark) {                          // at dusk and dawn, in steps, so the bars follow the dark without a style pass each second
+  const d = Math.round(dark * 16) / 16;
+  if (d === edgeDark) return;
+  edgeDark = d; edgeShow();
 }
 
 // The ground; the shader paints it again only when it would look different.
@@ -1153,13 +1161,14 @@ const goldLight = k => GOLD_LIGHT.map(v => 1 + (v - 1) * k);
 const shownDark = darkness;
 const shownGold = phase => Math.round(goldenHour(phase) * GOLD_STEPS) / GOLD_STEPS;
 
-// The things a frame draws (a tree or a rock d, a swarm h, a creature c, a visitor v, mushrooms, nettles or a bramble s), each a record of the
+// The things a frame draws (a tree or a rock d, a swarm h, a creature c, a visitor v, mushrooms, nettles or a bramble s, the
+// pot over a fire k), each a record of the
 // one shape, kept from frame to frame: a few hundred new objects a frame, of five shapes, were felt in every loop over them.
 const frameItems = [], itemPool = [];
 function itemOf(items, y, sx, sy, f) {
   let it = itemPool[items.length];
-  if (!it) itemPool.push(it = { y: -0, sx: -0, sy: -0, f: -0, px: -0, d: null, h: null, c: null, v: null, s: null, p: null, q: null });
-  it.y = y; it.sx = sx; it.sy = sy; it.f = f; it.px = 0; it.d = it.h = it.c = it.v = it.s = it.p = it.q = null;
+  if (!it) itemPool.push(it = { y: -0, sx: -0, sy: -0, f: -0, px: -0, d: null, h: null, c: null, v: null, s: null, p: null, q: null, k: null });
+  it.y = y; it.sx = sx; it.sy = sy; it.f = f; it.px = 0; it.d = it.h = it.c = it.v = it.s = it.p = it.q = it.k = null;
   items.push(it);
   return it;
 }
@@ -1265,7 +1274,11 @@ function render(now) {
   }
   for (const F of world.fires) {                           // the campfires, and where one would go (ui.place: drawFire)
     const sx = (F.x - cam.x) * z + vw / 2, sy = (F.y - cam.y) * z + vh / 2;
-    if (visible(sx, sy, 2 * z + 20)) itemOf(items, F.y, sx, sy, 1 - mistAt(F.x, F.y)).s = F;
+    if (visible(sx, sy, 2 * z + 20)) {
+      const m = 1 - mistAt(F.x, F.y);
+      itemOf(items, F.y, sx, sy, m).s = F;
+      if (potOver(F)) itemOf(items, F.y, sx, sy, m).k = F;  // its pot, sorted at the fire's own y: over the fire, under whoever stands in front of it
+    }
   }
   const Bk = myBasket();                                   // the camp's basket
   if (Bk) {
@@ -1333,6 +1346,7 @@ function render(now) {
     if (it.d) it.d.hive ? drawBeeTree(it.d, it.sx, it.sy, now, ck) : drawDecor(it.d, it.sx, it.sy, now, ck, it.px);
     else if (it.h) drawSwarm(it.h, it.sx, it.sy);
     else if (it.s) it.s.fire ? drawFire(it.s, z, now) : it.s.basket ? drawBasket(it.s, z, now) : it.s.stone ? drawStone(it.s, z, now) : it.s.green ? drawNettles(it.s, z) : it.s.bramble ? drawBramble(it.s, z) : it.s.find ? drawFind(it.s, z) : it.s.dropped ? drawDropped(it.s, z, now) : drawShroom(it.s, z);
+    else if (it.k) drawPotAt(it.k, it.sx, it.sy, now);     // (the pot over a fire: right after its fire, tied on its y)
     else if (it.v) drawVisitor(it.v, it.sx, it.sy, now, z);
     else if (it.p) drawForager(it.sx, it.sy, now);
     else if (it.q) drawPeer(it.q, it.sx, it.sy, now);
@@ -1345,8 +1359,7 @@ function render(now) {
   drawLeaves(now, false);                                  // the trees' leaves coming down
   drawPollen(now);
   drawButterflies(now, ck);
-  if (cooking()) drawPot(now);                             // the pot over the fire cooked at: over all that stands, so a bush can't hide it
-  if (world.fires.length) drawAwayPots(now);                         // (and the pots left cooking on other fires, or this one with its window shut)
+  // (the pot over a fire is drawn in the sorted pass above, as its fire's own k item: so the forager can stand in front of it)
 
   // The golden hour and the night. The ground is lit by the shader; what's drawn on it gets the warm light laid over
   // just what's there (source-atop), before the dark goes over everything.
@@ -1987,6 +2000,7 @@ const fg = { wasWalking: false, at: -1, x: 0, y: 0, step: 0, stillMs: 1e4, view:
   snow: -1, snowTick: -0, snowArt: 0, sizedSnow: 0,   // (the snow on it: snowOnForager)
   kneel: -1, knelt: -1e9, sizedKneel: false,           // (at a fire: its kneeling pose, fur.js FORAGER_KNEEL, or -1; when it last knelt)
   emote: -1, emoteMs: -0, emoteFrame: -1, lift: -0, sneakStill: -0, sizedEmote: false,   // (an emote: EMOTE, or -1; emoteTick)
+  swingAt: -1e9, swingDir: -0, hitAt: -1e9,            // (friendly fire: when it last swung, which way, when it was last hit: swing)
   sx: -0, sy: -0, px: -0, drawnAt: -0 };   // (where it was drawn this frame)
 const CLOAKS = Fur.FORAGER_CLOAKS.length, HATS = Fur.FORAGER_HATS.length;
 const outfitKept = (cloak, hat) => Fur.outfitOf(Math.min(CLOAKS - 1, Math.max(0, +cloak | 0)), Math.min(HATS - 1, Math.max(0, +hat | 0)));
@@ -2280,6 +2294,8 @@ function drawPrints() {
 }
 function drawForager(sx, sy, now) {
   const px = forPx(), art = fg.art, f = world.forager, stage = S.warmthStage(f);
+  sx += joltOf(fg, now) * px;
+  drawSwat(fg, sx, sy, px, now);
   fg.sx = sx; fg.sy = sy - fg.lift * px; fg.px = px; fg.drawnAt = now;
   drawRings(fg.rings, now, px);
   if (zoomedOut()) { drawSmall(art, sx, sy - px * 0.36, px, fg.flip); return; }
@@ -3000,46 +3016,46 @@ const FLOAT_MS = 1400, SAY_MS = 1900;     // a "+3 Chanterelles" floating up, an
 const FROM_FRONT = { tree: 1, hive: 1, bramble: 1 };   // (comes at these from in front, where it shows, not hidden behind them)
 let GLOW_ART = null;
 const pickFloats = [];                    // { img, w, h, x, y (world), t0, ms }
-const aim = { x: 0, y: 0, in: false, moved: false, cx: 0, cy: 0, cz: 0, at: 0, t: null, id: '', n: 0, why: '', fire: null, basket: null };   // what the mouse is on (hoverFrame): a thing to gather, or a fire
+const aim = { x: 0, y: 0, in: false, moved: false, cx: 0, cy: 0, cz: 0, at: 0, t: null, id: '', n: 0, why: '', fire: null, basket: null, close: false, closeAt: 0, closeT0: 0 };   // what the mouse is on (hoverFrame): a thing to gather, or a fire; close: what the forager stands by instead (closeBy)
 const AIM_MS = 150;
 
 // The thing to gather under a point: { kind, it } or null. Hives first (in their tree), then what grows at a tree's foot,
 // the trees with fruit or mast, and the garlic lying flat under all.
-function gatherAt(sx, sy) {
-  const z = cam.zoom, [wx, wy] = toWorld(sx, sy), f = fingerTap ? 1.6 : 1;
+function gatherAt(sx, sy, snap = true) {
+  const z = cam.zoom, [wx, wy] = toWorld(sx, sy), m = fingerTap ? FINGER_R : 0;
   const h = hiveAt(sx, sy);
   if (h) return { kind: 'hive', it: h };
   let best = null, bd = Infinity;
   for (const d of world.dropped) {                     // (lying on top of all: first)
     if (Math.abs(d.x - wx) > 3 || Math.abs(d.y - wy) > 3) continue;
     const px = dropPx(d, z), x = (d.x - cam.x) * z + vw / 2, y = (d.y - cam.y) * z + vh / 2 - px * 0.3;
-    const r = Math.max(14 * f, px * 0.55), e = ((x - sx) ** 2 + (y - sy) ** 2) / (r * r);
+    const r = Math.max(14, m, px * 0.55), e = ((x - sx) ** 2 + (y - sy) ** 2) / (r * r);
     if (e < 1 && e < bd) { best = d; bd = e; }
   }
   if (best) return { kind: 'dropped', it: best };
   for (const m of world.shrooms) {
     if (Math.abs(m.x - wx) > 3 || Math.abs(m.y - wy) > 4) continue;
     placeShroom(m, z);
-    const r = Math.max(12 * f, shroomAt.px * 0.55), d = ((shroomAt.x - sx) ** 2 + (shroomAt.y - sy) ** 2) / (r * r);
+    const r = Math.max(12, m, shroomAt.px * 0.55), d = ((shroomAt.x - sx) ** 2 + (shroomAt.y - sy) ** 2) / (r * r);
     if (d < 1 && d < bd) { best = m; bd = d; }
   }
   for (const m of world.finds) {                       // (as near as a mushroom: whichever the point is nearer)
     if (Math.abs(m.x - wx) > 4 || Math.abs(m.y - wy) > 4) continue;
     const px = findPx(m, z), x = (m.x - cam.x) * z + vw / 2, y = (m.y - cam.y) * z + vh / 2 - px * 0.31;
-    const r = Math.max(14 * f, px * 0.5), d = ((x - sx) ** 2 + (y - sy) ** 2) / (r * r);
+    const r = Math.max(14, m, px * 0.5), d = ((x - sx) ** 2 + (y - sy) ** 2) / (r * r);
     if (d < 1 && d < bd) { best = m; bd = d; }
   }
   if (best) return { kind: best.find ? 'find' : 'shroom', it: best };
   for (const b of world.brambles) {
     if (Math.abs(b.x - wx) > 4 || Math.abs(b.y - wy) > 4) continue;
     const px = bramblePx(b, z), x = (b.x - cam.x) * z + vw / 2, y = (b.y - cam.y) * z + vh / 2 - px * 0.18;
-    const d = ((sx - x) / Math.max(10 * f, px * 0.5)) ** 2 + ((sy - y) / Math.max(8 * f, px * 0.26)) ** 2;
+    const d = ((sx - x) / Math.max(10, m, px * 0.5)) ** 2 + ((sy - y) / Math.max(8, m, px * 0.26)) ** 2;
     if (d < 1 && d < bd) { best = b; bd = d; }
   }
   if (best) return { kind: 'bramble', it: best };
   for (const g of world.greens) {
     if (g.kind !== 'nettle' || Math.abs(g.x - wx) > 3 || Math.abs(g.y - wy) > 4 || S.greenStage(world, g) === null) continue;
-    const px = nettlePx(g, z), x = (g.x - cam.x) * z + vw / 2, y = (g.y - cam.y) * z + vh / 2 - px * 0.3, r = Math.max(12 * f, px * 0.4);
+    const px = nettlePx(g, z), x = (g.x - cam.x) * z + vw / 2, y = (g.y - cam.y) * z + vh / 2 - px * 0.3, r = Math.max(12, m, px * 0.4);
     const d = ((sx - x) ** 2 + (sy - y) ** 2) / (r * r);
     if (d < 1 && d < bd) { best = g; bd = d; }
   }
@@ -3053,26 +3069,61 @@ function gatherAt(sx, sy) {
   for (const g of world.greens) {
     if (g.kind !== 'garlic' || Math.abs(g.x - wx) > 4 || Math.abs(g.y - wy) > 3 || S.greenStage(world, g) === null) continue;
     const px = garlicPx(g, z), x = (g.x - cam.x) * z + vw / 2, y = (g.y - cam.y) * z + vh / 2;
-    const d = ((sx - x) / (px * 0.5)) ** 2 + ((sy - y + px * 0.1) / (px * 0.22)) ** 2;
+    const d = ((sx - x) / Math.max(m, px * 0.5)) ** 2 + ((sy - y + px * 0.1) / Math.max(m, px * 0.22)) ** 2;
     if (d < 1 && d < bd) { best = g; bd = d; }
   }
-  return best ? { kind: 'green', it: best } : snapTo(sx, sy);
+  return best ? { kind: 'green', it: best } : snap ? snapTo(sx, sy) : null;
 }
 // Near enough is on it: a click or a tap a little off something with something to give, or something dropped (SNAP px past
-// its glow, more for a finger, and it's in reach of the forager more still) goes for it, so a moving meadow doesn't make you miss.
-const SNAP = 14, SNAP_FINGER = 34, SNAP_NEAR = 1.5;
-function snapTo(sx, sy) {
-  const F = world.forager, pad = fingerTap ? SNAP_FINGER : SNAP;
+// its glow, TAP_SNAP for a finger, and it's in reach of the forager more still) goes for it, so a moving meadow doesn't make you
+// miss. With all (a click's useAt), the fires, the basket and the old stone too: whichever is nearest.
+const SNAP = 14, TAP_SNAP = 48, SNAP_NEAR = 1.5;
+const FINGER_R = 28;                      // a finger's target is at least this round (px): 56 across, whatever it is
+function snapTo(sx, sy, all = false) {
+  const F = world.forager, pad = fingerTap ? TAP_SNAP : SNAP;
   let best = null, bk = '', bd = 1;
   const near = (kind, it) => {
-    const s = gatherSpot(kind, it);
+    const s = kind === 'fire' || kind === 'basket' || kind === 'stone' ? useSpot(kind, it) : gatherSpot(kind, it);
     const r = Math.max(s.rx, s.ry) * 0.7 + pad * (Math.hypot(it.x - F.x, it.y - F.y) < NEAR_REACH ? SNAP_NEAR : 1);
     const d = Math.hypot(sx - s.gx, sy - s.gy) / r;
     if (d < bd) { bd = d; best = it; bk = kind; }
   };
   for (let i = 0; i < picks.it.length; i++) near(picks.kind[i], picks.it[i]);
   for (const d of world.dropped) near('dropped', d);
+  if (all) {
+    for (const f of world.fires) near('fire', f);
+    if (myBasket()) near('basket', myBasket());
+    if (world.stone) near('stone', world.stone);
+  }
   return best && { kind: bk, it: best };
+}
+// A fire's, the basket's or the old stone's middle on screen, and how far round it its target goes (in gspot, as gatherSpot).
+function useSpot(kind, it) {
+  const z = cam.zoom, px = kind === 'fire' ? firePx(z) : kind === 'basket' ? basketPx(z) : stonePx();
+  gspot.x = it.x; gspot.y = it.y; gspot.gx = (it.x - cam.x) * z + vw / 2;
+  gspot.gy = (it.y - cam.y) * z + vh / 2 - px * (kind === 'fire' ? 0.12 : kind === 'basket' ? 0.18 : 0.5);
+  gspot.rx = Math.max(14, px * (kind === 'stone' ? 0.32 : 0.5)); gspot.ry = Math.max(12, px * (kind === 'stone' ? 0.55 : 0.36));
+  gspot.reach = 0;
+  return gspot;
+}
+// What a click or a tap at a point is on, { kind, it }: an animal, a fire, the basket or the old stone, or something to gather,
+// as it's drawn; failing those, the nearest of them all within a snap of it (snapTo), so a near miss isn't a walk past.
+function useAt(sx, sy) {
+  const c = animalAt(sx, sy);
+  if (c) return { kind: 'animal', it: c };
+  const F = fireAt(sx, sy);
+  if (F) return { kind: 'fire', it: F };
+  const B = basketAt(sx, sy) || stoneAt(sx, sy);
+  if (B) return { kind: B.stone ? 'stone' : 'basket', it: B };
+  return gatherAt(sx, sy, false) || snapTo(sx, sy, true);
+}
+// Off to it: an animal's panel, a fire to see to, the basket, the stone, or the thing to pick (lined up, if a pick's under way).
+function useIt(u, run = false, queue = true) {
+  if (u.kind === 'animal') select(u.it.id);
+  else if (u.kind === 'fire') clickFire(u.it);
+  else if (u.kind === 'stone') goStone();
+  else if (u.kind === 'basket') goBasket();
+  else if (!queue || !queueGather(u)) goGather(u, run);
 }
 
 // Where it is (world), how far off the forager stands to pick it, and its glow on screen (x, y, rx, ry).
@@ -3133,6 +3184,7 @@ const pickSound = id => { const g = Recipes.INGREDIENTS[id]; return g && g.tags[
 
 // Once a frame: there, it picks; stopped short (it couldn't get there), it says so.
 function gatherFrame(now) {
+  sprintFrame();
   const g = ui.gather, F = world.forager;
   if (F.down >= 0) return;                              // (collapsed)
   if (!g && ui.queue.length && !F.walking && now >= ui.nextAt) nextGather();
@@ -3152,10 +3204,10 @@ function gatherFrame(now) {
     fx: F.x, fy: F.y, k: fg.pickK, v: fg.view, fl: fg.flip });                                                     // and they see it picked)
   ui.nextAt = now + (ui.queue.length ? PICK_MS[1] : PICK_MS[2]) * fg.pickK;   // (the next in the queue once it's back up)
   $('#satchel').classList.remove('empty');
-  const lands = PICK_MS[0] * fg.pickK + 90, [gx, gy] = [s.gx, s.gy], at = now + lands;
+  const lands = PICK_MS[0] * fg.pickK + 90, [gx, gy] = [s.gx, s.gy], [wx, wy] = [s.x, s.y], at = now + lands;   // (copied: s is gspot, shared)
   setTimeout(() => {
     if (!world) return;
-    pickFloats.push(floatOf(r.id, r.n, s.x, s.y, at));
+    pickFloats.push(floatOf(r.id, r.n, wx, wy, at));
     flyToSlot(r.id, gx, gy, r.into[r.into.length - 1], () => chime('pick', { n: r.n }));   // (the plop as it lands)
     chime('pluck', { what: pickSound(r.id) });
     firstFind(r.id);
@@ -3178,6 +3230,24 @@ function queueGather(t) {
   ui.queue.push({ kind: t.kind, it: t.it });
   chime('click');
   return true;
+}
+// On a touch screen there's no Shift: while it's picking or has more lined up, a round button by the book (#sprint-btn) runs it
+// from one pick to the next, pressed again it walks. It lets go by itself once the picking's done, and shows only then.
+const SPRINT_BTN = matchMedia('(pointer: coarse)').matches;
+const sprintUi = { shown: false, on: false };
+function sprintFrame() {
+  if (!SPRINT_BTN) return;
+  const show = gatherBusy() && world.forager.down < 0;
+  if (show === sprintUi.shown) return;
+  sprintUi.shown = show;
+  $('#sprint-btn').classList.toggle('hidden', !show);
+  if (!show && sprintUi.on) sprintSet(false);
+}
+function sprintSet(on) {
+  sprintUi.on = on;
+  const el = $('#sprint-btn');
+  el.classList.toggle('on', on); el.setAttribute('aria-pressed', on);
+  if (!sprintHold) holdShift(on);                       // (a finger held on the meadow is already Shift: endSprint hands back)
 }
 // E: the nearest thing to pick in reach (lit by drawNear) or lying where it was dropped, as a click on it would. Pressed again
 // while it's off picking, the next nearest lines up after.
@@ -3343,24 +3413,56 @@ function glowArt() {
   return GLOW_ART;
 }
 
-// What the mouse is on, looked up again only when it or the camera moved; what it has to give, every frame (cheap).
+// What the mouse is on, looked up again only when it or the camera moved; what it has to give, every frame (cheap). With no
+// mouse on anything (a finger has no hover), what the forager stands still by instead (closeBy), looked for every AIM_MS.
 function hoverFrame() {
-  if (!aim.in || fingerTap || drag || ui.place) { if (aim.t || aim.fire || aim.basket) { aim.t = null; aim.fire = null; aim.basket = null; canvas.classList.remove('on-animal'); } return; }
-  const now = performance.now();                        // (the camera gliding after the forager: a look every AIM_MS will do)
-  if (aim.moved || (aim.cx !== cam.x || aim.cy !== cam.y || aim.cz !== cam.zoom) && now - aim.at > AIM_MS) {
-    aim.moved = false; aim.cx = cam.x; aim.cy = cam.y; aim.cz = cam.zoom; aim.at = now;
+  const now = performance.now(), mouse = aim.in && !fingerTap && !drag && !ui.place;
+  if (mouse && (aim.moved || (aim.cx !== cam.x || aim.cy !== cam.y || aim.cz !== cam.zoom) && now - aim.at > AIM_MS)) {
+    aim.moved = false; aim.cx = cam.x; aim.cy = cam.y; aim.cz = cam.zoom; aim.at = now; aim.close = false;   // (the camera gliding after the forager: a look every AIM_MS will do)
     aim.fire = ui.hoverId ? null : fireAt(aim.x, aim.y);   // (a fire first, as a click: over what lies by it)
     aim.basket = ui.hoverId || aim.fire ? null : basketAt(aim.x, aim.y) || stoneAt(aim.x, aim.y);   // (or the old stone)
     aim.t = ui.hoverId || aim.fire || aim.basket ? null : gatherAt(aim.x, aim.y);
-  }
+  } else if (!mouse && !aim.close && (aim.t || aim.fire || aim.basket)) { aim.t = null; aim.fire = null; aim.basket = null; }
+  if ((aim.close || !(aim.t || aim.fire || aim.basket || ui.hoverId)) && now - aim.closeAt > AIM_MS) closeBy(now);
   if (aim.t) {
     const w = S.whatThere(world, aim.t.kind, aim.t.it);
     aim.id = w.id; aim.n = w.n; aim.why = w.why;
     if (!w.n && !w.why) aim.t = null;                     // (a dead tree: nothing to say)
   }
-  canvas.classList.toggle('on-animal', !!ui.hoverId || !!(aim.t && aim.n) || !!aim.fire || !!aim.basket);
+  canvas.classList.toggle('on-animal', !!ui.hoverId || !aim.close && (!!(aim.t && aim.n) || !!aim.fire || !!aim.basket));
+}
+// Standing still by something to use (a fire, the basket, the old stone, or the nearest thing to pick), within USE_NEAR: it
+// glows as under a mouse, with its name by it (for USE_SAY ms, then it fades), so a finger knows what a tap will do here.
+const USE_NEAR = 2.6, USE_STILL = 350, USE_SAY = 4000, USE_FADE = 900;
+function closeBy(now) {
+  aim.closeAt = now;
+  const F = world.forager;
+  let best = null, bk = '', bd = USE_NEAR * USE_NEAR;
+  const look = (kind, it) => { const d = (it.x - F.x) ** 2 + (it.y - F.y) ** 2; if (d < bd) { bd = d; best = it; bk = kind; } };
+  if (F && F.down < 0 && !F.walking && !ui.gather && !ui.fire && !ui.place && !drag && now - sense.still > USE_STILL) {
+    for (const f of world.fires) look('fire', f);
+    if (myBasket()) look('basket', myBasket());
+    if (world.stone) look('stone', world.stone);
+    const t = nearPick();
+    if (t) look(t.kind, t.it);
+  }
+  if (!best && !aim.close) return;
+  const was = aim.fire || aim.basket || (aim.t && aim.t.it);
+  aim.close = !!best;
+  aim.fire = bk === 'fire' ? best : null;
+  aim.basket = bk === 'basket' || bk === 'stone' ? best : null;
+  aim.t = best && !aim.fire && !aim.basket ? (aim.t && aim.t.it === best ? aim.t : { kind: bk, it: best }) : null;
+  if (best !== was) aim.closeT0 = now;
 }
 function drawGlow(now, over) {
+  if ((aim.fire || aim.basket) && !over && !ui.fire) {    // a fire, the basket or the stone: the ring of what's in reach (ringArt), round its foot
+    const it = aim.fire || aim.basket, s = useSpot(aim.fire ? 'fire' : it.stone ? 'stone' : 'basket', it), art = RING_E_ART || ringArt(true), k = 1 + 0.04 * Math.sin(now / 300);
+    const rx = s.rx * 1.5 * k, ry = rx * 0.45, y = (it.y - cam.y) * cam.zoom + vh / 2 - ry * 0.3;
+    ctx.globalAlpha = 0.8 + 0.2 * Math.sin(now / 300);
+    ctx.drawImage(art.img, s.gx - rx, y - ry, rx * 2, ry * 2);
+    ctx.globalAlpha = 1;
+    return;
+  }
   if (!aim.t || !aim.n || (aim.t.kind === 'hive') !== over) return;   // (a hive's goes over its hollow: under, the trunk hid it)
   const s = gatherSpot(aim.t.kind, aim.t.it), art = GLOW_ART || glowArt(), k = 1 + 0.06 * Math.sin(now / 300);
   ctx.globalAlpha = 0.85 + 0.15 * Math.sin(now / 300);
@@ -3368,6 +3470,13 @@ function drawGlow(now, over) {
   ctx.globalAlpha = 1;
 }
 function drawHoverLine(now) {
+  const a = aim.close ? clamp(1 - (now - aim.closeT0 - USE_SAY) / USE_FADE, 0, 1) : 1;   // (stood by it: said a while, then it fades)
+  if (a <= 0) return;
+  ctx.globalAlpha = a;
+  hoverLine();
+  ctx.globalAlpha = 1;
+}
+function hoverLine() {
   if (aim.fire && !ui.fire && !pickFloats.length) {      // a fire: how it is, and what it wants (fireWord)
     const F = aim.fire, z = cam.zoom;
     drawLabel(fireWord(F), (F.x - cam.x) * z + vw / 2, (F.y - cam.y) * z + vh / 2 + firePx(z) * 0.15 + 4);
@@ -3810,6 +3919,29 @@ const CAMP_NEAR = 10;                              // tiles: a friend's first fi
 const CAMP_WORDS_MS = 650;                         // "Your camp" this long after the flare
 const CAMP_RING_IN = 1600, CAMP_RING_MS = 3200;    // the ring comes in this long after, over this long
 const CAMP_BUZZ = [35, 70, 35, 70, 110];           // ms buzzing and not
+// Android has navigator.vibrate. Safari (iOS 17.4+) has none, but toggling a hidden <input type=checkbox switch> ticks the Taptic
+// Engine, so a buzz there is that switch clicked once per beat of the pattern (the ms don't matter). iOS only lets it tick
+// from a tap or click, so one outside a gesture (a plop long after the tap) may stay silent.
+let tapSwitch = null;
+function iosTick() {
+  if (!tapSwitch) {
+    const l = document.createElement('label');
+    l.setAttribute('aria-hidden', 'true');
+    l.style.cssText = 'position:fixed;left:-99px;top:-99px;width:1px;height:1px;opacity:0;pointer-events:none';
+    const i = document.createElement('input');
+    i.type = 'checkbox'; i.setAttribute('switch', ''); i.tabIndex = -1;
+    l.appendChild(i); document.body.appendChild(l); tapSwitch = l;
+  }
+  tapSwitch.click();
+}
+const HAS_VIBRATE = typeof navigator.vibrate === 'function', IOS_HAPTIC = !HAS_VIBRATE && CSS.supports?.('-webkit-touch-callout', 'none') && matchMedia('(pointer: coarse)').matches;
+const buzz = p => {
+  try {
+    if (HAS_VIBRATE) navigator.vibrate(p);
+    else if (IOS_HAPTIC) { const n = Array.isArray(p) ? (p.length + 1) >> 1 : 1; for (let k = 0; k < n; k++) setTimeout(iosTick, k * 70); }
+  } catch (e) { /* fine */ }
+};
+const BUZZ_PLOP = 12, BUZZ_DISH = [15, 50, 25], BUZZ_MESS = 40;   // a thing into the pot; a dish done; a mess
 const campShow = { F: null, t0: -1e9, z0: 0, z: 0 };
 // Up quickly to 1, then easing back to 0 over ms.
 function campCurve(now, ms) {
@@ -3822,7 +3954,7 @@ function campMoment(F) {
   campShow.z0 = near && f.down < 0 ? cam.zoom : 0; campShow.z = cam.zoom;
   if (!mine && near) fireFlare.set(F, now);
   chime('camp');
-  if (mine) try { navigator.vibrate?.(CAMP_BUZZ); } catch (e) { /* fine */ }
+  if (mine) buzz(CAMP_BUZZ);
   if (mine) {                                     // (and thinks of cooking on it: tries again while a line or the fire's card is in the way)
     const w = world, tryThink = n => { if (world === w && w.camp && w.camp.fire === F && n > 0 && !(!ui.fire && think(CAMP_COOK_LINE))) setTimeout(tryThink, 1500, n - 1); };
     setTimeout(tryThink, CAMP_COOK_MS, 12);
@@ -4189,9 +4321,9 @@ function drawBasket(B, z, now) {
 function basketAt(sx, sy) {
   const B = myBasket();
   if (!B) return null;
-  const z = cam.zoom, px = basketPx(z), f = fingerTap ? 1.5 : 1;
+  const z = cam.zoom, px = basketPx(z), m = fingerTap ? FINGER_R : 0;
   const x = (B.x - cam.x) * z + vw / 2, y = (B.y - cam.y) * z + vh / 2 - px * 0.18;
-  return ((sx - x) / Math.max(14 * f, px * 0.5)) ** 2 + ((sy - y) / Math.max(12 * f, px * 0.42)) ** 2 < 1 ? B : null;
+  return ((sx - x) / Math.max(14, m, px * 0.5)) ** 2 + ((sy - y) / Math.max(12, m, px * 0.42)) ** 2 < 1 ? B : null;
 }
 function basketWord(B) {
   let n = 0;
@@ -4313,9 +4445,9 @@ function drawStone(St, z, now) {
 function stoneAt(sx, sy) {
   const St = world && world.stone;
   if (!St) return null;
-  const z = cam.zoom, px = stonePx(), f = fingerTap ? 1.4 : 1;
+  const z = cam.zoom, px = stonePx(), m = fingerTap ? FINGER_R : 0;
   const x = (St.x - cam.x) * z + vw / 2, y = (St.y - cam.y) * z + vh / 2 - px * 0.5;
-  return ((sx - x) / Math.max(14 * f, px * 0.32)) ** 2 + ((sy - y) / Math.max(20 * f, px * 0.55)) ** 2 < 1 ? St : null;
+  return ((sx - x) / Math.max(14, m, px * 0.32)) ** 2 + ((sy - y) / Math.max(20, m, px * 0.55)) ** 2 < 1 ? St : null;
 }
 // Off to the stone, and the line to talk on opens once the forager's by it (fireFrame's 'stone').
 function goStone() {
@@ -4682,11 +4814,11 @@ function goFire(t) {
 }
 // The fire under a point on screen (its ring as drawn, a little wider for a finger), or null.
 function fireAt(sx, sy) {
-  const z = cam.zoom, px = firePx(z), f = fingerTap ? 1.5 : 1;
+  const z = cam.zoom, px = firePx(z), m = fingerTap ? FINGER_R : 0;
   let best = null, bd = 1;
   for (const F of world.fires) {
     const x = (F.x - cam.x) * z + vw / 2, y = (F.y - cam.y) * z + vh / 2 - px * 0.12;
-    const d = ((sx - x) / Math.max(14 * f, px * 0.48)) ** 2 + ((sy - y) / Math.max(12 * f, px * 0.32)) ** 2;
+    const d = ((sx - x) / Math.max(14, m, px * 0.48)) ** 2 + ((sy - y) / Math.max(12, m, px * 0.32)) ** 2;
     if (d < bd) { best = F; bd = d; }
   }
   return best;
@@ -5367,6 +5499,7 @@ function cookDone(j, now) {
   kw.reveal = { id: dish.name, t0: now, mess, k: into.length ? into[0] : -1, flown: false };
   kw.incoming = into.length ? into[0] : -1;               // (its tile waits for it)
   chime(mess ? 'mess' : 'dish');
+  buzz(mess ? BUZZ_MESS : BUZZ_DISH);
   if (into.length) renderSatchel();
   else {
     const until = world.tick + Math.round(S.DROP_DAYS * S.TPD), x = f.x + (j.x - f.x) * 0.4, y = f.y + 0.3, d = S.dropAt(world, dish.name, x, y, 1, world.tick, until);
@@ -6122,7 +6255,7 @@ function drawCookView(now) {
     if (u < T) { const k = u / T; x = x0 + (tx - x0) * k; yc = y0 + 0.5 * FG * u * u; rot = (1 - k) * 0.35 * (i & 1 ? 1 : -1); kw.fall[i] = 1; kw.ty[i] = 1e9; }
     else {
       const vv = u - T;
-      if (was - land < T) { const p = plopOf(j.pot[i]); splash(x, ty, p.w, now); if (v === 'pan') spit(x, ty - S * 0.1, 3, now); chime('plop', p); }
+      if (was - land < T) { const p = plopOf(j.pot[i]); splash(x, ty, p.w, now); if (v === 'pan') spit(x, ty - S * 0.1, 3, now); chime('plop', p); buzz(BUZZ_PLOP); }
       if (inPot) {
         const dip = S * 0.42 * Math.exp(-vv / 380) * Math.sin(vv / 110);
         yc = ty - S * 0.2 + dip + (busy ? S * 0.06 * Math.sin(now / 170 + i * 2.1) : S * 0.025 * Math.sin(now / 640 + i * 2.3));
@@ -6553,13 +6686,23 @@ function cookCam(dt) {
 }
 
 // The pot over the fire being cooked at, and what's in it: dropped in with a bounce and a puff, bobbing and steaming while
-// it cooks, a puff of smoke off a mess. Its back, the things, then its front: a handful of draws, for one fire. Drawn after
-// all that stands (frame), so it's never behind a bush or a tree: it's what you're looking at.
+// it cooks, a puff of smoke off a mess. Its back, the things, then its front: a handful of draws, for one fire. Sorted as a
+// thing of the fire's own y (render's items, k), so it's over the fire it hangs on but under the forager standing in front.
 const idleVessel = new WeakMap();        // the vessel last cooked in at each fire, left over it when the window shuts
-function drawPot(now) {
+// Whether a pot hangs over this fire this frame: the one the window is open at (drawPot, even while a vessel's being made
+// there: its hits are cleared), or one left cooking or set down over any other (drawAwayPot).
+function potOver(F) {
+  if (cooking() && ui.fire.F === F) return true;
+  return F.cookDish !== '' || idleVessel.has(F);
+}
+// Which of the two draws it (render's sorted loop dispatches here on the fire alone).
+function drawPotAt(F, sx, sy, now) {
+  if (cooking() && ui.fire.F === F) drawPot(now, F, sx, sy); else drawAwayPot(now, F, sx, sy);
+}
+function drawPot(now, F, sx, sy) {
   if (cookMode() !== 'cook') { cookUi.potR = 0; potHit.n = 0; return; }   // (a vessel being made: in the window only)
-  idleVessel.set(ui.fire.F, cookVessel);
-  const j = ui.fire, F = j.F, z = cam.zoom, px = firePx(z), sx = (F.x - cam.x) * z + vw / 2, sy = (F.y - cam.y) * z + vh / 2;
+  idleVessel.set(F, cookVessel);
+  const j = ui.fire, z = cam.zoom, px = firePx(z);
   const t = clamp((now - cookUi.potIn) / POT_IN_MS, 0, 1), P = px * POT_SIZE * (0.7 + 0.3 * ease(t)), cy = sy - px * POT_UP - (1 - t) * px * 0.15;
   const L = vesselLook(cookVessel), mx = sx, my = cy - P * 0.15, busy = j.stage === 'cooking';
   cookUi.potX = mx; cookUi.potY = my; cookUi.potR = P * 0.32;
@@ -6608,40 +6751,35 @@ function drawPot(now) {
 // A pot cooking on a fire goes on without the window (sim.js cookOn: only while the fire's lit): it stays on the fire, steaming,
 // and a slim bar over the fire fills as it cooks (drawCookBars), brass-rimmed, glossy ember orange with a glow at its front; grey
 // while the fire's out and it waits, and gold, softly pulsing in a glow, once the dish is done and waiting to be taken. No text on it: a hover says the time left
-// (fireWord). A loop over the few fires a frame, nothing drawn without a pot.
+// (fireWord). A draw for one fire at a time, nothing drawn without a pot (render sorts each in at its fire's y: potOver).
 const POT_BAR_UP = 0.86;                  // the bar's foot over the fire's foot, in the fire's size
 // The pot on a fire that the window isn't open at: its back, what went in, its front, steam while it cooks.
-function drawAwayPots(now) {
-  const z = cam.zoom, px = firePx(z), mine = cooking() ? ui.fire.F : null, art = smokeArt().img, tt = now / 1000;
-  for (const F of world.fires) {
-    if (F === mine) continue;
-    const idle = F.cookDish === '' ? idleVessel.get(F) : null;
-    if (F.cookDish === '' && !idle) continue;
-    const sx = (F.x - cam.x) * z + vw / 2, sy = (F.y - cam.y) * z + vh / 2;
-    if (!visible(sx, sy, px)) continue;
-    if (idle) {                                             // (nothing cooking: the vessel last cooked in stays over the fire)
-      const P = px * POT_SIZE, cy = sy - px * POT_UP, L = vesselLook(idle);
-      drawEmoji(L.back, sx, cy + L.up * P, P);
-      if (L.front) drawEmoji(L.front, sx, cy + L.up * P, P);
-      continue;
-    }
-    const busy = F.cookLeft > 0 && F.lit, P = px * POT_SIZE, cy = sy - px * POT_UP, my = cy - P * 0.15, n = F.cookItems.length, w = P * 0.46;
-    const L = vesselLook(DISH_VESSEL.get(F.cookDish));      // (a mess: the pot)
+function drawAwayPot(now, F, sx, sy) {
+  const z = cam.zoom, px = firePx(z), art = smokeArt().img, tt = now / 1000;
+  const idle = F.cookDish === '' ? idleVessel.get(F) : null;
+  if (F.cookDish === '' && !idle) return;
+  if (idle) {                                             // (nothing cooking: the vessel last cooked in stays over the fire)
+    const P = px * POT_SIZE, cy = sy - px * POT_UP, L = vesselLook(idle);
     drawEmoji(L.back, sx, cy + L.up * P, P);
-    const sheet = itemSheet().img;
-    for (let i = 0; i < n; i++) {
-      const k = ITEM_IDS.indexOf(F.cookItems[i]), ox = (n === 1 ? 0 : (i / (n - 1) - 0.5) * 0.46 * (n === 2 ? 0.8 : 1)) * P;
-      const bob = busy ? P * 0.035 * Math.sin(now / 170 + i * 2.1) : 0, by = cy + L.foot * P / 2 - bob - (i === 1 && n === 3 ? P * 0.05 : 0);
-      ctx.drawImage(sheet, k * ITEM_PX, 0, ITEM_PX, ITEM_PX, sx + ox - w / 2, by - w, w, w);
-    }
     if (L.front) drawEmoji(L.front, sx, cy + L.up * P, P);
-    if (busy) for (let k = 0; k < 4; k++) {
-      const p = (tt / 1.8 + k / 4) % 1, r = P * (0.1 + 0.22 * p);
-      ctx.globalAlpha = 0.5 * Math.sin(Math.PI * p);
-      ctx.drawImage(art, sx + P * (0.2 * Math.sin(p * 5 + k * 1.7) + (k - 1.5) * 0.06) - r, my - P * 0.1 - p * P * 1.1 - r, r * 2, r * 2);
-    }
-    ctx.globalAlpha = 1;
+    return;
   }
+  const busy = F.cookLeft > 0 && F.lit, P = px * POT_SIZE, cy = sy - px * POT_UP, my = cy - P * 0.15, n = F.cookItems.length, w = P * 0.46;
+  const L = vesselLook(DISH_VESSEL.get(F.cookDish));      // (a mess: the pot)
+  drawEmoji(L.back, sx, cy + L.up * P, P);
+  const sheet = itemSheet().img;
+  for (let i = 0; i < n; i++) {
+    const k = ITEM_IDS.indexOf(F.cookItems[i]), ox = (n === 1 ? 0 : (i / (n - 1) - 0.5) * 0.46 * (n === 2 ? 0.8 : 1)) * P;
+    const bob = busy ? P * 0.035 * Math.sin(now / 170 + i * 2.1) : 0, by = cy + L.foot * P / 2 - bob - (i === 1 && n === 3 ? P * 0.05 : 0);
+    ctx.drawImage(sheet, k * ITEM_PX, 0, ITEM_PX, ITEM_PX, sx + ox - w / 2, by - w, w, w);
+  }
+  if (L.front) drawEmoji(L.front, sx, cy + L.up * P, P);
+  if (busy) for (let k = 0; k < 4; k++) {
+    const p = (tt / 1.8 + k / 4) % 1, r = P * (0.1 + 0.22 * p);
+    ctx.globalAlpha = 0.5 * Math.sin(Math.PI * p);
+    ctx.drawImage(art, sx + P * (0.2 * Math.sin(p * 5 + k * 1.7) + (k - 1.5) * 0.06) - r, my - P * 0.1 - p * P * 1.1 - r, r * 2, r * 2);
+  }
+  ctx.globalAlpha = 1;
 }
 // The bar's look is painted once a size (cookBarArt): a soft shadow, a brass rim lit from above, a dark trough with faint
 // quarter marks, and under it a row of each fill (glossy ember, grey, gold), so a frame is three or four drawImages: the
@@ -6752,7 +6890,7 @@ const VSL_STEPS = 4;
 const VSL_RAW = [178, 166, 148], VSL_FIRED = [184, 98, 60];
 const vslArt = name => VSL_ARTS[VSL_PARTS.indexOf(name)];
 const VSL_FIRING = [0, 1, 2, 3].map(s => [vslArt('potW' + s), vslArt('panW' + s)]);   // (by step: the pot's, the griddle's)
-// How each vessel sits over a fire in the meadow (drawPot, drawAwayPots): its back and front art (null for none), and where
+// How each vessel sits over a fire in the meadow (drawPotAt): its back and front art (null for none), and where
 // what's in it stands (foot: box y of their feet; for the stick, their middles on the spit).
 const VSL_LOOK = {
   pot: { back: vslArt('pot0'), front: vslArt('pot1'), foot: 0.03, up: 0 },
@@ -7833,7 +7971,7 @@ function drawGlints(now, dark) {
 // The marker at the screen's edge, toward the nearest thing to pick while none is on screen, with that thing's painting in
 // it (the satchel's: itemSheet). Out of the way of the watch and the pill at the top and the satchel and the bars over it at
 // the foot (their places looked at once a second, KEEP_CLEAR).
-const KEEP_CLEAR = ['#watch', '#hud-right .hud-top', '#satchel', '#me-box'];
+const KEEP_CLEAR = ['#watch', '#hud-right .hud-top', '#satchel', '#vitals', '#me-box'];   // (0, 1 and 4 are pushed out from under; 2 and 3 are the foot's)
 const clearOf = KEEP_CLEAR.map(() => ({ l: 0, t: 0, r: 0, b: 0 }));
 // Where the way from the forager to a spot in the meadow leaves the screen, kept r + 10 in from its edges, over the satchel and
 // out from under the watch and the pill (edge: x, y and the way, cx, cy); false if it doesn't.
@@ -7848,7 +7986,8 @@ function edgeAt(tx, ty, r) {
   if (cy > 0) t = Math.min(t, (y1 - fy) / cy); else if (cy < 0) t = Math.min(t, (y0 - fy) / cy);
   if (!(t > 0) || t === Infinity) return false;
   let x = fx + cx * t, y = fy + cy * t;
-  for (let k = 0; k < 2; k++) {                         // (pushed down out from under the watch or the pill)
+  for (let k = 0; k < 5; k++) {                         // (pushed down out from under the watch, the pill or the face)
+    if (k === 2 || k === 3) continue;
     const o = clearOf[k];
     if (o.b && x > o.l - r - 4 && x < o.r + r + 4 && y < o.b + r + 4) y = o.b + r + 6;
   }
@@ -11617,7 +11756,7 @@ function hiveAt(sx, sy, swarms = false) {
       const z = cam.zoom, [hx, hy] = toScreen(h.x, h.y);
       return Math.abs(sx - hx) < Math.max(16, z * 0.5) && sy > hy - z * 1.7 && sy < hy - z * 0.8;
     }
-    const P = cam.zoom * (h.tree ? h.tree.size : S.HIVE_TREE), reach = Math.max(22, P * 0.12);
+    const P = cam.zoom * (h.tree ? h.tree.size : S.HIVE_TREE), reach = Math.max(fingerTap ? FINGER_R : 22, P * 0.12);
     const [hx, hy] = toScreen(h.x, h.y);
     return Math.abs(sx - hx) < reach && sy > hy - P * 0.3 - reach / 2 && sy < hy + reach / 2;
   }) || null;
@@ -13080,7 +13219,9 @@ function updateFavicon(ck) {
 
 // A few times a second: the tab's icon.
 function updateClock() {
-  updateFavicon(S.clock(world));
+  const ck = S.clock(world);
+  updateFavicon(ck);
+  edgeNight(darkness(ck.phase));
 }
 
 // ------------------------------------------------------------------ the inspector
@@ -13991,7 +14132,7 @@ let holdTimer = 0;
 // A finger held still while it's picking or has more lined up is what Shift is on a keyboard: the forager runs between them
 // (the queue stays, the finger steers nothing) and walks again once it's lifted.
 let sprintHold = false;
-function endSprint() { if (sprintHold) { sprintHold = false; holdShift(false); } }
+function endSprint() { if (sprintHold) { sprintHold = false; holdShift(sprintUi.on); } }   // (the sprint button still on: it runs on)
 
 function zoomOn(z) { const [sx, sy] = toScreen(fg.x, fg.y); zoomAt(sx, sy, z); }
 
@@ -14046,7 +14187,7 @@ canvas.addEventListener('pointerdown', e => {
   }
   if (ui.place && fingerTap) placeAt(...toWorld(e.clientX, e.clientY));   // (picking a spot for a fire: the faint one under the finger)
   // (pressed on something to pick, or a fire, it's a tap however long it's held, and a wobble more doesn't make it a drag: held, it runs there)
-  const on = !animalAt(e.clientX, e.clientY) && (!!fireAt(e.clientX, e.clientY) || !!basketAt(e.clientX, e.clientY) || !!promptAt(e.clientX, e.clientY) || !!gatherAt(e.clientX, e.clientY));
+  const u = useAt(e.clientX, e.clientY), on = !!promptAt(e.clientX, e.clientY) || !!u && u.kind !== 'animal';
   drag = { x: e.clientX, y: e.clientY, moved: false, id: e.pointerId, steer: false, px: e.clientX, py: e.clientY, at: 0, on, rush: false, blow: false, t0: e.timeStamp };
   clearTimeout(holdTimer);
   holdTimer = setTimeout(() => {                        // held still on the ground: it runs toward the pointer while it's down
@@ -14106,8 +14247,8 @@ canvas.addEventListener('pointerup', e => {
   }
   if (ui.place && drag) { placeHere(e.clientX, e.clientY); drag = null; return; }   // (picking a spot for a fire: there)
   if (drag?.steer) {                                    // (held: it runs on to where it was let go, and picks what it was let go on)
-    const c = animalAt(e.clientX, e.clientY), F = !c && fireAt(e.clientX, e.clientY), Bk = !c && !F && (basketAt(e.clientX, e.clientY) || stoneAt(e.clientX, e.clientY)), t = !c && !F && !Bk && gatherAt(e.clientX, e.clientY);
-    if (F) clickFire(F); else if (Bk) Bk.stone ? goStone() : goBasket(); else if (t) goGather(t, true); else walkTo(e.clientX, e.clientY, true);
+    const u = useAt(e.clientX, e.clientY);
+    if (u && u.kind !== 'animal') useIt(u, true, false); else walkTo(e.clientX, e.clientY, true);
   } else if (drag && !drag.moved) {
     click(e.clientX, e.clientY, drag.rush);
     if (fingerTap) lastTap = { t: e.timeStamp, x: e.clientX, y: e.clientY, on: drag.on };
@@ -14122,7 +14263,7 @@ canvas.addEventListener('pointercancel', e => {
   if (drag?.blow) blowOn(false);
   drag = null;
 });
-// Safari ignores the viewport's no-zoom, and a zoomed page makes the whole meadow blurry.
+// A pinch on the page (off the canvas) blurs the whole meadow, so it's swallowed; the canvas does its own zoom.
 document.addEventListener('gesturestart', e => e.preventDefault());
 // Safari on a phone shows a button pressed (:active) only where something listens for touches.
 document.addEventListener('touchstart', () => {}, { passive: true });
@@ -14146,11 +14287,8 @@ function click(sx, sy, run = false) {
   if (!cooking() && foragerHit(sx, sy) && !basketAt(sx, sy) && !stoneAt(sx, sy) && !gatherAt(sx, sy)) { partyTap(); return; }   // (on the forager itself: the easter egg's taps; standing by the basket or something to pick, the click is theirs)
   const PF = !cooking() && promptAt(sx, sy);
   if (PF) { clickFire(PF); return; }                       // (the pot over a fire: off to cook at it)
-  const c = animalAt(sx, sy), F = !c && fireAt(sx, sy), Bk = !c && !F && (basketAt(sx, sy) || stoneAt(sx, sy)), t = !c && !F && !Bk && gatherAt(sx, sy);
-  if (c) select(c.id);
-  else if (F) clickFire(F);                               // (a fire: off to see to it)
-  else if (Bk) Bk.stone ? goStone() : goBasket();         // (the basket: off to open it; the old stone: off to talk to it)
-  else if (t) { if (!queueGather(t)) goGather(t, run); }
+  const u = useAt(sx, sy);
+  if (u) useIt(u, run);                                   // (on something, or near enough: off to it)
   else walkTo(sx, sy);
 }
 // A tap walks it there; held (steering) or with Shift down, it runs.
@@ -14170,7 +14308,7 @@ function animalAt(sx, sy) {
   let best = null, bd = Infinity;
   for (const c of world.creatures) {
     if (c.hidden || !c.alive) continue;
-    const [x, y] = screenOf(c), px = creaturePx(c), r = Math.max(12, px * 0.42) + (fingerTap ? 8 : 0);
+    const [x, y] = screenOf(c), px = creaturePx(c), r = fingerTap ? Math.max(FINGER_R, px * 0.42 + 8) : Math.max(12, px * 0.42);
     const d = Math.hypot(x - sx, y - sy);
     if (d < r && d / r < bd) { best = c; bd = d / r; }
   }
@@ -14284,6 +14422,12 @@ const net = { tick: -1, base: 0, rate: 0, sentAt: 0, hostId: '', later: [], host
 const peers = new Map();                   // friends' foragers, by id
 let leftGuest = false;                     // left a friend's meadow for home: the keep as the page goes mustn't take it over your own
 
+// A guest's line dropped and net.js is taking it up again: a small pill says so till it's back or given up (#reconnect).
+function reconnectShow(on) { $('#reconnect').classList.toggle('on', on); }
+// The network or the page coming back is the moment to look at the line (net.js recheck).
+addEventListener('online', () => { if (Net && Net.recheck) Net.recheck(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && Net && Net.recheck) Net.recheck(); });
+
 function startTogether() {
   if (!Net) return;
   Net.start(ROOM, params.has('local'), {
@@ -14294,7 +14438,9 @@ function startTogether() {
     },
     joined(id) { Net.send(worldMsg(id)); },
     message: heardNet,
-    lost() { hostGone(); },
+    lost() { reconnectShow(false); hostGone(); },
+    reconnecting() { reconnectShow(true); },
+    back() { reconnectShow(false); toast('🧺 Back in your friend’s meadow.'); },
     failed(why) { toast(`🧺 Couldn't open the meadow to friends (${esc(why)}).`); },
   });
 }
@@ -14366,6 +14512,7 @@ function heardNet(m) {
   else if (m.t === 'say') heardChat(m, now);
   else if (m.t === 'call') heardCall(m, now);
   else if (m.t === 'give') heardGive(m, now);
+  else if (m.t === 'swat') heardSwat(m, now);
 }
 
 // The host's meadow, as a guest comes (to it alone), as the host starts a new one (to all), or again after drifting off.
@@ -14517,7 +14664,8 @@ function heardPos(m, now) {
       rings: [], puffs: [], puffAt: 0, drips: [], dripAt: 0, shiverAt: -1e9, shiverNext: 0,   // (its body, as fg's: drawBody, drawRings, shiverOf)
       art: FORAGER_ARTS[0], sized: 0, sizedSet: 0, sizedSnow: 0, name: '', nameArt: null, sx: -0, sy: -0, shown: false, chat: null, kneel: -1,
       mark: -0,                                            // (how far its marker at the screen's edge has faded in: drawFriendMarks)
-      emote: -1, emoteMs: -0, emoteFrame: -1, lift: -0, sizedEmote: -1 };   // (an emote, as it said: EMOTE, emoteStill)
+      emote: -1, emoteMs: -0, emoteFrame: -1, lift: -0, sizedEmote: -1,
+      swingAt: -1e9, swingDir: -0, hitAt: -1e9 };          // (friendly fire: swing)   // (an emote, as it said: EMOTE, emoteStill)
     peers.set(m.from, p);
     p.name = cleanName(m.n);
     if (Net.host || m.tick < 0) toast(`🧺 ${friendName(p) || 'A friend'} has come into the meadow`);   // (a guest knows the host is there)
@@ -14921,6 +15069,8 @@ function drawFriendMarks(now) {
 }
 function drawPeer(p, sx, sy, now) {
   const px = forPx();
+  sx += joltOf(p, now) * px;
+  drawSwat(p, sx, sy, px, now);
   drawRings(p.rings, now, px);
   if (zoomedOut()) { drawSmall(p.art, sx, sy - px * 0.36, px, p.flip); return; }
   if (p.stage === 4) { drawFallen(p.art, sx, sy, px, p.flip, p.fall); return; }
@@ -15142,6 +15292,59 @@ function callOut() {
   chime('hoot');
   myChat = chatFor(CALL_TEXT, performance.now());
 }
+// Friendly fire, a first pass: X swings at the nearest friend in reach (SWING_REACH), and everyone is told ('swat'). Each
+// sees the swing, a quick white arc round the one swinging (drawSwat); the one hit judders (joltOf), is knocked back a
+// step from the swing (SWAT_PUSH, onto ground it can stand on) and loses SWAT_HURT of its health (sim.js hurt): enough
+// swats and it collapses as from the cold. The one hit takes its own hurt, so the meadow's sim stays its own.
+const SWING_MS = 240, SWING_EVERY = 550, SWING_REACH = 1.5, SWAT_HURT = 0.12, SWAT_PUSH = 0.8, HIT_MS = 360;
+function swing() {
+  const f = world.forager, now = performance.now();
+  if (f.down >= 0 || ui.fire || cooking() || now - fg.swingAt < SWING_EVERY) return;
+  let hit = null, best = SWING_REACH;
+  for (const p of peers.values()) {
+    const d = Math.hypot(p.x - f.x, p.y - f.y);
+    if (p.stage !== 4 && d < best) { best = d; hit = p; }
+  }
+  fg.swingAt = now;
+  fg.swingDir = hit ? Math.atan2(hit.y - f.y, hit.x - f.x) : fg.flip ? 0 : Math.PI;
+  if (hit) { hit.hitAt = now + SWING_MS * 0.4; fg.flip = hit.x > f.x; }   // (turned to whom it swings at)
+  Net.send({ t: 'swat', x: f.x, y: f.y, d: fg.swingDir, hit: hit ? hit.id : '', n: myName });
+  hear('swat', f.x, f.y, { hit: !!hit }, true);
+}
+function heardSwat(m, now) {
+  if (!world || !Number.isFinite(m.x) || !Number.isFinite(m.y)) return;
+  const p = peers.get(m.from);
+  if (p) { p.swingAt = now; p.swingDir = +m.d || 0; }
+  hear('swat', m.x, m.y, { hit: !!m.hit });
+  const q = m.hit && peers.get(m.hit);
+  if (q) q.hitAt = now + SWING_MS * 0.4;
+  if (m.hit !== Net.me || !(Net.guest ? net.tick >= 0 : true)) return;
+  const f = world.forager;
+  if (f.down >= 0) return;
+  fg.hitAt = now + SWING_MS * 0.4;
+  const dx = f.x - m.x, dy = f.y - m.y, d = Math.hypot(dx, dy) || 1, nx = f.x + dx / d * SWAT_PUSH, ny = f.y + dy / d * SWAT_PUSH;
+  if (S.walkable(world, nx, ny)) { f.x = nx; f.y = ny; }
+  f.path.length = 0; f.walking = false; f.speed = 0; f.goalX = f.x; f.goalY = f.y;
+  ui.gather = null; ui.queue.length = 0;
+  S.hurt(world, SWAT_HURT);
+  toast(`💢 ${esc((p && p.name) || cleanName(m.n) || 'A friend')} bopped you`);
+  sendPos(now);                                            // (they see it knocked back at once)
+}
+// Hit a moment ago: it judders side to side, dying away (in its sizes, added to where it's drawn).
+function joltOf(b, now) {
+  const u = (now - b.hitAt) / HIT_MS;
+  return u < 0 || u >= 1 ? 0 : Math.sin(u * 28) * 0.07 * (1 - u);
+}
+// The swing: a white arc that sweeps round past it the way it swung, fading (one stroke, only while it lasts).
+function drawSwat(b, sx, sy, px, now) {
+  const u = (now - b.swingAt) / SWING_MS;
+  if (u < 0 || u >= 1) return;
+  const cy = sy - px * 0.22, r = px * 0.3, a0 = b.swingDir - 1.3, a1 = a0 + 2.6 * Math.min(1, u * 1.6);
+  ctx.strokeStyle = `rgba(255, 252, 240, ${0.85 * (1 - u)})`;
+  ctx.lineWidth = Math.max(1.5, px * 0.05 * (1 - u * 0.5));
+  ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.arc(sx, cy, r, Math.max(a0, a1 - 1.6), a1); ctx.stroke();
+}
 const WAYS = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
 function heardCall(m, now) {
   if (!Number.isFinite(m.x) || !Number.isFinite(m.y)) return;
@@ -15209,6 +15412,7 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'pause') setSpeed(ui.speed ? 0 : 1);
   else if (t.dataset.act === 'build') buildPressed();       // (the fire button by the satchel)
   else if (t.dataset.act === 'basket') basketPressed();     // (the basket's, by it)
+  else if (t.dataset.act === 'sprint') { sprintSet(!sprintUi.on); chime('click'); }   // (run between the picks, or walk again)
   else if (t.dataset.act === 'larder-close') openLarder(false);
   else if (t.dataset.act === 'larder-all') larderAll();
   else if (t.dataset.act === 'make-one') makeOne(t.dataset.id);
@@ -15365,6 +15569,7 @@ document.addEventListener('keydown', e => {
   }
   else if (e.code === 'KeyF' && !e.repeat) { if (atFire()) { fireKey = true; blowOn(true); } else buildPressed(); }   // (at a fire, held: blowing; else the fire button)
   else if (e.key === 'h' && !e.repeat && Net && Net.on) callOut();   // (a hoot to your friends)
+  else if (e.code === 'KeyX' && !e.repeat && Net && Net.on) swing();   // (friendly fire)
   else if (e.key === 'm') toggleSound();
   else if (e.key === 'i') openMe();
   else if (e.key === '+' || e.key === '=') zoomOn(cam.zoom * 1.25);
@@ -15746,10 +15951,10 @@ function onBeat(now) {
 }
 
 // Paused, the world stands still, but the water, the weather and the trees still move a little:
-// 30 frames a second are plenty for that, unless you're looking around or something is happening.
-const RESTING_MS = 30, WOKEN_MS = 500;
-// Watching the meadow play at 1x, camera still, hands off: 30 fps is plenty (what resting gets
-// when paused). Anything happening — a drag, a zoom, a storm, an effect — stays at full rate.
+// 12 frames a second are plenty for that, unless you're looking around or something is happening.
+const RESTING_MS = 1000 / 12 - 2.2, WOKEN_MS = 500;
+// Watching the meadow play at 1x, camera still, hands off: 30 fps is plenty (paused, resting
+// gets 12). Anything happening — a drag, a zoom, a storm, an effect — stays at full rate.
 const CALM_MS = 2000, CALM_GAP = 1000 / 30 - 2.2;
 let lastDrawn = 0, lastInput = 0;
 // The most frames worth painting a second. A 120Hz phone renders every other rAF instead of all

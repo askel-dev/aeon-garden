@@ -217,7 +217,7 @@ an apple, oak or beech up to `FALL_PICK` of its windfalls (`d.windfall`, the rab
 season: low in spring, when the bees live on nectar, so a meadow's first hives, starting with `HIVE_HONEY` 40, give a little; from
 autumn more than a big colony eats in a winter): a greedy forager taking all it could for three years starved no more colonies
 than none. `eachPickable` lists everything with something to give now (game.js's glints and arrow, and counting). `whatThere` also says gently why not ("Not ripe yet", "Picked clean"...). What's picked goes
-in the satchel (`w.forager.bag`, `bagN`: `SLOTS` slots, `STACK` of a kind to one; `stow`, `roomFor`, `dropSlot`), kept with the meadow. What's dropped lies on the ground (`w.dropped`, `dropOf`; dropped on a pile of its kind it goes on it) for `DROP_DAYS` (half a day, six minutes at 1x), or till deep water comes over it (`droppedTick`).
+in the satchel (`w.forager.bag`, `bagN`: `SLOTS` slots, `STACK` of a kind to one; `stow`, `roomFor`, `dropSlot`), kept with the meadow. What's dropped lies on the ground (`w.dropped`, `dropOf`; dropped on a pile of its kind it goes on it) for `DROP_DAYS` (half a day, six minutes at 1x), or till deep water comes over it (`droppedTick`). Picking one's own back up takes no Gathering practice (`gather`): it was practised when it was first taken from the meadow, so a thing can't be set down and picked up again for a level.
 No `KEEP_VERSION` bump: the new fields are in the blanks (`foragerOf`, `greenOf`, `blankTree`).
 Its body (`bodyTick`, every tick, before it walks): the air's temperature (`airTemp`, degrees: the year's, `AIR_YEAR`, about
 19 at midsummer and -1 at midwinter; the day's, `AIR_DAY`, coldest at sunrise, warmest at `AIR_WARMEST`; the weather's,

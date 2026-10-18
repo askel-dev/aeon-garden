@@ -83,6 +83,70 @@ function startLocal() {
   addEventListener('pagehide', () => bc && bc.postMessage({ t: 'bye', from: Net.me }));
 }
 
+// A guest's line to the host. When it drops (cell to Wi-Fi, a tunnel, a tab put to sleep) the guest doesn't give up at once:
+// it tries again with a new peer, after RETRY_MS in turn, and only when they've all failed is the host gone (lost()). Each
+// try is a generation (gen), so a late word from an old one is ignored. Offline waits without counting; Net.recheck() (game.js
+// calls it when the network comes back or the page does) tries at once.
+const RETRY_MS = [1000, 2000, 4000, 8000, 8000, 8000], TRY_MS = 8000;
+let gen = 0, tries = 0, retryTimer = 0, tryTimer = 0;
+Net.reconnecting = false;
+
+function guestLine() {
+  const g = ++gen, me = new window.Peer();
+  me.on('open', id => {
+    if (g !== gen) { me.destroy(); return; }
+    peer = me; Net.me = id;
+    const c = me.connect(PREFIX + Net.room, { reliable: true });
+    toHost = c;
+    c.on('open', () => {
+      if (g !== gen) return;
+      clearTimeout(tryTimer);
+      const back = Net.reconnecting;
+      Net.reconnecting = false; tries = 0;
+      Net.guest = true; Net.on = true; Net.peers = 1;
+      if (back) { if (handlers.back) handlers.back(); } else handlers.ready('guest');
+    });
+    c.on('data', m => heard(m, c));
+    c.on('close', () => { if (g === gen) lineDown(); });
+  });
+  me.on('error', e => {
+    if (g !== gen) return;
+    if (Net.reconnecting) lineDown();
+    else if (!Net.on) handlers.failed(e.type || String(e));
+    else console.warn('Net', e);
+  });
+}
+
+function lineDown() {
+  clearTimeout(tryTimer); clearTimeout(retryTimer);
+  gen++;                                               // (whatever the last try was, it's over)
+  Net.on = false; Net.peers = 0;
+  const online = navigator.onLine !== false;
+  if (online && tries >= RETRY_MS.length) { Net.reconnecting = false; handlers.lost(); return; }
+  if (!Net.reconnecting) { Net.reconnecting = true; if (handlers.reconnecting) handlers.reconnecting(); }
+  retryTimer = setTimeout(attempt, online ? RETRY_MS[tries++] : RETRY_MS[2]);
+}
+
+function attempt() {
+  if (!Net.reconnecting || bc) return;
+  clearTimeout(tryTimer); clearTimeout(retryTimer);
+  for (const c of [toHost]) if (c) { c.removeAllListeners(); try { c.close(); } catch (e) { /* gone already */ } }
+  if (peer) { peer.removeAllListeners(); try { peer.destroy(); } catch (e) { /* gone already */ } }
+  peer = toHost = null;
+  guestLine();
+  const g = gen;
+  tryTimer = setTimeout(() => { if (g === gen) lineDown(); }, TRY_MS);   // (a try that hangs counts as failed)
+}
+
+// The network came back, or the page did: a guest whose line is down tries now; a host whose broker line dropped takes it up
+// again (so friends can find the room), and a guest whose line looks shut at once goes the same way.
+Net.recheck = () => {
+  if (bc || !peer) return;
+  if (Net.host) { if (peer.disconnected && !peer.destroyed) peer.reconnect(); return; }
+  if (Net.reconnecting) { attempt(); return; }
+  if (Net.guest && (!toHost || !toHost.open)) { Net.reconnecting = true; if (handlers.reconnecting) handlers.reconnecting(); attempt(); }
+};
+
 // Over the internet: claim the room's name on the broker; taken, join whoever has it.
 function startPeer() {
   const P = window.Peer;
@@ -98,16 +162,7 @@ function startPeer() {
   host.on('error', e => {
     if (e.type !== 'unavailable-id') { if (!Net.on) handlers.failed(e.type || String(e)); else console.warn('Net', e); return; }
     host.destroy();
-    const me = new P();
-    me.on('open', id => {
-      peer = me; Net.me = id;
-      const c = me.connect(PREFIX + Net.room, { reliable: true });
-      toHost = c;
-      c.on('open', () => { Net.guest = true; Net.on = true; Net.peers = 1; handlers.ready('guest'); });
-      c.on('data', m => heard(m, c));
-      c.on('close', () => { Net.on = false; Net.peers = 0; handlers.lost(); });
-    });
-    me.on('error', e2 => { if (!Net.on) handlers.failed(e2.type || String(e2)); else console.warn('Net', e2); });
+    guestLine();
   });
   addEventListener('pagehide', () => peer && peer.destroy());
 }
@@ -116,6 +171,7 @@ function startPeer() {
 // closed, quietly (no lost() or bye heard back). Net.start can open another after.
 Net.leave = () => {
   if (Net.on) Net.send({ t: 'bye' });
+  gen++; Net.reconnecting = false; tries = 0; clearTimeout(tryTimer); clearTimeout(retryTimer);
   if (bc) { bc.onmessage = null; bc.close(); bc = null; }
   for (const c of [toHost, ...conns.values()]) if (c) c.removeAllListeners();
   if (peer) { peer.removeAllListeners(); setTimeout(peer.destroy.bind(peer), 200); }   // (a moment for the bye to go)
@@ -123,7 +179,8 @@ Net.leave = () => {
   Net.on = Net.host = Net.guest = false; Net.peers = 0;
 };
 
-// handlers: ready(role), joined(id) (host: a guest came), message(msg), lost() (guest: the host went), failed(why).
+// handlers: ready(role), joined(id) (host: a guest came), message(msg), lost() (guest: the host went), failed(why),
+// reconnecting() and back() (guest: the line dropped and is being taken up again, and was).
 Net.start = (room, local, h) => {
   handlers = h;
   Net.room = String(room).toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 40) || 'meadow';

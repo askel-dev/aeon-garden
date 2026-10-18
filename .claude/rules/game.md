@@ -270,7 +270,13 @@ with something to give glows (`GLOW_ART`, painted once, under it; a hive's over 
 its name by it and a hand for the pointer; one with nothing says why (sim.js `whatThere`), as a click on it does (`say`). The hover
 is looked up again only when the mouse moves, or every `AIM_MS` while the camera glides (`hoverFrame`, `aim`). "Satchel's full"
 says so by the forager and leaves the thing be.
-A click a little off one still goes for it, or off something dropped (`snapTo`: `SNAP` px past its glow, `SNAP_FINGER` for a finger, more in reach).
+A click or a tap is looked up in one place (`useAt`, then `useIt`; the click, a held press let go, and what a press is on all ask it):
+an animal, a fire, the basket or the old stone, or something to gather, as drawn; for a finger each target is at least `FINGER_R` round
+(56 px across). Failing those, the nearest of them all within a snap goes (`snapTo` with `all`: `SNAP` px past its glow, `TAP_SNAP`
+for a finger, more in reach; `useSpot` is the fire's, the basket's and the stone's), so a near miss isn't a walk past.
+A finger has no hover, so standing still a moment (`USE_STILL`) within `USE_NEAR` of something to use (a fire, the basket, the stone,
+or what E would pick: `nearPick`) shows it as a mouse's hover does, in `aim` with `aim.close` (`closeBy`): the paler ring round a fire's,
+the basket's or the stone's foot (`drawGlow`, `RING_E_ART`) or a pick's glow, and its name by it for `USE_SAY`, then fading (`USE_FADE`).
 A tap on the forager with something to pick there picks it (only one on nothing is the dance's tap), and a quick tap after a pick,
 or onto something to pick, is a tap, never the double tap's zoom (`lastTap.on`): picking a cluster on a phone kept zooming. A press on
 something to pick is a tap however long it's held (held past `HOLD_MS`, it runs there, `drag.rush`) and needs a bigger move to become

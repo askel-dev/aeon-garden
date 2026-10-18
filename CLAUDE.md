@@ -40,7 +40,7 @@ trodden earth round it (`CAMP_R`, `inCamp`, game.js `drawCampRing`) is where lat
 on the fire and a big window opens beside it, the pot close up with water in it that what you drag (or tap) from the satchel's big
 tiles splashes into, the fire under it, steam, a spoon stirring, and its sounds (game.js `renderCook`, `drawCookView`, `setupCookBag`;
 sound.js `plop`, `stir`, `dish`, `mess`, the pot's simmer; recipes.js `cook`); a recipe book by the satchel (B: a book open on the meadow like the old field journal, numbered pages with each dish's
-picture and what goes in, `renderBook`; a few dishes `known` from the start, the rest found by trying or half told by the forager's hints, `hintTick`; its other tab, Finds, has every ingredient found or still to find, with where to look: recipes.js `where`), and food is eaten from the satchel into a tummy (sim.js `f.tummy`, `feedForager`; game.js `eatAsk`). It gets better by doing, as in The Forest (the start of a levelling system, to build on): skills in sim.js `SKILLS`, each with practice `f.xp` and a level `f.lv` (0 to `SKILL_TOP`) whose perks are read where the thing is done (`perk`, `gainSkill`). Stamina is practised by sprinting (longer sprints, breath back sooner), Cooking by each dish out of the pot (quicker cooking, and each vessel past the stick is made only from a level: recipes.js CRAFTS `level`, game.js `makeLocked`), Gathering by each pick into the satchel (a quicker stoop and reach; what lies about for a fire counts a quarter, `GROUND_PRACTICE`); a level up is a toast (game.js `levelup`). A new skill is a block in `SKILLS` and a `gainSkill` where it's practised; a tap on the face (or I) shows them all (game.js `openMe`, `renderMe`: a `SKILL_SAYS` line each says what its level gives), and the face's brass badge is the levels added up, glinting after a level up till they're looked at. `forager-lab.html` shows all its paintings. Notes in game.md and ecology.md.
+picture and what goes in, `renderBook`; a few dishes `known` from the start, the rest found by trying or half told by the forager's hints, `hintTick`; its other tab, Finds, has every ingredient found or still to find, with where to look: recipes.js `where`), and food is eaten from the satchel into a tummy (sim.js `f.tummy`, `feedForager`; game.js `eatAsk`). It gets better by doing, as in The Forest (the start of a levelling system, to build on): skills in sim.js `SKILLS`, each with practice `f.xp` and a level `f.lv` (0 to `SKILL_TOP`) whose perks are read where the thing is done (`perk`, `gainSkill`). Stamina is practised by sprinting (longer sprints, breath back sooner), Cooking by each dish out of the pot (quicker cooking, and each vessel past the stick is made only from a level: recipes.js CRAFTS `level`, game.js `makeLocked`), Gathering by each pick into the satchel (a quicker stoop and reach; what lies about for a fire counts a quarter, `GROUND_PRACTICE`, and what it dropped itself counts nothing, so a thing can't be set down and taken up again for practice); a level up is a toast (game.js `levelup`). A new skill is a block in `SKILLS` and a `gainSkill` where it's practised; a tap on the face (or I) shows them all (game.js `openMe`, `renderMe`: a `SKILL_SAYS` line each says what its level gives), and the face's brass badge is the levels added up, glinting after a level up till they're looked at. `forager-lab.html` shows all its paintings. Notes in game.md and ecology.md.
 - `game.js`: drawing, UI, the inspector. Its features (and where new notes on them go) are in
   `.claude/rules/game.md`, which loads when game.js or index.html is opened.
 - `ground.js`: the ground (grass, earth, shores, water) as a WebGL shader, painted from a
@@ -53,7 +53,7 @@ picture and what goes in, `renderBook`; a few dishes `known` from the start, the
   light over it instead of adding to it). The golden hour lights it in the shader (`light`, game.js `goldLight`, in
   `GOLD_STEPS` so it repaints only on a step); what stands on it gets the same warmth as one `'source-atop'` fill, and
   the night is a navy `wash` over everything. The loop gives the sim at most `SIM_MS` a frame (a slow phone runs fast time a bit slower
-  instead of dropping frames), a paused meadow nobody is touching draws at 30 fps (`resting`), so does a calm one played at 1x with a still camera and no hands on it (`calm`), and a touch screen draws at most about 60 a second (`renderGap`, `FRAME_GAP`: a 120Hz phone paints every other beat, the sim still runs on all).
+  instead of dropping frames), a paused meadow nobody is touching draws at 12 fps (`resting`), a calm one played at 1x with a still camera and no hands on it (`calm`) at 30, and a touch screen draws at most about 60 a second (`renderGap`, `FRAME_GAP`: a 120Hz phone paints every other beat, the sim still runs on all).
 - `sound.js`: all the sounds, made with Web Audio (no files). Off until the 🔊 button or M.
   `sound-lab.html` plays each one on its own. The forager's footsteps (`step`) come from game.js `foragerFrame`, one for each
   foot down in the stride, with `pace` = its speed against `FORAGER_WALK`, so a sprint (just a faster `f.speed`) is quicker
@@ -73,6 +73,16 @@ picture and what goes in, `renderBook`; a few dishes `known` from the start, the
   who, what they're up to, and the tummy. Tap it for the rest. On a touch screen every target is 44 px or more and a ✕ is
   a round brass button; on an upright phone a card is a sheet from the bottom with its ✕ at the foot in the
   middle, and Back shuts what's open (`stepOut`).
+- `sw.js`: the offline shell. A service worker, registered by index.html, that keeps the page and all it runs
+  (the eleven scripts, the workers' painters, the icons, the self-hosted fonts) in a Cache and serves them
+  cache-first, refreshing behind it (stale-while-revalidate, so a new version lands on the next visit). Everything
+  is same-origin: PeerJS, Supabase and the stone's function are the only things that still want the network, and
+  they go straight through. So a meadow already visited opens with no signal, and Android Chrome offers to install
+  it (its fetch handler is what the browser wants before the prompt). Bump `VERSION` for a forced clean start.
+- `assets/fonts`: Fraunces and Nunito, self-hosted (index.html `@font-face`, no `<link>` to Google Fonts and no
+  preconnect). The same variable Latin cuts Google served — Fraunces italic 450 and upright 600 to 680, Nunito 500
+  to 900 — so the meadow asks no third party for anything on first load. Both are OFL (`OFL-Fraunces.txt`,
+  `OFL-Nunito.txt`). Replaced only by dropping in new woff2s and, for the browser to notice, bumping sw.js `VERSION`.
 - `fur.js`, `fur-worker.js`: the painted foxes and rabbits (their rigs, poses and `paintFur`), the visitors painted the
   same way (dragonflies, the kingfisher, the skylark: `Fur.painters`), and the few drawing helpers every painting in game.js
   uses (`fillIn`, `ovalAt`, `blurIn`, `softIn`, `furGlow`, `rockRGB`, `tone`...), which game.js takes from `Fur`. In the
@@ -89,7 +99,7 @@ picture and what goes in, `renderBook`; a few dishes `known` from the start, the
   the satchel's sheet as `'ingr:' + n`, every ingredient so far; a new one not painted here yet keeps the meadow's painting or its emoji.
 - `friends.js`, `supabase/friends.sql`: friends (••• › Friends; game.js `openFriends`, `friendsChanged`, `friendInvited`). An anonymous
   Supabase player made the first time Friends opens (`aeon-garden-friends` says to start it from then on), a code to add each other by
-  (or a `?friend=CODE` link), a beat every 30 s while in view (`here()`: name and the room played together in) that brings the list back,
+  (or a `?friend=CODE` link), a beat every minute while in view, every 30 s while the list is open (`here()`: name and the room played together in) that brings the list back,
   and invites and knocks over Realtime. Your headshot (the corner's face in your hat and cloak, a small JPEG) goes with a beat
   when Friends comes on or the outfit changes (game.js `sendHead`), and the list shows each friend's (fetched only when new, `friend_snaps`). The tables' rules are the security: friends only see each other's room once accepted, and only
   the anon key is in the page (never the service_role one). A change to the SQL is pasted into the Supabase SQL editor by Axel.

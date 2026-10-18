@@ -1,0 +1,209 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Draw bench</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #6a9a55; overflow: hidden; touch-action: none; }
+  canvas { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; }
+  #out { position: fixed; left: 8px; right: 8px; bottom: 30px; z-index: 9; font: 13px/1.4 ui-monospace, monospace; color: #fff;
+    background: rgba(0,0,0,.65); padding: 8px 10px; border-radius: 8px; white-space: pre-wrap; }
+  #go { position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center; background: #2c3a24; color: #fff;
+    font: 600 22px system-ui; text-align: center; padding: 20px; }
+</style></head>
+<body>
+<canvas id="ground"></canvas><canvas id="world"></canvas>
+<div id="out">loading…</div>
+<div id="go">Tap to start the draw bench<br><small style="font-weight:400;font-size:15px">round 2 · about 2–3 minutes · keep the phone awake, unplugged if you can</small></div>
+<script>
+'use strict';
+const out = document.getElementById('out'), log = [];
+const say = s => { log.push(s); out.textContent = log.slice(-14).join('\n'); };
+const dpr = Math.min(3, devicePixelRatio || 1);
+const W = Math.round(innerWidth * dpr), H = Math.round(innerHeight * dpr);
+const SPR = 48;                         // distinct pictures
+const results = { ua: navigator.userAgent, dpr, W, H, scenes: [] };
+
+// Pictures like the game's: soft painted blobs with alpha, 48 to 256 px.
+const pics = [];
+function paint(i) {
+  const s = 48 + ((i * 37) % 209), c = document.createElement('canvas'); c.width = c.height = s;
+  const g = c.getContext('2d'), h = (i * 47) % 360;
+  for (let k = 0; k < 9; k++) {
+    g.fillStyle = `hsla(${h + k * 9},55%,${35 + k * 4}%,0.85)`;
+    g.beginPath(); g.ellipse(s * (0.3 + 0.4 * ((k * 13) % 7) / 7), s * (0.3 + 0.4 * ((k * 5) % 7) / 7), s * 0.22, s * 0.18, k, 0, 7); g.fill();
+  }
+  return c;
+}
+for (let i = 0; i < SPR; i++) pics.push(paint(i));
+
+// The atlas for WebGL: shelf-packed into 2048².
+const AT = 2048, atlas = document.createElement('canvas'); atlas.width = atlas.height = AT;
+const ag = atlas.getContext('2d'), uv = [];
+{ let x = 0, y = 0, row = 0;
+  for (const p of pics) { if (x + p.width + 2 > AT) { x = 0; y += row + 2; row = 0; } ag.drawImage(p, x, y); uv.push([x / AT, y / AT, p.width / AT, p.height / AT, p.width]); x += p.width + 2; row = Math.max(row, p.height); } }
+
+// The ground: one WebGL canvas with a shader, painted once (as the game's is, when steady) and slid by CSS.
+const ground = document.getElementById('ground'); ground.width = W; ground.height = H;
+function paintGround(gl, w, h) {
+  const vs = 'attribute vec2 p; void main(){ gl_Position = vec4(p,0.,1.); }';
+  const fs = 'precision mediump float; uniform vec2 r; void main(){ vec2 q = gl_FragCoord.xy / r; float n = sin(q.x*40.)*sin(q.y*53.)*0.04; gl_FragColor = vec4(0.36+n, 0.56+n, 0.3, 1.); }';
+  const pr = prog(gl, vs, fs); gl.useProgram(pr);
+  const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,3,-1,-1,3]), gl.STATIC_DRAW);
+  const l = gl.getAttribLocation(pr, 'p'); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 2, gl.FLOAT, false, 0, 0);
+  gl.uniform2f(gl.getUniformLocation(pr, 'r'), w, h); gl.viewport(0, 0, w, h); gl.drawArrays(gl.TRIANGLES, 0, 3);
+  return { pr, b, l };
+}
+function prog(gl, vs, fs) {
+  const sh = (t, s) => { const o = gl.createShader(t); gl.shaderSource(o, s); gl.compileShader(o); if (!gl.getShaderParameter(o, gl.COMPILE_STATUS)) throw gl.getShaderInfoLog(o); return o; };
+  const p = gl.createProgram(); gl.attachShader(p, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p); return p;
+}
+paintGround(ground.getContext('webgl', { alpha: false, antialias: false }), W, H);
+
+// The things: positions that wander, like animals and swaying trees.
+const N_MAX = 60000, xs = new Float32Array(N_MAX), ys = new Float32Array(N_MAX), ks = new Uint8Array(N_MAX), ph = new Float32Array(N_MAX);
+for (let i = 0; i < N_MAX; i++) { xs[i] = Math.random() * W; ys[i] = Math.random() * H; ks[i] = i % SPR; ph[i] = Math.random() * 6.28; }
+let scale = 0.5 * dpr / 2;            // (a 48–256 px painting drawn at 0.375x–0.75x of itself, like a sprite near its size)
+
+// ---- Canvas 2D, the game's way: a setTransform and an alpha per thing, drawImage from ImageBitmaps.
+let bitmaps = null, world = document.getElementById('world'), ctx2d = null, gl = null, glS = null;
+function draw2d(n, t) {
+  const g = ctx2d; g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, W, H);
+  for (let i = 0; i < n; i++) {
+    const b = bitmaps[ks[i]], s = b.width * scale, a = ph[i] + t * 0.002, x = xs[i] + Math.sin(a) * 6 * dpr, y = ys[i];
+    if (i % 3 === 0) { g.setTransform(1, 0, Math.sin(a) * 0.05, 1, x, y); g.globalAlpha = 1; g.drawImage(b, -s / 2, -s, s, s); }   // (a swaying tree)
+    else { g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = i % 5 === 0 ? 0.6 : 1; g.drawImage(b, x - s / 2, y - s, s, s); }
+  }
+  g.globalAlpha = 1;
+}
+
+// ---- WebGL: every thing an instance of one quad; one buffer upload and one draw call a frame.
+const GVS = `#version 300 es
+in vec2 corner; in vec4 a_pos; in vec4 a_uv; in float a_alpha;
+uniform vec2 res; out vec2 v_uv; out float v_a;
+void main() { vec2 p = a_pos.xy + vec2((corner.x - 0.5) * a_pos.z + a_pos.w * (1.0 - corner.y), (corner.y - 1.0) * a_pos.z);
+  gl_Position = vec4(p / res * vec2(2., -2.) + vec2(-1., 1.), 0., 1.); v_uv = a_uv.xy + corner * a_uv.zw; v_a = a_alpha; }`;
+const GFS = `#version 300 es
+precision mediump float; uniform sampler2D tex; in vec2 v_uv; in float v_a; out vec4 o;
+void main() { o = texture(tex, v_uv) * v_a; }`;
+let inst = null, instBuf = null;
+function setupGL(canvas, withGround) {
+  gl = canvas.getContext('webgl2', { alpha: !withGround, premultipliedAlpha: true, antialias: false });
+  const pr = prog(gl, GVS, GFS); gl.useProgram(pr);
+  const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+  const cb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, cb); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0,0, 1,0, 0,1, 1,1]), gl.STATIC_DRAW);
+  const lc = gl.getAttribLocation(pr, 'corner'); gl.enableVertexAttribArray(lc); gl.vertexAttribPointer(lc, 2, gl.FLOAT, false, 0, 0);
+  instBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, instBuf); inst = new Float32Array(N_MAX * 9);
+  gl.bufferData(gl.ARRAY_BUFFER, inst.byteLength, gl.DYNAMIC_DRAW);
+  const at = (name, size, off) => { const l = gl.getAttribLocation(pr, name); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, size, gl.FLOAT, false, 36, off); gl.vertexAttribDivisor(l, 1); };
+  at('a_pos', 4, 0); at('a_uv', 4, 16); at('a_alpha', 1, 32);
+  const tx = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tx);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, atlas);
+  gl.generateMipmap(gl.TEXTURE_2D);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  gl.uniform2f(gl.getUniformLocation(pr, 'res'), W, H); gl.viewport(0, 0, W, H);
+  glS = { pr, vao, withGround, gpr: null };
+  if (withGround) {   // (the ground drawn into the same canvas each frame, as one layer: a full-screen pass, then the sprites)
+    const vs = 'attribute vec2 p; void main(){ gl_Position = vec4(p,0.,1.); }';
+    const fs = 'precision mediump float; uniform vec2 r; void main(){ vec2 q = gl_FragCoord.xy / r; float n = sin(q.x*40.)*sin(q.y*53.)*0.04; gl_FragColor = vec4(0.36+n, 0.56+n, 0.3, 1.); }';
+    const gp = prog(gl, vs, fs), gv = gl.createVertexArray(); gl.bindVertexArray(gv);
+    const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,3,-1,-1,3]), gl.STATIC_DRAW);
+    const l = gl.getAttribLocation(gp, 'p'); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 2, gl.FLOAT, false, 0, 0);
+    gl.useProgram(gp); gl.uniform2f(gl.getUniformLocation(gp, 'r'), W, H);
+    glS.gpr = gp; glS.gvao = gv;
+  }
+}
+function drawGL(n, t) {
+  for (let i = 0; i < n; i++) {
+    const u = uv[ks[i]], s = u[4] * scale, a = ph[i] + t * 0.002, o = i * 9;
+    inst[o] = xs[i] + Math.sin(a) * 6 * dpr; inst[o + 1] = ys[i]; inst[o + 2] = s; inst[o + 3] = i % 3 === 0 ? Math.sin(a) * 0.05 * s : 0;
+    inst[o + 4] = u[0]; inst[o + 5] = u[1]; inst[o + 6] = u[2]; inst[o + 7] = u[3]; inst[o + 8] = i % 3 !== 0 && i % 5 === 0 ? 0.6 : 1;
+  }
+  if (glS.withGround) { gl.useProgram(glS.gpr); gl.bindVertexArray(glS.gvao); gl.drawArrays(gl.TRIANGLES, 0, 3); }
+  else { gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); }
+  gl.useProgram(glS.pr); gl.bindVertexArray(glS.vao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, instBuf); gl.bufferSubData(gl.ARRAY_BUFFER, 0, inst, 0, n * 9);
+  gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, n);
+}
+
+// ---- Running a scene: SECS at a fixed count, counting frames and the JS time each took; and a ramp to find where 60 breaks.
+const SECS = 6;
+function fresh(kind) {
+  const c = document.createElement('canvas'); c.width = W; c.height = H; c.id = 'world';
+  world.replaceWith(c); world = c; ctx2d = gl = null;
+  if (kind === '2d') ctx2d = c.getContext('2d');
+  else setupGL(c, kind === 'gl1');
+  ground.style.display = kind === 'gl1' ? 'none' : '';
+  return kind === '2d' ? draw2d : drawGL;
+}
+function runFixed(kind, n) {
+  return new Promise(res => {
+    const draw = fresh(kind); let f = 0, js = 0, late = 0, t0 = 0, prev = 0;
+    const tick = t => {
+      if (!t0) { t0 = t; prev = t; }
+      const a = performance.now(); draw(n, t); js += performance.now() - a; f++;
+      if (t - prev > 22) late++; prev = t;
+      if (t - t0 < SECS * 1000) requestAnimationFrame(tick);
+      else { const r = { kind, n, fps: +(f / (t - t0) * 1000).toFixed(1), jsMs: +(js / f).toFixed(2), late }; results.scenes.push(r); say(`${kind} ${n}: ${r.fps} fps, js ${r.jsMs} ms/frame, ${late} late`); res(); }
+    };
+    requestAnimationFrame(tick);
+  });
+}
+function runRamp(kind) {   // grow by 15% each second while fewer than 3 frames that second were late
+  return new Promise(res => {
+    const draw = fresh(kind); let n = 1000, sec = 0, late = 0, prev = 0, best = 0, js = 0, f = 0;
+    const tick = t => {
+      if (!sec) { sec = t; prev = t; }
+      const a = performance.now(); draw(n, t); js += performance.now() - a; f++;
+      if (t - prev > 22) late++; prev = t;
+      if (t - sec >= 1000) {
+        if (late < 3) { best = n; n = Math.min(N_MAX, Math.round(n * 1.15)); }
+        const stop = late >= 3 || n >= N_MAX; sec = t; late = 0; js = 0; f = 0;
+        if (stop) { const r = { kind, ramp: true, best, scale }; results.scenes.push(r); say(`${kind} ramp (${scale.toFixed(2)}x): ${best} at 60 fps`); return res(); }
+      }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+}
+// ?power: fixed scenes, POWER_S each, every start posted with the wall clock so a power trace can be cut by them.
+const POWER = location.search.includes('power'), POWER_S = 30;
+function runPower(kind, n, sc) {
+  return new Promise(res => {
+    scale = sc;
+    const draw = kind === 'idle' ? () => {} : fresh(kind); let t0 = 0, f = 0, late = 0, prev = 0;
+    if (kind === 'idle') { world.getContext('2d')?.clearRect(0, 0, W, H); }
+    fetch('/mark', { method: 'POST', body: JSON.stringify({ kind, n, scale: sc, at: Date.now() }) }).catch(() => {});
+    const tick = t => {
+      if (!t0) { t0 = t; prev = t; }
+      draw(n, t); f++; if (t - prev > 22) late++; prev = t;
+      if (t - t0 < POWER_S * 1000) requestAnimationFrame(tick);
+      else { const r = { kind, n, scale: sc, fps: +(f / (t - t0) * 1000).toFixed(1), late, end: Date.now() }; results.scenes.push(r); say(`power ${kind} ${n} @${sc.toFixed(2)}: ${r.fps} fps, ${late} late`); res(); }
+    };
+    requestAnimationFrame(tick);
+  });
+}
+async function mainPower() {
+  bitmaps = await Promise.all(pics.map(p => createImageBitmap(p)));
+  results.round = 'power';
+  const small = 0.5 * dpr / 2, big = 0.5 * dpr;
+  const plan = [['idle', 0, small], ['2d', 400, small], ['gl', 400, small], ['2d', 400, big], ['gl', 400, big], ['2d', 1500, small], ['gl', 1500, small], ['idle', 0, small], ['gl', 400, small], ['2d', 400, small]];
+  for (const [k, n, sc] of plan) await runPower(k, n, sc);
+  await fetch('/result', { method: 'POST', body: JSON.stringify(results) }).catch(() => {});
+  say('POWER DONE — thank you');
+}
+async function main() {
+  if (POWER) return mainPower();
+  bitmaps = await Promise.all(pics.map(p => createImageBitmap(p)));
+  say(`${navigator.userAgent.match(/iPhone OS [\d_]+|Mac OS X [\d_]+|Android [\d.]+/)?.[0] || '?'} · ${W}×${H} @${dpr}`);
+  results.round = 2;
+  await runRamp('2d'); await runRamp('gl');
+  scale = 0.5 * dpr; await runRamp('2d'); await runRamp('gl');   // (the bigger ones: trees close up)
+  say('sending…');
+  try { await fetch('/result', { method: 'POST', body: JSON.stringify(results) }); say('DONE — thank you, sent to the Mac.'); }
+  catch (e) { say('DONE (could not send: ' + e + ')'); }
+}
+document.getElementById('go').addEventListener('click', e => { e.currentTarget.remove(); main().catch(e => say('ERROR ' + e)); });
+say('ready');
+</script>
+</body></html>
