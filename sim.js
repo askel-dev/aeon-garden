@@ -6068,7 +6068,7 @@ function gainSkill(w, f, s, n) {
 // it dries the forager (FIRE_DRY), rain or not. It's the meadow's strongest warmth: a winter night by a fed fire is cosy,
 // a night away from one still dangerous. Nothing here draws the meadow's random numbers. A meadow kept before fires has
 // none (unpackWorld), no KEEP_VERSION bump.
-const FIRE_STICK = TPD / 14;            // ticks a stick burns (51 s at 1x): a new fire's five, dusk to about dawn
+const FIRE_STICK = TPD / 10;            // ticks a stick burns (72 s at 1x): a new fire's five, dusk well past midnight
 const FIRE_MOST = 6 * FIRE_STICK;       // it takes no more on than this (a night, dry: rain and storms burn it faster)
 const FIRE_LOW = 1.5 * FIRE_STICK;      // with less than this left it burns low: smaller and less warm
 const FIRE_EMBERS = TPD / 10;           // ticks its embers glow once it's burnt out (a minute and a bit at 1x)
@@ -6258,8 +6258,8 @@ const inCamp = (w, x, y) => !!w.camp && ((x - w.camp.x) / CAMP_R) ** 2 + ((y - w
 // The camp's basket (w.camp.basket, null till it's made): a big lidded basket woven of sticks and dry grass (recipes.js
 // BUILDS.basket, which game.js spends), set down inside the camp's ring, where what the satchel can't carry is kept:
 // BASKET_SLOTS slots of STACK, as the satchel's (bag, bagN). It stays when the forager collapses and the satchel is lost.
-// Things go back and forth a slot at a time (moveBetween), or the whole satchel in (putAway). Playing together it's the
-// meadow's host's: a friend sees it but keeps its own things in its own satchel (game.js). No random numbers, no KEEP_VERSION
+// Things go back and forth a slot at a time (moveBetween), or the whole satchel in (putAway). Playing together it's
+// everyone's: game.js sends each change to the others (sendBasket). No random numbers, no KEEP_VERSION
 // bump (w.camp is in LATER; a camp kept before baskets gets basket: null in unpackWorld).
 const BASKET_SLOTS = 24;
 const BASKET_GAP = 1.1;                 // tiles it keeps from a fire, a trunk or a rock

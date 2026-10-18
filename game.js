@@ -13,6 +13,9 @@ const TICKS_PER_SECOND = 30;           // at 1x
 // ------------------------------------------------------------------ state
 
 const params = new URLSearchParams(location.search);
+const BENCH = params.has('bench');            // (the phone's worst case set up by itself and timed: benchStart; implies perf)
+const PERF = params.has('perf') || BENCH;     // (a live readout of frame rate and cost, bottom left)
+const perf = { fps: 0, ms: 0, ren: 0, sim: 0, at: 0, el: null, n: 0, drawn: 0, dAt: 0 };   // fps and ms: averages over the raw frame gaps (the browser's beats, drawn or not); ren: render ms; sim: sim ms last frame; drawn: frames really drawn a second (n counting them since dAt)
 const meadowLink = seed => '?seed=' + seed;   // the address of a meadow, and the name it's kept under
 let ROOM = params.get('room') || '';          // playing together (net.js): the room in the address
 const Net = window.Net || null;               // (net.js)
@@ -57,6 +60,8 @@ let sheet = null;                                 // the edges of the meadow the
 const narrow = () => matchMedia('(max-width: 760px), (max-height: 500px)').matches;
 const short = () => matchMedia('(max-height: 500px)').matches;
 const canHover = matchMedia('(hover: hover)');
+const coarsePtr = matchMedia('(pointer: coarse)');
+let dprCap = coarsePtr.matches ? 2 : 3, groundCap = 2, lowFx = false;   // (the quality governor's, below: set early as resize() reads them)
 
 // Safari's fingerprinting protection (iOS 26, private tabs) can report a ratio of 1 on a
 // retina phone, which leaves the meadow blurry. Ask the media queries too, and failing that,
@@ -102,7 +107,7 @@ function shortOfScreen() {
 function resize() {
   if (shortOfScreen()) document.documentElement.style.setProperty('--home-bar', '0px');
   else document.documentElement.style.removeProperty('--home-bar');
-  dpr = pixelRatio();
+  dpr = Math.min(pixelRatio(), dprCap);   // a phone's 3x paints 2.25x the pixels of 2x for no visible gain
   // The CSS sizes the canvas: in Safari on a phone it reaches under the clock and the address bar, past innerHeight.
   vw = canvas.clientWidth || innerWidth; vh = canvas.clientHeight || innerHeight;
   canvas.width = Math.round(vw * dpr); canvas.height = Math.round(vh * dpr);
@@ -112,6 +117,11 @@ function resize() {
   cam.zoom = Math.max(cam.zoom, fitZoom);
   clampCam();
   measureSheet();
+  if (typeof CHAT_ARTS !== 'undefined') {
+    CHAT_ARTS.clear();
+    TAIL_ART = null;
+    if (myChat?.text) myChat.art = chatArt(myChat.text, myChat.thought);
+  }
 }
 
 // On a phone the inspector is a sheet over the bottom of the meadow, or on its side a panel down the
@@ -470,7 +480,7 @@ function drawGround(z, ox, oy, shx, shy, now) {
   }
   const [low, high] = groundColours(), ck = S.clock(world), sn = sun(ck), k = 2.5 * Math.max(0, sn.a) * (0.6 + 0.4 * Math.abs(sn.lean));
   if (!mist.field) { mistField(); Ground.mist(mist.field, MIST_W, MIST_H, MIST_OUT); }
-  const gd = Math.min(dpr, GROUND_DPR, WEBKIT ? Math.max(1, Math.sqrt(GROUND_WEBKIT / (vw * vh))) : Infinity);
+  const gd = Math.min(dpr, groundCap, WEBKIT ? Math.max(1, Math.sqrt(GROUND_WEBKIT / (vw * vh))) : Infinity);
   const w = Math.round(vw * gd), h = Math.round(vh * gd);
   Ground.draw({
     width: w, height: h, zoom: z, ox, oy, dpr: gd, seed: groundSeed, low, high, sand: shoreSand, fog: fogColour(high, ck.phase),
@@ -3021,19 +3031,21 @@ function gatherAt(sx, sy) {
   }
   return best ? { kind: 'green', it: best } : snapTo(sx, sy);
 }
-// Near enough is on it: a click or a tap a little off something with something to give (SNAP px past its glow, more for a
-// finger, and it's in reach of the forager more still) goes for it, so a moving meadow doesn't make you miss.
-const SNAP = 14, SNAP_FINGER = 26, SNAP_NEAR = 1.5;
+// Near enough is on it: a click or a tap a little off something with something to give, or something dropped (SNAP px past
+// its glow, more for a finger, and it's in reach of the forager more still) goes for it, so a moving meadow doesn't make you miss.
+const SNAP = 14, SNAP_FINGER = 34, SNAP_NEAR = 1.5;
 function snapTo(sx, sy) {
   const F = world.forager, pad = fingerTap ? SNAP_FINGER : SNAP;
-  let best = -1, bd = 1;
-  for (let i = 0; i < picks.it.length; i++) {
-    const it = picks.it[i], s = gatherSpot(picks.kind[i], it);
+  let best = null, bk = '', bd = 1;
+  const near = (kind, it) => {
+    const s = gatherSpot(kind, it);
     const r = Math.max(s.rx, s.ry) * 0.7 + pad * (Math.hypot(it.x - F.x, it.y - F.y) < NEAR_REACH ? SNAP_NEAR : 1);
     const d = Math.hypot(sx - s.gx, sy - s.gy) / r;
-    if (d < bd) { bd = d; best = i; }
-  }
-  return best < 0 ? null : { kind: picks.kind[best], it: picks.it[best] };
+    if (d < bd) { bd = d; best = it; bk = kind; }
+  };
+  for (let i = 0; i < picks.it.length; i++) near(picks.kind[i], picks.it[i]);
+  for (const d of world.dropped) near('dropped', d);
+  return best && { kind: bk, it: best };
 }
 
 // Where it is (world), how far off the forager stands to pick it, and its glow on screen (x, y, rx, ry).
@@ -4067,7 +4079,9 @@ function makeOne(id) {
 // on a slot moves it across (sim.js moveInto), a drag puts it in the slot it's let go on (moveBetween), "Put all in"
 // empties the satchel into it (putAway). Walking off (LARDER_NEAR), ✕, Esc or Back shut it (larderFrame, stepOut).
 // Drawn with the trees and animals (a frame item's s, drawBasket: shut while it's empty, open with things heaped in it
-// once it has any). Playing together it's the host's: a friend sees it set down (sendFire 'basket') but can't open it.
+// once it has any). Playing together it's everyone's: the host makes it (a friend sees it set down: sendFire 'basket'), and
+// anyone at camp can open it; each change sends what's in it to the others (sendBasket, heard in applyNet as 'bk'), the
+// last word winning.
 const WEAVE_MS = 2600, WEAVE_STEPS = 7;  // ms the forager weaves it, and the rustles in that
 const LARDER_NEAR = 2.4;                 // tiles from the basket it stays open
 const BASKET_BUILD = 'basket';           // recipes.js BUILDS: what the basket button builds
@@ -4154,7 +4168,7 @@ function basketAt(sx, sy) {
 function basketWord(B) {
   let n = 0;
   for (let k = 0; k < B.bag.length; k++) n += B.bagN[k];
-  return Net && Net.guest ? 'Your friend\'s basket' : n ? `Basket · ${n} ${n === 1 ? 'thing' : 'things'} in it` : 'Basket · empty';
+  return n ? `Basket · ${n} ${n === 1 ? 'thing' : 'things'} in it` : 'Basket · empty';
 }
 
 // ------------------------------------------------------------------ the old stone
@@ -4379,9 +4393,9 @@ function renderBasketBtn() {
   if (!el || !world || !world.forager) return;
   const B = myBasket(), f = world.forager, on = !!(ui.place && ui.place.basket);
   let mode = '', have = null;
-  if (world.camp && !(Net && Net.guest) && f.down < 0) {
+  if (world.camp && f.down < 0) {
     if (B) mode = S.inCamp(world, f.x, f.y) || larderOpen() ? 'open' : '';
-    else { have = buildHave(BASKET_BUILD); if (have.any || on) mode = 'make'; }
+    else if (!(Net && Net.guest)) { have = buildHave(BASKET_BUILD); if (have.any || on) mode = 'make'; }
   }
   if (mode !== basketUi.mode) {
     basketUi.mode = mode; basketUi.got = -1;
@@ -4429,7 +4443,6 @@ function basketPressed() {
 function goBasket() {
   const B = myBasket(), f = world.forager;
   if (!B || f.down >= 0) return;
-  if (Net && Net.guest) { say('Your friend\'s basket', B.x, B.y - 0.6); chime('click'); return; }
   if (!f.walking && Math.hypot(B.x - f.x, B.y - f.y) < LARDER_NEAR * 0.75) { ui.fire = null; openLarder(true); return; }
   goFire({ kind: 'larder', F: null, x: B.x, y: B.y });
 }
@@ -4507,6 +4520,7 @@ function flyMoves(from, to, run) {
   const fromEls = sides[from](), rects = [];
   for (let k = 0; k < sa.length; k++) rects[k] = sa[k] ? fromEls[k]?.getBoundingClientRect() : null;
   const res = run();
+  if (from === 'larder') sendBasket(sa, na); else sendBasket(sb, nb);
   renderSatchel();
   const toEls = sides[to](), srcs = [], dsts = [];
   for (let k = 0; k < sa.length; k++) if (sa[k] && (A.bag[k] !== sa[k] || A.bagN[k] < na[k])) srcs.push(k);
@@ -4579,7 +4593,7 @@ function setupLarder() {
     if (!h.fly) { if (e.type === 'pointerup') takeSlot(h.k); return; }
     h.fly.remove(); row.children[h.k]?.classList.remove('lifted'); h.over?.classList.remove('over', 'over-l');
     if (e.type === 'pointerup' && B && B.bag[h.k] === h.id) {
-      if (h.over && h.over.classList.contains('lslot')) S.moveBetween(B, h.k, B, +h.over.dataset.b);
+      if (h.over && h.over.classList.contains('lslot')) { const was = B.bag.slice(), wasN = B.bagN.slice(); S.moveBetween(B, h.k, B, +h.over.dataset.b); sendBasket(was, wasN); }
       else if (h.over) flyMoves('larder', 'bag', () => S.moveBetween(B, h.k, f, +h.over.dataset.k));
       else if (h.bag && !flyMoves('larder', 'bag', () => S.moveInto(B, h.k, f))) say('Satchel\'s full', f.x, f.y - 1.6);
     }
@@ -4905,6 +4919,21 @@ function drawFireHint(now) {
 // Playing together: a fire laid, fed or lit goes to the others, with the tick it was on (applyNet does it there).
 function sendFire(a, F, n, tinder) {
   if (Net && Net.on) Net.send({ t: 'fire', a, x: F.x, y: F.y, n, tn: tinder, tick: world.tick });
+}
+// Playing together: the basket's slots a move changed (against what they were, was and wasN), to the others as they are
+// now, [slot, id, n] each, so two moving different things at once both land; heard, they're set so there too (applyNet).
+function sendBasket(was, wasN) {
+  const B = myBasket();
+  if (!B || !(Net && Net.on)) return;
+  const s = [];
+  for (let k = 0; k < B.bag.length; k++) if (B.bag[k] !== was[k] || B.bagN[k] !== wasN[k]) s.push([k, B.bag[k], B.bagN[k]]);
+  if (s.length) Net.send({ t: 'bk', s, tick: world.tick });
+}
+function basketNet(m) {
+  const B = myBasket();
+  if (!B || !Array.isArray(m.s)) return;
+  for (const [k, id, n] of m.s) if (k >= 0 && k < B.bag.length) { B.bag[k] = id ? String(id) : ''; B.bagN[k] = id ? Math.max(1, n | 0) : 0; }
+  if (larderOpen()) renderLarder();
 }
 function fireNet(m) {
   if (m.a === 'basket') { S.makeBasket(world, m.x, m.y); return; }   // (the camp's basket: set down here too)
@@ -7672,16 +7701,21 @@ function drawNear(now, over) {
   if (now - nearE.at > NEAR_E_MS) { nearE.at = now; const t = nearPick(); nearE.it = t && t.it; }
   for (let i = 0; i < picks.it.length; i++) {
     const it = picks.it[i], kind = picks.kind[i];
-    if ((kind === 'hive') !== over || (aim.t && aim.t.it === it && aim.n)) continue;
-    const d = Math.hypot(it.x - F.x, it.y - F.y), lined = (g && g.it === it) || ui.queue.some(q => q.it === it);
-    if (d > NEAR_REACH && !lined) continue;
-    const s = gatherSpot(kind, it);
-    if (!visible(s.gx, s.gy, s.rx * 2)) continue;
-    ctx.globalAlpha = Math.min(1, NEAR_A * k * (lined ? 1.35 : Math.min(1, (NEAR_REACH - d) / NEAR_FADE)));
-    const rx = s.rx * 1.1, ry = Math.min(s.ry, s.rx * 0.55) * 1.1, y = s.gy + s.ry - ry * 0.9;   // (lying flat round its foot)
-    ctx.drawImage((lined ? artQ : it === nearE.it ? artE : art).img, s.gx - rx, y - ry, rx * 2, ry * 2);
+    if ((kind === 'hive') !== over) continue;
+    nearRing(it, kind, F, g, k, art, artE, artQ);
   }
+  if (!over) for (const d of world.dropped) if (!dropLand.has(d) || now >= dropLand.get(d)) nearRing(d, 'dropped', F, g, k, art, artE, artQ);   // (once it's landed)
   ctx.globalAlpha = 1;
+}
+function nearRing(it, kind, F, g, k, art, artE, artQ) {
+  if (aim.t && aim.t.it === it && aim.n) return;
+  const d = Math.hypot(it.x - F.x, it.y - F.y), lined = (g && g.it === it) || ui.queue.some(q => q.it === it);
+  if (d > NEAR_REACH && !lined) return;
+  const s = gatherSpot(kind, it);
+  if (!visible(s.gx, s.gy, s.rx * 2)) return;
+  ctx.globalAlpha = Math.min(1, NEAR_A * k * (lined ? 1.35 : Math.min(1, (NEAR_REACH - d) / NEAR_FADE)));
+  const rx = s.rx * 1.1, ry = Math.min(s.ry, s.rx * 0.55) * 1.1, y = s.gy + s.ry - ry * 0.9;   // (lying flat round its foot)
+  ctx.drawImage((lined ? artQ : it === nearE.it ? artE : art).img, s.gx - rx, y - ry, rx * 2, ry * 2);
 }
 // A glint, painted once: a soft honey bloom, a little warm light in it and four fine rays, the upright pair longer, like
 // sun catching on something wet. Drawn small, so the bloom does most of the work.
@@ -9515,12 +9549,15 @@ function drawFind(f, z) {
     { alpha: left < FIND_OVER ? 0.3 + 0.7 * left / FIND_OVER : undefined, flip: f.born % 2 === 1 });
 }
 
-// What the forager dropped (sim.js w.dropped): its satchel painting, lying on the ground at about a find's size, a pile
-// a little bigger. It lands as the one flying down from the satchel gets there (dropLand), with a little bounce, and
+// What the forager dropped (sim.js w.dropped): looking like something to pick, so it's easy to see and find again. One of
+// the little finds (sticks, dandelions...) is the meadow's own painting of it at its size there (FIND_PX); anything else its
+// satchel painting at about a find's size (DROP_PX); a pile a little bigger. It lands as the one flying down from the satchel gets there (dropLand), with a little bounce, and
 // fades over its last DROP_FADE of DROP_DAYS (then it's gone).
 const DROP_FLY = 340, DROP_BOUNCE = 220, DROP_FADE = 0.25;   // ms the fall takes, ms of the bounce, the share of its time it fades over
 const dropLand = new Map();                                 // a drop still flying down: when it lands (ms)
-const dropPx = (d, z) => Math.max(8, (8 + z) * 0.6 * (ITEM_FILL[d.kind] || 1) * (d.n > 4 ? 1.15 : 1));   // (about a quarter of the forager)
+const DROP_PX = 0.55, DROP_FIND = 0.8;                      // (a satchel painting fills its box, a find's has room round it); a find dropped, against one growing
+const dropPx = (d, z) => Math.max(10, (8 + z) * (FIND_PX[d.kind] ? FIND_PX[d.kind] * DROP_FIND : DROP_PX) * (d.n > 4 ? 1.15 : 1));
+const dropArt = d => FIND_PX[d.kind] ? FIND_ARTS[FIND_KINDS.indexOf(d.kind) * 4 + d.born % 2] : ITEM_ART[d.kind] || Recipes.foodOf(d.kind)?.icon || '❔';
 function drawDropped(d, z, now) {
   let px = dropPx(d, z), lift = 0;
   const lands = dropLand.get(d);
@@ -9532,8 +9569,8 @@ function drawDropped(d, z, now) {
   }
   const left = (d.until - world.tick) / (S.DROP_DAYS * S.TPD);
   if (left <= 0) return;                                    // (gone: sim.js takes it off the list within a second)
-  drawEmoji(ITEM_ART[d.kind] || Recipes.foodOf(d.kind)?.icon || '❔', (d.x - cam.x) * z + vw / 2, (d.y - cam.y) * z + vh / 2 - px * 0.3 - lift, px,
-    { alpha: left < DROP_FADE ? 0.25 + 0.75 * left / DROP_FADE : undefined });
+  drawEmoji(dropArt(d), (d.x - cam.x) * z + vw / 2, (d.y - cam.y) * z + vh / 2 - px * 0.3 - lift, px,
+    { alpha: left < DROP_FADE ? 0.25 + 0.75 * left / DROP_FADE : undefined, flip: d.born % 2 === 1 });
 }
 
 function paintFind(g, size, U, n) {
@@ -12161,7 +12198,7 @@ function drawWeather(now, ck, dark) {
   const m = ui.sky.mix, t = weatherTick(now);
   if (dark > 0) skyWash(NIGHT_RGB, dark);
   const shade = 0.12 * m.cloudy + 0.08 * m.rain + 0.10 * m.storm;
-  if (shade > 0.01) skyLayer(SKY_CLOUDS, shade);
+  if (shade > 0.01 && !lowFx) skyLayer(SKY_CLOUDS, shade);
   const dim = 0.05 * m.cloudy + 0.09 * m.rain + 0.30 * m.storm + 0.04 * m.snow;
   if (dim > 0.005) skyWash(DIM_RGB, dim);
   if (m.heat > 0.01) skyWash(HEAT_RGB, 0.11 * m.heat);
@@ -12253,7 +12290,7 @@ function paintCloudShadows(g, now, a) {
 // jump backwards whenever the period grew (a storm easing out), sending every drop up.
 let rainFall = 0, rainAt = 0;
 function drawRain(now, amount, storm) {
-  const n = Math.min(drops.length, Math.round(150 * amount)), slant = 3 + 6 * storm;
+  const n = Math.min(drops.length, Math.round((lowFx ? 75 : 150) * amount)), slant = 3 + 6 * storm;
   rainFall += clamp(now - rainAt, 0, 100) / (1400 - 500 * storm);
   rainAt = now;
   ctx.save();
@@ -12270,7 +12307,7 @@ function drawRain(now, amount, storm) {
 }
 
 function drawSnow(now, amount) {
-  const n = Math.round(160 * amount);
+  const n = Math.round((lowFx ? 80 : 160) * amount);
   ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
   ctx.beginPath();
   for (let i = 0; i < n; i++) {
@@ -12566,6 +12603,7 @@ function puffPollen(x, y) {
 }
 
 function drawPollen(now) {
+  if (lowFx) return;
   if (now > pollen.until) return;                       // nothing in the air
   const z = cam.zoom, s = Math.max(2.2, z * 0.09);
   for (let i = 0; i < POLLEN_MAX; i++) {
@@ -12634,6 +12672,7 @@ function fireflyLight(dark) {                     // how brightly they're out to
   return summer * clamp((dark - 0.15) / 0.25, 0, 1) * clamp(1 - 1.5 * ((m.rain || 0) + (m.storm || 0)), 0, 1);
 }
 function drawFireflies(now, dark) {
+  if (lowFx) return;
   const a = fireflyLight(dark);
   if (a <= 0.02) return;
   const spots = fireflyHaunts(), z = cam.zoom, d = Math.max(12, z * 1.1), t = now / 1000;
@@ -13970,7 +14009,8 @@ canvas.addEventListener('pointerdown', e => {
   }
   const tap = lastTap;
   lastTap = null;
-  if (fingerTap && tap && e.timeStamp - tap.t < DOUBLE_MS && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) < DOUBLE_PX && !foragerHit(e.clientX, e.clientY)) {   // (on the forager: taps, not a zoom)
+  if (fingerTap && tap && !tap.on && e.timeStamp - tap.t < DOUBLE_MS && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) < DOUBLE_PX
+    && !foragerHit(e.clientX, e.clientY) && !gatherAt(e.clientX, e.clientY)) {   // (on the forager, or picking one thing after another: taps, not a zoom)
     clearTimeout(tapAway); tapAway = 0;   // (the first tap put nothing away after all)
     zoomDrag = { id: e.pointerId, y: e.clientY, z: cam.zoom, moved: false };
     drag = null; cam.goal = null;
@@ -14042,7 +14082,7 @@ canvas.addEventListener('pointerup', e => {
     if (F) clickFire(F); else if (Bk) Bk.stone ? goStone() : goBasket(); else if (t) goGather(t, true); else walkTo(e.clientX, e.clientY, true);
   } else if (drag && !drag.moved) {
     click(e.clientX, e.clientY, drag.rush);
-    if (fingerTap) lastTap = { t: e.timeStamp, x: e.clientX, y: e.clientY };
+    if (fingerTap) lastTap = { t: e.timeStamp, x: e.clientX, y: e.clientY, on: drag.on };
   }
   drag = null;
 });
@@ -14075,7 +14115,7 @@ function click(sx, sy, run = false) {
   if (ui.place) { placeHere(sx, sy); return; }            // (picking a spot for a fire: there)
   const pi = cooking() ? potThingAt(sx, sy) : -1;
   if (pi >= 0) { potTake(pi); return; }                    // (a thing in the pot: back out)
-  if (!cooking() && foragerHit(sx, sy) && !basketAt(sx, sy) && !stoneAt(sx, sy)) { partyTap(); return; }   // (on the forager itself: the easter egg's taps; standing by the basket, the click is the basket's)
+  if (!cooking() && foragerHit(sx, sy) && !basketAt(sx, sy) && !stoneAt(sx, sy) && !gatherAt(sx, sy)) { partyTap(); return; }   // (on the forager itself: the easter egg's taps; standing by the basket or something to pick, the click is theirs)
   const PF = !cooking() && promptAt(sx, sy);
   if (PF) { clickFire(PF); return; }                       // (the pot over a fire: off to cook at it)
   const c = animalAt(sx, sy), F = !c && fireAt(sx, sy), Bk = !c && !F && (basketAt(sx, sy) || stoneAt(sx, sy)), t = !c && !F && !Bk && gatherAt(sx, sy);
@@ -14196,15 +14236,20 @@ const NAME_MOST = 16;                      // letters in a name, at most
 const NAME_UP = 0.64;                      // a friend's name sits this many of its forager's sizes over its feet (just over its hood)
 const CHAT_MOST = 120;                      // letters in a line of chat, at most
 const CHAT_MS = 3500, CHAT_PER = 70, CHAT_LONGEST = 10000;   // a bubble stays CHAT_MS, and CHAT_PER more a letter, up to CHAT_LONGEST
-const CHAT_WIDE = 200;                      // px a bubble is at most, before its words wrap
+const CHAT_WIDE = 200, CHAT_WIDE_MOB = 150;      // px a bubble is at most, before its words wrap (scaled down on a phone)
 const CHAT_LOG_MS = 12000;                 // a line in the log fades after this
 const CHAT_KEEP = 40;                      // lines the log keeps
 const CALL_TEXT = '🦉 Hoo-hoo!';             // not said but called (callOut): friends hear it from where you stand
 const CHAT_QUICK = [CALL_TEXT, '👋 Hello!', 'Over here!', 'Come and see!', 'Thank you!', 'Wait for me!', '😊', '❤️'];   // said with one tap
-const CHAT_TAIL = 7;                       // px from a bubble's foot down to the tip of its tail
-const CHAT_TAIL_IN = 16;                   // px from a bubble's side its tail may come, at most (so a bubble slid aside still points down to who said it)
+const CHAT_TAIL = 7, CHAT_TAIL_MOB = 5;          // px from a bubble's foot down to the tip of its tail
+const CHAT_TAIL_IN = 16, CHAT_TAIL_IN_MOB = 12;  // px from a bubble's side its tail may come, at most (so a bubble slid aside still points down to who said it)
 const CHAT_GAP = 6;                        // px kept between two bubbles
 const CHAT_SLIDE = 120;                    // ms a bubble takes to slide aside for another
+const chatWide = () => narrow() ? CHAT_WIDE_MOB : CHAT_WIDE;
+const chatTail = () => narrow() ? CHAT_TAIL_MOB : CHAT_TAIL;
+const chatTailIn = () => narrow() ? CHAT_TAIL_IN_MOB : CHAT_TAIL_IN;
+const chatFont = () => narrow() ? 10.5 : 13;
+const chatRadius = () => narrow() ? 8.5 : 11;
 let myName = '', myChat = null;
 try { myName = cleanName(localStorage.getItem(NAME)); } catch (e) { /* none, then */ }
 const net = { tick: -1, base: 0, rate: 0, sentAt: 0, hostId: '', later: [], hostSums: new Map(), mySums: new Map(), off: 0, askedAt: -1e9, shown: '' };
@@ -14280,7 +14325,7 @@ function heardNet(m) {
   const now = performance.now();
   if (m.t === 'pos') heardPos(m, now);
   else if (m.t === 'world') { if (Net.guest) heardWorld(m, now); }
-  else if (m.t === 'pick' || m.t === 'drop' || m.t === 'fire') {
+  else if (m.t === 'pick' || m.t === 'drop' || m.t === 'fire' || m.t === 'bk') {
     if (Net.guest && net.tick < 0) return;              // (the meadow's on its way, with this in it)
     if (m.t === 'pick') peerPicked(m, now);
     if (m.tick > world.tick) { net.later.push(m); net.later.sort((a, b) => a.tick - b.tick); }
@@ -14373,6 +14418,7 @@ function netTick() {
 }
 function applyNet(m) {
   if (m.t === 'fire') { fireNet(m); return; }            // (a fire laid, fed or lit)
+  if (m.t === 'bk') { basketNet(m); return; }            // (what's in the basket, changed by a friend)
   if (m.t === 'pick') {
     const it = thingAt(m.kind, m.id, m.x, m.y);
     if (it) S.takeFrom(world, m.kind, it, m.n);
@@ -14395,6 +14441,8 @@ function meadowSum(w) {
   for (const d of w.dropped) h = (h * 31 + d.n) | 0;
   for (const v of w.hives) h = (h * 31 + Math.round(v.honey * 64)) | 0;
   for (const F of w.fires) h = (h * 31 + (F.lit ? 2 : 1) + (F.cookDish ? 4 : 0)) | 0;   // (the fires, which burn and which have a pot on: not their sticks or how far it's cooked, which a late word shifts a little)
+  const B = w.camp && w.camp.basket;
+  if (B) for (let k = 0; k < B.bag.length; k++) h = (h * 31 + B.bag[k].length + B.bagN[k] * 7) | 0;   // (and the basket: two who took the last of a thing at once come out even)
   return h;
 }
 function netCheck() {
@@ -14852,16 +14900,18 @@ function drawPeer(p, sx, sy, now) {
   drawBody(p, p.x, p.y, p.soak, p.stillMs < PEER_STILL_MS, p.jog, p.stage, px, now, false);
 }
 
-// The chat. A line said, painted once: a parchment bubble, its words wrapped to CHAT_WIDE. Its tail is painted apart
-// (tailArt), so it can come down from wherever under the bubble its forager is.
+// The chat. A line said, painted once: a parchment bubble, its words wrapped to CHAT_WIDE (CHAT_WIDE_MOB on a phone).
+// Its tail is painted apart (tailArt), so it can come down from wherever under the bubble its forager is.
 const CHAT_ARTS = new Map();
 function chatArt(text, thought) {
-  const key = thought ? '~' + text : text;
+  const mob = narrow();
+  const key = `${thought ? '~' : ''}${mob ? '@' : ''}${text}`;
   let a = CHAT_ARTS.get(key);
   if (a) return a;
   if (CHAT_ARTS.size > 32) CHAT_ARTS.clear();
-  const k = Math.max(1, dpr), F = 13 * k, c = document.createElement('canvas'), g = c.getContext('2d');
-  const font = `${thought ? 'italic ' : ''}700 ${F}px Nunito, ui-rounded, system-ui, sans-serif`, most = CHAT_WIDE * k;
+  const k = Math.max(1, dpr), F = chatFont() * k, c = document.createElement('canvas'), g = c.getContext('2d');
+  const wideMax = chatWide(), tailIn = chatTailIn(), tail = chatTail();
+  const font = `${thought ? 'italic ' : ''}700 ${F}px Nunito, ui-rounded, system-ui, sans-serif`, most = wideMax * k;
   g.font = font;
   const lines = [];
   for (const said of text.split('\n')) {                   // (a line of its own where the game's own words break)
@@ -14880,8 +14930,8 @@ function chatArt(text, thought) {
   }
   let wide = 0;
   for (const l of lines) wide = Math.max(wide, g.measureText(l).width);
-  const lh = Math.round(F * 1.3), padX = Math.round(F * 0.75), padY = Math.round(F * 0.4), sh = Math.round(1.5 * k);
-  const w = Math.max(Math.ceil(wide) + 2 * padX, Math.round((2 * CHAT_TAIL_IN + 4) * k)), h = lines.length * lh + 2 * padY, r = Math.min(Math.round(11 * k), h / 2);
+  const lh = Math.round(F * 1.3), padX = Math.round(F * 0.75), padY = Math.round(F * 0.4), sh = Math.round((mob ? 1.2 : 1.5) * k);
+  const w = Math.max(Math.ceil(wide) + 2 * padX, Math.round((2 * tailIn + 4) * k)), h = lines.length * lh + 2 * padY, r = Math.min(Math.round(chatRadius() * k), h / 2);
   c.width = w + 2; c.height = h + sh + 2;
   const bubble = y => { g.beginPath(); g.roundRect(1, 1 + y, w, h, r); };
   g.fillStyle = 'rgba(60, 40, 10, 0.25)'; bubble(sh); g.fill();
@@ -14889,7 +14939,7 @@ function chatArt(text, thought) {
   g.strokeStyle = 'rgba(176, 132, 58, 0.8)'; g.lineWidth = k; g.stroke();
   g.font = font; g.fillStyle = '#4a3920'; g.textAlign = 'center'; g.textBaseline = 'middle';
   lines.forEach((l, i) => g.fillText(l, 1 + w / 2, 1 + padY + lh * (i + 0.5) + k * 0.5));
-  a = { img: c, w: c.width / k, h: c.height / k, foot: (1 + h) / k };   // (foot: from its top down to the bubble's lower edge)
+  a = { img: c, w: c.width / k, h: c.height / k, foot: (1 + h) / k, tail, tailIn };   // (foot: from its top down to the bubble's lower edge)
   asBitmap(c, b => { a.img = b; });
   CHAT_ARTS.set(key, a);
   return a;
@@ -14897,9 +14947,10 @@ function chatArt(text, thought) {
 // A bubble's tail, painted once: a little point down, its top over the bubble's edge so the line there is hidden under it.
 let TAIL_ART = null;
 function tailArt() {
-  const k = Math.max(1, dpr);
-  if (TAIL_ART && TAIL_ART.k === k) return TAIL_ART;
-  const t = Math.round(CHAT_TAIL * k), w = Math.round(1.6 * t), lap = Math.ceil(2 * k), sh = Math.round(1.5 * k), tip = 0.42;
+  const k = Math.max(1, dpr), mob = narrow();
+  if (TAIL_ART && TAIL_ART.k === k && TAIL_ART.mob === mob) return TAIL_ART;
+  const tail = chatTail();
+  const t = Math.round(tail * k), w = Math.round(1.6 * t), lap = Math.ceil(2 * k), sh = Math.round((mob ? 1.2 : 1.5) * k), tip = 0.42;
   const c = document.createElement('canvas'), g = c.getContext('2d');
   c.width = w + 2; c.height = lap + t + sh + 2;
   const point = y => { g.beginPath(); g.moveTo(1, 1 + y); g.lineTo(1 + w * tip, 1 + y + lap + t); g.lineTo(1 + w, 1 + y); g.closePath(); };
@@ -14908,12 +14959,12 @@ function tailArt() {
   const u = lap / (lap + t);                                // (its sides, from the bubble's edge down)
   g.beginPath(); g.moveTo(1 + w * tip * u, 1 + lap); g.lineTo(1 + w * tip, 1 + lap + t); g.lineTo(1 + w - w * (1 - tip) * u, 1 + lap);
   g.strokeStyle = 'rgba(176, 132, 58, 0.8)'; g.lineWidth = k; g.lineJoin = 'round'; g.stroke();
-  TAIL_ART = { img: c, w: c.width / k, h: c.height / k, top: (1 + lap) / k, tip: (1 + w * tip) / k, k };
+  TAIL_ART = { img: c, w: c.width / k, h: c.height / k, top: (1 + lap) / k, tip: (1 + w * tip) / k, k, mob };
   asBitmap(c, b => { TAIL_ART.img = b; });
   return TAIL_ART;
 }
 const cleanChat = s => String(s || '').replace(/[\u0000-\u001f\u007f-\u009f]/g, '').replace(/\s+/g, ' ').trim().slice(0, CHAT_MOST);
-const chatFor = (text, now, thought) => ({ art: chatArt(text, thought), at: now, until: now + Math.min(CHAT_LONGEST, CHAT_MS + CHAT_PER * text.length),
+const chatFor = (text, now, thought) => ({ art: chatArt(text, thought), text, thought, at: now, until: now + Math.min(CHAT_LONGEST, CHAT_MS + CHAT_PER * text.length),
   x: -0, y: -0, bx: -0, by: -0, ox: -0, oy: -0, laid: false });
 
 // This frame's bubbles (x, y where each one's tail points), and the names over friends (x, y, w, h each), reused.
@@ -14926,8 +14977,8 @@ function saidAt(s, x, y) { s.x = x; s.y = y; chats.said[chats.n++] = s; }
 function layChats(now) {
   const said = chats.said, n = chats.n;
   for (let i = 0; i < n; i++) {
-    const s = said[i], hw = s.art.w / 2;
-    s.bx = clamp(s.x, hw + 8, vw - hw - 8); s.by = s.y - CHAT_TAIL;
+    const s = said[i], hw = s.art.w / 2, tail = s.art.tail ?? chatTail();
+    s.bx = clamp(s.x, hw + 8, vw - hw - 8); s.by = s.y - tail;
   }
   for (let k = 0; k < 3; k++) for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) partChats(said[i], said[j]);
@@ -14936,14 +14987,14 @@ function layChats(now) {
   const e = 1 - Math.exp(-Math.min(500, now - chats.at) / CHAT_SLIDE);
   chats.at = now;
   for (let i = 0; i < n; i++) {
-    const s = said[i], ox = s.bx - s.x, oy = s.by - (s.y - CHAT_TAIL);
+    const s = said[i], tail = s.art.tail ?? chatTail(), ox = s.bx - s.x, oy = s.by - (s.y - tail);
     if (s.laid) { s.ox += (ox - s.ox) * e; s.oy += (oy - s.oy) * e; } else { s.ox = ox; s.oy = oy; s.laid = true; }
     drawChat(s, now);
   }
 }
 // How far a bubble can go left or right and still have its tail under it (and stay on the screen).
-const roomLeft = s => Math.max(0, Math.min(s.bx - (s.x - s.art.w / 2 + CHAT_TAIL_IN), s.bx - s.art.w / 2 - 8));
-const roomRight = s => Math.max(0, Math.min(s.x + s.art.w / 2 - CHAT_TAIL_IN - s.bx, vw - 8 - s.art.w / 2 - s.bx));
+const roomLeft = s => Math.max(0, Math.min(s.bx - (s.x - s.art.w / 2 + (s.art.tailIn ?? chatTailIn())), s.bx - s.art.w / 2 - 8));
+const roomRight = s => Math.max(0, Math.min(s.x + s.art.w / 2 - (s.art.tailIn ?? chatTailIn()) - s.bx, vw - 8 - s.art.w / 2 - s.bx));
 function partChats(A, B) {
   const over = (A.art.w + B.art.w) / 2 + CHAT_GAP - Math.abs(A.bx - B.bx);
   if (over <= 0 || Math.min(A.by, B.by) - Math.max(A.by - A.art.foot, B.by - B.art.foot) + CHAT_GAP <= 0) return;
@@ -14954,7 +15005,8 @@ function partChats(A, B) {
     return;
   }
   const up = A.y < B.y || A.y === B.y && A.at > B.at ? A : B, down = up === A ? B : A;   // (further back, or said later)
-  up.by = Math.min(up.by, down.by - down.art.foot - CHAT_TAIL - 3);
+  const tail = down.art.tail ?? chatTail();
+  up.by = Math.min(up.by, down.by - down.art.foot - tail - 3);
 }
 function offName(s, m) {
   const r = chats.names, x = r[m], y = r[m + 1], w = r[m + 2], h = r[m + 3], hw = s.art.w / 2;
@@ -14962,12 +15014,13 @@ function offName(s, m) {
   const left = s.bx + hw - x + 2, right = x + w + 2 - (s.bx - hw), l = left <= roomLeft(s), r2 = right <= roomRight(s);   // (how far it'd go either way)
   if (l && (!r2 || left <= right)) s.bx -= left;
   else if (r2) s.bx += right;
-  else s.by = y - CHAT_TAIL - 2;
+  else s.by = y - (s.art.tail ?? chatTail()) - 2;
 }
 function drawChat(s, now) {
   const a = s.art, t = tailArt(), k = now - s.at, alpha = Math.min(1, k / 150, (s.until - now) / 600);
-  const left = Math.round(s.x + s.ox - a.w / 2), edge = Math.round(s.y - CHAT_TAIL + s.oy + 4 * (1 - Math.min(1, k / 150)));
-  const tx = Math.round(clamp(s.x, left + CHAT_TAIL_IN, left + a.w - CHAT_TAIL_IN) - t.tip);
+  const tail = a.tail ?? chatTail(), tailIn = a.tailIn ?? chatTailIn();
+  const left = Math.round(s.x + s.ox - a.w / 2), edge = Math.round(s.y - tail + s.oy + 4 * (1 - Math.min(1, k / 150)));
+  const tx = Math.round(clamp(s.x, left + tailIn, left + a.w - tailIn) - t.tip);
   ctx.globalAlpha = alpha;
   ctx.drawImage(a.img, left, edge - a.foot, a.w, a.h);
   ctx.drawImage(t.img, tx, edge - t.top, t.w, t.h);
@@ -15182,6 +15235,7 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'ask-later') askIdeas(false);
   else if (t.dataset.act === 'ask-send') sendIdea();
   else if (t.dataset.act === 'sound') toggleSound();
+  else if (t.dataset.act === 'saver') { toggleSaver(); toast(saverOn ? '🍃 Battery saver on — the meadow takes it easy' : '🍃 Battery saver off'); }
   else if (t.dataset.act === 'story') { ui.allStory = !ui.allStory; renderInspector(); }
   else if (t.dataset.thing) goToThing(t.dataset.thing);
   else if (t.dataset.id) {
@@ -15486,7 +15540,10 @@ function resumeWorld(rec) {
   return true;
 }
 
-document.addEventListener('visibilitychange', () => { if (document.hidden) keepMeadow(); else freshDb().catch(() => {}); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { keepMeadow(); Sound.suspend?.(); }
+  else { freshDb().catch(() => {}); Sound.wakeUp?.(); }
+});
 addEventListener('beforeunload', keepMeadow);         // (while the page still has a moment: by pagehide it's often too late)
 addEventListener('pagehide', keepMeadow);
 
@@ -15498,6 +15555,7 @@ const KEEP_EVERY = 30000, KEEP_IDLE = 12, KEEP_WAIT = 5000;
 const keepSoon = { due: 0, asked: false };
 const whenIdle = window.requestIdleCallback || ((f, o) => setTimeout(() => f({ didTimeout: true, timeRemaining: () => 0 }), 0));
 function keepTick(now) {
+  if (BENCH) return;                                      // (a bench's meadow isn't kept over yours)
   if (!keepSoon.due) keepSoon.due = now + KEEP_EVERY;
   if (keepSoon.asked || now < keepSoon.due || intro.on) return;
   keepSoon.asked = true;
@@ -15662,16 +15720,109 @@ function onBeat(now) {
 // Paused, the world stands still, but the water, the weather and the trees still move a little:
 // 30 frames a second are plenty for that, unless you're looking around or something is happening.
 const RESTING_MS = 30, WOKEN_MS = 500;
+// Watching the meadow play at 1x, camera still, hands off: 30 fps is plenty (what resting gets
+// when paused). Anything happening — a drag, a zoom, a storm, an effect — stays at full rate.
+const CALM_MS = 2000, CALM_GAP = 1000 / 30 - 2.2;
 let lastDrawn = 0, lastInput = 0;
+// The most frames worth painting a second. A 120Hz phone renders every other rAF instead of all
+// of them; the sim still runs on every beat. 0 paints every frame (a 60Hz screen is unaffected:
+// its beats are already past the gap).
+const FRAME_GAP = 1000 / 60 - 2.2;              // under a 60Hz beat, over half a 120Hz one
+let renderGap = coarsePtr.matches ? FRAME_GAP : 0;
+
+// The quality governor. A hot phone throttles and frame times climb, which keeps it hot: so a
+// frame that stays costly steps the meadow down a rung until it cools, and long comfort steps
+// back up. Silent; the meadow looks the same in the common case.
+const GOV_MS = 4000, GOV_UP = 8;                // a decision this often; this many comfortable ones to climb back
+const REN_OVER = 12, REN_OK = 7;                // render ms, EMA: over budget / comfortable
+const gov = { rung: 0, floor: 0, top: 3, at: 0, ok: 0, hold: false, battFloor: 0 };
+function govApply() {
+  const r = gov.rung;
+  const d = r >= 1 ? 1.5 : coarsePtr.matches ? 2 : 3, g = r >= 2 ? 1.5 : GROUND_DPR, fx = r >= 2, gap = r >= 3 ? 1000 / 30 - 2.2 : coarsePtr.matches ? FRAME_GAP : 0;
+  if (d !== dprCap) { dprCap = d; if (!drag && !pinch) resize(); else gov.hold = true; }   // (not mid-gesture)
+  groundCap = g;
+  if (fx !== lowFx) lowFx = fx;
+  renderGap = gap;
+}
+// Battery saver (••• menu): pins the governor at least a rung down, remembered like the sound choice.
+const saverFloor = () => saverOn ? 1 : 0;
+let saverOn = false;
+function toggleSaver(on = !saverOn) {
+  saverOn = on;
+  try { localStorage.setItem('aeon-garden-saver', on ? '1' : '0'); } catch (e) { /* fine */ }
+  gov.floor = Math.max(gov.battFloor || 0, saverFloor());
+  if (gov.rung < gov.floor) { gov.rung = gov.floor; govApply(); }
+  const l = $('#saver-item .l'); if (l) l.textContent = `Battery saver is ${on ? 'on' : 'off'}`;
+}
+// Low and unplugged (where the browser tells us: Chrome): start a rung down, before the heat
+// builds. iOS says nothing; the governor's frame times answer there instead.
+if (navigator.getBattery) navigator.getBattery().then(b => {
+  const mind = () => {
+    gov.battFloor = !b.charging && b.level < 0.2 ? 1 : 0;
+    if (gov.battFloor > gov.floor) { gov.floor = gov.battFloor; if (gov.rung < gov.floor) { gov.rung = gov.floor; govApply(); } }
+    else if (!gov.battFloor && !saverFloor()) gov.floor = 0;   // (charged again; the saver may still hold a floor)
+  };
+  b.addEventListener('levelchange', mind); b.addEventListener('chargingchange', mind);
+  mind();
+}).catch(() => {});
+function govTick(now) {
+  if (gov.hold && !drag && !pinch) { gov.hold = false; resize(); }
+  if (now - gov.at < GOV_MS) return;
+  gov.at = now;
+  if (perf.ren > REN_OVER && gov.rung < gov.top) { gov.rung++; gov.ok = 0; govApply(); console.info(`meadow: hot, quality rung ${gov.rung}`); }
+  else if (perf.ren < REN_OK && gov.rung > gov.floor && ++gov.ok >= GOV_UP) { gov.rung--; gov.ok = 0; govApply(); }
+  else if (perf.ren >= REN_OK) gov.ok = 0;
+}
+
+// ?bench: the worst case the mobile-heat plan's step 9 asks a real phone for, with no console to type into: a new meadow
+// (the seed's, never the kept one, and not kept), zoomed right out, a fire lit by the forager, a storm that won't end,
+// night, 60x, the forager walking to and fro; for BENCH_MS, then the numbers stay on screen (and in the console).
+const BENCH_MS = 120000, BENCH_WARM = 10000, BENCH_WALK = 6;
+const bench = { t0: 0, n: 0, ren: [], sim: [], fps: 0, drawn: 0, rungs: [], done: '', dir: 1 };
+function benchStart() {
+  endIntro(true);
+  const w = world, f = w.forager;
+  for (let r = 2; r < 8 && !w.fires.length; r++) for (let a = 0; a < 8; a++) {   // (a spot beside it that takes a fire)
+    const x = f.x + r * Math.cos(a * TAU / 8), y = f.y + r * Math.sin(a * TAU / 8);
+    if (!S.fireSpot(w, x, y)) { S.lightFire(w, S.layFire(w, x, y, 6, 1)); break; }
+  }
+  w.tick += (0.75 - S.clock(w).phase + 1) % 1 * S.TPD | 0;   // (on to the evening's dark)
+  w.weather.kind = 'storm'; w.weather.until = w.tick + 1e9;
+  setSpeed(60);
+  bench.t0 = performance.now();
+}
+function benchTick(now) {
+  const t = now - bench.t0, w = world;
+  if (bench.done) return bench.done;
+  cam.zoom = fitZoom; clampCam();                         // (kept right out, whatever the hand does)
+  const f = w.forager; f.warmth = f.health = f.tummy = f.stamina = 1;   // (kept alive: a collapse would carry it home, away from the fire)
+  if (!w.forager.walking) S.foragerTo(w, w.forager.x + (bench.dir = -bench.dir) * BENCH_WALK, w.forager.y);
+  const ph = S.clock(w).phase;
+  if (ph < 0.74 || ph > 0.95) w.tick += (0.75 - ph + 1) % 1 * S.TPD | 0;   // (the dark, again: a day is 12 s at 60x)
+  for (const F of w.fires) { S.feedFire(w, F, 6, 1); if (!F.lit) S.lightFire(w, F); }   // (and the fire kept in: a storm eats it fast)
+  if (t < BENCH_WARM) return `\nbench: settling ${((BENCH_WARM - t) / 1000).toFixed(0)} s`;
+  bench.ren.push(perf.ren); bench.sim.push(perf.sim); bench.fps += perf.fps; bench.drawn += perf.drawn; bench.n++;
+  if (bench.rungs[bench.rungs.length - 1] !== gov.rung) bench.rungs.push(gov.rung);
+  if (t < BENCH_WARM + BENCH_MS) return `\nbench: ${((BENCH_WARM + BENCH_MS - t) / 1000).toFixed(0)} s left`;
+  const q = (a, k) => a.slice().sort((x, y) => x - y)[Math.min(a.length - 1, a.length * k | 0)].toFixed(1);
+  const avg = a => (a.reduce((x, y) => x + y, 0) / a.length).toFixed(1);
+  bench.done = `\nBENCH DONE (${BENCH_MS / 1000} s, ${navigator.userAgent.match(/iPhone|Android|Mac|Windows/)?.[0] || '?'})\n`
+    + `render avg ${avg(bench.ren)} · p50 ${q(bench.ren, 0.5)} · p95 ${q(bench.ren, 0.95)} ms\n`
+    + `sim avg ${avg(bench.sim)} · p95 ${q(bench.sim, 0.95)} ms \n${(bench.fps / bench.n).toFixed(0)} beats/s · ${(bench.drawn / bench.n).toFixed(0)} drawn/s avg\n`
+    + `rungs ${bench.rungs.join('→')} (ends ${gov.rung}) · dpr ${dpr} · ${canvas.width}×${canvas.height}`;
+  console.info(bench.done);
+  setSpeed(0);
+  return bench.done;
+}
 
 // A meadow is for watching, so on a phone or tablet the screen stays on while time runs, till nobody has touched it
 // for WAKE_MS; then it dims and locks as it always would. Paused or hidden, it's let go (the Screen Wake Lock API;
 // a browser without it does as it likes).
-const WAKE_MS = 10 * 60 * 1000;
+const WAKE_MS = 10 * 60 * 1000, WAKE_SAVER_MS = 3 * 60 * 1000;   // (battery saver holds it a third as long)
 const wake = { lock: null, asking: false, retry: 0, touch: matchMedia('(pointer: coarse)') };
 function wakeTick(now) {
   if (!navigator.wakeLock || !wake.touch.matches) return;
-  const want = ui.speed > 0 && !document.hidden && now - lastInput < WAKE_MS;
+  const want = ui.speed > 0 && !document.hidden && now - lastInput < (saverOn ? WAKE_SAVER_MS : WAKE_MS);
   if (want && !wake.lock && !wake.asking && now > wake.retry) {
     wake.asking = true;
     navigator.wakeLock.request('screen').then(l => {
@@ -15682,15 +15833,21 @@ function wakeTick(now) {
 }
 const camWas = { x: 0, y: 0, zoom: 0 };
 for (const type of ['pointerdown', 'pointermove', 'wheel', 'keydown', 'resize']) addEventListener(type, () => { lastInput = performance.now(); }, { passive: true });
+let camStill = false;
 function resting(now) {
   const still = cam.x === camWas.x && cam.y === camWas.y && cam.zoom === camWas.zoom;
+  camStill = still;                              // (for calm, below)
   camWas.x = cam.x; camWas.y = cam.y; camWas.zoom = cam.zoom;
   return still && ui.speed === 0 && !ui.effects.length
     && now - lastInput > WOKEN_MS && now - ui.sky.boom > WOKEN_MS;
 }
+const calm = now => ui.speed === 1 && camStill && !drag && !pinch && !zoomTo && !cam.goal
+  && !ui.effects.length && !cookUi.open && (ui.sky.mix.storm || 0) < 0.2 && now - lastInput > CALM_MS;
 
 function frame(now) {
   if (opening === 1) opening = 2;
+  const raw = now, dt0 = raw - (perf.at || raw); perf.at = raw;
+  if (dt0 > 0 && dt0 < 250) { perf.fps += (1000 / dt0 - perf.fps) * 0.05; perf.ms += (dt0 - perf.ms) * 0.05; }
   now = onBeat(now);
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
@@ -15721,6 +15878,7 @@ function frame(now) {
       ran++;
       if (performance.now() - t0 > SIM_STOP) break;
     }
+    perf.sim = performance.now() - t0;
     if (ran > days) {
       tickMs += ((performance.now() - t0 - dayMs) / (ran - days) - tickMs) * 0.05;
       simFit = Math.max(1, Math.floor(SIM_MS / tickMs));
@@ -15755,13 +15913,15 @@ function frame(now) {
   }
   clampCam();
 
-  const rest = resting(now) && now - lastDrawn < RESTING_MS;
-  if (!rest && canvas.width && canvas.height) {   // (a hidden tab can have no size)
+  const rest = resting(now), easy = calm(now);
+  if (canvas.width && canvas.height && now - lastDrawn >= (rest ? RESTING_MS : easy ? CALM_GAP : renderGap)) {   // (a hidden tab can have no size)
     lastDrawn = now;
     // Every 12 ticks, and no more than a few times a second: grass changes too slowly to see the difference.
     if (terrainTick < 0 || (world.tick - terrainTick >= 12 && now - terrainAt >= TERRAIN_MS)) paintTerrain();
     const steadied = handShow(now);        // (a drag, a pinch: drawn where the hand had it a moment ago)
+    const r0 = performance.now();
     render(now);
+    perf.ren += (performance.now() - r0 - perf.ren) * 0.1; perf.n++;
     if (steadied) handBack();
     if (cookUi.open) drawCookView(now);  // (the cooking window's pot)
   }
@@ -15774,6 +15934,14 @@ function frame(now) {
     askTick(Math.min(now - lastCard, 1000));
     furAhead(now);
     lastCard = now;
+    if (PERF) {
+      if (now - perf.dAt >= 1000) { perf.drawn = perf.n * 1000 / (now - perf.dAt); perf.n = 0; perf.dAt = now; }
+      perf.el = perf.el || Object.assign(document.body.appendChild(document.createElement('div')), {
+        style: 'position:fixed;left:4px;bottom:4px;z-index:30;padding:3px 7px;background:rgba(20,16,8,.72);color:#efe7d0;font:11px/1.5 ui-monospace,monospace;border-radius:6px;pointer-events:none;white-space:pre',
+      });
+      perf.el.textContent = `${perf.fps.toFixed(0)} beats · ${perf.drawn.toFixed(0)} drawn/s · ${perf.ms.toFixed(1)} ms frame · ${perf.ren.toFixed(1)} ms render · ${perf.sim.toFixed(1)} ms sim\n`
+        + `dpr ${dpr} · ${canvas.width}×${canvas.height} · rung ${gov.rung} · ${ui.speed}x` + (BENCH ? benchTick(now) : '');
+    }
     updateClock();
     renderVitals();
     renderBasketBtn();                                    // (in the camp or out of it: the basket's button)
@@ -15791,6 +15959,7 @@ function frame(now) {
   }
   if (opening > 1 && ++opening > 4) cleared();       // a kept meadow that opened fine
   keepTick(now);
+  govTick(now);
   requestAnimationFrame(frame);
 }
 
@@ -15828,9 +15997,10 @@ setupSatchel();
 const seedParam = +params.get('seed');
 // The kept meadow if there is one (keeping the meadow, above), else a new one.
 function begin(rec) {
-  if (!(rec && resumeWorld(rec))) newWorld(seedParam || randomSeed());
+  if (BENCH || !(rec && resumeWorld(rec))) newWorld(seedParam || randomSeed());
   if (!ROOM) { bringSkills(world.forager, false); dropAwayBag(); }   // (home: what it learnt there comes with it; a satchel left away doesn't wait)
   requestAnimationFrame(frame);
+  if (BENCH) benchStart();
   if (ROOM) { endIntro(true); wardrobe('join', startTogether); }   // (who's coming and in what, before the room hears of you)
   else if (params.get('friend') && Fr) {                  // (a friend's code link: Friends open, adding them)
     const code = params.get('friend');
@@ -15846,9 +16016,12 @@ if (!IDEAS_KEY) $('[data-act="ideas"]').remove();
 // Sound stays off until you turn it on, and remembers your choice. Browsers only let a page
 // make sound after a click or key press, so a remembered "on" waits for the first one.
 try { if (localStorage.getItem('aeon-garden-sound') === '1') toggleSound(true); } catch (e) { /* fine */ }
+try { if (localStorage.getItem('aeon-garden-saver') === '1') toggleSaver(true); } catch (e) { /* fine */ }
 
 for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => { if (ui.sound) Sound.start(); }, { once: true });
 
 window.garden = { get world() { return world; }, ui, cam, forager: fg, prints: pr, peers, satchel: () => renderSatchel(), kit: { netFiring, firedUi, paint: paintVessel }, stone: { paint: paintOldStone, ui: stoneUi }, screen: (x, y) => [...toScreen(x, y)], click: (x, y) => click(x, y),   // handy in the console
+  perf,
+  gov: { get rung() { return gov.rung; }, set rung(r) { gov.rung = clamp(r | 0, 0, gov.top); govApply(); }, get floor() { return gov.floor; }, get ema() { return perf.ren; } },
   get trees() { return { worker: !!treeWorker, workers: treeWorkers.length, art: treeArt, bytes: treeBytes, asked: treeAsked.size, busy: treeBusy }; } };
 })();

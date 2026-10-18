@@ -346,6 +346,13 @@
     .wd-dice { width: 44px; height: 44px; right: -6px; bottom: -6px; }
     #name-text, .wd-btns .btn { min-height: 44px; }
   }
+  /* (a phone on its side: wider and shorter, the hats in one row and a smaller figure, so it fits under the top edge) */
+  @media (max-height: 500px) {
+    #wardrobe, #wardrobe.join { top: var(--top); bottom: auto; transform: translateX(-50%); width: min(600px, calc(100% - 32px)); max-height: calc(100% - var(--top) - var(--bottom));
+      overflow-y: auto; overscroll-behavior: contain; padding: 10px 16px 12px; }
+    #wardrobe-form { grid-template-columns: 84px minmax(0, 1fr); }
+    #wardrobe #wd-figure { width: 84px; } #wardrobe #wd-look { width: 84px; height: 140px; }
+  }
   /* ---- playing together, the chat (game.js chat): what was said, a few lines bottom left that fade after a while (all of
      them back while it's open), and under them while it's open a small card: things to say with one tap (CHAT_QUICK), and
      the line to type on. On a touch screen it opens up top instead, out of the keyboard's way (below). */
@@ -1130,10 +1137,58 @@
     #chat:not(.open) { bottom: calc(var(--bottom) + 154px); }
     body:has(#build:not(.hidden)) #chat:not(.open) { bottom: calc(var(--bottom) + 154px); }
   }
+  /* A phone on its side has width to spare and little height: the round buttons go back beside the satchel's ends (the basket
+     and the fire left, the book right), its slots a little smaller so the row fits a 667 px screen, and the bar and the chat's
+     lines come down with them, leaving the meadow's middle to the forager. */
+  @media (pointer: coarse) and (max-height: 500px) {
+    #satchel .slot { width: 48px; height: 48px; }
+    #build { left: auto; right: calc(100% + 8px); bottom: 0; }
+    #basket-btn { left: auto; right: calc(100% + 70px); bottom: 0; }
+    #book-btn { right: auto; left: calc(100% + 8px); bottom: 0; }
+    #vitals { bottom: calc(var(--bottom) + 62px); }
+    #chat:not(.open), body:has(#build:not(.hidden)) #chat:not(.open) { bottom: calc(var(--bottom) + 88px); }
+  }
   @media (max-width: 760px), (max-height: 500px) {
     #me-box { transform: scale(1.1); }
     #me-card { top: calc(var(--top) + 106px); }
     #tasks { display: none; }   /* (no room for the first-things note on a phone) */
+  }
+  /* A phone on its side has only ~390 px of height: everything on the screen shrinks a step so the meadow shows.
+     (Targets stay about 40 px for a finger.) */
+  @media (max-height: 500px) {
+    :root { --top: calc(8px + env(safe-area-inset-top, 0px)); --bottom: calc(8px + var(--home-bar, env(safe-area-inset-bottom, 0px)));
+      --left: calc(10px + env(safe-area-inset-left, 0px)); --right: calc(10px + env(safe-area-inset-right, 0px)); --hud-h: 38px; }
+    #time { border-radius: 13px; }
+    .hud-btn, .hud-btn.hud-btn { min-width: 38px; height: 38px; font-size: 15px; }
+    #me-box { transform: scale(0.78); }
+    #me-card { top: calc(var(--top) + 76px); }
+    #tasks { top: calc(var(--top) + 78px); width: 160px; }
+    #tasks .t-head { padding-top: 4px; }
+    #tasks .t-head b { font-size: 12.5px; }
+    #tasks li { font-size: 11px; padding: 2px 0; }
+    #tasks li p { font-size: 10.5px; }
+    #news { top: calc(var(--top) + 44px); font-size: 13px; }
+    #announce { top: calc(var(--top) + 70px); }
+    #announce b { font-size: 15px; } #announce:is(.season, .join) b { font-size: 22px; } #announce.first b { font-size: 24px; }
+    #announce.camp b { font-size: 28px; } #announce.level b { font-size: 22px; } #announce p { font-size: 12px; }
+    #satchel { padding: 3px; border-radius: 12px; }
+    #satchel .slots { gap: 3px; }
+    #satchel .slot, #satchel .slot.slot { width: 40px; height: 40px; }
+    #satchel .slot i { inset: 3px; }
+    #satchel .slot b { font-size: 11px; }
+    #build, #book-btn { width: 44px; height: 44px; }
+    #basket-btn { width: 40px; height: 40px; }
+    #basket-btn { right: calc(100% + 60px); }
+    #vitals { bottom: calc(var(--bottom) + 50px); }
+    .vital { padding: 3px 9px 3px 7px; gap: 5px; }
+    .vital svg { width: 12px; height: 12px; }
+    .vital .bar { width: min(180px, 40vw); height: 6px; }
+    #chat:not(.open), body:has(#build:not(.hidden)) #chat:not(.open) { bottom: calc(var(--bottom) + 56px); }
+    .chat-line { font-size: 12px; padding: 2px 8px; }
+    #inspector { width: min(280px, 38vw); }
+    #inspector.strip { width: min(250px, 38vw); }
+    .ins-name { font-size: 16px; }
+    .portrait { width: 40px; height: 40px; font-size: 24px; }
   }
   @media (max-width: 760px) and (min-height: 501px) {
     body:has(#inspector.open) #vitals { opacity: 0; transform: translate(-50%, 30px); }
@@ -1142,6 +1197,27 @@
       padding: 16px 20px calc(12px + env(safe-area-inset-bottom, 0px)); }
     #me-card h2 { padding-right: 0; }
     #me-card > .close { position: relative; top: auto; right: auto; order: 9; margin: 14px auto 0; }
+  }
+  /* On a phone the meadow comes first. First things is a slim note: as wide as it says, its chapter a small line over the
+     step worked on (the whole note the tap that folds it, so its head needn't be 44 px tall). The satchel shows only the
+     slots with something in them, a new one opening as a thing lands; all of them while one is dragged or the basket is open
+     (somewhere to let go), and the empty satchel is the slim row it is on a computer. */
+  @media (max-width: 760px), (max-height: 500px) {
+    #tasks { width: max-content; min-width: 120px; max-width: min(220px, 62vw); padding: 0 10px 6px; border-radius: 12px; }
+    #tasks .t-head, #tasks .t-head.t-head { min-height: 0; padding: 6px 0 1px; gap: 5px; }
+    #tasks .t-head::after { content: ''; position: absolute; inset: 0; }
+    #tasks .t-head b { overflow: hidden; color: var(--muted); font-size: 10.5px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase;
+      white-space: nowrap; text-overflow: ellipsis; }
+    #tasks .t-head span { font-size: 10px; }
+    #tasks li { padding: 2px 0; font-size: 12px; }
+    #tasks li p { font-size: 11px; }
+  }
+  @media (pointer: coarse) and (max-width: 760px), (pointer: coarse) and (max-height: 500px) {
+    #satchel .slots { gap: 0; }
+    #satchel .slot { transition: width 0.25s ease-out, opacity 0.25s; }
+    body:not(:has(#larder:not(.hidden))) #satchel:not(.empty, .dragging, .cooking) .slot:not(:has(i.on)) { width: 0; opacity: 0; pointer-events: none; }
+    #satchel.empty .slot.slot { width: 22px; height: 10px; }
+    #satchel.empty .slot::before { inset: 2px 3px; border-radius: 4px; }
   }
   #frost { position: fixed; inset: 0; z-index: 3; display: none; pointer-events: none; opacity: 0; transition: opacity 1.2s;
     background: radial-gradient(circle at 0 0, rgba(240, 247, 255, 0.85), rgba(232, 242, 252, 0) 32%),
@@ -1265,6 +1341,7 @@
   </div>
   <div id="more-menu" class="card drop hidden">
     <button class="menu-item phone-only" data-act="sound" id="sound-item"><span class="e">🔇</span> <span class="l">Sound is off</span></button>
+    <button class="menu-item" data-act="saver" id="saver-item"><span class="e">🍃</span> <span class="l">Battery saver is off</span></button>
     <button class="menu-item" data-act="copy-link"><span class="e">🔗</span> <span class="l">Copy a link<span class="x"> to this meadow</span></span></button>
     <button class="menu-item" data-act="together"><span class="e">🧺</span> <span class="l">Play together<span class="x"> with a friend</span></span></button>
     <button class="menu-item" data-act="friends" id="friends-item"><span class="e">👥</span> <span class="l">Friends<span class="x" id="friends-on"></span></span></button>

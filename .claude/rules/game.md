@@ -101,7 +101,7 @@ forager says to itself what it needs, "It's freezing. I need a fire before dark.
 it as a line of chat is (`myChat`), in italics (`chatArt`'s `thought`; a `\n` in the game's own words breaks the line there). A
 friend joining during the opening storm hears it too (`heardWorld`), and the storm blowing over brings the rainbow as any rain does.
 The campfire (sim.js `w.fires`; its rules in ecology.md; the long comment over game.js's `FIRE_SIZE` has it all): a round fire
-button by the satchel (`#build`, `renderBuild`; 50 px above the satchel on a touch screen) with a ring filling in as the satchel
+button by the satchel (`#build`, `renderBuild`; above the satchel on an upright touch screen, beside it with the basket and the book on a phone on its side) with a ring filling in as the satchel
 holds what recipes.js `BUILDS.campfire` takes (6 pebbles, 5 sticks, 2 tinder); a tap or F picks a spot (`ui.place`, a faint fire
 following the mouse, within `PLACE_REACH`; sim.js `fireSpot` says why not). The forager kneels side on (fur.js `FORAGER_KNEEL`,
 `KNEEL_VIEW`), lays it a piece at a time (`LAY_STEPS`), strikes (`STRIKES`), and you hold (mouse, finger or F: `blowHeld`) to
@@ -133,7 +133,7 @@ with the trees and animals (`drawBasket`), a hover saying how much is in it (`ba
 the basket, or E standing by it (`basketByE`: nearer it than to a fire E would cook at or light), walks over and opens its card just over the satchel (`#larder`, `openLarder`, `renderLarder`, `setupLarder`): 24
 slots as the satchel's; a tap moves a slot across either way, a drag puts it in the slot it's let go on (sim.js `moveBetween`,
 `moveInto`), "Put all in" empties the satchel into it (`putAway`). Whatever moves either way flies as a small painting from its slot to the one that took it (`flyMoves`: paired by what it is, at most `FLY_MOST`, `FLY_GAP` ms apart; the landing slot's own painting waits hidden, `.incoming`, and bumps as it lands). Walking off `LARDER_NEAR`, going to a fire, ✕, E, Esc or Back shut
-it (`larderFrame`, `stepOut`). Playing together a friend sees it set down (`sendFire` 'basket') but can't open it.
+it (`larderFrame`, `stepOut`). Playing together it's shared: the host makes it (a friend sees it set down: `sendFire` 'basket') and anyone in camp can open it; each move sends the slots it changed (`sendBasket`, `'bk'`, applied at its tick in `basketNet`), so two moving different things at once both land, and the basket is in `meadowSum`, so a guest who drifts off gets it again.
 Cooking at the fire (PLAN.md stage 6, its redesign, and the cooking window of 2026-10-16; the long comments over `COOK_TPS` and
 `DROPS` have it all): a click on a lit fire (or E, or the pot prompt) walks the forager there (`clickFire` 'cook', `goFire`), it
 kneels, and the camera eases in close on the fire (`cookCam`, in `leadCam`: to `kw.zoom`, about `COOK_TILES` across what the
@@ -268,7 +268,9 @@ with something to give glows (`GLOW_ART`, painted once, under it; a hive's over 
 its name by it and a hand for the pointer; one with nothing says why (sim.js `whatThere`), as a click on it does (`say`). The hover
 is looked up again only when the mouse moves, or every `AIM_MS` while the camera glides (`hoverFrame`, `aim`). "Satchel's full"
 says so by the forager and leaves the thing be.
-A click a little off one still goes for it (`snapTo`: `SNAP` px past its glow, `SNAP_FINGER` for a finger, more in reach). A press on
+A click a little off one still goes for it, or off something dropped (`snapTo`: `SNAP` px past its glow, `SNAP_FINGER` for a finger, more in reach).
+A tap on the forager with something to pick there picks it (only one on nothing is the dance's tap), and a quick tap after a pick,
+or onto something to pick, is a tap, never the double tap's zoom (`lastTap.on`): picking a cluster on a phone kept zooming. A press on
 something to pick is a tap however long it's held (held past `HOLD_MS`, it runs there, `drag.rush`) and needs a bigger move to become
 a drag; a held run let go on something picks it. Playtesters had found a slow tap turning into a sprint past the thing.
 The queue: while the forager is off to pick something or stooped over it, a click on more lines it up after (`queueGather`,
@@ -314,7 +316,7 @@ The satchel (`#satchel`, `renderSatchel`, rewritten only after a pick or a drop)
 the middle, a slim faint row while it's empty. Their paintings are one sheet painted once (`itemSheet`, `--items`): items.js's paintings of things
 picked (`'ingr:'`: every ingredient so far, the fruit, honeycomb, nuts, flowers and what lies about for a fire too), over the
 meadow's own painting of it (`ITEM_ART`), which a new ingredient keeps till items.js paints it; one with neither gets its
-recipes.js emoji. Each is clipped to its own square in the sheet (`ITEM_FILL` scales one up). A tap on a slot opens nothing, but a full one can be dragged (`setupSatchel`): its painting follows the pointer (above a finger), let go on another slot it goes there (sim.js `moveSlot`: onto a stack of its kind, or the two swap), let go off the satchel it is dropped (sim.js `dropSlot`): it flies down to just in front of the forager and lands with a little bounce (`dropLand`), and lies there in its satchel painting (`drawDropped`, `dropPx`) to be picked up again like a find (`'dropped'` in `gatherAt`, `gatherSpot`), fading over its last `DROP_FADE` till it's gone. On a touch screen each slot is 44 px or more, and upright the satchel steps aside while the
+recipes.js emoji. Each is clipped to its own square in the sheet (`ITEM_FILL` scales one up). A tap on a slot opens nothing, but a full one can be dragged (`setupSatchel`): its painting follows the pointer (above a finger), let go on another slot it goes there (sim.js `moveSlot`: onto a stack of its kind, or the two swap), let go off the satchel it is dropped (sim.js `dropSlot`): it flies down to just in front of the forager and lands with a little bounce (`dropLand`), and lies there looking like something to pick (`drawDropped`, `dropPx`, `dropArt`: a find in the meadow's own painting at its size there, a little smaller, `DROP_FIND`; anything else in its satchel painting at about that size, `DROP_PX`), with the same warm ring in reach as a find (`drawNear`, `nearRing`) to be picked up again like a find (`'dropped'` in `gatherAt`, `gatherSpot`), fading over its last `DROP_FADE` till it's gone. On a touch screen each slot is 44 px or more, and upright the satchel steps aside while the
 inspector's sheet is up.
 
 The inspector shows animals and every other thing you click (hives, trees, rocks, burrows, flowers, fields, water,

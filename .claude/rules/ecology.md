@@ -247,7 +247,7 @@ in the wet, `FIRE_WET`), never more than `FIRE_MOST` on (`feedFire`, `fireRoom`)
 relight them), then cold. The spring flood over one puts it out. It warms the forager up to `FIRE_WARM` degrees within `FIRE_NEAR`,
 none past `FIRE_REACH` (`fireWarmth`, by `fireHeat`), and dries it close up (`FIRE_DRY`), rain or not. No random numbers, and a
 meadow kept before fires gets none (no `KEEP_VERSION` bump). Standing by one from dusk with warmth full (4 seeds): a new fire's 5
-sticks burn about 8.5 game hours dry (7 in rain); spring nights end at 0.6 to 1 warmth, winter ones at 0.1 to 0.75 (snow worst),
+sticks burn about 12 game hours dry (8.5 in rain); spring nights end at 0.6 to 1 warmth, winter ones at 0.1 to 0.75 (snow worst),
 and a fire kept fed keeps it at 1 all night; with none, the rainy spring nights and every winter night kill.
 A fire has one pot (`cookDish`, `cookItems`, `cookLeft`, `cookTotal`; `cookOn`, `cookTake`, `cookReady`, `cookProgress`): game.js takes
 the things out of the satchel and sets a dish going for its recipes.js `time` (seconds at 1x, `cookTicks`), and `fireTick` counts it

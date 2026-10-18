@@ -53,7 +53,7 @@ picture and what goes in, `renderBook`; a few dishes `known` from the start, the
   light over it instead of adding to it). The golden hour lights it in the shader (`light`, game.js `goldLight`, in
   `GOLD_STEPS` so it repaints only on a step); what stands on it gets the same warmth as one `'source-atop'` fill, and
   the night is a navy `wash` over everything. The loop gives the sim at most `SIM_MS` a frame (a slow phone runs fast time a bit slower
-  instead of dropping frames), and a paused meadow nobody is touching draws at 30 fps (`resting`).
+  instead of dropping frames), a paused meadow nobody is touching draws at 30 fps (`resting`), so does a calm one played at 1x with a still camera and no hands on it (`calm`), and a touch screen draws at most about 60 a second (`renderGap`, `FRAME_GAP`: a 120Hz phone paints every other beat, the sim still runs on all).
 - `sound.js`: all the sounds, made with Web Audio (no files). Off until the 🔊 button or M.
   `sound-lab.html` plays each one on its own. The forager's footsteps (`step`) come from game.js `foragerFrame`, one for each
   foot down in the stride, with `pace` = its speed against `FORAGER_WALK`, so a sprint (just a faster `f.speed`) is quicker

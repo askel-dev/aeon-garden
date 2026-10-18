@@ -1651,8 +1651,12 @@ function setVolume(v) {
   loud.gain.setTargetAtTime(v * LOUD, ac.currentTime, 0.1);
 }
 
+// Hidden, the meadow keeps silent and the audio thread stands down; back and wanted, it wakes.
+const suspend = () => { if (ac && ac.state === 'running') ac.suspend(); };
+const wakeUp = () => { if (ac && enabled && ac.state === 'suspended') ac.resume(); };
+
 window.Sound = {
-  start, play, update, setEnabled, setVolume, get enabled() { return enabled; }, names: Object.keys(SOUNDS),
+  start, play, update, setEnabled, suspend, wakeUp, setVolume, get enabled() { return enabled; }, names: Object.keys(SOUNDS),
   playTune, stopTune, tunes: Object.fromEntries(Object.entries(TUNES).map(([k, t]) => [k, t.title])),
   // What's playing: { name, at, length } in seconds, or null.
   get tune() { const p = music.piece; return p && ac ? { name: p.name, at: Math.max(0, ac.currentTime - p.t0), length: p.length } : null; },
