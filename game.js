@@ -2746,6 +2746,25 @@ function renderVitals() {
     vit.frost = frost;
   }
 }
+// The air's temperature top middle (#thermo, in the 250 ms block, rewritten only when the whole degree changes): the
+// mercury up from THERMO_RANGE's low to its high, ice blue to amber to a hot red (THERMO_INK), the degrees, and a word.
+const THERMO_RANGE = [-15, 30];
+const THERMO_INK = [[-10, 120, 168, 222], [18, 222, 128, 58], [28, 210, 78, 48]];   // degrees and the colour there: ice, amber, hot
+const THERMO_WORDS = [[22, 'Hot'], [16, 'Warm'], [10, 'Mild'], [5, 'Chilly'], [0, 'Cold'], [-5, 'Freezing'], [-1e9, 'Bitter']];
+const thermo = { deg: NaN };
+function renderThermo() {
+  const deg = Math.round(S.airTemp(world));
+  if (deg === thermo.deg) return;
+  thermo.deg = deg;
+  const el = $('#thermo'), word = THERMO_WORDS.find(([v]) => deg >= v)[1];
+  const [from, to] = deg < THERMO_INK[1][0] ? [THERMO_INK[0], THERMO_INK[1]] : [THERMO_INK[1], THERMO_INK[2]];
+  const m = clamp((deg - from[0]) / (to[0] - from[0]), 0, 1), c = [1, 2, 3].map(i => Math.round(lerp(from[i], to[i], m)));
+  el.style.setProperty('--c', `rgb(${c.join(', ')})`);
+  el.style.setProperty('--t', (0.08 + 0.92 * clamp((deg - THERMO_RANGE[0]) / (THERMO_RANGE[1] - THERMO_RANGE[0]), 0, 1)).toFixed(3));
+  el.querySelector('b').textContent = deg + '°';
+  el.querySelector('span').textContent = word;
+  el.ariaLabel = `Air temperature: ${deg} degrees, ${word.toLowerCase()}`;
+}
 // The skills (#me-card: a tap on the face or I): each of sim.js SKILLS with its level, how far to the next, what it gives
 // now and what practises it. A new skill shows with its line till it has a SKILL_SAYS.
 const pct = v => Math.round(v * 100) + '%';
@@ -16675,6 +16694,7 @@ function frame(now) {
     }
     updateClock();
     renderVitals();
+    renderThermo();                                       // (the air's temperature, top middle)
     renderBasketBtn();                                    // (in the camp or out of it: the basket's button)
     renderTasks();                                        // (first things)
     netCard(now);

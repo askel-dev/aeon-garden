@@ -82,6 +82,10 @@ and what helps). Stamina is a slim bar centered over the
 satchel (`#vitals`, `#v-stam`, in `renderVitals`) shown while it isn't full, ember-red pulsing while winded. A tap on
 the face or I opens the skills (`#me-card`, `openMe`, `renderMe`: level, a bar to the next, what it gives, what practises it; a sheet with its ✕
 at the foot on an upright phone); its brass badge is the levels added up and glints after a level up till they're looked at.
+The air's temperature (sim.js `airTemp`, the weather's, not what the forager feels) is a small parchment pill top middle (`#thermo`,
+`renderThermo`, in the 250 ms block, rewritten only when the whole degree changes; 2026-10-18): a thermometer whose mercury rises over
+`THERMO_RANGE` and goes ice blue to amber to hot red (`THERMO_INK`), the degrees and a word (`THERMO_WORDS`). The toast and the headlines
+sit under it. On an upright phone it's just the degrees, and while playing together (the pill then reaching past the middle) it sits beside the face.
 Practice earned floats up over its head as in Project Zomboid (`xpFrame`, `drawXpFloats`, 2026-10-17): "+4 Gathering" in the
 skill's ink (`SKILL_INK`, lightened) as plain words with a faint dark edge, no pill, painted once (`xpFloatOf`), gathered till it stops
 gaining for `XP_QUIET_MS` (a pick, a dish) or `XP_MOST`; stamina only now and then, every `XP_EVERY` seconds of sprinting gathered over
