@@ -8514,8 +8514,22 @@ function setupSatchel() {
   const HOLD_FROM = 6, slotAt = (x, y) => document.elementFromPoint(x, y)?.closest('#satchel .slot, #larder .lslot');
   let held = null;                          // { k, id, pid, x, y, fly, over, touch }
   const place = (h, x, y) => { h.fly.style.transform = `translate(${x - 20}px, ${y - (h.touch ? 58 : 20)}px)`; };
+  // Whatever is lifted put down where it is, if the pointer's end never came (capture lost, the window blurred, another press):
+  // its painting gone, its slot back, as if nothing had been picked up. Else the painting stayed stuck on the screen.
+  const abandon = () => {
+    const h = held;
+    held = null;
+    if (!h) return;
+    h.over?.classList.remove('over');
+    if (h.fly) h.fly.remove();
+    row.children[h.k]?.classList.remove('lifted');
+    box.classList.remove('dragging');
+  };
+  row.addEventListener('lostpointercapture', e => { if (held && e.pointerId === held.pid && !e.defaultPrevented) setTimeout(() => { if (held && held.pid === e.pointerId) abandon(); }, 0); });
+  addEventListener('blur', abandon);
   row.addEventListener('pointerdown', e => {
     const el = e.target.closest('.slot'), F = world && world.forager;
+    if (held && held.pid !== e.pointerId) abandon();
     if (held || !el || !F || e.button > 0 || !F.bag[+el.dataset.k]) return;
     held = { k: +el.dataset.k, id: F.bag[+el.dataset.k], pid: e.pointerId, x: e.clientX, y: e.clientY, fly: null, over: null, touch: e.pointerType !== 'mouse' };
     el.setPointerCapture(e.pointerId);
@@ -8573,8 +8587,10 @@ function setupSatchel() {
       if (Net && Net.on) Net.send({ t: 'drop', kind: d.kind, x: d.x, y: d.y, n, born: d.born, until: d.until, tick: world.tick });
       const to = `translate(${tx - 20}px, ${ty - px * 0.3 - 20}px)`, k = clamp(px / 40, 0.3, 1.2);
       dropLand.set(d, performance.now() + DROP_FLY);
+      const gone = () => h.fly.remove();
       h.fly.animate([{ transform: `${from} scale(1)`, opacity: 1 }, { transform: `${to} scale(${k})`, opacity: 0.9 }], { duration: DROP_FLY, easing: 'ease-in' })
-        .onfinish = () => h.fly.remove();
+        .onfinish = gone;
+      setTimeout(gone, DROP_FLY + 300);                   // (in case the animation never finishes, hidden tab or cancelled)
       lifted.classList.remove('lifted'); renderSatchel();
       return;
     }
