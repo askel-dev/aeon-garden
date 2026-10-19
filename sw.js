@@ -15,7 +15,7 @@
  * index.html registers this ('serviceWorker' in navigator). Its fetch handler is also what Android Chrome wants
  * before it offers to install the meadow: without it there is only the manual "Add to Home screen". */
 
-const VERSION = 2;
+const VERSION = 3;
 const CACHE = `meadow-${VERSION}`;
 
 // The page, everything it loads to run (the eleven scripts in index.html: sim, fur, dishes, items, sound, ground,

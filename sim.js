@@ -6073,8 +6073,8 @@ function gainSkill(w, f, s, n) {
 // it dries the forager (FIRE_DRY), rain or not. It's the meadow's strongest warmth: a winter night by a fed fire is cosy,
 // a night away from one still dangerous. Nothing here draws the meadow's random numbers. A meadow kept before fires has
 // none (unpackWorld), no KEEP_VERSION bump.
-const FIRE_STICK = TPD / 10;            // ticks a stick burns (72 s at 1x): a new fire's five, dusk well past midnight
-const FIRE_MOST = 6 * FIRE_STICK;       // it takes no more on than this (a night, dry: rain and storms burn it faster)
+const FIRE_STICK = TPD / 5;             // ticks a stick burns (2 min 24 s at 1x): a new fire's five, dusk to the next dusk
+const FIRE_MOST = 6 * FIRE_STICK;       // it takes no more on than this (a day and more, dry: rain and storms burn it faster)
 const FIRE_LOW = 1.5 * FIRE_STICK;      // with less than this left it burns low: smaller and less warm
 const FIRE_EMBERS = TPD / 10;           // ticks its embers glow once it's burnt out (a minute and a bit at 1x)
 const FIRE_WET = { rain: 1.4, storm: 2, snow: 1.25 };   // it burns this much faster in the wet
@@ -6415,29 +6415,86 @@ function whatThere(w, kind, it) {
   return there;
 }
 
-// How many of id the satchel has room for.
-function roomFor(f, id) {
+// ---------------------------------------------------------------- stores
+//
+// A store is anything that keeps things: two rows, `bag` (what's in each slot) and `bagN` (how many), and nothing else is
+// needed of it. The satchel (w.forager) is one, the camp's basket (w.camp.basket) another, and a larder, a drying rack or a
+// cellar to come is one more in worldStores: everything that takes things out of a satchel asks storesAt or spends with
+// storesTake, so a new store works everywhere at once. The satchel's own helpers (roomFor, stow, bagCount, spend) are
+// these, on it.
+const STORE_NEAR = 2.6;                 // tiles a store set down in the meadow is to hand from
+// How many of id a store holds.
+function storeCount(S, id) {
   let n = 0;
-  for (let k = 0; k < SLOTS; k++) n += f.bag[k] === id ? stackOf(id) - f.bagN[k] : f.bag[k] === '' ? stackOf(id) : 0;
+  for (let k = 0; k < S.bag.length; k++) if (S.bag[k] === id) n += S.bagN[k];
   return n;
 }
-// Puts n of id in the satchel: onto its stacks first, then the first empty slots. Returns the slots it went in (for
-// game.js to fly them to).
-function stow(f, id, n) {
+// How many of id it has room for.
+function storeRoom(S, id) {
+  let n = 0;
+  for (let k = 0; k < S.bag.length; k++) n += S.bag[k] === id ? stackOf(id) - S.bagN[k] : S.bag[k] === '' ? stackOf(id) : 0;
+  return n;
+}
+// Puts n of id in it: onto its stacks first, then the first empty slots. Returns the slots it went in (for game.js to fly
+// them to).
+function storePut(S, id, n) {
   const into = [];
-  for (let pass = 0; pass < 2 && n > 0; pass++) for (let k = 0; k < SLOTS && n > 0; k++) {
-    if (pass === 0 ? f.bag[k] !== id || f.bagN[k] >= stackOf(id) : f.bag[k] !== '') continue;
-    const m = Math.min(n, stackOf(id) - f.bagN[k]);
-    f.bag[k] = id; f.bagN[k] += m; n -= m; into.push(k);
+  for (let pass = 0; pass < 2 && n > 0; pass++) for (let k = 0; k < S.bag.length && n > 0; k++) {
+    if (pass === 0 ? S.bag[k] !== id || S.bagN[k] >= stackOf(id) : S.bag[k] !== '') continue;
+    const m = Math.min(n, stackOf(id) - S.bagN[k]);
+    S.bag[k] = id; S.bagN[k] += m; n -= m; into.push(k);
   }
   return into;
 }
-// How many of id the satchel holds.
-function bagCount(f, id) {
-  let n = 0;
-  for (let k = 0; k < SLOTS; k++) if (f.bag[k] === id) n += f.bagN[k];
-  return n;
+// Takes n of id out of it, from its smallest stacks first, so the fewest slots are left part full. Returns how many it took.
+function storeTake(S, id, n) {
+  let took = 0;
+  while (took < n) {
+    let k = -1;
+    for (let j = 0; j < S.bag.length; j++) if (S.bag[j] === id && (k < 0 || S.bagN[j] < S.bagN[k])) k = j;
+    if (k < 0) break;
+    const m = Math.min(n - took, S.bagN[k]);
+    S.bagN[k] -= m; took += m;
+    if (!S.bagN[k]) S.bag[k] = '';
+  }
+  return took;
 }
+// Every store set down in the meadow: the camp's basket now, and whatever is built later.
+function worldStores(w) {
+  const out = [];
+  if (w.camp && w.camp.basket) out.push(w.camp.basket);
+  return out;
+}
+// The stores to hand at x, y: the satchel always, then any set down in the camp (where camp stores are kept) or within
+// STORE_NEAR of the place. A fire in camp has them all; one out in the meadow only the satchel.
+function storesAt(w, x, y) {
+  const out = [];
+  if (w.forager) out.push(w.forager);
+  for (const S of worldStores(w)) if (inCamp(w, x, y) || Math.hypot(S.x - x, S.y - y) <= STORE_NEAR) out.push(S);
+  return out;
+}
+// How many of id all of them hold, and how much room for it they have together.
+function storesCount(stores, id) { let n = 0; for (const S of stores) n += storeCount(S, id); return n; }
+function storesRoom(stores, id) { let n = 0; for (const S of stores) n += storeRoom(S, id); return n; }
+// Takes n of id out of them, the first that has it first (the satchel before the basket). Returns how many it took.
+function storesTake(stores, id, n) {
+  let took = 0;
+  for (const S of stores) { if (took >= n) break; took += storeTake(S, id, n - took); }
+  return took;
+}
+// Puts n of id in the first of them with room (the satchel before the basket): { store, into }, or null with none holding it.
+function storesPut(stores, id, n) {
+  for (const S of stores) {
+    if (!storeRoom(S, id)) continue;
+    const into = storePut(S, id, n);
+    if (into.length) return { store: S, into };
+  }
+  return null;
+}
+// The satchel's own: the stores above, on it.
+const roomFor = (f, id) => storeRoom(f, id);
+const stow = (f, id, n) => storePut(f, id, n);
+const bagCount = (f, id) => storeCount(f, id);
 // Eats one of what's in slot k: fill (recipes.js: how much it fills, game.js reads it) into the tummy, and a warm dish's
 // warmth. Returns '' if it ate, else why not in a few words (game.js says it).
 function feedForager(w, k, fill, warm) {
@@ -6454,18 +6511,7 @@ function feedForager(w, k, fill, warm) {
 }
 // Takes n of id out of the satchel (for a fire: game.js, by recipes.js's BUILDS), from its smallest stacks first, so the
 // fewest slots are left part full. Returns how many it took.
-function spend(f, id, n) {
-  let took = 0;
-  while (took < n) {
-    let k = -1;
-    for (let j = 0; j < SLOTS; j++) if (f.bag[j] === id && (k < 0 || f.bagN[j] < f.bagN[k])) k = j;
-    if (k < 0) break;
-    const m = Math.min(n - took, f.bagN[k]);
-    f.bagN[k] -= m; took += m;
-    if (!f.bagN[k]) f.bag[k] = '';
-  }
-  return took;
-}
+const spend = (f, id, n) => storeTake(f, id, n);
 // Calls fn(kind, it) for everything that has something to give now (whatThere's n > 0): for game.js's glints and the
 // edge arrow, a few times a second, and for counting. What lies on the ground for a fire (FINDS ground) isn't food and
 // doesn't glint, so it's not here.
@@ -7820,6 +7866,7 @@ const api = {
   TREES, treeStage, treeAge, standing, bearing, inBloom, SEEDLING, SAPLING, GROWN, KIND_NAMES,
   FROG_K, SPAWN_WORTH, FISH_K, FISH_EAT, CROW_SEATS, SHROOMS, SHROOM_KINDS, FINDS, FIND_KINDS, findSeason, eachPickable, greenStage, greenPicked, GREEN_SEASONS, brambleStage, RIPE_FROM, RIPE_TO,
   bagCount, spend, stow, feedForager, hungerOf, HUNGRY, TUMMY, fireSpot, layFire, feedFire, fireRoom, lightable, lightFire, fireHeat, fireWarmth, CAMP_R, CAMP_FLAT, inCamp, BASKET_SLOTS, basketSpot, makeBasket, moveBetween, moveInto, putAway,
+  storeCount, storeRoom, storePut, storeTake, worldStores, storesAt, storesCount, storesRoom, storesTake, storesPut, STORE_NEAR,
   cookTicks, cookReady, cookOn, cookTake, shapeVessel, makeVessel, kitOf, cookProgress, SKILLS, SKILL_NAMES, SKILL_TOP, skillNeed, skillLevel, skillProgress, perk, gainSkill, FIRE_STICK, FIRE_MOST, FIRE_LOW, FIRE_EMBERS, FIRE_NEAR, FIRE_REACH, FIRE_GAP, FIRE_WET,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
