@@ -471,10 +471,109 @@ builds go behind **one make button**, and the first new build is a **torch** you
   frogs, rabbits), at most 2 torches kept at once and at most 1 lit, round-trip after the years. No drawing or game.js
   change yet.
 
+### Torch painting (2026-10-19)
+- game.js `paintTorch`, in `PAINTERS` as `torch:` so the sprite cache makes it once a size: a cut hazel shaft pushed into
+  the earth, bowed and tapered, a roll of birch bark lashed to its head, the bark torn and blackened at the crown with
+  embers still in it, and its brown inner edge and a chip or two. Three looks (`TORCH_ARTS`): 'torch:0' burning (the full
+  head), 'torch:1' guttering (burnt lower, the flame smaller), 'torch:2' the charred stub (a short split, ashen end).
+  `TORCH_SIZE` 2.0 next to a rabbit, `TORCH_FOOT` 0.72 in its box. Its sheet (large, at play size 20 to 48 px, guttering
+  and stub) went to Axel to rate.
+- The flame is drawn over it from a sharper set of the same three tongues (`TORCH_FLAME_ART`: 0.7 px blur against the
+  fire's 2 px, brighter edges, so it keeps an edge at torch size), scaled down and centred on the charred crown, not on
+  the leaning stick (`garden.torch.flame` in the console). Then still to come, in step 3: the crackle and the 'torch' net
+  message (its glow and pool are built; see the note below).
+
+### Torch placement (2026-10-19)
+- game.js: `placeTorch(open)` beside `placeFire` and `placeBasket` (`ui.place.torch`, `build: TORCH_BUILD`); `placeAt`
+  takes `S.torchSpot`'s word ("Another torch is here", "Too close to the tree", ...), and `startBuild('torch')` opens it
+  from the make strip. `BUILD_ART.torch` is the painted torch (`paintTorch`), so the strip's tile and the make button
+  have its picture.
+- The ghost is `drawTorch`'s faint branch (the burning look at 0.6/0.3, no flame of its own); its reason is the label
+  `drawFireHint` already lays by a faint one, and a torch's click doesn't say it a second time. `drawTorch` also draws the
+  real ones with the trees and animals, sorted by y: the painting by what's left of its night (burning, guttering over
+  its last fifth, then the stub) and the sharper flame over its crown.
+- Setting it down is the generic one: the forager walks to its side and kneels (`fireFrame` 'torch' → 'set',
+  `TORCH_SET_MS` 900), spends 1 stick and 1 birch bark (`spendBuild`), pushes it in with a stick sound, one strike
+  (one, whatever the wet), and `S.placeTorch` lights it at that strike; then it watches it take (`lit`). `kneelNow` has
+  its 'set' pose, and `atFire` counts it, so a press while setting it down doesn't walk away.
+- Checked in Chrome (headless, CDP, a new meadow with the opening storm): the make strip's Torch tile, the faint ghost,
+  its "Too close to the tree" and "Another torch is here" reasons, then a clear spot: the forager knelt, one stick and
+  one birch bark went, the strike lit it, `world.torches` had it (`burn` 10590, `wet` 2 in the storm), the satchel went
+  from 3 to 2 of each, no JS errors. Still to come: the crackle and the 'torch' message to friends (its light pool is
+  built; see the note below).
+
+### Torch light (2026-10-19)
+- game.js: a lit torch is now a lantern in the dark. `lightsFrame` gathers the fires as before, and every `world.torches`
+  entry with `burn > 0`: a burning torch glows 0.55, a guttering one (its last fifth, `TORCH_BURN * 0.2`) 0.30, and the
+  charred stub none. Its pool is `LIGHT_TILES * TORCH_LIGHT`, with `TORCH_LIGHT` 0.4 of a fire's, times
+  `(0.85 + 0.15 * glow)` — no camp bloom, no sqrt — laid on the ground at its foot (`sy - torchPx(z) * TORCH_FOOT *
+  0.5`); its alpha is 0.62 burning and 0.42 guttering. Each torch flickers on its own phase from `T.born`, faster and
+  smaller than a fire's (`0.85 + 0.1 * sin(step / 3 + born) + 0.05 * sin(step / 1.3 + 2 * born)`, the same `step` as the
+  fires, so the cached sky still repaints only on a step), so twelve torches don't pulse together. It gives no warmth:
+  `snowMelt` still takes fires only, and sim.js didn't change.
+- `lights` grew to `LIGHT_MAX` (16) in every array (it was a literal 4 in three places). `lightsFrame` now keeps the
+  nearest lights to the middle of the screen, fires ahead of torches at the same distance, in a bounded insertion over
+  the reused arrays, so a frame allocates nothing; both kinds are `visible`-culled first, so a row of twelve torches off
+  screen can't eat the slots. `fireReach`, `fireLight`, `paintFireLights` and `lightForager` read the arrays as they are,
+  so the forager's rim and the warm cast follow a torch automatically — at its lantern alpha, dimmer than a hearth's.
+- `laySky`'s cached-picture snapshots (`sky.was` / `sky.now`) went from 96 to 160 numbers: a night lays 10 + 5 * 10 layers
+  + (1 + 3 * `LIFT_MAX`) lifts + (1 + 4 * `LIGHT_MAX`) lights = 144 at most. At 96 the far lights were silently dropped
+  from the compare, so the sky would have repainted every frame at night. The weather clock is left out of the snapshot
+  when there is no cloud or fog layer for it to move, so a clear night repaints on the flicker step, not every 50 ms.
+- Measured in headless Chrome (M5, 30 fps calm, night, camera still): 12 torches on screen repainted the sky 56 times in
+  152 drawn frames over 5 s — the 5000 / `FLICKER_MS` flicker steps (55) and no camera moves, not one a frame. Render
+  time over 300 frames was 1.62 ms with 12 torches against 1.44 ms with none (+0.17 ms a frame, +12%; medians 1.6 and
+  1.4; a second pair read 1.75 against 1.47). A 5 s heap sample showed no allocation in `lightsFrame` or `lightAdd`
+  (the top was `updateWater`). By eye and in Chrome: one torch with no fire cut a pool out of the night, the forager's
+  rim faint at 2 tiles and dark at 6, guttering dimmer and the stub none; 12 torches and 2 fires all lit, 12 off-screen
+  torches and 1 fire left the fire lit, 18 candidates capped at the nearest 16; `?split` lit the close-up on the torch's
+  side and stayed on it after the camera moved; 386 px wide with 12 torches had no overflow and no console errors.
+- Playing together: the host's world snapshot already carries `world.torches` (`S.packWorld`), and a guest runs the same
+  sim at the host's tick, so a torch that was there is lit on both sides. The light is render-only and sends nothing.
+  Still step 3: the crackle (sound.js) and the 'torch' net message, so a torch set down after the snapshot reaches friends
+  without waiting for another world.
+
+### Birch bark a little commoner (2026-10-19)
+- It was the rarest thing on the ground and the one thing a torch needs one of: at most 5 about (`most`, times `w.room`), but
+  only ever under a birch's crown (`findPlace` 'birch', `inCrown`), which is a small target for `findSpot`'s few random tries,
+  so most meadows sat at 3 to 5, and a pick gave 1.
+- sim.js: a bark lies under a birch or within `BIRCH_NEAR` (2.6 tiles) of its trunk, standing or fallen (`birchNear`, the
+  same ellipse as `inCrown`), so the birches a meadow does have actually fill up; and `FINDS.birchbark.n` is 2, as sticks,
+  pebbles, dry grass and clay already were. `most` stays 5: it's still the rarest ground find, but a stop is worth a torch.
+- Six seeds, a year: 5.8 to 7.8 bark about at a time (was 3.5 to 6.3), 25 to 35 sheets coming up a year, 50 to 70 if all
+  picked (was 15 to 29). From the camp the nearest is as near as it was where birches grow near it; where it isn't (one seed
+  in four), the walk now buys two sheets, not one, and the camp's own bark covers a campfire's tinder (2) on its own.
+- Three seeds, two years: nothing the cooking needs died out (hives with queens, fish, frogs, rabbits), the other ground finds
+  stand as they did (sticks 29 to 46, pebbles 13 to 14, dry grass 7, clay 7 to 8), pack/unpack round-trips. No `KEEP_VERSION`
+  bump: a kept meadow's finds are plain data. recipes.js's birch bark `where` and `.claude/rules/ecology.md` say the new place.
+
+### A torch's crackle, and a torch to friends (2026-10-19)
+- sound.js: `state.torch` and `state.torchPan`, fed beside `fire` and `pot` in `Sound.update`. `tickAmbience` rolls
+  `crackle` at `3 * state.torch` a second at `0.55` of its gain, from the torch's side of the screen, and `crackle` grew
+  a `pan` (the fire's own still comes from the middle). It's the same dry snaps with no roar under them, so a torch
+  reads as a lantern while a campfire still owns the low bed of noise.
+- game.js `torchSound()` (beside `fireSound`): the nearest lit torch to the middle of the screen, quieter as it gutters
+  (`TORCH_BURN * 0.2`, the same fifth `drawTorch` uses) and with zoom clamped as a fire's, returning its level and pan.
+  The charred stub is silent.
+- Playing together: the strike now sends the torch (`sendFire('torch', j, 0, 0)`), and `fireNet` takes `m.a === 'torch'`
+  by `S.placeTorch`-ing it where it stands with the night it has left (`TORCH_BURN - (world.tick - m.tick)`), unless one
+  is already there. `meadowSum` now counts the torches too, so a side that misses one is caught at the next check and
+  asks for the meadow again, rather than the two quietly differing. (Before this, torches were left out of the sum, so
+  nothing would have noticed.)
+- Checked: two tabs of one headless Chrome (`?room=..&local`, BroadcastChannel, the wardrobe set off in each): host
+  placed one, the guest had it at the same spot and the same burn; the guest placed one, the host had it; both ended
+  with both, no console errors, and both burns drained together. The real strike path (kneel, one stick and one bark,
+  strike) was driven in Chrome and lit its torch as before. The crackle: 3 s with a torch two tiles off made 10
+  crackles (the stacks through `crackle` and `out`), and none with no torch. Not tried over PeerJS with two machines.
+- That closes step 3 of stage 7. What's left is step 4: the seat log, the drying rack and the lean-to.
+
 ## After that (roughly in this order)
 1. **Cooking at the fire** and 2. **hunger and eating**: stage 6 above.
 3. **Camp builds.** Arranged inside the camp ring: a seat log, a spit, a drying rack (keeping food for winter), a basket
-   for storage (built 2026-10-17: `w.camp.basket`, 24 slots, and the ring went from 3.2 to 5 tiles), a lantern, a bedroll or lean-to. What each costs is data, recipes.js-style, so Axel can add builds by
+   for storage (built 2026-10-17: `w.camp.basket`, the ring went from 3.2 to 5 tiles; 2026-10-19: it grew to 32 slots,
+   tinder stacks 20, its card got a Tidy that folds piles of a kind, and set-down stores learned to keep bigger stacks
+   than the satchel carries (a `keep` in recipes.js: greens lie 20 to a basket slot, still 10 to a satchel one), a lantern,
+   a bedroll or lean-to. What each costs is data, recipes.js-style, so Axel can add builds by
    hand. More ground items come in as builds need them (clay, reeds, flint, logs, pine cones, tinder fungus, feathers).
 4. **Fishing and hunting.** Fish from the water the sim already stocks (`w.fish`), and hunting the rabbits and the game
    (the gentle respawn keeps them from running out). Visitor NPCs are never hunted.

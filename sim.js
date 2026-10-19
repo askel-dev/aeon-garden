@@ -1972,7 +1972,30 @@ function strike(w, x, y, open = false) {
   if (victim) die(w, victim, 'lightning');
   // Thunder: every rabbit out in the open bolts for a burrow.
   forEachNear(w, x, y, 22, o => frighten(o, x, y, 'thunder'), 'rabbit');
+  // The ground it struck is left blackened for half a day, then pales away (scorchOf, scorchFade; game.js draws it).
+  if (w.scorches.length >= SCORCH_MOST) w.scorches.shift();
+  w.scorches.push(scorchOf(x, y, w.tick));
   emit(w, { type: 'lightning', x, y, tree: !!tree, victim });
+}
+
+// A burn on the ground where a bolt struck (w.scorches, one layout, scorchOf): a charred patch that weathers to nothing
+// in SCORCH_LIFE (half a day, 6 min at 1x), paling over the last SCORCH_FADE of that. Only the newest SCORCH_MOST are
+// kept: a gale can strike every few seconds, and older ones are dropped to keep the drawing and the keeping small.
+// Nothing here draws the meadow's random numbers (the shape is hashed from the tick in game.js), and a meadow kept
+// before them gets none (unpackWorld), with no KEEP_VERSION bump (w.scorches is in LATER).
+const SCORCH_LIFE = Math.round(TPD / 2), SCORCH_FADE = Math.round(TPD / 8), SCORCH_MOST = 24;
+const SCORCH_EVERY = 30;                 // ticks between forgetting the weathered ones (a second at 1x)
+const scorchOf = (x, y, born) => ({ scorch: true, x, y, born });
+// How much of it still shows, 1 down to 0 (game.js fades its painting with this).
+const scorchFade = (w, s) => clamp(1 - (w.tick - s.born - (SCORCH_LIFE - SCORCH_FADE)) / SCORCH_FADE, 0, 1);
+// Every so often, the ones weathered away are forgotten.
+function scorchTick(w) {
+  let keep = 0;
+  for (let k = 0; k < w.scorches.length; k++) {
+    const s = w.scorches[k];
+    if (w.tick - s.born < SCORCH_LIFE) w.scorches[keep++] = s;
+  }
+  w.scorches.length = keep;
 }
 
 function frighten(c, x, y, what) {
@@ -4046,6 +4069,7 @@ const FIND_PATCHY = 0.6;                // this often (else anywhere that suits)
 const FIND_CLUMP = 5;                   // till there are this many in the patch
 const FIND_FILL = 5;                    // a look brings up one in this many of those missing (so a season fills in a day or so)
 const FIND_SNOW = 0.3;                  // snow this deep covers the low ones
+const BIRCH_NEAR = 2.6;                 // tiles from a birch's trunk its bark may lie (under the crown, or a little way out)
 // The kinds: when (from, to: seasons into the year, 0 spring to 4, wrapping into the next spring), where (findPlace),
 // how many at most (times w.room), and how many a pick gives (n). low: snow covers it. wet: it stands in the shallows.
 // The last four are what lies on the ground for a fire (ground: they don't glint, they're not food), there all year:
@@ -4063,7 +4087,7 @@ const FINDS = {
   stick:       { name: 'Sticks',            from: 0,    to: 4,    place: 'sticks',   most: 16, n: 2, low: false, ground: true, days: [5, 10] },
   pebble:      { name: 'Pebbles',           from: 0,    to: 4,    place: 'stony',    most: 9,  n: 2, low: false, ground: true, days: [12, 24] },
   drygrass:    { name: 'Dry grass',         from: 0,    to: 4,    place: 'long',     most: 9,  n: 2, low: false, ground: true, days: [3, 6], more: [0.5, 1, 1, 0.5] },
-  birchbark:   { name: 'Birch bark',        from: 0,    to: 4,    place: 'birch',    most: 5,  n: 1, low: false, ground: true, days: [5, 10] },
+  birchbark:   { name: 'Birch bark',        from: 0,    to: 4,    place: 'birch',    most: 5,  n: 2, low: false, ground: true, days: [5, 10] },
   clay:        { name: 'Clay',              from: 0,    to: 4,    place: 'muddy',    most: 5,  n: 2, low: false, ground: true, days: [12, 24] },
 };
 const STICK_WIND = { rain: 1.4, storm: 2.2 };   // sticks lie about this many times more in rain and storms, and come down faster
@@ -4086,8 +4110,8 @@ function findSeason(kind, t) {
 // Whether a kind suits the ground at x, y: dandelions out in the open grass, sorrel in the damp grass near the water,
 // strawberries and hazelnuts along the woods' edges, elder by the water or at a wood's edge, roses in the scrub by the thorn
 // bushes or the wood's edge, watercress in the shallows right by the bank. Sticks under the trees and in the woods, pebbles
-// on the shore, at the fords and round the rocks, dry grass in long grass out in the open, birch bark under a birch or by a
-// fallen one.
+// on the shore, at the fords and round the rocks, dry grass in long grass out in the open, birch bark under a birch or a
+// little way out from one (standing or fallen).
 function findPlace(w, kind, x, y) {
   if (!inBounds(x, y)) return false;
   const i = idx(x, y), place = FINDS[kind].place;
@@ -4106,7 +4130,7 @@ function findPlace(w, kind, x, y) {
   if (place === 'elder') return damp <= 6 && wood >= 0.05 && wood <= 0.45;
   if (place === 'long') return wood < 0.15 && w.grass[i] >= DRY_GRASS;
   if (place === 'sticks') return wood >= 0.12 || inCrown(w, x, y, '');
-  if (place === 'birch') return inCrown(w, x, y, 'birch');
+  if (place === 'birch') return inCrown(w, x, y, 'birch') || birchNear(w, x, y, BIRCH_NEAR);
   return wood < 0.3 && damp > 1 && (wood >= 0.06 || thornNear(w, x, y, 3));   // 'scrub'
 }
 
@@ -4119,6 +4143,16 @@ function inCrown(w, x, y, kind) {
     if ((d.x - x) ** 2 + ((d.y - y) * 1.3) ** 2 < reach * reach) under = true;
   });
   return under;
+}
+// Whether there's a birch near enough to have shed bark here: under its crown or a little way out from its trunk, where a
+// peel or a fallen one leaves it. (The crown alone is a small target: a look at the whole meadow found it too often missed.)
+function birchNear(w, x, y, reach) {
+  let near = false;
+  forEachDecorNear(w, x, y, 6, d => {
+    if (near || !d.tree || d.stump || d.size < SAPLING || d.kind !== 'birch') return;
+    if ((d.x - x) ** 2 + ((d.y - y) * 1.3) ** 2 < reach * reach) near = true;
+  });
+  return near;
 }
 // Whether there's water in the 3x3 tiles round x, y (a muddy bank: clay).
 function waterNear(w, x, y) {
@@ -5462,9 +5496,13 @@ const BRUSH_NEAR = 2.5;                 // tiles about it it looks for brush in,
 // tummy (1 full, 0 empty: eat), warmIn: ticks left of a warm dish's warmth inside it, health (1 well, 0 collapsed: bodyTick). xp, lv: its skills, by name (SKILLS).
 // kit: what it has made (kitOf, shapeVessel), kept at camp, never in the satchel.
 const SLOTS = 8, STACK = 10;            // the satchel's slots, and how many of a kind one holds (by default)
-let stackFn = null;                     // recipes.js stackOf, handed over by setStacks (the sim has no recipes of its own)
-function setStacks(fn) { stackFn = fn; }
-function stackOf(id) { return (stackFn && stackFn(id)) || STACK; }   // how many of one kind a slot holds
+let stackFn = null;                     // recipes.js stackOf and keepOf, handed over by setStacks (the sim has no recipes of its own)
+let keepFn = null;
+function setStacks(fn, kn) { stackFn = fn; keepFn = kn || null; }
+function stackOf(id, S) {               // how many of one kind a slot holds: what a set-down store keeps, or what a satchel carries
+  if (S && S.kept && keepFn) { const k = keepFn(id); if (k) return k; }
+  return (stackFn && stackFn(id)) || STACK;
+}
 function foragerOf(x, y) {
   const f = { forager: true, x, y, path: [], leg: 0, speed: -0, heading: Math.PI / 2, moved: -0, walking: false, goalX: x, goalY: y,
     running: false, sneaking: false, bag: new Array(SLOTS).fill(''), bagN: new Array(SLOTS).fill(0),
@@ -6364,13 +6402,15 @@ const inCamp = (w, x, y) => !!w.camp && ((x - w.camp.x) / CAMP_R) ** 2 + ((y - w
 
 // The camp's basket (w.camp.basket, null till it's made): a big lidded basket woven of sticks and dry grass (recipes.js
 // BUILDS.basket, which game.js spends), set down inside the camp's ring, where what the satchel can't carry is kept:
-// BASKET_SLOTS slots of STACK, as the satchel's (bag, bagN). It stays when the forager collapses and the satchel is lost.
+// BASKET_SLOTS slots (of the bigger keep stacks, recipes.js), as the satchel's (bag, bagN). It stays when the forager
+// collapses and the satchel is lost.
 // Things go back and forth a slot at a time (moveBetween), or the whole satchel in (putAway). Playing together it's
 // everyone's: game.js sends each change to the others (sendBasket). No random numbers, no KEEP_VERSION
-// bump (w.camp is in LATER; a camp kept before baskets gets basket: null in unpackWorld).
-const BASKET_SLOTS = 24;
+// bump (w.camp is in LATER; a camp kept before baskets gets basket: null in unpackWorld, and one kept before it grew is
+// topped up with empty slots along the end there).
+const BASKET_SLOTS = 32;
 const BASKET_GAP = 1.1;                 // tiles it keeps from a fire, a trunk or a rock
-const basketOf = (x, y, made) => ({ basket: true, x, y, made, bag: new Array(BASKET_SLOTS).fill(''), bagN: new Array(BASKET_SLOTS).fill(0) });
+const basketOf = (x, y, made) => ({ basket: true, kept: 1, x, y, made, bag: new Array(BASKET_SLOTS).fill(''), bagN: new Array(BASKET_SLOTS).fill(0) });
 // Whether the basket can go at x, y: '' if it can, else why not, in a few words (game.js says it).
 function basketSpot(w, x, y) {
   if (!w.camp) return 'Make camp first';
@@ -6399,7 +6439,7 @@ function moveBetween(A, a, B, b) {
   const id = A.bag[a];
   if (!id || (A === B && a === b)) return 0;
   if (B.bag[b] === id) {
-    const m = Math.min(A.bagN[a], stackOf(id) - B.bagN[b]);
+    const m = Math.min(A.bagN[a], stackOf(id, B) - B.bagN[b]);
     B.bagN[b] += m; A.bagN[a] -= m;
     if (!A.bagN[a]) A.bag[a] = '';
     return m;
@@ -6414,8 +6454,8 @@ function moveInto(A, a, B) {
   const id = A.bag[a];
   let moved = 0;
   for (let pass = 0; pass < 2 && A.bagN[a] > 0; pass++) for (let k = 0; k < B.bag.length && A.bagN[a] > 0; k++) {
-    if (pass === 0 ? B.bag[k] !== id || B.bagN[k] >= stackOf(id) : B.bag[k] !== '') continue;
-    const m = Math.min(A.bagN[a], stackOf(id) - B.bagN[k]);
+    if (pass === 0 ? B.bag[k] !== id || B.bagN[k] >= stackOf(id, B) : B.bag[k] !== '') continue;
+    const m = Math.min(A.bagN[a], stackOf(id, B) - B.bagN[k]);
     B.bag[k] = id; B.bagN[k] += m; A.bagN[a] -= m; moved += m;
   }
   if (!A.bagN[a]) A.bag[a] = '';
@@ -6534,7 +6574,7 @@ function storeCount(S, id) {
 // How many of id it has room for.
 function storeRoom(S, id) {
   let n = 0;
-  for (let k = 0; k < S.bag.length; k++) n += S.bag[k] === id ? stackOf(id) - S.bagN[k] : S.bag[k] === '' ? stackOf(id) : 0;
+  for (let k = 0; k < S.bag.length; k++) n += S.bag[k] === id ? stackOf(id, S) - S.bagN[k] : S.bag[k] === '' ? stackOf(id, S) : 0;
   return n;
 }
 // Puts n of id in it: onto its stacks first, then the first empty slots. Returns the slots it went in (for game.js to fly
@@ -6542,8 +6582,8 @@ function storeRoom(S, id) {
 function storePut(S, id, n) {
   const into = [];
   for (let pass = 0; pass < 2 && n > 0; pass++) for (let k = 0; k < S.bag.length && n > 0; k++) {
-    if (pass === 0 ? S.bag[k] !== id || S.bagN[k] >= stackOf(id) : S.bag[k] !== '') continue;
-    const m = Math.min(n, stackOf(id) - S.bagN[k]);
+    if (pass === 0 ? S.bag[k] !== id || S.bagN[k] >= stackOf(id, S) : S.bag[k] !== '') continue;
+    const m = Math.min(n, stackOf(id, S) - S.bagN[k]);
     S.bag[k] = id; S.bagN[k] += m; n -= m; into.push(k);
   }
   return into;
@@ -6560,6 +6600,26 @@ function storeTake(S, id, n) {
     if (!S.bagN[k]) S.bag[k] = '';
   }
   return took;
+}
+// Tidies a store: folds its piles of one kind into as few slots as they fit, topping each up from the piles after it and
+// nothing else moving, so every kind sits in the fewest slots from its first. Returns how many went into another slot
+// (game.js's Tidy button on the basket's card).
+function tidyStore(S) {
+  let moved = 0;
+  for (let a = 0; a < S.bag.length; a++) {
+    const id = S.bag[a];
+    if (!id) continue;
+    const cap = stackOf(id, S);
+    while (S.bagN[a] < cap) {
+      let b = -1;
+      for (let j = a + 1; j < S.bag.length; j++) if (S.bag[j] === id) { b = j; break; }
+      if (b < 0) break;
+      const m = Math.min(cap - S.bagN[a], S.bagN[b]);
+      S.bagN[a] += m; S.bagN[b] -= m; moved += m;
+      if (!S.bagN[b]) S.bag[b] = '';
+    }
+  }
+  return moved;
 }
 // Every store set down in the meadow: the camp's basket now, and whatever is built later.
 function worldStores(w) {
@@ -6669,7 +6729,7 @@ function droppedTick(w) {
 function moveSlot(f, a, b) {
   if (a === b || !f.bag[a]) return;
   if (f.bag[b] === f.bag[a]) {
-    const m = Math.min(f.bagN[a], stackOf(f.bag[a]) - f.bagN[b]);
+    const m = Math.min(f.bagN[a], stackOf(f.bag[a], f) - f.bagN[b]);
     f.bagN[b] += m; f.bagN[a] -= m;
     if (!f.bagN[a]) f.bag[a] = '';
   } else {
@@ -6738,6 +6798,7 @@ const LATER = {
   forager: null,                                                                                    // the player (startForager)
   camp: null,                                                                                       // made by the first fire lit (campAt)
   torches: null,                                                                                    // stuck in the ground (torchTick; an old meadow gets [])
+  scorches: null,                                                                                   // where lightning blackened the ground (strike; an old meadow gets [])
   stone: null,                                                                                      // the old stone (stoneOf)
 };
 // A kept meadow's fractions come back as whole numbers where they were (0, 1): made fractions again, so they can't
@@ -6800,6 +6861,7 @@ function createWorld(seed, opts = {}) {
     ...LATER,
   };
   w.torches = [];                                             // (see torchTick: LATER's is null for a meadow kept before them)
+  w.scorches = [];                                            // (see strike: likewise)
   makeTerrain(w);
   for (let k = Math.max(1, Math.round(HIVES * w.room)); k > 0; k--) placeHive(w);
   w.treeRoom = TREE_ROOM * w.decor.filter(d => d.tree).length;
@@ -6939,6 +7001,7 @@ function step(w) {
   weatherTick(w);
   if (w.fires.length) { fireTick(w); kitTick(w); }
   if (w.torches.length && t % TORCH_EVERY === 0) torchTick(w);
+  if (w.scorches.length && t % SCORCH_EVERY === 0) scorchTick(w);
   bodyTick(w);
   foragerTick(w);
   if (t % GRASS_EVERY === 0) { growGrass(w, GRASS_EVERY); iceTick(w, GRASS_EVERY); }
@@ -7052,6 +7115,7 @@ function unpackWorld(kept) {
     : e.tree === true ? blankTree() : e.emoji === '🪨' ? rockOf(-0, -0, -0) : e.shroom === true ? shroomOf('', -0, -0, null, 0, 0, 0, 0)
     : e.forager === true ? foragerOf(-0, -0) : e.find === true ? findOf('', -0, -0, 0, 0, 0, 0) : e.dropped === true ? dropOf('', -0, -0, 0, 0, 0) : e.green === true ? greenOf('', -0, -0, 0, 0) : e.bramble === true ? brambleOf(-0, -0, 0, '', 0)
     : e.torch === true ? torchOf(-0, -0, 0)
+    : e.scorch === true ? scorchOf(-0, -0, 0)
     : e.fire === true ? fireOf(-0, -0, 0)
     : e.n !== undefined && e.i !== undefined && e.kind !== undefined && e.field !== undefined ? plantOf(-0, -0, 0, -0, null, 0) : {}));   // (a flower or blossom)
   const table = path => path.split('.').reduce((o, k) => {
@@ -7091,6 +7155,8 @@ function unpackWorld(kept) {
   }
   if (!w.torches) w.torches = [];                       // (kept before torches)
   for (const T of w.torches) asFractions(T, ['x', 'y', 'burn', 'wet']);
+  if (!w.scorches) w.scorches = [];                     // (kept before them)
+  for (const s of w.scorches) asFractions(s, ['x', 'y']);
   const noBrambles = !w.brambles;                       // (kept on the cooking branch before them: a new meadow's come up, below)
   if (noBrambles) { w.brambles = []; w.pips = []; w.brambleRng = makeRng(w.seed ^ 0xb4a3b1); }
   for (const b of w.brambles) asFractions(b, ['x', 'y', 'crop', 'berries']);
@@ -7105,7 +7171,13 @@ function unpackWorld(kept) {
   if (!F.homeX && !F.homeY) { F.homeX = F.x; F.homeY = F.y; }   // (kept before it had a home: where it is)
   if (w.camp) asFractions(w.camp, ['x', 'y']);
   if (w.camp && !w.camp.basket) w.camp.basket = null;      // (kept before baskets: none yet)
-  else if (w.camp) asFractions(w.camp.basket, ['x', 'y']);
+  else if (w.camp) {
+    asFractions(w.camp.basket, ['x', 'y']);
+    const Bk = w.camp.basket;                                // (kept before the basket grew to 32: empty slots along the end;
+    while (Bk.bag.length < BASKET_SLOTS) Bk.bag.push('');    // and before keep stacks: it's a set-down store all the same)
+    while (Bk.bagN.length < BASKET_SLOTS) Bk.bagN.push(0);
+    Bk.kept = 1;
+  }
   else for (const fire of w.fires) if (fire.litAt >= 0) { campAt(w, fire); break; }   // (kept with a fire lit before camps came)
   if (!w.stone) w.stone = stoneOf(w);                   // (kept before the old stone: it's put up as it opens)
   else asFractions(w.stone, ['x', 'y']);
@@ -7974,8 +8046,8 @@ const api = {
   TREES, treeStage, treeAge, standing, bearing, inBloom, SEEDLING, SAPLING, GROWN, KIND_NAMES,
   FROG_K, SPAWN_WORTH, FISH_K, FISH_EAT, CROW_SEATS, SHROOMS, SHROOM_KINDS, FINDS, FIND_KINDS, findSeason, eachPickable, greenStage, greenPicked, GREEN_SEASONS, brambleStage, RIPE_FROM, RIPE_TO,
   bagCount, spend, stow, feedForager, hungerOf, HUNGRY, TUMMY, fireSpot, layFire, feedFire, fireRoom, lightable, lightFire, fireHeat, fireWarmth, CAMP_R, CAMP_FLAT, inCamp, BASKET_SLOTS, basketSpot, makeBasket, moveBetween, moveInto, putAway,
-  torchSpot, placeTorch, TORCH_BURN, TORCH_STUB, TORCH_WET, TORCH_MAX, TORCH_GAP,
-  storeCount, storeRoom, storePut, storeTake, worldStores, storesAt, storesCount, storesRoom, storesTake, storesPut, STORE_NEAR,
+  torchSpot, placeTorch, TORCH_BURN, TORCH_STUB, TORCH_WET, TORCH_MAX, TORCH_GAP, scorchFade,
+  storeCount, storeRoom, storePut, storeTake, tidyStore, worldStores, storesAt, storesCount, storesRoom, storesTake, storesPut, STORE_NEAR,
   cookTicks, cookReady, cookOn, cookTake, shapeVessel, makeVessel, kitOf, cookProgress, SKILLS, SKILL_NAMES, SKILL_TOP, skillNeed, skillLevel, skillProgress, perk, gainSkill, FIRE_STICK, FIRE_MOST, FIRE_LOW, FIRE_EMBERS, FIRE_NEAR, FIRE_REACH, FIRE_GAP, FIRE_WET, FIRE_WARM,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;

@@ -824,8 +824,8 @@ const FORAGER_EATS = Object.values(FORAGER_EAT);
 // The sneak, side on: a devious tiptoe, crouched and hunched, its head poked forward, the knees lifted high and each
 // foot set down toe first, the mittens up before its chest like little claws, rubbing, a sly look and a smirk; eight
 // paintings a stride (as the walk), and two lurking on the spot.
-const FORAGER_EMOTE = { down: 0, hopR: 1, kickR: 2, backR: 3, hopL: 4, kickL: 5, backL: 6, sneak: 8, lurkA: 16, lurkB: 17 };
-const FORAGER_EMOTES = [0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
+const FORAGER_EMOTE = { down: 0, hopR: 1, kickR: 2, backR: 3, hopL: 4, kickL: 5, backL: 6, sneak: 8, lurkA: 16, lurkB: 17, hugA: 18, hugB: 19 };
+const FORAGER_EMOTES = [0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
 const EMOTE_AT = FORAGER_SNOWS * FORAGER_SNOW_ARTS, FORAGER_EMOTE_ARTS = FORAGER_SNOWS * FORAGER_OUTFITS.length << 5;
 const emoteArt = (snow, outfit, pose) => EMOTE_AT + ((snow * FORAGER_OUTFITS.length + outfit) << 5) + pose;
 const SNEAK_STRIDE = 1.15, SNEAK_DOWN = 0.6, SNEAK_LIFT = 0.2, SNEAK_BOB = 0.05;
@@ -840,11 +840,23 @@ const DANCE = [   // feet, knees (front view: leg 0 on your left), mittens and e
   { feet: [[-0.18, 0.68], [0.07, 0.73]], knees: [[-0.19, 0.53], [0.09, 0.57]], hands: [[0.11, 0.06, -0.05, 0.12], [0.06, 0.06, 0.09, 0.12]], bob: 0.02, sway: 0.02, tip: 0.01, grin: true },
 ];
 function emotePose(i) {
+  if (i >= FORAGER_EMOTE.hugA) return hugPose(i);
   if (i >= FORAGER_EMOTE.sneak) return sneakPose(i);
   const P = foragerPose(1, 0), D = DANCE[i] || DANCE[0];
   P.feet = D.feet.map(f => f.slice()); P.knees = D.knees.map(k => k.slice());
   P.hands = D.hands; P.bob = D.bob; P.sway = D.sway; P.tip = D.tip; P.happy = !!D.happy; P.grin = !!D.grin;
   P.legLine = 0.32;                                             // (a leg kicked out shows up to the hip)
+  return P;
+}
+// A hug, side on and turned toward the friend it hugs (game.js hug): arms out and up, its eyes shut happy, then a
+// squeeze in closer, its head against them. Two paintings, taken in turn for as long as the hug lasts.
+function hugPose(i) {
+  const P = foragerPose(0, 0), B = i === FORAGER_EMOTE.hugB;
+  P.arms = B ? [1.54, 1.62] : [0.92, 1.0];
+  P.lean = B ? 0.1 : 0.025;
+  P.bob = B ? -0.008 : 0.014;
+  P.look = 0.02; P.tip = B ? 0.055 : 0.02; P.sway = 0;
+  P.warm = true; P.happy = true;
   return P;
 }
 function sneakPose(i) {

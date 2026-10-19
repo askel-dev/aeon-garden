@@ -16,7 +16,8 @@
  * few times a second (sky: how much of each weather is showing, 0..1; bees: how many are flying
  * on screen; life: how full the meadow is of rabbits, 0..1; frogs: 0..1,
  * the spring's spawn, for a croak now and then at night; trees: 0..1, how much of the screen is under
- * leafy crowns, for the leaves' rustle in the wind; fire: 0..1, how near and well a campfire burns, for its crackle; pot:
+ * leafy crowns, for the leaves' rustle in the wind; fire: 0..1, how near and well a campfire burns, for its crackle; torch:
+ * 0..1, the same for the nearest lit torch, a quieter crackle with no roar under it; pot:
  * 0..1, the cooking pot on the fire, simmering at 0.3 and bubbling hard at 1) and
  * Sound.play('birth', { species, pan, near, seen }) on events.
  */
@@ -36,7 +37,8 @@ let ac = null, master, ducker, loud, fxBus, ambBus, musicBus, hush, reverb, nois
 let enabled = true, volume = 0.6;
 const amb = {};                                    // ambient layers
 const LOUD = 0.7;                                  // thunder's level against the rest
-const state = { phase: 0.3, season: 0, sky: { clear: 1 }, bees: 0, life: 0.3, frogs: 0, trees: 0.5, fire: 0, pot: 0 };
+const BIRDS = 0.85;                                // birds, 15% under the rest of the meadow
+const state = { phase: 0.3, season: 0, sky: { clear: 1 }, bees: 0, life: 0.3, frogs: 0, trees: 0.5, fire: 0, torch: 0, torchPan: 0, pot: 0 };
 const last = {};                                   // per-sound cooldowns
 const picking = { n: 0, at: -1e9, base: 0 };       // the picks in a row (SOUNDS.pick)
 const PICK_CHAIN = 2.5;                            // s: a pick within this of the last climbs on
@@ -332,6 +334,7 @@ const RULES = {
   click:   { gap: 0.04, free: true },
   hoot:    { gap: 0.6, always: true },
   swat:    { gap: 0.15, always: true },
+  hug:     { gap: 0.8,  always: true, lift: 1.6 },   // two foragers hug
   step:    { gap: 0.1, always: true },   // (a foot down is cheap and rhythmic: it never counts against the budget)
   pick:    { gap: 0.08, always: true },
   pluck:   { gap: 0.08, always: true },
@@ -423,6 +426,12 @@ const SOUNDS = {
     g.gain.exponentialRampToValueAtTime(0.0001, at + 0.18);
     osc.connect(g).connect(o); osc.start(at); osc.stop(at + 0.22);
     noise(o, at, 0.06, { from: 900, to: 400, q: 0.8, peak: 0.18, type: 'lowpass', attack: 0.002 });
+  },
+  // Two foragers hug (game.js hug): a warm low hum, two soft notes settling into it.
+  hug(t, o) {
+    pad(o, [note(0, 0), note(2, 0), note(4, 0)], t, 1.5, 0.5);
+    kalimba(o, note(4, 0), t + 0.06, 0.26);
+    kalimba(o, note(2, 0), t + 0.26, 0.2);
   },
   // A swarm moved into its new home: a bell, and the hive buzzing up to meet the queen.
   queen(t, o) {
@@ -1135,6 +1144,7 @@ function tickAmbience() {
   }
   if (Math.random() < m.snow * 0.15 * dt) snowChime(now);
   if (Math.random() < state.fire * 5 * dt) crackle(now + rand(0, 0.2), state.fire);   // a campfire crackling
+  if (Math.random() < state.torch * 3 * dt) crackle(now + rand(0, 0.2), 0.55 * state.torch, state.torchPan);   // a torch: the same snaps, quieter, from where it stands
   if (state.pot > 0) for (let i = 0, n = Math.round(state.pot * state.pot * 7 * Math.random() + (Math.random() < state.pot * 2.5 * dt ? 1 : 0)); i < n; i++)
     bubble(out(rand(-0.15, 0.15), 0.2, 0.9), now + rand(0, 0.2), state.pot);                // the pot bubbling: now and then a bubble, a boil a stream of them
   if (Math.random() < m.cicadas * 0.12 * dt) cicada(now);
@@ -1311,7 +1321,7 @@ const residents = Object.keys(SONGS).map((kind, i, all) => ({
 }));
 function birdOut(b) {
   const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 12000 - 7000 * b.dist;
-  lp.connect(out(b.pan, 0.2 + 0.45 * b.dist, 0.6 - 0.35 * b.dist));
+  lp.connect(out(b.pan, 0.2 + 0.45 * b.dist, (0.6 - 0.35 * b.dist) * BIRDS));
   return lp;
 }
 function birdTick(now, activity) {
@@ -1381,8 +1391,9 @@ function chime(t) {
 const snowChime = t => kalimba(out(rand(-1, 1), 0.7, 0.3), note(Math.floor(rand(5, 10)), 1), t, 0.4);
 
 // A campfire crackling: a pop or a few, tiny dry snaps of wood in the heat, in the middle (v: how near and well it burns).
-function crackle(t, v = 1) {
-  const o = out(rand(-0.25, 0.25), 0.2, 0.5 + 0.5 * v);
+// A torch's crackle is the same, quieter and from where it stands (pan), with no roar under it.
+function crackle(t, v = 1, pan = rand(-0.25, 0.25)) {
+  const o = out(pan, 0.2, 0.5 + 0.5 * v);
   for (let i = 0, n = 1 + Math.floor(rand(0, 3.5)); i < n; i++) {
     const at = t + i * rand(0.03, 0.11);
     noise(o, at, 0.018, { from: rand(1600, 3600), to: 1200, q: 1.6, peak: rand(0.05, 0.13), attack: 0.002 });

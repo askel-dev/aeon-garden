@@ -33,6 +33,7 @@ const VESSELS = {
 // mast). fill: how much it fills the tummy eaten raw. raw: false if it can't be eaten as it is. icon: an emoji to stand
 // in until it has a painted one. text: a line said under its name the first time it goes in the satchel.
 // stack: how many one satchel slot holds (default 10, sim.js STACK).
+// keep: how many one slot of a set-down store holds, the camp's basket and the keeps to come (default: its stack).
 // where: when and where to look for it, for its page in the book (shown before it's found, as the hint).
 const INGREDIENTS = {
   apple:       { name: 'Apple',               tags: ['fruit'],          fill: 1,   icon: '🍎', text: 'Windfalls in the grass under the tree, sweet with a bruise.', where: 'Autumn: windfalls in the grass under the apple trees.' },
@@ -44,23 +45,23 @@ const INGREDIENTS = {
   field:       { name: 'Field mushroom',      tags: ['mushroom'],       fill: 1,   icon: '🍄', text: 'Pink gills under a white cap, up after the rain.', where: 'Out in the grass where the ground is rich, after rain.' },
   oyster:      { name: 'Oyster mushroom',     tags: ['mushroom'],       fill: 1,   icon: '🍄', text: 'Soft grey shelves on a fallen log.', where: 'On fallen logs, after rain.' },
   sulphur:     { name: 'Chicken of the woods', tags: ['mushroom'],      fill: 2,   icon: '🍄', raw: false, text: 'Orange shelves on a dead tree. Never raw: it wants cooking.', where: 'On dead trees still standing, after rain.' },
-  garlic:      { name: 'Wild garlic',         tags: ['greens'],         fill: 0.5, icon: '🌿', text: 'You smell it before you see it.', where: 'In spring, carpeting the damp woods near the water.' },
-  nettle:      { name: 'Nettles',             tags: ['greens'],         fill: 0.5, icon: '🌿', raw: false, text: 'Pinched by the tops. They sting raw, but not once cooked.', where: 'Spring to autumn, wherever the ground is rich.' },
+  garlic:      { name: 'Wild garlic',         keep: 20, tags: ['greens'],         fill: 0.5, icon: '🌿', text: 'You smell it before you see it.', where: 'In spring, carpeting the damp woods near the water.' },
+  nettle:      { name: 'Nettles',             keep: 20, tags: ['greens'],         fill: 0.5, icon: '🌿', raw: false, text: 'Pinched by the tops. They sting raw, but not once cooked.', where: 'Spring to autumn, wherever the ground is rich.' },
   acorns:      { name: 'Acorns',              tags: ['nut'],            fill: 1,   icon: '🌰', raw: false, text: 'Bitter raw. They need soaking and roasting.', where: 'Autumn, under the oaks. Plenty in a mast year.' },
   beechnuts:   { name: 'Beechnuts',           tags: ['nut'],            fill: 1,   icon: '🌰', text: 'Little three-sided nuts from under the beeches.', where: 'Autumn, under the beeches. Plenty in a mast year.' },
   hazelnut:    { name: 'Hazelnuts',           tags: ['nut'],            fill: 1,   icon: '🌰', text: 'Cracked between two stones, sweet and milky.', where: 'Autumn, along the edges of the woods.' },
-  dandelion:   { name: 'Dandelions',          tags: ['greens', 'flower'], fill: 0.5, icon: '🌼', text: 'Every bit of it is good to eat, flower to root.', where: 'All through spring, out in the open grass.' },
-  sorrel:      { name: 'Sorrel',              tags: ['greens'],         fill: 0.5, icon: '🌿', text: 'Sharp and lemony. A leaf to wake a dish up.', where: 'Spring and summer, in the damp grass near the water.' },
-  watercress:  { name: 'Watercress',          tags: ['greens'],         fill: 0.5, icon: '🥬', text: 'Peppery, from the cold shallows.', where: 'Late autumn through winter, in the shallows by the bank.' },
+  dandelion:   { name: 'Dandelions',          keep: 20, tags: ['greens', 'flower'], fill: 0.5, icon: '🌼', text: 'Every bit of it is good to eat, flower to root.', where: 'All through spring, out in the open grass.' },
+  sorrel:      { name: 'Sorrel',              keep: 20, tags: ['greens'],         fill: 0.5, icon: '🌿', text: 'Sharp and lemony. A leaf to wake a dish up.', where: 'Spring and summer, in the damp grass near the water.' },
+  watercress:  { name: 'Watercress',          keep: 20, tags: ['greens'],         fill: 0.5, icon: '🥬', text: 'Peppery, from the cold shallows.', where: 'Late autumn through winter, in the shallows by the bank.' },
   strawberry:  { name: 'Wild strawberries',   stack: 20, tags: ['fruit', 'berry'], fill: 1,   icon: '🍓', text: 'Tiny, and sweeter than any from a garden.', where: 'Summer, along the edges of the woods.' },
   elderflower: { name: 'Elderflower',         tags: ['flower'],         fill: 0.5, icon: '💮', text: 'Creamy flat heads that smell of summer.', where: 'Late spring into summer, on the elders by the water and at the woods\' edge.' },
   rosehip:     { name: 'Rosehips',            tags: ['fruit'],          fill: 0.5, icon: '🌹', raw: false, text: 'Red and bright in the cold. Full of hairs: cook them first.', where: 'Late autumn and winter, on the wild roses in the scrub.' },
   // What lies on the ground for a fire: not food. 'tinder' catches the spark, 'fuel' keeps it going.
   stick:       { name: 'Sticks',              stack: 20, tags: ['fuel'],           fill: 0,   icon: '🪵', raw: false, text: 'Something to keep a fire going.', where: 'Under the trees, all year. More come down in a storm.' },
   pebble:      { name: 'Pebbles',             stack: 20, tags: ['stone'],          fill: 0,   icon: '🪨', raw: false, text: 'Smooth stones, to ring a fire.', where: 'On the shore, at the fords and round the rocks.' },
-  drygrass:    { name: 'Dry grass',           tags: ['tinder'],         fill: 0,   icon: '🌾', raw: false, text: 'Dry stems from the long grass, to catch a spark.', where: 'In the long grass out in the open, most in summer and autumn.' },
+  drygrass:    { name: 'Dry grass',           stack: 20, tags: ['tinder'],         fill: 0,   icon: '🌾', raw: false, text: 'Dry stems from the long grass, to catch a spark.', where: 'In the long grass out in the open, most in summer and autumn.' },
   clay:        { name: 'Clay',                tags: ['earth'],          fill: 0,   icon: '🟤', raw: false, text: 'Cool, heavy and red-grey. It holds the shape of your thumb.', where: 'On the muddy banks, right by the water.' },
-  birchbark:   { name: 'Birch bark',          tags: ['tinder'],         fill: 0,   icon: '📜', raw: false, text: 'Papery curls that catch even when damp.', where: 'Under the birches, and by a fallen one.' },
+  birchbark:   { name: 'Birch bark',          stack: 20, tags: ['tinder'],         fill: 0,   icon: '📜', raw: false, text: 'Papery curls that catch even when damp.', where: 'Under the birches, and a little way out from them.' },
 };
 
 // The dishes. Only name and needs are a must. The rest, when left out:
@@ -266,7 +267,7 @@ const RECIPES = [
 // What the forager builds, from the make button by the satchel (game.js renderBuild), and what each takes out of the
 // satchel. In `needs`, each word is an ingredient or a tag (any ingredient that has it: 'tinder' takes dry grass or birch
 // bark), with how many. To add a build, copy a block; the game only knows how to build the ones it paints and places (the
-// campfire, the basket at camp, and later a torch).
+// campfire, the basket at camp, and a torch).
 //   name            what it's called
 //   needs           what it takes, { word: how many }
 //   where           where it may go: 'anywhere' (left out), or 'camp' (inside the camp's ring)
@@ -285,6 +286,11 @@ const BUILDS = {
     where: 'camp',
     after: 'camp',
     text: 'A big lidded basket of sticks woven through with grass, set down at camp, for what the satchel can\'t carry.',
+  },
+  torch: {
+    name: 'Torch',
+    needs: { stick: 1, birchbark: 1 },
+    text: 'A stick wrapped with birch bark and set in the ground, a flame at its head to keep the dark off.',
   },
 };
 
@@ -510,7 +516,8 @@ function thingsFor(needs, have) {
 const takes = word => (INGREDIENTS[word] ? [word] : Object.keys(INGREDIENTS).filter(id => INGREDIENTS[id].tags.includes(word)));
 
 function stackOf(id) { const i = INGREDIENTS[id]; return (i && i.stack) || 0; }
-const Recipes = { stackOf, STATIONS, VESSELS, vesselOf, craftLevel, whereOf, INGREDIENTS, RECIPES, BUILDS, CRAFTS, MESS, cook, fits, fillOf, timeOf, recipeOf, takes, foodOf, thingsFor, answers, checkRecipes };
+function keepOf(id) { const i = INGREDIENTS[id]; return (i && i.keep) || 0; }
+const Recipes = { stackOf, keepOf, STATIONS, VESSELS, vesselOf, craftLevel, whereOf, INGREDIENTS, RECIPES, BUILDS, CRAFTS, MESS, cook, fits, fillOf, timeOf, recipeOf, takes, foodOf, thingsFor, answers, checkRecipes };
 if (typeof module !== 'undefined') module.exports = Recipes;
 else {
   window.Recipes = Recipes;

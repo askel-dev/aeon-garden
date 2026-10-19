@@ -27,9 +27,12 @@ brings (`SEASON_LINES`, hand-written: keep them true to sim.js's seasons), where
 friend's meadow as you join, and the first of anything in gold between ✦s (`firstTime`, kept across meadows in
 `aeon-garden-firsts`; a first find says its recipes.js `text`). One at a time: the rest wait, except a day's line, which
 is dropped. None while a card is open or the forager is down. The first fire and the first dish go through `firstTime`.
-A skill up a level is one too (`levelUp`, announce 'level', `LEVEL_WAIT` after what did it): it rises from below, a brass coin
+A skill up a level is one too (`levelUp`, announce 'level', `LEVEL_WAIT` after what did it): it rises from below, a coin
 with the level flipping in on a ring of light and rays, the skill's name in its `SKILL_INK` tracking in, its `SKILL_SAYS`
-under it, and sound.js `level` (the one sound with a real cadence: up an A7, home on D). With a card open it's a toast.
+under it, and sound.js `level` (the one sound with a real cadence: up an A7, home on D). The coin's metal is the level's own
+(`LEVEL_COIN`: copper, bronze, brass and gold, then jade, verdigris, sapphire, amethyst and rose), and the top one is extra:
+a pale opal of every colour (`.max`, index.html) with a turning sheen, sparks and a wider rainbow halo of rays. With a card
+open it's a toast.
 
 The forager (sim.js `w.forager`; how it walks is in ecology.md) is painted in fur.js like a fox (`paintForager`,
 `foragerPose`, `foragerParts`: a rust hood with a flopping point, a round face, a moss cloak, mittens, a satchel, boots), in
@@ -123,9 +126,9 @@ is one breath more (`puff`, `BLOW_PUFF`, as one held breath; it never walks the 
 still walks away (that's how you leave it). A click on a fire sees to it
 (`clickFire`: a stick on, a stick and a blow on embers, tinder and a strike when cold), standing still by a lit one it kneels and
 warms its mittens (`SIT_MS`; from the fire's side, `STAND_OFF`, stepping out to it first if it's standing nearer), and a hover
-says how it is (`fireWord`). Drawn with the trees and animals (`drawFire`: `paintFire` once a look and size, `FIRE_ARTS`; flames
-as `TONGUES` of one painting; smoke), its glow, embers and sparks over the dark
-(`drawFireGlows`); near the forager a lit one has a row of pips under it, one a stick it can take, lit for what's still burning, red and breathing when low (`drawFireGauges`, `FUEL_NEAR`). Cold, the forager has a slim thermometer by its side (`drawChill`, from `CHILL_SHOW`). Its light (`lightsFrame`, at most 4 fires, out to `LIGHT_TILES`, flickering in `FLICKER_MS` steps) is cut out of the night on the sky's
+says what it wants (`fireWord`), nothing at all while it burns well (so a fire that's fine doesn't nag over the camp). Drawn with the trees and animals (`drawFire`: `paintFire` once a look and size, `FIRE_ARTS`; flames
+as `TONGUES` of one painting, smaller as its sticks burn down, `fireFlame`; smoke), its glow, embers and sparks over the dark
+(`drawFireGlows`); near the forager a lit one has a row of pips under it, one a stick it can take, lit for what's still burning, red and breathing when low (`drawFireGauges`, `FUEL_NEAR`), and the hover note sits under the row (`hoverLine`)—the pips are over the dark, so any the forager's body or a tree in front stands over are cut out. Cold, the forager has a slim thermometer by its side (`drawChill`, from `CHILL_SHOW`). Its light (`lightsFrame`, at most 4 fires, out to `LIGHT_TILES`, flickering in `FLICKER_MS` steps) is cut out of the night on the sky's
 picture (`SKY_FIRE`, `paintFireLights`: so the sky repaints only on a flicker step) and laid warm over what stands near it
 (`fireLight`, source-atop, kept soft so the forager by it isn't washed out). Readable by firelight at night (2026-10-18):
 the forager's top edge takes a faint warm rim where a fire's pool falls and no further (`drawForagerRim`, `foragerRim` a rim
@@ -140,13 +143,22 @@ Friends see fires laid, fed and lit (`sendFire`). Sounds: sound.js `clack`,
 `stick`, `tinder`, `strike`, `blow`, `kindle` (`catch` is the fox's), `fizzle`, and a crackle near a burning one (`fire` in
 `Sound.update`). Cost: none measurable (1440x813, zoomed out, a summer night in the rain, walking: about 1.0 ms of script a
 frame with a fire and without, 60 fps).
+Torches (PLAN.md stage 7; the comment over `paintTorch`): a stick of birch bark set down anywhere from the make strip
+(recipes.js `BUILDS.torch`: 1 stick, 1 birch bark). A tap on its tile picks a spot (`placeTorch`, `ui.place.torch`,
+`placeAt` asking `sim.js torchSpot`), a faint burning torch follows the pointer (never a fire's bright ghost), and its
+"why not" is the label `drawFireHint` already draws by a faint one (a torch's click doesn't say it twice). The forager walks
+to its side, kneels (`fireFrame` 'torch' → 'set', `TORCH_SET_MS`) pushing it in, spends it, and strikes once, which is
+when `S.placeTorch` sets it lit; then it watches the flame (`lit`). `drawTorch` draws the real ones with the trees and
+animals: `paintTorch`'s three looks (`TORCH_ARTS`: burning, guttering over its last fifth, then the stub) and the
+sharper flame set (`TORCH_FLAME_ART`, centred on the crown). Still to come, in step 3: its glow and pool cut out of the
+night (so it reads at night), the crackle, and the fire message that shows it to friends.
 Making camp (sim.js `w.camp`, event 'camp': the first fire lit) is a moment (`campMoment`, the comment over
 `CAMP_FLARE`): the flames flare (`fireShown`), the light blooms out (`lightsFrame`) with a warm glow, two fountains of sparks,
 twinkling stars, a wave of light out to the ring and motes rising off it (`campBurst`, in `drawFireGlows`; `CAMP_PARTY_MS`), a felt-piano flourish (sound.js `camp`), the camera eases in and leans to the fire and back
 (`campCam`, in `leadCam`; a zoom of your own ends it), "Your camp" pops in, glowing between two twinkling ✦ (announce 'camp', which cuts in ahead of the others; index.html `camp-pop`)
 and an Android phone buzzes (`CAMP_BUZZ`). Then a soft ring of trodden earth with a few stones lies round the fire (`drawCampRing`,
 `CAMP_ART` painted once, stretched; under all that stands), coming in over `CAMP_RING_MS` (`campFade`). The brown earth inside it is in the ground shader
-(ground.js `camp`, `campA`: an ellipse of ragged, mottled dirt over the grass, repainting the ground only while it fades in). The fire's hover calls it "Your camp".
+(ground.js `camp`, `campA`: an ellipse of ragged, mottled dirt over the grass, repainting the ground only while it fades in). The fire's hover calls it "Your camp" when it wants something.
 The make strip (PLAN.md stage 7; `#make`, `openMake`, `renderMakeStrip`: `stripUi` is it, not the vessels' `makeUi`): with more
 than one build on offer, a tap on the make button (or C) opens it just over the satchel, a tile a build (`makeList`: `after`
 passed, the basket not twice, and a guest's basket left out) with its painting (`BUILD_ART`, painted once and kept as a blob's
@@ -275,7 +287,8 @@ seven moods, each with its mouth shut and open; moss hair and brows, asleep and 
 trees and animals (`drawStone`), solid in the forager's way like a rock. A click on it walks over (`goStone`, `goFire` 'stone', standing
 `STONE_STAND` further out than at a fire) and opens a slim line to talk on over the satchel (`#stone-talk`, `openStone`; up top on a
 touch screen, out of the keyboard's way, the face hidden under it and the camera keeping the stone and its bubble below it and above the
-satchel or the keyboard: `measureSheet`, `STONE_ROOM`). Woken, it says hello. What's typed is the forager's bubble (`myChat`), its answer a bubble
+satchel or the keyboard: `measureSheet`, `STONE_ROOM`). E standing by it does the same (`stoneByE`), with a little disc of its face and
+an E bobbing over it while it would (`drawStonePrompt`; a tap on the disc opens it too). Woken, it says hello. What's typed is the forager's bubble (`myChat`), its answer a bubble
 over the stone (`stoneUi.chat`, in `drawPeerNames`) with its mouth going (`STONE_MOUTH_MS`). A tap on anything in the satchel there has
 🙏 Offer by Eat (`eatAsk`, `offerSlot`): it flies into the stone, which rates it (a "★★★ 7 / 10" pill over it and a sound by the
 score; the pill stays up as long as its bubble's words, `stoneSays`, and goes when the stone is asked or offered something
@@ -286,6 +299,13 @@ Gifts, playing together: with a friend's forager within `GIVE_REACH` (`giftFrien
 it (a green 🎁 button with their name, by Eat in `eatAsk`); `giveSlot` takes one out and flies it over to them, and `heardGive`
 puts it in their satchel with a toast, or at their feet as a drop when it's full. Sent `to` that friend alone (net.js passes a
 guest's word to another guest through the host).
+Hugs, playing together (2026-10-19): G, or the round heart button above the swing's while a friend stands within
+`HUG_REACH` (`#hug-btn`, `hugFrame`), stops the forager and turns it to the nearest friend (`hugLocal`): both open
+their arms and hug for `HUG_MS`, squeezing every `HUG_SQUEEZE` (fur.js `FORAGER_EMOTE` `hugA`, `hugB`, `hugPose`), with
+little hearts (drawEffects) and sound.js `hug`; the first hug ever is a gold headline (`firstTime('hug', …)`). Sent `to`
+that friend alone (`'hug'`, as a gift is): they hug back and
+send where they stand, so everyone sees both (sendPos's `em`). A friend at a fire, cooking, placing something or on the
+ground isn't pulled away: they hear the hug and get a toast, and the hearts still rise over the one who hugged them.
 A click or a tap on an animal (on its body as drawn: `animalAt`, a little wider for a finger) opens its panel;
 anywhere else walks the forager there (`walkTo`, sim.js `foragerTo`) and shuts the panel, with a
 soft ring where it was sent (`drawMark`, `MARK_ART` painted once) that fades once it's there, and a faint dashed line to it

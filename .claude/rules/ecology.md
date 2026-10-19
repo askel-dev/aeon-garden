@@ -380,10 +380,11 @@ and they never glint), there all year (`from: 0, to: 4`: no end of season, `addF
 under a crown or by a log (`inCrown`) or in the woods, the commonest, more in rain and a lot more in a storm (`STICK_WIND`, and a
 storm brings them down faster); pebbles by the water's edge, at the fords and round the rocks (`stonyAt`); dry grass in long
 open grass (`DRY_GRASS`), mostly in summer and autumn (`more`, its most by season), standing up out of the snow; birch bark
-under a birch or by a fallen one. Their most go through `findsMost`. A new meadow lays `CAMP_GROUND` of each round the camp,
+under a birch or a little way out from one (`inCrown`, `birchNear`), standing or fallen. Their most go through `findsMost`. A
+new meadow lays `CAMP_GROUND` of each round the camp,
 looking further out till it's found, so a first fire can always be made (4 to 6 seeds: sticks within about 5 to 19 tiles,
 tinder within about 20). In a meadow over a year: about 25 to 50 sticks (50 in a storm), 14 pebbles, 14 dry grass in summer and
-autumn and 4 to 7 in winter and spring, 3 to 8 birch bark.
+autumn and 4 to 7 in winter and spring, 5 to 8 birch bark (a pick gives two).
 
 Brambles (`bramblesTick`, once an hour for the berries and once a day for the rest): thorny mounds that live for years and
 show all year (`w.brambles`, one layout, `brambleOf`). What a patch shows comes from the season (`brambleStage`): bare canes in

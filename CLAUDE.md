@@ -109,7 +109,7 @@ picture and what goes in, `renderBook`; a few dishes `known` from the start, the
   the anon key is in the page (never the service_role one). A change to the SQL is pasted into the Supabase SQL editor by Axel.
   `?as=x` is a second player in the same browser, for trying it out. Playing together itself is still net.js.
 - `stone.js`, `supabase/functions/stone`, `supabase/stone.sql`: the old stone (sim.js `w.stone`, `stoneOf`; game.js `paintOldStone`,
-  `openStone`, `offerSlot`), a standing stone with a face a short walk from the start: you talk to it (typed) and offer it what's in
+  `openStone`, `offerSlot`), a standing stone with a face a short walk from the start: a click or E by it talks to it (typed) and offers it what's in
   the satchel, and it rates it out of 10. Comical, pompous, a food critic. Playing together it's one stone for all: whoever talks
   to it asks the LLM, and the others see what was said, its answer and the score, and their stone remembers it (game.js `heardStone`, `t: 'stone'`). Its words come from free LLMs through the Edge Function
   (Gemini flash-lite, then Groq, then OpenRouter, whichever answers: their keys Supabase secrets `GEMINI_KEY`, `GROQ_KEY`,
