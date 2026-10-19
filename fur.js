@@ -803,8 +803,18 @@ function idlePose(i) {
   else if (i === I.peek) { P.turn = 0.7; P.look = 0.045; P.hands = [null, [0.04, 0.17]]; P.flap = 0.045; }
   else if (i === I.tap) { P.feet[1][1] -= 0.065; P.feet[1][0] -= 0.015; P.bob = -0.01; }
   else if (i === I.waveA || i === I.waveB) { P.happy = true; P.hands = [null, i === I.waveA ? [0.25, -0.15] : [0.19, -0.26]]; }
+  else if (i === FORAGER_EAT.bite) { P.hands = [null, [-0.19, -0.1, 0.03, 0.11]]; P.eat = 1; P.look = 0.03; P.tip = 0.02; }
+  else if (i === FORAGER_EAT.chewA || i === FORAGER_EAT.chewB) {
+    P.hands = [null, [-0.14, -0.03, 0.04, 0.12]]; P.eat = i === FORAGER_EAT.chewA ? 2 : 3; P.happy = true;
+    P.bob = i === FORAGER_EAT.chewA ? 0.006 : -0.004; P.tip = i === FORAGER_EAT.chewA ? 0.035 : 0.01;
+  }
   return P;
 }
+// Eating (game.js EAT_SEQ), from the front as the idles, after them in 'view' 3: a mitten up to its mouth with a bite in
+// it, the mouth open, then munching, eyes shut happy and a cheek full, one side and the other. The mitten comes in front
+// of the face (drawn after the head) and lies under its chin; the bite itself is painted with the face (P.eat 1).
+const FORAGER_EAT = { bite: 9, chewA: 10, chewB: 11 };
+const FORAGER_EATS = Object.values(FORAGER_EAT);
 
 // Emotes (game.js EMOTES), kept after all the rest of its paintings: 'forager:' + emoteArt(snow, outfit, pose).
 // The dance (NLE Choppa's, the first one: the easter egg's, game.js partyTap), from the front: a crouch, then a hop on one
@@ -1062,9 +1072,10 @@ function foragerParts(P) {
       if (P.hug) { hug(-shoulder, 0); hug(shoulder, 1); }
       else {
         const [hl, hr] = P.hands || [];
-        arm(-shoulder, P.stoop ? reach : P.swing, false, true, hl); arm(shoulder, P.hand ? 2.4 : P.stoop ? reach : -P.swing, false, true, hr);
+        arm(-shoulder, P.stoop ? reach : P.swing, false, true, hl); if (!P.eat) arm(shoulder, P.hand ? 2.4 : P.stoop ? reach : -P.swing, false, true, hr);
       }
       head(); hat();
+      if (P.eat) arm(shoulder, 0, false, true, P.hands[1]);       // (eating: the mitten up in front of its chin)
     } else {
       // (An arm swung forward is ahead of it, behind the cloak from here: only the one swung back shows over it.)
       const al = P.stoop ? 1.1 * P.stoop : P.swing, ar = P.stoop ? 1.1 * P.stoop : -P.swing;
@@ -1131,7 +1142,15 @@ function paintPose(g, size, U, P) {
       const cheeks = view === 0 ? [[fx - 0.04, fy + 0.07]] : [[fx - 0.105, fy + 0.07], [fx + 0.085, fy + 0.07]];
       for (const [x, y] of cheeks) furGlow(g, CHEEK, P.sad ? 0.3 : P.blow ? 0.8 : P.warm ? 0.7 : 0.55, x, y, P.blow ? 0.052 : 0.04, P.blow ? 0.036 : 0.026);   // (cold, paler; blowing, puffed out)
       const mx = view === 0 ? fx - 0.115 : fx - 0.015, my = fy + 0.085;
-      if (P.yawn) fillIn(g, 'rgba(110,52,44,0.9)', () => ovalAt(g, mx, my + 0.012, 0.02, 0.028));   // a yawn
+      if (P.eat === 1) {                                        // a bite on its way in: the mouth open, a crumb of something held to it
+        fillIn(g, 'rgba(110,52,44,0.9)', () => ovalAt(g, mx, my + 0.008, 0.019, 0.022));
+        softIn(g, [196, 132, 70], my - 0.005, my + 0.05, () => ovalAt(g, mx + 0.012, my + 0.03, 0.034, 0.026, 0.3), 1.2, 0.7);
+        fillIn(g, 'rgba(255,236,200,0.6)', () => ovalAt(g, mx + 0.002, my + 0.02, 0.012, 0.007, 0.3));
+      } else if (P.eat) {                                       // munching: lips pressed in a wobbly line, a cheek puffed out
+        const s = P.eat === 2 ? 1 : -1, cx = view === 0 ? fx - 0.05 : s > 0 ? fx + 0.085 : fx - 0.105;
+        furGlow(g, CHEEK, 0.9, cx, fy + 0.075, 0.062, 0.045);
+        strokeIn(g, 'rgba(120,64,50,0.85)', 0.013, () => { g.moveTo(mx - 0.018, my + 0.004 * s); g.quadraticCurveTo(mx - 0.006, my + 0.012, mx, my + 0.004); g.quadraticCurveTo(mx + 0.008, my - 0.004, mx + 0.018, my + 0.006 - 0.004 * s); });
+      } else if (P.yawn) fillIn(g, 'rgba(110,52,44,0.9)', () => ovalAt(g, mx, my + 0.012, 0.02, 0.028));   // a yawn
       else if (P.blow) fillIn(g, 'rgba(110,52,42,0.85)', () => ovalAt(g, mx - 0.006, my + 0.004, 0.012, 0.015));   // lips pursed, blowing
       else if (P.goof) {                                         // goofy: a big open grin, the tongue lolling out of it
         fillIn(g, 'rgba(110,50,42,0.92)', () => { g.moveTo(mx - 0.04, my - 0.01); g.quadraticCurveTo(mx, my + 0.075, mx + 0.04, my - 0.01); g.quadraticCurveTo(mx, my + 0.002, mx - 0.04, my - 0.01); g.closePath(); });
@@ -1151,5 +1170,5 @@ const painters = { fox: paintFox, rabbit: paintRabbit, dfly: paintDragonfly, kfi
 
 root.Fur = { tone, rockRGB, fillIn, strokeIn, discAt, ovalAt, blurIn, softIn, furGlow, foxRGB, FOX_WHITE, FOX_SOCK,
   FOX_POSE, RABBIT_POSE, RABBIT_KINDS, setCoats, paintFox, paintRabbit, paintForager, paintForagerFace, FACE_MOODS, FORAGER_REACH, FORAGER_JOG_STRIDE, FORAGER_OUTFITS, FORAGER_CLOAKS, FORAGER_HATS, outfitOf, FORAGER_COLD, FORAGER_IDLE, FORAGER_IDLES, FORAGER_SNOWS, FORAGER_SNOW_ARTS, KNEEL_VIEW, FORAGER_KNEEL,
-  FORAGER_EMOTE, FORAGER_EMOTES, FORAGER_EMOTE_ARTS, EMOTE_AT, emoteArt, SNEAK_STRIDE, painters };
+  FORAGER_EMOTE, FORAGER_EMOTES, FORAGER_EMOTE_ARTS, FORAGER_EAT, FORAGER_EATS, EMOTE_AT, emoteArt, SNEAK_STRIDE, painters };
 })(typeof window !== 'undefined' ? window : globalThis);

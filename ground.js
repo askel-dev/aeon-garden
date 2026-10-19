@@ -13,7 +13,8 @@
  *     the sun's side and shades the short below;
  *   - the paper's grain over it all and, up close, a few dry-brush dabs in the longest grass;
  *   - the sun on the slopes, wet moss at the water's edge, then the water in soft layers,
- *     deepest well out from the shore, with long brushed strokes on its surface.
+ *     deepest well out from the shore, with long brushed strokes on its surface;
+ *   - the snow in patches as thick as it lies, and the bare, wet clearings the fires melt round them.
  *
  * Use: Ground.set(name, data) with a Float32Array of 4 values a tile: 'tile' (grass, water,
  * nothing, wood), 'bloom' (a field's tint times how much it shows, then how much), 'shape' (height,
@@ -42,6 +43,8 @@ uniform sampler2D tile, bloom, shape, water, mist;
 uniform vec2 size, off, seed;
 uniform float top, zoom, dpr, snow, damp, lx, ly, ice, cold, mistOut, campA;
 uniform vec4 camp;                       // the camp's ground: where (tiles), how far out, how flat (an ellipse); campA how much of it is laid
+uniform vec4 fire[4];                    // the fires melting the snow: xy tile, z how far out (tiles), w how much of it is bared
+uniform int fireN;                       // how many of the four are in it (none and the snow lays as it did)
 uniform vec3 low, high, sand, fog;
 uniform vec3 light;                      // what it's all lit by: white by day, warm in the golden hour (game.js goldLight)
 out vec4 o;
@@ -276,10 +279,19 @@ void main() {
     vec3 dirt = mix(vec3(0.42, 0.31, 0.2), vec3(0.54, 0.41, 0.28), tread) * (1. - 0.12 * smoothstep(0.5, 0.8, noise(q * 6. + 940.)));
     col = mix(col, dirt, 0.88 * onCamp);
   }
-  // Snow settles in patches first, on the long grass's sunny tops before its hollows; blue in the shade.
+  // Snow settles in patches first, on the long grass's sunny tops before its hollows; blue in the shade. A fire melts it
+  // back: a soft, ragged clearing round each, bared to the ground, which goes wet (game.js fireMelt: a fire's heat and how
+  // long it has burnt). Its edge is ragged with the snow's own noise, so the thaw is no drawn circle.
   float s0 = snow > 0. ? clamp(snow * 1.4 - 0.2 - 0.25 * (2. * n1 - 1.) - 0.1 * (2. * n2 - 1.), 0., 0.92) : 0.;
+  float here = s0, melt = 0.;
+  for (int i = 0; i < 4; i++) {
+    if (i >= fireN) break;
+    float d = length((p - fire[i].xy) / (fire[i].z * vec2(1., 0.9))) + 0.16 * (2. * n1 - 1.) + 0.07 * (2. * n2 - 1.);
+    melt = max(melt, fire[i].w * (1. - smoothstep(0.5, 1.05, d)));
+  }
+  s0 *= 1. - melt;
   col = mix(col, mix(vec3(0.8, 0.86, 0.96), vec3(246., 248., 252.) / 255., 0.6 + 0.4 * (1. - castOn)), s0);
-  col *= damp * (1. - 0.3 * T.a) * (1. - 0.1 * wet);
+  col *= damp * (1. - 0.3 * T.a) * (1. - 0.1 * wet) * (1. - 0.14 * melt * clamp(here * 4., 0., 1.));   // the ground it bared is wet
 
   // The sun on the slopes: lighter where the ground falls toward it, gently. Water lies flat.
   vec2 e = vec2(1., 0.);
@@ -352,6 +364,7 @@ if (gl) {
       textures[name] = { unit, t };
     });
     gl.uniform2f(U.size, S.W, S.H); gl.uniform1i(U.mist, 4);   // (no mist until Ground.mist: unit 4 reads 0)
+    U.fire = gl.getUniformLocation(prog, 'fire');               // (the array's own name, one location for all four)
   } catch (e) {
     console.warn('The ground shader would not start:', e);
     ok = false;
@@ -421,6 +434,8 @@ function steady(u) {                                    // all but where the cam
   if (stale || !last || u.seed[0] !== last.seed[0] || u.seed[1] !== last.seed[1]) return false;
   for (const k of EXACT) if (u[k] !== last[k]) return false;
   for (let i = 0; i < 4; i++) if (u.camp[i] !== last.camp[i]) return false;
+  if (u.fireN !== last.fireN) return false;
+  for (let i = 0; i < 16; i++) if (Math.abs(u.fires[i] - last.fires[i]) > 0.03) return false;
   for (const k in NEAR) if (Math.abs(u[k] - last[k]) > NEAR[k]) return false;
   for (const k of ['low', 'high', 'sand']) for (let i = 0; i < 3; i++) if (Math.abs(u[k][i] - last[k][i]) > 0.5) return false;
   if (last.misty) for (let i = 0; i < 3; i++) if (Math.abs(u.fog[i] - last.fog[i]) > 0.5) return false;   // (none in it: the fog can't show)
@@ -452,8 +467,9 @@ function draw(u) {
   for (const k of ['zoom', 'dpr', 'snow', 'damp', 'lx', 'ly', 'ice', 'cold', 'campA']) gl.uniform1f(U[k], u[k]);
   for (const k of ['low', 'high', 'sand', 'fog']) gl.uniform3fv(U[k], u[k].map(v => v / 255));
   gl.uniform3fv(U.light, u.light); gl.uniform4fv(U.camp, u.camp);
+  gl.uniform1i(U.fireN, u.fireN); gl.uniform4fv(U.fire, u.fires);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
-  last = { ...u, camp: u.camp.slice(), pad, misty: misty(u, pad) }; stale = false; view.x = view.y = m; between = false;
+  last = { ...u, camp: u.camp.slice(), fires: u.fires.slice(), pad, misty: misty(u, pad) }; stale = false; view.x = view.y = m; between = false;
   return true;
 }
 

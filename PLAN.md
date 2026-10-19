@@ -90,13 +90,14 @@ the forager, and the bars slide off after 7 s (a click, a tap or a key cuts it s
 - 6 pebbles, 5 sticks, 2 tinder (recipes.js `BUILDS.campfire`); camp lays 3 pebbles now (so 3 more to find).
 - A round fire button by the satchel (F too), its ring filling as you gather; pick a spot, the forager kneels, lays it,
   strikes, and you hold to blow. Clicking a fire feeds it a stick or relights it; by a lit one it kneels to warm its hands.
-- 5 sticks burn about 8.5 game hours dry (7 in rain), then embers about 2.4 hours, then cold. By a fed fire every night
+- 5 sticks burn about a game day dry (17 game hours in rain), then embers about 2.4 hours, then cold. By a fed fire every night
   ends cosy; by 5 sticks alone a winter night ends at 0.1 to 0.75 warmth; with none, winter and rainy spring nights kill.
 - Nights made much darker (game.js `DARK` 0.55 to 0.88, a deeper navy) after Axel looked, so the fire's pool is the cosy
   place; its light reaches further (`LIGHT_TILES` 6 to 8, a gentler falloff), and its warm light on the forager is softer
   (it washed it out).
 - Played in a browser and timed (no measurable cost). Left for a refinement pass: the look of the pool and flames, the
-  balance of how long a stick burns, the sounds.
+  sounds. A stick burns twice as long since 2026-10-19 (`FIRE_STICK`, `TPD / 10` to `TPD / 5`): five sticks carry a fire
+  from dusk to the next dusk.
 
 ## Stage 5: making camp
 Lighting the first fire makes camp (`w.camp`: where, and the fire), and it's a big moment: the flame flares, warm light
@@ -383,6 +384,93 @@ switch between what you have at the fire.
   same on every side, so it hardens exactly as the host's fire burns. A `fire` message 'shape' lets friends see it in the fire
   (`netFiring`; drawn by ticks gone by, not counting a spell with the fire out). A guest's vessels go when the visit ends.
   Not tried live with two players (only checked by reading); the paintings checked in Chrome. sim.js untouched.
+## Stage 7: making things (one make button), and torches (planned 2026-10-19)
+
+The fire button and the basket button each build one thing; a button a build would fill the satchel's sides. So the
+builds go behind **one make button**, and the first new build is a **torch** you stick in the ground anywhere.
+
+### The make button
+- One round button where the fire's is now (`#build`). Its painting and its filling ring are the build most worth doing
+  now: the campfire until the first fire is lit, then the basket (in camp, until it's made), then whichever is most nearly
+  ready. So the storm opening looks and plays exactly as it does today: one button, a campfire in it, filling up.
+- A tap, with only one thing it could make (before camp): what the fire button does now. Otherwise it opens a small
+  **make strip** just over the satchel, like the basket's card (`#larder`): one tile a build, its painting, its name, and
+  what it takes as little item chips with have/need (`2/5` sticks); ready ones bright, the rest faded with the ring.
+  A tap on a ready one shuts the strip and starts placing it (`ui.place`, as the fire and basket do now); on one not
+  ready it says what's missing (`missingWords`). ✕, Esc, Back or walking off shut it. A row of tiles wraps, so ten
+  builds still fit in a small card.
+- Keys: **C** opens the strip, **F** stays the quick campfire (and blowing at a fire). The basket's button stays, but only
+  as "open the basket" once it's made; making it moves into the strip.
+- Data: `BUILDS` gains a few optional fields so a new build is a block and a painter: `where` (`'camp'` or anywhere),
+  `after` (`'camp'`, or a skill level like CRAFTS `level`), and the painting by id (like `Items.paint`). `checkRecipes`
+  checks them. The game still needs code for how each build is placed and what it does; a generic "set it down"
+  (kneel, `LAY_MS`-ish, done) covers small things like the torch, and the fire and basket keep their own.
+
+### Torches
+- **Takes** 1 stick and 1 birch bark (bark torches are a real thing, and it gives bark a use beyond tinder). Cheap on
+  purpose: you make several.
+- **Placed** anywhere within `PLACE_REACH`, not in deep water, on a tree or a rock (a `torchSpot` like `fireSpot`, but
+  closer spacing is fine). The forager kneels, pushes it into the ground, one strike, and it's lit. No blowing.
+- **Burns** about a night (half a day, 6 min at 1x), shorter in rain (`BLOW_WET`-like table), then gutters to a charred
+  stub that's gone by the next evening. At most `TORCH_MAX` (12) at once: a 13th, the oldest gutters out.
+- **Gives** light, no warmth (the fire stays the warmth). A small pool cut out of the night (a lantern's, not a fire's:
+  radius ~40% of `LIGHT_TILES`), so you can mark the path home, the hive, a good mushroom patch. The forager's rim
+  light already follows any pool (`fireReach`).
+- **Sim**: `w.torches` (in `LATER`, one layout each: `torchOf` { x, y, born, burn, wet }), `torchTick` run every few
+  ticks, never a scan of creatures. `unpackWorld` gives an old meadow `[]`: no `KEEP_VERSION` bump. Packs as plain data.
+- **Drawn**: a painted torch (stick, wrapped bark, a charred tip) in the sprite cache, a small flame from `FLAME_ART`
+  scaled down, its glow with the fire's (`drawFireGlows`). `lights` grows from 4 to ~16 slots, nearest on screen first;
+  the pools are already one picture (`SKY_FIRE`) repainted only on a flicker step, so more of them costs a few draws in
+  that picture, not a new pass. A faint crackle only when standing close (sound.js, reuse the fire's at low gain).
+- **Playing together**: a `fire` message `'torch'` like the basket's, so friends see it set down; the host's sim burns it.
+- **Not now** (later, if it's fun): carrying a lit torch in hand, relighting a burnt one, torches scaring foxes off.
+
+### Building it
+1. The make button and strip, with only the campfire and basket in it (no new content). Check the storm opening still
+   reads the same, and the phone layout (44 px tiles, a sheet on an upright phone).
+2. Torches in the sim (`w.torches`, place, burn, pack/unpack round-trip) and a few headless years.
+3. Torch painting, flame, light, sound, net. Measure a night at speed with 12 torches lit (a new thing drawn a frame).
+4. After that a new build is data plus a painting: the seat log, the drying rack, the lean-to (After that, 3).
+
+### The make button and strip built (2026-10-19)
+- recipes.js `BUILDS` has `where` (left out: 'anywhere'; 'camp') and `after` (left out: at once; 'camp'; or a Cooking
+  level), checked by `checkRecipes` (`BUILD_KEYS`, `whereOf`). The campfire is `where: 'anywhere'`, the basket
+  `where: 'camp', after: 'camp'`.
+- game.js: `#build` is the make button (`renderBuild`, `buildFocus`): the campfire in its painting and ring till the first
+  fire, the basket till it's made, then whichever is most nearly ready (`buildHave`'s share). `makeList` leaves out what
+  `after` holds back, the basket once made, and a guest's basket. Before a camp there's only the campfire, so a tap does
+  what the fire button did (C still opens the strip, a tile); with more it opens `#make` (`openMake`, `renderMakeStrip`,
+  `stripUi`), a tile a build with `BUILD_ART`'s painting (painted once and kept as a blob's address, `buildIconURL`), its
+  name and what it takes as item chips, have/need (`2/5`), ready or faded with a ring. `startBuild` shuts it and places a
+  ready one (`placeFire`, or `placeBasket`, now its own) or says what's missing (the strip staying open); ✕, Esc, Back, C,
+  a tap elsewhere or walking off shut it (`makeFrame`). `ui.place.build` and `ui.fire.build` carry what's being made. F is
+  `campfirePressed` (the campfire, and blowing at a fire).
+- The basket's button (`#basket-btn`) only opens the basket once it's made; its making ring and `.making` CSS are gone, and
+  its painting is the strip's.
+- index.html: `#make`'s markup and CSS (a sheet just over the satchel, `width: max-content` with a `100vw` cap so it
+  centres rather than taking only half the screen's width and wrapping; a 44 px ✕ and tiles well over a fingertip). The
+  phone's rules sit beside the basket card's.
+- Checked in Chrome: before camp the make button is the old fire button (painting, ring, words, F), no strip; after camp
+  the strip's two tiles, chips, ready and faded states, the camp gate, ✕/Esc/Back/walk-off/C; the basket made, its button
+  then only opening it, and the make button back to the campfire. At 386 px wide (an iframe) two tiles sit in one row with
+  no overflow; the pointer-coarse tile and ✕ rules checked by reading. No console errors. (Not tried with two players;
+  sim.js untouched.)
+
+### Torches in the sim built (2026-10-19)
+- sim.js: `w.torches` (in `LATER` as null, a new world gets `[]`), one layout each (`torchOf`: `x`, `y`, `born`, `burn`,
+  `wet`), `torchSpot` (not the deep water; clear of a trunk, a rock, a burrow, a fire, the basket or another torch),
+  `placeTorch` (lit at once, `burn` `TORCH_BURN` = half a day) and `torchTick` every `TORCH_EVERY` (15) ticks: quicker in
+  the wet (`TORCH_WET`: rain 1.5, storm 2, snow 1.3), a negative `burn` is the charred stub, gone after `TORCH_STUB` (a
+  day); a 13th lit torch gutters the oldest (`TORCH_MAX` 12). Events 'torchlit' and 'torchout'. It gives no warmth and
+  draws no random numbers.
+- Keeping a meadow: a torch packs as plain data and comes back with its fields (the `made` chain's `e.torch`); a meadow
+  kept before them gets `[]` in `unpackWorld`. `KEEP_VERSION` stays 10.
+- Checked headless (node): 15 laid in a row → 12 lit and the 3 oldest stubs, dry and rain burns, stubs gone after their
+  day, pack/unpack through `structuredClone` with each field equal, an old kept meadow (torches deleted) opening with `[]`,
+  and three years over seeds 1–3 with a torch laid each day: nothing the cooking needs died out (hives with queens, fish,
+  frogs, rabbits), at most 2 torches kept at once and at most 1 lit, round-trip after the years. No drawing or game.js
+  change yet.
+
 ## After that (roughly in this order)
 1. **Cooking at the fire** and 2. **hunger and eating**: stage 6 above.
 3. **Camp builds.** Arranged inside the camp ring: a seat log, a spit, a drying rack (keeping food for winter), a basket

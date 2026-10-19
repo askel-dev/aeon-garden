@@ -31,7 +31,7 @@ The forager feels the cold (stage 2 of PLAN.md): the air has a temperature (sim.
 `bodyFrame`) and on its face top left (`#me`, `renderVitals`: painted in a mood, `faceMood`, fur.js `paintForagerFace`; health a ring round it, warmth and the tummy two dials under it; stamina a ring by the forager itself, `drawStamina`), and a health (`f.health`: it drops while freezing or starving, mends warm and fed, and at nothing it collapses like no warmth; `hurt(w, n)` is the hook for any other harm); at nothing it collapses and wakes at home the next
 morning with the satchel lost (`wakeForager`). A new meadow opens in a storm late in the afternoon, the forager cold and wet and
 saying it needs a fire before dark (stage 3: sim.js `START_PHASE`, `foragerArrives`; game.js `openingLine`); the storm, a gale
-harsher than others, holds till the first fire is lit (`OPENING_HOLD`, `GALE_*`). A campfire (stage 4) is its warmth: built from the satchel by the round fire button
+harsher than others, holds till the first fire is lit (`OPENING_HOLD`, `GALE_*`). A campfire (stage 4) is its warmth: built from the satchel by the round make button
 by it or F (recipes.js `BUILDS`, game.js `renderBuild`), laid where you pick, struck, and blown on by holding till it catches;
 it burns its sticks down to embers, then cold (sim.js `w.fires`, `fireTick`, `fireWarmth`), and at night lights a warm pool
 cut out of a dark navy (game.js `lightsFrame`, `paintFireLights`). The first fire lit makes camp (stage 5: sim.js `w.camp`,
@@ -52,7 +52,8 @@ picture and what goes in, `renderBook`; a few dishes `known` from the start, the
   under the meadow's (`#ground`), slid into place with a CSS transform, never copied onto a frame; so nothing drawn on the meadow can blend with the ground (a `'lighter'` glow lays a
   light over it instead of adding to it). The golden hour lights it in the shader (`light`, game.js `goldLight`, in
   `GOLD_STEPS` so it repaints only on a step); what stands on it gets the same warmth as one `'source-atop'` fill, and
-  the night is a navy `wash` over everything. The loop gives the sim at most `SIM_MS` a frame (a slow phone runs fast time a bit slower
+  the night is a navy `wash` over everything, and a lit campfire bares a ragged clearing in the snow round it when it lies
+(`fire[]`/`fireN` in, game.js `snowMelt`). The loop gives the sim at most `SIM_MS` a frame (a slow phone runs fast time a bit slower
   instead of dropping frames), a paused meadow nobody is touching draws at 12 fps (`resting`), a calm one played at 1x with a still camera and no hands on it (`calm`) at 30, and a touch screen draws at most about 60 a second (`renderGap`, `FRAME_GAP`: a 120Hz phone paints every other beat, the sim still runs on all).
 - `sound.js`: all the sounds, made with Web Audio (no files). Off until the 🔊 button or M.
   `sound-lab.html` plays each one on its own. The forager's footsteps (`step`) come from game.js `foragerFrame`, one for each
@@ -64,7 +65,8 @@ picture and what goes in, `renderBook`; a few dishes `known` from the start, the
   silence between pieces is part of it, and no piece is about the time of day (a day is 12 minutes, a
   piece 90 s): they fit any moment, lean towards a season at 1x, and the piano plays darker at night.
 - `index.html`: layout and styles. The world fills the screen: on it only a small pill top right
-  (pause, sound, ••• with a link, an idea and a new meadow; on a phone the sound waits in •••), a toast line top
+  (pause, sound, ••• with a link, an idea and a new meadow; on a phone the sound waits in •••) with the sky dial left of it
+  (the time of day, the season's hills and its days: game.js `updateDial`), a toast line top
   middle (`toast`), now and then a big headline under it (`announce`: a new day or season, a first find, a friend's
   meadow) and the inspector. Axel wants to see the meadow, not big cards: new UI stays small, temporary and
   close to the action. The cards are opaque parchment with a painted grain (`--paper`), never a `backdrop-filter`.

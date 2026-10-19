@@ -286,6 +286,7 @@ const TERRAIN = {
 const idx = (x, y) => (y | 0) * W + (x | 0);
 const inBounds = (x, y) => x >= 0.5 && y >= 0.5 && x < W - 0.5 && y < H - 0.5;
 const isWater = (w, x, y) => w.water[idx(x, y)] > 0;
+const onIce = (w, x, y) => w.frozen && w.water[idx(x, y)] > 0;                      // frozen water under it
 const walkable = (w, x, y) => inBounds(x, y) && (w.water[idx(x, y)] !== DEEP || w.frozen);   // ice takes any weight
 const dry = (w, x, y) => inBounds(x, y) && !w.water[idx(x, y)];
 const footing = (w, x, y) => inBounds(x, y) && (w.frozen || !w.water[idx(x, y)]);   // dry land, or the ice
@@ -5418,7 +5419,10 @@ function lifeTick(w, c) {
 // corners come round in curves; it speeds up gently (FORAGER_ACCEL), slows to stop just where it was sent (FORAGER_BRAKE),
 // slows into a sharp turn, and wades at FORAGER_WADE of its pace. Sent running (f.running: game.js, Shift held or the
 // spot tapped again) it sprints at FORAGER_RUN instead, while its stamina lasts (bodyTick); cold, it walks slower
-// (bodyPace). It moves on the sim's ticks, so pausing pauses it, and game.js draws it between them.
+// (bodyPace). On the ice (onIce) it glides: it gets going slowly (FORAGER_ICE_ACCEL), turns in long wide arcs
+// (FORAGER_ICE_TURN), and doesn't stop where it was sent but keeps going, losing pace little by little (FORAGER_ICE_GLIDE)
+// till it comes to rest, or reaches dry ground. It moves on the sim's ticks, so pausing pauses it, and game.js draws it
+// between them.
 const FORAGER_WALK = 0.085;             // tiles a tick at a walk (a rabbit ambles 0.06)
 const FORAGER_RUN = 0.16;               // and at a sprint
 const FORAGER_SNEAK = 0.042;            // and sneaking (f.sneaking: game.js, the devious walk), a creep on its toes
@@ -5426,6 +5430,10 @@ const FORAGER_WADE = 0.5;               // of that, in the shallows
 const FORAGER_ACCEL = 0.0058;           // tiles a tick it gains a tick, setting off (about half a second to a walk)
 const FORAGER_BRAKE = 0.0035;           // and loses, stopping (it starts slowing about 0.7 tiles out)
 const FORAGER_TURN = 0.16;              // radians a tick it can turn at most at a walk (three times that from standing)
+const FORAGER_ICE_ACCEL = 0.0022;       // tiles a tick it gains a tick on the ice (a slow start: it has no grip)
+const FORAGER_ICE_TURN = 0.045;         // radians a tick it can turn at most on the ice (a long wide arc, no digging in)
+const FORAGER_ICE_GLIDE = 0.0012;       // tiles a tick its glide loses (a walk carries about three tiles)
+const FORAGER_ICE_STOP = 0.004;         // and slower than this the glide is over
 const FORAGER_LOOK = 0.8;               // tiles ahead along its way it steers for
 const SHALLOW_COST = 2.5;               // a step in the shallows costs this many on dry ground
 const BRINK_COST = 0.8;                 // and one next to deep water this much more
@@ -5806,11 +5814,35 @@ function segDist(x, y, ax, ay, bx, by) {
   return Math.hypot(ax + dx * t - x, ay + dy * t - y);
 }
 
+// A step of the glide on ice: no steering, its heading held, losing pace a tick (glide). Eased off rocks and friends as
+// a walking step is, and stopped at the brink of anything it can't slide onto. Into f.x, f.y, f.moved.
+function glideTick(w, f, glide) {
+  f.speed = Math.max(0, f.speed - glide);
+  const step = f.speed;
+  if (step <= 0) { f.speed = 0; return; }
+  let nx = f.x + Math.cos(f.heading) * step, ny = f.y + Math.sin(f.heading) * step;
+  if (friendN) { outOfFriends(f, nx, ny); nx = rockX; ny = rockY; }
+  rocksFor(w);
+  outOfRocks(nx, ny, f.x, f.y); nx = rockX; ny = rockY;
+  if (!walkable(w, nx, ny)) {                            // (the brink, or dry ground it can't slide onto: along it, else stopped)
+    if (walkable(w, nx, f.y)) ny = f.y;
+    else if (walkable(w, f.x, ny)) nx = f.x;
+    else { f.speed = 0; return; }
+  }
+  f.moved = Math.hypot(nx - f.x, ny - f.y);
+  f.x = nx; f.y = ny;
+}
+
 // One tick of walking its way.
 function foragerTick(w) {
   const f = w.forager, P = f.path;
   f.moved = 0;
-  if (!f.walking) { f.speed = 0; if (friendN && f.down < 0) makeRoom(w, f); return; }
+  const ice = onIce(w, f.x, f.y);
+  if (!f.walking) {
+    if (f.speed > FORAGER_ICE_STOP) glideTick(w, f, ice ? FORAGER_ICE_GLIDE : FORAGER_BRAKE * 2);   // (over the ice it glides; off it, it comes up short)
+    else { f.speed = 0; if (friendN && f.down < 0) makeRoom(w, f); }
+    return;
+  }
   const n = P.length / 2;
   while (f.leg < n - 1) {                                // onto the next leg once near this one's end, past it, or nearer the next
     const k = f.leg * 2, bx = P[k], by = P[k + 1];
@@ -5832,11 +5864,12 @@ function foragerTick(w) {
     if (left > 0) { along = Math.min(left, dl); tx = cx + dx / dl * along; ty = cy + dy / dl * along; left -= along; }
   }
   rest = Math.max(rest, Math.hypot(f.goalX - f.x, f.goalY - f.y) * (f.leg === n - 1 ? 1 : 0));
-  // Turn toward it, at most FORAGER_TURN a tick, slowing into a sharp turn; up to speed gently, and down to stop at the end.
+  // Turn toward it, at most FORAGER_TURN a tick (on the ice FORAGER_ICE_TURN: a long wide arc), slowing into a sharp turn;
+  // up to speed gently, and down to stop at the end (on the ice, not at all: it carries on past where it was sent).
   const want = Math.atan2(ty - f.y, tx - f.x);
   let turn = want - f.heading;
   turn -= Math.round(turn / (2 * Math.PI)) * 2 * Math.PI;
-  const most = FORAGER_TURN * (1 + 2 * clamp(1 - f.speed / FORAGER_WALK, 0, 1));   // (standing, it turns round quicker)
+  const most = (ice ? FORAGER_ICE_TURN : FORAGER_TURN) * (1 + 2 * clamp(1 - f.speed / FORAGER_WALK, 0, 1));   // (standing, it turns round quicker)
   f.heading += clamp(turn, -most, most);
   f.heading -= Math.round(f.heading / (2 * Math.PI)) * 2 * Math.PI;
   const wade = !w.frozen && w.water[idx(f.x, f.y)] === SHALLOW;
@@ -5852,10 +5885,10 @@ function foragerTick(w) {
     free *= 1 - brushAt(q, brushNear[k + 3]);
     if (d > 1e-4) { pushX += dx / d * q; pushY += dy / d * q; }
   }
-  const top = (f.running ? FORAGER_RUN * perk(f, 'stamina', 'pace') : f.sneaking ? FORAGER_SNEAK : FORAGER_WALK) * (wade ? FORAGER_WADE : 1) * free * bodyPace(f) * clamp(Math.cos(turn) * 0.8 + 0.4, 0.15, 1);
-  const v = Math.min(top, Math.sqrt(2 * FORAGER_BRAKE * rest)), s = f.speed;
-  f.speed = v > s ? Math.min(v, s + FORAGER_ACCEL) : Math.max(v, s - FORAGER_BRAKE * 2);
-  if (rest < 0.02 || (rest < 0.1 && f.speed < 0.008)) { f.walking = false; f.running = false; f.speed = 0; f.path.length = 0; return; }
+  const top = (f.running ? FORAGER_RUN * perk(f, 'stamina', 'pace') : f.sneaking ? FORAGER_SNEAK : FORAGER_WALK) * (wade ? FORAGER_WADE : 1) * free * bodyPace(f) * (ice ? 1 : clamp(Math.cos(turn) * 0.8 + 0.4, 0.15, 1));
+  const v = ice ? top : Math.min(top, Math.sqrt(2 * FORAGER_BRAKE * rest)), s = f.speed;
+  f.speed = v > s ? Math.min(v, s + (ice ? FORAGER_ICE_ACCEL : FORAGER_ACCEL)) : Math.max(v, s - (ice ? FORAGER_ICE_GLIDE : FORAGER_BRAKE * 2));
+  if (rest < 0.02 || (rest < 0.1 && f.speed < 0.008)) { f.walking = false; f.running = false; if (!ice) f.speed = 0; f.path.length = 0; return; }
   const step = Math.min(f.speed, rest);
   let nx = f.x + Math.cos(f.heading) * step, ny = f.y + Math.sin(f.heading) * step;
   if (pushX || pushY) { const p = BRUSH_PUSH * step * clamp(rest / 0.8, 0, 1); nx += pushX * p; ny += pushY * p; }
@@ -6184,6 +6217,75 @@ function fireTick(w) {
 }
 // How well it burns, 0 (cold) to 1: a fed fire 1, smaller as its last sticks go, embers a dull glow going grey.
 const fireHeat = F => (F.lit ? 0.45 + 0.55 * clamp(F.fuel / FIRE_LOW, 0, 1) : F.embers > 0 ? 0.3 * F.embers / FIRE_EMBERS : 0);
+
+// ---------------------------------------------------------------- torches
+//
+// A torch (w.torches, one layout, torchOf): a stick wrapped with birch bark, pushed into the ground where the forager
+// kneels (placeTorch; what one takes is recipes.js's BUILDS.torch, which game.js spends), and lit at once with a strike.
+// It burns for TORCH_BURN (half a day, 6 min at 1x), quicker in the wet (TORCH_WET), then its charred stub stays for
+// TORCH_STUB before it's gone. At most TORCH_MAX burn at once: laying one past that gutters the oldest (its stub stays).
+// It gives light, no warmth (game.js draws its pool), and nothing here draws the meadow's random numbers. A meadow kept
+// before torches gets none (unpackWorld), no KEEP_VERSION bump (w.torches is in LATER).
+const TORCH_BURN = TPD / 2;             // ticks it burns (6 min at 1x)
+const TORCH_STUB = TPD;                 // ticks its charred stub stays once it's out (gone by the next evening)
+const TORCH_WET = { rain: 1.5, storm: 2, snow: 1.3 };   // it burns this much faster in the wet
+const TORCH_MAX = 12;                   // burning at once: a 13th gutters the oldest
+const TORCH_GAP = 0.5;                  // tiles it keeps from another torch, a trunk, a rock or a burrow
+const TORCH_EVERY = 15;                 // ticks between its looks (half a second at 1x)
+// Every field a torch ever has: where it stands, the tick it was set down, the ticks of flame left (0 out, negative as
+// its stub goes) and how fast it's burning just now (TORCH_WET, for its look).
+const torchOf = (x, y, born) => ({ torch: true, x, y, born, burn: -0, wet: -0 });
+
+// Whether a torch can stand at x, y: '' if it can, else why not, in a few words (game.js says it).
+function torchSpot(w, x, y) {
+  if (!inBounds(x, y) || x < 1 || y < 1 || x > W - 1 || y > H - 1) return 'Too near the edge';
+  const i = idx(x, y);
+  if (w.water[i] === DEEP && !w.frozen) return 'Not in the deep water';
+  for (const T of w.torches) if (Math.hypot(T.x - x, T.y - y) < TORCH_GAP) return 'Another torch is here';
+  for (const F of w.fires) if (Math.hypot(F.x - x, F.y - y) < TORCH_GAP * 2) return 'There\'s a fire here';
+  if (w.camp && w.camp.basket && Math.hypot(w.camp.basket.x - x, w.camp.basket.y - y) < TORCH_GAP * 1.4) return 'The basket\'s here';
+  rocksFor(w);
+  for (let k = 0; k < solidR.length; k += 3) if (Math.hypot(solidR[k] - x, solidR[k + 1] - y) < solidR[k + 2] + TORCH_GAP * 0.4) return 'A rock\'s in the way';
+  let trunk = false;
+  forEachDecorNear(w, x, y, 2, d => { if (standing(d) && d.size >= SEEDLING && Math.hypot(d.x - x, d.y - y) < TORCH_GAP * (0.5 + 0.15 * Math.min(d.size, 3))) trunk = true; });
+  if (trunk) return 'Too close to the tree';
+  for (const b of w.brambles) if (b.size > 0 && Math.hypot(b.x - x, b.y - y) < TORCH_GAP + 0.2 * b.size) return 'Too close to the brambles';
+  for (const b of w.burrows) if (Math.hypot(b.x - x, b.y - y) < TORCH_GAP) return 'On a burrow';
+  return '';
+}
+// Sets one down at x, y, lit (game.js has taken what it takes out of the satchel). `ticks` is how much flame it starts
+// with (a friend's, as the host's had it). Returns it.
+function placeTorch(w, x, y, ticks = TORCH_BURN) {
+  let lit = 0, oldest = null;
+  for (const T of w.torches) if (T.burn > 0) {
+    lit++;
+    if (!oldest || T.born < oldest.born) oldest = T;
+  }
+  if (lit >= TORCH_MAX && oldest) { oldest.burn = 0; emit(w, { type: 'torchout', torch: oldest }); }
+  const T = torchOf(x, y, w.tick);
+  T.burn = Math.max(1, ticks); T.wet = TORCH_WET[w.weather.kind] || 1;
+  w.torches.push(T);
+  emit(w, { type: 'torchlit', torch: T });
+  return T;
+}
+// Every few ticks: the lit ones burn down (quicker in the wet), a gutted one's stub goes, and one long gone is forgotten.
+function torchTick(w, n = TORCH_EVERY) {
+  const wet = TORCH_WET[w.weather.kind] || 1, step = Math.round(n * wet);
+  let keep = 0;
+  for (let k = 0; k < w.torches.length; k++) {
+    const T = w.torches[k];
+    if (T.burn > 0) {
+      T.wet = wet;
+      T.burn -= step;
+      if (T.burn <= 0) { T.burn = 0; emit(w, { type: 'torchout', torch: T }); }
+    } else {
+      T.burn -= n;
+      if (T.burn <= -TORCH_STUB) continue;
+    }
+    w.torches[keep++] = T;
+  }
+  w.torches.length = keep;
+}
 // How many degrees the fires warm x, y (the nearest, warmest one), and how close to one it is (fireNear, 0 to 1).
 let fireNear = 0;
 function fireWarmth(w, x, y) {
@@ -6527,7 +6629,7 @@ function eachPickable(w, fn) {
 // What the forager drops out of the satchel lies on the ground where it stood (w.dropped, one layout, dropOf), to be
 // picked up again ('dropped' to whatThere and gather), and is gone after DROP_DAYS (sooner if the water comes over it).
 // Dropped on a pile of its own kind it goes on the pile. kind: an ingredient id; born, until: ticks; n: how many.
-const DROP_DAYS = 0.5;                  // a day is 12 minutes at 1x: six minutes
+const DROP_DAYS = 3;                    // a day is 12 minutes at 1x: thirty-six minutes
 const DROP_EVERY = TPD / 720;           // ticks between looks for ones gone (two minutes; a second at 1x)
 const DROP_PILE = 0.6;                  // tiles from a pile of its kind that one dropped goes on it
 const dropOf = (kind, x, y, born, until, n) => ({ dropped: true, kind, x, y, born, until, n });
@@ -6635,6 +6737,7 @@ const LATER = {
   dug: null, ponds: null, hedges: null, visitors: null, visited: null, visitGone: false, visitId: 0,   // the places visitors come to, and who's come
   forager: null,                                                                                    // the player (startForager)
   camp: null,                                                                                       // made by the first fire lit (campAt)
+  torches: null,                                                                                    // stuck in the ground (torchTick; an old meadow gets [])
   stone: null,                                                                                      // the old stone (stoneOf)
 };
 // A kept meadow's fractions come back as whole numbers where they were (0, 1): made fractions again, so they can't
@@ -6696,6 +6799,7 @@ function createWorld(seed, opts = {}) {
     options: { migration: true, ...opts },
     ...LATER,
   };
+  w.torches = [];                                             // (see torchTick: LATER's is null for a meadow kept before them)
   makeTerrain(w);
   for (let k = Math.max(1, Math.round(HIVES * w.room)); k > 0; k--) placeHive(w);
   w.treeRoom = TREE_ROOM * w.decor.filter(d => d.tree).length;
@@ -6834,6 +6938,7 @@ function step(w) {
   buildGrid(w);
   weatherTick(w);
   if (w.fires.length) { fireTick(w); kitTick(w); }
+  if (w.torches.length && t % TORCH_EVERY === 0) torchTick(w);
   bodyTick(w);
   foragerTick(w);
   if (t % GRASS_EVERY === 0) { growGrass(w, GRASS_EVERY); iceTick(w, GRASS_EVERY); }
@@ -6946,6 +7051,7 @@ function unpackWorld(kept) {
     : e.$map ? new Map() : e.$set ? new Set() : e.sp !== undefined && e.species !== undefined ? blankCreature()   // (laid out like new ones)
     : e.tree === true ? blankTree() : e.emoji === '🪨' ? rockOf(-0, -0, -0) : e.shroom === true ? shroomOf('', -0, -0, null, 0, 0, 0, 0)
     : e.forager === true ? foragerOf(-0, -0) : e.find === true ? findOf('', -0, -0, 0, 0, 0, 0) : e.dropped === true ? dropOf('', -0, -0, 0, 0, 0) : e.green === true ? greenOf('', -0, -0, 0, 0) : e.bramble === true ? brambleOf(-0, -0, 0, '', 0)
+    : e.torch === true ? torchOf(-0, -0, 0)
     : e.fire === true ? fireOf(-0, -0, 0)
     : e.n !== undefined && e.i !== undefined && e.kind !== undefined && e.field !== undefined ? plantOf(-0, -0, 0, -0, null, 0) : {}));   // (a flower or blossom)
   const table = path => path.split('.').reduce((o, k) => {
@@ -6983,6 +7089,8 @@ function unpackWorld(kept) {
     if (F.cookDish === undefined) { F.cookDish = ''; F.cookItems = []; F.cookLeft = 0; F.cookTotal = 0; }   // (kept before pots)
     if (!F.own) F.own = [];                             // (kept before vessels were each fire's)
   }
+  if (!w.torches) w.torches = [];                       // (kept before torches)
+  for (const T of w.torches) asFractions(T, ['x', 'y', 'burn', 'wet']);
   const noBrambles = !w.brambles;                       // (kept on the cooking branch before them: a new meadow's come up, below)
   if (noBrambles) { w.brambles = []; w.pips = []; w.brambleRng = makeRng(w.seed ^ 0xb4a3b1); }
   for (const b of w.brambles) asFractions(b, ['x', 'y', 'crop', 'berries']);
@@ -7859,15 +7967,16 @@ const api = {
   createWorld, step, clock, isNight, phaseOf, seasonOf, springPart, mood, ageDays, growth, isAdult, patchFresh,
   hedgehogComes, heronComes, dragonflyComes, kingfisherComes, skylarkComes, placeNeeds, VISIT_SEASONS, VISIT_FADE, HERON_FADE, HERON_STAB,
   DRAGON_FROM, KF_FADE, KF_UNDER, KF_BEAT, LARK_FADE, LARK_OPEN, LARK_RISE, EDGE_REACH, OPEN_MOST,
-  walkable, friendsAt, packWorld, unpackWorld, GROUND, foragerTo, foragerArrives, openingStorm, FORAGER_WALK, FORAGER_RUN, FORAGER_SNEAK, airTemp, warmthStage, WARMTH_STAGES, hurt, STUMBLE_TICKS, wakeForager, rockKind, whatThere, cherryShow, honeySpare, gather, takeFrom, dropSlot, dropAt, DROP_DAYS, moveSlot, roomFor, forEachDecorNear, SLOTS, STACK, stackOf, setStacks,
+  walkable, onIce, friendsAt, packWorld, unpackWorld, GROUND, foragerTo, foragerArrives, openingStorm, FORAGER_WALK, FORAGER_RUN, FORAGER_SNEAK, airTemp, warmthStage, WARMTH_STAGES, hurt, STUMBLE_TICKS, wakeForager, rockKind, whatThere, cherryShow, honeySpare, gather, takeFrom, dropSlot, dropAt, DROP_DAYS, moveSlot, roomFor, forEachDecorNear, SLOTS, STACK, stackOf, setStacks,
   KINDS, FEW, whiteness, visibility, WINTER_COAT, WILD_COAT,
   TERRAIN, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE, hollow,
   TREES, treeStage, treeAge, standing, bearing, inBloom, SEEDLING, SAPLING, GROWN, KIND_NAMES,
   FROG_K, SPAWN_WORTH, FISH_K, FISH_EAT, CROW_SEATS, SHROOMS, SHROOM_KINDS, FINDS, FIND_KINDS, findSeason, eachPickable, greenStage, greenPicked, GREEN_SEASONS, brambleStage, RIPE_FROM, RIPE_TO,
   bagCount, spend, stow, feedForager, hungerOf, HUNGRY, TUMMY, fireSpot, layFire, feedFire, fireRoom, lightable, lightFire, fireHeat, fireWarmth, CAMP_R, CAMP_FLAT, inCamp, BASKET_SLOTS, basketSpot, makeBasket, moveBetween, moveInto, putAway,
+  torchSpot, placeTorch, TORCH_BURN, TORCH_STUB, TORCH_WET, TORCH_MAX, TORCH_GAP,
   storeCount, storeRoom, storePut, storeTake, worldStores, storesAt, storesCount, storesRoom, storesTake, storesPut, STORE_NEAR,
-  cookTicks, cookReady, cookOn, cookTake, shapeVessel, makeVessel, kitOf, cookProgress, SKILLS, SKILL_NAMES, SKILL_TOP, skillNeed, skillLevel, skillProgress, perk, gainSkill, FIRE_STICK, FIRE_MOST, FIRE_LOW, FIRE_EMBERS, FIRE_NEAR, FIRE_REACH, FIRE_GAP, FIRE_WET,
+  cookTicks, cookReady, cookOn, cookTake, shapeVessel, makeVessel, kitOf, cookProgress, SKILLS, SKILL_NAMES, SKILL_TOP, skillNeed, skillLevel, skillProgress, perk, gainSkill, FIRE_STICK, FIRE_MOST, FIRE_LOW, FIRE_EMBERS, FIRE_NEAR, FIRE_REACH, FIRE_GAP, FIRE_WET, FIRE_WARM,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 else root.Sim = api;

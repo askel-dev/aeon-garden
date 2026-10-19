@@ -217,7 +217,7 @@ an apple, oak or beech up to `FALL_PICK` of its windfalls (`d.windfall`, the rab
 season: low in spring, when the bees live on nectar, so a meadow's first hives, starting with `HIVE_HONEY` 40, give a little; from
 autumn more than a big colony eats in a winter): a greedy forager taking all it could for three years starved no more colonies
 than none. `eachPickable` lists everything with something to give now (game.js's glints and arrow, and counting). `whatThere` also says gently why not ("Not ripe yet", "Picked clean"...). What's picked goes
-in the satchel (`w.forager.bag`, `bagN`: `SLOTS` slots, `STACK` of a kind to one; `stow`, `roomFor`, `dropSlot`), kept with the meadow. What's dropped lies on the ground (`w.dropped`, `dropOf`; dropped on a pile of its kind it goes on it) for `DROP_DAYS` (half a day, six minutes at 1x), or till deep water comes over it (`droppedTick`). A pick of greens, berries, cherries, windfalls or honey gives half to one and a half times `whatThere`'s n, more by the Gathering level (`yieldOf`, perk `yield`, hashed from place, tick and practice: no meadow random numbers); the meadow loses what that many cost (`takeFrom`'s `give`), and practice is `GATHER_PRACTICE` for each thing that goes in. Picking one's own back up takes no Gathering practice (`gather`): it was practised when it was first taken from the meadow, so a thing can't be set down and picked up again for a level.
+in the satchel (`w.forager.bag`, `bagN`: `SLOTS` slots, `STACK` of a kind to one; `stow`, `roomFor`, `dropSlot`), kept with the meadow. What's dropped lies on the ground (`w.dropped`, `dropOf`; dropped on a pile of its kind it goes on it) for `DROP_DAYS` (three days, thirty-six minutes at 1x), or till deep water comes over it (`droppedTick`). A pick of greens, berries, cherries, windfalls or honey gives half to one and a half times `whatThere`'s n, more by the Gathering level (`yieldOf`, perk `yield`, hashed from place, tick and practice: no meadow random numbers); the meadow loses what that many cost (`takeFrom`'s `give`), and practice is `GATHER_PRACTICE` for each thing that goes in. Picking one's own back up takes no Gathering practice (`gather`): it was practised when it was first taken from the meadow, so a thing can't be set down and picked up again for a level.
 No `KEEP_VERSION` bump: the new fields are in the blanks (`foragerOf`, `greenOf`, `blankTree`).
 Its body (`bodyTick`, every tick, before it walks): the air's temperature (`airTemp`, degrees: the year's, `AIR_YEAR`, about
 19 at midsummer and -1 at midwinter; the day's, `AIR_DAY`, coldest at sunrise, warmest at `AIR_WARMEST`; the weather's,
@@ -247,7 +247,7 @@ in the wet, `FIRE_WET`), never more than `FIRE_MOST` on (`feedFire`, `fireRoom`)
 relight them), then cold. The spring flood over one puts it out. It warms the forager up to `FIRE_WARM` degrees within `FIRE_NEAR`,
 none past `FIRE_REACH` (`fireWarmth`, by `fireHeat`), and dries it close up (`FIRE_DRY`), rain or not. No random numbers, and a
 meadow kept before fires gets none (no `KEEP_VERSION` bump). Standing by one from dusk with warmth full (4 seeds): a new fire's 5
-sticks burn about 12 game hours dry (8.5 in rain); spring nights end at 0.6 to 1 warmth, winter ones at 0.1 to 0.75 (snow worst),
+sticks burn about a game day dry (17 game hours in rain, 12 in a storm); spring nights end at 0.6 to 1 warmth, winter ones at 0.1 to 0.75 (snow worst),
 and a fire kept fed keeps it at 1 all night; with none, the rainy spring nights and every winter night kill.
 A fire has one pot (`cookDish`, `cookItems`, `cookLeft`, `cookTotal`; `cookOn`, `cookTake`, `cookReady`, `cookProgress`): game.js takes
 the things out of the satchel and sets a dish going for its recipes.js `time` (seconds at 1x, `cookTicks`), and `fireTick` counts it
@@ -257,6 +257,14 @@ The meadow's first fire lit makes camp (`w.camp`, in `LATER`: where, the fire, t
 the forager's home (`homeX`, `homeY`) moves to where it knelt to light it (within `CAMP_KNEEL`; else the fire's clear side), so it
 wakes there after a collapse. Its ring, `CAMP_R` tiles round the fire and `CAMP_FLAT` as deep as wide (`inCamp`), is where later
 builds go. A meadow kept with a fire lit before camps makes camp at it as it opens. No random numbers, no `KEEP_VERSION` bump.
+Torches (`w.torches`, in `LATER`, one layout each, `torchOf`: where it stands, when it was set down, the ticks of flame left and
+how fast it's burning just now, `wet`): a stick wrapped in birch bark pushed into the ground anywhere but the deep water, or a
+trunk, a rock, a burrow or another torch (`torchSpot`, like `fireSpot` but closer), lit at once (`placeTorch`; what one takes is
+recipes.js `BUILDS.torch`, spent by game.js). It burns `TORCH_BURN` (half a day, 6 min at 1x), quicker in the wet as a fire's
+blowing is (`TORCH_WET`, `BLOW_WET`'s table), then its charred stub stays `TORCH_STUB` (a day) before it's gone. At most
+`TORCH_MAX` (12) burn at once: laying one past that gutters the oldest, its stub staying. It gives light, no warmth (game.js
+draws its pool). `torchTick`, every `TORCH_EVERY` ticks, looks only at the torches; no random numbers. A meadow kept before them
+gets none (`unpackWorld`), no `KEEP_VERSION` bump.
 The camp's basket (`w.camp.basket`, `basketOf`, null till it's made: `makeBasket`, where `basketSpot` allows, inside the ring
 and clear of the fire, rocks and trunks) keeps `BASKET_SLOTS` slots of `STACK`, laid out as the satchel's (`bag`, `bagN`), and
 a collapse doesn't touch it. `moveBetween` and `moveInto` move a slot between any two of them, `putAway` the whole satchel in.

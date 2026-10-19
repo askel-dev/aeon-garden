@@ -363,6 +363,7 @@ const RULES = {
   pages:   { gap: 0.3,  always: true, lift: 2 },   // the recipe book opening,
   hearth:  { gap: 0.5,  always: true, lift: 2 },   // and the cooking window (the pot settling on the fire)
   stone:   { gap: 0.3,  always: true, lift: 1.6 }, // the old stone answering
+  munch:   { gap: 0.6,  always: true, lift: 1.6 }, // the forager eating
 };
 
 const STEP_SOFT = 0.6;          // the footsteps' level against the meadow's sounds: soft, they come a few times a second
@@ -877,6 +878,22 @@ const SOUNDS = {
     for (let i = 0; i < 3; i++) partial(o, rand(700, 900), t + 0.08 + i * 0.06, 0.03, 0.003, 0.05, 'triangle');
     marimba(o, note(2, -1), t + 0.3, 0.4);
     marimba(o, note(0, -1), t + 0.55, 0.35);
+  },
+  // Eating (game.js eatSlot, in time with its munching: EAT_SEQ): a bite as the mouth shuts on it (first s in), then n
+  // chews gap s apart, each a little softer, and a swallow with a tiny pleased "mm" after. crisp 0 to 1: a stew is soft
+  // and wet, an apple or a nut crunches (a gritty burst over the soft one).
+  munch(t, o0, { crisp = 0.5, first = 0.3, gap = 0.17, n = 4 }) {
+    const o = ac.createBiquadFilter(); o.type = 'lowpass'; o.frequency.value = 3200; o.Q.value = 0.5; o.connect(o0);
+    for (let i = 0; i <= n; i++) {
+      const at = t + first + (i ? i * gap + rand(-0.015, 0.015) : 0), v = (i ? 0.75 - 0.08 * i : 1) * rand(0.85, 1.1);
+      noise(o, at, 0.07, { from: rand(900, 1300), to: 300, q: 0.7, peak: 0.07 * v * (1.2 - crisp), attack: 0.008, type: 'lowpass' });   // the soft squish
+      if (crisp > 0.2) grains(o, at, 0.05 + 0.03 * crisp, 0.16 * v * crisp);                                                          // a crunch
+      partial(o, rand(110, 140), at + 0.01, 0.05 * v, 0.004, 0.06);                                                                   // the jaw shutting
+    }
+    const end = t + first + n * gap + 0.16;
+    bloop(o, end, rand(160, 190), 0.06, 0.08);                                                                                        // a gulp
+    partial(o, note(2, 0) / 2, end + 0.14, 0.035, 0.05, 0.26, 'triangle');                                                            // mm
+    partial(o, note(4, 0) / 2, end + 0.26, 0.03, 0.04, 0.3, 'triangle');
   },
   // The old stone answering (game.js stoneAsk): a soft knock of rock, then it babbles what it says the way Animal
   // Crossing's villagers do, one quick blip a letter (babble), low and gravelly; the mood sets its tune (STONE_TUNES).

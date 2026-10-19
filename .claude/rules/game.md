@@ -12,6 +12,13 @@ Drawing, the camera, the inspector. The world fills the screen; over it only a s
 (pause, sound, •••), a toast line (`toast`, for a copied link or an idea that couldn't go) and the inspector. The old
 watching game's cards, news feed, stats, journal, tools, intro and idle camera were cut on the `cooking` branch
 (main at 1d79f03 has them); the pocket watch that told the day and the year went later (git history before its removal).
+The sky dial (2026-10-19; the comment over `DIAL_W`) is what came back in its place, small, left of the pill (`#sky`,
+`updateDial`, `dialWords`): an arched brass window like a grandfather clock's moon dial, the sky of the hour in it
+(`SKY_KEYS`, dark as `darkness`, grey with the weather's mix), the sun and then the moon with its stars going over on a
+wheel (a CSS transform; the sun rises at `DIAL_RISE`, sets at `DIAL_SET`), the season's hills in front with a rabbit's ears
+over Nobody's hill (`DIAL_HILLS`, a painting by day and one by night a season, all painted once), and under it a pip a day
+of the season. A new season fades its hills in and glints over the brass (`.turn`); a hover or a tap says the day, the
+part of it, and the dark, the light or the next season coming. The edge markers keep clear of it (`KEEP_CLEAR`).
 
 Headlines (`announce`, index.html `#announce`): big Fraunces italic words over the meadow with no card, under the toast,
 fading in and out, clicks going through. The old watching game's daybreak lines brought back (cut in da8079b): each new
@@ -100,9 +107,9 @@ heavier than other storms (`GALE_LOOK`: the storm's share of the sky's mix goes 
 forager says to itself what it needs, "It's freezing. I need a fire before dark." (`openingLine`, `OPENING_LINE`; in the intro at `INTRO_LINE`), in a bubble over
 it as a line of chat is (`myChat`), in italics (`chatArt`'s `thought`; a `\n` in the game's own words breaks the line there). A
 friend joining during the opening storm hears it too (`heardWorld`), and the storm blowing over brings the rainbow as any rain does.
-The campfire (sim.js `w.fires`; its rules in ecology.md; the long comment over game.js's `FIRE_SIZE` has it all): a round fire
-button by the satchel (`#build`, `renderBuild`; above the satchel on an upright touch screen, beside it with the basket and the book on a phone on its side) with a ring filling in as the satchel
-holds what recipes.js `BUILDS.campfire` takes (6 pebbles, 5 sticks, 2 tinder); a tap or F picks a spot (`ui.place`, a faint fire
+The campfire (sim.js `w.fires`; its rules in ecology.md; the long comment over game.js's `FIRE_SIZE` has it all): the round make
+button by the satchel (`#build`, `renderBuild`; above the satchel on an upright touch screen, beside it with the basket and the book on a phone on its side) shows the build most worth doing (`buildFocus`) with a ring filling in as the satchel
+holds what that takes. Before there's a camp that's the campfire alone (recipes.js `BUILDS.campfire`: 6 pebbles, 5 sticks, 2 tinder), so a tap does what the fire button always did; with more, a tap opens the make strip (below). F stays the quick campfire wherever. A tap on a ready one picks a spot (`ui.place`, a faint fire
 following the mouse, within `PLACE_REACH`; sim.js `fireSpot` says why not). The forager kneels side on (fur.js `FORAGER_KNEEL`,
 `KNEEL_VIEW`), lays it a piece at a time (`LAY_STEPS`), strikes (`STRIKES`), and you hold (mouse, finger or F: `blowHeld`) to
 blow till it catches (`blowFrame`, `BLOW_S`, longer in the wet); let go too soon and it only smokes. A quick tap while it blows
@@ -112,7 +119,7 @@ still walks away (that's how you leave it). A click on a fire sees to it
 warms its mittens (`SIT_MS`; from the fire's side, `STAND_OFF`, stepping out to it first if it's standing nearer), and a hover
 says how it is (`fireWord`). Drawn with the trees and animals (`drawFire`: `paintFire` once a look and size, `FIRE_ARTS`; flames
 as `TONGUES` of one painting; smoke), its glow, embers and sparks over the dark
-(`drawFireGlows`). Its light (`lightsFrame`, at most 4 fires, out to `LIGHT_TILES`, flickering in `FLICKER_MS` steps) is cut out of the night on the sky's
+(`drawFireGlows`); near the forager a lit one has a row of pips under it, one a stick it can take, lit for what's still burning, red and breathing when low (`drawFireGauges`, `FUEL_NEAR`). Cold, the forager has a slim thermometer by its side (`drawChill`, from `CHILL_SHOW`). Its light (`lightsFrame`, at most 4 fires, out to `LIGHT_TILES`, flickering in `FLICKER_MS` steps) is cut out of the night on the sky's
 picture (`SKY_FIRE`, `paintFireLights`: so the sky repaints only on a flicker step) and laid warm over what stands near it
 (`fireLight`, source-atop, kept soft so the forager by it isn't washed out). Readable by firelight at night (2026-10-18):
 the forager's top edge takes a faint warm rim where a fire's pool falls and no further (`drawForagerRim`, `foragerRim` a rim
@@ -120,7 +127,10 @@ sprite cut out of the pose's own picture, drawn after the washes so the navy doe
 pool's own falloff, `lightFall`), and the camp's basket and cold fire pit get a
 little of the dark taken back over their footprint (`liftsFrame`, `paintCampLift`, `SKY_LIFT` — same sky pass as the fires,
 painted once, so the lit fire's pool stays the only strong light). Nights are dark (`DARK` 0.88 of a deep navy
-`NIGHT_RGB`, 2026-10-15) so the fire is the cosy place. Friends see fires laid, fed and lit (`sendFire`). Sounds: sound.js `clack`,
+`NIGHT_RGB`, 2026-10-15) so the fire is the cosy place. A lit fire also melts the snow back round it (`snowMelt`: the
+ground shader takes up to four fires and bares a soft, ragged clearing — `fire[]`, `fireN` in ground.js — coming in over
+`SNOW_MELT_TICKS` from `F.litAt` so it thaws rather than pops, wider the hotter it burns; the ground it bares goes wet).
+Friends see fires laid, fed and lit (`sendFire`). Sounds: sound.js `clack`,
 `stick`, `tinder`, `strike`, `blow`, `kindle` (`catch` is the fox's), `fizzle`, and a crackle near a burning one (`fire` in
 `Sound.update`). Cost: none measurable (1440x813, zoomed out, a summer night in the rain, walking: about 1.0 ms of script a
 frame with a fire and without, 60 fps).
@@ -131,14 +141,24 @@ twinkling stars, a wave of light out to the ring and motes rising off it (`campB
 and an Android phone buzzes (`CAMP_BUZZ`). Then a soft ring of trodden earth with a few stones lies round the fire (`drawCampRing`,
 `CAMP_ART` painted once, stretched; under all that stands), coming in over `CAMP_RING_MS` (`campFade`). The brown earth inside it is in the ground shader
 (ground.js `camp`, `campA`: an ellipse of ragged, mottled dirt over the grass, repainting the ground only while it fades in). The fire's hover calls it "Your camp".
-The camp's basket (2026-10-17; the comment over `WEAVE_MS`): a round button left of the fire's (`#basket-btn`, `renderBasketBtn`,
-also looked at in the 250 ms block) shows once there's a camp; with nothing the fire's takes in the satchel (or one already laid) the
-fire's button hides, and the basket's steps into its place by the satchel (`index.html`'s `#satchel:has(#build.hidden) #basket-btn`)
-rather than hanging out where the fire's would have been. Before the basket it fills a ring as the fire's does (recipes.js
-`BUILDS.basket`: 8 sticks, 4 dry grass), and a tap in camp picks a spot inside the ring (`ui.place` with `basket: true`, sim.js
+The make strip (PLAN.md stage 7; `#make`, `openMake`, `renderMakeStrip`: `stripUi` is it, not the vessels' `makeUi`): with more
+than one build on offer, a tap on the make button (or C) opens it just over the satchel, a tile a build (`makeList`: `after`
+passed, the basket not twice, and a guest's basket left out) with its painting (`BUILD_ART`, painted once and kept as a blob's
+address, as `vesselIcon`'s), its name, and what it takes as little item chips, have/need (`2/5`), bright when met. Ready tiles
+are bright, the rest faded with a ring (`--k`); a tap on a ready one shuts it and starts placing (`startBuild`: `placeFire` or
+`placeBasket`), one not ready (or one that goes at camp, from outside it) says what's missing and the strip stays open. ✕, Esc,
+Back, C, a tap anywhere else, or walking off shut it (`makeFrame`; it rewrites only when what it shows changes). F stays the
+quick campfire (`campfirePressed`), and still blows at a fire.
+The camp's basket (2026-10-17; the comment over `WEAVE_MS`): once there's a camp the make button's build is it until it's made
+(`buildFocus`), and the make strip offers it (recipes.js `BUILDS.basket`: 8 sticks, 4 dry grass, `where: 'camp'`,
+`after: 'camp'`). A tap on its ready tile in camp picks a spot inside the ring (`ui.place` with `basket: true`, sim.js
 `basketSpot`); the forager kneels and weaves it (`fireFrame`'s 'weave', `WEAVE_MS`), the basket growing up out of the ground.
+Its round button left of the make button (`#basket-btn`, `renderBasketBtn`, also looked at in the 250 ms block) shows once it's
+made, in camp, and only opens it; with nothing the make button takes in the satchel (or one already laid) the make button hides, and the
+basket's steps into its place by the satchel (`index.html`'s `#satchel:has(#build.hidden) #basket-btn`) rather than hanging out
+where the make button's would have been.
 Painted once (`paintBasket`, 'basket:' 0 shut, 1 open with apples, a cep and leaves heaped in it once it holds anything), drawn
-with the trees and animals (`drawBasket`), a hover saying how much is in it (`basketWord`). In camp the button, or a click on
+with the trees and animals (`drawBasket`), a hover saying how much is in it (`basketWord`). In camp its button, or a click on
 the basket, or E standing by it (`basketByE`: nearer it than to a fire E would cook at or light), walks over and opens its card just over the satchel (`#larder`, `openLarder`, `renderLarder`, `setupLarder`): 24
 slots as the satchel's; a tap moves a slot across either way, a drag puts it in the slot it's let go on (sim.js `moveBetween`,
 `moveInto`), "Put all in" empties the satchel into it (`putAway`). Whatever moves either way flies as a small painting from its slot to the one that took it (`flyMoves`: paired by what it is, at most `FLY_MOST`, `FLY_GAP` ms apart; the landing slot's own painting waits hidden, `.incoming`, and bumps as it lands). Walking off `LARDER_NEAR`, going to a fire, ✕, E, Esc or Back shut
@@ -297,7 +317,7 @@ once a number); clicked again it comes off, a click on the ground or holding to 
 waits till it's back up from the last (`ui.nextAt`, `nextGather`), and one gone or picked clean meanwhile is passed over.
 E picks the nearest thing in reach (within `NEAR_REACH`, or lying where it was dropped) as a click on it would, and pressed
 again while it's busy lines up the next nearest (`pickNear`); with nothing in reach it says so.
-Near a lit fire (`cookFire`: the nearest within `PROMPT_NEAR`, as far as the pot shows over it; or anywhere inside the camp's ring, `campFire`) E walks there and opens its cooking card as a click on the fire does, and shuts it again; the picking is for everywhere else. By a fire that's burnt down or gone cold that the satchel can see to (`relightFire`, `fireKind`), E relights it as a click does (a stick, tinder, a strike, then hold F to blow), and a little painted flame with an E bobs over it (`drawCookPrompt`, `PROMPT_RELIGHT`; a click on it is one on the fire).
+Near a lit fire (`cookFire`: the nearest within `PROMPT_NEAR`, as far as the pot shows over it; or anywhere inside the camp's ring, `campFire`) E walks there and opens its cooking card as a click on the fire does, and shuts it again; the picking is for everywhere else. The moment it takes (`lit`, the kneel watching the flame catch) is no exception (`fireFree`): the flame with its E is already painted, and E there opens the card at once — it used to fall through to the picking and say there was nothing in reach till the kneel was up. By a fire that's burnt down or gone cold that the satchel can see to (`relightFire`, `fireKind`), E relights it as a click does (a stick, tinder, a strike, then hold F to blow), and a little painted flame with an E bobs over it (`drawCookPrompt`, `PROMPT_RELIGHT`; a click on it is one on the fire).
 In reach: everything to pick within `NEAR_REACH` of the forager, the sticks, grass and bark for a fire too, has a soft honey ring
 lying round its foot (`drawNear`, `RING_ART` painted once), steady, fading out over `NEAR_FADE` at the edge, brighter on what's
 queued. That's what tells a dandelion from the other yellow flowers and dry grass from the tufts (playtesters couldn't).
