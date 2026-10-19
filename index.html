@@ -114,6 +114,18 @@
   #thermo .merc { transform-box: fill-box; transform-origin: 50% 100%; transform: scaleY(var(--t, 0.5)); transition: transform 0.6s, fill 0.6s; }
   #thermo b { color: var(--ink); font: 650 17px/1 Fraunces, Georgia, serif; font-variant-numeric: tabular-nums; }
   #thermo span { color: var(--c); font-size: 11.5px; font-weight: 800; transition: color 0.6s; }
+  /* Cold, it ices over (--ice, 0 to 1: game.js renderThermo): frost ferns creep in from its ends with a pale glaze and a
+     rim of rime, under the words, and icicles hang from its foot, longer the colder; the glass goes pale too */
+  #thermo::before, #thermo::after { content: ''; position: absolute; pointer-events: none; opacity: var(--ice, 0); transition: opacity 0.6s, transform 0.6s; }
+  #thermo::before { inset: 0; z-index: -1; border-radius: inherit;
+    box-shadow: inset 0 0 0 1px rgba(228, 244, 255, 0.85), inset 0 1.5px 0 1px rgba(255, 255, 255, 0.7), inset 0 0 9px 2px rgba(196, 226, 250, 0.75);
+    background:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 34'%3E%3Cpath fill='none' stroke='%23fff' stroke-width='0.9' stroke-linecap='round' d='M1 6L11 11M4 7.5L5 4.5M4 7.5L2.5 10M7.5 9.2L8.5 6.5M7.5 9.2L6.8 12M1 28L12 22M4.5 26L3.5 23M4.5 26L6.5 28.5M8.5 24L8 21M8.5 24L10.5 26M0 17L14 17M4 17L5.5 14.5M4 17L5.5 19.5M8 17L9.5 14.8M8 17L9.5 19.2M11.5 17L12.6 15.6M11.5 17L12.6 18.4'/%3E%3C/svg%3E") left center / auto 100% no-repeat,
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 34'%3E%3Cpath fill='none' stroke='%23fff' stroke-width='0.9' stroke-linecap='round' transform='matrix(-1 0 0 1 24 0)' d='M1 9L10 13M4 10.3L5.2 7.6M4 10.3L3 12.8M7 11.7L7.8 9M1 25L11 20.5M4.5 23.4L3.6 20.6M4.5 23.4L6.4 25.8M8 21.8L7.7 19M0 16L12 16.5M4 16.2L5.4 13.8M4 16.2L5.4 18.6M8 16.3L9.3 14.3M8 16.3L9.3 18.4'/%3E%3C/svg%3E") right center / auto 100% no-repeat,
+      linear-gradient(90deg, rgba(214, 236, 252, 0.8), rgba(232, 244, 252, 0.25) 28%, rgba(232, 244, 252, 0.12) 50%, rgba(232, 244, 252, 0.25) 72%, rgba(214, 236, 252, 0.8)); }
+  #thermo::after { left: 14px; right: 14px; top: calc(100% - 1.5px); height: 10px; transform-origin: 50% 0; transform: scaleY(var(--ice, 0));
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 10'%3E%3Cpath fill='%23e2f2fd' stroke='%2396c3e6' stroke-width='0.5' stroke-linejoin='round' d='M0 -1H30L28.6 -1L27.3 5.2L25.8 -1H21.6L20.1 9.6L18.4 -1H12.6L11.4 3.8L10 -1H5.8L4.4 6.8L3 -1Z'/%3E%3Cpath fill='none' stroke='%23fff' stroke-width='0.6' stroke-linecap='round' d='M19.6 1.5L19.9 5.5M4.2 1.5L4.3 4'/%3E%3C/svg%3E") 0 0 / 30px 10px repeat-x; }
+  #thermo .glass { stroke: color-mix(in srgb, #b98a45, #a9d2ef calc(var(--ice, 0) * 100%)); transition: stroke 0.6s; }
   /* ---- a word now and then (game.js toast): one small line top middle, under the temperature, gone in a few seconds */
   #news { position: fixed; z-index: 4; left: 50%; top: calc(var(--top) + 44px); transform: translateX(-50%); width: min(360px, calc(100% - var(--left) - var(--right)));
     display: flex; flex-direction: column; align-items: center; pointer-events: none; }

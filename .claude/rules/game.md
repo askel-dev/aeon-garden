@@ -91,7 +91,9 @@ the face or I opens the skills (`#me-card`, `openMe`, `renderMe`: level, a bar t
 at the foot on an upright phone); its brass badge is the levels added up and glints after a level up till they're looked at.
 The air's temperature (sim.js `airTemp`, the weather's, not what the forager feels) is a small parchment pill top middle (`#thermo`,
 `renderThermo`, in the 250 ms block, rewritten only when the whole degree changes; 2026-10-18): a thermometer whose mercury rises over
-`THERMO_RANGE` and goes ice blue to amber to hot red (`THERMO_INK`), the degrees and a word (`THERMO_WORDS`). The toast and the headlines
+`THERMO_RANGE` and goes ice blue to amber to hot red (`THERMO_INK`), the degrees and a word (`THERMO_WORDS`). Cold it ices over (`--ice`, 0 at `THERMO_ICE`'s first degree to 1 at its second; 2026-10-19):
+frost ferns in from its ends, a pale glaze and rime under the words, and icicles hanging from its foot that grow longer the colder (index.html
+`#thermo::before`, `::after`: CSS and small inline SVGs only). The toast and the headlines
 sit under it. On an upright phone it's just the degrees, and while playing together (the pill then reaching past the middle) it sits beside the face.
 Practice earned floats up over its head as in Project Zomboid (`xpFrame`, `drawXpFloats`, 2026-10-17): "+4 Gathering" in the
 skill's ink (`SKILL_INK`, lightened) as plain words with a faint dark edge, no pill, painted once (`xpFloatOf`), gathered till it stops
@@ -275,7 +277,9 @@ trees and animals (`drawStone`), solid in the forager's way like a rock. A click
 touch screen, out of the keyboard's way, the face hidden under it and the camera keeping the stone and its bubble below it and above the
 satchel or the keyboard: `measureSheet`, `STONE_ROOM`). Woken, it says hello. What's typed is the forager's bubble (`myChat`), its answer a bubble
 over the stone (`stoneUi.chat`, in `drawPeerNames`) with its mouth going (`STONE_MOUTH_MS`). A tap on anything in the satchel there has
-🙏 Offer by Eat (`eatAsk`, `offerSlot`): it flies into the stone, which rates it (a "★★★ 7 / 10" float and a sound by the score).
+🙏 Offer by Eat (`eatAsk`, `offerSlot`): it flies into the stone, which rates it (a "★★★ 7 / 10" pill over it and a sound by the
+score; the pill stays up as long as its bubble's words, `stoneSays`, and goes when the stone is asked or offered something
+else, `stoneDropScore`, so the rating and its number are always on screen together).
 Words from stone.js (`stoneAsk`, `stoneCtx` tells it the season, time, weather and how the forager is). Walking off `STONE_NEAR`, ✕,
 Esc or Back shut it (`stoneFrame`, `stepOut`).
 Gifts, playing together: with a friend's forager within `GIVE_REACH` (`giftFriend`), a tap on anything in the satchel offers
@@ -290,7 +294,7 @@ fading in just after the ring pops up, `TRAIL_IN`, and marching on toward it whi
 and steering, the ring glides after where it was sent (`MARK_GLIDE`) rather than jumping each `STEER_MS`. A press held still for
 `HOLD_MS`, or dragged, runs toward the pointer while it's down (sim.js `f.running`, `FORAGER_RUN`; Shift held runs too, `holdShift`), the
 way found again every `STEER_MS` (in `frame`), and on to where it's let go. WASD or the arrows (`keyWalk`) take over from a walk or a held press: the ring, the trail and the press itself are dropped, so letting go walks nowhere. Running, once up past `FORAGER_JOG` it jogs (`fg.jog`, fur.js poses 16 to 23: both feet off the ground a moment, heels
-kicking up, elbows bent and pumping, leaning in) with a stride `FORAGER_JOG_STRIDE` longer. The camera always goes with it (`leadCam`): eased after it (`CAM_FOLLOW`), a little ahead the way it walks
+kicking up, elbows bent and pumping, leaning in) with a stride `FORAGER_JOG_STRIDE` longer. On the ice it can't dig in (sim.js `onIce`, `FORAGER_ICE_*`): it gets going slowly, turns in long wide arcs, and isn't stopped where it was sent but carries on past, gliding (no stride, standing) till it comes to rest or reaches dry ground. The camera always goes with it (`leadCam`): eased after it (`CAM_FOLLOW`), a little ahead the way it walks
 (`CAM_AHEAD`, itself eased so setting off and stopping are soft), its feet a little below the middle (`CAM_FEET`). Nothing pans it:
 the wheel, a pinch, a double tap and + - zoom about the forager (`zoomOn`), and a kept meadow opens on it at its kept zoom (`resumeWorld`: `showWorld` leaves the wide shot, so it's set back there).
 Gathering: a click or a tap on something to gather (`gatherAt`: a hive, a clump of mushrooms, a wild find, a bramble, nettles, a fruit or mast

@@ -7967,7 +7967,7 @@ const api = {
   createWorld, step, clock, isNight, phaseOf, seasonOf, springPart, mood, ageDays, growth, isAdult, patchFresh,
   hedgehogComes, heronComes, dragonflyComes, kingfisherComes, skylarkComes, placeNeeds, VISIT_SEASONS, VISIT_FADE, HERON_FADE, HERON_STAB,
   DRAGON_FROM, KF_FADE, KF_UNDER, KF_BEAT, LARK_FADE, LARK_OPEN, LARK_RISE, EDGE_REACH, OPEN_MOST,
-  walkable, onIce, friendsAt, packWorld, unpackWorld, GROUND, foragerTo, foragerArrives, openingStorm, FORAGER_WALK, FORAGER_RUN, FORAGER_SNEAK, airTemp, warmthStage, WARMTH_STAGES, hurt, STUMBLE_TICKS, wakeForager, rockKind, whatThere, cherryShow, honeySpare, gather, takeFrom, dropSlot, dropAt, DROP_DAYS, moveSlot, roomFor, forEachDecorNear, SLOTS, STACK, stackOf, setStacks,
+  walkable, onIce, friendsAt, packWorld, unpackWorld, GROUND, foragerTo, foragerArrives, openingStorm, FORAGER_WALK, FORAGER_RUN, FORAGER_SNEAK, FORAGER_ICE_STOP, airTemp, warmthStage, WARMTH_STAGES, hurt, STUMBLE_TICKS, wakeForager, rockKind, whatThere, cherryShow, honeySpare, gather, takeFrom, dropSlot, dropAt, DROP_DAYS, moveSlot, roomFor, forEachDecorNear, SLOTS, STACK, stackOf, setStacks,
   KINDS, FEW, whiteness, visibility, WINTER_COAT, WILD_COAT,
   TERRAIN, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE, hollow,

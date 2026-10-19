@@ -2246,14 +2246,20 @@ function foragerFrame(now, d) {
     const sy = Math.sin(f.heading), sx = Math.cos(f.heading), v = fg.view;
     fg.view = f.sneaking ? 0 : sy > (v === 1 ? 0.45 : 0.62) ? 1 : sy < (v === 2 ? -0.45 : -0.62) ? 2 : 0;   // (sneaking, always side on)
     if (sx > 0.18) fg.flip = true; else if (sx < -0.18) fg.flip = false;
-    pose = (fg.jog ? 16 : cold ? 24 : 8) + Math.floor(fg.step % 1 * 8);   // (cold, it walks hugging itself)
-    if (f.sneaking) { emo = Fur.FORAGER_EMOTE.sneak + Math.floor(fg.step % 1 * 8); fg.sneakStill = 0; }
-    const half = Math.floor(fg.step * 2);                 // a foot comes down: in the shallows, a ring
-    if (half !== fg.lastHalf && fg.wet && ui.speed > 0) fg.rings.push({ x: d.x, y: d.y, t: now });
-    if (half !== fg.lastHalf && ui.speed > 0 && !fg.wet) footprint(d.x, d.y, f.heading, half & 1);
-    if (half !== fg.lastHalf && ui.speed > 0) hear('step', d.x, d.y, { pace: f.speed / S.FORAGER_WALK, foot: half & 1, ground: groundUnder(d.x, d.y) }, true);   // (each foot down; the quicker it goes, the quicker and crisper they come)
-    fg.lastHalf = half;
-    idleStop(fg);
+    if (gliding) {                                        // (on the ice: no stride, it stands and is carried along)
+      pose = cold ? 5 : 0;
+      fg.lastHalf = Math.floor(fg.step * 2);              // (no foot to come down: no ring, print or step)
+      idleStop(fg);
+    } else {
+      pose = (fg.jog ? 16 : cold ? 24 : 8) + Math.floor(fg.step % 1 * 8);   // (cold, it walks hugging itself)
+      if (f.sneaking) { emo = Fur.FORAGER_EMOTE.sneak + Math.floor(fg.step % 1 * 8); fg.sneakStill = 0; }
+      const half = Math.floor(fg.step * 2);               // a foot comes down: in the shallows, a ring
+      if (half !== fg.lastHalf && fg.wet && ui.speed > 0) fg.rings.push({ x: d.x, y: d.y, t: now });
+      if (half !== fg.lastHalf && ui.speed > 0 && !fg.wet) footprint(d.x, d.y, f.heading, half & 1);
+      if (half !== fg.lastHalf && ui.speed > 0) hear('step', d.x, d.y, { pace: f.speed / S.FORAGER_WALK, foot: half & 1, ground: groundUnder(d.x, d.y) }, true);   // (each foot down; the quicker it goes, the quicker and crisper they come)
+      fg.lastHalf = half;
+      idleStop(fg);
+    }
   } else {
     fg.step = Math.round(fg.step * 2) / 2;                // (it sets off again on the next foot)
     if (kneel >= 0 || fg.emote >= 0) idleStop(fg);      // (kneeling it neither does things nor turns, and up again it turns a moment after)
@@ -2784,6 +2790,7 @@ function renderVitals() {
 const THERMO_RANGE = [-15, 30];
 const THERMO_INK = [[-10, 120, 168, 222], [18, 222, 128, 58], [28, 210, 78, 48]];   // degrees and the colour there: ice, amber, hot
 const THERMO_WORDS = [[22, 'Hot'], [16, 'Warm'], [10, 'Mild'], [5, 'Chilly'], [0, 'Cold'], [-5, 'Freezing'], [-1e9, 'Bitter']];
+const THERMO_ICE = [3, -10];   // it starts to ice over at the first degree, and is iced right over by the second
 const thermo = { deg: NaN };
 function renderThermo() {
   const deg = Math.round(S.airTemp(world));
@@ -2793,6 +2800,7 @@ function renderThermo() {
   const [from, to] = deg < THERMO_INK[1][0] ? [THERMO_INK[0], THERMO_INK[1]] : [THERMO_INK[1], THERMO_INK[2]];
   const m = clamp((deg - from[0]) / (to[0] - from[0]), 0, 1), c = [1, 2, 3].map(i => Math.round(lerp(from[i], to[i], m)));
   el.style.setProperty('--c', `rgb(${c.join(', ')})`);
+  el.style.setProperty('--ice', clamp((THERMO_ICE[0] - deg) / (THERMO_ICE[0] - THERMO_ICE[1]), 0, 1).toFixed(2));   // (frost and icicles: index.html)
   el.style.setProperty('--t', (0.08 + 0.92 * clamp((deg - THERMO_RANGE[0]) / (THERMO_RANGE[1] - THERMO_RANGE[0]), 0, 1)).toFixed(3));
   el.querySelector('b').textContent = deg + '°';
   el.querySelector('span').textContent = word;
@@ -3443,9 +3451,11 @@ function drawQueue() {
   }
 }
 
-// A line by a thing (world x, y): why not, or the satchel full.
-function say(text, x, y) {
-  pickFloats.push(floatOf('', 0, x, y, performance.now(), text));
+// A line by a thing (world x, y): why not, or the satchel full. It floats up for SAY_MS unless given longer.
+function say(text, x, y, ms) {
+  const f = floatOf('', 0, x, y, performance.now(), text, ms);
+  pickFloats.push(f);
+  return f;
 }
 
 // What a thing is called, n of them: recipes.js's name, made plural for more than one (an apple, two apples; honey stays honey).
@@ -3455,7 +3465,7 @@ function itemName(id, n) {
   return n > 1 && Recipes.INGREDIENTS[id] && !MASS[id] && !name.endsWith('s') ? name + 's' : name;   // (a dish keeps its name)
 }
 // "+3 Chanterelles" with its icon on a parchment pill (or a plain line), painted once, then only drawn.
-function floatOf(id, n, x, y, t0, text) {
+function floatOf(id, n, x, y, t0, text, ms) {
   const icon = id ? 20 : 0, label = text || `+${n} ${itemName(id, n)}`;
   const c = document.createElement('canvas'), g = c.getContext('2d'), k = 2;
   g.font = LABEL_FONT;
@@ -3469,15 +3479,15 @@ function floatOf(id, n, x, y, t0, text) {
   g.font = LABEL_FONT; g.fillStyle = text ? '#6f6657' : '#3b372f'; g.textBaseline = 'middle';
   g.fillText(label, 9 + (icon ? icon + 2 : 0), h / 2 + 0.5);
   while (pickFloats.length > 4) pickFloats.shift();
-  return { img: c, w, h, x, y, t0, ms: text ? SAY_MS : FLOAT_MS, rise: text ? 10 : 34 };
+  return { img: c, w, h, x, y, t0, ms: ms || (text ? SAY_MS : FLOAT_MS), rise: text ? 10 : 34 };
 }
 function drawPickFloats(now) {
   for (let k = pickFloats.length - 1; k >= 0; k--) {
     const f = pickFloats[k], u = (now - f.t0) / f.ms;
     if (u >= 1) { pickFloats.splice(k, 1); continue; }
     if (u < 0) continue;
-    const [sx, sy] = onScreen(f.x, f.y), e = 1 - (1 - u) ** 3;
-    ctx.globalAlpha = Math.min(1, u * 8) * (u > 0.6 ? 1 - (u - 0.6) / 0.4 : 1);
+    const [sx, sy] = onScreen(f.x, f.y), e = 1 - (1 - u) ** 3, tail = Math.min(0.4, 600 / f.ms);
+    ctx.globalAlpha = Math.min(1, (now - f.t0) / 120) * (u > 1 - tail ? (1 - u) / tail : 1);
     ctx.drawImage(f.img, Math.round(sx - f.w / 2), Math.round(sy - 18 - Math.max(16, cam.zoom * 0.9) - f.rise * e), f.w, f.h);
   }
   ctx.globalAlpha = 1;
@@ -4724,7 +4734,7 @@ function basketWord(B) {
 // (goFire 'stone') and opens a slim line to talk on just over the satchel (#stone-talk, openStone); what's typed is said
 // by the forager (myChat) and the stone answers in a bubble over itself (stoneUi.chat), its mouth going as it talks. A tap
 // on anything in the satchel there offers it (eatAsk's 🙏, offerSlot): it flies into the stone, which eats it and rates it
-// out of 10 (a float over it, and a sound by the score). The words come from stone.js (a free LLM behind a Supabase Edge
+// out of 10 (a "★★★ 7 / 10" pill over it, up as long as its words, and a sound by the score). The words come from stone.js (a free LLM behind a Supabase Edge
 // Function, or hand-written lines when that can't be reached). Walking off STONE_NEAR, ✕, Esc or Back shut the line.
 const STONE_MOODS = ['asleep', 'awake', 'pleased', 'grumpy', 'disgusted', 'delighted', 'shocked'];
 const STONE_ARTS = STONE_MOODS.flatMap((_, m) => ['oldstone:' + m * 2, 'oldstone:' + (m * 2 + 1)]);   // (made once)
@@ -4736,7 +4746,7 @@ const STONE_DOZE_MS = 45000;             // left alone this long it nods off aga
 const STONE_MOUTH_MS = 130;              // its mouth opens and shuts this often while it talks
 const STONE_ROOM = 110;                  // px kept clear under its card on a touch screen for its bubble (measureSheet)
 const stonePx = () => forPx() * 1.4;
-const stoneUi = { open: false, chat: null, mood: 1, talkTo: 0, waiting: false, waitTo: 0, at: -1e9 };
+const stoneUi = { open: false, chat: null, mood: 1, talkTo: 0, waiting: false, waitTo: 0, at: -1e9, score: null };
 const stoneOpen = () => stoneUi.open;
 const STONE_RGB = [152, 147, 136], MOSS = [104, 138, 62];
 function paintOldStone(g, size, U, n) {
@@ -4895,8 +4905,16 @@ function stoneAsk({ said = '', offer = null }) {
 function stoneWaits(now) {
   stoneUi.waiting = true; stoneUi.at = now; stoneUi.waitTo = now + STONE_WAIT_MS;
   stoneUi.chat = Object.assign(chatFor('…', now), { until: now + STONE_WAIT_MS });
+  stoneDropScore();                                      // (a new thing said or offered: the last rating's float goes)
 }
-// Its answer: a bubble over it, its face, its mouth going, and for an offering the score floating up.
+// The little score pill over the stone: it stays up with its words (which last seconds after the answer), and goes when
+// the stone is asked or offered something else, so a rating is never left showing without it.
+function stoneDropScore() {
+  const f = stoneUi.score, i = f ? pickFloats.indexOf(f) : -1;
+  if (i >= 0) pickFloats.splice(i, 1);
+  stoneUi.score = null;
+}
+// Its answer: a bubble over it, its face, its mouth going, and for an offering the score over it, up as long as the words.
 function stoneSays(text, mood, score, t) {
   stoneUi.waiting = false; stoneUi.at = t;
   stoneUi.mood = Math.max(1, STONE_MOODS.indexOf(mood));
@@ -4904,12 +4922,10 @@ function stoneSays(text, mood, score, t) {
   stoneUi.talkTo = t + Math.min(6000, 600 + 38 * text.length);
   const St = world.stone, near = stoneUi.open || Math.hypot(St.x - world.forager.x, St.y - world.forager.y) < STONE_NEAR * 2;
   if (near) chime('stone', { mood, text });
+  stoneDropScore();
   if (Number.isFinite(score)) {
-    setTimeout(() => {
-      if (world.stone !== St) return;                    // (another meadow by now)
-      say(`${'★'.repeat(Math.round(score / 2)) || '☆'}  ${score} / 10`, St.x, St.y - 2.4);
-      if (near) chime(score >= 7 ? 'dish' : score <= 2 ? 'mess' : 'click');
-    }, 500);
+    stoneUi.score = say(`${'★'.repeat(Math.round(score / 2)) || '☆'}  ${score} / 10`, St.x, St.y - 2.4, Math.max(SAY_MS, stoneUi.chat.until - t));
+    if (near) chime(score >= 7 ? 'dish' : score <= 2 ? 'mess' : 'click');
   }
 }
 // A friend talking to the stone: first what they said or brought (over them, and in the chat's log), the stone thinking;
@@ -17253,7 +17269,7 @@ function frame(now) {
 // Its feet sit a little below the middle of the screen (CAM_FEET), the rest of it above them.
 const CAM_FOLLOW = 3.2, CAM_AHEAD = 0.55, CAM_LEAD_S = 0.9, CAM_FEET = 0.25;
 function leadCam(dt) {
-  const f = world.forager, p = drawnAt(f), v = f.walking ? f.speed * TICKS_PER_SECOND * ui.speed : 0;
+  const f = world.forager, p = drawnAt(f), v = f.walking || f.speed > 0 ? f.speed * TICKS_PER_SECOND * ui.speed : 0;   // (gliding on the ice too)
   const a = 1 - Math.exp(-dt / CAM_LEAD_S);
   fg.lx += (Math.cos(f.heading) * v * CAM_AHEAD - fg.lx) * a; fg.ly += (Math.sin(f.heading) * v * CAM_AHEAD - fg.ly) * a;
   const k = 1 - Math.exp(-dt * CAM_FOLLOW);

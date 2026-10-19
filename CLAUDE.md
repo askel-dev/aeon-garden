@@ -19,7 +19,9 @@ closed); none of that project's rules apply here.
 - You play a little hooded forager (sim.js `w.forager`, fur.js `paintForager`, game.js `drawForager`): a click or a tap
   on the ground walks it there round the deep water (sim.js `foragerTo`), one on an animal opens its panel, a press held
   still sprints toward the pointer (so does a drag, or Shift), and the camera always stays on it (`leadCam`): there's no looking
-  around, and a zoom (wheel, pinch, double tap) is about the forager, from `HOME_TILES` across out to `FAR_TILES`. A click
+  around, and a zoom (wheel, pinch, double tap) is about the forager, from `HOME_TILES` across out to `FAR_TILES`. On the winter
+  ice it glides (sim.js `onIce`, `FORAGER_ICE_*`): a slow start, wide turns, and it carries on past where it was sent till it
+  slows to a stop. A click
   or a tap on something the meadow gives (mushrooms, greens, a bramble, a fruit or mast tree, a hive) walks it there and
   picks it into the satchel, a row of slots at the bottom in the middle (sim.js `gather`, `w.forager.bag`; game.js
   `goGather`, `renderSatchel`). Every season has little wild finds to pick (sim.js `w.finds`), what has something to give
