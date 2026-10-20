@@ -5824,60 +5824,237 @@ const seatLift = (Q, x, y, z, px) => (((y - Q.y) * Math.cos(Q.turn) - (x - Q.x) 
 // with food on it, RACK_ARTS) for the meadow and the make strip's tile, like the basket's two looks. It's a store, so the food
 // look is chosen once it holds anything (drawRack).
 const RACK_BUILD = 'rack';                // recipes.js BUILDS: the drying rack the make strip offers once there's a camp
-const RACK_SIZE = 1.4;                    // its painting's box, about the seat log's width (2 units across it)
+const RACK_SIZE = 1.6;                    // its painting's box: a little under two tiles across, bar end to bar end
 const RACK_FOOT = 0.6;                    // where the ground under its middle is in its painting (of its half-size, down from the middle)
 const RACK_ARTS = ['rack:0', 'rack:1'];   // (made once: a frame builds no names)
-const RACK_WOOD = [164, 120, 70], RACK_GRASS = [200, 172, 98], RACK_BARK = [228, 222, 200], RACK_INK = [96, 62, 32];
+const RACK_WOOD = [150, 108, 66], RACK_GRASS = [212, 184, 112], RACK_BARK = [226, 216, 192], RACK_INK = [74, 50, 30];
 const rackPx = z => (8 + z) * RACK_SIZE;
 const myRack = () => (world && world.camp && world.camp.rack) || null;
 const rackAny = K => { for (let k = 0; k < K.bag.length; k++) if (K.bag[k]) return true; return false; };
+// The camp builds are drawn three-quarter, as the seat log is: what lies further back goes up and to the right.
+const CAMP_KX = 0.35, CAMP_KY = 0.5;
+const campAt3 = (x, d, h) => [x + d * CAMP_KX, -d * CAMP_KY - h];   // along it, back, up → its box
+// A cut pole from one end to the other, w thick: inked round, round from the light along its upper left and the shade along
+// its lower right, a few grain lines and a knot, and its pale cut end at the first end if cut. Painted once.
+function campPole(g, x0, y0, x1, y1, w, rgb, seed, cut) {
+  const dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy) || 1;
+  let nx = -dy / len, ny = dx / len;
+  if (nx + ny > 0) { nx = -nx; ny = -ny; }                 // (n: toward the light, up and to the left)
+  const line = (o, wd, colour) => strokeIn(g, colour, wd, () => { g.moveTo(x0 + nx * o, y0 + ny * o); g.lineTo(x1 + nx * o, y1 + ny * o); });
+  line(0, w + 0.024, rockRGB(RACK_INK, 0.8));
+  line(0, w, rockRGB(tone(rgb, 0.92)));
+  line(-w * 0.26, w * 0.42, rockRGB(tone(rgb, 0.66)));
+  line(w * 0.24, w * 0.26, rockRGB(tone(rgb, 1.22, 14), 0.9));
+  strokeIn(g, rockRGB(tone(rgb, 0.5), 0.55), 0.008, () => {
+    for (let i = 0; i < Math.max(2, len * 5 | 0); i++) {
+      const t = (i + 0.3 + 0.4 * hash2(seed, i, 761)) / Math.max(2, len * 5 | 0), o = (hash2(i, seed, 763) - 0.5) * w * 0.6, l = 0.03 + 0.05 * hash2(seed, i, 767);
+      const x = x0 + dx * t + nx * o, y = y0 + dy * t + ny * o; g.moveTo(x, y); g.lineTo(x + dx / len * l, y + dy / len * l);
+    }
+  });
+  const kt = 0.3 + 0.4 * hash2(seed, 9, 769);
+  fillIn(g, rockRGB(tone(rgb, 0.45), 0.8), () => ovalAt(g, x0 + dx * kt - nx * w * 0.1, y0 + dy * kt - ny * w * 0.1, w * 0.22, w * 0.15, Math.atan2(dy, dx)));
+  if (cut) {
+    fillIn(g, rockRGB(RACK_INK, 0.8), () => ovalAt(g, x0, y0, w * 0.62, w * 0.5, Math.atan2(dy, dx)));
+    fillIn(g, rockRGB(tone([226, 196, 146], 1)), () => ovalAt(g, x0, y0, w * 0.48, w * 0.36, Math.atan2(dy, dx)));
+    fillIn(g, rockRGB(tone([226, 196, 146], 0.78)), () => ovalAt(g, x0, y0, w * 0.15, w * 0.11, Math.atan2(dy, dx)));
+  }
+}
+// A forked stick pushed into the ground at x, y (in its box), standing h tall to its crotch, the fork's two prongs above it.
+function campFork(g, x, y, h, w, rgb, seed) {
+  const lean = (hash2(seed, 1, 771) - 0.5) * 0.04, tx = x + lean, ty = y - h;
+  campPole(g, x, y, tx, ty, w, rgb, seed, false);
+  campPole(g, tx - 0.06, ty - 0.1, tx, ty + 0.012, w * 0.66, rgb, seed + 1, true);
+  campPole(g, tx + 0.055, ty - 0.085, tx, ty + 0.012, w * 0.6, rgb, seed + 2, true);
+}
+// A few turns of cord round where two poles cross, at x, y.
+function campLash(g, x, y, r, a = 0.6) {
+  const c = Math.cos(a), s = Math.sin(a);
+  const turns = () => { for (let i = -1; i <= 1; i++) { const o = i * r * 0.62; g.moveTo(x - c * r + s * o, y - s * r - c * o * 0.5); g.lineTo(x + c * r + s * o, y + s * r - c * o * 0.5); } };
+  strokeIn(g, rockRGB(RACK_INK, 0.85), 0.022, turns);
+  strokeIn(g, rockRGB([190, 152, 98]), 0.011, turns);
+}
+// Where a stick or a stone meets the earth: a dark press, a few clods turned up round it.
+function campFoot(g, x, y, r, seed) {
+  softSpot(g, x + r * 0.2, y + 0.01, r * 1.9, r * 0.6, '30, 22, 12', 0.42);
+  for (let i = 0; i < 3; i++) {
+    const a = hash2(seed, i, 773) * TAU, d = r * (0.6 + 0.6 * hash2(i, seed, 777)), cx = x + Math.cos(a) * d, cy = y + 0.008 + Math.sin(a) * d * 0.3;
+    softIn(g, tone([110, 86, 58], 0.8 + 0.3 * hash2(seed, i, 779)), cy - 0.014, cy + 0.012, () => ovalAt(g, cx, cy, 0.026, 0.013, a), 1.15, 0.7);
+  }
+}
+// A grey stone sitting on the ground at x, y, r across: its shadow, its round, the light on its top.
+function campStone(g, x, y, r, seed) {
+  const sy = r * 0.6, rgb = tone([150, 146, 136], 0.88 + 0.24 * hash2(seed, 0, 781));
+  fillIn(g, 'rgba(30, 24, 16, 0.38)', () => ovalAt(g, x + r * 0.12, y + sy * 0.35, r * 1.05, sy * 0.55));
+  fillIn(g, rockRGB(tone(rgb, 0.45), 0.85), () => ovalAt(g, x, y - sy * 0.45, r + 0.012, sy + 0.012, (hash2(seed, 1, 783) - 0.5) * 0.4));
+  softIn(g, rgb, y - sy * 1.45, y + sy * 0.55, () => ovalAt(g, x, y - sy * 0.45, r, sy, (hash2(seed, 1, 783) - 0.5) * 0.4), 1.3, 0.6);
+  furGlow(g, [255, 252, 240], 0.45, x - r * 0.3, y - sy * 0.95, r * 0.42, sy * 0.3, -0.3);
+  fillIn(g, 'rgba(118, 140, 82, 0.6)', () => ovalAt(g, x + r * 0.35, y - sy * 0.1, r * 0.25, sy * 0.18, 0.3));   // (a speck of moss)
+}
+// A sheet of birch bark between four corners (its band running from the first to the second): creamy white shading to warm
+// grey, its dark lenticels in short dashes along the band, a pale peeling strip or two, its thickness showing under its lower
+// edge (thick), and its tan inside curling up along that edge.
+function birchSheet(g, p, seed, curl = true, bow = 0, thick = 0) {
+  const [ax, ay, bx, by, cx, cy, dx, dy] = p;
+  const at = (u, v) => [lerp(lerp(ax, bx, u), lerp(dx, cx, u), v), lerp(lerp(ay, by, u), lerp(dy, cy, u), v) - bow * 4 * u * (1 - u)];
+  const edge = v => { for (let i = 0; i <= 8; i++) g.lineTo(...at(i / 8, v)); }, back = v => { for (let i = 8; i >= 0; i--) g.lineTo(...at(i / 8, v)); };
+  const path = () => { g.moveTo(ax, ay); edge(0); back(1); g.closePath(); };
+  if (thick) {                                                                // its edge, seen under it: the bark's thickness, darker
+    g.save(); g.translate(0, thick);
+    strokeIn(g, rockRGB(RACK_INK, 0.9), 0.026, path);
+    fillIn(g, rockRGB([128, 100, 74]), path);
+    g.restore();
+  }
+  strokeIn(g, rockRGB(RACK_INK, 0.9), 0.026, path);
+  softIn(g, RACK_BARK, Math.min(ay, by) - bow, Math.max(cy, dy), path, 1.03, 0.74);
+  g.save(); g.beginPath(); path(); g.clip();
+  for (const v of [0.28 + 0.12 * hash2(seed, 2, 787), 0.68]) {               // pale peeling bands, a grey line under each
+    strokeIn(g, 'rgba(250, 244, 228, 0.85)', 0.02, () => { g.moveTo(...at(0, v)); edge(v); });
+    strokeIn(g, rockRGB(tone(RACK_BARK, 0.74), 0.55), 0.006, () => { g.moveTo(...at(0, v + 0.09)); edge(v + 0.09); });
+  }
+  strokeIn(g, 'rgba(62, 52, 46, 0.62)', 0.008, () => {                       // its lenticels, short dark dashes along the band
+    const len = Math.hypot(bx - ax, by - ay), many = clamp(Math.round(len * 16), 3, 16);
+    for (let i = 0; i < many; i++) {
+      const u = hash2(seed, i, 789) * 0.92, v = 0.08 + 0.84 * hash2(i, seed, 791), l = (0.03 + 0.05 * hash2(seed, i + 20, 793)) / len;
+      g.moveTo(...at(u, v)); g.lineTo(...at(u + l, v));
+    }
+  });
+  { const [x, y] = at(0.25 + 0.5 * hash2(seed, 1, 797), 0.5); fillIn(g, 'rgba(66, 56, 50, 0.6)', () => ovalAt(g, x, y, 0.022, 0.008, Math.atan2(by - ay, bx - ax))); }   // a black scar
+  furGlow(g, [118, 104, 86], 0.34, (cx + dx) / 2, (cy + dy) / 2, Math.hypot(cx - dx, cy - dy) * 0.6, 0.07, Math.atan2(cy - dy, cx - dx));   // grey shade along its lower edge
+  furGlow(g, [150, 134, 112], 0.28, ax, ay, 0.12, 0.08);                    // and round its ends, as it curves away
+  furGlow(g, [150, 134, 112], 0.28, bx, by, 0.12, 0.08);
+  g.restore();
+  if (curl) {                                                                 // its inside, curling up along the lower edge
+    const run = () => { g.moveTo(...at(0.05, 1)); for (let i = 1; i <= 9; i++) g.lineTo(...at(0.05 + 0.9 * i / 9, 1)); };
+    strokeIn(g, rockRGB(RACK_INK, 0.6), 0.036, run);
+    strokeIn(g, rockRGB([204, 138, 86]), 0.022, run);
+    strokeIn(g, rockRGB([238, 190, 134], 0.9), 0.008, run);
+  }
+}
 function paintRack(g, size, U, n) {
   g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
   g.lineCap = g.lineJoin = 'round';
   g.translate(0, RACK_FOOT);
-  const wood = RACK_WOOD, grass = RACK_GRASS, bark = RACK_BARK;
-  const X = [-0.82, -0.28, 0.28, 0.82], H = [0.98, 0.86, 0.86, 0.98];   // its four posts, and how tall they stand
-  furGlow(g, [40, 30, 16], 0.42, 0.02, 0.03, 0.95, 0.2, 0, 0.35);      // its shadow on the ground
-  // The bark roof at the back: a strip slanting over the top bar, a dark fleck or two on it.
-  const roof = () => { g.moveTo(-0.86, -1.06); g.lineTo(0.88, -1.12); g.lineTo(0.86, -0.94); g.lineTo(-0.84, -0.9); g.closePath(); };
-  softIn(g, bark, -1.12, -0.9, roof, 1.04, 0.78);
-  strokeIn(g, rockRGB(tone(bark, 0.82), 0.7), 0.016, () => { for (const x of [-0.6, -0.1, 0.42]) { g.moveTo(x, -1.08); g.lineTo(x + 0.14, -0.94); } });
-  // The posts, their feet in the earth and a fork at the top of each for the bars.
-  for (let i = 0; i < 4; i++) {
-    const x = X[i], top = -H[i], lean = x * 0.04;
-    strokeIn(g, rockRGB(tone(wood, 0.7)), 0.085, () => { g.moveTo(x - lean, 0); g.lineTo(x, top); });
-    strokeIn(g, rockRGB(tone(wood, 1.06, 8)), 0.034, () => { g.moveTo(x - lean - 0.02, -0.02); g.lineTo(x - 0.012, top + 0.03); });
-    strokeIn(g, rockRGB(tone(wood, 0.72)), 0.05, () => { g.moveTo(x - 0.06, top + 0.02); g.lineTo(x, top + 0.12); g.lineTo(x + 0.06, top + 0.02); });
-  }
-  // The two crossbars, the front one lower, their ends beyond the posts.
-  for (const [y, x0, x1] of [[-0.56, -0.9, 0.9], [-0.86, -0.86, 0.86]]) {
-    strokeIn(g, rockRGB(tone(wood, 0.66)), 0.09, () => { g.moveTo(x0, y + 0.02); g.lineTo(x1, y - 0.01); });
-    strokeIn(g, rockRGB(tone(wood, 1.08, 10)), 0.03, () => { g.moveTo(x0 + 0.03, y - 0.02); g.lineTo(x1 - 0.03, y - 0.05); });
-  }
-  // A mat of dry grass hanging from the top bar, lashed to both: stalks of a few lengths, and a cord round them.
-  g.save(); g.beginPath(); g.rect(-0.86, -0.88, 1.72, 0.36); g.clip();
-  for (let i = 0; i < 26; i++) {
-    const x = -0.84 + i * 0.067 + (hash2(i, n, 733) - 0.5) * 0.04, h = 0.16 + hash2(n, i, 739) * 0.18, a = (hash2(i, 3, 741) - 0.5) * 0.5;
-    strokeIn(g, rockRGB(tone(grass, 0.72 + hash2(i, 5, 743) * 0.5)), 0.02, () => { g.moveTo(x, -0.87); g.quadraticCurveTo(x + a * 0.1, -0.87 + h * 0.6, x + a * 0.2, -0.87 + h); });
-  }
-  g.restore();
-  for (const x of [-0.52, 0.5]) strokeIn(g, rockRGB(tone(RACK_INK, 0.9), 0.8), 0.018, () => { g.moveTo(x, -0.9); g.lineTo(x + 0.02, -0.53); });
-  if (n === 1) {                                            // food laid on the slats, and a string of berries from the top bar
-    const cap = (x, y, r) => {
-      fillIn(g, rockRGB(tone([150, 98, 54], 0.85)), () => ovalAt(g, x, y, r, r * 0.62));
-      fillIn(g, rockRGB([238, 220, 180]), () => ovalAt(g, x, y + r * 0.4, r * 0.24, r * 0.2));
-    };
-    cap(-0.62, -0.64, 0.11); cap(-0.36, -0.7, 0.08);
-    for (const [x, y, c] of [[0.02, -0.62, [206, 78, 54]], [0.22, -0.7, [226, 140, 58]], [0.4, -0.63, [222, 196, 120]]]) {
-      fillIn(g, rockRGB(tone(c, 0.82)), () => discAt(g, x, y, 0.1));
-      fillIn(g, rockRGB(tone(c, 1.16, 12)), () => discAt(g, x - 0.01, y - 0.01, 0.07));
+  const P = campAt3, wood = RACK_WOOD, grass = RACK_GRASS, food = n === 1;
+  const XL = -0.72, XR = 0.72, DF = -0.26, DB = 0.26, H = 0.46, HB = 0.92;   // its posts' feet, its bed's height, and the back posts' (the roof's)
+  // Its shadow: soft under it all, and the mat's darker on the ground a little to the right, out of the light.
+  furGlow(g, [40, 30, 16], 0.34, 0.06, -0.01, 1.02, 0.26, 0, 0.3);
+  fillIn(g, 'rgba(36, 26, 14, 0.1)', () => { const a = P(XL + 0.08, DF, 0), b = P(XR + 0.14, DF, 0), c = P(XR + 0.14, DB, 0), d = P(XL + 0.08, DB, 0); g.moveTo(...a); g.lineTo(...b); g.lineTo(...c); g.lineTo(...d); g.closePath(); });
+  for (const [x, d, i] of [[XL, DB, 0], [XR, DB, 1], [XL, DF, 2], [XR, DF, 3]]) { const [fx, fy] = P(x, d, 0); campFoot(g, fx, fy, 0.05, 40 + i); }
+  // The back posts, tall to hold the roof, and the bar across them the mat's back rests on.
+  for (const [x, i] of [[XL, 0], [XR, 1]]) { const [fx, fy] = P(x, DB, 0); campFork(g, fx, fy, HB, 0.05, wood, 10 + i); }
+  { const [x0, y0] = P(XL - 0.13, DB, H), [x1, y1] = P(XR + 0.12, DB, H); campPole(g, x0, y0, x1, y1, 0.046, tone(wood, 0.92), 20, true); }
+  // The bark roof: a bar across the back posts' forks, and two strips of birch bark laid from it forward and down, overlapping.
+  { const [x0, y0] = P(XL - 0.12, DB, HB), [x1, y1] = P(XR + 0.14, DB, HB); campPole(g, x0, y0, x1, y1, 0.044, wood, 21, true); }
+  const sheet = (xa, xb, s) => birchSheet(g, [...P(xa, DB + 0.04, HB + 0.04), ...P(xb, DB + 0.04, HB + 0.04), ...P(xb + 0.02, DB - 0.12, HB - 0.1), ...P(xa - 0.02, DB - 0.12, HB - 0.1)], s, true, 0.035, 0.03);
+  sheet(-0.86, 0.08, 31); sheet(-0.06, 0.88, 32);
+  for (const x of [XL, XR]) { const [lx, ly] = P(x, DB, HB); campLash(g, lx, ly - 0.01, 0.045); }
+  // Hung from the roof's front edge: with food on it, a string of rosehips and a bunch of herbs drying; empty, a bare loop of cord.
+  const hang = (x, drop) => { const [hx, hy] = P(x, DB - 0.12, HB - 0.1); return [hx, hy, hy + drop]; };
+  if (food) {
+    const [x0, y0] = P(-0.5, DB - 0.12, HB - 0.1), [x1, y1] = P(0.0, DB - 0.12, HB - 0.1), mx = (x0 + x1) / 2, my = Math.max(y0, y1) + 0.2;
+    strokeIn(g, rockRGB(RACK_INK, 0.9), 0.012, () => { g.moveTo(x0, y0); g.quadraticCurveTo(mx, my, x1, y1); });
+    for (let i = 1; i < 10; i++) {                         // the rosehips threaded along it
+      const t = i / 10, u = 1 - t, x = u * u * x0 + 2 * u * t * mx + t * t * x1, y = u * u * y0 + 2 * u * t * my + t * t * y1 + 0.012;
+      const rgb = i % 3 === 1 ? [168, 36, 50] : [214, 66, 42];
+      fillIn(g, rockRGB(tone(rgb, 0.5)), () => ovalAt(g, x, y, 0.036, 0.042));
+      softIn(g, rgb, y - 0.035, y + 0.035, () => ovalAt(g, x, y, 0.03, 0.036), 1.3, 0.7);
+      fillIn(g, 'rgba(255, 236, 220, 0.8)', () => discAt(g, x - 0.01, y - 0.014, 0.008));
     }
-    strokeIn(g, rockRGB(tone(RACK_INK, 1.1), 0.8), 0.01, () => { g.moveTo(0.62, -0.86); g.quadraticCurveTo(0.65, -0.72, 0.62, -0.58); });
-    for (const [x, y] of [[0.6, -0.7], [0.66, -0.74], [0.63, -0.62], [0.58, -0.64]]) fillIn(g, rockRGB([142, 44, 66]), () => discAt(g, x, y, 0.033));
+    const [bx, by, bt] = hang(0.42, 0.24);                 // the herbs, hung head down by their stalks
+    strokeIn(g, rockRGB(RACK_INK, 0.9), 0.012, () => { g.moveTo(bx, by); g.lineTo(bx + 0.005, by + 0.05); });
+    strokeIn(g, rockRGB([92, 120, 52]), 0.014, () => { for (let i = -2; i <= 2; i++) { g.moveTo(bx + i * 0.008, by + 0.05); g.quadraticCurveTo(bx + i * 0.03, by + 0.14, bx + i * 0.045, bt); } });
+    for (let i = 0; i < 9; i++) {
+      const t = 0.3 + 0.7 * hash2(i, 1, 801), s = (hash2(i, 2, 803) - 0.5) * 2, x = bx + s * 0.05 * t, y = by + 0.05 + (bt - by - 0.05) * t;
+      fillIn(g, rockRGB(tone([110, 146, 64], 0.75 + 0.4 * hash2(i, 3, 807))), () => ovalAt(g, x + s * 0.02, y, 0.03, 0.013, 1.2 + s * 0.6));
+    }
+    strokeIn(g, rockRGB([200, 162, 104]), 0.016, () => { g.moveTo(bx - 0.03, by + 0.05); g.lineTo(bx + 0.035, by + 0.055); });
+  } else {
+    const [bx, by] = hang(-0.24, 0);
+    strokeIn(g, rockRGB(RACK_INK, 0.85), 0.012, () => { g.moveTo(bx - 0.04, by); g.quadraticCurveTo(bx - 0.03, by + 0.14, bx + 0.02, by + 0.1); g.quadraticCurveTo(bx + 0.05, by + 0.06, bx + 0.04, by); });
   }
-  // A few chips of bark on the ground, and a tuft or two at its feet.
-  fillIn(g, rockRGB(tone(RACK_INK, 1.2), 0.5), () => { ovalAt(g, -0.55, 0.02, 0.05, 0.018); ovalAt(g, 0.4, 0.03, 0.04, 0.015); });
-  strokeIn(g, rockRGB([96, 146, 60]), 0.014, () => { for (const [x, a, h] of [[-0.98, -0.4, 0.1], [-0.92, 0.1, 0.13], [0.95, 0.3, 0.11]]) { g.moveTo(x, 0); g.lineTo(x + Math.sin(a) * h, -Math.cos(a) * h); } });
+  // The front bar the mat's front edge lies on.
+  { const [x0, y0] = P(XL - 0.14, DF, H), [x1, y1] = P(XR + 0.13, DF, H); campPole(g, x0, y0, x1, y1, 0.05, wood, 22, true); }
+  // Slats laid from bar to bar under the mat, their ends showing past the front bar.
+  for (let i = 0; i < 6; i++) {
+    const x = lerp(XL + 0.1, XR - 0.1, i / 5) + (hash2(i, 4, 809) - 0.5) * 0.04, [x0, y0] = P(x, DF - 0.03, H + 0.035), [x1, y1] = P(x + 0.02, DB + 0.04, H + 0.035);
+    campPole(g, x0, y0, x1, y1, 0.026, tone(wood, 1.1), 50 + i, false);
+  }
+  // The mat of dry grass over them: its stalks running front to back, a fringe of their ends over the front, two cords across.
+  const M = [...P(XL - 0.04, DF + 0.02, H + 0.05), ...P(XR + 0.04, DF + 0.02, H + 0.05), ...P(XR + 0.04, DB - 0.02, H + 0.05), ...P(XL - 0.04, DB - 0.02, H + 0.05)];
+  const mat = () => { g.moveTo(M[0], M[1]); g.lineTo(M[2], M[3]); g.lineTo(M[4], M[5]); g.lineTo(M[6], M[7]); g.closePath(); };
+  strokeIn(g, rockRGB(tone(grass, 0.45), 0.9), 0.03, mat);
+  softIn(g, grass, M[5], M[1], mat, 1.08, 0.8);
+  g.save(); g.beginPath(); mat(); g.clip();
+  for (let i = 0; i < 64; i++) {
+    const x = lerp(XL - 0.06, XR + 0.06, (i + hash2(i, n + 7, 811)) / 64), w0 = (hash2(i, 5, 813) - 0.5) * 0.06;
+    const [x0, y0] = P(x + w0, DF - 0.02, H + 0.05), [x1, y1] = P(x - w0 + (hash2(i, 6, 817) - 0.5) * 0.05, DB + 0.02, H + 0.05);
+    strokeIn(g, rockRGB(tone(grass, 0.7 + 0.55 * hash2(i, 7, 819), hash2(i, 8, 821) > 0.8 ? 16 : 0), 0.9), 0.012 + 0.008 * hash2(i, 9, 823), () => { g.moveTo(x0, y0); g.quadraticCurveTo((x0 + x1) / 2 + w0 * 0.3, (y0 + y1) / 2, x1, y1); });
+  }
+  furGlow(g, tone(grass, 0.45), 0.4, M[4] - 0.1, (M[5] + M[7]) / 2 + 0.02, 0.9, 0.05);   // (shaded under the roof at the back)
+  g.restore();
+  for (const d of [DF + 0.08, DB - 0.09]) {                // the cords lashing it down
+    const [x0, y0] = P(XL - 0.02, d, H + 0.055), [x1, y1] = P(XR + 0.02, d, H + 0.055);
+    strokeIn(g, rockRGB(RACK_INK, 0.75), 0.022, () => { g.moveTo(x0, y0); g.lineTo(x1, y1); });
+    strokeIn(g, rockRGB([170, 130, 80]), 0.011, () => { g.moveTo(x0, y0); g.lineTo(x1, y1); });
+  }
+  strokeIn(g, rockRGB(tone(grass, 0.62), 0.95), 0.012, () => {   // the fringe of stalk ends over the front bar, and a few loose
+    for (let i = 0; i < 30; i++) {
+      const [x, y] = P(lerp(XL - 0.04, XR + 0.04, (i + 0.5) / 30) + (hash2(i, 10, 827) - 0.5) * 0.03, DF + 0.02, H + 0.05), l = 0.04 + 0.06 * hash2(i, 11, 829), a = (hash2(i, 12, 831) - 0.5) * 0.5;
+      g.moveTo(x, y - 0.01); g.lineTo(x + Math.sin(a) * l, y + Math.cos(a) * l);
+    }
+  });
+  strokeIn(g, rockRGB(tone(grass, 1.12, 10), 0.95), 0.01, () => {
+    for (let i = 0; i < 18; i++) {
+      const [x, y] = P(lerp(XL, XR, (i + 0.3) / 18), DF + 0.02, H + 0.05), l = 0.03 + 0.05 * hash2(i, 13, 833), a = (hash2(i, 14, 837) - 0.5) * 0.6;
+      g.moveTo(x, y - 0.012); g.lineTo(x + Math.sin(a) * l, y + Math.cos(a) * l);
+    }
+  });
+  // Food laid on it to dry: cep caps, apple rings, and slices of root, each with its soft shadow on the mat, laid back to front
+  // so the nearer ones lap over.
+  if (food) {
+    const lay = (x, d) => P(x, d, H + 0.05);
+    const shade = (cx, cy, rx, ry) => furGlow(g, [70, 46, 20], 0.5, cx + rx * 0.22, cy + ry * 0.55, rx * 1.15, ry * 0.9, 0, 0.35);
+    const ring = (cx, cy, k, s) => {                         // an apple ring, curling as it dries: red skin, pale flesh, browning in, the hole
+      const rx = 0.078 * k, ry = 0.045 * k;
+      shade(cx, cy, rx, ry);
+      fillIn(g, rockRGB([112, 30, 26]), () => ovalAt(g, cx, cy + 0.006 * k, rx + 0.006, ry + 0.006, s));   // (its rim's thickness)
+      softIn(g, [186, 48, 38], cy - ry, cy + ry, () => ovalAt(g, cx, cy, rx, ry, s), 1.3, 0.75);
+      softIn(g, [244, 228, 184], cy - ry, cy + ry, () => ovalAt(g, cx, cy - 0.003, rx * 0.82, ry * 0.8, s), 1.08, 0.82);
+      strokeIn(g, 'rgba(196, 150, 90, 0.55)', 0.008 * k, () => ovalAt(g, cx, cy - 0.003, rx * 0.5, ry * 0.48, s));   // (browning round the core)
+      fillIn(g, rockRGB(tone(grass, 0.62)), () => ovalAt(g, cx, cy - 0.002, rx * 0.26, ry * 0.26, s));
+      fillIn(g, rockRGB([96, 58, 30]), () => { ovalAt(g, cx - rx * 0.4, cy - 0.004, 0.008 * k, 0.005 * k, s); ovalAt(g, cx + rx * 0.4, cy, 0.008 * k, 0.005 * k, s); });
+      furGlow(g, [255, 252, 240], 0.6, cx - rx * 0.4, cy - ry * 0.45, rx * 0.3, ry * 0.18, -0.2);
+    };
+    const cap = (cx, cy, r, s) => {                          // a cep's cap, domed: its pale rim of pores under, the light on its crown
+      const ry = r * 0.62;
+      shade(cx, cy, r, ry);
+      fillIn(g, rockRGB([214, 196, 128]), () => ovalAt(g, cx + 0.004, cy + ry * 0.3, r * 0.96, ry * 0.8, s));   // (the pores, peeping out under)
+      fillIn(g, rockRGB(tone([120, 74, 38], 0.62)), () => ovalAt(g, cx, cy, r + 0.008, ry + 0.008, s));
+      softIn(g, [154, 98, 52], cy - ry, cy + ry, () => ovalAt(g, cx, cy, r, ry, s), 1.3, 0.66);
+      furGlow(g, [255, 238, 210], 0.55, cx - r * 0.3, cy - ry * 0.4, r * 0.42, ry * 0.32, -0.3);
+      fillIn(g, 'rgba(255, 246, 228, 0.85)', () => ovalAt(g, cx - r * 0.38, cy - ry * 0.45, r * 0.12, ry * 0.08, -0.3));
+    };
+    const root = (cx, cy, k, s) => {                         // a slice of root: its rind round the side, the cut face with its rings and pale heart
+      const rx = 0.05 * k, ry = 0.03 * k;
+      shade(cx, cy, rx, ry);
+      fillIn(g, rockRGB([118, 72, 36]), () => ovalAt(g, cx, cy + 0.008 * k, rx, ry, s));
+      softIn(g, [226, 156, 84], cy - ry, cy + ry, () => ovalAt(g, cx, cy, rx * 0.94, ry * 0.92, s), 1.2, 0.8);
+      strokeIn(g, 'rgba(176, 102, 46, 0.7)', 0.006 * k, () => ovalAt(g, cx, cy, rx * 0.6, ry * 0.58, s));
+      fillIn(g, rockRGB([248, 214, 156]), () => ovalAt(g, cx, cy, rx * 0.3, ry * 0.3, s));
+      furGlow(g, [255, 248, 230], 0.5, cx - rx * 0.4, cy - ry * 0.4, rx * 0.3, ry * 0.2);
+    };
+    const FOOD = [[cap, -0.6, 0.1, 0.105, 0.1], [cap, -0.4, 0.0, 0.08, -0.2], [cap, -0.54, -0.14, 0.07, 0.3], [cap, -0.27, -0.17, 0.055, 0],
+      [ring, -0.12, 0.1, 1, 0], [ring, -0.02, -0.02, 0.9, 0.12], [ring, 0.12, 0.12, 1.05, -0.1], [ring, -0.14, -0.15, 0.85, 0.05], [ring, 0.14, -0.16, 0.95, -0.08],
+      [root, 0.36, 0.06, 1.1, 0.2], [root, 0.44, -0.06, 0.9, -0.2], [root, 0.58, 0.12, 1, 0.1], [root, 0.38, -0.18, 0.8, 0.3], [root, 0.62, -0.08, 1.15, -0.1], [root, 0.52, 0.02, 0.75, 0.4]];
+    FOOD.sort((p, q) => q[2] - p[2]);
+    for (const [paint, x, d, k, a] of FOOD) { const [cx, cy] = lay(x, d); paint(cx, cy, k, a); }
+  }
+  // The front posts, their forks holding the front bar, a lashing on each.
+  for (const [x, i] of [[XL, 0], [XR, 1]]) { const [fx, fy] = P(x, DF, 0); campFork(g, fx, fy, H, 0.054, wood, 12 + i); const [lx, ly] = P(x, DF, H); campLash(g, lx, ly, 0.045); }
+  // A few chips of bark and a stalk or two dropped on the ground, a tuft at its feet.
+  for (const [x, d, a] of [[-0.4, -0.42, 0.4], [0.3, -0.4, -0.6], [0.92, 0.0, 0.2]]) { const [cx, cy] = P(x, d, 0); fillIn(g, rockRGB(tone(RACK_BARK, 0.9)), () => ovalAt(g, cx, cy, 0.04, 0.016, a)); fillIn(g, rockRGB([196, 130, 80], 0.9), () => ovalAt(g, cx + 0.004, cy + 0.008, 0.032, 0.007, a)); }
+  strokeIn(g, rockRGB(tone(grass, 0.9)), 0.012, () => { for (const [x, d, a] of [[-0.1, -0.4, 0.3], [0.1, -0.44, -1.2], [-0.86, -0.3, 1.0]]) { const [cx, cy] = P(x, d, 0); g.moveTo(cx - Math.cos(a) * 0.07, cy - Math.sin(a) * 0.02); g.lineTo(cx + Math.cos(a) * 0.07, cy + Math.sin(a) * 0.02); } });
+  strokeIn(g, rockRGB([96, 146, 60]), 0.014, () => { for (const [x, d, a, h] of [[XL - 0.1, DF, -0.4, 0.1], [XL - 0.06, DF - 0.02, 0.1, 0.13], [XR + 0.08, DF, 0.3, 0.11], [XR + 0.12, DF + 0.02, 0.7, 0.08]]) { const [cx, cy] = P(x, d, 0); g.moveTo(cx, cy); g.lineTo(cx + Math.sin(a) * h, cy - Math.cos(a) * h); } });
 }
 function drawRack(K, z) {
   const px = rackPx(z), sx = (K.x - cam.x) * z + vw / 2, sy = (K.y - cam.y) * z + vh / 2;
@@ -5895,48 +6072,131 @@ function rackAt(sx, sy) {
 }
 // The camp's lean-to (sim.js w.camp.lean): a sloping roof of poles, thatch and birch-bark shingles, a bed of dry grass and
 // leaves under it, a couple of stones at the feet of the poles. Painted once (LEAN_ART), its mouth opening left; drawLean
-// mirrors it when it stands to the right of the fire, so it always opens toward it. No store and nothing to click: standing
+// mirrors it when it stands to the left of the fire, so it always opens toward it. No store and nothing to click: standing
 // under it is the whole of it (sim.js underLean, bodyTick).
 const LEAN_BUILD = 'lean';                // recipes.js BUILDS: the lean-to the make strip offers once there's a camp
-const LEAN_SIZE = 1.7;                    // its painting's box, a little wider than the rack and the seat log
+const LEAN_SIZE = 1.9;                    // its painting's box: about two tiles across, a little under its roof (sim.js LEAN_RX)
 const LEAN_FOOT = 0.68;                   // where the ground under it is in its painting (of its half-size, down from the middle)
 const LEAN_ART = 'lean:0';                // (made once: a frame builds no names)
-const LEAN_WOOD = [148, 106, 62], LEAN_THATCH = [192, 158, 92], LEAN_BARK = [228, 222, 200], LEAN_LEAF = [122, 110, 64];
+const LEAN_WOOD = [140, 100, 60], LEAN_THATCH = [206, 172, 102], LEAN_LEAF = [176, 120, 58];
 const leanPx = z => (8 + z) * LEAN_SIZE;
 const myLean = () => (world && world.camp && world.camp.lean) || null;
 function paintLean(g, size, U) {
   g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
   g.lineCap = g.lineJoin = 'round';
   g.translate(0, LEAN_FOOT);
-  const back = 0.88, front = -0.9, ridge = -1.16, eave = -0.46;   // its tall back, its low mouth, and the roof between
-  furGlow(g, [40, 30, 16], 0.44, 0.02, 0.03, 1.0, 0.22, 0, 0.3);   // its shadow on the ground
-  // The dark inside, under the roof, its mouth opening left.
-  fillIn(g, rockRGB(tone(LEAN_WOOD, 0.34)), () => { g.moveTo(front, eave + 0.14); g.lineTo(back, ridge + 0.18); g.lineTo(back, 0); g.lineTo(front - 0.04, 0); g.closePath(); });
-  // A bed of dry grass and leaves under it.
-  softIn(g, LEAN_LEAF, -0.34, 0, () => { g.moveTo(front - 0.02, 0); g.quadraticCurveTo(-0.3, -0.36, back - 0.06, -0.06); g.lineTo(back - 0.06, 0); g.closePath(); }, 1.12, 0.6);
-  for (let i = 0; i < 16; i++) {
-    const x = -0.82 + i * 0.11, a = (hash2(i, 1, 751) - 0.5) * 0.9, h = 0.1 + hash2(1, i, 753) * 0.16;
-    strokeIn(g, rockRGB(tone(i % 3 ? LEAN_THATCH : LEAN_LEAF, 1.05)), 0.02, () => { g.moveTo(x, -0.03); g.lineTo(x + Math.sin(a) * h, -0.04 - Math.cos(a) * h); });
+  const P = campAt3, wood = LEAN_WOOD, straw = LEAN_THATCH, h = (i, k) => hash2(i, k, 851);
+  const XM = -0.8, XF = 0.88, DN = -0.36, DB = 0.36, HR = 1.0;   // its mouth (the ridge's line), its roof's foot, near and far, the ridge's height
+  // The roof as a plane: u from the ridge (0) down to its foot (1), v from its near edge (0) to its far one (1), a little over the poles.
+  const R = (u, v, lift = 0) => P(lerp(XM - 0.05, XF + 0.08, u), lerp(DN - 0.07, DB + 0.07, v), lerp(HR + 0.04, 0.02, u) + lift);
+  const quad = (a, b, c, d) => { g.moveTo(...a); g.lineTo(...b); g.lineTo(...c); g.lineTo(...d); g.closePath(); };
+  // Its shadow, and the trodden ground of its mouth.
+  furGlow(g, [40, 30, 16], 0.4, 0.1, -0.02, 1.1, 0.3, 0, 0.35);
+  // The dark under its roof, seen at its mouth and its near side.
+  const inside = () => quad(P(XM, DN, 0), P(XM, DN, HR), P(XM, DB, HR), P(XF, DB, 0)), [, iy0] = P(XM, DB, HR);
+  { const gr = g.createLinearGradient(0, iy0, 0, 0.2); gr.addColorStop(0, 'rgb(30, 22, 14)'); gr.addColorStop(0.6, 'rgb(58, 40, 26)'); gr.addColorStop(1, 'rgb(92, 68, 42)'); g.fillStyle = gr; g.beginPath(); inside(); g.lineTo(...P(XF, DN, 0)); g.closePath(); g.fill(); }
+  // Its far side, laid with brush: a few poles leaning in, dark.
+  for (let i = 0; i < 4; i++) { const u = 0.2 + i * 0.2, [x0, y0] = P(lerp(XM, XF, u), DB, 0), [x1, y1] = P(lerp(XM, XF, u) - 0.06, DB, lerp(HR, 0, u) - 0.02); campPole(g, x0, y0, x1, y1, 0.03, tone(wood, 0.5), 60 + i, false); }
+  // The back upright, in the dark of its mouth.
+  { const [fx, fy] = P(XM, DB, 0); campFork(g, fx, fy, HR, 0.05, tone(wood, 0.72), 70); campStone(g, fx + 0.05, fy + 0.02, 0.07, 71); }
+  // A bed of dry grass and leaves under it, spilling out of its mouth.
+  const bed = () => { g.moveTo(...P(XM - 0.3, DN + 0.02, 0)); g.quadraticCurveTo(...P(XM - 0.42, 0, 0), ...P(XM - 0.24, DB - 0.06, 0)); g.lineTo(...P(XF - 0.3, DB - 0.06, 0)); g.quadraticCurveTo(...P(XF - 0.08, 0, 0), ...P(XF - 0.34, DN + 0.04, 0)); g.closePath(); };
+  { const [, by0] = P(0, DB, 0), [, by1] = P(0, DN, 0); softIn(g, tone(straw, 0.82), by0 - 0.02, by1 + 0.02, bed, 1.05, 0.62); }
+  g.save(); g.beginPath(); bed(); g.clip();
+  for (let i = 0; i < 70; i++) {                            // straws every way
+    const [x, y] = P(lerp(XM - 0.4, XF - 0.1, h(i, 1)), lerp(DN, DB, h(i, 2)), 0), a = h(i, 3) * Math.PI, l = 0.05 + 0.07 * h(i, 4);
+    const lit = 0.55 + 0.6 * h(i, 5) * (1 - 0.6 * h(i, 2));
+    strokeIn(g, rockRGB(tone(straw, lit)), 0.011, () => { g.moveTo(x - Math.cos(a) * l, y - Math.sin(a) * l * 0.5); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l * 0.5); });
   }
-  // Its poles: the back pair tall, the front pair low, their feet on the ground.
-  for (const x of [back - 0.02, back - 0.28]) strokeIn(g, rockRGB(tone(LEAN_WOOD, 0.66)), 0.075, () => { g.moveTo(x + 0.02, 0); g.lineTo(x, ridge + 0.12); });
-  for (const x of [front + 0.02, front + 0.26]) strokeIn(g, rockRGB(tone(LEAN_WOOD, 0.7)), 0.065, () => { g.moveTo(x - 0.02, 0); g.lineTo(x, eave - 0.04); });
-  // The roof: a thick slab of thatch and bark shingles slanting from the ridge down to the eave.
-  const roof = () => { g.moveTo(front - 0.06, eave); g.lineTo(back + 0.06, ridge); g.lineTo(back + 0.12, ridge + 0.17); g.lineTo(front + 0.02, eave + 0.2); g.closePath(); };
-  softIn(g, LEAN_THATCH, ridge, eave + 0.2, roof, 1.12, 0.62);
-  g.save(); g.beginPath(); roof(); g.clip();
-  strokeIn(g, rockRGB(tone(LEAN_THATCH, 0.74), 0.6), 0.018, () => {          // the shingle rows, down the slope
-    for (let i = 1; i < 7; i++) { const t = i / 7, x0 = lerp(front - 0.04, back + 0.05, t), y0 = lerp(eave, ridge, t); g.moveTo(x0, y0 - 0.02); g.lineTo(x0 + 0.12, y0 + 0.14); }
-  });
-  for (const [x, y] of [[-0.46, -0.62], [-0.08, -0.84], [0.32, -1.0]])           // a couple of pale bark shingles among them
-    fillIn(g, rockRGB(tone(LEAN_BARK, 0.96), 0.92), () => { g.moveTo(x, y); g.lineTo(x + 0.3, y - 0.05); g.lineTo(x + 0.33, y + 0.08); g.lineTo(x + 0.03, y + 0.13); g.closePath(); });
+  furGlow(g, [255, 240, 200], 0.28, ...P(XM - 0.12, DN + 0.2, 0), 0.4, 0.08);   // (heaped soft: the light on its near side)
+  furGlow(g, [26, 18, 10], 0.78, ...P(lerp(XM, XF, 0.42), DB * 0.25, 0), 0.72, 0.2, 0.12, 0.35);   // (under the roof it lies in the shade, deepest at the back)
+  furGlow(g, [26, 18, 10], 0.4, ...P(lerp(XM, XF, 0.65), DB * 0.5, 0), 0.4, 0.1, 0.12, 0.2);
   g.restore();
-  strokeIn(g, rockRGB(tone(LEAN_BARK, 1.02), 0.85), 0.06, () => { g.moveTo(front - 0.04, eave + 0.01); g.lineTo(back + 0.06, ridge + 0.02); });   // its ridge pole
-  // The stones at the feet of its poles.
-  for (const [x, y, r] of [[front + 0.04, 0.03, 0.1], [back - 0.04, 0.02, 0.12], [0.2, 0.04, 0.07]]) {
-    softIn(g, [146, 142, 132], y - r, y + r * 0.5, () => ovalAt(g, x, y, r, r * 0.55), 1.15, 0.62);
-    fillIn(g, rockRGB([170, 164, 152], 0.6), () => ovalAt(g, x - r * 0.3, y - r * 0.25, r * 0.28, r * 0.16, -0.3));
+  strokeIn(g, rockRGB(tone(straw, 0.95)), 0.012, () => {    // tufts of it poking out round its edge
+    for (let i = 0; i < 30; i++) {
+      const t = (i + h(i, 23)) / 30, mouth = t < 0.25, [x, y] = mouth ? P(XM - 0.38 + 0.06 * Math.abs(t * 8 - 1), lerp(DB - 0.08, DN + 0.04, t * 4), 0) : P(lerp(XM - 0.28, XF - 0.3, (t - 0.25) / 0.75), DN + 0.02, 0);
+      const a = (mouth ? Math.PI : Math.PI / 2) + (h(i, 24) - 0.5) * 1.4, l = 0.035 + 0.04 * h(i, 25);
+      g.moveTo(x - Math.cos(a) * 0.02, y - Math.sin(a) * 0.01); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l * 0.5);
+    }
+  });
+  const leaf = (x, y, r, a, rgb) => {                       // a fallen leaf: pointed, a vein down it
+    fillIn(g, rockRGB(tone(rgb, 0.6)), () => { g.moveTo(x - Math.cos(a) * r * 1.1, y - Math.sin(a) * r * 0.6); g.quadraticCurveTo(x - Math.sin(a) * r * 0.6, y + Math.cos(a) * r * 0.4, x + Math.cos(a) * r * 1.1, y + Math.sin(a) * r * 0.6); g.quadraticCurveTo(x + Math.sin(a) * r * 0.6, y - Math.cos(a) * r * 0.4, x - Math.cos(a) * r * 1.1, y - Math.sin(a) * r * 0.6); });
+    fillIn(g, rockRGB(rgb), () => { g.moveTo(x - Math.cos(a) * r, y - Math.sin(a) * r * 0.55); g.quadraticCurveTo(x - Math.sin(a) * r * 0.5, y + Math.cos(a) * r * 0.32, x + Math.cos(a) * r, y + Math.sin(a) * r * 0.55); g.quadraticCurveTo(x + Math.sin(a) * r * 0.5, y - Math.cos(a) * r * 0.32, x - Math.cos(a) * r, y - Math.sin(a) * r * 0.55); });
+    strokeIn(g, rockRGB(tone(rgb, 0.7)), 0.006, () => { g.moveTo(x - Math.cos(a) * r * 0.8, y - Math.sin(a) * r * 0.45); g.lineTo(x + Math.cos(a) * r * 0.8, y + Math.sin(a) * r * 0.45); });
+  };
+  const LEAVES = [[204, 120, 50], [176, 84, 44], [214, 168, 72], [130, 140, 60], [190, 140, 60]];
+  for (let i = 0; i < 16; i++) {
+    const u = h(i, 6) ** 1.6, [x, y] = P(lerp(XM - 0.34, XF - 0.3, u), lerp(DN + 0.04, DB - 0.1, h(i, 7)), 0);
+    leaf(x, y, 0.04 + 0.02 * h(i, 8), h(i, 9) * 3, tone(LEAVES[i % 5], 0.7 + 0.4 * (1 - u)));
   }
+  // The poles it's laid on, leaning from the ridge to the ground; their tops poke out over the ridge.
+  for (let i = 0; i < 4; i++) {
+    const v = 0.06 + i * 0.29, [x0, y0] = R(0.96, v, 0.015), [x1, y1] = R(-0.07, v, 0.03);
+    campPole(g, x1, y1, x0, y0, 0.042, tone(wood, 0.8), 80 + i, true);
+  }
+  // The roof: rows of thatch from the foot up, each lapping over the one below; the top rows birch-bark shingles, overlapping.
+  const ROWS = 6;
+  for (let r = ROWS - 1; r >= 0; r--) {
+    const u0 = r / ROWS - 0.02, u1 = Math.min(1.03, (r + 1.35) / ROWS), bark = r < 2;
+    if (bark) {
+      for (let k = 0; k < 4; k++) {                         // shingles, their joins staggered row to row
+        const v0 = clamp((k - 0.15 + (r % 2) * 0.5) / 3.6, -0.02, 1), v1 = clamp((k + 1.05 + (r % 2) * 0.5) / 3.6, 0, 1.02);
+        if (v1 - v0 < 0.08) continue;
+        const sk = (h(r * 5 + k, 10) - 0.5) * 0.04;
+        birchSheet(g, [...R(u0 + sk, v0, 0.06), ...R(u0 - sk, v1, 0.06), ...R(u1 - sk, v1, 0.06), ...R(u1 + sk, v0, 0.06)], 90 + r * 5 + k, true, 0, 0.014);
+      }
+      continue;
+    }
+    const band = () => quad(R(u0, -0.02, 0.05), R(u0, 1.02, 0.05), R(u1, 1.02, 0.05), R(u1, -0.02, 0.05));
+    const [, ya] = R(u0, 1, 0.05), [, yb] = R(u1, 0, 0.05);
+    strokeIn(g, rockRGB(tone(straw, 0.45), 0.5), 0.02, band);
+    softIn(g, tone(straw, 0.96 - r * 0.03), ya, yb, band, 1.1, 0.72);
+    g.save(); g.beginPath(); band(); g.clip();
+    for (let i = 0; i < 46; i++) {                          // its straws, down the slope
+      const v = (i + h(r * 50 + i, 11)) / 46 * 1.06 - 0.03, [x0, y0] = R(u0, v, 0.05), [x1, y1] = R(u1 + 0.02, v + (h(r * 50 + i, 12) - 0.5) * 0.04, 0.05);
+      strokeIn(g, rockRGB(tone(straw, 0.68 + 0.55 * h(r * 50 + i, 13), h(r * 50 + i, 14) > 0.85 ? 18 : 0)), 0.013, () => { g.moveTo(x0, y0); g.lineTo(x1, y1); });
+    }
+    furGlow(g, tone(straw, 0.4), 0.5, ...R(u0 + 0.02, 0.5, 0.05), 1.2, 0.05, Math.atan2(R(u0, 1)[1] - R(u0, 0)[1], R(u0, 1)[0] - R(u0, 0)[0]));   // (in the shade of the row over it)
+    g.restore();
+    strokeIn(g, rockRGB(tone(straw, 0.8)), 0.012, () => {   // its ragged lower edge, straw ends hanging over
+      for (let i = 0; i < 26; i++) {
+        const v = (i + 0.5) / 26, [x, y] = R(u1, v, 0.05), l = 0.03 + 0.05 * h(r * 30 + i, 15), a = 0.55 + (h(r * 30 + i, 16) - 0.5) * 0.5;
+        g.moveTo(x - Math.cos(a) * 0.02, y - Math.sin(a) * 0.02); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l);
+      }
+    });
+    if (r === 3) for (const v of [0.22, 0.6, 0.92]) { const [lx, ly] = R(u0 + 0.06, v, 0.05); campLash(g, lx, ly, 0.035, -0.9); }   // (tied to the poles)
+  }
+  // Its near edge: the thatch's cut ends, thick, and a few loose straws sticking out.
+  {
+    const edge = () => { g.moveTo(...R(-0.02, -0.02, 0.07)); g.lineTo(...R(1.03, -0.02, 0.05)); g.lineTo(...R(1.03, -0.02, -0.02)); g.lineTo(...R(-0.02, -0.02, -0.02)); g.closePath(); };
+    strokeIn(g, rockRGB(tone(straw, 0.4), 0.85), 0.024, edge);
+    fillIn(g, rockRGB(tone(straw, 0.74)), edge);
+    for (const [k, c] of [[0, tone(straw, 0.5)], [1, tone(straw, 1.12, 10)]]) fillIn(g, rockRGB(c, 0.9), () => {   // the straws' ends, cut, seen end on
+      for (let i = 0; i < 40; i++) { const [x, y] = R((i + h(i, 26 + k)) / 40, -0.02, -0.01 + 0.07 * h(i, 28 + k)); ovalAt(g, x, y, 0.011, 0.008, h(i, 30) * 3); }
+    });
+    strokeIn(g, rockRGB(tone(straw, 0.62)), 0.01, () => { for (let i = 0; i < 22; i++) { const [x, y] = R((i + h(i, 32)) / 22, -0.02, -0.015), l = 0.02 + 0.04 * h(i, 33); g.moveTo(x, y); g.lineTo(x + (h(i, 34) - 0.5) * 0.03, y + l); } });   // (ragged under)
+    strokeIn(g, rockRGB(tone(straw, 1.1, 8)), 0.011, () => { for (let i = 0; i < 9; i++) { const u = 0.08 + 0.85 * h(i, 17), [x, y] = R(u, -0.03, 0.02), a = 1.6 + (h(i, 18) - 0.5) * 1.4, l = 0.06 + 0.05 * h(i, 19); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l * 0.6, y + Math.sin(a) * l); } });
+  }
+  // The ridge: a pole laid along the top, holding the shingles down, tied at each end.
+  { const [x0, y0] = R(0.02, -0.12, 0.1), [x1, y1] = R(0.02, 1.1, 0.1); campPole(g, x0, y0, x1, y1, 0.05, wood, 100, true); for (const v of [0.1, 0.9]) { const [lx, ly] = R(0.02, v, 0.1); campLash(g, lx, ly, 0.04, 0.3); } }
+  // Its foot: the thatch's ends splayed out on the ground in their own shade, ragged, no two alike.
+  { const [x0, y0] = R(1.0, -0.05), [x1, y1] = R(1.0, 1.05); furGlow(g, [40, 30, 16], 0.42, (x0 + x1) / 2 + 0.06, (y0 + y1) / 2 + 0.03, 0.42, 0.1, Math.atan2(y1 - y0, x1 - x0), 0.2); }
+  for (const [k, lit] of [[0, 0.6], [1, 0.85], [2, 1.08]]) strokeIn(g, rockRGB(tone(straw, lit, k === 2 ? 8 : 0)), 0.012, () => {
+    for (let i = 0; i < 24; i++) {
+      const v = (i + h(i, 40 + k)) / 24 * 1.08 - 0.04, [x, y] = R(0.97, v, 0.03), l = 0.05 + 0.09 * h(i, 43 + k) * (0.6 + 0.6 * Math.sin(v * 9 + k)), a = 0.42 + (h(i, 46 + k) - 0.5) * 0.9;
+      g.moveTo(x - 0.02, y - 0.012); g.quadraticCurveTo(x + Math.cos(a) * l * 0.5, y + Math.sin(a) * l * 0.3, x + Math.cos(a) * l, y + Math.sin(a) * l * 0.8);
+    }
+  });
+  // A few stones about its foot to keep the wind from lifting it, of all sizes, sunk in the grass, and a scatter of loose straw.
+  for (const [v, r, dx, s] of [[0.06, 0.085, 0.14, 1], [0.44, 0.05, 0.22, 2], [0.86, 0.068, 0.1, 3]]) {
+    const [x, y] = P(XF + dx, lerp(DN, DB, v), 0); campStone(g, x, y + 0.02, r, 110 + s);
+    strokeIn(g, rockRGB([92, 140, 58]), 0.012, () => { for (let i = 0; i < 4; i++) { const tx = x + (h(s, 50 + i) - 0.5) * r * 2.2, a = (h(s, 54 + i) - 0.5) * 1.1, l = 0.04 + 0.04 * h(s, 58 + i); g.moveTo(tx, y + 0.03); g.lineTo(tx + Math.sin(a) * l, y + 0.03 - Math.cos(a) * l); } });   // (grass up round it)
+  }
+  strokeIn(g, rockRGB(tone(straw, 0.95)), 0.011, () => { for (let i = 0; i < 8; i++) { const [x, y] = P(lerp(XM - 0.5, XF + 0.3, h(i, 20)), DN - 0.08 - 0.12 * h(i, 21), 0), a = (h(i, 22) - 0.5) * 2; g.moveTo(x - Math.cos(a) * 0.06, y - Math.sin(a) * 0.02); g.lineTo(x + Math.cos(a) * 0.06, y + Math.sin(a) * 0.02); } });
+  // The front upright, at its mouth's near corner, the ridge on its fork; a stone at its foot.
+  { const [fx, fy] = P(XM, DN, 0); campFoot(g, fx, fy, 0.05, 120); campFork(g, fx, fy, HR + 0.02, 0.056, wood, 121); const [lx, ly] = P(XM, DN, HR + 0.02); campLash(g, lx, ly, 0.045); campStone(g, fx - 0.07, fy + 0.035, 0.06, 122); }
+  // Tufts of grass about its corners.
+  strokeIn(g, rockRGB([96, 146, 60]), 0.014, () => { for (const [x, d, a, l] of [[XM - 0.16, DN - 0.04, -0.4, 0.1], [XM - 0.12, DN - 0.06, 0.1, 0.13], [XF + 0.3, DN + 0.06, 0.3, 0.11], [XF + 0.34, DN + 0.1, 0.7, 0.08], [XF + 0.26, DB, -0.2, 0.09]]) { const [cx, cy] = P(x, d, 0); g.moveTo(cx, cy); g.lineTo(cx + Math.sin(a) * l, cy - Math.cos(a) * l); } });
 }
 function drawLean(L, z) {
   const px = leanPx(z), sx = (L.x - cam.x) * z + vw / 2, sy = (L.y - cam.y) * z + vh / 2;
@@ -19986,7 +20246,7 @@ function setupDevGive() {
 }
 if (DEV) setupDevGive();
 
-window.garden = { get world() { return world; }, ui, cam, get pace() { return S.pace; }, set pace(v) { S.pace = v; }, forager: fg, prints: pr, peers, satchel: () => renderSatchel(), kit: { netFiring, firedUi, paint: paintVessel }, stone: { paint: paintOldStone, ui: stoneUi }, torch: { paint: paintTorch, flame: drawTorchFlame, arts: TORCH_ARTS }, screen: (x, y) => [...toScreen(x, y)], click: (x, y) => click(x, y),   // handy in the console
+window.garden = { get world() { return world; }, ui, cam, get pace() { return S.pace; }, set pace(v) { S.pace = v; }, forager: fg, prints: pr, peers, satchel: () => renderSatchel(), kit: { netFiring, firedUi, paint: paintVessel }, stone: { paint: paintOldStone, ui: stoneUi }, torch: { paint: paintTorch, flame: drawTorchFlame, arts: TORCH_ARTS }, camp: { fire: paintFire, basket: paintBasket, seat: paintSeat, rack: paintRack, lean: paintLean }, screen: (x, y) => [...toScreen(x, y)], click: (x, y) => click(x, y),   // handy in the console
   give: (id, n) => devGive(id, n), cosy: n => devCosy(n), raise: n => devRaise(n), dev: DEV,
   perf,
   gov: { get rung() { return gov.rung; }, set rung(r) { gov.rung = clamp(r | 0, 0, gov.top); govApply(); }, get floor() { return gov.floor; }, get ema() { return perf.ren; } },
