@@ -51,14 +51,17 @@ working on (each has the game.js side and the sim.js side), and add new notes th
 - `files.md`: the long version of the file list above
 
 Run: `python3 -m http.server 8765`, then open http://localhost:8765 (`?seed=123` replays
-a meadow).
+a meadow). On localhost (or with `?dev`) `~` opens a barebones dev panel that puts a stack of any
+ingredient in the satchel, and the satchel carries 999 of a kind; `garden.give(id, n)` in the console
+does the same (`DEV`, game.js). Nothing of it runs on the site unless `?dev` is asked for.
 
 Checking visuals: you may use Google Chrome on this laptop (`/Applications/Google Chrome.app`)
 to look at the game yourself, headless or not. `--headless=new --screenshot` only captures the
 first frame; to see the game running (animals moving, camera moved), drive Chrome over the
 DevTools protocol (`--remote-debugging-port`) and use `Runtime.evaluate` / `Page.captureScreenshot`.
-Shortcuts for that: `window.garden` has `world`, `cam` (set `x`, `y`, `zoom`, `goal = null` to look somewhere) and
-`ui` (`ui.speed = 0` pauses); the CSS `body > *:not(#world, #ground) { visibility: hidden }` hides every panel.
+Shortcuts for that: `window.garden` has `world`, `cam` (set `x`, `y`, `zoom`, `goal = null` to look somewhere),
+`ui` (`ui.speed = 0` pauses) and `pace` (`garden.pace = 2` walks and runs the forager twice as quick); the CSS
+`body > *:not(#world, #ground) { visibility: hidden }` hides every panel.
 In a cloud session with no Chrome, Playwright is installed globally (`npm root -g`) with Chromium.
 You don't have to test everything: check what a change could plausibly break, and leave the rest.
 

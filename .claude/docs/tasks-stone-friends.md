@@ -8,14 +8,14 @@ off from the meadow and the satchel (`got`/`n`, `done`; a stick fed and a dish e
 and stays ticked per player (`aeon-garden-tasks`), so it's for the first meadow or so; on load what's already true ticks quietly. A
 line ticked pops its circle with a click; the line worked on says how (`how`); a chapter done is a toast and `found`, stays ticked
 `TASK_TURN_MS`, then the next pops in; the last is a gold headline ("Settled in") and the note is gone for good. A tap on its head
-folds it to the one line (`aeon-garden-tasks-fold`). Away while the skills, the book, the wardrobe
+folds it to the one line (`aeon-garden-tasks-fold`). Away while the book, the wardrobe
 or the old stone are open or the forager is down. Not shown on a phone at all (index.html's `narrow()` media query hides `#tasks`).
 The old stone (2026-10-17; the comment over `STONE_MOODS`): sim.js `w.stone`, painted once a face (`paintOldStone`, `STONE_ARTS`:
 seven moods, each with its mouth shut and open; moss hair and brows, asleep and drooling left alone `STONE_DOZE_MS`), drawn with the
 trees and animals (`drawStone`), solid in the forager's way like a rock. A click on it walks over (`goStone`, `goFire` 'stone', standing
 `STONE_STAND` further out than at a fire) and opens a slim line to talk on over the satchel (`#stone-talk`, `openStone`; up top on a
 touch screen, out of the keyboard's way, the face hidden under it and the camera keeping the stone and its bubble below it and above the
-satchel or the keyboard: `measureSheet`, `STONE_ROOM`). E standing by it does the same (`stoneByE`), with a little disc of its face and
+satchel or the keyboard: `measureSheet`, `STONE_ROOM`). E when it's the nearest thing to use does the same (`eTarget`), with a little disc of its face and
 an E bobbing over it while it would (`drawStonePrompt`; a tap on the disc opens it too). Woken, it says hello. What's typed is the forager's bubble (`myChat`), its answer a bubble
 over the stone (`stoneUi.chat`, in `drawPeerNames`) with its mouth going (`STONE_MOUTH_MS`). A tap on anything in the satchel there has
 🙏 Offer by Eat (`eatAsk`, `offerSlot`): it flies into the stone, which rates it (a "★★★ 7 / 10" pill over it and a sound by the

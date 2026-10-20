@@ -727,10 +727,10 @@ function kneelPose(pose) {
 // game.js lifts the painting onto the log (seatLift: its hips SIT_HIPS over its feet's line).
 function sitPose(warm) {
   const P = foragerPose(1, 0);
-  P.bob = 0.14; P.hemUp = 0.02; P.tip = 0.03;
-  P.knees = [[-0.085, 0.6], [0.08, 0.605]];
-  P.feet = [[-0.095, 0.76], [0.085, 0.755]];
-  P.hands = [[0.075, 0.27], [-0.075, 0.27]];
+  P.bob = 0.14; P.hemUp = 0.09; P.lap = 0.05; P.tip = 0.03;
+  P.knees = [[-0.17, 0.7], [0.17, 0.7]];
+  P.feet = [[-0.16, 0.87], [0.16, 0.87]];
+  P.hands = [[0.0, 0.38], [0.0, 0.38]];   // (resting on its thighs)
   if (warm) { P.warm = true; P.blink = true; }
   return P;
 }
@@ -959,8 +959,9 @@ function foragerParts(P) {
       g.quadraticCurveTo(0.23, 0.6, 0.17, 0.42);
       g.quadraticCurveTo(0.14 + lx * 0.5, 0.2 + P.bob, 0.11 + lx, -0.02 + P.bob + ly);
     } else {
-      g.quadraticCurveTo(-0.2 + lx * 0.5, 0.18 + P.bob, -0.25 + sw, hem);
-      g.quadraticCurveTo(0, hem + 0.06, 0.25 + sw, hem);
+      const lap = P.lap || 0;                                         // (sitting: the hem spread over its lap, wider than it falls)
+      g.quadraticCurveTo(-0.2 + lx * 0.5, 0.18 + P.bob, -0.25 - lap + sw, hem);
+      g.quadraticCurveTo(0, hem + 0.06 - lap * 0.4, 0.25 + lap + sw, hem);
       g.quadraticCurveTo(0.2 + lx * 0.5, 0.18 + P.bob, 0.11 + lx, -0.02 + P.bob + ly);
     }
     g.closePath();

@@ -336,6 +336,9 @@ const RULES = {
   swat:    { gap: 0.15, always: true },
   hug:     { gap: 0.8,  always: true, lift: 1.6 },   // two foragers hug
   step:    { gap: 0.1, always: true },   // (a foot down is cheap and rhythmic: it never counts against the budget)
+  jump:    { gap: 0.15, always: true },  // (off its feet: the push and the whoosh)
+  land:    { gap: 0.12, always: true },  // and down again
+  hopcue:  { gap: 0.05, always: true },  // the moment to press again (a chained dash)
   pick:    { gap: 0.08, always: true },
   pluck:   { gap: 0.08, always: true },
   dawn:    { gap: 4,    free: true },
@@ -519,6 +522,27 @@ const SOUNDS = {
     }
   },
   rainbow(t, o) { for (let i = 0; i < 8; i++) kalimba(o, note(i, 1), t + i * 0.09, 0.28 - i * 0.02); },
+  // Off its feet, and down again (game.js jumpNow, foragerFrame): a soft push off the ground and a whoosh up, then the
+  // ground taking it. pace is how fast it went against a walk, hop how much momentum it carries (a chained dash: quicker,
+  // brighter, and a little note on top), ground what's underfoot (as step).
+  jump(t, o, { pace = 1, ground = 'grass', hop = 0 }) {
+    const k = Math.max(0.7, Math.min(2, pace)), up = 1 + hop * 0.5;
+    partial(o, (130 + 35 * k) * up, t, 0.05 + hop * 0.02, 0.004, 0.15, 'triangle');
+    noise(o, t, 0.2 - hop * 0.04, { from: 480 * up, to: (1600 + 900 * k) * up, q: 0.8, peak: (0.06 + hop * 0.03) * k, attack: 0.13 - hop * 0.04 });
+    if (ground === 'water') noise(o, t, 0.22, { from: 2600, to: 900, q: 0.7, peak: 0.12, attack: 0.01 });
+    if (hop > 0.01) kalimba(o, note(2 + Math.round(hop * 4), 1), t + 0.03, 0.08 + hop * 0.08);
+  },
+  land(t, o, { pace = 1, ground = 'grass', hop = 0 }) {
+    const soft = ground === 'grass' || ground === 'snow' || ground === 'woods' || ground === 'earth';
+    const wet = ground === 'water';
+    partial(o, (wet ? 190 : soft ? 108 : 140) * (1 + hop * 0.25), t, wet ? 0.12 : 0.09, 0.003, wet ? 0.28 : 0.18, 'sine');
+    noise(o, t, wet ? 0.26 : 0.16, { from: wet ? 3200 : soft ? 700 : 1200, to: wet ? 800 : soft ? 250 : 420, q: 0.7, peak: (wet ? 0.2 : 0.15) + hop * 0.04, type: 'lowpass', attack: 0.002 });
+    if (ground === 'snow') noise(o, t + 0.02, 0.12, { from: 2400, to: 5000, q: 1.4, peak: 0.05, attack: 0.01 });
+  },
+  // The moment to press again: a tiny bright tick, a note higher with each dash the chain keeps.
+  hopcue(t, o, { hop = 0 }) {
+    celesta(o, note(5 + Math.round(hop * 2), 1), t, 0.04 + hop * 0.03);
+  },
   // A foot comes down. pace is how fast the walker goes against a walk (1 = a walk, 2 = a sprint): the quicker, the
   // shorter, brighter, harder and higher it sounds, so it needs no change of its own to run. ground is what's underfoot
   // (game.js groundUnder), each its own sound: 'grass' (a brush of blades on a soft pad), 'earth' (a dull dry tap),

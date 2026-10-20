@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Camp levels · lab</title>
+<style>
+  @font-face { font-family: 'Fraunces'; font-style: italic; font-weight: 450; font-display: swap;
+    src: url(assets/fonts/fraunces-italic-latin.woff2) format('woff2'); }
+  @font-face { font-family: 'Fraunces'; font-style: normal; font-weight: 600 680; font-display: swap;
+    src: url(assets/fonts/fraunces-normal-latin.woff2) format('woff2'); }
+  @font-face { font-family: 'Nunito'; font-style: normal; font-weight: 500 900; font-display: swap;
+    src: url(assets/fonts/nunito-normal-latin.woff2) format('woff2'); }
+
+  :root {
+    --card: #f8f0de; --ink: #3b372f; --muted: #6f6657; --line: #ecdfc8;
+    --accent: #e98a4b; --accent-ink: #9e4a17; --accent-soft: #fde4cf;
+    --brass: #d2b06a; --brass-dark: #a8742a; --deep-brass: #8a5e22;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #efe6d2; color: var(--ink); }
+  body { font-family: Nunito, ui-rounded, system-ui, sans-serif; font-size: 15px; -webkit-font-smoothing: antialiased; }
+  .fr { font-family: Fraunces, Georgia, serif; font-variation-settings: 'SOFT' 100, 'WONK' 1; }
+  main { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 48px 0 80px; }
+
+  header { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 18px; padding-bottom: 18px; border-bottom: 1px solid #d9cbb0; }
+  header h1 { margin: 0; font-size: 42px; line-height: 1; font-weight: 650; }
+  header h1 em { font-style: italic; font-weight: 450; color: var(--accent-ink); }
+  header p { margin: 0 0 4px auto; max-width: 430px; font-size: 13.5px; line-height: 1.5; font-weight: 700; color: var(--muted); }
+  .kicker { font-size: 11px; font-weight: 900; letter-spacing: 0.16em; text-transform: uppercase; color: var(--deep-brass); }
+  section { margin-top: 46px; }
+  section > h2 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; margin: 0 0 12px; font-size: 13px; font-weight: 900;
+    letter-spacing: 0.14em; text-transform: uppercase; color: var(--deep-brass); }
+  section > h2 span { font-family: Fraunces, Georgia, serif; font-size: 15px; font-style: italic; font-weight: 450;
+    letter-spacing: 0; text-transform: none; color: var(--muted); }
+
+  /* ---- the camp board ---- */
+  .board { display: grid; grid-template-columns: 1fr 340px; border-radius: 22px; overflow: hidden;
+    background: #f6ecd6; box-shadow: inset 0 0 0 1px rgba(150,115,60,.22), 0 10px 30px rgba(70,55,25,.13); }
+  @media (max-width: 900px) { .board { grid-template-columns: 1fr; } }
+  .view { position: relative; background: #8fae63; min-height: 380px; }
+  .view svg { display: block; width: 100%; height: 100%; min-height: 380px; }
+  .view .night-toggle { position: absolute; right: 12px; top: 12px; }
+  .side { padding: 22px 22px 24px; background: var(--card); border-left: 1px solid var(--line); }
+  .levels { display: flex; gap: 6px; margin: 0 0 16px; }
+  .levels button { flex: 1; min-height: 44px; border: 0; border-radius: 12px; cursor: pointer; font: 900 15px Fraunces, Georgia, serif;
+    color: var(--deep-brass); background: #efe2c4; box-shadow: inset 0 0 0 1px rgba(150,115,60,.25); }
+  .levels button.on { color: #fff8ea; background: linear-gradient(#d9a35a, #a8742a); box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 2px 4px rgba(90,60,20,.3); }
+  .side h3 { margin: 0; font: 650 28px/1.1 Fraunces, Georgia, serif; }
+  .side h3 em { font-style: italic; font-weight: 450; color: var(--accent-ink); font-size: 17px; display: block; margin-top: 4px; }
+  .side .meta { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 14px; }
+  .chip { font-size: 11.5px; font-weight: 900; padding: 4px 9px; border-radius: 999px; background: #efe2c4; color: var(--deep-brass); }
+  .side h4 { margin: 16px 0 6px; font-size: 11px; font-weight: 900; letter-spacing: .14em; text-transform: uppercase; color: var(--deep-brass); }
+  .side ul { margin: 0; padding: 0; list-style: none; }
+  .side li { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; font-size: 13.5px; font-weight: 700; line-height: 1.35; border-bottom: 1px dashed var(--line); }
+  .side li:last-child { border-bottom: 0; }
+  .side li b { font-weight: 900; }
+  .side li .ic { flex: none; width: 18px; text-align: center; }
+  .side li.new b::after { content: 'new'; margin-left: 6px; font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase;
+    padding: 1px 5px; border-radius: 5px; background: var(--accent-soft); color: var(--accent-ink); vertical-align: 2px; }
+  .raise { margin-top: 14px; padding: 12px 14px; border-radius: 14px; background: #fff8ea; box-shadow: inset 0 0 0 1px rgba(150,115,60,.25); font-size: 13px; font-weight: 700; color: var(--muted); line-height: 1.45; }
+  .raise b { color: var(--ink); }
+
+  /* the SVG's pieces fade in as the level rises */
+  .piece { transition: opacity .6s ease, transform .6s cubic-bezier(.3,1.6,.5,1); transform-box: fill-box; transform-origin: 50% 100%; }
+  .piece.off { opacity: 0; transform: scale(.6) translateY(6px); pointer-events: none; }
+  .piece.fresh { filter: drop-shadow(0 0 6px rgba(255,230,150,.95)); }
+  #ring, #dirt { transition: rx .8s cubic-bezier(.3,1.3,.5,1), ry .8s cubic-bezier(.3,1.3,.5,1); }
+  .night #nightwash { opacity: .62; }
+  #nightwash, #glow { transition: opacity .6s; }
+  .night #glow { opacity: 1; }
+  .flame { animation: flick .5s ease-in-out infinite alternate; transform-box: fill-box; transform-origin: 50% 100%; }
+  @keyframes flick { from { transform: scaleY(.9) skewX(-3deg); } to { transform: scaleY(1.08) skewX(3deg); } }
+  .sway { animation: sway 3s ease-in-out infinite alternate; transform-box: fill-box; transform-origin: 50% 0; }
+  @keyframes sway { from { transform: rotate(-6deg); } to { transform: rotate(6deg); } }
+
+  /* ---- brass button ---- */
+  .brass-btn { min-height: 44px; padding: 0 16px; border: 0; border-radius: 999px; cursor: pointer; font: 900 13px Nunito, sans-serif; color: #fff8ea;
+    background: linear-gradient(#d9a35a, #a8742a); box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 2px 4px rgba(90,60,20,.3); }
+
+  /* ---- ui mockups ---- */
+  .mocks { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; }
+  .mock { position: relative; border-radius: 18px; overflow: hidden; min-height: 240px; padding: 18px;
+    background: linear-gradient(#9cb96e, #7f9d55); box-shadow: inset 0 0 0 1px rgba(60,80,30,.25); }
+  .mock.dusk { background: linear-gradient(#4a5a7a, #2c3550); }
+  .mock .cap { position: absolute; left: 14px; bottom: 10px; right: 14px; font-size: 12px; font-weight: 800; color: rgba(255,255,255,.88); line-height: 1.4; }
+  .card { background: var(--card); border-radius: 16px; box-shadow: 0 6px 18px rgba(40,30,10,.25), inset 0 0 0 1px rgba(150,115,60,.3); }
+
+  /* camp badge */
+  .badge { display: inline-flex; align-items: center; gap: 10px; padding: 7px 14px 7px 8px; border-radius: 999px;
+    background: var(--card); box-shadow: 0 3px 10px rgba(40,30,10,.22), inset 0 0 0 1.5px var(--brass); }
+  .badge .seal { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font: 900 14px Fraunces, serif; color: #fff8ea;
+    background: radial-gradient(circle at 35% 30%, #e7bf72, #a8742a); box-shadow: inset 0 0 0 2px rgba(255,255,255,.3); }
+  .badge .nm { font: 650 15px Fraunces, serif; line-height: 1; }
+  .badge .nm small { display: block; font: 800 10.5px Nunito, sans-serif; color: var(--muted); margin-top: 3px; letter-spacing: .02em; }
+  .embers { display: flex; gap: 3px; margin-top: 5px; }
+  .embers i { width: 9px; height: 9px; border-radius: 50%; background: #e3d5b8; }
+  .embers i.lit { background: radial-gradient(circle at 40% 35%, #ffd27a, #e98a4b); box-shadow: 0 0 4px rgba(233,138,75,.7); }
+
+  /* level-up moment */
+  .pop { position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%); text-align: center; color: #fff4d6;
+    text-shadow: 0 0 18px rgba(255,190,90,.9), 0 2px 3px rgba(0,0,0,.35); white-space: nowrap; }
+  .pop .a { font: 800 12px Nunito, sans-serif; letter-spacing: .18em; text-transform: uppercase; opacity: .9; }
+  .pop .b { font: italic 450 38px/1.05 Fraunces, serif; margin-top: 4px; }
+  .pop .b .tw { font-style: normal; font-size: 22px; vertical-align: 8px; margin: 0 10px; color: #ffd98a; }
+  .pop .c { margin-top: 10px; display: inline-flex; gap: 6px; }
+  .pop .c span { font: 800 11.5px Nunito, sans-serif; padding: 4px 9px; border-radius: 999px; background: rgba(255,240,200,.18); box-shadow: inset 0 0 0 1px rgba(255,230,170,.45); text-shadow: none; }
+  .spark { position: absolute; width: 4px; height: 4px; border-radius: 50%; background: #ffd98a; box-shadow: 0 0 6px #ffb84a; animation: rise 2.4s linear infinite; }
+  @keyframes rise { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-120px); opacity: 0; } }
+
+  /* make strip */
+  .strip { position: absolute; left: 50%; bottom: 46px; transform: translateX(-50%); display: flex; gap: 8px; padding: 10px; }
+  .tile { width: 92px; padding: 8px 6px 7px; border-radius: 12px; background: #fff8ea; text-align: center; box-shadow: inset 0 0 0 1px rgba(150,115,60,.25); }
+  .tile .pic { font-size: 28px; line-height: 36px; }
+  .tile .t { font: 800 11.5px Nunito, sans-serif; }
+  .tile .n { margin-top: 4px; font: 800 10px Nunito, sans-serif; color: var(--muted); }
+  .tile.ready { box-shadow: inset 0 0 0 2px var(--accent); background: #fff2e2; }
+  .tile.locked { opacity: .62; background: #efe2c4; }
+  .tile.locked .pic { filter: grayscale(1) opacity(.55); }
+  .tile.locked .n { color: var(--deep-brass); }
+
+  /* camp card */
+  .campcard { position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%); width: min(330px, calc(100% - 24px)); padding: 14px 16px; }
+  .campcard h5 { margin: 0; font: 650 19px Fraunces, serif; display: flex; justify-content: space-between; align-items: baseline; }
+  .campcard h5 small { font: 800 11px Nunito, sans-serif; color: var(--muted); }
+  .bar { height: 10px; margin: 8px 0 4px; border-radius: 6px; background: #e8dabd; overflow: hidden; box-shadow: inset 0 1px 2px rgba(0,0,0,.12); }
+  .bar i { display: block; height: 100%; width: 68%; border-radius: 6px; background: linear-gradient(90deg, #f0b363, #e98a4b); }
+  .campcard .row { display: flex; justify-content: space-between; font-size: 12px; font-weight: 800; color: var(--muted); }
+  .campcard .src { margin-top: 10px; display: grid; grid-template-columns: 1fr auto; gap: 3px 10px; font-size: 12px; font-weight: 700; }
+  .campcard .src span:nth-child(even) { color: var(--accent-ink); font-weight: 900; text-align: right; }
+
+  /* tables */
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }
+  .note { padding: 18px 20px; border-radius: 18px; background: var(--card); box-shadow: inset 0 0 0 1px rgba(150,115,60,.22); }
+  .note h3 { margin: 0 0 8px; font: 650 20px Fraunces, serif; }
+  .note p, .note li { font-size: 13.5px; line-height: 1.55; font-weight: 600; color: var(--ink); }
+  .note p { margin: 0 0 8px; }
+  .note ul { margin: 0; padding-left: 18px; }
+  .note b { font-weight: 900; }
+  .note .q { color: var(--muted); font-style: italic; font-family: Fraunces, serif; font-weight: 450; }
+  .note code { font-size: 12px; background: #efe2c4; padding: 1px 5px; border-radius: 5px; }
+  .note table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .note td { padding: 4px 0; border-bottom: 1px dashed var(--line); font-weight: 700; }
+  .note td:last-child { text-align: right; color: var(--accent-ink); font-weight: 900; white-space: nowrap; padding-left: 10px; }
+  .note td.grp { padding-top: 10px; font-size: 10.5px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; color: var(--deep-brass); border-bottom: 0; }
+  .note .later li { color: var(--muted); }
+
+  /* two ways to look: the camp as you built it, and the plan */
+  .modes { display: flex; gap: 4px; padding: 4px; margin: 0 0 12px; border-radius: 14px; background: #efe2c4; }
+  .modes button { flex: 1; min-height: 40px; border: 0; border-radius: 10px; cursor: pointer; font: 900 13px Nunito, sans-serif; color: var(--muted); background: transparent; }
+  .modes button.on { background: var(--card); color: var(--ink); box-shadow: 0 1px 3px rgba(90,60,20,.2); }
+  .view .legend { position: absolute; left: 12px; top: 12px; max-width: 62%; padding: 7px 12px; border-radius: 999px; background: rgba(248,240,222,.94);
+    font-size: 12px; font-weight: 800; color: var(--muted); box-shadow: 0 2px 6px rgba(40,30,10,.18); }
+  .piece.ghost { opacity: .4; filter: grayscale(.7); }
+  .piece.ghost.fresh { filter: grayscale(.7) drop-shadow(0 0 5px rgba(255,240,190,.9)); }
+  .side li.tog { cursor: pointer; border-radius: 8px; }
+  .side li.tog:hover { background: #fff8ea; }
+  .side li .ck { flex: none; width: 18px; height: 18px; border-radius: 50%; box-shadow: inset 0 0 0 2px var(--brass); display: grid; place-items: center;
+    font-size: 11px; font-weight: 900; color: #fff8ea; align-self: center; }
+  .side li.built .ck { background: var(--brass-dark); box-shadow: none; }
+  .side li.built .ck::after { content: '✓'; }
+  .side li .dim { color: var(--muted); font-weight: 700; }
+  .key { margin-top: 2px; padding: 10px 12px; border-radius: 12px; background: #fff2e2; box-shadow: inset 0 0 0 1.5px var(--accent); font-size: 13px; font-weight: 700; line-height: 1.45; }
+  .key b { font-weight: 900; }
+
+  /* the line over the satchel, as it is */
+  .what { position: absolute; left: 50%; bottom: 70px; transform: translateX(-50%); padding: 6px 14px; border-radius: 999px; white-space: nowrap;
+    background: var(--card); font-size: 13px; font-weight: 800; box-shadow: 0 2px 8px rgba(40,30,10,.2); }
+  .what span { color: var(--accent-ink); }
+  .what .tap { margin-left: 8px; font-size: 11px; color: var(--muted); }
+  .campcard .seal { width: 30px; height: 30px; border-radius: 50%; display: inline-grid; place-items: center; font: 900 13px Fraunces, serif; color: #fff8ea;
+    background: radial-gradient(circle at 35% 30%, #e7bf72, #a8742a); margin-right: 8px; vertical-align: -6px; }
+  .campcard .src .todo { color: #a8916a; }
+  .campcard .src .todo + span { color: #c4ab84; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <div class="kicker">Mockup · not built · second pass</div>
+      <h1 class="fr">Camp <em>levels</em></h1>
+    </div>
+    <p>The camp grows from a fire to a little home. A level is a <b>place you build</b> (its keystone), not a number you
+      reach. Raising it widens the ring, does one real thing, and opens one or two more things to make. Whatever you make
+      is made by you: the camp never fills itself with things you didn't build.</p>
+  </header>
+
+  <!-- ===================================================== the camp, level by level -->
+  <section>
+    <h2>The camp <span>your camp as built, or the plan of what each level opens</span></h2>
+    <div class="board">
+      <div class="view" id="view">
+        <div class="legend" id="legend"></div>
+        <button class="brass-btn night-toggle" id="nightBtn">Night</button>
+        <svg id="camp" viewBox="0 0 820 540" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <radialGradient id="dirtG" cx="50%" cy="45%" r="60%">
+              <stop offset="0" stop-color="#b59466"/><stop offset=".75" stop-color="#a5865a"/><stop offset="1" stop-color="#a5865a" stop-opacity="0"/>
+            </radialGradient>
+            <radialGradient id="glowG"><stop offset="0" stop-color="#ffcf7a" stop-opacity=".75"/><stop offset="1" stop-color="#ffcf7a" stop-opacity="0"/></radialGradient>
+            <radialGradient id="lampG"><stop offset="0" stop-color="#ffd98a" stop-opacity=".7"/><stop offset="1" stop-color="#ffd98a" stop-opacity="0"/></radialGradient>
+            <radialGradient id="shadowG"><stop offset="0" stop-color="#2d3a17" stop-opacity=".35"/><stop offset="1" stop-color="#2d3a17" stop-opacity="0"/></radialGradient>
+          </defs>
+          <rect width="820" height="540" fill="#93b166"/>
+          <g id="grass"></g>
+          <ellipse id="dirt" cx="410" cy="290" rx="220" ry="128" fill="url(#dirtG)"/>
+          <ellipse id="ring" cx="410" cy="290" rx="218" ry="126" fill="none" stroke="#8b7352" stroke-width="3" stroke-dasharray="2 9" stroke-linecap="round" opacity=".7"/>
+          <g id="pieces"></g>
+          <rect id="nightwash" width="820" height="540" fill="#16203d" opacity="0" style="mix-blend-mode:multiply" pointer-events="none"/>
+          <g id="glow" opacity="0" style="mix-blend-mode:screen" pointer-events="none"></g>
+        </svg>
+      </div>
+      <aside class="side">
+        <div class="modes" id="modes"><button data-m="built" class="on">Your camp</button><button data-m="plan">The plan</button></div>
+        <div class="levels" id="levels"></div>
+        <h3 id="lvName"></h3>
+        <div class="meta" id="lvMeta"></div>
+        <h4>Raised by</h4><div class="key" id="lvKey"></div>
+        <h4>The camp gives</h4><ul id="lvGives"></ul>
+        <h4 id="opensHead">Opens to make</h4><ul id="lvOpens"></ul>
+        <div class="raise" id="lvRaise"></div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ===================================================== small UI -->
+  <section>
+    <h2>How it shows in the game <span>small, brief, close to the camp</span></h2>
+    <div class="mocks">
+      <div class="mock">
+        <div class="what">Your camp · Hearth · <span>14 / 18 cosy</span><span class="tap">tap</span></div>
+        <div class="cap">The line over the satchel stays one thin pill: hovering the ring (away from the fire) says the camp's name and its cosy. A tap on the line opens the camp's card. The fire itself still means "see to it".</div>
+      </div>
+
+      <div class="mock dusk">
+        <div class="spark" style="left:44%;top:70%"></div><div class="spark" style="left:52%;top:74%;animation-delay:.6s"></div>
+        <div class="spark" style="left:58%;top:68%;animation-delay:1.2s"></div><div class="spark" style="left:38%;top:72%;animation-delay:1.8s"></div>
+        <div class="pop">
+          <div class="a">Your camp grew</div>
+          <div class="b"><span class="tw">✦</span>Homestead<span class="tw">✦</span></div>
+          <div class="c"><span>the ring widens</span><span>the oven is fired</span><span>2 new things to make</span></div>
+        </div>
+        <div class="cap">The moment, when the keystone is finished: only what really happened. The ring of earth spreads out half a tile with a wave of light, the felt piano, gone in four seconds.</div>
+      </div>
+
+      <div class="mock">
+        <div class="strip card">
+          <div class="tile ready"><div class="pic">🪵</div><div class="t">Drying rack</div><div class="n">8/8 sticks · 3/3 grass</div></div>
+          <div class="tile"><div class="pic">⛺</div><div class="t">Lean-to</div><div class="n">3/5 grass</div></div>
+          <div class="tile locked"><div class="pic">🍞</div><div class="t">Clay oven</div><div class="n">raises the camp · 14/18 cosy</div></div>
+        </div>
+        <div class="cap">The make strip stays "what you can make now", plus one faded tile: the next keystone. The levels after it live in the card.</div>
+      </div>
+
+      <div class="mock">
+        <div class="campcard card">
+          <h5><span><span class="seal">II</span>Hearth</span><small>14 / 18 cosy</small></h5>
+          <div class="bar"><i style="width:78%"></i></div>
+          <div class="row"><span>4 more, then build the clay oven</span></div>
+          <div class="src">
+            <span>✓ Made camp</span><span>+2</span>
+            <span>✓ Wove the basket</span><span>+3</span>
+            <span>✓ Built the drying rack</span><span>+3</span>
+            <span>✓ Cooked five dishes at camp</span><span>+3</span>
+            <span class="todo">Keep the fire through a storm</span><span>+3</span>
+            <span class="todo">Build the lean-to</span><span>+3</span>
+          </div>
+        </div>
+        <div class="cap">The card: every point is a named deed, done once. The next two not done yet are shown faintly, so the bar says what to go and do.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================== how it works -->
+  <section>
+    <h2>How it works <span>the proposal, after review</span></h2>
+    <div class="grid2">
+      <div class="note">
+        <h3>Cosy is a list of deeds</h3>
+        <p>Every point has a name and is earned once, so it can't be farmed and the card can show what made it. Cosy never goes down. Raising the camp takes <b>8 · 18 · 30 · 44</b>; the deeds below reach 44 before level V with six to spare, alone.</p>
+        <table>
+          <tr><td class="grp" colspan="2">Making the camp</td></tr>
+          <tr><td>Made camp (the first fire)</td><td>+2</td></tr>
+          <tr><td>Each thing built at camp, once</td><td>+1 to +3</td></tr>
+          <tr><td class="grp" colspan="2">Cooking</td></tr>
+          <tr><td>First dish cooked at camp</td><td>+2</td></tr>
+          <tr><td>Five different dishes at camp · twelve</td><td>+3 · +4</td></tr>
+          <tr><td>Ate a meal sitting on the seat log</td><td>+1</td></tr>
+          <tr><td class="grp" colspan="2">The fire</td></tr>
+          <tr><td>Kept it lit from dusk to dawn</td><td>+2</td></tr>
+          <tr><td>Kept it lit through a storm</td><td>+3</td></tr>
+          <tr><td>First fire of each season</td><td>+2 × 4</td></tr>
+          <tr><td class="grp" colspan="2">The basket</td></tr>
+          <tr><td>Half filled it · one of every kind of food in it</td><td>+2 · +3</td></tr>
+          <tr><td class="grp" colspan="2">Friends (a bonus, never needed)</td></tr>
+          <tr><td>A friend sat by your fire · ate your dish</td><td>+2 · +2</td></tr>
+        </table>
+      </div>
+      <div class="note">
+        <h3>The ring</h3>
+        <p><code>CAMP_R</code> is 5 today. It stays the floor: <b>5 → 5.5 → 6 → 6.5 → 7</b> tiles. A camp never shrinks, so nothing placed today ends up outside its ring.</p>
+        <p><b>Kept meadows</b> open at level I with the deeds they've already done counted (camp made, basket, seat, torches), so an old camp may find itself a few points from Hearth on its first visit.</p>
+        <p>The ground shader's camp ellipse grows over the moment and then stays still: it repaints the ground only while it spreads.</p>
+      </div>
+      <div class="note">
+        <h3>One real payoff a level</h3>
+        <ul>
+          <li><b>I</b> · home: you wake here after a collapse (already true).</li>
+          <li><b>II</b> · the hearthstones hold the heat: a stick burns a third longer (<code>FIRE_STICK</code>).</li>
+          <li><b>III</b> · baking at the oven, which is already a <code>STATIONS</code> entry.</li>
+          <li><b>IV</b> · the lantern arch: the ring keeps a steady light at night (a torch's pool, never burns out).</li>
+          <li><b>V</b> · the cabin: dry and warm inside, and where you wake. Needs one new item, logs.</li>
+        </ul>
+        <p>Keystones II–IV cost only things that lie about already (pebbles, clay, sticks, bark).</p>
+      </div>
+      <div class="note">
+        <h3>Later, not in this stage</h3>
+        <p>Good ideas that each touch another system. They wait for their own stage:</p>
+        <ul class="later">
+          <li>Sleeping through a night (the forager has no sleep yet).</li>
+          <li>A cellar where nothing spoils (nothing spoils yet).</li>
+          <li>Visitors stopping by a free seat (the visitors are dormant: PLAN "After that" 5).</li>
+          <li>Foxes going round the ring, crows kept off by a scarecrow.</li>
+          <li>The camp on friends' minimaps, the notice board's requests, the bell.</li>
+          <li>Garden bed, rain tarp, morning gifts, naming the camp.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+// Each level: its ring (tiles, and as drawn), the keystone that raises the camp to it, the one thing it does, the small
+// gifts that come with it, and what it opens to make.
+const LEVELS = [
+  { n: 'I', name: 'Campfire', sub: 'a fire and a ring of earth', R: 5, cosy: 0,
+    key: ['🔥', 'The first fire lit', 'makes camp, as it does now'],
+    gives: [['🏠', 'Home', 'you wake here after a collapse'], ['🟤', 'The ring of trodden earth']],
+    opens: ['basket', 'seat', 'torch'] },
+  { n: 'II', name: 'Hearth', sub: 'stones round the fire', R: 5.5, cosy: 8,
+    key: ['🪨', 'Hearthstones', '12 pebbles · 2 clay, laid round the fire'],
+    gives: [['🔥', 'The stones hold the heat', 'a stick burns a third longer']],
+    opens: ['rack', 'lean'] },
+  { n: 'III', name: 'Homestead', sub: 'an oven, and the camp dressed for the season', R: 6, cosy: 18,
+    key: ['🍞', 'The clay oven', '8 clay · 10 pebbles · 4 sticks'],
+    gives: [['🥧', 'Baking', 'bread, pies and honey cakes at the oven'], ['🎃', 'Season dressing', 'a pumpkin, snow lanterns, a jar of flowers']],
+    opens: ['spit', 'herbs'] },
+  { n: 'IV', name: 'Hollow', sub: 'a lit way in', R: 6.5, cosy: 30,
+    key: ['🏮', 'The lantern arch', '12 sticks · 4 birch bark · 2 clay, at the ring\'s mouth'],
+    gives: [['✨', 'The ring keeps a steady light at night'], ['🐦', 'A robin that hops round the camp'], ['〰️', 'A path worn to where you go most']],
+    opens: ['feeder', 'board'] },
+  { n: 'V', name: 'Meadow Home', sub: 'somewhere to come back to', R: 7, cosy: 44,
+    key: ['🏡', 'The cabin', 'logs (a new item) · pebbles · clay'],
+    gives: [['🛏️', 'Inside is dry and warm', 'and you wake there'], ['🎐', 'Wind chimes on the eaves'], ['🚩', 'A pennant in the season\'s colour']],
+    opens: ['hammock'] },
+];
+const BUILDS = {
+  basket: ['🧺', 'Basket', 'built'], seat: ['🪵', 'Seat log', 'built'], torch: ['🕯️', 'Torch', 'built'],
+  rack: ['🐟', 'Drying rack', 'planned in plans/camp-builds'], lean: ['⛺', 'Lean-to', 'planned in plans/camp-builds'],
+  spit: ['🍢', 'Spit', 'a new way to cook over the fire'], herbs: ['🌿', 'Herb pots', 'a few greens to hand'],
+  feeder: ['🐦', 'Bird feeder', 'small birds to watch'], board: ['📌', 'Notice board', 'the first-things notes, pinned'],
+  hammock: ['🪢', 'Hammock', 'between the two oaks'],
+};
+const built = new Set(['basket', 'seat', 'torch', 'rack']);
+
+// Each piece: what it is ('base', 'key', 'gift' or 'build'), the level it comes at, and its drawing (the fire is 0, 0).
+const CX = 410, CY = 290;
+const P = [];
+const piece = (kind, lv, id, svg, glow) => P.push({ kind, lv, id, svg, glow });
+const at = (x, y, s) => `<g transform="translate(${CX + x} ${CY + y})">${s}</g>`;
+const shadow = (w, h = w * .35) => `<ellipse cx="0" cy="2" rx="${w}" ry="${h}" fill="url(#shadowG)"/>`;
+const log = (x1, y1, x2, y2, r = 5, c = '#8a5a34') => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width="${r * 2}" stroke-linecap="round"/>`;
+const stone = (x, y, r, c = '#a9a294') => `<ellipse cx="${x}" cy="${y}" rx="${r}" ry="${r * .7}" fill="${c}" stroke="#7d776c" stroke-width="1.2"/>`;
+const tree = (x, y, s = 1, c = '#5f8a3f') => at(x, y, `<g transform="scale(${s})">${shadow(30, 10)}<rect x="-5" y="-30" width="10" height="32" rx="4" fill="#7a5233"/>
+  <circle cx="0" cy="-55" r="30" fill="${c}"/><circle cx="-16" cy="-44" r="18" fill="${c}"/><circle cx="17" cy="-46" r="19" fill="${c}"/><circle cx="-6" cy="-66" r="15" fill="#7aa356"/></g>`);
+
+// I
+piece('base', 1, 'fire', at(0, 0, `${shadow(26)}${log(-20, 6, 18, -4)}${log(-16, -6, 20, 6, 5, '#7b4e2b')}
+  <path class="flame" d="M-12 2 Q-14 -18 -3 -30 Q0 -16 6 -26 Q14 -12 12 2 Z" fill="#f29a3c"/>
+  <path class="flame" d="M-6 2 Q-6 -12 0 -18 Q4 -8 6 2 Z" fill="#ffd56a" style="animation-delay:.2s"/>`), [0, 0, 130]);
+piece('build', 1, 'basket', at(-84, 30, `${shadow(18)}<path d="M-16 -16 L16 -16 L13 4 Q0 9 -13 4 Z" fill="#c69a5a" stroke="#8f6634" stroke-width="1.5"/>
+  <path d="M-14 -10 H14 M-14 -4 H14 M-13 2 H13" stroke="#a37a42" stroke-width="1.4"/><circle cx="-6" cy="-19" r="5" fill="#d54b3a"/><circle cx="5" cy="-19" r="5" fill="#e0a43a"/>`));
+piece('build', 1, 'seat', at(6, 64, `${shadow(40, 9)}${log(-32, 0, 32, -4, 7, '#9a6a40')}<line x1="-30" y1="-3" x2="30" y2="-7" stroke="#c49568" stroke-width="3" stroke-linecap="round"/>`));
+piece('build', 1, 'torch', at(104, -10, `${shadow(6, 3)}<rect x="-2.5" y="-36" width="5" height="38" rx="2" fill="#7a5233"/><path class="flame" d="M-5 -36 Q0 -50 5 -36 Z" fill="#ffb54a"/>`), [0, -40, 50]);
+
+// II
+piece('key', 2, 'hearth', at(0, 0, [[-26, 4], [-20, 14], [-6, 19], [10, 18], [23, 11], [27, 0], [-24, -8], [24, -10], [-12, -14], [10, -15]].map(([x, y], i) => stone(x, y, 6 + (i % 3), i % 2 ? '#b4ad9f' : '#9c968a')).join('')));
+piece('build', 2, 'lean', at(-160, -34, `${shadow(44, 12)}<path d="M-40 6 L-6 -44 L40 6 Z" fill="#8e7a4c"/><path d="M-40 6 L-6 -44 L-2 6 Z" fill="#a69060"/>
+  <path d="M-30 6 L-6 -34 M-18 6 L-6 -24" stroke="#776339" stroke-width="2"/>${log(-48, -38, 40, -50, 3, '#6d4a2c')}
+  <path d="M-4 6 Q8 -8 30 6 Z" fill="#c9a96f" opacity=".7"/>`));
+piece('build', 2, 'rack', at(150, -50, `${shadow(30, 8)}${log(-26, 4, -26, -38, 3)}${log(26, 4, 26, -38, 3)}${log(-30, -36, 30, -36, 2.5)}
+  <g class="sway"><path d="M-14 -34 l0 14 M0 -34 l0 16 M14 -34 l0 13" stroke="#6d5a3a" stroke-width="1"/>
+  <ellipse cx="-14" cy="-16" rx="4" ry="8" fill="#9db3c4"/><ellipse cx="0" cy="-14" rx="4" ry="9" fill="#a9bfcf"/><ellipse cx="14" cy="-17" rx="4" ry="7" fill="#c46b4a"/></g>`));
+
+// III
+piece('key', 3, 'oven', at(180, 40, `${shadow(36, 12)}<path d="M-32 6 Q-34 -40 0 -44 Q34 -40 32 6 Z" fill="#c98a5a" stroke="#93572f" stroke-width="2"/>
+  <path d="M-12 6 Q-12 -18 0 -18 Q12 -18 12 6 Z" fill="#3a2418"/><path class="flame" d="M-7 6 Q0 -10 7 6 Z" fill="#ff9a3c"/>
+  <rect x="12" y="-56" width="9" height="18" fill="#b07448"/><circle cx="17" cy="-64" r="5" fill="#ddd" opacity=".55"/><circle cx="22" cy="-74" r="7" fill="#ddd" opacity=".35"/>`), [0, -10, 60]);
+piece('build', 3, 'spit', at(0, -2, `${log(-36, 10, -36, -34, 2, '#6d4a2c')}${log(36, 10, 36, -34, 2, '#6d4a2c')}${log(-42, -32, 42, -32, 1.6, '#5a3a22')}
+  <ellipse cx="0" cy="-32" rx="12" ry="5" fill="#b9805a"/>`));
+piece('build', 3, 'herbs', at(-76, 92, `${shadow(26, 7)}<path d="M-24 -10 h14 l-2 12 h-10 Z M-4 -12 h16 l-2 14 h-12 Z M16 -8 h12 l-2 10 h-8 Z" fill="#c2754c" stroke="#8e4f2e" stroke-width="1.2"/>
+  <path d="M-17 -10 q-4 -10 2 -16 M-17 -10 q3 -9 8 -12 M4 -12 q-2 -12 4 -18 M4 -12 q5 -8 10 -9 M22 -8 q0 -8 4 -12" stroke="#5b8a3a" stroke-width="3" fill="none" stroke-linecap="round"/>`));
+piece('gift', 3, 'pumpkin', at(58, 66, `${shadow(12, 4)}<ellipse cx="0" cy="-7" rx="12" ry="9" fill="#e5873a"/><path d="M-5 -15 Q-6 -7 -5 1 M5 -15 Q6 -7 5 1" stroke="#c46a26" stroke-width="1.5" fill="none"/><path d="M0 -15 l2 -6" stroke="#5b7a32" stroke-width="3"/>`));
+
+// IV
+piece('gift', 4, 'path', `<path d="M${CX + 230} ${CY + 112} Q${CX + 310} ${CY + 170} ${CX + 410} ${CY + 230}" stroke="#a5865a" stroke-width="22" fill="none" stroke-linecap="round" opacity=".55"/>`);
+piece('key', 4, 'arch', at(232, 112, `${shadow(40, 9)}${log(-30, 4, -30, -64, 3.5, '#6d4a2c')}${log(30, 4, 30, -64, 3.5, '#6d4a2c')}
+  <path d="M-36 -60 Q0 -86 36 -60" stroke="#6d4a2c" stroke-width="7" fill="none" stroke-linecap="round"/>
+  <path d="M-36 -60 Q0 -86 36 -60" stroke="#7aa356" stroke-width="3" fill="none" stroke-dasharray="4 5"/>
+  ${[-22, 22].map(x => `<line x1="${x}" y1="-70" x2="${x}" y2="-58" stroke="#5a3a22" stroke-width="1"/><rect x="${x - 5}" y="-58" width="10" height="13" rx="2" fill="#ffd98a" stroke="#6b4a2e" stroke-width="1.2"/>`).join('')}`), [0, -52, 90]);
+piece('build', 4, 'feeder', at(250, -70, `${shadow(10, 4)}${log(0, 4, 0, -50, 2.5, '#7a5233')}<path d="M-18 -50 L0 -62 L18 -50 Z" fill="#a0583a"/><rect x="-14" y="-50" width="28" height="4" fill="#c49568"/>
+  <circle cx="-8" cy="-56" r="4" fill="#7a5f45"/><path d="M-11 -56 l-4 -1" stroke="#e0a43a" stroke-width="1.5"/>`));
+piece('build', 4, 'board', at(64, -116, `${shadow(26, 7)}${log(-20, 4, -20, -20, 2.5, '#6d4a2c')}${log(20, 4, 20, -20, 2.5, '#6d4a2c')}<rect x="-26" y="-44" width="52" height="30" rx="3" fill="#8e6a42"/>
+  <rect x="-20" y="-40" width="14" height="12" fill="#f3e6c8" transform="rotate(-4 -13 -34)"/><rect x="-2" y="-41" width="12" height="14" fill="#fde4cf" transform="rotate(5 4 -34)"/><rect x="12" y="-38" width="9" height="10" fill="#e9f0d8"/>
+  <circle cx="-13" cy="-40" r="1.5" fill="#c2443a"/><circle cx="4" cy="-40" r="1.5" fill="#c2443a"/>`));
+piece('gift', 4, 'robin', at(-30, 96, `<ellipse cx="0" cy="-6" rx="7" ry="6" fill="#7a5f45"/><circle cx="4" cy="-9" r="3.6" fill="#7a5f45"/><ellipse cx="2" cy="-5" rx="4" ry="3.5" fill="#d0583a"/><circle cx="5" cy="-10" r=".9" fill="#111"/><path d="M7.5 -9 l3 0" stroke="#e0a43a" stroke-width="1.4"/>`));
+
+// V
+piece('key', 5, 'cabin', at(-196, -138, `${shadow(70, 16)}<rect x="-58" y="-56" width="116" height="62" fill="#9a6a40"/>
+  ${[2, -8, -18, -28, -38, -48].map(y => `<line x1="-58" y1="${y}" x2="58" y2="${y}" stroke="#7b5233" stroke-width="1.4"/>`).join('')}
+  <path d="M-70 -54 L0 -100 L70 -54 Z" fill="#7a4b33"/><path d="M-70 -54 L0 -100 L0 -54 Z" fill="#8c5a3e"/>
+  <rect x="-14" y="-30" width="22" height="36" rx="10" fill="#5a3a22"/><rect x="20" y="-38" width="22" height="18" fill="#ffe1a0" stroke="#5a3a22" stroke-width="3"/>
+  <rect x="26" y="-112" width="12" height="28" fill="#8a8274"/><circle cx="32" cy="-120" r="6" fill="#ddd" opacity=".5"/>`), [31, -29, 70]);
+piece('gift', 5, 'chimes', at(-130, -190, `<g class="sway">${[-8, -3, 2, 7].map((x, i) => `<line x1="${x}" y1="0" x2="${x}" y2="${12 + i * 3}" stroke="#7b6a52" stroke-width=".8"/><rect x="${x - 1.5}" y="${12 + i * 3}" width="3" height="${10 - i}" rx="1.5" fill="#c9b37a"/>`).join('')}</g>`));
+piece('gift', 5, 'pennant', at(-196, -238, `${log(0, 4, 0, -30, 1.5, '#5a3a22')}<path class="sway" d="M2 -30 L26 -25 L2 -18 Z" fill="#e98a4b"/>`));
+piece('build', 5, 'hammock', `<path d="M${CX + 236} ${CY - 186} Q${CX + 284} ${CY - 150} ${CX + 326} ${CY - 170}" stroke="#d8c08a" stroke-width="8" fill="none" stroke-linecap="round"/>`);
+
+// The meadow round about: grass, and trees outside even the widest ring (the two oaks hold the hammock).
+let flecks = '';
+for (let i = 0; i < 160; i++) { const x = (i * 97) % 820, y = (i * 53 + (i % 7) * 31) % 540; flecks += `<path d="M${x} ${y} l-2 -6 M${x} ${y} l2 -7" stroke="#7a9a4c" stroke-width="1.5"/>`; }
+document.getElementById('grass').innerHTML = flecks;
+const scenery = tree(-352, -186, 1.1) + tree(-352, 190, .9) + tree(-262, 236, .7, '#6a9447') + tree(236, -176, .9) + tree(326, -160, .8, '#6a9447');
+
+document.getElementById('pieces').innerHTML = scenery + P.map(p => `<g class="piece" data-id="${p.id}">${p.svg}</g>`).join('');
+document.getElementById('glow').innerHTML = P.filter(p => p.glow).map(p => {
+  const m = p.svg.match(/translate\(([-\d.]+) ([-\d.]+)\)/), [dx, dy, r] = p.glow;
+  return `<circle class="piece" data-id="${p.id}" cx="${+m[1] + dx}" cy="${+m[2] + dy}" r="${r}" fill="url(#${r > 100 ? 'glowG' : 'lampG'})"/>`;
+}).join('');
+
+let level = 2, mode = 'built';
+function show() {
+  const L = LEVELS[level - 1];
+  for (const el of document.querySelectorAll('#camp .piece')) {
+    const p = P.find(q => q.id === el.dataset.id), open = p.lv <= level;
+    const isBuild = p.kind === 'build';
+    const shown = open && (!isBuild || mode === 'plan' || built.has(p.id));
+    el.classList.toggle('off', !shown);
+    el.classList.toggle('ghost', shown && isBuild && mode === 'plan' && !built.has(p.id) && !el.closest('#glow'));
+    el.classList.toggle('fresh', shown && p.lv === level && level > 1 && !el.closest('#glow'));
+    if (el.closest('#glow') && isBuild && !built.has(p.id)) el.classList.add('off');
+  }
+  const rx = L.R * 44, ry = rx * .58;
+  for (const id of ['ring', 'dirt']) { const e = document.getElementById(id), d = id === 'ring' ? 2 : 0; e.setAttribute('rx', rx - d); e.setAttribute('ry', ry - d); }
+  document.querySelectorAll('#levels button').forEach((b, i) => b.classList.toggle('on', i === level - 1));
+  document.querySelectorAll('#modes button').forEach(b => b.classList.toggle('on', b.dataset.m === mode));
+  document.getElementById('legend').textContent = mode === 'built'
+    ? 'Your camp: what the level laid, and only what you made. Tick builds in the list.'
+    : 'The plan: what each level opens, faint until you make it.';
+  document.getElementById('lvName').innerHTML = `${L.name}<em>${L.sub}</em>`;
+  document.getElementById('lvMeta').innerHTML = `<span class="chip">Level ${L.n}</span><span class="chip">ring ${L.R} tiles</span><span class="chip">${L.cosy ? 'at ' + L.cosy + ' cosy' : 'from the first fire'}</span>`;
+  document.getElementById('lvKey').innerHTML = `${L.key[0]} <b>${L.key[1]}</b> · ${L.key[2]}`;
+  document.getElementById('lvGives').innerHTML = L.gives.map(a => `<li><span class="ic">${a[0]}</span><span><b>${a[1]}</b>${a[2] ? ' · ' + a[2] : ''}</span></li>`).join('');
+  // Your camp lists everything open so far, to tick; the plan lists what this level opens.
+  const ids = mode === 'built' ? LEVELS.slice(0, level).flatMap(l => l.opens) : L.opens;
+  document.getElementById('opensHead').textContent = mode === 'built' ? 'What you\'ve made' : 'Opens to make';
+  document.getElementById('lvOpens').innerHTML = ids.map(id => {
+    const [ic, nm, note] = BUILDS[id];
+    return mode === 'built'
+      ? `<li class="tog ${built.has(id) ? 'built' : ''}" data-id="${id}"><span class="ck"></span><span><b>${nm}</b> <span class="dim">${built.has(id) ? '' : '· not made yet'}</span></span></li>`
+      : `<li><span class="ic">${ic}</span><span><b>${nm}</b> · ${note}</span></li>`;
+  }).join('');
+  const next = LEVELS[level];
+  document.getElementById('lvRaise').innerHTML = next
+    ? `Next: <b>${next.name}</b> at <b>${next.cosy} cosy</b>, then build <b>${next.key[1].toLowerCase()}</b>.`
+    : 'The last level. Cosy keeps counting; the camp dresses up a little more each season.';
+}
+document.getElementById('levels').innerHTML = LEVELS.map((L, i) => `<button data-i="${i + 1}" aria-label="${L.name}">${L.n}</button>`).join('');
+document.getElementById('levels').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { level = +b.dataset.i; show(); } });
+document.getElementById('modes').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { mode = b.dataset.m; show(); } });
+document.getElementById('lvOpens').addEventListener('click', e => {
+  const li = e.target.closest('li.tog'); if (!li) return;
+  const id = li.dataset.id; built.has(id) ? built.delete(id) : built.add(id); show();
+});
+document.getElementById('nightBtn').addEventListener('click', e => {
+  const v = document.getElementById('view'); v.classList.toggle('night'); e.target.textContent = v.classList.contains('night') ? 'Day' : 'Night';
+});
+show();
+</script>
+</body>
+</html>

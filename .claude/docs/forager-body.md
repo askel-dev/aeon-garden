@@ -17,8 +17,9 @@ it, warmth (amber to ice blue, a drop while wet) and the tummy two small dials u
 a parchment tag slides out beside the one hovered, or for a moment after a tap (`#me-tip`, `showTip`, `tipSaid`: what it is, how it is,
 and what helps). Stamina is a slim bar centered over the
 satchel (`#vitals`, `#v-stam`, in `renderVitals`) shown while it isn't full, ember-red pulsing while winded. A tap on
-the face or I opens the skills (`#me-card`, `openMe`, `renderMe`: level, a bar to the next, what it gives, what practises it; a sheet with its ✕
-at the foot on an upright phone); its brass badge is the levels added up and glints after a level up till they're looked at.
+the face or I opens the book at You (the book's third part, `openYou`, `youSheetHTML`, `skillPageHTML`: level, a bar to the
+next, what it gives, what practises it, and the road to opal); its brass badge is the levels added up, and a level up glows the
+book button and puts the You tab's dot there till the book is opened on You.
 The air's temperature (sim.js `airTemp`, the weather's, not what the forager feels) is a small parchment pill top middle (`#thermo`,
 `renderThermo`, in the 250 ms block, rewritten only when the whole degree changes; 2026-10-18): a thermometer whose mercury rises over
 `THERMO_RANGE` and goes ice blue to amber to hot red (`THERMO_INK`), the degrees and a word (`THERMO_WORDS`). Cold it ices over (`--ice`, 0 at `THERMO_ICE`'s first degree to 1 at its second; 2026-10-19):

@@ -17,9 +17,10 @@ is one breath more (`puff`, `BLOW_PUFF`, as one held breath; it never walks the 
 still walks away (that's how you leave it). A click on a fire sees to it
 (`clickFire`: a stick on, a stick and a blow on embers, tinder and a strike when cold), standing still by a lit one it kneels and
 warms its mittens (`SIT_MS`; from the fire's side, `STAND_OFF`, stepping out to it first if it's standing nearer), and a hover
-says what it wants (`fireWord`), nothing at all while it burns well (so a fire that's fine doesn't nag over the camp). Drawn with the trees and animals (`drawFire`: `paintFire` once a look and size, `FIRE_ARTS`; flames
+says what it wants in the line over the satchel (`fireSaid`, `hoverSay`), no more than its name while it burns well (so a fire
+that's fine doesn't nag over the camp). Drawn with the trees and animals (`drawFire`: `paintFire` once a look and size, `FIRE_ARTS`; flames
 as `TONGUES` of one painting, smaller as its sticks burn down, `fireFlame`; smoke), its glow, embers and sparks over the dark
-(`drawFireGlows`); near the forager a lit one has a row of pips under it, one a stick it can take, lit for what's still burning, red and breathing when low (`drawFireGauges`, `FUEL_NEAR`), and the hover note sits under the row (`hoverLine`)—the pips are over the dark, so any the forager's body or a tree in front stands over are cut out. Cold, the forager has a slim thermometer by its side (`drawChill`, from `CHILL_SHOW`). Its light (`lightsFrame`, at most 4 fires, out to `LIGHT_TILES`, flickering in `FLICKER_MS` steps) is cut out of the night on the sky's
+(`drawFireGlows`); near the forager a lit one has a row of pips under it, one a stick it can take, lit for what's still burning, red and breathing when low (`drawFireGauges`, `FUEL_NEAR`)—the pips are over the dark, so any the forager's body or a tree in front stands over are cut out. Cold, the forager has a slim thermometer by its side (`drawChill`, from `CHILL_SHOW`). Its light (`lightsFrame`, at most 4 fires, out to `LIGHT_TILES`, flickering in `FLICKER_MS` steps) is cut out of the night on the sky's
 picture (`SKY_FIRE`, `paintFireLights`: so the sky repaints only on a flicker step) and laid warm over what stands near it
 (`fireLight`, source-atop, kept soft so the forager by it isn't washed out). Readable by firelight at night (2026-10-18):
 the forager's top edge takes a faint warm rim where a fire's pool falls and no further (`drawForagerRim`, `foragerRim` a rim
@@ -37,17 +38,23 @@ frame with a fire and without, 60 fps).
 Torches (PLAN.md stage 7; the comment over `paintTorch`): a stick of birch bark set down anywhere from the make strip
 (recipes.js `BUILDS.torch`: 1 stick, 1 birch bark). A tap on its tile picks a spot (`placeTorch`, `ui.place.torch`,
 `placeAt` asking `sim.js torchSpot`), a faint burning torch follows the pointer (never a fire's bright ghost), and its
-"why not" is the label `drawFireHint` already draws by a faint one (a torch's click doesn't say it twice). The forager walks
-to its side, kneels (`fireFrame` 'torch' → 'set', `TORCH_SET_MS`) pushing it in, spends it, and strikes once, which is
+"why not" is the label `drawFireHint` already draws by a faint one (a torch's click doesn't say it twice). While a spot is
+picked, the light it would cast lies on the ground round the faint one (`drawTorchReach`: `torchReach` tiles out, the pool
+warm and faint with a thin ring at its edge, fainter where it can't go, drawn with the camp's ghost ring under all that
+stands), and at night `lightsFrame` puts the ghost among the lights, so the dark is cut away out to it for real: a torch's
+place is picked by what it would light rather than guessed at. The forager walks to its side, kneels (`fireFrame` 'torch' →
+'set', `TORCH_SET_MS`) pushing it in, spends it, and strikes once, which is
 when `S.placeTorch` sets it lit; then it watches the flame (`lit`). `drawTorch` draws the real ones with the trees and
 animals: `paintTorch`'s three looks (`TORCH_ARTS`: burning, guttering over its last fifth, then the stub) and the
-sharper flame set (`TORCH_FLAME_ART`, centred on the crown). Its light is `lightsFrame`'s (a lantern's pool, `TORCH_LIGHT` of a fire's, dimmer guttering, none from the stub), it crackles
-near (`torchSound`), and friends see it set down (`sendFire('torch')`). One guttering or burnt out (`torchLow`: its last fifth,
-drawTorch's look, or the stub) wants bark: a hover says so (`torchWord`, through `hoverLine`, as `fireWord`; nothing while it
-burns well), and a click, a tap, or E standing by it with bark (`barkTorch`) walks over and lights it again (`clickTorch`,
+sharper flame set (`TORCH_FLAME_ART`, centred on the crown). Its light is `lightsFrame`'s (a lantern's pool, `TORCH_LIGHT` of a fire's, dimmer guttering, none from the stub): the lattice's `t` marks it, so it takes `lightFallT` and `torchCutArt` rather than a fire's falloff — the same soft shape, a touch fuller at every step of the reach (0.86, 0.50, 0.20 against a fire's 0.82, 0.42, 0.14), so a line of them at five tiles closes into one lit path without a flat-topped disc with a drawn rim. Its cut alpha is 0.82 burning, 0.62 guttering (0.72 was a pip in the dark). It crackles
+near (`torchSound`), and friends see it set down (`sendFire('torch')`). A torch's line over the satchel names it: "Torch · burning"
+while it burns well, and one guttering or burnt out (`torchLow`: its last fifth, drawTorch's look, or the stub) wants bark, so
+the line says what it wants (`torchSaid`, `hoverSay`). A click, a tap, or E when it's the nearest thing to use and the satchel has
+bark (`barkTorch`, through `eTarget`) walks over and lights it again (`clickTorch`,
 `goFire` kind 'relight': the generic 'set' kneel, one birch bark spent through `spendBuild`'s `RELIGHT` table, one strike,
-`S.relightTorch`, then a `firstTime`). Without bark it says what's missing where it stands and doesn't walk. `torchAt` only
-finds the ones that want bark, so a click on one burning well is a walk there. Friends get `sendFire('torchre')`, and
+`S.relightTorch`, then a `firstTime`). Without bark it says what's missing where it stands and doesn't walk. `torchAt` (a
+click's) only finds the ones that want bark, so a click on one burning well is a walk there; a hover's `torchAt(..., true)` names
+a fine one too. Friends get `sendFire('torchre')`, and
 `meadowSum` counts which torches burn as well as how many.
 Making camp (sim.js `w.camp`, event 'camp': the first fire lit) is a moment (`campMoment`, the comment over
 `CAMP_FLARE`): the flames flare (`fireShown`), the light blooms out (`lightsFrame`) with a warm glow, two fountains of sparks,
@@ -55,38 +62,40 @@ twinkling stars, a wave of light out to the ring and motes rising off it (`campB
 (`campCam`, in `leadCam`; a zoom of your own ends it), "Your camp" pops in, glowing between two twinkling ✦ (announce 'camp', which cuts in ahead of the others; index.html `camp-pop`)
 and an Android phone buzzes (`CAMP_BUZZ`). Then a soft ring of trodden earth with a few stones lies round the fire (`drawCampRing`,
 `CAMP_ART` painted once, stretched; under all that stands), coming in over `CAMP_RING_MS` (`campFade`). The brown earth inside it is in the ground shader
-(ground.js `camp`, `campA`: an ellipse of ragged, mottled dirt over the grass, repainting the ground only while it fades in). The fire's hover calls it "Your camp" when it wants something.
-The make strip (PLAN.md stage 7; `#make`, `openMake`, `renderMakeStrip`: `stripUi` is it, not the vessels' `makeUi`): with more
-than one build on offer, a tap on the make button (or C) opens it just over the satchel, a tile a build (`makeList`: `after`
+(ground.js `camp`, `campA`: an ellipse of ragged, mottled dirt over the grass, repainting the ground only while it fades in). The fire's line over the satchel calls the camp's fire "Your camp".
+The craft button (2026-10-20; `#build`, `renderBuild`, from `craft-button-lab.html`): a brass plate with a pot and the word
+Craft left of the satchel (round, the plate alone, over its left end on a touch screen), in place of the old round make and
+basket buttons. It shows once the satchel holds any of what something on offer takes, sits in quiet parchment, and turns to
+the warm clay fill with a slow bloom (`.ready`) while any build can be made. A tap always opens the make strip.
+The make strip (PLAN.md stage 7; `#make`, `openMake`, `renderMakeStrip`: `stripUi` is it, not the vessels' `makeUi`): a tap
+on the craft button (or C) opens it just over the satchel, a tile a build (`makeList`: `after`
 passed, the basket not twice, and a guest's basket left out) with its painting (`BUILD_ART`, painted once and kept as a blob's
 address, as `vesselIcon`'s), its name, and what it takes as little item chips, have/need (`2/5`), bright when met. Ready tiles
 are bright, the rest faded with a ring (`--k`); a tap on a ready one shuts it and starts placing (`startBuild`: `placeFire` or
 `placeBasket`), one not ready (or one that goes at camp, from outside it) says what's missing and the strip stays open. ✕, Esc,
-Back, C, a tap anywhere else, or walking off shut it (`makeFrame`; it rewrites only when what it shows changes). F stays the
+Back, C, or a tap on another card or button shut it; walking (the keys, a click or a drag on the meadow, the minimap) leaves it
+open, its chips following the forager in and out of camp (`makeFrame`; it rewrites only when what it shows changes). F stays the
 quick campfire (`campfirePressed`), and still blows at a fire.
-The camp's basket (2026-10-17; the comment over `WEAVE_MS`): once there's a camp the make button's build is it until it's made
-(`buildFocus`), and the make strip offers it (recipes.js `BUILDS.basket`: 8 sticks, 4 dry grass, `where: 'camp'`,
+The camp's basket (2026-10-17; the comment over `WEAVE_MS`): once there's a camp the make strip offers it (recipes.js `BUILDS.basket`: 8 sticks, 4 dry grass, `where: 'camp'`,
 `after: 'camp'`). A tap on its ready tile in camp picks a spot inside the ring (`ui.place` with `basket: true`, sim.js
 `basketSpot`); the forager kneels and weaves it (`fireFrame`'s 'weave', `WEAVE_MS`), the basket growing up out of the ground.
-Its round button left of the make button (`#basket-btn`, `renderBasketBtn`, also looked at in the 250 ms block) shows once it's
-made, in camp, and only opens it; with nothing the make button takes in the satchel (or one already laid) the make button hides, and the
-basket's steps into its place by the satchel (`index.html`'s `#satchel:has(#build.hidden) #basket-btn`) rather than hanging out
-where the make button's would have been.
+Once made it opens from the meadow: a click on it, or E by it (`goBasket`); it no longer has a button by the satchel.
 Painted once (`paintBasket`, 'basket:' 0 shut, 1 open with apples, a cep and leaves heaped in it once it holds anything), drawn
-with the trees and animals (`drawBasket`), a hover saying how much is in it (`basketWord`). In camp its button, or a click on
-the basket, or E standing by it (`basketByE`: nearer it than to a fire E would cook at or light), walks over and opens its card just over the satchel (`#larder`, `openLarder`, `renderLarder`, `setupLarder`): 24
+with the trees and animals (`drawBasket`), a hover saying in the line over the satchel how much is in it (`basketSaid`, `hoverSay`). In camp a click on
+the basket, or E when it's the nearest thing to use (`eTarget`: the same race as every other E target, by distance), walks over and opens its card just over the satchel (`#larder`, `openLarder`, `renderLarder`, `setupLarder`): 24
 slots as the satchel's; a tap moves a slot across either way, a drag puts it in the slot it's let go on (sim.js `moveBetween`,
 `moveInto`), "Put all in" empties the satchel into it (`putAway`). Whatever moves either way flies as a small painting from its slot to the one that took it (`flyMoves`: paired by what it is, at most `FLY_MOST`, `FLY_GAP` ms apart; the landing slot's own painting waits hidden, `.incoming`, and bumps as it lands). Walking off `LARDER_NEAR`, going to a fire, ✕, E, Esc or Back shut
 it (`larderFrame`, `stepOut`). Playing together it's shared: the host makes it (a friend sees it set down: `sendFire` 'basket') and anyone in camp can open it; each move sends the slots it changed (`sendBasket`, `'bk'`, applied at its tick in `basketNet`), so two moving different things at once both land, and the basket is in `meadowSum`, so a guest who drifts off gets it again. It's also to hand while cooking at a fire in camp: its things are then a row of small tiles in the cooking window, a tap taking one out (below, `#cook-basket`).
 
 The seat log (`BUILDS.seat`, five sticks, `where: 'camp'`) goes down the basket's way: `placeSeat` (`ui.place` with `seat: true`,
 `S.seatSpot` for the why), `goFire` kind `'seat'`, the generic `'set'` kneel (`TORCH_SET_MS`), which for a seat ends the job
-instead of striking, then a `firstTime`. Painted once a turn (`paintSeat`, `SEAT_ARTS`, `SEAT_TURNS`: 15° steps from -45° to 45°, then the old tilt for a seat kept
-from before it turned; `SEAT_TURN0` for the strip's tile): a round log on two sawn rounds, turned as it was placed, about two foragers long; drawn by `drawSeat`. It's solid. A click on it (`seatAt`) walks
+instead of striking, then a `firstTime`. Painted once a turn (`paintSeat`, `SEAT_ARTS`, `SEAT_TURNS`: 15° steps from -45° to 45°, then the old tilt for a seat kept from before it turned; `SEAT_TURN0` for the strip's tile): a bench: a log split lengthwise, flat side up (grain, two knots, a split at the far end), on two
+short stumps, in a three-quarter view (`SEAT_KX`, `SEAT_KY`) and soft-shaded with no outline, turned as it was placed, about two foragers long; drawn by `drawSeat`. It's solid. A click on it (`seatAt`) or E when it's the nearest thing to use (`eTarget`) walks
 the forager to just in front (`goSeat`, `S.SEAT_OUT`), and standing still there `SEAT_MS` (`sitFrame`, `fireSit.seat`) it sits
 on it: fur.js `sitPose` (`KNEEL.sit`, `KNEEL.sitWarm` with a fire lit at camp: eyes shut, smiling), facing you, lifted onto the
-log by `seatLift` (as a dance's hop is, `fg.lift`; a friend's from its `kn`), with no shadow of its own. Friends get
-`sendFire('seat')`, and `meadowSum` counts it.
+log by `seatLift` (as a dance's hop is, `fg.lift`; a friend's from its `kn`), with no shadow of its own. A hover, or a finger
+standing by it, says "Seat log · sit down" in the line over the satchel (`hoverSay`; "sitting" once it's up there), with E on a
+keyboard when E would go to it. Friends get `sendFire('seat')`, and `meadowSum` counts it.
 
 ## sim.js
 
@@ -109,9 +118,12 @@ builds go. A meadow kept with a fire lit before camps makes camp at it as it ope
 Torches (`w.torches`, in `LATER`, one layout each, `torchOf`: where it stands, when it was set down, the ticks of flame left and
 how fast it's burning just now, `wet`): a stick wrapped in birch bark pushed into the ground anywhere but the deep water, or a
 trunk, a rock, a burrow or another torch (`torchSpot`, like `fireSpot` but closer), lit at once (`placeTorch`; what one takes is
-recipes.js `BUILDS.torch`, spent by game.js). It burns `TORCH_BURN` (half a season, 3.5 days, 42 min at 1x), quicker in the wet as a fire's
+recipes.js `BUILDS.torch`, spent by game.js). It burns `TORCH_BURN` (ten days, 2 h at 1x: a fixture for a session or two, not a
+thing you keep feeding), quicker in the wet as a fire's
 blowing is (`TORCH_WET`, `BLOW_WET`'s table), then its charred stub stays for good (fresh bark relights it). At most
-`TORCH_MAX` (20) burn at once: laying one past that gutters the oldest, its stub staying. It gives light, no warmth (game.js
+`TORCH_MAX` (64) burn at once: laying one past that gutters the oldest, its stub staying. The cap is on how many stand lit,
+not on the painting: game.js keeps only the nearest `LIGHT_MAX` (24) a frame, so a meadow can hold a real spread of them
+(64 was 20, which the birch bark's own supply could never keep up anyway). It gives light, no warmth (game.js
 draws its pool). `relightTorch` lights one guttering or out again (game.js has spent the bark): a fresh `TORCH_BURN`,
 `born` moved to now so it isn't the next one guttered, and the same `TORCH_MAX`. The water coming up over one puts it out
 (`torchUnder`: deep and not frozen, so the spring flood over the shallows it stood in, or the thaw under one on the ice; looked

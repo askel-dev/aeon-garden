@@ -46,7 +46,7 @@ over about a season (`RICH_DAYS`). Rabbits won't graze ground that rich (`fouled
 busy warren's latrines and an old kill site stand out as lusher patches until they fade and get grazed. Rich ground has more
 grubs for the crows (`grubs`) and rich shallows a little more frogspawn (`spawnFrogs`).
 Reeds and lily pads (`drawShore`) are a look too: a scatter `updateWater` works out along the shore whenever the water changes.
-Shallow water is waded slowly; deep water blocks.
+Shallow water is waded slowly; deep water blocks the animals (the forager wades it as it does the shallows, so it crosses anywhere).
 The rivers run (`makeCurrent`, `w.current`: worked out when a meadow is made or opened, never kept). Each point of a river
 knows which way it runs, how wide its channel is and its pace (quick in the narrows and over a ford, all but still in the lake
 or a wide stretch); each tile of running water takes the way and pace of the nearest point, slower by the banks; and it all runs

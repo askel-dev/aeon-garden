@@ -44,7 +44,8 @@ go after the frogs first, rooting along the shallows, and in winter they dig the
 the water's edge (`mostNear`'s `shore`, `OTTER_SHORE`). Under the ice they still fish where it meets the bank (`atEdge`): mud
 frogs alone starved them in long frozen winters. A fox up and
 about close to one on the bank sends it into the water (`slip`), and it watches the fox from there (mode `'watch'`) till
-it's `WARY_FAR` off or lies down, or `WATCH_TICKS` have gone, then pays foxes no mind for `CALM_TICKS` (`c.calm`). Asleep, it
+it's `WARY_FAR` off or lies down, or `WATCH_TICKS` have gone, then pays foxes no mind for `CALM_TICKS` (`c.calm`). A
+forager on the bank does the same (`foragerSign`, `FORAGER_THREAT`): in it goes, and watches you from the water. Asleep, it
 doesn't mind a fox (no fox hunts otters; before, one passing woke the family and sent cubs in and out of the water all night).
 A cub stays up while mum is (`mumUp`) and then sleeps by her; a bed is never in the water (`beside`).
 Well fed (`PLAY_FED`), they play (`play`): a slide (`slideNear`, `c.slide`) from the highest of a few spots on the open

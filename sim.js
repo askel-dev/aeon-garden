@@ -69,33 +69,40 @@ const MOVE_COST = 0.25;         // energy per tick = MOVE_COST * v^2 / walk, tim
 // Every animal of a kind is alike (SPECIES): no genes, and young don't take after their parents. Only a look
 // differs: a little bigger or smaller (c.scale), and a fox's shade (c.fur), which its cubs share. burn: energy a
 // tick on the 600-tick day, and hunger: how much of that it burns a tick now (see HUNGER); walk and sprint: tiles a tick.
+// spook: how many tiles off it starts to mind the forager, and bolt: the share of its notice (foragerSign) that
+// sends it running (see the forager's presence). Bees mind it not at all, yet.
 const SPECIES = {
   rabbit: {
     key: 'rabbit', name: 'Rabbit', plural: 'Rabbits', emoji: '🐇',
+    spook: 5.5, bolt: 0.45,
     maxEnergy: 100, burn: 0.035, hunger: EAT, walk: 0.06, sprint: 0.155, sight: 10, mateRange: 24, wade: 0.45,
     matureDays: 6, lifeDays: 30, gestationDays: 2, litter: [2, 5], cooldownDays: 2,
     breedSeasons: [0, 1], breedEnergy: 0.55, birthCost: 10, cap: 150,   // the cap holds them, with the foxes
   },
   fox: {
     key: 'fox', name: 'Fox', plural: 'Foxes', emoji: '🦊',
+    spook: 8, bolt: 0.55,
     maxEnergy: 220, burn: 0.035, hunger: 1 / SLOW, walk: 0.07, sprint: 0.21, sight: 18, mateRange: 45, wade: 0.6,
     matureDays: 11, lifeDays: 56, gestationDays: 3.5, litter: [2, 4], cooldownDays: 14,
     breedSeasons: [0, 1], breedEnergy: 0.65, birthCost: 25, cap: 12,
   },
   bee: {
     key: 'bee', name: 'Bee', plural: 'Bees', emoji: '🐝',
+    spook: 0, bolt: 1,   // (the guards and the smoke are a later thing)
     maxEnergy: 30, burn: 0.02, hunger: EAT, walk: 0.2, sprint: 0.3, sight: 15, wade: 1, flies: true,
     matureDays: 0.3, lifeDays: 5, winterLifeDays: 18,   // summer bees wear out in days; autumn-born ones last the winter
     breedSeasons: [0, 1, 2], cap: 150,                  // the queen lays (hivesTick), no pairing up
   },
   crow: {
     key: 'crow', name: 'Crow', plural: 'Crows', emoji: '🐦‍⬛',   // (game.js paints them: older systems split this emoji in two)
+    spook: 6, bolt: 0.4,
     maxEnergy: 80, burn: 0.028, hunger: EAT, walk: 0.35, sprint: 0.45, sight: 30, mateRange: 60, wade: 1, flies: true, glide: 0.2,   // walk: its flying pace; glide: what flying costs, of walking
     matureDays: 8, lifeDays: 84, gestationDays: 3, litter: [1, 3], cooldownDays: 21,   // one brood a year, in a tall tree
     breedSeasons: [0], breedEnergy: 0.6, birthCost: 8, cap: 24,
   },
   otter: {
     key: 'otter', name: 'Otter', plural: 'Otters', emoji: '🦦',   // (game.js paints them: the emoji floats on its back, and differs from system to system)
+    spook: 6, bolt: 0.4,
     maxEnergy: 150, burn: 0.03, hunger: EAT, walk: 0.055, sprint: 0.15, sight: 12, mateRange: 150, wade: 1.6, swims: true, glide: 0.4,   // wade: in the water it's quicker; glide: what moving costs it
     matureDays: 14, lifeDays: 84, gestationDays: 3, litter: [2, 3], cooldownDays: 21,   // one litter a year, in the holt
     breedSeasons: [0], breedEnergy: 0.55, birthCost: 15, cap: 6,
@@ -2157,6 +2164,7 @@ const blankCreature = () => ({
   mode: 'wander', target: null, targetId: 0, timer: 0, moved: -0,
   sprinting: false, sleeping: false, hidden: false, burrow: null, home: null, refuge: null, dig: null,
   alert: 0, threatId: 0, chaseT: 0, fright: 0, frightX: -0, frightY: -0, frightWhat: '',
+  notice: -0, trust: -0, scaredAt: 0, watchAt: 0,   // the forager: what it has noticed, how used to it, the last fright, the last good look (foragerSign)
   wary: 0, waryX: -0, waryY: -0, detour: 0, detourX: -0, detourY: -0, nemesisId: 0, haunt: null,
   pregnantUntil: 0, cooldownUntil: 0, dadIdPending: 0, dadGenPending: 0, dadMoult: -0,
   kids: 0, kills: 0, frogs: 0, fish: 0, escapes: 0, visits: 0, load: 0, find: null, story: null,
@@ -2502,6 +2510,26 @@ function rabbitTick(w, c) {
         c.alert = 120; c.threatId = fox.id; c.wary = 900; c.waryX = fox.x; c.waryY = fox.y;
       }
     }
+    // The forager about: a rabbit that sees it stops and watches (and keeps off the grass there), and one that
+    // has it too close bolts. A fox in sight still comes first for watching: it's the one that eats rabbits.
+    const f0 = w.forager, sign = foragerSign(w, c);
+    c.notice = sign;
+    if (f0 && sign >= c.sp.bolt) {
+      if (c.fright <= 0) {
+        c.trust = Math.max(0, c.trust - 0.2);
+        if (t - c.scaredAt > SCARE_NOTE) { c.scaredAt = t; note(w, c, '💨', 'Shied away from you'); }
+      }
+      frighten(c, f0.x, f0.y, 'forager');
+    } else if (!fox && f0 && sign > 0.1) {
+      c.wary = Math.max(c.wary, 90); c.waryX = f0.x; c.waryY = f0.y;
+      if (c.fright <= 0 && c.mode !== 'flee') {
+        if (sign > 0.18 && c.mode !== 'alarm' && t - c.watchAt > WATCH_GAP) {
+          c.watchAt = t;
+          c.mode = 'alarm'; c.timer = 25; c.threatId = FORAGER_THREAT; c.sleeping = false; c.target = null;
+        }
+        trustForager(c, 2);   // (rabbits look every other tick: the step above)
+      }
+    }
   }
   if (c.alert > 0) {
     const f = w.byId.get(c.threatId);
@@ -2511,7 +2539,10 @@ function rabbitTick(w, c) {
       return flee(w, c, f);
     }
   }
-  if (c.fright > 0) { c.fright--; return flee(w, c, { id: 0, x: c.frightX, y: c.frightY }); }
+  if (c.fright > 0) {
+    c.fright--;
+    return flee(w, c, { id: c.frightWhat === 'forager' ? FORAGER_THREAT : 0, x: c.frightX, y: c.frightY });
+  }
   if (c.mode === 'flee') { c.mode = 'wander'; c.target = null; c.sleeping = false; }
   if (c.mode === 'alarm') { if (--c.timer > 0) return; c.mode = 'wander'; c.target = null; }
 
@@ -2637,6 +2668,7 @@ function thump(w, c, fox) {
   forEachNear(w, c.x, c.y, 6, o => {
     if (o === c || o.alert > 0) return;
     o.alert = 80; o.threatId = fox.id; o.sleeping = false;
+    if (fox.id === FORAGER_THREAT) { o.wary = 300; o.waryX = fox.x; o.waryY = fox.y; }   // (thumped at the forager: keep off that spot)
     if (o.mode !== 'flee') { o.mode = 'alarm'; o.timer = w.rng.int(15, 40); o.target = null; }
   }, 'rabbit');
 }
@@ -2720,6 +2752,27 @@ function foxTick(w, c) {
   const e = c.energy / c.maxEnergy;
   c.sleeping = false;
 
+  // The forager: a fox is bold enough to hold a kill, but it gives ground when someone comes close, and it won't
+  // run a rabbit down with someone standing over it. (A fox eats a rabbit at a time, so a hunt lost is a meal lost.)
+  if ((t + c.id) % 3 === 0 && c.fright <= 0) {
+    const f0 = w.forager, sign = foragerSign(w, c);
+    c.notice = sign;
+    if (f0 && sign >= c.sp.bolt) {
+      c.trust = Math.max(0, c.trust - 0.2);
+      if (t - c.scaredAt > SCARE_NOTE) { c.scaredAt = t; note(w, c, '😤', 'Gave ground as you came near'); }
+      c.threatId = FORAGER_THREAT;
+      frighten(c, f0.x, f0.y, 'forager');
+    } else if (f0 && sign > 0.3) {
+      trustForager(c, 3);   // (foxes look every third tick)
+      if (c.mode === 'eat' && sign > 0.4) {
+        c.mode = 'wander'; c.target = null; c.timer = 0;
+        if (t - c.scaredAt > SCARE_NOTE) { c.scaredAt = t; note(w, c, '🍖', 'Left its kill as you came near'); }
+      } else if ((c.mode === 'stalk' || c.mode === 'chase') && sign > 0.45) {
+        c.targetId = 0; c.mode = 'wander'; c.target = null; missed(c);
+        if (t - c.scaredAt > SCARE_NOTE) { c.scaredAt = t; note(w, c, '😤', 'Gave up the hunt when you came near'); }
+      }
+    }
+  }
   if (c.fright > 0) {
     c.fright--; c.mode = 'flee'; c.targetId = 0;
     const a = Math.atan2(c.y - c.frightY, c.x - c.frightX);
@@ -4567,6 +4620,15 @@ function crowTick(w, c) {
     } else if (fox && dist2(c, fox) < FOX_REACH ** 2 && !fox.sleeping && fox.mode !== 'eat' && fox.energy < 0.75 * fox.maxEnergy && growth(w, fox) > 0.3) {   // (a fox out hunting)
       caw(w, c, fox); catchPrey(w, fox, c);
       return;
+    } else {                                           // (on the ground and no fox: the forager can put it up)
+      const f0 = w.forager, sign = foragerSign(w, c);
+      c.notice = sign;
+      if (f0 && sign >= c.sp.bolt) {
+        c.trust = Math.max(0, c.trust - 0.2);
+        if (t - c.scaredAt > SCARE_NOTE) { c.scaredAt = t; note(w, c, '🪽', 'Flew up as you came near'); }
+        c.threatId = FORAGER_THREAT;
+        flapUp(w, c, f0.x, f0.y, true);
+      } else if (f0 && sign > 0.1) trustForager(c, 4);   // (crows look every fourth tick)
     }
   }
   if (c.mode === 'flap') {
@@ -4706,9 +4768,10 @@ function gatherSpot(w) {
   return g;
 }
 
-// Up and away from a fox, or a fright, at x, y.
-function flapUp(w, c, x, y) {
-  const a = Math.atan2(c.y - y, c.x - x) + w.rng.range(-0.5, 0.5);
+// Up and away from a fox, or a fright, at x, y. sure: straight off, with no jitter (the forager's, whose
+// coming and going doesn't draw the meadow's random numbers).
+function flapUp(w, c, x, y, sure) {
+  const a = Math.atan2(c.y - y, c.x - x) + (sure ? 0 : w.rng.range(-0.5, 0.5));
   c.mode = 'flap'; c.sleeping = false;
   c.target = { x: clamp(c.x + Math.cos(a) * FLAP, 2, W - 2), y: clamp(c.y + Math.sin(a) * FLAP, 2, H - 2) };
 }
@@ -4901,7 +4964,7 @@ function crowMood(w, c) {
     case 'nest': return { emoji: '🪺', text: c.hidden ? 'A chick in the nest, calling for food' : c.sleeping ? 'Sitting on her eggs in the nest' : 'Flying to her nest' };
     case 'sleep': return { emoji: '💤', text: c.perch ? 'Asleep at the roost with the other crows' : 'Asleep' };
     case 'roost': return { emoji: '🏠', text: 'Flying to the roost for the night' };
-    case 'flap': return { emoji: '😱', text: c.threatId ? `Flapped up, away from ${w.byId.get(c.threatId)?.name ?? 'a fox'}!` : 'Flapped up, away from the smoke!' };
+    case 'flap': return { emoji: '😱', text: c.threatId === FORAGER_THREAT ? 'Flapped up, away from you!' : c.threatId ? `Flapped up, away from ${w.byId.get(c.threatId)?.name ?? 'a fox'}!` : 'Flapped up, away from the smoke!' };
     case 'remains': return { emoji: '👀', text: `Flying down to the remains of ${dead.name}` };
     case 'carrion': return { emoji: '🍖', text: `Pecking at the remains of ${dead.name}` };
     case 'peck': return { emoji: '🪱', text: 'Pecking for grubs' };
@@ -5022,6 +5085,15 @@ function otterTick(w, c) {
   if ((t + c.id) % 4 === 0 && c.mode !== 'slip' && c.mode !== 'leave' && c.mode !== 'sleep' && !(c.calm > t) && !swimming(w, c)) {
     const fox = nearest(w, c, OTTER_WARY, 'fox', awake);   // (a fox asleep is no bother)
     if (fox) slip(w, c, fox.x, fox.y, fox);
+    else {                                                 // (someone on the bank: in it goes, as from a fox)
+      const f0 = w.forager, sign = foragerSign(w, c);
+      c.notice = sign;
+      if (f0 && sign >= c.sp.bolt) {
+        c.trust = Math.max(0, c.trust - 0.2);
+        if (t - c.scaredAt > SCARE_NOTE) { c.scaredAt = t; note(w, c, '💦', 'Slipped into the water as you came near'); }
+        slip(w, c, f0.x, f0.y, FORAGER_WHO);
+      } else if (f0 && sign > 0.1) trustForager(c, 4);   // (otters look every fourth tick)
+    }
   }
   if (c.mode === 'slip' || c.mode === 'leave') {
     if (c.target && !moveToward(w, c, c.target.x, c.target.y, c.mode === 'slip' ? c.sprint : c.walk)) return;
@@ -5030,9 +5102,9 @@ function otterTick(w, c) {
     if (c.threatId && swimming(w, c)) { c.mode = 'watch'; c.timer = WATCH_TICKS; return; }
     c.mode = 'wander';
   }
-  if (c.mode === 'watch') {                          // treading water, eyes on the fox
-    const fox = w.byId.get(c.threatId);
-    if (fox && fox.alive && !fox.sleeping && --c.timer > 0 && dist2(c, fox) < WARY_FAR ** 2) { c.facing = fox.x > c.x ? 1 : -1; return; }
+  if (c.mode === 'watch') {                          // treading water, eyes on the fox, or on the forager on the bank
+    const fox = w.byId.get(c.threatId), who = fox || (c.threatId === FORAGER_THREAT ? w.forager : null);
+    if (who && who.alive !== false && !who.sleeping && --c.timer > 0 && dist2(c, who) < WARY_FAR ** 2) { c.facing = who.x > c.x ? 1 : -1; return; }
     c.mode = 'wander'; c.calm = t + CALM_TICKS;
   }
 
@@ -5186,7 +5258,7 @@ function slip(w, c, x, y, fox) {
   }
   c.mode = 'slip'; c.sleeping = false; c.threatId = fox ? fox.id : 0;
   c.target = best || { x: clamp(c.x + ax / ad * 6, 1, W - 1), y: clamp(c.y + ay / ad * 6, 1, H - 1) };
-  if (fox && best && c.story[c.story.length - 1].text !== 'Slipped into the water away from ' + fox.name) note(w, c, '💦', 'Slipped into the water away from ' + fox.name);
+  if (fox && best && fox.id !== FORAGER_THREAT && c.story[c.story.length - 1].text !== 'Slipped into the water away from ' + fox.name) note(w, c, '💦', 'Slipped into the water away from ' + fox.name);
 }
 
 // Where it sleeps: curled up at the holt with the family, side by side. Further from it than HOLT_HOME (and not
@@ -5381,8 +5453,9 @@ function otterMood(w, c) {
     case 'nest': return { emoji: '', text: 'A cub in the holt, squeaking for milk' };
     case 'sleep': return { emoji: '💤', text: holtOf(c) && dist2(c, c.home) < 4 ? 'Curled up asleep at the holt' : 'Curled up asleep on the bank' };
     case 'bed': return { emoji: '🏠', text: holtOf(c) && c.target && dist2(c.target, c.home) < 4 ? 'Off home to the holt for the day' : 'Off to a quiet bank to sleep on' };
-    case 'slip': return c.threatId ? { emoji: '💦', text: `Into the water, away from ${w.byId.get(c.threatId)?.name ?? 'a fox'}!` } : { emoji: '🔥', text: 'Away from the smoke!' };
-    case 'watch': return { emoji: '👀', text: `Watching ${w.byId.get(c.threatId)?.name ?? 'a fox'} from the water` };
+    case 'slip': return c.threatId === FORAGER_THREAT ? { emoji: '💦', text: 'Into the water, away from you!' }
+      : c.threatId ? { emoji: '💦', text: `Into the water, away from ${w.byId.get(c.threatId)?.name ?? 'a fox'}!` } : { emoji: '🔥', text: 'Away from the smoke!' };
+    case 'watch': return { emoji: '👀', text: c.threatId === FORAGER_THREAT ? 'Watching you from the water' : `Watching ${w.byId.get(c.threatId)?.name ?? 'a fox'} from the water` };
     case 'leave': return { emoji: '🧳', text: 'Off down the water to find a stretch of its own' };
     case 'fish': return { emoji: '🐟', text: c.target && c.target.tries ? 'Coming up, and down again' : 'Swimming off to where the fish are' };
     case 'dive': return { emoji: '🐟', text: 'Diving for fish' };
@@ -5444,11 +5517,12 @@ function lifeTick(w, c) {
 
 // ---------------------------------------------------------------- the forager
 //
-// The player: a little hooded forager (w.forager) you walk about by clicking. Not a creature: nothing hunts it and it
-// eats nothing the meadow counts. A click asks foragerTo for a way there: A* over the tiles (deep water blocks unless
-// it's frozen; the shallows cost more, so it wades only where that saves a good way round; ground by the deep costs a
-// little more, so the way keeps off the brink), then pulled tight into a few straight legs (taut: each as long as it can
-// be without coming within TAUT_CLEAR of the deep, or wading where the tiles' way didn't). It walks them by steering, not
+// The player: a little hooded forager (w.forager) you walk about by clicking. Not a creature, and nothing hunts it,
+// but not a ghost either: the animals notice it, watch it and give ground (the forager's presence), and it eats
+// nothing the meadow counts. A click asks foragerTo for a way there: A* over the tiles (any water may be waded, the
+// shallows and the deep alike, though it costs more, so the way wades only where that saves a good way round), then
+// pulled tight into a few straight legs (taut: each as long as it can be without clipping a rock or cutting through thick
+// brush). It walks them by steering, not
 // tile by tile: it heads for a point FORAGER_LOOK tiles further along the way, turning at most FORAGER_TURN a tick, so
 // corners come round in curves; it speeds up gently (FORAGER_ACCEL), slows to stop just where it was sent (FORAGER_BRAKE),
 // slows into a sharp turn, and wades at FORAGER_WADE of its pace. Sent running (f.running: game.js, Shift held or the
@@ -5460,18 +5534,36 @@ function lifeTick(w, c) {
 const FORAGER_WALK = 0.085;             // tiles a tick at a walk (a rabbit ambles 0.06)
 const FORAGER_RUN = 0.16;               // and at a sprint
 const FORAGER_SNEAK = 0.042;            // and sneaking (f.sneaking: game.js, the devious walk), a creep on its toes
-const FORAGER_WADE = 0.5;               // of that, in the shallows
-const FORAGER_ACCEL = 0.0058;           // tiles a tick it gains a tick, setting off (about half a second to a walk)
-const FORAGER_BRAKE = 0.0035;           // and loses, stopping (it starts slowing about 0.7 tiles out)
-const FORAGER_TURN = 0.16;              // radians a tick it can turn at most at a walk (three times that from standing)
+const FORAGER_WADE = 0.5;               // of that, in the water
+const FORAGER_ACCEL = 0.014;            // tiles a tick it gains a tick, setting off (about a fifth of a second to a walk)
+const FORAGER_BRAKE = 0.009;            // and loses, stopping (it starts slowing about 0.4 tiles out)
+const FORAGER_TURN = 0.24;              // radians a tick it can turn at most at a walk (three times that from standing)
+const FORAGER_ABOUT = 2.4;              // a turn wider than this it makes on the spot (turning about: no front or back view on the way round)
 const FORAGER_ICE_ACCEL = 0.0022;       // tiles a tick it gains a tick on the ice (a slow start: it has no grip)
 const FORAGER_ICE_TURN = 0.045;         // radians a tick it can turn at most on the ice (a long wide arc, no digging in)
 const FORAGER_ICE_GLIDE = 0.0012;       // tiles a tick its glide loses (a walk carries about three tiles)
 const FORAGER_ICE_STOP = 0.004;         // and slower than this the glide is over
 const FORAGER_LOOK = 0.8;               // tiles ahead along its way it steers for
-const SHALLOW_COST = 2.5;               // a step in the shallows costs this many on dry ground
-const BRINK_COST = 0.8;                 // and one next to deep water this much more
-const TAUT_CLEAR = 0.3;                 // a straightened leg keeps this far off the deep on either side
+let foragerPace = 1;                    // of its walk, run and dash it goes: garden.pace in the console, to try a quicker one (2 is twice as quick)
+// A jump: a dash off the feet, not a leap: a short, low hop that carries it fast the way it faces, up and over whatever's
+// under it. Press it again just before it lands (or in the moment after) and the next dash keeps the momentum, a little
+// more each time, up to the most; press at the wrong time and the momentum is gone. A dash from standing is a
+// short shift; off a walk or a run it's longer, so a good chain clears a boulder. Rocks, the seat log and brush aren't in
+// its way while it's up (foragerJump, airTick).
+const FORAGER_JUMP_TICKS = 9;           // ticks in the air (0.3 s at 1x): a dash, not a float
+const FORAGER_JUMP_HEIGHT = 0.3;        // tiles it rises at the top of the arc (its painting's feet, drawForager)
+const FORAGER_DASH = 0.21;              // tiles a tick off a walk or a run (the run itself is FORAGER_RUN)
+const FORAGER_DASH_STILL = 0.13;        // and from standing: a shorter shift
+const FORAGER_DASH_DRAG = 0.96;         // of its pace it keeps each tick in the air (it goes off like a dash, easing out)
+const FORAGER_HOP_GAIN = 0.2;           // of the momentum a dash that keeps the chain adds (five make the most: 1)
+const FORAGER_HOP_DASH = 0.5;           // at the most, a dash is this much quicker (and a little quicker with each)
+const FORAGER_HOP_RUN = 0.2;            // and its walk or run once it's down
+const FORAGER_HOP_FADE = 1 / 120;       // of the momentum it loses a tick walking (and three times that standing)
+const FORAGER_HOP_EARLY = 3;            // ticks before it lands a press is kept for the next dash (the window to aim for)
+const FORAGER_HOP_GRACE = 2;            // and ticks after it lands one still keeps the chain
+const FORAGER_JUMP_V = 4 * FORAGER_JUMP_HEIGHT / FORAGER_JUMP_TICKS;                              // tiles a tick up at take-off
+const FORAGER_JUMP_G = 8 * FORAGER_JUMP_HEIGHT / (FORAGER_JUMP_TICKS * FORAGER_JUMP_TICKS);      // and its gravity, a tick
+const WATER_COST = 2.5;                 // a step in the water costs this many on dry ground
 const FORAGER_GIRTH = 0.22;             // how near a rock's side it comes, middle to edge
 // How far out from its middle a rock is in the way, in its sizes (its main stone as game.js paints it); pebbles and a
 // ford's stones it walks over.
@@ -5494,6 +5586,10 @@ const BRUSH_NEAR = 2.5;                 // tiles about it it looks for brush in,
 // now (in degrees, like airTemp), winded: spent, no sprint till it's got its breath back, down: the tick it collapsed
 // (-1: on its feet), stumble: ticks left of a stumble, homeX, homeY: where it wakes (where it started, then by the camp's fire),
 // tummy (1 full, 0 empty: eat), warmIn: ticks left of a warm dish's warmth inside it, health (1 well, 0 collapsed: bodyTick). xp, lv: its skills, by name (SKILLS).
+// jumpT: ticks left in the air (0: on its feet), jz: how high it is (tiles), jumpV: how fast it's rising; jumpSpeed: the
+// pace it took off at, jumpFX, jumpFY: where it left the ground (outOfRocks, landing on a rock), jumpAt: the tick it took
+// off (drawing its take-off once); hop: the momentum it has (chained dashes, 0 to 1), hopBuf: ticks a press while up is
+// kept for the landing, hopWin: ticks after landing a press still chains, landTick: the tick it last came down (0: never).
 // kit: what it has made (kitOf, shapeVessel), kept at camp, never in the satchel.
 const SLOTS = 8, STACK = 10;            // the satchel's slots, and how many of a kind one holds (by default)
 let stackFn = null;                     // recipes.js stackOf and keepOf, handed over by setStacks (the sim has no recipes of its own)
@@ -5507,6 +5603,8 @@ function foragerOf(x, y) {
   const f = { forager: true, x, y, path: [], leg: 0, speed: -0, heading: Math.PI / 2, moved: -0, walking: false, goalX: x, goalY: y,
     running: false, sneaking: false, bag: new Array(SLOTS).fill(''), bagN: new Array(SLOTS).fill(0),
     warmth: -0, wet: -0, stamina: -0, feel: -0, winded: false, down: -1, stumble: 0, homeX: x, homeY: y, tummy: -0, warmIn: 0, health: -0,
+    jumpT: 0, jz: -0, jumpV: -0, jumpSpeed: -0, jumpFX: -0, jumpFY: -0, jumpAt: 0,
+    hop: 0, hopBuf: 0, hopWin: 0, landTick: 0,
     xp: bySkill(-0), lv: bySkill(0), kit: kitOf() };
   f.warmth = 1; f.stamina = 1; f.tummy = 1; f.health = 1;   // (after: they start as fractions, so the layout never changes; a kept one from before the tummy starts full)
   return f;
@@ -5559,7 +5657,7 @@ function stoneOf(w) {
 
 // The rocks in its way, worked out once a meadow (rocks never come or go): x, y and how near it comes to the middle
 // (solidR, as x, y, r threes), and the tiles whose middle is that near one, which it can't step on (solidTile).
-let solidW = null, solidR = [], solidTile = null;
+let solidW = null, solidR = [], solidTile = null, solidN = 0;   // (solidN: the circles that walking steps out of one by one; the seat log's after them are one capsule, seatSolid)
 function rocksFor(w) {
   if (solidW === w) return;
   solidW = w; solidR = [];
@@ -5579,6 +5677,7 @@ function rocksFor(w) {
       for (let tx = Math.max(0, Math.floor(d.x - r)); tx <= Math.min(W - 1, Math.floor(d.x + r)); tx++)
         if (Math.hypot(tx + 0.5 - d.x, ty + 0.5 - d.y) < r) solidTile[ty * W + tx] = 1;
   }
+  solidN = solidR.length;
   const Q = w.camp && w.camp.seat;                          // (the camp's seat log: a row of them along it, seatEnds)
   if (Q) {
     const r = SEAT_DEEP + FORAGER_GIRTH;
@@ -5594,19 +5693,35 @@ function rocksFor(w) {
 }
 // Whether the leg from x0, y0 to x1, y1 keeps clear of every rock.
 function pastRocks(x0, y0, x1, y1) {
-  for (let k = 0; k < solidR.length; k += 3) if (segDist(solidR[k], solidR[k + 1], x0, y0, x1, y1) < solidR[k + 2]) return false;
+  for (let k = 0; k < solidN; k += 3) if (segDist(solidR[k], solidR[k + 1], x0, y0, x1, y1) < solidR[k + 2]) return false;
+  if (solidR.length > solidN) {                            // (the seat log: a capsule, its ends the first and last circle)
+    const e = solidR.length - 3, r = solidR[e + 2];
+    if (segSegDist(solidR[solidN], solidR[solidN + 1], solidR[e], solidR[e + 1], x0, y0, x1, y1) < r) return false;
+  }
   return true;
 }
 // x, y moved out of any rock it's in, to its edge (or no further in than from, for one it's already in: a meadow kept
 // before rocks were in its way). Into rockX, rockY.
 let rockX = 0, rockY = 0;
 function outOfRocks(x, y, fromX, fromY) {
-  for (let k = 0; k < solidR.length; k += 3) {
+  for (let k = 0; k < solidN; k += 3) {
     const cx = solidR[k], cy = solidR[k + 1], dx = x - cx, dy = y - cy, d = Math.hypot(dx, dy);
     const most = Math.min(solidR[k + 2], Math.hypot(fromX - cx, fromY - cy));
     if (d >= most) continue;
     const a = d > 1e-6 ? 1 / d : 0;
     x = cx + (a ? dx * a : 1) * most; y = cy + (a ? dy * a : 0) * most;
+  }
+  if (solidR.length > solidN) {                            // (the seat log, one capsule: pushed out straight from its line, so it slides along it)
+    const e = solidR.length - 3, ax = solidR[solidN], ay = solidR[solidN + 1], bx = solidR[e], by = solidR[e + 1];
+    const dx = bx - ax, dy = by - ay, L = dx * dx + dy * dy || 1;
+    const t = clamp(((x - ax) * dx + (y - ay) * dy) / L, 0, 1), cx = ax + dx * t, cy = ay + dy * t;
+    const ox = x - cx, oy = y - cy, d = Math.hypot(ox, oy);
+    const tf = clamp(((fromX - ax) * dx + (fromY - ay) * dy) / L, 0, 1);
+    const most = Math.min(solidR[e + 2], Math.hypot(fromX - (ax + dx * tf), fromY - (ay + dy * tf)));
+    if (d < most) {
+      if (d > 1e-6) { x = cx + ox / d * most; y = cy + oy / d * most; }
+      else { const n = Math.hypot(dx, dy) || 1; x = cx - dy / n * most; y = cy + dx / n * most; }
+    }
   }
   rockX = x; rockY = y;
 }
@@ -5719,18 +5834,14 @@ function brushAbout(w, x, y) {
   for (const b of w.brambles) add(b);
 }
 
-// A step's cost onto tile i, or 0 where it can't go.
-const canStand = (w, i) => (w.frozen || w.water[i] !== DEEP) && !solidTile[i];
+// Whether it can stand on tile i: anything but a rock's.
+const canStand = i => !solidTile[i];
+// What a step onto tile i costs, or 0 where it can't go. The water is all wadeable, the deep with the shallows.
 function stepCost(w, i) {
   if (solidTile[i]) return 0;
   const brush = 1 + BRUSH_COST * brushTile[i];
   if (w.frozen) return brush;
-  const v = w.water[i];
-  if (v === DEEP) return 0;
-  let c = v === SHALLOW ? SHALLOW_COST : brush;
-  const x = i % W, y = (i / W) | 0;
-  if ((x > 0 && w.water[i - 1] === DEEP) || (x < W - 1 && w.water[i + 1] === DEEP) || (y > 0 && w.water[i - W] === DEEP) || (y < H - 1 && w.water[i + W] === DEEP)) c += BRINK_COST;
-  return c;
+  return w.water[i] ? WATER_COST : brush;
 }
 
 // A* over the tiles, from tile a to tile b (or, if b can't be reached, to the tile reached nearest it). Its arrays are
@@ -5778,7 +5889,7 @@ function tilePath(w, a, b) {
       const j = ny * W + nx;
       if (starSeen[j] === -run) continue;
       const c = stepCost(w, j);
-      if (!c || (dx && dy && (!canStand(w, y * W + nx) || !canStand(w, ny * W + x)))) continue;   // (no squeezing past the deep's corner)
+      if (!c || (dx && dy && (!canStand(y * W + nx) || !canStand(ny * W + x)))) continue;   // (no cutting past a rock's corner)
       const g = starG[i] + c * (dx && dy ? Math.SQRT2 : 1);
       if (starSeen[j] === run && g >= starG[j]) continue;
       starSeen[j] = run; starG[j] = g; starF[j] = g + h(j) * 0.999; starFrom[j] = i;
@@ -5790,29 +5901,17 @@ function tilePath(w, a, b) {
   return out.reverse();
 }
 
-// Whether the straight leg from x0, y0 to x1, y1 keeps clear of the rocks, TAUT_CLEAR off the deep, (dry: the tiles' way didn't wade)
-// out of the shallows, and out of brush thicker than thick (the thickest the tiles' way went through), so it doesn't cut
-// through the wood the way went round.
-function taut(w, x0, y0, x1, y1, dry, thick) {
+// Whether the straight leg from x0, y0 to x1, y1 keeps clear of the rocks and out of brush thicker than thick (the
+// thickest the tiles' way went through), so it doesn't cut through the wood the way went round.
+function taut(w, x0, y0, x1, y1, thick) {
   if (!pastRocks(x0, y0, x1, y1)) return false;
   const dx = x1 - x0, dy = y1 - y0, d = Math.hypot(dx, dy), n = Math.max(1, Math.ceil(d / 0.2));
   for (let k = 1; k < n; k++) if (brushTile[idx(x0 + dx * k / n, y0 + dy * k / n)] > thick + 0.05) return false;
-  if (w.frozen) return true;
-  const px = d ? -dy / d * TAUT_CLEAR : 0, py = d ? dx / d * TAUT_CLEAR : 0;
-  for (let k = 0; k <= n; k++) {
-    const x = x0 + dx * k / n, y = y0 + dy * k / n;
-    for (let s = -1; s <= 1; s++) {
-      const sx = x + px * s, sy = y + py * s;
-      if (!inBounds(sx, sy)) return false;
-      const v = w.water[idx(sx, sy)];
-      if (v === DEEP || (dry && s === 0 && v === SHALLOW)) return false;
-    }
-  }
   return true;
 }
 
 // Sends it to x, y: the way there found and pulled tight. Returns where it'll stop (the nearest it can get, for a click
-// on the deep or across it), or null if it's there already.
+// on a rock or whatever it can't stand on), or null if it's there already.
 function foragerTo(w, x, y) {
   const f = w.forager;
   if (f.down >= 0) return null;                          // (collapsed: it goes nowhere till it wakes)
@@ -5821,11 +5920,11 @@ function foragerTo(w, x, y) {
   outOfRocks(x, y, x, y + 1e9);                          // (sent onto a rock: to its edge, the side nearest the click)
   x = clamp(rockX, 0.6, W - 0.6); y = clamp(rockY, 0.6, H - 0.6);
   let goal = idx(x, y);
-  if (!canStand(w, goal)) {                              // on the deep: the nearest tile it can stand on
+  if (!canStand(goal)) {                              // (on a rock: the nearest tile it can stand on)
     let best = -1, bd = Infinity;
     for (let r = 1; r < 16 && best < 0; r++) for (let j = -r; j <= r; j++) for (let i = -r; i <= r; i++) {
       const tx = (x | 0) + i, ty = (y | 0) + j;
-      if (tx < 0 || ty < 0 || tx >= W || ty >= H || !canStand(w, ty * W + tx)) continue;
+      if (tx < 0 || ty < 0 || tx >= W || ty >= H || !canStand(ty * W + tx)) continue;
       const d = (tx + 0.5 - x) ** 2 + (ty + 0.5 - y) ** 2;
       if (d < bd) { bd = d; best = ty * W + tx; }
     }
@@ -5836,16 +5935,14 @@ function foragerTo(w, x, y) {
   if (tiles[last] !== goal) { x = tiles[last] % W + 0.5; y = ((tiles[last] / W) | 0) + 0.5; }   // (cut off: as near as it gets)
   if (Math.hypot(x - f.x, y - f.y) < 0.15) return null;
   // Pulled tight: from each corner, straight on to the furthest tile along the way it can reach in a line.
-  const wet = i => !w.frozen && w.water[i] === SHALLOW;
   const px = k => (k === last ? x : tiles[k] % W + 0.5), py = k => (k === last ? y : ((tiles[k] / W) | 0) + 0.5);
   const pts = [f.x, f.y];
   let ax = f.x, ay = f.y, a = 0;
   while (a < last) {
-    let dry = !wet(tiles[a]), thick = brushTile[tiles[a]], ok = a + 1;
+    let thick = brushTile[tiles[a]], ok = a + 1;
     for (let b = a + 1; b <= last; b++) {
-      if (wet(tiles[b])) dry = false;
       thick = Math.max(thick, brushTile[tiles[b]]);
-      if (taut(w, ax, ay, px(b), py(b), dry, thick)) ok = b;
+      if (taut(w, ax, ay, px(b), py(b), thick)) ok = b;
       else if (b - ok > 4) break;                        // (well past where it lost sight)
     }
     a = ok; ax = px(a); ay = py(a);
@@ -5858,10 +5955,69 @@ function foragerTo(w, x, y) {
   return { x, y };
 }
 
+// How near two segments come (a to b, c to d); they cross: 0.
+function segSegDist(ax, ay, bx, by, cx, cy, dx, dy) {
+  const r = (bx - ax) * (dy - cy) - (by - ay) * (dx - cx);
+  if (r) {
+    const t = ((cx - ax) * (dy - cy) - (cy - ay) * (dx - cx)) / r, u = ((cx - ax) * (by - ay) - (cy - ay) * (bx - ax)) / r;
+    if (t >= 0 && t <= 1 && u >= 0 && u <= 1) return 0;
+  }
+  return Math.min(segDist(cx, cy, ax, ay, bx, by), segDist(dx, dy, ax, ay, bx, by), segDist(ax, ay, cx, cy, dx, dy), segDist(bx, by, cx, cy, dx, dy));
+}
 // How far x, y is from the segment from a to b.
 function segDist(x, y, ax, ay, bx, by) {
   const dx = bx - ax, dy = by - ay, t = clamp(((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy || 1), 0, 1);
   return Math.hypot(ax + dx * t - x, ay + dy * t - y);
+}
+
+// It dashes off its feet (game.js: the space bar): a quick, low hop the way it faces, over rocks, the seat log and brush,
+// landing where its pace carries it. Pressed again in the last FORAGER_HOP_EARLY ticks of a dash it's kept for the
+// landing, and in the FORAGER_HOP_GRACE ticks after one it still counts, either way carrying the chain on (hop) with a
+// little more pace each time. Pressed too late, or too early in the air (which drops the chain, so mashing doesn't work),
+// or from standing still after a wait, the momentum is gone. Returns false if it didn't jump (it's already up, or down);
+// a press while up is still taken if it's near enough the landing.
+function foragerJump(w) {
+  const f = w.forager;
+  if (!f || f.down >= 0) return false;
+  if (f.jumpT > 0) {
+    if (f.jumpT <= FORAGER_HOP_EARLY) f.hopBuf = FORAGER_HOP_EARLY;   // (a press just before it lands: kept for then)
+    else { f.hop = 0; f.hopBuf = 0; f.hopWin = 0; }                   // (too early: the chain is dropped, so mashing doesn't work)
+    return false;
+  }
+  const chained = f.hopWin > 0 || f.hopBuf > 0;
+  f.hop = chained ? Math.min(1, f.hop + FORAGER_HOP_GAIN) : 0;
+  f.hopBuf = 0; f.hopWin = 0;
+  f.jumpT = FORAGER_JUMP_TICKS; f.jz = 0; f.jumpV = FORAGER_JUMP_V; f.jumpAt = w.tick;
+  f.jumpSpeed = (f.walking ? FORAGER_DASH : FORAGER_DASH_STILL) * foragerPace * (1 + FORAGER_HOP_DASH * f.hop);
+  f.jumpFX = f.x; f.jumpFY = f.y;
+  return true;
+}
+
+// One tick in the air: it keeps its heading, the dash easing out a tick at a time, over whatever is under it. A friend is
+// still in its way (a person, not scenery). Landing inside a rock (a dash that fell short, or one that didn't quite clear
+// a boulder) it's put out at its edge, the side it was going. A press kept for the landing starts the next dash there and
+// then; else it goes on walking if it was walking, carrying what momentum it has.
+function airTick(w, f) {
+  f.moved = 0;
+  let nx = f.x + Math.cos(f.heading) * f.jumpSpeed, ny = f.y + Math.sin(f.heading) * f.jumpSpeed;
+  if (friendN) { outOfFriends(f, nx, ny); nx = rockX; ny = rockY; }
+  if (!inBounds(nx, ny)) {                               // (the meadow's edge: along it, else stopped in the air)
+    if (inBounds(nx, f.y)) ny = f.y;
+    else if (inBounds(f.x, ny)) nx = f.x;
+    else { nx = f.x; ny = f.y; }
+  }
+  f.moved = Math.hypot(nx - f.x, ny - f.y);
+  f.x = nx; f.y = ny;
+  f.jumpSpeed *= FORAGER_DASH_DRAG;
+  f.jz += f.jumpV; f.jumpV -= FORAGER_JUMP_G;
+  if (--f.jumpT > 0) return;
+  f.jz = 0; f.jumpV = 0;
+  rocksFor(w);
+  outOfRocks(f.x, f.y, f.jumpFX, f.jumpFY);
+  f.x = clamp(rockX, 0.05, W - 0.05); f.y = clamp(rockY, 0.05, H - 0.05);
+  f.jumpSpeed = 0; f.landTick = w.tick; f.hopWin = FORAGER_HOP_GRACE;
+  if (f.hopBuf > 0) foragerJump(w);                      // (a press kept: straight off again, the chain carried on)
+  else f.speed = f.walking ? Math.max(f.speed, FORAGER_WALK) * foragerPace * (1 + FORAGER_HOP_RUN * f.hop) : 0;
 }
 
 // A step of the glide on ice: no steering, its heading held, losing pace a tick (glide). Eased off rocks and friends as
@@ -5874,9 +6030,9 @@ function glideTick(w, f, glide) {
   if (friendN) { outOfFriends(f, nx, ny); nx = rockX; ny = rockY; }
   rocksFor(w);
   outOfRocks(nx, ny, f.x, f.y); nx = rockX; ny = rockY;
-  if (!walkable(w, nx, ny)) {                            // (the brink, or dry ground it can't slide onto: along it, else stopped)
-    if (walkable(w, nx, f.y)) ny = f.y;
-    else if (walkable(w, f.x, ny)) nx = f.x;
+  if (!inBounds(nx, ny)) {                               // (the meadow's edge: along it, else stopped)
+    if (inBounds(nx, f.y)) ny = f.y;
+    else if (inBounds(f.x, ny)) nx = f.x;
     else { f.speed = 0; return; }
   }
   f.moved = Math.hypot(nx - f.x, ny - f.y);
@@ -5887,6 +6043,9 @@ function glideTick(w, f, glide) {
 function foragerTick(w) {
   const f = w.forager, P = f.path;
   f.moved = 0;
+  if (f.jumpT > 0) { airTick(w, f); return; }
+  if (f.hopWin > 0) f.hopWin--;
+  if (f.hop > 0) f.hop = Math.max(0, f.hop - (f.walking ? FORAGER_HOP_FADE : FORAGER_HOP_FADE * 3));   // (momentum goes if it isn't used)
   const ice = onIce(w, f.x, f.y);
   if (!f.walking) {
     if (f.speed > FORAGER_ICE_STOP) glideTick(w, f, ice ? FORAGER_ICE_GLIDE : FORAGER_BRAKE * 2);   // (over the ice it glides; off it, it comes up short)
@@ -5920,9 +6079,9 @@ function foragerTick(w) {
   let turn = want - f.heading;
   turn -= Math.round(turn / (2 * Math.PI)) * 2 * Math.PI;
   const most = (ice ? FORAGER_ICE_TURN : FORAGER_TURN) * (1 + 2 * clamp(1 - f.speed / FORAGER_WALK, 0, 1));   // (standing, it turns round quicker)
-  f.heading += clamp(turn, -most, most);
+  f.heading += !ice && Math.abs(turn) > FORAGER_ABOUT ? turn : clamp(turn, -most, most);
   f.heading -= Math.round(f.heading / (2 * Math.PI)) * 2 * Math.PI;
-  const wade = !w.frozen && w.water[idx(f.x, f.y)] === SHALLOW;
+  const wade = !w.frozen && w.water[idx(f.x, f.y)] > 0;
   // In brush: slowed, and pushed out from each trunk's middle (pushX, pushY, in its sizes), less as it nears where it's going.
   brushAbout(w, f.x, f.y);
   let free = 1, pushX = 0, pushY = 0;
@@ -5935,7 +6094,7 @@ function foragerTick(w) {
     free *= 1 - brushAt(q, brushNear[k + 3]);
     if (d > 1e-4) { pushX += dx / d * q; pushY += dy / d * q; }
   }
-  const top = (f.running ? FORAGER_RUN * perk(f, 'stamina', 'pace') : f.sneaking ? FORAGER_SNEAK : FORAGER_WALK) * (wade ? FORAGER_WADE : 1) * free * bodyPace(f) * (ice ? 1 : clamp(Math.cos(turn) * 0.8 + 0.4, 0.15, 1));
+  const top = (f.running ? FORAGER_RUN * perk(f, 'stamina', 'pace') : f.sneaking ? FORAGER_SNEAK : FORAGER_WALK) * (wade ? FORAGER_WADE : 1) * free * bodyPace(f) * foragerPace * (ice ? 1 : clamp(Math.cos(turn) * 0.8 + 0.4, 0.15, 1)) * (1 + FORAGER_HOP_RUN * f.hop);   // (the momentum it landed with carries it a little faster)
   const v = ice ? top : Math.min(top, Math.sqrt(2 * FORAGER_BRAKE * rest)), s = f.speed;
   f.speed = v > s ? Math.min(v, s + (ice ? FORAGER_ICE_ACCEL : FORAGER_ACCEL)) : Math.max(v, s - (ice ? FORAGER_ICE_GLIDE : FORAGER_BRAKE * 2));
   if (rest < 0.02 || (rest < 0.1 && f.speed < 0.008)) { f.walking = false; f.running = false; if (!ice) f.speed = 0; f.path.length = 0; return; }
@@ -5952,14 +6111,78 @@ function foragerTick(w) {
   }
   rocksFor(w);
   outOfRocks(nx, ny, f.x, f.y); nx = rockX; ny = rockY;   // (a rock in the way: round it)
-  if (!walkable(w, nx, ny)) {                            // (the water came up, or a corner clipped the deep: slide along it)
-    if (walkable(w, nx, f.y)) ny = f.y;
-    else if (walkable(w, f.x, ny)) nx = f.x;
+  {                                                      // (grazing one it keeps its pace: the step it lost to the rock is made up along its side, or it wades)
+    const mx = nx - f.x, my = ny - f.y, ml = Math.hypot(mx, my);
+    if (ml > 1e-4 && ml < step * 0.98) {
+      outOfRocks(f.x + mx / ml * step, f.y + my / ml * step, f.x, f.y);
+      if (Math.hypot(rockX - f.x, rockY - f.y) > ml) { nx = rockX; ny = rockY; }
+    }
+  }
+  if (!inBounds(nx, ny)) {                               // (the meadow's edge: slide along it)
+    if (inBounds(nx, f.y)) ny = f.y;
+    else if (inBounds(f.x, ny)) nx = f.x;
     else { f.speed = 0; if (!foragerTo(w, f.goalX, f.goalY)) f.walking = false; return; }
   }
   f.moved = Math.hypot(nx - f.x, ny - f.y);
   f.x = nx; f.y = ny;
 }
+
+// ---------------------------------------------------------------- the forager's presence
+//
+// The forager is not a creature, but it is not a ghost either. One number says how much of it a creature has
+// noticed, 0 (not at all) to 1 (right under its nose): foragerSign. It reads the forager's pace and stealth
+// (sneaking is a creep), the ground it's on (wading splashes, ice rings, snow crunches, the woods hide it), the
+// weather's sight, and the creature's own spook range (shorter asleep or head down), and gives up some of that
+// range as the creature grows used to it (c.trust). Nothing here draws the meadow's random numbers: a walk about
+// leaves its own chances as they were (only the animals' reactions do, as a fox's would).
+//
+// A creature that notices it stops to watch a moment (rabbits alarm; all of them keep off the spot), and one that has
+// it too close bolts: frighten, the same flight a thumping rabbit or a lightning strike gives, so every species already
+// knows how to run from a point. (A rabbit gets back to its grass after a look: c.watchAt keeps it from standing there
+// all day.) c.notice is what it has noticed now, c.trust how used to the forager it is (it falls when it's frightened;
+// game.js shows the trust in its panel). A hunt begins with the same two numbers: creep in while it's tame and quiet,
+// and an arrow that misses has only to startle it (frighten at where it struck) for the flight.
+const FORAGER_THREAT = -1;        // c.threatId while it watches or runs from the forager (creature ids are positive)
+const FORAGER_WHO = { id: FORAGER_THREAT, name: 'you' };   // the forager as a threat, for slip and whatever else wants one
+const TRUST_TICKS = TPD;          // being near it, unalarmed, this long makes an animal wholly used to it
+const TRUST_GIVE = 0.6;           // and gives up this much of its spook range
+const SCARE_NOTE = TPD / 4;       // one line in its story a quarter day, though it may bolt more often
+const WATCH_GAP = TPD / 6;        // and it stops to watch the forager no more often than this (else it would never eat)
+const SPOOK_SLEEP = 0.45;         // asleep, it notices this much
+const SPOOK_GRAZE = 0.8;          // head down, this much
+const SPOOK_SNEAK = 0.6;          // of its noise, sneaking
+const SPOOK_STILL = 0.25;         // standing still
+const SPOOK_WALK = 1.15;          // walking
+const SPOOK_RUN = 1.5;            // sprinting
+const SPOOK_CLOSE = 1.5;          // tiles: closer than this, on the move, it's seen whatever the cover
+
+// How much of the forager a creature has noticed, 0 to 1.
+function foragerSign(w, c) {
+  const f = w.forager, spook = c.sp.spook;
+  if (!f || f.down >= 0 || !spook) return 0;
+  const dx = f.x - c.x, dy = f.y - c.y, d2 = dx * dx + dy * dy;
+  let range = spook * (1 - TRUST_GIVE * c.trust) * sky(w).sight;
+  if (c.sleeping) range *= SPOOK_SLEEP;
+  if (c.mode === 'graze' || c.mode === 'munch' || c.mode === 'peck' || c.mode === 'carrion'
+    || c.mode === 'berries' || c.mode === 'tadpole' || c.mode === 'unbury' || c.mode === 'root') range *= SPOOK_GRAZE;
+  if (range < 0.5 || d2 > range * range) return 0;
+  const d = Math.sqrt(d2);
+  if (d < 0.9 || (d < SPOOK_CLOSE && f.speed > 0.02)) return 1;
+  const v = f.speed / FORAGER_WALK;                    // 0 standing, 1 walking, about 1.9 sprinting
+  let loud = v < 1 ? SPOOK_STILL + (SPOOK_WALK - SPOOK_STILL) * v
+    : SPOOK_WALK + (SPOOK_RUN - SPOOK_WALK) * clamp(v - 1, 0, 1);
+  if (f.sneaking) loud *= SPOOK_SNEAK;
+  const i = idx(f.x, f.y);
+  if (w.water[i] && !w.frozen) loud *= 1.25;           // wading splashes
+  if (onIce(w, f.x, f.y)) loud *= 1.35;                // and rings over the ice
+  if (w.snow > 0.25) loud *= 1.15;                     // snow crunches
+  if (w.weather.kind === 'rain' || w.weather.kind === 'storm') loud *= 0.8;   // the rain covers it
+  if (w.wood[i] > 0.4) loud *= 0.9;                    // the woods hide it a little
+  return clamp((1 - d / range) * loud, 0, 1);
+}
+
+// It has had the forager in sight and hasn't run: it gets a little more used to it (a tick's worth).
+function trustForager(c, ticks) { if (c.trust < 1) c.trust = Math.min(1, c.trust + ticks / TRUST_TICKS); }
 
 // ---------------------------------------------------------------- warmth, wet and stamina
 //
@@ -6056,7 +6279,7 @@ function bodyTick(w) {
   const kind = w.weather.kind, i = idx(f.x, f.y), air = airTemp(w), gale = openingStorm(w);
   const shelter = clamp(w.wood[i] / SHELTER_WOOD, 0, 1);
   const moving = f.walking && f.moved > 0, sprint = moving && f.running && !f.winded;
-  const wade = !w.frozen && w.water[i] === SHALLOW;
+  const wade = !w.frozen && w.water[i] > 0;
   const fire = w.fires.length ? fireWarmth(w, f.x, f.y) : 0, near = fire ? fireNear : 0;   // (a fire close by: the strongest warmth)
   const feel = air + (SUN[kind] || 0) * sunUp(w.tick) * (1 - shelter) - ((WIND[kind] || 0) + (gale ? GALE_WIND : 0)) * (1 - 0.6 * shelter) - WET_CHILL * f.wet
     + (sprint ? ACTIVE.run : moving ? ACTIVE.walk : ACTIVE.still) + fire;
@@ -6273,18 +6496,19 @@ const fireHeat = F => (F.lit ? 0.45 + 0.55 * clamp(F.fuel / FIRE_LOW, 0, 1) : F.
 //
 // A torch (w.torches, one layout, torchOf): a stick wrapped with birch bark, pushed into the ground where the forager
 // kneels (placeTorch; what one takes is recipes.js's BUILDS.torch, which game.js spends), and lit at once with a strike.
-// It burns for TORCH_BURN (half a day, 6 min at 1x), quicker in the wet (TORCH_WET), then its charred stub stays for
-// TORCH_STUB before it's gone. At most TORCH_MAX burn at once: laying one past that gutters the oldest (its stub stays).
+// It burns for TORCH_BURN (ten days, 2 h at 1x: a fixture for a session or two, not a thing you keep feeding), quicker
+// in the wet (TORCH_WET), then its charred stub stays for good (ready for fresh bark). At most TORCH_MAX burn at once:
+// laying one past that gutters the oldest (its stub stays). The cap is on how many stand lit, not on the drawing: game.js
+// keeps only the nearest LIGHT_MAX (24) to paint each frame, so a meadow can hold a real spread of them.
 // It gives light, no warmth (game.js draws its pool), and nothing here draws the meadow's random numbers. A meadow kept
 // before torches gets none (unpackWorld), no KEEP_VERSION bump (w.torches is in LATER).
-const TORCH_BURN = TPD / 2;             // ticks it burns (6 min at 1x)
-const TORCH_STUB = TPD;                 // ticks its charred stub stays once it's out (gone by the next evening)
-const TORCH_WET = { rain: 1.5, storm: 2, snow: 1.3 };   // it burns this much faster in the wet
-const TORCH_MAX = 20;                   // burning at once: a 21st gutters the oldest
+const TORCH_BURN = TPD * 10;            // ticks it burns (ten days, 2 h at 1x)
+const TORCH_WET = { rain: 1.15, storm: 2, snow: 1.3 };  // it burns this much faster in the wet
+const TORCH_MAX = 64;                   // burning at once: a 65th gutters the oldest
 const TORCH_GAP = 0.5;                  // tiles it keeps from another torch, a trunk, a rock or a burrow
 const TORCH_EVERY = 15;                 // ticks between its looks (half a second at 1x)
-// Every field a torch ever has: where it stands, the tick it was set down, the ticks of flame left (0 out, negative as
-// its stub goes) and how fast it's burning just now (TORCH_WET, for its look).
+// Every field a torch ever has: where it stands, the tick it was set down, the ticks of flame left (0 once it's out) and
+// how fast it's burning just now (TORCH_WET, for its look).
 const torchOf = (x, y, born) => ({ torch: true, x, y, born, burn: -0, wet: -0 });
 
 // Whether a torch can stand at x, y: '' if it can, else why not, in a few words (game.js says it).
@@ -6340,25 +6564,17 @@ function relightTorch(w, T, ticks = TORCH_BURN) {
 // Whether the water's over a torch: deep, and not frozen (one pushed in on the ice, or in the shallows the spring flood
 // came up over). Shallows don't put it out; its head stands well clear of them.
 const torchUnder = (w, T) => !w.frozen && w.water[idx(T.x, T.y)] === DEEP;
-// Every few ticks: the lit ones burn down (quicker in the wet), the water coming up over one puts it out, a gutted one's
-// stub goes, and one long gone is forgotten.
+// Every few ticks: the lit ones burn down (quicker in the wet), the water coming up over one puts it out. Its charred stub
+// stays for good, so a torch is never forgotten.
 function torchTick(w, n = TORCH_EVERY) {
   const wet = TORCH_WET[w.weather.kind] || 1, step = Math.round(n * wet);
-  let keep = 0;
-  for (let k = 0; k < w.torches.length; k++) {
-    const T = w.torches[k];
-    if (T.burn > 0) {
-      T.wet = wet;
-      T.burn -= step;
-      if (T.burn > 0 && torchUnder(w, T)) T.burn = 0;    // (the flood, or the thaw under one stuck in the ice)
-      if (T.burn <= 0) { T.burn = 0; emit(w, { type: 'torchout', torch: T }); }
-    } else {
-      T.burn -= n;
-      if (T.burn <= -TORCH_STUB) continue;
-    }
-    w.torches[keep++] = T;
+  for (const T of w.torches) {
+    if (T.burn <= 0) continue;
+    T.wet = wet;
+    T.burn -= step;
+    if (T.burn > 0 && torchUnder(w, T)) T.burn = 0;      // (the flood, or the thaw under one stuck in the ice)
+    if (T.burn <= 0) { T.burn = 0; emit(w, { type: 'torchout', torch: T }); }
   }
-  w.torches.length = keep;
 }
 // How many degrees the fires warm x, y (the nearest, warmest one), and how close to one it is (fireNear, 0 to 1).
 let fireNear = 0;
@@ -7275,7 +7491,7 @@ function unpackWorld(kept) {
   if (!w.stone) w.stone = stoneOf(w);                   // (kept before the old stone: it's put up as it opens)
   else asFractions(w.stone, ['x', 'y']);
   if (F.health === undefined) F.health = 1;            // (kept before health: well)
-  asFractions(F, ['x', 'y', 'speed', 'heading', 'moved', 'goalX', 'goalY', 'warmth', 'wet', 'stamina', 'feel', 'homeX', 'homeY', 'tummy', 'health']);
+  asFractions(F, ['x', 'y', 'speed', 'heading', 'moved', 'goalX', 'goalY', 'warmth', 'wet', 'stamina', 'feel', 'homeX', 'homeY', 'tummy', 'health', 'jz', 'jumpV', 'jumpSpeed', 'jumpFX', 'jumpFY', 'hop']);
   for (const s of SKILL_NAMES) if (!(s in F.xp)) { F.xp[s] = -0; F.lv[s] = 0; }   // (kept before that skill: it starts at nothing)
   for (const s of SKILL_NAMES) F.lv[s] = skillLevel(s, F.xp[s]);
   asFractions(F.xp, SKILL_NAMES);
@@ -8096,12 +8312,14 @@ function mood(w, c) {
   if (c.species === 'otter') { const m = otterMood(w, c); if (m) return m; }
   switch (c.mode) {
     case 'flee':
-      if (c.fright > 0) return { emoji: '⚡', text: 'Spooked by thunder!' };
-      return { emoji: '😱', text: `Running from ${w.byId.get(c.threatId)?.name ?? 'a fox'}!` };
-    case 'alarm': return { emoji: '‼️', text: `Spotted ${w.byId.get(c.threatId)?.name ?? 'a fox'}!` };
+      if (c.fright > 0 && c.frightWhat === 'thunder') return { emoji: '⚡', text: 'Spooked by thunder!' };
+      return { emoji: '😱', text: c.threatId === FORAGER_THREAT ? 'Running from you!' : `Running from ${w.byId.get(c.threatId)?.name ?? 'a fox'}!` };
+    case 'alarm': return c.threatId === FORAGER_THREAT
+      ? { emoji: '👀', text: 'Watching you' }
+      : { emoji: '‼️', text: `Spotted ${w.byId.get(c.threatId)?.name ?? 'a fox'}!` };
     case 'dig': return { emoji: '🕳️', text: 'Digging a burrow' };
     case 'hide': return { emoji: '🫣', text: 'Hiding in a burrow' };
-    case 'thicket': return { emoji: '🫣', text: `Hiding deep in a bramble from ${w.byId.get(c.threatId)?.name ?? 'a fox'}` };
+    case 'thicket': return { emoji: '🫣', text: c.threatId === FORAGER_THREAT ? 'Hiding deep in a bramble from you' : `Hiding deep in a bramble from ${w.byId.get(c.threatId)?.name ?? 'a fox'}` };
     case 'bramble': return { emoji: '🫐', text: 'Off to a bramble for the blackberries' };
     case 'berries': return { emoji: '🫐', text: 'Eating blackberries off a bramble' };
     case 'sleep': return { emoji: '💤', text: c.hidden ? (storm ? 'Snug in the burrow, out of the storm' : 'Asleep in the burrow') : 'Napping' };
@@ -8132,8 +8350,9 @@ const api = {
   createWorld, step, clock, isNight, phaseOf, seasonOf, springPart, mood, ageDays, growth, isAdult, patchFresh,
   hedgehogComes, heronComes, dragonflyComes, kingfisherComes, skylarkComes, placeNeeds, VISIT_SEASONS, VISIT_FADE, HERON_FADE, HERON_STAB,
   DRAGON_FROM, KF_FADE, KF_UNDER, KF_BEAT, LARK_FADE, LARK_OPEN, LARK_RISE, EDGE_REACH, OPEN_MOST,
-  walkable, onIce, friendsAt, packWorld, unpackWorld, GROUND, foragerTo, foragerArrives, openingStorm, FORAGER_WALK, FORAGER_RUN, FORAGER_SNEAK, FORAGER_ICE_STOP, airTemp, warmthStage, WARMTH_STAGES, hurt, STUMBLE_TICKS, wakeForager, rockKind, whatThere, cherryShow, honeySpare, gather, takeFrom, dropSlot, dropAt, DROP_DAYS, moveSlot, roomFor, forEachDecorNear, SLOTS, STACK, stackOf, setStacks,
+  walkable, onIce, friendsAt, packWorld, unpackWorld, GROUND, foragerTo, foragerJump, foragerArrives, openingStorm, FORAGER_WALK, FORAGER_RUN, FORAGER_SNEAK, FORAGER_ICE_STOP, FORAGER_JUMP_TICKS, FORAGER_HOP_EARLY, airTemp, warmthStage, WARMTH_STAGES, hurt, STUMBLE_TICKS, wakeForager, rockKind, whatThere, cherryShow, honeySpare, gather, takeFrom, dropSlot, dropAt, DROP_DAYS, moveSlot, roomFor, forEachDecorNear, SLOTS, STACK, stackOf, setStacks,
   KINDS, FEW, whiteness, visibility, WINTER_COAT, WILD_COAT,
+  foragerSign, FORAGER_THREAT,
   TERRAIN, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE, hollow,
   TREES, treeStage, treeAge, standing, bearing, inBloom, SEEDLING, SAPLING, GROWN, KIND_NAMES,
@@ -8142,6 +8361,7 @@ const api = {
   torchSpot, placeTorch, relightTorch, torchUnder, TORCH_BURN, TORCH_WET, TORCH_MAX, TORCH_GAP, scorchFade,
   storeCount, storeRoom, storePut, storeTake, tidyStore, worldStores, storesAt, storesCount, storesRoom, storesTake, storesPut, STORE_NEAR,
   cookTicks, cookReady, cookOn, cookTake, shapeVessel, makeVessel, kitOf, cookProgress, SKILLS, SKILL_NAMES, SKILL_TOP, skillNeed, skillLevel, skillProgress, perk, gainSkill, FIRE_STICK, FIRE_MOST, FIRE_LOW, FIRE_EMBERS, FIRE_NEAR, FIRE_REACH, FIRE_GAP, FIRE_WET, FIRE_WARM,
+  get pace() { return foragerPace; }, set pace(v) { foragerPace = clamp(+v || 1, 0.1, 20); },
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 else root.Sim = api;

@@ -50,6 +50,19 @@ they walk a way for the windfalls, unless they're too hungry for the walk (`APPL
 through the middle of a fed day, and hungry it stalks the nearest rabbit it sees, charges from `POUNCE`, and keeps to where
 it last caught one (`c.haunt`); a rabbit runs from it within `FLEE_DIST` of its sight. Rabbits boom through the summer and
 thin over the winter, every year.
+The forager is not a creature, but it is no ghost either: `foragerSign` says how much of it one has noticed, 0 to 1,
+from its pace and stealth (sneaking is a creep), the ground it's on (wading splashes, ice rings, snow crunches, the woods
+hide it), the weather's sight, the animal's own `SPECIES[..].spook`, shorter asleep or head down, and `c.trust`. A rabbit
+that notices it stops to watch (`alarm`) and keeps off the spot (`wary`), but gets back to its grass after a look
+(`WATCH_GAP`); one with it too close bolts: `frighten` sends it running as from a fox, and it thumps the warren on its way. A fox is bolder: coming near makes it leave a kill
+(`sign` over 0.4) or give up a hunt, and only almost on top of it does it run. Crows on the ground fly up, otters slip
+into the water and watch you from there; bees pay you no mind yet. `c.trust` (the inspector's `🫶 Getting used to you`)
+grows while an animal has you in sight and calm, shrinks by a fifth when you startle it, and gives up to `TRUST_GIVE` of
+its spook range: a day of quiet company makes one quite used to you. Nothing here draws the
+meadow's random numbers; a walk about leaves its own chances as they were (only the animals' reactions do, as a fox's
+would). A hunt begins with the same two numbers: creep close while it's tame and quiet, and an arrow that misses need only
+startle it (`frighten` where it struck) for the flight.
+
 The gentle respawn (`migrate`, four times a day): with fewer than `FEW` of a kind (rabbits times `w.room`), once they've been
 few for `COME_AFTER` days, `ARRIVE` more wander in from an edge, and again as long after while they're still few; foxes only
 come with `FOX_FOOD` rabbits about, and otters come up the water to a free holt. So neither the foxes nor, later, the

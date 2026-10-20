@@ -38,7 +38,8 @@ swaying with the tree; one 💤 a tree, and mates side by side. In flight a crow
 In spring a mum sits on her eggs high in a tall tree, night and day (`nestTree`,
 `c.home`) and the chicks stay hidden in the nest till they fledge (`FLEDGE`). A fox that comes close sends them flapping up,
 the others with them (`flapUp`, `caw`), but one busy on the ground may not see a fox out hunting in time: a small meal
-for it (`CROW_MEAL`) that doesn't change where it hunts. game.js paints a dead rabbit, or a dead fox (`paintBody`,
+for it (`CROW_MEAL`) that doesn't change where it hunts. A forager on the ground close enough (`foragerSign`) puts them up
+too, straight off (`flapUp`'s `sure`, no jitter: the forager draws no random numbers). game.js paints a dead rabbit, or a dead fox (`paintBody`,
 `paintDeadFox`; a fox `FOX_BODY` the size, its white-tipped tail lasting longest), lying on its side with its eyes closed, in four
 stages as the meat goes (`BODY_STAGES`): whole, opened with the ribs showing (where a fox's catch starts), picked over to bones,
 and a flat pelt that fades. A bird's remains are a few feathers, an otter's tufts of fur (`paintRemains`, `drawRemains`), and

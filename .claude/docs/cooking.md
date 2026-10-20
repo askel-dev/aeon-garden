@@ -33,7 +33,7 @@ the fire only with no room anywhere); a dish never made before gets its gold
 headline (`firstTime('dish:' + name)`, which `knownDish` reads with recipes.js `known`). Walking off, ✕, E, Esc or Back leave the
 fire (`closeCook`, `stepOut`) and the pot keeps cooking on the fire (sim.js `cookOn`, on the fire's clock, only while it's lit): the pot
 stays on it, steaming (`drawAwayPots`), with a slim bar over it filling as it cooks (`drawCookBars`: ember orange, grey while the fire's
-out, gold and pulsing once done), a hover saying the time left (`fireWord`) and a "Ready" by it (event 'cooked'). A done dish waits in the
+out, gold and pulsing once done), a hover saying the time left in the line over the satchel (`fireSaid`, `hoverSay`) and a "Ready" by it (event 'cooked'). A done dish waits in the
 pot, for a click on the fire or E (the pot prompt shows over it); the window opened on a pot going finds it as it was and on a done one
 takes the dish out as before (`cookSync`). Playing together the pot is the fire's, so friends see it cook: a pot set going and a dish taken
 out go over (`fire` messages 'cook', with the cook's own time after its Cooking skill, and 'take': `fireNet`), and a friend's done dish waits
@@ -53,10 +53,11 @@ missing and where to find it). With nothing made the window opens making the fir
 (taken out 10-17: the window's vessel row does it); a book page whose vessel isn't made has "First make a …" (`book-make`), which
 walks to a lit fire to make it there (`makeOne`, `makeNext`), and something newly within reach is told once (`renderMake`). The bowl is painted as folded, laced birch bark now.
 The recipe book (`#book`, `renderBook`, `#book-btn` by the satchel's right end, B, and on the cooking bar), modelled on the old
-field journal (main at 1d79f03): a book laid open on the meadow over a soft scrim (`#book-scrim`), the numbered tiles on the left
+field journal (main at 1d79f03): a book laid open on the meadow over a soft scrim (`#book-scrim`, which doesn't take the
+pointer: a tap on the meadow beside it walks, and the book stays where it is), the numbered tiles on the left
 page in sections (`BOOK_SECTIONS`: savoury, sweet by whether a need is sweet or fruit; `BOOK_PAGES`, No. 1 to N), the page picked
-on the right (`bookPageHTML`), turned with ‹ n/N ›, ← → (a capturing listener that also keeps the walking keys off the forager
-while it's open) or a sideways swipe (`turnBook`), a 44 px brass ✕ top right. A page: the dish's picture big on a plate (`dishArt`:
+on the right (`bookPageHTML`), turned with ‹ n/N ›, ← → (a capturing listener; the walking keys still walk the forager while
+it's open), or a sideways swipe (`turnBook`), a 44 px brass ✕ top right. A page: the dish's picture big on a plate (`dishArt`:
 its painting from dishes.js, painted at the page's size, `dishBig`; its recipes.js emoji while it has none), its name, its `text`,
 "✦ Warms you" (`warm`), how much it fills (`BOOK_PIPS` against the most filling), what goes in marked against the satchel
 (`needsHad`), and a button: "Put its things in the pot" at the pot (`bookDish`, `fillPot`), else "Cook it at the fire" (walks to a
@@ -91,3 +92,4 @@ opening storm or over another line), telling the book up to `hintMost` of it. Th
 they're painted. Eating: a tap on food in the satchel (`eatAsk`, `#eat`) shows its name with an Eat button, or why not
 ("It wants cooking", "I'm full"); `eatSlot` feeds it (sim.js `feedForager`). The tummy is the face's second dial (`#v-food`); "I'm getting hungry" and "I'm starving" are said over it (events 'hungry',
 'starving'). The ideas card waits while it's at a fire (`askTick`).
+Its button by the satchel wears the craft button's plate (parchment, a line-drawn book, the word Recipes; round on a touch screen); while a page has news (`.new`) it takes the craft button's warm ready fill and bloom, with the "New" badge. The painted leather book (`bookIcon`) is only the cooking bar's now.

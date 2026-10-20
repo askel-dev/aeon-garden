@@ -567,6 +567,68 @@ builds go behind **one make button**, and the first new build is a **torch** you
   crackles (the stacks through `crackle` and `out`), and none with no torch. Not tried over PeerJS with two machines.
 - That closes step 3 of stage 7. What's left is step 4: the seat log, the drying rack and the lean-to.
 
+## Stage 8: the camp grows (planned 2026-10-20; mockup `camp-level-lab.html`)
+
+The camp becoming a home is the heart of the game, so the camp should visibly grow. It has five levels, and a level is
+**a place you build** (its keystone), not a number you reach. The mockup has two views: your camp as you built it, and
+the plan of what each level opens.
+
+### The rules
+- **Levels unlock things; they don't hand them out.** Raising the camp widens the ring, lays the keystone, does one
+  real thing, and may bring a small gift that is only scenery (season dressing, a robin, wind chimes). Everything that
+  does something is opened by the level and then made by you, from the make strip. A level V camp where only a basket was
+  made shows a basket.
+- **Cosy is a list of deeds, each earned once** (`w.camp.cosy`: the set of deeds done; the count is their sum). Every
+  point has a name the camp's card can show, nothing repeats, and cosy never goes down. Raising the camp takes
+  **8 · 18 · 30 · 44**, then its keystone. Deeds (Axel tunes these; they're data, recipes.js-style):
+  made camp +2; each thing built at camp, once +1 to +3; first dish cooked at camp +2; five different dishes there +3,
+  twelve +4; ate a meal on the seat log +1; kept the fire lit from dusk to dawn +2, through a storm +3; first fire of
+  each season +2 (×4); basket half full +2, one of every kind of food in it +3; and as a bonus never needed, a friend
+  sat by your fire +2, ate your dish +2. Alone, the deeds reach 44 before level V with six to spare.
+- **The ring only grows.** `CAMP_R` is 5 and stays the floor: 5 → 5.5 → 6 → 6.5 → 7 (`campR(w)` in place of the
+  constant, `inCamp` and the ground shader's `camp` ellipse following it). A kept meadow opens at level I with the deeds it
+  has already done counted (camp, basket, seat, torches); nothing placed today ends up outside the ring.
+- **The keystones** are builds with `where: 'camp'` and a new `raises: n` in recipes.js `BUILDS`, offered once the cosy is
+  there. II–IV cost only things that lie about already:
+
+  | Level | Name        | Keystone        | Costs                                | Its one real payoff                                   |
+  |-------|-------------|-----------------|--------------------------------------|-------------------------------------------------------|
+  | I     | Campfire    | the first fire  | as now                               | home: you wake here after a collapse (already true)   |
+  | II    | Hearth      | hearthstones    | 12 pebbles, 2 clay                   | a stick burns a third longer at the camp's fire       |
+  | III   | Homestead   | the clay oven   | 8 clay, 10 pebbles, 4 sticks         | baking (the oven is already a `STATIONS` entry)       |
+  | IV    | Hollow      | the lantern arch| 12 sticks, 4 birch bark, 2 clay      | the ring keeps a steady light at night                |
+  | V     | Meadow Home | the cabin       | logs (a new item), pebbles, clay     | dry and warm inside, and where you wake               |
+
+- **What each level opens to make** (one or two each): I basket, seat, torch (built); II drying rack, lean-to (planned in
+  `plans/camp-builds`); III spit, herb pots; IV bird feeder, notice board (the first-things notes pinned up); V hammock.
+- **Gifts** (scenery only, painted once, no store): III season dressing (a pumpkin by the seat in autumn, snow lanterns in
+  winter, a jar of flowers in spring); IV a robin hopping round the camp, a path worn towards where you go most; V wind
+  chimes on the eaves (a few notes in sound.js when the wind turns), a pennant in the season's colour.
+
+### How it shows
+- **The line over the satchel** stays one thin pill: hovering the ring, away from the fire, says "Your camp · Hearth ·
+  14 / 18 cosy". A tap on the line opens the camp's card. The fire stays "see to it": no second click target beside it.
+- **The camp's card** (small, over the satchel, ✕ at the foot on a phone): the level's seal and name, the bar with its
+  number (no pips), "4 more, then build the clay oven", the deeds done with their points, and the next two not done
+  shown faintly, so the bar says what to go and do.
+- **The make strip** stays "what you can make now", plus one faded tile: the next keystone ("raises the camp · 14/18
+  cosy"). The levels after that live in the card.
+- **The moment**, when a keystone is finished, is the "Your camp" one grown a step: flare, the ring of earth spreading
+  out half a tile with a wave of light, the felt piano, "Your camp grew ✦ Homestead ✦", and chips saying only what
+  happened ("the ring widens · the oven is fired · 2 new things to make").
+
+### Slice one
+Cosy and its deeds, the five levels, the ring growing, the keystones II–IV (V waits for logs), the moment and the card.
+The payoffs for II–IV come in slice one too (each is one small change to a system that exists). The new builds each level
+opens come after it, one at a time, as "data plus a painting" (stage 7). The sim keeps one layout: `w.camp` gets
+`level`, `cosy` and the keystones' fields in its blank from the start, and a kept camp gets them in `unpackWorld`.
+
+### Later, not in this stage
+Each of these touches another system and waits for its own stage: sleeping through a night (the forager has no sleep), a
+cellar where nothing spoils (nothing spoils), visitors stopping by a free seat ("After that" 5), foxes going round the
+ring and a scarecrow for the crows, the camp on friends' minimaps, the notice board's requests and a bell, a garden bed,
+a rain tarp, morning gifts, naming the camp.
+
 ## After that (roughly in this order)
 1. **Cooking at the fire** and 2. **hunger and eating**: stage 6 above.
 3. **Camp builds.** Arranged inside the camp ring: a seat log, a spit, a drying rack (keeping food for winter), a basket

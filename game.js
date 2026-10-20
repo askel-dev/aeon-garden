@@ -14,6 +14,11 @@ const TICKS_PER_SECOND = 30;           // at 1x
 // ------------------------------------------------------------------ state
 
 const params = new URLSearchParams(location.search);
+// Dev (this machine, or ?dev): a barebones give panel (~: setupDevGive, at the end) and a satchel that carries a pile of a
+// kind rather than a stack, so a thing it has never fills. Nothing of it runs anywhere else.
+const DEV = params.has('dev') || ['localhost', '127.0.0.1', '::1'].includes(location.hostname);
+const DEV_CARRY = 999;                  // what one satchel slot holds in dev
+if (DEV) S.setStacks(id => Math.max(Recipes.stackOf(id), DEV_CARRY), Recipes.keepOf);
 const BENCH = params.has('bench');            // (the phone's worst case set up by itself and timed: benchStart; implies perf)
 const PERF = params.has('perf') || BENCH;     // (a live readout of frame rate and cost, bottom left)
 const perf = { fps: 0, ms: 0, ren: 0, sim: 0, at: 0, el: null, n: 0, drawn: 0, dAt: 0 };   // fps and ms: averages over the raw frame gaps (the browser's beats, drawn or not); ren: render ms; sim: sim ms last frame; drawn: frames really drawn a second (n counting them since dAt)
@@ -1215,7 +1220,9 @@ function sortByY(items) {
 }
 
 let shakeX = 0, shakeY = 0;                          // the frame's own transform (render's), in device pixels: see drawPaintedTree
+let eFrame = 0;                                      // (render's frame: E looked at once a frame, as the discs and hoverSay ask)
 function render(now) {
+  eFrame++;                                          // (the one E does this frame: eTarget, looked at by the discs and hoverSay)
   // Thunder rumbles the whole screen a little.
   const q = !SPLIT && now - ui.sky.boom < 350 ? 3 * (1 - (now - ui.sky.boom) / 350) : 0;   // (no shake when split: the ground and the meadow slide as one)
   const shx = q * Math.sin(now / 17), shy = q * Math.cos(now / 23);
@@ -1258,6 +1265,7 @@ function render(now) {
   drawGarlic(z);
   drawCampRing(z, now);
   drawCampRingGhost(z);
+  drawTorchReach(z);                                       // (the light a torch would cast, where one is being picked)
   if (ui.mark) drawMark(now);
 
   const sel = world.byId.get(ui.selectedId);
@@ -1329,6 +1337,11 @@ function render(now) {
     const sx = (Sq.x - cam.x) * z + vw / 2, sy = (Sq.y - cam.y) * z + vh / 2;
     if (visible(sx, sy, 2 * z + 20)) itemOf(items, Sq.y, sx, sy, 1 - mistAt(Sq.x, Sq.y)).s = Sq;
   }
+  const Kn = world.camp && campCairn(now);                 // the camp's cairn
+  if (Kn) {
+    const sx = (Kn.x - cam.x) * z + vw / 2, sy = (Kn.y - cam.y) * z + vh / 2;
+    if (visible(sx, sy, 2 * z + 20)) itemOf(items, Kn.y, sx, sy, 1 - mistAt(Kn.x, Kn.y)).s = Kn;
+  }
   const St = world.stone;                                  // the old stone
   if (St) {
     const sx = (St.x - cam.x) * z + vw / 2, sy = (St.y - cam.y) * z + vh / 2;
@@ -1387,8 +1400,8 @@ function render(now) {
     else if (it.c) {
       drawCreatureShadow(it.c, it.sx, it.sy, now, sn, it.f);
     } else if (it.v) drawVisitorShadow(it.v, it.sx, it.sy, sn);
-    else if (it.p) { if (fg.kneel < KNEEL.sit) foragerShadow(it.sx, it.sy, sn, fg.wet); }   // (on the seat log: the log's shadow is its)
-    else if (it.q) { if (it.q.kneel < KNEEL.sit) foragerShadow(it.sx, it.sy, sn, it.q.wet); }
+    else if (it.p) { if (fg.kneel < KNEEL.sit) foragerShadow(it.sx, it.sy, sn, fg.wet, fg.air); }   // (on the seat log: the log's shadow is its)
+    else if (it.q) { if (it.q.kneel < KNEEL.sit) foragerShadow(it.sx, it.sy, sn, it.q.wet, it.q.air || 0); }
   }
   layShadows();
   drawLeaves(now, true);                                   // the leaves lying round the trees' feet, on the ground under all that stands
@@ -1399,7 +1412,7 @@ function render(now) {
     fadeTo(it.f);
     if (it.d) it.d.hive ? drawBeeTree(it.d, it.sx, it.sy, now, ck) : drawDecor(it.d, it.sx, it.sy, now, ck, it.px);
     else if (it.h) drawSwarm(it.h, it.sx, it.sy);
-    else if (it.s) it.s.fire ? drawFire(it.s, z, now) : it.s.basket ? drawBasket(it.s, z, now) : it.s.stone ? drawStone(it.s, z, now) : it.s.torch ? drawTorch(it.s, z, now) : it.s.seat ? drawSeat(it.s, z) : it.s.green ? drawNettles(it.s, z) : it.s.bramble ? drawBramble(it.s, z) : it.s.find ? drawFind(it.s, z) : it.s.dropped ? drawDropped(it.s, z, now) : drawShroom(it.s, z);
+    else if (it.s) it.s.fire ? drawFire(it.s, z, now) : it.s.basket ? drawBasket(it.s, z, now) : it.s.stone ? drawStone(it.s, z, now) : it.s.torch ? drawTorch(it.s, z, now) : it.s.seat ? drawSeat(it.s, z) : it.s.cairn ? drawCairn(it.s, z, now) : it.s.green ? drawNettles(it.s, z) : it.s.bramble ? drawBramble(it.s, z) : it.s.find ? drawFind(it.s, z) : it.s.dropped ? drawDropped(it.s, z, now) : drawShroom(it.s, z);
     else if (it.k) drawPotAt(it.k, it.sx, it.sy, now);     // (the pot over a fire: right after its fire, tied on its y)
     else if (it.v) drawVisitor(it.v, it.sx, it.sy, now, z);
     else if (it.p) drawForager(it.sx, it.sy, now);
@@ -1460,7 +1473,7 @@ function render(now) {
   if (world.fires.length) drawCookBars(now);                         // (a pot cooking: the bar over its fire)
   if (peers.size || myChat || stoneUi.chat) drawPeerNames(now);
   drawGlints(now, dark);
-  drawHoverLine(now);
+  hoverSay(now);
   drawFireHint(now);
   drawQueue();
   if (pickFloats.length) drawPickFloats(now);
@@ -1656,14 +1669,14 @@ function keepLast() {
 }
 function keepAt(c) {
   let p = lastTick.get(c);
-  if (!p) lastTick.set(c, p = { x: 0, y: 0, tick: 0 });
-  p.x = c.x; p.y = c.y; p.tick = world.tick + 1;
+  if (!p) lastTick.set(c, p = { x: 0, y: 0, z: 0, tick: 0 });
+  p.x = c.x; p.y = c.y; p.z = c.jz || 0; p.tick = world.tick + 1;
 }
 function drawnAt(c) {
-  const p = lastTick.get(c);
-  if (!p || p.tick !== world.tick || Math.abs(c.x - p.x) + Math.abs(c.y - p.y) > 1) { drawnPos.x = c.x; drawnPos.y = c.y; return drawnPos; }
+  const p = lastTick.get(c), z = c.jz || 0;
+  if (!p || p.tick !== world.tick || Math.abs(c.x - p.x) + Math.abs(c.y - p.y) > 1) { drawnPos.x = c.x; drawnPos.y = c.y; drawnPos.z = z; return drawnPos; }
   const t = Math.min(acc, 1);
-  drawnPos.x = p.x + (c.x - p.x) * t; drawnPos.y = p.y + (c.y - p.y) * t;
+  drawnPos.x = p.x + (c.x - p.x) * t; drawnPos.y = p.y + (c.y - p.y) * t; drawnPos.z = p.z + (z - p.z) * t;
   return drawnPos;
 }
 
@@ -2057,7 +2070,8 @@ const fg = { wasWalking: false, at: -1, x: 0, y: 0, step: 0, stillMs: 1e4, view:
   puffs: [], puffAt: 0, drips: [], dripAt: 0, shiverAt: -1e9, shiverNext: 0, heartAt: 0, pantAt: 0, panting: false, downAt: 0, dark: false, cold: false, sizedSet: 0,   // (the body: drawBody, bodyFrame)
   snow: -1, snowTick: -0, snowArt: 0, sizedSnow: 0,   // (the snow on it: snowOnForager)
   kneel: -1, knelt: -1e9, sizedKneel: false,           // (at a fire: its kneeling pose, fur.js FORAGER_KNEEL, or -1; when it last knelt)
-  emote: -1, emoteMs: -0, emoteFrame: -1, lift: -0, sneakStill: -0, sizedEmote: false, eatAt: -1e9,   // (an emote: EMOTE, or -1; emoteTick)
+  emote: -1, emoteMs: -0, emoteFrame: -1, lift: -0, sitU: -0, sitQ: null, sitRise: true, sitAt: -1e9, sneakStill: -0, sizedEmote: false, eatAt: -1e9,   // (an emote: EMOTE, or -1; emoteTick)
+  air: -0, squash: 1, jumpSeen: 0, dust: [], landSeen: 0, chainAt: -1e9, lean: -0, cuePlayed: true,   // (a dash: how high it's drawn, squash on take-off and landing, the take-off it last showed, its dust, the landing it last showed, its lean, and whether the press-me tick has sounded)
   hugAt: -1e9,                                          // (when it last hugged a friend: hug)
   swingAt: -1e9, swingDir: -0, hitAt: -1e9,            // (friendly fire: when it last swung, which way, when it was last hit: swing)
   sx: -0, sy: -0, px: -0, drawnAt: -0,   // (where it was drawn this frame)
@@ -2264,18 +2278,40 @@ function emoteStill(b, d, me) {
 }
 function foragerFrame(now, d) {
   const f = world.forager, px = forPx();
-  if (fg.at < 0) { fg.x = d.x; fg.y = d.y; fg.at = now; }
+  if (fg.at < 0) { fg.x = d.x; fg.y = d.y; fg.at = now; fg.landSeen = f.landTick; fg.jumpSeen = f.jumpAt; }
   const dx = d.x - fg.x, dy = d.y - fg.y, moved = Math.hypot(dx, dy), ms = now - fg.at;
   fg.x = d.x; fg.y = d.y; fg.at = now;
   const gliding = !f.walking && f.speed > S.FORAGER_ICE_STOP && S.onIce(world, d.x, d.y);   // (sim.js: carried along the ice)
+  const jumping = f.jumpT > 0;
+  fg.air = d.z || 0;                                     // (sim.js: how high it is, between ticks)
+  const landed = f.landTick !== fg.landSeen;             // (a dash that came down, even if it's straight up again)
+  const hopping = jumping && f.jumpAt !== fg.jumpSeen;
+  if (landed) {                                          // (down: a soft landing, the dust it kicks up)
+    fg.landSeen = f.landTick;
+    fg.squash = 0.86;
+    jumpDust(d.x, d.y, now, 6 + Math.round(f.hop * 4), f.hop);
+    if (ui.speed > 0) hear('land', d.x, d.y, { pace: 1 + f.hop, hop: f.hop, ground: groundUnder(d.x, d.y) }, true);
+  }
+  if (hopping) {                                         // (off its feet: a push, a stretch, and the ground's dust)
+    fg.squash = 1.07; fg.cuePlayed = false;
+    jumpDust(d.x, d.y, now, 4 + Math.round(f.hop * 4), f.hop);
+    if (f.hop > 0) fg.chainAt = now;
+    if (ui.speed > 0) hear('jump', d.x, d.y, { pace: 1 + f.hop, hop: f.hop, ground: groundUnder(d.x, d.y) }, true);
+  }
+  fg.jumpSeen = f.jumpAt;
+  if (jumping && f.jumpT <= S.FORAGER_HOP_EARLY && !fg.cuePlayed) {
+    fg.cuePlayed = true;
+    if (ui.speed > 0) hear('hopcue', d.x, d.y, { hop: f.hop }, true);   // (a little tick: the moment to press again)
+  }
+  if (ms > 0) fg.squash += (1 - fg.squash) * Math.min(1, ms / 90);
+  fg.lean += ((jumping ? (fg.flip ? 1 : -1) * (0.07 + 0.04 * f.hop) : 0) - fg.lean) * Math.min(1, ms / (jumping ? 40 : 110));
   fg.jog = !gliding && f.running && f.speed > FORAGER_JOG[fg.jog ? 0 : 1];   // (its legs don't spin: the jog's stride is longer)
   if (moved > 1e-5 && moved < 2) {
-    if (!gliding) fg.step += moved / (2 * Fur.FORAGER_REACH * px / cam.zoom * (fg.jog ? Fur.FORAGER_JOG_STRIDE : f.sneaking ? Fur.SNEAK_STRIDE : 1));
+    if (!gliding && !jumping) fg.step += moved / (2 * Fur.FORAGER_REACH * px / cam.zoom * (fg.jog ? Fur.FORAGER_JOG_STRIDE : f.sneaking ? Fur.SNEAK_STRIDE : 1));
     fg.stillMs = 0;
   } else if (ui.speed > 0) fg.stillMs += ms;            // (paused mid-stride, it holds the stride)
   fg.wet = inWaterAt(d.x, d.y);
   const walking = fg.stillMs < FORAGER_STILL_MS, stage = S.warmthStage(f), cold = fg.cold = stage >= FORAGER_SAD;
-  if (walking && !fg.wasWalking && bookOpen() && !cooking()) openBook(false);   // (setting off shuts the recipe book)
   fg.wasWalking = walking;
   emoteTick(f, stage, ms);
   const kneel = fg.kneel = stage < 4 && fg.emote < 0 ? kneelNow(now) : -1;   // (at a fire: kneeling, side on to it)
@@ -2317,8 +2353,11 @@ function foragerFrame(now, d) {
   snowOnForager();
   const at = fg.snowArt * Fur.FORAGER_SNOW_ARTS + (fg.outfit << 7);
   if (emo < 0 || stage === 4) fg.lift = 0;
-  if (kneel >= KNEEL.sit && fireSit.seat) fg.lift = seatLift(fireSit.seat, d.x, d.y, cam.zoom, px);   // (on the seat log)
-  fg.art = shownPose(f, FORAGER_ARTS[emo >= 0 && stage < 4 ? Fur.emoteArt(fg.snowArt, fg.outfit, emo) : at + (kneel >= 0 ? KNEEL_AT + kneel : poseKey(fg.view, pose))], px);
+  const sitting = kneel >= KNEEL.sit && fireSit.seat;
+  if (sitting) fg.sitQ = fireSit.seat;
+  if (fg.sitU > 0 || sitting) sitEase(fg, sitting, ms, now, d.x, d.y, px);   // (hopping up onto the seat log, and down off it)
+  const sat = sitting && fg.sitU > SIT_POSE;
+  fg.art = shownPose(f, FORAGER_ARTS[emo >= 0 && stage < 4 ? Fur.emoteArt(fg.snowArt, fg.outfit, emo) : at + (sat || kneel >= 0 && !sitting ? KNEEL_AT + kneel : poseKey(sitting ? 1 : fg.view, sitting ? 0 : pose))], px);
 }
 // Its footprints: one at each foot down, a little to that foot's side, fading as the ground takes them back: soon in
 // grass, slower in earth and the damp sand, slowest in snow. A ring of PRINTS kept in typed arrays (nothing made a step),
@@ -2368,13 +2407,66 @@ function drawPrints() {
   }
   if (drawn) { ctx.setTransform(dpr, 0, 0, dpr, shakeX, shakeY); ctx.globalAlpha = 1; }
 }
+// The dust a jump kicks up (jumpDust): a handful of soft motes at its feet, thrown out and fading. On snow or earth
+// it's their colour; in the water or on the ice it's a ring instead (drawRings).
+const DUST_MS = 430;
+const DUST_RGB = { grass: '218, 210, 174', earth: '188, 164, 132', woods: '176, 156, 122', shore: '208, 194, 162', snow: '236, 242, 250', ice: '224, 238, 248', water: '230, 244, 250' };
+function jumpDust(x, y, now, n, hop = 0) {
+  const kind = groundUnder(x, y);
+  if (kind === 'water' || kind === 'ice') { if (fg.rings.length < 8) fg.rings.push({ x, y, t: now }); return; }
+  if (fg.dust.length > 30) return;
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * TAU, r = 0.04 + Math.random() * 0.1;
+    fg.dust.push({ x: x + Math.cos(a) * r, y: y + Math.sin(a) * r, vx: Math.cos(a) * (0.2 + Math.random() * (0.3 + hop * 0.25)), vy: Math.sin(a) * (0.16 + Math.random() * (0.24 + hop * 0.2)),
+      t: now, s: 0.035 + Math.random() * (0.03 + hop * 0.015), c: DUST_RGB[kind] || DUST_RGB.grass });
+  }
+}
+function drawDust(now) {
+  if (!fg.dust.length) return;
+  const px = forPx();
+  for (let i = fg.dust.length - 1; i >= 0; i--) {
+    const p = fg.dust[i], u = (now - p.t) / DUST_MS;
+    if (u >= 1 || u < 0) { fg.dust.splice(i, 1); continue; }
+    const [sx, sy] = onScreen(p.x + p.vx * u, p.y + p.vy * u);
+    ctx.fillStyle = `rgba(${p.c}, ${0.38 * (1 - u) * (1 - u)})`;
+    ctx.beginPath(); ctx.arc(sx, sy, Math.max(0.8, px * p.s * (0.7 + u * 1.8)), 0, TAU); ctx.fill();
+  }
+}
+// The cue for a chained dash: the last few ticks before it lands a thin cream ring closes in at its feet (the moment to
+// press again), and a dash that keeps the chain sends a ring out from where it took off.
+const HOP_CUE_MS = 340;
+function drawHopCue(f, sx, sy, px, now) {
+  ctx.save();
+  if (f.jumpT > 0 && f.jumpT <= S.FORAGER_HOP_EARLY) {
+    const k = 1 - f.jumpT / S.FORAGER_HOP_EARLY, r = px * (0.3 - 0.11 * k), ry = r * 0.34;
+    ctx.strokeStyle = `rgba(228, 244, 255, ${0.55 + 0.3 * k})`;
+    ctx.fillStyle = `rgba(240, 250, 255, ${0.5 + 0.35 * k})`;
+    ctx.lineWidth = Math.max(1.5, px * 0.028);
+    ctx.lineCap = 'round';
+    for (let i = 0; i < 4; i++) {                        // (four little brackets closing in: the moment to press again)
+      const a = i * Math.PI / 2 + Math.PI / 4;
+      ctx.beginPath(); ctx.ellipse(sx, sy, r, ry, 0, a - 0.36, a + 0.36); ctx.stroke();
+    }
+    ctx.beginPath(); ctx.arc(sx, sy, Math.max(1.2, px * 0.022), 0, TAU); ctx.fill();
+  }
+  const u = (now - fg.chainAt) / HOP_CUE_MS;
+  if (u >= 0 && u < 1) {
+    ctx.strokeStyle = `rgba(255, 240, 198, ${0.55 * (1 - u)})`;
+    ctx.lineWidth = Math.max(1, px * 0.03 * (1 - u));
+    ctx.beginPath(); ctx.ellipse(sx, sy, px * (0.18 + 0.32 * u), px * (0.06 + 0.1 * u), 0, 0, TAU); ctx.stroke();
+  }
+  ctx.restore();
+}
 function drawForager(sx, sy, now) {
   const px = forPx(), art = fg.art, f = world.forager, stage = S.warmthStage(f);
   sx += joltOf(fg, now) * px;
   drawSwat(fg, sx, sy, px, now);
+  drawRings(fg.rings, now, px);
+  drawDust(now);
+  drawHopCue(f, sx, sy, px, now);
+  sy -= fg.air * px;                                      // (in the air: its feet off the ground, its shadow left there)
   fg.sx = sx; fg.sy = sy - fg.lift * px; fg.px = px; fg.drawnAt = now;
   fg.rimOn = false;                                       // (the rim follows the whole figure only: drawFigure turns it back on)
-  drawRings(fg.rings, now, px);
   if (zoomedOut()) { drawSmall(art, sx, sy - (0.36 + fg.lift) * px, px, fg.flip); drawChill(sx, sy, px, f.warmth, now); return; }
   if (stage === 4) { drawFallen(art, sx, sy, px, fg.flip, clamp((now - fg.downAt) / FALL_MS, 0, 1)); return; }
   const trip = f.stumble > 0 ? Math.sin(Math.PI * (1 - f.stumble / S.STUMBLE_TICKS)) : 0;   // (a stumble: it pitches forward and catches itself)
@@ -2423,15 +2515,15 @@ function drawFigure(b, art, sx, sy, px, now, stage, trip, still, me) {
     return;
   }
   const breathe = still && ui.speed > 0 ? Math.sin(now / 620) * 0.012 : 0;
-  const squash = (1 + breathe) * HUNCH[stage] * (b.view === 1 ? 1 - 0.1 * trip : 1), shake = shiverOf(b, stage, now, me) + b.hum;   // (humming, a sway)
+  const squash = (1 + breathe) * HUNCH[stage] * (b.view === 1 ? 1 - 0.1 * trip : 1) * (b.squash || 1), shake = shiverOf(b, stage, now, me) + b.hum;   // (humming, a sway; a jump, a stretch and a squash)
+  const rot = (trip && b.view !== 1 ? (flip ? 1 : -1) * 0.24 * trip : 0) + (b.lean || 0);   // (a stumble pitching forward, a dash leaning into it)
   if (me) {                                              // (where its painting sits, as it's about to be drawn: its rim is laid over the dark from here, drawForagerRim)
-    b.rimOn = true; b.fx = sx; b.fy = sy; b.fs = squash; b.fk = shake;
-    b.fr = trip && b.view !== 1 ? (flip ? 1 : -1) * 0.24 * trip : 0;
+    b.rimOn = true; b.fx = sx; b.fy = sy; b.fs = squash; b.fk = shake; b.fr = rot;
   }
-  if (trip && b.view !== 1 || shake) {                  // (a shiver sways it about its feet: the head most, the feet not at all)
+  if (rot || shake) {                                   // (a shiver sways it about its feet: the head most, the feet not at all)
     ctx.save(); ctx.translate(sx, sy);
     if (shake) ctx.transform(1, 0, -shake / 0.6, 1, 0, 0);
-    if (trip && b.view !== 1) ctx.rotate((flip ? 1 : -1) * 0.24 * trip);
+    if (rot) ctx.rotate(rot);
     drawEmoji(art, 0, -px * 0.36 * squash, px, { flip, squash });
     ctx.restore();
   } else drawEmoji(art, sx, top + px * 0.36 * (1 - squash), px, { flip, squash });   // (feet stay on the ground)
@@ -2445,11 +2537,12 @@ function drawRings(rings, now, px) {
     ctx.beginPath(); ctx.ellipse(rx, ry, px * (0.12 + 0.3 * u), px * (0.04 + 0.1 * u), 0, 0, TAU); ctx.stroke();
   }
 }
-function foragerShadow(sx, sy, sn, wet) {
+function foragerShadow(sx, sy, sn, wet, air = 0) {
   if (zoomedOut() || wet) return;
-  const px = forPx(), n = shadeStep(), a = (0.16 + 0.18 * Math.max(0, sn.a)) * lerp(1, SNOW_SHADE_A, n / SHADE_STEPS), off = Math.max(0, sn.a) * sn.lean * px * 0.12;
+  const px = forPx(), n = shadeStep(), lift = Math.min(1, air / 0.3);
+  const a = (0.16 + 0.18 * Math.max(0, sn.a)) * lerp(1, SNOW_SHADE_A, n / SHADE_STEPS) * (1 - 0.45 * lift), off = Math.max(0, sn.a) * sn.lean * px * 0.12;
   const k = Math.round(clamp(a / SHADOW_MOST, 0, 1) * SHADOW_STEPS), at = shadowAt[k], i = shadowN[k]++ * 4;
-  at[i] = sx + off; at[i + 1] = sy - px * 0.01; at[i + 2] = px * 0.13 + Math.abs(off) * 0.5; at[i + 3] = px * 0.042;
+  at[i] = sx + off; at[i + 1] = sy - px * 0.01; at[i + 2] = (px * 0.13 + Math.abs(off) * 0.5) * (1 - 0.28 * lift); at[i + 3] = px * 0.042 * (1 - 0.2 * lift);
 }
 
 // The forager's rim in the dark (PLAN.md stage 5, "the camp catches the light"): a thin amber edge along the top of its
@@ -2557,7 +2650,7 @@ function snowOnForager() {
 // morning, the satchel empty (sim.js wakeForager). In cold air its breath shows (BREATH_AIR, a puff painted once,
 // PUFF_ART), and soaked it drips. Its face is top left (#me, renderVitals, with the frost, a few times a second): painted
 // in a mood (faceMood), health a ring round it, warmth and the tummy two dials under it (a drop by the warmth while it's
-// wet), and a tap on it shows the skills (openMe). Stamina is a bar over the satchel (#vitals).
+// wet), and a tap on it opens the book at You (openYou). Stamina is a bar over the satchel (#vitals).
 const BREATH_AIR = 8;                      // degrees: air colder than this shows its breath
 const BREATH_MS = [2700, 1500];            // ms between puffs, standing and walking (sprinting, half that)
 const PUFF_MS = 1500;                      // a puff's life
@@ -2688,10 +2781,10 @@ const FOOD_FULL = 0.85;                   // the tummy's dial dims over this
 const MOOD_HOLD = 1200;                   // ms a new mood has to last before the face changes to it
 const FACE_PX = 50 * 1.5;                 // the face's size painted: #me canvas is 50 css px but #me-box scales up to 1.4x, so paint for that
 const vit = { health: -1, stam: -1, winded: null, warm: -1, wet: -1, frost: -1, food: -1, starving: null, fedAt: -1e9, lvAt: -1e9, lv: -1,
-  mood: '', want: '', wantAt: 0, face: '', skills: '' };
+  mood: '', want: '', wantAt: 0, face: '' };
 const TUMMY_WORDS = [[0.85, 'Full'], [0.55, 'Fed'], [S.HUNGRY, 'Peckish'], [0.001, 'Hungry'], [-1, 'Starving']];
 // The tag beside the face and dials (#me-tip): what it is, how it is, and what helps. A mouse shows it while over one; a tap
-// shows it for TIP_TAP_MS (the face's tap opens the skills as well).
+// shows it for TIP_TAP_MS (not the face's: its tap opens the book at You, so a tip would only flash behind it).
 const TIP_KEYS = ['me', 'warm', 'food'], TIP_EL = { me: '#me', warm: '#v-warm', food: '#v-food' };
 const TIP_Y = { me: 36, warm: 77, food: 77 };   // px in #me-box: the middle of what each is about
 const TIP_TAP_MS = 2600;
@@ -2700,7 +2793,7 @@ vit.tips = { me: '', warm: '', food: '' };
 function tipSaid(k, f) {
   if (k === 'me') {
     const hp = Math.round(f.health * 100);
-    return f.health > 0.75 ? ['Health', `Well · ${hp}%`, hp < 100 ? 'Mends while warm and fed' : 'Tap for your skills']
+    return f.health > 0.75 ? ['Health', `Well · ${hp}%`, hp < 100 ? 'Mends while warm and fed' : 'Tap to open the book at You']
       : f.health > 0.4 ? ['Health', `Hurt · ${hp}%`, 'Mends while warm and fed']
       : ['Health', `Badly hurt · ${hp}%`, 'Get warm and eat, or you\'ll fall'];
   }
@@ -2736,7 +2829,7 @@ for (const k of TIP_KEYS) {
   const el = $(TIP_EL[k]);
   el.addEventListener('pointerenter', e => { if (e.pointerType === 'mouse') showTip(k); });
   el.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse' && tip.on === k) showTip(''); });
-  el.addEventListener('pointerdown', e => { if (e.pointerType !== 'mouse') showTip(k, TIP_TAP_MS); });
+  el.addEventListener('pointerdown', e => { if (e.pointerType !== 'mouse' && k !== 'me') showTip(k, TIP_TAP_MS); });
 }
 const faces = new Map();                  // a face painted once an outfit, snow and mood (fur.js paintForagerFace)
 // How it looks (fur.js FACE_MOODS): hurt or down, cold, out of breath, hungry, happy a moment after eating or a level up,
@@ -2809,13 +2902,16 @@ function renderVitals() {
     if (line === vit.tips[k]) continue;
     vit.tips[k] = line;
     const el = $(TIP_EL[k]);
-    el.ariaLabel = `${t[0]}: ${t[1]}${k === 'me' ? ' · your skills' : ''}`;
+    el.ariaLabel = `${t[0]}: ${t[1]}${k === 'me' ? ' · opens the book at You' : ''}`;
     if (tip.on === k) layTip(k);
   }
   let lv = 0;
   for (const s of S.SKILL_NAMES) lv += f.lv[s];
   if (lv !== vit.lv) { $('#me-lv').textContent = lv || ''; vit.lv = lv; }
-  if (meOpen()) renderMe();
+  if (bookOpen()) {                                       // (the sheet's bars and chips a few times a second, and the satchel's counts as it walks in or out of camp)
+    const at = (f.x | 0) + ',' + (f.y | 0);
+    if (bookPart() === 'you' || at !== bookUi.at) { bookUi.at = at; renderBook(); }
+  }
   const frost = S.warmthStage(f) === 3 ? Math.round((0.45 + 0.55 * (1 - f.warmth / S.WARMTH_STAGES[2])) * 20) / 20 : 0;
   if (frost !== vit.frost) {
     const el = $('#frost');
@@ -2846,8 +2942,8 @@ function renderThermo() {
   el.querySelector('span').textContent = word;
   el.ariaLabel = `Air temperature: ${deg} degrees, ${word.toLowerCase()}`;
 }
-// The skills (#me-card: a tap on the face or I): each of sim.js SKILLS with its level, how far to the next, what it gives
-// now and what practises it. A new skill shows with its line till it has a SKILL_SAYS.
+// The skills, in the book's You part (a tap on the face or I): each of sim.js SKILLS with its level, how far to the next,
+// what it gives now and what practises it. A new skill shows with its line till it has a SKILL_SAYS.
 const pct = v => Math.round(v * 100) + '%';
 const SKILL_SAYS = {
   stamina: (k, lv) => `Sprints ${pct(k.perks.sprint * lv)} longer, ${pct(k.perks.pace * lv)} faster, breath back ${pct(k.perks.rest * lv)} sooner`,
@@ -2860,9 +2956,26 @@ const SKILL_NEXT = {
 };
 const SKILL_HOW = { stamina: 'sprinting', cooking: 'cooking dishes', gathering: 'picking things' };
 const SKILL_INK = { stamina: '#6f9cc9', cooking: '#d9803a', gathering: '#7a9a46' };
+// What a skill's practice is counted in, for the "7 dishes to 5" beside it: the practice one thing gives (sim.js
+// GATHER_PRACTICE, a dish = 1, a minute of sprinting = 60), and its one and many. A skill not in this table counts in
+// "practice", which is true if not so nice to read.
+const SKILL_UNIT = {
+  cooking: { per: 1, one: 'dish', many: 'dishes' },
+  gathering: { per: 0.4, one: 'thing picked', many: 'things picked' },   // (sim.js GATHER_PRACTICE)
+  stamina: { per: 60, one: 'minute of sprinting', many: 'minutes of sprinting' },
+};
+const unitOf = s => SKILL_UNIT[s] || { per: 1, one: 'bit of practice', many: 'bits of practice' };
+// How much of the skill's own unit is left to the next level: 7 dishes, 70 things picked, 2 minutes of sprinting.
+function skillLeft(s, f) {
+  const lv = f.lv[s];
+  if (lv >= S.SKILL_TOP) return 0;
+  return Math.max(1, Math.ceil((S.skillNeed(s, lv + 1) - f.xp[s]) / unitOf(s).per));
+}
+const skillLeftWords = (s, f, n = skillLeft(s, f)) => `${n} ${n === 1 ? unitOf(s).one : unitOf(s).many}`;
 // The metal of a level up's coin (index.html #announce.level .coin, --coin and --coin-ink): worn copper at the first
 // level, then bronze, brass and gold, and then the jewel colours, jade, verdigris, sapphire, amethyst and rose. The top
-// (SKILL_TOP) is the coin's .max: a pale opal of every colour, with a sheen and sparks (index.html).
+// (SKILL_TOP) is the coin's .max: a pale opal of every colour, with a sheen and sparks (index.html). Level 0 has no coin
+// yet; the book gives it a blank worn one.
 const LEVEL_COIN = [
   null,
   { coin: '#b8743c', ink: '#331a06' },   // copper
@@ -2876,29 +2989,35 @@ const LEVEL_COIN = [
   { coin: '#d26786', ink: '#4c1024' },   // rose
   { coin: '#f2e2b0', ink: '#3a2408' },   // opal, the best it gets
 ];
-const meOpen = () => !$('#me-card').classList.contains('hidden');
-function openMe(open = !meOpen()) {
-  $('#me-card').classList.toggle('hidden', !open);
-  if (!open) return;
-  $('#me').classList.remove('news');
-  vit.skills = '';
-  renderMe();
+const LEVEL_METAL = ['', 'Copper', 'Bronze', 'Brass', 'Gold', 'Jade', 'Verdigris', 'Sapphire', 'Amethyst', 'Rose', 'Opal'];
+const BARE_COIN = { coin: '#d4b98a', ink: '#5a4528' };   // (level 0: a coin not struck yet)
+// What each perk is called in the book's rows (sim.js SKILLS's perk keys): [what it does, how].
+const PERK_WORDS = {
+  stamina: { sprint: ['Sprints', 'longer'], pace: ['Runs', 'faster'], rest: ['Breath back', 'sooner'] },
+  cooking: { speed: ['Dishes cook', 'quicker'] },
+  gathering: { quick: ['Picks', 'quicker'], yield: ['Each pick gives', 'more'] },
+};
+// The forager in one word, as The Forest says "Currently feeling GOOD": the one thing that most colours how they are.
+function feelingWord(f) {
+  if (f.down >= 0) return 'spent';
+  if (f.wet > 0.6) return 'soaked';
+  const st = S.warmthStage(f);
+  if (st >= 3) return 'freezing';
+  if (st >= 2) return 'cold';
+  if (f.health < 0.4) return 'badly hurt';
+  if (f.tummy <= 0) return 'starving';
+  if (f.tummy < S.HUNGRY) return 'hungry';
+  if (f.winded) return 'winded';
+  if (f.stamina < 0.3) return 'tired';
+  if (f.health < 0.75) return 'sore';
+  if (st >= 1) return 'chilly';
+  if (f.tummy > FOOD_FULL && f.warmth > 0.6) return 'cosy';
+  return 'well';
 }
-function renderMe() {
-  const f = world.forager;
-  let key = myName;
-  for (const s of S.SKILL_NAMES) key += ':' + f.lv[s] + ':' + Math.round(S.skillProgress(f, s) * 100);
-  if (key === vit.skills) return;
-  vit.skills = key;
-  $('#me-title').textContent = myName || 'Your forager';
-  $('#me-skills').innerHTML = S.SKILL_NAMES.map(s => {
-    const k = S.SKILLS[s], lv = f.lv[s], top = lv >= S.SKILL_TOP;
-    const says = lv && SKILL_SAYS[s] ? SKILL_SAYS[s](k, lv) : k.line, how = SKILL_HOW[s], next = SKILL_NEXT[s] ? SKILL_NEXT[s](lv) : '';
-    return `<div class="sk"><div class="sk-top"><b>${esc(k.name)}</b><span>Level ${lv}${top ? ' · the best it gets' : ''}</span></div>`
-      + `<div class="sk-bar" style="--ink: ${SKILL_INK[s] || '#b98a45'}"><i style="width: ${Math.round(S.skillProgress(f, s) * 100)}%"></i></div>`
-      + `<p>${esc(says)}${how && !top ? ` · better with ${how}` : ''}${next ? `<br><small>Next: ${esc(next)}</small>` : ''}</p></div>`;
-  }).join('');
-}
+const warmthWord = f => ['warm', 'chilly', 'cold', 'freezing', 'too cold'][S.warmthStage(f)];
+const tummyWord = f => TUMMY_WORDS.find(([v]) => f.tummy > v)[1].toLowerCase();
+const staminaWord = f => f.winded ? 'winded' : f.stamina > 0.75 ? 'fresh' : f.stamina > 0.35 ? 'tiring' : 'spent';
+const healthWord = f => f.health > 0.75 ? 'well' : f.health > 0.4 ? 'hurt' : 'badly hurt';
 
 // ---- first things: a new player's guide (2026-10-17)
 //
@@ -2987,7 +3106,7 @@ function renderTasks() {
     }
   }
   taskUi.quiet = false;
-  const away = taskUi.shown < 0 || meOpen() || bookOpen() || wardrobeOpen() || stoneOpen() || f.down >= 0 || (narrow() && (cooking() || larderOpen() || now < announcing.until));
+  const away = taskUi.shown < 0 || bookOpen() || wardrobeOpen() || stoneOpen() || f.down >= 0 || (narrow() && (cooking() || larderOpen() || now < announcing.until));
   el.classList.toggle('away', away);
   if (taskUi.shown < 0) return;
   const c = TASKS[taskUi.shown], next = c.tasks.find(t => !taskUi.done.has(t.id));
@@ -3217,7 +3336,7 @@ const FLOAT_MS = 1400, SAY_MS = 1900;     // a "+3 Chanterelles" floating up, an
 const FROM_FRONT = { tree: 1, hive: 1, bramble: 1 };   // (comes at these from in front, where it shows, not hidden behind them)
 let GLOW_ART = null;
 const pickFloats = [];                    // { img, w, h, x, y (world), t0, ms }
-const aim = { x: 0, y: 0, in: false, moved: false, cx: 0, cy: 0, cz: 0, at: 0, t: null, id: '', n: 0, why: '', fire: null, basket: null, torch: null, close: false, closeAt: 0, closeT0: 0 };   // what the mouse is on (hoverFrame): a thing to gather, or a fire; close: what the forager stands by instead (closeBy)
+const aim = { x: 0, y: 0, in: false, moved: false, cx: 0, cy: 0, cz: 0, at: 0, t: null, id: '', n: 0, why: '', fire: null, basket: null, torch: null, seat: null, close: false, closeAt: 0, closeT0: 0 };   // what the mouse is on (hoverFrame): a thing to gather, a fire, the basket, the stone or the seat log; close: what the forager stands by instead (closeBy)
 const AIM_MS = 150;
 
 // The thing to gather under a point: { kind, it } or null. Hives first (in their tree), then what grows at a tree's foot,
@@ -3457,17 +3576,18 @@ function sprintSet(on) {
   el.classList.toggle('on', on); el.setAttribute('aria-pressed', on);
   if (!sprintHold) holdShift(on);                       // (a finger held on the meadow is already Shift: endSprint hands back)
 }
-// E: the nearest thing to pick in reach (lit by drawNear) or lying where it was dropped, as a click on it would. Pressed again
-// while it's off picking, the next nearest lines up after.
+// The fallback E uses when no thing to use is nearer: the nearest thing to pick in reach (lit by drawNear) or lying where
+// it was dropped, as a click on it would. Pressed again while it's off picking, the next nearest lines up after.
 function pickNear() {
   const best = nearPick(), F = world.forager;
   if (!best) { if (!gatherBusy()) say('Nothing in reach', F.x, F.y - 1.6); return; }
   if (!queueGather(best)) goGather(best);
 }
-// What E would pick now: { kind, it } or null (drawNear rings it in RING_E_ART).
-function nearPick() {
+// What E would pick if no thing to use were nearer: { kind, it } or null (drawNear rings it in RING_E_ART). max is how far to
+// look (the E target asks only as far as the nearest thing to use, so a far pick's whatThere isn't worked out).
+function nearPick(max = NEAR_REACH) {
   const F = world.forager, busy = gatherBusy();
-  let best = null, bd = NEAR_REACH * NEAR_REACH;
+  let best = null, bd = max * max;
   const look = (kind, it) => {
     const d = (it.x - F.x) ** 2 + (it.y - F.y) ** 2;
     if (d >= bd || (busy && ((ui.gather && ui.gather.it === it) || ui.queue.some(q => q.it === it)))) return;
@@ -3630,23 +3750,24 @@ function hoverFrame() {
   if (mouse && (aim.moved || (aim.cx !== cam.x || aim.cy !== cam.y || aim.cz !== cam.zoom) && now - aim.at > AIM_MS)) {
     aim.moved = false; aim.cx = cam.x; aim.cy = cam.y; aim.cz = cam.zoom; aim.at = now;   // (the camera gliding after the forager: a look every AIM_MS will do)
     const fire = ui.hoverId ? null : fireAt(aim.x, aim.y);   // (a fire first, as a click: over what lies by it)
-    const torch = ui.hoverId || fire ? null : torchAt(aim.x, aim.y);   // (a torch that wants bark: one burning well isn't one)
+    const torch = ui.hoverId || fire ? null : torchAt(aim.x, aim.y, true);   // (a torch wants bark; one burning well is only named)
     const basket = ui.hoverId || fire || torch ? null : basketAt(aim.x, aim.y) || stoneAt(aim.x, aim.y);   // (or the old stone)
-    const t = ui.hoverId || fire || torch || basket ? null : gatherAt(aim.x, aim.y);
+    const seat = ui.hoverId || fire || torch || basket ? null : seatAt(aim.x, aim.y);   // (the camp's seat log)
+    const t = ui.hoverId || fire || torch || basket || seat ? null : gatherAt(aim.x, aim.y);
     // A mouse over nothing leaves what the forager stands by alone: clearing it for each look blanked its ring and label
     // (and restarted their fade) until closeBy looked again, so they flickered.
-    if (fire || torch || basket || t || ui.hoverId || !aim.close) { aim.close = false; aim.fire = fire; aim.torch = torch; aim.basket = basket; aim.t = t; }
-  } else if (!mouse && !aim.close && (aim.t || aim.fire || aim.torch || aim.basket)) { aim.t = null; aim.fire = null; aim.torch = null; aim.basket = null; }
-  if ((aim.close || !(aim.t || aim.fire || aim.torch || aim.basket || ui.hoverId)) && now - aim.closeAt > AIM_MS) closeBy(now);
+    if (fire || torch || basket || seat || t || ui.hoverId || !aim.close) { aim.close = false; aim.fire = fire; aim.torch = torch; aim.basket = basket; aim.seat = seat; aim.t = t; }
+  } else if (!mouse && !aim.close && (aim.t || aim.fire || aim.torch || aim.basket || aim.seat)) { aim.t = null; aim.fire = null; aim.torch = null; aim.basket = null; aim.seat = null; }
+  if ((aim.close || !(aim.t || aim.fire || aim.torch || aim.basket || aim.seat || ui.hoverId)) && now - aim.closeAt > AIM_MS) closeBy(now);
   if (aim.t) {
     const w = S.whatThere(world, aim.t.kind, aim.t.it);
     aim.id = w.id; aim.n = w.n; aim.why = w.why;
     if (!w.n && !w.why) aim.t = null;                     // (a dead tree: nothing to say)
   }
-  canvas.classList.toggle('on-animal', !!ui.hoverId || !aim.close && (!!(aim.t && aim.n) || !!aim.fire || !!aim.torch || !!aim.basket));
+  canvas.classList.toggle('on-animal', !!ui.hoverId || !aim.close && (!!(aim.t && aim.n) || !!aim.fire || !!aim.torch || !!aim.basket || !!aim.seat));
 }
-// Standing still by something to use (a fire, the basket, the old stone, or the nearest thing to pick), within USE_NEAR: it
-// glows as under a mouse, with its name by it (for USE_SAY ms, then it fades), so a finger knows what a tap will do here.
+// Standing still by something to use (a fire, the basket, the old stone, the seat log, a torch, or the nearest thing to pick),
+// within USE_NEAR: it's looked at as under a mouse, with its name by it (for USE_SAY ms, then it fades), so a finger knows what a tap will do here.
 const USE_NEAR = 2.6, USE_STILL = 350, USE_SAY = 4000, USE_FADE = 900;
 function closeBy(now) {
   aim.closeAt = now;
@@ -3655,19 +3776,21 @@ function closeBy(now) {
   const look = (kind, it) => { const d = (it.x - F.x) ** 2 + (it.y - F.y) ** 2; if (d < bd) { bd = d; best = it; bk = kind; } };
   if (F && F.down < 0 && !F.walking && !ui.gather && !ui.fire && !ui.place && !drag && now - sense.still > USE_STILL) {
     for (const f of world.fires) look('fire', f);
-    for (const T of world.torches) if (torchLow(T)) look('torch', T);
+    for (const T of world.torches) look('torch', T);
     if (myBasket()) look('basket', myBasket());
     if (world.stone) look('stone', world.stone);
+    if (mySeat()) look('seat', mySeat());
     const t = nearPick();
     if (t) look(t.kind, t.it);
   }
   if (!best && !aim.close) return;
-  const was = aim.fire || aim.torch || aim.basket || (aim.t && aim.t.it);
+  const was = aim.fire || aim.torch || aim.basket || aim.seat || (aim.t && aim.t.it);
   aim.close = !!best;
   aim.fire = bk === 'fire' ? best : null;
   aim.torch = bk === 'torch' ? best : null;
   aim.basket = bk === 'basket' || bk === 'stone' ? best : null;
-  aim.t = best && !aim.fire && !aim.torch && !aim.basket ? (aim.t && aim.t.it === best ? aim.t : { kind: bk, it: best }) : null;
+  aim.seat = bk === 'seat' ? best : null;
+  aim.t = best && !aim.fire && !aim.torch && !aim.basket && !aim.seat ? (aim.t && aim.t.it === best ? aim.t : { kind: bk, it: best }) : null;
   if (best !== was) aim.closeT0 = now;
 }
 function drawGlow(now, over) {
@@ -3685,42 +3808,60 @@ function drawGlow(now, over) {
   ctx.drawImage(art.img, s.gx - s.rx * 1.25 * k, s.gy - s.ry * 1.25 * k, s.rx * 2.5 * k, s.ry * 2.5 * k);
   ctx.globalAlpha = 1;
 }
-function drawHoverLine(now) {
-  const a = aim.close ? clamp(1 - (now - aim.closeT0 - USE_SAY) / USE_FADE, 0, 1) : 1;   // (stood by it: said a while, then it fades)
-  if (a <= 0) return;
-  ctx.globalAlpha = a;
-  hoverLine();
-  ctx.globalAlpha = 1;
+// What the mouse is on, or what a finger has stopped by, in one line over the satchel (#what): one at a time, in one
+// place, never a tag over each thing in the camp. The key is the one that does it, where E would (eTarget). The line a
+// fire, the basket, a torch, the seat log or a thing to pick would have had by it is here instead, and the discs over a fire
+// and the stone are their own tell (so standing by those says nothing more).
+const whatUi = { name: '', do: '', key: '', on: false };
+let whatEl = null;
+function whatSet(name, detail, key) {
+  if (!whatEl) whatEl = $('#what');
+  if (name !== whatUi.name) { whatEl.querySelector('b').textContent = name; whatUi.name = name; }
+  const doing = detail || '';
+  if (doing !== whatUi.do) { whatEl.querySelector('span').textContent = doing; whatUi.do = doing; }
+  if (key !== whatUi.key) { whatEl.querySelector('kbd').textContent = key; whatUi.key = key; }
+  const on = !!name;
+  if (on !== whatUi.on) { whatEl.classList.toggle('on', on); whatUi.on = on; }
 }
-function hoverLine() {
-  if (aim.fire && !ui.fire && !pickFloats.length) {      // a fire: what it wants, if anything (fireWord); quiet while it burns well
-    const F = aim.fire, w = fireWord(F);
-    if (w) {
-      const z = cam.zoom, px = firePx(z);
-      drawLabel(w, (F.x - cam.x) * z + vw / 2, (F.y - cam.y) * z + vh / 2 + px * FIRE_PIP_DY + firePipR(z) * 1.3 + 4);   // (under the fuel pips, as the vessel row's name is under it)
+function whatOff() { whatSet('', '', ''); }
+function hoverSay(now) {
+  if (!world || promptsOff() || drag) { whatOff(); return; }
+  let name = '', detail = '', it = null;
+  const t = eTarget(), key = keyboardy.matches && !fingerTap ? 'E' : '';
+  if (aim.close) {                                       // (a finger standing still: the nearest pick too, which its ring doesn't name)
+    if (now - aim.closeT0 > USE_SAY + USE_FADE) { whatOff(); return; }
+    if (aim.torch && !ui.fire) { [name, detail] = torchSaid(aim.torch); it = aim.torch; }
+    else if (aim.basket && !aim.basket.stone && !ui.fire) { [name, detail] = basketSaid(aim.basket); it = aim.basket; }
+    else if (aim.seat && !ui.fire) { name = 'Seat log'; detail = fireSit.seat === aim.seat ? 'sitting' : 'sit down'; it = aim.seat; }
+    else if (aim.t && !ui.gather && !pickFloats.length) {   // (a stick, a berry, a dropped thing: the ring alone doesn't name it)
+      name = aim.n ? Recipes.INGREDIENTS[aim.id]?.name || aim.id : aim.why;
+      detail = aim.n ? aim.why : '';
+      it = aim.t.it;
     }
-    return;
+  } else if (aim.in) {
+    if (aim.fire && !ui.fire && !pickFloats.length) { [name, detail] = fireSaid(aim.fire); it = aim.fire; }
+    else if (aim.torch && !ui.fire && !pickFloats.length) {
+      if (world.torches.includes(aim.torch)) { [name, detail] = torchSaid(aim.torch); it = aim.torch; }
+    } else if (aim.basket && !ui.fire && !pickFloats.length) {
+      if (aim.basket.stone) name = Stone.NAME; else [name, detail] = basketSaid(aim.basket);
+      it = aim.basket;
+    } else if (aim.seat && !ui.fire && !pickFloats.length) {
+      name = 'Seat log'; detail = fireSit.seat === aim.seat ? 'sitting' : 'sit down'; it = aim.seat;
+    } else if (aim.t && !ui.gather && !pickFloats.length) {   // (not over a "+3" floating up, or a line saying why not)
+      name = aim.n ? Recipes.INGREDIENTS[aim.id]?.name || aim.id : aim.why;
+      detail = aim.n ? aim.why : '';
+      it = aim.t.it;
+    }
   }
-  if (aim.torch && !ui.fire && !pickFloats.length) {     // a torch burning low or out: that bark lights it again (torchWord)
-    const T = aim.torch, z = cam.zoom;
-    if (torchLow(T) && world.torches.includes(T)) drawLabel(torchWord(T), (T.x - cam.x) * z + vw / 2, (T.y - cam.y) * z + vh / 2 + 6);
-    return;
-  }
-  if (aim.basket && !ui.fire && !pickFloats.length) {    // the basket: what's in it
-    const B = aim.basket, z = cam.zoom;
-    drawLabel(B.stone ? Stone.NAME : basketWord(B), (B.x - cam.x) * z + vw / 2, (B.y - cam.y) * z + vh / 2 + 6);
-    return;
-  }
-  if (!aim.t || ui.gather || pickFloats.length) return;   // (not over a "+3" floating up, or a line saying why not)
-  const s = gatherSpot(aim.t.kind, aim.t.it);
-  drawLabel(aim.n ? Recipes.INGREDIENTS[aim.id]?.name || aim.id : aim.why, s.gx, s.gy + s.ry * 0.9 + 4);
+  if (!name) { whatOff(); return; }
+  whatSet(name, detail, t && t.it === it ? key : '');
 }
 
 // ------------------------------------------------------------------ the campfire
 //
 // A fire (sim.js w.fires) is built from what's in the satchel (recipes.js BUILDS.campfire: pebbles, sticks and tinder). The
-// make button by the satchel (#build, renderBuild) has a little campfire in it (the build most worth doing: buildFocus)
-// and a ring round it filling in as the satchel holds more of what one takes; with it all there, a tap (or F) picks a spot
+// craft button by the satchel (#build, renderBuild) opens the make strip, where its tile shows how much of what one takes
+// the satchel holds; with it all there, a tap on the tile (or F) picks a spot
 // near the forager (ui.place: a faint fire there, following the mouse, or where a finger taps or drags, within
 // PLACE_REACH; one where it can't go says why, sim.js fireSpot). The forager walks there, kneels at its side (fur.js's
 // kneeling, view 3, side on to it, STAND_OFF off)
@@ -4228,6 +4369,31 @@ function paintTorch(g, size, U, n) {
 }
 
 const torchPx = z => Math.max(9, (8 + z) * TORCH_SIZE);
+// How far a burning torch's light reaches, in tiles (lightsFrame's r at a steady flame, TORCH_LIGHT of a fire's), and on
+// screen at this zoom.
+const TORCH_GLOW = 0.55;                 // a burning torch's glow, of a fed fire's (guttering: 0.30): lightsFrame's and so the pool's
+const TORCH_REACH = LIGHT_TILES * TORCH_LIGHT * (0.85 + 0.15 * TORCH_GLOW);
+const torchReach = z => TORCH_REACH * z;
+// The reach of the torch being placed (ui.place, torch: true): the pool it would lay on the ground, warm and faint, with a
+// thin ring at its edge, so its place can be picked by what it would light rather than guessed at. Drawn with the camp's
+// ghost ring, under all that stands; at night lightsFrame puts the ghost among the lights, so the dark is cut away out to
+// it for real. Fainter where it can't go (P.ok), as its own faint torch is.
+const REACH_RGB = '255, 198, 128';       // warm, but paler than a use ring's cream: this is what a flame would light, not something to use
+function drawTorchReach(z) {
+  const P = ui.place;
+  if (!P || !P.torch) return;
+  const r = torchReach(z), sx = (P.x - cam.x) * z + vw / 2, sy = (P.y - cam.y) * z + vh / 2 - torchPx(z) * TORCH_FOOT * 0.5;   // (the light's own middle, as lightsFrame has it)
+  if (!visible(sx, sy, r)) return;
+  const a = P.ok ? 1 : 0.4, ry = r * LIGHT_FLAT;
+  ctx.globalAlpha = 0.34 * a;
+  ctx.drawImage(lightArt().img, sx - r, sy - ry, r * 2, ry * 2);
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = `rgba(${REACH_RGB}, ${0.75 * a})`;
+  ctx.lineWidth = clamp(z * 0.06, 1.5, 2.5);
+  ctx.beginPath();
+  ctx.ellipse(sx, sy, r, ry, 0, 0, TAU);
+  ctx.stroke();
+}
 // A torch in the meadow, or a faint one where one would go (ui.place: the ghost is the burning look, no flame of its own).
 // Its painting is chosen by what's left of its night (torchTick): burning, guttering, or the charred stub; the flame is
 // the sharper, smaller set from drawTorchFlame, sitting on the middle of its charred crown.
@@ -4249,23 +4415,26 @@ function drawTorch(T, z, now) {
 }
 
 // The torch under a point on screen that wants bark (guttering or burnt out), or null: one burning well isn't a thing to
-// use, so a click on it walks there as on the grass (as a fire burning well says nothing).
-function torchAt(sx, sy) {
+// use, so a click on it walks there as on the grass (as a fire burning well says nothing). `any` finds one burning well too,
+// for the line over the satchel (a thing to name, not to use).
+function torchAt(sx, sy, any = false) {
   const z = cam.zoom, px = torchPx(z), m = fingerTap ? FINGER_R : 0;
   let best = null, bd = 1;
   for (const T of world.torches) {
-    if (!torchLow(T)) continue;
+    if (!any && !torchLow(T)) continue;
     const x = (T.x - cam.x) * z + vw / 2, y = (T.y - cam.y) * z + vh / 2 - px * 0.25;
     const d = ((sx - x) / Math.max(12, m, px * 0.2)) ** 2 + ((sy - y) / Math.max(14, m, px * 0.32)) ** 2;
     if (d < bd) { best = T; bd = d; }
   }
   return best;
 }
-// A torch's hover line, only once it wants bark (torchLow), as fireWord's: what it wants, and whether the satchel has it.
-function torchWord(T) {
+// A torch's line over the satchel: what it is (a fine one is just burning), and once it wants bark (torchLow), as fireSaid's,
+// what it wants and whether the satchel has it.
+function torchSaid(T) {
+  if (!torchLow(T)) return ['Torch', 'burning'];
   const bark = S.storesCount(storesAt(T.x, T.y), 'birchbark') > 0;
-  if (T.burn > 0) return bark ? 'Torch · burning low: bark relights it' : 'Torch · burning low: it wants birch bark';
-  return bark ? 'Torch · burnt out: bark relights it' : 'Torch · burnt out: it wants birch bark';
+  if (T.burn > 0) return ['Torch', bark ? 'burning low: bark relights it' : 'burning low: it wants birch bark'];
+  return ['Torch', bark ? 'burnt out: bark relights it' : 'burnt out: it wants birch bark'];
 }
 // A click or a tap on a torch that wants bark: off to its side to wrap fresh bark round it and strike (goFire 'relight',
 // the generic 'set' kneel), or, with none to hand, what's missing, said where it stands.
@@ -4352,10 +4521,10 @@ function drawFireGlows(now, dark) {
 // FUEL_FADE), over the dark so it reads at night, and not under the cooking card (it has the stick's ring). Down to its
 // last sticks (FIRE_LOW) the lit ones go a deeper red and breathe. A few plain arcs, only while one is near: the pips a
 // tree in front or the forager's own body is standing over are left out, as the vessels about the fire are hidden by
-// them. The fire's hover note goes under the row (hoverLine), a name under its pips as the cooking row has.
+// them. The fire's line over the satchel says what it wants (hoverSay), not here over the camp.
 const FUEL_NEAR = 5, FUEL_FADE = 1.5;    // tiles from the forager it shows within, and over how many it fades
 const FUEL_PIPS = S.FIRE_MOST / S.FIRE_STICK;
-const FIRE_PIP_DY = 0.34;                // where the row sits, down from the fire's middle, in its size (hoverLine's note goes under it)
+const FIRE_PIP_DY = 0.34;                // where the row sits, down from the fire's middle, in its size
 const firePipR = z => clamp(firePx(z) * 0.03, 1.6, 3.2);
 function drawFireGauges(now) {
   const f = world.forager, z = cam.zoom, px = firePx(z), r = firePipR(z), gap = r * 2.9, rr = r * 1.3;
@@ -4420,13 +4589,14 @@ function snowMelt() {
 // The light the fires and torches cast this frame: where, how far and how bright (on screen), for the warm light laid over
 // what stands about them (fireLight) and the pool cut out of the dark (laySky, SKY_FIRE). In the dark it flickers in steps
 // (FLICKER_MS), so the sky's picture is painted again only on a step, or when the camera moves. A torch is a lantern: its
-// pool is a share of a fire's (TORCH_LIGHT) and dimmer, so it lights a path rather than a clearing. Fires go in first, so
-// at the same distance one keeps its slot ahead of a torch; then the nearest LIGHT_MAX are kept, the rest dropped.
+// pool is a share of a fire's (TORCH_LIGHT), and its falloff is flatter (lightFallT), so a whole torch stands as one wide
+// pool rather than a bright pip with a dark rim: the same reach covers more ground, which is what a torch is for. Fires go
+// in first, so at the same distance one keeps its slot ahead of a torch; then the nearest LIGHT_MAX are kept, the rest dropped.
 const lights = { n: 0, x: new Float64Array(LIGHT_MAX), y: new Float64Array(LIGHT_MAX), r: new Float64Array(LIGHT_MAX),
-  a: new Float64Array(LIGHT_MAX), d: new Float64Array(LIGHT_MAX) };
+  a: new Float64Array(LIGHT_MAX), d: new Float64Array(LIGHT_MAX), t: new Uint8Array(LIGHT_MAX) };   // (t: a torch's, for the flatter falloff)
 // One light into the frame's list, kept nearest the middle of the screen first (the ones you're looking at read most).
 // A bounded insertion: with LIGHT_MAX slots the ones already kept are the nearest so far, and a farther light is dropped.
-function lightAdd(x, y, r, a, d) {
+function lightAdd(x, y, r, a, d, t = 0) {
   let i;
   if (lights.n < LIGHT_MAX) i = lights.n++;
   else {
@@ -4435,13 +4605,14 @@ function lightAdd(x, y, r, a, d) {
   }
   for (; i > 0 && lights.d[i - 1] > d; i--) {
     lights.x[i] = lights.x[i - 1]; lights.y[i] = lights.y[i - 1]; lights.r[i] = lights.r[i - 1];
-    lights.a[i] = lights.a[i - 1]; lights.d[i] = lights.d[i - 1];
+    lights.a[i] = lights.a[i - 1]; lights.d[i] = lights.d[i - 1]; lights.t[i] = lights.t[i - 1];
   }
-  lights.x[i] = x; lights.y[i] = y; lights.r[i] = r; lights.a[i] = a; lights.d[i] = d;
+  lights.x[i] = x; lights.y[i] = y; lights.r[i] = r; lights.a[i] = a; lights.d[i] = d; lights.t[i] = t;
 }
 function lightsFrame(now) {
   lights.n = 0;
-  if (!world.fires.length && !world.torches.length) return;
+  const P = ui.place, ghost = !!(P && P.torch && P.ok);   // (a torch being placed: its light is a preview, at the end)
+  if (!world.fires.length && !world.torches.length && !ghost) return;
   const z = cam.zoom, step = Math.floor(now / FLICKER_MS), cx = vw / 2, cy = vh / 2;
   for (const F of world.fires) {
     const s = fireShown(F, now), glow = Math.max(s.heat, F.lit ? 0 : F.embers > 0 ? 0.22 * F.embers / S.FIRE_EMBERS : 0, s.spark * 0.25);
@@ -4454,13 +4625,17 @@ function lightsFrame(now) {
   }
   for (const T of world.torches) {
     if (T.burn <= 0) continue;                            // (the charred stub gives no light at all)
-    const low = T.burn < S.TORCH_BURN * 0.2, glow = low ? 0.30 : 0.55;
+    const low = T.burn < S.TORCH_BURN * 0.2, glow = low ? 0.30 : TORCH_GLOW;
     const fl = 0.95 + 0.03 * Math.sin(step / 3 + T.born) + 0.02 * Math.sin(step / 1.3 + 2 * T.born);
     const r = LIGHT_TILES * TORCH_LIGHT * z * (0.85 + 0.15 * glow) * fl;
     const sx = (T.x - cam.x) * z + vw / 2, sy = (T.y - cam.y) * z + vh / 2;
     if (!visible(sx, sy, r)) continue;                    // (a row of torches off screen must not eat the slots)
     const y = sy - torchPx(z) * TORCH_FOOT * 0.5;         // (its foot: the pool lies on the ground there)
-    lightAdd(sx, y, r, (low ? 0.5 : 0.72) * fl, Math.hypot(sx - cx, y - cy));
+    lightAdd(sx, y, r, (low ? 0.62 : 0.82) * fl, Math.hypot(sx - cx, y - cy), 1);
+  }
+  if (ghost) {                                          // where one would go: the pool it would light, so its reach is seen before it's set (a shade under a real one, no flicker)
+    const r = torchReach(z), sx = (P.x - cam.x) * z + vw / 2, sy = (P.y - cam.y) * z + vh / 2 - torchPx(z) * TORCH_FOOT * 0.5;
+    if (visible(sx, sy, r)) lightAdd(sx, sy, r, 0.6, Math.hypot(sx - cx, sy - cy), 1);
   }
 }
 // How bright a light's pool lies over a point, u of the way through it (the falloff the pool's cut and the warm over what
@@ -4468,11 +4643,16 @@ function lightsFrame(now) {
 // a strong one (a share of a full fire's, the 0.85 the pool's cut lays over what's nearest it). The forager's rim rides
 // on this (drawForagerRim), so what shows on it is a light where a light falls — never a light of its own.
 const lightFall = u => u < 0.35 ? 1 - 0.51 * u : u < 0.7 ? 0.82 - 1.14 * (u - 0.35) : u < 0.88 ? 0.42 - 1.55 * (u - 0.7) : 0.14 * (1 - u) / 0.12;
+// A torch's own falloff, a touch fuller than a fire's at every step (0.86, 0.50, 0.20 at 0.35, 0.7, 0.88 of the reach,
+// where a fire's is 0.82, 0.42, 0.14) but the same soft shape: enough of the outer reach above the dark to be worth having,
+// and still a pool that fades rather than a flat disc with a drawn rim (which reads as a spotlight when they stand in a row).
+// torchCutArt's stops are this curve, so the pool cut out of the dark and what stands in its light agree.
+const lightFallT = u => u < 0.35 ? 1 - 0.4 * u : u < 0.7 ? 0.86 - 1.0286 * (u - 0.35) : u < 0.88 ? 0.50 - 1.6667 * (u - 0.7) : 0.20 * (1 - u) / 0.12;
 function fireReach(fx, fy, dx = 0, dy = 0) {
   let pool = 0;
   for (let i = 0; i < lights.n; i++) {
     const u = Math.hypot(fx - lights.x[i] - dx, (fy - lights.y[i] - dy) / LIGHT_FLAT) / lights.r[i];
-    if (u < 1) pool += lights.a[i] * lightFall(u);
+    if (u < 1) pool += lights.a[i] * (lights.t[i] ? lightFallT(u) : lightFall(u));
   }
   return Math.min(1, pool / 0.85);
 }
@@ -4492,15 +4672,17 @@ function fireLight(dark) {
 }
 // Cut out of the dark on the sky's picture (laySky): the dark goes, and a warm glow comes in its place, by a fire or a
 // torch. Both are pictures painted once (CUT_ART, lightArt), laid flat on the ground (LIGHT_FLAT).
-let CUT_ART = null;
+let CUT_ART = null, TORCH_CUT_ART = null;
 const cutArt = () => CUT_ART || (CUT_ART = glowArt2(128, [[0, 'rgba(0, 0, 0, 1)'], [0.35, 'rgba(0, 0, 0, 0.82)'], [0.7, 'rgba(0, 0, 0, 0.42)'], [0.88, 'rgba(0, 0, 0, 0.14)'], [1, 'rgba(0, 0, 0, 0)']]));
+// A torch's pool: lightFallT's stops, a little fuller than a fire's all the way out, with the same long fade at the rim.
+const torchCutArt = () => TORCH_CUT_ART || (TORCH_CUT_ART = glowArt2(128, [[0, 'rgba(0, 0, 0, 1)'], [0.35, 'rgba(0, 0, 0, 0.86)'], [0.7, 'rgba(0, 0, 0, 0.50)'], [0.88, 'rgba(0, 0, 0, 0.20)'], [1, 'rgba(0, 0, 0, 0)']]));
 function paintFireLights(g) {
-  const cut = cutArt().img, warm = lightArt().img;
+  const cut = cutArt().img, torchCut = torchCutArt().img, warm = lightArt().img;
   for (let i = 0; i < lights.n; i++) {
     const x = lights.x[i], y = lights.y[i], r = lights.r[i], a = lights.a[i];
     g.globalCompositeOperation = 'destination-out';
     g.globalAlpha = 0.85 * a;
-    g.drawImage(cut, x - r, y - r * LIGHT_FLAT, r * 2, r * 2 * LIGHT_FLAT);
+    g.drawImage(lights.t[i] ? torchCut : cut, x - r, y - r * LIGHT_FLAT, r * 2, r * 2 * LIGHT_FLAT);
     g.globalCompositeOperation = 'source-over';
     g.globalAlpha = 0.26 * a;
     g.drawImage(warm, x - r * 0.8, y - r * 0.8 * LIGHT_FLAT, r * 1.6, r * 1.6 * LIGHT_FLAT);
@@ -4737,10 +4919,12 @@ function drawCampRing(z, now) {
   if (!C) return;
   const a = campFade(now);
   const art = CAMP_ART || campArt(), w = S.CAMP_R * z / CAMP_MID * 2, h = w * art.h / art.w, sx = (C.x - cam.x) * z + vw / 2, sy = (C.y - cam.y) * z + vh / 2;
-  if (a <= 0 || !visible(sx, sy, w / 2)) return;
-  ctx.globalAlpha = a;
-  ctx.drawImage(art.img, sx - w / 2, sy - h / 2, w, h);
-  ctx.globalAlpha = 1;
+  if (a > 0 && visible(sx, sy, w / 2)) {
+    ctx.globalAlpha = a;
+    ctx.drawImage(art.img, sx - w / 2, sy - h / 2, w, h);
+    ctx.globalAlpha = 1;
+  }
+  drawCampBits(C, z, now);                                 // (its path runs out past the ring: looked for on its own)
 }
 // The camp that would spring up round a first campfire while its place is being tried for: the same ring, faint, under
 // the fire being aimed (and fainter still where it can't go). Once there's a camp, drawCampRing draws the true one.
@@ -4752,6 +4936,253 @@ function drawCampRingGhost(z) {
   ctx.globalAlpha = P.ok ? 0.5 : 0.22;
   ctx.drawImage(art.img, sx - w / 2, sy - h / 2, w, h);
   ctx.globalAlpha = 1;
+}
+// The little things that come with the camp, popping up one after another as its ring comes in: soot fanned out past the
+// fire's stones and a few scuffs in the earth, the dents where the forager knelt to light it, the grass round the rim
+// trodden flat and lying outward (rippling round from the path), a worn path running out of the camp, a trail of
+// footprints walking in along it, a fox's prints across the rim, and last a cairn of three flat stones by the path, set
+// one on another with a clack each. All scenery: nothing to pick, no use ring, nothing in the sim (it's all worked out
+// from the camp, the water and the forager's home). The flat ones are painted once a camp and a season's look as pieces
+// (CAMP_BITS), each popping in at its time, then laid into one picture drawn with the ring under all that stands; the
+// cairn stands with the trees ('cairn:', drawCairn). A camp kept from before shows them all at once.
+const BITS_PX = 48;                        // px a tile in their paintings
+const BITS_AT = CAMP_RING_IN + 200;        // ms after camp is made: the first of them
+const BIT_POP_MS = 420;                    // each one's pop
+const CAIRN_FALL = 300, CAIRN_GAP = 330;   // ms: a cairn stone dropping onto the one below, and between them
+const CAMP_BITS = { C: null, look: -1, pieces: [], last: 0, img: null, x0: 0, y0: 0, w: 0, h: 0, cairn: null };
+const PATH_EARTH = [92, 70, 46], PATH_DUST = [176, 150, 104];   // the ring's worn earth; the path's paler trodden dust
+// The grass trodden flat round the rim, paler than it stands (its blades' undersides): from the foot to the tip, for the
+// green, autumn's and winter's looks.
+const PRESSED = [[[112, 160, 66], [206, 218, 136]], [[156, 138, 72], [228, 204, 134]], GRASS_FROST];
+const BITS_DABS = new Map();
+function bitsDab(rgb = PATH_EARTH) {       // one soft dab of a colour, painted once
+  let c = BITS_DABS.get(rgb);
+  if (c) return c;
+  c = document.createElement('canvas');
+  const g = c.getContext('2d'), gr = g.createRadialGradient(16, 16, 0, 16, 16, 16), col = a => rockRGB(rgb, a);
+  c.width = c.height = 32;
+  gr.addColorStop(0, col(1)); gr.addColorStop(0.5, col(0.5)); gr.addColorStop(1, col(0));
+  g.fillStyle = gr; g.fillRect(0, 0, 32, 32);
+  BITS_DABS.set(rgb, c);
+  return c;
+}
+// How long since this camp was made (ms), Infinity for one that was there already (kept, or made before this visit).
+const campMs = (C, now) => C.fire === campShow.F ? now - campShow.t0 : Infinity;
+// The grass's look round the camp: green, autumn's, or winter's frosted.
+const bitsLook = () => { const s = S.seasonOf(world.tick); return s < 2 ? 0 : s === 2 ? 1 : 2; };
+// The camp's bits, painted for this camp and season (again only when either changes).
+function campBits(C) {
+  const B = CAMP_BITS, look = bitsLook();
+  if (B.C === C && B.look === look) return B;
+  if (B.img) freeImage(B.img);
+  for (const p of B.pieces) p.c.width = 0;
+  B.C = C; B.look = look; B.pieces = []; B.img = null; B.cairn = null;
+  paintCampBits(B, C, look);
+  B.last = 0;
+  for (const p of B.pieces) B.last = Math.max(B.last, p.t);
+  return B;
+}
+function paintCampBits(B, C, look) {
+  const R = S.CAMP_R, FL = S.CAMP_FLAT, W = world, K = BITS_PX, h = (k, s = 0) => hash2(Math.round(C.x * 8) + k, Math.round(C.y * 8) + s, 433);
+  const dryAt = (x, y) => { const X = C.x + x, Y = C.y + y; return X >= 0.5 && Y >= 0.5 && X < S.W - 0.5 && Y < S.H - 0.5 && !W.water[(Y | 0) * S.W + (X | 0)]; };
+  const clearAt = (x, y, r) => { let ok = dryAt(x, y); if (ok) S.forEachDecorNear(W, C.x + x, C.y + y, 2, d => { if (Math.hypot(d.x - C.x - x, d.y - C.y - y) < r) ok = false; }); return ok; };
+  // One piece: painted in tiles from the camp's middle, inside x0..x1, y0..y1, popping in at t.
+  const piece = (x0, y0, x1, y1, t, paint) => {
+    const c = document.createElement('canvas'), g = c.getContext('2d');
+    c.width = Math.max(1, Math.ceil((x1 - x0) * K)); c.height = Math.max(1, Math.ceil((y1 - y0) * K));
+    g.setTransform(K, 0, 0, K, -x0 * K, -y0 * K); g.lineCap = g.lineJoin = 'round';
+    paint(g);
+    B.pieces.push({ c, x: (x0 + x1) / 2, y: (y0 + y1) / 2, rx: (x1 - x0) / 2, ry: (y1 - y0) / 2, t });
+  };
+  // The path's way out: toward you, or round from there to the first way that's dry ground all along.
+  const pref = Math.PI / 2 + (h(1) - 0.5) * 0.9;
+  const out = (a, u) => [Math.cos(a) * R * u, Math.sin(a) * R * FL * u];
+  let a0 = pref;
+  for (let k = 0; k < 14; k++) {
+    const a = pref + (k & 1 ? 1 : -1) * Math.ceil(k / 2) * 0.42;
+    if ([0.85, 1.1, 1.35, 1.6, 1.8].every(u => dryAt(...out(a, u)))) { a0 = a; break; }
+  }
+  const dl = Math.hypot(Math.cos(a0), Math.sin(a0) * FL), dx = Math.cos(a0) / dl, dy = Math.sin(a0) * FL / dl, ph = h(2) * TAU;
+  const pathAt = u => { const [x, y] = out(a0, u), s = 0.32 * Math.sin(u * 2.6 + ph) * Math.min(1, (u - 0.6) * 2); return [x - dy * s, y + dx * s]; };
+  // Near the fire: soot fanned out past its stones on the side away from where the forager knelt, and a few scuffs.
+  const f = W.forager, hx = f ? f.homeX - C.x : 0.8, hy = f ? f.homeY - C.y : 0, side = hx < 0 ? -1 : 1;
+  const sx = -side * 0.95, sy = -0.12;
+  piece(sx - 0.7, sy - 0.4, sx + 0.7, sy + 0.4, BITS_AT, g => {
+    furGlow(g, [44, 36, 30], 0.32, sx, sy, 0.55, 0.24, 0.1 * side, 0.15);
+    furGlow(g, [26, 22, 19], 0.3, sx + side * 0.12, sy + 0.02, 0.28, 0.12, 0.1 * side, 0.2);
+    for (let i = 0; i < 14; i++) {
+      const x = sx + (h(10 + i) - 0.5) * 1.1, y = sy + (h(30 + i) - 0.5) * 0.5;
+      fillIn(g, i % 4 ? `rgba(150, 144, 134, ${0.3 + 0.3 * h(50 + i)})` : 'rgba(30, 26, 22, 0.5)', () => ovalAt(g, x, y, 0.012 + 0.018 * h(70 + i), 0.01 + 0.01 * h(90 + i)));
+    }
+  });
+  const cx = side * 0.55, cy = 1.25;
+  piece(cx - 0.6, cy - 0.35, cx + 0.6, cy + 0.35, BITS_AT + 150, g => {
+    for (let i = 0; i < 3; i++) {
+      const x = cx + (i - 1) * 0.3 + (h(110 + i) - 0.5) * 0.1, y = cy + (h(120 + i) - 0.5) * 0.3, l = 0.16 + 0.1 * h(130 + i), a = -0.5 + h(140 + i);
+      const arc = o => { g.moveTo(x - Math.cos(a) * l, y - Math.sin(a) * l * 0.6 + o); g.quadraticCurveTo(x, y + 0.05 + o, x + Math.cos(a) * l, y + Math.sin(a) * l * 0.6 + o); };
+      strokeIn(g, 'rgba(66, 46, 28, 0.32)', 0.055, () => arc(0));
+      strokeIn(g, 'rgba(200, 172, 128, 0.26)', 0.022, () => arc(-0.035));
+    }
+  });
+  if (Math.hypot(hx, hy) < 2.5) {                          // where it knelt: the grass pressed flat, two knees and its toes
+    const d = Math.hypot(hx, hy) || 1, tx = -hx / d;
+    piece(hx - 0.45, hy - 0.3, hx + 0.45, hy + 0.3, BITS_AT + 300, g => {
+      furGlow(g, [70, 52, 32], 0.16, hx, hy + 0.02, 0.36, 0.2);
+      for (const [x, y, rx, ry] of [[hx + tx * 0.07, hy - 0.05, 0.075, 0.048], [hx + tx * 0.09, hy + 0.06, 0.075, 0.048], [hx - tx * 0.3, hy - 0.04, 0.045, 0.03], [hx - tx * 0.28, hy + 0.07, 0.045, 0.03]]) {
+        fillIn(g, 'rgba(56, 40, 24, 0.14)', () => ovalAt(g, x, y, rx * 1.5, ry * 1.5));
+        fillIn(g, 'rgba(56, 40, 24, 0.26)', () => ovalAt(g, x, y, rx, ry));
+      }
+    });
+  }
+  // The grass round the rim, trodden flat and lying outward, in eight stretches rippling round from the path.
+  const cols = PRESSED[look], tip = look === 2 ? FROST : null;
+  for (let s = 0; s < 8; s++) {
+    const tufts = [];
+    for (let a = a0 + s * TAU / 8; a < a0 + (s + 1) * TAU / 8 - 0.02; a += 0.1 + 0.05 * h(200 + tufts.length, s)) {
+      const da = Math.abs(((a - a0) % TAU + TAU + Math.PI) % TAU - Math.PI), u = 0.99 + 0.06 * h(220 + tufts.length, s);
+      const [x, y] = out(a, u);
+      if (da > 0.14 && dryAt(x, y)) tufts.push([x, y, Math.atan2(Math.sin(a), Math.cos(a) * FL), tufts.length]);
+    }
+    if (!tufts.length) continue;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const [x, y] of tufts) { x0 = Math.min(x0, x - 0.45); y0 = Math.min(y0, y - 0.4); x1 = Math.max(x1, x + 0.45); y1 = Math.max(y1, y + 0.4); }
+    const da = Math.abs(((s + 0.5) * TAU / 8 + Math.PI) % TAU - Math.PI);
+    piece(x0, y0, x1, y1, BITS_AT + 500 + 900 * da / Math.PI, g => {
+      for (const [x, y, ang, i] of tufts) for (let b = 0; b < 4; b++) {
+        const k = 0.9 + 0.2 * h(300 + i * 4 + b, s);
+        g.save(); g.translate(x, y); g.scale(1, 0.62); g.rotate(ang + Math.PI / 2 + (b - 1.5) * 0.3 + (h(400 + i * 4 + b, s) - 0.5) * 0.3);
+        grassBlade(g, (b - 1.5) * 0.03, 0.3 + 0.18 * h(500 + i * 4 + b, s), (h(600 + i, s) - 0.5) * 0.1, 0.04, tone(cols[0], k), tone(cols[1], k), tip);
+        g.restore();
+      }
+    });
+  }
+  // The worn path, in four lengths from the rim outward, fading out into the grass: a wide pale band of trodden earth
+  // with a darker way worn down its middle.
+  const dab = bitsDab(), dust = bitsDab(PATH_DUST);
+  const SEGS = [0.7, 1.0, 1.25, 1.5, 1.8];
+  for (let s = 0; s < 4; s++) {
+    const pts = [];
+    for (let u = SEGS[s]; u < SEGS[s + 1]; u += 0.012) pts.push(pathAt(u), u);
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (let i = 0; i < pts.length; i += 2) { const [x, y] = pts[i]; x0 = Math.min(x0, x - 0.5); y0 = Math.min(y0, y - 0.4); x1 = Math.max(x1, x + 0.5); y1 = Math.max(y1, y + 0.4); }
+    piece(x0, y0, x1, y1, BITS_AT + 1200 + s * 200, g => {
+      for (let i = 0; i < pts.length; i += 2) {
+        const [x, y] = pts[i], u = pts[i + 1], j = i / 2, fade = u < 1 ? 0.45 + 0.55 * smooth(0.7, 1, u) : 1 - smooth(1.35, 1.8, u);
+        for (let k = 0; k < 3; k++) {
+          const ox = (h(700 + j * 3 + k, s) - 0.5) * 0.5, oy = (h(800 + j * 3 + k, s) - 0.5) * 0.2, r = 0.34 + 0.14 * h(900 + j * 3 + k, s), q = h(1000 + j * 3 + k, s);
+          g.globalAlpha = fade * (0.04 + 0.03 * q);
+          g.drawImage(dust, x - dy * ox - r, y + dx * ox + oy - r * 0.7, r * 2, r * 1.4);
+          if (k) continue;
+          g.globalAlpha = fade * (0.012 + 0.012 * q);
+          g.drawImage(dab, x - dy * ox * 0.3 - r * 0.5, y + dx * ox * 0.3 - r * 0.35, r, r * 0.7);
+        }
+      }
+      g.globalAlpha = 1;
+    });
+  }
+  // Footprints walking in along it, left, right, from where it fades to near the fire.
+  const sole = (g, x, y, hd, a) => {
+    g.save(); g.translate(x, y); g.scale(1, 0.72); g.rotate(hd + Math.PI / 2);
+    for (const [k, al] of [[1.35, a * 0.35], [1, a]]) fillIn(g, `rgba(58, 40, 24, ${al})`, () => { ovalAt(g, 0, -0.05, 0.056 * k, 0.08 * k); ovalAt(g, 0, 0.085, 0.043 * k, 0.05 * k); });
+    g.restore();
+  };
+  let t = BITS_AT + 2100, n = 0, lx = Infinity, ly = Infinity;
+  for (let u = 1.72; u > 0.2; u -= 0.01) {
+    const [x, y] = pathAt(u);
+    if (Math.hypot(x, y) < 1.4) break;
+    if (Math.hypot(x - lx, y - ly) < 0.45) continue;
+    lx = x; ly = y;
+    const [nx, ny] = pathAt(u - 0.05), hd = Math.atan2(ny - y, nx - x), sd = n++ & 1 ? 0.1 : -0.1, px = x - Math.sin(hd) * sd, py = y + Math.cos(hd) * sd;
+    if (!dryAt(px, py)) continue;
+    piece(px - 0.2, py - 0.2, px + 0.2, py + 0.2, t, g => sole(g, px, py, hd, u < 1 ? 0.4 : 0.3 * (1 - smooth(1.4, 1.75, u)) + 0.12));
+    t += 150;
+  }
+  // A fox's prints across the rim, in a line, on another side.
+  const ap = a0 + (h(3) < 0.5 ? 2.1 : -2.1), [fx0, fy0] = out(ap - 0.16, 1.28), [fx1, fy1] = out(ap + 0.16, 0.86), fh = Math.atan2(fy1 - fy0, fx1 - fx0);
+  t += 150;
+  for (let i = 0; i < 5; i++) {
+    const q = i / 4, x = fx0 + (fx1 - fx0) * q - Math.sin(fh) * (i & 1 ? 0.03 : -0.03), y = fy0 + (fy1 - fy0) * q + Math.cos(fh) * (i & 1 ? 0.03 : -0.03);
+    if (!dryAt(x, y)) continue;
+    piece(x - 0.1, y - 0.1, x + 0.1, y + 0.1, t + i * 110, g => {
+      g.save(); g.translate(x, y); g.scale(1, 0.72); g.rotate(fh + Math.PI / 2);
+      fillIn(g, 'rgba(58, 40, 24, 0.3)', () => { ovalAt(g, 0, 0.02, 0.03, 0.026); for (const [ox, oy] of [[-0.032, -0.022], [-0.012, -0.048], [0.012, -0.048], [0.032, -0.022]]) discAt(g, ox, oy, 0.012); });
+      g.restore();
+    });
+  }
+  // The cairn, beside the path where it crosses the rim (or none, if neither side's clear).
+  const [rx, ry] = pathAt(1.04);
+  for (const s of [1, -1]) {
+    const x = rx - dy * 0.7 * s, y = ry + dx * 0.7 * s;
+    if (!clearAt(x, y, 0.7)) continue;
+    const t0 = t + 5 * 110 + 250;
+    B.cairn = { cairn: true, x: C.x + x, y: C.y + y, t: [t0, t0 + CAIRN_GAP, t0 + CAIRN_GAP * 2], heard: 0 };
+    break;
+  }
+}
+// Laid into one picture once they're all in (or at once, for a camp that was there already).
+function bakeCampBits(B) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const p of B.pieces) { x0 = Math.min(x0, p.x - p.rx); y0 = Math.min(y0, p.y - p.ry); x1 = Math.max(x1, p.x + p.rx); y1 = Math.max(y1, p.y + p.ry); }
+  const c = document.createElement('canvas'), g = c.getContext('2d'), K = BITS_PX;
+  c.width = Math.max(1, Math.ceil((x1 - x0) * K)); c.height = Math.max(1, Math.ceil((y1 - y0) * K));
+  for (const p of B.pieces) { g.drawImage(p.c, (p.x - p.rx - x0) * K, (p.y - p.ry - y0) * K); p.c.width = 0; }
+  B.pieces = []; B.img = c; B.x0 = x0; B.y0 = y0; B.w = x1 - x0; B.h = y1 - y0;
+  asBitmap(c, b => { if (B.img === c) { B.img = b; c.width = 0; } else b.close(); });
+}
+// A piece popping up: from nothing, past its size a little, and back.
+const popIn = q => { const k = q - 1; return 1 + 2.7 * k * k * k + 1.7 * k * k; };
+function drawCampBits(C, z, now) {
+  const B = campBits(C), ms = campMs(C, now), sx = (C.x - cam.x) * z + vw / 2, sy = (C.y - cam.y) * z + vh / 2;
+  if (!B.img && ms > B.last + BIT_POP_MS) bakeCampBits(B);
+  if (B.img) {
+    if (!visible(sx + (B.x0 + B.w / 2) * z, sy + (B.y0 + B.h / 2) * z, Math.max(B.w, B.h) * z / 2)) return;
+    ctx.drawImage(B.img, sx + B.x0 * z, sy + B.y0 * z, B.w * z, B.h * z);
+    return;
+  }
+  if (!visible(sx, sy, S.CAMP_R * 2 * z)) return;
+  for (const p of B.pieces) {
+    const q = (ms - p.t) / BIT_POP_MS;
+    if (q <= 0) continue;
+    const k = q >= 1 ? 1 : Math.max(0.05, popIn(q)), w = p.rx * z * k, h = p.ry * z * k;
+    ctx.globalAlpha = Math.min(1, q * 3);
+    ctx.drawImage(p.c, sx + p.x * z - w, sy + p.y * z - h, w * 2, h * 2);
+  }
+  ctx.globalAlpha = 1;
+}
+// The cairn: three flat stones, the biggest at the foot, moss on it. 'cairn:0' to 'cairn:2' the stack one, two or three
+// high; 'cairn:3' to 'cairn:5' a stone alone at its place in the stack (dropping onto it).
+const CAIRN_ARTS = ['cairn:0', 'cairn:1', 'cairn:2', 'cairn:3', 'cairn:4', 'cairn:5'];   // (made once: a frame builds no names)
+const CAIRN_FOOT = 0.6;                    // where the ground is in its painting (of its half-size, down from the middle)
+const cairnPx = z => (8 + z) * 1.5;
+const CAIRN_STONES = [[0, 0.47, 0.44, 0.13, -0.04, 2], [-0.05, 0.26, 0.32, 0.11, 0.06, 0], [0.03, 0.085, 0.2, 0.09, -0.08, 4]];   // x, y, half-width, half-height, tilt, grey
+function paintCairn(g, size, U, n) {
+  g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
+  const alone = n >= 3, from = alone ? n - 3 : 0, to = alone ? n - 3 : n;
+  if (!alone) furGlow(g, [40, 32, 22], 0.4, 0.04, CAIRN_FOOT - 0.02, 0.6, 0.13);                  // its shadow on the ground
+  for (let k = from; k <= to; k++) {
+    const [x, y, rx, hh, tilt, grey] = CAIRN_STONES[k], rgb = STONE_GREYS[grey];
+    if (k && !alone) furGlow(g, [30, 26, 20], 0.5, x + 0.02, y + hh * 0.85, rx * 0.95, hh * 0.45);   // where it sits on the one below
+    softIn(g, rgb, y - hh, y + hh, () => ovalAt(g, x, y, rx, hh, tilt), 1.3, 0.6);
+    furGlow(g, [255, 252, 240], 0.42, x - rx * 0.3, y - hh * 0.45, rx * 0.45, hh * 0.32, -0.15);
+    if (k === 0) fillIn(g, 'rgba(112, 148, 70, 0.85)', () => { ovalAt(g, x - rx * 0.62, y - hh * 0.1, 0.07, 0.04, -0.4); ovalAt(g, x - rx * 0.4, y - hh * 0.55, 0.06, 0.03, -0.2); ovalAt(g, x + rx * 0.7, y + hh * 0.2, 0.04, 0.03, 0.5); });
+    if (k === 1) fillIn(g, 'rgba(214, 206, 140, 0.7)', () => { discAt(g, x + rx * 0.35, y - hh * 0.1, 0.022); discAt(g, x + rx * 0.5, y + hh * 0.25, 0.014); });
+  }
+}
+function drawCairn(Kn, z, now) {
+  const C = world.camp, ms = C ? campMs(C, now) : Infinity, px = cairnPx(z), sx = (Kn.x - cam.x) * z + vw / 2, sy = (Kn.y - cam.y) * z + vh / 2, y = sy - CAIRN_FOOT * px / 2;
+  let landed = 0;
+  while (landed < 3 && ms >= Kn.t[landed] + CAIRN_FALL) landed++;
+  if (ms < Infinity && landed > Kn.heard) { Kn.heard = landed; chime('clack'); }
+  if (landed) drawEmoji(CAIRN_ARTS[landed - 1], sx, y, px);
+  if (landed < 3) {                                        // the next dropping onto it
+    const q = (ms - Kn.t[landed]) / CAIRN_FALL;
+    if (q > 0) drawEmoji(CAIRN_ARTS[3 + landed], sx, y - (1 - q * q) * px * 0.7, px, { alpha: Math.min(1, q * 4) });
+  }
+}
+// The cairn to stand with the trees, once its first stone is coming down.
+function campCairn(now) {
+  const C = world.camp, Kn = C && campBits(C).cairn;
+  return Kn && campMs(C, now) > Kn.t[0] ? Kn : null;
 }
 
 // ---- building and tending it
@@ -4807,14 +5238,13 @@ function spendTag(tag, stores = storesHere()) {
 }
 const hasTag = (tag, stores = storesHere()) => Recipes.takes(tag).some(ing => S.storesCount(stores, ing) > 0);
 
-// The make button, by the satchel (PLAN.md stage 7): one round button where the fire's used to be. Its painting and its
-// ring are the build most worth doing now: the campfire until the first fire is lit, the basket while there's a camp and
-// none yet, then whichever is most nearly ready (buildFocus). With only one thing on offer it does what the fire button
-// did (the storm opening plays exactly as it did); with more, a tap opens the make strip (#make, openMake) just over the
-// satchel, a tile a build with its painting, its name and what it takes as little item chips. A ready tile picks a spot
-// (ui.place, as the fire and basket always did); one not ready says what's missing. F stays the quick campfire (and
-// blowing at a fire); C opens the strip. Its words say what the build it shows still wants.
-const buildUi = { shown: null, ready: null, focus: '', key: '' };
+// The craft button, by the satchel (#build, craft-button-lab.html): a brass plate with a pot and the word Craft, where the
+// round make and basket buttons used to be (the basket opens from the meadow now: a click on it, or E). A tap opens the
+// make strip (#make, openMake) just over the satchel, a tile a build with its painting, its name and what it takes as
+// little item chips; the button glows (.ready) while any of them can be made. A ready tile picks a spot (ui.place, as the
+// fire and basket always did); one not ready says what's missing. F stays the quick campfire (and blowing at a fire); C
+// opens the strip. Its title says what the build most worth doing (buildFocus) still wants.
+const buildUi = { shown: null, ready: null, key: '' };
 const buildOrder = Object.keys(Recipes.BUILDS);
 // Whether a build is on offer yet: 'after' left out, at once; 'camp' once there's a camp; a number, at that Cooking level.
 const buildAfter = id => {
@@ -4842,18 +5272,16 @@ const buildTip = (id, have) => {
 function renderBuild() {
   const el = $('#build');
   if (!el || !world || !world.forager) return;
-  const list = makeList(), id = buildFocus(), have = buildHave(id), k = have.all ? have.got / have.all : 0;
+  const list = makeList(), id = buildFocus(), have = buildHave(id);
   const show = list.some(x => buildHave(x).any) || !!ui.place;
   if (show !== buildUi.shown) { el.classList.toggle('hidden', !show); buildUi.shown = show; }
-  if (id !== buildUi.focus) { buildUi.focus = id; buildIcon(id); }
-  if (have.ready !== buildUi.ready) { el.classList.toggle('ready', have.ready); buildUi.ready = have.ready; }
+  const ready = list.some(x => buildHave(x).ready);
+  if (ready !== buildUi.ready) { el.classList.toggle('ready', ready); buildUi.ready = ready; }
   el.classList.toggle('on', !!ui.place);                // (pressed in while a spot is picked)
-  renderBasketBtn();                                      // (and the basket's, by it)
-  const key = `${id}:${have.got}:${have.ready}`;
+  const key = `${id}:${have.got}:${have.ready}:${ready}`;
   if (key !== buildUi.key) {
     buildUi.key = key;
-    el.style.setProperty('--k', k.toFixed(3));
-    el.title = have.ready ? `Make a ${Recipes.BUILDS[id].name.toLowerCase()}${id === BUILD ? ' (F)' : ''}` : buildTip(id, have);
+    el.title = ready ? 'Craft (C): something\'s ready to make' : `Craft (C). ${buildTip(id, have)}`;
     el.setAttribute('aria-label', el.title);
   }
   renderMakeStrip();
@@ -4871,7 +5299,7 @@ function renderPlaceBar() {
   const turns = !!PLACE_TURNS[P.build];
   if (turns !== placeUi.turn) { $('#place-turn').classList.toggle('hidden', !turns); placeUi.turn = turns; }
 }
-// Each build's painting for the button and the strip's tiles: painted once, a small picture (a blob's address, as
+// Each build's painting for the strip's tiles: painted once, a small picture (a blob's address, as
 // vesselIcon's). A build with no painter yet gets no painting (the tile keeps to its words).
 const BUILD_ART = {
   campfire: (g, size, U) => paintFire(g, size, U, 7),   // (laid, its flames up)
@@ -4889,14 +5317,8 @@ function buildIconURL(id) {
   for (let i = 0; i < bytes.length; i++) a[i] = bytes.charCodeAt(i);
   return BUILD_ICONS[id] = URL.createObjectURL(new Blob([a], { type: 'image/png' }));
 }
-function buildIcon(id) {
-  const el = $('#build i');
-  if (!el || !BUILD_ART[id] || el.dataset.art === id) return;
-  el.dataset.art = id;
-  el.style.backgroundImage = `url(${buildIconURL(id)})`;
-}
 // The make strip: a tile a build on offer, just over the satchel, rewritten only when what it shows changes.
-const stripUi = { open: false, key: '' };
+const stripUi = { open: false, key: '', at: '' };
 const stripOpen = () => stripUi.open;
 const buildNeedName = word => Recipes.INGREDIENTS[word] ? itemName(word, 2) : Recipes.takes(word).map(ing => itemName(ing, 2)).join(' or ');
 function renderMakeStrip(force) {
@@ -4925,7 +5347,7 @@ function renderMakeStrip(force) {
 function openMake(on) {
   const el = $('#make');
   if (!el || on === stripUi.open) return;
-  if (on && (world.forager.down >= 0 || ui.place || cooking() || larderOpen() || bookOpen() || meOpen() || stoneOpen())) return;
+  if (on && (world.forager.down >= 0 || ui.place || cooking() || larderOpen() || bookOpen() || stoneOpen())) return;
   stripUi.open = on;
   el.classList.toggle('hidden', !on);
   document.body.classList.toggle('make', on);
@@ -4933,11 +5355,13 @@ function openMake(on) {
   else renderBuild();
   syncBack();
 }
-// Once a frame: walked off, collapsed, or off to a fire, it shuts.
+// Once a frame: collapsed, off to a fire, or another card open, it shuts. Walking keeps it (and its chips follow the
+// forager as it goes in or out of camp).
 function makeFrame() {
   if (!stripUi.open) return;
   const f = world.forager;
-  if (f.down >= 0 || f.walking || ui.fire || ui.place || cooking() || larderOpen() || bookOpen() || meOpen() || stoneOpen()) openMake(false);
+  if (f.down >= 0 || ui.fire || ui.place || cooking() || larderOpen() || bookOpen() || stoneOpen()) openMake(false);
+  else { const at = (f.x | 0) + ',' + (f.y | 0); if (at !== stripUi.at) { stripUi.at = at; renderMakeStrip(); } }
 }
 // A tile: ready, it shuts the strip and picks a spot; not, it says what's still missing (the strip staying open).
 function startBuild(id) {
@@ -4951,15 +5375,13 @@ function startBuild(id) {
   if (stripOpen()) openMake(false);
   if (id === 'campfire') placeFire(true); else if (id === 'basket') placeBasket(); else if (id === SEAT_BUILD) placeSeat(); else placeTorch(true);
 }
-// The button: with more than one thing to make, the strip; else that one. F still lays a campfire straight away.
+// The button: the strip, open or shut. F still lays a campfire straight away.
 function buildPressed() {
   if (!world || world.forager.down >= 0) return;
   if (cooking()) { feedStick(); return; }                  // (at the pot: F or the button puts a stick on)
   if (stripOpen()) { openMake(false); return; }
   if (ui.place) { placeFire(false); return; }
-  const list = makeList();
-  if (list.length > 1) { openMake(true); return; }
-  startBuild(list[0] || BUILD);
+  openMake(true);
 }
 function campfirePressed() {
   if (!world || world.forager.down >= 0) return;
@@ -5020,10 +5442,8 @@ function makeOne(id) {
 // A big lidded basket set down inside the camp's ring (sim.js w.camp.basket, makeBasket; recipes.js BUILDS.basket), where
 // what the satchel can't carry is kept, and what a collapse can't take. It's made from the make strip (startBuild: a tap
 // with it all, in camp, picks a spot inside the ring, ui.place, basket: true; the forager kneels and weaves it, fireFrame's
-// 'weave', WEAVE_MS, the basket growing up out of the ground). Its round button left of the make button (#basket-btn,
-// renderBasketBtn; index.html moves it into the make button's place while that's hidden) then opens it: in the camp, a tap
-// (or a click on the basket) walks it over and opens the basket's card (#larder, renderLarder) just over the satchel: a tap
-// on a slot moves it across (sim.js moveInto), a drag puts it in the slot it's let go on (moveBetween), "Put all in"
+// 'weave', WEAVE_MS, the basket growing up out of the ground). Then a click on the basket (or E by it)
+// walks it over and opens the basket's card (#larder, renderLarder) just over the satchel: a tap on a slot moves it across (sim.js moveInto), a drag puts it in the slot it's let go on (moveBetween), "Put all in"
 // empties the satchel into it (putAway) and "Tidy" folds its piles of a kind into as few slots as they fit (tidyStore).
 // Walking off (LARDER_NEAR), ✕, Esc or Back shut it (larderFrame, stepOut).
 // Drawn with the trees and animals (a frame item's s, drawBasket: shut while it's empty, open with things heaped in it
@@ -5119,56 +5539,107 @@ const SEAT_FOOT = 0.5;                   // where the ground under its middle is
 const SEAT_TURNS = [-Math.PI / 4, -Math.PI / 6, -Math.PI / 12, 0, Math.PI / 12, Math.PI / 6, Math.PI / 4, S.SEAT_TILT];   // its 7 turn steps, then the old tilt (kept seats, index 7: not reachable by turning)
 const SEAT_TURN0 = 3;                    // a new seat's turn: straight across (0°)
 const SEAT_ARTS = SEAT_TURNS.map((_, i) => 'seat:' + i);   // (made once: a frame builds no names)
-const SEAT_SIZE = 2;                     // its painting's box: its half-size about a tile (holds the log at ±45°)
-const SEAT_R = 0.15, SEAT_Y = 0.37;      // the log's girth, and its line's height over the ground (of its half-size)
+const SEAT_SIZE = 2;                     // its painting's box: its half-size about a tile
+const SEAT_R = 0.18, SEAT_Y = 0.4;       // how far back its flat top goes on screen, and its front edge's height (of its half-size)
 const SEAT_BUM = SEAT_Y + SEAT_R * 0.45; // where one sits on it: over the ground (of its half-size)
 const SEAT_MS = 250;                     // standing still this long in front of it, it sits
 const SIT_HIPS = 0.18;                   // fur.js sitPose: its hips over its feet's line (of its half-size)
 const seatPx = z => (8 + z) * SEAT_SIZE;
 const mySeat = () => (world && world.camp && world.camp.seat) || null;
-const BARK = [150, 98, 60], WOOD_CUT = [228, 186, 130];
+const SEAT_WOOD = [186, 128, 76], SEAT_CUT = [224, 184, 130], SEAT_INK = [120, 74, 40];
+// Drawn in a three-quarter view: what lies further back goes up and to the right (SEAT_KX, SEAT_KY a unit back), so its
+// flat top, its rounded front and its near sawn end all show.
+const SEAT_KX = 0.35, SEAT_KY = 0.5, SEAT_D = SEAT_R / SEAT_KY;   // (its seat's depth, front to back)
 function paintSeat(g, size, U, n) {
   g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
   g.lineCap = g.lineJoin = 'round';
-  g.translate(0, SEAT_FOOT); g.rotate(SEAT_TURNS[n]);                                               // (the ground under its line at y 0)
-  const L = S.SEAT_HALF * 0.95, R = SEAT_R, ay = -SEAT_Y, top = ay - R, bot = ay + R, ex = 0.075, INK = rockRGB(tone(BARK, 0.4));
-  furGlow(g, [40, 30, 16], 0.42, 0.03, 0, L + 0.22, 0.12, 0, 0.5);                                 // its shadow on the ground
-  for (const x of [-L * 0.62, L * 0.62]) {                                                        // the two rounds it rests on, their rings to you
-    const r = 0.13, cy = -r + 0.005, round = () => ovalAt(g, x - 0.03, cy - 0.035, r * 0.95, r);
-    fillIn(g, rockRGB(tone(BARK, 0.72)), round);                                                    // (its bark, going back)
-    strokeIn(g, INK, 0.018, round);
-    fillIn(g, rockRGB(WOOD_CUT), () => ovalAt(g, x, cy, r * 0.9, r));
-    strokeIn(g, rockRGB(tone(WOOD_CUT, 0.68), 0.8), 0.01, () => { ovalAt(g, x, cy, r * 0.56, r * 0.6); ovalAt(g, x, cy, r * 0.24, r * 0.26); });
-    strokeIn(g, INK, 0.018, () => ovalAt(g, x, cy, r * 0.9, r));
-    strokeIn(g, rockRGB([96, 146, 60]), 0.016, () => {                                              // a tuft of grass at its foot
-      for (const [dx, h, a] of [[-0.1, 0.07, -0.45], [-0.075, 0.09, -0.12], [0.08, 0.08, 0.25], [0.105, 0.06, 0.6]]) { g.moveTo(x + dx, 0.004); g.lineTo(x + dx + Math.sin(a) * h, 0.004 - Math.cos(a) * h); }
-    });
-  }
-  const log = () => {
-    g.moveTo(-L, top); g.lineTo(L, top); g.ellipse(L, ay, ex, R, 0, -Math.PI / 2, Math.PI / 2);
-    g.lineTo(-L, bot); g.ellipse(-L, ay, ex, R, 0, Math.PI / 2, Math.PI * 1.5); g.closePath();
+  g.translate(0, SEAT_FOOT); g.rotate(SEAT_TURNS[n]);                                               // (the ground under its front at y 0)
+  const L = S.SEAT_HALF * 0.92, D = SEAT_D, H = SEAT_Y, T = 0.21, KX = SEAT_KX, KY = SEAT_KY;
+  const GRAIN = rockRGB(tone(SEAT_WOOD, 0.66), 0.8), RING = rockRGB(tone(SEAT_CUT, 0.74), 0.9);
+  const px = (x, d) => x + d * KX, py = (d, h) => -h - d * KY;                                    // along it, back, up → its box
+  const poly = pts => { g.moveTo(pts[0], pts[1]); for (let i = 2; i < pts.length; i += 2) g.lineTo(pts[i], pts[i + 1]); g.closePath(); };
+  // Its outline round a set of points (all of a solid's corners: it's convex).
+  const hull = pts => {
+    const p = []; for (let i = 0; i < pts.length; i += 2) p.push([pts[i], pts[i + 1]]);
+    p.sort((u, v) => u[0] - v[0] || u[1] - v[1]);
+    const cross = (o, u, v) => (u[0] - o[0]) * (v[1] - o[1]) - (u[1] - o[1]) * (v[0] - o[0]), half = list => {
+      const h = []; for (const q of list) { while (h.length > 1 && cross(h[h.length - 2], h[h.length - 1], q) <= 0) h.pop(); h.push(q); } h.pop(); return h;
+    };
+    return [...half(p), ...half(p.slice().reverse())].flat();
   };
-  softIn(g, BARK, top, bot, log, 1.25, 0.6);
-  g.save(); g.beginPath(); log(); g.clip();
-  fillIn(g, rockRGB(tone(BARK, 0.55), 0.45), () => g.rect(-L - 0.1, ay + R * 0.45, 2 * L + 0.2, R));   // its underside in shade
-  strokeIn(g, rockRGB(tone(BARK, 0.6), 0.8), 0.014, () => {                                       // the bark's furrows, along it
-    for (const [y, a, b] of [[-0.55, -0.6, 0.35], [-0.1, -0.75, -0.15], [0.05, 0.1, 0.62], [0.45, -0.45, 0.5], [0.7, -0.3, 0.2]]) {
-      g.moveTo(a, ay + y * R); g.quadraticCurveTo((a + b) / 2, ay + y * R + 0.012, b, ay + y * R - 0.004);
+  furGlow(g, [40, 30, 16], 0.42, px(0.05, D * 0.5), py(D * 0.5, 0), L + 0.3, 0.2, 0, 0.45);          // its shadow on the ground
+  // The two legs: short stumps standing under it, wider at the foot, their bark furrowed up and down.
+  const LEGS = [-L * 0.58, L * 0.6], r = 0.15;
+  for (const cx of LEGS) {
+    furGlow(g, [30, 22, 12], 0.5, px(cx, D * 0.5), py(D * 0.5, 0), r * 1.9, r * 0.75, 0, 0.35);    // (pressed into the ground)
+    const ring = (rr, h) => { const o = []; for (let i = 0; i < 16; i++) { const a = i * TAU / 16; o.push(px(cx + rr * Math.cos(a), D * 0.5 + rr * Math.sin(a)), py(D * 0.5 + rr * Math.sin(a), h)); } return o; };
+    const leg = hull([...ring(r * 1.15, 0), ...ring(r, H - T * 0.8)]), y0 = py(D * 0.5, H - T);
+    const lit = g.createLinearGradient(px(cx - r, D * 0.5), 0, px(cx + r, D * 0.5), 0);
+    lit.addColorStop(0, rockRGB(tone(SEAT_WOOD, 0.95, 6))); lit.addColorStop(0.55, rockRGB(tone(SEAT_WOOD, 0.8))); lit.addColorStop(1, rockRGB(tone(SEAT_WOOD, 0.58)));
+    g.fillStyle = lit; g.beginPath(); poly(leg); g.fill();
+    strokeIn(g, GRAIN, 0.011, () => {
+      for (const a of [2.2, 1.85, 1.35, 0.95]) {
+        const d = D * 0.5 + r * Math.sin(a + Math.PI) * 0.9;
+        g.moveTo(px(cx + r * 1.12 * Math.cos(a + Math.PI), d), py(d, 0.015)); g.lineTo(px(cx + r * Math.cos(a + Math.PI), d), py(d, H - T * 0.9));
+      }
+    });
+    fillIn(g, rockRGB(tone(SEAT_WOOD, 0.5), 0.5), () => ovalAt(g, px(cx, D * 0.5), y0 + 0.03, r * 1.3, 0.05));   // (in the seat's shade)
+  }
+  // The seat: a log split down its length, laid flat side up. Its cross-section: a flat top, its bark rounded under.
+  const sec = [];
+  for (let i = 0; i <= 12; i++) { const t = Math.PI * i / 12; sec.push([D / 2 - D / 2 * Math.cos(t), H - T * Math.sin(t)]); }
+  const at = (x, [d, h]) => [px(x, d), py(d, h)];
+  const body = hull(sec.flatMap(q => [...at(-L, q), ...at(L, q)]));
+  softIn(g, SEAT_WOOD, py(0, H) - 0.02, py(D * 0.5, H - T), () => poly(body), 1.05, 0.62);
+  g.save(); g.beginPath(); poly(body); g.clip();
+  strokeIn(g, rockRGB(tone(SEAT_WOOD, 0.62), 0.75), 0.012, () => {                                  // the bark's furrows, along it
+    for (const [t, a, b] of [[0.35, -0.9, 0.1], [0.5, -0.2, 0.95], [0.7, -0.8, 0.5], [0.85, -0.3, 0.9]]) {
+      const q = [D / 2 - D / 2 * Math.cos(t * Math.PI / 2), H - T * Math.sin(t * Math.PI / 2)];
+      const [x0, y0] = at(a * L, q), [x1, y1] = at(b * L, q);
+      g.moveTo(x0, y0); g.quadraticCurveTo((x0 + x1) / 2, (y0 + y1) / 2 + 0.008, x1, y1);
     }
   });
-  strokeIn(g, rockRGB(tone(BARK, 1.35, 20), 0.75), 0.016, () => { g.moveTo(-L + 0.06, top + 0.035); g.lineTo(L - 0.12, top + 0.035); });   // the light along its top
-  fillIn(g, rockRGB(tone(BARK, 0.55)), () => ovalAt(g, -0.18, ay + 0.02, 0.045, 0.03));          // a knot
-  fillIn(g, rockRGB(tone(BARK, 1.2)), () => ovalAt(g, -0.18, ay + 0.015, 0.022, 0.014));
   g.restore();
-  strokeIn(g, INK, 0.02, log);
-  fillIn(g, rockRGB(WOOD_CUT), () => ovalAt(g, L, ay, ex, R));                                       // the sawn end nearer you, with its rings
-  strokeIn(g, rockRGB(tone(WOOD_CUT, 0.66), 0.8), 0.01, () => { ovalAt(g, L, ay, ex * 0.62, R * 0.62); ovalAt(g, L, ay, ex * 0.28, R * 0.28); });
-  strokeIn(g, INK, 0.02, () => ovalAt(g, L, ay, ex, R));
-  for (const [x, y, c] of [[-L * 0.62 - 0.17, -0.035, [246, 206, 72]], [-L * 0.62 - 0.12, -0.06, [178, 140, 218]]]) {   // two small flowers by the far round
-    strokeIn(g, rockRGB([96, 146, 60]), 0.01, () => { g.moveTo(x, y); g.lineTo(x + 0.005, 0.004); });
-    fillIn(g, rockRGB(c), () => discAt(g, x, y, 0.022));
-    fillIn(g, rockRGB([255, 244, 200]), () => discAt(g, x, y, 0.008));
+  // Its flat top, worn pale, the grain running along it, a knot or two, and a split opening at the far end.
+  const top = [...at(-L, [0, H]), ...at(L, [0, H]), ...at(L, [D, H]), ...at(-L, [D, H])];
+  fillIn(g, rockRGB(tone(SEAT_CUT, 0.97)), () => poly(top));
+  g.save(); g.beginPath(); poly(top); g.clip();
+  fillIn(g, rockRGB(tone(SEAT_CUT, 1.04, 6), 0.9), () => poly([...at(-L, [0, H]), ...at(L, [0, H]), ...at(L, [D * 0.3, H]), ...at(-L, [D * 0.3, H])]));
+  strokeIn(g, GRAIN, 0.011, () => {
+    for (const [f, a, b, w] of [[0.18, -0.55, 0.7, 0.01], [0.42, -0.95, -0.1, -0.012], [0.5, 0.15, 0.9, 0.01], [0.74, -0.6, 0.45, -0.008], [0.88, -0.2, 0.95, 0.006]]) {
+      const [x0, y0] = at(a * L, [D * f, H]), [x1, y1] = at(b * L, [D * f, H]);
+      g.moveTo(x0, y0); g.bezierCurveTo(x0 + (x1 - x0) / 3, y0 + w, x0 + (x1 - x0) * 2 / 3, y0 - w, x1, y1);
+    }
+  });
+  for (const [f, x, k] of [[0.62, 0.32, 1], [0.3, -0.35, 0.75]]) {                                  // knots, almond eyes in the grain
+    const [cx, cy] = at(x * L, [D * f, H]);
+    const kn = () => { g.moveTo(cx - 0.08 * k, cy); g.quadraticCurveTo(cx, cy - 0.04 * k, cx + 0.06 * k, cy - 0.006); g.quadraticCurveTo(cx, cy + 0.03 * k, cx - 0.08 * k, cy); };
+    fillIn(g, rockRGB(tone(SEAT_WOOD, 0.85)), kn);
+    fillIn(g, rockRGB(SEAT_INK, 0.6), () => ovalAt(g, cx + 0.004, cy - 0.003, 0.013 * k, 0.009 * k));
   }
+  const split = [...at(-L - 0.01, [D * 0.4, H]), ...at(-L * 0.35, [D * 0.48, H]), ...at(-L - 0.01, [D * 0.62, H])];
+  fillIn(g, rockRGB(tone(SEAT_WOOD, 0.55)), () => poly(split));
+  g.restore();
+  strokeIn(g, rockRGB(tone(SEAT_CUT, 1.1, 12), 0.9), 0.016, () => { const [x0, y0] = at(-L + 0.08, [0.012, H]), [x1, y1] = at(L - 0.1, [0.012, H]); g.moveTo(x0, y0); g.lineTo(x1, y1); });   // the light along its front edge
+  // Its near sawn end: half a round, bark round the curve, its rings about the heart at the top.
+  const end = sec.flatMap(q => at(L, q));
+  fillIn(g, rockRGB(tone(SEAT_WOOD, 0.78)), () => poly(end));
+  const ringsAt = k => { const o = []; for (let i = 0; i <= 12; i++) { const t = Math.PI * i / 12; o.push(...at(L, [D / 2 - D / 2 * k * Math.cos(t), H - T * k * Math.sin(t)])); } return o; };
+  fillIn(g, rockRGB(SEAT_CUT), () => poly(ringsAt(0.84)));
+  strokeIn(g, RING, 0.01, () => { for (const k of [0.6, 0.36, 0.14]) { const o = ringsAt(k); g.moveTo(o[0], o[1]); for (let i = 2; i < o.length; i += 2) g.lineTo(o[i], o[i + 1]); } });
+  // Flowers and a tuft or two about its feet.
+  for (const [x, d, c] of [[LEGS[1] - 0.2, 0.0, [250, 208, 80]], [LEGS[1] - 0.13, -0.05, [240, 140, 170]], [LEGS[0] + 0.19, -0.02, [250, 244, 236]], [LEGS[1] + 0.2, 0.06, [190, 160, 230]]]) {
+    const fx = px(x, d), fy = py(d, 0.075);
+    strokeIn(g, rockRGB([92, 140, 58]), 0.011, () => { g.moveTo(fx, fy); g.lineTo(fx + 0.006, py(d, 0)); });
+    fillIn(g, rockRGB([108, 160, 70]), () => ovalAt(g, fx - 0.022, fy + 0.05, 0.022, 0.009, -0.5));
+    fillIn(g, rockRGB(c), () => { for (let i = 0; i < 5; i++) { const a = i * TAU / 5 - Math.PI / 2; discAt(g, fx + Math.cos(a) * 0.016, fy + Math.sin(a) * 0.016, 0.013); } });
+    fillIn(g, rockRGB([255, 222, 110]), () => discAt(g, fx, fy, 0.008));
+  }
+  strokeIn(g, rockRGB([96, 146, 60]), 0.014, () => {
+    for (const cx of LEGS) for (const [dx, h, a] of [[-0.15, 0.07, -0.45], [-0.12, 0.09, -0.1], [0.14, 0.08, 0.3], [0.17, 0.06, 0.6]]) {
+      const x0 = px(cx + dx, D * 0.2), y0 = py(D * 0.2, 0); g.moveTo(x0, y0); g.lineTo(x0 + Math.sin(a) * h, y0 - Math.cos(a) * h);
+    }
+  });
 }
 function drawSeat(Q, z) {
   const px = seatPx(z), sx = (Q.x - cam.x) * z + vw / 2, sy = (Q.y - cam.y) * z + vh / 2;
@@ -5198,6 +5669,22 @@ function goSeat() {
   if (ui.selectedId || ui.picked) select(0);
 }
 // How far up its painting is lifted to sit on the seat log Q from where it stands, x, y (of its size, px: drawFigure's lift).
+// Sitting down is a hop, not a snap: it springs up onto the log (SIT_RISE_MS, arcing SIT_HOP over it, standing till it's
+// past SIT_POSE of the way), settles with a little bounce, then breathes; getting up it drops off the log as it walks on.
+const SIT_RISE_MS = 340, SIT_FALL_MS = 200, SIT_HOP = 0.1, SIT_POSE = 0.45, SIT_BREATH = 0.007;
+function sitEase(o, sitting, ms, now, x, y, px) {
+  const was = o.sitU;
+  if (sitting) { if (!o.sitRise) o.sitRise = true; o.sitU = Math.min(1, o.sitU + ms / SIT_RISE_MS); }
+  else { o.sitRise = false; o.sitU = Math.max(0, o.sitU - ms / SIT_FALL_MS); }
+  if (was < 1 && o.sitU >= 1) o.sitAt = now;
+  const u = o.sitU, Q = o.sitQ;
+  if (!Q) { o.sitU = 0; return; }
+  const ease = u * u * (3 - 2 * u), t = now - o.sitAt;
+  let l = seatLift(Q, x, y, cam.zoom, px) * ease;
+  if (o.sitRise && u < 1) l += SIT_HOP * Math.sin(Math.PI * u);
+  else if (sitting) l += 0.03 * Math.sin(t / 45) * Math.exp(-t / 130) + SIT_BREATH * Math.sin(now / 750);
+  o.lift = l;
+}
 const seatLift = (Q, x, y, z, px) => ((y - Q.y - Math.tan(Q.turn) * (x - Q.x)) * z + SEAT_BUM * seatPx(z) / 2 - SIT_HIPS * px / 2) / px;
 // The basket under a point on screen (a little wider for a finger), or null.
 function basketAt(sx, sy) {
@@ -5207,10 +5694,11 @@ function basketAt(sx, sy) {
   const x = (B.x - cam.x) * z + vw / 2, y = (B.y - cam.y) * z + vh / 2 - px * 0.18;
   return ((sx - x) / Math.max(14, m, px * 0.5)) ** 2 + ((sy - y) / Math.max(12, m, px * 0.42)) ** 2 < 1 ? B : null;
 }
-function basketWord(B) {
+// The basket's line over the satchel (hoverSay): what's in it.
+function basketSaid(B) {
   let n = 0;
   for (let k = 0; k < B.bag.length; k++) n += B.bagN[k];
-  return n ? `Basket · ${n} ${n === 1 ? 'thing' : 'things'} in it` : 'Basket · empty';
+  return ['Basket', n ? `${n} ${n === 1 ? 'thing' : 'things'} in it` : 'empty'];
 }
 
 // ------------------------------------------------------------------ the old stone
@@ -5219,7 +5707,7 @@ function basketWord(B) {
 // insists, and above all its food critic. Painted once a face (paintOldStone, STONE_ARTS: mood * 2 + mouth open), moss for
 // hair and brows, asleep till someone comes. A click on it (or its hover, "Old Mossbottom") walks the forager over
 // (goFire 'stone') and opens a slim line to talk on just over the satchel (#stone-talk, openStone); so does E standing
-// by it, with its disc over its head as the basket's is (stoneByE, drawStonePrompt). What's typed is said
+// by it, with its disc over its head (eTarget, drawStonePrompt). What's typed is said
 // by the forager (myChat) and the stone answers in a bubble over itself (stoneUi.chat), its mouth going as it talks. A tap
 // on anything in the satchel there offers it (eatAsk's 🙏, offerSlot): it flies into the stone, which eats it and rates it
 // out of 10 (a "★★★ 7 / 10" pill over it, up as long as its words, and a sound by the score). The words come from stone.js (a free LLM behind a Supabase Edge
@@ -5469,37 +5957,6 @@ $('#stone-form').addEventListener('submit', e => {
 });
 $('#stone-form').addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); openStone(false); } });
 
-// The basket's button, left of the make button (#basket-btn): once the basket's made, it opens it while the forager is in
-// camp (making it moved into the make strip, PLAN.md stage 7). Rewritten only on a change.
-const basketUi = { mode: '', on: false };
-function renderBasketBtn() {
-  const el = $('#basket-btn');
-  if (!el || !world || !world.forager) return;
-  const B = myBasket(), f = world.forager;
-  const mode = B && f.down < 0 && (S.inCamp(world, f.x, f.y) || larderOpen()) ? 'open' : '';
-  if (mode !== basketUi.mode) {
-    basketUi.mode = mode;
-    el.classList.toggle('hidden', !mode);
-    if (mode) { basketIcon(); el.title = 'The basket: what\'s kept at camp'; el.setAttribute('aria-label', el.title); }
-  }
-  el.classList.toggle('on', larderOpen());
-}
-// The button's painting: the basket shut, painted once.
-function basketIcon() {
-  const el = $('#basket-btn i');
-  if (!el || el.dataset.done) return;
-  const c = document.createElement('canvas'), px = 40, size = Math.ceil(px * 1.3 * dpr);
-  c.width = c.height = size;
-  paintBasket(c.getContext('2d'), size, px * dpr, 0);
-  el.style.backgroundImage = `url(${c.toDataURL()})`;
-  el.dataset.done = '1';
-}
-// Pressed: it opens (or shuts) the basket, walking the forager over to it when it's not by it.
-function basketPressed() {
-  if (!world || world.forager.down >= 0) return;
-  if (myBasket()) { if (larderOpen()) openLarder(false); else goBasket(); return; }
-  if (ui.place) { const was = ui.place.basket; placeFire(false); if (was) return; }
-}
 // Off to the basket, and it opens once the forager's by it (fireFrame's 'larder').
 function goBasket() {
   const B = myBasket(), f = world.forager;
@@ -5507,28 +5964,7 @@ function goBasket() {
   if (!f.walking && Math.hypot(B.x - f.x, B.y - f.y) < LARDER_NEAR * 0.75) { ui.fire = null; openLarder(true); return; }
   goFire({ kind: 'larder', F: null, x: B.x, y: B.y });
 }
-// Whether E goes to the basket rather than a fire: standing by it (LARDER_NEAR), and nearer it than to the fire E would
-// cook at or light (the fire anywhere in camp, campFire, never wins over a basket at hand).
-function basketByE() {
-  const B = myBasket(), f = world.forager;
-  if (!B || f.down >= 0 || ui.fire || ui.place) return false;
-  const dB = Math.hypot(B.x - f.x, B.y - f.y);
-  if (dB > LARDER_NEAR) return false;
-  const F = cookFire() || relightFire();
-  return !F || dB < Math.hypot(F.x - f.x, F.y - f.y);
-}
-// Whether E goes to the old stone: standing by it (STONE_NEAR), and nearer it than the basket or fire E would go to
-// instead (a camp or basket set down by the stone).
-function stoneByE() {
-  const St = world && world.stone, f = world && world.forager;
-  if (!St || !f || f.down >= 0 || ui.fire || ui.place) return false;
-  const dS = Math.hypot(St.x - f.x, St.y - f.y);
-  if (dS > STONE_NEAR) return false;
-  const B = myBasket();
-  if (B && dS > Math.hypot(B.x - f.x, B.y - f.y)) return false;
-  for (const F of [cookFire(), relightFire(), campFire()]) if (F && dS > Math.hypot(F.x - f.x, F.y - f.y)) return false;
-  return true;
-}
+// (Whether E goes to the basket or the stone is not asked here: eTarget has every thing E can use in one race, by distance.)
 function openLarder(on) {
   const el = $('#larder');
   if (!el || on === larderUi.open) return;
@@ -5784,16 +6220,16 @@ function fireAt(sx, sy) {
   }
   return best;
 }
-// What a fire wants, in a few words: its hover line (drawHoverLine), or '' when it wants nothing and burns well (so a
-// fire that's fine says nothing at all, rather than nagging over the camp).
-function fireWord(F) {
+// What a fire is and wants, in a few words: its line over the satchel (hoverSay). The name, and what it says ('' when
+// it burns well and wants nothing, so a fire that's fine doesn't nag over the camp).
+function fireSaid(F) {
   const n = world.camp && world.camp.fire === F ? 'Your camp' : 'Campfire';
-  if (S.cookReady(F)) return `${n} · ${F.cookDish} is ready`;
-  if (F.cookDish) return F.lit ? `${n} · cooking, ${cookLeftText(F)} to go` : `${n} · the pot waits for the fire`;
-  if (F.lit) return F.fuel < S.FIRE_LOW ? `${n} · burning low: it wants sticks` : '';
-  if (F.embers > 0) return F.fuel > 0 ? `${n} · embers: blow on them` : `${n} · embers: a stick on, and a blow`;
-  if (S.lightable(F)) return `${n} · laid, ready to light`;
-  return F.fuel > 0 ? `${n} · cold: it wants tinder` : `${n} · cold: it wants tinder and sticks`;
+  if (S.cookReady(F)) return [n, `${F.cookDish} is ready`];
+  if (F.cookDish) return [n, F.lit ? `cooking, ${cookLeftText(F)} to go` : 'the pot waits for the fire'];
+  if (F.lit) return [n, F.fuel < S.FIRE_LOW ? 'burning low: it wants sticks' : ''];
+  if (F.embers > 0) return [n, F.fuel > 0 ? 'embers: blow on them' : 'embers: a stick on, and a blow'];
+  if (S.lightable(F)) return [n, 'laid, ready to light'];
+  return [n, F.fuel > 0 ? 'cold: it wants tinder' : 'cold: it wants tinder and sticks'];
 }
 // A fire burnt down, gone cold or put out (sim.js events): a line by it, if it's in sight.
 const FIRE_TELLS = { fireout: 'Burnt down to embers', firecold: 'The embers have gone cold', firedoused: 'The water put it out' };
@@ -6032,7 +6468,7 @@ function cookFire() {
   for (const o of world.fires) { const d = Math.hypot(o.x - f.x, o.y - f.y); if ((o.lit || S.cookReady(o)) && d < best) { F = o; best = d; } }
   return F;
 }
-// Standing anywhere in the camp's ring, the camp's lit fire: E goes to it before it picks anything (the fire first, in camp).
+// The camp's lit fire, from anywhere in its ring: E's fallback when nothing else is nearer, never before what lies at its feet.
 function campFire() {
   const f = world.forager;
   if (f.down >= 0 || intro.on || !S.inCamp(world, f.x, f.y)) return null;
@@ -6718,7 +7154,7 @@ function renderCook(measure = true) {
     $('#cook-vessels').innerHTML = VS.map(v => {
       const V = Recipes.VESSELS[v], m = vesselMode(v), c = Recipes.CRAFTS[v], lock = m === 'make' && makeLocked(v);
       const tip = m === 'cook' ? `${V.name}: ${V.word}, ${V.slots} things` : m === 'fire' ? `${c.name}: hardening in the fire, ${fp}%` : lock ? `${c.name}: made at Cooking ${Recipes.craftLevel(v)}` : `Make a ${c.name.toLowerCase()}: ${needWords(c.needs)}`;
-      return `<button data-act="vessel" data-v="${v}" class="${v === cookVessel ? 'on' : ''}${m === 'cook' ? '' : ' ' + m}${lock ? ' locked' : ''}"${busy && v !== cookVessel ? ' disabled' : ''} title="${esc(tip)}"${m === 'fire' ? ` style="--p:${fp / 100}"` : ''}><img src="${vesselIcon(v)}" alt=""><small>${m === 'cook' ? esc(V.name) : m === 'fire' ? fp + '%' : lock ? 'Lv ' + Recipes.craftLevel(v) : 'Make'}</small></button>`; }).join('');
+      return `<button data-act="vessel" data-v="${v}" class="${v === cookVessel ? 'on' : ''}${m === 'cook' ? '' : ' ' + m}${lock ? ' locked' : ''}"${busy && v !== cookVessel ? ' disabled' : ''} title="${esc(tip)}"${m === 'fire' ? ` style="--p:${fp / 100}"` : ''}>${m === 'cook' ? `<img src="${vesselIcon(v)}" alt="">` : `<span class="plate"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-pot"/>${lock || m === 'fire' ? '' : '<use href="#i-spark"/>'}</svg>${lock ? '<span class="lock"><svg viewBox="0 0 12 12"><use href="#i-lock"/></svg></span>' : ''}</span>`}<small>${m === 'cook' ? esc(V.name) : m === 'fire' ? fp + '%' : lock ? 'Lv ' + Recipes.craftLevel(v) : 'Make'}</small></button>`; }).join('');
   }
   cookFuel(j);
   const sticks = Recipes.takes('fuel').reduce((n, ing) => n + S.storesCount(storesAt(j.F.x, j.F.y), ing), 0), stick = $('#cook-stick');
@@ -7928,7 +8364,7 @@ function drawPot(now, F, sx, sy) {
 // A pot cooking on a fire goes on without the window (sim.js cookOn: only while the fire's lit): it stays on the fire, steaming,
 // and a slim bar over the fire fills as it cooks (drawCookBars), brass-rimmed, glossy ember orange with a glow at its front; grey
 // while the fire's out and it waits, and gold, softly pulsing in a glow, once the dish is done and waiting to be taken. No text on it: a hover says the time left
-// (fireWord). A draw for one fire at a time, nothing drawn without a pot (render sorts each in at its fire's y: potOver).
+// (fireSaid). A draw for one fire at a time, nothing drawn without a pot (render sorts each in at its fire's y: potOver).
 const POT_BAR_UP = 0.86;                  // the bar's foot over the fire's foot, in the fire's size
 // The pot on a fire that the window isn't open at: its back, what went in, its front, steam while it cooks.
 function drawAwayPot(now, F, sx, sy) {
@@ -8363,9 +8799,9 @@ function hint(name, words) {
   return true;
 }
 // depth: 0 shut, 1 open, 2 a page laid over the tiles (upright phones only; elsewhere the page is always beside them).
-// pick: the page shown, by its key (a dish's name, 'find:' + an ingredient); picked: the last page shown in each part, to come
-// back to; shown: the parts shown since it opened (shutting it has seen what's new in those).
-const bookUi = { open: false, depth: 0, pick: '', picked: { dishes: '', finds: '' }, shown: new Set(), key: '', stamp: '', stampAt: 0, quietTill: 0, drag: null, swipe: null, glow: null };
+// pick: the page shown, by its key (a dish's name, 'find:' + an ingredient, 'skill:' + a skill); picked: the last page
+// shown in each part, to come back to; shown: the parts shown since it opened (shutting it has seen what's new in those).
+const bookUi = { open: false, depth: 0, pick: '', picked: { dishes: '', finds: '', you: '' }, shown: new Set(), key: '', stamp: '', stampAt: 0, quietTill: 0, drag: null, swipe: null, glow: null, at: '' };
 const bookOpen = () => bookUi.open;
 const bookReading = () => bookUi.depth === 2;
 const bookUpright = () => narrow() && !short();
@@ -8388,8 +8824,13 @@ const FIND_SECTIONS = [
 const FIND_PAGES = [], findSec = new Map();
 for (const [id, g] of Object.entries(Recipes.INGREDIENTS)) findSec.set(id, FIND_SECTIONS.find(s => s.test(g)));
 for (const sec of FIND_SECTIONS) for (const id of findSec.keys()) if (findSec.get(id) === sec) FIND_PAGES.push({ r: null, g: id, key: 'find:' + id, part: 'finds', sec, no: FIND_PAGES.length + 1, i: FIND_PAGES.length });
-const BOOK_PARTS = { dishes: { name: 'Recipes', pages: BOOK_PAGES, sections: BOOK_SECTIONS }, finds: { name: 'Finds', pages: FIND_PAGES, sections: FIND_SECTIONS } };
-const ALL_PAGES = [...BOOK_PAGES, ...FIND_PAGES];
+// Its third part, You: a page for each skill in sim.js SKILLS, made here so a new skill shows up with no hand list. The
+// left page is the sheet (the face, how you are, the skills as rows); the right one is the skill picked, as a recipe's.
+const YOU_PAGES = [];
+for (const s of S.SKILL_NAMES) YOU_PAGES.push({ r: null, g: '', skill: s, key: 'skill:' + s, part: 'you', sec: null, no: YOU_PAGES.length + 1, i: YOU_PAGES.length });
+const BOOK_PARTS = { dishes: { name: 'Recipes', pages: BOOK_PAGES, sections: BOOK_SECTIONS }, finds: { name: 'Finds', pages: FIND_PAGES, sections: FIND_SECTIONS },
+  you: { name: 'You', pages: YOU_PAGES, sections: [] } };
+const ALL_PAGES = [...BOOK_PAGES, ...FIND_PAGES, ...YOU_PAGES];
 const BOOK_PAGE = new Map(ALL_PAGES.map(p => [p.key, p]));
 const bookAt = () => BOOK_PAGE.get(bookUi.pick) || BOOK_PAGES[0];
 const bookPart = () => bookAt().part;
@@ -8402,7 +8843,7 @@ const foundIt = id => firsts.has(id);
 // do the finds in a book kept from before it had them.
 let bookSeen = null;
 const pageLevel = r => knownDish(r.name) ? 9 : (hinted.get(r.name) || []).length;
-const levelOf = p => p.r ? pageLevel(p.r) : foundIt(p.g) ? 9 : 0;
+const levelOf = p => p.skill ? (world ? world.forager.lv[p.skill] : 0) : p.r ? pageLevel(p.r) : foundIt(p.g) ? 9 : 0;
 function seenBook() {
   if (bookSeen) return bookSeen;
   try { bookSeen = JSON.parse(localStorage.getItem(BOOK_KEY) || 'null'); } catch (e) { /* fine */ }
@@ -8473,8 +8914,9 @@ $('#book').innerHTML = `<button class="bb b-x" data-act="book-close" aria-label=
       `<button class="tab fr" role="tab" data-act="book-part" data-part="${k}">${b.name}</button>`).join('')}<span class="n"></span></div>
     <div class="b-bar"><i></i></div><p id="book-sub"></p>
   </header>
-  <section class="b-pages">${Object.entries(BOOK_PARTS).map(([k, b]) => `<div class="part" data-part="${k}">${b.sections.filter(s => b.pages.some(p => p.sec === s)).map(s => `
-    <h3 class="sec">${s.name}<span data-sec="${s.k}"></span></h3><div class="grid" data-sec="${s.k}"></div>`).join('')}</div>`).join('')}
+  <section class="b-pages">${['dishes', 'finds'].map(k => { const b = BOOK_PARTS[k]; return `<div class="part" data-part="${k}">${b.sections.filter(s => b.pages.some(p => p.sec === s)).map(s => `
+    <h3 class="sec">${s.name}<span data-sec="${s.k}"></span></h3><div class="grid" data-sec="${s.k}"></div>`).join('')}</div>`; }).join('')}
+    <div class="part" data-part="you"><div class="you-page" data-you></div></div>
   </section>
   <footer class="b-foot"><button class="bb x" data-act="book-close" aria-label="Close the book">${B_X}</button></footer>
   <section class="b-page"></section>`;
@@ -8581,16 +9023,119 @@ function findPageHTML(p, have) {
       <button class="bb" data-act="book-next" aria-label="Next page" title="Next page (→)"${p.i < pages - 1 ? '' : ' disabled'}>${B_NEXT}</button>
     </div>`;
 }
+// The You part: the left page is the sheet (the face, how the forager is, the skills as rows), the right one is the skill
+// picked, laid out as a recipe page is: its coin on the plate, the bar, what it gives now, and the road to opal. Level 0
+// has a blank coin and a page that says what level 1 brings, since that's where every forager starts.
+const youCoin = (lv, big) => {
+  const c = LEVEL_COIN[lv] || BARE_COIN;
+  return `<span class="you-coin${lv >= S.SKILL_TOP ? ' max' : ''}${big ? ' big' : ''}${lv ? '' : ' bare'}" style="--coin:${c.coin};--coin-ink:${c.ink}" aria-hidden="true">${lv}</span>`;
+};
+const youBar = (v, c, cls = '') => `<div class="you-bar${cls}"><i style="width:${Math.round(clamp(v, 0, 1) * 100)}%;--c:${c}"></i></div>`;
+function youSheetHTML() {
+  const f = world.forager, ck = S.clock(world), days = Math.floor(world.tick / S.TPD) + 1;
+  const nearFire = S.fireWarmth(world, f.x, f.y) > 0;
+  const chips = [];
+  if (f.warmIn > 0) chips.push(`<span class="you-chip warm">♨ Warm food inside · ${Math.max(1, Math.round(f.warmIn / (S.TPD / 24)))} h</span>`);
+  if (f.wet > 0.6) chips.push('<span class="you-chip wet">Soaked</span>');
+  else if (f.wet > 0.05) chips.push('<span class="you-chip wet">Damp</span>');
+  if (f.winded) chips.push('<span class="you-chip">Winded</span>');
+  if (f.down >= 0) chips.push('<span class="you-chip">Down</span>');
+  if (nearFire) chips.push('<span class="you-chip good">By the fire</span>');
+  const rows = S.SKILL_NAMES.map(s => {
+    const k = S.SKILLS[s], lv = f.lv[s], top = lv >= S.SKILL_TOP;
+    const right = top ? 'the best it gets' : `${skillLeftWords(s, f)} to ${lv + 1}`;
+    const label = `${k.name}, level ${lv}${top ? ', the best it gets' : `, ${skillLeftWords(s, f)} to level ${lv + 1}`}`;
+    return `<button class="you-sk${bookUi.pick === 'skill:' + s ? ' on' : ''}" data-act="book-page" data-name="skill:${s}" aria-label="${esc(label)}">
+      ${youCoin(lv)}
+      <span class="you-sk-main"><span class="you-sk-top"><b>${esc(k.name)}</b><span>${right}</span></span>
+      ${youBar(S.skillProgress(f, s), SKILL_INK[s] || '#b98a45')}</span></button>`;
+  }).join('');
+  return `<div class="you-head"><h2 class="fr">${esc(myName || 'Your forager')}</h2><span>${S.SEASONS[ck.season].name}, day ${ck.dayInSeason}</span></div>
+    <div class="you-who"><div class="you-face"><canvas id="you-face" width="75" height="75" aria-hidden="true"></canvas></div>
+      <div class="you-lines">
+        <div class="you-line">Days in the meadow <span class="hand">${days}</span></div>
+        <div class="you-line">Feeling <span class="hand big">${feelingWord(f)}</span></div>
+      </div></div>
+    <div class="you-vitals">
+      <div class="you-vital"><div class="you-v-top"><span>Warmth</span><b class="hand">${warmthWord(f)}</b></div>${youBar(f.warmth, '#e98a4b')}</div>
+      <div class="you-vital"><div class="you-v-top"><span>Tummy</span><b class="hand">${tummyWord(f)}</b></div>${youBar(f.tummy, '#c9a54a')}</div>
+      <div class="you-vital"><div class="you-v-top"><span>Stamina</span><b class="hand">${staminaWord(f)}</b></div>${youBar(f.stamina, '#6f9cc9')}</div>
+      <div class="you-vital"><div class="you-v-top"><span>Health</span><b class="hand">${healthWord(f)}</b></div>${youBar(f.health, '#c4584a')}</div>
+    </div>
+    <div class="you-chips">${chips.join('') || '<span class="you-none">Nothing much on you</span>'}</div>
+    <h3 class="sec">Skills</h3>
+    <div class="you-skills">${rows}</div>`;
+}
+// The face in the book is the HUD's painted canvas copied over (a draw on open, and when the mood or outfit changes), so
+// nothing new is painted for it.
+function paintYouFace() {
+  const c = $('#you-face'), src = $('#me-face');
+  if (!c || !src || !src.width) return;
+  if (c.width !== src.width || c.height !== src.height) { c.width = src.width; c.height = src.height; }
+  const g = c.getContext('2d');
+  g.clearRect(0, 0, c.width, c.height);
+  g.drawImage(src, 0, 0);
+}
+// What the sheet and its rows show, for bookUi.key, so it's rewritten a few times a second at most, and only while it's
+// open on You. The vitals are rounded to 5% (the bars), the wet to steps of 10% (the chip), the warm food to hours.
+function youKey() {
+  const f = world.forager, ck = S.clock(world);
+  return [myName, Math.floor(world.tick / S.TPD), ck.year, ck.season, ck.dayInSeason,
+    Math.round(f.warmth * 20), Math.round(f.tummy * 20), Math.round(f.stamina * 20), Math.round(f.health * 20),
+    Math.round(f.wet * 10), f.winded, f.down, Math.round(f.warmIn / (S.TPD / 24)),
+    feelingWord(f), warmthWord(f), tummyWord(f), staminaWord(f), healthWord(f),
+    fg.outfit, fg.snowArt, dpr, vit.mood, S.fireWarmth(world, f.x, f.y) > 0 ? 1 : 0].join('|');
+}
+function skillPageHTML(p, f) {
+  const s = p.skill, k = S.SKILLS[s], lv = f.lv[s], top = lv >= S.SKILL_TOP;
+  const metal = LEVEL_METAL[lv] || 'no coin yet';
+  const left = top ? 'The best it gets' : `${skillLeftWords(s, f)} more to level ${lv + 1}`;
+  const perks = Object.entries(k.perks).map(([perk, v]) => {
+    const [what, word] = (PERK_WORDS[s] || {})[perk] || [perk.replace(/_/g, ' '), ''];
+    const now = Math.round(v * lv * 100), next = Math.round(v * Math.min(S.SKILL_TOP, lv + 1) * 100);
+    const nums = lv === 0 ? `level 1: +${next}%` : top ? `+${now}%` : `+${now}% · next +${next}%`;
+    return `<li>${esc(upFirst(what))} <span><b>${nums}</b> <small>${esc(word)}</small></span></li>`;
+  }).join('');
+  const road = Array.from({ length: S.SKILL_TOP }, (_, i) => {
+    const n = i + 1, c = LEVEL_COIN[n] || BARE_COIN;
+    return `<div class="you-step${n > lv ? ' ahead' : ''}${n === lv ? ' here' : ''}" style="--coin:${c.coin};--coin-ink:${c.ink}"><span class="you-pip">${n}</span></div>`;
+  }).join('');
+  const opens = s === 'cooking' ? Array.from({ length: S.SKILL_TOP }, (_, i) => [i + 1, opensAt(i + 1)]).filter(([, o]) => o) : [];
+  const opensHTML = opens.length ? `<p class="you-opens">${opens.map(([n, o]) => {
+    const c = LEVEL_COIN[n] || BARE_COIN;
+    return `<span><b style="--coin:${c.coin};--coin-ink:${c.ink}">${n}</b>${esc(o.replace(/^a /, ''))}</span>`;
+  }).join('')}</p>` : '';
+  const head = lv === 0 ? 'What level 1 gives' : top ? 'What it gives you' : 'What it gives you now';
+  return `<div class="pg-grab"><div class="no">Skill · ${metal}</div></div>
+    <div class="pg-body"><div class="pg-in">
+      <div class="art">${youCoin(lv, true)}</div>
+      <h3 class="fr">${esc(k.name)} <span class="you-lv">level ${lv}</span></h3>
+      <p class="say">${esc(k.line)}.</p>
+      ${youBar(S.skillProgress(f, s), SKILL_INK[s] || '#b98a45', ' big')}
+      <div class="you-prog"><span>${left}</span><span>level ${lv} of ${S.SKILL_TOP}</span></div>
+      <h4>${head}</h4>
+      <ul class="you-perks">${perks}</ul>
+      <h4>The road to opal</h4>
+      <div class="you-road">${road}</div>${opensHTML}
+      <p class="you-note">Better with ${SKILL_HOW[s] || 'doing it'}.</p>
+    </div></div>
+    <div class="pg-foot">
+      <button class="bb" data-act="book-prev" aria-label="Skill before" title="Skill before (←)"${p.i ? '' : ' disabled'}>${B_PREV}</button>
+      <span class="of">${p.no} / ${YOU_PAGES.length}</span>
+      <button class="bb x" data-act="book-back" aria-label="Back to the skills" title="Back to the skills (Esc)">${B_X}</button>
+      <button class="bb" data-act="book-next" aria-label="Skill after" title="Skill after (→)"${p.i < YOU_PAGES.length - 1 ? '' : ' disabled'}>${B_NEXT}</button>
+    </div>`;
+}
 // The book button's "New": a glow while a page has news and the book's shut.
 function bookNews() {
-  const glow = !bookUi.open && FIRE_DISHES.some(bookFresh);
+  const glow = !bookUi.open && ALL_PAGES.some(pageFresh);
   if (glow === bookUi.glow) return;
   bookUi.glow = glow;
   const el = $('#book-btn');
   el.classList.toggle('new', glow);
   el.setAttribute('aria-label', glow ? 'Recipe book: something new' : 'Recipe book');
 }
-function openBook(on = !bookUi.open) {
+function openBook(on = !bookUi.open, at = '') {
   if (on && (!world || intro.on)) return;
   if (on === bookUi.open) return;
   bookUi.open = on;
@@ -8599,9 +9144,11 @@ function openBook(on = !bookUi.open) {
   $('#book-btn').classList.toggle('on', on);
   if (on) {
     const fresh = BOOK_PAGES.find(p => bookFresh(p.r) && knownDish(p.r.name)) || BOOK_PAGES.find(p => bookFresh(p.r)) || FIND_PAGES.find(pageFresh);
-    bookUi.pick = fresh?.key || bookUi.pick || (BOOK_PAGES.find(p => knownDish(p.r.name)) || BOOK_PAGES[0]).key;
+    const last = BOOK_PAGE.get(bookUi.picked[at]);
+    bookUi.pick = at ? (last && last.part === at ? last.key : (BOOK_PARTS[at].pages.find(pageFresh) || BOOK_PARTS[at].pages[0]).key)
+      : fresh?.key || bookUi.pick || (BOOK_PAGES.find(p => knownDish(p.r.name)) || BOOK_PAGES[0]).key;
     bookUi.shown.clear();
-    bookUi.depth = fresh && bookUpright() ? 2 : 1;
+    bookUi.depth = !at && fresh && bookUpright() ? 2 : 1;
     el.classList.toggle('reading', bookUi.depth === 2);
     bookUi.key = ''; renderBook();
     el.querySelector('.b-pages').scrollTop = 0;
@@ -8618,6 +9165,12 @@ function openBook(on = !bookUi.open) {
   }
   pairBook();
   chime(on ? 'pages' : 'click');
+}
+// A tap on the face, or I: the book, on You (the face's own card is gone; its page is this one). It opens straight on You, so
+// the newest dish isn't flashed (and marked seen) on the way past.
+function openYou() {
+  if (!bookUi.open) openBook(true, 'you');
+  if (bookUi.open && bookPart() !== 'you') bookTab('you');
 }
 // The book and the cooking window open together (the book opened at the pot, or the pot at the book): the book moves into
 // the meadow left beside the window, centred there and no wider than it is on its own, with no scrim, so a page can be read
@@ -8644,13 +9197,18 @@ function renderBook() {
   bookNews();
   if (!bookUi.open) return;
   itemSheet();
-  const have = haveAt(storesHere()), atPot = cooking() && ui.fire.stage === 'cook', p = bookAt(), part = p.part, B = BOOK_PARTS[part];
+  const have = haveAt(storesHere()), atPot = cooking() && ui.fire.stage === 'cook', p = bookAt(), part = p.part, you = part === 'you', f = world.forager, B = BOOK_PARTS[part];
   bookUi.picked[part] = p.key; bookUi.shown.add(part);
-  if ((!bookUpright() || bookUi.depth === 2) && seePage(p)) { bookUi.stamp = p.key; bookUi.stampAt = performance.now(); }   // (shown: seen, stamped)
-  const key = ALL_PAGES.map(q => levelOf(q) + (pageFresh(q) ? 'n' : '')).join(',') + '|' + JSON.stringify(have) + '|' + atPot + cooking() + '|' + p.key + '|' + bookUi.stamp + '|' + (world ? world.fires.map(F => F.own.join()).join('|') + world.forager.kit.firing + (ui.fire ? ui.fire.F.x : '') : '');
+  const shown = (!bookUpright() || bookUi.depth === 2) && seePage(p);   // (shown: seen, stamped)
+  if (shown && !you) { bookUi.stamp = p.key; bookUi.stampAt = performance.now(); }
+  const skillKey = you ? S.SKILL_NAMES.map(s => `${f.lv[s]}:${Math.round(S.skillProgress(f, s) * 100)}:${skillLeft(s, f)}`).join(',') : '';
+  const key = ALL_PAGES.map(q => levelOf(q) + (pageFresh(q) ? 'n' : '')).join(',') + '|' + skillKey + '|' + JSON.stringify(have) + '|' + atPot + cooking() + '|' + p.key + '|' + bookUi.stamp + '|' + (world ? world.fires.map(F => F.own.join()).join('|') + world.forager.kit.firing + (ui.fire ? ui.fire.F.x : '') : '') + (you ? '|' + youKey() : '');
   if (key === bookUi.key) return;
   bookUi.key = key;
-  const el = $('#book'), got = q => levelOf(q) === 9, known = B.pages.filter(got).length, all = B.pages.length;
+  const el = $('#book'), got = q => levelOf(q) === 9;
+  let known, all;
+  if (you) { known = S.SKILL_NAMES.reduce((n, s) => n + f.lv[s], 0); all = S.SKILL_NAMES.length * S.SKILL_TOP; }
+  else { known = B.pages.filter(got).length; all = B.pages.length; }
   for (const t of el.querySelectorAll('.b-head .tab')) {
     const on = t.dataset.part === part;
     t.classList.toggle('on', on); t.setAttribute('aria-selected', on);
@@ -8659,16 +9217,20 @@ function renderBook() {
   for (const d of el.querySelectorAll('.b-pages .part')) d.hidden = d.dataset.part !== part;
   setHTML(el.querySelector('.b-head .n'), `${known}<small>/${all}</small>`);
   el.querySelector('.b-bar i').style.width = (known / all * 100).toFixed(1) + '%';
-  bookText(el.querySelector('#book-sub'), part === 'finds' ? (known < all ? 'What the meadow gives: each season brings its own' : 'Everything the meadow gives, found')
+  bookText(el.querySelector('#book-sub'), part === 'you' ? 'How you are, and the road each skill is on'
+    : part === 'finds' ? (known < all ? 'What the meadow gives: each season brings its own' : 'Everything the meadow gives, found')
     : atPot ? 'At the pot: a known recipe puts its things in' : known < all ? 'Try things together at the fire to find the rest' : 'Every recipe found');
-  for (const s of B.sections) {
+  if (you) setHTML(el.querySelector('.part[data-part="you"] [data-you]'), youSheetHTML());
+  else for (const s of B.sections) {
     const grid = el.querySelector(`.part[data-part="${part}"] .grid[data-sec="${s.k}"]`);
     if (!grid) continue;
     const pages = B.pages.filter(q => q.sec === s);
     bookText(el.querySelector(`.part[data-part="${part}"] h3.sec span[data-sec="${s.k}"]`), `${pages.filter(got).length}/${pages.length}`);
     setHTML(grid, pages.map(q => q.r ? bookTileHTML(q, have) : findTileHTML(q, have)).join(''));
   }
-  setHTML(el.querySelector('.b-page'), p.r ? bookPageHTML(p, have, atPot) : findPageHTML(p, have));
+  setHTML(el.querySelector('.b-page'), p.skill ? skillPageHTML(p, f) : p.r ? bookPageHTML(p, have, atPot) : findPageHTML(p, have));
+  el.querySelector('.b-page').classList.toggle('you-skill', !!p.skill);
+  if (you) paintYouFace();
 }
 // A page picked: from a tile (on an upright phone laid over the tiles), or turned (‹ ›, the arrow keys, a swipe), the new one
 // sliding in from the side it came from.
@@ -8699,7 +9261,8 @@ function turnBook(dir, from) {
 // A tab at the top: the other part, back on the page last shown in it (on an upright phone, its tiles).
 function bookTab(part) {
   if (part === bookPart() || !BOOK_PARTS[part]) return;
-  bookUi.pick = bookUi.picked[part] || (BOOK_PARTS[part].pages.find(pageFresh) || BOOK_PARTS[part].pages[0]).key;
+  const last = BOOK_PAGE.get(bookUi.picked[part]);
+  bookUi.pick = last && last.part === part ? last.key : (BOOK_PARTS[part].pages.find(pageFresh) || BOOK_PARTS[part].pages[0]).key;
   bookUi.stamp = '';
   if (bookUi.depth === 2) { bookUi.depth = 1; $('#book').classList.remove('reading'); }
   renderBook();
@@ -8776,36 +9339,50 @@ function bookLift(e) {
 }
 $('#book').addEventListener('pointerup', bookLift);
 $('#book').addEventListener('pointercancel', bookLift);
-// Keys while it's open: ← → turn the page, and the other walking keys don't walk the forager (on the window, first: before
-// the meadow's own keys). Esc reaches stepOut as ever, and B shuts it.
+// Keys while it's open: ← → turn the page, and the walking keys still walk the forager (a menu doesn't pin it to the
+// spot). Esc reaches stepOut as ever, and B shuts it.
 addEventListener('keydown', e => {
   if (!bookUi.open || e.target.closest?.('input,textarea') || e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); e.stopPropagation(); turnBook(e.key === 'ArrowRight' ? 1 : -1); }
-  else if (KEY_DIRS[e.code]) e.stopPropagation();
 }, true);
-// The book's button, painted once: a little leather-bound book with a gold leaf on it and a ribbon.
-function bookIcon() {
-  const el = $('#book-btn i');
-  if (!el || el.dataset.done) return;
+// The book buttons (the satchel's #book-btn and the cooking bar's) and the craft button wear small paintings, made once:
+// a leather-bound book with a cream label and a ribbon, and a wooden mallet. Each goes in as a blob's address.
+function paintIcon(paint, done) {
   const n = Math.ceil(40 * dpr), c = document.createElement('canvas'), g = c.getContext('2d');
   c.width = c.height = n;
   g.setTransform(n / 2, 0, 0, n / 2, n / 2, n / 2);
   g.lineCap = g.lineJoin = 'round';
-  fillIn(g, 'rgba(60, 40, 20, 0.25)', () => ovalAt(g, 0.02, 0.66, 0.62, 0.12));                    // its shadow
-  softIn(g, [246, 236, 210], -0.58, 0.62, () => g.roundRect(-0.5, -0.56, 1.04, 1.16, 0.08), 1.05, 0.85);   // the pages' edge
-  for (let i = 0; i < 4; i++) strokeIn(g, 'rgba(160, 130, 90, 0.45)', 0.02, () => { g.moveTo(-0.42, 0.48 + i * 0.03); g.lineTo(0.5, 0.48 + i * 0.03); });
-  softIn(g, [150, 70, 40], -0.66, 0.48, () => g.roundRect(-0.58, -0.68, 1.08, 1.14, 0.12), 1.22, 0.7);   // the cover
-  softIn(g, [112, 50, 30], -0.66, 0.48, () => g.roundRect(-0.58, -0.68, 0.2, 1.14, [0.12, 0, 0, 0.12]), 1.15, 0.75);   // the spine
-  strokeIn(g, 'rgba(232, 190, 110, 0.9)', 0.04, () => g.roundRect(-0.28, -0.52, 0.66, 0.82, 0.06));   // a gold rule round the front
-  fillIn(g, 'rgb(236, 196, 116)', () => {                                                           // and a leaf in gold on it
-    g.moveTo(0.05, -0.34); g.quadraticCurveTo(0.32, -0.12, 0.05, 0.14); g.quadraticCurveTo(-0.22, -0.12, 0.05, -0.34);
-  });
-  strokeIn(g, 'rgba(150, 70, 40, 0.8)', 0.03, () => { g.moveTo(0.05, -0.28); g.lineTo(0.05, 0.1); });
-  fillIn(g, 'rgb(196, 64, 52)', () => { g.moveTo(0.22, 0.42); g.lineTo(0.22, 0.82); g.lineTo(0.29, 0.74); g.lineTo(0.36, 0.82); g.lineTo(0.36, 0.42); });   // the ribbon
-  furGlow(g, [255, 240, 210], 0.35, -0.1, -0.46, 0.42, 0.12);
-  el.style.backgroundImage = `url(${c.toDataURL()})`;
-  el.dataset.done = '1';
-  $('#cook-book i').style.backgroundImage = el.style.backgroundImage;   // (the cooking bar's book too)
+  paint(g);
+  c.toBlob(b => done(`url(${URL.createObjectURL(b)})`));
+}
+function paintBook(g) {
+  fillIn(g, 'rgba(60, 40, 20, 0.25)', () => ovalAt(g, 0.02, 0.8, 0.66, 0.12));                     // its shadow
+  softIn(g, [246, 236, 210], -0.62, 0.78, () => g.roundRect(-0.52, -0.66, 1.1, 1.38, 0.08), 1.05, 0.85);   // the pages' edge
+  for (let i = 0; i < 4; i++) strokeIn(g, 'rgba(160, 130, 90, 0.45)', 0.025, () => { g.moveTo(-0.4, 0.6 + i * 0.03); g.lineTo(0.54, 0.6 + i * 0.03); });
+  softIn(g, [150, 70, 40], -0.8, 0.56, () => g.roundRect(-0.62, -0.82, 1.14, 1.36, 0.12), 1.22, 0.7);   // the cover
+  softIn(g, [112, 50, 30], -0.8, 0.56, () => g.roundRect(-0.62, -0.82, 0.22, 1.36, [0.12, 0, 0, 0.12]), 1.15, 0.75);   // the spine
+  strokeIn(g, 'rgba(96, 40, 22, 0.55)', 0.035, () => { for (const y of [-0.62, 0.34]) { g.moveTo(-0.6, y); g.lineTo(-0.42, y); } });   // its bands
+  softIn(g, [244, 228, 190], -0.5, -0.08, () => g.roundRect(-0.24, -0.5, 0.56, 0.42, 0.05), 1.05, 0.9);   // a label
+  strokeIn(g, 'rgba(206, 168, 96, 0.9)', 0.035, () => g.roundRect(-0.24, -0.5, 0.56, 0.42, 0.05));
+  strokeIn(g, 'rgba(120, 70, 40, 0.75)', 0.05, () => { g.moveTo(-0.12, -0.36); g.lineTo(0.2, -0.36); g.moveTo(-0.08, -0.22); g.lineTo(0.16, -0.22); });
+  fillIn(g, 'rgb(196, 64, 52)', () => { g.moveTo(0.24, 0.5); g.lineTo(0.24, 0.94); g.lineTo(0.31, 0.85); g.lineTo(0.38, 0.94); g.lineTo(0.38, 0.5); });   // the ribbon
+  furGlow(g, [255, 240, 210], 0.32, -0.08, -0.56, 0.44, 0.13);
+}
+function paintMallet(g) {
+  fillIn(g, 'rgba(60, 40, 20, 0.22)', () => ovalAt(g, 0, 0.8, 0.66, 0.11));                        // its shadow
+  g.rotate(-0.62);
+  softIn(g, [186, 136, 84], -0.1, 0.1, () => g.roundRect(-0.09, -0.15, 0.18, 1.1, 0.08), 1.15, 0.75);   // the handle
+  fillIn(g, 'rgba(110, 70, 40, 0.5)', () => g.roundRect(-0.1, 0.62, 0.2, 0.06, 0.02));
+  softIn(g, [150, 98, 56], -0.62, -0.04, () => g.roundRect(-0.58, -0.6, 1.16, 0.56, 0.16), 1.25, 0.66);   // the head, its ends darker
+  fillIn(g, 'rgba(100, 60, 30, 0.35)', () => { g.roundRect(-0.58, -0.6, 0.12, 0.56, [0.16, 0, 0, 0.16]); g.roundRect(0.46, -0.6, 0.12, 0.56, [0, 0.16, 0.16, 0]); });
+  strokeIn(g, 'rgba(100, 62, 32, 0.4)', 0.03, () => { g.moveTo(-0.3, -0.42); g.quadraticCurveTo(0, -0.36, 0.3, -0.44); g.moveTo(-0.26, -0.24); g.quadraticCurveTo(0.04, -0.2, 0.32, -0.26); });   // grain
+  furGlow(g, [255, 236, 200], 0.4, -0.06, -0.5, 0.42, 0.08);
+}
+function bookIcon() {
+  if (bookIcon.done) return;
+  bookIcon.done = true;
+  paintIcon(paintBook, url => { for (const el of document.querySelectorAll('#cook-book i, #book-btn .plate i')) el.style.backgroundImage = url; });
+  paintIcon(paintMallet, url => { const el = $('#build .plate i'); if (el) el.style.backgroundImage = url; });
 }
 // B opens and shuts it (a listener of its own, beside the game's keys).
 document.addEventListener('keydown', e => {
@@ -8922,41 +9499,75 @@ function relightFire() {
   for (const o of world.fires) { const d = Math.hypot(o.x - f.x, o.y - f.y); if (!o.lit && d < best && fireKind(o)) { F = o; best = d; } }
   return F;
 }
-// Each frame: the pot over the nearest lit fire, standing near it with something to cook and nothing else on at a fire.
+// What E does, and what the little discs and the line over the satchel show it will: the nearest, by the tiles between it
+// and the forager, of the things to use (the stone, the basket, the seat log, a fire to cook at or light, a torch to relight)
+// and the things to pick; the camp's fire from anywhere in its ring when nothing is nearer. One rule for the key, the discs
+// and the line, so what is shown is what E does. It used to be the fire first anywhere in camp, which took E from the basket
+// and from what lay at the forager's feet (2026-10-20).
+const USE_REACH = 4.5;                    // tiles E walks to use the basket, the stone or the seat log (a fire's is PROMPT_NEAR)
+const eCache = { frame: -1, t: null };
+function eTarget(fresh = false) {
+  if (!fresh && eCache.frame === eFrame) return eCache.t;
+  const t = eLook();
+  eCache.frame = eFrame; eCache.t = t;
+  return t;
+}
+function eLook() {
+  const f = world && world.forager, St = world && world.stone;
+  if (!f || f.down >= 0 || ui.place || intro.on) return null;
+  let best = null, bd = Infinity;
+  const take = (kind, it, reach) => {
+    if (!it) return;
+    const d = Math.hypot(it.x - f.x, it.y - f.y);
+    if (d <= reach && d < bd) { bd = d; best = { kind, it }; }
+  };
+  take('stone', St, USE_REACH);
+  take('basket', myBasket(), USE_REACH);
+  if (fireSit.seat !== mySeat()) take('seat', mySeat(), USE_REACH);   // (already on it: E is free for the fire or the basket)
+  if (fireFree()) {
+    take('fire', cookFire(), PROMPT_NEAR);
+    take('fire', relightFire(), PROMPT_NEAR);
+    take('torch', barkTorch(), PROMPT_NEAR);
+    take('fire', campFire(), Infinity);      // (the camp's fire, from anywhere in its ring, if nothing is nearer)
+  }
+  const p = nearPick(best ? Math.min(bd, NEAR_REACH) : NEAR_REACH);   // (only a pick nearer than the thing to use can win)
+  if (p) take('pick', p.it, NEAR_REACH);
+  return best;
+}
+// A card, a place being picked, the wardrobe or the intro owns the screen: no discs and no line over the satchel (hoverSay).
+const promptsOff = () => !world || intro.on || ui.place || cooking() || larderOpen() || stoneOpen() || stripOpen() || bookOpen() || wardrobeOpen();
+// Each frame: the pot over the fire E would go to (when it's one of the near ones), or, by a dead fire the satchel
+// can't light, what it wants. It follows eTarget, so a disc never says E goes to a fire when E would go to the basket or
+// something at the forager's feet.
 function drawCookPrompt(now) {
   hintLine.on = false;                                    // (its line, drawn again below if there's one to draw)
-  const f = world.forager;
-  let F = null;
-  if (f.down < 0 && (!ui.fire || ui.fire.stage === 'lit') && !ui.place && !intro.on && !basketByE() && !stoneByE()) {   // (one disc at a time: the one E goes to)
-    let best = PROMPT_NEAR;
-    for (const o of world.fires) { const d = Math.hypot(o.x - f.x, o.y - f.y); if (d < best && (o.lit || S.cookReady(o))) { F = o; best = d; } }   // (a lit fire to cook at, or a dish to take)
-    if (!F) F = relightFire();
-    if (!F) {                                                      // a dead fire the satchel can't light: say what it wants
-      let d0 = PROMPT_NEAR, D = null;
-      for (const o of world.fires) { const d = Math.hypot(o.x - f.x, o.y - f.y); if (d < d0 && !o.lit && !S.cookReady(o) && !fireKind(o)) { D = o; d0 = d; } }
-      if (D) {
-        const sticks = D.fuel <= 0, line = D.embers > 0 ? 'Needs a stick' : sticks ? 'Needs tinder and sticks' : 'Needs tinder';
-        const [dx, dy] = onScreen(D.x, D.y), ly = dy - firePx(cam.zoom) * 0.95;
-        drawLabel(line, dx, ly);
-        const l = labels.get(line);                      // (painted just above: its box, so the line is a tap on that fire)
-        hintBox(hintLine, D, dx - l.w / 2, ly, l.w, LABEL_H);
-      }
+  const f = world.forager, off = promptsOff(), t = off ? null : eTarget();
+  let F = t && t.kind === 'fire' && Math.hypot(t.it.x - f.x, t.it.y - f.y) <= PROMPT_NEAR ? t.it : null;
+  if (!off && !F) {                                       // a dead fire the satchel can't light: say what it wants
+    let d0 = PROMPT_NEAR, D = null;
+    for (const o of world.fires) { const d = Math.hypot(o.x - f.x, o.y - f.y); if (d < d0 && !o.lit && !S.cookReady(o) && !fireKind(o)) { D = o; d0 = d; } }
+    if (D) {
+      const sticks = D.fuel <= 0, line = D.embers > 0 ? 'Needs a stick' : sticks ? 'Needs tinder and sticks' : 'Needs tinder';
+      const [dx, dy] = onScreen(D.x, D.y), ly = dy - firePx(cam.zoom) * 0.95;
+      drawLabel(line, dx, ly);
+      const l = labels.get(line);                      // (painted just above: its box, so the line is a tap on that fire)
+      hintBox(hintLine, D, dx - l.w / 2, ly, l.w, LABEL_H);
     }
   }
   if (F !== promptUi.F) { promptUi.F = F; promptUi.t0 = now; }
   if (!F) { promptUi.on = false; return; }
   const a = promptArt(!F.lit && !S.cookReady(F), S.cookReady(F) ? DISH_VESSEL.get(F.cookDish) || 'pot' : openVessel()), px = firePx(cam.zoom), [sx, sy] = onScreen(F.x, F.y);
-  const x = sx, y = sy - px * (FLAME_H + 0.35) - a.r + 3 * Math.sin(now / 500), t = clamp((now - promptUi.t0) / PROMPT_IN, 0, 1);
+  const x = sx, y = sy - px * (FLAME_H + 0.35) - a.r + 3 * Math.sin(now / 500), t0 = clamp((now - promptUi.t0) / PROMPT_IN, 0, 1);
   hintBox(promptUi, F, x - a.r - 2, y - a.r - 2, a.w, a.h);   // (the disc and its key: the box it's drawn in, not just the disc)
-  ctx.globalAlpha = t * (0.88 + 0.12 * Math.sin(now / 700));
+  ctx.globalAlpha = t0 * (0.88 + 0.12 * Math.sin(now / 700));
   ctx.drawImage(a.img, Math.round(x - a.r - 2), Math.round(y - a.r - 2), a.w, a.h);
   ctx.globalAlpha = 1;
 }
-// The same disc over the old stone, with its E key, while E would open it (stoneByE): a tap on it opens it too.
+// The same disc over the old stone, with its E key, while E would open it (eTarget): a tap on it opens it too.
 const stoneDisc = { on: false, x: 0, y: 0, w: 0, h: 0, t0: 0 };
 function drawStonePrompt(now) {
   const St = world && world.stone;
-  if (!St || cooking() || larderOpen() || stoneOpen() || !stoneByE()) { stoneDisc.on = false; return; }
+  if (!St || promptsOff() || eTarget()?.kind !== 'stone') { stoneDisc.on = false; return; }
   if (!stoneDisc.on) stoneDisc.t0 = now;
   const a = promptArt('stone'), z = cam.zoom, sx = (St.x - cam.x) * z + vw / 2, sy = (St.y - cam.y) * z + vh / 2;
   const x = sx, y = sy - stonePx() * (STONE_FOOT / 2 + 0.56) - a.r - 2 + 3 * Math.sin(now / 500);
@@ -9237,6 +9848,8 @@ function edgeAt(tx, ty, r) {
     const o = clearOf[k];
     if (o.b && x > o.l - r - 4 && x < o.r + r + 4 && y < o.b + r + 4) y = o.b + r + 6;
   }
+  const mm = clearOf[5];                                // (and up out of the minimap's way, bottom right)
+  if (mm.b && x > mm.l - r - 4 && y > mm.t - r - 4) y = mm.t - r - 6;
   edge.x = x; edge.y = y; edge.cx = cx; edge.cy = cy;
   return true;
 }
@@ -9255,8 +9868,6 @@ function edgeApart(r, half, below) {
       if (Math.abs(dx) >= needX || Math.abs(dy) >= needY) continue;
       if (along) edge.x = at[i] + (dx < 0 ? -needX : needX);
       else edge.y = at[i + 1] + (dy < 0 ? -needY : needY);
-  const mm = clearOf[5];                                // (and up out of the minimap's way, bottom right)
-  if (mm.b && x > mm.l - r - 4 && y > mm.t - r - 4) y = mm.t - r - 6;
       moved = true;
     }
     if (!moved) break;
@@ -9462,7 +10073,7 @@ function setupSatchel() {
   row.innerHTML = Array.from({ length: S.SLOTS }, (_, k) => `<div class="slot" data-k="${k}" data-name="" aria-label="Empty"><i></i><b></b></div>`).join('');
   setupCookBag();                                         // (the cooking window's tiles)
   setupLarder();                                          // (the basket's card)
-  bookIcon();                                             // (and the recipe book's)
+  bookIcon();                                             // (and the book and craft buttons' paintings)
   // Hovered (or tapped) a full slot says what's in it, a small label over it (CSS, data-name).
   // A full slot can be dragged: once the press has moved HOLD_FROM px its painting follows the pointer (above a finger, so
   // it shows), and let go over another slot it goes there (S.moveSlot: onto a stack of its kind, or the two swap), off the
@@ -12825,7 +13436,7 @@ function putPainting(p, f, alpha, snow, ox, oy) {
 // A visitor fur.js paints (Fur.painters: the dragonflies, the kingfisher, the skylark), at the doublings of its size and
 // shrunk between (shrunk), as a fox is; in the meadow the worker paints it (furReady).
 const furPaint = kind => (g, size, U, n) => { if (!shrunk(g, size, U, kind + ':' + n)) Fur.painters[kind](g, size, U, n); };
-const PAINTERS = { fox: paintFox, rabbit: paintRabbit, forager: paintForager, hog: paintHedgehog, heron: paintHeron, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody, bee: paintBee, fall: paintFall, shroom: paintShroom, green: paintGreen, bramble: paintBramble, find: paintFind, ingr: Items.paint, dish: Dishes.paint, fire: paintFire, basket: paintBasket, seat: paintSeat, oldstone: paintOldStone, pot: paintPot, vsl: paintVessel, torch: paintTorch, scorch: paintScorch,
+const PAINTERS = { fox: paintFox, rabbit: paintRabbit, forager: paintForager, hog: paintHedgehog, heron: paintHeron, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody, bee: paintBee, fall: paintFall, shroom: paintShroom, green: paintGreen, bramble: paintBramble, find: paintFind, ingr: Items.paint, dish: Dishes.paint, fire: paintFire, basket: paintBasket, seat: paintSeat, cairn: paintCairn, oldstone: paintOldStone, pot: paintPot, vsl: paintVessel, torch: paintTorch, scorch: paintScorch,
   dfly: furPaint('dfly'), kfisher: furPaint('kfisher'), lark: furPaint('lark') };
 function drawDecor(d, sx, sy, now, ck, px = d.tree ? treePx(d) : d.size * cam.zoom) {   // (px: render has it already)
   if (d.emoji === '🪨') { drawRock(d, sx, sy); return; }
@@ -13743,10 +14354,10 @@ const DIM_RGB = [50, 62, 92], HEAT_RGB = [255, 168, 60], FOG_RGB = [236, 240, 24
 const SKY_EVEN = 0, SKY_CLOUDS = 1, SKY_FOG = 2, SKY_FIRE = 3, SKY_LIFT = 4;   // a layer: one colour all over, the cloud shadows, the fog's banks, the fires' and torches' light (paintFireLights), the camp's lift (paintCampLift)
 const SKY_RES = 0.25;                                      // the picture's pixels to a CSS pixel (at 0.125 the low-alpha gradients' 8-bit rounding, a few levels from one pixel to the next, stretched 8x into a visible mesh in fog)
 const SKY_MS = 50;                                         // and its clouds and fog drift on in steps this long (a pixel or two: they're soft)
-// 160 numbers because a night lays 10 + 5 * 10 layers + (1 + 3 * LIFT_MAX) lifts + (1 + 4 * LIGHT_MAX) lights = 144 at
+// 224 numbers because a night lays 10 + 5 * 10 layers + (1 + 3 * LIFT_MAX) lifts + (1 + 5 * LIGHT_MAX) lights = 200 at
 // most, and a short snapshot would silently drop the far lights from the compare: the sky would paint again every frame.
 const sky = { n: 0, layers: Array.from({ length: 10 }, () => ({ kind: 0, rgb: null, a: 0 })), canvas: null, g: null,
-  was: new Float64Array(160), now: new Float64Array(160) };   // what the picture was painted from, and what it's wanted from now
+  was: new Float64Array(224), now: new Float64Array(224) };   // what the picture was painted from, and what it's wanted from now
 
 function skyLayer(kind, a, rgb = null) { const l = sky.layers[sky.n++]; l.kind = kind; l.a = a; l.rgb = rgb; }
 const skyWash = (rgb, a) => skyLayer(SKY_EVEN, a, rgb);
@@ -13778,7 +14389,7 @@ function laySky(t) {
   for (let i = 0; i < n; i++) { const l = L[i], o = 10 + i * 5; f[o] = l.kind; f[o + 1] = l.a; f[o + 2] = l.rgb ? l.rgb[0] : -1; f[o + 3] = l.rgb ? l.rgb[1] : -1; f[o + 4] = l.rgb ? l.rgb[2] : -1; if (l.kind === SKY_FIRE) fire = true; else if (l.kind === SKY_LIFT) lift = true; else if (l.kind === SKY_CLOUDS || l.kind === SKY_FOG) drift = true; }
   if (!drift) f[9] = 0;                                    // (a clear night has no cloud or fog to drift: its clock mustn't repaint the sky)
   if (lift) { f[m++] = lifts.n; for (let i = 0; i < lifts.n; i++) { f[m++] = lifts.x[i]; f[m++] = lifts.y[i]; } }   // (the basket and the cold pits: liftsFrame)
-  if (fire) { f[m++] = lights.n; for (let i = 0; i < lights.n; i++) { f[m++] = lights.x[i]; f[m++] = lights.y[i]; f[m++] = lights.r[i]; f[m++] = lights.a[i]; } }   // (it flickers in steps: lightsFrame)
+  if (fire) { f[m++] = lights.n; for (let i = 0; i < lights.n; i++) { f[m++] = lights.x[i]; f[m++] = lights.y[i]; f[m++] = lights.r[i]; f[m++] = lights.a[i]; f[m++] = lights.t[i]; } }   // (it flickers in steps: lightsFrame)
   let same = c.width === w && c.height === h;
   for (let i = 0; same && i < m; i++) if (f[i] !== sky.was[i] && !(i === 9 && f[9] - sky.was[9] < SKY_MS)) same = false;
   if (same) { ctx.drawImage(c, -10 - EDGE, -10 - EDGE, w / k, h / k); return; }
@@ -14451,7 +15062,7 @@ function handleEvent(e) {
     case 'levelup': {                                       // a skill up a level (sim.js SKILLS): a headline of its own
       levelUp(e.skill, e.lv);
       vit.lvAt = performance.now();                       // (the face smiles, and its level glints till the skills are looked at)
-      if (!meOpen()) $('#me').classList.add('news');
+      bookUi.key = ''; if (bookOpen()) renderBook(); bookNews();   // (the You tab's dot, or the book button's glow)
       break;
     }
     case 'hungry': case 'starving':
@@ -14791,24 +15402,6 @@ function dialWords(ck) {
   dial.el.setAttribute('aria-label', `${a}, ${b}${c ? '. ' + c : ''}`);
 }
 
-// ------------------------------------------------------------------ the inspector
-
-
-function when(t) {
-  t = Math.max(0, t);                    // (the intro's kits were born on the way here, before the meadow's first day)
-  const s = S.seasonOf(t), day = Math.floor(t / S.TPD);
-  return `${S.SEASONS[s].name} ${day % S.SEASON_DAYS + 1}, Y${Math.floor(day / S.YEAR_DAYS) + 1}`;
-}
-
-function lifeStage(c) {
-  const age = S.ageDays(world, c), g = S.growth(world, c);
-  if (g < 0.5) return 'baby';
-  if (g < 1) return 'youngster';
-  if (age > c.lifespan / S.TPD * 0.8) return 'elder';
-  return 'adult';
-}
-
-// On a phone the inspector opens folded to one line: who, what they're up to, and the tummy (or a
 // ------------------------------------------------------------------ the minimap
 //
 // The whole meadow, small, bottom right in brass like the sky dial (#minimap). Hidden on an upright phone and wherever
@@ -14926,6 +15519,24 @@ function drawMap(s, vx, vy, vwk, vhk, dark) {
   dot(w.forager.x * s, w.forager.y * s, '#c4562f');
 }
 
+// ------------------------------------------------------------------ the inspector
+
+
+function when(t) {
+  t = Math.max(0, t);                    // (the intro's kits were born on the way here, before the meadow's first day)
+  const s = S.seasonOf(t), day = Math.floor(t / S.TPD);
+  return `${S.SEASONS[s].name} ${day % S.SEASON_DAYS + 1}, Y${Math.floor(day / S.YEAR_DAYS) + 1}`;
+}
+
+function lifeStage(c) {
+  const age = S.ageDays(world, c), g = S.growth(world, c);
+  if (g < 0.5) return 'baby';
+  if (g < 1) return 'youngster';
+  if (age > c.lifespan / S.TPD * 0.8) return 'elder';
+  return 'adult';
+}
+
+// On a phone the inspector opens folded to one line: who, what they're up to, and the tummy (or a
 // thing's first meter) as a thin line under that. Tap it for the rest.
 const stripHTML = (tint, face, name, line, meter) => `
   <div class="strip-row" data-act="sheet-up" title="Show more">
@@ -14966,6 +15577,7 @@ function renderInspector() {
   if (c.fish) chips.push(`🐟 ${c.fish} fish caught`);
   if (c.frogs) chips.push(`🐸 ${c.frogs} ${c.frogs === 1 ? 'frog' : 'frogs'} caught`);
   if (c.escapes) chips.push(`💨 ${c.escapes} narrow ${c.escapes === 1 ? 'escape' : 'escapes'}`);
+  if (c.alive && c.trust > 0.05) chips.push(`🫶 ${c.trust > 0.65 ? 'Quite used to you' : 'Getting used to you'}`);
   if (c.visits) chips.push(`🌼 ${c.visits} ${c.visits === 1 ? 'flower' : 'flowers'} visited`);
   const mate = c.species === 'crow' && c.mate && world.byId.get(c.mate);
   if (mate) chips.push(mate.alive ? `💞 Paired with ${link(mate)}` : `🥀 Lost its mate ${link(mate)}`);
@@ -15752,7 +16364,7 @@ function setSpeed(s, heard) {
   Sound.update({ speed: s });
   const b = $('[data-act="pause"]');
   b.textContent = s ? '⏸' : '▶';
-  b.title = s ? 'Pause (space)' : 'Carry on (space)';
+  b.title = s ? 'Pause (P)' : 'Carry on (P)';
 }
 
 // The camera stays with the forager (leadCam): nothing pans it. Two fingers pinch, the wheel, a double tap and + - zoom it
@@ -17197,8 +17809,8 @@ function copyLink() {
 document.addEventListener('click', e => {
   const t = e.target.closest('[data-action],[data-act],a[data-id],a[data-thing]');
   if (!(t && t.dataset.act === 'more')) toggleMore(false);
-  if (meOpen() && !e.target.closest('#me, #me-card')) openMe(false);
-  if (stripOpen() && !e.target.closest('#make, #build')) openMake(false);   // (the make strip: a tap anywhere else leaves it)
+  // the make strip: a tap on another card or button leaves it, a tap on the meadow (or the minimap) walks and keeps it
+  if (stripOpen() && !e.target.closest('#make, #build') && e.target !== canvas && !e.target.closest?.('#minimap')) openMake(false);
   if (eatUi.k >= 0 && !e.target.closest('#eat, #satchel')) eatAsk(-1);
   if (!t) return;
   if (t.closest('#hud-right .hud-top')) chime('click');
@@ -17210,7 +17822,6 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'build') buildPressed();       // (the make button by the satchel)
   else if (t.dataset.act === 'make') startBuild(t.dataset.b);   // (a tile in the make strip)
   else if (t.dataset.act === 'make-close') openMake(false);
-  else if (t.dataset.act === 'basket') basketPressed();     // (the basket's, by it)
   else if (t.dataset.act === 'sprint') { sprintSet(!sprintUi.on); chime('click'); }   // (run between the picks, or walk again)
   else if (t.dataset.act === 'place-turn') turnPlace(1);   // (the placing bar: turn it)
   else if (t.dataset.act === 'place-ok') placeHere();      // (the placing bar: put it here)
@@ -17229,8 +17840,7 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'cook-dish') cookKnown(t.dataset.name);
   else if (t.dataset.act === 'cook-again') cookAgain();
   else if (t.dataset.act === 'cook-close') closeCook();
-  else if (t.dataset.act === 'me') openMe();               // (the face top left: the skills)
-  else if (t.dataset.act === 'me-close') openMe(false);
+  else if (t.dataset.act === 'me') openYou();              // (the face top left: the book, on You)
   else if (t.dataset.act === 'tasks') foldTasks();         // (first things: folded to one line, or not)
   else if (t.dataset.act === 'book') openBook();           // (the recipe book)
   else if (t.dataset.act === 'book-close') openBook(false);
@@ -17300,6 +17910,13 @@ function holdShift(on) {
   shiftHeld = on;
   if (world?.forager.walking) world.forager.running = on && !world.forager.winded;
 }
+// Space: it leaps (sim.js foragerJump) the way it faces, over whatever's in its way, a walk's length or a sprint's.
+// Where it lands it walks on, or stands. Not while paused, and not twice while it's up.
+function jumpNow() {
+  if (!world || ui.speed <= 0 || !S.foragerJump(world)) return;
+  if (fg.emote >= 0) emoteOff();
+  foragerAhead();
+}
 // WASD or the arrows held: it walks that way (runs with Shift), sent KEY_AHEAD tiles on every frame (keyWalk), and
 // let go it stops a step on. By e.code, so Shift+W is still W wherever the keyboard puts it.
 const KEY_DIRS = { KeyW: [0, -1], KeyA: [-1, 0], KeyS: [0, 1], KeyD: [1, 0], ArrowUp: [0, -1], ArrowLeft: [-1, 0], ArrowDown: [0, 1], ArrowRight: [1, 0] };
@@ -17313,7 +17930,7 @@ function keyWalk() {
   for (const k of keysHeld) { dx += KEY_DIRS[k][0]; dy += KEY_DIRS[k][1]; }
   const d = Math.hypot(dx, dy);
   if (!d) {                             // (let go, or two that cancel: it stops a step on)
-    if (keyWalking && f.walking) S.foragerTo(world, f.x + Math.cos(f.heading) * 0.4, f.y + Math.sin(f.heading) * 0.4);
+    if (keyWalking && f.walking) S.foragerTo(world, f.x + Math.cos(f.heading) * 0.2, f.y + Math.sin(f.heading) * 0.2);
     keyWalking = false;
     return;
   }
@@ -17362,19 +17979,26 @@ document.addEventListener('keydown', e => {
   if (e.target.closest('input,textarea') || !world) return;
   if ((e.metaKey || e.ctrlKey || e.altKey) && /^[a-z]$/i.test(e.key)) return;   // ⌘C, Ctrl+Z…: the browser's
   if (KEY_DIRS[e.code]) { e.preventDefault(); keysHeld.add(e.code); return; }
-  if (e.key === ' ') { e.preventDefault(); setSpeed(ui.speed ? 0 : 1); }
+  if (e.key === ' ') { e.preventDefault(); if (!e.repeat) jumpNow(); }
+  else if (e.key === 'p' || e.key === 'P') setSpeed(ui.speed ? 0 : 1);
   else if (e.key === 'Escape') stepOut();
   else if (e.key === 'Enter' && ui.place) { e.preventDefault(); placeHere(); }   // (picking a spot for a fire: where the faint one is)
   else if ((e.key === 'r' || e.key === 'R') && ui.place) { e.preventDefault(); turnPlace(1); }   // (turning the seat log)
   else if ((e.key === 'Enter' || e.key === 't') && Net && Net.on) { e.preventDefault(); openChat(true); }
-  else if (e.code === 'KeyE' && !e.repeat) {               // (at a lit fire: its cooking card, and again shuts it; by the basket or the stone: its card; else pick)
+  else if (e.code === 'KeyE' && !e.repeat) {               // (the one thing eTarget finds: a card to shut, a stone, the basket, a fire, a torch, or a pick)
     e.preventDefault();                                    // (E opens the stone: its letter mustn't land in the line that takes the focus)
     if (cooking()) closeCook();
     else if (larderOpen()) openLarder(false);
     else if (stoneOpen()) openStone(false);
-    else if (stoneByE()) goStone();
-    else if (basketByE()) goBasket();
-    else { const F = fireFree() && (cookFire() || relightFire() || campFire()), T = !F && fireFree() && barkTorch(); if (F) clickFire(F); else if (T) clickTorch(T); else pickNear(); }   // (fireFree: the 'lit' moment counts, as the prompt does)
+    else {
+      const t = eTarget(true);
+      if (t && t.kind === 'stone') goStone();
+      else if (t && t.kind === 'basket') goBasket();
+      else if (t && t.kind === 'seat') goSeat();
+      else if (t && t.kind === 'fire') clickFire(t.it);
+      else if (t && t.kind === 'torch') clickTorch(t.it);
+      else pickNear();
+    }
   }
   else if (e.code === 'KeyF' && !e.repeat) { if (atFire()) { fireKey = true; blowOn(true); } else campfirePressed(); }   // (at a fire, held: blowing; else the quick campfire)
   else if (e.code === 'KeyC' && !e.repeat) { if (stripOpen()) openMake(false); else openMake(true); }   // (the make strip)
@@ -17382,7 +18006,7 @@ document.addEventListener('keydown', e => {
   else if (e.code === 'KeyX' && !e.repeat && Net && Net.on) swing();   // (friendly fire)
   else if (e.code === 'KeyG' && !e.repeat && Net && Net.on) hug();     // (a hug for the friend close by)
   else if (e.key === 'm') toggleSound();
-  else if (e.key === 'i') openMe();
+  else if (e.key === 'i') openYou();
   else if (e.key === '+' || e.key === '=') zoomOn(cam.zoom * 1.25);
   else if (e.key === '-') zoomOn(cam.zoom / 1.25);
 });
@@ -17399,14 +18023,13 @@ const back = { token: Math.random().toString(36).slice(2), depth: 0, going: fals
 const moreOpen = () => !$('#more-menu').classList.contains('hidden');
 function opened() {
   const ins = $('#inspector').classList, sheetUp = ins.contains('open') && narrow() && !ins.contains('strip');
-  return [askOpen(), moreOpen(), meOpen(), friendsOpen(), askedOver(), !!ui.place, stripOpen(), larderOpen(), stoneOpen(), bookOpen(), bookReading(), cooking(), wardrobeOpen(), chatOpen(), ins.contains('open'), sheetUp].filter(Boolean).length;
+  return [askOpen(), moreOpen(), friendsOpen(), askedOver(), !!ui.place, stripOpen(), larderOpen(), stoneOpen(), bookOpen(), bookReading(), cooking(), wardrobeOpen(), chatOpen(), ins.contains('open'), sheetUp].filter(Boolean).length;
 }
 // The one on top shuts (Esc, and Back once for each step it takes).
 function stepOut() {
   const ins = $('#inspector').classList;
   if (askOpen()) askIdeas(false);
   else if (moreOpen()) toggleMore(false);
-  else if (meOpen()) openMe(false);
   else if (askedOver()) friendAsk(false);
   else if (friendsOpen()) openFriends(false);
   else if (stripOpen()) openMake(false);                   // (the make strip)
@@ -17723,7 +18346,7 @@ function showWorld(w) {
   fg.at = -1; fg.rings.length = 0; fg.sized = 0; fg.pick = -1e9; pickFloats.length = 0; aim.t = null; aim.fire = null;
   fireLay.clear(); fireFlare.clear(); sparks.length = 0; fireSit.F = null; fireSit.seat = null; fg.kneel = -1;   // (the last meadow's fires)
   fg.puffs.length = 0; fg.drips.length = 0; fg.downAt = 0; fg.dark = false; $('#veil').classList.remove('dark');
-  vit.warm = vit.health = vit.stam = vit.food = vit.frost = vit.lv = -1; vit.starving = null; vit.mood = vit.skills = '';
+  vit.warm = vit.health = vit.stam = vit.food = vit.frost = vit.lv = -1; vit.starving = null; vit.mood = '';
   pollen.until = 0; pollen.t0.fill(-1e9);
   const mix = Object.fromEntries(Object.keys(S.WEATHER).map(k => [k, k === world.weather.kind ? 1 : 0]));
   Object.assign(ui.sky, { mix, tick: world.tick, bolts: [], rainbow: -1e9, bowEnd: -1e9 });
@@ -17967,7 +18590,7 @@ function drawForagerLayer(now, ox, oy) {
   ctx.clearRect(bx, by, size, size);
   standIns = true;
   const ck = S.clock(world);
-  if (fg.kneel < KNEEL.sit) foragerShadow(sx, sy, sun(ck), fg.wet);
+  if (fg.kneel < KNEEL.sit) foragerShadow(sx, sy, sun(ck), fg.wet, fg.air);
   layShadows();
   drawForager(sx, sy, now);
   unfade();
@@ -17985,7 +18608,7 @@ function lightForager(now, ck, dx, dy) {
     const art = lightArt(), night = clamp(dark / DARK, 0, 1), fx = fg.sx, fy = fg.sy;
     for (let i = 0; i < lights.n; i++) {                  // (lights were worked out at the meadow's camera: dx, dy is how it has moved since)
       const r = lights.r[i], x = lights.x[i] + dx, y = lights.y[i] + dy, u = Math.hypot(fx - x, (fy - y) / LIGHT_FLAT) / r;
-      if (u < 1) pool += lights.a[i] * 0.85 * lightFall(u);
+      if (u < 1) pool += lights.a[i] * 0.85 * (lights.t[i] ? lightFallT(u) : lightFall(u));
       const rr = r * 0.85;
       ctx.globalAlpha = lights.a[i] * (0.06 + 0.24 * night);
       ctx.drawImage(art.img, x - rr, y - rr * LIGHT_FLAT, rr * 2, rr * 2 * LIGHT_FLAT);
@@ -18051,6 +18674,7 @@ function frame(now) {
   }
   updateSky();
   updateDial();
+  updateMap(now);
 
   const sel = world.byId.get(ui.selectedId);
   if (sel && sel.alive && !sel.hidden) {
@@ -18069,7 +18693,6 @@ function frame(now) {
   if (cam.goal) {
     const k = 1 - Math.pow(0.01, dt);
     cam.zoom += (cam.goal - cam.zoom) * k;
-  updateMap(now);
     if (Math.abs(cam.goal - cam.zoom) < 0.05) cam.goal = null;
     cam.zoom = Math.max(cam.zoom, fitZoom);
   }
@@ -18116,7 +18739,6 @@ function frame(now) {
     updateClock();
     renderVitals();
     renderThermo();                                       // (the air's temperature, top middle)
-    renderBasketBtn();                                    // (in the camp or out of it: the basket's button)
     renderTasks();                                        // (first things)
     netCard(now);
     if (ui.sound) {
@@ -18139,7 +18761,7 @@ function frame(now) {
 // The camera goes with the forager: a little ahead of it the way it's walking (CAM_AHEAD seconds of its pace, eased in
 // and out over CAM_LEAD_S), easing after it (CAM_FOLLOW a second), so setting off, stopping and turning are all soft.
 // Its feet sit a little below the middle of the screen (CAM_FEET), the rest of it above them.
-const CAM_FOLLOW = 3.2, CAM_AHEAD = 0.55, CAM_LEAD_S = 0.9, CAM_FEET = 0.25;
+const CAM_FOLLOW = 5, CAM_AHEAD = 0.55, CAM_LEAD_S = 0.6, CAM_FEET = 0.25;
 function leadCam(dt) {
   const f = world.forager, p = drawnAt(f), v = f.walking || f.speed > 0 ? f.speed * TICKS_PER_SECOND * ui.speed : 0;   // (gliding on the ice too)
   const a = 1 - Math.exp(-dt / CAM_LEAD_S);
@@ -18193,7 +18815,59 @@ try { if (localStorage.getItem('aeon-garden-saver') === '1') toggleSaver(true); 
 
 for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => { if (ui.sound) Sound.start(); }, { once: true });
 
-window.garden = { get world() { return world; }, ui, cam, forager: fg, prints: pr, peers, satchel: () => renderSatchel(), kit: { netFiring, firedUi, paint: paintVessel }, stone: { paint: paintOldStone, ui: stoneUi }, torch: { paint: paintTorch, flame: drawTorchFlame, arts: TORCH_ARTS }, screen: (x, y) => [...toScreen(x, y)], click: (x, y) => click(x, y),   // handy in the console
+// Dev only (DEV: this machine, or ?dev): ~ opens a barebones list of every ingredient, and a tap puts a full stack of it in the
+// satchel (devGive; ~ again or Esc shuts it). Built and styled here, so index.html keeps none of it.
+function devGive(id, n) {
+  if (!DEV || !world) return 0;
+  const f = world.forager;
+  if (!Recipes.foodOf(id)) return 0;
+  const want = n > 0 ? n | 0 : S.stackOf(id);
+  if (!S.storePut(f, id, want).length) { say('Satchel\'s full', f.x, f.y - 1); return 0; }
+  renderSatchel();
+  return want;
+}
+function setupDevGive() {
+  const style = document.createElement('style');
+  style.textContent = `
+    #dev-give { position: fixed; z-index: 40; left: 10px; bottom: 10px; width: 268px; max-height: 64vh; overflow: auto; padding: 8px;
+      background: var(--paper, none) var(--card); border-radius: 12px;
+      box-shadow: var(--edge, 0 0 0 1px rgba(150, 115, 60, 0.35)), var(--shadow, 0 10px 30px rgba(50, 40, 15, 0.25)); }
+    #dev-give .dg-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+    #dev-give .dg-head b { flex: 1; font: 650 14px/1 Fraunces, Georgia, serif; }
+    #dev-give .dg-head small { color: #8a7c63; font-weight: 700; }
+    #dev-give button { font: inherit; font-size: 11px; font-weight: 700; color: var(--ink); background: #fffaf0;
+      border: 1px solid #d9ccb0; border-radius: 8px; padding: 3px 6px; cursor: pointer; text-align: left; }
+    #dev-give button:hover { background: var(--accent-soft, #f3e7c9); }
+    #dev-give .dg-list { display: flex; flex-wrap: wrap; gap: 4px; }`;
+  document.head.append(style);
+  const box = document.createElement('div');
+  box.id = 'dev-give'; box.className = 'hidden'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-label', 'Give items (dev)');
+  box.innerHTML = `<div class="dg-head"><b>Give items</b><small>~</small><button data-act="levels">Max levels</button><button data-act="clear">Clear</button>` +
+    `<button data-act="shut" aria-label="Shut">✕</button></div><div class="dg-list"></div>`;
+  box.querySelector('.dg-list').innerHTML = Object.keys(Recipes.INGREDIENTS).map(id => {
+    const ing = Recipes.INGREDIENTS[id];
+    return `<button data-id="${id}" title="A stack of ${esc(ing.name)}">${ing.icon || ''} ${esc(ing.name)}</button>`;
+  }).join('');
+  document.body.append(box);
+  box.addEventListener('click', e => {
+    const b = e.target.closest('button'), f = world && world.forager;
+    if (!b) return;
+    if (b.dataset.act === 'shut') box.classList.add('hidden');
+    else if (b.dataset.act === 'clear') { if (!f) return; f.bag.fill(''); f.bagN.fill(0); renderSatchel(); }
+    else if (b.dataset.act === 'levels') { if (!f) return; for (const s of S.SKILL_NAMES) { f.xp[s] = S.skillNeed(s, S.SKILL_TOP); f.lv[s] = S.SKILL_TOP; } say('Top level', f.x, f.y - 1); }
+    else if (b.dataset.id) devGive(b.dataset.id);
+  });
+  addEventListener('keydown', e => {
+    const t = e.target.closest?.('input,textarea,select,[contenteditable]');
+    if (e.metaKey || e.ctrlKey || e.altKey || (t && t.offsetParent !== null)) return;   // (a field you're typing in keeps its ~)
+    if (e.code === 'Backquote' && !e.repeat) { e.preventDefault(); box.classList.toggle('hidden'); }
+    else if (e.key === 'Escape' && !box.classList.contains('hidden')) box.classList.add('hidden');
+  });
+}
+if (DEV) setupDevGive();
+
+window.garden = { get world() { return world; }, ui, cam, get pace() { return S.pace; }, set pace(v) { S.pace = v; }, forager: fg, prints: pr, peers, satchel: () => renderSatchel(), kit: { netFiring, firedUi, paint: paintVessel }, stone: { paint: paintOldStone, ui: stoneUi }, torch: { paint: paintTorch, flame: drawTorchFlame, arts: TORCH_ARTS }, screen: (x, y) => [...toScreen(x, y)], click: (x, y) => click(x, y),   // handy in the console
+  give: (id, n) => devGive(id, n), dev: DEV,
   perf,
   gov: { get rung() { return gov.rung; }, set rung(r) { gov.rung = clamp(r | 0, 0, gov.top); govApply(); }, get floor() { return gov.floor; }, get ema() { return perf.ren; } },
   get trees() { return { worker: !!treeWorker, workers: treeWorkers.length, art: treeArt, bytes: treeBytes, asked: treeAsked.size, busy: treeBusy }; } };

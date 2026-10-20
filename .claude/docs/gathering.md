@@ -9,16 +9,18 @@ away, in front of a tree, a hive or a bramble so it isn't hidden (`goGather`, `s
 "+3 Chanterelles" with its icon floats up from the spot (`pickFloats`, `floatOf`: a pill painted once), it flies into its slot
 (`flyToSlot`: one element, the browser's own animation) and the pick sound plays (sound.js `pick`). Hovered with a mouse, a thing
 with something to give glows (`GLOW_ART`, painted once, under it; a hive's over its hollow, where the trunk would hide it) with
-its name by it and a hand for the pointer; one with nothing says why (sim.js `whatThere`), as a click on it does (`say`). The hover
-is looked up again only when the mouse moves, or every `AIM_MS` while the camera glides (`hoverFrame`, `aim`). "Satchel's full"
-says so by the forager and leaves the thing be.
+a hand for the pointer, and its name in the one line over the satchel (`#what`, `hoverSay`); one with nothing says why there
+(sim.js `whatThere`), as a click on it does (`say`). The hover is looked up again only when the mouse moves, or every `AIM_MS` while
+the camera glides (`hoverFrame`, `aim`). "Satchel's full" says so by the forager and leaves the thing be.
 A click or a tap is looked up in one place (`useAt`, then `useIt`; the click, a held press let go, and what a press is on all ask it):
 an animal, a fire, the basket or the old stone, or something to gather, as drawn; for a finger each target is at least `FINGER_R` round
 (56 px across). Failing those, the nearest of them all within a snap goes (`snapTo` with `all`: `SNAP` px past its glow, `TAP_SNAP`
 for a finger, more in reach; `useSpot` is the fire's, the basket's and the stone's), so a near miss isn't a walk past.
 A finger has no hover, so standing still a moment (`USE_STILL`) within `USE_NEAR` of something to use (a fire, the basket, the stone,
 or what E would pick: `nearPick`) shows it as a mouse's hover does, in `aim` with `aim.close` (`closeBy`): the paler ring round a fire's,
-the basket's or the stone's foot (`drawGlow`, `RING_E_ART`) or a pick's glow, and its name by it for `USE_SAY`, then fading (`USE_FADE`).
+the basket's or the stone's foot (`drawGlow`, `RING_E_ART`) or a pick's glow; the line over the satchel says the name for a torch
+("Torch · burning" while it burns well), the basket, the seat log or the nearest thing to pick (its ring says something is there,
+not what), for `USE_SAY`, then fading (`USE_FADE`); a fire or the stone is left to its E disc.
 A tap on the forager with something to pick there picks it (only one on nothing is the dance's tap), and a quick tap after a pick,
 or onto something to pick, is a tap, never the double tap's zoom (`lastTap.on`): picking a cluster on a phone kept zooming. A press on
 something to pick is a tap however long it's held (held past `HOLD_MS`, it runs there, `drag.rush`) and needs a bigger move to become
@@ -28,9 +30,21 @@ The queue: while the forager is off to pick something or stooped over it, a clic
 `ui.queue`, at most `QUEUE_MOST`, in click order), each with a small parchment number over it (`drawQueue`, `badgeArt`, painted
 once a number); clicked again it comes off, a click on the ground or holding to run lets the queue go (`walkTo`). Each next one
 waits till it's back up from the last (`ui.nextAt`, `nextGather`), and one gone or picked clean meanwhile is passed over.
-E picks the nearest thing in reach (within `NEAR_REACH`, or lying where it was dropped) as a click on it would, and pressed
-again while it's busy lines up the next nearest (`pickNear`); with nothing in reach it says so.
-Near a lit fire (`cookFire`: the nearest within `PROMPT_NEAR`, as far as the pot shows over it; or anywhere inside the camp's ring, `campFire`) E walks there and opens its cooking card as a click on the fire does, and shuts it again; the picking is for everywhere else. The moment it takes (`lit`, the kneel watching the flame catch) is no exception (`fireFree`): the flame with its E is already painted, and E there opens the card at once — it used to fall through to the picking and say there was nothing in reach till the kneel was up. By a fire that's burnt down or gone cold that the satchel can see to (`relightFire`, `fireKind`), E relights it as a click does (a stick, tinder, a strike, then hold F to blow), and a little painted flame with an E bobs over it (`drawCookPrompt`, `PROMPT_RELIGHT`; a click on it is one on the fire).
+E does the nearest thing to the forager, by the tiles between them, in one race (`eTarget`, `eLook`): the old stone, the camp's
+basket or the seat log (within `USE_REACH`), a fire to cook at or light or a torch to relight (within `PROMPT_NEAR`), or
+something to pick (`nearPick`, within `NEAR_REACH`); the camp's fire is in it from anywhere in the ring (`campFire`) when
+nothing is nearer. The
+same answer puts the disc over a fire in reach and over the stone, and the E in the line over the satchel on a keyboard, so
+what's shown is what E does (2026-10-20: the fire used to win anywhere in camp, taking E from the basket and from what lay at the
+forager's feet). Pressed again while it's busy picking, the next nearest lines up (`pickNear`); with nothing in reach it says so.
+A fire's cooking card shuts with E, as a basket's card does, when one is open.
+E walks to a lit fire within `PROMPT_NEAR` (`cookFire`) and opens its cooking card as a click on the fire does, and shuts it
+again. The moment it takes
+(`lit`, the kneel watching the flame catch) is no exception (`fireFree`): the flame with its E is already painted, and E there
+opens the card at once — it used to fall through to the picking and say there was nothing in reach till the kneel was up. By a
+fire that's burnt down or gone cold that the satchel can see to (`relightFire`, `fireKind`), E relights it as a click does (a
+stick, tinder, a strike, then hold F to blow), and a little painted flame with an E bobs over it (`drawCookPrompt`,
+`PROMPT_RELIGHT`; a click on it is one on the fire).
 In reach: everything to pick within `NEAR_REACH` of the forager, the sticks, grass and bark for a fire too, has a soft honey ring
 lying round its foot (`drawNear`, `RING_ART` painted once), steady, fading out over `NEAR_FADE` at the edge, brighter on what's
 queued. That's what tells a dandelion from the other yellow flowers and dry grass from the tufts (playtesters couldn't).

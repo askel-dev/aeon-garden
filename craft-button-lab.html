@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Craft button · lab</title>
+<style>
+  @font-face { font-family: 'Fraunces'; font-style: italic; font-weight: 450; font-display: swap;
+    src: url(assets/fonts/fraunces-italic-latin.woff2) format('woff2'); }
+  @font-face { font-family: 'Fraunces'; font-style: normal; font-weight: 600 680; font-display: swap;
+    src: url(assets/fonts/fraunces-normal-latin.woff2) format('woff2'); }
+  @font-face { font-family: 'Nunito'; font-style: normal; font-weight: 500 900; font-display: swap;
+    src: url(assets/fonts/nunito-normal-latin.woff2) format('woff2'); }
+
+  :root {
+    --card: #f8f0de;
+    --ink: #3b372f;
+    --muted: #6f6657;
+    --line: #ecdfc8;
+    --accent: #e98a4b;
+    --accent-ink: #9e4a17;
+    --accent-soft: #fde4cf;
+    --brass: #d2b06a;
+    --brass-dark: #a8742a;
+    --deep-brass: #8a5e22;
+  }
+  * { box-sizing: border-box; }
+  html { background: #efe6d2; }
+  body { margin: 0; background: #efe6d2; color: var(--ink); font-family: Nunito, ui-rounded, system-ui, sans-serif; font-size: 15px;
+    -webkit-font-smoothing: antialiased; }
+  .fr { font-family: Fraunces, Georgia, serif; font-variation-settings: 'SOFT' 100, 'WONK' 1; }
+  main { width: min(1180px, calc(100% - 48px)); margin: 0 auto; padding: 54px 0 80px; }
+
+  /* ---- page furniture -------------------------------------------------- */
+  header { display: flex; align-items: flex-end; gap: 18px; padding-bottom: 18px; border-bottom: 1px solid #d9cbb0; }
+  header h1 { margin: 0; font-size: 42px; line-height: 1; font-weight: 650; }
+  header h1 em { font-style: italic; font-weight: 450; color: var(--accent-ink); }
+  header p { margin: 0 0 4px auto; max-width: 390px; font-size: 13.5px; line-height: 1.5; font-weight: 700; color: var(--muted); }
+  .kicker { font-size: 11px; font-weight: 900; letter-spacing: 0.16em; text-transform: uppercase; color: #8a5e22; }
+  section { margin-top: 46px; }
+  section > h2 { display: flex; align-items: baseline; gap: 12px; margin: 0 0 6px; font-size: 13px; font-weight: 900;
+    letter-spacing: 0.14em; text-transform: uppercase; color: #8a5e22; }
+  section > h2 span { font-family: Fraunces, Georgia, serif; font-size: 15px; font-style: italic; font-weight: 450;
+    letter-spacing: 0; text-transform: none; color: var(--muted); }
+
+  /* ---- the anatomy board ---------------------------------------------- */
+  .board { position: relative; display: grid; grid-template-columns: 1fr 300px; gap: 0;
+    margin-top: 14px; border-radius: 22px; overflow: hidden;
+    background: radial-gradient(120% 130% at 18% 0%, #fffaf0 0%, #f6ecd6 58%, #efe2c4 100%);
+    box-shadow: inset 0 0 0 1px rgba(150, 115, 60, 0.22), 0 10px 30px rgba(70, 55, 25, 0.13); }
+  .stage { position: relative; display: grid; place-items: center; min-height: 430px; padding: 60px 40px; }
+  .grain { position: absolute; inset: 0; opacity: 0.5; pointer-events: none; mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.42 0 0 0 0 0.33 0 0 0 0 0.18 0 0 0 .16 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E"); }
+  .stage .hero { position: relative; z-index: 2; }
+  .stage .pair { position: relative; z-index: 2; display: flex; flex-direction: column; align-items: center; gap: 26px; }
+  .stage .mini-row { display: flex; align-items: center; gap: 12px; padding-top: 4px; }
+  .stage .mini-row .note { font-size: 11.5px; font-weight: 800; color: #a8916a; line-height: 1.4; }
+  .stage .mini-row .note b { display: block; color: var(--muted); font-size: 12px; font-weight: 900; }
+  .stage .halo { position: absolute; left: 50%; top: 50%; width: 430px; height: 260px; margin: -130px 0 0 -215px;
+    border-radius: 50%; background: radial-gradient(ellipse, rgba(233, 138, 75, 0.22), rgba(233, 138, 75, 0) 68%); z-index: 1; }
+  .notes { padding: 46px 30px 36px 28px; border-left: 1px dashed #d9cbb0; font-size: 12.5px; line-height: 1.55; }
+  .notes h3 { margin: 0 0 12px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: #8a5e22; }
+  .notes dl { margin: 0; display: grid; gap: 11px; }
+  .notes dt { font-weight: 900; font-size: 12px; color: var(--ink); }
+  .notes dd { margin: 1px 0 0; font-weight: 700; color: var(--muted); }
+
+  /* ---- the button ------------------------------------------------------ */
+  .craft {
+    --h: 62px;
+    position: relative; display: inline-flex; align-items: center; gap: 12px;
+    min-height: var(--h); padding: 0 22px 0 12px; border: 0; border-radius: 17px;
+    font-family: inherit; font-size: 17px; font-weight: 900; letter-spacing: 0.01em; color: #4b3214;
+    background: linear-gradient(180deg, #ffe9cd 0%, #f7c794 55%, #f0b074 100%);
+    box-shadow: inset 0 0 0 1.5px #e7a865, inset 0 1.5px 0 rgba(255, 255, 255, 0.75),
+                0 4px 0 #a8742a, 0 8px 18px rgba(120, 70, 20, 0.18);
+    cursor: pointer; -webkit-tap-highlight-color: transparent;
+    transition: transform 0.1s ease, box-shadow 0.1s ease, filter 0.15s ease;
+  }
+  .craft::after {           /* the warm bloom of a thing that's ready */
+    content: ''; position: absolute; inset: -6px; border-radius: 22px; pointer-events: none;
+    box-shadow: 0 0 0 2px rgba(233, 138, 75, 0.35), 0 0 26px rgba(233, 138, 75, 0.35);
+    animation: bloom 2.6s ease-in-out infinite;
+  }
+  @keyframes bloom { 0%, 100% { opacity: 0.35; } 50% { opacity: 0.9; } }
+  .craft:hover { filter: brightness(1.035); }
+  .craft:active { transform: translateY(3px); box-shadow: inset 0 0 0 1.5px #e7a865, 0 1px 0 #a8742a, 0 3px 8px rgba(120, 70, 20, 0.2); }
+  .craft .plate {
+    flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 11px;
+    background: linear-gradient(180deg, #fffaf0, #f3e4c6);
+    box-shadow: inset 0 0 0 1.5px #d2b06a, inset 0 -2px 0 rgba(168, 116, 42, 0.22), 0 1px 0 rgba(255, 255, 255, 0.6);
+    color: #8a5e22;
+  }
+  .craft .plate svg { display: block; width: 26px; height: 26px; }
+  .craft .words { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.1; }
+  .craft .words b { font-size: 17px; font-weight: 900; }
+  .craft .words small { margin-top: 4px; font-size: 11.5px; font-weight: 800; color: #96612a; letter-spacing: 0.01em; }
+  .craft .cost { display: flex; gap: 5px; margin-left: 6px; padding-left: 14px; border-left: 1.5px dashed rgba(138, 94, 34, 0.3); }
+  .craft .cost i { display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px 2px 5px; border-radius: 99px;
+    font-style: normal; font-size: 11.5px; font-weight: 900; font-variant-numeric: tabular-nums; color: #6b4a1f;
+    background: rgba(255, 250, 238, 0.55); box-shadow: inset 0 0 0 1px rgba(138, 94, 34, 0.22); }
+  .craft .cost i em { font-style: normal; width: 13px; height: 13px; display: block; }
+  .craft .cost i em svg { display: block; width: 13px; height: 13px; }
+  .craft .cost i.clay em, .craft .cost i.stick em, .craft .cost i.bark em { border-radius: 0; background: none; }
+
+  /* short: the rim goes dashed and the label says what's missing */
+  .craft.short {
+    background: linear-gradient(180deg, #fffaf0, #f4e8cf);
+    box-shadow: inset 0 0 0 1.5px #d7c29b, 0 3px 0 #bfa173, 0 6px 14px rgba(120, 90, 40, 0.12);
+    color: #6b6152;
+  }
+  .craft.short::after { content: none; }
+  .craft.short .plate { box-shadow: inset 0 0 0 1.5px #d7c29b; color: #a8916a; }
+  .craft.short .words small { color: #8b7c62; }
+  .craft.short .words b { color: #6b6152; }
+  .craft.short .cost { border-left-color: rgba(120, 95, 50, 0.22); }
+  .craft.short .cost i { opacity: 0.55; }
+  .craft.short .cost i.miss { background: rgba(196, 86, 42, 0.1); box-shadow: inset 0 0 0 1px rgba(196, 86, 42, 0.3); opacity: 1; color: #a34f26; }
+  .craft.short .cost i.miss em { opacity: 0.45; }
+
+  /* locked: quieter still, a brass padlock in the plate's corner */
+  .craft.locked { background: linear-gradient(180deg, #f4ebd8, #e8dcc3); color: #8d8474; filter: saturate(0.55);
+    box-shadow: inset 0 0 0 1.5px #cdbc9c, 0 3px 0 #b6a483; cursor: default; }
+  .craft.locked::after { content: none; }
+  .craft.locked .plate { background: rgba(255, 250, 238, 0.5); box-shadow: inset 0 0 0 1.5px #cdbc9c; color: #a99a80; }
+  .craft.locked .words small { color: #9a8e79; }
+  .craft.locked .lock { position: absolute; top: -7px; left: -7px; display: grid; place-items: center; width: 24px; height: 24px;
+    border-radius: 50%; background: linear-gradient(180deg, #e8cd8d, #c39a45); color: #5d4215;
+    box-shadow: inset 0 0 0 1.5px #8a5e22, 0 2px 0 #8a5e22; }
+  .craft .check { position: absolute; top: -7px; left: -7px; display: grid; place-items: center; width: 24px; height: 24px;
+    border-radius: 50%; background: linear-gradient(180deg, #9fce7d, #6fb350); color: #fff;
+    box-shadow: inset 0 0 0 1.5px #43762c, 0 2px 0 #43762c; }
+
+  /* working: a warm bar fills along the foot, the plate turns */
+  .craft.working { background: linear-gradient(180deg, #fbe9d4, #f3d3b1); box-shadow: inset 0 0 0 1.5px #dcb183, 0 3px 0 #b3834f;
+    cursor: default; overflow: hidden; }
+  .craft.working::after { content: none; }
+  .craft.working .plate svg { animation: breathe 2.8s ease-in-out infinite; }
+  @keyframes breathe { 0%, 100% { transform: translateY(0.5px) scale(0.985); } 50% { transform: translateY(-1px) scale(1.02); } }
+  .craft .bar { position: absolute; left: 10px; right: 10px; bottom: 5px; height: 5px; border-radius: 99px;
+    background: rgba(168, 116, 42, 0.16); box-shadow: inset 0 1px 1px rgba(120, 80, 30, 0.18); }
+  .craft .bar span { display: block; height: 100%; width: 42%; border-radius: 99px;
+    background: linear-gradient(90deg, #f0a868, #e98a4b); box-shadow: 0 0 8px rgba(233, 138, 75, 0.6); }
+
+  /* done: a little gleam crosses it once */
+  .craft.done .gleam { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; pointer-events: none; }
+  .craft.done .gleam::before { content: ''; position: absolute; top: -40%; bottom: -40%; width: 40%; left: -60%;
+    transform: rotate(14deg); background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.7), transparent);
+    animation: gleam 1.6s ease-in-out infinite; }
+  @keyframes gleam { 0% { left: -60%; } 55%, 100% { left: 130%; } }
+
+  /* a compact, round one for the HUD / the foot of a phone */
+  .craft-mini { --h: 44px; padding: 0; width: 44px; height: 44px; justify-content: center; border-radius: 50%; gap: 0; }
+  .craft-mini .plate { width: 30px; height: 30px; border-radius: 50%; background: none; box-shadow: none; }
+  .craft-mini .plate svg { width: 21px; height: 21px; }
+  .craft-mini::after { border-radius: 50%; inset: -5px; }
+  .craft-mini .dot { position: absolute; top: 2px; right: 2px; width: 9px; height: 9px; border-radius: 50%;
+    background: #d2552a; box-shadow: 0 0 0 2px #fff6e4, 0 0 6px rgba(210, 85, 42, 0.7); }
+
+  /* ---- states row ------------------------------------------------------ */
+  .states { display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); gap: 14px; margin-top: 16px; }
+  .cell { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 14px;
+    min-height: 172px; padding: 30px 14px 16px; border-radius: 16px;
+    background: rgba(255, 250, 238, 0.6); box-shadow: inset 0 0 0 1px rgba(150, 115, 60, 0.18); }
+  .cell .tag { position: absolute; top: 10px; left: 12px; font-size: 10px; font-weight: 900; letter-spacing: 0.13em;
+    text-transform: uppercase; color: #a8916a; }
+  .cell .cap { font-size: 12px; font-weight: 800; color: var(--muted); text-align: center; line-height: 1.4; }
+  .cell .craft { transform: scale(0.86); transform-origin: bottom center; }
+  .cell .craft:active { transform: scale(0.86) translateY(3px); }
+
+  /* ---- in the meadow --------------------------------------------------- */
+  .meadow { position: relative; margin-top: 16px; height: 380px; border-radius: 22px; overflow: hidden;
+    box-shadow: inset 0 0 0 1px rgba(70, 55, 25, 0.15), 0 10px 30px rgba(70, 55, 25, 0.15);
+    background:
+      radial-gradient(70% 48% at 76% 2%, rgba(255, 246, 207, 0.9) 0%, rgba(255, 246, 207, 0) 62%),
+      radial-gradient(90% 55% at 16% 0%, rgba(186, 220, 236, 0.75) 0%, rgba(186, 220, 236, 0) 58%),
+      linear-gradient(180deg, #b7d8aa 0%, #9cc77e 40%, #83b566 64%, #6ea350 100%);
+  }
+  .meadow::before { content: ''; position: absolute; inset: 0;
+    background:
+      radial-gradient(42% 26% at 12% 62%, rgba(96, 145, 70, 0.5), rgba(96, 145, 70, 0) 70%),
+      radial-gradient(34% 22% at 58% 58%, rgba(150, 190, 110, 0.45), rgba(150, 190, 110, 0) 70%),
+      radial-gradient(46% 30% at 90% 70%, rgba(74, 122, 55, 0.55), rgba(74, 122, 55, 0) 72%),
+      radial-gradient(26% 16% at 38% 76%, rgba(204, 220, 140, 0.45), rgba(204, 220, 140, 0) 70%); }
+  .meadow::after { content: ''; position: absolute; inset: 0; opacity: 0.28; mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 0.3 0 0 0 0 0.4 0 0 0 0 0.2 0 0 0 .22 0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23g)'/%3E%3C/svg%3E"); }
+  .meadow .scene { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; }
+  .meadow .sky-dial { position: absolute; top: 18px; right: 20px; z-index: 3; display: flex; align-items: center; gap: 8px;    padding: 6px 12px 6px 8px; border-radius: 99px; background: #f8f0de; font-size: 12px; font-weight: 900;
+    box-shadow: inset 0 0 0 1px rgba(150, 115, 60, 0.22), 0 2px 6px rgba(70, 55, 25, 0.18); }
+  .meadow .sky-dial i { width: 20px; height: 20px; border-radius: 50%; background: conic-gradient(#f3c85e 0 62%, #e6dcc4 62% 100%);
+    box-shadow: inset 0 0 0 1px rgba(138, 94, 34, 0.35); }
+  .meadow .strip { position: absolute; left: 50%; bottom: 22px; z-index: 3; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 22px;
+    background: var(--card);
+    box-shadow: inset 0 0 0 1px rgba(150, 115, 60, 0.22), 0 4px 0 rgba(138, 94, 34, 0.28), 0 10px 22px rgba(40, 55, 25, 0.25); }
+  .meadow .strip .sep { width: 1.5px; height: 30px; background: repeating-linear-gradient(180deg, rgba(150, 115, 60, 0.35) 0 3px, transparent 3px 6px); }
+  .meadow .strip .round { width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; display: grid; place-items: center;
+    background: linear-gradient(180deg, #fffaf0, #f1e5c9); color: #8a5e22;
+    box-shadow: inset 0 0 0 1.5px #d2b06a, 0 2px 0 #a8742a; cursor: pointer; }
+  .meadow .strip .round svg { width: 23px; height: 23px; }
+  .meadow .strip .craft { --h: 52px; font-size: 15.5px; border-radius: 15px; padding-right: 18px; }
+  .meadow .strip .craft .words b { font-size: 15.5px; }
+  .meadow .strip .craft .plate { width: 34px; height: 34px; border-radius: 9px; }
+  .meadow .strip .craft .plate svg { width: 21px; height: 21px; }
+  .meadow .strip .craft::after { inset: -4px; border-radius: 18px; }
+  .meadow .caption { position: absolute; left: 22px; bottom: 24px; z-index: 3; max-width: 260px; font-size: 12px; font-weight: 800;
+    color: rgba(40, 55, 25, 0.75); line-height: 1.5; }
+
+  /* ---- motion notes ---------------------------------------------------- */
+  .rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; margin-top: 16px; }
+  .rule { padding: 16px 18px; border-radius: 14px; background: rgba(255, 250, 238, 0.6);
+    box-shadow: inset 0 0 0 1px rgba(150, 115, 60, 0.18); }
+  .rule b { display: block; margin-bottom: 4px; font-size: 13px; font-weight: 900; color: var(--accent-ink); }
+  .rule p { margin: 0; font-size: 12.5px; font-weight: 700; line-height: 1.55; color: var(--muted); }
+  .rule code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; padding: 1px 4px;
+    border-radius: 4px; background: rgba(138, 94, 34, 0.1); }
+
+  @media (max-width: 860px) {
+    main { width: calc(100% - 28px); padding-top: 30px; }
+    header { flex-wrap: wrap; }
+    header p { margin-left: 0; }
+    .board { grid-template-columns: 1fr; }
+    .notes { border-left: 0; border-top: 1px dashed #d9cbb0; }
+    .stage { min-height: 300px; padding: 40px 16px; }
+    .craft .cost { display: none; }
+    .meadow { height: 320px; }
+    .meadow .caption { display: none; }
+  }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-pot" viewBox="0 0 24 24">
+      <path d="M6.2 11.2h11.6v4.6a4 4 0 0 1-4 4h-3.6a4 4 0 0 1-4-4z"/>
+      <path d="M7.4 11.2c.2-1.7 2.1-2.8 4.6-2.8s4.4 1.1 4.6 2.8"/>
+      <path d="M12 8.4V6.9M10.7 6.9h2.6"/>
+      <path d="M6.2 13H3.8M17.8 13h2.4"/>
+      <path d="M8.9 13.8v2.3" opacity=".5"/>
+    </symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24">
+      <path d="M19 2.6l.7 2.1 2.1.7-2.1.7-.7 2.1-.7-2.1-2.1-.7 2.1-.7z" fill="currentColor" stroke="none"/>
+    </symbol>
+    <symbol id="i-satchel" viewBox="0 0 24 24">
+      <path d="M5.2 9.3h13.6l-1.1 9a2 2 0 0 1-2 1.8H8.3a2 2 0 0 1-2-1.8z"/>
+      <path d="M9 9.3V7.9a3 3 0 0 1 6 0v1.4"/>
+      <path d="M5.7 12.6c2.2 1.5 10.4 1.5 12.6 0" opacity=".6"/>
+      <path d="M12 12.4v2.4" />
+      <circle cx="12" cy="15.6" r=".7" fill="currentColor" stroke="none"/>
+    </symbol>
+    <symbol id="i-book" viewBox="0 0 24 24">
+      <path d="M3.8 5.9c2.5-1 5-.8 8.2.8v12.1c-3.2-1.6-5.7-1.8-8.2-.8z"/>
+      <path d="M20.2 5.9c-2.5-1-5-.8-8.2.8v12.1c3.2-1.6 5.7-1.8 8.2-.8z"/>
+      <path d="M6.3 9.4c1.2-.2 2.5 0 3.6.6M6.3 12.4c1.2-.2 2.5 0 3.6.6M17.7 9.4c-1.2-.2-2.5 0-3.6.6M17.7 12.4c-1.2-.2-2.5 0-3.6.6" opacity=".5" stroke-width="1.4"/>
+    </symbol>
+    <symbol id="i-clay" viewBox="0 0 16 16">
+      <path d="M2.4 9.6c0-2.5 2.4-4.5 5.6-4.5s5.6 2 5.6 4.5c0 1.9-2.4 3.5-5.6 3.5s-5.6-1.6-5.6-3.5z" fill="#a9774c" stroke="#7d5232" stroke-width="1"/>
+      <path d="M4.5 8.2c.6-1 1.9-1.6 3.5-1.6" stroke="#d3a77a" stroke-width="1.3" stroke-linecap="round" fill="none"/>
+    </symbol>
+    <symbol id="i-stick" viewBox="0 0 16 16">
+      <path d="M3.2 12.8L12.4 3.4" stroke="#7d5232" stroke-width="3" stroke-linecap="round"/>
+      <path d="M3.2 12.8L12.4 3.4" stroke="#b58455" stroke-width="1.6" stroke-linecap="round"/>
+      <path d="M8.6 8.2l3.2 1.6" stroke="#8a5e34" stroke-width="1.6" stroke-linecap="round"/>
+      <circle cx="12.6" cy="3.2" r="1" fill="#d9b88a"/>
+    </symbol>
+  </defs>
+</svg>
+<main>
+  <header>
+    <div>
+      <div class="kicker">Nobody's Meadow · UI lab</div>
+      <h1 class="fr">A <em>craft</em> button</h1>
+    </div>
+    <p>One tactile button for making a thing at the fire. Parchment and brass like the rest of the game, sized for a thumb, and it tells you what it will cost before you press it.</p>
+  </header>
+
+  <section>
+    <h2>The button <span>at 62 px, with its parts named</span></h2>
+    <div class="board">
+      <div class="stage">
+        <div class="halo"></div>
+        <div class="pair">
+          <button class="craft hero" type="button">
+            <span class="plate">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-pot"/><use href="#i-spark"/></svg>
+            </span>
+            <span class="words">
+              <b>Craft a pot</b>
+              <small>at the fire</small>
+            </span>
+            <span class="cost">
+              <i class="clay"><em><svg viewBox="0 0 16 16"><use href="#i-clay"/></svg></em>3</i>
+              <i class="stick"><em><svg viewBox="0 0 16 16"><use href="#i-stick"/></svg></em>1</i>
+            </span>
+          </button>
+          <div class="mini-row">
+            <button class="craft craft-mini" type="button" title="Craft">
+            <span class="plate">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-pot"/><use href="#i-spark"/></svg>
+            </span>
+            <span class="dot"></span>
+          </button>
+            <span class="note"><b>44 px</b>the HUD, a phone corner</span>
+          </div>
+        </div>
+      </div>
+      <aside class="notes">
+        <h3>Anatomy</h3>
+        <dl>
+          <dt>Clay fill</dt>
+          <dd>The warm gradient only when you have everything: the one loud thing on the screen.</dd>
+          <dt>Brass plate</dt>
+          <dd>An inked picture on a little stamped plate. Here: a pot, with a spark for “made”.</dd>
+          <dt>Label &amp; cost</dt>
+          <dd>What you'll make, then what it takes in beads. Costs drop off on narrow phones; the label keeps the count.</dd>
+          <dt>Extruded foot</dt>
+          <dd>A 4 px bottom edge. Pressing pushes it 3 px down and shrinks the edge to 1 px: it moves like an object.</dd>
+          <dt>Bloom</dt>
+          <dd>A slow brass halo, 2.6 s, only while it's ready. Nothing blinks for attention.</dd>
+        </dl>
+      </aside>
+    </div>
+  </section>
+
+  <section>
+    <h2>The states <span>ready · short · working · locked · just made</span></h2>
+    <div class="states">
+      <div class="cell">
+        <span class="tag">Ready</span>
+        <button class="craft" type="button">
+          <span class="plate">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-pot"/><use href="#i-spark"/></svg>
+          </span>
+          <span class="words"><b>Craft a pot</b><small>at the fire</small></span>
+        </button>
+        <p class="cap">Clay fill, brass rim, a slow bloom.</p>
+      </div>
+      <div class="cell">
+        <span class="tag">Short</span>
+        <button class="craft short" type="button">
+          <span class="plate">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-pot"/></svg>
+          </span>
+          <span class="words"><b>Craft a pot</b><small>1 more clay</small></span>
+        </button>
+        <p class="cap">Quiet parchment. The line under the name says what's short.</p>
+      </div>
+      <div class="cell">
+        <span class="tag">Working</span>
+        <button class="craft working" type="button">
+          <span class="plate">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-pot"/></svg>
+          </span>
+          <span class="words"><b>Hardening…</b><small>42% · keep it lit</small></span>
+          <span class="bar"><span></span></span>
+        </button>
+        <p class="cap">No pressing. A bar creeps along its foot.</p>
+      </div>
+      <div class="cell">
+        <span class="tag">Locked</span>
+        <button class="craft locked" type="button">
+          <span class="lock">
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8">
+              <rect x="2" y="5.4" width="8" height="5.4" rx="1.3"/><path d="M4 5.4V4a2 2 0 0 1 4 0v1.4"/><circle cx="6" cy="8" r=".5" fill="currentColor" stroke="none"/>
+            </svg>
+          </span>
+          <span class="plate">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-pot"/></svg>
+          </span>
+          <span class="words"><b>Craft a pot</b><small>Cooking 2</small></span>
+        </button>
+        <p class="cap">The padlock says why, in one short line.</p>
+      </div>
+      <div class="cell">
+        <span class="tag">Just made</span>
+        <button class="craft done" type="button">
+          <span class="gleam"></span>
+          <span class="check">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M2.4 6.4l2.4 2.3 4.8-5"/>
+            </svg>
+          </span>
+          <span class="plate">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-pot"/></svg>
+          </span>
+          <span class="words"><b>Your pot</b><small>ready at any fire</small></span>
+        </button>
+        <p class="cap">One pale gleam across it, then it settles.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>In the meadow <span>a strip at the foot, in thumb's reach</span></h2>
+    <div class="meadow">
+      <svg class="scene" viewBox="0 0 1180 380" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+        <defs>
+          <radialGradient id="fireGlow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#ffd9a0" stop-opacity=".85"/>
+            <stop offset="45%" stop-color="#ffb763" stop-opacity=".38"/>
+            <stop offset="100%" stop-color="#ffb763" stop-opacity="0"/>
+          </radialGradient>
+          <linearGradient id="trunk" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stop-color="#7d5a38"/><stop offset="100%" stop-color="#5e4226"/>
+          </linearGradient>
+        </defs>
+        <!-- distant hedgerow -->
+        <g opacity=".55" fill="#7fa869">
+          <ellipse cx="140" cy="228" rx="150" ry="28"/>
+          <ellipse cx="420" cy="232" rx="180" ry="22"/>
+          <ellipse cx="930" cy="226" rx="210" ry="26"/>
+        </g>
+        <!-- left oak -->
+        <g opacity=".9">
+          <path d="M96 250c-2-30 4-58 10-76h14c-5 22-7 48-5 76z" fill="url(#trunk)"/>
+          <ellipse cx="70" cy="186" rx="56" ry="42" fill="#6b9a4f"/>
+          <ellipse cx="126" cy="172" rx="64" ry="48" fill="#79aa59"/>
+          <ellipse cx="100" cy="146" rx="48" ry="38" fill="#8ab967"/>
+          <ellipse cx="84" cy="158" rx="26" ry="18" fill="#9ac777" opacity=".7"/>
+        </g>
+        <!-- right oak, a little further off -->
+        <g opacity=".8">
+          <path d="M1078 246c0-22 3-42 7-56h10c-3 16-4 34-4 56z" fill="url(#trunk)"/>
+          <ellipse cx="1052" cy="196" rx="44" ry="32" fill="#6b9a4f"/>
+          <ellipse cx="1096" cy="186" rx="50" ry="38" fill="#79aa59"/>
+          <ellipse cx="1072" cy="166" rx="36" ry="28" fill="#8ab967"/>
+        </g>
+        <!-- grass tufts -->
+        <g stroke="#5f9147" stroke-width="3" stroke-linecap="round" opacity=".5" fill="none">
+          <path d="M300 300c2-8 4-14 8-19M306 300c0-7 1-13 3-19"/>
+          <path d="M860 316c2-8 4-14 8-19M866 316c0-7 1-13 3-19"/>
+          <path d="M1010 296c2-7 3-12 6-16M1015 296c0-6 1-11 2-16"/>
+          <path d="M210 336c2-8 4-14 8-19M216 336c0-7 1-13 3-19"/>
+        </g>
+        <!-- the fire the pot is made at -->
+
+        <ellipse cx="812" cy="320" rx="150" ry="92" fill="url(#fireGlow)"/>
+        <g>
+          <rect x="786" y="326" width="54" height="9" rx="4.5" fill="#7d5a38" transform="rotate(-12 812 330)"/>
+          <rect x="786" y="326" width="54" height="9" rx="4.5" fill="#5e4226" transform="rotate(14 812 330)"/>
+          <path d="M812 282c9 12 18 20 18 30a18 18 0 0 1-36 0c0-10 9-18 18-30z" fill="#f09b45"/>
+          <path d="M812 296c5 8 10 13 10 19a10 10 0 0 1-20 0c0-6 5-11 10-19z" fill="#ffd27a"/>
+        </g>
+      </svg>
+      <div class="sky-dial"><i></i> Day 3 · 1×</div>
+      <div class="strip">
+        <button class="round" type="button" title="Satchel">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-satchel"/></svg>
+        </button>
+        <span class="sep"></span>
+        <button class="craft" type="button">
+          <span class="plate">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-pot"/><use href="#i-spark"/></svg>
+          </span>
+          <span class="words"><b>Craft a pot</b><small>3 clay · 1 stick</small></span>
+        </button>
+        <span class="sep"></span>
+        <button class="round" type="button" title="Cooking book">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-book"/></svg>
+        </button>
+      </div>
+      <p class="caption">Sits beside the satchel, in reach of a thumb, and reads as the loudest thing in the strip only when it can be pressed.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Rules it follows <span>the parts you don't see</span></h2>
+    <div class="rules">
+      <div class="rule"><b>44 px, always</b><p>The small round one is 44 × 44; the bar is 52–62 tall. A thumb reaches it at the foot of an upright phone.</p></div>
+      <div class="rule"><b>Costs before the press</b><p>The beads are the satchel's own words (<code>3 clay</code>, <code>1 stick</code>), so there's no second window to open to find out.</p></div>
+      <div class="rule"><b>Pressed, not hovered</b><p>Hover only brightens 3%. The press moves it 3 px into its brass foot, which is the game's usual feel.</p></div>
+      <div class="rule"><b>Never a spinner</b><p>Working is a bar that fills and a pot that breathes. Finite, calm, and it never asks for another press.</p></div>
+      <div class="rule"><b>One accent</b><p>Only the ready state carries the clay fill and the bloom. Short, locked and working all fall back to parchment.</p></div>
+      <div class="rule"><b>Painted, like the rest</b><p>Opaque parchment, no blur behind it; the grain is one SVG layer. The bar animates <code>width</code> on a 5 px strip, nothing full-screen.</p></div>
+    </div>
+  </section>
+</main>
+</body>
+</html>

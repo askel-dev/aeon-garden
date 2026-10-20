@@ -23,15 +23,19 @@ fingers tapped zoom out (`zoomTo`, `zoomDrag`, as Google's and Apple's maps do);
 away waits `DOUBLE_MS` in case it's the first of two (`tapAway`). On a touch screen the screen stays awake while time
 runs, till nobody has touched it for `WAKE_MS` (`wakeTick`, the Screen Wake Lock API).
 
+The book and the make strip don't pin it: walking leaves them open (WASD and a tap, a drag or the minimap; ← → still turn
+the book's pages), the book's scrim takes no pointer so a tap on the meadow beside it walks, and the make strip only shuts
+on another card or button (`makeFrame`, `openBook`).
+
 ## sim.js
 
 The forager (`w.forager`, `foragerOf`: one layout, kept with the meadow; a meadow kept before it gets one when it opens,
-no `KEEP_VERSION` bump) is the player: not a creature, so nothing hunts it and nothing it does touches the meadow's random
-numbers. It starts at a pleasant dry spot near the water and the woods, above the spring flood, nothing standing on it, near
-the middle (`startForager`). `foragerTo` finds its way: A* over the tiles (`tilePath`, its arrays made once; deep water
-blocks unless frozen, the shallows cost `SHALLOW_COST`, ground by the deep `BRINK_COST` more, no squeezing past the deep's
-corners), to the tile it can stand on nearest a click on the deep, or the nearest it can reach; then pulled tight into a few
-straight legs (`taut`: `TAUT_CLEAR` off the deep, and no wading where the tiles' way didn't). Rocks are in its way, all but
+no `KEEP_VERSION` bump) is the player: not a creature, so nothing hunts it (the animals do mind it, `foragerSign`: see
+`animals.md`), and nothing it does touches the meadow's random numbers. It starts at a pleasant dry spot near the water and the woods, above the spring flood, nothing standing on it, near
+the middle (`startForager`). `foragerTo` finds its way: A* over the tiles (`tilePath`, its arrays made once; any water is
+wadeable, the deep with the shallows, at `WATER_COST` a step more, and a diagonal can't cut past a rock's corner), to
+the nearest tile it can stand on (rocks are the only thing in the way), or the nearest it can reach; then pulled tight
+into a few straight legs (`taut`: clear of the rocks, and no cutting through thick brush). Rocks are in its way, all but
 pebbles and a ford's stones (`rockKind`, which game.js paints by too; `ROCK_SOLID` of its size, plus `FORAGER_GIRTH`): worked
 out once a meadow (`rocksFor`: their circles, and the tiles whose middle is in one, which A* won't step on), a leg keeps out
 of them (`pastRocks`), a click on one goes to its edge, and a step into one is put back at its edge, so it slides round
@@ -45,7 +49,8 @@ so it can be sent into one). The way keeps out of them: A* pays `BRUSH_COST` mor
 it's gone a tile), so a tick looks at a handful. Through a wood it weaves and takes about a tenth longer. `foragerTick` walks them by
 steering: it heads for a point `FORAGER_LOOK` along the way, turning at most `FORAGER_TURN` a tick (three times that from
 standing), speeds up by `FORAGER_ACCEL`, slows to stop where it was sent (`FORAGER_BRAKE`) and into a sharp turn, wades at
-`FORAGER_WADE` of `FORAGER_WALK`, and slides along the deep if a corner clips it. Sneaking (`f.sneaking`, game.js's sneak emote, in the blank: no `KEEP_VERSION` bump) it creeps at `FORAGER_SNEAK`; a sprint wins.
+`FORAGER_WADE` of `FORAGER_WALK` in any water, and slides along the meadow's edge if a step goes out of it. All of it is
+scaled by `foragerPace` (`garden.pace` in the console, 1 as it is: a hand for trying a quicker forager, kept for the visit only). Sneaking (`f.sneaking`, game.js's sneak emote, in the blank: no `KEEP_VERSION` bump) it creeps at `FORAGER_SNEAK`; a sprint wins.
 Playing together, friends' foragers are in each other's way (`friendsAt`: game.js `friendsFrame` hands over where each is
 drawn and whether it's standing still (`PEER_STILL_MS`), every frame; one collapsed isn't): a circle of `ELBOW_ROOM` about each it can't step into (`outOfFriends`), sliding round
 it, met about head on (`FRIEND_HEAD_ON`) stepping to its right (`FRIEND_SIDESTEP`) so two walkers pass, and a way that ends in one ends at
@@ -55,3 +60,13 @@ the way. A friend is shown a moment late, so the walker's stopped at `ELBOW_ROOM
 a walker already inside a circle is moved out of it by `ELBOW_SHUFFLE` a tick (`outOfFriends`). Two standing side by side settle
 `PUSH_ROOM` apart on both screens; two on one spot (woken by the camp's fire) step off the
 ways `friendSide` says, hashed from who each is. Not the sim's: nothing the meadow counts follows from it.
+
+Space is a dash (`foragerJump`): a short, low hop (`FORAGER_JUMP_TICKS`, `FORAGER_JUMP_HEIGHT`) the way it faces, at
+`FORAGER_DASH` and easing out (`FORAGER_DASH_DRAG`), so from standing it's a short shift. Rocks, the seat log and brush
+aren't in its way while it's up (`airTick`); a friend still is. Its last `FORAGER_HOP_EARLY` ticks take a press for the
+landing, and the `FORAGER_HOP_GRACE` after it does too: either keeps the chain (`f.hop`, 0 to 1), each chained dash a
+little quicker (`FORAGER_HOP_GAIN`, `FORAGER_HOP_DASH`) and its walk after it quicker too (`FORAGER_HOP_RUN`), while a
+mistimed dash or standing about lets the momentum go (`FORAGER_HOP_FADE`). A dash that comes down in a rock is put out at
+its edge. game.js draws the moment to press (four pale brackets at its feet, and `hopcue`), the dust of take-off and
+landing (`jumpDust`) and the lean into it; P pauses now, not Space.
+
