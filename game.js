@@ -1242,6 +1242,7 @@ function render(now) {
   liftsFrame();                                      // (and the basket and each cold fire pit: a little of the dark taken back over each)
   drawGround(z, ox, oy, shx, shy, now);
   drawScorches(z, ox, oy);
+  drawSplats(now);
   drawWaves(weatherClock);   // (the wind's, so they still while it's paused)
   drawFlow(now, ck);
   drawShore(z, ox, oy, ck.season);
@@ -1412,7 +1413,7 @@ function render(now) {
     fadeTo(it.f);
     if (it.d) it.d.hive ? drawBeeTree(it.d, it.sx, it.sy, now, ck) : drawDecor(it.d, it.sx, it.sy, now, ck, it.px);
     else if (it.h) drawSwarm(it.h, it.sx, it.sy);
-    else if (it.s) it.s.fire ? drawFire(it.s, z, now) : it.s.basket ? drawBasket(it.s, z, now) : it.s.stone ? drawStone(it.s, z, now) : it.s.torch ? drawTorch(it.s, z, now) : it.s.seat ? drawSeat(it.s, z) : it.s.cairn ? drawCairn(it.s, z, now) : it.s.green ? drawNettles(it.s, z) : it.s.bramble ? drawBramble(it.s, z) : it.s.find ? drawFind(it.s, z) : it.s.dropped ? drawDropped(it.s, z, now) : drawShroom(it.s, z);
+    else if (it.s) it.s.fire ? drawFire(it.s, z, now) : it.s.basket ? drawBasket(it.s, z, now) : it.s.stone ? drawStone(it.s, z, now) : it.s.torch ? drawTorch(it.s, z, now) : it.s.seat ? drawSeat(it.s, z) : it.s.cairn ? drawCairn(it.s, z, now) : it.s.green ? drawNettles(it.s, z) : it.s.bramble ? drawBramble(it.s, z) : it.s.find ? drawFind(it.s, z, now) : it.s.dropped ? drawDropped(it.s, z, now) : drawShroom(it.s, z);
     else if (it.k) drawPotAt(it.k, it.sx, it.sy, now);     // (the pot over a fire: right after its fire, tied on its y)
     else if (it.v) drawVisitor(it.v, it.sx, it.sy, now, z);
     else if (it.p) drawForager(it.sx, it.sy, now);
@@ -1481,6 +1482,8 @@ function render(now) {
   if (xpFloats.length) drawXpFloats(now);
 
   drawEffects(now);
+  drawTosses(now);
+  drawTossAim(now);
   if (sel) drawSelectionOver(sel, now);
   if (ui.picked) drawPickedOver();
   const hov = world.byId.get(ui.hoverId);
@@ -2073,7 +2076,7 @@ const fg = { wasWalking: false, at: -1, x: 0, y: 0, step: 0, stillMs: 1e4, view:
   emote: -1, emoteMs: -0, emoteFrame: -1, lift: -0, sitU: -0, sitQ: null, sitRise: true, sitAt: -1e9, sneakStill: -0, sizedEmote: false, eatAt: -1e9,   // (an emote: EMOTE, or -1; emoteTick)
   air: -0, squash: 1, jumpSeen: 0, dust: [], landSeen: 0, chainAt: -1e9, lean: -0, cuePlayed: true,   // (a dash: how high it's drawn, squash on take-off and landing, the take-off it last showed, its dust, the landing it last showed, its lean, and whether the press-me tick has sounded)
   hugAt: -1e9,                                          // (when it last hugged a friend: hug)
-  swingAt: -1e9, swingDir: -0, hitAt: -1e9,            // (friendly fire: when it last swung, which way, when it was last hit: swing)
+  swingAt: -1e9, swingDir: -0, hitAt: -1e9, swingRest: -0, tossAt: -1e9,   // (friendly fire: when it last swung, which way, when it was last hit, how long it must rest, when it last threw: swing, toss)
   sx: -0, sy: -0, px: -0, drawnAt: -0,   // (where it was drawn this frame)
   rimOn: false, fx: -0, fy: -0, fs: -0, fk: -0, fr: -0 };   // (where its painting sat and how it was turned: drawFigure, for its rim over the dark, drawForagerRim)
 const CLOAKS = Fur.FORAGER_CLOAKS.length, HATS = Fur.FORAGER_HATS.length;
@@ -2296,6 +2299,7 @@ function foragerFrame(now, d) {
     fg.squash = 1.07; fg.cuePlayed = false;
     jumpDust(d.x, d.y, now, 4 + Math.round(f.hop * 4), f.hop);
     if (f.hop > 0) fg.chainAt = now;
+    if (Net && Net.on) Net.send({ t: 'jump', x: f.jumpFX, y: f.jumpFY, h: f.heading, sp: f.jumpSpeed, hop: f.hop });   // (friends see it leap: peerJump)
     if (ui.speed > 0) hear('jump', d.x, d.y, { pace: 1 + f.hop, hop: f.hop, ground: groundUnder(d.x, d.y) }, true);
   }
   fg.jumpSeen = f.jumpAt;
@@ -2413,7 +2417,11 @@ const DUST_MS = 430;
 const DUST_RGB = { grass: '218, 210, 174', earth: '188, 164, 132', woods: '176, 156, 122', shore: '208, 194, 162', snow: '236, 242, 250', ice: '224, 238, 248', water: '230, 244, 250' };
 function jumpDust(x, y, now, n, hop = 0) {
   const kind = groundUnder(x, y);
-  if (kind === 'water' || kind === 'ice') { if (fg.rings.length < 8) fg.rings.push({ x, y, t: now }); return; }
+  if (kind === 'water' || kind === 'ice') {
+    if (fg.rings.length < 8) fg.rings.push({ x, y, t: now });
+    if (kind === 'water' && splashes.length < 12) { const size = forPx() / cam.zoom * (1 + hop * 0.3); splashes.push({ x, y: y - size * 0.31, size, t0: now }); }   // (a jump in or out of the water splashes)
+    return;
+  }
   if (fg.dust.length > 30) return;
   for (let i = 0; i < n; i++) {
     const a = Math.random() * TAU, r = 0.04 + Math.random() * 0.1;
@@ -3508,7 +3516,9 @@ const pickSound = id => { const g = Recipes.INGREDIENTS[id]; return g && g.tags[
 // Once a frame: there, it picks; stopped short (it couldn't get there), it says so.
 function gatherFrame(now) {
   sprintFrame();
-  swingFrame();
+  swingFrame(now);
+  swatFrame(now);
+  tossFrame(now);
   hugFrame();
   const g = ui.gather, F = world.forager;
   if (F.down >= 0) return;                              // (collapsed)
@@ -5253,8 +5263,12 @@ const buildAfter = id => {
 };
 // The ones there's no making twice (the camp's basket), and what a guest can't make in a friend's meadow.
 const buildMade = id => (id === 'basket' && !!(world.camp && world.camp.basket)) || (id === SEAT_BUILD && !!(world.camp && world.camp.seat));
-const canMake = id => buildAfter(id) && !buildMade(id) && !(Recipes.whereOf(Recipes.BUILDS[id]) === 'camp' && Net && Net.guest);
+const campOnly = id => Recipes.whereOf(Recipes.BUILDS[id]) === 'camp';
+const guestLocked = id => campOnly(id) && !!(Net && Net.guest);   // (at camp, a guest's builds are the keeper's)
+const canMake = id => buildAfter(id) && !buildMade(id) && !guestLocked(id);
 const makeList = () => buildOrder.filter(canMake);
+// Camp builds a guest can't make in a friend's meadow (the keeper's), in buildOrder: the basket, then the seat.
+const guestCamp = () => !(Net && Net.guest) ? [] : buildOrder.filter(id => guestLocked(id) && buildAfter(id) && !buildMade(id));
 // The build the button shows: a campfire till there's a camp, the basket till it's made, then the nearest ready.
 function buildFocus() {
   const list = makeList();
@@ -5273,7 +5287,8 @@ function renderBuild() {
   const el = $('#build');
   if (!el || !world || !world.forager) return;
   const list = makeList(), id = buildFocus(), have = buildHave(id);
-  const show = list.some(x => buildHave(x).any) || !!ui.place;
+  const show = list.some(x => buildHave(x).any)     // (a guest's camp builds only open the strip to say whose they are)
+    || guestCamp().some(x => buildHave(x).any) || !!ui.place;
   if (show !== buildUi.shown) { el.classList.toggle('hidden', !show); buildUi.shown = show; }
   const ready = list.some(x => buildHave(x).ready);
   if (ready !== buildUi.ready) { el.classList.toggle('ready', ready); buildUi.ready = ready; }
@@ -5321,13 +5336,17 @@ function buildIconURL(id) {
 const stripUi = { open: false, key: '', at: '' };
 const stripOpen = () => stripUi.open;
 const buildNeedName = word => Recipes.INGREDIENTS[word] ? itemName(word, 2) : Recipes.takes(word).map(ing => itemName(ing, 2)).join(' or ');
+// A short list in prose: 'basket, seat log', 'basket, seat log and cairn' (empty: nothing).
+const wordsJoin = xs => xs.length < 2 ? xs.join('') : xs.length === 2 ? xs.join(' and ') : xs.slice(0, -1).join(', ') + ' and ' + xs[xs.length - 1];
 function renderMakeStrip(force) {
   const el = $('#make');
   if (!el || !world) return;
   if (!stripUi.open) { stripUi.key = ''; return; }
   itemSheet();
-  const list = makeList(), stores = storesHere();
-  let key = list.join(',');
+  const list = makeList(), locked = guestCamp(), stores = storesHere();
+  const host = locked.length ? peers.get(net.hostId) : null;
+  const hostName = host && host.name ? host.name.trim() : '';   // (a name is player text: escaped with the rest)
+  let key = list.join(',') + (locked.length ? `!${locked.join(',')}:${hostName}` : '');
   const tiles = list.map(id => {
     const b = Recipes.BUILDS[id], have = buildHave(id), k = have.all ? have.got / have.all : 0;
     const chips = Object.entries(b.needs).map(([word, n]) => {
@@ -5338,9 +5357,10 @@ function renderMakeStrip(force) {
     const tip = buildTip(id, have), art = BUILD_ART[id] ? ` style="background-image:url(${buildIconURL(id)})"` : '';
     return `<button class="mk${have.ready ? ' ready' : ''}" data-act="make" data-b="${id}" style="--k:${k.toFixed(3)}" title="${esc(tip)}" aria-label="${esc(tip)}"><span class="mi"><i${art}></i></span><b>${esc(b.name)}</b><span class="mcost">${chips}</span></button>`;
   }).join('');
+  const note = locked.length ? `<p class="mk-note">Only ${hostName ? esc(hostName) : 'the meadow’s keeper'} builds at camp: ${wordsJoin(locked.map(id => esc(Recipes.BUILDS[id].name.toLowerCase())))}.</p>` : '';
   if (!force && key === stripUi.key) return;
   stripUi.key = key;
-  el.innerHTML = `<div class="mk-tiles">${tiles}</div><button class="close" data-act="make-close" title="Never mind (Esc)" aria-label="Never mind">✕</button>`;
+  el.innerHTML = `<div class="mk-tiles">${tiles}</div>${note}<button class="close" data-act="make-close" title="Never mind (Esc)" aria-label="Never mind">✕</button>`;
   const top = $('#satchel').getBoundingClientRect().top;
   if (top > 0) el.style.bottom = `${Math.round(innerHeight - top + 12)}px`;
 }
@@ -5553,10 +5573,14 @@ const SEAT_KX = 0.35, SEAT_KY = 0.5, SEAT_D = SEAT_R / SEAT_KY;   // (its seat's
 function paintSeat(g, size, U, n) {
   g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
   g.lineCap = g.lineJoin = 'round';
-  g.translate(0, SEAT_FOOT); g.rotate(SEAT_TURNS[n]);                                               // (the ground under its front at y 0)
+  g.translate(0, SEAT_FOOT);                                                                        // (the ground under its front at y 0)
   const L = S.SEAT_HALF * 0.92, D = SEAT_D, H = SEAT_Y, T = 0.21, KX = SEAT_KX, KY = SEAT_KY;
   const GRAIN = rockRGB(tone(SEAT_WOOD, 0.66), 0.8), RING = rockRGB(tone(SEAT_CUT, 0.74), 0.9);
-  const px = (x, d) => x + d * KX, py = (d, h) => -h - d * KY;                                    // along it, back, up → its box
+  // Turned on the ground, not spun as a picture: along it follows its line on the ground (sim.js seatEnds), back is its
+  // back side seen three-quarter, and up stays up, so its stumps stand straight at any turn.
+  const turn = SEAT_TURNS[n], ca = Math.cos(turn), sa = Math.sin(turn), bx = sa + ca * KX, by = -ca * KY;
+  const px = (x, d) => x * ca + d * bx, py = (x, d, h) => x * sa + d * by - h;                   // along it, back, up → its box
+  const E = ca * KX + sa >= 0 ? 1 : -1;                                                            // (the end that's toward you: its sawn face shows)
   const poly = pts => { g.moveTo(pts[0], pts[1]); for (let i = 2; i < pts.length; i += 2) g.lineTo(pts[i], pts[i + 1]); g.closePath(); };
   // Its outline round a set of points (all of a solid's corners: it's convex).
   const hull = pts => {
@@ -5567,30 +5591,32 @@ function paintSeat(g, size, U, n) {
     };
     return [...half(p), ...half(p.slice().reverse())].flat();
   };
-  furGlow(g, [40, 30, 16], 0.42, px(0.05, D * 0.5), py(D * 0.5, 0), L + 0.3, 0.2, 0, 0.45);          // its shadow on the ground
+  furGlow(g, [40, 30, 16], 0.42, px(0.05, D * 0.5), py(0.05, D * 0.5, 0), L + 0.3, 0.2, turn, 0.45);   // its shadow on the ground
   // The two legs: short stumps standing under it, wider at the foot, their bark furrowed up and down.
   const LEGS = [-L * 0.58, L * 0.6], r = 0.15;
   for (const cx of LEGS) {
-    furGlow(g, [30, 22, 12], 0.5, px(cx, D * 0.5), py(D * 0.5, 0), r * 1.9, r * 0.75, 0, 0.35);    // (pressed into the ground)
-    const ring = (rr, h) => { const o = []; for (let i = 0; i < 16; i++) { const a = i * TAU / 16; o.push(px(cx + rr * Math.cos(a), D * 0.5 + rr * Math.sin(a)), py(D * 0.5 + rr * Math.sin(a), h)); } return o; };
-    const leg = hull([...ring(r * 1.15, 0), ...ring(r, H - T * 0.8)]), y0 = py(D * 0.5, H - T);
-    const lit = g.createLinearGradient(px(cx - r, D * 0.5), 0, px(cx + r, D * 0.5), 0);
+    const lx = px(cx, D * 0.5), ly = py(cx, D * 0.5, 0);                                             // (its foot's middle; round it as at no turn)
+    const lp = (ox, od, h) => [lx + ox + od * KX, ly - od * KY - h];
+    furGlow(g, [30, 22, 12], 0.5, lx, ly, r * 1.9, r * 0.75, 0, 0.35);                              // (pressed into the ground)
+    const ring = (rr, h) => { const o = []; for (let i = 0; i < 16; i++) { const a = i * TAU / 16; o.push(...lp(rr * Math.cos(a), rr * Math.sin(a), h)); } return o; };
+    const leg = hull([...ring(r * 1.15, 0), ...ring(r, H - T * 0.8)]), y0 = ly - (H - T);
+    const lit = g.createLinearGradient(lx - r, 0, lx + r, 0);
     lit.addColorStop(0, rockRGB(tone(SEAT_WOOD, 0.95, 6))); lit.addColorStop(0.55, rockRGB(tone(SEAT_WOOD, 0.8))); lit.addColorStop(1, rockRGB(tone(SEAT_WOOD, 0.58)));
     g.fillStyle = lit; g.beginPath(); poly(leg); g.fill();
     strokeIn(g, GRAIN, 0.011, () => {
       for (const a of [2.2, 1.85, 1.35, 0.95]) {
-        const d = D * 0.5 + r * Math.sin(a + Math.PI) * 0.9;
-        g.moveTo(px(cx + r * 1.12 * Math.cos(a + Math.PI), d), py(d, 0.015)); g.lineTo(px(cx + r * Math.cos(a + Math.PI), d), py(d, H - T * 0.9));
+        const d = r * Math.sin(a + Math.PI) * 0.9;
+        g.moveTo(...lp(r * 1.12 * Math.cos(a + Math.PI), d, 0.015)); g.lineTo(...lp(r * Math.cos(a + Math.PI), d, H - T * 0.9));
       }
     });
-    fillIn(g, rockRGB(tone(SEAT_WOOD, 0.5), 0.5), () => ovalAt(g, px(cx, D * 0.5), y0 + 0.03, r * 1.3, 0.05));   // (in the seat's shade)
+    fillIn(g, rockRGB(tone(SEAT_WOOD, 0.5), 0.5), () => ovalAt(g, lx, y0 + 0.03, r * 1.3, 0.05));   // (in the seat's shade)
   }
   // The seat: a log split down its length, laid flat side up. Its cross-section: a flat top, its bark rounded under.
   const sec = [];
   for (let i = 0; i <= 12; i++) { const t = Math.PI * i / 12; sec.push([D / 2 - D / 2 * Math.cos(t), H - T * Math.sin(t)]); }
-  const at = (x, [d, h]) => [px(x, d), py(d, h)];
+  const at = (x, [d, h]) => [px(x, d), py(x, d, h)];
   const body = hull(sec.flatMap(q => [...at(-L, q), ...at(L, q)]));
-  softIn(g, SEAT_WOOD, py(0, H) - 0.02, py(D * 0.5, H - T), () => poly(body), 1.05, 0.62);
+  softIn(g, SEAT_WOOD, py(0, 0, H) - 0.02, py(0, D * 0.5, H - T), () => poly(body), 1.05, 0.62);
   g.save(); g.beginPath(); poly(body); g.clip();
   strokeIn(g, rockRGB(tone(SEAT_WOOD, 0.62), 0.75), 0.012, () => {                                  // the bark's furrows, along it
     for (const [t, a, b] of [[0.35, -0.9, 0.1], [0.5, -0.2, 0.95], [0.7, -0.8, 0.5], [0.85, -0.3, 0.9]]) {
@@ -5617,27 +5643,27 @@ function paintSeat(g, size, U, n) {
     fillIn(g, rockRGB(tone(SEAT_WOOD, 0.85)), kn);
     fillIn(g, rockRGB(SEAT_INK, 0.6), () => ovalAt(g, cx + 0.004, cy - 0.003, 0.013 * k, 0.009 * k));
   }
-  const split = [...at(-L - 0.01, [D * 0.4, H]), ...at(-L * 0.35, [D * 0.48, H]), ...at(-L - 0.01, [D * 0.62, H])];
+  const split = [...at(-E * (L + 0.01), [D * 0.4, H]), ...at(-E * L * 0.35, [D * 0.48, H]), ...at(-E * (L + 0.01), [D * 0.62, H])];   // (at the far end)
   fillIn(g, rockRGB(tone(SEAT_WOOD, 0.55)), () => poly(split));
   g.restore();
   strokeIn(g, rockRGB(tone(SEAT_CUT, 1.1, 12), 0.9), 0.016, () => { const [x0, y0] = at(-L + 0.08, [0.012, H]), [x1, y1] = at(L - 0.1, [0.012, H]); g.moveTo(x0, y0); g.lineTo(x1, y1); });   // the light along its front edge
   // Its near sawn end: half a round, bark round the curve, its rings about the heart at the top.
-  const end = sec.flatMap(q => at(L, q));
+  const end = sec.flatMap(q => at(E * L, q));
   fillIn(g, rockRGB(tone(SEAT_WOOD, 0.78)), () => poly(end));
-  const ringsAt = k => { const o = []; for (let i = 0; i <= 12; i++) { const t = Math.PI * i / 12; o.push(...at(L, [D / 2 - D / 2 * k * Math.cos(t), H - T * k * Math.sin(t)])); } return o; };
+  const ringsAt = k => { const o = []; for (let i = 0; i <= 12; i++) { const t = Math.PI * i / 12; o.push(...at(E * L, [D / 2 - D / 2 * k * Math.cos(t), H - T * k * Math.sin(t)])); } return o; };
   fillIn(g, rockRGB(SEAT_CUT), () => poly(ringsAt(0.84)));
   strokeIn(g, RING, 0.01, () => { for (const k of [0.6, 0.36, 0.14]) { const o = ringsAt(k); g.moveTo(o[0], o[1]); for (let i = 2; i < o.length; i += 2) g.lineTo(o[i], o[i + 1]); } });
   // Flowers and a tuft or two about its feet.
   for (const [x, d, c] of [[LEGS[1] - 0.2, 0.0, [250, 208, 80]], [LEGS[1] - 0.13, -0.05, [240, 140, 170]], [LEGS[0] + 0.19, -0.02, [250, 244, 236]], [LEGS[1] + 0.2, 0.06, [190, 160, 230]]]) {
-    const fx = px(x, d), fy = py(d, 0.075);
-    strokeIn(g, rockRGB([92, 140, 58]), 0.011, () => { g.moveTo(fx, fy); g.lineTo(fx + 0.006, py(d, 0)); });
+    const fx = px(x, d), fy = py(x, d, 0.075);
+    strokeIn(g, rockRGB([92, 140, 58]), 0.011, () => { g.moveTo(fx, fy); g.lineTo(fx + 0.006, py(x, d, 0)); });
     fillIn(g, rockRGB([108, 160, 70]), () => ovalAt(g, fx - 0.022, fy + 0.05, 0.022, 0.009, -0.5));
     fillIn(g, rockRGB(c), () => { for (let i = 0; i < 5; i++) { const a = i * TAU / 5 - Math.PI / 2; discAt(g, fx + Math.cos(a) * 0.016, fy + Math.sin(a) * 0.016, 0.013); } });
     fillIn(g, rockRGB([255, 222, 110]), () => discAt(g, fx, fy, 0.008));
   }
   strokeIn(g, rockRGB([96, 146, 60]), 0.014, () => {
     for (const cx of LEGS) for (const [dx, h, a] of [[-0.15, 0.07, -0.45], [-0.12, 0.09, -0.1], [0.14, 0.08, 0.3], [0.17, 0.06, 0.6]]) {
-      const x0 = px(cx + dx, D * 0.2), y0 = py(D * 0.2, 0); g.moveTo(x0, y0); g.lineTo(x0 + Math.sin(a) * h, y0 - Math.cos(a) * h);
+      const x0 = px(cx + dx, D * 0.2), y0 = py(cx + dx, D * 0.2, 0); g.moveTo(x0, y0); g.lineTo(x0 + Math.sin(a) * h, y0 - Math.cos(a) * h);
     }
   });
 }
@@ -5657,9 +5683,13 @@ function seatArtIndex(rad) {
 function seatAt(sx, sy) {
   const Q = mySeat();
   if (!Q) return null;
-  const z = cam.zoom, h = seatPx(z) / 2, m = fingerTap ? FINGER_R * 0.5 : 0, x = (Q.x - cam.x) * z + vw / 2;
-  const y = (Q.y - cam.y) * z + vh / 2 + Math.tan(Q.turn) * (sx - x);   // (the ground under its line, there)
-  return Math.abs(sx - x) < S.SEAT_HALF * h + m && sy > y - (SEAT_Y + SEAT_R) * h - 4 - m && sy < y + 4 + m ? Q : null;
+  const z = cam.zoom, h = seatPx(z) / 2, m = fingerTap ? FINGER_R * 0.5 : 0, x = (Q.x - cam.x) * z + vw / 2, y = (Q.y - cam.y) * z + vh / 2;
+  const ca = Math.cos(Q.turn), sa = Math.sin(Q.turn), back = SEAT_D * 0.5 * (sa + ca * SEAT_KX) * h, up = (SEAT_Y + SEAT_R) * h + 4 + m;
+  for (let k = -1; k <= 1; k += 0.25) {                    // (a column as tall as it over each step along its line: as paintSeat turns it)
+    const cx = x + k * ca * S.SEAT_HALF * h + back, cy = y + k * sa * S.SEAT_HALF * h;
+    if (Math.abs(sx - cx) < 0.3 * h + m && sy > cy - up && sy < cy + 4 + m) return Q;
+  }
+  return null;
 }
 // Off to sit on it: to just in front of its middle (sitFrame sits it down once it's still there).
 function goSeat() {
@@ -5685,7 +5715,8 @@ function sitEase(o, sitting, ms, now, x, y, px) {
   else if (sitting) l += 0.03 * Math.sin(t / 45) * Math.exp(-t / 130) + SIT_BREATH * Math.sin(now / 750);
   o.lift = l;
 }
-const seatLift = (Q, x, y, z, px) => ((y - Q.y - Math.tan(Q.turn) * (x - Q.x)) * z + SEAT_BUM * seatPx(z) / 2 - SIT_HIPS * px / 2) / px;
+const seatLift = (Q, x, y, z, px) => (((y - Q.y) * Math.cos(Q.turn) - (x - Q.x) * Math.sin(Q.turn)) * Math.cos(Q.turn) * z +   // (how far in front of its line, down the screen)
+   SEAT_BUM * seatPx(z) / 2 - SIT_HIPS * px / 2) / px;
 // The basket under a point on screen (a little wider for a finger), or null.
 function basketAt(sx, sy) {
   const B = myBasket();
@@ -6573,7 +6604,7 @@ function basketNet(m) {
 }
 function fireNet(m) {
   if (m.a === 'seat') { S.makeSeat(world, m.x, m.y, +m.r || 0); renderBuild(); return; }          // (the camp's seat log: set down here too, turned as there)
-  if (m.a === 'basket') { S.makeBasket(world, m.x, m.y); renderCookBasket(); return; }   // (the camp's basket: set down here too)
+  if (m.a === 'basket') { S.makeBasket(world, m.x, m.y); renderCookBasket(); renderBuild(); return; }   // (the camp's basket: set down here too, and off the guest's camp list)
   if (m.a === 'torch') {                               // (a friend's torch: pushed in where it stands, as much of its night left)
     if (!world.torches.some(T => Math.abs(T.x - m.x) < 1e-3 && Math.abs(T.y - m.y) < 1e-3))
       S.placeTorch(world, m.x, m.y, Math.max(1, S.TORCH_BURN - Math.max(0, world.tick - (m.tick | 0))));
@@ -8906,12 +8937,17 @@ function halfName(r) {
   return { shown, left, line: words.length ? `Something with ${words.length > 1 ? words.slice(0, -1).join(', ') + ' and ' + words[words.length - 1] : words[0]}…` : 'Not found yet' };
 }
 
+// The parts' ribbons: a colour and a small mark each (the marks are stroked, drawn in the ribbon's text colour).
+const PART_INK = { dishes: '#c9733a', finds: '#6f9446', you: '#4f72a6' };
+const rmark = d => `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="${d}"/></svg>`;
+const PART_MARK = { dishes: rmark('M2 8h12c0 3-2.5 5-6 5S2 11 2 8zM5.5 2.5c1 .9 1 1.9 0 2.8M9 2.5c1 .9 1 1.9 0 2.8'),
+  finds: rmark('M3 8a5 4 0 0 1 10 0zM8 8v5.5M6.5 13.5h3'), you: rmark('M5.2 5.5a2.8 2.8 0 1 0 5.6 0 2.8 2.8 0 1 0-5.6 0M2.8 14c.6-3 2.7-4.4 5.2-4.4s4.6 1.4 5.2 4.4') };
 const bsvg = d => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 const B_X = bsvg('M6.5 6.5l11 11M17.5 6.5l-11 11'), B_PREV = bsvg('M14.5 5.5L8 12l6.5 6.5'), B_NEXT = bsvg('M9.5 5.5L16 12l-6.5 6.5');
 $('#book').innerHTML = `<button class="bb b-x" data-act="book-close" aria-label="Close the book" title="Back to the meadow (Esc)">${B_X}</button>
   <header class="b-top"><div class="grab"></div>
     <div class="b-head" role="tablist">${Object.entries(BOOK_PARTS).map(([k, b]) =>
-      `<button class="tab fr" role="tab" data-act="book-part" data-part="${k}">${b.name}</button>`).join('')}<span class="n"></span></div>
+      `<button class="tab" role="tab" data-act="book-part" data-part="${k}" style="--c:${PART_INK[k]}">${PART_MARK[k]}<span>${b.name}</span></button>`).join('')}<span class="n"></span></div>
     <div class="b-bar"><i></i></div><p id="book-sub"></p>
   </header>
   <section class="b-pages">${['dishes', 'finds'].map(k => { const b = BOOK_PARTS[k]; return `<div class="part" data-part="${k}">${b.sections.filter(s => b.pages.some(p => p.sec === s)).map(s => `
@@ -11585,14 +11621,23 @@ const FIND_KINDS = S.FIND_KINDS;
 const FIND_ARTS = Array.from({ length: FIND_KINDS.length * 4 }, (_, i) => 'find:' + i);
 const FIND_PX = { dandelion: 1.9, sorrel: 1.8, strawberry: 2.1, elderflower: 2.5, hazelnut: 1.8, rosehip: 2.5, watercress: 2.0,   // next to a rabbit
   stick: 1.9, pebble: 1.35, drygrass: 1.8, birchbark: 1.5, clay: 1.4 };
+const FIND_SWAY = 1.6;                                                      // plants bend more than trunks
+const FIND_STILL = { stick: 1, pebble: 1, birchbark: 1, clay: 1 };          // (what lies on the ground and doesn't grow)
 const FIND_GROW = 0.2, FIND_OVER = 0.4;   // days it takes to come up, and its last days, fading
 const findStage = f => (f.kind === 'rosehip' ? S.seasonOf(world.tick) === 3 : f.kind === 'watercress' && world.frozen) ? 1 : 0;   // (bare; in the ice)
 const findArt = f => FIND_ARTS[FIND_KINDS.indexOf(f.kind) * 4 + findStage(f) * 2 + f.look];
 const findPx = (f, z) => Math.max(7, (8 + z) * FIND_PX[f.kind] * (0.55 + 0.45 * clamp((world.tick - f.born) / (FIND_GROW * S.TPD), 0, 1)));
-function drawFind(f, z) {
+// A find sways from its foot with the trees; sticks and stones lie still, and watercress in the ice is held fast.
+function drawFind(f, z, now) {
   const px = findPx(f, z), left = (f.until - world.tick) / S.TPD;
-  drawEmoji(findArt(f), (f.x - cam.x) * z + vw / 2, (f.y - cam.y) * z + vh / 2 - px * 0.31, px,
-    { alpha: left < FIND_OVER ? 0.3 + 0.7 * left / FIND_OVER : undefined, flip: f.born % 2 === 1 });
+  const sx = (f.x - cam.x) * z + vw / 2, sy = (f.y - cam.y) * z + vh / 2;
+  const opts = { alpha: left < FIND_OVER ? 0.3 + 0.7 * left / FIND_OVER : undefined, flip: f.born % 2 === 1 };
+  const r = FIND_STILL[f.kind] || (f.kind === 'watercress' && findStage(f) === 1) ? 0 : treeSway(f, now) * FIND_SWAY;
+  if (Math.abs(r) * px < 0.5) { drawEmoji(findArt(f), sx, sy - px * 0.31, px, opts); return; }   // a sway too small to see isn't drawn
+  const c = Math.cos(r) * dpr, s = Math.sin(r) * dpr;
+  ctx.setTransform(c, s, -s, c, sx * dpr + shakeX, sy * dpr + shakeY);
+  drawEmoji(findArt(f), 0, -px * 0.31, px, opts);
+  ctx.setTransform(dpr, 0, 0, dpr, shakeX, shakeY);
 }
 
 // What the forager dropped (sim.js w.dropped): looking like something to pick, so it's easy to see and find again. One of
@@ -14920,8 +14965,9 @@ function announce(kind, head, line = '', opts = {}) {
     a.timer = setTimeout(() => { const n = a.wait.shift(); if (n) announce(...n); }, ANNOUNCE_FADE);
   }, ANNOUNCE_MS[kind]);
 }
-// A skill up a level: its name in its colour over a brass coin with the new level, and what that level gives. A moment
-// after whatever did it (a dish's own sound, a pick's), so the two don't play over each other. With a card open, a toast.
+// A skill up a level: its name in its colour over a brass coin with the new level, and what that level gives, then a
+// pencilled "see it in the book" (the You tab's dot points there). A moment after whatever did it (a dish's own sound,
+// a pick's), so the two don't play over each other. With a card open, a toast.
 const LEVEL_WAIT = 600;
 function levelUp(s, lv) {
   const k = S.SKILLS[s], top = lv >= S.SKILL_TOP, opens = s === 'cooking' ? opensAt(lv) : '';
@@ -14932,7 +14978,7 @@ function levelUp(s, lv) {
     if (!canAnnounce()) { toast(`<b>${k.name} ${lv}</b>${top ? ' (the best it gets)' : ''} · ${says}`); chime('level', { lv }); return; }
     announce('level', `<small>${top ? 'the best it gets' : 'level up'}</small>`
       + `<i class="coin${top ? ' max' : ''}" style="--ink:${ink};--coin:${metal.coin};--coin-ink:${metal.ink}">${sparks}${lv}</i>`
-      + `<b class="fr" style="--ink:${ink}">${k.name}</b>`, says, { lv });
+      + `<b class="fr" style="--ink:${ink}">${k.name}</b>`, says + '<span class="see">see it in the book</span>', { lv });
   }, LEVEL_WAIT);
 }
 const canAnnounce = () => !document.hidden && world.forager.down < 0 && !wardrobeOpen() && !askOpen() && !bookOpen() && !friendsOpen();
@@ -15076,6 +15122,7 @@ function handleEvent(e) {
       break;
     case 'camp':
       campMoment(e.fire);
+      renderBuild();                                        // (a friend's camp at once: the strip's camp builds and its note)
       break;
     case 'ate':                                             // (first things: a dish eaten)
       if (!Recipes.INGREDIENTS[e.id]) taskUi.ate = true;
@@ -15433,6 +15480,7 @@ const map = { el: $('#minimap'), cv: null, g: null, k: 2, on: false, land: null,
   const fit = () => { map.on = !hide.matches; map.landAt = -1e9; map.was[0] = NaN; };
   hide.addEventListener('change', fit); fit();
   map.el.addEventListener('click', e => {
+    if (cardsOpen()) { cardAway(); return; }             // (a press away puts the card away: the map is no walk till it's gone)
     const r = map.cv.getBoundingClientRect(), wx = (e.clientX - r.left) / r.width * S.W, wy = (e.clientY - r.top) / r.height * S.H;
     if (!world?.forager || world.forager.down >= 0) return;
     const [sx, sy] = toScreen(wx, wy);
@@ -16457,13 +16505,41 @@ function liftFinger(e) {
   return true;
 }
 
+// A press on the meadow while a card or menu is up puts away the one on top, and goes no further: it walks nowhere, picks
+// nothing and blows on no fire. The make strip and a fire being placed aren't cards: there the meadow is where it's going
+// or the spot being picked (openMake, placeFire). With only the inspector up, a press on an animal still swaps to it.
+const cardsOpen = () => askOpen() || moreOpen() || friendsOpen() || meadowOpen() || larderOpen() || stoneOpen()
+  || bookOpen() || cooking() || chatOpen() || wardrobeOpen() || eatUi.k >= 0 || $('#inspector').classList.contains('open');
+function cardAway() {
+  if (eatUi.k >= 0) { eatAsk(-1); return; }               // (the small card over the satchel)
+  if (askOpen()) askIdeas(false);
+  else if (moreOpen()) toggleMore(false);
+  else if (friendsOpen()) openFriends(false);         // (a friend's ask up top isn't put away: a tap would wave it off for good)
+  else if (meadowOpen()) openMeadow(false);
+  else if (larderOpen()) openLarder(false);
+  else if (stoneOpen()) openStone(false);
+  else if (bookOpen()) openBook(false);                   // (a page laid over it goes with it)
+  else if (cooking()) closeCook();
+  else if (chatOpen()) openChat(false);                   // (a draft typed stays in the line, for next time)
+  else if (wardrobeOpen()) closeWardrobe(false);          // (joining one, it stays: that's what it's for)
+  else if ($('#inspector').classList.contains('open')) select(0);
+}
+const inspectorAlone = () => $('#inspector').classList.contains('open') && !askOpen() && !moreOpen() && !askedOver()
+  && !friendsOpen() && !meadowOpen() && !larderOpen() && !stoneOpen() && !bookOpen() && !cooking() && !chatOpen()
+  && !wardrobeOpen() && !stripOpen() && !ui.place && eatUi.k < 0;
+
 canvas.addEventListener('pointerdown', e => {
   if (!world) return;                     // (a kept meadow still opening)
   if (ui.place && e.button === 2) { placeFire(false); return; }   // (picking a spot: a right click, not now)
   if (e.button === 2 || (e.ctrlKey && e.pointerType === 'mouse')) return;
-  if (chatOpen() && chatAway(e)) return;
-  canvas.setPointerCapture(e.pointerId);
   fingerTap = e.pointerType === 'touch';
+  if (!ui.place && cardsOpen() && !(inspectorAlone() && animalAt(e.clientX, e.clientY))) {
+    cardAway();
+    clearTimeout(holdTimer); endSprint(); drag = null; lastTap = null;   // (no walk, and no hold steers either)
+    if (fingerTap) { canvas.setPointerCapture(e.pointerId); fingers.set(e.pointerId, { x: e.clientX, y: e.clientY }); }   // (a pinch may still start here)
+    return;
+  }
+  canvas.setPointerCapture(e.pointerId);
   zoomTo = null;
   if (fingerTap) fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (fingers.size >= 2) { startPinch(); return; }
@@ -16590,7 +16666,8 @@ canvas.addEventListener('wheel', e => {
 }, { passive: false });
 
 // A click or a tap on an animal (on it as it's drawn: animalAt) opens its panel; on something to gather, the forager
-// goes and picks it (goGather); anywhere else, the forager walks there and the panel shuts (walkTo).
+// goes and picks it (goGather); anywhere else, the forager walks there and the panel shuts (walkTo). A press while a card
+// or menu is up got no further than shutting it (cardAway, pointerdown).
 function click(sx, sy, run = false) {
   clearTimeout(tapAway); tapAway = 0;
   if (ui.place) { (fingerTap ? placeAt(...toWorld(sx, sy)) : placeHere(sx, sy)); return; }   // (picking a spot: a mouse lays it there; a finger only moves the ghost)
@@ -16707,6 +16784,7 @@ const POS_MS = 150;                        // ms between a forager's "here I am"
 const PEER_SLIDE = 1.3;                    // a friend glides to where it said over this many POS_MS (so it's still going when the next comes)
 const PEER_STILL_MS = 250;                 // a friend that hasn't moved this long is standing
 const PEER_GONE = 8000;                    // ms with no word from a friend before it's taken for gone
+const HOST_WAIT_MS = 1500;                 // ms with no word from the host before a guest says it's waiting
 const CHECK_TICKS = 300;                   // ticks between sums of the meadow
 const ASK_AGAIN_MS = 20000;                // a guest asks for the meadow again at most this often
 const AHEAD_MS = 500;                      // a guest runs on at most this far past the last tick it heard (the host's tab may have stopped)
@@ -16719,6 +16797,7 @@ const CHAT_MS = 3500, CHAT_PER = 70, CHAT_LONGEST = 10000;   // a bubble stays C
 const CHAT_WIDE = 200, CHAT_WIDE_MOB = 150;      // px a bubble is at most, before its words wrap (scaled down on a phone)
 const CHAT_LOG_MS = 12000;                 // a line in the log fades after this
 const CHAT_KEEP = 40;                      // lines the log keeps
+const CHAT_HELD = 3;                       // unread lines left showing over the meadow while the card is shut (the 💬 dot says there are more)
 const CALL_TEXT = '🦉 Hoo-hoo!';             // not said but called (callOut): friends hear it from where you stand
 const CHAT_QUICK = [CALL_TEXT, '👋 Hello!', 'Over here!', 'Come and see!', 'Thank you!', 'Wait for me!', '😊', '❤️'];   // said with one tap
 const CHAT_TAIL = 7, CHAT_TAIL_MOB = 5;          // px from a bubble's foot down to the tip of its tail
@@ -16732,12 +16811,15 @@ const chatFont = () => narrow() ? 10.5 : 13;
 const chatRadius = () => narrow() ? 8.5 : 11;
 let myName = '', myChat = null;
 try { myName = cleanName(localStorage.getItem(NAME)); } catch (e) { /* none, then */ }
-const net = { tick: -1, base: 0, rate: 0, sentAt: 0, hostId: '', later: [], hostSums: new Map(), mySums: new Map(), off: 0, askedAt: -1e9, shown: '' };
+const net = { tick: -1, base: 0, rate: 0, sentAt: 0, hostAt: 0, hostId: '', later: [], hostSums: new Map(), mySums: new Map(), off: 0, askedAt: -1e9, shown: '' };
 const peers = new Map();                   // friends' foragers, by id
 let leftGuest = false;                     // left a friend's meadow for home: the keep as the page goes mustn't take it over your own
 
 // A guest's line dropped and net.js is taking it up again: a small pill says so till it's back or given up (#reconnect).
 function reconnectShow(on) { $('#reconnect').classList.toggle('on', on); }
+// A guest whose host has gone quiet (its tab asleep, its screen dark) sees a small pill too (#host-wait), so the meadow
+// waiting on the host's clock doesn't look like a freeze. As last written: the pill is touched only when this changes.
+const hostWait = { on: false, text: '' };
 // The network or the page coming back is the moment to look at the line (net.js recheck).
 addEventListener('online', () => { if (Net && Net.recheck) Net.recheck(); });
 document.addEventListener('visibilitychange', () => { if (!document.hidden && Net && Net.recheck) Net.recheck(); });
@@ -16754,7 +16836,7 @@ function startTogether() {
     message: heardNet,
     lost() { reconnectShow(false); hostGone(); },
     reconnecting() { reconnectShow(true); },
-    back() { reconnectShow(false); toast('🧺 Back in your friend’s meadow.'); },
+    back() { reconnectShow(false); net.hostAt = performance.now(); toast('🧺 Back in your friend’s meadow.'); },   // (hostAt: the waiting pill doesn't flash before the host's next pos)
     failed(why, role) { toast(role === 'guest' ? `🧺 Couldn't reach your friend’s meadow (${esc(why)}).` : `🧺 Couldn't open the meadow to friends (${esc(why)}).`); },
   });
 }
@@ -16764,8 +16846,17 @@ function together(dressed) {
   if (!Net) return;
   if (!ROOM && !dressed) { wardrobe('host', () => together(true)); return; }   // (who you are and what you wear, first)
   openRoom();
+  shareMeadowLink();
+}
+
+// The meadow's link as it is now (the room is in the address): the card's Share, and opening one for friends. On a phone the
+// share sheet, elsewhere the clipboard.
+function shareMeadowLink() {
   const url = location.href;
-  if (canShare) { navigator.share({ title: "Nobody's Meadow", text: 'Come and forage with me.', url }).catch(() => {}); return; }
+  if (canShare) {
+    navigator.share({ title: "Nobody's Meadow", text: 'Come and forage with me.', url }).catch(() => {});
+    return;
+  }
   navigator.clipboard?.writeText(url).then(
     () => toast('🧺 Link copied. Whoever opens it comes into this meadow with you.'),
     () => toast(`🧺 Send a friend this link: ${esc(url)}`));
@@ -16829,6 +16920,9 @@ function heardNet(m) {
   else if (m.t === 'give') heardGive(m, now);
   else if (m.t === 'hug') heardHug(m, now);
   else if (m.t === 'swat') heardSwat(m, now);
+  else if (m.t === 'swing') heardSwingStart(m, now);
+  else if (m.t === 'toss') heardToss(m, now);
+  else if (m.t === 'jump') peerJump(m, now);
 }
 
 // The host's meadow, as a guest comes (to it alone), as the host starts a new one (to all), or again after drifting off.
@@ -16844,6 +16938,7 @@ function heardWorld(m, now) {
   cam.zoom = zoom; cam.x = world.forager.x; cam.y = world.forager.y - CAM_FEET * forPx() / cam.zoom; clampCam();
   history.replaceState(history.state, '', pageLink(w.seed));
   net.hostId = m.from; net.later.length = 0; net.hostSums.clear(); net.mySums.clear(); net.off = 0;
+  net.hostAt = now;                                      // (the meadow itself proves the host was there, before its first pos)
   setClock(m.tick, m.s, now, true);
   const host = cleanName(m.n);
   if (!again) { announce('join', `<small>you’re in</small><b class="fr">${host ? esc(host) + '’s' : 'your friend’s'} meadow</b>`, 'Forage together!'); openingLine(); }
@@ -16971,9 +17066,11 @@ function sendPos(now) {
   net.sentAt = now;
   const f = world.forager;
   Net.send({ t: 'pos', x: f.x, y: f.y, h: f.heading, j: fg.jog, st: S.warmthStage(f), wt: Math.round(f.wet * 20) / 20, sn: fg.snowArt, o: fg.outfit,
+    hp: Math.round(f.health * 20) / 20,   // (how much it has left, for the pips over a friend's head)
     kn: fg.kneel, fl: fg.flip, em: fg.emote, et: Math.round(fg.emoteMs), tick: Net.host ? world.tick : -1, s: ui.speed, n: myName });   // (kn: kneeling at a fire, and which way; em: an emote)
 }
 function heardPos(m, now) {
+  if (m.tick >= 0) net.hostAt = now;                     // (the host's own word: its meadow is running)
   if (m.tick >= 0 && Net.guest && net.tick >= 0) setClock(m.tick, m.s, now, false);
   let p = peers.get(m.from);
   if (!p) {
@@ -16984,7 +17081,8 @@ function heardPos(m, now) {
       art: FORAGER_ARTS[0], sized: 0, sizedSet: 0, sizedSnow: 0, name: '', nameArt: null, sx: -0, sy: -0, shown: false, chat: null, kneel: -1,
       mark: -0,                                            // (how far its marker at the screen's edge has faded in: drawFriendMarks)
       emote: -1, emoteMs: -0, emoteFrame: -1, lift: -0, sizedEmote: -1,
-      swingAt: -1e9, swingDir: -0, hitAt: -1e9 };          // (friendly fire: swing)   // (an emote, as it said: EMOTE, emoteStill)
+      swingAt: -1e9, swingDir: -0, hitAt: -1e9, hp: 1, swatAt: -1e9, tossHitAt: -1e9,   // (friendly fire: swing; the health pips over its head; when its last hit on us was taken, hitFrom)
+      jumpAt: -1e9, jumpMs: -0, jx: -0, jy: -0, jdx: -0, jdy: -0, jhop: -0, air: -0 };   // (a dash: peerJump)   // (an emote, as it said: EMOTE, emoteStill)
     peers.set(m.from, p);
     p.name = cleanName(m.n);
     if (Net.host || m.tick < 0) toast(`🧺 ${friendName(p) || 'A friend'} has come into the meadow`);   // (a guest knows the host is there)
@@ -16999,6 +17097,7 @@ function heardPos(m, now) {
   const far = Math.hypot(m.x - p.x, m.y - p.y) > 3;        // (woken at home, or a new meadow: there at once)
   p.fx = far ? m.x : p.x; p.fy = far ? m.y : p.y; p.tx = m.x; p.ty = m.y; p.at = now; p.seen = now;
   p.heading = m.h; p.jog = m.j; p.stage = m.st; p.soak = +m.wt || 0; p.snowArt = m.sn | 0;
+  p.hp = m.hp == null ? 1 : clamp(+m.hp || 0, 0, 1);       // (the pips over its head: how much it has left)
   p.flip = !!m.fl;                                         // (which way it's turned: a hug turns it to its friend while standing)
   p.kneel = m.kn >= 0 ? m.kn | 0 : -1;                    // (kneeling at a fire, turned to it)
   if (p.kneel >= 0) p.view = 0;
@@ -17007,6 +17106,21 @@ function heardPos(m, now) {
   if (m.st === 4 && !p.downAt) p.downAt = now; else if (m.st !== 4) p.downAt = 0;
   const em = m.em >= 0 ? m.em | 0 : -1;                    // (an emote: from where it was in it, then on our clock)
   if (em !== p.emote) { p.emote = em; p.emoteMs = +m.et || 0; p.emoteFrame = -1; if (em < 0) { p.lift = 0; p.hum = 0; } }
+}
+// A friend dashed (sim.js foragerJump): from where it took off, the way and pace it went, played here as its own sim
+// plays it (FORAGER_JUMP_TICKS on the shared clock, the pace easing out by FORAGER_DASH_DRAG a tick), over what it says
+// of where it is till it's down, with the dust and the sound at both ends.
+function peerJump(m, now) {
+  const p = peers.get(m.from);
+  if (!p || !(m.sp > 0)) return;
+  const T = S.FORAGER_JUMP_TICKS, D = S.FORAGER_DASH_DRAG, L = Math.min(4, m.sp * (1 - D ** T) / (1 - D));
+  p.jumpAt = now; p.jumpMs = T * 1000 / (TICKS_PER_SECOND * Math.max(ui.speed, 1));
+  p.jx = +m.x; p.jy = +m.y; p.jdx = Math.cos(m.h) * L; p.jdy = Math.sin(m.h) * L; p.jhop = clamp(+m.hop || 0, 0, 1);
+  p.stillMs = 0;
+  if (visible(...onScreen(p.jx, p.jy), 60)) {
+    jumpDust(p.jx, p.jy, now, 4 + Math.round(p.jhop * 4), p.jhop);
+    if (ui.speed > 0) hear('jump', p.jx, p.jy, { pace: 1 + p.jhop, hop: p.jhop, ground: groundUnder(p.jx, p.jy) }, true);
+  }
 }
 // A friend picked something: it stoops where it stood, turned to it, and its "+3 Chanterelles" floats up from it (as
 // gatherFrame), with the pick's sound if it's on the screen.
@@ -17033,23 +17147,32 @@ function friendGone(id) {
 // address too: opening it afresh finds the kept meadow, not whoever has the room now (joining would empty the satchel).
 function hostGone() {
   const who = friendName(peers.get(net.hostId)) || 'Your friend';
+  const others = peers.size - (peers.has(net.hostId) ? 1 : 0);   // (other guests here: each keeps a copy of its own now)
   Net.on = false; Net.guest = false; Net.peers = 0;
-  peers.clear(); net.tick = -1; net.later.length = 0;
+  peers.clear(); net.tick = -1; net.later.length = 0; net.hostAt = 0;
   ROOM = '';
   dropAwayBag();                                       // (the satchel is kept with the meadow from now on instead)
   history.replaceState(history.state, '', pageLink(world.seed));
   setSpeed(ui.speed || 1, true);
-  toast(`🧺 ${who} has gone home. This meadow is yours to keep now.`);
+  toast(`🧺 ${who} has gone home. This meadow is yours to keep now${others > 0 ? ' — each of you has your own copy.' : '.'}`);
 }
 
-// ••• › Leave: a guest goes home to its own meadow (the last one kept, as on a fresh visit); a host closes the meadow to
-// friends and plays on in it alone, and its guests keep it as their own (hostGone).
+// ••• › Leave: a guest goes home to its own meadow (the last one kept, as on a fresh visit), after a word that the visit's
+// over; a host with friends here is told that closing the meadow leaves each of them a copy of their own, and cancelling keeps
+// the party together. Left, a host plays on alone and its guests keep their copy (hostGone).
 function leaveTogether() {
   if (!(Net && Net.on)) return;
-  const guest = Net.guest;
+  const guest = Net.guest, here = guest ? 0 : peers.size;   // (a host's guests are peers, a guest's own forager never is)
   if (guest && !confirm('Leave your friend’s meadow and go home to your own?')) return;
+  if (!guest && here > 0) {
+    const parting = here === 1
+      ? 'Close your meadow to your friend? They’ll keep their own copy, and you won’t be together any more.'
+      : `Close your meadow to the ${here} friends here? Each keeps their own copy, and you won’t be together any more.`;
+    if (!confirm(parting)) return;                     // (cancelled: the meadow stays open to them, and nothing changes)
+  }
   leftGuest = guest;                                   // (before Net.leave clears it: the unload's keep would keep the friend's meadow)
   Net.leave();
+  net.hostAt = 0;                                      // (the waiting pill can't flash on whatever comes next)
   ROOM = '';
   if (guest) { dropAwayBag(); location.replace(location.pathname); return; }   // (the visit's over: the satchel there isn't waiting any more)
   peers.clear(); openChat(false);
@@ -17062,13 +17185,12 @@ function leaveTogether() {
 // starts till Friends is first opened (••• › Friends: an anonymous player is made then); from then on it starts with
 // the page. A friend about and playing together has a Join (their room in the address, as a link would); about on their
 // own, a Visit (a knock: let in, they open their meadow and the invite back brings you straight over) and an Invite
-// (your meadow opened, if it isn't, and an ask that shows up top in theirs). A friend coming about is a toast, and
-// while any is, a green dot on •••.
+// (your meadow opened, if it isn't, and an ask that waits up top in theirs until they answer it; several queue). A friend
+// coming about is a toast, and while any is, a green dot on •••.
 const FRIENDS = 'aeon-garden-friends';     // in localStorage: '1' once Friends has been opened
-const FR_ASK_MS = 45000;                   // a friend's ask waits up top this long
 const KNOCK_MS = 120000;                   // an invite from a friend you knocked on within this long takes you straight there
 const Fr = window.Friends || null;         // (friends.js)
-const fr = { shown: '', first: true, states: new Map(), ask: null, askTimer: 0, knocked: new Map(), failed: '' };
+const fr = { shown: '', first: true, states: new Map(), asks: [], knocked: new Map(), failed: '' };
 const friendsOpen = () => !$('#friends').classList.contains('hidden');
 const askedOver = () => !$('#friend-ask').classList.contains('hidden');
 const friendsBeat = () => { if (Fr && Fr.on) Fr.beat(); };
@@ -17091,6 +17213,7 @@ function openFriends(open) {
   $('#friends').classList.toggle('hidden', !open);
   if (Fr) Fr.often(open);
   if (!open) { $('#fr-text').blur(); return; }
+  openMeadow(false);
   fr.failed = ''; frSaid('');
   if (Fr && !Fr.on) startFriends().then(() => renderFriends(true));
   renderFriends(true);
@@ -17168,33 +17291,45 @@ function friendsChanged(list) {
   renderFriends();
 }
 
-// An ask from a friend: come to my meadow, or can I come to yours? Up top, a while.
-function friendInvited({ from, kind, room }) {
+// An ask from a friend: come to my meadow, or can I come to yours? Up top until they answer it; several queue.
+function friendInvited({ from, kind, room, id }) {
   const name = frName(from);
   if (kind === 'invite') {
-    if (!room || Net && Net.on && Net.room === room) return;
+    if (!room || ROOM === room) { Fr?.done(id); return; }   // (nothing to answer: already there, or on the way in, or no room)   // (nothing to answer: already there, or no room)
     const k = fr.knocked.get(from);
     if (k && performance.now() - k < KNOCK_MS) {
       fr.knocked.delete(from);
+      Fr?.done(id);                                  // (answered by walking straight over)
       toast(`🧺 ${name} let you in. Walking over…`);
       setTimeout(() => goRoom(room, true), 1200);
       return;
     }
-    askOver(`🧺 ${name} asks you over to their meadow.`, 'Go', () => goRoom(room));
-  } else askOver(`🧺 ${name} would like to come over to your meadow.`, 'Let them in', () => letIn(from));
+    askOver(`🧺 ${name} asks you over to their meadow.`, 'Go', () => goRoom(room), id);
+  } else askOver(`🧺 ${name} would like to come over to your meadow.`, 'Let them in', () => letIn(from), id);
 }
-function askOver(text, yes, go) {
-  fr.ask = go;
-  $('#fa-text').innerHTML = text;
-  $('#fa-yes').textContent = yes;
+// An ask waits here till it's answered, not for a while: four is plenty to be going on with, and the newest past that is
+// dropped (its invite stays in the table, so a later visit offers it again while it's fresh).
+const ASK_DONE_MS = 800;                   // a yes waits at most this long for its ask to be cleared before going over
+function askOver(text, yes, go, id) {
+  if (fr.asks.length >= 4) return;
+  fr.asks.push({ text, yes, go, id });
+  if (!$('#friend-ask').classList.contains('hidden')) return;
+  showAsk();
+}
+function showAsk() {
+  const a = fr.asks[0];
+  if (!a) { $('#friend-ask').classList.add('hidden'); return; }
+  $('#fa-text').innerHTML = a.text;
+  $('#fa-yes').textContent = a.yes;
   $('#friend-ask').classList.remove('hidden');
-  clearTimeout(fr.askTimer); fr.askTimer = setTimeout(() => friendAsk(false), FR_ASK_MS);
 }
 function friendAsk(yes) {
-  const go = fr.ask;
-  fr.ask = null; clearTimeout(fr.askTimer);
+  const a = fr.asks.shift();
   $('#friend-ask').classList.add('hidden');
-  if (yes && go) go();
+  if (!a) return;
+  const gone = Fr ? Fr.done(a.id) : null;            // (cleared before a yes goes anywhere: a navigation would cut the delete off)
+  if (yes && a.go) Promise.race([gone, new Promise(r => setTimeout(r, ASK_DONE_MS))]).then(a.go);
+  if (fr.asks.length) showAsk();                     // (the next one at once; the wardrobe, if it opened, is over it)
 }
 
 // Over to a friend's room, as their link would take you (a guest's meadow is the host's; your own is kept).
@@ -17256,10 +17391,24 @@ function peerItems(items, now, z) {
   const px = forPx(), P = poseStep(Math.max(4, px));
   for (const p of peers.values()) {
     if (now - p.seen > PEER_GONE) { friendGone(p.id); continue; }
-    const u = clamp((now - p.at) / (POS_MS * PEER_SLIDE), 0, 1), x = p.fx + (p.tx - p.fx) * u, y = p.fy + (p.ty - p.fy) * u;
+    let u = clamp((now - p.at) / (POS_MS * PEER_SLIDE), 0, 1), x = p.fx + (p.tx - p.fx) * u, y = p.fy + (p.ty - p.fy) * u;
+    const ju = p.jumpMs > 0 ? (now - p.jumpAt) / p.jumpMs : 1;
+    p.air = 0;
+    if (ju < 1) {                                         // in the air (peerJump): along its dash, over what it said
+      const T = S.FORAGER_JUMP_TICKS, D = S.FORAGER_DASH_DRAG, k = (1 - D ** (ju * T)) / (1 - D ** T);
+      x = p.jx + p.jdx * k; y = p.jy + p.jdy * k;
+      p.air = 4 * S.FORAGER_JUMP_HEIGHT * ju * (1 - ju);
+    } else if (p.jumpMs > 0) {                            // down: from where it landed, on to where it says it is
+      p.jumpMs = 0; p.fx = x = p.x; p.fy = y = p.y; p.at = now;
+      if (visible(...onScreen(x, y), 60)) {
+        jumpDust(x, y, now, 6 + Math.round(p.jhop * 4), p.jhop);
+        if (ui.speed > 0) hear('land', x, y, { pace: 1 + p.jhop, hop: p.jhop, ground: groundUnder(x, y) }, true);
+      }
+    }
     const moved = Math.hypot(x - p.x, y - p.y), ms = now - p.last;
     p.x = x; p.y = y; p.last = now;
-    if (moved > 1e-5 && moved < 2) {
+    if (ju < 1) p.stillMs = 0;
+    else if (moved > 1e-5 && moved < 2) {
       p.step += moved / (2 * Fur.FORAGER_REACH * px / z * (p.jog ? Fur.FORAGER_JOG_STRIDE : p.emote === EMOTE.sneak ? Fur.SNEAK_STRIDE : 1));
       p.stillMs = 0;
     } else p.stillMs += ms;
@@ -17335,6 +17484,7 @@ function drawPeerNames(now) {
     if (!p.shown) continue;
     const fall = p.downAt ? p.fall * 0.6 : 0;
     let top = p.sy - px * NAME_UP * (1 - fall) - 3;
+    if (p.hp < 0.995 && p.stage !== 4 && px >= 22) top -= 13;   // (clear of the health pips, drawPeerHp)
     if (p.nameArt) {
       const a = p.nameArt, x = Math.round(p.sx - a.w / 2), y = Math.round(top - a.h), r = chats.names, m = chats.nn;
       ctx.drawImage(a.img, x, y, a.w, a.h);
@@ -17395,6 +17545,8 @@ function drawPeer(p, sx, sy, now) {
   drawRings(p.rings, now, px);
   if (zoomedOut()) { drawSmall(p.art, sx, sy - px * 0.36, px, p.flip); return; }
   if (p.stage === 4) { drawFallen(p.art, sx, sy, px, p.flip, p.fall); return; }
+  drawPeerHp(p, sx, sy, px);
+  sy -= p.air * px;                                       // (in the air: its feet off the ground, its shadow left there)
   drawFigure(p, p.art, sx, sy, px, now, p.stage, 0, p.stillMs >= PEER_STILL_MS, false);
   drawBody(p, p.x, p.y, p.soak, p.stillMs < PEER_STILL_MS, p.jog, p.stage, px, now, false);
 }
@@ -17537,6 +17689,12 @@ function openChat(open) {
     box.classList.add('open');
     $('#chat-log').scrollTop = 1e6;
     $('#chat-quick').scrollLeft = 0;
+    for (const el of $('#chat-log').querySelectorAll('.chat-line.held')) {   // (read now: they fade from here on)
+      el.classList.remove('held');
+      setTimeout(() => el.classList.add('old'), CHAT_LOG_MS);
+    }
+    chatUi.unread = 0;
+    chatNew(false);
     if (!TOUCH.matches) $('#chat-text').focus({ preventScroll: true });   // (with a finger the keyboard waits for a tap on the line)
     keyboardUp();
     return;
@@ -17563,12 +17721,14 @@ function keyboardUp() {
   measureSheet();
 }
 if (window.visualViewport) for (const type of ['resize', 'scroll']) visualViewport.addEventListener(type, keyboardUp);
-// A tap on the meadow while the card is open: it shuts if nothing's typed, else the keyboard goes down. With a finger,
-// a tap that only put the keyboard away goes no further (true).
-function chatAway(e) {
-  const t = $('#chat-text'), typing = document.activeElement === t;
-  if (t.value.trim()) t.blur(); else openChat(false);
-  return typing && e.pointerType === 'touch';
+// A line coming in while the card is shut is held, not timed to fade: it waits in the log, and the 💬 has a small green
+// dot till the card is opened (a line the player never saw shouldn't go after CHAT_LOG_MS). Read, it fades as before.
+const chatUi = { unread: 0 };
+function chatNew(on) {
+  const b = $('#chat-btn');
+  if (!b) return;
+  b.classList.toggle('has-new', !!on);
+  b.title = on ? 'New messages · Say something to your friends (Enter)' : 'Say something to your friends (Enter)';
 }
 function chatLine(who, text, me) {
   const log = $('#chat-log'), el = document.createElement('div'), b = document.createElement('b');
@@ -17578,7 +17738,13 @@ function chatLine(who, text, me) {
   log.append(el);
   while (log.childElementCount > CHAT_KEEP) log.firstElementChild.remove();
   log.scrollTop = 1e6;
-  setTimeout(() => el.classList.add('old'), CHAT_LOG_MS);
+  const held = !me && !chatOpen() && !!(Net && Net.on);   // (a line you said is already read; with no net, nothing's waiting)
+  if (held) {
+    el.classList.add('held'); chatUi.unread++; chatNew(true);
+    const waiting = log.querySelectorAll('.chat-line.held');   // (only the last few stay on the meadow; the rest wait in the log)
+    for (let i = 0; i < waiting.length - CHAT_HELD; i++) { waiting[i].classList.remove('held'); waiting[i].classList.add('old'); }
+  }
+  else setTimeout(() => el.classList.add('old'), CHAT_LOG_MS);
 }
 function sayLine(text) {
   text = cleanChat(text);
@@ -17686,49 +17852,191 @@ function heardHug(m, now) {
   sendPos(now);                                            // (they see it hug back at once)
   hugHearts(f.x, f.y);
 }
-// Friendly fire, a first pass: X swings at the nearest friend in reach (SWING_REACH), and everyone is told ('swat'). Each
-// sees the swing, a quick white arc round the one swinging (drawSwat); the one hit judders (joltOf), is knocked back a
-// step from the swing (SWAT_PUSH, onto ground it can stand on) and loses SWAT_HURT of its health (sim.js hurt): enough
-// swats and it collapses as from the cold. The one hit takes its own hurt, so the meadow's sim stays its own.
-const SWING_MS = 240, SWING_EVERY = 550, SWING_REACH = 1.5, SWAT_HURT = 0.12, SWAT_PUSH = 0.8, HIT_MS = 360;
-function swing() {
-  const f = world.forager, now = performance.now();
-  if (f.down >= 0 || ui.fire || cooking() || now - fg.swingAt < SWING_EVERY) return;
-  let hit = null, best = SWING_REACH;
-  for (const p of peers.values()) {
-    const d = Math.hypot(p.x - f.x, p.y - f.y);
-    if (p.stage !== 4 && d < best) { best = d; hit = p; }
-  }
-  fg.swingAt = now;
-  fg.swingDir = hit ? Math.atan2(hit.y - f.y, hit.x - f.x) : fg.flip ? 0 : Math.PI;
-  if (hit) { hit.hitAt = now + SWING_MS * 0.4; fg.flip = hit.x > f.x; }   // (turned to whom it swings at)
-  Net.send({ t: 'swat', x: f.x, y: f.y, d: fg.swingDir, hit: hit ? hit.id : '', n: myName });
-  hear('swat', f.x, f.y, { hit: !!hit }, true);
+// Friendly fire: X swings at the nearest friend in reach (SWING_REACH) and everyone is told ('swat'). Each sees the
+// swing, a quick white arc round the one swinging (drawSwat); the one hit judders (joltOf), is knocked back a step from
+// the swing (SWAT_PUSH, onto ground it can stand on) and loses SWAT_HURT of its health (sim.js hurt): enough swats and it
+// collapses as from the cold. The one hit takes its own hurt, so the meadow's sim stays its own.
+//
+// It costs breath now, and it comes round in its own time: SWING_COST of its stamina a swing (SWING_MISS_COST more for one
+// that lands nowhere, and it rests SWING_WHIFF longer after that), and SWING_WINDUP ms between the press and the strike,
+// so the arc is a warning and a friend can step out of reach in it. Everyone sends its health in pos, so a bopping match
+// has pips over each head instead of a guess (drawPeerHp).
+//
+// The one hit has the last word, since only it knows where it truly stands: a swat or a throw takes only if it's still in
+// reach of where it came from (SWAT_SLACK, TOSS_CATCH: that's the dodge, the swinger's picture of it being a few hundred ms
+// old), only if it was sent from about where that friend is (HIT_FROM), and no oftener than a friend can swing or throw.
+const SWING_MS = 240, SWING_EVERY = 620, SWING_REACH = 1.5, SWAT_HURT = 0.12, SWAT_PUSH = 0.8, HIT_MS = 360;
+const SWING_WINDUP = 110, SWING_WHIFF = 380;              // ms before the strike, and the rest past SWING_EVERY a swing that misses needs
+const SWAT_SLACK = 0.45, TOSS_CATCH = 0.9, HIT_FROM = 3;  // (tiles: past reach a swat still takes, from where a throw lands, from where it said it was)
+const SWING_COST = 0.14, SWING_MISS_COST = 0.1, SWING_MIN = 0.12;   // stamina a swing takes, more for a miss, and the least it swings on
+const THROW_HOLD = 230;                                   // X held past this is a throw being aimed, not a swing
+const THROW_REACH = 7, THROW_LAND = 4.2, THROW_COST = 0.06, THROW_EVERY = 420, TOSS_MS = 520;
+const swingKey = { down: false, at: -1e9, touch: -1e9 };   // (X, or the round button, held: swing on a tap, throw on a hold)
+let pendingSwat = null;                                   // ({ due, id }: the strike a swing is on its way to)
+
+function canSwing(now) {
+  const f = world.forager;
+  return !(f.down >= 0 || ui.fire || cooking() || now - fg.swingAt < SWING_EVERY || now < fg.swingRest);
 }
-// On a touch screen there's no X: while a friend stands near (SWING_NEAR), a round button above the sprint's (#swing-btn)
-// swings, as X does. It shows only then, so a meadow played alone or apart never sees it.
+function nearestFriend(reach) {
+  const f = world.forager;
+  let hit = null, best = reach;
+  for (const p of peers.values()) {
+    if (p.stage === 4) continue;
+    const d = Math.hypot(p.x - f.x, p.y - f.y);
+    if (d < best) { best = d; hit = p; }
+  }
+  return hit;
+}
+function spendStamina(k) {
+  const f = world.forager;
+  f.stamina = Math.max(0, f.stamina - k);
+  if (f.stamina <= 0) f.winded = true;                     // (the body's own: no sprint till it has WINDED_BACK)
+}
+// X down: nothing yet. Up again quickly: a swing. Held: a throw, aimed at the friend nearest (drawTossAim).
+function swingPress() {
+  if (!(Net && Net.on) || !world) return;
+  swingKey.down = true; swingKey.at = performance.now();
+}
+function swingRelease() {
+  if (!swingKey.down) return;
+  swingKey.down = false;
+  if (performance.now() - swingKey.at < THROW_HOLD) shove();
+  else toss();
+}
+function swingCancel() { swingKey.down = false; }
+
+function shove() {
+  const f = world.forager, now = performance.now();
+  if (!canSwing(now)) return;
+  if (f.stamina < SWING_MIN) { say('Too out of breath to swing', f.x, f.y - 1.6); chime('pant'); return; }
+  const hit = nearestFriend(SWING_REACH);
+  fg.swingAt = now;                                        // (the arc starts as it winds up; the strike comes at the end of the windup)
+  fg.swingDir = hit ? Math.atan2(hit.y - f.y, hit.x - f.x) : fg.flip ? 0 : Math.PI;
+  if (hit) fg.flip = hit.x > f.x;                          // (turned to whom it swings at)
+  spendStamina(SWING_COST);
+  if (fg.emote >= 0) emoteOff();
+  ui.gather = null; ui.queue.length = 0;
+  pendingSwat = { due: now + SWING_WINDUP, id: hit ? hit.id : '' };
+  Net.send({ t: 'swing', x: f.x, y: f.y, d: fg.swingDir, n: myName });   // (so everyone sees it coming: the arc, drawSwat)
+}
+// The strike: the one swung at is still in reach (it may have stepped out of it: that's the dodge), so it lands.
+function swatFrame(now) {
+  if (!pendingSwat || now < pendingSwat.due) return;
+  const f = world.forager, p = pendingSwat.id ? peers.get(pendingSwat.id) : null;
+  pendingSwat = null;
+  const lands = !!p && p.stage !== 4 && Math.hypot(p.x - f.x, p.y - f.y) <= SWING_REACH + SWAT_SLACK;
+  if (lands) p.hitAt = now + SWING_MS * 0.4;
+  else { spendStamina(SWING_MISS_COST); fg.swingRest = fg.swingAt + SWING_EVERY + SWING_WHIFF; }   // (a swing at nothing costs more, and rests longer)
+  Net.send({ t: 'swat', x: f.x, y: f.y, d: fg.swingDir, hit: lands ? p.id : '', n: myName });
+  hear('swat', f.x, f.y, { hit: lands }, true);
+  if (lands && hasToss() && firstOnce('toss-hint')) toast('🧺 Hold X to throw something at a friend (or hold the round button)');
+}
+
+// What can be thrown, and what it does where it lands. A snowball comes off its own shoulders while it has snow on them
+// (fg.snow, snowOnForager); else the first of these it carries; else a dish (a pudding down a friend's front is still a
+// pudding: it fills them a little).
+const TOSSES = {
+  pebble:     { hurt: 0.05, push: 0.22, ink: '150, 148, 140', sound: 'tock' },
+  stick:      { hurt: 0.08, push: 0.34, ink: '148, 106, 62', sound: 'tock' },
+  hazelnut:   { hurt: 0.03, push: 0.14, ink: '150, 104, 58', sound: 'tock', splat: 0.1 },
+  acorns:     { hurt: 0.03, push: 0.14, ink: '150, 104, 58', sound: 'tock', splat: 0.1 },
+  beechnuts:  { hurt: 0.03, push: 0.14, ink: '142, 104, 60', sound: 'tock', splat: 0.1 },
+  cherry:     { hurt: 0.01, push: 0.08, ink: '176, 44, 54', sound: 'splat', splat: 0.2, wet: 0.04 },
+  strawberry: { hurt: 0.01, push: 0.08, ink: '196, 66, 62', sound: 'splat', splat: 0.2, wet: 0.05 },
+  blackberry: { hurt: 0.01, push: 0.08, ink: '74, 32, 86', sound: 'splat', splat: 0.22, wet: 0.04 },
+  rosehip:    { hurt: 0.01, push: 0.08, ink: '186, 58, 42', sound: 'splat', splat: 0.18, wet: 0.04 },
+  honey:      { hurt: 0, push: 0, ink: '214, 160, 44', sound: 'splat', splat: 0.24, sticky: true },
+};
+const TOSS_ORDER = Object.keys(TOSSES);
+const SNOWBALL = { id: 'snow', hurt: 0.02, push: 0.1, ink: '236, 244, 250', sound: 'splat', splat: 0.18, wet: 0.09 };
+// Everything a thrown thing is, from its id (so both ends of the throw agree on it).
+function tossInfo(id) {
+  if (id === 'snow') return SNOWBALL;
+  if (TOSSES[id]) return { id, ...TOSSES[id] };
+  const food = Recipes.foodOf(id);
+  if (food && food.dish) return { id, dish: food, hurt: 0, push: 0.05, ink: '226, 206, 160', sound: 'splat', splat: 0.18 };
+  return null;
+}
+function hasToss() {
+  if (fg.snow > 0.12) return true;
+  const f = world.forager;
+  for (const id of TOSS_ORDER) if (S.bagCount(f, id) > 0) return true;
+  return false;
+}
+function tossWhat() {
+  if (fg.snow > 0.12) return SNOWBALL;
+  const f = world.forager;
+  for (const id of TOSS_ORDER) if (S.bagCount(f, id) > 0) return tossInfo(id);
+  for (const r of Recipes.RECIPES) if (S.bagCount(f, r.name) > 0) return tossInfo(r.name);
+  return null;
+}
+function toss() {
+  const f = world.forager, now = performance.now();
+  if (!(Net && Net.on) || f.down >= 0 || ui.fire || cooking() || now - fg.tossAt < THROW_EVERY) return;
+  const what = tossWhat();
+  if (!what) { say('Nothing to throw: a pebble, a berry…', f.x, f.y - 1.6); chime('click'); return; }
+  if (f.stamina < SWING_MIN * 0.5) { say('Too out of breath to throw', f.x, f.y - 1.6); chime('pant'); return; }
+  const hit = nearestFriend(THROW_REACH);
+  const dir = hit ? Math.atan2(hit.y - f.y, hit.x - f.x) : fg.flip ? 0 : Math.PI;
+  const far = hit ? Math.hypot(hit.x - f.x, hit.y - f.y) : THROW_LAND;
+  const tx = f.x + Math.cos(dir) * far, ty = f.y + Math.sin(dir) * far;
+  if (Math.abs(Math.cos(dir)) > 0.2) fg.flip = Math.cos(dir) > 0;   // (turned the way it throws: flip is facing right)
+  if (what.id === 'snow') fg.snow = Math.max(0, fg.snow - 0.2); else S.spend(f, what.id, 1);
+  spendStamina(THROW_COST);
+  fg.tossAt = now;
+  if (fg.emote >= 0) emoteOff();
+  ui.gather = null; ui.queue.length = 0;
+  tossAdd(f.x, f.y, tx, ty, what, hit ? hit.id : '', now, '', myName);
+  Net.send({ t: 'toss', x: f.x, y: f.y, tx, ty, it: what.id, hit: hit ? hit.id : '', n: myName });
+  hear('toss', f.x, f.y, {}, true);
+}
+// On a touch screen there's no X: while a friend stands near (SWING_NEAR), or there's something to throw and one is
+// within throwing reach, a round button above the sprint's (#swing-btn) does it. It shows only then, so a meadow played
+// alone or apart never sees it.
 const SWING_NEAR = 4;
-const swingUi = { shown: false };
-function swingFrame() {
+const swingUi = { shown: false, aim: false };
+function swingFrame(now) {
   if (!SPRINT_BTN) return;
   const f = world.forager;
   let show = false;
-  if (Net && Net.on && f.down < 0 && !ui.fire && !cooking())
-    for (const p of peers.values()) if (p.stage !== 4 && Math.abs(p.x - f.x) < SWING_NEAR && Math.abs(p.y - f.y) < SWING_NEAR) { show = true; break; }
-  if (show === swingUi.shown) return;
-  swingUi.shown = show;
-  $('#swing-btn').classList.toggle('hidden', !show);
+  if (Net && Net.on && f.down < 0 && !ui.fire && !cooking()) {
+    let swing = false, far = false;
+    for (const p of peers.values()) {
+      if (p.stage === 4) continue;
+      const dx = Math.abs(p.x - f.x), dy = Math.abs(p.y - f.y);
+      if (dx < SWING_NEAR && dy < SWING_NEAR) swing = true;
+      if (dx < THROW_REACH && dy < THROW_REACH) far = true;
+    }
+    show = swing || (far && hasToss());
+  }
+  if (show !== swingUi.shown) { swingUi.shown = show; $('#swing-btn').classList.toggle('hidden', !show); }
+  const aim = swingKey.down && now - swingKey.at >= THROW_HOLD;
+  if (aim !== swingUi.aim) { swingUi.aim = aim; $('#swing-btn').classList.toggle('aim', aim); }
 }
+// The round button does what X does: a tap swings, a hold aims a throw. (A click made from the keyboard still swings:
+// the pointer handlers mark the time, so the click a pointer makes on the way up isn't a second swing.)
+const swingBtn = $('#swing-btn');
+swingBtn.addEventListener('pointerdown', e => {
+  if (e.button > 0) return;
+  e.preventDefault();                                      // (no focus ring, no click from this press)
+  swingKey.touch = performance.now();
+  swingBtn.setPointerCapture?.(e.pointerId);
+  swingPress();
+});
+swingBtn.addEventListener('pointerup', () => { swingKey.touch = performance.now(); swingRelease(); });
+swingBtn.addEventListener('pointercancel', () => { swingKey.touch = performance.now(); swingCancel(); });
+swingBtn.addEventListener('contextmenu', e => e.preventDefault());   // (a held finger isn't a right-click)
 function heardSwat(m, now) {
   if (!world || !Number.isFinite(m.x) || !Number.isFinite(m.y)) return;
   const p = peers.get(m.from);
-  if (p) { p.swingAt = now; p.swingDir = +m.d || 0; }
   hear('swat', m.x, m.y, { hit: !!m.hit });
   const q = m.hit && peers.get(m.hit);
   if (q) q.hitAt = now + SWING_MS * 0.4;
   if (m.hit !== Net.me || !(Net.guest ? net.tick >= 0 : true)) return;
   const f = world.forager;
-  if (f.down >= 0) return;
+  if (f.down >= 0 || !hitFrom(p, m, 'swatAt', SWING_EVERY, now)) return;
+  if (Math.hypot(f.x - m.x, f.y - m.y) > SWING_REACH + SWAT_SLACK) return;   // (stepped out of it: dodged, whatever the swinger saw)
   fg.hitAt = now + SWING_MS * 0.4;
   const dx = f.x - m.x, dy = f.y - m.y, d = Math.hypot(dx, dy) || 1, nx = f.x + dx / d * SWAT_PUSH, ny = f.y + dy / d * SWAT_PUSH;
   if (S.walkable(world, nx, ny)) { f.x = nx; f.y = ny; }
@@ -17737,6 +18045,84 @@ function heardSwat(m, now) {
   S.hurt(world, SWAT_HURT);
   toast(`💢 ${esc((p && p.name) || cleanName(m.n) || 'A friend')} bopped you`);
   sendPos(now);                                            // (they see it knocked back at once)
+}
+// A friend has started a swing ('swing', sent as it turns): the arc round it shows at once, so it can be seen coming.
+function heardSwingStart(m, now) {
+  const p = peers.get(m.from);
+  if (!p) return;
+  p.swingAt = now;
+  p.swingDir = +m.d || 0;
+}
+// Whether a hit from friend p is one to take: sent from about where p last said it was (tx, ty: where it's drawn lags),
+// and no sooner after its last than it can come round (every ms, less a little for the net's jitter). Marks it taken
+// (p[key]: swatAt, tossHitAt).
+function hitFrom(p, m, key, every, now) {
+  if (!p || Math.hypot(m.x - p.tx, m.y - p.ty) > HIT_FROM || now - p[key] < every * 0.7) return false;
+  p[key] = now;
+  return true;
+}
+// A thrown thing, in the air: from (x0, y0) to (x1, y1) over ms, drawn as an arc (drawTosses), landing once (tossFrame).
+// victim: the one it's for, if it's this forager (the hit lands when it does, so it comes at the same moment as the throw).
+const tosses = [], splats = [];
+const TOSS_MOST = 16, SPLAT_MOST = 24, SPLAT_MS = 9000;
+function tossAdd(x0, y0, x1, y1, what, hit, at, victim, by) {
+  if (tosses.length >= TOSS_MOST) tosses.shift();
+  tosses.push({ x0, y0, x1, y1, at, ms: TOSS_MS + Math.hypot(x1 - x0, y1 - y0) * 26, what, hit, victim, by });
+}
+function tossFrame(now) {
+  for (let i = tosses.length - 1; i >= 0; i--) {
+    const t = tosses[i];
+    if (now < t.at + t.ms) continue;
+    tosses.splice(i, 1);
+    tossLand(t, now);
+  }
+}
+function tossLand(t, now) {
+  splatAt(t.x1, t.y1, t.what.ink, t.what.splat || 0, now);
+  jumpDust(t.x1, t.y1, now, 5);
+  hear(t.what.sound || 'tock', t.x1, t.y1, {}, true);
+  const q = t.hit ? peers.get(t.hit) : null;
+  if (q) q.hitAt = now + HIT_MS * 0.4;
+  const f = world && world.forager;                        // (it hits only if it's still where it was thrown at: a throw can be dodged)
+  if (t.victim === Net.me && f && Math.hypot(f.x - t.x1, f.y - t.y1) <= TOSS_CATCH) tossHurt(t.what, t.x0, t.y0, t.by, now);
+}
+// Where a throw lands on this forager: the little push, the wet of a snowball, a dish eaten (it fills them), or the hurt.
+function tossHurt(what, fx, fy, by, now) {
+  const f = world.forager, who = esc(by || 'A friend');
+  if (f.down >= 0) return;
+  fg.hitAt = now + HIT_MS * 0.4;
+  if (what.push) {
+    const dx = f.x - fx, dy = f.y - fy, d = Math.hypot(dx, dy) || 1, nx = f.x + dx / d * what.push, ny = f.y + dy / d * what.push;
+    if (S.walkable(world, nx, ny)) { f.x = nx; f.y = ny; }
+  }
+  if (what.wet) f.wet = Math.min(1, f.wet + what.wet);
+  f.path.length = 0; f.walking = false; f.speed = 0; f.goalX = f.x; f.goalY = f.y;
+  ui.gather = null; ui.queue.length = 0;
+  if (what.dish) {                                         // (a dish: caught, and eaten, not a hit)
+    const fill = Math.min(3, what.dish.fill || 1);
+    f.tummy = Math.min(1, f.tummy + fill / S.TUMMY);
+    toast(`🥧 ${who} threw you a ${esc(what.dish.name)} — caught it!`);
+  } else if (what.sticky) toast(`🍯 ${who} got you with honey`);
+  else if (what.hurt) {
+    S.hurt(world, what.hurt);
+    toast(`💥 ${who} pelts you with ${esc(itemName(what.id, 1).toLowerCase())}`);
+  }
+  sendPos(now);
+}
+// A mark where something burst: a few little dabs, fading (drawn into the ground's own layer of the frame, drawSplats).
+function splatAt(x, y, ink, r, now) {
+  if (!(r > 0)) return;
+  if (splats.length >= SPLAT_MOST) splats.shift();
+  splats.push({ x, y, ink, r, at: now, seed: Math.random() });
+}
+function heardToss(m, now) {
+  if (!world || !Number.isFinite(m.x) || !Number.isFinite(m.y) || !Number.isFinite(m.tx) || !Number.isFinite(m.ty)) return;
+  const what = tossInfo(m.it);
+  if (!what || Math.hypot(m.tx - m.x, m.ty - m.y) > THROW_REACH + 1) return;   // (no one throws that far)
+  const p = peers.get(m.from), by = (p && p.name) || cleanName(m.n) || 'A friend';
+  const victim = m.hit === Net.me && (Net.host || net.tick >= 0) && hitFrom(p, m, 'tossHitAt', THROW_EVERY, now) ? Net.me : '';
+  tossAdd(+m.x, +m.y, +m.tx, +m.ty, what, m.hit || '', now, victim, by);
+  hear('toss', m.x, m.y, {}, true);
 }
 // Hit a moment ago: it judders side to side, dying away (in its sizes, added to where it's drawn).
 function joltOf(b, now) {
@@ -17752,6 +18138,85 @@ function drawSwat(b, sx, sy, px, now) {
   ctx.lineWidth = Math.max(1.5, px * 0.05 * (1 - u * 0.5));
   ctx.lineCap = 'round';
   ctx.beginPath(); ctx.arc(sx, cy, r, Math.max(a0, a1 - 1.6), a1); ctx.stroke();
+}
+// A friend's health, while it's under its best: a small bar over its hood (the name goes up a little to clear it).
+function drawPeerHp(p, sx, sy, px) {
+  if (!(p.hp < 0.995) || px < 22) return;                  // (zoomed far out the name's enough)
+  const w = Math.max(14, px * 0.28), h = 3, x = sx - w / 2, y = sy - px * 0.64 - 11;
+  ctx.fillStyle = 'rgba(32, 24, 12, 0.62)';
+  ctx.beginPath(); ctx.roundRect(x - 1.5, y - 1.5, w + 3, h + 3, 3); ctx.fill();
+  ctx.strokeStyle = 'rgba(255, 248, 226, 0.5)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.roundRect(x - 1.5, y - 1.5, w + 3, h + 3, 3); ctx.stroke();
+  ctx.fillStyle = 'rgba(255, 242, 206, 0.96)';
+  ctx.beginPath(); ctx.roundRect(x, y, Math.max(3, w * clamp(p.hp, 0, 1)), h, 1.5); ctx.fill();
+}
+// The aim while X is held: a dotted arc from the forager to where the thing will land, and a ring there. Dotted cream,
+// a little brighter as the hold settles; faint when there's nothing in the satchel to throw.
+function drawTossAim(now) {
+  if (!swingKey.down || !(Net && Net.on)) return;
+  const held = now - swingKey.at;
+  if (held < 60) return;                                   // (a line as soon as it's clearly a hold)
+  const k = clamp(held / THROW_HOLD, 0, 1);
+  const f = world.forager, what = tossWhat(), hit = nearestFriend(THROW_REACH);
+  const dir = hit ? Math.atan2(hit.y - f.y, hit.x - f.x) : fg.flip ? 0 : Math.PI;
+  const far = hit ? Math.hypot(hit.x - f.x, hit.y - f.y) : THROW_LAND;
+  const d = drawnAt(f), a = onScreen(d.x, d.y), ax = a[0], ay = a[1];
+  const b = toScreen(f.x + Math.cos(dir) * far, f.y + Math.sin(dir) * far), bx = b[0], by = b[1];
+  const px = forPx(), lift = Math.min(px * 1.4, Math.abs(bx - ax) * 0.22 + px * 0.25);
+  ctx.save();
+  ctx.strokeStyle = what ? `rgba(255, 248, 226, ${0.5 + 0.4 * k})` : 'rgba(255, 248, 226, 0.22)';
+  ctx.lineWidth = Math.max(1.6, px * 0.032);
+  ctx.setLineDash([Math.max(3, px * 0.05), Math.max(4, px * 0.06)]);
+  ctx.beginPath();
+  ctx.moveTo(ax, ay - px * 0.3);
+  ctx.quadraticCurveTo((ax + bx) / 2, (ay + by) / 2 - lift, bx, by);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.beginPath(); ctx.ellipse(bx, by, px * 0.11, px * 0.045, 0, 0, TAU); ctx.stroke();
+  ctx.restore();
+}
+// What's in the air: each thrown thing on its arc, turning, its shadow on the ground under it. Above the dark with the
+// pop-ups (a thing in the air is over everything).
+function drawTosses(now) {
+  if (!tosses.length) return;
+  const px = forPx();
+  for (const t of tosses) {
+    const u = (now - t.at) / t.ms;
+    if (u < 0 || u >= 1) continue;
+    const x = lerp(t.x0, t.x1, u), y = lerp(t.y0, t.y1, u);
+    const lift = Math.sin(Math.PI * u) * (0.35 + 0.1 * Math.hypot(t.x1 - t.x0, t.y1 - t.y0));
+    const a = toScreen(x, y), sx = a[0], sy = a[1], size = Math.max(5, px * 0.19), top = sy - lift * px;
+    if (!visible(sx, top, size * 2)) continue;
+    ctx.fillStyle = `rgba(30, 40, 24, ${0.16 * clamp(1 - lift, 0, 1)})`;
+    ctx.beginPath(); ctx.ellipse(sx, sy, size * 0.4, size * 0.16, 0, 0, TAU); ctx.fill();
+    if (t.what.id === 'snow') {
+      ctx.fillStyle = 'rgba(250, 253, 255, 0.95)';
+      ctx.beginPath(); ctx.arc(sx, top, size * 0.4, 0, TAU); ctx.fill();
+      ctx.fillStyle = 'rgba(206, 224, 240, 0.6)';
+      ctx.beginPath(); ctx.arc(sx + size * 0.12, top + size * 0.1, size * 0.19, 0, TAU); ctx.fill();
+    } else {
+      const s = sprite(ITEM_ART[t.what.id] || '•', size * 1.4);
+      ctx.save(); ctx.translate(sx, top); ctx.rotate(u * 7 + (t.x1 > t.x0 ? 0.4 : -0.4));
+      ctx.drawImage(s.canvas, -s.size / 2, -s.size / 2, s.size, s.size);
+      ctx.restore();
+    }
+  }
+}
+// Where something burst: a stain and a few dabs, fading. Laid on the ground with the scorches (under the animals).
+function drawSplats(now) {
+  for (let i = splats.length - 1; i >= 0; i--) if (now - splats[i].at >= SPLAT_MS) splats.splice(i, 1);
+  if (!splats.length) return;
+  for (const s of splats) {
+    const u = (now - s.at) / SPLAT_MS, a = toScreen(s.x, s.y), sx = a[0], sy = a[1], r = cam.zoom * s.r * (0.7 + 0.5 * s.seed);
+    if (!visible(sx, sy, r * 3)) continue;
+    ctx.fillStyle = `rgba(${s.ink}, ${0.45 * (1 - u * u)})`;
+    ctx.beginPath(); ctx.ellipse(sx, sy, r, r * 0.45, 0, 0, TAU); ctx.fill();
+    for (let k = 0; k < 4; k++) {
+      const ang = s.seed * TAU + k * 1.7, dd = r * (0.8 + 0.5 * ((s.seed * (k + 3)) % 1));
+      ctx.beginPath(); ctx.ellipse(sx + Math.cos(ang) * dd, sy + Math.sin(ang) * dd * 0.5, r * 0.22, r * 0.1, ang, 0, TAU); ctx.fill();
+    }
+  }
 }
 const WAYS = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
 function heardCall(m, now) {
@@ -17775,22 +18240,99 @@ function heardChat(m, now) {
   chime('click');
 }
 
-// A few times a second: how many are here, on the pill (shown only while together).
+// The 🧺 pill's card: the meadow you're in, who's here and who hosts it, and the link to ask someone in. The pill opens it
+// (openMeadow) instead of sharing at once, since the card has Share and Leave. It is rewritten only when what it says changes
+// (the content key), though netCard looks at it a few times a second while it's open.
+let meadowShown = '';
+const meadowOpen = () => !$('#meadow-card').classList.contains('hidden');
+
+function openMeadow(open) {
+  const card = $('#meadow-card');
+  if (open && !(Net && Net.on)) return;
+  if (open) {
+    openFriends(false);
+    toggleMore(false);
+    meadowShown = '';
+    card.classList.remove('hidden');
+    renderMeadow();
+    return;                                            // (no focus taken: there is nothing to type on)
+  }
+  if (card.classList.contains('hidden')) return;
+  card.classList.add('hidden');
+  meadowShown = '';                                    // (the next open says it all afresh)
+}
+
+function renderMeadow() {
+  if (!meadowOpen() || !(Net && Net.on)) return;
+  const guest = Net.guest, host = guest ? peers.get(net.hostId) : null, hostName = host ? host.name : '';
+  const here = peers.size + 1, others = here - 1;
+  let key = (guest ? 'g:' : 'h:') + myName + ':' + net.hostId;
+  for (const p of peers.values()) key += ':' + p.id + '=' + p.name;
+  if (key === meadowShown) return;
+  meadowShown = key;
+  const rows = [];
+  const row = (name, role, mine, fallback) => '<li class="md-row"><span class="fr-pic" aria-hidden="true">' + (role === 'host' ? '🧺' : '🌿') +
+    '</span><span class="fr-who"><b>' + esc(name || fallback) + '</b><span>' + (mine ? role + ' · you' : role) + '</span></span></li>';
+  if (guest) {
+    rows.push(row(hostName, 'host', false, 'your friend'));
+    rows.push(row(myName, 'guest', true, 'You'));
+    if (net.hostId) for (const p of peers.values()) if (p.id !== net.hostId) rows.push(row(p.name, 'guest', false, 'a friend'));   // (not till the host is known: it would be listed twice)
+  } else {
+    rows.push(row(myName, 'host', true, 'You'));
+    for (const p of peers.values()) rows.push(row(p.name, 'guest', false, 'a friend'));
+  }
+  $('#meadow-list').innerHTML = rows.join('');
+  const where = $('#meadow-where'), note = $('#meadow-note');
+  if (guest) {
+    where.textContent = hostName ? `You’re in ${hostName}’s meadow.` : 'You’re in your friend’s meadow.';
+    let line = hostName ? `The meadow runs on ${hostName}’s clock.` : 'The meadow runs on your friend’s clock.';
+    if (net.hostId && peers.size - (host ? 1 : 0) > 0) line += ` ${here} foraging here.`;   // (other guests: the host relays their positions)
+    note.textContent = line;
+  } else {
+    where.textContent = others > 0 ? 'Your meadow, with friends in it.' : 'Your meadow is open to friends.';
+    note.textContent = others > 0 ? (others === 1 ? '1 friend here.' : `${here} foraging here.`) : 'Waiting for a friend to come. Send them the link.';
+  }
+  $('#meadow-leave').textContent = guest ? 'Leave' : 'Close the meadow';
+}
+
+// A guest whose host has stopped sending positions (its tab in the background, its phone asleep) says so: the meadow waits
+// on the host's clock by design, and without a word this is what a freeze looks like. Shown a few times a second, written only
+// when it changes; the host's next pos hides it again (heardPos). Hidden while the line is being taken up again (#reconnect
+// says that), before the host's meadow has landed, and for a host or a solo meadow.
+function hostWaitShow(now) {
+  const waiting = !!(Net && Net.on && Net.guest && net.tick >= 0 && !Net.reconnecting
+    && net.hostAt && now - net.hostAt > HOST_WAIT_MS);
+  if (waiting !== hostWait.on) { hostWait.on = waiting; $('#host-wait').classList.toggle('on', waiting); }
+  if (!waiting) return;
+  const name = peers.get(net.hostId)?.name;
+  const text = name ? `🧺 Waiting for ${name}…` : '🧺 Waiting for your friend…';   // (a name is player text: textContent, never innerHTML)
+  if (text !== hostWait.text) { hostWait.text = text; $('#host-wait').textContent = text; }
+}
+
+// A few times a second: how many are here, on the pill (shown only while together), and the meadow card, if it's open, kept to
+// date with who's here and whose meadow it is.
 function netCard(now) {
   const on = !!(Net && Net.on), n = on ? peers.size + 1 : 0;
+  if (!on) openMeadow(false);                          // (the room was left, or the host went: its card goes too)
+  hostWaitShow(now);                                   // (before the key's early return: it changes without anyone coming or going)
   let names = '';
   if (on) for (const p of peers.values()) names += (names ? ', ' : '') + (p.name || 'a friend');
   const key = on ? n + ':' + names : '';
-  if (key === net.shown) return;
+  if (key === net.shown) { renderMeadow(); return; }
   net.shown = key;
   const b = $('#friends-btn');
   b.classList.toggle('hidden', !on);
   $('#chat-btn').classList.toggle('hidden', !on);
   $('#chat').classList.toggle('hidden', !on);
-  if (!on) { openChat(false); myChat = null; }
+  if (!on) {
+    openChat(false); myChat = null;
+    chatUi.unread = 0; chatNew(false);                 // (no session: nothing is waiting to be read)
+    for (const el of $('#chat-log').querySelectorAll('.chat-line.held')) { el.classList.remove('held'); el.classList.add('old'); }
+  }
   $('#leave-item').classList.toggle('hidden', !on);
   b.textContent = '🧺 ' + n;
-  b.title = n > 1 ? `Foraging together with ${names}` : 'Open to friends: waiting for someone to come';
+  b.title = (n > 1 ? `Foraging together with ${names}` : 'Open to friends: waiting for someone to come') + '. Who’s here, and the link to share';
+  renderMeadow();
 }
 
 // On a phone the share sheet (messages, chats), elsewhere the clipboard.
@@ -17826,7 +18368,7 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'place-turn') turnPlace(1);   // (the placing bar: turn it)
   else if (t.dataset.act === 'place-ok') placeHere();      // (the placing bar: put it here)
   else if (t.dataset.act === 'place-x') placeFire(false);  // (the placing bar: not now)
-  else if (t.dataset.act === 'swing') swing();             // (friendly fire, the X of a touch screen)
+  else if (t.dataset.act === 'swing') { if (performance.now() - swingKey.touch > 500) shove(); }   // (friendly fire, the X of a touch screen: a keyboard's click)
   else if (t.dataset.act === 'hug') hug();                 // (the G of a touch screen)
   else if (t.dataset.act === 'larder-close') openLarder(false);
   else if (t.dataset.act === 'larder-all') larderAll();
@@ -17858,7 +18400,11 @@ document.addEventListener('click', e => {
   }
   else if (t.dataset.act === 'more') toggleMore();
   else if (t.dataset.act === 'copy-link') copyLink();
-  else if (t.dataset.act === 'together') together();
+  else if (t.dataset.act === 'together') { if (Net && Net.on) openMeadow(true); else together(); }   // (the card has the share once it's open)
+  else if (t.dataset.act === 'meadow') openMeadow(true);
+  else if (t.dataset.act === 'meadow-share') shareMeadowLink();
+  else if (t.dataset.act === 'meadow-done') openMeadow(false);
+  else if (t.dataset.act === 'meadow-leave') { leaveTogether(); if (!(Net && Net.on)) openMeadow(false); }
   else if (t.dataset.act === 'wd-hat') wardrobePick('hat', +t.dataset.i);
   else if (t.dataset.act === 'wd-cloak') wardrobePick('cloak', +t.dataset.i);
   else if (t.dataset.act === 'wd-dice') wardrobePick('dice');
@@ -17911,10 +18457,20 @@ function holdShift(on) {
   shiftHeld = on;
   if (world?.forager.walking) world.forager.running = on && !world.forager.winded;
 }
-// Space: it leaps (sim.js foragerJump) the way it faces, over whatever's in its way, a walk's length or a sprint's.
-// Where it lands it walks on, or stands. Not while paused, and not twice while it's up.
+// Space: it leaps (sim.js foragerJump) over whatever's in its way, a walk's length or a sprint's: the way the keys
+// held say, walking where it's walking to, and standing the way it's shown facing (a pick or a hug turns its painting
+// but not its heading, so the heading turned to the same side). Where it lands it walks on, or stands. Not while paused,
+// and not twice while it's up.
 function jumpNow() {
-  if (!world || ui.speed <= 0 || !S.foragerJump(world)) return;
+  if (!world || ui.speed <= 0) return;
+  const f = world.forager;
+  let aim = NaN;
+  if (keyWalking) aim = Math.atan2(keyArrow.uy, keyArrow.ux);
+  else if (!f.walking) {
+    const c = Math.cos(f.heading), y = Math.sin(f.heading);
+    aim = fg.flip === c > 0 || Math.abs(c) < 0.18 ? f.heading : Math.atan2(y, -c);
+  }
+  if (!S.foragerJump(world, aim)) return;
   if (fg.emote >= 0) emoteOff();
   foragerAhead();
 }
@@ -17971,9 +18527,10 @@ function drawKeyArrow(now) {
 document.addEventListener('keyup', e => {
   if (e.key === 'Shift') holdShift(false);
   keysHeld.delete(e.code);
+  if (e.code === 'KeyX') swingRelease();                   // (let go of X: a swing, or the throw it was aiming)
   if (e.code === 'KeyF' && fireKey) { fireKey = false; blowOn(false); }   // (let go of F: it stops blowing)
 });
-addEventListener('blur', () => { holdShift(false); keysHeld.clear(); if (fireKey) { fireKey = false; blowOn(false); } });
+addEventListener('blur', () => { holdShift(false); keysHeld.clear(); swingCancel(); if (fireKey) { fireKey = false; blowOn(false); } });
 document.addEventListener('keydown', e => {
   if (e.key === 'Shift' && !e.repeat) holdShift(true);
   if (e.key === 'Meta') keysHeld.clear();               // (a Mac doesn't send the keyup of a key let go while ⌘ is down)
@@ -18004,7 +18561,7 @@ document.addEventListener('keydown', e => {
   else if (e.code === 'KeyF' && !e.repeat) { if (atFire()) { fireKey = true; blowOn(true); } else campfirePressed(); }   // (at a fire, held: blowing; else the quick campfire)
   else if (e.code === 'KeyC' && !e.repeat) { if (stripOpen()) openMake(false); else openMake(true); }   // (the make strip)
   else if (e.key === 'h' && !e.repeat && Net && Net.on) callOut();   // (a hoot to your friends)
-  else if (e.code === 'KeyX' && !e.repeat && Net && Net.on) swing();   // (friendly fire)
+  else if (e.code === 'KeyX' && !e.repeat && Net && Net.on) swingPress();   // (friendly fire: a tap swings, a hold throws)
   else if (e.code === 'KeyG' && !e.repeat && Net && Net.on) hug();     // (a hug for the friend close by)
   else if (e.key === 'm') toggleSound();
   else if (e.key === 'i') openYou();
@@ -18024,7 +18581,7 @@ const back = { token: Math.random().toString(36).slice(2), depth: 0, going: fals
 const moreOpen = () => !$('#more-menu').classList.contains('hidden');
 function opened() {
   const ins = $('#inspector').classList, sheetUp = ins.contains('open') && narrow() && !ins.contains('strip');
-  return [askOpen(), moreOpen(), friendsOpen(), askedOver(), !!ui.place, stripOpen(), larderOpen(), stoneOpen(), bookOpen(), bookReading(), cooking(), wardrobeOpen(), chatOpen(), ins.contains('open'), sheetUp].filter(Boolean).length;
+  return [askOpen(), moreOpen(), friendsOpen(), meadowOpen(), askedOver(), !!ui.place, stripOpen(), larderOpen(), stoneOpen(), bookOpen(), bookReading(), cooking(), wardrobeOpen(), chatOpen(), ins.contains('open'), sheetUp].filter(Boolean).length;
 }
 // The one on top shuts (Esc, and Back once for each step it takes).
 function stepOut() {
@@ -18033,6 +18590,7 @@ function stepOut() {
   else if (moreOpen()) toggleMore(false);
   else if (askedOver()) friendAsk(false);
   else if (friendsOpen()) openFriends(false);
+  else if (meadowOpen()) openMeadow(false);
   else if (stripOpen()) openMake(false);                   // (the make strip)
   else if (ui.place) placeFire(false);                     // (picking a spot for a fire: not now)
   else if (larderOpen()) openLarder(false);                // (the basket's card)

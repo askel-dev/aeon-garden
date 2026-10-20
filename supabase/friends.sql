@@ -25,7 +25,8 @@ create table if not exists public.friendships (
   check (a <> b)
 );
 
--- 'invite': come to my meadow (room). 'knock': can I come to yours? Gone once read.
+-- 'invite': come to my meadow (room). 'knock': can I come to yours? Kept until the one asked answers,
+-- or goes when stale (friends.js INVITE_FRESH, 10 min: a reload inside that brings it back).
 create table if not exists public.invites (
   id bigint generated always as identity primary key,
   from_id uuid not null references public.profiles on delete cascade,

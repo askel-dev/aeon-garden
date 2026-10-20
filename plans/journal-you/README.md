@@ -2,7 +2,7 @@
 
 **Built (first slice).** The mockup is `mockup.html` next to this (open it through the dev server so the fonts load:
 http://localhost:8765/plans/journal-you/mockup.html). Its buttons along the top switch between the concepts. The game
-has the sheet, the three real skills, the skill pages and the freshness dot; the ribbons and the later parts are still
+has the sheet, the three real skills, the skill pages and the freshness dot; the ribbons are built too; the later parts are still
 only in the mockup (see "What's next").
 
 ## Why
@@ -39,20 +39,18 @@ Right page, the skill picked, laid out as a recipe page is:
   forward to.
 - at the top (mockup 2) the opal coin, every pip filled.
 
-A level up's headline could later end with "see it in the book", but the dot is wired now: the You tab gets the red
+A level up's headline ends with "see it in the book" (built below), and the dot is wired: the You tab gets the red
 "new" dot (and the shut book's button its glow), as a new recipe does (`bookFresh` / `bookNews`), till the book's opened
 on You.
 
-A level up's headline could end with "see it in the book" and the You ribbon gets the red "new" dot, as a new recipe
-does (`bookFresh` / `bookNews`), till the book's opened on it.
+## The ribbons (built)
 
-## The ribbons (new navigation): later
-
-Not built. With three parts the titles-as-tabs (`#book .tab`) still fit — Recipes, Finds and You — so the first slice
-keeps them, as three titles, not ribbons. Ribbons are worth doing when a fourth part exists and the titles would get
-crowded: cloth ribbons over the book's top edge, like The Forest's coloured tabs, a mark and a word each, the open one
-taller and joining the page, a red dot for something new. On an upright phone they'd be a row of 44 px tabs across the
-top of the sheet, only the open one with its word (mockup 6).
+The three parts' titles are cloth ribbons now (`#book .tab`, still the same buttons, so `bookTab`, the freshness dot and
+`aria-selected` are unchanged): a mark and a word each, in `PART_INK` / `PART_MARK` (game.js). On a wide book they hang from
+the brass top edge, a swallowtail notch at the foot, the open one longer and in full colour, the others shorter and a little
+faded; the red dot sits inside the ribbon (the clip would cut one hung outside). On an upright phone they're a row of 44 px
+tabs across the top of the sheet, only the open one with its word. A fourth part is a new `PART_INK` / `PART_MARK` entry and
+a `BOOK_PARTS` key; four fit the row.
 
 ## Built (first slice)
 
@@ -69,30 +67,34 @@ top of the sheet, only the open one with its word (mockup 6).
    mark it seen) on the way past. The face's `data-act="me"` and `I` call it. `openMe`, `renderMe`, `#me-card`, its CSS
    and its phone sheet are gone. The face's touch `pointerdown` no longer shows the tip (the book covers it); mouse hover
    still does, and the help now says "Tap to open the book at You".
-4. The titles stay titles. The ribbons are for when a fourth part exists.
+4. The titles became ribbons (above).
 5. Level 0 gets `BARE_COIN` (a blank worn coin) and "What level 1 gives". The road's cooking vessels are listed under
    the pips, each with its level's little coin, from `opensAt`; the pips themselves stay numbers (long vessel names under
    a 39 px pip wrapped to five lines). No sim or kept-meadow change: days are `Math.floor(world.tick / S.TPD) + 1`, and
    the page's title is the forager's name (no Name row).
+6. A level up's headline says "see it in the book": `levelUp` keeps its line and adds `<span class="see">` to it, a
+   pencilled note in Fraunces italic under what the level gives (`#announce.level .see`, index.html), so the dot on the
+   You tab has its words. The toast, when a card is open or the tab hidden, stays the one line.
 
 Checked at 1400×1000, 390×844 and 844×390: no console errors, the sheet and page fit without clipping (the landscape
-page scrolls, as any book page does there), the face and I open on You, level 0 and level 10 are handled, and a skill
-level up while the book is shut puts the dot on the You tab.
+page scrolls, as any book page does there), the face and I open on You, level 0 and level 10 are handled, a skill
+level up while the book is shut puts the dot on the You tab, and the headline's line reads under the says at both level
+5 and the opal.
 
 ## What's next
 
-- The ribbons, when a fourth part (Almanac, Diary, Bestiary) is real.
-- The level-up headline's "see it in the book" line, if it's worth saying (the dot already points there).
+- A fourth part (Almanac, Diary, Bestiary) for the ribbons to hold.
 - More skills and levels that open things, not only percentages (the mockup's faint road labels are ideas, not built).
 
 ## Decided
 
 - Skills not in the game yet: hidden, not dashed "later" rows.
 - The face always opens the book on You (and so does I). The hover tip stays; a touch on the face doesn't flash it.
-- Keep the titles-as-tabs for the first slice; ribbons wait for a fourth part.
+- Ribbons were built with three parts, ahead of the plan, when Axel asked.
 - The pencil blue is one new value, `--hand: #3d5570`, only for written values (days, feeling, the vitals' words).
 - The sheet's title is the forager's name; "Your forager" is the fallback when none is set.
 - No later parts, no speculative road labels, no per-frame drawing, no sim behavior changes.
+- The headline's "see it in the book" is words, not a button: headlines take no clicks; the face or I opens it.
 
 ## Later: other parts the ribbons make room for (mockup 3–5)
 

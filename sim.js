@@ -1217,7 +1217,7 @@ const OLD_NAMES = ['Old', 'Great', 'Crooked', 'Grey', 'Twisted', 'Lonely', 'Whis
 const KIND_NAMES = { oak: 'Oak', beech: 'Beech', maple: 'Maple', pine: 'Pine', birch: 'Birch', alder: 'Alder', apple: 'Apple', cherry: 'Cherry', hawthorn: 'Thorn' };
 
 const treeAge = (w, d) => (w.tick - d.born) / YEAR;
-const standing = d => d.tree && !d.stump && !d.dead && !d.fallen;
+const standing = d => d.tree && !d.stump && !d.dead && !d.fallen && !d.gone;
 const bearing = (w, d) => standing(d) && d.size >= GROWN && treeAge(w, d) >= TREES[d.kind].seedAge;
 const sizeAt = (k, max, years) => max / (1 + (max / SPROUT - 1) * Math.exp(-k.grow * years));
 const yearsTo = (k, max, size) => Math.log((max / SPROUT - 1) / Math.max(1e-3, max / size - 1)) / k.grow;
@@ -5549,18 +5549,21 @@ let foragerPace = 1;                    // of its walk, run and dash it goes: ga
 // under it. Press it again just before it lands (or in the moment after) and the next dash keeps the momentum, a little
 // more each time, up to the most; press at the wrong time and the momentum is gone. A dash from standing is a
 // short shift; off a walk or a run it's longer, so a good chain clears a boulder. Rocks, the seat log and brush aren't in
-// its way while it's up (foragerJump, airTick).
+// its way while it's up, deep water is (foragerJump, airTick). A chain costs stamina and is no quicker than a sprint till
+// it's built up; out of the water it's a wade's dash, with no chain.
 const FORAGER_JUMP_TICKS = 9;           // ticks in the air (0.3 s at 1x): a dash, not a float
 const FORAGER_JUMP_HEIGHT = 0.3;        // tiles it rises at the top of the arc (its painting's feet, drawForager)
 const FORAGER_DASH = 0.21;              // tiles a tick off a walk or a run (the run itself is FORAGER_RUN)
 const FORAGER_DASH_STILL = 0.13;        // and from standing: a shorter shift
 const FORAGER_DASH_DRAG = 0.96;         // of its pace it keeps each tick in the air (it goes off like a dash, easing out)
-const FORAGER_HOP_GAIN = 0.2;           // of the momentum a dash that keeps the chain adds (five make the most: 1)
-const FORAGER_HOP_DASH = 0.5;           // at the most, a dash is this much quicker (and a little quicker with each)
-const FORAGER_HOP_RUN = 0.2;            // and its walk or run once it's down
+const FORAGER_HOP_GAIN = 0.125;         // of the momentum a dash that keeps the chain adds (eight make the most: 1)
+const FORAGER_HOP_DASH = 0.3;           // at the most, a dash is this much quicker (and a little quicker with each)
+const FORAGER_HOP_RUN = 0.15;           // and its walk or run once it's down
 const FORAGER_HOP_FADE = 1 / 120;       // of the momentum it loses a tick walking (and three times that standing)
-const FORAGER_HOP_EARLY = 3;            // ticks before it lands a press is kept for the next dash (the window to aim for)
-const FORAGER_HOP_GRACE = 2;            // and ticks after it lands one still keeps the chain
+const FORAGER_HOP_EARLY = 2;            // ticks before it lands a press is kept for the next dash (the window to aim for)
+const FORAGER_HOP_GRACE = 1;            // and ticks after it lands one still keeps the chain
+const FORAGER_PAST = 2.5;               // tiles past where it was going a dash can carry it and it counts as there (overshot)
+const FORAGER_JUMP_COST = 0.045;        // of its stamina a dash costs (twice that at full momentum); winded, it can't keep a chain
 const FORAGER_JUMP_V = 4 * FORAGER_JUMP_HEIGHT / FORAGER_JUMP_TICKS;                              // tiles a tick up at take-off
 const FORAGER_JUMP_G = 8 * FORAGER_JUMP_HEIGHT / (FORAGER_JUMP_TICKS * FORAGER_JUMP_TICKS);      // and its gravity, a tick
 const WATER_COST = 2.5;                 // a step in the water costs this many on dry ground
@@ -5589,7 +5592,8 @@ const BRUSH_NEAR = 2.5;                 // tiles about it it looks for brush in,
 // jumpT: ticks left in the air (0: on its feet), jz: how high it is (tiles), jumpV: how fast it's rising; jumpSpeed: the
 // pace it took off at, jumpFX, jumpFY: where it left the ground (outOfRocks, landing on a rock), jumpAt: the tick it took
 // off (drawing its take-off once); hop: the momentum it has (chained dashes, 0 to 1), hopBuf: ticks a press while up is
-// kept for the landing, hopWin: ticks after landing a press still chains, landTick: the tick it last came down (0: never).
+// kept for the landing, hopWin: ticks after landing a press still chains, landTick: the tick it last came down (0: never),
+// hopAim: the way that kept press was aimed (radians).
 // kit: what it has made (kitOf, shapeVessel), kept at camp, never in the satchel.
 const SLOTS = 8, STACK = 10;            // the satchel's slots, and how many of a kind one holds (by default)
 let stackFn = null;                     // recipes.js stackOf and keepOf, handed over by setStacks (the sim has no recipes of its own)
@@ -5604,7 +5608,7 @@ function foragerOf(x, y) {
     running: false, sneaking: false, bag: new Array(SLOTS).fill(''), bagN: new Array(SLOTS).fill(0),
     warmth: -0, wet: -0, stamina: -0, feel: -0, winded: false, down: -1, stumble: 0, homeX: x, homeY: y, tummy: -0, warmIn: 0, health: -0,
     jumpT: 0, jz: -0, jumpV: -0, jumpSpeed: -0, jumpFX: -0, jumpFY: -0, jumpAt: 0,
-    hop: 0, hopBuf: 0, hopWin: 0, landTick: 0,
+    hop: -0, hopBuf: 0, hopWin: 0, landTick: 0, hopAim: -0,
     xp: bySkill(-0), lv: bySkill(0), kit: kitOf() };
   f.warmth = 1; f.stamina = 1; f.tummy = 1; f.health = 1;   // (after: they start as fractions, so the layout never changes; a kept one from before the tummy starts full)
   return f;
@@ -5974,23 +5978,48 @@ function segDist(x, y, ax, ay, bx, by) {
 // landing where its pace carries it. Pressed again in the last FORAGER_HOP_EARLY ticks of a dash it's kept for the
 // landing, and in the FORAGER_HOP_GRACE ticks after one it still counts, either way carrying the chain on (hop) with a
 // little more pace each time. Pressed too late, or too early in the air (which drops the chain, so mashing doesn't work),
-// or from standing still after a wait, the momentum is gone. Returns false if it didn't jump (it's already up, or down);
-// a press while up is still taken if it's near enough the landing.
-function foragerJump(w) {
+// or from standing still after a wait, the momentum is gone. Each dash costs a little stamina, more the more momentum it
+// has, and winded it dashes only a standing dash's length, with no chain. Out of the water it wades: half the dash, and no
+// momentum kept. aim: the way it goes (game.js: the keys held, or the way it's shown facing), else where it's walking to,
+// else its heading. Returns false if it didn't jump (it's already up, or down); a press while up is still taken if it's
+// near enough the landing.
+function foragerJump(w, aim) {
   const f = w.forager;
   if (!f || f.down >= 0) return false;
+  if (aim === undefined || aim !== aim) aim = jumpAim(f);
   if (f.jumpT > 0) {
-    if (f.jumpT <= FORAGER_HOP_EARLY) f.hopBuf = FORAGER_HOP_EARLY;   // (a press just before it lands: kept for then)
+    if (f.jumpT <= FORAGER_HOP_EARLY) { f.hopBuf = FORAGER_HOP_EARLY; f.hopAim = aim; }   // (a press just before it lands: kept for then)
     else { f.hop = 0; f.hopBuf = 0; f.hopWin = 0; }                   // (too early: the chain is dropped, so mashing doesn't work)
     return false;
   }
-  const chained = f.hopWin > 0 || f.hopBuf > 0;
+  const wade = !w.frozen && w.water[idx(f.x, f.y)] > 0, spent = f.winded;
+  const chained = (f.hopWin > 0 || f.hopBuf > 0) && !wade && !spent;
   f.hop = chained ? Math.min(1, f.hop + FORAGER_HOP_GAIN) : 0;
   f.hopBuf = 0; f.hopWin = 0;
+  f.heading = aim - Math.round(aim / (2 * Math.PI)) * 2 * Math.PI;
   f.jumpT = FORAGER_JUMP_TICKS; f.jz = 0; f.jumpV = FORAGER_JUMP_V; f.jumpAt = w.tick;
-  f.jumpSpeed = (f.walking ? FORAGER_DASH : FORAGER_DASH_STILL) * foragerPace * (1 + FORAGER_HOP_DASH * f.hop);
+  f.jumpSpeed = (f.walking && !spent ? FORAGER_DASH : FORAGER_DASH_STILL) * foragerPace * (1 + FORAGER_HOP_DASH * f.hop) * (wade ? FORAGER_WADE : 1) * bodyPace(f);
+  f.stamina = Math.max(0, f.stamina - FORAGER_JUMP_COST * (1 + f.hop));
+  if (f.stamina <= 0) f.winded = true;                   // (spent: no more chain, nor a sprint, till it's got its breath back)
   f.jumpFX = f.x; f.jumpFY = f.y;
   return true;
+}
+// Which way a dash goes when game.js doesn't say: walking, at the end of the leg it's on (its heading lags behind a turn
+// it's still making), else its heading. Not back at the end of its way when a dash has carried it past (let go of the
+// keys mid-chain, it's sent a step on, and the dash goes further: it would bounce back and forth over it).
+function jumpAim(f) {
+  const P = f.path, k = f.leg * 2;
+  if (f.walking && k + 1 < P.length) {
+    const dx = P[k] - f.x, dy = P[k + 1] - f.y;
+    if (dx * dx + dy * dy > 0.09 && (k + 2 < P.length || dx * Math.cos(f.heading) + dy * Math.sin(f.heading) > 0)) return Math.atan2(dy, dx);
+  }
+  return f.heading;
+}
+// Down past where it was going, near (within a dash), when it was still ahead at take-off: it's there, and stops rather
+// than turning back for it (sent somewhere behind while up, it does turn back).
+function overshot(f) {
+  const c = Math.cos(f.heading), s = Math.sin(f.heading), dx = f.goalX - f.x, dy = f.goalY - f.y;
+  return dx * c + dy * s < 0 && (f.goalX - f.jumpFX) * c + (f.goalY - f.jumpFY) * s >= 0 && dx * dx + dy * dy < FORAGER_PAST * FORAGER_PAST;
 }
 
 // One tick in the air: it keeps its heading, the dash easing out a tick at a time, over whatever is under it. A friend is
@@ -6001,9 +6030,9 @@ function airTick(w, f) {
   f.moved = 0;
   let nx = f.x + Math.cos(f.heading) * f.jumpSpeed, ny = f.y + Math.sin(f.heading) * f.jumpSpeed;
   if (friendN) { outOfFriends(f, nx, ny); nx = rockX; ny = rockY; }
-  if (!inBounds(nx, ny)) {                               // (the meadow's edge: along it, else stopped in the air)
-    if (inBounds(nx, f.y)) ny = f.y;
-    else if (inBounds(f.x, ny)) nx = f.x;
+  if (!walkable(w, nx, ny)) {                            // (the meadow's edge or deep water: along it, else stopped in the air)
+    if (walkable(w, nx, f.y)) ny = f.y;
+    else if (walkable(w, f.x, ny)) nx = f.x;
     else { nx = f.x; ny = f.y; }
   }
   f.moved = Math.hypot(nx - f.x, ny - f.y);
@@ -6016,7 +6045,8 @@ function airTick(w, f) {
   outOfRocks(f.x, f.y, f.jumpFX, f.jumpFY);
   f.x = clamp(rockX, 0.05, W - 0.05); f.y = clamp(rockY, 0.05, H - 0.05);
   f.jumpSpeed = 0; f.landTick = w.tick; f.hopWin = FORAGER_HOP_GRACE;
-  if (f.hopBuf > 0) foragerJump(w);                      // (a press kept: straight off again, the chain carried on)
+  if (f.walking && overshot(f)) { f.walking = false; f.running = false; f.speed = 0; f.path.length = 0; }
+  if (f.hopBuf > 0) foragerJump(w, f.hopAim);            // (a press kept: straight off again, the chain carried on)
   else f.speed = f.walking ? Math.max(f.speed, FORAGER_WALK) * foragerPace * (1 + FORAGER_HOP_RUN * f.hop) : 0;
 }
 
@@ -6414,7 +6444,19 @@ function fireSpot(w, x, y) {
   if (trunk) return 'Too close to the tree';
   for (const b of w.brambles) if (b.size > 0 && Math.hypot(b.x - x, b.y - y) < FIRE_GAP + 0.3 * b.size) return 'Too close to the brambles';
   for (const b of w.burrows) if (Math.hypot(b.x - x, b.y - y) < FIRE_GAP) return 'On a burrow';
+  if (!w.camp && campWet(w, x, y)) return 'Too near the water for a camp';
   return '';
+}
+// Whether any water lies in the ring a camp at x, y would take in (CAMP_R, CAMP_FLAT; the tiles whose middles are inside).
+function campWet(w, x, y) {
+  const ry = CAMP_R * CAMP_FLAT;
+  for (let ty = Math.floor(y - ry); ty <= Math.ceil(y + ry); ty++) {
+    for (let tx = Math.floor(x - CAMP_R); tx <= Math.ceil(x + CAMP_R); tx++) {
+      if (tx < 0 || ty < 0 || tx >= W || ty >= H) continue;
+      if (((tx + 0.5 - x) / CAMP_R) ** 2 + ((ty + 0.5 - y) / ry) ** 2 < 1 && w.water[ty * W + tx]) return true;
+    }
+  }
+  return false;
 }
 // Lays one at x, y with sticks and tinder in it (game.js has taken them out of the satchel), unlit. Returns it.
 function layFire(w, x, y, sticks, tinder) {
@@ -6630,12 +6672,14 @@ function kitTick(w) {
 // Lighting the meadow's first fire makes camp (w.camp: where, the fire, and the tick it was made). From then on the forager
 // wakes there after a collapse, beside the fire (homeX, homeY: where it knelt to light it, or at its side), and what's built
 // later is arranged inside the camp's ring (CAMP_R tiles about the fire, CAMP_FLAT as deep as it's wide: inCamp), which
-// game.js draws. Playing together, a friend's first fire makes the camp everyone's. A meadow kept with a fire lit before
-// camps came makes camp at it as it opens (unpackWorld). No random numbers, no KEEP_VERSION bump (w.camp is in LATER).
+// game.js draws. What the ring takes in is cleared for it as it's made (clearCamp: no wood, rocks, burrows or flowers in
+// the trodden earth). Playing together, a friend's first fire makes the camp everyone's. A meadow kept with a fire lit
+// before camps came makes camp at it as it opens (unpackWorld). No random numbers, no KEEP_VERSION bump (w.camp is in LATER).
 const CAMP_R = 5, CAMP_FLAT = 0.8;
 const CAMP_KNEEL = 1.5;                 // the forager within this of the fire is kneeling by it: it wakes there
 function campAt(w, F) {
   w.camp = { x: F.x, y: F.y, fire: F, made: w.tick, basket: null, seat: null };
+  clearCamp(w);
   const f = w.forager;
   if (!f) return;
   rocksFor(w);
@@ -6651,6 +6695,66 @@ function campAt(w, F) {
 }
 // Whether x, y is inside the camp's ring.
 const inCamp = (w, x, y) => !!w.camp && ((x - w.camp.x) / CAMP_R) ** 2 + ((y - w.camp.y) / (CAMP_R * CAMP_FLAT)) ** 2 < 1;
+
+// The ring is trodden earth, so what stood in it is gone when the camp is made: the trees and rocks, the brambles and
+// burrows, and the mushrooms, greens, finds, seeds and flowers under it. A rabbit inside a burrow that goes comes out
+// (nothing drowns it this time); the bees in a hollow that goes swarm out to another tree (hiveMoves), the crows pick a
+// new roost, an otter another holt. What the forager dropped itself stays where it lies. No random numbers, no new field,
+// no KEEP_VERSION bump.
+function clearCamp(w) {
+  const inRing = p => inCamp(w, p.x, p.y);
+  const hives = [];
+  let decor = false;
+  for (const d of w.decor) {
+    if (!inRing(d)) continue;
+    decor = true;
+    d.gone = true;
+    if (!d.tree) continue;                                 // (a rock: the ground it stood on is clear now)
+    dropBlossoms(w, d);
+    if (d.hive) hives.push(d.hive);
+    if (d.holt) {                                          // (her holt goes with the tree: she looks for another)
+      const o = w.byId.get(d.holt);
+      if (o && o.home === d) { o.home = null; if (o.mode === 'nest') o.mode = 'wander'; }
+      d.holt = 0; d.door = null;
+    }
+  }
+  if (decor) {
+    w.treesMoved = true;
+    tidyTrees(w);
+    solidW = null;                                         // (the rocks in its way are worked out again)
+    for (const h of hives) hiveMoves(w, h, 'camp');
+    if (w.roost && w.roost.gone) w.roost = pickRoost(w);
+    for (const p of w.ponds || []) if (p.perch && p.perch.gone) p.perch = null;
+  }
+  const burrows = w.burrows.filter(inRing);
+  if (burrows.length) {
+    const gone = new Set(burrows);
+    w.burrows = w.burrows.filter(b => !gone.has(b));
+    for (const list of [w.creatures, w.newborn]) for (const c of list) {
+      if (gone.has(c.home)) c.home = null;
+      if (gone.has(c.refuge)) c.refuge = null;
+      if (gone.has(c.dig)) { c.dig = null; c.mode = 'wander'; c.target = null; }
+      if (c.hidden && gone.has(c.burrow)) exitBurrow(w, c);
+    }
+  }
+  const brambles = w.brambles.filter(inRing);
+  if (brambles.length) {
+    const gone = new Set(brambles);
+    for (const b of brambles) { dropBlossoms(w, b); b.berries = 0; }   // (a fox at one stops at nothing left)
+    w.brambles = w.brambles.filter(b => !gone.has(b));
+    for (const list of [w.creatures, w.newborn]) for (const c of list) if (gone.has(c.refuge)) c.refuge = null;
+  }
+  w.shrooms = w.shrooms.filter(m => !inRing(m));
+  w.greens = w.greens.filter(g => !inRing(g));
+  w.finds = w.finds.filter(f => !inRing(f));
+  w.seeds = w.seeds.filter(sd => !inRing(sd));
+  w.pips = w.pips.filter(p => !inRing(p));
+  if (w.plants.some(inRing)) {
+    w.plants = w.plants.filter(p => !inRing(p));
+    w.plantCells = Array.from({ length: GW * GH }, () => []);
+    for (const p of w.plants) cellOf(w.plantCells, p).push(p);
+  }
+}
 
 // The camp's basket (w.camp.basket, null till it's made): a big lidded basket woven of sticks and dry grass (recipes.js
 // BUILDS.basket, which game.js spends), set down inside the camp's ring, where what the satchel can't carry is kept:
@@ -8350,7 +8454,7 @@ const api = {
   createWorld, step, clock, isNight, phaseOf, seasonOf, springPart, mood, ageDays, growth, isAdult, patchFresh,
   hedgehogComes, heronComes, dragonflyComes, kingfisherComes, skylarkComes, placeNeeds, VISIT_SEASONS, VISIT_FADE, HERON_FADE, HERON_STAB,
   DRAGON_FROM, KF_FADE, KF_UNDER, KF_BEAT, LARK_FADE, LARK_OPEN, LARK_RISE, EDGE_REACH, OPEN_MOST,
-  walkable, onIce, friendsAt, packWorld, unpackWorld, GROUND, foragerTo, foragerJump, foragerArrives, openingStorm, FORAGER_WALK, FORAGER_RUN, FORAGER_SNEAK, FORAGER_ICE_STOP, FORAGER_JUMP_TICKS, FORAGER_HOP_EARLY, airTemp, warmthStage, WARMTH_STAGES, hurt, STUMBLE_TICKS, wakeForager, rockKind, whatThere, cherryShow, honeySpare, gather, takeFrom, dropSlot, dropAt, DROP_DAYS, moveSlot, roomFor, forEachDecorNear, SLOTS, STACK, stackOf, setStacks,
+  walkable, onIce, friendsAt, packWorld, unpackWorld, GROUND, foragerTo, foragerJump, foragerArrives, openingStorm, FORAGER_WALK, FORAGER_RUN, FORAGER_SNEAK, FORAGER_ICE_STOP, FORAGER_JUMP_TICKS, FORAGER_JUMP_HEIGHT, FORAGER_DASH_DRAG, FORAGER_HOP_EARLY, airTemp, warmthStage, WARMTH_STAGES, hurt, STUMBLE_TICKS, wakeForager, rockKind, whatThere, cherryShow, honeySpare, gather, takeFrom, dropSlot, dropAt, DROP_DAYS, moveSlot, roomFor, forEachDecorNear, SLOTS, STACK, stackOf, setStacks,
   KINDS, FEW, whiteness, visibility, WINTER_COAT, WILD_COAT,
   foragerSign, FORAGER_THREAT,
   TERRAIN, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,

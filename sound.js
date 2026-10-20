@@ -334,6 +334,9 @@ const RULES = {
   click:   { gap: 0.04, free: true },
   hoot:    { gap: 0.6, always: true },
   swat:    { gap: 0.15, always: true },
+  toss:    { gap: 0.12, always: true },              // something thrown at a friend
+  tock:    { gap: 0.08, always: true },              // and down on the grass (a pebble, a stick, a nut)
+  splat:   { gap: 0.08, always: true },              // a berry or a snowball bursting
   hug:     { gap: 0.8,  always: true, lift: 1.6 },   // two foragers hug
   step:    { gap: 0.1, always: true },   // (a foot down is cheap and rhythmic: it never counts against the budget)
   jump:    { gap: 0.15, always: true },  // (off its feet: the push and the whoosh)
@@ -429,6 +432,26 @@ const SOUNDS = {
     g.gain.exponentialRampToValueAtTime(0.0001, at + 0.18);
     osc.connect(g).connect(o); osc.start(at); osc.stop(at + 0.22);
     noise(o, at, 0.06, { from: 900, to: 400, q: 0.8, peak: 0.18, type: 'lowpass', attack: 0.002 });
+  },
+  // A forager throws something (game.js toss): the arm's whoosh. What it was sounds where it lands.
+  toss(t, o) {
+    whoosh(o, t, 0.11, 1.2);
+  },
+  // A pebble or a stick down on the grass: a short woody knock, and the grass taking it.
+  tock(t, o) {
+    const osc = ac.createOscillator(), g = ac.createGain(), at = t + 0.01;
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(520, at); osc.frequency.exponentialRampToValueAtTime(180, at + 0.07);
+    g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(0.16, at + 0.003);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + 0.1);
+    osc.connect(g).connect(o); osc.start(at); osc.stop(at + 0.12);
+    noise(o, at, 0.05, { from: 2200, to: 900, q: 0.8, peak: 0.06, attack: 0.002 });   // (the grass)
+  },
+  // A berry or a snowball: a soft splat, wet and brief.
+  splat(t, o) {
+    const at = t + 0.01;
+    noise(o, at, 0.1, { from: 1500, to: 420, q: 0.5, peak: 0.14, type: 'lowpass', attack: 0.003 });
+    noise(o, at + 0.02, 0.09, { from: 900, to: 260, q: 0.6, peak: 0.07, type: 'lowpass', attack: 0.004 });
   },
   // Two foragers hug (game.js hug): a warm low hum, two soft notes settling into it.
   hug(t, o) {

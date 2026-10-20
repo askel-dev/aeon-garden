@@ -109,7 +109,7 @@
   @keyframes rise { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-120px); opacity: 0; } }
 
   /* make strip */
-  .strip { position: absolute; left: 50%; bottom: 46px; transform: translateX(-50%); display: flex; gap: 8px; padding: 10px; }
+  .strip { position: absolute; left: 50%; bottom: 76px; transform: translateX(-50%); display: flex; gap: 8px; padding: 10px; }
   .tile { width: 92px; padding: 8px 6px 7px; border-radius: 12px; background: #fff8ea; text-align: center; box-shadow: inset 0 0 0 1px rgba(150,115,60,.25); }
   .tile .pic { font-size: 28px; line-height: 36px; }
   .tile .t { font: 800 11.5px Nunito, sans-serif; }
@@ -120,7 +120,7 @@
   .tile.locked .n { color: var(--deep-brass); }
 
   /* camp card */
-  .campcard { position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%); width: min(330px, calc(100% - 24px)); padding: 14px 16px; }
+  .campcard { position: absolute; left: 50%; bottom: 70px; transform: translateX(-50%); width: min(330px, calc(100% - 24px)); padding: 14px 16px; }
   .campcard h5 { margin: 0; font: 650 19px Fraunces, serif; display: flex; justify-content: space-between; align-items: baseline; }
   .campcard h5 small { font: 800 11px Nunito, sans-serif; color: var(--muted); }
   .bar { height: 10px; margin: 8px 0 4px; border-radius: 6px; background: #e8dabd; overflow: hidden; box-shadow: inset 0 1px 2px rgba(0,0,0,.12); }
@@ -164,7 +164,7 @@
   .key b { font-weight: 900; }
 
   /* the line over the satchel, as it is */
-  .what { position: absolute; left: 50%; bottom: 70px; transform: translateX(-50%); padding: 6px 14px; border-radius: 999px; white-space: nowrap;
+  .what { position: absolute; left: 50%; bottom: 90px; transform: translateX(-50%); padding: 6px 14px; border-radius: 999px; white-space: nowrap;
     background: var(--card); font-size: 13px; font-weight: 800; box-shadow: 0 2px 8px rgba(40,30,10,.2); }
   .what span { color: var(--accent-ink); }
   .what .tap { margin-left: 8px; font-size: 11px; color: var(--muted); }
@@ -229,7 +229,7 @@
     <h2>How it shows in the game <span>small, brief, close to the camp</span></h2>
     <div class="mocks">
       <div class="mock">
-        <div class="what">Your camp · Hearth · <span>14 / 18 cosy</span><span class="tap">tap</span></div>
+        <div class="what">Your camp · Hearth · <span>10 / 18 cosy</span><span class="tap">tap</span></div>
         <div class="cap">The line over the satchel stays one thin pill: hovering the ring (away from the fire) says the camp's name and its cosy. A tap on the line opens the camp's card. The fire itself still means "see to it".</div>
       </div>
 
@@ -248,23 +248,23 @@
         <div class="strip card">
           <div class="tile ready"><div class="pic">🪵</div><div class="t">Drying rack</div><div class="n">8/8 sticks · 3/3 grass</div></div>
           <div class="tile"><div class="pic">⛺</div><div class="t">Lean-to</div><div class="n">3/5 grass</div></div>
-          <div class="tile locked"><div class="pic">🍞</div><div class="t">Clay oven</div><div class="n">raises the camp · 14/18 cosy</div></div>
+          <div class="tile locked"><div class="pic">🍞</div><div class="t">Clay oven</div><div class="n">raises the camp · 10/18 cosy</div></div>
         </div>
         <div class="cap">The make strip stays "what you can make now", plus one faded tile: the next keystone. The levels after it live in the card.</div>
       </div>
 
-      <div class="mock">
+      <div class="mock" style="min-height: 330px">
         <div class="campcard card">
-          <h5><span><span class="seal">II</span>Hearth</span><small>14 / 18 cosy</small></h5>
-          <div class="bar"><i style="width:78%"></i></div>
-          <div class="row"><span>4 more, then build the clay oven</span></div>
+          <h5><span><span class="seal">II</span>Hearth</span><small>10 / 18 cosy</small></h5>
+          <div class="bar"><i style="width:56%"></i></div>
+          <div class="row"><span>8 more, then build the clay oven</span></div>
           <div class="src">
             <span>✓ Made camp</span><span>+2</span>
             <span>✓ Wove the basket</span><span>+3</span>
-            <span>✓ Built the drying rack</span><span>+3</span>
+            <span>✓ Built the drying rack</span><span>+2</span>
             <span>✓ Cooked five dishes at camp</span><span>+3</span>
             <span class="todo">Keep the fire through a storm</span><span>+3</span>
-            <span class="todo">Build the lean-to</span><span>+3</span>
+            <span class="todo">Build the lean-to</span><span>+2</span>
           </div>
         </div>
         <div class="cap">The card: every point is a named deed, done once. The next two not done yet are shown faintly, so the bar says what to go and do.</div>
@@ -278,7 +278,7 @@
     <div class="grid2">
       <div class="note">
         <h3>Cosy is a list of deeds</h3>
-        <p>Every point has a name and is earned once, so it can't be farmed and the card can show what made it. Cosy never goes down. Raising the camp takes <b>8 · 18 · 30 · 44</b>; the deeds below reach 44 before level V with six to spare, alone.</p>
+        <p>Every point has a name and is earned once, so it can't be farmed and the card can show what made it. Cosy never goes down. Raising the camp takes <b>8 · 18 · 28 · 40</b>; the deeds below reach 52 before level V, twelve to spare, alone.</p>
         <table>
           <tr><td class="grp" colspan="2">Making the camp</td></tr>
           <tr><td>Made camp (the first fire)</td><td>+2</td></tr>
@@ -292,7 +292,7 @@
           <tr><td>Kept it lit through a storm</td><td>+3</td></tr>
           <tr><td>First fire of each season</td><td>+2 × 4</td></tr>
           <tr><td class="grp" colspan="2">The basket</td></tr>
-          <tr><td>Half filled it · one of every kind of food in it</td><td>+2 · +3</td></tr>
+          <tr><td>Half filled it · one of every kind of food in it</td><td>+2 · +4</td></tr>
           <tr><td class="grp" colspan="2">Friends (a bonus, never needed)</td></tr>
           <tr><td>A friend sat by your fire · ate your dish</td><td>+2 · +2</td></tr>
         </table>
@@ -346,11 +346,11 @@ const LEVELS = [
     key: ['🍞', 'The clay oven', '8 clay · 10 pebbles · 4 sticks'],
     gives: [['🥧', 'Baking', 'bread, pies and honey cakes at the oven'], ['🎃', 'Season dressing', 'a pumpkin, snow lanterns, a jar of flowers']],
     opens: ['spit', 'herbs'] },
-  { n: 'IV', name: 'Hollow', sub: 'a lit way in', R: 6.5, cosy: 30,
+  { n: 'IV', name: 'Hollow', sub: 'a lit way in', R: 6.5, cosy: 28,
     key: ['🏮', 'The lantern arch', '12 sticks · 4 birch bark · 2 clay, at the ring\'s mouth'],
-    gives: [['✨', 'The ring keeps a steady light at night'], ['🐦', 'A robin that hops round the camp'], ['〰️', 'A path worn to where you go most']],
+    gives: [['✨', 'The ring keeps a steady light at night'], ['🐦', 'A robin that hops round the camp']],
     opens: ['feeder', 'board'] },
-  { n: 'V', name: 'Meadow Home', sub: 'somewhere to come back to', R: 7, cosy: 44,
+  { n: 'V', name: 'Meadow Home', sub: 'somewhere to come back to', R: 7, cosy: 40,
     key: ['🏡', 'The cabin', 'logs (a new item) · pebbles · clay'],
     gives: [['🛏️', 'Inside is dry and warm', 'and you wake there'], ['🎐', 'Wind chimes on the eaves'], ['🚩', 'A pennant in the season\'s colour']],
     opens: ['hammock'] },
@@ -404,7 +404,6 @@ piece('build', 3, 'herbs', at(-76, 92, `${shadow(26, 7)}<path d="M-24 -10 h14 l-
 piece('gift', 3, 'pumpkin', at(58, 66, `${shadow(12, 4)}<ellipse cx="0" cy="-7" rx="12" ry="9" fill="#e5873a"/><path d="M-5 -15 Q-6 -7 -5 1 M5 -15 Q6 -7 5 1" stroke="#c46a26" stroke-width="1.5" fill="none"/><path d="M0 -15 l2 -6" stroke="#5b7a32" stroke-width="3"/>`));
 
 // IV
-piece('gift', 4, 'path', `<path d="M${CX + 230} ${CY + 112} Q${CX + 310} ${CY + 170} ${CX + 410} ${CY + 230}" stroke="#a5865a" stroke-width="22" fill="none" stroke-linecap="round" opacity=".55"/>`);
 piece('key', 4, 'arch', at(232, 112, `${shadow(40, 9)}${log(-30, 4, -30, -64, 3.5, '#6d4a2c')}${log(30, 4, 30, -64, 3.5, '#6d4a2c')}
   <path d="M-36 -60 Q0 -86 36 -60" stroke="#6d4a2c" stroke-width="7" fill="none" stroke-linecap="round"/>
   <path d="M-36 -60 Q0 -86 36 -60" stroke="#7aa356" stroke-width="3" fill="none" stroke-dasharray="4 5"/>
@@ -473,7 +472,7 @@ function show() {
   const next = LEVELS[level];
   document.getElementById('lvRaise').innerHTML = next
     ? `Next: <b>${next.name}</b> at <b>${next.cosy} cosy</b>, then build <b>${next.key[1].toLowerCase()}</b>.`
-    : 'The last level. Cosy keeps counting; the camp dresses up a little more each season.';
+    : 'The last level. The camp keeps its cosy; it dresses up a little more each season.';
 }
 document.getElementById('levels').innerHTML = LEVELS.map((L, i) => `<button data-i="${i + 1}" aria-label="${L.name}">${L.n}</button>`).join('');
 document.getElementById('levels').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { level = +b.dataset.i; show(); } });

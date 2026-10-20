@@ -7,7 +7,8 @@ anywhere else walks the forager there (`walkTo`, sim.js `foragerTo`) and shuts t
 soft ring where it was sent (`drawMark`, `MARK_ART` painted once) that fades once it's there, and a faint dashed line to it
 along what's left of its way (`drawTrail`: one stroke a frame, the dashes counted from the ring so they keep still on the ground,
 fading in just after the ring pops up, `TRAIL_IN`, and marching on toward it while it sprints, `TRAIL_MARCH`); held
-and steering, the ring glides after where it was sent (`MARK_GLIDE`) rather than jumping each `STEER_MS`. A press held still for
+and steering, the ring glides after where it was sent (`MARK_GLIDE`) rather than jumping each `STEER_MS`. A press with a card
+or menu up walks nowhere: it only puts it away (below). A press held still for
 `HOLD_MS`, or dragged, runs toward the pointer while it's down (sim.js `f.running`, `FORAGER_RUN`; Shift held runs too, `holdShift`), the
 way found again every `STEER_MS` (in `frame`), and on to where it's let go. WASD or the arrows (`keyWalk`) take over from a walk or a held press: the ring, the trail and the press itself are dropped, so letting go walks nowhere. Running, once up past `FORAGER_JOG` it jogs (`fg.jog`, fur.js poses 16 to 23: both feet off the ground a moment, heels
 kicking up, elbows bent and pumping, leaning in) with a stride `FORAGER_JOG_STRIDE` longer. On the ice it can't dig in (sim.js `onIce`, `FORAGER_ICE_*`): it gets going slowly, turns in long wide arcs, and isn't stopped where it was sent but carries on past, gliding (no stride, standing) till it comes to rest or reaches dry ground. The camera always goes with it (`leadCam`): eased after it (`CAM_FOLLOW`), a little ahead the way it walks
@@ -23,9 +24,11 @@ fingers tapped zoom out (`zoomTo`, `zoomDrag`, as Google's and Apple's maps do);
 away waits `DOUBLE_MS` in case it's the first of two (`tapAway`). On a touch screen the screen stays awake while time
 runs, till nobody has touched it for `WAKE_MS` (`wakeTick`, the Screen Wake Lock API).
 
-The book and the make strip don't pin it: walking leaves them open (WASD and a tap, a drag or the minimap; ← → still turn
-the book's pages), the book's scrim takes no pointer so a tap on the meadow beside it walks, and the make strip only shuts
-on another card or button (`makeFrame`, `openBook`).
+Cards and menus don't pin it: the keys still walk with the book open (← → turn its pages), but a press on the meadow while one
+is up puts the one on top away and goes no further — it walks, picks and blows on nothing (`cardsOpen`, `cardAway`; the
+minimap's press too). The make strip is no card: walking leaves it open (a tap or a drag on the meadow, the keys, the
+minimap), its chips following the forager in and out of camp, and it only shuts on another card or button (`makeFrame`). Nor is
+a fire being placed: there the meadow is the spot being picked (`placeFire`).
 
 ## sim.js
 
@@ -61,12 +64,19 @@ a walker already inside a circle is moved out of it by `ELBOW_SHUFFLE` a tick (`
 `PUSH_ROOM` apart on both screens; two on one spot (woken by the camp's fire) step off the
 ways `friendSide` says, hashed from who each is. Not the sim's: nothing the meadow counts follows from it.
 
-Space is a dash (`foragerJump`): a short, low hop (`FORAGER_JUMP_TICKS`, `FORAGER_JUMP_HEIGHT`) the way it faces, at
-`FORAGER_DASH` and easing out (`FORAGER_DASH_DRAG`), so from standing it's a short shift. Rocks, the seat log and brush
-aren't in its way while it's up (`airTick`); a friend still is. Its last `FORAGER_HOP_EARLY` ticks take a press for the
+Space is a dash (`foragerJump`): a short, low hop (`FORAGER_JUMP_TICKS`, `FORAGER_JUMP_HEIGHT`) at `FORAGER_DASH` and
+easing out (`FORAGER_DASH_DRAG`), so from standing it's a short shift. Its way (`jumpNow`): the keys held, else walking
+where it's walking to (`jumpAim`: its heading lags a turn), else standing the side it's shown facing (a pick turns the
+painting, not the heading). A dash that carries it past where it was walking to, when that was still ahead at take-off
+and is within `FORAGER_PAST`, stops it there (`overshot`): let go of the keys mid-chain and the step it's sent on is
+overshot, and it used to dash back and forth over it. Rocks, the seat log and brush aren't in its way while it's up (`airTick`); deep water and a
+friend still are. A dash costs stamina (`FORAGER_JUMP_COST`, twice at full momentum), and spent or out of the water it's
+short and keeps no chain (`FORAGER_WADE`), so a chain is a few seconds' burst a bit quicker than a sprint, not the way to
+travel. Its last `FORAGER_HOP_EARLY` ticks take a press for the
 landing, and the `FORAGER_HOP_GRACE` after it does too: either keeps the chain (`f.hop`, 0 to 1), each chained dash a
 little quicker (`FORAGER_HOP_GAIN`, `FORAGER_HOP_DASH`) and its walk after it quicker too (`FORAGER_HOP_RUN`), while a
 mistimed dash or standing about lets the momentum go (`FORAGER_HOP_FADE`). A dash that comes down in a rock is put out at
 its edge. game.js draws the moment to press (four pale brackets at its feet, and `hopcue`), the dust of take-off and
-landing (`jumpDust`) and the lean into it; P pauses now, not Space.
+landing (`jumpDust`) and the lean into it; P pauses now, not Space. Playing together, each take-off is sent (`'jump'`)
+and a friend's is played out on its own clock (`peerJump`, `peerItems`: the arc, its dust and sounds).
 

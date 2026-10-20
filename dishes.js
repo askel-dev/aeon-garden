@@ -5,6 +5,7 @@
  * NAMES) and the recipe book, and recipes.html shows them by their recipes. Loaded after fur.js, whose drawing helpers it
  * paints with. A painter paints one into a canvas size pixels square, U pixels to the box -1 to 1 (as game.js's paintItem),
  * lit from the top left. A dish with no painting here keeps its recipes.js emoji for now.
+ * Painting a new one: .claude/docs/dish-painting.md (the helpers, the vessels, the steps), and dish-lab.html to look at it.
  */
 (root => {
 'use strict';
@@ -844,6 +845,111 @@ function paintToastedHazelnuts(g) {
   strokeIn(g, rgba(HAZEL_SKIN, 0.9), 0.018, () => { g.moveTo(-0.3, 0.74); g.quadraticCurveTo(-0.26, 0.7, -0.22, 0.74); g.moveTo(0.3, 0.76); g.quadraticCurveTo(0.34, 0.72, 0.38, 0.75); });
 }
 
+// ------------------------------------------------------------------ hazelnut brittle
+//
+// Honey boiled down and poured over chopped toasted hazelnuts, set hard on the hot stone and broken up into the carved
+// bowl: shards the colour of dark amber, their broken edges lit where the light comes thin through them, the nuts set in
+// them like flies in resin and drawn over with a skin of candy. Bubbles caught in it, crumbs, a whole kernel or two on
+// top, and a shell and a hazel leaf at its foot.
+const BRITTLE = [176, 92, 22], BRITTLE_LIGHT = [255, 200, 110], BRITTLE_DEEP = [96, 38, 6];
+// A chopped hazelnut set in the candy: a pale angular shard of kernel with a strip of its brown skin, r across, under amber.
+const NUT_SHARDS = [
+  [[1, -0.5], [0.3, -0.9], [-0.8, -0.4], [-0.9, 0.5], [0.2, 0.9], [0.9, 0.4]],
+  [[0.9, -0.3], [0.1, -1], [-0.9, -0.2], [-0.4, 0.8], [0.6, 0.9]],
+  [[0.8, -0.6], [-0.4, -0.9], [-1, 0.1], [-0.2, 0.9], [0.9, 0.5]],
+];
+function brittleNutAt(g, x, y, r, rot, k = 0) {
+  const P = NUT_SHARDS[k % NUT_SHARDS.length];
+  g.save(); g.translate(x, y); g.rotate(rot); g.scale(r, r);
+  const path = () => { g.moveTo(P[0][0], P[0][1]); for (let i = 1; i < P.length; i++) g.lineTo(P[i][0], P[i][1]); g.closePath(); };
+  fillIn(g, 'rgba(46, 22, 6, 0.35)', () => { g.save(); g.translate(0.16, 0.3); path(); g.restore(); });   // where it lies in the candy
+  fillIn(g, rgba([202, 152, 82]), path);                                                      // the kernel
+  fillIn(g, rgba([230, 186, 116], 0.9), () => { g.moveTo(P[0][0], P[0][1]); g.lineTo(P[1][0], P[1][1]); g.lineTo(P[2][0], P[2][1]); g.lineTo(0, 0); g.closePath(); });   // its lit face
+  strokeIn(g, rgba([100, 50, 22], 0.9), 0.28, () => { g.moveTo(P[2][0], P[2][1]); g.lineTo(P[3][0], P[3][1]); });   // a strip of skin
+  strokeIn(g, rgba([150, 96, 48], 0.7), 0.12, path);                                          // its edge in the amber
+  g.restore();
+  g.save(); g.translate(x, y); g.rotate(rot);
+  fillIn(g, 'rgba(190, 100, 24, 0.16)', () => { g.moveTo(P[0][0] * r, P[0][1] * r); for (let i = 1; i < P.length; i++) g.lineTo(P[i][0] * r, P[i][1] * r); g.closePath(); });   // the candy drawn thin over it
+  strokeIn(g, 'rgba(255, 240, 198, 0.5)', r * 0.07, () => { g.moveTo(P[0][0] * r * 0.8, P[0][1] * r * 0.8); g.lineTo(P[1][0] * r * 0.8, P[1][1] * r * 0.8); });
+  g.restore();
+}
+// A shard of the brittle: its outline (in the painting's box, before sy is added), where its nuts and bubbles are, its shade,
+// how thick the edge of the slab is, and the cracks run through it.
+function brittleShardAt(g, sy, pts, k, nuts, bubbles, thick = 0.014, cracks = []) {
+  const path = () => { g.moveTo(pts[0][0], sy + pts[0][1]); for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], sy + pts[i][1]); g.closePath(); };
+  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1] + sy);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  furGlow(g, [50, 28, 10], 0.24, (x0 + x1) / 2 + 0.03, y1 + 0.05, (x1 - x0) * 0.46, (y1 - y0) * 0.38);   // where it sits
+  g.save(); g.translate(0.006, thick); fillIn(g, rgba(tone(BRITTLE, 1.12, 16)), path); g.restore();  // light through the thin edge of the break
+  softIn(g, tone(BRITTLE, k), y0, y1, path, 0.9, 0.5);
+  g.save(); g.beginPath(); path(); g.clip();
+  furGlow(g, BRITTLE_LIGHT, 0.3, x0 + (x1 - x0) * 0.3, y0 + (y1 - y0) * 0.28, (x1 - x0) * 0.3, (y1 - y0) * 0.3);
+  furGlow(g, BRITTLE_DEEP, 0.42, (x0 + x1) / 2, (y0 + y1) / 2 + (y1 - y0) * 0.16, (x1 - x0) * 0.3, (y1 - y0) * 0.24);
+  furGlow(g, BRITTLE_DEEP, 0.55, x1 - (x1 - x0) * 0.18, y1 - (y1 - y0) * 0.18, (x1 - x0) * 0.42, (y1 - y0) * 0.34);
+  strokeIn(g, rgba(tone(BRITTLE, 1.42, 30), 0.4), 0.07, path);                                  // light coming through the thin edge
+  strokeIn(g, 'rgba(255, 238, 190, 0.45)', 0.015, path);
+  // A long window of light across the face, and a couple of hard glints on it.
+  furGlow(g, [255, 250, 236], 0.5, x0 + (x1 - x0) * 0.34, y0 + (y1 - y0) * 0.34, (x1 - x0) * 0.24, (y1 - y0) * 0.08, -0.35);
+  fillIn(g, 'rgba(255, 252, 242, 0.72)', () => { ovalAt(g, x0 + (x1 - x0) * 0.26, y0 + (y1 - y0) * 0.28, (x1 - x0) * 0.09, 0.016, -0.35); ovalAt(g, x0 + (x1 - x0) * 0.52, y0 + (y1 - y0) * 0.2, (x1 - x0) * 0.045, 0.01, -0.35); ovalAt(g, x0 + (x1 - x0) * 0.7, y0 + (y1 - y0) * 0.34, (x1 - x0) * 0.03, 0.008, -0.35); });
+  strokeIn(g, rgba(tone(BRITTLE, 0.66), 0.25), 0.01, () => {                                     // the pour's streaks, deeper amber
+    g.moveTo(x0 + (x1 - x0) * 0.16, y0 + (y1 - y0) * 0.52); g.bezierCurveTo(x0 + (x1 - x0) * 0.4, y0 + (y1 - y0) * 0.4, x0 + (x1 - x0) * 0.62, y0 + (y1 - y0) * 0.6, x1 - (x1 - x0) * 0.1, y0 + (y1 - y0) * 0.5);
+  });
+  // Cracks run through the slab: a dark fracture with a thread of light along one side.
+  for (const line of cracks) {
+    const crack = () => { g.moveTo(line[0][0], sy + line[0][1]); for (let i = 1; i < line.length; i++) { const [px, py] = line[i]; g.lineTo(px, sy + py); } };
+    strokeIn(g, 'rgba(112, 48, 8, 0.5)', 0.014, crack);
+    strokeIn(g, 'rgba(255, 232, 180, 0.4)', 0.006, () => { g.save(); g.translate(-0.004, -0.006); crack(); g.restore(); });
+  }
+  for (const [x, y, r, rot, kk] of nuts) brittleNutAt(g, x, sy + y, r, rot, kk || 0);
+  fillIn(g, 'rgba(255, 240, 190, 0.55)', () => { for (const [x, y, r] of bubbles) ovalAt(g, x, sy + y, r, r * 0.72); });   // bubbles caught in it
+  fillIn(g, 'rgba(255, 255, 250, 0.8)', () => { for (const [x, y, r] of bubbles) ovalAt(g, x - r * 0.25, sy + y - r * 0.25, r * 0.3, r * 0.22); });
+  strokeIn(g, 'rgba(120, 54, 10, 0.4)', 0.005, () => { for (const [x, y, r] of bubbles) g.ellipse(x, sy + y, r, r * 0.72, 0, -0.4, Math.PI - 0.2); });
+  g.restore();
+  strokeIn(g, rgba(tone(BRITTLE, 0.5), 0.5), 0.014, path);                                      // its edge, dark against the bowl
+  const edge = g.createLinearGradient(x0, y0, x1, y1);                                           // lit only where the light falls on it
+  edge.addColorStop(0, 'rgba(255, 240, 196, 0.7)'); edge.addColorStop(0.45, 'rgba(255, 216, 140, 0.25)'); edge.addColorStop(0.75, 'rgba(255, 216, 140, 0)');
+  strokeIn(g, edge, 0.012, () => { g.save(); g.translate(-0.003, -0.008); path(); g.restore(); });
+}
+function paintHazelnutBrittle(g) {
+  const { cy, IX, IY } = BOWL;
+  woodBowl(g, () => {
+    furGlow(g, [46, 24, 8], 0.4, 0.06, cy + 0.12, IX * 0.9, IY * 0.7);                          // the shadow in the hollow
+    // A thin sheet of it set in the bottom, so the bowl is full, then the broken shards heaped over it.
+    softIn(g, tone(BRITTLE, 0.82), cy - 0.08, cy + 0.16, () => ovalAt(g, 0, cy + 0.02, IX * 0.92, IY * 0.84), 1.15, 0.6);
+    furGlow(g, BRITTLE_LIGHT, 0.3, -0.2, cy - 0.04, 0.4, 0.08);
+    strokeIn(g, 'rgba(255, 232, 176, 0.3)', 0.01, () => ovalAt(g, 0, cy + 0.02, IX * 0.72, IY * 0.6));
+    brittleShardAt(g, cy, [[-0.72, -0.04], [-0.62, -0.32], [-0.3, -0.38], [-0.08, -0.22], [-0.14, 0.04], [-0.4, 0.12], [-0.62, 0.1]], 1.0,
+      [[-0.54, -0.16, 0.06, -0.4, 0], [-0.34, -0.06, 0.055, 0.7, 1], [-0.5, 0.04, 0.045, 0.2, 2]], [[-0.62, -0.02, 0.012], [-0.4, -0.28, 0.009], [-0.2, -0.12, 0.011], [-0.58, -0.2, 0.007], [-0.48, 0.02, 0.006], [-0.3, -0.18, 0.005], [-0.24, 0.0, 0.007], [-0.66, 0.04, 0.005]], 0.014, [[[-0.4, -0.36], [-0.36, -0.12], [-0.44, 0.02]]]);
+    brittleShardAt(g, cy, [[-0.02, -0.4], [0.28, -0.44], [0.58, -0.3], [0.7, -0.08], [0.54, 0.1], [0.24, 0.06], [0.04, -0.16]], 1.05,
+      [[0.2, -0.24, 0.06, 0.2, 2], [0.46, -0.12, 0.055, -0.7, 0], [0.32, 0.0, 0.045, 0.5, 1]], [[0.5, -0.28, 0.011], [0.12, -0.3, 0.009], [0.4, -0.36, 0.006], [0.56, -0.16, 0.007], [0.3, -0.08, 0.005], [0.16, -0.18, 0.006], [0.58, -0.04, 0.005]], 0.014, [[[0.34, -0.42], [0.3, -0.14], [0.42, 0.0]]]);
+    brittleShardAt(g, cy, [[-0.56, 0.18], [-0.36, 0.02], [-0.06, 0.08], [0.2, 0.0], [0.46, 0.1], [0.38, 0.28], [0.08, 0.34], [-0.24, 0.32], [-0.48, 0.3]], 1.02,
+      [[-0.3, 0.14, 0.06, 0.4, 1], [0.0, 0.16, 0.055, -0.2, 2], [0.26, 0.14, 0.05, 0.9, 0]], [[-0.4, 0.1, 0.011], [0.12, 0.24, 0.009], [0.4, 0.2, 0.008], [-0.44, 0.2, 0.006], [-0.1, 0.24, 0.005], [0.26, 0.26, 0.006], [0.44, 0.24, 0.005]], 0.014, [[[-0.2, 0.02], [-0.14, 0.16], [-0.24, 0.3]]]);
+    // A thin sliver come away and lying across the front.
+    g.save(); g.translate(0.24, cy + 0.14); g.rotate(-0.3); g.translate(-0.24, -cy - 0.14);
+    brittleShardAt(g, cy, [[-0.34, 0.16], [-0.16, 0.06], [0.06, 0.1], [0.12, 0.18], [-0.08, 0.26], [-0.3, 0.26]], 1.12,
+      [[-0.1, 0.16, 0.035, 0.4, 0]], [[0.0, 0.12, 0.007]], 0.012);
+    g.restore();
+    // Three whole kernels on top, glossy from the candy, and a scatter of chopped nuts and crumbs.
+    hazelKernelAt(g, 0.46, cy + 0.2, 0.095, 0.5, 0);
+    hazelKernelAt(g, -0.5, cy + 0.24, 0.085, -0.6, 2);
+    hazelKernelAt(g, 0.06, cy + 0.3, 0.08, 0.2, 1);
+    for (const [x, y, r, rot, k] of [[-0.16, 0.22, 0.04, 0.4, 2], [0.18, 0.28, 0.035, -0.5, 0], [0.56, 0.26, 0.035, 1.1, 1], [-0.36, 0.28, 0.03, 0.3, 2], [0.04, -0.02, 0.04, -0.8, 0]]) brittleNutAt(g, x, cy + y, r, rot, k);
+    fillIn(g, rgba(tone(BRITTLE, 0.92), 0.95), () => { for (const [x, y, a] of [[-0.44, 0.2, 0.4], [-0.08, 0.26, -0.6], [0.36, 0.2, 1.1], [0.62, 0.24, 0.2], [0.24, 0.3, -0.3]]) ovalAt(g, x, cy + y * 0.6, 0.024, 0.011, a); });
+  });
+  // A hazelnut shell at its foot, a leaf under it, and a crumb or two on the ground.
+  g.save(); g.translate(-0.52, 0.62); g.rotate(0.4);
+  softIn(g, [108, 138, 58], -0.14, 0.12, () => { g.moveTo(0, 0); g.bezierCurveTo(-0.08, -0.14, -0.2, -0.14, -0.26, -0.02); g.bezierCurveTo(-0.2, 0.12, -0.06, 0.14, 0, 0); g.closePath(); }, 1.2, 0.66);
+  strokeIn(g, 'rgba(78, 100, 40, 0.7)', 0.01, () => { g.moveTo(0, 0); g.quadraticCurveTo(-0.12, -0.02, -0.24, -0.01); });
+  fillIn(g, rgba([130, 160, 76]), () => { for (let i = 0; i < 7; i++) { const t = i / 7, x = -0.22 * t, y = -0.02 * t; ovalAt(g, x, y - 0.05, 0.03, 0.012, -0.6); ovalAt(g, x, y + 0.05, 0.03, 0.012, 0.6); } });
+  g.restore();
+  g.save(); g.translate(-0.62, 0.7); g.rotate(-0.5);
+  softIn(g, [96, 126, 52], -0.12, 0.1, () => { g.moveTo(0, 0); g.bezierCurveTo(-0.06, -0.12, -0.18, -0.12, -0.24, 0); g.bezierCurveTo(-0.18, 0.1, -0.05, 0.12, 0, 0); g.closePath(); }, 1.2, 0.66);
+  strokeIn(g, 'rgba(70, 92, 36, 0.7)', 0.008, () => { g.moveTo(0, 0); g.quadraticCurveTo(-0.1, 0.0, -0.22, 0.0); });
+  g.restore();
+  hazelShellAt(g, -0.76, 0.6, 0.13, -0.4);
+  fillIn(g, rgba(tone(BRITTLE, 0.9), 0.9), () => { for (const [x, y, a] of [[0.44, 0.66, 0.3], [0.56, 0.62, -0.4], [0.3, 0.7, 1.0]]) ovalAt(g, x, y, 0.026, 0.012, a); });
+}
+
 // ------------------------------------------------------------------ mushrooms with hazelnuts
 //
 // Mushrooms fried soft in a shallow clay pan, two little lugs on its sides to lift it off the fire by: the pan wide and low,
@@ -1650,6 +1756,118 @@ function paintNettleSoup(g) {
   strokeIn(g, 'rgba(255, 255, 250, 0.3)', 0.035, () => { g.moveTo(-0.14, -0.1); g.bezierCurveTo(-0.24, -0.3, -0.04, -0.4, -0.12, -0.62); g.moveTo(0.18, -0.08); g.bezierCurveTo(0.12, -0.24, 0.3, -0.32, 0.22, -0.52); });
 }
 
+// ------------------------------------------------------------------ chicken of the woods steak
+//
+// A thick slab of chicken of the woods seared in the clay pan like a steak: deep orange and lobed, sulphur yellow out at
+// its rim, the cut edge showing pale pores underneath. Burnt brown where it caught the pan, glossy with butter, dark sear
+// lines across it, a few garlic cloves gone golden and a garlic leaf laid over the edge, and steam coming off it.
+const CHICKEN_STEAK = [226, 92, 18], CHICKEN_STEAK_LIT = [252, 166, 40], CHICKEN_STEAK_RIM = [252, 206, 58],
+  CHICKEN_PORE = [246, 212, 118], CHICKEN_CHAR = [100, 42, 18], CHICKEN_CLOVE = [214, 172, 104], CHICKEN_CLOVE_GOLD = [172, 104, 34];
+// The shelf's outline: a lobed slab, wider at its front, wobbling with k.
+function chickenSteakPoint(a, rx, ry, k) {
+  const w = 1 + 0.075 * Math.sin(a * 3 + k) + 0.03 * Math.sin(a * 7 - k * 2);
+  return [Math.cos(a) * rx * w * (0.8 + 0.22 * Math.sin(a)), Math.sin(a) * ry * w];
+}
+function chickenSteakPath(g, rx, ry, k) {
+  const N = 40;
+  for (let i = 0; i <= N; i++) {
+    const [px, py] = chickenSteakPoint(i / N * TAU, rx, ry, k);
+    i ? g.lineTo(px, py) : g.moveTo(px, py);
+  }
+  g.closePath();
+}
+// One thick fried shelf, its pale pore edge under the front, sear lines on top.
+function chickenSteakAt(g, x, y, rx, ry, rot, k, shade) {
+  const base = tone(CHICKEN_STEAK, shade), rim = tone(CHICKEN_STEAK_RIM, shade), pore = tone(CHICKEN_PORE, shade), char = tone(CHICKEN_CHAR, shade);
+  g.save(); g.translate(x, y); g.rotate(rot);
+  const top = () => chickenSteakPath(g, rx, ry, k);
+  const under = () => { g.save(); g.translate(0, 0.02); chickenSteakPath(g, rx * 1.01, ry + 0.03, k); g.restore(); };
+  fillIn(g, rgba(char, 0.35), () => { g.save(); g.translate(0.05, 0.1); chickenSteakPath(g, rx, ry, k); g.restore(); });   // where it sits
+  // Its thickness, the pale pores showing under the front edge.
+  fillIn(g, rgba(pore), under);
+  softIn(g, tone(pore, 0.8), ry * 0.4, ry + 0.06, under, 1.0, 0.72);
+  strokeIn(g, rgba(tone(pore, 0.66), 0.5), 0.006, () => {
+    for (let i = 0; i <= 12; i++) {
+      const [px, py] = chickenSteakPoint((0.12 + i * 0.76 / 12) * Math.PI, rx, ry, k);
+      g.moveTo(px, py + 0.008); g.lineTo(px, py + 0.055);
+    }
+  });
+  // The fried top: deep orange, going golden out to its rim.
+  softIn(g, base, -ry, ry, top, 1.16, 0.78);
+  g.save(); g.beginPath(); top(); g.clip();
+  g.save(); g.scale(1, ry / rx);
+  const gr = g.createRadialGradient(0, 0, rx * 0.18, 0, 0, rx * 1.14);
+  gr.addColorStop(0, rgba(rim, 0)); gr.addColorStop(0.7, rgba(rim, 0.15)); gr.addColorStop(1, rgba(rim, 0.9));
+  g.fillStyle = gr; g.fillRect(-rx * 1.3, -rx * 1.3, rx * 2.6, rx * 2.6);
+  g.restore();
+  furGlow(g, CHICKEN_STEAK_LIT, 0.42, -rx * 0.3, -ry * 0.38, rx * 0.5, ry * 0.36);              // the light on it
+  furGlow(g, char, 0.5, rx * 0.5, ry * 0.45, rx * 0.6, ry * 0.55);                              // round: browned on the shade side
+  furGlow(g, [70, 26, 10], 0.55, -rx * 0.64, ry * 0.34, rx * 0.22, ry * 0.16, 0.3);              // a charred spot
+  furGlow(g, [70, 26, 10], 0.45, rx * 0.55, -ry * 0.36, rx * 0.2, ry * 0.12, -0.2);
+  furGlow(g, [150, 56, 14], 0.3, -rx * 0.05, ry * 0.18, rx * 0.42, ry * 0.22, 0.2);              // a browner patch, unevenly fried
+  strokeIn(g, rgba(char, 0.5), 0.085, top);                                                       // the seared crust round its rim
+  strokeIn(g, rgba(rim, 0.9), 0.03, top);                                                         // the bright sulphur rim, inside the crust
+  strokeIn(g, rgba(char, 0.6), 0.03, () => {                                                      // sear lines, like a steak's
+    for (const d of [-0.12, 0.12, 0.36]) {
+      g.moveTo(-rx * 0.7, ry * (d + 0.16));
+      g.quadraticCurveTo(0, ry * (d + 0.01), rx * 0.7, ry * (d - 0.18));
+    }
+  });
+  strokeIn(g, 'rgba(255, 214, 130, 0.4)', 0.012, () => {                                          // the light along the sear ridges
+    for (const d of [-0.12, 0.12, 0.36]) {
+      g.moveTo(-rx * 0.66, ry * (d + 0.14));
+      g.quadraticCurveTo(0, ry * (d - 0.01), rx * 0.66, ry * (d - 0.2));
+    }
+  });
+  strokeIn(g, 'rgba(255, 244, 206, 0.68)', 0.022, () => {                                          // butter-sheen on the lit edge
+    g.moveTo(-rx * 0.52, -ry * 0.3); g.bezierCurveTo(-rx * 0.3, -ry * 0.76, rx * 0.14, -ry * 0.84, rx * 0.42, -ry * 0.48);
+  });
+  fillIn(g, 'rgba(255, 252, 232, 0.9)', () => { ovalAt(g, -rx * 0.3, -ry * 0.34, 0.018, 0.011, -0.3); ovalAt(g, 0.02, -ry * 0.52, 0.012, 0.008); });
+  g.restore();
+  strokeIn(g, rgba(tone(base, 0.52), 0.65), 0.014, top);
+  g.restore();
+}
+// A clove of garlic, fried gold at its edge.
+function chickenCloveAt(g, x, y, r, rot) {
+  g.save(); g.translate(x, y); g.rotate(rot);
+  const clove = () => {
+    g.moveTo(-r * 1.1, 0);
+    g.bezierCurveTo(-r * 0.7, -r * 0.5, 0, -r * 0.64, r * 0.55, -r * 0.4);
+    g.bezierCurveTo(r * 1.0, -r * 0.2, r * 0.94, r * 0.4, r * 0.34, r * 0.56);
+    g.bezierCurveTo(-r * 0.24, r * 0.72, -r * 0.76, r * 0.44, -r * 1.1, 0);
+    g.closePath();
+  };
+  fillIn(g, 'rgba(70, 38, 10, 0.3)', () => { g.save(); g.translate(0.018, 0.03); clove(); g.restore(); });
+  softIn(g, CHICKEN_CLOVE, -r * 0.7, r * 0.7, clove, 1.06, 0.7);
+  strokeIn(g, rgba(CHICKEN_CLOVE_GOLD, 0.9), 0.012, clove);
+  furGlow(g, [255, 244, 206], 0.5, -r * 0.28, -r * 0.26, r * 0.3, r * 0.16, -0.3);
+  strokeIn(g, 'rgba(255, 246, 214, 0.45)', 0.008, () => { g.moveTo(-r * 0.7, -r * 0.05); g.quadraticCurveTo(0, -r * 0.32, r * 0.6, -r * 0.18); });
+  g.restore();
+}
+function paintChickenSteak(g) {
+  const { cy, IX, IY } = CLAY_PAN;
+  clayPan(g, () => {
+    // Butter and juices in the pan, a line of light along its far edge.
+    softIn(g, JUS, cy - IY * 0.8, cy + IY, () => ovalAt(g, 0, cy + 0.03, IX * 0.96, IY * 0.86), 1.2, 0.7);
+    strokeIn(g, 'rgba(255, 220, 150, 0.55)', 0.016, () => g.ellipse(0, cy + 0.03, IX * 0.9, IY * 0.8, 0, Math.PI + 0.5, TAU - 0.4));
+    // The steak, long and thick, filling the pan.
+    chickenSteakAt(g, -0.03, cy - 0.02, 0.8, 0.2, -0.1, 1, 1);
+    // Garlic, fried golden, scattered over it and a leaf laid across.
+    chickenCloveAt(g, -0.36, cy - 0.02, 0.078, -0.5);
+    chickenCloveAt(g, -0.06, cy + 0.1, 0.072, 0.3);
+    chickenCloveAt(g, 0.26, cy - 0.02, 0.075, -0.2);
+    leafAt(g, 'g', 0.1, cy - 0.16, 0.4, 0.105, -0.42, -0.3, 1.05);
+    // Butter bubbling round the edge and glinting in the pan.
+    fillIn(g, rgba([255, 226, 146], 0.7), () => { for (const [x, y, r] of [[-0.62, cy + 0.12, 0.022], [0.62, cy + 0.14, 0.018], [0.5, cy + 0.21, 0.014], [-0.48, cy + 0.21, 0.016]]) ovalAt(g, x, y, r, r * 0.55); });
+    fillIn(g, 'rgba(255, 252, 236, 0.85)', () => { ovalAt(g, -0.35, cy + 0.23, 0.014, 0.008); ovalAt(g, 0.38, cy + 0.24, 0.011, 0.007); });
+  });
+  // Steam off the steak.
+  strokeIn(g, 'rgba(255, 255, 250, 0.32)', 0.033, () => {
+    g.moveTo(-0.16, -0.14); g.bezierCurveTo(-0.26, -0.34, -0.06, -0.44, -0.14, -0.66);
+    g.moveTo(0.2, -0.12); g.bezierCurveTo(0.14, -0.3, 0.32, -0.38, 0.24, -0.58);
+  });
+}
+
 // The painted dishes by name, in the order of their numbers ('dish:' + n): a new one goes at the end.
 const PAINTED = [
   ['Roast mushrooms', paintRoastMushrooms],
@@ -1675,6 +1893,8 @@ const PAINTED = [
   ['Elderflower fritters', paintElderflowerFritters],
   ['Rosehip syrup', paintRosehipSyrup],
   ['Nettle soup', paintNettleSoup],
+  ['Hazelnut brittle', paintHazelnutBrittle],
+  ['Chicken of the woods steak', paintChickenSteak],
 ];
 const NAMES = PAINTED.map(p => p[0]);
 function paint(g, size, U, n) {

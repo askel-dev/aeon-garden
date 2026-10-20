@@ -41,6 +41,7 @@ working on (each has the game.js side and the sim.js side), and add new notes th
 - `gathering.md`: picking, the satchel, hover and use rings, the queue, E, glints and edge markers
 - `fire-camp.md`: the campfire, torches, making camp, the make strip, the basket
 - `cooking.md`: the cooking window, vessels, the recipe book and Finds, hints, eating
+- `dish-painting.md`: how to paint a new dish in dishes.js (the box, the helpers, the vessels, the steps); `dish-lab.html` and `tools/dish-shot.sh` to look at one
 - `tasks-stone-friends.md`: the first-things guide, the old stone, gifts, hugs
 - `plants.md`: mushrooms, greens, wild finds, brambles, rocks and flowers
 - `animals.md`: rabbits and foxes (sim and painting), the inspector

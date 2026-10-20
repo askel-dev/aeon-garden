@@ -1,0 +1,15 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>dish lab</title>
+<script src="fur.js"></script>
+<script src="dishes.js"></script>
+<body style="margin:0;background:#2f4030;display:flex;gap:28px;align-items:center;justify-content:center;height:100vh">
+<script>
+  const i = Dishes.NAMES.indexOf(new URLSearchParams(location.search).get('dish') || 'Nettle soup');
+  for (const size of [48, 96, 256]) {
+    const c = document.createElement('canvas'); c.width = c.height = size;
+    c.style.cssText = `width:${size}px;height:${size}px`;
+    document.body.appendChild(c);
+    Dishes.paint(c.getContext('2d'), size, size / 1.3, i);
+  }
+</script>

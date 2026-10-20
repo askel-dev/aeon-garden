@@ -21,7 +21,8 @@ friend's meadow as you join, and the first of anything in gold between ✦s (`fi
 is dropped. None while a card is open or the forager is down. The first fire and the first dish go through `firstTime`.
 A skill up a level is one too (`levelUp`, announce 'level', `LEVEL_WAIT` after what did it): it rises from below, a coin
 with the level flipping in on a ring of light and rays, the skill's name in its `SKILL_INK` tracking in, its `SKILL_SAYS`
-under it, and sound.js `level` (the one sound with a real cadence: up an A7, home on D). The coin's metal is the level's own
+under it and "see it in the book" pencilled after it (`.see`, index.html; the You tab has the dot), and sound.js `level`
+(the one sound with a real cadence: up an A7, home on D). The coin's metal is the level's own
 (`LEVEL_COIN`: copper, bronze, brass and gold, then jade, verdigris, sapphire, amethyst and rose), and the top one is extra:
 a pale opal of every colour (`.max`, index.html) with a turning sheen, sparks and a wider rainbow halo of rays. With a card
 open it's a toast.

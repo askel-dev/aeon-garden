@@ -79,6 +79,15 @@ const INGREDIENTS = {
 //   text            a line for its card
 const RECIPES = [
   {
+    name: 'Chicken of the woods steak',
+    vessel: 'pan',
+    time: 35,
+    icon: '🍄',
+    needs: ['sulphur', 'garlic'],
+    warm: true,
+    text: 'A thick orange shelf fried like meat. It gives the “never raw” mushroom a dish of its own.',
+  },
+  {
     name: 'Roast mushrooms',
     vessel: 'stick',
     time: 30,
@@ -167,6 +176,15 @@ const RECIPES = [
     icon: '🥜',
     needs: ['hazelnut', 'hazelnut'],
     text: 'Rolled in the embers till the skins crackle and rub off.',
+  },
+  {
+    name: 'Hazelnut brittle',
+    vessel: 'stone',
+    time: 40,
+    level: 2,
+    icon: '🍬',
+    needs: ['hazelnut', 'honey'],
+    text: 'Honey boiled till it snaps, poured over the nuts and broken up. A shard of it lasts a whole walk.',
   },
   {
     name: 'Mushrooms with hazelnuts',

@@ -6,13 +6,22 @@ commits, played and checked before the next. Read CLAUDE.md first (its perf rule
 ## Where we are
 A cozy cooking game: a little hooded forager walks a painted meadow (click or tap to walk, hold to sprint), gathers
 what the meadow gives into a satchel (mushrooms, greens, brambles, fruit and mast trees, hives, and the wild finds:
-dandelion, sorrel, strawberry, elder, hazel, rosehip, watercress), and will cook with `recipes.js`. Pickables glint, the
-forager's sense makes them glint when it stands still, and an edge marker points to the nearest. The pocket watch is gone.
+dandelion, sorrel, strawberry, elder, hazel, rosehip, watercress), and cooks with `recipes.js` (stage 6; stage 9 gives
+the dishes a table). Pickables glint, the forager's sense makes them glint when it stands still, and an edge marker points
+to the nearest. The pocket watch is gone.
 
 ## The feeling we want
 A balance of cozy and survival, like Raft: you can die fairly easily, but it's still cozy. Cold nights are the reason
 for a fire; the fire is the safest, warmest place in the world. The UI stays small: Axel wants to see the meadow, not
 big cards.
+
+### The dishes
+The dishes are the best thing the game paints and the least seen: 128 px of painting shown at 48 in the satchel, and the
+second and a half it takes to rise out of the pot. A bigger inventory only hides them better. A dish needs a **place** and
+an **audience**: ingredients are what you carry; a dish is something you made, and it should leave the bag the moment it's
+finished. Stage 9 gives every dish three homes — the hands, the table, the pot — and never a slot. It is the floor under
+the three directions Axel liked: the table is the still life a season collects on, the surface a meal is laid on, and the
+place a visitor is fed.
 
 ## Stage 1: things on the ground (built 2026-10-15)
 Sticks, pebbles, dry grass and birch bark lie about to pick up, like the finds (same walk-over-and-pick, into the
@@ -143,7 +152,8 @@ a timer. The cold is already there, so a warm dish by the fire on a cold night i
   and its `text` under it (the `firstTime` style, much smaller than "Your camp"), a little chime. Known dishes are
   remembered for good, per player (localStorage), whatever meadow they're in.
 - **Playing together:** a guest cooks at any fire; it goes through the host's sim like feeding a fire (`sendFire`).
-- **In the satchel:** a dish is kept by its name, and shows its painting (below).
+- **In the satchel:** a dish is kept by its name, and shows its painting (below). This is the fallback: stage 9 makes
+  the hands and the table a dish's home, and the satchel what carries one.
 
 ### The look and sound of cooking (the heart of the game: take the time to make it lovely)
 Cooking is what the game is about, so this part gets the most care of anything so far: it should feel like the best
@@ -178,7 +188,8 @@ vector; readable at a glance in a 48 px slot, not too detailed), painted in code
    stick, gives the pan a toss halfway (the food flips in the air and lands back), and leans in to sniff it, with a
    happy wiggle.
 4. *Done:* the dish rises out of the pan in a puff of steam, the forager holds it up to look (a warm glow behind it),
-   then it arcs down into its satchel slot, which bounces as the count ticks up.
+   then it arcs down into its satchel slot, which bounces as the count ticks up. (Stage 9: into the hands, or onto the
+   table; the satchel only when neither can take it.)
 5. *A new dish:* at "done", the big painting rises over the fire with its name in gold, "New recipe!", its `text`
    under it and a ring of sparkles; it fades after a few seconds or a tap.
 6. *A mess:* a dark puff of smoke instead, the forager coughs, fans it with a hand and looks at you sheepishly. Funny,
@@ -567,7 +578,7 @@ builds go behind **one make button**, and the first new build is a **torch** you
   crackles (the stacks through `crackle` and `out`), and none with no torch. Not tried over PeerJS with two machines.
 - That closes step 3 of stage 7. What's left is step 4: the seat log, the drying rack and the lean-to.
 
-## Stage 8: the camp grows (planned 2026-10-20; mockup `camp-level-lab.html`)
+## Stage 8: the camp grows (planned and the deeds settled 2026-10-20; mockup `camp-level-lab.html`)
 
 The camp becoming a home is the heart of the game, so the camp should visibly grow. It has five levels, and a level is
 **a place you build** (its keystone), not a number you reach. The mockup has two views: your camp as you built it, and
@@ -580,34 +591,121 @@ the plan of what each level opens.
   made shows a basket.
 - **Cosy is a list of deeds, each earned once** (`w.camp.cosy`: the set of deeds done; the count is their sum). Every
   point has a name the camp's card can show, nothing repeats, and cosy never goes down. Raising the camp takes
-  **8 · 18 · 30 · 44**, then its keystone. Deeds (Axel tunes these; they're data, recipes.js-style):
-  made camp +2; each thing built at camp, once +1 to +3; first dish cooked at camp +2; five different dishes there +3,
-  twelve +4; ate a meal on the seat log +1; kept the fire lit from dusk to dawn +2, through a storm +3; first fire of
-  each season +2 (×4); basket half full +2, one of every kind of food in it +3; and as a bonus never needed, a friend
-  sat by your fire +2, ate your dish +2. Alone, the deeds reach 44 before level V with six to spare.
+  **8 · 18 · 28 · 40**, then its keystone. The deeds are data (recipes.js-style; Axel tunes these) and the table below
+  is all of them: **60 points** with every build in, **56 alone** (the friend deeds are never needed), and **52 alone
+  before V**.
 - **The ring only grows.** `CAMP_R` is 5 and stays the floor: 5 → 5.5 → 6 → 6.5 → 7 (`campR(w)` in place of the
   constant, `inCamp` and the ground shader's `camp` ellipse following it). A kept meadow opens at level I with the deeds it
   has already done counted (camp, basket, seat, torches); nothing placed today ends up outside the ring.
-- **The keystones** are builds with `where: 'camp'` and a new `raises: n` in recipes.js `BUILDS`, offered once the cosy is
-  there. II–IV cost only things that lie about already:
 
-  | Level | Name        | Keystone        | Costs                                | Its one real payoff                                   |
-  |-------|-------------|-----------------|--------------------------------------|-------------------------------------------------------|
-  | I     | Campfire    | the first fire  | as now                               | home: you wake here after a collapse (already true)   |
-  | II    | Hearth      | hearthstones    | 12 pebbles, 2 clay                   | a stick burns a third longer at the camp's fire       |
-  | III   | Homestead   | the clay oven   | 8 clay, 10 pebbles, 4 sticks         | baking (the oven is already a `STATIONS` entry)       |
-  | IV    | Hollow      | the lantern arch| 12 sticks, 4 birch bark, 2 clay      | the ring keeps a steady light at night                |
-  | V     | Meadow Home | the cabin       | logs (a new item), pebbles, clay     | dry and warm inside, and where you wake               |
+### The deeds, exactly
+A deed is earned once and never lost. The level in the table is when it first becomes possible, not when it's awarded,
+and a build worth points is worth them once however many you make (torches included).
 
-- **What each level opens to make** (one or two each): I basket, seat, torch (built); II drying rack, lean-to (planned in
-  `plans/camp-builds`); III spit, herb pots; IV bird feeder, notice board (the first-things notes pinned up); V hammock.
+| Deed | Points | From |
+|---|---|---|
+| **Making the camp** | | |
+| Made camp (the first fire) | 2 | I |
+| Wove the basket | 3 | I |
+| Set the seat log | 2 | I |
+| Set a torch in the ground | 1 | I |
+| Laid the hearthstones *(keystone)* | 2 | II |
+| Built the drying rack | 2 | II |
+| Raised the lean-to | 2 | II |
+| Built the clay oven *(keystone)* | 2 | III |
+| Built the spit | 2 | III |
+| Planted the herb pots | 1 | III |
+| Raised the lantern arch *(keystone)* | 2 | IV |
+| Hung the bird feeder | 1 | IV |
+| Put up the notice board | 1 | IV |
+| Built the cabin *(keystone)* | 3 | V |
+| Hung the hammock | 1 | V |
+| **Cooking** | | |
+| Cooked the first dish at camp | 2 | I |
+| Five different dishes at camp | 3 | I |
+| Twelve different dishes at camp | 4 | I |
+| Ate a meal sitting on the seat log | 1 | I |
+| **The fire** | | |
+| Kept the fire lit from dusk to dawn | 2 | I |
+| Kept the fire lit through a storm | 3 | I |
+| The first fire of each season (four deeds) | 2 each · 8 | I |
+| **The basket** | | |
+| Filled half the basket | 2 | I |
+| One of every kind of food in it | 4 | I |
+| **Friends** (never needed) | | |
+| A friend sat by your fire | 2 | I |
+| A friend ate your dish | 2 | I |
+
+**Totals:** making camp 27 (the camp 2, the builds 25), cooking 10, the fire 13, the basket 6, friends 4: **60 all in,
+56 alone**, and 52 alone before V (the cabin and the hammock are V's own opens).
+
+**The cheapest routes.** Everything before V is cleared by what's in front of you, with no storm and no season but the
+one you're in: II is 2 + 3 + 2 + 1 (camp, basket, seat, torch); III is that 8 + the hearthstones 2 + the first dish 2 +
+five dishes 3 + eating on the seat 1 + one season's fire 2 (18); IV is 18 + the oven 2 + the rack 2 + the lean-to 2 +
+dusk to dawn 2 + half the basket 2 (28). V is 28 + the arch 2 + the spit 2 + the herbs 1 + the feeder 1 + the board 1 +
+twelve dishes 4 (39), and one more thing to live through: a storm (3), another season's fire (2) or the basket kept
+through a year (4). That's the last level's point, and any of the three will come.
+
+**What the gates leave.** Before each gate, the most cosy there is to be had:
+
+| Gate | Needs | slice one as planned | + rack and lean-to | + every build |
+|---|---|---|---|---|
+| II | 8 | 37 (22%) | 37 | 37 |
+| III | 18 | 39 (46%) | 43 (42%) | 43 (42%) |
+| IV | 28 | 41 (68%) | 45 (62%) | 48 (58%) |
+| V | 40 | 43 (93%) | 47 (85%) | 52 (77%) |
+
+The old 30 for IV was 73% of slice one's 41: a wall, because the builds that should carry the ladder don't exist yet.
+With the rack and the lean-to in slice one it's 62%, and a player can skip a whole category (the storm, or the twelve
+dishes, or the basket's year) and still raise the camp. V is 93% in slice one alone, which is why it waits for its own
+builds (and why the card says "to come" until it has them).
+
+**What a deed means.**
+- **The first fire of each season** is earned when the camp's fire burns at any point in that season, not only when it's
+  lit: a fire kept over a season's turn earns the next one, 2 each, four times.
+- **Through a storm** is the camp's fire lit at the storm's start and its end with no gap. `WEATHER_ODDS` brings them
+  often enough that it's "be at camp when it blows", not a rare event.
+- **Different dishes** are distinct dish names cooked at a fire inside the ring, a set on the world (not in
+  localStorage, or a friend's visit wouldn't count); the mess isn't one.
+- **Half the basket** is 16 of its 32 slots. **One of every kind of food** is one of each of the 20 `INGREDIENTS` with
+  `fill > 0` at once: a year's deed (cherry in summer, apple and acorns in autumn, watercress in winter, garlic in
+  spring), so it's worth 4 and never needed.
+- **Whose cosy** is the meadow's: the camp is shared, so both players see one level and the friend deeds only mean
+  "someone else sat by the fire" and "someone else ate your dish".
+- **The hearthstones** should read as a flagged hearth (flat stones laid round the fire), not another ring of stones:
+  the fire already has one (`fireOf`).
+
+### The keystones and what they open
+The keystones are builds with `where: 'camp'` and a new `raises: n` in recipes.js `BUILDS`, offered once the cosy is
+there. II–IV cost only things that lie about already:
+
+| Level | Name        | Keystone        | At | Costs                                | Its one real payoff                                   |
+|-------|-------------|-----------------|----|--------------------------------------|-------------------------------------------------------|
+| I     | Campfire    | the first fire  | —  | as now                               | home: you wake here after a collapse (already true)   |
+| II    | Hearth      | hearthstones    | 8  | 12 pebbles, 2 clay                   | a stick burns a third longer at the camp's fire       |
+| III   | Homestead   | the clay oven   | 18 | 8 clay, 10 pebbles, 4 sticks         | baking (see below)                                    |
+| IV    | Hollow      | the lantern arch| 28 | 12 sticks, 4 birch bark, 2 clay      | the ring keeps a steady light at night                |
+| V     | Meadow Home | the cabin       | 40 | logs (a new item), pebbles, clay     | dry and warm inside, and where you wake               |
+
+The costs are near the top of what a meadow holds (`FINDS`: pebbles `most` 9 and clay 5, 2 a pick, 12–24 days for one
+to come back; II and III together want 22 pebbles and 10 clay), so check them before slice one and lean on sticks, grass
+and bark if the walks get long. III's baking is a `STATIONS` entry only: nothing is cooked `at: 'oven'` yet, so its
+recipes come with the oven. II's longer burn is a per-fire rate (`FIRE_STICK` is read in 16 places; the fuel pips and
+the painting's sticks follow it).
+
+- **What each level opens to make** (one or two each): I basket, seat, torch (built), the table (stage 9); II drying rack,
+  lean-to (in slice one too: `plans/camp-builds`); III spit, herb pots; IV bird feeder, notice board (the first-things
+  notes pinned up); V hammock.
 - **Gifts** (scenery only, painted once, no store): III season dressing (a pumpkin by the seat in autumn, snow lanterns in
-  winter, a jar of flowers in spring); IV a robin hopping round the camp, a path worn towards where you go most; V wind
-  chimes on the eaves (a few notes in sound.js when the wind turns), a pennant in the season's colour.
+  winter, a jar of flowers in spring); IV a robin hopping round the camp; V wind chimes on the eaves (a few notes in
+  sound.js when the wind turns), a pennant in the season's colour. A path worn to where you go most waits: it's a
+  footfall map in the sim and a ground repaint, not scenery.
 
 ### How it shows
 - **The line over the satchel** stays one thin pill: hovering the ring, away from the fire, says "Your camp · Hearth ·
   14 / 18 cosy". A tap on the line opens the camp's card. The fire stays "see to it": no second click target beside it.
+  A touch screen has no hover, so there the line sits in the satchel's sheet and while the forager is in camp, and it
+  gives way to whatever is under the hand (the fire, the basket, a torch).
 - **The camp's card** (small, over the satchel, ✕ at the foot on a phone): the level's seal and name, the bar with its
   number (no pips), "4 more, then build the clay oven", the deeds done with their points, and the next two not done
   shown faintly, so the bar says what to go and do.
@@ -618,16 +716,162 @@ the plan of what each level opens.
   happened ("the ring widens · the oven is fired · 2 new things to make").
 
 ### Slice one
-Cosy and its deeds, the five levels, the ring growing, the keystones II–IV (V waits for logs), the moment and the card.
-The payoffs for II–IV come in slice one too (each is one small change to a system that exists). The new builds each level
-opens come after it, one at a time, as "data plus a painting" (stage 7). The sim keeps one layout: `w.camp` gets
-`level`, `cosy` and the keystones' fields in its blank from the start, and a kept camp gets them in `unpackWorld`.
+Cosy and its deeds, the five levels, the ring growing, the keystones II–IV, the moment and the card. The drying rack and
+lean-to come with it: they are level II's own opens, already specified (`plans/camp-builds`), and without them II opens
+nothing and IV would be 73% of everything slice one holds. V waits for logs, and until its keystone exists the card says
+"the meadow home · to come" with no bar (a camp at 43 shouldn't be told to build a door that isn't there). The payoffs
+for II–IV come in slice one too (each is one small change to a system that exists). The builds the later levels open
+come after it, one at a time, as "data plus a painting" (stage 7).
+
+The sim keeps one layout: `w.camp` gets `level`, `cosy` and the keystones' fields in its blank from the start, and a
+kept camp gets them in `unpackWorld`. Cosy and the level are **derived** from the deed set and the keystones built
+(stored as data, summed in one place), so a tuning pass can't leave the three disagreeing. A kept camp counts only what
+it can see it did (camp, basket, seat, torches); the rest is earned again.
+
+**The ring.** `campR(w)` reaches further than `inCamp`: the ground shader's `camp` uniform (`campGround`), the ring art
+painted once at `CAMP_R` (`campArt`), the ring's drawing and its `visible` test, and the ring/motes/bits animation. A
+level's spread gets its own state (`campShow` keys on the camp's creation, not on a level).
+
+**Checked by:** `checkDeeds()` beside `checkRecipes` (every deed names a thing that exists, the points are whole numbers,
+and each gate is cleared by ≥ 8 points of slack from the deeds open at that level), a kept-meadow round-trip with the
+deed set in it, and `garden.cosy(n)` in the dev panel so the card and the moment can be seen at every level. The
+cheapest routes above are the test: every gate before V is cleared without a storm and without a season but the one it's
+played in.
 
 ### Later, not in this stage
-Each of these touches another system and waits for its own stage: sleeping through a night (the forager has no sleep), a
-cellar where nothing spoils (nothing spoils), visitors stopping by a free seat ("After that" 5), foxes going round the
-ring and a scarecrow for the crows, the camp on friends' minimaps, the notice board's requests and a bell, a garden bed,
-a rain tarp, morning gifts, naming the camp.
+Each of these touches another system and waits for its own stage: the table (stage 9), sleeping through a night (the
+forager has no sleep), a cellar where nothing spoils (nothing spoils), visitors stopping by a free seat at the table
+(stage 9, "After that" 5), foxes going round the ring and a scarecrow for the crows, the camp on friends' minimaps, the
+notice board's requests and a bell, a garden bed, a rain tarp, morning gifts, naming the camp, the path worn to where you
+go most (a footfall map in the sim, and a ground repaint).
+
+## Stage 9: the table (planned 2026-10-20)
+
+A dish is the best thing the game paints and the least seen: 128 px of painting shown at 48 in the satchel, and the
+second and a half it takes to rise out of the pot. The fix is not a bigger inventory; it is a place and an audience. This
+stage gives every dish three homes — **the hands, the table, the pot** — and never a slot. It is the floor under the three
+directions Axel liked: the table is the still life a season collects on, the surface a meal is laid on, and the place a
+visitor is fed. Build it first; each of those is then a small layer. Axel couldn't choose between them, and doesn't have
+to: the table is the common floor. The first slice is the hands and the table; the still life, the shared meal and the
+visitor come after it in whatever order the play asks for.
+
+### The rule
+- **Out of the pot, in this order:** the forager's empty hands, else a free place on the table, else the satchel (for
+  carrying; a dish can still travel), else it waits in the pot. A done dish never flies to a tile unless there is nowhere
+  better: the satchel is the fallback, not the home.
+- **One dish in hand.** The forager carries it where you can see it (a new `f.hand`, `FORAGER_HOLD` in fur.js, a curl of
+  steam), and a second dish cannot be held: it waits in the pot or goes on the table. Walking, sitting, eating, offering
+  and giving all use it. If the hand, the table and the satchel are all full, the pot keeps it.
+- **A dish on the table is a thing in the world.** It is painted, it stays (nothing spoils), it can be picked up, eaten,
+  given, or taken by a friend. It is not a storage row: it is the dish's place.
+- **The pot keeps a done dish** as it does now (`drawAwayPots`), so there is always somewhere for one to wait.
+
+### The table
+A new `BUILDS.table` (`where: 'camp'`, `after: 'camp'`): a low table of split sticks lashed with dry grass on two stumps,
+a flat stone or a board on top. **8 sticks, 2 pebbles, 4 dry grass**, early enough to come right after the basket and the
+seat; it earns no cosy for now. A `TABLE_SIZE` of about 2.6 x 1.5 tiles, solid like the seat, placed with `ui.place` and
+turned in its steps as the seat is (`TABLE_TURNS`; `TABLE_ARTS` painted once). It has **6 places** on top, in the table's
+three-quarter view (two rows of three), each a fixed point in the painting.
+- **Setting a dish down:** with a dish in hand, a tap on the table sets it on the nearest free place (a drag from the
+  satchel can aim one), with a small clink and a puff of steam. A tap on a dish lifts it back into the hand; the line's
+  Eat (the satchel's `eatAsk`) or a second tap on it in the hand eats it. A tap on the table with an empty hand and no
+  dish does nothing.
+- **The table view:** a click or tap on the table walks there and eases the camera in (`tableCam` in `leadCam`, about
+  `TABLE_TILES` 4.5 across, 3.2 on an upright phone, at most `TABLE_MOST` 220: the same easing as `cookCam`, no window,
+  no scrim, the meadow still behind). The dishes are then 90-130 px on a computer, 60-75 on a phone, sizes the paintings
+  were made for. A tap elsewhere, ✕, E, Esc or Back steps back out. The line over the satchel names the dish under the
+  hand ("Warm bramble compote · Eat · Take") and the meal, if there is one.
+- **Sitting:** the seat log is the chair. Placed within `TABLE_SIT` (2.2 tiles) of the table, sitting at it faces the
+  table and the table view eases in (the existing `sit`, `SEAT_*` poses). Without a seat you stand and eat; the table
+  works the same, it is just less of a moment.
+- **Far away:** zoomed out the dishes are too small to paint, so the table is one painted table (`TABLE_ARTS`) and the
+  dishes and their steam show only when `z * 0.55 >= 3` px (as other details). Nothing is painted per frame; the table and
+  its dishes are 7 cached draws at most, and the steam is one shared curl a warm dish.
+
+### The meal
+The reason to cook variety rather than the one most filling thing, and the reason a table is a *cooking* surface and not
+a shelf. `MEALS` in recipes.js, a new table beside `RECIPES`: each a set of 2-4 dishes by name. (Tags can come later if
+dishes grow them; names keep it copy-a-block.) 3-6 at first, one for each season and one for the first night; Axel's to
+tune:
+- *A forager's supper*: Roast mushrooms, Wilted greens, Rosehip tea.
+- *A summer picnic*: Spring salad, Strawberries and honey, Elderflower cordial.
+- *A winter warmer*: Watercress soup, Baked apple with honey, Rosehip tea.
+- *A sweet finish*: Warm bramble compote, Toasted hazelnuts, Rosehip tea.
+
+A meal is **laid** when the table holds dishes that answer every need, each dish answering one (as `Recipes.answers` does
+for a recipe). It is not an item and never enters the bag: it is a state of the table (`table.meal`), worked out when the
+dishes change, not per frame. Laid, the table says its name in the meadow's handwriting over it (a small float, a chime;
+the first time a `firstTime('meal:' + name)` headline), and the line over the satchel names it while you are at the table.
+Eating any dish of a laid meal gives the warm dish's lift a little longer (`warmIn` by `MEAL_WARM`, about a game hour) and
+a contented "mm"; not more fill, because you cannot overeat. The point is the moment and the collection, not a stat.
+- **The book:** a **Meals** section at the end of the recipe book's sections (not a fourth part: the three tabs are full),
+  a page each (`MEAL_PAGES`, as `FIND_PAGES`): its name, its `text`, its dishes' small paintings (not a new composite
+  painting: cheap and clear), which of them you have cooked, and "Laid once" once it has been (`firsts`, 'meal:' + name).
+  The first laying tags the book button "New", as a new dish does.
+- **The deed already on the board,** "Ate a meal sitting on the seat log" (stage 8), is earned as stage 8 has it, by
+  eating any dish while sitting. The laid meal gives it its picture, not a new gate. If it should *mean* a laid meal, that
+  is a cosy pass with the numbers redone, not a quiet change.
+
+### Who sees it
+- **The old stone** is already an audience: a dish offered to it (`offerSlot`) flies to the stone and **rests on it**
+  while it rates it (its mouth going, the rating pill over it), then goes with a puff: the stone has eaten it. One small
+  change to the offer's arc and the painting; the critic gets a visible plate.
+- **Friends:** the table is the meadow's, like the basket and the fire. A dish set down or taken goes to everyone
+  (`'table'`, a small message with the place and the dish, at the tick, as the basket's slots are); a guest can take and
+  eat one, and the host sees it go. A guest's dish set on the table stays with the meadow (a gift). A friend sitting at
+  your table is the deed already there ("A friend ate your dish"), now with a place to sit.
+- **The first visitor (later, with 'After that' 5):** a dish left on the table at dawn is the trigger: the hedgehog comes,
+  eats it, and leaves a recipe. The table is the landing place the visitor system was missing; a stump works the same if
+  there is no table. Not in this stage's first slice.
+
+### The dish's finish (later, with the cooking levels)
+The last beat of a cook is plating, not a pop-out: the vessel comes off the heat, the dish is set on its plate or board in
+front of you, and a **finish** can be added from the satchel (a leaf, a berry, a drizzle of honey): one tap, optional,
+never a fail. It changes the painting by a small overlay (a `finish` on the dish, painted once per dish and finish), gives
+the dish a little authored name ("with sorrel"), and later feeds the cooking levels' stars (golden, charred, perfect) and
+portions (a pot of soup serving three). This is the cooking-depth thread; it follows the table, not the other way round.
+
+### Building it
+Each its own branch, played and looked at before the next:
+1. **The hands.** A done dish comes out into the hands; the forager carries it (the one new painting, `FORAGER_HOLD`, in
+   fur.js); eating it is the existing bite; the satchel is the fallback. No new build: the smallest change that fixes
+   "hidden", and playable at once.
+2. **The table.** `BUILDS.table`, `paintTable` and `TABLE_ARTS`, placing and turning, six places, set down/take/eat,
+   `tableCam`, the warm steam, the kept table. No meals yet.
+3. **The meal.** `MEALS`, `mealOf`, `checkRecipes`, the name over the table, the warm lift, the book's Meals section and
+   pages, the "New" tag.
+4. **The stone and friends.** The offer rests on the stone; `'table'` messages; a guest taking a dish; the meadow sum.
+5. **The first visitor.** The hedgehog at a dish at dawn; a recipe; the dialogue. (Ties into 'After that' 5.)
+6. **The finish and portions,** with the cooking levels.
+
+### The sim and the keep
+- `w.camp.table: null` in the camp's blank, made when the table is built: `{ x: -0, y: -0, turn: 0, dishes: [] }`; a
+  dish is `{ id: '', at: 0, warmAt: 0 }` made in one shape (`id` a string; `at` and `warmAt` whole numbers; no fractions,
+  nothing deleted: take one and it is set back to the blank). A kept camp from before gets `table: null` in
+  `unpackWorld`; a kept forager gets `hand: ''`; no `KEEP_VERSION` bump if unpack fills both (a dish in hand at the keep
+  is kept with it).
+- The table is solid (`tableSpot`, as `seatSpot`); a dish on it is not a `world.dropped` thing and never fades: it is the
+  table's.
+- A guest's table is the host's; a dish left on it stays with the meadow, as the basket's things do. The host keeps them.
+
+### Checked by
+- `checkRecipes` checks `MEALS` (every name is a dish, every set 2-4, no two meals the same set); a kept-meadow
+  round-trip with a table, three dishes and one in hand; `garden.table()` in the dev panel fills it with a dish of each
+  (and clears it) so the meals and the table view can be seen; the table view at 1400x900, 390x844 and 844x390; a guest
+  putting a dish on and taking it off; the meal name on the table and in the book; no console errors. Cost: a table and
+  six dishes is seven cached draws (the dishes skipped far out) and one shared steam curl a warm dish; the table view is
+  a camera move, no canvas of its own. Time `render` before and after over a few seconds in a camp with a full table,
+  zoomed out and in, per CLAUDE.md only if the draws show up.
+
+### Settled / open
+- **Settled:** a dish leaves the satchel for the hands and the table; one in hand; the table is a camp build with six
+  places; the table view is the camera, not a card; a meal is a set of dishes and never an item; nothing spoils; the
+  satchel still carries a dish for travel; the stone's offer becomes visible; the table is the meadow's (shared).
+- **Open:** the table's cost and place on the ladder (I have it after the basket, a level I open with no cosy for now; a
+  table deed would mean redoing the gates' slack); whether it includes a bench or leans on the seat log; whether a meal
+  gives a small stat or only the moment (I would keep it the moment plus the warm lift); whether a guest can eat from your
+  table while you are away (yes, it is cosy); the first visitor's trigger (a dish on the table at dawn, or any dish left
+  out); and whether the finish belongs to this stage or waits for the cooking levels (I would wait).
 
 ## After that (roughly in this order)
 1. **Cooking at the fire** and 2. **hunger and eating**: stage 6 above.
@@ -637,18 +881,20 @@ a rain tarp, morning gifts, naming the camp.
    than the satchel carries (a `keep` in recipes.js: greens lie 20 to a basket slot, still 10 to a satchel one), a lantern,
    a bedroll or lean-to. What each costs is data, recipes.js-style, so Axel can add builds by
    hand. More ground items come in as builds need them (clay, reeds, flint, logs, pine cones, tinder fungus, feathers).
+   The table comes next among these (stage 9): it is the one build that changes what cooking is for, and the visitor
+   stage below lands on it.
 4. **Fishing and hunting.** Fish from the water the sim already stocks (`w.fish`), and hunting the rabbits and the game
    (the gentle respawn keeps them from running out). Visitor NPCs are never hunted.
 5. **The visitors come back as NPCs.** The hedgehog, heron, kingfisher, dragonflies and skylark (their lives and
    paintings are still in the code, dormant: they only ever came to the keeper's places). They need a new way in, e.g.
-   drawn by food left out at camp. You feed them, and they thank you with recipes in cute little dialogues (the hedgehog
-   trades its nettle soup for a bowl of something; recipes.js `from`).
+   drawn by food left out at camp (a dish on the table, stage 9). You feed them, and they thank you with recipes in cute
+   little dialogues (the hedgehog trades its nettle soup for a bowl of something; recipes.js `from`).
 6. **The kitchen ladder.** Stations beyond the fire: the clay pot (stews and soups, 4 slots), the drying rack, a stone
    hearth (two things at once), a skep for your own bees (the sim's swarm hook in `hangOut`), the clay oven (bread, pies,
    honey cakes), a smokehouse or cellar for winter. recipes.js `STATIONS` already has fire, pot and oven.
-7. **Cooking levels.** Cooking raises your level; a level raises quality (stars, less burning, bigger servings) and
-   opens new stations, rather than handing out recipes one by one (recipes.js `level`). Recipes are still mostly found by
-   trying, and some are taught by visitors.
+7. **Cooking levels.** Cooking raises your level; a level raises quality (stars, less burning, bigger servings, and the
+   finish a dish can take: stage 9's leaf, berry or honey) and opens new stations, rather than handing out recipes one by
+   one (recipes.js `level`). Recipes are still mostly found by trying, and some are taught by visitors.
 8. **Winter as the gentle pressure.** Cold, short days, little to forage: what you dried and kept carries you through.
 
 ## Open notes from the last pass

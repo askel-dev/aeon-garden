@@ -5,7 +5,8 @@
    You're an anonymous Supabase user, made the first time Friends is opened and kept in localStorage (KEY), so there's no
    signing up: a friend adds you by your code. While the game is in view it says it's here every BEAT_MS, 1 min, inside the 75 s online window (every OFTEN_MS, 30 s, while the friends card is open; here(), with the
    name and the room you're playing together in), and that same call brings the friends list back. A friend seen in the
-   last 75 s (by the server's clock) is online. Invites and knocks come at once over Realtime and are cleared once heard.
+   last 75 s (by the server's clock) is online. Invites and knocks come at once over Realtime and wait in the table until
+   they're answered (Friends.done) or stale, so an unanswered one comes back on a reload.
    game.js hands over your headshot when it changes (.snap(url)): the next beat takes it along, and the list
    says when each friend's was taken, so theirs are fetched (friend_snaps) only when new and only while the card is open.
 
@@ -13,7 +14,7 @@
    allow. Never the service_role key here.
 
    game.js uses it as Friends: Friends.start(handlers), .add(code), .accept(id), .drop(id), .invite(id, room),
-   .knock(id), .beat(), .often(on), .snap(url), .pic(id), and reads .on, .me ({ id, name, code }) and .list. */
+   .knock(id), .done(id), .beat(), .often(on), .snap(url), .pic(id), and reads .on, .me ({ id, name, code }) and .list. */
 (() => {
 'use strict';
 const BASE = 'https://cecvgnhqavygiqkbpkuz.supabase.co';
@@ -114,14 +115,19 @@ const send = (to, kind, room) => db.from('invites').insert({ from_id: Friends.me
 Friends.invite = (id, room) => send(id, 'invite', room);
 Friends.knock = id => send(id, 'knock', '');
 
-// Invites to you: each heard once, then gone.
+// Invites to you: each heard once, and left in the table until answered (Friends.done) or
+// stale, so a reload within INVITE_FRESH brings an unanswered one back.
 function heard(row) {
   if (told.has(row.id)) return;
   told.add(row.id);
-  db.from('invites').delete().eq('id', row.id).then(() => {});
-  if (Date.now() - Date.parse(row.created_at) > INVITE_FRESH) return;
-  h.invited({ from: row.from_id, kind: row.kind, room: row.room });
+  if (Date.now() - Date.parse(row.created_at) > INVITE_FRESH) {
+    db.from('invites').delete().eq('id', row.id).then(() => {}, () => {});
+    return;
+  }
+  h.invited({ from: row.from_id, kind: row.kind, room: row.room, id: row.id });
 }
+// An invite answered (or waved away): gone for good.
+Friends.done = id => id ? db.from('invites').delete().eq('id', id).then(() => {}, () => {}) : Promise.resolve();
 async function heardInvites() {
   const rows = must(await db.from('invites').select('*').eq('to_id', Friends.me.id).order('id'));
   for (const r of rows || []) heard(r);

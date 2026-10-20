@@ -30,8 +30,9 @@ murky for a mess), bubbling, steaming, a wooden spoon going round in it (a swish
 of the pot glowing with sparks round it, or a mess in a puff of dark smoke (sound.js `dish`, `mess`), and after `REVEAL_MS` flying
 to its tile (`kw.reveal`, `kw.incoming`; into the basket at camp with the satchel full, `kw.reveal.bk`, and on the ground by
 the fire only with no room anywhere); a dish never made before gets its gold
-headline (`firstTime('dish:' + name)`, which `knownDish` reads with recipes.js `known`). Walking off, ✕, E, Esc or Back leave the
-fire (`closeCook`, `stepOut`) and the pot keeps cooking on the fire (sim.js `cookOn`, on the fire's clock, only while it's lit): the pot
+headline (`firstTime('dish:' + name)`, which `knownDish` reads with recipes.js `known`). Walking off, a click on the meadow,
+✕, E, Esc or Back leave the
+fire (`closeCook`, `cardAway`, `stepOut`) and the pot keeps cooking on the fire (sim.js `cookOn`, on the fire's clock, only while it's lit): the pot
 stays on it, steaming (`drawAwayPots`), with a slim bar over it filling as it cooks (`drawCookBars`: ember orange, grey while the fire's
 out, gold and pulsing once done), a hover saying the time left in the line over the satchel (`fireSaid`, `hoverSay`) and a "Ready" by it (event 'cooked'). A done dish waits in the
 pot, for a click on the fire or E (the pot prompt shows over it); the window opened on a pot going finds it as it was and on a done one
@@ -54,7 +55,7 @@ missing and where to find it). With nothing made the window opens making the fir
 walks to a lit fire to make it there (`makeOne`, `makeNext`), and something newly within reach is told once (`renderMake`). The bowl is painted as folded, laced birch bark now.
 The recipe book (`#book`, `renderBook`, `#book-btn` by the satchel's right end, B, and on the cooking bar), modelled on the old
 field journal (main at 1d79f03): a book laid open on the meadow over a soft scrim (`#book-scrim`, which doesn't take the
-pointer: a tap on the meadow beside it walks, and the book stays where it is), the numbered tiles on the left
+pointer: a tap on the meadow beside it puts the book away, and walks nowhere), the numbered tiles on the left
 page in sections (`BOOK_SECTIONS`: savoury, sweet by whether a need is sweet or fruit; `BOOK_PAGES`, No. 1 to N), the page picked
 on the right (`bookPageHTML`), turned with ‹ n/N ›, ← → (a capturing listener; the walking keys still walk the forager while
 it's open), or a sideways swipe (`turnBook`), a 44 px brass ✕ top right. A page: the dish's picture big on a plate (`dishArt`:
@@ -74,8 +75,8 @@ tiles with ‹ ✕ › (`bookUi.depth` 2, `bookBack`), and Back steps out of the
 narrow (`.slim`, under 600 px); a known dish tapped there fills the pot and the book stays open. Not on a phone (`narrow()`): there
 the book opens over the window as it does anywhere (squeezed beside it, it was a strip upright and 200 px on its side, 10-18), and
 a dish put in the pot shuts it. Rewritten only when what it shows changes (`bookUi.key`, `setHTML`).
-The book has a second part, Finds (2026-10-16), behind two titles at the top that are its tabs (`BOOK_PARTS`, `bookTab`; the one open
-big, a red dot on the other when it has news): a page for every ingredient in recipes.js (`FIND_PAGES`, in `FIND_SECTIONS`:
+The book has two more parts behind titles at the top that are its tabs (`BOOK_PARTS`, `bookTab`; the one open
+big, a red dot on the others when they have news). Finds (2026-10-16): a page for every ingredient in recipes.js (`FIND_PAGES`, in `FIND_SECTIONS`:
 mushrooms, greens & flowers, fruit nuts & honey, for a fire), found once it's been picked into the satchel ever (`foundIt`: the
 firsts, as the first find's headline). Found, its satchel painting, its `text`, good raw or cook it first, how much it fills, where
 to find it (recipes.js `where`), and what it goes into (`findUses`: the book's dishes that take it, a known one a tap to its page,
@@ -83,6 +84,8 @@ the rest a ?; the campfire for the sticks). Not found, the painting's shadow and
 (a dish's name, 'find:' + the id), and paging stays within its part (`pageBy`). A new find tags its tile "New" and stamps
 "Found!" but doesn't make the book button glow (there are too many finds early on); shutting the book has seen the news of the
 parts shown (`bookUi.shown`), and a book kept from before the finds counts what's been found as seen.
+You, the third, is the forager's own sheet (the face, days, feeling, vitals, what's on and the skills) and a page for each
+skill, from a tap on the face or I (`openYou`, `youSheetHTML`, `skillPageHTML`; `.claude/docs/forager-body.md`).
 Finding it: near a lit fire with something to cook (`bagFood`) a small painted pot bobs
 over it, with an E key where there's a keyboard (`drawCookPrompt`, `PROMPT_ART` painted once; a click on it is one on the fire,
 `hintAt`); making camp the forager thinks "I could cook something on this fire" (`think`, `CAMP_COOK_LINE`), and now and then it

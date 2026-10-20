@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Journal on a phone</title>
+<!-- A mockup, not the game: three ways the recipe book could look on an upright phone, beside how it looks now.
+     Open it through the dev server (http://localhost:8765/plans/journal-mobile/mockup.html) so the fonts and paintings load.
+     The paintings are the game's own (dishes.js, items.js); nothing here is wired to game.js. -->
+<style>
+  @font-face { font-family: 'Fraunces'; font-style: italic; font-weight: 450; src: url(../../assets/fonts/fraunces-italic-latin.woff2) format('woff2'); }
+  @font-face { font-family: 'Fraunces'; font-style: normal; font-weight: 600 680; src: url(../../assets/fonts/fraunces-normal-latin.woff2) format('woff2'); }
+  @font-face { font-family: 'Nunito'; font-style: normal; font-weight: 500 900; src: url(../../assets/fonts/nunito-normal-latin.woff2) format('woff2'); }
+  :root {
+    --card: #f8f0de; --ink: #3b372f; --muted: #6f6657; --line: #ecdfc8; --hand: #3d5570;
+    --accent: #e98a4b; --accent-ink: #9e4a17; --accent-soft: #fde4cf; --good: #6fb350; --good-ink: #43762c;
+    --brass: linear-gradient(180deg, #fffaf0, #f1e5c9); --brass-edge: inset 0 0 0 1.5px #d2b06a, 0 2px 0 #a8742a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 28px 28px 40px; background: #2f3a2a; font-family: Nunito, system-ui, sans-serif; color: var(--ink); }
+  .fr { font-family: Fraunces, Georgia, serif; }
+  h1 { margin: 0 0 4px; color: #f8f0de; font: 650 30px Fraunces, serif; }
+  .intro { margin: 0 0 26px; color: #cfd8c4; font-size: 15px; font-weight: 600; max-width: 1200px; line-height: 1.45; }
+  .row { display: inline-flex; vertical-align: top; gap: 26px; margin: 0 44px 44px 0; }
+  .col { flex: none; }
+  .lab { margin: 0 0 10px; color: #f8f0de; font: 800 17px Nunito, sans-serif; }
+  .lab small { display: block; margin-top: 3px; font-size: 13px; font-weight: 600; color: #b9c4ad; line-height: 1.35; max-width: 390px; }
+  .pair { display: flex; gap: 18px; }
+  .phone { position: relative; width: 390px; height: 844px; border-radius: 46px; overflow: hidden; flex: none;
+    background: url(meadow.png) center / cover; box-shadow: 0 0 0 9px #111, 0 20px 50px rgba(0, 0, 0, 0.5); }
+  .phone.shot { background-size: cover; }
+  .phone .scrim { position: absolute; inset: 0; background: rgba(40, 32, 18, 0.32); }
+  .cap { margin-top: 18px; color: #cfd8c4; font-size: 13px; font-weight: 700; text-align: center; }
+
+  /* bits every concept shares */
+  .sheet { position: absolute; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; background: var(--card);
+    border-radius: 24px 24px 0 0; box-shadow: 0 -8px 40px rgba(50, 40, 15, 0.35), inset 0 0 0 1px rgba(150, 115, 60, 0.22); }
+  .grab { flex: none; display: grid; place-items: center; height: 22px; }
+  .grab::before { content: ''; width: 40px; height: 5px; border-radius: 3px; background: #d8c8a6; }
+  .bb { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--brass); box-shadow: var(--brass-edge); flex: none; }
+  .bb.big { width: 54px; height: 54px; }
+  .bb svg { width: 20px; height: 20px; }
+  .foot { flex: none; display: flex; align-items: center; justify-content: center; gap: 22px; padding: 10px 0 30px; }
+  .pic { display: block; flex: none; }
+  .sil { filter: brightness(0); opacity: 0.13; }
+  .half { filter: brightness(0); opacity: 0.4; }
+  .dots { display: inline-flex; gap: 3px; vertical-align: 1px; }
+  .dots i { width: 7px; height: 7px; border-radius: 50%; background: #e6d7b8; box-shadow: inset 0 1px 1px rgba(80, 60, 30, 0.25); }
+  .dots i.on { background: radial-gradient(circle at 35% 30%, #f6d98c, #b07a2a 70%); box-shadow: 0 0 0 1px #8a5e22; }
+  .newdot { width: 9px; height: 9px; border-radius: 50%; background: #c4562a; box-shadow: 0 0 0 2px var(--card); flex: none; }
+  .tabs { display: flex; gap: 6px; }
+  .tab { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; height: 44px; border-radius: 12px; position: relative;
+    font-weight: 850; font-size: 14px; color: var(--muted); background: rgba(150, 115, 60, 0.08); }
+  .tab svg { width: 18px; height: 18px; }
+  .tab.on { background: var(--c); color: #fff8ea; box-shadow: inset 0 -5px 6px -4px rgba(40, 20, 0, 0.35); }
+  .tab .newdot { position: absolute; top: 7px; right: 9px; }
+  .go { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 52px; border-radius: 14px; font-weight: 850; font-size: 16px;
+    background: linear-gradient(180deg, #ffe9cf, #f9c99c); box-shadow: inset 0 0 0 1.5px #e98a4b, 0 3px 0 #b8662c; }
+  .go.off { background: none; color: var(--muted); box-shadow: inset 0 0 0 1.5px rgba(150, 115, 60, 0.35); }
+  .eyebrow { text-transform: uppercase; letter-spacing: 0.11em; font-size: 11.5px; font-weight: 900; color: #8a5e22; }
+
+  /* ========== A: the shelf. A half sheet, a list, one layer. ========== */
+  .A .sheet { top: 318px; }
+  .A .head { flex: none; padding: 2px 16px 8px; }
+  .A .body { flex: 1; min-height: 0; overflow: hidden; padding: 0 16px; }
+  .A .sec { display: flex; align-items: center; gap: 10px; margin: 8px 0 6px; }
+  .A .sec .bar { flex: 1; height: 4px; border-radius: 2px; background: #e9dcc0; overflow: hidden; }
+  .A .sec .bar i { display: block; height: 100%; background: linear-gradient(90deg, #b07a2a, #e2b75c); }
+  .A .sec b { font-size: 12.5px; font-weight: 800; color: var(--muted); }
+  .A .it { display: flex; align-items: center; gap: 12px; height: 60px; padding: 0 6px; border-bottom: 1px solid var(--line); }
+  .A .plate { display: grid; place-items: center; width: 50px; height: 50px; border-radius: 50%; flex: none;
+    background: radial-gradient(circle at 50% 45%, #fffdf6 0 55%, #efe2c4 56% 68%, #fbf4e3 69%); box-shadow: 0 2px 4px -1px rgba(80, 55, 20, 0.25); }
+  .A .tx { flex: 1; min-width: 0; }
+  .A .nm { font-size: 16px; font-weight: 850; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .A .sub { font-size: 12.5px; font-weight: 700; color: var(--muted); margin-top: 1px; }
+  .A .st { flex: none; font-size: 12.5px; font-weight: 850; padding: 4px 10px; border-radius: 99px; }
+  .A .st.ready { background: #e3f0d6; color: var(--good-ink); }
+  .A .st.miss { color: var(--muted); }
+  .A .it.sel { background: #fff6e4; border-radius: 12px; box-shadow: inset 0 0 0 2px #d9a441; border-color: transparent; }
+  .A .unk { margin-top: 10px; padding: 12px 12px 12px; border-radius: 14px; background: rgba(120, 95, 50, 0.06); }
+  .A .unk .sils { display: flex; gap: 6px; margin-bottom: 6px; }
+  .A .unk p { margin: 0; font: italic 450 15px/1.35 Fraunces, serif; color: #6b5636; }
+  /* A's page: the same sheet, taller, the list slid away */
+  .A.pg .sheet { top: 140px; }
+  .A .crumb { display: flex; align-items: center; gap: 8px; height: 44px; font-weight: 850; color: var(--muted); font-size: 15px; }
+  .A .crumb svg { width: 18px; height: 18px; }
+  .A .hero { display: flex; gap: 16px; align-items: center; margin: 4px 0 10px; }
+  .A .hero .plate { width: 118px; height: 118px; }
+  .A .hero h3 { margin: 2px 0 6px; font: 650 25px/1.12 Fraunces, serif; }
+  .A .line { margin: 0 0 14px; font: italic 450 17px/1.4 Fraunces, serif; }
+  .A .needs { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0 16px; }
+  .A .need { display: flex; align-items: center; gap: 6px; height: 46px; padding: 0 12px 0 5px; border-radius: 99px; font-weight: 850; font-size: 14.5px;
+    background: rgba(120, 95, 50, 0.07); }
+  .A .need.got { background: #e3f0d6; color: var(--good-ink); }
+  .A .need .n { font-size: 12.5px; color: var(--muted); }
+  .A .need.got .n { color: var(--good-ink); }
+  .A .meta { display: flex; gap: 14px; font-size: 13px; font-weight: 800; color: var(--muted); margin: 0 0 4px; }
+  .A .foot { gap: 18px; }
+
+  /* ========== B: the deck. One big card at a time, a strip of all of them under it. ========== */
+  .B .sheet { top: 104px; }
+  .B .head { flex: none; padding: 2px 16px 0; }
+  .B .deck { position: relative; flex: 1; min-height: 0; margin-top: 12px; }
+  .B .card { position: absolute; top: 0; bottom: 6px; left: 28px; right: 28px; border-radius: 22px; padding: 16px 18px 16px; display: flex; flex-direction: column;
+    background: #fffaf0; box-shadow: 0 6px 18px rgba(80, 55, 20, 0.18), inset 0 0 0 1.5px #e3cfa3, inset 0 0 0 6px #fffaf0, inset 0 0 0 7px rgba(201, 154, 76, 0.35); }
+  .B .card.side { transform: scale(0.92); opacity: 0.65; filter: saturate(0.6); }
+  .B .card.l { left: -320px; right: 362px; } .B .card.r { left: 362px; right: -320px; }
+  .B .card .top { display: flex; justify-content: space-between; align-items: center; }
+  .B .card .stamp { padding: 1px 9px; border: 2px solid #b8432a; border-radius: 7px; color: #b8432a; font: italic 600 15px Fraunces, serif; transform: rotate(-8deg); opacity: 0.85; }
+  .B .art { display: grid; place-items: center; height: 172px; position: relative; }
+  .B .art::before { content: ''; position: absolute; width: 196px; height: 128px; top: 50%; left: 50%; margin: -44px 0 0 -98px; border-radius: 50%;
+    background: radial-gradient(ellipse at 50% 45%, #fffdf6 0 52%, #efe2c4 53% 62%, #fbf4e3 63% 70%, transparent 71%); box-shadow: 0 6px 10px -4px rgba(80, 55, 20, 0.28); }
+  .B .art .pic { position: relative; }
+  .B h3 { margin: 4px 0 4px; text-align: center; font: 650 26px/1.12 Fraunces, serif; }
+  .B .line { margin: 0 4px 12px; text-align: center; font: italic 450 16px/1.4 Fraunces, serif; color: #4e4637; }
+  .B .coins { display: flex; justify-content: center; gap: 14px; margin: 2px 0 6px; }
+  .B .coin { position: relative; display: grid; place-items: center; width: 58px; height: 58px; border-radius: 50%; background: #f4ead4; box-shadow: inset 0 0 0 1.5px #e0cc9f; }
+  .B .coin.miss { background: none; box-shadow: inset 0 0 0 1.5px rgba(150, 115, 60, 0.3); }
+  .B .coin.miss .pic { opacity: 0.45; filter: saturate(0.3); }
+  .B .coin .tick { position: absolute; right: -3px; bottom: -3px; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
+    background: var(--good); color: #fff; font-size: 13px; font-weight: 900; box-shadow: 0 0 0 2px #fffaf0; }
+  .B .coin .tick.no { background: #d9c9a8; }
+  .B .coin.q { box-shadow: none; border: 1.5px dashed rgba(150, 115, 60, 0.35); font: 900 20px Nunito; color: #b5a17a; }
+  .B .coinlab { text-align: center; font-size: 12.5px; font-weight: 800; color: var(--muted); margin-bottom: 10px; }
+  .B .card .go { margin-top: auto; }
+  .B .meta { display: flex; justify-content: center; gap: 14px; font-size: 13px; font-weight: 800; color: var(--muted); margin: 0 0 10px; }
+  .B .strip { flex: none; display: flex; gap: 8px; padding: 12px 16px 2px; overflow: hidden; }
+  .B .th { position: relative; flex: none; display: grid; place-items: center; width: 50px; height: 50px; border-radius: 14px; background: rgba(120, 95, 50, 0.07); }
+  .B .th.on { background: #fff6e4; box-shadow: inset 0 0 0 2px #d9a441, 0 2px 0 #a8742a; }
+  .B .th .newdot { position: absolute; top: -2px; right: -2px; }
+  .B .foot { padding-top: 8px; gap: 30px; }
+  .B .foot .of { width: 60px; text-align: center; font-weight: 900; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  /* ========== C: the notebook. A book page with ribbons; pencil, not boxes. ========== */
+  .C .sheet { top: 108px; border-radius: 10px 10px 0 0; background: #f6eedb;
+    background-image: repeating-linear-gradient(180deg, transparent 0 33px, rgba(110, 140, 170, 0.16) 33px 34px);
+    background-position: 0 14px; }
+  .C .sheet::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 6px; border-radius: 10px 10px 0 0;
+    background: linear-gradient(180deg, #f1d48a, #c99a4c 60%, #a8742a); }
+  .C .sheet::after { content: ''; position: absolute; top: 0; bottom: 0; left: 30px; width: 1.5px; background: rgba(196, 86, 42, 0.25); }
+  .C .ribbons { position: absolute; top: 4px; right: 18px; display: flex; gap: 6px; z-index: 2; }
+  .C .rib { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 2px; width: 50px; height: 50px; padding-bottom: 12px;
+    background: var(--c); color: #fff8ea; font-size: 10.5px; font-weight: 900; opacity: 0.72; margin-top: 0;
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 50% calc(100% - 9px), 0 100%); box-shadow: inset 0 -6px 6px -4px rgba(40, 20, 0, 0.35); }
+  .C .rib svg { width: 18px; height: 18px; }
+  .C .rib.on { height: 76px; opacity: 1; }
+  .C .rib .newdot { position: absolute; top: 6px; right: 5px; box-shadow: 0 0 0 2px var(--c); background: #fff3d6; }
+  .C .head { flex: none; padding: 20px 20px 0 46px; }
+  .C .head h2 { margin: 0; font: 650 30px Fraunces, serif; }
+  .C .count { font: italic 450 17px Fraunces, serif; color: var(--hand); }
+  .C .body { flex: 1; min-height: 0; overflow: hidden; padding: 4px 16px 0 46px; }
+  .C h4 { margin: 12px 0 4px; font: italic 450 18px Fraunces, serif; color: #8a5e22; display: flex; justify-content: space-between; align-items: baseline; }
+  .C h4 span { font: italic 450 15px Fraunces, serif; color: var(--hand); }
+  .C .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px 4px; }
+  .C .t { position: relative; display: flex; flex-direction: column; align-items: center; gap: 1px; height: 98px; padding-top: 4px; }
+  .C .t .nm { font-size: 11.5px; font-weight: 800; line-height: 1.15; text-align: center; height: 2.3em; display: flex; align-items: center; }
+  .C .t .newdot { position: absolute; top: 4px; right: 8px; }
+  .C .t.sel::before { content: ''; position: absolute; inset: -2px 0 0; border-radius: 50% 46% 52% 48%; border: 2px solid rgba(61, 85, 112, 0.55); transform: rotate(-4deg); }
+  .C .q { display: grid; place-items: center; width: 56px; height: 56px; font: italic 450 26px Fraunces, serif; color: rgba(61, 85, 112, 0.45); position: relative; }
+  .C .q::before { content: ''; position: absolute; inset: 6px; border-radius: 50%; border: 1.5px solid rgba(61, 85, 112, 0.22); transform: rotate(8deg) scaleX(1.1); }
+  .C .t.unk .nm { color: rgba(61, 85, 112, 0.5); font: italic 450 12px Fraunces, serif; }
+  .C .foot { padding-top: 6px; }
+  /* C's page: a journal entry on the same paper */
+  .C .entry { position: relative; padding: 18px 18px 0 46px; flex: 1; min-height: 0; }
+  .C .entry .pinned { position: relative; float: right; margin: 70px -4px 4px 10px; padding: 6px; background: #fffdf6; transform: rotate(3deg);
+    box-shadow: 0 4px 10px rgba(80, 55, 20, 0.25); }
+  .C .entry .pinned::before { content: ''; position: absolute; top: -8px; left: 50%; width: 46px; height: 16px; margin-left: -23px; background: rgba(230, 205, 150, 0.75); transform: rotate(-5deg); }
+  .C .entry h3 { margin: 6px 0 6px; font: 650 28px/1.1 Fraunces, serif; }
+  .C .entry .line { margin: 0 0 12px; font: italic 450 17px/34px Fraunces, serif; color: #4e4637; }
+  .C .check { list-style: none; margin: 0 0 14px; padding: 0; clear: both; }
+  .C .check li { display: flex; align-items: center; gap: 10px; height: 34px; font: 450 18px Fraunces, serif; font-style: italic; color: var(--hand); }
+  .C .check li .box { width: 22px; height: 22px; border: 1.8px solid rgba(61, 85, 112, 0.6); border-radius: 4px 6px 5px 4px; display: grid; place-items: center; transform: rotate(-3deg); }
+  .C .check li.got { text-decoration: line-through; text-decoration-color: rgba(61, 85, 112, 0.5); color: rgba(61, 85, 112, 0.7); }
+  .C .check li .box b { color: var(--hand); font: 900 17px Nunito; margin-top: -4px; }
+  .C .check li .pic { margin-left: auto; }
+  .C .meta { font: italic 450 15px Fraunces, serif; color: var(--hand); margin: 0 0 14px; }
+</style>
+</head>
+<body>
+<h1>The journal on a phone</h1>
+<p class="intro">Now on the left, then three ways it could go. Each comes as the list and a recipe opened. All three keep one
+layer (no page sheet laid over the book sheet), cut the four rows of header down to one, stop showing undiscovered dishes
+as a wall of dashed boxes, and keep ✕ round, brass and at the foot.</p>
+
+<div class="row">
+  <div class="col">
+    <div class="lab">Now<small>Full-height sheet, then a second sheet laid over it for a page. Four rows of header (tabs, count, bar, sub-line) before any content; every unknown is its own dashed box; ingredients spelled out as "not in the satchel".</small></div>
+    <div class="pair">
+      <div class="phone shot" style="background-image:url(now-list.png)"></div>
+      <div class="phone shot" style="background-image:url(now-page.png)"></div>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <!-- A -->
+  <div class="col">
+    <div class="lab">A · The shelf<small>A half sheet: the meadow and the forager stay in view. A list, not tiles: picture, name, what it's cooked on, and whether you can cook it now. The undiscovered ones fold into one line with a hint. A page opens in the same sheet, which rises; ‹ goes back.</small></div>
+    <div class="pair">
+      <div class="phone A"><div class="scrim"></div>
+        <div class="sheet"><div class="grab"></div>
+          <div class="head"><div class="tabs" data-tabs="0"></div></div>
+          <div class="body">
+            <div class="sec"><span class="eyebrow">Savoury</span><div class="bar"><i style="width:57%"></i></div><b>8 of 14</b></div>
+            <div class="it"><span class="plate"><i class="d" data-d="Garlic mushrooms" data-s="40"></i></span><div class="tx"><div class="nm">Garlic mushrooms</div><div class="sub">Pan · fills <span class="dots" data-f="3"></span></div></div><span class="st miss">1 to find</span></div>
+            <div class="it"><span class="plate"><i class="d" data-d="Roast mushrooms" data-s="40"></i></span><div class="tx"><div class="nm">Roast mushrooms</div><div class="sub">Stick · fills <span class="dots" data-f="2"></span></div></div><span class="st ready">Ready</span></div>
+            <div class="it"><span class="plate"><i class="d" data-d="Mushrooms with hazelnuts" data-s="40"></i></span><div class="tx"><div class="nm">Mushrooms with hazelnuts</div><div class="sub">Pan · fills <span class="dots" data-f="4"></span></div></div><span class="newdot"></span></div>
+            <div class="it"><span class="plate"><i class="d" data-d="Wilted greens" data-s="40"></i></span><div class="tx"><div class="nm">Wilted greens</div><div class="sub">Pot · fills <span class="dots" data-f="2"></span></div></div><span class="st miss">2 to find</span></div>
+            <div class="unk"><div class="sils"><i class="d sil" data-d="Dandelion fritters" data-s="34"></i><i class="d sil" data-d="Spring salad" data-s="34"></i><i class="d sil" data-d="Toasted beechnuts" data-s="34"></i><i class="d sil" data-d="Rosehip tea" data-s="34"></i><i class="d sil" data-d="Toasted hazelnuts" data-s="34"></i></div>
+              <p>6 more to find. Try things together at the fire.</p></div>
+          </div>
+          <div class="foot"><span class="bb big" data-x></span></div>
+        </div>
+      </div>
+      <div class="phone A pg"><div class="scrim"></div>
+        <div class="sheet"><div class="grab"></div>
+          <div class="head" style="padding-bottom:0"><div class="crumb"><span class="bb" data-l></span>Recipes · Savoury</div></div>
+          <div class="body" style="padding-top:4px">
+            <div class="hero"><span class="plate"><i class="d" data-d="Garlic mushrooms" data-s="96"></i></span>
+              <div><div class="eyebrow">No. 5</div><h3>Garlic mushrooms</h3><div class="meta"><span>Pan</span><span>Fills <span class="dots" data-f="3"></span></span><span>40 s</span></div></div></div>
+            <p class="line">The garlic wilts into the mushrooms and the whole camp smells of it.</p>
+            <div class="eyebrow">What goes in</div>
+            <div class="needs">
+              <span class="need got"><i class="g" data-g="cep" data-s="36"></i>Mushroom <span class="n">2 / 2</span></span>
+              <span class="need"><i class="g" data-g="garlic" data-s="36"></i>Wild garlic <span class="n">0 / 1</span></span>
+            </div>
+            <div class="go off">Find wild garlic to cook it</div>
+          </div>
+          <div class="foot"><span class="bb" data-l></span><span class="bb big" data-x></span><span class="bb" data-r></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <!-- B -->
+  <div class="col">
+    <div class="lab">B · The deck<small>Page-first: one big recipe card, its neighbours peeking at the sides, swiped like a card collection. A strip of every dish underneath is the index (unknown ones as silhouettes). The ingredients are coins with a tick or not.</small></div>
+    <div class="pair">
+      <div class="phone B"><div class="scrim"></div>
+        <div class="sheet"><div class="grab"></div>
+          <div class="head"><div class="tabs" data-tabs="0"></div></div>
+          <div class="deck">
+            <div class="card side l"></div><div class="card side r"></div>
+            <div class="card">
+              <div class="top"><span class="eyebrow">No. 5 · Savoury</span><span class="stamp">Learned!</span></div>
+              <div class="art"><i class="d" data-d="Garlic mushrooms" data-s="150"></i></div>
+              <h3>Garlic mushrooms</h3>
+              <p class="line">The garlic wilts into the mushrooms and the whole camp smells of it.</p>
+              <div class="meta"><span>Pan</span><span>Fills <span class="dots" data-f="3"></span></span><span>40 s</span></div>
+              <div class="coins"><span class="coin"><i class="g" data-g="cep" data-s="40"></i><span class="tick">✓</span></span><span class="coin"><i class="g" data-g="cep" data-s="40"></i><span class="tick">✓</span></span><span class="coin miss"><i class="g" data-g="garlic" data-s="40"></i><span class="tick no">·</span></span></div>
+              <div class="coinlab">2 mushrooms, 1 wild garlic</div>
+              <div class="go off">Find wild garlic to cook it</div>
+            </div>
+          </div>
+          <div class="strip" data-strip="4"></div>
+          <div class="foot"><span class="bb" data-l></span><span class="bb big" data-x></span><span class="bb" data-r></span></div>
+        </div>
+      </div>
+      <div class="phone B"><div class="scrim"></div>
+        <div class="sheet"><div class="grab"></div>
+          <div class="head"><div class="tabs" data-tabs="0"></div></div>
+          <div class="deck">
+            <div class="card side l"></div><div class="card side r"></div>
+            <div class="card">
+              <div class="top"><span class="eyebrow">No. 15 · Sweet</span><span class="eyebrow" style="color:var(--hand)">A hint</span></div>
+              <div class="art"><i class="d half" data-d="Warm bramble compote" data-s="150"></i></div>
+              <h3 class="fr" style="font-style:italic;font-weight:450;color:#6b5636">Something with honey…</h3>
+              <p class="line">The old stone said it's sweet, and cooked in a pot.</p>
+              <div class="coins"><span class="coin"><i class="g" data-g="honey" data-s="40"></i><span class="tick">✓</span></span><span class="coin q">?</span><span class="coin q">?</span></div>
+              <div class="coinlab">Honey, and two things more</div>
+              <div class="go off">Try it at the fire</div>
+            </div>
+          </div>
+          <div class="strip" data-strip="13"></div>
+          <div class="foot"><span class="bb" data-l></span><span class="bb big" data-x></span><span class="bb" data-r></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <!-- C -->
+  <div class="col">
+    <div class="lab">C · The notebook<small>Leans into "journal": lined paper with a margin, the parts as cloth ribbons hanging over the top edge (as on desktop), pencil for what's written in. Smaller tiles, four across, with no boxes; unknowns are pencilled circles. A page reads like a diary entry with a taped-in picture and a ticked list.</small></div>
+    <div class="pair">
+      <div class="phone C"><div class="scrim"></div>
+        <div class="sheet">
+          <div class="ribbons" data-ribs="0"></div>
+          <div class="head"><h2>Recipes</h2><div class="count">12 of 22 found</div></div>
+          <div class="body">
+            <h4>Savoury <span>8 of 14</span></h4>
+            <div class="grid" data-grid="savoury"></div>
+            <h4>Sweet <span>4 of 8</span></h4>
+            <div class="grid" data-grid="sweet"></div>
+          </div>
+          <div class="foot"><span class="bb big" data-x></span></div>
+        </div>
+      </div>
+      <div class="phone C"><div class="scrim"></div>
+        <div class="sheet">
+          <div class="ribbons" data-ribs="0"></div>
+          <div class="entry">
+            <div class="eyebrow">No. 5 · Savoury</div>
+            <span class="pinned"><i class="d" data-d="Garlic mushrooms" data-s="112"></i></span>
+            <h3>Garlic mushrooms</h3>
+            <p class="line">The garlic wilts into the mushrooms and the whole camp smells of it.</p>
+            <p class="meta">in the pan · 40 s · fills <span class="dots" data-f="3"></span></p>
+            <ul class="check">
+              <li class="got"><span class="box"><b>✓</b></span>a mushroom<i class="g" data-g="cep" data-s="30"></i></li>
+              <li class="got"><span class="box"><b>✓</b></span>another mushroom<i class="g" data-g="chanterelle" data-s="30"></i></li>
+              <li><span class="box"></span>wild garlic<i class="g" data-g="garlic" data-s="30"></i></li>
+            </ul>
+            <div class="go off">Find wild garlic to cook it</div>
+          </div>
+          <div class="foot"><span class="bb" data-l></span><span class="bb big" data-x></span><span class="bb" data-r></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="../../fur.js"></script>
+<script src="../../items.js"></script>
+<script src="../../dishes.js"></script>
+<script>
+const X = '<svg viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11" stroke="#5a4326" stroke-width="3" stroke-linecap="round" fill="none"/></svg>';
+const L = '<svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" stroke="#5a4326" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>';
+const R = '<svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" stroke="#5a4326" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>';
+const ICON = {
+  dishes: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M3 13h18a9 6 0 0 1-18 0zM8 9c0-2 2-2 2-4M13 9c0-2 2-2 2-4"/></svg>',
+  finds: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M3 11a9 6 0 0 1 18 0zM12 11v9"/></svg>',
+  you: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 7 0 0 1 16 0"/></svg>',
+};
+const PARTS = [['dishes', 'Recipes', '#c9733a'], ['finds', 'Finds', '#6f9446'], ['you', 'You', '#4f72a6']];
+for (const el of document.querySelectorAll('[data-x]')) el.innerHTML = X;
+for (const el of document.querySelectorAll('[data-l]')) el.innerHTML = L;
+for (const el of document.querySelectorAll('[data-r]')) el.innerHTML = R;
+for (const el of document.querySelectorAll('[data-f]')) el.innerHTML = [0, 1, 2, 3, 4].map(i => `<i class="${i < +el.dataset.f ? 'on' : ''}"></i>`).join('');
+for (const el of document.querySelectorAll('[data-tabs]')) el.innerHTML = PARTS.map(([k, n, c], i) =>
+  `<span class="tab ${i === +el.dataset.tabs ? 'on' : ''}" style="--c:${c}">${ICON[k]}${n}${i === 1 ? '<span class="newdot"></span>' : ''}</span>`).join('');
+for (const el of document.querySelectorAll('[data-ribs]')) el.innerHTML = PARTS.map(([k, n, c], i) =>
+  `<span class="rib ${i === +el.dataset.ribs ? 'on' : ''}" style="--c:${c}">${ICON[k]}${n}${i === 1 ? '<span class="newdot"></span>' : ''}</span>`).join('');
+
+// the dishes, as the book has them (known or not, for the mockup)
+const SAV = [['Roast mushrooms', 1], ['Garlic mushrooms', 1, 'sel'], ['Wilted greens', 1], ['Mushrooms with hazelnuts', 1, 'new'], ['Toasted beechnuts', 1], ['Toasted hazelnuts', 1],
+  ['Dandelion fritters', 0], ['Spring salad', 0], ['Dandelion fritters', 1], ['Spring salad', 1], ['Wilted greens', 0], ['Toasted beechnuts', 0]];
+const SWE = [['Baked apple with honey', 1], ['Warm bramble compote', 2], ['Honeyed cherries', 1], ['Rosehip tea', 1], ['Spring salad', 0], ['Honeyed cherries', 0], ['Baked apple with honey', 0], ['Rosehip tea', 0]];
+const tile = ([n, k, f]) => k === 0
+  ? `<div class="t unk"><span class="q">?</span><span class="nm">not yet</span></div>`
+  : `<div class="t ${f || ''}"><i class="d ${k === 2 ? 'half' : ''}" data-d="${n}" data-s="56"></i><span class="nm">${k === 2 ? 'Something with honey…' : n}</span>${f === 'new' ? '<span class="newdot"></span>' : ''}</div>`;
+for (const el of document.querySelectorAll('[data-grid]')) el.innerHTML = (el.dataset.grid === 'savoury' ? SAV : SWE).map(tile).join('');
+const ALL = [...SAV, ...SWE];
+for (const el of document.querySelectorAll('[data-strip]')) {
+  const at = +el.dataset.strip, from = Math.max(0, at - 2);
+  el.innerHTML = ALL.slice(from, from + 6).map(([n, k, f], i) => `<span class="th ${from + i === at ? 'on' : ''}"><i class="d ${k === 0 ? 'sil' : k === 2 ? 'half' : ''}" data-d="${n}" data-s="40"></i>${f === 'new' ? '<span class="newdot"></span>' : ''}</span>`).join('');
+}
+
+// paint: the game's own paintings
+const canvasOf = (s, fn) => { const c = document.createElement('canvas'), px = s * 2; c.width = c.height = px; c.style.width = c.style.height = s + 'px'; fn(c.getContext('2d'), px); return c; };
+for (const el of document.querySelectorAll('i.d')) {
+  const s = +el.dataset.s, c = canvasOf(s, (g, px) => Dishes.paint(g, px, px / 1.3, Dishes.NAMES.indexOf(el.dataset.d)));
+  c.className = 'pic ' + el.className.replace(/\bd\b/, ''); el.replaceWith(c);
+}
+for (const el of document.querySelectorAll('i.g')) {
+  const s = +el.dataset.s, c = canvasOf(s, (g, px) => Items.paint(g, px, px / 1.25, Items.NAMES.indexOf(el.dataset.g)));
+  c.className = 'pic ' + el.className.replace(/\bg\b/, ''); el.replaceWith(c);
+}
+</script>
+</body>
+</html>
