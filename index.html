@@ -600,6 +600,17 @@
   @media (pointer: coarse) {
     .hud-btn { min-width: 44px; height: 44px; }
   }
+  /* ---- the minimap (game.js updateMap): the whole meadow, bottom right, in the sky dial's brass; a tap walks there.
+     Not on a phone, or in a window too narrow to keep it clear of the satchel (game.js asks the same, map.on). */
+  #minimap { position: fixed; z-index: 4; right: var(--right); bottom: var(--bottom); padding: 4px; border-radius: 14px; cursor: pointer;
+    background: radial-gradient(circle at 34% 18%, #f6d98c, #d9a441 45%, #a8742a 100%); transform-origin: 100% 100%; transition: opacity 0.35s;
+    box-shadow: inset 0 1px 0 rgba(255, 240, 200, 0.5), inset 0 0 0 1px rgba(110, 70, 20, 0.45), 0 6px 14px rgba(60, 45, 20, 0.26), 0 1px 2px rgba(60, 45, 20, 0.3); }
+  #minimap canvas { display: block; width: 156px; height: 104px; border-radius: 10px; }
+  #minimap::after { content: ''; position: absolute; inset: 4px; border-radius: 10px; pointer-events: none;
+    box-shadow: inset 0 1px 3px rgba(40, 25, 5, 0.5), inset 0 0 0 1px rgba(90, 55, 15, 0.35); }
+  @media (max-width: 919px), (max-width: 959px) and (max-height: 500px) { #minimap { display: none; } }   /* (the satchel and the book reach vw / 2 + 264px, a phone on its side's further with its notch) */
+  @media (max-height: 500px) { #minimap { transform: scale(0.8); } }
+  body:has(:is(#inspector.open, #cook:not(.hidden), #book:not(.hidden))) #minimap { opacity: 0; pointer-events: none; }   /* (out of the way of a card) */
   /* ---- the satchel (game.js renderSatchel): small parchment slots at the bottom in the middle, a faint slim row while
      it's empty; each slot's painting comes from one sheet (--items, itemSheet) */
   #satchel { position: fixed; z-index: 4; left: 50%; bottom: var(--bottom); transform: translateX(-50%); padding: 4px; border-radius: 14px;
@@ -1488,7 +1499,7 @@
     opacity: 0; transition: opacity 1.4s 0.5s; }
   #intro.named h1 { opacity: 0.95; transform: none; }
   #intro.named p { opacity: 0.8; }
-  body.intro #hud-right, body.intro #satchel, body.intro #vitals, body.intro #me-box, body.intro #thermo, body.intro #news, body.intro #chat, body.intro #tasks { opacity: 0; pointer-events: none; }
+  body.intro #hud-right, body.intro #satchel, body.intro #minimap, body.intro #vitals, body.intro #me-box, body.intro #thermo, body.intro #news, body.intro #chat, body.intro #tasks { opacity: 0; pointer-events: none; }
   #hud-right, #satchel, #vitals, #me-box, #thermo, #news, #chat { transition: opacity 0.9s; }
   @media (max-height: 500px) { #intro .lb { height: max(40px, 9vh); } #intro p { display: none; } }
 </style>
@@ -1557,6 +1568,7 @@
 <div id="book-scrim" class="hidden" data-act="book-close"></div>
 <div id="book" class="hidden" role="dialog" aria-label="The book: recipes and finds" tabindex="-1"></div>
 <div id="eat" class="hidden"></div>
+<div id="minimap" title="The meadow: click to walk there" aria-label="Map of the meadow"><canvas></canvas></div>
 <div id="satchel" class="empty"><div class="slots"></div>
   <button id="book-btn" data-act="book" title="Recipes (B)" aria-label="Recipe book"><i></i></button>
   <button id="build" class="hidden" data-act="build" title="Make something" aria-label="Make something"><i></i></button>

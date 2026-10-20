@@ -9184,7 +9184,7 @@ function drawGlints(now, dark) {
 // The marker at the screen's edge, toward the nearest thing to pick while none is on screen, with that thing's painting in
 // it (the satchel's: itemSheet). Out of the way of the watch and the pill at the top and the satchel and the bars over it at
 // the foot (their places looked at once a second, KEEP_CLEAR).
-const KEEP_CLEAR = ['#sky', '#hud-right .hud-top', '#satchel', '#vitals .vital.show', '#me-box'];   // (0, 1 and 4 are pushed out from under; 2 and 3 are the foot's: the stamina bar only while it shows, or it held the marker halfway up a phone)
+const KEEP_CLEAR = ['#sky', '#hud-right .hud-top', '#satchel', '#vitals .vital.show', '#me-box', '#minimap'];   // (0, 1 and 4 are pushed out from under, 5 up out of; 2 and 3 are the foot's: the stamina bar only while it shows, or it held the marker halfway up a phone)
 const clearOf = KEEP_CLEAR.map(() => ({ l: 0, t: 0, r: 0, b: 0 }));
 // Where the way from the forager to a spot in the meadow leaves the screen, kept r + 10 in from its edges, over the satchel and
 // out from under the watch and the pill (edge: x, y and the way, cx, cy); false if it doesn't.
@@ -9222,6 +9222,8 @@ function edgeApart(r, half, below) {
       if (Math.abs(dx) >= needX || Math.abs(dy) >= needY) continue;
       if (along) edge.x = at[i] + (dx < 0 ? -needX : needX);
       else edge.y = at[i + 1] + (dy < 0 ? -needY : needY);
+  const mm = clearOf[5];                                // (and up out of the minimap's way, bottom right)
+  if (mm.b && x > mm.l - r - 4 && y > mm.t - r - 4) y = mm.t - r - 6;
       moved = true;
     }
     if (!moved) break;
@@ -14774,6 +14776,123 @@ function lifeStage(c) {
 }
 
 // On a phone the inspector opens folded to one line: who, what they're up to, and the tummy (or a
+// ------------------------------------------------------------------ the minimap
+//
+// The whole meadow, small, bottom right in brass like the sky dial (#minimap). Hidden on an upright phone and wherever
+// the window's too narrow to keep it clear of the satchel (index.html), and then nothing here runs (map.on).
+// Two layers: the land (paintMapLand: the ground's colours, the water with a pale rim at its shore, the standing trees),
+// painted MAP_PX pixels a tile into a canvas of its own and only again when the meadow's moved on (MAP_LAND_MS); and over
+// it, copied in with what moves (drawMap: the view's frame, lit fires, hives, friends and the forager), drawn only when
+// one of those has moved a pixel or the dark has gone a step: the dark is laid over the land, under the marks, so the forager
+// and a lit fire still show at night.
+// A tap on it walks the forager there.
+const MAP_W = 156, MAP_H = 104;        // css px, the meadow's 3:2
+const MAP_PX = 2;                      // the land's pixels a tile
+const MAP_LAND_MS = 5000;              // the grass, the water and the trees, looked at again this often at most
+const map = { el: $('#minimap'), cv: null, g: null, k: 2, on: false, land: null, landAt: -1e9, landTick: -1, world: null,
+  img: null, was: new Float64Array(8), glow: null };
+{
+  const k = map.k = Math.min(3, Math.max(2, window.devicePixelRatio || 1)), cv = map.cv = map.el.querySelector('canvas');
+  cv.width = MAP_W * k; cv.height = MAP_H * k;
+  map.g = cv.getContext('2d');
+  const land = map.land = document.createElement('canvas');
+  land.width = S.W * MAP_PX; land.height = S.H * MAP_PX;
+  map.img = land.getContext('2d').createImageData(land.width, land.height);   // (one, used again each time)
+  const [c, g] = dialCanvas(16, 16, 'glow');           // a lit fire's glow, painted once
+  const gr = g.createRadialGradient(8, 8, 0, 8, 8, 8);
+  gr.addColorStop(0, 'rgba(255, 236, 170, 1)'); gr.addColorStop(0.25, 'rgba(255, 200, 100, 0.8)'); gr.addColorStop(1, 'rgba(255, 170, 60, 0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 16, 16);
+  map.glow = c;
+  const hide = matchMedia('(max-width: 919px), (max-width: 959px) and (max-height: 500px)');   // (as index.html hides it: a phone, a narrow window)
+  const fit = () => { map.on = !hide.matches; map.landAt = -1e9; map.was[0] = NaN; };
+  hide.addEventListener('change', fit); fit();
+  map.el.addEventListener('click', e => {
+    const r = map.cv.getBoundingClientRect(), wx = (e.clientX - r.left) / r.width * S.W, wy = (e.clientY - r.top) / r.height * S.H;
+    if (!world?.forager || world.forager.down >= 0) return;
+    const [sx, sy] = toScreen(wx, wy);
+    walkTo(sx, sy);
+  });
+}
+// The bare ground and lush grass of the season (groundColours), sampled between tiles so the shore comes out smooth.
+function paintMapLand() {
+  const w = world, W = S.W, H = S.H, P = MAP_PX, c = map.land, g = c.getContext('2d');
+  const img = map.img, D = img.data;
+  const [bare, lush] = groundColours(), cold = coldness() / 0.6;
+  const at = (a, x, y) => {
+    x = clamp(x, 0, W - 1.001); y = clamp(y, 0, H - 1.001);
+    const i = x | 0, j = y | 0, fx = x - i, fy = y - j, n = j * W + i;
+    return (a[n] * (1 - fx) + a[n + 1] * fx) * (1 - fy) + (a[n + W] * (1 - fx) + a[n + W + 1] * fx) * fy;
+  };
+  let o = 0;
+  for (let py = 0; py < c.height; py++) for (let px = 0; px < c.width; px++, o += 4) {
+    const x = (px + 0.5) / P - 0.5, y = (py + 0.5) / P - 0.5, deep = w.level - at(w.ground, x, y);
+    let r, gg, b;
+    if (deep > 0) {                                      // (water: darker the deeper, slate in the cold, a pale rim at the shore)
+      const d = clamp(deep / 0.45, 0, 1);
+      r = lerp(150, 74, d); gg = lerp(196, 128, d); b = lerp(214, 178, d);
+      if (cold > 0) { r = lerp(r, 196, cold * 0.6); gg = lerp(gg, 212, cold * 0.6); b = lerp(b, 224, cold * 0.6); }
+      if (deep < 0.025) { r = lerp(r, 236, 0.5); gg = lerp(gg, 244, 0.5); b = lerp(b, 240, 0.5); }
+    } else {
+      const t = clamp(at(w.grass, x, y), 0, 1), wd = at(w.wood, x, y);
+      r = lerp(bare[0], lush[0], t) * (1 - 0.22 * wd); gg = lerp(bare[1], lush[1], t) * (1 - 0.14 * wd); b = lerp(bare[2], lush[2], t) * (1 - 0.22 * wd);
+      if (deep > -0.02) { r = lerp(r, shoreSand[0], 0.6); gg = lerp(gg, shoreSand[1], 0.6); b = lerp(b, shoreSand[2], 0.6); }
+    }
+    D[o] = r; D[o + 1] = gg; D[o + 2] = b; D[o + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  const winter = S.clock(w).season === 3;
+  for (const pine of [false, true]) {                    // (the standing trees, a dot each, in one path a kind: a pine darker)
+    g.beginPath();
+    for (const d of w.decor) {
+      if (!d.tree || d.stump || d.dead || d.fallen || (d.emoji === '🌲') !== pine) continue;
+      g.moveTo(d.x * P + P * 0.95, d.y * P); g.arc(d.x * P, d.y * P, P * 0.95, 0, 7);
+    }
+    g.fillStyle = pine ? '#44704a' : winter ? '#8d8a72' : '#5f9447'; g.fill();
+  }
+  map.landAt = performance.now(); map.landTick = w.tick; map.world = w;
+  map.was[0] = NaN;
+}
+// A frame: the land again once in a while, what moves only when it has, the dark when its step changes.
+function updateMap(now) {
+  if (!map.on || !world?.forager) return;
+  if (map.world !== world || (now - map.landAt > MAP_LAND_MS && world.tick !== map.landTick)) paintMapLand();
+  const w = world, f = w.forager, k = map.k, s = MAP_W * k / S.W, z = cam.zoom, was = map.was;
+  const fx = Math.round(f.x * s), fy = Math.round(f.y * s), vx = Math.round((cam.x - vw / 2 / z) * s), vy = Math.round((cam.y - vh / 2 / z) * s);
+  const vwk = Math.round(vw / z * s), vhk = Math.round(vh / z * s);
+  let more = w.fires.length * 7 + w.hives.length * 3;
+  for (const p of peers.values()) more += Math.round(p.x * s) * 31 + Math.round(p.y * s);
+  for (const F of w.fires) if (F.lit) more += 1;
+  const n = Math.round(darkness((w.tick % S.TPD) / S.TPD) / DARK * 10) / 10;
+  if (fx !== was[0] || fy !== was[1] || vx !== was[2] || vy !== was[3] || vwk !== was[4] || vhk !== was[5] || more !== was[6] || n !== was[7]) {
+    was[0] = fx; was[1] = fy; was[2] = vx; was[3] = vy; was[4] = vwk; was[5] = vhk; was[6] = more; was[7] = n;
+    drawMap(s, vx, vy, vwk, vhk, n);
+  }
+}
+function drawMap(s, vx, vy, vwk, vhk, dark) {
+  const w = world, g = map.g, k = map.k, cw = map.cv.width, ch = map.cv.height;
+  g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+  g.drawImage(map.land, 0, 0, cw, ch);
+  if (dark > 0) { g.fillStyle = `rgba(14, 20, 58, ${dark * 0.5})`; g.fillRect(0, 0, cw, ch); }
+  g.lineWidth = 1.25 * k; g.strokeStyle = 'rgba(255, 250, 230, 0.9)';   // (the view: what's on screen)
+  g.beginPath(); g.roundRect(vx, vy, vwk, vhk, 2 * k); g.stroke();
+  for (const F of w.fires) {
+    if (!F.lit) continue;
+    const r = 7 * k;
+    g.drawImage(map.glow, F.x * s - r, F.y * s - r, r * 2, r * 2);
+  }
+  g.lineWidth = 0.8 * k; g.fillStyle = '#e4ac3c'; g.strokeStyle = 'rgba(110, 70, 20, 0.8)';
+  for (const h of w.hives) {
+    if (h.cluster) continue;
+    g.beginPath(); g.arc(h.x * s, h.y * s, 1.7 * k, 0, 7); g.fill(); g.stroke();
+  }
+  const dot = (x, y, ink) => {
+    g.fillStyle = '#fff8e8'; g.beginPath(); g.arc(x, y, 3.6 * k, 0, 7); g.fill();
+    g.fillStyle = ink; g.beginPath(); g.arc(x, y, 2.5 * k, 0, 7); g.fill();
+  };
+  for (const p of peers.values()) dot(p.x * s, p.y * s, '#4f7fa8');
+  dot(w.forager.x * s, w.forager.y * s, '#c4562f');
+}
+
 // thing's first meter) as a thin line under that. Tap it for the rest.
 const stripHTML = (tint, face, name, line, meter) => `
   <div class="strip-row" data-act="sheet-up" title="Show more">
@@ -17903,6 +18022,7 @@ function frame(now) {
   if (cam.goal) {
     const k = 1 - Math.pow(0.01, dt);
     cam.zoom += (cam.goal - cam.zoom) * k;
+  updateMap(now);
     if (Math.abs(cam.goal - cam.zoom) < 0.05) cam.goal = null;
     cam.zoom = Math.max(cam.zoom, fitZoom);
   }

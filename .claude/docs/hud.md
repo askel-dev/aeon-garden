@@ -25,3 +25,13 @@ under it, and sound.js `level` (the one sound with a real cadence: up an A7, hom
 (`LEVEL_COIN`: copper, bronze, brass and gold, then jade, verdigris, sapphire, amethyst and rose), and the top one is extra:
 a pale opal of every colour (`.max`, index.html) with a turning sheen, sparks and a wider rainbow halo of rays. With a card
 open it's a toast.
+
+The minimap (2026-10-20; the comment over `MAP_W`, index.html `#minimap`): the whole meadow, small, bottom right in
+the sky dial's brass. The land (`paintMapLand`: the season's ground colours, water darker the deeper with a pale rim at
+the shore, slate in the cold, a dot a standing tree) is painted `MAP_PX` pixels a tile into a canvas of its own, again
+only every `MAP_LAND_MS` while time runs; over it (`drawMap`) the night's tint, the view's frame, lit fires' glow, the
+hives, friends in blue and the forager in its red, redrawn only when one of them moves a pixel or the dark goes a step.
+A click or tap on it walks the forager there (`walkTo`). Hidden on a phone either way up and in a window too narrow to
+keep it clear of the satchel and the book (on its side a phone's notch and its book beside the satchel leave no room; the
+same query in index.html and `map.on`, so a hidden map costs nothing); faded while the inspector, the cooking window or
+the book is open. The sprint button stands just over it.
