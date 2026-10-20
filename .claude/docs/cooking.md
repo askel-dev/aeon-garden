@@ -88,8 +88,8 @@ over it, with an E key where there's a keyboard (`drawCookPrompt`, `PROMPT_ART` 
 `hintAt`); making camp the forager thinks "I could cook something on this fire" (`think`, `CAMP_COOK_LINE`), and now and then it
 muses on a dish it doesn't know from what's in the satchel (`hintTick`: `HINT_EVERY`, `HINT_GAP`, never in the intro or the
 opening storm or over another line), telling the book up to `hintMost` of it. The dishes are painted in dishes.js (`Dishes.paint`,
-'dish:' + n in `ITEM_ART`, so into `itemSheet`; big on a book page once a size, `dishBig`), 18 so far; the rest are their emoji till
-they're painted. Eating: a tap on food in the satchel (`eatAsk`, `#eat`) shows its name with an Eat button, or why not
+'dish:' + n in `ITEM_ART`, so into `itemSheet`; big on a book page once a size, `dishBig`), every one of them now; a new dish keeps its emoji till
+it's painted. Eating: a tap on food in the satchel (`eatAsk`, `#eat`) shows its name with an Eat button, or why not
 ("It wants cooking", "I'm full"); `eatSlot` feeds it (sim.js `feedForager`). The tummy is the face's second dial (`#v-food`); "I'm getting hungry" and "I'm starving" are said over it (events 'hungry',
 'starving'). The ideas card waits while it's at a fire (`askTick`).
 Its button by the satchel wears the craft button's plate (parchment, a line-drawn book, the word Recipes; round on a touch screen); while a page has news (`.new`) it takes the craft button's warm ready fill and bloom, with the "New" badge. The painted leather book (`bookIcon`) is only the cooking bar's now.
