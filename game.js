@@ -15811,7 +15811,7 @@ function startTogether() {
     lost() { reconnectShow(false); hostGone(); },
     reconnecting() { reconnectShow(true); },
     back() { reconnectShow(false); toast('🧺 Back in your friend’s meadow.'); },
-    failed(why) { toast(`🧺 Couldn't open the meadow to friends (${esc(why)}).`); },
+    failed(why, role) { toast(role === 'guest' ? `🧺 Couldn't reach your friend’s meadow (${esc(why)}).` : `🧺 Couldn't open the meadow to friends (${esc(why)}).`); },
   });
 }
 
