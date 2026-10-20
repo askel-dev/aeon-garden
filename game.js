@@ -331,10 +331,13 @@ function paintedSprite(emoji, px, tint, leaf, center) {
 // (keptForager): they're its walk, a frame or two from being drawn, and let go after a zoom they came back one by one
 // as it walked, and it stuck in a pose till each had. Only if that isn't enough does it start again from empty.
 // Only the set in use is kept: warm, or cold (fur.js FORAGER_COLD), so the cold paintings don't double what's held.
-// The emotes' only while one is on.
-const keptForager = s => s.look.startsWith('forager:') && (s.px === fg.sized || s.px === furPainted(fg.sized)) && (parseInt(s.look.slice(8)) >= Fur.EMOTE_AT
-  ? fg.emote >= 0 && (parseInt(s.look.slice(8)) - Fur.EMOTE_AT >> 5) === fg.snowArt * Fur.FORAGER_OUTFITS.length + fg.outfit
-  : !(fg.cold ? WARM_ONLY : COLD_ONLY)[parseInt(s.look.slice(8)) & 127] && Math.floor(parseInt(s.look.slice(8)) / Fur.FORAGER_SNOW_ARTS) === fg.snowArt);
+// The emotes' only while one is on, and carrying a dish's while one's in its hand.
+const keptForager = s => s.look.startsWith('forager:') && (s.px === fg.sized || s.px === furPainted(fg.sized)) && keptPose(parseInt(s.look.slice(8)));
+function keptPose(n) {
+  if (n >= Fur.CARRY_AT) { n -= Fur.CARRY_AT; if (!fg.carry) return false; }
+  else if (n >= Fur.EMOTE_AT) return fg.emote >= 0 && (n - Fur.EMOTE_AT >> 5) === fg.snowArt * Fur.FORAGER_OUTFITS.length + fg.outfit;
+  return !(fg.cold ? WARM_ONLY : COLD_ONLY)[n & 127] && Math.floor(n / Fur.FORAGER_SNOW_ARTS) === fg.snowArt;
+}
 function dropSprites(need) {
   for (const [key, s] of spriteCache) {
     if (spriteFrame - s.used < 3 || keptForager(s)) continue;
@@ -1397,6 +1400,7 @@ function render(now) {
   if (peers.size) peerItems(items, now, z);               // friends playing along (net.js)
   sortByY(items);
   drawPrints();                                            // the forager's footprints, on the ground under all
+  drawStains();                                            // (and a dropped dish's)
   if (world.forager) drawKeyArrow(now);                    // (the key arrow lies under it too)
   // Shadows first, all together, so a tree's shadow never lands on a rabbit behind it.
   // Shadows first, all together, so a tree's shadow never lands on a rabbit behind it. In the same pass the cream
@@ -1434,6 +1438,7 @@ function render(now) {
     else drawCreature(it.c, it.sx, it.sy, now);
   }
   unfade();
+  drawSpills(now);                                         // (a dropped dish falling, and the drops a run with one slops)
   if (rope.to || rope.by || peers.size > 1) drawRopes();   // (a friend on a rope: over both, under the night)
   drawNear(now, true);
   drawGlow(now, true);
@@ -2067,7 +2072,7 @@ function drawCreature(c, sx, sy, now) {
 // each step sends out a ring (fg.rings). Its outfit (Fur.FORAGER_OUTFITS: a cloak and a hat) is the player's, picked as the
 // first meadow opens and before playing together (the wardrobe; later from •••) and kept in localStorage for every meadow after.
 const FORAGER_SIZE = 2.5;                  // its painting's box, next to a rabbit's
-const FORAGER_ARTS = Array.from({ length: Fur.EMOTE_AT + Fur.FORAGER_EMOTE_ARTS }, (_, n) => 'forager:' + n);   // (made once: a frame builds no names; the emotes last)
+const FORAGER_ARTS = Array.from({ length: Fur.CARRY_AT + Fur.FORAGER_CARRY_ARTS }, (_, n) => 'forager:' + n);   // (made once: a frame builds no names; the emotes, then carrying a dish, last)
 const OUTFIT = 'aeon-garden-outfit', HAT = 'aeon-garden-hat';   // in localStorage: the cloak and the hat, by their place in fur.js's lists
 const FORAGER_POSES = [0, 1, 2, 3, 4, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23];
 const FORAGER_CHILLY = [...FORAGER_POSES, ...Fur.FORAGER_COLD];   // (chilly, the cold ones are asked for ahead too)
@@ -2090,6 +2095,7 @@ const fg = { wasWalking: false, at: -1, x: 0, y: 0, step: 0, stillMs: 1e4, view:
   emote: -1, emoteMs: -0, emoteFrame: -1, lift: -0, sitU: -0, sitQ: null, sitRise: true, sitAt: -1e9, sneakStill: -0, sizedEmote: false, eatAt: -1e9,   // (an emote: EMOTE, or -1; emoteTick)
   air: -0, squash: 1, jumpSeen: 0, dust: [], landSeen: 0, chainAt: -1e9, lean: -0, cuePlayed: true,   // (a dash: how high it's drawn, squash on take-off and landing, the take-off it last showed, its dust, the landing it last showed, its lean, and whether the press-me tick has sounded)
   hugAt: -1e9,                                          // (when it last hugged a friend: hug)
+  carry: false, carryShown: false, sizedCarry: false, dishY: -0, dishV: -0, slopAt: -1e9,   // (a dish in its hands: carrying it, its paintings asked for, its spring and last slop: drawHeldDish, slop)
   swingAt: -1e9, swingDir: -0, hitAt: -1e9, swingRest: -0, tossAt: -1e9,   // (friendly fire: when it last swung, which way, when it was last hit, how long it must rest, when it last threw: swing, toss)
   sx: -0, sy: -0, px: -0, drawnAt: -0,   // (where it was drawn this frame)
   rimOn: false, fx: -0, fy: -0, fs: -0, fk: -0, fr: -0 };   // (where its painting sat and how it was turned: drawFigure, for its rim over the dark, drawForagerRim)
@@ -2325,7 +2331,7 @@ function foragerFrame(now, d) {
   fg.lean += ((jumping ? (fg.flip ? 1 : -1) * (0.07 + 0.04 * f.hop) : 0) - fg.lean) * Math.min(1, ms / (jumping ? 40 : 110));
   fg.jog = !gliding && f.running && f.speed > FORAGER_JOG[fg.jog ? 0 : 1];   // (its legs don't spin: the jog's stride is longer)
   if (moved > 1e-5 && moved < 2) {
-    if (!gliding && !jumping) fg.step += moved / (2 * Fur.FORAGER_REACH * px / cam.zoom * (fg.jog ? Fur.FORAGER_JOG_STRIDE : f.sneaking ? Fur.SNEAK_STRIDE : 1));
+    if (!gliding && !jumping) fg.step += moved / (2 * Fur.FORAGER_REACH * px / cam.zoom * (fg.jog ? Fur.FORAGER_JOG_STRIDE : f.sneaking ? Fur.SNEAK_STRIDE : 1) * (fg.carry ? Fur.CARRY_STRIDE : 1));
     fg.stillMs = 0;
   } else if (ui.speed > 0) fg.stillMs += ms;            // (paused mid-stride, it holds the stride)
   fg.wet = inWaterAt(d.x, d.y);
@@ -2334,6 +2340,7 @@ function foragerFrame(now, d) {
   emoteTick(f, stage, ms);
   const kneel = fg.kneel = stage < 4 && fg.emote < 0 ? kneelNow(now) : -1;   // (at a fire: kneeling, side on to it)
   if (kneel >= 0) { fg.view = 0; fg.knelt = now; }
+  const carry = fg.carry = !!f.hand && stage < 4 && fg.emote < 0 && kneel < 0 && !(kw.reveal && kw.reveal.hand);   // (a dish held out in both hands)
   let pose = 0, emo = -1;                                // (emo: an emote's painting, fur.js FORAGER_EMOTE)
   if (walking && kneel < 0) {                          // (kneeling, it keeps the side it turned to the fire, not the way it came in)
     const sy = Math.sin(f.heading), sx = Math.cos(f.heading), v = fg.view;
@@ -2350,6 +2357,7 @@ function foragerFrame(now, d) {
       if (half !== fg.lastHalf && fg.wet && ui.speed > 0) fg.rings.push({ x: d.x, y: d.y, t: now });
       if (half !== fg.lastHalf && ui.speed > 0 && !fg.wet) footprint(d.x, d.y, f.heading, half & 1);
       if (half !== fg.lastHalf && ui.speed > 0) hear('step', d.x, d.y, { pace: f.speed / S.FORAGER_WALK, foot: half & 1, ground: groundUnder(d.x, d.y) }, true);   // (each foot down; the quicker it goes, the quicker and crisper they come)
+      if (half !== fg.lastHalf && ui.speed > 0 && carry && fg.jog) slop(f, d.x, d.y, now);   // (running with it: it slops)
       fg.lastHalf = half;
       idleStop(fg);
     }
@@ -2358,7 +2366,8 @@ function foragerFrame(now, d) {
     if (kneel >= 0 || fg.emote >= 0) idleStop(fg);      // (kneeling it neither does things nor turns, and up again it turns a moment after)
     else if (fg.stillMs > FORAGER_TURN_MS && now - fg.knelt > FORAGER_TURN_MS && fg.view !== 1) { fg.view = 1; fg.blinkAt = now; }   // turned to you, with a blink
     if (now - fg.blinkAt > fg.blinkIn) { fg.blinkAt = now; fg.blinkIn = 2200 + Math.random() * 3500; }
-    pose = cold ? (now - fg.blinkAt < 150 ? 6 : 5) : idleOf(fg, now, now - fg.blinkAt < 150 ? 2 : 0);
+    pose = cold ? (now - fg.blinkAt < 150 ? 6 : 5) : carry ? (now - fg.blinkAt < 150 ? 2 : 0) : idleOf(fg, now, now - fg.blinkAt < 150 ? 2 : 0);
+    if (carry) idleStop(fg);                              // (its hands full: no idles)
     const p = (now - fg.pick) / fg.pickK;                 // picking (gatherFrame): stooped, reaching down, back up
     if (p < PICK_MS[2]) { pose = p < PICK_MS[0] || p > PICK_MS[1] ? 3 : 4; fg.stillMs = FORAGER_STILL_MS + 1; idleStop(fg); }
     else if (fg.emote >= 0) emo = emoteStill(fg, d, true);
@@ -2375,7 +2384,12 @@ function foragerFrame(now, d) {
   if (sitting) fg.sitQ = fireSit.seat;
   if (fg.sitU > 0 || sitting) sitEase(fg, sitting, ms, now, d.x, d.y, px);   // (hopping up onto the seat log, and down off it)
   const sat = sitting && fg.sitU > SIT_POSE;
-  fg.art = shownPose(f, FORAGER_ARTS[emo >= 0 && stage < 4 ? Fur.emoteArt(fg.snowArt, fg.outfit, emo) : at + (sat || kneel >= 0 && !sitting ? KNEEL_AT + kneel : poseKey(sitting ? 1 : fg.view, sitting ? 0 : pose))], px);
+  const carried = carry && emo < 0 && pose < 32;
+  const want = FORAGER_ARTS[emo >= 0 && stage < 4 ? Fur.emoteArt(fg.snowArt, fg.outfit, emo) : carried ? Fur.carryArt(fg.snowArt, fg.outfit, poseKey(fg.view, pose))
+    : at + (sat || kneel >= 0 && !sitting ? KNEEL_AT + kneel : poseKey(sitting ? 1 : fg.view, sitting ? 0 : pose))];
+  fg.art = shownPose(f, want, px);
+  if (fg.art === want) fg.carryShown = carried;          // (its new painting not in yet: the dish stays where the old one held it)
+  dishSpring(fg, ms);
 }
 // Its footprints: one at each foot down, a little to that foot's side, fading as the ground takes them back: soon in
 // grass, slower in earth and the damp sand, slowest in snow. A ring of PRINTS kept in typed arrays (nothing made a step),
@@ -2479,13 +2493,20 @@ function drawHopCue(f, sx, sy, px, now) {
   }
   ctx.restore();
 }
-// The dish it carries in its hand (sim.js hand): its painting from the sprite cache, in front of it at hand height, a
-// little to the side it faces, and behind the body when it faces away (drawForager and drawPeer lay it before or after
-// the figure). A warm dish has a small curl of steam over it. The names and sizes are made once: a frame builds none.
+// The dish it carries in its hand (sim.js hand): its painting from the sprite cache, held out in both hands (fur.js
+// carryPose: CARRY_SPOT, by view: side on ahead of it, from the front before its middle, from behind hidden by it but for its
+// steam), and laid where the hand was before when its own painting isn't the carrying one (kneeling, or a friend's not in
+// yet: HAND_UP). It rides on a little spring (dishSpring): walking it rides steady, and each foot down at a run knocks it,
+// so it bobs and tips, and while there's some to lose it slops (slop: a few drops, a slosh; sim.js HAND_SLOP takes the
+// share). A warm dish steams as hot as it still is (sim.js handHeat); gone cold it doesn't. The names and sizes are made
+// once: a frame builds none.
 const DISH_ARTS = Dishes.NAMES.map((_, i) => 'dish:' + i);   // (made once: a frame builds no names)
 const DISH_IX = new Map(Dishes.NAMES.map((n, i) => [n, i]));
 const HAND_STEAM_ARTS = ['handsteam:0', 'handsteam:1', 'handsteam:2'];
-const HAND_DISH = 0.18, HAND_UP = 0.25;    // the held dish's size and how high it's held, in the forager's px (its mittens)
+const HAND_DISH = 0.18, HAND_UP = 0.25;    // not carrying: the dish's size and how high it's held, in the forager's px
+const CARRY_DISH = 0.23;                   // carrying: its size
+const CARRY_SPOT = [[0.08, 0.3], [0.005, 0.27], [0, 0.3]];   // and where it sits by view: how far ahead (side on) and up, in px
+const DISH_K = 7e-4, DISH_C = 0.011, DISH_KICK = 6e-4, DISH_TIP = 4;   // its spring (a ms), a foot down at a run, and how far it tips with it
 const handLook = { name: null, art: null, warm: false };
 function handArtOf(name) {                                 // (looked up only when the hand changes)
   if (name !== handLook.name) {
@@ -2507,14 +2528,146 @@ function paintHandSteam(g, size, U, n) {
     g.moveTo(0.22, 0.42); g.bezierCurveTo(0.4 + sway, 0.18, -0.04, 0, 0.2, -0.28);
   });
 }
-function drawHeldDish(b, sx, sy, px, now, art, warm) {
-  if (!art) return;
+// Where the dish is held, on screen (b: fg or a friend's), into DISH_AT: x, y and its size.
+const DISH_AT = [0, 0, 0];
+function dishAt(b, sx, sy, px) {
   if (b.lift) sy -= b.lift * px;                           // (dancing, a hop)
-  const d = px * HAND_DISH, x = sx + (b.view === 0 ? (b.flip ? 1 : -1) * px * 0.15 : 0), y = sy - px * HAND_UP;   // (side on: out in front; from the front or behind: at its middle)
-  drawEmoji(art, x, y, d);
-  if (!warm) return;
+  if (b.carryShown) {
+    const at = CARRY_SPOT[b.view > 2 ? 0 : b.view];
+    DISH_AT[0] = sx + (b.view === 0 ? (b.flip ? 1 : -1) * at[0] : at[0]) * px; DISH_AT[1] = sy - (at[1] - b.dishY) * px; DISH_AT[2] = px * CARRY_DISH;
+  } else {                                                 // (side on: out in front; from the front or behind: at its middle)
+    DISH_AT[0] = sx + (b.view === 0 ? (b.flip ? 1 : -1) * px * 0.15 : 0); DISH_AT[1] = sy - px * HAND_UP; DISH_AT[2] = px * HAND_DISH;
+  }
+  return DISH_AT;
+}
+function drawHeldDish(b, sx, sy, px, now, art, heat) {
+  if (!art) return;
+  const [x, y, d] = dishAt(b, sx, sy, px), tip = b.carryShown ? b.dishY * DISH_TIP * (b.flip ? -1 : 1) : 0;
+  if (b.view === 2 && b.carryShown) { /* (from behind, held out ahead: the body hides it, only its steam shows) */ }
+  else if (Math.abs(tip) > 0.01) { ctx.save(); ctx.translate(x, y); ctx.rotate(tip); drawEmoji(art, 0, 0, d); ctx.restore(); }
+  else drawEmoji(art, x, y, d);
+  if (heat < 0.08) return;                                 // (gone cold: no steam)
   const k = (now / 240 | 0) % 3, sway = Math.sin(now / 540) * d * 0.12;
-  drawEmoji(HAND_STEAM_ARTS[k], x + sway, y - d * 0.48, d * 0.6, { alpha: 0.55 + 0.2 * Math.sin(now / 610) });
+  drawEmoji(HAND_STEAM_ARTS[k], x + sway, y - d * 0.48, d * 0.6, { alpha: (0.55 + 0.2 * Math.sin(now / 610)) * Math.min(1, heat * 1.6) });
+}
+// The dish's spring: knocked by a run's feet (slop), it bobs a little and settles. ms: since the last frame.
+function dishSpring(b, ms) {
+  if (!b.dishY && !b.dishV) return;
+  for (let t = Math.min(ms, 60); t > 0; t -= 8) {          // (in steps, so a slow frame doesn't fling it)
+    const h = Math.min(8, t);
+    b.dishV -= (DISH_K * b.dishY + DISH_C * b.dishV) * h; b.dishY += b.dishV * h;
+  }
+  if (Math.abs(b.dishY) < 1e-4 && Math.abs(b.dishV) < 1e-5) { b.dishY = 0; b.dishV = 0; }
+}
+// A foot down at a run with a dish in its hands (foragerFrame): the dish knocked, and while there's some to lose (sim.js
+// HAND_LEAST) a couple of drops fly off it and now and then you hear it slosh.
+function slop(f, x, y, now) {
+  fg.dishV += DISH_KICK;
+  if (f.handFull <= S.HAND_LEAST + 0.01) return;
+  const px = forPx(), ahead = (fg.view === 0 ? (fg.flip ? 1 : -1) * CARRY_SPOT[0][0] : 0) * px / cam.zoom;
+  for (let i = 0; i < 2; i++) dropFly(x + ahead, y, CARRY_SPOT[fg.view > 2 ? 0 : fg.view][1], Math.cos(f.heading) * 0.0004, 0.6, now);
+  if (now - fg.slopAt > 700) { fg.slopAt = now; hear('slosh', x, y, { v: f.handFull }, true); }
+}
+// The drops: a ring of SLOP_DROPS in typed arrays (nothing made a drop), each thrown from x, y at h up (the forager's px) with
+// some way along (vx, a ms) and up, falling and lying a moment where it lands. Drawn over all that stands (drawSpills).
+const SLOP_DROPS = 40, SLOP_MS = 900, SLOP_FALL = 4e-6, SLOP_RGB = 'rgb(150, 98, 52)';
+const sd = { x: new Float32Array(SLOP_DROPS), y: new Float32Array(SLOP_DROPS), h: new Float32Array(SLOP_DROPS), vx: new Float32Array(SLOP_DROPS), vy: new Float32Array(SLOP_DROPS),
+  vh: new Float32Array(SLOP_DROPS), t: new Float64Array(SLOP_DROPS), next: 0, n: 0 };
+function dropFly(x, y, h, vx, up, now) {
+  const j = sd.next;
+  sd.x[j] = x; sd.y[j] = y; sd.h[j] = h; sd.t[j] = now;
+  sd.vx[j] = vx + (Math.random() - 0.5) * 0.0012; sd.vy[j] = (Math.random() - 0.3) * 0.0008; sd.vh[j] = (0.4 + Math.random() * 0.6) * up * 1e-3;
+  sd.next = (j + 1) % SLOP_DROPS; sd.n = Math.min(SLOP_DROPS, sd.n + 1);
+}
+// A dish dropped (sim.js 'spill', a stumble with it hot; or a friend's, heardSpill): it tumbles from the hands to the ground
+// ahead of it (SPILL_MS), splashes (drops, a clatter and a splat), leaves a stain (STAINS) and lies tipped a moment, fading.
+const SPILL_MS = 380, SPILL_LIE = 1600;
+const spills = [];                         // { art, x, y, dir, t, splashed } (one a stumble: a handful at most)
+function spillDish(id, x, y, heading, now) {
+  const ix = DISH_IX.get(id);
+  if (ix === undefined || spills.length > 4) return;
+  spills.push({ art: DISH_ARTS[ix], x, y, dir: Math.cos(heading) > 0 ? 1 : -1, t: now, splashed: false });
+}
+function drawSpills(now) {
+  if (!sd.n && !spills.length) return;
+  const z = cam.zoom, px = forPx(), far = zoomedOut();
+  for (let i = spills.length - 1; i >= 0; i--) {
+    const S0 = spills[i], u = (now - S0.t) / SPILL_MS;
+    if (u > 1 + SPILL_LIE / SPILL_MS) { spills.splice(i, 1); continue; }
+    const lx = S0.x + S0.dir * 0.28 * px / z;             // (where it lands: ahead of it, the way it went)
+    if (u >= 1 && !S0.splashed) {
+      S0.splashed = true;
+      for (let k = 0; k < 10; k++) dropFly(lx, S0.y, 0.02, S0.dir * 0.0003, 1, now);
+      stainAt(lx, S0.y);
+      hear('spill', lx, S0.y, {}, true);
+    }
+    if (far) continue;
+    const k = Math.min(1, u), sx = (S0.x + (lx - S0.x) * k - cam.x) * z + vw / 2, sy = (S0.y - cam.y) * z + vh / 2;
+    const hh = 0.3 * (1 - k * k), a = u <= 1 ? 1 : 1 - (u - 1) * SPILL_MS / SPILL_LIE;
+    if (!visible(sx, sy, px)) continue;
+    ctx.save(); ctx.globalAlpha = a; ctx.translate(sx, sy - (hh + 0.04) * px); ctx.rotate(S0.dir * 1.9 * k);
+    drawEmoji(S0.art, 0, 0, px * CARRY_DISH);
+    ctx.restore();
+  }
+  if (!sd.n || far) return;
+  ctx.fillStyle = SLOP_RGB;
+  let live = 0;
+  for (let j = 0; j < sd.n; j++) {
+    const age = now - sd.t[j];
+    if (age >= SLOP_MS || age < 0) continue;
+    live++;
+    const land = sd.vh[j] / SLOP_FALL + Math.sqrt((sd.vh[j] / SLOP_FALL) ** 2 + 2 * sd.h[j] / SLOP_FALL);   // (when it reaches the ground)
+    const ta = Math.min(age, land), h = Math.max(0, sd.h[j] + sd.vh[j] * ta - SLOP_FALL * ta * ta / 2);
+    const sx = (sd.x[j] + sd.vx[j] * ta - cam.x) * z + vw / 2, sy = (sd.y[j] + sd.vy[j] * ta - cam.y) * z + vh / 2 - h * px;
+    ctx.globalAlpha = age < land ? 0.9 : 0.7 * (1 - (age - land) / (SLOP_MS - land + 1));
+    ctx.beginPath(); ctx.ellipse(sx, sy, px * 0.018, px * (age < land ? 0.02 : 0.009), 0, 0, TAU); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  if (!live) sd.n = 0;
+}
+// Where a dish was dropped, a stain: one soft splash painted once (STAIN_ART), laid flat, a little turned each time, fading
+// back into the ground over STAIN_MS on the prints' clock (fg.printMs: stopped while paused). Kept in a small ring.
+const STAINS = 8, STAIN_MS = 90000;
+const stn = { x: new Float32Array(STAINS), y: new Float32Array(STAINS), t: new Float64Array(STAINS), r: new Float32Array(STAINS), next: 0, n: 0 };
+let STAIN_ART = null;
+function stainArt() {
+  const W = 96, H = 64, c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  g.filter = 'blur(2.5px)';
+  g.fillStyle = 'rgba(112, 72, 36, 0.75)';
+  g.beginPath(); g.ellipse(W * 0.5, H * 0.5, W * 0.3, H * 0.26, 0, 0, TAU); g.fill();
+  for (const [x, y, r] of [[0.2, 0.32, 0.09], [0.8, 0.62, 0.1], [0.72, 0.24, 0.06], [0.26, 0.74, 0.07], [0.9, 0.4, 0.04], [0.1, 0.56, 0.04]]) {
+    g.beginPath(); g.ellipse(W * x, H * y, W * r, H * r * 1.2, 0, 0, TAU); g.fill();
+  }
+  g.filter = 'none';
+  g.fillStyle = 'rgba(70, 42, 20, 0.35)';                 // (darker where it pooled)
+  g.beginPath(); g.ellipse(W * 0.52, H * 0.52, W * 0.16, H * 0.13, 0, 0, TAU); g.fill();
+  STAIN_ART = { img: c };
+  asBitmap(c, b => { STAIN_ART.img = b; });
+  return STAIN_ART;
+}
+function stainAt(x, y) {
+  const j = stn.next;
+  stn.x[j] = x; stn.y[j] = y; stn.t[j] = fg.printMs; stn.r[j] = Math.random() * TAU;
+  stn.next = (j + 1) % STAINS; stn.n = Math.min(STAINS, stn.n + 1);
+}
+function drawStains() {
+  if (!stn.n || zoomedOut()) return;
+  const art = STAIN_ART || stainArt(), z = cam.zoom, w = forPx() * 0.5, k = w / 96;
+  let drawn = false;
+  for (let j = 0; j < stn.n; j++) {
+    const age = fg.printMs - stn.t[j];
+    if (age >= STAIN_MS) continue;
+    const sx = (stn.x[j] - cam.x) * z + vw / 2, sy = (stn.y[j] - cam.y) * z + vh / 2;
+    if (!visible(sx, sy, w)) continue;
+    const cs = Math.cos(stn.r[j]) * k * dpr, sn = Math.sin(stn.r[j]) * k * dpr;
+    ctx.globalAlpha = Math.min(1, age / 200) * Math.min(1, (STAIN_MS - age) / (STAIN_MS * 0.5));
+    ctx.setTransform(cs, sn * 0.5, -sn, cs * 0.5, sx * dpr + shakeX, sy * dpr + shakeY);   // (laid flat: squashed to the ground)
+    ctx.drawImage(art.img, -48, -32);
+    drawn = true;
+  }
+  if (drawn) { ctx.setTransform(dpr, 0, 0, dpr, shakeX, shakeY); ctx.globalAlpha = 1; }
 }
 function drawForager(sx, sy, now) {
   const px = forPx(), art = fg.art, f = world.forager, stage = S.warmthStage(f);
@@ -2531,11 +2684,12 @@ function drawForager(sx, sy, now) {
   const trip = f.stumble > 0 ? Math.sin(Math.PI * (1 - f.stumble / S.STUMBLE_TICKS)) : 0;   // (a stumble: it pitches forward and catches itself)
   const held = f.hand && handArtOf(f.hand), eating = now - fg.eatAt >= 0 && now - fg.eatAt < EAT_SEQ[1];
   const shown = held && !eating && !(kw.reveal && kw.reveal.hand);   // (hidden while it's being eaten, or flying to the hand)
-  if (shown && fg.view === 2) drawHeldDish(fg, sx, sy, px, now, held.art, held.warm);   // (facing away: behind it)
+  const heat = held && held.warm ? f.handHeat : 0;
+  if (shown && fg.view === 2) drawHeldDish(fg, sx, sy, px, now, held.art, heat);   // (facing away: behind it)
   drawFigure(fg, art, sx, sy, px, now, stage, trip, fg.stillMs > FORAGER_STILL_MS, true);
   const d = drawnAt(f);
   drawBody(fg, d.x, d.y, f.wet, fg.stillMs < FORAGER_STILL_MS, f.running, stage, px, now, true);
-  if (shown && fg.view !== 2) drawHeldDish(fg, sx, sy, px, now, held.art, held.warm);
+  if (shown && fg.view !== 2) drawHeldDish(fg, sx, sy, px, now, held.art, heat);
   drawChill(sx, sy - fg.lift * px, px, f.warmth, now);
 }
 // A little thermometer by the forager's side that fades in as its warmth drops under cosy and out as it warms again
@@ -2666,15 +2820,16 @@ function drawForagerRim(dark, occl = true, dx = 0, dy = 0) {
 // ones too once there's a fire about, or what one takes is in the satchel.
 function foragerAhead() {
   const P = poseStep(Math.max(4, forPx())), set = S.warmthStage(world.forager) >= 1 ? 2 : 1;   // (chilly: the cold ones too)
-  const kneel = world.fires.length > 0 || !!ui.fire || !!ui.place || buildUi.ready, emo = fg.emote >= 0;
-  if (!furWorker || P === fg.sized && set === fg.sizedSet && fg.snowArt === fg.sizedSnow && kneel === fg.sizedKneel && emo === fg.sizedEmote) return;
-  fg.sized = P; fg.sizedSet = set; fg.sizedSnow = fg.snowArt; fg.sizedKneel = kneel; fg.sizedEmote = emo;
+  const kneel = world.fires.length > 0 || !!ui.fire || !!ui.place || buildUi.ready, emo = fg.emote >= 0, carry = !!world.forager.hand;
+  if (!furWorker || P === fg.sized && set === fg.sizedSet && fg.snowArt === fg.sizedSnow && kneel === fg.sizedKneel && emo === fg.sizedEmote && carry === fg.sizedCarry) return;
+  fg.sized = P; fg.sizedSet = set; fg.sizedSnow = fg.snowArt; fg.sizedKneel = kneel; fg.sizedEmote = emo; fg.sizedCarry = carry;
   const at = fg.snowArt * Fur.FORAGER_SNOW_ARTS + (fg.outfit << 7);
   for (let v = 0; v < 3; v++) for (const p of set === 2 ? FORAGER_CHILLY : FORAGER_POSES) furReady(FORAGER_ARTS[at + (v << 5) + p], P);
   for (const p of Fur.FORAGER_IDLES) furReady(FORAGER_ARTS[at + 96 + p], P);
   for (const p of Fur.FORAGER_EATS) furReady(FORAGER_ARTS[at + 96 + p], P);
   if (kneel) for (const p of KNEEL_POSES) furReady(FORAGER_ARTS[at + KNEEL_AT + p], P);
   if (emo) for (const p of Fur.FORAGER_EMOTES) furReady(FORAGER_ARTS[Fur.emoteArt(fg.snowArt, fg.outfit, p)], P);   // (an emote on, or about to be)
+  if (carry) for (let v = 0; v < 3; v++) for (const p of set === 2 ? FORAGER_CHILLY : FORAGER_POSES) furReady(FORAGER_ARTS[Fur.carryArt(fg.snowArt, fg.outfit, (v << 5) + p)], P);   // (a dish in its hands)
 }
 // Out while it snows, snow gathers on it (on the hood, the shoulders: fur.js FORAGER_SNOWS), less under the trees; once
 // it stops it melts off, soon above freezing, slowly under, quicker on the move, and by a fire close by it goes snowing or
@@ -7640,7 +7795,7 @@ function cookDone(j, now) {
   }
   S.gainSkill(world, f, 'cooking', mess ? MESS_PRACTICE : 1);   // (sim.js SKILLS: a dish is practice)
   const was = storesWas();
-  const inHand = !mess && S.holdDish(world, dish.name);    // (a real dish, with an empty hand: into it; a mess keeps its way)
+  const inHand = !mess && S.holdDish(world, dish.name, !!Recipes.foodOf(dish.name)?.warm);   // (warm off the fire: it cools in the hand)    // (a real dish, with an empty hand: into it; a mess keeps its way)
   const put = inHand ? null : S.storesPut(storesAt(j.F.x, j.F.y), dish.name, 1), toBag = !!put && put.store === f;
   if (put && !toBag) sendStores(was);                     // (playing together: a camp store's share of it)
   kw.reveal = { id: dish.name, t0: now, mess, hand: inHand, k: toBag ? put.into[0] : -1, bk: put && !toBag ? put.into[0] : -1, flown: false };
@@ -15713,6 +15868,14 @@ function handleEvent(e) {
       campMoment(e.fire);
       renderBuild();                                        // (a friend's camp at once: the strip's camp builds and its note)
       break;
+    case 'spill': {                                         // (a stumble with a hot dish: dropped)
+      const now = performance.now();
+      spillDish(e.id, e.x, e.y, e.heading, now);
+      fg.dishY = 0; fg.dishV = 0;
+      say('Oh no, my ' + e.id.toLowerCase() + '!', e.x, e.y - 1.6);
+      if (Net && Net.on) Net.send({ t: 'spill', x: e.x, y: e.y, h: e.heading, hd: DISH_IX.get(e.id) ?? -1 });   // (friends see it fall: heardSpill)
+      break;
+    }
     case 'ate':                                             // (first things: a dish eaten)
       if (!Recipes.INGREDIENTS[e.id]) taskUi.ate = true;
       break;
@@ -17516,6 +17679,7 @@ function heardNet(m) {
   else if (m.t === 'swing') heardSwingStart(m, now);
   else if (m.t === 'toss') heardToss(m, now);
   else if (m.t === 'jump') peerJump(m, now);
+  else if (m.t === 'spill') { if (m.hd >= 0 && m.hd < Dishes.NAMES.length) spillDish(Dishes.NAMES[m.hd | 0], +m.x || 0, +m.y || 0, +m.h || 0, now); }   // (a friend's dish dropped)
 }
 
 // The host's meadow, as a guest comes (to it alone), as the host starts a new one (to all), or again after drifting off.
@@ -17679,6 +17843,7 @@ function heardPos(m, now) {
       rings: [], puffs: [], puffAt: 0, drips: [], dripAt: 0, shiverAt: -1e9, shiverNext: 0,   // (its body, as fg's: drawBody, drawRings, shiverOf)
       art: FORAGER_ARTS[0], sized: 0, sizedSet: 0, sizedSnow: 0, name: '', nameArt: null, sx: -0, sy: -0, shown: false, chat: null, kneel: -1,
       handIx: -1, handArt: null, handWarm: false,          // (the dish in its hand: heardPos)
+      carry: false, carryShown: false, sizedCarry: -1, dishY: -0, dishV: -0,   // (held out in both hands: drawHeldDish)
       mark: -0,                                            // (how far its marker at the screen's edge has faded in: drawFriendMarks)
       emote: -1, emoteMs: -0, emoteFrame: -1, lift: -0, sizedEmote: -1,
       lead: '',                                            // (the friend it has on a rope, or us: heardLead)
@@ -18013,12 +18178,13 @@ function peerItems(items, now, z) {
     p.x = x; p.y = y; p.last = now;
     if (ju < 1) p.stillMs = 0;
     else if (moved > 1e-5 && moved < 2) {
-      p.step += moved / (2 * Fur.FORAGER_REACH * px / z * (p.jog ? Fur.FORAGER_JOG_STRIDE : p.emote === EMOTE.sneak ? Fur.SNEAK_STRIDE : 1));
+      p.step += moved / (2 * Fur.FORAGER_REACH * px / z * (p.jog ? Fur.FORAGER_JOG_STRIDE : p.emote === EMOTE.sneak ? Fur.SNEAK_STRIDE : 1) * (p.carry ? Fur.CARRY_STRIDE : 1));
       p.stillMs = 0;
     } else p.stillMs += ms;
     p.wet = inWaterAt(x, y);
     const cold = p.stage >= FORAGER_SAD, k = (now - p.pickAt) / (p.pickK || 1), half = Math.floor(p.step * 2);
     if (p.emote >= 0 && ui.speed > 0) p.emoteMs += ms;
+    const carry = p.carry = !!p.handArt && p.emote < 0 && p.kneel < 0 && p.stage < 4;
     let pose, emo = -1;
     if (k < PICK_MS[2]) {                                 // picking (peerPicked), even while it glides the last bit to where it stood
       pose = k < PICK_MS[0] || k > PICK_MS[1] ? 3 : 4;
@@ -18037,12 +18203,14 @@ function peerItems(items, now, z) {
       idleStop(p);
       if (half !== p.lastHalf && ui.speed > 0) {            // a foot down: a ring in the shallows, else a footprint (as foragerFrame)
         if (p.wet) p.rings.push({ x, y, t: now }); else footprint(x, y, p.heading, half & 1);
+        if (carry && p.jog) p.dishV += DISH_KICK;           // (running with a dish: it bobs)
       }
     } else {
       p.step = Math.round(p.step * 2) / 2;
       if (p.stillMs > FORAGER_TURN_MS && p.view !== 1) { p.view = 1; p.blinkAt = now; }
       if (now - p.blinkAt > 4000) p.blinkAt = now - Math.random() * 1500;
-      pose = cold ? (now - p.blinkAt < 150 ? 6 : 5) : idleOf(p, now, now - p.blinkAt < 150 ? 2 : 0);
+      pose = cold ? (now - p.blinkAt < 150 ? 6 : 5) : carry ? (now - p.blinkAt < 150 ? 2 : 0) : idleOf(p, now, now - p.blinkAt < 150 ? 2 : 0);
+      if (carry) idleStop(p);
       if (p.emote >= 0) { idleStop(p); emo = emoteStill(p, p, false); }
       else if (cold) idleStop(p);
     }
@@ -18059,7 +18227,14 @@ function peerItems(items, now, z) {
       for (const q of Fur.FORAGER_IDLES) furReady(FORAGER_ARTS[at + 96 + q], P);
     }
     if (furWorker && p.emote >= 0 && p.sizedEmote !== P) { p.sizedEmote = P; for (const q of Fur.FORAGER_EMOTES) furReady(FORAGER_ARTS[Fur.emoteArt(p.snowArt, p.outfit, q)], P); }
-    p.art = shownPose(p, FORAGER_ARTS[emo >= 0 && p.stage < 4 ? Fur.emoteArt(p.snowArt, p.outfit, emo) : at + (p.kneel >= 0 && p.stage < 4 ? KNEEL_AT + pose : poseKey(p.view, pose))], px);
+    if (furWorker && carry && p.sizedCarry !== P) { p.sizedCarry = P; for (let v = 0; v < 3; v++) for (const q of set === 2 ? FORAGER_CHILLY : FORAGER_POSES) furReady(FORAGER_ARTS[Fur.carryArt(p.snowArt, p.outfit, (v << 5) + q)], P); }
+    const carried = carry && emo < 0 && pose < 32;
+    const want = FORAGER_ARTS[emo >= 0 && p.stage < 4 ? Fur.emoteArt(p.snowArt, p.outfit, emo) : carried ? Fur.carryArt(p.snowArt, p.outfit, poseKey(p.view, pose))
+      : at + (p.kneel >= 0 && p.stage < 4 ? KNEEL_AT + pose : poseKey(p.view, pose))];
+    p.art = shownPose(p, want, px);
+    if (p.art === want) p.carryShown = carried;
+    if (!carry) p.sizedCarry = -1;
+    dishSpring(p, ms);
     const sx = (x - cam.x) * z + vw / 2, sy = (y - cam.y) * z + vh / 2;
     p.shown = visible(sx, sy, 2 * px); p.sx = sx; p.sy = sy;
     if (p.shown) itemOf(items, y, sx, sy, 1).q = p;
@@ -18151,10 +18326,10 @@ function drawPeer(p, sx, sy, now) {
   if (p.stage === 4) { drawFallen(p.art, sx, sy, px, p.flip, p.fall); return; }
   drawPeerHp(p, sx, sy, px);
   sy -= p.air * px;                                       // (in the air: its feet off the ground, its shadow left there)
-  if (p.handArt && p.view === 2) drawHeldDish(p, sx, sy, px, now, p.handArt, p.handWarm);   // (facing away: behind it)
+  if (p.handArt && p.view === 2) drawHeldDish(p, sx, sy, px, now, p.handArt, p.handWarm ? 1 : 0);   // (facing away: behind it)
   drawFigure(p, p.art, sx, sy, px, now, p.stage, 0, p.stillMs >= PEER_STILL_MS, false);
   drawBody(p, p.x, p.y, p.soak, p.stillMs < PEER_STILL_MS, p.jog, p.stage, px, now, false);
-  if (p.handArt && p.view !== 2) drawHeldDish(p, sx, sy, px, now, p.handArt, p.handWarm);
+  if (p.handArt && p.view !== 2) drawHeldDish(p, sx, sy, px, now, p.handArt, p.handWarm ? 1 : 0);
 }
 
 // The chat. A line said, painted once: a parchment bubble, its words wrapped to CHAT_WIDE (CHAT_WIDE_MOB on a phone).

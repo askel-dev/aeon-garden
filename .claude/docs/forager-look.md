@@ -27,6 +27,7 @@ die, and the name while playing together), tried on there and worn only on its b
 Set off), as you first open yours to friends ('host', from `together`), as a new meadow opens till one's been picked, and from
 ••• ('dress'). Up top on a touch screen, out of the keyboard's way. Kept in localStorage apart (`aeon-garden-outfit` the cloak,
 `aeon-garden-hat`, `aeon-garden-name`), so a new cloak or hat goes at the end of its list.
+Carrying a dish (cooking.md, the hands) it has paintings of its own, kept after the emotes (fur.js `carryPose`, `carryArt`): the standing, walking and jogging ones in every view with both mittens holding it out, shorter steps (`CARRY_STRIDE`), a gentler bob; friends' too.
 Emotes (`emote`, the comment over `EMOTE`): the dance and the sneak. (They used to be asked for by 1 and 2 or the round button on
 the satchel's other side from the fire's: `#emote`, `emoteMenu`, `emoteIcons`, `emoteShown`; button, keys and fan are gone, and
 `emote` is left as the workings behind them.) Painted in fur.js (`FORAGER_EMOTE`, `emotePose`, kept after all its other paintings:

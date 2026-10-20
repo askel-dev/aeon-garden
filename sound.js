@@ -356,6 +356,8 @@ const RULES = {
   pant:    { gap: 0.25, always: true },
   phew:    { gap: 4,    always: true },
   hemdrip: { gap: 0.25, always: true },
+  slosh:   { gap: 0.4,  always: true },   // a dish in its hands, slopping at a run
+  spill:   { gap: 0.5,  always: true },   // and dropped
   strike:  { gap: 0.15, always: true, lift: 2 },   // the campfire: the flint and steel,
   blow:    { gap: 0.3,  always: true, lift: 2 },   // a breath blown on the spark,
   kindle:  { gap: 0.5,  always: true, lift: 2 },   // the tinder catching and the flame taking,
@@ -710,6 +712,37 @@ const SOUNDS = {
     g.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
     osc.connect(g).connect(o); osc.start(t); osc.stop(t + 0.1);
     noise(o, t, 0.03, { from: 1400, to: 700, q: 1, peak: 0.03 * v, attack: 0.003 });
+  },
+  // A dish slopping in its hands at a run (game.js slop): the broth slapping the bowl's side, a soft low swash rising and
+  // falling back, and a drop or two off the rim. v: how full it still is (fuller, a touch louder).
+  slosh(t, o, { v = 1 }) {
+    const at = t + 0.005, k = 0.6 + 0.4 * v;
+    noise(o, at, 0.12, { from: 380, to: 900, q: 0.9, peak: 0.07 * k, type: 'lowpass', attack: 0.02 });
+    noise(o, at + 0.09, 0.14, { from: 760, to: 300, q: 0.8, peak: 0.05 * k, type: 'lowpass', attack: 0.015 });
+    for (let i = 0, n = Math.random() < 0.5 ? 1 : 2; i < n; i++) {   // (a drop off the rim, pitched like a bubble)
+      const ft = at + 0.16 + i * rand(0.05, 0.09), f = rand(700, 1000), osc = ac.createOscillator(), g = ac.createGain();
+      osc.frequency.setValueAtTime(f, ft); osc.frequency.exponentialRampToValueAtTime(f * 1.6, ft + 0.04);
+      g.gain.setValueAtTime(0.0001, ft); g.gain.exponentialRampToValueAtTime(0.025 * k, ft + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.0001, ft + 0.06);
+      osc.connect(g).connect(o); osc.start(ft); osc.stop(ft + 0.08);
+    }
+  },
+  // A dish dropped (game.js drawSpills): the bowl landing with a hollow wooden knock and a smaller bounce, and what was in
+  // it splashing out over the grass, wet and heavy.
+  spill(t, o) {
+    const knock = (at, f, peak) => {
+      const osc = ac.createOscillator(), g = ac.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(f, at); osc.frequency.exponentialRampToValueAtTime(f * 0.45, at + 0.08);
+      g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(peak, at + 0.003);
+      g.gain.exponentialRampToValueAtTime(0.0001, at + 0.13);
+      osc.connect(g).connect(o); osc.start(at); osc.stop(at + 0.15);
+    };
+    const at = t + 0.01;
+    knock(at, 340, 0.16); knock(at + 0.14, 420, 0.07);
+    noise(o, at + 0.01, 0.22, { from: 1300, to: 260, q: 0.5, peak: 0.16, type: 'lowpass', attack: 0.004 });
+    noise(o, at + 0.05, 0.3, { from: 700, to: 180, q: 0.6, peak: 0.09, type: 'lowpass', attack: 0.01 });
+    noise(o, at + 0.02, 0.08, { from: 2600, to: 1400, q: 1, peak: 0.03, attack: 0.003 });   // (the grass taking it)
   },
   // Waking at home after a collapse: three soft notes stepping up, a new morning.
   wake(t, o) {
