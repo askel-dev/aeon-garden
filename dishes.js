@@ -23,11 +23,9 @@ const sitShadow = (g, x, y, rx, ry, a = 0.32) => furGlow(g, [60, 40, 20], a, x, 
 // lowest one.
 const ROAST_CAP = [[166, 102, 54], [150, 90, 48], [176, 112, 60]], ROAST_RIM = [84, 46, 24], ROAST_STEM = [226, 192, 140], ROAST_GILL = [146, 98, 66];
 const STICK_GREEN = [198, 186, 128], STICK_BARK = [112, 88, 60];
-function paintRoastMushrooms(g) {
-  const ax = -0.84, ay = 0.8, bx = 0.86, by = -0.72;           // the stick, from the hand to the tip
+// A green stick from the hand (ax, ay) to its tip (bx, by): bark where it's held, peeled along the rest, charred at the tip.
+function greenStick(g, ax, ay, bx, by) {
   const at = t => [ax + (bx - ax) * t, ay + (by - ay) * t];
-  sitShadow(g, 0.04, 0.72, 0.62, 0.11, 0.22);
-  // The stick: bark where it's held, peeled along the rest, charred at the tip.
   const stick = (t0, t1, rgb, w) => {
     const [x0, y0] = at(t0), [x1, y1] = at(t1);
     strokeIn(g, rgba(tone(rgb, 0.7)), w + 0.03, () => { g.moveTo(x0, y0); g.lineTo(x1, y1); });
@@ -40,6 +38,12 @@ function paintRoastMushrooms(g) {
   const [tx, ty] = at(0.92);
   strokeIn(g, 'rgba(44, 30, 22, 0.92)', 0.09, () => { g.moveTo(tx, ty); g.lineTo(bx, by); });   // the charred tip
   furGlow(g, [255, 120, 40], 0.55, bx - 0.01, by + 0.01, 0.05, 0.05);                            // still glowing a little
+}
+function paintRoastMushrooms(g) {
+  const ax = -0.84, ay = 0.8, bx = 0.86, by = -0.72;           // the stick, from the hand to the tip
+  const at = t => [ax + (bx - ax) * t, ay + (by - ay) * t];
+  sitShadow(g, 0.04, 0.72, 0.62, 0.11, 0.22);
+  greenStick(g, ax, ay, bx, by);
   // The mushrooms, the one furthest up first (it's behind).
   for (const [t, s, tilt, k] of [[0.76, 0.84, 0.16, 2], [0.5, 0.94, -0.08, 1], [0.24, 1, 0.1, 0]]) {
     const [x, y] = at(t), CAP = ROAST_CAP[k];
@@ -848,8 +852,10 @@ function shardAt(g, x, y, s, rot, k) {
   strokeIn(g, rgba(HAZEL_SKIN, 0.9), 0.32, () => { g.moveTo(P[6], P[7]); g.lineTo(P[8], P[9]); });                  // a strip of skin
   g.restore();
 }
-function paintMushroomsHazelnuts(g) {
-  const cy = 0.08, RX = 0.86, RY = 0.3, IX = 0.76, IY = 0.24, D = 0.2;   // the rim, outside and in, and how deep the pan stands
+// The clay pan, with what's in it painted by inside() held in its hollow (only what's above the front of the rim shows).
+const CLAY_PAN = { cy: 0.08, IX: 0.76, IY: 0.24 };
+function clayPan(g, inside) {
+  const { cy, IX, IY } = CLAY_PAN, RX = 0.86, RY = 0.3, D = 0.2;   // the rim, outside and in, and how deep the pan stands
   sitShadow(g, 0, cy + D + 0.3, 0.86, 0.14, 0.34);
   // The lugs, then the pan's low wall under the rim, lit from the left, sooty underneath.
   for (const s of [-1, 1]) {
@@ -877,27 +883,33 @@ function paintMushroomsHazelnuts(g) {
   softIn(g, PAN_IN, cy - IY, cy + IY, () => ovalAt(g, 0, cy + 0.01, IX, IY), 1.55, 0.6);
   const held = () => { g.moveTo(-IX, cy); g.lineTo(-IX - 0.2, -1.3); g.lineTo(IX + 0.2, -1.3); g.lineTo(IX, cy); g.ellipse(0, cy + 0.01, IX, IY, 0, 0, Math.PI); g.closePath(); };
   g.save(); g.beginPath(); held(); g.clip();
-  // The juice, buttery brown, a line of light along its far edge.
-  softIn(g, JUS, cy - IY * 0.8, cy + IY, () => ovalAt(g, 0, cy + 0.03, IX * 0.96, IY * 0.86), 1.2, 0.7);
-  strokeIn(g, 'rgba(255, 220, 150, 0.55)', 0.016, () => g.ellipse(0, cy + 0.03, IX * 0.9, IY * 0.8, 0, Math.PI + 0.5, TAU - 0.4));
-  // The mushrooms, back ones first.
-  capAt(g, -0.42, cy - 0.12, 0.7, -0.3);
-  halfShroomAt(g, 0.04, cy - 0.16, 0.84, 0.15, FRIED);
-  capAt(g, 0.46, cy - 0.1, 0.72, 0.35);
-  halfShroomAt(g, -0.3, cy + 0.06, 0.86, -0.4, FRIED);
-  halfShroomAt(g, 0.32, cy + 0.08, 0.84, 0.3, FRIED);
-  capAt(g, 0.02, cy + 0.12, 0.62, 0.05);
-  // The hazelnuts crushed over: halves, shards and crumbs.
-  for (const [x, y, r, rot, k] of [[-0.12, cy - 0.06, 0.09, 0.6, 1], [0.24, cy - 0.02, 0.085, -0.8, 2], [-0.5, cy + 0.04, 0.08, 1.4, 0]]) hazelKernelAt(g, x, y, r, rot, k);
-  for (const [x, y, s, rot, k] of [[-0.24, cy - 0.16, 0.045, 0.3, 0], [0.12, cy - 0.28, 0.04, 1.2, 1], [0.44, cy - 0.2, 0.042, -0.6, 2], [-0.04, cy + 0.02, 0.05, 2.2, 1],
-    [0.4, cy + 0.04, 0.04, 0.9, 0], [-0.38, cy - 0.04, 0.042, -1.1, 2], [0.12, cy + 0.14, 0.046, 0.4, 0], [-0.18, cy + 0.12, 0.038, 1.8, 1], [0.58, cy - 0.04, 0.036, 0.2, 1], [-0.58, cy - 0.12, 0.036, -0.4, 0]]) shardAt(g, x, y, s, rot, k);
-  fillIn(g, rgba(tone(HAZEL, 1.1, 10)), () => { for (const [x, y] of [[-0.3, cy - 0.24], [0.02, cy - 0.12], [0.3, cy - 0.12], [-0.08, cy + 0.08], [0.22, cy + 0.12], [-0.44, cy + 0.12], [0.5, cy + 0.12], [0.06, cy - 0.32], [-0.2, cy + 0.0]]) ovalAt(g, x, y, 0.018, 0.013); });   // crumbs
-  fillIn(g, rgba([92, 150, 60]), () => { for (const [x, y, a] of [[-0.16, cy - 0.22, 0.5], [0.34, cy - 0.06, -0.8], [-0.4, cy + 0.08, 1.2], [0.08, cy + 0.04, -0.2], [0.52, cy - 0.16, 0.3]]) ovalAt(g, x, y, 0.024, 0.011, a); });   // a pinch of green
-  fillIn(g, 'rgba(255, 252, 236, 0.85)', () => { ovalAt(g, -0.34, cy + 0.14, 0.014, 0.009); ovalAt(g, 0.42, cy + 0.16, 0.012, 0.008); });   // the juice glinting
+  inside();
   g.restore();
   // The front of the rim: rolled, catching the light; its outer edge.
   strokeIn(g, rgba(tone(PAN_RIM, 1.12, 14), 0.9), 0.024, () => g.ellipse(0, cy + 0.01, IX, IY, 0, 0.12, Math.PI - 0.12));
   strokeIn(g, rgba(tone(PAN, 0.6), 0.6), 0.016, () => g.ellipse(0, cy, RX, RY, 0, 0.05, Math.PI - 0.05));
+}
+function paintMushroomsHazelnuts(g) {
+  const { cy, IX, IY } = CLAY_PAN;
+  clayPan(g, () => {
+    // The juice, buttery brown, a line of light along its far edge.
+    softIn(g, JUS, cy - IY * 0.8, cy + IY, () => ovalAt(g, 0, cy + 0.03, IX * 0.96, IY * 0.86), 1.2, 0.7);
+    strokeIn(g, 'rgba(255, 220, 150, 0.55)', 0.016, () => g.ellipse(0, cy + 0.03, IX * 0.9, IY * 0.8, 0, Math.PI + 0.5, TAU - 0.4));
+    // The mushrooms, back ones first.
+    capAt(g, -0.42, cy - 0.12, 0.7, -0.3);
+    halfShroomAt(g, 0.04, cy - 0.16, 0.84, 0.15, FRIED);
+    capAt(g, 0.46, cy - 0.1, 0.72, 0.35);
+    halfShroomAt(g, -0.3, cy + 0.06, 0.86, -0.4, FRIED);
+    halfShroomAt(g, 0.32, cy + 0.08, 0.84, 0.3, FRIED);
+    capAt(g, 0.02, cy + 0.12, 0.62, 0.05);
+    // The hazelnuts crushed over: halves, shards and crumbs.
+    for (const [x, y, r, rot, k] of [[-0.12, cy - 0.06, 0.09, 0.6, 1], [0.24, cy - 0.02, 0.085, -0.8, 2], [-0.5, cy + 0.04, 0.08, 1.4, 0]]) hazelKernelAt(g, x, y, r, rot, k);
+    for (const [x, y, s, rot, k] of [[-0.24, cy - 0.16, 0.045, 0.3, 0], [0.12, cy - 0.28, 0.04, 1.2, 1], [0.44, cy - 0.2, 0.042, -0.6, 2], [-0.04, cy + 0.02, 0.05, 2.2, 1],
+      [0.4, cy + 0.04, 0.04, 0.9, 0], [-0.38, cy - 0.04, 0.042, -1.1, 2], [0.12, cy + 0.14, 0.046, 0.4, 0], [-0.18, cy + 0.12, 0.038, 1.8, 1], [0.58, cy - 0.04, 0.036, 0.2, 1], [-0.58, cy - 0.12, 0.036, -0.4, 0]]) shardAt(g, x, y, s, rot, k);
+    fillIn(g, rgba(tone(HAZEL, 1.1, 10)), () => { for (const [x, y] of [[-0.3, cy - 0.24], [0.02, cy - 0.12], [0.3, cy - 0.12], [-0.08, cy + 0.08], [0.22, cy + 0.12], [-0.44, cy + 0.12], [0.5, cy + 0.12], [0.06, cy - 0.32], [-0.2, cy + 0.0]]) ovalAt(g, x, y, 0.018, 0.013); });   // crumbs
+    fillIn(g, rgba([92, 150, 60]), () => { for (const [x, y, a] of [[-0.16, cy - 0.22, 0.5], [0.34, cy - 0.06, -0.8], [-0.4, cy + 0.08, 1.2], [0.08, cy + 0.04, -0.2], [0.52, cy - 0.16, 0.3]]) ovalAt(g, x, y, 0.024, 0.011, a); });   // a pinch of green
+    fillIn(g, 'rgba(255, 252, 236, 0.85)', () => { ovalAt(g, -0.34, cy + 0.14, 0.014, 0.009); ovalAt(g, 0.42, cy + 0.16, 0.012, 0.008); });   // the juice glinting
+  });
 }
 
 // ------------------------------------------------------------------ dandelion fritters
@@ -1057,6 +1069,314 @@ function paintForagersMess(g) {
   fillIn(g, 'rgba(255, 250, 226, 0.75)', () => { ovalAt(g, -0.33, cy + 0.2, 0.03, 0.012, 0.4); ovalAt(g, -0.29, cy + 0.44, 0.012, 0.016); });
 }
 
+// ------------------------------------------------------------------ roast wild garlic
+//
+// Wild garlic leaves wound round a green stick in a fat spiral and held over the flames: the stick as the roast mushrooms'
+// (bark where it's held, peeled pale, charred at the tip), lying flatter. The leaves gone a deep glossy green, each turn of
+// them crisped brown along its edge where it lay over the last, blistered black here and there, a loose leaf's tip curling
+// off either end; two of the white star flowers, wilted, riding on top, and a few crisp flakes fallen under it.
+const ROAST_LEAF = [50, 104, 40], CRISP = [158, 112, 40];
+function paintRoastGarlic(g) {
+  const ax = -0.9, ay = 0.56, bx = 0.9, by = -0.44, len = Math.hypot(bx - ax, by - ay);
+  sitShadow(g, 0.02, 0.64, 0.7, 0.11, 0.24);
+  greenStick(g, ax, ay, bx, by);
+  // The bundle, along the stick: a fat spindle of leaves from x0 to x1.
+  const x0 = len * 0.28, x1 = len * 0.86, H = 0.2;
+  const h = x => H * Math.sin(Math.PI * Math.min(1, Math.max(0, (x - x0) / (x1 - x0)))) ** 0.55 * (1 + 0.07 * Math.sin(x * 19));
+  const spindle = () => {
+    g.moveTo(x0, 0);
+    for (let i = 1; i <= 24; i++) { const x = x0 + (x1 - x0) * i / 24; g.lineTo(x, -h(x)); }
+    for (let i = 23; i >= 1; i--) { const x = x0 + (x1 - x0) * i / 24; g.lineTo(x, h(x) * 0.9); }
+    g.closePath();
+  };
+  g.save(); g.translate(ax, ay); g.rotate(Math.atan2(by - ay, bx - ax));
+  // A loose leaf's tip off the back end, under the bundle.
+  const looseLeaf = (x, y, l, w, rot, bend) => {
+    g.save(); g.translate(x, y); g.rotate(rot);
+    softIn(g, ROAST_LEAF, -w, w, () => leafPath(g, 'g', l, w, bend), 1.35, 0.7);
+    strokeIn(g, rgba(CRISP, 0.95), 0.022, () => leafPath(g, 'g', l, w, bend));                // crisped round its edge
+    strokeIn(g, rgba(tone(ROAST_LEAF, 1.5, 30), 0.6), w * 0.14, () => { g.moveTo(l * 0.04, 0); g.quadraticCurveTo(l * 0.5, bend * w * 0.6, l * 0.9, bend * w * 0.92); });
+    furGlow(g, [40, 24, 10], 0.7, l * 0.86, bend * w * 0.9, l * 0.14, w * 0.6);              // its tip burnt
+    g.restore();
+  };
+  looseLeaf(x0 + 0.12, 0.06, 0.36, 0.09, Math.PI + 0.55, 0.5);
+  furGlow(g, [20, 30, 10], 0.4, (x0 + x1) / 2 + 0.02, H * 0.7, (x1 - x0) * 0.5, H * 0.35);   // its shade on the stick
+  softIn(g, tone(ROAST_LEAF, 0.72), -H, H, spindle, 1.2, 0.6);
+  g.save(); g.beginPath(); spindle(); g.clip();
+  // The turns of leaf, wound left to right, each lying over the last: its leading edge crisped brown.
+  const n = 7, slant = 0.2, step = (x1 - x0 + slant) / n;
+  for (let i = 0; i < n; i++) {
+    const xt = x0 - slant + i * step, bw = step * 1.2, k = [0.96, 1.04, 0.9, 1.08, 0.98, 1.02, 0.92][i];
+    // Each edge bows round the bundle (it's round), a little ragged where it crisped.
+    const curve = (x, d = 0) => { g.quadraticCurveTo(x + slant * 0.5 + 0.07 + d, 0, x + slant + d, H + 0.04); };
+    const ragged = (x, d = 0) => { for (let j = 1; j <= 6; j++) { const t = j / 6, u = 1 - t; g.lineTo(u * u * x + 2 * u * t * (x + slant * 0.5 + 0.07) + t * t * (x + slant) + d + (j % 2 ? 0.014 : -0.008), -H - 0.04 + t * (2 * H + 0.08)); } };
+    const band = () => { g.moveTo(xt, -H - 0.04); g.lineTo(xt + bw, -H - 0.04); curve(xt + bw); g.lineTo(xt + slant, H + 0.04); g.quadraticCurveTo(xt + slant * 0.5 + 0.07, 0, xt, -H - 0.04); g.closePath(); };
+    if (i) strokeIn(g, 'rgba(14, 26, 8, 0.45)', 0.05, () => { g.moveTo(xt - 0.03, -H - 0.04); curve(xt, -0.03); });   // its shade on the turn under it
+    softIn(g, tone(ROAST_LEAF, k), -H, H, band, 1.3, 0.62);
+    strokeIn(g, rgba(tone(ROAST_LEAF, 1.5, 30), 0.5), 0.016, () => { g.moveTo(xt + bw * 0.5, -H - 0.04); curve(xt + bw * 0.5); });   // its midrib
+    if (i) { strokeIn(g, rgba(CRISP), 0.034, () => { g.moveTo(xt, -H - 0.04); ragged(xt); }); strokeIn(g, rgba(tone(CRISP, 1.3, 30), 0.8), 0.01, () => { g.moveTo(xt + 0.008, -H - 0.04); ragged(xt, 0.008); }); }
+  }
+  // Blistered black in spots where it touched the flames, shaded underneath, glossy along the top.
+  for (const [x, y, r] of [[0.32, -0.08, 0.05], [0.56, 0.06, 0.04], [0.72, -0.1, 0.035], [0.44, 0.12, 0.03], [0.18, 0.04, 0.03]]) furGlow(g, [34, 22, 10], 0.75, x0 + (x1 - x0) * x, y, r * 1.4, r, 0, 0.3);
+  furGlow(g, [10, 22, 6], 0.55, (x0 + x1) / 2, H * 0.8, (x1 - x0) * 0.6, H * 0.5);
+  furGlow(g, [255, 255, 230], 0.42, (x0 + x1) / 2 - 0.06, -H * 0.55, (x1 - x0) * 0.36, H * 0.16);
+  g.restore();
+  strokeIn(g, 'rgba(26, 36, 14, 0.6)', 0.014, spindle);
+  // A loose leaf's tip curling off the front end, and the wilted stars on top.
+  looseLeaf(x1 - 0.14, -0.04, 0.34, 0.085, -0.6, -0.5);
+  g.restore();
+  const star = (x, y, r, rot) => {
+    fillIn(g, 'rgba(20, 30, 10, 0.3)', () => ovalAt(g, x + 0.012, y + 0.02, r, r * 0.8));
+    fillIn(g, 'rgb(244, 238, 214)', () => { for (let i = 0; i < 6; i++) { const a = rot + i / 6 * TAU; ovalAt(g, x + Math.cos(a) * r * 0.5, y + Math.sin(a) * r * 0.45, r * 0.46, r * 0.17, a + 0.4); } });
+    fillIn(g, 'rgb(214, 196, 110)', () => ovalAt(g, x, y, r * 0.22, r * 0.2));
+  };
+  star(-0.12, -0.04, 0.085, 0.2);
+  star(0.34, -0.22, 0.075, 0.6);
+  // Crisp flakes fallen under it.
+  fillIn(g, rgba(tone(CRISP, 0.75), 0.9), () => { for (const [x, y, a] of [[-0.2, 0.62, 0.4], [0.3, 0.66, -0.6], [0.5, 0.6, 1.1]]) ovalAt(g, x, y, 0.04, 0.018, a); });
+  fillIn(g, rgba([40, 70, 28], 0.9), () => { for (const [x, y, a] of [[0.06, 0.64, -0.3], [0.62, 0.66, 0.6]]) ovalAt(g, x, y, 0.036, 0.016, a); });
+}
+
+// ------------------------------------------------------------------ strawberries and honey
+//
+// Wild strawberries heaped in a bowl folded from birch bark: the bark chalk-white with its dark dashes, its tan inside, the
+// ends pinched up to a point and lashed with root, its rim rolled. The berries small and bright red, pointed, freckled with
+// their gold seeds, each with its green ruff of sepals; honey poured over them in a glossy run, pooled under them. In front,
+// one fallen out, a strawberry flower and a three-toothed leaf.
+const STRAWBERRY = [212, 40, 44], SEED = [252, 216, 120], SEPAL = [72, 134, 48];
+// A strawberry, radius r, its point down along +y before it's turned (rot).
+function strawberryAt(g, x, y, r, rot) {
+  furGlow(g, [70, 16, 10], 0.42, x + r * 0.1, y + r * 0.7, r * 1.0, r * 0.38);                 // where it sits
+  g.save(); g.translate(x, y); g.rotate(rot);
+  const body = () => { g.moveTo(0, r * 1.05); g.bezierCurveTo(-r * 0.5, r * 0.82, -r * 0.96, r * 0.1, -r * 0.86, -r * 0.42); g.bezierCurveTo(-r * 0.74, -r * 0.86, r * 0.74, -r * 0.86, r * 0.86, -r * 0.42); g.bezierCurveTo(r * 0.96, r * 0.1, r * 0.5, r * 0.82, 0, r * 1.05); g.closePath(); };
+  softIn(g, STRAWBERRY, -r * 0.8, r * 1.05, body, 1.3, 0.55);
+  g.save(); g.beginPath(); body(); g.clip();
+  furGlow(g, [96, 6, 14], 0.55, r * 0.5, r * 0.3, r * 0.6, r * 0.9);                          // round: the shade side
+  furGlow(g, [240, 150, 40], 0.4, 0, r * 0.95, r * 0.6, r * 0.22);                             // the honey's glaze
+  g.restore();
+  // The seeds, each in its little dimple, in staggered rows narrowing to the point.
+  const seeds = [];
+  for (let j = 0; j < 5; j++) { const v = -0.42 + j * 0.3, w = 0.68 * (1 - Math.max(0, v) * 0.75); for (let u = -w + (j % 2) * 0.15; u <= w + 0.01; u += 0.3) seeds.push([u * r, v * r]); }
+  fillIn(g, 'rgba(110, 10, 18, 0.6)', () => { for (const [u, v] of seeds) ovalAt(g, u, v, r * 0.08, r * 0.065); });
+  fillIn(g, rgba(SEED), () => { for (const [u, v] of seeds) ovalAt(g, u - r * 0.015, v - r * 0.02, r * 0.042, r * 0.05); });
+  fillIn(g, 'rgba(255, 244, 240, 0.85)', () => ovalAt(g, -r * 0.42, -r * 0.3, r * 0.16, r * 0.09, -0.9));   // a window of light
+  // Its ruff of sepals, and the stalk's stub.
+  g.save(); g.translate(0, -r * 0.66);
+  softIn(g, SEPAL, -r * 0.3, r * 0.2, () => { for (let i = 0; i < 6; i++) { const a = -Math.PI / 2 + (i - 2.5) * 0.62; ovalAt(g, Math.cos(a) * r * 0.32, Math.sin(a) * r * 0.16 + r * 0.04, r * 0.3, r * 0.09, a); } }, 1.3, 0.7);
+  strokeIn(g, rgba([96, 120, 52]), r * 0.12, () => { g.moveTo(0, 0); g.quadraticCurveTo(r * 0.04, -r * 0.2, r * 0.14, -r * 0.3); });
+  g.restore();
+  g.restore();
+}
+function paintStrawberriesHoney(g) {
+  const L = [-0.92, -0.18], R = [0.92, -0.18];                 // the bowl's pinched ends
+  const front = () => { g.bezierCurveTo(0.6, 0.2, -0.6, 0.2, L[0], L[1]); };   // its front rim, from R to L
+  sitShadow(g, 0, 0.62, 0.76, 0.13, 0.32);
+  // The hollow: the bark's tan inside, deeper toward the front.
+  softIn(g, BARK_IN, -0.36, 0.14, () => { g.moveTo(...L); g.bezierCurveTo(-0.6, -0.4, 0.6, -0.4, ...R); front(); g.closePath(); }, 1.1, 0.62);
+  furGlow(g, [80, 40, 20], 0.45, 0.1, 0.0, 0.6, 0.12);
+  // The honey pooled in it, and the berries heaped, back ones first.
+  softIn(g, HONEY, -0.16, 0.12, () => ovalAt(g, 0.02, -0.02, 0.56, 0.12), 1.25, 0.72);
+  for (const [x, y, r, rot] of [[-0.42, -0.2, 0.16, 0.5], [0.0, -0.26, 0.16, -0.2], [0.4, -0.2, 0.16, -0.6], [-0.6, -0.06, 0.15, 0.9],
+    [-0.22, -0.08, 0.17, 0.2], [0.2, -0.08, 0.17, -0.4], [0.58, -0.04, 0.15, -1.0], [-0.04, -0.34, 0.15, 0.1], [0.0, 0.0, 0.17, 0.05], [-0.38, 0.02, 0.16, 0.6], [0.38, 0.02, 0.16, -0.5]]) strawberryAt(g, x, y, r, rot);
+  // Honey poured over them in a glossy run.
+  const run = () => { g.moveTo(-0.5, -0.2); g.bezierCurveTo(-0.3, -0.34, -0.1, -0.12, 0.06, -0.24); g.bezierCurveTo(0.2, -0.32, 0.26, -0.1, 0.46, -0.16); };
+  g.globalAlpha = 0.75; strokeIn(g, rgba(HONEY), 0.045, run); g.globalAlpha = 1;
+  strokeIn(g, 'rgba(255, 240, 190, 0.85)', 0.012, () => { g.save(); g.translate(-0.008, -0.012); run(); g.restore(); });
+  // The bark's side, over the front of it all: chalk-white, round, its dark dashes, grubby at the foot.
+  const side = () => { g.moveTo(...R); front(); g.bezierCurveTo(-0.86, 0.22, -0.5, 0.6, 0, 0.6); g.bezierCurveTo(0.5, 0.6, 0.86, 0.22, ...R); g.closePath(); };
+  softIn(g, BARK, -0.18, 0.6, side, 1.05, 0.8);
+  g.save(); g.beginPath(); side(); g.clip();
+  furGlow(g, [120, 106, 88], 0.55, 0.5, 0.36, 0.4, 0.3);                                      // round: the shade side
+  furGlow(g, [255, 255, 250], 0.6, -0.42, 0.24, 0.24, 0.1, 0.3);                              // the light on its left
+  furGlow(g, [150, 120, 90], 0.35, 0, 0.6, 0.5, 0.1);                                         // grubby at the foot
+  strokeIn(g, 'rgba(58, 48, 42, 0.78)', 0.016, () => {
+    for (const [x, y, w] of [[-0.62, 0.18, 0.1], [-0.3, 0.3, 0.08], [0.06, 0.24, 0.12], [0.36, 0.34, 0.1], [0.6, 0.2, 0.08], [-0.46, 0.42, 0.08], [-0.08, 0.48, 0.1], [0.24, 0.5, 0.08], [0.5, 0.42, 0.06]]) { g.moveTo(x, y); g.quadraticCurveTo(x + w / 2, y + 0.008, x + w, y); }
+  });
+  softIn(g, [212, 160, 110], 0.32, 0.44, () => ovalAt(g, -0.16, 0.38, 0.1, 0.045, -0.1), 1.1, 0.8);   // a peeled patch, tan
+  g.restore();
+  // The rim rolled over, and the ends pinched up and lashed with root.
+  strokeIn(g, rgba(tone(BARK, 0.86)), 0.05, () => { g.moveTo(...R); front(); });
+  strokeIn(g, 'rgba(255, 255, 255, 0.9)', 0.016, () => { g.moveTo(R[0] - 0.12, R[1] + 0.06); g.bezierCurveTo(0.5, 0.17, -0.5, 0.17, L[0] + 0.12, L[1] + 0.06); });
+  strokeIn(g, rgba(tone(BARK, 0.8)), 0.022, () => { g.moveTo(...L); g.bezierCurveTo(-0.6, -0.4, 0.6, -0.4, ...R); });   // the back rim's edge
+  for (const s of [-1, 1]) {
+    const x = s * 0.78, y = -0.1;
+    strokeIn(g, rgba(tone(BARK, 0.7), 0.7), 0.012, () => { g.moveTo(s * 0.92, -0.18); g.quadraticCurveTo(s * 0.84, 0.04, s * 0.7, 0.18); });   // the fold
+    strokeIn(g, rgba(ROOT), 0.026, () => { for (let i = -1; i <= 1; i++) { g.moveTo(x + i * 0.035 - s * 0.03, y - 0.1); g.lineTo(x + i * 0.035 + s * 0.03, y + 0.1); } });
+    strokeIn(g, rgba(tone(ROOT, 1.3, 20), 0.6), 0.008, () => { for (let i = -1; i <= 1; i++) { g.moveTo(x + i * 0.035 - s * 0.03 - 0.006, y - 0.08); g.lineTo(x + i * 0.035 - 0.006, y + 0.0); } });
+  }
+  // In front: a leaf, a flower and one fallen out.
+  g.save(); g.translate(-0.5, 0.66);
+  for (const a of [-2.3, -1.57, -0.84]) {
+    g.save(); g.rotate(a + Math.PI / 2 - 0.3); g.scale(0.9, 0.9);
+    const leaflet = () => { g.moveTo(0, 0); g.bezierCurveTo(-0.1, -0.06, -0.12, -0.2, 0, -0.24); g.bezierCurveTo(0.12, -0.2, 0.1, -0.06, 0, 0); g.closePath(); };
+    softIn(g, LEAF, -0.24, 0, leaflet, 1.25, 0.66);
+    strokeIn(g, rgba(tone(LEAF, 0.6), 0.7), 0.01, () => { for (let i = 1; i <= 3; i++) { const v = -0.04 - i * 0.05; g.moveTo(-0.09 + i * 0.006, v); g.lineTo(-0.05, v + 0.012); g.moveTo(0.09 - i * 0.006, v); g.lineTo(0.05, v + 0.012); } });   // its teeth
+    strokeIn(g, rgba(tone(LEAF, 1.35, 24), 0.7), 0.012, () => { g.moveTo(0, -0.02); g.lineTo(0, -0.2); });
+    g.restore();
+  }
+  g.restore();
+  strawberryAt(g, 0.56, 0.66, 0.15, -1.3);
+  const fx = -0.24, fy = 0.72, fr = 0.1;
+  furGlow(g, [60, 50, 20], 0.3, fx + 0.02, fy + 0.04, fr * 1.2, fr * 0.6);
+  softIn(g, [252, 250, 240], fy - fr, fy + fr, () => { for (let i = 0; i < 5; i++) { const a = -Math.PI / 2 + i / 5 * TAU; ovalAt(g, fx + Math.cos(a) * fr * 0.55, fy + Math.sin(a) * fr * 0.44, fr * 0.5, fr * 0.4, a); } }, 1.05, 0.85);
+  fillIn(g, rgba([236, 196, 60]), () => ovalAt(g, fx, fy, fr * 0.3, fr * 0.24));
+  fillIn(g, rgba([200, 150, 30], 0.8), () => { for (let i = 0; i < 8; i++) { const a = i / 8 * TAU; ovalAt(g, fx + Math.cos(a) * fr * 0.26, fy + Math.sin(a) * fr * 0.2, fr * 0.05, fr * 0.05); } });
+}
+
+// ------------------------------------------------------------------ elderflower cordial
+//
+// Cordial in a round-bellied jug of pale fired clay: a little pinched lip to pour from, a looped handle, a band of brown slip
+// waved round its shoulder, a gold drip run down from the lip. In its mouth the cordial, pale gold and clear, with the tiny
+// cream florets floating in it. At its foot a whole flower head lying on its side, a lacy plate of florets on fine green
+// stalks, and the half of an apple it was steeped with.
+const JUG = [214, 178, 130], SLIP = [132, 78, 44], CORDIAL = [238, 204, 100], FLORET = [250, 244, 216];
+// An elderflower head lying tipped toward us: a flat dome of florets, rx by ry, its stalks under it.
+function elderAt(g, x, y, rx, ry) {
+  furGlow(g, [60, 50, 20], 0.35, x + 0.02, y + ry * 0.7, rx * 1.05, ry * 0.6);
+  strokeIn(g, rgba([96, 132, 56]), 0.014, () => { for (let i = 0; i < 7; i++) { const a = Math.PI * (0.12 + i * 0.126); g.moveTo(x + rx * 0.1, y + ry * 1.2); g.lineTo(x + Math.cos(a) * rx * 0.9, y + Math.sin(a) * ry * 0.6); } });
+  softIn(g, [212, 210, 168], y - ry, y + ry, () => ovalAt(g, x, y, rx, ry), 1.1, 0.75);
+  const pts = [];
+  for (let i = 0; i < 42; i++) { const t = Math.sqrt((i + 0.5) / 42), a = i * 2.39996; pts.push([x + Math.cos(a) * t * rx * 0.92, y + Math.sin(a) * t * ry * 0.88]); }
+  fillIn(g, 'rgba(120, 120, 80, 0.4)', () => { for (const [px, py] of pts) ovalAt(g, px + 0.006, py + 0.008, rx * 0.11, rx * 0.09); });
+  fillIn(g, rgba(FLORET), () => { for (const [px, py] of pts) ovalAt(g, px, py, rx * 0.1, rx * 0.085); });
+  fillIn(g, rgba([228, 210, 120]), () => { for (const [px, py] of pts) ovalAt(g, px, py, rx * 0.03, rx * 0.028); });
+  furGlow(g, [90, 90, 50], 0.35, x + rx * 0.3, y + ry * 0.4, rx * 0.6, ry * 0.5);                 // round: the shade side
+}
+function paintElderflowerCordial(g) {
+  const my = -0.42, MX = 0.3, MRY = 0.09, fy = 0.62, FX = 0.3, FRY = 0.07;   // its mouth and its foot
+  sitShadow(g, 0.04, fy + 0.06, 0.8, 0.13, 0.32);
+  // The handle, looped out on the right.
+  const handle = () => { g.moveTo(0.26, -0.28); g.bezierCurveTo(0.72, -0.38, 0.88, 0.12, 0.48, 0.32); };
+  strokeIn(g, rgba(tone(JUG, 0.62)), 0.13, handle);
+  strokeIn(g, rgba(tone(JUG, 0.9)), 0.095, handle);
+  strokeIn(g, 'rgba(255, 246, 226, 0.7)', 0.024, () => { g.moveTo(0.4, -0.33); g.bezierCurveTo(0.66, -0.36, 0.78, -0.14, 0.76, 0.0); });
+  // The body: round-bellied, narrowing up to the mouth and down to its foot.
+  const body = () => {
+    g.moveTo(-MX, my);
+    g.bezierCurveTo(-MX, my + 0.16, -0.64, -0.12, -0.64, 0.16);
+    g.bezierCurveTo(-0.64, 0.44, -0.44, fy - 0.02, -FX, fy);
+    g.ellipse(0, fy, FX, FRY, 0, Math.PI, 0, true);
+    g.bezierCurveTo(0.44, fy - 0.02, 0.64, 0.44, 0.64, 0.16);
+    g.bezierCurveTo(0.64, -0.12, MX, my + 0.16, MX, my);
+    g.ellipse(0, my, MX, MRY, 0, 0, Math.PI, true);
+    g.closePath();
+  };
+  softIn(g, JUG, my, fy + FRY, body, 1.1, 0.7);
+  g.save(); g.beginPath(); body(); g.clip();
+  furGlow(g, [110, 70, 40], 0.55, 0.42, 0.24, 0.36, 0.56);                                    // round: the shade side
+  furGlow(g, [255, 246, 226], 0.55, -0.36, 0.06, 0.12, 0.3, 0.2);                             // the light down its belly
+  furGlow(g, [120, 80, 50], 0.3, 0, fy, 0.4, 0.1);
+  // The band of slip round its shoulder, waved, and two plain lines either side of it.
+  const ring = (y, ry) => g.ellipse(0, y, 0.7, ry, 0, 0.05, Math.PI - 0.05);
+  strokeIn(g, rgba(SLIP, 0.8), 0.014, () => { ring(-0.2, 0.12); ring(0.02, 0.14); });
+  strokeIn(g, rgba(SLIP, 0.85), 0.03, () => { for (let i = 0; i <= 40; i++) { const t = 0.08 + i / 40 * (Math.PI - 0.16), px = Math.cos(t) * 0.64, py = -0.09 + Math.sin(t) * 0.13 + Math.sin(i * 0.9) * 0.025; i ? g.lineTo(px, py) : g.moveTo(px, py); } });
+  // A gold drip run down from the lip.
+  fillIn(g, rgba(tone(CORDIAL, 0.9), 0.9), () => { g.moveTo(-MX - 0.02, my + 0.02); g.quadraticCurveTo(-0.4, -0.2, -0.44, -0.04); g.arc(-0.415, -0.04, 0.026, Math.PI, 0, true); g.quadraticCurveTo(-0.37, -0.22, -MX + 0.04, my + 0.04); g.closePath(); });
+  fillIn(g, 'rgba(255, 250, 220, 0.85)', () => ovalAt(g, -0.42, -0.045, 0.008, 0.012));
+  g.restore();
+  // The lip, pinched out on the left, then the mouth: its rim, and the cordial in it with florets floating.
+  softIn(g, tone(JUG, 1.06), my - 0.1, my + 0.06, () => { g.moveTo(-MX + 0.06, my - 0.08); g.quadraticCurveTo(-MX - 0.1, my - 0.1, -MX - 0.13, my - 0.03); g.quadraticCurveTo(-MX - 0.06, my + 0.05, -MX + 0.06, my + 0.06); g.closePath(); }, 1.1, 0.8);
+  fillIn(g, rgba(tone(JUG, 1.1, 10)), () => ovalAt(g, 0, my, MX, MRY));
+  const mouth = () => ovalAt(g, 0, my + 0.006, MX - 0.045, MRY - 0.022);
+  fillIn(g, rgba([96, 62, 34]), mouth);
+  g.save(); g.beginPath(); mouth(); g.clip();
+  softIn(g, CORDIAL, my - 0.02, my + 0.08, () => ovalAt(g, 0, my + 0.024, MX - 0.05, MRY - 0.026), 1.15, 0.8);
+  furGlow(g, [255, 250, 230], 0.6, -0.08, my + 0.02, 0.14, 0.02);                             // the sky in it
+  fillIn(g, rgba(FLORET), () => { for (const [x, y] of [[0.08, 0.03], [0.14, 0.04], [-0.12, 0.04], [0.02, 0.05], [0.18, 0.02]]) ovalAt(g, x, my + y, 0.016, 0.01); });
+  furGlow(g, [60, 30, 10], 0.4, 0, my + 0.07, MX, 0.02);                                      // shaded under the front of the rim
+  g.restore();
+  strokeIn(g, 'rgba(255, 250, 236, 0.8)', 0.012, () => g.ellipse(0, my - 0.006, MX - 0.01, MRY - 0.006, 0, Math.PI + 0.3, TAU - 0.4));
+  strokeIn(g, rgba(tone(JUG, 0.7), 0.6), 0.012, () => g.ellipse(0, my, MX, MRY, 0, 0.1, Math.PI - 0.1));
+  // At its foot: the flower head on its side, and the half apple.
+  elderAt(g, -0.6, fy - 0.02, 0.26, 0.15);
+  strokeIn(g, rgba([96, 132, 56]), 0.026, () => { g.moveTo(-0.56, fy + 0.16); g.quadraticCurveTo(-0.4, fy + 0.2, -0.26, fy + 0.16); });   // its stalk
+  const ax = 0.56, ay = fy + 0.06;
+  furGlow(g, [70, 30, 14], 0.4, ax + 0.02, ay + 0.08, 0.2, 0.06);
+  softIn(g, APPLE, ay - 0.06, ay + 0.11, () => ovalAt(g, ax, ay + 0.02, 0.19, 0.09), 1.2, 0.6);   // its skin, under
+  softIn(g, FLESH, ay - 0.08, ay + 0.06, () => ovalAt(g, ax, ay - 0.012, 0.175, 0.075), 1.12, 0.86);   // the cut face
+  fillIn(g, rgba([246, 226, 170]), () => ovalAt(g, ax - 0.01, ay - 0.016, 0.13, 0.05));
+  fillIn(g, rgba([110, 64, 30]), () => { for (const a of [0.4, 2.0, 3.6, 5.2]) ovalAt(g, ax + Math.cos(a) * 0.04, ay - 0.014 + Math.sin(a) * 0.018, 0.014, 0.008, a); });   // its pips
+}
+
+// ------------------------------------------------------------------ watercress soup
+//
+// Watercress soup in the carved wooden bowl: smooth and green as the stream, lighter where the light falls on it and turning
+// in a pale swirl from the stirring, a sheen and a few small bubbles on it; sprigs of fresh cress laid on top, their round
+// leaflets glossy and dark, and one hanging out over the rim. A wisp of steam off it.
+const SOUP = [92, 146, 52], CRESS = [44, 110, 40];
+// A sprig of watercress along +x, length l: a pale stem, round leaflets in pairs, a bigger one at its tip.
+function cressAt(g, x, y, l, rot, k = 1) {
+  const rgb = tone(CRESS, k);
+  g.save(); g.translate(x, y); g.rotate(rot);
+  furGlow(g, [20, 40, 10], 0.35, l * 0.5, l * 0.1, l * 0.6, l * 0.2);
+  strokeIn(g, rgba([150, 176, 96]), l * 0.05, () => { g.moveTo(0, 0); g.quadraticCurveTo(l * 0.5, -l * 0.04, l * 0.86, 0); });
+  const leaflets = [];
+  for (const [t, f] of [[0.34, 0.8], [0.62, 1]]) for (const s of [-1, 1]) leaflets.push([l * t + l * 0.06, s * l * 0.15 * f, l * 0.15 * f, l * 0.1 * f, s * 0.6]);
+  leaflets.push([l * 0.96, 0, l * 0.21, l * 0.16, 0]);
+  for (const [lx, ly, rx, ry, a] of leaflets) {
+    softIn(g, rgb, ly - ry, ly + ry, () => ovalAt(g, lx, ly, rx, ry, a), 1.3, 0.62);
+    strokeIn(g, rgba(tone(rgb, 0.55), 0.6), l * 0.012, () => ovalAt(g, lx, ly, rx, ry, a));
+    furGlow(g, [255, 255, 236], 0.5, lx - rx * 0.25, ly - ry * 0.35, rx * 0.4, ry * 0.25, a);   // glossy
+  }
+  g.restore();
+}
+function paintWatercressSoup(g) {
+  const { cy, IX, IY } = BOWL, sy = cy + 0.05;
+  woodBowl(g, () => {
+    const top = () => ovalAt(g, 0, sy, IX - 0.03, IY - 0.04);
+    fillIn(g, rgba(SOUP), top);
+    furGlow(g, [60, 110, 36], 0.5, 0.3, sy, 0.3, 0.1);                                         // darker where it's deep
+    furGlow(g, [170, 210, 110], 0.7, -0.16, sy - 0.03, 0.46, 0.11);                           // lighter where the light falls
+    furGlow(g, [28, 60, 18], 0.55, 0.12, sy + 0.15, IX * 0.8, 0.06);                          // shaded under the front of the rim
+    strokeIn(g, 'rgba(206, 232, 160, 0.7)', 0.02, () => { g.moveTo(-0.44, sy + 0.02); g.bezierCurveTo(-0.4, sy - 0.1, 0.1, sy - 0.12, 0.16, sy - 0.03); g.bezierCurveTo(0.2, sy + 0.05, -0.14, sy + 0.08, -0.16, sy + 0.0); g.quadraticCurveTo(-0.15, sy - 0.05, -0.04, sy - 0.04); });   // the swirl from the stirring
+    furGlow(g, [255, 255, 240], 0.45, -0.36, sy - 0.08, 0.16, 0.03, -0.05);                   // the sky in it
+    strokeIn(g, 'rgba(230, 246, 200, 0.75)', 0.008, () => { for (const [x, y, r] of [[0.36, sy - 0.08, 0.022], [0.44, sy - 0.03, 0.014], [-0.5, sy + 0.06, 0.016], [0.28, sy + 0.08, 0.012]]) ovalAt(g, x, y, r, r * 0.6); });   // small bubbles
+    cressAt(g, -0.5, sy - 0.04, 0.4, -0.35, 0.92);
+    cressAt(g, 0.46, sy - 0.1, 0.36, Math.PI + 0.4, 0.96);
+    cressAt(g, -0.16, sy + 0.04, 0.44, -0.15, 1.05);
+  });
+  // A sprig hanging out over the rim at the right.
+  cressAt(g, 0.4, cy + 0.12, 0.4, 0.5, 1.1);
+  // A wisp of steam off it.
+  strokeIn(g, 'rgba(255, 255, 250, 0.3)', 0.035, () => { g.moveTo(-0.16, -0.12); g.bezierCurveTo(-0.26, -0.32, -0.06, -0.42, -0.14, -0.64); g.moveTo(0.16, -0.1); g.bezierCurveTo(0.1, -0.26, 0.28, -0.34, 0.2, -0.54); });
+}
+
+// ------------------------------------------------------------------ sorrel and mushrooms
+//
+// Mushrooms fried in the clay pan with sorrel melted down into a sour little sauce: the sauce a soft olive-gold, buttery at
+// the edges; the mushrooms halved and seared gold, a whole cap or two; the sorrel leaves gone khaki and limp where they
+// melted in, lying among them, and one fresh arrow-headed leaf laid bright on top at the last.
+const SAUCE = [176, 160, 78], MELTED = [132, 128, 50];
+function paintSorrelMushrooms(g) {
+  const { cy, IX, IY } = CLAY_PAN;
+  const melted = (x, y, len, w, rot, bend, k = 1) => {
+    const rgb = tone(MELTED, k);
+    g.save(); g.translate(x, y); g.rotate(rot);
+    softIn(g, rgb, -w, w, () => leafPath(g, 's', len, w, bend), 1.3, 0.7);
+    strokeIn(g, rgba(tone(rgb, 1.4, 24), 0.5), w * 0.12, () => { g.moveTo(len * 0.04, 0); g.quadraticCurveTo(len * 0.5, bend * w * 0.6, len * 0.9, bend * w * 0.92); });
+    furGlow(g, [255, 250, 210], 0.35, len * 0.45, -w * 0.3, len * 0.2, w * 0.2);               // glossy with the sauce
+    g.restore();
+  };
+  clayPan(g, () => {
+    softIn(g, SAUCE, cy - IY * 0.8, cy + IY, () => ovalAt(g, 0, cy + 0.03, IX * 0.96, IY * 0.86), 1.2, 0.72);
+    furGlow(g, [130, 100, 40], 0.45, 0, cy + 0.03, IX * 0.9, IY * 0.8, 0, 0.6);                 // the sauce browned at its edge
+    strokeIn(g, 'rgba(255, 236, 160, 0.55)', 0.016, () => g.ellipse(0, cy + 0.03, IX * 0.9, IY * 0.8, 0, Math.PI + 0.5, TAU - 0.4));
+    melted(-0.1, cy - 0.12, 0.5, 0.13, -2.8, 0.4, 0.86);
+    melted(0.12, cy - 0.1, 0.5, 0.13, -0.3, -0.4, 0.9);
+    capAt(g, -0.5, cy - 0.06, 0.56, -0.25);
+    halfShroomAt(g, -0.06, cy - 0.12, 0.64, 0.1, FRIED);
+    halfShroomAt(g, 0.44, cy - 0.04, 0.6, 0.4, FRIED);
+    melted(-0.3, cy + 0.08, 0.4, 0.11, 2.9, -0.4, 1.0);
+    melted(0.5, cy + 0.06, 0.36, 0.1, -2.6, 0.4, 0.96);
+    halfShroomAt(g, -0.22, cy + 0.08, 0.6, -0.35, FRIED);
+    capAt(g, 0.22, cy + 0.12, 0.5, 0.2);
+    melted(0.04, cy + 0.12, 0.36, 0.1, -0.5, 0.4, 1.06);
+    fillIn(g, 'rgba(255, 252, 230, 0.85)', () => { ovalAt(g, -0.4, cy + 0.14, 0.014, 0.009); ovalAt(g, 0.52, cy + 0.12, 0.012, 0.008); ovalAt(g, 0.08, cy - 0.02, 0.012, 0.008); });   // the sauce glinting
+  });
+  // The fresh leaf laid on top at the last, its point over the rim.
+  leafAt(g, 's', 0.06, cy - 0.04, 0.44, 0.12, -0.6, 0.3, 1.08);
+}
+
 // The painted dishes by name, in the order of their numbers ('dish:' + n): a new one goes at the end.
 const PAINTED = [
   ['Roast mushrooms', paintRoastMushrooms],
@@ -1072,6 +1392,11 @@ const PAINTED = [
   ['Mushrooms with hazelnuts', paintMushroomsHazelnuts],
   ['Dandelion fritters', paintDandelionFritters],
   ["A forager's mess", paintForagersMess],
+  ['Roast wild garlic', paintRoastGarlic],
+  ['Strawberries and honey', paintStrawberriesHoney],
+  ['Elderflower cordial', paintElderflowerCordial],
+  ['Watercress soup', paintWatercressSoup],
+  ['Sorrel and mushrooms', paintSorrelMushrooms],
 ];
 const NAMES = PAINTED.map(p => p[0]);
 function paint(g, size, U, n) {
