@@ -128,7 +128,7 @@ function shortOfScreen() {
 function resize() {
   if (shortOfScreen()) document.documentElement.style.setProperty('--home-bar', '0px');
   else document.documentElement.style.removeProperty('--home-bar');
-  dpr = Math.min(pixelRatio(), saverOn ? SAVER_DPR : 3);   // (a phone's own 3x: capped at 2 it's a little soft, so only when battery saver asks)
+  dpr = Math.min(pixelRatio(), saverOn ? SAVER_DPR : 3, SHARP[sharp].most);   // (a phone's own 3x: capped at 2 it's a little soft, so only when battery saver asks)
   // The CSS sizes the canvas: in Safari on a phone it reaches under the clock and the address bar, past innerHeight.
   vw = canvas.clientWidth || innerWidth; vh = canvas.clientHeight || innerHeight;
   if (SPLIT) {
@@ -17882,6 +17882,7 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'ask-later') askIdeas(false);
   else if (t.dataset.act === 'ask-send') sendIdea();
   else if (t.dataset.act === 'sound') toggleSound();
+  else if (t.dataset.act === 'sharp') { setSharp(); toast(`🔍 ${['Sharp picture', 'Softer picture — quicker on a big screen', 'Softest picture — quickest'][sharp]}`); }
   else if (t.dataset.act === 'saver') { toggleSaver(); toast(saverOn ? '🍃 Battery saver on — the meadow takes it easy' : '🍃 Battery saver off'); }
   else if (t.dataset.act === 'story') { ui.allStory = !ui.allStory; renderInspector(); }
   else if (t.dataset.thing) goToThing(t.dataset.thing);
@@ -18431,6 +18432,19 @@ function toggleSaver(on = !saverOn) {
   if (gov.rung < gov.floor) { gov.rung = gov.floor; govApply(); }
   const l = $('#saver-item .l'); if (l) l.textContent = `Battery saver is ${on ? 'on' : 'off'}`;
 }
+// The picture's sharpness (••• menu): a big retina screen on a weak GPU (an Intel Mac's) spends its frames filling pixels,
+// which the governor can't see (its render ms is the page's own work, not the GPU's). Drawing at 1.5x or 1x is the player's
+// choice, never the governor's (see above: soft, and at 1.5x Safari's sprites may jitter). Only shown on a screen past 1x.
+const SHARP = [{ most: 3, l: 'Sharp<span class="x"> picture</span>' }, { most: 1.5, l: 'Softer<span class="x"> picture, quicker</span>' },
+  { most: 1, l: 'Softest<span class="x"> picture, quickest</span>' }];
+let sharp = 0;
+function setSharp(n = (sharp + 1) % SHARP.length) {
+  const was = sharp;
+  sharp = n;
+  if (n !== was) resize();
+  try { localStorage.setItem('aeon-garden-sharp', String(n)); } catch (e) { /* fine */ }
+  const l = $('#sharp-item .l'); if (l) l.innerHTML = SHARP[n].l;
+}
 // Low and unplugged (where the browser tells us: Chrome): start a rung down, before the heat
 // builds. iOS says nothing; the governor's frame times answer there instead.
 if (navigator.getBattery) navigator.getBattery().then(b => {
@@ -18812,6 +18826,8 @@ if (!IDEAS_KEY) $('[data-act="ideas"]').remove();
 // make sound after a click or key press, so a remembered "on" waits for the first one.
 try { if (localStorage.getItem('aeon-garden-sound') === '1') toggleSound(true); } catch (e) { /* fine */ }
 try { if (localStorage.getItem('aeon-garden-saver') === '1') toggleSaver(true); } catch (e) { /* fine */ }
+try { const n = +localStorage.getItem('aeon-garden-sharp'); if (n > 0 && n < SHARP.length) setSharp(n); } catch (e) { /* fine */ }
+if (pixelRatio() <= 1) $('#sharp-item').remove();
 
 for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => { if (ui.sound) Sound.start(); }, { once: true });
 
