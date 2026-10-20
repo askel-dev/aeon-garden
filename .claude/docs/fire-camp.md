@@ -36,8 +36,14 @@ Torches (PLAN.md stage 7; the comment over `paintTorch`): a stick of birch bark 
 to its side, kneels (`fireFrame` 'torch' → 'set', `TORCH_SET_MS`) pushing it in, spends it, and strikes once, which is
 when `S.placeTorch` sets it lit; then it watches the flame (`lit`). `drawTorch` draws the real ones with the trees and
 animals: `paintTorch`'s three looks (`TORCH_ARTS`: burning, guttering over its last fifth, then the stub) and the
-sharper flame set (`TORCH_FLAME_ART`, centred on the crown). Still to come, in step 3: its glow and pool cut out of the
-night (so it reads at night), the crackle, and the fire message that shows it to friends.
+sharper flame set (`TORCH_FLAME_ART`, centred on the crown). Its light is `lightsFrame`'s (a lantern's pool, `TORCH_LIGHT` of a fire's, dimmer guttering, none from the stub), it crackles
+near (`torchSound`), and friends see it set down (`sendFire('torch')`). One guttering or burnt out (`torchLow`: its last fifth,
+drawTorch's look, or the stub) wants bark: a hover says so (`torchWord`, through `hoverLine`, as `fireWord`; nothing while it
+burns well), and a click, a tap, or E standing by it with bark (`barkTorch`) walks over and lights it again (`clickTorch`,
+`goFire` kind 'relight': the generic 'set' kneel, one birch bark spent through `spendBuild`'s `RELIGHT` table, one strike,
+`S.relightTorch`, then a `firstTime`). Without bark it says what's missing where it stands and doesn't walk. `torchAt` only
+finds the ones that want bark, so a click on one burning well is a walk there. Friends get `sendFire('torchre')`, and
+`meadowSum` counts which torches burn as well as how many.
 Making camp (sim.js `w.camp`, event 'camp': the first fire lit) is a moment (`campMoment`, the comment over
 `CAMP_FLARE`): the flames flare (`fireShown`), the light blooms out (`lightsFrame`) with a warm glow, two fountains of sparks,
 twinkling stars, a wave of light out to the ring and motes rising off it (`campBurst`, in `drawFireGlows`; `CAMP_PARTY_MS`), a felt-piano flourish (sound.js `camp`), the camera eases in and leans to the fire and back
@@ -92,7 +98,10 @@ trunk, a rock, a burrow or another torch (`torchSpot`, like `fireSpot` but close
 recipes.js `BUILDS.torch`, spent by game.js). It burns `TORCH_BURN` (half a day, 6 min at 1x), quicker in the wet as a fire's
 blowing is (`TORCH_WET`, `BLOW_WET`'s table), then its charred stub stays `TORCH_STUB` (a day) before it's gone. At most
 `TORCH_MAX` (20) burn at once: laying one past that gutters the oldest, its stub staying. It gives light, no warmth (game.js
-draws its pool). `torchTick`, every `TORCH_EVERY` ticks, looks only at the torches; no random numbers. A meadow kept before them
+draws its pool). `relightTorch` lights one guttering or out again (game.js has spent the bark): a fresh `TORCH_BURN`,
+`born` moved to now so it isn't the next one guttered, and the same `TORCH_MAX`. The water coming up over one puts it out
+(`torchUnder`: deep and not frozen, so the spring flood over the shallows it stood in, or the thaw under one on the ice; looked
+at in `torchTick`), and one under the water won't relight. Shallows don't touch it. `torchTick`, every `TORCH_EVERY` ticks, looks only at the torches; no random numbers. A meadow kept before them
 gets none (`unpackWorld`), no `KEEP_VERSION` bump.
 The camp's basket (`w.camp.basket`, `basketOf`, null till it's made: `makeBasket`, where `basketSpot` allows, inside the ring
 and clear of the fire, rocks and trunks) keeps `BASKET_SLOTS` slots of `STACK`, laid out as the satchel's (`bag`, `bagN`), and
