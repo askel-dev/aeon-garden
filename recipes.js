@@ -63,7 +63,7 @@ const INGREDIENTS = {
   clay:        { name: 'Clay',                tags: ['earth'],          fill: 0,   icon: '🟤', raw: false, text: 'Cool, heavy and red-grey. It holds the shape of your thumb.', where: 'On the muddy banks, right by the water.' },
   birchbark:   { name: 'Birch bark',          stack: 20, tags: ['tinder'],         fill: 0,   icon: '📜', raw: false, text: 'Papery curls that catch even when damp.', where: 'Under the birches, and a little way out from them.' },
   // Made, not found (made: true keeps it out of the book's Finds): BUILDS.rope twists it at the Craft strip.
-  rope:        { name: 'Rope',                stack: 5, tags: ['cord'],           fill: 0,   icon: '🪢', raw: false, made: true, text: 'Dry grass twisted into a rope. Tie it to a friend (L) and lead them about.', where: 'Twisted from dry grass at the Craft strip, with friends here.' },
+  rope:        { name: 'Rope',                stack: 5, tags: ['cord'],           fill: 0,   icon: '🪢', raw: false, made: true, text: 'Dry grass twisted into a rope. Tie it to a friend (L) and lead them about.', where: 'Twisted from dry grass at the Craft strip.' },
 };
 
 // The dishes. Only name and needs are a must. The rest, when left out:
@@ -325,7 +325,6 @@ const BUILDS = {
     name: 'Rope',
     needs: { drygrass: 5 },
     makes: 'rope',
-    after: 'together',
     text: 'Dry grass twisted and plied into a rope, to tie to a friend and lead them about.',
   },
 };

@@ -91,7 +91,7 @@ with the host's name from its peer, or `the meadow's keeper` till it's known. Th
 has the makings of one, without glowing ready. It goes as the keeper makes them, or when the guest leaves.
 
 A rope, playing together (2026-10-20; the comment over game.js `ROPE_REACH`): a lead, as in Minecraft. It's twisted from five dry
-grass at the Craft strip (recipes.js `BUILDS.rope`, `makes: 'rope'`, `after: 'together'`: offered only while friends are here;
+grass at the Craft strip (recipes.js `BUILDS.rope`, `makes: 'rope'`, always on offer;
 `makeThing` puts it straight in the satchel, no spot picked) and is an ingredient of its own (`INGREDIENTS.rope`, `made: true`
 keeps it out of the book's Finds; painted in items.js `paintRope`). L, or the round rope button above the hug's on a touch screen
 (`#rope-btn`, `ropeBtnFrame`), ties it to the nearest friend within `ROPE_REACH` who isn't on a rope already (`ropeTarget`); L again

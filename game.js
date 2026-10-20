@@ -11639,7 +11639,7 @@ const FIND_KINDS = S.FIND_KINDS;
 const FIND_ARTS = Array.from({ length: FIND_KINDS.length * 4 }, (_, i) => 'find:' + i);
 const FIND_PX = { dandelion: 1.9, sorrel: 1.8, strawberry: 2.1, elderflower: 2.5, hazelnut: 1.8, rosehip: 2.5, watercress: 2.0,   // next to a rabbit
   stick: 1.9, pebble: 1.35, drygrass: 1.8, birchbark: 1.5, clay: 1.4 };
-const FIND_SWAY = 1.6;                                                      // plants bend more than trunks
+const FIND_SWAY = 2.3;                                                     // plants bend more than trunks
 const FIND_STILL = { stick: 1, pebble: 1, birchbark: 1, clay: 1 };          // (what lies on the ground and doesn't grow)
 const FIND_GROW = 0.2, FIND_OVER = 0.4;   // days it takes to come up, and its last days, fading
 const findStage = f => (f.kind === 'rosehip' ? S.seasonOf(world.tick) === 3 : f.kind === 'watercress' && world.frozen) ? 1 : 0;   // (bare; in the ice)
@@ -17875,7 +17875,7 @@ function heardHug(m, now) {
   hugHearts(f.x, f.y);
 }
 // A rope, playing together (a lead, as in Minecraft): twisted from dry grass at the Craft strip (recipes.js BUILDS.rope,
-// offered only while friends are here) and carried in the satchel. L, or the round rope button while a friend stands
+// always on offer) and carried in the satchel. L, or the round rope button while a friend stands
 // within ROPE_REACH, ties it to the nearest; from then on that friend goes where you lead. Who holds whom goes out in
 // each pos (ld), so everyone draws the rope (drawRopes) and the one tied knows it. Only its own page moves a forager, so
 // the one tied pulls itself along (ropeFrame): past ROPE_LEN it walks back towards you, at your pace or quicker, and past
