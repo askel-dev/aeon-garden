@@ -262,7 +262,7 @@ how fast it's burning just now, `wet`): a stick wrapped in birch bark pushed int
 trunk, a rock, a burrow or another torch (`torchSpot`, like `fireSpot` but closer), lit at once (`placeTorch`; what one takes is
 recipes.js `BUILDS.torch`, spent by game.js). It burns `TORCH_BURN` (half a day, 6 min at 1x), quicker in the wet as a fire's
 blowing is (`TORCH_WET`, `BLOW_WET`'s table), then its charred stub stays `TORCH_STUB` (a day) before it's gone. At most
-`TORCH_MAX` (12) burn at once: laying one past that gutters the oldest, its stub staying. It gives light, no warmth (game.js
+`TORCH_MAX` (20) burn at once: laying one past that gutters the oldest, its stub staying. It gives light, no warmth (game.js
 draws its pool). `torchTick`, every `TORCH_EVERY` ticks, looks only at the torches; no random numbers. A meadow kept before them
 gets none (`unpackWorld`), no `KEEP_VERSION` bump.
 The camp's basket (`w.camp.basket`, `basketOf`, null till it's made: `makeBasket`, where `basketSpot` allows, inside the ring

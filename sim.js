@@ -6267,7 +6267,7 @@ const fireHeat = F => (F.lit ? 0.45 + 0.55 * clamp(F.fuel / FIRE_LOW, 0, 1) : F.
 const TORCH_BURN = TPD / 2;             // ticks it burns (6 min at 1x)
 const TORCH_STUB = TPD;                 // ticks its charred stub stays once it's out (gone by the next evening)
 const TORCH_WET = { rain: 1.5, storm: 2, snow: 1.3 };   // it burns this much faster in the wet
-const TORCH_MAX = 12;                   // burning at once: a 13th gutters the oldest
+const TORCH_MAX = 20;                   // burning at once: a 21st gutters the oldest
 const TORCH_GAP = 0.5;                  // tiles it keeps from another torch, a trunk, a rock or a burrow
 const TORCH_EVERY = 15;                 // ticks between its looks (half a second at 1x)
 // Every field a torch ever has: where it stands, the tick it was set down, the ticks of flame left (0 out, negative as

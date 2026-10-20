@@ -3747,8 +3747,8 @@ const FEED_MS = 520, FEED_AT = 0.5;      // ms putting a stick on takes, and how
 const SIT_MS = 1600, SIT_NEAR = 1.7;     // standing still this long this near a lit fire, it kneels to warm its hands (from its side, STAND_OFF)
 const FLAME_H = 0.62;                    // a fed fire's flames, in its size
 const LIGHT_TILES = 8;                   // how far a fed fire's light reaches at night
-const TORCH_LIGHT = 0.4;                 // a torch's reach, as a share of a fire's: a lantern's pool, not a hearth's
-const LIGHT_MAX = 16;                    // lights a frame at most (fires and torches): each pool is a picture the GPU blends
+const TORCH_LIGHT = 0.7;                 // a torch's reach, as a share of a fire's: a ring of them lights a whole camp
+const LIGHT_MAX = 24;                   // lights a frame at most (fires and torches): each pool is a picture the GPU blends
 const LIGHT_FLAT = 0.72;                 // the light lies on the ground: an oval this much as tall as wide
 const FLICKER_MS = 90;                   // the light in the dark flickers in steps this long
 const SMOKES = 7, EMBERS_UP = 9;         // smoke puffs and embers drifting up off a fire at once, at most
@@ -4395,12 +4395,12 @@ function lightsFrame(now) {
   for (const T of world.torches) {
     if (T.burn <= 0) continue;                            // (the charred stub gives no light at all)
     const low = T.burn < S.TORCH_BURN * 0.2, glow = low ? 0.30 : 0.55;
-    const fl = 0.85 + 0.1 * Math.sin(step / 3 + T.born) + 0.05 * Math.sin(step / 1.3 + 2 * T.born);
+    const fl = 0.95 + 0.03 * Math.sin(step / 3 + T.born) + 0.02 * Math.sin(step / 1.3 + 2 * T.born);
     const r = LIGHT_TILES * TORCH_LIGHT * z * (0.85 + 0.15 * glow) * fl;
     const sx = (T.x - cam.x) * z + vw / 2, sy = (T.y - cam.y) * z + vh / 2;
     if (!visible(sx, sy, r)) continue;                    // (a row of torches off screen must not eat the slots)
     const y = sy - torchPx(z) * TORCH_FOOT * 0.5;         // (its foot: the pool lies on the ground there)
-    lightAdd(sx, y, r, (low ? 0.42 : 0.62) * fl, Math.hypot(sx - cx, y - cy));
+    lightAdd(sx, y, r, (low ? 0.5 : 0.72) * fl, Math.hypot(sx - cx, y - cy));
   }
 }
 // How bright a light's pool lies over a point, u of the way through it (the falloff the pool's cut and the warm over what
