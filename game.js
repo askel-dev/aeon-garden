@@ -4857,6 +4857,19 @@ function renderBuild() {
     el.setAttribute('aria-label', el.title);
   }
   renderMakeStrip();
+  renderPlaceBar();
+}
+// The little bar of round buttons while a spot is picked (placeFire): Turn (only for builds with a facing), Put it here,
+// Not now. It changes only when placing starts or stops (renderBuild) or the ok state flips (placeAt).
+const placeUi = { on: false, turn: false, ok: null };
+function renderPlaceBar() {
+  const el = $('#place-bar');
+  if (!el) return;
+  const P = ui.place, on = !!P;
+  if (on !== placeUi.on) { el.classList.toggle('hidden', !on); placeUi.on = on; }
+  if (!on) { placeUi.ok = null; return; }
+  const turns = !!PLACE_TURNS[P.build];
+  if (turns !== placeUi.turn) { $('#place-turn').classList.toggle('hidden', !turns); placeUi.turn = turns; }
 }
 // Each build's painting for the button and the strip's tiles: painted once, a small picture (a blob's address, as
 // vesselIcon's). A build with no painter yet gets no painting (the tile keeps to its words).
@@ -4864,7 +4877,7 @@ const BUILD_ART = {
   campfire: (g, size, U) => paintFire(g, size, U, 7),   // (laid, its flames up)
   basket: (g, size, U) => paintBasket(g, size, U, 0),   // (shut)
   torch: (g, size, U) => paintTorch(g, size, U, 0),     // (burning, its crown glowing)
-  seat: (g, size, U) => paintSeat(g, size, U, 0),
+  seat: (g, size, U) => paintSeat(g, size, U, SEAT_TURN0),
 };
 const BUILD_ICONS = {};
 function buildIconURL(id) {
@@ -5097,14 +5110,16 @@ function drawBasket(B, z, now) {
   drawEmoji(BASKET_ARTS[basketAny(B) ? 1 : 0], sx, sy - BASKET_FOOT * p / 2, p);
   ctx.globalAlpha = 1;
 }
-// The camp's seat log (sim.js w.camp.seat): a round log on two sawn rounds, lying a little turned (S.SEAT_TILT), its near end
-// showing its rings. Painted once ('seat:0', SEAT_ART) for the meadow and the make strip's tile. It's solid (sim.js rocksFor);
-// a click on it walks the forager to just in front (goSeat), and standing still there it sits on it (sitFrame), lifted onto
-// the log (seatLift), its hands in its lap, eyes shut and smiling when a fire burns at camp.
+// The camp's seat log (sim.js w.camp.seat): a round log on two sawn rounds, lying turned (its ghost's turn, or its own for
+// a laid one). Painted once ('seat:0'..'seat:7', SEAT_ARTS) for the meadow and the make strip's tile. It's solid (sim.js
+// rocksFor); a click on it walks the forager to just in front (goSeat), and standing still there it sits on it (sitFrame),
+// lifted onto the log (seatLift), its hands in its lap, eyes shut and smiling when a fire burns at camp.
 const SEAT_BUILD = 'seat';               // recipes.js BUILDS: the seat log the make strip offers once there's a camp
 const SEAT_FOOT = 0.5;                   // where the ground under its middle is in its painting (of its half-size, down from the middle)
-const SEAT_ART = 'seat:0';               // (made once: a frame builds no names)
-const SEAT_SIZE = 2;                     // its painting's box: its half-size about a tile
+const SEAT_TURNS = [-Math.PI / 4, -Math.PI / 6, -Math.PI / 12, 0, Math.PI / 12, Math.PI / 6, Math.PI / 4, S.SEAT_TILT];   // its 7 turn steps, then the old tilt (kept seats, index 7: not reachable by turning)
+const SEAT_TURN0 = 3;                    // a new seat's turn: straight across (0°)
+const SEAT_ARTS = SEAT_TURNS.map((_, i) => 'seat:' + i);   // (made once: a frame builds no names)
+const SEAT_SIZE = 2;                     // its painting's box: its half-size about a tile (holds the log at ±45°)
 const SEAT_R = 0.15, SEAT_Y = 0.37;      // the log's girth, and its line's height over the ground (of its half-size)
 const SEAT_BUM = SEAT_Y + SEAT_R * 0.45; // where one sits on it: over the ground (of its half-size)
 const SEAT_MS = 250;                     // standing still this long in front of it, it sits
@@ -5112,10 +5127,10 @@ const SIT_HIPS = 0.18;                   // fur.js sitPose: its hips over its fe
 const seatPx = z => (8 + z) * SEAT_SIZE;
 const mySeat = () => (world && world.camp && world.camp.seat) || null;
 const BARK = [150, 98, 60], WOOD_CUT = [228, 186, 130];
-function paintSeat(g, size, U) {
+function paintSeat(g, size, U, n) {
   g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
   g.lineCap = g.lineJoin = 'round';
-  g.translate(0, SEAT_FOOT); g.rotate(S.SEAT_TILT);                                               // (the ground under its line at y 0)
+  g.translate(0, SEAT_FOOT); g.rotate(SEAT_TURNS[n]);                                               // (the ground under its line at y 0)
   const L = S.SEAT_HALF * 0.95, R = SEAT_R, ay = -SEAT_Y, top = ay - R, bot = ay + R, ex = 0.075, INK = rockRGB(tone(BARK, 0.4));
   furGlow(g, [40, 30, 16], 0.42, 0.03, 0, L + 0.22, 0.12, 0, 0.5);                                 // its shadow on the ground
   for (const x of [-L * 0.62, L * 0.62]) {                                                        // the two rounds it rests on, their rings to you
@@ -5158,26 +5173,32 @@ function paintSeat(g, size, U) {
 function drawSeat(Q, z) {
   const px = seatPx(z), sx = (Q.x - cam.x) * z + vw / 2, sy = (Q.y - cam.y) * z + vh / 2;
   if (Q.ghost) ctx.globalAlpha = Q.ok ? 0.6 : 0.3;          // (where one would go: ui.place)
-  drawEmoji(SEAT_ART, sx, sy - SEAT_FOOT * px / 2, px);
+  drawEmoji(SEAT_ARTS[Q.ghost ? Q.turn : seatArtIndex(Q.turn)], sx, sy - SEAT_FOOT * px / 2, px);
   if (Q.ghost) ctx.globalAlpha = 1;
+}
+// The art a laid log's turn (radians) is drawn with: the nearest of its turn steps, and the old tilt for kept seats.
+function seatArtIndex(rad) {
+  let best = 0, bd = Infinity;
+  for (let i = 0; i < SEAT_TURNS.length; i++) { const d = Math.abs(SEAT_TURNS[i] - rad); if (d < bd) { bd = d; best = i; } }
+  return best;
 }
 // The seat log under a point on screen (its painting, a little wider for a finger), or null.
 function seatAt(sx, sy) {
   const Q = mySeat();
   if (!Q) return null;
   const z = cam.zoom, h = seatPx(z) / 2, m = fingerTap ? FINGER_R * 0.5 : 0, x = (Q.x - cam.x) * z + vw / 2;
-  const y = (Q.y - cam.y) * z + vh / 2 + Math.tan(S.SEAT_TILT) * (sx - x);   // (the ground under its line, there)
+  const y = (Q.y - cam.y) * z + vh / 2 + Math.tan(Q.turn) * (sx - x);   // (the ground under its line, there)
   return Math.abs(sx - x) < S.SEAT_HALF * h + m && sy > y - (SEAT_Y + SEAT_R) * h - 4 - m && sy < y + 4 + m ? Q : null;
 }
 // Off to sit on it: to just in front of its middle (sitFrame sits it down once it's still there).
 function goSeat() {
   const Q = mySeat();
-  S.foragerTo(world, Q.x, Q.y + S.SEAT_OUT);
+  S.foragerTo(world, Q.x - Math.sin(Q.turn) * S.SEAT_OUT, Q.y + Math.cos(Q.turn) * S.SEAT_OUT);   // (just in front of its middle, along its normal)
   ui.gather = null; ui.fire = null; ui.queue.length = 0; ui.mark = null;
   if (ui.selectedId || ui.picked) select(0);
 }
 // How far up its painting is lifted to sit on the seat log Q from where it stands, x, y (of its size, px: drawFigure's lift).
-const seatLift = (Q, x, y, z, px) => ((y - Q.y - Math.tan(S.SEAT_TILT) * (x - Q.x)) * z + SEAT_BUM * seatPx(z) / 2 - SIT_HIPS * px / 2) / px;
+const seatLift = (Q, x, y, z, px) => ((y - Q.y - Math.tan(Q.turn) * (x - Q.x)) * z + SEAT_BUM * seatPx(z) / 2 - SIT_HIPS * px / 2) / px;
 // The basket under a point on screen (a little wider for a finger), or null.
 function basketAt(sx, sy) {
   const B = myBasket();
@@ -5667,11 +5688,12 @@ function setupLarder() {
 
 // Picking where: a faint fire in front of the forager (a mouse moves it about; a finger taps or drags it where it's
 // wanted) within PLACE_REACH, and a click or a tap lays it there. One where it can't go is fainter, and a click there
-// says why.
+// says why. The little bar of round buttons (renderPlaceBar) turns, lays and cancels it.
+const PLACE_TURNS = { seat: 7 };             // build id -> turn steps (only the seat log has a facing)
 function placeFire(open) {
   if (!open) { ui.place = null; renderBuild(); return; }
   const F = world.forager, a = F.heading;
-  ui.place = { x: F.x, y: F.y, ok: false, why: '', ghost: true, fire: true, build: BUILD };
+  ui.place = { x: F.x, y: F.y, ok: false, why: '', ghost: true, fire: true, build: BUILD, turn: 0 };
   placeAt(F.x + Math.cos(a) * 1.4, F.y + Math.sin(a) * 1.4 * 0.9 + 0.2);
   chime('click');
   renderBuild();
@@ -5680,7 +5702,7 @@ function placeFire(open) {
 // when it can't (sim.js basketSpot).
 function placeBasket() {
   const F = world.forager, a = F.heading;
-  ui.place = { x: F.x, y: F.y, ok: false, why: '', ghost: true, basket: true, build: BASKET_BUILD };
+  ui.place = { x: F.x, y: F.y, ok: false, why: '', ghost: true, basket: true, build: BASKET_BUILD, turn: 0 };
   placeAt(F.x + Math.cos(a) * 1.4, F.y + Math.sin(a) * 1.4 * 0.9 + 0.2);
   chime('click');
   renderBuild();
@@ -5688,7 +5710,7 @@ function placeBasket() {
 // The seat log's spot, picked the same way (ui.place, seat: true); inside the camp's ring too (sim.js seatSpot).
 function placeSeat() {
   const F = world.forager, a = F.heading;
-  ui.place = { x: F.x, y: F.y, ok: false, why: '', ghost: true, seat: true, build: SEAT_BUILD };
+  ui.place = { x: F.x, y: F.y, ok: false, why: '', ghost: true, seat: true, build: SEAT_BUILD, turn: SEAT_TURN0 };
   placeAt(F.x + Math.cos(a) * 1.4, F.y + Math.sin(a) * 1.4 * 0.9 + 0.2);
   chime('click');
   renderBuild();
@@ -5698,7 +5720,7 @@ function placeSeat() {
 function placeTorch(open) {
   if (!open) { ui.place = null; renderBuild(); return; }
   const F = world.forager, a = F.heading;
-  ui.place = { x: F.x, y: F.y, ok: false, why: '', ghost: true, torch: true, build: TORCH_BUILD };
+  ui.place = { x: F.x, y: F.y, ok: false, why: '', ghost: true, torch: true, build: TORCH_BUILD, turn: 0 };
   placeAt(F.x + Math.cos(a) * 1.4, F.y + Math.sin(a) * 1.4 * 0.9 + 0.2);
   chime('click');
   renderBuild();
@@ -5707,18 +5729,28 @@ function placeAt(x, y) {
   const P = ui.place, F = world.forager, d = Math.hypot(x - F.x, y - F.y);
   if (d > PLACE_REACH) { x = F.x + (x - F.x) * PLACE_REACH / d; y = F.y + (y - F.y) * PLACE_REACH / d; }
   P.x = x; P.y = y;
-  P.why = P.torch ? S.torchSpot(world, x, y) : P.build === BASKET_BUILD ? S.basketSpot(world, x, y) : P.build === SEAT_BUILD ? S.seatSpot(world, x, y) : S.fireSpot(world, x, y);
+  P.why = P.torch ? S.torchSpot(world, x, y) : P.build === BASKET_BUILD ? S.basketSpot(world, x, y) : P.build === SEAT_BUILD ? S.seatSpot(world, x, y, SEAT_TURNS[P.turn]) : S.fireSpot(world, x, y);
   if (!P.why && !standAt(x, y, F.x)) P.why = 'No room to kneel by it';
   P.ok = !P.why;
+  if (P.ok !== placeUi.ok) { placeUi.ok = P.ok; const b = $('#place-ok'); if (b) b.classList.toggle('no', !P.ok); }
 }
 function placeHere(sx, sy) {
   const P = ui.place;
   if (sx !== undefined) placeAt(...toWorld(sx, sy));
   if (!P.ok) { if (!P.torch) say(P.why, P.x, P.y); chime('click'); return; }   // (a torch's reason is already drawn by its faint one: drawFireHint)
   ui.place = null;
-  goFire({ kind: P.torch ? 'torch' : P.build === BASKET_BUILD ? 'basket' : P.build === SEAT_BUILD ? 'seat' : 'build', build: P.build, F: null, x: P.x, y: P.y });
+  goFire({ kind: P.torch ? 'torch' : P.build === BASKET_BUILD ? 'basket' : P.build === SEAT_BUILD ? 'seat' : 'build', build: P.build, F: null, x: P.x, y: P.y, turn: P.turn });
   renderBuild();
 }
+// Turns the build being placed one step (d: 1 or -1), if it has a facing: the seat log's 15° steps, wrapping.
+function turnPlace(d) {
+  const P = ui.place;
+  if (!P || !PLACE_TURNS[P.build]) return;
+  P.turn = (P.turn + d + PLACE_TURNS[P.build]) % PLACE_TURNS[P.build];
+  placeAt(P.x, P.y);                                     // (the spot check depends on the angle)
+  chime('click');
+}
+let turnWheelAt = 0;                                     // when Shift + wheel last turned (throttled: a trackpad streams)
 // Where the forager kneels to see to a fire at x, y: at its side, the one toward from (its x), or the other if that's
 // in the water; null with neither.
 const standPt = [0, 0];
@@ -5738,7 +5770,7 @@ function goFire(t) {
   if (!at) { say('No room to kneel by it', t.x, t.y); return; }
   const [x, y] = at;
   walkTo(...toScreen(x, y));
-  ui.fire = { kind: t.kind, build: t.build, F: t.F, x: t.x, y: t.y, sx: x, sy: y, stage: 'go', t0: performance.now(), step: -1, heat: 0, blowing: false, caught: 0,
+  ui.fire = { kind: t.kind, build: t.build, turn: t.turn || 0, F: t.F, x: t.x, y: t.y, sx: x, sy: y, stage: 'go', t0: performance.now(), step: -1, heat: 0, blowing: false, caught: 0,
     puff: 0, breath: 0, blownAt: 0, held: 0, pot: [], src: [], land: [], drop: [], fedAt: 0, want: '', shown: -1 };   // (want: a dish from the book, for the pot once there; src: the store each thing in the pot came from; drop: where each thing in the pot fell from, kw)
 }
 // The fire under a point on screen (its ring as drawn, a little wider for a finger), or null.
@@ -5829,9 +5861,9 @@ function fireFrame(now, dt) {
       fireStage(j, 'weave', now);
     } else if (j.kind === 'seat') {                       // (the seat log: rolled into place where it was put)
       const id = j.build || SEAT_BUILD;
-      const why = S.seatSpot(world, j.x, j.y), got = !why && spendBuild(id);
+      const why = S.seatSpot(world, j.x, j.y, SEAT_TURNS[j.turn]), got = !why && spendBuild(id);
       if (!got) { say(why || 'Something\'s missing', j.x, j.y); ui.fire = null; renderBuild(); return; }
-      sendFire('seat', S.makeSeat(world, j.x, j.y), 0, 0);
+      sendFire('seat', S.makeSeat(world, j.x, j.y, SEAT_TURNS[j.turn]), 0, 0);
       renderBuild();
       fireStage(j, 'set', now);
       chime('stick');
@@ -6013,8 +6045,9 @@ function sitFrame(now) {
   if (f.walking || f.down >= 0 || ui.gather || ui.place || fg.emote >= 0) return;
   const Q = mySeat();                                      // (just in front of the seat log, along it: on it, facing you)
   if (Q && fg.stillMs >= SEAT_MS) {
-    const dx = f.x - Q.x, dy = f.y - Q.y - Math.tan(S.SEAT_TILT) * dx;
-    if (Math.abs(dx) < S.SEAT_HALF * 0.75 && dy > 0 && dy < S.SEAT_OUT + 0.3) {
+    const t = Q.turn, dx = f.x - Q.x, dy = f.y - Q.y;
+    const u = dx * Math.cos(t) + dy * Math.sin(t), v = -dx * Math.sin(t) + dy * Math.cos(t);   // (in the log's own frame: along it, and in front)
+    if (Math.abs(u) < S.SEAT_HALF * 0.75 && v > 0 && v < S.SEAT_OUT + 0.3) {
       fireSit.seat = Q; fireSit.warm = world.fires.some(F => F.lit && S.inCamp(world, F.x, F.y));
       return;
     }
@@ -6083,7 +6116,7 @@ function drawFireHint(now) {
 
 // Playing together: a fire laid, fed or lit goes to the others, with the tick it was on (applyNet does it there).
 function sendFire(a, F, n, tinder) {
-  if (Net && Net.on) Net.send({ t: 'fire', a, x: F.x, y: F.y, n, tn: tinder, tick: world.tick });
+  if (Net && Net.on) Net.send({ t: 'fire', a, x: F.x, y: F.y, n, tn: tinder, tick: world.tick, r: F.turn || 0 });   // (r: the seat's turn, radians; 0 elsewhere)
 }
 // Playing together: the basket's slots a move changed (against what they were, was and wasN), to the others as they are
 // now, [slot, id, n] each, so two moving different things at once both land; heard, they're set so there too (applyNet).
@@ -6103,7 +6136,7 @@ function basketNet(m) {
   renderSatchel();                                         // (the pot's tiles too: this one's was holding it)
 }
 function fireNet(m) {
-  if (m.a === 'seat') { S.makeSeat(world, m.x, m.y); renderBuild(); return; }          // (the camp's seat log: set down here too)
+  if (m.a === 'seat') { S.makeSeat(world, m.x, m.y, +m.r || 0); renderBuild(); return; }          // (the camp's seat log: set down here too, turned as there)
   if (m.a === 'basket') { S.makeBasket(world, m.x, m.y); renderCookBasket(); return; }   // (the camp's basket: set down here too)
   if (m.a === 'torch') {                               // (a friend's torch: pushed in where it stands, as much of its night left)
     if (!world.torches.some(T => Math.abs(T.x - m.x) < 1e-3 && Math.abs(T.y - m.y) < 1e-3))
@@ -15814,6 +15847,7 @@ function liftFinger(e) {
 
 canvas.addEventListener('pointerdown', e => {
   if (!world) return;                     // (a kept meadow still opening)
+  if (ui.place && e.button === 2) { placeFire(false); return; }   // (picking a spot: a right click, not now)
   if (e.button === 2 || (e.ctrlKey && e.pointerType === 'mouse')) return;
   if (chatOpen() && chatAway(e)) return;
   canvas.setPointerCapture(e.pointerId);
@@ -15902,7 +15936,11 @@ canvas.addEventListener('pointerup', e => {
     drag = null;
     return;
   }
-  if (ui.place && drag) { placeHere(e.clientX, e.clientY); drag = null; return; }   // (picking a spot for a fire: there)
+  if (ui.place && drag) {                 // (picking a spot: a mouse lays it there; a finger only moved the ghost, lifting doesn't build)
+    if (e.pointerType !== 'mouse') placeAt(...toWorld(e.clientX, e.clientY));
+    else placeHere(e.clientX, e.clientY);
+    drag = null; return;
+  }
   if (drag?.steer) {                                    // (held: it runs on to where it was let go, and picks what it was let go on)
     const u = useAt(e.clientX, e.clientY);
     if (u && u.kind !== 'animal') useIt(u, true, false); else walkTo(e.clientX, e.clientY, true);
@@ -15928,6 +15966,11 @@ canvas.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') { 
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
+  if (ui.place && e.shiftKey) {                        // (picking a spot: Shift + wheel turns it, not a zoom)
+    const now = performance.now();
+    if (now - turnWheelAt >= 120) { turnWheelAt = now; turnPlace(e.deltaY > 0 ? 1 : -1); }
+    return;
+  }
   const unit = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? innerHeight : 1;   // Firefox's wheel counts lines (3 a notch, Chrome's 100 px)
   cam.goal = null; zoomTo = null;   // a mouse wheel, a trackpad's pinch or its two-finger scroll up and down: zoom
   zoomOn(cam.zoom * Math.exp(-e.deltaY * unit * (e.ctrlKey ? 0.012 : 0.0018)));
@@ -15938,7 +15981,7 @@ canvas.addEventListener('wheel', e => {
 // goes and picks it (goGather); anywhere else, the forager walks there and the panel shuts (walkTo).
 function click(sx, sy, run = false) {
   clearTimeout(tapAway); tapAway = 0;
-  if (ui.place) { placeHere(sx, sy); return; }            // (picking a spot for a fire: there)
+  if (ui.place) { (fingerTap ? placeAt(...toWorld(sx, sy)) : placeHere(sx, sy)); return; }   // (picking a spot: a mouse lays it there; a finger only moves the ghost)
   const pi = cooking() ? potThingAt(sx, sy) : -1;
   if (pi >= 0) { potTake(pi); return; }                    // (a thing in the pot: back out)
   if (!cooking() && foragerHit(sx, sy) && !basketAt(sx, sy) && !stoneAt(sx, sy) && !gatherAt(sx, sy)) { partyTap(); return; }   // (on the forager itself: the easter egg's taps; standing by the basket or something to pick, the click is theirs)
@@ -16279,7 +16322,7 @@ function meadowSum(w) {
   for (const F of w.fires) h = (h * 31 + (F.lit ? 2 : 1) + (F.cookDish ? 4 : 0)) | 0;   // (the fires, which burn and which have a pot on: not their sticks or how far it's cooked, which a late word shifts a little)
   h = (h * 31 + w.torches.length) | 0;                    // (the torches: a friend's word for one lands on its tick, so both sides agree)
   for (const T of w.torches) h = (h * 31 + (T.burn > 0 ? 2 : 1)) | 0;   // (and which burn: a relit one is lit on both sides)
-  if (w.camp && w.camp.seat) h = (h * 31 + 5 + Math.round(w.camp.seat.x * 64) * 3 + Math.round(w.camp.seat.y * 64)) | 0;   // (the seat log: present, and where)
+  if (w.camp && w.camp.seat) h = (h * 31 + 5 + Math.round(w.camp.seat.x * 64) * 3 + Math.round(w.camp.seat.y * 64) + Math.round(w.camp.seat.turn * 64)) | 0;   // (the seat log: present, where, and how it's turned)
   const B = w.camp && w.camp.basket;
   if (B) for (let k = 0; k < B.bag.length; k++) h = (h * 31 + B.bag[k].length + B.bagN[k] * 7) | 0;   // (and the basket: two who took the last of a thing at once come out even)
   return h;
@@ -17169,6 +17212,9 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'make-close') openMake(false);
   else if (t.dataset.act === 'basket') basketPressed();     // (the basket's, by it)
   else if (t.dataset.act === 'sprint') { sprintSet(!sprintUi.on); chime('click'); }   // (run between the picks, or walk again)
+  else if (t.dataset.act === 'place-turn') turnPlace(1);   // (the placing bar: turn it)
+  else if (t.dataset.act === 'place-ok') placeHere();      // (the placing bar: put it here)
+  else if (t.dataset.act === 'place-x') placeFire(false);  // (the placing bar: not now)
   else if (t.dataset.act === 'swing') swing();             // (friendly fire, the X of a touch screen)
   else if (t.dataset.act === 'hug') hug();                 // (the G of a touch screen)
   else if (t.dataset.act === 'larder-close') openLarder(false);
@@ -17319,6 +17365,7 @@ document.addEventListener('keydown', e => {
   if (e.key === ' ') { e.preventDefault(); setSpeed(ui.speed ? 0 : 1); }
   else if (e.key === 'Escape') stepOut();
   else if (e.key === 'Enter' && ui.place) { e.preventDefault(); placeHere(); }   // (picking a spot for a fire: where the faint one is)
+  else if ((e.key === 'r' || e.key === 'R') && ui.place) { e.preventDefault(); turnPlace(1); }   // (turning the seat log)
   else if ((e.key === 'Enter' || e.key === 't') && Net && Net.on) { e.preventDefault(); openChat(true); }
   else if (e.code === 'KeyE' && !e.repeat) {               // (at a lit fire: its cooking card, and again shuts it; by the basket or the stone: its card; else pick)
     e.preventDefault();                                    // (E opens the stone: its letter mustn't land in the line that takes the focus)

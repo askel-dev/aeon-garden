@@ -5,7 +5,12 @@
 The campfire (sim.js `w.fires`; its rules under sim.js below; the long comment over game.js's `FIRE_SIZE` has it all): the round make
 button by the satchel (`#build`, `renderBuild`; above the satchel on an upright touch screen, beside it with the basket and the book on a phone on its side) shows the build most worth doing (`buildFocus`) with a ring filling in as the satchel
 holds what that takes. Before there's a camp that's the campfire alone (recipes.js `BUILDS.campfire`: 6 pebbles, 5 sticks, 2 tinder), so a tap does what the fire button always did; with more, a tap opens the make strip (below). F stays the quick campfire wherever. A tap on a ready one picks a spot (`ui.place`, a faint fire
-following the mouse, within `PLACE_REACH`; sim.js `fireSpot` says why not). The forager kneels side on (fur.js `FORAGER_KNEEL`,
+following the mouse, within `PLACE_REACH`; sim.js `fireSpot` says why not). Picking a spot works the same for every build: a mouse
+moves the faint one and a click lays it; a finger's tap or drag only moves it, and lifting never builds. While a spot is picked
+a small bar of round brass buttons sits over the satchel (`#place-bar`, `renderPlaceBar`; over the make button and the vitals on
+an upright touch screen): ✕ not now, ✓ put it here (dimmed, `.no`, while it can't go there, a tap still says why), ↻ turn it,
+shown only for a build with a facing (`PLACE_TURNS`: the seat log's 7 steps). R and Shift + wheel turn it too (`turnPlace`,
+`ui.place.turn`, an index), a right click, Esc or Back put it away, Enter lays it. The forager kneels side on (fur.js `FORAGER_KNEEL`,
 `KNEEL_VIEW`), lays it a piece at a time (`LAY_STEPS`), strikes (`STRIKES`), and you hold (mouse, finger or F: `blowHeld`) to
 blow till it catches (`blowFrame`, `BLOW_S`, longer in the wet); let go too soon and it only smokes. A quick tap while it blows
 is one breath more (`puff`, `BLOW_PUFF`, as one held breath; it never walks the forager away), and a tap well off the fire
@@ -76,8 +81,8 @@ it (`larderFrame`, `stepOut`). Playing together it's shared: the host makes it (
 
 The seat log (`BUILDS.seat`, five sticks, `where: 'camp'`) goes down the basket's way: `placeSeat` (`ui.place` with `seat: true`,
 `S.seatSpot` for the why), `goFire` kind `'seat'`, the generic `'set'` kneel (`TORCH_SET_MS`), which for a seat ends the job
-instead of striking, then a `firstTime`. Painted once (`paintSeat`, `SEAT_ART`, also the strip's tile): a round log on two sawn
-rounds, turned a little (`S.SEAT_TILT`), about two foragers long; drawn by `drawSeat`. It's solid. A click on it (`seatAt`) walks
+instead of striking, then a `firstTime`. Painted once a turn (`paintSeat`, `SEAT_ARTS`, `SEAT_TURNS`: 15° steps from -45° to 45°, then the old tilt for a seat kept
+from before it turned; `SEAT_TURN0` for the strip's tile): a round log on two sawn rounds, turned as it was placed, about two foragers long; drawn by `drawSeat`. It's solid. A click on it (`seatAt`) walks
 the forager to just in front (`goSeat`, `S.SEAT_OUT`), and standing still there `SEAT_MS` (`sitFrame`, `fireSit.seat`) it sits
 on it: fur.js `sitPose` (`KNEEL.sit`, `KNEEL.sitWarm` with a fire lit at camp: eyes shut, smiling), facing you, lifted onto the
 log by `seatLift` (as a dance's hop is, `fg.lift`; a friend's from its `kn`), with no shadow of its own. Friends get
@@ -117,7 +122,7 @@ and clear of the fire, rocks and trunks) keeps `BASKET_SLOTS` slots of `STACK`, 
 a collapse doesn't touch it. `moveBetween` and `moveInto` move a slot between any two of them, `putAway` the whole satchel in.
 A camp kept before baskets gets none (`unpackWorld`), no `KEEP_VERSION` bump.
 The seat log (`w.camp.seat`, `seatOf`, null till `makeSeat`) is scenery with no store, `SEAT_HALF` either side of its middle
-and turned `SEAT_TILT`. It's solid: `rocksFor` puts a row of `SEAT_SOLID` circles along it into `solidR` (`makeSeat` clears
+and turned its own `turn` (radians: what it was placed at; a seat kept from before gets `SEAT_TILT` in `unpackWorld`; friends get it as the fire word's `r`). It's solid: `rocksFor` puts a row of `SEAT_SOLID` circles along it into `solidR` (`makeSeat` clears
 `solidW` so they're added). `seatSpot` measures to its line (`seatEnds`): the fire, basket, torches, rocks, trunks, brambles
 and burrows; `seatNear` is how far a point is from it, which keeps the fire, torch and basket spots clear. A camp kept before
 it gets `seat: null` (`unpackWorld`), no `KEEP_VERSION` bump.

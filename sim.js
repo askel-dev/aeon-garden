@@ -6479,11 +6479,11 @@ const SEAT_TILT = 0.12;                 // how far it's turned, its right end to
 const SEAT_DEEP = 0.2;                  // tiles from its line to its side, on the ground
 const SEAT_SOLID = 5;                   // circles along it that the forager can't step into
 const SEAT_OUT = SEAT_DEEP + FORAGER_GIRTH + 0.04;   // tiles in front of its line where it sits down from
-const seatOf = (x, y, made) => ({ seat: true, x, y, made });
+const seatOf = (x, y, made, turn) => ({ seat: true, x, y, made, turn: turn || -0 });   // (turn: its angle in radians; -0 so a whole 0 keeps the fraction layout)
 // Its two ends, into seatAx, seatAy, seatBx, seatBy (left, then right).
 let seatAx = 0, seatAy = 0, seatBx = 0, seatBy = 0;
 function seatEnds(Q) {
-  const c = Math.cos(SEAT_TILT) * SEAT_HALF, s = Math.sin(SEAT_TILT) * SEAT_HALF;
+  const c = Math.cos(Q.turn) * SEAT_HALF, s = Math.sin(Q.turn) * SEAT_HALF;
   seatAx = Q.x - c; seatAy = Q.y - s; seatBx = Q.x + c; seatBy = Q.y + s;
 }
 // How far x, y is from the seat log's line (Infinity: there's none).
@@ -6493,13 +6493,13 @@ function seatNear(w, x, y) {
   seatEnds(Q);
   return segDist(x, y, seatAx, seatAy, seatBx, seatBy);
 }
-function seatSpot(w, x, y) {
+function seatSpot(w, x, y, turn = SEAT_TILT) {
   if (!w.camp) return 'Make camp first';
   if (w.camp.seat) return 'There\'s a seat at camp';
   if (!inCamp(w, x, y)) return 'Inside the camp';
   const i = idx(x, y);
   if (w.water[i]) return 'Not in the water';
-  seatEnds({ x, y });
+  seatEnds({ x, y, turn });
   const ax = seatAx, ay = seatAy, bx = seatBx, by = seatBy, near = (px, py) => segDist(px, py, ax, ay, bx, by);
   for (const F of w.fires) if (near(F.x, F.y) < 1.0) return 'Too near the fire';
   if (w.camp.basket && near(w.camp.basket.x, w.camp.basket.y) < 0.95) return 'The basket\'s here';
@@ -6514,9 +6514,9 @@ function seatSpot(w, x, y) {
   return '';
 }
 // Sets it down at x, y (game.js has taken what it takes out of the satchel; a friend's is only set down). Returns it.
-function makeSeat(w, x, y) {
+function makeSeat(w, x, y, turn = SEAT_TILT) {
   if (!w.camp || w.camp.seat) return null;
-  w.camp.seat = seatOf(x, y, w.tick);
+  w.camp.seat = seatOf(x, y, w.tick, turn);
   solidW = null;                                          // (it's in the way now: rocksFor again)
   emit(w, { type: 'seat', seat: w.camp.seat });
   return w.camp.seat;
@@ -7268,7 +7268,10 @@ function unpackWorld(kept) {
   }
   else for (const fire of w.fires) if (fire.litAt >= 0) { campAt(w, fire); break; }   // (kept with a fire lit before camps came)
   if (w.camp && !w.camp.seat) w.camp.seat = null;          // (kept before the seat log: none yet)
-  else if (w.camp) asFractions(w.camp.seat, ['x', 'y']);
+  else if (w.camp) {
+    if (w.camp.seat.turn === undefined) w.camp.seat.turn = SEAT_TILT;   // (kept before it could be turned: it looks as it did)
+    asFractions(w.camp.seat, ['x', 'y', 'turn']);
+  }
   if (!w.stone) w.stone = stoneOf(w);                   // (kept before the old stone: it's put up as it opens)
   else asFractions(w.stone, ['x', 'y']);
   if (F.health === undefined) F.health = 1;            // (kept before health: well)

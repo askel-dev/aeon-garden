@@ -1189,6 +1189,26 @@
   #sprint-btn.on svg { opacity: 1; }
   #sprint-btn:active { transform: translateY(1px); }
   body:has(#book:not(.hidden)) #sprint-btn, body:has(#inspector.open) #sprint-btn { visibility: hidden; }
+  /* ---- the placing bar (game.js renderPlaceBar): round brass buttons while a spot is picked, over the satchel as the
+     make strip is. ✕ on the left, ✓ in the middle (a little larger), ↻ on the right; the turn button only for builds with
+     a facing, and the ✓ dims (.no) while the spot won't do. */
+  #place-bar { position: fixed; z-index: 5; left: 50%; bottom: calc(var(--bottom) + 80px); transform: translateX(-50%); display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: 16px;
+    background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); animation: larder-in 0.2s ease-out;
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+  #place-bar .pb { position: relative; flex: none; width: 44px; height: 44px; padding: 0; border: none; border-radius: 50%; font-size: 0; cursor: pointer;
+    color: var(--ink); background: linear-gradient(180deg, #fffaf0, #f1e5c9); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 2px 0 #a8742a, 0 4px 12px rgba(70, 55, 25, 0.25); }
+  #place-bar .pb svg { position: absolute; inset: 10px; width: auto; height: auto; }
+  #place-bar .pb.ok { width: 50px; height: 50px; }        /* the ✓, a little larger */
+  #place-bar .pb.ok svg { inset: 11px; }
+  #place-bar .pb.no { opacity: 0.45; }                    /* dimmed while the spot won't do: a tap still says why */
+  #place-bar .pb:active { transform: translateY(2px); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 0 0 #a8742a; }
+  @media (pointer: coarse) {
+    #place-bar .pb { width: 54px; height: 54px; }
+    #place-bar .pb.ok { width: 60px; height: 60px; }
+    #place-bar .pb svg { inset: 12px; }
+    #place-bar .pb.ok svg { inset: 13px; }
+  }
+  body:has(#book:not(.hidden)) #place-bar, body:has(#inspector.open) #place-bar { visibility: hidden; }
   /* ---- the swing button (game.js swingFrame): a touch screen only, while a friend stands near; a tap swings at them as X
      does. Right above the sprint's, under the right thumb. */
   #swing-btn { position: fixed; z-index: 4; right: var(--right); bottom: calc(var(--bottom) + 192px); width: 54px; height: 54px; padding: 0; border: none; border-radius: 50%;
@@ -1378,6 +1398,7 @@
     #vitals { bottom: calc(var(--bottom) + 128px); }
     #chat:not(.open) { bottom: calc(var(--bottom) + 154px); }
     body:has(#build:not(.hidden)) #chat:not(.open) { bottom: calc(var(--bottom) + 154px); }
+    #place-bar { bottom: calc(var(--bottom) + 160px); }   /* (over the make button and the vitals) */
   }
   /* A phone on its side has width to spare and little height: the round buttons go back beside the satchel's ends (the basket
      and the fire left, the book right), its slots a little smaller so the row fits a 667 px screen, and the bar and the chat's
@@ -1392,6 +1413,7 @@
     #swing-btn { bottom: calc(var(--bottom) + 150px); }
     #hug-btn { bottom: calc(var(--bottom) + 204px); }
     #vitals { bottom: calc(var(--bottom) + 62px); }
+    #place-bar { bottom: calc(var(--bottom) + 96px); }   /* (just over the vitals) */
     #chat:not(.open), body:has(#build:not(.hidden)) #chat:not(.open) { bottom: calc(var(--bottom) + 88px); }
   }
   @media (max-width: 760px), (max-height: 500px) {
@@ -1588,6 +1610,13 @@
 <div id="make" class="hidden" role="dialog" aria-label="Make">
   <div class="mk-tiles"></div>
   <button class="close" data-act="make-close" title="Never mind (Esc)" aria-label="Never mind">✕</button>
+</div>
+
+<!-- the placing bar (game.js renderPlaceBar): Turn, Put it here, Not now, while a spot is picked -->
+<div id="place-bar" class="hidden" role="group" aria-label="Placing it">
+  <button id="place-x" class="pb" data-act="place-x" title="Cancel (Esc)" aria-label="Not now"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M10 10l12 12M22 10L10 22" stroke="#8a5a32" stroke-width="3" stroke-linecap="round" fill="none"/></svg></button>
+  <button id="place-ok" class="pb ok" data-act="place-ok" title="Place (Enter)" aria-label="Put it here"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M8 17.2l5.6 5.6L24.4 11" stroke="#5a3c22" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></button>
+  <button id="place-turn" class="pb hidden" data-act="place-turn" title="Turn (R)" aria-label="Turn it"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M25.6 16A9.6 9.6 0 1 1 22.9 9.3" stroke="#8a5a32" stroke-width="2.6" stroke-linecap="round" fill="none"/><path d="M22.3 3.8v6h-6" stroke="#8a5a32" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></button>
 </div>
 
 <!-- the old stone: a line to talk to it on, over the satchel (game.js, the old stone) -->
