@@ -197,7 +197,7 @@ Gl2d.addPaths(proto, emit)             // emit(kind, matrix, params, colour): th
 | 5 | `05-call-sites.md` | Sonnet | 1 | game.js (listed call sites only) |
 | 6 | `06-integrate.md` | **Opus** | 2, 3, 4, 5 | game.js, gl2d*.js, index.html |
 | 7 | `07-parity.md` | **Opus** (fixes may go to Sonnet) | 6 | anything in the drawing |
-| 8 | `08-measure-ship.md` | **Opus**, docs to Sonnet | 7 | CLAUDE.md, .claude/rules/game.md, game.js (default) |
+| 8 | `08-measure-ship.md` | **Opus**, docs to Sonnet | 7 | CLAUDE.md, .claude/docs/, game.js (default) |
 | 9 | `09-one-layer.md` (optional) | **Opus** | 8 | ground.js, gl2d.js, game.js |
 
 - **Parallel:** after stage 1, stages 3, 4 and 5 can run at once. They touch different files, and the interface above

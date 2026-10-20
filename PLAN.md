@@ -545,7 +545,7 @@ builds go behind **one make button**, and the first new build is a **torch** you
   in four), the walk now buys two sheets, not one, and the camp's own bark covers a campfire's tinder (2) on its own.
 - Three seeds, two years: nothing the cooking needs died out (hives with queens, fish, frogs, rabbits), the other ground finds
   stand as they did (sticks 29 to 46, pebbles 13 to 14, dry grass 7, clay 7 to 8), pack/unpack round-trips. No `KEEP_VERSION`
-  bump: a kept meadow's finds are plain data. recipes.js's birch bark `where` and `.claude/rules/ecology.md` say the new place.
+  bump: a kept meadow's finds are plain data. recipes.js's birch bark `where` and `.claude/docs/plants.md` say the new place.
 
 ### A torch's crackle, and a torch to friends (2026-10-19)
 - sound.js: `state.torch` and `state.torchPan`, fed beside `fire` and `pot` in `Sound.update`. `tickAmbience` rolls

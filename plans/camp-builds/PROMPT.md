@@ -11,9 +11,9 @@ Read, in this order, before writing anything:
 1. `CLAUDE.md` — the rules, above all "Keep it smooth" and "Paint once, copy after". They are law.
 2. `PLAN.md` — "Stage 7: making things (one make button), and torches", especially "Building it" 4 and "The make button
    and strip built"; then "After that" 3 (camp builds) and 8 (winter).
-3. `.claude/rules/game.md` — the campfire, make strip, basket and larder-card notes (roughly lines 119–185); they are
+3. `.claude/docs/fire-camp.md` — the campfire, make strip, basket and larder-card notes; they are
    the conventions the new builds should join.
-4. `.claude/rules/ecology.md` — the camp and store notes (roughly lines 256–271).
+4. the sim.js part of the same file — the camp and store notes.
 5. The code, in this order: `recipes.js` `BUILDS` (and `checkRecipes`'s `BUILDS` loop), `sim.js`'s camp and store blocks
    (`inCamp`, `basketSpot`/`basketOf`/`makeBasket`, `worldStores`, `storesAt`, `stackOf`, `LATER`, `unpackWorld`'s camp
    branch), then `game.js`'s `buildHave`/`spendBuild`, `buildMade`/`makeList`/`buildFocus`, `renderBuild`, `BUILD_ART`,
@@ -226,7 +226,7 @@ The camp is `w.camp`, in `LATER`, so new fields on it need no `KEEP_VERSION` bum
     repaints. If anything looks slower, measure `render` before and after and put the numbers in the report.
 11. Notes: a short "### The camp builds (date)" under stage 7 in `PLAN.md` (what was built, costs, the rack's keep rule,
     the lean's shelter, the friends' messages), the closing "step 4" line updated, one paragraph in
-    `.claude/rules/game.md` and one in `.claude/rules/ecology.md`. Keep them short and in the existing voice.
+    the game.js part of `.claude/docs/fire-camp.md` and one in its sim.js part. Keep them short and in the existing voice.
 
 ## Report back
 

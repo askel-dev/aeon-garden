@@ -42,7 +42,7 @@ in `plans/webgl/RESULTS.md`: medians, % saved, and render JS ms.
   - New: a canvas repainted in place needs `ctx.touched?.(c)`, and a freed one goes through `freeImage`.
   - New: what gl2d can't draw: clips other than axis-aligned rects, `shadowBlur`, gradients and patterns as fills,
     per-frame text. Paint those into a picture once.
-- **`.claude/rules/game.md`:** a short section on gl2d (the files, the stats in `?perf`, `touched`/`forget`, the scenes
+- **`.claude/docs/files.md`:** a short section on gl2d (the files, the stats in `?perf`, `touched`/`forget`, the scenes
   and pixdiff tools).
 - The memory file of the session that runs this (not the repo): what was learnt about measuring power on the iPhone.
 
