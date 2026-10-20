@@ -1450,7 +1450,6 @@ function render(now) {
 
   // Pop-ups above the dark. Not in the intro: its lines tell the story.
   drawPops(shown, now);
-  drawBasketPrompt(now);
   drawStonePrompt(now);                                    // (by the old stone: its face and E)
   drawCookPrompt(now);                                     // (near a lit fire with something to cook: the pot over it)
   if (world.fires.length) drawCookBars(now);                         // (a pot cooking: the bar over its fire)
@@ -8619,7 +8618,7 @@ const CAMP_COOK_LINE = 'I could cook something on this fire.';
 const HINT_EVERY = 0.3, HINT_SPREAD = 0.25;   // a day: the least between hints, and up to this much more
 const HINT_GAP = 90000;                   // ms between hints at the least, whatever the speed
 const HINT_FIRST = 0.06;                  // a day after camp is made before the first
-let PROMPT_ART = null, PROMPT_RELIGHT = null, PROMPT_BLOW = null, PROMPT_BASKET = null, PROMPT_STONE = null;
+let PROMPT_ART = null, PROMPT_RELIGHT = null, PROMPT_BLOW = null, PROMPT_STONE = null;
 // What's drawn over a fire and where it was drawn (each frame: filled in as it's drawn, cleared as it stops being drawn):
 // its disc (promptUi — the pot to cook with, the flame to light again, the breath to blow on, each with its key beside it)
 // or a line over it (hintLine: 'Needs a stick'; blowHint: the breath disc and 'Hold to blow', while it's being blown on).
@@ -8635,8 +8634,8 @@ const keyboardy = matchMedia('(hover: hover) and (pointer: fine)');
 // dish's) in it, and (where there's a keyboard) an E key.
 function promptArt(relight, v = 'pot') {
   const key = keyboardy.matches && !fingerTap;
-  const blow = relight === 'blow', bask = relight === 'basket', st = relight === 'stone',
-    cur = blow ? PROMPT_BLOW : bask ? PROMPT_BASKET : st ? PROMPT_STONE : relight ? PROMPT_RELIGHT : PROMPT_ART;
+  const blow = relight === 'blow', st = relight === 'stone',
+    cur = blow ? PROMPT_BLOW : st ? PROMPT_STONE : relight ? PROMPT_RELIGHT : PROMPT_ART;
   if (cur && cur.key === key && (relight || cur.v === v)) return cur;
   const k = Math.max(2, dpr), R = 17, W = key ? R * 2 + 26 : R * 2, H = R * 2 + 4, c = document.createElement('canvas'), g = c.getContext('2d');
   c.width = Math.ceil((W + 4) * k); c.height = Math.ceil((H + 4) * k);
@@ -8650,14 +8649,6 @@ function promptArt(relight, v = 'pot') {
       g.beginPath(); g.moveTo(R - 11, R + dy); g.lineTo(R - 11 + len, R + dy);
       g.bezierCurveTo(R + 9 + len * 0.4, R + dy, R + 9 + len * 0.4, R + dy - 5, R + 4 + len * 0.4, R + dy - 4); g.stroke();
     }
-  } else if (bask) {                                               // a little wicker basket, to open the camp's
-    g.strokeStyle = '#8a6030'; g.lineWidth = 2.2; g.lineCap = 'round';
-    g.beginPath(); g.arc(R, R - 1, 9, Math.PI * 1.05, Math.PI * 1.95); g.stroke();
-    g.fillStyle = '#c4893f'; g.beginPath(); g.moveTo(R - 11, R - 1);
-    g.bezierCurveTo(R - 11, R + 10, R - 7, R + 12, R, R + 12); g.bezierCurveTo(R + 7, R + 12, R + 11, R + 10, R + 11, R - 1); g.closePath(); g.fill();
-    g.strokeStyle = '#8a6030'; g.lineWidth = 1.2; g.stroke();
-    g.beginPath(); g.moveTo(R - 10, R + 3); g.lineTo(R + 10, R + 3); g.moveTo(R - 8, R + 7.5); g.lineTo(R + 8, R + 7.5); g.stroke();
-    g.fillStyle = '#c4382a'; g.beginPath(); g.arc(R - 4, R - 2, 3.4, 0, TAU); g.arc(R + 4, R - 3, 3, 0, TAU); g.fill();
   } else if (st) {                                                 // a little standing stone with its face, to talk to it
     g.fillStyle = '#9a958a'; g.beginPath(); g.moveTo(R - 9, R + 11);
     g.bezierCurveTo(R - 11, R + 3, R - 10, R - 8, R - 5, R - 12); g.quadraticCurveTo(R, R - 14, R + 5, R - 12);
@@ -8694,7 +8685,7 @@ function promptArt(relight, v = 'pot') {
     g.fillText(blow ? 'F' : 'E', x + s / 2, y + s / 2 + 1);
   }
   const art = { img: c, w: W + 4, h: H + 4, r: R, key, v };
-  if (blow) PROMPT_BLOW = art; else if (bask) PROMPT_BASKET = art; else if (st) PROMPT_STONE = art; else if (relight) PROMPT_RELIGHT = art; else PROMPT_ART = art;
+  if (blow) PROMPT_BLOW = art; else if (st) PROMPT_STONE = art; else if (relight) PROMPT_RELIGHT = art; else PROMPT_ART = art;
   asBitmap(c, b => { art.img = b; });
   return art;
 }
@@ -8711,7 +8702,7 @@ function drawCookPrompt(now) {
   hintLine.on = false;                                    // (its line, drawn again below if there's one to draw)
   const f = world.forager;
   let F = null;
-  if (f.down < 0 && (!ui.fire || ui.fire.stage === 'lit') && !ui.place && !intro.on) {
+  if (f.down < 0 && (!ui.fire || ui.fire.stage === 'lit') && !ui.place && !intro.on && !basketByE() && !stoneByE()) {   // (one disc at a time: the one E goes to)
     let best = PROMPT_NEAR;
     for (const o of world.fires) { const d = Math.hypot(o.x - f.x, o.y - f.y); if (d < best && (o.lit || S.cookReady(o))) { F = o; best = d; } }   // (a lit fire to cook at, or a dish to take)
     if (!F) F = relightFire();
@@ -8736,20 +8727,6 @@ function drawCookPrompt(now) {
   ctx.drawImage(a.img, Math.round(x - a.r - 2), Math.round(y - a.r - 2), a.w, a.h);
   ctx.globalAlpha = 1;
 }
-// The same disc by the camp's basket, with its E key, while E would open it (basketByE): a tap on it opens it too.
-const basketDisc = { on: false, x: 0, y: 0, w: 0, h: 0, t0: 0 };
-function drawBasketPrompt(now) {
-  const B = myBasket();
-  if (!B || cooking() || larderOpen() || !basketByE()) { basketDisc.on = false; return; }
-  if (!basketDisc.on) basketDisc.t0 = now;
-  const a = promptArt('basket'), z = cam.zoom, sx = (B.x - cam.x) * z + vw / 2, sy = (B.y - cam.y) * z + vh / 2;
-  const x = sx, y = sy + basketPx(z) * 0.3 + a.r + 3 * Math.sin(now / 500);
-  basketDisc.on = true; basketDisc.x = x - a.r - 2; basketDisc.y = y - a.r - 2; basketDisc.w = a.w; basketDisc.h = a.h;
-  ctx.globalAlpha = clamp((now - basketDisc.t0) / PROMPT_IN, 0, 1) * (0.88 + 0.12 * Math.sin(now / 700));
-  ctx.drawImage(a.img, Math.round(basketDisc.x), Math.round(basketDisc.y), a.w, a.h);
-  ctx.globalAlpha = 1;
-}
-const basketPromptAt = (sx, sy) => { const pad = fingerTap ? 12 : 4, b = basketDisc; return b.on && sx >= b.x - pad && sx <= b.x + b.w + pad && sy >= b.y - pad && sy <= b.y + b.h + pad; };
 // The same disc over the old stone, with its E key, while E would open it (stoneByE): a tap on it opens it too.
 const stoneDisc = { on: false, x: 0, y: 0, w: 0, h: 0, t0: 0 };
 function drawStonePrompt(now) {
@@ -9015,7 +8992,7 @@ function drawGlints(now, dark) {
 // The marker at the screen's edge, toward the nearest thing to pick while none is on screen, with that thing's painting in
 // it (the satchel's: itemSheet). Out of the way of the watch and the pill at the top and the satchel and the bars over it at
 // the foot (their places looked at once a second, KEEP_CLEAR).
-const KEEP_CLEAR = ['#sky', '#hud-right .hud-top', '#satchel', '#vitals', '#me-box'];   // (0, 1 and 4 are pushed out from under; 2 and 3 are the foot's)
+const KEEP_CLEAR = ['#sky', '#hud-right .hud-top', '#satchel', '#vitals .vital.show', '#me-box'];   // (0, 1 and 4 are pushed out from under; 2 and 3 are the foot's: the stamina bar only while it shows, or it held the marker halfway up a phone)
 const clearOf = KEEP_CLEAR.map(() => ({ l: 0, t: 0, r: 0, b: 0 }));
 // Where the way from the forager to a spot in the meadow leaves the screen, kept r + 10 in from its edges, over the satchel and
 // out from under the watch and the pill (edge: x, y and the way, cx, cy); false if it doesn't.
@@ -9071,7 +9048,8 @@ function keepClear(now) {                               // (the watch's, the pil
 function drawPickArrow(now) {
   const dt = Math.min(100, now - picks.arrowAt);
   picks.arrowAt = now;
-  if (picks.seen || !picks.near) picks.none = now;
+  const f = world.forager;
+  if (picks.seen || !picks.near || S.inCamp(world, f.x, f.y) || promptUi.on || stoneDisc.on) picks.none = now;   // (not in camp, nor over a disc)
   const want = now - picks.none > ARROW_WAIT ? 1 : 0;
   if (want && !picks.wanted && picks.arrow < 0.3) picks.shownAt = now;
   picks.wanted = want;
@@ -15549,7 +15527,7 @@ canvas.addEventListener('pointerdown', e => {
   }
   if (ui.place && fingerTap) placeAt(...toWorld(e.clientX, e.clientY));   // (picking a spot for a fire: the faint one under the finger)
   // (pressed on something to pick, or a fire, it's a tap however long it's held, and a wobble more doesn't make it a drag: held, it runs there)
-  const u = useAt(e.clientX, e.clientY), on = !!hintAt(e.clientX, e.clientY) || basketPromptAt(e.clientX, e.clientY) || stonePromptAt(e.clientX, e.clientY) || !!u && u.kind !== 'animal';
+  const u = useAt(e.clientX, e.clientY), on = !!hintAt(e.clientX, e.clientY) || stonePromptAt(e.clientX, e.clientY) || !!u && u.kind !== 'animal';
   drag = { x: e.clientX, y: e.clientY, moved: false, id: e.pointerId, steer: false, px: e.clientX, py: e.clientY, at: 0, on, rush: false, blow: false, t0: e.timeStamp };
   clearTimeout(holdTimer);
   holdTimer = setTimeout(() => {                        // held still on the ground: it runs toward the pointer while it's down
@@ -15653,7 +15631,6 @@ function click(sx, sy, run = false) {
   const pi = cooking() ? potThingAt(sx, sy) : -1;
   if (pi >= 0) { potTake(pi); return; }                    // (a thing in the pot: back out)
   if (!cooking() && foragerHit(sx, sy) && !basketAt(sx, sy) && !stoneAt(sx, sy) && !gatherAt(sx, sy)) { partyTap(); return; }   // (on the forager itself: the easter egg's taps; standing by the basket or something to pick, the click is theirs)
-  if (!cooking() && basketPromptAt(sx, sy)) { goBasket(); return; }   // (the disc by the basket)
   if (!cooking() && stonePromptAt(sx, sy)) { goStone(); return; }     // (the disc over the old stone)
   const HF = !cooking() && hintAt(sx, sy);
   if (HF) { hintFire(HF); return; }                        // (a disc or a line over a fire: onto that fire, never a walk away)
