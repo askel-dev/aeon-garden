@@ -338,6 +338,7 @@ const RULES = {
   tock:    { gap: 0.08, always: true },              // and down on the grass (a pebble, a stick, a nut)
   splat:   { gap: 0.08, always: true },              // a berry or a snowball bursting
   hug:     { gap: 0.8,  always: true, lift: 1.6 },   // two foragers hug
+  rope:    { gap: 0.12, always: true },              // a rope tied on, let go or wriggled against
   step:    { gap: 0.1, always: true },   // (a foot down is cheap and rhythmic: it never counts against the budget)
   jump:    { gap: 0.15, always: true },  // (off its feet: the push and the whoosh)
   land:    { gap: 0.12, always: true },  // and down again
@@ -458,6 +459,18 @@ const SOUNDS = {
     pad(o, [note(0, 0), note(2, 0), note(4, 0)], t, 1.5, 0.5);
     kalimba(o, note(4, 0), t + 0.06, 0.26);
     kalimba(o, note(2, 0), t + 0.26, 0.2);
+  },
+  // A rope (game.js ropePressed): a creak of twisted grass pulled tight, and tied on (tie), the knot's soft pull.
+  rope(t, o, { tie } = {}) {
+    noise(o, t, 0.16, { from: 700, to: 1600, q: 3.5, peak: 0.07, attack: 0.03 });
+    noise(o, t + 0.05, 0.1, { from: 2600, to: 1800, q: 1.2, peak: 0.035, attack: 0.01 });
+    if (!tie) return;
+    const osc = ac.createOscillator(), g = ac.createGain(), at = t + 0.17;
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(240, at); osc.frequency.exponentialRampToValueAtTime(130, at + 0.08);
+    g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(0.12, at + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + 0.12);
+    osc.connect(g).connect(o); osc.start(at); osc.stop(at + 0.14);
   },
   // A swarm moved into its new home: a bell, and the hive buzzing up to meet the queen.
   queen(t, o) {

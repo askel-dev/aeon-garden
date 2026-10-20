@@ -930,6 +930,36 @@ function paintClay(g) {
   clayLump(g, 0.58, 0.48, 0.3, 2);
 }
 
+// Rope: a coil of it twisted from dry grass, three loops lying one over the next, its end trailing out frayed. No outline:
+// each loop is its shaded underside with the lit straw over it, the ply as slanting strands across it, lit along its top.
+const ROPE = [196, 160, 98];
+function ropeLoop(g, x, y, rx, ry, k) {
+  const p = (o) => () => { g.moveTo(x + rx, y + o); g.ellipse(x, y + o, rx, ry, 0, 0, TAU); };
+  strokeIn(g, rgba(tone(ROPE, 0.7)), 0.15, p(0.012));
+  strokeIn(g, rgba(tone(ROPE, 0.94 + k * 0.06)), 0.11, p(-0.01));
+  strokeIn(g, rgba(tone(ROPE, 0.68), 0.75), 0.02, () => {
+    for (let i = 0; i < 34; i++) {
+      const a = i / 34 * TAU, cx = x + Math.cos(a) * rx, cy = y - 0.01 + Math.sin(a) * ry;
+      let tx = -Math.sin(a) * rx, ty = Math.cos(a) * ry;
+      const d = Math.hypot(tx, ty); tx /= d; ty /= d;
+      g.moveTo(cx - ty * 0.05 - tx * 0.035, cy + tx * 0.05 - ty * 0.035); g.lineTo(cx + ty * 0.05 + tx * 0.035, cy - tx * 0.05 + ty * 0.035);
+    }
+  });
+  strokeIn(g, rgba(tone(ROPE, 1.3, 26), 0.6), 0.018, () => g.ellipse(x, y - 0.045, rx, ry, 0, Math.PI * 1.08, Math.PI * 1.92));
+}
+function paintRope(g) {
+  touch(g, 0, 0.6, 0.72, 0.16);
+  const tail = (o) => () => { g.moveTo(0.56, 0.2 + o); g.bezierCurveTo(0.74, 0.34 + o, 0.66, 0.6 + o, 0.84, 0.72 + o); };
+  strokeIn(g, rgba(tone(ROPE, 0.7)), 0.13, tail(0));
+  strokeIn(g, rgba(tone(ROPE, 0.96)), 0.09, tail(-0.012));
+  strokeIn(g, rgba(tone(ROPE, 1.15, 20), 0.85), 0.018, () => {   // its frayed end
+    for (let i = 0; i < 6; i++) { const a = 0.5 + (i - 2.5) * 0.22; g.moveTo(0.83, 0.71); g.lineTo(0.83 + Math.cos(a) * 0.13, 0.71 + Math.sin(a) * 0.13); }
+  });
+  ropeLoop(g, -0.06, 0.24, 0.62, 0.32, 0);
+  ropeLoop(g, 0.02, 0.1, 0.58, 0.3, 1);
+  ropeLoop(g, -0.02, -0.04, 0.55, 0.29, 2);
+}
+
 // The painted things by their ids, in the order of their numbers ('ingr:' + n): a new one goes at the end.
 const PAINTED = [
   ['cep', paintCep],
@@ -957,6 +987,7 @@ const PAINTED = [
   ['drygrass', paintDryGrass],
   ['birchbark', paintBark],
   ['clay', paintClay],
+  ['rope', paintRope],
 ];
 const NAMES = PAINTED.map(p => p[0]);
 function paint(g, size, U, n) {

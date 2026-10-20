@@ -89,3 +89,18 @@ seat log: recipes.js `where: 'camp'`), which used to vanish from the make strip 
 are: a small muted line under the tiles (`#make .mk-note`, `guestCamp`), `Only Ana builds at camp: basket and seat log.`
 with the host's name from its peer, or `the meadow's keeper` till it's known. The Craft button shows while the guest
 has the makings of one, without glowing ready. It goes as the keeper makes them, or when the guest leaves.
+
+A rope, playing together (2026-10-20; the comment over game.js `ROPE_REACH`): a lead, as in Minecraft. It's twisted from five dry
+grass at the Craft strip (recipes.js `BUILDS.rope`, `makes: 'rope'`, `after: 'together'`: offered only while friends are here;
+`makeThing` puts it straight in the satchel, no spot picked) and is an ingredient of its own (`INGREDIENTS.rope`, `made: true`
+keeps it out of the book's Finds; painted in items.js `paintRope`). L, or the round rope button above the hug's on a touch screen
+(`#rope-btn`, `ropeBtnFrame`), ties it to the nearest friend within `ROPE_REACH` who isn't on a rope already (`ropeTarget`); L again
+unties it, and the rope stays in the satchel (giving it away or dropping it lets go). Who holds whom rides in each `pos` (`ld`,
+`heardLead`, `p.lead`), so everyone draws the rope (`drawRopes`, `ropeLine`: hand to middle, sagging while slack, after what stands
+and under the night) and a guest coming later sees it. Only its own page moves a forager, so the one tied pulls itself along
+(`ropeFrame`): past `ROPE_LEN` it's walked back towards the holder every `ROPE_PULL_MS` (running when the holder runs or it lags),
+past `ROPE_DRAG` dragged straight on over walkable ground. It wriggles free with `ROPE_WRIGGLES` presses of L (or its button,
+which shakes, `.free`) within `ROPE_WRIGGLE_MS`: each is a judder everyone sees (`'rope'` `w`), the last tells the holder
+(`'rope'` `off`, `to` it), and the holder's `ld` is let be for `ROPE_FREE_MS` till it hears. Stretched past `ROPE_SNAP` for
+`ROPE_SNAP_MS` it comes undone the same way (`snap`). At a fire, cooking, placing or on the ground it isn't pulled: the rope
+stretches. Sound: sound.js `rope` (a creak; `tie`, the knot).

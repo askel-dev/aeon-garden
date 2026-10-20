@@ -1421,6 +1421,7 @@ function render(now) {
     else drawCreature(it.c, it.sx, it.sy, now);
   }
   unfade();
+  if (rope.to || rope.by || peers.size > 1) drawRopes();   // (a friend on a rope: over both, under the night)
   drawNear(now, true);
   drawGlow(now, true);
   if (splashes.length) drawSplashes(now);
@@ -3520,6 +3521,8 @@ function gatherFrame(now) {
   swatFrame(now);
   tossFrame(now);
   hugFrame();
+  ropeFrame(now);
+  ropeBtnFrame();
   const g = ui.gather, F = world.forager;
   if (F.down >= 0) return;                              // (collapsed)
   if (!g && ui.queue.length && !F.walking && now >= ui.nextAt) nextGather();
@@ -5256,10 +5259,11 @@ const hasTag = (tag, stores = storesHere()) => Recipes.takes(tag).some(ing => S.
 // opens the strip. Its title says what the build most worth doing (buildFocus) still wants.
 const buildUi = { shown: null, ready: null, key: '' };
 const buildOrder = Object.keys(Recipes.BUILDS);
-// Whether a build is on offer yet: 'after' left out, at once; 'camp' once there's a camp; a number, at that Cooking level.
+// Whether a build is on offer yet: 'after' left out, at once; 'camp' once there's a camp; 'together' while friends are here
+// (the rope); a number, at that Cooking level.
 const buildAfter = id => {
   const a = Recipes.BUILDS[id].after;
-  return a == null || (a === 'camp' ? !!world.camp : world.forager.lv.cooking >= a);
+  return a == null || (a === 'camp' ? !!world.camp : a === 'together' ? !!(Net && Net.on) : world.forager.lv.cooking >= a);
 };
 // The ones there's no making twice (the camp's basket), and what a guest can't make in a friend's meadow.
 const buildMade = id => (id === 'basket' && !!(world.camp && world.camp.basket)) || (id === SEAT_BUILD && !!(world.camp && world.camp.seat));
@@ -5321,6 +5325,7 @@ const BUILD_ART = {
   basket: (g, size, U) => paintBasket(g, size, U, 0),   // (shut)
   torch: (g, size, U) => paintTorch(g, size, U, 0),     // (burning, its crown glowing)
   seat: (g, size, U) => paintSeat(g, size, U, SEAT_TURN0),
+  rope: (g, size, U) => Items.paint(g, size, U * 0.9, Items.NAMES.indexOf('rope')),   // (its satchel painting)
 };
 const BUILD_ICONS = {};
 function buildIconURL(id) {
@@ -5391,9 +5396,22 @@ function startBuild(id) {
   const have = buildHave(id);
   if (!have.ready) return no(`A ${b.name.toLowerCase()} needs ${missingWords(have.missing)}`);
   if (Recipes.whereOf(b) === 'camp' && !S.inCamp(world, f.x, f.y)) return no('It goes at camp, by the fire');
+  if (b.makes) return makeThing(id);
   if (id !== 'campfire' && id !== 'basket' && id !== TORCH_BUILD && id !== SEAT_BUILD) return no(`Nothing knows how to make a ${b.name.toLowerCase()} yet`);
   if (stripOpen()) openMake(false);
   if (id === 'campfire') placeFire(true); else if (id === 'basket') placeBasket(); else if (id === SEAT_BUILD) placeSeat(); else placeTorch(true);
+}
+// A build that makes a thing for the satchel (recipes.js `makes`: the rope): made at once, where the forager stands, and
+// flown into its slot. The strip stays open, to make another.
+function makeThing(id) {
+  const b = Recipes.BUILDS[id], f = world.forager;
+  if (S.roomFor(f, b.makes) < 1) { say('Satchel\'s full', f.x, f.y - 1.6); chime('click'); return; }
+  if (!spendBuild(id)) return;
+  const into = S.stow(f, b.makes, 1), [sx, sy] = toScreen(f.x, f.y - 0.5);
+  flyToSlot(b.makes, sx, sy, into[0], () => chime('pick', { n: 1 }));
+  hear('rope', f.x, f.y, { tie: 1 }, true);
+  renderSatchel(); renderBuild();
+  if (b.makes === 'rope' && firstOnce('rope-hint')) toast(`🪢 A rope. Stand by a friend and ${SPRINT_BTN ? 'tap the rope button' : 'press L'} to tie it on`);
 }
 // The button: the strip, open or shut. F still lays a campfire straight away.
 function buildPressed() {
@@ -8853,7 +8871,7 @@ const FIND_SECTIONS = [
   { k: 'fire', name: 'For a fire', test: () => true },
 ];
 const FIND_PAGES = [], findSec = new Map();
-for (const [id, g] of Object.entries(Recipes.INGREDIENTS)) findSec.set(id, FIND_SECTIONS.find(s => s.test(g)));
+for (const [id, g] of Object.entries(Recipes.INGREDIENTS)) if (!g.made) findSec.set(id, FIND_SECTIONS.find(s => s.test(g)));   // (what's made isn't found: the rope)
 for (const sec of FIND_SECTIONS) for (const id of findSec.keys()) if (findSec.get(id) === sec) FIND_PAGES.push({ r: null, g: id, key: 'find:' + id, part: 'finds', sec, no: FIND_PAGES.length + 1, i: FIND_PAGES.length });
 // Its third part, You: a page for each skill in sim.js SKILLS, made here so a new skill shows up with no hand list. The
 // left page is the sheet (the face, how you are, the skills as rows); the right one is the skill picked, as a recipe's.
@@ -16919,6 +16937,7 @@ function heardNet(m) {
   else if (m.t === 'call') heardCall(m, now);
   else if (m.t === 'give') heardGive(m, now);
   else if (m.t === 'hug') heardHug(m, now);
+  else if (m.t === 'rope') heardRope(m, now);
   else if (m.t === 'swat') heardSwat(m, now);
   else if (m.t === 'swing') heardSwingStart(m, now);
   else if (m.t === 'toss') heardToss(m, now);
@@ -17067,6 +17086,7 @@ function sendPos(now) {
   const f = world.forager;
   Net.send({ t: 'pos', x: f.x, y: f.y, h: f.heading, j: fg.jog, st: S.warmthStage(f), wt: Math.round(f.wet * 20) / 20, sn: fg.snowArt, o: fg.outfit,
     hp: Math.round(f.health * 20) / 20,   // (how much it has left, for the pips over a friend's head)
+    ld: rope.to,                          // (the friend it has on a rope: heardLead)
     kn: fg.kneel, fl: fg.flip, em: fg.emote, et: Math.round(fg.emoteMs), tick: Net.host ? world.tick : -1, s: ui.speed, n: myName });   // (kn: kneeling at a fire, and which way; em: an emote)
 }
 function heardPos(m, now) {
@@ -17081,6 +17101,7 @@ function heardPos(m, now) {
       art: FORAGER_ARTS[0], sized: 0, sizedSet: 0, sizedSnow: 0, name: '', nameArt: null, sx: -0, sy: -0, shown: false, chat: null, kneel: -1,
       mark: -0,                                            // (how far its marker at the screen's edge has faded in: drawFriendMarks)
       emote: -1, emoteMs: -0, emoteFrame: -1, lift: -0, sizedEmote: -1,
+      lead: '',                                            // (the friend it has on a rope, or us: heardLead)
       swingAt: -1e9, swingDir: -0, hitAt: -1e9, hp: 1, swatAt: -1e9, tossHitAt: -1e9,   // (friendly fire: swing; the health pips over its head; when its last hit on us was taken, hitFrom)
       jumpAt: -1e9, jumpMs: -0, jx: -0, jy: -0, jdx: -0, jdy: -0, jhop: -0, air: -0 };   // (a dash: peerJump)   // (an emote, as it said: EMOTE, emoteStill)
     peers.set(m.from, p);
@@ -17098,6 +17119,7 @@ function heardPos(m, now) {
   p.fx = far ? m.x : p.x; p.fy = far ? m.y : p.y; p.tx = m.x; p.ty = m.y; p.at = now; p.seen = now;
   p.heading = m.h; p.jog = m.j; p.stage = m.st; p.soak = +m.wt || 0; p.snowArt = m.sn | 0;
   p.hp = m.hp == null ? 1 : clamp(+m.hp || 0, 0, 1);       // (the pips over its head: how much it has left)
+  heardLead(p, m.ld, now);
   p.flip = !!m.fl;                                         // (which way it's turned: a hug turns it to its friend while standing)
   p.kneel = m.kn >= 0 ? m.kn | 0 : -1;                    // (kneeling at a fire, turned to it)
   if (p.kneel >= 0) p.view = 0;
@@ -17852,6 +17874,183 @@ function heardHug(m, now) {
   sendPos(now);                                            // (they see it hug back at once)
   hugHearts(f.x, f.y);
 }
+// A rope, playing together (a lead, as in Minecraft): twisted from dry grass at the Craft strip (recipes.js BUILDS.rope,
+// offered only while friends are here) and carried in the satchel. L, or the round rope button while a friend stands
+// within ROPE_REACH, ties it to the nearest; from then on that friend goes where you lead. Who holds whom goes out in
+// each pos (ld), so everyone draws the rope (drawRopes) and the one tied knows it. Only its own page moves a forager, so
+// the one tied pulls itself along (ropeFrame): past ROPE_LEN it walks back towards you, at your pace or quicker, and past
+// ROPE_DRAG it's dragged straight on as far as the ground lets it. L again unties it (the rope stays in the satchel). The
+// one tied presses L (or its button) ROPE_WRIGGLES times within ROPE_WRIGGLE_MS to wriggle free ('rope', to the one
+// holding it); each wriggle judders it for everyone. Stretched past ROPE_SNAP for ROPE_SNAP_MS (a dash over the water, a
+// pull it can't walk) it comes undone. A friend at a fire, cooking or on the ground isn't pulled: the rope stretches.
+const ROPE_REACH = 2.4, ROPE_LEN = 2.8, ROPE_DRAG = 4.2, ROPE_SNAP = 9, ROPE_SNAP_MS = 1500, ROPE_PULL_MS = 280;
+const ROPE_WRIGGLES = 5, ROPE_WRIGGLE_MS = 2500, ROPE_FREE_MS = 3000;   // (presses to wriggle free, and in how long; a holder's ld ignored after)
+const rope = { to: '', by: '', farAt: 0, pullAt: -1e9, wriggles: 0, wriggleAt: -1e9, free: '', freeTill: 0, shown: '' };
+const hasRope = () => S.storeCount(world.forager, 'rope') > 0;
+function ledBy(id) { for (const p of peers.values()) if (p.lead === id) return p; return null; }   // (whoever holds friend id)
+// The friend a rope would go on: the nearest in reach that's up, isn't holding us and isn't on someone's rope already.
+function ropeTarget() {
+  const f = world.forager;
+  let best = null, bd = ROPE_REACH;
+  for (const p of peers.values()) {
+    if (p.stage === 4 || p.lead === Net.me || ledBy(p.id)) continue;
+    const d = Math.hypot(p.x - f.x, p.y - f.y);
+    if (d < bd) { bd = d; best = p; }
+  }
+  return best;
+}
+function ropePressed() {
+  if (!(Net && Net.on) || !world) return;
+  const f = world.forager, now = performance.now();
+  if (rope.by) { wriggle(now); return; }
+  if (rope.to) { untie(); return; }
+  if (f.down >= 0 || cooking()) return;
+  if (!hasRope()) { say('No rope in the satchel', f.x, f.y - 1.6); chime('click'); return; }
+  const p = ropeTarget();
+  if (!p) { say('No one close enough to tie', f.x, f.y - 1.6); chime('click'); return; }
+  rope.to = p.id;
+  sendPos(now);                                            // (they're on it at once)
+  hear('rope', f.x, f.y, { tie: 1 }, true);
+  firstTime('rope', 'together', 'On a rope', 'Where you go, they go.');
+}
+function untie() {
+  const f = world.forager;
+  rope.to = '';
+  sendPos(performance.now());
+  hear('rope', f.x, f.y, {}, true);
+}
+function wriggle(now) {
+  const f = world.forager;
+  if (now - rope.wriggleAt > ROPE_WRIGGLE_MS) rope.wriggles = 0;
+  rope.wriggleAt = now; rope.wriggles++;
+  fg.hitAt = now;                                          // (a judder: joltOf)
+  Net.send({ t: 'rope', w: 1 });
+  if (rope.wriggles < ROPE_WRIGGLES) { hear('rope', f.x, f.y, {}, true); return; }
+  const id = rope.by, p = peers.get(id);
+  ropeLoose(now);
+  Net.send({ t: 'rope', to: id, off: 1, n: myName });
+  hear('rope', f.x, f.y, { tie: 1 }, true);
+  toast(`🪢 You wriggled free of ${friendName(p) || 'your friend'}’s rope`);
+}
+// Off the rope here (wriggled free, or it came undone): what the holder says of it is let be for a moment, till it hears.
+function ropeLoose(now) {
+  rope.free = rope.by; rope.freeTill = now + ROPE_FREE_MS;
+  rope.by = ''; rope.wriggles = 0; rope.farAt = 0;
+}
+// What a friend's pos says of a rope (heardPos): whom it holds, and whether that's us.
+function heardLead(p, ld, now) {
+  p.lead = typeof ld === 'string' ? ld : '';
+  if (p.lead === Net.me) {
+    if (rope.by === p.id || (rope.free === p.id && now < rope.freeTill)) return;
+    rope.by = p.id; rope.wriggles = 0; rope.farAt = 0; rope.pullAt = -1e9;
+    if (rope.to === p.id) rope.to = '';                    // (tied to each other at once: theirs wins)
+    hear('rope', p.x, p.y, { tie: 1 }, true);
+    toast(`🪢 ${friendName(p) || 'A friend'} has you on a rope. ${SPRINT_BTN ? 'Tap the rope button' : 'Press L'} ${ROPE_WRIGGLES} times quickly to wriggle free`);
+  } else if (rope.by === p.id) {
+    rope.by = '';
+    toast(`🪢 ${friendName(p) || 'Your friend'} let you off the rope`);
+  }
+}
+function heardRope(m, now) {
+  const p = peers.get(m.from);
+  if (!p) return;
+  if (m.w) { p.hitAt = now; if (visible(...onScreen(p.x, p.y), 60)) hear('rope', p.x, p.y, {}, true); return; }   // (a wriggle)
+  if (m.off && m.to === Net.me && rope.to === m.from) {
+    rope.to = '';
+    sendPos(now);
+    toast(m.snap ? `🪢 The rope came undone from ${friendName(p) || 'your friend'}` : `🪢 ${friendName(p) || 'Your friend'} wriggled free`);
+  }
+}
+// Once a frame: a friend gone (or the rope given away) lets go; tied, the pull.
+function ropeFrame(now) {
+  if (!rope.to && !rope.by) return;
+  if (!(Net && Net.on)) { rope.to = rope.by = ''; return; }
+  if (rope.to && (!peers.has(rope.to) || !hasRope())) untie();
+  if (!rope.by) return;
+  const p = peers.get(rope.by), f = world.forager;
+  if (!p) { rope.by = ''; return; }
+  const dx = p.x - f.x, dy = p.y - f.y, d = Math.hypot(dx, dy);
+  if (d > ROPE_SNAP) {                                     // (too far to follow: undone, after a moment to catch up)
+    if (!rope.farAt) rope.farAt = now;
+    else if (now - rope.farAt > ROPE_SNAP_MS) {
+      const id = rope.by;
+      ropeLoose(now);
+      Net.send({ t: 'rope', to: id, off: 1, snap: 1, n: myName });
+      toast(`🪢 The rope came undone from ${friendName(p) || 'your friend'}`);
+    }
+    return;
+  }
+  rope.farAt = 0;
+  if (d <= ROPE_LEN || f.down >= 0 || ui.fire || ui.place || cooking() || f.jumpT > 0) return;
+  if (d > ROPE_DRAG) {                                     // (dragged: straight on, as far as the ground lets it)
+    const k = (d - ROPE_DRAG) / d, nx = f.x + dx * k, ny = f.y + dy * k;
+    if (S.walkable(world, nx, ny)) { f.x = nx; f.y = ny; }
+  }
+  if (now - rope.pullAt < ROPE_PULL_MS) return;
+  rope.pullAt = now;
+  const k = ROPE_LEN * 0.6 / d;                            // (to just inside the rope's length of them)
+  if (S.foragerTo(world, p.x - dx * k, p.y - dy * k)) f.running = (p.jog || d > ROPE_LEN * 1.4) && !f.winded;
+  ui.gather = null; ui.queue.length = 0;
+  if (fg.emote >= 0) emoteOff();
+}
+// On a touch screen there's no L: the round rope button above the hug's, while a friend's in reach and there's a rope to
+// tie, while one's tied (untie), and while we're tied (wriggle).
+function ropeBtnFrame() {
+  if (!SPRINT_BTN) return;
+  const f = world.forager;
+  let show = '';
+  if (Net && Net.on && f.down < 0) show = rope.by ? 'free' : rope.to ? 'let' : !cooking() && hasRope() && ropeTarget() ? 'tie' : '';
+  if (show === rope.shown) return;
+  rope.shown = show;
+  const el = $('#rope-btn');
+  el.classList.toggle('hidden', !show);
+  if (!show) return;
+  el.classList.toggle('free', show === 'free');
+  el.title = show === 'free' ? 'Wriggle free (L)' : show === 'let' ? 'Untie the rope (L)' : 'Tie the rope to a friend (L)';
+  el.setAttribute('aria-label', el.title);
+}
+// Each rope: from the holder's hand to the one tied, sagging while it's slack and straight when it pulls. Drawn after
+// what stands (over both foragers) and under the night. No outline: its shaded underside, the lit straw over it, the ply as
+// slanting strands across it and a glint along its top; only while one's tied.
+function drawRopes() {
+  if (!(Net && Net.on)) return;
+  const F = world.forager, me = drawnAt(F), mx = me.x, my = me.y;
+  if (rope.to) { const p = peers.get(rope.to); if (p) ropeLine(mx, my, fg.air, p.x, p.y, p.air); }
+  for (const p of peers.values()) {
+    if (!p.lead) continue;
+    if (p.lead === Net.me) ropeLine(p.x, p.y, p.air, mx, my, fg.air);
+    else { const q = peers.get(p.lead); if (q) ropeLine(p.x, p.y, p.air, q.x, q.y, q.air); }
+  }
+}
+function ropeLine(hx, hy, hair, tx, ty, tair) {
+  const px = forPx(), d = Math.hypot(tx - hx, ty - hy), side = tx > hx ? 1 : -1;
+  let a = onScreen(hx, hy);
+  const ax = a[0] + side * px * 0.13, ay = a[1] - (0.28 + hair) * px;   // (the hand, on its friend's side)
+  a = onScreen(tx, ty);
+  const bx = a[0], by = a[1] - (0.34 + tair) * px;                       // (round its middle)
+  if (Math.max(ax, bx) < -20 || Math.min(ax, bx) > vw + 20 || Math.max(ay, by) < -20 || Math.min(ay, by) > vh + px) return;
+  const sag = clamp((ROPE_LEN - d) / ROPE_LEN, 0, 1) * px * 0.9 + px * 0.04, cx = (ax + bx) / 2, cy = (ay + by) / 2 + sag * 2;
+  const w = Math.max(2, px * 0.055);
+  ctx.lineCap = 'round';
+  ropeCurve(ax, ay, cx, cy, bx, by, 0); ctx.strokeStyle = 'rgb(160, 122, 70)'; ctx.lineWidth = w; ctx.stroke();
+  ropeCurve(ax, ay, cx, cy, bx, by, -w * 0.12); ctx.strokeStyle = 'rgb(206, 172, 110)'; ctx.lineWidth = w * 0.72; ctx.stroke();
+  if (w < 3) return;                                       // (zoomed out: too thin to show its twist)
+  const n = Math.min(160, Math.floor((Math.hypot(cx - ax, cy - ay) + Math.hypot(bx - cx, by - cy)) / (w * 0.75)));
+  const h = w * 0.36, sl = w * 0.26;                       // (a strand's half across, and how far it slants along)
+  ctx.beginPath();
+  for (let i = 1; i < n; i++) {
+    const t = i / n, u = 1 - t, x = u * u * ax + 2 * u * t * cx + t * t * bx, y = u * u * ay + 2 * u * t * cy + t * t * by;
+    let tx = u * (cx - ax) + t * (bx - cx), ty = u * (cy - ay) + t * (by - cy);
+    const k = 1 / (Math.hypot(tx, ty) || 1); tx *= k; ty *= k;
+    ctx.moveTo(x - ty * h - tx * sl, y + tx * h - ty * sl); ctx.lineTo(x + ty * h + tx * sl, y - tx * h + ty * sl);
+  }
+  ctx.strokeStyle = 'rgba(146, 108, 58, 0.7)'; ctx.lineWidth = w * 0.16; ctx.stroke();
+  ropeCurve(ax, ay, cx, cy, bx, by, -w * 0.26); ctx.strokeStyle = 'rgba(242, 218, 166, 0.75)'; ctx.lineWidth = w * 0.16; ctx.stroke();
+}
+function ropeCurve(ax, ay, cx, cy, bx, by, o) {
+  ctx.beginPath(); ctx.moveTo(ax, ay + o); ctx.quadraticCurveTo(cx, cy + o, bx, by + o);
+}
+
 // Friendly fire: X swings at the nearest friend in reach (SWING_REACH) and everyone is told ('swat'). Each sees the
 // swing, a quick white arc round the one swinging (drawSwat); the one hit judders (joltOf), is knocked back a step from
 // the swing (SWAT_PUSH, onto ground it can stand on) and loses SWAT_HURT of its health (sim.js hurt): enough swats and it
@@ -18370,6 +18569,7 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'place-x') placeFire(false);  // (the placing bar: not now)
   else if (t.dataset.act === 'swing') { if (performance.now() - swingKey.touch > 500) shove(); }   // (friendly fire, the X of a touch screen: a keyboard's click)
   else if (t.dataset.act === 'hug') hug();                 // (the G of a touch screen)
+  else if (t.dataset.act === 'rope') ropePressed();        // (the L of a touch screen)
   else if (t.dataset.act === 'larder-close') openLarder(false);
   else if (t.dataset.act === 'larder-all') larderAll();
   else if (t.dataset.act === 'larder-tidy') larderTidy();
@@ -18563,6 +18763,7 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'h' && !e.repeat && Net && Net.on) callOut();   // (a hoot to your friends)
   else if (e.code === 'KeyX' && !e.repeat && Net && Net.on) swingPress();   // (friendly fire: a tap swings, a hold throws)
   else if (e.code === 'KeyG' && !e.repeat && Net && Net.on) hug();     // (a hug for the friend close by)
+  else if (e.code === 'KeyL' && !e.repeat && Net && Net.on) ropePressed();   // (a rope: tie it on, untie it, or wriggle free)
   else if (e.key === 'm') toggleSound();
   else if (e.key === 'i') openYou();
   else if (e.key === '+' || e.key === '=') zoomOn(cam.zoom * 1.25);

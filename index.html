@@ -1289,6 +1289,15 @@
   #hug-btn svg { position: absolute; inset: 8px; width: auto; height: auto; }
   #hug-btn:active { transform: translateY(1px) scale(0.94); background-color: var(--accent-soft); }
   body:has(#book:not(.hidden)) #hug-btn, body:has(#inspector.open) #hug-btn, body.larder #hug-btn, body.stone-talk #hug-btn { visibility: hidden; }
+  /* ---- the rope button (game.js ropeBtnFrame): a touch screen only, above the hug's: ties the rope on to a friend in reach,
+     unties it, or, on someone's rope, wriggles (.free: it shakes a little, to say tap it again). */
+  #rope-btn { position: fixed; z-index: 4; touch-action: manipulation; -webkit-tap-highlight-color: transparent; right: var(--right); bottom: calc(var(--bottom) + 320px); width: 54px; height: 54px; padding: 0; border: none; border-radius: 50%;
+    background: var(--paper, none) var(--card); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 2px 0 #a8742a, 0 4px 12px rgba(70, 55, 25, 0.25); transition: transform 0.1s; animation: sprint-in 0.2s ease-out; }
+  #rope-btn svg { position: absolute; inset: 8px; width: auto; height: auto; }
+  #rope-btn:active { transform: translateY(1px) scale(0.94); background-color: var(--accent-soft); }
+  #rope-btn.free { animation: rope-wriggle 1.4s ease-in-out infinite; }
+  @keyframes rope-wriggle { 0%, 70%, 100% { transform: rotate(0); } 76% { transform: rotate(-9deg); } 84% { transform: rotate(8deg); } 92% { transform: rotate(-5deg); } }
+  body:has(#book:not(.hidden)) #rope-btn, body:has(#inspector.open) #rope-btn, body.larder #rope-btn, body.stone-talk #rope-btn { visibility: hidden; }
   body.larder #build, body.larder #sprint-btn { visibility: hidden; }
   /* ---- the old stone (game.js openStone): a slim parchment line to talk on, just over the satchel; the stone answers
      in a bubble over itself in the meadow */
@@ -1578,6 +1587,7 @@
     #sprint-btn { bottom: calc(var(--bottom) + 96px); }   /* (a third of the way up the right edge, where the thumb rests) */
     #swing-btn { bottom: calc(var(--bottom) + 150px); }
     #hug-btn { bottom: calc(var(--bottom) + 204px); }
+    #rope-btn { bottom: calc(var(--bottom) + 258px); }
     #vitals { bottom: calc(var(--bottom) + 62px); }
     #place-bar { bottom: calc(var(--bottom) + 96px); }   /* (just over the vitals) */
     #chat:not(.open), body:has(#build:not(.hidden)) #chat:not(.open) { bottom: calc(var(--bottom) + 88px); }
@@ -1619,6 +1629,8 @@
     #swing-btn svg { inset: 7px; }
     #hug-btn { width: 44px; height: 44px; }
     #hug-btn svg { inset: 7px; }
+    #rope-btn { width: 44px; height: 44px; }
+    #rope-btn svg { inset: 7px; }
     #vitals { bottom: calc(var(--bottom) + 50px); }
     .vital { padding: 3px 9px 3px 7px; gap: 5px; }
     .vital svg { width: 12px; height: 12px; }
@@ -1765,6 +1777,7 @@
 <button id="sprint-btn" class="hidden" data-act="sprint" title="Run between the picks" aria-label="Run between the picks" aria-pressed="true"><svg viewBox="0 0 32 32" aria-hidden="true"><g stroke="#b08a52" stroke-width="2" stroke-linecap="round" fill="none"><path d="M2.5 11h5" opacity=".55"/><path d="M1.5 16h6.5"/><path d="M3 21h5" opacity=".75"/></g><path d="M11.6 6.2h8.2v9.6c0 1.1.6 1.9 1.7 2.4l4.1 1.8c1.8.8 2.8 2 2.8 3.8v1.6H11.6z" fill="#9a6a3c" stroke="#5a3c22" stroke-width="1.4" stroke-linejoin="round"/><rect x="10.8" y="4.8" width="10.4" height="3.6" rx="1.6" fill="#d2a96a" stroke="#5a3c22" stroke-width="1.4" stroke-linejoin="round"/><path d="M15.6 12.2h3.4M15.6 15.2h3.4" stroke="#5a3c22" stroke-width="1.3" stroke-linecap="round"/><path d="M11.6 23.2h19v3.2a1.4 1.4 0 0 1-1.4 1.4H13a1.4 1.4 0 0 1-1.4-1.4z" fill="#5a3c22" stroke="#5a3c22" stroke-width="1.4" stroke-linejoin="round"/></svg></button>
 <button id="swing-btn" class="hidden" data-act="swing" title="Swing at a friend (X) · hold to throw something" aria-label="Swing at a friend, or hold to throw"><svg viewBox="0 0 32 32" aria-hidden="true"><g stroke="#b08a52" stroke-width="2" stroke-linecap="round" fill="none"><path d="M2.5 12.5h5" opacity=".55"/><path d="M1.5 17.5h6.5"/><path d="M3 22.5h5" opacity=".75"/></g><g fill="#c98f5a" stroke="#5a3c22" stroke-width="1.4" stroke-linejoin="round"><rect x="11.6" y="7.2" width="4" height="9" rx="2"/><rect x="15.4" y="5.6" width="4" height="10.6" rx="2"/><rect x="19.2" y="6.4" width="4" height="9.8" rx="2"/><rect x="22.8" y="9" width="3.6" height="8" rx="1.8"/><path d="M11.4 15.4h14.9v4.6c0 3.6-2.6 6.2-6.2 6.2h-2.4c-3.6 0-6.3-2.4-6.3-6z"/></g><path d="M12.4 17.6h12.6" stroke="#c98f5a" stroke-width="2.2" stroke-linecap="round"/></svg></button>
 <button id="hug-btn" class="hidden" data-act="hug" title="Hug a friend (G)" aria-label="Hug a friend"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 27.4c-6.4-4.2-11.4-8.8-11.4-13.9 0-3.5 2.7-6 5.9-6 2.1 0 4.1 1.2 5.5 3.2 1.4-2 3.4-3.2 5.5-3.2 3.2 0 5.9 2.5 5.9 6 0 5.1-5 9.7-11.4 13.9z" fill="#d0604f" stroke="#5a3c22" stroke-width="1.4" stroke-linejoin="round"/><path d="M10.2 12c1.1-1.3 2.7-1.6 4-.9" stroke="#f3b3a4" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M26.5 4.2v3.4M24.8 5.9h3.4" stroke="#d2a96a" stroke-width="1.6" stroke-linecap="round"/></svg></button>
+<button id="rope-btn" class="hidden" data-act="rope" title="Tie the rope to a friend (L)" aria-label="Tie the rope to a friend"><svg viewBox="0 0 32 32" aria-hidden="true"><g fill="none" stroke-linecap="round"><g stroke="#5a3c22" stroke-width="5"><ellipse cx="14" cy="18" rx="9.5" ry="5.6"/><ellipse cx="14.6" cy="14.6" rx="9" ry="5.2"/><path d="M23.4 15.6c2.6 2 1.4 6.6 4.6 9.4"/></g><g stroke="#c9a062" stroke-width="2.8"><ellipse cx="14" cy="18" rx="9.5" ry="5.6"/><ellipse cx="14.6" cy="14.6" rx="9" ry="5.2"/><path d="M23.4 15.6c2.6 2 1.4 6.6 4.6 9.4"/></g><path d="M8 10.6c3-1.6 9-1.8 12.6-.2" stroke="#ecd49c" stroke-width="1.2"/></g></svg></button>
 <!-- the basket at camp, open over the satchel (game.js, the basket at camp) -->
 <div id="larder" class="hidden" role="dialog" aria-label="The basket at camp">
   <div class="l-head"><h2 class="fr">Basket<small></small></h2><button class="l-all" data-act="larder-all">Put all in</button><button class="l-tidy" data-act="larder-tidy" title="Fold piles of one kind together" aria-label="Tidy the basket">Tidy</button></div>

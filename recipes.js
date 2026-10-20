@@ -62,6 +62,8 @@ const INGREDIENTS = {
   drygrass:    { name: 'Dry grass',           stack: 20, tags: ['tinder'],         fill: 0,   icon: '🌾', raw: false, text: 'Dry stems from the long grass, to catch a spark.', where: 'In the long grass out in the open, most in summer and autumn.' },
   clay:        { name: 'Clay',                tags: ['earth'],          fill: 0,   icon: '🟤', raw: false, text: 'Cool, heavy and red-grey. It holds the shape of your thumb.', where: 'On the muddy banks, right by the water.' },
   birchbark:   { name: 'Birch bark',          stack: 20, tags: ['tinder'],         fill: 0,   icon: '📜', raw: false, text: 'Papery curls that catch even when damp.', where: 'Under the birches, and a little way out from them.' },
+  // Made, not found (made: true keeps it out of the book's Finds): BUILDS.rope twists it at the Craft strip.
+  rope:        { name: 'Rope',                stack: 5, tags: ['cord'],           fill: 0,   icon: '🪢', raw: false, made: true, text: 'Dry grass twisted into a rope. Tie it to a friend (L) and lead them about.', where: 'Twisted from dry grass at the Craft strip, with friends here.' },
 };
 
 // The dishes. Only name and needs are a must. The rest, when left out:
@@ -285,11 +287,13 @@ const RECIPES = [
 // What the forager builds, from the make button by the satchel (game.js renderBuild), and what each takes out of the
 // satchel. In `needs`, each word is an ingredient or a tag (any ingredient that has it: 'tinder' takes dry grass or birch
 // bark), with how many. To add a build, copy a block; the game only knows how to build the ones it paints and places (the
-// campfire, the basket at camp, a torch and the seat log).
+// campfire, the basket at camp, a torch and the seat log), or the ones that make a thing for the satchel (`makes`).
 //   name            what it's called
 //   needs           what it takes, { word: how many }
 //   where           where it may go: 'anywhere' (left out), or 'camp' (inside the camp's ring)
-//   after           when it's on offer: left out at once, 'camp' once there's a camp, or a Cooking level (2)
+//   after           when it's on offer: left out at once, 'camp' once there's a camp, 'together' while friends are
+//                   here, or a Cooking level (2)
+//   makes           an ingredient's id: made at once into the satchel, nothing placed (the rope)
 //   text            a line for when you look at it
 const BUILDS = {
   campfire: {
@@ -316,6 +320,13 @@ const BUILDS = {
     where: 'camp',
     after: 'camp',
     text: 'A felled log rolled up by the fire onto two sawn rounds, to sit on.',
+  },
+  rope: {
+    name: 'Rope',
+    needs: { drygrass: 5 },
+    makes: 'rope',
+    after: 'together',
+    text: 'Dry grass twisted and plied into a rope, to tie to a friend and lead them about.',
   },
 };
 
@@ -375,7 +386,7 @@ const MESS = { name: "A forager's mess", fill: 1, time: 15, icon: '🫠', text: 
 const COOK_TIME = 30;                   // seconds a dish takes if it doesn't say
 const DISH_ICON = '🥣';
 const RECIPE_KEYS = ['name', 'needs', 'at', 'vessel', 'fill', 'level', 'from', 'warm', 'known', 'time', 'icon', 'text'];
-const BUILD_KEYS = ['name', 'needs', 'where', 'after', 'text'];
+const BUILD_KEYS = ['name', 'needs', 'where', 'after', 'makes', 'text'];
 
 const recipeOf = name => RECIPES.find(r => r.name.toLowerCase() === String(name).toLowerCase());
 const isTag = word => Object.values(INGREDIENTS).some(g => g.tags.includes(word));
@@ -481,7 +492,8 @@ function checkRecipes() {
     if (!b.name) problems.push(`${who} has no name.`);
     for (const k of Object.keys(b)) if (!BUILD_KEYS.includes(k)) problems.push(`${who} has '${k}', which nothing reads (a typo?).`);
     if (b.where != null && b.where !== 'camp' && b.where !== 'anywhere') problems.push(`${who} has where: '${b.where}', but it's 'camp' or 'anywhere'.`);
-    if (b.after != null && b.after !== 'camp' && !(typeof b.after === 'number' && b.after >= 0 && b.after === Math.floor(b.after))) problems.push(`${who} has after: ${JSON.stringify(b.after)}, but it's 'camp' or a Cooking level (2).`);
+    if (b.after != null && b.after !== 'camp' && b.after !== 'together' && !(typeof b.after === 'number' && b.after >= 0 && b.after === Math.floor(b.after))) problems.push(`${who} has after: ${JSON.stringify(b.after)}, but it's 'camp', 'together' or a Cooking level (2).`);
+    if (b.makes != null && !INGREDIENTS[b.makes]) problems.push(`${who} makes '${b.makes}', which is no ingredient.`);
     if (!b.needs || typeof b.needs !== 'object' || Array.isArray(b.needs)) { problems.push(`${who} needs what it takes: needs: { pebble: 6, stick: 5 }.`); continue; }
     for (const [word, n] of Object.entries(b.needs)) {
       if (!INGREDIENTS[word] && !isTag(word)) problems.push(`${who} needs '${word}', which is no ingredient or tag.`);

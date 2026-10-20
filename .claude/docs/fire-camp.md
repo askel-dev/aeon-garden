@@ -75,7 +75,8 @@ are bright, the rest faded with a ring (`--k`); a tap on a ready one shuts it an
 `placeBasket`), one not ready (or one that goes at camp, from outside it) says what's missing and the strip stays open. ✕, Esc,
 Back, C, or a tap on another card or button shut it; walking (the keys, a click or a drag on the meadow, the minimap) leaves it
 open, its chips following the forager in and out of camp (`makeFrame`; it rewrites only when what it shows changes). F stays the
-quick campfire (`campfirePressed`), and still blows at a fire.
+quick campfire (`campfirePressed`), and still blows at a fire. A build with `makes` (the rope, while friends are here) is made at once into the satchel
+(`makeThing`) instead of picking a spot, and the strip stays open; see tasks-stone-friends.md.
 The camp's basket (2026-10-17; the comment over `WEAVE_MS`): once there's a camp the make strip offers it (recipes.js `BUILDS.basket`: 8 sticks, 4 dry grass, `where: 'camp'`,
 `after: 'camp'`). A tap on its ready tile in camp picks a spot inside the ring (`ui.place` with `basket: true`, sim.js
 `basketSpot`); the forager kneels and weaves it (`fireFrame`'s 'weave', `WEAVE_MS`), the basket growing up out of the ground.
