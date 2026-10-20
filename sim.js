@@ -5595,7 +5595,8 @@ const BRUSH_NEAR = 2.5;                 // tiles about it it looks for brush in,
 // kept for the landing, hopWin: ticks after landing a press still chains, landTick: the tick it last came down (0: never),
 // hopAim: the way that kept press was aimed (radians).
 // kit: what it has made (kitOf, shapeVessel), kept at camp, never in the satchel.
-// hand: the dish it carries in its hand (a dish's name, '' for none): one at most, and lost with the satchel.
+// hand: the dish it carries in its hand (a dish's name, '' for none): one at most, and lost with the satchel. handHeat: how hot
+// it still is (1 off the fire, 0 cold: HAND_COOL), handFull: how much of it is left (1, down to HAND_LEAST sprinting with it).
 const SLOTS = 8, STACK = 10;            // the satchel's slots, and how many of a kind one holds (by default)
 let stackFn = null;                     // recipes.js stackOf and keepOf, handed over by setStacks (the sim has no recipes of its own)
 let keepFn = null;
@@ -5610,7 +5611,7 @@ function foragerOf(x, y) {
     warmth: -0, wet: -0, stamina: -0, feel: -0, winded: false, down: -1, stumble: 0, homeX: x, homeY: y, tummy: -0, warmIn: 0, health: -0,
     jumpT: 0, jz: -0, jumpV: -0, jumpSpeed: -0, jumpFX: -0, jumpFY: -0, jumpAt: 0,
     hop: -0, hopBuf: 0, hopWin: 0, landTick: 0, hopAim: -0,
-    hand: '', xp: bySkill(-0), lv: bySkill(0), kit: kitOf() };
+    hand: '', handHeat: -0, handFull: -0, xp: bySkill(-0), lv: bySkill(0), kit: kitOf() };
   f.warmth = 1; f.stamina = 1; f.tummy = 1; f.health = 1;   // (after: they start as fractions, so the layout never changes; a kept one from before the tummy starts full)
   return f;
 }
@@ -6254,6 +6255,11 @@ const WINDED_BACK = 0.35;               // spent, it sprints again once it has t
 const WARMTH_STAGES = [0.7, 0.45, 0.22];   // over the first it's cosy, then chilly, cold, and freezing under the last
 const COLD_PACE = [0.88, 0.72];         // its pace cold, and freezing
 const STUMBLE_ODDS = 1 / 240, STUMBLE_TICKS = 28, STUMBLE_PACE = 0.15;   // freezing, walking: a stumble about every 8 s
+// A dish carried in the hand (holdDish) cools (HAND_COOL a tick: cold in a quarter of a day, three minutes at 1x; not at all
+// by a fire, faster in the rain), and sprinting with it slops some out (HAND_SLOP a tick: a full sprint's worth spills about
+// half, never below HAND_LEAST), so it fills that much less (feedHand). Still warm (over HAND_WARM) it warms as a warm dish
+// does; cold it only fills. A stumble with it still hot (over HAND_HOT) drops it: event 'spill', the hand empty.
+const HAND_COOL = 4 / TPD, HAND_SLOP = 0.5 / SPRINT_TICKS, HAND_LEAST = 0.4, HAND_WARM = 0.12, HAND_HOT = 0.3;
 const WAKE_PHASE = 0.04, DOWN_TICKS = TPD / 5, WAKE_WARMTH = 0.62;   // it wakes the next morning (at least DOWN_TICKS after: down at dawn, the one after), chilly
 // The tummy (PLAN.md stage 6): f.tummy, 1 full to 0 empty, TUMMY of recipes.js's fill. It empties in about a day walking
 // about (TUMMY_BURN), slower standing (TUMMY_STILL), faster sprinting (TUMMY_RUN) and in the cold (TUMMY_COLD more at
@@ -6335,6 +6341,15 @@ function bodyTick(w) {
   if (f.winded) f.running = false;
   if (f.stumble > 0) f.stumble--;
   else if (moving && f.warmth <= WARMTH_STAGES[2] && hash2(w.tick, 0x5707, w.seed) < STUMBLE_ODDS) f.stumble = STUMBLE_TICKS;
+  if (f.hand) {
+    if (f.handHeat > 0 && !near) f.handHeat = Math.max(0, f.handHeat - HAND_COOL * (WET_RAIN[kind] && !roof ? 1.5 : 1));
+    if (sprint) f.handFull = Math.max(HAND_LEAST, f.handFull - HAND_SLOP);
+    if (f.stumble === STUMBLE_TICKS && f.handHeat > HAND_HOT) {   // (tripping with a hot dish: it's dropped)
+      emit(w, { type: 'spill', id: f.hand, x: f.x, y: f.y, heading: f.heading });
+      f.hand = ''; f.handHeat = 0; f.handFull = 0;
+      f.walking = false; f.running = false; f.speed = 0; f.path.length = 0; f.goalX = f.x; f.goalY = f.y;   // (and it stops, dismayed)
+    }
+  }
   if (f.warmth <= WARMTH_STAGES[2]) f.health = Math.max(0, f.health - HEALTH_COLD * (1 - f.warmth / WARMTH_STAGES[2]) - HEALTH_COLD * 0.15);   // (the colder, the faster)
   if (f.tummy <= 0) f.health = Math.max(0, f.health - HEALTH_STARVE);
   if (f.warmth > WARMTH_STAGES[1] && f.tummy >= HUNGRY && f.health < 1) f.health = Math.min(1, f.health + HEALTH_MEND);
@@ -7217,23 +7232,25 @@ function feedHand(w, fill, warm) {
   if (!id || f.down >= 0) return 'Nothing there';
   if (!(fill > 0)) return 'Not something to eat';
   if (f.tummy > 0.97) return 'I\'m full';
-  f.tummy = Math.min(1, f.tummy + fill / TUMMY);
-  if (warm) { f.warmth = Math.min(1, f.warmth + WARM_DISH); f.warmIn = WARM_IN; }
-  f.hand = '';
-  emit(w, { type: 'ate', id, warm: !!warm });
+  f.tummy = Math.min(1, f.tummy + fill * f.handFull / TUMMY);   // (what's left of it: sprinting slopped some out)
+  const hot = warm && f.handHeat > HAND_WARM;             // (gone cold in the hand, it only fills)
+  if (hot) { f.warmth = Math.min(1, f.warmth + WARM_DISH); f.warmIn = WARM_IN; }
+  f.hand = ''; f.handHeat = 0; f.handFull = 0;
+  emit(w, { type: 'ate', id, warm: hot });
   return '';
 }
 // What it carries in its hand: a dish's name (one at most), or ''. True if it took it; false with a hand already full.
-function holdDish(w, name) {
+// hot: a warm dish (recipes.js warm) straight off the fire.
+function holdDish(w, name, hot) {
   const f = w.forager;
   if (f.hand) return false;
-  f.hand = name;
+  f.hand = name; f.handHeat = hot ? 1 : 0; f.handFull = 1;
   return true;
 }
 // Takes what's in its hand out of it, and says what it was ('' with an empty hand).
 function dropHand(w) {
   const f = w.forager, name = f.hand;
-  f.hand = '';
+  f.hand = ''; f.handHeat = 0; f.handFull = 0;
   return name;
 }
 // Takes n of id out of the satchel (for a fire: game.js, by recipes.js's BUILDS), from its smallest stacks first, so the
@@ -7735,6 +7752,7 @@ function unpackWorld(kept) {
   if (!w.forager) w.forager = startForager(w);            // (kept before the forager: it starts afresh)
   const F = w.forager;
   if (F.hand === undefined) F.hand = '';                  // (kept before the hands)
+  if (F.handHeat === undefined) { F.handHeat = -0; F.handFull = -0; if (F.hand) F.handFull = 1; }   // (and before a dish cooled in them)
   if (!F.homeX && !F.homeY) { F.homeX = F.x; F.homeY = F.y; }   // (kept before it had a home: where it is)
   if (w.camp) asFractions(w.camp, ['x', 'y']);
   if (w.camp && !w.camp.basket) w.camp.basket = null;      // (kept before baskets: none yet)
@@ -8630,7 +8648,7 @@ const api = {
   createWorld, step, clock, isNight, phaseOf, seasonOf, springPart, mood, ageDays, growth, isAdult, patchFresh,
   hedgehogComes, heronComes, dragonflyComes, kingfisherComes, skylarkComes, placeNeeds, VISIT_SEASONS, VISIT_FADE, HERON_FADE, HERON_STAB,
   DRAGON_FROM, KF_FADE, KF_UNDER, KF_BEAT, LARK_FADE, LARK_OPEN, LARK_RISE, EDGE_REACH, OPEN_MOST,
-  walkable, onIce, friendsAt, packWorld, unpackWorld, GROUND, foragerTo, foragerJump, foragerArrives, openingStorm, FORAGER_WALK, FORAGER_RUN, FORAGER_SNEAK, FORAGER_ICE_STOP, FORAGER_JUMP_TICKS, FORAGER_JUMP_HEIGHT, FORAGER_DASH_DRAG, FORAGER_HOP_EARLY, airTemp, warmthStage, WARMTH_STAGES, hurt, STUMBLE_TICKS, wakeForager, rockKind, whatThere, cherryShow, honeySpare, gather, takeFrom, dropSlot, dropAt, DROP_DAYS, moveSlot, roomFor, forEachDecorNear, SLOTS, STACK, stackOf, setStacks,
+  walkable, onIce, friendsAt, packWorld, unpackWorld, GROUND, foragerTo, foragerJump, foragerArrives, openingStorm, FORAGER_WALK, FORAGER_RUN, FORAGER_SNEAK, FORAGER_ICE_STOP, FORAGER_JUMP_TICKS, FORAGER_JUMP_HEIGHT, FORAGER_DASH_DRAG, FORAGER_HOP_EARLY, airTemp, warmthStage, WARMTH_STAGES, hurt, STUMBLE_TICKS, HAND_WARM, HAND_LEAST, wakeForager, rockKind, whatThere, cherryShow, honeySpare, gather, takeFrom, dropSlot, dropAt, DROP_DAYS, moveSlot, roomFor, forEachDecorNear, SLOTS, STACK, stackOf, setStacks,
   KINDS, FEW, whiteness, visibility, WINTER_COAT, WILD_COAT,
   foragerSign, FORAGER_THREAT,
   TERRAIN, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,

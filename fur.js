@@ -768,10 +768,11 @@ const FORAGER_SHADE = [34, 30, 26], FORAGER_LIGHT = [255, 240, 214];
 const smoothstep = t => t * t * (3 - 2 * t);
 
 // Where things are in a pose: the feet (x, y, and which is in front), the hips' bob, the arms' swing, the hood's point.
-function foragerPose(view, pose) {
+// short: the step's length against its own (carrying a dish, CARRY_STRIDE).
+function foragerPose(view, pose, short = 1) {
   if (view === KNEEL_VIEW) return kneelPose(pose);
   const walk = pose >= 8, jog = pose >= 16 && pose < 24, cold = pose >= 24 || pose >= 5 && pose <= 7, u = walk ? (pose & 7) / 8 : 0;
-  const down = jog ? JOG_DOWN : 0.5, reach = jog ? JOG_REACH : FORAGER_REACH;
+  const down = jog ? JOG_DOWN : 0.5, reach = (jog ? JOG_REACH : FORAGER_REACH) * short;
   // A foot: how far ahead of the hips it is (+: forward) and how high off the ground, at phase v of the stride.
   // (Jogging, it's highest early in the swing: the heel kicks up behind before the knee brings it through.)
   const foot = v => {
@@ -779,7 +780,7 @@ function foragerPose(view, pose) {
     if (!walk) return [0, 0];
     if (v < down) return [reach - 2 * reach * v / down, 0];
     const s = (v - down) / (1 - down);
-    return [-reach + 2 * reach * smoothstep(s), jog ? JOG_LIFT * Math.sin(Math.PI * s ** 0.7) : FORAGER_LIFT * Math.sin(Math.PI * s)];
+    return [-reach + 2 * reach * smoothstep(s), (jog ? JOG_LIFT * Math.sin(Math.PI * s ** 0.7) : FORAGER_LIFT * Math.sin(Math.PI * s)) * short];
   };
   const fwd = view === 0 ? [-1, 0] : view === 1 ? [-0.62, 0.4] : [-0.62, -0.4];   // forward, on the picture
   const base = view === 0 ? [[-0.035, 0.72], [0.045, 0.72]] : view === 1 ? [[-0.1, 0.71], [0.07, 0.735]] : [[-0.09, 0.735], [0.08, 0.71]];
@@ -892,6 +893,24 @@ function sneakPose(i) {
   P.kneeOver = !lurk && steps[0][1] > 0.05; P.hemUp = 0.05;        // (the cloak hitched up, tiptoeing)
   P.tip = 0.06 * Math.cos(4 * Math.PI * u + 1.2) + 0.03; P.sway = lurk ? 0.01 : 0.02 * Math.sin(2 * Math.PI * u);
   P.look = lurk && i === FORAGER_EMOTE.lurkB ? 0.03 : 0.015; P.sly = true; P.legLine = 0.44;
+  return P;
+}
+
+// Carrying a dish (game.js drawHeldDish), kept after the emotes: the same standing, walking and jogging paintings in each
+// view, but held carefully: both mittens out before its middle with the forearms level, where the dish sits on them (side
+// on, the elbows bent and the hands ahead; from the front, the mittens at the dish's either side; from behind, both arms
+// out ahead, hidden by the cloak). Its steps a little shorter (CARRY_STRIDE: game.js turns the stride over sooner), the
+// body upright and its bob halved, so the dish rides steady. Cold, it no longer hugs itself (its hands are full), but its
+// face stays cold. 'forager:' + carryArt(snow, outfit, (view << 5) + pose), views 0 to 2 only.
+const CARRY_STRIDE = 0.8, CARRY_HANDS = [[-0.05, 0.22, -0.09, 0.12], [0.05, 0.22, 0.09, 0.12]];   // (from the front: each mitten and elbow, from its shoulder)
+const CARRY_AT = EMOTE_AT + FORAGER_EMOTE_ARTS, FORAGER_CARRY_ARTS = FORAGER_SNOWS * FORAGER_SNOW_ARTS;
+const carryArt = (snow, outfit, vp) => CARRY_AT + snow * FORAGER_SNOW_ARTS + (outfit << 7) + vp;
+function carryPose(view, pose) {
+  const P = foragerPose(view, pose, CARRY_STRIDE);
+  P.carry = true; P.hug = false; P.hand = false; P.swing = 0;
+  P.bob *= P.stoop ? 1 : 0.5; P.tip *= 0.6; P.sway *= 0.6; P.lean *= 0.4;
+  if (view === 0) { P.arms = [0.5, 0.42]; P.bend = 1.25; }      // (side on: the upper arms down a little forward, the forearms level ahead)
+  else if (view === 1) P.hands = CARRY_HANDS;
   return P;
 }
 
@@ -1104,7 +1123,7 @@ function foragerParts(P) {
       if (P.eat) arm(shoulder, 0, false, true, P.hands[1]);       // (eating: the mitten up in front of its chin)
     } else {
       // (An arm swung forward is ahead of it, behind the cloak from here: only the one swung back shows over it.)
-      const al = P.stoop ? 1.1 * P.stoop : P.swing, ar = P.stoop ? 1.1 * P.stoop : -P.swing;
+      const al = P.carry ? 1.2 : P.stoop ? 1.1 * P.stoop : P.swing, ar = P.carry ? 1.2 : P.stoop ? 1.1 * P.stoop : -P.swing;   // (carrying: both out ahead)
       if (P.hug) { hug(-shoulder, 0); hug(shoulder, 1); }
       else { if (al > 0) arm(-shoulder, al, true, false); if (ar > 0) arm(shoulder, ar, true, false); }
       cloak(); satchel();
@@ -1117,7 +1136,12 @@ function foragerParts(P) {
 
 function paintForager(g, size, U, n) {
   let P;
-  if (n >= EMOTE_AT) {                                           // (an emote: emoteArt)
+  if (n >= CARRY_AT) {                                           // (carrying a dish: carryArt)
+    n -= CARRY_AT;
+    SNOWED = Math.floor(n / FORAGER_SNOW_ARTS); n %= FORAGER_SNOW_ARTS;
+    wear(n >> 7);
+    P = carryPose((n >> 5) & 3, n & 31);
+  } else if (n >= EMOTE_AT) {                                           // (an emote: emoteArt)
     const e = n - EMOTE_AT, k = e >> 5;
     SNOWED = Math.floor(k / FORAGER_OUTFITS.length); wear(k % FORAGER_OUTFITS.length);
     P = emotePose(e & 31);
@@ -1196,5 +1220,5 @@ const painters = { fox: paintFox, rabbit: paintRabbit, dfly: paintDragonfly, kfi
 
 root.Fur = { tone, rockRGB, fillIn, strokeIn, discAt, ovalAt, blurIn, softIn, furGlow, foxRGB, FOX_WHITE, FOX_SOCK,
   FOX_POSE, RABBIT_POSE, RABBIT_KINDS, setCoats, paintFox, paintRabbit, paintForager, paintForagerFace, FACE_MOODS, FORAGER_REACH, FORAGER_JOG_STRIDE, FORAGER_OUTFITS, FORAGER_CLOAKS, FORAGER_HATS, outfitOf, FORAGER_COLD, FORAGER_IDLE, FORAGER_IDLES, FORAGER_SNOWS, FORAGER_SNOW_ARTS, KNEEL_VIEW, FORAGER_KNEEL,
-  FORAGER_EMOTE, FORAGER_EMOTES, FORAGER_EMOTE_ARTS, FORAGER_EAT, FORAGER_EATS, EMOTE_AT, emoteArt, SNEAK_STRIDE, painters };
+  FORAGER_EMOTE, FORAGER_EMOTES, FORAGER_EMOTE_ARTS, FORAGER_EAT, FORAGER_EATS, EMOTE_AT, emoteArt, CARRY_AT, FORAGER_CARRY_ARTS, CARRY_STRIDE, carryArt, SNEAK_STRIDE, painters };
 })(typeof window !== 'undefined' ? window : globalThis);
