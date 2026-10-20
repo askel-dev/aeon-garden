@@ -6306,7 +6306,28 @@ function placeTorch(w, x, y, ticks = TORCH_BURN) {
   emit(w, { type: 'torchlit', torch: T });
   return T;
 }
-// Every few ticks: the lit ones burn down (quicker in the wet), a gutted one's stub goes, and one long gone is forgotten.
+// Lights one that's guttering or burnt out again (game.js has taken the fresh bark it's wrapped in out of the satchel):
+// `ticks` of flame, as placeTorch's, and the same TORCH_MAX (one past it gutters the oldest other). It counts as new from
+// now (born), so it isn't the next one guttered. Not one the water's over (torchUnder). Returns it, or null.
+function relightTorch(w, T, ticks = TORCH_BURN) {
+  if (torchUnder(w, T)) return null;
+  if (T.burn <= 0) {
+    let lit = 0, oldest = null;
+    for (const o of w.torches) if (o.burn > 0) {
+      lit++;
+      if (!oldest || o.born < oldest.born) oldest = o;
+    }
+    if (lit >= TORCH_MAX && oldest) { oldest.burn = 0; emit(w, { type: 'torchout', torch: oldest }); }
+  }
+  T.born = w.tick; T.burn = Math.max(1, ticks); T.wet = TORCH_WET[w.weather.kind] || 1;
+  emit(w, { type: 'torchlit', torch: T });
+  return T;
+}
+// Whether the water's over a torch: deep, and not frozen (one pushed in on the ice, or in the shallows the spring flood
+// came up over). Shallows don't put it out; its head stands well clear of them.
+const torchUnder = (w, T) => !w.frozen && w.water[idx(T.x, T.y)] === DEEP;
+// Every few ticks: the lit ones burn down (quicker in the wet), the water coming up over one puts it out, a gutted one's
+// stub goes, and one long gone is forgotten.
 function torchTick(w, n = TORCH_EVERY) {
   const wet = TORCH_WET[w.weather.kind] || 1, step = Math.round(n * wet);
   let keep = 0;
@@ -6315,6 +6336,7 @@ function torchTick(w, n = TORCH_EVERY) {
     if (T.burn > 0) {
       T.wet = wet;
       T.burn -= step;
+      if (T.burn > 0 && torchUnder(w, T)) T.burn = 0;    // (the flood, or the thaw under one stuck in the ice)
       if (T.burn <= 0) { T.burn = 0; emit(w, { type: 'torchout', torch: T }); }
     } else {
       T.burn -= n;
@@ -8046,7 +8068,7 @@ const api = {
   TREES, treeStage, treeAge, standing, bearing, inBloom, SEEDLING, SAPLING, GROWN, KIND_NAMES,
   FROG_K, SPAWN_WORTH, FISH_K, FISH_EAT, CROW_SEATS, SHROOMS, SHROOM_KINDS, FINDS, FIND_KINDS, findSeason, eachPickable, greenStage, greenPicked, GREEN_SEASONS, brambleStage, RIPE_FROM, RIPE_TO,
   bagCount, spend, stow, feedForager, hungerOf, HUNGRY, TUMMY, fireSpot, layFire, feedFire, fireRoom, lightable, lightFire, fireHeat, fireWarmth, CAMP_R, CAMP_FLAT, inCamp, BASKET_SLOTS, basketSpot, makeBasket, moveBetween, moveInto, putAway,
-  torchSpot, placeTorch, TORCH_BURN, TORCH_STUB, TORCH_WET, TORCH_MAX, TORCH_GAP, scorchFade,
+  torchSpot, placeTorch, relightTorch, torchUnder, TORCH_BURN, TORCH_STUB, TORCH_WET, TORCH_MAX, TORCH_GAP, scorchFade,
   storeCount, storeRoom, storePut, storeTake, tidyStore, worldStores, storesAt, storesCount, storesRoom, storesTake, storesPut, STORE_NEAR,
   cookTicks, cookReady, cookOn, cookTake, shapeVessel, makeVessel, kitOf, cookProgress, SKILLS, SKILL_NAMES, SKILL_TOP, skillNeed, skillLevel, skillProgress, perk, gainSkill, FIRE_STICK, FIRE_MOST, FIRE_LOW, FIRE_EMBERS, FIRE_NEAR, FIRE_REACH, FIRE_GAP, FIRE_WET, FIRE_WARM,
 };

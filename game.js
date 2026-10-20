@@ -3211,7 +3211,7 @@ const FLOAT_MS = 1400, SAY_MS = 1900;     // a "+3 Chanterelles" floating up, an
 const FROM_FRONT = { tree: 1, hive: 1, bramble: 1 };   // (comes at these from in front, where it shows, not hidden behind them)
 let GLOW_ART = null;
 const pickFloats = [];                    // { img, w, h, x, y (world), t0, ms }
-const aim = { x: 0, y: 0, in: false, moved: false, cx: 0, cy: 0, cz: 0, at: 0, t: null, id: '', n: 0, why: '', fire: null, basket: null, close: false, closeAt: 0, closeT0: 0 };   // what the mouse is on (hoverFrame): a thing to gather, or a fire; close: what the forager stands by instead (closeBy)
+const aim = { x: 0, y: 0, in: false, moved: false, cx: 0, cy: 0, cz: 0, at: 0, t: null, id: '', n: 0, why: '', fire: null, basket: null, torch: null, close: false, closeAt: 0, closeT0: 0 };   // what the mouse is on (hoverFrame): a thing to gather, or a fire; close: what the forager stands by instead (closeBy)
 const AIM_MS = 150;
 
 // The thing to gather under a point: { kind, it } or null. Hives first (in their tree), then what grows at a tree's foot,
@@ -3308,6 +3308,8 @@ function useAt(sx, sy) {
   if (c) return { kind: 'animal', it: c };
   const F = fireAt(sx, sy);
   if (F) return { kind: 'fire', it: F };
+  const T = torchAt(sx, sy);
+  if (T) return { kind: 'torch', it: T };
   const B = basketAt(sx, sy) || stoneAt(sx, sy);
   if (B) return { kind: B.stone ? 'stone' : 'basket', it: B };
   return gatherAt(sx, sy, false) || snapTo(sx, sy, true);
@@ -3316,6 +3318,7 @@ function useAt(sx, sy) {
 function useIt(u, run = false, queue = true) {
   if (u.kind === 'animal') select(u.it.id);
   else if (u.kind === 'fire') clickFire(u.it);
+  else if (u.kind === 'torch') clickTorch(u.it);
   else if (u.kind === 'stone') goStone();
   else if (u.kind === 'basket') goBasket();
   else if (!queue || !queueGather(u)) goGather(u, run);
@@ -3621,19 +3624,20 @@ function hoverFrame() {
   if (mouse && (aim.moved || (aim.cx !== cam.x || aim.cy !== cam.y || aim.cz !== cam.zoom) && now - aim.at > AIM_MS)) {
     aim.moved = false; aim.cx = cam.x; aim.cy = cam.y; aim.cz = cam.zoom; aim.at = now;   // (the camera gliding after the forager: a look every AIM_MS will do)
     const fire = ui.hoverId ? null : fireAt(aim.x, aim.y);   // (a fire first, as a click: over what lies by it)
-    const basket = ui.hoverId || fire ? null : basketAt(aim.x, aim.y) || stoneAt(aim.x, aim.y);   // (or the old stone)
-    const t = ui.hoverId || fire || basket ? null : gatherAt(aim.x, aim.y);
+    const torch = ui.hoverId || fire ? null : torchAt(aim.x, aim.y);   // (a torch that wants bark: one burning well isn't one)
+    const basket = ui.hoverId || fire || torch ? null : basketAt(aim.x, aim.y) || stoneAt(aim.x, aim.y);   // (or the old stone)
+    const t = ui.hoverId || fire || torch || basket ? null : gatherAt(aim.x, aim.y);
     // A mouse over nothing leaves what the forager stands by alone: clearing it for each look blanked its ring and label
     // (and restarted their fade) until closeBy looked again, so they flickered.
-    if (fire || basket || t || ui.hoverId || !aim.close) { aim.close = false; aim.fire = fire; aim.basket = basket; aim.t = t; }
-  } else if (!mouse && !aim.close && (aim.t || aim.fire || aim.basket)) { aim.t = null; aim.fire = null; aim.basket = null; }
-  if ((aim.close || !(aim.t || aim.fire || aim.basket || ui.hoverId)) && now - aim.closeAt > AIM_MS) closeBy(now);
+    if (fire || torch || basket || t || ui.hoverId || !aim.close) { aim.close = false; aim.fire = fire; aim.torch = torch; aim.basket = basket; aim.t = t; }
+  } else if (!mouse && !aim.close && (aim.t || aim.fire || aim.torch || aim.basket)) { aim.t = null; aim.fire = null; aim.torch = null; aim.basket = null; }
+  if ((aim.close || !(aim.t || aim.fire || aim.torch || aim.basket || ui.hoverId)) && now - aim.closeAt > AIM_MS) closeBy(now);
   if (aim.t) {
     const w = S.whatThere(world, aim.t.kind, aim.t.it);
     aim.id = w.id; aim.n = w.n; aim.why = w.why;
     if (!w.n && !w.why) aim.t = null;                     // (a dead tree: nothing to say)
   }
-  canvas.classList.toggle('on-animal', !!ui.hoverId || !aim.close && (!!(aim.t && aim.n) || !!aim.fire || !!aim.basket));
+  canvas.classList.toggle('on-animal', !!ui.hoverId || !aim.close && (!!(aim.t && aim.n) || !!aim.fire || !!aim.torch || !!aim.basket));
 }
 // Standing still by something to use (a fire, the basket, the old stone, or the nearest thing to pick), within USE_NEAR: it
 // glows as under a mouse, with its name by it (for USE_SAY ms, then it fades), so a finger knows what a tap will do here.
@@ -3645,17 +3649,19 @@ function closeBy(now) {
   const look = (kind, it) => { const d = (it.x - F.x) ** 2 + (it.y - F.y) ** 2; if (d < bd) { bd = d; best = it; bk = kind; } };
   if (F && F.down < 0 && !F.walking && !ui.gather && !ui.fire && !ui.place && !drag && now - sense.still > USE_STILL) {
     for (const f of world.fires) look('fire', f);
+    for (const T of world.torches) if (torchLow(T)) look('torch', T);
     if (myBasket()) look('basket', myBasket());
     if (world.stone) look('stone', world.stone);
     const t = nearPick();
     if (t) look(t.kind, t.it);
   }
   if (!best && !aim.close) return;
-  const was = aim.fire || aim.basket || (aim.t && aim.t.it);
+  const was = aim.fire || aim.torch || aim.basket || (aim.t && aim.t.it);
   aim.close = !!best;
   aim.fire = bk === 'fire' ? best : null;
+  aim.torch = bk === 'torch' ? best : null;
   aim.basket = bk === 'basket' || bk === 'stone' ? best : null;
-  aim.t = best && !aim.fire && !aim.basket ? (aim.t && aim.t.it === best ? aim.t : { kind: bk, it: best }) : null;
+  aim.t = best && !aim.fire && !aim.torch && !aim.basket ? (aim.t && aim.t.it === best ? aim.t : { kind: bk, it: best }) : null;
   if (best !== was) aim.closeT0 = now;
 }
 function drawGlow(now, over) {
@@ -3687,6 +3693,11 @@ function hoverLine() {
       const z = cam.zoom, px = firePx(z);
       drawLabel(w, (F.x - cam.x) * z + vw / 2, (F.y - cam.y) * z + vh / 2 + px * FIRE_PIP_DY + firePipR(z) * 1.3 + 4);   // (under the fuel pips, as the vessel row's name is under it)
     }
+    return;
+  }
+  if (aim.torch && !ui.fire && !pickFloats.length) {     // a torch burning low or out: that bark lights it again (torchWord)
+    const T = aim.torch, z = cam.zoom;
+    if (torchLow(T) && world.torches.includes(T)) drawLabel(torchWord(T), (T.x - cam.x) * z + vw / 2, (T.y - cam.y) * z + vh / 2 + 6);
     return;
   }
   if (aim.basket && !ui.fire && !pickFloats.length) {    // the basket: what's in it
@@ -3731,6 +3742,8 @@ const PLACE_REACH = 5;                   // tiles from the forager a fire can be
 const STAND_OFF = 0.78;                  // tiles to its side the forager kneels at it
 const LAY_STEPS = 12, LAY_MS = 190;      // six stones, five sticks and the tinder, this long each
 const TORCH_SET_MS = 900;                // ms it kneels pushing a torch into the ground, before the strike
+const RELIGHT = { torch: { needs: { birchbark: 1 } } };   // what lighting a torch again takes (spendBuild's table): fresh bark round the old stick
+const torchLow = T => T.burn < S.TORCH_BURN * 0.2;     // guttering (its last fifth, drawTorch's look) or out: bark lights it again
 const STRIKE_MS = 440, STRIKE_UP = 0.6;  // a strike of the flint and steel, and how much of it is the swing up
 const STRIKES = 2;                       // strikes till a spark takes (one more in the wet)
 const BLOW_S = 2.2;                      // s of blowing it takes to light the tinder, dry (BLOW_WET times that in the wet)
@@ -4227,6 +4240,48 @@ function drawTorch(T, z, now) {
     const heat = look ? 0.34 + 0.04 * Math.sin(now / 170 + T.born) : 0.56 + 0.04 * Math.sin(now / 210 + T.born);
     drawTorchFlame(sx + 0.006 * px / 2, cy + (TORCH_TOP[look] + 0.045) * px / 2, px * (look ? 0.38 : 0.46), heat, now, T.born % 97);
   }
+}
+
+// The torch under a point on screen that wants bark (guttering or burnt out), or null: one burning well isn't a thing to
+// use, so a click on it walks there as on the grass (as a fire burning well says nothing).
+function torchAt(sx, sy) {
+  const z = cam.zoom, px = torchPx(z), m = fingerTap ? FINGER_R : 0;
+  let best = null, bd = 1;
+  for (const T of world.torches) {
+    if (!torchLow(T)) continue;
+    const x = (T.x - cam.x) * z + vw / 2, y = (T.y - cam.y) * z + vh / 2 - px * 0.25;
+    const d = ((sx - x) / Math.max(12, m, px * 0.2)) ** 2 + ((sy - y) / Math.max(14, m, px * 0.32)) ** 2;
+    if (d < bd) { best = T; bd = d; }
+  }
+  return best;
+}
+// A torch's hover line, only once it wants bark (torchLow), as fireWord's: what it wants, and whether the satchel has it.
+function torchWord(T) {
+  const bark = S.storesCount(storesAt(T.x, T.y), 'birchbark') > 0;
+  if (T.burn > 0) return bark ? 'Torch · burning low: bark relights it' : 'Torch · burning low: it wants birch bark';
+  return bark ? 'Torch · burnt out: bark relights it' : 'Torch · burnt out: it wants birch bark';
+}
+// A click or a tap on a torch that wants bark: off to its side to wrap fresh bark round it and strike (goFire 'relight',
+// the generic 'set' kneel), or, with none to hand, what's missing, said where it stands.
+function clickTorch(T) {
+  if (!torchLow(T)) return;
+  const have = buildHave('torch', RELIGHT, storesAt(T.x, T.y));
+  if (!have.ready) { say(`Relighting it needs ${missingWords(have.missing)}`, T.x, T.y - 0.4); chime('click'); return; }
+  if (S.torchUnder(world, T)) { say('The water\'s over it', T.x, T.y - 0.4); return; }
+  goFire({ kind: 'relight', F: null, x: T.x, y: T.y });
+}
+// The nearest torch close by that wants bark, with bark to hand for it (E lights it again), or null.
+function barkTorch() {
+  const f = world.forager;
+  if (f.down >= 0 || intro.on) return null;
+  let T = null, best = PROMPT_NEAR;
+  for (const o of world.torches) { const d = Math.hypot(o.x - f.x, o.y - f.y); if (d < best && torchLow(o) && S.storesCount(storesAt(o.x, o.y), 'birchbark') > 0) { T = o; best = d; } }
+  return T;
+}
+// The torch stuck in the ground at x, y (a relight's, here or a friend's), or null.
+function torchHere(x, y) {
+  for (const T of world.torches) if (Math.abs(T.x - x) < 1e-3 && Math.abs(T.y - y) < 1e-3) return T;
+  return null;
 }
 
 // Over the dark: each fire's glow (the bloom over its flames, its embers glowing, the spark in the tinder), the embers
@@ -5683,6 +5738,12 @@ function fireFrame(now, dt) {
       renderBuild();
       fireStage(j, 'set', now);
       chime('stick');
+    } else if (j.kind === 'relight') {                    // (a torch burning low or out: fresh bark round it, then one strike)
+      const T = torchHere(j.x, j.y);
+      if (!T || !torchLow(T)) { ui.fire = null; return; }
+      if (!spendBuild('torch', RELIGHT, storesAt(j.x, j.y))) { say('Relighting it needs 1 more birch bark', j.x, j.y - 0.4); ui.fire = null; return; }
+      fireStage(j, 'set', now);
+      chime('tinder');
     } else if (j.kind === 'larder') { ui.fire = null; openLarder(true); }   // (by the basket: it opens)
     else if (j.kind === 'stone') { ui.fire = null; openStone(true); }      // (by the old stone: the line to talk on)
     else if (j.kind === 'relay') {                      // a cold one: tinder in, and sticks if it has none
@@ -5724,13 +5785,20 @@ function fireFrame(now, dt) {
   } else if (j.stage === 'set') {
     if (u > TORCH_SET_MS) fireStage(j, 'strike', now);
   } else if (j.stage === 'strike') {
-    const torch = j.kind === 'torch', k = Math.floor(u / STRIKE_MS), most = torch ? 1 : STRIKES + (S.FIRE_WET[world.weather.kind] ? 1 : 0);
+    const torch = j.kind === 'torch' || j.kind === 'relight', k = Math.floor(u / STRIKE_MS), most = torch ? 1 : STRIKES + (S.FIRE_WET[world.weather.kind] ? 1 : 0);
     if (k >= most) { fireStage(j, torch ? 'lit' : 'blow', now); return; }
     if (u - k * STRIKE_MS > STRIKE_MS * STRIKE_UP && j.step !== k) {   // struck: sparks off it, into the tinder
       j.step = k;
       sparks.push({ x: j.x + (j.sx < j.x ? -0.12 : 0.12), y: j.y - 0.05, t0: now, dir: j.sx < j.x ? 0.6 : Math.PI - 0.6 });
       hear('strike', j.x, j.y, { n: k }, true);
-      if (torch) { S.placeTorch(world, j.x, j.y); sendFire('torch', j, 0, 0); }   // (stuck in the ground here, and the others')
+      if (j.kind === 'torch') { S.placeTorch(world, j.x, j.y); sendFire('torch', j, 0, 0); }   // (stuck in the ground here, and the others')
+      else if (torch) {                                   // (a torch lit again: here, and the others')
+        const T = torchHere(j.x, j.y);
+        if (T && S.relightTorch(world, T)) {
+          sendFire('torchre', j, 0, 0);
+          firstTime('relight:torch', 'you relit', 'A torch', 'Fresh bark round the old stick, and it burns another night.');
+        }
+      }
     }
   } else if (j.stage === 'blow') blowFrame(j, now, dt);
   else if (j.stage === 'cook' || j.stage === 'cooking') cookFrame(j, now);
@@ -5921,6 +5989,11 @@ function fireNet(m) {
   if (m.a === 'torch') {                               // (a friend's torch: pushed in where it stands, as much of its night left)
     if (!world.torches.some(T => Math.abs(T.x - m.x) < 1e-3 && Math.abs(T.y - m.y) < 1e-3))
       S.placeTorch(world, m.x, m.y, Math.max(1, S.TORCH_BURN - Math.max(0, world.tick - (m.tick | 0))));
+    return;
+  }
+  if (m.a === 'torchre') {                             // (a friend's torch lit again, as much of its night left; gone here already, set down again)
+    const T = torchHere(m.x, m.y), left = Math.max(1, S.TORCH_BURN - Math.max(0, world.tick - (m.tick | 0)));
+    if (T) S.relightTorch(world, T, left); else S.placeTorch(world, m.x, m.y, left);
     return;
   }
   let F = null;
@@ -15966,6 +16039,7 @@ function meadowSum(w) {
   for (const v of w.hives) h = (h * 31 + Math.round(v.honey * 64)) | 0;
   for (const F of w.fires) h = (h * 31 + (F.lit ? 2 : 1) + (F.cookDish ? 4 : 0)) | 0;   // (the fires, which burn and which have a pot on: not their sticks or how far it's cooked, which a late word shifts a little)
   h = (h * 31 + w.torches.length) | 0;                    // (the torches: a friend's word for one lands on its tick, so both sides agree)
+  for (const T of w.torches) h = (h * 31 + (T.burn > 0 ? 2 : 1)) | 0;   // (and which burn: a relit one is lit on both sides)
   const B = w.camp && w.camp.basket;
   if (B) for (let k = 0; k < B.bag.length; k++) h = (h * 31 + B.bag[k].length + B.bagN[k] * 7) | 0;   // (and the basket: two who took the last of a thing at once come out even)
   return h;
@@ -17012,7 +17086,7 @@ document.addEventListener('keydown', e => {
     else if (stoneOpen()) openStone(false);
     else if (stoneByE()) goStone();
     else if (basketByE()) goBasket();
-    else { const F = fireFree() && (cookFire() || relightFire() || campFire()); if (F) clickFire(F); else pickNear(); }   // (fireFree: the 'lit' moment counts, as the prompt does)
+    else { const F = fireFree() && (cookFire() || relightFire() || campFire()), T = !F && fireFree() && barkTorch(); if (F) clickFire(F); else if (T) clickTorch(T); else pickNear(); }   // (fireFree: the 'lit' moment counts, as the prompt does)
   }
   else if (e.code === 'KeyF' && !e.repeat) { if (atFire()) { fireKey = true; blowOn(true); } else campfirePressed(); }   // (at a fire, held: blowing; else the quick campfire)
   else if (e.code === 'KeyC' && !e.repeat) { if (stripOpen()) openMake(false); else openMake(true); }   // (the make strip)
