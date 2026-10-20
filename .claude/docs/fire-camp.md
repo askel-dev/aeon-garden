@@ -74,6 +74,15 @@ slots as the satchel's; a tap moves a slot across either way, a drag puts it in 
 `moveInto`), "Put all in" empties the satchel into it (`putAway`). Whatever moves either way flies as a small painting from its slot to the one that took it (`flyMoves`: paired by what it is, at most `FLY_MOST`, `FLY_GAP` ms apart; the landing slot's own painting waits hidden, `.incoming`, and bumps as it lands). Walking off `LARDER_NEAR`, going to a fire, ✕, E, Esc or Back shut
 it (`larderFrame`, `stepOut`). Playing together it's shared: the host makes it (a friend sees it set down: `sendFire` 'basket') and anyone in camp can open it; each move sends the slots it changed (`sendBasket`, `'bk'`, applied at its tick in `basketNet`), so two moving different things at once both land, and the basket is in `meadowSum`, so a guest who drifts off gets it again. It's also to hand while cooking at a fire in camp: its things are then a row of small tiles in the cooking window, a tap taking one out (below, `#cook-basket`).
 
+The seat log (`BUILDS.seat`, five sticks, `where: 'camp'`) goes down the basket's way: `placeSeat` (`ui.place` with `seat: true`,
+`S.seatSpot` for the why), `goFire` kind `'seat'`, the generic `'set'` kneel (`TORCH_SET_MS`), which for a seat ends the job
+instead of striking, then a `firstTime`. Painted once (`paintSeat`, `SEAT_ART`, also the strip's tile): a round log on two sawn
+rounds, turned a little (`S.SEAT_TILT`), about two foragers long; drawn by `drawSeat`. It's solid. A click on it (`seatAt`) walks
+the forager to just in front (`goSeat`, `S.SEAT_OUT`), and standing still there `SEAT_MS` (`sitFrame`, `fireSit.seat`) it sits
+on it: fur.js `sitPose` (`KNEEL.sit`, `KNEEL.sitWarm` with a fire lit at camp: eyes shut, smiling), facing you, lifted onto the
+log by `seatLift` (as a dance's hop is, `fg.lift`; a friend's from its `kn`), with no shadow of its own. Friends get
+`sendFire('seat')`, and `meadowSum` counts it.
+
 ## sim.js
 
 Fires (`w.fires`, one layout, `fireOf`; the long comment over `FIRE_STICK`): laid with sticks and tinder (`layFire`; what one takes
@@ -95,8 +104,8 @@ builds go. A meadow kept with a fire lit before camps makes camp at it as it ope
 Torches (`w.torches`, in `LATER`, one layout each, `torchOf`: where it stands, when it was set down, the ticks of flame left and
 how fast it's burning just now, `wet`): a stick wrapped in birch bark pushed into the ground anywhere but the deep water, or a
 trunk, a rock, a burrow or another torch (`torchSpot`, like `fireSpot` but closer), lit at once (`placeTorch`; what one takes is
-recipes.js `BUILDS.torch`, spent by game.js). It burns `TORCH_BURN` (half a day, 6 min at 1x), quicker in the wet as a fire's
-blowing is (`TORCH_WET`, `BLOW_WET`'s table), then its charred stub stays `TORCH_STUB` (a day) before it's gone. At most
+recipes.js `BUILDS.torch`, spent by game.js). It burns `TORCH_BURN` (half a season, 3.5 days, 42 min at 1x), quicker in the wet as a fire's
+blowing is (`TORCH_WET`, `BLOW_WET`'s table), then its charred stub stays for good (fresh bark relights it). At most
 `TORCH_MAX` (20) burn at once: laying one past that gutters the oldest, its stub staying. It gives light, no warmth (game.js
 draws its pool). `relightTorch` lights one guttering or out again (game.js has spent the bark): a fresh `TORCH_BURN`,
 `born` moved to now so it isn't the next one guttered, and the same `TORCH_MAX`. The water coming up over one puts it out
@@ -107,3 +116,8 @@ The camp's basket (`w.camp.basket`, `basketOf`, null till it's made: `makeBasket
 and clear of the fire, rocks and trunks) keeps `BASKET_SLOTS` slots of `STACK`, laid out as the satchel's (`bag`, `bagN`), and
 a collapse doesn't touch it. `moveBetween` and `moveInto` move a slot between any two of them, `putAway` the whole satchel in.
 A camp kept before baskets gets none (`unpackWorld`), no `KEEP_VERSION` bump.
+The seat log (`w.camp.seat`, `seatOf`, null till `makeSeat`) is scenery with no store, `SEAT_HALF` either side of its middle
+and turned `SEAT_TILT`. It's solid: `rocksFor` puts a row of `SEAT_SOLID` circles along it into `solidR` (`makeSeat` clears
+`solidW` so they're added). `seatSpot` measures to its line (`seatEnds`): the fire, basket, torches, rocks, trunks, brambles
+and burrows; `seatNear` is how far a point is from it, which keeps the fire, torch and basket spots clear. A camp kept before
+it gets `seat: null` (`unpackWorld`), no `KEEP_VERSION` bump.

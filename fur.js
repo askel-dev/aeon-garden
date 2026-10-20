@@ -700,7 +700,7 @@ const FORAGER_VIEWS = ['side', 'front', 'back', 'kneel'];
 // Kneeling at a fire (view 3): the pose, and how it's held: how far it's bent over (stoop), how far forward each arm
 // reaches (far, near: 0 hanging, 1.57 straight out), the head's lift (look), and the face (blow, warm).
 const KNEEL_VIEW = 3;
-const FORAGER_KNEEL = { rest: 16, lay: 17, strikeUp: 18, strikeDown: 19, blow: 20, breathe: 21, warm: 22 };
+const FORAGER_KNEEL = { rest: 16, lay: 17, strikeUp: 18, strikeDown: 19, blow: 20, breathe: 21, warm: 22, sit: 23, sitWarm: 24 };
 const KNEELS = [
   { stoop: 0.3, lean: 0.02, far: 0.55, near: 0.7, look: 0 },              // resting, a mitten on its knee
   { stoop: 1, lean: 0.09, far: 1.0, near: 1.1, look: 0.02 },              // reaching down in front, laying a stone or a stick
@@ -711,6 +711,7 @@ const KNEELS = [
   { stoop: 0.3, lean: 0, far: 1.35, near: 1.48, look: -0.02, warm: 1 },   // mittens out to the flames
 ];
 function kneelPose(pose) {
+  if (pose >= FORAGER_KNEEL.sit) return sitPose(pose === FORAGER_KNEEL.sitWarm);
   const k = KNEELS[pose - 16] || KNEELS[0];
   return {
     view: 0, kneel: true, walk: false, jog: false, u: 0, fwd: [-1, 0], stoop: k.stoop, swing: 0,
@@ -720,6 +721,18 @@ function kneelPose(pose) {
     arms: [k.far, k.near], look: k.look, tilt: 0, hand: false, blink: !!k.warm, hug: false, sad: false, blow: !!k.blow, warm: !!k.warm,
     turn: 0, hands: null, happy: false, yawn: false, flap: 0,
   };
+}
+// Sitting on the camp's seat log (game.js sitFrame), facing you (poses 23 and 24 of view 3): its hips down by the log's top,
+// the knees out toward you under the cloak, the boots dangling, its mittens in its lap; by a lit fire, eyes shut and smiling.
+// game.js lifts the painting onto the log (seatLift: its hips SIT_HIPS over its feet's line).
+function sitPose(warm) {
+  const P = foragerPose(1, 0);
+  P.bob = 0.14; P.hemUp = 0.02; P.tip = 0.03;
+  P.knees = [[-0.085, 0.6], [0.08, 0.605]];
+  P.feet = [[-0.095, 0.76], [0.085, 0.755]];
+  P.hands = [[0.075, 0.27], [-0.075, 0.27]];
+  if (warm) { P.warm = true; P.blink = true; }
+  return P;
 }
 // An outfit is a cloak (with its hood's colours) and a hat (foragerParts: hat), picked apart (game.js wardrobe) and painted
 // as one: outfit = hat * FORAGER_CLOAKS.length + cloak (outfitOf), so the first few are the pointed hood in each cloak. A

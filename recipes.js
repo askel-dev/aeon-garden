@@ -267,7 +267,7 @@ const RECIPES = [
 // What the forager builds, from the make button by the satchel (game.js renderBuild), and what each takes out of the
 // satchel. In `needs`, each word is an ingredient or a tag (any ingredient that has it: 'tinder' takes dry grass or birch
 // bark), with how many. To add a build, copy a block; the game only knows how to build the ones it paints and places (the
-// campfire, the basket at camp, and a torch).
+// campfire, the basket at camp, a torch and the seat log).
 //   name            what it's called
 //   needs           what it takes, { word: how many }
 //   where           where it may go: 'anywhere' (left out), or 'camp' (inside the camp's ring)
@@ -291,6 +291,13 @@ const BUILDS = {
     name: 'Torch',
     needs: { stick: 1, birchbark: 1 },
     text: 'A stick wrapped with birch bark and set in the ground, a flame at its head to keep the dark off.',
+  },
+  seat: {
+    name: 'Seat log',
+    needs: { stick: 5 },
+    where: 'camp',
+    after: 'camp',
+    text: 'A felled log rolled up by the fire onto two sawn rounds, to sit on.',
   },
 };
 

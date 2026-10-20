@@ -5579,6 +5579,18 @@ function rocksFor(w) {
       for (let tx = Math.max(0, Math.floor(d.x - r)); tx <= Math.min(W - 1, Math.floor(d.x + r)); tx++)
         if (Math.hypot(tx + 0.5 - d.x, ty + 0.5 - d.y) < r) solidTile[ty * W + tx] = 1;
   }
+  const Q = w.camp && w.camp.seat;                          // (the camp's seat log: a row of them along it, seatEnds)
+  if (Q) {
+    const r = SEAT_DEEP + FORAGER_GIRTH;
+    seatEnds(Q);
+    for (let k = 0; k < SEAT_SOLID; k++) {
+      const u = k / (SEAT_SOLID - 1), x = lerp(seatAx, seatBx, u), y = lerp(seatAy, seatBy, u);
+      solidR.push(x, y, r);
+      for (let ty = Math.max(0, Math.floor(y - r)); ty <= Math.min(H - 1, Math.floor(y + r)); ty++)
+        for (let tx = Math.max(0, Math.floor(x - r)); tx <= Math.min(W - 1, Math.floor(x + r)); tx++)
+          if (Math.hypot(tx + 0.5 - x, ty + 0.5 - y) < r) solidTile[ty * W + tx] = 1;
+    }
+  }
 }
 // Whether the leg from x0, y0 to x1, y1 keeps clear of every rock.
 function pastRocks(x0, y0, x1, y1) {
@@ -6171,6 +6183,7 @@ function fireSpot(w, x, y) {
   if (w.water[i]) return 'Not on the ice';
   for (const F of w.fires) if (Math.hypot(F.x - x, F.y - y) < FIRE_GAP * 1.5) return 'There\'s a fire here';
   if (w.camp && w.camp.basket && Math.hypot(w.camp.basket.x - x, w.camp.basket.y - y) < BASKET_GAP * 1.4) return 'The basket\'s here';
+  if (seatNear(w, x, y) < 1.0) return 'The seat\'s here';           // (past what its row of solidR would say, so it says this)
   rocksFor(w);
   for (let k = 0; k < solidR.length; k += 3) if (Math.hypot(solidR[k] - x, solidR[k + 1] - y) < solidR[k + 2] + FIRE_GAP * 0.4) return 'A rock\'s in the way';
   let trunk = false;
@@ -6282,6 +6295,7 @@ function torchSpot(w, x, y) {
   for (const T of w.torches) if (Math.hypot(T.x - x, T.y - y) < TORCH_GAP) return 'Another torch is here';
   for (const F of w.fires) if (Math.hypot(F.x - x, F.y - y) < TORCH_GAP * 2) return 'There\'s a fire here';
   if (w.camp && w.camp.basket && Math.hypot(w.camp.basket.x - x, w.camp.basket.y - y) < TORCH_GAP * 1.4) return 'The basket\'s here';
+  if (seatNear(w, x, y) < 0.65) return 'The seat\'s here';
   rocksFor(w);
   for (let k = 0; k < solidR.length; k += 3) if (Math.hypot(solidR[k] - x, solidR[k + 1] - y) < solidR[k + 2] + TORCH_GAP * 0.4) return 'A rock\'s in the way';
   let trunk = false;
@@ -6405,7 +6419,7 @@ function kitTick(w) {
 const CAMP_R = 5, CAMP_FLAT = 0.8;
 const CAMP_KNEEL = 1.5;                 // the forager within this of the fire is kneeling by it: it wakes there
 function campAt(w, F) {
-  w.camp = { x: F.x, y: F.y, fire: F, made: w.tick, basket: null };
+  w.camp = { x: F.x, y: F.y, fire: F, made: w.tick, basket: null, seat: null };
   const f = w.forager;
   if (!f) return;
   rocksFor(w);
@@ -6441,6 +6455,7 @@ function basketSpot(w, x, y) {
   const i = idx(x, y);
   if (w.water[i]) return 'Not in the water';
   for (const F of w.fires) if (Math.hypot(F.x - x, F.y - y) < BASKET_GAP * 1.4) return 'Too near the fire';
+  if (seatNear(w, x, y) < 0.95) return 'The seat\'s here';
   rocksFor(w);
   for (let k = 0; k < solidR.length; k += 3) if (Math.hypot(solidR[k] - x, solidR[k + 1] - y) < solidR[k + 2] + BASKET_GAP * 0.4) return 'A rock\'s in the way';
   let trunk = false;
@@ -6454,6 +6469,57 @@ function makeBasket(w, x, y) {
   w.camp.basket = basketOf(x, y, w.tick);
   emit(w, { type: 'basket', basket: w.camp.basket });
   return w.camp.basket;
+}
+// The camp's seat log (w.camp.seat, null till it's made): a felled log by the fire to sit on (recipes.js BUILDS.seat, which
+// game.js spends). It lies a little turned, its right end nearer (SEAT_TILT), and it's solid: a row of SEAT_SOLID circles
+// along it in rocksFor, so the forager walks round it; game.js sits it on it from just in front (SEAT_OUT, sitFrame). One
+// each, and no random numbers; w.camp is in LATER, so a camp kept before it gets seat: null in unpackWorld.
+const SEAT_HALF = 0.72;                 // tiles from its middle to either end
+const SEAT_TILT = 0.12;                 // how far it's turned, its right end toward you (radians, on the ground)
+const SEAT_DEEP = 0.2;                  // tiles from its line to its side, on the ground
+const SEAT_SOLID = 5;                   // circles along it that the forager can't step into
+const SEAT_OUT = SEAT_DEEP + FORAGER_GIRTH + 0.04;   // tiles in front of its line where it sits down from
+const seatOf = (x, y, made) => ({ seat: true, x, y, made });
+// Its two ends, into seatAx, seatAy, seatBx, seatBy (left, then right).
+let seatAx = 0, seatAy = 0, seatBx = 0, seatBy = 0;
+function seatEnds(Q) {
+  const c = Math.cos(SEAT_TILT) * SEAT_HALF, s = Math.sin(SEAT_TILT) * SEAT_HALF;
+  seatAx = Q.x - c; seatAy = Q.y - s; seatBx = Q.x + c; seatBy = Q.y + s;
+}
+// How far x, y is from the seat log's line (Infinity: there's none).
+function seatNear(w, x, y) {
+  const Q = w.camp && w.camp.seat;
+  if (!Q) return Infinity;
+  seatEnds(Q);
+  return segDist(x, y, seatAx, seatAy, seatBx, seatBy);
+}
+function seatSpot(w, x, y) {
+  if (!w.camp) return 'Make camp first';
+  if (w.camp.seat) return 'There\'s a seat at camp';
+  if (!inCamp(w, x, y)) return 'Inside the camp';
+  const i = idx(x, y);
+  if (w.water[i]) return 'Not in the water';
+  seatEnds({ x, y });
+  const ax = seatAx, ay = seatAy, bx = seatBx, by = seatBy, near = (px, py) => segDist(px, py, ax, ay, bx, by);
+  for (const F of w.fires) if (near(F.x, F.y) < 1.0) return 'Too near the fire';
+  if (w.camp.basket && near(w.camp.basket.x, w.camp.basket.y) < 0.95) return 'The basket\'s here';
+  for (const T of w.torches) if (near(T.x, T.y) < 0.65) return 'A torch is here';
+  rocksFor(w);
+  for (let k = 0; k < solidR.length; k += 3) if (near(solidR[k], solidR[k + 1]) < solidR[k + 2] + 0.05) return 'A rock\'s in the way';
+  let trunk = false;
+  forEachDecorNear(w, x, y, 3, d => { if (standing(d) && d.size >= SEEDLING && near(d.x, d.y) < 0.5 + 0.15 * Math.min(d.size, 3)) trunk = true; });
+  if (trunk) return 'Too close to the tree';
+  for (const b of w.brambles) if (b.size > 0 && near(b.x, b.y) < 0.7 + 0.3 * b.size) return 'Too close to the brambles';
+  for (const b of w.burrows) if (near(b.x, b.y) < 0.9) return 'On a burrow';
+  return '';
+}
+// Sets it down at x, y (game.js has taken what it takes out of the satchel; a friend's is only set down). Returns it.
+function makeSeat(w, x, y) {
+  if (!w.camp || w.camp.seat) return null;
+  w.camp.seat = seatOf(x, y, w.tick);
+  solidW = null;                                          // (it's in the way now: rocksFor again)
+  emit(w, { type: 'seat', seat: w.camp.seat });
+  return w.camp.seat;
 }
 // Moves what's in slot a of A (the satchel, w.forager, or the basket: anything with bag and bagN) to slot b of B: onto
 // B's stack if it's the same kind (what doesn't fit stays), into it if it's empty, else the two swap. Returns how many went.
@@ -7201,6 +7267,8 @@ function unpackWorld(kept) {
     Bk.kept = 1;
   }
   else for (const fire of w.fires) if (fire.litAt >= 0) { campAt(w, fire); break; }   // (kept with a fire lit before camps came)
+  if (w.camp && !w.camp.seat) w.camp.seat = null;          // (kept before the seat log: none yet)
+  else if (w.camp) asFractions(w.camp.seat, ['x', 'y']);
   if (!w.stone) w.stone = stoneOf(w);                   // (kept before the old stone: it's put up as it opens)
   else asFractions(w.stone, ['x', 'y']);
   if (F.health === undefined) F.health = 1;            // (kept before health: well)
@@ -8067,8 +8135,8 @@ const api = {
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE, hollow,
   TREES, treeStage, treeAge, standing, bearing, inBloom, SEEDLING, SAPLING, GROWN, KIND_NAMES,
   FROG_K, SPAWN_WORTH, FISH_K, FISH_EAT, CROW_SEATS, SHROOMS, SHROOM_KINDS, FINDS, FIND_KINDS, findSeason, eachPickable, greenStage, greenPicked, GREEN_SEASONS, brambleStage, RIPE_FROM, RIPE_TO,
-  bagCount, spend, stow, feedForager, hungerOf, HUNGRY, TUMMY, fireSpot, layFire, feedFire, fireRoom, lightable, lightFire, fireHeat, fireWarmth, CAMP_R, CAMP_FLAT, inCamp, BASKET_SLOTS, basketSpot, makeBasket, moveBetween, moveInto, putAway,
-  torchSpot, placeTorch, relightTorch, torchUnder, TORCH_BURN, TORCH_STUB, TORCH_WET, TORCH_MAX, TORCH_GAP, scorchFade,
+  bagCount, spend, stow, feedForager, hungerOf, HUNGRY, TUMMY, fireSpot, layFire, feedFire, fireRoom, lightable, lightFire, fireHeat, fireWarmth, CAMP_R, CAMP_FLAT, inCamp, BASKET_SLOTS, basketSpot, makeBasket, seatSpot, makeSeat, seatNear, SEAT_HALF, SEAT_TILT, SEAT_OUT, moveBetween, moveInto, putAway,
+  torchSpot, placeTorch, relightTorch, torchUnder, TORCH_BURN, TORCH_WET, TORCH_MAX, TORCH_GAP, scorchFade,
   storeCount, storeRoom, storePut, storeTake, tidyStore, worldStores, storesAt, storesCount, storesRoom, storesTake, storesPut, STORE_NEAR,
   cookTicks, cookReady, cookOn, cookTake, shapeVessel, makeVessel, kitOf, cookProgress, SKILLS, SKILL_NAMES, SKILL_TOP, skillNeed, skillLevel, skillProgress, perk, gainSkill, FIRE_STICK, FIRE_MOST, FIRE_LOW, FIRE_EMBERS, FIRE_NEAR, FIRE_REACH, FIRE_GAP, FIRE_WET, FIRE_WARM,
 };
