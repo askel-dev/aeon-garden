@@ -88,7 +88,7 @@
 <script src="recipes.js"></script>
 <script>
 'use strict';
-const { STATIONS, INGREDIENTS, RECIPES, cook, fillOf, recipeOf, checkRecipes } = Recipes;
+const { STATIONS, INGREDIENTS, RECIPES, cook, fillOf, recipeOf, checkRecipes, checkDeeds } = Recipes;
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const label = id => INGREDIENTS[id] ? `${INGREDIENTS[id].icon || ''} ${INGREDIENTS[id].name}` : id;
@@ -106,7 +106,7 @@ function chip(word) {
   return `<span class="chip tag">any ${esc(word)}</span>`;
 }
 
-const problems = checkRecipes();
+const problems = [...checkRecipes(), ...checkDeeds()];
 $('check').innerHTML = problems.length
   ? `<h2>${problems.length} thing${problems.length > 1 ? 's' : ''} to fix in recipes.js</h2><ul>${problems.map(p => `<li>${esc(p)}</li>`).join('')}</ul>`
   : `<span class="ok">✓ recipes.js looks right:</span> ${Object.keys(INGREDIENTS).length} ingredients, ${RECIPES.length} dishes.`;

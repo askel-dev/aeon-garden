@@ -576,7 +576,27 @@ builds go behind **one make button**, and the first new build is a **torch** you
   with both, no console errors, and both burns drained together. The real strike path (kneel, one stick and one bark,
   strike) was driven in Chrome and lit its torch as before. The crackle: 3 s with a torch two tiles off made 10
   crackles (the stacks through `crackle` and `out`), and none with no torch. Not tried over PeerJS with two machines.
-- That closes step 3 of stage 7. What's left is step 4: the seat log, the drying rack and the lean-to.
+- That closes step 3 of stage 7. Step 4, the camp builds, is the note below.
+- Step 4's seat log was done on its own branch (the bench, its turns, and sitting on it: see the fire-camp notes).
+
+### The camp builds (2026-10-20)
+- **The drying rack** (recipes.js `BUILDS.rack`: 8 sticks, 3 dry grass, 1 birch bark, `where: 'camp'`) and **the lean-to**
+  (`BUILDS.lean`: 10 sticks, 5 dry grass, 2 birch bark) join the seat log in the make strip, one each. Both are placed the
+  basket's way, inside the camp ring, and both are scenery you walk through: sim.js `campSpot` is the basket's spot
+  generalised (its messages unchanged), and `makeRack`/`makeLean` are what game.js spends for and calls.
+- **The rack is a second store** (12 slots in `worldStores` after the basket). `stackOf` now scales a store's keep by its
+  `kept`, so the rack's `kept: 2` means a slot holds twice a basket slot's stack; the basket's `kept: 1` is exactly what it
+  was. It opens the basket's card (`larderUi.store`, `larderStore`), which names itself "Drying rack" and fills from the
+  rack; `putAway` takes the store it fills. Its food look (`rack:1`) is chosen once it holds anything.
+- **The lean-to shelters**: `underLean` is an ellipse under its roof, and `bodyTick`'s shelter is all of it there (no rain
+  soak, little wind; `LEAN_SHELTER` is the soak's own 1 - 0.7·shelter at nought). Building it moves the forager's home
+  under the roof, so a collapse wakes there.
+- **Friends**: both go over `sendFire` as `'rack'`/`'lean'` (fireNet makes them), and the camp's stores are shared as a
+  snapshot: `storesWas` before a move and `sendStores` after diff each store's slots into `'bk'` messages with a `w` field
+  (`'basket'`/`'rack'`), so two people moving different things both land. `meadowSum` counts both builds and the rack's
+  slots, as it does the basket's.
+- Not in this step: the cooking window's camp row still shows only the basket's things (the rack's tiles there are a later
+  refinement), and the spit, lantern and bedroll stay later.
 
 ## Stage 8: the camp grows (planned and the deeds settled 2026-10-20; mockup `camp-level-lab.html`)
 

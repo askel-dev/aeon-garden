@@ -689,7 +689,7 @@
   #satchel .slot.held i { opacity: 0.3; }   /* all of it in the pot (game.js potHeld) */
   #satchel .slot.asking::after { opacity: 0 !important; }   /* (its Eat is up instead) */
   /* ---- eating (game.js eatAsk): its name over the slot with a small Eat, or why not */
-  #eat { position: fixed; z-index: 6; display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 11px; border-radius: 12px; transform: translateX(-50%);
+  #eat { position: fixed; z-index: 6; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 4px 4px 11px; border-radius: 12px; transform: translateX(-50%);
     background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); font-size: 13px; font-weight: 800; white-space: nowrap; animation: fade-in 0.15s ease-out; }
   #eat .warm { color: var(--accent-ink); }
   #eat .why { color: var(--muted); font-weight: 700; padding: 3px 8px 3px 0; }
@@ -697,7 +697,7 @@
   #eat button:active { transform: translateY(1px); box-shadow: 0 1px 0 #b8622a; }
   #eat button.give { background: #6f8a3e; box-shadow: 0 2px 0 #4d6327; white-space: nowrap; }   /* (a gift to a friend by: game.js giveSlot) */
   #eat button.give:active { box-shadow: 0 1px 0 #4d6327; }
-  @media (pointer: coarse) { #eat { padding: 4px 4px 4px 13px; } #eat button { min-height: 40px; padding: 0 18px; } }
+  @media (pointer: coarse) { #eat { padding: 4px 4px 4px 13px; } #eat button { min-height: 44px; padding: 0 18px; } }
   @keyframes fade-in { from { opacity: 0; } }
   /* ---- cooking at the fire (game.js renderCook, drawCookView): the camera eases in close on the fire and a big parchment
      window opens beside it (from the foot on an upright phone): the pot close up on a small canvas of its own

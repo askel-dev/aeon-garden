@@ -21,7 +21,7 @@ or what E would pick: `nearPick`) shows it as a mouse's hover does, in `aim` wit
 the basket's or the stone's foot (`drawGlow`, `RING_E_ART`) or a pick's glow; the line over the satchel says the name for a torch
 ("Torch · burning" while it burns well), the basket, the seat log or the nearest thing to pick (its ring says something is there,
 not what), for `USE_SAY`, then fading (`USE_FADE`); a fire or the stone is left to its E disc.
-A tap on the forager with something to pick there picks it (only one on nothing is the dance's tap), and a quick tap after a pick,
+A tap on the forager with something to pick there picks it (only one on nothing is the dance's tap, or with a dish in its hand the eat card: "the hands" in `cooking.md`), and a quick tap after a pick,
 or onto something to pick, is a tap, never the double tap's zoom (`lastTap.on`): picking a cluster on a phone kept zooming. A press on
 something to pick is a tap however long it's held (held past `HOLD_MS`, it runs there, `drag.rush`) and needs a bigger move to become
 a drag; a held run let go on something picks it. Playtesters had found a slow tap turning into a sprint past the thing.

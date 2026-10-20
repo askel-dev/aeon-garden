@@ -98,6 +98,8 @@ log by `seatLift` (as a dance's hop is, `fg.lift`; a friend's from its `kn`), wi
 standing by it, says "Seat log · sit down" in the line over the satchel (`hoverSay`; "sitting" once it's up there), with E on a
 keyboard when E would go to it. Friends get `sendFire('seat')`, and `meadowSum` counts it.
 
+The drying rack and the lean-to (`BUILDS.rack`, 8 sticks, 3 dry grass and 1 birch bark; `BUILDS.lean`, 10 sticks, 5 dry grass and 2 birch bark) go down the seat log's way: `placeRack`/`placeLean` (`ui.place` with `rack`/`lean`, `S.campSpot` for the why), `goFire` kinds `'rack'`/`'lean'`, the generic `'set'` kneel, then a `firstTime`. Painted once (`paintRack`, `RACK_ARTS`: empty, and with food on it once the rack holds anything; `paintLean`, `LEAN_ART`), shared by the meadow and the strip's tiles. The rack is a store: a click on it, or E by it, walks the forager there and opens the same card as the basket (`larderUi.store`, `larderStore`), titled "Drying rack", 12 slots that each hold twice a basket slot's stack; the lean-to is passive, and is drawn mirrored when it stands right of the fire so its mouth opens toward it. Friends get them by `sendFire('rack'/'lean')`, and every camp-store move goes as a diffed snapshot (`storesWas`/`sendStores`), so the rack's slots agree on both sides.
+
 ## sim.js
 
 Fires (`w.fires`, one layout, `fireOf`; the long comment over `FIRE_STICK`): laid with sticks and tinder (`layFire`; what one takes
@@ -142,3 +144,24 @@ and turned its own `turn` (radians: what it was placed at; a seat kept from befo
 `solidW` so they're added). `seatSpot` measures to its line (`seatEnds`): the fire, basket, torches, rocks, trunks, brambles
 and burrows; `seatNear` is how far a point is from it, which keeps the fire, torch and basket spots clear. A camp kept before
 it gets `seat: null` (`unpackWorld`), no `KEEP_VERSION` bump.
+
+## Cosy and the camp's level
+
+Cosy is a list of deeds, each earned once and never lost (recipes.js `DEEDS`: `{ name, points, from, build?, friend? }`, and
+`CAMP_LEVELS` for the five levels and their keystones; `checkDeeds` says what's wrong, and that every gate II–IV has 8 points
+of slack from the deeds open below it whose build is written or absent). `w.camp.deeds` keeps the ids in the order they were
+earned and `w.camp.cosy` is their points summed in `countCosy`, the one place they are added up; `campLevel(w)` is
+`1 + w.camp.raised`, and the ring follows it (`campR`: `CAMP_R` + 0.5 a level, `CAMP_R` the floor, used by `inCamp`, `campWet`
+and game.js's ring, motes and ground shader). `earnDeed(w, id)` pushes a new one and recounts cosy: `campAt` earns `camp`,
+`makeBasket` `basket`, `makeSeat` `seat`, `placeTorch` `torch` (inside the ring only), and game.js `cookDone` `dish-1`, `dish-5`
+and `dish-12` as `w.camp.dishes` (distinct dish names cooked at a fire in the ring) passes them; `eatSlot` earns `seat-meal`
+while `fireSit.seat` is set. The rest are the hourly `deedCheck` (`DEED_EVERY` ticks): a season's fire while the camp's fire
+burns, the fire lit at dusk (`duskLit`) till dawn (`night-fire`), lit through a storm (`stormLit`, `storm-fire`), 16 filled
+basket slots (`basket-half`) and one of every food in it (`basket-all`). Game.js says each new one over the forager ("✦ Wove
+the basket · +3 cosy", `deedEarned`, chime `found`): game-side earns say it at once, sim-side ones are picked up a few times a
+second by comparing `world.camp.deeds.length` (`deedFrame`). A camp kept before cosy gets the six blanks and earns only what
+it can see it did (camp, basket, seat, a torch in the ring) in `unpackWorld`, no `KEEP_VERSION` bump. In dev,
+`garden.cosy(n)` earns deeds in table order (friends left out) till cosy reaches n and `garden.raise(n)` raises the level (0–4),
+both only with a camp.
+
+The drying rack (`w.camp.rack`, `rackOf`, null till `makeRack`) is a second camp store: `RACK_SLOTS` (12) slots, and each holds `RACK_KEEP` (2) times the stack a basket slot does, because what dries takes less room (`stackOf` scales a store's keep by its `kept`). It's in `worldStores` after the basket and in `meadowSum`; the basket's `kept: 1` keeps it exactly as it was. The lean-to (`w.camp.lean`, `leanOf`, null till `makeLean`) shelters: `underLean` is an ellipse under its roof, and `bodyTick` takes `shelter` as all of it there (no rain soak, little wind), and `makeLean` moves the forager's home under the roof. Both are placed by `campSpot` (the basket's spot generalised), are scenery you walk through, and a camp kept before them gets `rack: null`/`lean: null` (`unpackWorld`), no `KEEP_VERSION` bump.

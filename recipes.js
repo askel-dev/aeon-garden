@@ -287,7 +287,8 @@ const RECIPES = [
 // What the forager builds, from the make button by the satchel (game.js renderBuild), and what each takes out of the
 // satchel. In `needs`, each word is an ingredient or a tag (any ingredient that has it: 'tinder' takes dry grass or birch
 // bark), with how many. To add a build, copy a block; the game only knows how to build the ones it paints and places (the
-// campfire, the basket at camp, a torch and the seat log), or the ones that make a thing for the satchel (`makes`).
+// campfire, the basket, the torch and the seat log, the drying rack and the lean-to at camp), or the ones that make a thing for
+// the satchel (`makes`).
 //   name            what it's called
 //   needs           what it takes, { word: how many }
 //   where           where it may go: 'anywhere' (left out), or 'camp' (inside the camp's ring)
@@ -327,7 +328,76 @@ const BUILDS = {
     makes: 'rope',
     text: 'Dry grass twisted and plied into a rope, to tie to a friend and lead them about.',
   },
+  rack: {
+    name: 'Drying rack',
+    needs: { stick: 8, drygrass: 3, birchbark: 1 },
+    where: 'camp',
+    after: 'camp',
+    text: 'Four forked sticks and two crossbars, with a mat of dry grass lashed across them for things to dry on.',
+  },
+  lean: {
+    name: 'Lean-to',
+    needs: { stick: 10, drygrass: 5, birchbark: 2 },
+    where: 'camp',
+    after: 'camp',
+    text: 'A sloping roof of poles, thatch and birch bark, with a bed of dry grass under it, out of the rain.',
+  },
 };
+
+// The camp's cosy (PLAN.md stage 8): every point is a deed, earned once and never lost. `w.camp.deeds` keeps their ids in the
+// order they were earned and `w.camp.cosy` is their points summed (sim.js countCosy). `from` is the camp level at which a deed
+// first becomes possible. One for a build names it in `build` (only the ones listed below are written yet); the friend deeds
+// are never needed to raise the camp.
+//   name            what the deed is called on the camp's card
+//   points          what it's worth (whole, 1 or more)
+//   from            the camp's level when it first becomes possible (1 to 5)
+//   build           the BUILDS id it's for, if it's for a build
+//   friend          a deed of playing together (left out of every gate's slack)
+const DEEDS = {
+  camp: { name: 'Made camp', points: 2, from: 1 },
+  basket: { name: 'Wove the basket', points: 3, from: 1, build: 'basket' },
+  seat: { name: 'Set the seat log', points: 2, from: 1, build: 'seat' },
+  torch: { name: 'Set a torch in the ground', points: 1, from: 1, build: 'torch' },
+  hearth: { name: 'Laid the hearthstones', points: 2, from: 2, build: 'hearth' },
+  rack: { name: 'Built the drying rack', points: 2, from: 2, build: 'rack' },
+  lean: { name: 'Raised the lean-to', points: 2, from: 2, build: 'lean' },
+  oven: { name: 'Built the clay oven', points: 2, from: 3, build: 'oven' },
+  spit: { name: 'Built the spit', points: 2, from: 3, build: 'spit' },
+  herbs: { name: 'Planted the herb pots', points: 1, from: 3, build: 'herbs' },
+  arch: { name: 'Raised the lantern arch', points: 2, from: 4, build: 'arch' },
+  feeder: { name: 'Hung the bird feeder', points: 1, from: 4, build: 'feeder' },
+  board: { name: 'Put up the notice board', points: 1, from: 4, build: 'board' },
+  cabin: { name: 'Built the cabin', points: 3, from: 5, build: 'cabin' },
+  hammock: { name: 'Hung the hammock', points: 1, from: 5, build: 'hammock' },
+
+  'dish-1': { name: 'Cooked the first dish at camp', points: 2, from: 1 },
+  'dish-5': { name: 'Five different dishes at camp', points: 3, from: 1 },
+  'dish-12': { name: 'Twelve different dishes at camp', points: 4, from: 1 },
+  'seat-meal': { name: 'Ate a meal sitting on the seat log', points: 1, from: 1 },
+
+  'night-fire': { name: 'Kept the fire lit from dusk to dawn', points: 2, from: 1 },
+  'storm-fire': { name: 'Kept the fire lit through a storm', points: 3, from: 1 },
+  'fire-spring': { name: 'The first fire of spring', points: 2, from: 1 },
+  'fire-summer': { name: 'The first fire of summer', points: 2, from: 1 },
+  'fire-autumn': { name: 'The first fire of autumn', points: 2, from: 1 },
+  'fire-winter': { name: 'The first fire of winter', points: 2, from: 1 },
+
+  'basket-half': { name: 'Filled half the basket', points: 2, from: 1 },
+  'basket-all': { name: 'One of every kind of food in it', points: 4, from: 1 },
+
+  'friend-fire': { name: 'A friend sat by your fire', points: 2, from: 1, friend: true },
+  'friend-dish': { name: 'A friend ate your dish', points: 2, from: 1, friend: true },
+};
+
+// The camp's five levels: the name the card shows, the cosy it takes to raise it, and the build that is its keystone (left
+// out for the first fire). Raising the camp widens its ring (sim.js campR): CAMP_R + 0.5 a level.
+const CAMP_LEVELS = [
+  { name: 'Campfire', at: 0, keystone: null },
+  { name: 'Hearth', at: 8, keystone: 'hearth' },
+  { name: 'Homestead', at: 18, keystone: 'oven' },
+  { name: 'Hollow', at: 28, keystone: 'arch' },
+  { name: 'Meadow Home', at: 40, keystone: 'cabin' },
+];
 
 // What the forager makes by hand, at a lit fire: each vessel (VESSELS), made by dragging what it takes out of the satchel
 // onto the fire in the cooking window, a piece at a time. One with a `fire` time is clay: shaped, it then hardens in that
@@ -514,9 +584,33 @@ function checkRecipes() {
   // Two dishes at one station that the same things could make: the first in the list would always win.
   for (let i = 0; i < RECIPES.length; i++) for (let j = i + 1; j < RECIPES.length; j++) {
     const a = RECIPES[i], b = RECIPES[j];
-    if (!a.needs || !b.needs || (a.at || 'fire') !== (b.at || 'fire') || a.needs.length !== b.needs.length) continue;
+    if (!a.needs || !b.needs || (a.at || 'fire') !== (b.at || 'fire') || vesselOf(a) !== vesselOf(b) || a.needs.length !== b.needs.length) continue;
     const plain = a.needs.map(w => INGREDIENTS[w] ? w : Object.keys(INGREDIENTS).find(id => answers(id, w)) || w);
     if (fits(plain, b.needs)) problems.push(`'${a.name}' and '${b.name}' can be made from the same things; the first one listed always wins.`);
+  }
+  return problems;
+}
+
+// The builds the deeds speak of, whether written yet or not (the later levels' keystones and their own opens).
+const DEED_BUILDS = ['basket', 'seat', 'torch', 'hearth', 'rack', 'lean', 'oven', 'spit', 'herbs', 'arch', 'feeder', 'board', 'cabin', 'hammock'];
+
+// Everything that's wrong with the deed table, as plain sentences: the names, the points, when each first becomes possible,
+// and that every gate (II, III, IV) has at least 8 points of slack from the deeds open below it whose build is written or
+// absent. V waits for its builds (the cabin and the hammock), so it isn't gated yet.
+function checkDeeds() {
+  const problems = [];
+  for (const [id, d] of Object.entries(DEEDS)) {
+    const who = `The deed '${id}'`;
+    if (!d.name) problems.push(`${who} has no name.`);
+    if (!(d.points > 0) || d.points !== Math.floor(d.points)) problems.push(`${who} has ${d.points} points: it wants a whole number, 1 or more.`);
+    if (!(d.from >= 1 && d.from <= 5 && d.from === Math.floor(d.from))) problems.push(`${who} has from: ${JSON.stringify(d.from)}, but a deed first comes at a camp level, 1 to 5.`);
+    if (d.build != null && !BUILDS[d.build] && !DEED_BUILDS.includes(d.build)) problems.push(`${who} is for '${d.build}', which is no build (${DEED_BUILDS.join(', ')}).`);
+  }
+  for (let lv = 2; lv <= 4; lv++) {                    // (the gates: Hearth, Homestead, Hollow)
+    const level = CAMP_LEVELS[lv - 1];
+    let slack = 0;
+    for (const d of Object.values(DEEDS)) if (!d.friend && d.from < lv && (!d.build || BUILDS[d.build])) slack += d.points;
+    if (slack < level.at + 8) problems.push(`The ${level.name} gate has only ${slack} cosy of deeds open below it: it wants ${level.at + 8} (its ${level.at}, and 8 spare).`);
   }
   return problems;
 }
@@ -553,10 +647,11 @@ const takes = word => (INGREDIENTS[word] ? [word] : Object.keys(INGREDIENTS).fil
 
 function stackOf(id) { const i = INGREDIENTS[id]; return (i && i.stack) || 0; }
 function keepOf(id) { const i = INGREDIENTS[id]; return (i && i.keep) || 0; }
-const Recipes = { stackOf, keepOf, STATIONS, VESSELS, vesselOf, craftLevel, whereOf, INGREDIENTS, RECIPES, BUILDS, CRAFTS, MESS, cook, fits, fillOf, timeOf, recipeOf, takes, foodOf, thingsFor, answers, checkRecipes };
+const Recipes = { stackOf, keepOf, STATIONS, VESSELS, vesselOf, craftLevel, whereOf, INGREDIENTS, RECIPES, BUILDS, CRAFTS, DEEDS, CAMP_LEVELS, MESS, cook, fits, fillOf, timeOf, recipeOf, takes, foodOf, thingsFor, answers, checkRecipes, checkDeeds };
 if (typeof module !== 'undefined') module.exports = Recipes;
 else {
   window.Recipes = Recipes;
   for (const p of checkRecipes()) console.warn('recipes.js: ' + p);
+  for (const p of checkDeeds()) console.warn('recipes.js: ' + p);
 }
 }
