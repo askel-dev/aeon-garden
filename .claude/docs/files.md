@@ -90,6 +90,10 @@ picture and what goes in, `renderBook`; a few dishes `known` from the start, the
   satchel's sheet and the book. A dish with no painting yet keeps its recipes.js emoji. How to paint one:
   `.claude/docs/dish-painting.md`; `dish-lab.html?dish=Name` shows one big, at 128 and 48, next to all the others (no server
   needed), and `tools/dish-shot.sh "Name" out.png` screenshots it headless.
+- `tools/asset-shot.mjs`: a camp asset seen in the real game (summer, a camp by oaks, three zooms) to judge whether a new
+  painting fits. Work on the painter in a plans/ sheet first (plans/lean-to: `build.sh` paints it beside the old one), then
+  swap it into game.js and shoot. It hands the page `garden.S` (the sim) through a rewritten game.js, for the shot only. Its Chrome takes a free debug port (another session's
+  headless Chrome often holds 9333). plans/drying-rack is the second worked example (`make-rack.html`, `build.sh`).
 - `items.js`: what the meadow gives, painted picked and held up for the satchel (`Items.paint`, `NAMES`, ingredient ids; a new
   one goes at the end), on nothing but a faint touch of shade, so no ground shadow blown up in a slot. game.js puts them in
   the satchel's sheet as `'ingr:' + n`, every ingredient so far; a new one not painted here yet keeps the meadow's painting or its emoji.

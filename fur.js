@@ -917,18 +917,33 @@ function sneakPose(i) {
 
 // Carrying a dish (game.js drawHeldDish), kept after the emotes: the same standing, walking and jogging paintings in each
 // view, but held carefully: both mittens out before its middle with the forearms level, where the dish sits on them (side
-// on, the elbows bent and the hands ahead; from the front, the mittens at the dish's either side; from behind, both arms
-// out ahead, hidden by the cloak). Its steps a little shorter (CARRY_STRIDE: game.js turns the stride over sooner), the
+// on, the elbows at its side and the mittens well ahead, the dish resting on them: CARRY_SIDE; from the front, the mittens
+// at the dish's either side; from behind, both arms out ahead, hidden by the cloak). Its steps a little shorter (CARRY_STRIDE: game.js turns the stride over sooner), the
 // body upright and its bob halved, so the dish rides steady. Cold, it no longer hugs itself (its hands are full), but its
 // face stays cold. 'forager:' + carryArt(snow, outfit, (view << 5) + pose), views 0 to 2 only.
-const CARRY_STRIDE = 0.8, CARRY_HANDS = [[-0.05, 0.22, -0.09, 0.12], [0.05, 0.22, 0.09, 0.12]];   // (from the front: each mitten and elbow, from its shoulder)
+const CARRY_STRIDE = 0.8, CARRY_HANDS = [[0.015, 0.19, -0.09, 0.11], [-0.015, 0.19, 0.09, 0.11]];   // (from the front: each mitten and elbow, from its shoulder)
+const CARRY_SIDE = [[-0.2, 0.15, 0.0, 0.14], [-0.21, 0.17, 0.01, 0.15]];   // (side on: the far and near mitten and elbow, the elbows at its side and the forearms level ahead)
 const CARRY_AT = EMOTE_AT + FORAGER_EMOTE_ARTS, FORAGER_CARRY_ARTS = FORAGER_SNOWS * FORAGER_SNOW_ARTS;
 const carryArt = (snow, outfit, vp) => CARRY_AT + snow * FORAGER_SNOW_ARTS + (outfit << 7) + vp;
+// Where its hands are in carrying pose vp (game.js CARRY_HOLD, worked out once): the shoulders' x and y, which move with
+// the bob and the lean, then each near mitten's x and y (side on, the near one; from the front, both), which go over the dish.
+function carryHold(vp) {
+  const { ax, ay, mitts } = foragerParts(carryPose(vp >> 5, vp & 31));
+  return [ax, ay, ...mitts];
+}
+// One mitten on its own, painted as the figure's are, centred in the box: game.js lays it over the dish where each near
+// mitten is (drawHeldDish), so the dish sits in its hands and not over them. 'forager:' + MITT_ART.
+const MITT_ART = CARRY_AT + FORAGER_CARRY_ARTS;
+function paintMitt(g, size, U) {
+  paintFur(g, size, U, [{ path: g => discAt(g, 0, 0, 0.048), marks: [[MITTEN, 1, 0.02, g => discAt(g, 0, 0.004, 0.05)]] }],
+    { coat: CLOAK, top: -0.5, shade: FORAGER_SHADE, light: FORAGER_LIGHT, flat: 0.25,
+      grain: [['rgba(40,30,20,0.03)', 1, 3], ['rgba(255,245,225,0.03)', 1, 3]], face: () => {} });
+}
 function carryPose(view, pose) {
   const P = foragerPose(view, pose, CARRY_STRIDE);
   P.carry = true; P.hug = false; P.hand = false; P.swing = 0;
   P.bob *= P.stoop ? 1 : 0.5; P.tip *= 0.6; P.sway *= 0.6; P.lean *= 0.4;
-  if (view === 0) { P.arms = [0.5, 0.42]; P.bend = 1.25; }      // (side on: the upper arms down a little forward, the forearms level ahead)
+  if (view === 0) P.hands = CARRY_SIDE;
   else if (view === 1) P.hands = CARRY_HANDS;
   return P;
 }
@@ -959,14 +974,16 @@ function foragerParts(P) {
   };
   // An arm: a sleeve from the shoulder, swung a forward (+), and a knitted mitten. Bent (jogging), the forearm comes up
   // forward from the elbow, level at the top of the swing (not up at the chin).
+  const ax = lx * 0.7 + P.fwd[0] * 0.04 * P.stoop, ay = 0.06 + P.bob + ly * 0.7, mitts = [];   // (the shoulders, past x; carrying, the near mittens: carryHold)
   const arm = (x, a, far, casts, hand) => {
-    const sx = x + lx * 0.7 + P.fwd[0] * 0.04 * P.stoop, sy = 0.06 + P.bob + ly * 0.7;
+    const sx = x + ax, sy = ay;
     if (P.bend) a -= 0.15;                                         // (pumping, the arm swings a little more back than up)
     const to = (x, y, t, L) => [x + (side ? -Math.sin(t) : P.fwd[0] * Math.sin(t) * 0.9) * L, y + Math.cos(t) * L + (side ? 0 : P.fwd[1] * Math.sin(t) * 0.12)];
     const [kx, ky] = P.bend ? to(sx, sy, a, 0.12) : [sx, sy];
     const [ex, ey] = hand ? [sx + hand[0], sy + hand[1]] : P.bend ? to(kx, ky, a + P.bend, 0.11) : to(sx, sy, a, 0.2 + 0.07 * P.stoop);
     if (hand && hand.length > 2) {                                 // (an elbow given: the mitten up, the cuff toward the elbow)
       const ox = sx + hand[2], oy = sy + hand[3];
+      if (P.carry && !far) mitts.push(ex, ey);
       add(g => { limbAt(g, sx, sy, 0.06, ox, oy, 0.055); limbAt(g, ox, oy, 0.055, ex, ey, 0.05); discAt(g, ex, ey, 0.048); },
         { far, casts, marks: [[MITTEN, 1, 0.02, g => discAt(g, ex, ey + 0.004, 0.05)], [tone(CLOAK, 0.8), 0.6, 0.03, g => ovalAt(g, ex + (ox - ex) * 0.32, ey + (oy - ey) * 0.32, 0.04, 0.04)]] });
       return;
@@ -1121,11 +1138,11 @@ function foragerParts(P) {
   const shoulder = side ? 0.0 : 0.15;
   if (side) {
     leg(1, true); if (!P.kneeOver) leg(0, false);
-    arm(0.03, P.arms ? P.arms[0] : P.stoop ? 0.75 * P.stoop : -P.swing, true, false);
+    arm(0.03, P.arms ? P.arms[0] : P.stoop ? 0.75 * P.stoop : -P.swing, true, false, P.carry ? P.hands[0] : undefined);
     cloak(); satchel(); if (P.kneeOver) leg(0, false);             // (sneaking, the near knee lifted high over the cloak's front)
     tip(); head(); hat();
     if (P.hug) hug(-0.01, 0);
-    else arm(-0.01, P.arms ? P.arms[1] : P.hand ? 0.9 : P.stoop ? 0.95 * P.stoop : P.swing, false, true);
+    else arm(-0.01, P.arms ? P.arms[1] : P.hand ? 0.9 : P.stoop ? 0.95 * P.stoop : P.swing, false, true, P.carry ? P.hands[1] : undefined);
   } else {
     const [a, b] = P.feet[0][1] > P.feet[1][1] ? [1, 0] : [0, 1];
     leg(a, false); leg(b, false);
@@ -1151,11 +1168,12 @@ function foragerParts(P) {
       head(); tip(); hat();
     }
   }
-  return { parts, fx, fy, frx, fry };
+  return { parts, fx, fy, frx, fry, ax, ay, mitts };
 }
 
 function paintForager(g, size, U, n) {
   let P;
+  if (n === MITT_ART) { paintMitt(g, size, U); return; }
   if (n >= CARRY_AT) {                                           // (carrying a dish: carryArt)
     n -= CARRY_AT;
     SNOWED = Math.floor(n / FORAGER_SNOW_ARTS); n %= FORAGER_SNOW_ARTS;
@@ -1240,5 +1258,5 @@ const painters = { fox: paintFox, rabbit: paintRabbit, dfly: paintDragonfly, kfi
 
 root.Fur = { tone, rockRGB, fillIn, strokeIn, discAt, ovalAt, blurIn, softIn, furGlow, foxRGB, FOX_WHITE, FOX_SOCK,
   FOX_POSE, RABBIT_POSE, RABBIT_KINDS, setCoats, paintFox, paintRabbit, paintForager, paintForagerFace, FACE_MOODS, FORAGER_REACH, FORAGER_JOG_STRIDE, FORAGER_OUTFITS, FORAGER_CLOAKS, FORAGER_HATS, outfitOf, FORAGER_COLD, FORAGER_IDLE, FORAGER_IDLES, FORAGER_SNOWS, FORAGER_SNOW_ARTS, KNEEL_VIEW, FORAGER_KNEEL,
-  FORAGER_EMOTE, FORAGER_EMOTES, FORAGER_EMOTE_ARTS, FORAGER_EAT, FORAGER_EATS, FORAGER_SIT_EAT, FORAGER_SIT_EATS, EMOTE_AT, emoteArt, CARRY_AT, FORAGER_CARRY_ARTS, CARRY_STRIDE, carryArt, SNEAK_STRIDE, painters };
+  FORAGER_EMOTE, FORAGER_EMOTES, FORAGER_EMOTE_ARTS, FORAGER_EAT, FORAGER_EATS, FORAGER_SIT_EAT, FORAGER_SIT_EATS, EMOTE_AT, emoteArt, CARRY_AT, FORAGER_CARRY_ARTS, CARRY_STRIDE, carryArt, carryHold, MITT_ART, SNEAK_STRIDE, painters };
 })(typeof window !== 'undefined' ? window : globalThis);

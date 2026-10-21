@@ -236,7 +236,10 @@ const spriteStep = px => px < 16 ? Math.round(px) : Math.round(2 ** (Math.round(
 // 57 paintings at the doubling above (256 px on a sharp screen, 1.8 MB each) were more than the whole cache (SPRITE_BYTES),
 // so its walk was let go and painted again over and over, and it stuck in a pose.
 const FUR_MOST = 320;
-const furTop = () => Math.floor(FUR_MOST / dpr);
+// Past the zoom you can reach yourself (the cooking window's close-up) it holds still, so only its still poses are painted,
+// and bigger (FUR_CLOSE): at FUR_MOST it was stretched to twice its size beside the sharp pot and food.
+const FUR_CLOSE = 480, CLOSE_ZOOM = 64;
+const furTop = () => Math.floor((cam.zoom > CLOSE_ZOOM ? FUR_CLOSE : FUR_MOST) / dpr);
 const poseStep = px => px > furTop() / ZOOM_STRETCH ? furTop()
   : px < FUR_PAINTED / dpr ? 2 ** Math.ceil(Math.log2(px)) : Math.ceil(2 ** (Math.ceil(Math.log2(px) * 4) / 4));
 const posed = art => isFur(art) || art.startsWith('hog:') || art.startsWith('heron:');
@@ -337,13 +340,25 @@ function paintedSprite(emoji, px, tint, leaf, center) {
 // The emotes' only while one is on, and carrying a dish's while one's in its hand.
 const keptForager = s => s.look.startsWith('forager:') && (s.px === fg.sized || s.px === furPainted(fg.sized)) && keptPose(parseInt(s.look.slice(8)));
 function keptPose(n) {
+  if (n === Fur.MITT_ART) return fg.carry;
   if (n >= Fur.CARRY_AT) { n -= Fur.CARRY_AT; if (!fg.carry) return false; }
   else if (n >= Fur.EMOTE_AT) return fg.emote >= 0 && (n - Fur.EMOTE_AT >> 5) === fg.snowArt * Fur.FORAGER_OUTFITS.length + fg.outfit;
+  else if (fg.carry && (n & 127) < KNEEL_AT) return false;      // (a dish in its hands, it walks the carry's walk)
   return !(fg.cold ? WARM_ONLY : COLD_ONLY)[n & 127] && Math.floor(n / Fur.FORAGER_SNOW_ARTS) === fg.snowArt;
 }
 function dropSprites(need) {
   for (const [key, s] of spriteCache) {
     if (spriteFrame - s.used < 3 || keptForager(s)) continue;
+    spriteBytes -= s.canvas.width * s.canvas.height * 4;
+    freeImage(s.canvas);
+    spriteCache.delete(key);
+    if (latestLook.get(s.look) === s) latestLook.delete(s.look);
+  }
+  if (spriteCache.size <= 2000 && spriteBytes + need <= SPRITE_BYTES) return;
+  // Then the forager's not drawn in the last few frames too: they come back as it needs them. Starting again from empty
+  // here let its whole walk go each time one of them came back, and it stuck in a pose for good.
+  for (const [key, s] of spriteCache) {
+    if (spriteFrame - s.used < 3) continue;
     spriteBytes -= s.canvas.width * s.canvas.height * 4;
     freeImage(s.canvas);
     spriteCache.delete(key);
@@ -1477,7 +1492,7 @@ function render(now) {
   if (!cut) drawFireflies(now, dark);
   drawWeather(now, ck, glows ? 0 : dark);                  // (else the dark is laid with the weather's washes, as one)
   if (cut) drawFireflies(now, dark);
-  if (!SPLIT || split.in) drawForagerRim(dark);           // (over the dark: its rim, so it isn't swallowed)
+  if (!SPLIT || split.in) drawForagerRim(dark, true, 0, 0, rimHidden(items));   // (over the dark: its rim, so it isn't swallowed)
   if (!SPLIT || split.in) drawCurledZ(now);              // (and asleep under the lean-to, its 💤)
   if (SPLIT) splitBehind(now, items);
   drawFireGlows(now, dark);                                // (the fires' glow, embers and sparks, over the dark)
@@ -1791,7 +1806,7 @@ function drawDigging(c, sx, y, px, now, back = c.x > c.dig.x ? 1 : -1) {
 // Whether x, y is in the water as the ground shows it (wetness): the shore is drawn smooth, not along the tiles, so an edge
 // tile can look like grass, and an animal on it was cut off at the shins on dry land. A little past the edge (0.47), so
 // the feet are well in first. Not on ice.
-const WADE_IN = 0.52;
+const WADE_IN = 0.52, WADE_SINK = 0.1;   // (wading: how far down it's drawn, of its px, drawFigure; its dish with it, dishAt)
 const inWaterAt = (x, y) => !world.frozen && (pond && pond.world === world ? wetness(x, y) > WADE_IN : world.water[(y | 0) * S.W + (x | 0)] > 0);
 
 // In shallow water an animal sits lower, its legs hidden below a little ring of ripples. Fliers fly over.
@@ -2086,7 +2101,7 @@ function drawCreature(c, sx, sy, now) {
 // each step sends out a ring (fg.rings). Its outfit (Fur.FORAGER_OUTFITS: a cloak and a hat) is the player's, picked as the
 // first meadow opens and before playing together (the wardrobe; later from •••) and kept in localStorage for every meadow after.
 const FORAGER_SIZE = 2.5;                  // its painting's box, next to a rabbit's
-const FORAGER_ARTS = Array.from({ length: Fur.CARRY_AT + Fur.FORAGER_CARRY_ARTS }, (_, n) => 'forager:' + n);   // (made once: a frame builds no names; the emotes, then carrying a dish, last)
+const FORAGER_ARTS = Array.from({ length: Fur.MITT_ART + 1 }, (_, n) => 'forager:' + n);   // (made once: a frame builds no names; the emotes, then carrying a dish, then a mitten, last)
 const OUTFIT = 'aeon-garden-outfit', HAT = 'aeon-garden-hat';   // in localStorage: the cloak and the hat, by their place in fur.js's lists
 const FORAGER_POSES = [0, 1, 2, 3, 4, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23];
 const FORAGER_CHILLY = [...FORAGER_POSES, ...Fur.FORAGER_COLD];   // (chilly, the cold ones are asked for ahead too)
@@ -2111,7 +2126,7 @@ const fg = { wasWalking: false, at: -1, x: 0, y: 0, step: 0, stillMs: 1e4, view:
   air: -0, squash: 1, jumpSeen: 0, dust: [], landSeen: 0, chainAt: -1e9, lean: -0, cuePlayed: true,   // (a dash: how high it's drawn, squash on take-off and landing, the take-off it last showed, its dust, the landing it last showed, its lean, and whether the press-me tick has sounded)
   hugAt: -1e9,                                          // (when it last hugged a friend: hug)
   curlAt: 0,                                            // (when it curled up under the lean-to, 0 while it isn't: drawCurled)
-  carry: false, carryShown: false, sizedCarry: false, dishY: -0, dishV: -0, slopAt: -1e9,   // (a dish in its hands: carrying it, its paintings asked for, its spring and last slop: drawHeldDish, slop)
+  carry: false, carryShown: false, carryVp: 0, sizedCarry: false, dishY: -0, dishV: -0, slopAt: -1e9,   // (a dish in its hands: carrying it, the pose holding it, its paintings asked for, its spring and last slop: drawHeldDish, slop)
   swingAt: -1e9, swingDir: -0, hitAt: -1e9, swingRest: -0, tossAt: -1e9,   // (friendly fire: when it last swung, which way, when it was last hit, how long it must rest, when it last threw: swing, toss)
   sx: -0, sy: -0, px: -0, drawnAt: -0,   // (where it was drawn this frame)
   rimOn: false, fx: -0, fy: -0, fs: -0, fk: -0, fr: -0 };   // (where its painting sat and how it was turned: drawFigure, for its rim over the dark, drawForagerRim)
@@ -2412,7 +2427,7 @@ function foragerFrame(now, d) {
   const want = FORAGER_ARTS[curl ? at + KNEEL_AT + KNEEL.sitWarm : emo >= 0 && stage < 4 ? Fur.emoteArt(fg.snowArt, fg.outfit, emo) : carried ? Fur.carryArt(fg.snowArt, fg.outfit, poseKey(fg.view, pose))
     : at + (sat || kneel >= 0 && !sitting ? KNEEL_AT + (satEat >= 0 ? satEat : kneel) : poseKey(sitting ? 1 : fg.view, sitting ? 0 : pose))];
   fg.art = shownPose(f, want, px);
-  if (fg.art === want) fg.carryShown = carried;          // (its new painting not in yet: the dish stays where the old one held it)
+  if (fg.art === want) { fg.carryShown = carried; fg.carryVp = carried ? poseKey(fg.view, pose) : 0; }   // (its new painting not in yet: the dish stays where the old one held it)
   dishSpring(fg, ms);
 }
 // Its footprints: one at each foot down, a little to that foot's side, fading as the ground takes them back: soon in
@@ -2525,20 +2540,64 @@ function drawHopCue(f, sx, sy, px, now) {
 // share). A warm dish steams as hot as it still is (sim.js handHeat); gone cold it doesn't. The names and sizes are made
 // once: a frame builds none.
 const DISH_ARTS = Dishes.NAMES.map((_, i) => 'dish:' + i);   // (made once: a frame builds no names)
+const HELD_ARTS = Dishes.NAMES.map((_, i) => 'helddish:' + i);   // (and held: paintHeldDish)
 const DISH_IX = new Map(Dishes.NAMES.map((n, i) => [n, i]));
 const HAND_STEAM_ARTS = ['handsteam:0', 'handsteam:1', 'handsteam:2'];
 const HAND_DISH = 0.18, HAND_UP = 0.25;    // not carrying: the dish's size and how high it's held, in the forager's px
-const CARRY_DISH = 0.23;                   // carrying: its size
-const CARRY_SPOT = [[0.08, 0.3], [0.005, 0.27], [0, 0.3]];   // and where it sits by view: how far ahead (side on) and up, in px
+const CARRY_DISH = 0.2;                    // carrying: its size
+const CARRY_SPOT = [[0.13, 0.32], [0.005, 0.27], [0, 0.3]];   // and where it sits by view: how far ahead (side on) and up, in px
 const DISH_K = 7e-4, DISH_C = 0.011, DISH_KICK = 6e-4, DISH_TIP = 4;   // its spring (a ms), a foot down at a run, and how far it tips with it
 const handLook = { name: null, art: null, warm: false };
 function handArtOf(name) {                                 // (looked up only when the hand changes)
   if (name !== handLook.name) {
     const ix = name ? DISH_IX.get(name) : undefined;
-    handLook.name = name; handLook.art = ix === undefined ? null : DISH_ARTS[ix];
+    handLook.name = name; handLook.art = ix === undefined ? null : HELD_ARTS[ix];
     handLook.warm = ix !== undefined && !!Recipes.foodOf(name)?.warm;
   }
   return handLook;
+}
+// A dish in the hand (or dropped from it), painted as the recipe book has it (dishes.js) but finished the way the forager is
+// (fur.js paintFur), so it looks to belong in its mittens: its detail a touch softer and its colours a little muted
+// (HELD_MUTE), light along its top and shade along its underside, the same faint grain of strokes as thick as the forager's
+// (its box is CARRY_DISH of the forager's), and its edge soft (a half-size copy of it, stretched back, under it).
+const HELD_MUTE = 0.2, HELD_SOFT = 0.7;
+let heldCanvas = null;
+function paintHeldDish(g, size, U, n) {
+  if (!heldCanvas) heldCanvas = document.createElement('canvas');
+  const c = heldCanvas;
+  c.width = c.height = size;
+  const h = c.getContext('2d'), k = Math.round(size * HELD_SOFT);
+  Dishes.paint(h, size, U, n);
+  h.globalCompositeOperation = 'copy';                    // (softer: down a little and back)
+  h.drawImage(c, 0, 0, size, size, 0, 0, k, k);
+  h.drawImage(c, 0, 0, k, k, 0, 0, size, size);
+  const img = h.getImageData(0, 0, size, size), d = img.data;   // (muted toward its own grey, a little warm, as the forager's colours are)
+  for (let i = 0; i < d.length; i += 4) {
+    if (!d[i + 3]) continue;
+    const grey = 0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2];
+    d[i] += (grey + 8 - d[i]) * HELD_MUTE; d[i + 1] += (grey + 2 - d[i + 1]) * HELD_MUTE; d[i + 2] += (grey - 8 - d[i + 2]) * HELD_MUTE;
+  }
+  h.putImageData(img, 0, 0);
+  h.globalCompositeOperation = 'source-atop';
+  const shade = h.createLinearGradient(0, size * 0.3, 0, size * 0.75);   // (light along the top, shade along the underside)
+  shade.addColorStop(0, 'rgba(255,240,214,0.16)'); shade.addColorStop(0.45, 'rgba(255,240,214,0)');
+  shade.addColorStop(0.6, 'rgba(34,30,26,0)'); shade.addColorStop(1, 'rgba(34,30,26,0.28)');
+  h.fillStyle = shade; h.fillRect(0, 0, size, size);
+  const r = Math.max(0.7, size / (220 * CARRY_DISH * 1.3));   // (the grain, its strokes as the forager's: fur.js paintFur)
+  let seed = 12345;
+  const rnd = () => (seed = seed * 16807 % 2147483647) / 2147483647;
+  for (const ink of ['rgba(40,30,20,0.07)', 'rgba(255,245,225,0.07)']) {
+    h.strokeStyle = ink; h.lineWidth = r; h.beginPath();
+    for (let i = size * size / 120; i > 0; i--) { const x = rnd() * size, y = rnd() * size; h.moveTo(x, y); h.lineTo(x + r * 3, y + r * 0.6); }
+    h.stroke();
+  }
+  h.globalCompositeOperation = 'source-over';
+  g.drawImage(c, 0, 0, size, size, 0, 0, size / 2, size / 2);   // (the soft copy first, then the dish over it)
+  g.globalCompositeOperation = 'copy';
+  g.drawImage(g.canvas, 0, 0, size / 2, size / 2, 0, 0, size, size);
+  g.globalCompositeOperation = 'source-over';
+  g.drawImage(c, 0, 0);
+  c.width = c.height = 1;
 }
 // A curl of steam over a warm dish in the hand, painted once (HAND_STEAM_ARTS): three wisps, each a little different.
 function paintHandSteam(g, size, U, n) {
@@ -2552,24 +2611,57 @@ function paintHandSteam(g, size, U, n) {
     g.moveTo(0.22, 0.42); g.bezierCurveTo(0.4 + sway, 0.18, -0.04, 0, 0.2, -0.28);
   });
 }
-// Where the dish is held, on screen (b: fg or a friend's), into DISH_AT: x, y and its size.
-const DISH_AT = [0, 0, 0];
+// Carrying, its hands by pose (fur.js carryHold, worked out once), by (view << 5) + pose, HOLD_N each, in its px: how far its
+// shoulders have moved from where they are standing in that view (the bob, the lean: the dish goes with them), then how many
+// near mittens there are and where each is from its feet (x as painted, facing left; y up is less).
+const HOLD_N = 7, CARRY_HOLD = new Float32Array(96 * HOLD_N);
+for (let vp = 0; vp < 96; vp++) {
+  const h = Fur.carryHold(vp), h0 = Fur.carryHold(vp & ~31), at = vp * HOLD_N;
+  CARRY_HOLD[at] = (h[0] - h0[0]) / 2; CARRY_HOLD[at + 1] = (h[1] - h0[1]) / 2; CARRY_HOLD[at + 2] = (h.length - 2) / 2;
+  for (let k = 2; k < h.length; k += 2) { CARRY_HOLD[at + 1 + k] = h[k] / 2; CARRY_HOLD[at + 2 + k] = (h[k + 1] - 0.72) / 2; }
+}
+// A point held (x, y from its feet at sx, sy, on screen) laid as its figure is (drawFigure: squashed, turned, a shiver's
+// skew, all about its feet), into HELD.
+const HELD = [0, 0];
+function layHeld(b, sx, sy, x, y) {
+  y *= b.fs || 1;
+  if (b.fr) { const c = Math.cos(b.fr), s = Math.sin(b.fr), t = x * c - y * s; y = x * s + y * c; x = t; }
+  if (b.fk) x -= b.fk / 0.6 * y;
+  HELD[0] = sx + x; HELD[1] = sy + y;
+}
+// Where its feet are drawn (b: fg or a friend's): up in a hop, down in the shallows (drawFigure).
+const heldFoot = (b, sy, px) => sy - (b.lift || 0) * px + (b.wet ? WADE_SINK * px : 0);
+// Where the dish is held, on screen (b: fg or a friend's), into DISH_AT: x, y, its size and how far it's turned with the figure.
+const DISH_AT = [0, 0, 0, 0];
 function dishAt(b, sx, sy, px) {
-  if (b.lift) sy -= b.lift * px;                           // (dancing, a hop)
+  sy = heldFoot(b, sy, px);
   if (b.carryShown) {
-    const at = CARRY_SPOT[b.view > 2 ? 0 : b.view];
-    DISH_AT[0] = sx + (b.view === 0 ? (b.flip ? 1 : -1) * at[0] : at[0]) * px; DISH_AT[1] = sy - (at[1] - b.dishY) * px; DISH_AT[2] = px * CARRY_DISH;
+    const at = CARRY_SPOT[b.view > 2 ? 0 : b.view], h = b.carryVp * HOLD_N, side = b.flip ? -1 : 1;
+    layHeld(b, sx, sy, (b.view === 0 ? -side * at[0] : at[0]) * px + side * CARRY_HOLD[h] * px, (CARRY_HOLD[h + 1] - at[1]) * px);
+    DISH_AT[0] = HELD[0]; DISH_AT[1] = HELD[1] + b.dishY * px; DISH_AT[2] = px * CARRY_DISH; DISH_AT[3] = b.fr || 0;
   } else {                                                 // (side on: out in front; from the front or behind: at its middle)
-    DISH_AT[0] = sx + (b.view === 0 ? (b.flip ? 1 : -1) * px * 0.15 : 0); DISH_AT[1] = sy - px * HAND_UP; DISH_AT[2] = px * HAND_DISH;
+    DISH_AT[0] = sx + (b.view === 0 ? (b.flip ? 1 : -1) * px * 0.15 : 0); DISH_AT[1] = sy - px * HAND_UP; DISH_AT[2] = px * HAND_DISH; DISH_AT[3] = 0;
   }
   return DISH_AT;
 }
+const MITT_LOOK = { squash: 1 };
+let mittOk = false;                                        // (its painting in: until then the dish is held without it)
 function drawHeldDish(b, sx, sy, px, now, art, heat) {
   if (!art) return;
-  const [x, y, d] = dishAt(b, sx, sy, px), tip = b.carryShown ? b.dishY * DISH_TIP * (b.flip ? -1 : 1) : 0;
+  const [x, y, d, turn] = dishAt(b, sx, sy, px), tip = b.carryShown ? b.dishY * DISH_TIP * (b.flip ? -1 : 1) + turn : 0;
   if (b.view === 2 && b.carryShown) { /* (from behind, held out ahead: the body hides it, only its steam shows) */ }
-  else if (Math.abs(tip) > 0.01) { ctx.save(); ctx.translate(x, y); ctx.rotate(tip); drawEmoji(art, 0, 0, d); ctx.restore(); }
-  else drawEmoji(art, x, y, d);
+  else {
+    if (Math.abs(tip) > 0.01) { ctx.save(); ctx.translate(x, y); ctx.rotate(tip); drawEmoji(art, 0, 0, d); ctx.restore(); }
+    else drawEmoji(art, x, y, d);
+    if (b.carryShown && (mittOk || (mittOk = !furWorker || furReady(FORAGER_ARTS[Fur.MITT_ART], poseStep(Math.max(4, px)))))) {
+      const h = b.carryVp * HOLD_N, side = b.flip ? -1 : 1, fy = heldFoot(b, sy, px);   // (its near mittens over the dish's rim)
+      MITT_LOOK.squash = b.fs || 1;
+      for (let k = 0; k < CARRY_HOLD[h + 2]; k++) {
+        layHeld(b, sx, fy, side * CARRY_HOLD[h + 3 + 2 * k] * px, CARRY_HOLD[h + 4 + 2 * k] * px);
+        drawEmoji(FORAGER_ARTS[Fur.MITT_ART], HELD[0], HELD[1], px, MITT_LOOK);
+      }
+    }
+  }
   if (heat < 0.08) return;                                 // (gone cold: no steam)
   const k = (now / 240 | 0) % 3, sway = Math.sin(now / 540) * d * 0.12;
   drawEmoji(HAND_STEAM_ARTS[k], x + sway, y - d * 0.48, d * 0.6, { alpha: (0.55 + 0.2 * Math.sin(now / 610)) * Math.min(1, heat * 1.6) });
@@ -2611,7 +2703,7 @@ const spills = [];                         // { art, x, y, dir, t, splashed } (o
 function spillDish(id, x, y, heading, now) {
   const ix = DISH_IX.get(id);
   if (ix === undefined || spills.length > 4) return;
-  spills.push({ art: DISH_ARTS[ix], x, y, dir: Math.cos(heading) > 0 ? 1 : -1, t: now, splashed: false });
+  spills.push({ art: HELD_ARTS[ix], x, y, dir: Math.cos(heading) > 0 ? 1 : -1, t: now, splashed: false });
 }
 function drawSpills(now) {
   if (!sd.n && !spills.length) return;
@@ -2751,9 +2843,10 @@ function drawFigure(b, art, sx, sy, px, now, stage, trip, still, me) {
   const flip = b.flip, top = sy - px * 0.36;            // (its painting's middle: the feet are at 0.72 of its half-size)
   if (b.wet) {
     const line = sy - px * 0.02, rip = 1 + 0.08 * Math.sin(now / 280);   // (in to its shins)
+    b.fs = 1; b.fk = 0; b.fr = 0;
     ctx.save();
     ctx.beginPath(); ctx.rect(sx - px, line - px * 2, px * 2, px * 2); ctx.clip();
-    drawEmoji(art, sx, top + px * 0.1, px, { flip });
+    drawEmoji(art, sx, top + px * WADE_SINK, px, { flip });
     ctx.restore();
     ctx.strokeStyle = 'rgba(240, 250, 255, 0.7)';
     ctx.lineWidth = Math.max(1, px * 0.025);
@@ -2763,9 +2856,8 @@ function drawFigure(b, art, sx, sy, px, now, stage, trip, still, me) {
   const breathe = still && ui.speed > 0 ? Math.sin(now / 620) * 0.012 : 0;
   const squash = (1 + breathe) * HUNCH[stage] * (b.view === 1 ? 1 - 0.1 * trip : 1) * (b.squash || 1), shake = shiverOf(b, stage, now, me) + b.hum;   // (humming, a sway; a jump, a stretch and a squash)
   const rot = (trip && b.view !== 1 ? (flip ? 1 : -1) * 0.24 * trip : 0) + (b.lean || 0);   // (a stumble pitching forward, a dash leaning into it)
-  if (me) {                                              // (where its painting sits, as it's about to be drawn: its rim is laid over the dark from here, drawForagerRim)
-    b.rimOn = true; b.fx = sx; b.fy = sy; b.fs = squash; b.fk = shake; b.fr = rot;
-  }
+  b.fs = squash; b.fk = shake; b.fr = rot;                // (how it's laid: its dish and mittens go with it, drawHeldDish)
+  if (me) { b.rimOn = true; b.fx = sx; b.fy = sy; }       // (where its painting sits, as it's about to be drawn: its rim is laid over the dark from here, drawForagerRim)
   if (rot || shake) {                                   // (a shiver sways it about its feet: the head most, the feet not at all)
     ctx.save(); ctx.translate(sx, sy);
     if (shake) ctx.transform(1, 0, -shake / 0.6, 1, 0, 0);
@@ -2824,15 +2916,34 @@ function foragerRim(art, px) {
   asBitmap(c, b => { if (rims.get(art) === r) r.canvas = b; });
   return r;
 }
+// How much of its head what stands in front of it that isn't a crown hides (a rock, a rack, a torch, a friend): the items
+// nearer the camera than it and tall enough (standsUp) to reach over its head, within their width of it.
+function rimHidden(items) {
+  const px = fg.px, fx = fg.fx, head = fg.fy - px * 0.62, y = world.forager.y, z = cam.zoom;
+  let most = 0;
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    if (it.p || it.y <= y || it.f < 0.02) continue;
+    const h = standsUp(it, z, px);
+    if (h < 0.5) continue;
+    const reach = (0.2 + 0.5 * h) * px, side = Math.abs(it.sx - fx);
+    if (side >= reach) continue;
+    const top = it.sy - h * px;
+    if (it.sy < head || top > head) continue;           // (its foot above the head: behind it on screen, or its top short of it)
+    const k = Math.min(1, (head - top) / (0.15 * px), (reach - side) / (0.2 * px));
+    if (k > most) most = k;
+  }
+  return most;
+}
 // Laid over the dark after it's down, where its painting went, turned as it was (fg: drawFigure). Only where a fire's
 // light falls (fireReach): that far and no further, faint, and a tree in front of it (coverAt, occl) hides its rim with
 // it; the split's forager canvas is over everything, so nothing hides it there (its lights were laid at the meadow's
 // camera, so they're shifted by dx, dy to where the camera is now).
-function drawForagerRim(dark, occl = true, dx = 0, dy = 0) {
-  if (dark < 0.02 || !fg.rimOn) return;
+function drawForagerRim(dark, occl = true, dx = 0, dy = 0, hid = 0) {
+  if (dark < 0.02 || !fg.rimOn || hid > 0.98) return;
   const px = fg.px, r = foragerRim(fg.art, px), s = r && sprite(fg.art, px);
   if (!s) return;
-  const seen = (occl ? 1 - coverAt(fg.fx, fg.fy - px * 0.3, world.forager.y) : 1) * fireReach(fg.fx, fg.fy, dx, dy);
+  const seen = (occl ? 1 - coverAt(fg.fx, fg.fy - px * 0.3, world.forager.y) : 1) * (1 - hid) * fireReach(fg.fx, fg.fy, dx, dy);
   if (seen < 0.02) return;
   ctx.globalAlpha = RIM_A * clamp(dark / DARK, 0, 1) * seen;
   ctx.save();
@@ -2853,13 +2964,15 @@ function foragerAhead() {
   if (!furWorker || P === fg.sized && set === fg.sizedSet && fg.snowArt === fg.sizedSnow && kneel === fg.sizedKneel && emo === fg.sizedEmote && carry === fg.sizedCarry) return;
   fg.sized = P; fg.sizedSet = set; fg.sizedSnow = fg.snowArt; fg.sizedKneel = kneel; fg.sizedEmote = emo; fg.sizedCarry = carry;
   const at = fg.snowArt * Fur.FORAGER_SNOW_ARTS + (fg.outfit << 7);
-  for (let v = 0; v < 3; v++) for (const p of set === 2 ? FORAGER_CHILLY : FORAGER_POSES) furReady(FORAGER_ARTS[at + (v << 5) + p], P);
+  const close = cam.zoom > CLOSE_ZOOM;                   // (close up it stands, kneels or sits: not its walk)
+  if (!close && !carry) for (let v = 0; v < 3; v++) for (const p of set === 2 ? FORAGER_CHILLY : FORAGER_POSES) furReady(FORAGER_ARTS[at + (v << 5) + p], P);
   for (const p of Fur.FORAGER_IDLES) furReady(FORAGER_ARTS[at + 96 + p], P);
   for (const p of Fur.FORAGER_EATS) furReady(FORAGER_ARTS[at + 96 + p], P);
   if (kneel) for (const p of KNEEL_POSES) furReady(FORAGER_ARTS[at + KNEEL_AT + p], P);
   if (kneel) for (const p of Fur.FORAGER_SIT_EATS) furReady(FORAGER_ARTS[at + KNEEL_AT + p], P);   // (eating sitting, on the seat log or by the fire)
   if (emo) for (const p of Fur.FORAGER_EMOTES) furReady(FORAGER_ARTS[Fur.emoteArt(fg.snowArt, fg.outfit, p)], P);   // (an emote on, or about to be)
-  if (carry) for (let v = 0; v < 3; v++) for (const p of set === 2 ? FORAGER_CHILLY : FORAGER_POSES) furReady(FORAGER_ARTS[Fur.carryArt(fg.snowArt, fg.outfit, (v << 5) + p)], P);   // (a dish in its hands)
+  if (carry && !close) for (let v = 0; v < 3; v++) for (const p of set === 2 ? FORAGER_CHILLY : FORAGER_POSES) furReady(FORAGER_ARTS[Fur.carryArt(fg.snowArt, fg.outfit, (v << 5) + p)], P);   // (a dish in its hands)
+  if (carry) furReady(FORAGER_ARTS[Fur.MITT_ART], P);   // (and its mittens over it)
 }
 // Out while it snows, snow gathers on it (on the hood, the shoulders: fur.js FORAGER_SNOWS), less under the trees; once
 // it stops it melts off, soon above freezing, slowly under, quicker on the move, and by a fire close by it goes snowing or
@@ -5066,13 +5179,14 @@ const POOL_UP = 1.4;                     // how much further the pool reaches up
 const POOL_CUT = 0.88, POOL_TINT = 0.42, POOL_GLOW = 0.4;   // how much of the dark goes at the heart, the amber over the pool, the glow close in
 let CUT_ART = null, TORCH_CUT_ART = null, TINT_ART = null, POOL_GLOW_ART = null;
 // A radial gradient as an egg: the circle's top half stretched up by `up`, its lower half as it is (the middle of the
-// light is then `up / (1 + up)` of the way down its box).
+// light is then `up / (1 + up)` of the way down its box). The halves meet on a whole row: a seam partway through one left
+// that row half covered, a dark line across every pool, stretched a few pixels thick on the screen.
 function eggArt(n, stops, up) {
   const c = document.createElement('canvas'), g = c.getContext('2d'), h = Math.round(n / 2 * (1 + up));
   c.width = n; c.height = h;
   const gr = g.createRadialGradient(n / 2, n / 2, 0, n / 2, n / 2, n / 2);
   for (const [at, col] of stops) gr.addColorStop(at, col);
-  g.fillStyle = gr; g.setTransform(1, 0, 0, up, 0, 0); g.fillRect(0, 0, n, n / 2);
+  g.fillStyle = gr; g.setTransform(1, 0, 0, (h - n / 2) / (n / 2), 0, 0); g.fillRect(0, 0, n, n / 2);
   g.setTransform(1, 0, 0, 1, 0, h - n); g.fillRect(0, n / 2, n, n / 2);
   const art = { img: c };
   asBitmap(c, b => { art.img = b; });
@@ -8170,7 +8284,7 @@ function renderCook(measure = true) {
     $('#cook-vessels').innerHTML = VS.map(v => {
       const V = Recipes.VESSELS[v], m = vesselMode(v), c = Recipes.CRAFTS[v], lock = m === 'make' && makeLocked(v);
       const tip = m === 'cook' ? `${V.name}: ${V.word}, ${V.slots} things` : m === 'fire' ? `${c.name}: hardening in the fire, ${fp}%` : lock ? `${c.name}: made at Cooking ${Recipes.craftLevel(v)}` : `Make a ${c.name.toLowerCase()}: ${needWords(c.needs)}`;
-      return `<button data-act="vessel" data-v="${v}" class="${v === cookVessel ? 'on' : ''}${m === 'cook' ? '' : ' ' + m}${lock ? ' locked' : ''}"${busy && v !== cookVessel ? ' disabled' : ''} title="${esc(tip)}"${m === 'fire' ? ` style="--p:${fp / 100}"` : ''}>${m === 'cook' ? `<img src="${vesselIcon(v)}" alt="">` : `<span class="plate"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-pot"/>${lock || m === 'fire' ? '' : '<use href="#i-spark"/>'}</svg>${lock ? '<span class="lock"><svg viewBox="0 0 12 12"><use href="#i-lock"/></svg></span>' : ''}</span>`}<small>${m === 'cook' ? esc(V.name) : m === 'fire' ? fp + '%' : lock ? 'Lv ' + Recipes.craftLevel(v) : 'Make'}</small></button>`; }).join('');
+      return `<button data-act="vessel" data-v="${v}" class="${v === cookVessel ? 'on' : ''}${m === 'cook' ? '' : ' ' + m}${lock ? ' locked' : ''}"${busy && v !== cookVessel ? ' disabled' : ''} title="${esc(tip)}"${m === 'fire' ? ` style="--p:${fp / 100}"` : ''}>${m === 'cook' ? `<img src="${vesselIcon(v)}" alt="">` : `<span class="plate"><img src="${vesselIcon(v)}" alt="">${lock || m === 'fire' ? '' : '<svg class="spark" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-spark"/></svg>'}${lock ? '<span class="lock"><svg viewBox="0 0 12 12"><use href="#i-lock"/></svg></span>' : ''}</span>`}<small>${m === 'cook' ? esc(V.name) : m === 'fire' ? fp + '%' : lock ? 'Lv ' + Recipes.craftLevel(v) : 'Make'}</small></button>`; }).join('');
   }
   cookFuel(j);
   const sticks = Recipes.takes('fuel').reduce((n, ing) => n + S.storesCount(storesAt(j.F.x, j.F.y), ing), 0), stick = $('#cook-stick');
@@ -8242,7 +8356,7 @@ function flyBig(id, sx, sy, tx, ty, ms, k0, k1, done) {
 // are; done, the dish rises out of it glowing (a mess, in a puff of dark smoke) and flies to its tile (kw.reveal). A tap on a
 // thing floating takes it back out. The other vessels (cookVessel) have their own place (kw.at) and painting (vesselArt): the
 // clay griddle (things sizzling, a hop now and then, a spit of fat), the hearth stone (a shimmer of heat), the stick across
-// the fire on two forked sticks (the things threaded on it turning) and the wooden bowl (off the heat, things resting in it);
+// the fire on two forked sticks (the things threaded on it turning) and the bark bowl (sat down on the stones, things resting in it);
 // on all but the bowl the things brown as they cook (each drawn again over itself, 'multiply').
 // What looks the same each frame is painted once a size (paintCookPot: kw.back the pot's inside and the water, kw.front its
 // clay belly and rim, the droplet, the bubble and the spoon; vesselArt the others, as first wanted; paintCookBed: kw.bg the
@@ -8335,7 +8449,18 @@ function grain(g, x, y, w, h, n, seed, size, a) {
     g.beginPath(); g.ellipse(x + hash2(k, seed, 61) * w, y + hash2(k, seed, 62) * h, r, r * 0.7, 0, 0, Math.PI * 2); g.fill();
   }
 }
-const blurOf = px => `blur(${Math.max(1, px)}px)`;
+// A shape (path) filled in color, or stroked lw wide, blurred about b px. Not ctx.filter: Safari has none and drew these
+// hard-edged. The shape is drawn off the canvas to the left and only its shadow, blurred, falls back where it belongs.
+function soft(g, color, b, path, lw = 0) {
+  const m = g.getTransform(), off = g.canvas.width * 2;
+  g.save();
+  g.setTransform(m.a, m.b, m.c, m.d, m.e - off, m.f);
+  g.shadowColor = color; g.shadowBlur = 2 * Math.max(1, b) * Math.hypot(m.a, m.b); g.shadowOffsetX = off;
+  g.beginPath(); path();
+  if (lw) { g.strokeStyle = '#000'; g.lineWidth = lw; g.stroke(); } else { g.fillStyle = '#000'; g.fill(); }
+  g.restore();
+}
+const softOval = (g, color, b, x, y, rx, ry, rot = 0) => soft(g, color, b, () => g.ellipse(x, y, rx, ry, rot, 0, Math.PI * 2));
 // The pot, painted once a size: its shape from the canvas's, then its inside and the water (kw.back), its clay belly, rim and
 // lugs (kw.front), a droplet, a bead of fat, a bubble and the wooden spoon; and where each vessel sits (kw.at).
 function paintCookPot() {
@@ -8346,13 +8471,13 @@ function paintCookPot() {
   // middle is from where it sits (of its size), ring: the glow round it with something held over, glow: the flames' light
   // on it (x, y, w, h, how strong), steam: puffs cooking and not
   const pan = { x: cx, y: fireY - rx * 0.5, rx: rx * 0.98, ry: rx * 0.33 }, stone = { x: cx, y: fireY - rx * 0.4, rx: rx * 0.9, ry: rx * 0.32 };
-  const stick = { x: cx, y: fireY - rx * 0.9, rx }, bowl = { x: cx, y: fireY - rx * 0.12, rx: rx * 0.86, ry: rx * 0.31 };
+  const stick = { x: cx, y: fireY - rx * 0.9, rx }, bowl = { x: cx, y: fireY - rx * 0.76, rx: rx * 0.74, ry: rx * 0.25 };
   kw.at = {
     pot: { x: cx, y: wy, rx: wrx, ry: wry, spread: 1, down: 0, size: 1, sit: 0.2, tilt: 0, ring: [cx, rimY, rx * 1.04, ry * 1.08], glow: [cx - rx * 0.95, rimY + rx * 0.4, rx * 1.9, rx * 0.8, 1], steam: [7, 4] },
     pan: { ...pan, spread: 0.8, down: 0.05, size: 1, sit: 0.36, tilt: 0, ring: [pan.x, pan.y, pan.rx * 1.12, pan.ry * 1.2], glow: [cx - rx, pan.y + rx * 0.04, rx * 2, rx * 0.35, 0.8], steam: [4, 0] },
     stone: { ...stone, spread: 0.75, down: 0, size: 1, sit: 0.36, tilt: 0, ring: [stone.x, stone.y, stone.rx * 1.1, stone.ry * 1.2], glow: [cx - rx * 0.9, stone.y + rx * 0.06, rx * 1.8, rx * 0.35, 0.7], steam: [3, 0] },
     stick: { ...stick, ry: rx * 0.2, spread: 1, down: 0, size: 0.92, sit: 0, tilt: -0.06, ring: [cx, stick.y, rx * 1.3, rx * 0.22], glow: [cx - rx * 0.7, stick.y - rx * 0.25, rx * 1.4, rx * 0.45, 0.6], steam: [3, 0] },
-    bowl: { ...bowl, spread: 0.72, down: 0.6, size: 0.92, sit: 0.12, tilt: 0, ring: [bowl.x, bowl.y, bowl.rx * 1.08, bowl.ry * 1.15], glow: [cx - rx * 0.8, bowl.y + rx * 0.05, rx * 1.6, rx * 0.5, 0.35], steam: [0, 0] },
+    bowl: { ...bowl, spread: 0.72, down: 0.6, size: 0.92, sit: 0.12, tilt: 0, ring: [bowl.x, bowl.y, bowl.rx * 1.08, bowl.ry * 1.15], glow: [cx - rx * 0.75, bowl.y + rx * 0.3, rx * 1.5, rx * 0.45, 0.6], steam: [3, 0] },
   };
   let [art, g, c] = cookLayer();
   // the inside: its far wall, dark fired clay catching a little light along the top
@@ -8363,11 +8488,10 @@ function paintCookPot() {
   gr = g.createRadialGradient(cx - wrx * 0.15, wy - wry * 0.1, 0, cx, wy, wrx);   // the water: clear, cool, deeper at its edge
   gr.addColorStop(0, '#86aca4'); gr.addColorStop(0.55, '#55807f'); gr.addColorStop(1, '#2c4a51');
   g.fillStyle = gr; g.beginPath(); g.ellipse(cx, wy, wrx, wry, 0, 0, TAU); g.fill();
-  g.filter = blurOf(rx * 0.035);
-  g.fillStyle = 'rgba(30, 14, 8, 0.5)'; g.beginPath(); g.ellipse(cx, wy - wry * 0.8, wrx * 0.98, wry * 0.42, 0, 0, TAU); g.fill();   // the far wall's shadow on it
-  g.fillStyle = 'rgba(236, 244, 232, 0.24)'; g.beginPath(); g.ellipse(cx + wrx * 0.3, wy + wry * 0.12, wrx * 0.3, wry * 0.15, -0.08, 0, TAU); g.fill();   // the sky in it
-  g.fillStyle = 'rgba(255, 150, 70, 0.14)'; g.beginPath(); g.ellipse(cx, wy + wry * 0.75, wrx * 0.8, wry * 0.32, 0, 0, TAU); g.fill();   // the firelight
-  g.filter = 'none';
+  const b = rx * 0.035;
+  softOval(g, 'rgba(30, 14, 8, 0.5)', b, cx, wy - wry * 0.8, wrx * 0.98, wry * 0.42);   // the far wall's shadow on it
+  softOval(g, 'rgba(236, 244, 232, 0.24)', b, cx + wrx * 0.3, wy + wry * 0.12, wrx * 0.3, wry * 0.15, -0.08);   // the sky in it
+  softOval(g, 'rgba(255, 150, 70, 0.14)', b, cx, wy + wry * 0.75, wrx * 0.8, wry * 0.32);   // the firelight
   g.restore();
   g.lineCap = 'round'; g.lineJoin = 'round';
   g.lineWidth = rx * 0.085; g.strokeStyle = '#a65f39';    // the rim at the back, a little uneven, lit along its top
@@ -8384,9 +8508,7 @@ function paintCookPot() {
     g.bezierCurveTo(cx + rx * 0.62, bot, cx + rx * 1.22, rimY + rx * 0.62, cx + rx * 1.02, rimY);
     wobble(g, cx, rimY, rx * 1.02, ry * 1.02, 0, PI, W, false); g.closePath();
   };
-  g.filter = blurOf(rx * 0.06);                           // sat down among the stones
-  g.fillStyle = 'rgba(20, 10, 6, 0.35)'; g.beginPath(); g.ellipse(cx, bot - rx * 0.02, rx * 0.72, rx * 0.12, 0, 0, TAU); g.fill();
-  g.filter = 'none';
+  softOval(g, 'rgba(20, 10, 6, 0.35)', rx * 0.06, cx, bot - rx * 0.02, rx * 0.72, rx * 0.12);   // sat down among the stones
   gr = g.createRadialGradient(cx - rx * 0.45, rimY + rx * 0.25, 0, cx - rx * 0.1, rimY + rx * 0.45, rx * 1.4);   // earthenware, warm
   gr.addColorStop(0, '#d99566'); gr.addColorStop(0.35, '#b4683f'); gr.addColorStop(0.75, '#7a3d22'); gr.addColorStop(1, '#3f1c10');
   g.fillStyle = gr; belly(); g.fill();
@@ -8398,27 +8520,20 @@ function paintCookPot() {
     g.strokeStyle = 'rgba(70, 30, 14, 0.2)'; g.beginPath(); wobble(g, cx, y, rx * 1.15, ry * 1.05, PI * 0.05, PI * 0.95, 0.02, true, k * 1.9); g.stroke();
     g.strokeStyle = 'rgba(255, 214, 176, 0.12)'; g.beginPath(); wobble(g, cx, y + rx * 0.013, rx * 1.15, ry * 1.05, PI * 0.08, PI * 0.92, 0.02, true, k * 1.9); g.stroke();
   }
-  g.filter = blurOf(rx * 0.09);                           // soot up the belly from the fire
-  g.fillStyle = 'rgba(26, 14, 10, 0.75)'; g.beginPath(); g.ellipse(cx, bot + rx * 0.08, rx * 0.95, rx * 0.4, 0, 0, TAU); g.fill();
-  g.fillStyle = 'rgba(26, 14, 10, 0.4)';
-  g.beginPath(); g.ellipse(cx - rx * 0.55, bot - rx * 0.28, rx * 0.22, rx * 0.32, 0.4, 0, TAU); g.fill();
-  g.beginPath(); g.ellipse(cx + rx * 0.5, bot - rx * 0.32, rx * 0.2, rx * 0.36, -0.35, 0, TAU); g.fill();
-  g.beginPath(); g.ellipse(cx + rx * 0.05, bot - rx * 0.35, rx * 0.18, rx * 0.3, 0, 0, TAU); g.fill();
-  g.filter = 'none';
+  softOval(g, 'rgba(26, 14, 10, 0.75)', rx * 0.09, cx, bot + rx * 0.08, rx * 0.95, rx * 0.4);   // soot up the belly from the fire
+  softOval(g, 'rgba(26, 14, 10, 0.4)', rx * 0.09, cx - rx * 0.55, bot - rx * 0.28, rx * 0.22, rx * 0.32, 0.4);
+  softOval(g, 'rgba(26, 14, 10, 0.4)', rx * 0.09, cx + rx * 0.5, bot - rx * 0.32, rx * 0.2, rx * 0.36, -0.35);
+  softOval(g, 'rgba(26, 14, 10, 0.4)', rx * 0.09, cx + rx * 0.05, bot - rx * 0.35, rx * 0.18, rx * 0.3);
   gr = g.createRadialGradient(cx, rimY + rx * 1.2, 0, cx, rimY + rx * 1.2, rx * 1.05);   // warm from the flames under it
   gr.addColorStop(0, 'rgba(255, 150, 64, 0.65)'); gr.addColorStop(0.45, 'rgba(232, 92, 40, 0.25)'); gr.addColorStop(1, 'rgba(200, 70, 30, 0)');
   g.fillStyle = gr; g.fillRect(cx - rx * 1.3, rimY, rx * 2.6, rx * 1.3);
-  g.filter = blurOf(rx * 0.012);                          // a thumb mark or two, left from the shaping
-  for (const [x, y, a] of [[cx + rx * 0.42, rimY + rx * 0.3, -0.5], [cx - rx * 0.24, rimY + rx * 0.55, 0.3]]) {
-    g.fillStyle = 'rgba(70, 30, 14, 0.24)'; g.beginPath(); g.ellipse(x, y, rx * 0.065, rx * 0.045, a, 0, TAU); g.fill();
-    g.strokeStyle = 'rgba(255, 218, 186, 0.3)'; g.lineWidth = rx * 0.01; g.beginPath(); g.ellipse(x, y + rx * 0.006, rx * 0.06, rx * 0.04, a, PI * 0.15, PI * 0.85); g.stroke();
+  for (const [x, y, a] of [[cx + rx * 0.42, rimY + rx * 0.3, -0.5], [cx - rx * 0.24, rimY + rx * 0.55, 0.3]]) {   // a thumb mark or two, left from the shaping
+    softOval(g, 'rgba(70, 30, 14, 0.24)', rx * 0.012, x, y, rx * 0.065, rx * 0.045, a);
+    soft(g, 'rgba(255, 218, 186, 0.3)', rx * 0.012, () => g.ellipse(x, y + rx * 0.006, rx * 0.06, rx * 0.04, a, PI * 0.15, PI * 0.85), rx * 0.01);
   }
-  g.filter = blurOf(rx * 0.05);                           // a soft sheen on its shoulders (clay, not iron: no gleam)
-  g.fillStyle = 'rgba(255, 236, 214, 0.2)'; g.beginPath(); g.ellipse(cx - rx * 0.6, rimY + rx * 0.32, rx * 0.13, rx * 0.28, 0.45, 0, TAU); g.fill();
-  g.fillStyle = 'rgba(255, 236, 214, 0.08)'; g.beginPath(); g.ellipse(cx + rx * 0.62, rimY + rx * 0.36, rx * 0.08, rx * 0.2, -0.4, 0, TAU); g.fill();
-  g.filter = blurOf(rx * 0.025);                          // the shadow under its lip
-  g.strokeStyle = 'rgba(60, 24, 10, 0.35)'; g.lineWidth = rx * 0.05; g.beginPath(); wobble(g, cx, rimY + rx * 0.07, rx * 1.0, ry, PI * 0.05, PI * 0.95, W); g.stroke();
-  g.filter = 'none';
+  softOval(g, 'rgba(255, 236, 214, 0.2)', rx * 0.05, cx - rx * 0.6, rimY + rx * 0.32, rx * 0.13, rx * 0.28, 0.45);   // a soft sheen on its shoulders (clay, not iron: no gleam)
+  softOval(g, 'rgba(255, 236, 214, 0.08)', rx * 0.05, cx + rx * 0.62, rimY + rx * 0.36, rx * 0.08, rx * 0.2, -0.4);
+  soft(g, 'rgba(60, 24, 10, 0.35)', rx * 0.025, () => wobble(g, cx, rimY + rx * 0.07, rx * 1.0, ry, PI * 0.05, PI * 0.95, W), rx * 0.05);   // the shadow under its lip
   g.restore();
   g.lineCap = 'round'; g.lineJoin = 'round';
   g.lineWidth = rx * 0.1; g.strokeStyle = '#bd7146';      // the rim in front
@@ -8460,6 +8575,14 @@ function paintCookPot() {
   kw.spoon = Object.assign(art, { len: L, h: H, bx: br + 1, enter: br * 2.6 });   // (enter: how far up from its bowl it comes out of the water)
   bitmapOf(art, c);
 }
+// One of the meadow's vessel paintings (paintVessel's parts) in a window layer: its box P CSS px across, middle at cx, cy.
+function meadowPart(g, part, cx, cy, P) {
+  const d = kw.d, T = Math.ceil(P * 1.3 * d), tc = document.createElement('canvas');
+  tc.width = tc.height = T;
+  paintVessel(tc.getContext('2d'), T, P * d, VSL_PARTS.indexOf(part));
+  g.drawImage(tc, cx - T / d / 2, cy - T / d / 2, T / d, T / d);
+  tc.width = 0;
+}
 // The other vessels, each painted once a size the first time it's wanted ({ back, front }: under its things, over them).
 const vesselArt = v => kw.vart[v] || (kw.vart[v] = VESSEL_PAINT[v](kw.at[v], kw.rx));
 const VESSEL_PAINT = {
@@ -8467,27 +8590,23 @@ const VESSEL_PAINT = {
   pan(A, rx) {
     const x = A.x, y = A.y, R = A.rx * 1.06, Ry = A.ry * 1.12, dep = rx * 0.13, TAU = Math.PI * 2, PI = Math.PI;
     let [back, g, c] = cookLayer();
-    g.filter = blurOf(rx * 0.05);
-    g.fillStyle = 'rgba(20, 10, 6, 0.4)'; g.beginPath(); g.ellipse(x, y + dep + Ry * 0.5, R * 0.95, Ry * 0.8, 0, 0, TAU); g.fill();
-    g.filter = 'none';
+    softOval(g, 'rgba(20, 10, 6, 0.4)', rx * 0.05, x, y + dep + Ry * 0.5, R * 0.95, Ry * 0.8);
     const side = () => { g.beginPath(); g.moveTo(x - R, y); g.lineTo(x - R * 0.9, y + dep); g.ellipse(x, y + dep, R * 0.9, Ry * 0.9, 0, PI, 0, true); g.lineTo(x + R, y); wobble(g, x, y, R, Ry, 0, PI, 0.01, false, 2); g.closePath(); };
     let gr = g.createLinearGradient(0, y, 0, y + dep + Ry);
     gr.addColorStop(0, '#a2592f'); gr.addColorStop(1, '#3b1a0e');
     g.fillStyle = gr; side(); g.fill();
     g.save(); side(); g.clip();
-    g.filter = blurOf(rx * 0.05);
-    g.fillStyle = 'rgba(26, 14, 10, 0.6)'; g.beginPath(); g.ellipse(x, y + dep + Ry * 0.9, R, Ry * 0.8, 0, 0, TAU); g.fill();
-    g.fillStyle = 'rgba(255, 140, 60, 0.25)'; g.beginPath(); g.ellipse(x, y + dep + Ry, R * 0.6, Ry * 0.6, 0, 0, TAU); g.fill();
-    g.filter = 'none'; g.restore();
+    softOval(g, 'rgba(26, 14, 10, 0.6)', rx * 0.05, x, y + dep + Ry * 0.9, R, Ry * 0.8);
+    softOval(g, 'rgba(255, 140, 60, 0.25)', rx * 0.05, x, y + dep + Ry, R * 0.6, Ry * 0.6);
+    g.restore();
     gr = g.createRadialGradient(x - R * 0.3, y - Ry * 0.3, 0, x, y, R);
     gr.addColorStop(0, '#c27b50'); gr.addColorStop(0.6, '#a35f39'); gr.addColorStop(1, '#7d4126');
     g.fillStyle = gr; g.beginPath(); wobble(g, x, y, R, Ry, 0, TAU, 0.01, true, 2); g.fill();
     g.save(); g.beginPath(); wobble(g, x, y, R, Ry, 0, TAU, 0.01, true, 2); g.clip();
     grain(g, x - R, y - Ry, R * 2, Ry * 2, 160, 5, rx * 0.005, 0.08);
-    g.filter = blurOf(rx * 0.03);                         // the well things cook in, dark and oiled
-    g.fillStyle = 'rgba(70, 30, 14, 0.38)'; g.beginPath(); g.ellipse(x, y + Ry * 0.08, R * 0.82, Ry * 0.74, 0, 0, TAU); g.fill();
-    g.fillStyle = 'rgba(255, 220, 160, 0.14)'; g.beginPath(); g.ellipse(x - R * 0.28, y - Ry * 0.12, R * 0.3, Ry * 0.25, 0, 0, TAU); g.fill();
-    g.filter = 'none'; g.restore();
+    softOval(g, 'rgba(70, 30, 14, 0.38)', rx * 0.03, x, y + Ry * 0.08, R * 0.82, Ry * 0.74);   // the well things cook in, dark and oiled
+    softOval(g, 'rgba(255, 220, 160, 0.14)', rx * 0.03, x - R * 0.28, y - Ry * 0.12, R * 0.3, Ry * 0.25);
+    g.restore();
     g.lineCap = 'round'; g.lineJoin = 'round';
     g.lineWidth = rx * 0.06; g.strokeStyle = '#b46c43';  // its lip at the back
     g.beginPath(); wobble(g, x, y, R * 0.97, Ry * 0.94, PI, TAU, 0.01, true, 2); g.stroke();
@@ -8507,34 +8626,11 @@ const VESSEL_PAINT = {
     bitmapOf(front, c);
     return { back, front };
   },
-  // The hearth stone: a flat grey slab over the coals, darker where things are put on it, warm along its underside.
-  stone(A, rx) {
-    const x = A.x, y = A.y, R = A.rx, Ry = A.ry, th = rx * 0.14, TAU = Math.PI * 2, PI = Math.PI;
-    const [back, g, c] = cookLayer();
-    const slab = dy => { g.beginPath(); wobble(g, x, y + dy, R, Ry, 0, TAU, 0.05, true, 4); };
-    g.filter = blurOf(rx * 0.05);
-    g.fillStyle = 'rgba(20, 10, 6, 0.45)'; g.beginPath(); g.ellipse(x, y + th + Ry * 0.3, R * 1.02, Ry * 0.9, 0, 0, TAU); g.fill();
-    g.filter = 'none';
-    const side = () => { g.beginPath(); wobble(g, x, y, R, Ry, 0, PI, 0.05, true, 4); wobble(g, x, y + th, R, Ry, PI, 0, 0.05, false, 4); g.closePath(); };
-    let gr = g.createLinearGradient(0, y, 0, y + th + Ry);
-    gr.addColorStop(0, '#5e5a53'); gr.addColorStop(1, '#2f2c29');
-    g.fillStyle = gr; side(); g.fill();
-    g.save(); side(); g.clip();
-    g.filter = blurOf(rx * 0.05);
-    g.fillStyle = 'rgba(255, 130, 60, 0.28)'; g.beginPath(); g.ellipse(x, y + th + Ry * 0.8, R * 0.6, Ry * 0.4, 0, 0, TAU); g.fill();
-    g.filter = 'none'; g.restore();
-    gr = g.createRadialGradient(x - R * 0.3, y - Ry * 0.4, 0, x, y, R * 1.05);
-    gr.addColorStop(0, '#aaa69b'); gr.addColorStop(0.6, '#8a867c'); gr.addColorStop(1, '#6a675f');
-    g.fillStyle = gr; slab(0); g.fill();
-    g.save(); slab(0); g.clip();
-    grain(g, x - R, y - Ry * 1.1, R * 2, Ry * 2.2, 220, 9, rx * 0.007, 0.1);
-    g.filter = blurOf(rx * 0.05);
-    g.fillStyle = 'rgba(40, 32, 26, 0.3)'; g.beginPath(); g.ellipse(x, y + Ry * 0.05, R * 0.6, Ry * 0.55, 0, 0, TAU); g.fill();   // scorched where things cook
-    g.fillStyle = 'rgba(255, 250, 236, 0.16)'; g.beginPath(); g.ellipse(x - R * 0.4, y - Ry * 0.45, R * 0.35, Ry * 0.25, -0.1, 0, TAU); g.fill();
-    g.filter = 'none';
-    g.lineWidth = Math.max(1, rx * 0.016); g.strokeStyle = 'rgba(255, 250, 236, 0.3)';
-    g.beginPath(); wobble(g, x, y + rx * 0.008, R * 0.99, Ry * 0.97, PI * 1.08, PI * 1.92, 0.05, true, 4); g.stroke();
-    g.restore();
+  // The hearth stone: the meadow's own painting (a flat grey slab, its side showing, the embers' glow at its foot), so it reads as
+  // the same thing in the window. Its top's middle at A.x, A.y and its half-width A.rx.
+  stone(A) {
+    const P = A.rx * 2 / 0.78, [back, g, c] = cookLayer();
+    meadowPart(g, 'stone', A.x, A.y - 0.14 * P / 2, P);
     bitmapOf(back, c);
     return { back, front: null };
   },
@@ -8559,12 +8655,10 @@ const VESSEL_PAINT = {
     g.strokeStyle = '#b08456'; g.lineWidth = th * 0.22;
     g.beginPath(); g.moveTo(x0 + th, at(x0) - th * 0.25); g.lineTo(x1 - th, at(x1) - th * 0.25); g.stroke();
     g.fillStyle = '#d2b184'; g.beginPath(); g.moveTo(x1 - rx * 0.1, at(x1) - th * 0.42); g.lineTo(x1 + rx * 0.08, at(x1) + th * 0.05); g.lineTo(x1 - rx * 0.1, at(x1) + th * 0.42); g.closePath(); g.fill();
-    g.filter = blurOf(rx * 0.015);
     for (let i = 0; i < 6; i++) {
       const x = A.x + (hash2(i, 3, 71) - 0.5) * rx * 1.1;
-      g.fillStyle = `rgba(28, 18, 10, ${0.35 + 0.25 * hash2(i, 3, 72)})`; g.beginPath(); g.ellipse(x, at(x) + th * 0.15, rx * (0.03 + 0.04 * hash2(i, 3, 73)), th * 0.3, 0, 0, Math.PI * 2); g.fill();
+      softOval(g, `rgba(28, 18, 10, ${0.35 + 0.25 * hash2(i, 3, 72)})`, rx * 0.015, x, at(x) + th * 0.15, rx * (0.03 + 0.04 * hash2(i, 3, 73)), th * 0.3);
     }
-    g.filter = 'none';
     bitmapOf(back, c);
     let front; [front, g, c] = cookLayer();
     g.lineCap = 'round'; g.strokeStyle = '#5a3b20'; g.lineWidth = th * 0.75;
@@ -8575,64 +8669,15 @@ const VESSEL_PAINT = {
     bitmapOf(front, c);
     return { back, front };
   },
-  // The bark bowl: birch bark folded up at its ends and laced, set down in front of the fire (no heat in it). Its inside the
-  // bark's warm ochre underside, behind the things; its belly the white bark with dark dashes, in front.
-  bowl(A, rx) {
-    const x = A.x, y = A.y, R = A.rx, Ry = A.ry, dep = rx * 0.46, TAU = Math.PI * 2, PI = Math.PI, W = 0.01;
+  // The bark bowl: the meadow's own painting, its ochre inside behind the things and its white belly in front, with the rim's
+  // middle at A.x, A.y and its half-width A.rx (the deep belly is what makes it a bowl and not a plate).
+  bowl(A) {
+    const P = A.rx * 2 / 0.66, cy = A.y + 0.02 * P;
     let [back, g, c] = cookLayer();
-    g.filter = blurOf(rx * 0.06);
-    g.fillStyle = 'rgba(20, 10, 6, 0.5)'; g.beginPath(); g.ellipse(x, y + dep * 0.95, R * 0.9, Ry * 0.6, 0, 0, TAU); g.fill();
-    g.filter = 'none';
-    let gr = g.createLinearGradient(0, y - Ry, 0, y + Ry);
-    gr.addColorStop(0, '#d29a5e'); gr.addColorStop(0.6, '#a8693a'); gr.addColorStop(1, '#7c4a26');
-    g.fillStyle = gr; g.beginPath(); wobble(g, x, y, R * 0.95, Ry * 0.92, 0, TAU, W); g.fill();
-    g.save(); g.beginPath(); wobble(g, x, y, R * 0.95, Ry * 0.92, 0, TAU, W); g.clip();
-    g.lineWidth = Math.max(1, rx * 0.009); g.strokeStyle = 'rgba(90, 46, 18, 0.22)';   // the bark's grain, along it
-    for (let k = 0; k < 7; k++) { const yy = y - Ry * 0.7 + k * Ry * 0.24; g.beginPath(); g.moveTo(x - R, yy); g.quadraticCurveTo(x, yy + Ry * 0.12 * (hash2(k, 5, 81) - 0.5), x + R, yy); g.stroke(); }
-    g.filter = blurOf(rx * 0.04);
-    g.fillStyle = 'rgba(255, 226, 180, 0.2)'; g.beginPath(); g.ellipse(x, y - Ry * 0.4, R * 0.6, Ry * 0.35, 0, 0, TAU); g.fill();
-    g.filter = 'none'; g.restore();
-    g.lineCap = 'round'; g.lineJoin = 'round';
-    g.lineWidth = rx * 0.045; g.strokeStyle = '#e9dfcb';
-    g.beginPath(); wobble(g, x, y, R, Ry, PI, TAU, W); g.stroke();
+    meadowPart(g, 'bowl0', A.x, cy, P);
     bitmapOf(back, c);
     let front; [front, g, c] = cookLayer();
-    const belly = () => {
-      g.beginPath(); g.moveTo(x - R, y);
-      g.bezierCurveTo(x - R * 0.98, y + dep * 0.75, x - R * 0.62, y + dep, x, y + dep);
-      g.bezierCurveTo(x + R * 0.62, y + dep, x + R * 0.98, y + dep * 0.75, x + R, y);
-      wobble(g, x, y, R, Ry, 0, PI, W, false); g.closePath();
-    };
-    gr = g.createRadialGradient(x - R * 0.35, y + dep * 0.25, 0, x, y + dep * 0.4, R * 1.2);
-    gr.addColorStop(0, '#f7f1e4'); gr.addColorStop(0.55, '#ddd2bc'); gr.addColorStop(1, '#9c8f78');
-    g.fillStyle = gr; belly(); g.fill();
-    g.save(); belly(); g.clip();
-    g.fillStyle = 'rgba(48, 38, 30, 0.7)';                // its dark dashes (lenticels), across it
-    for (let k = 0; k < 26; k++) {
-      const u = hash2(k, 7, 82) * 2 - 1, v = hash2(k, 7, 83), lx = x + u * R * 0.95, ly = y + dep * (0.12 + 0.8 * v) * (1 - 0.25 * u * u);
-      const lw = R * (0.04 + 0.08 * hash2(k, 7, 84));
-      g.beginPath(); g.ellipse(lx, ly, lw, Math.max(0.6, rx * 0.007), 0, 0, TAU); g.fill();
-    }
-    g.lineWidth = Math.max(1, rx * 0.012);
-    for (const sd of [-1, 1]) {                           // the folds up at each end, and the lacing that holds them
-      const fx = x + sd * R * 0.7;
-      g.strokeStyle = 'rgba(110, 96, 74, 0.55)';
-      g.beginPath(); g.moveTo(fx, y + Ry * 0.25); g.quadraticCurveTo(fx + sd * R * 0.12, y + dep * 0.5, fx - sd * R * 0.02, y + dep * 0.88); g.stroke();
-      g.strokeStyle = 'rgba(255, 255, 250, 0.45)';
-      g.beginPath(); g.moveTo(fx + sd * rx * 0.012, y + Ry * 0.3); g.quadraticCurveTo(fx + sd * R * 0.13, y + dep * 0.5, fx, y + dep * 0.85); g.stroke();
-      g.strokeStyle = '#6b4a2c'; g.lineWidth = Math.max(1, rx * 0.016);
-      for (let q = 0; q < 3; q++) { const sy = y + Ry * 0.35 + q * dep * 0.17; g.beginPath(); g.moveTo(fx + sd * R * 0.03, sy); g.lineTo(fx + sd * R * 0.13, sy + dep * 0.06); g.stroke(); }
-      g.lineWidth = Math.max(1, rx * 0.012);
-    }
-    g.filter = blurOf(rx * 0.05);
-    g.fillStyle = 'rgba(255, 150, 70, 0.16)'; g.beginPath(); g.ellipse(x + R * 0.8, y + dep * 0.3, R * 0.15, dep * 0.35, -0.4, 0, TAU); g.fill();   // the firelight round its side
-    g.fillStyle = 'rgba(60, 40, 24, 0.25)'; g.beginPath(); g.ellipse(x, y + dep * 0.95, R * 0.7, dep * 0.18, 0, 0, TAU); g.fill();   // its foot in shadow
-    g.filter = 'none'; g.restore();
-    g.lineCap = 'round'; g.lineJoin = 'round';
-    g.lineWidth = rx * 0.05; g.strokeStyle = '#f3ecdd';    // the rim, rolled over
-    g.beginPath(); wobble(g, x, y, R, Ry, 0, PI, W); g.stroke();
-    g.lineWidth = Math.max(1, rx * 0.012); g.strokeStyle = 'rgba(120, 100, 76, 0.5)';
-    g.beginPath(); wobble(g, x, y + rx * 0.022, R * 0.99, Ry, PI * 0.1, PI * 0.9, W); g.stroke();
+    meadowPart(g, 'bowl1', A.x, cy, P);
     bitmapOf(front, c);
     return { back, front };
   },
@@ -8646,9 +8691,7 @@ function paintCookBed(bed) {
   let gr = g.createRadialGradient(cx, fireY - rx * 0.4, 0, cx, fireY - rx * 0.4, Math.max(w, h) * 0.85);
   gr.addColorStop(0, '#7e4729'); gr.addColorStop(0.28, '#55331f'); gr.addColorStop(0.62, '#2f2220'); gr.addColorStop(1, '#1b1619');
   g.fillStyle = gr; g.fillRect(0, 0, w, h);
-  g.filter = `blur(${Math.max(1, rx * 0.08)}px)`;
-  g.fillStyle = 'rgba(146, 96, 58, 0.4)'; g.beginPath(); g.ellipse(cx, fireY + rx * 0.1, rx * 1.9, rx * 0.4, 0, 0, Math.PI * 2); g.fill();   // trodden earth round it
-  g.filter = 'none';
+  softOval(g, 'rgba(146, 96, 58, 0.4)', rx * 0.08, cx, fireY + rx * 0.1, rx * 1.9, rx * 0.4);   // trodden earth round it
   g.lineCap = 'round';
   for (let i = 0; i < 26; i++) {                          // grass at the edges, dark against the firelight
     const side = i & 1 ? 1 : -1, u = hash2(i, 7, 41), x = cx + side * (w * 0.32 + u * w * 0.2), y0 = h + 2, tall = rx * (0.28 + 0.4 * hash2(i, 7, 42));
@@ -8658,7 +8701,8 @@ function paintCookBed(bed) {
   const P = rx * 3.3, T = Math.ceil(P * 1.3 * kw.d), tc = document.createElement('canvas');
   tc.width = tc.height = T;
   const was = standIns; standIns = false;
-  paintFire(tc.getContext('2d'), T, P * kw.d, +bed.slice(bed.indexOf(':') + 1));
+  const n = +bed.slice(bed.indexOf(':') + 1);
+  paintFire(tc.getContext('2d'), T, P * kw.d, n < 32 ? n & ~6 : n);   // (never its tepee of sticks: it stood up behind a vessel as if the vessel were pasted on)
   standIns = was;
   g.drawImage(tc, cx - T / kw.d / 2, fireY - FIRE_FOOT * P / 2 - T / kw.d / 2, T / kw.d, T / kw.d);
   tc.width = 0;
@@ -8969,7 +9013,7 @@ function makeArt(v, raw) {
 // Where a vessel's painting runs top to bottom in the window (its pieces build it up from the bottom): [top, bottom].
 function makeBox(v) {
   const A = kw.at[v], rx = kw.rx;
-  return v === 'pot' ? [kw.rimY - kw.ry * 1.25, kw.rimY + rx * 0.98] : v === 'bowl' ? [A.y - A.ry * 1.25, A.y + rx * 0.56]
+  return v === 'pot' ? [kw.rimY - kw.ry * 1.25, kw.rimY + rx * 0.98] : v === 'bowl' ? [A.y - A.ry * 1.25, A.y + A.rx * 0.92]
     : v === 'stick' ? [A.y - rx * 0.35, kw.fireY + rx * 0.05] : [A.y - A.ry * 1.4, A.y + rx * 0.32];
 }
 // The window making a vessel (cookMode 'make') or one hardening in the fire ('fire'): see the comment over cookVessel. Making:
@@ -9343,28 +9387,12 @@ function drawPot(now, F, sx, sy) {
   const L = vesselLook(cookVessel), mx = sx, my = cy - P * 0.15, busy = j.stage === 'cooking';
   cookUi.potX = mx; cookUi.potY = my; cookUi.potR = P * 0.32;
   ctx.globalAlpha = t;
+  if (L.hang) drawEmoji(L.hang[0], sx, cy, P);
   drawEmoji(L.back, sx, cy + L.up * P, P);
-  const sheet = itemSheet().img, n = j.pot.length, w = P * 0.46;
   potHit.n = 0;
-  for (let i = 0; i < n; i++) {
-    const u = (now - j.land[i]) / LAND_MS;
-    if (!(u >= 0)) continue;                              // (still flying in)
-    const k = ITEM_IDS.indexOf(j.pot[i]), ox = (n === 1 ? 0 : (i / (n - 1) - 0.5) * 0.46 * (n === 2 ? 0.8 : 1)) * P;
-    let lift = 0, sq = 1;
-    if (u < 0.55) lift = (1 - (u / 0.55) ** 2) * P * 0.7;  // (falling in)
-    else if (u < 1) { const b = (u - 0.55) / 0.45; lift = Math.sin(b * Math.PI) * P * 0.08; sq = 1 - 0.18 * Math.sin(b * Math.PI * 2) * (1 - b); }
-    if (busy) lift += P * 0.035 * Math.sin(now / 170 + i * 2.1);   // (bobbing in the simmer)
-    const x = mx + ox, by = cy + L.foot * P / 2 - lift - (i === 1 && n === 3 ? P * 0.05 : 0), hw = w * (2 - sq) / 2, hh = w * sq / 2;   // (its foot down in the pot, under the rim)
-    ctx.drawImage(sheet, k * ITEM_PX, 0, ITEM_PX, ITEM_PX, x - hw, by - hh * 2, hw * 2, hh * 2);
-    potHit.x[potHit.n] = x; potHit.y[potHit.n] = by - hh; potHit.r[potHit.n] = Math.max(16, w * 0.6); potHit.n++;
-    if (u > 0.5 && u < 1.6) {                             // (a puff as it lands)
-      const v = (u - 0.5) / 1.1, r = P * (0.08 + 0.18 * v);
-      ctx.globalAlpha = t * 0.45 * (1 - v);
-      ctx.drawImage(smokeArt().img, x - r, my - P * 0.05 - v * P * 0.2 - r, r * 2, r * 2);
-      ctx.globalAlpha = t;
-    }
-  }
+  layThings(now, cookVessel, j.pot, j.pot.length, j.land, sx, cy + L.up * P, P, busy, busy ? (now - j.t0) / (COOK_STIR * 4) * Math.PI * 2 : 0, t, true);
   if (L.front) drawEmoji(L.front, sx, cy + L.up * P, P);
+  if (L.hang) drawEmoji(L.hang[1], sx, cy, P);
   const art = smokeArt().img, tt = now / 1000;
   if (busy) {                                             // steam curling up off it
     const heat = clamp((now - j.t0) / 1200, 0, 1);
@@ -9384,8 +9412,83 @@ function drawPot(now, F, sx, sy) {
   }
   ctx.globalAlpha = 1;
 }
+// Where the things sit in each vessel in the meadow, in its box (-1 to 1, as paintVessel; its middle at by0): the middle of
+// what they're in or on (y), how far round it they go (rx, ry), how big they're drawn (s, of the vessel's size) and how much
+// of each is down in it (sink, of its size: under the broth in the pot, down in the bowl), so they're in it and not stood on
+// its rim. The stick has them along its spit.
+const VSL_HOLD = {
+  pot: { y: -0.2, rx: 0.4, ry: 0.1, s: 0.27, sink: 0.4 },
+  bowl: { y: -0.03, rx: 0.5, ry: 0.12, s: 0.3, sink: 0.34 },
+  pan: { y: 0.21, rx: 0.48, ry: 0.15, s: 0.28, sink: 0 },
+  stone: { y: 0.1, rx: 0.4, ry: 0.09, s: 0.28, sink: 0 },
+  stick: { y: -0.2, rx: 0.48, ry: 0, s: 0.3, sink: 0 },
+};
+const held = { x: new Float64Array(4), y: new Float64Array(4), o: new Int8Array(4) };   // (this frame's, back to front)
+// What's in a vessel over a fire, between its back and its front (drawPot, drawAwayPot): ids[0..n), dropped in at land (or
+// null: in already). In the pot they float, going round with the stirring (spin) and bobbing in the simmer; in the bowl they
+// go round and tumble as it's mixed; on the griddle and the stone they lie and hop as they sizzle; on the stick they turn.
+// Back to front, what's under the broth drawn faintly through it. A draw or two a thing (hit: kept for a tap, potHit).
+function layThings(now, v, ids, n, land, sx, by0, P, busy, spin, a, hit) {
+  const H = VSL_HOLD[v] || VSL_HOLD.pot, sheet = itemSheet().img, w = P * H.s, U = P / 2, TAU = Math.PI * 2, round = v === 'pot' || v === 'bowl';
+  const cy = by0 + H.y * U;
+  for (let i = 0; i < n; i++) {                           // where each sits
+    let x, y;
+    if (round) {
+      const an = spin + TAU * i / n + 0.6, r = n === 1 ? 0.3 : 0.62 + 0.2 * ((i * 0.37) % 1);
+      x = sx + Math.cos(an) * H.rx * U * r; y = cy + Math.sin(an) * H.ry * U * r;
+    } else {
+      const f = n === 1 ? 0 : i / (n - 1) * 2 - 1;
+      x = sx + f * H.rx * U + (busy && v !== 'stick' ? H.rx * U * 0.06 * Math.sin(now / 1300 + i * 2.4) : 0);
+      y = cy + (v === 'stick' ? -f * 0.02 * U : ((i & 1) * 2 - 1) * H.ry * U * 0.4);
+    }
+    held.x[i] = x; held.y[i] = y; held.o[i] = i;
+  }
+  for (let i = 1; i < n; i++) { const o = held.o[i]; let k = i; while (k > 0 && held.y[held.o[k - 1]] > held.y[o]) { held.o[k] = held.o[k - 1]; k--; } held.o[k] = o; }
+  for (let q = 0; q < n; q++) {
+    const i = held.o[q], k = ITEM_IDS.indexOf(ids[i]), x = held.x[i], y = held.y[i];
+    if (k < 0) continue;
+    const u = land ? (now - land[i]) / LAND_MS : 9;
+    if (!(u >= 0)) continue;                              // (still flying in)
+    let lift = 0, sink = H.sink, sq = 1;
+    if (u < 0.55) { lift = (1 - (u / 0.55) ** 2) * P * 0.7; sink = 0; }   // (falling in)
+    else if (u < 1) {                                     // (in: under and back up, or a bounce)
+      const b = (u - 0.55) / 0.45;
+      if (sink) sink += 0.22 * Math.sin(b * Math.PI);
+      else { lift = Math.sin(b * Math.PI) * P * 0.06; sq = 1 - 0.18 * Math.sin(b * Math.PI * 2) * (1 - b); }
+    } else if (v === 'pot') lift = busy ? w * 0.06 * Math.sin(now / 170 + i * 2.1) : w * 0.025 * Math.sin(now / 640 + i * 2.3);   // (bobbing in the simmer)
+    else if (busy && v !== 'stick') {                     // (a hop now and then: sizzling, or tossed in the bowl)
+      const p = now / (v === 'bowl' ? 700 + 90 * i : 430 + 60 * i) + i * 0.37, m = Math.floor(p);
+      if (hash2(i, m, 21) < (v === 'bowl' ? 0.3 : 0.45)) { const h = Math.sin(Math.PI * (p - m)); lift = h * w * (v === 'bowl' ? 0.3 : 0.12); sink *= 1 - h; }
+    } else if (busy) sq = 0.82 + 0.18 * Math.cos(now / 1000 + i * 1.9);   // (turning on the spit)
+    const hw = w * (2 - sq) / 2, hh = w * sq, foot = y + (v === 'stick' ? hh / 2 : sink * hh) - lift, top = foot - hh, seen = 1 - sink;
+    ctx.globalAlpha = a;
+    if (seen < 1 && v === 'pot') {                        // under the broth: seen dimly through it, and a ring where it sits in it
+      ctx.globalAlpha = a * 0.3;
+      ctx.drawImage(sheet, k * ITEM_PX, ITEM_PX * seen, ITEM_PX, ITEM_PX * (1 - seen), x - hw, top + hh * seen, hw * 2, hh * (1 - seen));
+      ctx.globalAlpha = a;
+    }
+    ctx.drawImage(sheet, k * ITEM_PX, 0, ITEM_PX, ITEM_PX * seen, x - hw, top, hw * 2, hh * seen);
+    if (seen < 1 && v === 'pot') {
+      ctx.globalAlpha = a * 0.35; ctx.strokeStyle = '#efe6d6'; ctx.lineWidth = Math.max(1, w * 0.035);
+      ctx.beginPath(); ctx.ellipse(x, top + hh * seen, hw * 0.78, hw * 0.2, 0, 0, TAU); ctx.stroke();
+    }
+    if (hit) { potHit.x[potHit.n] = x; potHit.y[potHit.n] = top + hh * seen / 2; potHit.r[potHit.n] = Math.max(16, w * 0.6); potHit.n++; }
+    if (u > 0.5 && u < 1.6) {                             // (as it lands: a ring going out on the broth, else a puff)
+      const e = (u - 0.5) / 1.1;
+      if (v === 'pot') {
+        ctx.globalAlpha = a * 0.5 * (1 - e); ctx.strokeStyle = '#efe6d6'; ctx.lineWidth = Math.max(1, w * 0.03);
+        ctx.beginPath(); ctx.ellipse(x, y, w * (0.3 + 0.6 * e), w * (0.08 + 0.15 * e), 0, 0, TAU); ctx.stroke();
+      } else {
+        const r = P * (0.08 + 0.18 * e);
+        ctx.globalAlpha = a * 0.45 * (1 - e);
+        ctx.drawImage(smokeArt().img, x - r, y - P * 0.05 - e * P * 0.2 - r, r * 2, r * 2);
+      }
+    }
+  }
+  ctx.globalAlpha = a;
+}
 // A pot cooking on a fire goes on without the window (sim.js cookOn: only while the fire's lit): it stays on the fire, steaming,
-// and a slim bar over the fire fills as it cooks (drawCookBars), brass-rimmed, glossy ember orange with a glow at its front; grey
+// and a slim bar over the fire fills as it cooks (drawCookBars), a parchment pill filling with matte honey-ember; grey
 // while the fire's out and it waits, and gold, softly pulsing in a glow, once the dish is done and waiting to be taken. No text on it: a hover says the time left
 // (fireSaid). A draw for one fire at a time, nothing drawn without a pot (render sorts each in at its fire's y: potOver).
 const POT_BAR_UP = 0.86;                  // the bar's foot over the fire's foot, in the fire's size
@@ -9396,20 +9499,19 @@ function drawAwayPot(now, F, sx, sy) {
   if (F.cookDish === '' && !idle) return;
   if (idle) {                                             // (nothing cooking: the vessel last cooked in stays over the fire)
     const P = px * POT_SIZE, cy = sy - px * POT_UP, L = vesselLook(idle);
+    if (L.hang) drawEmoji(L.hang[0], sx, cy, P);
     drawEmoji(L.back, sx, cy + L.up * P, P);
     if (L.front) drawEmoji(L.front, sx, cy + L.up * P, P);
+    if (L.hang) drawEmoji(L.hang[1], sx, cy, P);
     return;
   }
-  const busy = F.cookLeft > 0 && F.lit, P = px * POT_SIZE, cy = sy - px * POT_UP, my = cy - P * 0.15, n = F.cookItems.length, w = P * 0.46;
+  const busy = F.cookLeft > 0 && F.lit, P = px * POT_SIZE, cy = sy - px * POT_UP, my = cy - P * 0.15, n = F.cookItems.length;
   const L = vesselLook(DISH_VESSEL.get(F.cookDish));      // (a mess: the pot)
+  if (L.hang) drawEmoji(L.hang[0], sx, cy, P);
   drawEmoji(L.back, sx, cy + L.up * P, P);
-  const sheet = itemSheet().img;
-  for (let i = 0; i < n; i++) {
-    const k = ITEM_IDS.indexOf(F.cookItems[i]), ox = (n === 1 ? 0 : (i / (n - 1) - 0.5) * 0.46 * (n === 2 ? 0.8 : 1)) * P;
-    const bob = busy ? P * 0.035 * Math.sin(now / 170 + i * 2.1) : 0, by = cy + L.foot * P / 2 - bob - (i === 1 && n === 3 ? P * 0.05 : 0);
-    ctx.drawImage(sheet, k * ITEM_PX, 0, ITEM_PX, ITEM_PX, sx + ox - w / 2, by - w, w, w);
-  }
+  layThings(now, DISH_VESSEL.get(F.cookDish) || 'pot', F.cookItems, n, null, sx, cy + L.up * P, P, busy, busy ? now / (COOK_STIR * 4) * Math.PI * 2 : 0, 1, false);
   if (L.front) drawEmoji(L.front, sx, cy + L.up * P, P);
+  if (L.hang) drawEmoji(L.hang[1], sx, cy, P);
   if (busy) for (let k = 0; k < 4; k++) {
     const p = (tt / 1.8 + k / 4) % 1, r = P * (0.1 + 0.22 * p);
     ctx.globalAlpha = 0.5 * Math.sin(Math.PI * p);
@@ -9417,40 +9519,31 @@ function drawAwayPot(now, F, sx, sy) {
   }
   ctx.globalAlpha = 1;
 }
-// The bar's look is painted once a size (cookBarArt): a soft shadow, a brass rim lit from above, a dark trough with faint
-// quarter marks, and under it a row of each fill (glossy ember, grey, gold), so a frame is three or four drawImages: the
-// frame, the fill cut to how far along it is with its round end, and a glow at its front while it cooks (gold round all of
-// it once it's done).
-const BAR_FILLS = [[255, 168, 92, 233, 118, 52, 168, 64, 28], [178, 172, 160, 140, 134, 122, 96, 90, 80], [255, 246, 190, 252, 208, 92, 218, 150, 40]];
+// The bar's look is painted once a size (cookBarArt), in the parchment of the cards and the satchel: a soft shadow, a cream
+// pill with a pale brown edge, a groove a shade darker, and under it a row of each fill (matte honey-ember, grey, gold, a
+// faint sheen along the top), so a frame is three drawImages: the pill, the fill cut to how far along it is, and its round
+// end (and a gold glow round it all once it's done).
+const BAR_FILLS = [['#f4b25e', '#dd8a3a'], ['#c9bfae', '#ab9f8a'], ['#f8d873', '#e7b43c']];
 const cookBars = new Map();
 function cookBarArt(W, H) {
   const key = W * 64 + H;
   let art = cookBars.get(key);
   if (art && art.d === dpr) return art;
   if (cookBars.size > 24) cookBars.clear();
-  const R = Math.max(2, Math.round(H * 0.3)), M = 3, ow = W + 2 * (R + M), oh = H + 2 * (R + M), fw = W - 2, fh = H - 2;
+  const R = Math.max(2, Math.round(H * 0.32)), M = 4, ow = W + 2 * (R + M), oh = H + 2 * (R + M), fw = W, fh = H;
   const c = document.createElement('canvas'), g = c.getContext('2d');
   c.width = Math.ceil(ow * dpr); c.height = Math.ceil((oh + 3 * fh) * dpr);
   g.scale(dpr, dpr);
   const pill = (x, y, w, h) => { g.beginPath(); if (g.roundRect) g.roundRect(x, y, w, h, h / 2); else g.rect(x, y, w, h); };
-  const down = (y, h, stops) => { const gr = g.createLinearGradient(0, y, 0, y + h); for (const [at, col] of stops) gr.addColorStop(at, col); return gr; };
-  const x0 = M, y0 = M, ix = M + R, iy = M + R;
-  g.save(); g.shadowColor = 'rgba(24, 14, 6, 0.45)'; g.shadowBlur = 3; g.shadowOffsetY = 1.2;     // its shadow on the meadow
-  g.fillStyle = '#7a5424'; pill(x0, y0, W + 2 * R, H + 2 * R); g.fill(); g.restore();
-  g.fillStyle = down(y0, H + 2 * R, [[0, '#f2d38c'], [0.45, '#c39446'], [1, '#6f4a1e']]);           // the brass, lit from above
-  pill(x0, y0, W + 2 * R, H + 2 * R); g.fill();
-  g.strokeStyle = 'rgba(58, 36, 14, 0.7)'; g.lineWidth = 0.8; pill(x0 + 0.4, y0 + 0.4, W + 2 * R - 0.8, H + 2 * R - 0.8); g.stroke();
-  g.fillStyle = down(iy, H, [[0, '#140c06'], [0.5, '#2a1c10'], [1, '#3c2a18']]);                    // the trough
-  pill(ix, iy, W, H); g.fill();
-  g.strokeStyle = 'rgba(255, 238, 200, 0.35)'; g.lineWidth = 0.7;                                 // its lip catching the light below
-  g.beginPath(); g.moveTo(ix + H / 2, iy + H + 0.35); g.lineTo(ix + W - H / 2, iy + H + 0.35); g.stroke();
-  g.fillStyle = 'rgba(255, 226, 170, 0.14)';                                                       // the quarter marks
-  for (let q = 1; q < 4; q++) g.fillRect(Math.round(ix + 1 + fw * q / 4) - 0.5, iy + H * 0.25, 1, H * 0.5);
+  g.save(); g.shadowColor = 'rgba(40, 24, 8, 0.35)'; g.shadowBlur = 4; g.shadowOffsetY = 1.5;        // its shadow on the meadow
+  g.fillStyle = '#fffaf0'; pill(M, M, W + 2 * R, H + 2 * R); g.fill(); g.restore();                 // the parchment
+  g.strokeStyle = '#d9ccb0'; g.lineWidth = 1.2; pill(M + 0.6, M + 0.6, W + 2 * R - 1.2, H + 2 * R - 1.2); g.stroke();
+  g.fillStyle = '#efe3c8'; pill(M + R, M + R, W, H); g.fill();                                      // the groove
+  g.strokeStyle = 'rgba(120, 90, 50, 0.18)'; g.lineWidth = 1; pill(M + R + 0.5, M + R + 0.5, W - 1, H - 1); g.stroke();
   BAR_FILLS.forEach((f, n) => {                                                                    // the fills, a row each
-    const y = oh + n * fh;
-    g.fillStyle = down(y, fh, [[0, `rgb(${f[0]}, ${f[1]}, ${f[2]})`], [0.45, `rgb(${f[3]}, ${f[4]}, ${f[5]})`], [1, `rgb(${f[6]}, ${f[7]}, ${f[8]})`]]);
-    pill(0, y, fw, fh); g.fill();
-    g.fillStyle = 'rgba(255, 252, 236, 0.5)'; pill(fh * 0.35, y + fh * 0.14, fw - fh * 0.7, fh * 0.28); g.fill();   // the gloss
+    const y = oh + n * fh, gr = g.createLinearGradient(0, y, 0, y + fh);
+    gr.addColorStop(0, f[0]); gr.addColorStop(1, f[1]); g.fillStyle = gr; pill(0, y, fw, fh); g.fill();
+    g.fillStyle = 'rgba(255, 248, 225, 0.35)'; pill(fh * 0.4, y + fh * 0.18, fw - fh * 0.8, fh * 0.22); g.fill();   // the sheen
   });
   art = { img: c, d: dpr, R, M, ow, oh, fw, fh };
   asBitmap(c, b => { art.img = b; });
@@ -9458,31 +9551,22 @@ function cookBarArt(W, H) {
   return art;
 }
 function drawCookBars(now) {
-  const z = cam.zoom, px = firePx(z), W = spriteStep(clamp(px * 0.72, 32, 100)), H = Math.round(clamp(px * 0.09, 6, 12));
+  const z = cam.zoom, px = firePx(z), W = spriteStep(clamp(px * 0.62, 30, 90)), H = Math.round(clamp(px * 0.075, 5, 10));
   for (const F of world.fires) {
     if (F.cookDish === '') continue;
     const sx = (F.x - cam.x) * z + vw / 2, sy = (F.y - cam.y) * z + vh / 2;
     if (!visible(sx, sy, px)) continue;
     const a = cookBarArt(W, H), d = a.d, ready = F.cookLeft <= 0, row = ready ? 2 : F.lit ? 0 : 1;
     const x = Math.round(sx - W / 2), y = Math.round(sy - px * POT_BAR_UP - H), p = ready ? 1 : S.cookProgress(F);
-    const pulse = 0.5 + 0.5 * Math.sin(now / 300);
     if (ready) {                                                                                   // done: a gold glow round it
-      const g = bloomArt().img;
-      ctx.globalAlpha = 0.5 + 0.35 * pulse;
-      ctx.drawImage(g, x - W * 0.3, y - H * 2.4, W * 1.6, H * 5.8);
+      ctx.globalAlpha = 0.4 + 0.15 * Math.sin(now / 300);
+      ctx.drawImage(bloomArt().img, x - W * 0.3, y - H * 2.4, W * 1.6, H * 5.8);
     }
     ctx.globalAlpha = 1;
     ctx.drawImage(a.img, 0, 0, a.ow * d, a.oh * d, x - a.R - a.M, y - a.R - a.M, a.ow, a.oh);
-    const fw = Math.max(a.fh, Math.round(a.fw * p)), fy = (a.oh + row * a.fh) * d, half = a.fh / 2, lx = x + 1, ly = y + 1;
-    if (ready) ctx.globalAlpha = 0.85 + 0.15 * pulse;
-    ctx.drawImage(a.img, 0, fy, (fw - half) * d, a.fh * d, lx, ly, fw - half, a.fh);               // the fill, then its round end
-    ctx.drawImage(a.img, (a.fw - half) * d, fy, half * d, a.fh * d, lx + fw - half, ly, half, a.fh);
-    if (row === 0) {                                                                               // cooking: the ember at its front
-      const e = emberArt().img, r = H * (0.95 + 0.15 * Math.sin(now / 140) + 0.1 * Math.sin(now / 67));
-      ctx.globalAlpha = 0.55 + 0.25 * pulse;
-      ctx.drawImage(e, lx + fw - half - r, ly + half - r, r * 2, r * 2);
-    }
-    ctx.globalAlpha = 1;
+    const fw = Math.max(a.fh, Math.round(a.fw * p)), fy = (a.oh + row * a.fh) * d, half = a.fh / 2;
+    ctx.drawImage(a.img, 0, fy, (fw - half) * d, a.fh * d, x, y, fw - half, a.fh);                 // the fill, then its round end
+    ctx.drawImage(a.img, (a.fw - half) * d, fy, half * d, a.fh * d, x + fw - half, y, half, a.fh);
   }
 }
 // The pot, painted once a size: 0 its back rim and the dark inside it, 1 its round iron belly, the rim in front and two little
@@ -9518,22 +9602,24 @@ function paintPot(g, size, U, n) {
 // name is built in a frame): the clay pot's back and front (what's in it drawn between), a hot stone, a roasting stick's
 // two forked uprights and its spit (things threaded between), a wooden bowl's back and front, and the clay pot and the
 // clay griddle whole in VSL_STEPS steps from raw to fired (VSL_RAW to VSL_FIRED: firing in a fire, kitFiring; the last one
-// is the fired one, over a fire and sitting at camp). Handmade clay: a little lopsided, finger grooves, soot at the foot.
-// Box -1 to 1, its foot near 0.66 like the pot's.
-const VSL_PARTS = ['pot0', 'pot1', 'stone', 'stickB', 'stickF', 'bowl0', 'bowl1', 'potW0', 'potW1', 'potW2', 'potW3', 'panW0', 'panW1', 'panW2', 'panW3'];
+// is the fired one, over a fire and sitting at camp), and the pot's and the bowl's hanging stand: two forked sticks and a
+// crossbar, the pot on a withy bail and the bowl on two cords (hangB0, hangB1 behind them; hangF0, hangF1 the forks' near
+// arms and where the bail or the cords take hold of the rim, in front). Handmade clay: a little lopsided, finger grooves, soot at the foot. Box -1 to 1, its foot near 0.66 like the pot's.
+const VSL_PARTS = ['pot0', 'pot1', 'stone', 'stickB', 'stickF', 'bowl0', 'bowl1', 'potW0', 'potW1', 'potW2', 'potW3', 'panW0', 'panW1', 'panW2', 'panW3', 'hangB0', 'hangB1', 'hangF0', 'hangF1'];
 const VSL_ARTS = VSL_PARTS.map((_, i) => 'vsl:' + i);
 const VSL_STEPS = 4;
 const VSL_RAW = [178, 166, 148], VSL_FIRED = [184, 98, 60];
 const vslArt = name => VSL_ARTS[VSL_PARTS.indexOf(name)];
 const VSL_FIRING = [0, 1, 2, 3].map(s => [vslArt('potW' + s), vslArt('panW' + s)]);   // (by step: the pot's, the griddle's)
-// How each vessel sits over a fire in the meadow (drawPotAt): its back and front art (null for none), and where
-// what's in it stands (foot: box y of their feet; for the stick, their middles on the spit).
+// How each vessel sits over a fire in the meadow (drawPotAt): its back and front art (null for none), how far its box is
+// moved down (up, of its size), and what it hangs from (hang: the stand's back and front, drawn where the box would be
+// unmoved, so its feet stay on the ground while the vessel is lifted off the flames). Where what's in it sits is VSL_HOLD.
 const VSL_LOOK = {
-  pot: { back: vslArt('pot0'), front: vslArt('pot1'), foot: 0.03, up: 0 },
-  pan: { back: vslArt('panW3'), front: null, foot: 0.12, up: 0.08 },
-  stone: { back: vslArt('stone'), front: null, foot: 0.1, up: 0.1 },
-  stick: { back: vslArt('stickB'), front: vslArt('stickF'), foot: 0.22, up: -0.1 },
-  bowl: { back: vslArt('bowl0'), front: vslArt('bowl1'), foot: 0.12, up: 0.04 },
+  pot: { back: vslArt('pot0'), front: vslArt('pot1'), up: -0.07, hang: [vslArt('hangB0'), vslArt('hangF0')] },
+  pan: { back: vslArt('panW3'), front: null, up: 0.08 },
+  stone: { back: vslArt('stone'), front: null, up: 0.1 },
+  stick: { back: vslArt('stickB'), front: vslArt('stickF'), up: -0.1 },
+  bowl: { back: vslArt('bowl0'), front: vslArt('bowl1'), up: -0.03, hang: [vslArt('hangB1'), vslArt('hangF1')] },
 };
 // Each vessel's meadow painting (VSL_LOOK) as a small picture for the cooking window's row (#cook-vessels): painted once,
 // fitted by what's painted to the middle of its square, and kept as a blob's address (as itemSheet's).
@@ -9655,6 +9741,44 @@ function paintVessel(g, size, U, n) {
     strokeIn(g, rockRGB([150, 132, 88]), 0.038, spit);                                              // green wood, peeled pale
     g.save(); g.translate(0, -0.012); strokeIn(g, 'rgba(230, 220, 180, 0.6)', 0.012, spit); g.restore();
     furGlow(g, [30, 20, 14], 0.6, 0, ry0, 0.22, 0.03);                                               // charred over the flames
+    return;
+  }
+  if (part.startsWith('hang')) {                                                                     // the hanging stand
+    const wood = [124, 94, 64], withy = [138, 112, 76], cord = [96, 72, 46], bar = -0.8, ux = 0.88;
+    if (part.startsWith('hangF')) {
+      const arm = () => { for (const s of [-1, 1]) { g.moveTo(s * ux, bar + 0.1); g.lineTo(s * (ux + 0.09), bar - 0.08); } };
+      strokeIn(g, rockRGB(tone(wood, 0.6)), 0.05, arm); strokeIn(g, rockRGB(wood), 0.032, arm);
+      if (part === 'hangF0') {                                                                       // the bail's ends, hooked through the lip
+        const end = () => { for (const s of [-1, 1]) { g.moveTo(s * 0.52, -0.42); g.quadraticCurveTo(s * 0.6, -0.32, s * 0.5, -0.27); } };
+        strokeIn(g, rockRGB(tone(withy, 0.55)), 0.05, end); strokeIn(g, rockRGB(withy), 0.03, end);
+      } else {                                                                                       // the cords knotted round the rim
+        for (const s of [-1, 1]) {
+          strokeIn(g, rockRGB(tone(cord, 0.8)), 0.03, () => { g.moveTo(s * 0.64, -0.2); g.quadraticCurveTo(s * 0.73, -0.1, s * 0.66, -0.02); });
+          fillIn(g, rockRGB(tone(cord, 0.8)), () => ovalAt(g, s * 0.67, -0.12, 0.035, 0.03));
+        }
+      }
+      return;
+    }
+    for (const s of [-1, 1]) {
+      const x = s * ux;
+      const p = () => { g.moveTo(x + s * 0.03, 0.74); g.lineTo(x, bar + 0.1); };
+      const fork = () => { g.moveTo(x, bar + 0.1); g.lineTo(x - s * 0.08, bar - 0.07); };
+      furGlow(g, [60, 40, 24], 0.3, x + s * 0.03, 0.76, 0.1, 0.04);
+      strokeIn(g, rockRGB(tone(wood, 0.6)), 0.075, p); strokeIn(g, rockRGB(wood), 0.05, p);
+      strokeIn(g, rockRGB(tone(wood, 0.6)), 0.05, fork); strokeIn(g, rockRGB(wood), 0.032, fork);
+    }
+    const cross = () => { g.moveTo(-0.97, bar + 0.01); g.quadraticCurveTo(0, bar + 0.03, 0.97, bar - 0.01); };
+    strokeIn(g, rockRGB([96, 82, 58]), 0.06, cross);
+    strokeIn(g, rockRGB([150, 132, 88]), 0.038, cross);                                             // green wood, as the spit
+    furGlow(g, [30, 20, 14], 0.5, 0, bar + 0.02, 0.18, 0.03);                                        // smoked over the middle
+    if (part === 'hangB0') {                                                                         // the pot's bail (it's lifted 0.14), hung on the bar
+      const bail = () => { g.moveTo(-0.52, -0.4); g.bezierCurveTo(-0.52, -0.86, 0.52, -0.86, 0.52, -0.4); };
+      strokeIn(g, rockRGB(tone(withy, 0.55)), 0.05, bail); strokeIn(g, rockRGB(withy), 0.03, bail);
+      return;
+    }
+    const cords = () => { g.moveTo(-0.66, -0.16); g.lineTo(0, bar + 0.03); g.lineTo(0.66, -0.16); };  // the bowl's (lifted 0.06)
+    strokeIn(g, rockRGB(tone(cord, 0.7)), 0.034, cords); strokeIn(g, rockRGB(cord), 0.02, cords);
+    fillIn(g, rockRGB(tone(cord, 0.7)), () => ovalAt(g, 0, bar + 0.05, 0.04, 0.035));                // the knot on the bar
     return;
   }
   // The bark bowl: birch bark folded and laced, its ochre inside, its white belly with dark dashes.
@@ -10623,7 +10747,7 @@ function promptArt(relight, v = 'pot') {
     for (const a of [L.back, L.front]) {
       if (!a) continue;
       const sp = sprite(a, S2);
-      g.drawImage(sp.canvas, R - sp.size / 2, R - sp.size / 2 + 2 + L.up * S2, sp.size, sp.size);
+      g.drawImage(sp.canvas, R - sp.size / 2, R - sp.size / 2 + 2 + Math.max(0, L.up) * S2, sp.size, sp.size);   // (not lifted on its stand here)
     }
     g.fillStyle = 'rgba(205, 205, 200, 0.75)';                     // a curl of steam off it
     g.beginPath(); g.arc(R - 3, R - 9, 2.6, 0, TAU); g.arc(R + 2, R - 12, 2.2, 0, TAU); g.fill();
@@ -14596,7 +14720,7 @@ function putPainting(p, f, alpha, snow, ox, oy) {
 // A visitor fur.js paints (Fur.painters: the dragonflies, the kingfisher, the skylark), at the doublings of its size and
 // shrunk between (shrunk), as a fox is; in the meadow the worker paints it (furReady).
 const furPaint = kind => (g, size, U, n) => { if (!shrunk(g, size, U, kind + ':' + n)) Fur.painters[kind](g, size, U, n); };
-const PAINTERS = { fox: paintFox, rabbit: paintRabbit, forager: paintForager, hog: paintHedgehog, heron: paintHeron, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody, bee: paintBee, fall: paintFall, shroom: paintShroom, green: paintGreen, bramble: paintBramble, find: paintFind, ingr: Items.paint, dish: Dishes.paint, handsteam: paintHandSteam, fire: paintFire, basket: paintBasket, seat: paintSeat, rack: paintRack, lean: paintLean, cairn: paintCairn, oldstone: paintOldStone, pot: paintPot, vsl: paintVessel, torch: paintTorch, scorch: paintScorch,
+const PAINTERS = { fox: paintFox, rabbit: paintRabbit, forager: paintForager, hog: paintHedgehog, heron: paintHeron, reeds: paintReeds, lily: paintLilies, bubble: paintBubble, frog: paintFrog, crow: paintCrow, otter: paintOtter, holt: paintHolt, remains: paintRemains, body: paintBody, bee: paintBee, fall: paintFall, shroom: paintShroom, green: paintGreen, bramble: paintBramble, find: paintFind, ingr: Items.paint, dish: Dishes.paint, helddish: paintHeldDish, handsteam: paintHandSteam, fire: paintFire, basket: paintBasket, seat: paintSeat, rack: paintRack, lean: paintLean, cairn: paintCairn, oldstone: paintOldStone, pot: paintPot, vsl: paintVessel, torch: paintTorch, scorch: paintScorch,
   dfly: furPaint('dfly'), kfisher: furPaint('kfisher'), lark: furPaint('lark') };
 function drawDecor(d, sx, sy, now, ck, px = d.tree ? treePx(d) : d.size * cam.zoom) {   // (px: render has it already)
   if (d.emoji === '🪨') { drawRock(d, sx, sy); return; }
@@ -18268,7 +18392,7 @@ function heardPos(m, now) {
       rings: [], puffs: [], puffAt: 0, drips: [], dripAt: 0, shiverAt: -1e9, shiverNext: 0,   // (its body, as fg's: drawBody, drawRings, shiverOf)
       art: FORAGER_ARTS[0], sized: 0, sizedSet: 0, sizedSnow: 0, name: '', nameArt: null, sx: -0, sy: -0, shown: false, chat: null, kneel: -1,
       handIx: -1, handArt: null, handWarm: false,          // (the dish in its hand: heardPos)
-      carry: false, carryShown: false, sizedCarry: -1, dishY: -0, dishV: -0,   // (held out in both hands: drawHeldDish)
+      carry: false, carryShown: false, carryVp: 0, sizedCarry: -1, dishY: -0, dishV: -0, fs: 1, fk: -0, fr: -0,   // (held out in both hands: drawHeldDish; how its figure was laid, drawFigure)
       mark: -0,                                            // (how far its marker at the screen's edge has faded in: drawFriendMarks)
       emote: -1, emoteMs: -0, emoteFrame: -1, lift: -0, sizedEmote: -1,
       lead: '',                                            // (the friend it has on a rope, or us: heardLead)
@@ -18289,7 +18413,7 @@ function heardPos(m, now) {
   p.fx = far ? m.x : p.x; p.fy = far ? m.y : p.y; p.tx = m.x; p.ty = m.y; p.at = now; p.seen = now;
   p.heading = m.h; p.jog = m.j; p.stage = m.st; p.soak = +m.wt || 0; p.snowArt = m.sn | 0;
   const hd = m.hd >= 0 && m.hd < DISH_ARTS.length ? m.hd | 0 : -1;   // (the dish in its hand, by its index: drawHeldDish)
-  if (hd !== p.handIx) { p.handIx = hd; p.handArt = hd < 0 ? null : DISH_ARTS[hd]; p.handWarm = hd >= 0 && !!Recipes.foodOf(Dishes.NAMES[hd])?.warm; }
+  if (hd !== p.handIx) { p.handIx = hd; p.handArt = hd < 0 ? null : HELD_ARTS[hd]; p.handWarm = hd >= 0 && !!Recipes.foodOf(Dishes.NAMES[hd])?.warm; }
   p.hp = m.hp == null ? 1 : clamp(+m.hp || 0, 0, 1);       // (the pips over its head: how much it has left)
   heardLead(p, m.ld, now);
   p.flip = !!m.fl;                                         // (which way it's turned: a hug turns it to its friend while standing)
@@ -18652,12 +18776,12 @@ function peerItems(items, now, z) {
       for (const q of Fur.FORAGER_IDLES) furReady(FORAGER_ARTS[at + 96 + q], P);
     }
     if (furWorker && p.emote >= 0 && p.sizedEmote !== P) { p.sizedEmote = P; for (const q of Fur.FORAGER_EMOTES) furReady(FORAGER_ARTS[Fur.emoteArt(p.snowArt, p.outfit, q)], P); }
-    if (furWorker && carry && p.sizedCarry !== P) { p.sizedCarry = P; for (let v = 0; v < 3; v++) for (const q of set === 2 ? FORAGER_CHILLY : FORAGER_POSES) furReady(FORAGER_ARTS[Fur.carryArt(p.snowArt, p.outfit, (v << 5) + q)], P); }
+    if (furWorker && carry && p.sizedCarry !== P) { p.sizedCarry = P; for (let v = 0; v < 3; v++) for (const q of set === 2 ? FORAGER_CHILLY : FORAGER_POSES) furReady(FORAGER_ARTS[Fur.carryArt(p.snowArt, p.outfit, (v << 5) + q)], P); furReady(FORAGER_ARTS[Fur.MITT_ART], P); }
     const carried = carry && emo < 0 && pose < 32;
     const want = FORAGER_ARTS[emo >= 0 && p.stage < 4 ? Fur.emoteArt(p.snowArt, p.outfit, emo) : carried ? Fur.carryArt(p.snowArt, p.outfit, poseKey(p.view, pose))
       : at + (p.kneel >= 0 && p.stage < 4 ? KNEEL_AT + pose : poseKey(p.view, pose))];
     p.art = shownPose(p, want, px);
-    if (p.art === want) p.carryShown = carried;
+    if (p.art === want) { p.carryShown = carried; p.carryVp = carried ? poseKey(p.view, pose) : 0; }
     if (!carry) p.sizedCarry = -1;
     dishSpring(p, ms);
     const sx = (x - cam.x) * z + vw / 2, sy = (y - cam.y) * z + vh / 2;

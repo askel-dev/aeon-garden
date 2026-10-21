@@ -1923,6 +1923,123 @@ function paintForestStew(g) {
 }
 
 // The painted dishes by name, in the order of their numbers ('dish:' + n): a new one goes at the end.
+// ------------------------------------------------------------------ toasted beechnuts, in the pan
+//
+// The beechnuts toasted in the clay pan over the embers: a dark scorched floor with a few drifting bits of shell, and a
+// round heap of nuts piled up over the rim, glossy chestnut brown, the back ones highest, three or four split open on their
+// gold kernels, and a thin curl of heat off the top.
+const BEECHPAN_FLOOR = [58, 32, 20];
+// [x, y, length, turn, split], back to front.
+const BEECHPAN_NUTS = [
+  [-0.5, -0.02, 0.27, 0.4, true], [-0.22, -0.08, 0.27, -0.5, false], [0.08, -0.1, 0.27, 0.6, true], [0.38, -0.04, 0.26, -0.2, false],
+  [0.62, 0.08, 0.25, 2.6, true], [-0.62, 0.14, 0.26, -0.6, false], [-0.34, 0.12, 0.28, 2.7, false], [-0.04, 0.1, 0.28, 0.3, true],
+  [0.26, 0.12, 0.28, -0.6, false], [-0.5, 0.28, 0.27, -0.2, false], [-0.16, 0.26, 0.28, 0.9, true], [0.18, 0.28, 0.27, 2.9, false],
+  [0.5, 0.26, 0.26, 0.5, false], [-0.1, -0.22, 0.26, 1.1, false], [0.22, -0.24, 0.25, 2.0, true]];
+function paintToastedBeechnutsPan(g) {
+  const { cy, IX, IY } = CLAY_PAN;
+  clayPan(g, () => {
+    softIn(g, BEECHPAN_FLOOR, cy - IY, cy + IY, () => ovalAt(g, 0, cy + 0.03, IX * 0.97, IY * 0.9), 1.25, 0.6);
+    furGlow(g, [20, 10, 6], 0.6, 0.3, cy + 0.14, 0.4, 0.12);                                  // scorched where the heat was
+    furGlow(g, [255, 190, 90], 0.3, 0, cy - 0.02, 0.6, 0.2);                                  // warm off the embers
+    for (const [x, y, l, rot, split] of BEECHPAN_NUTS) beechnutAt(g, x, y, l, rot, split);
+    fillIn(g, rgba([60, 32, 16], 0.85), () => { for (const [x, y, a] of [[-0.66, cy + 0.12, 0.4], [0.62, cy + 0.2, -0.5], [0.2, cy + 0.27, 1.2]]) ovalAt(g, x, y, 0.03, 0.014, a); });   // bits of shell
+  });
+  strokeIn(g, 'rgba(255, 250, 240, 0.3)', 0.04, () => { g.moveTo(-0.12, -0.36); g.bezierCurveTo(-0.2, -0.52, 0.0, -0.6, -0.08, -0.76); g.moveTo(0.2, -0.34); g.bezierCurveTo(0.14, -0.48, 0.3, -0.56, 0.24, -0.7); });
+}
+
+// ------------------------------------------------------------------ baked apple with honey, third painting
+//
+// The apple whole on the hot stone, its top sliced off as a lid and set back on askew, the stalk still in it. The apple
+// slumped soft in the heat, deep glossy red and wrinkled; honey wells up from under the lid in a bright amber collar and runs
+// down the shoulders in three fat drips, gone dark as caramel at the edges, and pools on the stone. A curl of steam.
+const BAKED3_SKIN = [160, 40, 30], BAKED3_FLESH = [244, 200, 112], BAKED3_LID = [176, 48, 34];
+// The drips down the front: [x at the collar, length, width], left to right.
+const BAKED3_DRIPS = [[-0.36, 0.14, 0.045], [-0.02, 0.3, 0.06], [0.34, 0.2, 0.05]];
+function paintBakedApple3(g) {
+  const sy = 0.52;
+  sitShadow(g, 0, sy + 0.2, 0.88, 0.14, 0.3);
+  // The stone, as in the first painting.
+  softIn(g, tone(STONE, 0.72), sy, sy + 0.32, () => lumpy(g, 0, sy + 0.09, 0.86, 0.25, STONE_LUMPS), 1.0, 0.6);
+  softIn(g, STONE, sy - 0.24, sy + 0.24, () => lumpy(g, 0, sy, 0.86, 0.25, STONE_LUMPS), 1.2, 0.86);
+  furGlow(g, [255, 250, 240], 0.22, -0.46, sy - 0.1, 0.3, 0.07);
+  fillIn(g, 'rgba(52, 44, 40, 0.6)', () => { ovalAt(g, -0.66, sy + 0.08, 0.016, 0.01); ovalAt(g, 0.7, sy - 0.04, 0.012, 0.008); });
+  furGlow(g, [255, 130, 50], 0.26, 0.62, sy + 0.08, 0.3, 0.1);
+  // Honey pooled round its foot.
+  softIn(g, HONEY, sy - 0.1, sy + 0.14, () => { g.moveTo(-0.56, sy + 0.01); g.bezierCurveTo(-0.56, sy - 0.09, 0.4, sy - 0.11, 0.6, sy - 0.02); g.bezierCurveTo(0.66, sy + 0.07, 0.46, sy + 0.14, 0.12, sy + 0.14); g.bezierCurveTo(-0.3, sy + 0.15, -0.56, sy + 0.1, -0.56, sy + 0.01); g.closePath(); }, 1.1, 0.72);
+  strokeIn(g, 'rgba(255, 236, 170, 0.75)', 0.02, () => { g.moveTo(-0.42, sy + 0.05); g.quadraticCurveTo(-0.22, sy + 0.1, 0.02, sy + 0.1); });
+  // The apple, slumped: broad and low, flat on top where the lid came off.
+  const ty = -0.2, by = sy + 0.02;                              // its cut top and its foot
+  const apple = () => {
+    g.moveTo(-0.34, ty);
+    g.bezierCurveTo(-0.6, ty - 0.02, -0.7, ty + 0.3, -0.6, by - 0.18);
+    g.bezierCurveTo(-0.5, by - 0.02, -0.24, by + 0.02, 0, by - 0.02);
+    g.bezierCurveTo(0.24, by + 0.02, 0.5, by - 0.02, 0.6, by - 0.18);
+    g.bezierCurveTo(0.7, ty + 0.3, 0.6, ty - 0.02, 0.34, ty);
+    g.closePath();
+  };
+  furGlow(g, [60, 26, 12], 0.5, 0.02, by - 0.01, 0.48, 0.07);
+  softIn(g, BAKED3_SKIN, ty, by, apple, 1.2, 0.5);
+  g.save(); g.beginPath(); apple(); g.clip();
+  furGlow(g, [72, 14, 14], 0.6, 0.36, by - 0.2, 0.36, 0.34);                                   // round: the shade side
+  furGlow(g, [232, 120, 64], 0.4, -0.36, ty + 0.24, 0.2, 0.24);                                // baked warm where the light is
+  furGlow(g, [110, 46, 20], 0.35, -0.2, by - 0.1, 0.18, 0.08);                                 // browned where it sat
+  strokeIn(g, rgba(tone(BAKED3_SKIN, 0.5), 0.4), 0.016, () => {                               // wrinkled as it slumped
+    g.moveTo(-0.52, ty + 0.2); g.quadraticCurveTo(-0.5, ty + 0.4, -0.4, by - 0.1);
+    g.moveTo(-0.3, ty + 0.3); g.quadraticCurveTo(-0.3, ty + 0.46, -0.22, by - 0.1);
+    g.moveTo(0.22, ty + 0.36); g.quadraticCurveTo(0.26, ty + 0.48, 0.2, by - 0.08);
+    g.moveTo(0.44, ty + 0.34); g.quadraticCurveTo(0.48, ty + 0.46, 0.4, by - 0.08);
+  });
+  g.restore();
+  // Honey welling up over the cut top: an amber collar, and drips down the shoulders.
+  const collar = () => {
+    g.moveTo(-0.48, ty + 0.04);
+    g.bezierCurveTo(-0.48, ty - 0.12, 0.48, ty - 0.12, 0.48, ty + 0.04);
+    g.bezierCurveTo(0.48, ty + 0.1, 0.44, ty + 0.12, 0.4, ty + 0.11);
+    for (let i = BAKED3_DRIPS.length - 1; i >= 0; i--) {
+      const [x, l, w] = BAKED3_DRIPS[i];
+      g.lineTo(x + w, ty + 0.12);
+      g.lineTo(x + w * 0.9, ty + 0.1 + l);
+      g.arc(x, ty + 0.1 + l, w * 0.9, 0, Math.PI);
+      g.lineTo(x - w, ty + 0.12);
+    }
+    g.bezierCurveTo(-0.44, ty + 0.12, -0.48, ty + 0.1, -0.48, ty + 0.04);
+    g.closePath();
+  };
+  softIn(g, HONEY, ty - 0.1, ty + 0.44, collar, 1.3, 0.75);
+  g.save(); g.beginPath(); collar(); g.clip();
+  furGlow(g, [140, 66, 14], 0.5, 0.3, ty + 0.14, 0.3, 0.12);
+  furGlow(g, [255, 220, 120], 0.6, -0.24, ty - 0.02, 0.22, 0.06);
+  g.restore();
+  strokeIn(g, rgba(CARAMEL, 0.7), 0.014, collar);
+  strokeIn(g, 'rgba(255, 246, 204, 0.85)', 0.02, () => { g.moveTo(-0.42, ty + 0.03); g.quadraticCurveTo(-0.4, ty - 0.05, -0.26, ty - 0.07); });
+  for (const [x, l, w] of BAKED3_DRIPS) {
+    strokeIn(g, 'rgba(255, 246, 204, 0.8)', 0.016, () => { g.moveTo(x - w * 0.4, ty + 0.16); g.lineTo(x - w * 0.4, ty + 0.04 + l); });
+    fillIn(g, 'rgba(255, 250, 236, 0.9)', () => ovalAt(g, x - w * 0.35, ty + 0.1 + l, 0.012, 0.016));
+  }
+  // The lid, set back on askew: a red cap with its gold cut edge showing, the stalk and a soft leaf.
+  const lx = 0.05, ly = ty - 0.05;
+  g.save(); g.translate(lx, ly); g.rotate(-0.12);
+  const cut = () => ovalAt(g, 0, 0.02, 0.34, 0.08);
+  softIn(g, BAKED3_FLESH, -0.06, 0.1, cut, 1.0, 0.75);
+  strokeIn(g, rgba(CARAMEL, 0.6), 0.02, cut);
+  const cap = () => { g.moveTo(-0.34, 0); g.bezierCurveTo(-0.34, -0.2, -0.12, -0.26, 0, -0.24); g.bezierCurveTo(0.12, -0.26, 0.34, -0.2, 0.34, 0); g.bezierCurveTo(0.2, 0.05, -0.2, 0.05, -0.34, 0); g.closePath(); };
+  softIn(g, BAKED3_LID, -0.26, 0.04, cap, 1.3, 0.6);
+  g.save(); g.beginPath(); cap(); g.clip();
+  furGlow(g, [80, 16, 14], 0.5, 0.22, 0, 0.2, 0.12);
+  furGlow(g, [240, 140, 80], 0.45, -0.16, -0.14, 0.12, 0.07);
+  g.restore();
+  strokeIn(g, rgba(tone(BAKED3_LID, 0.5), 0.7), 0.014, cap);
+  strokeIn(g, 'rgba(255, 240, 220, 0.85)', 0.022, () => { g.moveTo(-0.24, -0.1); g.quadraticCurveTo(-0.18, -0.19, -0.06, -0.2); });
+  strokeIn(g, 'rgb(92, 62, 36)', 0.05, () => { g.moveTo(0, -0.23); g.quadraticCurveTo(0.0, -0.36, 0.07, -0.43); });
+  strokeIn(g, 'rgba(176, 130, 80, 0.7)', 0.016, () => { g.moveTo(-0.012, -0.26); g.quadraticCurveTo(-0.012, -0.36, 0.05, -0.42); });
+  softIn(g, [124, 128, 54], -0.52, -0.34, () => { g.moveTo(0.05, -0.38); g.bezierCurveTo(0.12, -0.53, 0.32, -0.53, 0.38, -0.43); g.bezierCurveTo(0.3, -0.33, 0.12, -0.33, 0.05, -0.38); g.closePath(); }, 1.25, 0.7);
+  strokeIn(g, 'rgba(84, 84, 34, 0.7)', 0.012, () => { g.moveTo(0.07, -0.39); g.quadraticCurveTo(0.2, -0.45, 0.35, -0.43); });
+  g.restore();
+  // Gleams on the skin, and steam.
+  strokeIn(g, 'rgba(255, 236, 226, 0.6)', 0.024, () => { g.moveTo(-0.55, ty + 0.26); g.quadraticCurveTo(-0.56, ty + 0.4, -0.5, ty + 0.5); });
+  strokeIn(g, 'rgba(255, 255, 250, 0.3)', 0.035, () => { g.moveTo(-0.3, ty - 0.2); g.bezierCurveTo(-0.38, ty - 0.32, -0.22, ty - 0.4, -0.3, ty - 0.52); });
+}
+
 const PAINTED = [
   ['Roast mushrooms', paintRoastMushrooms],
   ['Baked apple with honey', paintBakedApple],
@@ -1932,7 +2049,7 @@ const PAINTED = [
   ['Honeyed cherries', paintHoneyedCherries],
   ['Warm bramble compote', paintBrambleCompote],
   ['Wilted greens', paintWiltedGreens],
-  ['Toasted beechnuts', paintToastedBeechnuts],
+  ['Toasted beechnuts', paintToastedBeechnutsPan],
   ['Toasted hazelnuts', paintToastedHazelnuts],
   ['Mushrooms with hazelnuts', paintMushroomsHazelnuts],
   ['Dandelion fritters', paintDandelionFritters],
@@ -1950,6 +2067,7 @@ const PAINTED = [
   ['Hazelnut brittle', paintHazelnutBrittle],
   ['Chicken of the woods steak', paintChickenSteak],
   ['Forest stew', paintForestStew],
+  ['Baked apple with honey', paintBakedApple3],
 ];
 const NAMES = PAINTED.map(p => p[0]);
 function paint(g, size, U, n) {

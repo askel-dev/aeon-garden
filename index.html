@@ -748,6 +748,9 @@
   #cook-vessels button .plate { display: grid; place-items: center; width: 34px; height: 34px; margin: 0 auto -2px; border-radius: 50%; position: relative; pointer-events: none;
     background: linear-gradient(180deg, #fffaf0, #f3e4c6); color: #8a5e22; box-shadow: inset 0 0 0 1.5px #d2b06a, inset 0 -2px 0 rgba(168, 116, 42, 0.22); }
   #cook-vessels button .plate svg { display: block; width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  #cook-vessels button .plate img { width: 26px; height: 26px; margin: 0; }
+  #cook-vessels button .plate .spark { position: absolute; top: -3px; right: -9px; width: 34px; height: 34px; color: #c0731f; }
+  #cook-vessels button.locked .plate img { opacity: 0.7; }
   #cook-vessels button.make:not(.locked) .plate { background: linear-gradient(180deg, #ffe9cd, #f7c794); color: #6b4a1f; box-shadow: inset 0 0 0 1.5px #e7a865, 0 2px 0 #a8742a; }
   #cook-vessels button.locked .plate { color: #a99a80; box-shadow: inset 0 0 0 1.5px #cdbc9c; }
   #cook-vessels button .plate .lock { position: absolute; top: -4px; left: -4px; display: grid; place-items: center; width: 16px; height: 16px; border-radius: 50%;
@@ -961,12 +964,12 @@
   #book .b-head h2 { margin: 0; font-size: 26px; font-weight: 650; }
   /* its parts, Recipes, Finds and You, as cloth ribbons hung from the brass edge: a mark and a word each; the open one hangs longer,
      in full colour, the others shorter and a little faded. A red dot is something new. On an upright phone they're a row of 44 px tabs. */
-  #book .b-head { gap: 5px; align-items: flex-start; margin-top: -22px; }
-  #book .tab { position: relative; display: flex; align-items: center; gap: 7px; height: 34px; margin: 0; padding: 7px 13px 0; border: none; background: var(--c);
+  #book .b-head { gap: 12px; align-items: flex-start; margin-top: -22px; margin-bottom: 8px; }
+  #book .tab { position: relative; display: flex; align-items: center; gap: 9px; height: 40px; margin: 0; padding: 6px 22px 6px; border: none; background: var(--c);
     font-size: 14px; font-weight: 850; letter-spacing: 0.01em; color: #fff8ea; line-height: 1; opacity: 0.78; transition: opacity 0.12s, height 0.12s;
     clip-path: polygon(0 0, 100% 0, 100% 100%, 50% calc(100% - 8px), 0 100%); box-shadow: inset 0 -6px 6px -4px rgba(40, 20, 0, 0.35); }
-  #book .tab svg { width: 17px; height: 17px; flex: none; }
-  #book .tab.on { height: 48px; opacity: 1; cursor: default; }
+  #book .tab svg { width: 18px; height: 18px; flex: none; }
+  #book .tab.on { height: 56px; opacity: 1; cursor: default; }
   #book .tab.new::after { content: ''; position: absolute; top: 9px; right: 5px; width: 8px; height: 8px; border-radius: 50%; background: #c4562a; box-shadow: 0 0 0 2px #fff8ea; }
   @media (hover: hover) { #book .tab:not(.on):hover { opacity: 1; } }
   @media (pointer: coarse) { #book .tab { min-width: 44px; } }

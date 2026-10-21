@@ -185,6 +185,21 @@
       ],
       "port": 8811,
       "autoPort": false
+    },
+    {
+      "name": "fire-cook",
+      "runtimeExecutable": "/Library/Frameworks/Python.framework/Versions/3.13/bin/python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8813",
+        "--bind",
+        "127.0.0.1",
+        "--directory",
+        "/Users/axel/Desktop/programming/aeon-garden/.claude/worktrees/fire-cook"
+      ],
+      "port": 8813,
+      "autoPort": false
     }
   ]
 }
