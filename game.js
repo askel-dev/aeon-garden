@@ -424,6 +424,7 @@ const PALETTE = [   // [bare ground, lush grass] per season
 ];
 const tileData = new Float32Array(S.W * S.H * 4), bloomData = new Float32Array(S.W * S.H * 4);
 let terrainTick = -1, terrainAt = 0;   // when the grass was last handed over, in ticks and real time
+let terrainSig = 0, terrainWorld = null;   // the grass last handed over (a checksum of it, and its meadow): unchanged, it isn't uploaded again
 let groundSeed = [0, 0];               // moves the shader's noise, so each meadow has its own
 let shoreSand = [200, 180, 130];
 let lastZoom = 0, groundStill = 0;      // frames the zoom has held still, so sprites know when to repaint sharp
@@ -454,7 +455,7 @@ const FLAT_WATER = [110, 175, 215];                // (no WebGL: the water's fla
 function paintTerrain() {
   const g = world.grass, water = world.water, [low, high] = groundColours(), damp = 1 - 0.12 * world.wet;
   shoreSand = low.map(v => v * 0.9 * damp);
-  let sum = 0;
+  let sum = 0, sig = 0;
   const ok = Ground.ok, fieldAt = world.fieldAt, fields = world.fields, wood = world.wood, deep = S.DEEP;
   for (let i = 0; i < g.length; i++) {
     let v = water[i] ? 0 : clamp(g[i] / 0.85, 0, 1);
@@ -465,6 +466,10 @@ function paintTerrain() {
     for (let k = 0; k < 3; k++) bloomData[o + k] = bloom > 0 ? f.tint[k] / 255 * bloom : 0;   // premultiplied, so it blends smoothly between tiles
     bloomData[o + 3] = bloom;
     sum += v;
+    // What's handed over, as a running hash (a step this fine is past what the screen's 255 levels can show): a look that
+    // finds the same grass as last time doesn't upload it again, and the ground needn't be painted again either.
+    sig = (Math.imul(sig, 31) + (v * 4096 | 0) + (water[i] * 4096 | 0) + (wood[i] * 4096 | 0) + (bloom * 4096 | 0)
+      + (bloom > 0 ? f.tint[0] + f.tint[1] * 256 + f.tint[2] * 65536 : 0)) | 0;
     if (!ok) {
       for (let k = 0; k < 3; k++) flatImg.data[o + k] = water[i] ? FLAT_WATER[k] : lerp(low[k], high[k], v) * damp;
       flatImg.data[o + 3] = 255;
@@ -474,8 +479,12 @@ function paintTerrain() {
   // The shader's grass averages a little deeper than the palette's (greener by the water, see ground.js).
   const v = sum / g.length;
   edgeColour(...low.map((c, k) => lerp(c, high[k] * 0.96, v) * damp));
-  if (Ground.ok) { Ground.set('tile', tileData); Ground.set('bloom', bloomData); }
-  else flat.getContext('2d').putImageData(flatImg, 0, 0);
+  if (Ground.ok) {
+    if (world !== terrainWorld || sig !== terrainSig) {   // (the textures already hold this grass and bloom: hand them over only when they don't)
+      terrainWorld = world; terrainSig = sig;
+      Ground.set('tile', tileData); Ground.set('bloom', bloomData);
+    }
+  } else flat.getContext('2d').putImageData(flatImg, 0, 0);
 }
 
 // Where the browser won't let the meadow reach (the clock, Safari's bars) it shows the page behind,
@@ -4987,7 +4996,7 @@ const lightFall = u => u < 0.35 ? 1 - 0.51 * u : u < 0.7 ? 0.82 - 1.14 * (u - 0.
 // A torch's own falloff, a touch fuller than a fire's at every step (0.86, 0.50, 0.20 at 0.35, 0.7, 0.88 of the reach,
 // where a fire's is 0.82, 0.42, 0.14) but the same soft shape: enough of the outer reach above the dark to be worth having,
 // and still a pool that fades rather than a flat disc with a drawn rim (which reads as a spotlight when they stand in a row).
-// torchCutArt's stops are this curve, so the pool cut out of the dark and what stands in its light agree.
+// (The pool cut out of the dark, torchCutArt and cutArt, falls a little faster near the flame than these and reaches up behind it: POOL_UP.)
 const lightFallT = u => u < 0.35 ? 1 - 0.4 * u : u < 0.7 ? 0.86 - 1.0286 * (u - 0.35) : u < 0.88 ? 0.50 - 1.6667 * (u - 0.7) : 0.20 * (1 - u) / 0.12;
 function fireReach(fx, fy, dx = 0, dy = 0) {
   let pool = 0;
@@ -4997,38 +5006,67 @@ function fireReach(fx, fy, dx = 0, dy = 0) {
   }
   return Math.min(1, pool / 0.85);
 }
+// A light fainter than a level of 255 can't warm anything: by day that's a fire's embers, and it needn't be drawn at all.
+const LIGHT_LEAST = 1 / 255;
 // The warm light laid over what's drawn about each light (source-atop: only over what's there, so the trees, the animals
 // and the forager are lit warm, more on the side toward it), stronger in the dark.
 function fireLight(dark) {
   if (!lights.n) return;
-  const art = lightArt(), night = clamp(dark / DARK, 0, 1);
+  const art = lightArt(), night = clamp(dark / DARK, 0, 1), lit = 0.06 + 0.24 * night;
   ctx.globalCompositeOperation = 'source-atop';
   for (let i = 0; i < lights.n; i++) {
+    const a = lights.a[i] * lit;
+    if (a < LIGHT_LEAST) continue;
     const r = lights.r[i] * 0.85, x = lights.x[i], y = lights.y[i];
-    ctx.globalAlpha = lights.a[i] * (0.06 + 0.24 * night);
+    ctx.globalAlpha = a;
     ctx.drawImage(art.img, x - r, y - r * LIGHT_FLAT, r * 2, r * 2 * LIGHT_FLAT);
   }
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
 }
-// Cut out of the dark on the sky's picture (laySky): the dark goes, and a warm glow comes in its place, by a fire or a
-// torch. Both are pictures painted once (CUT_ART, lightArt), laid flat on the ground (LIGHT_FLAT).
-let CUT_ART = null, TORCH_CUT_ART = null;
-const cutArt = () => CUT_ART || (CUT_ART = glowArt2(128, [[0, 'rgba(0, 0, 0, 1)'], [0.35, 'rgba(0, 0, 0, 0.82)'], [0.7, 'rgba(0, 0, 0, 0.42)'], [0.88, 'rgba(0, 0, 0, 0.14)'], [1, 'rgba(0, 0, 0, 0)']]));
-// A torch's pool: lightFallT's stops, a little fuller than a fire's all the way out, with the same long fade at the rim.
-const torchCutArt = () => TORCH_CUT_ART || (TORCH_CUT_ART = glowArt2(128, [[0, 'rgba(0, 0, 0, 1)'], [0.35, 'rgba(0, 0, 0, 0.86)'], [0.7, 'rgba(0, 0, 0, 0.50)'], [0.88, 'rgba(0, 0, 0, 0.20)'], [1, 'rgba(0, 0, 0, 0)']]));
+// Cut out of the dark on the sky's picture (laySky), by a fire or a torch: the dark goes, most near the flame and falling
+// off fast, with a long faint tail (no flat lit disc with a rim), and in its place a dusky amber tint over the whole pool and
+// a brighter warm glow close in, so what's lit reads as lit by a fire, not as a hole showing the day's colours under the
+// night. The pool's pictures are eggs, not ovals (eggArt): flat on the ground in front of the light, and reaching higher
+// behind it (POOL_UP), where what stands there shows the camera its lit side. So a tree in the pool is lit up to its
+// crown, and one standing in front of the light stays in the dark rather than being sliced across by the oval's edge.
+// All painted once (CUT_ART, TORCH_CUT_ART, TINT_ART, POOL_GLOW_ART). The cuts lie in the quarter-res picture and are soft all
+// through, so 64 is as fine as they can show.
+const POOL_UP = 1.4;                     // how much further the pool reaches up the screen behind a light than in front of it
+const POOL_CUT = 0.88, POOL_TINT = 0.42, POOL_GLOW = 0.4;   // how much of the dark goes at the heart, the amber over the pool, the glow close in
+let CUT_ART = null, TORCH_CUT_ART = null, TINT_ART = null, POOL_GLOW_ART = null;
+// A radial gradient as an egg: the circle's top half stretched up by `up`, its lower half as it is (the middle of the
+// light is then `up / (1 + up)` of the way down its box).
+function eggArt(n, stops, up) {
+  const c = document.createElement('canvas'), g = c.getContext('2d'), h = Math.round(n / 2 * (1 + up));
+  c.width = n; c.height = h;
+  const gr = g.createRadialGradient(n / 2, n / 2, 0, n / 2, n / 2, n / 2);
+  for (const [at, col] of stops) gr.addColorStop(at, col);
+  g.fillStyle = gr; g.setTransform(1, 0, 0, up, 0, 0); g.fillRect(0, 0, n, n / 2);
+  g.setTransform(1, 0, 0, 1, 0, h - n); g.fillRect(0, n / 2, n, n / 2);
+  const art = { img: c };
+  asBitmap(c, b => { art.img = b; });
+  return art;
+}
+const cutArt = () => CUT_ART || (CUT_ART = eggArt(64, [[0, 'rgba(0, 0, 0, 1)'], [0.18, 'rgba(0, 0, 0, 0.86)'], [0.42, 'rgba(0, 0, 0, 0.55)'], [0.68, 'rgba(0, 0, 0, 0.26)'], [0.86, 'rgba(0, 0, 0, 0.09)'], [1, 'rgba(0, 0, 0, 0)']], POOL_UP));
+// A torch's pool: a little fuller than a fire's all the way out (as lightFallT is), with the same long fade at the rim.
+const torchCutArt = () => TORCH_CUT_ART || (TORCH_CUT_ART = eggArt(64, [[0, 'rgba(0, 0, 0, 1)'], [0.2, 'rgba(0, 0, 0, 0.88)'], [0.45, 'rgba(0, 0, 0, 0.6)'], [0.7, 'rgba(0, 0, 0, 0.3)'], [0.87, 'rgba(0, 0, 0, 0.11)'], [1, 'rgba(0, 0, 0, 0)']], POOL_UP));
+// The amber the pool is washed with: dusky, so it warms and dims what the cut gave back, more toward the rim than at the
+// heart (where the glow takes over), and gone at the rim with the cut.
+const tintArt = () => TINT_ART || (TINT_ART = eggArt(64, [[0, 'rgba(120, 66, 30, 0.22)'], [0.3, 'rgba(96, 54, 34, 0.5)'], [0.6, 'rgba(64, 38, 42, 0.55)'], [0.85, 'rgba(36, 26, 48, 0.25)'], [1, 'rgba(20, 20, 50, 0)']], POOL_UP));
+const poolGlowArt = () => POOL_GLOW_ART || (POOL_GLOW_ART = eggArt(64, [[0, 'rgba(255, 178, 96, 1)'], [0.25, 'rgba(255, 150, 70, 0.6)'], [0.55, 'rgba(255, 128, 56, 0.18)'], [1, 'rgba(255, 120, 50, 0)']], POOL_UP));
 function paintFireLights(g) {
-  const cut = cutArt().img, torchCut = torchCutArt().img, warm = lightArt().img;
-  for (let i = 0; i < lights.n; i++) {
-    const x = lights.x[i], y = lights.y[i], r = lights.r[i], a = lights.a[i];
-    g.globalCompositeOperation = 'destination-out';
-    g.globalAlpha = 0.85 * a;
-    g.drawImage(lights.t[i] ? torchCut : cut, x - r, y - r * LIGHT_FLAT, r * 2, r * 2 * LIGHT_FLAT);
-    g.globalCompositeOperation = 'source-over';
-    g.globalAlpha = 0.26 * a;
-    g.drawImage(warm, x - r * 0.8, y - r * 0.8 * LIGHT_FLAT, r * 1.6, r * 1.6 * LIGHT_FLAT);
+  const cut = cutArt().img, torchCut = torchCutArt().img, tint = tintArt().img, warm = poolGlowArt().img, top = POOL_UP / (1 + POOL_UP);
+  for (let pass = 0; pass < 3; pass++) {               // (every cut first, then the amber over them all, then the glows: a pool's tint mustn't fill another's cut back in)
+    g.globalCompositeOperation = pass ? 'source-over' : 'destination-out';
+    for (let i = 0; i < lights.n; i++) {
+      const x = lights.x[i], a = lights.a[i], r = pass === 2 ? lights.r[i] * 0.7 : lights.r[i], h = r * LIGHT_FLAT * (1 + POOL_UP), y = lights.y[i] - h * top;
+      g.globalAlpha = (pass === 0 ? POOL_CUT : pass === 1 ? POOL_TINT : POOL_GLOW) * a;
+      g.drawImage(pass === 0 ? (lights.t[i] ? torchCut : cut) : pass === 1 ? tint : warm, x - r, y, r * 2, h);
+    }
   }
   g.globalAlpha = 1;
+  g.globalCompositeOperation = 'source-over';
 }
 // The camp catches the light: at night the basket and a cold fire pit are cut back out of the dark a little (a quarter,
 // LIFT_TAKE, over their footprint: liftsFrame works out where), so their shapes and the cream lights on the fire's stones
@@ -15462,15 +15500,17 @@ function weatherTick(now) {
 function drawWeather(now, ck, dark) {
   const m = ui.sky.mix, t = weatherTick(now);
   if (dark > 0) skyWash(NIGHT_RGB, dark);
+  // The cut-offs are past what an alpha of a level of 255 can show: under them the effect is invisible, and the cloud
+  // shadows and the fog's banks would still have turned the sky from one cheap fill into a picture of gradients.
   const shade = 0.12 * m.cloudy + 0.08 * m.rain + 0.10 * m.storm;
-  if (shade > 0.01 && !lowFx) skyLayer(SKY_CLOUDS, shade);
+  if (shade > 0.02 && !lowFx) skyLayer(SKY_CLOUDS, shade);
   const dim = 0.05 * m.cloudy + 0.09 * m.rain + 0.30 * m.storm + 0.04 * m.snow;
-  if (dim > 0.005) skyWash(DIM_RGB, dim);
+  if (dim > 0.01) skyWash(DIM_RGB, dim);
   if (m.heat > 0.01) skyWash(HEAT_RGB, 0.11 * m.heat);
   if (lifts.n && dark > 0.02) skyLayer(SKY_LIFT, LIFT_TAKE);   // (the camp's lift, a little of the dark gone over each: liftsFrame)
   if (lights.n && dark > 0.02) skyLayer(SKY_FIRE, 1);      // (the fires' and torches' light, cut out of all that: lightsFrame)
   if (!ck.night && rainbowShows()) { laySky(t); drawRainbow(); }   // (over what's laid so far, under the fog)
-  if (m.fog > 0.01) { skyWash(FOG_RGB, 0.30 * m.fog); skyLayer(SKY_FOG, m.fog); }
+  if (m.fog > 0.02) { skyWash(FOG_RGB, 0.30 * m.fog); skyLayer(SKY_FOG, m.fog); }
   laySky(t);
   const rain = m.rain + 1.8 * m.storm;
   if (rain > 0.02) drawRain(t, rain, m.storm);
@@ -15485,11 +15525,11 @@ function drawWeather(now, ck, dark) {
 const DIM_RGB = [50, 62, 92], HEAT_RGB = [255, 168, 60], FOG_RGB = [236, 240, 244];
 const SKY_EVEN = 0, SKY_CLOUDS = 1, SKY_FOG = 2, SKY_FIRE = 3, SKY_LIFT = 4;   // a layer: one colour all over, the cloud shadows, the fog's banks, the fires' and torches' light (paintFireLights), the camp's lift (paintCampLift)
 const SKY_RES = 0.25;                                      // the picture's pixels to a CSS pixel (at 0.125 the low-alpha gradients' 8-bit rounding, a few levels from one pixel to the next, stretched 8x into a visible mesh in fog)
-const SKY_MS = 50;                                         // and its clouds and fog drift on in steps this long (a pixel or two: they're soft)
+const SKY_MS = 50;                                         // and its clouds and fog drift on in steps this long (a pixel or two: they're soft), and the camera it follows moves in steps this long
 // 224 numbers because a night lays 10 + 5 * 10 layers + (1 + 3 * LIFT_MAX) lifts + (1 + 5 * LIGHT_MAX) lights = 200 at
 // most, and a short snapshot would silently drop the far lights from the compare: the sky would paint again every frame.
 const sky = { n: 0, layers: Array.from({ length: 10 }, () => ({ kind: 0, rgb: null, a: 0 })), canvas: null, g: null,
-  was: new Float64Array(224), now: new Float64Array(224) };   // what the picture was painted from, and what it's wanted from now
+  was: new Float64Array(224), now: new Float64Array(224), at: -1e9 };   // what the picture was painted from, what it's wanted from now, and when it was painted
 
 function skyLayer(kind, a, rgb = null) { const l = sky.layers[sky.n++]; l.kind = kind; l.a = a; l.rgb = rgb; }
 const skyWash = (rgb, a) => skyLayer(SKY_EVEN, a, rgb);
@@ -15520,12 +15560,32 @@ function laySky(t) {
   let m = 10 + n * 5, fire = false, lift = false, drift = false;
   for (let i = 0; i < n; i++) { const l = L[i], o = 10 + i * 5; f[o] = l.kind; f[o + 1] = l.a; f[o + 2] = l.rgb ? l.rgb[0] : -1; f[o + 3] = l.rgb ? l.rgb[1] : -1; f[o + 4] = l.rgb ? l.rgb[2] : -1; if (l.kind === SKY_FIRE) fire = true; else if (l.kind === SKY_LIFT) lift = true; else if (l.kind === SKY_CLOUDS || l.kind === SKY_FOG) drift = true; }
   if (!drift) f[9] = 0;                                    // (a clear night has no cloud or fog to drift: its clock mustn't repaint the sky)
-  if (lift) { f[m++] = lifts.n; for (let i = 0; i < lifts.n; i++) { f[m++] = lifts.x[i]; f[m++] = lifts.y[i]; } }   // (the basket and the cold pits: liftsFrame)
-  if (fire) { f[m++] = lights.n; for (let i = 0; i < lights.n; i++) { f[m++] = lights.x[i]; f[m++] = lights.y[i]; f[m++] = lights.r[i]; f[m++] = lights.a[i]; f[m++] = lights.t[i]; } }   // (it flickers in steps: lightsFrame)
+  // The lights and lifts are keyed where the camera puts them, not where they land on the screen: a walk moves them every
+  // frame, and the camera's own entries above already answer for that (the camera at SKY_MS), so their screen places alone
+  // mustn't paint the sky every frame. A light that moves in the world (the torch being placed) still paints at once. The
+  // places are rounded (a sixteenth of a pixel, half a pixel of pool) so the camera's arithmetic, which comes back a
+  // trillionth off, doesn't read as a move; the burning's slow growth of a pool is far under that.
+  const px = cam.x * cam.zoom, py = cam.y * cam.zoom;
+  if (lift) { f[m++] = lifts.n; for (let i = 0; i < lifts.n; i++) { f[m++] = Math.round((lifts.x[i] + px) * 16) / 16; f[m++] = Math.round((lifts.y[i] + py) * 16) / 16; } }   // (the basket and the cold pits: liftsFrame)
+  if (fire) { f[m++] = lights.n; for (let i = 0; i < lights.n; i++) { f[m++] = Math.round((lights.x[i] + px) * 16) / 16; f[m++] = Math.round((lights.y[i] + py) * 16) / 16; f[m++] = Math.round(lights.r[i] * 2) / 2; f[m++] = lights.a[i]; f[m++] = lights.t[i]; } }   // (it flickers in steps: lightsFrame)
+  // The camera moves every frame the forager walks, and once the picture followed it every frame: a quarter-res screen of
+  // nine cloud gradients, six fog banks and up to 24 light cuts, at 60 a second. It's soft all through, so it follows the
+  // camera at SKY_MS instead (20 a second, the cadence its clouds already drift on), and in between the picture is slid
+  // by as much as the camera has moved since, so the pools stay on their fires. A layer's alpha, a light's flicker, a
+  // lift, the weather's clock or a zoom paints at once — those would show as a lag — and so does a jump (a new meadow):
+  // no walk or run moves the camera further than this between two paints (a meadow at 60x does: it follows it frame by
+  // frame) or slides it past the 10 pixels the picture has to spare all round (the thunder's, but a shake paints anyway).
+  const at = performance.now(), z = f[5], sx = (sky.was[3] - f[3]) * z, sy = (sky.was[4] - f[4]) * z;
+  const slide = at - sky.at < SKY_MS && Math.abs(sx) <= 10 + EDGE && Math.abs(sy) <= 10 + EDGE;
   let same = c.width === w && c.height === h;
-  for (let i = 0; same && i < m; i++) if (f[i] !== sky.was[i] && !(i === 9 && f[9] - sky.was[9] < SKY_MS)) same = false;
-  if (same) { ctx.drawImage(c, -10 - EDGE, -10 - EDGE, w / k, h / k); return; }
-  sky.was.set(f);
+  for (let i = 0; same && i < m; i++) {
+    if (f[i] === sky.was[i]) continue;
+    if (i === 9 && f[9] - sky.was[9] < SKY_MS) continue;
+    if ((i === 3 || i === 4) && slide) continue;
+    same = false;
+  }
+  if (same) { ctx.drawImage(c, -10 - EDGE + sx, -10 - EDGE + sy, w / k, h / k); return; }   // (and wasn't painted: the old key is kept, so the camera stopping still catches up)
+  sky.was.set(f); sky.at = at;
   if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
   sg.setTransform(1, 0, 0, 1, 0, 0);
   sg.clearRect(0, 0, w, h);
@@ -15690,6 +15750,31 @@ function drawRainbow() {
   ctx.restore();
 }
 
+// A bolt and its blur, painted once when it first shows and then copied: a shadowBlur on the path was a fresh blur every
+// frame of the flash, for a jag that hardly moves. The glow is painted below the bolt in the same canvas (the shadow is
+// offset down a screen's height, the whole path inside it, so the blur is whole) and the two are copied one over the
+// other at the strike's foot, as they're drawn: the bolt's fade lets the glow show through it, so they can't be baked
+// together. Both at the screen's own dpr (the blur isn't scaled with the transform, so a picture stretched over the
+// meadow's would come out soft). The white flash stays a wash of its own: it lies over the trees and the fires, where
+// the sky's washes don't reach.
+const BOLT_PAD = 28, BOLT_HALF = 0.03;     // past its blur, and how far its jags wander either side of its foot (of the screen's width)
+function paintBolt(b, sy) {
+  const pad = BOLT_PAD, w = b.artW = Math.ceil(vw * BOLT_HALF * 2 + pad * 2), h = b.artH = Math.ceil(sy + 20 + pad * 2);
+  const c = b.art || (b.art = document.createElement('canvas')), g = c.getContext('2d');
+  b.artVW = vw; b.artDPR = dpr;
+  c.width = Math.round(w * dpr); c.height = Math.round(h * dpr) * 2;   // (the bolt in the top half, its glow in the bottom)
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h * 2);
+  g.strokeStyle = 'rgba(255, 255, 240, 1)';
+  g.shadowColor = '#bcd4ff'; g.shadowBlur = 14; g.shadowOffsetY = h * dpr;   // (device pixels, as the blur is)
+  g.lineWidth = 3; g.lineJoin = 'round';
+  g.beginPath();
+  b.path.forEach(([f, dx], i) => {
+    const x = w / 2 + dx * vw * 0.06 * (1 - f), y = pad + (sy + 10) * f;   // (the canvas's top edge lies at -10 - pad, so the foot at -10 + (sy + 10))
+    i ? g.lineTo(x, y) : g.moveTo(x, y);
+  });
+  g.stroke();
+}
 // A white flash, and a jagged bolt for each strike on screen. Several at once share one flash.
 function drawLightning(now) {
   const bolts = ui.sky.bolts;
@@ -15701,17 +15786,12 @@ function drawLightning(now) {
   for (const b of bolts) {
     const age = now - b.t0, [sx, sy] = toScreen(b.x, b.y);
     if (!visible(sx, sy, 20) || age > 250) continue;
-    ctx.save();
-    ctx.strokeStyle = `rgba(255, 255, 240, ${1 - age / 450})`;
-    ctx.shadowColor = '#bcd4ff'; ctx.shadowBlur = 14;
-    ctx.lineWidth = 3; ctx.lineJoin = 'round';
-    ctx.beginPath();
-    b.path.forEach(([f, dx], i) => {
-      const x = sx + dx * vw * 0.06 * (1 - f), y = -10 + (sy + 10) * f;
-      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
-    });
-    ctx.stroke();
-    ctx.restore();
+    if (!b.art || b.artVW !== vw || b.artDPR !== dpr) paintBolt(b, sy);
+    const wd = Math.round(b.artW * dpr), hd = Math.round(b.artH * dpr), dh = sy + 20 + BOLT_PAD * 2;   // (stretched to this frame's foot: the camera has moved under it)
+    ctx.globalAlpha = 1 - age / 450;
+    ctx.drawImage(b.art, 0, hd, wd, hd, sx - b.artW / 2, -10 - BOLT_PAD, b.artW, dh);   // (its glow, under it)
+    ctx.drawImage(b.art, 0, 0, wd, hd, sx - b.artW / 2, -10 - BOLT_PAD, b.artW, dh);
+    ctx.globalAlpha = 1;
   }
 }
 
@@ -18031,10 +18111,14 @@ function heardWorld(m, now) {
   const w = S.unpackWorld(m.kept);
   if (!w) { toast('🧺 Your friend’s meadow is from another version of the game. Reload both pages.'); return; }
   const again = net.tick >= 0 && m.to, mine = again ? world.forager : null, zoom = cam.zoom;
+  const owns = again ? world.fires.map(F => ({ x: F.x, y: F.y, own: F.own })) : null;   // (the vessels made here, each fire's)
   showWorld(w);
   endIntro(true);                                        // (a friend's meadow: no opening of our own over it)
-  if (mine) w.forager = mine;                            // (the same meadow again: its own forager stays as it was)
-  else { arrive(w.forager); pr.n = 0; pr.next = 0; awayBack(w.forager, w); }
+  if (mine) {                                            // (the same meadow again: its own forager stays as it was, and its kit:
+    w.forager = mine;                                    //  the fires came with the host's vessels, so they go and ours come back)
+    for (const F of w.fires) F.own.length = 0;
+    for (const o of owns) { const F = w.fires.find(q => fireAtXY(q, o.x, o.y)); if (F) for (const v of o.own) if (!F.own.includes(v)) F.own.push(v); }
+  } else { arrive(w.forager); pr.n = 0; pr.next = 0; awayBack(w.forager, w); }
   renderSatchel();                                       // (showWorld drew the host's satchel, as it came)
   cam.zoom = zoom; cam.x = world.forager.x; cam.y = world.forager.y - CAM_FEET * forPx() / cam.zoom; clampCam();
   history.replaceState(history.state, '', pageLink(w.seed));
@@ -20235,7 +20319,7 @@ function showWorld(w) {
 }
 
 let last = performance.now(), acc = 0, lastCard = 0;
-const TERRAIN_MS = 250;                   // real time between hand-overs of the grass to the ground (painting grass skips the wait)
+const TERRAIN_MS = 500;                   // real time between looks at the grass (an unchanged one isn't handed over; painting grass skips the wait)
 // The most real time the sim gets in a frame. A slow phone at 60x would rather run a little slower
 // than drop frames: the ticks that don't fit are let go, and don't pile up for the next frame.
 // How many fit is learnt as it goes (simFit, from tickMs: a tick's cost, a new day's aside), and each frame runs that
@@ -20550,8 +20634,9 @@ function lightForager(now, ck, dx, dy) {
     for (let i = 0; i < lights.n; i++) {                  // (lights were worked out at the meadow's camera: dx, dy is how it has moved since)
       const r = lights.r[i], x = lights.x[i] + dx, y = lights.y[i] + dy, u = Math.hypot(fx - x, (fy - y) / LIGHT_FLAT) / r;
       if (u < 1) pool += lights.a[i] * 0.85 * (lights.t[i] ? lightFallT(u) : lightFall(u));
-      const rr = r * 0.85;
-      ctx.globalAlpha = lights.a[i] * (0.06 + 0.24 * night);
+      const rr = r * 0.85, a = lights.a[i] * (0.06 + 0.24 * night);
+      if (a < LIGHT_LEAST) continue;                        // (as fireLight: a light too faint to warm a level of 255)
+      ctx.globalAlpha = a;
       ctx.drawImage(art.img, x - rr, y - rr * LIGHT_FLAT, rr * 2, rr * 2 * LIGHT_FLAT);
     }
     ctx.globalAlpha = 1;
@@ -20573,13 +20658,32 @@ function lightForager(now, ck, dx, dy) {
   drawForagerRim(dark, false, dx, dy);                     // (and its rim, over the dark on its own canvas, where render draws it on the meadow's)
 }
 
+// A hidden tab gets no animation frames, so a host's meadow would stop and its friends with it. Playing together, a
+// worker's timer (not throttled like the page's) runs the same frame while the tab is hidden, drawing nothing.
+let bgTick = false;
+const bg = { w: null };
+function bgWatch() {
+  const want = document.hidden && !!(Net && Net.on);
+  if (want && !bg.w) {
+    try {
+      const url = URL.createObjectURL(new Blob(['setInterval(()=>postMessage(0),50)'], { type: 'text/javascript' }));
+      bg.w = new Worker(url); URL.revokeObjectURL(url);
+      bg.w.onmessage = () => {
+        if (!document.hidden || !world) return;
+        bgTick = true;
+        try { frame(performance.now()); } finally { bgTick = false; }
+      };
+    } catch (e) { bg.w = null; }
+  } else if (!want && bg.w) { bg.w.terminate(); bg.w = null; }
+}
+document.addEventListener('visibilitychange', bgWatch);
 function frame(now) {
   if (opening === 1) opening = 2;
   const raw = now, dt0 = raw - (perf.at || raw); perf.at = raw;
   const fr0 = BENCH ? performance.now() : 0;
   if (bench.on) { bench.beats++; if (dt0 > 25) bench.late++; }
   if (dt0 > 0 && dt0 < 250) { perf.fps += (1000 / dt0 - perf.fps) * 0.05; perf.ms += (dt0 - perf.ms) * 0.05; }
-  now = onBeat(now);
+  if (!bgTick) now = onBeat(now);
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   friendsFrame();                          // (where friends stand: in the way of this forager's next steps)
@@ -20648,7 +20752,7 @@ function frame(now) {
 
   const rest = resting(now), easy = calm(now), gap = rest ? RESTING_MS : easy ? CALM_GAP : renderGap;
   if (SPLIT) { if (wview.width && wview.height && now - split.at >= gap) splitFrame(now, gap); }
-  else if (canvas.width && canvas.height && now - lastDrawn >= gap) {   // (a hidden tab can have no size)
+  else if (canvas.width && canvas.height && !bgTick && now - lastDrawn >= gap) {   // (a hidden tab can have no size)
     lastDrawn = now;
     // Every 12 ticks, and no more than a few times a second: grass changes too slowly to see the difference.
     if (terrainTick < 0 || (world.tick - terrainTick >= 12 && now - terrainAt >= TERRAIN_MS)) paintTerrain();
@@ -20700,7 +20804,7 @@ function frame(now) {
   keepTick(now);
   govTick(now);
   if (bench.on) bench.busy += performance.now() - fr0;
-  requestAnimationFrame(frame);
+  if (!bgTick) requestAnimationFrame(frame);
 }
 
 // The camera goes with the forager: a little ahead of it the way it's walking (CAM_AHEAD seconds of its pace, eased in
