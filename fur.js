@@ -786,10 +786,13 @@ function foragerPose(view, pose, short = 1) {
     return [-reach + 2 * reach * smoothstep(s), (jog ? JOG_LIFT * Math.sin(Math.PI * s ** 0.7) : FORAGER_LIFT * Math.sin(Math.PI * s)) * short];
   };
   const fwd = view === 0 ? [-1, 0] : view === 1 ? [-0.62, 0.4] : [-0.62, -0.4];   // forward, on the picture
-  const base = view === 0 ? [[-0.035, 0.72], [0.045, 0.72]] : view === 1 ? [[-0.1, 0.71], [0.07, 0.735]] : [[-0.09, 0.735], [0.08, 0.71]];
+  const base = view === 0 ? [[-0.035, 0.72], [0.045, 0.72]] : view === 1 ? [[-0.09, 0.72], [0.09, 0.72]] : [[-0.085, 0.72], [0.085, 0.72]];
+  // Seen from the front or the back each foot keeps to its own lane (barely crossing), the one ahead lower (nearer you) or, from
+  // behind, higher: the picture's forward is mostly down or up it. (fwd stays the picture's forward for the lean and the arms.)
+  const step = view === 0 ? fwd : view === 1 ? [-0.1, 0.55] : [-0.1, -0.55];
   const feet = [0, 0.5].map((off, i) => {
     const [a, up] = foot(u + off);
-    return [base[i][0] + fwd[0] * a, base[i][1] + fwd[1] * a - up];
+    return [base[i][0] + step[0] * a, base[i][1] + step[1] * a - up];
   });
   const stoop = walk || jog ? 0 : STOOP[pose] || 0;                // (picking: knees bent, the head and the hands forward and down)
   // (Walking it's lowest with the feet apart; jogging, as the planted foot passes under it, and highest in the air.)
@@ -967,7 +970,7 @@ function foragerParts(P) {
   const arm = (x, a, far, casts, hand) => {
     const sx = x + lx * 0.7 + sh * 0.8, sy = 0.06 + P.bob + ly * 0.7 + sd;
     if (P.bend) a -= 0.15;                                         // (pumping, the arm swings a little more back than up)
-    const to = (x, y, t, L) => [x + (side ? -Math.sin(t) : P.fwd[0] * Math.sin(t) * 0.9) * L, y + Math.cos(t) * L + (side ? 0 : P.fwd[1] * Math.sin(t) * 0.12)];
+    const to = (x, y, t, L) => [x + (side ? -Math.sin(t) : P.fwd[0] * Math.sin(t) * 0.9) * L, y + Math.cos(t) * L + (side ? 0 : P.fwd[1] * Math.sin(t) * (P.walk ? 0.9 : 0.12))];   // (front or back, a walking arm swung toward you is nearer, so lower; one swung away is higher)
     const [kx, ky] = P.bend ? to(sx, sy, a, 0.12) : [sx, sy];
     const [ex, ey] = hand ? [sx + hand[0], sy + hand[1]] : P.bend ? to(kx, ky, a + P.bend, 0.11) : to(sx, sy, a, 0.2 + 0.07 * P.stoop);
     if (hand && hand.length > 2) {                                 // (an elbow given: the mitten up, the cuff toward the elbow)
