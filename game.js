@@ -2092,7 +2092,8 @@ const fg = { wasWalking: false, at: -1, x: 0, y: 0, step: 0, stillMs: 1e4, view:
   puffs: [], puffAt: 0, drips: [], dripAt: 0, shiverAt: -1e9, shiverNext: 0, heartAt: 0, pantAt: 0, panting: false, downAt: 0, dark: false, cold: false, sizedSet: 0,   // (the body: drawBody, bodyFrame)
   snow: -1, snowTick: -0, snowArt: 0, sizedSnow: 0,   // (the snow on it: snowOnForager)
   kneel: -1, knelt: -1e9, sizedKneel: false,           // (at a fire: its kneeling pose, fur.js FORAGER_KNEEL, or -1; when it last knelt)
-  emote: -1, emoteMs: -0, emoteFrame: -1, lift: -0, sitU: -0, sitQ: null, sitRise: true, sitAt: -1e9, sneakStill: -0, sizedEmote: false, eatAt: -1e9,   // (an emote: EMOTE, or -1; emoteTick)
+  emote: -1, emoteMs: -0, emoteFrame: -1, lift: -0, sitU: -0, sitQ: null, sitRise: true, sitAt: -1e9, sneakStill: -0, sizedEmote: false,   // (an emote: EMOTE, or -1; emoteTick)
+  meal: null, mealShown: false,                          // (eating: the meal going, and whether its painting holds it: mealTick)
   air: -0, squash: 1, jumpSeen: 0, dust: [], landSeen: 0, chainAt: -1e9, lean: -0, cuePlayed: true,   // (a dash: how high it's drawn, squash on take-off and landing, the take-off it last showed, its dust, the landing it last showed, its lean, and whether the press-me tick has sounded)
   hugAt: -1e9,                                          // (when it last hugged a friend: hug)
   carry: false, carryShown: false, sizedCarry: false, dishY: -0, dishV: -0, slopAt: -1e9,   // (a dish in its hands: carrying it, its paintings asked for, its spring and last slop: drawHeldDish, slop)
@@ -2340,7 +2341,8 @@ function foragerFrame(now, d) {
   emoteTick(f, stage, ms);
   const kneel = fg.kneel = stage < 4 && fg.emote < 0 ? kneelNow(now) : -1;   // (at a fire: kneeling, side on to it)
   if (kneel >= 0) { fg.view = 0; fg.knelt = now; }
-  const carry = fg.carry = !!f.hand && stage < 4 && fg.emote < 0 && kneel < 0 && !(kw.reveal && kw.reveal.hand);   // (a dish held out in both hands)
+  const meal = mealTick(f, now, !walking, d.x, d.y);       // (eating: its painting, or -1)
+  const carry = fg.carry = !!f.hand && stage < 4 && fg.emote < 0 && kneel < 0 && !fg.meal && !(kw.reveal && kw.reveal.hand);   // (a dish held out in both hands)
   let pose = 0, emo = -1;                                // (emo: an emote's painting, fur.js FORAGER_EMOTE)
   if (walking && kneel < 0) {                          // (kneeling, it keeps the side it turned to the fire, not the way it came in)
     const sy = Math.sin(f.heading), sx = Math.cos(f.heading), v = fg.view;
@@ -2371,7 +2373,7 @@ function foragerFrame(now, d) {
     const p = (now - fg.pick) / fg.pickK;                 // picking (gatherFrame): stooped, reaching down, back up
     if (p < PICK_MS[2]) { pose = p < PICK_MS[0] || p > PICK_MS[1] ? 3 : 4; fg.stillMs = FORAGER_STILL_MS + 1; idleStop(fg); }
     else if (fg.emote >= 0) emo = emoteStill(fg, d, true);
-    else if (kneel < 0 && now - fg.eatAt < EAT_LONG) { const e = eatPose(now); if (e >= 0) { pose = e; fg.view = 1; idleStop(fg); } }
+    else if (kneel < 0 && meal >= 0) { pose = meal; fg.view = 1; idleStop(fg); }
     else if (cold) idleStop(fg);
   }
   if (stage === 4) { pose = 7; idleStop(fg); }          // (down: eyes shut, no blinking)
@@ -2385,8 +2387,12 @@ function foragerFrame(now, d) {
   if (fg.sitU > 0 || sitting) sitEase(fg, sitting, ms, now, d.x, d.y, px);   // (hopping up onto the seat log, and down off it)
   const sat = sitting && fg.sitU > SIT_POSE;
   const carried = carry && emo < 0 && pose < 32;
+  // (eating on the seat log, or by the fire with nothing to do there: sat down on the ground, for the whole meal; fur.js FORAGER_SIT_EAT)
+  if (meal >= 0 && fg.meal.ground === null && kneel >= 0 && !sitting) fg.meal.ground = kneel === KNEEL.warm || kneel === KNEEL.rest;
+  const satEat = meal >= 0 && (sat || kneel >= 0 && !sitting && fg.meal.ground) ? SIT_EAT_OF[meal] : -1;
+  fg.mealShown = stage < 4 && emo < 0 && (satEat >= 0 || kneel < 0 && meal >= 0 && pose === meal);
   const want = FORAGER_ARTS[emo >= 0 && stage < 4 ? Fur.emoteArt(fg.snowArt, fg.outfit, emo) : carried ? Fur.carryArt(fg.snowArt, fg.outfit, poseKey(fg.view, pose))
-    : at + (sat || kneel >= 0 && !sitting ? KNEEL_AT + kneel : poseKey(sitting ? 1 : fg.view, sitting ? 0 : pose))];
+    : at + (sat || kneel >= 0 && !sitting ? KNEEL_AT + (satEat >= 0 ? satEat : kneel) : poseKey(sitting ? 1 : fg.view, sitting ? 0 : pose))];
   fg.art = shownPose(f, want, px);
   if (fg.art === want) fg.carryShown = carried;          // (its new painting not in yet: the dish stays where the old one held it)
   dishSpring(fg, ms);
@@ -2570,12 +2576,13 @@ function slop(f, x, y, now) {
 }
 // The drops: a ring of SLOP_DROPS in typed arrays (nothing made a drop), each thrown from x, y at h up (the forager's px) with
 // some way along (vx, a ms) and up, falling and lying a moment where it lands. Drawn over all that stands (drawSpills).
+// crumb: 1 a crumb off something crisp being eaten (mealStep: CRUMB_RGB, smaller), 0 a drop.
 const SLOP_DROPS = 40, SLOP_MS = 900, SLOP_FALL = 4e-6, SLOP_RGB = 'rgb(150, 98, 52)';
 const sd = { x: new Float32Array(SLOP_DROPS), y: new Float32Array(SLOP_DROPS), h: new Float32Array(SLOP_DROPS), vx: new Float32Array(SLOP_DROPS), vy: new Float32Array(SLOP_DROPS),
-  vh: new Float32Array(SLOP_DROPS), t: new Float64Array(SLOP_DROPS), next: 0, n: 0 };
-function dropFly(x, y, h, vx, up, now) {
+  vh: new Float32Array(SLOP_DROPS), t: new Float64Array(SLOP_DROPS), c: new Uint8Array(SLOP_DROPS), next: 0, n: 0 };
+function dropFly(x, y, h, vx, up, now, crumb = 0) {
   const j = sd.next;
-  sd.x[j] = x; sd.y[j] = y; sd.h[j] = h; sd.t[j] = now;
+  sd.x[j] = x; sd.y[j] = y; sd.h[j] = h; sd.t[j] = now; sd.c[j] = crumb;
   sd.vx[j] = vx + (Math.random() - 0.5) * 0.0012; sd.vy[j] = (Math.random() - 0.3) * 0.0008; sd.vh[j] = (0.4 + Math.random() * 0.6) * up * 1e-3;
   sd.next = (j + 1) % SLOP_DROPS; sd.n = Math.min(SLOP_DROPS, sd.n + 1);
 }
@@ -2611,16 +2618,18 @@ function drawSpills(now) {
   }
   if (!sd.n || far) return;
   ctx.fillStyle = SLOP_RGB;
-  let live = 0;
+  let live = 0, col = 0;
   for (let j = 0; j < sd.n; j++) {
     const age = now - sd.t[j];
     if (age >= SLOP_MS || age < 0) continue;
     live++;
+    if (sd.c[j] !== col) { col = sd.c[j]; ctx.fillStyle = col ? CRUMB_RGB : SLOP_RGB; }
     const land = sd.vh[j] / SLOP_FALL + Math.sqrt((sd.vh[j] / SLOP_FALL) ** 2 + 2 * sd.h[j] / SLOP_FALL);   // (when it reaches the ground)
     const ta = Math.min(age, land), h = Math.max(0, sd.h[j] + sd.vh[j] * ta - SLOP_FALL * ta * ta / 2);
     const sx = (sd.x[j] + sd.vx[j] * ta - cam.x) * z + vw / 2, sy = (sd.y[j] + sd.vy[j] * ta - cam.y) * z + vh / 2 - h * px;
     ctx.globalAlpha = age < land ? 0.9 : 0.7 * (1 - (age - land) / (SLOP_MS - land + 1));
-    ctx.beginPath(); ctx.ellipse(sx, sy, px * 0.018, px * (age < land ? 0.02 : 0.009), 0, 0, TAU); ctx.fill();
+    const r = col ? 0.65 : 1;                                // (a crumb's smaller)
+    ctx.beginPath(); ctx.ellipse(sx, sy, px * 0.018 * r, px * (age < land ? 0.02 : 0.009) * r, 0, 0, TAU); ctx.fill();
   }
   ctx.globalAlpha = 1;
   if (!live) sd.n = 0;
@@ -2682,14 +2691,15 @@ function drawForager(sx, sy, now) {
   if (zoomedOut()) { drawSmall(art, sx, sy - (0.36 + fg.lift) * px, px, fg.flip); drawChill(sx, sy, px, f.warmth, now); return; }
   if (stage === 4) { drawFallen(art, sx, sy, px, fg.flip, clamp((now - fg.downAt) / FALL_MS, 0, 1)); return; }
   const trip = f.stumble > 0 ? Math.sin(Math.PI * (1 - f.stumble / S.STUMBLE_TICKS)) : 0;   // (a stumble: it pitches forward and catches itself)
-  const held = f.hand && handArtOf(f.hand), eating = now - fg.eatAt >= 0 && now - fg.eatAt < EAT_SEQ[1];
-  const shown = held && !eating && !(kw.reveal && kw.reveal.hand);   // (hidden while it's being eaten, or flying to the hand)
+  const held = f.hand && handArtOf(f.hand);
+  const shown = held && !fg.meal && !(kw.reveal && kw.reveal.hand);   // (hidden while it's being eaten, or flying to the hand)
   const heat = held && held.warm ? f.handHeat : 0;
   if (shown && fg.view === 2) drawHeldDish(fg, sx, sy, px, now, held.art, heat);   // (facing away: behind it)
   drawFigure(fg, art, sx, sy, px, now, stage, trip, fg.stillMs > FORAGER_STILL_MS, true);
   const d = drawnAt(f);
   drawBody(fg, d.x, d.y, f.wet, fg.stillMs < FORAGER_STILL_MS, f.running, stage, px, now, true);
   if (shown && fg.view !== 2) drawHeldDish(fg, sx, sy, px, now, held.art, heat);
+  if (fg.mealShown) drawMeal(fg.meal, sx, sy - fg.lift * px, px, now);
   drawChill(sx, sy - fg.lift * px, px, f.warmth, now);
 }
 // A little thermometer by the forager's side that fades in as its warmth drops under cosy and out as it warms again
@@ -2828,6 +2838,7 @@ function foragerAhead() {
   for (const p of Fur.FORAGER_IDLES) furReady(FORAGER_ARTS[at + 96 + p], P);
   for (const p of Fur.FORAGER_EATS) furReady(FORAGER_ARTS[at + 96 + p], P);
   if (kneel) for (const p of KNEEL_POSES) furReady(FORAGER_ARTS[at + KNEEL_AT + p], P);
+  if (kneel) for (const p of Fur.FORAGER_SIT_EATS) furReady(FORAGER_ARTS[at + KNEEL_AT + p], P);   // (eating sitting, on the seat log or by the fire)
   if (emo) for (const p of Fur.FORAGER_EMOTES) furReady(FORAGER_ARTS[Fur.emoteArt(fg.snowArt, fg.outfit, p)], P);   // (an emote on, or about to be)
   if (carry) for (let v = 0; v < 3; v++) for (const p of set === 2 ? FORAGER_CHILLY : FORAGER_POSES) furReady(FORAGER_ARTS[Fur.carryArt(fg.snowArt, fg.outfit, (v << 5) + p)], P);   // (a dish in its hands)
 }
@@ -9151,14 +9162,100 @@ const EAT_MS = 5000, HAND = -2;          // (eatUi.k: a satchel slot, HAND for t
 const eatUi = { k: -1, timer: 0 };
 // Where the dish in its hand is on screen: the eat card's Put away, a gift and an offering fly from it.
 const handSpot = f => fg.drawnAt > 0 ? [fg.sx + (fg.view === 0 ? (fg.flip ? 1 : -1) * fg.px * 0.15 : 0), fg.sy - fg.px * HAND_UP] : toScreen(f.x, f.y - 0.5);
-// Eaten, it munches (fur.js FORAGER_EAT, from the front: foragerFrame), standing or not kneeling at a fire: a mitten up
-// with the bite, then EAT_CHEWS chews a cheek and the other, EAT_CHEW ms each, and sound.js munch in time with them.
-const EAT_CHEW = 170, EAT_CHEWS = 4, EAT = Fur.FORAGER_EAT;
-const EAT_SEQ = [ID(EAT.bite), 300, ...Array.from({ length: EAT_CHEWS }, (_, i) => [ID(i & 1 ? EAT.chewB : EAT.chewA), EAT_CHEW]).flat(), ID(IDLE.hum), 500];
-const EAT_LONG = EAT_SEQ.reduce((a, v, i) => i & 1 ? a + v : a, 0);
-function eatPose(now) {
-  for (let i = 0, t = now - fg.eatAt; i < EAT_SEQ.length; i += 2, t -= EAT_SEQ[i - 1]) if (t < EAT_SEQ[i + 1]) return EAT_SEQ[i];
-  return -1;
+// Eaten, it has a meal (fg.meal, mealTick): a few paintings in a row (fur.js FORAGER_EAT, from the front as the idles), by
+// how the thing is eaten (recipes.js eatsOf: EAT_WAYS) — spooned from the bowl, bitten, pulled off a stick, sipped, or in
+// quick small bites — each mouthful munched (sound.js munch, a mouthful at a time, its group and which one) with crumbs
+// off a crisp one (dropFly). The rest is held in the other mitten (drawMeal), a bitten thing a little less each bite, a
+// hot dish blown on first (EAT_BLOW, still steaming from the hand). It's swallowed at the end of the last chew, only then
+// taken from the satchel or the hand (sim.js feedForager, feedHand), and then a happy hum if it liked it, a flat face if
+// it didn't (EAT_LIKED, EAT_MEH). Walking off before that, the meal stops and the dish is kept. Sitting on the seat log
+// it eats sitting (fur.js FORAGER_SIT_EAT); kneeling by a fire with nothing on there, it sits down on the ground to eat (in
+// the middle of a fire's work, it keeps at it and only the sounds and the swallow go on).
+// Each way: { steps: [pose, ms, what], held }, made once. what: EAT_BITE a mouthful going in, EAT_CHEW a chew, 0 neither.
+// held: where the rest is while it eats ('bowl' stays whole till the end, 'food' goes down a bite at a time).
+const EAT = Fur.FORAGER_EAT, EAT_BITE = 1, EAT_CHEW = 2, EAT_CHEW_MS = 165, EAT_HOT = 0.7;
+const chewSteps = (n, ms = EAT_CHEW_MS) => Array.from({ length: n }, (_, i) => [ID(i & 1 ? EAT.chewB : EAT.chewA), ms, EAT_CHEW]);
+const EAT_WAYS = {
+  spoon: { held: 'bowl', steps: [[ID(EAT.dip), 280, 0], [ID(EAT.bite), 220, EAT_BITE], ...chewSteps(2), [ID(EAT.dip), 260, 0], [ID(EAT.bite), 220, EAT_BITE], ...chewSteps(3)] },
+  hand: { held: 'food', steps: [[ID(EAT.bite), 300, EAT_BITE], ...chewSteps(4), [ID(EAT.bite), 260, EAT_BITE], ...chewSteps(2)] },
+  skewer: { held: 'food', steps: [[ID(EAT.tug), 340, EAT_BITE], ...chewSteps(4), [ID(EAT.tug), 300, EAT_BITE], ...chewSteps(2)] },
+  sip: { held: 'lips', steps: [[ID(EAT.sip), 850, EAT_BITE], [ID(EAT.chewA), 420, 0], [ID(EAT.sip), 700, EAT_BITE]] },
+  fruit: { held: 'food', steps: [[ID(EAT.bite), 240, EAT_BITE], ...chewSteps(2, 150), [ID(EAT.bite), 240, EAT_BITE], ...chewSteps(2, 150), [ID(EAT.bite), 220, EAT_BITE], ...chewSteps(2, 150)] },
+};
+for (const w of Object.values(EAT_WAYS)) w.bites = w.steps.filter(st => st[2] === EAT_BITE).length;
+const EAT_BLOW = [ID(EAT.blow), 750, 0], EAT_LIKED = [ID(IDLE.hum), 800, 0], EAT_MEH = [0, 900, 0];
+// Its sitting painting for each (fur.js FORAGER_SIT_EAT; the hum and the flat face, sitting as it does), -1 for none.
+const SIT_EAT_OF = new Int8Array(64).fill(-1);
+for (const k of Object.keys(EAT)) SIT_EAT_OF[ID(EAT[k])] = Fur.FORAGER_SIT_EAT[k];
+SIT_EAT_OF[ID(IDLE.hum)] = KNEEL.sitWarm; SIT_EAT_OF[0] = KNEEL.sit;
+// Where the rest of it is held, by painting (of the forager's px: across from its middle, up from its feet, and its size):
+// in the other mitten before its chest, at its lips sipping, held low blowing.
+const MEAL_HOLD = [-0.025, 0.25, 0.16], MEAL_SPOT = new Map([[ID(EAT.sip), [-0.008, 0.37, 0.18]], [ID(EAT.blow), [-0.005, 0.3, 0.18]]]);
+const MEAL_SIT = 0.07;                     // (sitting, its hands are this much lower: fur.js sitPose's bob)
+const CRUMB_RGB = 'rgb(214, 172, 100)';
+function startMeal(id, hand, food) {
+  const f = world.forager, how = Recipes.eatsOf(id), way = EAT_WAYS[how.eats] || EAT_WAYS.hand;
+  const heat = hand && food.warm ? f.handHeat : 0, ix = DISH_IX.get(id);
+  const steps = [...(heat > EAT_HOT && how.eats !== 'fruit' ? [EAT_BLOW] : []), ...way.steps, how.liked ? EAT_LIKED : EAT_MEH];
+  f.path.length = 0; f.walking = false; f.running = false; f.speed = 0; f.goalX = f.x; f.goalY = f.y;   // (it stops to eat)
+  ui.gather = null; ui.queue.length = 0;
+  fg.meal = { id, hand, food, way, how, steps, heat, art: ix !== undefined ? DISH_ARTS[ix] : ITEM_ART[id] || food.icon || null,
+    t0: -1, at: -1, i: 0, u: 0, bitten: 0, fed: false, ground: null };
+}
+// The meal going on (foragerFrame, each frame): its painting now, or -1. still: standing (it starts once it is, and a step
+// ends it); x, y: where it's drawn, for the crumbs.
+function mealTick(f, now, still, x, y) {
+  const m = fg.meal;
+  if (!m) return -1;
+  if (!still && m.t0 >= 0 || f.down >= 0 || !m.fed && !(m.hand ? f.hand === m.id : S.bagCount(f, m.id) > 0)) { fg.meal = null; return -1; }   // (walked off, fell, or it's gone: kept, if it wasn't eaten)
+  if (m.t0 < 0) { if (!still) return -1; m.t0 = now; }
+  let t = now - m.t0, i = 0;
+  const steps = m.steps;
+  while (i < steps.length && t >= steps[i][1]) t -= steps[i++][1];
+  for (let j = m.at + 1; j <= i && j < steps.length; j++) mealStep(m, j, f, now, x, y);
+  if (i > m.at) m.at = i;
+  if (i >= steps.length || !fg.meal) { fg.meal = null; return -1; }
+  m.i = i; m.u = t / steps[i][1];
+  return steps[i][0];
+}
+// A step of the meal begun: a mouthful's munch and crumbs, a chew's crumb, and the last (how it liked it) swallowed.
+function mealStep(m, j, f, now, x, y) {
+  const st = m.steps[j], crisp = m.how.crisp;
+  if (st[2] === EAT_BITE) {
+    let n = 0, gap = EAT_CHEW_MS / 1000;
+    while (m.steps[j + 1 + n] && m.steps[j + 1 + n][2] === EAT_CHEW) { gap = m.steps[j + 1 + n][1] / 1000; n++; }
+    chime('munch', { group: m.how.eats, bite: m.bitten, n, crisp, first: st[1] / 1000, gap, last: m.bitten === m.way.bites - 1 });
+    if (crisp) for (let k = 0; k < 2; k++) dropFly(x, y, 0.38 + fg.lift, (Math.random() - 0.5) * 0.0008, 0.5, now, 1);
+    m.bitten++;
+  } else if (st[2] === EAT_CHEW && crisp && Math.random() < crisp) dropFly(x, y, 0.36 + fg.lift, (Math.random() - 0.5) * 0.0006, 0.3, now, 1);
+  if (j === m.steps.length - 1) swallow(m, f);
+}
+function swallow(m, f) {
+  const k = m.hand ? HAND : f.bag.indexOf(m.id), food = m.food;
+  const why = m.hand ? S.feedHand(world, food.fill, food.warm) : k >= 0 ? S.feedForager(world, k, food.fill, food.warm) : 'Nothing there';
+  if (why) { say(why, f.x, f.y - 1.6); fg.meal = null; return; }
+  m.fed = true;
+  say(!m.how.liked ? (m.id === Recipes.MESS.name ? 'Well. It\'s food' : 'Hm. It\'ll do') : food.warm ? 'Mm. Warm right through' : food.dish ? 'Mm, that\'s good' : 'Mm', f.x, f.y - 1.6);
+  if (fireSit.seat && S.earnDeed(world, 'seat-meal')) deedEarned('seat-meal');
+  vit.fedAt = performance.now();
+  potPrune();
+  renderSatchel(); renderVitals(); if (cooking()) renderCook();
+}
+// The rest of the meal, in its mitten (or at its lips), till it's swallowed: a bitten thing smaller a bite at a time, a
+// hot one steaming, blown on (the steam pushed off it).
+function drawMeal(m, sx, sy, px, now) {
+  if (!m.art || m.fed) return;
+  const pose = m.steps[m.i][0], at = MEAL_SPOT.get(pose) || MEAL_HOLD;
+  const x = sx + (fg.flip ? -1 : 1) * at[0] * px, y = sy - (at[1] - (fg.kneel >= 0 ? MEAL_SIT : 0)) * px;
+  const d = at[2] * px * (m.way.held === 'food' ? 1 - 0.4 * m.bitten / m.way.bites : 1);
+  drawEmoji(m.art, x, y, d);
+  const heat = m.heat > 0.08 ? m.heat : 0;
+  if (!heat) return;
+  const k = (now / 240 | 0) % 3;
+  if (pose === EAT_BLOW[0]) {                               // (blown: the steam pushed off sideways, thinning)
+    const u = m.u, dir = fg.flip ? -1 : 1;
+    drawEmoji(HAND_STEAM_ARTS[k], x + dir * d * (0.2 + 0.9 * u), y - d * (0.45 + 0.15 * u), d * 0.6 * (1 + 0.6 * u), { alpha: 0.75 * (1 - u) });
+  } else drawEmoji(HAND_STEAM_ARTS[k], x + Math.sin(now / 540) * d * 0.12, y - d * 0.48, d * 0.6, { alpha: (0.55 + 0.2 * Math.sin(now / 610)) * Math.min(1, heat * 1.6) });
 }
 function eatAsk(k) {
   const box = $('#eat'), slots = $('#satchel').querySelectorAll('.slot'), hand = k === HAND;
@@ -9191,17 +9288,12 @@ function eatAsk(k) {
 function eatSlot() {
   const k = eatUi.k, f = world.forager, hand = k === HAND, id = hand ? f.hand : k >= 0 && f.bag[k], food = id && Recipes.foodOf(id);
   if (!food) { eatAsk(-1); return; }
+  if (fg.meal) { eatAsk(-1); return; }                   // (one meal at a time)
   if (!hand && cooking() && (potHeld()[id] || 0) >= S.bagCount(f, id)) { say('It\'s in the pot', f.x, f.y - 1.6); return; }
-  const why = food.raw ? (hand ? S.feedHand(world, food.fill, food.warm) : S.feedForager(world, k, food.fill, food.warm)) : 'It wants cooking';
-  if (why) { say(why, f.x, f.y - 1.6); chime('click'); eatAsk((hand ? f.hand : f.bag[k]) ? k : -1); return; }
-  say(food.warm ? 'Mm. Warm right through' : food.dish ? 'Mm, that\'s good' : 'Mm', f.x, f.y - 1.6);
-  if (fireSit.seat && S.earnDeed(world, 'seat-meal')) deedEarned('seat-meal');
-  fg.eatAt = performance.now();
-  chime('munch', { crisp: food.dish || food.warm ? 0 : 0.75, first: EAT_SEQ[1] / 1000, gap: EAT_CHEW / 1000, n: EAT_CHEWS });
-  vit.fedAt = performance.now();
-  potPrune();
-  renderSatchel(); renderVitals(); if (cooking()) renderCook();
-  eatAsk((hand ? f.hand : f.bag[k]) ? k : -1);
+  const why = !food.raw ? 'It wants cooking' : f.down >= 0 ? 'Nothing there' : !(food.fill > 0) ? 'Not something to eat' : f.tummy > 0.97 ? 'I\'m full' : '';   // (sim.js feedForager's, asked first)
+  if (why) { say(why, f.x, f.y - 1.6); chime('click'); eatAsk(k); return; }
+  startMeal(id, hand, food);
+  eatAsk(-1);
 }
 // Puts the dish in its hand away in the satchel (the eat card's Put away): flown to its tile as a pick is, or said full.
 function putHandAway() {

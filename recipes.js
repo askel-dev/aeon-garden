@@ -78,6 +78,9 @@ const INGREDIENTS = {
 //   time: 30        how long it cooks, in seconds at 1x (the pot keeps cooking while you're off, only while the fire's lit)
 //   known: false    true: a new player knows it from the start (it's in their recipe book), not only once they've made it
 //   icon: '🥣'      an emoji to stand in until it has a painted one
+//   eats            how it's eaten (game.js EAT_WAYS): 'spoon' (from the bowl), 'hand' (bitten), 'skewer' (pulled off the
+//                   stick), 'sip' (the bowl to its lips). Left out: by the vessel (EATS_BY_VESSEL)
+//   crisp: false    true: it crunches as it's eaten, and drops crumbs
 //   text            a line for its card
 const RECIPES = [
   {
@@ -103,6 +106,7 @@ const RECIPES = [
     vessel: 'stick',
     time: 20,
     icon: '🍢',
+    crisp: true,
     needs: ['garlic', 'garlic'],
     known: true,
     text: 'The leaves wound round the stick and held over the flames till they crisp and go sweet.',
@@ -112,6 +116,7 @@ const RECIPES = [
     vessel: 'stick',
     time: 30,
     icon: '🍢',
+    crisp: true,
     needs: ['dandelion', 'dandelion'],
     known: true,
     text: 'Dug up, threaded on and roasted brown. Bitter, nutty, and filling enough.',
@@ -137,6 +142,7 @@ const RECIPES = [
     vessel: 'stone',
     time: 75,
     icon: '🥧',
+    eats: 'spoon',
     needs: ['apple', 'honey'],
     text: 'Soft and sticky, the honey gone to caramel in the cracks.',
   },
@@ -169,6 +175,7 @@ const RECIPES = [
     vessel: 'pan',
     time: 25,
     icon: '🥜',
+    crisp: true,
     needs: ['beechnuts', 'beechnuts'],
   },
   {
@@ -176,6 +183,7 @@ const RECIPES = [
     vessel: 'pan',
     time: 25,
     icon: '🥜',
+    crisp: true,
     needs: ['hazelnut', 'hazelnut'],
     text: 'Rolled in the embers till the skins crackle and rub off.',
   },
@@ -185,6 +193,7 @@ const RECIPES = [
     time: 40,
     level: 2,
     icon: '🍬',
+    crisp: true,
     needs: ['hazelnut', 'honey'],
     text: 'Honey boiled till it snaps, poured over the nuts and broken up. A shard of it lasts a whole walk.',
   },
@@ -193,6 +202,7 @@ const RECIPES = [
     vessel: 'pan',
     time: 50,
     icon: '🥘',
+    eats: 'spoon',
     needs: ['mushroom', 'mushroom', 'hazelnut'],
     text: 'The nuts crushed over the top at the last moment.',
   },
@@ -201,6 +211,7 @@ const RECIPES = [
     vessel: 'pan',
     time: 35,
     icon: '🥞',
+    crisp: true,
     needs: ['dandelion', 'dandelion', 'honey'],
     text: 'Dipped by the stalk and fried, a drizzle of honey over.',
   },
@@ -218,6 +229,7 @@ const RECIPES = [
     vessel: 'pan',
     time: 40,
     icon: '🍛',
+    eats: 'spoon',
     needs: ['sorrel', 'mushroom'],
     text: 'The sorrel melts into a sour little sauce.',
   },
@@ -234,6 +246,7 @@ const RECIPES = [
     vessel: 'pan',
     time: 40,
     icon: '🥞',
+    crisp: true,
     needs: ['elderflower', 'honey'],
     text: 'Whole plates of flowers in batter, crisp as lace.',
   },
@@ -242,6 +255,7 @@ const RECIPES = [
     vessel: 'pot',
     time: 90,
     icon: '🧃',
+    eats: 'sip',
     needs: ['elderflower', 'elderflower', 'honey', 'fruit'],
     text: 'Steeped a night, sweet and floral. Tastes of early summer.',
   },
@@ -250,6 +264,7 @@ const RECIPES = [
     vessel: 'pot',
     time: 60,
     icon: '🍵',
+    eats: 'sip',
     needs: ['rosehip', 'rosehip'],
     warm: true,
     text: 'Steeped on the embers, tart and red. You hold the cup for the warmth.',
@@ -259,6 +274,7 @@ const RECIPES = [
     vessel: 'pot',
     time: 90,
     icon: '🫙',
+    eats: 'sip',
     needs: ['rosehip', 'rosehip', 'honey'],
     warm: true,
     text: 'Simmered and strained through a cloth for the hairs. A spoonful keeps the winter off.',
@@ -454,7 +470,7 @@ const TEACHERS = ['hedgehog', 'heron', 'kingfisher', 'skylark', 'dragonfly'];
 const MESS = { name: "A forager's mess", fill: 1, time: 15, icon: '🫠', text: "It's... food. Mostly." };
 const COOK_TIME = 30;                   // seconds a dish takes if it doesn't say
 const DISH_ICON = '🥣';
-const RECIPE_KEYS = ['name', 'needs', 'at', 'vessel', 'fill', 'level', 'from', 'warm', 'known', 'time', 'icon', 'text'];
+const RECIPE_KEYS = ['name', 'needs', 'at', 'vessel', 'fill', 'level', 'from', 'warm', 'known', 'time', 'icon', 'text', 'eats', 'crisp'];
 const BUILD_KEYS = ['name', 'needs', 'where', 'after', 'makes', 'text'];
 
 const recipeOf = name => RECIPES.find(r => r.name.toLowerCase() === String(name).toLowerCase());
@@ -541,6 +557,7 @@ function checkRecipes() {
       else if (d === r) problems.push(`${who} needs itself.`);
     }
     const vs = vesselOf(r);
+    if (r.eats != null && !EAT_WAYS.includes(r.eats)) problems.push(`${who} is eaten '${r.eats}', which is no way of eating (${EAT_WAYS.join(', ')}).`);
     if (!VESSELS[vs]) problems.push(`${who} is cooked in '${vs}', which is no vessel (${Object.keys(VESSELS).join(', ')}).`);
     else if (r.needs.length > VESSELS[vs].slots) problems.push(`${who} needs ${r.needs.length} things, but the ${VESSELS[vs].name.toLowerCase()} holds ${VESSELS[vs].slots}.`);
     for (let j = 0; j < i; j++) {
@@ -625,6 +642,23 @@ function foodOf(id) {
   return { name: r.name, fill: r === MESS ? MESS.fill : fillOf(r), warm: !!r.warm, raw: true, icon: r.icon || DISH_ICON, dish: true };
 }
 
+// How a thing in the satchel is eaten (game.js EAT_WAYS): { eats, crisp, liked }. A dish by its own eats or its vessel,
+// crisp 0.6 if it says so; what's picked: fruit, berries and nuts in small bites ('fruit'), the rest bitten ('hand'), an
+// apple or a nut crunching. Liked: every dish but the mess, and what's sweet (fruit, berries, nuts, honey); greens and
+// mushrooms raw, only so-so.
+const EATS_BY_VESSEL = { pot: 'spoon', pan: 'hand', stick: 'skewer', stone: 'hand', bowl: 'spoon' };
+const EAT_WAYS = ['spoon', 'hand', 'skewer', 'sip', 'fruit'];
+function eatsOf(id) {
+  const g = INGREDIENTS[id];
+  if (g) {
+    const sweet = g.tags.some(t => t === 'fruit' || t === 'berry' || t === 'nut' || t === 'sweet');
+    return { eats: g.tags.some(t => t === 'fruit' || t === 'berry' || t === 'nut') ? 'fruit' : 'hand', crisp: id === 'apple' || g.tags.includes('nut') ? 0.8 : 0, liked: sweet };
+  }
+  if (id === MESS.name) return { eats: 'spoon', crisp: 0, liked: false };
+  const r = recipeOf(id);
+  return { eats: (r && r.eats) || EATS_BY_VESSEL[r ? vesselOf(r) : 'pot'], crisp: r && r.crisp ? 0.6 : 0, liked: true };
+}
+
 // Things out of `have` ({ id: how many }) that make a dish with these needs, each word answered by one: a list of ids, or
 // null if they don't (tried every way, as fits does).
 function thingsFor(needs, have) {
@@ -647,7 +681,7 @@ const takes = word => (INGREDIENTS[word] ? [word] : Object.keys(INGREDIENTS).fil
 
 function stackOf(id) { const i = INGREDIENTS[id]; return (i && i.stack) || 0; }
 function keepOf(id) { const i = INGREDIENTS[id]; return (i && i.keep) || 0; }
-const Recipes = { stackOf, keepOf, STATIONS, VESSELS, vesselOf, craftLevel, whereOf, INGREDIENTS, RECIPES, BUILDS, CRAFTS, DEEDS, CAMP_LEVELS, MESS, cook, fits, fillOf, timeOf, recipeOf, takes, foodOf, thingsFor, answers, checkRecipes, checkDeeds };
+const Recipes = { stackOf, keepOf, STATIONS, VESSELS, vesselOf, craftLevel, whereOf, INGREDIENTS, RECIPES, BUILDS, CRAFTS, DEEDS, CAMP_LEVELS, MESS, cook, fits, fillOf, timeOf, recipeOf, takes, foodOf, eatsOf, EAT_WAYS, thingsFor, answers, checkRecipes, checkDeeds };
 if (typeof module !== 'undefined') module.exports = Recipes;
 else {
   window.Recipes = Recipes;
