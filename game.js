@@ -7899,8 +7899,8 @@ function potPush(id, src, x, y, dropped, from) {
   if (x === undefined) { const r = from && from.getBoundingClientRect(); x = r ? r.left + r.width / 2 : vw / 2; y = r ? r.top + r.height / 2 : vh / 2; }
   if (dropped && !kw.w) dropped = false;                  // (no pot drawn yet to fall into: it flies in)
   if (dropped) {                                          // (let go over the pot: it falls from there)
-    const r = kw.cv.getBoundingClientRect();
-    j.drop[i] = [clamp(x - r.left, kw.cx - kw.rx * 1.1, kw.cx + kw.rx * 1.1), Math.min(y - r.top, kw.wy - kw.rx * 0.25)];
+    const r = kw.cv.getBoundingClientRect(), k = r.width / kw.w || 1;
+    j.drop[i] = [clamp((x - r.left) / k, kw.cx - kw.rx * 1.1, kw.cx + kw.rx * 1.1), Math.min((y - r.top) / k, kw.wy - kw.rx * 0.25)];
     j.land[i] = performance.now();
   }
   renderSatchel();
@@ -8004,9 +8004,9 @@ function potTake(i) {
   kw.sx.copyWithin(i, i + 1);
   chime('plop', { what: 'out' });
   if (kw.w && i < kw.n) {                                 // (from where it floats, back to its tile)
-    const r = kw.cv.getBoundingClientRect(), x = r.left + kw.hx[i], y = r.top + kw.hy[i], el = potTile(store, id);
+    const r = kw.cv.getBoundingClientRect(), k = r.width / kw.w || 1, x = r.left + kw.hx[i] * k, y = r.top + kw.hy[i] * k, el = potTile(store, id);
     splash(kw.hx[i], kw.hy[i] + kw.hr[i] * 0.4, 0.35, performance.now());
-    if (el) { const t = el.getBoundingClientRect(); flyBig(id, x, y, t.left + t.width / 2, t.top + t.height / 2, 420, kw.hr[i] * 2 / 72, 1); }
+    if (el) { const t = el.getBoundingClientRect(); flyBig(id, x, y, t.left + t.width / 2, t.top + t.height / 2, 420, kw.hr[i] * 2 * k / 72, 1); }
   }
   renderSatchel(); renderCook();
 }
@@ -8325,8 +8325,8 @@ function makeLine(j, mode) {
 // (drawCookView).
 function flyToPot(id, sx, sy, landed) {
   if (!kw.w) { landed(); return; }
-  const r = kw.cv.getBoundingClientRect(), i = ui.fire.pot.length - 1;
-  flyBig(id, sx, sy, r.left + potX(i, ui.fire.pot.length), r.top + kw.at[cookVessel].y - kw.rx * 0.95, 360, 1, potSize(ui.fire.pot.length) / 72, landed);
+  const r = kw.cv.getBoundingClientRect(), i = ui.fire.pot.length - 1, k = r.width / kw.w || 1;
+  flyBig(id, sx, sy, r.left + potX(i, ui.fire.pot.length) * k, r.top + (kw.at[cookVessel].y - kw.rx * 0.95) * k, 360, 1, potSize(ui.fire.pot.length) * k / 72, landed);
 }
 // A satchel painting flying from sx, sy to tx, ty on screen (CSS px) in a little arc, a big tile's size (72 px) times k0 to
 // k1: one element, the browser's own animation.
@@ -8366,6 +8366,21 @@ const DROPS = 48, RINGS = 14;
 const REVEAL_MS = 1500;                   // ms the dish takes to rise out of the pot, before it flies to the satchel
 const COOK_TILES = 6.5, COOK_MOST = 110;   // the camera close enough for this many tiles across what the window leaves, at most this close
 const COOK_AIM = 0.3, COOK_UP = 0.85;     // the camera aims this far from the fire to the forager, and this many tiles over its foot
+// At the fire itself, not in a window (the fire-cook prototype, 2026-10-21): the camera goes in closer than you can zoom, on
+// the real fire, and the pot you cook in is drawn over it where the meadow has it (#cook-canvas laid on the fire, its own bed,
+// vignette and flames left out: the meadow's fire burns under it; the meadow's little pot steps aside, drawPot). What's
+// round it is small and close: what it'll make and Cook under the stones (.cook-under), the satchel's things in a strip at
+// the foot (.cook-side). ?card has the window back.
+const FIRE_COOK = !params.has('card');
+const NEAR_TILES = 4.4;                    // the camera close enough for this many tiles across, but no closer than nearMost
+// The meadow is painted for the camera's 64 at most: the forager at most FUR_MOST device pixels (furTop), the trees and the
+// ground about so. Past that it's stretched, and at 240 the prototype's forager was four times its painting, the meadow a blur.
+// So the camera comes no closer than the forager's painting stretched NEAR_STRETCH (what a phone shows at 64 already), and
+// at least that 64 plus a little (NEAR_LEAST), so the pot has some size on a sharp phone too.
+const NEAR_STRETCH = 1.75, NEAR_LEAST = 72;
+const nearMost = () => Math.max(NEAR_LEAST, furTop() * NEAR_STRETCH / FORAGER_SIZE - 8);
+const NEAR_POT = 0.3;                      // the pot's half-width, in the fire's painted size (firePx)
+const potLaid = { sx: NaN, sy: NaN, z: 0, key: '' };   // where the meadow drew the fire this frame, and how close (drawPot)
 const kw = {
   cv: null, g: null, w: 0, h: 0, d: 1, slots: [], bslots: [], press: -1,
   bg: null, back: null, front: null, dropArt: null, fatArt: null, bubArt: null, spoon: null, bed: '', at: null, vart: {},
@@ -8413,12 +8428,22 @@ function brothOf(pot) {
 // The window measured (renderCook): the canvas sized to its box and painted again if that changed, and where the camera
 // puts the fire: the middle of the meadow left beside the window, or over the sheet on an upright phone.
 function measureCook() {
-  const card = $('#cook'), cv = kw.cv, w = cv.clientWidth, h = cv.clientHeight, d = Math.min(2, dpr);
+  const card = $('#cook'), cv = kw.cv;
+  if (FIRE_COOK) {                                        // (at the fire: the canvas the size the pot is drawn at, once the camera's in)
+    const foot = vh - $('#cook .cook-side').getBoundingClientRect().top;
+    kw.zoom = clamp(Math.min(vw / NEAR_TILES, (vh - foot) / (NEAR_TILES * 0.62)), 48, nearMost());
+    kw.fx = vw / 2; kw.fy = (vh - foot) * 0.36;
+    const rx = firePx(kw.zoom) * NEAR_POT;
+    cv.style.width = Math.round(rx / 0.34) + 'px'; cv.style.height = Math.round(rx * 1.6 / 0.38) + 'px';
+    potLaid.key = '';
+  }
+  const w = cv.clientWidth, h = cv.clientHeight, d = Math.min(2, dpr);
   if (w && h && (w !== kw.w || h !== kw.h || d !== kw.d)) {
     kw.w = w; kw.h = h; kw.d = d;
     cv.width = Math.round(w * d); cv.height = Math.round(h * d);
     paintCookPot();
   }
+  if (FIRE_COOK) return;
   const sheet = card.offsetTop > vh * 0.25 && card.offsetLeft < 30, fw = sheet ? vw : card.offsetLeft, fh = sheet ? card.offsetTop : vh;   // (a sheet from the foot, or beside it)
   kw.fx = fw / 2; kw.fy = fh * (sheet ? 0.55 : 0.5);
   kw.zoom = clamp(Math.min(fw / COOK_TILES, fh / (COOK_TILES * 0.65)), 48, COOK_MOST);
@@ -8708,6 +8733,22 @@ function paintCookBed(bed) {
   tc.width = 0;
   kw.bg = art; bitmapOf(art, c);
 }
+// At the fire itself (FIRE_COOK): the pot's canvas laid over the fire where the meadow drew it this frame (near, from drawPot),
+// stretched while the camera eases in or you zoom (painted sharp at kw.zoom), what's under it following. Written only when
+// it moved.
+function layNear() {
+  if (!(potLaid.sx === potLaid.sx)) return;
+  const s = firePx(potLaid.z) / firePx(kw.zoom), x = Math.round(potLaid.sx * 2) / 2, y = Math.round(potLaid.sy * 2) / 2, k = Math.round(s * 1000) / 1000;
+  const key = x + ' ' + y + ' ' + k;
+  if (key === potLaid.key) return;
+  potLaid.key = key;
+  const at = $('#cook .cook-pot');
+  at.style.transform = `translate(${x}px, ${y}px)`;
+  at.style.setProperty('--s', k);
+  at.style.setProperty('--rx', (kw.rx * k).toFixed(1) + 'px');
+  kw.cv.style.transformOrigin = `${kw.cx}px ${kw.fireY}px`;
+  kw.cv.style.transform = `translate(${-kw.cx}px, ${-kw.fireY}px) scale(${k})`;
+}
 // A ring going out on the water from x, y (size: its half-width at the start, ms its life) at the time at.
 function potRing(x, y, size, ms, a, at) {
   const i = kw.rn = (kw.rn + 1) % RINGS;
@@ -8773,11 +8814,13 @@ function drawCookView(now) {
   const g = kw.g, d = kw.d, w = kw.w, h = kw.h, t = now / 1000, was = kw.last, fdt = Math.max(0, now - was), TAU = Math.PI * 2;
   kw.last = now;
   const bed = fireArt(j.F, now);
-  if (bed !== kw.bed) paintCookBed(bed);
+  if (bed !== kw.bed && !FIRE_COOK) paintCookBed(bed);
   const cx = kw.cx, rx = kw.rx, wy = kw.wy, wrx = kw.wrx, wry = kw.wry, fireY = kw.fireY, v = cookVessel, A = kw.at[v], inPot = v === 'pot';
   const busy = j.stage === 'cooking', shown = fireShown(j.F, now), heat = Math.min(1.2, shown.heat), flame = Math.min(1.2, shown.flame), cooked = busy ? cookFrac(j.F) : 0;
   g.setTransform(d, 0, 0, d, 0, 0); g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1;
   g.clearRect(0, 0, w, h);
+  if (FIRE_COOK) layNear();
+  else {                                                  // (in the window: its own bed, the glow and the flames)
   g.drawImage(kw.bg.img, 0, 0, w, h);
   const bloom = bloomArt().img;
   g.globalCompositeOperation = 'lighter';                 // the flames' glow on the ground and the stones
@@ -8788,6 +8831,7 @@ function drawCookView(now) {
     drawFlames(cx - rx * 0.66, fireY, rx * 1.5, flame, now, 7, g, d, 0, 0);
     drawFlames(cx + rx * 0.68, fireY, rx * 1.4, flame, now, 31, g, d, 0, 0);
     drawFlames(cx, fireY, rx * 1.7, flame, now, 53, g, d, 0, 0);
+  }
   }
   if (cookMode() !== 'cook') { drawMakeView(g, now, fdt, heat); drawMadeBurst(g, now); return; }
   const art = inPot ? kw : vesselArt(v);
@@ -8935,7 +8979,7 @@ function drawCookView(now) {
   const gl = A.glow;
   g.globalCompositeOperation = 'lighter';                 // the flames' light flickering on it
   g.globalAlpha = gl[4] * heat * (0.2 + 0.06 * Math.sin(t * 9.1) + 0.04 * Math.sin(t * 15.7));
-  g.drawImage(bloom, gl[0], gl[1], gl[2], gl[3]);
+  g.drawImage(bloomArt().img, gl[0], gl[1], gl[2], gl[3]);
   g.globalCompositeOperation = 'source-over';
   if (kw.hover) {                                         // something held over it: its rim glows to take it
     const r = A.ring;
@@ -9170,6 +9214,15 @@ function drawReveal(g, now, sheet) {
 // it's over it: kw.hover); let go anywhere else it flies back. A tap on a thing in the pot takes it out.
 function setupCookBag() {
   const bag = $('#cook-bag');
+  if (FIRE_COOK) {                                        // (at the fire itself: what it'll make, a stick and Cook under the stones)
+    const under = document.createElement('div'), row = document.createElement('div');
+    under.className = 'cook-under'; row.className = 'cook-act';
+    row.append($('#cook-stick'), $('#cook-go'));
+    under.append($('#cook-what'), row);
+    $('#cook .cook-pot').append(under);
+    $('#cook .cook-side').prepend($('#cook-vessels'));
+    $('#cook').classList.add('at-fire');
+  }
   kw.cv = $('#cook-canvas'); kw.g = kw.cv.getContext('2d');
   bag.innerHTML = Array.from({ length: S.SLOTS }, (_, k) => `<button class="cook-slot empty" data-k="${k}" aria-label="Empty"><i></i><b></b><span class="nm"></span></button>`).join('');
   kw.slots = [...bag.children];
@@ -9264,7 +9317,7 @@ function setupCookBag() {
   bag.addEventListener('pointercancel', letGo);
   bag.addEventListener('click', e => { const el = e.target.closest('.cook-slot'); if (el && e.detail === 0 && world.forager.bag[+el.dataset.k]) potAdd(+el.dataset.k); });   // (a key on a tile)
   const thingAt = (x, y, touch) => {
-    const r = kw.cv.getBoundingClientRect(), lx = x - r.left, ly = y - r.top;
+    const r = kw.cv.getBoundingClientRect(), k = r.width / kw.w || 1, lx = (x - r.left) / k, ly = (y - r.top) / k;
     for (let i = kw.n - 1; i >= 0; i--) if (Math.hypot(lx - kw.hx[i], ly - kw.hy[i]) < kw.hr[i] * (touch ? 1.3 : 1.05)) return i;
     return -1;
   };
@@ -9361,7 +9414,7 @@ function cookCam(dt) {
   const was = 1 + (c.f - 1) * c.k;
   c.k += (goal - c.k) * (1 - Math.exp(-dt / COOK_EASE));
   if (Math.abs(goal - c.k) < 0.003) c.k = goal;
-  cam.zoom = clamp(cam.zoom / was * (1 + (c.f - 1) * c.k), fitZoom, COOK_MOST);
+  cam.zoom = clamp(cam.zoom / was * (1 + (c.f - 1) * c.k), fitZoom, FIRE_COOK ? nearMost() : COOK_MOST);
   return c.k;
 }
 
@@ -9380,6 +9433,12 @@ function drawPotAt(F, sx, sy, now) {
   if (cooking() && ui.fire.F === F) drawPot(now, F, sx, sy); else drawAwayPot(now, F, sx, sy);
 }
 function drawPot(now, F, sx, sy) {
+  if (FIRE_COOK) {                                        // (cooking at the fire itself: the pot is the window's canvas, laid here)
+    potLaid.sx = sx; potLaid.sy = sy; potLaid.z = cam.zoom;
+    if (cookMode() === 'cook') idleVessel.set(F, cookVessel);
+    cookUi.potR = 0; potHit.n = 0;
+    return;
+  }
   if (cookMode() !== 'cook') { cookUi.potR = 0; potHit.n = 0; return; }   // (a vessel being made: in the window only)
   idleVessel.set(F, cookVessel);
   const j = ui.fire, z = cam.zoom, px = firePx(z);
@@ -10452,7 +10511,7 @@ function openYou() {
 // was squeezed to a strip over the sheet, or 200 px beside the window on its side), so there the book opens over the window
 // as it does anywhere, and a dish put in the pot shuts it. Measured as either opens or shuts and as the window is (measureCook).
 function pairBook() {
-  const el = $('#book'), card = $('#cook'), on = bookUi.open && cooking() && !narrow(), was = el.classList.contains('paired');
+  const el = $('#book'), card = $('#cook'), on = bookUi.open && cooking() && !narrow() && !FIRE_COOK, was = el.classList.contains('paired');
   el.classList.toggle('paired', on);
   $('#book-scrim').classList.toggle('hidden', !bookUi.open || on);
   el.style.left = el.style.right = '';
