@@ -131,6 +131,21 @@
   </div>
 
   <div class="card">
+    <h2>A meal</h2>
+    <div class="row" id="meals">
+      <button data-meal="spoon">🥄 A hot stew</button>
+      <button data-meal="hand">🍞 Bread</button>
+      <button data-meal="skewer">🍢 A kebab</button>
+      <button data-meal="sip">🥣 A broth</button>
+      <button data-meal="fruit">🍎 An apple</button>
+      <button data-meal="berries">🫐 Berries</button>
+      <button data-meal="greens">🥬 Raw greens</button>
+    </div>
+    <p class="note">The whole meal as the game plays it, a mouthful at a time in time with the forager's eating (game.js EAT_WAYS),
+      and the last one filling the tummy. Each bite is a little different: no two chews the same.</p>
+  </div>
+
+  <div class="card">
     <h2>How it's put together</h2>
     <ul class="ideas">
       <li><b>One scale, three voices.</b> D major pentatonic only, so any two sounds that overlap still sound nice together.</li>
@@ -209,8 +224,18 @@
     ['dish', '🍲', 'A dish done', 'steam off it and a warm little run up into a chord'],
     ['pages', '📖', 'Recipe book opens', 'the cover lifting and a few pages riffling over'],
     ['hearth', '🍲', 'Cooking window opens', 'the pot set down on the stones, the fire catching under it'],
-    ['munch', '🍎', 'Eating something crisp', 'a crunchy bite, a few chews, a gulp and a pleased mm'],
-    ['munchsoft', '🍲', 'Eating something soft', 'a stew: soft wet chews, a gulp and a pleased mm'],
+    ['munch', '🍎', 'Crunch', 'an apple: a crack, gritty bursts, the crunch softening each chew, a gulp and an mm'],
+    ['munchtear', '🍞', 'Tear and chew', 'bread or meat bitten: a ragged tear in the teeth, soft chews'],
+    ['munchsoft', '🥄', 'Off the spoon', 'a stew: a little slurp, soft wet chews, a gulp'],
+    ['munchsip', '🥣', 'Slurp', 'a broth sipped from the bowl: air drawn in rising, bubbles, a gulp'],
+    ['munchskewer', '🍢', 'Off the stick', 'a kebab: a tear, a little char crunching'],
+    ['munchberry', '🫐', 'Small soft bites', 'berries: a juicy squish'],
+    ['munchhot', '😗', 'Too hot: a blow first', 'two soft puffs on the spoonful, then the bite'],
+    ['munchlove', '😋', 'Mm, love it', 'the last mouthful of a dish: three notes up, held'],
+    ['munchmeh', '😐', 'Hm, it\'ll do', 'raw greens: a short flat hm, dropping'],
+    ['munchfull', '😌', 'Full', 'the tummy filled: a breath in and a long contented one out'],
+    ['munchroof', '🛖', 'Under the lean-to', 'the same stew under its roof: close, a little dull'],
+    ['munchfriend', '🧑‍🤝‍🧑', 'A friend eating', 'over there: softer, further'],
     ['mess', '💨', 'A forager\'s mess', 'a puff of smoke, a rattle and two low notes: a shrug'],
     ['stone', '🗿', 'The old stone answers', 'a knock of rock and a pompous hm-hm-hmm'],
     ['stonetalk', '🗿', 'The old stone babbles', 'a sentence in gravelly animalese, a blip a letter'],
@@ -288,6 +313,35 @@
     $('#log').textContent = 'Out of breath, then breath back.';
   }
 
+  // A meal as game.js eats it: its steps (ms; b a mouthful going in, c a chew), as EAT_WAYS has them, each mouthful one munch.
+  const chews = (n, ms = 165) => Array.from({ length: n }, () => [ms, 'c']);
+  const WAYS = {
+    spoon: [[280], [220, 'b'], ...chews(2), [260], [220, 'b'], ...chews(3)],
+    hand: [[300, 'b'], ...chews(4), [260, 'b'], ...chews(2)],
+    skewer: [[340, 'b'], ...chews(4), [300, 'b'], ...chews(2)],
+    sip: [[850, 'b'], [420], [700, 'b']],
+    fruit: [[240, 'b'], ...chews(2, 150), [240, 'b'], ...chews(2, 150), [220, 'b'], ...chews(2, 150)],
+  };
+  const MEALS = { spoon: ['spoon', 0, 'love', true], hand: ['hand', 0, 'love'], skewer: ['skewer', 0.6, 'love'], sip: ['sip', 0, 'love', true],
+    fruit: ['fruit', 0.8, 'like'], berries: ['fruit', 0, 'like'], greens: ['hand', 0, 'meh'] };
+  function meal(key) {
+    const [group, crisp, mood, hot] = MEALS[key], steps = hot ? [[750, 'blow'], ...WAYS[group]] : WAYS[group];
+    if (!$('#start').classList.contains('on')) $('#start').click();
+    const bites = steps.filter(s => s[1] === 'b').length;
+    let at = 0, bitten = 0;
+    steps.forEach((s, j) => {
+      if (s[1] === 'b') {
+        let n = 0, gap = 0.165;
+        while (steps[j + 1 + n] && steps[j + 1 + n][1] === 'c') { gap = steps[j + 1 + n][0] / 1000; n++; }
+        const last = ++bitten === bites, lead = hot && bitten === 1 ? at / 1000 : 0;   // (hot: its sound starts with the blowing)
+        setTimeout(() => S.play('munch', { group, crisp, n, first: s[0] / 1000, gap, last, mood, full: last, hot: lead, near: 1, pan: 0 }), at - lead * 1000);
+      }
+      at += s[0];
+    });
+    $('#log').textContent = `Ate ${key}.`;
+  }
+  $('#meals').onclick = e => { const b = e.target.closest('[data-meal]'); if (b) meal(b.dataset.meal); };
+
   document.addEventListener('click', e => {
     const b = e.target.closest('[data-play],[data-season],[data-species],[data-sky]');
     if (!b) return;
@@ -305,8 +359,18 @@
       plophoney: ['plop', { what: 'sweet', w: 1.1, label: 'honey into the pot' }],
       plopout: ['plop', { what: 'out', label: 'one out of the pot' }],
       simmer: ['simmer', { sec: 3, v: 1 }],
-      munch: ['munch', { crisp: 0.8 }],
-      munchsoft: ['munch', { crisp: 0, label: 'eating something soft' }],
+      munch: ['munch', { group: 'fruit', crisp: 0.8, n: 2, gap: 0.15, label: 'a crunch' }],
+      munchtear: ['munch', { group: 'hand', crisp: 0, label: 'a tear and chews' }],
+      munchsoft: ['munch', { group: 'spoon', crisp: 0, n: 3, label: 'off the spoon' }],
+      munchsip: ['munch', { group: 'sip', crisp: 0, n: 0, first: 0.6, label: 'a slurp' }],
+      munchskewer: ['munch', { group: 'skewer', crisp: 0.6, label: 'off the stick' }],
+      munchberry: ['munch', { group: 'fruit', crisp: 0, n: 2, gap: 0.15, label: 'small soft bites' }],
+      munchhot: ['munch', { group: 'spoon', crisp: 0, n: 2, hot: 0.75, last: false, label: 'blown on first' }],
+      munchlove: ['munch', { group: 'spoon', crisp: 0, n: 2, mood: 'love', label: 'mm, love it' }],
+      munchmeh: ['munch', { group: 'hand', crisp: 0, n: 3, mood: 'meh', label: 'hm, it\'ll do' }],
+      munchfull: ['munch', { group: 'spoon', crisp: 0, n: 2, mood: 'love', full: true, label: 'full' }],
+      munchroof: ['munch', { group: 'spoon', crisp: 0, n: 3, under: true, label: 'under the lean-to' }],
+      munchfriend: ['munch', { group: 'hand', crisp: 0, n: 3, friend: true, near: 0.5, pan: 0.6, label: 'a friend eating' }],
       stonetalk: ['stone', { mood: 'pleased', text: 'Hm. A forager. You may approach, little one. Have you brought me something to taste?', label: 'the stone, babbling' }],
       stonejoy: ['stone', { mood: 'delighted', text: 'Oh! Oh my. Now THAT is a mushroom worthy of the moss!', label: 'the stone, delighted' }],
       stonegrump: ['stone', { mood: 'disgusted', text: 'Raw pebbles. Again. I have stood here a thousand years for this.', label: 'the stone, disgusted' }],

@@ -375,7 +375,7 @@ const RULES = {
   pages:   { gap: 0.3,  always: true, lift: 2 },   // the recipe book opening,
   hearth:  { gap: 0.5,  always: true, lift: 2 },   // and the cooking window (the pot settling on the fire)
   stone:   { gap: 0.3,  always: true, lift: 1.6 }, // the old stone answering
-  munch:   { gap: 0.6,  always: true, lift: 1.6 }, // the forager eating
+  munch:   { gap: 0.25, always: true, lift: 1.6 }, // the forager eating (a mouthful each: small bites come 0.5 s apart)
 };
 
 const STEP_SOFT = 0.6;          // the footsteps' level against the meadow's sounds: soft, they come a few times a second
@@ -981,23 +981,33 @@ const SOUNDS = {
     marimba(o, note(2, -1), t + 0.3, 0.4);
     marimba(o, note(0, -1), t + 0.55, 0.35);
   },
-  // Eating (game.js mealTick, a mouthful at a time in time with its munching: EAT_WAYS): a bite as the mouth shuts on it
-  // (first s in), then n chews gap s apart, each a little softer, and a swallow, with a tiny pleased "mm" after the last
-  // mouthful (last). crisp 0 to 1: a stew is soft and wet, an apple or a nut crunches (a gritty burst over the soft one).
-  // group: how it's eaten ('spoon', 'hand', 'skewer', 'sip', 'fruit'), and bite: which mouthful, from 0.
-  munch(t, o0, { crisp = 0.5, first = 0.3, gap = 0.17, n = 4, last = true }) {
-    const o = ac.createBiquadFilter(); o.type = 'lowpass'; o.frequency.value = 3200; o.Q.value = 0.5; o.connect(o0);
-    for (let i = 0; i <= n; i++) {
-      const at = t + first + (i ? i * gap + rand(-0.015, 0.015) : 0), v = (i ? 0.75 - 0.08 * i : 1) * rand(0.85, 1.1);
-      noise(o, at, 0.07, { from: rand(900, 1300), to: 300, q: 0.7, peak: 0.07 * v * (1.2 - crisp), attack: 0.008, type: 'lowpass' });   // the soft squish
-      if (crisp > 0.2) grains(o, at, 0.05 + 0.03 * crisp, 0.16 * v * crisp);                                                          // a crunch
-      partial(o, rand(110, 140), at + 0.01, 0.05 * v, 0.004, 0.06);                                                                   // the jaw shutting
+  // Eating (game.js mealTick, a mouthful at a time in time with its munching: EAT_WAYS). Each mouthful: a bite as the mouth
+  // shuts on it (first s in), then n chews gap s apart, each a little softer, and a gulp; after the last mouthful (last) a
+  // pleased "mm" by its mood ('love', 'like', 'meh'), and a satisfied sigh if that filled the tummy (full). How it's eaten
+  // (group: 'spoon', 'hand', 'skewer', 'sip', 'fruit'; left out, by crisp alone) and crisp 0 to 1 pick the mouthfeel
+  // (MOUTHFEEL): an apple crunches, bread and meat tear, soup slurps off the spoon, a drink slurps and bubbles. hot: a hot
+  // dish blown on first, that many s before the bite (true: 0.7). under: under the lean-to's roof, close and a little
+  // dull; friend: a friend eating (game.js heardMunch), softer. seed: the same mouthful every time (the lab's tests).
+  munch(t, o0, { group, crisp = 0.5, first = 0.3, gap = 0.17, n = 4, last = true, hot = 0, mood = 'like', full = false, under = false, friend = false, seed }) {
+    const r = seeded(seed), feel = MOUTHFEEL[group] || (crisp > 0.4 ? MOUTHFEEL.hand : MOUTHFEEL.spoon);
+    const o = ac.createBiquadFilter(); o.type = 'lowpass'; o.frequency.value = under ? 2200 : friend ? 2600 : 3600; o.Q.value = 0.5;
+    const g = ac.createGain(); g.gain.value = (friend ? 0.55 : 1) * (hushed() ? 0.6 : 1);   // (under the stone's voice or the music: softer)
+    o.connect(g).connect(o0);
+    if (under) {                                                                                      // (the roof: one close echo off it)
+      const d = ac.createDelay(0.05), dg = ac.createGain(); d.delayTime.value = 0.013; dg.gain.value = 0.28;
+      g.connect(d).connect(dg).connect(o0);
     }
-    const end = t + first + n * gap + 0.16;
-    bloop(o, end, rand(160, 190), 0.06, 0.08);                                                                                        // a gulp
+    if (hot) { cool(o, t, r); t += hot === true ? 0.7 : hot; }
+    for (let i = 0; i <= n; i++) {
+      const at = t + first + (i ? i * gap + r(-0.015, 0.015) : 0), v = (i ? 0.75 - 0.08 * i : 1) * r(0.85, 1.1);
+      (i ? feel.chew : feel.bite)(o, at, v, r, crisp, i);
+      partial(o, r(105, 145), at + 0.01, 0.05 * v, 0.004, 0.06);                                        // the jaw shutting
+    }
+    const end = t + first + n * gap + (n ? 0.16 : 0.12);
+    bloop(o, end, r(150, 195), 0.06, feel.gulp * r(0.8, 1.1));                                         // a gulp
     if (!last) return;
-    partial(o, note(2, 0) / 2, end + 0.14, 0.035, 0.05, 0.26, 'triangle');                                                            // mm
-    partial(o, note(4, 0) / 2, end + 0.26, 0.03, 0.04, 0.3, 'triangle');
+    mm(o, end + 0.14, mood, r);
+    if (full) sigh(o, end + (mood === 'love' ? 1.05 : 0.7), r);
   },
   // The old stone answering (game.js stoneAsk): a soft knock of rock, then it babbles what it says the way Animal
   // Crossing's villagers do, one quick blip a letter (babble), low and gravelly; the mood sets its tune (STONE_TUNES).
@@ -1009,6 +1019,79 @@ const SOUNDS = {
     hum.forEach((d, i) => marimba(o, note(d, -1) * rand(0.995, 1.005), t + 0.07 + i * 0.15, i === hum.length - 1 ? 0.75 : 0.5));
   },
 };
+// The mouthfeels (SOUNDS.munch), each a bite, a chew (i: which, from 1: the food breaking down, a crunch softens) and how
+// loud the gulp. c: how crisp.
+const CRISP = 0.3;                                 // (crisper than this, it crunches)
+const MOUTHFEEL = {
+  spoon: { gulp: 0.08,                             // off the spoon: a little slurp, wet soft chews
+    bite(o, at, v, r, c) { slurp(o, at, v * 0.6, r, 0.22, 1); chewSoft(o, at, v, r, 1); if (c > CRISP) crunch(o, at, v * 0.6, r, c); },
+    chew(o, at, v, r, c, i) { chewSoft(o, at, v, r, 1); if (c > CRISP) crunch(o, at, v * 0.5, r, c * (0.8 - 0.15 * i)); } },
+  sip: { gulp: 0.1,                                // the bowl to its lips: a long slurp, bubbling
+    bite(o, at, v, r) { slurp(o, at, v, r, 0.45, 3); },
+    chew(o, at, v, r) { chewSoft(o, at, v * 0.6, r, 0.6); } },
+  hand: { gulp: 0.06,                              // bitten: a crisp thing crunches, bread and meat tear
+    bite(o, at, v, r, c) { if (c > CRISP) crunch(o, at, v, r, c); else tear(o, at, v, r); },
+    chew(o, at, v, r, c, i) { chewSoft(o, at, v, r, 0.3); if (c > CRISP) crunch(o, at, v * 0.7, r, c * (0.8 - 0.15 * i)); } },
+  skewer: { gulp: 0.06,                            // pulled off the stick: a tear, and a char that crunches a little
+    bite(o, at, v, r, c) { tear(o, at, v * 1.1, r); if (c > CRISP) crunch(o, at + 0.03, v * 0.6, r, c); },
+    chew(o, at, v, r, c, i) { chewSoft(o, at, v, r, 0.4); if (c > CRISP) crunch(o, at, v * 0.5, r, c * (0.7 - 0.15 * i)); } },
+  fruit: { gulp: 0.05,                             // small bites: an apple or a nut crunches, a berry squishes, juicy
+    bite(o, at, v, r, c) { if (c > CRISP) { crunch(o, at, v, r, c); chewSoft(o, at + 0.02, v * 0.5, r, 0.8); } else chewSoft(o, at, v * 1.1, r, 1); },
+    chew(o, at, v, r, c, i) { if (c > CRISP) crunch(o, at, v * 0.7, r, c * (0.85 - 0.2 * i)); chewSoft(o, at, v * 0.8, r, 0.7); } },
+};
+// A crunch: a high click as it cracks, a quick run of gritty bursts as it breaks, under them a dull thud of the bite.
+function crunch(o, at, v, r, c) {
+  noise(o, at, 0.02, { from: 5200, to: 3600, q: 0.8, peak: 0.08 * v * c, type: 'highpass', attack: 0.001 });
+  const k = 2 + Math.round(2 * c);
+  for (let j = 0; j < k; j++) grains(o, at + j * r(0.012, 0.028), r(0.025, 0.045), 0.15 * v * c * (1 - 0.18 * j));
+  noise(o, at, 0.06, { from: r(900, 1300), to: 400, q: 0.7, peak: 0.035 * v, type: 'lowpass', attack: 0.004 });
+}
+// A soft chew: a low squish, and (wet 0 to 1) a small wet click of the tongue.
+function chewSoft(o, at, v, r, wet) {
+  noise(o, at, 0.08, { from: r(900, 1300), to: 300, q: 0.7, peak: 0.075 * v, type: 'lowpass', attack: 0.01 });
+  if (wet > 0) noise(o, at + r(0.01, 0.03), 0.035, { from: r(1700, 2300), to: r(1300, 1700), q: 4, peak: 0.022 * v * wet, attack: 0.004 });
+}
+// A slurp, ending at (the mouth shuts on it): air drawn in over the lips, a narrow band sliding up like a vowel going
+// from "oo" to "ee", over len s, and k bubbles in it.
+function slurp(o, at, v, r, len, k) {
+  const t0 = at - len * 0.75;
+  noise(o, t0, len, { from: r(380, 480), to: r(1700, 2300), q: 7, peak: 0.07 * v, attack: len * 0.65 });
+  noise(o, t0, len, { from: r(900, 1100), to: r(2800, 3400), q: 5, peak: 0.025 * v, attack: len * 0.6 });
+  for (let j = 0; j < k; j++) bloop(o, t0 + len * (0.25 + 0.5 * j / k) + r(0, 0.03), r(500, 900), 0.03, 0.018 * v);
+}
+// A tear: a soft thing pulled apart in the teeth, a quick ragged run of tiny bursts, each a little higher, over a squish.
+function tear(o, at, v, r) {
+  const k = 5 + Math.floor(r(0, 3));
+  for (let j = 0, x = at; j < k; j++, x += r(0.011, 0.02))
+    noise(o, x, 0.018, { from: r(850, 1000) + j * 140, to: r(1350, 1500) + j * 160, q: 2.2, peak: 0.05 * v * (1 - 0.1 * j), attack: 0.002 });
+  noise(o, at, 0.1, { from: 1100, to: 350, q: 0.7, peak: 0.04 * v, type: 'lowpass', attack: 0.01 });
+}
+// Blowing on a hot spoonful: two soft puffs, "fff, fffff".
+function cool(o, t, r) {
+  breathe(o, t + 0.05, 0.22, r(1500, 1700), 1100, 0.035, 0.3);
+  breathe(o, t + 0.34, 0.36, r(1400, 1600), 950, 0.045, 0.35);
+}
+// The "mm" after the last mouthful: a hum through closed lips, by how it liked it. love: three notes up and held; like:
+// two up; meh: a short "hm", dropping.
+const MM = { love: [[2, 0, 0.035, 0.24], [4, 0.12, 0.033, 0.28], [5, 0.26, 0.03, 0.5]], like: [[2, 0, 0.035, 0.26], [4, 0.12, 0.03, 0.3]],
+  meh: [[0, 0, 0.028, 0.16], [-1, 0.13, 0.02, 0.2]] };
+function mm(o, at, mood, r) {
+  for (const [d, dt, v, len] of MM[mood] || MM.like) partial(o, note(d, 0) / 2 * r(0.995, 1.005), at + dt, v, 0.05, len, 'triangle');
+}
+// Full: a breath in, a long contented one out, sliding down, and a low warm hum under it.
+function sigh(o, at, r) {
+  breathe(o, at, 0.32, 700, 1300, 0.016, 0.7);
+  breathe(o, at + 0.36, 0.95, r(1150, 1250), 450, 0.04, 0.15);
+  partial(o, note(0, -1) * r(0.995, 1.005), at + 0.4, 0.022, 0.1, 0.6, 'triangle');
+}
+// The stone talking or a piece playing: the small close sounds (the eating) keep under them.
+const hushed = () => !!music.piece || ac.currentTime - (last.stone ?? -1e9) < BABBLE_MAX;
+// A random number source, from seed if given (the same every time), else Math.random's: r(a, b) a number between.
+function seeded(seed) {
+  if (seed == null) return rand;
+  let s = seed >>> 0 || 1;
+  return (a, b) => { s = s + 0x6D2B79F5 >>> 0; let x = Math.imul(s ^ s >>> 15, s | 1); x ^= x + Math.imul(x ^ x >>> 7, x | 61); return a + ((x ^ x >>> 14) >>> 0) / 4294967296 * (b - a); };
+}
 const STONE_HUMS = { awake: [2, 4, 3], pleased: [2, 3, 5], delighted: [3, 5, 7, 9], grumpy: [3, 2, 1],
   disgusted: [3, 1, -1], shocked: [5, 8] };
 // The stone's babble by mood: f its voice (Hz), slide how far it drifts over a sentence (semitones), wobble how much each

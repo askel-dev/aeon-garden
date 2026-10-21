@@ -9481,14 +9481,29 @@ function mealTick(f, now, still, x, y) {
 // A step of the meal begun: a mouthful's munch and crumbs, a chew's crumb, and the last (how it liked it) swallowed.
 function mealStep(m, j, f, now, x, y) {
   const st = m.steps[j], crisp = m.how.crisp;
+  if (st === EAT_BLOW) {                                    // (the first mouthful's sound starts with the blowing on it)
+    let k = j + 1, lead = st[1];
+    while (m.steps[k] && m.steps[k][2] !== EAT_BITE) lead += m.steps[k++][1];
+    if (m.steps[k]) munch(m, k, f, lead / 1000);
+  }
   if (st[2] === EAT_BITE) {
-    let n = 0, gap = EAT_CHEW_MS / 1000;
-    while (m.steps[j + 1 + n] && m.steps[j + 1 + n][2] === EAT_CHEW) { gap = m.steps[j + 1 + n][1] / 1000; n++; }
-    chime('munch', { group: m.how.eats, bite: m.bitten, n, crisp, first: st[1] / 1000, gap, last: m.bitten === m.way.bites - 1 });
+    if (m.bitten || m.steps[0] !== EAT_BLOW) munch(m, j, f, 0);
     if (crisp) for (let k = 0; k < 2; k++) dropFly(x, y, 0.38 + fg.lift, (Math.random() - 0.5) * 0.0008, 0.5, now, 1);
     m.bitten++;
   } else if (st[2] === EAT_CHEW && crisp && Math.random() < crisp) dropFly(x, y, 0.36 + fg.lift, (Math.random() - 0.5) * 0.0006, 0.3, now, 1);
   if (j === m.steps.length - 1) swallow(m, f);
+}
+// A mouthful's munch (sound.js munch), the bite at step j: its chews after it, how it liked it on the last, a sigh if that
+// fills it, close under the lean-to's roof; hot s of blowing first. Friends near hear it too (heardMunch).
+function munch(m, j, f, hot) {
+  const st = m.steps[j], last = m.bitten === m.way.bites - 1;
+  let n = 0, gap = EAT_CHEW_MS / 1000;
+  while (m.steps[j + 1 + n] && m.steps[j + 1 + n][2] === EAT_CHEW) { gap = m.steps[j + 1 + n][1] / 1000; n++; }
+  const o = { group: m.how.eats, bite: m.bitten, n, crisp: m.how.crisp, first: st[1] / 1000, gap, last, hot,
+    mood: !m.how.liked ? 'meh' : m.food.dish ? 'love' : 'like', full: last && f.tummy + m.food.fill / S.TUMMY > 0.95,
+    under: !!(world.camp && world.camp.lean) && S.underLean(world, f.x, f.y) };
+  chime('munch', o);
+  if (Net && Net.on) Net.send({ t: 'munch', x: f.x, y: f.y, g: o.group, c: o.crisp, n, a: o.first, p: gap, l: last, h: hot, m: o.mood });
 }
 function swallow(m, f) {
   const k = m.hand ? HAND : f.bag.indexOf(m.id), food = m.food;
@@ -17771,6 +17786,7 @@ function heardNet(m) {
   else if (m.t === 'swing') heardSwingStart(m, now);
   else if (m.t === 'toss') heardToss(m, now);
   else if (m.t === 'jump') peerJump(m, now);
+  else if (m.t === 'munch') heardMunch(m);
   else if (m.t === 'spill') { if (m.hd >= 0 && m.hd < Dishes.NAMES.length) spillDish(Dishes.NAMES[m.hd | 0], +m.x || 0, +m.y || 0, +m.h || 0, now); }   // (a friend's dish dropped)
 }
 
@@ -19077,6 +19093,14 @@ swingBtn.addEventListener('pointerdown', e => {
 swingBtn.addEventListener('pointerup', () => { swingKey.touch = performance.now(); swingRelease(); });
 swingBtn.addEventListener('pointercancel', () => { swingKey.touch = performance.now(); swingCancel(); });
 swingBtn.addEventListener('contextmenu', e => e.preventDefault());   // (a held finger isn't a right-click)
+// A friend eating (game.js munch): heard where it stands, softer, if it's on screen.
+const MUNCH_GROUPS = new Set(Recipes.EAT_WAYS), MUNCH_MOODS = new Set(['love', 'like', 'meh']);
+function heardMunch(m) {
+  if (!world || !Number.isFinite(m.x) || !Number.isFinite(m.y)) return;
+  const num = (v, a, b, d) => Number.isFinite(v) ? clamp(v, a, b) : d;
+  hear('munch', m.x, m.y, { group: MUNCH_GROUPS.has(m.g) ? m.g : undefined, crisp: num(m.c, 0, 1, 0.5), n: num(m.n, 0, 8, 2) | 0, first: num(m.a, 0.2, 1, 0.3),
+    gap: num(m.p, 0.05, 0.5, 0.17), last: !!m.l, hot: num(m.h, 0, 1.5, 0), mood: MUNCH_MOODS.has(m.m) ? m.m : 'like', friend: true });
+}
 function heardSwat(m, now) {
   if (!world || !Number.isFinite(m.x) || !Number.isFinite(m.y)) return;
   const p = peers.get(m.from);
