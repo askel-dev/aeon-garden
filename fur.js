@@ -724,14 +724,16 @@ function kneelPose(pose) {
   };
 }
 // Sitting on the camp's seat log (game.js sitFrame), facing you (poses 23 and 24 of view 3): its hips down by the log's top,
-// the knees out toward you under the cloak, the boots dangling, its mittens in its lap; by a lit fire, eyes shut and smiling.
-// game.js lifts the painting onto the log (seatLift: its hips SIT_HIPS over its feet's line).
+// the cloak spread over the log and draped over its knees (P.sit), the knees peeping out toward you under it, the shins
+// hanging down in front of the log, the boots dangling with their toes to you; the elbows bent and its mittens together in
+// its lap; by a lit fire, eyes shut and smiling. game.js lifts the painting onto the log (seatLift: its hips SIT_HIPS over
+// its feet's line). (The arms are short: a mitten held further than about 0.25 from its shoulder stretches them.)
 function sitPose(warm) {
   const P = foragerPose(1, 0);
-  P.bob = 0.14; P.hemUp = 0.09; P.lap = 0.05; P.tip = 0.03;
-  P.knees = [[-0.17, 0.7], [0.17, 0.7]];
-  P.feet = [[-0.16, 0.87], [0.16, 0.87]];
-  P.hands = [[0.0, 0.38], [0.0, 0.38]];   // (resting on its thighs)
+  P.sit = true; P.bob = 0.14; P.tip = 0.04;
+  P.knees = [[-0.09, 0.625], [0.09, 0.63]];
+  P.feet = [[-0.1, 0.785], [0.105, 0.77]];   // (dangling, one a little swung up)
+  P.hands = [[0.1, 0.235, -0.015, 0.13], [-0.1, 0.235, 0.015, 0.13]];   // (mitten, elbow: each from its shoulder)
   if (warm) { P.warm = true; P.blink = true; }
   return P;
 }
@@ -947,9 +949,9 @@ function foragerParts(P) {
     const [fx, fy] = P.feet[i], sx = hx + (side ? (i ? 0.03 : -0.02) : (i ? 0.075 : -0.075)), sy = hy;
     const knee = P.knees ? P.knees[i].slice() : jointAt(sx, sy, fx, fy - 0.03, 0.17, 0.17, side ? -1 : 1);
     if (!side && !P.knees) { knee[0] += ((sx + fx) / 2 - knee[0]) * 0.5; knee[1] += ((sy + fy - 0.03) / 2 - knee[1]) * 0.2; }   // (a knee bent toward you or away is foreshortened, not out to the side)
-    const down = P.kneel && i === 0, toe = down ? 1 : side ? -1 : P.fwd[0] < 0 ? -0.8 : 0.8;   // (kneeling, the near boot lies behind, toe down)
+    const down = P.kneel && i === 0, toe = down ? 1 : side ? -1 : P.sit ? (i ? 0.3 : -0.3) : P.fwd[0] < 0 ? -0.8 : 0.8;   // (kneeling, the near boot lies behind, toe down; sitting, toes to you, splayed)
     const tt = P.toes ? P.toes[i] : 0;                                // (up on its toes: the boot tipped, narrower and taller, toe forward)
-    const bh = (down ? 0.032 : 0.04) + 0.012 * tt, by = fy - (down ? 0.02 : 0.025) + 0.004 * tt, bx = fx + toe * (0.025 + 0.012 * tt), bw = (side ? 0.07 : 0.055) - 0.02 * tt;
+    const bh = (down ? 0.032 : P.sit ? 0.048 : 0.04) + 0.012 * tt, by = fy - (down ? 0.02 : 0.025) + 0.004 * tt, bx = fx + toe * (0.025 + 0.012 * tt), bw = (side ? 0.07 : 0.055) - 0.02 * tt;
     add(g => {
       limbAt(g, sx, sy, 0.065, knee[0], knee[1], 0.05);
       limbAt(g, knee[0], knee[1], 0.05, fx, fy - 0.03, 0.045);
@@ -986,6 +988,13 @@ function foragerParts(P) {
   };
   // The cloak: a bell from the shoulders to the hem, the strap across it.
   const hem = 0.47 + P.bob - (P.hemUp || 0), sw = P.sway;
+  // Sitting (P.sit): spread out to either side over the log, its front over the knees in two humps, d lower.
+  const lapEdge = (g, d) => {
+    const [l, r] = P.knees, y = hy + 0.02 + d;
+    g.quadraticCurveTo(-0.22, y + 0.06, l[0], l[1] + 0.005 + d);
+    g.quadraticCurveTo(0, l[1] - 0.045 + d, r[0], r[1] + 0.005 + d);
+    g.quadraticCurveTo(0.22, y + 0.06, 0.29, y);
+  };
   const cloak = () => add(g => {
     g.moveTo(-0.11 + lx, -0.02 + P.bob + ly);
     if (P.kneel) {                                                   // draped over the far knee (its shin showing under it), lying on the ground behind
@@ -996,10 +1005,13 @@ function foragerParts(P) {
       g.quadraticCurveTo(0.06, 0.74, 0.17, 0.705);
       g.quadraticCurveTo(0.23, 0.6, 0.17, 0.42);
       g.quadraticCurveTo(0.14 + lx * 0.5, 0.2 + P.bob, 0.11 + lx, -0.02 + P.bob + ly);
+    } else if (P.sit) {
+      g.quadraticCurveTo(-0.25, 0.16 + P.bob, -0.29, hy + 0.02);
+      lapEdge(g, 0);
+      g.quadraticCurveTo(0.25, 0.16 + P.bob, 0.11, -0.02 + P.bob);
     } else {
-      const lap = P.lap || 0;                                         // (sitting: the hem spread over its lap, wider than it falls)
-      g.quadraticCurveTo(-0.2 + lx * 0.5, 0.18 + P.bob, -0.25 - lap + sw, hem);
-      g.quadraticCurveTo(0, hem + 0.06 - lap * 0.4, 0.25 + lap + sw, hem);
+      g.quadraticCurveTo(-0.2 + lx * 0.5, 0.18 + P.bob, -0.25 + sw, hem);
+      g.quadraticCurveTo(0, hem + 0.06, 0.25 + sw, hem);
       g.quadraticCurveTo(0.2 + lx * 0.5, 0.18 + P.bob, 0.11 + lx, -0.02 + P.bob + ly);
     }
     g.closePath();
@@ -1007,6 +1019,7 @@ function foragerParts(P) {
     ...snowOn(g => { const d = 0.03 * SNOWED; g.moveTo(-0.3 + lx, -0.1 + P.bob + ly); g.lineTo(0.3 + lx, -0.1 + P.bob + ly); g.lineTo(0.3 + lx, 0.05 + d + P.bob + ly);
       g.quadraticCurveTo(0.15 + lx, 0.02 + d + P.bob + ly, 0, 0.04 + d + P.bob + ly); g.quadraticCurveTo(-0.15 + lx, 0.02 + d + P.bob + ly, -0.3 + lx, 0.05 + d + P.bob + ly); g.closePath(); }, 0.03),   // on the shoulders
     [tone(CLOAK, 0.82), 0.7, 0.04, P.kneel ? g => { g.moveTo(-0.35, 0.64); g.quadraticCurveTo(0, 0.68, 0.35, 0.64); g.lineTo(0.35, 0.8); g.lineTo(-0.35, 0.8); g.closePath(); }
+      : P.sit ? g => { g.moveTo(-0.29, hy - 0.02); lapEdge(g, -0.04); g.lineTo(0.35, 0.9); g.lineTo(-0.35, 0.9); g.closePath(); }
       : g => { g.moveTo(-0.3 + sw, hem - 0.04); g.quadraticCurveTo(0, hem + 0.02, 0.3 + sw, hem - 0.04); g.lineTo(0.3, hem + 0.1); g.lineTo(-0.3, hem + 0.1); g.closePath(); }],   // a darker hem
     ...side ? [[STRAP, 1, 0.012, g => { g.moveTo(-0.04, -0.04 + P.bob); g.lineTo(0.03, -0.04 + P.bob); g.lineTo(0.13, 0.27 + P.bob); g.lineTo(0.08, 0.28 + P.bob); g.closePath(); }]]
       : [[STRAP, 1, 0.012, g => { const s = front ? 1 : -1; g.moveTo(-0.12 * s, -0.02 + P.bob); g.lineTo(-0.06 * s, -0.04 + P.bob); g.lineTo(0.2 * s, 0.25 + P.bob); g.lineTo(0.15 * s, 0.28 + P.bob); g.closePath(); }]],
@@ -1132,6 +1145,8 @@ function foragerParts(P) {
     if (front) {
       tip();
       cloak(); satchel();
+      if (P.sit) add(g => { for (const [x, y] of P.knees) ovalAt(g, x, y, 0.072, 0.06); },   // (sitting: its knees out toward you from under the cloak)
+        { casts: true, marks: [[TROUSER, 1, 0.012, g => g.rect(-1, -1, 2, 2)], [tone(TROUSER, 1.18), 0.7, 0.03, g => { for (const [x, y] of P.knees) ovalAt(g, x - 0.01, y - 0.025, 0.04, 0.02); }]] });
       const reach = 1.1 * P.stoop;
       if (P.hug) { hug(-shoulder, 0); hug(shoulder, 1); }
       else {

@@ -93,7 +93,9 @@ The seat log (`BUILDS.seat`, five sticks, `where: 'camp'`) goes down the basket'
 instead of striking, then a `firstTime`. Painted once a turn (`paintSeat`, `SEAT_ARTS`, `SEAT_TURNS`: 15° steps from -45° to 45°, then the old tilt for a seat kept from before it turned; `SEAT_TURN0` for the strip's tile): a bench: a log split lengthwise, flat side up (grain, two knots, a split at the far end), on two
 short stumps, in a three-quarter view (`SEAT_KX`, `SEAT_KY`) and soft-shaded with no outline, turned as it was placed, about two foragers long; drawn by `drawSeat`. It's solid. A click on it (`seatAt`) or E when it's the nearest thing to use (`eTarget`) walks
 the forager to just in front (`goSeat`, `S.SEAT_OUT`), and standing still there `SEAT_MS` (`sitFrame`, `fireSit.seat`) it sits
-on it: fur.js `sitPose` (`KNEEL.sit`, `KNEEL.sitWarm` with a fire lit at camp: eyes shut, smiling), facing you, lifted onto the
+on it: fur.js `sitPose` (`KNEEL.sit`, `KNEEL.sitWarm` with a fire lit at camp: eyes shut, smiling; `P.sit`: the cloak spread over
+the log, round knees out from under it, short shins and dangling boots, the elbows bent and the mittens in its lap, as its
+arms are short), facing you, lifted onto the
 log by `seatLift` (as a dance's hop is, `fg.lift`; a friend's from its `kn`), with no shadow of its own. A hover, or a finger
 standing by it, says "Seat log · sit down" in the line over the satchel (`hoverSay`; "sitting" once it's up there), with E on a
 keyboard when E would go to it. Friends get `sendFire('seat')`, and `meadowSum` counts it.
