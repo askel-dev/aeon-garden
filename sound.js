@@ -38,7 +38,7 @@ let enabled = true, volume = 0.6;
 const amb = {};                                    // ambient layers
 const LOUD = 0.7;                                  // thunder's level against the rest
 const BIRDS = 0.85;                                // birds, 15% under the rest of the meadow
-const state = { phase: 0.3, season: 0, sky: { clear: 1 }, bees: 0, life: 0.3, frogs: 0, trees: 0.5, fire: 0, torch: 0, torchPan: 0, pot: 0 };
+const state = { phase: 0.3, season: 0, sky: { clear: 1 }, bees: 0, life: 0.3, frogs: 0, trees: 0.5, fire: 0, torch: 0, torchPan: 0, pot: 0, roof: 0 };
 const last = {};                                   // per-sound cooldowns
 const picking = { n: 0, at: -1e9, base: 0 };       // the picks in a row (SOUNDS.pick)
 const PICK_CHAIN = 2.5;                            // s: a pick within this of the last climbs on
@@ -1356,6 +1356,8 @@ function buildAmbience() {
   amb.rainLow = loopNoise('lowpass', 350, 0.5);
   amb.fire = loopNoise('lowpass', 420, 0.6);              // a campfire's soft roar (state.fire), crackling over it (crackle)
   amb.pot = loopNoise('lowpass', 260, 0.7);               // the pot on it, simmering (state.pot), bubbles breaking over it (bubble)
+  amb.roof = loopNoise('bandpass', 850, 1.1);             // rain on the lean-to's thatch over its head (state.roof): a soft close patter
+  amb.under = 0;                                          // (how far under it, eased: the rain outside muffles as it goes in)
   amb.hum = hiveHum();
   amb.calm = 0.5; amb.blow = null; amb.gust = 0; amb.swell = 0.5; amb.tube = 2;
 }
@@ -1393,12 +1395,17 @@ function tickAmbience() {
   // Rain breathes slowly, and in a storm leans into the gusts.
   amb.swell = Math.max(0, Math.min(1, amb.swell + (Math.random() - 0.5) * 0.05));
   const gust = amb.gust * m.storm, rainLvl = 0.85 + 0.3 * amb.swell + 0.5 * gust;
-  amb.rainL.g.gain.setTargetAtTime((0.055 * m.rain + 0.025 * m.storm) * rainLvl * (1 + 0.2 * gust), now, 1.5);
-  amb.rainR.g.gain.setTargetAtTime((0.055 * m.rain + 0.025 * m.storm) * rainLvl * (1 - 0.1 * gust), now, 1.5);
-  amb.rainLow.g.gain.setTargetAtTime((0.10 * m.rain + 0.06 * m.storm) * rainLvl, now, 2);
+  // Under the lean-to the rain outside is muffled (its hiss down, its low rush a little up: through the roof) and the thatch
+  // patters close overhead, breathing with the rain.
+  amb.under += ((state.roof || 0) - amb.under) * 0.25;
+  const muff = 1 - 0.65 * amb.under, roofLvl = 0.07 * Math.min(1, m.rain + m.storm) * amb.under * (0.8 + 0.4 * amb.swell + 0.4 * gust);
+  amb.rainL.g.gain.setTargetAtTime((0.055 * m.rain + 0.025 * m.storm) * rainLvl * (1 + 0.2 * gust) * muff, now, 1.5);
+  amb.rainR.g.gain.setTargetAtTime((0.055 * m.rain + 0.025 * m.storm) * rainLvl * (1 - 0.1 * gust) * muff, now, 1.5);
+  amb.rainLow.g.gain.setTargetAtTime((0.10 * m.rain + 0.06 * m.storm) * rainLvl * (1 + 0.3 * amb.under), now, 2);
+  amb.roof.g.gain.setTargetAtTime(roofLvl, now, 0.8);
   amb.hum.gain.setTargetAtTime(0.03 * m.bees, now, 1.5);
-  const rl = (0.055 * m.rain + 0.025 * m.storm) * rainLvl, rlow = (0.10 * m.rain + 0.06 * m.storm) * rainLvl;
-  gateTick(amb.rainL.gate, rl, 0.2); gateTick(amb.rainR.gate, rl, 0.2); gateTick(amb.rainLow.gate, rlow, 0.2);
+  const rl = (0.055 * m.rain + 0.025 * m.storm) * rainLvl * muff, rlow = (0.10 * m.rain + 0.06 * m.storm) * rainLvl * (1 + 0.3 * amb.under);
+  gateTick(amb.rainL.gate, rl, 0.2); gateTick(amb.rainR.gate, rl, 0.2); gateTick(amb.rainLow.gate, rlow, 0.2); gateTick(amb.roof.gate, roofLvl, 0.2);
   gateTick(amb.hum.gate, 0.03 * m.bees, 0.2); gateTick(amb.fire.gate, 0.06 * state.fire, 0.2); gateTick(amb.pot.gate, 0.05 * state.pot, 0.2);
   amb.fire.g.gain.setTargetAtTime(0.06 * state.fire, now, 0.6);
   amb.pot.g.gain.setTargetAtTime(0.05 * state.pot, now, 0.5);
@@ -1409,7 +1416,8 @@ function tickAmbience() {
   birdTick(now, m.birds);
   if (Math.random() < m.crickets * 2.2 * dt) cricket(now + rand(0, 0.2));
   if (Math.random() < (1 - m.day) * state.frogs * 0.5 * dt) croak(now + rand(0, 0.2));   // spring nights, while there's spawn about
-  if (Math.random() < m.rain * 3 * dt) {
+  if (Math.random() < m.rain * 4 * amb.under * dt) SOUNDS.hemdrip(now + rand(0, 0.2), out(rand(-0.5, 0.5), 0.3, 0.5), { v: rand(0.6, 1.2) });   // (off the eave, by your ear)
+  if (Math.random() < m.rain * 3 * (1 - 0.6 * amb.under) * dt) {
     const deg = drip(now + rand(0, 0.2), rand(0.5, 1.3));
     if (Math.random() < 0.2) drip(now + rand(0.25, 0.4), 0.5, deg + pick([-1, 1]));   // then a smaller one off the leaf
   }

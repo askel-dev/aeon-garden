@@ -960,6 +960,97 @@ function paintRope(g) {
   ropeLoop(g, -0.02, -0.04, 0.55, 0.29, 2);
 }
 
+// ------------------------------------------------------------------ dried on the rack
+
+// A cord threaded through what's strung on it, sagging from the top left to the right and on out past the last one.
+function cordThrough(g, pts) {
+  const run = () => { g.moveTo(-0.9, pts[0][1] - 0.22); for (const [x, y] of pts) g.lineTo(x, y); g.lineTo(0.9, pts[pts.length - 1][1] - 0.2); };
+  strokeIn(g, rgba(tone(ROPE, 0.6)), 0.04, run);
+  strokeIn(g, rgba(ROPE), 0.022, run);
+}
+// Dried mushrooms: slices of cep strung on a cord, each the mushroom's own outline cut through (a domed cap over a
+// stem), cream inside going leathery brown at the edge, shrunk and wavy-edged as they dried.
+function shroomSlice(g, x, y, s, rot, k) {
+  g.save(); g.translate(x, y); g.rotate(rot); g.scale(s, s);
+  const wob = (i, a) => 1 + (jit(k, i) - 0.5) * a;
+  const cut = () => {
+    g.moveTo(-0.5, 0.0);
+    g.bezierCurveTo(-0.56 * wob(1, 0.2), -0.36, -0.28, -0.52 * wob(2, 0.15), 0, -0.52);
+    g.bezierCurveTo(0.3, -0.52 * wob(3, 0.15), 0.58 * wob(4, 0.2), -0.34, 0.5, 0.0);
+    g.bezierCurveTo(0.36, 0.06, 0.22, 0.02, 0.17, 0.06);
+    g.bezierCurveTo(0.2, 0.26, 0.24, 0.42 * wob(5, 0.2), 0.14, 0.5);
+    g.quadraticCurveTo(0, 0.56, -0.14, 0.5);
+    g.bezierCurveTo(-0.24, 0.42 * wob(6, 0.2), -0.2, 0.26, -0.17, 0.06);
+    g.bezierCurveTo(-0.22, 0.02, -0.36, 0.06, -0.5, 0.0); g.closePath();
+  };
+  strokeIn(g, rgba([92, 54, 28]), 0.07, cut);                                                  // its brown skin, round the edge
+  softIn(g, [200, 158, 104], -0.52, 0.52, cut, 1.14, 0.78);
+  g.save(); g.beginPath(); cut(); g.clip();
+  furGlow(g, [128, 82, 44], 0.65, 0.2, -0.2, 0.36, 0.28);                                       // browned where it dried hardest
+  furGlow(g, [255, 240, 204], 0.5, -0.16, -0.22, 0.2, 0.12, -0.3);
+  strokeIn(g, 'rgba(140, 98, 56, 0.45)', 0.018, () => {                                         // the grain down the stem and round the cap
+    g.moveTo(-0.06, 0.48); g.quadraticCurveTo(-0.04, 0.1, -0.24, -0.2);
+    g.moveTo(0.06, 0.48); g.quadraticCurveTo(0.06, 0.1, 0.22, -0.24);
+    g.moveTo(-0.36, -0.06); g.quadraticCurveTo(0, -0.42, 0.36, -0.08);
+  });
+  g.restore();
+  g.restore();
+}
+function paintDriedShroom(g) {
+  touch(g, 0, 0.74, 0.7, 0.14);
+  const at = [[-0.56, -0.06, 0.8, -0.35, 0], [-0.02, 0.14, 0.9, 0.08, 1], [0.54, -0.04, 0.78, 0.4, 2]];
+  cordThrough(g, at.map(([x, y]) => [x, y - 0.12]));
+  for (const [x, y, sc, r, k] of at) shroomSlice(g, x, y + 0.08, sc, r, k + 3);
+  strokeIn(g, rgba(tone(ROPE, 0.62)), 0.035, () => { for (const [x, y] of at) { g.moveTo(x - 0.04, y - 0.16); g.lineTo(x + 0.04, y - 0.08); } });   // (where it goes through each)
+}
+
+// Dried apple rings: three rings strung on a cord, the flesh gone cream and translucent, the red skin a thin curled rim,
+// the core cut out, a few dark seed-cells round the hole, each ring a little buckled.
+function appleRing(g, x, y, r, rot, k) {
+  g.save(); g.translate(x, y); g.rotate(rot); g.scale(1, 0.92);
+  const N = 40, edge = (rr, a) => rr * (1 + (jit(k, Math.round(a * 6)) - 0.5) * 0.08 + 0.04 * Math.sin(a * 5 + k));
+  const ring = () => {
+    for (let i = 0; i <= N; i++) { const a = i / N * TAU, rr = edge(r, a); i ? g.lineTo(Math.cos(a) * rr, Math.sin(a) * rr) : g.moveTo(rr, 0); }
+    g.moveTo(r * 0.3, 0); g.ellipse(0, 0, r * 0.3, r * 0.27, 0, 0, TAU, true);
+  };
+  g.save(); g.beginPath(); ring(); g.fillStyle = rgba([150, 40, 30]); g.fill('evenodd'); g.restore();   // the skin, all round
+  g.save(); g.scale(0.9, 0.9);
+  softIn(g, [240, 214, 150], -r, r, () => { g.beginPath(); ring(); }, 1.1, 0.82);
+  g.restore();
+  g.save(); g.beginPath(); ring(); g.clip('evenodd');
+  furGlow(g, [196, 140, 70], 0.5, r * 0.3, r * 0.3, r * 0.6, r * 0.5);                         // browned toward its edge
+  furGlow(g, [255, 248, 222], 0.55, -r * 0.4, -r * 0.4, r * 0.32, r * 0.18, -0.6);
+  g.restore();
+  fillIn(g, 'rgba(110, 66, 30, 0.55)', () => { for (let i = 0; i < 5; i++) { const a = i / 5 * TAU + 0.3; ovalAt(g, Math.cos(a) * r * 0.42, Math.sin(a) * r * 0.42, r * 0.07, r * 0.035, a); } });
+  strokeIn(g, 'rgba(120, 30, 24, 0.5)', 0.012, () => g.ellipse(0, 0, r * 0.31, r * 0.28, 0, 0, TAU));
+  g.restore();
+}
+function paintAppleRing(g) {
+  touch(g, 0, 0.74, 0.7, 0.14);
+  const at = [[-0.5, -0.04, 0.42, -0.2, 0], [0.02, 0.18, 0.47, 0.1, 1], [0.52, -0.02, 0.4, 0.3, 2]];
+  cordThrough(g, at.map(([x, y]) => [x, y]));
+  for (const [x, y, r, rot, k] of at) appleRing(g, x, y, r, rot, k + 5);
+  for (const [x, y] of at) strokeIn(g, rgba(ROPE), 0.024, () => { g.moveTo(x - 0.07, y - 0.02); g.lineTo(x + 0.07, y + 0.01); });   // (the cord across the hole)
+}
+
+// Dried berries: a little heap of them shrunk to raisins, dark wine-red, ink-purple and a few brighter red, each wrinkled
+// with a crease or two and only a dull gleam left.
+function paintDriedBerry(g) {
+  touch(g, 0, 0.74, 0.66, 0.2);
+  const C = [[118, 18, 36], [62, 22, 58], [168, 40, 40]];
+  const heap = [[-0.46, 0.4, 0.23, 0], [-0.08, 0.46, 0.25, 1], [0.32, 0.42, 0.23, 2], [0.64, 0.46, 0.19, 0], [-0.72, 0.48, 0.18, 1],
+    [-0.26, 0.14, 0.24, 2], [0.12, 0.14, 0.25, 0], [0.48, 0.16, 0.22, 1], [-0.06, -0.14, 0.23, 1], [0.3, -0.1, 0.2, 2], [-0.42, -0.1, 0.18, 0]];
+  for (let i = 0; i < heap.length; i++) {
+    const [x, y, r, c] = heap[i], rot = (jit(7, i) - 0.5) * 1.2, rgb = tone(C[c], 0.9 + 0.2 * jit(8, i));
+    ball(g, x, y, r, r * (0.78 + 0.12 * jit(9, i)), rgb, { lit: 1.5, dim: 0.5, gleam: 0.3, back: 0.2, rot });
+    strokeIn(g, rgba(tone(rgb, 0.45), 0.7), 0.02, () => {                                     // its wrinkles
+      g.moveTo(x - r * 0.6, y - r * 0.1); g.quadraticCurveTo(x - r * 0.1, y + r * 0.25 * (jit(10, i) - 0.3), x + r * 0.55, y - r * 0.2);
+      g.moveTo(x - r * 0.2, y - r * 0.6); g.quadraticCurveTo(x + r * 0.05 * jit(11, i), y - r * 0.2, x - r * 0.1, y + r * 0.3);
+    });
+    strokeIn(g, rgba(tone(rgb, 1.5, 30), 0.45), 0.014, () => { g.moveTo(x - r * 0.5, y - r * 0.28); g.quadraticCurveTo(x - r * 0.1, y - r * 0.05, x + r * 0.4, y - r * 0.36); });
+  }
+}
+
 // The painted things by their ids, in the order of their numbers ('ingr:' + n): a new one goes at the end.
 const PAINTED = [
   ['cep', paintCep],
@@ -988,6 +1079,9 @@ const PAINTED = [
   ['birchbark', paintBark],
   ['clay', paintClay],
   ['rope', paintRope],
+  ['driedshroom', paintDriedShroom],
+  ['applering', paintAppleRing],
+  ['driedberry', paintDriedBerry],
 ];
 const NAMES = PAINTED.map(p => p[0]);
 function paint(g, size, U, n) {

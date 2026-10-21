@@ -78,3 +78,8 @@ warm dish puts `WARM_DISH` back and keeps it warm inside for `WARM_IN` (`f.warmI
 forager starts at `START_TUMMY` (0.85: by the first fire it's still fed at dawn, hungry by mid-morning), wakes at least
 `WAKE_TUMMY`. Events 'hungry', 'starving', 'ate'. A kept forager from before starts full; no `KEEP_VERSION` bump. (The rabbits
 have an `eat` of their own: a second `function eat` in sim.js would take its place.)
+
+Curling up (2026-10-21): still under the lean-to at night (no walking, nothing in its hands, no stumble) `f.rest` counts the
+ticks (a field in its blank; kept from before, 0), and at `CURL_TICKS` (six seconds at 1x) it's curled up (`curledUp`, event 'curl', the
+deed 'lean-rest'): `CURL_FEEL` degrees warmer and it mends twice as fast. Any step, or the dawn, sets it back to 0. Drawn in
+game.js `drawCurled` (fire-camp.md).
