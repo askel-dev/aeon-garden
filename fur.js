@@ -952,13 +952,29 @@ function foragerParts(P) {
   const sh = P.fwd[0] * 0.12 * P.stoop, sd = 0.05 * P.stoop, hunch = side ? 0.13 * P.stoop : 0;
   const R = 0.26;
   // Legs: from the hips to the feet, the knee bent forward, in a boot. (Mostly under the cloak.)
-  const leg = (i, far) => {
+  const leg = (i, far, part) => {
     const [fx, fy] = P.feet[i], sx = hx + (side ? (i ? 0.03 : -0.02) : (i ? 0.075 : -0.075)), sy = hy;
     const knee = P.knees ? P.knees[i].slice() : jointAt(sx, sy, fx, fy - 0.03, 0.17, 0.17, side ? -1 : 1);
     if (!side && !P.knees) { knee[0] += ((sx + fx) / 2 - knee[0]) * 0.5; knee[1] += ((sy + fy - 0.03) / 2 - knee[1]) * 0.2; }   // (a knee bent toward you or away is foreshortened, not out to the side)
     const down = P.kneel && i === 0, toe = down ? 1 : side ? -1 : P.sit ? (i ? 0.3 : -0.3) : P.fwd[0] < 0 ? -0.8 : 0.8;   // (kneeling, the near boot lies behind, toe down; sitting, toes to you, splayed)
     const tt = P.toes ? P.toes[i] : 0;                                // (up on its toes: the boot tipped, narrower and taller, toe forward)
     const bh = (down ? 0.032 : P.sit ? 0.048 : 0.04) + 0.012 * tt, by = fy - (down ? 0.02 : 0.025) + 0.004 * tt, bx = fx + toe * (0.025 + 0.012 * tt), bw = (side ? 0.07 : 0.055) - 0.02 * tt;
+    if (part === 'thigh') {                                        // (a lifted knee: the thigh goes in under the cloak, it's drawn first)
+      add(g => limbAt(g, sx, sy, 0.065, knee[0], knee[1], 0.05), { far, leg: P.legLine, marks: [[TROUSER, 1, 0.02, g => limbAt(g, sx, sy, 0.065, knee[0], knee[1], 0.05)]] });
+      return;
+    }
+    if (part === 'shin') {                                         // ...and over the cloak's front: the knee pushes the cloak out in a round bulge, the shin and boot come out under it
+      const [kx, ky] = knee;
+      add(g => { limbAt(g, kx, ky, 0.05, fx, fy - 0.03, 0.045); ovalAt(g, bx, by, bw, bh); },
+        { far, leg: P.legLine, marks: [[TROUSER, 1, 0.02, g => limbAt(g, kx, ky, 0.05, fx, fy - 0.03, 0.045)],
+          [BOOT, 1, 0.02, g => { ovalAt(g, bx, by, bw + 0.005, bh + 0.005); g.rect(fx - 0.06, fy - 0.11, 0.12, 0.09); }]] });
+      const tx = sx + (kx - sx) * 0.3, ty = sy + (ky - sy) * 0.3 - 0.01;   // (the thigh's upper end)
+      const cap = (g, k, r0, r1) => limbAt(g, tx, ty, r0, kx, ky - 0.01, r1);
+      add(g => cap(g, 0, 0.055, 0.07),
+        { far, casts: true, marks: [full(CLOAK), [tone(CLOAK, 1.2), 0.8, 0.04, g => limbAt(g, tx - 0.01, ty - 0.02, 0.03, kx - 0.025, ky - 0.04, 0.035)],   // (the cloak pushed out over the thigh, lit on top)
+          [tone(CLOAK, 0.68), 0.85, 0.03, g => { g.moveTo(kx - 0.13, ky + 0.025); g.quadraticCurveTo(kx, ky + 0.09, kx + 0.13, ky + 0.02); g.lineTo(kx + 0.13, ky + 0.15); g.lineTo(kx - 0.13, ky + 0.15); g.closePath(); }]] });   // (and the hem's fold under the knee)
+      return;
+    }
     add(g => {
       limbAt(g, sx, sy, 0.065, knee[0], knee[1], 0.05);
       limbAt(g, knee[0], knee[1], 0.05, fx, fy - 0.03, 0.045);
@@ -1140,9 +1156,9 @@ function foragerParts(P) {
   };
   const shoulder = side ? 0.0 : 0.15;
   if (side) {
-    leg(1, true); if (!P.kneeOver) leg(0, false);
+    leg(1, true); if (P.kneeOver) leg(0, false, 'thigh'); else leg(0, false);
     arm(0.03, P.arms ? P.arms[0] : P.stoop ? 0.75 * P.stoop : -P.swing, true, false);
-    cloak(); satchel(); if (P.kneeOver) leg(0, false);             // (sneaking, the near knee lifted high over the cloak's front)
+    cloak(); satchel(); if (P.kneeOver) leg(0, false, 'shin');   // (sneaking, the near knee lifted high under the cloak's front)
     tip(); head(); hat();
     if (P.hug) hug(-0.01, 0);
     else arm(-0.01, P.arms ? P.arms[1] : P.hand ? 0.9 : P.stoop ? 0.95 * P.stoop : P.swing, false, true);
