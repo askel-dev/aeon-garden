@@ -692,6 +692,7 @@ function paintSkylark(g, size, U, n) {
 // 'forager:' + snow * FORAGER_SNOW_ARTS + (outfit << 7) + (view << 5) + pose; the emotes after all those (emoteArt).
 // Box -1 to 1, feet on the ground at 0.72.
 const FORAGER_REACH = 0.18, FORAGER_LIFT = 0.075, FORAGER_BOB = 0.016;
+const SIDE_SWING = 0.8, SIDE_BOB = 0.03;   // (side on, the walk's arms swing wider and the body bobs more than from the front: only view 0)
 const STOOP = [0, 0, 0, 0.55, 1];       // how far down it's bent, picking (poses 3 and 4)
 const FORAGER_COLD = [5, 6, 7, 24, 25, 26, 27, 28, 29, 30, 31];   // (the cold poses; game.js asks for them only once it's chilly)
 const FORAGER_JOG_STRIDE = 1.75, JOG_DOWN = 0.32, JOG_LIFT = 0.13, JOG_BOB = 0.03, JOG_LEAN = 0.08;
@@ -796,8 +797,8 @@ function foragerPose(view, pose, short = 1) {
   });
   const stoop = walk || jog ? 0 : STOOP[pose] || 0;                // (picking: knees bent, the head and the hands forward and down)
   // (Walking it's lowest with the feet apart; jogging, as the planted foot passes under it, and highest in the air.)
-  const bob = jog ? JOG_BOB * Math.cos(4 * Math.PI * (u - down / 2)) : walk ? FORAGER_BOB * Math.cos(4 * Math.PI * u) : 0.16 * stoop;
-  const swing = (jog ? 0.6 : walk && !cold ? 0.42 : 0) * Math.cos(2 * Math.PI * u);   // the near arm back as the near foot is ahead
+  const bob = jog ? JOG_BOB * Math.cos(4 * Math.PI * (u - down / 2)) : walk ? (view === 0 ? SIDE_BOB : FORAGER_BOB) * Math.cos(4 * Math.PI * u) : 0.16 * stoop;
+  const swing = (jog ? 0.6 : walk && !cold ? (view === 0 ? SIDE_SWING : 0.42) : 0) * Math.cos(2 * Math.PI * u);   // the near arm back as the near foot is ahead
   return {
     view, walk, jog, u, feet, bob, swing, fwd, stoop,
     lean: jog ? JOG_LEAN : 0, bend: jog ? 1.1 : 0,                 // jogging, it leans in and its elbows bend
