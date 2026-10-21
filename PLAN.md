@@ -893,6 +893,134 @@ Each its own branch, played and looked at before the next:
   table while you are away (yes, it is cosy); the first visitor's trigger (a dish on the table at dawn, or any dish left
   out); and whether the finish belongs to this stage or waits for the cooking levels (I would wait).
 
+## Stage 10: fishing (planned 2026-10-21)
+
+The meadow has been keeping fish for weeks with nobody to catch them: `w.fish`, a field over the lasting water, about
+400 in a meadow, deep water best, breeding spring into summer, thinned a little by winter and by the otters
+(`takeFish`). The game says the meadow gives "fish and game"; this stage gives the first of them. It's also the most cozy
+cooking thing still missing: sitting on a bank at dusk with a line in, the float bobbing. Two things it has to be:
+**calm** (no failing hard, nothing lost but the fish) and **readable on a phone** (one thumb, big targets, no fiddly bar).
+
+### The rod
+A make at the make strip, as the rope is (`BUILDS.rod` with `makes: 'rod'`, anywhere, no camp needed): **Fishing rod,
+2 sticks + 1 rope** (the rope is already a make: 5 dry grass). The hook is a bramble thorn, implied, as the flint is for the fire. It's carried, like the vessels: one rod, kept
+with the forager (`f.rod`, a 0/1), never in a satchel slot. A friend makes their own. Early in the game on purpose: the
+first fish should come on the first or second day, so it's a way to eat, not a late reward.
+
+### Where and when
+- **From the bank.** Standing on land within `CAST_REACH` (about 3 tiles) of water that lasts (not a flood pool: no fish
+  there), a tap or click on the water casts there; on a computer `R` casts the way the forager faces (R only turns a thing
+  while placing it, so it's free otherwise). The line over the satchel says "Fish here" when the forager stands at a good bank (as the cook prompt does at a fire).
+- **The bite comes from `w.fish` where the float lands** (the 5x5 sum `takeFish` already reads): thick water bites in a
+  few seconds, thin water slowly or not at all, so where you fish matters and the otters' favourite pools are yours too.
+  Dawn and dusk bite best (`BITE_HOUR`), rain a little better, the middle of a hot day worst, night slow but it's eel time.
+- **Seeing the fish.** Where the water's thick, a rise now and then: a ring spreading on the surface, a small plop
+  (`drawRises`: a few at most on screen, one cached ring painting stretched, only near the forager and only when the rod
+  is made). It's the fishing's glint: it tells you where to cast without an arrow.
+- **Winter, under the ice:** later. Ice fishing (a hole knocked in it with a stone, a stool of a log) is a lovely second
+  slice, not the first.
+
+### The catch
+Cast → wait → bite → strike → bring it in, with a Stardew-style bar for the bringing in (Axel's pick, 2026-10-21):
+1. **Cast:** the forager swings the rod, the line arcs out and the float plops where you tapped (a short throw, no aim
+   game; a tap past `CAST_REACH` casts as far as it goes that way).
+2. **Wait:** the float rides the water, drifting a little in the current (the sim's current already moves otters). Nibbles
+   come first: two or three small dips with a tick sound, which are not the bite.
+3. **The bite:** the float goes under with a plop and a ring, and a "!" pops over the forager. **Tap within the strike
+   window** (`STRIKE_MS`, about 900 ms: generous, the bar is where the skill is). Too early on a nibble or too late: "It
+   got away", the float comes back up, cast again. Nothing is lost.
+4. **The bar** (`#reel`, `renderReel`): a slim upright brass-and-parchment gauge beside the forager on the water's side
+   (about 44 px wide, a third of the screen's height; on an upright phone over the satchel's corner, never under the thumb).
+   In it the fish (its small painting, side on) darts up and down, and a pale catch zone you move: **hold to lift it,
+   let go and it sinks**, with a little weight and bounce, as Stardew's. Beside it a catch meter fills while the fish is in
+   the zone and drains while it's out. Full: landed. Empty: the line goes slack, "It got away". Hold is anywhere on the
+   screen (a phone's whole screen is the button, the meadow's taps paused while it's up), the mouse or Space on a computer.
+   Calm by the numbers, not by the idea: the meter starts a third full and drains slower than it fills (`REEL_FILL`,
+   `REEL_DRAIN`), the zone starts wide (`REEL_ZONE`), and a roach barely moves. A treasure-style extra is left out.
+   The meadow goes on behind it: the camera eases in a little on the forager and the float (as `tendCam`), the rod bends
+   with the fish's pull, the float's water splashes as it darts, and the line goes taut and slack with the meter.
+   It's drawn by the page, not the canvas: one small element whose fish and zone move by a `transform` each frame (no
+   layout), so it costs nothing in the meadow's frame.
+5. **Landed:** the fish flips on the bank by the forager, a splash, then it hops into the satchel (as a pick does), with a
+   float of its name the first time. The sim takes it (`takeFish(w, x, y, 1)`), so the forager and the otters share one
+   stock, and a pool fished out bites slowly till it breeds back.
+
+### The fish
+Not species in the sim: one `w.fish` field stays, and *what* bites is decided at the bite, by the water and the season
+(`fishKind`: no random numbers of the meadow's, the forager's own). Each kind is a block in a `FISH` table (recipes.js,
+copy-a-block like the rest): where and when it bites, and how it moves in the bar (`dart`: how far and how often it
+jumps, `pull`: how fast, `idle`: how long it rests). The first four, Axel's to tune:
+- **Roach**: small and silver, any still water, all year. The everyday fish: drifts slowly, rests a lot.
+- **Perch**: striped, deep still water, spring to autumn. Short darts, often.
+- **Brown trout**: in the current (the brooks and rivers), spring and summer, best at dawn. Long leaps, the prize.
+- **Eel**: at night in summer, deep water. Slow to bite, then a steady sinking pull that wants a long hold, with sudden
+  wriggles; the best stew in the book.
+Later, with more water life: crayfish in the shallows (a trap at camp, not a rod), pike in winter.
+
+Ingredients in recipes.js with the tag `fish`, `raw: false`, fill as meat; each with `where` for the book's Finds page
+and a painting in items.js. A trout and a perch also **dry** on the rack into **Dried fish** (stack 30): the winter food
+the rack was always for. (Smoked fish waits for a smokehouse.)
+
+### The dishes
+Six to start, each painted to the dish bar (dish-painting.md; a sheet to Axel first):
+- **Roast fish on a stick** (stick: any fish): the first one, `known: true`.
+- **Trout with wild garlic** (pan: trout, garlic).
+- **Fish and sorrel on a hot stone** (stone: fish, sorrel).
+- **Fish soup** (pot: fish, fish, nettles, watercress).
+- **Eel and mushroom stew** (pot: eel, mushroom, mushroom, garlic): warm, fills the most.
+- **Dried fish and hazelnuts** (bowl: dried fish, hazelnuts): cold trail food for a long walk.
+
+### The skill
+`SKILLS.fishing` (practice: fish landed; one that got away counts a little): each level the catch zone grows
+(`zone: 0.06`) and the meter drains slower (`calm: 0.05`), and from level 3 a perch or trout comes a little more often.
+The "You" tab shows it with the others.
+
+### How it looks and sounds
+- **The forager:** a casting pose and a holding pose in fur.js (the rod held out over the water, two views: side and
+  three-quarter from behind, the forager faces the water), and a sit on the bank if it waits long (`SIT_FISH`, the existing
+  sit). The rod is part of the painting; the **line** is one thin stroke a frame from the rod's tip to the float (a single
+  path, no sprite), sagging, taut when reeling.
+- **The float:** a small red-and-white quill painted once (sprite cache), bobbing by a sine, with a ring at each dip.
+- **The fish in hand:** each kind painted once in items.js; landed, it's that painting flipping on the bank.
+- **Sounds** in sound.js (and sound-lab): a swish of the cast, the float's plop, nibble ticks, the bite's deeper plop, a
+  reel's wooden click, the line's creak, the splash of landing, a little "got away" sigh of water. All synthesized, as the rest.
+- **Friends** see your line and float and your catch (`'fish'` messages: cast at, bite, landed), and two can fish one pool.
+
+### Building it
+Each its own branch, played before the next:
+1. **The rod and the catch, plain.** The make strip's rod, `f.rod`, cast/wait/bite/strike, the bar with `FISH`'s four
+   ways of moving, land, a placeholder float and the line, `fishKind`, `takeFish`, the four fish as ingredients (emoji
+   for now), "Fish here", the dev panel's `garden.give('rod')`. Playable: can you catch one, does the bar feel good on a
+   phone and a trackpad? (The bar's feel is the whole stage; tune it here, with Axel, before anything is painted.)
+2. **The look and sound.** The poses, the float, the bar painted properly, the fish paintings, the rises, every sound.
+   The polish bar is the cooking's.
+3. **The skill**, and the bar's numbers once it has been played a while.
+4. **The dishes**: the six recipes and their paintings, dried fish on the rack.
+5. **Friends** fishing together.
+6. Later: ice fishing, crayfish traps, pike.
+
+### The sim and the keep
+- `f.rod: 0` in the forager's blank (`foragerOf`), and its fishing state in the blank too, one shape for life:
+  `f.cast: { x: -0, y: -0, at: 0, bite: 0, kind: '' }`, set back to the blank when the line's in. A kept forager from
+  before gets them in `unpackWorld`; `SKILLS.fishing` starts at nothing there already (bySkill). No `KEEP_VERSION` bump.
+- The bite is the forager's own timing (game.js, like gathering's), the take is the sim's (`takeFish`), so fishing at 60x
+  still takes from the stock it should. A friend's catch is taken from the host's water.
+- Headless, over three seeds, two years with a forager taking 10 fish a day from the thickest water: the fish and the
+  otters don't die out (`w.fishCount`, otters in `w.count`).
+
+### Checked by
+Catching each of the four in their water and season (the dev panel's `garden.fishNow(kind)` to skip the wait), a miss,
+one that got away in the bar, at 1400x900, 390x844 and 844x390 by touch (the hold reaching the bar under a thumb, the
+bar clear of the satchel and the notch); a friend watching a cast; the round-trip; no console errors.
+Cost: one line stroke and one float sprite a frame while fishing, a few rise rings near the forager, the bar's two
+transforms; nothing new when not fishing. No timing needed unless the rises show up.
+
+### Settled / open
+- **Settled (Axel, 2026-10-21):** a Stardew-style bar to bring a fish in, after a tap on the bite; the rod is made
+  (2 sticks + rope) at the make strip; no bait for now; four fish in the first slice, the eel at night included.
+- **Open:** whether a fish can be eaten raw (I'd say no: it wants the fire, which is the point); how hard the bar should
+  be at level 0 (to find by playing step 1); whether the camera eases in while reeling or stays put.
+
 ## After that (roughly in this order)
 1. **Cooking at the fire** and 2. **hunger and eating**: stage 6 above.
 3. **Camp builds.** Arranged inside the camp ring: a seat log, a spit, a drying rack (keeping food for winter), a basket
@@ -903,7 +1031,7 @@ Each its own branch, played and looked at before the next:
    hand. More ground items come in as builds need them (clay, reeds, flint, logs, pine cones, tinder fungus, feathers).
    The table comes next among these (stage 9): it is the one build that changes what cooking is for, and the visitor
    stage below lands on it.
-4. **Fishing and hunting.** Fish from the water the sim already stocks (`w.fish`), and hunting the rabbits and the game
+4. **Fishing and hunting.** Fishing is stage 10 above. Fish from the water the sim already stocks (`w.fish`), and hunting the rabbits and the game
    (the gentle respawn keeps them from running out). Visitor NPCs are never hunted.
 5. **The visitors come back as NPCs.** The hedgehog, heron, kingfisher, dragonflies and skylark (their lives and
    paintings are still in the code, dormant: they only ever came to the keeper's places). They need a new way in, e.g.
