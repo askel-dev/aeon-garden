@@ -711,6 +711,7 @@ const KNEELS = [
   { stoop: 0.3, lean: 0, far: 1.35, near: 1.48, look: -0.02, warm: 1 },   // mittens out to the flames
 ];
 function kneelPose(pose) {
+  if (pose >= FORAGER_SIT_EAT.bite) return sitEatPose(pose);
   if (pose >= FORAGER_KNEEL.sit) return sitPose(pose === FORAGER_KNEEL.sitWarm);
   const k = KNEELS[pose - 16] || KNEELS[0];
   return {
@@ -817,18 +818,36 @@ function idlePose(i) {
   else if (i === I.peek) { P.turn = 0.7; P.look = 0.045; P.hands = [null, [0.04, 0.17]]; P.flap = 0.045; }
   else if (i === I.tap) { P.feet[1][1] -= 0.065; P.feet[1][0] -= 0.015; P.bob = -0.01; }
   else if (i === I.waveA || i === I.waveB) { P.happy = true; P.hands = [null, i === I.waveA ? [0.25, -0.15] : [0.19, -0.26]]; }
-  else if (i === FORAGER_EAT.bite) { P.hands = [null, [-0.19, -0.1, 0.03, 0.11]]; P.eat = 1; P.look = 0.03; P.tip = 0.02; }
+  else if (i === FORAGER_EAT.bite) { P.hands = [EAT_HOLD, [-0.19, -0.1, 0.03, 0.11]]; P.eat = 1; P.look = 0.03; P.tip = 0.02; }
   else if (i === FORAGER_EAT.chewA || i === FORAGER_EAT.chewB) {
-    P.hands = [null, [-0.14, -0.03, 0.04, 0.12]]; P.eat = i === FORAGER_EAT.chewA ? 2 : 3; P.happy = true;
+    P.hands = [EAT_HOLD, [-0.14, -0.03, 0.04, 0.12]]; P.eat = i === FORAGER_EAT.chewA ? 2 : 3; P.happy = true;
     P.bob = i === FORAGER_EAT.chewA ? 0.006 : -0.004; P.tip = i === FORAGER_EAT.chewA ? 0.035 : 0.01;
   }
+  else if (i === FORAGER_EAT.dip) { P.hands = [EAT_HOLD, [-0.16, 0.17, 0.02, 0.14]]; P.look = 0.05; P.tip = 0.03; }
+  else if (i === FORAGER_EAT.tug) { P.hands = [EAT_HOLD, [-0.1, -0.09, 0.07, 0.1]]; P.eat = 1; P.turn = 0.55; P.look = 0.02; P.tip = 0.05; P.bob = -0.006; }
+  else if (i === FORAGER_EAT.sip) { P.hands = [[0.12, -0.03, -0.04, 0.12], [-0.12, -0.03, 0.04, 0.12]]; P.up = true; P.look = -0.035; P.blink = true; P.tip = -0.02; }
+  else if (i === FORAGER_EAT.blow) { P.hands = [[0.1, 0.09, -0.05, 0.13], [-0.1, 0.09, 0.05, 0.13]]; P.blow = true; P.look = 0.03; P.tip = 0.02; }
   return P;
 }
-// Eating (game.js EAT_SEQ), from the front as the idles, after them in 'view' 3: a mitten up to its mouth with a bite in
+// Eating sitting on the seat log (kneel view, poses 25 to 31: FORAGER_SIT_EAT): sitting as sitPose, the arms and face of
+// the standing eat painting it stands for.
+function sitEatPose(i) {
+  const P = sitPose(false), E = idlePose(FORAGER_EATS[i - FORAGER_SIT_EAT.bite]);
+  P.hands = E.hands; P.eat = E.eat; P.up = E.up; P.happy = E.happy; P.blink = E.blink; P.blow = E.blow;
+  P.look = E.look; P.turn = E.turn; P.tip = E.tip; P.bob += E.bob;
+  return P;
+}
+// Eating (game.js EAT_WAYS), from the front as the idles, after them in 'view' 3: a mitten up to its mouth with a bite in
 // it, the mouth open, then munching, eyes shut happy and a cheek full, one side and the other. The mitten comes in front
-// of the face (drawn after the head) and lies under its chin; the bite itself is painted with the face (P.eat 1).
-const FORAGER_EAT = { bite: 9, chewA: 10, chewB: 11 };
+// of the face (drawn after the head) and lies under its chin; the bite itself is painted with the face (P.eat 1). The
+// other mitten holds the rest before its chest (EAT_HOLD: game.js lays the dish there). And: a spoon dipped into it, the
+// head down (dip); a bite pulled off a stick to the side, the face turned (tug); the bowl to its lips in both hands, eyes
+// shut, the head back (sip: both mittens over the face, P.up); and blown on, held low, lips pursed and cheeks puffed (blow).
+const FORAGER_EAT = { bite: 9, chewA: 10, chewB: 11, sip: 12, blow: 13, dip: 14, tug: 15 };
 const FORAGER_EATS = Object.values(FORAGER_EAT);
+const EAT_HOLD = [0.1, 0.2, -0.05, 0.13];
+const FORAGER_SIT_EAT = { bite: 25, chewA: 26, chewB: 27, sip: 28, blow: 29, dip: 30, tug: 31 };   // (in the order of FORAGER_EAT)
+const FORAGER_SIT_EATS = Object.values(FORAGER_SIT_EAT);
 
 // Emotes (game.js EMOTES), kept after all the rest of its paintings: 'forager:' + emoteArt(snow, outfit, pose).
 // The dance (NLE Choppa's, the first one: the easter egg's, game.js partyTap), from the front: a crouch, then a hop on one
@@ -1117,10 +1136,11 @@ function foragerParts(P) {
       if (P.hug) { hug(-shoulder, 0); hug(shoulder, 1); }
       else {
         const [hl, hr] = P.hands || [];
-        arm(-shoulder, P.stoop ? reach : P.swing, false, true, hl); if (!P.eat) arm(shoulder, P.hand ? 2.4 : P.stoop ? reach : -P.swing, false, true, hr);
+        if (!P.up) arm(-shoulder, P.stoop ? reach : P.swing, false, true, hl); if (!P.eat && !P.up) arm(shoulder, P.hand ? 2.4 : P.stoop ? reach : -P.swing, false, true, hr);
       }
       head(); hat();
-      if (P.eat) arm(shoulder, 0, false, true, P.hands[1]);       // (eating: the mitten up in front of its chin)
+      if (P.up) arm(-shoulder, 0, false, true, P.hands[0]);       // (sipping: both mittens up over its face)
+      if (P.eat || P.up) arm(shoulder, 0, false, true, P.hands[1]);   // (eating: the mitten up in front of its chin)
     } else {
       // (An arm swung forward is ahead of it, behind the cloak from here: only the one swung back shows over it.)
       const al = P.carry ? 1.2 : P.stoop ? 1.1 * P.stoop : P.swing, ar = P.carry ? 1.2 : P.stoop ? 1.1 * P.stoop : -P.swing;   // (carrying: both out ahead)
@@ -1220,5 +1240,5 @@ const painters = { fox: paintFox, rabbit: paintRabbit, dfly: paintDragonfly, kfi
 
 root.Fur = { tone, rockRGB, fillIn, strokeIn, discAt, ovalAt, blurIn, softIn, furGlow, foxRGB, FOX_WHITE, FOX_SOCK,
   FOX_POSE, RABBIT_POSE, RABBIT_KINDS, setCoats, paintFox, paintRabbit, paintForager, paintForagerFace, FACE_MOODS, FORAGER_REACH, FORAGER_JOG_STRIDE, FORAGER_OUTFITS, FORAGER_CLOAKS, FORAGER_HATS, outfitOf, FORAGER_COLD, FORAGER_IDLE, FORAGER_IDLES, FORAGER_SNOWS, FORAGER_SNOW_ARTS, KNEEL_VIEW, FORAGER_KNEEL,
-  FORAGER_EMOTE, FORAGER_EMOTES, FORAGER_EMOTE_ARTS, FORAGER_EAT, FORAGER_EATS, EMOTE_AT, emoteArt, CARRY_AT, FORAGER_CARRY_ARTS, CARRY_STRIDE, carryArt, SNEAK_STRIDE, painters };
+  FORAGER_EMOTE, FORAGER_EMOTES, FORAGER_EMOTE_ARTS, FORAGER_EAT, FORAGER_EATS, FORAGER_SIT_EAT, FORAGER_SIT_EATS, EMOTE_AT, emoteArt, CARRY_AT, FORAGER_CARRY_ARTS, CARRY_STRIDE, carryArt, SNEAK_STRIDE, painters };
 })(typeof window !== 'undefined' ? window : globalThis);
