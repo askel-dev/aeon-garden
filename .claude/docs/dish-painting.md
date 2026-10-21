@@ -63,7 +63,7 @@ recipes.js gives each dish a `vessel` (stick, stone, pan, pot, bowl). Painted so
 | a slate | `lumpy` + `SLATE`, `SLATE_LUMPS` in `paintGarlicMushrooms` | Garlic mushrooms |
 | the carved wooden bowl | `woodBowl(g, inside)`, rim at `BOWL` | Spring salad, Warm bramble compote, Toasted hazelnuts, Watercress soup, Hazelnut brittle |
 | the clay bowl (pot dishes) | `clayBowl(g, inside)`, rim at `CLAY_BOWL` | Wilted greens, Nettle soup |
-| the clay pan (griddle) | `clayPan(g, inside)`, rim at `CLAY_PAN` | Mushrooms with hazelnuts, Sorrel and mushrooms, Elderflower fritters |
+| the clay pan (griddle) | `clayPan(g, inside)`, rim at `CLAY_PAN` | Mushrooms with hazelnuts, Sorrel and mushrooms, Elderflower fritters, Chicken of the woods steak |
 | a birch-bark cup | inline in `paintRosehipTea` | Rosehip tea |
 | a broad green leaf, curled up | inline in `paintHoneyedCherries` | Honeyed cherries |
 | a dry copper beech leaf | inline in `paintToastedBeechnuts` | Toasted beechnuts |
@@ -76,6 +76,10 @@ recipes.js gives each dish a `vessel` (stick, stone, pan, pot, bowl). Painted so
 (only what's above the front of the rim shows) with the rim painted over it. The rim's inside is centred at `(0, cy)`, `IX`
 wide by `IY` tall: put a soup's surface at about `ovalAt(g, 0, cy + 0.04, IX - 0.03, IY - 0.03)`; heap things up above
 `cy` to show over the rim. Things may stick out over the rim (a spoon, a leaf): paint them after the vessel call.
+
+Reading the vessel helpers themselves (`woodBowl`, `clayBowl`, `clayPan`, `greenStick`) and the colour constants they use
+(`PAN`, `PAN_RIM`, `PAN_IN`, `JUS`, `BOWL`, `CLAY_BOWL`, `FRIED`, `STONE`, ...) is expected: they are the vessel, not
+another dish. The "read only that section" rule below is about not copying another dish's food.
 
 ## Ingredient pieces already painted (reuse them)
 
@@ -91,8 +95,13 @@ draw it cooked.
 
 ## Adding one, step by step
 
-1. Find its recipe in recipes.js (`name`, `vessel`, `needs`, `text`, `warm`) or open `dish-lab.html?dish=Its name`,
-   which shows them. Its name in dishes.js must be exactly the same, capitals and all.
+1. Find its recipe in recipes.js (`name`, `vessel`, `needs`, `text`, `warm`) or open `dish-lab.html?dish=Its name`
+   (or `?dish=24`, its number in PAINTED), which shows the vessel, needs, warmth and text under the name. Its name in
+   dishes.js must be exactly the same, capitals and all. If it isn't in recipes.js yet, add it there first, copying a
+   block in RECIPES: `name`, `vessel`, `needs` (ingredient ids or tags), `text`, and `warm: true` if it steams. Put it
+   ahead of any generic dish with the same needs in the same vessel: the first one listed wins. Then check the data:
+   `node -e "const R=require('./recipes.js'); console.log(R.checkRecipes())"` (an empty list is good; if it names two
+   same-vessel dishes made the same way, that is the ordering above, and the first still wins).
 2. Pick the painted dish nearest it (same vessel, similar food) and read that section of dishes.js whole. It is your
    template: copy its structure, its proportions and its way of shading.
 3. Write the new section **just above the `PAINTED` list at the end of dishes.js**, in the same form as the others:
@@ -116,13 +125,16 @@ draw it cooked.
 4. Add it **at the end** of `PAINTED`: `['Acorn bread', paintAcornBread],`. Never reorder or remove: a dish's number is
    its place there.
 5. Check it loads: `node --check dishes.js`.
-6. Look at it: `tools/dish-shot.sh "Acorn bread" /tmp/acorn.png`, then open the png. An error shows in a red box at the
-   top of the page. You see it big, at 128, at 48 on the satchel's parchment and on dark, and next to every other dish.
+6. Look at it: `tools/dish-shot.sh "Acorn bread" /tmp/acorn.png` (or `... 24`, its number; with neither it shows the
+   newest), then open the png. It shows the dish at 48, 96, 128 and 256, its true 48 pixels enlarged four times, and
+   every painted dish at 48 on the satchel's parchment and on dark with the current one ringed, so you can judge it at
+   48 next to its neighbours. The recipe's vessel, needs, warmth and text sit under the name. An error shows in a red
+   box at the top of the page.
 7. Fix what it shows and look again, as often as it takes. Then check:
    - At 48 px, can you tell what it is? Is its vessel clear? If it's mush, use fewer, bigger shapes and more contrast.
    - Is it lit top left, with a soft shadow under it, about the size of its neighbours, centred?
    - Does it look cooked (browned, glazed, steaming if `warm`)?
-   - Does it sit with the others in the row at 48, not brighter, darker, flatter or busier than they are?
+   - Does it sit with the others in the 48 px strip, not brighter, darker, flatter or busier than they are?
 8. Don't commit unless asked: other sessions work in this folder. Leave it for Axel to look at in the dish lab.
 
 The game picks a new painting up on its own (game.js reads `Dishes.NAMES`), as do `recipes.html` and the recipe book.

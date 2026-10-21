@@ -74,7 +74,7 @@ const INGREDIENTS = {
 //   fill            how much it fills the tummy (a guess from what goes in)
 //   level: 0        the cooking level it needs before it can be found
 //   from            a visitor who teaches it, for a dish ('hedgehog', 'heron', 'kingfisher', 'skylark', 'dragonfly')
-//   warm: false     it warms you on a cold day
+//   warm: true      true if it warms you on a cold day (left out: it doesn't)
 //   time: 30        how long it cooks, in seconds at 1x (the pot keeps cooking while you're off, only while the fire's lit)
 //   known: false    true: a new player knows it from the start (it's in their recipe book), not only once they've made it
 //   icon: '🥣'      an emoji to stand in until it has a painted one
@@ -598,7 +598,7 @@ function checkRecipes() {
       if (!(n >= 1) || n !== Math.floor(n)) problems.push(`${who} needs ${n} of '${word}': it wants a whole number, 1 or more.`);
     }
   }
-  // Two dishes at one station that the same things could make: the first in the list would always win.
+  // Two dishes in one vessel at one station that the same things could make: the first in the list would always win.
   for (let i = 0; i < RECIPES.length; i++) for (let j = i + 1; j < RECIPES.length; j++) {
     const a = RECIPES[i], b = RECIPES[j];
     if (!a.needs || !b.needs || (a.at || 'fire') !== (b.at || 'fire') || vesselOf(a) !== vesselOf(b) || a.needs.length !== b.needs.length) continue;

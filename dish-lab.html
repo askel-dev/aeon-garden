@@ -3,13 +3,146 @@
 <title>dish lab</title>
 <script src="fur.js"></script>
 <script src="dishes.js"></script>
-<body style="margin:0;background:#2f4030;display:flex;gap:28px;align-items:center;justify-content:center;height:100vh">
+<script src="recipes.js"></script>
+<style>
+  :root { --parchment: #f8f0de; --ink: #3b372f; --dark: #2f4030; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--dark); color: #efe6cf;
+    font: 12px/1.35 ui-rounded, Nunito, system-ui, sans-serif;
+  }
+  main { padding: 14px 18px 20px; min-height: 100vh; display: flex; flex-direction: column; justify-content: center; }
+  #error {
+    display: none; position: sticky; top: 0; z-index: 9; padding: 8px 14px;
+    background: #8a2420; color: #fff3e8; font-weight: 700; white-space: pre-wrap;
+  }
+  #note { display: none; margin: 0 auto 10px; padding: 5px 12px; width: fit-content; border-radius: 8px;
+    background: #6a5420; color: #ffe9b0; font-weight: 700; }
+  h1 { margin: 0 0 4px; text-align: center; font: 600 16px/1.2 Fraunces, Georgia, serif; }
+  .recipe { margin: 0 auto 12px; max-width: 760px; text-align: center; color: #d8cbaa; }
+  .recipe b { color: #f4e7c4; }
+  .recipe em { display: block; margin-top: 3px; color: #c9bd9f; }
+  .row { display: flex; gap: 22px; align-items: flex-end; justify-content: center; min-height: 280px; }
+  .row figure { margin: 0; text-align: center; }
+  .row figcaption { margin-top: 4px; font-size: 11px; color: #b9ae93; }
+  .zoom { image-rendering: pixelated; }
+  h2 { margin: 16px 0 5px; text-align: center; font: 600 11px/1.2 ui-rounded, system-ui, sans-serif;
+    letter-spacing: 0.04em; color: #b9ae93; }
+  .strip { display: flex; flex-wrap: wrap; gap: 6px; padding: 7px; border-radius: 10px; justify-content: center; }
+  .strip.paper { background: var(--parchment); box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25); }
+  .strip.dark { background: #26362a; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07); }
+  .strip canvas { display: block; width: 48px; height: 48px; }
+  .strip .now { box-shadow: 0 0 0 2px #ffcf6e; border-radius: 5px; }
+  .strip.paper .now { box-shadow: 0 0 0 2px #8a5a1c; }
+</style>
+<body>
+<div id="error"></div>
+<main>
+  <h1 id="title">dish lab</h1>
+  <p id="recipe" class="recipe"></p>
+  <div id="note"></div>
+  <div id="row" class="row"></div>
+  <h2>every painted dish at 48 px, on the satchel’s parchment</h2>
+  <div id="paper" class="strip paper"></div>
+  <h2>and on dark</h2>
+  <div id="dark" class="strip dark"></div>
+</main>
 <script>
-  const i = Dishes.NAMES.indexOf(new URLSearchParams(location.search).get('dish') || 'Nettle soup');
-  for (const size of [48, 96, 256]) {
-    const c = document.createElement('canvas'); c.width = c.height = size;
-    c.style.cssText = `width:${size}px;height:${size}px`;
-    document.body.appendChild(c);
+  const $ = s => document.querySelector(s);
+  const showError = msg => { const e = $('#error'); e.style.display = 'block'; e.textContent += (e.textContent ? '\n' : '') + msg; };
+  addEventListener('error', e => showError(e.message || String(e.error)));
+  addEventListener('unhandledrejection', e => showError(String(e.reason && e.reason.message || e.reason)));
+
+  const N = Dishes.NAMES;
+  const param = (new URLSearchParams(location.search).get('dish') || '').trim();
+  // A name, its number in PAINTED, or with neither the newest (the one just painted).
+  function findDish(s) {
+    const byName = N.indexOf(s);
+    if (byName >= 0) return byName;
+    if (/^\d+$/.test(s)) { const n = +s; if (n < N.length) return n; }
+    return -1;
+  }
+  const index = param ? findDish(param) : N.length - 1;
+  const name = index >= 0 ? N[index] : param;
+
+  function paintInto(i, size) {
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    c.style.width = c.style.height = size + 'px';
     Dishes.paint(c.getContext('2d'), size, size / 1.3, i);
+    return c;
+  }
+
+  try {
+    if (index < 0) {
+      const known = window.Recipes && Recipes.recipeOf(param);
+      if (known) {
+        const note = $('#note');
+        note.style.display = 'block';
+        note.textContent = `‘${param}’ is a recipe, but it has no painting yet (${N.length} painted).`;
+      } else showError(`No painted dish called ‘${param}’.`);
+    }
+    if (index >= 0) {
+      document.title = name + ' — dish lab';
+      $('#title').textContent = `${name}  ·  #${index}`;
+
+      const rec = window.Recipes && (Recipes.recipeOf(name) ||
+        (Recipes.MESS && Recipes.MESS.name === name ? Recipes.MESS : null));
+      if (rec) {
+        const word = w => {
+          const g = Recipes.INGREDIENTS[w];
+          if (g) return g.name;
+          const d = Recipes.recipeOf(w);
+          if (d) return d.name;
+          return 'any ' + w;
+        };
+        const vessel = (Recipes.VESSELS[Recipes.vesselOf(rec)] || {}).name || Recipes.vesselOf(rec);
+        const line = document.createElement('div');
+        line.innerHTML = (rec.needs ? `<b>${vessel}</b> · ${rec.needs.map(word).join(' + ')}` : '<b>Whatever went in</b>') +
+          (rec.warm ? ' · <b>warm</b>' : '') + ` · ${Recipes.timeOf(rec)} s`;
+        $('#recipe').appendChild(line);
+        if (rec.text) {
+          const em = document.createElement('em');
+          em.textContent = rec.text;
+          $('#recipe').appendChild(em);
+        }
+      } else if (window.Recipes) {
+        const em = document.createElement('em');
+        em.textContent = 'Not in recipes.js yet.';
+        $('#recipe').appendChild(em);
+      }
+
+      // The dish as it is seen: 48, 96, the book's tile, and the page size; then its true 48 pixels, enlarged.
+      for (const size of [48, 96, 128, 256]) {
+        const fig = document.createElement('figure');
+        fig.appendChild(paintInto(index, size));
+        const cap = document.createElement('figcaption');
+        cap.textContent = size + ' px';
+        fig.appendChild(cap);
+        $('#row').appendChild(fig);
+      }
+      const zoomFig = document.createElement('figure');
+      const zoom = paintInto(index, 48);
+      zoom.className = 'zoom';
+      zoom.style.width = zoom.style.height = '192px';
+      zoomFig.appendChild(zoom);
+      const zoomCap = document.createElement('figcaption');
+      zoomCap.textContent = '48 px ×4';
+      zoomFig.appendChild(zoomCap);
+      $('#row').appendChild(zoomFig);
+    }
+
+    // Every dish at 48, on the two backgrounds it is read on, the current one ringed.
+    for (const id of ['paper', 'dark']) {
+      N.forEach((n, i) => {
+        const c = paintInto(i, 48);
+        c.title = `${n} (#${i})`;
+        if (i === index) c.className = 'now';
+        $('#' + id).appendChild(c);
+      });
+    }
+  } catch (e) {
+    showError(e && e.stack || String(e));
   }
 </script>
+</body>
