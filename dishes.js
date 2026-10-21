@@ -1868,6 +1868,60 @@ function paintChickenSteak(g) {
   });
 }
 
+// ------------------------------------------------------------------ forest stew
+//
+// A thick autumn stew in the clay bowl from the pot: a glossy brown gravy with big halved ceps in it, the cut stems pale and
+// the seared caps chestnut, golden chanterelles curled like little trumpets, whole toasted hazelnuts, slivers of garlic gone
+// gold and flecks of green on top. A wisp of steam off it.
+const FSTEW_GRAVY = [112, 66, 34], FSTEW_CHANT = [236, 164, 36], FSTEW_CUT = [222, 182, 128];
+// A chanterelle seen from above, wavy-edged and dipped in the middle, size s: gold, ridges running out from the centre.
+function fstewChanterelleAt(g, x, y, s, rot) {
+  g.save(); g.translate(x, y); g.rotate(rot); g.scale(s, s);
+  furGlow(g, [40, 20, 8], 0.45, 0.03, 0.08, 0.34, 0.2);
+  const frill = () => {
+    for (let i = 0; i <= 28; i++) {
+      const a = i / 28 * TAU, w = 1 + 0.14 * Math.sin(a * 5) + 0.05 * Math.sin(a * 9 + 1);
+      const px = Math.cos(a) * 0.3 * w, py = Math.sin(a) * 0.21 * w;
+      i ? g.lineTo(px, py) : g.moveTo(px, py);
+    }
+    g.closePath();
+  };
+  softIn(g, FSTEW_CHANT, -0.24, 0.24, frill, 1.25, 0.68);
+  g.save(); g.beginPath(); frill(); g.clip();
+  furGlow(g, [150, 80, 16], 0.6, 0.02, 0.02, 0.12, 0.08);                                    // the dip in the middle
+  furGlow(g, [150, 80, 16], 0.5, 0.2, 0.1, 0.18, 0.12);
+  strokeIn(g, rgba([176, 104, 22], 0.6), 0.016, () => { for (let i = 0; i < 9; i++) { const a = i / 9 * TAU; g.moveTo(Math.cos(a) * 0.1, Math.sin(a) * 0.07); g.lineTo(Math.cos(a) * 0.34, Math.sin(a) * 0.24); } });
+  furGlow(g, [255, 236, 150], 0.6, -0.12, -0.1, 0.12, 0.06, -0.4);
+  g.restore();
+  strokeIn(g, rgba([140, 74, 14], 0.8), 0.018, frill);
+  fillIn(g, 'rgba(255, 250, 220, 0.9)', () => ovalAt(g, -0.14, -0.1, 0.03, 0.014, -0.4));
+  g.restore();
+}
+function paintForestStew(g) {
+  const { cy, IX, IY } = CLAY_BOWL, sy = cy + 0.04;
+  clayBowl(g, () => {
+    fillIn(g, rgba(FSTEW_GRAVY), () => ovalAt(g, 0, sy, IX - 0.03, IY - 0.03));
+    furGlow(g, [60, 30, 12], 0.55, 0.28, sy, 0.32, 0.1);                                      // darker where it's deep
+    furGlow(g, [188, 120, 60], 0.55, -0.18, sy - 0.03, 0.42, 0.1);                            // lighter where the light falls
+    furGlow(g, [30, 14, 6], 0.55, 0.1, sy + 0.12, IX * 0.8, 0.05);                            // shaded under the front of the rim
+    // Everything heaps up above the rim, back to front.
+    halfShroomAt(g, -0.3, sy - 0.1, 0.6, -0.3, FSTEW_CUT);
+    halfShroomAt(g, 0.28, sy - 0.1, 0.58, 0.3, FSTEW_CUT);
+    fstewChanterelleAt(g, -0.5, sy + 0.02, 0.7, 0.2);
+    fstewChanterelleAt(g, 0.52, sy + 0.02, 0.68, -0.3);
+    fstewChanterelleAt(g, 0.0, sy - 0.02, 0.66, 0.5);
+    hazelKernelAt(g, -0.3, sy + 0.1, 0.07, 0.4, 1);
+    hazelKernelAt(g, 0.34, sy + 0.1, 0.07, -0.5, 2);
+    hazelKernelAt(g, -0.58, sy + 0.1, 0.065, 1.2, 0);
+    hazelKernelAt(g, 0.6, sy + 0.1, 0.065, 2.4, 1);
+    fillIn(g, 'rgb(240, 214, 150)', () => { for (const [x, y, a] of [[-0.32, sy + 0.02, 0.4], [0.06, sy - 0.14, -0.6], [0.36, sy + 0.04, 1.1], [-0.04, sy + 0.1, -0.2]]) ovalAt(g, x, y, 0.05, 0.022, a); });   // garlic slivers
+    fillIn(g, 'rgb(250, 238, 196)', () => { for (const [x, y, a] of [[-0.33, sy + 0.01, 0.4], [0.05, sy - 0.15, -0.6], [0.35, sy + 0.03, 1.1], [-0.05, sy + 0.09, -0.2]]) ovalAt(g, x, y, 0.036, 0.013, a); });
+    fillIn(g, rgba([74, 124, 44], 0.9), () => { for (const [x, y, a] of [[-0.26, sy - 0.12, 0.4], [0.18, sy - 0.16, -0.6], [0.5, sy - 0.04, 0.3], [-0.52, sy - 0.02, 1.4], [0.0, sy + 0.14, 0.2], [0.14, sy + 0.04, 2]]) ovalAt(g, x, y, 0.03, 0.013, a); });   // green flecks
+    strokeIn(g, 'rgba(255, 224, 150, 0.6)', 0.01, () => { ovalAt(g, -0.6, sy + 0.05, 0.03, 0.014); ovalAt(g, 0.6, sy + 0.04, 0.03, 0.014); ovalAt(g, 0.1, sy + 0.15, 0.03, 0.012); });   // gleams on the gravy
+  });
+  strokeIn(g, 'rgba(255, 255, 250, 0.3)', 0.035, () => { g.moveTo(-0.14, -0.2); g.bezierCurveTo(-0.24, -0.4, -0.04, -0.5, -0.12, -0.7); g.moveTo(0.18, -0.18); g.bezierCurveTo(0.12, -0.34, 0.3, -0.42, 0.22, -0.62); });
+}
+
 // The painted dishes by name, in the order of their numbers ('dish:' + n): a new one goes at the end.
 const PAINTED = [
   ['Roast mushrooms', paintRoastMushrooms],
@@ -1895,6 +1949,7 @@ const PAINTED = [
   ['Nettle soup', paintNettleSoup],
   ['Hazelnut brittle', paintHazelnutBrittle],
   ['Chicken of the woods steak', paintChickenSteak],
+  ['Forest stew', paintForestStew],
 ];
 const NAMES = PAINTED.map(p => p[0]);
 function paint(g, size, U, n) {

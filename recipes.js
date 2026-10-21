@@ -298,6 +298,16 @@ const RECIPES = [
     from: 'hedgehog',
     text: "The hedgehog's own: \"Pick the tops, never the stalks.\"",
   },
+  {
+    name: 'Forest stew',
+    vessel: 'pot',
+    time: 100,
+    level: 2,
+    icon: '🍲',
+    needs: ['cep', 'chanterelle', 'hazelnut', 'garlic'],
+    warm: true,
+    text: "Autumn after rain: a filling, warm main course built around the cook's favourite mushroom.",
+  },
 ];
 
 // What the forager builds, from the make button by the satchel (game.js renderBuild), and what each takes out of the
