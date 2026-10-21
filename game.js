@@ -58,13 +58,13 @@ const cam = { x: S.W / 2, y: S.H / 2, zoom: 10, goal: null };
 // ------------------------------------------------------------------ canvas and camera
 
 const canvas = $('#world');
-// Split (on a touch screen, or ?split; ?split=0 turns it off): the meadow is drawn every other beat (30 fps) on a canvas
+// Split (?split, off by default; it was on for touch screens for a while): the meadow is drawn every other beat (30 fps) on a canvas
 // EDGE css px bigger all round (wview), and on the beats between it and the ground are slid by how far the camera has moved (splitFrame), so the camera
 // still moves at the screen's rate; the forager is drawn every beat on a small canvas of its own over them (fview, drawForagerLayer).
 // #world stays as it was, full screen and empty, over them all: it takes the pointer.
 // On the iPhone 17 Pro it did a third less work a second walking about at 1x, as smooth (2026-10-21: 107 and 105 ms/s
 // against 67 and 70, no late beats either way).
-const SPLIT = params.has('split') ? params.get('split') !== '0' : matchMedia('(pointer: coarse)').matches;
+const SPLIT = params.has('split') && params.get('split') !== '0';
 const EDGE = SPLIT ? 20 : 0;
 const wview = SPLIT ? document.createElement('canvas') : canvas, fview = SPLIT ? document.createElement('canvas') : null;
 if (SPLIT) {

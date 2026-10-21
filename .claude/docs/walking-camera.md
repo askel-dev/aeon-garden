@@ -81,7 +81,7 @@ landing (`jumpDust`) and the lean into it; P pauses now, not Space. Playing toge
 and a friend's is played out on its own clock (`peerJump`, `peerItems`: the arc, its dust and sounds).
 
 
-**The split, on a phone.** On a touch screen (or `?split`; `?split=0` turns it off) the meadow is drawn at 30 fps on a
+**The split.** Off by default (it was on for touch screens from f4acee4 till Axel turned it off, 2026-10-21); with `?split` the meadow is drawn at 30 fps on a
 canvas a little bigger than the screen (`wview`), and on the beats between it and the ground are slid by what the camera
 has moved; the forager is drawn every beat on a small canvas of its own over them (`fview`, `drawForagerLayer`), its
 light laid over just it (`lightForager`). So the camera and the forager move at the screen's rate for about a third less
