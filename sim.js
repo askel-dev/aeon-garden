@@ -5611,7 +5611,7 @@ function foragerOf(x, y) {
     warmth: -0, wet: -0, stamina: -0, feel: -0, winded: false, down: -1, stumble: 0, homeX: x, homeY: y, tummy: -0, warmIn: 0, health: -0,
     jumpT: 0, jz: -0, jumpV: -0, jumpSpeed: -0, jumpFX: -0, jumpFY: -0, jumpAt: 0,
     hop: -0, hopBuf: 0, hopWin: 0, landTick: 0, hopAim: -0,
-    hand: '', handHeat: -0, handFull: -0, xp: bySkill(-0), lv: bySkill(0), kit: kitOf() };
+    hand: '', handHeat: -0, handFull: -0, rest: 0, xp: bySkill(-0), lv: bySkill(0), kit: kitOf() };
   f.warmth = 1; f.stamina = 1; f.tummy = 1; f.health = 1;   // (after: they start as fractions, so the layout never changes; a kept one from before the tummy starts full)
   return f;
 }
@@ -6306,6 +6306,11 @@ function hurt(w, n) {
   return f.health > 0;
 }
 
+// Still under the lean-to at night for CURL_TICKS, it curls up in its bed of dry grass (f.rest counts the ticks; game.js
+// draws it lying curled, zzz): warmer by CURL_FEEL, and it mends twice as fast. Walking off, or the dawn, gets it up.
+const CURL_TICKS = Math.round(6 * TPD / 720);   // (six seconds at 1x)
+const CURL_FEEL = 8;                    // degrees warmer, curled up in the dry grass out of the wind
+const curledUp = f => f.rest >= CURL_TICKS;
 // One tick of its body: warmth, wet, stamina, health, and a collapse.
 function bodyTick(w) {
   const f = w.forager;
@@ -6317,10 +6322,13 @@ function bodyTick(w) {
   const roof = !!(w.camp && w.camp.lean) && underLean(w, f.x, f.y);   // (under the lean-to: sheltered as the thickest wood, and no rain at all)
   const shelter = roof ? 1 : clamp(w.wood[i] / SHELTER_WOOD, 0, 1);
   const moving = f.walking && f.moved > 0, sprint = moving && f.running && !f.winded;
+  f.rest = roof && isNight(w.tick) && !f.walking && !f.hand && f.stumble === 0 ? f.rest + 1 : 0;
+  const curled = f.rest >= CURL_TICKS;
+  if (f.rest === CURL_TICKS) { earnDeed(w, 'lean-rest'); emit(w, { type: 'curl' }); }
   const wade = !w.frozen && w.water[i] > 0;
   const fire = w.fires.length ? fireWarmth(w, f.x, f.y) : 0, near = fire ? fireNear : 0;   // (a fire close by: the strongest warmth)
   const feel = air + (SUN[kind] || 0) * sunUp(w.tick) * (1 - shelter) - ((WIND[kind] || 0) + (gale ? GALE_WIND : 0)) * (1 - 0.6 * shelter) - WET_CHILL * f.wet
-    + (sprint ? ACTIVE.run : moving ? ACTIVE.walk : ACTIVE.still) + fire;
+    + (sprint ? ACTIVE.run : moving ? ACTIVE.walk : ACTIVE.still) + fire + (curled ? CURL_FEEL : 0);
   f.feel = feel;
   const d = feel - COMFY, hunger = hungerOf(f);
   const cool = (1 + WET_COLD * f.wet) * (1 + HUNGRY_COLD * hunger) * (f.warmIn > 0 ? WARM_IN_COOL : 1);
@@ -6352,7 +6360,7 @@ function bodyTick(w) {
   }
   if (f.warmth <= WARMTH_STAGES[2]) f.health = Math.max(0, f.health - HEALTH_COLD * (1 - f.warmth / WARMTH_STAGES[2]) - HEALTH_COLD * 0.15);   // (the colder, the faster)
   if (f.tummy <= 0) f.health = Math.max(0, f.health - HEALTH_STARVE);
-  if (f.warmth > WARMTH_STAGES[1] && f.tummy >= HUNGRY && f.health < 1) f.health = Math.min(1, f.health + HEALTH_MEND);
+  if (f.warmth > WARMTH_STAGES[1] && f.tummy >= HUNGRY && f.health < 1) f.health = Math.min(1, f.health + HEALTH_MEND * (curled ? 2 : 1));
   if (f.warmth <= 0 || f.health <= 0) {                 // collapsed
     f.down = w.tick; f.walking = false; f.running = false; f.sneaking = false; f.speed = 0; f.path.length = 0; f.stumble = 0;
     emit(w, { type: 'collapse' });
@@ -6363,7 +6371,7 @@ function bodyTick(w) {
 function wakeForager(w) {
   const f = w.forager;
   f.x = f.homeX; f.y = f.homeY; f.goalX = f.x; f.goalY = f.y; f.heading = Math.PI / 2;
-  f.walking = false; f.running = false; f.sneaking = false; f.speed = 0; f.path.length = 0;
+  f.walking = false; f.running = false; f.sneaking = false; f.speed = 0; f.path.length = 0; f.rest = 0;
   f.warmth = WAKE_WARMTH; f.wet = 0; f.stamina = 1; f.winded = false; f.stumble = 0; f.down = -1;
   f.tummy = Math.max(f.tummy, WAKE_TUMMY); f.warmIn = 0; f.health = Math.max(f.health, WAKE_HEALTH);
   f.bag.fill(''); f.bagN.fill(0); f.hand = '';
@@ -6748,7 +6756,7 @@ function earnDeed(w, id) {
 function basketHasAll(B) {
   const ing = recipesData().INGREDIENTS;
   for (const id in ing) {
-    if (!(ing[id].fill > 0)) continue;
+    if (!(ing[id].fill > 0) || ing[id].dried) continue;   // (what the rack makes isn't a kind of food to find)
     let has = false;
     for (let k = 0; k < B.bag.length && !has; k++) if (B.bag[k] === id && B.bagN[k] > 0) has = true;
     if (!has) return false;
@@ -6951,7 +6959,8 @@ function makeSeat(w, x, y, turn = SEAT_TILT) {
 // before it gets rack: null in unpackWorld.
 const RACK_SLOTS = 6;                   // one row of hooks, a slot to a hook (game.js RACK_HOOKS)
 const RACK_KEEP = 4;                    // what a slot holds, times a basket's
-const rackOf = (x, y, made) => ({ rack: true, kept: RACK_KEEP, x, y, made, bag: new Array(RACK_SLOTS).fill(''), bagN: new Array(RACK_SLOTS).fill(0) });
+const rackOf = (x, y, made) => ({ rack: true, kept: RACK_KEEP, x, y, made, bag: new Array(RACK_SLOTS).fill(''), bagN: new Array(RACK_SLOTS).fill(0),
+  dry: new Array(RACK_SLOTS).fill(-0), dryOf: new Array(RACK_SLOTS).fill(''), dryN: new Array(RACK_SLOTS).fill(0) });   // (how far each slot has dried: rackTick)
 // Sets it down at x, y (game.js has taken what it takes out of the satchel; a friend's is only set down). Returns it.
 function makeRack(w, x, y) {
   if (!w.camp || w.camp.rack || campSpot(w, x, y, 'rack')) return null;
@@ -6960,6 +6969,43 @@ function makeRack(w, x, y) {
   emit(w, { type: 'rack', rack: w.camp.rack });
   return w.camp.rack;
 }
+// Drying (rackTick, every RACK_EVERY ticks): what hangs on the rack and has a dried form (recipes.js `dries`) turns into it
+// over about DRY_DAYS of plain dry weather: not at all in rain, a storm, fog or snow (DRY_WEATHER), half as fast at night,
+// twice with a lit fire near. A slot's progress is K.dry (0 to 1), kept with what it was for (dryOf, dryN): a new kind
+// starts again, and more of the same hung up sets it back by its share. The whole stack turns at once (event 'dried').
+// No random numbers; a rack kept before drying gets the blanks in unpackWorld, no KEEP_VERSION bump.
+const RACK_EVERY = 30;
+const DRY_DAYS = 1.2;                   // game days it takes in clear weather by day, with no fire
+const DRY_WEATHER = { clear: 1, cloudy: 0.7, heat: 1.6 };   // (the rest: 0)
+const DRY_NIGHT = 0.5, DRY_FIRE = 2, DRY_FIRE_R = 3.5;      // (a lit fire within DRY_FIRE_R tiles)
+const driesTo = id => { const g = id && recipesData().INGREDIENTS[id]; return (g && g.dries) || ''; };
+// How fast the rack dries just now, against clear weather by day (0: it doesn't).
+function dryPace(w) {
+  const K = w.camp && w.camp.rack;
+  if (!K) return 0;
+  let p = DRY_WEATHER[w.weather.kind] || 0;
+  if (!p) return 0;
+  if (isNight(w.tick)) p *= DRY_NIGHT;
+  for (const F of w.fires) if (F.lit && Math.hypot(F.x - K.x, F.y - K.y) < DRY_FIRE_R) { p *= DRY_FIRE; break; }
+  return p;
+}
+function rackTick(w) {
+  const K = w.camp.rack, step = dryPace(w) * RACK_EVERY / (DRY_DAYS * TPD);
+  for (let k = 0; k < K.bag.length; k++) {
+    const id = K.bag[k], n = K.bagN[k];
+    if (id !== K.dryOf[k]) { K.dryOf[k] = id; K.dryN[k] = n; K.dry[k] = 0; }
+    else if (n > K.dryN[k]) { K.dry[k] *= K.dryN[k] / n; K.dryN[k] = n; }
+    else K.dryN[k] = n;
+    const to = n > 0 ? driesTo(id) : '';
+    if (!to || step <= 0) continue;
+    K.dry[k] += step;
+    if (K.dry[k] < 1) continue;
+    K.bag[k] = to; K.dryOf[k] = to; K.dry[k] = 0;
+    earnDeed(w, 'dried');
+    emit(w, { type: 'dried', id: to, from: id, n, slot: k });
+  }
+}
+
 // The camp's lean-to (w.camp.lean, null till it's made): a sloping roof of poles, thatch and birch bark leaning against the
 // wind, with a bed of dry grass under it (recipes.js BUILDS.lean, which game.js spends). Standing under its roof counts as
 // sheltered (underLean, bodyTick: out of the rain and most of the wind), and building it moves the forager's home under it,
@@ -6979,8 +7025,8 @@ function makeLean(w, x, y) {
   const L = w.camp.lean = leanOf(x, y, w.tick);
   earnDeed(w, 'lean');
   const f = w.forager;
-  if (f) {                                                 // (its home under the roof, a step in from its mouth)
-    const hx = x + (w.camp.x <= x ? 0.35 : -0.35), hy = y + 0.1;
+  if (f) {                                                 // (its home under the roof, a step in from its mouth, which opens toward the fire: game.js drawLean)
+    const hx = x + (w.camp.x > x ? 0.35 : -0.35), hy = y + 0.1;
     if (walkable(w, hx, hy)) { f.homeX = hx; f.homeY = hy; }
   }
   emit(w, { type: 'lean', lean: L });
@@ -7583,6 +7629,7 @@ function step(w) {
   weatherTick(w);
   if (w.fires.length) { fireTick(w); kitTick(w); }
   if (w.camp && t % DEED_EVERY === 0) deedCheck(w);
+  if (w.camp && w.camp.rack && t % RACK_EVERY === 0) rackTick(w);
   if (w.torches.length && t % TORCH_EVERY === 0) torchTick(w);
   if (w.scorches.length && t % SCORCH_EVERY === 0) scorchTick(w);
   bodyTick(w);
@@ -7784,6 +7831,7 @@ function unpackWorld(kept) {
     }
     K.bag.length = RACK_SLOTS; K.bagN.length = RACK_SLOTS;
     K.kept = RACK_KEEP;
+    if (!K.dry) { K.dry = new Array(RACK_SLOTS).fill(-0); K.dryOf = new Array(RACK_SLOTS).fill(''); K.dryN = new Array(RACK_SLOTS).fill(0); }   // (kept before drying: nothing on its way yet)
     asFractions(K, ['x', 'y']);
   }
   if (w.camp && !w.camp.lean) w.camp.lean = null;          // (kept before the lean-to: none yet)
@@ -7798,6 +7846,7 @@ function unpackWorld(kept) {
   if (!w.stone) w.stone = stoneOf(w);                   // (kept before the old stone: it's put up as it opens)
   else asFractions(w.stone, ['x', 'y']);
   if (F.health === undefined) F.health = 1;            // (kept before health: well)
+  if (F.rest === undefined) F.rest = 0;                // (kept before resting under the lean-to)
   asFractions(F, ['x', 'y', 'speed', 'heading', 'moved', 'goalX', 'goalY', 'warmth', 'wet', 'stamina', 'feel', 'homeX', 'homeY', 'tummy', 'health', 'jz', 'jumpV', 'jumpSpeed', 'jumpFX', 'jumpFY', 'hop']);
   for (const s of SKILL_NAMES) if (!(s in F.xp)) { F.xp[s] = -0; F.lv[s] = 0; }   // (kept before that skill: it starts at nothing)
   for (const s of SKILL_NAMES) F.lv[s] = skillLevel(s, F.xp[s]);
@@ -8664,7 +8713,7 @@ const api = {
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE, hollow,
   TREES, treeStage, treeAge, standing, bearing, inBloom, SEEDLING, SAPLING, GROWN, KIND_NAMES,
   FROG_K, SPAWN_WORTH, FISH_K, FISH_EAT, CROW_SEATS, SHROOMS, SHROOM_KINDS, FINDS, FIND_KINDS, findSeason, eachPickable, greenStage, greenPicked, GREEN_SEASONS, brambleStage, RIPE_FROM, RIPE_TO,
-  bagCount, spend, stow, feedForager, feedHand, holdDish, dropHand, hungerOf, HUNGRY, TUMMY, fireSpot, layFire, feedFire, fireRoom, lightable, lightFire, fireHeat, fireWarmth, CAMP_R, CAMP_FLAT, inCamp, campLevel, campR, earnDeed, countCosy, DEED_EVERY, BASKET_SLOTS, basketSpot, makeBasket, campSpot, seatSpot, makeSeat, seatNear, SEAT_HALF, SEAT_TILT, SEAT_OUT, makeRack, makeLean, RACK_SLOTS, RACK_KEEP, underLean, moveBetween, moveInto, putAway,
+  bagCount, spend, stow, feedForager, feedHand, holdDish, dropHand, hungerOf, HUNGRY, TUMMY, fireSpot, layFire, feedFire, fireRoom, lightable, lightFire, fireHeat, fireWarmth, CAMP_R, CAMP_FLAT, inCamp, campLevel, campR, earnDeed, countCosy, DEED_EVERY, BASKET_SLOTS, basketSpot, makeBasket, campSpot, seatSpot, makeSeat, seatNear, SEAT_HALF, SEAT_TILT, SEAT_OUT, makeRack, makeLean, RACK_SLOTS, RACK_KEEP, underLean, dryPace, driesTo, curledUp, CURL_TICKS, moveBetween, moveInto, putAway,
   torchSpot, placeTorch, relightTorch, torchUnder, TORCH_BURN, TORCH_WET, TORCH_MAX, TORCH_GAP, scorchFade,
   storeCount, storeRoom, storePut, storeTake, tidyStore, worldStores, storesAt, storesCount, storesRoom, storesTake, storesPut, STORE_NEAR,
   cookTicks, cookReady, cookOn, cookTake, shapeVessel, makeVessel, kitOf, cookProgress, SKILLS, SKILL_NAMES, SKILL_TOP, skillNeed, skillLevel, skillProgress, perk, gainSkill, FIRE_STICK, FIRE_MOST, FIRE_LOW, FIRE_EMBERS, FIRE_NEAR, FIRE_REACH, FIRE_GAP, FIRE_WET, FIRE_WARM,

@@ -1442,7 +1442,7 @@ function render(now) {
     fadeTo(it.f);
     if (it.d) it.d.hive ? drawBeeTree(it.d, it.sx, it.sy, now, ck) : drawDecor(it.d, it.sx, it.sy, now, ck, it.px);
     else if (it.h) drawSwarm(it.h, it.sx, it.sy);
-    else if (it.s) it.s.fire ? drawFire(it.s, z, now) : it.s.basket ? drawBasket(it.s, z, now) : it.s.stone ? drawStone(it.s, z, now) : it.s.torch ? drawTorch(it.s, z, now) : it.s.seat ? drawSeat(it.s, z) : it.s.rack ? drawRack(it.s, z) : it.s.lean ? drawLean(it.s, z) : it.s.cairn ? drawCairn(it.s, z, now) : it.s.green ? drawNettles(it.s, z) : it.s.bramble ? drawBramble(it.s, z) : it.s.find ? drawFind(it.s, z, now) : it.s.dropped ? drawDropped(it.s, z, now) : drawShroom(it.s, z);
+    else if (it.s) it.s.fire ? drawFire(it.s, z, now) : it.s.basket ? drawBasket(it.s, z, now) : it.s.stone ? drawStone(it.s, z, now) : it.s.torch ? drawTorch(it.s, z, now) : it.s.seat ? drawSeat(it.s, z) : it.s.rack ? drawRack(it.s, z) : it.s.lean ? drawLean(it.s, z, now) : it.s.cairn ? drawCairn(it.s, z, now) : it.s.green ? drawNettles(it.s, z) : it.s.bramble ? drawBramble(it.s, z) : it.s.find ? drawFind(it.s, z, now) : it.s.dropped ? drawDropped(it.s, z, now) : drawShroom(it.s, z);
     else if (it.k) drawPotAt(it.k, it.sx, it.sy, now);     // (the pot over a fire: right after its fire, tied on its y)
     else if (it.v) drawVisitor(it.v, it.sx, it.sy, now, z);
     else if (it.p) drawForager(it.sx, it.sy, now);
@@ -1478,6 +1478,7 @@ function render(now) {
   drawWeather(now, ck, glows ? 0 : dark);                  // (else the dark is laid with the weather's washes, as one)
   if (cut) drawFireflies(now, dark);
   if (!SPLIT || split.in) drawForagerRim(dark);           // (over the dark: its rim, so it isn't swallowed)
+  if (!SPLIT || split.in) drawCurledZ(now);              // (and asleep under the lean-to, its 💤)
   if (SPLIT) splitBehind(now, items);
   drawFireGlows(now, dark);                                // (the fires' glow, embers and sparks, over the dark)
   drawFireGauges(now);                                     // (how long each near one has left)
@@ -2109,6 +2110,7 @@ const fg = { wasWalking: false, at: -1, x: 0, y: 0, step: 0, stillMs: 1e4, view:
   meal: null, mealShown: false,                          // (eating: the meal going, and whether its painting holds it: mealTick)
   air: -0, squash: 1, jumpSeen: 0, dust: [], landSeen: 0, chainAt: -1e9, lean: -0, cuePlayed: true,   // (a dash: how high it's drawn, squash on take-off and landing, the take-off it last showed, its dust, the landing it last showed, its lean, and whether the press-me tick has sounded)
   hugAt: -1e9,                                          // (when it last hugged a friend: hug)
+  curlAt: 0,                                            // (when it curled up under the lean-to, 0 while it isn't: drawCurled)
   carry: false, carryShown: false, sizedCarry: false, dishY: -0, dishV: -0, slopAt: -1e9,   // (a dish in its hands: carrying it, its paintings asked for, its spring and last slop: drawHeldDish, slop)
   swingAt: -1e9, swingDir: -0, hitAt: -1e9, swingRest: -0, tossAt: -1e9,   // (friendly fire: when it last swung, which way, when it was last hit, how long it must rest, when it last threw: swing, toss)
   sx: -0, sy: -0, px: -0, drawnAt: -0,   // (where it was drawn this frame)
@@ -2404,7 +2406,10 @@ function foragerFrame(now, d) {
   if (meal >= 0 && fg.meal.ground === null && kneel >= 0 && !sitting) fg.meal.ground = kneel === KNEEL.warm || kneel === KNEEL.rest;
   const satEat = meal >= 0 && (sat || kneel >= 0 && !sitting && fg.meal.ground) ? SIT_EAT_OF[meal] : -1;
   fg.mealShown = stage < 4 && emo < 0 && (satEat >= 0 || kneel < 0 && meal >= 0 && pose === meal);
-  const want = FORAGER_ARTS[emo >= 0 && stage < 4 ? Fur.emoteArt(fg.snowArt, fg.outfit, emo) : carried ? Fur.carryArt(fg.snowArt, fg.outfit, poseKey(fg.view, pose))
+  // (still under the lean-to at night a while: curled up asleep in its bed, sim.js curledUp; eyes shut, the sitting pose laid on its side)
+  const curl = stage < 4 && !walking && kneel < 0 && meal < 0 && emo < 0 && !carry && S.curledUp(f);
+  if (!curl) fg.curlAt = 0; else if (!fg.curlAt) { fg.curlAt = now; idleStop(fg); }
+  const want = FORAGER_ARTS[curl ? at + KNEEL_AT + KNEEL.sitWarm : emo >= 0 && stage < 4 ? Fur.emoteArt(fg.snowArt, fg.outfit, emo) : carried ? Fur.carryArt(fg.snowArt, fg.outfit, poseKey(fg.view, pose))
     : at + (sat || kneel >= 0 && !sitting ? KNEEL_AT + (satEat >= 0 ? satEat : kneel) : poseKey(sitting ? 1 : fg.view, sitting ? 0 : pose))];
   fg.art = shownPose(f, want, px);
   if (fg.art === want) fg.carryShown = carried;          // (its new painting not in yet: the dish stays where the old one held it)
@@ -2703,6 +2708,7 @@ function drawForager(sx, sy, now) {
   fg.rimOn = false;                                       // (the rim follows the whole figure only: drawFigure turns it back on)
   if (zoomedOut()) { drawSmall(art, sx, sy - (0.36 + fg.lift) * px, px, fg.flip); drawChill(sx, sy, px, f.warmth, now); return; }
   if (stage === 4) { drawFallen(art, sx, sy, px, fg.flip, clamp((now - fg.downAt) / FALL_MS, 0, 1)); return; }
+  if (fg.curlAt) { drawCurled(art, sx, sy, px, now); return; }
   const trip = f.stumble > 0 ? Math.sin(Math.PI * (1 - f.stumble / S.STUMBLE_TICKS)) : 0;   // (a stumble: it pitches forward and catches itself)
   const held = f.hand && handArtOf(f.hand);
   const shown = held && !fg.meal && !(kw.reveal && kw.reveal.hand);   // (hidden while it's being eaten, or flying to the hand)
@@ -2975,6 +2981,24 @@ function drawFallen(art, sx, sy, px, flip, u) {
   ctx.translate(sx + side * px * 0.05 * e, sy - px * 0.04 * e); ctx.rotate(side * 1.42 * e);
   drawEmoji(art, 0, -px * 0.36, px, { flip });
   ctx.restore();
+}
+// Curled up asleep under the lean-to (fg.curlAt): it settles onto its side over CURL_MS, its feet in under the roof and its
+// head out of the mouth on the straw that spills from it (the mouth opens toward the fire: drawLean), breathing slow, and
+// a 💤 drifts up from its head close up.
+const CURL_MS = 900;
+function drawCurled(art, sx, sy, px, now) {
+  const L = myLean(), side = L && L.x < world.camp.x ? 1 : -1;
+  const u = clamp((now - fg.curlAt) / CURL_MS, 0, 1), e = u * u * (3 - 2 * u), breath = 1 + 0.025 * Math.sin(now / 900) * e;
+  ctx.save();
+  ctx.translate(sx - side * px * 0.12 * e, sy + px * 0.04 * e); ctx.rotate(side * 1.32 * e); ctx.scale(1, breath);
+  drawEmoji(art, 0, -px * 0.3, px, { flip: side < 0 });
+  ctx.restore();
+}
+// Its 💤, over the dark (render calls it after the washes, as the rim: it's only ever asleep at night).
+function drawCurledZ(now) {
+  if (!fg.curlAt || cam.zoom < 8 || now - fg.curlAt < CURL_MS || fg.drawnAt !== now) return;
+  const L = myLean(), side = L && L.x < world.camp.x ? 1 : -1, px = fg.px;
+  drawEmoji('💤', fg.sx + side * px * 0.3, fg.sy - px * 0.24 + Math.sin(now / 600) * 3, Math.max(12, Math.min(36, px * 0.12)), { alpha: 0.8 * clamp((now - fg.curlAt - CURL_MS) / 600, 0, 1) });
 }
 // Once a frame: the heartbeat, the dark and the night running by. Whether the sim should run the night by now.
 function bodyFrame(now) {
@@ -3590,7 +3614,7 @@ const FLOAT_MS = 1400, SAY_MS = 1900;     // a "+3 Chanterelles" floating up, an
 const FROM_FRONT = { tree: 1, hive: 1, bramble: 1 };   // (comes at these from in front, where it shows, not hidden behind them)
 let GLOW_ART = null;
 const pickFloats = [];                    // { img, w, h, x, y (world), t0, ms }
-const aim = { x: 0, y: 0, in: false, moved: false, cx: 0, cy: 0, cz: 0, at: 0, t: null, id: '', n: 0, why: '', fire: null, basket: null, torch: null, seat: null, close: false, closeAt: 0, closeT0: 0 };   // what the mouse is on (hoverFrame): a thing to gather, a fire, the basket, the stone or the seat log; close: what the forager stands by instead (closeBy)
+const aim = { x: 0, y: 0, in: false, moved: false, cx: 0, cy: 0, cz: 0, at: 0, t: null, id: '', n: 0, why: '', fire: null, basket: null, torch: null, seat: null, lean: null, close: false, closeAt: 0, closeT0: 0 };   // what the mouse is on (hoverFrame): a thing to gather, a fire, the basket, the stone or the seat log; close: what the forager stands by instead (closeBy)
 const AIM_MS = 150;
 
 // The thing to gather under a point: { kind, it } or null. Hives first (in their tree), then what grows at a tree's foot,
@@ -4035,11 +4059,12 @@ function hoverFrame() {
     const basket = ui.hoverId || fire || torch ? null : basketAt(aim.x, aim.y) || rackAt(aim.x, aim.y) || stoneAt(aim.x, aim.y);   // (or the rack, or the old stone)
     const seat = ui.hoverId || fire || torch || basket ? null : seatAt(aim.x, aim.y);   // (the camp's seat log)
     const t = ui.hoverId || fire || torch || basket || seat ? null : gatherAt(aim.x, aim.y);
+    const lean = ui.hoverId || fire || torch || basket || seat || t ? null : leanAt(aim.x, aim.y);   // (the lean-to: only named)
     // A mouse over nothing leaves what the forager stands by alone: clearing it for each look blanked its ring and label
     // (and restarted their fade) until closeBy looked again, so they flickered.
-    if (fire || torch || basket || seat || t || ui.hoverId || !aim.close) { aim.close = false; aim.fire = fire; aim.torch = torch; aim.basket = basket; aim.seat = seat; aim.t = t; }
-  } else if (!mouse && !aim.close && (aim.t || aim.fire || aim.torch || aim.basket || aim.seat)) { aim.t = null; aim.fire = null; aim.torch = null; aim.basket = null; aim.seat = null; }
-  if ((aim.close || !(aim.t || aim.fire || aim.torch || aim.basket || aim.seat || ui.hoverId)) && now - aim.closeAt > AIM_MS) closeBy(now);
+    if (fire || torch || basket || seat || t || lean || ui.hoverId || !aim.close) { aim.close = false; aim.fire = fire; aim.torch = torch; aim.basket = basket; aim.seat = seat; aim.t = t; aim.lean = lean; }
+  } else if (!mouse && !aim.close && (aim.t || aim.fire || aim.torch || aim.basket || aim.seat || aim.lean)) { aim.t = null; aim.fire = null; aim.torch = null; aim.basket = null; aim.seat = null; aim.lean = null; }
+  if ((aim.close || !(aim.t || aim.fire || aim.torch || aim.basket || aim.seat || aim.lean || ui.hoverId)) && now - aim.closeAt > AIM_MS) closeBy(now);
   if (aim.t) {
     const w = S.whatThere(world, aim.t.kind, aim.t.it);
     aim.id = w.id; aim.n = w.n; aim.why = w.why;
@@ -4062,17 +4087,19 @@ function closeBy(now) {
     if (myRack()) look('rack', myRack());
     if (world.stone) look('stone', world.stone);
     if (mySeat()) look('seat', mySeat());
+    if (myLean() && S.underLean(world, F.x, F.y)) look('lean', myLean());
     const t = nearPick();
     if (t) look(t.kind, t.it);
   }
   if (!best && !aim.close) return;
-  const was = aim.fire || aim.torch || aim.basket || aim.seat || (aim.t && aim.t.it);
+  const was = aim.fire || aim.torch || aim.basket || aim.seat || aim.lean || (aim.t && aim.t.it);
   aim.close = !!best;
   aim.fire = bk === 'fire' ? best : null;
   aim.torch = bk === 'torch' ? best : null;
   aim.basket = bk === 'basket' || bk === 'rack' || bk === 'stone' ? best : null;
   aim.seat = bk === 'seat' ? best : null;
-  aim.t = best && !aim.fire && !aim.torch && !aim.basket && !aim.seat ? (aim.t && aim.t.it === best ? aim.t : { kind: bk, it: best }) : null;
+  aim.lean = bk === 'lean' ? best : null;
+  aim.t = best && !aim.fire && !aim.torch && !aim.basket && !aim.seat && !aim.lean ? (aim.t && aim.t.it === best ? aim.t : { kind: bk, it: best }) : null;
   if (best !== was) aim.closeT0 = now;
 }
 function drawGlow(now, over) {
@@ -4115,6 +4142,7 @@ function hoverSay(now) {
     if (aim.torch && !ui.fire) { [name, detail] = torchSaid(aim.torch); it = aim.torch; }
     else if (aim.basket && !aim.basket.stone && !ui.fire) { [name, detail] = basketSaid(aim.basket); it = aim.basket; }
     else if (aim.seat && !ui.fire) { name = 'Seat log'; detail = fireSit.seat === aim.seat ? 'sitting' : 'sit down'; it = aim.seat; }
+    else if (aim.lean && !ui.fire) { [name, detail] = leanSaid(aim.lean); it = aim.lean; }
     else if (aim.t && !ui.gather && !pickFloats.length) {   // (a stick, a berry, a dropped thing: the ring alone doesn't name it)
       name = aim.n ? Recipes.INGREDIENTS[aim.id]?.name || aim.id : aim.why;
       detail = aim.n ? aim.why : '';
@@ -4129,6 +4157,8 @@ function hoverSay(now) {
       it = aim.basket;
     } else if (aim.seat && !ui.fire && !pickFloats.length) {
       name = 'Seat log'; detail = fireSit.seat === aim.seat ? 'sitting' : 'sit down'; it = aim.seat;
+    } else if (aim.lean && !ui.fire && !pickFloats.length) {
+      [name, detail] = leanSaid(aim.lean); it = aim.lean;
     } else if (aim.t && !ui.gather && !pickFloats.length) {   // (not over a "+3" floating up, or a line saying why not)
       name = aim.n ? Recipes.INGREDIENTS[aim.id]?.name || aim.id : aim.why;
       detail = aim.n ? aim.why : '';
@@ -6270,6 +6300,7 @@ const RACK_ART = 'rack:0';                // (made once: a frame builds no names
 const RACK_HB = 1.02;                     // the bar's height
 const RACK_HOOKS = [-0.6, -0.36, -0.12, 0.12, 0.36, 0.6].map((x, i) => [x, -RACK_HB + (i % 2 ? 0.2 : 0.1)]);   // where each hangs, from the ground under its middle (staggered, so they lap less)
 const RACK_ITEM = 0.32;                   // an item hung there, across (of its half-size)
+const RACK_SHRINK = 0.24;                 // how much smaller one drying is drawn by the time it's dry (then it's its dried painting)
 const RACK_WOOD = [150, 108, 66], RACK_BARK = [226, 216, 192], RACK_INK = [74, 50, 30];
 const rackPx = z => (8 + z) * RACK_SIZE;
 const myRack = () => (world && world.camp && world.camp.rack) || null;
@@ -6418,8 +6449,11 @@ function drawRack(K, z) {
   const ip = RACK_ITEM * px / 2;
   for (let k = 0; k < RACK_HOOKS.length && k < K.bag.length; k++) {   // what it holds, each under its hook, its top on the hook
     if (!K.bag[k]) continue;
-    const [hx, hy] = RACK_HOOKS[k];
-    drawEmoji(ITEM_ART[K.bag[k]] || Recipes.foodOf(K.bag[k])?.icon || '❔', sx + hx * px / 2, sy + hy * px / 2 + ip * 0.32, ip);
+    const [hx, hy] = RACK_HOOKS[k], art = ITEM_ART[K.bag[k]] || Recipes.foodOf(K.bag[k])?.icon || '❔', x = sx + hx * px / 2, y = sy + hy * px / 2 + ip * 0.32;
+    const d = K.dry[k];
+    if (!(d > 0)) { drawEmoji(art, x, y, ip); continue; }
+    const s = sprite(art, ip), w = s.size * (1 - RACK_SHRINK * d);   // drying: it shrivels toward its dried size, hanging from the same hook
+    ctx.drawImage(s.canvas, x - w / 2, y - s.size / 2, w, w);
   }
 }
 // The drying rack under a point on screen (its painting, a little wider for a finger), or null.
@@ -6524,11 +6558,47 @@ function paintLean(g, size, U) {
   // The front upright at its mouth's near corner, the ridge on its fork.
   { const [fx, fy] = P(XM, DN, 0); campFoot(g, fx, fy, 0.05, 120); campFork(g, fx, fy, HR + 0.02, 0.056, wood, 121); const [lx, ly] = P(XM, DN, HR + 0.02); campLash(g, lx, ly, 0.045); }
 }
-function drawLean(L, z) {
-  const px = leanPx(z), sx = (L.x - cam.x) * z + vw / 2, sy = (L.y - cam.y) * z + vh / 2;
+function drawLean(L, z, now) {
+  const px = leanPx(z), sx = (L.x - cam.x) * z + vw / 2, sy = (L.y - cam.y) * z + vh / 2, flip = L.x < world.camp.x;
   if (L.ghost) ctx.globalAlpha = L.ok ? 0.6 : 0.3;          // (where one would go: ui.place)
-  drawEmoji(LEAN_ART, sx, sy - LEAN_FOOT * px / 2, px, { flip: L.x < world.camp.x });   // (its mouth, painted left, turned to the fire)
-  if (L.ghost) ctx.globalAlpha = 1;
+  drawEmoji(LEAN_ART, sx, sy - LEAN_FOOT * px / 2, px, { flip });   // (its mouth, painted left, turned to the fire)
+  if (L.ghost) { ctx.globalAlpha = 1; return; }
+  const m = ui.sky.mix, wet = Math.min(1, (m.rain || 0) + (m.storm || 0));
+  if (wet > 0.1 && px > 40) leanDrips(sx, sy, px, flip ? -1 : 1, wet, now);
+}
+// Rain on the lean-to (drawLean): drops gathering along its near eave, where the thatch ends, and falling off it to the
+// ground in a little splash, more in a heavier rain. The roof runs from its ridge (XM, high, its mouth) down to its foot
+// (XF): an eave lower toward the foot drops sooner. One stroke for all the drops and one for the splashes, and only while
+// it rains with it on screen and near enough to see: nothing painted, nothing kept.
+const LEAN_DRIPS = 24, LEAN_DRIP_MS = 1000;
+function leanDrips(sx, sy, px, sd, wet, now) {
+  const h = px / 2, n = Math.round(LEAN_DRIPS * wet), P = campAt3;
+  ctx.beginPath();
+  const splash = [];
+  for (let i = 0; i < n; i++) {
+    const u = 0.08 + 0.84 * hash2(i, 5, 853), period = LEAN_DRIP_MS * (0.75 + 0.6 * hash2(i, 6, 853));
+    const t = (now / period + hash2(i, 7, 853)) % 1, fall = 0.72;   // (the rest of its time it's the splash)
+    const [ex, ey] = P(lerp(-0.85, 0.96, u), -0.43, lerp(1.04, 0.02, u)), [, gy] = P(0, -0.46, 0);
+    const x = sx + sd * ex * h;
+    if (t < 0.2) { const r = Math.max(1, px * 0.009) * t / 0.2; ctx.moveTo(x + r, sy + ey * h + r); ctx.arc(x, sy + ey * h + r, r, 0, TAU); continue; }   // (swelling on the eave)
+    if (t < fall) {
+      const k = (t - 0.2) / (fall - 0.2), y = sy + lerp(ey, gy, k * k) * h, len = Math.max(3, px * 0.045 * (0.3 + k));
+      ctx.moveTo(x, Math.min(y - len, sy + gy * h)); ctx.lineTo(x, Math.min(y, sy + gy * h));
+    } else splash.push(x, sy + gy * h, (t - fall) / (1 - fall));
+  }
+  const lw = Math.max(1.5, px * 0.014);
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = 'rgba(40, 52, 64, 0.3)'; ctx.lineWidth = lw + 1.5; ctx.stroke();   // (a faint dark edge, so a drop shows on the straw too)
+  ctx.strokeStyle = 'rgba(232, 242, 250, 0.9)'; ctx.fillStyle = 'rgba(232, 242, 250, 0.9)'; ctx.lineWidth = lw;
+  ctx.fill(); ctx.stroke();
+  if (!splash.length) return;
+  ctx.beginPath();
+  for (let i = 0; i < splash.length; i += 3) {             // (a crown of spray, widening as it fades)
+    const x = splash[i], y = splash[i + 1], k = splash[i + 2], r = px * 0.045 * (0.3 + k);
+    ctx.moveTo(x - r, y); ctx.quadraticCurveTo(x - r * 0.6, y - r * 0.8 * (1 - k), x - r * 0.2, y);
+    ctx.moveTo(x + r, y); ctx.quadraticCurveTo(x + r * 0.6, y - r * 0.8 * (1 - k), x + r * 0.2, y);
+  }
+  ctx.lineWidth = Math.max(1, px * 0.008); ctx.globalAlpha = 0.75; ctx.stroke(); ctx.globalAlpha = 1;
 }
 // The basket under a point on screen (a little wider for a finger), or null.
 function basketAt(sx, sy) {
@@ -6538,11 +6608,45 @@ function basketAt(sx, sy) {
   const x = (B.x - cam.x) * z + vw / 2, y = (B.y - cam.y) * z + vh / 2 - px * 0.18;
   return ((sx - x) / Math.max(14, m, px * 0.5)) ** 2 + ((sy - y) / Math.max(12, m, px * 0.42)) ** 2 < 1 ? B : null;
 }
-// A camp store's line over the satchel (hoverSay): what's in it.
+// A camp store's line over the satchel (hoverSay): what's in it. The rack's names what's drying, how far, and what's dried (✓).
 function basketSaid(B) {
   let n = 0;
   for (let k = 0; k < B.bag.length; k++) n += B.bagN[k];
-  return [B.rack ? 'Drying rack' : 'Basket', n ? `${n} ${n === 1 ? 'thing' : 'things'} in it` : 'empty'];
+  if (B.rack) return ['Drying rack', rackSaid(B) || (n ? `${n} ${n === 1 ? 'thing' : 'things'} on it` : 'hang food on it to dry')];
+  return ['Basket', n ? `${n} ${n === 1 ? 'thing' : 'things'} in it` : 'empty'];
+}
+const DRY_WORDS = ['just hung', 'drying', 'half dry', 'nearly dry'];
+function rackSaid(K) {
+  let drying = '', far = 0, more = 0, done = '';
+  for (let k = 0; k < K.bag.length; k++) {
+    const id = K.bag[k];
+    if (!id) continue;
+    if (S.driesTo(id)) { if (drying) more++; else { drying = Recipes.INGREDIENTS[id].name; far = K.dry[k]; } }
+    else if (Recipes.INGREDIENTS[id]?.dried && !done) done = Recipes.INGREDIENTS[id].name;
+  }
+  const said = [];
+  const m = ui.sky.mix, rain = (m.rain || 0) + (m.storm || 0) > 0.3;   // (not drying: say why instead of how far)
+  const others = more ? ` (+${more})` : '';
+  if (drying) said.push(S.dryPace(world) ? `${drying} ${DRY_WORDS[Math.min(3, Math.floor(far * 4))]}${others}` : `${drying}${others}: ${rain ? 'waiting out the rain' : 'too damp to dry'}`);
+  if (done) said.push('✓ ' + done);
+  return said.join(' · ');
+}
+// The lean-to's: how dry it is under there, and what it's for.
+function leanSaid(L) {
+  const f = world.forager, under = S.underLean(world, f.x, f.y), m = ui.sky.mix, wet = (m.rain || 0) + (m.storm || 0) > 0.3;
+  if (under && S.curledUp(f)) return ['Lean-to', 'curled up, warm and dry'];
+  if (under && f.wet > 0.05) return ['Lean-to', wet ? 'drying off, the rain on the roof' : 'drying off'];
+  if (wet) return ['Lean-to', under ? 'dry under here, the rain on the roof' : 'dry under it'];
+  if (under && S.isNight(world.tick)) return ['Lean-to', 'dry · stay a while to sleep'];
+  return ['Lean-to', under ? 'dry and out of the wind' : (m.snow || 0) > 0.3 ? 'out of the snow under it' : 'out of the rain and wind'];
+}
+// The lean-to under a point on screen, or null (its roof, a little wider for a finger).
+function leanAt(sx, sy) {
+  const L = myLean();
+  if (!L) return null;
+  const z = cam.zoom, px = leanPx(z), m = fingerTap ? FINGER_R : 0;
+  const x = (L.x - cam.x) * z + vw / 2, y = (L.y - cam.y) * z + vh / 2 - px * 0.2;
+  return ((sx - x) / Math.max(18, m, px * 0.5)) ** 2 + ((sy - y) / Math.max(14, m, px * 0.32)) ** 2 < 1 ? L : null;
 }
 
 // ------------------------------------------------------------------ the old stone
@@ -16152,6 +16256,13 @@ function handleEvent(e) {
     case 'woke':
       bodyWoke();
       break;
+    case 'dried': {                                         // (something on the rack dried: sim.js rackTick)
+      const K = myRack(), name = Recipes.INGREDIENTS[e.id]?.name || e.id;
+      if (K && visible(...toScreen(K.x, K.y), 40)) { say('✓ ' + name, K.x, K.y - 1.2); hear('pick', K.x, K.y, { n: 1 }); }
+      firstTime('dried', 'you dried', name, 'Take them off the rack: lighter, so more go in a slot.');
+      if (larderOpen()) renderLarder();
+      break;
+    }
     case 'fired':                                           // a vessel out of the fire (sim.js kitTick)
       firedUi.at = performance.now(); firedUi.x = world.forager.kit.x; firedUi.y = world.forager.kit.y; firedUi.id = e.what;
       toast(`<b>Your ${craftName(e.what)} is ready</b> · cook in it at any fire`);
@@ -20680,7 +20791,7 @@ function frame(now) {
       const life = world.count.rabbit / (S.SPECIES.rabbit.cap * world.room);   // a meadow full of rabbits
       Sound.update({ phase: ck.phase, season: ck.season, speed: ui.speed, sky: ui.sky.mix, bees: beesOnScreen(), trees: leavesOnScreen(), life,
         frogs: world.spawnCount > 0 && ck.season === 0 ? Math.min(1, world.spawnCount / 300) : 0, fire: fireSound(),
-        torch: torch.v, torchPan: torch.pan,
+        torch: torch.v, torchPan: torch.pan, roof: myLean() && S.underLean(world, world.forager.x, world.forager.y) ? 1 : 0,
         pot: cooking() ? (ui.fire.stage === 'cooking' ? 1 : 0.3) : 0 });   // (the pot simmering on it, bubbling hard as it cooks)
     }
     // Not under the mouse or a finger: a rebuilt button would swallow the click. (A finger leaves :hover stuck.)

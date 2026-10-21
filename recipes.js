@@ -35,15 +35,17 @@ const VESSELS = {
 // stack: how many one satchel slot holds (default 10, sim.js STACK).
 // keep: how many one slot of a set-down store holds, the camp's basket and the keeps to come (default: its stack).
 // where: when and where to look for it, for its page in the book (shown before it's found, as the hint).
+// dries: what it turns into hung on the camp's drying rack a day or two in dry weather (sim.js rackTick); the dried one
+// has dried: true (it isn't a kind of food the basket wants one of).
 const INGREDIENTS = {
-  apple:       { name: 'Apple',               tags: ['fruit'],          fill: 1,   icon: '🍎', text: 'Windfalls in the grass under the tree, sweet with a bruise.', where: 'Autumn: windfalls in the grass under the apple trees.' },
-  cherry:      { name: 'Cherries',            stack: 20, tags: ['fruit', 'berry'], fill: 1,   icon: '🍒', text: 'Dark and warm from the sun, picked in pairs by the stalk.', where: 'Early summer, on the cherry trees out in the open.' },
-  blackberry:  { name: 'Blackberries',        stack: 20, tags: ['fruit', 'berry'], fill: 1,   icon: '🫐', text: 'Off the brambles, mind the thorns. One for the satchel, one for you.', where: 'Late summer into autumn, on the brambles at the edges of the woods.' },
+  apple:       { name: 'Apple',               tags: ['fruit'],          fill: 1,   dries: 'applering', icon: '🍎', text: 'Windfalls in the grass under the tree, sweet with a bruise.', where: 'Autumn: windfalls in the grass under the apple trees.' },
+  cherry:      { name: 'Cherries',            stack: 20, tags: ['fruit', 'berry'], fill: 1,   dries: 'driedberry', icon: '🍒', text: 'Dark and warm from the sun, picked in pairs by the stalk.', where: 'Early summer, on the cherry trees out in the open.' },
+  blackberry:  { name: 'Blackberries',        stack: 20, tags: ['fruit', 'berry'], fill: 1,   dries: 'driedberry', icon: '🫐', text: 'Off the brambles, mind the thorns. One for the satchel, one for you.', where: 'Late summer into autumn, on the brambles at the edges of the woods.' },
   honey:       { name: 'Honey',               stack: 5, tags: ['sweet'],          fill: 2,   icon: '🍯', text: 'Taken gently, leaving the bees what they need.', where: 'From the bees in the hollow old oaks, when they have some to spare.' },
-  cep:         { name: 'Cep',                 tags: ['mushroom'],       fill: 1.5, icon: '🍄', text: 'A fat brown cap on a white stem: the cook\'s favourite.', where: 'Under oaks and pines a day or two after rain, mostly in autumn.' },
-  chanterelle: { name: 'Chanterelles',        tags: ['mushroom'],       fill: 1,   icon: '🍄', text: 'Golden, smelling faintly of apricots.', where: 'Under birches and beeches after rain, mostly in autumn.' },
-  field:       { name: 'Field mushroom',      tags: ['mushroom'],       fill: 1,   icon: '🍄', text: 'Pink gills under a white cap, up after the rain.', where: 'Out in the grass where the ground is rich, after rain.' },
-  oyster:      { name: 'Oyster mushroom',     tags: ['mushroom'],       fill: 1,   icon: '🍄', text: 'Soft grey shelves on a fallen log.', where: 'On fallen logs, after rain.' },
+  cep:         { name: 'Cep',                 tags: ['mushroom'],       fill: 1.5, dries: 'driedshroom', icon: '🍄', text: 'A fat brown cap on a white stem: the cook\'s favourite.', where: 'Under oaks and pines a day or two after rain, mostly in autumn.' },
+  chanterelle: { name: 'Chanterelles',        tags: ['mushroom'],       fill: 1,   dries: 'driedshroom', icon: '🍄', text: 'Golden, smelling faintly of apricots.', where: 'Under birches and beeches after rain, mostly in autumn.' },
+  field:       { name: 'Field mushroom',      tags: ['mushroom'],       fill: 1,   dries: 'driedshroom', icon: '🍄', text: 'Pink gills under a white cap, up after the rain.', where: 'Out in the grass where the ground is rich, after rain.' },
+  oyster:      { name: 'Oyster mushroom',     tags: ['mushroom'],       fill: 1,   dries: 'driedshroom', icon: '🍄', text: 'Soft grey shelves on a fallen log.', where: 'On fallen logs, after rain.' },
   sulphur:     { name: 'Chicken of the woods', tags: ['mushroom'],      fill: 2,   icon: '🍄', raw: false, text: 'Orange shelves on a dead tree. Never raw: it wants cooking.', where: 'On dead trees still standing, after rain.' },
   garlic:      { name: 'Wild garlic',         keep: 20, tags: ['greens'],         fill: 0.5, icon: '🌿', text: 'You smell it before you see it.', where: 'In spring, carpeting the damp woods near the water.' },
   nettle:      { name: 'Nettles',             keep: 20, tags: ['greens'],         fill: 0.5, icon: '🌿', raw: false, text: 'Pinched by the tops. They sting raw, but not once cooked.', where: 'Spring to autumn, wherever the ground is rich.' },
@@ -53,9 +55,13 @@ const INGREDIENTS = {
   dandelion:   { name: 'Dandelions',          keep: 20, tags: ['greens', 'flower'], fill: 0.5, icon: '🌼', text: 'Every bit of it is good to eat, flower to root.', where: 'All through spring, out in the open grass.' },
   sorrel:      { name: 'Sorrel',              keep: 20, tags: ['greens'],         fill: 0.5, icon: '🌿', text: 'Sharp and lemony. A leaf to wake a dish up.', where: 'Spring and summer, in the damp grass near the water.' },
   watercress:  { name: 'Watercress',          keep: 20, tags: ['greens'],         fill: 0.5, icon: '🥬', text: 'Peppery, from the cold shallows.', where: 'Late autumn through winter, in the shallows by the bank.' },
-  strawberry:  { name: 'Wild strawberries',   stack: 20, tags: ['fruit', 'berry'], fill: 1,   icon: '🍓', text: 'Tiny, and sweeter than any from a garden.', where: 'Summer, along the edges of the woods.' },
+  strawberry:  { name: 'Wild strawberries',   stack: 20, tags: ['fruit', 'berry'], fill: 1,   dries: 'driedberry', icon: '🍓', text: 'Tiny, and sweeter than any from a garden.', where: 'Summer, along the edges of the woods.' },
   elderflower: { name: 'Elderflower',         tags: ['flower'],         fill: 0.5, icon: '💮', text: 'Creamy flat heads that smell of summer.', where: 'Late spring into summer, on the elders by the water and at the woods\' edge.' },
   rosehip:     { name: 'Rosehips',            tags: ['fruit'],          fill: 0.5, icon: '🌹', raw: false, text: 'Red and bright in the cold. Full of hairs: cook them first.', where: 'Late autumn and winter, on the wild roses in the scrub.' },
+  // Dried on the camp's rack (`dries` above): lighter, so a slot holds more, and sweeter or deeper than fresh.
+  driedshroom: { name: 'Dried mushrooms',     stack: 30, tags: ['mushroom'],       fill: 1,   icon: '🍄', dried: true, text: 'Shrivelled dark and leathery, and they smell twice as much of mushroom as they did.', where: 'Hang ceps, chanterelles, field or oyster mushrooms on the drying rack, in dry weather.' },
+  applering:   { name: 'Dried apple rings',   stack: 30, tags: ['fruit'],          fill: 1,   icon: '🍎', dried: true, text: 'Chewy and sweet, curling at the edges like old leather.', where: 'Hang apples on the drying rack, in dry weather.' },
+  driedberry:  { name: 'Dried berries',       stack: 40, tags: ['fruit', 'berry'], fill: 1,   icon: '🫐', dried: true, text: 'Wrinkled, dark and tart-sweet: summer kept for the cold.', where: 'Hang cherries, blackberries or wild strawberries on the drying rack, in dry weather.' },
   // What lies on the ground for a fire: not food. 'tinder' catches the spark, 'fuel' keeps it going.
   stick:       { name: 'Sticks',              stack: 20, tags: ['fuel'],           fill: 0,   icon: '🪵', raw: false, text: 'Something to keep a fire going.', where: 'Under the trees, all year. More come down in a storm.' },
   pebble:      { name: 'Pebbles',             stack: 20, tags: ['stone'],          fill: 0,   icon: '🪨', raw: false, text: 'Smooth stones, to ring a fire.', where: 'On the shore, at the fords and round the rocks.' },
@@ -400,6 +406,8 @@ const DEEDS = {
   'dish-5': { name: 'Five different dishes at camp', points: 3, from: 1 },
   'dish-12': { name: 'Twelve different dishes at camp', points: 4, from: 1 },
   'seat-meal': { name: 'Ate a meal sitting on the seat log', points: 1, from: 1 },
+  dried: { name: 'Dried something on the rack', points: 1, from: 2 },
+  'lean-rest': { name: 'Curled up under the lean-to for the night', points: 1, from: 2 },
 
   'night-fire': { name: 'Kept the fire lit from dusk to dawn', points: 2, from: 1 },
   'storm-fire': { name: 'Kept the fire lit through a storm', points: 3, from: 1 },
@@ -552,6 +560,7 @@ function checkRecipes() {
     if (!Array.isArray(g.tags)) problems.push(`Ingredient '${id}' needs tags: [...] (it can be empty).`);
     if (typeof g.fill !== 'number') problems.push(`Ingredient '${id}' needs a fill (a number).`);
     if (g.tags && g.tags.includes(id)) problems.push(`Ingredient '${id}' has itself as a tag.`);
+    if (g.dries != null && !(INGREDIENTS[g.dries] && INGREDIENTS[g.dries].dried)) problems.push(`Ingredient '${id}' dries into '${g.dries}', which is no ingredient with dried: true.`);
   }
   RECIPES.forEach((r, i) => {
     const who = r.name ? `'${r.name}'` : `Recipe number ${i + 1}`;
