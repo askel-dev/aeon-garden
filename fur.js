@@ -1069,10 +1069,10 @@ function foragerParts(P) {
     else if (front) add(g => { g.moveTo(cx + 0.06, cy - 0.24); g.quadraticCurveTo(cx + 0.24, cy - 0.34 + t, cx + 0.33, cy - 0.22 + t * 1.6); g.quadraticCurveTo(cx + 0.22, cy - 0.16, cx + 0.17, cy - 0.12); g.closePath(); },
       { marks: [[HOOD, 1, 0.01, g => g.rect(cx - 1, cy - 1, 2, 2)], ...snowOn(g => ovalAt(g, cx + 0.2, cy - 0.31 + t, 0.14, 0.025 + 0.025 * SNOWED), 0.02)] });
     else add(g => {                                             // from the back: hanging down between the shoulders
-      g.moveTo(cx - 0.15, cy - 0.04);
-      g.bezierCurveTo(cx - 0.12, cy + 0.16, cx - 0.02 + t, cy + 0.26, cx + 0.03 + t * 1.5, cy + 0.42);
-      g.bezierCurveTo(cx + 0.08 + t, cy + 0.26, cx + 0.15, cy + 0.14, cx + 0.14, cy - 0.06);
-      g.quadraticCurveTo(cx, cy - 0.12, cx - 0.15, cy - 0.04);
+      g.moveTo(cx - 0.09, cy - 0.04);                           // a short, slim point that curls to the right at its end
+      g.bezierCurveTo(cx - 0.08, cy + 0.1, cx - 0.06 + t, cy + 0.2, cx + 0.03 + t * 1.5, cy + 0.27);
+      g.bezierCurveTo(cx + 0.02 + t, cy + 0.18, cx + 0.09, cy + 0.12, cx + 0.09, cy - 0.05);
+      g.quadraticCurveTo(cx, cy - 0.1, cx - 0.09, cy - 0.04);
       g.closePath();
     },
       { casts: true, marks: [[HOOD, 1, 0.01, g => g.rect(cx - 1, cy - 1, 2, 2)]] });
@@ -1082,8 +1082,7 @@ function foragerParts(P) {
   const frx = side ? 0.155 : 0.165, fry = 0.165;
   const cap = snowOn(g => ovalAt(g, cx + 0.01, cy - R * 0.98, R * 0.95, 0.05 + 0.045 * SNOWED), 0.025);   // a cap of snow on the hood
   const head = () => add(g => { ovalAt(g, cx, cy, R, R * 0.97); ovalAt(g, cx + 0.02, cy + 0.17, 0.17, 0.09); },   // and a little cowl at the neck
-    { casts: true, marks: back ? [[HOOD, 1, 0.01, g => g.rect(cx - 1, cy - 1, 2, 2)], [HOOD_RIM, 0.55, 0.04, g => ovalAt(g, cx, cy + 0.17, 0.17, 0.06)], ...cap,
-      [SKIN, 1, 0.02, g => ovalAt(g, cx - 0.28, cy + 0.06, 0.06, 0.12)]]   // (a glimpse of a cheek)
+    { casts: true, marks: back ? [[HOOD, 1, 0.01, g => g.rect(cx - 1, cy - 1, 2, 2)], [HOOD_RIM, 0.55, 0.04, g => ovalAt(g, cx, cy + 0.17, 0.17, 0.06)], ...cap]   // (no cheek from behind)
       : [[HOOD, 1, 0.01, g => g.rect(cx - 1, cy - 1, 2, 2)],
         [HOOD_RIM, 1, 0.03, g => ovalAt(g, fx, fy, frx + 0.04, fry + 0.04)], ...cap,
         [SKIN, 1, 0.015, g => ovalAt(g, fx, fy, frx, fry)],
