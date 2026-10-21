@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lean-to Looks</title>
+<style>
+  body { margin: 0; padding: 16px; background: #f1ead8; font: 600 14px system-ui, sans-serif; color: #3b372f; }
+  canvas { max-width: 100%; height: auto; border-radius: 12px; }
+</style>
+</head>
+<body>
+<canvas id="sheet"></canvas>
+<script src="../summer-trees/fur.js"></script>
+<script src="camp.js"></script>
+<script src="lean.js"></script>
+<script>
+// The lean-to as it is (left) and the simpler one (right): close up, then in the grass at two of the game's zooms
+// (a lean-to is (8 + zoom) * LEAN_SIZE px across, game.js leanPx).
+const W = 1400, H = 900, k = 2;
+const c = document.getElementById('sheet');
+c.width = W * k; c.height = H * k;
+const g = c.getContext('2d');
+g.scale(k, k);
+g.fillStyle = '#86775b'; g.fillRect(0, 0, W, H);
+g.fillStyle = '#74a84a'; g.fillRect(0, 560, W, H - 560);
+const paint = (fn, px, x, y) => {
+  const size = Math.ceil(px * 1.3 * k), cv = document.createElement('canvas');
+  cv.width = cv.height = size;
+  fn(cv.getContext('2d'), size, px * k, 0);
+  g.drawImage(cv, x - size / k / 2, y - LEAN_FOOT * px / 2 - size / k / 2, size / k, size / k);
+};
+const label = (t, x, y) => { g.font = '700 22px system-ui'; g.fillStyle = '#fff6e2'; g.textAlign = 'center'; g.fillText(t, x, y); };
+const looks = [[paintLean, 'Now'], [paintLeanSimple, 'Simpler']];
+looks.forEach(([fn, name], i) => {
+  const x = 350 + i * 700;
+  label(name, x, 40);
+  paint(fn, 440, x, 470);
+  for (const [z, dx] of [[30, -150], [60, 60]]) paint(fn, (8 + z) * LEAN_SIZE, x + dx, 780);
+});
+const out = document.createElement('div');
+out.id = 'png'; out.hidden = true; out.textContent = c.toDataURL('image/png');
+document.body.append(out);
+</script>
+</body>
+</html>
