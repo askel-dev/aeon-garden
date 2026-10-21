@@ -886,6 +886,44 @@
     .cook-row { padding-top: 8px; padding-right: 56px; }
     #cook .close { top: auto; bottom: 10px; right: 12px; }
   }
+  /* ---- cooking at the fire itself (game.js FIRE_COOK, layNear; ?card has the window back): no window. The pot's canvas is laid
+     on the real fire where the meadow draws it, what it'll make and Cook sit under the stones, and the satchel's things are a
+     slim strip at the foot with the vessels, the book and the ✕. Only those take the pointer: round them the meadow is the meadow. */
+  #cook.at-fire { inset: 0; display: block; padding: 0; border-radius: 0; background: none; box-shadow: none; transform: none; animation: none; pointer-events: none; }
+  #cook.at-fire .cook-pot { position: absolute; left: 0; top: 0; width: 0; height: 0; }
+  #cook.at-fire #cook-canvas { position: absolute; left: 0; top: 0; border-radius: 0; background: none; box-shadow: none; pointer-events: auto; animation: fade-in 0.4s ease-out; }
+  #cook.at-fire #cook-empty { top: calc(var(--rx) * -1.7); right: auto; left: calc(var(--rx) * 0.95); width: 36px; height: 36px; pointer-events: auto; }
+  #cook.at-fire .cook-under { position: absolute; left: 0; top: calc(var(--rx) * 0.5); transform: translateX(-50%); display: flex; flex-direction: column; align-items: center;
+    gap: 8px; width: max-content; max-width: min(420px, 92vw); animation: fade-in 0.4s ease-out; }
+  #cook.at-fire #cook-what { margin: 0; min-height: 0; padding: 6px 14px; border-radius: 14px; font-size: 13.5px; line-height: 1.25; pointer-events: auto;
+    background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); }
+  #cook.at-fire #cook-what:has(> span:empty) { display: none; }
+  #cook.at-fire #cook-what b { font-size: 16px; }
+  #cook.at-fire .cook-act { display: flex; gap: 8px; pointer-events: auto; }
+  #cook.at-fire #cook-stick { background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); }
+  #cook.at-fire #cook-go { flex: none; min-width: 120px; }
+  #cook.at-fire.busy #cook-go { display: none; }   /* (cooking: the bar over the pot and the line say how long, the stick's still to hand) */
+  #cook.at-fire .cook-side { position: absolute; left: 50%; bottom: var(--bottom); transform: translateX(-50%); flex-direction: row; align-items: center; gap: 8px;
+    padding: 4px 6px; border-radius: 16px; pointer-events: auto; background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); animation: fade-in 0.3s ease-out; }
+  #cook.at-fire .cook-head { display: none; }
+  #cook.at-fire #cook-bag { --slot: 52px; grid-template-columns: repeat(8, var(--slot)); gap: 4px; }
+  #cook.at-fire .cook-slot { border-radius: 11px; }
+  #cook.at-fire .cook-slot b { right: 4px; bottom: 2px; font-size: 12px; }
+  #cook.at-fire #cook-vessels { margin: 0; gap: 2px; }
+  #cook.at-fire #cook-vessels button { min-width: 44px; padding: 2px; }
+  #cook.at-fire #cook-vessels button small { display: none; }
+  #cook.at-fire #cook-vessels button :is(img, .plate) { width: 30px; height: 30px; margin: 0 auto; }
+  #cook.at-fire .cook-row { display: flex; margin: 0; padding: 0; gap: 6px; }   /* (the window's three-column grid would leave an empty column: on a phone that pushed it to a row of its own) */
+  #cook.at-fire .close { position: relative; inset: auto; width: 44px; height: 44px; }
+  #cook.at-fire #cook-basket { position: absolute; left: 0; bottom: calc(100% + 6px); margin: 0; padding: 4px 6px; border-radius: 12px; max-width: 100%;
+    background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); }
+  #cook.at-fire #cook-basket.hidden { display: none; }
+  #cook.at-fire #cook-basket h3 { display: none; }
+  #cook.at-fire #cook-basket .bslots { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: var(--bslot, 40px); max-height: none; overflow-x: auto; overflow-y: hidden; }
+  @media (max-width: 760px) {
+    #cook.at-fire .cook-side { flex-wrap: wrap; justify-content: center; width: calc(100vw - 12px); padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px)); }
+    #cook.at-fire #cook-bag { --slot: min(52px, calc((100vw - 52px) / 8)); order: -1; flex: 1 0 100%; justify-content: center; }
+  }
   /* ---- the recipe book (game.js, the recipe book): a small leather book by the satchel's right end (B), glowing with "New"
      while a page has news; open, a book laid open on the meadow over a soft scrim, the numbered recipe tiles on the left
      page in their sections and the one picked on the right, its ✕ a round brass button top right. Every target is 44 px

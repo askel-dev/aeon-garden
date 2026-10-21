@@ -1,5 +1,14 @@
 # Cooking, vessels, the recipe book, eating
 
+At the fire itself (branch `fire-cook`, 2026-10-21, a prototype; `?card` has the window back): no window. The camera eases in on
+the real fire (`FIRE_COOK`, `measureCook`, `cookCam`) and the pot's canvas is laid on it where the meadow draws the fire each frame
+(`drawPot` keeps the spot in `potLaid`, `layNear` moves and scales the canvas, written only when it moved), its own bed, vignette
+and flames left out so the meadow's fire burns under it. What it'll make, the stick and Cook sit under the stones (`.cook-under`;
+Cook goes while it cooks, the meadow's bar over the pot says how long), the satchel's things, the vessels, the book and the ✕ are a
+slim strip at the foot (`.cook-side`). The camera comes no closer than the meadow is painted for (`nearMost`: the forager's painting,
+`furTop`, stretched at most `NEAR_STRETCH`, the most a phone already shows it at 64): at 240 the prototype blew the meadow up four
+times past its paintings into a blur. So the pot is the meadow's size, about 100 px across on a computer, 170 on an upright phone.
+
 Cooking at the fire (PLAN.md stage 6, its redesign, and the cooking window of 2026-10-16; the long comments over `COOK_TPS` and
 `DROPS` have it all): a click on a lit fire (or E, or the pot prompt) walks the forager there (`clickFire` 'cook', `goFire`), it
 kneels, and the camera eases in close on the fire (`cookCam`, in `leadCam`: to `kw.zoom`, about `COOK_TILES` across what the
