@@ -6944,13 +6944,13 @@ function makeSeat(w, x, y, turn = SEAT_TILT) {
   emit(w, { type: 'seat', seat: w.camp.seat });
   return w.camp.seat;
 }
-// The camp's drying rack (w.camp.rack, null till it's made): four forked sticks and two crossbars with a mat of dry grass
-// lashed across them, set down inside the camp's ring (recipes.js BUILDS.rack, which game.js spends). It's a second store
+// The camp's drying rack (w.camp.rack, null till it's made): two A-frames of crossed poles and a bar with a hook for each
+// slot, what it holds hung from them (game.js drawRack), set down inside the camp's ring (recipes.js BUILDS.rack, which game.js spends). It's a second store
 // for food: RACK_SLOTS slots, each holding RACK_KEEP times what a basket slot does, because what dries takes less room
 // (stackOf). Scenery you walk through, like the basket; one each, and no random numbers. w.camp is in LATER, so a camp kept
 // before it gets rack: null in unpackWorld.
-const RACK_SLOTS = 12;
-const RACK_KEEP = 2;                    // what a slot holds, times a basket's
+const RACK_SLOTS = 6;                   // one row of hooks, a slot to a hook (game.js RACK_HOOKS)
+const RACK_KEEP = 4;                    // what a slot holds, times a basket's
 const rackOf = (x, y, made) => ({ rack: true, kept: RACK_KEEP, x, y, made, bag: new Array(RACK_SLOTS).fill(''), bagN: new Array(RACK_SLOTS).fill(0) });
 // Sets it down at x, y (game.js has taken what it takes out of the satchel; a friend's is only set down). Returns it.
 function makeRack(w, x, y) {
@@ -7774,6 +7774,15 @@ function unpackWorld(kept) {
     const K = w.camp.rack;
     while (K.bag.length < RACK_SLOTS) K.bag.push('');       // (kept before it held twelve slots: empty ones along the end)
     while (K.bagN.length < RACK_SLOTS) K.bagN.push(0);
+    for (let k = RACK_SLOTS; k < K.bag.length; k++) {       // (kept with twelve, before a slot was a hook: the rest into the six, or the basket)
+      const id = K.bag[k], n = K.bagN[k];
+      if (!id) continue;
+      let to = K.bag.indexOf(id);
+      if (to >= RACK_SLOTS) to = K.bag.indexOf('');
+      if (to >= 0 && to < RACK_SLOTS) { K.bag[to] = id; K.bagN[to] += n; }
+      else if (w.camp.basket) { const B = w.camp.basket, b = B.bag.indexOf(id) >= 0 ? B.bag.indexOf(id) : B.bag.indexOf(''); if (b >= 0) { B.bag[b] = id; B.bagN[b] += n; } }
+    }
+    K.bag.length = RACK_SLOTS; K.bagN.length = RACK_SLOTS;
     K.kept = RACK_KEEP;
     asFractions(K, ['x', 'y']);
   }

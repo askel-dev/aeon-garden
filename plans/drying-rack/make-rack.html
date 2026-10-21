@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Drying Rack Looks</title>
+<style>
+  body { margin: 0; padding: 16px; background: #f1ead8; font: 600 14px system-ui, sans-serif; color: #3b372f; }
+  canvas { max-width: 100%; height: auto; border-radius: 12px; }
+</style>
+</head>
+<body>
+<canvas id="sheet"></canvas>
+<script src="../../fur.js"></script>
+<script src="../../items.js"></script>
+<script src="../lean-to/camp.js"></script>
+<script src="rack-old.js"></script>
+<script src="rack.js"></script>
+<script>
+// The rack as it is (left, with food) and the hanging one (right, with six things hung): close up, then in the grass at two
+// of the game's zooms (a rack is (8 + zoom) * RACK_SIZE px across, game.js rackPx).
+const W = 1400, H = 900, k = 2;
+const c = document.getElementById('sheet');
+c.width = W * k; c.height = H * k;
+const g = c.getContext('2d');
+g.scale(k, k);
+g.fillStyle = '#86775b'; g.fillRect(0, 0, W, H);
+g.fillStyle = '#74a84a'; g.fillRect(0, 560, W, H - 560);
+const art = (fn, px, n) => { const size = Math.ceil(px * 1.3 * k), cv = document.createElement('canvas'); cv.width = cv.height = size; fn(cv.getContext('2d'), size, px * k, n); return [cv, size / k]; };
+const HUNG = ['cep', 'apple', 'nettle', 'rosehip', 'garlic', 'chanterelle'].map(id => Items.NAMES.indexOf(id));
+const paint = (fn, px, x, y, n, hung) => {
+  const [cv, s] = art(fn, px, n), cy = y - RACK_FOOT * px / 2;
+  g.drawImage(cv, x - s / 2, cy - s / 2, s, s);
+  if (hung) for (let i = 0; i < hung.length; i++) {          // as drawRack will: each item's top at its hook
+    const [hx, hy] = RACK_HOOKS[i], ip = RACK_ITEM * px / 2, [ic, is] = art(Items.paint, ip, hung[i]);
+    g.drawImage(ic, x + hx * px / 2 - is / 2, y + hy * px / 2 + ip * 0.32 - is / 2, is, is);
+  }
+};
+const label = (t, x, y) => { g.font = '700 22px system-ui'; g.fillStyle = '#fff6e2'; g.textAlign = 'center'; g.fillText(t, x, y); };
+label('Now', 350, 40); label('Hanging', 1050, 40);
+paint(paintRack, 440, 350, 470, 1);
+for (const [z, dx] of [[30, -150], [60, 60]]) paint(paintRack, (8 + z) * RACK_SIZE, 350 + dx, 780, 1);
+paint(paintRackHang, 440, 1050, 470, 0, HUNG);
+for (const [z, dx, h] of [[30, -170, HUNG], [60, 30, HUNG.slice(0, 3)], [60, 200, []]]) paint(paintRackHang, (8 + z) * RACK_SIZE, 1050 + dx, 780, 0, h);
+const out = document.createElement('div');
+out.id = 'png'; out.hidden = true; out.textContent = c.toDataURL('image/png');
+document.body.append(out);
+</script>
+</body>
+</html>
