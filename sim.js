@@ -3305,7 +3305,7 @@ function takeFish(w, x0, y0, n) {
 const NECTAR = 0.4 * EAT;       // energy per tick of sipping
 const SIP_TICKS = 40;           // how long one flower takes
 const REFILL = 150;             // ticks a sipped flower needs to fill with nectar again
-const HONEY = 0.005;            // honey a flower's nectar makes, once home: a busy hive with flowers in reach fills in about two seasons
+const HONEY = 0.007;            // honey a flower's nectar makes, once home: a busy hive with flowers in reach fills in about two seasons
 const LOAD = 3;                 // flowers a forager visits before she flies home to unload
 const RICH = 3;                 // fresh flowers left around her last one (within 8 tiles) that make a patch worth dancing for
 const DANCE_TICKS = 40;         // how long she dances about it at the hive
@@ -3315,7 +3315,7 @@ const LEAVE = 0.05;             // chance each tick that a bee ready to go comes
 const FILL_UP = 0.9;            // how full a bee eats herself in the hive before flying out
 const HONEY_BITE = 0.2 * EAT;   // energy a tick a bee eats in the hive, while there's honey (the hive pays BEE_EAT for it)
 const POLLEN = 0.002;           // how much a visited flower thickens the grass around it
-const HIVE_HONEY = 40;          // what a new hive starts with (a meadow's first: enough for the bees' spring and a little for the cook)
+const HIVE_HONEY = 50;          // what a new hive starts with (a meadow's first: enough for the bees' spring and a little for the cook)
 const HIVE_FULL = 100;          // all the honey a hive can hold
 const BEE_EAT = 0.2;            // honey each bee eats a winter day
 const HOME_EAT = 0.25;          // and the rest of the year this share of that: out among the flowers they live on nectar
@@ -7098,9 +7098,9 @@ function cherryShow(w, d) {
 }
 const FALL_PICK = 2;                    // windfalls under a tree a pick takes up
 const FALL_GIVES = { apple: 2, acorns: 4, beechnuts: 4 };   // and what each is in the satchel (a rabbit's windfall is a big meal)
-const HONEY_TAKE = 8;                   // of a hive's honey (HIVE_FULL) a pick takes,
-const HONEY_GIVES = 2;                  // the honey that is in the satchel,
-const HONEY_KEEP = [24, 34, 40, 40];    // and it never takes the store below this, by season: in spring the bees bring nectar in and
+const HONEY_TAKE = 6;                   // of a hive's honey (HIVE_FULL) a pick takes,
+const HONEY_GIVES = 3;                  // the honey that is in the satchel,
+const HONEY_KEEP = [18, 28, 38, 40];    // and it never takes the store below this, by season: in spring the bees bring nectar in and
                                         // eat little of the store; in summer they put by for winter; from autumn, more than a big colony eats in a winter
 // The honey a hive could spare: what's over the store the bees keep (HONEY_KEEP), in picks (game.js oozes it over the sill).
 const honeySpare = (w, h) => h.cluster ? 0 : Math.max(0, Math.floor((h.honey - HONEY_KEEP[seasonOf(w.tick)]) / HONEY_TAKE));
