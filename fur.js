@@ -963,16 +963,11 @@ function foragerParts(P) {
       add(g => limbAt(g, sx, sy, 0.065, knee[0], knee[1], 0.05), { far, leg: P.legLine, marks: [[TROUSER, 1, 0.02, g => limbAt(g, sx, sy, 0.065, knee[0], knee[1], 0.05)]] });
       return;
     }
-    if (part === 'shin') {                                         // ...and over the cloak's front: the knee pushes the cloak out in a round bulge, the shin and boot come out under it
+    if (part === 'shin') {                                         // ...and the shin and boot below it (the cloak itself is draped over the knee, `cloak`)
       const [kx, ky] = knee;
       add(g => { limbAt(g, kx, ky, 0.05, fx, fy - 0.03, 0.045); ovalAt(g, bx, by, bw, bh); },
         { far, leg: P.legLine, marks: [[TROUSER, 1, 0.02, g => limbAt(g, kx, ky, 0.05, fx, fy - 0.03, 0.045)],
           [BOOT, 1, 0.02, g => { ovalAt(g, bx, by, bw + 0.005, bh + 0.005); g.rect(fx - 0.06, fy - 0.11, 0.12, 0.09); }]] });
-      const tx = sx + (kx - sx) * 0.3, ty = sy + (ky - sy) * 0.3 - 0.01;   // (the thigh's upper end)
-      const cap = (g, k, r0, r1) => limbAt(g, tx, ty, r0, kx, ky - 0.01, r1);
-      add(g => cap(g, 0, 0.055, 0.07),
-        { far, casts: true, marks: [full(CLOAK), [tone(CLOAK, 1.2), 0.8, 0.04, g => limbAt(g, tx - 0.01, ty - 0.02, 0.03, kx - 0.025, ky - 0.04, 0.035)],   // (the cloak pushed out over the thigh, lit on top)
-          [tone(CLOAK, 0.68), 0.85, 0.03, g => { g.moveTo(kx - 0.13, ky + 0.025); g.quadraticCurveTo(kx, ky + 0.09, kx + 0.13, ky + 0.02); g.lineTo(kx + 0.13, ky + 0.15); g.lineTo(kx - 0.13, ky + 0.15); g.closePath(); }]] });   // (and the hem's fold under the knee)
       return;
     }
     add(g => {
@@ -1018,6 +1013,7 @@ function foragerParts(P) {
     g.quadraticCurveTo(0, l[1] - 0.045 + d, r[0], r[1] + 0.005 + d);
     g.quadraticCurveTo(0.22, y + 0.06, 0.29, y);
   };
+  const kneeUp = P.kneeOver ? jointAt(0 - 0.02, hy, P.feet[0][0], P.feet[0][1] - 0.03, 0.17, 0.17, -1) : null;   // (the lifted near knee, as `leg` finds it)
   const cloak = () => add(g => {
     g.moveTo(-0.11 + lx + sh, -0.02 + P.bob + ly + sd);
     if (P.kneel) {                                                   // draped over the far knee (its shin showing under it), lying on the ground behind
@@ -1034,13 +1030,19 @@ function foragerParts(P) {
       g.quadraticCurveTo(0.25, 0.16 + P.bob, 0.11, -0.02 + P.bob);
     } else {
       g.quadraticCurveTo(-0.2 + lx * 0.5 + sh * 0.4, 0.18 + P.bob + sd * 0.5, -0.25 + sw, hem);
-      g.quadraticCurveTo(0, hem + 0.06, 0.25 + sw, hem);
+      if (P.kneeOver) {                                              // (sneaking: the hem draped over the lifted knee, its round shape in the cloak's own edge)
+        const [kx, ky] = kneeUp;
+        g.quadraticCurveTo(kx - 0.14, hem + 0.05, kx - 0.075, ky + 0.01);
+        g.quadraticCurveTo(kx, ky + 0.085, kx + 0.075, ky + 0.01);
+        g.quadraticCurveTo(kx + 0.11, ky + 0.07, 0.25 + sw, hem);
+      } else g.quadraticCurveTo(0, hem + 0.06, 0.25 + sw, hem);
       g.quadraticCurveTo(0.2 + lx * 0.5 + sh * 0.3 + hunch, 0.18 + P.bob - hunch * 0.5, 0.11 + lx + sh, -0.02 + P.bob + ly + sd);
     }
     g.closePath();
   }, { casts: true, marks: [
     ...snowOn(g => { const d = 0.03 * SNOWED; const o = lx + sh, e = ly + sd; g.moveTo(-0.3 + o, -0.1 + P.bob + e); g.lineTo(0.3 + o, -0.1 + P.bob + e); g.lineTo(0.3 + o, 0.05 + d + P.bob + e);
       g.quadraticCurveTo(0.15 + o, 0.02 + d + P.bob + e, sh, 0.04 + d + P.bob + e); g.quadraticCurveTo(-0.15 + o, 0.02 + d + P.bob + e, -0.3 + o, 0.05 + d + P.bob + e); g.closePath(); }, 0.03),   // on the shoulders
+    ...P.kneeOver ? [[tone(CLOAK, 0.7), 0.7, 0.03, g => { const [kx, ky] = kneeUp; g.moveTo(kx - 0.1, ky - 0.01); g.quadraticCurveTo(kx, ky + 0.045, kx + 0.1, ky - 0.01); g.lineTo(kx + 0.1, ky + 0.15); g.lineTo(kx - 0.1, ky + 0.15); g.closePath(); }]] : [],   // (a darker fold under the knee)
     [tone(CLOAK, 0.82), 0.7, 0.04, P.kneel ? g => { g.moveTo(-0.35, 0.64); g.quadraticCurveTo(0, 0.68, 0.35, 0.64); g.lineTo(0.35, 0.8); g.lineTo(-0.35, 0.8); g.closePath(); }
       : P.sit ? g => { g.moveTo(-0.29, hy - 0.02); lapEdge(g, -0.04); g.lineTo(0.35, 0.9); g.lineTo(-0.35, 0.9); g.closePath(); }
       : g => { g.moveTo(-0.3 + sw, hem - 0.04); g.quadraticCurveTo(0, hem + 0.02, 0.3 + sw, hem - 0.04); g.lineTo(0.3, hem + 0.1); g.lineTo(-0.3, hem + 0.1); g.closePath(); }],   // a darker hem
