@@ -6875,7 +6875,7 @@ function campSpot(w, x, y, id, gap = CAMP_GAP, near = null) {
   if (id !== 'basket' && w.camp.basket && at(w.camp.basket.x, w.camp.basket.y) < gap * 1.15) return 'The basket\'s here';
   if (id !== 'seat' && seatNear(w, x, y) < gap * 0.9) return 'The seat\'s here';
   for (const T of w.torches) if (at(T.x, T.y) < gap) return 'A torch is here';
-  if (id !== 'rack' && w.camp.rack && at(w.camp.rack.x, w.camp.rack.y) < gap) return 'The drying rack\'s here';
+  for (const K of w.racks) if (inCamp(w, K.x, K.y) && at(K.x, K.y) < gap) return 'The drying rack\'s here';
   if (id !== 'lean' && w.camp.lean && at(w.camp.lean.x, w.camp.lean.y) < gap) return 'The lean-to\'s here';
   rocksFor(w);
   for (let k = 0; k < solidR.length; k += 3) if (at(solidR[k], solidR[k + 1]) < solidR[k + 2] + gap * 0.4) return 'A rock\'s in the way';
@@ -6952,22 +6952,44 @@ function makeSeat(w, x, y, turn = SEAT_TILT) {
   emit(w, { type: 'seat', seat: w.camp.seat });
   return w.camp.seat;
 }
-// The camp's drying rack (w.camp.rack, null till it's made): two A-frames of crossed poles and a bar with a hook for each
-// slot, what it holds hung from them (game.js drawRack), set down inside the camp's ring (recipes.js BUILDS.rack, which game.js spends). It's a second store
+// The drying racks (w.racks): each is two A-frames of crossed poles and a bar with a hook for each
+// slot, what it holds hung from them (game.js drawRack), set down anywhere once there's a camp (recipes.js BUILDS.rack, which game.js spends). Each is a second store
 // for food: RACK_SLOTS slots, each holding RACK_KEEP times what a basket slot does, because what dries takes less room
-// (stackOf). Scenery you walk through, like the basket; one each, and no random numbers. w.camp is in LATER, so a camp kept
-// before it gets rack: null in unpackWorld.
+// (stackOf). Scenery you walk through, like the basket; as many as you like, and no random numbers. w.racks is created in createWorld.
 const RACK_SLOTS = 6;                   // one row of hooks, a slot to a hook (game.js RACK_HOOKS)
 const RACK_KEEP = 4;                    // what a slot holds, times a basket's
 const rackOf = (x, y, made) => ({ rack: true, kept: RACK_KEEP, x, y, made, bag: new Array(RACK_SLOTS).fill(''), bagN: new Array(RACK_SLOTS).fill(0),
   dry: new Array(RACK_SLOTS).fill(-0), dryOf: new Array(RACK_SLOTS).fill(''), dryN: new Array(RACK_SLOTS).fill(0) });   // (how far each slot has dried: rackTick)
+// Why a drying rack can't go at x, y ('' if it can): not in the water, clear of the fire, the basket, the seat log, the
+// lean-to, other racks, rocks, trunks, brambles and burrows.
+function rackSpot(w, x, y, gap = CAMP_GAP) {
+  if (!w.camp) return 'Make camp first';
+  const i = idx(x, y);
+  if (w.water[i]) return 'Not in the water';
+  const at = (px, py) => Math.hypot(px - x, py - y);
+  for (const F of w.fires) if (at(F.x, F.y) < gap * 1.4) return 'Too near the fire';
+  if (w.camp.basket && at(w.camp.basket.x, w.camp.basket.y) < gap * 0.9) return 'The basket\'s here';
+  if (seatNear(w, x, y) < gap * 0.9) return 'The seat\'s here';
+  for (const T of w.torches) if (at(T.x, T.y) < gap) return 'A torch is here';
+  for (const K of w.racks) if (at(K.x, K.y) < gap) return 'The drying rack\'s here';
+  if (w.camp.lean && at(w.camp.lean.x, w.camp.lean.y) < gap) return 'The lean-to\'s here';
+  rocksFor(w);
+  for (let k = 0; k < solidR.length; k += 3) if (at(solidR[k], solidR[k + 1]) < solidR[k + 2] + gap * 0.4) return 'A rock\'s in the way';
+  let trunk = false;
+  forEachDecorNear(w, x, y, 2, d => { if (standing(d) && d.size >= SEEDLING && at(d.x, d.y) < gap * (0.5 + 0.15 * Math.min(d.size, 3))) trunk = true; });
+  if (trunk) return 'Too close to the tree';
+  for (const b of w.brambles) if (b.size > 0 && at(b.x, b.y) < gap * 0.7 + 0.3 * b.size) return 'Too close to the brambles';
+  for (const b of w.burrows) if (at(b.x, b.y) < gap) return 'On a burrow';
+  return '';
+}
 // Sets it down at x, y (game.js has taken what it takes out of the satchel; a friend's is only set down). Returns it.
 function makeRack(w, x, y) {
-  if (!w.camp || w.camp.rack || campSpot(w, x, y, 'rack')) return null;
-  w.camp.rack = rackOf(x, y, w.tick);
+  if (!w.camp || rackSpot(w, x, y)) return null;
+  const K = rackOf(x, y, w.tick);
+  w.racks.push(K);
   earnDeed(w, 'rack');
-  emit(w, { type: 'rack', rack: w.camp.rack });
-  return w.camp.rack;
+  emit(w, { type: 'rack', rack: K });
+  return K;
 }
 // Drying (rackTick, every RACK_EVERY ticks): what hangs on the rack and has a dried form (recipes.js `dries`) turns into it
 // over about DRY_DAYS of plain dry weather: not at all in rain, a storm, fog or snow (DRY_WEATHER), half as fast at night,
@@ -6979,9 +7001,8 @@ const DRY_DAYS = 1.2;                   // game days it takes in clear weather b
 const DRY_WEATHER = { clear: 1, cloudy: 0.7, heat: 1.6 };   // (the rest: 0)
 const DRY_NIGHT = 0.5, DRY_FIRE = 2, DRY_FIRE_R = 3.5;      // (a lit fire within DRY_FIRE_R tiles)
 const driesTo = id => { const g = id && recipesData().INGREDIENTS[id]; return (g && g.dries) || ''; };
-// How fast the rack dries just now, against clear weather by day (0: it doesn't).
-function dryPace(w) {
-  const K = w.camp && w.camp.rack;
+// How fast the given rack dries just now, against clear weather by day (0: it doesn't).
+function dryPace(w, K) {
   if (!K) return 0;
   let p = DRY_WEATHER[w.weather.kind] || 0;
   if (!p) return 0;
@@ -6990,19 +7011,21 @@ function dryPace(w) {
   return p;
 }
 function rackTick(w) {
-  const K = w.camp.rack, step = dryPace(w) * RACK_EVERY / (DRY_DAYS * TPD);
-  for (let k = 0; k < K.bag.length; k++) {
-    const id = K.bag[k], n = K.bagN[k];
-    if (id !== K.dryOf[k]) { K.dryOf[k] = id; K.dryN[k] = n; K.dry[k] = 0; }
-    else if (n > K.dryN[k]) { K.dry[k] *= K.dryN[k] / n; K.dryN[k] = n; }
-    else K.dryN[k] = n;
-    const to = n > 0 ? driesTo(id) : '';
-    if (!to || step <= 0) continue;
-    K.dry[k] += step;
-    if (K.dry[k] < 1) continue;
-    K.bag[k] = to; K.dryOf[k] = to; K.dry[k] = 0;
-    earnDeed(w, 'dried');
-    emit(w, { type: 'dried', id: to, from: id, n, slot: k });
+  for (const K of w.racks) {
+    const step = dryPace(w, K) * RACK_EVERY / (DRY_DAYS * TPD);
+    for (let k = 0; k < K.bag.length; k++) {
+      const id = K.bag[k], n = K.bagN[k];
+      if (id !== K.dryOf[k]) { K.dryOf[k] = id; K.dryN[k] = n; K.dry[k] = 0; }
+      else if (n > K.dryN[k]) { K.dry[k] *= K.dryN[k] / n; K.dryN[k] = n; }
+      else K.dryN[k] = n;
+      const to = n > 0 ? driesTo(id) : '';
+      if (!to || step <= 0) continue;
+      K.dry[k] += step;
+      if (K.dry[k] < 1) continue;
+      K.bag[k] = to; K.dryOf[k] = to; K.dry[k] = 0;
+      earnDeed(w, 'dried');
+      emit(w, { type: 'dried', id: to, from: id, n, slot: k, x: K.x, y: K.y });
+    }
   }
 }
 
@@ -7220,11 +7243,11 @@ function tidyStore(S) {
   }
   return moved;
 }
-// Every store set down in the meadow: the camp's basket and its drying rack now, and whatever is built later.
+// Every store set down in the meadow: the camp's basket and every drying rack, and whatever is built later.
 function worldStores(w) {
   const out = [];
   if (w.camp && w.camp.basket) out.push(w.camp.basket);
-  if (w.camp && w.camp.rack) out.push(w.camp.rack);
+  for (const K of w.racks) out.push(K);
   return out;
 }
 // The stores to hand at x, y: the satchel always, then any set down in the camp (where camp stores are kept) or within
@@ -7477,6 +7500,7 @@ function createWorld(seed, opts = {}) {
     finds: [], findRng: makeRng(seed ^ 0xf1d5ea),                         // (see findsTick)
     dropped: [],                                                          // (see dropSlot)
     fires: [],                                                            // (see fireTick)
+    racks: [],                                                            // (see rackTick)
     brambles: [], pips: [], brambleRng: makeRng(seed ^ 0xb4a3b1),          // (see bramblesTick)
     count: perKind(() => 0), expecting: perKind(() => 0),
     stats: { deaths: perKind(() => ({})) },                                 // deaths by cause, of each kind
@@ -7629,7 +7653,7 @@ function step(w) {
   weatherTick(w);
   if (w.fires.length) { fireTick(w); kitTick(w); }
   if (w.camp && t % DEED_EVERY === 0) deedCheck(w);
-  if (w.camp && w.camp.rack && t % RACK_EVERY === 0) rackTick(w);
+  if (w.racks.length && t % RACK_EVERY === 0) rackTick(w);
   if (w.torches.length && t % TORCH_EVERY === 0) torchTick(w);
   if (w.scorches.length && t % SCORCH_EVERY === 0) scorchTick(w);
   bodyTick(w);
@@ -7685,7 +7709,7 @@ const KEEP_VERSION = 10;                // 2: shade and rich ground (w.shadedFer
                                         // 5: crows and remains (w.carcasses, w.roost, c.caches, d.nuts); 6: owls (d.owl, c.perch);
                                         // 7: frogs (w.frogs, w.spawn, w.frogYear, c.frogs); 8: the cooking cut (no keeper, owls, fire or player powers);
                                         // 9: the pantry (no voles, sickness, remains or genes; hives that fill; the 12-minute day);
-                                        // 10: some ecology back (remains and rich ground again: w.carcasses, w.rich; winter coats: c.moult; bee colonies: h.queen, h.cluster...; mushrooms: w.shrooms, w.rainAt; spring greens: w.greens; brambles: w.brambles, w.pips, c.pips)
+                                        // 10: some ecology back (remains and rich ground again: w.carcasses, w.rich; winter coats: c.moult; bee colonies: h.queen, h.cluster...; mushrooms: w.shrooms, w.rainAt; spring greens: w.greens; brambles: w.brambles, w.pips, c.pips);
 const TABLES = { SPECIES, FIELD_KINDS, TREE_MIX, TREES, SEASONS, WEATHER };
 const UNKEPT = ['grid', 'grids', 'events', 'newborn', 'current'];   // on the world
 let tableNames = null;                                     // object -> 'SPECIES.fox', made the first time
@@ -7816,8 +7840,8 @@ function unpackWorld(kept) {
     if (w.camp.seat.turn === undefined) w.camp.seat.turn = SEAT_TILT;   // (kept before it could be turned: it looks as it did)
     asFractions(w.camp.seat, ['x', 'y', 'turn']);
   }
-  if (w.camp && !w.camp.rack) w.camp.rack = null;          // (kept before the drying rack: none yet)
-  else if (w.camp) {
+  if (!w.racks) w.racks = [];                              // (kept before drying racks were an array)
+  if (w.camp && w.camp.rack) {                             // (a kept single rack moves into the array)
     const K = w.camp.rack;
     while (K.bag.length < RACK_SLOTS) K.bag.push('');       // (kept before it held twelve slots: empty ones along the end)
     while (K.bagN.length < RACK_SLOTS) K.bagN.push(0);
@@ -7833,6 +7857,8 @@ function unpackWorld(kept) {
     K.kept = RACK_KEEP;
     if (!K.dry) { K.dry = new Array(RACK_SLOTS).fill(-0); K.dryOf = new Array(RACK_SLOTS).fill(''); K.dryN = new Array(RACK_SLOTS).fill(0); }   // (kept before drying: nothing on its way yet)
     asFractions(K, ['x', 'y']);
+    w.racks.push(K);
+    w.camp.rack = null;
   }
   if (w.camp && !w.camp.lean) w.camp.lean = null;          // (kept before the lean-to: none yet)
   else if (w.camp) asFractions(w.camp.lean, ['x', 'y']);
@@ -8713,7 +8739,7 @@ const api = {
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE, hollow,
   TREES, treeStage, treeAge, standing, bearing, inBloom, SEEDLING, SAPLING, GROWN, KIND_NAMES,
   FROG_K, SPAWN_WORTH, FISH_K, FISH_EAT, CROW_SEATS, SHROOMS, SHROOM_KINDS, FINDS, FIND_KINDS, findSeason, eachPickable, greenStage, greenPicked, GREEN_SEASONS, brambleStage, RIPE_FROM, RIPE_TO,
-  bagCount, spend, stow, feedForager, feedHand, holdDish, dropHand, hungerOf, HUNGRY, TUMMY, fireSpot, layFire, feedFire, fireRoom, lightable, lightFire, fireHeat, fireWarmth, CAMP_R, CAMP_FLAT, inCamp, campLevel, campR, earnDeed, countCosy, DEED_EVERY, BASKET_SLOTS, basketSpot, makeBasket, campSpot, seatSpot, makeSeat, seatNear, SEAT_HALF, SEAT_TILT, SEAT_OUT, makeRack, makeLean, RACK_SLOTS, RACK_KEEP, underLean, dryPace, driesTo, curledUp, CURL_TICKS, moveBetween, moveInto, putAway,
+  bagCount, spend, stow, feedForager, feedHand, holdDish, dropHand, hungerOf, HUNGRY, TUMMY, fireSpot, layFire, feedFire, fireRoom, lightable, lightFire, fireHeat, fireWarmth, CAMP_R, CAMP_FLAT, inCamp, campLevel, campR, earnDeed, countCosy, DEED_EVERY, BASKET_SLOTS, basketSpot, makeBasket, campSpot, seatSpot, makeSeat, seatNear, SEAT_HALF, SEAT_TILT, SEAT_OUT, rackSpot, makeRack, makeLean, RACK_SLOTS, RACK_KEEP, underLean, dryPace, driesTo, curledUp, CURL_TICKS, moveBetween, moveInto, putAway,
   torchSpot, placeTorch, relightTorch, torchUnder, TORCH_BURN, TORCH_WET, TORCH_MAX, TORCH_GAP, scorchFade,
   storeCount, storeRoom, storePut, storeTake, tidyStore, worldStores, storesAt, storesCount, storesRoom, storesTake, storesPut, STORE_NEAR,
   cookTicks, cookReady, cookOn, cookTake, shapeVessel, makeVessel, kitOf, cookProgress, SKILLS, SKILL_NAMES, SKILL_TOP, skillNeed, skillLevel, skillProgress, perk, gainSkill, FIRE_STICK, FIRE_MOST, FIRE_LOW, FIRE_EMBERS, FIRE_NEAR, FIRE_REACH, FIRE_GAP, FIRE_WET, FIRE_WARM,

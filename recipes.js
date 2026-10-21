@@ -363,7 +363,6 @@ const BUILDS = {
   rack: {
     name: 'Drying rack',
     needs: { stick: 8, drygrass: 3, birchbark: 1 },
-    where: 'camp',
     after: 'camp',
     text: 'Four forked sticks and two crossbars, with a mat of dry grass lashed across them for things to dry on.',
   },

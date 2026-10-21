@@ -2,6 +2,8 @@
 
 ## game.js
 
+While the forager sees to a fire (laying it, a stick on, the flint, blowing, watching it take: `TEND_STAGES`) the camera eases onto the fire, as cooking does but no closer, and back onto the forager when it's done (`tendCam`, in `leadCam`; 2026-10-21).
+
 The campfire (sim.js `w.fires`; its rules under sim.js below; the long comment over game.js's `FIRE_SIZE` has it all): the round make
 button by the satchel (`#build`, `renderBuild`; above the satchel on an upright touch screen, beside it with the basket and the book on a phone on its side) shows the build most worth doing (`buildFocus`) with a ring filling in as the satchel
 holds what that takes. Before there's a camp that's the campfire alone (recipes.js `BUILDS.campfire`: 6 pebbles, 5 sticks, 2 tinder), so a tap does what the fire button always did; with more, a tap opens the make strip (below). F stays the quick campfire wherever. A tap on a ready one picks a spot (`ui.place`, a faint fire
