@@ -80,3 +80,14 @@ its edge. game.js draws the moment to press (four pale brackets at its feet, and
 landing (`jumpDust`) and the lean into it; P pauses now, not Space. Playing together, each take-off is sent (`'jump'`)
 and a friend's is played out on its own clock (`peerJump`, `peerItems`: the arc, its dust and sounds).
 
+
+**The split, on a phone.** On a touch screen (or `?split`; `?split=0` turns it off) the meadow is drawn at 30 fps on a
+canvas a little bigger than the screen (`wview`), and on the beats between it and the ground are slid by what the camera
+has moved; the forager is drawn every beat on a small canvas of its own over them (`fview`, `drawForagerLayer`), its
+light laid over just it (`lightForager`). So the camera and the forager move at the screen's rate for about a third less
+work: on the iPhone 17 Pro, walking about at 1x, 67–70 ms of work a second against 104–107, no late beats either way
+(2026-10-21). With something in front of the forager (a tree's cover, `coverAt`, or a bush, rock, animal or camp build
+just nearer) its canvas would show it over them, so it's drawn in the meadow again, sorted among them, and the meadow every
+beat, till it has been clear of them for `SPLIT_CLEAR` (`splitBehind`). Left out while split: the lightning's shake, and
+the rain falls under the forager, not over it. To measure it on a phone: `?bench=walk&runs=nsns&run=0` from a server that
+takes the results' POST to `/result` (n without the split, s with it; each run 70 s, then the next opens by itself).

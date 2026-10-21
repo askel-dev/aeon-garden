@@ -20,6 +20,7 @@ const DEV = params.has('dev') || ['localhost', '127.0.0.1', '::1'].includes(loca
 const DEV_CARRY = 999;                  // what one satchel slot holds in dev
 if (DEV) S.setStacks(id => Math.max(Recipes.stackOf(id), DEV_CARRY), Recipes.keepOf);
 const BENCH = params.has('bench');            // (the phone's worst case set up by itself and timed: benchStart; implies perf)
+const BENCH_PLAN = params.get('bench') || '';  // ('walk': an ordinary day instead, the forager walking and the camera after it)
 const PERF = params.has('perf') || BENCH;     // (a live readout of frame rate and cost, bottom left)
 const perf = { fps: 0, ms: 0, ren: 0, sim: 0, at: 0, el: null, n: 0, drawn: 0, dAt: 0 };   // fps and ms: averages over the raw frame gaps (the browser's beats, drawn or not); ren: render ms; sim: sim ms last frame; drawn: frames really drawn a second (n counting them since dAt)
 const meadowLink = seed => '?seed=' + seed;   // the address of a meadow, and the name it's kept under
@@ -57,11 +58,13 @@ const cam = { x: S.W / 2, y: S.H / 2, zoom: 10, goal: null };
 // ------------------------------------------------------------------ canvas and camera
 
 const canvas = $('#world');
-// ?split (a prototype, off by default): the meadow is drawn every other beat (30 fps) on a canvas EDGE css px bigger all round
-// (wview), and on the beats between it and the ground are slid by how far the camera has moved (splitFrame), so the camera
+// Split (on a touch screen, or ?split; ?split=0 turns it off): the meadow is drawn every other beat (30 fps) on a canvas
+// EDGE css px bigger all round (wview), and on the beats between it and the ground are slid by how far the camera has moved (splitFrame), so the camera
 // still moves at the screen's rate; the forager is drawn every beat on a small canvas of its own over them (fview, drawForagerLayer).
 // #world stays as it was, full screen and empty, over them all: it takes the pointer.
-const SPLIT = params.has('split');
+// On the iPhone 17 Pro it did a third less work a second walking about at 1x, as smooth (2026-10-21: 107 and 105 ms/s
+// against 67 and 70, no late beats either way).
+const SPLIT = params.has('split') ? params.get('split') !== '0' : matchMedia('(pointer: coarse)').matches;
 const EDGE = SPLIT ? 20 : 0;
 const wview = SPLIT ? document.createElement('canvas') : canvas, fview = SPLIT ? document.createElement('canvas') : null;
 if (SPLIT) {
@@ -71,7 +74,7 @@ if (SPLIT) {
 }
 const wctx = wview.getContext('2d'), fctx = SPLIT ? fview.getContext('2d') : null;
 let ctx = wctx;
-const split = { z: -1, ox: 0, oy: 0, ok: false, at: 0 };   // the meadow as it was last drawn: its zoom, where its corner was
+const split = { z: -1, ox: 0, oy: 0, ok: false, at: 0, in: false, clear: 0 };   // the meadow as it was last drawn: its zoom, where its corner was
 
 let vw = 0, vh = 0, dpr = 1, minZoom = 1, fitZoom = 1;
 const FIT = 0.92;                                 // zoomed right out, how much of the window the meadow fills (it fades into mist, mistField)
@@ -1391,11 +1394,11 @@ function render(now) {
   }
   {                                                        // the forager
     const F = world.forager, d = drawnAt(F), sx = (d.x - cam.x) * z + vw / 2, sy = (d.y - cam.y) * z + vh / 2;
-    if (!SPLIT) foragerFrame(now, d);                      // (split: drawForagerLayer, every beat)
+    if (!SPLIT || split.in) foragerFrame(now, d);          // (split: drawForagerLayer, every beat, unless something stands in front of it)
     const px = forPx();
     fgBody.on = visible(sx, sy, 2 * px); fgBody.x = sx; fgBody.y = sy - px * 0.3; fgBody.w = px * 0.14; fgBody.h = px * 0.28; fgBody.wy = d.y;
     seeDt = Math.min(100, now - seeLast); seeLast = now;
-    if (fgBody.on && !SPLIT) itemOf(items, d.y, sx, sy, 1).p = F;
+    if (fgBody.on && (!SPLIT || split.in)) itemOf(items, d.y, sx, sy, 1).p = F;
   }
   if (peers.size) peerItems(items, now, z);               // friends playing along (net.js)
   sortByY(items);
@@ -1465,7 +1468,8 @@ function render(now) {
   if (!cut) drawFireflies(now, dark);
   drawWeather(now, ck, glows ? 0 : dark);                  // (else the dark is laid with the weather's washes, as one)
   if (cut) drawFireflies(now, dark);
-  if (!SPLIT) drawForagerRim(dark);                       // (over the dark: its rim, so it isn't swallowed)
+  if (!SPLIT || split.in) drawForagerRim(dark);           // (over the dark: its rim, so it isn't swallowed)
+  if (SPLIT) splitBehind(now, items);
   drawFireGlows(now, dark);                                // (the fires' glow, embers and sparks, over the dark)
   drawFireGauges(now);                                     // (how long each near one has left)
 
@@ -4787,7 +4791,7 @@ function drawFireGauges(now) {
   const f = world.forager, z = cam.zoom, px = firePx(z), r = firePipR(z), gap = r * 2.9, rr = r * 1.3;
   // The forager's painting this frame, where it stands between the camera and a fire: its body hides the pips behind it,
   // as it does the vessels set about the fire (the two are drawn with the fire, it with the meadow; these, over the dark).
-  const me = !SPLIT && fg.drawnAt === now && fg.rimOn, mw = me ? fg.px * 0.24 : 0, mt = me ? fg.fy - fg.px * 0.84 : 0, mb = me ? fg.fy + fg.px * 0.14 : 0;
+  const me = (!SPLIT || split.in) && fg.drawnAt === now && fg.rimOn, mw = me ? fg.px * 0.24 : 0, mt = me ? fg.fy - fg.px * 0.84 : 0, mb = me ? fg.fy + fg.px * 0.14 : 0;
   for (const F of world.fires) {
     if (!F.lit || F.ghost || (cooking() && ui.fire.F === F)) continue;
     const a = clamp((FUEL_NEAR - Math.hypot(F.x - f.x, F.y - f.y)) / FUEL_FADE, 0, 1);
@@ -20105,7 +20109,8 @@ function govTick(now) {
 // (the seed's, never the kept one, and not kept), zoomed right out, a fire lit by the forager, a storm that won't end,
 // night, 60x, the forager walking to and fro; for BENCH_MS, then the numbers stay on screen (and in the console).
 const BENCH_MS = 120000, BENCH_WARM = 10000, BENCH_WALK = 6;
-const bench = { t0: 0, n: 0, ren: [], sim: [], fps: 0, drawn: 0, rungs: [], done: '', dir: 1 };
+const bench = { t0: 0, n: 0, ren: [], sim: [], fps: 0, drawn: 0, rungs: [], done: '', dir: 1, on: false, t1: 0, busy: 0, beats: 0, late: 0 };
+const WALK = BENCH_PLAN === 'walk', BENCH_LEN = WALK ? 60000 : BENCH_MS, BENCH_GO = WALK ? 12 : BENCH_WALK;
 function benchStart() {
   endIntro(true);
   const w = world, f = w.forager;
@@ -20113,33 +20118,53 @@ function benchStart() {
     const x = f.x + r * Math.cos(a * TAU / 8), y = f.y + r * Math.sin(a * TAU / 8);
     if (!S.fireSpot(w, x, y)) { S.lightFire(w, S.layFire(w, x, y, 6, 1)); break; }
   }
-  w.tick += (0.75 - S.clock(w).phase + 1) % 1 * S.TPD | 0;   // (on to the evening's dark)
-  w.weather.kind = 'storm'; w.weather.until = w.tick + 1e9;
-  setSpeed(60);
+  const at = WALK ? 0.4 : 0.75;
+  w.tick += (at - S.clock(w).phase + 1) % 1 * S.TPD | 0;   // (on to the evening's dark; a walk's midday)
+  w.weather.kind = WALK ? 'clear' : 'storm'; w.weather.until = w.tick + 1e9;
+  setSpeed(WALK ? 1 : 60);
   bench.t0 = performance.now();
 }
 function benchTick(now) {
   const t = now - bench.t0, w = world;
   if (bench.done) return bench.done;
-  cam.zoom = fitZoom; clampCam();                         // (kept right out, whatever the hand does)
+  if (!WALK) { cam.zoom = fitZoom; clampCam(); }          // (kept right out, whatever the hand does)
   const f = w.forager; f.warmth = f.health = f.tummy = f.stamina = 1;   // (kept alive: a collapse would carry it home, away from the fire)
-  if (!w.forager.walking) S.foragerTo(w, w.forager.x + (bench.dir = -bench.dir) * BENCH_WALK, w.forager.y);
+  if (!w.forager.walking) S.foragerTo(w, w.forager.x + (bench.dir = -bench.dir) * BENCH_GO, w.forager.y);
   const ph = S.clock(w).phase;
-  if (ph < 0.74 || ph > 0.95) w.tick += (0.75 - ph + 1) % 1 * S.TPD | 0;   // (the dark, again: a day is 12 s at 60x)
+  if (!WALK && (ph < 0.74 || ph > 0.95)) w.tick += (0.75 - ph + 1) % 1 * S.TPD | 0;   // (the dark, again: a day is 12 s at 60x)
   for (const F of w.fires) { S.feedFire(w, F, 6, 1); if (!F.lit) S.lightFire(w, F); }   // (and the fire kept in: a storm eats it fast)
   if (t < BENCH_WARM) return `\nbench: settling ${((BENCH_WARM - t) / 1000).toFixed(0)} s`;
+  if (!bench.on) { bench.on = true; bench.t1 = performance.now(); }
   bench.ren.push(perf.ren); bench.sim.push(perf.sim); bench.fps += perf.fps; bench.drawn += perf.drawn; bench.n++;
   if (bench.rungs[bench.rungs.length - 1] !== gov.rung) bench.rungs.push(gov.rung);
-  if (t < BENCH_WARM + BENCH_MS) return `\nbench: ${((BENCH_WARM + BENCH_MS - t) / 1000).toFixed(0)} s left`;
+  if (t < BENCH_WARM + BENCH_LEN) return `\nbench: ${((BENCH_WARM + BENCH_LEN - t) / 1000).toFixed(0)} s left`;
+  bench.on = false;
+  const secs = (performance.now() - bench.t1) / 1000;
   const q = (a, k) => a.slice().sort((x, y) => x - y)[Math.min(a.length - 1, a.length * k | 0)].toFixed(1);
   const avg = a => (a.reduce((x, y) => x + y, 0) / a.length).toFixed(1);
-  bench.done = `\nBENCH DONE (${BENCH_MS / 1000} s, ${navigator.userAgent.match(/iPhone|Android|Mac|Windows/)?.[0] || '?'})\n`
+  bench.done = `\nBENCH DONE (${BENCH_LEN / 1000} s, ${navigator.userAgent.match(/iPhone|Android|Mac|Windows/)?.[0] || '?'})\n`
     + `render avg ${avg(bench.ren)} · p50 ${q(bench.ren, 0.5)} · p95 ${q(bench.ren, 0.95)} ms\n`
     + `sim avg ${avg(bench.sim)} · p95 ${q(bench.sim, 0.95)} ms \n${(bench.fps / bench.n).toFixed(0)} beats/s · ${(bench.drawn / bench.n).toFixed(0)} drawn/s avg\n`
     + `rungs ${bench.rungs.join('→')} (ends ${gov.rung}) · dpr ${dpr} · ${canvas.width}×${canvas.height}`;
+  bench.done += `\nbusy ${(bench.busy / secs).toFixed(0)} ms/s · late beats ${(100 * bench.late / bench.beats).toFixed(1)}%`;
   console.info(bench.done);
   setSpeed(0);
+  benchSend({ plan: BENCH_PLAN || 'worst', split: SPLIT, secs, busy: bench.busy / secs, beats: bench.beats / secs, late: bench.late / bench.beats,
+    drawn: bench.drawn / bench.n, ren: +avg(bench.ren), ren95: +q(bench.ren, 0.95), sim: +avg(bench.sim), rungs: bench.rungs.join('>'), dpr, ua: navigator.userAgent });
   return bench.done;
+}
+
+// With ?runs=nsns, a bench ends by posting its numbers back to the page's server (/result) and opening the next run in the
+// list: n without the split, s with it (so a phone can compare the two by itself, alternating to even out its warming).
+function benchSend(r) {
+  const runs = params.get('runs') || '', i = +(params.get('run') || 0);
+  if (!runs) return;
+  fetch('/result', { method: 'POST', body: JSON.stringify({ ...r, run: i }) }).catch(() => {}).finally(() => {
+    if (i + 1 >= runs.length) return;
+    const u = new URLSearchParams(params);              // (as it was opened: the game rewrites its address)
+    u.set('run', i + 1); u.set('split', runs[i + 1] === 's' ? '' : '0');
+    setTimeout(() => { location.search = u.toString(); }, 3000);
+  });
 }
 
 // A meadow is for watching, so on a phone or tablet the screen stays on while time runs, till nobody has touched it
@@ -20193,7 +20218,7 @@ function splitFrame(now, gap) {
   const cx = cam.x, cy = cam.y;
   pixelCam();
   const z = cam.zoom, ox = vw / 2 - cam.x * z, oy = vh / 2 - cam.y * z;
-  let full = !Ground.ok || split.z !== z || now - lastDrawn >= Math.max(gap, WORLD_GAP) || !(Math.abs(ox - split.ox) < EDGE - 2 && Math.abs(oy - split.oy) < EDGE - 2);
+  let full = split.in || !Ground.ok || split.z !== z || now - lastDrawn >= Math.max(gap, WORLD_GAP) || !(Math.abs(ox - split.ox) < EDGE - 2 && Math.abs(oy - split.oy) < EDGE - 2);
   if (!full) full = !Ground.slide(ox, oy, z);
   if (!full) {
     placeGround(0, 0);
@@ -20208,10 +20233,43 @@ function splitFrame(now, gap) {
     split.z = z; split.ox = ox; split.oy = oy;
     if (slidX !== 0 || slidY !== 0) { wview.style.transform = ''; slidX = slidY = 0; }
   }
-  drawForagerLayer(now, ox, oy);
+  if (split.in) { if (fgLayer.on) { fview.style.display = 'none'; fgLayer.on = false; } }   // (drawn in the meadow this beat)
+  else drawForagerLayer(now, ox, oy);
   cam.x = cx; cam.y = cy;
   if (steadied) handBack();
   if (cookUi.open) drawCookView(now);
+}
+
+// The forager's canvas is over everything, so with something standing in front of it (a tree's trunk or crown: coverAt;
+// a rock, an animal, a friend, a fire or a camp build just nearer and tall enough to reach over its feet) it is drawn in
+// the meadow again, sorted among them, and the meadow every beat, as without a split, till it has been clear of them for
+// SPLIT_CLEAR. What lies flat (a find, a mushroom, a dropped dish) or is tiny (a bee) never hides it. Worked out after each
+// drawing of the meadow (the crowns' cover is built as they're drawn), a little wide, so it's in before anything overlaps it.
+const SPLIT_CLEAR = 300;
+const SPLIT_TALL = { rabbit: 0.25, fox: 0.3, bee: 0, crow: 0.2, otter: 0.2 };   // how high each stands, in forPx
+function standsUp(it, z, px) {
+  if (it.c) return SPLIT_TALL[it.c.species] || 0;
+  if (it.q) return 0.6;
+  if (it.v || it.k) return 0.3;
+  if (it.d) return it.d.tree ? 0 : it.d.size * z * 0.5 / px;   // (a tree: its cover)
+  const t = it.s;
+  if (!t) return 0;
+  return t.stone ? 0.9 : t.torch || t.rack || t.lean ? 0.7 : t.cairn ? 0.4 : t.bramble ? 0.35 : t.fire ? 0.3
+    : t.basket ? 0.25 : t.green ? 0.2 : t.seat ? 0.15 : 0;
+}
+function splitBehind(now, items) {
+  const F = world.forager, d = drawnAt(F), z = cam.zoom, px = forPx();
+  const sx = (d.x - cam.x) * z + vw / 2, sy = (d.y - cam.y) * z + vh / 2, w = px * 0.3;
+  let hid = coverAt(sx, sy - px * 0.15, d.y) > 0.02 || coverAt(sx, sy - px * 0.45, d.y) > 0.02
+    || coverAt(sx - w * 0.5, sy - px * 0.3, d.y) > 0.02 || coverAt(sx + w * 0.5, sy - px * 0.3, d.y) > 0.02;
+  for (let i = 0; i < items.length && !hid; i++) {
+    const it = items[i];
+    if (it.p || it.y <= d.y || it.f < 0.02) continue;
+    const h = standsUp(it, z, px);
+    if (h > 0.05 && it.sy - sy < (h - 0.05) * px && Math.abs(it.sx - sx) < (0.2 + 0.5 * h) * px) hid = true;   // (its top over the forager's feet)
+  }
+  if (hid) { split.in = true; split.clear = now; }
+  else if (split.in && now - split.clear > SPLIT_CLEAR) split.in = false;
 }
 
 // The forager on a canvas of its own (fview) a little bigger than it, every beat, where the camera is now: it is drawn as it
@@ -20286,6 +20344,8 @@ function lightForager(now, ck, dx, dy) {
 function frame(now) {
   if (opening === 1) opening = 2;
   const raw = now, dt0 = raw - (perf.at || raw); perf.at = raw;
+  const fr0 = BENCH ? performance.now() : 0;
+  if (bench.on) { bench.beats++; if (dt0 > 25) bench.late++; }
   if (dt0 > 0 && dt0 < 250) { perf.fps += (1000 / dt0 - perf.fps) * 0.05; perf.ms += (dt0 - perf.ms) * 0.05; }
   now = onBeat(now);
   const dt = Math.min(0.1, (now - last) / 1000);
@@ -20407,6 +20467,7 @@ function frame(now) {
   if (opening > 1 && ++opening > 4) cleared();       // a kept meadow that opened fine
   keepTick(now);
   govTick(now);
+  if (bench.on) bench.busy += performance.now() - fr0;
   requestAnimationFrame(frame);
 }
 
