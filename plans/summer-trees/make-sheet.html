@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Summer Tree Sheet</title>
+<style>
+  body { margin: 0; padding: 16px; background: #f1ead8; font: 600 14px system-ui, sans-serif; color: #3b372f; }
+  canvas { max-width: 100%; height: auto; background: #cfe0a8; border-radius: 12px; }
+</style>
+</head>
+<body>
+<p>The meadow's trees in summer (and the blossoming ones), painted by <code>trees.js</code> exactly as the game's tree workers paint them.</p>
+<canvas id="sheet"></canvas>
+<pre id="atlas"></pre>
+<script src="trees.js"></script>
+<script>
+// Rows of the sheet: [label, kind, look, tones]. Each tone is one of three colours of its kind (a beech's fourth: copper).
+// Every kind blossoms only in spring in the game, so the last row is those looks: apple, cherry and hawthorn in flower.
+const ROWS = [
+  ['Oak',       'oak',      'summer', [0, 1, 2]],
+  ['Beech',     'beech',    'summer', [0, 1, 3]],
+  ['Maple',     'maple',    'summer', [0, 1, 2]],
+  ['Birch',     'birch',    'summer', [0, 1, 2]],
+  ['Apple',     'apple',    'summer', [0, 1, 2]],
+  ['Cherry',    'cherry',   'summer', [0, 1, 2]],
+  ['Alder',     'alder',    'summer', [0, 1, 2]],
+  ['Hawthorn',  'hawthorn', 'summer', [0, 1, 2]],
+  ['Pine',      'pine',     'summer', [0, 1, 2]],
+  ['Hive oak',  'hive',     'summer', [0]],
+  ['Blossom',   ['apple', 'cherry', 'hawthorn'], 'spring', [0]],
+];
+const SCALE = 1, SS = 3, PAD = 8;
+
+// Paint every tree first, so the cells can be as big as the biggest.
+const frames = [];
+for (const [label, kinds, season, tones] of ROWS) {
+  const row = [];
+  for (const kind of [].concat(kinds)) for (const tone of tones) {
+    const cv = Trees.paint(kind, { seed: 3 + tone * 7, season, tone, scale: SCALE, ss: SS });
+    row.push({ label, kind, season, tone, cv });
+  }
+  frames.push(row);
+}
+// Every tree stands with the foot of its trunk on one line across its cell, so they line up along a row.
+// The cells are all as wide as the widest tree, and each row as tall as its tallest (the hive oak is a giant).
+const all = frames.flat();
+const left = Math.max(...all.map(f => f.cv.bx)), right = Math.max(...all.map(f => f.cv.width - f.cv.bx));
+const cellW = Math.ceil(left + right) + PAD * 2, cols = Math.max(...frames.map(r => r.length));
+const rows = frames.map(row => ({ above: Math.max(...row.map(f => f.cv.by)), below: Math.max(...row.map(f => f.cv.height - f.cv.by)) }));
+let sheetH = 0;
+for (const r of rows) { r.top = sheetH; sheetH += Math.ceil(r.above + r.below) + PAD * 2; }
+
+const sheet = document.getElementById('sheet');
+sheet.width = cellW * cols; sheet.height = sheetH;
+const g = sheet.getContext('2d'), atlas = [];
+frames.forEach((row, y) => row.forEach((f, x) => {
+  const dx = Math.round(x * cellW + PAD + left - f.cv.bx), dy = Math.round(rows[y].top + PAD + rows[y].above - f.cv.by);
+  g.drawImage(f.cv, dx, dy);
+  atlas.push({ name: `${f.kind}-${f.season}-${f.tone}`, x: dx, y: dy, w: f.cv.width, h: f.cv.height, footX: Math.round(f.cv.bx), footY: Math.round(f.cv.by) });
+}));
+document.getElementById('atlas').textContent = JSON.stringify({ image: 'summer-trees.png', frames: atlas }, null, 1);
+// For the headless run: the sheet as a PNG, read back out of the page's DOM.
+const out = document.createElement('div');
+out.id = 'png'; out.hidden = true; out.textContent = sheet.toDataURL('image/png');
+document.body.append(out);
+</script>
+</body>
+</html>

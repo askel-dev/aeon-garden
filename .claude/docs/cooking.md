@@ -1,13 +1,18 @@
 # Cooking, vessels, the recipe book, eating
 
 At the fire itself (branch `fire-cook`, 2026-10-21, a prototype; `?card` has the window back): no window. The camera eases in on
-the real fire (`FIRE_COOK`, `measureCook`, `cookCam`) and the pot's canvas is laid on it where the meadow draws the fire each frame
-(`drawPot` keeps the spot in `potLaid`, `layNear` moves and scales the canvas, written only when it moved), its own bed, vignette
-and flames left out so the meadow's fire burns under it. What it'll make, the stick and Cook sit under the stones (`.cook-under`;
+the real fire (`FIRE_COOK`, `measureCook`, `cookCam`) and the pot's canvas is drawn by the meadow itself where it draws the fire
+(`drawPot`: last beat's picture, sorted at the fire's y as any pot over a fire), so the fire looks the same cooking or not: its
+flames, bloom and embers, the meadow's dark. The canvas on the page is invisible and only takes the pointer (`potLaid`, `layNear`
+keep it on the fire, written only when it moved); its own bed, vignette and flames are left out. What it'll make, the stick and Cook sit under the stones (`.cook-under`;
 Cook goes while it cooks, the meadow's bar over the pot says how long), the satchel's things, the vessels, the book and the ✕ are a
 slim strip at the foot (`.cook-side`). The camera comes no closer than the meadow is painted for (`nearMost`: the forager's painting,
 `furTop`, stretched at most `NEAR_STRETCH`, the most a phone already shows it at 64): at 240 the prototype blew the meadow up four
-times past its paintings into a blur. So the pot is the meadow's size, about 100 px across on a computer, 170 on an upright phone.
+times past its paintings into a blur. So the pot is the meadow's size, about 90 px across on a computer, 150 on an upright phone (`NEAR_POT`).  The pot
+and the bowl stand `POT_LIFT` up on three green sticks charred at their feet, the shadow close under on the coals (`kw.under`, a
+painting each; the hanging stand of forked sticks and a crossbar is gone, 2026-10-21), and
+`litByFire` lights its belly, lip and lugs from below, flickering (`kw.lit`). (When the canvas was shown over the meadow it had
+its own dusk, small flames, sparks and glow to fake the fire it hid, and the fire looked different while cooking: 2026-10-21.)
 
 Cooking at the fire (PLAN.md stage 6, its redesign, and the cooking window of 2026-10-16; the long comments over `COOK_TPS` and
 `DROPS` have it all): a click on a lit fire (or E, or the pot prompt) walks the forager there (`clickFire` 'cook', `goFire`), it
@@ -27,8 +32,12 @@ flies in an arc to over the pot's mouth (`flyToPot`, `flyBig`) and falls in. Mee
 and back down, rings going out, `potRing`; a pool each of typed arrays), dips under, bobs back up and floats, its lower part dim
 through the water with a ring round it (`drawPotThing`), and plops (sound.js `plop`, by `plopOf`: heavier for a mushroom, an apple
 or one day a fish, lighter for a leaf or a berry, honey a gloop). What's in the pot is held back in the satchel (`potHeld`,
-`potPrune`) till cooked; a tap on one floating lifts it out with a drip and it flies back to its tile (`potTake`), and a small red cross at the pot's corner (`#cook-empty`, only with something in it) lifts them all out (`emptyPot`). The camp's basket is to hand at any fire standing in camp (`basketAtHand`: `S.inCamp` under the fire, so wherever in the ring the basket was set down it counts), and its things are a row of small tiles under the satchel's (`#cook-basket`, 40 px, 46 on a touch screen, 38 in a short window; it never grows the window: three rows then a scroll, on a phone on its side what the satchel leaves, upright one row scrolled sideways: `renderCookBasket`, `kw.bslots`, rewritten only when what's in it changes, hidden when it's empty or out of camp), each ringed as a satchel's is when it would go in the pot (or on the fire) and the rest let down. A tap takes one straight out of the basket (`potAddBasket`): into the pot, or a stick on the fire, the satchel out of it, so a full satchel is no reason a thing kept at camp can't cook. The pot remembers the store each thing came from (`ui.fire.src`), holds its tile back there (`potHeld`, `potPrune`) and spends it there at Cook (`spendPot`, `potStillThere`; sim.js `storesAt`, `storesPut` — the satchel first, then the basket while the fire stands in camp). Each change is sent (`sendBasket`), so a friend sees it leave. A fire lit outside the ring cooks without it: the row's gone. The meadow keeps
-its own little pot over the fire too (`drawPot`, `paintPot`), which the forager stirs. What's in a vessel over a fire in the meadow sits down in it (`layThings`, `VSL_HOLD`: its lower part hidden under the
+`potPrune`) till cooked; a tap on one floating lifts it out with a drip and it flies back to its tile (`potTake`), and a small red cross at the pot's corner (`#cook-empty`, only with something in it) lifts them all out (`emptyPot`). The camp's basket is to hand at any fire standing in camp (`basketAtHand`: `S.inCamp` under the fire, so wherever in the ring the basket was set down it counts), and its things are a row of small tiles under the satchel's (`#cook-basket`, 40 px, 46 on a touch screen, 38 in a short window; it never grows the window: three rows then a scroll, on a phone on its side what the satchel leaves, upright one row scrolled sideways: `renderCookBasket`, `kw.bslots`, rewritten only when what's in it changes, hidden when it's empty or out of camp), each ringed as a satchel's is when it would go in the pot (or on the fire) and the rest let down. A tap takes one straight out of the basket (`potAddBasket`): into the pot, or a stick on the fire, the satchel out of it, so a full satchel is no reason a thing kept at camp can't cook. The pot remembers the store each thing came from (`ui.fire.src`), holds its tile back there (`potHeld`, `potPrune`) and spends it there at Cook (`spendPot`, `potStillThere`; sim.js `storesAt`, `storesPut` — the satchel first, then the basket while the fire stands in camp). Each change is sent (`sendBasket`), so a friend sees it leave. A fire lit outside the ring cooks without it: the row's gone. A vessel over a fire
+when you're not cooking at it (left cooking, or the one last cooked in) is the cooking's very own painting, so the fire looks the
+same cooking or not: `meadowVessels` paints `paintCookPot` and `VESSEL_PAINT` again a size apart from the window's (kw's fields
+swapped out and back), in fire units, at sizes doubling (8 to 128 px of half-width, drawn scaled between), and `vesselOver` lays
+its sticks, back, broth, things, front and the fire's light on it (as `litByFire`). What's in it sits down in it (`layThings`,
+placed by `kw.at` as the window places them, `VSL_SINK`: its lower part hidden under the
 broth or down in the bowl, the pot's seen dimly through the broth with a ring round it) and moves while it cooks: round the pot with
 the stirring and bobbing, tumbled in the bowl, hopping on the griddle and the stone, turning on the spit. Under the pot what it will make (`potWord`: a
 known dish's name, "Something new!" for an exact dish never made, "Not a dish yet… as it is, a forager's mess" with what a known

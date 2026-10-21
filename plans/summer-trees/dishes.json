@@ -1,0 +1,248 @@
+{
+ "image": "dishes.png",
+ "frames": [
+  {
+   "name": "roast-mushrooms",
+   "x": 4,
+   "y": 4,
+   "w": 192,
+   "h": 192,
+   "footX": 96,
+   "footY": 192
+  },
+  {
+   "name": "baked-apple-with-honey",
+   "x": 204,
+   "y": 4,
+   "w": 192,
+   "h": 192,
+   "footX": 96,
+   "footY": 192
+  },
+  {
+   "name": "spring-salad",
+   "x": 404,
+   "y": 4,
+   "w": 192,
+   "h": 192,
+   "footX": 96,
+   "footY": 192
+  },
+  {
+   "name": "rosehip-tea",
+   "x": 604,
+   "y": 4,
+   "w": 192,
+   "h": 192,
+   "footX": 96,
+   "footY": 192
+  },
+  {
+   "name": "garlic-mushrooms",
+   "x": 804,
+   "y": 4,
+   "w": 192,
+   "h": 192,
+   "footX": 96,
+   "footY": 192
+  },
+  {
+   "name": "honeyed-cherries",
+   "x": 1004,
+   "y": 4,
+   "w": 192,
+   "h": 192,
+   "footX": 96,
+   "footY": 192
+  },
+  {
+   "name": "warm-bramble-compote",
+   "x": 4,
+   "y": 204,
+   "w": 192,
+   "h": 192,
+   "footX": 96,
+   "footY": 192
+  },
+  {
+   "name": "wilted-greens",
+   "x": 204,
+   "y": 204,
+   "w": 192,
+   "h": 192,
+   "footX": 96,
+   "footY": 192
+  },
+  {
+   "name": "toasted-beechnuts",
+   "x": 404,
+   "y": 204,
+   "w": 192,
+   "h": 192,
+   "footX": 96,
+   "footY": 192
+  },
+  {
+   "name": "toasted-hazelnuts",
+   "x": 604,
+   "y": 204,
+   "w": 192,
+   "h": 192,
+   "footX": 96,
+   "footY": 192
+  },
+  {
+   "name": "mushrooms-with-hazelnuts",
+   "x": 804,
+   "y": 204,
+   "w": 192,
+   "h": 192,
+   "footX": 96,
+   "footY": 192
+  },
+  {
+   "name": "dandelion-fritters",
+   "x": 1004,
+   "y": 204,
+   "w": 192,
+   "h": 192,
+   "footX": 96,
+   "footY": 192
+  },
+  {
+   "name": "a-forager-s-mess",
+   "x": 4,
+   "y": 404,
+   "w": 192,
+   "h": 192,
+   "footX": 96,
+   "footY": 192
+  },
+  {
+   "name": "roast-wild-garlic",
+   "x": 204,
+   "y": 404,
+   "w": 192,
+   "h": 192,
+   "footX": 96,
+   "footY": 192
+  },
+  {
+   "name": "strawberries-and-honey",
+   "x": 404,
+   "y": 404,
+   "w": 192,
+   "h": 192,
+   "footX": 96,
+   "footY": 192
+  },
+  {
+   "name": "elderflower-cordial",
+   "x": 604,
+   "y": 404,
+   "w": 192,
+   "h": 192,
+   "footX": 96,
+   "footY": 192
+  },
+  {
+   "name": "watercress-soup",
+   "x": 804,
+   "y": 404,
+   "w": 192,
+   "h": 192,
+   "footX": 96,
+   "footY": 192
+  },
+  {
+   "name": "sorrel-and-mushrooms",
+   "x": 1004,
+   "y": 404,
+   "w": 192,
+   "h": 192,
+   "footX": 96,
+   "footY": 192
+  },
+  {
+   "name": "roast-dandelion-roots",
+   "x": 4,
+   "y": 604,
+   "w": 192,
+   "h": 192,
+   "footX": 96,
+   "footY": 192
+  },
+  {
+   "name": "mushroom-and-garlic-skewer",
+   "x": 204,
+   "y": 604,
+   "w": 192,
+   "h": 192,
+   "footX": 96,
+   "footY": 192
+  },
+  {
+   "name": "elderflower-fritters",
+   "x": 404,
+   "y": 604,
+   "w": 192,
+   "h": 192,
+   "footX": 96,
+   "footY": 192
+  },
+  {
+   "name": "rosehip-syrup",
+   "x": 604,
+   "y": 604,
+   "w": 192,
+   "h": 192,
+   "footX": 96,
+   "footY": 192
+  },
+  {
+   "name": "nettle-soup",
+   "x": 804,
+   "y": 604,
+   "w": 192,
+   "h": 192,
+   "footX": 96,
+   "footY": 192
+  },
+  {
+   "name": "hazelnut-brittle",
+   "x": 1004,
+   "y": 604,
+   "w": 192,
+   "h": 192,
+   "footX": 96,
+   "footY": 192
+  },
+  {
+   "name": "chicken-of-the-woods-steak",
+   "x": 4,
+   "y": 804,
+   "w": 192,
+   "h": 192,
+   "footX": 96,
+   "footY": 192
+  },
+  {
+   "name": "forest-stew",
+   "x": 204,
+   "y": 804,
+   "w": 192,
+   "h": 192,
+   "footX": 96,
+   "footY": 192
+  },
+  {
+   "name": "baked-apple-with-honey",
+   "x": 404,
+   "y": 804,
+   "w": 192,
+   "h": 192,
+   "footX": 96,
+   "footY": 192
+  }
+ ]
+}

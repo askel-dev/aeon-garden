@@ -1,0 +1,482 @@
+{
+ "image": "stones-plants.png",
+ "frames": [
+  {
+   "name": "rock-pebbles",
+   "x": 8,
+   "y": 8,
+   "w": 270,
+   "h": 225,
+   "footX": 135,
+   "footY": 149
+  },
+  {
+   "name": "rock-stone",
+   "x": 294,
+   "y": 8,
+   "w": 270,
+   "h": 225,
+   "footX": 135,
+   "footY": 149
+  },
+  {
+   "name": "rock-stone-mossy",
+   "x": 580,
+   "y": 8,
+   "w": 270,
+   "h": 225,
+   "footX": 135,
+   "footY": 149
+  },
+  {
+   "name": "rock-boulder",
+   "x": 866,
+   "y": 8,
+   "w": 270,
+   "h": 225,
+   "footX": 135,
+   "footY": 149
+  },
+  {
+   "name": "rock-boulder-mossy",
+   "x": 1152,
+   "y": 8,
+   "w": 270,
+   "h": 225,
+   "footX": 135,
+   "footY": 149
+  },
+  {
+   "name": "rock-great-rock",
+   "x": 1438,
+   "y": 8,
+   "w": 270,
+   "h": 225,
+   "footX": 135,
+   "footY": 149
+  },
+  {
+   "name": "rock-ford-stone",
+   "x": 1724,
+   "y": 8,
+   "w": 270,
+   "h": 225,
+   "footX": 135,
+   "footY": 149
+  },
+  {
+   "name": "old-stone-asleep",
+   "x": 68,
+   "y": 249,
+   "w": 150,
+   "h": 150,
+   "footX": 75,
+   "footY": 128
+  },
+  {
+   "name": "old-stone-awake",
+   "x": 354,
+   "y": 249,
+   "w": 150,
+   "h": 150,
+   "footX": 75,
+   "footY": 128
+  },
+  {
+   "name": "old-stone-pleased",
+   "x": 640,
+   "y": 249,
+   "w": 150,
+   "h": 150,
+   "footX": 75,
+   "footY": 128
+  },
+  {
+   "name": "old-stone-grumpy",
+   "x": 926,
+   "y": 249,
+   "w": 150,
+   "h": 150,
+   "footX": 75,
+   "footY": 128
+  },
+  {
+   "name": "old-stone-disgusted",
+   "x": 1212,
+   "y": 249,
+   "w": 150,
+   "h": 150,
+   "footX": 75,
+   "footY": 128
+  },
+  {
+   "name": "old-stone-delighted",
+   "x": 1498,
+   "y": 249,
+   "w": 150,
+   "h": 150,
+   "footX": 75,
+   "footY": 128
+  },
+  {
+   "name": "old-stone-shocked",
+   "x": 1784,
+   "y": 249,
+   "w": 150,
+   "h": 150,
+   "footX": 75,
+   "footY": 128
+  },
+  {
+   "name": "flower-tulips-0",
+   "x": 71,
+   "y": 415,
+   "w": 144,
+   "h": 162,
+   "footX": 72,
+   "footY": 133
+  },
+  {
+   "name": "flower-blossom-0",
+   "x": 357,
+   "y": 415,
+   "w": 144,
+   "h": 162,
+   "footX": 72,
+   "footY": 133
+  },
+  {
+   "name": "flower-buttercups-0",
+   "x": 643,
+   "y": 415,
+   "w": 144,
+   "h": 162,
+   "footX": 72,
+   "footY": 133
+  },
+  {
+   "name": "flower-sunflowers-0",
+   "x": 929,
+   "y": 415,
+   "w": 144,
+   "h": 162,
+   "footX": 72,
+   "footY": 133
+  },
+  {
+   "name": "flower-bluebells-0",
+   "x": 1215,
+   "y": 415,
+   "w": 144,
+   "h": 162,
+   "footX": 72,
+   "footY": 133
+  },
+  {
+   "name": "flower-heather-0",
+   "x": 1501,
+   "y": 415,
+   "w": 144,
+   "h": 162,
+   "footX": 72,
+   "footY": 133
+  },
+  {
+   "name": "flower-asters-0",
+   "x": 1787,
+   "y": 415,
+   "w": 144,
+   "h": 162,
+   "footX": 72,
+   "footY": 133
+  },
+  {
+   "name": "flower-tulips-3",
+   "x": 71,
+   "y": 593,
+   "w": 144,
+   "h": 162,
+   "footX": 72,
+   "footY": 133
+  },
+  {
+   "name": "flower-blossom-3",
+   "x": 357,
+   "y": 593,
+   "w": 144,
+   "h": 162,
+   "footX": 72,
+   "footY": 133
+  },
+  {
+   "name": "flower-buttercups-3",
+   "x": 643,
+   "y": 593,
+   "w": 144,
+   "h": 162,
+   "footX": 72,
+   "footY": 133
+  },
+  {
+   "name": "flower-sunflowers-3",
+   "x": 929,
+   "y": 593,
+   "w": 144,
+   "h": 162,
+   "footX": 72,
+   "footY": 133
+  },
+  {
+   "name": "flower-bluebells-3",
+   "x": 1215,
+   "y": 593,
+   "w": 144,
+   "h": 162,
+   "footX": 72,
+   "footY": 133
+  },
+  {
+   "name": "flower-heather-3",
+   "x": 1501,
+   "y": 593,
+   "w": 144,
+   "h": 162,
+   "footX": 72,
+   "footY": 133
+  },
+  {
+   "name": "flower-asters-3",
+   "x": 1787,
+   "y": 593,
+   "w": 144,
+   "h": 162,
+   "footX": 72,
+   "footY": 133
+  },
+  {
+   "name": "flower-tuft-1",
+   "x": 71,
+   "y": 771,
+   "w": 144,
+   "h": 162,
+   "footX": 72,
+   "footY": 133
+  },
+  {
+   "name": "flower-tuft-autumn-1",
+   "x": 357,
+   "y": 771,
+   "w": 144,
+   "h": 162,
+   "footX": 72,
+   "footY": 133
+  },
+  {
+   "name": "flower-sprout-1",
+   "x": 643,
+   "y": 771,
+   "w": 144,
+   "h": 162,
+   "footX": 72,
+   "footY": 133
+  },
+  {
+   "name": "flower-fallen-leaves-1",
+   "x": 929,
+   "y": 771,
+   "w": 144,
+   "h": 162,
+   "footX": 72,
+   "footY": 133
+  },
+  {
+   "name": "flower-seed-heads-1",
+   "x": 1215,
+   "y": 771,
+   "w": 144,
+   "h": 162,
+   "footX": 72,
+   "footY": 133
+  },
+  {
+   "name": "flower-tuft-frost-1",
+   "x": 1501,
+   "y": 771,
+   "w": 144,
+   "h": 162,
+   "footX": 72,
+   "footY": 133
+  },
+  {
+   "name": "picked-cep",
+   "x": 79,
+   "y": 949,
+   "w": 128,
+   "h": 128,
+   "footX": 64,
+   "footY": 128
+  },
+  {
+   "name": "picked-chanterelle",
+   "x": 365,
+   "y": 949,
+   "w": 128,
+   "h": 128,
+   "footX": 64,
+   "footY": 128
+  },
+  {
+   "name": "picked-field",
+   "x": 651,
+   "y": 949,
+   "w": 128,
+   "h": 128,
+   "footX": 64,
+   "footY": 128
+  },
+  {
+   "name": "picked-oyster",
+   "x": 937,
+   "y": 949,
+   "w": 128,
+   "h": 128,
+   "footX": 64,
+   "footY": 128
+  },
+  {
+   "name": "picked-sulphur",
+   "x": 1223,
+   "y": 949,
+   "w": 128,
+   "h": 128,
+   "footX": 64,
+   "footY": 128
+  },
+  {
+   "name": "picked-garlic",
+   "x": 1509,
+   "y": 949,
+   "w": 128,
+   "h": 128,
+   "footX": 64,
+   "footY": 128
+  },
+  {
+   "name": "picked-nettle",
+   "x": 1795,
+   "y": 949,
+   "w": 128,
+   "h": 128,
+   "footX": 64,
+   "footY": 128
+  },
+  {
+   "name": "picked-sorrel",
+   "x": 79,
+   "y": 1093,
+   "w": 128,
+   "h": 128,
+   "footX": 64,
+   "footY": 128
+  },
+  {
+   "name": "picked-dandelion",
+   "x": 365,
+   "y": 1093,
+   "w": 128,
+   "h": 128,
+   "footX": 64,
+   "footY": 128
+  },
+  {
+   "name": "picked-watercress",
+   "x": 651,
+   "y": 1093,
+   "w": 128,
+   "h": 128,
+   "footX": 64,
+   "footY": 128
+  },
+  {
+   "name": "picked-apple",
+   "x": 937,
+   "y": 1093,
+   "w": 128,
+   "h": 128,
+   "footX": 64,
+   "footY": 128
+  },
+  {
+   "name": "picked-cherry",
+   "x": 1223,
+   "y": 1093,
+   "w": 128,
+   "h": 128,
+   "footX": 64,
+   "footY": 128
+  },
+  {
+   "name": "picked-blackberry",
+   "x": 1509,
+   "y": 1093,
+   "w": 128,
+   "h": 128,
+   "footX": 64,
+   "footY": 128
+  },
+  {
+   "name": "picked-strawberry",
+   "x": 1795,
+   "y": 1093,
+   "w": 128,
+   "h": 128,
+   "footX": 64,
+   "footY": 128
+  },
+  {
+   "name": "picked-elderflower",
+   "x": 79,
+   "y": 1237,
+   "w": 128,
+   "h": 128,
+   "footX": 64,
+   "footY": 128
+  },
+  {
+   "name": "picked-rosehip",
+   "x": 365,
+   "y": 1237,
+   "w": 128,
+   "h": 128,
+   "footX": 64,
+   "footY": 128
+  },
+  {
+   "name": "picked-acorns",
+   "x": 651,
+   "y": 1237,
+   "w": 128,
+   "h": 128,
+   "footX": 64,
+   "footY": 128
+  },
+  {
+   "name": "picked-beechnuts",
+   "x": 937,
+   "y": 1237,
+   "w": 128,
+   "h": 128,
+   "footX": 64,
+   "footY": 128
+  },
+  {
+   "name": "picked-hazelnut",
+   "x": 1223,
+   "y": 1237,
+   "w": 128,
+   "h": 128,
+   "footX": 64,
+   "footY": 128
+  }
+ ]
+}

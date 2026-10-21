@@ -1,0 +1,284 @@
+{
+ "image": "summer-trees.png",
+ "frames": [
+  {
+   "name": "oak-summer-0",
+   "x": 70,
+   "y": 12,
+   "w": 203,
+   "h": 184,
+   "footX": 107,
+   "footY": 176
+  },
+  {
+   "name": "oak-summer-1",
+   "x": 407,
+   "y": 11,
+   "w": 229,
+   "h": 185,
+   "footX": 111,
+   "footY": 177
+  },
+  {
+   "name": "oak-summer-2",
+   "x": 749,
+   "y": 8,
+   "w": 209,
+   "h": 188,
+   "footX": 110,
+   "footY": 180
+  },
+  {
+   "name": "beech-summer-0",
+   "x": 74,
+   "y": 212,
+   "w": 212,
+   "h": 210,
+   "footX": 103,
+   "footY": 202
+  },
+  {
+   "name": "beech-summer-1",
+   "x": 411,
+   "y": 219,
+   "w": 217,
+   "h": 203,
+   "footX": 107,
+   "footY": 195
+  },
+  {
+   "name": "beech-summer-3",
+   "x": 719,
+   "y": 226,
+   "w": 230,
+   "h": 196,
+   "footX": 140,
+   "footY": 188
+  },
+  {
+   "name": "maple-summer-0",
+   "x": 76,
+   "y": 448,
+   "w": 195,
+   "h": 218,
+   "footX": 101,
+   "footY": 210
+  },
+  {
+   "name": "maple-summer-1",
+   "x": 434,
+   "y": 438,
+   "w": 189,
+   "h": 228,
+   "footX": 84,
+   "footY": 220
+  },
+  {
+   "name": "maple-summer-2",
+   "x": 762,
+   "y": 461,
+   "w": 197,
+   "h": 205,
+   "footX": 97,
+   "footY": 197
+  },
+  {
+   "name": "birch-summer-0",
+   "x": 75,
+   "y": 684,
+   "w": 214,
+   "h": 284,
+   "footX": 102,
+   "footY": 276
+  },
+  {
+   "name": "birch-summer-1",
+   "x": 414,
+   "y": 688,
+   "w": 206,
+   "h": 280,
+   "footX": 104,
+   "footY": 272
+  },
+  {
+   "name": "birch-summer-2",
+   "x": 753,
+   "y": 682,
+   "w": 216,
+   "h": 286,
+   "footX": 106,
+   "footY": 278
+  },
+  {
+   "name": "apple-summer-0",
+   "x": 91,
+   "y": 1003,
+   "w": 196,
+   "h": 130,
+   "footX": 86,
+   "footY": 122
+  },
+  {
+   "name": "apple-summer-1",
+   "x": 436,
+   "y": 995,
+   "w": 173,
+   "h": 138,
+   "footX": 82,
+   "footY": 130
+  },
+  {
+   "name": "apple-summer-2",
+   "x": 776,
+   "y": 984,
+   "w": 165,
+   "h": 149,
+   "footX": 83,
+   "footY": 141
+  },
+  {
+   "name": "cherry-summer-0",
+   "x": 91,
+   "y": 1168,
+   "w": 196,
+   "h": 130,
+   "footX": 86,
+   "footY": 122
+  },
+  {
+   "name": "cherry-summer-1",
+   "x": 436,
+   "y": 1160,
+   "w": 173,
+   "h": 138,
+   "footX": 82,
+   "footY": 130
+  },
+  {
+   "name": "cherry-summer-2",
+   "x": 776,
+   "y": 1149,
+   "w": 165,
+   "h": 149,
+   "footX": 83,
+   "footY": 141
+  },
+  {
+   "name": "alder-summer-0",
+   "x": 71,
+   "y": 1314,
+   "w": 203,
+   "h": 289,
+   "footX": 106,
+   "footY": 281
+  },
+  {
+   "name": "alder-summer-1",
+   "x": 423,
+   "y": 1320,
+   "w": 179,
+   "h": 283,
+   "footX": 95,
+   "footY": 275
+  },
+  {
+   "name": "alder-summer-2",
+   "x": 766,
+   "y": 1317,
+   "w": 191,
+   "h": 286,
+   "footX": 93,
+   "footY": 278
+  },
+  {
+   "name": "hawthorn-summer-0",
+   "x": 94,
+   "y": 1619,
+   "w": 168,
+   "h": 128,
+   "footX": 83,
+   "footY": 120
+  },
+  {
+   "name": "hawthorn-summer-1",
+   "x": 420,
+   "y": 1622,
+   "w": 198,
+   "h": 125,
+   "footX": 98,
+   "footY": 117
+  },
+  {
+   "name": "hawthorn-summer-2",
+   "x": 756,
+   "y": 1626,
+   "w": 201,
+   "h": 121,
+   "footX": 103,
+   "footY": 113
+  },
+  {
+   "name": "pine-summer-0",
+   "x": 88,
+   "y": 1763,
+   "w": 191,
+   "h": 279,
+   "footX": 89,
+   "footY": 271
+  },
+  {
+   "name": "pine-summer-1",
+   "x": 431,
+   "y": 1763,
+   "w": 181,
+   "h": 279,
+   "footX": 87,
+   "footY": 271
+  },
+  {
+   "name": "pine-summer-2",
+   "x": 768,
+   "y": 1763,
+   "w": 179,
+   "h": 279,
+   "footX": 91,
+   "footY": 271
+  },
+  {
+   "name": "hive-summer-0",
+   "x": 8,
+   "y": 2058,
+   "w": 325,
+   "h": 317,
+   "footX": 169,
+   "footY": 309
+  },
+  {
+   "name": "apple-spring-0",
+   "x": 91,
+   "y": 2391,
+   "w": 196,
+   "h": 130,
+   "footX": 86,
+   "footY": 122
+  },
+  {
+   "name": "cherry-spring-0",
+   "x": 432,
+   "y": 2391,
+   "w": 196,
+   "h": 130,
+   "footX": 86,
+   "footY": 122
+  },
+  {
+   "name": "hawthorn-spring-0",
+   "x": 776,
+   "y": 2393,
+   "w": 168,
+   "h": 128,
+   "footX": 83,
+   "footY": 120
+  }
+ ]
+}

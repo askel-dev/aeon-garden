@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Stones and Plants Sheet</title>
+<style>
+  body { margin: 0; padding: 16px; background: #f1ead8; font: 600 14px system-ui, sans-serif; color: #3b372f; }
+  canvas { max-width: 100%; height: auto; background: #cfe0a8; border-radius: 12px; }
+</style>
+</head>
+<body>
+<p>The meadow's rocks, the old stone, its flowers and ground cover, and the plants you pick, painted by the game's own code
+  (<code>meadow.js</code>, lifted out of game.js, and <code>items.js</code>).</p>
+<canvas id="sheet"></canvas>
+<pre id="atlas"></pre>
+<script src="fur.js"></script>
+<script src="meadow.js"></script>
+<script src="items.js"></script>
+<script src="sheet.js"></script>
+<script>
+// Rocks: where a rock lies picks its kind (pebbles, stone or boulder by a hash of its spot), stones, colour and moss.
+// These spots are ones that come out as each kind; wood is how wooded its spot is (more moss).
+const ROCK_U = 150;
+const ROCKS = [
+  ['pebbles', { x: 0.37, y: 0.11, size: 1.2 }], ['stone', { x: 0.74, y: 0.22, size: 1.2 }], ['stone-mossy', { x: 2.22, y: 0.66, size: 1.2, wood: 1 }],
+  ['boulder', { x: 5.55, y: 1.65, size: 1.2 }], ['boulder-mossy', { x: 7.03, y: 2.09, size: 1.2, wood: 1 }],
+  ['great-rock', { x: 3.1, y: 4.7, size: 2, big: true }], ['ford-stone', { x: 1.3, y: 2.9, size: 1, stone: true }],
+];
+const rocks = ROCKS.map(([name, d]) => { const cv = Meadow.rock(d, ROCK_U); return { name: 'rock-' + name, cv, footX: cv.width / 2, footY: cv.height * Meadow.ROCK_FOOT }; });
+
+// The old stone, in each of its moods.
+const OLD = 150;
+const old = Meadow.STONE_MOODS.map((mood, m) => {
+  const cv = Object.assign(document.createElement('canvas'), { width: OLD, height: OLD });
+  Meadow.paintOldStone(cv.getContext('2d'), OLD, OLD / 1.3, m * 2);
+  return { name: 'old-stone-' + mood, cv, footX: OLD / 2, footY: OLD / 2 + 0.92 * OLD / 2.6 };
+});
+
+// Flowers (0 to 6) and ground cover (7 to 12), each in two of its five variants.
+const FLOWER_U = 90, FLOWERS = ['tulips', 'blossom', 'buttercups', 'sunflowers', 'bluebells', 'heather', 'asters'],
+  COVER = ['tuft', 'tuft-autumn', 'sprout', 'fallen-leaves', 'seed-heads', 'tuft-frost'];
+const flower = (name, art, v) => { const cv = Meadow.flower(art, v, FLOWER_U); return { name: `flower-${name}-${v}`, cv, footX: cv.width / 2, footY: cv.height * Meadow.FLOWER_FOOT }; };
+const flowers = v => FLOWERS.map((n, i) => flower(n, i, v));
+const cover = COVER.map((n, i) => flower(n, 7 + i, 1));
+
+// The plants you pick, as the satchel shows them (not the honey, nor what's for the fire).
+const PLANTS = ['cep', 'chanterelle', 'field', 'oyster', 'sulphur', 'garlic', 'nettle', 'sorrel', 'dandelion', 'watercress',
+  'apple', 'cherry', 'blackberry', 'strawberry', 'elderflower', 'rosehip', 'acorns', 'beechnuts', 'hazelnut'];
+const ITEM = 128;
+const picked = PLANTS.map(name => {
+  const cv = Object.assign(document.createElement('canvas'), { width: ITEM, height: ITEM });
+  Items.paint(cv.getContext('2d'), ITEM, ITEM / 1.3, Items.NAMES.indexOf(name));
+  return { name: 'picked-' + name, cv, footX: ITEM / 2, footY: ITEM };
+});
+
+packSheet([rocks, old, flowers(0), flowers(3), cover, picked.slice(0, 7), picked.slice(7, 14), picked.slice(14)], 'stones-plants.png');
+</script>
+</body>
+</html>
