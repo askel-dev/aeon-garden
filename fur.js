@@ -943,6 +943,9 @@ function foragerParts(P) {
   const hx = 0, hy = 0.4 + P.bob;                                  // the hips
   const lx = P.fwd[0] * P.lean, ly = P.fwd[1] * P.lean * 0.5;     // leaning in: the head and the shoulders forward
   const cx = (side ? 0.0 : front ? -0.01 : 0.01) + lx + P.fwd[0] * 0.1 * P.stoop, cy = -0.2 + P.bob + P.look + ly + P.lean * 0.3 + 0.05 * P.stoop;   // the head (the hood's middle)
+  // Bent over (P.stoop): the shoulders go forward and down with the head, so the neck stays on the body; the hips and the hem stay.
+  // Side on, the back rounds out behind them (hunch) and the hood's point flops forward.
+  const sh = P.fwd[0] * 0.12 * P.stoop, sd = 0.05 * P.stoop, hunch = side ? 0.13 * P.stoop : 0;
   const R = 0.26;
   // Legs: from the hips to the feet, the knee bent forward, in a boot. (Mostly under the cloak.)
   const leg = (i, far) => {
@@ -962,7 +965,7 @@ function foragerParts(P) {
   // An arm: a sleeve from the shoulder, swung a forward (+), and a knitted mitten. Bent (jogging), the forearm comes up
   // forward from the elbow, level at the top of the swing (not up at the chin).
   const arm = (x, a, far, casts, hand) => {
-    const sx = x + lx * 0.7 + P.fwd[0] * 0.04 * P.stoop, sy = 0.06 + P.bob + ly * 0.7;
+    const sx = x + lx * 0.7 + sh * 0.8, sy = 0.06 + P.bob + ly * 0.7 + sd;
     if (P.bend) a -= 0.15;                                         // (pumping, the arm swings a little more back than up)
     const to = (x, y, t, L) => [x + (side ? -Math.sin(t) : P.fwd[0] * Math.sin(t) * 0.9) * L, y + Math.cos(t) * L + (side ? 0 : P.fwd[1] * Math.sin(t) * 0.12)];
     const [kx, ky] = P.bend ? to(sx, sy, a, 0.12) : [sx, sy];
@@ -996,36 +999,36 @@ function foragerParts(P) {
     g.quadraticCurveTo(0.22, y + 0.06, 0.29, y);
   };
   const cloak = () => add(g => {
-    g.moveTo(-0.11 + lx, -0.02 + P.bob + ly);
+    g.moveTo(-0.11 + lx + sh, -0.02 + P.bob + ly + sd);
     if (P.kneel) {                                                   // draped over the far knee (its shin showing under it), lying on the ground behind
       const kx = P.knees[1][0], ky = P.knees[1][1];
-      g.quadraticCurveTo(-0.19 + lx * 0.6, 0.12 + P.bob, kx - 0.07, ky - 0.035);
+      g.quadraticCurveTo(-0.19 + lx * 0.6 + sh * 0.4, 0.12 + P.bob + sd * 0.5, kx - 0.07, ky - 0.035);
       g.quadraticCurveTo(kx - 0.09, ky + 0.04, kx + 0.03, ky + 0.06);
       g.quadraticCurveTo(-0.07, 0.62, -0.06, 0.7);
       g.quadraticCurveTo(0.06, 0.74, 0.17, 0.705);
       g.quadraticCurveTo(0.23, 0.6, 0.17, 0.42);
-      g.quadraticCurveTo(0.14 + lx * 0.5, 0.2 + P.bob, 0.11 + lx, -0.02 + P.bob + ly);
+      g.quadraticCurveTo(0.14 + lx * 0.5 + sh * 0.3 + hunch, 0.2 + P.bob - hunch * 0.5, 0.11 + lx + sh, -0.02 + P.bob + ly + sd);
     } else if (P.sit) {
       g.quadraticCurveTo(-0.25, 0.16 + P.bob, -0.29, hy + 0.02);
       lapEdge(g, 0);
       g.quadraticCurveTo(0.25, 0.16 + P.bob, 0.11, -0.02 + P.bob);
     } else {
-      g.quadraticCurveTo(-0.2 + lx * 0.5, 0.18 + P.bob, -0.25 + sw, hem);
+      g.quadraticCurveTo(-0.2 + lx * 0.5 + sh * 0.4, 0.18 + P.bob + sd * 0.5, -0.25 + sw, hem);
       g.quadraticCurveTo(0, hem + 0.06, 0.25 + sw, hem);
-      g.quadraticCurveTo(0.2 + lx * 0.5, 0.18 + P.bob, 0.11 + lx, -0.02 + P.bob + ly);
+      g.quadraticCurveTo(0.2 + lx * 0.5 + sh * 0.3 + hunch, 0.18 + P.bob - hunch * 0.5, 0.11 + lx + sh, -0.02 + P.bob + ly + sd);
     }
     g.closePath();
   }, { casts: true, marks: [
-    ...snowOn(g => { const d = 0.03 * SNOWED; g.moveTo(-0.3 + lx, -0.1 + P.bob + ly); g.lineTo(0.3 + lx, -0.1 + P.bob + ly); g.lineTo(0.3 + lx, 0.05 + d + P.bob + ly);
-      g.quadraticCurveTo(0.15 + lx, 0.02 + d + P.bob + ly, 0, 0.04 + d + P.bob + ly); g.quadraticCurveTo(-0.15 + lx, 0.02 + d + P.bob + ly, -0.3 + lx, 0.05 + d + P.bob + ly); g.closePath(); }, 0.03),   // on the shoulders
+    ...snowOn(g => { const d = 0.03 * SNOWED; const o = lx + sh, e = ly + sd; g.moveTo(-0.3 + o, -0.1 + P.bob + e); g.lineTo(0.3 + o, -0.1 + P.bob + e); g.lineTo(0.3 + o, 0.05 + d + P.bob + e);
+      g.quadraticCurveTo(0.15 + o, 0.02 + d + P.bob + e, sh, 0.04 + d + P.bob + e); g.quadraticCurveTo(-0.15 + o, 0.02 + d + P.bob + e, -0.3 + o, 0.05 + d + P.bob + e); g.closePath(); }, 0.03),   // on the shoulders
     [tone(CLOAK, 0.82), 0.7, 0.04, P.kneel ? g => { g.moveTo(-0.35, 0.64); g.quadraticCurveTo(0, 0.68, 0.35, 0.64); g.lineTo(0.35, 0.8); g.lineTo(-0.35, 0.8); g.closePath(); }
       : P.sit ? g => { g.moveTo(-0.29, hy - 0.02); lapEdge(g, -0.04); g.lineTo(0.35, 0.9); g.lineTo(-0.35, 0.9); g.closePath(); }
       : g => { g.moveTo(-0.3 + sw, hem - 0.04); g.quadraticCurveTo(0, hem + 0.02, 0.3 + sw, hem - 0.04); g.lineTo(0.3, hem + 0.1); g.lineTo(-0.3, hem + 0.1); g.closePath(); }],   // a darker hem
-    ...side ? [[STRAP, 1, 0.012, g => { g.moveTo(-0.04, -0.04 + P.bob); g.lineTo(0.03, -0.04 + P.bob); g.lineTo(0.13, 0.27 + P.bob); g.lineTo(0.08, 0.28 + P.bob); g.closePath(); }]]
-      : [[STRAP, 1, 0.012, g => { const s = front ? 1 : -1; g.moveTo(-0.12 * s, -0.02 + P.bob); g.lineTo(-0.06 * s, -0.04 + P.bob); g.lineTo(0.2 * s, 0.25 + P.bob); g.lineTo(0.15 * s, 0.28 + P.bob); g.closePath(); }]],
+    ...side ? [[STRAP, 1, 0.012, g => { g.moveTo(-0.04 + sh, -0.04 + P.bob + sd); g.lineTo(0.03 + sh, -0.04 + P.bob + sd); g.lineTo(0.13, 0.27 + P.bob); g.lineTo(0.08, 0.28 + P.bob); g.closePath(); }]]
+      : [[STRAP, 1, 0.012, g => { const s = front ? 1 : -1; g.moveTo(-0.12 * s + sh, -0.02 + P.bob + sd); g.lineTo(-0.06 * s + sh, -0.04 + P.bob + sd); g.lineTo(0.2 * s, 0.25 + P.bob); g.lineTo(0.15 * s, 0.28 + P.bob); g.closePath(); }]],
   ] });
   const satchel = () => {
-    const x = side ? 0.12 : front ? 0.19 : -0.19, y = 0.3 + P.bob + (P.walk ? (P.jog ? 0.025 : 0.012) * Math.sin(4 * Math.PI * P.u + 0.6) : 0), w = side ? 0.085 : 0.075, yf = y - P.flap;
+    const x = (side ? 0.12 : front ? 0.19 : -0.19) + sh * 0.4, y = 0.3 + P.bob + sd * 0.4 + (P.walk ? (P.jog ? 0.025 : 0.012) * Math.sin(4 * Math.PI * P.u + 0.6) : 0), w = side ? 0.085 : 0.075, yf = y - P.flap;
     add(g => { g.moveTo(x - w, y - 0.06); g.lineTo(x + w, y - 0.06); g.quadraticCurveTo(x + w + 0.01, y + 0.08, x, y + 0.09); g.quadraticCurveTo(x - w - 0.01, y + 0.08, x - w, y - 0.06); g.closePath(); },
       { casts: true, marks: [[SATCHEL, 1, 0.015, g => g.rect(x - 0.2, y - 0.2, 0.4, 0.4)],
         ...P.flap ? [[tone(SATCHEL, 0.45), 1, 0.012, g => ovalAt(g, x, y - 0.05, w * 0.9, 0.025)]] : [],   // (the flap up: the dark inside)
@@ -1035,7 +1038,7 @@ function foragerParts(P) {
   };
   // The hood's point: out behind the head, flopping.
   const tip = () => {
-    const t = P.tip;
+    const t = P.tip + 0.05 * P.stoop;
     if (HAT !== 'hood') return;                                   // (a hat instead: hat)
     if (side) add(g => { g.moveTo(cx + 0.12, cy - 0.22); g.quadraticCurveTo(cx + 0.36, cy - 0.24 + t, cx + 0.42, cy - 0.06 + t * 1.6); g.quadraticCurveTo(cx + 0.3, cy - 0.05 + t, cx + 0.2, cy + 0.02); g.closePath(); },
       { marks: [[HOOD, 1, 0.01, g => g.rect(cx - 1, cy - 1, 2, 2)], ...snowOn(g => ovalAt(g, cx + 0.3, cy - 0.24 + t, 0.16, 0.025 + 0.025 * SNOWED), 0.02)] });
