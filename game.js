@@ -4197,7 +4197,7 @@ function paintFire(g, size, U, n) {
   // The trodden ground round it, its shadow, a few chips and pebbles kicked out.
   softSpot(g, 0.03, F0 + 0.04, RX + 0.3, RY + 0.16, '40, 30, 18', 0.32);
   for (let i = 0; i < 6; i++) {
-    const a = hash2(i, 3, 421) * TAU, d = 1.15 + 0.25 * hash2(i, 4, 423), x = Math.cos(a) * RX * d, y = F0 + Math.sin(a) * RY * d + 0.03;
+    const a = (i + 0.7 * hash2(i, 3, 421)) / 6 * TAU, d = 1.15 + 0.25 * hash2(i, 4, 423), x = Math.cos(a) * RX * d, y = F0 + Math.sin(a) * RY * d + 0.03;
     softIn(g, tone([150, 140, 126], 0.8 + 0.3 * hash2(i, 5, 427)), y - 0.02, y + 0.02, () => ovalAt(g, x, y, 0.022, 0.014), 1.3, 0.6);
   }
   // The pit: a hollow, its far wall lit and its floor darker, inked faintly round its lip.
@@ -4210,22 +4210,25 @@ function paintFire(g, size, U, n) {
     for (let i = 0; i < 7; i++) { const x = (h(i) - 0.5) * pr * 1.4, y = F0 + (h(10 + i) - 0.3) * pry * 0.9; fillIn(g, rockRGB(tone([196, 170, 130], 0.8 + 0.3 * h(20 + i))), () => ovalAt(g, x, y, 0.026, 0.009, h(30 + i) * 3)); }
   } else if (bed === 3) {                                   // soft grey ash, banked, black bits in it
     furGlow(g, [96, 90, 86], 0.6, 0, F0 + pry * 0.4, pr, pry * 0.6);
-    for (let i = 0; i < 5; i++) { const x = (h(40 + i) - 0.5) * pr * 1.2, y = F0 + (h(50 + i) - 0.5) * pry * 0.8; softIn(g, [196, 190, 182], y - 0.05, y + 0.03, () => ovalAt(g, x, y, 0.1 + 0.05 * h(60 + i), 0.04), 1.2, 0.75); }
+    softIn(g, [176, 170, 162], F0 - pry * 0.5, F0 + pry * 0.5, () => ovalAt(g, 0.02, F0 + pry * 0.1, pr * 0.66, pry * 0.42), 1.15, 0.8);   // (one low bank of it, not lumps: two side by side looked like eyes)
+    for (let i = 0; i < 26; i++) { const x = (h(40 + i) - 0.5) * pr * 1.5, y = F0 + (h(50 + i) - 0.5) * pry * 1.1; fillIn(g, rockRGB(tone([214, 208, 200], 0.9 + 0.15 * h(60 + i)), 0.7), () => ovalAt(g, x, y, 0.012 + 0.014 * h(66 + i), 0.007, h(72 + i))); }
     for (let i = 0; i < 16; i++) { const x = (h(70 + i) - 0.5) * pr * 1.5, y = F0 + (h(90 + i) - 0.5) * pry * 1.2; softIn(g, [44, 38, 36], y - 0.012, y + 0.012, () => ovalAt(g, x, y, 0.016 + 0.018 * h(110 + i), 0.011, h(130 + i)), 1.6, 0.7); }
-  } else {                                                  // coals: black lumps rimmed with the glow, brightest in its heart
+  } else {                                                  // coals: lumps glowing through from the heart out, darker and duller toward the edge
     fillIn(g, 'rgb(54, 30, 22)', pit);
     furGlow(g, burning ? [255, 140, 50] : [232, 92, 36], burning ? 1 : 0.85, 0, F0, pr * 0.72, pry * 0.66, 0, 0.2);
     furGlow(g, [255, 220, 140], burning ? 0.7 : 0.35, 0, F0 - 0.01, pr * 0.32, pry * 0.3);
     for (let i = 0; i < 18; i++) {
       const a = h(140 + i) * TAU, d = Math.sqrt(h(160 + i)), x = Math.cos(a) * pr * 0.92 * d, y = F0 + Math.sin(a) * pry * 0.85 * d, r = 0.03 + 0.03 * h(180 + i);
-      const hot = 1 - d * 0.7;
-      fillIn(g, rockRGB([255, 150 + 60 * hot, 60 + 40 * hot], 0.9), () => ovalAt(g, x, y + 0.005, r * 1.2, r * 0.75));
-      softIn(g, [52, 36, 32], y - r * 0.6, y + r * 0.6, () => ovalAt(g, x, y - 0.006, r, r * 0.58, h(200 + i)), 1.5, 0.6);
-      strokeIn(g, rockRGB([255, 170, 80], 0.8 * hot), 0.008, () => { g.moveTo(x - r * 0.5, y - 0.004); g.lineTo(x + r * 0.3, y + 0.002); });
+      const hot = clamp((1 - d) * (burning ? 1.3 : 0.9) + 0.15 * h(190 + i), 0, 1);
+      const rgb = [lerp(70, 250, hot), lerp(34, 132, hot * hot), lerp(26, 52, hot * hot)];
+      softIn(g, rgb, y - r * 0.6, y + r * 0.6, () => ovalAt(g, x, y, r, r * 0.6, h(200 + i)), 1.35, 0.55);
+      furGlow(g, [255, 226, 150], 0.7 * hot * hot, x, y + r * 0.1, r * 0.55, r * 0.32);   // (hot through its middle, never a bright rim round a dark one)
+      if (h(210 + i) > 0.45) strokeIn(g, rockRGB([40, 24, 20], 0.5), 0.007, () => { g.moveTo(x - r * 0.4, y - r * 0.1); g.lineTo(x + r * 0.1, y + r * 0.15); });
     }
   }
   furGlow(g, [30, 20, 12], bed === 3 ? 0.35 : 0.5, 0, F0 - pry * 0.95, pr * 1.1, pry * 0.35);   // (the lip's shadow over its far side)
   g.restore();
+  strokeIn(g, rockRGB([176, 146, 106], 0.7), 0.022, () => g.ellipse(0, F0 + 0.004, pr + 0.01, pry + 0.008, 0, 0.15, Math.PI - 0.15));   // its near lip, lit: the earth's edge before it drops
   // A stone of the ring: fat and rounded, sunk into the earth, lit from the top left, a crack, moss on a few, sooted on its
   // inside once it has burned, lit warm from the fire's side while it glows.
   const stone = k => {
@@ -4251,7 +4254,7 @@ function paintFire(g, size, U, n) {
   const stick = (x0, y0, x1, y1, w, seed, char) => {
     const dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy); let nx = -dy / len, ny = dx / len;
     if (nx + ny > 0) { nx = -nx; ny = -ny; }
-    const rgb = char ? tone([48, 36, 30], 0.9 + 0.25 * hash2(seed, 1, 431)) : tone(FIRE_BARK, 0.86 + 0.28 * hash2(seed, 1, 431));
+    const rgb = char ? tone([62, 48, 40], 0.9 + 0.25 * hash2(seed, 1, 431)) : tone(FIRE_BARK, 0.86 + 0.28 * hash2(seed, 1, 431));
     const side = (o, wd, c) => strokeIn(g, c, wd, () => { g.moveTo(x0 + nx * o, y0 + ny * o); g.lineTo(x1 + nx * o * 0.6, y1 + ny * o * 0.6); });
     side(0, w + 0.016, rockRGB(RACK_INK, 0.5));
     side(0, w, rockRGB(rgb));
@@ -4261,10 +4264,15 @@ function paintFire(g, size, U, n) {
       for (let i = 0; i < 5; i++) { const t = 0.1 + 0.8 * hash2(seed, i, 433), o = (hash2(i, seed, 437) - 0.6) * w * 0.5, l = 0.05 + 0.06 * hash2(seed, i, 439); g.moveTo(x0 + dx * t + nx * o, y0 + dy * t + ny * o); g.lineTo(x0 + dx * (t + l) + nx * o, y0 + dy * (t + l) + ny * o); }
     });
     if (char && glowing) {
-      strokeIn(g, 'rgba(255, 140, 50, 0.9)', 0.012, () => {   // glowing seams, crossways, low on it
-        for (let i = 0; i < 4; i++) { const t = 0.05 + i * 0.09 + 0.03 * hash2(seed, i, 441), cx = x0 + dx * t, cy = y0 + dy * t; g.moveTo(cx - nx * w * 0.4, cy - ny * w * 0.4); g.lineTo(cx + nx * w * 0.3, cy + ny * w * 0.3); }
+      furGlow(g, [255, 120, 40], 0.65, x0 + dx * 0.12, y0 + dy * 0.12, w * 1.5, w * 1.5);   // its foot in the coals, glowing
+      strokeIn(g, 'rgba(255, 150, 60, 0.8)', 0.008, () => {   // a few cracks, short and uneven, thinning out up it
+        for (let i = 0; i < 4; i++) {
+          if (i && hash2(seed, i, 443) > 0.7) continue;
+          const t = 0.04 + 0.32 * Math.pow(hash2(seed, i, 441), 1.5), cx = x0 + dx * t, cy = y0 + dy * t;
+          const o = (hash2(i, seed, 445) - 0.5) * w * 0.4, l = w * (0.18 + 0.3 * hash2(seed, i, 447)) * (1 - t);
+          g.moveTo(cx + nx * (o - l), cy + ny * (o - l)); g.lineTo(cx + nx * (o + l) + dx * 0.02, cy + ny * (o + l) + dy * 0.02);
+        }
       });
-      furGlow(g, [255, 120, 40], 0.6, x0 + dx * 0.15, y0 + dy * 0.15, w * 1.4, w * 1.4);
     }
     if (!char) {                                            // its cut top
       fillIn(g, rockRGB([226, 196, 146]), () => ovalAt(g, x1, y1, w * 0.46, w * 0.3, Math.atan2(dy, dx) + Math.PI / 2));
@@ -4274,27 +4282,28 @@ function paintFire(g, size, U, n) {
   const top = F0 - 0.56 * (sticks >= 5 ? 1 : sticks >= 3 ? 0.86 : 0.66);
   const tepee = i => {
     const [a, len, w] = FIRE_STICKS[i], bx = Math.cos(a) * RX * 0.5, by = F0 + Math.sin(a) * RY * 0.48;
-    const tx = -bx * 0.14 + 0.01 + Math.cos(a) * 0.035, ty = top + (1 - len) * 0.12 - 0.04;   // (crossing just under the top, ends poking past)
-    stick(bx, by, tx, ty, w, 60 + i, burning);
+    const tx = -bx * 0.34 + 0.01, ty = top + (1 - len) * 0.1 - 0.06;   // (crossing just under the top, their ends poking out past it to the other side)
+    stick(bx, by, tx, ty, w * 1.3, 60 + i, burning);
   };
   const stub = (x0, y0, x1, y1, i) => stick(x0, F0 + y0, x1, F0 + y1, 0.05, 80 + i, true);
   const behind = [], before = [];
   for (let k = 0; k < stones; k++) (Math.sin(FIRE_STONES[k][0]) < 0 ? behind : before).push(k);
   for (const k of behind) stone(k);
-  if (!sticks && bed >= 2) { stub(-0.3, -0.02, 0.16, 0.04, 0); stub(0.28, -0.05, -0.1, 0.06, 1); }
+  if (!sticks && bed >= 2) { stub(-0.34, 0.03, 0.04, -0.03, 0); stub(0.12, 0.07, 0.32, 0.02, 1); }   // (two fallen apart, not crossed: an X over the ash read as brows)
   for (let i = 0; i < sticks; i++) if (Math.sin(FIRE_STICKS[i][0]) < 0) tepee(i);
-  if (tinder) {                                             // a nest of dry grass, a curl of birch bark tucked in it
-    furGlow(g, [40, 28, 14], 0.4, 0.01, F0 + 0.02, 0.14, 0.04);
-    for (let i = 0; i < 22; i++) {
-      const t = i / 21, a = Math.PI + t * Math.PI + (h(520 + i) - 0.5) * 0.3, r = 0.08 + 0.04 * h(540 + i);
-      const x0 = Math.cos(a) * r * 0.4, x1 = Math.cos(a) * r * 1.2, y1 = F0 - 0.04 - Math.abs(Math.sin(a)) * r * 0.9 - 0.06 * h(560 + i);
-      strokeIn(g, rockRGB(tone(i % 3 ? [226, 200, 128] : [192, 152, 90], 0.8 + 0.32 * h(580 + i))), 0.016, () => { g.moveTo(x0, F0 + 0.01); g.quadraticCurveTo((x0 + x1) / 2 - 0.02, (F0 + y1) / 2 - 0.03, x1, y1); });
+  if (tinder && !glowing) {                                 // a nest of dry grass, a curl of birch bark tucked in it (burnt away once it's lit)
+    furGlow(g, [40, 28, 14], 0.45, 0.01, F0 + 0.02, 0.15, 0.045);
+    // A round tangle, the stalks lying every which way, not fanned up from one point (that read as a hand).
+    for (let i = 0; i < 30; i++) {
+      const cx = (h(520 + i) - 0.5) * 0.2, cy = F0 - 0.035 + (h(540 + i) - 0.5) * 0.07, a = (h(560 + i) - 0.5) * 2.4 + (i % 2) * Math.PI, l = 0.035 + 0.03 * h(570 + i);
+      const dx = Math.cos(a) * l, dy = Math.sin(a) * l * 0.45, bend = (h(575 + i) - 0.5) * 0.03;
+      strokeIn(g, rockRGB(tone(i % 3 ? [222, 196, 128] : [184, 146, 86], 0.78 + 0.32 * h(580 + i))), 0.012, () => { g.moveTo(cx - dx, cy - dy); g.quadraticCurveTo(cx, cy - 0.012 + bend, cx + dx, cy + dy); });
     }
-    const cx = 0.03, cy = F0 - 0.07;                       // the bark's curl
-    fillIn(g, rockRGB(RACK_INK, 0.6), () => ovalAt(g, cx, cy, 0.07, 0.04, -0.3));
-    softIn(g, [238, 230, 212], cy - 0.04, cy + 0.04, () => ovalAt(g, cx, cy, 0.06, 0.032, -0.3), 1.05, 0.75);
-    strokeIn(g, rockRGB([204, 138, 86]), 0.012, () => g.ellipse(cx + 0.03, cy - 0.008, 0.022, 0.026, 0, -0.5, Math.PI * 1.4));
-    furGlow(g, [255, 246, 210], 0.3, 0, F0 - 0.1, 0.14, 0.08);
+    const cx = 0.04, cy = F0 - 0.05;                       // the bark's curl: a small roll lying in it, its rolled end showing
+    fillIn(g, rockRGB(RACK_INK, 0.5), () => ovalAt(g, cx, cy + 0.004, 0.048, 0.022, -0.2));
+    softIn(g, [232, 222, 200], cy - 0.022, cy + 0.022, () => ovalAt(g, cx, cy, 0.042, 0.018, -0.2), 1.05, 0.8);
+    strokeIn(g, rockRGB([150, 104, 70], 0.8), 0.006, () => { g.moveTo(cx - 0.03, cy - 0.004); g.lineTo(cx + 0.01, cy - 0.01); });
+    strokeIn(g, rockRGB([196, 134, 86]), 0.009, () => g.ellipse(cx + 0.036, cy - 0.006, 0.012, 0.016, 0, -0.5, Math.PI * 1.5));
   }
   for (let i = 0; i < sticks; i++) if (Math.sin(FIRE_STICKS[i][0]) >= 0) tepee(i);
   for (const k of before) stone(k);
@@ -5804,7 +5813,7 @@ const LARDER_NEAR = 2.4;                 // tiles from the basket it stays open
 const BASKET_BUILD = 'basket';           // recipes.js BUILDS: the basket the make strip offers once there's a camp
 const BASKET_FOOT = 0.6;                 // where its foot is in its painting (of its half-size, down from the middle)
 const BASKET_ARTS = ['basket:0', 'basket:1'];   // (made once) shut, and open with things heaped in it
-const basketPx = z => firePx(z) * 0.95;
+const basketPx = z => firePx(z) * 0.82;
 const myBasket = () => (world && world.camp && world.camp.basket) || null;
 const basketAny = B => { for (let k = 0; k < B.bag.length; k++) if (B.bag[k]) return true; return false; };
 // The stores to hand at a place (sim.js storesAt): the satchel, and any store set down there (the camp's basket). Everything
@@ -5821,7 +5830,7 @@ const larderName = B => (B && B.rack ? 'Drying rack' : 'Basket');
 // next so each row is a string of little lit bulges, a thick plaited border, a darker foot, two twisted handles. Shut, a
 // low domed lid woven round from its middle and a loop to lift it by; open, the lid leans on its back and the food is
 // heaped in it.
-const WICKER = [190, 138, 78], WICKER_PALE = [222, 182, 120];
+const WICKER = [182, 140, 94], WICKER_PALE = [218, 188, 140];   // (quieter than it was: it outshone everything else at camp)
 function paintBasket(g, size, U, n) {
   g.setTransform(U / 2, 0, 0, U / 2, size / 2, size / 2);
   g.lineCap = g.lineJoin = 'round';
@@ -5843,21 +5852,26 @@ function paintBasket(g, size, U, n) {
   // Its shadow, soft under it and leaning off to the right, out of the light.
   furGlow(g, [40, 28, 14], 0.42, 0.08, bot + 0.04, 0.78, 0.16, 0, 0.3);
   if (open) {
-    // The lid stood on its edge behind it, leaning on the back of the rim.
-    g.save(); g.translate(0.2, top - 0.3); g.rotate(-0.12);
-    const lr = 0.52, lry = 0.4;
-    fillIn(g, rockRGB(RACK_INK, 0.5), () => ovalAt(g, 0.02, 0.02, lr + 0.035, lry + 0.035));
-    softIn(g, tone(WICKER, 0.92), -lry, lry, () => ovalAt(g, 0, 0, lr, lry), 1.12, 0.7);
-    wickerLid(g, 0, 0, lr, lry, 0.85);
-    strokeIn(g, rockRGB(tone(WICKER_PALE, 0.95)), 0.05, () => ovalAt(g, 0, 0, lr - 0.01, lry - 0.01));
-    wickerPlait(g, (t) => [Math.cos(t * TAU) * (lr - 0.01), Math.sin(t * TAU) * (lry - 0.01)], 26, 0.022, 0.9);
-    furGlow(g, [40, 26, 12], 0.4, 0.15, 0.25, lr * 0.8, lry * 0.6);
+    // The lid stood on its edge behind it, leaning back against the rim: its foot hidden inside, behind the far wall.
+    g.save(); g.translate(0.05, top - ry - 0.22); g.rotate(-0.06);
+    const lr = rx + 0.02, lry = 0.36;
+    fillIn(g, rockRGB(RACK_INK, 0.45), () => ovalAt(g, 0, 0.006, lr + 0.02, lry + 0.02));
+    softIn(g, tone(WICKER, 0.9), -lry, lry, () => ovalAt(g, 0, 0, lr, lry), 1.12, 0.7);
+    wickerLid(g, 0, 0, lr, lry, 0.88);
+    wickerPlait(g, (t) => [Math.cos(t * TAU) * (lr - 0.01), Math.sin(t * TAU) * (lry - 0.01)], 30, 0.03, 0.9);
+    furGlow(g, [40, 26, 12], 0.35, 0, lry * 0.75, lr * 0.9, lry * 0.3);   // (shaded low down, behind the basket)
     g.restore();
     // The dark inside and the back of its wall, the inside of the far wall lit a little.
     fillIn(g, rockRGB(tone(WICKER, 0.3)), () => ovalAt(g, 0, top, rx, ry));
     g.save(); g.beginPath(); ovalAt(g, 0, top, rx, ry); g.clip();
     furGlow(g, tone(WICKER, 0.75), 0.6, -0.1, top - ry * 0.7, rx * 0.8, ry * 0.5);
     g.restore();
+    // The border's far half, seen from inside: its top and inner face, a little shaded, behind what's heaped in it (it was
+    // drawn over the food, as if it stood in front).
+    const far = () => g.ellipse(0, top, rx + 0.01, ry + 0.005, 0, Math.PI, TAU);
+    strokeIn(g, rockRGB(RACK_INK, 0.4), 0.1, far);
+    strokeIn(g, rockRGB(tone(WICKER, 0.72)), 0.086, far);
+    strokeIn(g, rockRGB(tone(WICKER_PALE, 0.9), 0.8), 0.022, () => g.ellipse(0, top - 0.03, rx + 0.01, ry + 0.005, 0, Math.PI, TAU));
     basketHeap(g, top, rx, ry);
   }
   // The wall: shaded round from the light on its left to the shade on its right, then woven.
@@ -5866,7 +5880,7 @@ function paintBasket(g, size, U, n) {
     fillIn(g, rockRGB(RACK_INK, 0.8), () => { g.save(); g.translate(0, 0.012); g.scale(1.02, 1); body(); g.restore(); });
     g.fillStyle = gr; g.beginPath(); body(); g.fill(); }
   g.save(); g.beginPath(); body(); g.clip();
-  const STAKES = 15, ROWS = 9;
+  const STAKES = 13, ROWS = 7;                              // (few and big: finer, it was a tan buzz at the size it's drawn)
   for (let r = 0; r < ROWS; r++) {                          // the weavers, row by row: in front of a stake, behind the next
     const v0 = 0.08 + r / ROWS * 0.82, v1 = v0 + 0.82 / ROWS;
     for (let i = 0; i < STAKES; i++) {
@@ -5889,10 +5903,13 @@ function paintBasket(g, size, U, n) {
     }
     // where the row goes behind the stakes: a thin dark gap under it
     strokeIn(g, rockRGB(tone(WICKER, 0.35), 0.45), 0.01, () => { g.moveTo(...wall(0, v1)); for (let k = 1; k <= 24; k++) g.lineTo(...wall(k / 24 * Math.PI, v1)); });
-  }
-  for (let i = 0; i <= STAKES; i++) {                       // the stakes, where they show between the weavers
-    const a = i / STAKES * Math.PI;
-    strokeIn(g, rockRGB(tone(WICKER, 0.6), 0.5), 0.016, () => { g.moveTo(...wall(a, 0)); for (let k = 1; k <= 10; k++) g.lineTo(...wall(a, k / 10)); });
+    // The stakes, only where this row passes behind one (between two of its weavers): a short upright, so they step from
+    // row to row. (Drawn the whole way down over every row they made a grid.)
+    for (let i = r % 2; i <= STAKES; i += 2) {
+      const a = i / STAKES * Math.PI, side = Math.cos(a);
+      strokeIn(g, rockRGB(tone(WICKER, 0.42), 0.6), 0.03, () => { g.moveTo(...wall(a, v0 + 0.01)); g.lineTo(...wall(a, v1)); });
+      strokeIn(g, rockRGB(tone(WICKER, 1.02 - 0.36 * Math.max(0, side))), 0.018, () => { g.moveTo(...wall(a, v0 + 0.015)); g.lineTo(...wall(a, v1 - 0.005)); });
+    }
   }
   furGlow(g, [60, 36, 16], 0.5, 0, top + ry * 0.9, rx * 1.1, 0.07);    // the rim's shadow on the wall under it
   furGlow(g, [70, 42, 18], 0.4, 0, bot + 0.02, bx * 1.1, 0.09);        // the shade low down where it turns under
@@ -5902,11 +5919,11 @@ function paintBasket(g, size, U, n) {
   wickerPlait(g, t => wall(Math.PI * (1 - t), 0.97), 22, 0.024, 0.7);
   // The border: a thick wickerPlait round the rim, its back half too when it's open.
   const rim = (a0, a1, many) => wickerPlait(g, t => { const a = lerp(a0, a1, t); return [Math.cos(a) * (rx + 0.01), top + Math.sin(a) * (ry + 0.005)]; }, many, 0.05, 1);
-  if (open) rim(TAU, Math.PI, 26);
-  // The handles: two rods twisted together, looped from the border.
+  // The handles: two rods twisted together, a loop standing out from each side under the border, the meadow showing through it.
   for (const s of [-1, 1]) {
-    const x0 = s * (rx - 0.04), y0 = top + 0.07, loop = t => { const a = lerp(-0.3, Math.PI + 0.3, t); return [x0 + s * Math.sin(a) * 0.11, y0 - 0.02 + Math.cos(a) * -0.09 + 0.09]; };
-    wickerPlait(g, loop, 9, 0.022, s < 0 ? 1.05 : 0.75);
+    const x0 = s * (rx + 0.01), y0 = top + 0.11, loop = t => { const a = lerp(-0.15, Math.PI + 0.15, t); return [x0 + s * Math.sin(a) * 0.15, y0 - Math.cos(a) * 0.09]; };
+    furGlow(g, [50, 30, 12], 0.35, x0 + s * 0.02, y0 + 0.08, 0.1, 0.03);
+    wickerPlait(g, loop, 10, 0.026, s < 0 ? 1.05 : 0.78);
   }
   if (!open) {
     // The lid: a low dome over the rim, its edge's thickness showing at the front, woven round from the middle.
@@ -5924,8 +5941,8 @@ function paintBasket(g, size, U, n) {
     wickerPlait(g, t => { const a = lerp(0, Math.PI, t); return [Math.cos(a) * lr, ly + Math.sin(a) * lry]; }, 24, 0.045, 1);
     // The loop to lift it by, standing up from its middle, and its shadow on the lid.
     const kx = 0, ky = ly - dome * 0.6;
-    furGlow(g, [50, 30, 12], 0.45, kx + 0.05, ky + 0.02, 0.1, 0.035);
-    wickerPlait(g, t => { const a = lerp(Math.PI * 0.95, Math.PI * 0.05, t); return [kx + Math.cos(a) * 0.08, ky + 0.01 - Math.sin(a) * 0.1]; }, 7, 0.024, 1);
+    furGlow(g, [50, 30, 12], 0.5, kx + 0.06, ky + 0.025, 0.14, 0.045);
+    wickerPlait(g, t => { const a = lerp(Math.PI * 0.97, Math.PI * 0.03, t); return [kx + Math.cos(a) * 0.11, ky + 0.015 - Math.sin(a) * 0.13]; }, 9, 0.03, 1);
   } else rim(0, Math.PI, 26);
 }
 // A plaited rod along a path (at(t), t 0 to 1): many short slanted lit bumps, inked under, as the rack's lashings are.
@@ -5942,28 +5959,26 @@ function wickerPlait(g, at, many, w, lit) {
     strokeIn(g, 'rgba(255, 244, 214, 0.55)', w * 0.2, () => { g.moveTo(x - c * 0.6 - w * 0.12, y - s * 0.6 - w * 0.2); g.lineTo(x + c * 0.3 - w * 0.12, y + s * 0.3 - w * 0.2); });
   }
 }
-// The lid's weave: spokes out from its middle, rings of weavers round them in front of one spoke and behind the next.
+// The lid's weave: coiled, a thick rope of rushes wound round and round out from a small knot in its middle, each coil
+// stitched to the last with short slanted stitches (a starburst of woven wedges read as a pie, not a lid).
 function wickerLid(g, cx, cy, rx, ry, k) {
-  const SPOKES = 16, RINGS = 6;
-  strokeIn(g, rockRGB(tone(WICKER, 0.55), 0.35), 0.01, () => { for (let i = 0; i < SPOKES; i++) { const a = i / SPOKES * TAU; g.moveTo(cx + Math.cos(a) * rx * 0.14, cy + Math.sin(a) * ry * 0.14); g.lineTo(cx + Math.cos(a) * rx * 0.98, cy + Math.sin(a) * ry * 0.98); } });
-  for (let r = 0; r < RINGS; r++) {
-    const f0 = 0.16 + r / RINGS * 0.82, f1 = f0 + 0.82 / RINGS;
-    for (let i = 0; i < SPOKES; i++) {
-      if ((i + r) % 2) continue;
-      const a0 = (i + 0.1) / SPOKES * TAU, a1 = (i + 1.9) / SPOKES * TAU;
-      const P = (a, f) => [cx + Math.cos(a) * rx * f, cy + Math.sin(a) * ry * f];
-      const path = () => {
-        g.moveTo(...P(a0, (f0 + f1) / 2));
-        for (let j = 0; j <= 8; j++) { const t = j / 8, b = Math.sin(t * Math.PI); g.lineTo(...P(lerp(a0, a1, t), lerp((f0 + f1) / 2, f0 + 0.01, b))); }
-        for (let j = 8; j >= 0; j--) { const t = j / 8, b = Math.sin(t * Math.PI); g.lineTo(...P(lerp(a0, a1, t), lerp((f0 + f1) / 2, f1 - 0.01, b))); }
-        g.closePath();
-      };
-      const m = (a0 + a1) / 2, lit = (1.05 - 0.3 * Math.cos(m - 0.8) * 0.5 + 0.1 * hash2(i, r, 409)) * k;   // (lit from the top left)
-      const [, y0] = P(m, f0), [, y1] = P(m, f1);
-      softIn(g, tone(WICKER, lit), Math.min(y0, y1) - 0.02, Math.max(y0, y1) + 0.02, path, 1.25, 0.7);
-    }
+  const COILS = 5;
+  for (let r = COILS - 1; r >= 0; r--) {
+    const f = 0.2 + (r + 0.5) / COILS * 0.78, w = 0.78 / COILS * 0.5;
+    const ring = () => ovalAt(g, cx, cy, rx * f, ry * f);
+    strokeIn(g, rockRGB(tone(WICKER, 0.55 * k), 0.4), w * Math.min(rx, ry) * 2.1, ring);                   // (the dark seam between coils)
+    strokeIn(g, rockRGB(tone(WICKER, (1.04 + 0.08 * hash2(r, 1, 409) - 0.04 * r) * k, 6)), w * Math.min(rx, ry) * 1.6, ring);
+    strokeIn(g, rockRGB(tone(WICKER_PALE, 1.04 * k, 8), 0.5), w * Math.min(rx, ry) * 0.5, () => ovalAt(g, cx - rx * 0.004, cy - ry * f * 0.02 - 0.004, rx * f, ry * f));
+    const many = 10 + r * 5;                                // its stitches, slanted, catching the coil inside it
+    strokeIn(g, rockRGB(tone(WICKER, 0.58 * k), 0.7), 0.01, () => {
+      for (let i = 0; i < many; i++) {
+        const a = (i + 0.5 * (r % 2)) / many * TAU, fi = f - w * 0.7, fo = f + w * 0.5;
+        g.moveTo(cx + Math.cos(a) * rx * fi, cy + Math.sin(a) * ry * fi); g.lineTo(cx + Math.cos(a + 0.12) * rx * fo, cy + Math.sin(a + 0.12) * ry * fo);
+      }
+    });
   }
-  fillIn(g, rockRGB(tone(WICKER, 0.8 * k)), () => ovalAt(g, cx, cy, rx * 0.15, ry * 0.15));
+  fillIn(g, rockRGB(tone(WICKER, 0.7 * k)), () => ovalAt(g, cx, cy, rx * 0.17, ry * 0.17));   // the knot it starts from
+  fillIn(g, rockRGB(tone(WICKER_PALE, 1 * k)), () => ovalAt(g, cx - rx * 0.03, cy - ry * 0.04, rx * 0.08, ry * 0.07));
 }
 // What's heaped in the open basket: leaves under, apples, ceps, a bunch of blackberries, hazelnuts, back to front.
 function basketHeap(g, top, rx, ry) {
