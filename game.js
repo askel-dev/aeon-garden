@@ -2093,7 +2093,7 @@ const FORAGER_STILL_MS = 70;               // no nearer than this to the last mo
 const forPx = () => (8 + cam.zoom) * FORAGER_SIZE;
 const fg = { wasWalking: false, at: -1, x: 0, y: 0, step: 0, stillMs: 1e4, view: 1, flip: false, art: FORAGER_ARTS[32], blinkAt: -1e9, blinkIn: 3000,
   idle: -1, idleLast: -1, idleAt: -0, idleIn: 1e4 + 5000, hum: -0, lastHalf: 0, jog: false, rings: [], wet: false, lx: -0, ly: -0, sized: 0, outfit: 0, picked: false, pick: -1e9, pickK: 1, printMs: -0,
-  puffs: [], puffAt: 0, drips: [], dripAt: 0, shiverAt: -1e9, shiverNext: 0, heartAt: 0, pantAt: 0, panting: false, downAt: 0, dark: false, cold: false, sizedSet: 0,   // (the body: drawBody, bodyFrame)
+  puffs: [], puffAt: 0, drips: [], dripAt: 0, shiverAt: -1e9, shiverNext: 0, heartAt: 0, growlAt: 0, pantAt: 0, panting: false, downAt: 0, dark: false, cold: false, sizedSet: 0,   // (the body: drawBody, bodyFrame)
   snow: -1, snowTick: -0, snowArt: 0, sizedSnow: 0,   // (the snow on it: snowOnForager)
   kneel: -1, knelt: -1e9, sizedKneel: false,           // (at a fire: its kneeling pose, fur.js FORAGER_KNEEL, or -1; when it last knelt)
   emote: -1, emoteMs: -0, emoteFrame: -1, lift: -0, sitU: -0, sitQ: null, sitRise: true, sitAt: -1e9, sneakStill: -0, sizedEmote: false,   // (an emote: EMOTE, or -1; emoteTick)
@@ -2896,6 +2896,7 @@ const SHIVER_STEADY = 0.3;                 // freezing, a faint tremble between 
 const HUNCH = [1, 1, 0.965, 0.94, 1];      // its height by stage (sim.js warmthStage)
 const DRIP_MS = 260;                       // soaked through, a drip this often (less wet, less often)
 const HEART_MS = 1250;                     // freezing: a heartbeat this often
+const GROWL_MS = [24000, 9000];            // hungry, its tummy growls about this often (sound.js growl); starving, this often
 const FALL_MS = 650;                       // collapsing: how long it takes to go over
 const DARK_AFTER = 2200, DARK_MS = 1300;   // down this long, the screen goes dark over this long; then the night runs by
 const SKIP_MS = 30;                        // ms of sim a frame while it does
@@ -2973,6 +2974,14 @@ function bodyFrame(now) {
     fg.heartAt = now;
     chime('heart', { v: 1 - 0.5 * f.warmth / S.WARMTH_STAGES[2] });
   }
+  if (f.tummy < S.HUNGRY && f.down < 0 && ui.speed > 0) {          // (hungry, its tummy growls now and then)
+    const k = 1 - clamp(f.tummy / S.HUNGRY, 0, 1);
+    if (!fg.growlAt) fg.growlAt = now + 1500;                      // (the first one soon after it gets hungry)
+    if (now > fg.growlAt) {
+      chime('growl', { v: k });
+      fg.growlAt = now + lerp(GROWL_MS[0], GROWL_MS[1], k) * (0.7 + 0.6 * Math.random());
+    }
+  } else fg.growlAt = 0;
   if (f.down < 0) { if (ui.speed > 0) pantFrame(f, now); return false; }
   if (!fg.downAt) fg.downAt = now - DARK_AFTER;          // (a meadow kept while it was down: dark at once)
   if (!fg.dark && now - fg.downAt > DARK_AFTER) { fg.dark = true; $('#veil').classList.add('dark'); }
@@ -3108,6 +3117,8 @@ function renderVitals() {
   if (warm !== vit.warm || wet !== vit.wet) {
     const el = $('#v-warm'), k = clamp(f.warmth, 0, 1);
     el.classList.toggle('full', f.warmth >= VITAL_FULL && f.wet <= 0.05);
+    el.classList.toggle('low', f.warmth < S.WARMTH_STAGES[1]);             // (cold: it blinks red, quicker freezing)
+    el.classList.toggle('dire', f.warmth < S.WARMTH_STAGES[2]);
     el.style.setProperty('--c', `rgb(${Math.round(lerp(120, 222, k))}, ${Math.round(lerp(168, 128, k))}, ${Math.round(lerp(222, 58, k))})`);
     el.querySelector('.fill').style.strokeDasharray = `${warm} 100`;
     el.querySelector('.drop').style.opacity = f.wet > 0.05 ? (0.35 + 0.65 * f.wet).toFixed(2) : '0';
@@ -3125,7 +3136,8 @@ function renderVitals() {
   if (food !== vit.food || starving !== vit.starving) {
     const el = $('#v-food');
     el.classList.toggle('full', f.tummy > FOOD_FULL);
-    el.classList.toggle('starving', starving);
+    el.classList.toggle('low', f.tummy < S.HUNGRY);                        // (hungry: it blinks red, quicker starving)
+    el.classList.toggle('dire', starving);
     el.querySelector('.fill').style.strokeDasharray = `${food} 100`;
     vit.food = food; vit.starving = starving;
   }

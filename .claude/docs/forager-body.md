@@ -13,7 +13,7 @@ CSS gradients only, shown only then) and a soft heartbeat (sound.js `heart`, `HE
 (`#me`, `renderVitals`, in the 250 ms block, rewritten only on a change; 2026-10-17): its head painted from the front in its outfit and snow,
 in a mood (`faceMood`, held `MOOD_HOLD` before it changes; fur.js `FACE_MOODS`, `paintForagerFace`: well, cosy by a fire, happy after eating or
 a level up, cold, hungry, hurt or down, winded), each painted once and kept (`faces`); frost round it while freezing. Health is a ring round
-it, warmth (amber to ice blue, a drop while wet) and the tummy two small dials under it, dimmed while full. No browser tooltips on them:
+it, warmth (amber to ice blue, a drop while wet) and the tummy two small dials under it, dimmed while full; low (cold, hungry) a dial blinks red and swells a little (`.dial.low`), quicker freezing or starving (`.dire`; 2026-10-21). Hungry, its tummy growls now and then (sound.js `growl`, `GROWL_MS`, in `bodyFrame`), more often and louder the emptier. No browser tooltips on them:
 a parchment tag slides out beside the one hovered, or for a moment after a tap (`#me-tip`, `showTip`, `tipSaid`: what it is, how it is,
 and what helps). Stamina is a slim bar centered over the
 satchel (`#vitals`, `#v-stam`, in `renderVitals`) shown while it isn't full, ember-red pulsing while winded. A tap on

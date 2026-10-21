@@ -33,7 +33,7 @@ const note = (deg, oct = 0) => {
 const rand = (a, b) => a + Math.random() * (b - a);
 const pick = a => a[Math.floor(Math.random() * a.length)];
 
-let ac = null, master, ducker, loud, fxBus, ambBus, musicBus, hush, reverb, noiseBuf, brownBuf, leafBuf, gravelBuf;
+let ac = null, master, ducker, loud, fxBus, ambBus, musicBus, hush, reverb, noiseBuf, brownBuf, leafBuf, gravelBuf, crackBuf;
 let enabled = true, volume = 0.6;
 const amb = {};                                    // ambient layers
 const LOUD = 0.7;                                  // thunder's level against the rest
@@ -75,7 +75,7 @@ function start() {
   musicBus = ac.createGain(); musicBus.gain.value = 0.45; musicBus.connect(master);
   const musicVerb = ac.createGain(); musicVerb.gain.value = 0.45; musicBus.connect(musicVerb).connect(reverb);
 
-  noiseBuf = pinkNoise(4); brownBuf = brownNoise(4); leafBuf = leafNoise(6); gravelBuf = gravelNoise(2);
+  noiseBuf = pinkNoise(4); brownBuf = brownNoise(4); leafBuf = leafNoise(6); gravelBuf = gravelNoise(2); crackBuf = crackleNoise(2);
   buildAmbience();
   setInterval(tickAmbience, 200);
 }
@@ -139,6 +139,20 @@ function gravelNoise(sec) {
   for (let n = Math.floor(sec * 900); n-- > 0;) {
     const at = Math.floor(Math.random() * d.length), len = Math.floor(sr * rand(0.0005, 0.004)), amp = 0.2 + Math.random() ** 2;
     for (let i = 0; i < len * 3 && at + i < d.length; i++) d[at + i] += amp * (Math.random() * 2 - 1) * Math.exp(-i / len);
+  }
+  let top = 0;
+  for (let i = 0; i < d.length; i++) top = Math.max(top, Math.abs(d[i]));
+  for (let i = 0; i < d.length; i++) d[i] /= top;
+  return buf;
+}
+
+// Crackle: thousands of single sharp ticks, most tiny and a few loud, each ringing a fraction of a ms (a crisp thing
+// breaking, a bubble of spit popping): the grit of the eating sounds (ticks).
+function crackleNoise(sec) {
+  const sr = ac.sampleRate, buf = ac.createBuffer(1, Math.floor(sr * sec), sr), d = buf.getChannelData(0);
+  for (let n = Math.floor(sec * 2600); n-- > 0;) {
+    const at = Math.floor(Math.random() * d.length), len = sr * rand(0.00005, 0.0004), amp = (Math.random() ** 3) * (Math.random() < 0.5 ? -1 : 1);
+    for (let i = 0; i < len * 4 && at + i < d.length; i++) d[at + i] += amp * Math.exp(-i / len) * (i & 1 ? -0.6 : 1);
   }
   let top = 0;
   for (let i = 0; i < d.length; i++) top = Math.max(top, Math.abs(d[i]));
@@ -351,6 +365,7 @@ const RULES = {
   heart:   { gap: 0.6,  always: true },
   collapse: { gap: 2,   always: true },
   shiver:  { gap: 1.5,  always: true },
+  growl:   { gap: 3,    always: true },
   breath:  { gap: 5,    always: true },
   wake:    { gap: 5,    always: true },
   pant:    { gap: 0.25, always: true },
@@ -375,7 +390,7 @@ const RULES = {
   pages:   { gap: 0.3,  always: true, lift: 2 },   // the recipe book opening,
   hearth:  { gap: 0.5,  always: true, lift: 2 },   // and the cooking window (the pot settling on the fire)
   stone:   { gap: 0.3,  always: true, lift: 1.6 }, // the old stone answering
-  munch:   { gap: 0.25, always: true, lift: 1.6 }, // the forager eating (a mouthful each: small bites come 0.5 s apart)
+  munch:   { gap: 0.25, always: true, lift: 1.6, verb: 0.06 }, // the forager eating (a mouthful each: small bites come 0.5 s apart)
 };
 
 const STEP_SOFT = 0.6;          // the footsteps' level against the meadow's sounds: soft, they come a few times a second
@@ -686,6 +701,25 @@ const SOUNDS = {
     }
     noise(lp, t, n * gap + 0.1, { from: 320, to: 220, q: 0.8, peak: 0.08 * (0.5 + 0.5 * v), attack: 0.1, type: 'lowpass' });
   },
+  // Hungry, its tummy growls: a few low gurgles, each a wobbling rumble that bubbles as it goes (v: louder and longer the emptier).
+  growl(t, o, { v = 1 }) {
+    const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 520; lp.Q.value = 0.7; lp.connect(o);
+    const n = 2 + (Math.random() * (1 + 2 * v) | 0), a = 0.45 + 0.55 * v;
+    let at = t;
+    for (let i = 0; i < n; i++) {
+      const len = rand(0.25, 0.5) * (0.8 + 0.5 * v), f0 = rand(70, 110), osc = ac.createOscillator(), g = ac.createGain();
+      const lfo = ac.createOscillator(), depth = ac.createGain(), bub = ac.createOscillator(), bubD = ac.createGain(), amp = ac.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(f0, at); osc.frequency.linearRampToValueAtTime(f0 * rand(1.3, 1.8), at + len * 0.6); osc.frequency.linearRampToValueAtTime(f0 * rand(0.8, 1.1), at + len);
+      lfo.frequency.value = rand(9, 16); depth.gain.value = f0 * 0.25; lfo.connect(depth).connect(osc.frequency);   // (the wobble)
+      bub.frequency.value = rand(18, 30); bubD.gain.value = 0.5; amp.gain.value = 0.5; bub.connect(bubD).connect(amp.gain);   // (the bubbling)
+      g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(0.16 * a, at + len * 0.3); g.gain.exponentialRampToValueAtTime(0.0001, at + len);
+      osc.connect(amp).connect(g).connect(lp);
+      for (const x of [osc, lfo, bub]) { x.start(at); x.stop(at + len + 0.05); }
+      noise(lp, at + len * 0.2, len * 0.6, { from: 260, to: 140, q: 2, peak: 0.1 * a, attack: len * 0.2 });   // (a gurgle of water in it)
+      at += len + rand(0.04, 0.2);
+    }
+  },
   // Cold, a shaky sigh: a breath out in a few faltering puffs.
   breath(t, o) {
     for (let i = 0; i < 4; i++) noise(o, t + i * rand(0.14, 0.18), 0.26, { from: 1000 - i * 90, to: 700 - i * 60, q: 0.9, peak: 0.11 * (1 - i * 0.18), attack: 0.08 });
@@ -990,7 +1024,7 @@ const SOUNDS = {
   // dull; friend: a friend eating (game.js heardMunch), softer. seed: the same mouthful every time (the lab's tests).
   munch(t, o0, { group, crisp = 0.5, first = 0.3, gap = 0.17, n = 4, last = true, hot = 0, mood = 'like', full = false, under = false, friend = false, seed }) {
     const r = seeded(seed), feel = MOUTHFEEL[group] || (crisp > 0.4 ? MOUTHFEEL.hand : MOUTHFEEL.spoon);
-    const o = ac.createBiquadFilter(); o.type = 'lowpass'; o.frequency.value = under ? 2200 : friend ? 2600 : 3600; o.Q.value = 0.5;
+    const o = ac.createBiquadFilter(); o.type = 'lowpass'; o.frequency.value = under ? 4500 : friend ? 5000 : 14000; o.Q.value = 0.5;
     const g = ac.createGain(); g.gain.value = (friend ? 0.55 : 1) * (hushed() ? 0.6 : 1);   // (under the stone's voice or the music: softer)
     o.connect(g).connect(o0);
     if (under) {                                                                                      // (the roof: one close echo off it)
@@ -1001,10 +1035,9 @@ const SOUNDS = {
     for (let i = 0; i <= n; i++) {
       const at = t + first + (i ? i * gap + r(-0.015, 0.015) : 0), v = (i ? 0.75 - 0.08 * i : 1) * r(0.85, 1.1);
       (i ? feel.chew : feel.bite)(o, at, v, r, crisp, i);
-      partial(o, r(105, 145), at + 0.01, 0.05 * v, 0.004, 0.06);                                        // the jaw shutting
-    }
+          }
     const end = t + first + n * gap + (n ? 0.16 : 0.12);
-    bloop(o, end, r(150, 195), 0.06, feel.gulp * r(0.8, 1.1));                                         // a gulp
+    gulp(o, end, feel.gulp * 5 * r(0.8, 1.1), r);                                                      // a gulp
     if (!last) return;
     mm(o, end + 0.14, mood, r);
     if (full) sigh(o, end + (mood === 'love' ? 1.05 : 0.7), r);
@@ -1039,32 +1072,75 @@ const MOUTHFEEL = {
     bite(o, at, v, r, c) { if (c > CRISP) { crunch(o, at, v, r, c); chewSoft(o, at + 0.02, v * 0.5, r, 0.8); } else chewSoft(o, at, v * 1.1, r, 1); },
     chew(o, at, v, r, c, i) { if (c > CRISP) crunch(o, at, v * 0.7, r, c * (0.85 - 0.2 * i)); chewSoft(o, at, v * 0.8, r, 0.7); } },
 };
-// A crunch: a high click as it cracks, a quick run of gritty bursts as it breaks, under them a dull thud of the bite.
+// A crunch: a sharp crack, a quick run of fractures in the crackle (more and brighter the crisper), the crushed body of
+// it, and the thud of the bite felt through the jaw.
 function crunch(o, at, v, r, c) {
-  noise(o, at, 0.02, { from: 5200, to: 3600, q: 0.8, peak: 0.08 * v * c, type: 'highpass', attack: 0.001 });
-  const k = 2 + Math.round(2 * c);
-  for (let j = 0; j < k; j++) grains(o, at + j * r(0.012, 0.028), r(0.025, 0.045), 0.15 * v * c * (1 - 0.18 * j));
-  noise(o, at, 0.06, { from: r(900, 1300), to: 400, q: 0.7, peak: 0.035 * v, type: 'lowpass', attack: 0.004 });
+  ticks(o, at, 0.03, 0.55 * v * c, r, 2800, r(4500, 6000), 1);
+  const k = 3 + Math.round(3 * c);
+  for (let j = 0, x = at + r(0.006, 0.014); j < k; j++, x += r(0.01, 0.026))
+    ticks(o, x, r(0.03, 0.06), 0.38 * v * c * (1 - 0.11 * j), r, 1100, r(2200, 4200), 0.004);
+  noise(o, at, 0.11, { from: r(2200, 2800), to: 380, q: 0.6, peak: 0.13 * v, type: 'lowpass', attack: 0.002 });
+  thud(o, at, r(130, 160), 0.16 * v, 0.07);
 }
-// A soft chew: a low squish, and (wet 0 to 1) a small wet click of the tongue.
+// A soft chew: the squelch of it moving (a wet band sliding down), its body, the jaw's thud, and (wet 0 to 1) the lips
+// parting with a smack and a fizz of spit.
 function chewSoft(o, at, v, r, wet) {
-  noise(o, at, 0.08, { from: r(900, 1300), to: 300, q: 0.7, peak: 0.075 * v, type: 'lowpass', attack: 0.01 });
-  if (wet > 0) noise(o, at + r(0.01, 0.03), 0.035, { from: r(1700, 2300), to: r(1300, 1700), q: 4, peak: 0.022 * v * wet, attack: 0.004 });
+  noise(o, at, 0.07, { from: r(1700, 2200), to: r(550, 750), q: 4.5, peak: 0.1 * v, attack: 0.005 });
+  noise(o, at, 0.1, { from: r(1100, 1500), to: 260, q: 0.7, peak: 0.1 * v, type: 'lowpass', attack: 0.006 });
+  thud(o, at, r(100, 125), 0.08 * v, 0.06);
+  if (wet <= 0) return;
+  ticks(o, at + r(0.03, 0.055), 0.014, 0.3 * v * wet, r, 1600, r(2600, 3400), 0.001);
+  ticks(o, at, 0.13, 0.09 * v * wet, r, 3500, 6500, 0.03);
 }
 // A slurp, ending at (the mouth shuts on it): air drawn in over the lips, a narrow band sliding up like a vowel going
-// from "oo" to "ee", over len s, and k bubbles in it.
+// from "oo" to "ee" with a hiss over it, over len s; the liquid churning in it, a fizz and a scatter of bubbles (k: how
+// many handfuls).
 function slurp(o, at, v, r, len, k) {
   const t0 = at - len * 0.75;
-  noise(o, t0, len, { from: r(380, 480), to: r(1700, 2300), q: 7, peak: 0.07 * v, attack: len * 0.65 });
-  noise(o, t0, len, { from: r(900, 1100), to: r(2800, 3400), q: 5, peak: 0.025 * v, attack: len * 0.6 });
-  for (let j = 0; j < k; j++) bloop(o, t0 + len * (0.25 + 0.5 * j / k) + r(0, 0.03), r(500, 900), 0.03, 0.018 * v);
+  noise(o, t0, len, { from: r(380, 480), to: r(1700, 2300), q: 5, peak: 0.1 * v, attack: len * 0.65 });
+  noise(o, t0, len, { from: r(2800, 3300), to: r(5000, 6000), q: 1.5, peak: 0.045 * v, attack: len * 0.7 });
+  ticks(o, t0 + len * 0.3, len * 0.75, 0.14 * v, r, 2200, r(3500, 4500), len * 0.4);
+  for (let j = 0, m = 3 + 4 * k; j < m; j++)
+    bloop(o, t0 + len * r(0.35, 0.95), r(700, 1900), r(0.012, 0.03), r(0.02, 0.05) * v);
 }
-// A tear: a soft thing pulled apart in the teeth, a quick ragged run of tiny bursts, each a little higher, over a squish.
+// A tear: a soft thing pulled apart in the teeth, fibres stretching (the crackle swelling) and a ragged run of bursts
+// each a little higher, then a snap as it gives, over a squish.
 function tear(o, at, v, r) {
   const k = 5 + Math.floor(r(0, 3));
+  ticks(o, at, k * 0.016 + 0.04, 0.24 * v, r, 900, r(1800, 2600), k * 0.012);
   for (let j = 0, x = at; j < k; j++, x += r(0.011, 0.02))
-    noise(o, x, 0.018, { from: r(850, 1000) + j * 140, to: r(1350, 1500) + j * 160, q: 2.2, peak: 0.05 * v * (1 - 0.1 * j), attack: 0.002 });
-  noise(o, at, 0.1, { from: 1100, to: 350, q: 0.7, peak: 0.04 * v, type: 'lowpass', attack: 0.01 });
+    noise(o, x, 0.02, { from: r(850, 1000) + j * 140, to: r(1350, 1500) + j * 160, q: 2.2, peak: 0.08 * v * (1 - 0.08 * j), attack: 0.002 });
+  ticks(o, at + k * 0.016, 0.025, 0.4 * v, r, 1800, r(3500, 4500), 0.001);
+  noise(o, at, 0.12, { from: 1500, to: 320, q: 0.7, peak: 0.09 * v, type: 'lowpass', attack: 0.008 });
+  thud(o, at, r(115, 140), 0.1 * v, 0.07);
+}
+// The swallow, "glk": a click in the throat, a low knock dropping as it goes down, and a small wet bloop after.
+function gulp(o, at, v, r) {
+  ticks(o, at, 0.012, 0.3 * v, r, 700, r(1300, 1700), 0.001);
+  const osc = ac.createOscillator(), g = ac.createGain();
+  osc.frequency.setValueAtTime(r(230, 270), at); osc.frequency.exponentialRampToValueAtTime(r(85, 100), at + 0.07);
+  g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(0.3 * v, at + 0.005); g.gain.exponentialRampToValueAtTime(0.0001, at + 0.13);
+  osc.connect(g).connect(o); osc.start(at); osc.stop(at + 0.15);
+  noise(o, at, 0.11, { from: 650, to: 180, q: 0.8, peak: 0.08 * v, type: 'lowpass', attack: 0.004 });
+  bloop(o, at + r(0.05, 0.07), r(170, 210), 0.05, 0.12 * v);
+}
+// A bite felt through the jaw and skull: a low sine knocked in and dropping, dying in len s.
+function thud(o, at, f, peak, len) {
+  const osc = ac.createOscillator(), g = ac.createGain();
+  osc.frequency.setValueAtTime(f * 1.6, at); osc.frequency.exponentialRampToValueAtTime(f * 0.6, at + len);
+  g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(peak, at + 0.003); g.gain.exponentialRampToValueAtTime(0.0001, at + len);
+  osc.connect(g).connect(o); osc.start(at); osc.stop(at + len + 0.02);
+}
+// A run of ticks (crackBuf, the tiny sharp breaks every crisp or wet sound is made of): above hp Hz, lifted around
+// band, swelling in over attack s and gone in dur.
+function ticks(o, at, dur, peak, r, hp, band, attack) {
+  const src = ac.createBufferSource(), h = ac.createBiquadFilter(), b = ac.createBiquadFilter(), g = ac.createGain();
+  src.buffer = crackBuf; h.type = 'highpass'; h.frequency.value = hp; h.Q.value = 0.6;
+  b.type = 'peaking'; b.frequency.value = band; b.Q.value = 0.9; b.gain.value = 8;
+  g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(Math.max(0.0002, peak), at + attack);
+  g.gain.exponentialRampToValueAtTime(0.0001, at + Math.max(dur, attack + 0.005));
+  src.connect(h).connect(b).connect(g).connect(o);
+  src.start(at, r(0, 1.7)); src.stop(at + dur + 0.03);
 }
 // Blowing on a hot spoonful: two soft puffs, "fff, fffff".
 function cool(o, t, r) {
@@ -1076,7 +1152,24 @@ function cool(o, t, r) {
 const MM = { love: [[2, 0, 0.035, 0.24], [4, 0.12, 0.033, 0.28], [5, 0.26, 0.03, 0.5]], like: [[2, 0, 0.035, 0.26], [4, 0.12, 0.03, 0.3]],
   meh: [[0, 0, 0.028, 0.16], [-1, 0.13, 0.02, 0.2]] };
 function mm(o, at, mood, r) {
-  for (const [d, dt, v, len] of MM[mood] || MM.like) partial(o, note(d, 0) / 2 * r(0.995, 1.005), at + dt, v, 0.05, len, 'triangle');
+  const steps = MM[mood] || MM.like, [, dtEnd, , tail] = steps[steps.length - 1], end = at + dtEnd + tail;
+  const osc = ac.createOscillator(), vib = ac.createOscillator(), depth = ac.createGain();
+  const lp = ac.createBiquadFilter(), nasal = ac.createBiquadFilter(), g = ac.createGain();
+  osc.type = 'sawtooth'; lp.type = 'lowpass'; lp.frequency.value = 900; lp.Q.value = 0.8;
+  nasal.type = 'peaking'; nasal.frequency.value = 260; nasal.Q.value = 1.4; nasal.gain.value = 9;
+  const f0 = note(steps[0][0], 0) / 2;
+  osc.frequency.setValueAtTime(f0 * 0.96, at); depth.gain.setValueAtTime(0, at); g.gain.setValueAtTime(0.0001, at);
+  steps.forEach(([d, dt, v]) => {                  // (each note glides in from the last, swells, and wavers as it's held)
+    const f = note(d, 0) / 2 * r(0.995, 1.005);
+    osc.frequency.setTargetAtTime(f, at + dt, 0.025);
+    depth.gain.setTargetAtTime(f * 0.012, at + dt + 0.08, 0.1);
+    g.gain.setTargetAtTime(v * 0.55, at + dt, 0.02);
+  });
+  g.gain.setTargetAtTime(0.0001, end - tail * 0.5, tail * 0.2);
+  vib.frequency.value = r(5, 6); vib.connect(depth).connect(osc.frequency);
+  osc.connect(lp).connect(nasal).connect(g).connect(o);
+  noise(o, at, end - at, { from: 320, to: 280, q: 1.2, peak: 0.012, attack: 0.05 });   // (the breath through the nose)
+  for (const x of [osc, vib]) { x.start(at); x.stop(end + 0.1); }
 }
 // Full: a breath in, a long contented one out, sliding down, and a low warm hum under it.
 function sigh(o, at, r) {
@@ -1191,7 +1284,7 @@ function play(name, opts = {}) {
   const ok = v => Number.isFinite(v) ? v : undefined;      // a NaN would throw inside Web Audio
   const near = ok(opts.near) ?? 1;
   const pan = ok(opts.pan) ?? 0;
-  SOUNDS[name](now + 0.02, out(pan, 0.25 + 0.35 * (1 - near), (r.lift ?? 1) * (0.35 + 0.65 * near)), { ...opts, near, pan });
+  SOUNDS[name](now + 0.02, out(pan, (r.verb ?? 0.25) + 0.35 * (1 - near), (r.lift ?? 1) * (0.35 + 0.65 * near)), { ...opts, near, pan });
   return true;
 }
 
