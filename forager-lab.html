@@ -33,9 +33,10 @@ Fur.FORAGER_EMOTES.forEach((p, i) => {
   Fur.paintForager(s.getContext('2d'), size, px * dpr, Fur.emoteArt(esnow, outfit, p));
   g.drawImage(s, i * size, (views + 1) * size + 60 * dpr + Math.ceil(34 * 1.3 * dpr));
 });
-// fishing (fur.js FORAGER_FISH: hold, wind, reel, blink), side on, from the front and from behind; the rod is game.js's
+// fishing (fur.js FORAGER_FISH: hold, wind, reel, blink), side on, from the front and from behind, then sat on the bank
+// (FORAGER_FISH_SIT: sit, blink, doze, start); the rod is game.js's
 // (drawRod), sketched here as a plain stroke from where the mittens grip it (fishHold), out toward the water
-Array.from({ length: 12 }, (_, vp) => vp).forEach((vp, i) => {
+Array.from({ length: 16 }, (_, vp) => vp).forEach((vp, i) => {
   const size = Math.ceil(px * 1.3 * dpr), s = document.createElement('canvas'), q = s.getContext('2d');
   s.width = s.height = size;
   Fur.paintForager(q, size, px * dpr, Fur.fishArt(esnow, outfit, vp));

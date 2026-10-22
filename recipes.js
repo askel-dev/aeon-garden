@@ -466,13 +466,16 @@ const CARRIED = {
 //   low             the lowest it goes in the bar (above the zone lying at the foot: one left alone never catches it)
 //   sink            how hard it pulls the zone down while it's on the line (bars a second²; 0 none): a long hold
 //   wriggle         how often a sudden wriggle comes (a second; 0 none)
+//   run             the odds (0 to 1) it makes one last hard run for it once it's nearly in (game.js REEL_RUN_AT; 0 never)
+// A fresh fish fights harder than a tired one (game.js REEL_FRESH, REEL_TIRED), and a big one harder than a small one:
+//   grams           how big it comes, [least, most] (most are small: a big one is rare, and the book keeps your biggest)
 const FISH = {
-  roach: { water: 'any', seasons: [0, 1, 2, 3], odds: 3, prize: false, dart: 0.3, pull: 1.2, idle: [1.4, 3], low: 0.4, sink: 0, wriggle: 0 },
-  perch: { water: 'still', deep: true, seasons: [0, 1, 2], odds: 2, prize: true, dart: 0.4, pull: 2.6, idle: [0.4, 1.1], low: 0.35, sink: 0, wriggle: 0 },
-  trout: { water: 'current', seasons: [0, 1], dawn: 2.5, odds: 3, prize: true, dart: 0.75, pull: 3.4, idle: [0.7, 1.8], low: 0.35, sink: 0, wriggle: 0 },
-  eel:   { water: 'still', deep: true, seasons: [1], night: true, odds: 6, prize: false, dart: 0.2, pull: 1.4, idle: [0.5, 1.2], low: 0.45, sink: 1.2, wriggle: 0.35 },
+  roach: { water: 'any', seasons: [0, 1, 2, 3], odds: 3, prize: false, dart: 0.3, pull: 1.3, idle: [1.2, 2.6], low: 0.4, sink: 0, wriggle: 0, run: 0, grams: [40, 320] },
+  perch: { water: 'still', deep: true, seasons: [0, 1, 2], odds: 2, prize: true, dart: 0.45, pull: 2.8, idle: [0.35, 0.9], low: 0.35, sink: 0, wriggle: 0, run: 0.5, grams: [90, 950] },
+  trout: { water: 'current', seasons: [0, 1], dawn: 2.5, odds: 3, prize: true, dart: 0.85, pull: 3.8, idle: [0.6, 1.5], low: 0.35, sink: 0, wriggle: 0, run: 1, grams: [180, 2200] },
+  eel:   { water: 'still', deep: true, seasons: [1], night: true, odds: 6, prize: false, dart: 0.25, pull: 1.5, idle: [0.5, 1.1], low: 0.45, sink: 1.35, wriggle: 0.5, run: 0.6, grams: [250, 2600] },
 };
-const FISH_KEYS = ['water', 'deep', 'seasons', 'night', 'dawn', 'odds', 'prize', 'dart', 'pull', 'idle', 'low', 'sink', 'wriggle'];
+const FISH_KEYS = ['water', 'deep', 'seasons', 'night', 'dawn', 'odds', 'prize', 'dart', 'pull', 'idle', 'low', 'sink', 'wriggle', 'run', 'grams'];
 
 // The camp's cosy (PLAN.md stage 8): every point is a deed, earned once and never lost. `w.camp.deeds` keeps their ids in the
 // order they were earned and `w.camp.cosy` is their points summed (sim.js countCosy). `from` is the camp level at which a deed
@@ -713,6 +716,8 @@ function checkRecipes() {
     for (const key of ['odds', 'dart', 'pull']) if (!(k[key] > 0)) problems.push(`${who} wants ${key}: a number over 0.`);
     if (!(k.low >= 0 && k.low < 0.9)) problems.push(`${who} wants low: the lowest it goes in the bar, 0 to 0.9.`);
     if (!(k.sink >= 0)) problems.push(`${who} wants sink: 0 or more.`);
+    if (!(k.run >= 0 && k.run <= 1)) problems.push(`${who} wants run: the odds of a last run, 0 to 1.`);
+    if (!Array.isArray(k.grams) || k.grams.length !== 2 || !(k.grams[0] > 0 && k.grams[0] < k.grams[1])) problems.push(`${who} wants grams: [least, most], the least over 0.`);
   }
   for (const [id, g] of Object.entries(INGREDIENTS)) if (g.tags.includes('fish') && !g.dried && !FISH[id]) problems.push(`The fish '${id}' has no block in FISH, so nothing bites as one.`);
   for (const [id, c] of Object.entries(CRAFTS)) {

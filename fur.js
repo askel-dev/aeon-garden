@@ -950,19 +950,25 @@ function carryPose(view, pose) {
 
 // Fishing (game.js angle), kept after the mitten: standing on the bank facing the water, the rod in both mittens. In each
 // view: holding it out over the water (hold), swung up and back over its shoulder to cast (wind), bringing a fish in,
-// leaning back with the mittens up and in at its chest (reel), and the hold with a blink. The rod and the line are
+// leaning back with the mittens up and in at its chest (reel), and the hold with a blink. From the front its mittens are
+// one above the other along the rod (fishHold), the lower by the butt. The rod and the line are
 // game.js's (drawRod: strokes from where the mittens are, fishHold), so they bend with the fish. Cold, it no longer hugs
 // itself (its hands are full) but its face stays cold. 'forager:' + fishArt(snow, outfit, (view << 2) + pose), views 0 to 2.
+// A long wait, and it sits down on the bank (view 3, FISH_SIT: always side on, whichever way the water is), the rod across
+// its knees and up: sat (sit), a blink (sitBlink), nodding off with its eyes shut and its head down (doze), and jolted
+// awake by a bite (start).
 const FORAGER_FISH = { hold: 0, wind: 1, reel: 2, blink: 3 };
+const FISH_SIT = 3, FORAGER_FISH_SIT = { sit: 0, sitBlink: 1, doze: 2, start: 3 };
 const FISH_AT = MITT_ART + 1, FORAGER_FISH_ARTS = FORAGER_SNOWS * FORAGER_OUTFITS.length << 4;
 const fishArt = (snow, outfit, vp) => FISH_AT + ((snow * FORAGER_OUTFITS.length + outfit) << 4) + vp;
 // Each mitten and elbow from its shoulder, by view and pose (side on: the far one, then the near; from the front: your left, then your right).
 const FISH_HANDS = [
-  [[[-0.17, 0.07, -0.04, 0.13], [-0.2, 0.1, -0.03, 0.14]], [[0.1, -0.22, 0.09, -0.03], [0.08, -0.19, 0.1, 0.0]], [[-0.11, -0.01, 0.02, 0.12], [-0.13, 0.01, 0.03, 0.13]]],
-  [[[0.08, 0.15, -0.05, 0.11], [-0.17, 0.16, 0.06, 0.12]], [[0.3, -0.13, 0.1, 0.05], [0.07, -0.16, 0.12, 0.02]], [[0.1, 0.05, -0.06, 0.11], [-0.13, 0.07, 0.07, 0.11]]],
+  [[[-0.17, 0.07, -0.04, 0.13], [-0.2, 0.1, -0.03, 0.14]], [[0.13, -0.11, 0.11, 0.03], [0.11, -0.08, 0.12, 0.05]], [[-0.11, -0.01, 0.02, 0.12], [-0.13, 0.01, 0.03, 0.13]]],
+  [[[0.03, 0.11, -0.06, 0.13], [-0.08, 0.22, 0.04, 0.13]], [[0.25, -0.02, 0.1, 0.07], [0.03, -0.16, 0.1, 0.0]], [[0.04, 0.0, -0.08, 0.1], [-0.09, 0.14, 0.05, 0.12]]],
   null,   // (from behind both are out ahead of it, hidden by the cloak)
 ];
 function fishPose(view, pose) {
+  if (view === FISH_SIT) return fishSitPose(pose);
   const P = foragerPose(view, 0), F = FORAGER_FISH, k = pose === F.blink ? F.hold : pose;
   P.carry = true; P.hug = false; P.hand = false; P.swing = 0;
   if (FISH_HANDS[view]) P.hands = FISH_HANDS[view][k];
@@ -972,14 +978,31 @@ function fishPose(view, pose) {
   if (pose === F.blink) P.blink = true;
   return P;
 }
-// Where it grips the rod in fishing pose vp (game.js FISH_HOLD, worked out once), x and y in the box: between its near
-// mittens, or from behind, ahead of its chest.
+// Sat on the bank, side on, facing the water (to the left as painted): its hips down on the ground, the knees drawn up
+// before it with the boots planted ahead, the cloak spread round it, both mittens on the rod low over its knees.
+function fishSitPose(pose) {
+  const P = foragerPose(0, 0), S = FORAGER_FISH_SIT;
+  P.carry = true; P.hug = false; P.hand = false; P.swing = 0;
+  P.bob = 0.21; P.hemUp = 0.02; P.lap = 0.03; P.tip = 0.03; P.sway = 0.02;
+  P.knees = [[-0.2, 0.49], [-0.15, 0.47]];                      // (drawn up in front, the far one a little behind)
+  P.feet = [[-0.34, 0.72], [-0.29, 0.715]];
+  P.legLine = 0.42;
+  P.hands = [[-0.19, 0.12, -0.05, 0.13], [-0.22, 0.14, -0.04, 0.14]];   // (out over its knees, on the rod)
+  if (pose === S.sitBlink) P.blink = true;
+  if (pose === S.doze) { P.blink = true; P.look = 0.05; P.tip = 0.07; P.bob = 0.22; P.lean = 0.04; P.happy = true; }
+  if (pose === S.start) { P.look = -0.035; P.tip = -0.03; P.lean = -0.02; P.hands = [[-0.17, 0.06, -0.05, 0.12], [-0.2, 0.08, -0.04, 0.13]]; }
+  return P;
+}
+// How it holds the rod in fishing pose vp (game.js FISH_HOLD, worked out once), x and y in the box: where it grips it (side
+// on, its near mitten; from the front, the lower mitten, by the butt; from behind, ahead of its chest and to the side the rod
+// leans), the way the rod runs from there (from the front, through its other mitten; else 0, 0 and game.js points it at the
+// float), then its near mittens, which game.js lays over the rod so it's held in them and not drawn over them.
 function fishHold(vp) {
   const P = fishPose(vp >> 2, vp & 3), { ax, ay, mitts } = foragerParts(P);
-  if (!mitts.length) return [ax + P.fwd[0] * 0.12, ay + 0.1 + (P.lean < 0 ? -0.04 : 0)];
-  let x = 0, y = 0;
-  for (let i = 0; i < mitts.length; i += 2) { x += mitts[i]; y += mitts[i + 1]; }
-  return [x / (mitts.length / 2), y / (mitts.length / 2)];
+  if (!mitts.length) return [ax + P.fwd[0] * 0.12 - 0.1, ay + 0.1 + (P.lean < 0 ? -0.04 : 0), 0, 0];
+  if (mitts.length < 4) return [mitts[0], mitts[1], 0, 0, ...mitts];
+  const lo = mitts[1] > mitts[3] ? 0 : 2, hi = 2 - lo, dx = mitts[hi] - mitts[lo], dy = mitts[hi + 1] - mitts[lo + 1], d = Math.hypot(dx, dy) || 1;
+  return [mitts[lo], mitts[lo + 1], dx / d, dy / d, ...mitts];
 }
 
 // Snow lying on a part: a soft white mark, none when there's no snow (thicker and brighter the more, SNOWED).
@@ -1296,5 +1319,5 @@ const painters = { fox: paintFox, rabbit: paintRabbit, dfly: paintDragonfly, kfi
 
 root.Fur = { tone, rockRGB, fillIn, strokeIn, discAt, ovalAt, blurIn, softIn, furGlow, foxRGB, FOX_WHITE, FOX_SOCK,
   FOX_POSE, RABBIT_POSE, RABBIT_KINDS, setCoats, paintFox, paintRabbit, paintForager, paintForagerFace, FACE_MOODS, FORAGER_REACH, FORAGER_JOG_STRIDE, FORAGER_OUTFITS, FORAGER_CLOAKS, FORAGER_HATS, outfitOf, FORAGER_COLD, FORAGER_IDLE, FORAGER_IDLES, FORAGER_SNOWS, FORAGER_SNOW_ARTS, KNEEL_VIEW, FORAGER_KNEEL,
-  FORAGER_EMOTE, FORAGER_EMOTES, FORAGER_EMOTE_ARTS, FORAGER_EAT, FORAGER_EATS, FORAGER_SIT_EAT, FORAGER_SIT_EATS, EMOTE_AT, emoteArt, CARRY_AT, FORAGER_CARRY_ARTS, CARRY_STRIDE, carryArt, carryHold, MITT_ART, FORAGER_FISH, FISH_AT, FORAGER_FISH_ARTS, fishArt, fishHold, SNEAK_STRIDE, painters };
+  FORAGER_EMOTE, FORAGER_EMOTES, FORAGER_EMOTE_ARTS, FORAGER_EAT, FORAGER_EATS, FORAGER_SIT_EAT, FORAGER_SIT_EATS, EMOTE_AT, emoteArt, CARRY_AT, FORAGER_CARRY_ARTS, CARRY_STRIDE, carryArt, carryHold, MITT_ART, FORAGER_FISH, FISH_SIT, FORAGER_FISH_SIT, FISH_AT, FORAGER_FISH_ARTS, fishArt, fishHold, SNEAK_STRIDE, painters };
 })(typeof window !== 'undefined' ? window : globalThis);

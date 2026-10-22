@@ -52,8 +52,8 @@ taking 10 fish a day from the thickest water left both the fish and the otters g
 Built: the four fish painted in items.js (`paintRoach`, `paintPerch`, `paintTrout`, `paintEel` on `spinePath` / `fishBody`:
 a body along a spine, shaded across it so the eel's S bends right). The forager's fishing paintings in fur.js
 (`FORAGER_FISH`: hold, wind, reel, blink in each view; `fishArt`, `fishHold`), asked ahead by `foragerAhead` once it has a rod
-by the water. game.js: `anglePose`, `drawRod` (two sticks lashed, a few strokes, whipped forward on the cast, bent by the
-fish, foreshortened from the front and behind, drawn behind it facing away), `quillArt` / `drawFloat` (a red-tipped quill
+by the water. game.js: `anglePose`, `drawRod` (whipped forward on the cast, bent by the fish, foreshortened from the front and
+behind, drawn behind it facing away; painted by `paintRod`, see "The rod's look" below), `quillArt` / `drawFloat` (a red-tipped quill
 painted once, under what stands), `drawFishing` (the line, the float flying out), `landing` / `drawLanding` (the fish flies
 onto the bank and flops before it goes into the satchel), `riseFrame` / `drawRises` (rings where the water's thick, only
 with a rod). sound.js `angle` (cast, float, nibble, bite, click, creak, land, away; in sound-lab). index.html `#reel`
@@ -61,8 +61,7 @@ painted: brass-rimmed water gauge, glassy zone, brass meter, a reel knob that tu
 forager-lab.html has a row of the fishing poses (hold, wind, reel, blink in each view), with a plain stroke from the grip
 (`fishHold`) standing in for game.js's rod. The bar was looked at on a phone upright (375x812: beside the forager, clear of
 the HUD and the satchel) and on its side (844x390: `REEL` clamps it to 150 px tall, between the HUD and the satchel).
-Left: a sit on the bank after a long wait (`SIT_FISH`: it wants a sitting-with-the-rod painting in fur.js, not the kneel's
-sit), the camera easing in while reeling (open), and Axel's look at all of it.
+The sit on the bank and the camera came later (see "Refined" below).
 
 ## Step 3, the skill (built 2026-10-22)
 
@@ -104,3 +103,64 @@ drawn just as ours is, its pose from `fishArt`. Its fish's pull isn't sent: its 
 tick and the tile, and `applyNet` takes the fish out of the water on that tick (through `net.later` as a pick is), so the
 otters and both anglers keep sharing one stock (checked with two tabs: the pool's count came out the same on both sides). Its
 fish flops on its bank (`peerLandings`, four at most).
+
+## Refined, for fun (2026-10-22)
+
+Played with a model of the bar (`reelFrame` copied into node, bots with a reaction lag, thinking now and then, aiming
+off where they saw the fish). Before: every kind landed in 3.5 to 6 s, the meter hardly dipped below where it starts, and
+a trout fought like a roach. So the fight got a shape and each catch a size:
+- **It tires.** A fresh fish darts further, quicker and with shorter rests than one nearly in (`REEL_FRESH` to
+  `REEL_TIRED`, by the meter).
+- **A last run.** Once the meter's past `REEL_RUN_AT`, a fish with a FISH `run` (trout always, perch and eel sometimes)
+  makes one hard run away from the zone (`REEL_RUN_DASH`): a splash, the line creaks, a buzz, the gauge jolts (index.html
+  `#reel.run`). It drops an ok player's meter by about 0.1 and almost never loses the fish: a scare, not a fail.
+- **Sizes.** At the strike a fish gets a size, 0 to 1, a random number to `FISH_SKEW` (most are small), "A big one!" from
+  `FISH_BIG` (about one in six). A big one fights harder (`REEL_SMALL` to `REEL_BIG`), looks bigger in the bar and glints
+  (`#reel.big`). Landed, it's weighed by FISH `grams` ("Roach, 150 g", `fishGrams`, `gramsSaid`), and the biggest of each
+  kind is kept in sim.js `f.fishBest` (in the forager's blank: a kept meadow from before gets `{}`) and shown on its Finds
+  page ("Biggest 1.2 kg"); a new biggest says so.
+- **A perfect catch.** In the zone from its first touch to landed (`reel.touched`, `slipped`): "Perfect catch!" and
+  `FISH_PERFECT_PRACTICE` more practice.
+- **Worried.** The meter under `REEL_LOW` with the fish out goes ember-red and pulses (`#reel.low`).
+- **Buzzes** on a bite, a last run and a landing (`BUZZ_BITE`, `BUZZ_RUN`, `BUZZ_LAND`: Android; an iPhone only from a tap).
+
+The bots now, at level 0 (sharp / ok / sloppy / first try): roach 3.5 / 5 / 12 / 16 s, landing 100 / 100 / 100 / 88%;
+trout 6 / 8 / 15 / 20 s, 100 / 100 / 94 / 78%. Level 5 lands everything for all of them. The eel's character is its sink
+(a long hold) and wriggles more than its time.
+
+**The sit.** After `SIT_S` of waiting on dry ground (not wading: `angle.dry`) it sits down on the bank, side on whichever
+way the water is (fur.js `FISH_SIT`, view 3 of the fishing paintings: `FORAGER_FISH_SIT` sit, a blink, a doze, a start),
+the knees drawn up and the rod across them. After `DOZE_S` it nods off (eyes shut, head down, smiling); a nibble rouses it,
+a bite jolts it awake ("!" lower, as it sits) and a fish on stands it up. `anglePose` gives `SAT_POSE` + its pose and
+`fishVp` turns that into the painting's place (16 now: `FISH_VPS`). A friend's line sits too (`lineOf` calm, from its
+'wait').
+
+**The camera.** While the line's out it leans `FISH_CAM_LEAN` of the way to the float, and eases in `FISH_CAM_IN` while a
+fish is brought in (`fishCam` in leadCam, by its share of the zoom, as cookCam).
+
+The eel stew's eel is short thick rounds now, their pale cut faces showing (dishes.js `eelPieceAt` takes a `flip`).
+Testing it by hand in Chrome over CDP: a key sent to `document` throws in the keydown handler (it reads `e.target.closest`);
+send it to `document.body`.
+
+## The rod's look (2026-10-22)
+
+The first rod (two even strokes in flat brown and a tan band for the lashing) read as a pool cue beside the painted
+forager: Axel said it didn't fit. Now it's a hazel switch cut from the hedge (game.js `paintRod`): one crooked stick
+(`rodCrook`, the same every frame) tapering from a thick butt to a fine tip (`rodThick`, swelling at a knot), filled down
+both sides of the bend (`ROD_N` points from its butt behind the mittens, `ROD_BUTT`), shaded under and lit along its top
+in the trunks' browns, a knot, a twig cut short with a pale end, a sprig of yellow-green leaves near the tip (`rodLeaf`,
+yellower than the bushes so it reads against them) and the grip wrapped in twine. Plain fills, no gradients: about a
+dozen calls a frame for the one rod; small (the forager's `px` 70 or less) it's the stick and the leaves alone. The recipe is still
+2 sticks and a rope (the twine). The satchel and make strip still show 🎣.
+Sat on the bank with the float straight ahead or behind, `drawRod` used to point it straight up; now a sat forager holds
+it out the way it faces. Looked at from the side, the front and behind, standing, sat and with a fish on.
+
+**In its hands (2026-10-22).** The rod was as thick as the forager's fist and its twine thicker, drawn over both mittens,
+so nothing seemed to hold it. Now it's a little over half a mitten thick (`W0`, `px * 0.014`), and `drawRod` lays the
+near mittens over it after it's painted (fur.js `MITT_ART`, the one a carried dish uses; `FISH_HOLD` keeps where each is,
+from fur.js `fishHold`), so the rod runs through its fists: side on the near one (the far one, painted, is behind the rod,
+as a far hand would be), the twine and the butt showing below it against its tummy. From the front its two mittens are one
+above the other along the rod (`FISH_HANDS`), the lower by the butt, and the rod runs through both (`fishHold` gives that
+way; it no longer follows the float, which only bends the tip), up and out to the side it faces; wound up, over its other
+shoulder. From behind it leans further to that side and comes out by its shoulder, not straight up behind its hood. Side
+on, wound up, its mittens are at its shoulder, not its chin, so the butt crosses its chest and not its face.

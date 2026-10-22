@@ -2237,8 +2237,8 @@ function paintFishSoup(g) {
 const EELSTEW_GRAVY = [92, 56, 28], EELSTEW_SKIN = [92, 66, 36], EELSTEW_FLESH = [236, 222, 192];
 // A piece of eel at (x, y), lying on its side, len long and r thick, turned by rot: dark glossy skin over a yellow belly,
 // the cut end toward the light white with the backbone's dot and a ring of skin.
-function eelPieceAt(g, x, y, len, r, rot) {
-  g.save(); g.translate(x, y); g.rotate(rot);
+function eelPieceAt(g, x, y, len, r, rot, flip = 1) {
+  g.save(); g.translate(x, y); g.rotate(rot); g.scale(flip, 1);   // (flip -1: its cut face to the right)
   furGlow(g, [30, 16, 6], 0.5, len * 0.1, r * 0.9, len * 0.7, r * 0.5);
   const side = () => { g.moveTo(-len / 2, -r); g.lineTo(len / 2, -r); g.ellipse(len / 2, 0, r * 0.4, r, 0, -Math.PI / 2, Math.PI / 2); g.lineTo(-len / 2, r); g.closePath(); };
   softIn(g, EELSTEW_SKIN, -r, r, side, 1.35, 0.55);
@@ -2247,9 +2247,10 @@ function eelPieceAt(g, x, y, len, r, rot) {
   furGlow(g, [20, 18, 8], 0.5, len * 0.3, r * 0.3, len * 0.4, r * 0.8);
   g.restore();
   strokeIn(g, 'rgba(250, 244, 214, 0.7)', r * 0.18, () => { g.moveTo(-len * 0.36, -r * 0.55); g.quadraticCurveTo(0, -r * 0.75, len * 0.36, -r * 0.55); });   // glossy
-  softIn(g, EELSTEW_FLESH, -r, r, () => ovalAt(g, -len / 2, 0, r * 0.42, r), 1.1, 0.85);
-  strokeIn(g, rgba(EELSTEW_SKIN, 0.95), r * 0.14, () => ovalAt(g, -len / 2, 0, r * 0.4, r * 0.95));
-  fillIn(g, rgba([120, 96, 70]), () => ovalAt(g, -len / 2, -r * 0.1, r * 0.08, r * 0.16));
+  softIn(g, EELSTEW_FLESH, -r, r, () => ovalAt(g, -len / 2, 0, r * 0.56, r), 1.1, 0.85);
+  strokeIn(g, rgba(EELSTEW_SKIN, 0.95), r * 0.14, () => ovalAt(g, -len / 2, 0, r * 0.54, r * 0.95));
+  strokeIn(g, 'rgba(200, 176, 136, 0.7)', r * 0.06, () => { g.moveTo(-len / 2, -r * 0.62); g.lineTo(-len / 2, r * 0.62); });   // (its flakes parting along the spine)
+  fillIn(g, rgba([120, 96, 70]), () => ovalAt(g, -len / 2, -r * 0.1, r * 0.1, r * 0.16));
   g.restore();
 }
 function paintEelStew(g) {
@@ -2261,10 +2262,12 @@ function paintEelStew(g) {
     furGlow(g, [24, 12, 4], 0.55, 0.1, sy + 0.12, IX * 0.8, 0.05);
     halfShroomAt(g, -0.42, sy - 0.08, 0.5, -0.4, FSTEW_CUT);
     halfShroomAt(g, 0.44, sy - 0.08, 0.48, 0.35, FSTEW_CUT);
-    eelPieceAt(g, -0.12, sy - 0.16, 0.34, 0.1, -0.2);
-    eelPieceAt(g, 0.24, sy - 0.12, 0.3, 0.095, 0.3);
-    eelPieceAt(g, -0.3, sy + 0.02, 0.32, 0.095, 0.15);
-    eelPieceAt(g, 0.12, sy + 0.04, 0.34, 0.1, -0.1);
+    eelPieceAt(g, -0.18, sy - 0.17, 0.19, 0.11, -0.25);              // (short thick rounds, as an eel's cut for the pot)
+    eelPieceAt(g, 0.16, sy - 0.18, 0.18, 0.105, 0.2, -1);
+    eelPieceAt(g, -0.36, sy + 0.03, 0.2, 0.11, 0.1);
+    eelPieceAt(g, 0.02, sy - 0.02, 0.2, 0.115, -0.05, -1);
+    eelPieceAt(g, 0.34, sy + 0.04, 0.19, 0.105, -0.15);
+    eelPieceAt(g, -0.1, sy + 0.12, 0.18, 0.1, 0.12);
     fillIn(g, rgba([74, 124, 44], 0.9), () => { for (const [x, y, a] of [[-0.26, sy - 0.24, 0.4], [0.3, sy - 0.24, -0.6], [0.54, sy + 0.04, 0.3], [-0.54, sy + 0.04, 1.4], [0.0, sy - 0.26, 0.2], [0.18, sy + 0.12, 2]]) ovalAt(g, x, y, 0.03, 0.013, a); });
     strokeIn(g, 'rgba(255, 224, 150, 0.6)', 0.01, () => { ovalAt(g, -0.6, sy + 0.08, 0.03, 0.014); ovalAt(g, 0.58, sy + 0.08, 0.03, 0.014); ovalAt(g, -0.14, sy + 0.16, 0.03, 0.012); });
   });

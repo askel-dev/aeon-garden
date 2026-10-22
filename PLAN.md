@@ -992,11 +992,13 @@ Each its own branch, played before the next:
    ways of moving, land, a placeholder float and the line, `fishKind`, `takeFish`, the four fish as ingredients (emoji
    for now), "Fish here", the dev panel's `garden.give('rod')`. Playable: can you catch one, does the bar feel good on a
    phone and a trackpad? (The bar's feel is the whole stage; tune it here, with Axel, before anything is painted.)
-2. **The look and sound** (built 2026-10-22, but for the sit on the bank). The poses, the float, the bar painted properly, the fish paintings, the rises, every sound.
+2. **The look and sound** (built 2026-10-22; the sit on the bank with the refining). The poses, the float, the bar painted properly, the fish paintings, the rises, every sound.
    The polish bar is the cooking's.
 3. **The skill** (built 2026-10-22; .claude/docs/fishing.md), and the bar's numbers once it has been played a while (still to do, by hand).
 4. **The dishes** (built 2026-10-22; the soup and stew take any greens): the six recipes and their paintings, dried fish on the rack.
 5. **Friends** fishing together (built 2026-10-22).
+   Then refined for fun (2026-10-22, .claude/docs/fishing.md "Refined"): the fish tires, a last run, sizes and the biggest
+   kept, a perfect catch, the sit and the doze on the bank, the camera leaning to the float.
 6. Later: ice fishing, crayfish traps, pike.
 
 ### The sim and the keep

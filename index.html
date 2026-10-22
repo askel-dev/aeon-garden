@@ -1805,6 +1805,14 @@
     background: radial-gradient(circle at 40% 35%, #f6e2b0, #b98a40); }   /* (the hub) */
   #reel .reel-knob::after { content: ''; position: absolute; left: 50%; top: -3px; width: 6px; height: 9px; margin-left: -3px; border-radius: 3px;
     background: linear-gradient(90deg, #8a5a2a, #6a4320); box-shadow: 0 0 0 1px #5a3818; }   /* (its handle) */
+  /* The fish's last run (game.js reelFrame, REEL_RUN_AT): the gauge jolts toward it. The meter low and the fish out of the
+     zone: the meter goes ember-red and its tube pulses (REEL_LOW). A big one (FISH_BIG) has a glint about it. */
+  #reel.run > * { animation: reel-jolt 0.5s ease-out; }
+  @keyframes reel-jolt { 0% { translate: 0 0; } 15% { translate: 0 5px; } 35% { translate: 0 -3px; } 55% { translate: 0 2px; } 100% { translate: 0 0; } }
+  #reel.low:not(.in) .reel-meter i { background: linear-gradient(90deg, #f08a60, #cf5a34); }
+  #reel.low:not(.in) .reel-meter { animation: reel-worry 0.45s ease-in-out infinite alternate; }
+  @keyframes reel-worry { to { box-shadow: inset 0 0 0 1.5px #d8643a, inset 0 2px 3px rgba(60, 40, 20, 0.3), 0 0 7px rgba(240, 110, 60, 0.7); } }
+  #reel.big .reel-fish { filter: drop-shadow(0 0 2px rgba(255, 236, 160, 0.95)) drop-shadow(0 1px 1px rgba(10, 30, 40, 0.35)); }
   /* A thing being dragged from the satchel owns the screen: the line goes till it's put down. */
   body:has(#satchel.dragging) #what { opacity: 0; }
   /* The stamina bar, centered over the satchel (renderVitals): shown only while it isn't full; ember-red and pulsing while winded. */

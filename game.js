@@ -347,7 +347,7 @@ function paintedSprite(emoji, px, tint, leaf, center) {
 const keptForager = s => s.look.startsWith('forager:') && (s.px === fg.sized || s.px === furPainted(fg.sized)) && keptPose(parseInt(s.look.slice(8)));
 function keptPose(n) {
   if (n >= Fur.FISH_AT) return fishing() && (n - Fur.FISH_AT >> 4) === fg.snowArt * Fur.FORAGER_OUTFITS.length + fg.outfit;
-  if (n === Fur.MITT_ART) return fg.carry;
+  if (n === Fur.MITT_ART) return fg.carry || fishing();
   if (n >= Fur.CARRY_AT) { n -= Fur.CARRY_AT; if (!fg.carry) return false; }
   else if (n >= Fur.EMOTE_AT) return fg.emote >= 0 && (n - Fur.EMOTE_AT >> 5) === fg.snowArt * Fur.FORAGER_OUTFITS.length + fg.outfit;
   else if (fg.carry && (n & 127) < KNEEL_AT) return false;      // (a dish in its hands, it walks the carry's walk)
@@ -2443,11 +2443,11 @@ function foragerFrame(now, d) {
   const curl = stage < 4 && !walking && kneel < 0 && meal < 0 && emo < 0 && !carry && S.curledUp(f);
   if (!curl) fg.curlAt = 0; else if (!fg.curlAt) { fg.curlAt = now; idleStop(fg); }
   const want = FORAGER_ARTS[curl ? at + KNEEL_AT + KNEEL.sitWarm : emo >= 0 && stage < 4 ? Fur.emoteArt(fg.snowArt, fg.outfit, emo) : carried ? Fur.carryArt(fg.snowArt, fg.outfit, poseKey(fg.view, pose))
-    : fishPose >= 0 ? Fur.fishArt(fg.snowArt, fg.outfit, (Math.min(fg.view, 2) << 2) + fishPose)
+    : fishPose >= 0 ? Fur.fishArt(fg.snowArt, fg.outfit, fishVp(fg.view, fishPose))
     : at + (sat || kneel >= 0 && !sitting ? KNEEL_AT + (satEat >= 0 ? satEat : kneel) : poseKey(sitting ? 1 : fg.view, sitting ? 0 : pose))];
   fg.art = shownPose(f, want, px);
   if (fg.art === want) { fg.carryShown = carried; fg.carryVp = carried ? poseKey(fg.view, pose) : 0; }   // (its new painting not in yet: the dish stays where the old one held it)
-  if (fg.art === want) { fg.fishShown = fishPose >= 0; fg.fishVp = fishPose >= 0 ? (Math.min(fg.view, 2) << 2) + fishPose : 0; }   // (and the rod where the old one held it)
+  if (fg.art === want) { fg.fishShown = fishPose >= 0; fg.fishVp = fishPose >= 0 ? fishVp(fg.view, fishPose) : 0; }   // (and the rod where the old one held it)
   dishSpring(fg, ms);
 }
 // Its footprints: one at each foot down, a little to that foot's side, fading as the ground takes them back: soon in
@@ -2996,8 +2996,8 @@ function foragerAhead() {
   if (kneel) for (const p of Fur.FORAGER_SIT_EATS) furReady(FORAGER_ARTS[at + KNEEL_AT + p], P);   // (eating sitting, on the seat log or by the fire)
   if (emo) for (const p of Fur.FORAGER_EMOTES) furReady(FORAGER_ARTS[Fur.emoteArt(fg.snowArt, fg.outfit, p)], P);   // (an emote on, or about to be)
   if (carry && !close) for (let v = 0; v < 3; v++) for (const p of set === 2 ? FORAGER_CHILLY : FORAGER_POSES) furReady(FORAGER_ARTS[Fur.carryArt(fg.snowArt, fg.outfit, (v << 5) + p)], P);   // (a dish in its hands)
-  if (carry) furReady(FORAGER_ARTS[Fur.MITT_ART], P);   // (and its mittens over it)
-  if (rod) for (let vp = 0; vp < 12; vp++) furReady(FORAGER_ARTS[Fur.fishArt(fg.snowArt, fg.outfit, vp)], P);   // (the rod in its hands)
+  if (carry || rod) furReady(FORAGER_ARTS[Fur.MITT_ART], P);   // (and its mittens over it, or over the rod)
+  if (rod) for (let vp = 0; vp < FISH_VPS; vp++) furReady(FORAGER_ARTS[Fur.fishArt(fg.snowArt, fg.outfit, vp)], P);   // (the rod in its hands)
 }
 // Out while it snows, snow gathers on it (on the hood, the shoulders: fur.js FORAGER_SNOWS), less under the trees; once
 // it stops it melts off, soon above freezing, slowly under, quicker on the move, and by a fire close by it goes snowing or
@@ -5352,6 +5352,7 @@ const buzz = p => {
   } catch (e) { /* fine */ }
 };
 const BUZZ_PLOP = 12, BUZZ_DISH = [15, 50, 25], BUZZ_MESS = 40;   // a thing into the pot; a dish done; a mess
+const BUZZ_BITE = [25, 40, 25], BUZZ_RUN = 45, BUZZ_LAND = [20, 60, 30];   // a fish bites; makes its last run; is landed
 const campShow = { F: null, t0: -1e9, z0: 0, z: 0 };
 const CAMP_TITLE_MS = 5200;                        // "Your camp" stays over the fire this long (index.html #camptitle)
 const campTitle = { el: document.getElementById('camptitle'), on: false };
@@ -6058,18 +6059,29 @@ const REEL_BOUNCE = 0.35;                // of its speed the zone keeps bouncing
 const REEL_SLACK = 0.03;                 // the fish counts as in the zone this far past its ends (its painting's half)
 const REEL_FISH_PX = 32, REEL_PAD = 7;   // the fish's painting in the bar, and the bar's frame (index.html #reel)
 const REEL_ABOVE = 0.07;                 // the fish keeps this far over a zone lying at the foot (more than its FISH low, as the zone grows)
+const REEL_FRESH = 1.25, REEL_TIRED = 0.75; // how hard a fish fights, freshly hooked and once the meter's full: it tires as it comes in
+const REEL_SMALL = 0.85, REEL_BIG = 1.25; // and the smallest of its kind against the biggest (recipes.js FISH grams)
+const REEL_RUN_AT = 0.72;                // the meter past this, a fish with a FISH run may make one last hard run for it
+const REEL_RUN_DASH = 1.8;               // that much quicker than its darts, away from the zone
+const REEL_LOW = 0.18;                   // the meter under this, the bar looks worried
+const FISH_SKEW = 1.6;                   // how rare a big one is: its size, 0 to 1, is a random number to this power
+const FISH_BIG = 0.75;                   // and from this size it's "a big one" (about one in six)
 const FISH_MISS_PRACTICE = 0.2;          // practice in fishing for one that got away in the bar (one landed: 1)
+const FISH_PERFECT_PRACTICE = 0.5;       // and more for a perfect catch: in the zone from the first touch to landed
+const SIT_S = 9, DOZE_S = 26;            // seconds of waiting before it sits down on the bank, and nods off there (fur.js FISH_SIT)
+const FISH_CAM_LEAN = 0.4, FISH_CAM_IN = 0.1;   // the camera leans this far toward the float while the line's out, and eases in this much bringing one in
 const PRIZE_FROM = 3, PRIZE_MORE = 0.12; // from this fishing level a FISH prize bites this much more often, and more each level on
 // The catch zone, of the bar's height: wider the better an angler it is (sim.js SKILLS fishing).
 const reelZone = () => REEL_ZONE * S.perk(world.forager, 'fishing', 'zone');
 const angle = { stage: '', t: 0, world: null, x: -0, y: -0, fx: -0, fy: -0, ox: -0, oy: -0, fromX: -0, fromY: -0, at: 0,
   tipX: -0, tipY: -0, rodAt: 0, floatX: -0, floatY: -0, floatAt: 0, clickAt: 0,   // (the rod's tip and the float on screen, this frame: drawRod, drawFloat)
-  last: 0, biteAt: 0, nibbles: [], nibAt: -1e9, hookBy: 0, kind: '', forced: '', said: false, hold: { ptr: new Set(), key: false },
-  reel: { p: -0, v: -0, fy: -0, goal: -0, rest: -0, m: -0, in: false, h: 0, zp: -1, fp: -1, mp: -1, inShown: null } };
+  last: 0, biteAt: 0, nibbles: [], nibAt: -1e9, hookBy: 0, kind: '', forced: '', said: false, hold: { ptr: new Set(), key: false }, calm: 0, dry: false,   // (calm: when the float settled, dry: on dry ground; for the sit: fishSat)
+  reel: { p: -0, v: -0, fy: -0, goal: -0, rest: -0, m: -0, in: false, h: 0, zp: -1, fp: -1, mp: -1, inShown: null,
+    size: -0, dash: -0, ran: false, touched: false, slipped: false, low: false, lowShown: null, runAt: -1e9 } };   // (size 0 to 1: FISH_SKEW; touched: in the zone once, slipped: out again after)
 const fishing = () => !!angle.stage;
 // A friend's line, as its 'line' messages tell it (heardLine): what drawRod, drawFloat and drawFishing read off angle, on
 // our clock. How hard its fish pulls isn't sent: its bar is played as a steady tug (peerLineFrame).
-const lineOf = () => ({ stage: '', t: 0, world: null, x: -0, y: -0, nibAt: -1e9, view: 0, flip: false,
+const lineOf = () => ({ stage: '', t: 0, world: null, x: -0, y: -0, nibAt: -1e9, calm: 1e9, dry: true, view: 0, flip: false,
   tipX: -0, tipY: -0, rodAt: 0, floatX: -0, floatY: -0, floatAt: 0, reel: { m: -0, fy: -0, p: -0 } });
 const lastingAt = (x, y) => x >= 0 && y >= 0 && x < S.W && y < S.H && !world.frozen && S.fishRoom(world, (y | 0) * S.W + (x | 0)) > 0;
 // Whether it could fish now, as it stands (the bank itself is bankNear's).
@@ -6128,7 +6140,8 @@ function cast(x, y) {
   f.path.length = 0; f.walking = false; f.running = false; f.goalX = f.x; f.goalY = f.y;   // (it stops where it stands)
   ui.gather = null; ui.queue.length = 0; ui.mark = null;
   if (ui.selectedId || ui.picked) select(0);
-  Object.assign(angle, { stage: 'cast', t: 0, world, x, y, ox: x, oy: y, fromX: f.x, fromY: f.y, at: 0, kind: '', said: false, nibAt: -1e9 });
+  Object.assign(angle, { stage: 'cast', t: 0, world, x, y, ox: x, oy: y, fromX: f.x, fromY: f.y, at: 0, kind: '', said: false, nibAt: -1e9, calm: 1e9,
+    dry: !world.water[(f.y | 0) * S.W + (f.x | 0)] });   // (wading, it never sits: fishSat)
   angle.hold.ptr.clear(); angle.hold.key = false;
   const dx = x - f.x, dy = y - f.y;                       // (it turns to the water)
   fg.view = Math.abs(dy) > Math.abs(dx) * 0.8 ? (dy > 0 ? 1 : 2) : 0;
@@ -6200,7 +6213,7 @@ function fishFrame(now) {
   A.t += dt;
   if (A.stage === 'cast') {
     if (A.t < CAST_MS) return;
-    A.stage = 'wait';
+    A.stage = 'wait'; A.calm = A.t;
     hear('angle', A.x, A.y, { what: 'float' }, true);
     sendLine('wait');
     if (splashes.length < 12) splashes.push({ x: A.x, y: A.y, size: forPx() / cam.zoom * 0.5, t0: now });
@@ -6224,7 +6237,8 @@ function fishFrame(now) {
       A.stage = 'bite'; A.hookBy = A.t + HOOK_MS; A.kind = A.forced || fishKind(A.x, A.y); A.forced = '';
       hear('angle', A.x, A.y, { what: 'bite' }, true);
       if (splashes.length < 12) splashes.push({ x: A.x, y: A.y, size: forPx() / cam.zoom * 0.7, t0: now });
-      say('!', f.x, f.y - 1.6, HOOK_MS);
+      say('!', f.x, f.y - (fishSat(A) ? 1.1 : 1.6), HOOK_MS);
+      buzz(BUZZ_BITE);
       sendLine('bite');
     }
     return;
@@ -6270,25 +6284,40 @@ function lineIn(why) {
 function reelOpen(kind) {
   const A = angle, R = A.reel;
   A.stage = 'reel';
-  Object.assign(R, { p: 0, v: 0, fy: 0.5, goal: 0.5, rest: 0.6, m: REEL_START, in: false, zp: -1, fp: -1, mp: -1, inShown: null });
+  Object.assign(R, { p: 0, v: 0, fy: 0.5, goal: 0.5, rest: 0.6, m: REEL_START, in: false, zp: -1, fp: -1, mp: -1, inShown: null,
+    size: Math.random() ** FISH_SKEW, dash: 1, ran: false, touched: false, slipped: false, low: false, lowShown: null, runAt: -1e9 });
   hear('angle', A.x, A.y, { what: 'creak', v: 1 }, true);
+  if (R.size >= FISH_BIG) { const f = world.forager; say('A big one!', f.x, f.y - 1.6); }
   reelShow(true);
   sendLine('reel');
 }
 function reelFrame(dt, now) {
   const A = angle, R = A.reel, k = Recipes.FISH[A.kind] || Recipes.FISH.roach, f = world.forager;
   const zone = reelZone(), low = Math.max(k.low, zone + REEL_ABOVE);   // (the zone grows with the skill, and the fish's floor with it)
+  const fight = lerp(REEL_FRESH, REEL_TIRED, R.m), big = lerp(REEL_SMALL, REEL_BIG, R.size);   // (fresh and big, it fights harder; it tires as it comes in)
   R.rest -= dt;                                            // the fish: a dart, then a rest
+  if (k.run && !R.ran && R.m > REEL_RUN_AT) {             // nearly in: one last hard run for it, away from the zone
+    R.ran = true;
+    if (Math.random() < k.run) {
+      R.goal = R.fy > 0.6 ? low : 0.97; R.dash = REEL_RUN_DASH; R.runAt = now;
+      R.rest = 0.35 + Math.abs(R.goal - R.fy) / (k.pull * 1.4);
+      if (splashes.length < 12) splashes.push({ x: A.x, y: A.y, size: forPx() / cam.zoom * 0.8, t0: now });
+      hear('angle', A.x, A.y, { what: 'creak', v: 1 }, true);
+      buzz(BUZZ_RUN);
+      reelEl.box.classList.remove('run'); void reelEl.box.offsetWidth; reelEl.box.classList.add('run');   // (the bar jolts: index.html)
+    }
+  }
   if (R.rest <= 0) {
-    R.goal = clamp(R.fy + (Math.random() * 2 - 1) * k.dart, low, 0.97);
-    R.rest = lerp(k.idle[0], k.idle[1], Math.random()) + Math.abs(R.goal - R.fy) / k.pull;
+    R.dash = 1;
+    R.goal = clamp(R.fy + (Math.random() * 2 - 1) * k.dart * fight * big, low, 0.97);
+    R.rest = lerp(k.idle[0], k.idle[1], Math.random()) / fight + Math.abs(R.goal - R.fy) / k.pull;
     if (Math.abs(R.goal - R.fy) > 0.25) {                 // (a big dart: a splash, and the line creaks)
       if (splashes.length < 12) splashes.push({ x: A.x, y: A.y, size: forPx() / cam.zoom * 0.5, t0: now });
       hear('angle', A.x, A.y, { what: 'creak', v: Math.min(1, Math.abs(R.goal - R.fy) * 1.6) }, true);
     }
   }
-  if (k.wriggle && Math.random() < k.wriggle * dt) R.goal = clamp(R.fy + (Math.random() < 0.5 ? -1 : 1) * (0.1 + Math.random() * 0.12), low, 0.97);
-  R.fy += (R.goal - R.fy) * Math.min(1, k.pull * 1.5 * dt);
+  if (k.wriggle && Math.random() < k.wriggle * fight * dt) R.goal = clamp(R.fy + (Math.random() < 0.5 ? -1 : 1) * (0.1 + Math.random() * 0.12), low, 0.97);
+  R.fy += (R.goal - R.fy) * Math.min(1, k.pull * 1.5 * big * fight * R.dash * dt);
   const held = A.hold.ptr.size > 0 || A.hold.key;          // the zone: lifted while held, sinking with a little weight let go (and the fish's pull)
   if (held && now - A.clickAt > 95 - 40 * Math.min(1, Math.max(0, R.v) / REEL_TOP)) { A.clickAt = now; hear('angle', A.x, A.y, { what: 'click', v: 0.5 + 0.5 * R.m }, true); }   // (the reel winding)
   R.v = clamp(R.v + ((held ? REEL_LIFT : -REEL_FALL) - k.sink) * dt, -REEL_TOP, REEL_TOP);
@@ -6296,7 +6325,9 @@ function reelFrame(dt, now) {
   if (R.p < 0) { R.p = 0; R.v = R.v < -0.3 ? -R.v * REEL_BOUNCE : 0; }
   if (R.p > 1 - zone) { R.p = 1 - zone; if (R.v > 0) R.v = 0; }
   R.in = R.fy > R.p - REEL_SLACK && R.fy < R.p + zone + REEL_SLACK;
+  if (R.in) R.touched = true; else if (R.touched) R.slipped = true;   // (a perfect catch never slips out once it's in)
   R.m = clamp(R.m + (R.in ? REEL_FILL : -REEL_DRAIN / S.perk(f, 'fishing', 'calm')) * dt, 0, 1);
+  R.low = R.m < REEL_LOW;
   if (R.m >= 1) landFish(now);
   else if (R.m <= 0) { S.gainSkill(world, f, 'fishing', FISH_MISS_PRACTICE); lineIn('gone'); }   // (sim.js SKILLS: a lost one teaches a little)
   else renderReel();
@@ -6308,7 +6339,8 @@ function landFish(now) {
   if (landing.id) landed();                                // (one still flopping: in it goes first)
   if (S.roomFor(f, id) < 1) { say('Satchel\'s full: you let it go', f.x, f.y - 1.6); hear('angle', A.x, A.y, { what: 'away' }, true); return; }
   S.takeFish(world, clamp(A.x | 0, 2, S.W - 3), clamp(A.y | 0, 2, S.H - 3), 1);   // (and friends' meadows on the same tick: sendLine 'land')
-  S.gainSkill(world, f, 'fishing', 1);                     // (sim.js SKILLS: a fish landed is practice)
+  const R = A.reel, perfect = !R.slipped;
+  S.gainSkill(world, f, 'fishing', 1 + (perfect ? FISH_PERFECT_PRACTICE : 0));   // (sim.js SKILLS: a fish landed is practice, a perfect one more)
   if (splashes.length < 12) splashes.push({ x: A.x, y: A.y, size: forPx() / cam.zoom * 0.8, t0: now });
   const dx = A.x - f.x, dy = A.y - f.y, d = Math.hypot(dx, dy) || 1;   // (onto the bank, a little way toward the water, else beside it)
   let x1 = f.x + dx / d * 0.5, y1 = f.y + dy / d * 0.5;
@@ -6318,8 +6350,16 @@ function landFish(now) {
   const tx = clamp(A.x | 0, 2, S.W - 3), ty = clamp(A.y | 0, 2, S.H - 3);   // (the fish out of the water for everyone, on this tick: applyNet)
   sendLine('land', { k: id, fx: tx, fy: ty, x1: Math.round(x1 * 100) / 100, y1: Math.round(y1 * 100) / 100, tick: world.tick });
   hear('angle', x1, y1, { what: 'land' }, true);
-  say(Recipes.INGREDIENTS[id].name, f.x, f.y - 1.6);
+  buzz(BUZZ_LAND);
+  const g = fishGrams(id, R.size), best = f.fishBest[id] || 0, first = !best;   // its size, and the biggest of its kind yet (sim.js f.fishBest)
+  if (g > best) f.fishBest[id] = g;
+  say(`${Recipes.INGREDIENTS[id].name}, ${gramsSaid(g)}`, f.x, f.y - 1.6);
+  const more = [perfect && 'Perfect catch!', !first && g > best && `Your biggest ${Recipes.INGREDIENTS[id].name.toLowerCase()} yet!`].filter(Boolean);
+  more.forEach((t, i) => setTimeout(() => { if (world && world.forager === f) say(t, f.x, f.y - 2.1 - 0.5 * i, 2000); }, 420 + 480 * i));
 }
+// How much one of a kind weighs at size u (0 to 1; recipes.js FISH grams), to 10 g, and said: "340 g", "1.2 kg".
+const fishGrams = (id, u) => { const k = Recipes.FISH[id]; return k ? Math.round(lerp(k.grams[0], k.grams[1], u) / 10) * 10 : 0; };
+const gramsSaid = g => g < 1000 ? `${g} g` : `${(g / 1000).toFixed(g < 10000 ? 1 : 0)} kg`;
 // Done flopping: into the satchel (the sim already has it out of the water).
 function landed() {
   const L = landing, f = world && world.forager, id = L.id;
@@ -6343,6 +6383,8 @@ function reelShow(on) {
   if (!on) { angle.hold.ptr.clear(); return; }
   itemSheet();
   E.fish.style.backgroundPosition = itemBg(angle.kind);
+  E.fish.style.scale = (0.85 + 0.35 * angle.reel.size).toFixed(2);   // (a big one looks it)
+  E.box.classList.toggle('big', angle.reel.size >= FISH_BIG); E.box.classList.remove('run');
   const H = Math.round(clamp(innerHeight / 3, 150, 280)), R = angle.reel;
   E.box.style.height = H + 'px';
   R.h = E.bar.offsetHeight || H - REEL_PAD * 2 - 29;   // (the bar, over the reel at its foot)
@@ -6361,6 +6403,7 @@ function renderReel() {
   if (fp !== R.fp) { R.fp = fp; E.fish.style.transform = `translateY(${fp}px)`; }
   if (mp !== R.mp) { R.mp = mp; E.meter.style.transform = `scaleY(${mp})`; }
   if (R.in !== R.inShown) { R.inShown = R.in; E.box.classList.toggle('in', R.in); }
+  if (R.low !== R.lowShown) { R.lowShown = R.low; E.box.classList.toggle('low', R.low); }
 }
 {
   const hold = $('#reel-hold');
@@ -6397,58 +6440,146 @@ function fishSaid() {
   return ['Fish here', fingerTap || SPRINT_BTN ? 'tap the water' : 'click the water', 'R'];
 }
 // Its pose while the line's out (fur.js FORAGER_FISH): the rod up and back as it casts, held out while it waits (a blink
-// now and then), and leaning back bringing one in.
+// now and then), and leaning back bringing one in. A long wait on dry ground (SIT_S) and it sits down on the bank
+// (FORAGER_FISH_SIT, as SAT_POSE + its pose), nodding off if it goes on (DOZE_S, a nibble rousing it), jolted awake by a bite;
+// a fish on stands it up again.
+const SAT_POSE = 4;
+const fishSat = (A = angle) => (A.stage === 'wait' || A.stage === 'bite') && A.dry && A.t - A.calm > SIT_S * 1000;
 function anglePose(now, A = angle, blinkAt = fg.blinkAt) {
-  const F = Fur.FORAGER_FISH;
+  const F = Fur.FORAGER_FISH, T = Fur.FORAGER_FISH_SIT;
+  if (fishSat(A)) return SAT_POSE + (A.stage === 'bite' ? T.start : A.t - A.calm > DOZE_S * 1000 && A.t - A.nibAt > 900 ? T.doze : now - blinkAt < 150 ? T.sitBlink : T.sit);
   if (A.stage === 'cast' && A.t < CAST_WIND) return F.wind;
   if (A.stage === 'reel') return F.reel;
   return now - blinkAt < 150 ? F.blink : F.hold;
 }
-// Where it grips the rod, by fishing pose (fur.js fishHold, worked out once): from its feet in its px, x as painted (facing left).
-const FISH_HOLD = new Float32Array(24);
-for (let vp = 0; vp < 12; vp++) { const h = Fur.fishHold(vp); FISH_HOLD[vp * 2] = h[0] / 2; FISH_HOLD[vp * 2 + 1] = (h[1] - 0.72) / 2; }
-// The rod (b: fg): two sticks lashed end to end (recipes.js BUILDS.rod), from its mittens out toward the float and up,
-// a few strokes a frame and only while it's held. Up and back over its shoulder as it winds up to cast, whipped forward
-// as the float flies; from the front or behind it leans to the side it faces, so it's never seen end on. A bite dips
+// Its painting's place among the fishing ones (fur.js fishArt): (view << 2) + pose, the sit always side on (FISH_SIT).
+const FISH_VPS = 16;
+const fishVp = (view, pose) => pose >= SAT_POSE ? (Fur.FISH_SIT << 2) + pose - SAT_POSE : (Math.min(view, 2) << 2) + pose;
+// How it holds the rod, by fishing pose (fur.js fishHold, worked out once), FISH_N a pose: where it grips it, from its feet in
+// its px, x as painted (facing left); the way the rod runs through its mittens (from the front; else 0, 0); how many mittens
+// go over the rod, and where each is.
+const FISH_N = 9, FISH_HOLD = new Float32Array(FISH_VPS * FISH_N);
+for (let vp = 0; vp < FISH_VPS; vp++) {
+  const h = Fur.fishHold(vp), at = vp * FISH_N;
+  FISH_HOLD[at] = h[0] / 2; FISH_HOLD[at + 1] = (h[1] - 0.72) / 2; FISH_HOLD[at + 2] = h[2]; FISH_HOLD[at + 3] = h[3]; FISH_HOLD[at + 4] = (h.length - 4) / 2;
+  for (let k = 4; k < h.length; k += 2) { FISH_HOLD[at + 1 + k] = h[k] / 2; FISH_HOLD[at + 2 + k] = (h[k + 1] - 0.72) / 2; }
+}
+// The rod (b: fg, recipes.js BUILDS.rod), from its mittens out toward the float and up, painted (paintRod) only while
+// it's held, its mittens laid over it (MITT_ART) so it's in them. Up and back over its shoulder as it winds up to cast, whipped
+// forward as the float flies; from the front through both its mittens and up to the side it faces, from behind leaning that
+// way too, so it's never seen end on. A bite dips
 // its tip, a nibble twitches it, and a fish on the line bends it, more the harder it pulls (the meter and the fish's
 // darting). Its tip is kept for the line (angle.tipX, tipY, rodAt).
 const ROD_LEN = 0.95;                      // of the forager's px
-const ROD_WOOD = 'rgb(116, 80, 46)', ROD_LIT = 'rgba(214, 170, 112, 0.9)', ROD_TIE = 'rgb(196, 160, 98)';
-const ROD_PTS = new Float32Array(14);
 function drawRod(b, sx, sy, px, now, A = angle) {
-  const vp = b.fishVp, view = vp >> 2, F = Fur.FORAGER_FISH, side = b.flip ? -1 : 1;
-  layHeld(b, sx, heldFoot(b, sy, px), side * FISH_HOLD[vp * 2] * px, FISH_HOLD[vp * 2 + 1] * px);
+  const vp = b.fishVp, sat = vp >> 2 === Fur.FISH_SIT, view = sat ? 0 : vp >> 2, F = Fur.FORAGER_FISH, side = b.flip ? -1 : 1;   // (sat on the bank: side on)
+  const at = vp * FISH_N, way = FISH_HOLD[at + 2] !== 0 || FISH_HOLD[at + 3] !== 0, foot = heldFoot(b, sy, px);
+  layHeld(b, sx, foot, side * FISH_HOLD[at] * px, FISH_HOLD[at + 1] * px);
   const gx = HELD[0], gy = HELD[1], L = px * ROD_LEN * (view === 1 ? 0.72 : view === 2 ? 0.82 : 1), [fx, fy] = toScreen(A.x, A.y);   // (from the front or behind it's foreshortened)
   let dx = fx - gx, dy = fy - gy, d = Math.hypot(dx, dy) || 1;
   dx /= d; dy /= d;
-  let ux = view === 1 ? dx * 0.7 - side * 0.5 : view === 2 ? dx * 0.6 - side * 0.3 : dx * 0.8;   // (held: out toward the float, raised)
-  let uy = view === 1 ? dy * 0.55 - 0.3 : view === 2 ? dy * 0.6 - 0.4 : dy * 0.35 - 0.62;
-  const wx = side * 0.5, wy = -0.86;                                      // (wound up: back over its shoulder)
-  if ((vp & 3) === F.wind) { ux = wx; uy = wy; }
+  let ux = view === 2 ? dx * 0.6 - side * 0.55 : dx * 0.8, uy = view === 2 ? dy * 0.6 - 0.4 : dy * 0.35 - 0.62;   // (held: out toward the float, raised)
+  if (way) { ux = side * FISH_HOLD[at + 2]; uy = FISH_HOLD[at + 3]; }   // (from the front: as its mittens hold it)
+  if (sat && ux * side > -0.45) ux = -side * 0.45;                       // (sat side on, it's held out the way it faces, never straight up)
+  const wa = (view << 2 | F.wind) * FISH_N, wx = view === 1 ? side * FISH_HOLD[wa + 2] : side * 0.5, wy = view === 1 ? FISH_HOLD[wa + 3] : -0.86;   // (wound up: back over its shoulder)
+  if (!sat && (vp & 3) === F.wind) { ux = wx; uy = wy; }
   else if (A.stage === 'cast') {                                           // (whipped forward, a little past, and back)
     const k = clamp((A.t - CAST_WIND) / CAST_WHIP, 0, 1), e = 1 - (1 - k) * (1 - k) + 0.12 * Math.sin(Math.PI * k);
     ux = lerp(wx, ux, e); uy = lerp(wy, uy, e);
-  } else if (A.stage === 'reel') uy -= 0.12;
+  } else if (A.stage === 'reel' && !way) uy -= 0.12;
   const u = Math.hypot(ux, uy); ux /= u; uy /= u;
   let tx = gx + ux * L, ty = gy + uy * L;
   const R = A.reel, nib = A.stage === 'wait' && A.t - A.nibAt < NIBBLE_MS ? 0.06 : 0;
   const bend = A.stage === 'reel' ? 0.16 + 0.22 * R.m + 0.1 * Math.abs(R.fy - R.p - reelZone() / 2) + 0.03 * Math.sin(now / 85) : A.stage === 'bite' ? 0.2 : nib;
   if (bend) { const ex = fx - tx, ey = fy - ty, ed = Math.hypot(ex, ey) || 1; tx += ex / ed * bend * L * 0.5; ty += ey / ed * bend * L * 0.5; }
   const cx = gx + ux * L * 0.55, cy = gy + uy * L * 0.55;                 // (the bend's control point: on the rod's straight line)
-  const at = (t, k) => { const m = 1 - t; ROD_PTS[k] = m * m * gx + 2 * m * t * cx + t * t * tx; ROD_PTS[k + 1] = m * m * gy + 2 * m * t * cy + t * t * ty; };
-  for (let i = 0; i <= 6; i++) at(i / 6, i * 2);
-  const w = Math.max(1.3, px * 0.024), bx = gx - ux * L * 0.12, by = gy - uy * L * 0.12;
-  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  ctx.strokeStyle = ROD_WOOD;
-  ctx.lineWidth = w * 1.5;                                                 // (the stout stick, from its butt past the grip)
-  ctx.beginPath(); ctx.moveTo(bx, by); for (let i = 0; i <= 3; i++) ctx.lineTo(ROD_PTS[i * 2], ROD_PTS[i * 2 + 1]); ctx.stroke();
-  ctx.lineWidth = w * 0.8;                                                 // (the slim one, on out to the tip)
-  ctx.beginPath(); ctx.moveTo(ROD_PTS[6], ROD_PTS[7]); for (let i = 4; i <= 6; i++) ctx.lineTo(ROD_PTS[i * 2], ROD_PTS[i * 2 + 1]); ctx.stroke();
-  ctx.strokeStyle = ROD_LIT; ctx.lineWidth = Math.max(0.6, w * 0.4);      // (lit along its top)
-  ctx.beginPath(); ctx.moveTo(bx, by - w * 0.35); for (let i = 0; i <= 6; i++) ctx.lineTo(ROD_PTS[i * 2], ROD_PTS[i * 2 + 1] - w * (i < 4 ? 0.35 : 0.2)); ctx.stroke();
-  ctx.strokeStyle = ROD_TIE; ctx.lineWidth = w * 2;                        // (the rope lashed round where the sticks meet)
-  ctx.beginPath(); ctx.moveTo(lerp(ROD_PTS[4], ROD_PTS[6], 0.6), lerp(ROD_PTS[5], ROD_PTS[7], 0.6)); ctx.lineTo(lerp(ROD_PTS[6], ROD_PTS[8], 0.4), lerp(ROD_PTS[7], ROD_PTS[9], 0.4)); ctx.stroke();
+  paintRod(gx, gy, cx, cy, tx, ty, px);
+  if (FISH_HOLD[at + 4] && (mittOk || (mittOk = !furWorker || furReady(FORAGER_ARTS[Fur.MITT_ART], poseStep(Math.max(4, px)))))) {
+    MITT_LOOK.squash = b.fs || 1;
+    for (let k = 0; k < FISH_HOLD[at + 4]; k++) {
+      layHeld(b, sx, foot, side * FISH_HOLD[at + 5 + 2 * k] * px, FISH_HOLD[at + 6 + 2 * k] * px);
+      drawEmoji(FORAGER_ARTS[Fur.MITT_ART], HELD[0], HELD[1], px, MITT_LOOK);
+    }
+  }
   A.tipX = tx; A.tipY = ty; A.rodAt = now;
+}
+// The rod as a hazel switch cut from the hedge: a crooked stick tapering to the tip, shaded under and lit along its top,
+// a knot and a twig cut short, a sprig of leaves left on near the tip and the grip wrapped in twine. Plain fills along
+// the bend (ROD_N points down each side, from its butt behind the mittens), a dozen calls a frame for the one rod.
+const ROD_N = 12, ROD_BUTT = -0.1;        // points down its length; where its butt is, past the grip (in the bend's t)
+const ROD_SIDES = new Float32Array((ROD_N + 1) * 6);   // per point: the middle, the lit side, the shaded side (x, y each)
+const ROD_BARK = 'rgb(140, 94, 56)', ROD_UNDER = 'rgb(98, 64, 40)', ROD_SHINE = 'rgba(226, 184, 130, 0.9)', ROD_KNOT = 'rgb(84, 54, 34)';
+const ROD_TWINE = 'rgb(204, 178, 128)', ROD_TURN = 'rgba(128, 94, 54, 0.75)';
+const ROD_LEAF = 'rgb(112, 170, 58)', ROD_LEAF_LIT = 'rgb(172, 212, 92)', ROD_LEAF_RIB = 'rgba(60, 100, 30, 0.55)';
+// How thick it is at t (of its length from the butt, 0 to 1), as a share of its butt's: tapering, swelling at the knot.
+const rodThick = t => 1 - 0.74 * t + 0.28 * Math.exp(-(((t - 0.44) / 0.035) ** 2));
+// Its crook: a little to one side and back, the same every frame (a branch's own shape), as a share of its butt's width.
+const rodCrook = t => 0.9 * Math.sin(t * 7.5 + 0.6) * t;
+function paintRod(gx, gy, cx, cy, tx, ty, px) {
+  const W0 = Math.max(1, px * 0.014), P = ROD_SIDES;   // (half its width at the butt: a little over half as thick as its mitten)
+  for (let i = 0; i <= ROD_N; i++) {
+    const s = i / ROD_N, t = lerp(ROD_BUTT, 1, s), m = 1 - t;
+    const x = m * m * gx + 2 * m * t * cx + t * t * tx, y = m * m * gy + 2 * m * t * cy + t * t * ty;
+    let dx = 2 * m * (cx - gx) + 2 * t * (tx - cx), dy = 2 * m * (cy - gy) + 2 * t * (ty - cy);
+    const d = Math.hypot(dx, dy) || 1; dx /= d; dy /= d;
+    let nx = -dy, ny = dx;
+    if (ny > 0) { nx = -nx; ny = -ny; }                                    // (n: toward its top, the lit side)
+    const w = W0 * rodThick(s), o = W0 * rodCrook(s), mx = x + nx * o, my = y + ny * o;
+    P[i * 6] = mx; P[i * 6 + 1] = my;
+    P[i * 6 + 2] = mx + nx * w; P[i * 6 + 3] = my + ny * w;
+    P[i * 6 + 4] = mx - nx * w; P[i * 6 + 5] = my - ny * w;
+  }
+  const side = (k, i0, i1) => { for (let i = i0; i <= i1; i++) ctx.lineTo(P[i * 6 + k], P[i * 6 + k + 1]); };
+  const back = (k, i0, i1) => { for (let i = i1; i >= i0; i--) ctx.lineTo(P[i * 6 + k], P[i * 6 + k + 1]); };
+  const tip = ROD_N * 6;
+  ctx.fillStyle = ROD_BARK;                                                // (the stick)
+  ctx.beginPath(); ctx.moveTo(P[2], P[3]); side(2, 1, ROD_N); ctx.lineTo(P[tip], P[tip + 1]); back(4, 0, ROD_N); ctx.fill();
+  ctx.fillStyle = ROD_UNDER;                                               // (shaded under, from a little below the middle)
+  ctx.beginPath(); ctx.moveTo(lerp(P[0], P[4], 0.25), lerp(P[1], P[5], 0.25));
+  for (let i = 1; i <= ROD_N; i++) ctx.lineTo(lerp(P[i * 6], P[i * 6 + 4], 0.25), lerp(P[i * 6 + 1], P[i * 6 + 5], 0.25));
+  back(4, 0, ROD_N); ctx.fill();
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  if (px > 70) {
+    ctx.strokeStyle = ROD_SHINE; ctx.lineWidth = W0 * 0.32;                // (lit along its top, out to near the tip)
+    ctx.beginPath(); ctx.moveTo(lerp(P[12], P[14], 0.5), lerp(P[13], P[15], 0.5));
+    for (let i = 3; i <= ROD_N - 2; i++) ctx.lineTo(lerp(P[i * 6], P[i * 6 + 2], 0.5), lerp(P[i * 6 + 1], P[i * 6 + 3], 0.5));
+    ctx.stroke();
+    const k = Math.round(0.44 * ROD_N) * 6;                                // (the knot, a dark eye on its side)
+    ctx.fillStyle = ROD_KNOT; ctx.beginPath(); ctx.ellipse(lerp(P[k], P[k + 4], 0.2), lerp(P[k + 1], P[k + 5], 0.2), W0 * 0.42, W0 * 0.3, Math.atan2(P[k + 7] - P[k + 1], P[k + 6] - P[k]), 0, TAU); ctx.fill();
+    const j = Math.round(0.64 * ROD_N) * 6, ax = P[j + 6] - P[j], ay = P[j + 7] - P[j + 1], al = Math.hypot(ax, ay) || 1;   // (a twig cut short, pointing up the rod)
+    const bx = P[j + 2] - P[j], by = P[j + 3] - P[j + 1], bl = Math.hypot(bx, by) || 1, sx = (ax / al * 0.6 + bx / bl) * W0 * 1.6, sy = (ay / al * 0.6 + by / bl) * W0 * 1.6;
+    ctx.strokeStyle = ROD_BARK; ctx.lineWidth = W0 * 0.7;
+    ctx.beginPath(); ctx.moveTo(P[j], P[j + 1]); ctx.lineTo(P[j] + sx, P[j + 1] + sy); ctx.stroke();
+    ctx.fillStyle = ROD_SHINE; ctx.beginPath(); ctx.arc(P[j] + sx, P[j + 1] + sy, W0 * 0.32, 0, TAU); ctx.fill();   // (its pale cut end)
+    const g0 = 0, g1 = 2;                                                    // (the grip, from the butt to just past the mittens: twine)
+    ctx.fillStyle = ROD_TWINE;
+    ctx.beginPath(); ctx.moveTo(lerp(P[g0 * 6], P[g0 * 6 + 2], 1.08), lerp(P[g0 * 6 + 1], P[g0 * 6 + 3], 1.08));
+    for (let i = g0 + 1; i <= g1; i++) ctx.lineTo(lerp(P[i * 6], P[i * 6 + 2], 1.08), lerp(P[i * 6 + 1], P[i * 6 + 3], 1.08));
+    for (let i = g1; i >= g0; i--) ctx.lineTo(lerp(P[i * 6], P[i * 6 + 4], 1.08), lerp(P[i * 6 + 1], P[i * 6 + 5], 1.08));
+    ctx.fill();
+    ctx.strokeStyle = ROD_TURN; ctx.lineWidth = Math.max(0.5, W0 * 0.13);    // (its turns, slanting across)
+    const turns = 6;
+    ctx.beginPath();
+    for (let n = 0; n <= turns; n++) {
+      const u = g0 + (g1 - g0) * n / turns, i = Math.min(g1 - 1, u | 0), f = u - i, v = Math.min(g1, u + 0.22), i2 = Math.min(g1 - 1, v | 0), f2 = v - i2;
+      ctx.moveTo(lerp(P[i * 6 + 2], P[i * 6 + 8], f) * 1.15 - lerp(P[i * 6], P[i * 6 + 6], f) * 0.15, lerp(P[i * 6 + 3], P[i * 6 + 9], f) * 1.15 - lerp(P[i * 6 + 1], P[i * 6 + 7], f) * 0.15);
+      ctx.lineTo(lerp(P[i2 * 6 + 4], P[i2 * 6 + 10], f2) * 1.15 - lerp(P[i2 * 6], P[i2 * 6 + 6], f2) * 0.15, lerp(P[i2 * 6 + 5], P[i2 * 6 + 11], f2) * 1.15 - lerp(P[i2 * 6 + 1], P[i2 * 6 + 7], f2) * 0.15);
+    }
+    ctx.stroke();
+  }
+  const q = Math.round(0.84 * ROD_N) * 6, ang = Math.atan2(P[q + 7] - P[q + 1], P[q + 6] - P[q]), up = Math.atan2(P[q + 3] - P[q + 1], P[q + 2] - P[q]);
+  const lw = Math.max(2.4, px * 0.1);                                    // (the sprig: two leaves and a small one, off its top)
+  rodLeaf(P[q + 2], P[q + 3], lerp(ang, up, 0.45), lw);
+  rodLeaf(P[q + 2], P[q + 3], ang - (up - ang) * 0.35, lw * 0.8);
+  rodLeaf(P[tip - 6 + 2], P[tip - 6 + 3], lerp(ang, up, 0.6), lw * 0.55);
+}
+// One leaf, from its stalk at x, y pointing along a, l long: a fat oval point, lit on one half, a rib down it.
+function rodLeaf(x, y, a, l) {
+  const c = Math.cos(a), s = Math.sin(a), w = l * 0.36, pt = (u, v) => [x + c * u - s * v, y + s * u + c * v];
+  let [ax, ay] = pt(l, 0), [bx, by] = pt(l * 0.45, -w * 1.3), [dx, dy] = pt(l * 0.45, w * 1.3);
+  ctx.fillStyle = ROD_LEAF; ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(bx, by, ax, ay); ctx.quadraticCurveTo(dx, dy, x, y); ctx.fill();
+  ctx.fillStyle = ROD_LEAF_LIT; ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(bx, by, ax, ay); ctx.closePath(); ctx.fill();
+  if (l > 5) { ctx.strokeStyle = ROD_LEAF_RIB; ctx.lineWidth = Math.max(0.5, l * 0.05); ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(lerp(x, ax, 0.85), lerp(y, ay, 0.85)); ctx.stroke(); }
 }
 // The float: a red-tipped quill painted once (quillArt), standing up out of the water; its reflection a dark sliver under it.
 const QUILL_W = 14, QUILL_H = 26;          // its painting, in CSS px at 2x (drawn at the size the forager's px asks)
@@ -10351,6 +10482,21 @@ function tendCam(dt) {
   if (Math.abs(goal - c.k) < 0.003) c.k = goal;
   return c.k;
 }
+// Fishing: the camera leans over toward the float while the line's out, so the forager and the float share the screen, and
+// eases in a little while a fish is brought in (FISH_CAM_IN, by its share of the zoom: one zoomed meanwhile keeps it).
+const fishShow = { k: 0, r: 0, x: -0, y: -0 };
+function fishCam(dt) {
+  const c = fishShow, on = !!angle.stage && angle.world === world, a = 1 - Math.exp(-dt / COOK_EASE);
+  if (on) { c.x = angle.x; c.y = angle.y; }
+  const goal = on ? 1 : 0, rGoal = on && angle.stage === 'reel' ? 1 : 0;
+  if (c.k !== goal) { c.k += (goal - c.k) * a; if (Math.abs(goal - c.k) < 0.003) c.k = goal; }
+  if (c.r !== rGoal) {
+    const was = 1 + FISH_CAM_IN * c.r;
+    c.r += (rGoal - c.r) * a * 0.6; if (Math.abs(rGoal - c.r) < 0.003) c.r = rGoal;
+    cam.zoom = cam.zoom / was * (1 + FISH_CAM_IN * c.r);
+  }
+  return c.k;
+}
 const cookShow = { k: 0, F: null, sx: 0, sy: 0, f: 1 };
 function cookCam(dt) {
   const c = cookShow, on = cooking();
@@ -11281,7 +11427,8 @@ function findPageHTML(p, have) {
     body = (g.text ? `<p class="say">${esc(g.text)}</p>` : '')
       + `<div class="facts">${n ? `<span class="chip warm">${n} in the satchel</span>` : ''}`
       + (!food ? '<span class="chip">Not for eating</span>' : g.raw === false ? '<span class="chip">Cook it first</span>' : '<span class="chip">Good raw</span>')
-      + (food ? `<span class="chip fills" title="How much it fills you raw">Fills <b>${'<i class="on"></i>'.repeat(fill)}${'<i></i>'.repeat(BOOK_PIPS - fill)}</b></span>` : '') + '</div>'
+      + (food ? `<span class="chip fills" title="How much it fills you raw">Fills <b>${'<i class="on"></i>'.repeat(fill)}${'<i></i>'.repeat(BOOK_PIPS - fill)}</b></span>` : '')
+      + (world && world.forager.fishBest[p.g] ? `<span class="chip warm" title="The biggest you've landed">Biggest <b>${gramsSaid(world.forager.fishBest[p.g])}</b></span>` : '') + '</div>'
       + (g.where ? `<h4>Where to find it</h4><p class="hint">${esc(g.where)}</p>` : '');
     const uses = findUses(p.g);
     if (uses) body += `<h4>What it goes into</h4><ul class="needs">${uses}</ul>`;
@@ -19454,13 +19601,14 @@ function heardLine(m, now) {
   if (!p) return;
   const L = p.line, x = +m.x || 0, y = +m.y || 0;
   L.world = world; L.view = clamp(m.v | 0, 0, 2); L.flip = !!m.fl;
-  if (m.s === 'cast') { Object.assign(L, { stage: 'cast', t: 0, x, y, nibAt: -1e9 }); hear('angle', p.x, p.y, { what: 'cast' }); return; }
+  if (m.s === 'cast') { Object.assign(L, { stage: 'cast', t: 0, x, y, nibAt: -1e9, calm: 1e9 }); hear('angle', p.x, p.y, { what: 'cast' }); return; }
   if (!L.stage) return;                                    // (out of step: its next cast puts it right)
   if (m.s === 'wait' || m.s === 'bite' || m.s === 'reel') {
     if (L.stage === 'cast' && m.s === 'wait') { hear('angle', x, y, { what: 'float' }); if (splashes.length < 12 && visible(...toScreen(x, y), 40)) splashes.push({ x, y, size: forPx() / cam.zoom * 0.5, t0: now }); }
     if (m.s === 'bite') hear('angle', x, y, { what: 'bite' });
     if (m.s === 'reel') hear('angle', x, y, { what: 'creak', v: 0.8 });
     L.stage = m.s; L.x = x; L.y = y; if (L.t < CAST_MS) L.t = CAST_MS;
+    if (L.calm > L.t) L.calm = L.t;                        // (settled: its sit counts from here, fishSat)
   } else if (m.s === 'nib') { L.nibAt = L.t; hear('angle', x, y, { what: 'nibble' }); }
   else {                                                   // ('in', 'away', 'land')
     if (m.s === 'away') hear('angle', x, y, { what: 'away' });
@@ -19476,7 +19624,7 @@ function heardLine(m, now) {
 function peerLineFrame(p, ms, now) {
   const L = p.line;
   if (ui.speed > 0) L.t += Math.min(ms, 50);
-  if (L.stage === 'cast' && L.t >= CAST_MS) L.stage = 'wait';   // (down on the water, its 'wait' late or lost)
+  if (L.stage === 'cast' && L.t >= CAST_MS) { L.stage = 'wait'; L.calm = L.t; }   // (down on the water, its 'wait' late or lost)
   if (L.stage === 'reel') { L.reel.m = 0.5 + 0.2 * Math.sin(now / 900); L.reel.fy = 0.5 + 0.3 * Math.sin(now / 430); L.reel.p = 0.4; }
 }
 // A friend dashed (sim.js foragerJump): from where it took off, the way and pace it went, played here as its own sim
@@ -19838,10 +19986,10 @@ function peerItems(items, now, z) {
     if (furWorker && p.emote >= 0 && p.sizedEmote !== P) { p.sizedEmote = P; for (const q of Fur.FORAGER_EMOTES) furReady(FORAGER_ARTS[Fur.emoteArt(p.snowArt, p.outfit, q)], P); }
     const fishPose = pose < 0 ? anglePose(now, p.line, p.blinkAt) : -1;
     if (fishPose >= 0) { if (now - p.blinkAt > 4000) p.blinkAt = now - Math.random() * 1500; pose = 0; }
-    if (furWorker && fishPose >= 0 && p.sizedFish !== P) { p.sizedFish = P; for (let vp = 0; vp < 12; vp++) furReady(FORAGER_ARTS[Fur.fishArt(p.snowArt, p.outfit, vp)], P); }
+    if (furWorker && fishPose >= 0 && p.sizedFish !== P) { p.sizedFish = P; for (let vp = 0; vp < FISH_VPS; vp++) furReady(FORAGER_ARTS[Fur.fishArt(p.snowArt, p.outfit, vp)], P); furReady(FORAGER_ARTS[Fur.MITT_ART], P); }
     if (furWorker && carry && p.sizedCarry !== P) { p.sizedCarry = P; for (let v = 0; v < 3; v++) for (const q of set === 2 ? FORAGER_CHILLY : FORAGER_POSES) furReady(FORAGER_ARTS[Fur.carryArt(p.snowArt, p.outfit, (v << 5) + q)], P); furReady(FORAGER_ARTS[Fur.MITT_ART], P); }
     const carried = carry && emo < 0 && pose < 32;
-    const fvp = (Math.min(p.view, 2) << 2) + fishPose;
+    const fvp = fishVp(p.view, fishPose);
     const want = FORAGER_ARTS[emo >= 0 && p.stage < 4 ? Fur.emoteArt(p.snowArt, p.outfit, emo) : carried ? Fur.carryArt(p.snowArt, p.outfit, poseKey(p.view, pose))
       : fishPose >= 0 ? Fur.fishArt(p.snowArt, p.outfit, fvp)
       : at + (p.kneel >= 0 && p.stage < 4 ? KNEEL_AT + pose : poseKey(p.view, pose))];
@@ -22017,6 +22165,8 @@ function leadCam(dt) {
   let tx = p.x + fg.lx + sx + cx, ty = p.y - CAM_FEET * forPx() / cam.zoom + fg.ly + sy + cy - INTRO_RISE * up;
   const k3 = FIRE_COOK ? tendCam(dt) : 0, T = tendShow.F;   // (seeing to a fire: it in the middle too)
   if (k3 && world.fires.includes(T)) { tx += (T.x - tx) * k3; ty += (T.y - ty) * k3; }
+  const k4 = fishCam(dt);                                  // (fishing: leaning over to the float)
+  if (k4) { tx += (fishShow.x - p.x) * FISH_CAM_LEAN * k4; ty += (fishShow.y - p.y) * FISH_CAM_LEAN * k4; }
   if (k2 && (FIRE_COOK || kw.fx === kw.fx)) {                            // cooking: the fire and the forager by it where the window leaves room (kw.fx, kw.fy)
     if (FIRE_COOK) {                                      // (at the fire itself: the fire in the middle of the screen, or as high as kw.fy has it: over the sheet, over the bar)
       const up = cookUi.lay === 'foot' ? 0 : (kw.fy - vh / 2) / cam.zoom;

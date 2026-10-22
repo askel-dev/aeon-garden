@@ -5596,6 +5596,7 @@ const BRUSH_NEAR = 2.5;                 // tiles about it it looks for brush in,
 // hopAim: the way that kept press was aimed (radians).
 // kit: what it has made (kitOf, shapeVessel), kept at camp, never in the satchel. rod: 1 once it has made a fishing rod
 // (recipes.js CARRIED), carried for good; the fishing itself is game.js's, and what it lands it takes here (takeFish).
+// fishBest: the biggest of each kind it has landed, { roach: grams } (game.js landFish; a kind not yet landed isn't in it).
 // hand: the dish it carries in its hand (a dish's name, '' for none): one at most, and lost with the satchel. handHeat: how hot
 // it still is (1 off the fire, 0 cold: HAND_COOL), handFull: how much of it is left (1, down to HAND_LEAST sprinting with it).
 const SLOTS = 8, STACK = 10;            // the satchel's slots, and how many of a kind one holds (by default)
@@ -5612,7 +5613,7 @@ function foragerOf(x, y) {
     warmth: -0, wet: -0, stamina: -0, feel: -0, winded: false, down: -1, stumble: 0, homeX: x, homeY: y, tummy: -0, warmIn: 0, health: -0,
     jumpT: 0, jz: -0, jumpV: -0, jumpSpeed: -0, jumpFX: -0, jumpFY: -0, jumpAt: 0,
     hop: -0, hopBuf: 0, hopWin: 0, landTick: 0, hopAim: -0,
-    hand: '', handHeat: -0, handFull: -0, rest: 0, xp: bySkill(-0), lv: bySkill(0), kit: kitOf(), rod: 0 };
+    hand: '', handHeat: -0, handFull: -0, rest: 0, xp: bySkill(-0), lv: bySkill(0), kit: kitOf(), rod: 0, fishBest: {} };
   f.warmth = 1; f.stamina = 1; f.tummy = 1; f.health = 1;   // (after: they start as fractions, so the layout never changes; a kept one from before the tummy starts full)
   return f;
 }
