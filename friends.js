@@ -30,6 +30,19 @@ let db = null, h = null, timer = 0, often = false, starting = null, channel = nu
 let mySnap = null, oldSql = false;        // a picture of my meadow for the next beat; the SQL from before pictures
 const SNAP_OK = /^data:image\/jpeg;base64,[A-Za-z0-9+/]+=*$/;
 const pics = new Map();                   // friends' meadow pictures by id: { at (their snap_at), url }
+const CACHE = 'aeon-garden-friend-pics';  // in localStorage: their pictures as last fetched { id: { at, snap } }, so an offline friend keeps a face
+let cache = {}, fetched = false;
+try { cache = JSON.parse(localStorage.getItem(CACHE) || '{}') || {}; } catch (e) { cache = {}; }
+const saveCache = () => { try { localStorage.setItem(CACHE, JSON.stringify(cache)); } catch (e) { /* full or blocked: the faces just aren't kept */ } };
+const blobOf = snap => {
+  const bytes = atob(snap.slice(snap.indexOf(',') + 1)), b = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) b[i] = bytes.charCodeAt(i);
+  return URL.createObjectURL(new Blob([b], { type: 'image/jpeg' }));   // (a blob's address: nothing of theirs goes into the page as text)
+};
+for (const id in cache) {
+  const c = cache[id];
+  if (c && SNAP_OK.test(c.snap || '')) pics.set(id, { at: c.at, url: blobOf(c.snap) });
+}
 const told = new Set();                   // invites heard (Realtime and the catch-up read may both bring one)
 
 const load = () => new Promise((ok, no) => {
@@ -79,7 +92,7 @@ Friends.beat = async () => {
     }
     Friends.list = must(r) || [];
     if (mySnap === snap) mySnap = null;
-    if (often) await fetchPics().catch(() => {});      // (the pictures can wait for the next beat)
+    if (often || !fetched) { fetched = true; await fetchPics().catch(() => {}); }   // (the pictures can wait for the next beat; once at the start so they're kept)
     h.changed(Friends.list);
   } catch (e) { /* the network: next beat */ }
   tick();
@@ -88,15 +101,17 @@ Friends.beat = async () => {
 async function fetchPics() {
   const ids = Friends.list.filter(f => f.snap_at && pics.get(f.id)?.at !== f.snap_at).map(f => f.id);
   if (!ids.length) return;
+  let kept = false;
   for (const row of must(await db.rpc('friend_snaps', { ids })) || []) {
     const f = Friends.list.find(x => x.id === row.id);
     if (!f || !SNAP_OK.test(row.snap || '')) continue;
-    const bytes = atob(row.snap.slice(row.snap.indexOf(',') + 1)), b = new Uint8Array(bytes.length);
-    for (let i = 0; i < bytes.length; i++) b[i] = bytes.charCodeAt(i);
     const was = pics.get(row.id);
     if (was) URL.revokeObjectURL(was.url);
-    pics.set(row.id, { at: f.snap_at, url: URL.createObjectURL(new Blob([b], { type: 'image/jpeg' })) });   // (a blob's address: nothing of theirs goes into the page as text)
+    pics.set(row.id, { at: f.snap_at, url: blobOf(row.snap) });
+    cache[row.id] = { at: f.snap_at, snap: row.snap };
+    kept = true;
   }
+  if (kept) saveCache();
 }
 Friends.snap = url => { mySnap = url; };
 Friends.pic = id => pics.get(id)?.url || '';
