@@ -58,9 +58,15 @@ const INGREDIENTS = {
   strawberry:  { name: 'Wild strawberries',   stack: 20, tags: ['fruit', 'berry'], fill: 1,   dries: 'driedberry', icon: '🍓', text: 'Tiny, and sweeter than any from a garden.', where: 'Summer, along the edges of the woods.' },
   elderflower: { name: 'Elderflower',         tags: ['flower'],         fill: 0.5, icon: '💮', text: 'Creamy flat heads that smell of summer.', where: 'Late spring into summer, on the elders by the water and at the woods\' edge.' },
   rosehip:     { name: 'Rosehips',            tags: ['fruit'],          fill: 0.5, icon: '🌹', raw: false, text: 'Red and bright in the cold. Full of hairs: cook them first.', where: 'Late autumn and winter, on the wild roses in the scrub.' },
+  // Caught with the rod, from the bank (game.js fishing; FISH below: where and when each bites, and how it moves on the line).
+  roach:       { name: 'Roach',               tags: ['fish'],           fill: 1.5, icon: '🐟', raw: false, text: 'Small and silver, with red eyes: the everyday fish.', where: 'Any water that lasts the year, all year. Cast from the bank with a rod.' },
+  perch:       { name: 'Perch',               tags: ['fish'],           fill: 2,   dries: 'driedfish', icon: '🐠', raw: false, text: 'Striped green and gold, with a spiny fin up its back.', where: 'Deep still water, spring to autumn.' },
+  trout:       { name: 'Brown trout',         tags: ['fish'],           fill: 2.5, dries: 'driedfish', icon: '🐡', raw: false, text: 'Speckled red and black, and strong in the current. The prize.', where: 'Where the water runs, in spring and summer, best at dawn.' },
+  eel:         { name: 'Eel',                 tags: ['fish'],           fill: 3,   icon: '🐍', raw: false, text: 'Long, dark and slippery, and it pulls like a rope.', where: 'Deep still water, on summer nights.' },
   // Dried on the camp's rack (`dries` above): lighter, so a slot holds more, and sweeter or deeper than fresh.
   driedshroom: { name: 'Dried mushrooms',     stack: 30, tags: ['mushroom'],       fill: 1,   icon: '🍄', dried: true, text: 'Shrivelled dark and leathery, and they smell twice as much of mushroom as they did.', where: 'Hang ceps, chanterelles, field or oyster mushrooms on the drying rack, in dry weather.' },
   applering:   { name: 'Dried apple rings',   stack: 30, tags: ['fruit'],          fill: 1,   icon: '🍎', dried: true, text: 'Chewy and sweet, curling at the edges like old leather.', where: 'Hang apples on the drying rack, in dry weather.' },
+  driedfish:   { name: 'Dried fish',          stack: 30, tags: ['fish'],           fill: 1.5, icon: '🐟', dried: true, text: 'Split, salted with ash and dried stiff in the wind. Winter\'s fish.', where: 'Hang perch or trout on the drying rack, in dry weather.' },
   driedberry:  { name: 'Dried berries',       stack: 40, tags: ['fruit', 'berry'], fill: 1,   icon: '🫐', dried: true, text: 'Wrinkled, dark and tart-sweet: summer kept for the cold.', where: 'Hang cherries, blackberries or wild strawberries on the drying rack, in dry weather.' },
   // What lies on the ground for a fire: not food. 'tinder' catches the spark, 'fuel' keeps it going.
   stick:       { name: 'Sticks',              stack: 20, tags: ['fuel'],           fill: 0,   icon: '🪵', raw: false, text: 'Something to keep a fire going.', where: 'Under the trees, all year. More come down in a storm.' },
@@ -314,6 +320,62 @@ const RECIPES = [
     warm: true,
     text: "Autumn after rain: a filling, warm main course built around the cook's favourite mushroom.",
   },
+  // The fish (PLAN.md stage 10): caught with the rod, any of them where a dish says 'fish'.
+  {
+    name: 'Roast fish on a stick',
+    vessel: 'stick',
+    time: 35,
+    icon: '🍢',
+    needs: ['fish'],
+    known: true,
+    warm: true,
+    text: 'Threaded through from the mouth and turned over the coals till the skin blisters and crackles.',
+  },
+  {
+    name: 'Trout with wild garlic',
+    vessel: 'pan',
+    time: 40,
+    icon: '🍳',
+    needs: ['trout', 'garlic'],
+    warm: true,
+    text: 'The prize of the brook, fried whole with the leaves wilting round it.',
+  },
+  {
+    name: 'Fish and sorrel on a hot stone',
+    vessel: 'stone',
+    time: 45,
+    icon: '🐟',
+    needs: ['fish', 'sorrel'],
+    warm: true,
+    text: 'Laid on the stone in a bed of sorrel, which melts into a sharp green sauce.',
+  },
+  {
+    name: 'Fish soup',
+    vessel: 'pot',
+    time: 80,
+    icon: '🥣',
+    needs: ['fish', 'fish', 'nettle', 'greens'],
+    warm: true,
+    text: 'Two fish and a fistful of green, simmered till it all falls off the bone.',
+  },
+  {
+    name: 'Eel and mushroom stew',
+    vessel: 'pot',
+    time: 100,
+    icon: '🍲',
+    needs: ['eel', 'mushroom', 'mushroom', 'greens'],
+    warm: true,
+    text: 'Dark, rich and slow: the best thing to come out of the pond on a summer night.',
+  },
+  {
+    name: 'Dried fish and hazelnuts',
+    vessel: 'bowl',
+    time: 15,
+    icon: '🥜',
+    eats: 'hand',
+    needs: ['driedfish', 'hazelnut'],
+    text: 'Cold trail food: chewy, salty and sweet. A pocketful lasts a long walk.',
+  },
 ];
 
 // What the forager builds, from the make button by the satchel (game.js renderBuild), and what each takes out of the
@@ -326,7 +388,8 @@ const RECIPES = [
 //   where           where it may go: 'anywhere' (left out), or 'camp' (inside the camp's ring)
 //   after           when it's on offer: left out at once, 'camp' once there's a camp, 'together' while friends are
 //                   here, or a Cooking level (2)
-//   makes           an ingredient's id: made at once into the satchel, nothing placed (the rope)
+//   makes           an ingredient's id: made at once into the satchel, nothing placed (the rope); or a thing the forager
+//                   carries (CARRIED: the rod), made once and kept with it, never in a slot
 //   text            a line for when you look at it
 const BUILDS = {
   campfire: {
@@ -360,6 +423,12 @@ const BUILDS = {
     makes: 'rope',
     text: 'Dry grass twisted and plied into a rope, to tie to a friend and lead them about.',
   },
+  rod: {
+    name: 'Fishing rod',
+    needs: { stick: 2, rope: 1 },
+    makes: 'rod',
+    text: 'Two sticks lashed end to end, a line of the rope\'s grass, and a bramble thorn for the hook.',
+  },
   rack: {
     name: 'Drying rack',
     needs: { stick: 8, drygrass: 3, birchbark: 1 },
@@ -374,6 +443,36 @@ const BUILDS = {
     text: 'A sloping roof of poles, thatch and birch bark, with a bed of dry grass under it, out of the rain.',
   },
 };
+
+// What the forager makes and carries (a build's `makes`): one each, kept with it for good, never in a satchel slot (sim.js f.rod).
+const CARRIED = {
+  rod: { name: 'Fishing rod', icon: '🎣', text: 'Tap the water from the bank to cast.' },
+};
+
+// The fish that bite on the rod (game.js fishing). They aren't kinds in the sim: sim.js keeps one w.fish, how many are in
+// each tile of water, and which bites is picked at the bite, by where the float lies and when (game.js fishKind). Each is
+// an ingredient above, tagged 'fish'. To add one, copy a block.
+//   water           where it bites: 'still' (no current), 'current' (where the water runs), or 'any'
+//   deep            true: only over deep water
+//   seasons         the seasons it bites in: 0 spring, 1 summer, 2 autumn, 3 winter
+//   night           true: only at night; left out, by day and night
+//   dawn            how much likelier it is at dawn and dusk (left out: 1, no likelier)
+//   odds            how often it's the one, next to the others that could bite there (1 the usual)
+//   prize           true: a good angler catches it more often (game.js PRIZE_FROM: the fishing level it starts at)
+// and how it moves in the bar while it's brought in (the bar 1 tall, 0 at its foot):
+//   dart            how far one dart takes it, at most
+//   pull            how quickly it gets there (1 a slow drift, 4 a flash)
+//   idle            seconds it rests between darts, [least, most]
+//   low             the lowest it goes in the bar (above the zone lying at the foot: one left alone never catches it)
+//   sink            how hard it pulls the zone down while it's on the line (bars a second²; 0 none): a long hold
+//   wriggle         how often a sudden wriggle comes (a second; 0 none)
+const FISH = {
+  roach: { water: 'any', seasons: [0, 1, 2, 3], odds: 3, prize: false, dart: 0.3, pull: 1.2, idle: [1.4, 3], low: 0.4, sink: 0, wriggle: 0 },
+  perch: { water: 'still', deep: true, seasons: [0, 1, 2], odds: 2, prize: true, dart: 0.4, pull: 2.6, idle: [0.4, 1.1], low: 0.35, sink: 0, wriggle: 0 },
+  trout: { water: 'current', seasons: [0, 1], dawn: 2.5, odds: 3, prize: true, dart: 0.75, pull: 3.4, idle: [0.7, 1.8], low: 0.35, sink: 0, wriggle: 0 },
+  eel:   { water: 'still', deep: true, seasons: [1], night: true, odds: 6, prize: false, dart: 0.2, pull: 1.4, idle: [0.5, 1.2], low: 0.45, sink: 1.2, wriggle: 0.35 },
+};
+const FISH_KEYS = ['water', 'deep', 'seasons', 'night', 'dawn', 'odds', 'prize', 'dart', 'pull', 'idle', 'low', 'sink', 'wriggle'];
 
 // The camp's cosy (PLAN.md stage 8): every point is a deed, earned once and never lost. `w.camp.deeds` keeps their ids in the
 // order they were earned and `w.camp.cosy` is their points summed (sim.js countCosy). `from` is the camp level at which a deed
@@ -597,13 +696,25 @@ function checkRecipes() {
     for (const k of Object.keys(b)) if (!BUILD_KEYS.includes(k)) problems.push(`${who} has '${k}', which nothing reads (a typo?).`);
     if (b.where != null && b.where !== 'camp' && b.where !== 'anywhere') problems.push(`${who} has where: '${b.where}', but it's 'camp' or 'anywhere'.`);
     if (b.after != null && b.after !== 'camp' && b.after !== 'together' && !(typeof b.after === 'number' && b.after >= 0 && b.after === Math.floor(b.after))) problems.push(`${who} has after: ${JSON.stringify(b.after)}, but it's 'camp', 'together' or a Cooking level (2).`);
-    if (b.makes != null && !INGREDIENTS[b.makes]) problems.push(`${who} makes '${b.makes}', which is no ingredient.`);
+    if (b.makes != null && !INGREDIENTS[b.makes] && !CARRIED[b.makes]) problems.push(`${who} makes '${b.makes}', which is no ingredient (or carried thing).`);
     if (!b.needs || typeof b.needs !== 'object' || Array.isArray(b.needs)) { problems.push(`${who} needs what it takes: needs: { pebble: 6, stick: 5 }.`); continue; }
     for (const [word, n] of Object.entries(b.needs)) {
       if (!INGREDIENTS[word] && !isTag(word)) problems.push(`${who} needs '${word}', which is no ingredient or tag.`);
       if (!(n >= 1) || n !== Math.floor(n)) problems.push(`${who} needs ${n} of '${word}': it wants a whole number, 1 or more.`);
     }
   }
+  for (const [id, k] of Object.entries(FISH)) {
+    const who = `The fish '${id}'`;
+    if (!INGREDIENTS[id] || !INGREDIENTS[id].tags.includes('fish')) problems.push(`${who} is no ingredient tagged 'fish'.`);
+    for (const key of Object.keys(k)) if (!FISH_KEYS.includes(key)) problems.push(`${who} has '${key}', which nothing reads (a typo?).`);
+    if (!['still', 'current', 'any'].includes(k.water)) problems.push(`${who} has water: '${k.water}', but it's 'still', 'current' or 'any'.`);
+    if (!Array.isArray(k.seasons) || !k.seasons.length || k.seasons.some(n => ![0, 1, 2, 3].includes(n))) problems.push(`${who} wants seasons: a list of 0 to 3.`);
+    if (!Array.isArray(k.idle) || k.idle.length !== 2 || !(k.idle[0] <= k.idle[1])) problems.push(`${who} wants idle: [least, most] seconds.`);
+    for (const key of ['odds', 'dart', 'pull']) if (!(k[key] > 0)) problems.push(`${who} wants ${key}: a number over 0.`);
+    if (!(k.low >= 0 && k.low < 0.9)) problems.push(`${who} wants low: the lowest it goes in the bar, 0 to 0.9.`);
+    if (!(k.sink >= 0)) problems.push(`${who} wants sink: 0 or more.`);
+  }
+  for (const [id, g] of Object.entries(INGREDIENTS)) if (g.tags.includes('fish') && !g.dried && !FISH[id]) problems.push(`The fish '${id}' has no block in FISH, so nothing bites as one.`);
   for (const [id, c] of Object.entries(CRAFTS)) {
     const who = `The craft '${id}'`;
     if (!VESSELS[id]) problems.push(`${who} isn't a vessel (${Object.keys(VESSELS).join(', ')}).`);
@@ -699,7 +810,7 @@ const takes = word => (INGREDIENTS[word] ? [word] : Object.keys(INGREDIENTS).fil
 
 function stackOf(id) { const i = INGREDIENTS[id]; return (i && i.stack) || 0; }
 function keepOf(id) { const i = INGREDIENTS[id]; return (i && i.keep) || 0; }
-const Recipes = { stackOf, keepOf, STATIONS, VESSELS, vesselOf, craftLevel, whereOf, INGREDIENTS, RECIPES, BUILDS, CRAFTS, DEEDS, CAMP_LEVELS, MESS, cook, fits, fillOf, timeOf, recipeOf, takes, foodOf, eatsOf, EAT_WAYS, thingsFor, answers, checkRecipes, checkDeeds };
+const Recipes = { stackOf, keepOf, STATIONS, VESSELS, vesselOf, craftLevel, whereOf, INGREDIENTS, RECIPES, BUILDS, CARRIED, FISH, CRAFTS, DEEDS, CAMP_LEVELS, MESS, cook, fits, fillOf, timeOf, recipeOf, takes, foodOf, eatsOf, EAT_WAYS, thingsFor, answers, checkRecipes, checkDeeds };
 if (typeof module !== 'undefined') module.exports = Recipes;
 else {
   window.Recipes = Recipes;

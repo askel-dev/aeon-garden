@@ -25,7 +25,7 @@ that in the lasting shallows), breed from spring into summer and spill over next
 it's flooded; there's no room for them there, and those still on it as it drains are stranded. Winter thins them a little
 (`FISH_COLD`). They eat tadpoles: on top of `TADPOLE_LOSS`, a tile loses `TADPOLE_FISH` a day at `FISH_K` fish, so the
 frogs' gamble is the flood pools (no fish, but they dry up) against the lasting shallows. They're there to be caught: the
-otters take `TAKES` of a fish a catch (`takeFish`), and one day the player.
+otters take `TAKES` of a fish a catch (`takeFish`), and so does the forager's rod (fishing.md).
 
 Otters (`otterTick`): a pair or two along the water, swimmers (`swims: true`: `moveToward` lets them through deep water, `wade`
 makes them quicker in it, `roamable` keeps their wandering within `OTTER_SHORE` of the water). A female makes her holt in the

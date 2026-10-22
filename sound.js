@@ -391,6 +391,7 @@ const RULES = {
   hearth:  { gap: 0.5,  always: true, lift: 2 },   // and the cooking window (the pot settling on the fire)
   stone:   { gap: 0.3,  always: true, lift: 1.6 }, // the old stone answering
   munch:   { gap: 0.25, always: true, lift: 1.6, verb: 0.06 }, // the forager eating (a mouthful each: small bites come 0.5 s apart)
+  angle:   { gap: 0.03, always: true, lift: 1.8 }, // fishing (game.js): the cast, the float, nibbles, the bite, the reel, landed or got away
 };
 
 const STEP_SOFT = 0.6;          // the footsteps' level against the meadow's sounds: soft, they come a few times a second
@@ -956,6 +957,58 @@ const SOUNDS = {
     noise(o, t + 0.01, 0.08 + 0.06 * k, { from: 3200, to: 1800, q: 1, peak: 0.025 * k, attack: 0.006 });   // its spray
     const d0 = Math.floor(rand(3, 9)), n = 2 + Math.round(k * 1.5);
     for (let i = 0; i < n; i++) waterDrop(o, t + 0.12 + i * rand(0.05, 0.11) * (0.8 + 0.2 * k), d0 + pick([-2, -1, 1, 2, 3]), (0.045 - i * 0.006) * (0.7 + 0.3 * k));
+  },
+  // Fishing (game.js), by what: the rod swung and the line whirring out (cast); the float landing light on the water (float);
+  // a nibble at the bait, a tick and a plip (nibble); the bite, the float pulled under with a deep gloop and two bright notes
+  // (bite); the reel's wooden click, a few to a second while it's wound in (click, v: how hard); the line creaking taut as
+  // the fish pulls (creak, v); landed, a slap on the bank, the fish flopping and a happy run up (land); and got away, a
+  // splash and two soft notes falling (away).
+  angle(t, o0, { what = '', v = 1 }) {
+    const o = ac.createBiquadFilter(); o.type = 'lowpass'; o.frequency.value = 5200; o.Q.value = 0.5; o.connect(o0);
+    if (what === 'cast') {
+      whoosh(o, t, 0.16, 1.5);
+      noise(o, t + 0.12, 0.42, { from: 1800, to: 4200, q: 7, peak: 0.05, attack: 0.04 });   // the line paying out, zinging
+      noise(o, t + 0.12, 0.42, { from: 900, to: 2100, q: 5, peak: 0.03, attack: 0.04 });
+    } else if (what === 'float') {
+      bloop(o, t, rand(480, 560), 0.045, 0.07);
+      noise(o, t, 0.12, { from: 3000, to: 900, q: 0.7, peak: 0.05, type: 'lowpass', attack: 0.003 });
+      const d0 = Math.floor(rand(5, 8));
+      for (let i = 0; i < 2; i++) waterDrop(o, t + 0.1 + i * rand(0.07, 0.12), d0 + pick([1, 2]) - i, 0.03 - i * 0.01);
+    } else if (what === 'nibble') {
+      partial(o, rand(1700, 2000), t, 0.03, 0.002, 0.03, 'triangle');
+      waterDrop(o, t + 0.015, Math.floor(rand(6, 9)), 0.028);
+    } else if (what === 'bite') {
+      bloop(o, t, 150, 0.11, 0.2);
+      partial(o, 72, t, 0.14, 0.006, 0.2);
+      noise(o, t, 0.24, { from: 2400, to: 500, q: 0.6, peak: 0.12, type: 'lowpass', attack: 0.004 });
+      noise(o, t + 0.01, 0.16, { from: 3400, to: 1800, q: 1, peak: 0.04, attack: 0.006 });
+      kalimba(o, note(2, 1), t + 0.06, 0.3); kalimba(o, note(4, 1), t + 0.14, 0.34);   // (!)
+    } else if (what === 'click') {
+      const osc = ac.createOscillator(), g = ac.createGain(), f = rand(1150, 1300);
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(f, t); osc.frequency.exponentialRampToValueAtTime(f * 0.5, t + 0.025);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.05 * v, t + 0.002); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
+      osc.connect(g).connect(o); osc.start(t); osc.stop(t + 0.06);
+      noise(o, t, 0.02, { from: 4200, to: 2600, q: 2, peak: 0.03 * v, attack: 0.001 });
+    } else if (what === 'creak') {
+      noise(o, t, 0.34, { from: rand(420, 520), to: rand(760, 900), q: 9, peak: 0.07 * v, attack: 0.12 });
+      noise(o, t + 0.05, 0.26, { from: 1300, to: 1700, q: 6, peak: 0.025 * v, attack: 0.08 });
+    } else if (what === 'land') {
+      noise(o, t, 0.2, { from: 2200, to: 420, q: 0.6, peak: 0.14, type: 'lowpass', attack: 0.003 });   // the slap of it out of the water
+      for (const [d, k] of [[0.16, 1], [0.34, 0.75], [0.5, 0.5]]) {                       // flopping on the bank
+        const osc = ac.createOscillator(), g = ac.createGain(), at = t + d;
+        osc.frequency.setValueAtTime(190, at); osc.frequency.exponentialRampToValueAtTime(90, at + 0.06);
+        g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(0.12 * k, at + 0.003); g.gain.exponentialRampToValueAtTime(0.0001, at + 0.09);
+        osc.connect(g).connect(o); osc.start(at); osc.stop(at + 0.11);
+        noise(o, at, 0.06, { from: 1600, to: 600, q: 0.7, peak: 0.05 * k, type: 'lowpass', attack: 0.002 });
+      }
+      [0, 2, 4].forEach((d, i) => kalimba(o, note(d, 1), t + 0.12 + i * 0.1, 0.3 - i * 0.03));
+      bell(o, note(0, 1), t + 0.42, 0.25);
+    } else if (what === 'away') {
+      noise(o, t, 0.36, { from: 1800, to: 400, q: 0.7, peak: 0.12, type: 'lowpass', attack: 0.006 });
+      [0.1, 0.2].forEach(d => waterDrop(o, t + d, Math.floor(rand(4, 7)), 0.03));
+      marimba(o, note(2, 0), t + 0.18, 0.4); marimba(o, note(0, 0), t + 0.38, 0.36);
+    }
   },
   // The spoon going round the pot: the water swished round (a band of noise swelling and moving), now and then the wood
   // knocking softly on the iron.

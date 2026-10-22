@@ -972,7 +972,7 @@ Six to start, each painted to the dish bar (dish-painting.md; a sheet to Axel fi
 
 ### The skill
 `SKILLS.fishing` (practice: fish landed; one that got away counts a little): each level the catch zone grows
-(`zone: 0.06`) and the meter drains slower (`calm: 0.05`), and from level 3 a perch or trout comes a little more often.
+(`zone: 0.04`, not 0.06: at 0.06 just holding lands everything at the top) and the meter drains slower (`calm: 0.05`), and from level 3 a perch or trout comes a little more often.
 The "You" tab shows it with the others.
 
 ### How it looks and sounds
@@ -988,15 +988,15 @@ The "You" tab shows it with the others.
 
 ### Building it
 Each its own branch, played before the next:
-1. **The rod and the catch, plain.** The make strip's rod, `f.rod`, cast/wait/bite/strike, the bar with `FISH`'s four
+1. **The rod and the catch, plain** (built 2026-10-21; .claude/docs/fishing.md). The make strip's rod, `f.rod`, cast/wait/bite/strike, the bar with `FISH`'s four
    ways of moving, land, a placeholder float and the line, `fishKind`, `takeFish`, the four fish as ingredients (emoji
    for now), "Fish here", the dev panel's `garden.give('rod')`. Playable: can you catch one, does the bar feel good on a
    phone and a trackpad? (The bar's feel is the whole stage; tune it here, with Axel, before anything is painted.)
-2. **The look and sound.** The poses, the float, the bar painted properly, the fish paintings, the rises, every sound.
+2. **The look and sound** (built 2026-10-22, but for the sit on the bank). The poses, the float, the bar painted properly, the fish paintings, the rises, every sound.
    The polish bar is the cooking's.
-3. **The skill**, and the bar's numbers once it has been played a while.
-4. **The dishes**: the six recipes and their paintings, dried fish on the rack.
-5. **Friends** fishing together.
+3. **The skill** (built 2026-10-22; .claude/docs/fishing.md), and the bar's numbers once it has been played a while (still to do, by hand).
+4. **The dishes** (built 2026-10-22; the soup and stew take any greens): the six recipes and their paintings, dried fish on the rack.
+5. **Friends** fishing together (built 2026-10-22).
 6. Later: ice fishing, crayfish traps, pike.
 
 ### The sim and the keep

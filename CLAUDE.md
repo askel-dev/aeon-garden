@@ -46,6 +46,7 @@ working on (each has the game.js side and the sim.js side), and add new notes th
 - `plants.md`: mushrooms, greens, wild finds, brambles, rocks and flowers
 - `animals.md`: rabbits and foxes (sim and painting), the inspector
 - `water-life.md`: frogs, fish, otters
+- `fishing.md`: the rod, casting, the bite, the bar that brings a fish in, `FISH`
 - `crows-remains.md`: remains and crows
 - `bees.md`: bees, hives, swarms
 - `visitors.md`: the visitors (none come now)

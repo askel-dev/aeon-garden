@@ -3276,7 +3276,7 @@ function fishTick(w) {
   w.fishCount = total;
 }
 
-// n fish fewer about the tile x0, y0 (x0, y0 two tiles in from the edge).
+// n fish fewer about the tile x0, y0 (x0, y0 two tiles in from the edge): an otter's catch, or the forager's.
 function takeFish(w, x0, y0, n) {
   let near = 0;
   for (let y = y0 - 2; y <= y0 + 2; y++) for (let x = x0 - 2; x <= x0 + 2; x++) near += w.fish[y * W + x];
@@ -5594,7 +5594,8 @@ const BRUSH_NEAR = 2.5;                 // tiles about it it looks for brush in,
 // off (drawing its take-off once); hop: the momentum it has (chained dashes, 0 to 1), hopBuf: ticks a press while up is
 // kept for the landing, hopWin: ticks after landing a press still chains, landTick: the tick it last came down (0: never),
 // hopAim: the way that kept press was aimed (radians).
-// kit: what it has made (kitOf, shapeVessel), kept at camp, never in the satchel.
+// kit: what it has made (kitOf, shapeVessel), kept at camp, never in the satchel. rod: 1 once it has made a fishing rod
+// (recipes.js CARRIED), carried for good; the fishing itself is game.js's, and what it lands it takes here (takeFish).
 // hand: the dish it carries in its hand (a dish's name, '' for none): one at most, and lost with the satchel. handHeat: how hot
 // it still is (1 off the fire, 0 cold: HAND_COOL), handFull: how much of it is left (1, down to HAND_LEAST sprinting with it).
 const SLOTS = 8, STACK = 10;            // the satchel's slots, and how many of a kind one holds (by default)
@@ -5611,7 +5612,7 @@ function foragerOf(x, y) {
     warmth: -0, wet: -0, stamina: -0, feel: -0, winded: false, down: -1, stumble: 0, homeX: x, homeY: y, tummy: -0, warmIn: 0, health: -0,
     jumpT: 0, jz: -0, jumpV: -0, jumpSpeed: -0, jumpFX: -0, jumpFY: -0, jumpAt: 0,
     hop: -0, hopBuf: 0, hopWin: 0, landTick: 0, hopAim: -0,
-    hand: '', handHeat: -0, handFull: -0, rest: 0, xp: bySkill(-0), lv: bySkill(0), kit: kitOf() };
+    hand: '', handHeat: -0, handFull: -0, rest: 0, xp: bySkill(-0), lv: bySkill(0), kit: kitOf(), rod: 0 };
   f.warmth = 1; f.stamina = 1; f.tummy = 1; f.health = 1;   // (after: they start as fractions, so the layout never changes; a kept one from before the tummy starts full)
   return f;
 }
@@ -6398,6 +6399,10 @@ const SKILLS = {
   // counts a quarter, GROUND_PRACTICE, and what it dropped itself counts nothing). Each level it stoops and reaches 4%
   // quicker (game.js gatherFrame) and a pick of greens, berries, fruit, nuts or honey gives 8% more on the average (yieldOf).
   gathering: { name: 'Gathering', per: 6, perks: { quick: 0.04, yield: 0.08 }, line: 'Your hands are quicker, and pick more' },
+  // Fish landed (game.js landFish; one that gets away in the bar counts a little, FISH_MISS_PRACTICE). Each level the bar's
+  // catch zone is 4% taller and the meter drains 5% slower (game.js reelFrame), and from level 3 a perch or trout bites a
+  // little more often (fishKind, PRIZE_FROM).
+  fishing: { name: 'Fishing', per: 3, perks: { zone: 0.04, calm: 0.05 }, line: 'A wider catch, and the fish slip away slower' },
 };
 const GROUND_PRACTICE = 0.25;
 const GATHER_PRACTICE = 0.4;            // practice for each thing that goes in the satchel (a pick of three is 1.2)
@@ -8738,7 +8743,7 @@ const api = {
   TERRAIN, distanceToWater, distanceTo, fieldBloom, FIELD_GRASS, settleWater, riverPace, LOAD, HONEY,
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE, hollow,
   TREES, treeStage, treeAge, standing, bearing, inBloom, SEEDLING, SAPLING, GROWN, KIND_NAMES,
-  FROG_K, SPAWN_WORTH, FISH_K, FISH_EAT, CROW_SEATS, SHROOMS, SHROOM_KINDS, FINDS, FIND_KINDS, findSeason, eachPickable, greenStage, greenPicked, GREEN_SEASONS, brambleStage, RIPE_FROM, RIPE_TO,
+  FROG_K, SPAWN_WORTH, FISH_K, FISH_EAT, takeFish, fishRoom, CROW_SEATS, SHROOMS, SHROOM_KINDS, FINDS, FIND_KINDS, findSeason, eachPickable, greenStage, greenPicked, GREEN_SEASONS, brambleStage, RIPE_FROM, RIPE_TO,
   bagCount, spend, stow, feedForager, feedHand, holdDish, dropHand, hungerOf, HUNGRY, TUMMY, fireSpot, layFire, feedFire, fireRoom, lightable, lightFire, fireHeat, fireWarmth, CAMP_R, CAMP_FLAT, inCamp, campLevel, campR, earnDeed, countCosy, DEED_EVERY, BASKET_SLOTS, basketSpot, makeBasket, campSpot, seatSpot, makeSeat, seatNear, SEAT_HALF, SEAT_TILT, SEAT_OUT, rackSpot, makeRack, makeLean, RACK_SLOTS, RACK_KEEP, underLean, dryPace, driesTo, curledUp, CURL_TICKS, moveBetween, moveInto, putAway,
   torchSpot, placeTorch, relightTorch, torchUnder, TORCH_BURN, TORCH_WET, TORCH_MAX, TORCH_GAP, scorchFade,
   storeCount, storeRoom, storePut, storeTake, tidyStore, worldStores, storesAt, storesCount, storesRoom, storesTake, storesPut, STORE_NEAR,

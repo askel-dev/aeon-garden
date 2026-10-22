@@ -86,7 +86,8 @@ another dish. The "read only that section" rule below is about not copying anoth
 `roastShroomAt`, `halfShroomAt` (a mushroom cut in half; its last arg is the cut's colour, `FRIED` for fried),
 `capAt`, `leafAt(g, 's'|'d'|'g', ...)` (sorrel, dandelion, wild garlic leaves), `dandelionAt` (a flower head), `hipAt`
 (rosehip), `cherryAt`, `berryAt` (blackberry), `nettlePath`, `nettleTopAt`, `beechnutAt`, `beechHuskAt`,
-`hazelKernelAt`, `hazelShellAt`, `shardAt` (crushed hazelnut), `brittleNutAt`, `fritterAt`, `elderFritterAt`, `elderAt`
+`hazelKernelAt`, `hazelShellAt`, `cookedFishAt` (a whole fish cooked, its look a `FISHC_*`), `fsoupFlakeAt` (a flake of
+fish), `eelPieceAt`, `shardAt` (crushed hazelnut), `brittleNutAt`, `fritterAt`, `elderFritterAt`, `elderAt`
 (elderflower head), `strawberryAt`, `cressAt` (watercress), `rootPieceAt`. Each has a comment above it in dishes.js
 saying its arguments. Look one up with `grep -n "function cherryAt" -B2 dishes.js`.
 

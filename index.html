@@ -1769,6 +1769,42 @@
     color: #6b4a2a; background: #fbf3e0; box-shadow: inset 0 0 0 1px #d2b06a, 0 1px 0 #a8742a; }
   @media (pointer: coarse) { #what { bottom: calc(var(--bottom) + 164px); } }
   @media (max-height: 500px) { #what { bottom: calc(var(--bottom) + 82px); } }
+  /* Bringing a fish in (game.js reelShow, renderReel): a slim upright gauge by the forager in a brass frame, the water in
+     it going deep toward the foot with faint ripples, the fish moving up and down it, the pale glassy zone you lift by
+     holding, the meter in its brass-capped tube beside it, and a little wooden reel at its foot that winds while you hold.
+     Its fish, zone, meter and reel move by a transform alone. While it's up the whole screen is the button (#reel-hold):
+     the meadow's taps wait. */
+  #reel-hold { position: fixed; inset: 0; z-index: 60; touch-action: none; cursor: pointer; user-select: none; -webkit-user-select: none;
+    -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+  #reel { position: fixed; z-index: 61; left: 0; top: 0; display: grid; grid-template: 1fr auto / auto auto; gap: 5px 5px; box-sizing: border-box;
+    padding: 7px 7px 6px; border-radius: 16px; background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); pointer-events: none;
+    animation: reel-in 0.22s cubic-bezier(0.3, 1.4, 0.6, 1); }
+  @keyframes reel-in { from { opacity: 0; transform: scale(0.85); } }
+  #reel .reel-bar { position: relative; width: 36px; height: 100%; min-height: 0; border-radius: 11px; overflow: hidden;
+    background: repeating-linear-gradient(170deg, transparent 0 13px, rgba(255, 255, 255, 0.07) 13px 15px),
+      linear-gradient(#cfe6e4, #7fb0b6 30%, #4f8291 72%, #3c6676);
+    box-shadow: inset 0 0 0 2px #c0943f, inset 0 0 0 3px #8a6224, inset 0 4px 8px rgba(20, 30, 40, 0.35), 0 1px 0 rgba(255, 255, 255, 0.6); }
+  #reel .reel-bar::after { content: ''; position: absolute; inset: 3px; border-radius: 8px; pointer-events: none;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.22), transparent 32%, transparent 76%, rgba(10, 30, 40, 0.18)); }   /* (the glass) */
+  #reel .reel-zone { position: absolute; left: 4px; right: 4px; bottom: 0; border-radius: 8px; will-change: transform;
+    background: linear-gradient(90deg, rgba(255, 252, 236, 0.5), rgba(250, 244, 220, 0.3) 60%, rgba(255, 252, 236, 0.45));
+    box-shadow: inset 0 0 0 1.5px rgba(255, 252, 238, 0.9), 0 0 6px rgba(255, 250, 220, 0.35); transition: background 0.15s, box-shadow 0.15s; }
+  #reel.in .reel-zone { background: linear-gradient(90deg, rgba(222, 246, 196, 0.66), rgba(196, 232, 168, 0.45) 60%, rgba(222, 246, 196, 0.6));
+    box-shadow: inset 0 0 0 1.5px rgba(246, 255, 230, 0.95), 0 0 10px rgba(200, 245, 160, 0.55); }
+  #reel .reel-fish { position: absolute; left: 50%; bottom: 0; width: 32px; height: 32px; margin-left: -16px; will-change: transform; rotate: 16deg;
+    background-image: var(--items); background-repeat: no-repeat; background-size: calc(100% * var(--item-n, 13)) 100%;
+    filter: drop-shadow(0 1px 1px rgba(10, 30, 40, 0.35)); }
+  #reel .reel-meter { position: relative; width: 10px; height: 100%; border-radius: 6px; overflow: hidden; background: rgba(70, 50, 25, 0.2);
+    box-shadow: inset 0 0 0 1.5px #c0943f, inset 0 2px 3px rgba(60, 40, 20, 0.3); }
+  #reel .reel-meter i { position: absolute; inset: 2px; border-radius: 4px; background: linear-gradient(90deg, #f0b450, #d4882a); transform-origin: 50% 100%;
+    transform: scaleY(0.33); will-change: transform; transition: background 0.15s; }
+  #reel.in .reel-meter i { background: linear-gradient(90deg, #a6d466, #6f9e3a); }
+  #reel .reel-knob { grid-column: 1 / 3; justify-self: center; width: 24px; height: 24px; border-radius: 50%; position: relative; will-change: transform;
+    background: radial-gradient(circle at 38% 34%, #e7c27a, #b88638 55%, #84591f); box-shadow: inset 0 0 0 2px #7a5220, 0 1px 2px rgba(60, 40, 15, 0.35); }
+  #reel .reel-knob::before { content: ''; position: absolute; left: 50%; top: 50%; width: 8px; height: 8px; margin: -4px; border-radius: 50%;
+    background: radial-gradient(circle at 40% 35%, #f6e2b0, #b98a40); }   /* (the hub) */
+  #reel .reel-knob::after { content: ''; position: absolute; left: 50%; top: -3px; width: 6px; height: 9px; margin-left: -3px; border-radius: 3px;
+    background: linear-gradient(90deg, #8a5a2a, #6a4320); box-shadow: 0 0 0 1px #5a3818; }   /* (its handle) */
   /* A thing being dragged from the satchel owns the screen: the line goes till it's put down. */
   body:has(#satchel.dragging) #what { opacity: 0; }
   /* The stamina bar, centered over the satchel (renderVitals): shown only while it isn't full; ember-red and pulsing while winded. */
@@ -1941,6 +1977,8 @@
   <div class="vital" id="v-stam"><svg viewBox="0 0 12 12"><path d="M3.2 1h3.3v4.6l3 1.3c.9.4 1.5 1.1 1.5 2v.9H1.6v-1.2c.6-.2 1-.7 1.1-1.3z"/></svg><span class="bar"><i></i></span></div>
 </div>
 <div id="what" aria-hidden="true"><b></b><span></span><kbd></kbd></div>
+<div id="reel-hold" class="hidden" aria-hidden="true"></div>
+<div id="reel" class="hidden" aria-hidden="true"><div class="reel-bar"><i class="reel-zone"></i><i class="reel-fish"></i></div><div class="reel-meter"><i></i></div><i class="reel-knob"></i></div>
 <div id="me-box">
   <button id="me" data-act="me" data-tip="me" aria-label="Your forager: open the book at You">
     <svg viewBox="0 0 72 72" aria-hidden="true"><circle class="rim" cx="36" cy="36" r="34.5"/><circle class="track" cx="36" cy="36" r="30"/><circle class="hp" cx="36" cy="36" r="30" pathLength="100" stroke-dasharray="100 100"/></svg>

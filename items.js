@@ -1051,6 +1051,218 @@ function paintDriedBerry(g) {
   }
 }
 
+// ------------------------------------------------------------------ the fish
+
+// A fish lying on its side, head to the left, as it's held up off the bank: its body along a spine from the snout (t 0) to
+// the root of its tail (t 1), the back toward -y. up(t) and down(t) are how far the back and the belly are from the spine
+// there; spinePath goes round them, along the back to the tail and back along the belly. Fins are thin and see-through,
+// with their rays; the body darker along the back, pale and shining at the belly, lit from the top left.
+function spineAt(spine, t, h) {
+  const [x, y] = spine(t), [x2, y2] = spine(Math.min(1, t + 0.01)), [x1, y1] = spine(Math.max(0, t - 0.01));
+  const nx = y2 - y1, ny = -(x2 - x1), d = Math.hypot(nx, ny) || 1;
+  return [x + nx / d * h, y + ny / d * h];
+}
+function spinePath(g, spine, up, down, N = 48) {
+  for (let i = 0; i <= N; i++) { const t = i / N, [x, y] = spineAt(spine, t, up(t)); i ? g.lineTo(x, y) : g.moveTo(x, y); }
+  for (let i = N; i >= 0; i--) { const t = i / N; g.lineTo(...spineAt(spine, t, -down(t))); }
+  g.closePath();
+}
+// The usual fish's outline: deepest a third of the way back, round at the snout, narrowing to the root of the tail (p).
+const fishShape = (H, p) => t => H * Math.pow(Math.sin(Math.PI * Math.pow(t, 0.62)), 0.75) + p * t * t * t;
+// A fin as a fan: from its root (x0, y0 to x1, y1 along the body) out to its edge through the points given, see-through,
+// darker at the root, with a ray from the root to each edge point.
+function fin(g, root, edge, rgb, a = 0.85) {
+  const [[x0, y0], [x1, y1]] = root, p = () => {
+    g.moveTo(x0, y0);
+    for (let i = 0; i < edge.length; i++) {
+      const [ex, ey] = edge[i], [px, py] = i ? edge[i - 1] : [x0, y0];
+      g.quadraticCurveTo((px + ex) / 2 + (ey - py) * 0.12, (py + ey) / 2 - (ex - px) * 0.12, ex, ey);
+    }
+    g.lineTo(x1, y1); g.closePath();
+  };
+  fillIn(g, rgba(rgb, a), p);
+  g.save(); g.beginPath(); p(); g.clip();
+  furGlow(g, tone(rgb, 0.6), 0.5, (x0 + x1) / 2, (y0 + y1) / 2, Math.hypot(x1 - x0, y1 - y0) * 0.6 + 0.04, Math.hypot(x1 - x0, y1 - y0) * 0.6 + 0.04);
+  strokeIn(g, rgba(tone(rgb, 0.62), 0.6), 0.012, () => {
+    for (let i = 0; i < edge.length; i++) { const k = edge.length > 1 ? i / (edge.length - 1) : 0.5; g.moveTo(x0 + (x1 - x0) * k, y0 + (y1 - y0) * k); g.lineTo(...edge[i]); }
+  });
+  g.restore();
+  strokeIn(g, rgba(tone(rgb, 1.25, 24), 0.4), 0.01, () => { g.moveTo(...edge[0]); for (const e of edge) g.lineTo(...e); });
+}
+// A forked tail at the end of the spine, turned with it: lobes reach out to ±T, the fork's notch at depth n (0 square).
+function tailFin(g, spine, p, len, T, n, rgb, a = 0.88) {
+  const [x, y] = spine(1), [xa, ya] = spine(0.98), ang = Math.atan2(y - ya, x - xa);
+  g.save(); g.translate(x, y); g.rotate(ang);
+  const P = () => {
+    g.moveTo(-0.03, -p); g.quadraticCurveTo(len * 0.4, -T * 0.55, len, -T);
+    g.quadraticCurveTo(len * (1 - n * 0.5), -T * 0.4, len * (1 - n), 0);
+    g.quadraticCurveTo(len * (1 - n * 0.5), T * 0.4, len, T);
+    g.quadraticCurveTo(len * 0.4, T * 0.55, -0.03, p); g.closePath();
+  };
+  fillIn(g, rgba(rgb, a), P);
+  g.save(); g.beginPath(); P(); g.clip();
+  furGlow(g, tone(rgb, 0.6), 0.55, 0, 0, len * 0.45, T * 0.7);
+  strokeIn(g, rgba(tone(rgb, 0.6), 0.55), 0.012, () => { for (let i = -5; i <= 5; i++) { const k = i / 5; g.moveTo(0, k * p * 0.8); g.lineTo(len * (1 - n * (1 - Math.abs(k))), k * T * 0.95); } });
+  g.restore();
+  g.restore();
+}
+// The body itself: shaded from the dark back (top) to the pale belly, a gleam along the upper flank, scales as rows of fine
+// arcs, the lateral line, the gill's curve and the eye. o.marks paints its own markings (bars, spots) clipped to the body.
+function fishBody(g, spine, up, down, C, o = {}) {
+  const body = () => spinePath(g, spine, up, down);
+  const [x0, y0] = spine(0), [x1, y1] = spine(1);
+  fillIn(g, rgba(C.side), body);
+  g.save(); g.beginPath(); body(); g.clip();
+  // Shaded across the body, wherever the spine bends: bands from the back down and the belly up, each a little further in.
+  const band = (rgb, a, from, to) => fillIn(g, rgba(rgb, a), () => spinePath(g, spine, t => up(t) * from, t => -up(t) * to, 32));
+  for (let k = 0; k < 6; k++) band(C.back, 0.3, 1.1, 0.75 - k * 0.15);
+  band(tone(C.back, 0.8), 0.35, 1.1, 0.7);
+  const belly = (rgb, a, to) => fillIn(g, rgba(rgb, a), () => spinePath(g, spine, t => -down(t) * to, t => down(t) * 1.1, 32));
+  for (let k = 0; k < 5; k++) belly(C.belly, 0.32, 0.05 + k * 0.17);
+  belly(tone(C.belly, 0.8), 0.4, 0.8);
+  if (o.marks) o.marks(g);
+  if (o.scales !== false) strokeIn(g, rgba(tone(C.back, 0.7), 0.22), 0.01, () => {   // scales: rows of small arcs, open toward the tail
+    const r = o.scale || 0.07;
+    for (let row = -4; row <= 4; row++) for (let i = 0; i < 20; i++) {
+      const t = 0.14 + i * 0.045, [sx, sy] = spineAt(spine, t, row * r * 0.8 + (i % 2) * r * 0.4);
+      g.moveTo(sx + r * 0.3, sy - r * 0.5); g.quadraticCurveTo(sx - r * 0.25, sy, sx + r * 0.3, sy + r * 0.5);
+    }
+  });
+  for (let i = 0; i < 24; i++) {                                                           // the gleam along its upper flank, brightest toward the head
+    const t = 0.12 + i * 0.026, [gx, gy] = spineAt(spine, t, up(t) * 0.32);
+    furGlow(g, [255, 255, 250], 0.09 * (o.shine ?? 1) * (1 - t * 0.6), gx, gy, 0.07, up(t) * 0.14 + 0.012);
+  }
+  if (o.line !== false) strokeIn(g, rgba(tone(C.side, 0.6), 0.5), 0.014, () => {     // the lateral line
+    for (let i = 0; i <= 20; i++) { const t = 0.2 + i * 0.04, [x, y] = spineAt(spine, t, up(t) * 0.25 - 0.01); i ? g.lineTo(x, y) : g.moveTo(x, y); }
+  });
+  const gt = o.gill ?? 0.2, [gx, gy] = spineAt(spine, gt, 0), hg = up(gt), dg = down(gt);   // the gill cover's curve
+  strokeIn(g, rgba(tone(C.side, 0.55), 0.55), 0.02, () => { g.moveTo(gx - 0.02, gy - hg * 0.9); g.quadraticCurveTo(gx + 0.08, gy, gx - 0.01, gy + dg * 0.9); });
+  furGlow(g, o.blush || tone(C.side, 0.8), o.blush ? 0.45 : 0.3, gx - 0.07, gy + dg * 0.15, 0.08, 0.13);
+  g.restore();
+  strokeIn(g, rgba(tone(C.back, 0.5), 0.35), 0.012, body);
+  const et = o.eyeAt ?? 0.07, [ex, ey] = spineAt(spine, et, up(et) * 0.35), er = o.eye || 0.055;   // the eye: a gold or red ring, a big black pupil, a glint
+  fillIn(g, rgba(C.iris), () => discAt(g, ex, ey, er));
+  fillIn(g, rgba(tone(C.iris, 0.55)), () => discAt(g, ex + er * 0.12, ey + er * 0.12, er * 0.7));
+  fillIn(g, 'rgb(20, 16, 14)', () => discAt(g, ex, ey, er * 0.58));
+  fillIn(g, 'rgba(255, 255, 255, 0.92)', () => discAt(g, ex - er * 0.25, ey - er * 0.28, er * 0.22));
+  if (o.mouth !== false) strokeIn(g, rgba(tone(C.back, 0.45), 0.6), 0.014, () => { const [mx, my] = spineAt(spine, 0.015, -down(0.015) * 0.2); g.moveTo(mx - 0.01, my); g.quadraticCurveTo(mx + 0.04, my + 0.02, mx + 0.07, my + 0.005); });
+}
+
+// A roach: the everyday fish. Silver flanks with a blue-green back, the fins below a warm orange-red, the eye red.
+const ROACH = { back: [62, 92, 104], side: [196, 206, 208], belly: [244, 242, 234], iris: [204, 46, 34] }, ROACH_FIN = [212, 82, 50];
+function paintRoach(g) {
+  touch(g, 0.04, 0.66, 0.72, 0.16);
+  g.save(); g.rotate(-0.3); g.scale(1.12, 1.12);
+  const spine = t => [-0.82 + t * 1.38, 0.02 - 0.03 * Math.sin(Math.PI * t)], up = fishShape(0.3, 0.07), down = fishShape(0.26, 0.07);
+  tailFin(g, spine, 0.07, 0.36, 0.3, 0.55, [176, 104, 88]);
+  const at = (t, h) => spineAt(spine, t, h);
+  fin(g, [at(0.38, up(0.38) - 0.02), at(0.56, up(0.56) - 0.02)], [at(0.36, up(0.36) + 0.24), at(0.44, up(0.44) + 0.22), at(0.56, up(0.56) + 0.1)], [130, 112, 104]);   // the dorsal fin
+  fin(g, [at(0.66, -down(0.66) + 0.02), at(0.82, -down(0.82) + 0.02)], [at(0.68, -down(0.68) - 0.16), at(0.84, -down(0.84) - 0.06)], ROACH_FIN);   // the anal fin
+  fishBody(g, spine, up, down, ROACH, { blush: [236, 150, 130] });
+  fin(g, [at(0.42, -down(0.42) * 0.7), at(0.5, -down(0.5) * 0.8)], [at(0.48, -down(0.48) - 0.12), at(0.56, -down(0.56) - 0.08)], ROACH_FIN, 0.9);   // the pelvic fin
+  fin(g, [at(0.22, -down(0.22) * 0.35), at(0.26, -down(0.26) * 0.55)], [at(0.34, -down(0.34) * 0.75), at(0.38, -down(0.38) * 0.4)], ROACH_FIN, 0.8);   // the pectoral fin, along its side
+  g.restore();
+}
+
+// A perch: deep in the body with a hump behind the head, olive over gold, dark bars down its sides, a spiny fin up its
+// back with a black spot at its end, the fins below orange-red.
+const PERCH = { back: [64, 96, 40], side: [184, 176, 72], belly: [240, 230, 186], iris: [226, 168, 48] }, PERCH_FIN = [232, 98, 40];
+function paintPerch(g) {
+  touch(g, 0.04, 0.68, 0.7, 0.16);
+  g.save(); g.rotate(-0.28); g.scale(1.1, 1.1);
+  const spine = t => [-0.8 + t * 1.32, 0.04 - 0.02 * Math.sin(Math.PI * t)];
+  const hump = fishShape(0.36, 0.07), up = t => hump(t) * (1 + 0.12 * Math.sin(Math.PI * Math.min(1, t * 1.6))), down = fishShape(0.27, 0.07);
+  tailFin(g, spine, 0.07, 0.32, 0.3, 0.3, [170, 140, 70]);
+  const at = (t, h) => spineAt(spine, t, h);
+  // The first dorsal fin, spiny: its spines sticking out past the membrane, the black spot at its back end.
+  const spines = [];
+  for (let k = 0; k < 7; k++) { const t = 0.24 + k * 0.045, h = 0.2 - Math.abs(k - 2) * 0.03; spines.push(at(t + 0.03, up(t) + h)); }
+  fin(g, [at(0.22, up(0.22) - 0.03), at(0.54, up(0.54) - 0.03)], spines, [118, 124, 82], 0.8);
+  fillIn(g, 'rgba(26, 24, 20, 0.8)', () => { const [x, y] = at(0.48, up(0.48) + 0.07); ovalAt(g, x, y, 0.045, 0.04); });
+  strokeIn(g, rgba([60, 56, 40], 0.9), 0.014, () => { const [x0, y0] = at(0.24, up(0.24)); for (const [x, y] of spines) { g.moveTo(x0 + (x - x0) * 0.2, y + 0.16); g.lineTo(x, y - 0.025); } });
+  fin(g, [at(0.6, up(0.6) - 0.02), at(0.76, up(0.76) - 0.02)], [at(0.6, up(0.6) + 0.16), at(0.7, up(0.7) + 0.14), at(0.78, up(0.78) + 0.06)], [150, 150, 80]);   // the second, soft
+  fin(g, [at(0.68, -down(0.68) + 0.02), at(0.8, -down(0.8) + 0.02)], [at(0.7, -down(0.7) - 0.15), at(0.82, -down(0.82) - 0.06)], PERCH_FIN);
+  fishBody(g, spine, up, down, PERCH, { scale: 0.06, marks: g => {
+    for (let k = 0; k < 6; k++) {                                                           // the dark bars, saddle-shaped down its sides
+      const t = 0.26 + k * 0.105, [x, y] = at(t, up(t) * 0.35), w = 0.05 - k * 0.003;
+      furGlow(g, [40, 58, 26], 0.72, x, y, w, up(t) * 0.9 + 0.05, 0.08, 0.35);
+    }
+  }, blush: [214, 140, 70] });
+  fin(g, [at(0.36, -down(0.36) * 0.75), at(0.44, -down(0.44) * 0.85)], [at(0.42, -down(0.42) - 0.14), at(0.5, -down(0.5) - 0.1)], PERCH_FIN, 0.92);
+  fin(g, [at(0.22, -down(0.22) * 0.3), at(0.25, -down(0.25) * 0.5)], [at(0.33, -down(0.33) * 0.7), at(0.36, -down(0.36) * 0.35)], [220, 140, 70], 0.8);
+  g.restore();
+}
+
+// A brown trout: long and strong, golden-brown going to cream, olive on the back, black spots over it and red ones with
+// pale rings along its middle, the little fleshy fin before the tail, a squarer tail.
+const TROUT = { back: [86, 82, 44], side: [204, 164, 84], belly: [246, 232, 196], iris: [214, 170, 60] }, TROUT_FIN = [176, 132, 76];
+function paintTrout(g) {
+  touch(g, 0.04, 0.68, 0.74, 0.16);
+  g.save(); g.rotate(-0.32); g.scale(1.08, 1.08);
+  const spine = t => [-0.86 + t * 1.46, 0.02 - 0.04 * Math.sin(Math.PI * t * 1.1)], up = fishShape(0.26, 0.08), down = fishShape(0.24, 0.08);
+  tailFin(g, spine, 0.08, 0.32, 0.27, 0.14, [150, 116, 66]);
+  const at = (t, h) => spineAt(spine, t, h);
+  fin(g, [at(0.36, up(0.36) - 0.02), at(0.52, up(0.52) - 0.02)], [at(0.34, up(0.34) + 0.18), at(0.42, up(0.42) + 0.18), at(0.53, up(0.53) + 0.07)], [140, 120, 70]);
+  fillIn(g, rgba([196, 120, 60]), () => { const [x, y] = at(0.82, up(0.82)); ovalAt(g, x, y - 0.03, 0.04, 0.035); });   // the adipose fin
+  fin(g, [at(0.7, -down(0.7) + 0.02), at(0.82, -down(0.82) + 0.02)], [at(0.71, -down(0.71) - 0.13), at(0.83, -down(0.83) - 0.05)], TROUT_FIN);
+  fishBody(g, spine, up, down, TROUT, { scale: 0.05, marks: g => {
+    fillIn(g, 'rgba(36, 26, 20, 0.85)', () => {                                            // black spots, thick on the back, a few lower
+      for (let i = 0; i < 34; i++) { const t = 0.1 + jit(21, i) * 0.8, h = up(t) * (1 - jit(22, i) * 1.15); const [x, y] = at(t, h); discAt(g, x, y, 0.014 + jit(23, i) * 0.012); }
+    });
+    for (let i = 0; i < 9; i++) {                                                           // red ones, each in a pale ring, along its middle
+      const t = 0.22 + i * 0.075 + (jit(24, i) - 0.5) * 0.03, [x, y] = at(t, (jit(25, i) - 0.4) * 0.12);
+      fillIn(g, 'rgba(250, 230, 200, 0.85)', () => discAt(g, x, y, 0.03));
+      fillIn(g, 'rgba(204, 54, 36, 0.95)', () => discAt(g, x, y, 0.019));
+    }
+  }, blush: [222, 140, 100] });
+  fin(g, [at(0.4, -down(0.4) * 0.75), at(0.48, -down(0.48) * 0.85)], [at(0.46, -down(0.46) - 0.12), at(0.54, -down(0.54) - 0.08)], TROUT_FIN, 0.92);
+  fin(g, [at(0.2, -down(0.2) * 0.3), at(0.23, -down(0.23) * 0.5)], [at(0.31, -down(0.31) * 0.7), at(0.34, -down(0.34) * 0.35)], [206, 170, 110], 0.8);
+  g.restore();
+}
+
+// An eel: long and slippery, laid in a loose S, dark olive-brown over a yellow belly, its fin a soft fringe all the way
+// round the back half, a small eye and a pointed head with the jaw just showing. Glossy, with no scales to see.
+const EEL = { back: [56, 54, 30], side: [110, 100, 52], belly: [220, 198, 116], iris: [190, 160, 70] };
+function paintEel(g) {
+  touch(g, 0, 0.6, 0.8, 0.16);
+  const spine = t => [-0.78 + t * 1.6, 0.22 * Math.sin(Math.PI * 2 * (t * 0.95 + 0.08)) - 0.04 + 0.08 * t];
+  const thick = t => 0.16 * Math.pow(Math.sin(Math.PI * Math.min(1, 0.05 + t * 0.9)), 0.45) * (1 - 0.55 * t * t) + 0.012;
+  const at = (t, h) => spineAt(spine, t, h);
+  const fringe = () => {                                                                      // the fin, round from the middle of its back to under it
+    const N = 40;
+    for (let i = 0; i <= N; i++) { const t = 0.42 + 0.58 * i / N, [x, y] = at(t, thick(t) + 0.04 + 0.006 * Math.sin(i * 1.7)); i ? g.lineTo(x, y) : g.moveTo(x, y); }
+    const [ex, ey] = spine(1), [ax, ay] = spine(0.97), a = Math.atan2(ey - ay, ex - ax);
+    g.quadraticCurveTo(ex + Math.cos(a) * 0.1, ey + Math.sin(a) * 0.1, ...at(1, -thick(1) - 0.04));
+    for (let i = N; i >= 0; i--) { const t = 0.6 + 0.4 * i / N; g.lineTo(...at(t, -thick(t) - 0.035 - 0.005 * Math.sin(i * 1.9))); }
+    g.closePath();
+  };
+  fillIn(g, rgba([92, 84, 50], 0.75), fringe);
+  fishBody(g, spine, thick, thick, EEL, { scales: false, eye: 0.03, eyeAt: 0.06, gill: 0.12, shine: 1.4, line: false });
+  const [px, py] = at(0.13, -thick(0.13) * 0.4);                                              // its little pectoral fin
+  fillIn(g, rgba([150, 130, 70], 0.85), () => ovalAt(g, px + 0.02, py + 0.01, 0.045, 0.025, 0.6));
+}
+
+// Dried fish: two split perch, stiff and flat, hung by their tails on a twist of dry grass. Leathery amber gone dark at the
+// edges, the ribs showing through, the eye sunk, no shine but a dull one along the back.
+const DRIED_FISH = { back: [104, 64, 28], side: [176, 116, 54], belly: [214, 164, 92], iris: [86, 56, 30] };
+function paintDriedFish(g) {
+  touch(g, 0.04, 0.68, 0.72, 0.16);
+  for (const [dx, dy, rot, k] of [[0.18, -0.12, -0.75, 0.86], [-0.08, 0.1, -1.05, 1]]) {
+    g.save(); g.translate(dx, dy); g.rotate(rot); g.scale(1.25, 1.25);
+    const spine = t => [-0.62 + t * 1.12, 0.02 * Math.sin(Math.PI * t)], up = fishShape(0.27, 0.06), down = fishShape(0.24, 0.06);
+    const C = { back: tone(DRIED_FISH.back, k), side: tone(DRIED_FISH.side, k), belly: tone(DRIED_FISH.belly, k), iris: DRIED_FISH.iris };
+    tailFin(g, spine, 0.06, 0.24, 0.22, 0.4, tone([120, 78, 36], k));
+    fishBody(g, spine, up, down, C, { scales: false, shine: 0.4, line: false, eye: 0.04, marks: g => {
+      strokeIn(g, rgba(tone(C.side, 0.6), 0.4), 0.014, () => {                               // the ribs through the dried skin
+        for (let i = 0; i < 7; i++) { const t = 0.28 + i * 0.07, [x0, y0] = spineAt(spine, t, up(t) * 0.8), [x1, y1] = spineAt(spine, t + 0.03, -down(t) * 0.8); g.moveTo(x0, y0); g.quadraticCurveTo((x0 + x1) / 2 + 0.03, (y0 + y1) / 2, x1, y1); }
+      });
+    } });
+    g.restore();
+  }
+  strokeIn(g, 'rgb(196, 168, 96)', 0.05, () => { g.moveTo(0.36, -0.56); g.quadraticCurveTo(0.5, -0.5, 0.58, -0.66); g.moveTo(0.36, -0.56); g.quadraticCurveTo(0.3, -0.74, 0.4, -0.84); });   // the twist of grass that ties their tails
+  strokeIn(g, 'rgba(150, 120, 60, 0.8)', 0.016, () => { g.moveTo(0.38, -0.55); g.quadraticCurveTo(0.5, -0.5, 0.57, -0.64); });
+}
+
 // The painted things by their ids, in the order of their numbers ('ingr:' + n): a new one goes at the end.
 const PAINTED = [
   ['cep', paintCep],
@@ -1082,6 +1294,11 @@ const PAINTED = [
   ['driedshroom', paintDriedShroom],
   ['applering', paintAppleRing],
   ['driedberry', paintDriedBerry],
+  ['roach', paintRoach],
+  ['perch', paintPerch],
+  ['trout', paintTrout],
+  ['eel', paintEel],
+  ['driedfish', paintDriedFish],
 ];
 const NAMES = PAINTED.map(p => p[0]);
 function paint(g, size, U, n) {

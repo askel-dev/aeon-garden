@@ -2040,6 +2040,256 @@ function paintBakedApple3(g) {
   strokeIn(g, 'rgba(255, 255, 250, 0.3)', 0.035, () => { g.moveTo(-0.3, ty - 0.2); g.bezierCurveTo(-0.38, ty - 0.32, -0.22, ty - 0.4, -0.3, ty - 0.52); });
 }
 
+// ------------------------------------------------------------------ the fish, cooked
+//
+// A fish cooked whole (PLAN.md stage 10), as the fish dishes all have one: lying on its side, head to the left, back up, s its
+// size (snout to tail tip about 1.2 s), turned by rot about its middle. The skin browned and blistered, darker along the back,
+// gold on the belly, scorched across in bars where it lay over the coals, the fins crisp and dark at their edges, the eye gone
+// white. C is how it looks: skin, belly, H (half its depth), bars (scorch marks), spots (a trout's), dried (split and dried
+// stiff: no eye, wrinkled, no gleam of juice).
+const FISHC_ROACH = { skin: [200, 150, 82], belly: [242, 214, 154], H: 0.18, bars: 3, spots: false, dried: false };
+const FISHC_TROUT = { skin: [186, 124, 62], belly: [244, 208, 148], H: 0.15, bars: 3, spots: true, dried: false };
+const FISHC_DRIED = { skin: [156, 98, 44], belly: [208, 150, 78], H: 0.13, bars: 0, spots: false, dried: true };
+const FISHC_EYE = [246, 240, 226];
+// Blisters on its skin, [x, y as a share of H, size], and a trout's spots, [x, y as a share of H].
+const FISHC_BLISTERS = [[-0.18, -0.3, 0.022], [0.0, 0.1, 0.018], [0.16, -0.36, 0.02], [-0.06, -0.62, 0.014], [0.28, 0.0, 0.016], [-0.24, 0.36, 0.014]];
+const FISHC_SPOTS = [[-0.2, -0.55], [-0.08, -0.7], [0.06, -0.5], [0.2, -0.6], [0.32, -0.3], [-0.1, -0.2], [0.12, -0.15], [0.26, 0.1], [-0.02, 0.2]];
+function cookedFishPath(g, H) {
+  g.moveTo(-0.5, 0.01);
+  g.bezierCurveTo(-0.47, -H * 0.85, -0.2, -H * 1.08, 0.04, -H * 0.92);
+  g.quadraticCurveTo(0.3, -H * 0.62, 0.44, -H * 0.24);
+  g.lineTo(0.44, H * 0.24);
+  g.quadraticCurveTo(0.3, H * 0.62, 0.04, H * 0.9);
+  g.bezierCurveTo(-0.2, H * 1.04, -0.46, H * 0.78, -0.5, 0.01);
+  g.closePath();
+}
+function cookedFishAt(g, x, y, s, rot, C) {
+  const H = C.H, FIN = tone(C.skin, 0.66);
+  g.save(); g.translate(x, y); g.rotate(rot); g.scale(s, s);
+  // The tail, crisp and dark at its tips, and the fin along the back.
+  const tail = () => { g.moveTo(0.4, -H * 0.22); g.quadraticCurveTo(0.52, -H * 0.5, 0.68, -H * 1.2); g.quadraticCurveTo(0.6, -H * 0.4, 0.61, 0); g.quadraticCurveTo(0.6, H * 0.4, 0.68, H * 1.2); g.quadraticCurveTo(0.52, H * 0.5, 0.4, H * 0.22); g.closePath(); };
+  softIn(g, FIN, -H * 1.2, H * 1.2, tail, 1.25, 0.6);
+  g.save(); g.beginPath(); tail(); g.clip();
+  furGlow(g, [44, 24, 12], 0.75, 0.68, -H * 1.1, 0.08, H * 0.5);
+  furGlow(g, [44, 24, 12], 0.75, 0.68, H * 1.1, 0.08, H * 0.5);
+  strokeIn(g, rgba(tone(FIN, 0.55), 0.55), 0.012, () => { for (let k = -3; k <= 3; k++) { g.moveTo(0.44, k * H * 0.06); g.lineTo(0.66, k * H * 0.36); } });
+  g.restore();
+  const dorsal = () => { g.moveTo(-0.12, -H * 0.96); g.quadraticCurveTo(-0.05, -H * 1.38, 0.06, -H * 1.36); g.quadraticCurveTo(0.14, -H * 1.12, 0.18, -H * 0.8); g.closePath(); };
+  softIn(g, FIN, -H * 1.38, -H * 0.8, dorsal, 1.2, 0.7);
+  strokeIn(g, rgba(tone(FIN, 0.5), 0.6), 0.01, () => { for (let k = 0; k < 4; k++) { const bx = -0.09 + k * 0.07; g.moveTo(bx + 0.02, -H * 0.92); g.lineTo(bx - 0.01 + k * 0.01, -H * (1.34 - k * 0.1)); } });
+  furGlow(g, [44, 24, 12], 0.45, 0.0, -H * 1.34, 0.08, H * 0.14);
+  // The body: browned, the back darker, the belly gold, round on the shade side, scorched in bars, blistered.
+  const body = () => cookedFishPath(g, H);
+  softIn(g, C.skin, -H, H, body, 1.2, 0.62);
+  g.save(); g.beginPath(); body(); g.clip();
+  furGlow(g, C.belly, 0.8, -0.06, H * 0.66, 0.44, H * 0.44);
+  furGlow(g, tone(C.skin, 0.5), 0.55, 0, -H * 1.0, 0.52, H * 0.4);
+  furGlow(g, [60, 30, 14], 0.45, 0.24, H * 0.62, 0.32, H * 0.5);
+  furGlow(g, [255, 236, 196], 0.3, -0.36, -H * 0.3, 0.14, H * 0.5);                          // lit about the head
+  if (C.spots) fillIn(g, rgba([60, 30, 18], 0.75), () => { for (const [sx, sy] of FISHC_SPOTS) ovalAt(g, sx, sy * H, 0.018, 0.016); });
+  for (let i = 0; i < C.bars; i++) {                                                         // scorched where it lay on the coals
+    const bx = -0.16 + i * 0.19;
+    furGlow(g, [40, 20, 10], 0.28, bx, 0, 0.06, H * 1.2, 0.3);
+    strokeIn(g, rgba([46, 24, 12], 0.32), 0.026, () => { g.moveTo(bx + 0.05, -H * 1.1); g.lineTo(bx - 0.05, H * 1.1); });
+  }
+  if (C.dried) strokeIn(g, rgba(tone(C.skin, 0.55), 0.55), 0.014, () => {                   // dried: wrinkled along its length, the ribs showing
+    for (let k = -2; k <= 2; k++) { g.moveTo(-0.26, k * H * 0.3); g.quadraticCurveTo(0.05, k * H * 0.3 + 0.02, 0.38, k * H * 0.2); }
+    for (let k = 0; k < 6; k++) { const bx = -0.18 + k * 0.09; g.moveTo(bx, -H * 0.7); g.quadraticCurveTo(bx + 0.03, 0, bx, H * 0.7); }
+  });
+  else fillIn(g, rgba(tone(C.skin, 1.35, 30), 0.6), () => { for (const [bx, by, r] of FISHC_BLISTERS) ovalAt(g, bx, by * H, r, r * 0.7); });
+  strokeIn(g, rgba(tone(C.skin, 0.5), 0.75), 0.022, () => { g.moveTo(-0.3, -H * 0.8); g.quadraticCurveTo(-0.21, 0, -0.3, H * 0.8); });   // the gill cover
+  g.restore();
+  strokeIn(g, rgba(tone(C.skin, 0.42), 0.65), 0.016, body);                                   // its browned edge
+  softIn(g, FIN, -0.02, H * 0.5, () => { g.moveTo(-0.24, H * 0.1); g.quadraticCurveTo(-0.08, H * 0.2, -0.06, H * 0.55); g.quadraticCurveTo(-0.18, H * 0.5, -0.24, H * 0.1); g.closePath(); }, 1.2, 0.7);   // the side fin
+  if (!C.dried) {                                                                            // glossy, juicy skin
+    strokeIn(g, 'rgba(255, 246, 220, 0.75)', 0.024, () => { g.moveTo(-0.36, -H * 0.62); g.quadraticCurveTo(-0.1, -H * 0.98, 0.18, -H * 0.72); });
+    fillIn(g, 'rgba(255, 252, 240, 0.9)', () => { ovalAt(g, -0.04, -H * 0.5, 0.02, 0.012); ovalAt(g, 0.22, -H * 0.36, 0.014, 0.01); ovalAt(g, 0.1, H * 0.3, 0.012, 0.009); });
+  } else strokeIn(g, 'rgba(255, 236, 196, 0.45)', 0.02, () => { g.moveTo(-0.36, -H * 0.6); g.quadraticCurveTo(-0.1, -H * 0.92, 0.18, -H * 0.7); });
+  if (C.dried) fillIn(g, rgba(tone(C.skin, 0.4)), () => ovalAt(g, -0.4, -H * 0.28, 0.035, 0.03));   // the eye, sunk
+  else {                                                                                       // the eye, gone white in the cooking
+    fillIn(g, rgba(FISHC_EYE), () => ovalAt(g, -0.4, -H * 0.28, 0.048, 0.048));
+    fillIn(g, rgba([126, 114, 98]), () => ovalAt(g, -0.394, -H * 0.27, 0.022, 0.022));
+    strokeIn(g, rgba(tone(C.skin, 0.45), 0.7), 0.012, () => ovalAt(g, -0.4, -H * 0.28, 0.048, 0.048));
+  }
+  strokeIn(g, rgba(tone(C.skin, 0.4), 0.7), 0.016, () => { g.moveTo(-0.5, 0.01 + H * 0.06); g.quadraticCurveTo(-0.45, H * 0.2, -0.39, H * 0.13); });   // the mouth
+  g.restore();
+}
+
+// ------------------------------------------------------------------ roast fish on a stick
+//
+// A whole roach threaded on a green stick from its mouth, held up slantwise over the fire: the stick's bark where it's held,
+// its charred tip out past the tail. The fish browned and blistered, scorched across where it lay over the coals, the belly
+// gold, the eye gone white; a drop of juice running off its belly, and a curl of steam.
+function paintRoastFish(g) {
+  const ax = -0.86, ay = 0.74, bx = 0.86, by = -0.64, rot = Math.atan2(by - ay, bx - ax);
+  sitShadow(g, 0.04, 0.72, 0.62, 0.11, 0.22);
+  greenStick(g, ax, ay, bx, by);
+  const cx = -0.02, cy = 0.04;
+  cookedFishAt(g, cx, cy, 1.3, rot, FISHC_ROACH);
+  const jx = cx + 0.1, jy = cy + 0.24;                                                         // juice off its belly
+  fillIn(g, 'rgba(176, 116, 46, 0.9)', () => { g.moveTo(jx - 0.025, jy - 0.04); g.quadraticCurveTo(jx - 0.03, jy + 0.06, jx, jy + 0.1); g.arc(jx, jy + 0.1, 0.03, 0, Math.PI); g.closePath(); g.moveTo(jx - 0.025, jy - 0.04); g.lineTo(jx + 0.025, jy - 0.04); g.quadraticCurveTo(jx + 0.03, jy + 0.06, jx + 0.03, jy + 0.1); });
+  fillIn(g, 'rgba(255, 236, 200, 0.9)', () => ovalAt(g, jx - 0.008, jy + 0.09, 0.009, 0.013));
+  strokeIn(g, 'rgba(255, 255, 250, 0.3)', 0.035, () => { g.moveTo(-0.2, -0.24); g.bezierCurveTo(-0.3, -0.42, -0.1, -0.52, -0.18, -0.72); g.moveTo(0.12, -0.36); g.bezierCurveTo(0.06, -0.5, 0.24, -0.58, 0.16, -0.76); });
+}
+
+// ------------------------------------------------------------------ trout with wild garlic
+//
+// A whole brown trout fried in the clay pan: browned and speckled, its tail curling up over the rim, lying in a golden jus
+// on a bed of wild garlic leaves gone dark and glossy in the heat, two more laid over it, slivers of garlic stalk gone gold.
+// A curl of steam.
+// [x, y, len, w, rot, bend, shade]: the leaves under it, then over it.
+const TROUTG_UNDER = [[-0.62, 0.02, 0.5, 0.14, -0.3, 0.3, 0.72], [0.18, -0.06, 0.52, 0.14, -0.2, -0.3, 0.74], [-0.2, 0.16, 0.5, 0.14, 0.15, 0.4, 0.8], [0.26, 0.2, 0.42, 0.13, -2.9, 0.3, 0.78]];
+const TROUTG_OVER = [[-0.56, 0.1, 0.4, 0.12, 0.25, -0.4, 0.92], [0.34, 0.12, 0.4, 0.11, -0.2, 0.4, 0.96]];
+function paintTroutGarlic(g) {
+  const { cy, IX, IY } = CLAY_PAN;
+  clayPan(g, () => {
+    softIn(g, JUS, cy - IY, cy + IY, () => ovalAt(g, 0, cy + 0.02, IX * 0.97, IY * 0.9), 1.3, 0.6);
+    furGlow(g, [255, 214, 120], 0.35, -0.2, cy - 0.02, 0.5, 0.14);
+    furGlow(g, [60, 30, 12], 0.5, 0.3, cy + 0.15, 0.5, 0.1);
+    for (const [x, y, len, w, rot, bend, k] of TROUTG_UNDER) leafAt(g, 'g', x, cy + y, len, w, rot, bend, k);
+    cookedFishAt(g, -0.1, cy - 0.1, 1.3, -0.08, FISHC_TROUT);
+    for (const [x, y, len, w, rot, bend, k] of TROUTG_OVER) leafAt(g, 'g', x, cy + y, len, w, rot, bend, k);
+    for (const [x, y, a] of [[-0.46, cy + 0.14, 0.4], [0.42, cy + 0.12, -0.6], [0.0, cy + 0.2, 1.1], [0.56, cy - 0.02, 0.2]]) {
+      fillIn(g, 'rgb(214, 168, 90)', () => ovalAt(g, x, y, 0.045, 0.022, a));                 // garlic stalk, sliced and gone gold
+      fillIn(g, 'rgb(246, 232, 196)', () => ovalAt(g, x - 0.005, y - 0.004, 0.032, 0.013, a));
+    }
+    fillIn(g, 'rgba(255, 240, 190, 0.8)', () => { ovalAt(g, -0.6, cy + 0.12, 0.02, 0.01); ovalAt(g, 0.56, cy + 0.12, 0.018, 0.009); });   // gleams on the jus
+  });
+  strokeIn(g, 'rgba(255, 255, 250, 0.3)', 0.035, () => { g.moveTo(-0.16, -0.22); g.bezierCurveTo(-0.26, -0.4, -0.06, -0.5, -0.14, -0.7); g.moveTo(0.2, -0.2); g.bezierCurveTo(0.14, -0.36, 0.32, -0.44, 0.24, -0.64); });
+}
+
+// ------------------------------------------------------------------ fish and sorrel on a hot stone
+//
+// A roach baked on a flat stone from the fire's edge, as the baked apple's, on a bed of sorrel leaves gone dark and soft, the
+// sorrel melted into a bright green sauce pooled round it; two fresh spearhead leaves laid by its head. A curl of steam.
+const SORRELS_SAUCE = [112, 150, 54];
+// [x, y, len, w, rot, bend, shade], back to front.
+const SORRELS_BED = [[-0.72, -0.04, 0.46, 0.14, -0.4, 0.3, 0.6], [0.06, -0.1, 0.5, 0.14, -0.1, -0.3, 0.6], [0.62, 0.04, 0.36, 0.12, 2.9, -0.3, 0.62]];
+function paintFishSorrelStone(g) {
+  const sy = 0.44;
+  sitShadow(g, 0, sy + 0.24, 0.88, 0.14, 0.3);
+  softIn(g, tone(STONE, 0.72), sy, sy + 0.32, () => lumpy(g, 0, sy + 0.09, 0.86, 0.25, STONE_LUMPS), 1.0, 0.6);
+  softIn(g, STONE, sy - 0.24, sy + 0.24, () => lumpy(g, 0, sy, 0.86, 0.25, STONE_LUMPS), 1.2, 0.86);
+  furGlow(g, [255, 250, 240], 0.22, -0.46, sy - 0.1, 0.3, 0.07);
+  furGlow(g, [255, 130, 50], 0.28, 0.62, sy + 0.08, 0.3, 0.1);
+  fillIn(g, 'rgba(52, 44, 40, 0.6)', () => { ovalAt(g, -0.66, sy + 0.1, 0.016, 0.01); ovalAt(g, 0.7, sy - 0.02, 0.012, 0.008); });
+  // The sauce pooled on the stone, the wilted sorrel under the fish.
+  softIn(g, SORRELS_SAUCE, sy - 0.14, sy + 0.12, () => { g.moveTo(-0.66, sy); g.bezierCurveTo(-0.66, sy - 0.12, -0.2, sy - 0.15, 0.1, sy - 0.13); g.bezierCurveTo(0.5, sy - 0.14, 0.7, sy - 0.06, 0.66, sy + 0.02); g.bezierCurveTo(0.62, sy + 0.1, 0.3, sy + 0.12, 0.0, sy + 0.12); g.bezierCurveTo(-0.36, sy + 0.12, -0.66, sy + 0.1, -0.66, sy); g.closePath(); }, 1.25, 0.7);
+  strokeIn(g, 'rgba(236, 250, 190, 0.6)', 0.02, () => { g.moveTo(-0.5, sy + 0.06); g.quadraticCurveTo(-0.3, sy + 0.1, -0.06, sy + 0.095); });
+  for (const [x, y, len, w, rot, bend, k] of SORRELS_BED) leafAt(g, 's', x, sy - 0.08 + y, len, w, rot, bend, k);
+  cookedFishAt(g, -0.04, sy - 0.2, 1.28, -0.06, FISHC_ROACH);
+  leafAt(g, 's', 0.16, sy + 0.04, 0.36, 0.1, 0.25, 0.3, 0.95);                               // fresh ones laid at its side
+  leafAt(g, 's', 0.34, sy + 0.02, 0.32, 0.09, -0.35, -0.3, 1.0);
+  strokeIn(g, 'rgba(255, 255, 250, 0.3)', 0.035, () => { g.moveTo(-0.14, -0.34); g.bezierCurveTo(-0.24, -0.5, -0.04, -0.6, -0.12, -0.78); g.moveTo(0.22, -0.32); g.bezierCurveTo(0.16, -0.46, 0.34, -0.54, 0.26, -0.72); });
+}
+
+// ------------------------------------------------------------------ fish soup
+//
+// In the clay bowl from the pot (as the nettle soup's): a pale golden broth with beads of fat on it, big white flakes of fish
+// with a strip of browned skin along each, nettle tops and torn green leaves, and a fish's tail standing up out of it at the
+// back, so it reads as fish at a glance. A wisp of steam.
+const FSOUP_BROTH = [210, 178, 112], FSOUP_FLAKE = [244, 236, 214], FSOUP_SKIN = [176, 126, 70];
+// A flake of fish at (x, y), size s, turned by rot: white, lit on top, the grain across it, a browned edge of skin.
+function fsoupFlakeAt(g, x, y, s, rot) {
+  g.save(); g.translate(x, y); g.rotate(rot); g.scale(s, s);
+  const flake = () => { g.moveTo(-0.12, 0.02); g.bezierCurveTo(-0.13, -0.07, -0.04, -0.1, 0.04, -0.09); g.bezierCurveTo(0.12, -0.08, 0.14, -0.01, 0.12, 0.04); g.bezierCurveTo(0.06, 0.08, -0.06, 0.08, -0.12, 0.02); g.closePath(); };
+  furGlow(g, [80, 60, 30], 0.35, 0.02, 0.06, 0.13, 0.04);
+  softIn(g, FSOUP_FLAKE, -0.1, 0.07, flake, 1.08, 0.78);
+  strokeIn(g, rgba(FSOUP_SKIN, 0.95), 0.03, () => { g.moveTo(-0.1, 0.04); g.quadraticCurveTo(0, 0.08, 0.11, 0.04); });
+  strokeIn(g, rgba([206, 190, 160], 0.7), 0.008, () => { for (let k = -2; k <= 2; k++) { g.moveTo(k * 0.04 - 0.01, -0.07); g.quadraticCurveTo(k * 0.04 + 0.01, -0.01, k * 0.04 - 0.005, 0.05); } });
+  g.restore();
+}
+function paintFishSoup(g) {
+  const { cy, IX, IY } = CLAY_BOWL, sy = cy + 0.04;
+  clayBowl(g, () => {
+    fillIn(g, rgba(FSOUP_BROTH), () => ovalAt(g, 0, sy, IX - 0.03, IY - 0.03));
+    furGlow(g, [120, 90, 44], 0.5, 0.26, sy, 0.3, 0.1);
+    furGlow(g, [250, 226, 160], 0.6, -0.16, sy - 0.03, 0.4, 0.1);
+    furGlow(g, [70, 50, 24], 0.55, 0.1, sy + 0.12, IX * 0.8, 0.05);
+    // The tail standing up out of it at the back, browned, its tips crisp.
+    g.save(); g.translate(0.3, sy - 0.08); g.rotate(-1.25);
+    const tail = () => { g.moveTo(0, -0.06); g.quadraticCurveTo(0.14, -0.1, 0.3, -0.24); g.quadraticCurveTo(0.24, -0.06, 0.26, 0); g.quadraticCurveTo(0.24, 0.06, 0.3, 0.24); g.quadraticCurveTo(0.14, 0.1, 0, 0.06); g.closePath(); };
+    softIn(g, [176, 120, 62], -0.24, 0.24, tail, 1.3, 0.62);
+    g.save(); g.beginPath(); tail(); g.clip();
+    furGlow(g, [44, 24, 12], 0.7, 0.3, -0.22, 0.06, 0.08); furGlow(g, [44, 24, 12], 0.7, 0.3, 0.22, 0.06, 0.08);
+    strokeIn(g, rgba([110, 70, 34], 0.55), 0.01, () => { for (let k = -3; k <= 3; k++) { g.moveTo(0.04, k * 0.012); g.lineTo(0.27, k * 0.07); } });
+    g.restore();
+    strokeIn(g, 'rgba(255, 240, 210, 0.6)', 0.014, () => { g.moveTo(0.04, -0.05); g.quadraticCurveTo(0.14, -0.09, 0.26, -0.2); });
+    g.restore();
+    fillIn(g, rgba([96, 120, 50], 0.85), () => { for (const [x, y, a] of [[-0.44, sy + 0.02, 0.4], [0.4, sy + 0.04, -0.6], [0.12, sy + 0.1, 1.1], [-0.2, sy - 0.08, -0.2], [0.52, sy - 0.02, 0.3]]) ovalAt(g, x, y, 0.03, 0.013, a); });   // torn green
+    strokeIn(g, 'rgba(255, 220, 120, 0.75)', 0.008, () => { for (const [x, y, r] of [[-0.06, sy - 0.1, 0.02], [0.02, sy - 0.06, 0.013], [-0.52, sy + 0.06, 0.016], [-0.3, sy + 0.1, 0.012], [0.46, sy + 0.1, 0.014]]) ovalAt(g, x, y, r, r * 0.6); });   // beads of fat
+    furGlow(g, [255, 255, 240], 0.4, -0.34, sy - 0.07, 0.14, 0.025, -0.05);
+    fsoupFlakeAt(g, -0.32, sy - 0.02, 1.25, -0.3);
+    fsoupFlakeAt(g, 0.06, sy + 0.04, 1.35, 0.2);
+    fsoupFlakeAt(g, 0.44, sy + 0.04, 1.1, -0.4);
+    fsoupFlakeAt(g, -0.12, sy + 0.12, 1.0, 0.5);
+    nettleTopAt(g, -0.5, sy - 0.06, 0.75, -0.4);
+    nettleTopAt(g, 0.22, sy - 0.04, 0.7, 2.6);
+  });
+  strokeIn(g, 'rgba(255, 255, 250, 0.3)', 0.035, () => { g.moveTo(-0.16, -0.12); g.bezierCurveTo(-0.26, -0.32, -0.06, -0.42, -0.14, -0.64); g.moveTo(0.04, -0.14); g.bezierCurveTo(-0.02, -0.3, 0.16, -0.38, 0.08, -0.58); });
+}
+
+// ------------------------------------------------------------------ eel and mushroom stew
+//
+// In the clay bowl from the pot: a dark glossy gravy, thick rounds of eel standing in it, each its dark olive skin round the
+// side and the white flesh on top with the backbone's dot in the middle, halved mushrooms between them, flecks of green and
+// gleams on the gravy. A wisp of steam.
+const EELSTEW_GRAVY = [92, 56, 28], EELSTEW_SKIN = [92, 66, 36], EELSTEW_FLESH = [236, 222, 192];
+// A piece of eel at (x, y), lying on its side, len long and r thick, turned by rot: dark glossy skin over a yellow belly,
+// the cut end toward the light white with the backbone's dot and a ring of skin.
+function eelPieceAt(g, x, y, len, r, rot) {
+  g.save(); g.translate(x, y); g.rotate(rot);
+  furGlow(g, [30, 16, 6], 0.5, len * 0.1, r * 0.9, len * 0.7, r * 0.5);
+  const side = () => { g.moveTo(-len / 2, -r); g.lineTo(len / 2, -r); g.ellipse(len / 2, 0, r * 0.4, r, 0, -Math.PI / 2, Math.PI / 2); g.lineTo(-len / 2, r); g.closePath(); };
+  softIn(g, EELSTEW_SKIN, -r, r, side, 1.35, 0.55);
+  g.save(); g.beginPath(); side(); g.clip();
+  furGlow(g, [214, 182, 96], 0.7, 0, r * 0.9, len * 0.7, r * 0.4);                           // the yellow belly
+  furGlow(g, [20, 18, 8], 0.5, len * 0.3, r * 0.3, len * 0.4, r * 0.8);
+  g.restore();
+  strokeIn(g, 'rgba(250, 244, 214, 0.7)', r * 0.18, () => { g.moveTo(-len * 0.36, -r * 0.55); g.quadraticCurveTo(0, -r * 0.75, len * 0.36, -r * 0.55); });   // glossy
+  softIn(g, EELSTEW_FLESH, -r, r, () => ovalAt(g, -len / 2, 0, r * 0.42, r), 1.1, 0.85);
+  strokeIn(g, rgba(EELSTEW_SKIN, 0.95), r * 0.14, () => ovalAt(g, -len / 2, 0, r * 0.4, r * 0.95));
+  fillIn(g, rgba([120, 96, 70]), () => ovalAt(g, -len / 2, -r * 0.1, r * 0.08, r * 0.16));
+  g.restore();
+}
+function paintEelStew(g) {
+  const { cy, IX, IY } = CLAY_BOWL, sy = cy + 0.04;
+  clayBowl(g, () => {
+    fillIn(g, rgba(EELSTEW_GRAVY), () => ovalAt(g, 0, sy, IX - 0.03, IY - 0.03));
+    furGlow(g, [44, 22, 8], 0.55, 0.28, sy, 0.32, 0.1);
+    furGlow(g, [176, 112, 56], 0.55, -0.18, sy - 0.03, 0.42, 0.1);
+    furGlow(g, [24, 12, 4], 0.55, 0.1, sy + 0.12, IX * 0.8, 0.05);
+    halfShroomAt(g, -0.42, sy - 0.08, 0.5, -0.4, FSTEW_CUT);
+    halfShroomAt(g, 0.44, sy - 0.08, 0.48, 0.35, FSTEW_CUT);
+    eelPieceAt(g, -0.12, sy - 0.16, 0.34, 0.1, -0.2);
+    eelPieceAt(g, 0.24, sy - 0.12, 0.3, 0.095, 0.3);
+    eelPieceAt(g, -0.3, sy + 0.02, 0.32, 0.095, 0.15);
+    eelPieceAt(g, 0.12, sy + 0.04, 0.34, 0.1, -0.1);
+    fillIn(g, rgba([74, 124, 44], 0.9), () => { for (const [x, y, a] of [[-0.26, sy - 0.24, 0.4], [0.3, sy - 0.24, -0.6], [0.54, sy + 0.04, 0.3], [-0.54, sy + 0.04, 1.4], [0.0, sy - 0.26, 0.2], [0.18, sy + 0.12, 2]]) ovalAt(g, x, y, 0.03, 0.013, a); });
+    strokeIn(g, 'rgba(255, 224, 150, 0.6)', 0.01, () => { ovalAt(g, -0.6, sy + 0.08, 0.03, 0.014); ovalAt(g, 0.58, sy + 0.08, 0.03, 0.014); ovalAt(g, -0.14, sy + 0.16, 0.03, 0.012); });
+  });
+  strokeIn(g, 'rgba(255, 255, 250, 0.3)', 0.035, () => { g.moveTo(-0.14, -0.26); g.bezierCurveTo(-0.24, -0.44, -0.04, -0.54, -0.12, -0.74); g.moveTo(0.18, -0.24); g.bezierCurveTo(0.12, -0.38, 0.3, -0.46, 0.22, -0.66); });
+}
+
+// ------------------------------------------------------------------ dried fish and hazelnuts
+//
+// Cold trail food in the carved wooden bowl: a heap of hazelnuts, some still in their glossy shells, some cracked to the
+// kernel, and two dried fish standing up out of it, flat, stiff and leathery amber, wrinkled along their length with the
+// ribs showing through. No steam: it's eaten cold.
+// [x, y, r, rot, shelled (0) or a kernel (k+1)], back to front.
+const DFISH_NUTS = [[-0.5, -0.04, 0.11, 0.4, 0], [-0.24, -0.1, 0.1, -0.6, 2], [0.26, -0.1, 0.11, 0.8, 0], [0.52, -0.02, 0.1, -0.3, 1],
+  [-0.62, 0.08, 0.1, 1.2, 1], [-0.36, 0.06, 0.11, -0.2, 0], [-0.08, 0.04, 0.1, 0.6, 3], [0.16, 0.06, 0.11, -0.9, 0], [0.42, 0.1, 0.1, 0.3, 2],
+  [-0.2, 0.16, 0.1, 2.2, 0], [0.04, 0.17, 0.1, -0.4, 1], [0.3, 0.18, 0.1, 1.6, 0]];
+function paintDriedFishHazel(g) {
+  const { cy } = BOWL;
+  woodBowl(g, () => {
+    furGlow(g, [40, 22, 10], 0.6, 0, cy + 0.1, 0.7, 0.18);
+    cookedFishAt(g, 0.06, cy - 0.26, 1.05, -0.5, FISHC_DRIED);
+    cookedFishAt(g, -0.1, cy - 0.08, 1.0, -0.12, FISHC_DRIED);
+    for (const [x, y, r, rot, k] of DFISH_NUTS) k ? hazelKernelAt(g, x, cy + y, r * 0.75, rot, k - 1) : hazelShellAt(g, x, cy + y, r, rot);
+  });
+}
+
 const PAINTED = [
   ['Roast mushrooms', paintRoastMushrooms],
   ['Baked apple with honey', paintBakedApple],
@@ -2068,6 +2318,12 @@ const PAINTED = [
   ['Chicken of the woods steak', paintChickenSteak],
   ['Forest stew', paintForestStew],
   ['Baked apple with honey', paintBakedApple3],
+  ['Roast fish on a stick', paintRoastFish],
+  ['Trout with wild garlic', paintTroutGarlic],
+  ['Fish and sorrel on a hot stone', paintFishSorrelStone],
+  ['Fish soup', paintFishSoup],
+  ['Eel and mushroom stew', paintEelStew],
+  ['Dried fish and hazelnuts', paintDriedFishHazel],
 ];
 const NAMES = PAINTED.map(p => p[0]);
 function paint(g, size, U, n) {
