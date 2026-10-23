@@ -19,14 +19,13 @@ once a pick. Nothing personal: no room codes, friends' names or chat.
 
 ## Bringing it back into the game (built 2026-10-23, waiting on the deploy below)
 
-Built: the rarity chips, the dawn line, the stone's gossip, the autumn feast (Harvest fish, 2,000 fish: recipes.js
+Built: the rarity chips, the dawn line, the autumn feast (Harvest fish, 2,000 fish: recipes.js
 `festival`, tune `of` once we see the numbers) and the week's best-loved, all on the book's Everyone page rather than a
 board at camp (a board in the meadow could come later). Not deployed yet:
 
 1. In Umami's Supabase project: run `supabase/tally.sql` (a read-only role; put in a password of your own).
 2. In the game's project (cecvgnhq...): secrets `UMAMI_DB` (that role through the transaction pooler, port 6543, user
    `meadow_tally.<umami project ref>`) and `UMAMI_SITE` (the website id), then deploy `supabase/functions/tally`.
-3. Deploy `supabase/functions/stone` again (its prompt now takes the gossip).
 
 Until then tally.js gets nothing and the game shows none of it (the Everyone tab stays hidden). The SQL was tried on a
 copy of Umami's tables (PGlite), not on the real database: the first call's log says if a column is named otherwise.
@@ -38,7 +37,7 @@ cached an hour, so the page sees only the totals.
 - **Rarity in the recipe book**: "found by 6% of foragers" under each Find, from the `first` events (a browser sends
   each first once ever) over the visitors.
 - **Not nobody's meadow after all**: a quiet line at dawn, "214 foragers walked a meadow today" (and "in 19 countries").
-- **The stone gossips**: the week's most-cooked dish and catch fed to the stone. "Everyone's been frying trout this
+- **The stone gossips** (built, then taken out 2026-10-23: not wanted): the week's most-cooked dish and catch fed to the stone. "Everyone's been frying trout this
   week. Bold of you to bring me soup."
 - **A goal for all meadows together**: "foragers caught 8,400 / 10,000 fish this autumn", and a festival dish or a
   camp thing when it's reached. Counts can be faked; for a cosy game that's fine.

@@ -25,7 +25,6 @@ const UPDATES = [
       'Every autumn foragers everywhere catch fish toward a feast, and when enough are caught, every meadow learns a new recipe.',
       'Each find and recipe in the book says how many foragers have found it.',
       'Some mornings tell you how many foragers walked a meadow today.',
-      'The old stone hears what the other meadows are cooking.',
     ],
   },
   {

@@ -9043,13 +9043,7 @@ function stoneCtx() {
     f.tummy < 0.25 ? 'starving' : f.tummy < 0.5 ? 'hungry' : '', f.health < 0.5 ? 'hurt' : ''].filter(Boolean);
   return { season: S.SEASONS[S.seasonOf(w.tick)].name, time, weather: w.weather.kind, day: Math.floor(w.tick / S.TPD) + 1,
     forager: (myName && Net && Net.on ? `called ${myName}, ` : '') + (feel.length ? feel.join(', ') : 'well') + (w.camp ? ', has a camp with a fire' : ', has no fire yet')
-      + (peers.size ? `, foraging with ${[...peers.values()].map(p => p.name || 'a friend').join(', ')}` : ''), gossip: tallyGossip() };
-}
-// What the other meadows cooked and caught most this week (tally.js), for the stone to be snide about.
-function tallyGossip() {
-  const T = Tally.now, d = T && T.week.dishes[0], c = T && T.week.fish[0], fish = c && Recipes.INGREDIENTS[c[0]];
-  if (!d || d[1] < 3) return '';
-  return `foragers in the other meadows cooked ${d[0]} more than anything (${d[1]} times)` + (fish && c[1] >= 3 ? ` and caught mostly ${fish.name.toLowerCase()}` : '');
+      + (peers.size ? `, foraging with ${[...peers.values()].map(p => p.name || 'a friend').join(', ')}` : '') };
 }
 // Says something to the stone (or offers it something), and its answer comes as a bubble over it. said: words; offer: what's given.
 // Together, the friends see it all (t: 'stone', heardStone): the words or the offering over whoever said them, the stone's

@@ -118,7 +118,7 @@ picture and what goes in, `renderBook`; a few dishes `known` from the start, the
   how many browsers sent each `first`, the week's top dishes and catches, and the calendar season's fish landed and dishes
   cooked. tally.js keeps one an hour in `aeon-garden-tally`; `?tally=fake` makes one up (`?tally=done`: the goal reached).
   game.js uses it for the book's Everyone part (`everySheetHTML`, `feastPageHTML`), "Found by n%" chips (`foundChip`, shown
-  once `Tally.FEW` foragers have found anything), the dawn line (`crowdWord`), the stone's `ctx.gossip` (`tallyGossip`), and
+  once `Tally.FEW` foragers have found anything), the dawn line (`crowdWord`), and
   the festival dish (recipes.js `festival`, `feastTick`: learned as a first once the season's count passes `of`).
 - `updates.js`: the meadow's version (`Updates.VERSION`, `0.MINOR.PATCH`: MINOR a new thing to do, PATCH the same made better)
   and `UPDATES`, a block an update (a push to main: changes made before it's committed add to the top block), newest first: its version, date, title and a few plain notes, one short sentence a change. game.js (what's new: `updatesTick`, `openUpdates`) keeps the version last shown in `aeon-garden-version` and, a few
